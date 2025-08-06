@@ -1,0 +1,63 @@
+{
+	"name": "covalence-lsp",
+	"description": "The Covalence Language Server",
+	"author": "Jad Elkhaleq Ghalayini",
+	"license": "0BSD",
+	"version": "0.1.0",
+	"workspaces": ["client", "server"],
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/imbrem/covalence"
+	},
+	"publisher": "covalence",
+	"categories": [],
+	"keywords": [
+		"WASM",
+		"Component Model",
+		"LSP",
+		"Language Server"
+	],
+	"engines": {
+		"vscode": "^1.88.0"
+	},
+	"main": "./client/dist/desktop/extension",
+	"browser": "./client/dist/web/extension",
+	"activationEvents": [
+		"onLanguage:plaintext"
+	],
+	"extensionDependencies": [
+		"ms-vscode.wasm-wasi-core"
+	],
+	"contributes": {
+		"commands": [
+			{
+				"command": "covalence.covalence-lsp.countFiles",
+				"category": "Samples",
+				"title": "Count Files"
+			}
+		]
+	},
+	"devDependencies": {
+		"@eslint/js": "^9.13.0",
+		"@stylistic/eslint-plugin": "^2.9.0",
+		"@types/node": "^20",
+		"@vscode/test-web": "^0.0.71",
+		"@vscode/vsce": "^3.6.0",
+		"esbuild": "^0.25.0",
+		"eslint": "^9.13.0",
+		"serve": "^14.2.3",
+		"typescript": "^5.8.2",
+		"typescript-eslint": "^8.26.0"
+	},
+	"scripts": {
+		"vscode:prepublish": "bun run package",
+		"build": "bun run --cwd client build && bun run --cwd server build",
+		"package": "bun run --cwd client package && bun run --cwd server package",
+		"lint": "bun run --cwd client lint",
+		"doc": "cargo doc --no-deps",
+		"view-docs": "cargo doc --no-deps --open",
+		"browser": "bun run vscode-test-web ./testbed/workspace --browserType=chromium --coi --extensionId=ms-vscode.wasm-wasi-core --extensionDevelopmentPath=. .",
+		"serve": "serve --cors -l 5000 --ssl-cert $HOME/certs/localhost.pem --ssl-key $HOME/certs/localhost-key.pem",
+		"vsce-package": "bun run package && bun run vsce package --no-dependencies"
+	}
+}

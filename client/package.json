@@ -1,0 +1,36 @@
+{
+	"name": "client",
+	"description": "A VSCode client for the Covalence Language Server",
+	"author": "Jad Elkhaleq Ghalayini",
+	"license": "MIT",
+	"version": "0.1.0",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/imbrem/covalence"
+	},
+	"publisher": "covalence",
+	"categories": [],
+	"keywords": [
+		"WASM",
+		"Component Model",
+		"LSP",
+		"Language Server"
+	],
+	"engines": {
+		"vscode": "^1.89.0"
+	},
+	"main": "./dist/desktop/extension",
+	"browser": "./dist/web/extension",
+	"dependencies": {
+		"@vscode/wasm-wasi-lsp": "0.1.0-pre.8"
+	},
+	"devDependencies": {
+		"@types/vscode": "1.89.0",
+		"@types/node": "^20"
+	},
+	"scripts": {
+		"build": "bun run ./bin/esbuild.js",
+		"package": "bun run build",
+		"lint": "eslint"
+	}
+}

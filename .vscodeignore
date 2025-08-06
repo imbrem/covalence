@@ -1,0 +1,11 @@
+# Ignore everything
+*
+**
+
+# Whitelist what you need
+!.vscodeignore
+!client/dist/**
+!server/dist/**
+!CHANGELOG.md
+!LICENSE
+!README.md

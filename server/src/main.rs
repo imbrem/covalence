@@ -14,7 +14,12 @@ use lsp_types::{
 };
 
 fn main() -> eyre::Result<()> {
-    tracing_subscriber::fmt::init();
+    // Configure tracing to output to stderr instead of stdout
+    // This is crucial for LSP servers since stdout is used for LSP protocol messages
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_ansi(false)
+        .init();
     info!("Initializing Covalence Language Server");
 
     // Create the transport. Includes the stdio (stdin and stdout) versions but this could

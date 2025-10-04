@@ -3,15 +3,15 @@ use crate::term::{Bv, GNode, Import, ULvl};
 /// A trait implemented by a datastore that can manipulate hash-consed terms and universe levels
 pub trait TermStore<C, T> {
     /// Insert a term into the store, returning a handle to it
-    fn add(&mut self, term: GNode<C, T>) -> T;
+    fn add(&mut self, ctx: C, term: GNode<C, T>) -> T;
 
     /// Get the node corresponding to a term
-    fn node(&self, term: T) -> &GNode<C, T>;
+    fn node(&self, ctx: C, term: T) -> &GNode<C, T>;
 
     /// Lookup a term in the store
     ///
     /// Canonicalizes the term's children if found
-    fn lookup(&self, term: &mut GNode<C, T>) -> Option<T>;
+    fn lookup(&self, ctx: C, term: &mut GNode<C, T>) -> Option<T>;
 
     /// Get the head variable of a context, if any
     fn head(&self, ctx: C) -> Option<T>;
@@ -26,7 +26,7 @@ pub trait TermStore<C, T> {
     fn imax(&mut self, lhs: ULvl, rhs: ULvl) -> ULvl;
 }
 
-/// A trait implemented by a datastore that can read and write facts about terms in a context.
+/// A trait implemented by a datastore that can read facts about terms in a context.
 pub trait ReadFacts<C, T> {
     // == Syntax information ==
     /// Get a bound on the de-Bruijn indices visible in `tm`
@@ -70,6 +70,11 @@ pub trait ReadFacts<C, T> {
     /// Corresponds to `Ctx.KHasTy` in `gt3-lean`
     fn has_ty(&self, ctx: C, tm: T, ty: T) -> bool;
 
+    /// Check whether the term `tm` is a valid type in `ctx` under a binder `binder`
+    ///
+    /// Corresponds to `Ctx.KIsTyUnder` in `gt3-lean`
+    fn is_ty_under(&self, ctx: C, binder: T, tm: T) -> bool;
+
     /// Check whether the term `tm` has type `ty` in `ctx` under a binder `binder`
     ///
     /// Corresponds to `Ctx.KHasTyUnder` in `gt3-lean`
@@ -108,6 +113,9 @@ pub trait WriteFacts<C, T> {
 
     /// Set the type of a term
     fn set_ty_unchecked(&mut self, ctx: C, tm: T, ty: T);
+
+    /// Mark a term as a valid type under a binder
+    fn set_is_ty_under_unchecked(&mut self, ctx: C, binder: T, tm: T);
 
     /// Set the type of a term under a binder
     fn set_ty_under_unchecked(&mut self, ctx: C, binder: T, tm: T, ty: T);
@@ -162,6 +170,14 @@ pub struct HasTy<C, T> {
     pub ty: T,
 }
 
+/// A term is a type under a binder
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct IsTyUnder<C, T> {
+    pub ctx: C,
+    pub binder: T,
+    pub tm: T,
+}
+
 /// A typing derivation under a binder
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct HasTyUnder<C, T> {
@@ -187,6 +203,7 @@ pub enum Goal<C, T> {
     IsInhab(IsInhab<C, T>),
     IsProp(IsProp<C, T>),
     HasTy(HasTy<C, T>),
+    IsTyUnder(IsTyUnder<C, T>),
     HasTyUnder(HasTyUnder<C, T>),
     EqIn(EqIn<C, T>),
 }
@@ -221,6 +238,12 @@ impl<C, T> From<HasTy<C, T>> for Goal<C, T> {
     }
 }
 
+impl<C, T> From<IsTyUnder<C, T>> for Goal<C, T> {
+    fn from(g: IsTyUnder<C, T>) -> Self {
+        Goal::IsTyUnder(g)
+    }
+}
+
 impl<C, T> From<HasTyUnder<C, T>> for Goal<C, T> {
     fn from(g: HasTyUnder<C, T>) -> Self {
         Goal::HasTyUnder(g)
@@ -242,6 +265,7 @@ impl<C, T> Goal<C, T> {
             Goal::IsInhab(g) => ker.is_inhab(g.ctx, g.tm),
             Goal::IsProp(g) => ker.is_prop(g.ctx, g.tm),
             Goal::HasTy(g) => ker.has_ty(g.ctx, g.tm, g.ty),
+            Goal::IsTyUnder(g) => ker.is_ty_under(g.ctx, g.binder, g.tm),
             Goal::HasTyUnder(g) => ker.has_ty_under(g.ctx, g.binder, g.tm, g.ty),
             Goal::EqIn(g) => ker.eq_in(g.ctx, g.lhs, g.rhs),
         }
@@ -389,6 +413,21 @@ pub trait Ensure<C: Copy, T: Copy>: Sized + ReadFacts<C, T> {
         self.ensure_goal(HasTy { ctx, tm, ty }.into(), strategy, msg)
     }
 
+    /// Attempt to prove that a term is a type in a context under a binder
+    fn ensure_is_ty_under<S>(
+        &mut self,
+        ctx: C,
+        binder: T,
+        tm: T,
+        strategy: &mut S,
+        msg: &'static str,
+    ) -> Result<(), S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        self.ensure_goal(IsTyUnder { ctx, binder, tm }.into(), strategy, msg)
+    }
+
     /// Attempt to prove that a term has a given type in a context under a binder
     fn ensure_has_ty_under<S>(
         &mut self,
@@ -426,6 +465,13 @@ where
 
 /// Typing rules for deriving facts about terms from those already in the datastore
 pub trait Derive<C, T>: Sized {
+    /// Compute the substitution of a term
+    ///
+    /// Given terms `bound` and `body`
+    /// - If `body` is locally-closed, return it unchanged
+    /// - Otherwise, `let bound in body`
+    fn lazy_subst(&mut self, ctx: C, bound: T, body: T) -> T;
+
     /// Typecheck a variable
     ///
     /// Corresponds to the rule
@@ -483,7 +529,7 @@ pub trait Derive<C, T>: Sized {
     /// ```lean
     /// theorem Ctx.KHasTy.null {Γ} (h : Ok Γ) : KHasTy Γ .unit .null
     /// ```
-    fn derive_nil(&mut self, ctx: C, level: ULvl) -> HasTyIn<T>;
+    fn derive_nil(&mut self, ctx: C) -> HasTyIn<T>;
 
     /// Typecheck the unit type
     ///
@@ -585,6 +631,192 @@ pub trait Derive<C, T>: Sized {
     ) -> Result<HasTyIn<T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
+
+    // TODO: pi_ty
+
+    // TODO: sigma_ty
+
+    /// Typecheck an abstraction
+    ///
+    /// Corresponds to the rule
+    /// ```text
+    /// ∀x ∉ L . Γ, x : A ⊢ b^x : B^x
+    /// ===
+    /// Γ ⊢ λ A . b : Π A . B
+    /// ```
+    /// or, in Lean,
+    /// ```lean
+    /// theorem Ctx.KHasTy.abs {Γ A B b}
+    ///   (hB : KHasTyUnder Γ A B b) : KHasTy Γ (.pi A B) (.abs A b)
+    /// ```
+    fn derive_abs<S>(
+        &mut self,
+        ctx: C,
+        arg_ty: T,
+        body: T,
+        res_ty: T,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
+
+    /// Typecheck an application
+    ///
+    /// Corresponds to the rule
+    /// ```text
+    /// Γ ⊢ f : Π A . B
+    /// Γ ⊢ a : A
+    /// ===
+    /// Γ ⊢ f a : B^a
+    /// ```
+    /// or, in Lean,
+    /// ```lean
+    /// theorem Ctx.KHasTy.app {Γ A B f a}
+    ///   (hA : KHasTy Γ (.pi A B) f) (hB : KHasTy Γ A a) : KHasTy Γ (B.lst 0 a) (.app f a)
+    /// ```
+    fn derive_app<S>(
+        &mut self,
+        ctx: C,
+        arg_ty: T,
+        res_ty: T,
+        func: T,
+        arg: T,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
+
+    /// Typecheck a pair
+    ///
+    /// Corresponds to the rule
+    /// ```text
+    /// ∀x ∉ L . Γ, x : A ⊢ B^x ty
+    /// Γ ⊢ a : A
+    /// Γ ⊢ b : B^a
+    /// ===
+    /// Γ ⊢ (a, b) : Σ A . B
+    /// ```
+    /// or, in Lean,
+    /// ```lean
+    /// theorem Ctx.KHasTy.pair {Γ A B a b}
+    ///   (hB : KIsTyUnder Γ A B) (ha : KHasTy Γ A a) (hb : KHasTy Γ (B.lst 0 a) b)
+    /// ```
+    fn derive_pair<S>(
+        &mut self,
+        ctx: C,
+        arg_ty: T,
+        res_ty: T,
+        fst: T,
+        snd: T,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
+
+    /// Typecheck the first projection of a pair
+    ///
+    /// Corresponds to the rule
+    /// ```text
+    /// Γ ⊢ p : Σ A . B
+    /// ===
+    /// Γ ⊢ fst p : A
+    /// ```
+    /// or, in Lean,
+    /// ```lean
+    /// theorem Ctx.KHasTy.fst {Γ A B p} (hp : KHasTy Γ (.sigma A B) p) : KHasTy Γ A (.fst p)
+    /// ```
+    fn derive_fst<S>(
+        &mut self,
+        ctx: C,
+        arg_ty: T,
+        res_ty: T,
+        pair: T,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
+
+    /// Typecheck the second projection of a pair
+    ///
+    /// Additionally typechecks the first projection using the rule for `fst`
+    /// 
+    /// Corresponds to the rule
+    /// ```text
+    /// Γ ⊢ p : Σ A . B
+    /// ===
+    /// Γ ⊢ snd p : B^(fst p)
+    /// + Γ ⊢ fst p : A
+    /// ```
+    /// or, in Lean,
+    /// ```lean
+    /// theorem Ctx.KHasTy.snd {Γ A B p} (hp : KHasTy Γ (.sigma A B) p)
+    ///   : KHasTy Γ (B.lst 0 (.fst p)) (.snd p)
+    /// 
+    /// -- Additional results:
+    /// theorem Ctx.KHasTy.fst {Γ A B p} (hp : KHasTy Γ (.sigma A B) p) : KHasTy Γ A (.fst p)
+    /// ```
+    fn derive_snd<S>(
+        &mut self,
+        ctx: C,
+        arg_ty: T,
+        res_ty: T,
+        pair: T,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
+
+    // TODO: dite
+
+    // TODO: trunc
+
+    // TODO: choose
+
+    // TODO: smallnat
+
+    // TODO: succ
+
+    // TODO: natrec
+
+    // TODO: lst
+
+    // TODO: beta_app
+
+    // TODO: beta_fst
+
+    // TODO: beta_snd
+
+    // TODO: beta_dite_tt
+
+    // TODO: beta_dite_ff
+
+    // TODO: beta_natrec_0
+
+    // TODO: beta_natrec_succ
+
+    // TODO: choose_spec
+
+    // TODO: unit_ext
+
+    // TODO: eqn_ext
+
+    // TODO: pi_ext
+
+    // TODO: sigma_ext
+
+    // TODO: sometime later:
+    // - propext
+    // - subtyping for sigma
+    // - optimization for conjunction
+    // - optimization for implication
+    // - optimization for composition
+    // - sums
+    // - optimizations for disjunction
+    // - optimizations for negation
+    // - binary applications
+    // - IF SOUND: beta_dite_same; or incorporate into dite
+    // - emptiness lore
+    // - subsingleton lore
 }
 
 /// The `covalence` kernel
@@ -637,6 +869,10 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.has_ty(ctx, tm, ty)
     }
 
+    fn is_ty_under(&self, ctx: C, binder: T, tm: T) -> bool {
+        self.0.is_ty_under(ctx, binder, tm)
+    }
+
     fn has_ty_under(&self, ctx: C, binder: T, tm: T, ty: T) -> bool {
         self.0.has_ty_under(ctx, binder, tm, ty)
     }
@@ -655,16 +891,16 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
 }
 
 impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
-    fn add(&mut self, term: GNode<C, T>) -> T {
-        self.0.add(term)
+    fn add(&mut self, ctx: C, term: GNode<C, T>) -> T {
+        self.0.add(ctx, term)
     }
 
-    fn node(&self, term: T) -> &GNode<C, T> {
-        self.0.node(term)
+    fn node(&self, ctx: C, term: T) -> &GNode<C, T> {
+        self.0.node(ctx, term)
     }
 
-    fn lookup(&self, term: &mut GNode<C, T>) -> Option<T> {
-        self.0.lookup(term)
+    fn lookup(&self, ctx: C, term: &mut GNode<C, T>) -> Option<T> {
+        self.0.lookup(ctx, term)
     }
 
     fn head(&self, ctx: C) -> Option<T> {
@@ -687,6 +923,13 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
 impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> Derive<C, T>
     for Kernel<D>
 {
+    fn lazy_subst(&mut self, ctx: C, bound: T, body: T) -> T {
+        if self.bvi(ctx, body) == Bv(0) {
+            return body;
+        }
+        self.add(ctx, GNode::Let(Bv(0), [bound, body]))
+    }
+
     fn derive_fv<S>(&mut self, ctx: C, var: C) -> Result<HasTyIn<T>, S::Fail>
     where
         S: Strategy<C, T, Self>,
@@ -702,41 +945,44 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
             Bv(0),
             "head variable should be locally-closed"
         );
-        let tm = self.add(GNode::Fv(var));
-        let ty = self.add(GNode::Copy(Import {
-            ctx: var,
-            term: head,
-            bvi: Bv(0),
-        }));
+        let tm = self.add(ctx, GNode::Fv(var));
+        let ty = self.add(
+            ctx,
+            GNode::Copy(Import {
+                ctx: var,
+                term: head,
+                bvi: Bv(0),
+            }),
+        );
         self.0.set_ty_unchecked(ctx, tm, ty);
         Ok(HasTyIn { tm, ty })
     }
 
     fn derive_univ(&mut self, ctx: C, lvl: ULvl) -> HasTyIn<T> {
-        let tm = self.add(GNode::U(lvl));
+        let tm = self.add(ctx, GNode::U(lvl));
         let ty_lvl = self.succ(lvl);
-        let ty = self.add(GNode::U(ty_lvl));
+        let ty = self.add(ctx, GNode::U(ty_lvl));
         self.0.set_ty_unchecked(ctx, tm, ty);
         HasTyIn { tm, ty }
     }
 
     fn derive_unit(&mut self, ctx: C, lvl: ULvl) -> HasTyIn<T> {
-        let tm = self.add(GNode::Unit);
-        let ty = self.add(GNode::U(lvl));
+        let tm = self.add(ctx, GNode::Unit);
+        let ty = self.add(ctx, GNode::U(lvl));
         self.0.set_ty_unchecked(ctx, tm, ty);
         HasTyIn { tm, ty }
     }
 
-    fn derive_nil(&mut self, ctx: C, level: ULvl) -> HasTyIn<T> {
-        let tm = self.add(GNode::Null);
-        let ty = self.add(GNode::Unit);
+    fn derive_nil(&mut self, ctx: C) -> HasTyIn<T> {
+        let tm = self.add(ctx, GNode::Null);
+        let ty = self.add(ctx, GNode::Unit);
         self.0.set_ty_unchecked(ctx, tm, ty);
         HasTyIn { tm, ty }
     }
 
     fn derive_empty(&mut self, ctx: C, lvl: ULvl) -> HasTyIn<T> {
-        let tm = self.add(GNode::Empty);
-        let ty = self.add(GNode::U(lvl));
+        let tm = self.add(ctx, GNode::Empty);
+        let ty = self.add(ctx, GNode::U(lvl));
         self.0.set_ty_unchecked(ctx, tm, ty);
         HasTyIn { tm, ty }
     }
@@ -754,8 +1000,8 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
     {
         self.ensure_has_ty(ctx, lhs, ty, strategy, "derive_eqn: lhs")?;
         self.ensure_has_ty(ctx, rhs, ty, strategy, "derive_eqn: rhs")?;
-        let tm = self.add(GNode::Eqn([lhs, rhs]));
-        let ty = self.add(GNode::U(ULvl::PROP));
+        let tm = self.add(ctx, GNode::Eqn([lhs, rhs]));
+        let ty = self.add(ctx, GNode::U(ULvl::PROP));
         self.0.set_ty_unchecked(ctx, tm, ty);
         Ok(HasTyIn { tm, ty })
     }
@@ -778,8 +1024,8 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
                 "derive_pi: cannot deduce that imax(arg_lvl, res_lvl) ≤ lvl",
             ));
         }
-        let arg_lvl_ty = self.add(GNode::U(arg_lvl));
-        let res_lvl_ty = self.add(GNode::U(res_lvl));
+        let arg_lvl_ty = self.add(ctx, GNode::U(arg_lvl));
+        let res_lvl_ty = self.add(ctx, GNode::U(res_lvl));
         self.ensure_has_ty(ctx, arg_ty, arg_lvl_ty, strategy, "derive_pi: arg_ty")?;
         self.ensure_has_ty_under(
             ctx,
@@ -789,8 +1035,8 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
             strategy,
             "derive_pi: res_ty",
         )?;
-        let ty = self.add(GNode::U(lvl));
-        let tm = self.add(GNode::Pi([arg_ty, res_ty]));
+        let ty = self.add(ctx, GNode::U(lvl));
+        let tm = self.add(ctx, GNode::Pi([arg_ty, res_ty]));
         self.0.set_ty_unchecked(ctx, tm, ty);
         Ok(HasTyIn { tm, ty })
     }
@@ -814,8 +1060,8 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
         if !self.u_le(res_lvl, lvl) {
             return Err(S::fail("derive_sigma: cannot deduce that res_lvl ≤ lvl"));
         }
-        let arg_lvl_ty = self.add(GNode::U(arg_lvl));
-        let res_lvl_ty = self.add(GNode::U(res_lvl));
+        let arg_lvl_ty = self.add(ctx, GNode::U(arg_lvl));
+        let res_lvl_ty = self.add(ctx, GNode::U(res_lvl));
         self.ensure_has_ty(ctx, arg_ty, arg_lvl_ty, strategy, "derive_sigma: arg_ty")?;
         self.ensure_has_ty_under(
             ctx,
@@ -825,8 +1071,108 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
             strategy,
             "derive_sigma: res_ty",
         )?;
-        let ty = self.add(GNode::U(lvl));
-        let tm = self.add(GNode::Sigma([arg_ty, res_ty]));
+        let ty = self.add(ctx, GNode::U(lvl));
+        let tm = self.add(ctx, GNode::Sigma([arg_ty, res_ty]));
+        self.0.set_ty_unchecked(ctx, tm, ty);
+        Ok(HasTyIn { tm, ty })
+    }
+
+    fn derive_abs<S>(
+        &mut self,
+        ctx: C,
+        arg_ty: T,
+        body: T,
+        res_ty: T,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        self.ensure_has_ty_under(ctx, arg_ty, body, res_ty, strategy, "derive_abs: body")?;
+        let tm = self.add(ctx, GNode::Abs([arg_ty, body]));
+        let ty = self.add(ctx, GNode::Pi([arg_ty, res_ty]));
+        self.0.set_ty_unchecked(ctx, tm, ty);
+        Ok(HasTyIn { tm, ty })
+    }
+
+    fn derive_app<S>(
+        &mut self,
+        ctx: C,
+        arg_ty: T,
+        res_ty: T,
+        func: T,
+        arg: T,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        self.ensure_has_ty(ctx, arg, arg_ty, strategy, "derive_app: arg")?;
+        let pi = self.add(ctx, GNode::Pi([arg_ty, res_ty]));
+        self.ensure_has_ty(ctx, func, pi, strategy, "derive_app: func")?;
+        let tm = self.add(ctx, GNode::App([func, arg]));
+        let ty = self.lazy_subst(ctx, arg, res_ty);
+        self.0.set_ty_unchecked(ctx, tm, ty);
+        Ok(HasTyIn { tm, ty })
+    }
+
+    fn derive_pair<S>(
+        &mut self,
+        ctx: C,
+        arg_ty: T,
+        res_ty: T,
+        fst: T,
+        snd: T,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        self.ensure_is_ty_under(ctx, arg_ty, res_ty, strategy, "derive_pair: res_ty")?;
+        self.ensure_has_ty(ctx, fst, arg_ty, strategy, "derive_pair: fst")?;
+        let snd_ty = self.lazy_subst(ctx, fst, res_ty);
+        self.ensure_has_ty(ctx, snd, snd_ty, strategy, "derive_pair: snd")?;
+        let tm = self.add(ctx, GNode::Pair([fst, snd]));
+        let ty = self.add(ctx, GNode::Sigma([arg_ty, res_ty]));
+        self.0.set_ty_unchecked(ctx, tm, ty);
+        Ok(HasTyIn { tm, ty })
+    }
+
+    fn derive_fst<S>(
+        &mut self,
+        ctx: C,
+        arg_ty: T,
+        res_ty: T,
+        pair: T,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        let sigma = self.add(ctx, GNode::Sigma([arg_ty, res_ty]));
+        self.ensure_has_ty(ctx, pair, sigma, strategy, "derive_fst: pair")?;
+        let tm = self.add(ctx, GNode::Fst([pair]));
+        self.0.set_ty_unchecked(ctx, tm, arg_ty);
+        Ok(HasTyIn { tm, ty: arg_ty })
+    }
+
+    fn derive_snd<S>(
+        &mut self,
+        ctx: C,
+        arg_ty: T,
+        res_ty: T,
+        pair: T,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        let sigma = self.add(ctx, GNode::Sigma([arg_ty, res_ty]));
+        self.ensure_has_ty(ctx, pair, sigma, strategy, "derive_snd: pair")?;
+        let fst = self.add(ctx, GNode::Fst([pair]));
+        self.0.set_ty_unchecked(ctx, fst, arg_ty);
+        let tm = self.add(ctx, GNode::Snd([pair]));
+        let ty = self.lazy_subst(ctx, fst, res_ty);
         self.0.set_ty_unchecked(ctx, tm, ty);
         Ok(HasTyIn { tm, ty })
     }

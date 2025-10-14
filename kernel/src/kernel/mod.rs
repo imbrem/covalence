@@ -45,12 +45,30 @@ mod test {
         assert_eq!(
             ker.derive_pi(ctx, ULvl::SET, ULvl::SET, ULvl::PROP, unit, empty, &mut ())
                 .unwrap_err(),
-            "derive_pi: cannot deduce that imax(arg_lvl, res_lvl) ≤ lvl"
+            Kernel::DERIVE_PI_IMAX_LE
         );
         assert_eq!(
             ker.derive_pi(ctx, ULvl::SET, ULvl::PROP, ULvl::PROP, unit, empty, &mut ())
                 .unwrap_err(),
-            "derive_pi: res_ty"
+            Kernel::DERIVE_PI_RES_TY
+        );
+        assert_eq!(
+            ker.derive_pi(ctx, ULvl::PROP, ULvl::SET, ULvl::PROP, unit, empty, &mut ())
+                .unwrap_err(),
+            Kernel::DERIVE_PI_IMAX_LE
+        );
+        assert_eq!(
+            ker.derive_pi(
+                ctx,
+                ULvl::PROP,
+                ULvl::PROP,
+                ULvl::PROP,
+                unit,
+                empty,
+                &mut ()
+            )
+            .unwrap_err(),
+            Kernel::DERIVE_PI_ARG_TY
         );
         let empty_deriv = ker.derive_empty(ctx, ULvl::PROP);
         let u0 = ker.add(ctx, Node::U(ULvl::PROP));
@@ -59,7 +77,25 @@ mod test {
         assert_eq!(
             ker.derive_pi(ctx, ULvl::SET, ULvl::SET, ULvl::PROP, unit, empty, &mut ())
                 .unwrap_err(),
-            "derive_pi: cannot deduce that imax(arg_lvl, res_lvl) ≤ lvl"
+            Kernel::DERIVE_PI_IMAX_LE
+        );
+        assert_eq!(
+            ker.derive_pi(ctx, ULvl::PROP, ULvl::SET, ULvl::PROP, unit, empty, &mut ())
+                .unwrap_err(),
+            Kernel::DERIVE_PI_IMAX_LE
+        );
+        assert_eq!(
+            ker.derive_pi(
+                ctx,
+                ULvl::PROP,
+                ULvl::PROP,
+                ULvl::PROP,
+                unit,
+                empty,
+                &mut ()
+            )
+            .unwrap_err(),
+            Kernel::DERIVE_PI_ARG_TY
         );
         let pi_deriv = ker
             .derive_pi(ctx, ULvl::SET, ULvl::PROP, ULvl::PROP, unit, empty, &mut ())

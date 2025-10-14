@@ -14,12 +14,12 @@ pub use ctx::{Node, TermId};
 pub struct CtxId(SmallIndex<Ctx>);
 
 /// A term store implemented using `egg`
-#[derive(Debug, Clone)]
-pub struct UncheckedStore {
+#[derive(Debug, Clone, Default)]
+pub struct EggTermDb {
     pub(crate) x: SmallArena<Ctx>,
 }
 
-impl UncheckedStore {
+impl EggTermDb {
     fn set_this(&mut self, ctx: CtxId) {
         let p = if let Some((head, (param_ctx, param_ty))) = self.x[ctx.0].set_this(ctx) {
             let param = self.import(ctx, param_ctx, param_ty);
@@ -56,7 +56,7 @@ impl UncheckedStore {
     }
 }
 
-impl TermStore<CtxId, TermId> for UncheckedStore {
+impl TermStore<CtxId, TermId> for EggTermDb {
     fn new_ctx(&mut self) -> CtxId {
         let result = CtxId(self.x.insert(Ctx::new_ctx()));
         self.set_this(result);
@@ -123,9 +123,13 @@ impl TermStore<CtxId, TermId> for UncheckedStore {
             },
         }
     }
+
+    fn propagate_in(&mut self, ctx: CtxId) -> usize {
+        self.x[ctx.0].propagate_in()
+    }
 }
 
-impl ReadFacts<CtxId, TermId> for UncheckedStore {
+impl ReadFacts<CtxId, TermId> for EggTermDb {
     fn is_ok(&self, ctx: CtxId) -> bool {
         self.x[ctx.0].is_ok()
     }
@@ -254,11 +258,11 @@ impl ReadFacts<CtxId, TermId> for UncheckedStore {
     }
 
     fn imax_le(&self, lo_lhs: ULvl, lo_rhs: ULvl, hi: ULvl) -> bool {
-        self.u_le(ULvl::PROP, lo_rhs) || self.u_le(lo_lhs, hi) && self.u_le(lo_rhs, hi)
+        self.u_le(lo_rhs, ULvl::PROP) || self.u_le(lo_lhs, hi) && self.u_le(lo_rhs, hi)
     }
 }
 
-impl WriteFacts<CtxId, TermId> for UncheckedStore {
+impl WriteFacts<CtxId, TermId> for EggTermDb {
     fn set_is_ok(&mut self, ctx: CtxId) {
         self.x[ctx.0].set_is_ok();
     }
@@ -302,12 +306,50 @@ impl WriteFacts<CtxId, TermId> for UncheckedStore {
     fn set_has_ty_under_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId, ty: TermId) {
         self.x[ctx.0].set_has_ty_under_unchecked(binder, tm, ty);
     }
-    
+
     fn set_forall_inhab_under_unchecked(&mut self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
         self.x[ctx.0].set_forall_inhab_under_unchecked(binder, ty)
     }
-    
+
     fn set_exists_inhab_under_unchecked(&mut self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
         self.x[ctx.0].set_exists_inhab_under_unchecked(binder, ty)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn unit_eq_empty_contr() {
+        let mut db = EggTermDb::default();
+        let ctx = db.new_ctx();
+        assert!(db.is_ok(ctx));
+        assert!(db.tel_inhab(ctx));
+        assert!(!db.is_contr(ctx));
+        assert_eq!(db.parent(ctx), None);
+        assert_eq!(db.param(ctx), None);
+        assert_eq!(db.head(ctx), None);
+        let unit = db.add(ctx, Node::Unit);
+        let empty = db.add(ctx, Node::Empty);
+        assert_ne!(unit, empty);
+        assert!(!db.is_contr(ctx));
+        db.set_eq_unchecked(ctx, unit, empty);
+        assert!(db.is_contr(ctx));
+    }
+
+    #[test]
+    fn basic_imax_le() {
+        let db = EggTermDb::default();
+        let u0 = ULvl::PROP;
+        assert!(db.imax_le(u0, u0, u0));
+        let u1 = ULvl::SET;
+        assert!(db.imax_le(u1, u1, u1));
+        assert!(db.imax_le(u1, u0, u1));
+        assert!(db.imax_le(u0, u1, u1));
+        assert!(db.imax_le(u0, u0, u1));
+        assert!(!db.imax_le(u1, u1, u0));
+        assert!(db.imax_le(u1, u0, u0));
+        assert!(!db.imax_le(u0, u1, u0));
     }
 }

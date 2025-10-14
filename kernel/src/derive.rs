@@ -36,6 +36,10 @@ pub trait TermStore<C, T> {
 
     /// Get the impredicatibe maximum of two universe levels
     fn imax(&mut self, lhs: ULvl, rhs: ULvl) -> ULvl;
+
+    // == Congruence management ==
+    /// Propagate congruence information _within_ a context
+    fn propagate_in(&mut self, ctx: C) -> usize;
 }
 
 /// A trait implemented by a datastore that can read facts about terms in a context.
@@ -568,20 +572,20 @@ pub trait Strategy<C, T, K> {
 }
 
 impl<C, T, K> Strategy<C, T, K> for () {
-    type Fail = ();
+    type Fail = &'static str;
 
     fn prove_goal(
         &mut self,
         _ker: &mut K,
         _goal: Goal<C, T>,
-        _msg: &'static str,
+        msg: &'static str,
         _attempt_no: usize,
     ) -> Result<(), Self::Fail> {
-        Err(())
+        Err(msg)
     }
 
-    fn fail(&mut self, _msg: &'static str) -> Self::Fail {
-        ()
+    fn fail(&mut self, msg: &'static str) -> Self::Fail {
+        msg
     }
 }
 
@@ -1577,6 +1581,10 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
     fn imax(&mut self, lhs: ULvl, rhs: ULvl) -> ULvl {
         self.0.imax(lhs, rhs)
     }
+
+    fn propagate_in(&mut self, ctx: C) -> usize {
+        self.0.propagate_in(ctx)
+    }
 }
 
 impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>>
@@ -1898,7 +1906,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_pi")?;
-        if self.imax_le(arg_lvl, res_lvl, lvl) {
+        if !self.imax_le(arg_lvl, res_lvl, lvl) {
             return Err(strategy.fail("derive_pi: cannot deduce that imax(arg_lvl, res_lvl) ≤ lvl"));
         }
         let arg_lvl_ty = self.add(ctx, GNode::U(arg_lvl));
@@ -2407,4 +2415,14 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         self.0.set_eq_unchecked(ctx, p, eta);
         Ok(Eqn { lhs: p, rhs: eta }.success(ctx, strategy))
     }
+}
+
+pub trait KernelAPI<C: Copy, T: Copy>:
+    Derive<C, T> + Ensure<C, T> + TermStore<C, T> + ReadFacts<C, T>
+{
+}
+
+impl<K, C: Copy, T: Copy> KernelAPI<C, T> for K where
+    K: Derive<C, T> + Ensure<C, T> + TermStore<C, T> + ReadFacts<C, T>
+{
 }

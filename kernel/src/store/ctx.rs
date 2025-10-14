@@ -63,6 +63,10 @@ impl Ctx {
         self.e.lookup(node).map(TermId)
     }
 
+    pub fn propagate_in(&mut self) -> usize {
+        self.e.rebuild()
+    }
+
     pub fn is_ok(&self) -> bool {
         self.e.analysis.flags.contains(CtxFlags::IS_OK)
     }
@@ -194,6 +198,10 @@ impl Ctx {
         self.e[tm.0].data.flags.contains(ClassFlags::IS_PROP)
     }
 
+    pub fn is_univ(&self, tm: TermId) -> bool {
+        self.e[tm.0].data.flags.contains(ClassFlags::IS_UNIV)
+    }
+
     fn set_flags_unchecked(&mut self, tm: TermId, flags: ClassFlags) -> bool {
         let mut data = self.e[tm.0].data;
         let old_flags = data.flags;
@@ -231,6 +239,14 @@ impl Ctx {
     }
 
     pub fn set_has_ty_unchecked(&mut self, tm: TermId, ty: TermId) -> bool {
+        if !self.is_prop(tm) && self.is_univ(ty) {
+            if let Some(u0) = self.lookup(Node::U(ULvl::PROP)) {
+                if self.eq_in(ty, u0) {
+                    self.set_is_prop_unchecked(tm);
+                }
+            }
+        }
+        self.set_is_wf_unchecked(tm);
         let has_ty = self.add(GNode::HasTy([tm, ty]));
         self.set_is_inhab_unchecked(ty);
         let unit = self.add(GNode::Unit);

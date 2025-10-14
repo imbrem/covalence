@@ -1,0 +1,73 @@
+/*!
+The base `covalence` kernel, currently implemented using `egg`
+*/
+pub use crate::derive::Derive;
+pub use crate::derive::Ensure;
+pub use crate::derive::ReadFacts;
+pub use crate::derive::TermStore;
+
+pub use crate::store::EggTermDb as TermDb;
+pub use crate::store::{CtxId, Node, TermId};
+
+pub use crate::term::ULvl;
+
+pub type Kernel = crate::derive::Kernel<TermDb>;
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn derive_unit_to_empty_wf() {
+        let mut ker = Kernel::default();
+        let ctx = ker.new_ctx();
+        debug_assert!(ker.is_ok(ctx));
+        debug_assert!(ker.tel_inhab(ctx));
+        debug_assert!(!ker.is_contr(ctx));
+        assert_eq!(ker.parent(ctx), None);
+        assert_eq!(ker.param(ctx), None);
+        assert_eq!(ker.head(ctx), None);
+        let unit = ker.add(ctx, Node::Unit);
+        let empty = ker.add(ctx, Node::Empty);
+        assert_ne!(unit, empty);
+        let u1 = ker.add(ctx, Node::U(ULvl::SET));
+        assert!(!ker.has_ty(ctx, unit, u1));
+        assert!(!ker.has_ty(ctx, empty, u1));
+        debug_assert!(!ker.is_contr(ctx));
+        let unit_deriv = ker.derive_unit(ctx, ULvl::SET);
+        assert_eq!(unit_deriv.ty, u1);
+        assert_eq!(unit_deriv.tm, unit);
+        assert!(ker.has_ty(ctx, unit, u1));
+        let empty_deriv = ker.derive_empty(ctx, ULvl::SET);
+        assert_eq!(empty_deriv.ty, u1);
+        assert_eq!(empty_deriv.tm, empty);
+        assert!(ker.has_ty(ctx, empty, u1));
+        assert_eq!(
+            ker.derive_pi(ctx, ULvl::SET, ULvl::SET, ULvl::PROP, unit, empty, &mut ())
+                .unwrap_err(),
+            "derive_pi: cannot deduce that imax(arg_lvl, res_lvl) ≤ lvl"
+        );
+        assert_eq!(
+            ker.derive_pi(ctx, ULvl::SET, ULvl::PROP, ULvl::PROP, unit, empty, &mut ())
+                .unwrap_err(),
+            "derive_pi: res_ty"
+        );
+        let empty_deriv = ker.derive_empty(ctx, ULvl::PROP);
+        let u0 = ker.add(ctx, Node::U(ULvl::PROP));
+        assert_eq!(empty_deriv.tm, empty);
+        assert_eq!(empty_deriv.ty, u0);
+        assert_eq!(
+            ker.derive_pi(ctx, ULvl::SET, ULvl::SET, ULvl::PROP, unit, empty, &mut ())
+                .unwrap_err(),
+            "derive_pi: cannot deduce that imax(arg_lvl, res_lvl) ≤ lvl"
+        );
+        let pi_deriv = ker
+            .derive_pi(ctx, ULvl::SET, ULvl::PROP, ULvl::PROP, unit, empty, &mut ())
+            .unwrap();
+        let pi = ker.add(ctx, Node::Pi([unit, empty]));
+        assert_eq!(pi_deriv.tm, pi);
+        assert_eq!(pi_deriv.ty, u0);
+        assert!(ker.has_ty(ctx, pi, u0));
+        assert!(ker.is_prop(ctx, pi));
+    }
+}

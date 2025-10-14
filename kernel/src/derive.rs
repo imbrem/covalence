@@ -12,15 +12,18 @@ pub trait TermStore<C, T> {
     fn with_param(&mut self, parent: C, param: T) -> C;
 
     /// Insert a term into the store, returning a handle to it
-    fn add(&mut self, ctx: C, term: GNode<C, T>) -> T;
+    fn add(&mut self, ctx: C, tm: GNode<C, T>) -> T;
+
+    /// Import a term into another context, returning a handle to it
+    fn import(&mut self, ctx: C, src: C, tm: T) -> T;
 
     /// Get the node corresponding to a term
-    fn node(&self, ctx: C, term: T) -> &GNode<C, T>;
+    fn node(&self, ctx: C, tm: T) -> &GNode<C, T>;
 
     /// Lookup a term in the store
     ///
     /// Canonicalizes the term's children if found
-    fn lookup(&self, ctx: C, term: &mut GNode<C, T>) -> Option<T>;
+    fn lookup(&self, ctx: C, tm: &mut GNode<C, T>) -> Option<T>;
 
     /// Get the head variable of a context, if any
     fn head(&self, ctx: C) -> Option<T>;
@@ -47,6 +50,27 @@ pub trait ReadFacts<C, T> {
     ///
     /// TODO: reference lean
     fn is_contr(&self, ctx: C) -> bool;
+
+    /// Get whether a context's parameter is inhabited w.r.t the context
+    ///
+    /// This is defined to be `true` for the empty context
+    ///
+    /// TODO: reference lean
+    fn head_inhab(&self, ctx: C) -> bool;
+
+    /// Get whether the _rest_ of a context is inhabited
+    ///
+    /// This is defined to be `true` for the empty context
+    ///
+    /// TODO: reference lean
+    fn tail_inhab(&self, ctx: C) -> bool;
+
+    /// Get whether a context is inhabited as a telescope
+    ///
+    /// This is defined to be `true` for the empty context
+    ///
+    /// TODO: reference lean
+    fn tel_inhab(&self, ctx: C) -> bool;
 
     /// Get a context's parent, if any
     fn parent(&self, ctx: C) -> Option<C>;
@@ -111,12 +135,22 @@ pub trait ReadFacts<C, T> {
     /// Check whether the term `tm` is a valid type in `ctx` under a binder `binder`
     ///
     /// Corresponds to `Ctx.KIsTyUnder` in `gt3-lean`
-    fn is_ty_under(&self, ctx: C, binder: T, tm: T) -> bool;
+    fn is_ty_under(&self, ctx: C, binder: T, ty: T) -> bool;
 
     /// Check whether the term `tm` has type `ty` in `ctx` under a binder `binder`
     ///
     /// Corresponds to `Ctx.KHasTyUnder` in `gt3-lean`
     fn has_ty_under(&self, ctx: C, binder: T, tm: T, ty: T) -> bool;
+
+    /// Check whether the term `tm` is always inhabited in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_inhab_under(&self, ctx: C, binder: T, ty: T) -> bool;
+
+    /// Check whether there exists a value of type `binder` such that the term `tm` is inhabited
+    ///
+    /// TODO: reference Lean
+    fn exists_inhab_under(&self, ctx: C, binder: T, ty: T) -> bool;
 
     // == Universe levels ==
     /// Check whether one universe is less than or equal to another
@@ -160,13 +194,23 @@ pub trait WriteFacts<C, T> {
     fn set_eq_unchecked(&mut self, ctx: C, lhs: T, rhs: T);
 
     /// Set the type of a term
-    fn set_ty_unchecked(&mut self, ctx: C, tm: T, ty: T);
+    fn set_has_ty_unchecked(&mut self, ctx: C, tm: T, ty: T);
 
     /// Mark a term as a valid type under a binder
     fn set_is_ty_under_unchecked(&mut self, ctx: C, binder: T, tm: T);
 
+    /// Check whether the term `tm` is always inhabited in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn set_forall_inhab_under_unchecked(&mut self, ctx: C, binder: T, ty: T) -> bool;
+
+    /// Check whether there exists a value of type `binder` such that the term `tm` is inhabited
+    ///
+    /// TODO: reference Lean
+    fn set_exists_inhab_under_unchecked(&mut self, ctx: C, binder: T, ty: T) -> bool;
+
     /// Set the type of a term under a binder
-    fn set_ty_under_unchecked(&mut self, ctx: C, binder: T, tm: T, ty: T);
+    fn set_has_ty_under_unchecked(&mut self, ctx: C, binder: T, tm: T, ty: T);
 }
 
 /// A trait implemented by a mutable datastore that can hold _unchecked_ facts about contexts
@@ -339,6 +383,22 @@ pub struct HasTyUnder<C, T> {
     pub ty: T,
 }
 
+/// A universally quantified statement of inhabitance
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct ForallInhabUnder<C, T> {
+    pub ctx: C,
+    pub binder: T,
+    pub ty: T,
+}
+
+/// An existentially quantified statement of inhabitance
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct ExistsInhabUnder<C, T> {
+    pub ctx: C,
+    pub binder: T,
+    pub ty: T,
+}
+
 /// Equality in a context
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct EqIn<C, T> {
@@ -370,6 +430,10 @@ pub enum Goal<C, T> {
     IsTyUnder(IsTyUnder<C, T>),
     /// A term has a type under a binder in the given context
     HasTyUnder(HasTyUnder<C, T>),
+    /// A term is always inhabited under a binder in the given context
+    ForallInhabUnder(ForallInhabUnder<C, T>),
+    /// There exists a value of the binder type such that the term is inhabited in the given context
+    ExistsInhabUnder(ExistsInhabUnder<C, T>),
     /// Two terms are equal in the given context
     EqIn(EqIn<C, T>),
 }
@@ -422,6 +486,18 @@ impl<C, T> From<HasTyUnder<C, T>> for Goal<C, T> {
     }
 }
 
+impl<C, T> From<ForallInhabUnder<C, T>> for Goal<C, T> {
+    fn from(g: ForallInhabUnder<C, T>) -> Self {
+        Goal::ForallInhabUnder(g)
+    }
+}
+
+impl<C, T> From<ExistsInhabUnder<C, T>> for Goal<C, T> {
+    fn from(g: ExistsInhabUnder<C, T>) -> Self {
+        Goal::ExistsInhabUnder(g)
+    }
+}
+
 impl<C, T> From<EqIn<C, T>> for Goal<C, T> {
     fn from(g: EqIn<C, T>) -> Self {
         Goal::EqIn(g)
@@ -442,6 +518,8 @@ impl<C, T> Goal<C, T> {
             Goal::HasTy(g) => ker.has_ty(g.ctx, g.tm, g.ty),
             Goal::IsTyUnder(g) => ker.is_ty_under(g.ctx, g.binder, g.tm),
             Goal::HasTyUnder(g) => ker.has_ty_under(g.ctx, g.binder, g.tm, g.ty),
+            Goal::ForallInhabUnder(g) => ker.forall_inhab_under(g.ctx, g.binder, g.ty),
+            Goal::ExistsInhabUnder(g) => ker.exists_inhab_under(g.ctx, g.binder, g.ty),
             Goal::EqIn(g) => ker.eq_in(g.ctx, g.lhs, g.rhs),
         }
     }
@@ -683,6 +761,37 @@ pub trait Ensure<C: Copy, T: Copy>: Sized + ReadFacts<C, T> {
             strategy,
             msg,
         )
+    }
+
+    /// Attempt to prove that a term is always inhabited in a context under a binder
+    fn ensure_forall_inhab_under<S>(
+        &mut self,
+        ctx: C,
+        binder: T,
+        ty: T,
+        strategy: &mut S,
+        msg: &'static str,
+    ) -> Result<(), S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        self.ensure_goal(ForallInhabUnder { ctx, binder, ty }.into(), strategy, msg)
+    }
+
+    /// Attempt to prove that there exists a value of the binder type such that the term is
+    /// inhabited
+    fn ensure_exists_inhab_under<S>(
+        &mut self,
+        ctx: C,
+        binder: T,
+        ty: T,
+        strategy: &mut S,
+        msg: &'static str,
+    ) -> Result<(), S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        self.ensure_goal(ExistsInhabUnder { ctx, binder, ty }.into(), strategy, msg)
     }
 
     /// Attempt to prove that two terms are equal in a context
@@ -1331,6 +1440,18 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.is_contr(ctx)
     }
 
+    fn head_inhab(&self, ctx: C) -> bool {
+        self.0.head_inhab(ctx)
+    }
+
+    fn tail_inhab(&self, ctx: C) -> bool {
+        self.0.tail_inhab(ctx)
+    }
+
+    fn tel_inhab(&self, ctx: C) -> bool {
+        self.0.tel_inhab(ctx)
+    }
+
     fn parent(&self, ctx: C) -> Option<C> {
         self.0.parent(ctx)
     }
@@ -1383,8 +1504,8 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.has_ty(ctx, tm, ty)
     }
 
-    fn is_ty_under(&self, ctx: C, binder: T, tm: T) -> bool {
-        self.0.is_ty_under(ctx, binder, tm)
+    fn is_ty_under(&self, ctx: C, binder: T, ty: T) -> bool {
+        self.0.is_ty_under(ctx, binder, ty)
     }
 
     fn has_ty_under(&self, ctx: C, binder: T, tm: T, ty: T) -> bool {
@@ -1401,6 +1522,14 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
 
     fn imax_le(&self, lo_lhs: ULvl, lo_rhs: ULvl, hi: ULvl) -> bool {
         self.0.imax_le(lo_lhs, lo_rhs, hi)
+    }
+
+    fn forall_inhab_under(&self, ctx: C, binder: T, ty: T) -> bool {
+        self.0.forall_inhab_under(ctx, binder, ty)
+    }
+
+    fn exists_inhab_under(&self, ctx: C, binder: T, ty: T) -> bool {
+        self.0.exists_inhab_under(ctx, binder, ty)
     }
 }
 
@@ -1419,6 +1548,10 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
 
     fn add(&mut self, ctx: C, term: GNode<C, T>) -> T {
         self.0.add(ctx, term)
+    }
+
+    fn import(&mut self, ctx: C, src: C, tm: T) -> T {
+        self.0.import(ctx, src, tm)
     }
 
     fn node(&self, ctx: C, term: T) -> &GNode<C, T> {
@@ -1479,7 +1612,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
             ctx,
             GNode::Import(Import {
                 ctx: src,
-                term: tm,
+                tm,
                 bvi: self.bvi(src, tm),
             }),
         )
@@ -1532,7 +1665,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
             ctx,
             GNode::Import(Import {
                 ctx: src,
-                term: tm,
+                tm,
                 bvi: self.bvi(src, tm),
             }),
         );
@@ -1549,7 +1682,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
             ctx,
             GNode::Import(Import {
                 ctx: src,
-                term: tm,
+                tm,
                 bvi: self.bvi(src, tm),
             }),
         );
@@ -1633,7 +1766,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         let close_tm = self.lazy_close_import(ctx, src, tm);
         let close_ty = self.lazy_close_import(ctx, src, ty);
         self.0
-            .set_ty_under_unchecked(ctx, binder, close_tm, close_ty);
+            .set_has_ty_under_unchecked(ctx, binder, close_tm, close_ty);
         Ok(HasTyUnderIn {
             tm: close_tm,
             ty: close_ty,
@@ -1690,11 +1823,11 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
             ctx,
             GNode::Import(Import {
                 ctx: var,
-                term: head,
+                tm: head,
                 bvi: Bv(0),
             }),
         );
-        self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
         Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
@@ -1702,14 +1835,14 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         let tm = self.add(ctx, GNode::U(lvl));
         let ty_lvl = self.succ(lvl);
         let ty = self.add(ctx, GNode::U(ty_lvl));
-        self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
         HasTyIn { tm, ty }
     }
 
     fn derive_unit(&mut self, ctx: C, lvl: ULvl) -> HasTyIn<T> {
         let tm = self.add(ctx, GNode::Unit);
         let ty = self.add(ctx, GNode::U(lvl));
-        self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
         self.0.set_is_prop_unchecked(ctx, tm);
         self.0.set_is_inhab_unchecked(ctx, tm);
         HasTyIn { tm, ty }
@@ -1718,14 +1851,14 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
     fn derive_nil(&mut self, ctx: C) -> HasTyIn<T> {
         let tm = self.add(ctx, GNode::Null);
         let ty = self.add(ctx, GNode::Unit);
-        self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
         HasTyIn { tm, ty }
     }
 
     fn derive_empty(&mut self, ctx: C, lvl: ULvl) -> HasTyIn<T> {
         let tm = self.add(ctx, GNode::Empty);
         let ty = self.add(ctx, GNode::U(lvl));
-        self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
         self.0.set_is_prop_unchecked(ctx, tm);
         self.0.set_is_empty_unchecked(ctx, tm);
         HasTyIn { tm, ty }
@@ -1747,7 +1880,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         self.ensure_has_ty(ctx, rhs, ty, strategy, "derive_eqn: rhs")?;
         let tm = self.add(ctx, GNode::Eqn([lhs, rhs]));
         let ty = self.add(ctx, GNode::U(ULvl::PROP));
-        self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
         Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
@@ -1781,7 +1914,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         )?;
         let ty = self.add(ctx, GNode::U(lvl));
         let tm = self.add(ctx, GNode::Pi([arg_ty, res_ty]));
-        self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
         Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
@@ -1818,7 +1951,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         )?;
         let ty = self.add(ctx, GNode::U(lvl));
         let tm = self.add(ctx, GNode::Sigma([arg_ty, res_ty]));
-        self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
         Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
@@ -1837,7 +1970,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         self.ensure_has_ty_under(ctx, arg_ty, body, res_ty, strategy, "derive_abs: body")?;
         let tm = self.add(ctx, GNode::Abs([arg_ty, body]));
         let ty = self.add(ctx, GNode::Pi([arg_ty, res_ty]));
-        self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
         Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
@@ -1859,7 +1992,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         self.ensure_has_ty(ctx, func, pi, strategy, "derive_app: func")?;
         let tm = self.add(ctx, GNode::App([func, arg]));
         let ty = self.lazy_subst(ctx, arg, res_ty);
-        self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
         Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
@@ -1882,7 +2015,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         self.ensure_has_ty(ctx, snd, snd_ty, strategy, "derive_pair: snd")?;
         let tm = self.add(ctx, GNode::Pair([fst, snd]));
         let ty = self.add(ctx, GNode::Sigma([arg_ty, res_ty]));
-        self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
         Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
@@ -1901,7 +2034,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         let sigma = self.add(ctx, GNode::Sigma([arg_ty, res_ty]));
         self.ensure_has_ty(ctx, pair, sigma, strategy, "derive_fst: pair")?;
         let tm = self.add(ctx, GNode::Fst([pair]));
-        self.0.set_ty_unchecked(ctx, tm, arg_ty);
+        self.0.set_has_ty_unchecked(ctx, tm, arg_ty);
         if let &GNode::Pair([a, _]) = self.node(ctx, pair) {
             self.0.set_eq_unchecked(ctx, tm, a);
         }
@@ -1923,10 +2056,10 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         let sigma = self.add(ctx, GNode::Sigma([arg_ty, res_ty]));
         self.ensure_has_ty(ctx, pair, sigma, strategy, "derive_snd: pair")?;
         let fst = self.add(ctx, GNode::Fst([pair]));
-        self.0.set_ty_unchecked(ctx, fst, arg_ty);
+        self.0.set_has_ty_unchecked(ctx, fst, arg_ty);
         let tm = self.add(ctx, GNode::Snd([pair]));
         let ty = self.lazy_subst(ctx, fst, res_ty);
-        self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
         if let &GNode::Pair([a, b]) = self.node(ctx, pair) {
             self.0.set_eq_unchecked(ctx, fst, a);
             self.0.set_eq_unchecked(ctx, tm, b);
@@ -1953,7 +2086,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         let not_cond = self.add(ctx, GNode::Eqn([cond, ff]));
         self.ensure_has_ty_under(ctx, not_cond, else_br, ty, strategy, "derive_dite: else_br")?;
         let tm = self.add(ctx, GNode::Ite([cond, then_br, else_br]));
-        self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
         if self.is_inhab(ctx, cond) {
             let null = self.add(ctx, GNode::Null);
             let then_br_null = self.lazy_subst(ctx, null, then_br);
@@ -1974,7 +2107,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         self.ensure_is_ty(ctx, ty, strategy, "derive_trunc: ty")?;
         let tm = self.add(ctx, GNode::Trunc([ty]));
         let prop = self.add(ctx, GNode::U(ULvl::PROP));
-        self.0.set_ty_unchecked(ctx, tm, prop);
+        self.0.set_has_ty_unchecked(ctx, tm, prop);
         if self.is_inhab(ctx, ty) {
             self.0.set_is_inhab_unchecked(ctx, tm);
         }
@@ -1999,7 +2132,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         let prop = self.add(ctx, GNode::U(ULvl::PROP));
         self.ensure_has_ty_under(ctx, ty, pred, prop, strategy, "derive_choose: pred")?;
         let tm = self.add(ctx, GNode::Choose([ty, pred]));
-        self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
         Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
@@ -2013,14 +2146,14 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         }
         let tm = self.add(ctx, GNode::Nats);
         let ty = self.add(ctx, GNode::U(lvl));
-        self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
         Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
     fn derive_n64(&mut self, ctx: C, n: u64) -> HasTyIn<T> {
         let tm = self.add(ctx, GNode::N64(n));
         let ty = self.add(ctx, GNode::Nats);
-        self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
         HasTyIn { tm, ty }
     }
 
@@ -2032,7 +2165,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         let nats = self.add(ctx, GNode::Nats);
         self.ensure_has_ty(ctx, n, nats, strategy, "derive_succ: n")?;
         let tm = self.add(ctx, GNode::Succ([n]));
-        self.0.set_ty_unchecked(ctx, tm, nats);
+        self.0.set_has_ty_unchecked(ctx, tm, nats);
         Ok(HasTyIn { tm, ty: nats }.finish_rule(ctx, strategy))
     }
 
@@ -2068,7 +2201,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
 
         let tm = self.add(ctx, GNode::Natrec([mot, z, s]));
         let ty = self.add(ctx, GNode::Pi([nats, mot]));
-        self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
         Ok(HasTyIn { tm, ty: nats }.finish_rule(ctx, strategy))
     }
 
@@ -2089,7 +2222,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         self.ensure_has_ty_under(ctx, bound_ty, body, body_ty, strategy, "derive_let: body")?;
         let tm = self.add(ctx, GNode::Let(Bv(0), [bound, body]));
         let ty = self.lazy_subst(ctx, bound, body_ty);
-        self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
         let tm_s = self.lazy_subst(ctx, bound, body);
         self.0.set_eq_unchecked(ctx, tm, tm_s);
         Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
@@ -2181,11 +2314,10 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_choose_spec")?;
-        let sigma = self.add(ctx, GNode::Sigma([ty, pred]));
-        self.ensure_is_inhab(ctx, sigma, strategy, "derive_choose_spec: ty")?;
+        self.ensure_exists_inhab_under(ctx, ty, pred, strategy, "derive_choose_spec: exists")?;
         let choose = self.add(ctx, GNode::Choose([ty, pred]));
         let pred_choose = self.lazy_subst(ctx, choose, pred);
-        self.0.set_ty_unchecked(ctx, choose, ty);
+        self.0.set_has_ty_unchecked(ctx, choose, ty);
         self.0.set_is_prop_unchecked(ctx, pred_choose);
         self.0.set_is_inhab_unchecked(ctx, pred_choose);
         Ok(IsInhabIn(pred_choose).success(ctx, strategy))

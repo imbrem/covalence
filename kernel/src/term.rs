@@ -4,6 +4,7 @@ use std::{
 };
 
 /// A term in `covalence`'s core calculus
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum GNode<C, T, I = T> {
     // == Term formers, corresponding to Tm from `gt3-lean` ==
     /// A free variable
@@ -66,7 +67,71 @@ pub enum GNode<C, T, I = T> {
     Import(Import<C, I>),
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub enum GDisc<C, T, I = T> {
+    Fv(C),
+    Bv(Bv),
+    U(ULvl),
+    Empty,
+    Unit,
+    Null,
+    Eqn,
+    Pi,
+    Sigma,
+    Abs,
+    App,
+    Pair,
+    Fst,
+    Snd,
+    Ite,
+    Trunc,
+    Choose,
+    Nats,
+    N64(u64),
+    Succ,
+    Natrec,
+    HasTy,
+    Invalid,
+    Let(Bv),
+    Wk1(Bv),
+    Close(Close<C, T>),
+    Import(Import<C, I>),
+}
+
 impl<C, T, I> GNode<C, T, I> {
+    /// Get this node's discriminant
+    pub fn disc(self) -> GDisc<C, T, I> {
+        match self {
+            GNode::Fv(x) => GDisc::Fv(x),
+            GNode::Bv(i) => GDisc::Bv(i),
+            GNode::U(level) => GDisc::U(level),
+            GNode::Empty => GDisc::Empty,
+            GNode::Unit => GDisc::Unit,
+            GNode::Null => GDisc::Null,
+            GNode::Eqn(_) => GDisc::Eqn,
+            GNode::Pi(_) => GDisc::Pi,
+            GNode::Sigma(_) => GDisc::Sigma,
+            GNode::Abs(_) => GDisc::Abs,
+            GNode::App(_) => GDisc::App,
+            GNode::Pair(_) => GDisc::Pair,
+            GNode::Fst(_) => GDisc::Fst,
+            GNode::Snd(_) => GDisc::Snd,
+            GNode::Ite(_) => GDisc::Ite,
+            GNode::Trunc(_) => GDisc::Trunc,
+            GNode::Choose(_) => GDisc::Choose,
+            GNode::Nats => GDisc::Nats,
+            GNode::N64(n) => GDisc::N64(n),
+            GNode::Succ(_) => GDisc::Succ,
+            GNode::Natrec(_) => GDisc::Natrec,
+            GNode::HasTy(_) => GDisc::HasTy,
+            GNode::Invalid => GDisc::Invalid,
+            GNode::Let(k, _) => GDisc::Let(k),
+            GNode::Wk1(k, _) => GDisc::Wk1(k),
+            GNode::Close(close) => GDisc::Close(close),
+            GNode::Import(import) => GDisc::Import(import),
+        }
+    }
+
     /// Map this node's children
     pub fn map<U>(self, mut f: impl FnMut(T) -> U) -> GNode<C, U, I> {
         match self {
@@ -390,7 +455,7 @@ impl Debug for Bv {
 /// A universe level
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ULvl {
-    level: i32,
+    pub(crate) level: i32,
 }
 
 impl ULvl {
@@ -428,6 +493,7 @@ impl Debug for ULvl {
 }
 
 /// A variable closure under `k` binders
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Close<C, T> {
     /// The number of binders being closed under
     pub under: Bv,
@@ -458,11 +524,12 @@ impl<C, T> Close<C, T> {
 }
 
 /// An import from another context
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Import<C, T> {
     /// The context being imported from
     pub ctx: C,
     /// The term being imported (in `ctx`)
-    pub term: T,
+    pub tm: T,
     /// An upper bound on the number of unbound variables in the import
     ///
     /// If this upper bound is invalid, the import is invalid
@@ -474,7 +541,7 @@ impl<C, T> Import<C, T> {
     pub fn as_ref(&self) -> Import<&C, &T> {
         Import {
             ctx: &self.ctx,
-            term: &self.term,
+            tm: &self.tm,
             bvi: self.bvi,
         }
     }
@@ -483,7 +550,7 @@ impl<C, T> Import<C, T> {
     pub fn as_mut(&mut self) -> Import<&mut C, &mut T> {
         Import {
             ctx: &mut self.ctx,
-            term: &mut self.term,
+            tm: &mut self.tm,
             bvi: self.bvi,
         }
     }

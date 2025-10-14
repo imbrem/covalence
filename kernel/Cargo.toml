@@ -4,3 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bitflags = "2.9.4"
+egg = "0.10.0"
+typed-generational-arena = "0.2.9"

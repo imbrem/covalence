@@ -1,7 +1,16 @@
-use crate::term::{Bv, GNode, Import, ULvl};
+use crate::term::{Bv, Close, GNode, Import, ULvl};
 
 /// A trait implemented by a datastore that can manipulate hash-consed terms and universe levels
 pub trait TermStore<C, T> {
+    /// Create a new context in this store
+    fn new_ctx(&mut self) -> C;
+
+    /// Create a new context in this store with the given parent
+    fn with_parent(&mut self, parent: C) -> C;
+
+    /// Insert a new context into the store with the given parameter
+    fn with_param(&mut self, parent: C, param: T) -> C;
+
     /// Insert a term into the store, returning a handle to it
     fn add(&mut self, ctx: C, term: GNode<C, T>) -> T;
 
@@ -28,12 +37,33 @@ pub trait TermStore<C, T> {
 
 /// A trait implemented by a datastore that can read facts about terms in a context.
 pub trait ReadFacts<C, T> {
+    // == Context information ==
+    /// Get whether a context is well-formed
+    ///
+    /// TODO: reference lean
+    fn is_ok(&self, ctx: C) -> bool;
+
+    /// Get whether a context is contradictory
+    ///
+    /// TODO: reference lean
+    fn is_contr(&self, ctx: C) -> bool;
+
+    /// Get a context's parent, if any
+    fn parent(&self, ctx: C) -> Option<C>;
+
+    /// Get a context's parameter, if any
+    fn param(&self, ctx: C) -> Option<(C, T)>;
+
     // == Syntax information ==
     /// Get a bound on the de-Bruijn indices visible in `tm`
+    ///
+    /// TODO: reference lean
     fn bvi(&self, ctx: C, tm: T) -> Bv;
 
     // == Context information ==
     /// Check whether `lo` is a prefix of `hi`
+    ///
+    /// TODO: reference lean
     fn ctx_prefix(&self, lo: C, hi: C) -> bool;
 
     // == Predicates ==
@@ -51,10 +81,18 @@ pub trait ReadFacts<C, T> {
     /// Corresponds to `Ctx.KIsInhab` in `gt3-lean`
     fn is_inhab(&self, ctx: C, tm: T) -> bool;
 
+    /// Check whether the term `tm` is an empty type in the context `ctx`
+    ///
+    /// TODO: reference lean
+    fn is_empty(&self, ctx: C, tm: T) -> bool;
+
     /// Check whether the term `tm` is a proposition in the context `ctx`
     ///
     /// Corresponds to `Ctx.KIsProp` in `gt3-lean`
     fn is_prop(&self, ctx: C, tm: T) -> bool;
+
+    /// Check whether the term `tm` depends on the variable `var` in context `ctx`
+    fn has_var(&self, ctx: C, tm: T, var: C) -> bool;
 
     // == Relations ==
     /// Check whether the term `lhs` in `lctx` is _syntactically_ equal to the term `rhs` in `rctx`
@@ -94,6 +132,13 @@ pub trait ReadFacts<C, T> {
 /// A trait implemented by a mutable datastore that can hold _unchecked_ facts about terms in a
 /// context.
 pub trait WriteFacts<C, T> {
+    // == Context predicates ==
+    /// Mark a context as well-formed
+    fn set_is_ok(&mut self, ctx: C);
+
+    /// Mark a context as contradictory
+    fn set_is_contr(&mut self, ctx: C);
+
     // == Predicates ==
     /// Mark a term as well-formed
     fn set_is_wf_unchecked(&mut self, ctx: C, tm: T);
@@ -103,6 +148,9 @@ pub trait WriteFacts<C, T> {
 
     /// Mark a term as an inhabited type
     fn set_is_inhab_unchecked(&mut self, ctx: C, tm: T);
+
+    /// Mark a term as an empty type
+    fn set_is_empty_unchecked(&mut self, ctx: C, tm: T);
 
     /// Mark a term as a proposition
     fn set_is_prop_unchecked(&mut self, ctx: C, tm: T);
@@ -121,17 +169,114 @@ pub trait WriteFacts<C, T> {
     fn set_ty_under_unchecked(&mut self, ctx: C, binder: T, tm: T, ty: T);
 }
 
+/// A trait implemented by a mutable datastore that can hold _unchecked_ facts about contexts
+pub trait WriteCtxFacts<C, T> {}
+
 /// A typing derivation in a given context
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct HasTyIn<T> {
     pub tm: T,
     pub ty: T,
 }
 
+impl<T> HasTyIn<T> {
+    /// Convert to a goal
+    pub fn goal<C>(self, ctx: C) -> Goal<C, T> {
+        Goal::HasTy(HasTy {
+            ctx,
+            tm: self.tm,
+            ty: self.ty,
+        })
+    }
+
+    /// Succeed
+    pub fn finish_rule<C, S, K>(self, ctx: C, strategy: &mut S) -> HasTyIn<T>
+    where
+        T: Copy,
+        S: Strategy<C, T, K>,
+    {
+        strategy.finish_rule(self.goal(ctx));
+        self
+    }
+}
+
 /// A typing derivation in a given context under a binder
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct HasTyUnderIn<T> {
     pub binder: T,
     pub tm: T,
     pub ty: T,
+}
+
+impl<T> HasTyUnderIn<T> {
+    /// Convert to a goal
+    pub fn goal<C>(self, ctx: C) -> Goal<C, T> {
+        Goal::HasTyUnder(HasTyUnder {
+            ctx,
+            binder: self.binder,
+            tm: self.tm,
+            ty: self.ty,
+        })
+    }
+
+    /// Succeed
+    pub fn success<C, S, K>(self, ctx: C, strategy: &mut S) -> HasTyUnderIn<T>
+    where
+        T: Copy,
+        S: Strategy<C, T, K>,
+    {
+        strategy.finish_rule(self.goal(ctx));
+        self
+    }
+}
+
+/// A term is an inhabited type
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct IsInhabIn<T>(pub T);
+
+impl<T> IsInhabIn<T> {
+    /// Convert to a goal
+    pub fn goal<C>(self, ctx: C) -> Goal<C, T> {
+        Goal::IsInhab(IsInhab { ctx, tm: self.0 })
+    }
+
+    /// Succeed
+    pub fn success<C, S, K>(self, ctx: C, strategy: &mut S) -> IsInhabIn<T>
+    where
+        T: Copy,
+        S: Strategy<C, T, K>,
+    {
+        strategy.finish_rule(self.goal(ctx));
+        self
+    }
+}
+
+/// An equation between two terms
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct Eqn<T> {
+    pub lhs: T,
+    pub rhs: T,
+}
+
+impl<T> Eqn<T> {
+    /// Convert to a goal
+    pub fn goal<C>(self, ctx: C) -> Goal<C, T> {
+        Goal::EqIn(EqIn {
+            ctx,
+            lhs: self.lhs,
+            rhs: self.rhs,
+        })
+    }
+
+    /// Succeed
+    pub fn success<C, S, K>(self, ctx: C, strategy: &mut S) -> Eqn<T>
+    where
+        T: Copy,
+        S: Strategy<C, T, K>,
+    {
+        strategy.finish_rule(self.goal(ctx));
+        self
+    }
 }
 
 /// A statement of well-formedness
@@ -151,6 +296,13 @@ pub struct IsTy<C, T> {
 /// A term is an inhabited type
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct IsInhab<C, T> {
+    pub ctx: C,
+    pub tm: T,
+}
+
+/// A term is an empty type
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct IsEmpty<C, T> {
     pub ctx: C,
     pub tm: T,
 }
@@ -198,13 +350,27 @@ pub struct EqIn<C, T> {
 /// A goal for a strategy
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum Goal<C, T> {
+    /// A context is well-formed
+    IsOk(C),
+    /// A context is contradictory
+    IsContr(C),
+    /// A term is well-formed in the given context
     IsWf(IsWf<C, T>),
+    /// A term is a type in the given context
     IsTy(IsTy<C, T>),
+    /// A type is inhabited in the given context
     IsInhab(IsInhab<C, T>),
+    /// A type is empty in the given context
+    IsEmpty(IsEmpty<C, T>),
+    /// A term is a proposition in the given context
     IsProp(IsProp<C, T>),
+    /// A term has a type in the given context
     HasTy(HasTy<C, T>),
+    /// A term is a type under a binder in the given context
     IsTyUnder(IsTyUnder<C, T>),
+    /// A term has a type under a binder in the given context
     HasTyUnder(HasTyUnder<C, T>),
+    /// Two terms are equal in the given context
     EqIn(EqIn<C, T>),
 }
 
@@ -223,6 +389,12 @@ impl<C, T> From<IsTy<C, T>> for Goal<C, T> {
 impl<C, T> From<IsInhab<C, T>> for Goal<C, T> {
     fn from(g: IsInhab<C, T>) -> Self {
         Goal::IsInhab(g)
+    }
+}
+
+impl<C, T> From<IsEmpty<C, T>> for Goal<C, T> {
+    fn from(g: IsEmpty<C, T>) -> Self {
+        Goal::IsEmpty(g)
     }
 }
 
@@ -260,9 +432,12 @@ impl<C, T> Goal<C, T> {
     /// Check whether this goal is true
     pub fn check(self, ker: &impl ReadFacts<C, T>) -> bool {
         match self {
+            Goal::IsOk(c) => ker.is_ok(c),
+            Goal::IsContr(c) => ker.is_contr(c),
             Goal::IsWf(g) => ker.is_wf(g.ctx, g.tm),
             Goal::IsTy(g) => ker.is_ty(g.ctx, g.tm),
             Goal::IsInhab(g) => ker.is_inhab(g.ctx, g.tm),
+            Goal::IsEmpty(g) => ker.is_empty(g.ctx, g.tm),
             Goal::IsProp(g) => ker.is_prop(g.ctx, g.tm),
             Goal::HasTy(g) => ker.has_ty(g.ctx, g.tm, g.ty),
             Goal::IsTyUnder(g) => ker.is_ty_under(g.ctx, g.binder, g.tm),
@@ -295,8 +470,23 @@ pub trait Strategy<C, T, K> {
     /// Called when the top goal in the stack has succeeded
     fn on_success(&mut self, _goal: Goal<C, T>) {}
 
-    /// An irrecoverable failure from a derivation
-    fn fail(msg: &'static str) -> Self::Fail;
+    /// Begin a goal
+    fn start_goal(&mut self, _goal: Goal<C, T>) -> Result<(), Self::Fail> {
+        Ok(())
+    }
+
+    //TODO: register side conditions as well?
+
+    /// Begin a derivation
+    fn start_rule(&mut self, _rule: &'static str) -> Result<(), Self::Fail> {
+        Ok(())
+    }
+
+    /// End a successful derivation
+    fn finish_rule(&mut self, _result: Goal<C, T>) {}
+
+    /// An irrecoverable failure of a derivation
+    fn fail(&mut self, msg: &'static str) -> Self::Fail;
 }
 
 impl<C, T, K> Strategy<C, T, K> for () {
@@ -312,7 +502,7 @@ impl<C, T, K> Strategy<C, T, K> for () {
         Err(())
     }
 
-    fn fail(_msg: &'static str) -> Self::Fail {
+    fn fail(&mut self, _msg: &'static str) -> Self::Fail {
         ()
     }
 }
@@ -328,6 +518,7 @@ pub trait Ensure<C: Copy, T: Copy>: Sized + ReadFacts<C, T> {
     where
         S: Strategy<C, T, Self>,
     {
+        strategy.start_goal(goal)?;
         let mut attempt_no = 0;
         while !goal.check(self) {
             strategy
@@ -340,6 +531,32 @@ pub trait Ensure<C: Copy, T: Copy>: Sized + ReadFacts<C, T> {
         }
         strategy.on_success(goal);
         Ok(())
+    }
+
+    /// Attempt to prove that a context is well-formed
+    fn ensure_is_ok<S>(
+        &mut self,
+        ctx: C,
+        strategy: &mut S,
+        msg: &'static str,
+    ) -> Result<(), S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        self.ensure_goal(Goal::IsOk(ctx), strategy, msg)
+    }
+
+    /// Attempt to prove that a context is contradictory
+    fn ensure_is_contr<S>(
+        &mut self,
+        ctx: C,
+        strategy: &mut S,
+        msg: &'static str,
+    ) -> Result<(), S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        self.ensure_goal(Goal::IsContr(ctx), strategy, msg)
     }
 
     /// Attempt to prove that a term is well-formed in a context
@@ -382,6 +599,20 @@ pub trait Ensure<C: Copy, T: Copy>: Sized + ReadFacts<C, T> {
         S: Strategy<C, T, Self>,
     {
         self.ensure_goal(IsInhab { ctx, tm }.into(), strategy, msg)
+    }
+
+    /// Attempt to prove that a term is an empty type in a context
+    fn ensure_is_empty<S>(
+        &mut self,
+        ctx: C,
+        tm: T,
+        strategy: &mut S,
+        msg: &'static str,
+    ) -> Result<(), S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        self.ensure_goal(IsEmpty { ctx, tm }.into(), strategy, msg)
     }
 
     /// Attempt to prove that a term is a proposition in a context
@@ -453,6 +684,21 @@ pub trait Ensure<C: Copy, T: Copy>: Sized + ReadFacts<C, T> {
             msg,
         )
     }
+
+    /// Attempt to prove that two terms are equal in a context
+    fn ensure_eq_in<S>(
+        &mut self,
+        ctx: C,
+        lhs: T,
+        rhs: T,
+        strategy: &mut S,
+        msg: &'static str,
+    ) -> Result<(), S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        self.ensure_goal(EqIn { ctx, lhs, rhs }.into(), strategy, msg)
+    }
 }
 
 impl<C, T, K> Ensure<C, T> for K
@@ -470,7 +716,77 @@ pub trait Derive<C, T>: Sized {
     /// Given terms `bound` and `body`
     /// - If `body` is locally-closed, return it unchanged
     /// - Otherwise, `let bound in body`
+    ///
+    /// TODO: reference Lean
     fn lazy_subst(&mut self, ctx: C, bound: T, body: T) -> T;
+
+    /// Compute the closure of a term
+    ///
+    /// Given term `tm` in context `ctx`
+    /// - If `tm` does not depend on the variable `var`, return `tm`
+    /// - Otherwise, return `close var tm`
+    fn lazy_close(&mut self, ctx: C, var: C, tm: T) -> T;
+
+    /// Compute the import of a term
+    ///
+    /// Given term `tm` in context `src`
+    /// - If `src == ctx`, return `tm`
+    /// - Otherwise, return `import src tm`
+    fn lazy_import(&mut self, ctx: C, src: C, tm: T) -> T;
+
+    /// Compute the closure of an imported term
+    ///
+    /// Given term `tm` in context `src`
+    /// - If `src` has no parameter, or `tm` does not depend on the parameter of `src`, return the
+    ///   import of `tm` into `ctx`
+    /// - Otherwise, return `close src (import src tm)`
+    fn lazy_close_import(&mut self, ctx: C, src: C, tm: T) -> T;
+
+    /// The substitution of a term is equal to its lazy substitution
+    fn lazy_subst_eq(&mut self, ctx: C, bound: T, body: T) -> Eqn<T>;
+
+    /// The closure of a term is equal to its lazy closure
+    fn lazy_close_eq(&mut self, ctx: C, var: C, tm: T) -> Eqn<T>;
+
+    /// The import of a term is equal to its lazy import
+    fn lazy_import_eq(&mut self, ctx: C, src: C, tm: T) -> Eqn<T>;
+
+    /// The closure of an imported term is equal to its lazy imported closure
+    fn lazy_close_import_eq(&mut self, ctx: C, src: C, tm: T) -> Eqn<T>;
+
+    /// Check a context is well-formed
+    ///
+    /// - An empty context is always well-formed
+    /// - The context `Γ, x : A` is well-formed iff
+    ///     - `Γ` is well-formed
+    ///     - `A` is a valid type in `Γ`
+    ///
+    /// TODO: reference Lean
+    fn derive_ok<S>(&mut self, ctx: C, strategy: &mut S) -> Result<(), S::Fail>
+    where
+        S: Strategy<C, T, Self>;
+
+    /// Check a term has type `B` under a binder `A`
+    ///
+    /// Checks that:
+    /// - `binder` is a valid type in `Γ`
+    /// - `src` is a child of `ctx` with parameter `x : binder`
+    /// - `tm` has type `ty` in context `src`
+    ///
+    /// If so, then `close x tm` has type `close x ty` under `binder` in `ctx`
+    ///
+    /// TODO: reference Lean
+    fn derive_binder<S>(
+        &mut self,
+        ctx: C,
+        binder: T,
+        src: C,
+        tm: T,
+        ty: T,
+        strategy: &mut S,
+    ) -> Result<HasTyUnderIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
     /// Typecheck a variable
     ///
@@ -485,7 +801,7 @@ pub trait Derive<C, T>: Sized {
     /// ```lean
     /// theorem Ctx.KHasTy.fv {Γ x A} (hΓ : Ok Γ) (hA : Lookup Γ x A) : KHasTy Γ A.erase (.fv x)
     /// ```
-    fn derive_fv<S>(&mut self, ctx: C, var: C) -> Result<HasTyIn<T>, S::Fail>
+    fn derive_fv<S>(&mut self, ctx: C, var: C, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -632,10 +948,6 @@ pub trait Derive<C, T>: Sized {
     where
         S: Strategy<C, T, Self>;
 
-    // TODO: pi_ty
-
-    // TODO: sigma_ty
-
     /// Typecheck an abstraction
     ///
     /// Corresponds to the rule
@@ -725,6 +1037,9 @@ pub trait Derive<C, T>: Sized {
     /// ```lean
     /// theorem Ctx.KHasTy.fst {Γ A B p} (hp : KHasTy Γ (.sigma A B) p) : KHasTy Γ A (.fst p)
     /// ```
+    ///
+    /// If `p :≡ (a, b)`, also inserts the equation `Γ ⊢ fst (a, b) = a`
+    /// (see: `Ctx.KIsWf.beta_fst_pair`)
     fn derive_fst<S>(
         &mut self,
         ctx: C,
@@ -739,7 +1054,7 @@ pub trait Derive<C, T>: Sized {
     /// Typecheck the second projection of a pair
     ///
     /// Additionally typechecks the first projection using the rule for `fst`
-    /// 
+    ///
     /// Corresponds to the rule
     /// ```text
     /// Γ ⊢ p : Σ A . B
@@ -751,10 +1066,13 @@ pub trait Derive<C, T>: Sized {
     /// ```lean
     /// theorem Ctx.KHasTy.snd {Γ A B p} (hp : KHasTy Γ (.sigma A B) p)
     ///   : KHasTy Γ (B.lst 0 (.fst p)) (.snd p)
-    /// 
+    ///
     /// -- Additional results:
     /// theorem Ctx.KHasTy.fst {Γ A B p} (hp : KHasTy Γ (.sigma A B) p) : KHasTy Γ A (.fst p)
     /// ```
+    ///
+    /// If `p :≡ (a, b)`, also inserts the equations `Γ ⊢ fst (a, b) ≡ a` and `Γ ⊢ snd (a, b) ≡ b`
+    /// (see: `Ctx.KIsWf.beta_fst_pair`, `Ctx.KIsWf.beta_snd_pair`)
     fn derive_snd<S>(
         &mut self,
         ctx: C,
@@ -766,57 +1084,229 @@ pub trait Derive<C, T>: Sized {
     where
         S: Strategy<C, T, Self>;
 
-    // TODO: dite
+    /// Typecheck a dependent if-then-else
+    ///
+    /// If the condition is inhabited, equates it to the (lazy substitution of) the then-branch
+    ///
+    /// If the condition is known empty, equates it to the (lazy substitution of) the else-branch
+    ///
+    /// TODO: reference Lean
+    fn derive_dite<S>(
+        &mut self,
+        ctx: C,
+        cond: T,
+        then_br: T,
+        else_br: T,
+        ty: T,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
-    // TODO: trunc
+    // TODO: dite with different branch types; fusion lore
 
-    // TODO: choose
+    /// Typecheck a propositional truncation
+    ///
+    /// Inherits inhabitance/emptiness from the underlying type
+    ///
+    /// TODO: reference Lean
+    fn derive_trunc<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
-    // TODO: smallnat
+    /// Typecheck Hilbert's ε-operator
+    ///
+    /// TODO: reference Lean
+    fn derive_choose<S>(
+        &mut self,
+        ctx: C,
+        ty: T,
+        pred: T,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
-    // TODO: succ
+    /// Typecheck the natural numbers
+    ///
+    /// TODO: reference Lean
+    fn derive_nats<S>(
+        &mut self,
+        ctx: C,
+        lvl: ULvl,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
-    // TODO: natrec
+    /// Typecheck a 64-bit natural number
+    ///
+    /// TODO: reference Lean
+    fn derive_n64(&mut self, ctx: C, n: u64) -> HasTyIn<T>;
 
-    // TODO: lst
+    /// Typecheck the successor function on natural numbers
+    ///
+    /// TODO: reference Lean
+    fn derive_succ<S>(&mut self, ctx: C, n: T, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
-    // TODO: beta_app
+    /// Typecheck the recursor on natural numbers
+    ///
+    /// TODO: reference Lean
+    fn derive_natrec<S>(
+        &mut self,
+        ctx: C,
+        mot: T,
+        z: T,
+        s: T,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
-    // TODO: beta_fst
+    /// Typecheck a let-binding
+    ///
+    /// If the body does not have a free variable, this also equates the binding to its body.
+    ///
+    /// TODO: reference Lean
+    fn derive_let<S>(
+        &mut self,
+        ctx: C,
+        bound: T,
+        bound_ty: T,
+        body: T,
+        body_ty: T,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
-    // TODO: beta_snd
+    /// Beta reduction for abstractions
+    ///
+    /// For well-formed `Γ ⊢ tm ≡ (λ A . b) a`, `Γ ⊢ a : A`; `Γ ⊢ tm b ≡ b^a`
+    ///
+    /// TODO: reference Lean
+    fn derive_beta_abs<S>(
+        &mut self,
+        ctx: C,
+        tm: T,
+        arg: T,
+        strategy: &mut S,
+    ) -> Result<Eqn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
-    // TODO: beta_dite_tt
+    /// Beta reduction for natural number recursors at zero
+    ///
+    /// For well-formed `Γ ⊢ tm ≡ natrec C z s`; `Γ ⊢ tm 0 = z`
+    ///
+    /// TODO: reference Lean
+    fn derive_beta_zero<S>(&mut self, ctx: C, tm: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
-    // TODO: beta_dite_ff
+    /// Beta reduction for natural number recursors at successors
+    ///
+    /// For well-formed `Γ ⊢ tm ≡ natrec C z s` and `Γ ⊢ n : ℕ`; `Γ ⊢ tm (succ n) = s^n (tm n)`
+    ///
+    /// TODO: reference Lean
+    fn derive_beta_succ<S>(
+        &mut self,
+        ctx: C,
+        tm: T,
+        n: T,
+        strategy: &mut S,
+    ) -> Result<Eqn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
-    // TODO: beta_natrec_0
+    /// Specification for choice
+    ///
+    /// If `∃A . φ` (encoded as Σ A . φ inhab) then `Γ ⊢ φ^(choose A φ)`
+    ///
+    /// TODO: reference lean
+    fn derive_choose_spec<S>(
+        &mut self,
+        ctx: C,
+        ty: T,
+        pred: T,
+        strategy: &mut S,
+    ) -> Result<IsInhabIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
-    // TODO: beta_natrec_succ
+    /// Extensionality for the unit type
+    ///
+    /// If `Γ ⊢ a : 1` then `Γ ⊢ a ≡ * : 1`
+    ///
+    /// TODO: reference Lean
+    fn derive_unit_ext<S>(&mut self, ctx: C, a: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
-    // TODO: choose_spec
+    /// Extensionality for the true proposition
+    ///
+    /// If `Γ ⊢ a : 2` and `Γ ⊢ a inhab` then `Γ ⊢ a ≡ 1 : 2`
+    ///
+    /// TODO: reference Lean
+    fn derive_prop_ext_tt<S>(&mut self, ctx: C, a: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
-    // TODO: unit_ext
+    /// Extensionality for the false proposition
+    ///
+    /// If `Γ ⊢ a : 2` and `Γ ⊢ a empty` then `Γ ⊢ a ≡ 0 : 2`
+    ///
+    /// TODO: reference Lean
+    fn derive_prop_ext_ff<S>(&mut self, ctx: C, a: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
-    // TODO: eqn_ext
+    /// Extensionality
+    ///
+    /// If `Γ ⊢ a = b` then `Γ ⊢ a ≡ b`
+    ///
+    /// TODO: reference Lean
+    fn derive_ext<S>(
+        &mut self,
+        ctx: C,
+        lhs: T,
+        rhs: T,
+        strategy: &mut S,
+    ) -> Result<Eqn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
-    // TODO: pi_ext
+    /// Eta for functions
+    ///
+    /// If `Γ ⊢ f : Π A . B` then `Γ ⊢ f ≡ λx. f x : Π A . B`
+    ///
+    /// TODO: reference Lean
+    fn derive_pi_eta<S>(
+        &mut self,
+        ctx: C,
+        ty: T,
+        f: T,
+        strategy: &mut S,
+    ) -> Result<Eqn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
-    // TODO: sigma_ext
-
-    // TODO: sometime later:
-    // - propext
-    // - subtyping for sigma
-    // - optimization for conjunction
-    // - optimization for implication
-    // - optimization for composition
-    // - sums
-    // - optimizations for disjunction
-    // - optimizations for negation
-    // - binary applications
-    // - IF SOUND: beta_dite_same; or incorporate into dite
-    // - emptiness lore
-    // - subsingleton lore
+    /// Eta for pairs
+    ///
+    /// If `Γ ⊢ p : Σ A . B` then `Γ ⊢ p ≡ (fst p, snd p) : Σ A . B`
+    ///
+    /// TODO: reference Lean
+    fn derive_sigma_eta<S>(
+        &mut self,
+        ctx: C,
+        ty: T,
+        p: T,
+        strategy: &mut S,
+    ) -> Result<Eqn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 }
 
 /// The `covalence` kernel
@@ -833,6 +1323,22 @@ impl<D> Kernel<D> {
 }
 
 impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
+    fn is_ok(&self, ctx: C) -> bool {
+        self.0.is_ok(ctx)
+    }
+
+    fn is_contr(&self, ctx: C) -> bool {
+        self.0.is_contr(ctx)
+    }
+
+    fn parent(&self, ctx: C) -> Option<C> {
+        self.0.parent(ctx)
+    }
+
+    fn param(&self, ctx: C) -> Option<(C, T)> {
+        self.0.param(ctx)
+    }
+
     fn bvi(&self, ctx: C, tm: T) -> Bv {
         self.0.bvi(ctx, tm)
     }
@@ -853,8 +1359,16 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.is_inhab(ctx, tm)
     }
 
+    fn is_empty(&self, ctx: C, tm: T) -> bool {
+        self.0.is_empty(ctx, tm)
+    }
+
     fn is_prop(&self, ctx: C, tm: T) -> bool {
         self.0.is_prop(ctx, tm)
+    }
+
+    fn has_var(&self, ctx: C, tm: T, var: C) -> bool {
+        self.0.has_var(ctx, tm, var)
     }
 
     fn syn_eq(&self, lctx: C, lhs: T, rctx: C, rhs: T) -> bool {
@@ -891,6 +1405,18 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
 }
 
 impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
+    fn new_ctx(&mut self) -> C {
+        self.0.new_ctx()
+    }
+
+    fn with_parent(&mut self, parent: C) -> C {
+        self.0.with_parent(parent)
+    }
+
+    fn with_param(&mut self, parent: C, param: T) -> C {
+        self.0.with_param(parent, param)
+    }
+
     fn add(&mut self, ctx: C, term: GNode<C, T>) -> T {
         self.0.add(ctx, term)
     }
@@ -920,8 +1446,8 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
     }
 }
 
-impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> Derive<C, T>
-    for Kernel<D>
+impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>>
+    Derive<C, T> for Kernel<D>
 {
     fn lazy_subst(&mut self, ctx: C, bound: T, body: T) -> T {
         if self.bvi(ctx, body) == Bv(0) {
@@ -930,15 +1456,229 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
         self.add(ctx, GNode::Let(Bv(0), [bound, body]))
     }
 
-    fn derive_fv<S>(&mut self, ctx: C, var: C) -> Result<HasTyIn<T>, S::Fail>
+    fn lazy_close(&mut self, ctx: C, var: C, tm: T) -> T {
+        debug_assert!(self.param(var).is_some(), "var must be a valid variable");
+        if !self.has_var(ctx, tm, var) {
+            return tm;
+        }
+        self.add(
+            ctx,
+            GNode::Close(Close {
+                under: Bv(0),
+                var,
+                tm,
+            }),
+        )
+    }
+
+    fn lazy_import(&mut self, ctx: C, src: C, tm: T) -> T {
+        if ctx == src {
+            return tm;
+        }
+        self.add(
+            ctx,
+            GNode::Import(Import {
+                ctx: src,
+                term: tm,
+                bvi: self.bvi(src, tm),
+            }),
+        )
+    }
+
+    fn lazy_close_import(&mut self, ctx: C, src: C, tm: T) -> T {
+        let import = self.lazy_import(ctx, src, tm);
+        if !self.has_var(src, tm, src) {
+            return import;
+        }
+        self.add(
+            ctx,
+            GNode::Close(Close {
+                under: Bv(0),
+                var: src,
+                tm: import,
+            }),
+        )
+    }
+
+    fn lazy_subst_eq(&mut self, ctx: C, bound: T, body: T) -> Eqn<T> {
+        let eager = self.add(ctx, GNode::Let(Bv(0), [bound, body]));
+        let lazy = self.lazy_subst(ctx, bound, body);
+        self.0.set_eq_unchecked(ctx, eager, lazy);
+        Eqn {
+            lhs: eager,
+            rhs: lazy,
+        }
+    }
+
+    fn lazy_close_eq(&mut self, ctx: C, var: C, tm: T) -> Eqn<T> {
+        let eager = self.add(
+            ctx,
+            GNode::Close(Close {
+                under: Bv(0),
+                var,
+                tm,
+            }),
+        );
+        let lazy = self.lazy_close(ctx, var, tm);
+        self.0.set_eq_unchecked(ctx, eager, lazy);
+        Eqn {
+            lhs: eager,
+            rhs: lazy,
+        }
+    }
+
+    fn lazy_import_eq(&mut self, ctx: C, src: C, tm: T) -> Eqn<T> {
+        let eager = self.add(
+            ctx,
+            GNode::Import(Import {
+                ctx: src,
+                term: tm,
+                bvi: self.bvi(src, tm),
+            }),
+        );
+        let lazy = self.lazy_import(ctx, src, tm);
+        self.0.set_eq_unchecked(ctx, eager, lazy);
+        Eqn {
+            lhs: eager,
+            rhs: lazy,
+        }
+    }
+
+    fn lazy_close_import_eq(&mut self, ctx: C, src: C, tm: T) -> Eqn<T> {
+        let import = self.add(
+            ctx,
+            GNode::Import(Import {
+                ctx: src,
+                term: tm,
+                bvi: self.bvi(src, tm),
+            }),
+        );
+        let eager = self.add(
+            ctx,
+            GNode::Close(Close {
+                under: Bv(0),
+                var: src,
+                tm: import,
+            }),
+        );
+        let lazy = self.lazy_close_import(ctx, src, tm);
+        self.0.set_eq_unchecked(ctx, eager, lazy);
+        Eqn {
+            lhs: eager,
+            rhs: lazy,
+        }
+    }
+
+    fn derive_binder<S>(
+        &mut self,
+        ctx: C,
+        binder: T,
+        src: C,
+        tm: T,
+        ty: T,
+        strategy: &mut S,
+    ) -> Result<HasTyUnderIn<T>, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
+        strategy.start_rule("derive_binder")?;
+        self.ensure_is_ok(src, strategy, "derive_binder: src is not ok")?;
+
+        //TODO: may handle this as special case later
+        let parent = self
+            .parent(src)
+            .ok_or_else(|| strategy.fail("derive_binder: src has no parent"))?;
+        if parent != ctx {
+            return Err(strategy.fail("derive_binder: src must be a child of ctx"));
+        }
+        let (param_ctx, param) = self
+            .param(src)
+            .ok_or_else(|| strategy.fail("derive_binder: src has no parameter"))?;
+        if param_ctx != ctx {
+            return Err(strategy.fail("derive_binder: src param context must match ctx"));
+        }
+        self.ensure_eq_in(
+            ctx,
+            param,
+            binder,
+            strategy,
+            "derive_binder: src parameter must match binder",
+        )?;
+
+        self.ensure_is_ty(
+            ctx,
+            binder,
+            strategy,
+            "derive_binder: binder is a type (in ctx)",
+        )?;
+        self.ensure_has_ty(
+            src,
+            tm,
+            ty,
+            strategy,
+            "derive_binder: tm has type ty (in src)",
+        )?;
+
+        debug_assert_eq!(
+            self.bvi(src, tm),
+            Bv(0),
+            "tm should be locally-closed in src"
+        );
+        debug_assert_eq!(
+            self.bvi(src, ty),
+            Bv(0),
+            "ty should be locally-closed in src"
+        );
+
+        let close_tm = self.lazy_close_import(ctx, src, tm);
+        let close_ty = self.lazy_close_import(ctx, src, ty);
+        self.0
+            .set_ty_under_unchecked(ctx, binder, close_tm, close_ty);
+        Ok(HasTyUnderIn {
+            tm: close_tm,
+            ty: close_ty,
+            binder,
+        }
+        .success(ctx, strategy))
+    }
+
+    fn derive_ok<S>(&mut self, ctx: C, strategy: &mut S) -> Result<(), S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_ok")?;
+        if let Some(parent) = self.parent(ctx) {
+            self.ensure_is_ok(parent, strategy, "derive_ok: parent context")?;
+            if let Some((param_ctx, param)) = self.param(ctx) {
+                //NOTE: this may change in future versions with flat term addressing
+                debug_assert!(
+                    param_ctx == parent,
+                    "Context parent and parameter context must match"
+                );
+                self.ensure_is_ty(parent, param, strategy, "derive_ok: param is a type")?;
+            }
+        } else {
+            //NOTE: this may change in future versions with flat term addressing
+            debug_assert!(
+                self.param(ctx).is_none(),
+                "A context without a parent cannot have parameters."
+            );
+        }
+        self.0.set_is_ok(ctx);
+        strategy.finish_rule(Goal::IsOk(ctx));
+        Ok(())
+    }
+
+    fn derive_fv<S>(&mut self, ctx: C, var: C, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_fv")?;
         let Some(head) = self.head(var) else {
-            return Err(S::fail("derive_fv: var is not a valid variable"));
+            return Err(strategy.fail("derive_fv: var is not a valid variable"));
         };
         if !self.ctx_prefix(var, ctx) {
-            return Err(S::fail("derive_fv: variable not in context"));
+            return Err(strategy.fail("derive_fv: variable not in context"));
         }
         debug_assert_eq!(
             self.bvi(var, head),
@@ -948,14 +1688,14 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
         let tm = self.add(ctx, GNode::Fv(var));
         let ty = self.add(
             ctx,
-            GNode::Copy(Import {
+            GNode::Import(Import {
                 ctx: var,
                 term: head,
                 bvi: Bv(0),
             }),
         );
         self.0.set_ty_unchecked(ctx, tm, ty);
-        Ok(HasTyIn { tm, ty })
+        Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
     fn derive_univ(&mut self, ctx: C, lvl: ULvl) -> HasTyIn<T> {
@@ -970,6 +1710,8 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
         let tm = self.add(ctx, GNode::Unit);
         let ty = self.add(ctx, GNode::U(lvl));
         self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_is_prop_unchecked(ctx, tm);
+        self.0.set_is_inhab_unchecked(ctx, tm);
         HasTyIn { tm, ty }
     }
 
@@ -984,6 +1726,8 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
         let tm = self.add(ctx, GNode::Empty);
         let ty = self.add(ctx, GNode::U(lvl));
         self.0.set_ty_unchecked(ctx, tm, ty);
+        self.0.set_is_prop_unchecked(ctx, tm);
+        self.0.set_is_empty_unchecked(ctx, tm);
         HasTyIn { tm, ty }
     }
 
@@ -998,12 +1742,13 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
     where
         S: Strategy<C, T, Self>,
     {
+        strategy.start_rule("derive_eqn")?;
         self.ensure_has_ty(ctx, lhs, ty, strategy, "derive_eqn: lhs")?;
         self.ensure_has_ty(ctx, rhs, ty, strategy, "derive_eqn: rhs")?;
         let tm = self.add(ctx, GNode::Eqn([lhs, rhs]));
         let ty = self.add(ctx, GNode::U(ULvl::PROP));
         self.0.set_ty_unchecked(ctx, tm, ty);
-        Ok(HasTyIn { tm, ty })
+        Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
     fn derive_pi<S>(
@@ -1019,10 +1764,9 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
     where
         S: Strategy<C, T, Self>,
     {
+        strategy.start_rule("derive_pi")?;
         if self.imax_le(arg_lvl, res_lvl, lvl) {
-            return Err(S::fail(
-                "derive_pi: cannot deduce that imax(arg_lvl, res_lvl) ≤ lvl",
-            ));
+            return Err(strategy.fail("derive_pi: cannot deduce that imax(arg_lvl, res_lvl) ≤ lvl"));
         }
         let arg_lvl_ty = self.add(ctx, GNode::U(arg_lvl));
         let res_lvl_ty = self.add(ctx, GNode::U(res_lvl));
@@ -1038,7 +1782,7 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
         let ty = self.add(ctx, GNode::U(lvl));
         let tm = self.add(ctx, GNode::Pi([arg_ty, res_ty]));
         self.0.set_ty_unchecked(ctx, tm, ty);
-        Ok(HasTyIn { tm, ty })
+        Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
     fn derive_sigma<S>(
@@ -1054,11 +1798,12 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
     where
         S: Strategy<C, T, Self>,
     {
+        strategy.start_rule("derive_sigma")?;
         if !self.u_le(arg_lvl, lvl) {
-            return Err(S::fail("derive_sigma: cannot deduce that arg_lvl ≤ lvl"));
+            return Err(strategy.fail("derive_sigma: cannot deduce that arg_lvl ≤ lvl"));
         }
         if !self.u_le(res_lvl, lvl) {
-            return Err(S::fail("derive_sigma: cannot deduce that res_lvl ≤ lvl"));
+            return Err(strategy.fail("derive_sigma: cannot deduce that res_lvl ≤ lvl"));
         }
         let arg_lvl_ty = self.add(ctx, GNode::U(arg_lvl));
         let res_lvl_ty = self.add(ctx, GNode::U(res_lvl));
@@ -1074,7 +1819,7 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
         let ty = self.add(ctx, GNode::U(lvl));
         let tm = self.add(ctx, GNode::Sigma([arg_ty, res_ty]));
         self.0.set_ty_unchecked(ctx, tm, ty);
-        Ok(HasTyIn { tm, ty })
+        Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
     fn derive_abs<S>(
@@ -1088,11 +1833,12 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
     where
         S: Strategy<C, T, Self>,
     {
+        strategy.start_rule("derive_abs")?;
         self.ensure_has_ty_under(ctx, arg_ty, body, res_ty, strategy, "derive_abs: body")?;
         let tm = self.add(ctx, GNode::Abs([arg_ty, body]));
         let ty = self.add(ctx, GNode::Pi([arg_ty, res_ty]));
         self.0.set_ty_unchecked(ctx, tm, ty);
-        Ok(HasTyIn { tm, ty })
+        Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
     fn derive_app<S>(
@@ -1107,13 +1853,14 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
     where
         S: Strategy<C, T, Self>,
     {
+        strategy.start_rule("derive_app")?;
         self.ensure_has_ty(ctx, arg, arg_ty, strategy, "derive_app: arg")?;
         let pi = self.add(ctx, GNode::Pi([arg_ty, res_ty]));
         self.ensure_has_ty(ctx, func, pi, strategy, "derive_app: func")?;
         let tm = self.add(ctx, GNode::App([func, arg]));
         let ty = self.lazy_subst(ctx, arg, res_ty);
         self.0.set_ty_unchecked(ctx, tm, ty);
-        Ok(HasTyIn { tm, ty })
+        Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
     fn derive_pair<S>(
@@ -1128,6 +1875,7 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
     where
         S: Strategy<C, T, Self>,
     {
+        strategy.start_rule("derive_pair")?;
         self.ensure_is_ty_under(ctx, arg_ty, res_ty, strategy, "derive_pair: res_ty")?;
         self.ensure_has_ty(ctx, fst, arg_ty, strategy, "derive_pair: fst")?;
         let snd_ty = self.lazy_subst(ctx, fst, res_ty);
@@ -1135,7 +1883,7 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
         let tm = self.add(ctx, GNode::Pair([fst, snd]));
         let ty = self.add(ctx, GNode::Sigma([arg_ty, res_ty]));
         self.0.set_ty_unchecked(ctx, tm, ty);
-        Ok(HasTyIn { tm, ty })
+        Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
     fn derive_fst<S>(
@@ -1149,11 +1897,15 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
     where
         S: Strategy<C, T, Self>,
     {
+        strategy.start_rule("derive_fst")?;
         let sigma = self.add(ctx, GNode::Sigma([arg_ty, res_ty]));
         self.ensure_has_ty(ctx, pair, sigma, strategy, "derive_fst: pair")?;
         let tm = self.add(ctx, GNode::Fst([pair]));
         self.0.set_ty_unchecked(ctx, tm, arg_ty);
-        Ok(HasTyIn { tm, ty: arg_ty })
+        if let &GNode::Pair([a, _]) = self.node(ctx, pair) {
+            self.0.set_eq_unchecked(ctx, tm, a);
+        }
+        Ok(HasTyIn { tm, ty: arg_ty }.finish_rule(ctx, strategy))
     }
 
     fn derive_snd<S>(
@@ -1167,6 +1919,7 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
     where
         S: Strategy<C, T, Self>,
     {
+        strategy.start_rule("derive_snd")?;
         let sigma = self.add(ctx, GNode::Sigma([arg_ty, res_ty]));
         self.ensure_has_ty(ctx, pair, sigma, strategy, "derive_snd: pair")?;
         let fst = self.add(ctx, GNode::Fst([pair]));
@@ -1174,6 +1927,352 @@ impl<C: Copy, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>> 
         let tm = self.add(ctx, GNode::Snd([pair]));
         let ty = self.lazy_subst(ctx, fst, res_ty);
         self.0.set_ty_unchecked(ctx, tm, ty);
-        Ok(HasTyIn { tm, ty })
+        if let &GNode::Pair([a, b]) = self.node(ctx, pair) {
+            self.0.set_eq_unchecked(ctx, fst, a);
+            self.0.set_eq_unchecked(ctx, tm, b);
+        }
+        Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+    }
+
+    fn derive_dite<S>(
+        &mut self,
+        ctx: C,
+        cond: T,
+        then_br: T,
+        else_br: T,
+        ty: T,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_dite")?;
+        self.ensure_is_prop(ctx, cond, strategy, "derive_dite: cond")?;
+        self.ensure_has_ty_under(ctx, cond, then_br, ty, strategy, "derive_dite: then_br")?;
+        let ff = self.add(ctx, GNode::Empty);
+        let not_cond = self.add(ctx, GNode::Eqn([cond, ff]));
+        self.ensure_has_ty_under(ctx, not_cond, else_br, ty, strategy, "derive_dite: else_br")?;
+        let tm = self.add(ctx, GNode::Ite([cond, then_br, else_br]));
+        self.0.set_ty_unchecked(ctx, tm, ty);
+        if self.is_inhab(ctx, cond) {
+            let null = self.add(ctx, GNode::Null);
+            let then_br_null = self.lazy_subst(ctx, null, then_br);
+            self.0.set_eq_unchecked(ctx, tm, then_br_null);
+        } else if self.is_empty(ctx, cond) {
+            let null = self.add(ctx, GNode::Null);
+            let else_br_null = self.lazy_subst(ctx, null, else_br);
+            self.0.set_eq_unchecked(ctx, tm, else_br_null);
+        }
+        Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+    }
+
+    fn derive_trunc<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_trunc")?;
+        self.ensure_is_ty(ctx, ty, strategy, "derive_trunc: ty")?;
+        let tm = self.add(ctx, GNode::Trunc([ty]));
+        let prop = self.add(ctx, GNode::U(ULvl::PROP));
+        self.0.set_ty_unchecked(ctx, tm, prop);
+        if self.is_inhab(ctx, ty) {
+            self.0.set_is_inhab_unchecked(ctx, tm);
+        }
+        if self.is_empty(ctx, ty) {
+            self.0.set_is_empty_unchecked(ctx, tm);
+        }
+        Ok(HasTyIn { tm, ty: prop }.finish_rule(ctx, strategy))
+    }
+
+    fn derive_choose<S>(
+        &mut self,
+        ctx: C,
+        ty: T,
+        pred: T,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_choose")?;
+        self.ensure_is_inhab(ctx, ty, strategy, "derive_choose: ty")?;
+        let prop = self.add(ctx, GNode::U(ULvl::PROP));
+        self.ensure_has_ty_under(ctx, ty, pred, prop, strategy, "derive_choose: pred")?;
+        let tm = self.add(ctx, GNode::Choose([ty, pred]));
+        self.0.set_ty_unchecked(ctx, tm, ty);
+        Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+    }
+
+    fn derive_nats<S>(&mut self, ctx: C, lvl: ULvl, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_nats")?;
+        if !self.u_le(ULvl::SET, lvl) {
+            return Err(strategy.fail("derive_nats: cannot deduce that SET ≤ lvl"));
+        }
+        let tm = self.add(ctx, GNode::Nats);
+        let ty = self.add(ctx, GNode::U(lvl));
+        self.0.set_ty_unchecked(ctx, tm, ty);
+        Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+    }
+
+    fn derive_n64(&mut self, ctx: C, n: u64) -> HasTyIn<T> {
+        let tm = self.add(ctx, GNode::N64(n));
+        let ty = self.add(ctx, GNode::Nats);
+        self.0.set_ty_unchecked(ctx, tm, ty);
+        HasTyIn { tm, ty }
+    }
+
+    fn derive_succ<S>(&mut self, ctx: C, n: T, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_succ")?;
+        let nats = self.add(ctx, GNode::Nats);
+        self.ensure_has_ty(ctx, n, nats, strategy, "derive_succ: n")?;
+        let tm = self.add(ctx, GNode::Succ([n]));
+        self.0.set_ty_unchecked(ctx, tm, nats);
+        Ok(HasTyIn { tm, ty: nats }.finish_rule(ctx, strategy))
+    }
+
+    fn derive_natrec<S>(
+        &mut self,
+        ctx: C,
+        mot: T,
+        z: T,
+        s: T,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_natrec")?;
+        let nats = self.add(ctx, GNode::Nats);
+        self.ensure_is_ty_under(ctx, nats, mot, strategy, "derive_natrec: mot")?;
+        debug_assert!(
+            self.bvi(ctx, mot) <= Bv(1),
+            "a term which is well-typed under a binder cannot have a bvi greater than one"
+        );
+        let zero = self.add(ctx, GNode::N64(0));
+        let mot_zero = self.lazy_subst(ctx, mot, zero);
+        self.ensure_has_ty(ctx, z, mot_zero, strategy, "derive_natrec: z")?;
+        let bv_one = self.add(ctx, GNode::Bv(Bv(1)));
+        let succ_bv_one = self.add(ctx, GNode::Succ([bv_one]));
+        debug_assert_eq!(self.bvi(ctx, succ_bv_one), Bv(2));
+        let mot_succ_bv_one = self.lazy_subst(ctx, mot, succ_bv_one);
+        debug_assert!(self.bvi(ctx, mot_succ_bv_one) <= Bv(2));
+        let mot_to_mot_succ = self.add(ctx, GNode::Pi([mot, mot_succ_bv_one]));
+        debug_assert!(self.bvi(ctx, mot_to_mot_succ) <= Bv(1));
+        self.ensure_has_ty_under(ctx, nats, s, mot_to_mot_succ, strategy, "derive_natrec: s")?;
+
+        let tm = self.add(ctx, GNode::Natrec([mot, z, s]));
+        let ty = self.add(ctx, GNode::Pi([nats, mot]));
+        self.0.set_ty_unchecked(ctx, tm, ty);
+        Ok(HasTyIn { tm, ty: nats }.finish_rule(ctx, strategy))
+    }
+
+    fn derive_let<S>(
+        &mut self,
+        ctx: C,
+        bound: T,
+        bound_ty: T,
+        body: T,
+        body_ty: T,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_let")?;
+        self.ensure_has_ty(ctx, bound, bound_ty, strategy, "derive_let: bound")?;
+        self.ensure_has_ty_under(ctx, bound_ty, body, body_ty, strategy, "derive_let: body")?;
+        let tm = self.add(ctx, GNode::Let(Bv(0), [bound, body]));
+        let ty = self.lazy_subst(ctx, bound, body_ty);
+        self.0.set_ty_unchecked(ctx, tm, ty);
+        let tm_s = self.lazy_subst(ctx, bound, body);
+        self.0.set_eq_unchecked(ctx, tm, tm_s);
+        Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+    }
+
+    fn derive_beta_abs<S>(
+        &mut self,
+        ctx: C,
+        tm: T,
+        arg: T,
+        strategy: &mut S,
+    ) -> Result<Eqn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_beta_abs")?;
+        let &GNode::Abs([arg_ty, body]) = self.node(ctx, tm) else {
+            return Err(strategy.fail("derive_beta_abs: tm ≡ abs A b"));
+        };
+        self.ensure_is_wf(ctx, tm, strategy, "derive_beta_abs: tm wf")?;
+        self.ensure_has_ty(ctx, arg, arg_ty, strategy, "derive_beta_abs: arg")?;
+        let tm_app = self.add(ctx, GNode::App([tm, arg]));
+        let tm_subst = self.lazy_subst(ctx, arg, body);
+        self.0.set_eq_unchecked(ctx, tm_app, tm_subst);
+        Ok(Eqn {
+            lhs: tm_app,
+            rhs: tm_subst,
+        }
+        .success(ctx, strategy))
+    }
+
+    fn derive_beta_zero<S>(&mut self, ctx: C, tm: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_beta_zero")?;
+        let &GNode::Natrec([_mot, z, _s]) = self.node(ctx, tm) else {
+            return Err(strategy.fail("derive_beta_zero: tm ≡ natrec C z s"));
+        };
+        self.ensure_is_wf(ctx, tm, strategy, "derive_beta_zero: tm wf")?;
+        let zero = self.add(ctx, GNode::N64(0));
+        let tm_zero = self.add(ctx, GNode::App([tm, zero]));
+        self.0.set_eq_unchecked(ctx, tm_zero, z);
+        Ok(Eqn {
+            lhs: tm_zero,
+            rhs: zero,
+        }
+        .success(ctx, strategy))
+    }
+
+    fn derive_beta_succ<S>(
+        &mut self,
+        ctx: C,
+        tm: T,
+        n: T,
+        strategy: &mut S,
+    ) -> Result<Eqn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_beta_succ")?;
+        let &GNode::Natrec([_mot, _z, s]) = self.node(ctx, tm) else {
+            return Err(strategy.fail("derive_beta_zero: tm ≡ natrec C z s"));
+        };
+        self.ensure_is_wf(ctx, tm, strategy, "derive_beta_zero: tm wf")?;
+        let nats = self.add(ctx, GNode::Nats);
+        self.ensure_has_ty(ctx, n, nats, strategy, "derive_beta_succ: n")?;
+        let tm_n = self.add(ctx, GNode::App([tm, n]));
+        let s_n = self.lazy_subst(ctx, n, s);
+        let s_n_tm_n = self.add(ctx, GNode::App([s_n, tm_n]));
+        let succ_n = self.add(ctx, GNode::Succ([n]));
+        let tm_succ_n = self.add(ctx, GNode::App([tm, succ_n]));
+        self.0.set_eq_unchecked(ctx, tm_succ_n, s_n_tm_n);
+        Ok(Eqn {
+            lhs: tm_succ_n,
+            rhs: s_n_tm_n,
+        }
+        .success(ctx, strategy))
+    }
+
+    fn derive_choose_spec<S>(
+        &mut self,
+        ctx: C,
+        ty: T,
+        pred: T,
+        strategy: &mut S,
+    ) -> Result<IsInhabIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_choose_spec")?;
+        let sigma = self.add(ctx, GNode::Sigma([ty, pred]));
+        self.ensure_is_inhab(ctx, sigma, strategy, "derive_choose_spec: ty")?;
+        let choose = self.add(ctx, GNode::Choose([ty, pred]));
+        let pred_choose = self.lazy_subst(ctx, choose, pred);
+        self.0.set_ty_unchecked(ctx, choose, ty);
+        self.0.set_is_prop_unchecked(ctx, pred_choose);
+        self.0.set_is_inhab_unchecked(ctx, pred_choose);
+        Ok(IsInhabIn(pred_choose).success(ctx, strategy))
+    }
+
+    fn derive_unit_ext<S>(&mut self, ctx: C, a: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_unit_ext")?;
+        let unit = self.add(ctx, GNode::Unit);
+        self.ensure_has_ty(ctx, a, unit, strategy, "derive_unit_ext: a")?;
+        let null = self.add(ctx, GNode::Null);
+        self.0.set_eq_unchecked(ctx, a, null);
+        Ok(Eqn { lhs: a, rhs: null }.success(ctx, strategy))
+    }
+
+    fn derive_prop_ext_tt<S>(&mut self, ctx: C, a: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_prop_ext_tt")?;
+        self.ensure_is_prop(ctx, a, strategy, "derive_prop_ext_tt: a prop")?;
+        self.ensure_is_inhab(ctx, a, strategy, "derive_prop_ext_tt: a inhab")?;
+        let unit = self.add(ctx, GNode::Unit);
+        self.0.set_eq_unchecked(ctx, a, unit);
+        Ok(Eqn { lhs: a, rhs: unit }.success(ctx, strategy))
+    }
+
+    fn derive_prop_ext_ff<S>(&mut self, ctx: C, a: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_prop_ext_ff")?;
+        self.ensure_is_prop(ctx, a, strategy, "derive_prop_ext_ff: a prop")?;
+        self.ensure_is_empty(ctx, a, strategy, "derive_prop_ext_ff: a empty")?;
+        let empty = self.add(ctx, GNode::Empty);
+        self.0.set_eq_unchecked(ctx, a, empty);
+        Ok(Eqn { lhs: a, rhs: empty }.success(ctx, strategy))
+    }
+
+    fn derive_ext<S>(&mut self, ctx: C, lhs: T, rhs: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_ext")?;
+        let eqn = self.add(ctx, GNode::Eqn([lhs, rhs]));
+        self.ensure_is_inhab(ctx, eqn, strategy, "derive_ext: eqn inhab")?;
+        self.0.set_eq_unchecked(ctx, lhs, rhs);
+        Ok(Eqn { lhs, rhs }.success(ctx, strategy))
+    }
+
+    fn derive_pi_eta<S>(&mut self, ctx: C, ty: T, f: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_pi_eta")?;
+        let &GNode::Pi([arg_ty, _res_ty]) = self.node(ctx, ty) else {
+            return Err(strategy.fail("derive_pi_eta: ty ≡ pi A B"));
+        };
+        self.ensure_has_ty(ctx, f, ty, strategy, "derive_pi_eta: f")?;
+        let bv_zero = self.add(ctx, GNode::Bv(Bv(0)));
+        let app_f_bv_zero = self.add(ctx, GNode::App([f, bv_zero]));
+        let eta = self.add(ctx, GNode::Abs([arg_ty, app_f_bv_zero]));
+        self.0.set_eq_unchecked(ctx, f, eta);
+        Ok(Eqn { lhs: f, rhs: eta }.success(ctx, strategy))
+    }
+
+    fn derive_sigma_eta<S>(
+        &mut self,
+        ctx: C,
+        ty: T,
+        p: T,
+        strategy: &mut S,
+    ) -> Result<Eqn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_sigma_eta")?;
+        let &GNode::Sigma(_) = self.node(ctx, ty) else {
+            return Err(strategy.fail("derive_sigma_eta: ty ≡ sigma A B"));
+        };
+        self.ensure_has_ty(ctx, p, ty, strategy, "derive_sigma_eta: p")?;
+        let fst_p = self.add(ctx, GNode::Fst([p]));
+        let snd_p = self.add(ctx, GNode::Snd([p]));
+        let eta = self.add(ctx, GNode::Pair([fst_p, snd_p]));
+        self.0.set_eq_unchecked(ctx, p, eta);
+        Ok(Eqn { lhs: p, rhs: eta }.success(ctx, strategy))
     }
 }

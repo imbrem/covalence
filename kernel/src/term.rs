@@ -35,7 +35,7 @@ pub enum GNode<C, T, I = T> {
     /// The second projection of a pair
     Snd([T; 1]),
     /// A dependent if-then-else
-    Ite([T; 4]),
+    Ite([T; 3]),
     /// A propositional truncation
     Trunc([T; 1]),
     /// Hilbert choice
@@ -43,11 +43,11 @@ pub enum GNode<C, T, I = T> {
     /// The type of natural numbers
     Nats,
     /// A small natural number
-    SmallNat(u64),
+    N64(u64),
     /// The successor of a natural number
     Succ([T; 1]),
     /// Recursion on natural numbers
-    Natrec([T; 4]),
+    Natrec([T; 3]),
     /// An assertion that a term has the given type
     HasTy([T; 2]),
     /// A known-invalid term
@@ -56,12 +56,14 @@ pub enum GNode<C, T, I = T> {
     // == Syntax extensions ==
     /// A substitution under `k` binders
     Let(Bv, [T; 2]),
+    /// A weakening under `k` binders
+    Wk1(Bv, [T; 1]),
     /// A variable closure under `k` binders
     Close(Close<C, T>),
 
     // == Imports from other contexts ==
     /// A direct import from another context
-    Copy(Import<C, I>),
+    Import(Import<C, I>),
 }
 
 impl<C, T, I> GNode<C, T, I> {
@@ -82,22 +84,23 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::Pair([a, b]) => GNode::Pair([f(a), f(b)]),
             GNode::Fst([a]) => GNode::Fst([f(a)]),
             GNode::Snd([a]) => GNode::Snd([f(a)]),
-            GNode::Ite([a, b, c, d]) => GNode::Ite([f(a), f(b), f(c), f(d)]),
+            GNode::Ite([a, b, c]) => GNode::Ite([f(a), f(b), f(c)]),
             GNode::Trunc([a]) => GNode::Trunc([f(a)]),
             GNode::Choose([a, b]) => GNode::Choose([f(a), f(b)]),
             GNode::Nats => GNode::Nats,
-            GNode::SmallNat(n) => GNode::SmallNat(n),
+            GNode::N64(n) => GNode::N64(n),
             GNode::Succ([a]) => GNode::Succ([f(a)]),
-            GNode::Natrec([a, b, c, d]) => GNode::Natrec([f(a), f(b), f(c), f(d)]),
+            GNode::Natrec([a, b, c]) => GNode::Natrec([f(a), f(b), f(c)]),
             GNode::HasTy([a, b]) => GNode::HasTy([f(a), f(b)]),
             GNode::Invalid => GNode::Invalid,
             GNode::Let(k, [a, b]) => GNode::Let(k, [f(a), f(b)]),
+            GNode::Wk1(k, [a]) => GNode::Wk1(k, [f(a)]),
             GNode::Close(close) => GNode::Close(Close {
                 under: close.under,
                 var: close.var,
-                term: f(close.term),
+                tm: f(close.tm),
             }),
-            GNode::Copy(import) => GNode::Copy(import),
+            GNode::Import(import) => GNode::Import(import),
         }
     }
 
@@ -118,22 +121,23 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::Pair([a, b]) => Ok(GNode::Pair([f(a)?, f(b)?])),
             GNode::Fst([a]) => Ok(GNode::Fst([f(a)?])),
             GNode::Snd([a]) => Ok(GNode::Snd([f(a)?])),
-            GNode::Ite([a, b, c, d]) => Ok(GNode::Ite([f(a)?, f(b)?, f(c)?, f(d)?])),
+            GNode::Ite([a, b, c]) => Ok(GNode::Ite([f(a)?, f(b)?, f(c)?])),
             GNode::Trunc([a]) => Ok(GNode::Trunc([f(a)?])),
             GNode::Choose([a, b]) => Ok(GNode::Choose([f(a)?, f(b)?])),
             GNode::Nats => Ok(GNode::Nats),
-            GNode::SmallNat(n) => Ok(GNode::SmallNat(n)),
+            GNode::N64(n) => Ok(GNode::N64(n)),
             GNode::Succ([a]) => Ok(GNode::Succ([f(a)?])),
-            GNode::Natrec([a, b, c, d]) => Ok(GNode::Natrec([f(a)?, f(b)?, f(c)?, f(d)?])),
+            GNode::Natrec([a, b, c]) => Ok(GNode::Natrec([f(a)?, f(b)?, f(c)?])),
             GNode::HasTy([a, b]) => Ok(GNode::HasTy([f(a)?, f(b)?])),
             GNode::Invalid => Ok(GNode::Invalid),
             GNode::Let(k, [a, b]) => Ok(GNode::Let(k, [f(a)?, f(b)?])),
+            GNode::Wk1(k, [a]) => Ok(GNode::Wk1(k, [f(a)?])),
             GNode::Close(close) => Ok(GNode::Close(Close {
                 under: close.under,
                 var: close.var,
-                term: f(close.term)?,
+                tm: f(close.tm)?,
             })),
-            GNode::Copy(import) => Ok(GNode::Copy(import)),
+            GNode::Import(import) => Ok(GNode::Import(import)),
         }
     }
 
@@ -154,26 +158,23 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::Pair([a, b]) => GNode::Pair([(Bv(0), a), (Bv(0), b)]),
             GNode::Fst([a]) => GNode::Fst([(Bv(0), a)]),
             GNode::Snd([a]) => GNode::Snd([(Bv(0), a)]),
-            GNode::Ite([a, b, c, d]) => {
-                GNode::Ite([(Bv(0), a), (Bv(0), b), (Bv(0), c), (Bv(0), d)])
-            }
+            GNode::Ite([a, b, c]) => GNode::Ite([(Bv(0), a), (Bv(0), b), (Bv(0), c)]),
             GNode::Trunc([a]) => GNode::Trunc([(Bv(0), a)]),
             GNode::Choose([a, b]) => GNode::Choose([(Bv(0), a), (Bv(1), b)]),
             GNode::Nats => GNode::Nats,
-            GNode::SmallNat(n) => GNode::SmallNat(n),
+            GNode::N64(n) => GNode::N64(n),
             GNode::Succ([a]) => GNode::Succ([(Bv(0), a)]),
-            GNode::Natrec([a, b, c, d]) => {
-                GNode::Natrec([(Bv(0), a), (Bv(0), b), (Bv(0), c), (Bv(2), d)])
-            }
+            GNode::Natrec([a, b, c]) => GNode::Natrec([(Bv(0), a), (Bv(0), b), (Bv(0), c)]),
             GNode::HasTy([a, b]) => GNode::HasTy([(Bv(0), a), (Bv(0), b)]),
             GNode::Invalid => GNode::Invalid,
             GNode::Let(k, [a, b]) => GNode::Let(k, [(Bv(0), a), (Bv(1), b)]),
+            GNode::Wk1(k, [a]) => GNode::Wk1(k, [(Bv(0), a)]),
             GNode::Close(close) => GNode::Close(Close {
                 under: close.under,
                 var: close.var,
-                term: (Bv(0), close.term),
+                tm: (Bv(0), close.tm),
             }),
-            GNode::Copy(import) => GNode::Copy(import),
+            GNode::Import(import) => GNode::Import(import),
         }
     }
 
@@ -194,18 +195,19 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::Pair([a, b]) => GNode::Pair([a, b]),
             GNode::Fst([a]) => GNode::Fst([a]),
             GNode::Snd([a]) => GNode::Snd([a]),
-            GNode::Ite([a, b, c, d]) => GNode::Ite([a, b, c, d]),
+            GNode::Ite([a, b, c]) => GNode::Ite([a, b, c]),
             GNode::Trunc([a]) => GNode::Trunc([a]),
             GNode::Choose([a, b]) => GNode::Choose([a, b]),
             GNode::Nats => GNode::Nats,
-            GNode::SmallNat(n) => GNode::SmallNat(*n),
+            GNode::N64(n) => GNode::N64(*n),
             GNode::Succ([a]) => GNode::Succ([a]),
-            GNode::Natrec([a, b, c, d]) => GNode::Natrec([a, b, c, d]),
+            GNode::Natrec([a, b, c]) => GNode::Natrec([a, b, c]),
             GNode::HasTy([a, b]) => GNode::HasTy([a, b]),
             GNode::Invalid => GNode::Invalid,
             GNode::Let(k, [a, b]) => GNode::Let(*k, [a, b]),
+            GNode::Wk1(k, [a]) => GNode::Wk1(*k, [a]),
             GNode::Close(close) => GNode::Close(close.as_ref()),
-            GNode::Copy(import) => GNode::Copy(import.as_ref()),
+            GNode::Import(import) => GNode::Import(import.as_ref()),
         }
     }
 
@@ -226,18 +228,19 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::Pair([a, b]) => GNode::Pair([a, b]),
             GNode::Fst([a]) => GNode::Fst([a]),
             GNode::Snd([a]) => GNode::Snd([a]),
-            GNode::Ite([a, b, c, d]) => GNode::Ite([a, b, c, d]),
+            GNode::Ite([a, b, c]) => GNode::Ite([a, b, c]),
             GNode::Trunc([a]) => GNode::Trunc([a]),
             GNode::Choose([a, b]) => GNode::Choose([a, b]),
             GNode::Nats => GNode::Nats,
-            GNode::SmallNat(n) => GNode::SmallNat(*n),
+            GNode::N64(n) => GNode::N64(*n),
             GNode::Succ([a]) => GNode::Succ([a]),
-            GNode::Natrec([a, b, c, d]) => GNode::Natrec([a, b, c, d]),
+            GNode::Natrec([a, b, c]) => GNode::Natrec([a, b, c]),
             GNode::HasTy([a, b]) => GNode::HasTy([a, b]),
             GNode::Invalid => GNode::Invalid,
             GNode::Let(k, [a, b]) => GNode::Let(*k, [a, b]),
+            GNode::Wk1(k, [a]) => GNode::Wk1(*k, [a]),
             GNode::Close(close) => GNode::Close(close.as_mut()),
-            GNode::Copy(import) => GNode::Copy(import.as_mut()),
+            GNode::Import(import) => GNode::Import(import.as_mut()),
         }
     }
 
@@ -265,14 +268,15 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::Trunc(xs) => &xs[..],
             GNode::Choose(xs) => &xs[..],
             GNode::Nats => &[],
-            GNode::SmallNat(_) => &[],
+            GNode::N64(_) => &[],
             GNode::Succ(xs) => &xs[..],
             GNode::Natrec(xs) => &xs[..],
             GNode::HasTy(xs) => &xs[..],
             GNode::Invalid => &[],
             GNode::Let(_, xs) => &xs[..],
+            GNode::Wk1(_, xs) => &xs[..],
             GNode::Close(_) => &[],
-            GNode::Copy(_) => &[],
+            GNode::Import(_) => &[],
         }
     }
 
@@ -300,14 +304,15 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::Trunc(xs) => &mut xs[..],
             GNode::Choose(xs) => &mut xs[..],
             GNode::Nats => &mut [],
-            GNode::SmallNat(_) => &mut [],
+            GNode::N64(_) => &mut [],
             GNode::Succ(xs) => &mut xs[..],
             GNode::Natrec(xs) => &mut xs[..],
             GNode::HasTy(xs) => &mut xs[..],
             GNode::Invalid => &mut [],
             GNode::Let(_, xs) => &mut xs[..],
+            GNode::Wk1(_, xs) => &mut xs[..],
             GNode::Close(_) => &mut [],
-            GNode::Copy(_) => &mut [],
+            GNode::Import(_) => &mut [],
         }
     }
 
@@ -315,10 +320,13 @@ impl<C, T, I> GNode<C, T, I> {
     pub fn bvi(&self, mut tm: impl FnMut(&T) -> Bv) -> Bv {
         match self {
             GNode::Bv(i) => i.succ(),
-            GNode::Copy(i) => i.bvi,
-            GNode::Close(c) => {
-                let b = tm(&c.term);
-                if b < c.under { b } else { b.succ() }
+            GNode::Import(i) => i.bvi,
+            GNode::Close(Close {
+                under: k, tm: a, ..
+            })
+            | GNode::Wk1(k, [a]) => {
+                let b = tm(&a);
+                if b < *k { b } else { b.succ() }
             }
             n => n
                 .as_ref()
@@ -426,7 +434,7 @@ pub struct Close<C, T> {
     /// The variable being closed over
     pub var: C,
     /// The term being closed over (in `this`, _not_ necessarily `ctx`)
-    pub term: T,
+    pub tm: T,
 }
 
 impl<C, T> Close<C, T> {
@@ -435,7 +443,7 @@ impl<C, T> Close<C, T> {
         Close {
             under: self.under,
             var: &self.var,
-            term: &self.term,
+            tm: &self.tm,
         }
     }
 
@@ -444,7 +452,7 @@ impl<C, T> Close<C, T> {
         Close {
             under: self.under,
             var: &mut self.var,
-            term: &mut self.term,
+            tm: &mut self.tm,
         }
     }
 }
@@ -501,7 +509,7 @@ impl<C, T> From<bool> for GNode<C, T> {
 
 impl<C, T> From<Import<C, T>> for GNode<C, T> {
     fn from(copy: Import<C, T>) -> Self {
-        GNode::Copy(copy)
+        GNode::Import(copy)
     }
 }
 

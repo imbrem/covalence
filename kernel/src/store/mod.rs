@@ -25,11 +25,8 @@ impl EggTermDb {
     fn set_this(&mut self, ctx: CtxId) {
         self.x[ctx.0].set_this(ctx);
         if let Some(parent) = self.x[ctx.0].parent() {
-            if self.tel_inhab(parent) {
+            if self.has_root_model(parent) {
                 self.x[ctx.0].set_may_tail_inhab();
-            }
-            if !self.is_ok(parent) {
-                return;
             }
         } else {
             self.x[ctx.0].set_may_tail_inhab();
@@ -53,13 +50,6 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         result
     }
 
-    fn with_param(&mut self, parent: CtxId, param: TermId) -> CtxId {
-        debug_assert!(self.x.contains(parent.0));
-        let result = CtxId(self.x.insert(Ctx::with_param(parent, param)));
-        self.set_this(result);
-        result
-    }
-
     fn add(&mut self, ctx: CtxId, tm: Node) -> TermId {
         self.x[ctx.0].add(tm)
     }
@@ -73,7 +63,13 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
         // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
         // inserting the import and hence fixing the `TermId`.
-        if let &Node::Import(Import { bvi, ctx: src, tm }) = self.node(src, tm) {
+        let bvi = self.bvi(src, tm);
+        if let &Node::Import(Import {
+            bvi: import_bvi,
+            ctx: src,
+            tm,
+        }) = self.node(src, tm)
+        {
             // For an import to be valid, `bvi` _must_ be _correct_
             //
             // We can't simply require an upper bound as that would break soundness as follows:
@@ -81,7 +77,7 @@ impl TermStore<CtxId, TermId> for EggTermDb {
             // - we import the import with bvi 0; call this import2
             // - import2 == invalid since bvi(import2) < 1
             // - but once we resolve import, import2 == term; so term == invalid!
-            if bvi != self.bvi(src, tm) {
+            if import_bvi != bvi {
                 return self.x[ctx.0].add(GNode::Invalid);
             }
             return self.import(ctx, src, tm);
@@ -89,7 +85,6 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         if ctx == src {
             return tm;
         }
-        let bvi = self.bvi(src, tm);
         self.x[ctx.0].add(GNode::Import(Import { bvi, ctx: src, tm }))
     }
 
@@ -99,6 +94,67 @@ impl TermStore<CtxId, TermId> for EggTermDb {
 
     fn lookup(&self, ctx: CtxId, tm: &mut Node) -> Option<TermId> {
         self.x[ctx.0].lookup(tm)
+    }
+
+    fn lookup_import(&self, ctx: CtxId, src: CtxId, tm: TermId) -> Option<TermId> {
+        // NOTE: an import cycle will lead to a stack overflow here, but that should be an error But
+        // think about it!
+        //
+        // We could try a cycle detection algorithm and return `Invalid`, if we want to be very
+        // clever... but again, this is a deeply invalid state, since import destinations should
+        // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
+        // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
+        // inserting the import and hence fixing the `TermId`.
+        let bvi = self.bvi(src, tm);
+        if let &Node::Import(Import {
+            bvi: import_bvi,
+            ctx: src,
+            tm,
+        }) = self.node(src, tm)
+        {
+            // For an import to be valid, `bvi` _must_ be _correct_
+            //
+            // We can't simply require an upper bound as that would break soundness as follows:
+            // - term has bvi 0, but we import it with bvi 1
+            // - we import the import with bvi 0; call this import2
+            // - import2 == invalid since bvi(import2) < 1
+            // - but once we resolve import, import2 == term; so term == invalid!
+            if import_bvi != bvi {
+                return self.x[ctx.0].lookup(GNode::Invalid);
+            }
+            if let Some(import) = self.lookup_import(ctx, src, tm) {
+                return Some(import);
+            }
+        }
+        if ctx == src {
+            return Some(tm);
+        }
+        self.lookup(ctx, &mut GNode::Import(Import { bvi, ctx: src, tm }))
+    }
+
+    fn assumes(&self, ctx: CtxId) -> &[TermId] {
+        todo!()
+    }
+
+    fn var_ty(&mut self, ctx: CtxId, var: VarId) -> TermId {
+        let ty = self.get_var_ty(var);
+        self.import(ctx, var.ctx, ty)
+    }
+
+    fn get_var_ty(&self, var: VarId) -> TermId {
+        todo!()
+    }
+
+    fn var_free(&self, ctx: CtxId, var: VarId) -> bool {
+        todo!()
+    }
+
+    fn num_constraints(&self, ctx: CtxId) -> usize {
+        todo!()
+    }
+
+    fn constraint(&self, ctx: CtxId, ix: usize) -> Gv<CtxId> {
+        todo!()
     }
 
     fn succ(&mut self, level: ULvl) -> ULvl {
@@ -132,24 +188,24 @@ impl TermStore<CtxId, TermId> for EggTermDb {
 }
 
 impl ReadFacts<CtxId, TermId> for EggTermDb {
-    fn is_ok(&self, ctx: CtxId) -> bool {
-        self.x[ctx.0].is_ok()
+    fn is_root(&self, ctx: CtxId) -> bool {
+        todo!()
     }
 
     fn is_contr(&self, ctx: CtxId) -> bool {
         self.x[ctx.0].is_contr()
     }
 
-    fn head_inhab(&self, ctx: CtxId) -> bool {
-        self.x[ctx.0].head_inhab()
+    fn has_model(&self, ctx: CtxId) -> bool {
+        self.x[ctx.0].has_model()
     }
 
-    fn tail_inhab(&self, ctx: CtxId) -> bool {
-        self.x[ctx.0].tail_inhab()
+    fn parent_has_root_model(&self, ctx: CtxId) -> bool {
+        self.x[ctx.0].parent_has_root_model()
     }
 
-    fn tel_inhab(&self, ctx: CtxId) -> bool {
-        self.x[ctx.0].tel_inhab()
+    fn has_root_model(&self, ctx: CtxId) -> bool {
+        self.x[ctx.0].has_root_model()
     }
 
     fn parent(&self, ctx: CtxId) -> Option<CtxId> {
@@ -160,8 +216,11 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
         self.x[ctx.0].bvi(tm)
     }
 
-    fn ctx_prefix(&self, lo: CtxId, mut hi: CtxId) -> bool {
+    fn is_subctx(&self, lo: CtxId, mut hi: CtxId) -> bool {
         //TODO: optimize
+        if self.is_root(lo) {
+            return true;
+        }
         while lo != hi {
             hi = if let Some(parent) = self.parent(hi) {
                 parent
@@ -170,6 +229,16 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
             }
         }
         true
+    }
+
+    fn is_subctx_of_parent(&self, lo: CtxId, hi: CtxId) -> bool {
+        if self.is_root(lo) {
+            return true;
+        }
+        if lo == hi {
+            return false;
+        }
+        self.is_subctx(lo, hi)
     }
 
     fn is_wf(&self, ctx: CtxId, tm: TermId) -> bool {
@@ -261,10 +330,6 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
 }
 
 impl WriteFacts<CtxId, TermId> for EggTermDb {
-    fn set_is_ok(&mut self, ctx: CtxId) {
-        self.x[ctx.0].set_is_ok();
-    }
-
     fn set_is_contr(&mut self, ctx: CtxId) {
         self.x[ctx.0].set_is_contr();
     }
@@ -312,6 +377,14 @@ impl WriteFacts<CtxId, TermId> for EggTermDb {
     fn set_exists_inhab_under_unchecked(&mut self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
         self.x[ctx.0].set_exists_inhab_under_unchecked(binder, ty)
     }
+
+    fn assume_unchecked(&mut self, ctx: CtxId, ty: TermId) -> usize {
+        todo!()
+    }
+
+    fn add_var_unchecked(&mut self, ctx: CtxId, ty: TermId) -> Gv<CtxId> {
+        todo!()
+    }
 }
 
 #[cfg(test)]
@@ -322,8 +395,7 @@ mod test {
     fn unit_eq_empty_contr() {
         let mut db = EggTermDb::default();
         let ctx = db.new_ctx();
-        assert!(db.is_ok(ctx));
-        assert!(db.tel_inhab(ctx));
+        assert!(db.has_root_model(ctx));
         assert!(!db.is_contr(ctx));
         assert_eq!(db.parent(ctx), None);
         let unit = db.add(ctx, Node::Unit);

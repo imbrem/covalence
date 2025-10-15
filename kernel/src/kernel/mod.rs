@@ -21,8 +21,7 @@ mod test {
     fn derive_unit_to_empty_wf() {
         let mut ker = Kernel::default();
         let ctx = ker.new_ctx();
-        assert!(ker.is_ok(ctx));
-        assert!(ker.tel_inhab(ctx));
+        assert!(ker.has_root_model(ctx));
         assert!(!ker.is_contr(ctx));
         assert_eq!(ker.parent(ctx), None);
         let unit = ker.add(ctx, Node::Unit);

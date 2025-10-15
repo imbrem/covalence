@@ -80,7 +80,7 @@ impl Ctx {
         self.e.analysis.flags != old_flags
     }
 
-    pub fn head_inhab(&self) -> bool {
+    pub fn has_model(&self) -> bool {
         self.e.analysis.flags.contains(CtxFlags::IS_HD_INHAB)
     }
 
@@ -90,11 +90,11 @@ impl Ctx {
         self.e.analysis.flags != old_flags
     }
 
-    pub fn tail_inhab(&self) -> bool {
+    pub fn parent_has_root_model(&self) -> bool {
         self.e.analysis.flags.contains(CtxFlags::IS_TL_INHAB)
     }
 
-    pub fn tel_inhab(&self) -> bool {
+    pub fn has_root_model(&self) -> bool {
         self.e.analysis.flags.contains(CtxFlags::IS_ALL_INHAB)
     }
 
@@ -507,21 +507,21 @@ mod test {
             assert!(ctx.has_ty(t, u0));
             assert!(ctx.has_ty(t, u1));
         }
-        assert!(!ctx.tel_inhab());
+        assert!(!ctx.has_root_model());
         ctx.set_may_head_inhab();
-        assert!(!ctx.head_inhab());
-        assert!(!ctx.tail_inhab());
-        assert!(!ctx.tel_inhab());
+        assert!(!ctx.has_model());
+        assert!(!ctx.parent_has_root_model());
+        assert!(!ctx.has_root_model());
         ctx.set_may_tail_inhab();
-        assert!(!ctx.head_inhab());
-        assert!(!ctx.tail_inhab());
-        assert!(!ctx.tel_inhab());
+        assert!(!ctx.has_model());
+        assert!(!ctx.parent_has_root_model());
+        assert!(!ctx.has_root_model());
         assert!(!ctx.is_ok());
         ctx.set_is_ok();
         assert!(ctx.is_ok());
-        assert!(ctx.head_inhab());
-        assert!(ctx.tail_inhab());
-        assert!(ctx.tel_inhab());
+        assert!(ctx.has_model());
+        assert!(ctx.parent_has_root_model());
+        assert!(ctx.has_root_model());
         assert!(!ctx.is_contr());
         ctx.set_eq_unchecked(unit, empty);
         assert!(ctx.is_contr());

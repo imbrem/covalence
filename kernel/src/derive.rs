@@ -2,14 +2,13 @@ use crate::term::{Bv, Close, GNode, Gv, Import, ULvl};
 
 /// A trait implemented by a datastore that can manipulate hash-consed terms and universe levels
 pub trait TermStore<C, T> {
+    // == Term management ==
+
     /// Create a new context in this store
     fn new_ctx(&mut self) -> C;
 
     /// Create a new context in this store with the given parent
     fn with_parent(&mut self, parent: C) -> C;
-
-    /// Insert a new context into the store with the given parameter
-    fn with_param(&mut self, parent: C, param: T) -> C;
 
     /// Insert a term into the store, returning a handle to it
     fn add(&mut self, ctx: C, tm: GNode<C, T>) -> T;
@@ -29,6 +28,35 @@ pub trait TermStore<C, T> {
     /// Canonicalizes the term's children if found
     fn lookup(&self, ctx: C, tm: &mut GNode<C, T>) -> Option<T>;
 
+    /// Lookup an import of a term into another context, returning a handle to it if it exists
+    fn lookup_import(&self, ctx: C, src: C, tm: T) -> Option<T>;
+
+    // == Variable management ==
+
+    /// Get this context's assumptions
+    fn assumes(&self, ctx: C) -> &[T];
+
+    /// Get the type of a variable in the given context
+    ///
+    /// Imports if necessary
+    fn var_ty(&mut self, ctx: C, var: Gv<C>) -> T;
+
+    /// Lookup the type of a variable in its own context
+    fn get_var_ty(&self, var: Gv<C>) -> T;
+
+    /// Get whether this variable is unconstrained at this level
+    ///
+    /// The result is unspecified for an ill-scoped variable
+    fn var_free(&self, ctx: C, var: Gv<C>) -> bool;
+
+    /// Get the number of constrained variables in this context
+    fn num_constraints(&self, ctx: C) -> usize;
+
+    /// Get the `n`th variable constrained by this context
+    fn constraint(&self, ctx: C, ix: usize) -> Gv<C>;
+
+    // == Universe management ==
+
     /// Get the successor of a given universe level
     fn succ(&mut self, level: ULvl) -> ULvl;
 
@@ -39,6 +67,7 @@ pub trait TermStore<C, T> {
     fn imax(&mut self, lhs: ULvl, rhs: ULvl) -> ULvl;
 
     // == Congruence management ==
+
     /// Propagate congruence information _within_ a context
     fn propagate_in(&mut self, ctx: C) -> usize;
 }
@@ -46,36 +75,36 @@ pub trait TermStore<C, T> {
 /// A trait implemented by a datastore that can read facts about terms in a context.
 pub trait ReadFacts<C, T> {
     // == Context information ==
-    /// Get whether a context is well-formed
+    /// Get whether a context is a root context
     ///
-    /// TODO: reference lean
-    fn is_ok(&self, ctx: C) -> bool;
+    /// Note that a root context has no assumptions _or_ variables.
+    ///
+    /// TODO: reference Lean
+    fn is_root(&self, ctx: C) -> bool;
 
     /// Get whether a context is contradictory
     ///
     /// TODO: reference lean
     fn is_contr(&self, ctx: C) -> bool;
 
-    /// Get whether a context's parameter is inhabited w.r.t the context
-    ///
-    /// This is defined to be `true` for the empty context
+    /// Get whether a context has a model in its parent context
     ///
     /// TODO: reference lean
-    fn head_inhab(&self, ctx: C) -> bool;
+    fn has_model(&self, ctx: C) -> bool;
 
     /// Get whether the _rest_ of a context is inhabited
     ///
     /// This is defined to be `true` for the empty context
     ///
     /// TODO: reference lean
-    fn tail_inhab(&self, ctx: C) -> bool;
+    fn parent_has_root_model(&self, ctx: C) -> bool;
 
     /// Get whether a context is inhabited as a telescope
     ///
     /// This is defined to be `true` for the empty context
     ///
     /// TODO: reference lean
-    fn tel_inhab(&self, ctx: C) -> bool;
+    fn has_root_model(&self, ctx: C) -> bool;
 
     /// Get a context's parent, if any
     fn parent(&self, ctx: C) -> Option<C>;
@@ -87,10 +116,24 @@ pub trait ReadFacts<C, T> {
     fn bvi(&self, ctx: C, tm: T) -> Bv;
 
     // == Context information ==
-    /// Check whether `lo` is a prefix of `hi`
+
+    /// Check whether `lo` is a subcontext of `hi`
     ///
-    /// TODO: reference lean
-    fn ctx_prefix(&self, lo: C, hi: C) -> bool;
+    /// This always returns `true` if `lo` is a root context, even if `hi` has no parent
+    ///
+    /// If `lo` is _not_ a root context, this in fact guarantees that `lo` is a _stable_ subcontext
+    /// of `hi`: adding variables to `lo` will automatically make those variables valid to use in
+    /// `hi`.
+    fn is_subctx(&self, lo: C, hi: C) -> bool;
+
+    /// Check whether `lo` is a subcontext of `hi`'s parent
+    ///
+    /// This always returns `true` if `lo` is a root context, even if `hi` has no parent
+    ///
+    /// If `lo` is _not_ a root context, this in fact guarantees that `lo` is a _stable_ subcontext
+    /// of `hi`: adding variables to `lo` will automatically make those variables valid to use in
+    /// `hi`.
+    fn is_subctx_of_parent(&self, lo: C, hi: C) -> bool;
 
     // == Predicates ==
     /// Check whether the term `tm` is well-formed in `ctx`
@@ -169,13 +212,12 @@ pub trait ReadFacts<C, T> {
 /// context.
 pub trait WriteFacts<C, T> {
     // == Context predicates ==
-    /// Mark a context as well-formed
-    fn set_is_ok(&mut self, ctx: C);
 
     /// Mark a context as contradictory
     fn set_is_contr(&mut self, ctx: C);
 
     // == Predicates ==
+
     /// Mark a term as well-formed
     fn set_is_wf_unchecked(&mut self, ctx: C, tm: T);
 
@@ -192,6 +234,7 @@ pub trait WriteFacts<C, T> {
     fn set_is_prop_unchecked(&mut self, ctx: C, tm: T);
 
     // == Relations ==
+
     /// Set two terms as equal in a given context
     fn set_eq_unchecked(&mut self, ctx: C, lhs: T, rhs: T);
 
@@ -213,6 +256,25 @@ pub trait WriteFacts<C, T> {
 
     /// Set the type of a term under a binder
     fn set_has_ty_under_unchecked(&mut self, ctx: C, binder: T, tm: T, ty: T);
+
+    // == Variable and assumption manipulation ==
+
+    /// Add an assumption to the given context; returning its index
+    ///
+    /// This adds the assumption that `ty` is inhabited; and marks it as so.
+    ///
+    /// This also adds all variables appearing in `ty` and not already constrained in the parent to
+    /// this context's constraint-set.
+    ///
+    /// Note that this does _not_ check whether the assumption is already inhabited, and always
+    /// inserts it, even if an exact duplicate has been inserted before. In general, you should
+    /// therefore use a wrapper.
+    ///
+    /// For this to be valid, `ty` should be a valid type _in the parent context_!
+    fn assume_unchecked(&mut self, ctx: C, ty: T) -> usize;
+
+    /// Add a variable to the given context
+    fn add_var_unchecked(&mut self, ctx: C, ty: T) -> Gv<C>;
 }
 
 /// A trait implemented by a mutable datastore that can hold _unchecked_ facts about contexts
@@ -266,7 +328,7 @@ impl<T> HasTyUnderIn<T> {
     }
 
     /// Succeed
-    pub fn success<C, S, K>(self, ctx: C, strategy: &mut S) -> HasTyUnderIn<T>
+    pub fn finish_rule<C, S, K>(self, ctx: C, strategy: &mut S) -> HasTyUnderIn<T>
     where
         T: Copy,
         S: Strategy<C, T, K>,
@@ -287,7 +349,7 @@ impl<T> IsInhabIn<T> {
     }
 
     /// Succeed
-    pub fn success<C, S, K>(self, ctx: C, strategy: &mut S) -> IsInhabIn<T>
+    pub fn finish_rule<C, S, K>(self, ctx: C, strategy: &mut S) -> IsInhabIn<T>
     where
         T: Copy,
         S: Strategy<C, T, K>,
@@ -315,7 +377,7 @@ impl<T> Eqn<T> {
     }
 
     /// Succeed
-    pub fn success<C, S, K>(self, ctx: C, strategy: &mut S) -> Eqn<T>
+    pub fn finish_rule<C, S, K>(self, ctx: C, strategy: &mut S) -> Eqn<T>
     where
         T: Copy,
         S: Strategy<C, T, K>,
@@ -412,8 +474,6 @@ pub struct EqIn<C, T> {
 /// A goal for a strategy
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum Goal<C, T> {
-    /// A context is well-formed
-    IsOk(C),
     /// A context is contradictory
     IsContr(C),
     /// A term is well-formed in the given context
@@ -510,7 +570,6 @@ impl<C, T> Goal<C, T> {
     /// Check whether this goal is true
     pub fn check(self, ker: &impl ReadFacts<C, T>) -> bool {
         match self {
-            Goal::IsOk(c) => ker.is_ok(c),
             Goal::IsContr(c) => ker.is_contr(c),
             Goal::IsWf(g) => ker.is_wf(g.ctx, g.tm),
             Goal::IsTy(g) => ker.is_ty(g.ctx, g.tm),
@@ -611,19 +670,6 @@ pub trait Ensure<C: Copy, T: Copy>: Sized + ReadFacts<C, T> {
         }
         strategy.on_success(goal);
         Ok(())
-    }
-
-    /// Attempt to prove that a context is well-formed
-    fn ensure_is_ok<S>(
-        &mut self,
-        ctx: C,
-        strategy: &mut S,
-        msg: &'static str,
-    ) -> Result<(), S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
-        self.ensure_goal(Goal::IsOk(ctx), strategy, msg)
     }
 
     /// Attempt to prove that a context is contradictory
@@ -822,6 +868,22 @@ where
 
 /// Typing rules for deriving facts about terms from those already in the datastore
 pub trait Derive<C, T>: Sized {
+    /// Assume a new hypothesis in this context
+    fn assume<S>(
+        &mut self,
+        ctx: C,
+        ty: T,
+        subctx: C,
+        strategy: &mut S,
+    ) -> Result<IsInhabIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
+
+    /// Add a new variable to this context with the given type
+    fn add_var<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Gv<C>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
+
     /// Compute the substitution of a term
     ///
     /// Given terms `bound` and `body`
@@ -857,18 +919,6 @@ pub trait Derive<C, T>: Sized {
 
     /// The closure of an imported term is equal to its lazy imported closure
     fn lazy_close_import_eq(&mut self, ctx: C, src: Gv<C>, tm: T) -> Eqn<T>;
-
-    /// Check a context is well-formed
-    ///
-    /// - An empty context is always well-formed
-    /// - The context `Γ, x : A` is well-formed iff
-    ///     - `Γ` is well-formed
-    ///     - `A` is a valid type in `Γ`
-    ///
-    /// TODO: reference Lean
-    fn derive_ok<S>(&mut self, ctx: C, strategy: &mut S) -> Result<(), S::Fail>
-    where
-        S: Strategy<C, T, Self>;
 
     /// Check a term has type `B` under a binder `A`
     ///
@@ -1427,24 +1477,24 @@ impl<D> Kernel<D> {
 }
 
 impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
-    fn is_ok(&self, ctx: C) -> bool {
-        self.0.is_ok(ctx)
+    fn is_root(&self, ctx: C) -> bool {
+        self.0.is_root(ctx)
     }
 
     fn is_contr(&self, ctx: C) -> bool {
         self.0.is_contr(ctx)
     }
 
-    fn head_inhab(&self, ctx: C) -> bool {
-        self.0.head_inhab(ctx)
+    fn has_model(&self, ctx: C) -> bool {
+        self.0.has_model(ctx)
     }
 
-    fn tail_inhab(&self, ctx: C) -> bool {
-        self.0.tail_inhab(ctx)
+    fn parent_has_root_model(&self, ctx: C) -> bool {
+        self.0.parent_has_root_model(ctx)
     }
 
-    fn tel_inhab(&self, ctx: C) -> bool {
-        self.0.tel_inhab(ctx)
+    fn has_root_model(&self, ctx: C) -> bool {
+        self.0.has_root_model(ctx)
     }
 
     fn parent(&self, ctx: C) -> Option<C> {
@@ -1455,8 +1505,12 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.bvi(ctx, tm)
     }
 
-    fn ctx_prefix(&self, lo: C, hi: C) -> bool {
-        self.0.ctx_prefix(lo, hi)
+    fn is_subctx(&self, lo: C, hi: C) -> bool {
+        self.0.is_subctx(lo, hi)
+    }
+
+    fn is_subctx_of_parent(&self, lo: C, hi: C) -> bool {
+        self.0.is_subctx_of_parent(lo, hi)
     }
 
     fn is_wf(&self, ctx: C, tm: T) -> bool {
@@ -1533,10 +1587,6 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
         self.0.with_parent(parent)
     }
 
-    fn with_param(&mut self, parent: C, param: T) -> C {
-        self.0.with_param(parent, param)
-    }
-
     fn add(&mut self, ctx: C, term: GNode<C, T>) -> T {
         self.0.add(ctx, term)
     }
@@ -1551,6 +1601,34 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
 
     fn lookup(&self, ctx: C, term: &mut GNode<C, T>) -> Option<T> {
         self.0.lookup(ctx, term)
+    }
+
+    fn lookup_import(&self, ctx: C, src: C, tm: T) -> Option<T> {
+        self.0.lookup_import(ctx, src, tm)
+    }
+
+    fn assumes(&self, ctx: C) -> &[T] {
+        self.0.assumes(ctx)
+    }
+
+    fn var_ty(&mut self, ctx: C, var: Gv<C>) -> T {
+        self.0.var_ty(ctx, var)
+    }
+
+    fn get_var_ty(&self, var: Gv<C>) -> T {
+        self.0.get_var_ty(var)
+    }
+
+    fn var_free(&self, ctx: C, var: Gv<C>) -> bool {
+        self.0.var_free(ctx, var)
+    }
+
+    fn num_constraints(&self, ctx: C) -> usize {
+        self.0.num_constraints(ctx)
+    }
+
+    fn constraint(&self, ctx: C, ix: usize) -> Gv<C> {
+        self.0.constraint(ctx, ix)
     }
 
     fn succ(&mut self, level: ULvl) -> ULvl {
@@ -1573,6 +1651,44 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
 impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>>
     Derive<C, T> for Kernel<D>
 {
+    fn assume<S>(
+        &mut self,
+        ctx: C,
+        ty: T,
+        subctx: C,
+        strategy: &mut S,
+    ) -> Result<IsInhabIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("assume");
+        if !self.is_subctx_of_parent(subctx, ctx) {
+            return Err(strategy.fail(Self::ASSUME_NOT_SUBCTX));
+        }
+        let in_subctx = self.import(subctx, ctx, ty);
+        // If this type is already inhabited in a subcontext, there's no need to add it as an
+        // assumption
+        if !self.is_inhab(subctx, in_subctx) {
+            self.ensure_is_ty(subctx, in_subctx, strategy, Self::ASSUME_IS_TY)?;
+            self.0.assume_unchecked(ctx, ty);
+        }
+        Ok(IsInhabIn(ty).finish_rule(ctx, strategy))
+    }
+
+    fn add_var<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Gv<C>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("add_var");
+        self.ensure_is_inhab(ctx, ty, strategy, Self::ADD_VAR_IS_INHAB)?;
+        let var = self.0.add_var_unchecked(ctx, ty);
+        debug_assert!(self.0.eq_in(ctx, self.0.get_var_ty(var), ty));
+        let tm = self.0.add(ctx, GNode::Fv(var));
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+        HasTyIn { tm, ty }.finish_rule(ctx, strategy);
+        Ok(var)
+    }
+
     fn lazy_subst(&mut self, ctx: C, bound: T, body: T) -> T {
         if self.bvi(ctx, body) == Bv(0) {
             return body;
@@ -1745,56 +1861,19 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         // .success(ctx, strategy))
     }
 
-    fn derive_ok<S>(&mut self, ctx: C, strategy: &mut S) -> Result<(), S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
-        strategy.start_rule("derive_ok")?;
-        if let Some(parent) = self.parent(ctx) {
-            return Err(strategy.fail(Self::NOT_IMPLEMENTED));
-            // self.ensure_is_ok(parent, strategy, Self::DERIVE_OK_PARENT_CTX)?;
-            // if let Some((param_ctx, param)) = self.param(ctx) {
-            //     //NOTE: this may change in future versions with flat term addressing
-            //     debug_assert!(
-            //         param_ctx == parent,
-            //         "Context parent and parameter context must match"
-            //     );
-            //     self.ensure_is_ty(parent, param, strategy, Self::DERIVE_OK_PARAM_IS_TYPE)?;
-            // }
-        }
-        self.0.set_is_ok(ctx);
-        strategy.finish_rule(Goal::IsOk(ctx));
-        Ok(())
-    }
-
     fn derive_fv<S>(&mut self, ctx: C, var: Gv<C>, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_fv")?;
-        return Err(strategy.fail(Self::NOT_IMPLEMENTED));
-        // let Some(head) = self.head(var) else {
-        //     return Err(strategy.fail(Self::DERIVE_FV_NOT_VALID_VAR));
-        // };
-        // if !self.ctx_prefix(var, ctx) {
-        //     return Err(strategy.fail(Self::DERIVE_FV_VAR_NOT_IN_CTX));
-        // }
-        // debug_assert_eq!(
-        //     self.bvi(var, head),
-        //     Bv(0),
-        //     "head variable should be locally-closed"
-        // );
-        // let tm = self.add(ctx, GNode::Fv(var));
-        // let ty = self.add(
-        //     ctx,
-        //     GNode::Import(Import {
-        //         ctx: var,
-        //         tm: head,
-        //         bvi: Bv(0),
-        //     }),
-        // );
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+        if !self.is_subctx(var.ctx, ctx) {
+            return Err(strategy.fail(Self::DERIVE_FV_ILL_SCOPED));
+        }
+        //NOTE: this will crash if the variable is not in fact valid!
+        let tm = self.add(ctx, GNode::Fv(var));
+        let ty = self.var_ty(ctx, var);
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+        Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
     fn derive_univ(&mut self, ctx: C, lvl: ULvl) -> HasTyIn<T> {
@@ -2238,7 +2317,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
             lhs: tm_app,
             rhs: tm_subst,
         }
-        .success(ctx, strategy))
+        .finish_rule(ctx, strategy))
     }
 
     fn derive_beta_zero<S>(&mut self, ctx: C, tm: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
@@ -2257,7 +2336,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
             lhs: tm_zero,
             rhs: zero,
         }
-        .success(ctx, strategy))
+        .finish_rule(ctx, strategy))
     }
 
     fn derive_beta_succ<S>(
@@ -2287,7 +2366,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
             lhs: tm_succ_n,
             rhs: s_n_tm_n,
         }
-        .success(ctx, strategy))
+        .finish_rule(ctx, strategy))
     }
 
     fn derive_choose_spec<S>(
@@ -2307,7 +2386,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         self.0.set_has_ty_unchecked(ctx, choose, ty);
         self.0.set_is_prop_unchecked(ctx, pred_choose);
         self.0.set_is_inhab_unchecked(ctx, pred_choose);
-        Ok(IsInhabIn(pred_choose).success(ctx, strategy))
+        Ok(IsInhabIn(pred_choose).finish_rule(ctx, strategy))
     }
 
     fn derive_unit_ext<S>(&mut self, ctx: C, a: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
@@ -2319,7 +2398,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         self.ensure_has_ty(ctx, a, unit, strategy, "derive_unit_ext: a")?;
         let null = self.add(ctx, GNode::Null);
         self.0.set_eq_unchecked(ctx, a, null);
-        Ok(Eqn { lhs: a, rhs: null }.success(ctx, strategy))
+        Ok(Eqn { lhs: a, rhs: null }.finish_rule(ctx, strategy))
     }
 
     fn derive_prop_ext_tt<S>(&mut self, ctx: C, a: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
@@ -2331,7 +2410,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         self.ensure_is_inhab(ctx, a, strategy, "derive_prop_ext_tt: a inhab")?;
         let unit = self.add(ctx, GNode::Unit);
         self.0.set_eq_unchecked(ctx, a, unit);
-        Ok(Eqn { lhs: a, rhs: unit }.success(ctx, strategy))
+        Ok(Eqn { lhs: a, rhs: unit }.finish_rule(ctx, strategy))
     }
 
     fn derive_prop_ext_ff<S>(&mut self, ctx: C, a: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
@@ -2343,7 +2422,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         self.ensure_is_empty(ctx, a, strategy, "derive_prop_ext_ff: a empty")?;
         let empty = self.add(ctx, GNode::Empty);
         self.0.set_eq_unchecked(ctx, a, empty);
-        Ok(Eqn { lhs: a, rhs: empty }.success(ctx, strategy))
+        Ok(Eqn { lhs: a, rhs: empty }.finish_rule(ctx, strategy))
     }
 
     fn derive_ext<S>(&mut self, ctx: C, lhs: T, rhs: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
@@ -2354,7 +2433,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         let eqn = self.add(ctx, GNode::Eqn([lhs, rhs]));
         self.ensure_is_inhab(ctx, eqn, strategy, "derive_ext: eqn inhab")?;
         self.0.set_eq_unchecked(ctx, lhs, rhs);
-        Ok(Eqn { lhs, rhs }.success(ctx, strategy))
+        Ok(Eqn { lhs, rhs }.finish_rule(ctx, strategy))
     }
 
     fn derive_pi_eta<S>(&mut self, ctx: C, ty: T, f: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
@@ -2370,7 +2449,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         let app_f_bv_zero = self.add(ctx, GNode::App([f, bv_zero]));
         let eta = self.add(ctx, GNode::Abs([arg_ty, app_f_bv_zero]));
         self.0.set_eq_unchecked(ctx, f, eta);
-        Ok(Eqn { lhs: f, rhs: eta }.success(ctx, strategy))
+        Ok(Eqn { lhs: f, rhs: eta }.finish_rule(ctx, strategy))
     }
 
     fn derive_sigma_eta<S>(
@@ -2392,7 +2471,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         let snd_p = self.add(ctx, GNode::Snd([p]));
         let eta = self.add(ctx, GNode::Pair([fst_p, snd_p]));
         self.0.set_eq_unchecked(ctx, p, eta);
-        Ok(Eqn { lhs: p, rhs: eta }.success(ctx, strategy))
+        Ok(Eqn { lhs: p, rhs: eta }.finish_rule(ctx, strategy))
     }
 }
 
@@ -2410,22 +2489,17 @@ impl<K, C: Copy, T: Copy> KernelAPI<C, T> for K where
 impl<D> Kernel<D> {
     /// Not implemented
     pub const NOT_IMPLEMENTED: &'static str = "covalence: not implemented";
-    pub const DERIVE_BINDER_SRC_NOT_OK: &'static str = "derive_binder: src is not ok";
-    pub const DERIVE_BINDER_SRC_NO_PARENT: &'static str = "derive_binder: src has no parent";
-    pub const DERIVE_BINDER_SRC_NOT_CHILD: &'static str =
-        "derive_binder: src must be a child of ctx";
-    pub const DERIVE_BINDER_SRC_NO_PARAM: &'static str = "derive_binder: src has no parameter";
-    pub const DERIVE_BINDER_PARAM_CTX_MISMATCH: &'static str =
-        "derive_binder: src param context must match ctx";
-    pub const DERIVE_BINDER_PARAM_MISMATCH: &'static str =
-        "derive_binder: src parameter must match binder";
-    pub const DERIVE_BINDER_BINDER_IS_TYPE: &'static str =
-        "derive_binder: binder is a type (in ctx)";
-    pub const DERIVE_BINDER_TM_HAS_TYPE: &'static str = "derive_binder: tm has type ty (in src)";
-    pub const DERIVE_OK_PARENT_CTX: &'static str = "derive_ok: parent context";
-    pub const DERIVE_OK_PARAM_IS_TYPE: &'static str = "derive_ok: param is a type";
-    pub const DERIVE_FV_NOT_VALID_VAR: &'static str = "derive_fv: var is not a valid variable";
-    pub const DERIVE_FV_VAR_NOT_IN_CTX: &'static str = "derive_fv: variable not in context";
+    /// Strategy did not return a valid subcontext
+    pub const ASSUME_NOT_SUBCTX: &'static str = "assume: not a subcontext of parent";
+    /// An assumption must be a valid type
+    pub const ASSUME_IS_TY: &'static str = "assume: ty is not a valid type";
+    /// To add a variable, its type must be inhabited
+    pub const ADD_VAR_IS_INHAB: &'static str = "add_var: ty is not inhabited";
+    /// When we add a variable, it should be _well-scoped_: only contain variables from the current
+    /// context
+    ///
+    /// Later, this restriction may be lifted slightly to allow _semi-well-scoped_ terms.
+    pub const DERIVE_FV_ILL_SCOPED: &'static str = "derive_fv: var is ill-scoped";
     pub const DERIVE_EQN_LHS: &'static str = "derive_eqn: lhs";
     pub const DERIVE_EQN_RHS: &'static str = "derive_eqn: rhs";
     pub const DERIVE_PI_IMAX_LE: &'static str =

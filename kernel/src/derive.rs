@@ -35,7 +35,7 @@ pub trait TermStore<C, T> {
 
     /// Get the number of assumptions this context has
     fn num_assumptions(&self, ctx: C) -> usize;
-    
+
     /// Get this context's `n`th assumption
     fn assumption(&self, ctx: C, ix: usize) -> Option<T>;
 
@@ -896,10 +896,9 @@ pub trait Derive<C, T>: Sized {
     /// If so, then `close x tm` has type `close x ty` under `binder` in `ctx`
     ///
     /// TODO: reference Lean
-    fn derive_binder<S>(
+    fn derive_close_has_ty_under<S>(
         &mut self,
         ctx: C,
-        binder: T,
         src: Gv<C>,
         tm: T,
         ty: T,
@@ -1568,11 +1567,11 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
     fn get_var_ty(&self, var: Gv<C>) -> T {
         self.0.get_var_ty(var)
     }
-    
+
     fn num_assumptions(&self, ctx: C) -> usize {
         self.0.num_assumptions(ctx)
     }
-    
+
     fn assumption(&self, ctx: C, ix: usize) -> Option<T> {
         self.0.assumption(ctx, ix)
     }
@@ -1744,11 +1743,10 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         }
     }
 
-    fn derive_binder<S>(
+    fn derive_close_has_ty_under<S>(
         &mut self,
         ctx: C,
-        binder: T,
-        src: Gv<C>,
+        var: Gv<C>,
         tm: T,
         ty: T,
         strategy: &mut S,
@@ -1756,55 +1754,34 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
     where
         S: Strategy<C, T, Self>,
     {
-        strategy.start_rule("derive_binder")?;
-        return Err(strategy.fail(Self::NOT_IMPLEMENTED));
-        // self.ensure_is_ok(src, strategy, Self::DERIVE_BINDER_SRC_NOT_OK)?;
-
-        // //TODO: may handle this as special case later
-        // let parent = self
-        //     .parent(src)
-        //     .ok_or_else(|| strategy.fail(Self::DERIVE_BINDER_SRC_NO_PARENT))?;
-        // if parent != ctx {
-        //     return Err(strategy.fail(Self::DERIVE_BINDER_SRC_NOT_CHILD));
-        // }
-        // let (param_ctx, param) = self
-        //     .param(src)
-        //     .ok_or_else(|| strategy.fail(Self::DERIVE_BINDER_SRC_NO_PARAM))?;
-        // if param_ctx != ctx {
-        //     return Err(strategy.fail(Self::DERIVE_BINDER_PARAM_CTX_MISMATCH));
-        // }
-        // self.ensure_eq_in(
-        //     ctx,
-        //     param,
-        //     binder,
-        //     strategy,
-        //     Self::DERIVE_BINDER_PARAM_MISMATCH,
-        // )?;
-
-        // self.ensure_is_ty(ctx, binder, strategy, Self::DERIVE_BINDER_BINDER_IS_TYPE)?;
-        // self.ensure_has_ty(src, tm, ty, strategy, Self::DERIVE_BINDER_TM_HAS_TYPE)?;
-
-        // debug_assert_eq!(
-        //     self.bvi(src, tm),
-        //     Bv(0),
-        //     "tm should be locally-closed in src"
-        // );
-        // debug_assert_eq!(
-        //     self.bvi(src, ty),
-        //     Bv(0),
-        //     "ty should be locally-closed in src"
-        // );
-
-        // let close_tm = self.lazy_close_import(ctx, src, tm);
-        // let close_ty = self.lazy_close_import(ctx, src, ty);
-        // self.0
-        //     .set_has_ty_under_unchecked(ctx, binder, close_tm, close_ty);
-        // Ok(HasTyUnderIn {
-        //     tm: close_tm,
-        //     ty: close_ty,
-        //     binder,
-        // }
-        // .success(ctx, strategy))
+        strategy.start_rule("derive_close_has_ty_under")?;
+        let binder = self.var_ty(ctx, var);
+        if var.ctx != ctx {
+            if let Some(parent) = self.parent(var.ctx) {
+                if !self.is_subctx(parent, ctx) {
+                    return Err(strategy.fail(Self::DERIVE_CLOSE_HAS_TY_UNDER_ILL_SCOPED));
+                }
+            };
+        }
+        let import_tm = self.import(var.ctx, ctx, tm);
+        let import_ty = self.import(var.ctx, ctx, ty);
+        self.ensure_has_ty(
+            var.ctx,
+            import_tm,
+            import_ty,
+            strategy,
+            Self::DERIVE_CLOSE_HAS_TY_UNDER_HAS_TY,
+        )?;
+        let close_tm = self.lazy_close(ctx, var, tm);
+        let close_ty = self.lazy_close(ctx, var, ty);
+        self.0
+            .set_has_ty_under_unchecked(ctx, binder, close_tm, close_ty);
+        Ok(HasTyUnderIn {
+            tm: close_tm,
+            ty: close_ty,
+            binder,
+        }
+        .finish_rule(ctx, strategy))
     }
 
     fn derive_fv<S>(&mut self, ctx: C, var: Gv<C>, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
@@ -2446,6 +2423,9 @@ impl<D> Kernel<D> {
     ///
     /// Later, this restriction may be lifted slightly to allow _semi-well-scoped_ terms.
     pub const DERIVE_FV_ILL_SCOPED: &'static str = "derive_fv: var is ill-scoped";
+    pub const DERIVE_CLOSE_HAS_TY_UNDER_ILL_SCOPED: &'static str =
+        "derive_close_has_ty_under: variable's context is not a subcontext of the current context";
+    pub const DERIVE_CLOSE_HAS_TY_UNDER_HAS_TY: &'static str = "derive_close_has_ty_under: tm";
     pub const DERIVE_EQN_LHS: &'static str = "derive_eqn: lhs";
     pub const DERIVE_EQN_RHS: &'static str = "derive_eqn: rhs";
     pub const DERIVE_PI_IMAX_LE: &'static str =

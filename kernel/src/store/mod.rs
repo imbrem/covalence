@@ -61,17 +61,18 @@ impl TermStore<CtxId, TermId> for EggTermDb {
             tm,
         }) = self.node(src, tm)
         {
-            // For an import to be valid, `bvi` _must_ be _correct_
+            // For an import to be valid, `bvi` must be correct
             //
-            // We can't simply require an upper bound as that would break soundness as follows:
-            // - term has bvi 0, but we import it with bvi 1
-            // - we import the import with bvi 0; call this import2
-            // - import2 == invalid since bvi(import2) < 1
-            // - but once we resolve import, import2 == term; so term == invalid!
-            if import_bvi != bvi {
-                return self.x[ctx.0].add(GNode::Invalid);
+            // Otherwise, the import is potentially invalid, so we cannot recurse past it and must
+            // instead just import it as itself.
+            //
+            // We can't require `bvi` to be an exact bound (so need import_bvi to be an upper bound)
+            // since when we add `close` terms we don't want to bother computing whether we need to
+            // bump the `bvi` or not, but this means the `bvi` can change (but only downwards!) as
+            // we reduce `close` terms.
+            if bvi <= import_bvi {
+                return self.import(ctx, src, tm);
             }
-            return self.import(ctx, src, tm);
         }
         if ctx == src {
             return tm;
@@ -103,18 +104,19 @@ impl TermStore<CtxId, TermId> for EggTermDb {
             tm,
         }) = self.node(src, tm)
         {
-            // For an import to be valid, `bvi` _must_ be _correct_
+            // For an import to be valid, `bvi` must be correct
             //
-            // We can't simply require an upper bound as that would break soundness as follows:
-            // - term has bvi 0, but we import it with bvi 1
-            // - we import the import with bvi 0; call this import2
-            // - import2 == invalid since bvi(import2) < 1
-            // - but once we resolve import, import2 == term; so term == invalid!
-            if import_bvi != bvi {
-                return self.x[ctx.0].lookup(GNode::Invalid);
-            }
-            if let Some(import) = self.lookup_import(ctx, src, tm) {
-                return Some(import);
+            // Otherwise, the import is potentially invalid, so we cannot recurse past it and must
+            // instead just import it as itself.
+            //
+            // We can't require `bvi` to be an exact bound (so need import_bvi to be an upper bound)
+            // since when we add `close` terms we don't want to bother computing whether we need to
+            // bump the `bvi` or not, but this means the `bvi` can change (but only downwards!) as
+            // we reduce `close` terms.
+            if bvi <= import_bvi {
+                if let Some(import) = self.lookup_import(ctx, src, tm) {
+                    return Some(import);
+                }
             }
         }
         if ctx == src {

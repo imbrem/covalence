@@ -560,7 +560,7 @@ pub struct Import<C, T> {
     pub ctx: C,
     /// The term being imported (in `ctx`)
     pub tm: T,
-    /// The number of unbound variables in the import
+    /// An upper bound on the number of unbound variables in the import
     ///
     /// If this bound is incorrect, the import is invalid
     pub bvi: Bv,

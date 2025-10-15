@@ -1,4 +1,4 @@
-use crate::term::{Bv, Close, GNode, Import, ULvl};
+use crate::term::{Bv, Close, GNode, Gv, Import, ULvl};
 
 /// A trait implemented by a datastore that can manipulate hash-consed terms and universe levels
 pub trait TermStore<C, T> {
@@ -15,6 +15,10 @@ pub trait TermStore<C, T> {
     fn add(&mut self, ctx: C, tm: GNode<C, T>) -> T;
 
     /// Import a term into another context, returning a handle to it
+    ///
+    /// This automatically traverses import chains, e.g.
+    /// - If `src[tm] := import(src2, tm)`, then `import(ctx, src, tm) => import(ctx, src2, tm)`
+    /// - _Otherwise_, `import(ctx, ctx, tm)` returns `tm`
     fn import(&mut self, ctx: C, src: C, tm: T) -> T;
 
     /// Get the node corresponding to a term
@@ -24,9 +28,6 @@ pub trait TermStore<C, T> {
     ///
     /// Canonicalizes the term's children if found
     fn lookup(&self, ctx: C, tm: &mut GNode<C, T>) -> Option<T>;
-
-    /// Get the head variable of a context, if any
-    fn head(&self, ctx: C) -> Option<T>;
 
     /// Get the successor of a given universe level
     fn succ(&mut self, level: ULvl) -> ULvl;
@@ -79,9 +80,6 @@ pub trait ReadFacts<C, T> {
     /// Get a context's parent, if any
     fn parent(&self, ctx: C) -> Option<C>;
 
-    /// Get a context's parameter, if any
-    fn param(&self, ctx: C) -> Option<(C, T)>;
-
     // == Syntax information ==
     /// Get a bound on the de-Bruijn indices visible in `tm`
     ///
@@ -120,7 +118,7 @@ pub trait ReadFacts<C, T> {
     fn is_prop(&self, ctx: C, tm: T) -> bool;
 
     /// Check whether the term `tm` depends on the variable `var` in context `ctx`
-    fn has_var(&self, ctx: C, tm: T, var: C) -> bool;
+    fn has_var(&self, ctx: C, tm: T, var: Gv<C>) -> bool;
 
     // == Relations ==
     /// Check whether the term `lhs` in `lctx` is _syntactically_ equal to the term `rhs` in `rctx`
@@ -838,14 +836,7 @@ pub trait Derive<C, T>: Sized {
     /// Given term `tm` in context `ctx`
     /// - If `tm` does not depend on the variable `var`, return `tm`
     /// - Otherwise, return `close var tm`
-    fn lazy_close(&mut self, ctx: C, var: C, tm: T) -> T;
-
-    /// Compute the import of a term
-    ///
-    /// Given term `tm` in context `src`
-    /// - If `src == ctx`, return `tm`
-    /// - Otherwise, return `import src tm`
-    fn lazy_import(&mut self, ctx: C, src: C, tm: T) -> T;
+    fn lazy_close(&mut self, ctx: C, var: Gv<C>, tm: T) -> T;
 
     /// Compute the closure of an imported term
     ///
@@ -853,19 +844,19 @@ pub trait Derive<C, T>: Sized {
     /// - If `src` has no parameter, or `tm` does not depend on the parameter of `src`, return the
     ///   import of `tm` into `ctx`
     /// - Otherwise, return `close src (import src tm)`
-    fn lazy_close_import(&mut self, ctx: C, src: C, tm: T) -> T;
+    fn lazy_close_import(&mut self, ctx: C, src: Gv<C>, tm: T) -> T;
 
     /// The substitution of a term is equal to its lazy substitution
     fn lazy_subst_eq(&mut self, ctx: C, bound: T, body: T) -> Eqn<T>;
 
     /// The closure of a term is equal to its lazy closure
-    fn lazy_close_eq(&mut self, ctx: C, var: C, tm: T) -> Eqn<T>;
+    fn lazy_close_eq(&mut self, ctx: C, var: Gv<C>, tm: T) -> Eqn<T>;
 
-    /// The import of a term is equal to its lazy import
+    /// An
     fn lazy_import_eq(&mut self, ctx: C, src: C, tm: T) -> Eqn<T>;
 
     /// The closure of an imported term is equal to its lazy imported closure
-    fn lazy_close_import_eq(&mut self, ctx: C, src: C, tm: T) -> Eqn<T>;
+    fn lazy_close_import_eq(&mut self, ctx: C, src: Gv<C>, tm: T) -> Eqn<T>;
 
     /// Check a context is well-formed
     ///
@@ -893,7 +884,7 @@ pub trait Derive<C, T>: Sized {
         &mut self,
         ctx: C,
         binder: T,
-        src: C,
+        src: Gv<C>,
         tm: T,
         ty: T,
         strategy: &mut S,
@@ -914,7 +905,7 @@ pub trait Derive<C, T>: Sized {
     /// ```lean
     /// theorem Ctx.KHasTy.fv {Γ x A} (hΓ : Ok Γ) (hA : Lookup Γ x A) : KHasTy Γ A.erase (.fv x)
     /// ```
-    fn derive_fv<S>(&mut self, ctx: C, var: C, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
+    fn derive_fv<S>(&mut self, ctx: C, var: Gv<C>, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -1460,10 +1451,6 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.parent(ctx)
     }
 
-    fn param(&self, ctx: C) -> Option<(C, T)> {
-        self.0.param(ctx)
-    }
-
     fn bvi(&self, ctx: C, tm: T) -> Bv {
         self.0.bvi(ctx, tm)
     }
@@ -1492,7 +1479,7 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.is_prop(ctx, tm)
     }
 
-    fn has_var(&self, ctx: C, tm: T, var: C) -> bool {
+    fn has_var(&self, ctx: C, tm: T, var: Gv<C>) -> bool {
         self.0.has_var(ctx, tm, var)
     }
 
@@ -1566,10 +1553,6 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
         self.0.lookup(ctx, term)
     }
 
-    fn head(&self, ctx: C) -> Option<T> {
-        self.0.head(ctx)
-    }
-
     fn succ(&mut self, level: ULvl) -> ULvl {
         self.0.succ(level)
     }
@@ -1587,77 +1570,6 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
     }
 }
 
-impl<D> Kernel<D> {
-    pub const DERIVE_BINDER_SRC_NOT_OK: &'static str = "derive_binder: src is not ok";
-    pub const DERIVE_BINDER_SRC_NO_PARENT: &'static str = "derive_binder: src has no parent";
-    pub const DERIVE_BINDER_SRC_NOT_CHILD: &'static str =
-        "derive_binder: src must be a child of ctx";
-    pub const DERIVE_BINDER_SRC_NO_PARAM: &'static str = "derive_binder: src has no parameter";
-    pub const DERIVE_BINDER_PARAM_CTX_MISMATCH: &'static str =
-        "derive_binder: src param context must match ctx";
-    pub const DERIVE_BINDER_PARAM_MISMATCH: &'static str =
-        "derive_binder: src parameter must match binder";
-    pub const DERIVE_BINDER_BINDER_IS_TYPE: &'static str =
-        "derive_binder: binder is a type (in ctx)";
-    pub const DERIVE_BINDER_TM_HAS_TYPE: &'static str = "derive_binder: tm has type ty (in src)";
-    pub const DERIVE_OK_PARENT_CTX: &'static str = "derive_ok: parent context";
-    pub const DERIVE_OK_PARAM_IS_TYPE: &'static str = "derive_ok: param is a type";
-    pub const DERIVE_FV_NOT_VALID_VAR: &'static str = "derive_fv: var is not a valid variable";
-    pub const DERIVE_FV_VAR_NOT_IN_CTX: &'static str = "derive_fv: variable not in context";
-    pub const DERIVE_EQN_LHS: &'static str = "derive_eqn: lhs";
-    pub const DERIVE_EQN_RHS: &'static str = "derive_eqn: rhs";
-    pub const DERIVE_PI_IMAX_LE: &'static str =
-        "derive_pi: cannot deduce that imax(arg_lvl, res_lvl) ≤ lvl";
-    pub const DERIVE_PI_ARG_TY: &'static str = "derive_pi: arg_ty";
-    pub const DERIVE_PI_RES_TY: &'static str = "derive_pi: res_ty";
-    pub const DERIVE_SIGMA_ARG_LVL_LE: &'static str =
-        "derive_sigma: cannot deduce that arg_lvl ≤ lvl";
-    pub const DERIVE_SIGMA_RES_LVL_LE: &'static str =
-        "derive_sigma: cannot deduce that res_lvl ≤ lvl";
-    pub const DERIVE_SIGMA_ARG_TY: &'static str = "derive_sigma: arg_ty";
-    pub const DERIVE_SIGMA_RES_TY: &'static str = "derive_sigma: res_ty";
-    pub const DERIVE_ABS_BODY: &'static str = "derive_abs: body";
-    pub const DERIVE_APP_ARG: &'static str = "derive_app: arg";
-    pub const DERIVE_APP_FUNC: &'static str = "derive_app: func";
-    pub const DERIVE_PAIR_RES_TY: &'static str = "derive_pair: res_ty";
-    pub const DERIVE_PAIR_FST: &'static str = "derive_pair: fst";
-    pub const DERIVE_PAIR_SND: &'static str = "derive_pair: snd";
-    pub const DERIVE_FST_PAIR: &'static str = "derive_fst: pair";
-    pub const DERIVE_SND_PAIR: &'static str = "derive_snd: pair";
-    pub const DERIVE_DITE_COND: &'static str = "derive_dite: cond";
-    pub const DERIVE_DITE_THEN_BR: &'static str = "derive_dite: then_br";
-    pub const DERIVE_DITE_ELSE_BR: &'static str = "derive_dite: else_br";
-    pub const DERIVE_TRUNC_TY: &'static str = "derive_trunc: ty";
-    pub const DERIVE_CHOOSE_TY: &'static str = "derive_choose: ty";
-    pub const DERIVE_CHOOSE_PRED: &'static str = "derive_choose: pred";
-    pub const DERIVE_NATS_SET_LE_LVL: &'static str = "derive_nats: cannot deduce that SET ≤ lvl";
-    pub const DERIVE_SUCC_N: &'static str = "derive_succ: n";
-    pub const DERIVE_NATREC_MOT: &'static str = "derive_natrec: mot";
-    pub const DERIVE_NATREC_Z: &'static str = "derive_natrec: z";
-    pub const DERIVE_NATREC_S: &'static str = "derive_natrec: s";
-    pub const DERIVE_LET_BOUND: &'static str = "derive_let: bound";
-    pub const DERIVE_LET_BODY: &'static str = "derive_let: body";
-    pub const DERIVE_BETA_ABS_TM_EQ_ABS: &'static str = "derive_beta_abs: tm ≡ abs A b";
-    pub const DERIVE_BETA_ABS_TM_WF: &'static str = "derive_beta_abs: tm wf";
-    pub const DERIVE_BETA_ABS_ARG: &'static str = "derive_beta_abs: arg";
-    pub const DERIVE_BETA_ZERO_TM_EQ_NATREC: &'static str = "derive_beta_zero: tm ≡ natrec C z s";
-    pub const DERIVE_BETA_ZERO_TM_WF: &'static str = "derive_beta_zero: tm wf";
-    pub const DERIVE_BETA_SUCC_TM_EQ_NATREC: &'static str = "derive_beta_zero: tm ≡ natrec C z s";
-    pub const DERIVE_BETA_SUCC_TM_WF: &'static str = "derive_beta_zero: tm wf";
-    pub const DERIVE_BETA_SUCC_N: &'static str = "derive_beta_succ: n";
-    pub const DERIVE_CHOOSE_SPEC_EXISTS: &'static str = "derive_choose_spec: exists";
-    pub const DERIVE_UNIT_EXT_A: &'static str = "derive_unit_ext: a";
-    pub const DERIVE_PROP_EXT_TT_PROP: &'static str = "derive_prop_ext_tt: a prop";
-    pub const DERIVE_PROP_EXT_TT_INHAB: &'static str = "derive_prop_ext_tt: a inhab";
-    pub const DERIVE_PROP_EXT_FF_PROP: &'static str = "derive_prop_ext_ff: a prop";
-    pub const DERIVE_PROP_EXT_FF_EMPTY: &'static str = "derive_prop_ext_ff: a empty";
-    pub const DERIVE_EXT_EQN_INHAB: &'static str = "derive_ext: eqn inhab";
-    pub const DERIVE_PI_ETA_TY_EQ_PI: &'static str = "derive_pi_eta: ty ≡ pi A B";
-    pub const DERIVE_PI_ETA_F: &'static str = "derive_pi_eta: f";
-    pub const DERIVE_SIGMA_ETA_TY_EQ_SIGMA: &'static str = "derive_sigma_eta: ty ≡ sigma A B";
-    pub const DERIVE_SIGMA_ETA_P: &'static str = "derive_sigma_eta: p";
-}
-
 impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>>
     Derive<C, T> for Kernel<D>
 {
@@ -1668,8 +1580,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         self.add(ctx, GNode::Let(Bv(0), [bound, body]))
     }
 
-    fn lazy_close(&mut self, ctx: C, var: C, tm: T) -> T {
-        debug_assert!(self.param(var).is_some(), "var must be a valid variable");
+    fn lazy_close(&mut self, ctx: C, var: Gv<C>, tm: T) -> T {
         if !self.has_var(ctx, tm, var) {
             return tm;
         }
@@ -1677,38 +1588,24 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
             ctx,
             GNode::Close(Close {
                 under: Bv(0),
-                var,
+                var: var.ctx,
                 ix: 0,
                 tm,
             }),
         )
     }
 
-    fn lazy_import(&mut self, ctx: C, src: C, tm: T) -> T {
-        if ctx == src {
-            return tm;
-        }
-        self.add(
-            ctx,
-            GNode::Import(Import {
-                ctx: src,
-                tm,
-                bvi: self.bvi(src, tm),
-            }),
-        )
-    }
-
-    fn lazy_close_import(&mut self, ctx: C, src: C, tm: T) -> T {
-        let import = self.lazy_import(ctx, src, tm);
-        if !self.has_var(src, tm, src) {
+    fn lazy_close_import(&mut self, ctx: C, src: Gv<C>, tm: T) -> T {
+        let import = self.import(ctx, src.ctx, tm);
+        if !self.has_var(src.ctx, tm, src) {
             return import;
         }
         self.add(
             ctx,
             GNode::Close(Close {
                 under: Bv(0),
-                var: src,
-                ix: 0,
+                var: src.ctx,
+                ix: src.ix,
                 tm: import,
             }),
         )
@@ -1724,13 +1621,13 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         }
     }
 
-    fn lazy_close_eq(&mut self, ctx: C, var: C, tm: T) -> Eqn<T> {
+    fn lazy_close_eq(&mut self, ctx: C, var: Gv<C>, tm: T) -> Eqn<T> {
         let eager = self.add(
             ctx,
             GNode::Close(Close {
                 under: Bv(0),
-                var,
-                ix: 0,
+                var: var.ctx,
+                ix: var.ix,
                 tm,
             }),
         );
@@ -1751,7 +1648,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
                 bvi: self.bvi(src, tm),
             }),
         );
-        let lazy = self.lazy_import(ctx, src, tm);
+        let lazy = self.import(ctx, src, tm);
         self.0.set_eq_unchecked(ctx, eager, lazy);
         Eqn {
             lhs: eager,
@@ -1759,21 +1656,21 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         }
     }
 
-    fn lazy_close_import_eq(&mut self, ctx: C, src: C, tm: T) -> Eqn<T> {
+    fn lazy_close_import_eq(&mut self, ctx: C, src: Gv<C>, tm: T) -> Eqn<T> {
         let import = self.add(
             ctx,
             GNode::Import(Import {
-                ctx: src,
+                ctx: src.ctx,
                 tm,
-                bvi: self.bvi(src, tm),
+                bvi: self.bvi(src.ctx, tm),
             }),
         );
         let eager = self.add(
             ctx,
             GNode::Close(Close {
                 under: Bv(0),
-                var: src,
-                ix: 0,
+                var: src.ctx,
+                ix: src.ix,
                 tm: import,
             }),
         );
@@ -1789,7 +1686,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         &mut self,
         ctx: C,
         binder: T,
-        src: C,
+        src: Gv<C>,
         tm: T,
         ty: T,
         strategy: &mut S,
@@ -1798,53 +1695,54 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_binder")?;
-        self.ensure_is_ok(src, strategy, Self::DERIVE_BINDER_SRC_NOT_OK)?;
+        return Err(strategy.fail(Self::NOT_IMPLEMENTED));
+        // self.ensure_is_ok(src, strategy, Self::DERIVE_BINDER_SRC_NOT_OK)?;
 
-        //TODO: may handle this as special case later
-        let parent = self
-            .parent(src)
-            .ok_or_else(|| strategy.fail(Self::DERIVE_BINDER_SRC_NO_PARENT))?;
-        if parent != ctx {
-            return Err(strategy.fail(Self::DERIVE_BINDER_SRC_NOT_CHILD));
-        }
-        let (param_ctx, param) = self
-            .param(src)
-            .ok_or_else(|| strategy.fail(Self::DERIVE_BINDER_SRC_NO_PARAM))?;
-        if param_ctx != ctx {
-            return Err(strategy.fail(Self::DERIVE_BINDER_PARAM_CTX_MISMATCH));
-        }
-        self.ensure_eq_in(
-            ctx,
-            param,
-            binder,
-            strategy,
-            Self::DERIVE_BINDER_PARAM_MISMATCH,
-        )?;
+        // //TODO: may handle this as special case later
+        // let parent = self
+        //     .parent(src)
+        //     .ok_or_else(|| strategy.fail(Self::DERIVE_BINDER_SRC_NO_PARENT))?;
+        // if parent != ctx {
+        //     return Err(strategy.fail(Self::DERIVE_BINDER_SRC_NOT_CHILD));
+        // }
+        // let (param_ctx, param) = self
+        //     .param(src)
+        //     .ok_or_else(|| strategy.fail(Self::DERIVE_BINDER_SRC_NO_PARAM))?;
+        // if param_ctx != ctx {
+        //     return Err(strategy.fail(Self::DERIVE_BINDER_PARAM_CTX_MISMATCH));
+        // }
+        // self.ensure_eq_in(
+        //     ctx,
+        //     param,
+        //     binder,
+        //     strategy,
+        //     Self::DERIVE_BINDER_PARAM_MISMATCH,
+        // )?;
 
-        self.ensure_is_ty(ctx, binder, strategy, Self::DERIVE_BINDER_BINDER_IS_TYPE)?;
-        self.ensure_has_ty(src, tm, ty, strategy, Self::DERIVE_BINDER_TM_HAS_TYPE)?;
+        // self.ensure_is_ty(ctx, binder, strategy, Self::DERIVE_BINDER_BINDER_IS_TYPE)?;
+        // self.ensure_has_ty(src, tm, ty, strategy, Self::DERIVE_BINDER_TM_HAS_TYPE)?;
 
-        debug_assert_eq!(
-            self.bvi(src, tm),
-            Bv(0),
-            "tm should be locally-closed in src"
-        );
-        debug_assert_eq!(
-            self.bvi(src, ty),
-            Bv(0),
-            "ty should be locally-closed in src"
-        );
+        // debug_assert_eq!(
+        //     self.bvi(src, tm),
+        //     Bv(0),
+        //     "tm should be locally-closed in src"
+        // );
+        // debug_assert_eq!(
+        //     self.bvi(src, ty),
+        //     Bv(0),
+        //     "ty should be locally-closed in src"
+        // );
 
-        let close_tm = self.lazy_close_import(ctx, src, tm);
-        let close_ty = self.lazy_close_import(ctx, src, ty);
-        self.0
-            .set_has_ty_under_unchecked(ctx, binder, close_tm, close_ty);
-        Ok(HasTyUnderIn {
-            tm: close_tm,
-            ty: close_ty,
-            binder,
-        }
-        .success(ctx, strategy))
+        // let close_tm = self.lazy_close_import(ctx, src, tm);
+        // let close_ty = self.lazy_close_import(ctx, src, ty);
+        // self.0
+        //     .set_has_ty_under_unchecked(ctx, binder, close_tm, close_ty);
+        // Ok(HasTyUnderIn {
+        //     tm: close_tm,
+        //     ty: close_ty,
+        //     binder,
+        // }
+        // .success(ctx, strategy))
     }
 
     fn derive_ok<S>(&mut self, ctx: C, strategy: &mut S) -> Result<(), S::Fail>
@@ -1853,54 +1751,50 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
     {
         strategy.start_rule("derive_ok")?;
         if let Some(parent) = self.parent(ctx) {
-            self.ensure_is_ok(parent, strategy, Self::DERIVE_OK_PARENT_CTX)?;
-            if let Some((param_ctx, param)) = self.param(ctx) {
-                //NOTE: this may change in future versions with flat term addressing
-                debug_assert!(
-                    param_ctx == parent,
-                    "Context parent and parameter context must match"
-                );
-                self.ensure_is_ty(parent, param, strategy, Self::DERIVE_OK_PARAM_IS_TYPE)?;
-            }
-        } else {
-            //NOTE: this may change in future versions with flat term addressing
-            debug_assert!(
-                self.param(ctx).is_none(),
-                "A context without a parent cannot have parameters."
-            );
+            return Err(strategy.fail(Self::NOT_IMPLEMENTED));
+            // self.ensure_is_ok(parent, strategy, Self::DERIVE_OK_PARENT_CTX)?;
+            // if let Some((param_ctx, param)) = self.param(ctx) {
+            //     //NOTE: this may change in future versions with flat term addressing
+            //     debug_assert!(
+            //         param_ctx == parent,
+            //         "Context parent and parameter context must match"
+            //     );
+            //     self.ensure_is_ty(parent, param, strategy, Self::DERIVE_OK_PARAM_IS_TYPE)?;
+            // }
         }
         self.0.set_is_ok(ctx);
         strategy.finish_rule(Goal::IsOk(ctx));
         Ok(())
     }
 
-    fn derive_fv<S>(&mut self, ctx: C, var: C, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
+    fn derive_fv<S>(&mut self, ctx: C, var: Gv<C>, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_fv")?;
-        let Some(head) = self.head(var) else {
-            return Err(strategy.fail(Self::DERIVE_FV_NOT_VALID_VAR));
-        };
-        if !self.ctx_prefix(var, ctx) {
-            return Err(strategy.fail(Self::DERIVE_FV_VAR_NOT_IN_CTX));
-        }
-        debug_assert_eq!(
-            self.bvi(var, head),
-            Bv(0),
-            "head variable should be locally-closed"
-        );
-        let tm = self.add(ctx, GNode::Fv(var));
-        let ty = self.add(
-            ctx,
-            GNode::Import(Import {
-                ctx: var,
-                tm: head,
-                bvi: Bv(0),
-            }),
-        );
-        self.0.set_has_ty_unchecked(ctx, tm, ty);
-        Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+        return Err(strategy.fail(Self::NOT_IMPLEMENTED));
+        // let Some(head) = self.head(var) else {
+        //     return Err(strategy.fail(Self::DERIVE_FV_NOT_VALID_VAR));
+        // };
+        // if !self.ctx_prefix(var, ctx) {
+        //     return Err(strategy.fail(Self::DERIVE_FV_VAR_NOT_IN_CTX));
+        // }
+        // debug_assert_eq!(
+        //     self.bvi(var, head),
+        //     Bv(0),
+        //     "head variable should be locally-closed"
+        // );
+        // let tm = self.add(ctx, GNode::Fv(var));
+        // let ty = self.add(
+        //     ctx,
+        //     GNode::Import(Import {
+        //         ctx: var,
+        //         tm: head,
+        //         bvi: Bv(0),
+        //     }),
+        // );
+        // self.0.set_has_ty_unchecked(ctx, tm, ty);
+        // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
     fn derive_univ(&mut self, ctx: C, lvl: ULvl) -> HasTyIn<T> {
@@ -2510,4 +2404,78 @@ pub trait KernelAPI<C: Copy, T: Copy>:
 impl<K, C: Copy, T: Copy> KernelAPI<C, T> for K where
     K: Derive<C, T> + Ensure<C, T> + TermStore<C, T> + ReadFacts<C, T>
 {
+}
+
+/// Kernel error messages
+impl<D> Kernel<D> {
+    /// Not implemented
+    pub const NOT_IMPLEMENTED: &'static str = "covalence: not implemented";
+    pub const DERIVE_BINDER_SRC_NOT_OK: &'static str = "derive_binder: src is not ok";
+    pub const DERIVE_BINDER_SRC_NO_PARENT: &'static str = "derive_binder: src has no parent";
+    pub const DERIVE_BINDER_SRC_NOT_CHILD: &'static str =
+        "derive_binder: src must be a child of ctx";
+    pub const DERIVE_BINDER_SRC_NO_PARAM: &'static str = "derive_binder: src has no parameter";
+    pub const DERIVE_BINDER_PARAM_CTX_MISMATCH: &'static str =
+        "derive_binder: src param context must match ctx";
+    pub const DERIVE_BINDER_PARAM_MISMATCH: &'static str =
+        "derive_binder: src parameter must match binder";
+    pub const DERIVE_BINDER_BINDER_IS_TYPE: &'static str =
+        "derive_binder: binder is a type (in ctx)";
+    pub const DERIVE_BINDER_TM_HAS_TYPE: &'static str = "derive_binder: tm has type ty (in src)";
+    pub const DERIVE_OK_PARENT_CTX: &'static str = "derive_ok: parent context";
+    pub const DERIVE_OK_PARAM_IS_TYPE: &'static str = "derive_ok: param is a type";
+    pub const DERIVE_FV_NOT_VALID_VAR: &'static str = "derive_fv: var is not a valid variable";
+    pub const DERIVE_FV_VAR_NOT_IN_CTX: &'static str = "derive_fv: variable not in context";
+    pub const DERIVE_EQN_LHS: &'static str = "derive_eqn: lhs";
+    pub const DERIVE_EQN_RHS: &'static str = "derive_eqn: rhs";
+    pub const DERIVE_PI_IMAX_LE: &'static str =
+        "derive_pi: cannot deduce that imax(arg_lvl, res_lvl) ≤ lvl";
+    pub const DERIVE_PI_ARG_TY: &'static str = "derive_pi: arg_ty";
+    pub const DERIVE_PI_RES_TY: &'static str = "derive_pi: res_ty";
+    pub const DERIVE_SIGMA_ARG_LVL_LE: &'static str =
+        "derive_sigma: cannot deduce that arg_lvl ≤ lvl";
+    pub const DERIVE_SIGMA_RES_LVL_LE: &'static str =
+        "derive_sigma: cannot deduce that res_lvl ≤ lvl";
+    pub const DERIVE_SIGMA_ARG_TY: &'static str = "derive_sigma: arg_ty";
+    pub const DERIVE_SIGMA_RES_TY: &'static str = "derive_sigma: res_ty";
+    pub const DERIVE_ABS_BODY: &'static str = "derive_abs: body";
+    pub const DERIVE_APP_ARG: &'static str = "derive_app: arg";
+    pub const DERIVE_APP_FUNC: &'static str = "derive_app: func";
+    pub const DERIVE_PAIR_RES_TY: &'static str = "derive_pair: res_ty";
+    pub const DERIVE_PAIR_FST: &'static str = "derive_pair: fst";
+    pub const DERIVE_PAIR_SND: &'static str = "derive_pair: snd";
+    pub const DERIVE_FST_PAIR: &'static str = "derive_fst: pair";
+    pub const DERIVE_SND_PAIR: &'static str = "derive_snd: pair";
+    pub const DERIVE_DITE_COND: &'static str = "derive_dite: cond";
+    pub const DERIVE_DITE_THEN_BR: &'static str = "derive_dite: then_br";
+    pub const DERIVE_DITE_ELSE_BR: &'static str = "derive_dite: else_br";
+    pub const DERIVE_TRUNC_TY: &'static str = "derive_trunc: ty";
+    pub const DERIVE_CHOOSE_TY: &'static str = "derive_choose: ty";
+    pub const DERIVE_CHOOSE_PRED: &'static str = "derive_choose: pred";
+    pub const DERIVE_NATS_SET_LE_LVL: &'static str = "derive_nats: cannot deduce that SET ≤ lvl";
+    pub const DERIVE_SUCC_N: &'static str = "derive_succ: n";
+    pub const DERIVE_NATREC_MOT: &'static str = "derive_natrec: mot";
+    pub const DERIVE_NATREC_Z: &'static str = "derive_natrec: z";
+    pub const DERIVE_NATREC_S: &'static str = "derive_natrec: s";
+    pub const DERIVE_LET_BOUND: &'static str = "derive_let: bound";
+    pub const DERIVE_LET_BODY: &'static str = "derive_let: body";
+    pub const DERIVE_BETA_ABS_TM_EQ_ABS: &'static str = "derive_beta_abs: tm ≡ abs A b";
+    pub const DERIVE_BETA_ABS_TM_WF: &'static str = "derive_beta_abs: tm wf";
+    pub const DERIVE_BETA_ABS_ARG: &'static str = "derive_beta_abs: arg";
+    pub const DERIVE_BETA_ZERO_TM_EQ_NATREC: &'static str = "derive_beta_zero: tm ≡ natrec C z s";
+    pub const DERIVE_BETA_ZERO_TM_WF: &'static str = "derive_beta_zero: tm wf";
+    pub const DERIVE_BETA_SUCC_TM_EQ_NATREC: &'static str = "derive_beta_zero: tm ≡ natrec C z s";
+    pub const DERIVE_BETA_SUCC_TM_WF: &'static str = "derive_beta_zero: tm wf";
+    pub const DERIVE_BETA_SUCC_N: &'static str = "derive_beta_succ: n";
+    pub const DERIVE_CHOOSE_SPEC_EXISTS: &'static str = "derive_choose_spec: exists";
+    pub const DERIVE_UNIT_EXT_A: &'static str = "derive_unit_ext: a";
+    pub const DERIVE_PROP_EXT_TT_PROP: &'static str = "derive_prop_ext_tt: a prop";
+    pub const DERIVE_PROP_EXT_TT_INHAB: &'static str = "derive_prop_ext_tt: a inhab";
+    pub const DERIVE_PROP_EXT_FF_PROP: &'static str = "derive_prop_ext_ff: a prop";
+    pub const DERIVE_PROP_EXT_FF_EMPTY: &'static str = "derive_prop_ext_ff: a empty";
+    pub const DERIVE_EXT_EQN_INHAB: &'static str = "derive_ext: eqn inhab";
+    pub const DERIVE_PI_ETA_TY_EQ_PI: &'static str = "derive_pi_eta: ty ≡ pi A B";
+    pub const DERIVE_PI_ETA_F: &'static str = "derive_pi_eta: f";
+    pub const DERIVE_SIGMA_ETA_TY_EQ_SIGMA: &'static str = "derive_sigma_eta: ty ≡ sigma A B";
+    pub const DERIVE_SIGMA_ETA_P: &'static str = "derive_sigma_eta: p";
 }

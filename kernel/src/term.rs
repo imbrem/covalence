@@ -8,7 +8,7 @@ use std::{
 pub enum GNode<C, T, I = T> {
     // == Term formers, corresponding to Tm from `gt3-lean` ==
     /// A free variable
-    Fv(C),
+    Fv(Gv<C>),
     /// A bound variable
     Bv(Bv),
     /// A universe level
@@ -69,7 +69,7 @@ pub enum GNode<C, T, I = T> {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum GDisc<C, T, I = T> {
-    Fv(C),
+    Fv(Gv<C>),
     Bv(Bv),
     U(ULvl),
     Empty,
@@ -249,7 +249,7 @@ impl<C, T, I> GNode<C, T, I> {
     /// Borrow this node
     pub fn as_ref(&self) -> GNode<&C, &T, &I> {
         match self {
-            GNode::Fv(x) => GNode::Fv(x),
+            GNode::Fv(x) => GNode::Fv(x.as_ref()),
             GNode::Bv(i) => GNode::Bv(*i),
             GNode::U(level) => GNode::U(*level),
             GNode::Empty => GNode::Empty,
@@ -282,7 +282,7 @@ impl<C, T, I> GNode<C, T, I> {
     /// Borrow this node mutably
     pub fn as_mut(&mut self) -> GNode<&mut C, &mut T, &mut I> {
         match self {
-            GNode::Fv(x) => GNode::Fv(x),
+            GNode::Fv(x) => GNode::Fv(x.as_mut()),
             GNode::Bv(i) => GNode::Bv(*i),
             GNode::U(level) => GNode::U(*level),
             GNode::Empty => GNode::Empty,
@@ -422,6 +422,29 @@ impl<C, T> Default for GNode<C, T> {
     }
 }
 
+/// A variable index in `covalence`'s core calculus
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct Gv<C> {
+    pub ctx: C,
+    pub ix: u32,
+}
+
+impl<C> Gv<C> {
+    pub fn as_ref(&self) -> Gv<&C> {
+        Gv {
+            ctx: &self.ctx,
+            ix: self.ix,
+        }
+    }
+
+    pub fn as_mut(&mut self) -> Gv<&mut C> {
+        Gv {
+            ctx: &mut self.ctx,
+            ix: self.ix,
+        }
+    }
+}
+
 /// A bound variable
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
 pub struct Bv(pub u32);
@@ -537,9 +560,9 @@ pub struct Import<C, T> {
     pub ctx: C,
     /// The term being imported (in `ctx`)
     pub tm: T,
-    /// An upper bound on the number of unbound variables in the import
+    /// The number of unbound variables in the import
     ///
-    /// If this upper bound is invalid, the import is invalid
+    /// If this bound is incorrect, the import is invalid
     pub bvi: Bv,
 }
 

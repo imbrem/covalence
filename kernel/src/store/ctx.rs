@@ -26,28 +26,15 @@ impl Ctx {
     }
 
     pub fn with_param(parent: CtxId, param: TermId) -> Ctx {
-        let mut ctx = Ctx::new_ctx();
-        ctx.e.analysis.parent = Some(parent);
-        ctx.e.analysis.param = Some(param);
-        ctx
+        todo!("initialize a sealed context with a single parameter")
     }
 
     pub fn parent(&self) -> Option<CtxId> {
         self.e.analysis.parent
     }
 
-    pub fn param(&self) -> Option<(CtxId, TermId)> {
-        Some((self.e.analysis.parent?, self.e.analysis.param?))
-    }
-
-    pub fn set_this(&mut self, this: CtxId) -> Option<(TermId, (CtxId, TermId))> {
+    pub fn set_this(&mut self, this: CtxId) {
         self.e.analysis.this = Some(this);
-        if let Some(param) = self.param() {
-            let head = self.add(GNode::Fv(this));
-            Some((head, param))
-        } else {
-            None
-        }
     }
 
     pub fn add(&mut self, node: Node) -> TermId {
@@ -301,8 +288,6 @@ struct CtxData {
     this: Option<CtxId>,
     /// This context's parent, if any
     parent: Option<CtxId>,
-    /// This context's parameter, if any
-    param: Option<TermId>,
     /// This context's flags
     flags: CtxFlags,
 }

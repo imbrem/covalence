@@ -2,7 +2,7 @@ use typed_generational_arena::{SmallArena, SmallIndex};
 
 use crate::{
     derive::*,
-    term::{GNode, Import, ULvl},
+    term::{GNode, Gv, Import, ULvl},
 };
 
 mod ctx;
@@ -13,6 +13,8 @@ pub use ctx::{Node, TermId};
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CtxId(SmallIndex<Ctx>);
 
+pub type VarId = Gv<CtxId>;
+
 /// A term store implemented using `egg`
 #[derive(Debug, Clone, Default)]
 pub struct EggTermDb {
@@ -21,16 +23,7 @@ pub struct EggTermDb {
 
 impl EggTermDb {
     fn set_this(&mut self, ctx: CtxId) {
-        let p = if let Some((head, (param_ctx, param_ty))) = self.x[ctx.0].set_this(ctx) {
-            let param = self.import(ctx, param_ctx, param_ty);
-            self.x[ctx.0].set_has_ty_unchecked(head, param);
-            if self.is_inhab(param_ctx, param_ty) {
-                self.x[ctx.0].set_may_head_inhab();
-            }
-            Some((param_ctx, param_ty))
-        } else {
-            None
-        };
+        self.x[ctx.0].set_this(ctx);
         if let Some(parent) = self.x[ctx.0].parent() {
             if self.tel_inhab(parent) {
                 self.x[ctx.0].set_may_tail_inhab();
@@ -38,21 +31,11 @@ impl EggTermDb {
             if !self.is_ok(parent) {
                 return;
             }
-            if let Some((param_ctx, param_ty)) = p {
-                if parent != param_ctx {
-                    return;
-                }
-                if !self.is_ty(parent, param_ty) {
-                    return;
-                }
-            }
-        } else if p.is_some() {
-            return;
         } else {
             self.x[ctx.0].set_may_tail_inhab();
             self.x[ctx.0].set_may_head_inhab();
+            self.x[ctx.0].set_is_ok();
         }
-        self.x[ctx.0].set_is_ok();
     }
 }
 
@@ -82,6 +65,30 @@ impl TermStore<CtxId, TermId> for EggTermDb {
     }
 
     fn import(&mut self, ctx: CtxId, src: CtxId, tm: TermId) -> TermId {
+        // NOTE: an import cycle will lead to a stack overflow here, but that should be an error But
+        // think about it!
+        //
+        // We could try a cycle detection algorithm and return `Invalid`, if we want to be very
+        // clever... but again, this is a deeply invalid state, since import destinations should
+        // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
+        // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
+        // inserting the import and hence fixing the `TermId`.
+        if let &Node::Import(Import { bvi, ctx: src, tm }) = self.node(src, tm) {
+            // For an import to be valid, `bvi` _must_ be _correct_
+            //
+            // We can't simply require an upper bound as that would break soundness as follows:
+            // - term has bvi 0, but we import it with bvi 1
+            // - we import the import with bvi 0; call this import2
+            // - import2 == invalid since bvi(import2) < 1
+            // - but once we resolve import, import2 == term; so term == invalid!
+            if bvi != self.bvi(src, tm) {
+                return self.x[ctx.0].add(GNode::Invalid);
+            }
+            return self.import(ctx, src, tm);
+        }
+        if ctx == src {
+            return tm;
+        }
         let bvi = self.bvi(src, tm);
         self.x[ctx.0].add(GNode::Import(Import { bvi, ctx: src, tm }))
     }
@@ -92,11 +99,6 @@ impl TermStore<CtxId, TermId> for EggTermDb {
 
     fn lookup(&self, ctx: CtxId, tm: &mut Node) -> Option<TermId> {
         self.x[ctx.0].lookup(tm)
-    }
-
-    fn head(&self, ctx: CtxId) -> Option<TermId> {
-        self.x[ctx.0].param()?;
-        self.x[ctx.0].lookup(GNode::Fv(ctx))
     }
 
     fn succ(&mut self, level: ULvl) -> ULvl {
@@ -154,10 +156,6 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
         self.x[ctx.0].parent()
     }
 
-    fn param(&self, ctx: CtxId) -> Option<(CtxId, TermId)> {
-        self.x[ctx.0].param()
-    }
-
     fn bvi(&self, ctx: CtxId, tm: TermId) -> crate::term::Bv {
         self.x[ctx.0].bvi(tm)
     }
@@ -194,7 +192,7 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
         self.x[ctx.0].is_prop(tm)
     }
 
-    fn has_var(&self, ctx: CtxId, tm: TermId, var: CtxId) -> bool {
+    fn has_var(&self, ctx: CtxId, tm: TermId, var: VarId) -> bool {
         //TODO: optimize, a _lot_
         match self.node(ctx, tm) {
             Node::Fv(v) => *v == var,
@@ -328,8 +326,6 @@ mod test {
         assert!(db.tel_inhab(ctx));
         assert!(!db.is_contr(ctx));
         assert_eq!(db.parent(ctx), None);
-        assert_eq!(db.param(ctx), None);
-        assert_eq!(db.head(ctx), None);
         let unit = db.add(ctx, Node::Unit);
         let empty = db.add(ctx, Node::Empty);
         assert_ne!(unit, empty);

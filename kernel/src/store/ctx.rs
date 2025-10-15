@@ -282,6 +282,15 @@ impl Ctx {
     pub fn bvi(&self, id: TermId) -> Bv {
         self.e[id.0].data.bvi
     }
+
+    pub fn set_bvi_unchecked(&mut self, id: TermId, bvi: Bv) {
+        let mut data = self.e[id.0].data;
+        if bvi >= data.bvi {
+            return;
+        }
+        data.bvi = bvi;
+        self.e.set_analysis_data(id.0, data);
+    }
 }
 
 #[derive(Debug, Clone, Default)]

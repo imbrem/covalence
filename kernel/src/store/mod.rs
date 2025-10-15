@@ -54,30 +54,20 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
         // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
         // inserting the import and hence fixing the `TermId`.
-        let bvi = self.bvi(src, tm);
-        if let &Node::Import(Import {
-            bvi: import_bvi,
-            ctx: src,
-            tm,
-        }) = self.node(src, tm)
-        {
-            // For an import to be valid, `bvi` must be correct
-            //
-            // Otherwise, the import is potentially invalid, so we cannot recurse past it and must
-            // instead just import it as itself.
-            //
-            // We can't require `bvi` to be an exact bound (so need import_bvi to be an upper bound)
-            // since when we add `close` terms we don't want to bother computing whether we need to
-            // bump the `bvi` or not, but this means the `bvi` can change (but only downwards!) as
-            // we reduce `close` terms.
-            if bvi <= import_bvi {
-                return self.import(ctx, src, tm);
+        let result = if let Some(node) = self.node(src, tm).relocate() {
+            if let Node::Import(Import { ctx: src, tm }) = node {
+                self.import(ctx, src, tm)
+            } else {
+                self.x[ctx.0].add(node)
             }
-        }
-        if ctx == src {
+        } else if ctx == src {
             return tm;
-        }
-        self.x[ctx.0].add(GNode::Import(Import { bvi, ctx: src, tm }))
+        } else {
+            self.x[ctx.0].add(GNode::Import(Import { ctx: src, tm }))
+        };
+        let bvi = self.bvi(src, tm);
+        self.set_bvi_unchecked(ctx, result, bvi);
+        result
     }
 
     fn node(&self, ctx: CtxId, tm: TermId) -> &Node {
@@ -97,32 +87,15 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
         // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
         // inserting the import and hence fixing the `TermId`.
-        let bvi = self.bvi(src, tm);
-        if let &Node::Import(Import {
-            bvi: import_bvi,
-            ctx: src,
-            tm,
-        }) = self.node(src, tm)
-        {
-            // For an import to be valid, `bvi` must be correct
-            //
-            // Otherwise, the import is potentially invalid, so we cannot recurse past it and must
-            // instead just import it as itself.
-            //
-            // We can't require `bvi` to be an exact bound (so need import_bvi to be an upper bound)
-            // since when we add `close` terms we don't want to bother computing whether we need to
-            // bump the `bvi` or not, but this means the `bvi` can change (but only downwards!) as
-            // we reduce `close` terms.
-            if bvi <= import_bvi {
-                if let Some(import) = self.lookup_import(ctx, src, tm) {
-                    return Some(import);
-                }
+        if let &Node::Import(Import { ctx: src, tm }) = self.node(src, tm) {
+            if let Some(import) = self.lookup_import(ctx, src, tm) {
+                return Some(import);
             }
         }
         if ctx == src {
             return Some(tm);
         }
-        self.lookup(ctx, &mut GNode::Import(Import { bvi, ctx: src, tm }))
+        self.lookup(ctx, &mut GNode::Import(Import { ctx: src, tm }))
     }
 
     fn num_assumptions(&self, ctx: CtxId) -> usize {
@@ -189,6 +162,7 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
     }
 
     fn bvi(&self, ctx: CtxId, tm: TermId) -> crate::term::Bv {
+        //TODO: compute the bvi if invalid
         self.x[ctx.0].bvi(tm)
     }
 
@@ -361,6 +335,10 @@ impl WriteFacts<CtxId, TermId> for EggTermDb {
     fn add_var_unchecked(&mut self, ctx: CtxId, ty: TermId) -> Gv<CtxId> {
         let ix = self.x[ctx.0].add_var_unchecked(ty);
         Gv { ctx, ix }
+    }
+
+    fn set_bvi_unchecked(&mut self, ctx: CtxId, tm: TermId, bvi: crate::term::Bv) {
+        self.x[ctx.0].set_bvi_unchecked(tm, bvi);
     }
 }
 

@@ -83,7 +83,7 @@ pub trait ReadFacts<C, T> {
     fn parent(&self, ctx: C) -> Option<C>;
 
     // == Syntax information ==
-    /// Get a bound on the de-Bruijn indices visible in `tm`
+    /// Get an upper bound on the de-Bruijn indices visible in `tm`
     ///
     /// TODO: reference lean
     fn bvi(&self, ctx: C, tm: T) -> Bv;
@@ -241,6 +241,11 @@ pub trait WriteFacts<C, T> {
 
     /// Add a variable to the given context
     fn add_var_unchecked(&mut self, ctx: C, ty: T) -> Gv<C>;
+
+    // == Cached information ==
+
+    /// Set the bound-variable index of a term
+    fn set_bvi_unchecked(&mut self, ctx: C, tm: T, bvi: Bv);
 }
 
 /// A trait implemented by a mutable datastore that can hold _unchecked_ facts about contexts
@@ -1705,7 +1710,6 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
             GNode::Import(Import {
                 ctx: src,
                 tm,
-                bvi: self.bvi(src, tm),
             }),
         );
         let lazy = self.import(ctx, src, tm);
@@ -1722,7 +1726,6 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
             GNode::Import(Import {
                 ctx: var.ctx,
                 tm,
-                bvi: self.bvi(var.ctx, tm),
             }),
         );
         let eager = self.add(

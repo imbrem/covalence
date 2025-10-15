@@ -381,11 +381,37 @@ impl<C, T, I> GNode<C, T, I> {
         }
     }
 
+    /// Check whether this term is relocatable
+    pub fn is_relocatable(&self) -> bool {
+        matches!(
+            self,
+            GNode::Fv(_)
+                | GNode::Bv(_)
+                | GNode::U(_)
+                | GNode::Empty
+                | GNode::Unit
+                | GNode::Null
+                | GNode::Nats
+                | GNode::N64(_)
+                | GNode::Invalid
+                | GNode::Import(_)
+        )
+    }
+
+    /// If this term has no dependencies, return it
+    pub fn relocate(self) -> Option<GNode<C, T, I>> {
+        if self.is_relocatable() {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
     /// Compute a bound on this term's unbound variables
     pub fn bvi(&self, mut tm: impl FnMut(&T) -> Bv) -> Bv {
         match self {
             GNode::Bv(i) => i.succ(),
-            GNode::Import(i) => i.bvi,
+            GNode::Import(_) => Bv::INVALID,
             GNode::Close(Close {
                 under: k, tm: a, ..
             })
@@ -447,9 +473,33 @@ impl<C> Gv<C> {
 pub struct Bv(pub u32);
 
 impl Bv {
+    /// An invalid bound variable
+    ///
+    /// Compares greater-than all other bound variables
+    pub const INVALID: Bv = Bv(u32::MAX);
+
     /// Get the successor of this bound variable
+    ///
+    /// Panics if this would overflow
+    ///
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::term::Bv;
+    /// for x in 0..100 {
+    ///     assert_eq!(Bv(x).succ(), Bv(x + 1));
+    /// }
+    /// assert_eq!(Bv::INVALID.succ(), Bv::INVALID);
+    /// ```
     pub fn succ(self) -> Bv {
-        Bv(self.0.checked_add(1).expect("bound variable overflow"))
+        if self.0 == u32::MAX - 1 {
+            panic!("bound variable overflow");
+        }
+        Bv(self.0.saturating_add(1))
+    }
+
+    /// Get whether this bound variable is valid
+    pub fn is_valid(self) -> bool {
+        self.0 != u32::MAX
     }
 }
 
@@ -471,6 +521,9 @@ impl Sub for Bv {
 
 impl Debug for Bv {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if *self == Bv::INVALID {
+            return write!(f, "#invalid");
+        }
         write!(f, "#{}", self.0)
     }
 }
@@ -553,11 +606,6 @@ pub struct Import<C, T> {
     pub ctx: C,
     /// The term being imported (in `ctx`)
     pub tm: T,
-    /// An upper bound on the number of unbound variables in the import
-    ///
-    /// If this bound is incorrect, the import is invalid
-    /// TODO: this should be removable if we transition to a saturate-able bvi...
-    pub bvi: Bv,
 }
 
 impl<C, T> Import<C, T> {
@@ -566,7 +614,6 @@ impl<C, T> Import<C, T> {
         Import {
             ctx: &self.ctx,
             tm: &self.tm,
-            bvi: self.bvi,
         }
     }
 
@@ -575,7 +622,6 @@ impl<C, T> Import<C, T> {
         Import {
             ctx: &mut self.ctx,
             tm: &mut self.tm,
-            bvi: self.bvi,
         }
     }
 }

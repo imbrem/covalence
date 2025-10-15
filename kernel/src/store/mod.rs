@@ -24,15 +24,6 @@ pub struct EggTermDb {
 impl EggTermDb {
     fn set_this(&mut self, ctx: CtxId) {
         self.x[ctx.0].set_this(ctx);
-        if let Some(parent) = self.x[ctx.0].parent() {
-            if self.has_root_model(parent) {
-                self.x[ctx.0].set_may_tail_inhab();
-            }
-        } else {
-            self.x[ctx.0].set_may_tail_inhab();
-            self.x[ctx.0].set_may_head_inhab();
-            self.x[ctx.0].set_is_ok();
-        }
     }
 }
 
@@ -132,8 +123,12 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         self.lookup(ctx, &mut GNode::Import(Import { bvi, ctx: src, tm }))
     }
 
-    fn assumes(&self, ctx: CtxId) -> &[TermId] {
-        todo!()
+    fn num_assumptions(&self, ctx: CtxId) -> usize {
+        self.x[ctx.0].num_assumptions()
+    }
+
+    fn assumption(&self, ctx: CtxId, ix: usize) -> Option<TermId> {
+        self.x[ctx.0].assumption(ix)
     }
 
     fn var_ty(&mut self, ctx: CtxId, var: VarId) -> TermId {
@@ -142,19 +137,9 @@ impl TermStore<CtxId, TermId> for EggTermDb {
     }
 
     fn get_var_ty(&self, var: VarId) -> TermId {
-        todo!()
-    }
-
-    fn var_free(&self, ctx: CtxId, var: VarId) -> bool {
-        todo!()
-    }
-
-    fn num_constraints(&self, ctx: CtxId) -> usize {
-        todo!()
-    }
-
-    fn constraint(&self, ctx: CtxId, ix: usize) -> Gv<CtxId> {
-        todo!()
+        self.x[var.ctx.0]
+            .var_ty(var.ix)
+            .expect("invalid variable index")
     }
 
     fn succ(&mut self, level: ULvl) -> ULvl {
@@ -189,23 +174,12 @@ impl TermStore<CtxId, TermId> for EggTermDb {
 
 impl ReadFacts<CtxId, TermId> for EggTermDb {
     fn is_root(&self, ctx: CtxId) -> bool {
-        todo!()
+        //TODO: optimize
+        self.x[ctx.0].is_null_extension() && self.parent(ctx).is_none_or(|p| self.is_root(p))
     }
 
     fn is_contr(&self, ctx: CtxId) -> bool {
         self.x[ctx.0].is_contr()
-    }
-
-    fn has_model(&self, ctx: CtxId) -> bool {
-        self.x[ctx.0].has_model()
-    }
-
-    fn parent_has_root_model(&self, ctx: CtxId) -> bool {
-        self.x[ctx.0].parent_has_root_model()
-    }
-
-    fn has_root_model(&self, ctx: CtxId) -> bool {
-        self.x[ctx.0].has_root_model()
     }
 
     fn parent(&self, ctx: CtxId) -> Option<CtxId> {
@@ -378,12 +352,13 @@ impl WriteFacts<CtxId, TermId> for EggTermDb {
         self.x[ctx.0].set_exists_inhab_under_unchecked(binder, ty)
     }
 
-    fn assume_unchecked(&mut self, ctx: CtxId, ty: TermId) -> usize {
-        todo!()
+    fn assume_unchecked(&mut self, ctx: CtxId, ty: TermId) {
+        self.x[ctx.0].assume_unchecked(ty);
     }
 
     fn add_var_unchecked(&mut self, ctx: CtxId, ty: TermId) -> Gv<CtxId> {
-        todo!()
+        let ix = self.x[ctx.0].add_var_unchecked(ty);
+        Gv { ctx, ix }
     }
 }
 
@@ -395,7 +370,6 @@ mod test {
     fn unit_eq_empty_contr() {
         let mut db = EggTermDb::default();
         let ctx = db.new_ctx();
-        assert!(db.has_root_model(ctx));
         assert!(!db.is_contr(ctx));
         assert_eq!(db.parent(ctx), None);
         let unit = db.add(ctx, Node::Unit);

@@ -33,8 +33,11 @@ pub trait TermStore<C, T> {
 
     // == Variable management ==
 
-    /// Get this context's assumptions
-    fn assumes(&self, ctx: C) -> &[T];
+    /// Get the number of assumptions this context has
+    fn num_assumptions(&self, ctx: C) -> usize;
+    
+    /// Get this context's `n`th assumption
+    fn assumption(&self, ctx: C, ix: usize) -> Option<T>;
 
     /// Get the type of a variable in the given context
     ///
@@ -43,17 +46,6 @@ pub trait TermStore<C, T> {
 
     /// Lookup the type of a variable in its own context
     fn get_var_ty(&self, var: Gv<C>) -> T;
-
-    /// Get whether this variable is unconstrained at this level
-    ///
-    /// The result is unspecified for an ill-scoped variable
-    fn var_free(&self, ctx: C, var: Gv<C>) -> bool;
-
-    /// Get the number of constrained variables in this context
-    fn num_constraints(&self, ctx: C) -> usize;
-
-    /// Get the `n`th variable constrained by this context
-    fn constraint(&self, ctx: C, ix: usize) -> Gv<C>;
 
     // == Universe management ==
 
@@ -86,25 +78,6 @@ pub trait ReadFacts<C, T> {
     ///
     /// TODO: reference lean
     fn is_contr(&self, ctx: C) -> bool;
-
-    /// Get whether a context has a model in its parent context
-    ///
-    /// TODO: reference lean
-    fn has_model(&self, ctx: C) -> bool;
-
-    /// Get whether the _rest_ of a context is inhabited
-    ///
-    /// This is defined to be `true` for the empty context
-    ///
-    /// TODO: reference lean
-    fn parent_has_root_model(&self, ctx: C) -> bool;
-
-    /// Get whether a context is inhabited as a telescope
-    ///
-    /// This is defined to be `true` for the empty context
-    ///
-    /// TODO: reference lean
-    fn has_root_model(&self, ctx: C) -> bool;
 
     /// Get a context's parent, if any
     fn parent(&self, ctx: C) -> Option<C>;
@@ -259,19 +232,12 @@ pub trait WriteFacts<C, T> {
 
     // == Variable and assumption manipulation ==
 
-    /// Add an assumption to the given context; returning its index
+    /// Add an assumption to the given context
     ///
     /// This adds the assumption that `ty` is inhabited; and marks it as so.
     ///
-    /// This also adds all variables appearing in `ty` and not already constrained in the parent to
-    /// this context's constraint-set.
-    ///
-    /// Note that this does _not_ check whether the assumption is already inhabited, and always
-    /// inserts it, even if an exact duplicate has been inserted before. In general, you should
-    /// therefore use a wrapper.
-    ///
     /// For this to be valid, `ty` should be a valid type _in the parent context_!
-    fn assume_unchecked(&mut self, ctx: C, ty: T) -> usize;
+    fn assume_unchecked(&mut self, ctx: C, ty: T);
 
     /// Add a variable to the given context
     fn add_var_unchecked(&mut self, ctx: C, ty: T) -> Gv<C>;
@@ -1485,18 +1451,6 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.is_contr(ctx)
     }
 
-    fn has_model(&self, ctx: C) -> bool {
-        self.0.has_model(ctx)
-    }
-
-    fn parent_has_root_model(&self, ctx: C) -> bool {
-        self.0.parent_has_root_model(ctx)
-    }
-
-    fn has_root_model(&self, ctx: C) -> bool {
-        self.0.has_root_model(ctx)
-    }
-
     fn parent(&self, ctx: C) -> Option<C> {
         self.0.parent(ctx)
     }
@@ -1607,10 +1561,6 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
         self.0.lookup_import(ctx, src, tm)
     }
 
-    fn assumes(&self, ctx: C) -> &[T] {
-        self.0.assumes(ctx)
-    }
-
     fn var_ty(&mut self, ctx: C, var: Gv<C>) -> T {
         self.0.var_ty(ctx, var)
     }
@@ -1618,17 +1568,13 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
     fn get_var_ty(&self, var: Gv<C>) -> T {
         self.0.get_var_ty(var)
     }
-
-    fn var_free(&self, ctx: C, var: Gv<C>) -> bool {
-        self.0.var_free(ctx, var)
+    
+    fn num_assumptions(&self, ctx: C) -> usize {
+        self.0.num_assumptions(ctx)
     }
-
-    fn num_constraints(&self, ctx: C) -> usize {
-        self.0.num_constraints(ctx)
-    }
-
-    fn constraint(&self, ctx: C, ix: usize) -> Gv<C> {
-        self.0.constraint(ctx, ix)
+    
+    fn assumption(&self, ctx: C, ix: usize) -> Option<T> {
+        self.0.assumption(ctx, ix)
     }
 
     fn succ(&mut self, level: ULvl) -> ULvl {
@@ -1661,7 +1607,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
     where
         S: Strategy<C, T, Self>,
     {
-        strategy.start_rule("assume");
+        strategy.start_rule("assume")?;
         if !self.is_subctx_of_parent(subctx, ctx) {
             return Err(strategy.fail(Self::ASSUME_NOT_SUBCTX));
         }
@@ -1679,7 +1625,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
     where
         S: Strategy<C, T, Self>,
     {
-        strategy.start_rule("add_var");
+        strategy.start_rule("add_var")?;
         self.ensure_is_inhab(ctx, ty, strategy, Self::ADD_VAR_IS_INHAB)?;
         let var = self.0.add_var_unchecked(ctx, ty);
         debug_assert!(self.0.eq_in(ctx, self.0.get_var_ty(var), ty));

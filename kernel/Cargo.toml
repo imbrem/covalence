@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 bitflags = "2.9.4"
 egg = "0.10.0"
+indexmap = "2.11.4"
 smol_str = "0.3.2"
 typed-generational-arena = "0.2.9"
 winnow = "0.7.13"

@@ -80,6 +80,7 @@ version = "0.1.0"
 dependencies = [
  "bitflags 2.9.4",
  "egg",
+ "indexmap",
  "smol_str",
  "typed-generational-arena",
  "winnow",

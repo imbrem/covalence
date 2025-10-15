@@ -2,6 +2,7 @@ use std::{borrow::BorrowMut, ops::BitOr};
 
 use bitflags::bitflags;
 use egg::{Analysis, DidMerge, EGraph, Language};
+use indexmap::IndexSet;
 
 use super::*;
 use crate::term::*;
@@ -25,10 +26,6 @@ impl Ctx {
         ctx
     }
 
-    pub fn with_param(parent: CtxId, param: TermId) -> Ctx {
-        todo!("initialize a sealed context with a single parameter")
-    }
-
     pub fn parent(&self) -> Option<CtxId> {
         self.e.analysis.parent
     }
@@ -50,18 +47,24 @@ impl Ctx {
         self.e.lookup(node).map(TermId)
     }
 
+    pub fn var_ty(&self, ix: u32) -> Option<TermId> {
+        self.e.analysis.vars.get(ix as usize).copied()
+    }
+
+    pub fn num_assumptions(&self) -> usize {
+        self.e.analysis.assumptions.len()
+    }
+
+    pub fn assumption(&self, ix: usize) -> Option<TermId> {
+        self.e.analysis.assumptions.get_index(ix as usize).copied()
+    }
+
     pub fn propagate_in(&mut self) -> usize {
         self.e.rebuild()
     }
 
-    pub fn is_ok(&self) -> bool {
-        self.e.analysis.flags.contains(CtxFlags::IS_OK)
-    }
-
-    pub fn set_is_ok(&mut self) -> bool {
-        let old_flags = self.e.analysis.flags;
-        self.e.analysis.flags |= CtxFlags::IS_OK;
-        self.e.analysis.flags != old_flags
+    pub fn is_null_extension(&self) -> bool {
+        self.e.analysis.assumptions.is_empty() && self.e.analysis.vars.is_empty()
     }
 
     pub fn is_contr(&self) -> bool {
@@ -72,30 +75,6 @@ impl Ctx {
         let old_flags = self.e.analysis.flags;
         self.e.analysis.flags |= CtxFlags::IS_CONTR;
         self.e.analysis.flags != old_flags
-    }
-
-    pub fn set_may_head_inhab(&mut self) -> bool {
-        let old_flags = self.e.analysis.flags;
-        self.e.analysis.flags |= CtxFlags::MAY_HD_INHAB;
-        self.e.analysis.flags != old_flags
-    }
-
-    pub fn has_model(&self) -> bool {
-        self.e.analysis.flags.contains(CtxFlags::IS_HD_INHAB)
-    }
-
-    pub fn set_may_tail_inhab(&mut self) -> bool {
-        let old_flags = self.e.analysis.flags;
-        self.e.analysis.flags |= CtxFlags::MAY_TL_INHAB;
-        self.e.analysis.flags != old_flags
-    }
-
-    pub fn parent_has_root_model(&self) -> bool {
-        self.e.analysis.flags.contains(CtxFlags::IS_TL_INHAB)
-    }
-
-    pub fn has_root_model(&self) -> bool {
-        self.e.analysis.flags.contains(CtxFlags::IS_ALL_INHAB)
     }
 
     pub fn eq_in(&self, lhs: TermId, rhs: TermId) -> bool {
@@ -267,6 +246,29 @@ impl Ctx {
         self.set_is_inhab_unchecked(sigma)
     }
 
+    pub fn assume_unchecked(&mut self, ty: TermId) {
+        // If something is already inhabited, don't bother adding it as an assumption
+        if self.is_inhab(ty) {
+            return;
+        }
+        self.e.analysis.assumptions.insert(ty);
+        self.set_is_inhab_unchecked(ty);
+    }
+
+    pub fn add_var_unchecked(&mut self, ty: TermId) -> u32 {
+        // NOTE: this overflow should be impossible due to limitations of the E-graph, but better
+        // safe than sorry...
+        let ix: u32 = self
+            .e
+            .analysis
+            .vars
+            .len()
+            .try_into()
+            .expect("variable index overflow");
+        self.e.analysis.vars.push(ty);
+        return ix;
+    }
+
     fn from_ref(this: &EGraph<Node, CtxData>) -> &Self {
         // SAFETY: due to `#[repr(transparent)]`
         unsafe { std::mem::transmute(this) }
@@ -282,7 +284,7 @@ impl Ctx {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
+#[derive(Debug, Clone, Default)]
 struct CtxData {
     /// Pointer to self
     this: Option<CtxId>,
@@ -290,6 +292,12 @@ struct CtxData {
     parent: Option<CtxId>,
     /// This context's flags
     flags: CtxFlags,
+    /// This context's assumptions
+    ///
+    /// Note these are not allowed to talk about _this_ context's variables!
+    assumptions: IndexSet<TermId>,
+    /// This context's variables, implemented as a map from indices to types
+    vars: Vec<TermId>,
 }
 
 impl Analysis<Node> for CtxData {
@@ -381,14 +389,7 @@ impl BitOr for ClassData {
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
     struct CtxFlags: u8 {
-        const IS_OK          = 0b00000001;
-        const MAY_HD_INHAB   = 0b00000010;
-        const IS_HD_INHAB    = 0b00000011;
-        const MAY_TL_INHAB   = 0b00000100;
-        const IS_TL_INHAB    = 0b00000101;
-        const IS_ALL_INHAB   = 0b00000111;
-        const MAY_CONTR      = 0b00001000;
-        const IS_CONTR       = 0b00001001;
+        const IS_CONTR  = 0b00000001;
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
@@ -507,21 +508,6 @@ mod test {
             assert!(ctx.has_ty(t, u0));
             assert!(ctx.has_ty(t, u1));
         }
-        assert!(!ctx.has_root_model());
-        ctx.set_may_head_inhab();
-        assert!(!ctx.has_model());
-        assert!(!ctx.parent_has_root_model());
-        assert!(!ctx.has_root_model());
-        ctx.set_may_tail_inhab();
-        assert!(!ctx.has_model());
-        assert!(!ctx.parent_has_root_model());
-        assert!(!ctx.has_root_model());
-        assert!(!ctx.is_ok());
-        ctx.set_is_ok();
-        assert!(ctx.is_ok());
-        assert!(ctx.has_model());
-        assert!(ctx.parent_has_root_model());
-        assert!(ctx.has_root_model());
         assert!(!ctx.is_contr());
         ctx.set_eq_unchecked(unit, empty);
         assert!(ctx.is_contr());

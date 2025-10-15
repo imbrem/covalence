@@ -1587,15 +1587,18 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
     }
 }
 
-//TODO: pull out all error messages as associated constants
 impl<D> Kernel<D> {
     pub const DERIVE_BINDER_SRC_NOT_OK: &'static str = "derive_binder: src is not ok";
     pub const DERIVE_BINDER_SRC_NO_PARENT: &'static str = "derive_binder: src has no parent";
-    pub const DERIVE_BINDER_SRC_NOT_CHILD: &'static str = "derive_binder: src must be a child of ctx";
+    pub const DERIVE_BINDER_SRC_NOT_CHILD: &'static str =
+        "derive_binder: src must be a child of ctx";
     pub const DERIVE_BINDER_SRC_NO_PARAM: &'static str = "derive_binder: src has no parameter";
-    pub const DERIVE_BINDER_PARAM_CTX_MISMATCH: &'static str = "derive_binder: src param context must match ctx";
-    pub const DERIVE_BINDER_PARAM_MISMATCH: &'static str = "derive_binder: src parameter must match binder";
-    pub const DERIVE_BINDER_BINDER_IS_TYPE: &'static str = "derive_binder: binder is a type (in ctx)";
+    pub const DERIVE_BINDER_PARAM_CTX_MISMATCH: &'static str =
+        "derive_binder: src param context must match ctx";
+    pub const DERIVE_BINDER_PARAM_MISMATCH: &'static str =
+        "derive_binder: src parameter must match binder";
+    pub const DERIVE_BINDER_BINDER_IS_TYPE: &'static str =
+        "derive_binder: binder is a type (in ctx)";
     pub const DERIVE_BINDER_TM_HAS_TYPE: &'static str = "derive_binder: tm has type ty (in src)";
     pub const DERIVE_OK_PARENT_CTX: &'static str = "derive_ok: parent context";
     pub const DERIVE_OK_PARAM_IS_TYPE: &'static str = "derive_ok: param is a type";
@@ -1603,11 +1606,14 @@ impl<D> Kernel<D> {
     pub const DERIVE_FV_VAR_NOT_IN_CTX: &'static str = "derive_fv: variable not in context";
     pub const DERIVE_EQN_LHS: &'static str = "derive_eqn: lhs";
     pub const DERIVE_EQN_RHS: &'static str = "derive_eqn: rhs";
-    pub const DERIVE_PI_IMAX_LE: &'static str = "derive_pi: cannot deduce that imax(arg_lvl, res_lvl) ≤ lvl";
+    pub const DERIVE_PI_IMAX_LE: &'static str =
+        "derive_pi: cannot deduce that imax(arg_lvl, res_lvl) ≤ lvl";
     pub const DERIVE_PI_ARG_TY: &'static str = "derive_pi: arg_ty";
     pub const DERIVE_PI_RES_TY: &'static str = "derive_pi: res_ty";
-    pub const DERIVE_SIGMA_ARG_LVL_LE: &'static str = "derive_sigma: cannot deduce that arg_lvl ≤ lvl";
-    pub const DERIVE_SIGMA_RES_LVL_LE: &'static str = "derive_sigma: cannot deduce that res_lvl ≤ lvl";
+    pub const DERIVE_SIGMA_ARG_LVL_LE: &'static str =
+        "derive_sigma: cannot deduce that arg_lvl ≤ lvl";
+    pub const DERIVE_SIGMA_RES_LVL_LE: &'static str =
+        "derive_sigma: cannot deduce that res_lvl ≤ lvl";
     pub const DERIVE_SIGMA_ARG_TY: &'static str = "derive_sigma: arg_ty";
     pub const DERIVE_SIGMA_RES_TY: &'static str = "derive_sigma: res_ty";
     pub const DERIVE_ABS_BODY: &'static str = "derive_abs: body";
@@ -1672,6 +1678,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
             GNode::Close(Close {
                 under: Bv(0),
                 var,
+                ix: 0,
                 tm,
             }),
         )
@@ -1701,6 +1708,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
             GNode::Close(Close {
                 under: Bv(0),
                 var: src,
+                ix: 0,
                 tm: import,
             }),
         )
@@ -1722,6 +1730,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
             GNode::Close(Close {
                 under: Bv(0),
                 var,
+                ix: 0,
                 tm,
             }),
         );
@@ -1764,6 +1773,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
             GNode::Close(Close {
                 under: Bv(0),
                 var: src,
+                ix: 0,
                 tm: import,
             }),
         );
@@ -1811,19 +1821,8 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
             Self::DERIVE_BINDER_PARAM_MISMATCH,
         )?;
 
-        self.ensure_is_ty(
-            ctx,
-            binder,
-            strategy,
-            Self::DERIVE_BINDER_BINDER_IS_TYPE,
-        )?;
-        self.ensure_has_ty(
-            src,
-            tm,
-            ty,
-            strategy,
-            Self::DERIVE_BINDER_TM_HAS_TYPE,
-        )?;
+        self.ensure_is_ty(ctx, binder, strategy, Self::DERIVE_BINDER_BINDER_IS_TYPE)?;
+        self.ensure_has_ty(src, tm, ty, strategy, Self::DERIVE_BINDER_TM_HAS_TYPE)?;
 
         debug_assert_eq!(
             self.bvi(src, tm),
@@ -2157,7 +2156,14 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         self.ensure_has_ty_under(ctx, cond, then_br, ty, strategy, Self::DERIVE_DITE_THEN_BR)?;
         let ff = self.add(ctx, GNode::Empty);
         let not_cond = self.add(ctx, GNode::Eqn([cond, ff]));
-        self.ensure_has_ty_under(ctx, not_cond, else_br, ty, strategy, Self::DERIVE_DITE_ELSE_BR)?;
+        self.ensure_has_ty_under(
+            ctx,
+            not_cond,
+            else_br,
+            ty,
+            strategy,
+            Self::DERIVE_DITE_ELSE_BR,
+        )?;
         let tm = self.add(ctx, GNode::Ite([cond, then_br, else_br]));
         self.0.set_has_ty_unchecked(ctx, tm, ty);
         if self.is_inhab(ctx, cond) {
@@ -2270,7 +2276,14 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         debug_assert!(self.bvi(ctx, mot_succ_bv_one) <= Bv(2));
         let mot_to_mot_succ = self.add(ctx, GNode::Pi([mot, mot_succ_bv_one]));
         debug_assert!(self.bvi(ctx, mot_to_mot_succ) <= Bv(1));
-        self.ensure_has_ty_under(ctx, nats, s, mot_to_mot_succ, strategy, Self::DERIVE_NATREC_S)?;
+        self.ensure_has_ty_under(
+            ctx,
+            nats,
+            s,
+            mot_to_mot_succ,
+            strategy,
+            Self::DERIVE_NATREC_S,
+        )?;
 
         let tm = self.add(ctx, GNode::Natrec([mot, z, s]));
         let ty = self.add(ctx, GNode::Pi([nats, mot]));
@@ -2292,7 +2305,14 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
     {
         strategy.start_rule("derive_let")?;
         self.ensure_has_ty(ctx, bound, bound_ty, strategy, Self::DERIVE_LET_BOUND)?;
-        self.ensure_has_ty_under(ctx, bound_ty, body, body_ty, strategy, Self::DERIVE_LET_BODY)?;
+        self.ensure_has_ty_under(
+            ctx,
+            bound_ty,
+            body,
+            body_ty,
+            strategy,
+            Self::DERIVE_LET_BODY,
+        )?;
         let tm = self.add(ctx, GNode::Let(Bv(0), [bound, body]));
         let ty = self.lazy_subst(ctx, bound, body_ty);
         self.0.set_has_ty_unchecked(ctx, tm, ty);

@@ -4,8 +4,12 @@ Utilities for parsing and working with S-expressions
 We slightly generalize the SMT-LIBv2 format; for example, we allow Unicode strings
 */
 
-use std::fmt::{self, Debug, Display};
+use std::{
+    fmt::{self, Debug, Display},
+    ops::Range,
+};
 use winnow::{
+    LocatingSlice,
     ascii::{digit1, multispace0, multispace1},
     combinator::{alt, delimited, preceded, separated},
     prelude::*,
@@ -42,13 +46,13 @@ impl Debug for Constant {
 }
 
 impl Constant {
-    pub fn numeral<'a>(input: &mut &'a str) -> ModalResult<&'a str> {
+    pub fn numeral<'a>(input: &mut LocatingSlice<&'a str>) -> ModalResult<&'a str> {
         digit1
             .verify(|s: &str| !s.starts_with('0') || s == "0")
             .parse_next(input)
     }
 
-    pub fn parser(input: &mut &str) -> ModalResult<Constant> {
+    pub fn parser(input: &mut LocatingSlice<&str>) -> ModalResult<Constant> {
         alt((
             preceded(
                 "#x",
@@ -80,11 +84,72 @@ pub enum SExpr {
     Constant(Constant),
     Keyword(SmolStr),
     Symbol(SmolStr),
-    List(Vec<SExpr>),
+    List(Vec<Spanned<SExpr>>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct Spanned<T> {
+    pub node: T,
+    pub start: usize,
+    pub end: usize,
+}
+
+impl<T> Display for Spanned<T>
+where
+    T: Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Display::fmt(&self.node, f)
+    }
+}
+
+impl<T> Spanned<T> {
+    pub fn new(node: T, range: Range<usize>) -> Self {
+        Self {
+            node,
+            start: range.start,
+            end: range.end,
+        }
+    }
+
+    pub fn as_deref(&self) -> Spanned<&T::Target>
+    where
+        T: std::ops::Deref,
+    {
+        Spanned {
+            node: &*self.node,
+            start: self.start,
+            end: self.end,
+        }
+    }
+
+    pub fn as_ref(&self) -> Spanned<&T> {
+        Spanned {
+            node: &self.node,
+            start: self.start,
+            end: self.end,
+        }
+    }
+
+    pub fn as_mut(&mut self) -> Spanned<&mut T> {
+        Spanned {
+            node: &mut self.node,
+            start: self.start,
+            end: self.end,
+        }
+    }
+
+    pub fn filter_map<U>(self, f: impl FnOnce(T) -> Option<U>) -> Option<Spanned<U>> {
+        f(self.node).map(|node| Spanned {
+            node,
+            start: self.start,
+            end: self.end,
+        })
+    }
 }
 
 impl SExpr {
-    pub fn parser(input: &mut &str) -> ModalResult<SExpr> {
+    pub fn parser(input: &mut LocatingSlice<&str>) -> ModalResult<SExpr> {
         alt((
             preceded(
                 ":",
@@ -98,25 +163,31 @@ impl SExpr {
             })
             .verify(|c: &str| !c.chars().next().unwrap().is_digit(10))
             .map(|s: &str| SExpr::Symbol(s.into())),
+            // //TODO: |symbol|
             Constant::parser.map(SExpr::Constant),
-            //TODO: |symbol|
             delimited(
                 ("(", multispace0),
-                separated(0.., SExpr::parser, multispace1).map(SExpr::List),
+                separated(
+                    0..,
+                    SExpr::parser.with_span().map(|(s, r)| Spanned::new(s, r)),
+                    multispace1,
+                )
+                .map(SExpr::List),
                 (multispace0, ")"),
             ),
         ))
         .parse_next(input)
     }
 
-    pub fn as_app(&self) -> Option<(&SmolStr, &[SExpr])> {
+    pub fn as_app(&self) -> Option<(Spanned<&SmolStr>, &[Spanned<SExpr>])> {
         let SExpr::List(v) = self else {
             return None;
         };
-        let SExpr::Symbol(f) = v.get(0)? else {
+        let symbol = v.get(0)?;
+        let SExpr::Symbol(f) = &symbol.node else {
             return None;
         };
-        Some((f, &v[1..]))
+        Some((Spanned::new(f, symbol.start..symbol.end), &v[1..]))
     }
 }
 
@@ -165,7 +236,7 @@ mod test {
             "(3.1512 \"你好 world\")",
         ];
         for sexpr in sexprs {
-            let parsed = SExpr::parser.parse(sexpr).unwrap();
+            let parsed = SExpr::parser.parse(LocatingSlice::new(sexpr)).unwrap();
             assert_eq!(parsed.to_string(), sexpr);
         }
         let denormal_sexprs = [
@@ -174,11 +245,14 @@ mod test {
             "( define ( f x ) ( g x ) )",
         ];
         for sexpr in denormal_sexprs {
-            let parsed = SExpr::parser.parse(sexpr).unwrap();
+            let parsed = SExpr::parser.parse(LocatingSlice::new(sexpr)).unwrap();
             let normalized = parsed.to_string();
             assert_ne!(normalized, sexpr);
-            let reparsed = SExpr::parser.parse(&normalized).unwrap();
-            assert_eq!(parsed, reparsed);
+            let reparsed = SExpr::parser
+                .parse(LocatingSlice::new(&normalized))
+                .unwrap();
+            assert_ne!(parsed, reparsed); // Locations are changed!
+            assert_eq!(normalized, reparsed.to_string());
         }
     }
 
@@ -196,7 +270,7 @@ mod test {
             "#b32",
         ];
         for sexpr in invalid_sexprs {
-            let parsed = SExpr::parser.parse(sexpr);
+            let parsed = SExpr::parser.parse(LocatingSlice::new(sexpr));
             assert!(parsed.is_err(), "{:?} ==> {:?}", sexpr, parsed);
         }
     }

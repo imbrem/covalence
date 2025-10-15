@@ -163,7 +163,6 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::Close(close) => GNode::Close(Close {
                 under: close.under,
                 var: close.var,
-                ix: close.ix,
                 tm: f(close.tm),
             }),
             GNode::Import(import) => GNode::Import(import),
@@ -200,7 +199,6 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::Wk1(k, [a]) => Ok(GNode::Wk1(k, [f(a)?])),
             GNode::Close(close) => Ok(GNode::Close(Close {
                 under: close.under,
-                ix: close.ix,
                 var: close.var,
                 tm: f(close.tm)?,
             })),
@@ -239,7 +237,6 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::Close(close) => GNode::Close(Close {
                 under: close.under,
                 var: close.var,
-                ix: close.ix,
                 tm: (Bv(0), close.tm),
             }),
             GNode::Import(import) => GNode::Import(import),
@@ -524,9 +521,7 @@ pub struct Close<C, T> {
     /// The number of binders being closed under
     pub under: Bv,
     /// The variable being closed over
-    pub var: C,
-    /// The index of the variable being closed over
-    pub ix: u32,
+    pub var: Gv<C>,
     /// The term being closed over (in `this`, _not_ necessarily `ctx`)
     pub tm: T,
 }
@@ -536,8 +531,7 @@ impl<C, T> Close<C, T> {
     pub fn as_ref(&self) -> Close<&C, &T> {
         Close {
             under: self.under,
-            var: &self.var,
-            ix: self.ix,
+            var: self.var.as_ref(),
             tm: &self.tm,
         }
     }
@@ -546,8 +540,7 @@ impl<C, T> Close<C, T> {
     pub fn as_mut(&mut self) -> Close<&mut C, &mut T> {
         Close {
             under: self.under,
-            var: &mut self.var,
-            ix: self.ix,
+            var: self.var.as_mut(),
             tm: &mut self.tm,
         }
     }
@@ -563,6 +556,7 @@ pub struct Import<C, T> {
     /// An upper bound on the number of unbound variables in the import
     ///
     /// If this bound is incorrect, the import is invalid
+    /// TODO: this should be removable if we transition to a saturate-able bvi...
     pub bvi: Bv,
 }
 

@@ -1642,31 +1642,31 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
     }
 
     fn lazy_close(&mut self, ctx: C, var: Gv<C>, tm: T) -> T {
-        if !self.has_var(ctx, tm, var) {
+        //TODO: optimize this, and cover more cases
+        if self.bvi(ctx, tm) == Bv(0) && !self.has_var(ctx, tm, var) {
             return tm;
         }
         self.add(
             ctx,
             GNode::Close(Close {
                 under: Bv(0),
-                var: var.ctx,
-                ix: 0,
+                var,
                 tm,
             }),
         )
     }
 
-    fn lazy_close_import(&mut self, ctx: C, src: Gv<C>, tm: T) -> T {
-        let import = self.import(ctx, src.ctx, tm);
-        if !self.has_var(src.ctx, tm, src) {
+    fn lazy_close_import(&mut self, ctx: C, var: Gv<C>, tm: T) -> T {
+        let import = self.import(ctx, var.ctx, tm);
+        //TODO: optimize this, and cover more cases
+        if self.bvi(var.ctx, tm) == Bv(0) && !self.has_var(var.ctx, tm, var) {
             return import;
         }
         self.add(
             ctx,
             GNode::Close(Close {
                 under: Bv(0),
-                var: src.ctx,
-                ix: src.ix,
+                var,
                 tm: import,
             }),
         )
@@ -1687,8 +1687,7 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
             ctx,
             GNode::Close(Close {
                 under: Bv(0),
-                var: var.ctx,
-                ix: var.ix,
+                var,
                 tm,
             }),
         );
@@ -1717,25 +1716,24 @@ impl<C: Copy + PartialEq, T: Copy, D: TermStore<C, T> + ReadFacts<C, T> + WriteF
         }
     }
 
-    fn lazy_close_import_eq(&mut self, ctx: C, src: Gv<C>, tm: T) -> Eqn<T> {
+    fn lazy_close_import_eq(&mut self, ctx: C, var: Gv<C>, tm: T) -> Eqn<T> {
         let import = self.add(
             ctx,
             GNode::Import(Import {
-                ctx: src.ctx,
+                ctx: var.ctx,
                 tm,
-                bvi: self.bvi(src.ctx, tm),
+                bvi: self.bvi(var.ctx, tm),
             }),
         );
         let eager = self.add(
             ctx,
             GNode::Close(Close {
                 under: Bv(0),
-                var: src.ctx,
-                ix: src.ix,
+                var,
                 tm: import,
             }),
         );
-        let lazy = self.lazy_close_import(ctx, src, tm);
+        let lazy = self.lazy_close_import(ctx, var, tm);
         self.0.set_eq_unchecked(ctx, eager, lazy);
         Eqn {
             lhs: eager,

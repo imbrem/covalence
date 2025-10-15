@@ -512,4 +512,17 @@ mod test {
         ctx.set_eq_unchecked(unit, empty);
         assert!(ctx.is_contr());
     }
+
+    #[test]
+    fn add_var_prop() {
+        let mut ctx = Ctx::new_ctx();
+        let u0 = ctx.add(Node::U(ULvl::PROP));
+        assert_eq!(ctx.num_assumptions(), 0);
+        assert_eq!(ctx.var_ty(0), None);
+        let vx = ctx.add_var_unchecked(u0);
+        assert_eq!(vx, 0);
+        assert_eq!(ctx.num_assumptions(), 0);
+        assert_eq!(ctx.var_ty(0), Some(u0));
+        assert_eq!(ctx.var_ty(1), None);
+    }
 }

@@ -366,6 +366,8 @@ impl WriteFacts<CtxId, TermId> for EggTermDb {
 
 #[cfg(test)]
 mod test {
+    use crate::term::Bv;
+
     use super::*;
 
     #[test]
@@ -380,6 +382,30 @@ mod test {
         assert!(!db.is_contr(ctx));
         db.set_eq_unchecked(ctx, unit, empty);
         assert!(db.is_contr(ctx));
+    }
+
+    #[test]
+    fn construct_pi_prop_close() {
+        let mut db = EggTermDb::default();
+        let root = db.new_ctx();
+        let child = db.with_parent(root);
+        let child_prop = db.add(child, Node::U(ULvl::PROP));
+        let vx = db.add_var_unchecked(child, child_prop);
+        let x = db.add(child, Node::Fv(vx));
+        let root_prop = db.add(root, Node::U(ULvl::PROP));
+        let root_x = db.import(root, child, x);
+        assert_eq!(db.bvi(root, root_x), Bv(0));
+        let root_close_x = db.add(
+            root,
+            Node::Close(crate::term::Close {
+                under: Bv(0),
+                var: vx,
+                tm: root_x,
+            }),
+        );
+        assert_eq!(db.bvi(root, root_close_x), Bv(1));
+        let root_pi = db.add(root, Node::Pi([root_prop, root_close_x]));
+        assert_eq!(db.bvi(root, root_pi), Bv(0));
     }
 
     #[test]

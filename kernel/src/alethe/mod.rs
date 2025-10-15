@@ -32,6 +32,7 @@ pub struct SortedVar {
 }
 
 pub enum Term {
+    Constant(Constant),
     App(QualId, Vec<Term>),
     Let(Vec<VarBinding>, Box<Term>),
     Forall(Vec<SortedVar>, Box<Term>),
@@ -40,7 +41,12 @@ pub enum Term {
     Annot(Box<Term>, Vec<Attribute>),
 }
 
-pub enum ProofCommand {}
+pub enum ProofCommand {
+    Assume(Assume),
+    Step(Step),
+    Anchor(Anchor),
+    DefineFun(DefineFun),
+}
 
 pub struct Assume {
     pub symbol: SmolStr,

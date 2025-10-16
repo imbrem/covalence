@@ -552,7 +552,6 @@ pub trait Derive<C, T> {
         &mut self,
         ctx: C,
         arg_lvl: ULvl,
-        res_lvl: ULvl,
         lvl: ULvl,
         arg_ty: T,
         res_ty: T,
@@ -582,8 +581,6 @@ pub trait Derive<C, T> {
     fn derive_sigma<S>(
         &mut self,
         ctx: C,
-        arg_lvl: ULvl,
-        res_lvl: ULvl,
         lvl: ULvl,
         arg_ty: T,
         res_ty: T,

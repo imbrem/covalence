@@ -85,10 +85,10 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
         // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
         // inserting the import and hence fixing the `TermId`.
-        if let &Node::Import(Import { ctx: src, tm }) = self.node(src, tm) {
-            if let Some(import) = self.lookup_import(ctx, src, tm) {
-                return Some(import);
-            }
+        if let &Node::Import(Import { ctx: src, tm }) = self.node(src, tm)
+            && let Some(import) = self.lookup_import(ctx, src, tm)
+        {
+            return Some(import);
         }
         if ctx == src {
             return Some(tm);

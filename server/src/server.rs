@@ -22,7 +22,7 @@ pub struct CovalenceLsp {
 
 /// A file kind `covalence` knows how to handle
 pub enum FileKind {
-    SMT,
+    Smt,
     Alethe,
 }
 
@@ -77,7 +77,7 @@ impl CovalenceLsp {
 
     pub fn file_kind(&mut self, url: &Url) -> Option<FileKind> {
         if url.path().ends_with(".smt2") {
-            Some(FileKind::SMT)
+            Some(FileKind::Smt)
         } else if url.path().ends_with(".alethe") {
             Some(FileKind::Alethe)
         } else {

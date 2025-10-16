@@ -4,7 +4,7 @@ The kernel's trusted code base
 This module is further subdivided into three primary components:
 - `data`, which contains generic data structures and (trusted) functions for manipulating them
 - `api`, which describes the generic API our rules are implemented over, including the API of the
-   rules themselves
+  rules themselves
 - `kernel`, which implements an LCF-style kernel for `covalence` over an abstract datastore
 - `store`, which is a specific, trusted implementation of our datastore API using `egg`
 

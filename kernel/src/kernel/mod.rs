@@ -50,31 +50,13 @@ mod test {
         assert_eq!(empty_deriv.tm, empty);
         assert!(ker.has_ty(ctx, empty, u1));
         assert_eq!(
-            ker.derive_pi(ctx, ULvl::SET, ULvl::SET, ULvl::PROP, unit, empty, &mut ())
-                .unwrap_err(),
-            kernel_error::DERIVE_PI_IMAX_LE
-        );
-        assert_eq!(
-            ker.derive_pi(ctx, ULvl::SET, ULvl::PROP, ULvl::PROP, unit, empty, &mut ())
+            ker.derive_pi(ctx, ULvl::SET, ULvl::PROP, unit, empty, &mut ())
                 .unwrap_err(),
             kernel_error::DERIVE_PI_RES_TY
         );
         assert_eq!(
-            ker.derive_pi(ctx, ULvl::PROP, ULvl::SET, ULvl::PROP, unit, empty, &mut ())
+            ker.derive_pi(ctx, ULvl::PROP, ULvl::PROP, unit, empty, &mut ())
                 .unwrap_err(),
-            kernel_error::DERIVE_PI_IMAX_LE
-        );
-        assert_eq!(
-            ker.derive_pi(
-                ctx,
-                ULvl::PROP,
-                ULvl::PROP,
-                ULvl::PROP,
-                unit,
-                empty,
-                &mut ()
-            )
-            .unwrap_err(),
             kernel_error::DERIVE_PI_ARG_TY
         );
         let empty_deriv = ker.derive_empty(ctx, ULvl::PROP);
@@ -82,30 +64,12 @@ mod test {
         assert_eq!(empty_deriv.tm, empty);
         assert_eq!(empty_deriv.ty, u0);
         assert_eq!(
-            ker.derive_pi(ctx, ULvl::SET, ULvl::SET, ULvl::PROP, unit, empty, &mut ())
+            ker.derive_pi(ctx, ULvl::PROP, ULvl::PROP, unit, empty, &mut ())
                 .unwrap_err(),
-            kernel_error::DERIVE_PI_IMAX_LE
-        );
-        assert_eq!(
-            ker.derive_pi(ctx, ULvl::PROP, ULvl::SET, ULvl::PROP, unit, empty, &mut ())
-                .unwrap_err(),
-            kernel_error::DERIVE_PI_IMAX_LE
-        );
-        assert_eq!(
-            ker.derive_pi(
-                ctx,
-                ULvl::PROP,
-                ULvl::PROP,
-                ULvl::PROP,
-                unit,
-                empty,
-                &mut ()
-            )
-            .unwrap_err(),
             kernel_error::DERIVE_PI_ARG_TY
         );
         let pi_deriv = ker
-            .derive_pi(ctx, ULvl::SET, ULvl::PROP, ULvl::PROP, unit, empty, &mut ())
+            .derive_pi(ctx, ULvl::SET, ULvl::PROP, unit, empty, &mut ())
             .unwrap();
         let pi = ker.add(ctx, Node::Pi([unit, empty]));
         assert_eq!(pi_deriv.tm, pi);

@@ -59,7 +59,7 @@ impl SExpr {
             take_while(1.., |c: char| {
                 c.is_alphanumeric() || "+-/*=%?!.%_~&<>@".contains(c)
             })
-            .verify(|c: &str| !c.chars().next().unwrap().is_digit(10))
+            .verify(|c: &str| !c.chars().next().unwrap().is_ascii_digit())
             .map(|s: &str| SExpr::Symbol(s.into())),
             // //TODO: |symbol|
             Constant::parser.map(SExpr::Constant),
@@ -77,7 +77,7 @@ impl SExpr {
         .parse_next(input)
     }
 
-    pub fn line_comment<'a>(input: &mut LocatingSlice<&str>) -> ModalResult<()> {
+    pub fn line_comment(input: &mut LocatingSlice<&str>) -> ModalResult<()> {
         (';', take_till(1.., ['\n', '\r']))
             .void() // Output is thrown away.
             .parse_next(input)
@@ -91,7 +91,7 @@ impl SExpr {
         let SExpr::List(v) = self else {
             return None;
         };
-        let symbol = v.get(0)?;
+        let symbol = v.first()?;
         let SExpr::Symbol(f) = &symbol.node else {
             return None;
         };

@@ -466,7 +466,6 @@ impl<
         &mut self,
         ctx: C,
         arg_lvl: ULvl,
-        res_lvl: ULvl,
         lvl: ULvl,
         arg_ty: T,
         res_ty: T,
@@ -476,11 +475,11 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_pi")?;
-        if !self.imax_le(arg_lvl, res_lvl, lvl) {
+        if !self.imax_le(arg_lvl, lvl, lvl) {
             return Err(strategy.fail(kernel_error::DERIVE_PI_IMAX_LE));
         }
         let arg_lvl_ty = self.add(ctx, GNode::U(arg_lvl));
-        let res_lvl_ty = self.add(ctx, GNode::U(res_lvl));
+        let ty = self.add(ctx, GNode::U(lvl));
         self.ensure_has_ty(
             ctx,
             arg_ty,
@@ -492,11 +491,10 @@ impl<
             ctx,
             arg_ty,
             res_ty,
-            res_lvl_ty,
+            ty,
             strategy,
             kernel_error::DERIVE_PI_RES_TY,
         )?;
-        let ty = self.add(ctx, GNode::U(lvl));
         let tm = self.add(ctx, GNode::Pi([arg_ty, res_ty]));
         self.0.set_has_ty_unchecked(ctx, tm, ty);
         Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
@@ -505,8 +503,6 @@ impl<
     fn derive_sigma<S>(
         &mut self,
         ctx: C,
-        arg_lvl: ULvl,
-        res_lvl: ULvl,
         lvl: ULvl,
         arg_ty: T,
         res_ty: T,
@@ -516,30 +512,16 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_sigma")?;
-        if !self.u_le(arg_lvl, lvl) {
-            return Err(strategy.fail(kernel_error::DERIVE_SIGMA_ARG_LVL_LE));
-        }
-        if !self.u_le(res_lvl, lvl) {
-            return Err(strategy.fail(kernel_error::DERIVE_SIGMA_RES_LVL_LE));
-        }
-        let arg_lvl_ty = self.add(ctx, GNode::U(arg_lvl));
-        let res_lvl_ty = self.add(ctx, GNode::U(res_lvl));
-        self.ensure_has_ty(
-            ctx,
-            arg_ty,
-            arg_lvl_ty,
-            strategy,
-            kernel_error::DERIVE_SIGMA_ARG_TY,
-        )?;
+        let ty = self.add(ctx, GNode::U(lvl));
+        self.ensure_has_ty(ctx, arg_ty, ty, strategy, kernel_error::DERIVE_SIGMA_ARG_TY)?;
         self.ensure_has_ty_under(
             ctx,
             arg_ty,
             res_ty,
-            res_lvl_ty,
+            ty,
             strategy,
             kernel_error::DERIVE_SIGMA_RES_TY,
         )?;
-        let ty = self.add(ctx, GNode::U(lvl));
         let tm = self.add(ctx, GNode::Sigma([arg_ty, res_ty]));
         self.0.set_has_ty_unchecked(ctx, tm, ty);
         Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))

@@ -94,7 +94,7 @@ fn parse_document_and_publish_diagnostics(
                 ),
                 severity: Some(DiagnosticSeverity::ERROR),
                 code: Some(NumberOrString::String("parse-error".to_string())),
-                message: format!("S-expression parse error: {}", err),
+                message: format!("S-expression parse error: {err}"),
                 source: Some("covalence-lsp".to_string()),
                 ..Default::default()
             };

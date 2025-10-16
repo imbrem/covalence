@@ -4,7 +4,7 @@ use std::{
 };
 
 /// A term in `covalence`'s core calculus
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
 pub enum GNode<C, T, I = T> {
     // == Term formers, corresponding to Tm from `gt3-lean` ==
     /// A free variable
@@ -52,6 +52,7 @@ pub enum GNode<C, T, I = T> {
     /// An assertion that a term has the given type
     HasTy([T; 2]),
     /// A known-invalid term
+    #[default]
     Invalid,
 
     // == Syntax extensions ==
@@ -414,7 +415,7 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::Import(_) => Bv::INVALID,
             GNode::Close(Close {
                 under: k, tm: a, ..
-            }) => tm(&a).bvi_under(*k),
+            }) => tm(a).bvi_under(*k),
             GNode::BWk(s, [a]) => s.bvi(tm(a)),
             n => n
                 .as_ref()
@@ -433,12 +434,6 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::U(level) => Some(*level),
             _ => None,
         }
-    }
-}
-
-impl<C, T> Default for GNode<C, T> {
-    fn default() -> Self {
-        GNode::Invalid
     }
 }
 

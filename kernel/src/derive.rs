@@ -902,14 +902,14 @@ pub trait Derive<C, T>: Sized {
     /// - Otherwise, `let bound in body`
     ///
     /// TODO: reference Lean
-    fn lazy_subst(&mut self, ctx: C, bound: T, body: T) -> T;
+    fn subst(&mut self, ctx: C, bound: T, body: T) -> T;
 
     /// Compute the closure of a term
     ///
     /// Given term `tm` in context `ctx`
     /// - If `tm` does not depend on the variable `var`, return `tm`
     /// - Otherwise, return `close var tm`
-    fn lazy_close(&mut self, ctx: C, var: Gv<C>, tm: T) -> T;
+    fn close(&mut self, ctx: C, var: Gv<C>, tm: T) -> T;
 
     /// Compute the closure of an imported term
     ///
@@ -917,7 +917,7 @@ pub trait Derive<C, T>: Sized {
     /// - If `src` has no parameter, or `tm` does not depend on the parameter of `src`, return the
     ///   import of `tm` into `ctx`
     /// - Otherwise, return `close src (import src tm)`
-    fn lazy_close_import(&mut self, ctx: C, src: Gv<C>, tm: T) -> T;
+    fn close_import(&mut self, ctx: C, src: Gv<C>, tm: T) -> T;
 
     /// The substitution of a term is equal to its lazy substitution
     fn lazy_subst_eq(&mut self, ctx: C, bound: T, body: T) -> Eqn<T>;
@@ -1686,14 +1686,14 @@ impl<
         Ok(var)
     }
 
-    fn lazy_subst(&mut self, ctx: C, bound: T, body: T) -> T {
+    fn subst(&mut self, ctx: C, bound: T, body: T) -> T {
         if self.bvi(ctx, body) == Bv(0) {
             return body;
         }
         self.add(ctx, GNode::Let(Bv(0), [bound, body]))
     }
 
-    fn lazy_close(&mut self, ctx: C, var: Gv<C>, tm: T) -> T {
+    fn close(&mut self, ctx: C, var: Gv<C>, tm: T) -> T {
         //TODO: optimize this, and cover more cases
         if self.bvi(ctx, tm) == Bv(0) && !self.has_var(ctx, tm, var) {
             return tm;
@@ -1708,7 +1708,7 @@ impl<
         )
     }
 
-    fn lazy_close_import(&mut self, ctx: C, var: Gv<C>, tm: T) -> T {
+    fn close_import(&mut self, ctx: C, var: Gv<C>, tm: T) -> T {
         let import = self.import(ctx, var.ctx, tm);
         //TODO: optimize this, and cover more cases
         if self.bvi(var.ctx, tm) == Bv(0) && !self.has_var(var.ctx, tm, var) {
@@ -1724,9 +1724,17 @@ impl<
         )
     }
 
+    //TODO: implement _eager_ import (i.e. deep copy; name this properly. clone?)
+
+    //TODO: implement _eager_ substitution; combine with import
+
+    //TODO: implement _eager_ close; combine with import
+
+    //TODO: equalities for eager substitution, close, import
+
     fn lazy_subst_eq(&mut self, ctx: C, bound: T, body: T) -> Eqn<T> {
         let eager = self.add(ctx, GNode::Let(Bv(0), [bound, body]));
-        let lazy = self.lazy_subst(ctx, bound, body);
+        let lazy = self.subst(ctx, bound, body);
         self.0.set_eq_unchecked(ctx, eager, lazy);
         Eqn {
             lhs: eager,
@@ -1743,7 +1751,7 @@ impl<
                 tm,
             }),
         );
-        let lazy = self.lazy_close(ctx, var, tm);
+        let lazy = self.close(ctx, var, tm);
         self.0.set_eq_unchecked(ctx, eager, lazy);
         Eqn {
             lhs: eager,
@@ -1771,7 +1779,7 @@ impl<
                 tm: import,
             }),
         );
-        let lazy = self.lazy_close_import(ctx, var, tm);
+        let lazy = self.close_import(ctx, var, tm);
         self.0.set_eq_unchecked(ctx, eager, lazy);
         Eqn {
             lhs: eager,
@@ -1834,8 +1842,8 @@ impl<
                 return Err(strategy.fail(kernel_errors::DERIVE_CLOSE_HAS_TY_UNDER_ILL_SCOPED));
             }
         }
-        let close_tm = self.lazy_close(ctx, var, tm);
-        let close_ty = self.lazy_close(ctx, var, ty);
+        let close_tm = self.close(ctx, var, tm);
+        let close_ty = self.close(ctx, var, ty);
         self.0
             .set_has_ty_under_unchecked(ctx, binder, close_tm, close_ty);
         Ok(HasTyUnderIn {
@@ -2040,7 +2048,7 @@ impl<
         let pi = self.add(ctx, GNode::Pi([arg_ty, res_ty]));
         self.ensure_has_ty(ctx, func, pi, strategy, kernel_errors::DERIVE_APP_FUNC)?;
         let tm = self.add(ctx, GNode::App([func, arg]));
-        let ty = self.lazy_subst(ctx, arg, res_ty);
+        let ty = self.subst(ctx, arg, res_ty);
         self.0.set_has_ty_unchecked(ctx, tm, ty);
         Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
@@ -2066,7 +2074,7 @@ impl<
             kernel_errors::DERIVE_PAIR_RES_TY,
         )?;
         self.ensure_has_ty(ctx, fst, arg_ty, strategy, kernel_errors::DERIVE_PAIR_FST)?;
-        let snd_ty = self.lazy_subst(ctx, fst, res_ty);
+        let snd_ty = self.subst(ctx, fst, res_ty);
         self.ensure_has_ty(ctx, snd, snd_ty, strategy, kernel_errors::DERIVE_PAIR_SND)?;
         let tm = self.add(ctx, GNode::Pair([fst, snd]));
         let ty = self.add(ctx, GNode::Sigma([arg_ty, res_ty]));
@@ -2113,7 +2121,7 @@ impl<
         let fst = self.add(ctx, GNode::Fst([pair]));
         self.0.set_has_ty_unchecked(ctx, fst, arg_ty);
         let tm = self.add(ctx, GNode::Snd([pair]));
-        let ty = self.lazy_subst(ctx, fst, res_ty);
+        let ty = self.subst(ctx, fst, res_ty);
         self.0.set_has_ty_unchecked(ctx, tm, ty);
         if let &GNode::Pair([a, b]) = self.node(ctx, pair) {
             self.0.set_eq_unchecked(ctx, fst, a);
@@ -2158,11 +2166,11 @@ impl<
         self.0.set_has_ty_unchecked(ctx, tm, ty);
         if self.is_inhab(ctx, cond) {
             let null = self.add(ctx, GNode::Null);
-            let then_br_null = self.lazy_subst(ctx, null, then_br);
+            let then_br_null = self.subst(ctx, null, then_br);
             self.0.set_eq_unchecked(ctx, tm, then_br_null);
         } else if self.is_empty(ctx, cond) {
             let null = self.add(ctx, GNode::Null);
-            let else_br_null = self.lazy_subst(ctx, null, else_br);
+            let else_br_null = self.subst(ctx, null, else_br);
             self.0.set_eq_unchecked(ctx, tm, else_br_null);
         }
         Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
@@ -2264,12 +2272,12 @@ impl<
             "a term which is well-typed under a binder cannot have a bvi greater than one"
         );
         let zero = self.add(ctx, GNode::N64(0));
-        let mot_zero = self.lazy_subst(ctx, mot, zero);
+        let mot_zero = self.subst(ctx, mot, zero);
         self.ensure_has_ty(ctx, z, mot_zero, strategy, kernel_errors::DERIVE_NATREC_Z)?;
         let bv_one = self.add(ctx, GNode::Bv(Bv(1)));
         let succ_bv_one = self.add(ctx, GNode::Succ([bv_one]));
         debug_assert_eq!(self.bvi(ctx, succ_bv_one), Bv(2));
-        let mot_succ_bv_one = self.lazy_subst(ctx, mot, succ_bv_one);
+        let mot_succ_bv_one = self.subst(ctx, mot, succ_bv_one);
         debug_assert!(self.bvi(ctx, mot_succ_bv_one) <= Bv(2));
         let mot_to_mot_succ = self.add(ctx, GNode::Pi([mot, mot_succ_bv_one]));
         debug_assert!(self.bvi(ctx, mot_to_mot_succ) <= Bv(1));
@@ -2317,9 +2325,9 @@ impl<
             kernel_errors::DERIVE_LET_BODY,
         )?;
         let tm = self.add(ctx, GNode::Let(Bv(0), [bound, body]));
-        let ty = self.lazy_subst(ctx, bound, body_ty);
+        let ty = self.subst(ctx, bound, body_ty);
         self.0.set_has_ty_unchecked(ctx, tm, ty);
-        let tm_s = self.lazy_subst(ctx, bound, body);
+        let tm_s = self.subst(ctx, bound, body);
         self.0.set_eq_unchecked(ctx, tm, tm_s);
         Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
@@ -2341,7 +2349,7 @@ impl<
         self.ensure_is_wf(ctx, tm, strategy, "derive_beta_abs: tm wf")?;
         self.ensure_has_ty(ctx, arg, arg_ty, strategy, "derive_beta_abs: arg")?;
         let tm_app = self.add(ctx, GNode::App([tm, arg]));
-        let tm_subst = self.lazy_subst(ctx, arg, body);
+        let tm_subst = self.subst(ctx, arg, body);
         self.0.set_eq_unchecked(ctx, tm_app, tm_subst);
         Ok(Eqn {
             lhs: tm_app,
@@ -2387,7 +2395,7 @@ impl<
         let nats = self.add(ctx, GNode::Nats);
         self.ensure_has_ty(ctx, n, nats, strategy, "derive_beta_succ: n")?;
         let tm_n = self.add(ctx, GNode::App([tm, n]));
-        let s_n = self.lazy_subst(ctx, n, s);
+        let s_n = self.subst(ctx, n, s);
         let s_n_tm_n = self.add(ctx, GNode::App([s_n, tm_n]));
         let succ_n = self.add(ctx, GNode::Succ([n]));
         let tm_succ_n = self.add(ctx, GNode::App([tm, succ_n]));
@@ -2412,7 +2420,7 @@ impl<
         strategy.start_rule("derive_choose_spec")?;
         self.ensure_exists_inhab_under(ctx, ty, pred, strategy, "derive_choose_spec: exists")?;
         let choose = self.add(ctx, GNode::Choose([ty, pred]));
-        let pred_choose = self.lazy_subst(ctx, choose, pred);
+        let pred_choose = self.subst(ctx, choose, pred);
         self.0.set_has_ty_unchecked(ctx, choose, ty);
         self.0.set_is_prop_unchecked(ctx, pred_choose);
         self.0.set_is_inhab_unchecked(ctx, pred_choose);

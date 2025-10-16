@@ -29,12 +29,6 @@
 		"ms-vscode.wasm-wasi-core"
 	],
 	"contributes": {
-		"commands": [
-			{
-				"command": "covalence.covalence-lsp.checkAlethe",
-				"title": "Check Alethe"
-			}
-		],
 		"languages": [
 			{
 				"id": "smt",
@@ -44,6 +38,7 @@
 					"sygus"
 				],
 				"extensions": [
+					"alethe",
 					"smt2",
 					"sy"
 				],

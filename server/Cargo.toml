@@ -16,3 +16,4 @@ tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 
 covalence_kernel = { path = "../kernel" }
+crossbeam-channel = "0.5.15"

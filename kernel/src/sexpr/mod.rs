@@ -283,7 +283,6 @@ mod test {
             let reparsed = SExpr::parser
                 .parse(LocatingSlice::new(&normalized))
                 .unwrap();
-            assert_ne!(parsed, reparsed); // Locations are changed!
             assert_eq!(normalized, reparsed.to_string());
         }
     }

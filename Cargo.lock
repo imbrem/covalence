@@ -64,6 +64,7 @@ name = "covalence-lsp"
 version = "0.1.0"
 dependencies = [
  "covalence_kernel",
+ "crossbeam-channel",
  "eyre",
  "lsp-server",
  "lsp-types",

@@ -12,7 +12,7 @@ pub use crate::store::{CtxId, Node, TermId};
 #[doc(inline)]
 pub use crate::term::ULvl;
 
-pub type Kernel = crate::derive::Kernel<TermDb>;
+pub type Kernel = crate::trusted::kernel::Kernel<TermDb>;
 
 impl Kernel {
     /// Construct a new, empty kernel

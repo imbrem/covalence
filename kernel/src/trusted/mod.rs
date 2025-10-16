@@ -5,8 +5,8 @@ This module is further subdivided into three primary components:
 - `data`, which contains generic data structures and (trusted) functions for manipulating them
 - `api`, which describes the generic API our rules are implemented over, including the API of the
    rules themselves
-- `rules`, which describes the concrete implementation of our sound derivations over the store API
-- `store`, which is a specific, trusted implementation of our API using `egg`
+- `kernel`, which implements an LCF-style kernel for `covalence` over an abstract datastore
+- `store`, which is a specific, trusted implementation of our datastore API using `egg`
 
 In general, you shouldn't depend on this file directly, but rather use the re-exports and utility
 functions provided in the rest of this crate. This is separated out into a separate file for the
@@ -41,6 +41,9 @@ pub mod data;
 
 /// Generic API
 pub mod api;
+
+/// Implementation of derivations
+pub mod kernel;
 
 /// Core API for term stores
 pub mod store;

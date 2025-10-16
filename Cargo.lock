@@ -81,6 +81,7 @@ dependencies = [
  "bitflags 2.9.4",
  "egg",
  "indexmap",
+ "smallvec",
  "smol_str",
  "typed-generational-arena",
  "winnow",

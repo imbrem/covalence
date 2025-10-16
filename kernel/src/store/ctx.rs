@@ -59,6 +59,10 @@ impl Ctx {
         self.e.analysis.assumptions.get_index(ix as usize).copied()
     }
 
+    pub fn num_vars(&self) -> usize {
+        self.e.analysis.vars.len()
+    }
+
     pub fn propagate_in(&mut self) -> usize {
         self.e.rebuild()
     }

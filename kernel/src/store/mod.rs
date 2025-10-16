@@ -106,6 +106,10 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         self.x[ctx.0].assumption(ix)
     }
 
+    fn num_vars(&self, ctx: CtxId) -> usize {
+        self.x[ctx.0].num_vars()
+    }
+
     fn var_ty(&mut self, ctx: CtxId, var: VarId) -> TermId {
         let ty = self.get_var_ty(var);
         self.import(ctx, var.ctx, ty)

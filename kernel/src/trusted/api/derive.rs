@@ -373,6 +373,18 @@ pub trait Derive<C, T> {
     /// The closure of an imported term is equal to its lazy imported closure
     fn lazy_close_import_eq(&mut self, ctx: C, src: Gv<C>, tm: T) -> Eqn<T>;
 
+    /// Cast by universe level
+    ///
+    /// TODO: reference Lean
+    fn derive_u_le<S>(
+        &mut self,
+        ctx: C,
+        tm: T,
+        lo: ULvl,
+        hi: ULvl,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail> where S: Strategy<C, T, Self>;
+
     /// Check a term has type `B` under a binder `A`
     ///
     /// Checks that:

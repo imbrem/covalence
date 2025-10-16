@@ -16,6 +16,10 @@ pub mod kernel_error {
     ///
     /// Later, this restriction may be lifted slightly to allow _semi-well-scoped_ terms.
     pub const DERIVE_FV_ILL_SCOPED: &str = "derive_fv: var is ill-scoped";
+    /// Cannot deduce that lvl1 ≤ lvl2
+    pub const DERIVE_U_LE_U_LE: &str = "derive_u_le: cannot deduce that lvl1 ≤ lvl2";
+    /// tm must be of type U(lvl1)
+    pub const DERIVE_U_LE_TM: &str = "derive_u_le: tm must be of type U(lvl1)";
     pub const DERIVE_CLOSE_HAS_TY_UNDER_ILL_SCOPED: &str =
         "derive_close_has_ty_under: variable's context is not a subcontext of the current context";
     pub const DERIVE_CLOSE_HAS_TY_UNDER_TOO_MANY_VARS: &str =

@@ -327,6 +327,28 @@ impl<
         }
     }
 
+    fn derive_u_le<S>(
+        &mut self,
+        ctx: C,
+        tm: T,
+        lo: ULvl,
+        hi: ULvl,
+        strategy: &mut S,
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("derive_u_le")?;
+        if !self.u_le(lo, hi) {
+            return Err(strategy.fail(kernel_error::DERIVE_U_LE_U_LE));
+        }
+        let old = self.add(ctx, GNode::U(lo));
+        self.ensure_has_ty(ctx, tm, old, strategy, kernel_error::DERIVE_U_LE_TM)?;
+        let ty = self.add(ctx, GNode::U(hi));
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+        Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+    }
+
     fn derive_close_has_ty_under<S>(
         &mut self,
         ctx: C,

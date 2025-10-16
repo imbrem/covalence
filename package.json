@@ -31,9 +31,8 @@
 	"contributes": {
 		"commands": [
 			{
-				"command": "covalence.covalence-lsp.countFiles",
-				"category": "Samples",
-				"title": "Count Files"
+				"command": "covalence.covalence-lsp.checkAlethe",
+				"title": "Check Alethe"
 			}
 		],
 		"languages": [

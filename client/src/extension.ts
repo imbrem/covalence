@@ -57,17 +57,17 @@ export async function activate(context: ExtensionContext) {
 
 	console.log("Initialized client");
 
-	interface CountFileParams {
+	interface CheckAletheParams {
 		readonly folder: string
 	};
-	const CountFilesRequest = new RequestType<CountFileParams, number, void>('covalence-lsp/countFiles');
-	context.subscriptions.push(commands.registerCommand('covalence.covalence-lsp.countFiles', async () => {
+	const CheckAletheRequest = new RequestType<CheckAletheParams, number, void>('covalence-lsp/checkAlethe');
+	context.subscriptions.push(commands.registerCommand('covalence.covalence-lsp.checkAlethe', async () => {
 		console.log("Counting files");
 		// We assume we do have a folder.
 		const folder = workspace.workspaceFolders![0].uri;
-		// We need to convert the folder URI to a URI that maps to the mounted WASI file system. This is something
-		// @vscode/wasm-wasi-lsp does for us.
-		const result = await client.sendRequest(CountFilesRequest, { folder: client.code2ProtocolConverter.asUri(folder) });
+		// We need to convert the folder URI to a URI that maps to the mounted WASI file system.
+		// This is something @vscode/wasm-wasi-lsp does for us.
+		const result = await client.sendRequest(CheckAletheRequest, { folder: client.code2ProtocolConverter.asUri(folder) });
 		window.showInformationMessage(`The workspace contains ${result} files.`);
 	}));
 }

@@ -9,9 +9,18 @@ use tracing::info;
 
 use lsp_server::{Connection, ExtractError, Message, RequestId, Response};
 use lsp_types::{
-    request::{GotoDefinition, Request},
-    GotoDefinitionResponse, InitializeParams, Location, OneOf, ServerCapabilities, Url,
+    notification::{
+        DidChangeTextDocument, DidOpenTextDocument, DidSaveTextDocument,
+        Notification as NotificationTrait,
+    },
+    request::Request,
+    Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
+    DidSaveTextDocumentParams, InitializeParams, NumberOrString,
+    Position, PublishDiagnosticsParams, Range, ServerCapabilities,
+    TextDocumentSyncCapability, TextDocumentSyncKind, Url,
 };
+
+use covalence_kernel::sexpr::{Commands, LocatingSlice, Parser};
 
 fn main() -> eyre::Result<()> {
     // Configure tracing to output to stderr instead of stdout
@@ -28,7 +37,7 @@ fn main() -> eyre::Result<()> {
 
     // Run the server and wait for the two threads to end (typically by trigger LSP Exit event).
     let server_capabilities = serde_json::to_value(&ServerCapabilities {
-        definition_provider: Some(OneOf::Left(true)),
+        text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
         ..Default::default()
     })
     .unwrap();
@@ -43,15 +52,15 @@ fn main() -> eyre::Result<()> {
 
 #[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CountFilesParams {
+pub struct CheckAletheParams {
     pub folder: Url,
 }
 
-pub enum CountFilesRequest {}
-impl Request for CountFilesRequest {
-    type Params = CountFilesParams;
+pub enum CheckAletheRequest {}
+impl Request for CheckAletheRequest {
+    type Params = CheckAletheParams;
     type Result = u32;
-    const METHOD: &'static str = "covalence-lsp/countFiles";
+    const METHOD: &'static str = "covalence-lsp/checkAlethe";
 }
 
 fn main_loop(connection: Connection, params: serde_json::Value) -> eyre::Result<()> {
@@ -62,37 +71,9 @@ fn main_loop(connection: Connection, params: serde_json::Value) -> eyre::Result<
                 if connection.handle_shutdown(&req)? {
                     return Ok(());
                 }
-                match cast::<GotoDefinition>(req.clone()) {
+                match cast::<CheckAletheRequest>(req.clone()) {
                     Ok((id, params)) => {
-                        let uri = params.text_document_position_params.text_document.uri;
-                        info!(
-                            "Received gotoDefinition request #{} {}",
-                            id,
-                            uri.to_string()
-                        );
-                        let loc = Location::new(
-                            uri,
-                            lsp_types::Range::new(
-                                lsp_types::Position::new(0, 0),
-                                lsp_types::Position::new(0, 0),
-                            ),
-                        );
-                        let result = Some(GotoDefinitionResponse::Array(vec![loc]));
-                        let result = serde_json::to_value(result).unwrap();
-                        let resp = Response {
-                            id,
-                            result: Some(result),
-                            error: None,
-                        };
-                        connection.sender.send(Message::Response(resp))?;
-                        continue;
-                    }
-                    Err(err @ ExtractError::JsonError { .. }) => panic!("{err:?}"),
-                    Err(ExtractError::MethodMismatch(req)) => req,
-                };
-                match cast::<CountFilesRequest>(req.clone()) {
-                    Ok((id, params)) => {
-                        info!("Received countFiles request #{} {}", id, params.folder);
+                        info!("Received checkAlethe request #{} {}", id, params.folder);
                         let result = count_files_in_directory(params.folder.path());
                         let json = serde_json::to_value(result).unwrap();
                         let resp = Response {
@@ -108,7 +89,58 @@ fn main_loop(connection: Connection, params: serde_json::Value) -> eyre::Result<
                 };
             }
             Message::Response(_resp) => {}
-            Message::Notification(_not) => {}
+            Message::Notification(not) => {
+                match not.method.as_str() {
+                    DidOpenTextDocument::METHOD => {
+                        let params: DidOpenTextDocumentParams =
+                            serde_json::from_value(not.params).unwrap();
+                        let uri = params.text_document.uri;
+                        let text = params.text_document.text;
+
+                        if uri.path().ends_with(".smt2") || uri.path().ends_with(".sy") {
+                            if let Err(err) =
+                                parse_document_and_publish_diagnostics(&connection, uri, &text)
+                            {
+                                info!("Failed to parse document: {}", err);
+                            }
+                        }
+                    }
+                    DidChangeTextDocument::METHOD => {
+                        let params: DidChangeTextDocumentParams =
+                            serde_json::from_value(not.params).unwrap();
+                        let uri = params.text_document.uri;
+
+                        if uri.path().ends_with(".smt2") || uri.path().ends_with(".sy") {
+                            // Get the full text from the last change
+                            if let Some(change) = params.content_changes.last() {
+                                if let Err(err) = parse_document_and_publish_diagnostics(
+                                    &connection,
+                                    uri,
+                                    &change.text,
+                                ) {
+                                    info!("Failed to parse document: {}", err);
+                                }
+                            }
+                        }
+                    }
+                    DidSaveTextDocument::METHOD => {
+                        let params: DidSaveTextDocumentParams =
+                            serde_json::from_value(not.params).unwrap();
+                        let uri = params.text_document.uri;
+
+                        if uri.path().ends_with(".smt2") || uri.path().ends_with(".sy") {
+                            if let Some(text) = params.text {
+                                if let Err(err) =
+                                    parse_document_and_publish_diagnostics(&connection, uri, &text)
+                                {
+                                    info!("Failed to parse document: {}", err);
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
         }
     }
     Ok(())
@@ -130,4 +162,83 @@ fn count_files_in_directory(path: &str) -> usize {
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_file())
         .count()
+}
+
+fn parse_document_and_publish_diagnostics(
+    connection: &Connection,
+    uri: Url,
+    text: &str,
+) -> eyre::Result<()> {
+    info!("Parsing document: {}", uri);
+    let mut diagnostics = Vec::new();
+
+    // Parse the entire document as S-expressions
+    let result = Commands::parser.parse(LocatingSlice::new(text));
+
+    match result {
+        Ok(commands) => {
+            info!("Document parsed successfully");
+            // Successfully parsed - create a blue diagnostic covering the entire document
+            let lines: Vec<&str> = text.lines().collect();
+            let last_line = lines.len().saturating_sub(1) as u32;
+            let last_character = lines
+                .last()
+                .map(|line| line.len() as u32)
+                .unwrap_or(0);
+
+            let diagnostic = Diagnostic {
+                range: Range::new(
+                    Position::new(0, 0),
+                    Position::new(last_line, last_character),
+                ),
+                severity: Some(DiagnosticSeverity::INFORMATION),
+                code: Some(NumberOrString::String("parse-success".to_string())),
+                message: format!("{} S-expressions parsed successfully", commands.0.len()),
+                source: Some("covalence-lsp".to_string()),
+                ..Default::default()
+            };
+            
+            diagnostics.push(diagnostic);
+        }
+        Err(err) => {
+            info!("Parse error: {}", err);
+            // Create a diagnostic that covers the entire document (turn everything red)
+            let lines: Vec<&str> = text.lines().collect();
+            let last_line = lines.len().saturating_sub(1) as u32;
+            let last_character = lines
+                .last()
+                .map(|line| line.len() as u32)
+                .unwrap_or(0);
+
+            let diagnostic = Diagnostic {
+                range: Range::new(
+                    Position::new(0, 0),
+                    Position::new(last_line, last_character),
+                ),
+                severity: Some(DiagnosticSeverity::ERROR),
+                code: Some(NumberOrString::String("parse-error".to_string())),
+                message: format!("S-expression parse error: {}", err),
+                source: Some("covalence-lsp".to_string()),
+                ..Default::default()
+            };
+            
+            diagnostics.push(diagnostic);
+        }
+    }
+
+    // Publish diagnostics
+    let params = PublishDiagnosticsParams {
+        uri,
+        diagnostics,
+        version: None,
+    };
+    let notification = lsp_server::Notification {
+        method: "textDocument/publishDiagnostics".to_string(),
+        params: serde_json::to_value(params)?,
+    };
+    connection
+        .sender
+        .send(Message::Notification(notification))?;
+
+    Ok(())
 }

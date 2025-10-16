@@ -4,7 +4,10 @@
 	"author": "Jad Elkhaleq Ghalayini",
 	"license": "0BSD",
 	"version": "0.1.0",
-	"workspaces": ["client", "server"],
+	"workspaces": [
+		"client",
+		"server"
+	],
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/imbrem/covalence"
@@ -22,9 +25,6 @@
 	},
 	"main": "./client/dist/desktop/extension",
 	"browser": "./client/dist/web/extension",
-	"activationEvents": [
-		"onLanguage:plaintext"
-	],
 	"extensionDependencies": [
 		"ms-vscode.wasm-wasi-core"
 	],
@@ -34,6 +34,28 @@
 				"command": "covalence.covalence-lsp.countFiles",
 				"category": "Samples",
 				"title": "Count Files"
+			}
+		],
+		"languages": [
+			{
+				"id": "smt",
+				"aliases": [
+					"smt",
+					"smt2",
+					"sygus"
+				],
+				"extensions": [
+					"smt2",
+					"sy"
+				],
+				"configuration": "language-configuration.json"
+			}
+		],
+		"grammars": [
+			{
+				"language": "smt",
+				"scopeName": "source.smt",
+				"path": "syntaxes/smt.tmLanguage.json"
 			}
 		]
 	},

@@ -3,9 +3,13 @@ The base `covalence` kernel, currently implemented using `egg`
 */
 pub use crate::derive::{Derive, DeriveExt, ReadFacts, TermStore};
 
-pub use crate::store::EggTermDb as TermDb;
+//TODO: add docs
+type TermDb = crate::store::EggTermDb;
+
+#[doc(inline)]
 pub use crate::store::{CtxId, Node, TermId};
 
+#[doc(inline)]
 pub use crate::term::ULvl;
 
 pub type Kernel = crate::derive::Kernel<TermDb>;
@@ -19,7 +23,7 @@ impl Kernel {
 
 #[cfg(test)]
 mod test {
-    use crate::derive::kernel_error;
+    use crate::error::kernel_error;
 
     use super::*;
 

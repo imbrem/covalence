@@ -1,6 +1,12 @@
-pub mod trusted;
+/*!
+API for soundly deriving judgements
+*/
 
-pub use trusted::*;
+#[doc(inline)]
+pub use crate::trusted::api::store::*;
+
+#[doc(inline)]
+pub use crate::trusted::api::derive::*;
 
 use crate::term::Gv;
 

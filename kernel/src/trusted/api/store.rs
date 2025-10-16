@@ -1,0 +1,594 @@
+use crate::trusted::api::derive::*;
+use crate::trusted::data::term::{Bv, GNode, Gv, ULvl};
+
+/// A trait implemented by a datastore that can manipulate hash-consed terms and universe levels
+pub trait TermStore<C, T> {
+    // == Term management ==
+
+    /// Create a new context in this store
+    fn new_ctx(&mut self) -> C;
+
+    /// Create a new context in this store with the given parent
+    fn with_parent(&mut self, parent: C) -> C;
+
+    /// Insert a term into the store, returning a handle to it
+    fn add(&mut self, ctx: C, tm: GNode<C, T>) -> T;
+
+    /// Import a term into another context, returning a handle to it
+    ///
+    /// This automatically traverses import chains, e.g.
+    /// - If `src[tm] := import(src2, tm)`, then `import(ctx, src, tm) => import(ctx, src2, tm)`
+    /// - _Otherwise_, `import(ctx, ctx, tm)` returns `tm`
+    fn import(&mut self, ctx: C, src: C, tm: T) -> T;
+
+    /// Get the node corresponding to a term
+    fn node(&self, ctx: C, tm: T) -> &GNode<C, T>;
+
+    /// Lookup a term in the store
+    ///
+    /// Canonicalizes the term's children if found
+    fn lookup(&self, ctx: C, tm: &mut GNode<C, T>) -> Option<T>;
+
+    /// Lookup an import of a term into another context, returning a handle to it if it exists
+    fn lookup_import(&self, ctx: C, src: C, tm: T) -> Option<T>;
+
+    // == Variable management ==
+
+    /// Get the number of assumptions this context has
+    fn num_assumptions(&self, ctx: C) -> usize;
+
+    /// Get the number of variables this context has
+    fn num_vars(&self, ctx: C) -> usize;
+
+    /// Get this context's `n`th assumption
+    fn assumption(&self, ctx: C, ix: usize) -> Option<T>;
+
+    /// Get the type of a variable in the given context
+    ///
+    /// Imports if necessary
+    fn var_ty(&mut self, ctx: C, var: Gv<C>) -> T;
+
+    /// Lookup the type of a variable in its own context
+    fn get_var_ty(&self, var: Gv<C>) -> T;
+
+    // == Universe management ==
+
+    /// Get the successor of a given universe level
+    fn succ(&mut self, level: ULvl) -> ULvl;
+
+    /// Get the maximum of two universe levels
+    fn umax(&mut self, lhs: ULvl, rhs: ULvl) -> ULvl;
+
+    /// Get the impredicatibe maximum of two universe levels
+    fn imax(&mut self, lhs: ULvl, rhs: ULvl) -> ULvl;
+
+    // == Congruence management ==
+
+    /// Propagate congruence information _within_ a context
+    fn propagate_in(&mut self, ctx: C) -> usize;
+}
+
+/// A trait implemented by a datastore that can read facts about terms in a context.
+pub trait ReadFacts<C, T> {
+    // == Context information ==
+    /// Get whether a context is a root context
+    ///
+    /// Note that a root context has no assumptions _or_ variables.
+    ///
+    /// TODO: reference Lean
+    fn is_root(&self, ctx: C) -> bool;
+
+    /// Get whether a context is contradictory
+    ///
+    /// TODO: reference lean
+    fn is_contr(&self, ctx: C) -> bool;
+
+    /// Get a context's parent, if any
+    fn parent(&self, ctx: C) -> Option<C>;
+
+    // == Syntax information ==
+    /// Get an upper bound on the de-Bruijn indices visible in `tm`
+    ///
+    /// TODO: reference lean
+    fn bvi(&self, ctx: C, tm: T) -> Bv;
+
+    // == Context information ==
+
+    /// Check whether `lo` is a subcontext of `hi`
+    ///
+    /// This always returns `true` if `lo` is a root context, even if `hi` has no parent
+    ///
+    /// If `lo` is _not_ a root context, this in fact guarantees that `lo` is a _stable_ subcontext
+    /// of `hi`: adding variables to `lo` will automatically make those variables valid to use in
+    /// `hi`.
+    fn is_subctx(&self, lo: C, hi: C) -> bool;
+
+    /// Check whether `lo` is a subcontext of `hi`'s parent
+    ///
+    /// This always returns `true` if `lo` is a root context, even if `hi` has no parent
+    ///
+    /// If `lo` is _not_ a root context, this in fact guarantees that `lo` is a _stable_ subcontext
+    /// of `hi`: adding variables to `lo` will automatically make those variables valid to use in
+    /// `hi`.
+    fn is_subctx_of_parent(&self, lo: C, hi: C) -> bool;
+
+    // == Predicates ==
+    /// Check whether the term `tm` is well-formed in `ctx`
+    /// Corresponds to `Ctx.KIsWf` in `gt3-lean`
+    fn is_wf(&self, ctx: C, tm: T) -> bool;
+
+    /// Check whether the term `tm` is a type in the context `ctx`
+    ///
+    /// Corresponds to `Ctx.KIsTy` in `gt3-lean`
+    fn is_ty(&self, ctx: C, tm: T) -> bool;
+
+    /// Check whether the term `tm` is an inhabited type in the context `ctx`
+    ///
+    /// Corresponds to `Ctx.KIsInhab` in `gt3-lean`
+    fn is_inhab(&self, ctx: C, tm: T) -> bool;
+
+    /// Check whether the term `tm` is an empty type in the context `ctx`
+    ///
+    /// TODO: reference lean
+    fn is_empty(&self, ctx: C, tm: T) -> bool;
+
+    /// Check whether the term `tm` is a proposition in the context `ctx`
+    ///
+    /// Corresponds to `Ctx.KIsProp` in `gt3-lean`
+    fn is_prop(&self, ctx: C, tm: T) -> bool;
+
+    /// Check whether the term `tm` depends on the variable `var` in context `ctx`
+    fn has_var(&self, ctx: C, tm: T, var: Gv<C>) -> bool;
+
+    // == Relations ==
+    /// Check whether the term `lhs` in `lctx` is _syntactically_ equal to the term `rhs` in `rctx`
+    fn syn_eq(&self, lctx: C, lhs: T, rctx: C, rhs: T) -> bool;
+
+    /// Check whether the term `lhs` is equal to the term `rhs` in `ctx`
+    ///
+    /// Corresponds to `Ctx.KEq` in `gt3-lean`
+    fn eq_in(&self, ctx: C, lhs: T, rhs: T) -> bool;
+
+    /// Check whether the term `tm` has type `ty` in `ctx`
+    ///
+    /// Corresponds to `Ctx.KHasTy` in `gt3-lean`
+    fn has_ty(&self, ctx: C, tm: T, ty: T) -> bool;
+
+    /// Check whether the term `tm` is a valid type in `ctx` under a binder `binder`
+    ///
+    /// Corresponds to `Ctx.KIsTyUnder` in `gt3-lean`
+    fn is_ty_under(&self, ctx: C, binder: T, ty: T) -> bool;
+
+    /// Check whether the term `tm` has type `ty` in `ctx` under a binder `binder`
+    ///
+    /// Corresponds to `Ctx.KHasTyUnder` in `gt3-lean`
+    fn has_ty_under(&self, ctx: C, binder: T, tm: T, ty: T) -> bool;
+
+    /// Check whether the term `tm` is always inhabited in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_inhab_under(&self, ctx: C, binder: T, ty: T) -> bool;
+
+    /// Check whether there exists a value of type `binder` such that the term `tm` is inhabited
+    ///
+    /// TODO: reference Lean
+    fn exists_inhab_under(&self, ctx: C, binder: T, ty: T) -> bool;
+
+    // == Universe levels ==
+    /// Check whether one universe is less than or equal to another
+    fn u_le(&self, lo: ULvl, hi: ULvl) -> bool;
+
+    /// Check whether one universe is strictly less than another
+    fn u_lt(&self, lo: ULvl, hi: ULvl) -> bool;
+
+    /// Check whether the impredicative maximum of two universes is less than or equal to another
+    fn imax_le(&self, lo_lhs: ULvl, lo_rhs: ULvl, hi: ULvl) -> bool;
+}
+
+/// A trait implemented by a mutable datastore that can hold _unchecked_ facts about terms in a
+/// context.
+pub trait WriteFacts<C, T> {
+    // == Context predicates ==
+
+    /// Mark a context as contradictory
+    fn set_is_contr(&mut self, ctx: C);
+
+    // == Predicates ==
+
+    /// Mark a term as well-formed
+    fn set_is_wf_unchecked(&mut self, ctx: C, tm: T);
+
+    /// Mark a term as a type
+    fn set_is_ty_unchecked(&mut self, ctx: C, tm: T);
+
+    /// Mark a term as an inhabited type
+    fn set_is_inhab_unchecked(&mut self, ctx: C, tm: T);
+
+    /// Mark a term as an empty type
+    fn set_is_empty_unchecked(&mut self, ctx: C, tm: T);
+
+    /// Mark a term as a proposition
+    fn set_is_prop_unchecked(&mut self, ctx: C, tm: T);
+
+    // == Relations ==
+
+    /// Set two terms as equal in a given context
+    fn set_eq_unchecked(&mut self, ctx: C, lhs: T, rhs: T);
+
+    /// Set the type of a term
+    fn set_has_ty_unchecked(&mut self, ctx: C, tm: T, ty: T);
+
+    /// Mark a term as a valid type under a binder
+    fn set_is_ty_under_unchecked(&mut self, ctx: C, binder: T, tm: T);
+
+    /// Check whether the term `tm` is always inhabited in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn set_forall_inhab_under_unchecked(&mut self, ctx: C, binder: T, ty: T) -> bool;
+
+    /// Check whether there exists a value of type `binder` such that the term `tm` is inhabited
+    ///
+    /// TODO: reference Lean
+    fn set_exists_inhab_under_unchecked(&mut self, ctx: C, binder: T, ty: T) -> bool;
+
+    /// Set the type of a term under a binder
+    fn set_has_ty_under_unchecked(&mut self, ctx: C, binder: T, tm: T, ty: T);
+
+    // == Variable and assumption manipulation ==
+
+    /// Add an assumption to the given context
+    ///
+    /// This adds the assumption that `ty` is inhabited; and marks it as so.
+    ///
+    /// For this to be valid, `ty` should be a valid type _in the parent context_!
+    fn assume_unchecked(&mut self, ctx: C, ty: T);
+
+    /// Add a variable to the given context
+    fn add_var_unchecked(&mut self, ctx: C, ty: T) -> Gv<C>;
+
+    // == Cached information ==
+
+    /// Set the bound-variable index of a term
+    fn set_bvi_unchecked(&mut self, ctx: C, tm: T, bvi: Bv);
+}
+
+/// A trait implemented by a mutable datastore that can hold _unchecked_ facts about contexts
+pub trait WriteCtxFacts<C, T> {}
+
+/// A typing derivation in a given context
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct HasTyIn<T> {
+    pub tm: T,
+    pub ty: T,
+}
+
+impl<T> HasTyIn<T> {
+    /// Convert to a goal
+    pub fn goal<C>(self, ctx: C) -> Goal<C, T> {
+        Goal::HasTy(HasTy {
+            ctx,
+            tm: self.tm,
+            ty: self.ty,
+        })
+    }
+
+    /// Succeed
+    pub fn finish_rule<C, S, K>(self, ctx: C, strategy: &mut S) -> HasTyIn<T>
+    where
+        T: Copy,
+        S: Strategy<C, T, K>,
+    {
+        strategy.finish_rule(self.goal(ctx));
+        self
+    }
+
+    /// Check this result
+    pub fn check<C, K>(self, ctx: C, ker: &K) -> bool
+    where
+        K: ReadFacts<C, T>,
+    {
+        ker.has_ty(ctx, self.tm, self.ty)
+    }
+}
+
+/// A typing derivation in a given context under a binder
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct HasTyUnderIn<T> {
+    pub binder: T,
+    pub tm: T,
+    pub ty: T,
+}
+
+impl<T> HasTyUnderIn<T> {
+    /// Convert to a goal
+    pub fn goal<C>(self, ctx: C) -> Goal<C, T> {
+        Goal::HasTyUnder(HasTyUnder {
+            ctx,
+            binder: self.binder,
+            tm: self.tm,
+            ty: self.ty,
+        })
+    }
+
+    /// Succeed
+    pub fn finish_rule<C, S, K>(self, ctx: C, strategy: &mut S) -> HasTyUnderIn<T>
+    where
+        T: Copy,
+        S: Strategy<C, T, K>,
+    {
+        strategy.finish_rule(self.goal(ctx));
+        self
+    }
+
+    /// Check this result
+    pub fn check<C, K>(self, ctx: C, ker: &K) -> bool
+    where
+        K: ReadFacts<C, T>,
+    {
+        ker.has_ty_under(ctx, self.binder, self.tm, self.ty)
+    }
+}
+
+/// A term is an inhabited type
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct IsInhabIn<T>(pub T);
+
+impl<T> IsInhabIn<T> {
+    /// Convert to a goal
+    pub fn goal<C>(self, ctx: C) -> Goal<C, T> {
+        Goal::IsInhab(IsInhab { ctx, tm: self.0 })
+    }
+
+    /// Succeed
+    pub fn finish_rule<C, S, K>(self, ctx: C, strategy: &mut S) -> IsInhabIn<T>
+    where
+        T: Copy,
+        S: Strategy<C, T, K>,
+    {
+        strategy.finish_rule(self.goal(ctx));
+        self
+    }
+
+    /// Check this result
+    pub fn check<C, K>(self, ctx: C, ker: &K) -> bool
+    where
+        K: ReadFacts<C, T>,
+    {
+        ker.is_inhab(ctx, self.0)
+    }
+}
+
+/// An equation between two terms
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct Eqn<T> {
+    pub lhs: T,
+    pub rhs: T,
+}
+
+impl<T> Eqn<T> {
+    /// Convert to a goal
+    pub fn goal<C>(self, ctx: C) -> Goal<C, T> {
+        Goal::EqIn(EqIn {
+            ctx,
+            lhs: self.lhs,
+            rhs: self.rhs,
+        })
+    }
+
+    /// Succeed
+    pub fn finish_rule<C, S, K>(self, ctx: C, strategy: &mut S) -> Eqn<T>
+    where
+        T: Copy,
+        S: Strategy<C, T, K>,
+    {
+        strategy.finish_rule(self.goal(ctx));
+        self
+    }
+
+    /// Check this result
+    pub fn check<C, K>(self, ctx: C, ker: &K) -> bool
+    where
+        K: ReadFacts<C, T>,
+    {
+        ker.eq_in(ctx, self.lhs, self.rhs)
+    }
+}
+
+/// A statement of well-formedness
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct IsWf<C, T> {
+    pub ctx: C,
+    pub tm: T,
+}
+
+/// A term is a valid type
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct IsTy<C, T> {
+    pub ctx: C,
+    pub tm: T,
+}
+
+/// A term is an inhabited type
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct IsInhab<C, T> {
+    pub ctx: C,
+    pub tm: T,
+}
+
+/// A term is an empty type
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct IsEmpty<C, T> {
+    pub ctx: C,
+    pub tm: T,
+}
+
+/// A term is a proposition
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct IsProp<C, T> {
+    pub ctx: C,
+    pub tm: T,
+}
+
+/// A typing derivation
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct HasTy<C, T> {
+    pub ctx: C,
+    pub tm: T,
+    pub ty: T,
+}
+
+/// A term is a type under a binder
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct IsTyUnder<C, T> {
+    pub ctx: C,
+    pub binder: T,
+    pub tm: T,
+}
+
+/// A typing derivation under a binder
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct HasTyUnder<C, T> {
+    pub ctx: C,
+    pub binder: T,
+    pub tm: T,
+    pub ty: T,
+}
+
+/// A universally quantified statement of inhabitance
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct ForallInhabUnder<C, T> {
+    pub ctx: C,
+    pub binder: T,
+    pub ty: T,
+}
+
+/// An existentially quantified statement of inhabitance
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct ExistsInhabUnder<C, T> {
+    pub ctx: C,
+    pub binder: T,
+    pub ty: T,
+}
+
+/// Equality in a context
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct EqIn<C, T> {
+    pub ctx: C,
+    pub lhs: T,
+    pub rhs: T,
+}
+
+/// A goal for a strategy
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub enum Goal<C, T> {
+    /// A context is contradictory
+    IsContr(C),
+    /// A term is well-formed in the given context
+    IsWf(IsWf<C, T>),
+    /// A term is a type in the given context
+    IsTy(IsTy<C, T>),
+    /// A type is inhabited in the given context
+    IsInhab(IsInhab<C, T>),
+    /// A type is empty in the given context
+    IsEmpty(IsEmpty<C, T>),
+    /// A term is a proposition in the given context
+    IsProp(IsProp<C, T>),
+    /// A term has a type in the given context
+    HasTy(HasTy<C, T>),
+    /// A term is a type under a binder in the given context
+    IsTyUnder(IsTyUnder<C, T>),
+    /// A term has a type under a binder in the given context
+    HasTyUnder(HasTyUnder<C, T>),
+    /// A term is always inhabited under a binder in the given context
+    ForallInhabUnder(ForallInhabUnder<C, T>),
+    /// There exists a value of the binder type such that the term is inhabited in the given context
+    ExistsInhabUnder(ExistsInhabUnder<C, T>),
+    /// Two terms are equal in the given context
+    EqIn(EqIn<C, T>),
+}
+
+impl<C, T> From<IsWf<C, T>> for Goal<C, T> {
+    fn from(g: IsWf<C, T>) -> Self {
+        Goal::IsWf(g)
+    }
+}
+
+impl<C, T> From<IsTy<C, T>> for Goal<C, T> {
+    fn from(g: IsTy<C, T>) -> Self {
+        Goal::IsTy(g)
+    }
+}
+
+impl<C, T> From<IsInhab<C, T>> for Goal<C, T> {
+    fn from(g: IsInhab<C, T>) -> Self {
+        Goal::IsInhab(g)
+    }
+}
+
+impl<C, T> From<IsEmpty<C, T>> for Goal<C, T> {
+    fn from(g: IsEmpty<C, T>) -> Self {
+        Goal::IsEmpty(g)
+    }
+}
+
+impl<C, T> From<IsProp<C, T>> for Goal<C, T> {
+    fn from(g: IsProp<C, T>) -> Self {
+        Goal::IsProp(g)
+    }
+}
+
+impl<C, T> From<HasTy<C, T>> for Goal<C, T> {
+    fn from(g: HasTy<C, T>) -> Self {
+        Goal::HasTy(g)
+    }
+}
+
+impl<C, T> From<IsTyUnder<C, T>> for Goal<C, T> {
+    fn from(g: IsTyUnder<C, T>) -> Self {
+        Goal::IsTyUnder(g)
+    }
+}
+
+impl<C, T> From<HasTyUnder<C, T>> for Goal<C, T> {
+    fn from(g: HasTyUnder<C, T>) -> Self {
+        Goal::HasTyUnder(g)
+    }
+}
+
+impl<C, T> From<ForallInhabUnder<C, T>> for Goal<C, T> {
+    fn from(g: ForallInhabUnder<C, T>) -> Self {
+        Goal::ForallInhabUnder(g)
+    }
+}
+
+impl<C, T> From<ExistsInhabUnder<C, T>> for Goal<C, T> {
+    fn from(g: ExistsInhabUnder<C, T>) -> Self {
+        Goal::ExistsInhabUnder(g)
+    }
+}
+
+impl<C, T> From<EqIn<C, T>> for Goal<C, T> {
+    fn from(g: EqIn<C, T>) -> Self {
+        Goal::EqIn(g)
+    }
+}
+
+impl<C, T> Goal<C, T> {
+    /// Check whether this goal is true
+    pub fn check<R: ReadFacts<C, T> + ?Sized>(self, ker: &R) -> bool {
+        match self {
+            Goal::IsContr(c) => ker.is_contr(c),
+            Goal::IsWf(g) => ker.is_wf(g.ctx, g.tm),
+            Goal::IsTy(g) => ker.is_ty(g.ctx, g.tm),
+            Goal::IsInhab(g) => ker.is_inhab(g.ctx, g.tm),
+            Goal::IsEmpty(g) => ker.is_empty(g.ctx, g.tm),
+            Goal::IsProp(g) => ker.is_prop(g.ctx, g.tm),
+            Goal::HasTy(g) => ker.has_ty(g.ctx, g.tm, g.ty),
+            Goal::IsTyUnder(g) => ker.is_ty_under(g.ctx, g.binder, g.tm),
+            Goal::HasTyUnder(g) => ker.has_ty_under(g.ctx, g.binder, g.tm, g.ty),
+            Goal::ForallInhabUnder(g) => ker.forall_inhab_under(g.ctx, g.binder, g.ty),
+            Goal::ExistsInhabUnder(g) => ker.exists_inhab_under(g.ctx, g.binder, g.ty),
+            Goal::EqIn(g) => ker.eq_in(g.ctx, g.lhs, g.rhs),
+        }
+    }
+}

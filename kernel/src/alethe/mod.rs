@@ -1,3 +1,7 @@
+/*!
+API for importing Alethe proofs into the kernel
+*/
+
 use crate::sexpr::*;
 use smol_str::SmolStr;
 

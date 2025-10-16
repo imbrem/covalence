@@ -126,7 +126,7 @@ impl Ctx {
         if !self.is_ty(binder) {
             return false;
         }
-        if self.is_inhab(ty) {
+        if self.is_inhab(ty) || self.eq_in(ty, binder) {
             return true;
         }
         let Some(forall_inhab_under) = self.lookup(Node::Pi([binder, ty])) else {
@@ -139,7 +139,7 @@ impl Ctx {
         if !self.is_ty(binder) {
             return false;
         }
-        if self.is_inhab(ty) {
+        if (self.is_inhab(ty) || self.eq_in(ty, binder)) && self.is_inhab(binder) {
             return true;
         }
         let Some(exists_inhab_under) = self.lookup(Node::Sigma([binder, ty])) else {

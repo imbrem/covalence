@@ -544,7 +544,7 @@ impl<C, T> From<EqIn<C, T>> for Goal<C, T> {
 
 impl<C, T> Goal<C, T> {
     /// Check whether this goal is true
-    pub fn check(self, ker: &impl ReadFacts<C, T>) -> bool {
+    pub fn check<R: ReadFacts<C, T> + ?Sized>(self, ker: &R) -> bool {
         match self {
             Goal::IsContr(c) => ker.is_contr(c),
             Goal::IsWf(g) => ker.is_wf(g.ctx, g.tm),
@@ -563,7 +563,7 @@ impl<C, T> Goal<C, T> {
 }
 
 /// A strategy tells a kernel how to derive facts about terms in a context
-pub trait Strategy<C, T, K> {
+pub trait Strategy<C, T, K: ?Sized> {
     /// The type returned by the strategy on failure
     type Fail;
 
@@ -604,7 +604,7 @@ pub trait Strategy<C, T, K> {
     fn fail(&mut self, msg: &'static str) -> Self::Fail;
 }
 
-impl<C, T, K> Strategy<C, T, K> for () {
+impl<C, T, K : ?Sized> Strategy<C, T, K> for () {
     type Fail = &'static str;
 
     fn prove_goal(
@@ -622,7 +622,7 @@ impl<C, T, K> Strategy<C, T, K> for () {
     }
 }
 
-pub trait Ensure<C: Copy, T: Copy + PartialEq>: Sized + ReadFacts<C, T> + TermStore<C, T> {
+pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadFacts<C, T> + TermStore<C, T> {
     /// Attempt to prove a goal
     fn ensure_goal<S>(
         &mut self,
@@ -862,7 +862,7 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: Sized + ReadFacts<C, T> + TermSt
         // In this case, it may make sense to move things to an extension trait?
         for (i, assumption) in assumptions.iter().enumerate() {
             if self.assumption(target, i) != Some(*assumption) {
-                return Err(strategy.fail(kernel_errors::ENSURE_ASSUMPTIONS_VALID_UNDER_CHANGED));
+                return Err(strategy.fail(kernel_error::ENSURE_ASSUMPTIONS_VALID_UNDER_CHANGED));
             }
         }
         Ok(())
@@ -873,12 +873,12 @@ impl<C, T, K> Ensure<C, T> for K
 where
     C: Copy,
     T: Copy + PartialEq,
-    K: ReadFacts<C, T> + TermStore<C, T> + Sized,
+    K: ReadFacts<C, T> + TermStore<C, T>,
 {
 }
 
 /// Typing rules for deriving facts about terms from those already in the datastore
-pub trait Derive<C, T>: Sized {
+pub trait Derive<C, T> {
     /// Assume a new hypothesis in this context
     fn assume<S>(
         &mut self,
@@ -941,6 +941,21 @@ pub trait Derive<C, T>: Sized {
     /// If so, then `close x tm` has type `close x ty` under `binder` in `ctx`
     ///
     /// TODO: reference Lean
+    ///
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::kernel::*;
+    /// # use covalence_kernel::derive::kernel_error;
+    /// # let mut ker = Kernel::new();
+    /// # let ctx = ker.new_ctx();
+    /// let emp = ker.add(ctx, Node::Empty);
+    /// let x = ker.with_param(ctx, emp, &mut ()).unwrap();
+    /// let tm = ker.add(ctx, Node::Fv(x));
+    /// let res = ker.derive_close_has_ty_under(ctx, x, tm, emp, &mut ()).unwrap();
+    /// let close_x = ker.close(ctx, x, tm);
+    /// assert_eq!(res.tm, close_x);
+    /// assert_eq!(res.ty, emp);
+    /// ```
     fn derive_close_has_ty_under<S>(
         &mut self,
         ctx: C,
@@ -1660,13 +1675,13 @@ impl<
     {
         strategy.start_rule("assume")?;
         if !self.is_subctx_of_parent(subctx, ctx) {
-            return Err(strategy.fail(kernel_errors::ASSUME_NOT_SUBCTX));
+            return Err(strategy.fail(kernel_error::ASSUME_NOT_SUBCTX));
         }
         let in_subctx = self.import(subctx, ctx, ty);
         // If this type is already inhabited in a subcontext, there's no need to add it as an
         // assumption
         if !self.is_inhab(subctx, in_subctx) {
-            self.ensure_is_ty(subctx, in_subctx, strategy, kernel_errors::ASSUME_IS_TY)?;
+            self.ensure_is_ty(subctx, in_subctx, strategy, kernel_error::ASSUME_IS_TY)?;
             self.0.assume_unchecked(ctx, ty);
         }
         Ok(IsInhabIn(ty).finish_rule(ctx, strategy))
@@ -1677,7 +1692,7 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("add_var")?;
-        self.ensure_is_inhab(ctx, ty, strategy, kernel_errors::ADD_VAR_IS_INHAB)?;
+        self.ensure_is_inhab(ctx, ty, strategy, kernel_error::ADD_VAR_IS_INHAB)?;
         let var = self.0.add_var_unchecked(ctx, ty);
         debug_assert!(self.0.eq_in(ctx, self.0.get_var_ty(var), ty));
         let tm = self.0.add(ctx, GNode::Fv(var));
@@ -1806,7 +1821,7 @@ impl<
             import_tm,
             import_ty,
             strategy,
-            kernel_errors::DERIVE_CLOSE_HAS_TY_UNDER_HAS_TY,
+            kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_HAS_TY,
         )?;
         let binder = self.var_ty(ctx, var);
         debug_assert!(
@@ -1819,7 +1834,7 @@ impl<
             //
             // But we can check this directly, and so relax this check, and maybe should, later!
             if self.num_vars(var.ctx) != 1 {
-                return Err(strategy.fail(kernel_errors::DERIVE_CLOSE_HAS_TY_UNDER_TOO_MANY_VARS));
+                return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_TOO_MANY_VARS));
             }
             // Now we check all the variable's context assumptions are implied by `binder` under
             // `ctx`
@@ -1828,7 +1843,7 @@ impl<
                 binder,
                 var.ctx,
                 strategy,
-                kernel_errors::DERIVE_CLOSE_HAS_TY_UNDER_INVALID_ASSUMPTION,
+                kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_INVALID_ASSUMPTION,
             )?;
             // Finally, we check that the variable's parent context is a subcontext of `ctx`
             //
@@ -1839,7 +1854,7 @@ impl<
                 .parent(var.ctx)
                 .is_some_and(|parent| !self.is_subctx(parent, ctx))
             {
-                return Err(strategy.fail(kernel_errors::DERIVE_CLOSE_HAS_TY_UNDER_ILL_SCOPED));
+                return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_ILL_SCOPED));
             }
         }
         let close_tm = self.close(ctx, var, tm);
@@ -1860,7 +1875,7 @@ impl<
     {
         strategy.start_rule("derive_fv")?;
         if !self.is_subctx(var.ctx, ctx) {
-            return Err(strategy.fail(kernel_errors::DERIVE_FV_ILL_SCOPED));
+            return Err(strategy.fail(kernel_error::DERIVE_FV_ILL_SCOPED));
         }
         //NOTE: this will crash if the variable is not in fact valid!
         let tm = self.add(ctx, GNode::Fv(var));
@@ -1914,8 +1929,8 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_eqn")?;
-        self.ensure_has_ty(ctx, lhs, ty, strategy, kernel_errors::DERIVE_EQN_LHS)?;
-        self.ensure_has_ty(ctx, rhs, ty, strategy, kernel_errors::DERIVE_EQN_RHS)?;
+        self.ensure_has_ty(ctx, lhs, ty, strategy, kernel_error::DERIVE_EQN_LHS)?;
+        self.ensure_has_ty(ctx, rhs, ty, strategy, kernel_error::DERIVE_EQN_RHS)?;
         let tm = self.add(ctx, GNode::Eqn([lhs, rhs]));
         let ty = self.add(ctx, GNode::U(ULvl::PROP));
         self.0.set_has_ty_unchecked(ctx, tm, ty);
@@ -1937,7 +1952,7 @@ impl<
     {
         strategy.start_rule("derive_pi")?;
         if !self.imax_le(arg_lvl, res_lvl, lvl) {
-            return Err(strategy.fail(kernel_errors::DERIVE_PI_IMAX_LE));
+            return Err(strategy.fail(kernel_error::DERIVE_PI_IMAX_LE));
         }
         let arg_lvl_ty = self.add(ctx, GNode::U(arg_lvl));
         let res_lvl_ty = self.add(ctx, GNode::U(res_lvl));
@@ -1946,7 +1961,7 @@ impl<
             arg_ty,
             arg_lvl_ty,
             strategy,
-            kernel_errors::DERIVE_PI_ARG_TY,
+            kernel_error::DERIVE_PI_ARG_TY,
         )?;
         self.ensure_has_ty_under(
             ctx,
@@ -1954,7 +1969,7 @@ impl<
             res_ty,
             res_lvl_ty,
             strategy,
-            kernel_errors::DERIVE_PI_RES_TY,
+            kernel_error::DERIVE_PI_RES_TY,
         )?;
         let ty = self.add(ctx, GNode::U(lvl));
         let tm = self.add(ctx, GNode::Pi([arg_ty, res_ty]));
@@ -1977,10 +1992,10 @@ impl<
     {
         strategy.start_rule("derive_sigma")?;
         if !self.u_le(arg_lvl, lvl) {
-            return Err(strategy.fail(kernel_errors::DERIVE_SIGMA_ARG_LVL_LE));
+            return Err(strategy.fail(kernel_error::DERIVE_SIGMA_ARG_LVL_LE));
         }
         if !self.u_le(res_lvl, lvl) {
-            return Err(strategy.fail(kernel_errors::DERIVE_SIGMA_RES_LVL_LE));
+            return Err(strategy.fail(kernel_error::DERIVE_SIGMA_RES_LVL_LE));
         }
         let arg_lvl_ty = self.add(ctx, GNode::U(arg_lvl));
         let res_lvl_ty = self.add(ctx, GNode::U(res_lvl));
@@ -1989,7 +2004,7 @@ impl<
             arg_ty,
             arg_lvl_ty,
             strategy,
-            kernel_errors::DERIVE_SIGMA_ARG_TY,
+            kernel_error::DERIVE_SIGMA_ARG_TY,
         )?;
         self.ensure_has_ty_under(
             ctx,
@@ -1997,7 +2012,7 @@ impl<
             res_ty,
             res_lvl_ty,
             strategy,
-            kernel_errors::DERIVE_SIGMA_RES_TY,
+            kernel_error::DERIVE_SIGMA_RES_TY,
         )?;
         let ty = self.add(ctx, GNode::U(lvl));
         let tm = self.add(ctx, GNode::Sigma([arg_ty, res_ty]));
@@ -2023,7 +2038,7 @@ impl<
             body,
             res_ty,
             strategy,
-            kernel_errors::DERIVE_ABS_BODY,
+            kernel_error::DERIVE_ABS_BODY,
         )?;
         let tm = self.add(ctx, GNode::Abs([arg_ty, body]));
         let ty = self.add(ctx, GNode::Pi([arg_ty, res_ty]));
@@ -2044,9 +2059,9 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_app")?;
-        self.ensure_has_ty(ctx, arg, arg_ty, strategy, kernel_errors::DERIVE_APP_ARG)?;
+        self.ensure_has_ty(ctx, arg, arg_ty, strategy, kernel_error::DERIVE_APP_ARG)?;
         let pi = self.add(ctx, GNode::Pi([arg_ty, res_ty]));
-        self.ensure_has_ty(ctx, func, pi, strategy, kernel_errors::DERIVE_APP_FUNC)?;
+        self.ensure_has_ty(ctx, func, pi, strategy, kernel_error::DERIVE_APP_FUNC)?;
         let tm = self.add(ctx, GNode::App([func, arg]));
         let ty = self.subst(ctx, arg, res_ty);
         self.0.set_has_ty_unchecked(ctx, tm, ty);
@@ -2071,11 +2086,11 @@ impl<
             arg_ty,
             res_ty,
             strategy,
-            kernel_errors::DERIVE_PAIR_RES_TY,
+            kernel_error::DERIVE_PAIR_RES_TY,
         )?;
-        self.ensure_has_ty(ctx, fst, arg_ty, strategy, kernel_errors::DERIVE_PAIR_FST)?;
+        self.ensure_has_ty(ctx, fst, arg_ty, strategy, kernel_error::DERIVE_PAIR_FST)?;
         let snd_ty = self.subst(ctx, fst, res_ty);
-        self.ensure_has_ty(ctx, snd, snd_ty, strategy, kernel_errors::DERIVE_PAIR_SND)?;
+        self.ensure_has_ty(ctx, snd, snd_ty, strategy, kernel_error::DERIVE_PAIR_SND)?;
         let tm = self.add(ctx, GNode::Pair([fst, snd]));
         let ty = self.add(ctx, GNode::Sigma([arg_ty, res_ty]));
         self.0.set_has_ty_unchecked(ctx, tm, ty);
@@ -2095,7 +2110,7 @@ impl<
     {
         strategy.start_rule("derive_fst")?;
         let sigma = self.add(ctx, GNode::Sigma([arg_ty, res_ty]));
-        self.ensure_has_ty(ctx, pair, sigma, strategy, kernel_errors::DERIVE_FST_PAIR)?;
+        self.ensure_has_ty(ctx, pair, sigma, strategy, kernel_error::DERIVE_FST_PAIR)?;
         let tm = self.add(ctx, GNode::Fst([pair]));
         self.0.set_has_ty_unchecked(ctx, tm, arg_ty);
         if let &GNode::Pair([a, _]) = self.node(ctx, pair) {
@@ -2117,7 +2132,7 @@ impl<
     {
         strategy.start_rule("derive_snd")?;
         let sigma = self.add(ctx, GNode::Sigma([arg_ty, res_ty]));
-        self.ensure_has_ty(ctx, pair, sigma, strategy, kernel_errors::DERIVE_SND_PAIR)?;
+        self.ensure_has_ty(ctx, pair, sigma, strategy, kernel_error::DERIVE_SND_PAIR)?;
         let fst = self.add(ctx, GNode::Fst([pair]));
         self.0.set_has_ty_unchecked(ctx, fst, arg_ty);
         let tm = self.add(ctx, GNode::Snd([pair]));
@@ -2143,14 +2158,14 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_dite")?;
-        self.ensure_is_prop(ctx, cond, strategy, kernel_errors::DERIVE_DITE_COND)?;
+        self.ensure_is_prop(ctx, cond, strategy, kernel_error::DERIVE_DITE_COND)?;
         self.ensure_has_ty_under(
             ctx,
             cond,
             then_br,
             ty,
             strategy,
-            kernel_errors::DERIVE_DITE_THEN_BR,
+            kernel_error::DERIVE_DITE_THEN_BR,
         )?;
         let ff = self.add(ctx, GNode::Empty);
         let not_cond = self.add(ctx, GNode::Eqn([cond, ff]));
@@ -2160,7 +2175,7 @@ impl<
             else_br,
             ty,
             strategy,
-            kernel_errors::DERIVE_DITE_ELSE_BR,
+            kernel_error::DERIVE_DITE_ELSE_BR,
         )?;
         let tm = self.add(ctx, GNode::Ite([cond, then_br, else_br]));
         self.0.set_has_ty_unchecked(ctx, tm, ty);
@@ -2181,7 +2196,7 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_trunc")?;
-        self.ensure_is_ty(ctx, ty, strategy, kernel_errors::DERIVE_TRUNC_TY)?;
+        self.ensure_is_ty(ctx, ty, strategy, kernel_error::DERIVE_TRUNC_TY)?;
         let tm = self.add(ctx, GNode::Trunc([ty]));
         let prop = self.add(ctx, GNode::U(ULvl::PROP));
         self.0.set_has_ty_unchecked(ctx, tm, prop);
@@ -2205,7 +2220,7 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_choose")?;
-        self.ensure_is_inhab(ctx, ty, strategy, kernel_errors::DERIVE_CHOOSE_TY)?;
+        self.ensure_is_inhab(ctx, ty, strategy, kernel_error::DERIVE_CHOOSE_TY)?;
         let prop = self.add(ctx, GNode::U(ULvl::PROP));
         self.ensure_has_ty_under(
             ctx,
@@ -2213,7 +2228,7 @@ impl<
             pred,
             prop,
             strategy,
-            kernel_errors::DERIVE_CHOOSE_PRED,
+            kernel_error::DERIVE_CHOOSE_PRED,
         )?;
         let tm = self.add(ctx, GNode::Choose([ty, pred]));
         self.0.set_has_ty_unchecked(ctx, tm, ty);
@@ -2226,7 +2241,7 @@ impl<
     {
         strategy.start_rule("derive_nats")?;
         if !self.u_le(ULvl::SET, lvl) {
-            return Err(strategy.fail(kernel_errors::DERIVE_NATS_SET_LE_LVL));
+            return Err(strategy.fail(kernel_error::DERIVE_NATS_SET_LE_LVL));
         }
         let tm = self.add(ctx, GNode::Nats);
         let ty = self.add(ctx, GNode::U(lvl));
@@ -2247,7 +2262,7 @@ impl<
     {
         strategy.start_rule("derive_succ")?;
         let nats = self.add(ctx, GNode::Nats);
-        self.ensure_has_ty(ctx, n, nats, strategy, kernel_errors::DERIVE_SUCC_N)?;
+        self.ensure_has_ty(ctx, n, nats, strategy, kernel_error::DERIVE_SUCC_N)?;
         let tm = self.add(ctx, GNode::Succ([n]));
         self.0.set_has_ty_unchecked(ctx, tm, nats);
         Ok(HasTyIn { tm, ty: nats }.finish_rule(ctx, strategy))
@@ -2266,14 +2281,14 @@ impl<
     {
         strategy.start_rule("derive_natrec")?;
         let nats = self.add(ctx, GNode::Nats);
-        self.ensure_is_ty_under(ctx, nats, mot, strategy, kernel_errors::DERIVE_NATREC_MOT)?;
+        self.ensure_is_ty_under(ctx, nats, mot, strategy, kernel_error::DERIVE_NATREC_MOT)?;
         debug_assert!(
             self.bvi(ctx, mot) <= Bv(1),
             "a term which is well-typed under a binder cannot have a bvi greater than one"
         );
         let zero = self.add(ctx, GNode::N64(0));
         let mot_zero = self.subst(ctx, mot, zero);
-        self.ensure_has_ty(ctx, z, mot_zero, strategy, kernel_errors::DERIVE_NATREC_Z)?;
+        self.ensure_has_ty(ctx, z, mot_zero, strategy, kernel_error::DERIVE_NATREC_Z)?;
         let bv_one = self.add(ctx, GNode::Bv(Bv(1)));
         let succ_bv_one = self.add(ctx, GNode::Succ([bv_one]));
         debug_assert_eq!(self.bvi(ctx, succ_bv_one), Bv(2));
@@ -2287,7 +2302,7 @@ impl<
             s,
             mot_to_mot_succ,
             strategy,
-            kernel_errors::DERIVE_NATREC_S,
+            kernel_error::DERIVE_NATREC_S,
         )?;
 
         let tm = self.add(ctx, GNode::Natrec([mot, z, s]));
@@ -2314,7 +2329,7 @@ impl<
             bound,
             bound_ty,
             strategy,
-            kernel_errors::DERIVE_LET_BOUND,
+            kernel_error::DERIVE_LET_BOUND,
         )?;
         self.ensure_has_ty_under(
             ctx,
@@ -2322,7 +2337,7 @@ impl<
             body,
             body_ty,
             strategy,
-            kernel_errors::DERIVE_LET_BODY,
+            kernel_error::DERIVE_LET_BODY,
         )?;
         let tm = self.add(ctx, GNode::Let(Bv(0), [bound, body]));
         let ty = self.subst(ctx, bound, body_ty);
@@ -2524,7 +2539,7 @@ impl<K, C: Copy, T: Copy + PartialEq> KernelAPI<C, T> for K where
 }
 
 /// Kernel error messages
-pub mod kernel_errors {
+pub mod kernel_error {
     /// Not implemented
     pub const NOT_IMPLEMENTED: &'static str = "covalence: not implemented";
     /// Strategy did not return a valid subcontext
@@ -2546,7 +2561,7 @@ pub mod kernel_errors {
     pub const DERIVE_CLOSE_HAS_TY_UNDER_TOO_MANY_VARS: &'static str =
         "derive_close_has_ty_under: variable's context must define exactly one variable";
     pub const DERIVE_CLOSE_HAS_TY_UNDER_INVALID_ASSUMPTION: &'static str =
-        "derive_close_has_ty_under: strategy changed assumptions";
+        "derive_close_has_ty_under: assumption is not valid";
     pub const DERIVE_CLOSE_HAS_TY_UNDER_HAS_TY: &'static str = "derive_close_has_ty_under: tm";
     pub const DERIVE_EQN_LHS: &'static str = "derive_eqn: lhs";
     pub const DERIVE_EQN_RHS: &'static str = "derive_eqn: rhs";

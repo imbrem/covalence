@@ -1,10 +1,7 @@
 /*!
 The base `covalence` kernel, currently implemented using `egg`
 */
-pub use crate::derive::Derive;
-pub use crate::derive::Ensure;
-pub use crate::derive::ReadFacts;
-pub use crate::derive::TermStore;
+pub use crate::derive::{Derive, DeriveExt, ReadFacts, TermStore};
 
 pub use crate::store::EggTermDb as TermDb;
 pub use crate::store::{CtxId, Node, TermId};
@@ -13,9 +10,16 @@ pub use crate::term::ULvl;
 
 pub type Kernel = crate::derive::Kernel<TermDb>;
 
+impl Kernel {
+    /// Construct a new, empty kernel
+    pub fn new() -> Kernel {
+        Kernel::default()
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use crate::derive::kernel_errors;
+    use crate::derive::kernel_error;
 
     use super::*;
 
@@ -44,17 +48,17 @@ mod test {
         assert_eq!(
             ker.derive_pi(ctx, ULvl::SET, ULvl::SET, ULvl::PROP, unit, empty, &mut ())
                 .unwrap_err(),
-            kernel_errors::DERIVE_PI_IMAX_LE
+            kernel_error::DERIVE_PI_IMAX_LE
         );
         assert_eq!(
             ker.derive_pi(ctx, ULvl::SET, ULvl::PROP, ULvl::PROP, unit, empty, &mut ())
                 .unwrap_err(),
-            kernel_errors::DERIVE_PI_RES_TY
+            kernel_error::DERIVE_PI_RES_TY
         );
         assert_eq!(
             ker.derive_pi(ctx, ULvl::PROP, ULvl::SET, ULvl::PROP, unit, empty, &mut ())
                 .unwrap_err(),
-            kernel_errors::DERIVE_PI_IMAX_LE
+            kernel_error::DERIVE_PI_IMAX_LE
         );
         assert_eq!(
             ker.derive_pi(
@@ -67,7 +71,7 @@ mod test {
                 &mut ()
             )
             .unwrap_err(),
-            kernel_errors::DERIVE_PI_ARG_TY
+            kernel_error::DERIVE_PI_ARG_TY
         );
         let empty_deriv = ker.derive_empty(ctx, ULvl::PROP);
         let u0 = ker.add(ctx, Node::U(ULvl::PROP));
@@ -76,12 +80,12 @@ mod test {
         assert_eq!(
             ker.derive_pi(ctx, ULvl::SET, ULvl::SET, ULvl::PROP, unit, empty, &mut ())
                 .unwrap_err(),
-            kernel_errors::DERIVE_PI_IMAX_LE
+            kernel_error::DERIVE_PI_IMAX_LE
         );
         assert_eq!(
             ker.derive_pi(ctx, ULvl::PROP, ULvl::SET, ULvl::PROP, unit, empty, &mut ())
                 .unwrap_err(),
-            kernel_errors::DERIVE_PI_IMAX_LE
+            kernel_error::DERIVE_PI_IMAX_LE
         );
         assert_eq!(
             ker.derive_pi(
@@ -94,7 +98,7 @@ mod test {
                 &mut ()
             )
             .unwrap_err(),
-            kernel_errors::DERIVE_PI_ARG_TY
+            kernel_error::DERIVE_PI_ARG_TY
         );
         let pi_deriv = ker
             .derive_pi(ctx, ULvl::SET, ULvl::PROP, ULvl::PROP, unit, empty, &mut ())

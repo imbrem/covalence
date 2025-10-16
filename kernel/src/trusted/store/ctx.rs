@@ -4,8 +4,7 @@ use bitflags::bitflags;
 use egg::{Analysis, DidMerge, EGraph, Language};
 use indexmap::IndexSet;
 
-use super::*;
-use crate::term::*;
+use crate::trusted::store::*;
 
 #[derive(Debug, Clone)]
 #[repr(transparent)]

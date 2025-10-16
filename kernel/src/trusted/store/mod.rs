@@ -1,9 +1,7 @@
 use typed_generational_arena::{SmallArena, SmallIndex};
 
-use crate::{
-    derive::*,
-    term::{GNode, Gv, Import, ULvl},
-};
+use crate::trusted::api::store::*;
+use crate::trusted::data::term::*;
 
 mod ctx;
 use ctx::*;
@@ -165,7 +163,7 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
         self.x[ctx.0].parent()
     }
 
-    fn bvi(&self, ctx: CtxId, tm: TermId) -> crate::term::Bv {
+    fn bvi(&self, ctx: CtxId, tm: TermId) -> Bv {
         //TODO: compute the bvi if invalid
         self.x[ctx.0].bvi(tm)
     }
@@ -341,15 +339,13 @@ impl WriteFacts<CtxId, TermId> for EggTermDb {
         Gv { ctx, ix }
     }
 
-    fn set_bvi_unchecked(&mut self, ctx: CtxId, tm: TermId, bvi: crate::term::Bv) {
+    fn set_bvi_unchecked(&mut self, ctx: CtxId, tm: TermId, bvi: Bv) {
         self.x[ctx.0].set_bvi_unchecked(tm, bvi);
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::term::Bv;
-
     use super::*;
 
     #[test]
@@ -379,7 +375,7 @@ mod test {
         assert_eq!(db.bvi(root, root_x), Bv(0));
         let root_close_x = db.add(
             root,
-            Node::Close(crate::term::Close {
+            Node::Close(Close {
                 under: Bv(0),
                 var: vx,
                 tm: root_x,

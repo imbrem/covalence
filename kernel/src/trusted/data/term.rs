@@ -484,7 +484,7 @@ impl Bv {
     ///
     /// # Examples
     /// ```rust
-    /// # use covalence_kernel::term::Bv;
+    /// # use covalence_kernel::trusted::data::term::Bv;
     /// for x in 0..100 {
     ///     assert_eq!(Bv(x).succ(), Bv(x + 1));
     /// }

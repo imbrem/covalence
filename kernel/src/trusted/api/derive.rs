@@ -386,6 +386,7 @@ pub trait Derive<C, T> {
     ///
     /// # Examples
     /// ```rust
+    /// # #[cfg(feature = "wrapper")] {
     /// # use covalence_kernel::kernel::*;
     /// # use covalence_kernel::error::kernel_error;
     /// # let mut ker = Kernel::new();
@@ -418,6 +419,7 @@ pub trait Derive<C, T> {
     /// // which is valid since the result is about the unchanged closed term, _not_ the term in the
     /// // (imported, changed) context!
     /// assert!(res.check(ctx, &ker));
+    /// # }
     /// ```
     fn derive_close_has_ty_under<S>(
         &mut self,

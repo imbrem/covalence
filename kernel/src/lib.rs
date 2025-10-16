@@ -1,8 +1,16 @@
-pub mod alethe;
-pub mod derive;
-pub mod error;
-pub mod kernel;
-pub mod sexpr;
-pub mod store;
-pub mod term;
 pub mod trusted;
+
+#[cfg(feature = "wrapper")]
+pub mod alethe;
+#[cfg(feature = "wrapper")]
+pub mod derive;
+#[cfg(feature = "wrapper")]
+pub mod error;
+#[cfg(feature = "wrapper")]
+pub mod kernel;
+#[cfg(feature = "wrapper")]
+pub mod sexpr;
+#[cfg(feature = "wrapper")]
+pub mod store;
+#[cfg(feature = "wrapper")]
+pub mod term;

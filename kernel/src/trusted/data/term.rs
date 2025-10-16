@@ -57,8 +57,8 @@ pub enum GNode<C, T, I = T> {
     // == Syntax extensions ==
     /// A substitution under `k` binders
     Let(Bv, [T; 2]),
-    /// A weakening under `k` binders
-    Wk1(Bv, [T; 1]),
+    /// A weakening by a shift
+    BWk(Shift, [T; 1]),
     /// A variable closure under `k` binders
     Close(Close<C, T>),
 
@@ -93,7 +93,7 @@ pub enum GDisc<C, T, I = T> {
     HasTy,
     Invalid,
     Let(Bv),
-    Wk1(Bv),
+    BWk(Shift),
     Close(Close<C, T>),
     Import(Import<C, I>),
 }
@@ -126,7 +126,7 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::HasTy(_) => GDisc::HasTy,
             GNode::Invalid => GDisc::Invalid,
             GNode::Let(k, _) => GDisc::Let(k),
-            GNode::Wk1(k, _) => GDisc::Wk1(k),
+            GNode::BWk(s, _) => GDisc::BWk(s),
             GNode::Close(close) => GDisc::Close(close),
             GNode::Import(import) => GDisc::Import(import),
         }
@@ -159,7 +159,7 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::HasTy([a, b]) => GNode::HasTy([f(a), f(b)]),
             GNode::Invalid => GNode::Invalid,
             GNode::Let(k, [a, b]) => GNode::Let(k, [f(a), f(b)]),
-            GNode::Wk1(k, [a]) => GNode::Wk1(k, [f(a)]),
+            GNode::BWk(k, [a]) => GNode::BWk(k, [f(a)]),
             GNode::Close(close) => GNode::Close(Close {
                 under: close.under,
                 var: close.var,
@@ -196,7 +196,7 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::HasTy([a, b]) => Ok(GNode::HasTy([f(a)?, f(b)?])),
             GNode::Invalid => Ok(GNode::Invalid),
             GNode::Let(k, [a, b]) => Ok(GNode::Let(k, [f(a)?, f(b)?])),
-            GNode::Wk1(k, [a]) => Ok(GNode::Wk1(k, [f(a)?])),
+            GNode::BWk(k, [a]) => Ok(GNode::BWk(k, [f(a)?])),
             GNode::Close(close) => Ok(GNode::Close(Close {
                 under: close.under,
                 var: close.var,
@@ -233,7 +233,7 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::HasTy([a, b]) => GNode::HasTy([(Bv(0), a), (Bv(0), b)]),
             GNode::Invalid => GNode::Invalid,
             GNode::Let(k, [a, b]) => GNode::Let(k, [(Bv(0), a), (Bv(1), b)]),
-            GNode::Wk1(k, [a]) => GNode::Wk1(k, [(Bv(0), a)]),
+            GNode::BWk(k, [a]) => GNode::BWk(k, [(Bv(0), a)]),
             GNode::Close(close) => GNode::Close(Close {
                 under: close.under,
                 var: close.var,
@@ -270,7 +270,7 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::HasTy([a, b]) => GNode::HasTy([a, b]),
             GNode::Invalid => GNode::Invalid,
             GNode::Let(k, [a, b]) => GNode::Let(*k, [a, b]),
-            GNode::Wk1(k, [a]) => GNode::Wk1(*k, [a]),
+            GNode::BWk(k, [a]) => GNode::BWk(*k, [a]),
             GNode::Close(close) => GNode::Close(close.as_ref()),
             GNode::Import(import) => GNode::Import(import.as_ref()),
         }
@@ -303,7 +303,7 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::HasTy([a, b]) => GNode::HasTy([a, b]),
             GNode::Invalid => GNode::Invalid,
             GNode::Let(k, [a, b]) => GNode::Let(*k, [a, b]),
-            GNode::Wk1(k, [a]) => GNode::Wk1(*k, [a]),
+            GNode::BWk(k, [a]) => GNode::BWk(*k, [a]),
             GNode::Close(close) => GNode::Close(close.as_mut()),
             GNode::Import(import) => GNode::Import(import.as_mut()),
         }
@@ -339,7 +339,7 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::HasTy(xs) => &xs[..],
             GNode::Invalid => &[],
             GNode::Let(_, xs) => &xs[..],
-            GNode::Wk1(_, xs) => &xs[..],
+            GNode::BWk(_, xs) => &xs[..],
             GNode::Close(_) => &[],
             GNode::Import(_) => &[],
         }
@@ -375,7 +375,7 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::HasTy(xs) => &mut xs[..],
             GNode::Invalid => &mut [],
             GNode::Let(_, xs) => &mut xs[..],
-            GNode::Wk1(_, xs) => &mut xs[..],
+            GNode::BWk(_, xs) => &mut xs[..],
             GNode::Close(_) => &mut [],
             GNode::Import(_) => &mut [],
         }
@@ -414,11 +414,8 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::Import(_) => Bv::INVALID,
             GNode::Close(Close {
                 under: k, tm: a, ..
-            })
-            | GNode::Wk1(k, [a]) => {
-                let b = tm(&a);
-                if b < *k { b } else { b.succ() }
-            }
+            }) => tm(&a).bvi_under(*k),
+            GNode::BWk(s, [a]) => s.bvi(tm(a)),
             n => n
                 .as_ref()
                 .with_binders()
@@ -498,8 +495,22 @@ impl Bv {
     }
 
     /// Get whether this bound variable is valid
+    ///
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::trusted::data::term::Bv;
+    /// for x in 0..100 {
+    ///    assert!(Bv(x).is_valid());
+    /// }
+    /// assert!(!Bv::INVALID.is_valid());
+    /// ```
     pub fn is_valid(self) -> bool {
         self.0 != u32::MAX
+    }
+
+    /// Get the `bvi` of this bound variable after inserting a bound variable under `k` binders
+    pub fn bvi_under(self, k: Bv) -> Bv {
+        if self < k { self } else { self.succ() }
     }
 }
 
@@ -507,7 +518,14 @@ impl Add for Bv {
     type Output = Bv;
 
     fn add(self, rhs: Bv) -> Bv {
-        Bv(self.0.checked_add(rhs.0).expect("bound variable overflow"))
+        let add = self.0.saturating_add(rhs.0);
+        if add != u32::MAX {
+            Bv(add)
+        } else if self.is_valid() && rhs.is_valid() {
+            panic!("bound variable overflow");
+        } else {
+            Bv::INVALID
+        }
     }
 }
 
@@ -525,6 +543,104 @@ impl Debug for Bv {
             return write!(f, "#invalid");
         }
         write!(f, "#{}", self.0)
+    }
+}
+
+/// A substitution which shifts up `shift` binders at level `level`
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
+pub struct Shift {
+    /// The level at which to shift
+    level: Bv,
+    /// The number of binders to shift by
+    shift: Bv,
+}
+
+impl Shift {
+    /// Construct a new shift from a level and shift
+    ///
+    /// Panics if either is invalid
+    pub fn new(level: Bv, shift: Bv) -> Shift {
+        debug_assert!(
+            level.is_valid(),
+            "cannot construct a shift at an invalid level"
+        );
+        debug_assert!(
+            shift.is_valid(),
+            "cannot construct a shift by an invalid amount"
+        );
+        Shift {
+            level: if shift == Bv(0) { Bv(0) } else { level },
+            shift,
+        }
+    }
+
+    /// Construct a new shift from the number of binders to shift by
+    ///
+    /// Panics if the shift is invalid
+    pub fn from_shift(shift: Bv) -> Shift {
+        Self::new(Bv(0), shift)
+    }
+
+    /// Shift upwards by one at the given level
+    ///
+    /// Panics if the level is invalid
+    pub fn up(level: Bv) -> Shift {
+        Self::new(level, Bv(1))
+    }
+
+    /// Lift this shift under a binder
+    pub fn lift(self) -> Shift {
+        if self.shift == Bv(0) {
+            debug_assert_eq!(self.level, Bv(0), "the identity shift must have zero level");
+            return self;
+        }
+        Shift {
+            level: self.level.succ(),
+            shift: self.shift,
+        }
+    }
+
+    /// Get the successor of this shift
+    pub fn succ(self) -> Shift {
+        Shift {
+            level: self.level,
+            shift: self.shift.succ(),
+        }
+    }
+
+    /// Apply this shift
+    pub fn apply(self, bv: Bv) -> Bv {
+        if bv < self.level { bv } else { bv + self.shift }
+    }
+
+    /// Get an upper bound on the bound variable index after applying this shift
+    ///
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::trusted::data::term::*;
+    /// # for level in (0..10).map(Bv) { for shift in (0..10).map(Bv) {
+    /// let shift = Shift::new(level, shift);
+    /// assert_eq!(shift.bvi(Bv(0)), Bv(0));
+    /// # for bv in (0..10).map(Bv) {
+    /// assert_eq!(shift.bvi(bv.succ()), shift.apply(bv).succ());
+    /// # } } }
+    /// ```
+    pub fn bvi(self, bvi: Bv) -> Bv {
+        if bvi <= self.level {
+            bvi
+        } else {
+            bvi + self.shift
+        }
+    }
+
+    /// Get this shift's level
+    pub fn level(self) -> Bv {
+        self.level
+    }
+
+    /// Get this shift's shift
+    pub fn shift(self) -> Bv {
+        self.shift
     }
 }
 

@@ -383,7 +383,9 @@ pub trait Derive<C, T> {
         lo: ULvl,
         hi: ULvl,
         strategy: &mut S,
-    ) -> Result<HasTyIn<T>, S::Fail> where S: Strategy<C, T, Self>;
+    ) -> Result<HasTyIn<T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
     /// Check a term has type `B` under a binder `A`
     ///

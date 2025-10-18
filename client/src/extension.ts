@@ -43,7 +43,7 @@ export async function activate(context: ExtensionContext) {
 	console.log("Initializing client");
 
 	const clientOptions: LanguageClientOptions = {
-		documentSelector: [{ language: 'smt' }],
+		documentSelector: [{ language: 'smt' }, { language: 'alethe' }],
 		outputChannel: channel,
 		uriConverters: createUriConverters(),
 	};

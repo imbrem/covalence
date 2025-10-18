@@ -38,9 +38,18 @@
 					"sygus"
 				],
 				"extensions": [
-					"alethe",
 					"smt2",
 					"sy"
+				],
+				"configuration": "language-configuration.json"
+			},
+			{
+				"id": "alethe",
+				"aliases": [
+					"alethe"
+				],
+				"extensions": [
+					"alethe"
 				],
 				"configuration": "language-configuration.json"
 			}
@@ -48,6 +57,11 @@
 		"grammars": [
 			{
 				"language": "smt",
+				"scopeName": "source.smt",
+				"path": "syntaxes/smt.tmLanguage.json"
+			},
+			{
+				"language": "alethe",
 				"scopeName": "source.smt",
 				"path": "syntaxes/smt.tmLanguage.json"
 			}

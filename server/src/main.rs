@@ -4,18 +4,18 @@
  *--------------------------------------------------------------------------------------------*/
 use tracing::info;
 
-use lsp_server::{Connection, Message};
+use lsp_server::Connection;
 use lsp_types::{
-    Diagnostic, DiagnosticSeverity, InitializeParams, NumberOrString, Position,
-    PublishDiagnosticsParams, Range, ServerCapabilities, TextDocumentSyncCapability,
-    TextDocumentSyncKind, Url,
+    InitializeParams, ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind,
 };
-
-use covalence_kernel::sexpr::{Commands, LocatingSlice, Parser};
 
 mod server;
 
 use server::CovalenceLsp;
+
+pub mod smt;
+
+pub mod utils;
 
 fn main() -> eyre::Result<()> {
     // Configure tracing to output to stderr instead of stdout
@@ -44,78 +44,5 @@ fn main() -> eyre::Result<()> {
 
     // Shut down gracefully.
     info!("Shutting down Covalence Language Server");
-    Ok(())
-}
-
-fn parse_document_and_publish_diagnostics(
-    connection: &Connection,
-    uri: Url,
-    text: &str,
-) -> eyre::Result<()> {
-    info!("Parsing document: {}", uri);
-    let mut diagnostics = Vec::new();
-
-    // Parse the entire document as S-expressions
-    let result = Commands::parser.parse(LocatingSlice::new(text));
-
-    match result {
-        Ok(commands) => {
-            info!("Document parsed successfully");
-            // Successfully parsed - create a blue diagnostic covering the entire document
-            let lines: Vec<&str> = text.lines().collect();
-            let last_line = lines.len().saturating_sub(1) as u32;
-            let last_character = lines.last().map(|line| line.len() as u32).unwrap_or(0);
-
-            let diagnostic = Diagnostic {
-                range: Range::new(
-                    Position::new(0, 0),
-                    Position::new(last_line, last_character),
-                ),
-                severity: Some(DiagnosticSeverity::INFORMATION),
-                code: Some(NumberOrString::String("parse-success".to_string())),
-                message: format!("{} S-expressions parsed successfully", commands.0.len()),
-                source: Some("covalence-lsp".to_string()),
-                ..Default::default()
-            };
-
-            diagnostics.push(diagnostic);
-        }
-        Err(err) => {
-            info!("Parse error: {}", err);
-            // Create a diagnostic that covers the entire document (turn everything red)
-            let lines: Vec<&str> = text.lines().collect();
-            let last_line = lines.len().saturating_sub(1) as u32;
-            let last_character = lines.last().map(|line| line.len() as u32).unwrap_or(0);
-
-            let diagnostic = Diagnostic {
-                range: Range::new(
-                    Position::new(0, 0),
-                    Position::new(last_line, last_character),
-                ),
-                severity: Some(DiagnosticSeverity::ERROR),
-                code: Some(NumberOrString::String("parse-error".to_string())),
-                message: format!("S-expression parse error: {err}"),
-                source: Some("covalence-lsp".to_string()),
-                ..Default::default()
-            };
-
-            diagnostics.push(diagnostic);
-        }
-    }
-
-    // Publish diagnostics
-    let params = PublishDiagnosticsParams {
-        uri,
-        diagnostics,
-        version: None,
-    };
-    let notification = lsp_server::Notification {
-        method: "textDocument/publishDiagnostics".to_string(),
-        params: serde_json::to_value(params)?,
-    };
-    connection
-        .sender
-        .send(Message::Notification(notification))?;
-
     Ok(())
 }

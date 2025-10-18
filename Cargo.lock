@@ -66,12 +66,14 @@ dependencies = [
  "covalence_kernel",
  "crossbeam-channel",
  "eyre",
+ "indexmap",
  "lsp-server",
  "lsp-types",
  "serde",
  "serde_json",
  "tracing",
  "tracing-subscriber",
+ "typed-generational-arena",
  "walkdir",
 ]
 

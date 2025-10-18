@@ -1,7 +1,5 @@
-use covalence_kernel::{
-    kernel::Kernel,
-    sexpr::{Commands, LocatingSlice, Parser},
-};
+use covalence::kernel::Kernel;
+use covalence::sexpr::{Commands, LocatingSlice, Parser};
 use indexmap::IndexMap;
 use tracing::{info, warn};
 

@@ -1,9 +1,9 @@
 use std::ops::Deref;
 
-use crate::trusted::api::derive::*;
-use crate::trusted::api::error::*;
-use crate::trusted::api::store::*;
-use crate::trusted::data::term::{Bv, Close, GNode, Gv, Import, ULvl};
+use crate::api::derive::*;
+use crate::api::error::*;
+use crate::api::store::*;
+use crate::data::term::{Bv, Close, GNode, Gv, Import, ULvl};
 
 /// The `covalence` kernel
 ///
@@ -223,6 +223,25 @@ impl<
         let tm = self.0.add(ctx, GNode::Fv(var));
         self.0.set_has_ty_unchecked(ctx, tm, ty);
         HasTyIn { tm, ty }.finish_rule(ctx, strategy);
+        Ok(var)
+    }
+
+    fn with_param<S>(&mut self, parent: C, param: T, strategy: &mut S) -> Result<Gv<C>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        //TODO: indicate to strategy we're calling with_param?
+        let ctx = self.with_parent(parent);
+        let ty = self.import(ctx, parent, param);
+        let assume = self.assume(ctx, ty, parent, strategy)?;
+        debug_assert!(
+            assume.0 == ty,
+            "assume returns the fact that ty is inhabited in ctx"
+        );
+        debug_assert!(self.is_inhab(ctx, ty), "ty is inhabited in ctx");
+        let var = self
+            .add_var(ctx, param, &mut ())
+            .expect("we can always safely add a variable of inhabited type");
         Ok(var)
     }
 

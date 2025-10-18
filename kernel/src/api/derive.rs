@@ -1,8 +1,8 @@
 use smallvec::SmallVec;
 
-use crate::trusted::api::error::*;
-use crate::trusted::api::store::*;
-use crate::trusted::data::term::{Gv, ULvl};
+use crate::api::error::*;
+use crate::api::store::*;
+use crate::data::term::{Gv, ULvl};
 
 /// A strategy tells a kernel how to derive facts about terms in a context
 pub trait Strategy<C, T, K: ?Sized> {
@@ -334,6 +334,11 @@ pub trait Derive<C, T> {
 
     /// Add a new variable to this context with the given type
     fn add_var<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Gv<C>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
+
+    /// Insert a new context with the given parameter
+    fn with_param<S>(&mut self, parent: C, param: T, strategy: &mut S) -> Result<Gv<C>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 

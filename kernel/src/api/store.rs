@@ -1,5 +1,5 @@
-use crate::trusted::api::derive::*;
-use crate::trusted::data::term::{Bv, GNode, Gv, ULvl};
+use crate::api::derive::*;
+use crate::data::term::{Bv, GNode, Gv, ULvl};
 
 /// A trait implemented by a datastore that can manipulate hash-consed terms and universe levels
 pub trait TermStore<C, T> {

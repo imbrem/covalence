@@ -35,10 +35,6 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.is_contr(ctx)
     }
 
-    fn parent(&self, ctx: C) -> Option<C> {
-        self.0.parent(ctx)
-    }
-
     fn bvi(&self, ctx: C, tm: T) -> Bv {
         self.0.bvi(ctx, tm)
     }
@@ -47,8 +43,12 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.is_subctx(lo, hi)
     }
 
-    fn is_subctx_of_parent(&self, lo: C, hi: C) -> bool {
-        self.0.is_subctx_of_parent(lo, hi)
+    fn is_subctx_of_parents(&self, lo: C, hi: C) -> bool {
+        self.0.is_subctx_of_parents(lo, hi)
+    }
+
+    fn parents_are_stable_subctx(&self, lo: C, hi: C) -> bool {
+        self.0.parents_are_stable_subctx(lo, hi)
     }
 
     fn is_wf(&self, ctx: C, tm: T) -> bool {
@@ -199,7 +199,7 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("assume")?;
-        if !self.is_subctx_of_parent(subctx, ctx) {
+        if !self.is_subctx_of_parents(subctx, ctx) {
             return Err(strategy.fail(kernel_error::ASSUME_NOT_SUBCTX));
         }
         let in_subctx = self.import(subctx, ctx, ty);
@@ -395,10 +395,17 @@ impl<
             "var is valid in its context"
         );
         if var.ctx != ctx {
+            debug_assert_ne!(
+                self.num_vars(var.ctx),
+                0,
+                "var is a valid variable, so there must be at least one variable"
+            );
             // What we're really checking here is that every variable in `import_ty` and `import_tm`
             // either exists in `ctx` (due to our later subcontext check) or is `var` itself.
             //
-            // But we can check this directly, and so relax this check, and maybe should, later!
+            // TODO: we can check this directly, and so probably relax this check
+            //
+            // TODO: if we're going to do this, should we change to kernel_error::NOT_IMPLEMENTED?
             if self.num_vars(var.ctx) != 1 {
                 return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_TOO_MANY_VARS));
             }
@@ -411,15 +418,12 @@ impl<
                 strategy,
                 kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_INVALID_ASSUMPTION,
             )?;
-            // Finally, we check that the variable's parent context is a subcontext of `ctx`
+            // Finally, we check that the variable context's parent(s) are subcontexts of `ctx`
             //
             // `ensure_assumptions_valid_under` should not be able to change this, since the check
             // is stable, but if we move to an unstable check its correct to check _afterwards_
             // rather than before!
-            if self
-                .parent(var.ctx)
-                .is_some_and(|parent| !self.is_subctx(parent, ctx))
-            {
+            if self.parents_are_stable_subctx(var.ctx, ctx) {
                 return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_ILL_SCOPED));
             }
         }

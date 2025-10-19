@@ -83,9 +83,6 @@ pub trait ReadFacts<C, T> {
     /// TODO: reference lean
     fn is_contr(&self, ctx: C) -> bool;
 
-    /// Get a context's parent, if any
-    fn parent(&self, ctx: C) -> Option<C>;
-
     // == Syntax information ==
     /// Get an upper bound on the de-Bruijn indices visible in `tm`
     ///
@@ -103,14 +100,11 @@ pub trait ReadFacts<C, T> {
     /// `hi`.
     fn is_subctx(&self, lo: C, hi: C) -> bool;
 
-    /// Check whether `lo` is a subcontext of `hi`'s parent
-    ///
-    /// This always returns `true` if `lo` is a root context, even if `hi` has no parent
-    ///
-    /// If `lo` is _not_ a root context, this in fact guarantees that `lo` is a _stable_ subcontext
-    /// of `hi`: adding variables to `lo` will automatically make those variables valid to use in
-    /// `hi`.
-    fn is_subctx_of_parent(&self, lo: C, hi: C) -> bool;
+    /// Check whether `lo` is a subcontext of `hi`'s parent(s)
+    fn is_subctx_of_parents(&self, lo: C, hi: C) -> bool;
+
+    /// Check whether `lo`'s parent(s) are a subcontext of `hi`
+    fn parents_are_stable_subctx(&self, lo: C, hi: C) -> bool;
 
     // == Predicates ==
     /// Check whether the term `tm` is well-formed in `ctx`

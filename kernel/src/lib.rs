@@ -48,7 +48,6 @@ mod test {
         let ctx = ker.new_ctx();
         assert!(ker.is_root(ctx));
         assert!(!ker.is_contr(ctx));
-        assert_eq!(ker.parent(ctx), None);
         let unit = ker.add(ctx, Node::Unit);
         let empty = ker.add(ctx, Node::Empty);
         assert_ne!(unit, empty);

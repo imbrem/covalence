@@ -152,15 +152,11 @@ impl TermStore<CtxId, TermId> for EggTermDb {
 impl ReadFacts<CtxId, TermId> for EggTermDb {
     fn is_root(&self, ctx: CtxId) -> bool {
         //TODO: optimize
-        self.x[ctx.0].is_null_extension() && self.parent(ctx).is_none_or(|p| self.is_root(p))
+        self.x[ctx.0].is_null_extension() && self.x[ctx.0].parent().is_none_or(|p| self.is_root(p))
     }
 
     fn is_contr(&self, ctx: CtxId) -> bool {
         self.x[ctx.0].is_contr()
-    }
-
-    fn parent(&self, ctx: CtxId) -> Option<CtxId> {
-        self.x[ctx.0].parent()
     }
 
     fn bvi(&self, ctx: CtxId, tm: TermId) -> Bv {
@@ -174,7 +170,7 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
             return true;
         }
         while lo != hi {
-            hi = if let Some(parent) = self.parent(hi) {
+            hi = if let Some(parent) = self.x[hi.0].parent() {
                 parent
             } else {
                 return false;
@@ -183,14 +179,25 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
         true
     }
 
-    fn is_subctx_of_parent(&self, lo: CtxId, hi: CtxId) -> bool {
+    fn is_subctx_of_parents(&self, lo: CtxId, hi: CtxId) -> bool {
         if self.is_root(lo) {
             return true;
         }
+        // NOTE: we don't check this first since for now we always return true if `lo` is root
         if lo == hi {
             return false;
         }
         self.is_subctx(lo, hi)
+    }
+
+    fn parents_are_stable_subctx(&self, lo: CtxId, hi: CtxId) -> bool {
+        if lo == hi || self.is_root(lo) {
+            return true;
+        }
+        let Some(parent) = self.x[lo.0].parent() else {
+            return true;
+        };
+        self.is_subctx(parent, hi)
     }
 
     fn is_wf(&self, ctx: CtxId, tm: TermId) -> bool {
@@ -353,7 +360,6 @@ mod test {
         let mut db = EggTermDb::default();
         let ctx = db.new_ctx();
         assert!(!db.is_contr(ctx));
-        assert_eq!(db.parent(ctx), None);
         let unit = db.add(ctx, Node::Unit);
         let empty = db.add(ctx, Node::Empty);
         assert_ne!(unit, empty);

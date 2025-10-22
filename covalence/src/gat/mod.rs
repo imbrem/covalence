@@ -2,6 +2,8 @@
 Generalized algebraic theories
 */
 
+/*
+
 use covalence_kernel::{
     CtxId, TermId, ULvl,
     api::derive::Strategy,
@@ -309,3 +311,5 @@ impl<C: Copy, T: Copy + PartialEq> Gat<C, T> {
         ix
     }
 }
+
+*/

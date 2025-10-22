@@ -29,6 +29,10 @@ impl Ctx {
         self.e.analysis.parent
     }
 
+    pub fn set_parent_unchecked(&mut self, parent: CtxId) {
+        self.e.analysis.parent = Some(parent);
+    }
+
     pub fn set_this(&mut self, this: CtxId) {
         self.e.analysis.this = Some(this);
     }
@@ -50,16 +54,16 @@ impl Ctx {
         self.e.analysis.vars.get(ix as usize).copied()
     }
 
-    pub fn num_assumptions(&self) -> usize {
-        self.e.analysis.assumptions.len()
+    pub fn num_assumptions(&self) -> u32 {
+        self.e.analysis.assumptions.len() as u32
     }
 
-    pub fn assumption(&self, ix: usize) -> Option<TermId> {
-        self.e.analysis.assumptions.get_index(ix).copied()
+    pub fn assumption(&self, ix: u32) -> Option<TermId> {
+        self.e.analysis.assumptions.get_index(ix as usize).copied()
     }
 
-    pub fn num_vars(&self) -> usize {
-        self.e.analysis.vars.len()
+    pub fn num_vars(&self) -> u32 {
+        self.e.analysis.vars.len() as u32
     }
 
     pub fn propagate_in(&mut self) -> usize {

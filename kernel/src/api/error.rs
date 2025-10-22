@@ -11,6 +11,10 @@ pub mod kernel_error {
     pub const ASSUME_IS_TY: &str = "assume: ty is not a valid type";
     /// To add a variable, its type must be inhabited
     pub const ADD_VAR_IS_INHAB: &str = "add_var: ty is not inhabited";
+    /// The parent argument of `set_parent` must have all existing parents as subcontexts
+    pub const SET_PARENT_NOT_SUBCTX: &str = "set_parent: expected subcontext";
+    /// The parent argument of `set_parent` must not have `ctx` as a subcontext
+    pub const SET_PARENT_WOULD_CYCLE: &str = "set_parent: would induce a cycle";
     /// When we add a variable, it should be _well-scoped_: only contain variables from the current
     /// context
     ///

@@ -47,8 +47,8 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.is_subctx_of_parents(lo, hi)
     }
 
-    fn parents_are_stable_subctx(&self, lo: C, hi: C) -> bool {
-        self.0.parents_are_stable_subctx(lo, hi)
+    fn parents_are_subctx(&self, lo: C, hi: C) -> bool {
+        self.0.parents_are_subctx(lo, hi)
     }
 
     fn is_wf(&self, ctx: C, tm: T) -> bool {
@@ -153,15 +153,15 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
         self.0.get_var_ty(var)
     }
 
-    fn num_assumptions(&self, ctx: C) -> usize {
+    fn num_assumptions(&self, ctx: C) -> u32 {
         self.0.num_assumptions(ctx)
     }
 
-    fn assumption(&self, ctx: C, ix: usize) -> Option<T> {
+    fn assumption(&self, ctx: C, ix: u32) -> Option<T> {
         self.0.assumption(ctx, ix)
     }
 
-    fn num_vars(&self, ctx: C) -> usize {
+    fn num_vars(&self, ctx: C) -> u32 {
         self.0.num_vars(ctx)
     }
 
@@ -217,6 +217,12 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("add_var")?;
+        // TODO: note that this allows later variables to depend on earlier variables
+        //
+        // e.g. if x : Nat, then Fin (x + 1) inhab so we can have y : Fin (x + 1)
+        //
+        // This is not _currently_ unsound, but we _might_ want to forbid it to allow playing
+        // unordered games... think about this
         self.ensure_is_inhab(ctx, ty, strategy, kernel_error::ADD_VAR_IS_INHAB)?;
         let var = self.0.add_var_unchecked(ctx, ty);
         debug_assert!(self.0.eq_in(ctx, self.0.get_var_ty(var), ty));
@@ -243,6 +249,26 @@ impl<
             .add_var(ctx, param, &mut ())
             .expect("we can always safely add a variable of inhabited type");
         Ok(var)
+    }
+
+    fn set_parent<S>(&mut self, ctx: C, parent: C, strategy: &mut S) -> Result<IsSubctx<C>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        strategy.start_rule("set_parent")?;
+        if self.is_subctx(ctx, parent) {
+            return Err(strategy.fail(kernel_error::SET_PARENT_WOULD_CYCLE));
+        }
+        if !self.parents_are_subctx(ctx, parent) {
+            return Err(strategy.fail(kernel_error::SET_PARENT_NOT_SUBCTX));
+        }
+        self.0.set_parent_unchecked(ctx, parent);
+        let result = IsSubctx {
+            lo: parent,
+            hi: ctx,
+        };
+        strategy.finish_rule(Goal::IsSubctx(result));
+        Ok(result)
     }
 
     fn subst(&mut self, ctx: C, bound: T, body: T) -> T {
@@ -423,7 +449,7 @@ impl<
             // `ensure_assumptions_valid_under` should not be able to change this, since the check
             // is stable, but if we move to an unstable check its correct to check _afterwards_
             // rather than before!
-            if self.parents_are_stable_subctx(var.ctx, ctx) {
+            if self.parents_are_subctx(var.ctx, ctx) {
                 return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_ILL_SCOPED));
             }
         }

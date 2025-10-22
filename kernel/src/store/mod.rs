@@ -96,15 +96,15 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         self.lookup(ctx, &mut GNode::Import(Import { ctx: src, tm }))
     }
 
-    fn num_assumptions(&self, ctx: CtxId) -> usize {
+    fn num_assumptions(&self, ctx: CtxId) -> u32 {
         self.x[ctx.0].num_assumptions()
     }
 
-    fn assumption(&self, ctx: CtxId, ix: usize) -> Option<TermId> {
+    fn assumption(&self, ctx: CtxId, ix: u32) -> Option<TermId> {
         self.x[ctx.0].assumption(ix)
     }
 
-    fn num_vars(&self, ctx: CtxId) -> usize {
+    fn num_vars(&self, ctx: CtxId) -> u32 {
         self.x[ctx.0].num_vars()
     }
 
@@ -190,7 +190,7 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
         self.is_subctx(lo, hi)
     }
 
-    fn parents_are_stable_subctx(&self, lo: CtxId, hi: CtxId) -> bool {
+    fn parents_are_subctx(&self, lo: CtxId, hi: CtxId) -> bool {
         if lo == hi || self.is_root(lo) {
             return true;
         }
@@ -289,8 +289,12 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
 }
 
 impl WriteFacts<CtxId, TermId> for EggTermDb {
-    fn set_is_contr(&mut self, ctx: CtxId) {
+    fn set_is_contr_unchecked(&mut self, ctx: CtxId) {
         self.x[ctx.0].set_is_contr();
+    }
+
+    fn set_parent_unchecked(&mut self, ctx: CtxId, parent: CtxId) {
+        self.x[ctx.0].set_parent_unchecked(parent);
     }
 
     fn set_is_wf_unchecked(&mut self, ctx: CtxId, tm: TermId) {

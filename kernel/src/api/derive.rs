@@ -303,7 +303,7 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadFacts<C, T> + TermStore<C, T
         //
         // In this case, it may make sense to move things to an extension trait?
         for (i, assumption) in assumptions.iter().enumerate() {
-            if self.assumption(target, i) != Some(*assumption) {
+            if self.assumption(target, i as u32) != Some(*assumption) {
                 return Err(strategy.fail(kernel_error::ENSURE_ASSUMPTIONS_VALID_UNDER_CHANGED));
             }
         }
@@ -339,6 +339,18 @@ pub trait Derive<C, T> {
 
     /// Insert a new context with the given parameter
     fn with_param<S>(&mut self, parent: C, param: T, strategy: &mut S) -> Result<Gv<C>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
+
+    /// Set a context's parent
+    ///
+    /// TODO: reference Lean
+    fn set_parent<S>(
+        &mut self,
+        ctx: C,
+        parent: C,
+        strategy: &mut S,
+    ) -> Result<IsSubctx<C>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 

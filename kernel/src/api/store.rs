@@ -35,13 +35,13 @@ pub trait TermStore<C, T> {
     // == Variable management ==
 
     /// Get the number of assumptions this context has
-    fn num_assumptions(&self, ctx: C) -> usize;
+    fn num_assumptions(&self, ctx: C) -> u32;
 
     /// Get the number of variables this context has
-    fn num_vars(&self, ctx: C) -> usize;
+    fn num_vars(&self, ctx: C) -> u32;
 
     /// Get this context's `n`th assumption
-    fn assumption(&self, ctx: C, ix: usize) -> Option<T>;
+    fn assumption(&self, ctx: C, ix: u32) -> Option<T>;
 
     /// Get the type of a variable in the given context
     ///
@@ -104,7 +104,7 @@ pub trait ReadFacts<C, T> {
     fn is_subctx_of_parents(&self, lo: C, hi: C) -> bool;
 
     /// Check whether `lo`'s parent(s) are a subcontext of `hi`
-    fn parents_are_stable_subctx(&self, lo: C, hi: C) -> bool;
+    fn parents_are_subctx(&self, lo: C, hi: C) -> bool;
 
     // == Predicates ==
     /// Check whether the term `tm` is well-formed in `ctx`
@@ -185,7 +185,10 @@ pub trait WriteFacts<C, T> {
     // == Context predicates ==
 
     /// Mark a context as contradictory
-    fn set_is_contr(&mut self, ctx: C);
+    fn set_is_contr_unchecked(&mut self, ctx: C);
+
+    /// Set a context's parent
+    fn set_parent_unchecked(&mut self, ctx: C, parent: C);
 
     // == Predicates ==
 
@@ -472,6 +475,13 @@ pub struct EqIn<C, T> {
     pub rhs: T,
 }
 
+/// A context is a subcontext of another
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct IsSubctx<C> {
+    pub lo: C,
+    pub hi: C,
+}
+
 /// A goal for a strategy
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum Goal<C, T> {
@@ -499,6 +509,8 @@ pub enum Goal<C, T> {
     ExistsInhabUnder(ExistsInhabUnder<C, T>),
     /// Two terms are equal in the given context
     EqIn(EqIn<C, T>),
+    /// A context is a subcontext of another
+    IsSubctx(IsSubctx<C>),
 }
 
 impl<C, T> From<IsWf<C, T>> for Goal<C, T> {
@@ -583,6 +595,7 @@ impl<C, T> Goal<C, T> {
             Goal::ForallInhabUnder(g) => ker.forall_inhab_under(g.ctx, g.binder, g.ty),
             Goal::ExistsInhabUnder(g) => ker.exists_inhab_under(g.ctx, g.binder, g.ty),
             Goal::EqIn(g) => ker.eq_in(g.ctx, g.lhs, g.rhs),
+            Goal::IsSubctx(g) => ker.is_subctx(g.lo, g.hi),
         }
     }
 }

@@ -212,12 +212,14 @@ impl Ctx {
     }
 
     pub fn set_has_ty_unchecked(&mut self, tm: TermId, ty: TermId) -> bool {
-        if !self.is_prop(tm)
-            && self.is_univ(ty)
-            && let Some(u0) = self.lookup(Node::U(ULvl::PROP))
-            && self.eq_in(ty, u0)
-        {
-            self.set_is_prop_unchecked(tm);
+        if self.is_univ(ty) {
+            self.set_is_ty_unchecked(tm);
+            if !self.is_prop(tm)
+                && let Some(u0) = self.lookup(Node::U(ULvl::PROP))
+                && self.eq_in(ty, u0)
+            {
+                self.set_is_prop_unchecked(tm);
+            }
         }
         self.set_is_wf_unchecked(tm);
         let has_ty = self.add(GNode::HasTy([tm, ty]));

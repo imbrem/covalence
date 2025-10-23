@@ -289,6 +289,20 @@ pub trait Derive<C, T> {
         S: Strategy<C, T, Self>;
 
     /// Add a new variable to this context with the given type
+    /// 
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # use covalence_kernel::api::error::kernel_error;
+    /// # let mut ker = Kernel::new();
+    /// let ctx = ker.new_ctx();
+    /// let set = ker.add(ctx, Node::U(ULvl::SET));
+    /// let sv = ker.add_var(ctx, set, &mut ()).unwrap();
+    /// let s = ker.add(ctx, Node::Fv(sv));
+    /// assert!(ker.is_ty(ctx, s));
+    /// let av = ker.add_var(ctx, s, &mut ()).unwrap();
+    /// assert_ne!(sv, av);
+    /// ```
     fn add_var<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Gv<C>, S::Fail>
     where
         S: Strategy<C, T, Self>;

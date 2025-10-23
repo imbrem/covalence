@@ -16,7 +16,7 @@ pub mod kernel_error {
     /// The parent argument of `set_parent` must not have `ctx` as a subcontext
     pub const SET_PARENT_WOULD_CYCLE: &str = "set_parent: would induce a cycle";
     /// Ghost variables are not well-typed, only inhabited
-    /// 
+    ///
     /// At a higher level, it might make sense to, for a ghost variable, instead return ε-choice at
     /// the appropriate type.
     pub const DERIVE_FV_GHOST: &str = "derive_fv: var is a ghost";

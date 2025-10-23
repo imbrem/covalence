@@ -12,8 +12,8 @@ This module is further subdivided into three primary components:
 
 pub mod api;
 pub mod data;
-pub mod store;
 pub mod rules;
+pub mod store;
 
 pub use crate::api::derive::Derive;
 pub use crate::api::store::{ReadFacts, TermStore};

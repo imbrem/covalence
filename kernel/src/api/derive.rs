@@ -289,7 +289,7 @@ pub trait Derive<C, T> {
         S: Strategy<C, T, Self>;
 
     /// Add a new variable to this context with the given type
-    /// 
+    ///
     /// # Examples
     /// ```rust
     /// # use covalence_kernel::*;
@@ -297,10 +297,13 @@ pub trait Derive<C, T> {
     /// # let mut ker = Kernel::new();
     /// let ctx = ker.new_ctx();
     /// let set = ker.add(ctx, Node::U(ULvl::SET));
+    /// assert_eq!(ker.num_vars(ctx), 0);
     /// let sv = ker.add_var(ctx, set, &mut ()).unwrap();
+    /// assert_eq!(ker.num_vars(ctx), 1);
     /// let s = ker.add(ctx, Node::Fv(sv));
     /// assert!(ker.is_ty(ctx, s));
     /// let av = ker.add_var(ctx, s, &mut ()).unwrap();
+    /// assert_eq!(ker.num_vars(ctx), 2);
     /// assert_ne!(sv, av);
     /// ```
     fn add_var<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Gv<C>, S::Fail>
@@ -444,7 +447,7 @@ pub trait Derive<C, T> {
     /// ```lean
     /// theorem Ctx.KHasTy.fv {Γ x A} (hΓ : Ok Γ) (hA : Lookup Γ x A) : KHasTy Γ A.erase (.fv x)
     /// ```
-    /// 
+    ///
     /// # Examples
     /// ```rust
     /// # use covalence_kernel::*;

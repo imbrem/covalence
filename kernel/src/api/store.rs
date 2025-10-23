@@ -97,7 +97,7 @@ pub trait ReadFacts<C, T> {
     fn is_subctx(&self, lo: C, hi: C) -> bool;
 
     /// Check whether `lo` is a subcontext of `hi`'s parent(s)
-    /// 
+    ///
     /// # Examples
     /// ```rust
     /// # use covalence_kernel::*;
@@ -117,7 +117,7 @@ pub trait ReadFacts<C, T> {
     fn is_subctx_of_parents(&self, lo: C, hi: C) -> bool;
 
     /// Check whether `lo`'s parent(s) are a subcontext of `hi`
-    /// 
+    ///
     /// # Examples
     /// ```rust
     /// # use covalence_kernel::*;

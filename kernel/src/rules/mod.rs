@@ -375,10 +375,8 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_close_has_ty_under")?;
-        if var.ctx != ctx {
-            if var.ix != 0 {
-                return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_IX_NONZERO));
-            }
+        if var.ctx != ctx && var.ix != 0 {
+            return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_IX_NONZERO));
         }
         let import_tm = self.import(var.ctx, ctx, tm);
         let import_ty = self.import(var.ctx, ctx, ty);

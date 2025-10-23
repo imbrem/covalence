@@ -75,6 +75,18 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.has_var(ctx, tm, var)
     }
 
+    fn has_var_from(&self, ctx: C, tm: T, vars: C) -> bool {
+        self.0.has_var_from(ctx, tm, vars)
+    }
+
+    fn may_have_var(&self, ctx: C, tm: T, var: Gv<C>) -> bool {
+        self.0.may_have_var(ctx, tm, var)
+    }
+
+    fn may_have_var_from(&self, ctx: C, tm: T, vars: C) -> bool {
+        self.0.may_have_var_from(ctx, tm, vars)
+    }
+
     fn syn_eq(&self, lctx: C, lhs: T, rctx: C, rhs: T) -> bool {
         self.0.syn_eq(lctx, lhs, rctx, rhs)
     }
@@ -248,8 +260,8 @@ impl<
     }
 
     fn close(&mut self, ctx: C, var: Gv<C>, tm: T) -> T {
-        //TODO: optimize this, and cover more cases
-        if self.bvi(ctx, tm) == Bv(0) && !self.has_var(ctx, tm, var) {
+        //TODO: optimize this
+        if self.bvi(ctx, tm) == Bv(0) && !self.has_var_from(ctx, tm, var.ctx) {
             return tm;
         }
         self.add(
@@ -265,7 +277,7 @@ impl<
     fn close_import(&mut self, ctx: C, var: Gv<C>, tm: T) -> T {
         let import = self.import(ctx, var.ctx, tm);
         //TODO: optimize this, and cover more cases
-        if self.bvi(var.ctx, tm) == Bv(0) && !self.has_var(var.ctx, tm, var) {
+        if self.bvi(var.ctx, tm) == Bv(0) && !self.may_have_var(var.ctx, tm, var) {
             return import;
         }
         self.add(

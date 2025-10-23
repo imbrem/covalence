@@ -170,6 +170,15 @@ pub trait ReadFacts<C, T> {
     /// Check whether the term `tm` depends on the variable `var` in context `ctx`
     fn has_var(&self, ctx: C, tm: T, var: Gv<C>) -> bool;
 
+    /// Check whether the term `tm` depends on any variable from the context `vars`
+    fn has_var_from(&self, ctx: C, tm: T, vars: C) -> bool;
+
+    /// Check whether the term `tm` may depend on the variable `var` in context `ctx`
+    fn may_have_var(&self, ctx: C, tm: T, var: Gv<C>) -> bool;
+
+    /// Check whether the term `tm` may depend on any variable from the context `vars`
+    fn may_have_var_from(&self, ctx: C, tm: T, vars: C) -> bool;
+
     // == Relations ==
     /// Check whether the term `lhs` in `lctx` is _syntactically_ equal to the term `rhs` in `rctx`
     fn syn_eq(&self, lctx: C, lhs: T, rctx: C, rhs: T) -> bool;

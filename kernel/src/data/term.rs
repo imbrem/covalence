@@ -414,8 +414,10 @@ impl<C, T, I> GNode<C, T, I> {
             GNode::Bv(i) => i.succ(),
             GNode::Import(_) => Bv::INVALID,
             GNode::Close(Close {
-                under: k, tm: a, ..
-            }) => tm(a).bvi_under(*k),
+                under: k,
+                tm: a,
+                var,
+            }) => tm(a).bvi_add_under(Bv(var.ix).succ(), *k),
             GNode::BWk(s, [a]) => s.bvi(tm(a)),
             n => n
                 .as_ref()
@@ -470,6 +472,15 @@ impl Bv {
     /// Compares greater-than all other bound variables
     pub const INVALID: Bv = Bv(u32::MAX);
 
+    /// Construct a bound variable from a `u32`
+    pub const fn new(ix: u32) -> Bv {
+        assert!(
+            ix != u32::MAX,
+            "cannot use new to construct an invalid bound variable"
+        );
+        Bv(ix)
+    }
+
     /// Get the successor of this bound variable
     ///
     /// Panics if this would overflow
@@ -506,6 +517,11 @@ impl Bv {
     /// Get the `bvi` of this bound variable after inserting a bound variable under `k` binders
     pub fn bvi_under(self, k: Bv) -> Bv {
         if self < k { self } else { self.succ() }
+    }
+
+    /// Get the `bvi` of this bound variable after inserting `n` bound variables under `k` binders
+    pub fn bvi_add_under(self, shift: Bv, k: Bv) -> Bv {
+        if self < k { self } else { self + shift }
     }
 }
 

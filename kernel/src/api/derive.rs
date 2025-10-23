@@ -1,6 +1,3 @@
-use smallvec::SmallVec;
-
-use crate::api::error::*;
 use crate::api::store::*;
 use crate::data::term::{Gv, ULvl};
 
@@ -274,41 +271,6 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadFacts<C, T> + TermStore<C, T
     {
         self.ensure_goal(EqIn { ctx, lhs, rhs }.into(), strategy, msg)
     }
-
-    /// Ensure that all assumptions in a context are valid under a binder
-    fn ensure_assumptions_valid_under<S>(
-        &mut self,
-        ctx: C,
-        binder: T,
-        target: C,
-        strategy: &mut S,
-        msg: &'static str,
-    ) -> Result<(), S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
-        let assumptions: SmallVec<[T; 16]> = (0..self.num_assumptions(target))
-            .map(|i| self.assumption(target, i).unwrap())
-            .collect();
-        for &assumption in &assumptions {
-            let ty = self.import(ctx, target, assumption);
-            self.ensure_forall_inhab_under(ctx, binder, ty, strategy, msg)?;
-        }
-        // TODO: rather than checking assumptions match directly, it may make more sense to:
-        // - re-collect assumptions
-        // - sort and dedup both lists
-        // - check equal
-        //
-        // This would require `T` to be `PartialOrd` (in fact, `Ord`) as well.
-        //
-        // In this case, it may make sense to move things to an extension trait?
-        for (i, assumption) in assumptions.iter().enumerate() {
-            if self.assumption(target, i as u32) != Some(*assumption) {
-                return Err(strategy.fail(kernel_error::ENSURE_ASSUMPTIONS_VALID_UNDER_CHANGED));
-            }
-        }
-        Ok(())
-    }
 }
 
 impl<C, T, K> Ensure<C, T> for K
@@ -322,13 +284,7 @@ where
 /// Typing rules for deriving facts about terms from those already in the datastore
 pub trait Derive<C, T> {
     /// Assume a new hypothesis in this context
-    fn assume<S>(
-        &mut self,
-        ctx: C,
-        ty: T,
-        subctx: C,
-        strategy: &mut S,
-    ) -> Result<IsInhabIn<T>, S::Fail>
+    fn assume<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Gv<C>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -417,9 +373,8 @@ pub trait Derive<C, T> {
     ///
     /// # Examples
     /// ```rust
-    /// # #[cfg(feature = "wrapper")] {
-    /// # use covalence_kernel::kernel::*;
-    /// # use covalence_kernel::error::kernel_error;
+    /// # use covalence_kernel::*;
+    /// # use covalence_kernel::api::error::kernel_error;
     /// # let mut ker = Kernel::new();
     /// # let ctx = ker.new_ctx();
     /// // `close x x ≡ #0` has type `empty` under binder `empty`
@@ -450,7 +405,6 @@ pub trait Derive<C, T> {
     /// // which is valid since the result is about the unchanged closed term, _not_ the term in the
     /// // (imported, changed) context!
     /// assert!(res.check(ctx, &ker));
-    /// # }
     /// ```
     fn derive_close_has_ty_under<S>(
         &mut self,
@@ -475,6 +429,15 @@ pub trait Derive<C, T> {
     /// or, in Lean,
     /// ```lean
     /// theorem Ctx.KHasTy.fv {Γ x A} (hΓ : Ok Γ) (hA : Lookup Γ x A) : KHasTy Γ A.erase (.fv x)
+    /// ```
+    /// 
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # use covalence_kernel::api::error::kernel_error;
+    /// # let mut ker = Kernel::new();
+    /// # let ctx = ker.new_ctx();
+    /// # let unit = Node::Unit;
     /// ```
     fn derive_fv<S>(&mut self, ctx: C, var: Gv<C>, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
     where

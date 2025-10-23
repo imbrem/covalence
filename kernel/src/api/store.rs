@@ -34,14 +34,8 @@ pub trait TermStore<C, T> {
 
     // == Variable management ==
 
-    /// Get the number of assumptions this context has
-    fn num_assumptions(&self, ctx: C) -> u32;
-
     /// Get the number of variables this context has
     fn num_vars(&self, ctx: C) -> u32;
-
-    /// Get this context's `n`th assumption
-    fn assumption(&self, ctx: C, ix: u32) -> Option<T>;
 
     /// Get the type of a variable in the given context
     ///
@@ -50,6 +44,12 @@ pub trait TermStore<C, T> {
 
     /// Lookup the type of a variable in its own context
     fn get_var_ty(&self, var: Gv<C>) -> T;
+
+    /// Get whether a variable is a ghost variable
+    ///
+    /// Ghost variables cannot appear in terms, and so in general are ill-typed, but their type is
+    /// inhabited.
+    fn var_is_ghost(&self, var: Gv<C>) -> bool;
 
     // == Universe management ==
 
@@ -94,16 +94,52 @@ pub trait ReadFacts<C, T> {
     /// Check whether `lo` is a subcontext of `hi`
     ///
     /// This always returns `true` if `lo` is a root context, even if `hi` has no parent
-    ///
-    /// If `lo` is _not_ a root context, this in fact guarantees that `lo` is a _stable_ subcontext
-    /// of `hi`: adding variables to `lo` will automatically make those variables valid to use in
-    /// `hi`.
     fn is_subctx(&self, lo: C, hi: C) -> bool;
 
     /// Check whether `lo` is a subcontext of `hi`'s parent(s)
+    /// 
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # use covalence_kernel::api::error::kernel_error;
+    /// # let mut ker = Kernel::new();
+    /// let ctx = ker.new_ctx();
+    /// // The empty context is a subctx of everything
+    /// assert!(ker.is_subctx_of_parents(ctx, ctx));
+    /// let unit = ker.add(ctx, Node::Unit);
+    /// let x = ker.with_param(ctx, unit, &mut ()).unwrap();
+    /// let child = x.ctx;
+    /// assert!(ker.is_subctx_of_parents(ctx, child));
+    /// assert!(!ker.is_subctx_of_parents(child, ctx));
+    /// // Child is nonempty, so is not a subctx of its parent (ctx)
+    /// assert!(!ker.is_subctx_of_parents(child, child));
+    /// ```
     fn is_subctx_of_parents(&self, lo: C, hi: C) -> bool;
 
     /// Check whether `lo`'s parent(s) are a subcontext of `hi`
+    /// 
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # use covalence_kernel::api::error::kernel_error;
+    /// # let mut ker = Kernel::new();
+    /// let ctx = ker.new_ctx();
+    /// // The empty context is a subctx of everything
+    /// assert!(ker.parents_are_subctx(ctx, ctx));
+    /// let unit = ker.add(ctx, Node::Unit);
+    /// let x = ker.with_param(ctx, unit, &mut ()).unwrap();
+    /// let child = x.ctx;
+    /// assert!(ker.parents_are_subctx(ctx, child));
+    /// assert!(ker.parents_are_subctx(child, ctx));
+    /// assert!(ker.parents_are_subctx(child, child));
+    /// let unit_ = ker.add(child, Node::Unit);
+    /// let y = ker.with_param(child, unit_, &mut ()).unwrap();
+    /// let grandchild = y.ctx;
+    /// assert!(ker.parents_are_subctx(ctx, grandchild));
+    /// assert!(ker.parents_are_subctx(grandchild, child));
+    /// // child is a parent of grandchild, but not of ctx!
+    /// assert!(!ker.parents_are_subctx(grandchild, ctx));
+    /// ```
     fn parents_are_subctx(&self, lo: C, hi: C) -> bool;
 
     // == Predicates ==
@@ -236,9 +272,7 @@ pub trait WriteFacts<C, T> {
     /// Add an assumption to the given context
     ///
     /// This adds the assumption that `ty` is inhabited; and marks it as so.
-    ///
-    /// For this to be valid, `ty` should be a valid type _in the parent context_!
-    fn assume_unchecked(&mut self, ctx: C, ty: T);
+    fn assume_unchecked(&mut self, ctx: C, ty: T) -> Gv<C>;
 
     /// Add a variable to the given context
     fn add_var_unchecked(&mut self, ctx: C, ty: T) -> Gv<C>;

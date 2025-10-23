@@ -2,7 +2,6 @@ use std::{borrow::BorrowMut, ops::BitOr};
 
 use bitflags::bitflags;
 use egg::{Analysis, DidMerge, EGraph, Language};
-use indexmap::IndexSet;
 
 use crate::store::*;
 
@@ -51,15 +50,16 @@ impl Ctx {
     }
 
     pub fn var_ty(&self, ix: u32) -> Option<TermId> {
-        self.e.analysis.vars.get(ix as usize).copied()
+        self.e.analysis.vars.get(ix as usize).map(|(v, _)| *v)
     }
 
-    pub fn num_assumptions(&self) -> u32 {
-        self.e.analysis.assumptions.len() as u32
-    }
-
-    pub fn assumption(&self, ix: u32) -> Option<TermId> {
-        self.e.analysis.assumptions.get_index(ix as usize).copied()
+    pub fn var_is_ghost(&self, ix: u32) -> bool {
+        self.e
+            .analysis
+            .vars
+            .get(ix as usize)
+            .map(|(_, g)| *g)
+            .unwrap_or(true)
     }
 
     pub fn num_vars(&self) -> u32 {
@@ -71,7 +71,7 @@ impl Ctx {
     }
 
     pub fn is_null_extension(&self) -> bool {
-        self.e.analysis.assumptions.is_empty() && self.e.analysis.vars.is_empty()
+        self.e.analysis.vars.is_empty()
     }
 
     pub fn is_contr(&self) -> bool {
@@ -253,13 +253,18 @@ impl Ctx {
         self.set_is_inhab_unchecked(sigma)
     }
 
-    pub fn assume_unchecked(&mut self, ty: TermId) {
-        // If something is already inhabited, don't bother adding it as an assumption
-        if self.is_inhab(ty) {
-            return;
-        }
-        self.e.analysis.assumptions.insert(ty);
-        self.set_is_inhab_unchecked(ty);
+    pub fn assume_unchecked(&mut self, ty: TermId) -> u32 {
+        // NOTE: this overflow should be impossible due to limitations of the E-graph, but better
+        // safe than sorry...
+        let ix: u32 = self
+            .e
+            .analysis
+            .vars
+            .len()
+            .try_into()
+            .expect("assumption index overflow");
+        self.e.analysis.vars.push((ty, true));
+        ix
     }
 
     pub fn add_var_unchecked(&mut self, ty: TermId) -> u32 {
@@ -272,7 +277,7 @@ impl Ctx {
             .len()
             .try_into()
             .expect("variable index overflow");
-        self.e.analysis.vars.push(ty);
+        self.e.analysis.vars.push((ty, false));
         ix
     }
 
@@ -308,12 +313,9 @@ struct CtxData {
     parent: Option<CtxId>,
     /// This context's flags
     flags: CtxFlags,
-    /// This context's assumptions
-    ///
-    /// Note these are not allowed to talk about _this_ context's variables!
-    assumptions: IndexSet<TermId>,
-    /// This context's variables, implemented as a map from indices to types
-    vars: Vec<TermId>,
+    /// This context's variables, implemented as a map from indices to types, and a bit indicating
+    /// whether the variable is a ghost or not
+    vars: Vec<(TermId, bool)>,
 }
 
 impl Analysis<Node> for CtxData {
@@ -533,11 +535,9 @@ mod test {
     fn add_var_prop() {
         let mut ctx = Ctx::new_ctx();
         let u0 = ctx.add(Node::U(ULvl::PROP));
-        assert_eq!(ctx.num_assumptions(), 0);
         assert_eq!(ctx.var_ty(0), None);
         let vx = ctx.add_var_unchecked(u0);
         assert_eq!(vx, 0);
-        assert_eq!(ctx.num_assumptions(), 0);
         assert_eq!(ctx.var_ty(0), Some(u0));
         assert_eq!(ctx.var_ty(1), None);
     }

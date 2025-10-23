@@ -9,23 +9,30 @@ pub mod kernel_error {
         "ensure_assumptions_valid_under: assumptions changed";
     /// An assumption must be a valid type
     pub const ASSUME_IS_TY: &str = "assume: ty is not a valid type";
-    /// To add a variable, its type must be inhabited
-    pub const ADD_VAR_IS_INHAB: &str = "add_var: ty is not inhabited";
+    /// A variable must have a valid type
+    pub const ADD_VAR_IS_TY: &str = "add_var: ty is not a valid type";
     /// The parent argument of `set_parent` must have all existing parents as subcontexts
     pub const SET_PARENT_NOT_SUBCTX: &str = "set_parent: expected subcontext";
     /// The parent argument of `set_parent` must not have `ctx` as a subcontext
     pub const SET_PARENT_WOULD_CYCLE: &str = "set_parent: would induce a cycle";
-    /// When we add a variable, it should be _well-scoped_: only contain variables from the current
-    /// context
-    ///
-    /// Later, this restriction may be lifted slightly to allow _semi-well-scoped_ terms.
+    /// Ghost variables are not well-typed, only inhabited
+    /// 
+    /// At a higher level, it might make sense to, for a ghost variable, instead return ε-choice at
+    /// the appropriate type.
+    pub const DERIVE_FV_GHOST: &str = "derive_fv: var is a ghost";
+    /// When we add a variable, it should be _well-scoped_: only contain variables  visible from
+    /// within the current context
     pub const DERIVE_FV_ILL_SCOPED: &str = "derive_fv: var is ill-scoped";
     /// Cannot deduce that lvl1 ≤ lvl2
     pub const DERIVE_U_LE_U_LE: &str = "derive_u_le: cannot deduce that lvl1 ≤ lvl2";
     /// tm must be of type U(lvl1)
     pub const DERIVE_U_LE_TM: &str = "derive_u_le: tm must be of type U(lvl1)";
+    /// `derive_close_has_ty_under` does not support variables of nonzero index
+    pub const DERIVE_CLOSE_HAS_TY_UNDER_IX_NONZERO: &str =
+        "derive_close_has_ty_under: we do not currently support variables of nonzero index";
+    /// variable's type must be well-scoped in the parent context
     pub const DERIVE_CLOSE_HAS_TY_UNDER_ILL_SCOPED: &str =
-        "derive_close_has_ty_under: variable's context is not a subcontext of the current context";
+        "derive_close_has_ty_under: variable's type may be ill-scoped";
     pub const DERIVE_CLOSE_HAS_TY_UNDER_TOO_MANY_VARS: &str =
         "derive_close_has_ty_under: variable's context must define exactly one variable";
     pub const DERIVE_CLOSE_HAS_TY_UNDER_INVALID_ASSUMPTION: &str =

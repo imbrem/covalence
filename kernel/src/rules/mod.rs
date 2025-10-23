@@ -153,12 +153,8 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
         self.0.get_var_ty(var)
     }
 
-    fn num_assumptions(&self, ctx: C) -> u32 {
-        self.0.num_assumptions(ctx)
-    }
-
-    fn assumption(&self, ctx: C, ix: u32) -> Option<T> {
-        self.0.assumption(ctx, ix)
+    fn var_is_ghost(&self, var: Gv<C>) -> bool {
+        self.0.var_is_ghost(var)
     }
 
     fn num_vars(&self, ctx: C) -> u32 {
@@ -188,28 +184,15 @@ impl<
     D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>,
 > Derive<C, T> for Kernel<D>
 {
-    fn assume<S>(
-        &mut self,
-        ctx: C,
-        ty: T,
-        subctx: C,
-        strategy: &mut S,
-    ) -> Result<IsInhabIn<T>, S::Fail>
+    fn assume<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Gv<C>, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("assume")?;
-        if !self.is_subctx_of_parents(subctx, ctx) {
-            return Err(strategy.fail(kernel_error::ASSUME_NOT_SUBCTX));
-        }
-        let in_subctx = self.import(subctx, ctx, ty);
-        // If this type is already inhabited in a subcontext, there's no need to add it as an
-        // assumption
-        if !self.is_inhab(subctx, in_subctx) {
-            self.ensure_is_ty(subctx, in_subctx, strategy, kernel_error::ASSUME_IS_TY)?;
-            self.0.assume_unchecked(ctx, ty);
-        }
-        Ok(IsInhabIn(ty).finish_rule(ctx, strategy))
+        self.ensure_is_ty(ctx, ty, strategy, kernel_error::ASSUME_IS_TY)?;
+        let var = self.0.assume_unchecked(ctx, ty);
+        IsInhabIn(ty).finish_rule(ctx, strategy);
+        Ok(var)
     }
 
     fn add_var<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Gv<C>, S::Fail>
@@ -217,13 +200,7 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("add_var")?;
-        // TODO: note that this allows later variables to depend on earlier variables
-        //
-        // e.g. if x : Nat, then Fin (x + 1) inhab so we can have y : Fin (x + 1)
-        //
-        // This is not _currently_ unsound, but we _might_ want to forbid it to allow playing
-        // unordered games... think about this
-        self.ensure_is_inhab(ctx, ty, strategy, kernel_error::ADD_VAR_IS_INHAB)?;
+        self.ensure_is_ty(ctx, ty, strategy, kernel_error::ADD_VAR_IS_TY)?;
         let var = self.0.add_var_unchecked(ctx, ty);
         debug_assert!(self.0.eq_in(ctx, self.0.get_var_ty(var), ty));
         let tm = self.0.add(ctx, GNode::Fv(var));
@@ -239,15 +216,7 @@ impl<
         //TODO: indicate to strategy we're calling with_param?
         let ctx = self.with_parent(parent);
         let ty = self.import(ctx, parent, param);
-        let assume = self.assume(ctx, ty, parent, strategy)?;
-        debug_assert!(
-            assume.0 == ty,
-            "assume returns the fact that ty is inhabited in ctx"
-        );
-        debug_assert!(self.is_inhab(ctx, ty), "ty is inhabited in ctx");
-        let var = self
-            .add_var(ctx, param, &mut ())
-            .expect("we can always safely add a variable of inhabited type");
+        let var = self.add_var(ctx, ty, strategy)?;
         Ok(var)
     }
 
@@ -406,6 +375,11 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_close_has_ty_under")?;
+        if var.ctx != ctx {
+            if var.ix != 0 {
+                return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_IX_NONZERO));
+            }
+        }
         let import_tm = self.import(var.ctx, ctx, tm);
         let import_ty = self.import(var.ctx, ctx, ty);
         self.ensure_has_ty(
@@ -426,30 +400,12 @@ impl<
                 0,
                 "var is a valid variable, so there must be at least one variable"
             );
-            // What we're really checking here is that every variable in `import_ty` and `import_tm`
-            // either exists in `ctx` (due to our later subcontext check) or is `var` itself.
-            //
-            // TODO: we can check this directly, and so probably relax this check
-            //
-            // TODO: if we're going to do this, should we change to kernel_error::NOT_IMPLEMENTED?
+            // We check that `var` is the only variable in its context
             if self.num_vars(var.ctx) != 1 {
                 return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_TOO_MANY_VARS));
             }
-            // Now we check all the variable's context assumptions are implied by `binder` under
-            // `ctx`
-            self.ensure_assumptions_valid_under(
-                ctx,
-                binder,
-                var.ctx,
-                strategy,
-                kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_INVALID_ASSUMPTION,
-            )?;
             // Finally, we check that the variable context's parent(s) are subcontexts of `ctx`
-            //
-            // `ensure_assumptions_valid_under` should not be able to change this, since the check
-            // is stable, but if we move to an unstable check its correct to check _afterwards_
-            // rather than before!
-            if self.parents_are_subctx(var.ctx, ctx) {
+            if !self.parents_are_subctx(var.ctx, ctx) {
                 return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_ILL_SCOPED));
             }
         }
@@ -470,7 +426,10 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_fv")?;
-        if !self.is_subctx(var.ctx, ctx) {
+        if self.0.var_is_ghost(var) {
+            return Err(strategy.fail(kernel_error::DERIVE_FV_GHOST));
+        }
+        if !self.0.is_subctx(var.ctx, ctx) {
             return Err(strategy.fail(kernel_error::DERIVE_FV_ILL_SCOPED));
         }
         //NOTE: this will crash if the variable is not in fact valid!

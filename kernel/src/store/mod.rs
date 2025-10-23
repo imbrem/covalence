@@ -96,14 +96,6 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         self.lookup(ctx, &mut GNode::Import(Import { ctx: src, tm }))
     }
 
-    fn num_assumptions(&self, ctx: CtxId) -> u32 {
-        self.x[ctx.0].num_assumptions()
-    }
-
-    fn assumption(&self, ctx: CtxId, ix: u32) -> Option<TermId> {
-        self.x[ctx.0].assumption(ix)
-    }
-
     fn num_vars(&self, ctx: CtxId) -> u32 {
         self.x[ctx.0].num_vars()
     }
@@ -117,6 +109,10 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         self.x[var.ctx.0]
             .var_ty(var.ix)
             .expect("invalid variable index")
+    }
+
+    fn var_is_ghost(&self, var: Gv<CtxId>) -> bool {
+        self.x[var.ctx.0].var_is_ghost(var.ix)
     }
 
     fn succ(&mut self, level: ULvl) -> ULvl {
@@ -341,13 +337,14 @@ impl WriteFacts<CtxId, TermId> for EggTermDb {
         self.x[ctx.0].set_exists_inhab_under_unchecked(binder, ty)
     }
 
-    fn assume_unchecked(&mut self, ctx: CtxId, ty: TermId) {
-        self.x[ctx.0].assume_unchecked(ty);
+    fn assume_unchecked(&mut self, ctx: CtxId, ty: TermId) -> VarId {
+        let ix = self.x[ctx.0].assume_unchecked(ty);
+        VarId { ctx, ix }
     }
 
-    fn add_var_unchecked(&mut self, ctx: CtxId, ty: TermId) -> Gv<CtxId> {
+    fn add_var_unchecked(&mut self, ctx: CtxId, ty: TermId) -> VarId {
         let ix = self.x[ctx.0].add_var_unchecked(ty);
-        Gv { ctx, ix }
+        VarId { ctx, ix }
     }
 
     fn set_bvi_unchecked(&mut self, ctx: CtxId, tm: TermId, bvi: Bv) {

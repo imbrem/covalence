@@ -281,7 +281,16 @@ where
 {
 }
 
-pub trait Unfolder<C, T, K> {}
+pub trait Unfolder<C, T, K>: Strategy<C, T, K> {}
+
+pub enum CloneStep<C, T> {
+    /// Continue by congruence
+    Congr,
+    /// Swap with a value known to be equal
+    Swap(Val<C, T>),
+    /// Stop
+    Stop,
+}
 
 /// Typing rules for deriving facts about terms from those already in the datastore
 pub trait Derive<C, T> {

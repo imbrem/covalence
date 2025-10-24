@@ -1,5 +1,5 @@
 use crate::api::derive::*;
-use crate::data::term::{Bv, Fv, GNode, ULvl, Val};
+use crate::data::term::{Bv, Fv, NodeT, ULvl, Val};
 
 /// A trait implemented by a datastore that can manipulate hash-consed terms and universe levels
 pub trait TermStore<C, T> {
@@ -12,7 +12,7 @@ pub trait TermStore<C, T> {
     fn with_parent(&mut self, parent: C) -> C;
 
     /// Insert a term into the store, returning a handle to it
-    fn add(&mut self, ctx: C, tm: GNode<C, T>) -> T;
+    fn add(&mut self, ctx: C, tm: NodeT<C, T>) -> T;
 
     /// Import a term into another context, returning a handle to it
     ///
@@ -22,12 +22,12 @@ pub trait TermStore<C, T> {
     fn import(&mut self, ctx: C, val: Val<C, T>) -> T;
 
     /// Get the node corresponding to a term
-    fn node(&self, ctx: C, tm: T) -> &GNode<C, T>;
+    fn node(&self, ctx: C, tm: T) -> &NodeT<C, T>;
 
     /// Lookup a term in the store
     ///
     /// Canonicalizes the term's children if found
-    fn lookup(&self, ctx: C, tm: &mut GNode<C, T>) -> Option<T>;
+    fn lookup(&self, ctx: C, tm: &mut NodeT<C, T>) -> Option<T>;
 
     /// Lookup an import of a term into another context, returning a handle to it if it exists
     fn lookup_import(&self, ctx: C, src: C, tm: T) -> Option<T>;
@@ -225,7 +225,7 @@ pub trait ReadFacts<C, T> {
 }
 
 impl<C, T> Val<C, T> {
-    pub fn node(self, store: &impl TermStore<C, T>) -> &GNode<C, T> {
+    pub fn node(self, store: &impl TermStore<C, T>) -> &NodeT<C, T> {
         store.node(self.ctx, self.tm)
     }
 

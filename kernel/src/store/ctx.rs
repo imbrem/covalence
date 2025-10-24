@@ -222,36 +222,36 @@ impl Ctx {
             }
         }
         self.set_is_wf_unchecked(tm);
-        let has_ty = self.add(GNode::HasTy([tm, ty]));
+        let has_ty = self.add(NodeT::HasTy([tm, ty]));
         self.set_is_inhab_unchecked(ty);
-        let unit = self.add(GNode::Unit);
+        let unit = self.add(NodeT::Unit);
         self.set_eq_unchecked(has_ty, unit)
     }
 
     pub fn set_has_ty_under_unchecked(&mut self, binder: TermId, tm: TermId, ty: TermId) -> bool {
         self.set_is_ty_unchecked(binder);
-        let has_ty = self.add(GNode::HasTy([tm, ty]));
-        let has_ty_under = self.add(GNode::Pi([binder, has_ty]));
-        let unit = self.add(GNode::Unit);
+        let has_ty = self.add(NodeT::HasTy([tm, ty]));
+        let has_ty_under = self.add(NodeT::Pi([binder, has_ty]));
+        let unit = self.add(NodeT::Unit);
         self.set_is_ty_under_unchecked(binder, ty);
         self.set_eq_unchecked(has_ty_under, unit)
     }
 
     pub fn set_is_ty_under_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
         self.set_is_ty_unchecked(binder);
-        let pi = self.add(GNode::Pi([binder, ty]));
+        let pi = self.add(NodeT::Pi([binder, ty]));
         self.set_is_ty_unchecked(pi)
     }
 
     pub fn set_forall_inhab_under_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
         self.set_is_ty_unchecked(binder);
-        let pi = self.add(GNode::Pi([binder, ty]));
+        let pi = self.add(NodeT::Pi([binder, ty]));
         self.set_is_inhab_unchecked(pi)
     }
 
     pub fn set_exists_inhab_under_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
         self.set_is_ty_under_unchecked(binder, ty);
-        let sigma = self.add(GNode::Sigma([binder, ty]));
+        let sigma = self.add(NodeT::Sigma([binder, ty]));
         self.set_is_inhab_unchecked(sigma)
     }
 
@@ -442,7 +442,7 @@ impl Ctx {}
 #[repr(transparent)]
 pub struct TermId(egg::Id);
 
-pub type Node = GNode<CtxId, TermId>;
+pub type Node = NodeT<CtxId, TermId>;
 
 impl Language for Node {
     type Discriminant = GDisc<CtxId, TermId>;

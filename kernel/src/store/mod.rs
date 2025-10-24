@@ -63,7 +63,7 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         } else if ctx == val.ctx {
             return val.tm;
         } else {
-            self.x[ctx.0].add(GNode::Import(val))
+            self.x[ctx.0].add(NodeT::Import(val))
         };
         let bvi = val.bvi(self);
         self.set_bvi_unchecked(ctx, result, bvi);
@@ -95,7 +95,7 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         if ctx == src {
             return Some(tm);
         }
-        self.lookup(ctx, &mut GNode::Import(Val { ctx: src, tm }))
+        self.lookup(ctx, &mut NodeT::Import(Val { ctx: src, tm }))
     }
 
     fn num_vars(&self, ctx: CtxId) -> u32 {

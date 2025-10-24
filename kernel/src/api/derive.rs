@@ -1,5 +1,5 @@
 use crate::api::store::*;
-use crate::data::term::{Fv, ULvl, Val};
+use crate::data::term::{Bv, Close, Fv, ULvl, Val};
 
 /// A strategy tells a kernel how to derive facts about terms in a context
 pub trait Strategy<C, T, K: ?Sized> {
@@ -281,15 +281,37 @@ where
 {
 }
 
-pub trait Unfolder<C, T, K>: Strategy<C, T, K> {}
+pub trait Unfolder<C, T, K>: Strategy<C, T, K> {
+    fn cloned_step(&mut self, ctx: C, val: Val<C, T>) -> Result<CongrStep<C, T>, Self::Fail>;
 
-pub enum CloneStep<C, T> {
-    /// Continue by congruence
-    Congr,
-    /// Swap with a value known to be equal
+    fn subst_under_step(
+        &mut self,
+        ctx: C,
+        under: Bv,
+        bound: Val<C, T>,
+        body: Val<C, T>,
+    ) -> Result<CongrStep<C, T>, Self::Fail>;
+
+    fn close_step(
+        &mut self,
+        ctx: C,
+        close: Close<C, Val<C, T>>,
+    ) -> Result<CongrStep<C, T>, Self::Fail>;
+}
+
+/// A step which can be taken in cloning a value
+pub enum CongrStep<C, T> {
+    /// Take a single congruence step
+    Step {
+        /// If `true`, mark the result as equal to the symbolic clone
+        mark_eq: bool,
+        /// If `true`, attempt to "simplify" calls
+        simp: bool,
+    },
+    /// Swap `val` with a known-equal value
     Swap(Val<C, T>),
-    /// Stop
-    Stop,
+    /// Stop, optionally returning a value known to be equal to the symbolic result
+    Stop(Option<Val<C, T>>),
 }
 
 /// Typing rules for deriving facts about terms from those already in the datastore

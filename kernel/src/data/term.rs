@@ -753,6 +753,8 @@ impl<C, T> Val<C, T> {
     }
 }
 
+pub type GlobalNode<C, T> = Val<C, NodeT<C, T>>;
+
 impl<C, T> From<Bv> for NodeT<C, T> {
     fn from(bv: Bv) -> Self {
         NodeT::Bv(bv)

@@ -258,11 +258,11 @@ impl<
         Ok(result)
     }
 
-    fn subst(&mut self, ctx: C, bound: T, body: T) -> T {
-        if self.bvi(ctx, body) == Bv(0) {
+    fn subst_under(&mut self, ctx: C, under: Bv, bound: T, body: T) -> T {
+        if self.bvi(ctx, body) <= under {
             return body;
         }
-        self.add(ctx, NodeT::Let(Bv(0), [bound, body]))
+        self.add(ctx, NodeT::Let(under, [bound, body]))
     }
 
     fn close(&mut self, ctx: C, var: Fv<C>, tm: T) -> T {
@@ -295,18 +295,10 @@ impl<
             }),
         )
     }
-
-    //TODO: implement _eager_ import (i.e. deep copy; name this properly. clone?)
-
-    //TODO: implement _eager_ substitution; combine with import
-
-    //TODO: implement _eager_ close; combine with import
-
-    //TODO: equalities for eager substitution, close, import
-
-    fn lazy_subst_eq(&mut self, ctx: C, bound: T, body: T) -> Eqn<T> {
-        let eager = self.add(ctx, NodeT::Let(Bv(0), [bound, body]));
-        let lazy = self.subst(ctx, bound, body);
+    
+    fn lazy_subst_under_eq(&mut self, ctx: C, under: Bv, bound: T, body: T) -> Eqn<T> {
+        let eager = self.add(ctx, NodeT::Let(under, [bound, body]));
+        let lazy = self.subst_under(ctx, under, bound, body);
         self.0.set_eq_unchecked(ctx, eager, lazy);
         Eqn {
             lhs: eager,

@@ -374,6 +374,15 @@ pub trait Derive<C, T> {
     where
         S: Strategy<C, T, Self>;
 
+    /// Compute the substitution of a term under binders
+    ///
+    /// Given terms `bound` and `body`
+    /// - If `body` is locally-closed, return it unchanged
+    /// - Otherwise, `let bound in body`
+    ///
+    /// TODO: reference Lean
+    fn subst_under(&mut self, ctx: C, under: Bv, bound: T, body: T) -> T;
+
     /// Compute the substitution of a term
     ///
     /// Given terms `bound` and `body`
@@ -381,7 +390,9 @@ pub trait Derive<C, T> {
     /// - Otherwise, `let bound in body`
     ///
     /// TODO: reference Lean
-    fn subst(&mut self, ctx: C, bound: T, body: T) -> T;
+    fn subst(&mut self, ctx: C, bound: T, body: T) -> T {
+        self.subst_under(ctx, Bv(0), bound, body)
+    }
 
     /// Compute the closure of a term
     ///
@@ -398,8 +409,13 @@ pub trait Derive<C, T> {
     /// - Otherwise, return `close src (import src tm)`
     fn close_import(&mut self, ctx: C, src: Fv<C>, tm: T) -> T;
 
+    /// The substitution of a term under binders is equal to its lazy substitution
+    fn lazy_subst_under_eq(&mut self, ctx: C, under: Bv, bound: T, body: T) -> Eqn<T>;
+
     /// The substitution of a term is equal to its lazy substitution
-    fn lazy_subst_eq(&mut self, ctx: C, bound: T, body: T) -> Eqn<T>;
+    fn lazy_subst_eq(&mut self, ctx: C, bound: T, body: T) -> Eqn<T> {
+        self.lazy_subst_under_eq(ctx, Bv(0), bound, body)
+    }
 
     /// The closure of a term is equal to its lazy closure
     fn lazy_close_eq(&mut self, ctx: C, var: Fv<C>, tm: T) -> Eqn<T>;

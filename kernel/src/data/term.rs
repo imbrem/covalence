@@ -5,7 +5,7 @@ use std::{
 
 /// A term in `covalence`'s core calculus
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
-pub enum NodeT<C, T, I = T> {
+pub enum NodeT<C, T, I = Val<C, T>> {
     // == Term formers, corresponding to Tm from `gt3-lean` ==
     /// A free variable
     Fv(Fv<C>),
@@ -65,11 +65,11 @@ pub enum NodeT<C, T, I = T> {
 
     // == Imports from other contexts ==
     /// A direct import from another context
-    Import(Val<C, I>),
+    Import(I),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub enum GDisc<C, T, I = T> {
+pub enum GDisc<C, T, I = Val<C, T>> {
     Fv(Fv<C>),
     Bv(Bv),
     U(ULvl),
@@ -96,7 +96,7 @@ pub enum GDisc<C, T, I = T> {
     Let(Bv),
     BWk(Shift),
     Close(Close<C, T>),
-    Import(Val<C, I>),
+    Import(I),
 }
 
 impl<C, T, I> NodeT<C, T, I> {
@@ -133,8 +133,8 @@ impl<C, T, I> NodeT<C, T, I> {
         }
     }
 
-    /// Map this node's children
-    pub fn map<U>(self, mut f: impl FnMut(T) -> U) -> NodeT<C, U, I> {
+    /// Map this node's subterms and imports
+    pub fn map<U, J>(self, mut f: impl FnMut(T) -> U, g: impl FnOnce(I) -> J) -> NodeT<C, U, J> {
         match self {
             NodeT::Fv(x) => NodeT::Fv(x),
             NodeT::Bv(i) => NodeT::Bv(i),
@@ -166,12 +166,26 @@ impl<C, T, I> NodeT<C, T, I> {
                 var: close.var,
                 tm: f(close.tm),
             }),
-            NodeT::Import(import) => NodeT::Import(import),
+            NodeT::Import(import) => NodeT::Import(g(import)),
         }
     }
 
-    /// Map this node's children, potentially returning an error
-    pub fn try_map<U, E>(self, mut f: impl FnMut(T) -> Result<U, E>) -> Result<NodeT<C, U, I>, E> {
+    /// Map this node's subterms
+    pub fn map_subterms<U>(self, f: impl FnMut(T) -> U) -> NodeT<C, U, I> {
+        self.map(f, |x| x)
+    }
+
+    /// Map this node's imports
+    pub fn map_import<J>(self, g: impl FnOnce(I) -> J) -> NodeT<C, T, J> {
+        self.map(|x| x, g)
+    }
+
+    /// Map this node's subterms and imports, potentially returning an error
+    pub fn try_map<U, J, E>(
+        self,
+        mut f: impl FnMut(T) -> Result<U, E>,
+        g: impl FnOnce(I) -> Result<J, E>,
+    ) -> Result<NodeT<C, U, J>, E> {
         match self {
             NodeT::Fv(x) => Ok(NodeT::Fv(x)),
             NodeT::Bv(i) => Ok(NodeT::Bv(i)),
@@ -203,11 +217,27 @@ impl<C, T, I> NodeT<C, T, I> {
                 var: close.var,
                 tm: f(close.tm)?,
             })),
-            NodeT::Import(import) => Ok(NodeT::Import(import)),
+            NodeT::Import(import) => Ok(NodeT::Import(g(import)?)),
         }
     }
 
-    /// Annotate this node's children with binders
+    /// Map this node's children, potentially returning an error
+    pub fn try_map_subterms<U, E>(
+        self,
+        f: impl FnMut(T) -> Result<U, E>,
+    ) -> Result<NodeT<C, U, I>, E> {
+        self.try_map(f, Ok)
+    }
+
+    /// Map this node's imports, potentially returning an error
+    pub fn try_map_import<J, E>(
+        self,
+        g: impl FnOnce(I) -> Result<J, E>,
+    ) -> Result<NodeT<C, T, J>, E> {
+        self.try_map(Ok, g)
+    }
+
+    /// Annotate this node's subterms with binders
     pub fn with_binders(self) -> NodeT<C, (Bv, T), I> {
         match self {
             NodeT::Fv(x) => NodeT::Fv(x),
@@ -273,7 +303,7 @@ impl<C, T, I> NodeT<C, T, I> {
             NodeT::Subst1(k, [a, b]) => NodeT::Subst1(*k, [a, b]),
             NodeT::BWk(k, [a]) => NodeT::BWk(*k, [a]),
             NodeT::Close(close) => NodeT::Close(close.as_ref()),
-            NodeT::Import(import) => NodeT::Import(import.as_ref()),
+            NodeT::Import(import) => NodeT::Import(import),
         }
     }
 
@@ -306,14 +336,14 @@ impl<C, T, I> NodeT<C, T, I> {
             NodeT::Subst1(k, [a, b]) => NodeT::Subst1(*k, [a, b]),
             NodeT::BWk(k, [a]) => NodeT::BWk(*k, [a]),
             NodeT::Close(close) => NodeT::Close(close.as_mut()),
-            NodeT::Import(import) => NodeT::Import(import.as_mut()),
+            NodeT::Import(import) => NodeT::Import(import),
         }
     }
 
     /// Get the children of this term
     ///
-    /// Note this only returns children _in the same context_ as this term; in particular, imports
-    /// and closures will return an empty slice.
+    /// Note that the argument of a closure does _not_ count as a child of the closure, since
+    /// closure does _not_ respect congruence!
     pub fn children(&self) -> &[T] {
         match self {
             NodeT::Fv(_) => &[],
@@ -430,12 +460,28 @@ impl<C, T, I> NodeT<C, T, I> {
         }
     }
 
+    /// Get this node as an import
+    pub fn as_import(&self) -> Option<&I> {
+        match self {
+            NodeT::Import(import) => Some(import),
+            _ => None,
+        }
+    }
+
     /// Get this node as a universe level
     pub fn as_level(&self) -> Option<ULvl> {
         match self {
             NodeT::U(level) => Some(*level),
             _ => None,
         }
+    }
+
+    /// Get whether this node can be unfolded
+    pub fn is_unfoldable(&self) -> bool {
+        matches!(
+            self,
+            NodeT::Subst1(_, _) | NodeT::BWk(_, _) | NodeT::Close(_) | NodeT::Import(_)
+        )
     }
 }
 
@@ -557,11 +603,11 @@ impl Debug for Bv {
     }
 }
 
-/// A substitution which shifts up `shift` binders at level `level`
+/// A substitution which shifts up `shift` binders under `under` binders
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
 pub struct Shift {
     /// The level at which to shift
-    level: Bv,
+    under: Bv,
     /// The number of binders to shift by
     shift: Bv,
 }
@@ -580,7 +626,7 @@ impl Shift {
             "cannot construct a shift by an invalid amount"
         );
         Shift {
-            level: if shift == Bv(0) { Bv(0) } else { level },
+            under: if shift == Bv(0) { Bv(0) } else { level },
             shift,
         }
     }
@@ -602,11 +648,23 @@ impl Shift {
     /// Lift this shift under a binder
     pub fn lift(self) -> Shift {
         if self.shift == Bv(0) {
-            debug_assert_eq!(self.level, Bv(0), "the identity shift must have zero level");
+            debug_assert_eq!(self.under, Bv(0), "the identity shift must have zero level");
             return self;
         }
         Shift {
-            level: self.level.succ(),
+            under: self.under.succ(),
+            shift: self.shift,
+        }
+    }
+
+    /// Lift this shift under `n` binders
+    pub fn lift_under(self, n: Bv) -> Shift {
+        if self.shift == Bv(0) {
+            debug_assert_eq!(self.under, Bv(0), "the identity shift must have zero level");
+            return self;
+        }
+        Shift {
+            under: self.under + n,
             shift: self.shift,
         }
     }
@@ -614,14 +672,14 @@ impl Shift {
     /// Get the successor of this shift
     pub fn succ(self) -> Shift {
         Shift {
-            level: self.level,
+            under: self.under,
             shift: self.shift.succ(),
         }
     }
 
     /// Apply this shift
     pub fn apply(self, bv: Bv) -> Bv {
-        if bv < self.level { bv } else { bv + self.shift }
+        if bv < self.under { bv } else { bv + self.shift }
     }
 
     /// Get an upper bound on the bound variable index after applying this shift
@@ -637,7 +695,7 @@ impl Shift {
     /// # } } }
     /// ```
     pub fn bvi(self, bvi: Bv) -> Bv {
-        if bvi <= self.level {
+        if bvi <= self.under {
             bvi
         } else {
             bvi + self.shift
@@ -645,13 +703,23 @@ impl Shift {
     }
 
     /// Get this shift's level
-    pub fn level(self) -> Bv {
-        self.level
+    pub fn under(self) -> Bv {
+        self.under
     }
 
     /// Get this shift's shift
     pub fn shift(self) -> Bv {
         self.shift
+    }
+
+    /// Check whether this shift is the identity
+    pub fn is_id(self) -> bool {
+        if self.shift == Bv(0) {
+            debug_assert_eq!(self.under, Bv(0), "the identity shift must have zero level");
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -724,6 +792,15 @@ impl<C, T> Close<C, T> {
             tm: &mut self.tm,
         }
     }
+
+    /// Lift this close under `n` binders
+    pub fn lift(self, n: Bv) -> Close<C, T> {
+        Close {
+            under: self.under + n,
+            var: self.var,
+            tm: self.tm,
+        }
+    }
 }
 
 /// An import from another context
@@ -758,7 +835,15 @@ impl<C, T> Val<C, T> {
     }
 }
 
-pub type GlobalNode<C, T> = Val<C, NodeT<C, T>>;
+pub type NodeVT<C, T> = NodeT<C, Val<C, T>>;
+
+pub type NodeT2<C, T> = NodeT<C, NodeT<C, T>, Val<C, T>>;
+
+pub type NodeVT2<C, T> = NodeT2<C, Val<C, T>>;
+
+pub type VNodeT<C, T> = Val<C, NodeT<C, T>>;
+
+pub type VNodeT2<C, T> = Val<C, NodeT2<C, T>>;
 
 impl<C, T> From<Bv> for NodeT<C, T> {
     fn from(bv: Bv) -> Self {

@@ -3,7 +3,11 @@ use std::ops::Deref;
 use crate::api::derive::*;
 use crate::api::error::*;
 use crate::api::store::*;
+use crate::data::term::VNodeT;
 use crate::data::term::{Bv, Close, Fv, NodeT, ULvl, Val};
+
+/// Rules for unfolding substitutions, imports, and closures
+pub mod unfold;
 
 /// The `covalence` kernel
 ///
@@ -95,8 +99,20 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.may_have_var_from(ctx, tm, vars)
     }
 
+    fn def_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
+        self.0.def_eq(lhs, rhs)
+    }
+
     fn syn_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
         self.0.syn_eq(lhs, rhs)
+    }
+
+    fn eq_val_in(&self, ctx: C, lhs: T, val: Val<C, T>) -> bool {
+        self.0.eq_val_in(ctx, lhs, val)
+    }
+
+    fn eq_node_in(&self, ctx: C, lhs: T, syn: VNodeT<C, T>) -> bool {
+        self.0.eq_node_in(ctx, lhs, syn)
     }
 
     fn eq_in(&self, ctx: C, lhs: T, rhs: T) -> bool {
@@ -161,8 +177,8 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
         self.0.lookup(ctx, term)
     }
 
-    fn lookup_import(&self, ctx: C, src: C, tm: T) -> Option<T> {
-        self.0.lookup_import(ctx, src, tm)
+    fn lookup_import(&self, ctx: C, val: Val<C, T>) -> Option<T> {
+        self.0.lookup_import(ctx, val)
     }
 
     fn var_ty(&mut self, ctx: C, var: Fv<C>) -> T {

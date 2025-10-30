@@ -1,7 +1,13 @@
 use crate::api::derive::*;
-use crate::data::term::{Bv, Fv, GlobalNode, NodeT, ULvl, Val};
+use crate::data::term::{Bv, Fv, VNodeT, VNodeT2, NodeT, NodeT2, ULvl, Val};
 
 /// A trait implemented by a datastore that can manipulate hash-consed terms and universe levels
+/// 
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn TermStore<CtxId, TermId> = &Kernel::new();
+/// ```
 pub trait TermStore<C, T> {
     // == Term management ==
 
@@ -53,7 +59,7 @@ pub trait TermStore<C, T> {
     fn lookup(&self, ctx: C, tm: &mut NodeT<C, T>) -> Option<T>;
 
     /// Lookup an import of a term into another context, returning a handle to it if it exists
-    fn lookup_import(&self, ctx: C, src: C, tm: T) -> Option<T>;
+    fn lookup_import(&self, ctx: C, val: Val<C, T>) -> Option<T>;
 
     // == Variable management ==
 
@@ -92,6 +98,12 @@ pub trait TermStore<C, T> {
 }
 
 /// A trait implemented by a datastore that can read facts about terms in a context.
+/// 
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadFacts<CtxId, TermId> = &Kernel::new();
+/// ```
 pub trait ReadFacts<C, T> {
     // == Context information ==
     /// Get whether a context is a root context
@@ -115,9 +127,9 @@ pub trait ReadFacts<C, T> {
     // == Context information ==
 
     /// Check whether `lo` is an ancestor of `hi`
-    /// 
+    ///
     /// Note that a context `ctx` is always an ancestor of itself
-    /// 
+    ///
     /// # Examples
     /// ```rust
     /// # use covalence_kernel::*;
@@ -132,9 +144,9 @@ pub trait ReadFacts<C, T> {
     fn is_ancestor(&self, lo: C, hi: C) -> bool;
 
     /// Check whether `lo` is _strict_ ancestor of `hi`
-    /// 
+    ///
     /// A context `ctx` is never a strict ancestor of itself
-    /// 
+    ///
     /// # Examples
     /// ```rust
     /// # use covalence_kernel::*;
@@ -149,13 +161,13 @@ pub trait ReadFacts<C, T> {
     fn is_strict_ancestor(&self, lo: C, hi: C) -> bool;
 
     /// Check whether `lo` is a subcontext of `hi`
-    /// 
-    /// This means that every variable in `lo` is contained in `hi`. 
-    /// 
+    ///
+    /// This means that every variable in `lo` is contained in `hi`.
+    ///
     /// Unlike [`is_ancestor`](#method.is_ancestor), this is _not_ monotonic: a context may be
     /// modified so that it is not longer a subcontext of another, whereas if `lo` is an ancestor of
     /// `hi`, all valid edits to a kernel will preserve this fact.
-    /// 
+    ///
     /// # Examples
     /// ```rust
     /// # use covalence_kernel::*;
@@ -265,11 +277,26 @@ pub trait ReadFacts<C, T> {
 
     // == Relations ==
     /// Check whether two values are syntactically equal
-    /// 
-    /// As usual, this is an _over-approximation_: if `ker.syn_eq(lhs, rhs)` then `lhs` and `rhs`
-    /// are _definitely_ syntactically equal, but this can return `false` even if in fact full
-    /// unfolding would determine otherwise.
+    ///
+    /// `lhs` is syntactically equal to `rhs` if they are the same term, modulo imports
     fn syn_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
+
+    /// Check whether two values are definitionally equal
+    ///
+    /// `lhs` is definitionally equal to `rhs` if they are equal after fully unfolding all `close`,
+    /// `subst1`, and `wkn`. This function is a (safe) approximation: it can return `false`
+    /// incorrectly.
+    fn def_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
+
+    /// Check whether the term `lhs` is equal to the value `val` in `ctx`
+    ///
+    /// Corresponds to `Ctx.KEq` in `gt3-lean`
+    fn eq_val_in(&self, ctx: C, lhs: T, val: Val<C, T>) -> bool;
+
+    /// Check whether the term `lhs` is equal to the value `node` in `ctx`
+    ///
+    /// Corresponds to `Ctx.KEq` in `gt3-lean`
+    fn eq_node_in(&self, ctx: C, lhs: T, node: VNodeT<C, T>) -> bool;
 
     /// Check whether the term `lhs` is equal to the term `rhs` in `ctx`
     ///
@@ -344,8 +371,13 @@ impl<C: Copy, T> NodeT<C, T> {
     }
 
     /// Annotate this node with a context, yielding a global node
-    pub fn with(self, ctx: C) -> GlobalNode<C, T> {
-        GlobalNode { ctx, tm: self }
+    pub fn with(self, ctx: C) -> VNodeT<C, T> {
+        VNodeT { ctx, tm: self }
+    }
+
+    /// Annotate the _children_ of this node with a context, yielding a nested node
+    pub fn children_with(self, ctx: C) -> NodeT2<C, T> {
+        self.map_subterms(|tm| NodeT::Import(Val { ctx, tm }))
     }
 }
 
@@ -369,15 +401,20 @@ impl<C: Copy, T: Copy> Val<C, T> {
     /// assert_eq!(v.global_node(&ker).add(&mut ker), v);
     /// # }
     /// ```
-    pub fn global_node(self, store: &impl TermStore<C, T>) -> GlobalNode<C, T> {
-        GlobalNode {
+    pub fn global_node(self, store: &impl TermStore<C, T>) -> VNodeT<C, T> {
+        VNodeT {
             ctx: self.ctx,
             tm: *self.node(store),
         }
     }
+
+    /// Get the nested node corresponding to this value
+    pub fn nested_node(self, store: &impl TermStore<C, T>) -> NodeT2<C, T> {
+        self.node(store).children_with(self.ctx)
+    }
 }
 
-impl<C: Copy, T> GlobalNode<C, T> {
+impl<C: Copy, T> VNodeT<C, T> {
     /// Get the value corresponding to this global node
     ///
     /// # Examples
@@ -398,15 +435,50 @@ impl<C: Copy, T> GlobalNode<C, T> {
     /// # }
     /// ```
     pub fn add(self, store: &mut impl TermStore<C, T>) -> Val<C, T> {
-        Val {
-            ctx: self.ctx,
-            tm: store.add(self.ctx, self.tm),
-        }
+        self.tm.add(self.ctx, store)
+    }
+
+    /// Get the nested node corresponding to this global node
+    pub fn into_nested(self) -> NodeT2<C, T> {
+        self.tm.children_with(self.ctx)
+    }
+}
+
+impl<C: Copy, T> NodeT2<C, T> {
+    /// Flatten this node into a single level in a given context
+    pub fn flatten_in(self, ctx: C, store: &mut impl TermStore<C, T>) -> NodeT<C, T> {
+        self.map_subterms(|tm| store.add(ctx, tm))
+    }
+
+    /// Get the value corresponding to this nested node
+    pub fn add(self, ctx: C, store: &mut impl TermStore<C, T>) -> Val<C, T> {
+        self.flatten_in(ctx, store).add(ctx, store)
+    }
+}
+
+impl<C: Copy, T> VNodeT2<C, T> {
+    /// Get the value corresponding to this global node
+    pub fn add(self, store: &mut impl TermStore<C, T>) -> Val<C, T> {
+        self.tm.add(self.ctx, store)
     }
 }
 
 /// A trait implemented by a mutable datastore that can hold _unchecked_ facts about terms in a
 /// context.
+/// 
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::api::store::*;
+/// # use covalence_kernel::store::EggTermDb;
+/// # use covalence_kernel::*;
+/// let db : &dyn WriteFacts<CtxId, TermId> = &EggTermDb::default();
+/// ```
+/// We note that it is _not_ implemented by `Kernel`, since that would be unsafe:
+/// ```rust,compile_fail
+/// # use covalence_kernel::api::store::*;
+/// # use covalence_kernel::*;
+/// let db : &dyn WriteFacts<CtxId, TermId> = &Kernel::new();
+/// ```
 pub trait WriteFacts<C, T> {
     // == Context predicates ==
 

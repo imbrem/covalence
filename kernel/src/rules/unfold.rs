@@ -1,127 +1,168 @@
-// use crate::{
-//     api::store::*,
-//     data::term::{Bv, Close, Fv, NodeT, NodeT2, Shift, Val},
-// };
+use crate::{
+    Bvi,
+    api::store::*,
+    data::term::{Bv, Close, Fv, NodeT, NodeVT, NodeVT2, Shift, Val},
+};
 
-// impl<C, T> Close<C, T> {}
+impl<C: Copy, T: Copy> Val<C, T> {
+    /// Get the substitution of this value after a single step, if possible
+    pub fn subst1_step(
+        self,
+        under: Bv,
+        bound: Val<C, T>,
+        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
+    ) -> Result<NodeVT2<C, T>, ()> {
+        if self.bvi(store) <= under {
+            return Ok(NodeVT2::Import(self));
+        }
+        self.node_val(store).subst1_step(under, bound, store)
+    }
 
-// impl<C: Copy, T: Copy> Close<C, T> {
-//     /// Get this close's term as a value
-//     pub fn tm_val(self, ctx: C) -> Val<C, T> {
-//         Val { ctx, tm: self.tm }
-//     }
+    /// Get the weakening of this value after a single step, if possible
+    pub fn bwk_step(
+        self,
+        shift: Shift,
+        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
+    ) -> Result<NodeVT2<C, T>, ()> {
+        if shift.is_id() || self.bvi(store) <= shift.under() {
+            return Ok(NodeVT2::Import(self));
+        }
+        self.node_val(store).bwk_step(shift, store)
+    }
 
-//     /// Get whether this closure is the identity in the given context
-//     pub fn is_id(&self, ctx: C, store: &(impl TermStore<C, T> + ReadFacts<C, T>)) -> bool {
-//         store.bvi(ctx, self.tm) <= self.under
-//     }
+    /// Get the close of this value after a single step, if possible
+    pub fn close_step(
+        self,
+        under: Bv,
+        var: Fv<C>,
+        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
+    ) -> Result<NodeVT2<C, T>, ()> {
+        if self.bvi(store) <= under {
+            return Ok(NodeVT2::Import(self));
+        }
+        self.node_val(store).close_step(under, var, store)
+    }
 
-//     /// Unfold this close by a single step in the given context, if possible
-//     pub fn unfold(&self, ctx: C, store: &impl TermStore<C, T>) -> Result<NodeT2<C, T>, ()> {
-//         store.node(ctx, self.tm).nested_close(self.under, self.var)
-//     }
+    /// Unfold this value by a single step, if possible
+    pub fn step(
+        self,
+        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
+    ) -> Option<Result<NodeVT2<C, T>, ()>> {
+        self.node_val(store).step(store)
+    }
 
-//     /// Unfold this close by a single step in the given context, if possible
-//     ///
-//     /// Return an import if this closure is the identity
-//     pub fn step(
-//         &self,
-//         ctx: C,
-//         store: &(impl TermStore<C, T> + ReadFacts<C, T>),
-//     ) -> Result<NodeT2<C, T>, ()> {
-//         if self.is_id(ctx, store) {
-//             return Ok(NodeT2::Import(self.tm_val(ctx)));
-//         }
-//         self.unfold(ctx, store)
-//     }
-// }
+    /// Unfold this node, unfolding imports as far as possible
+    pub fn import_step(
+        self,
+        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
+    ) -> Option<Result<NodeVT2<C, T>, ()>> {
+        match self.step(store)? {
+            Ok(NodeVT2::Import(val)) => val.step(store),
+            Ok(this) => {
+                debug_assert!(!this.is_unfoldable());
+                Some(Ok(this))
+            }
+            Err(err) => Some(Err(err)),
+        }
+    }
+}
 
-// // impl<C: Copy, T: Copy> Close<C, Val<C, T>> {
-// //     /// Get whether this closure is the identity in the given store
-// //     pub fn is_id_val(&self, store: &(impl TermStore<C, T> + ReadFacts<C, T>)) -> bool {
-// //         self.tm.bvi(store) <= self.under
-// //     }
+impl<C: Copy, T: Copy> NodeVT<C, T> {
+    /// Get the substitution of this node after a single step, if possible
+    pub fn subst1_step(
+        self,
+        under: Bv,
+        bound: Val<C, T>,
+        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
+    ) -> Result<NodeVT2<C, T>, ()> {
+        if self.is_unfoldable() {
+            return Err(());
+        }
+        match self {
+            NodeVT::Import(val) => val.subst1_step(under, bound, store),
+            _ => self.with_binders().try_map_subterms(|(bv, tm)| {
+                // To support this case, we need to insert a `BWk`, which we don't have space for
+                //
+                // Don't reduce under binders, friend!
+                if bv != Bv(0) && bound.bvi(store) != Bv(0) {
+                    return Err(());
+                }
+                Ok(NodeT::Subst1(under + bv, [bound, tm]))
+            }),
+        }
+    }
 
-// //     /// Unfold this close by a single step in the given store, if possible
-// //     ///
-// //     /// Return an import if this closure is the identity
-// //     pub fn step_val(
-// //         &self,
-// //         store: &(impl TermStore<C, T> + ReadFacts<C, T>),
-// //     ) -> Result<NodeT2<C, Val<C, T>>, ()> {
-// //         if self.is_id_val(store) {
-// //             return Ok(NodeT2::Import(self.tm_val(ctx)));
-// //         }
-// //         self.unfold(ctx, store)
-// //     }
-// // }
+    /// Get the weakening of this node after a single step, if possible
+    pub fn bwk_step(
+        self,
+        shift: Shift,
+        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
+    ) -> Result<NodeVT2<C, T>, ()> {
+        if self.is_unfoldable() {
+            return Err(());
+        }
+        match self {
+            NodeVT::Import(val) => val.bwk_step(shift, store),
+            _ => Ok(self
+                .with_binders()
+                .map_subterms(|(bv, tm)| NodeT::BWk(shift.lift_under(bv), [tm]))),
+        }
+    }
 
-// impl<C: Copy, T: Copy> NodeT<C, T> {
-//     /// Get the nested closure of this node
-//     pub fn nested_close(self, under: Bv, var: Fv<C>) -> Result<NodeT2<C, T>, ()> {
-//         if self.is_unfoldable() {
-//             return Err(());
-//         }
-//         Ok(self.with_binders().map_subterms(|(bv, tm)| {
-//             Close {
-//                 under: under + bv,
-//                 var,
-//                 tm,
-//             }
-//             .into()
-//         }))
-//     }
+    /// Get the close of this node after a single step, if possible
+    pub fn close_step(
+        self,
+        under: Bv,
+        var: Fv<C>,
+        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
+    ) -> Result<NodeVT2<C, T>, ()> {
+        if self.is_unfoldable() {
+            return Err(());
+        }
+        match self {
+            NodeVT::Import(val) => val.close_step(under, var, store),
+            _ => Ok(self.with_binders().map_subterms(|(bv, tm)| {
+                NodeT::Close(Close {
+                    under: under + bv,
+                    var,
+                    tm,
+                })
+            })),
+        }
+    }
 
-//     /// Get the nested single substitution of this node
-//     pub fn nested_subst1(
-//         self,
-//         ctx: C,
-//         under: Bv,
-//         bound: T,
-//         store: &impl ReadFacts<C, T>,
-//     ) -> Result<NodeT2<C, T>, ()> {
-//         if self.is_unfoldable() {
-//             return Err(());
-//         }
-//         self.with_binders().try_map_subterms(|(bv, tm)| {
-//             if store.bvi(ctx, bound) != Bv(0) {
-//                 return Err(());
-//             }
-//             Ok(NodeT::Subst1(under + bv, [bound, tm]))
-//         })
-//     }
+    /// Unfold this node by a single step, if possible
+    pub fn step(
+        self,
+        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
+    ) -> Option<Result<NodeVT2<C, T>, ()>> {
+        match self {
+            NodeVT::Import(this) => match this.node_val(store) {
+                NodeVT::Import(that) => Some(Ok(NodeVT2::Import(that))),
+                this => Some(Ok(this.into_nested_val())),
+            },
+            NodeVT::Subst1(under, [bound, tm]) => Some(tm.subst1_step(under, bound, store)),
+            NodeVT::BWk(shift, [tm]) => Some(tm.bwk_step(shift, store)),
+            NodeVT::Close(Close { under, var, tm }) => Some(tm.close_step(under, var, store)),
+            _ => {
+                debug_assert!(!self.is_unfoldable());
+                None
+            }
+        }
+    }
 
-//     /// Get the weakening of this node
-//     pub fn nested_bwk(self, shift: Shift) -> Result<NodeT2<C, T>, ()> {
-//         if self.is_unfoldable() {
-//             return Err(());
-//         }
-//         self.with_binders()
-//             .try_map_subterms(|(bv, tm)| Ok(NodeT::BWk(shift.lift_under(bv), [tm])))
-//     }
-
-//     /// Unfold this node by a single step in the given context, if possible
-//     pub fn step(
-//         self,
-//         ctx: C,
-//         store: &(impl TermStore<C, T> + ReadFacts<C, T>),
-//     ) -> Option<Result<NodeT2<C, T>, ()>> {
-//         match self {
-//             NodeT::Import(val) => Some(Ok(val.node_val(store))),
-//             NodeT::Close(cl) => Some(cl.step(ctx, store)),
-//             NodeT::Subst1(under, [bound, tm]) => Some(if store.bvi(ctx, tm) <= under {
-//                 Ok(NodeT2::Import(Val { ctx, tm }))
-//             } else {
-//                 store.node(ctx, tm).nested_subst1(ctx, under, bound, store)
-//             }),
-//             NodeT::BWk(shift, [tm]) => {
-//                 Some(if shift.is_id() || store.bvi(ctx, tm) <= shift.under() {
-//                     Ok(NodeT2::Import(Val { ctx, tm }))
-//                 } else {
-//                     store.node(ctx, tm).nested_bwk(shift)
-//                 })
-//             }
-//             _ => None,
-//         }
-//     }
-// }
+    /// Unfold this node, unfolding imports as far as possible
+    pub fn import_step(
+        self,
+        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
+    ) -> Option<Result<NodeVT2<C, T>, ()>> {
+        match self.step(store)? {
+            Ok(NodeVT2::Import(val)) => val.import_step(store),
+            Ok(this) => {
+                debug_assert!(!this.is_unfoldable());
+                Some(Ok(this))
+            }
+            Err(err) => Some(Err(err)),
+        }
+    }
+}

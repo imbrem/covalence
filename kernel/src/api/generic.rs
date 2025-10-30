@@ -82,6 +82,13 @@ impl<C: Copy, T> VNodeT<C, T> {
     }
 }
 
+impl<C: Copy, T> NodeVT<C, T> {
+    /// Convert nested values to nested imports
+    pub fn into_nested_val(self) -> NodeVT2<C, T> {
+        self.map_subterms(|tm| NodeT::Import(tm))
+    }
+}
+
 impl<C: Copy, T> NodeT2<C, T> {
     /// Flatten this node into a single level in a given context
     pub fn flatten_in(self, ctx: C, store: &mut impl TermStore<C, T>) -> NodeT<C, T> {
@@ -157,7 +164,7 @@ where
 
 /// A trait for a value which can be inserted into a given context of a term store
 ///
-/// `import`ing a value, unlike `add`ing it, unfolds all imports
+/// `import`ing a value, unlike `add`ing it, unfolds imports _within_ the object
 pub trait ImportNode<S, C, T> {
     /// Insert a value into the given store in the given context
     fn import(self, ctx: C, store: &mut S) -> T;
@@ -172,17 +179,6 @@ pub trait ImportNode<S, C, T> {
             ctx,
             tm: self.import(ctx, store),
         }
-    }
-}
-
-impl<S, C, T> ImportNode<S, C, T> for Val<C, T>
-where
-    S: TermStore<C, T>,
-    C: Copy,
-    T: Copy,
-{
-    fn import(self, ctx: C, store: &mut S) -> T {
-        store.import(ctx, self)
     }
 }
 

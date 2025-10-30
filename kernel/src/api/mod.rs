@@ -6,3 +6,6 @@ pub mod derive;
 
 /// API for errors
 pub mod error;
+
+/// API for visitors
+pub mod visit;

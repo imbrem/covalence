@@ -270,7 +270,7 @@ impl<
         if self.bvi(ctx, body) <= under {
             return body;
         }
-        self.add(ctx, NodeT::Let(under, [bound, body]))
+        self.add(ctx, NodeT::Subst1(under, [bound, body]))
     }
 
     fn close(&mut self, ctx: C, var: Fv<C>, tm: T) -> T {
@@ -305,7 +305,7 @@ impl<
     }
 
     fn lazy_subst_under_eq(&mut self, ctx: C, under: Bv, bound: T, body: T) -> Eqn<T> {
-        let eager = self.add(ctx, NodeT::Let(under, [bound, body]));
+        let eager = self.add(ctx, NodeT::Subst1(under, [bound, body]));
         let lazy = self.subst_under(ctx, under, bound, body);
         self.0.set_eq_unchecked(ctx, eager, lazy);
         Eqn {
@@ -892,7 +892,7 @@ impl<
             strategy,
             kernel_error::DERIVE_LET_BODY,
         )?;
-        let tm = self.add(ctx, NodeT::Let(Bv(0), [bound, body]));
+        let tm = self.add(ctx, NodeT::Subst1(Bv(0), [bound, body]));
         let ty = self.subst(ctx, bound, body_ty);
         self.0.set_has_ty_unchecked(ctx, tm, ty);
         let tm_s = self.subst(ctx, bound, body);

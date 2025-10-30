@@ -55,9 +55,9 @@ pub enum NodeT<C, T, I = T> {
     #[default]
     Invalid,
 
-    // == Syntax extensions ==
+    // == Meta-syntax ==
     /// A substitution under `k` binders
-    Let(Bv, [T; 2]),
+    Subst1(Bv, [T; 2]),
     /// A weakening by a shift
     BWk(Shift, [T; 1]),
     /// A variable closure under `k` binders
@@ -126,7 +126,7 @@ impl<C, T, I> NodeT<C, T, I> {
             NodeT::Natrec(_) => GDisc::Natrec,
             NodeT::HasTy(_) => GDisc::HasTy,
             NodeT::Invalid => GDisc::Invalid,
-            NodeT::Let(k, _) => GDisc::Let(k),
+            NodeT::Subst1(k, _) => GDisc::Let(k),
             NodeT::BWk(s, _) => GDisc::BWk(s),
             NodeT::Close(close) => GDisc::Close(close),
             NodeT::Import(import) => GDisc::Import(import),
@@ -159,7 +159,7 @@ impl<C, T, I> NodeT<C, T, I> {
             NodeT::Natrec([a, b, c]) => NodeT::Natrec([f(a), f(b), f(c)]),
             NodeT::HasTy([a, b]) => NodeT::HasTy([f(a), f(b)]),
             NodeT::Invalid => NodeT::Invalid,
-            NodeT::Let(k, [a, b]) => NodeT::Let(k, [f(a), f(b)]),
+            NodeT::Subst1(k, [a, b]) => NodeT::Subst1(k, [f(a), f(b)]),
             NodeT::BWk(k, [a]) => NodeT::BWk(k, [f(a)]),
             NodeT::Close(close) => NodeT::Close(Close {
                 under: close.under,
@@ -196,7 +196,7 @@ impl<C, T, I> NodeT<C, T, I> {
             NodeT::Natrec([a, b, c]) => Ok(NodeT::Natrec([f(a)?, f(b)?, f(c)?])),
             NodeT::HasTy([a, b]) => Ok(NodeT::HasTy([f(a)?, f(b)?])),
             NodeT::Invalid => Ok(NodeT::Invalid),
-            NodeT::Let(k, [a, b]) => Ok(NodeT::Let(k, [f(a)?, f(b)?])),
+            NodeT::Subst1(k, [a, b]) => Ok(NodeT::Subst1(k, [f(a)?, f(b)?])),
             NodeT::BWk(k, [a]) => Ok(NodeT::BWk(k, [f(a)?])),
             NodeT::Close(close) => Ok(NodeT::Close(Close {
                 under: close.under,
@@ -233,7 +233,7 @@ impl<C, T, I> NodeT<C, T, I> {
             NodeT::Natrec([a, b, c]) => NodeT::Natrec([(Bv(0), a), (Bv(0), b), (Bv(0), c)]),
             NodeT::HasTy([a, b]) => NodeT::HasTy([(Bv(0), a), (Bv(0), b)]),
             NodeT::Invalid => NodeT::Invalid,
-            NodeT::Let(k, [a, b]) => NodeT::Let(k, [(Bv(0), a), (Bv(1), b)]),
+            NodeT::Subst1(k, [a, b]) => NodeT::Subst1(k, [(Bv(0), a), (Bv(1), b)]),
             NodeT::BWk(k, [a]) => NodeT::BWk(k, [(Bv(0), a)]),
             NodeT::Close(close) => NodeT::Close(Close {
                 under: close.under,
@@ -270,7 +270,7 @@ impl<C, T, I> NodeT<C, T, I> {
             NodeT::Natrec([a, b, c]) => NodeT::Natrec([a, b, c]),
             NodeT::HasTy([a, b]) => NodeT::HasTy([a, b]),
             NodeT::Invalid => NodeT::Invalid,
-            NodeT::Let(k, [a, b]) => NodeT::Let(*k, [a, b]),
+            NodeT::Subst1(k, [a, b]) => NodeT::Subst1(*k, [a, b]),
             NodeT::BWk(k, [a]) => NodeT::BWk(*k, [a]),
             NodeT::Close(close) => NodeT::Close(close.as_ref()),
             NodeT::Import(import) => NodeT::Import(import.as_ref()),
@@ -303,7 +303,7 @@ impl<C, T, I> NodeT<C, T, I> {
             NodeT::Natrec([a, b, c]) => NodeT::Natrec([a, b, c]),
             NodeT::HasTy([a, b]) => NodeT::HasTy([a, b]),
             NodeT::Invalid => NodeT::Invalid,
-            NodeT::Let(k, [a, b]) => NodeT::Let(*k, [a, b]),
+            NodeT::Subst1(k, [a, b]) => NodeT::Subst1(*k, [a, b]),
             NodeT::BWk(k, [a]) => NodeT::BWk(*k, [a]),
             NodeT::Close(close) => NodeT::Close(close.as_mut()),
             NodeT::Import(import) => NodeT::Import(import.as_mut()),
@@ -339,7 +339,7 @@ impl<C, T, I> NodeT<C, T, I> {
             NodeT::Natrec(xs) => &xs[..],
             NodeT::HasTy(xs) => &xs[..],
             NodeT::Invalid => &[],
-            NodeT::Let(_, xs) => &xs[..],
+            NodeT::Subst1(_, xs) => &xs[..],
             NodeT::BWk(_, xs) => &xs[..],
             NodeT::Close(_) => &[],
             NodeT::Import(_) => &[],
@@ -375,7 +375,7 @@ impl<C, T, I> NodeT<C, T, I> {
             NodeT::Natrec(xs) => &mut xs[..],
             NodeT::HasTy(xs) => &mut xs[..],
             NodeT::Invalid => &mut [],
-            NodeT::Let(_, xs) => &mut xs[..],
+            NodeT::Subst1(_, xs) => &mut xs[..],
             NodeT::BWk(_, xs) => &mut xs[..],
             NodeT::Close(_) => &mut [],
             NodeT::Import(_) => &mut [],

@@ -23,10 +23,10 @@ pub use crate::api::store::{ReadFacts, TermStore};
 type TermDb = crate::store::EggTermDb;
 
 #[doc(inline)]
-pub use crate::store::{CtxId, Node, TermId};
+pub use crate::store::{CtxId, Node, TermId, ValId};
 
 #[doc(inline)]
-pub use crate::data::term::ULvl;
+pub use crate::data::term::{Bv, ULvl};
 
 pub type Kernel = crate::rules::Kernel<TermDb>;
 

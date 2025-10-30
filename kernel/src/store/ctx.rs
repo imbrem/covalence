@@ -445,7 +445,7 @@ pub struct TermId(egg::Id);
 pub type Node = NodeT<CtxId, TermId>;
 
 impl Language for Node {
-    type Discriminant = GDisc<CtxId, TermId>;
+    type Discriminant = DiscT<CtxId, TermId>;
 
     fn discriminant(&self) -> Self::Discriminant {
         self.disc()

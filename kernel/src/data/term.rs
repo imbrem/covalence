@@ -69,7 +69,7 @@ pub enum NodeT<C, T, I = Val<C, T>> {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub enum GDisc<C, T, I = Val<C, T>> {
+pub enum DiscT<C, T, I = Val<C, T>> {
     Fv(Fv<C>),
     Bv(Bv),
     U(ULvl),
@@ -100,36 +100,41 @@ pub enum GDisc<C, T, I = Val<C, T>> {
 }
 
 impl<C, T, I> NodeT<C, T, I> {
+    /// Construct a bound variable
+    pub const fn bv(ix: u32) -> NodeT<C, T, I> {
+        NodeT::Bv(Bv::new(ix))
+    }
+
     /// Get this node's discriminant
-    pub fn disc(self) -> GDisc<C, T, I> {
+    pub fn disc(self) -> DiscT<C, T, I> {
         match self {
-            NodeT::Fv(x) => GDisc::Fv(x),
-            NodeT::Bv(i) => GDisc::Bv(i),
-            NodeT::U(level) => GDisc::U(level),
-            NodeT::Empty => GDisc::Empty,
-            NodeT::Unit => GDisc::Unit,
-            NodeT::Null => GDisc::Null,
-            NodeT::Eqn(_) => GDisc::Eqn,
-            NodeT::Pi(_) => GDisc::Pi,
-            NodeT::Sigma(_) => GDisc::Sigma,
-            NodeT::Abs(_) => GDisc::Abs,
-            NodeT::App(_) => GDisc::App,
-            NodeT::Pair(_) => GDisc::Pair,
-            NodeT::Fst(_) => GDisc::Fst,
-            NodeT::Snd(_) => GDisc::Snd,
-            NodeT::Ite(_) => GDisc::Ite,
-            NodeT::Trunc(_) => GDisc::Trunc,
-            NodeT::Choose(_) => GDisc::Choose,
-            NodeT::Nats => GDisc::Nats,
-            NodeT::N64(n) => GDisc::N64(n),
-            NodeT::Succ(_) => GDisc::Succ,
-            NodeT::Natrec(_) => GDisc::Natrec,
-            NodeT::HasTy(_) => GDisc::HasTy,
-            NodeT::Invalid => GDisc::Invalid,
-            NodeT::Subst1(k, _) => GDisc::Let(k),
-            NodeT::BWk(s, _) => GDisc::BWk(s),
-            NodeT::Close(close) => GDisc::Close(close),
-            NodeT::Import(import) => GDisc::Import(import),
+            NodeT::Fv(x) => DiscT::Fv(x),
+            NodeT::Bv(i) => DiscT::Bv(i),
+            NodeT::U(level) => DiscT::U(level),
+            NodeT::Empty => DiscT::Empty,
+            NodeT::Unit => DiscT::Unit,
+            NodeT::Null => DiscT::Null,
+            NodeT::Eqn(_) => DiscT::Eqn,
+            NodeT::Pi(_) => DiscT::Pi,
+            NodeT::Sigma(_) => DiscT::Sigma,
+            NodeT::Abs(_) => DiscT::Abs,
+            NodeT::App(_) => DiscT::App,
+            NodeT::Pair(_) => DiscT::Pair,
+            NodeT::Fst(_) => DiscT::Fst,
+            NodeT::Snd(_) => DiscT::Snd,
+            NodeT::Ite(_) => DiscT::Ite,
+            NodeT::Trunc(_) => DiscT::Trunc,
+            NodeT::Choose(_) => DiscT::Choose,
+            NodeT::Nats => DiscT::Nats,
+            NodeT::N64(n) => DiscT::N64(n),
+            NodeT::Succ(_) => DiscT::Succ,
+            NodeT::Natrec(_) => DiscT::Natrec,
+            NodeT::HasTy(_) => DiscT::HasTy,
+            NodeT::Invalid => DiscT::Invalid,
+            NodeT::Subst1(k, _) => DiscT::Let(k),
+            NodeT::BWk(s, _) => DiscT::BWk(s),
+            NodeT::Close(close) => DiscT::Close(close),
+            NodeT::Import(import) => DiscT::Import(import),
         }
     }
 
@@ -508,7 +513,7 @@ impl<C> Fv<C> {
     }
 }
 
-/// A bound variable
+/// A bound variable, represented by a de-Bruijn index
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
 pub struct Bv(pub u32);
 
@@ -522,7 +527,7 @@ impl Bv {
     pub const fn new(ix: u32) -> Bv {
         assert!(
             ix != u32::MAX,
-            "cannot use new to construct an invalid bound variable"
+            "cannot use new to construct an invalid de-Bruijn index"
         );
         Bv(ix)
     }
@@ -541,9 +546,41 @@ impl Bv {
     /// ```
     pub fn succ(self) -> Bv {
         if self.0 == u32::MAX - 1 {
-            panic!("bound variable overflow");
+            panic!("de-Bruijn index overflow");
         }
         Bv(self.0.saturating_add(1))
+    }
+
+    /// Get the predecessory of this bound variable
+    ///
+    /// Panics if:
+    /// - The bound variable is invalid
+    ///     ```rust,should_panic
+    ///     # use covalence_kernel::data::term::Bv;
+    ///     Bv::INVALID.pred();
+    ///     ```
+    ///     
+    /// - The bound variable is zero
+    ///     ```rust,should_panic
+    ///     # use covalence_kernel::data::term::Bv;
+    ///     Bv(0).pred();
+    ///     ```
+    ///
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::data::term::Bv;
+    /// for x in 0..100 {
+    ///     assert_eq!(Bv(x).succ().pred(), Bv(x));
+    /// }
+    /// ```
+    pub fn pred(self) -> Bv {
+        if !self.is_valid() {
+            panic!("attempted to take predecessor of invalid de-Bruijn index")
+        }
+        if self == Bv(0) {
+            panic!("attempted to take predecessor of de-Bruijn index 0")
+        }
+        Bv(self.0 - 1)
     }
 
     /// Get whether this bound variable is valid
@@ -566,8 +603,8 @@ impl Bv {
     }
 
     /// Get the `bvi` of this bound variable after inserting `n` bound variables under `k` binders
-    pub fn bvi_add_under(self, shift: Bv, k: Bv) -> Bv {
-        if self < k { self } else { self + shift }
+    pub fn bvi_add_under(self, shift: Bv, under: Bv) -> Bv {
+        if self < under { self } else { self + shift }
     }
 }
 

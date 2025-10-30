@@ -439,7 +439,7 @@ impl<C, T, I> NodeT<C, T, I> {
     }
 
     /// Compute a bound on this term's unbound variables
-    pub fn bvi(&self, mut tm: impl FnMut(&T) -> Bv) -> Bv {
+    pub fn bvi_with(&self, mut tm: impl FnMut(&T) -> Bv) -> Bv {
         match self {
             NodeT::Bv(i) => i.succ(),
             NodeT::Import(_) => Bv::INVALID,
@@ -835,11 +835,11 @@ impl<C, T> Val<C, T> {
     }
 }
 
-pub type NodeVT<C, T> = NodeT<C, Val<C, T>>;
+pub type NodeVT<C, T> = NodeT<C, Val<C, T>, Val<C, T>>;
 
 pub type NodeT2<C, T> = NodeT<C, NodeT<C, T>, Val<C, T>>;
 
-pub type NodeVT2<C, T> = NodeT2<C, Val<C, T>>;
+pub type NodeVT2<C, T> = NodeT<C, NodeVT<C, T>, Val<C, T>>;
 
 pub type VNodeT<C, T> = Val<C, NodeT<C, T>>;
 

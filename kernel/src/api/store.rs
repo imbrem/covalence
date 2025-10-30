@@ -1,8 +1,8 @@
 use crate::api::derive::*;
-use crate::data::term::{Bv, Fv, VNodeT, VNodeT2, NodeT, NodeT2, ULvl, Val};
+use crate::data::term::{Bv, Fv, NodeT, ULvl, VNodeT, Val};
 
 /// A trait implemented by a datastore that can manipulate hash-consed terms and universe levels
-/// 
+///
 /// This trait is `dyn`-safe:
 /// ```rust
 /// # use covalence_kernel::*;
@@ -98,7 +98,7 @@ pub trait TermStore<C, T> {
 }
 
 /// A trait implemented by a datastore that can read facts about terms in a context.
-/// 
+///
 /// This trait is `dyn`-safe:
 /// ```rust
 /// # use covalence_kernel::*;
@@ -339,133 +339,9 @@ pub trait ReadFacts<C, T> {
     fn imax_le(&self, lo_lhs: ULvl, lo_rhs: ULvl, hi: ULvl) -> bool;
 }
 
-impl<C, T> Val<C, T> {
-    /// Get the node in `self.ctx` corresponding to this value
-    pub fn node(self, store: &impl TermStore<C, T>) -> &NodeT<C, T> {
-        store.node(self.ctx, self.tm)
-    }
-
-    /// Get this value's bound variable index
-    pub fn bvi(self, store: &impl ReadFacts<C, T>) -> Bv {
-        store.bvi(self.ctx, self.tm)
-    }
-}
-
-impl<C: Copy, T> Val<C, T> {
-    /// Get this value imported into `ctx`
-    pub fn imported(self, ctx: C, store: &mut impl TermStore<C, T>) -> Val<C, T> {
-        Val {
-            ctx,
-            tm: store.import(ctx, self),
-        }
-    }
-}
-
-impl<C: Copy, T> NodeT<C, T> {
-    /// Get this node as a value in the given context
-    pub fn add(self, ctx: C, store: &mut impl TermStore<C, T>) -> Val<C, T> {
-        Val {
-            ctx,
-            tm: store.add(ctx, self),
-        }
-    }
-
-    /// Annotate this node with a context, yielding a global node
-    pub fn with(self, ctx: C) -> VNodeT<C, T> {
-        VNodeT { ctx, tm: self }
-    }
-
-    /// Annotate the _children_ of this node with a context, yielding a nested node
-    pub fn children_with(self, ctx: C) -> NodeT2<C, T> {
-        self.map_subterms(|tm| NodeT::Import(Val { ctx, tm }))
-    }
-}
-
-impl<C: Copy, T: Copy> Val<C, T> {
-    /// Get the global node corresponding to this value
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence_kernel::*;
-    /// # let mut ker = Kernel::new();
-    /// # // TODO: pick better values here...
-    /// # let ctx = ker.new_ctx();
-    /// # let other = ker.new_ctx();
-    /// # let values = [
-    /// #   Node::U(ULvl::SET).add(ctx, &mut ker),
-    /// #   Node::U(ULvl::PROP).add(ctx, &mut ker),
-    /// #   Node::U(ULvl::SET).add(other, &mut ker),
-    /// #   Node::U(ULvl::PROP).add(other, &mut ker),
-    /// # ];
-    /// # for v in values {
-    /// assert_eq!(v.global_node(&ker).add(&mut ker), v);
-    /// # }
-    /// ```
-    pub fn global_node(self, store: &impl TermStore<C, T>) -> VNodeT<C, T> {
-        VNodeT {
-            ctx: self.ctx,
-            tm: *self.node(store),
-        }
-    }
-
-    /// Get the nested node corresponding to this value
-    pub fn nested_node(self, store: &impl TermStore<C, T>) -> NodeT2<C, T> {
-        self.node(store).children_with(self.ctx)
-    }
-}
-
-impl<C: Copy, T> VNodeT<C, T> {
-    /// Get the value corresponding to this global node
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence_kernel::*;
-    /// # let mut ker = Kernel::new();
-    /// # // TODO: pick better values here...
-    /// # let ctx = ker.new_ctx();
-    /// # let other = ker.new_ctx();
-    /// # let nodes = [
-    /// #   Node::U(ULvl::SET).with(ctx),
-    /// #   Node::U(ULvl::PROP).with(ctx),
-    /// #   Node::U(ULvl::SET).with(other),
-    /// #   Node::U(ULvl::PROP).with(other),
-    /// # ];
-    /// # for g in nodes {
-    /// assert_eq!(g.add(&mut ker).global_node(&ker), g);
-    /// # }
-    /// ```
-    pub fn add(self, store: &mut impl TermStore<C, T>) -> Val<C, T> {
-        self.tm.add(self.ctx, store)
-    }
-
-    /// Get the nested node corresponding to this global node
-    pub fn into_nested(self) -> NodeT2<C, T> {
-        self.tm.children_with(self.ctx)
-    }
-}
-
-impl<C: Copy, T> NodeT2<C, T> {
-    /// Flatten this node into a single level in a given context
-    pub fn flatten_in(self, ctx: C, store: &mut impl TermStore<C, T>) -> NodeT<C, T> {
-        self.map_subterms(|tm| store.add(ctx, tm))
-    }
-
-    /// Get the value corresponding to this nested node
-    pub fn add(self, ctx: C, store: &mut impl TermStore<C, T>) -> Val<C, T> {
-        self.flatten_in(ctx, store).add(ctx, store)
-    }
-}
-
-impl<C: Copy, T> VNodeT2<C, T> {
-    /// Get the value corresponding to this global node
-    pub fn add(self, store: &mut impl TermStore<C, T>) -> Val<C, T> {
-        self.tm.add(self.ctx, store)
-    }
-}
-
 /// A trait implemented by a mutable datastore that can hold _unchecked_ facts about terms in a
 /// context.
-/// 
+///
 /// This trait is `dyn`-safe:
 /// ```rust
 /// # use covalence_kernel::api::store::*;

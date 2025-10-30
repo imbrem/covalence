@@ -325,7 +325,7 @@ impl Analysis<Node> for CtxData {
 
     fn make(egraph: &mut EGraph<Node, Self>, enode: &Node) -> Self::Data {
         let this = Ctx::from_ref(egraph);
-        let bvi = enode.bvi(|x| this.bvi(*x));
+        let bvi = enode.bvi_with(|x| this.bvi(*x));
         let flags = match enode {
             Node::U(_) => ClassFlags::IS_UNIV,
             Node::Unit => ClassFlags::IS_TRUE,

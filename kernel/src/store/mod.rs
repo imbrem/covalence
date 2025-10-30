@@ -1,5 +1,6 @@
 use typed_generational_arena::{SmallArena, SmallIndex};
 
+use crate::api::generic::*;
 use crate::api::store::*;
 use crate::data::term::*;
 
@@ -330,7 +331,7 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
         {
             return true;
         }
-        self.eq_node_in(ctx, lhs, val.global_node(self))
+        self.eq_node_in(ctx, lhs, val.val_node(self))
     }
 
     fn eq_node_in(&self, ctx: CtxId, lhs: TermId, node: VNodeT<CtxId, TermId>) -> bool {

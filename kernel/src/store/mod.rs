@@ -11,7 +11,9 @@ pub use ctx::{Node, TermId};
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CtxId(SmallIndex<Ctx>);
 
-pub type VarId = Gv<CtxId>;
+pub type VarId = Fv<CtxId>;
+
+pub type ValId = Val<CtxId, TermId>;
 
 /// A term store implemented using `egg`
 #[derive(Debug, Clone, Default)]
@@ -43,7 +45,7 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         self.x[ctx.0].add(tm)
     }
 
-    fn import(&mut self, ctx: CtxId, src: CtxId, tm: TermId) -> TermId {
+    fn import(&mut self, ctx: CtxId, val: ValId) -> TermId {
         // NOTE: an import cycle will lead to a stack overflow here, but that should be an error But
         // think about it!
         //
@@ -52,18 +54,18 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
         // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
         // inserting the import and hence fixing the `TermId`.
-        let result = if let Some(node) = self.node(src, tm).relocate() {
-            if let Node::Import(Import { ctx: src, tm }) = node {
-                self.import(ctx, src, tm)
+        let result = if let Some(node) = val.node(self).relocate() {
+            if let Node::Import(imp) = node {
+                self.import(ctx, imp)
             } else {
                 self.x[ctx.0].add(node)
             }
-        } else if ctx == src {
-            return tm;
+        } else if ctx == val.ctx {
+            return val.tm;
         } else {
-            self.x[ctx.0].add(GNode::Import(Import { ctx: src, tm }))
+            self.x[ctx.0].add(GNode::Import(val))
         };
-        let bvi = self.bvi(src, tm);
+        let bvi = val.bvi(self);
         self.set_bvi_unchecked(ctx, result, bvi);
         result
     }
@@ -85,7 +87,7 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
         // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
         // inserting the import and hence fixing the `TermId`.
-        if let &Node::Import(Import { ctx: src, tm }) = self.node(src, tm)
+        if let &Node::Import(Val { ctx: src, tm }) = self.node(src, tm)
             && let Some(import) = self.lookup_import(ctx, src, tm)
         {
             return Some(import);
@@ -93,7 +95,7 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         if ctx == src {
             return Some(tm);
         }
-        self.lookup(ctx, &mut GNode::Import(Import { ctx: src, tm }))
+        self.lookup(ctx, &mut GNode::Import(Val { ctx: src, tm }))
     }
 
     fn num_vars(&self, ctx: CtxId) -> u32 {
@@ -102,7 +104,13 @@ impl TermStore<CtxId, TermId> for EggTermDb {
 
     fn var_ty(&mut self, ctx: CtxId, var: VarId) -> TermId {
         let ty = self.get_var_ty(var);
-        self.import(ctx, var.ctx, ty)
+        self.import(
+            ctx,
+            Val {
+                ctx: var.ctx,
+                tm: ty,
+            },
+        )
     }
 
     fn get_var_ty(&self, var: VarId) -> TermId {
@@ -111,7 +119,7 @@ impl TermStore<CtxId, TermId> for EggTermDb {
             .expect("invalid variable index")
     }
 
-    fn var_is_ghost(&self, var: Gv<CtxId>) -> bool {
+    fn var_is_ghost(&self, var: Fv<CtxId>) -> bool {
         self.x[var.ctx.0].var_is_ghost(var.ix)
     }
 
@@ -216,7 +224,7 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
         self.x[ctx.0].is_prop(tm)
     }
 
-    fn has_var(&self, ctx: CtxId, tm: TermId, var: Gv<CtxId>) -> bool {
+    fn has_var(&self, ctx: CtxId, tm: TermId, var: Fv<CtxId>) -> bool {
         //TODO: optimize, a _lot_
         match self.node(ctx, tm) {
             Node::Fv(v) => *v == var,
@@ -411,7 +419,7 @@ mod test {
         let vx = db.add_var_unchecked(child, child_prop);
         let x = db.add(child, Node::Fv(vx));
         let root_prop = db.add(root, Node::U(ULvl::PROP));
-        let root_x = db.import(root, child, x);
+        let root_x = db.import(root, Val { ctx: child, tm: x });
         assert_eq!(db.bvi(root, root_x), Bv(0));
         let root_close_x = db.add(
             root,

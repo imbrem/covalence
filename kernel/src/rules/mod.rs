@@ -3,7 +3,7 @@ use std::ops::Deref;
 use crate::api::derive::*;
 use crate::api::error::*;
 use crate::api::store::*;
-use crate::data::term::{Bv, Close, GNode, Gv, Import, ULvl};
+use crate::data::term::{Bv, Close, Fv, GNode, ULvl, Val};
 
 /// The `covalence` kernel
 ///
@@ -71,7 +71,7 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.is_prop(ctx, tm)
     }
 
-    fn has_var(&self, ctx: C, tm: T, var: Gv<C>) -> bool {
+    fn has_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool {
         self.0.has_var(ctx, tm, var)
     }
 
@@ -79,7 +79,7 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.has_var_from(ctx, tm, vars)
     }
 
-    fn may_have_var(&self, ctx: C, tm: T, var: Gv<C>) -> bool {
+    fn may_have_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool {
         self.0.may_have_var(ctx, tm, var)
     }
 
@@ -141,8 +141,8 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
         self.0.add(ctx, term)
     }
 
-    fn import(&mut self, ctx: C, src: C, tm: T) -> T {
-        self.0.import(ctx, src, tm)
+    fn import(&mut self, ctx: C, val: Val<C, T>) -> T {
+        self.0.import(ctx, val)
     }
 
     fn node(&self, ctx: C, term: T) -> &GNode<C, T> {
@@ -157,15 +157,15 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
         self.0.lookup_import(ctx, src, tm)
     }
 
-    fn var_ty(&mut self, ctx: C, var: Gv<C>) -> T {
+    fn var_ty(&mut self, ctx: C, var: Fv<C>) -> T {
         self.0.var_ty(ctx, var)
     }
 
-    fn get_var_ty(&self, var: Gv<C>) -> T {
+    fn get_var_ty(&self, var: Fv<C>) -> T {
         self.0.get_var_ty(var)
     }
 
-    fn var_is_ghost(&self, var: Gv<C>) -> bool {
+    fn var_is_ghost(&self, var: Fv<C>) -> bool {
         self.0.var_is_ghost(var)
     }
 
@@ -196,7 +196,7 @@ impl<
     D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>,
 > Derive<C, T> for Kernel<D>
 {
-    fn assume<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Gv<C>, S::Fail>
+    fn assume<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Fv<C>, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
@@ -207,7 +207,7 @@ impl<
         Ok(var)
     }
 
-    fn add_var<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Gv<C>, S::Fail>
+    fn add_var<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Fv<C>, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
@@ -221,13 +221,19 @@ impl<
         Ok(var)
     }
 
-    fn with_param<S>(&mut self, parent: C, param: T, strategy: &mut S) -> Result<Gv<C>, S::Fail>
+    fn with_param<S>(&mut self, parent: C, param: T, strategy: &mut S) -> Result<Fv<C>, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
         //TODO: indicate to strategy we're calling with_param?
         let ctx = self.with_parent(parent);
-        let ty = self.import(ctx, parent, param);
+        let ty = self.import(
+            ctx,
+            Val {
+                ctx: parent,
+                tm: param,
+            },
+        );
         let var = self.add_var(ctx, ty, strategy)?;
         Ok(var)
     }
@@ -259,7 +265,7 @@ impl<
         self.add(ctx, GNode::Let(Bv(0), [bound, body]))
     }
 
-    fn close(&mut self, ctx: C, var: Gv<C>, tm: T) -> T {
+    fn close(&mut self, ctx: C, var: Fv<C>, tm: T) -> T {
         //TODO: optimize this
         if self.bvi(ctx, tm) == Bv(0) && !self.has_var_from(ctx, tm, var.ctx) {
             return tm;
@@ -274,8 +280,8 @@ impl<
         )
     }
 
-    fn close_import(&mut self, ctx: C, var: Gv<C>, tm: T) -> T {
-        let import = self.import(ctx, var.ctx, tm);
+    fn close_import(&mut self, ctx: C, var: Fv<C>, tm: T) -> T {
+        let import = self.import(ctx, Val { ctx: var.ctx, tm });
         //TODO: optimize this, and cover more cases
         if self.bvi(var.ctx, tm) == Bv(0) && !self.may_have_var(var.ctx, tm, var) {
             return import;
@@ -308,7 +314,7 @@ impl<
         }
     }
 
-    fn lazy_close_eq(&mut self, ctx: C, var: Gv<C>, tm: T) -> Eqn<T> {
+    fn lazy_close_eq(&mut self, ctx: C, var: Fv<C>, tm: T) -> Eqn<T> {
         let eager = self.add(
             ctx,
             GNode::Close(Close {
@@ -325,9 +331,9 @@ impl<
         }
     }
 
-    fn lazy_import_eq(&mut self, ctx: C, src: C, tm: T) -> Eqn<T> {
-        let eager = self.add(ctx, GNode::Import(Import { ctx: src, tm }));
-        let lazy = self.import(ctx, src, tm);
+    fn lazy_import_eq(&mut self, ctx: C, val: Val<C, T>) -> Eqn<T> {
+        let eager = self.add(ctx, GNode::Import(val));
+        let lazy = self.import(ctx, val);
         self.0.set_eq_unchecked(ctx, eager, lazy);
         Eqn {
             lhs: eager,
@@ -335,8 +341,8 @@ impl<
         }
     }
 
-    fn lazy_close_import_eq(&mut self, ctx: C, var: Gv<C>, tm: T) -> Eqn<T> {
-        let import = self.add(ctx, GNode::Import(Import { ctx: var.ctx, tm }));
+    fn lazy_close_import_eq(&mut self, ctx: C, var: Fv<C>, tm: T) -> Eqn<T> {
+        let import = self.add(ctx, GNode::Import(Val { ctx: var.ctx, tm }));
         let eager = self.add(
             ctx,
             GNode::Close(Close {
@@ -378,7 +384,7 @@ impl<
     fn derive_close_has_ty_under<S>(
         &mut self,
         ctx: C,
-        var: Gv<C>,
+        var: Fv<C>,
         tm: T,
         ty: T,
         strategy: &mut S,
@@ -390,8 +396,8 @@ impl<
         if var.ctx != ctx && var.ix != 0 {
             return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_IX_NONZERO));
         }
-        let import_tm = self.import(var.ctx, ctx, tm);
-        let import_ty = self.import(var.ctx, ctx, ty);
+        let import_tm = self.import(var.ctx, Val { ctx, tm });
+        let import_ty = self.import(var.ctx, Val { ctx, tm: ty });
         self.ensure_has_ty(
             var.ctx,
             import_tm,
@@ -431,7 +437,7 @@ impl<
         .finish_rule(ctx, strategy))
     }
 
-    fn derive_fv<S>(&mut self, ctx: C, var: Gv<C>, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
+    fn derive_fv<S>(&mut self, ctx: C, var: Fv<C>, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {

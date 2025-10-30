@@ -1,5 +1,5 @@
 use crate::api::store::*;
-use crate::data::term::{Gv, ULvl};
+use crate::data::term::{Fv, ULvl, Val};
 
 /// A strategy tells a kernel how to derive facts about terms in a context
 pub trait Strategy<C, T, K: ?Sized> {
@@ -281,10 +281,12 @@ where
 {
 }
 
+pub trait Unfolder<C, T, K> {}
+
 /// Typing rules for deriving facts about terms from those already in the datastore
 pub trait Derive<C, T> {
     /// Assume a new hypothesis in this context
-    fn assume<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Gv<C>, S::Fail>
+    fn assume<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Fv<C>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -306,12 +308,12 @@ pub trait Derive<C, T> {
     /// assert_eq!(ker.num_vars(ctx), 2);
     /// assert_ne!(sv, av);
     /// ```
-    fn add_var<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Gv<C>, S::Fail>
+    fn add_var<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Fv<C>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
     /// Insert a new context with the given parameter
-    /// 
+    ///
     /// # Examples
     /// ```rust
     /// # use covalence_kernel::*;
@@ -325,7 +327,7 @@ pub trait Derive<C, T> {
     /// let xt = ker.add(x.ctx, Node::Fv(x));
     /// assert!(ker.is_ty(x.ctx, xt));
     /// ```
-    fn with_param<S>(&mut self, parent: C, param: T, strategy: &mut S) -> Result<Gv<C>, S::Fail>
+    fn with_param<S>(&mut self, parent: C, param: T, strategy: &mut S) -> Result<Fv<C>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -355,7 +357,7 @@ pub trait Derive<C, T> {
     /// Given term `tm` in context `ctx`
     /// - If `tm` does not depend on the variable `var`, return `tm`
     /// - Otherwise, return `close var tm`
-    fn close(&mut self, ctx: C, var: Gv<C>, tm: T) -> T;
+    fn close(&mut self, ctx: C, var: Fv<C>, tm: T) -> T;
 
     /// Compute the closure of an imported term
     ///
@@ -363,19 +365,19 @@ pub trait Derive<C, T> {
     /// - If `src` has no parameter, or `tm` does not depend on the parameter of `src`, return the
     ///   import of `tm` into `ctx`
     /// - Otherwise, return `close src (import src tm)`
-    fn close_import(&mut self, ctx: C, src: Gv<C>, tm: T) -> T;
+    fn close_import(&mut self, ctx: C, src: Fv<C>, tm: T) -> T;
 
     /// The substitution of a term is equal to its lazy substitution
     fn lazy_subst_eq(&mut self, ctx: C, bound: T, body: T) -> Eqn<T>;
 
     /// The closure of a term is equal to its lazy closure
-    fn lazy_close_eq(&mut self, ctx: C, var: Gv<C>, tm: T) -> Eqn<T>;
+    fn lazy_close_eq(&mut self, ctx: C, var: Fv<C>, tm: T) -> Eqn<T>;
 
     /// An
-    fn lazy_import_eq(&mut self, ctx: C, src: C, tm: T) -> Eqn<T>;
+    fn lazy_import_eq(&mut self, ctx: C, val: Val<C, T>) -> Eqn<T>;
 
     /// The closure of an imported term is equal to its lazy imported closure
-    fn lazy_close_import_eq(&mut self, ctx: C, src: Gv<C>, tm: T) -> Eqn<T>;
+    fn lazy_close_import_eq(&mut self, ctx: C, src: Fv<C>, tm: T) -> Eqn<T>;
 
     /// Cast by universe level
     ///
@@ -440,7 +442,7 @@ pub trait Derive<C, T> {
     fn derive_close_has_ty_under<S>(
         &mut self,
         ctx: C,
-        src: Gv<C>,
+        src: Fv<C>,
         tm: T,
         ty: T,
         strategy: &mut S,
@@ -470,7 +472,7 @@ pub trait Derive<C, T> {
     /// # let ctx = ker.new_ctx();
     /// # let unit = Node::Unit;
     /// ```
-    fn derive_fv<S>(&mut self, ctx: C, var: Gv<C>, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
+    fn derive_fv<S>(&mut self, ctx: C, var: Fv<C>, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 

@@ -1,5 +1,5 @@
 use crate::api::derive::*;
-use crate::data::term::{Bv, GNode, Gv, ULvl};
+use crate::data::term::{Bv, Fv, GNode, ULvl, Val};
 
 /// A trait implemented by a datastore that can manipulate hash-consed terms and universe levels
 pub trait TermStore<C, T> {
@@ -19,7 +19,7 @@ pub trait TermStore<C, T> {
     /// This automatically traverses import chains, e.g.
     /// - If `src[tm] := import(src2, tm)`, then `import(ctx, src, tm) => import(ctx, src2, tm)`
     /// - _Otherwise_, `import(ctx, ctx, tm)` returns `tm`
-    fn import(&mut self, ctx: C, src: C, tm: T) -> T;
+    fn import(&mut self, ctx: C, val: Val<C, T>) -> T;
 
     /// Get the node corresponding to a term
     fn node(&self, ctx: C, tm: T) -> &GNode<C, T>;
@@ -40,16 +40,16 @@ pub trait TermStore<C, T> {
     /// Get the type of a variable in the given context
     ///
     /// Imports if necessary
-    fn var_ty(&mut self, ctx: C, var: Gv<C>) -> T;
+    fn var_ty(&mut self, ctx: C, var: Fv<C>) -> T;
 
     /// Lookup the type of a variable in its own context
-    fn get_var_ty(&self, var: Gv<C>) -> T;
+    fn get_var_ty(&self, var: Fv<C>) -> T;
 
     /// Get whether a variable is a ghost variable
     ///
     /// Ghost variables cannot appear in terms, and so in general are ill-typed, but their type is
     /// inhabited.
-    fn var_is_ghost(&self, var: Gv<C>) -> bool;
+    fn var_is_ghost(&self, var: Fv<C>) -> bool;
 
     // == Universe management ==
 
@@ -168,13 +168,13 @@ pub trait ReadFacts<C, T> {
     fn is_prop(&self, ctx: C, tm: T) -> bool;
 
     /// Check whether the term `tm` depends on the variable `var` in context `ctx`
-    fn has_var(&self, ctx: C, tm: T, var: Gv<C>) -> bool;
+    fn has_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool;
 
     /// Check whether the term `tm` depends on any variable from the context `vars`
     fn has_var_from(&self, ctx: C, tm: T, vars: C) -> bool;
 
     /// Check whether the term `tm` may depend on the variable `var` in context `ctx`
-    fn may_have_var(&self, ctx: C, tm: T, var: Gv<C>) -> bool;
+    fn may_have_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool;
 
     /// Check whether the term `tm` may depend on any variable from the context `vars`
     fn may_have_var_from(&self, ctx: C, tm: T, vars: C) -> bool;
@@ -222,6 +222,26 @@ pub trait ReadFacts<C, T> {
 
     /// Check whether the impredicative maximum of two universes is less than or equal to another
     fn imax_le(&self, lo_lhs: ULvl, lo_rhs: ULvl, hi: ULvl) -> bool;
+}
+
+impl<C, T> Val<C, T> {
+    pub fn node(self, store: &impl TermStore<C, T>) -> &GNode<C, T> {
+        store.node(self.ctx, self.tm)
+    }
+
+    pub fn bvi(self, store: &impl ReadFacts<C, T>) -> Bv {
+        store.bvi(self.ctx, self.tm)
+    }
+
+    pub fn imported(self, ctx: C, store: &mut impl TermStore<C, T>) -> Val<C, T>
+    where
+        C: Copy,
+    {
+        Val {
+            ctx,
+            tm: store.import(ctx, self),
+        }
+    }
 }
 
 /// A trait implemented by a mutable datastore that can hold _unchecked_ facts about terms in a
@@ -281,10 +301,10 @@ pub trait WriteFacts<C, T> {
     /// Add an assumption to the given context
     ///
     /// This adds the assumption that `ty` is inhabited; and marks it as so.
-    fn assume_unchecked(&mut self, ctx: C, ty: T) -> Gv<C>;
+    fn assume_unchecked(&mut self, ctx: C, ty: T) -> Fv<C>;
 
     /// Add a variable to the given context
-    fn add_var_unchecked(&mut self, ctx: C, ty: T) -> Gv<C>;
+    fn add_var_unchecked(&mut self, ctx: C, ty: T) -> Fv<C>;
 
     // == Cached information ==
 

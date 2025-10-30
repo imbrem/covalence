@@ -8,7 +8,7 @@ use std::{
 pub enum GNode<C, T, I = T> {
     // == Term formers, corresponding to Tm from `gt3-lean` ==
     /// A free variable
-    Fv(Gv<C>),
+    Fv(Fv<C>),
     /// A bound variable
     Bv(Bv),
     /// A universe level
@@ -65,12 +65,12 @@ pub enum GNode<C, T, I = T> {
 
     // == Imports from other contexts ==
     /// A direct import from another context
-    Import(Import<C, I>),
+    Import(Val<C, I>),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum GDisc<C, T, I = T> {
-    Fv(Gv<C>),
+    Fv(Fv<C>),
     Bv(Bv),
     U(ULvl),
     Empty,
@@ -96,7 +96,7 @@ pub enum GDisc<C, T, I = T> {
     Let(Bv),
     BWk(Shift),
     Close(Close<C, T>),
-    Import(Import<C, I>),
+    Import(Val<C, I>),
 }
 
 impl<C, T, I> GNode<C, T, I> {
@@ -441,21 +441,21 @@ impl<C, T, I> GNode<C, T, I> {
 
 /// A variable index in `covalence`'s core calculus
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct Gv<C> {
+pub struct Fv<C> {
     pub ctx: C,
     pub ix: u32,
 }
 
-impl<C> Gv<C> {
-    pub fn as_ref(&self) -> Gv<&C> {
-        Gv {
+impl<C> Fv<C> {
+    pub fn as_ref(&self) -> Fv<&C> {
+        Fv {
             ctx: &self.ctx,
             ix: self.ix,
         }
     }
 
-    pub fn as_mut(&mut self) -> Gv<&mut C> {
-        Gv {
+    pub fn as_mut(&mut self) -> Fv<&mut C> {
+        Fv {
             ctx: &mut self.ctx,
             ix: self.ix,
         }
@@ -701,7 +701,7 @@ pub struct Close<C, T> {
     /// The number of binders being closed under
     pub under: Bv,
     /// The variable being closed over
-    pub var: Gv<C>,
+    pub var: Fv<C>,
     /// The term being closed over (in `this`, _not_ necessarily `ctx`)
     pub tm: T,
 }
@@ -728,25 +728,25 @@ impl<C, T> Close<C, T> {
 
 /// An import from another context
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct Import<C, T> {
+pub struct Val<C, T> {
     /// The context being imported from
     pub ctx: C,
     /// The term being imported (in `ctx`)
     pub tm: T,
 }
 
-impl<C, T> Import<C, T> {
+impl<C, T> Val<C, T> {
     /// Borrow this import
-    pub fn as_ref(&self) -> Import<&C, &T> {
-        Import {
+    pub fn as_ref(&self) -> Val<&C, &T> {
+        Val {
             ctx: &self.ctx,
             tm: &self.tm,
         }
     }
 
     /// Borrow this import mutably
-    pub fn as_mut(&mut self) -> Import<&mut C, &mut T> {
-        Import {
+    pub fn as_mut(&mut self) -> Val<&mut C, &mut T> {
+        Val {
             ctx: &mut self.ctx,
             tm: &mut self.tm,
         }
@@ -771,8 +771,8 @@ impl<C, T> From<bool> for GNode<C, T> {
     }
 }
 
-impl<C, T> From<Import<C, T>> for GNode<C, T> {
-    fn from(copy: Import<C, T>) -> Self {
+impl<C, T> From<Val<C, T>> for GNode<C, T> {
+    fn from(copy: Val<C, T>) -> Self {
         GNode::Import(copy)
     }
 }

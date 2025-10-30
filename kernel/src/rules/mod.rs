@@ -39,6 +39,14 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.bvi(ctx, tm)
     }
 
+    fn is_ancestor(&self, lo: C, hi: C) -> bool {
+        self.0.is_ancestor(lo, hi)
+    }
+    
+    fn is_strict_ancestor(&self, lo: C, hi: C) -> bool {
+        self.0.is_strict_ancestor(lo, hi)
+    }
+
     fn is_subctx(&self, lo: C, hi: C) -> bool {
         self.0.is_subctx(lo, hi)
     }
@@ -295,7 +303,7 @@ impl<
             }),
         )
     }
-    
+
     fn lazy_subst_under_eq(&mut self, ctx: C, under: Bv, bound: T, body: T) -> Eqn<T> {
         let eager = self.add(ctx, NodeT::Let(under, [bound, body]));
         let lazy = self.subst_under(ctx, under, bound, body);

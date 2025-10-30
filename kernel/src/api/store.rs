@@ -1,14 +1,37 @@
 use crate::api::derive::*;
-use crate::data::term::{Bv, Fv, NodeT, ULvl, Val};
+use crate::data::term::{Bv, Fv, GlobalNode, NodeT, ULvl, Val};
 
 /// A trait implemented by a datastore that can manipulate hash-consed terms and universe levels
 pub trait TermStore<C, T> {
     // == Term management ==
 
     /// Create a new context in this store
+    ///
+    /// # Example
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # use covalence_kernel::api::error::kernel_error;
+    /// # let mut ker = Kernel::new();
+    /// let ctx = ker.new_ctx();
+    /// assert_eq!(ker.num_vars(ctx), 0);
+    /// ```
     fn new_ctx(&mut self) -> C;
 
     /// Create a new context in this store with the given parent
+    ///
+    /// # Example
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # use covalence_kernel::api::error::kernel_error;
+    /// # let mut ker = Kernel::new();
+    /// let parent = ker.new_ctx();
+    /// let child = ker.with_parent(parent);
+    /// // This is true since both contexts are currently empty
+    /// assert!(ker.is_subctx(parent, child));
+    /// assert!(ker.is_subctx(child, parent));
+    /// let s = ker.add(child, Node::U(ULvl::SET));
+    /// let x = ker.add_var(child, s, &mut ()).unwrap();
+    /// ```
     fn with_parent(&mut self, parent: C) -> C;
 
     /// Insert a term into the store, returning a handle to it
@@ -91,9 +114,70 @@ pub trait ReadFacts<C, T> {
 
     // == Context information ==
 
+    /// Check whether `lo` is an ancestor of `hi`
+    /// 
+    /// Note that a context `ctx` is always an ancestor of itself
+    /// 
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// let parent = ker.new_ctx();
+    /// let child = ker.with_parent(parent);
+    /// assert!(ker.is_ancestor(parent, child));
+    /// assert!(ker.is_ancestor(parent, parent));
+    /// assert!(ker.is_ancestor(child, child));
+    /// assert!(!ker.is_ancestor(child, parent));
+    /// ```
+    fn is_ancestor(&self, lo: C, hi: C) -> bool;
+
+    /// Check whether `lo` is _strict_ ancestor of `hi`
+    /// 
+    /// A context `ctx` is never a strict ancestor of itself
+    /// 
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// let parent = ker.new_ctx();
+    /// let child = ker.with_parent(parent);
+    /// assert!(ker.is_strict_ancestor(parent, child));
+    /// assert!(!ker.is_strict_ancestor(parent, parent));
+    /// assert!(!ker.is_strict_ancestor(child, child));
+    /// assert!(!ker.is_strict_ancestor(child, parent));
+    /// ```
+    fn is_strict_ancestor(&self, lo: C, hi: C) -> bool;
+
     /// Check whether `lo` is a subcontext of `hi`
-    ///
-    /// This always returns `true` if `lo` is a root context, even if `hi` has no parent
+    /// 
+    /// This means that every variable in `lo` is contained in `hi`. 
+    /// 
+    /// Unlike [`is_ancestor`](#method.is_ancestor), this is _not_ monotonic: a context may be
+    /// modified so that it is not longer a subcontext of another, whereas if `lo` is an ancestor of
+    /// `hi`, all valid edits to a kernel will preserve this fact.
+    /// 
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// let parent = ker.new_ctx();
+    /// let child = ker.with_parent(parent);
+    /// let grandchild = ker.with_parent(child);
+    /// for x in [parent, child, grandchild] {
+    ///     for y in [parent, child, grandchild] {
+    ///         assert!(ker.is_subctx(x, y));
+    ///     }
+    /// }
+    /// let n = ker.add(child, Node::Nats);
+    /// let x = ker.add_var(child, n, &mut ()).unwrap();
+    /// // ∅ is a subset of everything
+    /// assert!(ker.is_subctx(parent, child));
+    /// // {x} is not a subset of ∅
+    /// assert!(!ker.is_subctx(child, parent));
+    /// // These both contain exactly x
+    /// assert!(ker.is_subctx(child, grandchild));
+    /// assert!(ker.is_subctx(grandchild, child));
+    /// ```
     fn is_subctx(&self, lo: C, hi: C) -> bool;
 
     /// Check whether `lo` is a subcontext of `hi`'s parent(s)
@@ -225,21 +309,94 @@ pub trait ReadFacts<C, T> {
 }
 
 impl<C, T> Val<C, T> {
+    /// Get the node in `self.ctx` corresponding to this value
     pub fn node(self, store: &impl TermStore<C, T>) -> &NodeT<C, T> {
         store.node(self.ctx, self.tm)
     }
 
+    /// Get this value's bound variable index
     pub fn bvi(self, store: &impl ReadFacts<C, T>) -> Bv {
         store.bvi(self.ctx, self.tm)
     }
+}
 
-    pub fn imported(self, ctx: C, store: &mut impl TermStore<C, T>) -> Val<C, T>
-    where
-        C: Copy,
-    {
+impl<C: Copy, T> Val<C, T> {
+    /// Get this value imported into `ctx`
+    pub fn imported(self, ctx: C, store: &mut impl TermStore<C, T>) -> Val<C, T> {
         Val {
             ctx,
             tm: store.import(ctx, self),
+        }
+    }
+}
+
+impl<C: Copy, T> NodeT<C, T> {
+    /// Get this node as a value in the given context
+    pub fn add(self, ctx: C, store: &mut impl TermStore<C, T>) -> Val<C, T> {
+        Val {
+            ctx,
+            tm: store.add(ctx, self),
+        }
+    }
+
+    /// Annotate this node with a context, yielding a global node
+    pub fn with(self, ctx: C) -> GlobalNode<C, T> {
+        GlobalNode { ctx, tm: self }
+    }
+}
+
+impl<C: Copy, T: Copy> Val<C, T> {
+    /// Get the global node corresponding to this value
+    ///
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// # // TODO: pick better values here...
+    /// # let ctx = ker.new_ctx();
+    /// # let other = ker.new_ctx();
+    /// # let values = [
+    /// #   Node::U(ULvl::SET).add(ctx, &mut ker),
+    /// #   Node::U(ULvl::PROP).add(ctx, &mut ker),
+    /// #   Node::U(ULvl::SET).add(other, &mut ker),
+    /// #   Node::U(ULvl::PROP).add(other, &mut ker),
+    /// # ];
+    /// # for v in values {
+    /// assert_eq!(v.global_node(&ker).add(&mut ker), v);
+    /// # }
+    /// ```
+    pub fn global_node(self, store: &impl TermStore<C, T>) -> GlobalNode<C, T> {
+        GlobalNode {
+            ctx: self.ctx,
+            tm: *self.node(store),
+        }
+    }
+}
+
+impl<C: Copy, T> GlobalNode<C, T> {
+    /// Get the value corresponding to this global node
+    ///
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// # // TODO: pick better values here...
+    /// # let ctx = ker.new_ctx();
+    /// # let other = ker.new_ctx();
+    /// # let nodes = [
+    /// #   Node::U(ULvl::SET).with(ctx),
+    /// #   Node::U(ULvl::PROP).with(ctx),
+    /// #   Node::U(ULvl::SET).with(other),
+    /// #   Node::U(ULvl::PROP).with(other),
+    /// # ];
+    /// # for g in nodes {
+    /// assert_eq!(g.add(&mut ker).global_node(&ker), g);
+    /// # }
+    /// ```
+    pub fn add(self, store: &mut impl TermStore<C, T>) -> Val<C, T> {
+        Val {
+            ctx: self.ctx,
+            tm: store.add(self.ctx, self.tm),
         }
     }
 }

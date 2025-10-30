@@ -42,7 +42,7 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
     fn is_ancestor(&self, lo: C, hi: C) -> bool {
         self.0.is_ancestor(lo, hi)
     }
-    
+
     fn is_strict_ancestor(&self, lo: C, hi: C) -> bool {
         self.0.is_strict_ancestor(lo, hi)
     }
@@ -95,8 +95,8 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.may_have_var_from(ctx, tm, vars)
     }
 
-    fn syn_eq(&self, lctx: C, lhs: T, rctx: C, rhs: T) -> bool {
-        self.0.syn_eq(lctx, lhs, rctx, rhs)
+    fn syn_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
+        self.0.syn_eq(lhs, rhs)
     }
 
     fn eq_in(&self, ctx: C, lhs: T, rhs: T) -> bool {

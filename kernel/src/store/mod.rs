@@ -272,26 +272,35 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
         }
     }
 
-    fn syn_eq(&self, lctx: CtxId, lhs: TermId, rctx: CtxId, rhs: TermId) -> bool {
-        //TODO: optimize; handle close and let at least a little
-        if lctx == rctx && lhs == rhs {
+    fn syn_eq(&self, lhs: ValId, rhs: ValId) -> bool {
+        if lhs == rhs {
             return true;
         }
-        let lnode = self.node(lctx, lhs);
-        if let Node::Import(import) = lnode {
-            return self.syn_eq(import.ctx, import.tm, rctx, rhs);
+        match (lhs.node(self), rhs.node(self)) {
+            (&Node::Import(lhs), _) => self.syn_eq(lhs, rhs),
+            (_, &Node::Import(rhs)) => self.syn_eq(lhs, rhs),
+            (Node::Subst1(under, [_, tm]), _) if self.bvi(lhs.ctx, *tm) <= *under => {
+                self.syn_eq(lhs.val(*tm), rhs)
+            }
+            (_, Node::Subst1(under, [_, tm])) if self.bvi(rhs.ctx, *tm) <= *under => {
+                self.syn_eq(lhs, rhs.val(*tm))
+            }
+            (Node::Close(lc), Node::Close(rc)) => {
+                // TODO: erase closures when variable does not exist
+                lc.under == rc.under
+                    && lc.var == rc.var
+                    && self.syn_eq(lhs.val(lc.tm), rhs.val(rc.tm))
+            }
+            //TODO: handle weakenings specially
+            (ln, rn) => {
+                ln.disc() == rn.disc()
+                    && ln
+                        .children()
+                        .iter()
+                        .zip(rn.children().iter())
+                        .all(|(&l, &r)| self.syn_eq(lhs.val(l), rhs.val(r)))
+            }
         }
-        let rnode = self.node(rctx, rhs);
-        if let Node::Import(rnode) = rnode {
-            return self.syn_eq(lctx, lhs, rnode.ctx, rnode.tm);
-        }
-        // Note this does not work on close since that goes into the discriminator; fine for _now_
-        lnode.disc() == rnode.disc()
-            && lnode
-                .children()
-                .iter()
-                .zip(rnode.children())
-                .all(|(&lhs, &rhs)| self.syn_eq(lctx, lhs, rctx, rhs))
     }
 
     fn eq_in(&self, ctx: CtxId, lhs: TermId, rhs: TermId) -> bool {

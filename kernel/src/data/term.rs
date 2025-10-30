@@ -736,6 +736,11 @@ pub struct Val<C, T> {
 }
 
 impl<C, T> Val<C, T> {
+    /// Replace this value's term
+    pub fn val<U>(self, tm: U) -> Val<C, U> {
+        Val { ctx: self.ctx, tm }
+    }
+
     /// Borrow this import
     pub fn as_ref(&self) -> Val<&C, &T> {
         Val {

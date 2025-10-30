@@ -264,8 +264,12 @@ pub trait ReadFacts<C, T> {
     fn may_have_var_from(&self, ctx: C, tm: T, vars: C) -> bool;
 
     // == Relations ==
-    /// Check whether the term `lhs` in `lctx` is _syntactically_ equal to the term `rhs` in `rctx`
-    fn syn_eq(&self, lctx: C, lhs: T, rctx: C, rhs: T) -> bool;
+    /// Check whether two values are syntactically equal
+    /// 
+    /// As usual, this is an _over-approximation_: if `ker.syn_eq(lhs, rhs)` then `lhs` and `rhs`
+    /// are _definitely_ syntactically equal, but this can return `false` even if in fact full
+    /// unfolding would determine otherwise.
+    fn syn_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
 
     /// Check whether the term `lhs` is equal to the term `rhs` in `ctx`
     ///

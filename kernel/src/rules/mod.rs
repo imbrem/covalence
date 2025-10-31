@@ -3,7 +3,6 @@ use std::ops::Deref;
 use crate::api::derive::*;
 use crate::api::error::*;
 use crate::api::store::*;
-use crate::data::term::VNodeT;
 use crate::data::term::{Bv, Close, Fv, NodeT, ULvl, Val};
 
 /// Rules for unfolding substitutions, imports, and closures
@@ -105,14 +104,6 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
 
     fn syn_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
         self.0.syn_eq(lhs, rhs)
-    }
-
-    fn eq_val_in(&self, ctx: C, lhs: T, val: Val<C, T>) -> bool {
-        self.0.eq_val_in(ctx, lhs, val)
-    }
-
-    fn eq_node_in(&self, ctx: C, lhs: T, syn: VNodeT<C, T>) -> bool {
-        self.0.eq_node_in(ctx, lhs, syn)
     }
 
     fn eq_in(&self, ctx: C, lhs: T, rhs: T) -> bool {

@@ -1,5 +1,5 @@
 use crate::api::derive::*;
-use crate::data::term::{Bv, Fv, NodeT, ULvl, VNodeT, Val};
+use crate::data::term::{Bv, Fv, NodeT, ULvl, Val};
 
 /// A trait implemented by a datastore that can manipulate hash-consed terms and universe levels
 ///
@@ -287,16 +287,6 @@ pub trait ReadFacts<C, T> {
     /// `subst1`, and `wkn`. This function is a (safe) approximation: it can return `false`
     /// incorrectly.
     fn def_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
-
-    /// Check whether the term `lhs` is equal to the value `val` in `ctx`
-    ///
-    /// Corresponds to `Ctx.KEq` in `gt3-lean`
-    fn eq_val_in(&self, ctx: C, lhs: T, val: Val<C, T>) -> bool;
-
-    /// Check whether the term `lhs` is equal to the value `node` in `ctx`
-    ///
-    /// Corresponds to `Ctx.KEq` in `gt3-lean`
-    fn eq_node_in(&self, ctx: C, lhs: T, node: VNodeT<C, T>) -> bool;
 
     /// Check whether the term `lhs` is equal to the term `rhs` in `ctx`
     ///

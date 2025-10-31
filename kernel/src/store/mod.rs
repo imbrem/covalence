@@ -277,78 +277,26 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
         if lhs == rhs {
             return true;
         }
-        match (lhs.node(self), rhs.node(self)) {
-            (&Node::Import(lhs), _) => self.syn_eq(lhs, rhs),
-            (_, &Node::Import(rhs)) => self.syn_eq(lhs, rhs),
-            //TODO: handle weakenings specially
+        match (lhs.node_val(self), rhs.node_val(self)) {
+            (NodeVT::Import(lhs), _) => self.syn_eq(lhs, rhs),
+            (_, NodeVT::Import(rhs)) => self.syn_eq(lhs, rhs),
+            (NodeVT::Close(lc), NodeVT::Close(rc)) => {
+                lc.under == rc.under && lc.var == rc.var && self.syn_eq(lc.tm, rc.tm)
+            }
             (ln, rn) => {
                 ln.disc() == rn.disc()
                     && ln
                         .children()
                         .iter()
                         .zip(rn.children().iter())
-                        .all(|(&l, &r)| self.syn_eq(lhs.val(l), rhs.val(r)))
+                        .all(|(&l, &r)| self.syn_eq(l, r))
             }
         }
     }
 
     fn def_eq(&self, lhs: Val<CtxId, TermId>, rhs: Val<CtxId, TermId>) -> bool {
-        if lhs == rhs {
-            return true;
-        }
-        match (lhs.node(self), rhs.node(self)) {
-            (&Node::Import(lhs), _) => self.def_eq(lhs, rhs),
-            (_, &Node::Import(rhs)) => self.def_eq(lhs, rhs),
-            (Node::Subst1(under, [_, tm]), _) if self.bvi(lhs.ctx, *tm) <= *under => {
-                self.def_eq(lhs.val(*tm), rhs)
-            }
-            (_, Node::Subst1(under, [_, tm])) if self.bvi(rhs.ctx, *tm) <= *under => {
-                self.def_eq(lhs, rhs.val(*tm))
-            }
-            (Node::Close(lc), Node::Close(rc)) => {
-                // TODO: erase closures when variable does not exist
-                lc.under == rc.under
-                    && lc.var == rc.var
-                    && self.def_eq(lhs.val(lc.tm), rhs.val(rc.tm))
-            }
-            //TODO: handle weakenings specially
-            (ln, rn) => {
-                ln.disc() == rn.disc()
-                    && ln
-                        .children()
-                        .iter()
-                        .zip(rn.children().iter())
-                        .all(|(&l, &r)| self.def_eq(lhs.val(l), rhs.val(r)))
-            }
-        }
-    }
-
-    fn eq_val_in(&self, ctx: CtxId, lhs: TermId, val: ValId) -> bool {
-        if ctx == val.ctx && self.eq_in(ctx, lhs, val.tm) {
-            return true;
-        } else if let Some(rhs) = self.lookup(ctx, &mut NodeT::Import(val))
-            && self.eq_in(ctx, lhs, rhs)
-        {
-            return true;
-        }
-        self.eq_node_in(ctx, lhs, val.val_node(self))
-    }
-
-    fn eq_node_in(&self, ctx: CtxId, lhs: TermId, node: VNodeT<CtxId, TermId>) -> bool {
-        match node.tm {
-            Node::Import(val) => self.eq_val_in(ctx, lhs, val),
-            // Node::Close(cl) => todo!(),
-            // Node::Subst1(u, [bound, body]) => todo!(),
-            rn => {
-                let ln = self.node(ctx, lhs);
-                ln.disc() == rn.disc()
-                    && ln
-                        .children()
-                        .iter()
-                        .zip(rn.children().iter())
-                        .all(|(&l, &r)| self.eq_val_in(ctx, l, node.val(r)))
-            }
-        }
+        //TODO: reduce here, later...
+        self.syn_eq(lhs, rhs)
     }
 
     fn eq_in(&self, ctx: CtxId, lhs: TermId, rhs: TermId) -> bool {

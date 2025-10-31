@@ -644,7 +644,7 @@ impl Debug for Bv {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
 pub struct Shift {
     /// The level at which to shift
-    under: Bv,
+    pub under: Bv,
     /// The number of binders to shift by
     shift: Bv,
 }

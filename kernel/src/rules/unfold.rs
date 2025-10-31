@@ -119,21 +119,23 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
         bound: Val<C, T>,
         store: &(impl TermStore<C, T> + ReadFacts<C, T>),
     ) -> Result<NodeVT2<C, T>, ()> {
-        if self.is_unfoldable() {
-            return Err(());
-        }
         match self {
             NodeVT::Bv(i) => Ok(i.subst1(under, bound)),
             NodeVT::Import(val) => val.subst1_step(under, bound, store),
-            _ => self.with_binders().try_map_subterms(|(bv, tm)| {
-                // To support this case, we need to insert a `BWk`, which we don't have space for
-                //
-                // Don't reduce under binders, friend!
-                if bv != Bv(0) && bound.bvi(store) != Bv(0) {
+            _ => {
+                if self.is_unfoldable() {
                     return Err(());
                 }
-                Ok(NodeT::Subst1(under + bv, [bound, tm]))
-            }),
+                self.with_binders().try_map_subterms(|(bv, tm)| {
+                    // To support this case, we need to insert a `BWk`, which we don't have space for
+                    //
+                    // Don't reduce under binders, friend!
+                    if bv != Bv(0) && bound.bvi(store) != Bv(0) {
+                        return Err(());
+                    }
+                    Ok(NodeT::Subst1(under + bv, [bound, tm]))
+                })
+            }
         }
     }
 
@@ -143,15 +145,17 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
         shift: Shift,
         store: &(impl TermStore<C, T> + ReadFacts<C, T>),
     ) -> Result<NodeVT2<C, T>, ()> {
-        if self.is_unfoldable() {
-            return Err(());
-        }
         match self {
             NodeVT::Bv(i) => Ok(NodeVT2::Bv(shift.apply(i))),
             NodeVT::Import(val) => val.bwk_step(shift, store),
-            _ => Ok(self
-                .with_binders()
-                .map_subterms(|(bv, tm)| NodeT::BWk(shift.lift_under(bv), [tm]))),
+            _ => {
+                if self.is_unfoldable() {
+                    return Err(());
+                }
+                Ok(self
+                    .with_binders()
+                    .map_subterms(|(bv, tm)| NodeT::BWk(shift.lift_under(bv), [tm])))
+            }
         }
     }
 
@@ -162,20 +166,22 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
         var: Fv<C>,
         store: &(impl TermStore<C, T> + ReadFacts<C, T>),
     ) -> Result<NodeVT2<C, T>, ()> {
-        if self.is_unfoldable() {
-            return Err(());
-        }
         match self {
             NodeVT::Fv(x) => Ok(x.close(under, var)),
             NodeVT::Bv(i) => Ok(NodeVT2::Bv(i.bvi_add_under(Bv::new(var.ix), under))),
             NodeVT::Import(val) => val.close_step(under, var, store),
-            _ => Ok(self.with_binders().map_subterms(|(bv, tm)| {
-                NodeT::Close(Close {
-                    under: under + bv,
-                    var,
-                    tm,
-                })
-            })),
+            _ => {
+                if self.is_unfoldable() {
+                    return Err(());
+                }
+                Ok(self.with_binders().map_subterms(|(bv, tm)| {
+                    NodeT::Close(Close {
+                        under: under + bv,
+                        var,
+                        tm,
+                    })
+                }))
+            }
         }
     }
 
@@ -243,6 +249,79 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
                 Some(Ok(this))
             }
             Err(err) => Some(Err(err)),
+        }
+    }
+}
+
+impl<C: Copy + PartialEq, T: Copy + PartialEq> Val<C, T> {
+    pub fn syn_eq(self, other: Val<C, T>, store: &impl TermStore<C, T>) -> bool {
+        if self == other {
+            return true;
+        }
+        self.node_val(store).syn_eq(other.node_val(store), store)
+    }
+
+    pub fn def_eq(
+        self,
+        other: Val<C, T>,
+        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
+    ) -> bool {
+        if self == other {
+            return true;
+        }
+        self.node_val(store).def_eq(other.node_val(store), store)
+    }
+}
+
+impl<C: Copy + PartialEq, T: Copy + PartialEq> NodeVT<C, T> {
+    pub fn syn_eq(self, other: NodeVT<C, T>, store: &impl TermStore<C, T>) -> bool {
+        match (self, other) {
+            (NodeVT::Import(val), other) => val.node_val(store).syn_eq(other, store),
+            (this, NodeVT::Import(val)) => this.syn_eq(val.node_val(store), store),
+            (NodeVT::Close(lc), NodeVT::Close(rc)) => {
+                lc.under == rc.under && lc.var == rc.var && lc.tm.syn_eq(rc.tm, store)
+            }
+            _ => {
+                self.disc() == other.disc()
+                    && self
+                        .children()
+                        .iter()
+                        .zip(other.children().iter())
+                        .all(|(&l, &r)| l.syn_eq(r, store))
+            }
+        }
+    }
+
+    pub fn def_eq(
+        self,
+        other: NodeVT<C, T>,
+        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
+    ) -> bool {
+        if self == other {
+            return true;
+        }
+        let this = self
+            .import_step(store)
+            .ok_or(())
+            .flatten()
+            .unwrap_or(self.into_nested_val());
+        let other = self
+            .import_step(store)
+            .ok_or(())
+            .flatten()
+            .unwrap_or(self.into_nested_val());
+        match (this, other) {
+            (NodeVT2::Close(lc), NodeVT2::Close(rc)) => {
+                lc.under == rc.under && lc.var == rc.var && lc.tm.def_eq(rc.tm, store)
+            }
+            _ => {
+                this.disc() == other.disc()
+                    && this
+                        .children()
+                        .iter()
+                        .zip(other.children().iter())
+                        .all(|(&l, &r)| l.def_eq(r, store))
+            }
         }
     }
 }

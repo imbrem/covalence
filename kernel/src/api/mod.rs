@@ -7,6 +7,9 @@ pub mod generic;
 /// API for sound derivations
 pub mod derive;
 
+/// API for primitive rewriting rules supported by the kernel
+pub mod rewrite;
+
 /// API for errors
 pub mod error;
 

@@ -1,5 +1,6 @@
 use crate::api::store::*;
-use crate::data::term::{Bv, Close, Fv, ULvl, Val};
+use crate::api::rewrite::*;
+use crate::data::term::{Bv, Close, Fv, NodeVT, ULvl, Val};
 
 /// A strategy tells a kernel how to derive facts about terms in a context
 pub trait Strategy<C, T, K: ?Sized> {
@@ -41,6 +42,43 @@ pub trait Strategy<C, T, K: ?Sized> {
 
     /// An irrecoverable failure of a derivation
     fn fail(&mut self, msg: &'static str) -> Self::Fail;
+
+    /// Begin rewriting a value
+    fn start_rewrite(
+        &mut self,
+        _ctx: C,
+        _lhs: NodeVT<C, T>,
+        _rhs: NodeVT<C, T>,
+    ) -> Result<(), Self::Fail> {
+        Ok(())
+    }
+
+    /// Attempt to rewrite the LHS to the RHS in the given context
+    fn rewrite(
+        &mut self,
+        _ctx: C,
+        _lhs: NodeVT<C, T>,
+        _rhs: NodeVT<C, T>,
+        _msg: &'static str,
+        _step_no: usize,
+        _pos: usize,
+    ) -> Result<RewriteStep<C, T>, Self::Fail> {
+        todo!()
+    }
+
+    /// Attempt to rewrite the LHS to the RHS in the given context under a binder
+    fn rewrite_under(
+        &mut self,
+        ctx: C,
+        _binder: Val<C, T>,
+        lhs: NodeVT<C, T>,
+        rhs: NodeVT<C, T>,
+        msg: &'static str,
+        step_no: usize,
+        pos: usize,
+    ) -> Result<RewriteStep<C, T>, Self::Fail> {
+        self.rewrite(ctx, lhs, rhs, msg, step_no, pos)
+    }
 }
 
 impl<C, T, K: ?Sized> Strategy<C, T, K> for () {
@@ -271,6 +309,36 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadFacts<C, T> + TermStore<C, T
     {
         self.ensure_goal(EqIn { ctx, lhs, rhs }.into(), strategy, msg)
     }
+
+    // /// Attempt to prove that a term is equal to a value in a given context
+    // fn rewrite_to_val<S>(
+    //     &mut self,
+    //     ctx: C,
+    //     lhs: T,
+    //     rhs: Val<C, T>,
+    //     strategy: &mut S,
+    //     msg: &'static str,
+    // ) -> Result<(), S::Fail>
+    // where
+    //     S: Strategy<C, T, Self>,
+    // {
+    //     todo!()
+    // }
+
+    // /// Attempt to prove that a term is equal to a node in a given context
+    // fn rewrite_to_node<S>(
+    //     &mut self,
+    //     ctx: C,
+    //     lhs: T,
+    //     rhs: NodeVT<C, T>,
+    //     strategy: &mut S,
+    //     msg: &'static str,
+    // ) -> Result<(), S::Fail>
+    // where
+    //     S: Strategy<C, T, Self>,
+    // {
+    //     todo!()
+    // }
 }
 
 impl<C, T, K> Ensure<C, T> for K

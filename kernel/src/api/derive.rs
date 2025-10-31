@@ -1,5 +1,6 @@
-use crate::api::store::*;
+use crate::api::goal::*;
 use crate::api::rewrite::*;
+use crate::api::store::*;
 use crate::data::term::{Bv, Close, Fv, NodeVT, ULvl, Val};
 
 /// A strategy tells a kernel how to derive facts about terms in a context

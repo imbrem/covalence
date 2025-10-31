@@ -2,6 +2,7 @@ use std::ops::Deref;
 
 use crate::api::derive::*;
 use crate::api::error::*;
+use crate::api::goal::*;
 use crate::api::store::*;
 use crate::data::term::{Bv, Close, Fv, NodeT, ULvl, Val};
 

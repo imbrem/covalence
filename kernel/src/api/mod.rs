@@ -4,6 +4,9 @@ pub mod store;
 /// Generic utilities for dealing with nodes and term stores
 pub mod generic;
 
+/// API for goals
+pub mod goal;
+
 /// API for sound derivations
 pub mod derive;
 

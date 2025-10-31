@@ -115,12 +115,12 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.has_ty(ctx, tm, ty)
     }
 
-    fn is_ty_under(&self, ctx: C, binder: T, ty: T) -> bool {
-        self.0.is_ty_under(ctx, binder, ty)
+    fn forall_is_ty(&self, ctx: C, binder: T, ty: T) -> bool {
+        self.0.forall_is_ty(ctx, binder, ty)
     }
 
-    fn has_ty_under(&self, ctx: C, binder: T, tm: T, ty: T) -> bool {
-        self.0.has_ty_under(ctx, binder, tm, ty)
+    fn forall_has_ty(&self, ctx: C, binder: T, tm: T, ty: T) -> bool {
+        self.0.forall_has_ty(ctx, binder, tm, ty)
     }
 
     fn u_le(&self, lo: ULvl, hi: ULvl) -> bool {
@@ -135,12 +135,52 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
         self.0.imax_le(lo_lhs, lo_rhs, hi)
     }
 
-    fn forall_inhab_under(&self, ctx: C, binder: T, ty: T) -> bool {
-        self.0.forall_inhab_under(ctx, binder, ty)
+    fn forall_is_inhab(&self, ctx: C, binder: T, ty: T) -> bool {
+        self.0.forall_is_inhab(ctx, binder, ty)
     }
 
-    fn exists_inhab_under(&self, ctx: C, binder: T, ty: T) -> bool {
-        self.0.exists_inhab_under(ctx, binder, ty)
+    fn exists_is_inhab(&self, ctx: C, binder: T, ty: T) -> bool {
+        self.0.exists_is_inhab(ctx, binder, ty)
+    }
+
+    fn forall_eq_in(&self, ctx: C, binder: T, lhs: T, rhs: T) -> bool {
+        self.0.forall_eq_in(ctx, binder, lhs, rhs)
+    }
+
+    fn forall_is_wf(&self, ctx: C, binder: T, ty: T) -> bool {
+        self.0.forall_is_wf(ctx, binder, ty)
+    }
+
+    fn forall_is_prop(&self, ctx: C, binder: T, ty: T) -> bool {
+        self.0.forall_is_prop(ctx, binder, ty)
+    }
+
+    fn forall_is_empty(&self, ctx: C, binder: T, tm: T) -> bool {
+        self.0.forall_is_empty(ctx, binder, tm)
+    }
+
+    fn exists_eq_in(&self, ctx: C, binder: T, lhs: T, rhs: T) -> bool {
+        self.0.exists_eq_in(ctx, binder, lhs, rhs)
+    }
+
+    fn exists_is_wf(&self, ctx: C, binder: T, ty: T) -> bool {
+        self.0.exists_is_wf(ctx, binder, ty)
+    }
+
+    fn exists_is_ty(&self, ctx: C, binder: T, ty: T) -> bool {
+        self.0.exists_is_ty(ctx, binder, ty)
+    }
+
+    fn exists_is_prop(&self, ctx: C, binder: T, ty: T) -> bool {
+        self.0.exists_is_prop(ctx, binder, ty)
+    }
+
+    fn exists_has_ty(&self, ctx: C, binder: T, tm: T, ty: T) -> bool {
+        self.0.exists_has_ty(ctx, binder, tm, ty)
+    }
+
+    fn exists_is_empty(&self, ctx: C, binder: T, tm: T) -> bool {
+        self.0.exists_is_empty(ctx, binder, tm)
     }
 }
 
@@ -270,7 +310,8 @@ impl<
             lo: parent,
             hi: ctx,
         };
-        strategy.finish_rule(Goal::IsSubctx(result));
+        //TODO: fixme
+        strategy.finish_rule(Goal::ok(ctx));
         Ok(result)
     }
 
@@ -436,7 +477,7 @@ impl<
         let close_tm = self.close(ctx, var, tm);
         let close_ty = self.close(ctx, var, ty);
         self.0
-            .set_has_ty_under_unchecked(ctx, binder, close_tm, close_ty);
+            .set_forall_has_ty_unchecked(ctx, binder, close_tm, close_ty);
         Ok(HasTyUnderIn {
             tm: close_tm,
             ty: close_ty,

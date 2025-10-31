@@ -1,6 +1,56 @@
 use crate::api::derive::*;
 use crate::api::store::*;
 
+/// A goal for a strategy
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct Goal<C, T> {
+    /// The context for this goal
+    pub ctx: C,
+    /// The binder for this goal, if any
+    pub binder: Option<Quant<T>>,
+    /// The relation
+    pub rel: Option<GoalRel<T>>,
+}
+
+/// A goal in a given context
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub enum GoalRel<T> {
+    /// Two terms are equal
+    Eq(T, T),
+    /// A term is well-formed
+    IsWf(T),
+    /// A term is a type
+    IsTy(T),
+    /// A term is a proposition
+    IsProp(T),
+    /// A term has a type
+    HasTy(T, T),
+    /// A term is inhabited
+    IsInhab(T),
+    /// A term is empty
+    IsEmpty(T),
+    /// A context is a contradiction
+    Contr,
+}
+
+impl<C, T> Goal<C, T> {
+    pub fn ok(ctx: C) -> Goal<C, T> {
+        Goal {
+            ctx,
+            binder: None,
+            rel: None,
+        }
+    }
+
+    pub fn contr(ctx: C) -> Goal<C, T> {
+        Goal {
+            ctx,
+            binder: None,
+            rel: Some(GoalRel::Contr),
+        }
+    }
+}
+
 /// A typing derivation in a given context
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct HasTyIn<T> {
@@ -11,11 +61,12 @@ pub struct HasTyIn<T> {
 impl<T> HasTyIn<T> {
     /// Convert to a goal
     pub fn goal<C>(self, ctx: C) -> Goal<C, T> {
-        Goal::HasTy(HasTy {
+        HasTy {
             ctx,
             tm: self.tm,
             ty: self.ty,
-        })
+        }
+        .into()
     }
 
     /// Succeed
@@ -48,12 +99,13 @@ pub struct HasTyUnderIn<T> {
 impl<T> HasTyUnderIn<T> {
     /// Convert to a goal
     pub fn goal<C>(self, ctx: C) -> Goal<C, T> {
-        Goal::HasTyUnder(HasTyUnder {
+        HasTyUnder {
             ctx,
             binder: self.binder,
             tm: self.tm,
             ty: self.ty,
-        })
+        }
+        .into()
     }
 
     /// Succeed
@@ -71,7 +123,7 @@ impl<T> HasTyUnderIn<T> {
     where
         K: ReadFacts<C, T>,
     {
-        ker.has_ty_under(ctx, self.binder, self.tm, self.ty)
+        ker.forall_has_ty(ctx, self.binder, self.tm, self.ty)
     }
 }
 
@@ -82,7 +134,7 @@ pub struct IsInhabIn<T>(pub T);
 impl<T> IsInhabIn<T> {
     /// Convert to a goal
     pub fn goal<C>(self, ctx: C) -> Goal<C, T> {
-        Goal::IsInhab(IsInhab { ctx, tm: self.0 })
+        IsInhab { ctx, tm: self.0 }.into()
     }
 
     /// Succeed
@@ -114,11 +166,12 @@ pub struct Eqn<T> {
 impl<T> Eqn<T> {
     /// Convert to a goal
     pub fn goal<C>(self, ctx: C) -> Goal<C, T> {
-        Goal::EqIn(EqIn {
+        EqIn {
             ctx,
             lhs: self.lhs,
             rhs: self.rhs,
-        })
+        }
+        .into()
     }
 
     /// Succeed
@@ -231,120 +284,146 @@ pub struct IsSubctx<C> {
     pub hi: C,
 }
 
-/// A goal for a strategy
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub enum Goal<C, T> {
-    /// A context is contradictory
-    IsContr(C),
-    /// A term is well-formed in the given context
-    IsWf(IsWf<C, T>),
-    /// A term is a type in the given context
-    IsTy(IsTy<C, T>),
-    /// A type is inhabited in the given context
-    IsInhab(IsInhab<C, T>),
-    /// A type is empty in the given context
-    IsEmpty(IsEmpty<C, T>),
-    /// A term is a proposition in the given context
-    IsProp(IsProp<C, T>),
-    /// A term has a type in the given context
-    HasTy(HasTy<C, T>),
-    /// A term is a type under a binder in the given context
-    IsTyUnder(IsTyUnder<C, T>),
-    /// A term has a type under a binder in the given context
-    HasTyUnder(HasTyUnder<C, T>),
-    /// A term is always inhabited under a binder in the given context
-    ForallInhabUnder(ForallInhabUnder<C, T>),
-    /// There exists a value of the binder type such that the term is inhabited in the given context
-    ExistsInhabUnder(ExistsInhabUnder<C, T>),
-    /// Two terms are equal in the given context
-    EqIn(EqIn<C, T>),
-    /// A context is a subcontext of another
-    IsSubctx(IsSubctx<C>),
-}
-
-impl<C, T> From<IsWf<C, T>> for Goal<C, T> {
+impl<C, T> From<IsWf<C, T>> for Goal<C, T>
+where
+    C: Copy,
+    T: Copy,
+{
     fn from(g: IsWf<C, T>) -> Self {
-        Goal::IsWf(g)
+        Goal {
+            ctx: g.ctx,
+            binder: None,
+            rel: Some(GoalRel::IsWf(g.tm)),
+        }
     }
 }
 
 impl<C, T> From<IsTy<C, T>> for Goal<C, T> {
     fn from(g: IsTy<C, T>) -> Self {
-        Goal::IsTy(g)
+        Goal {
+            ctx: g.ctx,
+            binder: None,
+            rel: Some(GoalRel::IsTy(g.tm)),
+        }
     }
 }
 
 impl<C, T> From<IsInhab<C, T>> for Goal<C, T> {
     fn from(g: IsInhab<C, T>) -> Self {
-        Goal::IsInhab(g)
+        Goal {
+            ctx: g.ctx,
+            binder: None,
+            rel: Some(GoalRel::IsInhab(g.tm)),
+        }
     }
 }
 
 impl<C, T> From<IsEmpty<C, T>> for Goal<C, T> {
     fn from(g: IsEmpty<C, T>) -> Self {
-        Goal::IsEmpty(g)
+        Goal {
+            ctx: g.ctx,
+            binder: Some(Quant::forall(g.tm)),
+            rel: Some(GoalRel::Contr),
+        }
     }
 }
 
 impl<C, T> From<IsProp<C, T>> for Goal<C, T> {
     fn from(g: IsProp<C, T>) -> Self {
-        Goal::IsProp(g)
+        Goal {
+            ctx: g.ctx,
+            binder: None,
+            rel: Some(GoalRel::IsProp(g.tm)),
+        }
     }
 }
 
 impl<C, T> From<HasTy<C, T>> for Goal<C, T> {
     fn from(g: HasTy<C, T>) -> Self {
-        Goal::HasTy(g)
+        Goal {
+            ctx: g.ctx,
+            binder: None,
+            rel: Some(GoalRel::HasTy(g.tm, g.ty)),
+        }
     }
 }
 
 impl<C, T> From<IsTyUnder<C, T>> for Goal<C, T> {
     fn from(g: IsTyUnder<C, T>) -> Self {
-        Goal::IsTyUnder(g)
+        Goal {
+            ctx: g.ctx,
+            binder: Some(Quant::forall(g.binder)),
+            rel: Some(GoalRel::IsTy(g.tm)),
+        }
     }
 }
 
 impl<C, T> From<HasTyUnder<C, T>> for Goal<C, T> {
     fn from(g: HasTyUnder<C, T>) -> Self {
-        Goal::HasTyUnder(g)
+        Goal {
+            ctx: g.ctx,
+            binder: Some(Quant::forall(g.binder)),
+            rel: Some(GoalRel::HasTy(g.tm, g.ty)),
+        }
     }
 }
 
 impl<C, T> From<ForallInhabUnder<C, T>> for Goal<C, T> {
     fn from(g: ForallInhabUnder<C, T>) -> Self {
-        Goal::ForallInhabUnder(g)
+        Goal {
+            ctx: g.ctx,
+            binder: Some(Quant::forall(g.binder)),
+            rel: Some(GoalRel::IsInhab(g.ty)),
+        }
     }
 }
 
 impl<C, T> From<ExistsInhabUnder<C, T>> for Goal<C, T> {
     fn from(g: ExistsInhabUnder<C, T>) -> Self {
-        Goal::ExistsInhabUnder(g)
+        Goal {
+            ctx: g.ctx,
+            binder: Some(Quant::exists(g.binder)),
+            rel: Some(GoalRel::IsInhab(g.ty)),
+        }
     }
 }
 
 impl<C, T> From<EqIn<C, T>> for Goal<C, T> {
     fn from(g: EqIn<C, T>) -> Self {
-        Goal::EqIn(g)
+        Goal {
+            ctx: g.ctx,
+            binder: None,
+            rel: Some(GoalRel::Eq(g.lhs, g.rhs)),
+        }
     }
 }
 
-impl<C, T> Goal<C, T> {
+impl<T: Copy> Quant<T> {
+    /// Check this quantifier in the given context
+    pub fn check<C: Copy, R: ReadFacts<C, T> + ?Sized>(self, ctx: C, ker: &R) -> bool {
+        ker.is_ty(ctx, self.ty)
+    }
+}
+
+impl<C: Copy, T: Copy> Goal<C, T> {
+    /// Check this relation's binder
+    pub fn check_binder<R: ReadFacts<C, T> + ?Sized>(self, ker: &R) -> bool {
+        self.binder.is_none_or(|binder| binder.check(self.ctx, ker))
+    }
+
     /// Check whether this goal is true
     pub fn check<R: ReadFacts<C, T> + ?Sized>(self, ker: &R) -> bool {
-        match self {
-            Goal::IsContr(c) => ker.is_contr(c),
-            Goal::IsWf(g) => ker.is_wf(g.ctx, g.tm),
-            Goal::IsTy(g) => ker.is_ty(g.ctx, g.tm),
-            Goal::IsInhab(g) => ker.is_inhab(g.ctx, g.tm),
-            Goal::IsEmpty(g) => ker.is_empty(g.ctx, g.tm),
-            Goal::IsProp(g) => ker.is_prop(g.ctx, g.tm),
-            Goal::HasTy(g) => ker.has_ty(g.ctx, g.tm, g.ty),
-            Goal::IsTyUnder(g) => ker.is_ty_under(g.ctx, g.binder, g.tm),
-            Goal::HasTyUnder(g) => ker.has_ty_under(g.ctx, g.binder, g.tm, g.ty),
-            Goal::ForallInhabUnder(g) => ker.forall_inhab_under(g.ctx, g.binder, g.ty),
-            Goal::ExistsInhabUnder(g) => ker.exists_inhab_under(g.ctx, g.binder, g.ty),
-            Goal::EqIn(g) => ker.eq_in(g.ctx, g.lhs, g.rhs),
-            Goal::IsSubctx(g) => ker.is_subctx(g.lo, g.hi),
-        }
+        self.check_binder(ker)
+            && match (self.binder, self.rel) {
+                (_, None) => true,
+                (_, Some(GoalRel::Eq(lhs, rhs))) => ker.eq_in(self.ctx, lhs, rhs),
+                (_, Some(GoalRel::IsWf(tm))) => ker.is_wf(self.ctx, tm),
+                (_, Some(GoalRel::IsTy(tm))) => ker.is_wf(self.ctx, tm),
+                (_, Some(GoalRel::IsProp(tm))) => ker.is_prop(self.ctx, tm),
+                (_, Some(GoalRel::HasTy(tm, ty))) => ker.has_ty(self.ctx, tm, ty),
+                (_, Some(GoalRel::IsInhab(tm))) => ker.is_inhab(self.ctx, tm),
+                (_, Some(GoalRel::IsEmpty(tm))) => ker.is_empty(self.ctx, tm),
+                (_, Some(GoalRel::Contr)) => ker.is_contr(self.ctx),
+            }
     }
 }

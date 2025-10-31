@@ -136,7 +136,7 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadFacts<C, T> + TermStore<C, T
     where
         S: Strategy<C, T, Self>,
     {
-        self.ensure_goal(Goal::IsContr(ctx), strategy, msg)
+        self.ensure_goal(Goal::contr(ctx), strategy, msg)
     }
 
     /// Attempt to prove that a term is well-formed in a context

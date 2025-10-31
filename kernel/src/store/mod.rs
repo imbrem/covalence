@@ -307,20 +307,60 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
         self.x[ctx.0].has_ty(tm, ty)
     }
 
-    fn is_ty_under(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+    fn forall_eq_in(&self, ctx: CtxId, binder: TermId, lhs: TermId, rhs: TermId) -> bool {
+        todo!()
+    }
+
+    fn forall_is_wf(&self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
+        todo!()
+    }
+
+    fn forall_is_ty(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
         self.x[ctx.0].is_ty_under(binder, tm)
     }
 
-    fn has_ty_under(&self, ctx: CtxId, binder: TermId, tm: TermId, ty: TermId) -> bool {
+    fn forall_is_prop(&self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
+        todo!()
+    }
+
+    fn forall_has_ty(&self, ctx: CtxId, binder: TermId, tm: TermId, ty: TermId) -> bool {
         self.x[ctx.0].has_ty_under(binder, tm, ty)
     }
 
-    fn forall_inhab_under(&self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
+    fn forall_is_inhab(&self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
         self.x[ctx.0].forall_inhab_under(binder, ty)
     }
 
-    fn exists_inhab_under(&self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
+    fn forall_is_empty(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+        todo!()
+    }
+
+    fn exists_eq_in(&self, ctx: CtxId, binder: TermId, lhs: TermId, rhs: TermId) -> bool {
+        todo!()
+    }
+
+    fn exists_is_wf(&self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
+        todo!()
+    }
+
+    fn exists_is_ty(&self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
+        todo!()
+    }
+
+    fn exists_is_prop(&self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
+        todo!()
+    }
+
+    fn exists_has_ty(&self, ctx: CtxId, binder: TermId, tm: TermId, ty: TermId) -> bool {
+        todo!()
+    }
+
+    fn exists_is_inhab(&self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
         self.x[ctx.0].exists_inhab_under(binder, ty)
+    }
+
+    fn exists_is_empty(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+        todo!()
     }
 
     fn u_le(&self, lo: ULvl, hi: ULvl) -> bool {
@@ -372,21 +412,53 @@ impl WriteFacts<CtxId, TermId> for EggTermDb {
     fn set_has_ty_unchecked(&mut self, ctx: CtxId, tm: TermId, ty: TermId) {
         self.x[ctx.0].set_has_ty_unchecked(tm, ty);
     }
-
-    fn set_is_ty_under_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
-        self.x[ctx.0].set_is_ty_under_unchecked(binder, tm);
+    
+    fn set_forall_is_wf_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
+        todo!()
     }
 
-    fn set_has_ty_under_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId, ty: TermId) {
+    fn set_forall_is_ty_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
+        self.x[ctx.0].set_is_ty_under_unchecked(binder, tm);
+    }
+    
+    fn set_forall_is_prop_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
+        todo!()
+    }
+
+    fn set_forall_has_ty_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId, ty: TermId) {
         self.x[ctx.0].set_has_ty_under_unchecked(binder, tm, ty);
     }
 
-    fn set_forall_inhab_under_unchecked(&mut self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
-        self.x[ctx.0].set_forall_inhab_under_unchecked(binder, ty)
+    fn set_forall_is_inhab_unchecked(&mut self, ctx: CtxId, binder: TermId, ty: TermId) {
+        self.x[ctx.0].set_forall_inhab_under_unchecked(binder, ty);
+    }
+    
+    fn set_forall_is_empty_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
+        todo!()
+    }
+    
+    fn set_exists_is_wf_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
+        todo!()
+    }
+    
+    fn set_exists_is_ty_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
+        todo!()
+    }
+    
+    fn set_exists_is_prop_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
+        todo!()
+    }
+    
+    fn set_exists_has_ty_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId, ty: TermId) {
+        todo!()
     }
 
-    fn set_exists_inhab_under_unchecked(&mut self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
-        self.x[ctx.0].set_exists_inhab_under_unchecked(binder, ty)
+    fn set_exists_is_inhab_unchecked(&mut self, ctx: CtxId, binder: TermId, ty: TermId) {
+        self.x[ctx.0].set_exists_inhab_under_unchecked(binder, ty);
+    }
+    
+    fn set_exists_is_empty_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
+        todo!()
     }
 
     fn assume_unchecked(&mut self, ctx: CtxId, ty: TermId) -> VarId {

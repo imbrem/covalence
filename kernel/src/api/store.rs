@@ -96,6 +96,40 @@ pub trait TermStore<C, T> {
     fn propagate_in(&mut self, ctx: C) -> usize;
 }
 
+/// A type of quantifier for a fact
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub enum QuantK {
+    /// An existential quantifier
+    Exists,
+    /// A universal quantifier
+    Forall,
+}
+
+/// A quantifier for a fact
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct Quant<T> {
+    /// Whether this is a universal or existential quantifier
+    pub kind: QuantK,
+    /// The type being quantified over
+    pub ty: T,
+}
+
+impl<T> Quant<T> {
+    pub const fn forall(ty: T) -> Quant<T> {
+        Quant {
+            kind: QuantK::Forall,
+            ty,
+        }
+    }
+
+    pub const fn exists(ty: T) -> Quant<T> {
+        Quant {
+            kind: QuantK::Exists,
+            ty,
+        }
+    }
+}
+
 /// A trait implemented by a datastore that can read facts about terms in a context.
 ///
 /// This trait is `dyn`-safe:
@@ -237,30 +271,7 @@ pub trait ReadFacts<C, T> {
     /// ```
     fn parents_are_subctx(&self, lo: C, hi: C) -> bool;
 
-    // == Predicates ==
-    /// Check whether the term `tm` is well-formed in `ctx`
-    /// Corresponds to `Ctx.KIsWf` in `gt3-lean`
-    fn is_wf(&self, ctx: C, tm: T) -> bool;
-
-    /// Check whether the term `tm` is a type in the context `ctx`
-    ///
-    /// Corresponds to `Ctx.KIsTy` in `gt3-lean`
-    fn is_ty(&self, ctx: C, tm: T) -> bool;
-
-    /// Check whether the term `tm` is an inhabited type in the context `ctx`
-    ///
-    /// Corresponds to `Ctx.KIsInhab` in `gt3-lean`
-    fn is_inhab(&self, ctx: C, tm: T) -> bool;
-
-    /// Check whether the term `tm` is an empty type in the context `ctx`
-    ///
-    /// TODO: reference lean
-    fn is_empty(&self, ctx: C, tm: T) -> bool;
-
-    /// Check whether the term `tm` is a proposition in the context `ctx`
-    ///
-    /// Corresponds to `Ctx.KIsProp` in `gt3-lean`
-    fn is_prop(&self, ctx: C, tm: T) -> bool;
+    // == Term predicates ==
 
     /// Check whether the term `tm` depends on the variable `var` in context `ctx`
     fn has_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool;
@@ -274,7 +285,8 @@ pub trait ReadFacts<C, T> {
     /// Check whether the term `tm` may depend on any variable from the context `vars`
     fn may_have_var_from(&self, ctx: C, tm: T, vars: C) -> bool;
 
-    // == Relations ==
+    // == Syntacitc relations ==
+
     /// Check whether two values are syntactically equal
     ///
     /// `lhs` is syntactically equal to `rhs` if they are the same term, modulo imports
@@ -287,35 +299,112 @@ pub trait ReadFacts<C, T> {
     /// incorrectly.
     fn def_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
 
+    // == Typing judgements ==
+
     /// Check whether the term `lhs` is equal to the term `rhs` in `ctx`
     ///
     /// Corresponds to `Ctx.KEq` in `gt3-lean`
     fn eq_in(&self, ctx: C, lhs: T, rhs: T) -> bool;
+
+    /// Check whether the term `tm` is well-formed in `ctx`
+    /// Corresponds to `Ctx.KIsWf` in `gt3-lean`
+    fn is_wf(&self, ctx: C, tm: T) -> bool;
+
+    /// Check whether the term `tm` is a type in the context `ctx`
+    ///
+    /// Corresponds to `Ctx.KIsTy` in `gt3-lean`
+    fn is_ty(&self, ctx: C, tm: T) -> bool;
+
+    /// Check whether the term `tm` is a proposition in the context `ctx`
+    ///
+    /// Corresponds to `Ctx.KIsProp` in `gt3-lean`
+    fn is_prop(&self, ctx: C, tm: T) -> bool;
 
     /// Check whether the term `tm` has type `ty` in `ctx`
     ///
     /// Corresponds to `Ctx.KHasTy` in `gt3-lean`
     fn has_ty(&self, ctx: C, tm: T, ty: T) -> bool;
 
+    /// Check whether the term `tm` is an inhabited type in the context `ctx`
+    ///
+    /// Corresponds to `Ctx.KIsInhab` in `gt3-lean`
+    fn is_inhab(&self, ctx: C, tm: T) -> bool;
+
+    /// Check whether the term `tm` is an empty type in the context `ctx`
+    ///
+    /// TODO: reference Lean
+    fn is_empty(&self, ctx: C, tm: T) -> bool;
+
+    /// Check whether the terms `lhs`, `rhs` are equal in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_eq_in(&self, ctx: C, binder: T, lhs: T, rhs: T) -> bool;
+
+    /// Check whether the term `tm` is well-formed in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_is_wf(&self, ctx: C, binder: T, ty: T) -> bool;
+
     /// Check whether the term `tm` is a valid type in `ctx` under a binder `binder`
     ///
     /// Corresponds to `Ctx.KIsTyUnder` in `gt3-lean`
-    fn is_ty_under(&self, ctx: C, binder: T, ty: T) -> bool;
+    fn forall_is_ty(&self, ctx: C, binder: T, ty: T) -> bool;
+
+    /// Check whether the term `tm` is a valid type in `ctx` under a binder `binder`
+    ///
+    /// Corresponds to `Ctx.KIsTyUnder` in `gt3-lean`
+    fn forall_is_prop(&self, ctx: C, binder: T, ty: T) -> bool;
 
     /// Check whether the term `tm` has type `ty` in `ctx` under a binder `binder`
     ///
     /// Corresponds to `Ctx.KHasTyUnder` in `gt3-lean`
-    fn has_ty_under(&self, ctx: C, binder: T, tm: T, ty: T) -> bool;
+    fn forall_has_ty(&self, ctx: C, binder: T, tm: T, ty: T) -> bool;
 
     /// Check whether the term `tm` is always inhabited in `ctx` under a binder `binder`
     ///
     /// TODO: reference Lean
-    fn forall_inhab_under(&self, ctx: C, binder: T, ty: T) -> bool;
+    fn forall_is_inhab(&self, ctx: C, binder: T, tm: T) -> bool;
+
+    /// Check whether the term `tm` is always inhabited in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_is_empty(&self, ctx: C, binder: T, tm: T) -> bool;
+
+    /// Check whether there exists a value of type `binder` such that `lhs`, `rhs` are equal in
+    /// `ctx`
+    ///
+    /// TODO: reference Lean
+    fn exists_eq_in(&self, ctx: C, binder: T, lhs: T, rhs: T) -> bool;
+
+    /// Check whether there exists a value of type `binder` such that `tm` is well-formed
+    ///
+    /// TODO: reference Lean
+    fn exists_is_wf(&self, ctx: C, binder: T, ty: T) -> bool;
+
+    /// Check whether there exists a value of type `binder` such that `tm` is a type
+    ///
+    /// Corresponds to `Ctx.KIsTyUnder` in `gt3-lean`
+    fn exists_is_ty(&self, ctx: C, binder: T, ty: T) -> bool;
+
+    /// Check whether there exists a value of type `binder` such that `tm` is a proposition
+    ///
+    /// Corresponds to `Ctx.KIsTyUnder` in `gt3-lean`
+    fn exists_is_prop(&self, ctx: C, binder: T, ty: T) -> bool;
+
+    /// Check whether there exists a value of type `binder` such that `tm` has type `ty`
+    ///
+    /// Corresponds to `Ctx.KHasTyUnder` in `gt3-lean`
+    fn exists_has_ty(&self, ctx: C, binder: T, tm: T, ty: T) -> bool;
 
     /// Check whether there exists a value of type `binder` such that the term `tm` is inhabited
     ///
     /// TODO: reference Lean
-    fn exists_inhab_under(&self, ctx: C, binder: T, ty: T) -> bool;
+    fn exists_is_inhab(&self, ctx: C, binder: T, tm: T) -> bool;
+
+    /// Check whether there exists a value of type `binder` such that the term `tm` is empty
+    ///
+    /// TODO: reference Lean
+    fn exists_is_empty(&self, ctx: C, binder: T, tm: T) -> bool;
 
     // == Universe levels ==
     /// Check whether one universe is less than or equal to another
@@ -353,7 +442,10 @@ pub trait WriteFacts<C, T> {
     /// Set a context's parent
     fn set_parent_unchecked(&mut self, ctx: C, parent: C);
 
-    // == Predicates ==
+    // == Typing judgements ==
+
+    /// Set two terms as equal in a given context
+    fn set_eq_unchecked(&mut self, ctx: C, lhs: T, rhs: T);
 
     /// Mark a term as well-formed
     fn set_is_wf_unchecked(&mut self, ctx: C, tm: T);
@@ -361,38 +453,53 @@ pub trait WriteFacts<C, T> {
     /// Mark a term as a type
     fn set_is_ty_unchecked(&mut self, ctx: C, tm: T);
 
+    /// Mark a term as a proposition
+    fn set_is_prop_unchecked(&mut self, ctx: C, tm: T);
+
+    /// Set the type of a term
+    fn set_has_ty_unchecked(&mut self, ctx: C, tm: T, ty: T);
+
     /// Mark a term as an inhabited type
     fn set_is_inhab_unchecked(&mut self, ctx: C, tm: T);
 
     /// Mark a term as an empty type
     fn set_is_empty_unchecked(&mut self, ctx: C, tm: T);
 
-    /// Mark a term as a proposition
-    fn set_is_prop_unchecked(&mut self, ctx: C, tm: T);
-
-    // == Relations ==
-
-    /// Set two terms as equal in a given context
-    fn set_eq_unchecked(&mut self, ctx: C, lhs: T, rhs: T);
-
-    /// Set the type of a term
-    fn set_has_ty_unchecked(&mut self, ctx: C, tm: T, ty: T);
+    /// Mark a term as well-formed under a binder
+    fn set_forall_is_wf_unchecked(&mut self, ctx: C, binder: T, tm: T);
 
     /// Mark a term as a valid type under a binder
-    fn set_is_ty_under_unchecked(&mut self, ctx: C, binder: T, tm: T);
+    fn set_forall_is_ty_unchecked(&mut self, ctx: C, binder: T, tm: T);
 
-    /// Check whether the term `tm` is always inhabited in `ctx` under a binder `binder`
-    ///
-    /// TODO: reference Lean
-    fn set_forall_inhab_under_unchecked(&mut self, ctx: C, binder: T, ty: T) -> bool;
-
-    /// Check whether there exists a value of type `binder` such that the term `tm` is inhabited
-    ///
-    /// TODO: reference Lean
-    fn set_exists_inhab_under_unchecked(&mut self, ctx: C, binder: T, ty: T) -> bool;
+    /// Mark a term as a proposition under a binder
+    fn set_forall_is_prop_unchecked(&mut self, ctx: C, binder: T, tm: T);
 
     /// Set the type of a term under a binder
-    fn set_has_ty_under_unchecked(&mut self, ctx: C, binder: T, tm: T, ty: T);
+    fn set_forall_has_ty_unchecked(&mut self, ctx: C, binder: T, tm: T, ty: T);
+
+    /// Mark a term as an inhabited type under a binder
+    fn set_forall_is_inhab_unchecked(&mut self, ctx: C, binder: T, tm: T);
+
+    /// Mark a term as an empty type under a binder
+    fn set_forall_is_empty_unchecked(&mut self, ctx: C, binder: T, tm: T);
+
+    /// Mark a term as well-formed under a binder
+    fn set_exists_is_wf_unchecked(&mut self, ctx: C, binder: T, tm: T);
+
+    /// Mark a term as a valid type under a binder
+    fn set_exists_is_ty_unchecked(&mut self, ctx: C, binder: T, tm: T);
+
+    /// Mark a term as a proposition under a binder
+    fn set_exists_is_prop_unchecked(&mut self, ctx: C, binder: T, tm: T);
+
+    /// Set the type of a term under a binder
+    fn set_exists_has_ty_unchecked(&mut self, ctx: C, binder: T, tm: T, ty: T);
+
+    /// Mark a term as an inhabited type under a binder
+    fn set_exists_is_inhab_unchecked(&mut self, ctx: C, binder: T, tm: T);
+
+    /// Mark a term as an empty type under a binder
+    fn set_exists_is_empty_unchecked(&mut self, ctx: C, binder: T, tm: T);
 
     // == Variable and assumption manipulation ==
 

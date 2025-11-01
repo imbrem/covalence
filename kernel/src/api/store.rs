@@ -483,6 +483,18 @@ pub trait ReadTermFacts<C, T> {
 }
 
 /// A database of terms, contexts, and facts which we can read from
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadFacts<CtxId, TermId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadFacts<CtxId, TermId> = &Kernel::new();
+/// ```
 pub trait ReadFacts<C, T>: ReadCtx<C, T> + ReadTermFacts<C, T> {}
 
 impl<D: ReadCtx<C, T> + ReadTermFacts<C, T>, C, T> ReadFacts<C, T> for D {}

@@ -30,7 +30,7 @@ impl<D> Deref for Kernel<D> {
     }
 }
 
-impl<C, T, D: GetReadTermDb<C, T>> GetReadTermDb<C, T> for Kernel<D> {
+impl<C, T, D: ReadTermDb<C, T>> ReadTermDb<C, T> for Kernel<D> {
     type Reader = D::Reader;
 
     fn read(&self) -> &Self::Reader {
@@ -85,7 +85,7 @@ impl<C, T, D> Derive<C, T> for Kernel<D>
 where
     C: Copy + PartialEq,
     T: Copy + PartialEq,
-    D: GetReadTermDb<C, T> + WriteTerm<C, T> + WriteFacts<C, T>,
+    D: ReadTermDb<C, T> + WriteTerm<C, T> + WriteFacts<C, T>,
 {
     fn assume<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Fv<C>, S::Fail>
     where
@@ -965,11 +965,11 @@ where
 }
 
 pub trait KernelAPI<C: Copy, T: Copy + PartialEq>:
-    Derive<C, T> + Ensure<C, T> + WriteTerm<C, T> + GetReadTermDb<C, T>
+    Derive<C, T> + Ensure<C, T> + WriteTerm<C, T> + ReadTermDb<C, T>
 {
 }
 
 impl<K, C: Copy, T: Copy + PartialEq> KernelAPI<C, T> for K where
-    K: Derive<C, T> + Ensure<C, T> + WriteTerm<C, T> + GetReadTermDb<C, T>
+    K: Derive<C, T> + Ensure<C, T> + WriteTerm<C, T> + ReadTermDb<C, T>
 {
 }

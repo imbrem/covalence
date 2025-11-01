@@ -82,7 +82,7 @@ impl<T> HasTyIn<T> {
     /// Check this result
     pub fn check<C, K>(self, ctx: C, ker: &K) -> bool
     where
-        K: ReadTermDb<C, T>,
+        K: ReadTermStore<C, T>,
     {
         ker.has_ty(ctx, self.tm, self.ty)
     }
@@ -121,7 +121,7 @@ impl<T> HasTyUnderIn<T> {
     /// Check this result
     pub fn check<C, K>(self, ctx: C, ker: &K) -> bool
     where
-        K: ReadTermDb<C, T>,
+        K: ReadTermStore<C, T>,
     {
         ker.forall_has_ty(ctx, self.binder, self.tm, self.ty)
     }
@@ -150,7 +150,7 @@ impl<T> IsInhabIn<T> {
     /// Check this result
     pub fn check<C, K>(self, ctx: C, ker: &K) -> bool
     where
-        K: ReadTermDb<C, T>,
+        K: ReadTermStore<C, T>,
     {
         ker.is_inhab(ctx, self.0)
     }
@@ -187,7 +187,7 @@ impl<T> Eqn<T> {
     /// Check this result
     pub fn check<C, K>(self, ctx: C, ker: &K) -> bool
     where
-        K: ReadTermDb<C, T>,
+        K: ReadTermStore<C, T>,
     {
         ker.eq_in(ctx, self.lhs, self.rhs)
     }

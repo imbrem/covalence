@@ -410,7 +410,7 @@ impl ReadTermFacts<CtxId, TermId> for TermDb {
     }
 }
 
-impl GetReadTermDb<CtxId, TermId> for TermDb {
+impl ReadTermDb<CtxId, TermId> for TermDb {
     type Reader = TermDb;
 
     fn read(&self) -> &Self::Reader {

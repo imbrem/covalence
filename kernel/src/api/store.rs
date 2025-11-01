@@ -500,13 +500,25 @@ pub trait ReadFacts<C, T>: ReadCtx<C, T> + ReadTermFacts<C, T> {}
 impl<D: ReadCtx<C, T> + ReadTermFacts<C, T>, C, T> ReadFacts<C, T> for D {}
 
 /// A database of terms, contexts, and facts which we can read from
-pub trait ReadTermDb<C, T>: ReadTerm<C, T> + ReadFacts<C, T> {}
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadTermStore<CtxId, TermId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadTermStore<CtxId, TermId> = &Kernel::new();
+/// ```
+pub trait ReadTermStore<C, T>: ReadTerm<C, T> + ReadFacts<C, T> {}
 
-impl<D: ReadTerm<C, T> + ReadFacts<C, T>, C, T> ReadTermDb<C, T> for D {}
+impl<D: ReadTerm<C, T> + ReadFacts<C, T>, C, T> ReadTermStore<C, T> for D {}
 
 /// A term database which we can read from
-pub trait GetReadTermDb<C, T> {
-    type Reader: ReadTermDb<C, T>;
+pub trait ReadTermDb<C, T> {
+    type Reader: ReadTermStore<C, T>;
 
     /// Get a read-only cursor into this term database
     fn read(&self) -> &Self::Reader;

@@ -30,60 +30,68 @@ impl<D> Deref for Kernel<D> {
     }
 }
 
+impl<C, T, D: ReadTermDb<C, T>> ReadTermDb<C, T> for Kernel<D> {
+    type Reader = D::Reader;
+
+    fn read(&self) -> &Self::Reader {
+        self.0.read()
+    }
+}
+
 impl<D: TermIndex> TermIndex for Kernel<D> {
     type CtxId = D::CtxId;
     type TermId = D::TermId;
 }
 
-impl<C, T, D: ReadTerm<C, T>> ReadTerm<C, T> for Kernel<D> {
-    fn val(&self, ctx: C, tm: T) -> Val<C, T> {
-        self.0.val(ctx, tm)
-    }
+// impl<C, T, D: ReadTerm<C, T>> ReadTerm<C, T> for Kernel<D> {
+//     fn val(&self, ctx: C, tm: T) -> Val<C, T> {
+//         self.0.val(ctx, tm)
+//     }
 
-    fn node(&self, ctx: C, term: T) -> &NodeT<C, T> {
-        self.0.node(ctx, term)
-    }
+//     fn node(&self, ctx: C, term: T) -> &NodeT<C, T> {
+//         self.0.node(ctx, term)
+//     }
 
-    fn lookup(&self, ctx: C, term: &mut NodeT<C, T>) -> Option<T> {
-        self.0.lookup(ctx, term)
-    }
+//     fn lookup(&self, ctx: C, term: &mut NodeT<C, T>) -> Option<T> {
+//         self.0.lookup(ctx, term)
+//     }
 
-    fn lookup_import(&self, ctx: C, val: Val<C, T>) -> Option<T> {
-        self.0.lookup_import(ctx, val)
-    }
+//     fn lookup_import(&self, ctx: C, val: Val<C, T>) -> Option<T> {
+//         self.0.lookup_import(ctx, val)
+//     }
 
-    fn bvi(&self, ctx: C, tm: T) -> Bv {
-        self.0.bvi(ctx, tm)
-    }
+//     fn bvi(&self, ctx: C, tm: T) -> Bv {
+//         self.0.bvi(ctx, tm)
+//     }
 
-    fn has_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool {
-        self.0.has_var(ctx, tm, var)
-    }
+//     fn has_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool {
+//         self.0.has_var(ctx, tm, var)
+//     }
 
-    fn has_var_from(&self, ctx: C, tm: T, vars: C) -> bool {
-        self.0.has_var_from(ctx, tm, vars)
-    }
+//     fn has_var_from(&self, ctx: C, tm: T, vars: C) -> bool {
+//         self.0.has_var_from(ctx, tm, vars)
+//     }
 
-    fn may_have_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool {
-        self.0.may_have_var(ctx, tm, var)
-    }
+//     fn may_have_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool {
+//         self.0.may_have_var(ctx, tm, var)
+//     }
 
-    fn may_have_var_from(&self, ctx: C, tm: T, vars: C) -> bool {
-        self.0.may_have_var_from(ctx, tm, vars)
-    }
+//     fn may_have_var_from(&self, ctx: C, tm: T, vars: C) -> bool {
+//         self.0.may_have_var_from(ctx, tm, vars)
+//     }
 
-    fn get_var_ty(&self, var: Fv<C>) -> T {
-        self.0.get_var_ty(var)
-    }
+//     fn get_var_ty(&self, var: Fv<C>) -> T {
+//         self.0.get_var_ty(var)
+//     }
 
-    fn var_is_ghost(&self, var: Fv<C>) -> bool {
-        self.0.var_is_ghost(var)
-    }
+//     fn var_is_ghost(&self, var: Fv<C>) -> bool {
+//         self.0.var_is_ghost(var)
+//     }
 
-    fn num_vars(&self, ctx: C) -> u32 {
-        self.0.num_vars(ctx)
-    }
-}
+//     fn num_vars(&self, ctx: C) -> u32 {
+//         self.0.num_vars(ctx)
+//     }
+// }
 
 impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
     fn is_root(&self, ctx: C) -> bool {
@@ -260,7 +268,7 @@ impl<C, T, D: WriteTerm<C, T>> WriteTerm<C, T> for Kernel<D> {
 impl<
     C: Copy + PartialEq,
     T: Copy + PartialEq,
-    D: ReadTerm<C, T> + WriteTerm<C, T> + ReadFacts<C, T> + WriteFacts<C, T>,
+    D: ReadTermDb<C, T> + WriteTerm<C, T> + WriteFacts<C, T>,
 > Derive<C, T> for Kernel<D>
 {
     fn assume<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Fv<C>, S::Fail>
@@ -281,7 +289,7 @@ impl<
         strategy.start_rule("add_var")?;
         self.ensure_is_ty(ctx, ty, strategy, kernel_error::ADD_VAR_IS_TY)?;
         let var = self.0.add_var_unchecked(ctx, ty);
-        debug_assert!(self.0.eq_in(ctx, self.0.get_var_ty(var), ty));
+        debug_assert!(self.read().eq_in(ctx, self.read().get_var_ty(var), ty));
         let tm = self.0.add(ctx, NodeT::Fv(var));
         self.0.set_has_ty_unchecked(ctx, tm, ty);
         HasTyIn { tm, ty }.finish_rule(ctx, strategy);
@@ -310,10 +318,10 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("set_parent")?;
-        if self.is_subctx(ctx, parent) {
+        if self.read().is_subctx(ctx, parent) {
             return Err(strategy.fail(kernel_error::SET_PARENT_WOULD_CYCLE));
         }
-        if !self.parents_are_subctx(ctx, parent) {
+        if !self.read().parents_are_subctx(ctx, parent) {
             return Err(strategy.fail(kernel_error::SET_PARENT_NOT_SUBCTX));
         }
         self.0.set_parent_unchecked(ctx, parent);
@@ -327,7 +335,7 @@ impl<
     }
 
     fn subst_under(&mut self, ctx: C, under: Bv, bound: T, body: T) -> T {
-        if self.bvi(ctx, body) <= under {
+        if self.read().bvi(ctx, body) <= under {
             return body;
         }
         self.add(ctx, NodeT::Subst1(under, [bound, body]))
@@ -335,7 +343,7 @@ impl<
 
     fn close(&mut self, ctx: C, var: Fv<C>, tm: T) -> T {
         //TODO: optimize this
-        if self.bvi(ctx, tm) == Bv(0) && !self.has_var_from(ctx, tm, var.ctx) {
+        if self.read().bvi(ctx, tm) == Bv(0) && !self.read().has_var_from(ctx, tm, var.ctx) {
             return tm;
         }
         self.add(
@@ -351,7 +359,7 @@ impl<
     fn close_import(&mut self, ctx: C, var: Fv<C>, tm: T) -> T {
         let import = self.import(ctx, Val { ctx: var.ctx, tm });
         //TODO: optimize this, and cover more cases
-        if self.bvi(var.ctx, tm) == Bv(0) && !self.may_have_var(var.ctx, tm, var) {
+        if self.read().bvi(var.ctx, tm) == Bv(0) && !self.read().may_have_var(var.ctx, tm, var) {
             return import;
         }
         self.add(
@@ -431,7 +439,7 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_u_le")?;
-        if !self.u_le(lo, hi) {
+        if !self.read().u_le(lo, hi) {
             return Err(strategy.fail(kernel_error::DERIVE_U_LE_U_LE));
         }
         let old = self.add(ctx, NodeT::U(lo));
@@ -467,21 +475,21 @@ impl<
         )?;
         let binder = self.var_ty(ctx, var);
         debug_assert!(
-            self.is_ty(var.ctx, self.get_var_ty(var)),
+            self.read().is_ty(var.ctx, self.read().get_var_ty(var)),
             "var is valid in its context"
         );
         if var.ctx != ctx {
             debug_assert_ne!(
-                self.num_vars(var.ctx),
+                self.read().num_vars(var.ctx),
                 0,
                 "var is a valid variable, so there must be at least one variable"
             );
             // We check that `var` is the only variable in its context
-            if self.num_vars(var.ctx) != 1 {
+            if self.read().num_vars(var.ctx) != 1 {
                 return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_TOO_MANY_VARS));
             }
             // Finally, we check that the variable context's parent(s) are subcontexts of `ctx`
-            if !self.parents_are_subctx(var.ctx, ctx) {
+            if !self.read().parents_are_subctx(var.ctx, ctx) {
                 return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_ILL_SCOPED));
             }
         }
@@ -502,10 +510,10 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_fv")?;
-        if self.0.var_is_ghost(var) {
+        if self.read().var_is_ghost(var) {
             return Err(strategy.fail(kernel_error::DERIVE_FV_GHOST));
         }
-        if !self.0.is_subctx(var.ctx, ctx) {
+        if !self.read().is_subctx(var.ctx, ctx) {
             return Err(strategy.fail(kernel_error::DERIVE_FV_ILL_SCOPED));
         }
         //NOTE: this will crash if the variable is not in fact valid!
@@ -581,7 +589,7 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_pi")?;
-        if !self.imax_le(arg_lvl, lvl, lvl) {
+        if !self.read().imax_le(arg_lvl, lvl, lvl) {
             return Err(strategy.fail(kernel_error::DERIVE_PI_IMAX_LE));
         }
         let arg_lvl_ty = self.add(ctx, NodeT::U(arg_lvl));
@@ -726,7 +734,7 @@ impl<
         self.ensure_has_ty(ctx, pair, sigma, strategy, kernel_error::DERIVE_FST_PAIR)?;
         let tm = self.add(ctx, NodeT::Fst([pair]));
         self.0.set_has_ty_unchecked(ctx, tm, arg_ty);
-        if let &NodeT::Pair([a, _]) = self.node(ctx, pair) {
+        if let &NodeT::Pair([a, _]) = self.read().node(ctx, pair) {
             self.0.set_eq_unchecked(ctx, tm, a);
         }
         Ok(HasTyIn { tm, ty: arg_ty }.finish_rule(ctx, strategy))
@@ -751,7 +759,7 @@ impl<
         let tm = self.add(ctx, NodeT::Snd([pair]));
         let ty = self.subst(ctx, fst, res_ty);
         self.0.set_has_ty_unchecked(ctx, tm, ty);
-        if let &NodeT::Pair([a, b]) = self.node(ctx, pair) {
+        if let &NodeT::Pair([a, b]) = self.read().node(ctx, pair) {
             self.0.set_eq_unchecked(ctx, fst, a);
             self.0.set_eq_unchecked(ctx, tm, b);
         }
@@ -792,11 +800,11 @@ impl<
         )?;
         let tm = self.add(ctx, NodeT::Ite([cond, then_br, else_br]));
         self.0.set_has_ty_unchecked(ctx, tm, ty);
-        if self.is_inhab(ctx, cond) {
+        if self.read().is_inhab(ctx, cond) {
             let null = self.add(ctx, NodeT::Null);
             let then_br_null = self.subst(ctx, null, then_br);
             self.0.set_eq_unchecked(ctx, tm, then_br_null);
-        } else if self.is_empty(ctx, cond) {
+        } else if self.read().is_empty(ctx, cond) {
             let null = self.add(ctx, NodeT::Null);
             let else_br_null = self.subst(ctx, null, else_br);
             self.0.set_eq_unchecked(ctx, tm, else_br_null);
@@ -813,10 +821,10 @@ impl<
         let tm = self.add(ctx, NodeT::Trunc([ty]));
         let prop = self.add(ctx, NodeT::U(ULvl::PROP));
         self.0.set_has_ty_unchecked(ctx, tm, prop);
-        if self.is_inhab(ctx, ty) {
+        if self.read().is_inhab(ctx, ty) {
             self.0.set_is_inhab_unchecked(ctx, tm);
         }
-        if self.is_empty(ctx, ty) {
+        if self.read().is_empty(ctx, ty) {
             self.0.set_is_empty_unchecked(ctx, tm);
         }
         Ok(HasTyIn { tm, ty: prop }.finish_rule(ctx, strategy))
@@ -853,7 +861,7 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_nats")?;
-        if !self.u_le(ULvl::SET, lvl) {
+        if !self.read().u_le(ULvl::SET, lvl) {
             return Err(strategy.fail(kernel_error::DERIVE_NATS_SET_LE_LVL));
         }
         let tm = self.add(ctx, NodeT::Nats);
@@ -896,7 +904,7 @@ impl<
         let nats = self.add(ctx, NodeT::Nats);
         self.ensure_is_ty_under(ctx, nats, mot, strategy, kernel_error::DERIVE_NATREC_MOT)?;
         debug_assert!(
-            self.bvi(ctx, mot) <= Bv(1),
+            self.read().bvi(ctx, mot) <= Bv(1),
             "a term which is well-typed under a binder cannot have a bvi greater than one"
         );
         let zero = self.add(ctx, NodeT::N64(0));
@@ -904,11 +912,11 @@ impl<
         self.ensure_has_ty(ctx, z, mot_zero, strategy, kernel_error::DERIVE_NATREC_Z)?;
         let bv_one = self.add(ctx, NodeT::Bv(Bv(1)));
         let succ_bv_one = self.add(ctx, NodeT::Succ([bv_one]));
-        debug_assert_eq!(self.bvi(ctx, succ_bv_one), Bv(2));
+        debug_assert_eq!(self.read().bvi(ctx, succ_bv_one), Bv(2));
         let mot_succ_bv_one = self.subst(ctx, mot, succ_bv_one);
-        debug_assert!(self.bvi(ctx, mot_succ_bv_one) <= Bv(2));
+        debug_assert!(self.read().bvi(ctx, mot_succ_bv_one) <= Bv(2));
         let mot_to_mot_succ = self.add(ctx, NodeT::Pi([mot, mot_succ_bv_one]));
-        debug_assert!(self.bvi(ctx, mot_to_mot_succ) <= Bv(1));
+        debug_assert!(self.read().bvi(ctx, mot_to_mot_succ) <= Bv(1));
         self.ensure_has_ty_under(
             ctx,
             nats,
@@ -971,7 +979,7 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_beta_abs")?;
-        let &NodeT::Abs([arg_ty, body]) = self.node(ctx, tm) else {
+        let &NodeT::Abs([arg_ty, body]) = self.read().node(ctx, tm) else {
             return Err(strategy.fail("derive_beta_abs: tm ≡ abs A b"));
         };
         self.ensure_is_wf(ctx, tm, strategy, "derive_beta_abs: tm wf")?;
@@ -991,7 +999,7 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_beta_zero")?;
-        let &NodeT::Natrec([_mot, z, _s]) = self.node(ctx, tm) else {
+        let &NodeT::Natrec([_mot, z, _s]) = self.read().node(ctx, tm) else {
             return Err(strategy.fail("derive_beta_zero: tm ≡ natrec C z s"));
         };
         self.ensure_is_wf(ctx, tm, strategy, "derive_beta_zero: tm wf")?;
@@ -1016,7 +1024,7 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_beta_succ")?;
-        let &NodeT::Natrec([_mot, _z, s]) = self.node(ctx, tm) else {
+        let &NodeT::Natrec([_mot, _z, s]) = self.read().node(ctx, tm) else {
             return Err(strategy.fail("derive_beta_zero: tm ≡ natrec C z s"));
         };
         self.ensure_is_wf(ctx, tm, strategy, "derive_beta_zero: tm wf")?;
@@ -1107,7 +1115,7 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_pi_eta")?;
-        let &NodeT::Pi([arg_ty, _res_ty]) = self.node(ctx, ty) else {
+        let &NodeT::Pi([arg_ty, _res_ty]) = self.read().node(ctx, ty) else {
             return Err(strategy.fail("derive_pi_eta: ty ≡ pi A B"));
         };
         self.ensure_has_ty(ctx, f, ty, strategy, "derive_pi_eta: f")?;
@@ -1129,7 +1137,7 @@ impl<
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_sigma_eta")?;
-        let &NodeT::Sigma(_) = self.node(ctx, ty) else {
+        let &NodeT::Sigma(_) = self.read().node(ctx, ty) else {
             return Err(strategy.fail("derive_sigma_eta: ty ≡ sigma A B"));
         };
         self.ensure_has_ty(ctx, p, ty, strategy, "derive_sigma_eta: p")?;

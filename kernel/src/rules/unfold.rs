@@ -183,11 +183,11 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
     /// # let mut ker = Kernel::new();
     /// # let ctx = ker.new_ctx();
     /// let nats = Node::Nats.add_val(ctx, &mut ker);
-    /// assert_eq!(nats.step(&ker), None);
+    /// assert_eq!(nats.step(&*ker), None);
     /// let i = Node::bv(0).add_val(ctx, &mut ker);
-    /// assert_eq!(i.step(&ker), None);
+    /// assert_eq!(i.step(&*ker), None);
     /// let s = Node::Subst1(Bv(0), [nats.tm, i.tm]).add_val(ctx, &mut ker);
-    /// assert_eq!(s.step(&ker), Some(NodeVT2::Import(nats)));
+    /// assert_eq!(s.step(&*ker), Some(NodeVT2::Import(nats)));
     /// ```
     pub fn step(self, store: &impl ReadTerm<C, T>) -> Option<NodeVT2<C, T>> {
         match self {
@@ -214,11 +214,11 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
     /// # let mut ker = Kernel::new();
     /// # let ctx = ker.new_ctx();
     /// let nats = Node::Nats.add_val(ctx, &mut ker);
-    /// assert_eq!(nats.import_step(&ker), None);
+    /// assert_eq!(nats.import_step(&*ker), None);
     /// let i = Node::bv(0).add_val(ctx, &mut ker);
-    /// assert_eq!(i.import_step(&ker), None);
+    /// assert_eq!(i.import_step(&*ker), None);
     /// let s = Node::Subst1(Bv(0), [nats.tm, i.tm]).add_val(ctx, &mut ker);
-    /// assert_eq!(s.import_step(&ker), Some(NodeVT2::Nats));
+    /// assert_eq!(s.import_step(&*ker), Some(NodeVT2::Nats));
     /// ```
     pub fn import_step(self, store: &impl ReadTerm<C, T>) -> Option<NodeVT2<C, T>> {
         match self.step(store)? {

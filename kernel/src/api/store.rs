@@ -13,6 +13,12 @@ pub trait TermIndex {
 /// This trait is `dyn`-safe:
 /// ```rust
 /// # use covalence_kernel::*;
+/// let ker : &dyn ReadTerm<CtxId, TermId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence_kernel::*;
 /// let ker : &dyn ReadTerm<CtxId, TermId> = &Kernel::new();
 /// ```
 pub trait ReadTerm<C, T> {
@@ -459,15 +465,23 @@ pub trait ReadTermFacts<C, T>: ReadTerm<C, T> + ReadFacts<C, T> {}
 
 impl<D: ReadTerm<C, T> + ReadFacts<C, T>, C, T> ReadTermFacts<C, T> for D {}
 
+/// A term database which we can read from
+pub trait ReadTermDb<C, T> {
+    type Reader: ReadTermFacts<C, T>;
+
+    /// Get a read-only cursor into this term database
+    fn read(&self) -> &Self::Reader;
+}
+
 /// A trait implemented by a mutable datastore that can hold _unchecked_ facts about terms in a
 /// context.
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
 /// # use covalence_kernel::api::store::*;
-/// # use covalence_kernel::store::EggTermDb;
+/// # use covalence_kernel::store::TermDb;
 /// # use covalence_kernel::*;
-/// let db : &dyn WriteFacts<CtxId, TermId> = &EggTermDb::default();
+/// let db : &dyn WriteFacts<CtxId, TermId> = &TermDb::default();
 /// ```
 /// We note that it is _not_ implemented by `Kernel`, since that would be unsafe:
 /// ```rust,compile_fail

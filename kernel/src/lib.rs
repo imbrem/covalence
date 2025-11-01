@@ -19,11 +19,8 @@ pub use crate::api::derive::Derive;
 pub use crate::api::generic::*;
 pub use crate::api::store::{ReadFacts, ReadTerm, WriteTerm};
 
-//TODO: add docs
-type TermDb = crate::store::EggTermDb;
-
 #[doc(inline)]
-pub use crate::store::{CtxId, Node, TermId, ValId};
+pub use crate::store::{CtxId, Node, TermDb, TermId, ValId};
 
 #[doc(inline)]
 pub use crate::data::term::{Bv, ULvl};

@@ -62,7 +62,7 @@ impl<C, T, K: ?Sized> Strategy<C, T, K> for () {
     }
 }
 
-pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadFacts<C, T> + WriteTerm<C, T> {
+pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, T> {
     /// Attempt to prove a goal
     fn ensure_goal<S>(
         &mut self,
@@ -75,7 +75,7 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadFacts<C, T> + WriteTerm<C, T
     {
         strategy.start_goal(goal)?;
         let mut attempt_no = 0;
-        while !goal.check_in(self) {
+        while !goal.check_in(self.read()) {
             strategy
                 .prove_goal(self, goal, msg, attempt_no)
                 .map_err(|mut err| {
@@ -278,7 +278,7 @@ impl<C, T, K> Ensure<C, T> for K
 where
     C: Copy,
     T: Copy + PartialEq,
-    K: ReadFacts<C, T> + WriteTerm<C, T>,
+    K: ReadTermDb<C, T> + WriteTerm<C, T>,
 {
 }
 

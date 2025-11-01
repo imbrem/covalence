@@ -18,22 +18,27 @@ pub type ValId = Val<CtxId, TermId>;
 
 /// A term store implemented using `egg`
 #[derive(Debug, Clone, Default)]
-pub struct EggTermDb {
+pub struct TermDb {
     pub(crate) x: SmallArena<Ctx>,
 }
 
-impl EggTermDb {
+impl TermDb {
+    /// Construct a new, empty term database
+    pub fn new() -> TermDb {
+        TermDb::default()
+    }
+
     fn set_this(&mut self, ctx: CtxId) {
         self.x[ctx.0].set_this(ctx);
     }
 }
 
-impl TermIndex for EggTermDb {
+impl TermIndex for TermDb {
     type CtxId = CtxId;
     type TermId = TermId;
 }
 
-impl ReadTerm<CtxId, TermId> for EggTermDb {
+impl ReadTerm<CtxId, TermId> for TermDb {
     fn val(&self, ctx: CtxId, tm: TermId) -> ValId {
         match self.node(ctx, tm) {
             Node::Import(val) => self.val(val.ctx, val.tm),
@@ -133,7 +138,7 @@ impl ReadTerm<CtxId, TermId> for EggTermDb {
     }
 }
 
-impl WriteTerm<CtxId, TermId> for EggTermDb {
+impl WriteTerm<CtxId, TermId> for TermDb {
     fn new_ctx(&mut self) -> CtxId {
         let result = CtxId(self.x.insert(Ctx::new_ctx()));
         self.set_this(result);
@@ -217,7 +222,7 @@ impl WriteTerm<CtxId, TermId> for EggTermDb {
     }
 }
 
-impl ReadFacts<CtxId, TermId> for EggTermDb {
+impl ReadFacts<CtxId, TermId> for TermDb {
     fn is_root(&self, ctx: CtxId) -> bool {
         //TODO: optimize
         self.x[ctx.0].is_null_extension() && self.x[ctx.0].parent().is_none_or(|p| self.is_root(p))
@@ -392,7 +397,15 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
     }
 }
 
-impl WriteFacts<CtxId, TermId> for EggTermDb {
+impl ReadTermDb<CtxId, TermId> for TermDb {
+    type Reader = TermDb;
+
+    fn read(&self) -> &Self::Reader {
+        self
+    }
+}
+
+impl WriteFacts<CtxId, TermId> for TermDb {
     fn set_is_contr_unchecked(&mut self, ctx: CtxId) {
         self.x[ctx.0].set_is_contr();
     }
@@ -506,7 +519,7 @@ mod test {
 
     #[test]
     fn unit_eq_empty_contr() {
-        let mut db = EggTermDb::default();
+        let mut db = TermDb::default();
         let ctx = db.new_ctx();
         assert!(!db.is_contr(ctx));
         let unit = db.add(ctx, Node::Unit);
@@ -519,7 +532,7 @@ mod test {
 
     #[test]
     fn construct_pi_prop_close() {
-        let mut db = EggTermDb::default();
+        let mut db = TermDb::default();
         let root = db.new_ctx();
         let child = db.with_parent(root);
         let child_prop = db.add(child, Node::U(ULvl::PROP));
@@ -543,7 +556,7 @@ mod test {
 
     #[test]
     fn basic_imax_le() {
-        let db = EggTermDb::default();
+        let db = TermDb::default();
         let u0 = ULvl::PROP;
         assert!(db.imax_le(u0, u0, u0));
         let u1 = ULvl::SET;

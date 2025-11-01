@@ -1,5 +1,13 @@
 use crate::data::term::{Bv, Fv, NodeT, NodeVT, ULvl, Val};
 
+/// A term database with a given index kind
+pub trait TermIndex {
+    /// The context identifier type
+    type CtxId: Copy;
+    /// The term identifier type
+    type TermId: Copy;
+}
+
 /// A trait implemented by a datastore that can read hash-consed terms and universe levels
 ///
 /// This trait is `dyn`-safe:
@@ -23,6 +31,13 @@ pub trait ReadTerm<C, T> {
 
     /// Lookup an import of a term into another context, returning a handle to it if it exists
     fn lookup_import(&self, ctx: C, val: Val<C, T>) -> Option<T>;
+
+    // == Syntactic information ==
+
+    /// Get an upper bound on the de-Bruijn indices visible in `tm`
+    ///
+    /// TODO: reference lean
+    fn bvi(&self, ctx: C, tm: T) -> Bv;
 
     // == Variables ==
 
@@ -178,11 +193,31 @@ pub trait ReadFacts<C, T> {
     /// TODO: reference lean
     fn is_contr(&self, ctx: C) -> bool;
 
-    // == Syntax information ==
-    /// Get an upper bound on the de-Bruijn indices visible in `tm`
+    // == Syntactic relations ==
+
+    /// Check whether the term `tm` depends on the variable `var` in context `ctx`
+    fn has_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool;
+
+    /// Check whether the term `tm` depends on any variable from the context `vars`
+    fn has_var_from(&self, ctx: C, tm: T, vars: C) -> bool;
+
+    /// Check whether the term `tm` may depend on the variable `var` in context `ctx`
+    fn may_have_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool;
+
+    /// Check whether the term `tm` may depend on any variable from the context `vars`
+    fn may_have_var_from(&self, ctx: C, tm: T, vars: C) -> bool;
+
+    /// Check whether two values are syntactically equal
     ///
-    /// TODO: reference lean
-    fn bvi(&self, ctx: C, tm: T) -> Bv;
+    /// `lhs` is syntactically equal to `rhs` if they are the same term, modulo imports
+    fn syn_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
+
+    /// Check whether two values are definitionally equal
+    ///
+    /// `lhs` is definitionally equal to `rhs` if they are equal after fully unfolding all `close`,
+    /// `subst1`, and `wkn`. This function is a (safe) approximation: it can return `false`
+    /// incorrectly.
+    fn def_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
 
     // == Context information ==
 
@@ -297,34 +332,6 @@ pub trait ReadFacts<C, T> {
     /// assert!(!ker.parents_are_subctx(grandchild, ctx));
     /// ```
     fn parents_are_subctx(&self, lo: C, hi: C) -> bool;
-
-    // == Term predicates ==
-
-    /// Check whether the term `tm` depends on the variable `var` in context `ctx`
-    fn has_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool;
-
-    /// Check whether the term `tm` depends on any variable from the context `vars`
-    fn has_var_from(&self, ctx: C, tm: T, vars: C) -> bool;
-
-    /// Check whether the term `tm` may depend on the variable `var` in context `ctx`
-    fn may_have_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool;
-
-    /// Check whether the term `tm` may depend on any variable from the context `vars`
-    fn may_have_var_from(&self, ctx: C, tm: T, vars: C) -> bool;
-
-    // == Syntacitc relations ==
-
-    /// Check whether two values are syntactically equal
-    ///
-    /// `lhs` is syntactically equal to `rhs` if they are the same term, modulo imports
-    fn syn_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
-
-    /// Check whether two values are definitionally equal
-    ///
-    /// `lhs` is definitionally equal to `rhs` if they are equal after fully unfolding all `close`,
-    /// `subst1`, and `wkn`. This function is a (safe) approximation: it can return `false`
-    /// incorrectly.
-    fn def_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
 
     // == Typing judgements ==
 

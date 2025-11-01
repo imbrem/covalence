@@ -30,6 +30,45 @@ impl<D> Deref for Kernel<D> {
     }
 }
 
+impl<D: TermIndex> TermIndex for Kernel<D> {
+    type CtxId = D::CtxId;
+    type TermId = D::TermId;
+}
+
+impl<C, T, D: ReadTerm<C, T>> ReadTerm<C, T> for Kernel<D> {
+    fn val(&self, ctx: C, tm: T) -> Val<C, T> {
+        self.0.val(ctx, tm)
+    }
+
+    fn node(&self, ctx: C, term: T) -> &NodeT<C, T> {
+        self.0.node(ctx, term)
+    }
+
+    fn lookup(&self, ctx: C, term: &mut NodeT<C, T>) -> Option<T> {
+        self.0.lookup(ctx, term)
+    }
+
+    fn lookup_import(&self, ctx: C, val: Val<C, T>) -> Option<T> {
+        self.0.lookup_import(ctx, val)
+    }
+
+    fn bvi(&self, ctx: C, tm: T) -> Bv {
+        self.0.bvi(ctx, tm)
+    }
+
+    fn get_var_ty(&self, var: Fv<C>) -> T {
+        self.0.get_var_ty(var)
+    }
+
+    fn var_is_ghost(&self, var: Fv<C>) -> bool {
+        self.0.var_is_ghost(var)
+    }
+
+    fn num_vars(&self, ctx: C) -> u32 {
+        self.0.num_vars(ctx)
+    }
+}
+
 impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
     fn is_root(&self, ctx: C) -> bool {
         self.0.is_root(ctx)
@@ -37,10 +76,6 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
 
     fn is_contr(&self, ctx: C) -> bool {
         self.0.is_contr(ctx)
-    }
-
-    fn bvi(&self, ctx: C, tm: T) -> Bv {
-        self.0.bvi(ctx, tm)
     }
 
     fn is_ancestor(&self, lo: C, hi: C) -> bool {
@@ -181,36 +216,6 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
 
     fn exists_is_empty(&self, ctx: C, binder: T, tm: T) -> bool {
         self.0.exists_is_empty(ctx, binder, tm)
-    }
-}
-
-impl<C, T, D: ReadTerm<C, T>> ReadTerm<C, T> for Kernel<D> {
-    fn val(&self, ctx: C, tm: T) -> Val<C, T> {
-        self.0.val(ctx, tm)
-    }
-
-    fn node(&self, ctx: C, term: T) -> &NodeT<C, T> {
-        self.0.node(ctx, term)
-    }
-
-    fn lookup(&self, ctx: C, term: &mut NodeT<C, T>) -> Option<T> {
-        self.0.lookup(ctx, term)
-    }
-
-    fn lookup_import(&self, ctx: C, val: Val<C, T>) -> Option<T> {
-        self.0.lookup_import(ctx, val)
-    }
-
-    fn get_var_ty(&self, var: Fv<C>) -> T {
-        self.0.get_var_ty(var)
-    }
-
-    fn var_is_ghost(&self, var: Fv<C>) -> bool {
-        self.0.var_is_ghost(var)
-    }
-
-    fn num_vars(&self, ctx: C) -> u32 {
-        self.0.num_vars(ctx)
     }
 }
 

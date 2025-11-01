@@ -28,6 +28,11 @@ impl EggTermDb {
     }
 }
 
+impl TermIndex for EggTermDb {
+    type CtxId = CtxId;
+    type TermId = TermId;
+}
+
 impl ReadTerm<CtxId, TermId> for EggTermDb {
     fn val(&self, ctx: CtxId, tm: TermId) -> ValId {
         match self.node(ctx, tm) {
@@ -64,6 +69,11 @@ impl ReadTerm<CtxId, TermId> for EggTermDb {
         } else {
             self.x[ctx.0].lookup(NodeT::Import(val))
         }
+    }
+
+    fn bvi(&self, ctx: CtxId, tm: TermId) -> Bv {
+        //TODO: compute the bvi if invalid
+        self.x[ctx.0].bvi(tm)
     }
 
     fn num_vars(&self, ctx: CtxId) -> u32 {
@@ -173,11 +183,6 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
 
     fn is_contr(&self, ctx: CtxId) -> bool {
         self.x[ctx.0].is_contr()
-    }
-
-    fn bvi(&self, ctx: CtxId, tm: TermId) -> Bv {
-        //TODO: compute the bvi if invalid
-        self.x[ctx.0].bvi(tm)
     }
 
     fn is_ancestor(&self, lo: CtxId, mut hi: CtxId) -> bool {

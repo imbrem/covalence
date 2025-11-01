@@ -122,6 +122,43 @@ impl ReadTerm<CtxId, TermId> for TermDb {
                 .any(|&i| self.may_have_var_from(ctx, i, vars)),
         }
     }
+
+    fn cons_eq(&self, lhs: ValId, rhs: ValId) -> bool {
+        if lhs == rhs {
+            return true;
+        }
+        let ln = lhs.node_val(self);
+        let rn = rhs.node_val(self);
+        ln.syn_disc() == rn.syn_disc()
+            && ln
+                .syn_children()
+                .iter()
+                .zip(rn.syn_children().iter())
+                .all(|(&l, &r)| self.cons_eq(l, r))
+    }
+
+    fn syn_eq(&self, lhs: ValId, rhs: ValId) -> bool {
+        if lhs == rhs {
+            return true;
+        }
+        match (lhs.node_val(self), rhs.node_val(self)) {
+            (NodeVT::Import(lhs), _) => self.syn_eq(lhs, rhs),
+            (_, NodeVT::Import(rhs)) => self.syn_eq(lhs, rhs),
+            (ln, rn) => {
+                ln.syn_disc() == rn.syn_disc()
+                    && ln
+                        .syn_children()
+                        .iter()
+                        .zip(rn.syn_children().iter())
+                        .all(|(&l, &r)| self.syn_eq(l, r))
+            }
+        }
+    }
+
+    fn unfold_eq(&self, lhs: Val<CtxId, TermId>, rhs: Val<CtxId, TermId>) -> bool {
+        //TODO: reduce here, later...
+        self.syn_eq(lhs, rhs)
+    }
 }
 
 impl WriteTerm<CtxId, TermId> for TermDb {
@@ -296,46 +333,6 @@ impl ReadTermFacts<CtxId, TermId> for TermDb {
         self.x[ctx.0].is_prop(tm)
     }
 
-    fn cons_eq(&self, lhs: ValId, rhs: ValId) -> bool {
-        if lhs == rhs {
-            return true;
-        }
-        let ln = lhs.node_val(self);
-        let rn = rhs.node_val(self);
-        ln.disc() == rn.disc()
-            && ln
-                .children()
-                .iter()
-                .zip(rn.children().iter())
-                .all(|(&l, &r)| self.cons_eq(l, r))
-    }
-
-    fn syn_eq(&self, lhs: ValId, rhs: ValId) -> bool {
-        if lhs == rhs {
-            return true;
-        }
-        match (lhs.node_val(self), rhs.node_val(self)) {
-            (NodeVT::Import(lhs), _) => self.syn_eq(lhs, rhs),
-            (_, NodeVT::Import(rhs)) => self.syn_eq(lhs, rhs),
-            (NodeVT::Close(lc), NodeVT::Close(rc)) => {
-                lc.under == rc.under && lc.var == rc.var && self.syn_eq(lc.tm, rc.tm)
-            }
-            (ln, rn) => {
-                ln.disc() == rn.disc()
-                    && ln
-                        .children()
-                        .iter()
-                        .zip(rn.children().iter())
-                        .all(|(&l, &r)| self.syn_eq(l, r))
-            }
-        }
-    }
-
-    fn unfold_eq(&self, lhs: Val<CtxId, TermId>, rhs: Val<CtxId, TermId>) -> bool {
-        //TODO: reduce here, later...
-        self.syn_eq(lhs, rhs)
-    }
-
     fn eq_in(&self, ctx: CtxId, lhs: TermId, rhs: TermId) -> bool {
         self.x[ctx.0].eq_in(lhs, rhs)
     }
@@ -413,7 +410,7 @@ impl ReadTermFacts<CtxId, TermId> for TermDb {
     }
 }
 
-impl ReadTermDb<CtxId, TermId> for TermDb {
+impl GetReadTermDb<CtxId, TermId> for TermDb {
     type Reader = TermDb;
 
     fn read(&self) -> &Self::Reader {

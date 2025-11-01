@@ -82,7 +82,7 @@ impl<T> HasTyIn<T> {
     /// Check this result
     pub fn check<C, K>(self, ctx: C, ker: &K) -> bool
     where
-        K: ReadFacts<C, T>,
+        K: ReadTermDb<C, T>,
     {
         ker.has_ty(ctx, self.tm, self.ty)
     }
@@ -121,7 +121,7 @@ impl<T> HasTyUnderIn<T> {
     /// Check this result
     pub fn check<C, K>(self, ctx: C, ker: &K) -> bool
     where
-        K: ReadFacts<C, T>,
+        K: ReadTermDb<C, T>,
     {
         ker.forall_has_ty(ctx, self.binder, self.tm, self.ty)
     }
@@ -150,7 +150,7 @@ impl<T> IsInhabIn<T> {
     /// Check this result
     pub fn check<C, K>(self, ctx: C, ker: &K) -> bool
     where
-        K: ReadFacts<C, T>,
+        K: ReadTermDb<C, T>,
     {
         ker.is_inhab(ctx, self.0)
     }
@@ -187,7 +187,7 @@ impl<T> Eqn<T> {
     /// Check this result
     pub fn check<C, K>(self, ctx: C, ker: &K) -> bool
     where
-        K: ReadFacts<C, T>,
+        K: ReadTermDb<C, T>,
     {
         ker.eq_in(ctx, self.lhs, self.rhs)
     }
@@ -400,14 +400,14 @@ impl<C, T> From<EqIn<C, T>> for Goal<C, T> {
 
 impl<T: Copy> Quant<T> {
     /// Check this quantifier in the given context
-    pub fn check_in<C: Copy, R: ReadTermFacts<C, T> + ?Sized>(self, ctx: C, ker: &R) -> bool {
+    pub fn check_in<C: Copy, R: ReadFacts<C, T> + ?Sized>(self, ctx: C, ker: &R) -> bool {
         ker.is_ty(ctx, self.binder())
     }
 }
 
 impl<C: Copy, T: Copy> Goal<C, T> {
     /// Check this relation's binder
-    pub fn check_binder_in<R: ReadTermFacts<C, T> + ?Sized>(self, ker: &R) -> bool {
+    pub fn check_binder_in<R: ReadFacts<C, T> + ?Sized>(self, ker: &R) -> bool {
         self.binder
             .is_none_or(|binder| binder.check_in(self.ctx, ker))
     }
@@ -467,7 +467,14 @@ impl<C: Copy, T: Copy> Goal<C, T> {
             (Some(Quant::Exists(binder)), Some(GoalRel::IsEmpty(tm))) => {
                 ker.exists_is_empty(self.ctx, binder, tm)
             }
-            (_, Some(GoalRel::Contr)) => ker.is_contr(self.ctx),
+            (Some(Quant::Exists(_)), Some(GoalRel::Contr)) => ker.is_contr(self.ctx),
         }
     }
 }
+
+// impl<C: Copy, T: Copy> Goal<C, Val<C, T>> {
+//     /// Check whether this goal is true
+//     pub fn check<R: ReadTermFacts<C, T> + ReadCtx<C, T> + ?Sized>(self, ker: &R) -> bool {
+//         todo!()
+//     }
+// }

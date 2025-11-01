@@ -56,6 +56,17 @@ pub trait ReadTerm<C, T> {
 
     /// Check whether the term `tm` may depend on any variable from the context `vars`
     fn may_have_var_from(&self, ctx: C, tm: T, vars: C) -> bool;
+
+    // == Syntactic relations ==
+
+    /// Check whether two values are equal up to first imports
+    fn cons_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
+
+    /// Check whether two values are syntactically equal
+    fn syn_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
+
+    /// Check whether two values are equal up to unfolding
+    fn unfold_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
 }
 
 impl<C: Copy, T: Copy> Val<C, T> {
@@ -353,15 +364,6 @@ impl<T> Quant<T> {
 /// let ker : &dyn ReadTermFacts<CtxId, TermId> = &Kernel::new();
 /// ```
 pub trait ReadTermFacts<C, T> {
-    /// Check whether two values are equal up to first imports
-    fn cons_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
-
-    /// Check whether two values are syntactically equal
-    fn syn_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
-
-    /// Check whether two values are equal up to unfolding
-    fn unfold_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
-
     // == Typing judgements ==
 
     /// Check whether the term `lhs` is equal to the term `rhs` in `ctx`
@@ -480,14 +482,19 @@ pub trait ReadTermFacts<C, T> {
     fn imax_le(&self, lo_lhs: ULvl, lo_rhs: ULvl, hi: ULvl) -> bool;
 }
 
-/// A datastore that can read facts about terms and contexts
-pub trait ReadFacts<C, T>: ReadTerm<C, T> + ReadCtx<C, T> + ReadTermFacts<C, T> {}
+/// A database of terms, contexts, and facts which we can read from
+pub trait ReadFacts<C, T>: ReadCtx<C, T> + ReadTermFacts<C, T> {}
 
-impl<D: ReadTerm<C, T> + ReadCtx<C, T> + ReadTermFacts<C, T>, C, T> ReadFacts<C, T> for D {}
+impl<D: ReadCtx<C, T> + ReadTermFacts<C, T>, C, T> ReadFacts<C, T> for D {}
+
+/// A database of terms, contexts, and facts which we can read from
+pub trait ReadTermDb<C, T>: ReadTerm<C, T> + ReadFacts<C, T> {}
+
+impl<D: ReadTerm<C, T> + ReadFacts<C, T>, C, T> ReadTermDb<C, T> for D {}
 
 /// A term database which we can read from
-pub trait ReadTermDb<C, T> {
-    type Reader: ReadFacts<C, T>;
+pub trait GetReadTermDb<C, T> {
+    type Reader: ReadTermDb<C, T>;
 
     /// Get a read-only cursor into this term database
     fn read(&self) -> &Self::Reader;

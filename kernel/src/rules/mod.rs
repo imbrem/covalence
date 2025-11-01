@@ -185,6 +185,10 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
 }
 
 impl<C, T, D: ReadTerm<C, T>> ReadTerm<C, T> for Kernel<D> {
+    fn val(&self, ctx: C, tm: T) -> Val<C, T> {
+        self.0.val(ctx, tm)
+    }
+
     fn node(&self, ctx: C, term: T) -> &NodeT<C, T> {
         self.0.node(ctx, term)
     }

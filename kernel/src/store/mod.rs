@@ -29,6 +29,13 @@ impl EggTermDb {
 }
 
 impl ReadTerm<CtxId, TermId> for EggTermDb {
+    fn val(&self, ctx: CtxId, tm: TermId) -> ValId {
+        match self.node(ctx, tm) {
+            Node::Import(val) => self.val(val.ctx, val.tm),
+            _ => Val { ctx, tm },
+        }
+    }
+
     fn node(&self, ctx: CtxId, tm: TermId) -> &Node {
         self.x[ctx.0].node(tm)
     }

@@ -10,6 +10,9 @@ use crate::data::term::{Bv, Fv, NodeT, ULvl, Val};
 pub trait ReadTerm<C, T> {
     // == Terms ==
 
+    /// Get the value corresponding to a term
+    fn val(&self, ctx: C, tm: T) -> Val<C, T>;
+
     /// Get the node corresponding to a term
     fn node(&self, ctx: C, tm: T) -> &NodeT<C, T>;
 

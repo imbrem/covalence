@@ -8,7 +8,7 @@ pub trait TermIndex {
     type TermId: Copy;
 }
 
-/// A trait implemented by a datastore that can read hash-consed terms and universe levels
+/// A datastore that can read terms and universe levels
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
@@ -56,6 +56,145 @@ pub trait ReadTerm<C, T> {
 
     /// Check whether the term `tm` may depend on any variable from the context `vars`
     fn may_have_var_from(&self, ctx: C, tm: T, vars: C) -> bool;
+}
+
+/// A datastore that can read information about contexts
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadCtx<CtxId, TermId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadCtx<CtxId, TermId> = &Kernel::new();
+/// ```
+pub trait ReadCtx<C, T> {
+    /// Get whether a context is a root context
+    ///
+    /// Note that a root context has no assumptions _or_ variables.
+    ///
+    /// TODO: reference Lean
+    fn is_root(&self, ctx: C) -> bool;
+
+    /// Get whether a context is contradictory
+    ///
+    /// TODO: reference lean
+    fn is_contr(&self, ctx: C) -> bool;
+
+    /// Check whether `lo` is an ancestor of `hi`
+    ///
+    /// Note that a context `ctx` is always an ancestor of itself
+    ///
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// let parent = ker.new_ctx();
+    /// let child = ker.with_parent(parent);
+    /// assert!(ker.is_ancestor(parent, child));
+    /// assert!(ker.is_ancestor(parent, parent));
+    /// assert!(ker.is_ancestor(child, child));
+    /// assert!(!ker.is_ancestor(child, parent));
+    /// ```
+    fn is_ancestor(&self, lo: C, hi: C) -> bool;
+
+    /// Check whether `lo` is _strict_ ancestor of `hi`
+    ///
+    /// A context `ctx` is never a strict ancestor of itself
+    ///
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// let parent = ker.new_ctx();
+    /// let child = ker.with_parent(parent);
+    /// assert!(ker.is_strict_ancestor(parent, child));
+    /// assert!(!ker.is_strict_ancestor(parent, parent));
+    /// assert!(!ker.is_strict_ancestor(child, child));
+    /// assert!(!ker.is_strict_ancestor(child, parent));
+    /// ```
+    fn is_strict_ancestor(&self, lo: C, hi: C) -> bool;
+
+    /// Check whether `lo` is a subcontext of `hi`
+    ///
+    /// This means that every variable in `lo` is contained in `hi`.
+    ///
+    /// Unlike [`is_ancestor`](#method.is_ancestor), this is _not_ monotonic: a context may be
+    /// modified so that it is not longer a subcontext of another, whereas if `lo` is an ancestor of
+    /// `hi`, all valid edits to a kernel will preserve this fact.
+    ///
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// let parent = ker.new_ctx();
+    /// let child = ker.with_parent(parent);
+    /// let grandchild = ker.with_parent(child);
+    /// for x in [parent, child, grandchild] {
+    ///     for y in [parent, child, grandchild] {
+    ///         assert!(ker.is_subctx(x, y));
+    ///     }
+    /// }
+    /// let n = ker.add(child, Node::Nats);
+    /// let x = ker.add_var(child, n, &mut ()).unwrap();
+    /// // ∅ is a subset of everything
+    /// assert!(ker.is_subctx(parent, child));
+    /// // {x} is not a subset of ∅
+    /// assert!(!ker.is_subctx(child, parent));
+    /// // These both contain exactly x
+    /// assert!(ker.is_subctx(child, grandchild));
+    /// assert!(ker.is_subctx(grandchild, child));
+    /// ```
+    fn is_subctx(&self, lo: C, hi: C) -> bool;
+
+    /// Check whether `lo` is a subcontext of `hi`'s parent(s)
+    ///
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # use covalence_kernel::api::error::kernel_error;
+    /// # let mut ker = Kernel::new();
+    /// let ctx = ker.new_ctx();
+    /// // The empty context is a subctx of everything
+    /// assert!(ker.is_subctx_of_parents(ctx, ctx));
+    /// let unit = ker.add(ctx, Node::Unit);
+    /// let x = ker.with_param(ctx, unit, &mut ()).unwrap();
+    /// let child = x.ctx;
+    /// assert!(ker.is_subctx_of_parents(ctx, child));
+    /// assert!(!ker.is_subctx_of_parents(child, ctx));
+    /// // Child is nonempty, so is not a subctx of its parent (ctx)
+    /// assert!(!ker.is_subctx_of_parents(child, child));
+    /// ```
+    fn is_subctx_of_parents(&self, lo: C, hi: C) -> bool;
+
+    /// Check whether `lo`'s parent(s) are a subcontext of `hi`
+    ///
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # use covalence_kernel::api::error::kernel_error;
+    /// # let mut ker = Kernel::new();
+    /// let ctx = ker.new_ctx();
+    /// // The empty context is a subctx of everything
+    /// assert!(ker.parents_are_subctx(ctx, ctx));
+    /// let unit = ker.add(ctx, Node::Unit);
+    /// let x = ker.with_param(ctx, unit, &mut ()).unwrap();
+    /// let child = x.ctx;
+    /// assert!(ker.parents_are_subctx(ctx, child));
+    /// assert!(ker.parents_are_subctx(child, ctx));
+    /// assert!(ker.parents_are_subctx(child, child));
+    /// let unit_ = ker.add(child, Node::Unit);
+    /// let y = ker.with_param(child, unit_, &mut ()).unwrap();
+    /// let grandchild = y.ctx;
+    /// assert!(ker.parents_are_subctx(ctx, grandchild));
+    /// assert!(ker.parents_are_subctx(grandchild, child));
+    /// // child is a parent of grandchild, but not of ctx!
+    /// assert!(!ker.parents_are_subctx(grandchild, ctx));
+    /// ```
+    fn parents_are_subctx(&self, lo: C, hi: C) -> bool;
 
     // == Variables ==
 
@@ -71,11 +210,6 @@ pub trait ReadTerm<C, T> {
     /// inhabited.
     fn var_is_ghost(&self, var: Fv<C>) -> bool;
 }
-
-/// A handle allowing reading from a term store
-pub trait ReadTermStore: TermIndex + ReadTerm<Self::CtxId, Self::TermId> {}
-
-impl<D: TermIndex + ReadTerm<D::CtxId, D::TermId>> ReadTermStore for D {}
 
 impl<C: Copy, T: Copy> Val<C, T> {
     /// Get the node in `self.ctx` corresponding to this value
@@ -195,33 +329,20 @@ impl<T> Quant<T> {
     }
 }
 
-/// A trait implemented by a datastore that can read facts about terms in a context.
+/// A datastore that can read facts about terms-in-context.
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
 /// # use covalence_kernel::*;
-/// let ker : &dyn ReadFacts<CtxId, TermId> = &TermDb::new();
+/// let ker : &dyn ReadTermFacts<CtxId, TermId> = &TermDb::new();
 /// ```
 /// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
 /// functions for different kernel wrappers:
 /// ```rust,compile_fail
 /// # use covalence_kernel::*;
-/// let ker : &dyn ReadFacts<CtxId, TermId> = &Kernel::new();
+/// let ker : &dyn ReadTermFacts<CtxId, TermId> = &Kernel::new();
 /// ```
-pub trait ReadFacts<C, T> {
-    // == Context information ==
-    /// Get whether a context is a root context
-    ///
-    /// Note that a root context has no assumptions _or_ variables.
-    ///
-    /// TODO: reference Lean
-    fn is_root(&self, ctx: C) -> bool;
-
-    /// Get whether a context is contradictory
-    ///
-    /// TODO: reference lean
-    fn is_contr(&self, ctx: C) -> bool;
-
+pub trait ReadTermFacts<C, T> {
     /// Check whether two values are equal up to first imports
     fn cons_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
 
@@ -230,120 +351,6 @@ pub trait ReadFacts<C, T> {
 
     /// Check whether two values are equal up to unfolding
     fn unfold_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
-
-    // == Context information ==
-
-    /// Check whether `lo` is an ancestor of `hi`
-    ///
-    /// Note that a context `ctx` is always an ancestor of itself
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence_kernel::*;
-    /// # let mut ker = Kernel::new();
-    /// let parent = ker.new_ctx();
-    /// let child = ker.with_parent(parent);
-    /// assert!(ker.is_ancestor(parent, child));
-    /// assert!(ker.is_ancestor(parent, parent));
-    /// assert!(ker.is_ancestor(child, child));
-    /// assert!(!ker.is_ancestor(child, parent));
-    /// ```
-    fn is_ancestor(&self, lo: C, hi: C) -> bool;
-
-    /// Check whether `lo` is _strict_ ancestor of `hi`
-    ///
-    /// A context `ctx` is never a strict ancestor of itself
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence_kernel::*;
-    /// # let mut ker = Kernel::new();
-    /// let parent = ker.new_ctx();
-    /// let child = ker.with_parent(parent);
-    /// assert!(ker.is_strict_ancestor(parent, child));
-    /// assert!(!ker.is_strict_ancestor(parent, parent));
-    /// assert!(!ker.is_strict_ancestor(child, child));
-    /// assert!(!ker.is_strict_ancestor(child, parent));
-    /// ```
-    fn is_strict_ancestor(&self, lo: C, hi: C) -> bool;
-
-    /// Check whether `lo` is a subcontext of `hi`
-    ///
-    /// This means that every variable in `lo` is contained in `hi`.
-    ///
-    /// Unlike [`is_ancestor`](#method.is_ancestor), this is _not_ monotonic: a context may be
-    /// modified so that it is not longer a subcontext of another, whereas if `lo` is an ancestor of
-    /// `hi`, all valid edits to a kernel will preserve this fact.
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence_kernel::*;
-    /// # let mut ker = Kernel::new();
-    /// let parent = ker.new_ctx();
-    /// let child = ker.with_parent(parent);
-    /// let grandchild = ker.with_parent(child);
-    /// for x in [parent, child, grandchild] {
-    ///     for y in [parent, child, grandchild] {
-    ///         assert!(ker.is_subctx(x, y));
-    ///     }
-    /// }
-    /// let n = ker.add(child, Node::Nats);
-    /// let x = ker.add_var(child, n, &mut ()).unwrap();
-    /// // ∅ is a subset of everything
-    /// assert!(ker.is_subctx(parent, child));
-    /// // {x} is not a subset of ∅
-    /// assert!(!ker.is_subctx(child, parent));
-    /// // These both contain exactly x
-    /// assert!(ker.is_subctx(child, grandchild));
-    /// assert!(ker.is_subctx(grandchild, child));
-    /// ```
-    fn is_subctx(&self, lo: C, hi: C) -> bool;
-
-    /// Check whether `lo` is a subcontext of `hi`'s parent(s)
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence_kernel::*;
-    /// # use covalence_kernel::api::error::kernel_error;
-    /// # let mut ker = Kernel::new();
-    /// let ctx = ker.new_ctx();
-    /// // The empty context is a subctx of everything
-    /// assert!(ker.is_subctx_of_parents(ctx, ctx));
-    /// let unit = ker.add(ctx, Node::Unit);
-    /// let x = ker.with_param(ctx, unit, &mut ()).unwrap();
-    /// let child = x.ctx;
-    /// assert!(ker.is_subctx_of_parents(ctx, child));
-    /// assert!(!ker.is_subctx_of_parents(child, ctx));
-    /// // Child is nonempty, so is not a subctx of its parent (ctx)
-    /// assert!(!ker.is_subctx_of_parents(child, child));
-    /// ```
-    fn is_subctx_of_parents(&self, lo: C, hi: C) -> bool;
-
-    /// Check whether `lo`'s parent(s) are a subcontext of `hi`
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence_kernel::*;
-    /// # use covalence_kernel::api::error::kernel_error;
-    /// # let mut ker = Kernel::new();
-    /// let ctx = ker.new_ctx();
-    /// // The empty context is a subctx of everything
-    /// assert!(ker.parents_are_subctx(ctx, ctx));
-    /// let unit = ker.add(ctx, Node::Unit);
-    /// let x = ker.with_param(ctx, unit, &mut ()).unwrap();
-    /// let child = x.ctx;
-    /// assert!(ker.parents_are_subctx(ctx, child));
-    /// assert!(ker.parents_are_subctx(child, ctx));
-    /// assert!(ker.parents_are_subctx(child, child));
-    /// let unit_ = ker.add(child, Node::Unit);
-    /// let y = ker.with_param(child, unit_, &mut ()).unwrap();
-    /// let grandchild = y.ctx;
-    /// assert!(ker.parents_are_subctx(ctx, grandchild));
-    /// assert!(ker.parents_are_subctx(grandchild, child));
-    /// // child is a parent of grandchild, but not of ctx!
-    /// assert!(!ker.parents_are_subctx(grandchild, ctx));
-    /// ```
-    fn parents_are_subctx(&self, lo: C, hi: C) -> bool;
 
     // == Typing judgements ==
 
@@ -463,14 +470,14 @@ pub trait ReadFacts<C, T> {
     fn imax_le(&self, lo_lhs: ULvl, lo_rhs: ULvl, hi: ULvl) -> bool;
 }
 
-/// A trait implemented by a datastore of terms-in-context annotated with facts
-pub trait ReadTermFacts<C, T>: ReadTerm<C, T> + ReadFacts<C, T> {}
+/// A datastore that can read facts about terms and contexts
+pub trait ReadFacts<C, T>: ReadTerm<C, T> + ReadCtx<C, T> + ReadTermFacts<C, T> {}
 
-impl<D: ReadTerm<C, T> + ReadFacts<C, T>, C, T> ReadTermFacts<C, T> for D {}
+impl<D: ReadTerm<C, T> + ReadCtx<C, T> + ReadTermFacts<C, T>, C, T> ReadFacts<C, T> for D {}
 
 /// A term database which we can read from
 pub trait ReadTermDb<C, T> {
-    type Reader: ReadTermFacts<C, T>;
+    type Reader: ReadFacts<C, T>;
 
     /// Get a read-only cursor into this term database
     fn read(&self) -> &Self::Reader;

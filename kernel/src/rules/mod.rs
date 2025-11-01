@@ -105,7 +105,6 @@ where
         strategy.start_rule("add_var")?;
         self.ensure_is_ty(ctx, ty, strategy, kernel_error::ADD_VAR_IS_TY)?;
         let var = self.0.add_var_unchecked(ctx, ty);
-        debug_assert!(self.read().eq_in(ctx, self.read().get_var_ty(var), ty));
         let tm = self.0.add(ctx, NodeT::Fv(var));
         self.0.set_has_ty_unchecked(ctx, tm, ty);
         HasTyIn { tm, ty }.finish_rule(ctx, strategy);

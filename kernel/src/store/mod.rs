@@ -122,20 +122,6 @@ impl ReadTerm<CtxId, TermId> for TermDb {
                 .any(|&i| self.may_have_var_from(ctx, i, vars)),
         }
     }
-
-    fn num_vars(&self, ctx: CtxId) -> u32 {
-        self.x[ctx.0].num_vars()
-    }
-
-    fn get_var_ty(&self, var: VarId) -> TermId {
-        self.x[var.ctx.0]
-            .var_ty(var.ix)
-            .expect("invalid variable index")
-    }
-
-    fn var_is_ghost(&self, var: Fv<CtxId>) -> bool {
-        self.x[var.ctx.0].var_is_ghost(var.ix)
-    }
 }
 
 impl WriteTerm<CtxId, TermId> for TermDb {
@@ -222,7 +208,7 @@ impl WriteTerm<CtxId, TermId> for TermDb {
     }
 }
 
-impl ReadFacts<CtxId, TermId> for TermDb {
+impl ReadCtx<CtxId, TermId> for TermDb {
     fn is_root(&self, ctx: CtxId) -> bool {
         //TODO: optimize
         self.x[ctx.0].is_null_extension() && self.x[ctx.0].parent().is_none_or(|p| self.is_root(p))
@@ -274,6 +260,22 @@ impl ReadFacts<CtxId, TermId> for TermDb {
         }
     }
 
+    fn num_vars(&self, ctx: CtxId) -> u32 {
+        self.x[ctx.0].num_vars()
+    }
+
+    fn get_var_ty(&self, var: VarId) -> TermId {
+        self.x[var.ctx.0]
+            .var_ty(var.ix)
+            .expect("invalid variable index")
+    }
+
+    fn var_is_ghost(&self, var: Fv<CtxId>) -> bool {
+        self.x[var.ctx.0].var_is_ghost(var.ix)
+    }
+}
+
+impl ReadTermFacts<CtxId, TermId> for TermDb {
     fn is_wf(&self, ctx: CtxId, tm: TermId) -> bool {
         self.x[ctx.0].is_wf(tm)
     }

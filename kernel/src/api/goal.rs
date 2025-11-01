@@ -400,15 +400,16 @@ impl<C, T> From<EqIn<C, T>> for Goal<C, T> {
 
 impl<T: Copy> Quant<T> {
     /// Check this quantifier in the given context
-    pub fn check_in<C: Copy, R: ReadFacts<C, T> + ?Sized>(self, ctx: C, ker: &R) -> bool {
+    pub fn check_in<C: Copy, R: ReadTermFacts<C, T> + ?Sized>(self, ctx: C, ker: &R) -> bool {
         ker.is_ty(ctx, self.binder())
     }
 }
 
 impl<C: Copy, T: Copy> Goal<C, T> {
     /// Check this relation's binder
-    pub fn check_binder_in<R: ReadFacts<C, T> + ?Sized>(self, ker: &R) -> bool {
-        self.binder.is_none_or(|binder| binder.check_in(self.ctx, ker))
+    pub fn check_binder_in<R: ReadTermFacts<C, T> + ?Sized>(self, ker: &R) -> bool {
+        self.binder
+            .is_none_or(|binder| binder.check_in(self.ctx, ker))
     }
 
     /// Check whether this goal is true

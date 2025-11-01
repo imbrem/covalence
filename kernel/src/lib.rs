@@ -17,7 +17,7 @@ pub mod store;
 
 pub use crate::api::derive::Derive;
 pub use crate::api::generic::*;
-pub use crate::api::store::{ReadFacts, ReadTerm, WriteTerm};
+pub use crate::api::store::{ReadCtx, ReadFacts, ReadTerm, ReadTermFacts, WriteTerm};
 
 #[doc(inline)]
 pub use crate::store::{CtxId, Node, TermDb, TermId, ValId};

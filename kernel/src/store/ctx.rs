@@ -95,60 +95,135 @@ impl Ctx {
         self.is_wf(has_ty)
     }
 
-    pub fn is_ty_under(&self, binder: TermId, ty: TermId) -> bool {
+    pub fn forall_eq_in(&self, binder: TermId, lhs: TermId, rhs: TermId) -> bool {
         if !self.is_ty(binder) {
             return false;
         }
-        if self.is_ty(ty) {
+        if self.eq_in(lhs, rhs) {
             return true;
         }
-        //TODO: should we check sigma as well, or assume things have been normalized?
-        let Some(is_ty_under) = self.lookup(Node::Pi([binder, ty])) else {
+        let Some(abs_lhs) = self.lookup(Node::Abs([binder, lhs])) else {
             return false;
         };
-        self.is_wf(is_ty_under)
+        let Some(abs_rhs) = self.lookup(Node::Abs([binder, rhs])) else {
+            return false;
+        };
+        self.eq_in(abs_lhs, abs_rhs)
     }
 
-    pub fn has_ty_under(&self, binder: TermId, tm: TermId, ty: TermId) -> bool {
-        let Some(has_ty) = self.lookup(Node::HasTy([tm, ty])) else {
-            return false;
-        };
-        if !self.is_ty(binder) {
-            return false;
-        }
-        if self.is_wf(has_ty) {
+    pub fn forall_is_wf(&self, binder: TermId, tm: TermId) -> bool {
+        if self.is_ty(binder) && self.is_wf(tm) {
             return true;
         }
-        let Some(has_ty_under) = self.lookup(Node::Pi([binder, has_ty])) else {
+        let Some(abs) = self.lookup(Node::Abs([binder, tm])) else {
             return false;
         };
-        self.is_wf(has_ty_under)
+        self.is_wf(abs)
     }
 
-    pub fn forall_inhab_under(&self, binder: TermId, ty: TermId) -> bool {
-        if !self.is_ty(binder) {
-            return false;
-        }
-        if self.is_inhab(ty) || self.eq_in(ty, binder) {
+    pub fn forall_is_ty(&self, binder: TermId, tm: TermId) -> bool {
+        if self.is_ty(binder) && self.is_ty(tm) {
             return true;
         }
-        let Some(forall_inhab_under) = self.lookup(Node::Pi([binder, ty])) else {
+        let Some(pi) = self.lookup(Node::Pi([binder, tm])) else {
             return false;
         };
-        self.is_inhab(forall_inhab_under)
+        self.is_wf(pi)
     }
 
-    pub fn exists_inhab_under(&self, binder: TermId, ty: TermId) -> bool {
-        if !self.is_ty(binder) {
-            return false;
-        }
-        if (self.is_inhab(ty) || self.eq_in(ty, binder)) && self.is_inhab(binder) {
+    pub fn forall_is_prop(&self, binder: TermId, tm: TermId) -> bool {
+        if self.is_ty(binder) && self.is_ty(tm) {
             return true;
         }
-        let Some(exists_inhab_under) = self.lookup(Node::Sigma([binder, ty])) else {
+        let Some(pi) = self.lookup(Node::Pi([binder, tm])) else {
             return false;
         };
-        self.is_inhab(exists_inhab_under)
+        self.is_prop(pi)
+    }
+
+    pub fn forall_has_ty(&self, binder: TermId, tm: TermId, ty: TermId) -> bool {
+        if self.is_ty(binder) && self.has_ty(tm, ty) {
+            return true;
+        }
+        let Some(abs) = self.lookup(Node::Abs([binder, tm])) else {
+            return false;
+        };
+        let Some(pi) = self.lookup(Node::Pi([binder, ty])) else {
+            return false;
+        };
+        self.has_ty(abs, pi)
+    }
+
+    pub fn forall_is_inhab(&self, binder: TermId, tm: TermId) -> bool {
+        if self.is_ty(binder) && (self.is_inhab(tm) || self.eq_in(tm, binder)) {
+            return true;
+        }
+        let Some(pi) = self.lookup(Node::Pi([binder, tm])) else {
+            return false;
+        };
+        self.is_inhab(pi)
+    }
+
+    pub fn forall_is_empty(&self, binder: TermId, tm: TermId) -> bool {
+        if self.is_ty(binder) && self.is_empty(tm) {
+            return true;
+        }
+        let Some(sigma) = self.lookup(Node::Sigma([binder, tm])) else {
+            return false;
+        };
+        self.is_empty(sigma)
+    }
+
+    pub fn exists_eq_in(&self, binder: TermId, lhs: TermId, rhs: TermId) -> bool {
+        if self.is_ty(binder) && self.eq_in(lhs, rhs) {
+            return true;
+        }
+        let Some(lhs_eq_rhs) = self.lookup(Node::Eqn([lhs, rhs])) else {
+            return false;
+        };
+        let Some(sigma) = self.lookup(Node::Sigma([binder, lhs_eq_rhs])) else {
+            return false;
+        };
+        self.is_inhab(sigma)
+    }
+
+    pub fn exists_is_wf(&self, binder: TermId, tm: TermId) -> bool {
+        self.is_inhab(binder) && self.forall_is_wf(binder, tm)
+    }
+
+    pub fn exists_is_ty(&self, binder: TermId, tm: TermId) -> bool {
+        self.is_inhab(binder) && self.forall_is_ty(binder, tm)
+    }
+
+    pub fn exists_is_prop(&self, binder: TermId, tm: TermId) -> bool {
+        self.is_inhab(binder) && self.forall_is_prop(binder, tm)
+    }
+
+    pub fn exists_has_ty(&self, binder: TermId, tm: TermId, ty: TermId) -> bool {
+        self.is_inhab(binder) && self.forall_has_ty(binder, tm, ty)
+    }
+
+    pub fn exists_is_inhab(&self, binder: TermId, tm: TermId) -> bool {
+        if self.is_inhab(binder) && (self.is_inhab(tm) || self.eq_in(tm, binder)) {
+            return true;
+        }
+        let Some(sigma) = self.lookup(Node::Sigma([binder, tm])) else {
+            return false;
+        };
+        self.is_inhab(sigma)
+    }
+
+    pub fn exists_is_empty(&self, binder: TermId, tm: TermId) -> bool {
+        if !self.is_inhab(binder) {
+            return false;
+        }
+        if self.is_empty(tm) {
+            return true;
+        }
+        let Some(sigma) = self.lookup(Node::Sigma([binder, tm])) else {
+            return false;
+        };
+        self.is_empty(sigma)
     }
 
     pub fn is_wf(&self, tm: TermId) -> bool {
@@ -228,31 +303,87 @@ impl Ctx {
         self.set_eq_unchecked(has_ty, unit)
     }
 
-    pub fn set_has_ty_under_unchecked(&mut self, binder: TermId, tm: TermId, ty: TermId) -> bool {
+    pub fn set_forall_eq_unchecked(&mut self, binder: TermId, lhs: TermId, rhs: TermId) -> bool {
         self.set_is_ty_unchecked(binder);
-        let has_ty = self.add(NodeT::HasTy([tm, ty]));
-        let has_ty_under = self.add(NodeT::Pi([binder, has_ty]));
-        let unit = self.add(NodeT::Unit);
-        self.set_is_ty_under_unchecked(binder, ty);
-        self.set_eq_unchecked(has_ty_under, unit)
+        let abs_lhs = self.add(NodeT::Abs([binder, lhs]));
+        let abs_rhs = self.add(NodeT::Abs([binder, rhs]));
+        self.set_eq_unchecked(abs_lhs, abs_rhs)
     }
 
-    pub fn set_is_ty_under_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
+    pub fn set_forall_is_wf_unchecked(&mut self, binder: TermId, tm: TermId) -> bool {
+        self.set_is_ty_unchecked(binder);
+        let tm = self.add(NodeT::Abs([binder, tm]));
+        self.set_is_wf_unchecked(tm)
+    }
+
+    pub fn set_forall_is_ty_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
         self.set_is_ty_unchecked(binder);
         let pi = self.add(NodeT::Pi([binder, ty]));
         self.set_is_ty_unchecked(pi)
     }
 
-    pub fn set_forall_inhab_under_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
+    pub fn set_forall_is_prop_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
+        self.set_is_ty_unchecked(binder);
+        let pi = self.add(NodeT::Pi([binder, ty]));
+        self.set_is_prop_unchecked(pi)
+    }
+
+    pub fn set_forall_has_ty_unchecked(&mut self, binder: TermId, tm: TermId, ty: TermId) -> bool {
+        self.set_is_ty_unchecked(binder);
+        let abs = self.add(NodeT::Abs([binder, tm]));
+        let pi = self.add(NodeT::Pi([binder, ty]));
+        self.set_has_ty_unchecked(abs, pi)
+    }
+
+    pub fn set_forall_is_inhab_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
         self.set_is_ty_unchecked(binder);
         let pi = self.add(NodeT::Pi([binder, ty]));
         self.set_is_inhab_unchecked(pi)
     }
 
-    pub fn set_exists_inhab_under_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
-        self.set_is_ty_under_unchecked(binder, ty);
+    pub fn set_forall_is_empty_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
+        self.set_is_ty_unchecked(binder);
+        let sigma = self.add(NodeT::Sigma([binder, ty]));
+        self.set_is_empty_unchecked(sigma)
+    }
+
+    pub fn set_exists_eq_unchecked(&mut self, binder: TermId, lhs: TermId, rhs: TermId) -> bool {
+        self.set_is_inhab_unchecked(binder);
+        let lhs_eq_rhs = self.add(NodeT::Eqn([lhs, rhs]));
+        let sigma = self.add(NodeT::Sigma([binder, lhs_eq_rhs]));
+        self.set_is_inhab_unchecked(sigma)
+    }
+
+    pub fn set_exists_is_wf_unchecked(&mut self, binder: TermId, tm: TermId) -> bool {
+        self.set_is_inhab_unchecked(binder);
+        self.set_forall_is_wf_unchecked(binder, tm)
+    }
+
+    pub fn set_exists_is_ty_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
+        self.set_is_inhab_unchecked(binder);
+        self.set_forall_is_ty_unchecked(binder, ty)
+    }
+
+    pub fn set_exists_is_prop_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
+        self.set_is_inhab_unchecked(binder);
+        self.set_forall_is_prop_unchecked(binder, ty)
+    }
+
+    pub fn set_exists_has_ty_unchecked(&mut self, binder: TermId, tm: TermId, ty: TermId) -> bool {
+        self.set_is_inhab_unchecked(binder);
+        self.set_forall_has_ty_unchecked(binder, tm, ty)
+    }
+
+    pub fn set_exists_is_inhab_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
+        self.set_forall_is_ty_unchecked(binder, ty);
         let sigma = self.add(NodeT::Sigma([binder, ty]));
         self.set_is_inhab_unchecked(sigma)
+    }
+
+    pub fn set_exists_is_empty_unchecked(&mut self, binder: TermId, tm: TermId) -> bool {
+        self.set_is_inhab_unchecked(binder);
+        let sigma = self.add(NodeT::Sigma([binder, tm]));
+        self.set_is_empty_unchecked(sigma)
     }
 
     pub fn assume_unchecked(&mut self, ty: TermId) -> u32 {
@@ -334,7 +465,7 @@ impl Analysis<Node> for CtxData {
             Node::N64(_) | Node::Null => ClassFlags::IS_WF,
             &Node::Pi([arg_ty, res_ty]) => {
                 let mut result = ClassFlags::MAY_TY;
-                result.set(ClassFlags::IS_WF, this.is_ty_under(arg_ty, res_ty));
+                result.set(ClassFlags::IS_WF, this.forall_is_ty(arg_ty, res_ty));
                 result.set(
                     ClassFlags::MAY_INHAB,
                     //NOTE: we don't check forall_inhab_under, since this is just circular!
@@ -349,7 +480,7 @@ impl Analysis<Node> for CtxData {
             }
             &Node::Sigma([lhs_ty, rhs_ty]) => {
                 let mut result = ClassFlags::MAY_TY;
-                result.set(ClassFlags::IS_WF, this.is_ty_under(lhs_ty, rhs_ty));
+                result.set(ClassFlags::IS_WF, this.forall_is_ty(lhs_ty, rhs_ty));
                 result.set(
                     ClassFlags::MAY_INHAB,
                     //NOTE: we don't check exists_inhab_under, since this is just circular!

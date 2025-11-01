@@ -107,25 +107,17 @@ pub enum QuantK {
 
 /// A quantifier for a fact
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct Quant<T> {
-    /// Whether this is a universal or existential quantifier
-    pub kind: QuantK,
-    /// The type being quantified over
-    pub ty: T,
+pub enum Quant<T> {
+    /// An existential quantifier
+    Exists(T),
+    /// A universal quantifier
+    Forall(T),
 }
 
 impl<T> Quant<T> {
-    pub const fn forall(ty: T) -> Quant<T> {
-        Quant {
-            kind: QuantK::Forall,
-            ty,
-        }
-    }
-
-    pub const fn exists(ty: T) -> Quant<T> {
-        Quant {
-            kind: QuantK::Exists,
-            ty,
+    pub fn binder(self) -> T {
+        match self {
+            Quant::Exists(binder) | Quant::Forall(binder) => binder,
         }
     }
 }
@@ -465,6 +457,9 @@ pub trait WriteFacts<C, T> {
     /// Mark a term as an empty type
     fn set_is_empty_unchecked(&mut self, ctx: C, tm: T);
 
+    /// Mark two terms as equal under a binder
+    fn set_forall_eq_unchecked(&mut self, ctx: C, binder: T, lhs: T, rhs: T);
+
     /// Mark a term as well-formed under a binder
     fn set_forall_is_wf_unchecked(&mut self, ctx: C, binder: T, tm: T);
 
@@ -482,6 +477,9 @@ pub trait WriteFacts<C, T> {
 
     /// Mark a term as an empty type under a binder
     fn set_forall_is_empty_unchecked(&mut self, ctx: C, binder: T, tm: T);
+
+    /// Mark two terms as equal under a binder
+    fn set_exists_eq_unchecked(&mut self, ctx: C, binder: T, lhs: T, rhs: T);
 
     /// Mark a term as well-formed under a binder
     fn set_exists_is_wf_unchecked(&mut self, ctx: C, binder: T, tm: T);

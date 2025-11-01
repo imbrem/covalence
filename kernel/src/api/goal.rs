@@ -322,7 +322,7 @@ impl<C, T> From<IsEmpty<C, T>> for Goal<C, T> {
     fn from(g: IsEmpty<C, T>) -> Self {
         Goal {
             ctx: g.ctx,
-            binder: Some(Quant::forall(g.tm)),
+            binder: Some(Quant::Forall(g.tm)),
             rel: Some(GoalRel::Contr),
         }
     }
@@ -352,7 +352,7 @@ impl<C, T> From<IsTyUnder<C, T>> for Goal<C, T> {
     fn from(g: IsTyUnder<C, T>) -> Self {
         Goal {
             ctx: g.ctx,
-            binder: Some(Quant::forall(g.binder)),
+            binder: Some(Quant::Forall(g.binder)),
             rel: Some(GoalRel::IsTy(g.tm)),
         }
     }
@@ -362,7 +362,7 @@ impl<C, T> From<HasTyUnder<C, T>> for Goal<C, T> {
     fn from(g: HasTyUnder<C, T>) -> Self {
         Goal {
             ctx: g.ctx,
-            binder: Some(Quant::forall(g.binder)),
+            binder: Some(Quant::Forall(g.binder)),
             rel: Some(GoalRel::HasTy(g.tm, g.ty)),
         }
     }
@@ -372,7 +372,7 @@ impl<C, T> From<ForallInhabUnder<C, T>> for Goal<C, T> {
     fn from(g: ForallInhabUnder<C, T>) -> Self {
         Goal {
             ctx: g.ctx,
-            binder: Some(Quant::forall(g.binder)),
+            binder: Some(Quant::Forall(g.binder)),
             rel: Some(GoalRel::IsInhab(g.ty)),
         }
     }
@@ -382,7 +382,7 @@ impl<C, T> From<ExistsInhabUnder<C, T>> for Goal<C, T> {
     fn from(g: ExistsInhabUnder<C, T>) -> Self {
         Goal {
             ctx: g.ctx,
-            binder: Some(Quant::exists(g.binder)),
+            binder: Some(Quant::Exists(g.binder)),
             rel: Some(GoalRel::IsInhab(g.ty)),
         }
     }
@@ -401,7 +401,7 @@ impl<C, T> From<EqIn<C, T>> for Goal<C, T> {
 impl<T: Copy> Quant<T> {
     /// Check this quantifier in the given context
     pub fn check<C: Copy, R: ReadFacts<C, T> + ?Sized>(self, ctx: C, ker: &R) -> bool {
-        ker.is_ty(ctx, self.ty)
+        ker.is_ty(ctx, self.binder())
     }
 }
 
@@ -413,17 +413,60 @@ impl<C: Copy, T: Copy> Goal<C, T> {
 
     /// Check whether this goal is true
     pub fn check<R: ReadFacts<C, T> + ?Sized>(self, ker: &R) -> bool {
-        self.check_binder(ker)
-            && match (self.binder, self.rel) {
-                (_, None) => true,
-                (_, Some(GoalRel::Eq(lhs, rhs))) => ker.eq_in(self.ctx, lhs, rhs),
-                (_, Some(GoalRel::IsWf(tm))) => ker.is_wf(self.ctx, tm),
-                (_, Some(GoalRel::IsTy(tm))) => ker.is_wf(self.ctx, tm),
-                (_, Some(GoalRel::IsProp(tm))) => ker.is_prop(self.ctx, tm),
-                (_, Some(GoalRel::HasTy(tm, ty))) => ker.has_ty(self.ctx, tm, ty),
-                (_, Some(GoalRel::IsInhab(tm))) => ker.is_inhab(self.ctx, tm),
-                (_, Some(GoalRel::IsEmpty(tm))) => ker.is_empty(self.ctx, tm),
-                (_, Some(GoalRel::Contr)) => ker.is_contr(self.ctx),
+        match (self.binder, self.rel) {
+            (_, None) => self.check_binder(ker),
+            (None, Some(GoalRel::Eq(lhs, rhs))) => ker.eq_in(self.ctx, lhs, rhs),
+            (None, Some(GoalRel::IsWf(tm))) => ker.is_wf(self.ctx, tm),
+            (None, Some(GoalRel::IsTy(tm))) => ker.is_wf(self.ctx, tm),
+            (None, Some(GoalRel::IsProp(tm))) => ker.is_prop(self.ctx, tm),
+            (None, Some(GoalRel::HasTy(tm, ty))) => ker.has_ty(self.ctx, tm, ty),
+            (None, Some(GoalRel::IsInhab(tm))) => ker.is_inhab(self.ctx, tm),
+            (None, Some(GoalRel::IsEmpty(tm))) => ker.is_empty(self.ctx, tm),
+            (None, Some(GoalRel::Contr)) => ker.is_contr(self.ctx),
+            (Some(Quant::Forall(binder)), Some(GoalRel::Eq(lhs, rhs))) => {
+                ker.forall_eq_in(self.ctx, binder, lhs, rhs)
             }
+            (Some(Quant::Forall(binder)), Some(GoalRel::IsWf(tm))) => {
+                ker.forall_is_wf(self.ctx, binder, tm)
+            }
+            (Some(Quant::Forall(binder)), Some(GoalRel::IsTy(tm))) => {
+                ker.forall_is_wf(self.ctx, binder, tm)
+            }
+            (Some(Quant::Forall(binder)), Some(GoalRel::IsProp(tm))) => {
+                ker.forall_is_prop(self.ctx, binder, tm)
+            }
+            (Some(Quant::Forall(binder)), Some(GoalRel::HasTy(tm, ty))) => {
+                ker.forall_has_ty(self.ctx, binder, tm, ty)
+            }
+            (Some(Quant::Forall(binder)), Some(GoalRel::IsInhab(tm))) => {
+                ker.forall_is_inhab(self.ctx, binder, tm)
+            }
+            (Some(Quant::Forall(binder)), Some(GoalRel::IsEmpty(tm))) => {
+                ker.forall_is_empty(self.ctx, binder, tm)
+            }
+            (Some(Quant::Forall(binder)), Some(GoalRel::Contr)) => ker.is_empty(self.ctx, binder),
+            (Some(Quant::Exists(binder)), Some(GoalRel::Eq(lhs, rhs))) => {
+                ker.exists_eq_in(self.ctx, binder, lhs, rhs)
+            }
+            (Some(Quant::Exists(binder)), Some(GoalRel::IsWf(tm))) => {
+                ker.exists_is_wf(self.ctx, binder, tm)
+            }
+            (Some(Quant::Exists(binder)), Some(GoalRel::IsTy(tm))) => {
+                ker.exists_is_ty(self.ctx, binder, tm)
+            }
+            (Some(Quant::Exists(binder)), Some(GoalRel::IsProp(tm))) => {
+                ker.exists_is_prop(self.ctx, binder, tm)
+            }
+            (Some(Quant::Exists(binder)), Some(GoalRel::HasTy(tm, ty))) => {
+                ker.exists_has_ty(self.ctx, binder, tm, ty)
+            }
+            (Some(Quant::Exists(binder)), Some(GoalRel::IsInhab(tm))) => {
+                ker.exists_is_inhab(self.ctx, binder, tm)
+            }
+            (Some(Quant::Exists(binder)), Some(GoalRel::IsEmpty(tm))) => {
+                ker.exists_is_empty(self.ctx, binder, tm)
+            }
+            (_, Some(GoalRel::Contr)) => ker.is_contr(self.ctx),
+        }
     }
 }

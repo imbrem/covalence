@@ -58,6 +58,35 @@ pub trait ReadTerm<C, T> {
     fn may_have_var_from(&self, ctx: C, tm: T, vars: C) -> bool;
 }
 
+impl<C: Copy, T: Copy> Val<C, T> {
+    /// Get the node in `self.ctx` corresponding to this value
+    pub fn node_ix(self, store: &impl ReadTerm<C, T>) -> NodeT<C, T> {
+        *store.node(self.ctx, self.tm)
+    }
+
+    /// Get the node corresponding to this value
+    pub fn node_val(self, store: &impl ReadTerm<C, T>) -> NodeVT<C, T> {
+        self.node_ix(store).val_in(self.ctx, store)
+    }
+
+    /// Get the node corresponding to this value
+    pub fn raw_node_val(self, store: &impl ReadTerm<C, T>) -> NodeVT<C, T> {
+        self.node_ix(store).raw_val_in(self.ctx)
+    }
+}
+
+impl<C: Copy, T> NodeT<C, T> {
+    /// Interpret this node in the given context
+    pub fn val_in(self, ctx: C, store: &impl ReadTerm<C, T>) -> NodeVT<C, T> {
+        self.map_subterms(|tm| store.val(ctx, tm))
+    }
+
+    /// Tag this node's syntactic children with the given context
+    pub fn raw_val_in(self, ctx: C) -> NodeVT<C, T> {
+        self.map_subterms(|tm| Val { ctx, tm })
+    }
+}
+
 /// A datastore that can read information about contexts
 ///
 /// This trait is `dyn`-safe:
@@ -209,25 +238,6 @@ pub trait ReadCtx<C, T> {
     /// Ghost variables cannot appear in terms, and so in general are ill-typed, but their type is
     /// inhabited.
     fn var_is_ghost(&self, var: Fv<C>) -> bool;
-}
-
-impl<C: Copy, T: Copy> Val<C, T> {
-    /// Get the node in `self.ctx` corresponding to this value
-    pub fn node_ix(self, store: &impl ReadTerm<C, T>) -> NodeT<C, T> {
-        *store.node(self.ctx, self.tm)
-    }
-
-    /// Get the node corresponding to this value
-    pub fn node_val(self, store: &impl ReadTerm<C, T>) -> NodeVT<C, T> {
-        self.node_ix(store).val_in(self.ctx)
-    }
-}
-
-impl<C: Copy, T> NodeT<C, T> {
-    /// Interpret this node as a value in the given context
-    pub fn val_in(self, ctx: C) -> NodeVT<C, T> {
-        self.map_subterms(|tm| Val { ctx, tm })
-    }
 }
 
 /// A trait implemented by a datastore that can create hash-consed terms and universe levels

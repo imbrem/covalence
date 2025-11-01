@@ -465,7 +465,7 @@ pub trait Derive<C, T> {
     /// let res = ker.derive_close_has_ty_under(ctx, x, tm, emp, &mut ()).unwrap();
     ///
     /// // the result is cached and valid
-    /// assert!(res.check(ctx, &ker));
+    /// assert!(res.check(ctx, &*ker));
     /// let close_x = ker.close(ctx, x, tm);
     /// assert_eq!(res.tm, close_x);
     /// assert_eq!(res.ty, emp);
@@ -485,7 +485,7 @@ pub trait Derive<C, T> {
     /// //
     /// // which is valid since the result is about the unchanged closed term, _not_ the term in the
     /// // (imported, changed) context!
-    /// assert!(res.check(ctx, &ker));
+    /// assert!(res.check(ctx, &*ker));
     /// ```
     fn derive_close_has_ty_under<S>(
         &mut self,

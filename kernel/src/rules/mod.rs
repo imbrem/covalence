@@ -43,190 +43,6 @@ impl<D: TermIndex> TermIndex for Kernel<D> {
     type TermId = D::TermId;
 }
 
-// impl<C, T, D: ReadTerm<C, T>> ReadTerm<C, T> for Kernel<D> {
-//     fn val(&self, ctx: C, tm: T) -> Val<C, T> {
-//         self.0.val(ctx, tm)
-//     }
-
-//     fn node(&self, ctx: C, term: T) -> &NodeT<C, T> {
-//         self.0.node(ctx, term)
-//     }
-
-//     fn lookup(&self, ctx: C, term: &mut NodeT<C, T>) -> Option<T> {
-//         self.0.lookup(ctx, term)
-//     }
-
-//     fn lookup_import(&self, ctx: C, val: Val<C, T>) -> Option<T> {
-//         self.0.lookup_import(ctx, val)
-//     }
-
-//     fn bvi(&self, ctx: C, tm: T) -> Bv {
-//         self.0.bvi(ctx, tm)
-//     }
-
-//     fn has_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool {
-//         self.0.has_var(ctx, tm, var)
-//     }
-
-//     fn has_var_from(&self, ctx: C, tm: T, vars: C) -> bool {
-//         self.0.has_var_from(ctx, tm, vars)
-//     }
-
-//     fn may_have_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool {
-//         self.0.may_have_var(ctx, tm, var)
-//     }
-
-//     fn may_have_var_from(&self, ctx: C, tm: T, vars: C) -> bool {
-//         self.0.may_have_var_from(ctx, tm, vars)
-//     }
-
-//     fn get_var_ty(&self, var: Fv<C>) -> T {
-//         self.0.get_var_ty(var)
-//     }
-
-//     fn var_is_ghost(&self, var: Fv<C>) -> bool {
-//         self.0.var_is_ghost(var)
-//     }
-
-//     fn num_vars(&self, ctx: C) -> u32 {
-//         self.0.num_vars(ctx)
-//     }
-// }
-
-impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
-    fn is_root(&self, ctx: C) -> bool {
-        self.0.is_root(ctx)
-    }
-
-    fn is_contr(&self, ctx: C) -> bool {
-        self.0.is_contr(ctx)
-    }
-
-    fn is_ancestor(&self, lo: C, hi: C) -> bool {
-        self.0.is_ancestor(lo, hi)
-    }
-
-    fn is_strict_ancestor(&self, lo: C, hi: C) -> bool {
-        self.0.is_strict_ancestor(lo, hi)
-    }
-
-    fn is_subctx(&self, lo: C, hi: C) -> bool {
-        self.0.is_subctx(lo, hi)
-    }
-
-    fn is_subctx_of_parents(&self, lo: C, hi: C) -> bool {
-        self.0.is_subctx_of_parents(lo, hi)
-    }
-
-    fn parents_are_subctx(&self, lo: C, hi: C) -> bool {
-        self.0.parents_are_subctx(lo, hi)
-    }
-
-    fn is_wf(&self, ctx: C, tm: T) -> bool {
-        self.0.is_wf(ctx, tm)
-    }
-
-    fn is_ty(&self, ctx: C, tm: T) -> bool {
-        self.0.is_ty(ctx, tm)
-    }
-
-    fn is_inhab(&self, ctx: C, tm: T) -> bool {
-        self.0.is_inhab(ctx, tm)
-    }
-
-    fn is_empty(&self, ctx: C, tm: T) -> bool {
-        self.0.is_empty(ctx, tm)
-    }
-
-    fn is_prop(&self, ctx: C, tm: T) -> bool {
-        self.0.is_prop(ctx, tm)
-    }
-
-    fn def_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
-        self.0.def_eq(lhs, rhs)
-    }
-
-    fn syn_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
-        self.0.syn_eq(lhs, rhs)
-    }
-
-    fn eq_in(&self, ctx: C, lhs: T, rhs: T) -> bool {
-        self.0.eq_in(ctx, lhs, rhs)
-    }
-
-    fn has_ty(&self, ctx: C, tm: T, ty: T) -> bool {
-        self.0.has_ty(ctx, tm, ty)
-    }
-
-    fn forall_is_ty(&self, ctx: C, binder: T, ty: T) -> bool {
-        self.0.forall_is_ty(ctx, binder, ty)
-    }
-
-    fn forall_has_ty(&self, ctx: C, binder: T, tm: T, ty: T) -> bool {
-        self.0.forall_has_ty(ctx, binder, tm, ty)
-    }
-
-    fn u_le(&self, lo: ULvl, hi: ULvl) -> bool {
-        self.0.u_le(lo, hi)
-    }
-
-    fn u_lt(&self, lo: ULvl, hi: ULvl) -> bool {
-        self.0.u_lt(lo, hi)
-    }
-
-    fn imax_le(&self, lo_lhs: ULvl, lo_rhs: ULvl, hi: ULvl) -> bool {
-        self.0.imax_le(lo_lhs, lo_rhs, hi)
-    }
-
-    fn forall_is_inhab(&self, ctx: C, binder: T, ty: T) -> bool {
-        self.0.forall_is_inhab(ctx, binder, ty)
-    }
-
-    fn exists_is_inhab(&self, ctx: C, binder: T, ty: T) -> bool {
-        self.0.exists_is_inhab(ctx, binder, ty)
-    }
-
-    fn forall_eq_in(&self, ctx: C, binder: T, lhs: T, rhs: T) -> bool {
-        self.0.forall_eq_in(ctx, binder, lhs, rhs)
-    }
-
-    fn forall_is_wf(&self, ctx: C, binder: T, ty: T) -> bool {
-        self.0.forall_is_wf(ctx, binder, ty)
-    }
-
-    fn forall_is_prop(&self, ctx: C, binder: T, ty: T) -> bool {
-        self.0.forall_is_prop(ctx, binder, ty)
-    }
-
-    fn forall_is_empty(&self, ctx: C, binder: T, tm: T) -> bool {
-        self.0.forall_is_empty(ctx, binder, tm)
-    }
-
-    fn exists_eq_in(&self, ctx: C, binder: T, lhs: T, rhs: T) -> bool {
-        self.0.exists_eq_in(ctx, binder, lhs, rhs)
-    }
-
-    fn exists_is_wf(&self, ctx: C, binder: T, ty: T) -> bool {
-        self.0.exists_is_wf(ctx, binder, ty)
-    }
-
-    fn exists_is_ty(&self, ctx: C, binder: T, ty: T) -> bool {
-        self.0.exists_is_ty(ctx, binder, ty)
-    }
-
-    fn exists_is_prop(&self, ctx: C, binder: T, ty: T) -> bool {
-        self.0.exists_is_prop(ctx, binder, ty)
-    }
-
-    fn exists_has_ty(&self, ctx: C, binder: T, tm: T, ty: T) -> bool {
-        self.0.exists_has_ty(ctx, binder, tm, ty)
-    }
-
-    fn exists_is_empty(&self, ctx: C, binder: T, tm: T) -> bool {
-        self.0.exists_is_empty(ctx, binder, tm)
-    }
-}
-
 impl<C, T, D: WriteTerm<C, T>> WriteTerm<C, T> for Kernel<D> {
     fn new_ctx(&mut self) -> C {
         self.0.new_ctx()
@@ -265,11 +81,11 @@ impl<C, T, D: WriteTerm<C, T>> WriteTerm<C, T> for Kernel<D> {
     }
 }
 
-impl<
+impl<C, T, D> Derive<C, T> for Kernel<D>
+where
     C: Copy + PartialEq,
     T: Copy + PartialEq,
     D: ReadTermDb<C, T> + WriteTerm<C, T> + WriteFacts<C, T>,
-> Derive<C, T> for Kernel<D>
 {
     fn assume<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Fv<C>, S::Fail>
     where
@@ -1150,11 +966,11 @@ impl<
 }
 
 pub trait KernelAPI<C: Copy, T: Copy + PartialEq>:
-    Derive<C, T> + Ensure<C, T> + WriteTerm<C, T> + ReadFacts<C, T>
+    Derive<C, T> + Ensure<C, T> + WriteTerm<C, T> + ReadTermDb<C, T>
 {
 }
 
 impl<K, C: Copy, T: Copy + PartialEq> KernelAPI<C, T> for K where
-    K: Derive<C, T> + Ensure<C, T> + WriteTerm<C, T> + ReadFacts<C, T>
+    K: Derive<C, T> + Ensure<C, T> + WriteTerm<C, T> + ReadTermDb<C, T>
 {
 }

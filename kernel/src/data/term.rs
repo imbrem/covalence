@@ -68,36 +68,70 @@ pub enum NodeT<C, T, I = Val<C, T>> {
     Import(I),
 }
 
+/// The discriminant of a term node
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum DiscT<C, T, I = Val<C, T>> {
+    /// A free variable
     Fv(Fv<C>),
+    /// A bound variable
     Bv(Bv),
+    /// A universe level
     U(ULvl),
+    /// The empty type
     Empty,
+    /// The unit type
     Unit,
+    /// The unique value of the unit type
     Null,
+    /// An equation between terms at a given type
     Eqn,
+    /// A pi type
     Pi,
+    /// A sigma type
     Sigma,
+    /// An abstraction
     Abs,
+    /// An application
     App,
+    /// A pair
     Pair,
+    /// The first projection of a pair
     Fst,
+    /// The second projection of a pair
     Snd,
+    /// A dependent if-then-else
     Ite,
+    /// A propositional truncation
     Trunc,
+    /// Hilbert choice
     Choose,
+    /// The type of natural numbers
     Nats,
+    /// A small natural number
     N64(u64),
+    /// The successor of a natural number
     Succ,
+    /// Recursion on natural numbers
     Natrec,
+    /// An assertion that a term has the given type
     HasTy,
+    /// A known-invalid term
     Invalid,
-    Let(Bv),
+    /// A substitution under `k` binders
+    Subst1(Bv),
+    /// A weakening by a shift
     BWk(Shift),
+    /// A variable closure under `k` binders
     Close(Close<C, T>),
+    /// A direct import from another context
     Import(I),
 }
+
+/// A syntactic discriminant, over a given import type
+pub type SynDiscIT<C, I> = DiscT<C, (), I>;
+
+/// A syntactic discriminant
+pub type SynDiscT<C, T> = SynDiscIT<C, Val<C, T>>;
 
 impl<C, T, I> NodeT<C, T, I> {
     /// Construct a bound variable
@@ -131,9 +165,42 @@ impl<C, T, I> NodeT<C, T, I> {
             NodeT::Natrec(_) => DiscT::Natrec,
             NodeT::HasTy(_) => DiscT::HasTy,
             NodeT::Invalid => DiscT::Invalid,
-            NodeT::Subst1(k, _) => DiscT::Let(k),
+            NodeT::Subst1(k, _) => DiscT::Subst1(k),
             NodeT::BWk(s, _) => DiscT::BWk(s),
             NodeT::Close(close) => DiscT::Close(close),
+            NodeT::Import(import) => DiscT::Import(import),
+        }
+    }
+
+    /// Get this node's syntactic discriminant
+    pub fn syn_disc(self) -> SynDiscIT<C, I> {
+        match self {
+            NodeT::Fv(x) => DiscT::Fv(x),
+            NodeT::Bv(i) => DiscT::Bv(i),
+            NodeT::U(level) => DiscT::U(level),
+            NodeT::Empty => DiscT::Empty,
+            NodeT::Unit => DiscT::Unit,
+            NodeT::Null => DiscT::Null,
+            NodeT::Eqn(_) => DiscT::Eqn,
+            NodeT::Pi(_) => DiscT::Pi,
+            NodeT::Sigma(_) => DiscT::Sigma,
+            NodeT::Abs(_) => DiscT::Abs,
+            NodeT::App(_) => DiscT::App,
+            NodeT::Pair(_) => DiscT::Pair,
+            NodeT::Fst(_) => DiscT::Fst,
+            NodeT::Snd(_) => DiscT::Snd,
+            NodeT::Ite(_) => DiscT::Ite,
+            NodeT::Trunc(_) => DiscT::Trunc,
+            NodeT::Choose(_) => DiscT::Choose,
+            NodeT::Nats => DiscT::Nats,
+            NodeT::N64(n) => DiscT::N64(n),
+            NodeT::Succ(_) => DiscT::Succ,
+            NodeT::Natrec(_) => DiscT::Natrec,
+            NodeT::HasTy(_) => DiscT::HasTy,
+            NodeT::Invalid => DiscT::Invalid,
+            NodeT::Subst1(k, _) => DiscT::Subst1(k),
+            NodeT::BWk(s, _) => DiscT::BWk(s),
+            NodeT::Close(close) => DiscT::Close(close.op()),
             NodeT::Import(import) => DiscT::Import(import),
         }
     }
@@ -414,6 +481,27 @@ impl<C, T, I> NodeT<C, T, I> {
             NodeT::BWk(_, xs) => &mut xs[..],
             NodeT::Close(_) => &mut [],
             NodeT::Import(_) => &mut [],
+        }
+    }
+
+    /// Get the _syntactic_ children of this term
+    ///
+    /// Note that this includes the argument of a closure, unlike [`children`](#method.children).
+    pub fn syn_children(&self) -> &[T] {
+        match self {
+            NodeT::Close(cl) => std::slice::from_ref(&cl.tm),
+            _ => self.children(),
+        }
+    }
+
+    /// Get the _syntactic_ children of this term
+    ///
+    /// Note that this includes the argument of a closure, unlike
+    /// [`children_mut`](#method.children_mut).
+    pub fn syn_children_mut(&mut self) -> &mut [T] {
+        match self {
+            NodeT::Close(cl) => std::slice::from_mut(&mut cl.tm),
+            _ => self.children_mut(),
         }
     }
 
@@ -838,6 +926,15 @@ impl<C, T> Close<C, T> {
             tm: self.tm,
         }
     }
+
+    /// Get this closure as an operation
+    pub fn op(self) -> Close<C, ()> {
+        Close {
+            under: self.under,
+            var: self.var,
+            tm: (),
+        }
+    }
 }
 
 /// An import from another context
@@ -850,11 +947,6 @@ pub struct Val<C, T> {
 }
 
 impl<C, T> Val<C, T> {
-    /// Construct a new value
-    pub const fn new(ctx: C, tm: T) -> Self {
-        Val { ctx, tm }
-    }
-
     /// Replace this value's term
     pub fn val<U>(self, tm: U) -> Val<C, U> {
         Val { ctx: self.ctx, tm }

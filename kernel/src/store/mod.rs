@@ -294,6 +294,20 @@ impl ReadFacts<CtxId, TermId> for TermDb {
         self.x[ctx.0].is_prop(tm)
     }
 
+    fn cons_eq(&self, lhs: ValId, rhs: ValId) -> bool {
+        if lhs == rhs {
+            return true;
+        }
+        let ln = lhs.node_val(self);
+        let rn = rhs.node_val(self);
+        ln.disc() == rn.disc()
+            && ln
+                .children()
+                .iter()
+                .zip(rn.children().iter())
+                .all(|(&l, &r)| self.cons_eq(l, r))
+    }
+
     fn syn_eq(&self, lhs: ValId, rhs: ValId) -> bool {
         if lhs == rhs {
             return true;
@@ -315,7 +329,7 @@ impl ReadFacts<CtxId, TermId> for TermDb {
         }
     }
 
-    fn def_eq(&self, lhs: Val<CtxId, TermId>, rhs: Val<CtxId, TermId>) -> bool {
+    fn unfold_eq(&self, lhs: Val<CtxId, TermId>, rhs: Val<CtxId, TermId>) -> bool {
         //TODO: reduce here, later...
         self.syn_eq(lhs, rhs)
     }

@@ -200,6 +200,12 @@ impl<T> Quant<T> {
 /// This trait is `dyn`-safe:
 /// ```rust
 /// # use covalence_kernel::*;
+/// let ker : &dyn ReadFacts<CtxId, TermId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence_kernel::*;
 /// let ker : &dyn ReadFacts<CtxId, TermId> = &Kernel::new();
 /// ```
 pub trait ReadFacts<C, T> {
@@ -216,17 +222,14 @@ pub trait ReadFacts<C, T> {
     /// TODO: reference lean
     fn is_contr(&self, ctx: C) -> bool;
 
+    /// Check whether two values are equal up to first imports
+    fn cons_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
+
     /// Check whether two values are syntactically equal
-    ///
-    /// `lhs` is syntactically equal to `rhs` if they are the same term, modulo imports
     fn syn_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
 
-    /// Check whether two values are definitionally equal
-    ///
-    /// `lhs` is definitionally equal to `rhs` if they are equal after fully unfolding all `close`,
-    /// `subst1`, and `wkn`. This function is a (safe) approximation: it can return `false`
-    /// incorrectly.
-    fn def_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
+    /// Check whether two values are equal up to unfolding
+    fn unfold_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
 
     // == Context information ==
 

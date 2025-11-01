@@ -28,6 +28,50 @@ impl EggTermDb {
     }
 }
 
+impl ReadTerm<CtxId, TermId> for EggTermDb {
+    fn node(&self, ctx: CtxId, tm: TermId) -> &Node {
+        self.x[ctx.0].node(tm)
+    }
+
+    fn lookup(&self, ctx: CtxId, tm: &mut Node) -> Option<TermId> {
+        self.x[ctx.0].lookup(tm)
+    }
+
+    fn lookup_import(&self, ctx: CtxId, val: ValId) -> Option<TermId> {
+        // NOTE: an import cycle will lead to a stack overflow here, but that should be an error But
+        // think about it!
+        //
+        // We could try a cycle detection algorithm and return `Invalid`, if we want to be very
+        // clever... but again, this is a deeply invalid state, since import destinations should
+        // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
+        // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
+        // inserting the import and hence fixing the `TermId`.
+        if let &Node::Import(val) = val.node(self)
+            && let Some(import) = self.lookup_import(ctx, val)
+        {
+            return Some(import);
+        }
+        if ctx == val.ctx {
+            return Some(val.tm);
+        }
+        self.lookup(ctx, &mut NodeT::Import(val))
+    }
+
+    fn num_vars(&self, ctx: CtxId) -> u32 {
+        self.x[ctx.0].num_vars()
+    }
+
+    fn get_var_ty(&self, var: VarId) -> TermId {
+        self.x[var.ctx.0]
+            .var_ty(var.ix)
+            .expect("invalid variable index")
+    }
+
+    fn var_is_ghost(&self, var: Fv<CtxId>) -> bool {
+        self.x[var.ctx.0].var_is_ghost(var.ix)
+    }
+}
+
 impl TermStore<CtxId, TermId> for EggTermDb {
     fn new_ctx(&mut self) -> CtxId {
         let result = CtxId(self.x.insert(Ctx::new_ctx()));
@@ -71,38 +115,6 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         result
     }
 
-    fn node(&self, ctx: CtxId, tm: TermId) -> &Node {
-        self.x[ctx.0].node(tm)
-    }
-
-    fn lookup(&self, ctx: CtxId, tm: &mut Node) -> Option<TermId> {
-        self.x[ctx.0].lookup(tm)
-    }
-
-    fn lookup_import(&self, ctx: CtxId, val: ValId) -> Option<TermId> {
-        // NOTE: an import cycle will lead to a stack overflow here, but that should be an error But
-        // think about it!
-        //
-        // We could try a cycle detection algorithm and return `Invalid`, if we want to be very
-        // clever... but again, this is a deeply invalid state, since import destinations should
-        // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
-        // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
-        // inserting the import and hence fixing the `TermId`.
-        if let &Node::Import(val) = val.node(self)
-            && let Some(import) = self.lookup_import(ctx, val)
-        {
-            return Some(import);
-        }
-        if ctx == val.ctx {
-            return Some(val.tm);
-        }
-        self.lookup(ctx, &mut NodeT::Import(val))
-    }
-
-    fn num_vars(&self, ctx: CtxId) -> u32 {
-        self.x[ctx.0].num_vars()
-    }
-
     fn var_ty(&mut self, ctx: CtxId, var: VarId) -> TermId {
         let ty = self.get_var_ty(var);
         self.import(
@@ -112,16 +124,6 @@ impl TermStore<CtxId, TermId> for EggTermDb {
                 tm: ty,
             },
         )
-    }
-
-    fn get_var_ty(&self, var: VarId) -> TermId {
-        self.x[var.ctx.0]
-            .var_ty(var.ix)
-            .expect("invalid variable index")
-    }
-
-    fn var_is_ghost(&self, var: Fv<CtxId>) -> bool {
-        self.x[var.ctx.0].var_is_ghost(var.ix)
     }
 
     fn succ(&mut self, level: ULvl) -> ULvl {

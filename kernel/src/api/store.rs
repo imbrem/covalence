@@ -1,5 +1,41 @@
 use crate::data::term::{Bv, Fv, NodeT, ULvl, Val};
 
+/// A trait implemented by a datastore that can read hash-consed terms and universe levels
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadTerm<CtxId, TermId> = &Kernel::new();
+/// ```
+pub trait ReadTerm<C, T> {
+    // == Terms ==
+
+    /// Get the node corresponding to a term
+    fn node(&self, ctx: C, tm: T) -> &NodeT<C, T>;
+
+    /// Lookup a term in the store
+    ///
+    /// Canonicalizes the term's children if found
+    fn lookup(&self, ctx: C, tm: &mut NodeT<C, T>) -> Option<T>;
+
+    /// Lookup an import of a term into another context, returning a handle to it if it exists
+    fn lookup_import(&self, ctx: C, val: Val<C, T>) -> Option<T>;
+
+    // == Variables ==
+
+    /// Get the number of variables this context has
+    fn num_vars(&self, ctx: C) -> u32;
+
+    /// Lookup the type of a variable in its own context
+    fn get_var_ty(&self, var: Fv<C>) -> T;
+
+    /// Get whether a variable is a ghost variable
+    ///
+    /// Ghost variables cannot appear in terms, and so in general are ill-typed, but their type is
+    /// inhabited.
+    fn var_is_ghost(&self, var: Fv<C>) -> bool;
+}
+
 /// A trait implemented by a datastore that can manipulate hash-consed terms and universe levels
 ///
 /// This trait is `dyn`-safe:
@@ -7,7 +43,7 @@ use crate::data::term::{Bv, Fv, NodeT, ULvl, Val};
 /// # use covalence_kernel::*;
 /// let ker : &dyn TermStore<CtxId, TermId> = &Kernel::new();
 /// ```
-pub trait TermStore<C, T> {
+pub trait TermStore<C, T> : ReadTerm<C, T> {
     // == Term management ==
 
     /// Create a new context in this store
@@ -49,35 +85,12 @@ pub trait TermStore<C, T> {
     /// - _Otherwise_, `import(ctx, ctx, tm)` returns `tm`
     fn import(&mut self, ctx: C, val: Val<C, T>) -> T;
 
-    /// Get the node corresponding to a term
-    fn node(&self, ctx: C, tm: T) -> &NodeT<C, T>;
-
-    /// Lookup a term in the store
-    ///
-    /// Canonicalizes the term's children if found
-    fn lookup(&self, ctx: C, tm: &mut NodeT<C, T>) -> Option<T>;
-
-    /// Lookup an import of a term into another context, returning a handle to it if it exists
-    fn lookup_import(&self, ctx: C, val: Val<C, T>) -> Option<T>;
-
     // == Variable management ==
-
-    /// Get the number of variables this context has
-    fn num_vars(&self, ctx: C) -> u32;
 
     /// Get the type of a variable in the given context
     ///
     /// Imports if necessary
     fn var_ty(&mut self, ctx: C, var: Fv<C>) -> T;
-
-    /// Lookup the type of a variable in its own context
-    fn get_var_ty(&self, var: Fv<C>) -> T;
-
-    /// Get whether a variable is a ghost variable
-    ///
-    /// Ghost variables cannot appear in terms, and so in general are ill-typed, but their type is
-    /// inhabited.
-    fn var_is_ghost(&self, var: Fv<C>) -> bool;
 
     // == Universe management ==
 

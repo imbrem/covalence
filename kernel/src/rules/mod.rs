@@ -184,6 +184,32 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
     }
 }
 
+impl<C, T, D: ReadTerm<C, T>> ReadTerm<C, T> for Kernel<D> {
+    fn node(&self, ctx: C, term: T) -> &NodeT<C, T> {
+        self.0.node(ctx, term)
+    }
+
+    fn lookup(&self, ctx: C, term: &mut NodeT<C, T>) -> Option<T> {
+        self.0.lookup(ctx, term)
+    }
+
+    fn lookup_import(&self, ctx: C, val: Val<C, T>) -> Option<T> {
+        self.0.lookup_import(ctx, val)
+    }
+
+    fn get_var_ty(&self, var: Fv<C>) -> T {
+        self.0.get_var_ty(var)
+    }
+
+    fn var_is_ghost(&self, var: Fv<C>) -> bool {
+        self.0.var_is_ghost(var)
+    }
+
+    fn num_vars(&self, ctx: C) -> u32 {
+        self.0.num_vars(ctx)
+    }
+}
+
 impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
     fn new_ctx(&mut self) -> C {
         self.0.new_ctx()
@@ -201,32 +227,8 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
         self.0.import(ctx, val)
     }
 
-    fn node(&self, ctx: C, term: T) -> &NodeT<C, T> {
-        self.0.node(ctx, term)
-    }
-
-    fn lookup(&self, ctx: C, term: &mut NodeT<C, T>) -> Option<T> {
-        self.0.lookup(ctx, term)
-    }
-
-    fn lookup_import(&self, ctx: C, val: Val<C, T>) -> Option<T> {
-        self.0.lookup_import(ctx, val)
-    }
-
     fn var_ty(&mut self, ctx: C, var: Fv<C>) -> T {
         self.0.var_ty(ctx, var)
-    }
-
-    fn get_var_ty(&self, var: Fv<C>) -> T {
-        self.0.get_var_ty(var)
-    }
-
-    fn var_is_ghost(&self, var: Fv<C>) -> bool {
-        self.0.var_is_ghost(var)
-    }
-
-    fn num_vars(&self, ctx: C) -> u32 {
-        self.0.num_vars(ctx)
     }
 
     fn succ(&mut self, level: ULvl) -> ULvl {

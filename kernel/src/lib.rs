@@ -17,7 +17,7 @@ pub mod store;
 
 pub use crate::api::derive::Derive;
 pub use crate::api::generic::*;
-pub use crate::api::store::{ReadFacts, TermStore};
+pub use crate::api::store::{ReadFacts, ReadTerm, TermStore};
 
 //TODO: add docs
 type TermDb = crate::store::EggTermDb;

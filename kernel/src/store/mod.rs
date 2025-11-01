@@ -53,15 +53,17 @@ impl ReadTerm<CtxId, TermId> for EggTermDb {
         // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
         // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
         // inserting the import and hence fixing the `TermId`.
-        if let &Node::Import(val) = val.node(self)
-            && let Some(import) = self.lookup_import(ctx, val)
-        {
-            return Some(import);
+        if let Some(node) = val.node(self).relocate() {
+            if let Node::Import(imp) = node {
+                self.lookup_import(ctx, imp)
+            } else {
+                self.x[ctx.0].lookup(node)
+            }
+        } else if ctx == val.ctx {
+            Some(val.tm)
+        } else {
+            self.x[ctx.0].lookup(NodeT::Import(val))
         }
-        if ctx == val.ctx {
-            return Some(val.tm);
-        }
-        self.lookup(ctx, &mut NodeT::Import(val))
     }
 
     fn num_vars(&self, ctx: CtxId) -> u32 {

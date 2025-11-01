@@ -76,6 +76,48 @@ impl ReadTerm<CtxId, TermId> for EggTermDb {
         self.x[ctx.0].bvi(tm)
     }
 
+    fn has_var(&self, ctx: CtxId, tm: TermId, var: Fv<CtxId>) -> bool {
+        //TODO: optimize, a _lot_
+        match self.node(ctx, tm) {
+            Node::Fv(v) => *v == var,
+            Node::Import(imp) => self.may_have_var(imp.ctx, imp.tm, var),
+            n => n.children().iter().any(|&i| self.may_have_var(ctx, i, var)),
+        }
+    }
+
+    fn has_var_from(&self, ctx: CtxId, tm: TermId, vars: CtxId) -> bool {
+        //TODO: optimize, a _lot_
+        match self.node(ctx, tm) {
+            Node::Fv(v) => v.ctx == vars,
+            Node::Import(imp) => self.may_have_var_from(imp.ctx, imp.tm, vars),
+            n => n
+                .children()
+                .iter()
+                .any(|&i| self.may_have_var_from(ctx, i, vars)),
+        }
+    }
+
+    fn may_have_var(&self, ctx: CtxId, tm: TermId, var: VarId) -> bool {
+        //TODO: optimize, a _lot_
+        match self.node(ctx, tm) {
+            Node::Fv(v) => *v == var,
+            Node::Import(imp) => self.may_have_var(imp.ctx, imp.tm, var),
+            n => n.children().iter().any(|&i| self.may_have_var(ctx, i, var)),
+        }
+    }
+
+    fn may_have_var_from(&self, ctx: CtxId, tm: TermId, vars: CtxId) -> bool {
+        //TODO: optimize, a _lot_
+        match self.node(ctx, tm) {
+            Node::Fv(v) => v.ctx == vars,
+            Node::Import(imp) => self.may_have_var_from(imp.ctx, imp.tm, vars),
+            n => n
+                .children()
+                .iter()
+                .any(|&i| self.may_have_var_from(ctx, i, vars)),
+        }
+    }
+
     fn num_vars(&self, ctx: CtxId) -> u32 {
         self.x[ctx.0].num_vars()
     }
@@ -91,7 +133,7 @@ impl ReadTerm<CtxId, TermId> for EggTermDb {
     }
 }
 
-impl TermStore<CtxId, TermId> for EggTermDb {
+impl WriteTerm<CtxId, TermId> for EggTermDb {
     fn new_ctx(&mut self) -> CtxId {
         let result = CtxId(self.x.insert(Ctx::new_ctx()));
         self.set_this(result);
@@ -245,48 +287,6 @@ impl ReadFacts<CtxId, TermId> for EggTermDb {
 
     fn is_prop(&self, ctx: CtxId, tm: TermId) -> bool {
         self.x[ctx.0].is_prop(tm)
-    }
-
-    fn has_var(&self, ctx: CtxId, tm: TermId, var: Fv<CtxId>) -> bool {
-        //TODO: optimize, a _lot_
-        match self.node(ctx, tm) {
-            Node::Fv(v) => *v == var,
-            Node::Import(imp) => self.may_have_var(imp.ctx, imp.tm, var),
-            n => n.children().iter().any(|&i| self.may_have_var(ctx, i, var)),
-        }
-    }
-
-    fn has_var_from(&self, ctx: CtxId, tm: TermId, vars: CtxId) -> bool {
-        //TODO: optimize, a _lot_
-        match self.node(ctx, tm) {
-            Node::Fv(v) => v.ctx == vars,
-            Node::Import(imp) => self.may_have_var_from(imp.ctx, imp.tm, vars),
-            n => n
-                .children()
-                .iter()
-                .any(|&i| self.may_have_var_from(ctx, i, vars)),
-        }
-    }
-
-    fn may_have_var(&self, ctx: CtxId, tm: TermId, var: VarId) -> bool {
-        //TODO: optimize, a _lot_
-        match self.node(ctx, tm) {
-            Node::Fv(v) => *v == var,
-            Node::Import(imp) => self.may_have_var(imp.ctx, imp.tm, var),
-            n => n.children().iter().any(|&i| self.may_have_var(ctx, i, var)),
-        }
-    }
-
-    fn may_have_var_from(&self, ctx: CtxId, tm: TermId, vars: CtxId) -> bool {
-        //TODO: optimize, a _lot_
-        match self.node(ctx, tm) {
-            Node::Fv(v) => v.ctx == vars,
-            Node::Import(imp) => self.may_have_var_from(imp.ctx, imp.tm, vars),
-            n => n
-                .children()
-                .iter()
-                .any(|&i| self.may_have_var_from(ctx, i, vars)),
-        }
     }
 
     fn syn_eq(&self, lhs: ValId, rhs: ValId) -> bool {

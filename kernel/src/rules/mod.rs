@@ -56,6 +56,22 @@ impl<C, T, D: ReadTerm<C, T>> ReadTerm<C, T> for Kernel<D> {
         self.0.bvi(ctx, tm)
     }
 
+    fn has_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool {
+        self.0.has_var(ctx, tm, var)
+    }
+
+    fn has_var_from(&self, ctx: C, tm: T, vars: C) -> bool {
+        self.0.has_var_from(ctx, tm, vars)
+    }
+
+    fn may_have_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool {
+        self.0.may_have_var(ctx, tm, var)
+    }
+
+    fn may_have_var_from(&self, ctx: C, tm: T, vars: C) -> bool {
+        self.0.may_have_var_from(ctx, tm, vars)
+    }
+
     fn get_var_ty(&self, var: Fv<C>) -> T {
         self.0.get_var_ty(var)
     }
@@ -116,22 +132,6 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
 
     fn is_prop(&self, ctx: C, tm: T) -> bool {
         self.0.is_prop(ctx, tm)
-    }
-
-    fn has_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool {
-        self.0.has_var(ctx, tm, var)
-    }
-
-    fn has_var_from(&self, ctx: C, tm: T, vars: C) -> bool {
-        self.0.has_var_from(ctx, tm, vars)
-    }
-
-    fn may_have_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool {
-        self.0.may_have_var(ctx, tm, var)
-    }
-
-    fn may_have_var_from(&self, ctx: C, tm: T, vars: C) -> bool {
-        self.0.may_have_var_from(ctx, tm, vars)
     }
 
     fn def_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
@@ -219,7 +219,7 @@ impl<C, T, D: ReadFacts<C, T>> ReadFacts<C, T> for Kernel<D> {
     }
 }
 
-impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
+impl<C, T, D: WriteTerm<C, T>> WriteTerm<C, T> for Kernel<D> {
     fn new_ctx(&mut self) -> C {
         self.0.new_ctx()
     }
@@ -260,7 +260,7 @@ impl<C, T, D: TermStore<C, T>> TermStore<C, T> for Kernel<D> {
 impl<
     C: Copy + PartialEq,
     T: Copy + PartialEq,
-    D: TermStore<C, T> + ReadFacts<C, T> + WriteFacts<C, T>,
+    D: ReadTerm<C, T> + WriteTerm<C, T> + ReadFacts<C, T> + WriteFacts<C, T>,
 > Derive<C, T> for Kernel<D>
 {
     fn assume<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Fv<C>, S::Fail>
@@ -1142,11 +1142,11 @@ impl<
 }
 
 pub trait KernelAPI<C: Copy, T: Copy + PartialEq>:
-    Derive<C, T> + Ensure<C, T> + TermStore<C, T> + ReadFacts<C, T>
+    Derive<C, T> + Ensure<C, T> + WriteTerm<C, T> + ReadFacts<C, T>
 {
 }
 
 impl<K, C: Copy, T: Copy + PartialEq> KernelAPI<C, T> for K where
-    K: Derive<C, T> + Ensure<C, T> + TermStore<C, T> + ReadFacts<C, T>
+    K: Derive<C, T> + Ensure<C, T> + WriteTerm<C, T> + ReadFacts<C, T>
 {
 }

@@ -39,6 +39,18 @@ pub trait ReadTerm<C, T> {
     /// TODO: reference lean
     fn bvi(&self, ctx: C, tm: T) -> Bv;
 
+    /// Check whether the term `tm` depends on the variable `var` in context `ctx`
+    fn has_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool;
+
+    /// Check whether the term `tm` depends on any variable from the context `vars`
+    fn has_var_from(&self, ctx: C, tm: T, vars: C) -> bool;
+
+    /// Check whether the term `tm` may depend on the variable `var` in context `ctx`
+    fn may_have_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool;
+
+    /// Check whether the term `tm` may depend on any variable from the context `vars`
+    fn may_have_var_from(&self, ctx: C, tm: T, vars: C) -> bool;
+
     // == Variables ==
 
     /// Get the number of variables this context has
@@ -54,14 +66,19 @@ pub trait ReadTerm<C, T> {
     fn var_is_ghost(&self, var: Fv<C>) -> bool;
 }
 
+/// A handle allowing reading from a term store
+pub trait ReadTermStore: TermIndex + ReadTerm<Self::CtxId, Self::TermId> {}
+
+impl<D: TermIndex + ReadTerm<D::CtxId, D::TermId>> ReadTermStore for D {}
+
 impl<C: Copy, T: Copy> Val<C, T> {
     /// Get the node in `self.ctx` corresponding to this value
-    pub fn node_ix(self, store: &impl TermStore<C, T>) -> NodeT<C, T> {
+    pub fn node_ix(self, store: &impl ReadTerm<C, T>) -> NodeT<C, T> {
         *store.node(self.ctx, self.tm)
     }
 
     /// Get the node corresponding to this value
-    pub fn node_val(self, store: &impl TermStore<C, T>) -> NodeVT<C, T> {
+    pub fn node_val(self, store: &impl ReadTerm<C, T>) -> NodeVT<C, T> {
         self.node_ix(store).val_in(self.ctx)
     }
 }
@@ -73,14 +90,14 @@ impl<C: Copy, T> NodeT<C, T> {
     }
 }
 
-/// A trait implemented by a datastore that can manipulate hash-consed terms and universe levels
+/// A trait implemented by a datastore that can create hash-consed terms and universe levels
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
 /// # use covalence_kernel::*;
-/// let ker : &dyn TermStore<CtxId, TermId> = &Kernel::new();
+/// let ker : &dyn WriteTerm<CtxId, TermId> = &Kernel::new();
 /// ```
-pub trait TermStore<C, T>: ReadTerm<C, T> {
+pub trait WriteTerm<C, T> {
     // == Term management ==
 
     /// Create a new context in this store
@@ -192,20 +209,6 @@ pub trait ReadFacts<C, T> {
     ///
     /// TODO: reference lean
     fn is_contr(&self, ctx: C) -> bool;
-
-    // == Syntactic relations ==
-
-    /// Check whether the term `tm` depends on the variable `var` in context `ctx`
-    fn has_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool;
-
-    /// Check whether the term `tm` depends on any variable from the context `vars`
-    fn has_var_from(&self, ctx: C, tm: T, vars: C) -> bool;
-
-    /// Check whether the term `tm` may depend on the variable `var` in context `ctx`
-    fn may_have_var(&self, ctx: C, tm: T, var: Fv<C>) -> bool;
-
-    /// Check whether the term `tm` may depend on any variable from the context `vars`
-    fn may_have_var_from(&self, ctx: C, tm: T, vars: C) -> bool;
 
     /// Check whether two values are syntactically equal
     ///
@@ -450,6 +453,11 @@ pub trait ReadFacts<C, T> {
     /// Check whether the impredicative maximum of two universes is less than or equal to another
     fn imax_le(&self, lo_lhs: ULvl, lo_rhs: ULvl, hi: ULvl) -> bool;
 }
+
+/// A trait implemented by a datastore of terms-in-context annotated with facts
+pub trait ReadTermFacts<C, T>: ReadTerm<C, T> + ReadFacts<C, T> {}
+
+impl<D: ReadTerm<C, T> + ReadFacts<C, T>, C, T> ReadTermFacts<C, T> for D {}
 
 /// A trait implemented by a mutable datastore that can hold _unchecked_ facts about terms in a
 /// context.

@@ -12,7 +12,7 @@ impl<C: Copy + PartialEq, T: Copy> Val<C, T> {
         self,
         under: Bv,
         bound: Val<C, T>,
-        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
+        store: &impl ReadTerm<C, T>,
     ) -> Option<NodeVT2<C, T>> {
         if self.bvi(store) <= under {
             return Some(NodeVT2::Import(self));
@@ -21,11 +21,7 @@ impl<C: Copy + PartialEq, T: Copy> Val<C, T> {
     }
 
     /// Get the weakening of this value after a single step, if possible
-    pub fn bwk_step(
-        self,
-        shift: Shift,
-        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
-    ) -> Option<NodeVT2<C, T>> {
+    pub fn bwk_step(self, shift: Shift, store: &impl ReadTerm<C, T>) -> Option<NodeVT2<C, T>> {
         if shift.is_id() || self.bvi(store) <= shift.under() {
             return Some(NodeVT2::Import(self));
         }
@@ -37,7 +33,7 @@ impl<C: Copy + PartialEq, T: Copy> Val<C, T> {
         self,
         under: Bv,
         var: Fv<C>,
-        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
+        store: &impl ReadTerm<C, T>,
     ) -> Option<NodeVT2<C, T>> {
         if self.bvi(store) <= under {
             return Some(NodeVT2::Import(self));
@@ -46,15 +42,12 @@ impl<C: Copy + PartialEq, T: Copy> Val<C, T> {
     }
 
     /// Unfold this value by a single step, if possible
-    pub fn step(self, store: &(impl TermStore<C, T> + ReadFacts<C, T>)) -> Option<NodeVT2<C, T>> {
+    pub fn step(self, store: &impl ReadTerm<C, T>) -> Option<NodeVT2<C, T>> {
         self.node_val(store).step(store)
     }
 
     /// Unfold this node, unfolding imports as far as possible
-    pub fn import_step(
-        self,
-        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
-    ) -> Option<NodeVT2<C, T>> {
+    pub fn import_step(self, store: &impl ReadTerm<C, T>) -> Option<NodeVT2<C, T>> {
         self.node_val(store).import_step(store)
     }
 }
@@ -114,7 +107,7 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
         self,
         under: Bv,
         bound: Val<C, T>,
-        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
+        store: &impl ReadTerm<C, T>,
     ) -> Option<NodeVT2<C, T>> {
         match self {
             NodeVT::Bv(i) => Some(i.subst1(under, bound)),
@@ -139,11 +132,7 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
     }
 
     /// Get the weakening of this node after a single step, if possible
-    pub fn bwk_step(
-        self,
-        shift: Shift,
-        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
-    ) -> Option<NodeVT2<C, T>> {
+    pub fn bwk_step(self, shift: Shift, store: &impl ReadTerm<C, T>) -> Option<NodeVT2<C, T>> {
         match self {
             NodeVT::Bv(i) => Some(NodeVT2::Bv(shift.apply(i))),
             NodeVT::Import(val) => val.bwk_step(shift, store),
@@ -164,7 +153,7 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
         self,
         under: Bv,
         var: Fv<C>,
-        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
+        store: &impl ReadTerm<C, T>,
     ) -> Option<NodeVT2<C, T>> {
         match self {
             NodeVT::Fv(x) => Some(x.close(under, var)),
@@ -200,7 +189,7 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
     /// let s = Node::Subst1(Bv(0), [nats.tm, i.tm]).add_val(ctx, &mut ker);
     /// assert_eq!(s.step(&ker), Some(NodeVT2::Import(nats)));
     /// ```
-    pub fn step(self, store: &(impl TermStore<C, T> + ReadFacts<C, T>)) -> Option<NodeVT2<C, T>> {
+    pub fn step(self, store: &impl ReadTerm<C, T>) -> Option<NodeVT2<C, T>> {
         match self {
             NodeVT::Import(this) => match this.node_val(store) {
                 NodeVT::Import(that) => Some(NodeVT2::Import(that)),
@@ -231,10 +220,7 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
     /// let s = Node::Subst1(Bv(0), [nats.tm, i.tm]).add_val(ctx, &mut ker);
     /// assert_eq!(s.import_step(&ker), Some(NodeVT2::Nats));
     /// ```
-    pub fn import_step(
-        self,
-        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
-    ) -> Option<NodeVT2<C, T>> {
+    pub fn import_step(self, store: &impl ReadTerm<C, T>) -> Option<NodeVT2<C, T>> {
         match self.step(store)? {
             NodeVT2::Import(val) => {
                 let result = NodeVT::Import(val).import_step(store);
@@ -250,18 +236,14 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
 }
 
 impl<C: Copy + PartialEq, T: Copy + PartialEq> Val<C, T> {
-    pub fn syn_eq(self, other: Val<C, T>, store: &impl TermStore<C, T>) -> bool {
+    pub fn syn_eq(self, other: Val<C, T>, store: &impl ReadTerm<C, T>) -> bool {
         if self == other {
             return true;
         }
         self.node_val(store).syn_eq(other.node_val(store), store)
     }
 
-    pub fn def_eq(
-        self,
-        other: Val<C, T>,
-        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
-    ) -> bool {
+    pub fn def_eq(self, other: Val<C, T>, store: &impl ReadTerm<C, T>) -> bool {
         if self == other {
             return true;
         }
@@ -270,7 +252,7 @@ impl<C: Copy + PartialEq, T: Copy + PartialEq> Val<C, T> {
 }
 
 impl<C: Copy + PartialEq, T: Copy + PartialEq> NodeVT<C, T> {
-    pub fn syn_eq(self, other: NodeVT<C, T>, store: &impl TermStore<C, T>) -> bool {
+    pub fn syn_eq(self, other: NodeVT<C, T>, store: &impl ReadTerm<C, T>) -> bool {
         match (self, other) {
             (NodeVT::Import(val), other) => val.node_val(store).syn_eq(other, store),
             (this, NodeVT::Import(val)) => this.syn_eq(val.node_val(store), store),
@@ -288,11 +270,7 @@ impl<C: Copy + PartialEq, T: Copy + PartialEq> NodeVT<C, T> {
         }
     }
 
-    pub fn def_eq(
-        self,
-        other: NodeVT<C, T>,
-        store: &(impl TermStore<C, T> + ReadFacts<C, T>),
-    ) -> bool {
+    pub fn def_eq(self, other: NodeVT<C, T>, store: &impl ReadTerm<C, T>) -> bool {
         if self == other {
             return true;
         }

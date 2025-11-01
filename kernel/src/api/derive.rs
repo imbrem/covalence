@@ -62,7 +62,7 @@ impl<C, T, K: ?Sized> Strategy<C, T, K> for () {
     }
 }
 
-pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadFacts<C, T> + TermStore<C, T> {
+pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadFacts<C, T> + WriteTerm<C, T> {
     /// Attempt to prove a goal
     fn ensure_goal<S>(
         &mut self,
@@ -278,7 +278,7 @@ impl<C, T, K> Ensure<C, T> for K
 where
     C: Copy,
     T: Copy + PartialEq,
-    K: ReadFacts<C, T> + TermStore<C, T>,
+    K: ReadFacts<C, T> + WriteTerm<C, T>,
 {
 }
 

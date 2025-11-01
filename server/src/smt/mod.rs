@@ -2,7 +2,7 @@
 SMT-lib implementation over `covalence`
 */
 
-use covalence::kernel::{CtxId, Kernel, TermStore};
+use covalence::kernel::{CtxId, Kernel, WriteTerm};
 
 /// State for SMT over a given kernel
 ///

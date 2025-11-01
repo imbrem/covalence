@@ -1,22 +1,10 @@
 use crate::{api::store::*, data::term::*};
 
-impl<C: Copy, T> NodeT<C, T> {
-    /// Annotate the _children_ of this node with a context, yielding a nested node
-    pub fn children_with(self, ctx: C) -> NodeVT<C, T> {
-        self.map_subterms(|tm| Val { ctx, tm })
-    }
-}
-
-impl<C: Copy, T: Copy> Val<C, T> {
-    /// Get the node value corresponding to this value
-    pub fn node_val(self, store: &impl TermStore<C, T>) -> NodeVT<C, T> {
-        self.node_ix(store).children_with(self.ctx)
-    }
-}
+impl<C: Copy, T: Copy> Val<C, T> {}
 
 impl<C: Copy, T> NodeVT<C, T> {
     /// Convert nested values to nested imports
-    pub fn into_nested_val(self) -> NodeVT2<C, T> {
+    pub fn import_children(self) -> NodeVT2<C, T> {
         self.map_subterms(|tm| NodeT::Import(tm))
     }
 }

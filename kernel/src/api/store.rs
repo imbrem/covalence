@@ -1,4 +1,4 @@
-use crate::data::term::{Bv, Fv, NodeT, ULvl, Val};
+use crate::data::term::{Bv, Fv, NodeT, NodeVT, ULvl, Val};
 
 /// A trait implemented by a datastore that can read hash-consed terms and universe levels
 ///
@@ -39,10 +39,22 @@ pub trait ReadTerm<C, T> {
     fn var_is_ghost(&self, var: Fv<C>) -> bool;
 }
 
-impl<C, T> Val<C, T> {
+impl<C: Copy, T: Copy> Val<C, T> {
     /// Get the node in `self.ctx` corresponding to this value
-    pub fn node_ix(self, store: &impl TermStore<C, T>) -> &NodeT<C, T> {
-        store.node(self.ctx, self.tm)
+    pub fn node_ix(self, store: &impl TermStore<C, T>) -> NodeT<C, T> {
+        *store.node(self.ctx, self.tm)
+    }
+
+    /// Get the node corresponding to this value
+    pub fn node_val(self, store: &impl TermStore<C, T>) -> NodeVT<C, T> {
+        self.node_ix(store).val_in(self.ctx)
+    }
+}
+
+impl<C: Copy, T> NodeT<C, T> {
+    /// Interpret this node as a value in the given context
+    pub fn val_in(self, ctx: C) -> NodeVT<C, T> {
+        self.map_subterms(|tm| Val { ctx, tm })
     }
 }
 

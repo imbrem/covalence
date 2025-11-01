@@ -204,7 +204,7 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
         match self {
             NodeVT::Import(this) => match this.node_val(store) {
                 NodeVT::Import(that) => Some(NodeVT2::Import(that)),
-                this => Some(this.into_nested_val()),
+                this => Some(this.import_children()),
             },
             NodeVT::Subst1(under, [bound, tm]) => tm.subst1_step(under, bound, store),
             NodeVT::BWk(shift, [tm]) => tm.bwk_step(shift, store),
@@ -296,8 +296,8 @@ impl<C: Copy + PartialEq, T: Copy + PartialEq> NodeVT<C, T> {
         if self == other {
             return true;
         }
-        let this = self.import_step(store).unwrap_or(self.into_nested_val());
-        let other = self.import_step(store).unwrap_or(self.into_nested_val());
+        let this = self.import_step(store).unwrap_or(self.import_children());
+        let other = self.import_step(store).unwrap_or(self.import_children());
         match (this, other) {
             (NodeVT2::Close(lc), NodeVT2::Close(rc)) => {
                 lc.under == rc.under && lc.var == rc.var && lc.tm.def_eq(rc.tm, store)

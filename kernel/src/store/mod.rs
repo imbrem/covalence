@@ -53,7 +53,7 @@ impl ReadTerm<CtxId, TermId> for EggTermDb {
         // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
         // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
         // inserting the import and hence fixing the `TermId`.
-        if let Some(node) = val.node(self).relocate() {
+        if let Some(node) = val.node_ix(self).relocate() {
             if let Node::Import(imp) = node {
                 self.lookup_import(ctx, imp)
             } else {
@@ -108,7 +108,7 @@ impl TermStore<CtxId, TermId> for EggTermDb {
         // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
         // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
         // inserting the import and hence fixing the `TermId`.
-        let result = if let Some(node) = val.node(self).relocate() {
+        let result = if let Some(node) = val.node_ix(self).relocate() {
             if let Node::Import(imp) = node {
                 self.import(ctx, imp)
             } else {

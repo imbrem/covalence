@@ -75,7 +75,7 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadFacts<C, T> + TermStore<C, T
     {
         strategy.start_goal(goal)?;
         let mut attempt_no = 0;
-        while !goal.check(self) {
+        while !goal.check_in(self) {
             strategy
                 .prove_goal(self, goal, msg, attempt_no)
                 .map_err(|mut err| {

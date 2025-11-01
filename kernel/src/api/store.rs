@@ -39,6 +39,13 @@ pub trait ReadTerm<C, T> {
     fn var_is_ghost(&self, var: Fv<C>) -> bool;
 }
 
+impl<C, T> Val<C, T> {
+    /// Get the node in `self.ctx` corresponding to this value
+    pub fn node_ix(self, store: &impl TermStore<C, T>) -> &NodeT<C, T> {
+        store.node(self.ctx, self.tm)
+    }
+}
+
 /// A trait implemented by a datastore that can manipulate hash-consed terms and universe levels
 ///
 /// This trait is `dyn`-safe:
@@ -46,7 +53,7 @@ pub trait ReadTerm<C, T> {
 /// # use covalence_kernel::*;
 /// let ker : &dyn TermStore<CtxId, TermId> = &Kernel::new();
 /// ```
-pub trait TermStore<C, T> : ReadTerm<C, T> {
+pub trait TermStore<C, T>: ReadTerm<C, T> {
     // == Term management ==
 
     /// Create a new context in this store

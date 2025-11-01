@@ -1,18 +1,6 @@
 use crate::{api::store::*, data::term::*};
 
-impl<C, T> Val<C, T> {
-    /// Get the node in `self.ctx` corresponding to this value
-    pub fn node(self, store: &impl TermStore<C, T>) -> &NodeT<C, T> {
-        store.node(self.ctx, self.tm)
-    }
-}
-
 impl<C: Copy, T> NodeT<C, T> {
-    /// Annotate this node with a context, yielding a global node
-    pub fn with(self, ctx: C) -> VNodeT<C, T> {
-        VNodeT { ctx, tm: self }
-    }
-
     /// Annotate the _children_ of this node with a context, yielding a nested node
     pub fn children_with(self, ctx: C) -> NodeVT<C, T> {
         self.map_subterms(|tm| Val { ctx, tm })
@@ -20,65 +8,9 @@ impl<C: Copy, T> NodeT<C, T> {
 }
 
 impl<C: Copy, T: Copy> Val<C, T> {
-    /// Get the value node corresponding to this value
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence_kernel::*;
-    /// # let mut ker = Kernel::new();
-    /// # // TODO: pick better values here...
-    /// # let ctx = ker.new_ctx();
-    /// # let other = ker.new_ctx();
-    /// # let values = [
-    /// #   Node::U(ULvl::SET).add_val(ctx, &mut ker),
-    /// #   Node::U(ULvl::PROP).add_val(ctx, &mut ker),
-    /// #   Node::U(ULvl::SET).add_val(other, &mut ker),
-    /// #   Node::U(ULvl::PROP).add_val(other, &mut ker),
-    /// # ];
-    /// # for v in values {
-    /// assert_eq!(v.val_node(&ker).add(&mut ker), v);
-    /// # }
-    /// ```
-    pub fn val_node(self, store: &impl TermStore<C, T>) -> VNodeT<C, T> {
-        VNodeT {
-            ctx: self.ctx,
-            tm: *self.node(store),
-        }
-    }
-
     /// Get the node value corresponding to this value
     pub fn node_val(self, store: &impl TermStore<C, T>) -> NodeVT<C, T> {
-        self.node(store).children_with(self.ctx)
-    }
-}
-
-impl<C: Copy, T> VNodeT<C, T> {
-    /// Get the value corresponding to this value node
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence_kernel::*;
-    /// # let mut ker = Kernel::new();
-    /// # // TODO: pick better values here...
-    /// # let ctx = ker.new_ctx();
-    /// # let other = ker.new_ctx();
-    /// # let nodes = [
-    /// #   Node::U(ULvl::SET).with(ctx),
-    /// #   Node::U(ULvl::PROP).with(ctx),
-    /// #   Node::U(ULvl::SET).with(other),
-    /// #   Node::U(ULvl::PROP).with(other),
-    /// # ];
-    /// # for g in nodes {
-    /// assert_eq!(g.add(&mut ker).val_node(&ker), g);
-    /// # }
-    /// ```
-    pub fn add(self, store: &mut impl TermStore<C, T>) -> Val<C, T> {
-        self.tm.add_val(self.ctx, store)
-    }
-
-    /// Get the node value corresponding to this value
-    pub fn into_node_val(self) -> NodeVT<C, T> {
-        self.tm.children_with(self.ctx)
+        self.node_ix(store).children_with(self.ctx)
     }
 }
 
@@ -98,13 +30,6 @@ impl<C: Copy, T> NodeT2<C, T> {
     /// Get the value corresponding to this nested node
     pub fn add(self, ctx: C, store: &mut impl TermStore<C, T>) -> Val<C, T> {
         self.flatten_in(ctx, store).add_val(ctx, store)
-    }
-}
-
-impl<C: Copy, T> VNodeT2<C, T> {
-    /// Get the value corresponding to this global node
-    pub fn add(self, store: &mut impl TermStore<C, T>) -> Val<C, T> {
-        self.tm.add(self.ctx, store)
     }
 }
 

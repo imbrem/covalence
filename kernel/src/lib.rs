@@ -9,7 +9,6 @@ This module is further subdivided into three primary components:
 - `store`, which is a specific, trusted implementation of our datastore API using `egg`
 - `kernel`, which instantiates the kernel in `rules` with the datastore
 */
-#![allow(clippy::should_implement_trait)]
 
 pub mod api;
 pub mod data;

@@ -83,7 +83,7 @@
 		"vscode:prepublish": "bun run package",
 		"build": "bun run --cwd client build && bun run --cwd server build",
 		"package": "bun run --cwd client package && bun run --cwd server package",
-		"lint": "cargo clippy && bun run --cwd client lint",
+		"lint": "cargo clippy --workspace --all-targets --all-features -- -D warnings && bun run --cwd client lint",
 		"doc": "cargo doc --no-deps",
 		"view-docs": "cargo doc --no-deps --open",
 		"browser": "bun run vscode-test-web ./testbed/workspace --browserType=chromium --coi --extensionId=ms-vscode.wasm-wasi-core --extensionDevelopmentPath=. .",

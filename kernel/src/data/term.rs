@@ -850,13 +850,18 @@ pub struct Val<C, T> {
 }
 
 impl<C, T> Val<C, T> {
+    /// Construct a new value
+    pub const fn new(ctx: C, tm: T) -> Self {
+        Val { ctx, tm }
+    }
+
     /// Replace this value's term
     pub fn val<U>(self, tm: U) -> Val<C, U> {
         Val { ctx: self.ctx, tm }
     }
 
     /// Borrow this import
-    pub fn as_ref(&self) -> Val<&C, &T> {
+    pub const fn as_ref(&self) -> Val<&C, &T> {
         Val {
             ctx: &self.ctx,
             tm: &self.tm,
@@ -864,7 +869,7 @@ impl<C, T> Val<C, T> {
     }
 
     /// Borrow this import mutably
-    pub fn as_mut(&mut self) -> Val<&mut C, &mut T> {
+    pub const fn as_mut(&mut self) -> Val<&mut C, &mut T> {
         Val {
             ctx: &mut self.ctx,
             tm: &mut self.tm,
@@ -877,10 +882,6 @@ pub type NodeVT<C, T> = NodeT<C, Val<C, T>, Val<C, T>>;
 pub type NodeT2<C, T> = NodeT<C, NodeT<C, T>, Val<C, T>>;
 
 pub type NodeVT2<C, T> = NodeT<C, NodeVT<C, T>, Val<C, T>>;
-
-pub type VNodeT<C, T> = Val<C, NodeT<C, T>>;
-
-pub type VNodeT2<C, T> = Val<C, NodeT2<C, T>>;
 
 impl<C, T> From<Bv> for NodeT<C, T> {
     fn from(bv: Bv) -> Self {

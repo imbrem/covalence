@@ -400,21 +400,21 @@ impl<C, T> From<EqIn<C, T>> for Goal<C, T> {
 
 impl<T: Copy> Quant<T> {
     /// Check this quantifier in the given context
-    pub fn check<C: Copy, R: ReadFacts<C, T> + ?Sized>(self, ctx: C, ker: &R) -> bool {
+    pub fn check_in<C: Copy, R: ReadFacts<C, T> + ?Sized>(self, ctx: C, ker: &R) -> bool {
         ker.is_ty(ctx, self.binder())
     }
 }
 
 impl<C: Copy, T: Copy> Goal<C, T> {
     /// Check this relation's binder
-    pub fn check_binder<R: ReadFacts<C, T> + ?Sized>(self, ker: &R) -> bool {
-        self.binder.is_none_or(|binder| binder.check(self.ctx, ker))
+    pub fn check_binder_in<R: ReadFacts<C, T> + ?Sized>(self, ker: &R) -> bool {
+        self.binder.is_none_or(|binder| binder.check_in(self.ctx, ker))
     }
 
     /// Check whether this goal is true
-    pub fn check<R: ReadFacts<C, T> + ?Sized>(self, ker: &R) -> bool {
+    pub fn check_in<R: ReadFacts<C, T> + ?Sized>(self, ker: &R) -> bool {
         match (self.binder, self.rel) {
-            (_, None) => self.check_binder(ker),
+            (_, None) => self.check_binder_in(ker),
             (None, Some(GoalRel::Eq(lhs, rhs))) => ker.eq_in(self.ctx, lhs, rhs),
             (None, Some(GoalRel::IsWf(tm))) => ker.is_wf(self.ctx, tm),
             (None, Some(GoalRel::IsTy(tm))) => ker.is_wf(self.ctx, tm),

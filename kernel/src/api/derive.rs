@@ -179,21 +179,21 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
         self.ensure_goal(ForallInhabUnder { ctx, binder, ty }.into(), strategy, msg)
     }
 
-    /// Attempt to prove that there exists a value of the binder type such that the term is
-    /// inhabited
-    fn ensure_exists_inhab_under<S>(
-        &mut self,
-        ctx: C,
-        binder: Val<C, T>,
-        ty: Val<C, T>,
-        strategy: &mut S,
-        msg: &'static str,
-    ) -> Result<(), S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
-        self.ensure_goal(ExistsInhabUnder { ctx, binder, ty }.into(), strategy, msg)
-    }
+    // /// Attempt to prove that there exists a value of the binder type such that the term is
+    // /// inhabited
+    // fn ensure_exists_inhab_under<S>(
+    //     &mut self,
+    //     ctx: C,
+    //     binder: Val<C, T>,
+    //     ty: Val<C, T>,
+    //     strategy: &mut S,
+    //     msg: &'static str,
+    // ) -> Result<(), S::Fail>
+    // where
+    //     S: Strategy<C, T, Self>,
+    // {
+    //     self.ensure_goal(ExistsInhabUnder { ctx, binder, ty }.into(), strategy, msg)
+    // }
 
     /// Attempt to prove that two terms are equal in a context
     fn ensure_eq_in<S>(

@@ -475,42 +475,6 @@ pub trait ReadTermFacts<C, T>: ReadCtxFacts<C> {
     ///
     /// TODO: reference Lean
     fn forall_is_empty(&self, ctx: C, binder: T, tm: T) -> bool;
-
-    /// Check whether there exists a value of type `binder` such that `lhs`, `rhs` are equal in
-    /// `ctx`
-    ///
-    /// TODO: reference Lean
-    fn exists_eq_in(&self, ctx: C, binder: T, lhs: T, rhs: T) -> bool;
-
-    /// Check whether there exists a value of type `binder` such that `tm` is well-formed
-    ///
-    /// TODO: reference Lean
-    fn exists_is_wf(&self, ctx: C, binder: T, ty: T) -> bool;
-
-    /// Check whether there exists a value of type `binder` such that `tm` is a type
-    ///
-    /// Corresponds to `Ctx.KIsTyUnder` in `gt3-lean`
-    fn exists_is_ty(&self, ctx: C, binder: T, ty: T) -> bool;
-
-    /// Check whether there exists a value of type `binder` such that `tm` is a proposition
-    ///
-    /// Corresponds to `Ctx.KIsTyUnder` in `gt3-lean`
-    fn exists_is_prop(&self, ctx: C, binder: T, ty: T) -> bool;
-
-    /// Check whether there exists a value of type `binder` such that `tm` has type `ty`
-    ///
-    /// Corresponds to `Ctx.KHasTyUnder` in `gt3-lean`
-    fn exists_has_ty(&self, ctx: C, binder: T, tm: T, ty: T) -> bool;
-
-    /// Check whether there exists a value of type `binder` such that the term `tm` is inhabited
-    ///
-    /// TODO: reference Lean
-    fn exists_is_inhab(&self, ctx: C, binder: T, tm: T) -> bool;
-
-    /// Check whether there exists a value of type `binder` such that the term `tm` is empty
-    ///
-    /// TODO: reference Lean
-    fn exists_is_empty(&self, ctx: C, binder: T, tm: T) -> bool;
 }
 
 /// A database of terms, contexts, and facts which we can read from
@@ -760,59 +724,6 @@ impl<C: Copy, T: Copy, D: ReadTerm<C, T> + ReadTermFacts<C, T>> ReadTermFacts<C,
         self.lookup_val(ctx, binder).is_some_and(|binder| {
             self.lookup_val(ctx, tm)
                 .is_some_and(|tm| self.forall_is_empty(ctx, binder, tm))
-        })
-    }
-
-    fn exists_eq_in(&self, ctx: C, binder: Val<C, T>, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, lhs).is_some_and(|lhs| {
-                self.lookup_val(ctx, rhs)
-                    .is_some_and(|rhs| self.exists_eq_in(ctx, binder, lhs, rhs))
-            })
-        })
-    }
-
-    fn exists_is_wf(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, ty)
-                .is_some_and(|ty| self.exists_is_wf(ctx, binder, ty))
-        })
-    }
-
-    fn exists_is_ty(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, ty)
-                .is_some_and(|ty| self.exists_is_ty(ctx, binder, ty))
-        })
-    }
-
-    fn exists_is_prop(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, ty)
-                .is_some_and(|ty| self.exists_is_prop(ctx, binder, ty))
-        })
-    }
-
-    fn exists_has_ty(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>, ty: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, tm).is_some_and(|tm| {
-                self.lookup_val(ctx, ty)
-                    .is_some_and(|ty| self.exists_has_ty(ctx, binder, tm, ty))
-            })
-        })
-    }
-
-    fn exists_is_inhab(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, tm)
-                .is_some_and(|tm| self.exists_is_inhab(ctx, binder, tm))
-        })
-    }
-
-    fn exists_is_empty(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, tm)
-                .is_some_and(|tm| self.exists_is_empty(ctx, binder, tm))
         })
     }
 }

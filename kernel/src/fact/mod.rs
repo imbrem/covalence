@@ -63,27 +63,6 @@ where
     }
 }
 
-/// A quantifier for a fact
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub enum Quant<T> {
-    /// No quantifier
-    Free,
-    /// An existential quantifier
-    Exists(T),
-    /// A universal quantifier
-    Forall(T),
-}
-
-impl<T> Quant<T> {
-    /// Get the binder type of this quantifier
-    pub fn binder(self) -> Option<T> {
-        match self {
-            Quant::Free => None,
-            Quant::Exists(binder) | Quant::Forall(binder) => Some(binder),
-        }
-    }
-}
-
 /// An atomic formula on terms supported by the kernel
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum Atom<T> {
@@ -105,8 +84,12 @@ pub enum Atom<T> {
     Contr,
 }
 
+/// A universal quantifier
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct Forall<T>(T);
+
 /// A quantified atomic formula
-pub type QAtom<T> = Quantified<Quant<T>, Atom<T>>;
+pub type QAtom<T> = Quantified<Option<Forall<T>>, Atom<T>>;
 
 /// An atomic sequent
 pub type AtomSeq<C, T> = Seq<C, Atom<T>>;
@@ -119,7 +102,7 @@ impl<C, T> QAtomSeq<C, T> {
         Seq {
             ctx,
             stmt: Quantified {
-                binder: Quant::Free,
+                binder: None,
                 body: Atom::Contr,
             },
         }
@@ -244,7 +227,7 @@ impl<C, T> From<Eqn<C, T>> for QAtomSeq<C, T> {
         Seq {
             ctx: g.ctx,
             stmt: Quantified {
-                binder: Quant::Free,
+                binder: None,
                 body: Atom::Eq(g.lhs, g.rhs),
             },
             // binder: Quant::Null,
@@ -262,7 +245,7 @@ where
         Seq {
             ctx: g.ctx,
             stmt: Quantified {
-                binder: Quant::Free,
+                binder: None,
                 body: Atom::IsWf(g.tm),
             },
             // binder: Quant::Null,
@@ -276,7 +259,7 @@ impl<C, T> From<IsTy<C, T>> for QAtomSeq<C, T> {
         Seq {
             ctx: g.ctx,
             stmt: Quantified {
-                binder: Quant::Free,
+                binder: None,
                 body: Atom::IsTy(g.tm),
             },
             // binder: Quant::Null,
@@ -290,7 +273,7 @@ impl<C, T> From<IsInhab<C, T>> for QAtomSeq<C, T> {
         Seq {
             ctx: g.ctx,
             stmt: Quantified {
-                binder: Quant::Free,
+                binder: None,
                 body: Atom::IsInhab(g.tm),
             },
             // binder: Quant::Null,
@@ -304,19 +287,19 @@ impl<C, T> From<IsEmpty<C, T>> for QAtomSeq<C, T> {
         Seq {
             ctx: g.ctx,
             stmt: Quantified {
-                binder: Quant::Forall(g.tm),
-                body: Atom::Contr,
+                binder: None,
+                body: Atom::IsEmpty(g.tm),
             },
         }
     }
 }
 
-impl<C, T> From<IsProp<C, T>> for QAtomSeq<C, T> {
+impl<C, T: Copy> From<IsProp<C, T>> for QAtomSeq<C, T> {
     fn from(g: IsProp<C, T>) -> Self {
         QAtomSeq {
             ctx: g.ctx,
             stmt: Quantified {
-                binder: Quant::Free,
+                binder: None,
                 body: Atom::IsProp(g.tm),
             },
         }
@@ -328,7 +311,7 @@ impl<C, T> From<HasTy<C, T>> for QAtomSeq<C, T> {
         QAtomSeq {
             ctx: g.ctx,
             stmt: Quantified {
-                binder: Quant::Free,
+                binder: None,
                 body: Atom::HasTy(g.tm, g.ty),
             },
         }
@@ -340,11 +323,9 @@ impl<C, T> From<IsTyUnder<C, T>> for QAtomSeq<C, T> {
         QAtomSeq {
             ctx: g.ctx,
             stmt: Quantified {
-                binder: Quant::Forall(g.binder),
+                binder: Some(Forall(g.binder)),
                 body: Atom::IsTy(g.tm),
             },
-            // binder: Quant::Forall(g.binder),
-            // rel: Some(GoalIn::IsTy(g.tm)),
         }
     }
 }
@@ -354,11 +335,9 @@ impl<C, T> From<HasTyUnder<C, T>> for QAtomSeq<C, T> {
         Seq {
             ctx: g.ctx,
             stmt: Quantified {
-                binder: Quant::Forall(g.binder),
+                binder: Some(Forall(g.binder)),
                 body: Atom::HasTy(g.tm, g.ty),
             },
-            // binder: Quant::Forall(g.binder),
-            // rel: Some(GoalIn::HasTy(g.tm, g.ty)),
         }
     }
 }
@@ -368,41 +347,14 @@ impl<C, T> From<ForallInhabUnder<C, T>> for QAtomSeq<C, T> {
         Seq {
             ctx: g.ctx,
             stmt: Quantified {
-                binder: Quant::Forall(g.binder),
+                binder: Some(Forall(g.binder)),
                 body: Atom::IsInhab(g.ty),
             },
-            // binder: Quant::Forall(g.binder),
-            // rel: Some(GoalIn::IsInhab(g.ty)),
         }
     }
 }
 
-impl<C, T> From<ExistsInhabUnder<C, T>> for QAtomSeq<C, T> {
-    fn from(g: ExistsInhabUnder<C, T>) -> Self {
-        Seq {
-            ctx: g.ctx,
-            stmt: Quantified {
-                binder: Quant::Exists(g.binder),
-                body: Atom::IsInhab(g.ty),
-            },
-            // binder: Quant::Exists(g.binder),
-            // rel: Some(GoalIn::IsInhab(g.ty)),
-        }
-    }
-}
-
-impl<T: Copy> Quant<T> {
-    /// Check this quantifier in the given context
-    pub fn check_in<C: Copy, R: ReadTermFacts<C, T> + ?Sized>(self, ctx: C, ker: &R) -> bool {
-        if let Some(binder) = self.binder() {
-            ker.is_ty(ctx, binder)
-        } else {
-            true
-        }
-    }
-}
-
-impl<C, T, R> FactIn<C, R> for Quant<T>
+impl<C, T, R> FactIn<C, R> for Forall<T>
 where
     C: Copy,
     T: Copy,
@@ -410,46 +362,63 @@ where
 {
     /// Check this quantifier in the given context
     fn check_in(&self, &ctx: &C, ker: &R) -> bool {
-        match self {
-            Quant::Free => true,
-            Quant::Exists(binder) | Quant::Forall(binder) => ker.is_ty(ctx, *binder),
+        ker.is_ty(ctx, self.0)
+    }
+}
+
+impl<C, T, R> FactIn<C, R> for Atom<T>
+where
+    C: Copy,
+    T: Copy,
+    R: ReadTermFacts<C, T> + ?Sized,
+{
+    /// Check whether this goal is true
+    fn check_in(&self, &ctx: &C, ker: &R) -> bool {
+        match *self {
+            Atom::Eq(lhs, rhs) => ker.eq_in(ctx, lhs, rhs),
+            Atom::IsWf(tm) => ker.is_wf(ctx, tm),
+            Atom::IsTy(tm) => ker.is_ty(ctx, tm),
+            Atom::IsProp(tm) => ker.is_prop(ctx, tm),
+            Atom::HasTy(tm, ty) => ker.has_ty(ctx, tm, ty),
+            Atom::IsInhab(tm) => ker.is_inhab(ctx, tm),
+            Atom::IsEmpty(tm) => ker.is_empty(ctx, tm),
+            Atom::Contr => ker.is_contr(ctx),
         }
     }
 }
 
-impl<C, T, R> FactUnder<C, Quant<T>, R> for Atom<T>
+impl<C, T, R> FactUnder<C, Forall<T>, R> for Atom<T>
 where
     C: Copy,
     T: Copy,
-    R: ReadFacts<C, T> + ?Sized,
+    R: ReadTermFacts<C, T> + ?Sized,
 {
     /// Check whether this goal is true
-    fn check_under(&self, &ctx: &C, &binder: &Quant<T>, ker: &R) -> bool {
-        match (binder, *self) {
-            (Quant::Free, Atom::Eq(lhs, rhs)) => ker.eq_in(ctx, lhs, rhs),
-            (Quant::Free, Atom::IsWf(tm)) => ker.is_wf(ctx, tm),
-            (Quant::Free, Atom::IsTy(tm)) => ker.is_wf(ctx, tm),
-            (Quant::Free, Atom::IsProp(tm)) => ker.is_prop(ctx, tm),
-            (Quant::Free, Atom::HasTy(tm, ty)) => ker.has_ty(ctx, tm, ty),
-            (Quant::Free, Atom::IsInhab(tm)) => ker.is_inhab(ctx, tm),
-            (Quant::Free, Atom::IsEmpty(tm)) => ker.is_empty(ctx, tm),
-            (Quant::Free, Atom::Contr) => ker.is_contr(ctx),
-            (Quant::Forall(binder), Atom::Eq(lhs, rhs)) => ker.forall_eq_in(ctx, binder, lhs, rhs),
-            (Quant::Forall(binder), Atom::IsWf(tm)) => ker.forall_is_wf(ctx, binder, tm),
-            (Quant::Forall(binder), Atom::IsTy(tm)) => ker.forall_is_ty(ctx, binder, tm),
-            (Quant::Forall(binder), Atom::IsProp(tm)) => ker.forall_is_prop(ctx, binder, tm),
-            (Quant::Forall(binder), Atom::HasTy(tm, ty)) => ker.forall_has_ty(ctx, binder, tm, ty),
-            (Quant::Forall(binder), Atom::IsInhab(tm)) => ker.forall_is_inhab(ctx, binder, tm),
-            (Quant::Forall(binder), Atom::IsEmpty(tm)) => ker.forall_is_empty(ctx, binder, tm),
-            (Quant::Forall(binder), Atom::Contr) => ker.is_empty(ctx, binder),
-            (Quant::Exists(binder), Atom::Eq(lhs, rhs)) => ker.exists_eq_in(ctx, binder, lhs, rhs),
-            (Quant::Exists(binder), Atom::IsWf(tm)) => ker.exists_is_wf(ctx, binder, tm),
-            (Quant::Exists(binder), Atom::IsTy(tm)) => ker.exists_is_ty(ctx, binder, tm),
-            (Quant::Exists(binder), Atom::IsProp(tm)) => ker.exists_is_prop(ctx, binder, tm),
-            (Quant::Exists(binder), Atom::HasTy(tm, ty)) => ker.exists_has_ty(ctx, binder, tm, ty),
-            (Quant::Exists(binder), Atom::IsInhab(tm)) => ker.exists_is_inhab(ctx, binder, tm),
-            (Quant::Exists(binder), Atom::IsEmpty(tm)) => ker.exists_is_empty(ctx, binder, tm),
-            (Quant::Exists(_), Atom::Contr) => ker.is_contr(ctx),
+    fn check_under(&self, &ctx: &C, &Forall(binder): &Forall<T>, ker: &R) -> bool {
+        match *self {
+            Atom::Eq(lhs, rhs) => ker.forall_eq_in(ctx, binder, lhs, rhs),
+            Atom::IsWf(tm) => ker.forall_is_wf(ctx, binder, tm),
+            Atom::IsTy(tm) => ker.forall_is_ty(ctx, binder, tm),
+            Atom::IsProp(tm) => ker.forall_is_prop(ctx, binder, tm),
+            Atom::HasTy(tm, ty) => ker.forall_has_ty(ctx, binder, tm, ty),
+            Atom::IsInhab(tm) => ker.forall_is_inhab(ctx, binder, tm),
+            Atom::IsEmpty(tm) => ker.forall_is_empty(ctx, binder, tm),
+            Atom::Contr => ker.is_empty(ctx, binder),
+        }
+    }
+}
+
+impl<C, T, R> FactUnder<C, Option<Forall<T>>, R> for Atom<T>
+where
+    C: Copy,
+    T: Copy,
+    R: ReadTermFacts<C, T> + ?Sized,
+{
+    /// Check whether this goal is true
+    fn check_under(&self, &ctx: &C, binder: &Option<Forall<T>>, ker: &R) -> bool {
+        match binder {
+            None => self.check_in(&ctx, ker),
+            Some(binder) => self.check_under(&ctx, binder, ker),
         }
     }
 }

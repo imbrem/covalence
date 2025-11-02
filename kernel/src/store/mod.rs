@@ -384,34 +384,6 @@ impl ReadTermFacts<CtxId, TermId> for TermDb {
     fn forall_is_empty(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
         self.x[ctx.0].forall_is_empty(binder, tm)
     }
-
-    fn exists_eq_in(&self, ctx: CtxId, binder: TermId, lhs: TermId, rhs: TermId) -> bool {
-        self.x[ctx.0].exists_eq_in(binder, lhs, rhs)
-    }
-
-    fn exists_is_wf(&self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
-        self.x[ctx.0].exists_is_wf(binder, ty)
-    }
-
-    fn exists_is_ty(&self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
-        self.x[ctx.0].exists_is_ty(binder, ty)
-    }
-
-    fn exists_is_prop(&self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
-        self.x[ctx.0].exists_is_prop(binder, ty)
-    }
-
-    fn exists_has_ty(&self, ctx: CtxId, binder: TermId, tm: TermId, ty: TermId) -> bool {
-        self.x[ctx.0].exists_has_ty(binder, tm, ty)
-    }
-
-    fn exists_is_inhab(&self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
-        self.x[ctx.0].exists_is_inhab(binder, ty)
-    }
-
-    fn exists_is_empty(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
-        self.x[ctx.0].exists_is_empty(binder, tm)
-    }
 }
 
 impl ReadTermDb<CtxId, TermId> for TermDb {

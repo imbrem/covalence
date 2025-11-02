@@ -19,7 +19,8 @@ pub mod store;
 pub use crate::api::derive::DeriveTrusted;
 pub use crate::api::generic::*;
 pub use crate::api::store::{
-    ReadCtx, ReadCtxFacts, ReadFacts, ReadTerm, ReadTermDb, ReadTermFacts, ReadTermStore, WriteTerm,
+    ReadCtx, ReadCtxFacts, ReadCtxRel, ReadFacts, ReadTerm, ReadTermDb, ReadTermFacts,
+    ReadTermStore, WriteTerm,
 };
 
 #[doc(inline)]

@@ -274,13 +274,15 @@ impl ReadCtx<CtxId, TermId> for TermDb {
 }
 
 impl ReadCtxFacts<CtxId> for TermDb {
+    fn is_contr(&self, ctx: CtxId) -> bool {
+        self.x[ctx.0].is_contr()
+    }
+}
+
+impl ReadCtxRel<CtxId> for TermDb {
     fn is_root(&self, ctx: CtxId) -> bool {
         //TODO: optimize
         self.x[ctx.0].is_null_extension() && self.x[ctx.0].parent().is_none_or(|p| self.is_root(p))
-    }
-
-    fn is_contr(&self, ctx: CtxId) -> bool {
-        self.x[ctx.0].is_contr()
     }
 
     fn is_ancestor(&self, lo: CtxId, mut hi: CtxId) -> bool {

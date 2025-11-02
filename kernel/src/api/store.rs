@@ -184,17 +184,32 @@ pub trait ReadCtx<C, T> {
 /// let ker : &dyn ReadCtxFacts<CtxId> = &Kernel::new();
 /// ```
 pub trait ReadCtxFacts<C> {
+    /// Get whether a context is contradictory
+    ///
+    /// TODO: reference lean
+    fn is_contr(&self, ctx: C) -> bool;
+}
+
+/// A datastore that can read relationships between contexts
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadCtxRel<CtxId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadCtxRel<CtxId> = &Kernel::new();
+/// ```
+pub trait ReadCtxRel<C> {
     /// Get whether a context is a root context
     ///
     /// Note that a root context has no assumptions _or_ variables.
     ///
     /// TODO: reference Lean
     fn is_root(&self, ctx: C) -> bool;
-
-    /// Get whether a context is contradictory
-    ///
-    /// TODO: reference lean
-    fn is_contr(&self, ctx: C) -> bool;
 
     /// Check whether `lo` is an ancestor of `hi`
     ///
@@ -389,7 +404,7 @@ pub trait WriteTerm<C, T> {
 /// # use covalence_kernel::*;
 /// let ker : &dyn ReadTermFacts<CtxId, TermId> = &Kernel::new();
 /// ```
-pub trait ReadTermFacts<C, T> {
+pub trait ReadTermFacts<C, T>: ReadCtxFacts<C> {
     // == Typing judgements ==
 
     /// Check whether the term `lhs` is equal to the term `rhs` in `ctx`

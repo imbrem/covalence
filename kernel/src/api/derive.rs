@@ -10,35 +10,41 @@ pub trait Strategy<C, T, K: ?Sized> {
     /// Attempt to prove a goal
     fn prove_goal(
         &mut self,
-        ker: &mut K,
         goal: Fact<C, Val<C, T>>,
         msg: &'static str,
         attempt_no: usize,
+        ker: &mut K,
     ) -> Result<(), Self::Fail>;
 
     /// Called when the top goal in the stack has failed
     ///
     /// This is usually called by returning an `Err` from `prove_has_ty`, but might be called on
     /// continue due to a wrapping strategy triggering the failure.
-    fn on_failure(&mut self, _goal: Fact<C, Val<C, T>>, _err: Option<&mut Self::Fail>) {}
+    fn on_failure(
+        &mut self,
+        _goal: Fact<C, Val<C, T>>,
+        _err: Option<&mut Self::Fail>,
+        _ker: &mut K,
+    ) {
+    }
 
     /// Called when the top goal in the stack has succeeded
-    fn on_success(&mut self, _goal: Fact<C, Val<C, T>>) {}
+    fn on_success(&mut self, _goal: Fact<C, Val<C, T>>, _ker: &mut K) {}
 
     /// Begin a goal
-    fn start_goal(&mut self, _goal: Fact<C, Val<C, T>>) -> Result<(), Self::Fail> {
+    fn start_goal(&mut self, _goal: Fact<C, Val<C, T>>, _ker: &mut K) -> Result<(), Self::Fail> {
         Ok(())
     }
 
     //TODO: register side conditions as well?
 
     /// Begin a derivation
-    fn start_rule(&mut self, _rule: &'static str) -> Result<(), Self::Fail> {
+    fn start_rule(&mut self, _rule: &'static str, _ker: &mut K) -> Result<(), Self::Fail> {
         Ok(())
     }
 
     /// End a successful derivation
-    fn finish_rule(&mut self, _result: Fact<C, Val<C, T>>) {}
+    fn finish_rule(&mut self, _result: Fact<C, Val<C, T>>, _ker: &mut K) {}
 
     /// An irrecoverable failure of a derivation
     fn fail(&mut self, msg: &'static str) -> Self::Fail;
@@ -49,10 +55,10 @@ impl<C, T, K: ?Sized> Strategy<C, T, K> for () {
 
     fn prove_goal(
         &mut self,
-        _ker: &mut K,
         _goal: Fact<C, Val<C, T>>,
         msg: &'static str,
         _attempt_no: usize,
+        _ker: &mut K,
     ) -> Result<(), Self::Fail> {
         Err(msg)
     }
@@ -73,18 +79,18 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     where
         S: Strategy<C, T, Self>,
     {
-        strategy.start_goal(goal)?;
+        strategy.start_goal(goal, self)?;
         let mut attempt_no = 0;
         while !goal.check(self.read()) {
             strategy
-                .prove_goal(self, goal, msg, attempt_no)
+                .prove_goal(goal, msg, attempt_no, self)
                 .map_err(|mut err| {
-                    strategy.on_failure(goal, Some(&mut err));
+                    strategy.on_failure(goal, Some(&mut err), self);
                     err
                 })?;
             attempt_no += 1;
         }
-        strategy.on_success(goal);
+        strategy.on_success(goal, self);
         Ok(())
     }
 

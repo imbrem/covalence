@@ -376,32 +376,6 @@ pub trait WriteTerm<C, T> {
     fn propagate_in(&mut self, ctx: C) -> usize;
 }
 
-/// A type of quantifier for a fact
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub enum QuantK {
-    /// An existential quantifier
-    Exists,
-    /// A universal quantifier
-    Forall,
-}
-
-/// A quantifier for a fact
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub enum Quant<T> {
-    /// An existential quantifier
-    Exists(T),
-    /// A universal quantifier
-    Forall(T),
-}
-
-impl<T> Quant<T> {
-    pub fn binder(self) -> T {
-        match self {
-            Quant::Exists(binder) | Quant::Forall(binder) => binder,
-        }
-    }
-}
-
 /// A datastore that can read facts about terms-in-context.
 ///
 /// This trait is `dyn`-safe:

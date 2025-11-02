@@ -14,8 +14,9 @@ pub mod api;
 pub mod data;
 pub mod rules;
 pub mod store;
+pub mod fact;
 
-pub use crate::api::derive::Derive;
+pub use crate::api::derive::DeriveTrusted;
 pub use crate::api::generic::*;
 pub use crate::api::store::{
     ReadCtx, ReadCtxFacts, ReadFacts, ReadTerm, ReadTermDb, ReadTermFacts, ReadTermStore, WriteTerm,

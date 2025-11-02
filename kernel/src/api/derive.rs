@@ -1,14 +1,14 @@
-use crate::api::goal::*;
 use crate::api::store::*;
 use crate::api::strategy::*;
 use crate::data::term::NodeVT;
-use crate::data::term::{Bv, Fv, ULvl, Val};
+use crate::data::term::{Fv, ULvl, Val};
+use crate::fact::*;
 
 pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, T> {
     /// Attempt to prove a goal
     fn ensure_goal<S>(
         &mut self,
-        goal: Fact<C, Val<C, T>>,
+        goal: Judgement<C, Val<C, T>>,
         strategy: &mut S,
         msg: &'static str,
     ) -> Result<(), S::Fail>
@@ -35,7 +35,7 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     where
         S: Strategy<C, T, Self>,
     {
-        self.ensure_goal(Fact::contr(ctx), strategy, msg)
+        self.ensure_goal(Judgement::contr(ctx), strategy, msg)
     }
 
     /// Attempt to prove that a term is well-formed in a context
@@ -246,19 +246,13 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
         Ok(result)
     }
 
-    /// Insert a value
+    /// Import a resolved value into the given context
     fn insert<S>(&mut self, ctx: C, val: NodeVT<C, T>, strategy: &mut S) -> Result<T, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
-        let result = if let Some(_result) = strategy.insert(ctx, val, self)? {
-            todo!("non-null insertion is not yet implemented!");
-        } else {
-            val.try_map_subterms(|tm| self.import_with(ctx, tm, strategy))?
-                .val_ix(ctx, self)
-        };
-        strategy.finish_insert(ctx, val, self);
-        Ok(result)
+        let val = self.resolve(ctx, val, strategy)?;
+        self.import_with(ctx, val, strategy)
     }
 }
 
@@ -271,7 +265,7 @@ where
 }
 
 /// Typing rules for deriving facts about terms from those already in the datastore
-pub trait Derive<C, T> {
+pub trait DeriveTrusted<C, T> {
     /// Add a new variable to this context with the given type
     ///
     /// TODO: reference Lean
@@ -304,41 +298,6 @@ pub trait Derive<C, T> {
     ) -> Result<IsSubctx<C>, S::Fail>
     where
         S: Strategy<C, T, Self>;
-
-    /// Compute the substitution of a term under binders
-    ///
-    /// Given terms `bound` and `body`
-    /// - If `body` is locally-closed, return it unchanged
-    /// - Otherwise, `let bound in body`
-    ///
-    /// TODO: reference Lean
-    fn subst_under(&mut self, ctx: C, under: Bv, bound: Val<C, T>, body: Val<C, T>) -> Val<C, T>;
-
-    /// Compute the substitution of a term
-    ///
-    /// Given terms `bound` and `body`
-    /// - If `body` is locally-closed, return it unchanged
-    /// - Otherwise, `let bound in body`
-    ///
-    /// TODO: reference Lean
-    fn subst(&mut self, ctx: C, bound: Val<C, T>, body: Val<C, T>) -> Val<C, T> {
-        self.subst_under(ctx, Bv(0), bound, body)
-    }
-
-    /// Compute the closure of a term
-    ///
-    /// Given term `tm` in context `ctx`
-    /// - If `tm` does not depend on the variable `var`, return `tm`
-    /// - Otherwise, return `close var tm`
-    fn close(&mut self, ctx: C, var: Fv<C>, tm: Val<C, T>) -> Val<C, T>;
-
-    /// Compute the closure of an imported term
-    ///
-    /// Given term `tm` in context `src`
-    /// - If `src` has no parameter, or `tm` does not depend on the parameter of `src`, return the
-    ///   import of `tm` into `ctx`
-    /// - Otherwise, return `close src (import src tm)`
-    fn close_import(&mut self, ctx: C, src: Fv<C>, tm: Val<C, T>) -> Val<C, T>;
 
     /// Cast by universe level
     ///

@@ -1,5 +1,5 @@
-use crate::api::goal::*;
 use crate::data::term::*;
+use crate::fact::*;
 
 /// A strategy tells a kernel how to derive facts about terms in a context
 pub trait Strategy<C, T, K: ?Sized> {
@@ -22,21 +22,21 @@ pub trait Strategy<C, T, K: ?Sized> {
     // == Goals ==
 
     /// Begin a goal
-    fn start_goal(&mut self, _goal: Fact<C, Val<C, T>>, _ker: &mut K) -> Result<(), Self::Fail> {
+    fn start_goal(&mut self, _goal: Judgement<C, Val<C, T>>, _ker: &mut K) -> Result<(), Self::Fail> {
         Ok(())
     }
 
     /// Attempt to prove a goal
     fn prove_goal(
         &mut self,
-        goal: Fact<C, Val<C, T>>,
+        goal: Judgement<C, Val<C, T>>,
         msg: &'static str,
         attempt_no: usize,
         ker: &mut K,
     ) -> Result<(), Self::Fail>;
 
     /// Called when a goal is proved
-    fn finish_goal(&mut self, _goal: Fact<C, Val<C, T>>, _ker: &mut K) {}
+    fn finish_goal(&mut self, _goal: Judgement<C, Val<C, T>>, _ker: &mut K) {}
 
     // == Imports ==
 
@@ -62,23 +62,6 @@ pub trait Strategy<C, T, K: ?Sized> {
 
     /// Called when an insertion has succeeded
     fn finish_resolve(&mut self, _ctx: C, _val: NodeVT<C, T>, _ker: &mut K) {}
-
-    // == Insertions ==
-
-    /// Attempt to insert a value into the given context
-    fn insert(
-        &mut self,
-        _ctx: C,
-        _val: NodeVT<C, T>,
-        _ker: &mut K,
-    ) -> Result<Option<T>, Self::Fail> {
-        Ok(None)
-    }
-
-    /// Called when an insertion has succeeded
-    fn finish_insert(&mut self, _ctx: C, _val: NodeVT<C, T>, _ker: &mut K) {}
-
-    //TODO: register side conditions as well?
 }
 
 impl<C, T, K: ?Sized> Strategy<C, T, K> for () {
@@ -86,7 +69,7 @@ impl<C, T, K: ?Sized> Strategy<C, T, K> for () {
 
     fn prove_goal(
         &mut self,
-        _goal: Fact<C, Val<C, T>>,
+        _goal: Judgement<C, Val<C, T>>,
         msg: &'static str,
         _attempt_no: usize,
         _ker: &mut K,

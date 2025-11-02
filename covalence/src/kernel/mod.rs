@@ -3,8 +3,8 @@ pub use covalence_kernel::*;
 
 use data::term::*;
 
-/// An extension trait providing a more convenient interface for the `covalence` kernel
-pub trait DeriveExt<C, T>: Derive<C, T> + ReadTermDb<C, T> + WriteTerm<C, T>
+/// Derivations supported by the `covalence` kernel
+pub trait Derive<C, T>: DeriveTrusted<C, T> + ReadTermDb<C, T> + WriteTerm<C, T>
 where
     C: Copy + PartialEq,
     T: Copy + PartialEq,
@@ -86,10 +86,10 @@ where
     }
 }
 
-impl<C, T, K> DeriveExt<C, T> for K
+impl<C, T, K> Derive<C, T> for K
 where
     C: Copy + PartialEq,
     T: Copy + PartialEq,
-    K: Derive<C, T> + ReadTermDb<C, T> + WriteTerm<C, T>,
+    K: DeriveTrusted<C, T> + ReadTermDb<C, T> + WriteTerm<C, T>,
 {
 }

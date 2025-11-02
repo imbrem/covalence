@@ -23,6 +23,11 @@ pub use crate::api::store::{
     ReadTermStore, WriteTerm,
 };
 
+pub use crate::fact::{
+    IS_CONTR, IS_EMPTY, IS_FALSE, IS_INHAB, IS_PROP, IS_SCOPED, IS_TRUE, IS_TY, IS_UNIV, IS_WF,
+    IS_WF_EMP, Pred1,
+};
+
 #[doc(inline)]
 pub use crate::store::{CtxId, Node, TermDb, TermId, ValId};
 

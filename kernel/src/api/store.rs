@@ -1,4 +1,8 @@
-use crate::data::term::{Bv, Fv, NodeT, NodeVT, ULvl, Val};
+use crate::{
+    Pred1,
+    data::term::{Bv, Fv, NodeT, NodeVT, ULvl, Val},
+    fact::Pred0,
+};
 
 /// A term database with a given index kind
 pub trait TermIndex {
@@ -31,9 +35,7 @@ pub trait ReadTerm<C, T> {
     fn node(&self, ctx: C, tm: T) -> &NodeT<C, T>;
 
     /// Lookup a term in the store
-    ///
-    /// Canonicalizes the term's children if found
-    fn lookup(&self, ctx: C, tm: &mut NodeT<C, T>) -> Option<T>;
+    fn lookup(&self, ctx: C, tm: NodeT<C, T>) -> Option<T>;
 
     /// Lookup an import of a term into another context, returning a handle to it if it exists
     fn lookup_val(&self, ctx: C, val: Val<C, T>) -> Option<T>;
@@ -143,7 +145,7 @@ impl<C: Copy> Fv<C> {
         Val {
             ctx: self.ctx,
             tm: store
-                .lookup(self.ctx, &mut NodeT::Fv(self))
+                .lookup(self.ctx, NodeT::Fv(self))
                 .expect("valid variables should exist in their contexts"),
         }
     }
@@ -184,6 +186,11 @@ pub trait ReadCtx<C, T> {
 /// let ker : &dyn ReadCtxFacts<CtxId> = &Kernel::new();
 /// ```
 pub trait ReadCtxFacts<C> {
+    /// Get whether a context satisfies a nullary predicate
+    ///
+    /// TODO: reference lean
+    fn nullary(&self, ctx: C, pred: Pred0) -> bool;
+
     /// Get whether a context is contradictory
     ///
     /// TODO: reference lean
@@ -407,74 +414,84 @@ pub trait WriteTerm<C, T> {
 pub trait ReadTermFacts<C, T>: ReadCtxFacts<C> {
     // == Typing judgements ==
 
+    /// Get a term's flags in a given context
+    fn tm_flags(&self, ctx: C, tm: T) -> Pred1;
+
+    /// Check whether the term `tm` satisfies predicate `pred` in `ctx`
+    ///
+    /// Removes any predicates known to be satisfied
+    ///
+    /// For details, see the helper methods in [`ReadTermStore`].
+    fn tm_filter(&self, ctx: C, pred: &mut Pred1, tm: T) -> bool {
+        pred.remove(self.tm_flags(ctx, tm));
+        pred.is_empty()
+    }
+
+    /// Check whether the term `tm` satisfies predicate `pred` in `ctx`
+    ///
+    /// For details, see the helper methods in [`ReadTermStore`].
+    fn tm_satisfies(&self, ctx: C, mut pred: Pred1, tm: T) -> bool {
+        self.tm_filter(ctx, &mut pred, tm)
+    }
+
     /// Check whether the term `lhs` is equal to the term `rhs` in `ctx`
     ///
     /// Corresponds to `Ctx.KEq` in `gt3-lean`
     fn eq_in(&self, ctx: C, lhs: T, rhs: T) -> bool;
-
-    /// Check whether the term `tm` is well-formed in `ctx`
-    /// Corresponds to `Ctx.KIsWf` in `gt3-lean`
-    fn is_wf(&self, ctx: C, tm: T) -> bool;
-
-    /// Check whether the term `tm` is a type in the context `ctx`
-    ///
-    /// Corresponds to `Ctx.KIsTy` in `gt3-lean`
-    fn is_ty(&self, ctx: C, tm: T) -> bool;
-
-    /// Check whether the term `tm` is a proposition in the context `ctx`
-    ///
-    /// Corresponds to `Ctx.KIsProp` in `gt3-lean`
-    fn is_prop(&self, ctx: C, tm: T) -> bool;
 
     /// Check whether the term `tm` has type `ty` in `ctx`
     ///
     /// Corresponds to `Ctx.KHasTy` in `gt3-lean`
     fn has_ty(&self, ctx: C, tm: T, ty: T) -> bool;
 
+    /// Check whether the term `tm` is well-formed in `ctx`
+    ///
+    /// Corresponds to `Ctx.KIsWf` in `gt3-lean`
+    fn is_wf(&self, ctx: C, tm: T) -> bool {
+        self.tm_satisfies(ctx, Pred1::IS_WF, tm)
+    }
+
+    /// Check whether the term `tm` is a type in the context `ctx`
+    ///
+    /// Corresponds to `Ctx.KIsTy` in `gt3-lean`
+    fn is_ty(&self, ctx: C, tm: T) -> bool {
+        self.tm_satisfies(ctx, Pred1::IS_TY, tm)
+    }
+
+    /// Check whether the term `tm` is a proposition in the context `ctx`
+    ///
+    /// Corresponds to `Ctx.KIsProp` in `gt3-lean`
+    fn is_prop(&self, ctx: C, tm: T) -> bool {
+        self.tm_satisfies(ctx, Pred1::IS_PROP, tm)
+    }
+
     /// Check whether the term `tm` is an inhabited type in the context `ctx`
     ///
     /// Corresponds to `Ctx.KIsInhab` in `gt3-lean`
-    fn is_inhab(&self, ctx: C, tm: T) -> bool;
+    fn is_inhab(&self, ctx: C, tm: T) -> bool {
+        self.tm_satisfies(ctx, Pred1::IS_INHAB, tm)
+    }
 
     /// Check whether the term `tm` is an empty type in the context `ctx`
     ///
     /// TODO: reference Lean
-    fn is_empty(&self, ctx: C, tm: T) -> bool;
+    fn is_empty(&self, ctx: C, tm: T) -> bool {
+        self.tm_satisfies(ctx, Pred1::IS_EMPTY, tm)
+    }
 
-    /// Check whether the terms `lhs`, `rhs` are equal in `ctx` under a binder `binder`
+    /// Check whether the term `tm` is the true proposition in the context `ctx`
     ///
     /// TODO: reference Lean
-    fn forall_eq_in(&self, ctx: C, binder: T, lhs: T, rhs: T) -> bool;
+    fn is_tt(&self, ctx: C, tm: T) -> bool {
+        self.tm_satisfies(ctx, Pred1::IS_TT, tm)
+    }
 
-    /// Check whether the term `tm` is well-formed in `ctx` under a binder `binder`
+    /// Check whether the term `tm` is the false proposition in the context `ctx`
     ///
     /// TODO: reference Lean
-    fn forall_is_wf(&self, ctx: C, binder: T, ty: T) -> bool;
-
-    /// Check whether the term `tm` is a valid type in `ctx` under a binder `binder`
-    ///
-    /// Corresponds to `Ctx.KIsTyUnder` in `gt3-lean`
-    fn forall_is_ty(&self, ctx: C, binder: T, ty: T) -> bool;
-
-    /// Check whether the term `tm` is a valid type in `ctx` under a binder `binder`
-    ///
-    /// Corresponds to `Ctx.KIsTyUnder` in `gt3-lean`
-    fn forall_is_prop(&self, ctx: C, binder: T, ty: T) -> bool;
-
-    /// Check whether the term `tm` has type `ty` in `ctx` under a binder `binder`
-    ///
-    /// Corresponds to `Ctx.KHasTyUnder` in `gt3-lean`
-    fn forall_has_ty(&self, ctx: C, binder: T, tm: T, ty: T) -> bool;
-
-    /// Check whether the term `tm` is always inhabited in `ctx` under a binder `binder`
-    ///
-    /// TODO: reference Lean
-    fn forall_is_inhab(&self, ctx: C, binder: T, tm: T) -> bool;
-
-    /// Check whether the term `tm` is always inhabited in `ctx` under a binder `binder`
-    ///
-    /// TODO: reference Lean
-    fn forall_is_empty(&self, ctx: C, binder: T, tm: T) -> bool;
+    fn is_ff(&self, ctx: C, tm: T) -> bool {
+        self.tm_satisfies(ctx, Pred1::IS_FF, tm)
+    }
 }
 
 /// A database of terms, contexts, and facts which we can read from
@@ -507,9 +524,155 @@ impl<D: ReadCtxFacts<C> + ReadTermFacts<C, T>, C, T> ReadFacts<C, T> for D {}
 /// # use covalence_kernel::*;
 /// let ker : &dyn ReadTermStore<CtxId, TermId> = &Kernel::new();
 /// ```
-pub trait ReadTermStore<C, T>: ReadCtx<C, T> + ReadTerm<C, T> + ReadFacts<C, T> {}
+pub trait ReadTermStore<C, T>: ReadCtx<C, T> + ReadTerm<C, T> + ReadFacts<C, T> {
+    /// Check whether the term `tm` satisfies predicate `pred` under a binder in `ctx`
+    ///
+    /// Removes any predicates known to be satisfied
+    ///
+    /// For details about the specific predicates, see helper methods like
+    /// [`forall_is_ty`](#method.forall_is_ty).
+    fn forall_filter(&self, ctx: C, binder: T, pred: &mut Pred1, tm: T) -> bool;
 
-impl<D: ReadCtx<C, T> + ReadTerm<C, T> + ReadFacts<C, T>, C, T> ReadTermStore<C, T> for D {}
+    /// Check whether the term `tm` satisfies predicate `pred` under a binder in `ctx`
+    ///
+    /// For details about the specific predicates, see helper methods like
+    /// [`forall_is_ty`](#method.forall_is_ty).
+    fn forall_satisfies(&self, ctx: C, binder: T, mut pred: Pred1, tm: T) -> bool {
+        self.forall_filter(ctx, binder, &mut pred, tm)
+    }
+
+    /// Check whether the terms `lhs`, `rhs` are equal in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_eq_in(&self, ctx: C, binder: T, lhs: T, rhs: T) -> bool;
+
+    /// Check whether the term `tm` has type `ty` in `ctx` under a binder `binder`
+    ///
+    /// Corresponds to `Ctx.KHasTyUnder` in `gt3-lean`
+    fn forall_has_ty(&self, ctx: C, binder: T, tm: T, ty: T) -> bool;
+
+    /// Check whether the term `tm` is well-formed in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_is_wf(&self, ctx: C, binder: T, tm: T) -> bool {
+        self.forall_satisfies(ctx, binder, Pred1::IS_WF, tm)
+    }
+
+    /// Check whether the term `tm` is a valid type in `ctx` under a binder `binder`
+    ///
+    /// Corresponds to `Ctx.KIsTyUnder` in `gt3-lean`
+    fn forall_is_ty(&self, ctx: C, binder: T, tm: T) -> bool {
+        self.forall_satisfies(ctx, binder, Pred1::IS_TY, tm)
+    }
+
+    /// Check whether the term `tm` is a valid type in `ctx` under a binder `binder`
+    ///
+    /// Corresponds to `Ctx.KIsTyUnder` in `gt3-lean`
+    fn forall_is_prop(&self, ctx: C, binder: T, tm: T) -> bool {
+        self.forall_satisfies(ctx, binder, Pred1::IS_PROP, tm)
+    }
+
+    /// Check whether the term `tm` is always inhabited in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_is_inhab(&self, ctx: C, binder: T, tm: T) -> bool {
+        self.forall_satisfies(ctx, binder, Pred1::IS_INHAB, tm)
+    }
+
+    /// Check whether the term `tm` is always inhabited in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_is_empty(&self, ctx: C, binder: T, tm: T) -> bool {
+        self.forall_satisfies(ctx, binder, Pred1::IS_EMPTY, tm)
+    }
+}
+
+impl<D: ReadCtx<C, T> + ReadTerm<C, T> + ReadFacts<C, T>, C, T> ReadTermStore<C, T> for D
+where
+    C: Copy,
+    T: Copy,
+{
+    fn forall_filter(&self, ctx: C, binder: T, pred: &mut Pred1, tm: T) -> bool {
+        // We begin by checking that `∀ x ∉ L . Γ, x : A ok`
+        let binder_flags = self.tm_flags(ctx, binder);
+        if !binder_flags.contains(Pred1::IS_TY) {
+            return false;
+        }
+
+        // We also cache whether `Γ ⊢ A empty`
+        //
+        // If we ever derive that `∀ x ∉ L, Γ, x : A ⊢ B wf`; we may add `∀ x ∉ L, Γ, x : A ⊢ P B`
+        // for `P` nonempty.
+        let is_empty = binder_flags.contains(Pred1::IS_EMPTY);
+
+        // - If `Γ ⊢ P B` then `∀ x ∉ L, Γ, x : A ⊢ P B` by weakening
+        pred.remove(self.tm_flags(ctx, tm).in_empty(is_empty));
+
+        // If `Γ ⊢ A ≡ B` then `∀ x ∉ L . Γ, x : A ⊢ B inhab`
+        if pred.intersects(Pred1::IS_INHAB) && self.eq_in(ctx, binder, tm) {
+            pred.remove(Pred1::IS_INHAB);
+        }
+
+        if pred.is_empty() {
+            return true;
+        }
+
+        // If `Γ ⊢ P (Π A . B)` and `P` is a Π-predicate, then `∀ x ∉ L . Γ, x : A ⊢ B`
+        if !pred.pi().is_empty() {
+            let pi_flags = self
+                .lookup(ctx, NodeT::Pi([binder, tm]))
+                .map(|pi| self.tm_flags(ctx, pi).pi())
+                .unwrap_or_default()
+                .in_empty(is_empty);
+            pred.remove(pi_flags);
+        }
+
+        if pred.is_empty() {
+            return true;
+        }
+
+        // If `Γ ⊢ P (Σ A . B)` and `P` is a Σ-predicate, then `∀ x ∉ L . Γ, x : A ⊢ B`
+        if !pred.sigma().is_empty() {
+            let sigma_flags = self
+                .lookup(ctx, NodeT::Sigma([binder, tm]))
+                .map(|sigma| self.tm_flags(ctx, sigma).sigma())
+                .unwrap_or_default()
+                .in_empty(is_empty);
+            pred.remove(sigma_flags);
+        }
+
+        pred.is_empty()
+    }
+
+    fn forall_eq_in(&self, ctx: C, binder: T, lhs: T, rhs: T) -> bool {
+        if !self.is_ty(ctx, binder) {
+            return false;
+        }
+        if self.eq_in(ctx, lhs, rhs) {
+            return true;
+        }
+        let Some(abs_lhs) = self.lookup(ctx, NodeT::Abs([binder, lhs])) else {
+            return false;
+        };
+        let Some(abs_rhs) = self.lookup(ctx, NodeT::Abs([binder, rhs])) else {
+            return false;
+        };
+        self.eq_in(ctx, abs_lhs, abs_rhs)
+    }
+
+    fn forall_has_ty(&self, ctx: C, binder: T, tm: T, ty: T) -> bool {
+        if self.is_ty(ctx, binder) && self.has_ty(ctx, tm, ty) {
+            return true;
+        }
+        let Some(abs) = self.lookup(ctx, NodeT::Abs([binder, tm])) else {
+            return false;
+        };
+        let Some(pi) = self.lookup(ctx, NodeT::Pi([binder, ty])) else {
+            return false;
+        };
+        self.has_ty(ctx, abs, pi)
+    }
+}
 
 /// A term database which we can read from
 pub trait ReadTermDb<C, T> {
@@ -631,6 +794,19 @@ pub trait WriteFacts<C, T> {
 }
 
 impl<C: Copy, T: Copy, D: ReadTerm<C, T> + ReadTermFacts<C, T>> ReadTermFacts<C, Val<C, T>> for D {
+    fn tm_flags(&self, ctx: C, tm: Val<C, T>) -> Pred1 {
+        if let Some(tm) = self.lookup_val(ctx, tm) {
+            self.tm_flags(ctx, tm)
+        } else {
+            Pred1::empty()
+        }
+    }
+
+    fn tm_satisfies(&self, ctx: C, pred: Pred1, tm: Val<C, T>) -> bool {
+        self.lookup_val(ctx, tm)
+            .is_some_and(|tm| self.tm_satisfies(ctx, pred, tm))
+    }
+
     fn eq_in(&self, ctx: C, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
         self.cons_eq(lhs, rhs)
             || if let Some(lhs) = self.lookup_val(ctx, lhs)
@@ -642,88 +818,10 @@ impl<C: Copy, T: Copy, D: ReadTerm<C, T> + ReadTermFacts<C, T>> ReadTermFacts<C,
             }
     }
 
-    fn is_wf(&self, ctx: C, tm: Val<C, T>) -> bool {
-        self.lookup_val(ctx, tm)
-            .is_some_and(|tm| self.is_wf(ctx, tm))
-    }
-
-    fn is_ty(&self, ctx: C, tm: Val<C, T>) -> bool {
-        self.lookup_val(ctx, tm)
-            .is_some_and(|tm| self.is_ty(ctx, tm))
-    }
-
-    fn is_prop(&self, ctx: C, tm: Val<C, T>) -> bool {
-        self.lookup_val(ctx, tm)
-            .is_some_and(|tm| self.is_prop(ctx, tm))
-    }
-
     fn has_ty(&self, ctx: C, tm: Val<C, T>, ty: Val<C, T>) -> bool {
         self.lookup_val(ctx, tm).is_some_and(|tm| {
             self.lookup_val(ctx, ty)
                 .is_some_and(|ty| self.has_ty(ctx, tm, ty))
-        })
-    }
-
-    fn is_inhab(&self, ctx: C, tm: Val<C, T>) -> bool {
-        self.lookup_val(ctx, tm)
-            .is_some_and(|tm| self.is_inhab(ctx, tm))
-    }
-
-    fn is_empty(&self, ctx: C, tm: Val<C, T>) -> bool {
-        self.lookup_val(ctx, tm)
-            .is_some_and(|tm| self.is_empty(ctx, tm))
-    }
-
-    fn forall_eq_in(&self, ctx: C, binder: Val<C, T>, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, lhs).is_some_and(|lhs| {
-                self.lookup_val(ctx, rhs)
-                    .is_some_and(|rhs| self.forall_eq_in(ctx, binder, lhs, rhs))
-            })
-        })
-    }
-
-    fn forall_is_wf(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, ty)
-                .is_some_and(|ty| self.forall_is_wf(ctx, binder, ty))
-        })
-    }
-
-    fn forall_is_ty(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, ty)
-                .is_some_and(|ty| self.forall_is_ty(ctx, binder, ty))
-        })
-    }
-
-    fn forall_is_prop(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, ty)
-                .is_some_and(|ty| self.forall_is_prop(ctx, binder, ty))
-        })
-    }
-
-    fn forall_has_ty(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>, ty: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, tm).is_some_and(|tm| {
-                self.lookup_val(ctx, ty)
-                    .is_some_and(|ty| self.forall_has_ty(ctx, binder, tm, ty))
-            })
-        })
-    }
-
-    fn forall_is_inhab(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, tm)
-                .is_some_and(|tm| self.forall_is_inhab(ctx, binder, tm))
-        })
-    }
-
-    fn forall_is_empty(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, tm)
-                .is_some_and(|tm| self.forall_is_empty(ctx, binder, tm))
         })
     }
 }

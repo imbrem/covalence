@@ -1,8 +1,10 @@
 use typed_generational_arena::{SmallArena, SmallIndex};
 
+use crate::Pred1;
 use crate::api::generic::*;
 use crate::api::store::*;
 use crate::data::term::*;
+use crate::fact::Pred0;
 
 mod ctx;
 use ctx::*;
@@ -50,7 +52,7 @@ impl ReadTerm<CtxId, TermId> for TermDb {
         self.x[ctx.0].node(tm)
     }
 
-    fn lookup(&self, ctx: CtxId, tm: &mut Node) -> Option<TermId> {
+    fn lookup(&self, ctx: CtxId, tm: Node) -> Option<TermId> {
         self.x[ctx.0].lookup(tm)
     }
 
@@ -274,8 +276,12 @@ impl ReadCtx<CtxId, TermId> for TermDb {
 }
 
 impl ReadCtxFacts<CtxId> for TermDb {
+    fn nullary(&self, ctx: CtxId, pred: Pred0) -> bool {
+        self.x[ctx.0].nullary().contains(pred)
+    }
+    
     fn is_contr(&self, ctx: CtxId) -> bool {
-        self.x[ctx.0].is_contr()
+        self.x[ctx.0].nullary().contains(Pred0::IS_CONTR)
     }
 }
 
@@ -329,24 +335,8 @@ impl ReadCtxRel<CtxId> for TermDb {
 }
 
 impl ReadTermFacts<CtxId, TermId> for TermDb {
-    fn is_wf(&self, ctx: CtxId, tm: TermId) -> bool {
-        self.x[ctx.0].is_wf(tm)
-    }
-
-    fn is_ty(&self, ctx: CtxId, tm: TermId) -> bool {
-        self.x[ctx.0].is_ty(tm)
-    }
-
-    fn is_inhab(&self, ctx: CtxId, tm: TermId) -> bool {
-        self.x[ctx.0].is_inhab(tm)
-    }
-
-    fn is_empty(&self, ctx: CtxId, tm: TermId) -> bool {
-        self.x[ctx.0].is_empty(tm)
-    }
-
-    fn is_prop(&self, ctx: CtxId, tm: TermId) -> bool {
-        self.x[ctx.0].is_prop(tm)
+    fn tm_flags(&self, ctx: CtxId, tm: TermId) -> Pred1 {
+        self.x[ctx.0].tm_flags(tm)
     }
 
     fn eq_in(&self, ctx: CtxId, lhs: TermId, rhs: TermId) -> bool {
@@ -355,34 +345,6 @@ impl ReadTermFacts<CtxId, TermId> for TermDb {
 
     fn has_ty(&self, ctx: CtxId, tm: TermId, ty: TermId) -> bool {
         self.x[ctx.0].has_ty(tm, ty)
-    }
-
-    fn forall_eq_in(&self, ctx: CtxId, binder: TermId, lhs: TermId, rhs: TermId) -> bool {
-        self.x[ctx.0].forall_eq_in(binder, lhs, rhs)
-    }
-
-    fn forall_is_wf(&self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
-        self.x[ctx.0].forall_is_wf(binder, ty)
-    }
-
-    fn forall_is_ty(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
-        self.x[ctx.0].forall_is_ty(binder, tm)
-    }
-
-    fn forall_is_prop(&self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
-        self.x[ctx.0].forall_is_prop(binder, ty)
-    }
-
-    fn forall_has_ty(&self, ctx: CtxId, binder: TermId, tm: TermId, ty: TermId) -> bool {
-        self.x[ctx.0].forall_has_ty(binder, tm, ty)
-    }
-
-    fn forall_is_inhab(&self, ctx: CtxId, binder: TermId, ty: TermId) -> bool {
-        self.x[ctx.0].forall_is_inhab(binder, ty)
-    }
-
-    fn forall_is_empty(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
-        self.x[ctx.0].forall_is_empty(binder, tm)
     }
 }
 
@@ -508,19 +470,6 @@ impl WriteFacts<CtxId, TermId> for TermDb {
 #[cfg(test)]
 mod test {
     use super::*;
-
-    #[test]
-    fn unit_eq_empty_contr() {
-        let mut db = TermDb::default();
-        let ctx = db.new_ctx();
-        assert!(!db.is_contr(ctx));
-        let unit = db.add(ctx, Node::Unit);
-        let empty = db.add(ctx, Node::Empty);
-        assert_ne!(unit, empty);
-        assert!(!db.is_contr(ctx));
-        db.set_eq_unchecked(ctx, unit, empty);
-        assert!(db.is_contr(ctx));
-    }
 
     #[test]
     fn construct_pi_prop_close() {

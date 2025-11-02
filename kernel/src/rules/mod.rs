@@ -2,8 +2,6 @@ use std::ops::Deref;
 
 use crate::api::derive::*;
 use crate::api::store::*;
-use crate::api::strategy;
-use crate::api::strategy::Strategy;
 use crate::data::term::{Fv, NodeT, ULvl, Val};
 
 /// Derivation rules for the `covalence` kernel

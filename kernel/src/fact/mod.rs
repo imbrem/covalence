@@ -4,6 +4,8 @@ Facts which can be checked in the datastore
 use crate::api::store::*;
 use crate::data::term::Val;
 
+use bitflags::bitflags;
+
 /// Logical composition for fact types
 mod logic;
 
@@ -63,25 +65,230 @@ where
     }
 }
 
+bitflags! {
+    /// A nullary predicate over contexts
+    /// ```
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Default, Ord, PartialOrd)]
+    pub struct Pred0: u8 {
+        /// This context is contradictory
+        const IS_CONTR = 0b00000001;
+    }
+
+    /// A unary predicate on terms-in-context
+    ///
+    /// We introduce the Π-subgroup and Σ-subgroups of predicates as follows:
+    ///
+    /// For the Π-predicates `P ∈ {IS_SCOPED, IS_WF, IS_TY, IS_INHAB, IS_PROP, IS_TRUE}`, i.e. `P ≤
+    /// IS_TRUE`, we have that
+    /// ```text
+    /// Γ ⊢ P(Π A . B)
+    /// ===
+    /// ∀x . Γ, x : A ⊢ P B
+    /// ```
+    /// and
+    /// ```text
+    /// ∀x . Γ, x : A ⊢ P B
+    /// ===
+    /// Γ ⊢ P(Π A . B)
+    /// ```
+    ///
+    /// For the Σ-predicates `P ∈ {IS_SCOPED, IS_WF, IS_TY, IS_EMPTY}`, i.e. `P <= IS_EMPTY`, we
+    /// have that
+    /// ```text
+    /// Γ ⊢ P(Σ A . B)
+    /// ===
+    /// ∀x . Γ, x : A ⊢ P B
+    /// ```
+    /// and
+    /// ```text
+    /// ∀x . Γ, x : A ⊢ P B
+    /// ===
+    /// Γ ⊢ P(Σ A . B)
+    /// ```
+    ///
+    /// We note the following relationships:
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// assert!(IS_WF.contains(IS_SCOPED));
+    /// assert_ne!(IS_SCOPED, IS_WF);
+    /// assert!(IS_TY.contains(IS_WF));
+    /// assert_ne!(IS_WF, IS_TY);
+    /// assert!(IS_PROP.contains(IS_TY));
+    /// assert_ne!(IS_TY, IS_PROP);
+    /// assert!(IS_INHAB.contains(IS_TY));
+    /// assert_ne!(IS_TY, IS_INHAB);
+    /// assert!(IS_EMPTY.contains(IS_TY));
+    /// assert_ne!(IS_TY, IS_EMPTY);
+    /// assert!(!IS_PROP.contains(IS_INHAB));
+    /// assert!(!IS_INHAB.contains(IS_PROP));
+    /// assert!(!IS_PROP.contains(IS_EMPTY));
+    /// assert!(!IS_EMPTY.contains(IS_PROP));
+    /// assert!(!IS_INHAB.contains(IS_EMPTY));
+    /// assert!(!IS_EMPTY.contains(IS_INHAB));
+    /// assert_eq!(IS_PROP | IS_INHAB, IS_TT);
+    /// assert_eq!(IS_PROP | IS_EMPTY, IS_FF);
+    /// assert!(IS_UNIV.contains(IS_INHAB));
+    /// assert_ne!(IS_INHAB, IS_UNIV);
+    /// assert!(!IS_UNIV.contains(IS_PROP));
+    /// assert!(!IS_UNIV.contains(IS_EMPTY));
+    /// assert_eq!(IS_CONTR, IS_INHAB | IS_EMPTY);
+    /// assert_eq!(IS_WF_EMP, IS_CONTR | IS_UNIV | IS_PROP);
+    /// ```
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Default, Ord, PartialOrd)]
+    pub struct Pred1: u8 {
+        /// This term is well-scoped
+        const IS_SCOPED = 0b00000001;
+        /// This term is well-formed
+        const IS_WF     = 0b00000011;
+        /// This term is a well-formed type
+        const IS_TY     = 0b00000111;
+        /// This term is a well-formed proposition
+        const IS_PROP   = 0b00001111;
+        /// This term is an inhabited type
+        const IS_INHAB  = 0b00010111;
+        /// This term is an empty type
+        const IS_EMPTY  = 0b00100111;
+        /// This term is equal to the true proposition
+        const IS_TT     = 0b00011111;
+        /// This term is equal to the false proposition
+        const IS_FF     = 0b00101111;
+        /// This term is a valid typing universe
+        const IS_UNIV   = 0b01010111;
+        /// This term indicates a contradiction has occurred
+        const IS_CONTR  = 0b00110111;
+        /// A well-formed term under an empty context
+        const IS_WF_EMP = 0b01111111;
+    }
+}
+
+impl Pred0 {
+    /// Convert this nullary predicate into a unary predicate on a binder
+    pub const fn forall(self) -> Pred1 {
+        if self.contains(Pred0::IS_CONTR) {
+            Pred1::IS_EMPTY
+        } else {
+            Pred1::empty()
+        }
+    }
+}
+
+impl Pred1 {
+    /// Get the Π-component of this predicate
+    pub fn pi(self) -> Pred1 {
+        self & Pred1::IS_TT
+    }
+
+    /// Get the Σ-component of this predicate
+    pub fn sigma(self) -> Pred1 {
+        self & Pred1::IS_EMPTY
+    }
+
+    /// Get the neutral component of this predicate
+    pub fn neutral(self) -> Pred1 {
+        self & !(Pred1::IS_TT | Pred1::IS_EMPTY)
+    }
+
+    /// Add whether this is an empty context
+    pub fn in_empty(self, is_empty: bool) -> Pred1 {
+        if is_empty && self.contains(Pred1::IS_WF) {
+            self | Pred1::IS_WF_EMP
+        } else {
+            self
+        }
+    }
+}
+
+/// A term is well-scoped
+pub const IS_SCOPED: Pred1 = Pred1::IS_SCOPED;
+
+/// A term is well-formed
+pub const IS_WF: Pred1 = Pred1::IS_WF;
+
+/// A term is a valid type
+pub const IS_TY: Pred1 = Pred1::IS_TY;
+
+/// A term is a proposition
+pub const IS_PROP: Pred1 = Pred1::IS_PROP;
+
+/// A term is an inhabited type
+pub const IS_INHAB: Pred1 = Pred1::IS_INHAB;
+
+/// A term is an empty type
+pub const IS_EMPTY: Pred1 = Pred1::IS_EMPTY;
+
+/// A term is equal to the true proposition
+pub const IS_TRUE: Pred1 = Pred1::IS_TT;
+
+/// A term is equal to the false proposition
+pub const IS_FALSE: Pred1 = Pred1::IS_FF;
+
+/// A term is a valid typing universe
+pub const IS_UNIV: Pred1 = Pred1::IS_UNIV;
+
+/// A term indicates a contradiction
+pub const IS_CONTR: Pred1 = Pred1::IS_CONTR;
+
+/// A well-formed term under an empty context
+pub const IS_WF_EMP: Pred1 = Pred1::IS_WF_EMP;
+
 /// An atomic formula on terms supported by the kernel
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum Atom<T> {
+    /// A nullary predicate predicate on contexts
+    Pred0(Pred0),
+    /// A unary predicate on terms-in-context
+    Pred1(Pred1, T),
     /// Two terms are equal
     Eq(T, T),
-    /// A term is well-formed
-    IsWf(T),
-    /// A term is a type
-    IsTy(T),
-    /// A term is a proposition
-    IsProp(T),
     /// A term has a type
     HasTy(T, T),
-    /// A term is inhabited
-    IsInhab(T),
-    /// A term is empty
-    IsEmpty(T),
-    /// A context is a contradiction
-    Contr,
+}
+
+impl<T> Atom<T> {
+    /// A term is well-scoped
+    pub const fn is_scoped(tm: T) -> Self {
+        Atom::Pred1(IS_SCOPED, tm)
+    }
+
+    /// A term is well-formed
+    pub const fn is_wf(tm: T) -> Self {
+        Atom::Pred1(IS_WF, tm)
+    }
+
+    /// A term is a valid type
+    pub const fn is_ty(tm: T) -> Self {
+        Atom::Pred1(IS_TY, tm)
+    }
+
+    /// A term is a proposition
+    pub const fn is_prop(tm: T) -> Self {
+        Atom::Pred1(IS_PROP, tm)
+    }
+
+    /// A term is an inhabited type
+    pub const fn is_inhab(tm: T) -> Self {
+        Atom::Pred1(IS_INHAB, tm)
+    }
+
+    /// A term is an empty type
+    pub const fn is_empty(tm: T) -> Self {
+        Atom::Pred1(IS_EMPTY, tm)
+    }
+
+    /// A term is equal to the true proposition
+    pub const fn is_true(tm: T) -> Self {
+        Atom::Pred1(IS_TRUE, tm)
+    }
+
+    /// A term is equal to the false proposition
+    pub const fn is_false(tm: T) -> Self {
+        Atom::Pred1(IS_FALSE, tm)
+    }
+
+    /// A term is a valid typing universe
+    pub const fn is_univ(tm: T) -> Self {
+        Atom::Pred1(IS_UNIV, tm)
+    }
 }
 
 /// A universal quantifier
@@ -103,7 +310,7 @@ impl<C, T> QAtomSeq<C, T> {
             ctx,
             stmt: Quantified {
                 binder: None,
-                body: Atom::Contr,
+                body: Atom::Pred0(Pred0::IS_CONTR),
             },
         }
     }
@@ -246,7 +453,7 @@ where
             ctx: g.ctx,
             stmt: Quantified {
                 binder: None,
-                body: Atom::IsWf(g.tm),
+                body: Atom::is_wf(g.tm),
             },
             // binder: Quant::Null,
             // rel: Some(GoalIn::IsWf(g.tm)),
@@ -260,7 +467,7 @@ impl<C, T> From<IsTy<C, T>> for QAtomSeq<C, T> {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: None,
-                body: Atom::IsTy(g.tm),
+                body: Atom::is_ty(g.tm),
             },
             // binder: Quant::Null,
             // rel: Some(GoalIn::IsTy(g.tm)),
@@ -274,7 +481,7 @@ impl<C, T> From<IsInhab<C, T>> for QAtomSeq<C, T> {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: None,
-                body: Atom::IsInhab(g.tm),
+                body: Atom::is_inhab(g.tm),
             },
             // binder: Quant::Null,
             // rel: Some(GoalIn::IsInhab(g.tm)),
@@ -288,7 +495,7 @@ impl<C, T> From<IsEmpty<C, T>> for QAtomSeq<C, T> {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: None,
-                body: Atom::IsEmpty(g.tm),
+                body: Atom::is_empty(g.tm),
             },
         }
     }
@@ -300,7 +507,7 @@ impl<C, T: Copy> From<IsProp<C, T>> for QAtomSeq<C, T> {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: None,
-                body: Atom::IsProp(g.tm),
+                body: Atom::is_prop(g.tm),
             },
         }
     }
@@ -324,7 +531,7 @@ impl<C, T> From<IsTyUnder<C, T>> for QAtomSeq<C, T> {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: Some(Forall(g.binder)),
-                body: Atom::IsTy(g.tm),
+                body: Atom::is_ty(g.tm),
             },
         }
     }
@@ -348,7 +555,7 @@ impl<C, T> From<ForallInhabUnder<C, T>> for QAtomSeq<C, T> {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: Some(Forall(g.binder)),
-                body: Atom::IsInhab(g.ty),
+                body: Atom::is_inhab(g.ty),
             },
         }
     }
@@ -362,7 +569,8 @@ where
 {
     /// Check this quantifier in the given context
     fn check_in(&self, &ctx: &C, ker: &R) -> bool {
-        ker.is_ty(ctx, self.0)
+        todo!()
+        //ker.is_ty(ctx, self.0)
     }
 }
 
@@ -376,13 +584,9 @@ where
     fn check_in(&self, &ctx: &C, ker: &R) -> bool {
         match *self {
             Atom::Eq(lhs, rhs) => ker.eq_in(ctx, lhs, rhs),
-            Atom::IsWf(tm) => ker.is_wf(ctx, tm),
-            Atom::IsTy(tm) => ker.is_ty(ctx, tm),
-            Atom::IsProp(tm) => ker.is_prop(ctx, tm),
+            Atom::Pred1(p, tm) => ker.tm_satisfies(ctx, p, tm),
             Atom::HasTy(tm, ty) => ker.has_ty(ctx, tm, ty),
-            Atom::IsInhab(tm) => ker.is_inhab(ctx, tm),
-            Atom::IsEmpty(tm) => ker.is_empty(ctx, tm),
-            Atom::Contr => ker.is_contr(ctx),
+            Atom::Pred0(p) => ker.nullary(ctx, p),
         }
     }
 }
@@ -396,14 +600,11 @@ where
     /// Check whether this goal is true
     fn check_under(&self, &ctx: &C, &Forall(binder): &Forall<T>, ker: &R) -> bool {
         match *self {
-            Atom::Eq(lhs, rhs) => ker.forall_eq_in(ctx, binder, lhs, rhs),
-            Atom::IsWf(tm) => ker.forall_is_wf(ctx, binder, tm),
-            Atom::IsTy(tm) => ker.forall_is_ty(ctx, binder, tm),
-            Atom::IsProp(tm) => ker.forall_is_prop(ctx, binder, tm),
-            Atom::HasTy(tm, ty) => ker.forall_has_ty(ctx, binder, tm, ty),
-            Atom::IsInhab(tm) => ker.forall_is_inhab(ctx, binder, tm),
-            Atom::IsEmpty(tm) => ker.forall_is_empty(ctx, binder, tm),
-            Atom::Contr => ker.is_empty(ctx, binder),
+            // Atom::Eq(lhs, rhs) => ker.forall_eq_in(ctx, binder, lhs, rhs),
+            // Atom::Pred1(pred, tm) => ker.forall_unary(ctx, binder, pred, tm),
+            // Atom::HasTy(tm, ty) => ker.forall_has_ty(ctx, binder, tm, ty),
+            Atom::Pred0(pred) => ker.tm_satisfies(ctx, pred.forall(), binder),
+            _ => todo!(),
         }
     }
 }

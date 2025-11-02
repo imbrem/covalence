@@ -35,6 +35,8 @@ where
         // Ok(var)
     }
 
+    //TODO: derive these to be fully well-typed, every time?
+
     /// Construct the universe of propositions in a given context
     fn prop(&mut self, ctx: C) -> Val<C, T> {
         Val {
@@ -56,6 +58,30 @@ where
         Val {
             ctx,
             tm: self.add(ctx, NodeT::Empty),
+        }
+    }
+
+    /// Construct the universe of sets in a given context
+    fn sets(&mut self, ctx: C) -> Val<C, T> {
+        Val {
+            ctx,
+            tm: self.add(ctx, NodeT::U(ULvl::SET)),
+        }
+    }
+
+    /// Construct the type of natural numbers in a given context
+    fn nats(&mut self, ctx: C) -> Val<C, T> {
+        Val {
+            ctx,
+            tm: self.add(ctx, NodeT::Nats),
+        }
+    }
+
+    /// Construct a small natural number in a given context
+    fn n64(&mut self, ctx: C, n: u64) -> Val<C, T> {
+        Val {
+            ctx,
+            tm: self.add(ctx, NodeT::N64(n)),
         }
     }
 }

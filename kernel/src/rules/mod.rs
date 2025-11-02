@@ -88,18 +88,6 @@ where
     T: Copy + PartialEq,
     D: ReadTermDb<C, T> + WriteTerm<C, T> + WriteFacts<C, T>,
 {
-    fn assume<S>(&mut self, ctx: C, ty: Val<C, T>, strategy: &mut S) -> Result<Fv<C>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
-        strategy.start_rule("assume", self)?;
-        self.ensure_is_ty(ctx, ty, strategy, kernel_error::ASSUME_IS_TY)?;
-        let ty = self.import_with(ctx, ty, strategy)?;
-        let var = self.0.assume_unchecked(ctx, ty);
-        strategy.finish_rule(self);
-        Ok(var)
-    }
-
     fn add_var<S>(&mut self, ctx: C, ty: Val<C, T>, strategy: &mut S) -> Result<Fv<C>, S::Fail>
     where
         S: Strategy<C, T, Self>,

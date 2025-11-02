@@ -229,7 +229,7 @@ pub trait ReadCtx<C, T> {
     /// let ctx = ker.new_ctx();
     /// // The empty context is a subctx of everything
     /// assert!(ker.is_subctx_of_parents(ctx, ctx));
-    /// let unit = ker.add(ctx, Node::Unit);
+    /// let unit = Node::Unit.val(ctx, &mut ker);;
     /// let x = ker.with_param(ctx, unit, &mut ()).unwrap();
     /// let child = x.ctx;
     /// assert!(ker.is_subctx_of_parents(ctx, child));
@@ -314,8 +314,6 @@ pub trait WriteTerm<C, T> {
     /// // This is true since both contexts are currently empty
     /// assert!(ker.is_subctx(parent, child));
     /// assert!(ker.is_subctx(child, parent));
-    /// let s = ker.add(child, Node::U(ULvl::SET));
-    /// let x = ker.add_var(child, s, &mut ()).unwrap();
     /// ```
     fn with_parent(&mut self, parent: C) -> C;
 

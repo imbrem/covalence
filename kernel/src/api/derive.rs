@@ -272,11 +272,6 @@ where
 
 /// Typing rules for deriving facts about terms from those already in the datastore
 pub trait Derive<C, T> {
-    /// Assume a new hypothesis in this context
-    fn assume<S>(&mut self, ctx: C, ty: Val<C, T>, strategy: &mut S) -> Result<Fv<C>, S::Fail>
-    where
-        S: Strategy<C, T, Self>;
-
     /// Add a new variable to this context with the given type
     ///
     /// # Examples

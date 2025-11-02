@@ -27,6 +27,24 @@ pub trait FactUnder<C, Q, R: ?Sized> {
     fn check_under(self, ctx: C, binder: Q, db: &R) -> bool;
 }
 
+/// A judgement about a given context, of the form `Γ ⊢ S`
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct Judgement<C, S> {
+    /// The context for this judgement
+    pub ctx: C,
+    /// The statement asserted
+    pub stmt: S,
+}
+
+/// A quantified statement, of the form `Q . S`
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct Quantified<Q, S> {
+    /// The quantifier for this statement
+    pub binder: Q,
+    /// The body of this statement
+    pub body: S,
+}
+
 /// A quantifier for a fact
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum Quant<T> {
@@ -48,16 +66,7 @@ impl<T> Quant<T> {
     }
 }
 
-/// A judgement about a given context
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct Judgement<C, T> {
-    /// The context for this judgement
-    pub ctx: C,
-    /// The binder for this goal, if any
-    pub binder: Quant<T>,
-    /// The relation
-    pub rel: Option<GoalIn<T>>,
-}
+pub type Goal<C, T> = Judgement<C, Quantified<Quant<T>, Option<GoalIn<T>>>>;
 
 /// A judgement about terms
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -80,20 +89,24 @@ pub enum GoalIn<T> {
     Contr,
 }
 
-impl<C, T> Judgement<C, T> {
-    pub fn ok(ctx: C) -> Judgement<C, T> {
+impl<C, T> Goal<C, T> {
+    pub fn ok(ctx: C) -> Goal<C, T> {
         Judgement {
             ctx,
-            binder: Quant::Null,
-            rel: None,
+            stmt: Quantified {
+                binder: Quant::Null,
+                body: None,
+            },
         }
     }
 
-    pub fn contr(ctx: C) -> Judgement<C, T> {
+    pub fn contr(ctx: C) -> Goal<C, T> {
         Judgement {
             ctx,
-            binder: Quant::Null,
-            rel: Some(GoalIn::Contr),
+            stmt: Quantified {
+                binder: Quant::Null,
+                body: Some(GoalIn::Contr),
+            },
         }
     }
 }
@@ -211,17 +224,21 @@ pub struct IsSubctx<C> {
     pub hi: C,
 }
 
-impl<C, T> From<Eqn<C, T>> for Judgement<C, T> {
+impl<C, T> From<Eqn<C, T>> for Goal<C, T> {
     fn from(g: Eqn<C, T>) -> Self {
         Judgement {
             ctx: g.ctx,
-            binder: Quant::Null,
-            rel: Some(GoalIn::Eq(g.lhs, g.rhs)),
+            stmt: Quantified {
+                binder: Quant::Null,
+                body: Some(GoalIn::Eq(g.lhs, g.rhs)),
+            },
+            // binder: Quant::Null,
+            // rel: Some(GoalIn::Eq(g.lhs, g.rhs)),
         }
     }
 }
 
-impl<C, T> From<IsWf<C, T>> for Judgement<C, T>
+impl<C, T> From<IsWf<C, T>> for Goal<C, T>
 where
     C: Copy,
     T: Copy,
@@ -229,98 +246,132 @@ where
     fn from(g: IsWf<C, T>) -> Self {
         Judgement {
             ctx: g.ctx,
-            binder: Quant::Null,
-            rel: Some(GoalIn::IsWf(g.tm)),
+            stmt: Quantified {
+                binder: Quant::Null,
+                body: Some(GoalIn::IsWf(g.tm)),
+            },
+            // binder: Quant::Null,
+            // rel: Some(GoalIn::IsWf(g.tm)),
         }
     }
 }
 
-impl<C, T> From<IsTy<C, T>> for Judgement<C, T> {
+impl<C, T> From<IsTy<C, T>> for Goal<C, T> {
     fn from(g: IsTy<C, T>) -> Self {
         Judgement {
             ctx: g.ctx,
-            binder: Quant::Null,
-            rel: Some(GoalIn::IsTy(g.tm)),
+            stmt: Quantified {
+                binder: Quant::Null,
+                body: Some(GoalIn::IsTy(g.tm)),
+            },
+            // binder: Quant::Null,
+            // rel: Some(GoalIn::IsTy(g.tm)),
         }
     }
 }
 
-impl<C, T> From<IsInhab<C, T>> for Judgement<C, T> {
+impl<C, T> From<IsInhab<C, T>> for Goal<C, T> {
     fn from(g: IsInhab<C, T>) -> Self {
         Judgement {
             ctx: g.ctx,
-            binder: Quant::Null,
-            rel: Some(GoalIn::IsInhab(g.tm)),
+            stmt: Quantified {
+                binder: Quant::Null,
+                body: Some(GoalIn::IsInhab(g.tm)),
+            },
+            // binder: Quant::Null,
+            // rel: Some(GoalIn::IsInhab(g.tm)),
         }
     }
 }
 
-impl<C, T> From<IsEmpty<C, T>> for Judgement<C, T> {
+impl<C, T> From<IsEmpty<C, T>> for Goal<C, T> {
     fn from(g: IsEmpty<C, T>) -> Self {
         Judgement {
             ctx: g.ctx,
-            binder: Quant::Forall(g.tm),
-            rel: Some(GoalIn::Contr),
+            stmt: Quantified {
+                binder: Quant::Forall(g.tm),
+                body: Some(GoalIn::Contr),
+            },
         }
     }
 }
 
-impl<C, T> From<IsProp<C, T>> for Judgement<C, T> {
+impl<C, T> From<IsProp<C, T>> for Goal<C, T> {
     fn from(g: IsProp<C, T>) -> Self {
-        Judgement {
+        Goal {
             ctx: g.ctx,
-            binder: Quant::Null,
-            rel: Some(GoalIn::IsProp(g.tm)),
+            stmt: Quantified {
+                binder: Quant::Null,
+                body: Some(GoalIn::IsProp(g.tm)),
+            },
         }
     }
 }
 
-impl<C, T> From<HasTy<C, T>> for Judgement<C, T> {
+impl<C, T> From<HasTy<C, T>> for Goal<C, T> {
     fn from(g: HasTy<C, T>) -> Self {
-        Judgement {
+        Goal {
             ctx: g.ctx,
-            binder: Quant::Null,
-            rel: Some(GoalIn::HasTy(g.tm, g.ty)),
+            stmt: Quantified {
+                binder: Quant::Null,
+                body: Some(GoalIn::HasTy(g.tm, g.ty)),
+            },
         }
     }
 }
 
-impl<C, T> From<IsTyUnder<C, T>> for Judgement<C, T> {
+impl<C, T> From<IsTyUnder<C, T>> for Goal<C, T> {
     fn from(g: IsTyUnder<C, T>) -> Self {
-        Judgement {
+        Goal {
             ctx: g.ctx,
-            binder: Quant::Forall(g.binder),
-            rel: Some(GoalIn::IsTy(g.tm)),
+            stmt: Quantified {
+                binder: Quant::Forall(g.binder),
+                body: Some(GoalIn::IsTy(g.tm)),
+            },
+            // binder: Quant::Forall(g.binder),
+            // rel: Some(GoalIn::IsTy(g.tm)),
         }
     }
 }
 
-impl<C, T> From<HasTyUnder<C, T>> for Judgement<C, T> {
+impl<C, T> From<HasTyUnder<C, T>> for Goal<C, T> {
     fn from(g: HasTyUnder<C, T>) -> Self {
         Judgement {
             ctx: g.ctx,
-            binder: Quant::Forall(g.binder),
-            rel: Some(GoalIn::HasTy(g.tm, g.ty)),
+            stmt: Quantified {
+                binder: Quant::Forall(g.binder),
+                body: Some(GoalIn::HasTy(g.tm, g.ty)),
+            },
+            // binder: Quant::Forall(g.binder),
+            // rel: Some(GoalIn::HasTy(g.tm, g.ty)),
         }
     }
 }
 
-impl<C, T> From<ForallInhabUnder<C, T>> for Judgement<C, T> {
+impl<C, T> From<ForallInhabUnder<C, T>> for Goal<C, T> {
     fn from(g: ForallInhabUnder<C, T>) -> Self {
         Judgement {
             ctx: g.ctx,
-            binder: Quant::Forall(g.binder),
-            rel: Some(GoalIn::IsInhab(g.ty)),
+            stmt: Quantified {
+                binder: Quant::Forall(g.binder),
+                body: Some(GoalIn::IsInhab(g.ty)),
+            },
+            // binder: Quant::Forall(g.binder),
+            // rel: Some(GoalIn::IsInhab(g.ty)),
         }
     }
 }
 
-impl<C, T> From<ExistsInhabUnder<C, T>> for Judgement<C, T> {
+impl<C, T> From<ExistsInhabUnder<C, T>> for Goal<C, T> {
     fn from(g: ExistsInhabUnder<C, T>) -> Self {
         Judgement {
             ctx: g.ctx,
-            binder: Quant::Exists(g.binder),
-            rel: Some(GoalIn::IsInhab(g.ty)),
+            stmt: Quantified {
+                binder: Quant::Exists(g.binder),
+                body: Some(GoalIn::IsInhab(g.ty)),
+            },
+            // binder: Quant::Exists(g.binder),
+            // rel: Some(GoalIn::IsInhab(g.ty)),
         }
     }
 }
@@ -336,10 +387,10 @@ impl<T: Copy> Quant<T> {
     }
 }
 
-impl<C: Copy, T: Copy, R: ReadFacts<C, T> + ?Sized> Fact<R> for Judgement<C, T> {
+impl<C: Copy, T: Copy, R: ReadFacts<C, T> + ?Sized> Fact<R> for Goal<C, T> {
     /// Check whether this goal is true
     fn check(self, ker: &R) -> bool {
-        match (self.binder, self.rel) {
+        match (self.stmt.binder, self.stmt.body) {
             (binder, None) => binder.check_in(self.ctx, ker),
             (Quant::Null, Some(GoalIn::Eq(lhs, rhs))) => ker.eq_in(self.ctx, lhs, rhs),
             (Quant::Null, Some(GoalIn::IsWf(tm))) => ker.is_wf(self.ctx, tm),

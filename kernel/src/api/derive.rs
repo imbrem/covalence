@@ -8,7 +8,7 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     /// Attempt to prove a goal
     fn ensure_goal<S>(
         &mut self,
-        goal: Judgement<C, Val<C, T>>,
+        goal: Goal<C, Val<C, T>>,
         strategy: &mut S,
         msg: &'static str,
     ) -> Result<(), S::Fail>

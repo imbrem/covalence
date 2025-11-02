@@ -12,9 +12,9 @@ This module is further subdivided into three primary components:
 
 pub mod api;
 pub mod data;
+pub mod fact;
 pub mod rules;
 pub mod store;
-pub mod fact;
 
 pub use crate::api::derive::DeriveTrusted;
 pub use crate::api::generic::*;

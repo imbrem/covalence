@@ -1,8 +1,8 @@
 use crate::api::derive::*;
-use crate::fact::*;
 use crate::api::store::*;
 use crate::api::strategy::*;
 use crate::data::term::{Bv, Fv, NodeT, ULvl, Val};
+use crate::fact::*;
 
 use super::Kernel;
 

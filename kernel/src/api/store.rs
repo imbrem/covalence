@@ -272,12 +272,6 @@ pub trait ReadCtx<C, T> {
 
     /// Lookup the type of a variable in its own context
     fn get_var_ty(&self, var: Fv<C>) -> T;
-
-    /// Get whether a variable is a ghost variable
-    ///
-    /// Ghost variables cannot appear in terms, and so in general are ill-typed, but their type is
-    /// inhabited.
-    fn var_is_ghost(&self, var: Fv<C>) -> bool;
 }
 
 /// A trait implemented by a datastore that can create hash-consed terms and universe levels

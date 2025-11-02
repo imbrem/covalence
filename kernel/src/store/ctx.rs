@@ -50,16 +50,7 @@ impl Ctx {
     }
 
     pub fn var_ty(&self, ix: u32) -> Option<TermId> {
-        self.e.analysis.vars.get(ix as usize).map(|(v, _)| *v)
-    }
-
-    pub fn var_is_ghost(&self, ix: u32) -> bool {
-        self.e
-            .analysis
-            .vars
-            .get(ix as usize)
-            .map(|(_, g)| *g)
-            .unwrap_or(true)
+        self.e.analysis.vars.get(ix as usize).copied()
     }
 
     pub fn num_vars(&self) -> u32 {
@@ -396,7 +387,7 @@ impl Ctx {
             .len()
             .try_into()
             .expect("assumption index overflow");
-        self.e.analysis.vars.push((ty, true));
+        self.e.analysis.vars.push(ty);
         ix
     }
 
@@ -410,7 +401,7 @@ impl Ctx {
             .len()
             .try_into()
             .expect("variable index overflow");
-        self.e.analysis.vars.push((ty, false));
+        self.e.analysis.vars.push(ty);
         ix
     }
 
@@ -446,9 +437,8 @@ struct CtxData {
     parent: Option<CtxId>,
     /// This context's flags
     flags: CtxFlags,
-    /// This context's variables, implemented as a map from indices to types, and a bit indicating
-    /// whether the variable is a ghost or not
-    vars: Vec<(TermId, bool)>,
+    /// This context's variables, implemented as a map from indices to types
+    vars: Vec<TermId>,
 }
 
 impl Analysis<Node> for CtxData {

@@ -279,9 +279,6 @@ where
     {
         todo!()
         // strategy.start_rule("derive_fv")?;
-        // if self.read().var_is_ghost(var) {
-        //     return Err(strategy.fail(kernel_error::DERIVE_FV_GHOST));
-        // }
         // if !self.read().is_subctx(var.ctx, ctx) {
         //     return Err(strategy.fail(kernel_error::DERIVE_FV_ILL_SCOPED));
         // }

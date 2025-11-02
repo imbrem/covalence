@@ -310,10 +310,6 @@ impl ReadCtx<CtxId, TermId> for TermDb {
             .var_ty(var.ix)
             .expect("invalid variable index")
     }
-
-    fn var_is_ghost(&self, var: Fv<CtxId>) -> bool {
-        self.x[var.ctx.0].var_is_ghost(var.ix)
-    }
 }
 
 impl ReadTermFacts<CtxId, TermId> for TermDb {

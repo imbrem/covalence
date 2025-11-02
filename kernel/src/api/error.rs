@@ -15,11 +15,6 @@ pub mod kernel_error {
     pub const SET_PARENT_NOT_SUBCTX: &str = "set_parent: expected subcontext";
     /// The parent argument of `set_parent` must not have `ctx` as a subcontext
     pub const SET_PARENT_WOULD_CYCLE: &str = "set_parent: would induce a cycle";
-    /// Ghost variables are not well-typed, only inhabited
-    ///
-    /// At a higher level, it might make sense to, for a ghost variable, instead return ε-choice at
-    /// the appropriate type.
-    pub const DERIVE_FV_GHOST: &str = "derive_fv: var is a ghost";
     /// When we add a variable, it should be _well-scoped_: only contain variables  visible from
     /// within the current context
     pub const DERIVE_FV_ILL_SCOPED: &str = "derive_fv: var is ill-scoped";

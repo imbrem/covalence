@@ -22,21 +22,21 @@ pub trait Strategy<C, T, K: ?Sized> {
     // == Goals ==
 
     /// Begin a goal
-    fn start_goal(&mut self, _goal: Goal<C, Val<C, T>>, _ker: &mut K) -> Result<(), Self::Fail> {
+    fn start_goal(&mut self, _goal: QAtomSeq<C, Val<C, T>>, _ker: &mut K) -> Result<(), Self::Fail> {
         Ok(())
     }
 
     /// Attempt to prove a goal
     fn prove_goal(
         &mut self,
-        goal: Goal<C, Val<C, T>>,
+        goal: QAtomSeq<C, Val<C, T>>,
         msg: &'static str,
         attempt_no: usize,
         ker: &mut K,
     ) -> Result<(), Self::Fail>;
 
     /// Called when a goal is proved
-    fn finish_goal(&mut self, _goal: Goal<C, Val<C, T>>, _ker: &mut K) {}
+    fn finish_goal(&mut self, _goal: QAtomSeq<C, Val<C, T>>, _ker: &mut K) {}
 
     // == Imports ==
 
@@ -69,7 +69,7 @@ impl<C, T, K: ?Sized> Strategy<C, T, K> for () {
 
     fn prove_goal(
         &mut self,
-        _goal: Goal<C, Val<C, T>>,
+        _goal: QAtomSeq<C, Val<C, T>>,
         msg: &'static str,
         _attempt_no: usize,
         _ker: &mut K,

@@ -25,20 +25,19 @@ pub trait FactUnder<C, Q, R: ?Sized> {
     fn check_under(&self, ctx: &C, binder: &Q, db: &R) -> bool;
 }
 
-/// A judgement about a given context, of the form `Γ ⊢ S`
+/// A _sequent_: a pair `Γ ⊢ S` of a context and a statement
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct Judgement<C, S> {
-    /// The context for this judgement
+pub struct Seq<C, S> {
+    /// The context for this sequent
     pub ctx: C,
     /// The statement asserted
     pub stmt: S,
 }
 
-impl<C, S, R: ?Sized> Fact<R> for Judgement<C, S>
+impl<C, S, R: ?Sized> Fact<R> for Seq<C, S>
 where
     S: FactIn<C, R>,
 {
-    /// Check whether this judgement is true in the given context
     fn check(&self, db: &R) -> bool {
         self.stmt.check_in(&self.ctx, db)
     }
@@ -85,11 +84,9 @@ impl<T> Quant<T> {
     }
 }
 
-pub type Goal<C, T> = Judgement<C, Quantified<Quant<T>, Option<GoalIn<T>>>>;
-
-/// A judgement about terms
+/// An atomic formula on terms supported by the kernel
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub enum GoalIn<T> {
+pub enum Atom<T> {
     /// Two terms are equal
     Eq(T, T),
     /// A term is well-formed
@@ -108,23 +105,22 @@ pub enum GoalIn<T> {
     Contr,
 }
 
-impl<C, T> Goal<C, T> {
-    pub fn ok(ctx: C) -> Goal<C, T> {
-        Judgement {
-            ctx,
-            stmt: Quantified {
-                binder: Quant::Free,
-                body: None,
-            },
-        }
-    }
+/// A quantified atomic formula
+pub type QAtom<T> = Quantified<Quant<T>, Atom<T>>;
 
-    pub fn contr(ctx: C) -> Goal<C, T> {
-        Judgement {
+/// An atomic sequent
+pub type AtomSeq<C, T> = Seq<C, Atom<T>>;
+
+/// A quantified atomic sequent
+pub type QAtomSeq<C, T> = Seq<C, QAtom<T>>;
+
+impl<C, T> QAtomSeq<C, T> {
+    pub fn contr(ctx: C) -> QAtomSeq<C, T> {
+        Seq {
             ctx,
             stmt: Quantified {
                 binder: Quant::Free,
-                body: Some(GoalIn::Contr),
+                body: Atom::Contr,
             },
         }
     }
@@ -243,13 +239,13 @@ pub struct IsSubctx<C> {
     pub hi: C,
 }
 
-impl<C, T> From<Eqn<C, T>> for Goal<C, T> {
+impl<C, T> From<Eqn<C, T>> for QAtomSeq<C, T> {
     fn from(g: Eqn<C, T>) -> Self {
-        Judgement {
+        Seq {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: Quant::Free,
-                body: Some(GoalIn::Eq(g.lhs, g.rhs)),
+                body: Atom::Eq(g.lhs, g.rhs),
             },
             // binder: Quant::Null,
             // rel: Some(GoalIn::Eq(g.lhs, g.rhs)),
@@ -257,17 +253,17 @@ impl<C, T> From<Eqn<C, T>> for Goal<C, T> {
     }
 }
 
-impl<C, T> From<IsWf<C, T>> for Goal<C, T>
+impl<C, T> From<IsWf<C, T>> for QAtomSeq<C, T>
 where
     C: Copy,
     T: Copy,
 {
     fn from(g: IsWf<C, T>) -> Self {
-        Judgement {
+        Seq {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: Quant::Free,
-                body: Some(GoalIn::IsWf(g.tm)),
+                body: Atom::IsWf(g.tm),
             },
             // binder: Quant::Null,
             // rel: Some(GoalIn::IsWf(g.tm)),
@@ -275,13 +271,13 @@ where
     }
 }
 
-impl<C, T> From<IsTy<C, T>> for Goal<C, T> {
+impl<C, T> From<IsTy<C, T>> for QAtomSeq<C, T> {
     fn from(g: IsTy<C, T>) -> Self {
-        Judgement {
+        Seq {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: Quant::Free,
-                body: Some(GoalIn::IsTy(g.tm)),
+                body: Atom::IsTy(g.tm),
             },
             // binder: Quant::Null,
             // rel: Some(GoalIn::IsTy(g.tm)),
@@ -289,13 +285,13 @@ impl<C, T> From<IsTy<C, T>> for Goal<C, T> {
     }
 }
 
-impl<C, T> From<IsInhab<C, T>> for Goal<C, T> {
+impl<C, T> From<IsInhab<C, T>> for QAtomSeq<C, T> {
     fn from(g: IsInhab<C, T>) -> Self {
-        Judgement {
+        Seq {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: Quant::Free,
-                body: Some(GoalIn::IsInhab(g.tm)),
+                body: Atom::IsInhab(g.tm),
             },
             // binder: Quant::Null,
             // rel: Some(GoalIn::IsInhab(g.tm)),
@@ -303,49 +299,49 @@ impl<C, T> From<IsInhab<C, T>> for Goal<C, T> {
     }
 }
 
-impl<C, T> From<IsEmpty<C, T>> for Goal<C, T> {
+impl<C, T> From<IsEmpty<C, T>> for QAtomSeq<C, T> {
     fn from(g: IsEmpty<C, T>) -> Self {
-        Judgement {
+        Seq {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: Quant::Forall(g.tm),
-                body: Some(GoalIn::Contr),
+                body: Atom::Contr,
             },
         }
     }
 }
 
-impl<C, T> From<IsProp<C, T>> for Goal<C, T> {
+impl<C, T> From<IsProp<C, T>> for QAtomSeq<C, T> {
     fn from(g: IsProp<C, T>) -> Self {
-        Goal {
+        QAtomSeq {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: Quant::Free,
-                body: Some(GoalIn::IsProp(g.tm)),
+                body: Atom::IsProp(g.tm),
             },
         }
     }
 }
 
-impl<C, T> From<HasTy<C, T>> for Goal<C, T> {
+impl<C, T> From<HasTy<C, T>> for QAtomSeq<C, T> {
     fn from(g: HasTy<C, T>) -> Self {
-        Goal {
+        QAtomSeq {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: Quant::Free,
-                body: Some(GoalIn::HasTy(g.tm, g.ty)),
+                body: Atom::HasTy(g.tm, g.ty),
             },
         }
     }
 }
 
-impl<C, T> From<IsTyUnder<C, T>> for Goal<C, T> {
+impl<C, T> From<IsTyUnder<C, T>> for QAtomSeq<C, T> {
     fn from(g: IsTyUnder<C, T>) -> Self {
-        Goal {
+        QAtomSeq {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: Quant::Forall(g.binder),
-                body: Some(GoalIn::IsTy(g.tm)),
+                body: Atom::IsTy(g.tm),
             },
             // binder: Quant::Forall(g.binder),
             // rel: Some(GoalIn::IsTy(g.tm)),
@@ -353,13 +349,13 @@ impl<C, T> From<IsTyUnder<C, T>> for Goal<C, T> {
     }
 }
 
-impl<C, T> From<HasTyUnder<C, T>> for Goal<C, T> {
+impl<C, T> From<HasTyUnder<C, T>> for QAtomSeq<C, T> {
     fn from(g: HasTyUnder<C, T>) -> Self {
-        Judgement {
+        Seq {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: Quant::Forall(g.binder),
-                body: Some(GoalIn::HasTy(g.tm, g.ty)),
+                body: Atom::HasTy(g.tm, g.ty),
             },
             // binder: Quant::Forall(g.binder),
             // rel: Some(GoalIn::HasTy(g.tm, g.ty)),
@@ -367,13 +363,13 @@ impl<C, T> From<HasTyUnder<C, T>> for Goal<C, T> {
     }
 }
 
-impl<C, T> From<ForallInhabUnder<C, T>> for Goal<C, T> {
+impl<C, T> From<ForallInhabUnder<C, T>> for QAtomSeq<C, T> {
     fn from(g: ForallInhabUnder<C, T>) -> Self {
-        Judgement {
+        Seq {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: Quant::Forall(g.binder),
-                body: Some(GoalIn::IsInhab(g.ty)),
+                body: Atom::IsInhab(g.ty),
             },
             // binder: Quant::Forall(g.binder),
             // rel: Some(GoalIn::IsInhab(g.ty)),
@@ -381,13 +377,13 @@ impl<C, T> From<ForallInhabUnder<C, T>> for Goal<C, T> {
     }
 }
 
-impl<C, T> From<ExistsInhabUnder<C, T>> for Goal<C, T> {
+impl<C, T> From<ExistsInhabUnder<C, T>> for QAtomSeq<C, T> {
     fn from(g: ExistsInhabUnder<C, T>) -> Self {
-        Judgement {
+        Seq {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: Quant::Exists(g.binder),
-                body: Some(GoalIn::IsInhab(g.ty)),
+                body: Atom::IsInhab(g.ty),
             },
             // binder: Quant::Exists(g.binder),
             // rel: Some(GoalIn::IsInhab(g.ty)),
@@ -421,7 +417,7 @@ where
     }
 }
 
-impl<C, T, R> FactUnder<C, Quant<T>, R> for GoalIn<T>
+impl<C, T, R> FactUnder<C, Quant<T>, R> for Atom<T>
 where
     C: Copy,
     T: Copy,
@@ -430,38 +426,30 @@ where
     /// Check whether this goal is true
     fn check_under(&self, &ctx: &C, &binder: &Quant<T>, ker: &R) -> bool {
         match (binder, *self) {
-            (Quant::Free, GoalIn::Eq(lhs, rhs)) => ker.eq_in(ctx, lhs, rhs),
-            (Quant::Free, GoalIn::IsWf(tm)) => ker.is_wf(ctx, tm),
-            (Quant::Free, GoalIn::IsTy(tm)) => ker.is_wf(ctx, tm),
-            (Quant::Free, GoalIn::IsProp(tm)) => ker.is_prop(ctx, tm),
-            (Quant::Free, GoalIn::HasTy(tm, ty)) => ker.has_ty(ctx, tm, ty),
-            (Quant::Free, GoalIn::IsInhab(tm)) => ker.is_inhab(ctx, tm),
-            (Quant::Free, GoalIn::IsEmpty(tm)) => ker.is_empty(ctx, tm),
-            (Quant::Free, GoalIn::Contr) => ker.is_contr(ctx),
-            (Quant::Forall(binder), GoalIn::Eq(lhs, rhs)) => {
-                ker.forall_eq_in(ctx, binder, lhs, rhs)
-            }
-            (Quant::Forall(binder), GoalIn::IsWf(tm)) => ker.forall_is_wf(ctx, binder, tm),
-            (Quant::Forall(binder), GoalIn::IsTy(tm)) => ker.forall_is_ty(ctx, binder, tm),
-            (Quant::Forall(binder), GoalIn::IsProp(tm)) => ker.forall_is_prop(ctx, binder, tm),
-            (Quant::Forall(binder), GoalIn::HasTy(tm, ty)) => {
-                ker.forall_has_ty(ctx, binder, tm, ty)
-            }
-            (Quant::Forall(binder), GoalIn::IsInhab(tm)) => ker.forall_is_inhab(ctx, binder, tm),
-            (Quant::Forall(binder), GoalIn::IsEmpty(tm)) => ker.forall_is_empty(ctx, binder, tm),
-            (Quant::Forall(binder), GoalIn::Contr) => ker.is_empty(ctx, binder),
-            (Quant::Exists(binder), GoalIn::Eq(lhs, rhs)) => {
-                ker.exists_eq_in(ctx, binder, lhs, rhs)
-            }
-            (Quant::Exists(binder), GoalIn::IsWf(tm)) => ker.exists_is_wf(ctx, binder, tm),
-            (Quant::Exists(binder), GoalIn::IsTy(tm)) => ker.exists_is_ty(ctx, binder, tm),
-            (Quant::Exists(binder), GoalIn::IsProp(tm)) => ker.exists_is_prop(ctx, binder, tm),
-            (Quant::Exists(binder), GoalIn::HasTy(tm, ty)) => {
-                ker.exists_has_ty(ctx, binder, tm, ty)
-            }
-            (Quant::Exists(binder), GoalIn::IsInhab(tm)) => ker.exists_is_inhab(ctx, binder, tm),
-            (Quant::Exists(binder), GoalIn::IsEmpty(tm)) => ker.exists_is_empty(ctx, binder, tm),
-            (Quant::Exists(_), GoalIn::Contr) => ker.is_contr(ctx),
+            (Quant::Free, Atom::Eq(lhs, rhs)) => ker.eq_in(ctx, lhs, rhs),
+            (Quant::Free, Atom::IsWf(tm)) => ker.is_wf(ctx, tm),
+            (Quant::Free, Atom::IsTy(tm)) => ker.is_wf(ctx, tm),
+            (Quant::Free, Atom::IsProp(tm)) => ker.is_prop(ctx, tm),
+            (Quant::Free, Atom::HasTy(tm, ty)) => ker.has_ty(ctx, tm, ty),
+            (Quant::Free, Atom::IsInhab(tm)) => ker.is_inhab(ctx, tm),
+            (Quant::Free, Atom::IsEmpty(tm)) => ker.is_empty(ctx, tm),
+            (Quant::Free, Atom::Contr) => ker.is_contr(ctx),
+            (Quant::Forall(binder), Atom::Eq(lhs, rhs)) => ker.forall_eq_in(ctx, binder, lhs, rhs),
+            (Quant::Forall(binder), Atom::IsWf(tm)) => ker.forall_is_wf(ctx, binder, tm),
+            (Quant::Forall(binder), Atom::IsTy(tm)) => ker.forall_is_ty(ctx, binder, tm),
+            (Quant::Forall(binder), Atom::IsProp(tm)) => ker.forall_is_prop(ctx, binder, tm),
+            (Quant::Forall(binder), Atom::HasTy(tm, ty)) => ker.forall_has_ty(ctx, binder, tm, ty),
+            (Quant::Forall(binder), Atom::IsInhab(tm)) => ker.forall_is_inhab(ctx, binder, tm),
+            (Quant::Forall(binder), Atom::IsEmpty(tm)) => ker.forall_is_empty(ctx, binder, tm),
+            (Quant::Forall(binder), Atom::Contr) => ker.is_empty(ctx, binder),
+            (Quant::Exists(binder), Atom::Eq(lhs, rhs)) => ker.exists_eq_in(ctx, binder, lhs, rhs),
+            (Quant::Exists(binder), Atom::IsWf(tm)) => ker.exists_is_wf(ctx, binder, tm),
+            (Quant::Exists(binder), Atom::IsTy(tm)) => ker.exists_is_ty(ctx, binder, tm),
+            (Quant::Exists(binder), Atom::IsProp(tm)) => ker.exists_is_prop(ctx, binder, tm),
+            (Quant::Exists(binder), Atom::HasTy(tm, ty)) => ker.exists_has_ty(ctx, binder, tm, ty),
+            (Quant::Exists(binder), Atom::IsInhab(tm)) => ker.exists_is_inhab(ctx, binder, tm),
+            (Quant::Exists(binder), Atom::IsEmpty(tm)) => ker.exists_is_empty(ctx, binder, tm),
+            (Quant::Exists(_), Atom::Contr) => ker.is_contr(ctx),
         }
     }
 }

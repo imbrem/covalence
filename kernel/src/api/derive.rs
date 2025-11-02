@@ -8,7 +8,7 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     /// Attempt to prove a goal
     fn ensure_goal<S>(
         &mut self,
-        goal: Goal<C, Val<C, T>>,
+        goal: QAtomSeq<C, Val<C, T>>,
         strategy: &mut S,
         msg: &'static str,
     ) -> Result<(), S::Fail>
@@ -35,7 +35,7 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     where
         S: Strategy<C, T, Self>,
     {
-        self.ensure_goal(Judgement::contr(ctx), strategy, msg)
+        self.ensure_goal(Seq::contr(ctx), strategy, msg)
     }
 
     /// Attempt to prove that a term is well-formed in a context

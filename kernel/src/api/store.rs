@@ -36,7 +36,7 @@ pub trait ReadTerm<C, T> {
     fn lookup(&self, ctx: C, tm: &mut NodeT<C, T>) -> Option<T>;
 
     /// Lookup an import of a term into another context, returning a handle to it if it exists
-    fn lookup_import(&self, ctx: C, val: Val<C, T>) -> Option<T>;
+    fn lookup_val(&self, ctx: C, val: Val<C, T>) -> Option<T>;
 
     // == Syntactic information ==
 
@@ -58,6 +58,9 @@ pub trait ReadTerm<C, T> {
     fn may_have_var_from(&self, ctx: C, tm: T, vars: C) -> bool;
 
     // == Syntactic relations ==
+
+    /// Check whether two values resolve to the same value, after following imports
+    fn deref_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
 
     /// Check whether two values are equal up to first imports
     fn cons_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;

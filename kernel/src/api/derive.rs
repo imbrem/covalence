@@ -11,7 +11,7 @@ pub trait Strategy<C, T, K: ?Sized> {
     fn prove_goal(
         &mut self,
         ker: &mut K,
-        goal: Goal<C, T>,
+        goal: Fact<C, Val<C, T>>,
         msg: &'static str,
         attempt_no: usize,
     ) -> Result<(), Self::Fail>;
@@ -20,13 +20,13 @@ pub trait Strategy<C, T, K: ?Sized> {
     ///
     /// This is usually called by returning an `Err` from `prove_has_ty`, but might be called on
     /// continue due to a wrapping strategy triggering the failure.
-    fn on_failure(&mut self, _goal: Goal<C, T>, _err: Option<&mut Self::Fail>) {}
+    fn on_failure(&mut self, _goal: Fact<C, Val<C, T>>, _err: Option<&mut Self::Fail>) {}
 
     /// Called when the top goal in the stack has succeeded
-    fn on_success(&mut self, _goal: Goal<C, T>) {}
+    fn on_success(&mut self, _goal: Fact<C, Val<C, T>>) {}
 
     /// Begin a goal
-    fn start_goal(&mut self, _goal: Goal<C, T>) -> Result<(), Self::Fail> {
+    fn start_goal(&mut self, _goal: Fact<C, Val<C, T>>) -> Result<(), Self::Fail> {
         Ok(())
     }
 
@@ -38,7 +38,7 @@ pub trait Strategy<C, T, K: ?Sized> {
     }
 
     /// End a successful derivation
-    fn finish_rule(&mut self, _result: Goal<C, T>) {}
+    fn finish_rule(&mut self, _result: Fact<C, Val<C, T>>) {}
 
     /// An irrecoverable failure of a derivation
     fn fail(&mut self, msg: &'static str) -> Self::Fail;
@@ -50,7 +50,7 @@ impl<C, T, K: ?Sized> Strategy<C, T, K> for () {
     fn prove_goal(
         &mut self,
         _ker: &mut K,
-        _goal: Goal<C, T>,
+        _goal: Fact<C, Val<C, T>>,
         msg: &'static str,
         _attempt_no: usize,
     ) -> Result<(), Self::Fail> {
@@ -66,7 +66,7 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     /// Attempt to prove a goal
     fn ensure_goal<S>(
         &mut self,
-        goal: Goal<C, T>,
+        goal: Fact<C, Val<C, T>>,
         strategy: &mut S,
         msg: &'static str,
     ) -> Result<(), S::Fail>
@@ -75,7 +75,7 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     {
         strategy.start_goal(goal)?;
         let mut attempt_no = 0;
-        while !goal.check_in(self.read()) {
+        while !goal.check(self.read()) {
             strategy
                 .prove_goal(self, goal, msg, attempt_no)
                 .map_err(|mut err| {
@@ -98,14 +98,14 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     where
         S: Strategy<C, T, Self>,
     {
-        self.ensure_goal(Goal::contr(ctx), strategy, msg)
+        self.ensure_goal(Fact::contr(ctx), strategy, msg)
     }
 
     /// Attempt to prove that a term is well-formed in a context
     fn ensure_is_wf<S>(
         &mut self,
         ctx: C,
-        tm: T,
+        tm: Val<C, T>,
         strategy: &mut S,
         msg: &'static str,
     ) -> Result<(), S::Fail>
@@ -119,7 +119,7 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     fn ensure_is_ty<S>(
         &mut self,
         ctx: C,
-        tm: T,
+        tm: Val<C, T>,
         strategy: &mut S,
         msg: &'static str,
     ) -> Result<(), S::Fail>
@@ -133,7 +133,7 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     fn ensure_is_inhab<S>(
         &mut self,
         ctx: C,
-        tm: T,
+        tm: Val<C, T>,
         strategy: &mut S,
         msg: &'static str,
     ) -> Result<(), S::Fail>
@@ -147,7 +147,7 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     fn ensure_is_empty<S>(
         &mut self,
         ctx: C,
-        tm: T,
+        tm: Val<C, T>,
         strategy: &mut S,
         msg: &'static str,
     ) -> Result<(), S::Fail>
@@ -161,7 +161,7 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     fn ensure_is_prop<S>(
         &mut self,
         ctx: C,
-        tm: T,
+        tm: Val<C, T>,
         strategy: &mut S,
         msg: &'static str,
     ) -> Result<(), S::Fail>
@@ -175,8 +175,8 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     fn ensure_has_ty<S>(
         &mut self,
         ctx: C,
-        tm: T,
-        ty: T,
+        tm: Val<C, T>,
+        ty: Val<C, T>,
         strategy: &mut S,
         msg: &'static str,
     ) -> Result<(), S::Fail>
@@ -190,8 +190,8 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     fn ensure_is_ty_under<S>(
         &mut self,
         ctx: C,
-        binder: T,
-        tm: T,
+        binder: Val<C, T>,
+        tm: Val<C, T>,
         strategy: &mut S,
         msg: &'static str,
     ) -> Result<(), S::Fail>
@@ -205,9 +205,9 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     fn ensure_has_ty_under<S>(
         &mut self,
         ctx: C,
-        binder: T,
-        tm: T,
-        ty: T,
+        binder: Val<C, T>,
+        tm: Val<C, T>,
+        ty: Val<C, T>,
         strategy: &mut S,
         msg: &'static str,
     ) -> Result<(), S::Fail>
@@ -231,8 +231,8 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     fn ensure_forall_inhab_under<S>(
         &mut self,
         ctx: C,
-        binder: T,
-        ty: T,
+        binder: Val<C, T>,
+        ty: Val<C, T>,
         strategy: &mut S,
         msg: &'static str,
     ) -> Result<(), S::Fail>
@@ -247,8 +247,8 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     fn ensure_exists_inhab_under<S>(
         &mut self,
         ctx: C,
-        binder: T,
-        ty: T,
+        binder: Val<C, T>,
+        ty: Val<C, T>,
         strategy: &mut S,
         msg: &'static str,
     ) -> Result<(), S::Fail>
@@ -262,15 +262,15 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     fn ensure_eq_in<S>(
         &mut self,
         ctx: C,
-        lhs: T,
-        rhs: T,
+        lhs: Val<C, T>,
+        rhs: Val<C, T>,
         strategy: &mut S,
         msg: &'static str,
     ) -> Result<(), S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
-        self.ensure_goal(EqIn { ctx, lhs, rhs }.into(), strategy, msg)
+        self.ensure_goal(Eqn { ctx, lhs, rhs }.into(), strategy, msg)
     }
 }
 
@@ -318,7 +318,7 @@ pub enum CongrStep<C, T> {
 /// Typing rules for deriving facts about terms from those already in the datastore
 pub trait Derive<C, T> {
     /// Assume a new hypothesis in this context
-    fn assume<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Fv<C>, S::Fail>
+    fn assume<S>(&mut self, ctx: C, ty: Val<C, T>, strategy: &mut S) -> Result<Fv<C>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -340,7 +340,7 @@ pub trait Derive<C, T> {
     /// assert_eq!(ker.num_vars(ctx), 2);
     /// assert_ne!(sv, av);
     /// ```
-    fn add_var<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<Fv<C>, S::Fail>
+    fn add_var<S>(&mut self, ctx: C, ty: Val<C, T>, strategy: &mut S) -> Result<Fv<C>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -359,7 +359,12 @@ pub trait Derive<C, T> {
     /// let xt = ker.add(x.ctx, Node::Fv(x));
     /// assert!(ker.is_ty(x.ctx, xt));
     /// ```
-    fn with_param<S>(&mut self, parent: C, param: T, strategy: &mut S) -> Result<Fv<C>, S::Fail>
+    fn with_param<S>(
+        &mut self,
+        parent: C,
+        param: Val<C, T>,
+        strategy: &mut S,
+    ) -> Result<Fv<C>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -382,7 +387,7 @@ pub trait Derive<C, T> {
     /// - Otherwise, `let bound in body`
     ///
     /// TODO: reference Lean
-    fn subst_under(&mut self, ctx: C, under: Bv, bound: T, body: T) -> T;
+    fn subst_under(&mut self, ctx: C, under: Bv, bound: Val<C, T>, body: Val<C, T>) -> Val<C, T>;
 
     /// Compute the substitution of a term
     ///
@@ -391,7 +396,7 @@ pub trait Derive<C, T> {
     /// - Otherwise, `let bound in body`
     ///
     /// TODO: reference Lean
-    fn subst(&mut self, ctx: C, bound: T, body: T) -> T {
+    fn subst(&mut self, ctx: C, bound: Val<C, T>, body: Val<C, T>) -> Val<C, T> {
         self.subst_under(ctx, Bv(0), bound, body)
     }
 
@@ -400,7 +405,7 @@ pub trait Derive<C, T> {
     /// Given term `tm` in context `ctx`
     /// - If `tm` does not depend on the variable `var`, return `tm`
     /// - Otherwise, return `close var tm`
-    fn close(&mut self, ctx: C, var: Fv<C>, tm: T) -> T;
+    fn close(&mut self, ctx: C, var: Fv<C>, tm: Val<C, T>) -> Val<C, T>;
 
     /// Compute the closure of an imported term
     ///
@@ -408,24 +413,7 @@ pub trait Derive<C, T> {
     /// - If `src` has no parameter, or `tm` does not depend on the parameter of `src`, return the
     ///   import of `tm` into `ctx`
     /// - Otherwise, return `close src (import src tm)`
-    fn close_import(&mut self, ctx: C, src: Fv<C>, tm: T) -> T;
-
-    /// The substitution of a term under binders is equal to its lazy substitution
-    fn lazy_subst_under_eq(&mut self, ctx: C, under: Bv, bound: T, body: T) -> Eqn<T>;
-
-    /// The substitution of a term is equal to its lazy substitution
-    fn lazy_subst_eq(&mut self, ctx: C, bound: T, body: T) -> Eqn<T> {
-        self.lazy_subst_under_eq(ctx, Bv(0), bound, body)
-    }
-
-    /// The closure of a term is equal to its lazy closure
-    fn lazy_close_eq(&mut self, ctx: C, var: Fv<C>, tm: T) -> Eqn<T>;
-
-    /// An
-    fn lazy_import_eq(&mut self, ctx: C, val: Val<C, T>) -> Eqn<T>;
-
-    /// The closure of an imported term is equal to its lazy imported closure
-    fn lazy_close_import_eq(&mut self, ctx: C, src: Fv<C>, tm: T) -> Eqn<T>;
+    fn close_import(&mut self, ctx: C, src: Fv<C>, tm: Val<C, T>) -> Val<C, T>;
 
     /// Cast by universe level
     ///
@@ -433,11 +421,11 @@ pub trait Derive<C, T> {
     fn derive_u_le<S>(
         &mut self,
         ctx: C,
-        tm: T,
+        tm: Val<C, T>,
         lo: ULvl,
         hi: ULvl,
         strategy: &mut S,
-    ) -> Result<HasTyIn<T>, S::Fail>
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -491,10 +479,10 @@ pub trait Derive<C, T> {
         &mut self,
         ctx: C,
         src: Fv<C>,
-        tm: T,
-        ty: T,
+        tm: Val<C, T>,
+        ty: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyUnderIn<T>, S::Fail>
+    ) -> Result<HasTyUnder<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -520,7 +508,12 @@ pub trait Derive<C, T> {
     /// # let ctx = ker.new_ctx();
     /// # let unit = Node::Unit;
     /// ```
-    fn derive_fv<S>(&mut self, ctx: C, var: Fv<C>, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
+    fn derive_fv<S>(
+        &mut self,
+        ctx: C,
+        var: Fv<C>,
+        strategy: &mut S,
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -536,7 +529,7 @@ pub trait Derive<C, T> {
     /// ```lean
     /// theorem Ctx.KHasTy.univ {Γ ℓ} (h : Ok Γ) : KHasTy Γ (.univ (ℓ + 1)) (.univ ℓ)
     /// ```
-    fn derive_univ(&mut self, ctx: C, lvl: ULvl) -> HasTyIn<T>;
+    fn derive_univ(&mut self, ctx: C, lvl: ULvl) -> HasTy<C, Val<C, T>>;
 
     /// Typecheck the unit type
     ///
@@ -550,7 +543,7 @@ pub trait Derive<C, T> {
     /// ```lean
     /// theorem Ctx.KHasTy.unit {Γ ℓ} (h : Ok Γ) : KHasTy Γ (.univ ℓ) .unit
     /// ```
-    fn derive_unit(&mut self, ctx: C, lvl: ULvl) -> HasTyIn<T>;
+    fn derive_unit(&mut self, ctx: C, lvl: ULvl) -> HasTy<C, Val<C, T>>;
 
     /// Typecheck the unique value of the unit type
     ///
@@ -564,7 +557,7 @@ pub trait Derive<C, T> {
     /// ```lean
     /// theorem Ctx.KHasTy.null {Γ} (h : Ok Γ) : KHasTy Γ .unit .null
     /// ```
-    fn derive_nil(&mut self, ctx: C) -> HasTyIn<T>;
+    fn derive_nil(&mut self, ctx: C) -> HasTy<C, Val<C, T>>;
 
     /// Typecheck the unit type
     ///
@@ -578,7 +571,7 @@ pub trait Derive<C, T> {
     /// ```lean
     /// theorem Ctx.KHasTy.empty {Γ ℓ} (h : Ok Γ) : KHasTy Γ (.univ ℓ) .empty
     /// ```
-    fn derive_empty(&mut self, ctx: C, lvl: ULvl) -> HasTyIn<T>;
+    fn derive_empty(&mut self, ctx: C, lvl: ULvl) -> HasTy<C, Val<C, T>>;
 
     /// Typecheck an equation between terms
     ///
@@ -598,11 +591,11 @@ pub trait Derive<C, T> {
     fn derive_eqn<S>(
         &mut self,
         ctx: C,
-        ty: T,
-        lhs: T,
-        rhs: T,
+        ty: Val<C, T>,
+        lhs: Val<C, T>,
+        rhs: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyIn<T>, S::Fail>
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -628,10 +621,10 @@ pub trait Derive<C, T> {
         ctx: C,
         arg_lvl: ULvl,
         lvl: ULvl,
-        arg_ty: T,
-        res_ty: T,
+        arg_ty: Val<C, T>,
+        res_ty: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyIn<T>, S::Fail>
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -657,10 +650,10 @@ pub trait Derive<C, T> {
         &mut self,
         ctx: C,
         lvl: ULvl,
-        arg_ty: T,
-        res_ty: T,
+        arg_ty: Val<C, T>,
+        res_ty: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyIn<T>, S::Fail>
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -680,11 +673,11 @@ pub trait Derive<C, T> {
     fn derive_abs<S>(
         &mut self,
         ctx: C,
-        arg_ty: T,
-        body: T,
-        res_ty: T,
+        arg_ty: Val<C, T>,
+        body: Val<C, T>,
+        res_ty: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyIn<T>, S::Fail>
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -705,12 +698,12 @@ pub trait Derive<C, T> {
     fn derive_app<S>(
         &mut self,
         ctx: C,
-        arg_ty: T,
-        res_ty: T,
-        func: T,
-        arg: T,
+        arg_ty: Val<C, T>,
+        res_ty: Val<C, T>,
+        func: Val<C, T>,
+        arg: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyIn<T>, S::Fail>
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -732,12 +725,12 @@ pub trait Derive<C, T> {
     fn derive_pair<S>(
         &mut self,
         ctx: C,
-        arg_ty: T,
-        res_ty: T,
-        fst: T,
-        snd: T,
+        arg_ty: Val<C, T>,
+        res_ty: Val<C, T>,
+        fst: Val<C, T>,
+        snd: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyIn<T>, S::Fail>
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -759,11 +752,11 @@ pub trait Derive<C, T> {
     fn derive_fst<S>(
         &mut self,
         ctx: C,
-        arg_ty: T,
-        res_ty: T,
-        pair: T,
+        arg_ty: Val<C, T>,
+        res_ty: Val<C, T>,
+        pair: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyIn<T>, S::Fail>
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -792,11 +785,11 @@ pub trait Derive<C, T> {
     fn derive_snd<S>(
         &mut self,
         ctx: C,
-        arg_ty: T,
-        res_ty: T,
-        pair: T,
+        arg_ty: Val<C, T>,
+        res_ty: Val<C, T>,
+        pair: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyIn<T>, S::Fail>
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -810,12 +803,12 @@ pub trait Derive<C, T> {
     fn derive_dite<S>(
         &mut self,
         ctx: C,
-        cond: T,
-        then_br: T,
-        else_br: T,
-        ty: T,
+        cond: Val<C, T>,
+        then_br: Val<C, T>,
+        else_br: Val<C, T>,
+        ty: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyIn<T>, S::Fail>
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -826,7 +819,12 @@ pub trait Derive<C, T> {
     /// Inherits inhabitance/emptiness from the underlying type
     ///
     /// TODO: reference Lean
-    fn derive_trunc<S>(&mut self, ctx: C, ty: T, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
+    fn derive_trunc<S>(
+        &mut self,
+        ctx: C,
+        ty: Val<C, T>,
+        strategy: &mut S,
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -836,10 +834,10 @@ pub trait Derive<C, T> {
     fn derive_choose<S>(
         &mut self,
         ctx: C,
-        ty: T,
-        pred: T,
+        ty: Val<C, T>,
+        pred: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyIn<T>, S::Fail>
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -851,19 +849,24 @@ pub trait Derive<C, T> {
         ctx: C,
         lvl: ULvl,
         strategy: &mut S,
-    ) -> Result<HasTyIn<T>, S::Fail>
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
     /// Typecheck a 64-bit natural number
     ///
     /// TODO: reference Lean
-    fn derive_n64(&mut self, ctx: C, n: u64) -> HasTyIn<T>;
+    fn derive_n64(&mut self, ctx: C, n: u64) -> HasTy<C, Val<C, T>>;
 
     /// Typecheck the successor function on natural numbers
     ///
     /// TODO: reference Lean
-    fn derive_succ<S>(&mut self, ctx: C, n: T, strategy: &mut S) -> Result<HasTyIn<T>, S::Fail>
+    fn derive_succ<S>(
+        &mut self,
+        ctx: C,
+        n: Val<C, T>,
+        strategy: &mut S,
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -873,11 +876,11 @@ pub trait Derive<C, T> {
     fn derive_natrec<S>(
         &mut self,
         ctx: C,
-        mot: T,
-        z: T,
-        s: T,
+        mot: Val<C, T>,
+        z: Val<C, T>,
+        s: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyIn<T>, S::Fail>
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -889,12 +892,12 @@ pub trait Derive<C, T> {
     fn derive_let<S>(
         &mut self,
         ctx: C,
-        bound: T,
-        bound_ty: T,
-        body: T,
-        body_ty: T,
+        bound: Val<C, T>,
+        bound_ty: Val<C, T>,
+        body: Val<C, T>,
+        body_ty: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyIn<T>, S::Fail>
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -906,10 +909,10 @@ pub trait Derive<C, T> {
     fn derive_beta_abs<S>(
         &mut self,
         ctx: C,
-        tm: T,
-        arg: T,
+        tm: Val<C, T>,
+        arg: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<Eqn<T>, S::Fail>
+    ) -> Result<EqnV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -918,7 +921,12 @@ pub trait Derive<C, T> {
     /// For well-formed `Γ ⊢ tm ≡ natrec C z s`; `Γ ⊢ tm 0 = z`
     ///
     /// TODO: reference Lean
-    fn derive_beta_zero<S>(&mut self, ctx: C, tm: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
+    fn derive_beta_zero<S>(
+        &mut self,
+        ctx: C,
+        tm: Val<C, T>,
+        strategy: &mut S,
+    ) -> Result<EqnV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -930,10 +938,10 @@ pub trait Derive<C, T> {
     fn derive_beta_succ<S>(
         &mut self,
         ctx: C,
-        tm: T,
-        n: T,
+        tm: Val<C, T>,
+        n: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<Eqn<T>, S::Fail>
+    ) -> Result<EqnV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -945,10 +953,10 @@ pub trait Derive<C, T> {
     fn derive_choose_spec<S>(
         &mut self,
         ctx: C,
-        ty: T,
-        pred: T,
+        ty: Val<C, T>,
+        pred: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<IsInhabIn<T>, S::Fail>
+    ) -> Result<IsInhab<C, Val<C, T>>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -957,7 +965,12 @@ pub trait Derive<C, T> {
     /// If `Γ ⊢ a : 1` then `Γ ⊢ a ≡ * : 1`
     ///
     /// TODO: reference Lean
-    fn derive_unit_ext<S>(&mut self, ctx: C, a: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
+    fn derive_unit_ext<S>(
+        &mut self,
+        ctx: C,
+        a: Val<C, T>,
+        strategy: &mut S,
+    ) -> Result<EqnV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -966,7 +979,12 @@ pub trait Derive<C, T> {
     /// If `Γ ⊢ a : 2` and `Γ ⊢ a inhab` then `Γ ⊢ a ≡ 1 : 2`
     ///
     /// TODO: reference Lean
-    fn derive_prop_ext_tt<S>(&mut self, ctx: C, a: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
+    fn derive_prop_ext_tt<S>(
+        &mut self,
+        ctx: C,
+        a: Val<C, T>,
+        strategy: &mut S,
+    ) -> Result<EqnV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -975,7 +993,12 @@ pub trait Derive<C, T> {
     /// If `Γ ⊢ a : 2` and `Γ ⊢ a empty` then `Γ ⊢ a ≡ 0 : 2`
     ///
     /// TODO: reference Lean
-    fn derive_prop_ext_ff<S>(&mut self, ctx: C, a: T, strategy: &mut S) -> Result<Eqn<T>, S::Fail>
+    fn derive_prop_ext_ff<S>(
+        &mut self,
+        ctx: C,
+        a: Val<C, T>,
+        strategy: &mut S,
+    ) -> Result<EqnV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -987,10 +1010,10 @@ pub trait Derive<C, T> {
     fn derive_ext<S>(
         &mut self,
         ctx: C,
-        lhs: T,
-        rhs: T,
+        lhs: Val<C, T>,
+        rhs: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<Eqn<T>, S::Fail>
+    ) -> Result<EqnV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -1002,10 +1025,10 @@ pub trait Derive<C, T> {
     fn derive_pi_eta<S>(
         &mut self,
         ctx: C,
-        ty: T,
-        f: T,
+        ty: Val<C, T>,
+        f: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<Eqn<T>, S::Fail>
+    ) -> Result<EqnV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -1017,10 +1040,10 @@ pub trait Derive<C, T> {
     fn derive_sigma_eta<S>(
         &mut self,
         ctx: C,
-        ty: T,
-        p: T,
+        ty: Val<C, T>,
+        p: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<Eqn<T>, S::Fail>
+    ) -> Result<EqnV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 }

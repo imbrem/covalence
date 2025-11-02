@@ -54,7 +54,7 @@ impl ReadTerm<CtxId, TermId> for TermDb {
         self.x[ctx.0].lookup(tm)
     }
 
-    fn lookup_import(&self, ctx: CtxId, val: ValId) -> Option<TermId> {
+    fn lookup_val(&self, ctx: CtxId, val: ValId) -> Option<TermId> {
         // NOTE: an import cycle will lead to a stack overflow here, but that should be an error But
         // think about it!
         //
@@ -65,7 +65,7 @@ impl ReadTerm<CtxId, TermId> for TermDb {
         // inserting the import and hence fixing the `TermId`.
         if let Some(node) = val.node_ix(self).relocate() {
             if let Node::Import(imp) = node {
-                self.lookup_import(ctx, imp)
+                self.lookup_val(ctx, imp)
             } else {
                 self.x[ctx.0].lookup(node)
             }
@@ -121,6 +121,10 @@ impl ReadTerm<CtxId, TermId> for TermDb {
                 .iter()
                 .any(|&i| self.may_have_var_from(ctx, i, vars)),
         }
+    }
+
+    fn deref_eq(&self, lhs: Val<CtxId, TermId>, rhs: Val<CtxId, TermId>) -> bool {
+        lhs == rhs || self.val(lhs.ctx, lhs.tm) == self.val(rhs.ctx, rhs.tm)
     }
 
     fn cons_eq(&self, lhs: ValId, rhs: ValId) -> bool {

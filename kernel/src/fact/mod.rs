@@ -10,21 +10,19 @@ mod logic;
 /// A fact which can be checked using a fact dataset
 pub trait Fact<R: ?Sized> {
     /// Check whether this goal is true
-    fn check(self, db: &R) -> bool;
+    fn check(&self, db: &R) -> bool;
 }
 
 /// A fact about ("within") a given context
 pub trait FactIn<C, R: ?Sized> {
     /// Check this fact in the given context
-    fn check_in(self, ctx: C, db: &R) -> bool;
+    fn check_in(&self, ctx: &C, db: &R) -> bool;
 }
 
 /// A quantified fact within a given context
 pub trait FactUnder<C, Q, R: ?Sized> {
     /// Check this fact under the given quantifier in the given context
-    ///
-    /// This also checks that the quantifier is well-formed
-    fn check_under(self, ctx: C, binder: Q, db: &R) -> bool;
+    fn check_under(&self, ctx: &C, binder: &Q, db: &R) -> bool;
 }
 
 /// A judgement about a given context, of the form `Γ ⊢ S`
@@ -36,6 +34,16 @@ pub struct Judgement<C, S> {
     pub stmt: S,
 }
 
+impl<C, S, R: ?Sized> Fact<R> for Judgement<C, S>
+where
+    S: FactIn<C, R>,
+{
+    /// Check whether this judgement is true in the given context
+    fn check(&self, db: &R) -> bool {
+        self.stmt.check_in(&self.ctx, db)
+    }
+}
+
 /// A quantified statement, of the form `Q . S`
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Quantified<Q, S> {
@@ -45,11 +53,22 @@ pub struct Quantified<Q, S> {
     pub body: S,
 }
 
+impl<C, Q, S, R: ?Sized> FactIn<C, R> for Quantified<Q, S>
+where
+    Q: FactIn<C, R>,
+    S: FactUnder<C, Q, R>,
+{
+    /// Check this quantified statement in the given context
+    fn check_in(&self, ctx: &C, db: &R) -> bool {
+        self.body.check_under(ctx, &self.binder, db)
+    }
+}
+
 /// A quantifier for a fact
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum Quant<T> {
     /// No quantifier
-    Null,
+    Free,
     /// An existential quantifier
     Exists(T),
     /// A universal quantifier
@@ -60,7 +79,7 @@ impl<T> Quant<T> {
     /// Get the binder type of this quantifier
     pub fn binder(self) -> Option<T> {
         match self {
-            Quant::Null => None,
+            Quant::Free => None,
             Quant::Exists(binder) | Quant::Forall(binder) => Some(binder),
         }
     }
@@ -94,7 +113,7 @@ impl<C, T> Goal<C, T> {
         Judgement {
             ctx,
             stmt: Quantified {
-                binder: Quant::Null,
+                binder: Quant::Free,
                 body: None,
             },
         }
@@ -104,7 +123,7 @@ impl<C, T> Goal<C, T> {
         Judgement {
             ctx,
             stmt: Quantified {
-                binder: Quant::Null,
+                binder: Quant::Free,
                 body: Some(GoalIn::Contr),
             },
         }
@@ -229,7 +248,7 @@ impl<C, T> From<Eqn<C, T>> for Goal<C, T> {
         Judgement {
             ctx: g.ctx,
             stmt: Quantified {
-                binder: Quant::Null,
+                binder: Quant::Free,
                 body: Some(GoalIn::Eq(g.lhs, g.rhs)),
             },
             // binder: Quant::Null,
@@ -247,7 +266,7 @@ where
         Judgement {
             ctx: g.ctx,
             stmt: Quantified {
-                binder: Quant::Null,
+                binder: Quant::Free,
                 body: Some(GoalIn::IsWf(g.tm)),
             },
             // binder: Quant::Null,
@@ -261,7 +280,7 @@ impl<C, T> From<IsTy<C, T>> for Goal<C, T> {
         Judgement {
             ctx: g.ctx,
             stmt: Quantified {
-                binder: Quant::Null,
+                binder: Quant::Free,
                 body: Some(GoalIn::IsTy(g.tm)),
             },
             // binder: Quant::Null,
@@ -275,7 +294,7 @@ impl<C, T> From<IsInhab<C, T>> for Goal<C, T> {
         Judgement {
             ctx: g.ctx,
             stmt: Quantified {
-                binder: Quant::Null,
+                binder: Quant::Free,
                 body: Some(GoalIn::IsInhab(g.tm)),
             },
             // binder: Quant::Null,
@@ -301,7 +320,7 @@ impl<C, T> From<IsProp<C, T>> for Goal<C, T> {
         Goal {
             ctx: g.ctx,
             stmt: Quantified {
-                binder: Quant::Null,
+                binder: Quant::Free,
                 body: Some(GoalIn::IsProp(g.tm)),
             },
         }
@@ -313,7 +332,7 @@ impl<C, T> From<HasTy<C, T>> for Goal<C, T> {
         Goal {
             ctx: g.ctx,
             stmt: Quantified {
-                binder: Quant::Null,
+                binder: Quant::Free,
                 body: Some(GoalIn::HasTy(g.tm, g.ty)),
             },
         }
@@ -387,63 +406,62 @@ impl<T: Copy> Quant<T> {
     }
 }
 
-impl<C: Copy, T: Copy, R: ReadFacts<C, T> + ?Sized> Fact<R> for Goal<C, T> {
+impl<C, T, R> FactIn<C, R> for Quant<T>
+where
+    C: Copy,
+    T: Copy,
+    R: ReadFacts<C, T> + ?Sized,
+{
+    /// Check this quantifier in the given context
+    fn check_in(&self, &ctx: &C, ker: &R) -> bool {
+        match self {
+            Quant::Free => true,
+            Quant::Exists(binder) | Quant::Forall(binder) => ker.is_ty(ctx, *binder),
+        }
+    }
+}
+
+impl<C, T, R> FactUnder<C, Quant<T>, R> for GoalIn<T>
+where
+    C: Copy,
+    T: Copy,
+    R: ReadFacts<C, T> + ?Sized,
+{
     /// Check whether this goal is true
-    fn check(self, ker: &R) -> bool {
-        match (self.stmt.binder, self.stmt.body) {
-            (binder, None) => binder.check_in(self.ctx, ker),
-            (Quant::Null, Some(GoalIn::Eq(lhs, rhs))) => ker.eq_in(self.ctx, lhs, rhs),
-            (Quant::Null, Some(GoalIn::IsWf(tm))) => ker.is_wf(self.ctx, tm),
-            (Quant::Null, Some(GoalIn::IsTy(tm))) => ker.is_wf(self.ctx, tm),
-            (Quant::Null, Some(GoalIn::IsProp(tm))) => ker.is_prop(self.ctx, tm),
-            (Quant::Null, Some(GoalIn::HasTy(tm, ty))) => ker.has_ty(self.ctx, tm, ty),
-            (Quant::Null, Some(GoalIn::IsInhab(tm))) => ker.is_inhab(self.ctx, tm),
-            (Quant::Null, Some(GoalIn::IsEmpty(tm))) => ker.is_empty(self.ctx, tm),
-            (Quant::Null, Some(GoalIn::Contr)) => ker.is_contr(self.ctx),
-            (Quant::Forall(binder), Some(GoalIn::Eq(lhs, rhs))) => {
-                ker.forall_eq_in(self.ctx, binder, lhs, rhs)
+    fn check_under(&self, &ctx: &C, &binder: &Quant<T>, ker: &R) -> bool {
+        match (binder, *self) {
+            (Quant::Free, GoalIn::Eq(lhs, rhs)) => ker.eq_in(ctx, lhs, rhs),
+            (Quant::Free, GoalIn::IsWf(tm)) => ker.is_wf(ctx, tm),
+            (Quant::Free, GoalIn::IsTy(tm)) => ker.is_wf(ctx, tm),
+            (Quant::Free, GoalIn::IsProp(tm)) => ker.is_prop(ctx, tm),
+            (Quant::Free, GoalIn::HasTy(tm, ty)) => ker.has_ty(ctx, tm, ty),
+            (Quant::Free, GoalIn::IsInhab(tm)) => ker.is_inhab(ctx, tm),
+            (Quant::Free, GoalIn::IsEmpty(tm)) => ker.is_empty(ctx, tm),
+            (Quant::Free, GoalIn::Contr) => ker.is_contr(ctx),
+            (Quant::Forall(binder), GoalIn::Eq(lhs, rhs)) => {
+                ker.forall_eq_in(ctx, binder, lhs, rhs)
             }
-            (Quant::Forall(binder), Some(GoalIn::IsWf(tm))) => {
-                ker.forall_is_wf(self.ctx, binder, tm)
+            (Quant::Forall(binder), GoalIn::IsWf(tm)) => ker.forall_is_wf(ctx, binder, tm),
+            (Quant::Forall(binder), GoalIn::IsTy(tm)) => ker.forall_is_ty(ctx, binder, tm),
+            (Quant::Forall(binder), GoalIn::IsProp(tm)) => ker.forall_is_prop(ctx, binder, tm),
+            (Quant::Forall(binder), GoalIn::HasTy(tm, ty)) => {
+                ker.forall_has_ty(ctx, binder, tm, ty)
             }
-            (Quant::Forall(binder), Some(GoalIn::IsTy(tm))) => {
-                ker.forall_is_wf(self.ctx, binder, tm)
+            (Quant::Forall(binder), GoalIn::IsInhab(tm)) => ker.forall_is_inhab(ctx, binder, tm),
+            (Quant::Forall(binder), GoalIn::IsEmpty(tm)) => ker.forall_is_empty(ctx, binder, tm),
+            (Quant::Forall(binder), GoalIn::Contr) => ker.is_empty(ctx, binder),
+            (Quant::Exists(binder), GoalIn::Eq(lhs, rhs)) => {
+                ker.exists_eq_in(ctx, binder, lhs, rhs)
             }
-            (Quant::Forall(binder), Some(GoalIn::IsProp(tm))) => {
-                ker.forall_is_prop(self.ctx, binder, tm)
+            (Quant::Exists(binder), GoalIn::IsWf(tm)) => ker.exists_is_wf(ctx, binder, tm),
+            (Quant::Exists(binder), GoalIn::IsTy(tm)) => ker.exists_is_ty(ctx, binder, tm),
+            (Quant::Exists(binder), GoalIn::IsProp(tm)) => ker.exists_is_prop(ctx, binder, tm),
+            (Quant::Exists(binder), GoalIn::HasTy(tm, ty)) => {
+                ker.exists_has_ty(ctx, binder, tm, ty)
             }
-            (Quant::Forall(binder), Some(GoalIn::HasTy(tm, ty))) => {
-                ker.forall_has_ty(self.ctx, binder, tm, ty)
-            }
-            (Quant::Forall(binder), Some(GoalIn::IsInhab(tm))) => {
-                ker.forall_is_inhab(self.ctx, binder, tm)
-            }
-            (Quant::Forall(binder), Some(GoalIn::IsEmpty(tm))) => {
-                ker.forall_is_empty(self.ctx, binder, tm)
-            }
-            (Quant::Forall(binder), Some(GoalIn::Contr)) => ker.is_empty(self.ctx, binder),
-            (Quant::Exists(binder), Some(GoalIn::Eq(lhs, rhs))) => {
-                ker.exists_eq_in(self.ctx, binder, lhs, rhs)
-            }
-            (Quant::Exists(binder), Some(GoalIn::IsWf(tm))) => {
-                ker.exists_is_wf(self.ctx, binder, tm)
-            }
-            (Quant::Exists(binder), Some(GoalIn::IsTy(tm))) => {
-                ker.exists_is_ty(self.ctx, binder, tm)
-            }
-            (Quant::Exists(binder), Some(GoalIn::IsProp(tm))) => {
-                ker.exists_is_prop(self.ctx, binder, tm)
-            }
-            (Quant::Exists(binder), Some(GoalIn::HasTy(tm, ty))) => {
-                ker.exists_has_ty(self.ctx, binder, tm, ty)
-            }
-            (Quant::Exists(binder), Some(GoalIn::IsInhab(tm))) => {
-                ker.exists_is_inhab(self.ctx, binder, tm)
-            }
-            (Quant::Exists(binder), Some(GoalIn::IsEmpty(tm))) => {
-                ker.exists_is_empty(self.ctx, binder, tm)
-            }
-            (Quant::Exists(_), Some(GoalIn::Contr)) => ker.is_contr(self.ctx),
+            (Quant::Exists(binder), GoalIn::IsInhab(tm)) => ker.exists_is_inhab(ctx, binder, tm),
+            (Quant::Exists(binder), GoalIn::IsEmpty(tm)) => ker.exists_is_empty(ctx, binder, tm),
+            (Quant::Exists(_), GoalIn::Contr) => ker.is_contr(ctx),
         }
     }
 }

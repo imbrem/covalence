@@ -4,7 +4,8 @@ use crate::api::derive::*;
 use crate::api::error::*;
 use crate::api::goal::*;
 use crate::api::store::*;
-use crate::data::term::{Bv, Close, Fv, NodeT, ULvl, Val};
+use crate::api::strategy::*;
+use crate::data::term::{Bv, Fv, NodeT, ULvl, Val};
 
 /// Rules for unfolding substitutions, imports, and closures
 pub mod unfold;

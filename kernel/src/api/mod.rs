@@ -7,6 +7,9 @@ pub mod generic;
 /// API for goals
 pub mod goal;
 
+/// API for strategies
+pub mod strategy;
+
 /// API for sound derivations
 pub mod derive;
 

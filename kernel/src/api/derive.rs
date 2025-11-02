@@ -1,105 +1,8 @@
 use crate::api::goal::*;
 use crate::api::store::*;
+use crate::api::strategy::*;
 use crate::data::term::NodeVT;
-use crate::data::term::{Bv, Close, Fv, ULvl, Val};
-
-/// A strategy tells a kernel how to derive facts about terms in a context
-pub trait Strategy<C, T, K: ?Sized> {
-    /// The type returned by the strategy on failure
-    type Fail;
-
-    // == Derivations ==
-
-    /// Begin a derivation
-    fn start_rule(&mut self, _rule: &'static str, _ker: &mut K) -> Result<(), Self::Fail> {
-        Ok(())
-    }
-
-    /// End a successful derivation
-    fn finish_rule(&mut self, _ker: &mut K) {}
-
-    /// An irrecoverable failure
-    fn fail(&mut self, msg: &'static str, ker: &mut K) -> Self::Fail;
-
-    // == Goals ==
-
-    /// Begin a goal
-    fn start_goal(&mut self, _goal: Fact<C, Val<C, T>>, _ker: &mut K) -> Result<(), Self::Fail> {
-        Ok(())
-    }
-
-    /// Attempt to prove a goal
-    fn prove_goal(
-        &mut self,
-        goal: Fact<C, Val<C, T>>,
-        msg: &'static str,
-        attempt_no: usize,
-        ker: &mut K,
-    ) -> Result<(), Self::Fail>;
-
-    /// Called when a goal is proved
-    fn finish_goal(&mut self, _goal: Fact<C, Val<C, T>>, _ker: &mut K) {}
-
-    // == Imports ==
-
-    /// Attempt to import a value into the given context
-    fn import(&mut self, _ctx: C, _val: Val<C, T>, _ker: &mut K) -> Result<Option<T>, Self::Fail> {
-        Ok(None)
-    }
-
-    /// Called when an import has succeeded
-    fn finish_import(&mut self, _ctx: C, _val: Val<C, T>, _ker: &mut K) {}
-
-    // == Resolutions ==
-
-    /// Attempt to resolve a node into a value
-    fn resolve(
-        &mut self,
-        _ctx: C,
-        _val: NodeVT<C, T>,
-        _ker: &mut K,
-    ) -> Result<Option<Val<C, T>>, Self::Fail> {
-        Ok(None)
-    }
-
-    /// Called when an insertion has succeeded
-    fn finish_resolve(&mut self, _ctx: C, _val: NodeVT<C, T>, _ker: &mut K) {}
-
-    // == Insertions ==
-
-    /// Attempt to insert a value into the given context
-    fn insert(
-        &mut self,
-        _ctx: C,
-        _val: NodeVT<C, T>,
-        _ker: &mut K,
-    ) -> Result<Option<T>, Self::Fail> {
-        Ok(None)
-    }
-
-    /// Called when an insertion has succeeded
-    fn finish_insert(&mut self, _ctx: C, _val: NodeVT<C, T>, _ker: &mut K) {}
-
-    //TODO: register side conditions as well?
-}
-
-impl<C, T, K: ?Sized> Strategy<C, T, K> for () {
-    type Fail = &'static str;
-
-    fn prove_goal(
-        &mut self,
-        _goal: Fact<C, Val<C, T>>,
-        msg: &'static str,
-        _attempt_no: usize,
-        _ker: &mut K,
-    ) -> Result<(), Self::Fail> {
-        Err(msg)
-    }
-
-    fn fail(&mut self, msg: &'static str, _ker: &mut K) -> Self::Fail {
-        msg
-    }
-}
+use crate::data::term::{Bv, Fv, ULvl, Val};
 
 pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, T> {
     /// Attempt to prove a goal
@@ -365,39 +268,6 @@ where
     T: Copy + PartialEq,
     K: ReadTermDb<C, T> + WriteTerm<C, T>,
 {
-}
-
-pub trait Unfolder<C, T, K>: Strategy<C, T, K> {
-    fn cloned_step(&mut self, ctx: C, val: Val<C, T>) -> Result<CongrStep<C, T>, Self::Fail>;
-
-    fn subst_under_step(
-        &mut self,
-        ctx: C,
-        under: Bv,
-        bound: Val<C, T>,
-        body: Val<C, T>,
-    ) -> Result<CongrStep<C, T>, Self::Fail>;
-
-    fn close_step(
-        &mut self,
-        ctx: C,
-        close: Close<C, Val<C, T>>,
-    ) -> Result<CongrStep<C, T>, Self::Fail>;
-}
-
-/// A step which can be taken in cloning a value
-pub enum CongrStep<C, T> {
-    /// Take a single congruence step
-    Step {
-        /// If `true`, mark the result as equal to the symbolic clone
-        mark_eq: bool,
-        /// If `true`, attempt to "simplify" calls
-        simp: bool,
-    },
-    /// Swap `val` with a known-equal value
-    Swap(Val<C, T>),
-    /// Stop, optionally returning a value known to be equal to the symbolic result
-    Stop(Option<Val<C, T>>),
 }
 
 /// Typing rules for deriving facts about terms from those already in the datastore

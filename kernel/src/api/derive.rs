@@ -16,7 +16,7 @@ pub trait Strategy<C, T, K: ?Sized> {
     }
 
     /// End a successful derivation
-    fn finish_rule(&mut self, _result: Fact<C, Val<C, T>>, _ker: &mut K) {}
+    fn finish_rule(&mut self, _ker: &mut K) {}
 
     /// An irrecoverable failure
     fn fail(&mut self, msg: &'static str, ker: &mut K) -> Self::Fail;

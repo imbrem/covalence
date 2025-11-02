@@ -1,11 +1,32 @@
 use crate::api::goal::*;
 use crate::api::store::*;
+use crate::data::term::NodeVT;
 use crate::data::term::{Bv, Close, Fv, ULvl, Val};
 
 /// A strategy tells a kernel how to derive facts about terms in a context
 pub trait Strategy<C, T, K: ?Sized> {
     /// The type returned by the strategy on failure
     type Fail;
+
+    // == Derivations ==
+
+    /// Begin a derivation
+    fn start_rule(&mut self, _rule: &'static str, _ker: &mut K) -> Result<(), Self::Fail> {
+        Ok(())
+    }
+
+    /// End a successful derivation
+    fn finish_rule(&mut self, _result: Fact<C, Val<C, T>>, _ker: &mut K) {}
+
+    /// An irrecoverable failure
+    fn fail(&mut self, msg: &'static str, ker: &mut K) -> Self::Fail;
+
+    // == Goals ==
+
+    /// Begin a goal
+    fn start_goal(&mut self, _goal: Fact<C, Val<C, T>>, _ker: &mut K) -> Result<(), Self::Fail> {
+        Ok(())
+    }
 
     /// Attempt to prove a goal
     fn prove_goal(
@@ -16,38 +37,50 @@ pub trait Strategy<C, T, K: ?Sized> {
         ker: &mut K,
     ) -> Result<(), Self::Fail>;
 
-    /// Called when the top goal in the stack has failed
-    ///
-    /// This is usually called by returning an `Err` from `prove_has_ty`, but might be called on
-    /// continue due to a wrapping strategy triggering the failure.
-    fn on_failure(
+    /// Called when a goal is proved
+    fn finish_goal(&mut self, _goal: Fact<C, Val<C, T>>, _ker: &mut K) {}
+
+    // == Imports ==
+
+    /// Attempt to import a value into the given context
+    fn import(&mut self, _ctx: C, _val: Val<C, T>, _ker: &mut K) -> Result<Option<T>, Self::Fail> {
+        Ok(None)
+    }
+
+    /// Called when an import has succeeded
+    fn finish_import(&mut self, _ctx: C, _val: Val<C, T>, _ker: &mut K) {}
+
+    // == Resolutions ==
+
+    /// Attempt to resolve a node into a value
+    fn resolve(
         &mut self,
-        _goal: Fact<C, Val<C, T>>,
-        _err: Option<&mut Self::Fail>,
+        _ctx: C,
+        _val: NodeVT<C, T>,
         _ker: &mut K,
-    ) {
+    ) -> Result<Option<Val<C, T>>, Self::Fail> {
+        Ok(None)
     }
 
-    /// Called when the top goal in the stack has succeeded
-    fn on_success(&mut self, _goal: Fact<C, Val<C, T>>, _ker: &mut K) {}
+    /// Called when an insertion has succeeded
+    fn finish_resolve(&mut self, _ctx: C, _val: NodeVT<C, T>, _ker: &mut K) {}
 
-    /// Begin a goal
-    fn start_goal(&mut self, _goal: Fact<C, Val<C, T>>, _ker: &mut K) -> Result<(), Self::Fail> {
-        Ok(())
+    // == Insertions ==
+
+    /// Attempt to insert a value into the given context
+    fn insert(
+        &mut self,
+        _ctx: C,
+        _val: NodeVT<C, T>,
+        _ker: &mut K,
+    ) -> Result<Option<T>, Self::Fail> {
+        Ok(None)
     }
+
+    /// Called when an insertion has succeeded
+    fn finish_insert(&mut self, _ctx: C, _val: NodeVT<C, T>, _ker: &mut K) {}
 
     //TODO: register side conditions as well?
-
-    /// Begin a derivation
-    fn start_rule(&mut self, _rule: &'static str, _ker: &mut K) -> Result<(), Self::Fail> {
-        Ok(())
-    }
-
-    /// End a successful derivation
-    fn finish_rule(&mut self, _result: Fact<C, Val<C, T>>, _ker: &mut K) {}
-
-    /// An irrecoverable failure of a derivation
-    fn fail(&mut self, msg: &'static str) -> Self::Fail;
 }
 
 impl<C, T, K: ?Sized> Strategy<C, T, K> for () {
@@ -63,7 +96,7 @@ impl<C, T, K: ?Sized> Strategy<C, T, K> for () {
         Err(msg)
     }
 
-    fn fail(&mut self, msg: &'static str) -> Self::Fail {
+    fn fail(&mut self, msg: &'static str, _ker: &mut K) -> Self::Fail {
         msg
     }
 }
@@ -82,15 +115,10 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
         strategy.start_goal(goal, self)?;
         let mut attempt_no = 0;
         while !goal.check(self.read()) {
-            strategy
-                .prove_goal(goal, msg, attempt_no, self)
-                .map_err(|mut err| {
-                    strategy.on_failure(goal, Some(&mut err), self);
-                    err
-                })?;
+            strategy.prove_goal(goal, msg, attempt_no, self)?;
             attempt_no += 1;
         }
-        strategy.on_success(goal, self);
+        strategy.finish_goal(goal, self);
         Ok(())
     }
 
@@ -277,6 +305,57 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
         S: Strategy<C, T, Self>,
     {
         self.ensure_goal(Eqn { ctx, lhs, rhs }.into(), strategy, msg)
+    }
+
+    /// Import a value into the given context
+    fn import_with<S>(&mut self, ctx: C, val: Val<C, T>, strategy: &mut S) -> Result<T, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        let result = if let Some(result) = strategy.import(ctx, val, self)? {
+            let result_val = self.read().val(ctx, result);
+            self.ensure_eq_in(ctx, result_val, val, strategy, "import: equality")?;
+            result
+        } else {
+            self.import(ctx, val)
+        };
+        strategy.finish_import(ctx, val, self);
+        Ok(result)
+    }
+
+    /// Resolve a value
+    fn resolve<S>(
+        &mut self,
+        ctx: C,
+        val: NodeVT<C, T>,
+        strategy: &mut S,
+    ) -> Result<Val<C, T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        let result = if let Some(_result) = strategy.resolve(ctx, val, self)? {
+            todo!("non-null resolution is not yet implemented!");
+        } else {
+            val.try_map_subterms(|tm| self.import_with(ctx, tm, strategy))?
+                .val(ctx, self)
+        };
+        strategy.finish_resolve(ctx, val, self);
+        Ok(result)
+    }
+
+    /// Insert a value
+    fn insert<S>(&mut self, ctx: C, val: NodeVT<C, T>, strategy: &mut S) -> Result<T, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        let result = if let Some(_result) = strategy.insert(ctx, val, self)? {
+            todo!("non-null insertion is not yet implemented!");
+        } else {
+            val.try_map_subterms(|tm| self.import_with(ctx, tm, strategy))?
+                .val_ix(ctx, self)
+        };
+        strategy.finish_insert(ctx, val, self);
+        Ok(result)
     }
 }
 

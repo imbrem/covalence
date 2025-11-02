@@ -72,6 +72,13 @@ pub trait ReadTerm<C, T> {
     fn unfold_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
 }
 
+impl<C: Copy, T> Val<C, T> {
+    /// Get the base value pointed to by this value
+    pub fn val(self, store: &impl ReadTerm<C, T>) -> Val<C, T> {
+        store.val(self.ctx, self.tm)
+    }
+}
+
 impl<C: Copy, T: Copy> Val<C, T> {
     /// Get the node in `self.ctx` corresponding to this value
     pub fn node_ix(self, store: &impl ReadTerm<C, T>) -> NodeT<C, T> {
@@ -80,23 +87,42 @@ impl<C: Copy, T: Copy> Val<C, T> {
 
     /// Get the node corresponding to this value
     pub fn node_val(self, store: &impl ReadTerm<C, T>) -> NodeVT<C, T> {
-        self.node_ix(store).val_in(self.ctx, store)
+        self.node_ix(store).node_val_in(self.ctx, store)
     }
 
     /// Get the node corresponding to this value
     pub fn raw_node_val(self, store: &impl ReadTerm<C, T>) -> NodeVT<C, T> {
-        self.node_ix(store).raw_val_in(self.ctx)
+        self.node_ix(store).raw_node_val_in(self.ctx)
     }
 }
 
 impl<C: Copy, T> NodeT<C, T> {
     /// Interpret this node in the given context
-    pub fn val_in(self, ctx: C, store: &impl ReadTerm<C, T>) -> NodeVT<C, T> {
+    pub fn val(self, ctx: C, store: &mut (impl RwTermDb<C, T> + ?Sized)) -> Val<C, T> {
+        match self {
+            NodeT::Import(val) => val.val(store.read()),
+            this => Val {
+                ctx,
+                tm: store.add(ctx, this),
+            },
+        }
+    }
+
+    /// Interpret this node in the given context
+    pub fn val_ix(self, ctx: C, store: &mut (impl RwTermDb<C, T> + ?Sized)) -> T {
+        match self {
+            NodeT::Import(val) => store.import(ctx, val),
+            this => store.add(ctx, this),
+        }
+    }
+
+    /// Interpret this node in the given context
+    pub fn node_val_in(self, ctx: C, store: &impl ReadTerm<C, T>) -> NodeVT<C, T> {
         self.map_subterms(|tm| store.val(ctx, tm))
     }
 
     /// Tag this node's syntactic children with the given context
-    pub fn raw_val_in(self, ctx: C) -> NodeVT<C, T> {
+    pub fn raw_node_val_in(self, ctx: C) -> NodeVT<C, T> {
         self.map_subterms(|tm| Val { ctx, tm })
     }
 }
@@ -526,6 +552,11 @@ pub trait ReadTermDb<C, T> {
     /// Get a read-only cursor into this term database
     fn read(&self) -> &Self::Reader;
 }
+
+/// A term database which we can read from and write to
+pub trait RwTermDb<C, T>: ReadTermDb<C, T> + WriteTerm<C, T> {}
+
+impl<C, T, D: ReadTermDb<C, T> + WriteTerm<C, T> + ?Sized> RwTermDb<C, T> for D {}
 
 /// A trait implemented by a mutable datastore that can hold _unchecked_ facts about terms in a
 /// context.

@@ -207,7 +207,7 @@ pub trait ReadCtx<C, T> {
     ///         assert!(ker.is_subctx(x, y));
     ///     }
     /// }
-    /// let n = ker.add(child, Node::Nats);
+    /// let n = Node::Nats.val(child, &mut ker);
     /// let x = ker.add_var(child, n, &mut ()).unwrap();
     /// // ∅ is a subset of everything
     /// assert!(ker.is_subctx(parent, child));
@@ -249,14 +249,13 @@ pub trait ReadCtx<C, T> {
     /// let ctx = ker.new_ctx();
     /// // The empty context is a subctx of everything
     /// assert!(ker.parents_are_subctx(ctx, ctx));
-    /// let unit = ker.add(ctx, Node::Unit);
+    /// let unit = Node::Unit.val(ctx, &mut ker);
     /// let x = ker.with_param(ctx, unit, &mut ()).unwrap();
     /// let child = x.ctx;
     /// assert!(ker.parents_are_subctx(ctx, child));
     /// assert!(ker.parents_are_subctx(child, ctx));
     /// assert!(ker.parents_are_subctx(child, child));
-    /// let unit_ = ker.add(child, Node::Unit);
-    /// let y = ker.with_param(child, unit_, &mut ()).unwrap();
+    /// let y = ker.with_param(child, unit, &mut ()).unwrap();
     /// let grandchild = y.ctx;
     /// assert!(ker.parents_are_subctx(ctx, grandchild));
     /// assert!(ker.parents_are_subctx(grandchild, child));

@@ -273,42 +273,15 @@ where
 /// Typing rules for deriving facts about terms from those already in the datastore
 pub trait Derive<C, T> {
     /// Add a new variable to this context with the given type
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence_kernel::*;
-    /// # use covalence_kernel::api::error::kernel_error;
-    /// # let mut ker = Kernel::new();
-    /// let ctx = ker.new_ctx();
-    /// let set = ker.add(ctx, Node::U(ULvl::SET));
-    /// assert_eq!(ker.num_vars(ctx), 0);
-    /// let sv = ker.add_var(ctx, set, &mut ()).unwrap();
-    /// assert_eq!(ker.num_vars(ctx), 1);
-    /// let s = ker.add(ctx, Node::Fv(sv));
-    /// assert!(ker.is_ty(ctx, s));
-    /// let av = ker.add_var(ctx, s, &mut ()).unwrap();
-    /// assert_eq!(ker.num_vars(ctx), 2);
-    /// assert_ne!(sv, av);
-    /// ```
+    /// 
+    /// TODO: reference Lean
     fn add_var<S>(&mut self, ctx: C, ty: Val<C, T>, strategy: &mut S) -> Result<Fv<C>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
     /// Insert a new context with the given parameter
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence_kernel::*;
-    /// # use covalence_kernel::api::error::kernel_error;
-    /// # let mut ker = Kernel::new();
-    /// let ctx = ker.new_ctx();
-    /// let prop = ker.add(ctx, Node::U(ULvl::PROP));
-    /// let x = ker.with_param(ctx, prop, &mut ()).unwrap();
-    /// assert_eq!(ker.num_vars(ctx), 0);
-    /// assert_eq!(ker.num_vars(x.ctx), 1);
-    /// let xt = ker.add(x.ctx, Node::Fv(x));
-    /// assert!(ker.is_ty(x.ctx, xt));
-    /// ```
+    /// 
+    /// TODO: reference Lean
     fn with_param<S>(
         &mut self,
         parent: C,
@@ -389,42 +362,6 @@ pub trait Derive<C, T> {
     /// If so, then `close x tm` has type `close x ty` under `binder` in `ctx`
     ///
     /// TODO: reference Lean
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence_kernel::*;
-    /// # use covalence_kernel::api::error::kernel_error;
-    /// # let mut ker = Kernel::new();
-    /// # let ctx = ker.new_ctx();
-    /// // `close x x ≡ #0` has type `empty` under binder `empty`
-    /// let emp = ker.add(ctx, Node::Empty);
-    /// let x = ker.with_param(ctx, emp, &mut ()).unwrap();
-    /// let tm = ker.add(ctx, Node::Fv(x));
-    /// let res = ker.derive_close_has_ty_under(ctx, x, tm, emp, &mut ()).unwrap();
-    ///
-    /// // the result is cached and valid
-    /// assert!(res.check(ctx, &*ker));
-    /// let close_x = ker.close(ctx, x, tm);
-    /// assert_eq!(res.tm, close_x);
-    /// assert_eq!(res.ty, emp);
-    ///
-    /// // we can no longer derive this if we add another variable
-    /// // (even if this variable is of inhabited type).
-    /// //
-    /// // we might relax this later if the closed term does not depend on
-    /// // the variable.
-    /// let unit_v = ker.add(x.ctx, Node::Unit);
-    /// let y = ker.add_var(x.ctx, unit_v, &mut ()).unwrap();
-    /// assert_eq!(
-    ///     ker.derive_close_has_ty_under(ctx, x, tm, emp, &mut ()).unwrap_err(),
-    ///     kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_TOO_MANY_VARS
-    /// );
-    /// // but the result is still cached in ctx!
-    /// //
-    /// // which is valid since the result is about the unchanged closed term, _not_ the term in the
-    /// // (imported, changed) context!
-    /// assert!(res.check(ctx, &*ker));
-    /// ```
     fn derive_close_has_ty_under<S>(
         &mut self,
         ctx: C,

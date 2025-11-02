@@ -970,9 +970,39 @@ pub type NodeT2<C, T> = NodeT<C, NodeT<C, T>, Val<C, T>>;
 
 pub type NodeVT2<C, T> = NodeT<C, NodeVT<C, T>, Val<C, T>>;
 
+impl<C, T> From<Fv<C>> for NodeT<C, T> {
+    fn from(x: Fv<C>) -> Self {
+        NodeT::Fv(x)
+    }
+}
+
+impl<C: PartialEq, T> PartialEq<Fv<C>> for NodeT<C, T> {
+    fn eq(&self, other: &Fv<C>) -> bool {
+        match self {
+            NodeT::Fv(this) => this == other,
+            _ => false,
+        }
+    }
+}
+
+impl<C: PartialEq, T> PartialEq<NodeT<C, T>> for Fv<C> {
+    fn eq(&self, other: &NodeT<C, T>) -> bool {
+        other.eq(self)
+    }
+}
+
 impl<C, T> From<Bv> for NodeT<C, T> {
     fn from(bv: Bv) -> Self {
         NodeT::Bv(bv)
+    }
+}
+
+impl<C, T> PartialEq<Bv> for NodeT<C, T> {
+    fn eq(&self, other: &Bv) -> bool {
+        match self {
+            NodeT::Bv(this) => this == other,
+            _ => false,
+        }
     }
 }
 

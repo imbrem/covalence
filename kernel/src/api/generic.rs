@@ -1,7 +1,5 @@
 use crate::{api::store::*, data::term::*};
 
-impl<C: Copy, T: Copy> Val<C, T> {}
-
 impl<C: Copy, T> NodeVT<C, T> {
     /// Convert nested values to nested imports
     pub fn import_children(self) -> NodeVT2<C, T> {

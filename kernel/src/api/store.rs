@@ -70,6 +70,17 @@ pub trait ReadTerm<C, T> {
 
     /// Check whether two values are equal up to unfolding
     fn unfold_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
+
+
+    // == Universe levels ==
+    /// Check whether one universe is less than or equal to another
+    fn u_le(&self, lo: ULvl, hi: ULvl) -> bool;
+
+    /// Check whether one universe is strictly less than another
+    fn u_lt(&self, lo: ULvl, hi: ULvl) -> bool;
+
+    /// Check whether the impredicative maximum of two universes is less than or equal to another
+    fn imax_le(&self, lo_lhs: ULvl, lo_rhs: ULvl, hi: ULvl) -> bool;
 }
 
 impl<C: Copy, T> Val<C, T> {
@@ -124,6 +135,18 @@ impl<C: Copy, T> NodeT<C, T> {
     /// Tag this node's syntactic children with the given context
     pub fn raw_node_val_in(self, ctx: C) -> NodeVT<C, T> {
         self.map_subterms(|tm| Val { ctx, tm })
+    }
+}
+
+impl<C: Copy> Fv<C> {
+    /// Get this variable as a value
+    pub fn val<T>(self, store: &(impl ReadTerm<C, T> + ?Sized)) -> Val<C, T> {
+        Val {
+            ctx: self.ctx,
+            tm: store
+                .lookup(self.ctx, &mut NodeT::Fv(self))
+                .expect("valid variables should exist in their contexts"),
+        }
     }
 }
 
@@ -490,16 +513,6 @@ pub trait ReadTermFacts<C, T> {
     ///
     /// TODO: reference Lean
     fn exists_is_empty(&self, ctx: C, binder: T, tm: T) -> bool;
-
-    // == Universe levels ==
-    /// Check whether one universe is less than or equal to another
-    fn u_le(&self, lo: ULvl, hi: ULvl) -> bool;
-
-    /// Check whether one universe is strictly less than another
-    fn u_lt(&self, lo: ULvl, hi: ULvl) -> bool;
-
-    /// Check whether the impredicative maximum of two universes is less than or equal to another
-    fn imax_le(&self, lo_lhs: ULvl, lo_rhs: ULvl, hi: ULvl) -> bool;
 }
 
 /// A database of terms, contexts, and facts which we can read from
@@ -653,4 +666,155 @@ pub trait WriteFacts<C, T> {
 
     /// Set the bound-variable index of a term
     fn set_bvi_unchecked(&mut self, ctx: C, tm: T, bvi: Bv);
+}
+
+impl<C: Copy, T: Copy, D: ReadTerm<C, T> + ReadTermFacts<C, T>> ReadTermFacts<C, Val<C, T>> for D {
+    fn eq_in(&self, ctx: C, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
+        self.cons_eq(lhs, rhs)
+            || if let Some(lhs) = self.lookup_val(ctx, lhs)
+                && let Some(rhs) = self.lookup_val(ctx, rhs)
+            {
+                self.eq_in(ctx, lhs, rhs)
+            } else {
+                false
+            }
+    }
+
+    fn is_wf(&self, ctx: C, tm: Val<C, T>) -> bool {
+        self.lookup_val(ctx, tm)
+            .is_some_and(|tm| self.is_wf(ctx, tm))
+    }
+
+    fn is_ty(&self, ctx: C, tm: Val<C, T>) -> bool {
+        self.lookup_val(ctx, tm)
+            .is_some_and(|tm| self.is_ty(ctx, tm))
+    }
+
+    fn is_prop(&self, ctx: C, tm: Val<C, T>) -> bool {
+        self.lookup_val(ctx, tm)
+            .is_some_and(|tm| self.is_prop(ctx, tm))
+    }
+
+    fn has_ty(&self, ctx: C, tm: Val<C, T>, ty: Val<C, T>) -> bool {
+        self.lookup_val(ctx, tm).is_some_and(|tm| {
+            self.lookup_val(ctx, ty)
+                .is_some_and(|ty| self.has_ty(ctx, tm, ty))
+        })
+    }
+
+    fn is_inhab(&self, ctx: C, tm: Val<C, T>) -> bool {
+        self.lookup_val(ctx, tm)
+            .is_some_and(|tm| self.is_inhab(ctx, tm))
+    }
+
+    fn is_empty(&self, ctx: C, tm: Val<C, T>) -> bool {
+        self.lookup_val(ctx, tm)
+            .is_some_and(|tm| self.is_empty(ctx, tm))
+    }
+
+    fn forall_eq_in(&self, ctx: C, binder: Val<C, T>, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, lhs).is_some_and(|lhs| {
+                self.lookup_val(ctx, rhs)
+                    .is_some_and(|rhs| self.forall_eq_in(ctx, binder, lhs, rhs))
+            })
+        })
+    }
+
+    fn forall_is_wf(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, ty)
+                .is_some_and(|ty| self.forall_is_wf(ctx, binder, ty))
+        })
+    }
+
+    fn forall_is_ty(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, ty)
+                .is_some_and(|ty| self.forall_is_ty(ctx, binder, ty))
+        })
+    }
+
+    fn forall_is_prop(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, ty)
+                .is_some_and(|ty| self.forall_is_prop(ctx, binder, ty))
+        })
+    }
+
+    fn forall_has_ty(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>, ty: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, tm).is_some_and(|tm| {
+                self.lookup_val(ctx, ty)
+                    .is_some_and(|ty| self.forall_has_ty(ctx, binder, tm, ty))
+            })
+        })
+    }
+
+    fn forall_is_inhab(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, tm)
+                .is_some_and(|tm| self.forall_is_inhab(ctx, binder, tm))
+        })
+    }
+
+    fn forall_is_empty(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, tm)
+                .is_some_and(|tm| self.forall_is_empty(ctx, binder, tm))
+        })
+    }
+
+    fn exists_eq_in(&self, ctx: C, binder: Val<C, T>, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, lhs).is_some_and(|lhs| {
+                self.lookup_val(ctx, rhs)
+                    .is_some_and(|rhs| self.exists_eq_in(ctx, binder, lhs, rhs))
+            })
+        })
+    }
+
+    fn exists_is_wf(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, ty)
+                .is_some_and(|ty| self.exists_is_wf(ctx, binder, ty))
+        })
+    }
+
+    fn exists_is_ty(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, ty)
+                .is_some_and(|ty| self.exists_is_ty(ctx, binder, ty))
+        })
+    }
+
+    fn exists_is_prop(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, ty)
+                .is_some_and(|ty| self.exists_is_prop(ctx, binder, ty))
+        })
+    }
+
+    fn exists_has_ty(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>, ty: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, tm).is_some_and(|tm| {
+                self.lookup_val(ctx, ty)
+                    .is_some_and(|ty| self.exists_has_ty(ctx, binder, tm, ty))
+            })
+        })
+    }
+
+    fn exists_is_inhab(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, tm)
+                .is_some_and(|tm| self.exists_is_inhab(ctx, binder, tm))
+        })
+    }
+
+    fn exists_is_empty(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, tm)
+                .is_some_and(|tm| self.exists_is_empty(ctx, binder, tm))
+        })
+    }
 }

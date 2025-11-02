@@ -163,6 +163,18 @@ impl ReadTerm<CtxId, TermId> for TermDb {
         //TODO: reduce here, later...
         self.syn_eq(lhs, rhs)
     }
+
+    fn u_le(&self, lo: ULvl, hi: ULvl) -> bool {
+        lo.level <= hi.level
+    }
+
+    fn u_lt(&self, lo: ULvl, hi: ULvl) -> bool {
+        lo.level < hi.level
+    }
+
+    fn imax_le(&self, lo_lhs: ULvl, lo_rhs: ULvl, hi: ULvl) -> bool {
+        self.u_le(lo_rhs, ULvl::PROP) || self.u_le(lo_lhs, hi) && self.u_le(lo_rhs, hi)
+    }
 }
 
 impl WriteTerm<CtxId, TermId> for TermDb {
@@ -396,18 +408,6 @@ impl ReadTermFacts<CtxId, TermId> for TermDb {
     fn exists_is_empty(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
         self.x[ctx.0].exists_is_empty(binder, tm)
     }
-
-    fn u_le(&self, lo: ULvl, hi: ULvl) -> bool {
-        lo.level <= hi.level
-    }
-
-    fn u_lt(&self, lo: ULvl, hi: ULvl) -> bool {
-        lo.level < hi.level
-    }
-
-    fn imax_le(&self, lo_lhs: ULvl, lo_rhs: ULvl, hi: ULvl) -> bool {
-        self.u_le(lo_rhs, ULvl::PROP) || self.u_le(lo_lhs, hi) && self.u_le(lo_rhs, hi)
-    }
 }
 
 impl ReadTermDb<CtxId, TermId> for TermDb {
@@ -518,7 +518,10 @@ impl WriteFacts<CtxId, TermId> for TermDb {
 
     fn add_var_unchecked(&mut self, ctx: CtxId, ty: TermId) -> VarId {
         let ix = self.x[ctx.0].add_var_unchecked(ty);
-        VarId { ctx, ix }
+        let var = VarId { ctx, ix };
+        let id = self.x[ctx.0].add(Node::Fv(var));
+        self.x[ctx.0].set_has_ty_unchecked(id, ty);
+        var
     }
 
     fn set_bvi_unchecked(&mut self, ctx: CtxId, tm: TermId, bvi: Bv) {

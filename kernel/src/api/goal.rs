@@ -280,20 +280,20 @@ impl<C, T> From<ExistsInhabUnder<C, T>> for Fact<C, T> {
 
 impl<T: Copy> Quant<T> {
     /// Check this quantifier in the given context
-    pub fn check_in<C: Copy, R: ReadFacts<C, T> + ?Sized>(self, ctx: C, ker: &R) -> bool {
+    pub fn check_in<C: Copy, R: ReadTermFacts<C, T> + ?Sized>(self, ctx: C, ker: &R) -> bool {
         ker.is_ty(ctx, self.binder())
     }
 }
 
 impl<C: Copy, T: Copy> Fact<C, T> {
     /// Check this relation's binder
-    pub fn check_binder_in<R: ReadFacts<C, T> + ?Sized>(self, ker: &R) -> bool {
+    pub fn check_binder_in<R: ReadTermFacts<C, T> + ?Sized>(self, ker: &R) -> bool {
         self.binder
             .is_none_or(|binder| binder.check_in(self.ctx, ker))
     }
 
     /// Check whether this goal is true
-    pub fn check_in<R: ReadFacts<C, T> + ?Sized>(self, ker: &R) -> bool {
+    pub fn check<R: ReadFacts<C, T> + ?Sized>(self, ker: &R) -> bool {
         match (self.binder, self.rel) {
             (_, None) => self.check_binder_in(ker),
             (None, Some(FactIn::Eq(lhs, rhs))) => ker.eq_in(self.ctx, lhs, rhs),
@@ -349,59 +349,5 @@ impl<C: Copy, T: Copy> Fact<C, T> {
             }
             (Some(Quant::Exists(_)), Some(FactIn::Contr)) => ker.is_contr(self.ctx),
         }
-    }
-}
-
-impl<C: Copy, T: Copy> Quant<Val<C, T>> {
-    /// Attempt to lookup this quantifier in the given context
-    pub fn lookup<R: ReadTerm<C, T> + ?Sized>(self, ctx: C, ker: &R) -> Option<Quant<T>> {
-        match self {
-            Quant::Forall(binder) => Some(Quant::Forall(ker.lookup_val(ctx, binder)?)),
-            Quant::Exists(binder) => Some(Quant::Exists(ker.lookup_val(ctx, binder)?)),
-        }
-    }
-}
-
-impl<C: Copy, T: Copy> Fact<C, Val<C, T>> {
-    /// Attempt to convert this goal to one in it's context
-    pub fn lookup<R: ReadTermStore<C, T> + ?Sized>(self, ker: &R) -> Option<Fact<C, T>> {
-        let binder = if let Some(binder) = self.binder {
-            Some(binder.lookup(self.ctx, ker)?)
-        } else {
-            None
-        };
-        let rel = match self.rel {
-            None => None,
-            Some(FactIn::Eq(lhs, rhs)) => {
-                if ker.deref_eq(lhs, rhs) {
-                    None
-                } else {
-                    Some(FactIn::Eq(
-                        ker.lookup_val(self.ctx, lhs)?,
-                        ker.lookup_val(self.ctx, rhs)?,
-                    ))
-                }
-            }
-            Some(FactIn::IsWf(tm)) => Some(FactIn::IsWf(ker.lookup_val(self.ctx, tm)?)),
-            Some(FactIn::IsTy(tm)) => Some(FactIn::IsTy(ker.lookup_val(self.ctx, tm)?)),
-            Some(FactIn::IsProp(tm)) => Some(FactIn::IsProp(ker.lookup_val(self.ctx, tm)?)),
-            Some(FactIn::HasTy(tm, ty)) => Some(FactIn::HasTy(
-                ker.lookup_val(self.ctx, tm)?,
-                ker.lookup_val(self.ctx, ty)?,
-            )),
-            Some(FactIn::IsInhab(tm)) => Some(FactIn::IsInhab(ker.lookup_val(self.ctx, tm)?)),
-            Some(FactIn::IsEmpty(tm)) => Some(FactIn::IsEmpty(ker.lookup_val(self.ctx, tm)?)),
-            Some(FactIn::Contr) => Some(FactIn::Contr),
-        };
-        Some(Fact {
-            ctx: self.ctx,
-            binder,
-            rel,
-        })
-    }
-
-    /// Check whether this goal is true
-    pub fn check<R: ReadTermStore<C, T> + ?Sized>(self, ker: &R) -> bool {
-        self.lookup(ker).is_some_and(|goal| goal.check_in(ker))
     }
 }

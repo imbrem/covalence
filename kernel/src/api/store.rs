@@ -71,7 +71,6 @@ pub trait ReadTerm<C, T> {
     /// Check whether two values are equal up to unfolding
     fn unfold_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
 
-
     // == Universe levels ==
     /// Check whether one universe is less than or equal to another
     fn u_le(&self, lo: ULvl, hi: ULvl) -> bool;
@@ -150,7 +149,7 @@ impl<C: Copy> Fv<C> {
     }
 }
 
-/// A datastore that can read information about contexts
+/// A datastore that can read contexts
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
@@ -164,6 +163,27 @@ impl<C: Copy> Fv<C> {
 /// let ker : &dyn ReadCtx<CtxId, TermId> = &Kernel::new();
 /// ```
 pub trait ReadCtx<C, T> {
+    /// Get the number of variables this context has
+    fn num_vars(&self, ctx: C) -> u32;
+
+    /// Lookup the type of a variable in its own context
+    fn get_var_ty(&self, var: Fv<C>) -> T;
+}
+
+/// A datastore that can read facts about contexts
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadCtxFacts<CtxId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadCtxFacts<CtxId> = &Kernel::new();
+/// ```
+pub trait ReadCtxFacts<C> {
     /// Get whether a context is a root context
     ///
     /// Note that a root context has no assumptions _or_ variables.
@@ -246,8 +266,7 @@ pub trait ReadCtx<C, T> {
     ///
     /// # Examples
     /// ```rust
-    /// # use covalence_kernel::*;
-    /// # use covalence_kernel::api::error::kernel_error;
+    /// # use covalence::kernel::*;
     /// # let mut ker = Kernel::new();
     /// let ctx = ker.new_ctx();
     /// // The empty context is a subctx of everything
@@ -266,8 +285,7 @@ pub trait ReadCtx<C, T> {
     ///
     /// # Examples
     /// ```rust
-    /// # use covalence_kernel::*;
-    /// # use covalence_kernel::api::error::kernel_error;
+    /// # use covalence::kernel::*;
     /// # let mut ker = Kernel::new();
     /// let ctx = ker.new_ctx();
     /// // The empty context is a subctx of everything
@@ -286,14 +304,6 @@ pub trait ReadCtx<C, T> {
     /// assert!(!ker.parents_are_subctx(grandchild, ctx));
     /// ```
     fn parents_are_subctx(&self, lo: C, hi: C) -> bool;
-
-    // == Variables ==
-
-    /// Get the number of variables this context has
-    fn num_vars(&self, ctx: C) -> u32;
-
-    /// Lookup the type of a variable in its own context
-    fn get_var_ty(&self, var: Fv<C>) -> T;
 }
 
 /// A trait implemented by a datastore that can create hash-consed terms and universe levels
@@ -322,8 +332,7 @@ pub trait WriteTerm<C, T> {
     ///
     /// # Example
     /// ```rust
-    /// # use covalence_kernel::*;
-    /// # use covalence_kernel::api::error::kernel_error;
+    /// # use covalence::kernel::*;
     /// # let mut ker = Kernel::new();
     /// let parent = ker.new_ctx();
     /// let child = ker.with_parent(parent);
@@ -528,9 +537,9 @@ pub trait ReadTermFacts<C, T> {
 /// # use covalence_kernel::*;
 /// let ker : &dyn ReadFacts<CtxId, TermId> = &Kernel::new();
 /// ```
-pub trait ReadFacts<C, T>: ReadCtx<C, T> + ReadTermFacts<C, T> {}
+pub trait ReadFacts<C, T>: ReadCtxFacts<C> + ReadTermFacts<C, T> {}
 
-impl<D: ReadCtx<C, T> + ReadTermFacts<C, T>, C, T> ReadFacts<C, T> for D {}
+impl<D: ReadCtxFacts<C> + ReadTermFacts<C, T>, C, T> ReadFacts<C, T> for D {}
 
 /// A database of terms, contexts, and facts which we can read from
 ///
@@ -545,9 +554,9 @@ impl<D: ReadCtx<C, T> + ReadTermFacts<C, T>, C, T> ReadFacts<C, T> for D {}
 /// # use covalence_kernel::*;
 /// let ker : &dyn ReadTermStore<CtxId, TermId> = &Kernel::new();
 /// ```
-pub trait ReadTermStore<C, T>: ReadTerm<C, T> + ReadFacts<C, T> {}
+pub trait ReadTermStore<C, T>: ReadCtx<C, T> + ReadTerm<C, T> + ReadFacts<C, T> {}
 
-impl<D: ReadTerm<C, T> + ReadFacts<C, T>, C, T> ReadTermStore<C, T> for D {}
+impl<D: ReadCtx<C, T> + ReadTerm<C, T> + ReadFacts<C, T>, C, T> ReadTermStore<C, T> for D {}
 
 /// A term database which we can read from
 pub trait ReadTermDb<C, T> {

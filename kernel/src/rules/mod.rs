@@ -102,29 +102,6 @@ where
         // Ok(var)
     }
 
-    fn with_param<S>(
-        &mut self,
-        parent: C,
-        param: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<Fv<C>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
-        todo!()
-        // //TODO: indicate to strategy we're calling with_param?
-        // let ctx = self.with_parent(parent);
-        // let ty = self.import(
-        //     ctx,
-        //     Val {
-        //         ctx: parent,
-        //         tm: param,
-        //     },
-        // );
-        // let var = self.add_var(ctx, ty, strategy)?;
-        // Ok(var)
-    }
-
     fn set_parent<S>(&mut self, ctx: C, parent: C, strategy: &mut S) -> Result<IsSubctx<C>, S::Fail>
     where
         S: Strategy<C, T, Self>,

@@ -1,3 +1,4 @@
+use covalence_kernel::api::strategy::Strategy;
 pub use covalence_kernel::*;
 
 use data::term::*;
@@ -8,6 +9,32 @@ where
     C: Copy + PartialEq,
     T: Copy + PartialEq,
 {
+    /// Insert a new context with the given parameter
+    ///
+    /// TODO: reference Lean
+    fn with_param<S>(
+        &mut self,
+        parent: C,
+        param: Val<C, T>,
+        strategy: &mut S,
+    ) -> Result<Fv<C>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        todo!()
+        // //TODO: indicate to strategy we're calling with_param?
+        // let ctx = self.with_parent(parent);
+        // let ty = self.import(
+        //     ctx,
+        //     Val {
+        //         ctx: parent,
+        //         tm: param,
+        //     },
+        // );
+        // let var = self.add_var(ctx, ty, strategy)?;
+        // Ok(var)
+    }
+
     /// Construct the universe of propositions in a given context
     fn prop(&mut self, ctx: C) -> Val<C, T> {
         Val {

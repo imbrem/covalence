@@ -273,9 +273,9 @@ where
 /// Typing rules for deriving facts about terms from those already in the datastore
 pub trait Derive<C, T> {
     /// Add a new variable to this context with the given type
-    /// 
+    ///
     /// TODO: reference Lean
-    /// 
+    ///
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
@@ -286,20 +286,10 @@ pub trait Derive<C, T> {
     /// assert_eq!(x.node_ix(&*ker), Fv { ctx, ix : 0 });
     /// let y = ker.add_var(ctx, x, &mut ()).unwrap().val(&*ker);
     /// assert_eq!(y.node_ix(&*ker), Fv { ctx, ix : 1 });
+    /// // Fails: y is not a valid type
+    /// ker.add_var(ctx, y, &mut ()).unwrap_err();
     /// ```
     fn add_var<S>(&mut self, ctx: C, ty: Val<C, T>, strategy: &mut S) -> Result<Fv<C>, S::Fail>
-    where
-        S: Strategy<C, T, Self>;
-
-    /// Insert a new context with the given parameter
-    /// 
-    /// TODO: reference Lean
-    fn with_param<S>(
-        &mut self,
-        parent: C,
-        param: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<Fv<C>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 

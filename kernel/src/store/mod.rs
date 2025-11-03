@@ -342,6 +342,110 @@ impl ReadTermFacts<CtxId, TermId> for TermDb {
     fn has_ty(&self, ctx: CtxId, tm: TermId, ty: TermId) -> bool {
         self.x[ctx.0].has_ty(tm, ty)
     }
+
+    fn forall_eq_in(&self, ctx: CtxId, binder: TermId, lhs: TermId, rhs: TermId) -> bool {
+        if !self.is_ty(ctx, binder) {
+            return false;
+        }
+        if self.eq_in(ctx, lhs, rhs) {
+            return true;
+        }
+        let Some(abs_lhs) = self.lookup(ctx, NodeT::Abs([binder, lhs])) else {
+            return false;
+        };
+        let Some(abs_rhs) = self.lookup(ctx, NodeT::Abs([binder, rhs])) else {
+            return false;
+        };
+        self.eq_in(ctx, abs_lhs, abs_rhs)
+    }
+
+    fn forall_has_ty(&self, ctx: CtxId, binder: TermId, tm: TermId, ty: TermId) -> bool {
+        if self.is_ty(ctx, binder) && self.has_ty(ctx, tm, ty) {
+            return true;
+        }
+        let Some(abs) = self.lookup(ctx, NodeT::Abs([binder, tm])) else {
+            return false;
+        };
+        let Some(pi) = self.lookup(ctx, NodeT::Pi([binder, ty])) else {
+            return false;
+        };
+        self.has_ty(ctx, abs, pi)
+    }
+
+    fn forall_is_wf(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+        if !self.is_ty(ctx, binder) {
+            return false;
+        }
+        self.is_wf(ctx, tm)
+            || self
+                .lookup(ctx, NodeT::Abs([binder, tm]))
+                .is_some_and(|abs| self.is_wf(ctx, abs))
+    }
+
+    fn forall_is_ty(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+        if !self.is_ty(ctx, binder) {
+            return false;
+        }
+        self.is_ty(ctx, tm)
+            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
+            || self
+                .lookup(ctx, NodeT::Pi([binder, tm]))
+                .is_some_and(|pi| self.is_ty(ctx, pi))
+    }
+
+    fn forall_is_prop(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+        if !self.is_ty(ctx, binder) {
+            return false;
+        }
+        self.is_prop(ctx, tm)
+            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
+            || self
+                .lookup(ctx, NodeT::Pi([binder, tm]))
+                .is_some_and(|pi| self.is_prop(ctx, pi))
+    }
+
+    fn forall_is_inhab(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+        if !self.is_ty(ctx, binder) {
+            return false;
+        }
+        self.is_inhab(ctx, tm)
+            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
+            || self.eq_in(ctx, tm, binder)
+            || self
+                .lookup(ctx, NodeT::Pi([binder, tm]))
+                .is_some_and(|pi| self.is_inhab(ctx, pi))
+    }
+
+    fn forall_is_tt(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+        if !self.is_ty(ctx, binder) {
+            return false;
+        }
+        self.is_tt(ctx, tm)
+            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
+            || (self.is_prop(ctx, binder) && self.eq_in(ctx, tm, binder))
+            || self
+                .lookup(ctx, NodeT::Pi([binder, tm]))
+                .is_some_and(|pi| self.is_tt(ctx, pi))
+    }
+
+    fn forall_is_empty(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+        if !self.is_ty(ctx, binder) {
+            return false;
+        }
+        self.is_empty(ctx, tm)
+            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
+            || self
+                .lookup(ctx, NodeT::Sigma([binder, tm]))
+                .is_some_and(|sigma| self.is_empty(ctx, sigma))
+    }
+
+    fn forall_is_ff(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+        self.forall_is_prop(ctx, binder, tm) && self.forall_is_empty(ctx, binder, tm)
+    }
+
+    fn forall_is_contr(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+        self.is_empty(ctx, binder) && self.forall_is_wf(ctx, binder, tm)
+    }
 }
 
 impl ReadTermDb<CtxId, TermId> for TermDb {
@@ -417,37 +521,8 @@ impl WriteFacts<CtxId, TermId> for TermDb {
         self.x[ctx.0].set_forall_is_empty_unchecked(binder, tm);
     }
 
-    fn set_exists_eq_unchecked(&mut self, ctx: CtxId, binder: TermId, lhs: TermId, rhs: TermId) {
-        self.x[ctx.0].set_exists_eq_unchecked(binder, lhs, rhs);
-    }
-
-    fn set_exists_is_wf_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
-        self.x[ctx.0].set_exists_is_wf_unchecked(binder, tm);
-    }
-
-    fn set_exists_is_ty_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
-        self.x[ctx.0].set_exists_is_ty_unchecked(binder, tm);
-    }
-
-    fn set_exists_is_prop_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
-        self.x[ctx.0].set_exists_is_prop_unchecked(binder, tm);
-    }
-
-    fn set_exists_has_ty_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId, ty: TermId) {
-        self.x[ctx.0].set_exists_has_ty_unchecked(binder, tm, ty);
-    }
-
     fn set_exists_is_inhab_unchecked(&mut self, ctx: CtxId, binder: TermId, ty: TermId) {
         self.x[ctx.0].set_exists_is_inhab_unchecked(binder, ty);
-    }
-
-    fn set_exists_is_empty_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
-        self.x[ctx.0].set_exists_is_empty_unchecked(binder, tm);
-    }
-
-    fn assume_unchecked(&mut self, ctx: CtxId, ty: TermId) -> VarId {
-        let ix = self.x[ctx.0].assume_unchecked(ty);
-        VarId { ctx, ix }
     }
 
     fn add_var_unchecked(&mut self, ctx: CtxId, ty: TermId) -> VarId {

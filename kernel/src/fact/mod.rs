@@ -595,8 +595,7 @@ where
 {
     /// Check this quantifier in the given context
     fn check_in(&self, &ctx: &C, ker: &R) -> bool {
-        todo!()
-        //ker.is_ty(ctx, self.0)
+        ker.is_ty(ctx, self.0)
     }
 }
 
@@ -609,10 +608,10 @@ where
     /// Check whether this goal is true
     fn check_in(&self, &ctx: &C, ker: &R) -> bool {
         match *self {
-            Atom::Eq(lhs, rhs) => ker.eq_in(ctx, lhs, rhs),
-            Atom::Pred1(p, tm) => ker.tm_satisfies(ctx, p, tm),
-            Atom::HasTy(tm, ty) => ker.has_ty(ctx, tm, ty),
             Atom::Pred0(p) => ker.ctx_satisfies(ctx, p),
+            Atom::Pred1(p, tm) => ker.tm_satisfies(ctx, p, tm),
+            Atom::Eq(lhs, rhs) => ker.eq_in(ctx, lhs, rhs),
+            Atom::HasTy(tm, ty) => ker.has_ty(ctx, tm, ty),
         }
     }
 }
@@ -626,11 +625,10 @@ where
     /// Check whether this goal is true
     fn check_under(&self, &ctx: &C, &Forall(binder): &Forall<T>, ker: &R) -> bool {
         match *self {
-            // Atom::Eq(lhs, rhs) => ker.forall_eq_in(ctx, binder, lhs, rhs),
-            // Atom::Pred1(pred, tm) => ker.forall_unary(ctx, binder, pred, tm),
-            // Atom::HasTy(tm, ty) => ker.forall_has_ty(ctx, binder, tm, ty),
             Atom::Pred0(pred) => ker.tm_satisfies(ctx, pred.forall(), binder),
-            _ => todo!(),
+            Atom::Pred1(pred, tm) => ker.forall_satisfies(ctx, binder, pred, tm),
+            Atom::Eq(lhs, rhs) => ker.forall_eq_in(ctx, binder, lhs, rhs),
+            Atom::HasTy(tm, ty) => ker.forall_has_ty(ctx, binder, tm, ty),
         }
     }
 }

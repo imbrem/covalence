@@ -1,5 +1,5 @@
 use crate::{
-    IS_SCOPED, Pred1,
+    Pred1,
     data::term::{Bv, Fv, NodeT, NodeVT, ULvl, Val},
     fact::Pred0,
 };
@@ -484,44 +484,27 @@ pub trait ReadTermFacts<C, T>: ReadCtxFacts<C> {
     fn is_ff(&self, ctx: C, tm: T) -> bool {
         self.tm_satisfies(ctx, Pred1::IS_FF, tm)
     }
-}
 
-/// A database of terms, contexts, and facts which we can read from
-///
-/// This trait is `dyn`-safe:
-/// ```rust
-/// # use covalence_kernel::*;
-/// let ker : &dyn ReadFacts<CtxId, TermId> = &TermDb::new();
-/// ```
-/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
-/// functions for different kernel wrappers:
-/// ```rust,compile_fail
-/// # use covalence_kernel::*;
-/// let ker : &dyn ReadFacts<CtxId, TermId> = &Kernel::new();
-/// ```
-pub trait ReadFacts<C, T>: ReadCtxFacts<C> + ReadTermFacts<C, T> {}
-
-impl<D: ReadCtxFacts<C> + ReadTermFacts<C, T>, C, T> ReadFacts<C, T> for D {}
-
-/// A database of terms, contexts, and facts which we can read from
-///
-/// This trait is `dyn`-safe:
-/// ```rust
-/// # use covalence_kernel::*;
-/// let ker : &dyn ReadTermStore<CtxId, TermId> = &TermDb::new();
-/// ```
-/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
-/// functions for different kernel wrappers:
-/// ```rust,compile_fail
-/// # use covalence_kernel::*;
-/// let ker : &dyn ReadTermStore<CtxId, TermId> = &Kernel::new();
-/// ```
-pub trait ReadTermStore<C, T>: ReadCtx<C, T> + ReadTerm<C, T> + ReadFacts<C, T> {
     /// Check whether the term `tm` satisfies predicate `pred` under a binder in `ctx`
     ///
     /// For details about the specific predicates, see helper methods like
     /// [`forall_is_ty`](#method.forall_is_ty).
-    fn forall_satisfies(&self, ctx: C, binder: T, pred: Pred1, tm: T) -> bool;
+    fn forall_satisfies(&self, ctx: C, binder: T, pred: Pred1, tm: T) -> bool
+    where
+        C: Copy,
+    {
+        match pred.to_valid().deduce() {
+            Pred1::IS_WF => self.forall_is_wf(ctx, binder, tm),
+            Pred1::IS_TY => self.forall_is_ty(ctx, binder, tm),
+            Pred1::IS_PROP => self.forall_is_prop(ctx, binder, tm),
+            Pred1::IS_INHAB => self.forall_is_inhab(ctx, binder, tm),
+            Pred1::IS_EMPTY => self.forall_is_empty(ctx, binder, tm),
+            Pred1::IS_TT => self.forall_is_tt(ctx, binder, tm),
+            Pred1::IS_FF => self.forall_is_ff(ctx, binder, tm),
+            Pred1::IS_CONTR => self.forall_is_contr(ctx, binder, tm),
+            pred => self.is_ty(ctx, binder) && self.tm_satisfies(ctx, pred, tm),
+        }
+    }
 
     /// Check whether the terms `lhs`, `rhs` are equal in `ctx` under a binder `binder`
     ///
@@ -574,128 +557,43 @@ pub trait ReadTermStore<C, T>: ReadCtx<C, T> + ReadTerm<C, T> + ReadFacts<C, T> 
     fn forall_is_contr(&self, ctx: C, binder: T, tm: T) -> bool;
 }
 
+/// A database of terms, contexts, and facts which we can read from
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadFacts<CtxId, TermId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadFacts<CtxId, TermId> = &Kernel::new();
+/// ```
+pub trait ReadFacts<C, T>: ReadCtxFacts<C> + ReadTermFacts<C, T> {}
+
+impl<D: ReadCtxFacts<C> + ReadTermFacts<C, T>, C, T> ReadFacts<C, T> for D {}
+
+/// A database of terms, contexts, and facts which we can read from
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadTermStore<CtxId, TermId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadTermStore<CtxId, TermId> = &Kernel::new();
+/// ```
+pub trait ReadTermStore<C, T>: ReadCtx<C, T> + ReadTerm<C, T> + ReadFacts<C, T> {}
+
 impl<D: ReadCtx<C, T> + ReadTerm<C, T> + ReadFacts<C, T>, C, T> ReadTermStore<C, T> for D
 where
     C: Copy,
     T: Copy,
 {
-    fn forall_satisfies(&self, ctx: C, binder: T, pred: Pred1, tm: T) -> bool {
-        match pred.to_valid().deduce() {
-            Pred1::IS_WF => self.forall_is_wf(ctx, binder, tm),
-            Pred1::IS_TY => self.forall_is_ty(ctx, binder, tm),
-            Pred1::IS_PROP => self.forall_is_prop(ctx, binder, tm),
-            Pred1::IS_INHAB => self.forall_is_inhab(ctx, binder, tm),
-            Pred1::IS_EMPTY => self.forall_is_empty(ctx, binder, tm),
-            Pred1::IS_TT => self.forall_is_tt(ctx, binder, tm),
-            Pred1::IS_FF => self.forall_is_ff(ctx, binder, tm),
-            Pred1::IS_CONTR => self.forall_is_contr(ctx, binder, tm),
-            pred => self.is_ty(ctx, binder) && self.tm_satisfies(ctx, pred, tm),
-        }
-    }
-
-    fn forall_eq_in(&self, ctx: C, binder: T, lhs: T, rhs: T) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        if self.eq_in(ctx, lhs, rhs) {
-            return true;
-        }
-        let Some(abs_lhs) = self.lookup(ctx, NodeT::Abs([binder, lhs])) else {
-            return false;
-        };
-        let Some(abs_rhs) = self.lookup(ctx, NodeT::Abs([binder, rhs])) else {
-            return false;
-        };
-        self.eq_in(ctx, abs_lhs, abs_rhs)
-    }
-
-    fn forall_has_ty(&self, ctx: C, binder: T, tm: T, ty: T) -> bool {
-        if self.is_ty(ctx, binder) && self.has_ty(ctx, tm, ty) {
-            return true;
-        }
-        let Some(abs) = self.lookup(ctx, NodeT::Abs([binder, tm])) else {
-            return false;
-        };
-        let Some(pi) = self.lookup(ctx, NodeT::Pi([binder, ty])) else {
-            return false;
-        };
-        self.has_ty(ctx, abs, pi)
-    }
-
-    fn forall_is_wf(&self, ctx: C, binder: T, tm: T) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        self.is_wf(ctx, tm)
-            || self
-                .lookup(ctx, NodeT::Abs([binder, tm]))
-                .is_some_and(|abs| self.is_wf(ctx, abs))
-    }
-
-    fn forall_is_ty(&self, ctx: C, binder: T, tm: T) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        self.is_ty(ctx, tm)
-            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
-            || self
-                .lookup(ctx, NodeT::Pi([binder, tm]))
-                .is_some_and(|pi| self.is_ty(ctx, pi))
-    }
-
-    fn forall_is_prop(&self, ctx: C, binder: T, tm: T) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        self.is_prop(ctx, tm)
-            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
-            || self
-                .lookup(ctx, NodeT::Pi([binder, tm]))
-                .is_some_and(|pi| self.is_prop(ctx, pi))
-    }
-
-    fn forall_is_inhab(&self, ctx: C, binder: T, tm: T) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        self.is_inhab(ctx, tm)
-            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
-            || self.eq_in(ctx, tm, binder)
-            || self
-                .lookup(ctx, NodeT::Pi([binder, tm]))
-                .is_some_and(|pi| self.is_inhab(ctx, pi))
-    }
-
-    fn forall_is_tt(&self, ctx: C, binder: T, tm: T) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        self.is_tt(ctx, tm)
-            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
-            || (self.is_prop(ctx, binder) && self.eq_in(ctx, tm, binder))
-            || self
-                .lookup(ctx, NodeT::Pi([binder, tm]))
-                .is_some_and(|pi| self.is_tt(ctx, pi))
-    }
-
-    fn forall_is_empty(&self, ctx: C, binder: T, tm: T) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        self.is_empty(ctx, tm)
-            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
-            || self
-                .lookup(ctx, NodeT::Sigma([binder, tm]))
-                .is_some_and(|pi| self.is_empty(ctx, pi))
-    }
-
-    fn forall_is_ff(&self, ctx: C, binder: T, tm: T) -> bool {
-        self.forall_is_prop(ctx, binder, tm) && self.forall_is_empty(ctx, binder, tm)
-    }
-
-    fn forall_is_contr(&self, ctx: C, binder: T, tm: T) -> bool {
-        self.is_empty(ctx, binder) && self.forall_is_wf(ctx, binder, tm)
-    }
 }
 
 /// A term database which we can read from
@@ -780,33 +678,10 @@ pub trait WriteFacts<C, T> {
     /// Mark a term as an empty type under a binder
     fn set_forall_is_empty_unchecked(&mut self, ctx: C, binder: T, tm: T);
 
-    /// Mark two terms as equal under a binder
-    fn set_exists_eq_unchecked(&mut self, ctx: C, binder: T, lhs: T, rhs: T);
-
-    /// Mark a term as well-formed under a binder
-    fn set_exists_is_wf_unchecked(&mut self, ctx: C, binder: T, tm: T);
-
-    /// Mark a term as a valid type under a binder
-    fn set_exists_is_ty_unchecked(&mut self, ctx: C, binder: T, tm: T);
-
-    /// Mark a term as a proposition under a binder
-    fn set_exists_is_prop_unchecked(&mut self, ctx: C, binder: T, tm: T);
-
-    /// Set the type of a term under a binder
-    fn set_exists_has_ty_unchecked(&mut self, ctx: C, binder: T, tm: T, ty: T);
-
     /// Mark a term as an inhabited type under a binder
     fn set_exists_is_inhab_unchecked(&mut self, ctx: C, binder: T, tm: T);
 
-    /// Mark a term as an empty type under a binder
-    fn set_exists_is_empty_unchecked(&mut self, ctx: C, binder: T, tm: T);
-
     // == Variable and assumption manipulation ==
-
-    /// Add an assumption to the given context
-    ///
-    /// This adds the assumption that `ty` is inhabited; and marks it as so.
-    fn assume_unchecked(&mut self, ctx: C, ty: T) -> Fv<C>;
 
     /// Add a variable to the given context
     fn add_var_unchecked(&mut self, ctx: C, ty: T) -> Fv<C>;
@@ -846,6 +721,81 @@ impl<C: Copy, T: Copy, D: ReadTerm<C, T> + ReadTermFacts<C, T>> ReadTermFacts<C,
         self.lookup_val(ctx, tm).is_some_and(|tm| {
             self.lookup_val(ctx, ty)
                 .is_some_and(|ty| self.has_ty(ctx, tm, ty))
+        })
+    }
+
+    fn forall_eq_in(&self, ctx: C, binder: Val<C, T>, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.is_ty(ctx, binder) && self.cons_eq(lhs, rhs)
+                || self.lookup_val(ctx, lhs).is_some_and(|lhs| {
+                    self.lookup_val(ctx, rhs)
+                        .is_some_and(|rhs| self.forall_eq_in(ctx, binder, lhs, rhs))
+                })
+        })
+    }
+
+    fn forall_is_wf(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, ty)
+                .is_some_and(|ty| self.forall_is_wf(ctx, binder, ty))
+        })
+    }
+
+    fn forall_is_ty(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, ty)
+                .is_some_and(|ty| self.forall_is_ty(ctx, binder, ty))
+        })
+    }
+
+    fn forall_is_prop(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, ty)
+                .is_some_and(|ty| self.forall_is_prop(ctx, binder, ty))
+        })
+    }
+
+    fn forall_has_ty(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>, ty: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, tm).is_some_and(|tm| {
+                self.lookup_val(ctx, ty)
+                    .is_some_and(|ty| self.forall_has_ty(ctx, binder, tm, ty))
+            })
+        })
+    }
+
+    fn forall_is_inhab(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, tm)
+                .is_some_and(|tm| self.forall_is_inhab(ctx, binder, tm))
+        })
+    }
+
+    fn forall_is_empty(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, tm)
+                .is_some_and(|tm| self.forall_is_empty(ctx, binder, tm))
+        })
+    }
+
+    fn forall_is_tt(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, tm)
+                .is_some_and(|tm| self.forall_is_tt(ctx, binder, tm))
+        })
+    }
+
+    fn forall_is_ff(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, tm)
+                .is_some_and(|tm| self.forall_is_ff(ctx, binder, tm))
+        })
+    }
+
+    fn forall_is_contr(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
+        self.lookup_val(ctx, binder).is_some_and(|binder| {
+            self.lookup_val(ctx, tm)
+                .is_some_and(|tm| self.forall_is_contr(ctx, binder, tm))
         })
     }
 }

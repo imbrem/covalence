@@ -1,3 +1,4 @@
+use covalence_kernel::api::derive::Ensure;
 use covalence_kernel::api::strategy::Strategy;
 pub use covalence_kernel::*;
 
@@ -21,18 +22,9 @@ where
     where
         S: Strategy<C, T, Self>,
     {
-        todo!()
-        // //TODO: indicate to strategy we're calling with_param?
-        // let ctx = self.with_parent(parent);
-        // let ty = self.import(
-        //     ctx,
-        //     Val {
-        //         ctx: parent,
-        //         tm: param,
-        //     },
-        // );
-        // let var = self.add_var(ctx, ty, strategy)?;
-        // Ok(var)
+        let ctx = self.with_parent(parent);
+        let var = self.add_var(ctx, param, strategy)?;
+        Ok(var)
     }
 
     //TODO: derive these to be fully well-typed, every time?

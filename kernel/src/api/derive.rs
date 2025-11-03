@@ -247,7 +247,7 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     }
 
     /// Import a resolved value into the given context
-    fn insert<S>(&mut self, ctx: C, val: NodeVT<C, T>, strategy: &mut S) -> Result<T, S::Fail>
+    fn add_with<S>(&mut self, ctx: C, val: NodeVT<C, T>, strategy: &mut S) -> Result<T, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
@@ -260,7 +260,7 @@ impl<C, T, K> Ensure<C, T> for K
 where
     C: Copy,
     T: Copy + PartialEq,
-    K: ReadTermDb<C, T> + WriteTerm<C, T>,
+    K: ReadTermDb<C, T> + WriteTerm<C, T> + ?Sized,
 {
 }
 
@@ -290,6 +290,19 @@ pub trait DeriveTrusted<C, T> {
     /// Set a context's parent
     ///
     /// TODO: reference Lean
+    ///
+    /// # Examples
+    /// ```rust
+    /// # use covalence::kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// let parent = ker.new_ctx();
+    /// let child = ker.new_ctx();
+    /// assert!(!ker.is_ancestor(parent, child));
+    /// ker.set_parent(child, parent, &mut ()).unwrap();
+    /// assert!(ker.is_ancestor(parent, child));
+    /// ker.set_parent(parent, child, &mut ()).unwrap_err();
+    /// assert!(ker.is_ancestor(parent, child));
+    /// ```
     fn set_parent<S>(
         &mut self,
         ctx: C,
@@ -692,6 +705,16 @@ pub trait DeriveTrusted<C, T> {
     /// Typecheck the natural numbers
     ///
     /// TODO: reference Lean
+    /// 
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// # let ctx = ker.new_ctx();
+    /// let dn = ker.derive_nats(ctx, ULvl::SET, &mut ()).unwrap();
+    /// assert_eq!(dn.tm.node_ix(&*ker), Node::Nats);
+    /// assert!(ker.has_ty(ctx, dn.tm, dn.ty));
+    /// ```
     fn derive_nats<S>(
         &mut self,
         ctx: C,

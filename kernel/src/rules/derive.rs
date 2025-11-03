@@ -1,4 +1,5 @@
 use crate::api::derive::*;
+use crate::api::error::kernel_error;
 use crate::api::store::*;
 use crate::api::strategy::*;
 use crate::data::term::{Bv, Fv, NodeT, ULvl, Val};
@@ -16,36 +17,34 @@ where
     where
         S: Strategy<C, T, Self>,
     {
-        todo!()
-        // strategy.start_rule("add_var")?;
-        // self.ensure_is_ty(ctx, ty, strategy, kernel_error::ADD_VAR_IS_TY)?;
-        // let var = self.0.add_var_unchecked(ctx, ty);
-        // let tm = self.0.add(ctx, NodeT::Fv(var));
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // HasTyIn { tm, ty }.finish_rule(ctx, strategy);
-        // Ok(var)
+        strategy.start_rule("add_var", self)?;
+        self.ensure_is_ty(ctx, ty, strategy, kernel_error::ADD_VAR_IS_TY)?;
+        let ty = self.import_with(ctx, ty, strategy)?;
+        let var = self.0.add_var_unchecked(ctx, ty);
+        let tm = self.add_with(ctx, NodeT::Fv(var), strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+        strategy.finish_rule(self);
+        Ok(var)
     }
 
     fn set_parent<S>(&mut self, ctx: C, parent: C, strategy: &mut S) -> Result<IsSubctx<C>, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
-        todo!()
-        // strategy.start_rule("set_parent")?;
-        // if self.read().is_subctx(ctx, parent) {
-        //     return Err(strategy.fail(kernel_error::SET_PARENT_WOULD_CYCLE));
-        // }
-        // if !self.read().parents_are_subctx(ctx, parent) {
-        //     return Err(strategy.fail(kernel_error::SET_PARENT_NOT_SUBCTX));
-        // }
-        // self.0.set_parent_unchecked(ctx, parent);
-        // let result = IsSubctx {
-        //     lo: parent,
-        //     hi: ctx,
-        // };
-        // //TODO: fixme
-        // strategy.finish_rule(Goal::ok(ctx));
-        // Ok(result)
+        strategy.start_rule("set_parent", self)?;
+        if self.read().is_ancestor(ctx, parent) {
+            return Err(strategy.fail(kernel_error::SET_PARENT_WOULD_CYCLE, self));
+        }
+        if !self.read().parents_are_subctx(ctx, parent) {
+            return Err(strategy.fail(kernel_error::SET_PARENT_NOT_SUBCTX, self));
+        }
+        self.0.set_parent_unchecked(ctx, parent);
+        let result = IsSubctx {
+            lo: parent,
+            hi: ctx,
+        };
+        strategy.finish_rule(self);
+        Ok(result)
     }
 
     fn derive_u_le<S>(
@@ -59,16 +58,20 @@ where
     where
         S: Strategy<C, T, Self>,
     {
-        todo!()
-        // strategy.start_rule("derive_u_le")?;
-        // if !self.read().u_le(lo, hi) {
-        //     return Err(strategy.fail(kernel_error::DERIVE_U_LE_U_LE));
-        // }
-        // let old = self.add(ctx, NodeT::U(lo));
-        // self.ensure_has_ty(ctx, tm, old, strategy, kernel_error::DERIVE_U_LE_TM)?;
-        // let ty = self.add(ctx, NodeT::U(hi));
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+        strategy.start_rule("derive_u_le", self)?;
+        if !self.read().u_le(lo, hi) {
+            return Err(strategy.fail(kernel_error::DERIVE_U_LE_U_LE, self));
+        }
+        let old = self.resolve(ctx, NodeT::U(lo), strategy)?;
+        self.ensure_has_ty(ctx, tm, old, strategy, kernel_error::DERIVE_U_LE_TM)?;
+        let tm = self.import_with(ctx, tm, strategy)?;
+        let ty = self.add_with(ctx, NodeT::U(hi), strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_close_has_ty_under<S>(
@@ -82,7 +85,7 @@ where
     where
         S: Strategy<C, T, Self>,
     {
-        todo!()
+        todo!("derive_close_has_ty_under")
         // strategy.start_rule("derive_close_has_ty_under")?;
         // if var.ctx != ctx && var.ix != 0 {
         //     return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_IX_NONZERO));
@@ -511,15 +514,19 @@ where
     where
         S: Strategy<C, T, Self>,
     {
-        todo!()
-        // strategy.start_rule("derive_nats")?;
-        // if !self.read().u_le(ULvl::SET, lvl) {
-        //     return Err(strategy.fail(kernel_error::DERIVE_NATS_SET_LE_LVL));
-        // }
-        // let tm = self.add(ctx, NodeT::Nats);
-        // let ty = self.add(ctx, NodeT::U(lvl));
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+        strategy.start_rule("derive_nats", self)?;
+        if !self.read().u_le(ULvl::SET, lvl) {
+            return Err(strategy.fail(kernel_error::DERIVE_NATS_SET_LE_LVL, self));
+        }
+        let tm = self.add_with(ctx, NodeT::Nats, strategy)?;
+        let ty = self.add_with(ctx, NodeT::U(lvl), strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+        strategy.finish_rule(self);
+        Ok(HasTy {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_n64(&mut self, ctx: C, n: u64) -> HasTyV<C, T> {

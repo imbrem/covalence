@@ -264,7 +264,7 @@ pub trait ReadCtxRel<C> {
     ///
     /// # Examples
     /// ```rust
-    /// # use covalence_kernel::*;
+    /// # use covalence::kernel::*;
     /// # let mut ker = Kernel::new();
     /// let parent = ker.new_ctx();
     /// let child = ker.with_parent(parent);
@@ -274,7 +274,7 @@ pub trait ReadCtxRel<C> {
     ///         assert!(ker.is_subctx(x, y));
     ///     }
     /// }
-    /// let n = Node::Nats.val(child, &mut ker);
+    /// let n = ker.nats(child);
     /// let x = ker.add_var(child, n, &mut ()).unwrap();
     /// // ∅ is a subset of everything
     /// assert!(ker.is_subctx(parent, child));
@@ -295,7 +295,7 @@ pub trait ReadCtxRel<C> {
     /// let ctx = ker.new_ctx();
     /// // The empty context is a subctx of everything
     /// assert!(ker.is_subctx_of_parents(ctx, ctx));
-    /// let unit = Node::Unit.val(ctx, &mut ker);;
+    /// let unit = ker.tt(ctx);
     /// let x = ker.with_param(ctx, unit, &mut ()).unwrap();
     /// let child = x.ctx;
     /// assert!(ker.is_subctx_of_parents(ctx, child));
@@ -587,9 +587,13 @@ impl<D: ReadCtxFacts<C> + ReadTermFacts<C, T>, C, T> ReadFacts<C, T> for D {}
 /// # use covalence_kernel::*;
 /// let ker : &dyn ReadTermStore<CtxId, TermId> = &Kernel::new();
 /// ```
-pub trait ReadTermStore<C, T>: ReadCtx<C, T> + ReadTerm<C, T> + ReadFacts<C, T> {}
+pub trait ReadTermStore<C, T>:
+    ReadCtx<C, T> + ReadCtxRel<C> + ReadTerm<C, T> + ReadFacts<C, T>
+{
+}
 
-impl<D: ReadCtx<C, T> + ReadTerm<C, T> + ReadFacts<C, T>, C, T> ReadTermStore<C, T> for D
+impl<D: ReadCtx<C, T> + ReadCtxRel<C> + ReadTerm<C, T> + ReadFacts<C, T>, C, T> ReadTermStore<C, T>
+    for D
 where
     C: Copy,
     T: Copy,

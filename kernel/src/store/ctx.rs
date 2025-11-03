@@ -1,4 +1,4 @@
-use std::{borrow::BorrowMut, ops::BitOr};
+use std::{collections::BTreeMap, ops::BitOr};
 
 use egg::{Analysis, DidMerge, EGraph, Language};
 
@@ -36,16 +36,30 @@ impl Ctx {
     }
 
     pub fn add(&mut self, node: Node) -> TermId {
-        // NOTE: an uncanonical application is necessary to roundtrip with lookup
-        TermId(self.e.add_uncanonical(node))
+        // NOTE: an uncanonical insertion is necessary to roundtrip with lookup
+        let result = TermId(self.e.add_uncanonical(node));
+        self.e.analysis.node_to_id.insert(node, result);
+        result
     }
 
     pub fn node(&self, id: TermId) -> &Node {
-        self.e.id_to_node(id.0)
+        let result = self.e.id_to_node(id.0);
+        debug_assert_eq!(
+            self.e.analysis.node_to_id.get(result),
+            Some(&id),
+            "Ctx::node and Ctx::add are out of sync",
+        );
+        result
     }
 
-    pub fn lookup(&self, node: impl BorrowMut<Node>) -> Option<TermId> {
-        self.e.lookup(node).map(TermId)
+    pub fn lookup(&self, node: Node) -> Option<TermId> {
+        let result = self.e.analysis.node_to_id.get(&node).copied();
+        debug_assert_eq!(
+            result.map(|id| self.node(id)),
+            Some(&node),
+            "Ctx::node and Ctx::add are out of sync",
+        );
+        result
     }
 
     pub fn var_ty(&self, ix: u32) -> Option<TermId> {
@@ -252,6 +266,12 @@ struct CtxData {
     flags: Pred0,
     /// This context's variables, implemented as a map from indices to types
     vars: Vec<TermId>,
+    /// A map from nodes to their TermId
+    ///
+    /// TODO: remove hack, but required for now for correctness of `lookup`
+    ///
+    /// Donald Knuth smiles on me this day, for avoiding temptation.
+    node_to_id: BTreeMap<Node, TermId>,
 }
 
 impl Analysis<Node> for CtxData {

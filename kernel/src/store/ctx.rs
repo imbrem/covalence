@@ -85,123 +85,12 @@ impl Ctx {
         self.is_wf(has_ty)
     }
 
-    pub fn forall_unary(&self, binder: TermId, pred: Pred1, tm: TermId) -> bool {
-        let binder_flags = self.tm_flags(binder);
-        if !binder_flags.contains(Pred1::IS_TY) {
-            return false;
-        }
-        let tm_pred = if binder_flags.contains(Pred1::IS_EMPTY) {
-            Pred1::IS_WF
-        } else {
-            pred
-        };
-        if self.has_flags(tm_pred, tm) {
-            return true;
-        }
-        todo!()
-    }
-
-    pub fn forall_eq_in(&self, binder: TermId, lhs: TermId, rhs: TermId) -> bool {
-        if !self.is_ty(binder) {
-            return false;
-        }
-        if self.eq_in(lhs, rhs) {
-            return true;
-        }
-        let Some(abs_lhs) = self.lookup(Node::Abs([binder, lhs])) else {
-            return false;
-        };
-        let Some(abs_rhs) = self.lookup(Node::Abs([binder, rhs])) else {
-            return false;
-        };
-        self.eq_in(abs_lhs, abs_rhs)
-    }
-
-    pub fn forall_is_wf(&self, binder: TermId, tm: TermId) -> bool {
-        if self.is_ty(binder) && self.is_wf(tm) {
-            return true;
-        }
-        let Some(abs) = self.lookup(Node::Abs([binder, tm])) else {
-            return false;
-        };
-        self.is_wf(abs)
-    }
-
-    pub fn forall_is_ty(&self, binder: TermId, tm: TermId) -> bool {
-        if self.is_ty(binder) && self.is_ty(tm) {
-            return true;
-        }
-        let Some(pi) = self.lookup(Node::Pi([binder, tm])) else {
-            return false;
-        };
-        self.is_wf(pi)
-    }
-
-    pub fn forall_is_prop(&self, binder: TermId, tm: TermId) -> bool {
-        if self.is_ty(binder) && self.is_ty(tm) {
-            return true;
-        }
-        let Some(pi) = self.lookup(Node::Pi([binder, tm])) else {
-            return false;
-        };
-        self.is_prop(pi)
-    }
-
-    pub fn forall_has_ty(&self, binder: TermId, tm: TermId, ty: TermId) -> bool {
-        if self.is_ty(binder) && self.has_ty(tm, ty) {
-            return true;
-        }
-        let Some(abs) = self.lookup(Node::Abs([binder, tm])) else {
-            return false;
-        };
-        let Some(pi) = self.lookup(Node::Pi([binder, ty])) else {
-            return false;
-        };
-        self.has_ty(abs, pi)
-    }
-
-    pub fn forall_is_inhab(&self, binder: TermId, tm: TermId) -> bool {
-        if self.is_ty(binder) && (self.is_inhab(tm) || self.eq_in(tm, binder)) {
-            return true;
-        }
-        let Some(pi) = self.lookup(Node::Pi([binder, tm])) else {
-            return false;
-        };
-        self.is_inhab(pi)
-    }
-
-    pub fn forall_is_empty(&self, binder: TermId, tm: TermId) -> bool {
-        if self.is_ty(binder) && self.is_empty(tm) {
-            return true;
-        }
-        let Some(sigma) = self.lookup(Node::Sigma([binder, tm])) else {
-            return false;
-        };
-        self.is_empty(sigma)
-    }
-
-    pub fn has_flags(&self, flags: Pred1, tm: TermId) -> bool {
-        self.e[tm.0].data.flags.contains(flags)
-    }
-
     pub fn tm_flags(&self, tm: TermId) -> Pred1 {
         self.e[tm.0].data.flags
     }
 
     pub fn is_wf(&self, tm: TermId) -> bool {
         self.e[tm.0].data.flags.contains(Pred1::IS_WF)
-    }
-
-    pub fn is_ty(&self, tm: TermId) -> bool {
-        self.e[tm.0].data.flags.contains(Pred1::IS_TY)
-    }
-
-    pub fn is_inhab(&self, tm: TermId) -> bool {
-        self.e[tm.0].data.flags.contains(Pred1::IS_INHAB)
-    }
-
-    pub fn is_empty(&self, tm: TermId) -> bool {
-        self.e[tm.0].data.flags.contains(Pred1::IS_EMPTY)
     }
 
     pub fn is_prop(&self, tm: TermId) -> bool {

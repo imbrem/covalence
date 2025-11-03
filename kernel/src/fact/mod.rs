@@ -612,7 +612,7 @@ where
             Atom::Eq(lhs, rhs) => ker.eq_in(ctx, lhs, rhs),
             Atom::Pred1(p, tm) => ker.tm_satisfies(ctx, p, tm),
             Atom::HasTy(tm, ty) => ker.has_ty(ctx, tm, ty),
-            Atom::Pred0(p) => ker.nullary(ctx, p),
+            Atom::Pred0(p) => ker.ctx_satisfies(ctx, p),
         }
     }
 }

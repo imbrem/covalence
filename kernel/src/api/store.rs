@@ -189,12 +189,14 @@ pub trait ReadCtxFacts<C> {
     /// Get whether a context satisfies a nullary predicate
     ///
     /// TODO: reference lean
-    fn nullary(&self, ctx: C, pred: Pred0) -> bool;
+    fn ctx_satisfies(&self, ctx: C, pred: Pred0) -> bool;
 
     /// Get whether a context is contradictory
     ///
     /// TODO: reference lean
-    fn is_contr(&self, ctx: C) -> bool;
+    fn is_contr(&self, ctx: C) -> bool {
+        self.ctx_satisfies(ctx, Pred0::IS_CONTR)
+    }
 }
 
 /// A datastore that can read relationships between contexts

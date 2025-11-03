@@ -24,8 +24,7 @@ pub use crate::api::store::{
 };
 
 pub use crate::fact::{
-    IS_CONTR, IS_EMPTY, IS_FF, IS_INHAB, IS_PROP, IS_SCOPED, IS_TT, IS_TY, IS_UNIV, IS_WF,
-    Pred1,
+    IS_CONTR, IS_EMPTY, IS_FF, IS_INHAB, IS_PROP, IS_SCOPED, IS_TT, IS_TY, IS_UNIV, IS_WF, Pred1,
 };
 
 #[doc(inline)]

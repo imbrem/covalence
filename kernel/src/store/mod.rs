@@ -276,12 +276,8 @@ impl ReadCtx<CtxId, TermId> for TermDb {
 }
 
 impl ReadCtxFacts<CtxId> for TermDb {
-    fn nullary(&self, ctx: CtxId, pred: Pred0) -> bool {
+    fn ctx_satisfies(&self, ctx: CtxId, pred: Pred0) -> bool {
         self.x[ctx.0].nullary().contains(pred)
-    }
-    
-    fn is_contr(&self, ctx: CtxId) -> bool {
-        self.x[ctx.0].nullary().contains(Pred0::IS_CONTR)
     }
 }
 

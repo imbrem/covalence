@@ -10,7 +10,7 @@ impl<C: Copy, T> NodeVT<C, T> {
 impl<C: Copy, T> NodeT2<C, T> {
     /// Flatten this node into a single level in a given context
     pub fn flatten_in(self, ctx: C, store: &mut impl WriteTerm<C, T>) -> NodeT<C, T> {
-        self.map_subterms(|tm| store.add(ctx, tm))
+        self.map_subterms(|tm| store.add_raw(ctx, tm))
     }
 
     /// Get the value corresponding to this nested node
@@ -69,7 +69,7 @@ where
     S: WriteTerm<C, T>,
 {
     fn add(self, ctx: C, store: &mut S) -> T {
-        store.add(ctx, self)
+        store.add_raw(ctx, self)
     }
 }
 
@@ -108,7 +108,7 @@ where
                 let node = this
                     .map_subterms(|x| x.import(ctx, store))
                     .map_import(|_| unreachable!());
-                store.add(ctx, node)
+                store.add_raw(ctx, node)
             }
         }
     }

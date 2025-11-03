@@ -42,10 +42,7 @@ where
     /// assert!(!ker.is_prop(ctx, prop));
     /// ```
     fn prop(&mut self, ctx: C) -> Val<C, T> {
-        Val {
-            ctx,
-            tm: self.add(ctx, NodeT::U(ULvl::PROP)),
-        }
+        self.add_ix(ctx, NodeT::U(ULvl::PROP))
     }
 
     /// Construct the true proposition in a given context
@@ -61,10 +58,7 @@ where
     /// assert!(!ker.is_ff(ctx, tt));
     /// ```
     fn tt(&mut self, ctx: C) -> Val<C, T> {
-        Val {
-            ctx,
-            tm: self.add(ctx, NodeT::Unit),
-        }
+        self.add_ix(ctx, NodeT::Unit)
     }
 
     /// Construct the false proposition in a given context
@@ -80,10 +74,7 @@ where
     /// assert!(ker.is_ff(ctx, ff));
     /// ```
     fn ff(&mut self, ctx: C) -> Val<C, T> {
-        Val {
-            ctx,
-            tm: self.add(ctx, NodeT::Empty),
-        }
+        self.add_ix(ctx, NodeT::Empty)
     }
 
     /// Construct the universe of sets in a given context
@@ -98,10 +89,7 @@ where
     /// assert!(ker.is_inhab(ctx, sets));
     /// ```
     fn sets(&mut self, ctx: C) -> Val<C, T> {
-        Val {
-            ctx,
-            tm: self.add(ctx, NodeT::U(ULvl::SET)),
-        }
+        self.add_ix(ctx, NodeT::U(ULvl::SET))
     }
 
     /// Construct the type of natural numbers in a given context
@@ -116,10 +104,7 @@ where
     /// assert!(ker.is_inhab(ctx, nats));
     /// ```
     fn nats(&mut self, ctx: C) -> Val<C, T> {
-        Val {
-            ctx,
-            tm: self.add(ctx, NodeT::Nats),
-        }
+        self.add_ix(ctx, NodeT::Nats)
     }
 
     /// Construct a small natural number in a given context
@@ -139,10 +124,7 @@ where
     /// assert!(!ker.eq_in(ctx, n, m));
     /// ```
     fn n64(&mut self, ctx: C, n: u64) -> Val<C, T> {
-        Val {
-            ctx,
-            tm: self.add(ctx, NodeT::N64(n)),
-        }
+        self.add_ix(ctx, NodeT::N64(n))
     }
 }
 

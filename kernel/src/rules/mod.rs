@@ -56,8 +56,8 @@ impl<C, T, D: WriteTerm<C, T>> WriteTerm<C, T> for Kernel<D> {
         self.0.with_parent(parent)
     }
 
-    fn add(&mut self, ctx: C, term: NodeT<C, T>) -> T {
-        self.0.add(ctx, term)
+    fn add_raw(&mut self, ctx: C, term: NodeT<C, T>) -> T {
+        self.0.add_raw(ctx, term)
     }
 
     fn import(&mut self, ctx: C, val: Val<C, T>) -> T {

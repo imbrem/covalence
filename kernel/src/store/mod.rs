@@ -56,7 +56,7 @@ impl ReadTerm<CtxId, TermId> for TermDb {
         self.x[ctx.0].lookup(tm)
     }
 
-    fn lookup_val(&self, ctx: CtxId, val: ValId) -> Option<TermId> {
+    fn lookup_import(&self, ctx: CtxId, val: ValId) -> Option<TermId> {
         // NOTE: an import cycle will lead to a stack overflow here, but that should be an error But
         // think about it!
         //
@@ -65,12 +65,8 @@ impl ReadTerm<CtxId, TermId> for TermDb {
         // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
         // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
         // inserting the import and hence fixing the `TermId`.
-        if let Some(node) = val.node_ix(self).relocate() {
-            if let Node::Import(imp) = node {
-                self.lookup_val(ctx, imp)
-            } else {
-                self.x[ctx.0].lookup(node)
-            }
+        if let Node::Import(imp) = val.node_ix(self) {
+            self.lookup_import(ctx, imp)
         } else if ctx == val.ctx {
             Some(val.tm)
         } else {
@@ -193,11 +189,8 @@ impl WriteTerm<CtxId, TermId> for TermDb {
         result
     }
 
-    fn add(&mut self, ctx: CtxId, tm: Node) -> TermId {
-        let flags = tm.infer_flags(ctx, self);
-        let result = self.x[ctx.0].add(tm);
-        self.x[ctx.0].set_flags_unchecked(result, flags);
-        result
+    fn add_raw(&mut self, ctx: CtxId, tm: Node) -> TermId {
+        self.x[ctx.0].add(tm)
     }
 
     fn import(&mut self, ctx: CtxId, val: ValId) -> TermId {
@@ -209,12 +202,8 @@ impl WriteTerm<CtxId, TermId> for TermDb {
         // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
         // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
         // inserting the import and hence fixing the `TermId`.
-        let result = if let Some(node) = val.node_ix(self).relocate() {
-            if let Node::Import(imp) = node {
-                self.import(ctx, imp)
-            } else {
-                self.x[ctx.0].add(node)
-            }
+        let result = if let Node::Import(imp) = val.node_ix(self) {
+            self.import(ctx, imp)
         } else if ctx == val.ctx {
             return val.tm;
         } else {

@@ -18,9 +18,10 @@ impl<C, T> NodeT<C, T> {
 
 impl<C: Copy, T: Copy> NodeT<C, T> {
     /// Infer predicates for this term in the given context
-    pub fn infer_flags(&self, ctx: C, store: &impl ReadTermFacts<C, T>) -> Pred1 {
+    pub fn infer_flags(&self, ctx: C, store: &impl ReadTermStore<C, T>) -> Pred1 {
         let mut result = Pred1::default();
         match self {
+            &NodeT::Fv(var) => return var.infer_flags(ctx, store),
             &NodeT::Pi([arg, res]) => {
                 let arg_flags = store.tm_flags(ctx, arg);
                 let res_flags = store.tm_flags(ctx, res);

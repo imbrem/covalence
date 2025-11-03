@@ -1,5 +1,6 @@
 use crate::api::store::*;
 use crate::api::strategy::*;
+use crate::data::term::NodeT;
 use crate::data::term::NodeVT;
 use crate::data::term::{Fv, ULvl, Val};
 use crate::fact::*;
@@ -266,6 +267,9 @@ where
 
 /// Typing rules for deriving facts about terms from those already in the datastore
 pub trait DeriveTrusted<C, T> {
+    /// Add a new term to the given context
+    fn add_ix(&mut self, ctx: C, tm: NodeT<C, T>) -> Val<C, T>;
+
     /// Add a new variable to this context with the given type
     ///
     /// TODO: reference Lean
@@ -277,13 +281,11 @@ pub trait DeriveTrusted<C, T> {
     /// let ctx = ker.new_ctx();
     /// let prop = ker.prop(ctx);
     /// let x = ker.add_var(ctx, prop, &mut ()).unwrap().val(&*ker);
-    /// /*
     /// assert_eq!(x.node_ix(&*ker), Fv { ctx, ix : 0 });
     /// let y = ker.add_var(ctx, x, &mut ()).unwrap().val(&*ker);
     /// assert_eq!(y.node_ix(&*ker), Fv { ctx, ix : 1 });
     /// // Fails: y is not a valid type
     /// ker.add_var(ctx, y, &mut ()).unwrap_err();
-    /// */
     /// ```
     fn add_var<S>(&mut self, ctx: C, ty: Val<C, T>, strategy: &mut S) -> Result<Fv<C>, S::Fail>
     where
@@ -707,9 +709,9 @@ pub trait DeriveTrusted<C, T> {
     /// Typecheck the natural numbers
     ///
     /// TODO: reference Lean
-    /// 
+    ///
     /// TODO: fix this test!!!
-    /// 
+    ///
     /// # Examples
     /// ```rust
     /// # use covalence_kernel::*;

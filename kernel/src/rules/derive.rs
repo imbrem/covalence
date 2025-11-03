@@ -13,6 +13,13 @@ where
     T: Copy + PartialEq,
     D: ReadTermDb<C, T> + WriteTerm<C, T> + WriteFacts<C, T>,
 {
+    fn add_ix(&mut self, ctx: C, tm: NodeT<C, T>) -> Val<C, T> {
+        let flags = tm.infer_flags(ctx, self.read());
+        let tm = self.0.add_raw(ctx, tm);
+        self.0.set_tm_flags_unchecked(ctx, tm, flags);
+        Val { ctx, tm }
+    }
+
     fn add_var<S>(&mut self, ctx: C, ty: Val<C, T>, strategy: &mut S) -> Result<Fv<C>, S::Fail>
     where
         S: Strategy<C, T, Self>,
@@ -25,9 +32,8 @@ where
 
         let var = self.0.add_var_unchecked(ctx, ty);
 
-        //TODO: think about whether we should do this? more?
-        let x = self.0.add(ctx, NodeT::Fv(var));
-        self.0.set_is_wf_unchecked(ctx, x);
+        //TODO: think about whether we should do this? more? at the `add_ix` level (probably!)?
+        let _x = self.add_ix(ctx, NodeT::Fv(var));
 
         strategy.finish_rule(self);
         Ok(var)

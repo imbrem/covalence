@@ -1,5 +1,5 @@
 use crate::{
-    Pred1,
+    CtxId, Pred1,
     data::term::{Bv, Fv, NodeT, NodeVT, ULvl, Val},
     fact::Pred0,
 };
@@ -38,7 +38,7 @@ pub trait ReadTerm<C, T> {
     fn lookup(&self, ctx: C, tm: NodeT<C, T>) -> Option<T>;
 
     /// Lookup an import of a term into another context, returning a handle to it if it exists
-    fn lookup_val(&self, ctx: C, val: Val<C, T>) -> Option<T>;
+    fn lookup_import(&self, ctx: C, val: Val<C, T>) -> Option<T>;
 
     // == Syntactic information ==
 
@@ -115,7 +115,7 @@ impl<C: Copy, T> NodeT<C, T> {
             NodeT::Import(val) => val.val(store.read()),
             this => Val {
                 ctx,
-                tm: store.add(ctx, this),
+                tm: store.add_raw(ctx, this),
             },
         }
     }
@@ -124,7 +124,7 @@ impl<C: Copy, T> NodeT<C, T> {
     pub fn val_ix(self, ctx: C, store: &mut (impl RwTermDb<C, T> + ?Sized)) -> T {
         match self {
             NodeT::Import(val) => store.import(ctx, val),
-            this => store.add(ctx, this),
+            this => store.add_raw(ctx, this),
         }
     }
 
@@ -147,6 +147,28 @@ impl<C: Copy> Fv<C> {
             tm: store
                 .lookup(self.ctx, NodeT::Fv(self))
                 .expect("valid variables should exist in their contexts"),
+        }
+    }
+
+    /// Get the type of this variable
+    pub fn ty<T>(self, store: &(impl ReadCtx<C, T> + ?Sized)) -> Val<C, T> {
+        store.var_ty(self)
+    }
+
+    /// Infer the flags of this variable in the given context
+    pub fn infer_flags<T: Copy>(
+        self,
+        ctx: C,
+        store: &(impl ReadTermStore<C, T> + ?Sized),
+    ) -> Pred1 {
+        // Reject invalid or ill-scoped variables
+        if store.num_vars(self.ctx) <= self.ix || !store.is_ancestor(ctx, self.ctx) {
+            return Pred1::default();
+        }
+        if ReadTermFacts::<C, Val<C, T>>::is_univ(store, ctx, self.ty(store)) {
+            Pred1::IS_TY
+        } else {
+            Pred1::IS_WF
         }
     }
 }
@@ -370,14 +392,15 @@ pub trait WriteTerm<C, T> {
     /// ```
     fn with_parent(&mut self, parent: C) -> C;
 
-    /// Insert a term into the store, returning a handle to it
-    fn add(&mut self, ctx: C, tm: NodeT<C, T>) -> T;
+    /// Directly insert a term into the store, returning a handle to it
+    fn add_raw(&mut self, ctx: C, tm: NodeT<C, T>) -> T;
 
     /// Import a term into another context, returning a handle to it
     ///
-    /// This automatically traverses import chains, e.g.
+    /// This automatically traverses import chains, and in particular:
     /// - If `src[tm] := import(src2, tm)`, then `import(ctx, src, tm) => import(ctx, src2, tm)`
-    /// - _Otherwise_, `import(ctx, ctx, tm)` returns `tm`
+    /// - `import(ctx, ctx, tm)` returns `tm`
+    /// - otherwise, return an `Import` node
     fn import(&mut self, ctx: C, val: Val<C, T>) -> T;
 
     // == Universe management ==
@@ -728,9 +751,11 @@ pub trait WriteFacts<C, T> {
     fn set_bvi_unchecked(&mut self, ctx: C, tm: T, bvi: Bv);
 }
 
-impl<C: Copy, T: Copy, D: ReadTerm<C, T> + ReadTermFacts<C, T>> ReadTermFacts<C, Val<C, T>> for D {
+impl<C: Copy, T: Copy, D: ReadTerm<C, T> + ReadTermFacts<C, T> + ?Sized> ReadTermFacts<C, Val<C, T>>
+    for D
+{
     fn tm_flags(&self, ctx: C, tm: Val<C, T>) -> Pred1 {
-        if let Some(tm) = self.lookup_val(ctx, tm) {
+        if let Some(tm) = self.lookup_import(ctx, tm) {
             self.tm_flags(ctx, tm)
         } else {
             Pred1::empty()
@@ -738,14 +763,14 @@ impl<C: Copy, T: Copy, D: ReadTerm<C, T> + ReadTermFacts<C, T>> ReadTermFacts<C,
     }
 
     fn tm_satisfies(&self, ctx: C, tm: Val<C, T>, pred: Pred1) -> bool {
-        self.lookup_val(ctx, tm)
+        self.lookup_import(ctx, tm)
             .is_some_and(|tm| self.tm_satisfies(ctx, tm, pred))
     }
 
     fn eq_in(&self, ctx: C, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
         self.cons_eq(lhs, rhs)
-            || if let Some(lhs) = self.lookup_val(ctx, lhs)
-                && let Some(rhs) = self.lookup_val(ctx, rhs)
+            || if let Some(lhs) = self.lookup_import(ctx, lhs)
+                && let Some(rhs) = self.lookup_import(ctx, rhs)
             {
                 self.eq_in(ctx, lhs, rhs)
             } else {
@@ -754,87 +779,87 @@ impl<C: Copy, T: Copy, D: ReadTerm<C, T> + ReadTermFacts<C, T>> ReadTermFacts<C,
     }
 
     fn has_ty(&self, ctx: C, tm: Val<C, T>, ty: Val<C, T>) -> bool {
-        self.lookup_val(ctx, tm).is_some_and(|tm| {
-            self.lookup_val(ctx, ty)
+        self.lookup_import(ctx, tm).is_some_and(|tm| {
+            self.lookup_import(ctx, ty)
                 .is_some_and(|ty| self.has_ty(ctx, tm, ty))
         })
     }
 }
 
-impl<C: Copy, T: Copy, D: ReadTerm<C, T> + ReadQuantFacts<C, T>> ReadQuantFacts<C, Val<C, T>>
-    for D
+impl<C: Copy, T: Copy, D: ReadTerm<C, T> + ReadQuantFacts<C, T> + ?Sized>
+    ReadQuantFacts<C, Val<C, T>> for D
 {
     fn forall_eq_in(&self, ctx: C, binder: Val<C, T>, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
             self.is_ty(ctx, binder) && self.cons_eq(lhs, rhs)
-                || self.lookup_val(ctx, lhs).is_some_and(|lhs| {
-                    self.lookup_val(ctx, rhs)
+                || self.lookup_import(ctx, lhs).is_some_and(|lhs| {
+                    self.lookup_import(ctx, rhs)
                         .is_some_and(|rhs| self.forall_eq_in(ctx, binder, lhs, rhs))
                 })
         })
     }
 
     fn forall_is_wf(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, ty)
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.lookup_import(ctx, ty)
                 .is_some_and(|ty| self.forall_is_wf(ctx, binder, ty))
         })
     }
 
     fn forall_is_ty(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, ty)
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.lookup_import(ctx, ty)
                 .is_some_and(|ty| self.forall_is_ty(ctx, binder, ty))
         })
     }
 
     fn forall_is_prop(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, ty)
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.lookup_import(ctx, ty)
                 .is_some_and(|ty| self.forall_is_prop(ctx, binder, ty))
         })
     }
 
     fn forall_has_ty(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>, ty: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, tm).is_some_and(|tm| {
-                self.lookup_val(ctx, ty)
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.lookup_import(ctx, tm).is_some_and(|tm| {
+                self.lookup_import(ctx, ty)
                     .is_some_and(|ty| self.forall_has_ty(ctx, binder, tm, ty))
             })
         })
     }
 
     fn forall_is_inhab(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, tm)
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.lookup_import(ctx, tm)
                 .is_some_and(|tm| self.forall_is_inhab(ctx, binder, tm))
         })
     }
 
     fn forall_is_empty(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, tm)
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.lookup_import(ctx, tm)
                 .is_some_and(|tm| self.forall_is_empty(ctx, binder, tm))
         })
     }
 
     fn forall_is_tt(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, tm)
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.lookup_import(ctx, tm)
                 .is_some_and(|tm| self.forall_is_tt(ctx, binder, tm))
         })
     }
 
     fn forall_is_ff(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, tm)
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.lookup_import(ctx, tm)
                 .is_some_and(|tm| self.forall_is_ff(ctx, binder, tm))
         })
     }
 
     fn forall_is_contr(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
-        self.lookup_val(ctx, binder).is_some_and(|binder| {
-            self.lookup_val(ctx, tm)
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.lookup_import(ctx, tm)
                 .is_some_and(|tm| self.forall_is_contr(ctx, binder, tm))
         })
     }

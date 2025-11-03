@@ -74,7 +74,7 @@ impl Bv {
     /// # use covalence_kernel::data::term::*;
     /// # let mut ker = Kernel::new();
     /// # let ctx = ker.new_ctx();
-    /// # let val = ValId { ctx, tm : ker.add(ctx, Node::Nats) };
+    /// # let val = ValId { ctx, tm : ker.add_raw(ctx, Node::Nats) };
     /// assert_eq!(Bv(0).subst1(Bv(0), val), NodeVT2::Import(val));
     /// assert_eq!(Bv(3).subst1(Bv(0), val), NodeVT2::bv(2));
     /// assert_eq!(Bv(3).subst1(Bv(5), val), NodeVT2::bv(3));

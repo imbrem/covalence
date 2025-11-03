@@ -56,7 +56,7 @@ impl Ctx {
         let result = self.e.analysis.node_to_id.get(&node).copied();
         debug_assert_eq!(
             result.map(|id| self.node(id)),
-            Some(&node),
+            if result.is_none() { None } else { Some(&node) },
             "Ctx::node and Ctx::add are out of sync",
         );
         result

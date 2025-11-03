@@ -218,7 +218,7 @@ impl Ctx {
         self.set_is_inhab_unchecked(sigma)
     }
 
-    pub fn add_var_unchecked(&mut self, ty: ValId) -> u32 {
+    pub fn add_var_unchecked(&mut self, ctx: CtxId, ty: ValId) -> VarId {
         // NOTE: this overflow should be impossible due to limitations of the E-graph, but better
         // safe than sorry...
         let ix: u32 = self
@@ -229,7 +229,7 @@ impl Ctx {
             .try_into()
             .expect("variable index overflow");
         self.e.analysis.vars.push(ty);
-        ix
+        VarId { ctx, ix }
     }
 
     fn from_ref(this: &EGraph<Node, CtxData>) -> &Self {

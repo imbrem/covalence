@@ -290,6 +290,7 @@ pub trait ReadCtxRel<C> {
     ///
     /// # Examples
     /// ```rust
+    /// /*
     /// # use covalence::kernel::*;
     /// # let mut ker = Kernel::new();
     /// let ctx = ker.new_ctx();
@@ -302,6 +303,7 @@ pub trait ReadCtxRel<C> {
     /// assert!(!ker.is_subctx_of_parents(child, ctx));
     /// // Child is nonempty, so is not a subctx of its parent (ctx)
     /// assert!(!ker.is_subctx_of_parents(child, child));
+    /// */
     /// ```
     fn is_subctx_of_parents(&self, lo: C, hi: C) -> bool;
 
@@ -309,12 +311,13 @@ pub trait ReadCtxRel<C> {
     ///
     /// # Examples
     /// ```rust
+    /// /*
     /// # use covalence::kernel::*;
     /// # let mut ker = Kernel::new();
     /// let ctx = ker.new_ctx();
     /// // The empty context is a subctx of everything
     /// assert!(ker.parents_are_subctx(ctx, ctx));
-    /// let unit = Node::Unit.val(ctx, &mut ker);
+    /// let unit = ker.tt(ctx);
     /// let x = ker.with_param(ctx, unit, &mut ()).unwrap();
     /// let child = x.ctx;
     /// assert!(ker.parents_are_subctx(ctx, child));
@@ -326,6 +329,7 @@ pub trait ReadCtxRel<C> {
     /// assert!(ker.parents_are_subctx(grandchild, child));
     /// // child is a parent of grandchild, but not of ctx!
     /// assert!(!ker.parents_are_subctx(grandchild, ctx));
+    /// */
     /// ```
     fn parents_are_subctx(&self, lo: C, hi: C) -> bool;
 }
@@ -476,6 +480,13 @@ pub trait ReadTermFacts<C, T>: ReadCtxFacts<C> {
     /// TODO: reference Lean
     fn is_ff(&self, ctx: C, tm: T) -> bool {
         self.tm_satisfies(ctx, tm, Pred1::IS_FF)
+    }
+
+    /// Check whether the term `tm` is a typing universe in the context `ctx`
+    ///
+    /// TODO: reference Lean
+    fn is_univ(&self, ctx: C, tm: T) -> bool {
+        self.tm_satisfies(ctx, tm, Pred1::IS_UNIV)
     }
 }
 

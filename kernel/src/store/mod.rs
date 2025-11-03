@@ -194,7 +194,10 @@ impl WriteTerm<CtxId, TermId> for TermDb {
     }
 
     fn add(&mut self, ctx: CtxId, tm: Node) -> TermId {
-        self.x[ctx.0].add(tm)
+        let flags = tm.infer_flags(ctx, self);
+        let result = self.x[ctx.0].add(tm);
+        self.x[ctx.0].set_flags_unchecked(result, flags);
+        result
     }
 
     fn import(&mut self, ctx: CtxId, val: ValId) -> TermId {
@@ -501,10 +504,7 @@ impl WriteFacts<CtxId, TermId> for TermDb {
     }
 
     fn add_var_unchecked(&mut self, ctx: CtxId, ty: ValId) -> VarId {
-        VarId {
-            ctx,
-            ix: self.x[ctx.0].add_var_unchecked(ty),
-        }
+        self.x[ctx.0].add_var_unchecked(ctx, ty)
     }
 
     fn set_bvi_unchecked(&mut self, ctx: CtxId, tm: TermId, bvi: Bv) {

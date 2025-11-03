@@ -10,6 +10,9 @@ mod derive;
 /// Rules for unfolding substitutions, imports, and closures
 mod unfold;
 
+/// Predicates which can be inferred from subterms
+mod pred;
+
 /// The `covalence` kernel
 ///
 /// This type is parametrized by its datastore `D`

@@ -29,6 +29,18 @@ where
     //TODO: derive these to be fully well-typed, every time?
 
     /// Construct the universe of propositions in a given context
+    /// 
+    /// # Examples
+    /// ```rust
+    /// # use covalence::kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// # let ctx = ker.new_ctx();
+    /// let prop = ker.prop(ctx);
+    /// assert!(ker.is_ty(ctx, prop));
+    /// assert!(ker.is_inhab(ctx, prop));
+    /// // Note: the _type_ of propositions is _not_ itself a proposition!
+    /// assert!(!ker.is_prop(ctx, prop));
+    /// ```
     fn prop(&mut self, ctx: C) -> Val<C, T> {
         Val {
             ctx,
@@ -37,6 +49,17 @@ where
     }
 
     /// Construct the true proposition in a given context
+    /// 
+    /// # Examples
+    /// ```rust
+    /// # use covalence::kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// # let ctx = ker.new_ctx();
+    /// let tt = ker.tt(ctx);
+    /// assert!(ker.is_prop(ctx, tt));
+    /// assert!(ker.is_tt(ctx, tt));
+    /// assert!(!ker.is_ff(ctx, tt));
+    /// ```
     fn tt(&mut self, ctx: C) -> Val<C, T> {
         Val {
             ctx,
@@ -45,6 +68,17 @@ where
     }
 
     /// Construct the false proposition in a given context
+    /// 
+    /// # Examples
+    /// ```rust
+    /// # use covalence::kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// # let ctx = ker.new_ctx();
+    /// let ff = ker.ff(ctx);
+    /// assert!(ker.is_prop(ctx, ff));
+    /// assert!(!ker.is_tt(ctx, ff));
+    /// assert!(ker.is_ff(ctx, ff));
+    /// ```
     fn ff(&mut self, ctx: C) -> Val<C, T> {
         Val {
             ctx,
@@ -53,6 +87,16 @@ where
     }
 
     /// Construct the universe of sets in a given context
+    /// 
+    /// # Examples
+    /// ```rust
+    /// # use covalence::kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// # let ctx = ker.new_ctx();
+    /// let sets = ker.sets(ctx);
+    /// assert!(ker.is_ty(ctx, sets));
+    /// assert!(ker.is_inhab(ctx, sets));
+    /// ```
     fn sets(&mut self, ctx: C) -> Val<C, T> {
         Val {
             ctx,
@@ -61,6 +105,16 @@ where
     }
 
     /// Construct the type of natural numbers in a given context
+    /// 
+    /// # Examples
+    /// ```rust
+    /// # use covalence::kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// # let ctx = ker.new_ctx();
+    /// let nats = ker.nats(ctx);
+    /// assert!(ker.is_ty(ctx, nats));
+    /// assert!(ker.is_inhab(ctx, nats));
+    /// ```
     fn nats(&mut self, ctx: C) -> Val<C, T> {
         Val {
             ctx,
@@ -69,6 +123,21 @@ where
     }
 
     /// Construct a small natural number in a given context
+    /// 
+    /// # Examples
+    /// ```rust
+    /// # use covalence::kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// # let ctx = ker.new_ctx();
+    /// let n = ker.n64(ctx, 50);
+    /// assert!(ker.is_wf(ctx, n));
+    /// assert!(!ker.is_ty(ctx, n));
+    /// let m = ker.n64(ctx, 3);
+    /// assert!(ker.is_wf(ctx, m));
+    /// assert!(!ker.is_ty(ctx, m));
+    /// assert_ne!(n, m);
+    /// assert!(!ker.eq_in(ctx, n, m));
+    /// ```
     fn n64(&mut self, ctx: C, n: u64) -> Val<C, T> {
         Val {
             ctx,

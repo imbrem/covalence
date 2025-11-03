@@ -25,6 +25,10 @@ where
 
         let var = self.0.add_var_unchecked(ctx, ty);
 
+        //TODO: think about whether we should do this? more?
+        let x = self.0.add(ctx, NodeT::Fv(var));
+        self.0.set_is_wf_unchecked(ctx, x);
+
         strategy.finish_rule(self);
         Ok(var)
     }

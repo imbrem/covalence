@@ -168,8 +168,8 @@ pub trait ReadCtx<C, T> {
     /// Get the number of variables this context has
     fn num_vars(&self, ctx: C) -> u32;
 
-    /// Lookup the type of a variable in its own context
-    fn get_var_ty(&self, var: Fv<C>) -> T;
+    /// Lookup the type of a variable
+    fn var_ty(&self, var: Fv<C>) -> Val<C, T>;
 }
 
 /// A datastore that can read facts about contexts
@@ -375,13 +375,6 @@ pub trait WriteTerm<C, T> {
     /// - If `src[tm] := import(src2, tm)`, then `import(ctx, src, tm) => import(ctx, src2, tm)`
     /// - _Otherwise_, `import(ctx, ctx, tm)` returns `tm`
     fn import(&mut self, ctx: C, val: Val<C, T>) -> T;
-
-    // == Variable management ==
-
-    /// Get the type of a variable in the given context
-    ///
-    /// Imports if necessary
-    fn var_ty(&mut self, ctx: C, var: Fv<C>) -> T;
 
     // == Universe management ==
 
@@ -688,7 +681,7 @@ pub trait WriteFacts<C, T> {
     // == Variable and assumption manipulation ==
 
     /// Add a variable to the given context
-    fn add_var_unchecked(&mut self, ctx: C, ty: T) -> Fv<C>;
+    fn add_var_unchecked(&mut self, ctx: C, ty: Val<C, T>) -> Fv<C>;
 
     // == Cached information ==
 

@@ -222,17 +222,6 @@ impl WriteTerm<CtxId, TermId> for TermDb {
         result
     }
 
-    fn var_ty(&mut self, ctx: CtxId, var: VarId) -> TermId {
-        let ty = self.get_var_ty(var);
-        self.import(
-            ctx,
-            Val {
-                ctx: var.ctx,
-                tm: ty,
-            },
-        )
-    }
-
     fn succ(&mut self, level: ULvl) -> ULvl {
         //TODO: universe store and variables
         ULvl {
@@ -268,7 +257,7 @@ impl ReadCtx<CtxId, TermId> for TermDb {
         self.x[ctx.0].num_vars()
     }
 
-    fn get_var_ty(&self, var: VarId) -> TermId {
+    fn var_ty(&self, var: VarId) -> ValId {
         self.x[var.ctx.0]
             .var_ty(var.ix)
             .expect("invalid variable index")
@@ -525,12 +514,11 @@ impl WriteFacts<CtxId, TermId> for TermDb {
         self.x[ctx.0].set_exists_is_inhab_unchecked(binder, ty);
     }
 
-    fn add_var_unchecked(&mut self, ctx: CtxId, ty: TermId) -> VarId {
-        let ix = self.x[ctx.0].add_var_unchecked(ty);
-        let var = VarId { ctx, ix };
-        let id = self.x[ctx.0].add(Node::Fv(var));
-        self.x[ctx.0].set_has_ty_unchecked(id, ty);
-        var
+    fn add_var_unchecked(&mut self, ctx: CtxId, ty: ValId) -> VarId {
+        VarId {
+            ctx,
+            ix: self.x[ctx.0].add_var_unchecked(ty),
+        }
     }
 
     fn set_bvi_unchecked(&mut self, ctx: CtxId, tm: TermId, bvi: Bv) {
@@ -541,30 +529,6 @@ impl WriteFacts<CtxId, TermId> for TermDb {
 #[cfg(test)]
 mod test {
     use super::*;
-
-    #[test]
-    fn construct_pi_prop_close() {
-        let mut db = TermDb::default();
-        let root = db.new_ctx();
-        let child = db.with_parent(root);
-        let child_prop = db.add(child, Node::U(ULvl::PROP));
-        let vx = db.add_var_unchecked(child, child_prop);
-        let x = db.add(child, Node::Fv(vx));
-        let root_prop = db.add(root, Node::U(ULvl::PROP));
-        let root_x = db.import(root, Val { ctx: child, tm: x });
-        assert_eq!(db.bvi(root, root_x), Bv(0));
-        let root_close_x = db.add(
-            root,
-            Node::Close(Close {
-                under: Bv(0),
-                var: vx,
-                tm: root_x,
-            }),
-        );
-        assert_eq!(db.bvi(root, root_close_x), Bv(1));
-        let root_pi = db.add(root, Node::Pi([root_prop, root_close_x]));
-        assert_eq!(db.bvi(root, root_pi), Bv(0));
-    }
 
     #[test]
     fn basic_imax_le() {

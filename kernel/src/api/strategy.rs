@@ -13,6 +13,9 @@ pub trait Strategy<C, T, K: ?Sized> {
         Ok(())
     }
 
+    /// Commit the results of a successful derivation
+    fn commit_rule(&mut self, _ker: &mut K) {}
+
     /// End a successful derivation
     fn finish_rule(&mut self, _ker: &mut K) {}
 
@@ -22,7 +25,11 @@ pub trait Strategy<C, T, K: ?Sized> {
     // == Goals ==
 
     /// Begin a goal
-    fn start_goal(&mut self, _goal: QAtomSeq<C, Val<C, T>>, _ker: &mut K) -> Result<(), Self::Fail> {
+    fn start_goal(
+        &mut self,
+        _goal: QAtomSeq<C, Val<C, T>>,
+        _ker: &mut K,
+    ) -> Result<(), Self::Fail> {
         Ok(())
     }
 

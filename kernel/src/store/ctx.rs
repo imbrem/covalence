@@ -62,7 +62,7 @@ impl Ctx {
         result
     }
 
-    pub fn var_ty(&self, ix: u32) -> Option<TermId> {
+    pub fn var_ty(&self, ix: u32) -> Option<ValId> {
         self.e.analysis.vars.get(ix as usize).copied()
     }
 
@@ -218,7 +218,7 @@ impl Ctx {
         self.set_is_inhab_unchecked(sigma)
     }
 
-    pub fn add_var_unchecked(&mut self, ty: TermId) -> u32 {
+    pub fn add_var_unchecked(&mut self, ty: ValId) -> u32 {
         // NOTE: this overflow should be impossible due to limitations of the E-graph, but better
         // safe than sorry...
         let ix: u32 = self
@@ -265,7 +265,7 @@ struct CtxData {
     /// This context's flags
     flags: Pred0,
     /// This context's variables, implemented as a map from indices to types
-    vars: Vec<TermId>,
+    vars: Vec<ValId>,
     /// A map from nodes to their TermId
     ///
     /// TODO: remove hack, but required for now for correctness of `lookup`

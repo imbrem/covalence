@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use crate::api::derive::*;
 use crate::api::store::*;
-use crate::data::term::{Fv, NodeT, ULvl, Val};
+use crate::data::term::{NodeT, ULvl, Val};
 
 /// Derivation rules for the `covalence` kernel
 mod derive;
@@ -59,10 +59,6 @@ impl<C, T, D: WriteTerm<C, T>> WriteTerm<C, T> for Kernel<D> {
 
     fn import(&mut self, ctx: C, val: Val<C, T>) -> T {
         self.0.import(ctx, val)
-    }
-
-    fn var_ty(&mut self, ctx: C, var: Fv<C>) -> T {
-        self.0.var_ty(ctx, var)
     }
 
     fn succ(&mut self, level: ULvl) -> ULvl {

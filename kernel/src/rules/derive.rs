@@ -18,11 +18,13 @@ where
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("add_var", self)?;
+
         self.ensure_is_ty(ctx, ty, strategy, kernel_error::ADD_VAR_IS_TY)?;
-        let ty = self.import_with(ctx, ty, strategy)?;
+
+        strategy.commit_rule(self);
+
         let var = self.0.add_var_unchecked(ctx, ty);
-        let tm = self.add_with(ctx, NodeT::Fv(var), strategy)?;
-        self.0.set_has_ty_unchecked(ctx, tm, ty);
+
         strategy.finish_rule(self);
         Ok(var)
     }
@@ -32,17 +34,22 @@ where
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("set_parent", self)?;
+
         if self.read().is_ancestor(ctx, parent) {
             return Err(strategy.fail(kernel_error::SET_PARENT_WOULD_CYCLE, self));
         }
         if !self.read().parents_are_subctx(ctx, parent) {
             return Err(strategy.fail(kernel_error::SET_PARENT_NOT_SUBCTX, self));
         }
+
+        strategy.commit_rule(self);
+
         self.0.set_parent_unchecked(ctx, parent);
         let result = IsSubctx {
             lo: parent,
             hi: ctx,
         };
+
         strategy.finish_rule(self);
         Ok(result)
     }
@@ -59,14 +66,20 @@ where
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_u_le", self)?;
+
         if !self.read().u_le(lo, hi) {
             return Err(strategy.fail(kernel_error::DERIVE_U_LE_U_LE, self));
         }
         let old = self.resolve(ctx, NodeT::U(lo), strategy)?;
         self.ensure_has_ty(ctx, tm, old, strategy, kernel_error::DERIVE_U_LE_TM)?;
+
+        strategy.commit_rule(self);
+
         let tm = self.import_with(ctx, tm, strategy)?;
         let ty = self.add_with(ctx, NodeT::U(hi), strategy)?;
         self.0.set_has_ty_unchecked(ctx, tm, ty);
+
+        strategy.finish_rule(self);
         Ok(HasTyV {
             ctx,
             tm: self.read().val(ctx, tm),
@@ -515,12 +528,17 @@ where
         S: Strategy<C, T, Self>,
     {
         strategy.start_rule("derive_nats", self)?;
+
         if !self.read().u_le(ULvl::SET, lvl) {
             return Err(strategy.fail(kernel_error::DERIVE_NATS_SET_LE_LVL, self));
         }
+
+        strategy.commit_rule(self);
+
         let tm = self.add_with(ctx, NodeT::Nats, strategy)?;
         let ty = self.add_with(ctx, NodeT::U(lvl), strategy)?;
         self.0.set_has_ty_unchecked(ctx, tm, ty);
+
         strategy.finish_rule(self);
         Ok(HasTy {
             ctx,

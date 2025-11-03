@@ -415,7 +415,7 @@ pub trait ReadTermFacts<C, T>: ReadCtxFacts<C> {
     /// Check whether the term `tm` satisfies predicate `pred` in `ctx`
     ///
     /// For details, see the helper methods in [`ReadTermStore`].
-    fn tm_satisfies(&self, ctx: C, pred: Pred1, tm: T) -> bool {
+    fn tm_satisfies(&self, ctx: C, tm: T, pred: Pred1) -> bool {
         self.tm_flags(ctx, tm).contains(pred)
     }
 
@@ -433,56 +433,71 @@ pub trait ReadTermFacts<C, T>: ReadCtxFacts<C> {
     ///
     /// Corresponds to `Ctx.KIsWf` in `gt3-lean`
     fn is_wf(&self, ctx: C, tm: T) -> bool {
-        self.tm_satisfies(ctx, Pred1::IS_WF, tm)
+        self.tm_satisfies(ctx, tm, Pred1::IS_WF)
     }
 
     /// Check whether the term `tm` is a type in the context `ctx`
     ///
     /// Corresponds to `Ctx.KIsTy` in `gt3-lean`
     fn is_ty(&self, ctx: C, tm: T) -> bool {
-        self.tm_satisfies(ctx, Pred1::IS_TY, tm)
+        self.tm_satisfies(ctx, tm, Pred1::IS_TY)
     }
 
     /// Check whether the term `tm` is a proposition in the context `ctx`
     ///
     /// Corresponds to `Ctx.KIsProp` in `gt3-lean`
     fn is_prop(&self, ctx: C, tm: T) -> bool {
-        self.tm_satisfies(ctx, Pred1::IS_PROP, tm)
+        self.tm_satisfies(ctx, tm, Pred1::IS_PROP)
     }
 
     /// Check whether the term `tm` is an inhabited type in the context `ctx`
     ///
     /// Corresponds to `Ctx.KIsInhab` in `gt3-lean`
     fn is_inhab(&self, ctx: C, tm: T) -> bool {
-        self.tm_satisfies(ctx, Pred1::IS_INHAB, tm)
+        self.tm_satisfies(ctx, tm, Pred1::IS_INHAB)
     }
 
     /// Check whether the term `tm` is an empty type in the context `ctx`
     ///
     /// TODO: reference Lean
     fn is_empty(&self, ctx: C, tm: T) -> bool {
-        self.tm_satisfies(ctx, Pred1::IS_EMPTY, tm)
+        self.tm_satisfies(ctx, tm, Pred1::IS_EMPTY)
     }
 
     /// Check whether the term `tm` is the true proposition in the context `ctx`
     ///
     /// TODO: reference Lean
     fn is_tt(&self, ctx: C, tm: T) -> bool {
-        self.tm_satisfies(ctx, Pred1::IS_TT, tm)
+        self.tm_satisfies(ctx, tm, Pred1::IS_TT)
     }
 
     /// Check whether the term `tm` is the false proposition in the context `ctx`
     ///
     /// TODO: reference Lean
     fn is_ff(&self, ctx: C, tm: T) -> bool {
-        self.tm_satisfies(ctx, Pred1::IS_FF, tm)
+        self.tm_satisfies(ctx, tm, Pred1::IS_FF)
     }
+}
 
+/// A datastore that can read quantified facts about terms-in-context.
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadQuantFacts<CtxId, TermId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadQuantFacts<CtxId, TermId> = &Kernel::new();
+/// ```
+pub trait ReadQuantFacts<C, T>: ReadTermFacts<C, T> {
     /// Check whether the term `tm` satisfies predicate `pred` under a binder in `ctx`
     ///
     /// For details about the specific predicates, see helper methods like
     /// [`forall_is_ty`](#method.forall_is_ty).
-    fn forall_satisfies(&self, ctx: C, binder: T, pred: Pred1, tm: T) -> bool
+    fn forall_satisfies(&self, ctx: C, binder: T, tm: T, pred: Pred1) -> bool
     where
         C: Copy,
     {
@@ -495,7 +510,7 @@ pub trait ReadTermFacts<C, T>: ReadCtxFacts<C> {
             Pred1::IS_TT => self.forall_is_tt(ctx, binder, tm),
             Pred1::IS_FF => self.forall_is_ff(ctx, binder, tm),
             Pred1::IS_CONTR => self.forall_is_contr(ctx, binder, tm),
-            pred => self.is_ty(ctx, binder) && self.tm_satisfies(ctx, pred, tm),
+            pred => self.is_ty(ctx, binder) && self.tm_satisfies(ctx, tm, pred),
         }
     }
 
@@ -563,9 +578,9 @@ pub trait ReadTermFacts<C, T>: ReadCtxFacts<C> {
 /// # use covalence_kernel::*;
 /// let ker : &dyn ReadFacts<CtxId, TermId> = &Kernel::new();
 /// ```
-pub trait ReadFacts<C, T>: ReadCtxFacts<C> + ReadTermFacts<C, T> {}
+pub trait ReadFacts<C, T>: ReadCtxFacts<C> + ReadQuantFacts<C, T> {}
 
-impl<D: ReadCtxFacts<C> + ReadTermFacts<C, T>, C, T> ReadFacts<C, T> for D {}
+impl<D: ReadCtxFacts<C> + ReadQuantFacts<C, T>, C, T> ReadFacts<C, T> for D {}
 
 /// A database of terms, contexts, and facts which we can read from
 ///
@@ -633,26 +648,39 @@ pub trait WriteFacts<C, T> {
 
     // == Typing judgements ==
 
+    /// Set a term's flags
+    fn set_tm_flags_unchecked(&mut self, ctx: C, tm: T, pred: Pred1);
+
     /// Set two terms as equal in a given context
     fn set_eq_unchecked(&mut self, ctx: C, lhs: T, rhs: T);
-
-    /// Mark a term as well-formed
-    fn set_is_wf_unchecked(&mut self, ctx: C, tm: T);
-
-    /// Mark a term as a type
-    fn set_is_ty_unchecked(&mut self, ctx: C, tm: T);
-
-    /// Mark a term as a proposition
-    fn set_is_prop_unchecked(&mut self, ctx: C, tm: T);
 
     /// Set the type of a term
     fn set_has_ty_unchecked(&mut self, ctx: C, tm: T, ty: T);
 
+    /// Mark a term as well-formed
+    fn set_is_wf_unchecked(&mut self, ctx: C, tm: T) {
+        self.set_tm_flags_unchecked(ctx, tm, Pred1::IS_WF);
+    }
+
+    /// Mark a term as a type
+    fn set_is_ty_unchecked(&mut self, ctx: C, tm: T) {
+        self.set_tm_flags_unchecked(ctx, tm, Pred1::IS_TY);
+    }
+
+    /// Mark a term as a proposition
+    fn set_is_prop_unchecked(&mut self, ctx: C, tm: T) {
+        self.set_tm_flags_unchecked(ctx, tm, Pred1::IS_PROP);
+    }
+
     /// Mark a term as an inhabited type
-    fn set_is_inhab_unchecked(&mut self, ctx: C, tm: T);
+    fn set_is_inhab_unchecked(&mut self, ctx: C, tm: T) {
+        self.set_tm_flags_unchecked(ctx, tm, Pred1::IS_INHAB);
+    }
 
     /// Mark a term as an empty type
-    fn set_is_empty_unchecked(&mut self, ctx: C, tm: T);
+    fn set_is_empty_unchecked(&mut self, ctx: C, tm: T) {
+        self.set_tm_flags_unchecked(ctx, tm, Pred1::IS_EMPTY);
+    }
 
     /// Mark two terms as equal under a binder
     fn set_forall_eq_unchecked(&mut self, ctx: C, binder: T, lhs: T, rhs: T);
@@ -698,9 +726,9 @@ impl<C: Copy, T: Copy, D: ReadTerm<C, T> + ReadTermFacts<C, T>> ReadTermFacts<C,
         }
     }
 
-    fn tm_satisfies(&self, ctx: C, pred: Pred1, tm: Val<C, T>) -> bool {
+    fn tm_satisfies(&self, ctx: C, tm: Val<C, T>, pred: Pred1) -> bool {
         self.lookup_val(ctx, tm)
-            .is_some_and(|tm| self.tm_satisfies(ctx, pred, tm))
+            .is_some_and(|tm| self.tm_satisfies(ctx, tm, pred))
     }
 
     fn eq_in(&self, ctx: C, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
@@ -720,7 +748,11 @@ impl<C: Copy, T: Copy, D: ReadTerm<C, T> + ReadTermFacts<C, T>> ReadTermFacts<C,
                 .is_some_and(|ty| self.has_ty(ctx, tm, ty))
         })
     }
+}
 
+impl<C: Copy, T: Copy, D: ReadTerm<C, T> + ReadQuantFacts<C, T>> ReadQuantFacts<C, Val<C, T>>
+    for D
+{
     fn forall_eq_in(&self, ctx: C, binder: Val<C, T>, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
         self.lookup_val(ctx, binder).is_some_and(|binder| {
             self.is_ty(ctx, binder) && self.cons_eq(lhs, rhs)

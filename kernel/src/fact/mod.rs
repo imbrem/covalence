@@ -638,7 +638,7 @@ where
     fn check_in(&self, &ctx: &C, ker: &R) -> bool {
         match *self {
             Atom::Pred0(p) => ker.ctx_satisfies(ctx, p),
-            Atom::Pred1(p, tm) => ker.tm_satisfies(ctx, p, tm),
+            Atom::Pred1(p, tm) => ker.tm_satisfies(ctx, tm, p),
             Atom::Eqn(lhs, rhs) => ker.eq_in(ctx, lhs, rhs),
             Atom::HasTy(tm, ty) => ker.has_ty(ctx, tm, ty),
         }
@@ -649,13 +649,13 @@ impl<C, T, R> FactUnder<C, Forall<T>, R> for Atom<T>
 where
     C: Copy,
     T: Copy,
-    R: ReadTermFacts<C, T> + ?Sized,
+    R: ReadQuantFacts<C, T> + ?Sized,
 {
     /// Check whether this goal is true
     fn check_under(&self, &ctx: &C, &Forall(binder): &Forall<T>, ker: &R) -> bool {
         match *self {
-            Atom::Pred0(pred) => ker.tm_satisfies(ctx, pred.forall(), binder),
-            Atom::Pred1(pred, tm) => ker.forall_satisfies(ctx, binder, pred, tm),
+            Atom::Pred0(p) => ker.tm_satisfies(ctx, binder, p.forall()),
+            Atom::Pred1(p, tm) => ker.forall_satisfies(ctx, binder, tm, p),
             Atom::Eqn(lhs, rhs) => ker.forall_eq_in(ctx, binder, lhs, rhs),
             Atom::HasTy(tm, ty) => ker.forall_has_ty(ctx, binder, tm, ty),
         }
@@ -666,7 +666,7 @@ impl<C, T, R> FactUnder<C, Option<Forall<T>>, R> for Atom<T>
 where
     C: Copy,
     T: Copy,
-    R: ReadTermFacts<C, T> + ?Sized,
+    R: ReadQuantFacts<C, T> + ?Sized,
 {
     /// Check whether this goal is true
     fn check_under(&self, &ctx: &C, binder: &Option<Forall<T>>, ker: &R) -> bool {

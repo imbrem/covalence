@@ -1,4 +1,3 @@
-use covalence_kernel::api::derive::Ensure;
 use covalence_kernel::api::strategy::Strategy;
 pub use covalence_kernel::*;
 

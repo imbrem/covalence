@@ -115,7 +115,7 @@ impl Ctx {
         self.e[tm.0].data.flags.contains(Pred1::IS_UNIV)
     }
 
-    fn set_flags_unchecked(&mut self, tm: TermId, flags: Pred1) -> bool {
+    pub fn set_flags_unchecked(&mut self, tm: TermId, flags: Pred1) -> bool {
         let mut data = self.e[tm.0].data;
         let old_flags = data.flags;
         data.flags |= flags;

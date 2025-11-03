@@ -331,7 +331,9 @@ impl ReadTermFacts<CtxId, TermId> for TermDb {
     fn has_ty(&self, ctx: CtxId, tm: TermId, ty: TermId) -> bool {
         self.x[ctx.0].has_ty(tm, ty)
     }
+}
 
+impl ReadQuantFacts<CtxId, TermId> for TermDb {
     fn forall_eq_in(&self, ctx: CtxId, binder: TermId, lhs: TermId, rhs: TermId) -> bool {
         if !self.is_ty(ctx, binder) {
             return false;
@@ -446,32 +448,16 @@ impl ReadTermDb<CtxId, TermId> for TermDb {
 }
 
 impl WriteFacts<CtxId, TermId> for TermDb {
+    fn set_tm_flags_unchecked(&mut self, ctx: CtxId, tm: TermId, pred: Pred1) {
+        self.x[ctx.0].set_flags_unchecked(tm, pred);
+    }
+
     fn set_is_contr_unchecked(&mut self, ctx: CtxId) {
         self.x[ctx.0].set_is_contr();
     }
 
     fn set_parent_unchecked(&mut self, ctx: CtxId, parent: CtxId) {
         self.x[ctx.0].set_parent_unchecked(parent);
-    }
-
-    fn set_is_wf_unchecked(&mut self, ctx: CtxId, tm: TermId) {
-        self.x[ctx.0].set_is_wf_unchecked(tm);
-    }
-
-    fn set_is_ty_unchecked(&mut self, ctx: CtxId, tm: TermId) {
-        self.x[ctx.0].set_is_ty_unchecked(tm);
-    }
-
-    fn set_is_inhab_unchecked(&mut self, ctx: CtxId, tm: TermId) {
-        self.x[ctx.0].set_is_inhab_unchecked(tm);
-    }
-
-    fn set_is_empty_unchecked(&mut self, ctx: CtxId, tm: TermId) {
-        self.x[ctx.0].set_is_empty_unchecked(tm);
-    }
-
-    fn set_is_prop_unchecked(&mut self, ctx: CtxId, tm: TermId) {
-        self.x[ctx.0].set_is_prop_unchecked(tm);
     }
 
     fn set_eq_unchecked(&mut self, ctx: CtxId, lhs: TermId, rhs: TermId) {

@@ -635,7 +635,7 @@ where
         tm: Val<C, T>,
         arg: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnV<C, T>, S::Fail>
+    ) -> Result<EqnInV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
@@ -661,7 +661,7 @@ where
         ctx: C,
         tm: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnV<C, T>, S::Fail>
+    ) -> Result<EqnInV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
@@ -687,7 +687,7 @@ where
         tm: Val<C, T>,
         n: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnV<C, T>, S::Fail>
+    ) -> Result<EqnInV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
@@ -738,7 +738,7 @@ where
         ctx: C,
         a: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnV<C, T>, S::Fail>
+    ) -> Result<EqnInV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
@@ -756,7 +756,7 @@ where
         ctx: C,
         a: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnV<C, T>, S::Fail>
+    ) -> Result<EqnInV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
@@ -774,7 +774,7 @@ where
         ctx: C,
         a: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnV<C, T>, S::Fail>
+    ) -> Result<EqnInV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
@@ -793,7 +793,7 @@ where
         lhs: Val<C, T>,
         rhs: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnV<C, T>, S::Fail>
+    ) -> Result<EqnInV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
@@ -811,7 +811,7 @@ where
         ty: Val<C, T>,
         f: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnV<C, T>, S::Fail>
+    ) -> Result<EqnInV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
@@ -834,7 +834,7 @@ where
         ty: Val<C, T>,
         p: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnV<C, T>, S::Fail>
+    ) -> Result<EqnInV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>,
     {

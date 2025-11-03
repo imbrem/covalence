@@ -1,6 +1,8 @@
 /*!
 Facts which can be checked in the datastore
 */
+use std::ops::{Deref, DerefMut};
+
 use crate::api::store::*;
 use crate::data::term::Val;
 
@@ -42,6 +44,20 @@ where
 {
     fn check(&self, db: &R) -> bool {
         self.stmt.check_in(&self.ctx, db)
+    }
+}
+
+impl<C, S> Deref for Seq<C, S> {
+    type Target = S;
+
+    fn deref(&self) -> &Self::Target {
+        &self.stmt
+    }
+}
+
+impl<C, S> DerefMut for Seq<C, S> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.stmt
     }
 }
 
@@ -264,8 +280,8 @@ pub enum Atom<T> {
     Pred0(Pred0),
     /// A unary predicate on terms-in-context
     Pred1(Pred1, T),
-    /// Two terms are equal
-    Eq(T, T),
+    /// An equation
+    Eqn(T, T),
     /// A term has a type
     HasTy(T, T),
 }
@@ -342,15 +358,28 @@ impl<C, T> QAtomSeq<C, T> {
     }
 }
 
-/// An equation in a context
+/// An equation
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct Eqn<C, T> {
-    pub ctx: C,
+pub struct Eqn<T> {
     pub lhs: T,
     pub rhs: T,
 }
 
-pub type EqnV<C, T> = Eqn<C, Val<C, T>>;
+/// An equation-in-context
+pub type EqnIn<C, T> = Seq<C, Eqn<T>>;
+
+impl<C, T> EqnIn<C, T> {
+    /// Construct a new equation-in-context
+    pub const fn new(ctx: C, lhs: T, rhs: T) -> Self {
+        Seq {
+            ctx,
+            stmt: Eqn { lhs, rhs },
+        }
+    }
+}
+
+/// An equation-in-context between values
+pub type EqnInV<C, T> = EqnIn<C, Val<C, T>>;
 
 /// A statement of well-formedness
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -455,13 +484,13 @@ pub struct IsSubctx<C> {
     pub hi: C,
 }
 
-impl<C, T> From<Eqn<C, T>> for QAtomSeq<C, T> {
-    fn from(g: Eqn<C, T>) -> Self {
+impl<C, T> From<EqnIn<C, T>> for QAtomSeq<C, T> {
+    fn from(g: EqnIn<C, T>) -> Self {
         Seq {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: None,
-                body: Atom::Eq(g.lhs, g.rhs),
+                body: Atom::Eqn(g.stmt.lhs, g.stmt.rhs),
             },
             // binder: Quant::Null,
             // rel: Some(GoalIn::Eq(g.lhs, g.rhs)),
@@ -610,7 +639,7 @@ where
         match *self {
             Atom::Pred0(p) => ker.ctx_satisfies(ctx, p),
             Atom::Pred1(p, tm) => ker.tm_satisfies(ctx, p, tm),
-            Atom::Eq(lhs, rhs) => ker.eq_in(ctx, lhs, rhs),
+            Atom::Eqn(lhs, rhs) => ker.eq_in(ctx, lhs, rhs),
             Atom::HasTy(tm, ty) => ker.has_ty(ctx, tm, ty),
         }
     }
@@ -627,7 +656,7 @@ where
         match *self {
             Atom::Pred0(pred) => ker.tm_satisfies(ctx, pred.forall(), binder),
             Atom::Pred1(pred, tm) => ker.forall_satisfies(ctx, binder, pred, tm),
-            Atom::Eq(lhs, rhs) => ker.forall_eq_in(ctx, binder, lhs, rhs),
+            Atom::Eqn(lhs, rhs) => ker.forall_eq_in(ctx, binder, lhs, rhs),
             Atom::HasTy(tm, ty) => ker.forall_has_ty(ctx, binder, tm, ty),
         }
     }

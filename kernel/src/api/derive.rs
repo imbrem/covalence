@@ -207,7 +207,7 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     where
         S: Strategy<C, T, Self>,
     {
-        self.ensure_goal(Eqn { ctx, lhs, rhs }.into(), strategy, msg)
+        self.ensure_goal(EqnIn::new(ctx, lhs, rhs).into(), strategy, msg)
     }
 
     /// Import a value into the given context
@@ -760,7 +760,7 @@ pub trait DeriveTrusted<C, T> {
         tm: Val<C, T>,
         arg: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnV<C, T>, S::Fail>
+    ) -> Result<EqnInV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -774,7 +774,7 @@ pub trait DeriveTrusted<C, T> {
         ctx: C,
         tm: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnV<C, T>, S::Fail>
+    ) -> Result<EqnInV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -789,7 +789,7 @@ pub trait DeriveTrusted<C, T> {
         tm: Val<C, T>,
         n: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnV<C, T>, S::Fail>
+    ) -> Result<EqnInV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -818,7 +818,7 @@ pub trait DeriveTrusted<C, T> {
         ctx: C,
         a: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnV<C, T>, S::Fail>
+    ) -> Result<EqnInV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -832,7 +832,7 @@ pub trait DeriveTrusted<C, T> {
         ctx: C,
         a: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnV<C, T>, S::Fail>
+    ) -> Result<EqnInV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -846,7 +846,7 @@ pub trait DeriveTrusted<C, T> {
         ctx: C,
         a: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnV<C, T>, S::Fail>
+    ) -> Result<EqnInV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -861,7 +861,7 @@ pub trait DeriveTrusted<C, T> {
         lhs: Val<C, T>,
         rhs: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnV<C, T>, S::Fail>
+    ) -> Result<EqnInV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -876,7 +876,7 @@ pub trait DeriveTrusted<C, T> {
         ty: Val<C, T>,
         f: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnV<C, T>, S::Fail>
+    ) -> Result<EqnInV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 
@@ -891,7 +891,7 @@ pub trait DeriveTrusted<C, T> {
         ty: Val<C, T>,
         p: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnV<C, T>, S::Fail>
+    ) -> Result<EqnInV<C, T>, S::Fail>
     where
         S: Strategy<C, T, Self>;
 }

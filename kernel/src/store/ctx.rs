@@ -418,14 +418,17 @@ impl Analysis<Node> for CtxData {
     fn make(egraph: &mut EGraph<Node, Self>, enode: &Node) -> Self::Data {
         let this = Ctx::from_ref(egraph);
         let bvi = enode.bvi_with(|x| this.bvi(*x));
-        ClassData { flags: Pred1::default(), bvi }
+        ClassData {
+            flags: Pred1::default(),
+            bvi,
+        }
     }
 
     fn merge(&mut self, a: &mut Self::Data, b: Self::Data) -> egg::DidMerge {
         let new = *a | b;
         let changed = DidMerge(*a == new, b == new);
         *a = new;
-        if new.flags.contains(Pred1::IS_CONTR) {
+        if new.flags.is_contr() {
             self.flags |= Pred0::IS_CONTR;
         }
         changed

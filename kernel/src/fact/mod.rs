@@ -131,8 +131,7 @@ bitflags! {
     /// assert_ne!(IS_INHAB, IS_UNIV);
     /// assert!(!IS_UNIV.contains(IS_PROP));
     /// assert!(!IS_UNIV.contains(IS_EMPTY));
-    /// assert_eq!(IS_CONTR, IS_INHAB | IS_EMPTY);
-    /// assert_eq!(IS_WF_EMP, IS_CONTR | IS_UNIV | IS_PROP);
+    /// assert_eq!(IS_CONTR, IS_TT | IS_FF | IS_UNIV);
     /// ```
     #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Default, Ord, PartialOrd)]
     pub struct Pred1: u8 {
@@ -154,10 +153,21 @@ bitflags! {
         const IS_FF     = 0b00101111;
         /// This term is a valid typing universe
         const IS_UNIV   = 0b01010111;
-        /// This term indicates a contradiction has occurred
-        const IS_CONTR  = 0b00110111;
         /// A well-formed term under an empty context
-        const IS_WF_EMP = 0b01111111;
+        const IS_CONTR = 0b01111111;
+
+        /// The indicating well-formedness
+        const WF_BIT = 1 << 1;
+        /// The bit indicating typehood
+        const TY_BIT = 1 << 2;
+        /// The bit indicating propositionality
+        const PROP_BIT = 1 << 3;
+        /// The bit indicating inhabitance
+        const INHAB_BIT = 1 << 4;
+        /// The bit indicating emptiness
+        const EMPTY_BIT = 1 << 5;
+        /// The bit indicating universes
+        const UNIV_BIT = 1 << 6;
     }
 }
 
@@ -173,28 +183,47 @@ impl Pred0 {
 }
 
 impl Pred1 {
-    /// Get the Π-component of this predicate
-    pub fn pi(self) -> Pred1 {
-        self & Pred1::IS_TT
+    /// Check whether these flags imply a contradiction
+    pub const fn is_contr(self) -> bool {
+        self.contains(IS_INHAB.union(IS_EMPTY)) //|| self.contains(IS_UNIV.union(IS_PROP))
     }
 
-    /// Get the Σ-component of this predicate
-    pub fn sigma(self) -> Pred1 {
-        self & Pred1::IS_EMPTY
+    /// Convert a bitset to a valid term
+    pub const fn to_valid(self) -> Pred1 {
+        let mut result = Pred1::empty();
+        if self.contains(Pred1::WF_BIT) {
+            result = result.union(Pred1::IS_WF);
+        }
+        if self.contains(Pred1::TY_BIT) {
+            result = result.union(Pred1::IS_TY);
+        }
+        if self.contains(Pred1::PROP_BIT) {
+            result = result.union(Pred1::IS_PROP);
+        }
+        if self.contains(Pred1::INHAB_BIT) {
+            result = result.union(Pred1::IS_INHAB);
+        }
+        if self.contains(Pred1::EMPTY_BIT) {
+            result = result.union(Pred1::IS_EMPTY);
+        }
+        if self.contains(Pred1::UNIV_BIT) {
+            result = result.union(Pred1::IS_UNIV);
+        }
+        result
     }
 
-    /// Get the neutral component of this predicate
-    pub fn neutral(self) -> Pred1 {
-        self & !(Pred1::IS_TT | Pred1::IS_EMPTY)
-    }
-
-    /// Add whether this is an empty context
-    pub fn in_empty(self, is_empty: bool) -> Pred1 {
-        if is_empty && self.contains(Pred1::IS_WF) {
-            self | Pred1::IS_WF_EMP
+    /// Deduce the flags implied by a given bitet
+    pub const fn deduce(self) -> Pred1 {
+        if self.is_contr() {
+            self.union(Pred1::IS_CONTR)
         } else {
             self
         }
+    }
+
+    /// Check whether a bitset is valid
+    pub const fn is_valid(self) -> bool {
+        self.symmetric_difference(self.to_valid()).is_empty()
     }
 }
 
@@ -217,19 +246,16 @@ pub const IS_INHAB: Pred1 = Pred1::IS_INHAB;
 pub const IS_EMPTY: Pred1 = Pred1::IS_EMPTY;
 
 /// A term is equal to the true proposition
-pub const IS_TRUE: Pred1 = Pred1::IS_TT;
+pub const IS_TT: Pred1 = Pred1::IS_TT;
 
 /// A term is equal to the false proposition
-pub const IS_FALSE: Pred1 = Pred1::IS_FF;
+pub const IS_FF: Pred1 = Pred1::IS_FF;
 
 /// A term is a valid typing universe
 pub const IS_UNIV: Pred1 = Pred1::IS_UNIV;
 
 /// A term indicates a contradiction
 pub const IS_CONTR: Pred1 = Pred1::IS_CONTR;
-
-/// A well-formed term under an empty context
-pub const IS_WF_EMP: Pred1 = Pred1::IS_WF_EMP;
 
 /// An atomic formula on terms supported by the kernel
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -277,12 +303,12 @@ impl<T> Atom<T> {
 
     /// A term is equal to the true proposition
     pub const fn is_true(tm: T) -> Self {
-        Atom::Pred1(IS_TRUE, tm)
+        Atom::Pred1(IS_TT, tm)
     }
 
     /// A term is equal to the false proposition
     pub const fn is_false(tm: T) -> Self {
-        Atom::Pred1(IS_FALSE, tm)
+        Atom::Pred1(IS_FF, tm)
     }
 
     /// A term is a valid typing universe

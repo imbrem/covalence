@@ -1,5 +1,5 @@
 use crate::{
-    Pred1,
+    IS_SCOPED, Pred1,
     data::term::{Bv, Fv, NodeT, NodeVT, ULvl, Val},
     fact::Pred0,
 };
@@ -419,19 +419,9 @@ pub trait ReadTermFacts<C, T>: ReadCtxFacts<C> {
 
     /// Check whether the term `tm` satisfies predicate `pred` in `ctx`
     ///
-    /// Removes any predicates known to be satisfied
-    ///
     /// For details, see the helper methods in [`ReadTermStore`].
-    fn tm_filter(&self, ctx: C, pred: &mut Pred1, tm: T) -> bool {
-        pred.remove(self.tm_flags(ctx, tm));
-        pred.is_empty()
-    }
-
-    /// Check whether the term `tm` satisfies predicate `pred` in `ctx`
-    ///
-    /// For details, see the helper methods in [`ReadTermStore`].
-    fn tm_satisfies(&self, ctx: C, mut pred: Pred1, tm: T) -> bool {
-        self.tm_filter(ctx, &mut pred, tm)
+    fn tm_satisfies(&self, ctx: C, pred: Pred1, tm: T) -> bool {
+        self.tm_flags(ctx, tm).contains(pred)
     }
 
     /// Check whether the term `lhs` is equal to the term `rhs` in `ctx`
@@ -527,19 +517,9 @@ impl<D: ReadCtxFacts<C> + ReadTermFacts<C, T>, C, T> ReadFacts<C, T> for D {}
 pub trait ReadTermStore<C, T>: ReadCtx<C, T> + ReadTerm<C, T> + ReadFacts<C, T> {
     /// Check whether the term `tm` satisfies predicate `pred` under a binder in `ctx`
     ///
-    /// Removes any predicates known to be satisfied
-    ///
     /// For details about the specific predicates, see helper methods like
     /// [`forall_is_ty`](#method.forall_is_ty).
-    fn forall_filter(&self, ctx: C, binder: T, pred: &mut Pred1, tm: T) -> bool;
-
-    /// Check whether the term `tm` satisfies predicate `pred` under a binder in `ctx`
-    ///
-    /// For details about the specific predicates, see helper methods like
-    /// [`forall_is_ty`](#method.forall_is_ty).
-    fn forall_satisfies(&self, ctx: C, binder: T, mut pred: Pred1, tm: T) -> bool {
-        self.forall_filter(ctx, binder, &mut pred, tm)
-    }
+    fn forall_satisfies(&self, ctx: C, binder: T, pred: Pred1, tm: T) -> bool;
 
     /// Check whether the terms `lhs`, `rhs` are equal in `ctx` under a binder `binder`
     ///
@@ -554,37 +534,42 @@ pub trait ReadTermStore<C, T>: ReadCtx<C, T> + ReadTerm<C, T> + ReadFacts<C, T> 
     /// Check whether the term `tm` is well-formed in `ctx` under a binder `binder`
     ///
     /// TODO: reference Lean
-    fn forall_is_wf(&self, ctx: C, binder: T, tm: T) -> bool {
-        self.forall_satisfies(ctx, binder, Pred1::IS_WF, tm)
-    }
+    fn forall_is_wf(&self, ctx: C, binder: T, tm: T) -> bool;
 
     /// Check whether the term `tm` is a valid type in `ctx` under a binder `binder`
     ///
     /// Corresponds to `Ctx.KIsTyUnder` in `gt3-lean`
-    fn forall_is_ty(&self, ctx: C, binder: T, tm: T) -> bool {
-        self.forall_satisfies(ctx, binder, Pred1::IS_TY, tm)
-    }
+    fn forall_is_ty(&self, ctx: C, binder: T, tm: T) -> bool;
 
     /// Check whether the term `tm` is a valid type in `ctx` under a binder `binder`
     ///
     /// Corresponds to `Ctx.KIsTyUnder` in `gt3-lean`
-    fn forall_is_prop(&self, ctx: C, binder: T, tm: T) -> bool {
-        self.forall_satisfies(ctx, binder, Pred1::IS_PROP, tm)
-    }
+    fn forall_is_prop(&self, ctx: C, binder: T, tm: T) -> bool;
 
     /// Check whether the term `tm` is always inhabited in `ctx` under a binder `binder`
     ///
     /// TODO: reference Lean
-    fn forall_is_inhab(&self, ctx: C, binder: T, tm: T) -> bool {
-        self.forall_satisfies(ctx, binder, Pred1::IS_INHAB, tm)
-    }
+    fn forall_is_inhab(&self, ctx: C, binder: T, tm: T) -> bool;
+
+    /// Check whether the term `tm` is always true in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_is_tt(&self, ctx: C, binder: T, tm: T) -> bool;
 
     /// Check whether the term `tm` is always inhabited in `ctx` under a binder `binder`
     ///
     /// TODO: reference Lean
-    fn forall_is_empty(&self, ctx: C, binder: T, tm: T) -> bool {
-        self.forall_satisfies(ctx, binder, Pred1::IS_EMPTY, tm)
-    }
+    fn forall_is_empty(&self, ctx: C, binder: T, tm: T) -> bool;
+
+    /// Check whether the term `tm` is always inhabited in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_is_ff(&self, ctx: C, binder: T, tm: T) -> bool;
+
+    /// Check whether the term `tm` is always contradictory in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_is_contr(&self, ctx: C, binder: T, tm: T) -> bool;
 }
 
 impl<D: ReadCtx<C, T> + ReadTerm<C, T> + ReadFacts<C, T>, C, T> ReadTermStore<C, T> for D
@@ -592,56 +577,18 @@ where
     C: Copy,
     T: Copy,
 {
-    fn forall_filter(&self, ctx: C, binder: T, pred: &mut Pred1, tm: T) -> bool {
-        // We begin by checking that `∀ x ∉ L . Γ, x : A ok`
-        let binder_flags = self.tm_flags(ctx, binder);
-        if !binder_flags.contains(Pred1::IS_TY) {
-            return false;
+    fn forall_satisfies(&self, ctx: C, binder: T, pred: Pred1, tm: T) -> bool {
+        match pred.to_valid().deduce() {
+            Pred1::IS_WF => self.forall_is_wf(ctx, binder, tm),
+            Pred1::IS_TY => self.forall_is_ty(ctx, binder, tm),
+            Pred1::IS_PROP => self.forall_is_prop(ctx, binder, tm),
+            Pred1::IS_INHAB => self.forall_is_inhab(ctx, binder, tm),
+            Pred1::IS_EMPTY => self.forall_is_empty(ctx, binder, tm),
+            Pred1::IS_TT => self.forall_is_tt(ctx, binder, tm),
+            Pred1::IS_FF => self.forall_is_ff(ctx, binder, tm),
+            Pred1::IS_CONTR => self.forall_is_contr(ctx, binder, tm),
+            pred => self.is_ty(ctx, binder) && self.tm_satisfies(ctx, pred, tm),
         }
-
-        // We also cache whether `Γ ⊢ A empty`
-        //
-        // If we ever derive that `∀ x ∉ L, Γ, x : A ⊢ B wf`; we may add `∀ x ∉ L, Γ, x : A ⊢ P B`
-        // for `P` nonempty.
-        let is_empty = binder_flags.contains(Pred1::IS_EMPTY);
-
-        // - If `Γ ⊢ P B` then `∀ x ∉ L, Γ, x : A ⊢ P B` by weakening
-        pred.remove(self.tm_flags(ctx, tm).in_empty(is_empty));
-
-        // If `Γ ⊢ A ≡ B` then `∀ x ∉ L . Γ, x : A ⊢ B inhab`
-        if pred.intersects(Pred1::IS_INHAB) && self.eq_in(ctx, binder, tm) {
-            pred.remove(Pred1::IS_INHAB);
-        }
-
-        if pred.is_empty() {
-            return true;
-        }
-
-        // If `Γ ⊢ P (Π A . B)` and `P` is a Π-predicate, then `∀ x ∉ L . Γ, x : A ⊢ B`
-        if !pred.pi().is_empty() {
-            let pi_flags = self
-                .lookup(ctx, NodeT::Pi([binder, tm]))
-                .map(|pi| self.tm_flags(ctx, pi).pi())
-                .unwrap_or_default()
-                .in_empty(is_empty);
-            pred.remove(pi_flags);
-        }
-
-        if pred.is_empty() {
-            return true;
-        }
-
-        // If `Γ ⊢ P (Σ A . B)` and `P` is a Σ-predicate, then `∀ x ∉ L . Γ, x : A ⊢ B`
-        if !pred.sigma().is_empty() {
-            let sigma_flags = self
-                .lookup(ctx, NodeT::Sigma([binder, tm]))
-                .map(|sigma| self.tm_flags(ctx, sigma).sigma())
-                .unwrap_or_default()
-                .in_empty(is_empty);
-            pred.remove(sigma_flags);
-        }
-
-        pred.is_empty()
     }
 
     fn forall_eq_in(&self, ctx: C, binder: T, lhs: T, rhs: T) -> bool {
@@ -671,6 +618,81 @@ where
             return false;
         };
         self.has_ty(ctx, abs, pi)
+    }
+
+    fn forall_is_wf(&self, ctx: C, binder: T, tm: T) -> bool {
+        if !self.is_ty(ctx, binder) {
+            return false;
+        }
+        self.is_wf(ctx, tm)
+            || self
+                .lookup(ctx, NodeT::Abs([binder, tm]))
+                .is_some_and(|abs| self.is_wf(ctx, abs))
+    }
+
+    fn forall_is_ty(&self, ctx: C, binder: T, tm: T) -> bool {
+        if !self.is_ty(ctx, binder) {
+            return false;
+        }
+        self.is_ty(ctx, tm)
+            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
+            || self
+                .lookup(ctx, NodeT::Pi([binder, tm]))
+                .is_some_and(|pi| self.is_ty(ctx, pi))
+    }
+
+    fn forall_is_prop(&self, ctx: C, binder: T, tm: T) -> bool {
+        if !self.is_ty(ctx, binder) {
+            return false;
+        }
+        self.is_prop(ctx, tm)
+            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
+            || self
+                .lookup(ctx, NodeT::Pi([binder, tm]))
+                .is_some_and(|pi| self.is_prop(ctx, pi))
+    }
+
+    fn forall_is_inhab(&self, ctx: C, binder: T, tm: T) -> bool {
+        if !self.is_ty(ctx, binder) {
+            return false;
+        }
+        self.is_inhab(ctx, tm)
+            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
+            || self.eq_in(ctx, tm, binder)
+            || self
+                .lookup(ctx, NodeT::Pi([binder, tm]))
+                .is_some_and(|pi| self.is_inhab(ctx, pi))
+    }
+
+    fn forall_is_tt(&self, ctx: C, binder: T, tm: T) -> bool {
+        if !self.is_ty(ctx, binder) {
+            return false;
+        }
+        self.is_tt(ctx, tm)
+            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
+            || (self.is_prop(ctx, binder) && self.eq_in(ctx, tm, binder))
+            || self
+                .lookup(ctx, NodeT::Pi([binder, tm]))
+                .is_some_and(|pi| self.is_tt(ctx, pi))
+    }
+
+    fn forall_is_empty(&self, ctx: C, binder: T, tm: T) -> bool {
+        if !self.is_ty(ctx, binder) {
+            return false;
+        }
+        self.is_empty(ctx, tm)
+            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
+            || self
+                .lookup(ctx, NodeT::Sigma([binder, tm]))
+                .is_some_and(|pi| self.is_empty(ctx, pi))
+    }
+
+    fn forall_is_ff(&self, ctx: C, binder: T, tm: T) -> bool {
+        self.forall_is_prop(ctx, binder, tm) && self.forall_is_empty(ctx, binder, tm)
+    }
+
+    fn forall_is_contr(&self, ctx: C, binder: T, tm: T) -> bool {
+        self.is_empty(ctx, binder) && self.forall_is_wf(ctx, binder, tm)
     }
 }
 

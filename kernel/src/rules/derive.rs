@@ -721,6 +721,7 @@ where
         let mot_zero = self.resolve(ctx, NodeT::subst1(zero, mot), strategy)?;
         self.ensure_has_ty(ctx, z, mot_zero, strategy, kernel_error::DERIVE_NATREC_Z)?;
 
+        // NOT succ bv 0, since bv 0 is the variable bound by the Π-type!
         let bv_one = self.resolve(ctx, NodeT::Bv(Bv(1)), strategy)?;
         let succ_bv_one = self.resolve(ctx, NodeT::Succ([bv_one]), strategy)?;
         let mot_succ_bv_one = self.resolve(ctx, NodeT::subst1(succ_bv_one, mot), strategy)?;
@@ -757,29 +758,36 @@ where
         body_ty: Val<C, T>,
         strategy: &mut S,
     ) -> Result<HasTyV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_let")?;
-        // self.ensure_has_ty(
-        //     ctx,
-        //     bound,
-        //     bound_ty,
-        //     strategy,
-        //     kernel_error::DERIVE_LET_BOUND,
-        // )?;
-        // self.ensure_has_ty_under(
-        //     ctx,
-        //     bound_ty,
-        //     body,
-        //     body_ty,
-        //     strategy,
-        //     kernel_error::DERIVE_LET_BODY,
-        // )?;
-        // let tm = self.add(ctx, NodeT::Subst1(Bv(0), [bound, body]));
-        // let ty = self.subst(ctx, bound, body_ty);
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // let tm_s = self.subst(ctx, bound, body);
-        // self.0.set_eq_unchecked(ctx, tm, tm_s);
-        // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+        strategy.start_rule("derive_let", self)?;
+
+        self.ensure_has_ty(
+            ctx,
+            bound,
+            bound_ty,
+            strategy,
+            kernel_error::DERIVE_LET_BOUND,
+        )?;
+        self.ensure_forall_has_ty(
+            ctx,
+            bound_ty,
+            body,
+            body_ty,
+            strategy,
+            kernel_error::DERIVE_LET_BODY,
+        )?;
+
+        strategy.commit_rule(self);
+
+        let tm = self.add_with(ctx, NodeT::subst1(bound, body), strategy)?;
+        let ty = self.add_with(ctx, NodeT::subst1(bound, body_ty), strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+
+        strategy.finish_rule(self);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_beta_abs(

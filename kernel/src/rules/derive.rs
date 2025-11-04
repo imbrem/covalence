@@ -219,21 +219,39 @@ where
         lvl: ULvl,
         strategy: &mut S,
     ) -> Result<HasTyV<C, T>, S::Fail> {
-        todo!()
-        // let tm = self.add(ctx, NodeT::Unit);
-        // let ty = self.add(ctx, NodeT::U(lvl));
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // self.0.set_is_prop_unchecked(ctx, tm);
-        // self.0.set_is_inhab_unchecked(ctx, tm);
-        // HasTyIn { tm, ty }
+        strategy.start_rule("derive_unit", self)?;
+
+        strategy.commit_rule(self);
+
+        let tm = self.add_with(ctx, NodeT::Unit, strategy)?;
+        let ty = self.add_with(ctx, NodeT::U(lvl), strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+        self.0.set_is_prop_unchecked(ctx, tm);
+        self.0.set_is_inhab_unchecked(ctx, tm);
+
+        strategy.finish_rule(self);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_nil(&mut self, ctx: C, strategy: &mut S) -> Result<HasTyV<C, T>, S::Fail> {
-        todo!()
-        // let tm = self.add(ctx, NodeT::Null);
-        // let ty = self.add(ctx, NodeT::Unit);
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // HasTyIn { tm, ty }
+        strategy.start_rule("derive_nil", self)?;
+
+        strategy.commit_rule(self);
+
+        let tm = self.add_with(ctx, NodeT::Null, strategy)?;
+        let ty = self.add_with(ctx, NodeT::Unit, strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+
+        strategy.finish_rule(self);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_empty(
@@ -242,13 +260,21 @@ where
         lvl: ULvl,
         strategy: &mut S,
     ) -> Result<HasTyV<C, T>, S::Fail> {
-        todo!()
-        // let tm = self.add(ctx, NodeT::Empty);
-        // let ty = self.add(ctx, NodeT::U(lvl));
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // self.0.set_is_prop_unchecked(ctx, tm);
-        // self.0.set_is_empty_unchecked(ctx, tm);
-        // HasTyIn { tm, ty }
+        strategy.start_rule("derive_empty", self)?;
+
+        strategy.commit_rule(self);
+
+        let tm = self.add_with(ctx, NodeT::Empty, strategy)?;
+        let ty = self.add_with(ctx, NodeT::U(lvl), strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+        self.0.set_is_ff_unchecked(ctx, tm);
+
+        strategy.finish_rule(self);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_eqn(
@@ -259,14 +285,23 @@ where
         rhs: Val<C, T>,
         strategy: &mut S,
     ) -> Result<HasTyV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_eqn")?;
-        // self.ensure_has_ty(ctx, lhs, ty, strategy, kernel_error::DERIVE_EQN_LHS)?;
-        // self.ensure_has_ty(ctx, rhs, ty, strategy, kernel_error::DERIVE_EQN_RHS)?;
-        // let tm = self.add(ctx, NodeT::Eqn([lhs, rhs]));
-        // let ty = self.add(ctx, NodeT::U(ULvl::PROP));
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+        strategy.start_rule("derive_eqn", self)?;
+
+        self.ensure_has_ty(ctx, lhs, ty, strategy, kernel_error::DERIVE_EQN_LHS)?;
+        self.ensure_has_ty(ctx, rhs, ty, strategy, kernel_error::DERIVE_EQN_RHS)?;
+
+        strategy.commit_rule(self);
+
+        let tm = self.add_with(ctx, NodeT::Eqn([lhs, rhs]), strategy)?;
+        let ty = self.add_with(ctx, NodeT::U(ULvl::PROP), strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+
+        strategy.finish_rule(self);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_pi(

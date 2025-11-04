@@ -716,6 +716,16 @@ pub trait WriteFacts<C, T> {
         self.set_tm_flags_unchecked(ctx, tm, Pred1::IS_EMPTY);
     }
 
+    /// Mark a term as the true proposition
+    fn set_is_tt_unchecked(&mut self, ctx: C, tm: T) {
+        self.set_tm_flags_unchecked(ctx, tm, Pred1::IS_TT);
+    }
+
+    /// Mark a term as the false proposition
+    fn set_is_ff_unchecked(&mut self, ctx: C, tm: T) {
+        self.set_tm_flags_unchecked(ctx, tm, Pred1::IS_FF);
+    }
+
     /// Mark two terms as equal under a binder
     fn set_forall_eq_unchecked(&mut self, ctx: C, binder: T, lhs: T, rhs: T);
 

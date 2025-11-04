@@ -395,20 +395,29 @@ where
         res_ty: Val<C, T>,
         strategy: &mut S,
     ) -> Result<HasTyV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_abs")?;
-        // self.ensure_has_ty_under(
-        //     ctx,
-        //     arg_ty,
-        //     body,
-        //     res_ty,
-        //     strategy,
-        //     kernel_error::DERIVE_ABS_BODY,
-        // )?;
-        // let tm = self.add(ctx, NodeT::Abs([arg_ty, body]));
-        // let ty = self.add(ctx, NodeT::Pi([arg_ty, res_ty]));
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+        strategy.start_rule("derive_abs", self)?;
+
+        self.ensure_has_ty_under(
+            ctx,
+            arg_ty,
+            body,
+            res_ty,
+            strategy,
+            kernel_error::DERIVE_ABS_BODY,
+        )?;
+
+        strategy.commit_rule(self);
+
+        let tm = self.add_with(ctx, NodeT::Abs([arg_ty, body]), strategy)?;
+        let ty = self.add_with(ctx, NodeT::Pi([arg_ty, res_ty]), strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+
+        strategy.finish_rule(self);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_app(
@@ -420,15 +429,24 @@ where
         arg: Val<C, T>,
         strategy: &mut S,
     ) -> Result<HasTyV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_app")?;
-        // self.ensure_has_ty(ctx, arg, arg_ty, strategy, kernel_error::DERIVE_APP_ARG)?;
-        // let pi = self.add(ctx, NodeT::Pi([arg_ty, res_ty]));
-        // self.ensure_has_ty(ctx, func, pi, strategy, kernel_error::DERIVE_APP_FUNC)?;
-        // let tm = self.add(ctx, NodeT::App([func, arg]));
-        // let ty = self.subst(ctx, arg, res_ty);
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+        strategy.start_rule("derive_app", self)?;
+
+        self.ensure_has_ty(ctx, arg, arg_ty, strategy, kernel_error::DERIVE_APP_ARG)?;
+        let pi = self.resolve(ctx, NodeT::Pi([arg_ty, res_ty]), strategy)?;
+        self.ensure_has_ty(ctx, func, pi, strategy, kernel_error::DERIVE_APP_FUNC)?;
+
+        strategy.commit_rule(self);
+
+        let tm = self.add_with(ctx, NodeT::App([func, arg]), strategy)?;
+        let ty = self.add_with(ctx, NodeT::subst1(arg, res_ty), strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+        
+        strategy.finish_rule(self);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_pair(

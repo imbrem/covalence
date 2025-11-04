@@ -139,6 +139,11 @@ impl<C, T, I> NodeT<C, T, I> {
         NodeT::Bv(Bv::new(ix))
     }
 
+    /// Construct a substitution
+    pub const fn subst1(bound: T, body: T) -> NodeT<C, T, I> {
+        NodeT::Subst1(Bv::new(0), [bound, body])
+    }
+
     /// Get this node's discriminant
     pub fn disc(self) -> DiscT<C, T, I> {
         match self {

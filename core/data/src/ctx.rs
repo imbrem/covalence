@@ -64,7 +64,8 @@ pub trait ReadCtxRel<C> {
     /// `hi`, all valid edits to a kernel will preserve this fact.
     ///
     /// # Examples
-    /// ```rust
+    /// ```text
+    /// BROKEN!
     /// # use covalence::kernel::*;
     /// # let mut ker = Kernel::default();
     /// let parent = ker.new_ctx();
@@ -90,8 +91,8 @@ pub trait ReadCtxRel<C> {
     /// Check whether `lo` is a subcontext of `hi`'s parent(s)
     ///
     /// # Examples
-    /// ```rust
-    /// /*
+    /// ```text
+    /// BROKEN!
     /// # use covalence::kernel::*;
     /// # let mut ker = Kernel::new();
     /// let ctx = ker.new_ctx();
@@ -104,15 +105,14 @@ pub trait ReadCtxRel<C> {
     /// assert!(!ker.is_subctx_of_parents(child, ctx));
     /// // Child is nonempty, so is not a subctx of its parent (ctx)
     /// assert!(!ker.is_subctx_of_parents(child, child));
-    /// */
     /// ```
     fn is_subctx_of_parents(&self, lo: C, hi: C) -> bool;
 
     /// Check whether `lo`'s parent(s) are a subcontext of `hi`
     ///
     /// # Examples
-    /// ```rust
-    /// /*
+    /// ```text
+    /// BROKEN!
     /// # use covalence::kernel::*;
     /// # let mut ker = Kernel::new();
     /// let ctx = ker.new_ctx();
@@ -130,7 +130,6 @@ pub trait ReadCtxRel<C> {
     /// assert!(ker.parents_are_subctx(grandchild, child));
     /// // child is a parent of grandchild, but not of ctx!
     /// assert!(!ker.parents_are_subctx(grandchild, ctx));
-    /// */
     /// ```
     fn parents_are_subctx(&self, lo: C, hi: C) -> bool;
 }

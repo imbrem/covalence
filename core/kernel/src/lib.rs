@@ -14,7 +14,7 @@ pub mod fact;
 pub mod rule;
 pub mod strategy;
 
-pub use crate::rule::ensure::{DeriveTrusted, WriteTrusted};
+// pub use crate::rule::ensure::{DeriveTrusted, WriteTrusted};
 pub use crate::store::{
     ReadCtx, ReadCtxFacts, ReadCtxRel, ReadFacts, ReadLocalFacts, ReadLocalTerm, ReadQuantFacts,
     ReadTermDb, ReadTermFacts, ReadTermStore, WriteFacts, WriteLocalFactsUnchecked, WriteLocalTerm,

@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use crate::api::store::*;
+use crate::store::*;
 use crate::data::term::ULvl;
 
 /// Derivation rules for the `covalence` kernel

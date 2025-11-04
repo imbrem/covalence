@@ -3,7 +3,7 @@ Facts which can be checked in the datastore
 */
 use std::ops::{Deref, DerefMut};
 
-use crate::api::store::*;
+use crate::store::*;
 use crate::data::term::Val;
 
 use bitflags::bitflags;

@@ -1,526 +1,873 @@
-use typed_generational_arena::{SmallArena, SmallIndex};
+use crate::{
+    Pred1,
+    data::term::{Bv, Fv, NodeT, NodeVT, Val},
+    fact::Pred0,
+};
 
-use crate::Pred1;
-use crate::api::generic::*;
-use crate::api::store::*;
-use crate::data::term::*;
-use crate::fact::Pred0;
+pub use crate::api::univ::{ReadUniv, WriteUniv};
 
-mod ctx;
-use ctx::*;
-
-pub use ctx::{NodeIx, TermId};
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct CtxId(SmallIndex<Ctx>);
-
-pub type ValId = KValId<TermDb>;
-
-pub type FvId = KFvId<TermDb>;
-
-/// A term store implemented using `egg`
-#[derive(Debug, Clone, Default)]
-pub struct TermDb {
-    pub(crate) x: SmallArena<Ctx>,
+/// A term database with a given index kind
+pub trait IndexTypes {
+    /// The context identifier type
+    type CtxId: Copy;
+    /// The term identifier type
+    type TermId: Copy;
 }
 
-impl TermDb {
-    /// Construct a new, empty term database
-    pub fn new() -> TermDb {
-        TermDb::default()
-    }
+pub type KCtxId<D> = <D as IndexTypes>::CtxId;
 
-    fn set_this(&mut self, ctx: CtxId) {
-        self.x[ctx.0].set_this(ctx);
-    }
+pub type KTermId<D> = <D as IndexTypes>::TermId;
+
+pub type KValId<D> = Val<KCtxId<D>, KTermId<D>>;
+
+pub type KNodeIx<D> = NodeT<KCtxId<D>, KTermId<D>>;
+
+pub type KFvId<D> = Fv<KCtxId<D>>;
+
+/// A datastore that can read terms and universe levels
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadTermIndex<CtxId = CtxId, TermId = TermId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadTermIndex<CtxId = CtxId, TermId = TermId> = &Kernel::new();
+/// ```
+pub trait ReadTermIndex: IndexTypes + ReadUniv {
+    // == Terms ==
+
+    /// Get the value corresponding to a term
+    fn val(&self, ctx: KCtxId<Self>, tm: KTermId<Self>) -> KValId<Self>;
+
+    /// Get the node corresponding to a term
+    fn node(&self, ctx: KCtxId<Self>, tm: KTermId<Self>) -> &KNodeIx<Self>;
+
+    /// Lookup a term in the store
+    fn lookup(&self, ctx: KCtxId<Self>, tm: KNodeIx<Self>) -> Option<KTermId<Self>>;
+
+    /// Lookup an import of a term into another context, returning a handle to it if it exists
+    fn lookup_import(&self, ctx: KCtxId<Self>, val: KValId<Self>) -> Option<KTermId<Self>>;
+
+    // == Syntactic information ==
+
+    /// Get an upper bound on the de-Bruijn indices visible in `tm`
+    ///
+    /// TODO: reference lean
+    fn bvi(&self, ctx: KCtxId<Self>, tm: KTermId<Self>) -> Bv;
+
+    /// Check whether the term `tm` depends on the variable `var` in context `ctx`
+    fn has_var(&self, ctx: KCtxId<Self>, tm: KTermId<Self>, var: KFvId<Self>) -> bool;
+
+    /// Check whether the term `tm` depends on any variable from the context `vars`
+    fn has_var_from(&self, ctx: KCtxId<Self>, tm: KTermId<Self>, vars: KCtxId<Self>) -> bool;
+
+    /// Check whether the term `tm` may depend on the variable `var` in context `ctx`
+    fn may_have_var(&self, ctx: KCtxId<Self>, tm: KTermId<Self>, var: KFvId<Self>) -> bool;
+
+    /// Check whether the term `tm` may depend on any variable from the context `vars`
+    fn may_have_var_from(&self, ctx: KCtxId<Self>, tm: KTermId<Self>, vars: KCtxId<Self>) -> bool;
+
+    // == Syntactic relations ==
+
+    /// Check whether two values resolve to the same value, after following imports
+    fn deref_eq(&self, lhs: KValId<Self>, rhs: KValId<Self>) -> bool;
+
+    /// Check whether two values are equal up to first imports
+    fn cons_eq(&self, lhs: KValId<Self>, rhs: KValId<Self>) -> bool;
+
+    /// Check whether two values are syntactically equal
+    fn syn_eq(&self, lhs: KValId<Self>, rhs: KValId<Self>) -> bool;
+
+    /// Check whether two values are equal up to unfolding
+    fn unfold_eq(&self, lhs: KValId<Self>, rhs: KValId<Self>) -> bool;
 }
 
-impl IndexTypes for TermDb {
-    type CtxId = CtxId;
-    type TermId = TermId;
+/// A trait implemented by a datastore that can create hash-consed terms
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn WriteTermIndex<CtxId = CtxId, TermId = TermId> = &Kernel::new();
+/// ```
+pub trait WriteTermIndex: IndexTypes + WriteUniv {
+    // == Term management ==
+
+    /// Create a new context in this store
+    ///
+    /// # Example
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # use covalence_kernel::api::error::kernel_error;
+    /// # let mut ker = Kernel::new();
+    /// let ctx = ker.new_ctx();
+    /// assert_eq!(ker.num_vars(ctx), 0);
+    /// ```
+    fn new_ctx(&mut self) -> KCtxId<Self>;
+
+    /// Create a new context in this store with the given parent
+    ///
+    /// # Example
+    /// ```rust
+    /// # use covalence::kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// let parent = ker.new_ctx();
+    /// let child = ker.with_parent(parent);
+    /// // This is true since both contexts are currently empty
+    /// assert!(ker.is_subctx(parent, child));
+    /// assert!(ker.is_subctx(child, parent));
+    /// ```
+    fn with_parent(&mut self, parent: KCtxId<Self>) -> KCtxId<Self>;
+
+    /// Directly insert a term into the store, returning a handle to it
+    fn add_raw(&mut self, ctx: KCtxId<Self>, tm: KNodeIx<Self>) -> KTermId<Self>;
+
+    /// Import a term into another context, returning a handle to it
+    ///
+    /// This automatically traverses import chains, and in particular:
+    /// - If `src[tm] := import(src2, tm)`, then `import(ctx, src, tm) => import(ctx, src2, tm)`
+    /// - `import(ctx, ctx, tm)` returns `tm`
+    /// - otherwise, return an `Import` node
+    fn import(&mut self, ctx: KCtxId<Self>, val: KValId<Self>) -> KTermId<Self>;
+
+    // == Congruence management ==
+
+    /// Propagate congruence information _within_ a context
+    fn propagate_in(&mut self, ctx: KCtxId<Self>) -> usize;
 }
 
-impl ReadTermIndex for TermDb {
-    fn val(&self, ctx: CtxId, tm: TermId) -> ValId {
-        match self.node(ctx, tm) {
-            NodeIx::Import(val) => self.val(val.ctx, val.tm),
-            _ => Val { ctx, tm },
-        }
-    }
-
-    fn node(&self, ctx: CtxId, tm: TermId) -> &NodeIx {
-        self.x[ctx.0].node(tm)
-    }
-
-    fn lookup(&self, ctx: CtxId, tm: NodeIx) -> Option<TermId> {
-        self.x[ctx.0].lookup(tm)
-    }
-
-    fn lookup_import(&self, ctx: CtxId, val: ValId) -> Option<TermId> {
-        // NOTE: an import cycle will lead to a stack overflow here, but that should be an error But
-        // think about it!
-        //
-        // We could try a cycle detection algorithm and return `Invalid`, if we want to be very
-        // clever... but again, this is a deeply invalid state, since import destinations should
-        // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
-        // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
-        // inserting the import and hence fixing the `TermId`.
-        if let NodeIx::Import(imp) = val.node_ix(self) {
-            self.lookup_import(ctx, imp)
-        } else if ctx == val.ctx {
-            Some(val.tm)
-        } else {
-            self.x[ctx.0].lookup(NodeT::Import(val))
-        }
-    }
-
-    fn bvi(&self, ctx: CtxId, tm: TermId) -> Bv {
-        //TODO: compute the bvi if invalid
-        self.x[ctx.0].bvi(tm)
-    }
-
-    fn has_var(&self, ctx: CtxId, tm: TermId, var: Fv<CtxId>) -> bool {
-        //TODO: optimize, a _lot_
-        match self.node(ctx, tm) {
-            NodeIx::Fv(v) => *v == var,
-            NodeIx::Import(imp) => self.may_have_var(imp.ctx, imp.tm, var),
-            n => n.children().iter().any(|&i| self.may_have_var(ctx, i, var)),
-        }
-    }
-
-    fn has_var_from(&self, ctx: CtxId, tm: TermId, vars: CtxId) -> bool {
-        //TODO: optimize, a _lot_
-        match self.node(ctx, tm) {
-            NodeIx::Fv(v) => v.ctx == vars,
-            NodeIx::Import(imp) => self.may_have_var_from(imp.ctx, imp.tm, vars),
-            n => n
-                .children()
-                .iter()
-                .any(|&i| self.may_have_var_from(ctx, i, vars)),
-        }
-    }
-
-    fn may_have_var(&self, ctx: CtxId, tm: TermId, var: FvId) -> bool {
-        //TODO: optimize, a _lot_
-        match self.node(ctx, tm) {
-            NodeIx::Fv(v) => *v == var,
-            NodeIx::Import(imp) => self.may_have_var(imp.ctx, imp.tm, var),
-            n => n.children().iter().any(|&i| self.may_have_var(ctx, i, var)),
-        }
-    }
-
-    fn may_have_var_from(&self, ctx: CtxId, tm: TermId, vars: CtxId) -> bool {
-        //TODO: optimize, a _lot_
-        match self.node(ctx, tm) {
-            NodeIx::Fv(v) => v.ctx == vars,
-            NodeIx::Import(imp) => self.may_have_var_from(imp.ctx, imp.tm, vars),
-            n => n
-                .children()
-                .iter()
-                .any(|&i| self.may_have_var_from(ctx, i, vars)),
-        }
-    }
-
-    fn deref_eq(&self, lhs: Val<CtxId, TermId>, rhs: Val<CtxId, TermId>) -> bool {
-        lhs == rhs || self.val(lhs.ctx, lhs.tm) == self.val(rhs.ctx, rhs.tm)
-    }
-
-    fn cons_eq(&self, lhs: ValId, rhs: ValId) -> bool {
-        if lhs == rhs {
-            return true;
-        }
-        let ln = lhs.node_val(self);
-        let rn = rhs.node_val(self);
-        ln.syn_disc() == rn.syn_disc()
-            && ln
-                .syn_children()
-                .iter()
-                .zip(rn.syn_children().iter())
-                .all(|(&l, &r)| self.cons_eq(l, r))
-    }
-
-    fn syn_eq(&self, lhs: ValId, rhs: ValId) -> bool {
-        if lhs == rhs {
-            return true;
-        }
-        match (lhs.node_val(self), rhs.node_val(self)) {
-            (NodeVT::Import(lhs), _) => self.syn_eq(lhs, rhs),
-            (_, NodeVT::Import(rhs)) => self.syn_eq(lhs, rhs),
-            (ln, rn) => {
-                ln.syn_disc() == rn.syn_disc()
-                    && ln
-                        .syn_children()
-                        .iter()
-                        .zip(rn.syn_children().iter())
-                        .all(|(&l, &r)| self.syn_eq(l, r))
-            }
-        }
-    }
-
-    fn unfold_eq(&self, lhs: Val<CtxId, TermId>, rhs: Val<CtxId, TermId>) -> bool {
-        //TODO: reduce here, later...
-        self.syn_eq(lhs, rhs)
+impl<C: Copy, T> Val<C, T> {
+    /// Get the base value pointed to by this value
+    pub fn val(self, store: &impl ReadTermIndex<CtxId = C, TermId = T>) -> Val<C, T> {
+        store.val(self.ctx, self.tm)
     }
 }
 
-impl ReadUniv for TermDb {
-    fn u_le(&self, lo: ULvl, hi: ULvl) -> bool {
-        lo.level <= hi.level
+impl<C: Copy, T: Copy> Val<C, T> {
+    /// Get the node in `self.ctx` corresponding to this value
+    pub fn node_ix(self, store: &impl ReadTermIndex<CtxId = C, TermId = T>) -> NodeT<C, T> {
+        *store.node(self.ctx, self.tm)
     }
 
-    fn u_lt(&self, lo: ULvl, hi: ULvl) -> bool {
-        lo.level < hi.level
+    /// Get the node corresponding to this value
+    pub fn node_val(self, store: &impl ReadTermIndex<CtxId = C, TermId = T>) -> NodeVT<C, T> {
+        self.node_ix(store).node_val_in(self.ctx, store)
     }
 
-    fn imax_le(&self, lo_lhs: ULvl, lo_rhs: ULvl, hi: ULvl) -> bool {
-        self.u_le(lo_rhs, ULvl::PROP) || self.u_le(lo_lhs, hi) && self.u_le(lo_rhs, hi)
-    }
-}
-
-impl WriteTermIndex for TermDb {
-    fn new_ctx(&mut self) -> CtxId {
-        let result = CtxId(self.x.insert(Ctx::new_ctx()));
-        self.set_this(result);
-        result
-    }
-
-    fn with_parent(&mut self, parent: CtxId) -> CtxId {
-        debug_assert!(self.x.contains(parent.0));
-        let result = CtxId(self.x.insert(Ctx::with_parent(parent)));
-        self.set_this(result);
-        result
-    }
-
-    fn add_raw(&mut self, ctx: CtxId, tm: NodeIx) -> TermId {
-        self.x[ctx.0].add(tm)
-    }
-
-    fn import(&mut self, ctx: CtxId, val: ValId) -> TermId {
-        // NOTE: an import cycle will lead to a stack overflow here, but that should be an error But
-        // think about it!
-        //
-        // We could try a cycle detection algorithm and return `Invalid`, if we want to be very
-        // clever... but again, this is a deeply invalid state, since import destinations should
-        // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
-        // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
-        // inserting the import and hence fixing the `TermId`.
-        let result = if let NodeIx::Import(imp) = val.node_ix(self) {
-            self.import(ctx, imp)
-        } else if ctx == val.ctx {
-            return val.tm;
-        } else {
-            self.x[ctx.0].add(NodeT::Import(val))
-        };
-        let bvi = val.bvi(self);
-        self.set_bvi_unchecked(ctx, result, bvi);
-        result
-    }
-
-    fn propagate_in(&mut self, ctx: CtxId) -> usize {
-        self.x[ctx.0].propagate_in()
+    /// Get the node corresponding to this value
+    pub fn raw_node_val(self, store: &impl ReadTermIndex<CtxId = C, TermId = T>) -> NodeVT<C, T> {
+        self.node_ix(store).raw_node_val_in(self.ctx)
     }
 }
 
-impl WriteUniv for TermDb {
-    fn succ(&mut self, level: ULvl) -> ULvl {
-        //TODO: universe store and variables
-        ULvl {
-            level: level.level.checked_add(1).expect("universe level overflow"),
-        }
-    }
-
-    fn umax(&mut self, lhs: ULvl, rhs: ULvl) -> ULvl {
-        //TODO: universe store and variables
-        ULvl {
-            level: lhs.level.max(rhs.level),
-        }
-    }
-
-    fn imax(&mut self, lhs: ULvl, rhs: ULvl) -> ULvl {
-        //TODO: universe store and variables
-        ULvl {
-            level: if rhs.level == 0 {
-                0
-            } else {
-                lhs.level.max(rhs.level)
+impl<C: Copy, T> NodeT<C, T> {
+    /// Interpret this node in the given context
+    pub fn val(self, ctx: C, store: &mut (impl RwTermDb<C, T> + ?Sized)) -> Val<C, T> {
+        match self {
+            NodeT::Import(val) => val.val(store.read()),
+            this => Val {
+                ctx,
+                tm: store.add_raw(ctx, this),
             },
         }
     }
-}
 
-impl ReadCtx<CtxId, TermId> for TermDb {
-    fn num_vars(&self, ctx: CtxId) -> u32 {
-        self.x[ctx.0].num_vars()
-    }
-
-    fn var_ty(&self, var: FvId) -> ValId {
-        self.x[var.ctx.0]
-            .var_ty(var.ix)
-            .expect("invalid variable index")
-    }
-}
-
-impl ReadCtxFacts<CtxId> for TermDb {
-    fn ctx_satisfies(&self, ctx: CtxId, pred: Pred0) -> bool {
-        self.x[ctx.0].nullary().contains(pred)
-    }
-}
-
-impl ReadCtxRel<CtxId> for TermDb {
-    fn is_root(&self, ctx: CtxId) -> bool {
-        //TODO: optimize
-        self.x[ctx.0].is_null_extension() && self.x[ctx.0].parent().is_none_or(|p| self.is_root(p))
-    }
-
-    fn is_ancestor(&self, lo: CtxId, mut hi: CtxId) -> bool {
-        while lo != hi {
-            hi = if let Some(parent) = self.x[hi.0].parent() {
-                parent
-            } else {
-                return false;
-            }
+    /// Interpret this node in the given context
+    pub fn val_ix(self, ctx: C, store: &mut (impl RwTermDb<C, T> + ?Sized)) -> T {
+        match self {
+            NodeT::Import(val) => store.import(ctx, val),
+            this => store.add_raw(ctx, this),
         }
-        true
     }
 
-    fn is_strict_ancestor(&self, lo: CtxId, hi: CtxId) -> bool {
-        lo != hi && self.is_ancestor(lo, hi)
+    /// Interpret this node in the given context
+    pub fn node_val_in(
+        self,
+        ctx: C,
+        store: &impl ReadTermIndex<CtxId = C, TermId = T>,
+    ) -> NodeVT<C, T> {
+        self.map_subterms(|tm| store.val(ctx, tm))
     }
 
-    fn is_subctx(&self, mut lo: CtxId, hi: CtxId) -> bool {
-        while self.x[lo.0].is_null_extension() {
-            if let Some(parent) = self.x[lo.0].parent() {
-                lo = parent;
-            } else {
-                return true;
-            }
+    /// Tag this node's syntactic children with the given context
+    pub fn raw_node_val_in(self, ctx: C) -> NodeVT<C, T> {
+        self.map_subterms(|tm| Val { ctx, tm })
+    }
+}
+
+impl<C: Copy> Fv<C> {
+    /// Get this variable as a value
+    pub fn val<T>(self, store: &(impl ReadTermIndex<CtxId = C, TermId = T> + ?Sized)) -> Val<C, T> {
+        Val {
+            ctx: self.ctx,
+            tm: store
+                .lookup(self.ctx, NodeT::Fv(self))
+                .expect("valid variables should exist in their contexts"),
         }
-        self.is_ancestor(lo, hi)
     }
 
-    fn is_subctx_of_parents(&self, lo: CtxId, hi: CtxId) -> bool {
-        if let Some(parent) = self.x[hi.0].parent() {
-            self.is_subctx(lo, parent)
+    /// Get the type of this variable
+    pub fn ty<T>(self, store: &(impl ReadCtx<C, T> + ?Sized)) -> Val<C, T> {
+        store.var_ty(self)
+    }
+
+    /// Infer the flags of this variable in the given context
+    pub fn infer_flags<T: Copy>(
+        self,
+        ctx: C,
+        store: &(impl ReadTermStore<C, T> + ?Sized),
+    ) -> Pred1 {
+        // Reject invalid or ill-scoped variables
+        if store.num_vars(self.ctx) <= self.ix || !store.is_ancestor(ctx, self.ctx) {
+            return Pred1::default();
+        }
+        if ReadTermFacts::<C, Val<C, T>>::is_univ(store, ctx, self.ty(store)) {
+            Pred1::IS_TY
         } else {
-            self.is_root(lo)
+            Pred1::IS_WF
+        }
+    }
+}
+
+/// A datastore that can read contexts
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadCtx<CtxId, TermId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadCtx<CtxId, TermId> = &Kernel::new();
+/// ```
+pub trait ReadCtx<C, T> {
+    /// Get the number of variables this context has
+    fn num_vars(&self, ctx: C) -> u32;
+
+    /// Lookup the type of a variable
+    fn var_ty(&self, var: Fv<C>) -> Val<C, T>;
+}
+
+/// A datastore that can read facts about contexts
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadCtxFacts<CtxId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadCtxFacts<CtxId> = &Kernel::new();
+/// ```
+pub trait ReadCtxFacts<C> {
+    /// Get whether a context satisfies a nullary predicate
+    ///
+    /// TODO: reference lean
+    fn ctx_satisfies(&self, ctx: C, pred: Pred0) -> bool;
+
+    /// Get whether a context is contradictory
+    ///
+    /// TODO: reference lean
+    fn is_contr(&self, ctx: C) -> bool {
+        self.ctx_satisfies(ctx, Pred0::IS_CONTR)
+    }
+}
+
+/// A datastore that can read relationships between contexts
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadCtxRel<CtxId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadCtxRel<CtxId> = &Kernel::new();
+/// ```
+pub trait ReadCtxRel<C> {
+    /// Get whether a context is a root context
+    ///
+    /// Note that a root context has no assumptions _or_ variables.
+    ///
+    /// TODO: reference Lean
+    fn is_root(&self, ctx: C) -> bool;
+
+    /// Check whether `lo` is an ancestor of `hi`
+    ///
+    /// Note that a context `ctx` is always an ancestor of itself
+    ///
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// let parent = ker.new_ctx();
+    /// let child = ker.with_parent(parent);
+    /// assert!(ker.is_ancestor(parent, child));
+    /// assert!(ker.is_ancestor(parent, parent));
+    /// assert!(ker.is_ancestor(child, child));
+    /// assert!(!ker.is_ancestor(child, parent));
+    /// ```
+    fn is_ancestor(&self, lo: C, hi: C) -> bool;
+
+    /// Check whether `lo` is _strict_ ancestor of `hi`
+    ///
+    /// A context `ctx` is never a strict ancestor of itself
+    ///
+    /// # Examples
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// let parent = ker.new_ctx();
+    /// let child = ker.with_parent(parent);
+    /// assert!(ker.is_strict_ancestor(parent, child));
+    /// assert!(!ker.is_strict_ancestor(parent, parent));
+    /// assert!(!ker.is_strict_ancestor(child, child));
+    /// assert!(!ker.is_strict_ancestor(child, parent));
+    /// ```
+    fn is_strict_ancestor(&self, lo: C, hi: C) -> bool;
+
+    /// Check whether `lo` is a subcontext of `hi`
+    ///
+    /// This means that every variable in `lo` is contained in `hi`.
+    ///
+    /// Unlike [`is_ancestor`](#method.is_ancestor), this is _not_ monotonic: a context may be
+    /// modified so that it is not longer a subcontext of another, whereas if `lo` is an ancestor of
+    /// `hi`, all valid edits to a kernel will preserve this fact.
+    ///
+    /// # Examples
+    /// ```rust
+    /// # use covalence::kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// let parent = ker.new_ctx();
+    /// let child = ker.with_parent(parent);
+    /// let grandchild = ker.with_parent(child);
+    /// for x in [parent, child, grandchild] {
+    ///     for y in [parent, child, grandchild] {
+    ///         assert!(ker.is_subctx(x, y));
+    ///     }
+    /// }
+    /// let n = ker.nats(child);
+    /// let x = ker.add_var(child, n, &mut ()).unwrap();
+    /// // ∅ is a subset of everything
+    /// assert!(ker.is_subctx(parent, child));
+    /// // {x} is not a subset of ∅
+    /// assert!(!ker.is_subctx(child, parent));
+    /// // These both contain exactly x
+    /// assert!(ker.is_subctx(child, grandchild));
+    /// assert!(ker.is_subctx(grandchild, child));
+    /// ```
+    fn is_subctx(&self, lo: C, hi: C) -> bool;
+
+    /// Check whether `lo` is a subcontext of `hi`'s parent(s)
+    ///
+    /// # Examples
+    /// ```rust
+    /// /*
+    /// # use covalence::kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// let ctx = ker.new_ctx();
+    /// // The empty context is a subctx of everything
+    /// assert!(ker.is_subctx_of_parents(ctx, ctx));
+    /// let unit = ker.tt(ctx);
+    /// let x = ker.with_param(ctx, unit, &mut ()).unwrap();
+    /// let child = x.ctx;
+    /// assert!(ker.is_subctx_of_parents(ctx, child));
+    /// assert!(!ker.is_subctx_of_parents(child, ctx));
+    /// // Child is nonempty, so is not a subctx of its parent (ctx)
+    /// assert!(!ker.is_subctx_of_parents(child, child));
+    /// */
+    /// ```
+    fn is_subctx_of_parents(&self, lo: C, hi: C) -> bool;
+
+    /// Check whether `lo`'s parent(s) are a subcontext of `hi`
+    ///
+    /// # Examples
+    /// ```rust
+    /// /*
+    /// # use covalence::kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// let ctx = ker.new_ctx();
+    /// // The empty context is a subctx of everything
+    /// assert!(ker.parents_are_subctx(ctx, ctx));
+    /// let unit = ker.tt(ctx);
+    /// let x = ker.with_param(ctx, unit, &mut ()).unwrap();
+    /// let child = x.ctx;
+    /// assert!(ker.parents_are_subctx(ctx, child));
+    /// assert!(ker.parents_are_subctx(child, ctx));
+    /// assert!(ker.parents_are_subctx(child, child));
+    /// let y = ker.with_param(child, unit, &mut ()).unwrap();
+    /// let grandchild = y.ctx;
+    /// assert!(ker.parents_are_subctx(ctx, grandchild));
+    /// assert!(ker.parents_are_subctx(grandchild, child));
+    /// // child is a parent of grandchild, but not of ctx!
+    /// assert!(!ker.parents_are_subctx(grandchild, ctx));
+    /// */
+    /// ```
+    fn parents_are_subctx(&self, lo: C, hi: C) -> bool;
+}
+
+/// A datastore that can read facts about terms-in-context.
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadTermFacts<CtxId, TermId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadTermFacts<CtxId, TermId> = &Kernel::new();
+/// ```
+pub trait ReadTermFacts<C, T>: ReadCtxFacts<C> {
+    // == Typing judgements ==
+
+    /// Get a term's flags in a given context
+    fn tm_flags(&self, ctx: C, tm: T) -> Pred1;
+
+    /// Check whether the term `tm` satisfies predicate `pred` in `ctx`
+    ///
+    /// For details, see the helper methods in [`ReadTermStore`].
+    fn tm_satisfies(&self, ctx: C, tm: T, pred: Pred1) -> bool {
+        self.tm_flags(ctx, tm).contains(pred)
+    }
+
+    /// Check whether the term `lhs` is equal to the term `rhs` in `ctx`
+    ///
+    /// Corresponds to `Ctx.KEq` in `gt3-lean`
+    fn eq_in(&self, ctx: C, lhs: T, rhs: T) -> bool;
+
+    /// Check whether the term `tm` has type `ty` in `ctx`
+    ///
+    /// Corresponds to `Ctx.KHasTy` in `gt3-lean`
+    fn has_ty(&self, ctx: C, tm: T, ty: T) -> bool;
+
+    /// Check whether the term `tm` is well-formed in `ctx`
+    ///
+    /// Corresponds to `Ctx.KIsWf` in `gt3-lean`
+    fn is_wf(&self, ctx: C, tm: T) -> bool {
+        self.tm_satisfies(ctx, tm, Pred1::IS_WF)
+    }
+
+    /// Check whether the term `tm` is a type in the context `ctx`
+    ///
+    /// Corresponds to `Ctx.KIsTy` in `gt3-lean`
+    fn is_ty(&self, ctx: C, tm: T) -> bool {
+        self.tm_satisfies(ctx, tm, Pred1::IS_TY)
+    }
+
+    /// Check whether the term `tm` is a proposition in the context `ctx`
+    ///
+    /// Corresponds to `Ctx.KIsProp` in `gt3-lean`
+    fn is_prop(&self, ctx: C, tm: T) -> bool {
+        self.tm_satisfies(ctx, tm, Pred1::IS_PROP)
+    }
+
+    /// Check whether the term `tm` is an inhabited type in the context `ctx`
+    ///
+    /// Corresponds to `Ctx.KIsInhab` in `gt3-lean`
+    fn is_inhab(&self, ctx: C, tm: T) -> bool {
+        self.tm_satisfies(ctx, tm, Pred1::IS_INHAB)
+    }
+
+    /// Check whether the term `tm` is an empty type in the context `ctx`
+    ///
+    /// TODO: reference Lean
+    fn is_empty(&self, ctx: C, tm: T) -> bool {
+        self.tm_satisfies(ctx, tm, Pred1::IS_EMPTY)
+    }
+
+    /// Check whether the term `tm` is the true proposition in the context `ctx`
+    ///
+    /// TODO: reference Lean
+    fn is_tt(&self, ctx: C, tm: T) -> bool {
+        self.tm_satisfies(ctx, tm, Pred1::IS_TT)
+    }
+
+    /// Check whether the term `tm` is the false proposition in the context `ctx`
+    ///
+    /// TODO: reference Lean
+    fn is_ff(&self, ctx: C, tm: T) -> bool {
+        self.tm_satisfies(ctx, tm, Pred1::IS_FF)
+    }
+
+    /// Check whether the term `tm` is a typing universe in the context `ctx`
+    ///
+    /// TODO: reference Lean
+    fn is_univ(&self, ctx: C, tm: T) -> bool {
+        self.tm_satisfies(ctx, tm, Pred1::IS_UNIV)
+    }
+}
+
+/// A datastore that can read quantified facts about terms-in-context.
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadQuantFacts<CtxId, TermId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadQuantFacts<CtxId, TermId> = &Kernel::new();
+/// ```
+pub trait ReadQuantFacts<C, T>: ReadTermFacts<C, T> {
+    /// Check whether the term `tm` satisfies predicate `pred` under a binder in `ctx`
+    ///
+    /// For details about the specific predicates, see helper methods like
+    /// [`forall_is_ty`](#method.forall_is_ty).
+    fn forall_satisfies(&self, ctx: C, binder: T, tm: T, pred: Pred1) -> bool
+    where
+        C: Copy,
+    {
+        match pred.to_valid().deduce() {
+            Pred1::IS_WF => self.forall_is_wf(ctx, binder, tm),
+            Pred1::IS_TY => self.forall_is_ty(ctx, binder, tm),
+            Pred1::IS_PROP => self.forall_is_prop(ctx, binder, tm),
+            Pred1::IS_INHAB => self.forall_is_inhab(ctx, binder, tm),
+            Pred1::IS_EMPTY => self.forall_is_empty(ctx, binder, tm),
+            Pred1::IS_TT => self.forall_is_tt(ctx, binder, tm),
+            Pred1::IS_FF => self.forall_is_ff(ctx, binder, tm),
+            Pred1::IS_CONTR => self.forall_is_contr(ctx, binder, tm),
+            pred => self.is_ty(ctx, binder) && self.tm_satisfies(ctx, tm, pred),
         }
     }
 
-    fn parents_are_subctx(&self, lo: CtxId, hi: CtxId) -> bool {
-        if let Some(parent) = self.x[lo.0].parent() {
-            self.is_subctx(parent, hi)
+    /// Check whether the terms `lhs`, `rhs` are equal in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_eq_in(&self, ctx: C, binder: T, lhs: T, rhs: T) -> bool;
+
+    /// Check whether the term `tm` has type `ty` in `ctx` under a binder `binder`
+    ///
+    /// Corresponds to `Ctx.KHasTyUnder` in `gt3-lean`
+    fn forall_has_ty(&self, ctx: C, binder: T, tm: T, ty: T) -> bool;
+
+    /// Check whether the term `tm` is well-formed in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_is_wf(&self, ctx: C, binder: T, tm: T) -> bool;
+
+    /// Check whether the term `tm` is a valid type in `ctx` under a binder `binder`
+    ///
+    /// Corresponds to `Ctx.KIsTyUnder` in `gt3-lean`
+    fn forall_is_ty(&self, ctx: C, binder: T, tm: T) -> bool;
+
+    /// Check whether the term `tm` is a valid type in `ctx` under a binder `binder`
+    ///
+    /// Corresponds to `Ctx.KIsTyUnder` in `gt3-lean`
+    fn forall_is_prop(&self, ctx: C, binder: T, tm: T) -> bool;
+
+    /// Check whether the term `tm` is always inhabited in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_is_inhab(&self, ctx: C, binder: T, tm: T) -> bool;
+
+    /// Check whether the term `tm` is always true in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_is_tt(&self, ctx: C, binder: T, tm: T) -> bool;
+
+    /// Check whether the term `tm` is always inhabited in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_is_empty(&self, ctx: C, binder: T, tm: T) -> bool;
+
+    /// Check whether the term `tm` is always inhabited in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_is_ff(&self, ctx: C, binder: T, tm: T) -> bool;
+
+    /// Check whether the term `tm` is always contradictory in `ctx` under a binder `binder`
+    ///
+    /// TODO: reference Lean
+    fn forall_is_contr(&self, ctx: C, binder: T, tm: T) -> bool;
+}
+
+/// A database of terms, contexts, and facts which we can read from
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadFacts<CtxId, TermId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadFacts<CtxId, TermId> = &Kernel::new();
+/// ```
+pub trait ReadFacts<C, T>: ReadCtxFacts<C> + ReadQuantFacts<C, T> {}
+
+impl<D: ReadCtxFacts<C> + ReadQuantFacts<C, T>, C, T> ReadFacts<C, T> for D {}
+
+/// A database of terms, contexts, and facts which we can read from
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadTermStore<CtxId, TermId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence_kernel::*;
+/// let ker : &dyn ReadTermStore<CtxId, TermId> = &Kernel::new();
+/// ```
+pub trait ReadTermStore<C, T>:
+    ReadCtx<C, T> + ReadCtxRel<C> + ReadTermIndex<CtxId = C, TermId = T> + ReadFacts<C, T>
+{
+}
+
+impl<C, T, D> ReadTermStore<C, T> for D
+where
+    C: Copy,
+    T: Copy,
+    D: ReadCtx<C, T> + ReadCtxRel<C> + ReadTermIndex<CtxId = C, TermId = T> + ReadFacts<C, T>,
+{
+}
+
+/// A term database which we can read from
+pub trait ReadTermDb<C, T> {
+    type Reader: ReadTermStore<C, T>;
+
+    /// Get a read-only cursor into this term database
+    fn read(&self) -> &Self::Reader;
+}
+
+/// A term database which we can read from and write to
+pub trait RwTermDb<C, T>: ReadTermDb<C, T> + WriteTermIndex<CtxId = C, TermId = T> {}
+
+impl<C, T, D: ReadTermDb<C, T> + WriteTermIndex<CtxId = C, TermId = T> + ?Sized> RwTermDb<C, T>
+    for D
+{
+}
+
+/// A trait implemented by a mutable datastore that can hold _unchecked_ facts about terms in a
+/// context.
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::store::*;
+/// # use covalence_kernel::*;
+/// let db : &dyn WriteFacts<CtxId, TermId> = &TermDb::default();
+/// ```
+/// We note that it is _not_ implemented by `Kernel`, since that would be unsafe:
+/// ```rust,compile_fail
+/// # use covalence_kernel::store::*;
+/// # use covalence_kernel::*;
+/// let db : &dyn WriteFacts<CtxId, TermId> = &Kernel::new();
+/// ```
+pub trait WriteFacts<C, T> {
+    // == Context predicates ==
+
+    /// Mark a context as contradictory
+    fn set_is_contr_unchecked(&mut self, ctx: C);
+
+    /// Set a context's parent
+    fn set_parent_unchecked(&mut self, ctx: C, parent: C);
+
+    // == Typing judgements ==
+
+    /// Set a term's flags
+    fn set_tm_flags_unchecked(&mut self, ctx: C, tm: T, pred: Pred1);
+
+    /// Set two terms as equal in a given context
+    fn set_eq_unchecked(&mut self, ctx: C, lhs: T, rhs: T);
+
+    /// Set the type of a term
+    fn set_has_ty_unchecked(&mut self, ctx: C, tm: T, ty: T);
+
+    /// Mark a term as well-formed
+    fn set_is_wf_unchecked(&mut self, ctx: C, tm: T) {
+        self.set_tm_flags_unchecked(ctx, tm, Pred1::IS_WF);
+    }
+
+    /// Mark a term as a type
+    fn set_is_ty_unchecked(&mut self, ctx: C, tm: T) {
+        self.set_tm_flags_unchecked(ctx, tm, Pred1::IS_TY);
+    }
+
+    /// Mark a term as a proposition
+    fn set_is_prop_unchecked(&mut self, ctx: C, tm: T) {
+        self.set_tm_flags_unchecked(ctx, tm, Pred1::IS_PROP);
+    }
+
+    /// Mark a term as an inhabited type
+    fn set_is_inhab_unchecked(&mut self, ctx: C, tm: T) {
+        self.set_tm_flags_unchecked(ctx, tm, Pred1::IS_INHAB);
+    }
+
+    /// Mark a term as an empty type
+    fn set_is_empty_unchecked(&mut self, ctx: C, tm: T) {
+        self.set_tm_flags_unchecked(ctx, tm, Pred1::IS_EMPTY);
+    }
+
+    /// Mark a term as the true proposition
+    fn set_is_tt_unchecked(&mut self, ctx: C, tm: T) {
+        self.set_tm_flags_unchecked(ctx, tm, Pred1::IS_TT);
+    }
+
+    /// Mark a term as the false proposition
+    fn set_is_ff_unchecked(&mut self, ctx: C, tm: T) {
+        self.set_tm_flags_unchecked(ctx, tm, Pred1::IS_FF);
+    }
+
+    /// Mark two terms as equal under a binder
+    fn set_forall_eq_unchecked(&mut self, ctx: C, binder: T, lhs: T, rhs: T);
+
+    /// Mark a term as well-formed under a binder
+    fn set_forall_is_wf_unchecked(&mut self, ctx: C, binder: T, tm: T);
+
+    /// Mark a term as a valid type under a binder
+    fn set_forall_is_ty_unchecked(&mut self, ctx: C, binder: T, tm: T);
+
+    /// Mark a term as a proposition under a binder
+    fn set_forall_is_prop_unchecked(&mut self, ctx: C, binder: T, tm: T);
+
+    /// Set the type of a term under a binder
+    fn set_forall_has_ty_unchecked(&mut self, ctx: C, binder: T, tm: T, ty: T);
+
+    /// Mark a term as an inhabited type under a binder
+    fn set_forall_is_inhab_unchecked(&mut self, ctx: C, binder: T, tm: T);
+
+    /// Mark a term as an empty type under a binder
+    fn set_forall_is_empty_unchecked(&mut self, ctx: C, binder: T, tm: T);
+
+    /// Mark a term as an inhabited type under a binder
+    fn set_exists_is_inhab_unchecked(&mut self, ctx: C, binder: T, tm: T);
+
+    // == Variable and assumption manipulation ==
+
+    /// Add a variable to the given context
+    fn add_var_unchecked(&mut self, ctx: C, ty: Val<C, T>) -> Fv<C>;
+
+    // == Cached information ==
+
+    /// Set the bound-variable index of a term
+    fn set_bvi_unchecked(&mut self, ctx: C, tm: T, bvi: Bv);
+}
+
+impl<C: Copy, T: Copy, D: ReadTermIndex<CtxId = C, TermId = T> + ReadTermFacts<C, T> + ?Sized>
+    ReadTermFacts<C, Val<C, T>> for D
+{
+    fn tm_flags(&self, ctx: C, tm: Val<C, T>) -> Pred1 {
+        if let Some(tm) = self.lookup_import(ctx, tm) {
+            self.tm_flags(ctx, tm)
         } else {
-            true
+            Pred1::empty()
         }
+    }
+
+    fn tm_satisfies(&self, ctx: C, tm: Val<C, T>, pred: Pred1) -> bool {
+        self.lookup_import(ctx, tm)
+            .is_some_and(|tm| self.tm_satisfies(ctx, tm, pred))
+    }
+
+    fn eq_in(&self, ctx: C, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
+        self.cons_eq(lhs, rhs)
+            || if let Some(lhs) = self.lookup_import(ctx, lhs)
+                && let Some(rhs) = self.lookup_import(ctx, rhs)
+            {
+                self.eq_in(ctx, lhs, rhs)
+            } else {
+                false
+            }
+    }
+
+    fn has_ty(&self, ctx: C, tm: Val<C, T>, ty: Val<C, T>) -> bool {
+        self.lookup_import(ctx, tm).is_some_and(|tm| {
+            self.lookup_import(ctx, ty)
+                .is_some_and(|ty| self.has_ty(ctx, tm, ty))
+        })
     }
 }
 
-impl ReadTermFacts<CtxId, TermId> for TermDb {
-    fn tm_flags(&self, ctx: CtxId, tm: TermId) -> Pred1 {
-        self.x[ctx.0].tm_flags(tm)
+impl<C: Copy, T: Copy, D: ReadTermIndex<CtxId = C, TermId = T> + ReadQuantFacts<C, T> + ?Sized>
+    ReadQuantFacts<C, Val<C, T>> for D
+{
+    fn forall_eq_in(&self, ctx: C, binder: Val<C, T>, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.is_ty(ctx, binder) && self.cons_eq(lhs, rhs)
+                || self.lookup_import(ctx, lhs).is_some_and(|lhs| {
+                    self.lookup_import(ctx, rhs)
+                        .is_some_and(|rhs| self.forall_eq_in(ctx, binder, lhs, rhs))
+                })
+        })
     }
 
-    fn eq_in(&self, ctx: CtxId, lhs: TermId, rhs: TermId) -> bool {
-        self.x[ctx.0].eq_in(lhs, rhs)
+    fn forall_is_wf(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.lookup_import(ctx, ty)
+                .is_some_and(|ty| self.forall_is_wf(ctx, binder, ty))
+        })
     }
 
-    fn has_ty(&self, ctx: CtxId, tm: TermId, ty: TermId) -> bool {
-        self.x[ctx.0].has_ty(tm, ty)
-    }
-}
-
-impl ReadQuantFacts<CtxId, TermId> for TermDb {
-    fn forall_eq_in(&self, ctx: CtxId, binder: TermId, lhs: TermId, rhs: TermId) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        if self.eq_in(ctx, lhs, rhs) {
-            return true;
-        }
-        let Some(abs_lhs) = self.lookup(ctx, NodeT::Abs([binder, lhs])) else {
-            return false;
-        };
-        let Some(abs_rhs) = self.lookup(ctx, NodeT::Abs([binder, rhs])) else {
-            return false;
-        };
-        self.eq_in(ctx, abs_lhs, abs_rhs)
+    fn forall_is_ty(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.lookup_import(ctx, ty)
+                .is_some_and(|ty| self.forall_is_ty(ctx, binder, ty))
+        })
     }
 
-    fn forall_has_ty(&self, ctx: CtxId, binder: TermId, tm: TermId, ty: TermId) -> bool {
-        if self.is_ty(ctx, binder) && self.has_ty(ctx, tm, ty) {
-            return true;
-        }
-        let Some(abs) = self.lookup(ctx, NodeT::Abs([binder, tm])) else {
-            return false;
-        };
-        let Some(pi) = self.lookup(ctx, NodeT::Pi([binder, ty])) else {
-            return false;
-        };
-        self.has_ty(ctx, abs, pi)
+    fn forall_is_prop(&self, ctx: C, binder: Val<C, T>, ty: Val<C, T>) -> bool {
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.lookup_import(ctx, ty)
+                .is_some_and(|ty| self.forall_is_prop(ctx, binder, ty))
+        })
     }
 
-    fn forall_is_wf(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        self.is_wf(ctx, tm)
-            || self
-                .lookup(ctx, NodeT::Abs([binder, tm]))
-                .is_some_and(|abs| self.is_wf(ctx, abs))
+    fn forall_has_ty(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>, ty: Val<C, T>) -> bool {
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.lookup_import(ctx, tm).is_some_and(|tm| {
+                self.lookup_import(ctx, ty)
+                    .is_some_and(|ty| self.forall_has_ty(ctx, binder, tm, ty))
+            })
+        })
     }
 
-    fn forall_is_ty(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        self.is_ty(ctx, tm)
-            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
-            || self
-                .lookup(ctx, NodeT::Pi([binder, tm]))
-                .is_some_and(|pi| self.is_ty(ctx, pi))
+    fn forall_is_inhab(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.lookup_import(ctx, tm)
+                .is_some_and(|tm| self.forall_is_inhab(ctx, binder, tm))
+        })
     }
 
-    fn forall_is_prop(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        self.is_prop(ctx, tm)
-            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
-            || self
-                .lookup(ctx, NodeT::Pi([binder, tm]))
-                .is_some_and(|pi| self.is_prop(ctx, pi))
+    fn forall_is_empty(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.lookup_import(ctx, tm)
+                .is_some_and(|tm| self.forall_is_empty(ctx, binder, tm))
+        })
     }
 
-    fn forall_is_inhab(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        self.is_inhab(ctx, tm)
-            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
-            || self.eq_in(ctx, tm, binder)
-            || self
-                .lookup(ctx, NodeT::Pi([binder, tm]))
-                .is_some_and(|pi| self.is_inhab(ctx, pi))
+    fn forall_is_tt(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.lookup_import(ctx, tm)
+                .is_some_and(|tm| self.forall_is_tt(ctx, binder, tm))
+        })
     }
 
-    fn forall_is_tt(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        self.is_tt(ctx, tm)
-            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
-            || (self.is_prop(ctx, binder) && self.eq_in(ctx, tm, binder))
-            || self
-                .lookup(ctx, NodeT::Pi([binder, tm]))
-                .is_some_and(|pi| self.is_tt(ctx, pi))
+    fn forall_is_ff(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.lookup_import(ctx, tm)
+                .is_some_and(|tm| self.forall_is_ff(ctx, binder, tm))
+        })
     }
 
-    fn forall_is_empty(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        self.is_empty(ctx, tm)
-            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
-            || self
-                .lookup(ctx, NodeT::Sigma([binder, tm]))
-                .is_some_and(|sigma| self.is_empty(ctx, sigma))
-    }
-
-    fn forall_is_ff(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
-        self.forall_is_prop(ctx, binder, tm) && self.forall_is_empty(ctx, binder, tm)
-    }
-
-    fn forall_is_contr(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
-        self.is_empty(ctx, binder) && self.forall_is_wf(ctx, binder, tm)
-    }
-}
-
-impl ReadTermDb<CtxId, TermId> for TermDb {
-    type Reader = TermDb;
-
-    fn read(&self) -> &Self::Reader {
-        self
-    }
-}
-
-impl WriteFacts<CtxId, TermId> for TermDb {
-    fn set_tm_flags_unchecked(&mut self, ctx: CtxId, tm: TermId, pred: Pred1) {
-        self.x[ctx.0].set_flags_unchecked(tm, pred);
-    }
-
-    fn set_is_contr_unchecked(&mut self, ctx: CtxId) {
-        self.x[ctx.0].set_is_contr();
-    }
-
-    fn set_parent_unchecked(&mut self, ctx: CtxId, parent: CtxId) {
-        self.x[ctx.0].set_parent_unchecked(parent);
-    }
-
-    fn set_eq_unchecked(&mut self, ctx: CtxId, lhs: TermId, rhs: TermId) {
-        self.x[ctx.0].set_eq_unchecked(lhs, rhs);
-    }
-
-    fn set_has_ty_unchecked(&mut self, ctx: CtxId, tm: TermId, ty: TermId) {
-        self.x[ctx.0].set_has_ty_unchecked(tm, ty);
-    }
-
-    fn set_forall_eq_unchecked(&mut self, ctx: CtxId, binder: TermId, lhs: TermId, rhs: TermId) {
-        self.x[ctx.0].set_forall_eq_unchecked(binder, lhs, rhs);
-    }
-
-    fn set_forall_is_wf_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
-        self.x[ctx.0].set_forall_is_wf_unchecked(binder, tm);
-    }
-
-    fn set_forall_is_ty_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
-        self.x[ctx.0].set_forall_is_ty_unchecked(binder, tm);
-    }
-
-    fn set_forall_is_prop_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
-        self.x[ctx.0].set_forall_is_prop_unchecked(binder, tm);
-    }
-
-    fn set_forall_has_ty_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId, ty: TermId) {
-        self.x[ctx.0].set_forall_has_ty_unchecked(binder, tm, ty);
-    }
-
-    fn set_forall_is_inhab_unchecked(&mut self, ctx: CtxId, binder: TermId, ty: TermId) {
-        self.x[ctx.0].set_forall_is_inhab_unchecked(binder, ty);
-    }
-
-    fn set_forall_is_empty_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
-        self.x[ctx.0].set_forall_is_empty_unchecked(binder, tm);
-    }
-
-    fn set_exists_is_inhab_unchecked(&mut self, ctx: CtxId, binder: TermId, ty: TermId) {
-        self.x[ctx.0].set_exists_is_inhab_unchecked(binder, ty);
-    }
-
-    fn add_var_unchecked(&mut self, ctx: CtxId, ty: ValId) -> FvId {
-        self.x[ctx.0].add_var_unchecked(ctx, ty)
-    }
-
-    fn set_bvi_unchecked(&mut self, ctx: CtxId, tm: TermId, bvi: Bv) {
-        self.x[ctx.0].set_bvi_unchecked(tm, bvi);
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn basic_imax_le() {
-        let db = TermDb::default();
-        let u0 = ULvl::PROP;
-        assert!(db.imax_le(u0, u0, u0));
-        let u1 = ULvl::SET;
-        assert!(db.imax_le(u1, u1, u1));
-        assert!(db.imax_le(u1, u0, u1));
-        assert!(db.imax_le(u0, u1, u1));
-        assert!(db.imax_le(u0, u0, u1));
-        assert!(!db.imax_le(u1, u1, u0));
-        assert!(db.imax_le(u1, u0, u0));
-        assert!(!db.imax_le(u0, u1, u0));
+    fn forall_is_contr(&self, ctx: C, binder: Val<C, T>, tm: Val<C, T>) -> bool {
+        self.lookup_import(ctx, binder).is_some_and(|binder| {
+            self.lookup_import(ctx, tm)
+                .is_some_and(|tm| self.forall_is_contr(ctx, binder, tm))
+        })
     }
 }

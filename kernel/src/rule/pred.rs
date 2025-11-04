@@ -1,6 +1,6 @@
 use crate::Pred1;
-use crate::api::store::*;
 use crate::data::term::*;
+use crate::store::*;
 
 impl<C, T> NodeT<C, T> {
     /// Infer predicates for this term in the given context

@@ -1,6 +1,3 @@
-/// API for term stores
-pub mod store;
-
 /// Generic utilities for dealing with nodes and term stores
 pub mod generic;
 

@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, ops::BitOr};
 
 use egg::{Analysis, DidMerge, EGraph, Language};
 
-use crate::{Pred1, fact::Pred0, store::*};
+use crate::{Pred1, fact::Pred0, db::*};
 
 #[derive(Debug, Clone)]
 #[repr(transparent)]

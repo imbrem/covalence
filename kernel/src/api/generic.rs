@@ -1,4 +1,4 @@
-use crate::{api::store::*, data::term::*};
+use crate::{data::term::*, store::*};
 
 impl<C: Copy, T> NodeVT<C, T> {
     /// Convert nested values to nested imports

@@ -1,11 +1,11 @@
 use crate::Bv;
 use crate::api::derive::*;
 use crate::api::error::kernel_error;
-use crate::api::store::*;
 use crate::api::strategy::*;
 use crate::data::term::Close;
 use crate::data::term::{Fv, NodeT, ULvl, Val};
 use crate::fact::*;
+use crate::store::*;
 
 use super::Kernel;
 

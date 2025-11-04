@@ -12,13 +12,15 @@ This module is further subdivided into three primary components:
 
 pub mod api;
 pub mod data;
+pub mod db;
 pub mod fact;
-pub mod rules;
+pub mod kernel;
+pub mod rule;
 pub mod store;
 
 pub use crate::api::derive::{DeriveTrusted, WriteTrusted};
 pub use crate::api::generic::*;
-pub use crate::api::store::{
+pub use crate::store::{
     ReadCtx, ReadCtxFacts, ReadCtxRel, ReadFacts, ReadQuantFacts, ReadTermDb, ReadTermFacts,
     ReadTermIndex, ReadTermStore, ReadUniv, WriteTermIndex, WriteUniv,
 };
@@ -28,12 +30,12 @@ pub use crate::fact::{
 };
 
 #[doc(inline)]
-pub use crate::store::{CtxId, FvId, NodeIx, TermDb, TermId, ValId};
+pub use crate::db::{CtxId, FvId, NodeIx, TermDb, TermId, ValId};
 
 #[doc(inline)]
 pub use crate::data::term::{Bv, Fv, ULvl};
 
-pub type Kernel = crate::rules::Kernel<TermDb>;
+pub type Kernel = crate::rule::Kernel<TermDb>;
 
 impl Kernel {
     /// Construct a new, empty kernel

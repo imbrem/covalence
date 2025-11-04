@@ -1,9 +1,9 @@
-use crate::api::store::*;
 use crate::api::strategy::*;
 use crate::data::term::NodeT;
 use crate::data::term::NodeVT;
 use crate::data::term::{Fv, ULvl, Val};
 use crate::fact::*;
+use crate::store::*;
 
 pub trait Ensure<C: Copy, T: Copy + PartialEq>:
     ReadTermDb<C, T> + WriteTermIndex<CtxId = C, TermId = T>

@@ -2,8 +2,8 @@ use std::cmp::Ordering;
 
 use crate::{
     Bvi,
-    api::store::*,
     data::term::{Bv, Close, Fv, NodeT, NodeVT, NodeVT2, Shift, Val},
+    store::*,
 };
 
 impl<C: Copy + PartialEq, T: Copy> Val<C, T> {

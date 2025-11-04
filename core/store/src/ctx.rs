@@ -1,8 +1,12 @@
 use std::{collections::BTreeMap, ops::BitOr};
 
+use covalence_data::term::{Bv, DiscT, Fv, NodeT};
 use egg::{Analysis, DidMerge, EGraph, Language};
 
-use crate::{Pred1, db::*, fact::Pred0};
+use covalence_data::fact::{Pred0, Pred1};
+use covalence_data::univ::ULvl;
+
+use super::{CtxId, FvId, ValId};
 
 #[derive(Debug, Clone)]
 #[repr(transparent)]
@@ -162,59 +166,59 @@ impl Ctx {
             }
         }
         self.set_is_wf_unchecked(tm);
-        let has_ty = self.add(NodeT::HasTy([tm, ty]));
+        let has_ty = self.add(NodeIx::HasTy([tm, ty]));
         self.set_is_inhab_unchecked(ty);
-        let unit = self.add(NodeT::Unit);
+        let unit = self.add(NodeIx::Unit);
         self.set_eq_unchecked(has_ty, unit)
     }
 
     pub fn set_forall_eq_unchecked(&mut self, binder: TermId, lhs: TermId, rhs: TermId) -> bool {
         self.set_is_ty_unchecked(binder);
-        let abs_lhs = self.add(NodeT::Abs([binder, lhs]));
-        let abs_rhs = self.add(NodeT::Abs([binder, rhs]));
+        let abs_lhs = self.add(NodeIx::Abs([binder, lhs]));
+        let abs_rhs = self.add(NodeIx::Abs([binder, rhs]));
         self.set_eq_unchecked(abs_lhs, abs_rhs)
     }
 
     pub fn set_forall_is_wf_unchecked(&mut self, binder: TermId, tm: TermId) -> bool {
         self.set_is_ty_unchecked(binder);
-        let tm = self.add(NodeT::Abs([binder, tm]));
+        let tm = self.add(NodeIx::Abs([binder, tm]));
         self.set_is_wf_unchecked(tm)
     }
 
     pub fn set_forall_is_ty_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
         self.set_is_ty_unchecked(binder);
-        let pi = self.add(NodeT::Pi([binder, ty]));
+        let pi = self.add(NodeIx::Pi([binder, ty]));
         self.set_is_ty_unchecked(pi)
     }
 
     pub fn set_forall_is_prop_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
         self.set_is_ty_unchecked(binder);
-        let pi = self.add(NodeT::Pi([binder, ty]));
+        let pi = self.add(NodeIx::Pi([binder, ty]));
         self.set_is_prop_unchecked(pi)
     }
 
     pub fn set_forall_has_ty_unchecked(&mut self, binder: TermId, tm: TermId, ty: TermId) -> bool {
         self.set_is_ty_unchecked(binder);
-        let abs = self.add(NodeT::Abs([binder, tm]));
-        let pi = self.add(NodeT::Pi([binder, ty]));
+        let abs = self.add(NodeIx::Abs([binder, tm]));
+        let pi = self.add(NodeIx::Pi([binder, ty]));
         self.set_has_ty_unchecked(abs, pi)
     }
 
     pub fn set_forall_is_inhab_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
         self.set_is_ty_unchecked(binder);
-        let pi = self.add(NodeT::Pi([binder, ty]));
+        let pi = self.add(NodeIx::Pi([binder, ty]));
         self.set_is_inhab_unchecked(pi)
     }
 
     pub fn set_forall_is_empty_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
         self.set_is_ty_unchecked(binder);
-        let sigma = self.add(NodeT::Sigma([binder, ty]));
+        let sigma = self.add(NodeIx::Sigma([binder, ty]));
         self.set_is_empty_unchecked(sigma)
     }
 
     pub fn set_exists_is_inhab_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
         self.set_forall_is_ty_unchecked(binder, ty);
-        let sigma = self.add(NodeT::Sigma([binder, ty]));
+        let sigma = self.add(NodeIx::Sigma([binder, ty]));
         self.set_is_inhab_unchecked(sigma)
     }
 

@@ -21,8 +21,8 @@ pub mod strategy;
 
 pub use crate::rule::ensure::{DeriveTrusted, WriteTrusted};
 pub use crate::store::{
-    ReadCtxFacts, ReadCtxRel, ReadFacts, ReadQuantFacts, ReadTermDb, ReadTermFacts, ReadTermIndex,
-    ReadTermStore, WriteTermIndex, ReadCtx,
+    ReadCtx, ReadCtxFacts, ReadCtxRel, ReadFacts, ReadQuantFacts, ReadTermDb, ReadTermFacts,
+    ReadTermIndex, ReadTermStore, WriteTermIndex,
 };
 pub use covalence_data::univ::{ReadUniv, WriteUniv};
 
@@ -31,7 +31,7 @@ pub use covalence_data::fact::{
 };
 
 #[doc(inline)]
-pub use crate::db::{CtxId, FvId, NodeIx, TermDb, TermId, ValId};
+pub use covalence_store::{CtxId, FvId, NodeIx, TermDb, TermId, ValId};
 
 #[doc(inline)]
 pub use covalence_data::term::{Bv, Fv, ULvl};

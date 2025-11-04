@@ -8,7 +8,7 @@ use crate::fact::*;
 
 use super::Kernel;
 
-impl<C, T, D> DeriveTrusted<C, T> for Kernel<D>
+impl<C, T, D> WriteTrusted<C, T> for Kernel<D>
 where
     C: Copy + PartialEq,
     T: Copy + PartialEq,
@@ -20,11 +20,16 @@ where
         self.0.set_tm_flags_unchecked(ctx, tm, flags);
         Val { ctx, tm }
     }
+}
 
-    fn add_var<S>(&mut self, ctx: C, ty: Val<C, T>, strategy: &mut S) -> Result<Fv<C>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+impl<C, T, D, S> DeriveTrusted<C, T, S> for Kernel<D>
+where
+    C: Copy + PartialEq,
+    T: Copy + PartialEq,
+    D: ReadTermDb<C, T> + WriteTerm<C, T> + WriteFacts<C, T>,
+    S: Strategy<C, T, Self>,
+{
+    fn add_var(&mut self, ctx: C, ty: Val<C, T>, strategy: &mut S) -> Result<Fv<C>, S::Fail> {
         strategy.start_rule("add_var", self)?;
 
         self.ensure_is_ty(ctx, ty, strategy, kernel_error::ADD_VAR_IS_TY)?;
@@ -40,10 +45,7 @@ where
         Ok(var)
     }
 
-    fn set_parent<S>(&mut self, ctx: C, parent: C, strategy: &mut S) -> Result<IsSubctx<C>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    fn set_parent(&mut self, ctx: C, parent: C, strategy: &mut S) -> Result<IsSubctx<C>, S::Fail> {
         strategy.start_rule("set_parent", self)?;
 
         if self.read().is_ancestor(ctx, parent) {
@@ -65,17 +67,14 @@ where
         Ok(result)
     }
 
-    fn derive_u_le<S>(
+    fn derive_u_le(
         &mut self,
         ctx: C,
         tm: Val<C, T>,
         lo: ULvl,
         hi: ULvl,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         strategy.start_rule("derive_u_le", self)?;
 
         if !self.read().u_le(lo, hi) {
@@ -98,17 +97,14 @@ where
         })
     }
 
-    fn derive_close_has_ty_under<S>(
+    fn derive_close_has_ty_under(
         &mut self,
         ctx: C,
         var: Fv<C>,
         tm: Val<C, T>,
         ty: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyUnderV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyUnderV<C, T>, S::Fail> {
         strategy.start_rule("derive_close_has_ty_under", self)?;
 
         // Let Γ = ctx, Δ = var.ctx, a = tm, B = ty
@@ -172,15 +168,7 @@ where
         })
     }
 
-    fn derive_fv<S>(
-        &mut self,
-        ctx: C,
-        var: Fv<C>,
-        strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    fn derive_fv(&mut self, ctx: C, var: Fv<C>, strategy: &mut S) -> Result<HasTyV<C, T>, S::Fail> {
         strategy.start_rule("derive_fv", self)?;
 
         // Check the variable is well-scoped
@@ -202,15 +190,12 @@ where
         })
     }
 
-    fn derive_univ<S>(
+    fn derive_univ(
         &mut self,
         ctx: C,
         lvl: ULvl,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         todo!()
         // let tm = self.add(ctx, NodeT::U(lvl));
         // let ty_lvl = self.succ(lvl);
@@ -219,15 +204,12 @@ where
         // HasTyIn { tm, ty }
     }
 
-    fn derive_unit<S>(
+    fn derive_unit(
         &mut self,
         ctx: C,
         lvl: ULvl,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         todo!()
         // let tm = self.add(ctx, NodeT::Unit);
         // let ty = self.add(ctx, NodeT::U(lvl));
@@ -237,10 +219,7 @@ where
         // HasTyIn { tm, ty }
     }
 
-    fn derive_nil<S>(&mut self, ctx: C, strategy: &mut S) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    fn derive_nil(&mut self, ctx: C, strategy: &mut S) -> Result<HasTyV<C, T>, S::Fail> {
         todo!()
         // let tm = self.add(ctx, NodeT::Null);
         // let ty = self.add(ctx, NodeT::Unit);
@@ -248,15 +227,12 @@ where
         // HasTyIn { tm, ty }
     }
 
-    fn derive_empty<S>(
+    fn derive_empty(
         &mut self,
         ctx: C,
         lvl: ULvl,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         todo!()
         // let tm = self.add(ctx, NodeT::Empty);
         // let ty = self.add(ctx, NodeT::U(lvl));
@@ -266,17 +242,14 @@ where
         // HasTyIn { tm, ty }
     }
 
-    fn derive_eqn<S>(
+    fn derive_eqn(
         &mut self,
         ctx: C,
         ty: Val<C, T>,
         lhs: Val<C, T>,
         rhs: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_eqn")?;
         // self.ensure_has_ty(ctx, lhs, ty, strategy, kernel_error::DERIVE_EQN_LHS)?;
@@ -287,7 +260,7 @@ where
         // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
-    fn derive_pi<S>(
+    fn derive_pi(
         &mut self,
         ctx: C,
         arg_lvl: ULvl,
@@ -295,10 +268,7 @@ where
         arg_ty: Val<C, T>,
         res_ty: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_pi")?;
         // if !self.read().imax_le(arg_lvl, lvl, lvl) {
@@ -326,17 +296,14 @@ where
         // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
-    fn derive_sigma<S>(
+    fn derive_sigma(
         &mut self,
         ctx: C,
         lvl: ULvl,
         arg_ty: Val<C, T>,
         res_ty: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_sigma")?;
         // let ty = self.add(ctx, NodeT::U(lvl));
@@ -354,17 +321,14 @@ where
         // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
-    fn derive_abs<S>(
+    fn derive_abs(
         &mut self,
         ctx: C,
         arg_ty: Val<C, T>,
         body: Val<C, T>,
         res_ty: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_abs")?;
         // self.ensure_has_ty_under(
@@ -381,7 +345,7 @@ where
         // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
-    fn derive_app<S>(
+    fn derive_app(
         &mut self,
         ctx: C,
         arg_ty: Val<C, T>,
@@ -389,10 +353,7 @@ where
         func: Val<C, T>,
         arg: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_app")?;
         // self.ensure_has_ty(ctx, arg, arg_ty, strategy, kernel_error::DERIVE_APP_ARG)?;
@@ -404,7 +365,7 @@ where
         // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
-    fn derive_pair<S>(
+    fn derive_pair(
         &mut self,
         ctx: C,
         arg_ty: Val<C, T>,
@@ -412,10 +373,7 @@ where
         fst: Val<C, T>,
         snd: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_pair")?;
         // self.ensure_is_ty_under(
@@ -434,17 +392,14 @@ where
         // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
-    fn derive_fst<S>(
+    fn derive_fst(
         &mut self,
         ctx: C,
         arg_ty: Val<C, T>,
         res_ty: Val<C, T>,
         pair: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_fst")?;
         // let sigma = self.add(ctx, NodeT::Sigma([arg_ty, res_ty]));
@@ -457,17 +412,14 @@ where
         // Ok(HasTyIn { tm, ty: arg_ty }.finish_rule(ctx, strategy))
     }
 
-    fn derive_snd<S>(
+    fn derive_snd(
         &mut self,
         ctx: C,
         arg_ty: Val<C, T>,
         res_ty: Val<C, T>,
         pair: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_snd")?;
         // let sigma = self.add(ctx, NodeT::Sigma([arg_ty, res_ty]));
@@ -484,7 +436,7 @@ where
         // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
-    fn derive_dite<S>(
+    fn derive_dite(
         &mut self,
         ctx: C,
         cond: Val<C, T>,
@@ -492,10 +444,7 @@ where
         else_br: Val<C, T>,
         ty: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_dite")?;
         // self.ensure_is_prop(ctx, cond, strategy, kernel_error::DERIVE_DITE_COND)?;
@@ -531,15 +480,12 @@ where
         // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
-    fn derive_trunc<S>(
+    fn derive_trunc(
         &mut self,
         ctx: C,
         ty: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_trunc")?;
         // self.ensure_is_ty(ctx, ty, strategy, kernel_error::DERIVE_TRUNC_TY)?;
@@ -555,16 +501,13 @@ where
         // Ok(HasTyIn { tm, ty: prop }.finish_rule(ctx, strategy))
     }
 
-    fn derive_choose<S>(
+    fn derive_choose(
         &mut self,
         ctx: C,
         ty: Val<C, T>,
         pred: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_choose")?;
         // self.ensure_is_inhab(ctx, ty, strategy, kernel_error::DERIVE_CHOOSE_TY)?;
@@ -582,15 +525,12 @@ where
         // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
-    fn derive_nats<S>(
+    fn derive_nats(
         &mut self,
         ctx: C,
         lvl: ULvl,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         strategy.start_rule("derive_nats", self)?;
 
         if !self.read().u_le(ULvl::SET, lvl) {
@@ -619,15 +559,12 @@ where
         // HasTyIn { tm, ty }
     }
 
-    fn derive_succ<S>(
+    fn derive_succ(
         &mut self,
         ctx: C,
         n: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_succ")?;
         // let nats = self.add(ctx, NodeT::Nats);
@@ -637,17 +574,14 @@ where
         // Ok(HasTyIn { tm, ty: nats }.finish_rule(ctx, strategy))
     }
 
-    fn derive_natrec<S>(
+    fn derive_natrec(
         &mut self,
         ctx: C,
         mot: Val<C, T>,
         z: Val<C, T>,
         s: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_natrec")?;
         // let nats = self.add(ctx, NodeT::Nats);
@@ -681,7 +615,7 @@ where
         // Ok(HasTyIn { tm, ty: nats }.finish_rule(ctx, strategy))
     }
 
-    fn derive_let<S>(
+    fn derive_let(
         &mut self,
         ctx: C,
         bound: Val<C, T>,
@@ -689,10 +623,7 @@ where
         body: Val<C, T>,
         body_ty: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<HasTyV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_let")?;
         // self.ensure_has_ty(
@@ -718,16 +649,13 @@ where
         // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
     }
 
-    fn derive_beta_abs<S>(
+    fn derive_beta_abs(
         &mut self,
         ctx: C,
         tm: Val<C, T>,
         arg: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<EqnInV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_beta_abs")?;
         // let &NodeT::Abs([arg_ty, body]) = self.read().node(ctx, tm) else {
@@ -745,15 +673,12 @@ where
         // .finish_rule(ctx, strategy))
     }
 
-    fn derive_beta_zero<S>(
+    fn derive_beta_zero(
         &mut self,
         ctx: C,
         tm: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<EqnInV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_beta_zero")?;
         // let &NodeT::Natrec([_mot, z, _s]) = self.read().node(ctx, tm) else {
@@ -770,16 +695,13 @@ where
         // .finish_rule(ctx, strategy))
     }
 
-    fn derive_beta_succ<S>(
+    fn derive_beta_succ(
         &mut self,
         ctx: C,
         tm: Val<C, T>,
         n: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<EqnInV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_beta_succ")?;
         // let &NodeT::Natrec([_mot, _z, s]) = self.read().node(ctx, tm) else {
@@ -801,16 +723,13 @@ where
         // .finish_rule(ctx, strategy))
     }
 
-    fn derive_choose_spec<S>(
+    fn derive_choose_spec(
         &mut self,
         ctx: C,
         ty: Val<C, T>,
         pred: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<IsInhabV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<IsInhabV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_choose_spec")?;
         // self.ensure_exists_inhab_under(ctx, ty, pred, strategy, "derive_choose_spec: exists")?;
@@ -822,15 +741,12 @@ where
         // Ok(IsInhabIn(pred_choose).finish_rule(ctx, strategy))
     }
 
-    fn derive_unit_ext<S>(
+    fn derive_unit_ext(
         &mut self,
         ctx: C,
         a: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<EqnInV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_unit_ext")?;
         // let unit = self.add(ctx, NodeT::Unit);
@@ -840,15 +756,12 @@ where
         // Ok(Eqn { lhs: a, rhs: null }.finish_rule(ctx, strategy))
     }
 
-    fn derive_prop_ext_tt<S>(
+    fn derive_prop_ext_tt(
         &mut self,
         ctx: C,
-        a: Val<C, T>,
+        p: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<EqnInV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_prop_ext_tt")?;
         // self.ensure_is_prop(ctx, a, strategy, "derive_prop_ext_tt: a prop")?;
@@ -858,15 +771,12 @@ where
         // Ok(Eqn { lhs: a, rhs: unit }.finish_rule(ctx, strategy))
     }
 
-    fn derive_prop_ext_ff<S>(
+    fn derive_prop_ext_ff(
         &mut self,
         ctx: C,
-        a: Val<C, T>,
+        p: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<EqnInV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_prop_ext_ff")?;
         // self.ensure_is_prop(ctx, a, strategy, "derive_prop_ext_ff: a prop")?;
@@ -876,16 +786,13 @@ where
         // Ok(Eqn { lhs: a, rhs: empty }.finish_rule(ctx, strategy))
     }
 
-    fn derive_ext<S>(
+    fn derive_ext(
         &mut self,
         ctx: C,
         lhs: Val<C, T>,
         rhs: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<EqnInV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_ext")?;
         // let eqn = self.add(ctx, NodeT::Eqn([lhs, rhs]));
@@ -894,16 +801,13 @@ where
         // Ok(Eqn { lhs, rhs }.finish_rule(ctx, strategy))
     }
 
-    fn derive_pi_eta<S>(
+    fn derive_pi_eta(
         &mut self,
         ctx: C,
         ty: Val<C, T>,
         f: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<EqnInV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_pi_eta")?;
         // let &NodeT::Pi([arg_ty, _res_ty]) = self.read().node(ctx, ty) else {
@@ -917,16 +821,13 @@ where
         // Ok(Eqn { lhs: f, rhs: eta }.finish_rule(ctx, strategy))
     }
 
-    fn derive_sigma_eta<S>(
+    fn derive_sigma_eta(
         &mut self,
         ctx: C,
         ty: Val<C, T>,
         p: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
+    ) -> Result<EqnInV<C, T>, S::Fail> {
         todo!()
         // strategy.start_rule("derive_sigma_eta")?;
         // let &NodeT::Sigma(_) = self.read().node(ctx, ty) else {

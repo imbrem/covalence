@@ -3,33 +3,14 @@ pub use covalence_kernel::*;
 
 use data::term::*;
 
-/// Derivations supported by the `covalence` kernel
-pub trait Derive<C, T>: DeriveTrusted<C, T> + ReadTermDb<C, T> + WriteTerm<C, T>
+/// Writing for the `covalence` kernel
+pub trait Write<C, T>: WriteTrusted<C, T> + WriteTerm<C, T>
 where
-    C: Copy + PartialEq,
-    T: Copy + PartialEq,
+    C: Copy,
+    T: Copy,
 {
-    /// Insert a new context with the given parameter
-    ///
-    /// TODO: reference Lean
-    fn with_param<S>(
-        &mut self,
-        parent: C,
-        param: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<Fv<C>, S::Fail>
-    where
-        S: Strategy<C, T, Self>,
-    {
-        let ctx = self.with_parent(parent);
-        let var = self.add_var(ctx, param, strategy)?;
-        Ok(var)
-    }
-
-    //TODO: derive these to be fully well-typed, every time?
-
     /// Construct the universe of propositions in a given context
-    /// 
+    ///
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
@@ -46,7 +27,7 @@ where
     }
 
     /// Construct the true proposition in a given context
-    /// 
+    ///
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
@@ -62,7 +43,7 @@ where
     }
 
     /// Construct the false proposition in a given context
-    /// 
+    ///
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
@@ -78,7 +59,7 @@ where
     }
 
     /// Construct the universe of sets in a given context
-    /// 
+    ///
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
@@ -93,7 +74,7 @@ where
     }
 
     /// Construct the type of natural numbers in a given context
-    /// 
+    ///
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
@@ -108,7 +89,7 @@ where
     }
 
     /// Construct a small natural number in a given context
-    /// 
+    ///
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
@@ -128,10 +109,42 @@ where
     }
 }
 
-impl<C, T, K> Derive<C, T> for K
+/// Derivations supported by the `covalence` kernel
+pub trait Derive<C, T, S>:
+    WriteTrusted<C, T> + DeriveTrusted<C, T, S> + ReadTermDb<C, T> + WriteTerm<C, T>
 where
     C: Copy + PartialEq,
     T: Copy + PartialEq,
-    K: DeriveTrusted<C, T> + ReadTermDb<C, T> + WriteTerm<C, T>,
+    S: Strategy<C, T, Self>,
+{
+    /// Insert a new context with the given parameter
+    ///
+    /// TODO: reference Lean
+    fn with_param(
+        &mut self,
+        parent: C,
+        param: Val<C, T>,
+        strategy: &mut S,
+    ) -> Result<Fv<C>, S::Fail> {
+        let ctx = self.with_parent(parent);
+        let var = self.add_var(ctx, param, strategy)?;
+        Ok(var)
+    }
+}
+
+impl<C, T, K> Write<C, T> for K
+where
+    C: Copy,
+    T: Copy,
+    K: WriteTrusted<C, T> + WriteTerm<C, T>,
+{
+}
+
+impl<C, T, S, K> Derive<C, T, S> for K
+where
+    C: Copy + PartialEq,
+    T: Copy + PartialEq,
+    K: WriteTrusted<C, T> + DeriveTrusted<C, T, S> + ReadTermDb<C, T> + WriteTerm<C, T>,
+    S: Strategy<C, T, K>,
 {
 }

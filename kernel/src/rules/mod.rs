@@ -80,13 +80,3 @@ impl<C, T, D: WriteTerm<C, T>> WriteTerm<C, T> for Kernel<D> {
         self.0.propagate_in(ctx)
     }
 }
-
-pub trait KernelAPI<C: Copy, T: Copy + PartialEq>:
-    DeriveTrusted<C, T> + Ensure<C, T> + WriteTerm<C, T> + ReadTermDb<C, T>
-{
-}
-
-impl<K, C: Copy, T: Copy + PartialEq> KernelAPI<C, T> for K where
-    K: DeriveTrusted<C, T> + Ensure<C, T> + WriteTerm<C, T> + ReadTermDb<C, T>
-{
-}

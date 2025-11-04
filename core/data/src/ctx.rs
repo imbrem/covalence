@@ -5,15 +5,15 @@ use crate::fact::Pred0;
 /// This trait is `dyn`-safe:
 /// ```rust
 /// # use covalence::kernel::*;
-/// let ker : &dyn ReadCtxRel<CtxId> = &TermDb::new();
+/// let ker : &dyn ReadCtxGraph<CtxId> = &TermDb::new();
 /// ```
 /// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
 /// functions for different kernel wrappers:
 /// ```rust,compile_fail
 /// # use covalence::kernel::*;
-/// let ker : &dyn ReadCtxRel<CtxId> = &Kernel::new();
+/// let ker : &dyn ReadCtxGraph<CtxId> = &Kernel::new();
 /// ```
-pub trait ReadCtxRel<C> {
+pub trait ReadCtxGraph<C> {
     /// Get whether a context is a root context
     ///
     /// Note that a root context has no assumptions _or_ variables.
@@ -134,6 +134,23 @@ pub trait ReadCtxRel<C> {
     fn parents_are_subctx(&self, lo: C, hi: C) -> bool;
 }
 
+/// A datastore that can edit the relationships between contexts _without checking validity_.
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence::kernel::*;
+/// let ker : &dyn WriteCtxGraphUnchecked<CtxId> = &TermDb::new();
+/// ```
+/// We note that it is _not_ implemented by `Kernel`, since that would be unsound:
+/// ```rust,compile_fail
+/// # use covalence::kernel::*;
+/// let ker : &dyn WriteCtxGraphUnchecked<CtxId> = &Kernel::new();
+/// ```
+pub trait WriteCtxGraphUnchecked<C> {
+    /// Set a context's parent
+    fn set_parent_unchecked(&mut self, ctx: C, parent: C);
+}
+
 /// A datastore that can read facts about contexts
 ///
 /// This trait is `dyn`-safe:
@@ -159,4 +176,21 @@ pub trait ReadCtxFacts<C> {
     fn is_contr(&self, ctx: C) -> bool {
         self.ctx_satisfies(ctx, Pred0::IS_CONTR)
     }
+}
+
+/// A datastore that can write unchecked facts about contexts
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence::kernel::*;
+/// let ker : &dyn WriteCtxFactsUnchecked<CtxId> = &TermDb::new();
+/// ```
+/// We note that it is _not_ implemented by `Kernel`, since that would be unsound:
+/// ```rust,compile_fail
+/// # use covalence::kernel::*;
+/// let ker : &dyn WriteCtxFactsUnchecked<CtxId> = &Kernel::new();
+/// ```
+pub trait WriteCtxFactsUnchecked<C> {
+    /// Mark a context as contradictory
+    fn set_is_contr_unchecked(&mut self, ctx: C);
 }

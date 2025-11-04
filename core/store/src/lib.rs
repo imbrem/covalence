@@ -200,7 +200,7 @@ impl ReadCtxFacts<CtxId> for TermDb {
     }
 }
 
-impl ReadCtxRel<CtxId> for TermDb {
+impl ReadCtxGraph<CtxId> for TermDb {
     fn is_root(&self, ctx: CtxId) -> bool {
         //TODO: optimize
         self.x[ctx.0].is_null_extension() && self.x[ctx.0].parent().is_none_or(|p| self.is_root(p))
@@ -387,17 +387,21 @@ impl ReadTermDb<CtxId, Ix> for TermDb {
     }
 }
 
-impl WriteLocalFactsUnchecked for TermDb {
-    fn set_tm_flags_unchecked(&mut self, ctx: CtxId, tm: Ix, pred: Pred1) {
-        self.x[ctx.0].set_flags_unchecked(tm, pred);
+impl WriteCtxGraphUnchecked<CtxId> for TermDb {
+    fn set_parent_unchecked(&mut self, ctx: CtxId, parent: CtxId) {
+        self.x[ctx.0].set_parent_unchecked(parent);
     }
+}
 
+impl WriteCtxFactsUnchecked<CtxId> for TermDb {
     fn set_is_contr_unchecked(&mut self, ctx: CtxId) {
         self.x[ctx.0].set_is_contr();
     }
+}
 
-    fn set_parent_unchecked(&mut self, ctx: CtxId, parent: CtxId) {
-        self.x[ctx.0].set_parent_unchecked(parent);
+impl WriteLocalFactsUnchecked for TermDb {
+    fn set_tm_flags_unchecked(&mut self, ctx: CtxId, tm: Ix, pred: Pred1) {
+        self.x[ctx.0].set_flags_unchecked(tm, pred);
     }
 
     fn set_eq_unchecked(&mut self, ctx: CtxId, lhs: Ix, rhs: Ix) {

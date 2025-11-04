@@ -38,7 +38,7 @@ pub type FvId<D> = Fv<CtxId<D>>;
 /// # use covalence::kernel::*;
 /// let ker : &dyn ReadLocalTerm<CtxId = CtxId, Ix = Ix> = &Kernel::new();
 /// ```
-pub trait ReadLocalTerm: TermIndex + ReadUniv {
+pub trait ReadLocalTerm: TermIndex {
     // == Terms ==
 
     /// Get the value corresponding to a term
@@ -193,6 +193,32 @@ pub trait ReadLocalFacts: TermIndex {
     fn local_eq(&self, ctx: CtxId<Self>, lhs: Ix<Self>, rhs: Ix<Self>) -> bool;
 }
 
+pub trait ReadLocalStore:
+    ReadLocalTerm
+    + ReadLocalFacts
+    + ReadUniv
+    + ReadCtx<CtxId<Self>, Ix<Self>>
+    + ReadCtxGraph<CtxId<Self>>
+{
+}
+
+impl<D> ReadLocalStore for D where
+    D: ReadLocalTerm
+        + ReadLocalFacts
+        + ReadUniv
+        + ReadCtx<CtxId<D>, Ix<D>>
+        + ReadCtxGraph<CtxId<D>>
+{
+}
+
+pub trait WriteLocalStore: WriteLocalTerm + WriteUniv {}
+
+impl<D> WriteLocalStore for D where D: WriteLocalTerm + WriteUniv {}
+
+pub trait LocalStore: ReadLocalStore + WriteLocalStore {}
+
+impl<D> LocalStore for D where D: ReadLocalStore + WriteLocalStore {}
+
 /// A trait implemented by a mutable datastore that can hold _unchecked_ facts about terms in a
 /// context.
 ///
@@ -207,14 +233,6 @@ pub trait ReadLocalFacts: TermIndex {
 /// let db : &dyn WriteLocalFactsUnchecked<CtxId = CtxId, Ix = Ix> = &Kernel::new();
 /// ```
 pub trait WriteLocalFactsUnchecked: TermIndex {
-    // == Context predicates ==
-
-    /// Mark a context as contradictory
-    fn set_is_contr_unchecked(&mut self, ctx: CtxId<Self>);
-
-    /// Set a context's parent
-    fn set_parent_unchecked(&mut self, ctx: CtxId<Self>, parent: CtxId<Self>);
-
     // == Typing judgements ==
 
     /// Set a term's flags
@@ -233,6 +251,26 @@ pub trait WriteLocalFactsUnchecked: TermIndex {
     /// Set the bound-variable index of a term
     fn set_bvi_unchecked(&mut self, ctx: CtxId<Self>, tm: Ix<Self>, bvi: Bv);
 }
+
+pub trait WriteLocalStoreUnchecked:
+    WriteLocalStore
+    + WriteLocalFactsUnchecked
+    + WriteCtxGraphUnchecked<CtxId<Self>>
+    + WriteCtxFactsUnchecked<CtxId<Self>>
+{
+}
+
+impl<D> WriteLocalStoreUnchecked for D where
+    D: WriteLocalStore
+        + WriteLocalFactsUnchecked
+        + WriteCtxGraphUnchecked<CtxId<D>>
+        + WriteCtxFactsUnchecked<CtxId<D>>
+{
+}
+
+pub trait LocalStoreUnchecked: ReadLocalStore + WriteLocalStoreUnchecked {}
+
+impl<D> LocalStoreUnchecked for D where D: ReadLocalStore + WriteLocalStoreUnchecked {}
 
 impl<C: Copy, T> NodeT<C, T> {
     /// Interpret this node in the given context
@@ -534,7 +572,7 @@ impl<D: ReadCtxFacts<C> + ReadQuantFacts<C, T>, C, T> ReadFacts<C, T> for D {}
 /// let ker : &dyn ReadTermStore<CtxId, Ix> = &Kernel::new();
 /// ```
 pub trait ReadTermStore<C, T>:
-    ReadCtx<C, Val<C, T>> + ReadCtxRel<C> + ReadLocalTerm<CtxId = C, Ix = T> + ReadFacts<C, T>
+    ReadCtx<C, Val<C, T>> + ReadCtxGraph<C> + ReadLocalTerm<CtxId = C, Ix = T> + ReadFacts<C, T>
 {
 }
 
@@ -542,7 +580,7 @@ impl<C, T, D> ReadTermStore<C, T> for D
 where
     C: Copy,
     T: Copy,
-    D: ReadCtx<C, Val<C, T>> + ReadCtxRel<C> + ReadLocalTerm<CtxId = C, Ix = T> + ReadFacts<C, T>,
+    D: ReadCtx<C, Val<C, T>> + ReadCtxGraph<C> + ReadLocalTerm<CtxId = C, Ix = T> + ReadFacts<C, T>,
 {
 }
 
@@ -567,13 +605,12 @@ impl<C, T, D: ReadTermDb<C, T> + WriteLocalTerm<CtxId = C, Ix = T> + ?Sized> RwT
 /// # use covalence::kernel::*;
 /// let db : &dyn WriteFacts<CtxId, Ix> = &TermDb::default();
 /// ```
-/// We note that it is _not_ implemented by `Kernel`, since that would be unsafe:
+/// We note that it is _not_ implemented by `Kernel`, since that would be unsound:
 /// ```rust,compile_fail
 /// # use covalence::kernel::*;
 /// let db : &dyn WriteFacts<CtxId, Ix> = &Kernel::new();
 /// ```
 pub trait WriteFacts<C, T>: WriteLocalFactsUnchecked<CtxId = C, Ix = T> {
-
     // == Typing judgements ==
 
     /// Set the type of a term

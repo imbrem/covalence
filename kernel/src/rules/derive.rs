@@ -493,16 +493,23 @@ where
         pair: Val<C, T>,
         strategy: &mut S,
     ) -> Result<HasTyV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_fst")?;
-        // let sigma = self.add(ctx, NodeT::Sigma([arg_ty, res_ty]));
-        // self.ensure_has_ty(ctx, pair, sigma, strategy, kernel_error::DERIVE_FST_PAIR)?;
-        // let tm = self.add(ctx, NodeT::Fst([pair]));
-        // self.0.set_has_ty_unchecked(ctx, tm, arg_ty);
-        // if let &NodeT::Pair([a, _]) = self.read().node(ctx, pair) {
-        //     self.0.set_eq_unchecked(ctx, tm, a);
-        // }
-        // Ok(HasTyIn { tm, ty: arg_ty }.finish_rule(ctx, strategy))
+        strategy.start_rule("derive_fst", self)?;
+
+        let sigma = self.resolve(ctx, NodeT::Sigma([arg_ty, res_ty]), strategy)?;
+        self.ensure_has_ty(ctx, pair, sigma, strategy, kernel_error::DERIVE_FST_PAIR)?;
+
+        strategy.commit_rule(self);
+
+        let tm = self.add_with(ctx, NodeT::Fst([pair]), strategy)?;
+        let ty = self.import_with(ctx, arg_ty, strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+
+        strategy.finish_rule(self);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_snd(

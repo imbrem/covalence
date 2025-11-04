@@ -272,7 +272,10 @@ pub trait WriteTrusted<C, T> {
 }
 
 /// Typing rules for deriving facts about terms from those already in the datastore
-pub trait DeriveTrusted<C, T, S> where S: Strategy<C, T, Self> {
+pub trait DeriveTrusted<C, T, S>
+where
+    S: Strategy<C, T, Self>,
+{
     /// Add a new variable to this context with the given type
     ///
     /// TODO: reference Lean
@@ -308,12 +311,7 @@ pub trait DeriveTrusted<C, T, S> where S: Strategy<C, T, Self> {
     /// ker.set_parent(parent, child, &mut ()).unwrap_err();
     /// assert!(ker.is_ancestor(parent, child));
     /// ```
-    fn set_parent(
-        &mut self,
-        ctx: C,
-        parent: C,
-        strategy: &mut S,
-    ) -> Result<IsSubctx<C>, S::Fail>;
+    fn set_parent(&mut self, ctx: C, parent: C, strategy: &mut S) -> Result<IsSubctx<C>, S::Fail>;
 
     /// Cast by universe level
     ///
@@ -607,9 +605,6 @@ pub trait DeriveTrusted<C, T, S> where S: Strategy<C, T, Self> {
     /// ```lean
     /// theorem Ctx.KHasTy.fst {Γ A B p} (hp : KHasTy Γ (.sigma A B) p) : KHasTy Γ A (.fst p)
     /// ```
-    ///
-    /// If `p :≡ (a, b)`, also inserts the equation `Γ ⊢ fst (a, b) = a`
-    /// (see: `Ctx.KIsWf.beta_fst_pair`)
     fn derive_fst(
         &mut self,
         ctx: C,
@@ -634,13 +629,7 @@ pub trait DeriveTrusted<C, T, S> where S: Strategy<C, T, Self> {
     /// ```lean
     /// theorem Ctx.KHasTy.snd {Γ A B p} (hp : KHasTy Γ (.sigma A B) p)
     ///   : KHasTy Γ (B.lst 0 (.fst p)) (.snd p)
-    ///
-    /// -- Additional results:
-    /// theorem Ctx.KHasTy.fst {Γ A B p} (hp : KHasTy Γ (.sigma A B) p) : KHasTy Γ A (.fst p)
     /// ```
-    ///
-    /// If `p :≡ (a, b)`, also inserts the equations `Γ ⊢ fst (a, b) ≡ a` and `Γ ⊢ snd (a, b) ≡ b`
-    /// (see: `Ctx.KIsWf.beta_fst_pair`, `Ctx.KIsWf.beta_snd_pair`)
     fn derive_snd(
         &mut self,
         ctx: C,

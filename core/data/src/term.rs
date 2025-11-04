@@ -919,7 +919,7 @@ pub struct TmIn<C, T> {
     /// The context being imported from
     pub ctx: C,
     /// The term being imported (in `ctx`)
-    pub tm: T,
+    pub ix: T,
 }
 
 impl<C, T> TmIn<C, T> {
@@ -927,7 +927,7 @@ impl<C, T> TmIn<C, T> {
     pub const fn as_ref(&self) -> TmIn<&C, &T> {
         TmIn {
             ctx: &self.ctx,
-            tm: &self.tm,
+            ix: &self.ix,
         }
     }
 
@@ -935,7 +935,7 @@ impl<C, T> TmIn<C, T> {
     pub const fn as_mut(&mut self) -> TmIn<&mut C, &mut T> {
         TmIn {
             ctx: &mut self.ctx,
-            tm: &mut self.tm,
+            ix: &mut self.ix,
         }
     }
 }

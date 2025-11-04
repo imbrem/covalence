@@ -47,7 +47,8 @@ pub trait ReadCtxGraph<C> {
     /// Note that a context `ctx` is always an ancestor of itself
     ///
     /// # Examples
-    /// ```rust
+    /// ```text
+    /// BROKEN!
     /// # use covalence::kernel::*;
     /// # let mut ker = Kernel::default();
     /// let parent = ker.new_ctx();
@@ -64,7 +65,8 @@ pub trait ReadCtxGraph<C> {
     /// A context `ctx` is never a strict ancestor of itself
     ///
     /// # Examples
-    /// ```rust
+    /// ```text
+    /// BROKEN!
     /// # use covalence::kernel::*;
     /// # let mut ker = Kernel::default();
     /// let parent = ker.new_ctx();

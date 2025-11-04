@@ -20,12 +20,6 @@ impl Ctx {
         }
     }
 
-    pub fn with_parent(parent: CtxId) -> Ctx {
-        let mut ctx = Ctx::new_ctx();
-        ctx.e.analysis.parent = Some(parent);
-        ctx
-    }
-
     pub fn parent(&self) -> Option<CtxId> {
         self.e.analysis.parent
     }
@@ -129,11 +123,6 @@ impl Ctx {
         Fv { ctx, ix }
     }
 
-    fn from_ref(this: &EGraph<InnerNode, CtxData>) -> &Self {
-        // SAFETY: due to `#[repr(transparent)]`
-        unsafe { std::mem::transmute(this) }
-    }
-
     // fn from_mut(this: &mut EGraph<Node, CtxData>) -> &mut Self {
     //     // SAFETY: due to `#[repr(transparent)]`
     //     unsafe { std::mem::transmute(this) }
@@ -174,13 +163,8 @@ struct CtxData {
 impl Analysis<InnerNode> for CtxData {
     type Data = ClassData;
 
-    fn make(egraph: &mut EGraph<InnerNode, Self>, enode: &InnerNode) -> Self::Data {
-        let this = Ctx::from_ref(egraph);
-        let bvi = enode.0.bvi_with(|x| this.bvi(*x));
-        ClassData {
-            flags: Pred1::default(),
-            bvi,
-        }
+    fn make(_egraph: &mut EGraph<InnerNode, Self>, _enode: &InnerNode) -> Self::Data {
+        ClassData::default()
     }
 
     fn merge(&mut self, a: &mut Self::Data, b: Self::Data) -> egg::DidMerge {

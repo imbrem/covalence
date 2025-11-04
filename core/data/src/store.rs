@@ -10,9 +10,9 @@ pub use crate::ctx::*;
 /// A term database with a given index kind
 pub trait TermIndex {
     /// The context identifier type
-    type CtxId: Copy;
+    type CtxId: Copy + PartialEq;
     /// A local index for a term
-    type Ix: Copy;
+    type Ix: Copy + PartialEq;
 }
 
 pub type CtxId<D> = <D as TermIndex>::CtxId;
@@ -41,23 +41,26 @@ pub type FvId<D> = Fv<CtxId<D>>;
 pub trait ReadLocalTerm: TermIndex {
     // == Terms ==
 
-    /// Get the value corresponding to a term
-    fn val(&self, ctx: CtxId<Self>, tm: Ix<Self>) -> TmId<Self>;
-
     /// Get the node corresponding to a term
     fn node(&self, ctx: CtxId<Self>, tm: Ix<Self>) -> &NodeIx<Self>;
 
     /// Lookup a term in the store
     fn lookup(&self, ctx: CtxId<Self>, tm: NodeIx<Self>) -> Option<Ix<Self>>;
 
-    /// Lookup an import of a term into another context, returning a handle to it if it exists
-    fn lookup_import(&self, ctx: CtxId<Self>, val: TmId<Self>) -> Option<Ix<Self>>;
+    /// Lookup an import in `self`
+    /// 
+    /// Does _not_ traverse import chains
+    fn lookup_import(&self, ctx: CtxId<Self>, tm: TmId<Self>) -> Option<Ix<Self>> {
+        if tm.ctx == ctx {
+            Some(tm.ix)
+        } else {
+            self.lookup(ctx, Node::Import(tm))
+        }
+    }
 
     // == Syntactic information ==
 
     /// Get an upper bound on the de-Bruijn indices visible in `tm`
-    ///
-    /// TODO: reference lean
     fn bvi(&self, ctx: CtxId<Self>, tm: Ix<Self>) -> Bv;
 
     /// Check whether the term `tm` may depend on the variable `var`
@@ -124,30 +127,8 @@ pub trait WriteLocalTerm: TermIndex + WriteUniv {
     /// ```
     fn new_ctx(&mut self) -> CtxId<Self>;
 
-    /// Create a new context in this store with the given parent
-    ///
-    /// # Example
-    /// ```rust
-    /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::default();
-    /// let parent = ker.new_ctx();
-    /// let child = ker.with_parent(parent);
-    /// // This is true since both contexts are currently empty
-    /// assert!(ker.is_subctx(parent, child));
-    /// assert!(ker.is_subctx(child, parent));
-    /// ```
-    fn with_parent(&mut self, parent: CtxId<Self>) -> CtxId<Self>;
-
     /// Directly insert a term into the store, returning a handle to it
-    fn add_raw(&mut self, ctx: CtxId<Self>, tm: NodeIx<Self>) -> Ix<Self>;
-
-    /// Import a term into another context, returning a handle to it
-    ///
-    /// This automatically traverses import chains, and in particular:
-    /// - If `src[tm] := import(src2, tm)`, then `import(ctx, src, tm) => import(ctx, src2, tm)`
-    /// - `import(ctx, ctx, tm)` returns `tm`
-    /// - otherwise, return an `Import` node
-    fn import(&mut self, ctx: CtxId<Self>, val: TmId<Self>) -> Ix<Self>;
+    fn cons_node_ix(&mut self, ctx: CtxId<Self>, tm: NodeIx<Self>) -> Ix<Self>;
 
     // == Congruence management ==
 
@@ -239,11 +220,6 @@ pub trait WriteLocalFactsUnchecked: TermIndex {
 
     /// Add a variable to the given context
     fn add_var_unchecked(&mut self, ctx: CtxId<Self>, ty: TmId<Self>) -> FvId<Self>;
-
-    // == Cached information ==
-
-    /// Set the bound-variable index of a term
-    fn set_bvi_unchecked(&mut self, ctx: CtxId<Self>, tm: Ix<Self>, bvi: Bv);
 }
 
 pub trait WriteLocalStoreUnchecked:

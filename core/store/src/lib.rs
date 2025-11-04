@@ -39,37 +39,12 @@ impl TermIndex for TermDb {
 }
 
 impl ReadLocalTerm for TermDb {
-    fn val(&self, ctx: CtxId, tm: Ix) -> TmId {
-        match self.node(ctx, tm) {
-            NodeIx::Import(val) => self.val(val.ctx, val.tm),
-            _ => TmIn { ctx, tm },
-        }
-    }
-
     fn node(&self, ctx: CtxId, tm: Ix) -> &NodeIx {
         self.x[ctx.0].node(tm)
     }
 
     fn lookup(&self, ctx: CtxId, tm: NodeIx) -> Option<Ix> {
         self.x[ctx.0].lookup(tm)
-    }
-
-    fn lookup_import(&self, ctx: CtxId, val: TmId) -> Option<Ix> {
-        // NOTE: an import cycle will lead to a stack overflow here, but that should be an error But
-        // think about it!
-        //
-        // We could try a cycle detection algorithm and return `Invalid`, if we want to be very
-        // clever... but again, this is a deeply invalid state, since import destinations should
-        // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
-        // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
-        // inserting the import and hence fixing the `TermId`.
-        if let NodeIx::Import(imp) = self.node(val.ctx, val.tm) {
-            self.lookup_import(ctx, *imp)
-        } else if ctx == val.ctx {
-            Some(val.tm)
-        } else {
-            self.x[ctx.0].lookup(Node::Import(val))
-        }
     }
 
     fn bvi(&self, ctx: CtxId, tm: Ix) -> Bv {
@@ -106,36 +81,14 @@ impl WriteLocalTerm for TermDb {
         result
     }
 
-    fn with_parent(&mut self, parent: CtxId) -> CtxId {
-        debug_assert!(self.x.contains(parent.0));
-        let result = CtxId(self.x.insert(Ctx::with_parent(parent)));
-        self.set_this(result);
-        result
-    }
-
-    fn add_raw(&mut self, ctx: CtxId, tm: NodeIx) -> Ix {
-        self.x[ctx.0].add(tm)
-    }
-
-    fn import(&mut self, ctx: CtxId, val: TmId) -> Ix {
-        // NOTE: an import cycle will lead to a stack overflow here, but that should be an error But
-        // think about it!
-        //
-        // We could try a cycle detection algorithm and return `Invalid`, if we want to be very
-        // clever... but again, this is a deeply invalid state, since import destinations should
-        // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
-        // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
-        // inserting the import and hence fixing the `TermId`.
-        let result = if let NodeIx::Import(imp) = self.node(val.ctx, val.tm) {
-            self.import(ctx, *imp)
-        } else if ctx == val.ctx {
-            return val.tm;
-        } else {
-            self.x[ctx.0].add(Node::Import(val))
+    fn cons_node_ix(&mut self, ctx: CtxId, tm: NodeIx) -> Ix {
+        let ix = self.x[ctx.0].add(tm);
+        let bvi = match tm {
+            Node::Import(tm) => self.bvi(tm.ctx, tm.ix),
+            tm => tm.bvi_with(|x| self.bvi(ctx, *x)),
         };
-        let bvi = self.bvi(val.ctx, val.tm);
-        self.set_bvi_unchecked(ctx, result, bvi);
-        result
+        self.x[ctx.0].set_bvi_unchecked(ix, bvi);
+        ix
     }
 
     fn propagate_in(&mut self, ctx: CtxId) -> usize {
@@ -389,10 +342,6 @@ impl WriteLocalFactsUnchecked for TermDb {
 
     fn add_var_unchecked(&mut self, ctx: CtxId, ty: TmId) -> FvId {
         self.x[ctx.0].add_var_unchecked(ctx, ty)
-    }
-
-    fn set_bvi_unchecked(&mut self, ctx: CtxId, tm: Ix, bvi: Bv) {
-        self.x[ctx.0].set_bvi_unchecked(tm, bvi);
     }
 }
 

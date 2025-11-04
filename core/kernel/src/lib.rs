@@ -81,16 +81,8 @@ impl<D: WriteLocalTerm> WriteLocalTerm for Kernel<D> {
         self.0.new_ctx()
     }
 
-    fn with_parent(&mut self, parent: CtxId<D>) -> CtxId<D> {
-        self.0.with_parent(parent)
-    }
-
-    fn add_raw(&mut self, ctx: CtxId<D>, term: NodeIx<D>) -> Ix<D> {
-        self.0.add_raw(ctx, term)
-    }
-
-    fn import(&mut self, ctx: CtxId<D>, val: TmId<D>) -> Ix<D> {
-        self.0.import(ctx, val)
+    fn cons_node_ix(&mut self, ctx: CtxId<D>, term: NodeIx<D>) -> Ix<D> {
+        self.0.cons_node_ix(ctx, term)
     }
 
     fn propagate_in(&mut self, ctx: CtxId<D>) -> usize {

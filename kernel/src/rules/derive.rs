@@ -206,7 +206,7 @@ where
         self.0.set_has_ty_unchecked(ctx, tm, ty);
 
         strategy.finish_rule(self);
-        Ok(HasTy {
+        Ok(HasTyV {
             ctx,
             tm: self.read().val(ctx, tm),
             ty: self.read().val(ctx, ty),
@@ -654,19 +654,28 @@ where
         self.0.set_has_ty_unchecked(ctx, tm, ty);
 
         strategy.finish_rule(self);
-        Ok(HasTy {
+        Ok(HasTyV {
             ctx,
             tm: self.read().val(ctx, tm),
             ty: self.read().val(ctx, ty),
         })
     }
 
-    fn derive_n64(&mut self, ctx: C, n: u64) -> HasTyV<C, T> {
-        todo!()
-        // let tm = self.add(ctx, NodeT::N64(n));
-        // let ty = self.add(ctx, NodeT::Nats);
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // HasTyIn { tm, ty }
+    fn derive_n64(&mut self, ctx: C, n: u64, strategy: &mut S) -> Result<HasTyV<C, T>, S::Fail> {
+        strategy.start_rule("derive_n64", self)?;
+
+        strategy.commit_rule(self);
+
+        let tm = self.add_with(ctx, NodeT::N64(n), strategy)?;
+        let ty = self.add_with(ctx, NodeT::Nats, strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+
+        strategy.finish_rule(self);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_succ(

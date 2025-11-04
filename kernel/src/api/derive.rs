@@ -718,7 +718,12 @@ where
     /// Typecheck a 64-bit natural number
     ///
     /// TODO: reference Lean
-    fn derive_n64(&mut self, ctx: C, n: u64) -> HasTy<C, Val<C, T>>;
+    fn derive_n64(
+        &mut self,
+        ctx: C,
+        n: u64,
+        strategy: &mut S,
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>;
 
     /// Typecheck the successor function on natural numbers
     ///

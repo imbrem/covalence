@@ -2,7 +2,6 @@
 resolver = "3"
 members = [
     "covalence",
-    "core",
     "server",
     "core/data",
     "core/store",

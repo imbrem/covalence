@@ -1,5 +1,5 @@
 use crate::{
-    CtxId, Pred1,
+    Pred1,
     data::term::{Bv, Fv, NodeT, NodeVT, ULvl, Val},
     fact::Pred0,
 };

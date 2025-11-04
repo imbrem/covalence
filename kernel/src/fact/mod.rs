@@ -438,34 +438,44 @@ pub type HasTyV<C, T> = HasTy<C, Val<C, T>>;
 
 /// A term is a type under a binder
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct IsTyUnder<C, T> {
+pub struct ForallIsTy<C, T> {
     pub ctx: C,
     pub binder: T,
     pub tm: T,
 }
 
-pub type IsTyUnderV<C, T> = IsTyUnder<C, Val<C, T>>;
+pub type ForallIsTyV<C, T> = ForallIsTy<C, Val<C, T>>;
 
 /// A typing derivation under a binder
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct HasTyUnder<C, T> {
+pub struct ForallHasTy<C, T> {
     pub ctx: C,
     pub binder: T,
     pub tm: T,
     pub ty: T,
 }
 
-pub type HasTyUnderV<C, T> = HasTyUnder<C, Val<C, T>>;
+pub type HasTyUnderV<C, T> = ForallHasTy<C, Val<C, T>>;
+
+/// A term is always a proposition under a binder
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct ForallIsProp<C, T> {
+    pub ctx: C,
+    pub binder: T,
+    pub tm: T,
+}
+
+pub type ForallIsPropV<C, T> = ForallIsProp<C, Val<C, T>>;
 
 /// A universally quantified statement of inhabitance
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct ForallInhabUnder<C, T> {
+pub struct ForallInhab<C, T> {
     pub ctx: C,
     pub binder: T,
-    pub ty: T,
+    pub tm: T,
 }
 
-pub type ForallInhabUnderV<C, T> = ForallInhabUnder<C, Val<C, T>>;
+pub type ForallInhabUnderV<C, T> = ForallInhab<C, Val<C, T>>;
 
 /// An existentially quantified statement of inhabitance
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -580,8 +590,8 @@ impl<C, T> From<HasTy<C, T>> for QAtomSeq<C, T> {
     }
 }
 
-impl<C, T> From<IsTyUnder<C, T>> for QAtomSeq<C, T> {
-    fn from(g: IsTyUnder<C, T>) -> Self {
+impl<C, T> From<ForallIsTy<C, T>> for QAtomSeq<C, T> {
+    fn from(g: ForallIsTy<C, T>) -> Self {
         QAtomSeq {
             ctx: g.ctx,
             stmt: Quantified {
@@ -592,8 +602,20 @@ impl<C, T> From<IsTyUnder<C, T>> for QAtomSeq<C, T> {
     }
 }
 
-impl<C, T> From<HasTyUnder<C, T>> for QAtomSeq<C, T> {
-    fn from(g: HasTyUnder<C, T>) -> Self {
+impl<C, T> From<ForallIsProp<C, T>> for QAtomSeq<C, T> {
+    fn from(g: ForallIsProp<C, T>) -> Self {
+        Seq {
+            ctx: g.ctx,
+            stmt: Quantified {
+                binder: Some(Forall(g.binder)),
+                body: Atom::is_prop(g.tm),
+            },
+        }
+    }
+}
+
+impl<C, T> From<ForallHasTy<C, T>> for QAtomSeq<C, T> {
+    fn from(g: ForallHasTy<C, T>) -> Self {
         Seq {
             ctx: g.ctx,
             stmt: Quantified {
@@ -604,13 +626,13 @@ impl<C, T> From<HasTyUnder<C, T>> for QAtomSeq<C, T> {
     }
 }
 
-impl<C, T> From<ForallInhabUnder<C, T>> for QAtomSeq<C, T> {
-    fn from(g: ForallInhabUnder<C, T>) -> Self {
+impl<C, T> From<ForallInhab<C, T>> for QAtomSeq<C, T> {
+    fn from(g: ForallInhab<C, T>) -> Self {
         Seq {
             ctx: g.ctx,
             stmt: Quantified {
                 binder: Some(Forall(g.binder)),
-                body: Atom::is_inhab(g.ty),
+                body: Atom::is_inhab(g.tm),
             },
         }
     }

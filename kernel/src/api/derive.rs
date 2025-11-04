@@ -136,11 +136,11 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
     where
         S: Strategy<C, T, Self>,
     {
-        self.ensure_goal(IsTyUnder { ctx, binder, tm }.into(), strategy, msg)
+        self.ensure_goal(ForallIsTy { ctx, binder, tm }.into(), strategy, msg)
     }
 
     /// Attempt to prove that a term has a given type in a context under a binder
-    fn ensure_has_ty_under<S>(
+    fn ensure_forall_has_ty<S>(
         &mut self,
         ctx: C,
         binder: Val<C, T>,
@@ -153,7 +153,7 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
         S: Strategy<C, T, Self>,
     {
         self.ensure_goal(
-            HasTyUnder {
+            ForallHasTy {
                 ctx,
                 binder,
                 tm,
@@ -165,19 +165,34 @@ pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, 
         )
     }
 
-    /// Attempt to prove that a term is always inhabited in a context under a binder
-    fn ensure_forall_inhab_under<S>(
+    /// Attempt to prove that a term is always a proposition under a binder
+    fn ensure_forall_is_prop<S>(
         &mut self,
         ctx: C,
         binder: Val<C, T>,
-        ty: Val<C, T>,
+        tm: Val<C, T>,
         strategy: &mut S,
         msg: &'static str,
     ) -> Result<(), S::Fail>
     where
         S: Strategy<C, T, Self>,
     {
-        self.ensure_goal(ForallInhabUnder { ctx, binder, ty }.into(), strategy, msg)
+        self.ensure_goal(ForallIsProp { ctx, binder, tm }.into(), strategy, msg)
+    }
+
+    /// Attempt to prove that a term is always inhabited in a context under a binder
+    fn ensure_forall_inhab<S>(
+        &mut self,
+        ctx: C,
+        binder: Val<C, T>,
+        tm: Val<C, T>,
+        strategy: &mut S,
+        msg: &'static str,
+    ) -> Result<(), S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
+        self.ensure_goal(ForallInhab { ctx, binder, tm }.into(), strategy, msg)
     }
 
     // /// Attempt to prove that there exists a value of the binder type such that the term is
@@ -342,7 +357,7 @@ where
         tm: Val<C, T>,
         ty: Val<C, T>,
         strategy: &mut S,
-    ) -> Result<HasTyUnder<C, Val<C, T>>, S::Fail>;
+    ) -> Result<ForallHasTy<C, Val<C, T>>, S::Fail>;
 
     /// Typecheck a variable
     ///

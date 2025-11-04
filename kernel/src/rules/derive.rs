@@ -329,7 +329,7 @@ where
         )?;
 
         let ty = self.resolve(ctx, NodeT::U(lvl), strategy)?;
-        self.ensure_has_ty_under(
+        self.ensure_forall_has_ty(
             ctx,
             arg_ty,
             res_ty,
@@ -364,7 +364,7 @@ where
 
         let ty = self.resolve(ctx, NodeT::U(lvl), strategy)?;
         self.ensure_has_ty(ctx, arg_ty, ty, strategy, kernel_error::DERIVE_SIGMA_ARG_TY)?;
-        self.ensure_has_ty_under(
+        self.ensure_forall_has_ty(
             ctx,
             arg_ty,
             res_ty,
@@ -397,7 +397,7 @@ where
     ) -> Result<HasTyV<C, T>, S::Fail> {
         strategy.start_rule("derive_abs", self)?;
 
-        self.ensure_has_ty_under(
+        self.ensure_forall_has_ty(
             ctx,
             arg_ty,
             body,
@@ -552,7 +552,7 @@ where
         strategy.start_rule("derive_dite", self)?;
 
         self.ensure_is_prop(ctx, cond, strategy, kernel_error::DERIVE_DITE_COND)?;
-        self.ensure_has_ty_under(
+        self.ensure_forall_has_ty(
             ctx,
             cond,
             then_br,
@@ -562,7 +562,7 @@ where
         )?;
         let ff = self.resolve(ctx, NodeT::Empty, strategy)?;
         let not_cond = self.resolve(ctx, NodeT::Eqn([cond, ff]), strategy)?;
-        self.ensure_has_ty_under(
+        self.ensure_forall_has_ty(
             ctx,
             not_cond,
             else_br,
@@ -616,21 +616,23 @@ where
         pred: Val<C, T>,
         strategy: &mut S,
     ) -> Result<HasTyV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_choose")?;
-        // self.ensure_is_inhab(ctx, ty, strategy, kernel_error::DERIVE_CHOOSE_TY)?;
-        // let prop = self.add(ctx, NodeT::U(ULvl::PROP));
-        // self.ensure_has_ty_under(
-        //     ctx,
-        //     ty,
-        //     pred,
-        //     prop,
-        //     strategy,
-        //     kernel_error::DERIVE_CHOOSE_PRED,
-        // )?;
-        // let tm = self.add(ctx, NodeT::Choose([ty, pred]));
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+        strategy.start_rule("derive_choose", self)?;
+
+        self.ensure_is_inhab(ctx, ty, strategy, kernel_error::DERIVE_CHOOSE_TY)?;
+        self.ensure_forall_is_prop(ctx, ty, pred, strategy, kernel_error::DERIVE_CHOOSE_PRED)?;
+
+        strategy.commit_rule(self);
+
+        let tm = self.add_with(ctx, NodeT::Choose([ty, pred]), strategy)?;
+        let ty = self.import_with(ctx, ty, strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+
+        strategy.finish_rule(self);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_nats(

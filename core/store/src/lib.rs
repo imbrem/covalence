@@ -12,7 +12,7 @@ pub use ctx::{Ix, NodeIx};
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CtxId(SmallIndex<Ctx>);
 
-pub type TermId = covalence_data::store::TermId<TermDb>;
+pub type TermId = covalence_data::store::TmId<TermDb>;
 
 pub type FvId = covalence_data::store::FvId<TermDb>;
 
@@ -42,7 +42,7 @@ impl ReadLocalTerm for TermDb {
     fn val(&self, ctx: CtxId, tm: Ix) -> TermId {
         match self.node(ctx, tm) {
             NodeIx::Import(val) => self.val(val.ctx, val.tm),
-            _ => Val { ctx, tm },
+            _ => TmIn { ctx, tm },
         }
     }
 
@@ -68,24 +68,13 @@ impl ReadLocalTerm for TermDb {
         } else if ctx == val.ctx {
             Some(val.tm)
         } else {
-            self.x[ctx.0].lookup(NodeT::Import(val))
+            self.x[ctx.0].lookup(Node::Import(val))
         }
     }
 
     fn bvi(&self, ctx: CtxId, tm: Ix) -> Bv {
         //TODO: compute the bvi if invalid
         self.x[ctx.0].bvi(tm)
-    }
-
-    fn deref_eq(&self, lhs: Val<CtxId, Ix>, rhs: Val<CtxId, Ix>) -> bool {
-        lhs == rhs || self.val(lhs.ctx, lhs.tm) == self.val(rhs.ctx, rhs.tm)
-    }
-
-    fn cons_eq(&self, lhs: TermId, rhs: TermId) -> bool {
-        if lhs == rhs {
-            return true;
-        }
-        lhs.node_val(self) == rhs.node_val(self)
     }
 }
 
@@ -142,7 +131,7 @@ impl WriteLocalTerm for TermDb {
         } else if ctx == val.ctx {
             return val.tm;
         } else {
-            self.x[ctx.0].add(NodeT::Import(val))
+            self.x[ctx.0].add(Node::Import(val))
         };
         let bvi = self.bvi(val.ctx, val.tm);
         self.set_bvi_unchecked(ctx, result, bvi);
@@ -259,20 +248,7 @@ impl ReadLocalFacts for TermDb {
     }
 }
 
-impl ReadTermFacts<CtxId, Ix> for TermDb {
-    fn tm_flags(&self, ctx: CtxId, tm: Ix) -> Pred1 {
-        self.x[ctx.0].tm_flags(tm)
-    }
-
-    fn eq_in(&self, ctx: CtxId, lhs: Ix, rhs: Ix) -> bool {
-        self.x[ctx.0].eq_in(lhs, rhs)
-    }
-
-    fn has_ty(&self, ctx: CtxId, tm: Ix, ty: Ix) -> bool {
-        self.x[ctx.0].has_ty(tm, ty)
-    }
-}
-
+/*
 impl ReadQuantFacts<CtxId, Ix> for TermDb {
     fn forall_eq_in(&self, ctx: CtxId, binder: Ix, lhs: Ix, rhs: Ix) -> bool {
         if !self.is_ty(ctx, binder) {
@@ -378,7 +354,9 @@ impl ReadQuantFacts<CtxId, Ix> for TermDb {
         self.is_empty(ctx, binder) && self.forall_is_wf(ctx, binder, tm)
     }
 }
+    */
 
+/*
 impl ReadTermDb<CtxId, Ix> for TermDb {
     type Reader = TermDb;
 
@@ -386,6 +364,7 @@ impl ReadTermDb<CtxId, Ix> for TermDb {
         self
     }
 }
+*/
 
 impl WriteCtxGraphUnchecked<CtxId> for TermDb {
     fn set_parent_unchecked(&mut self, ctx: CtxId, parent: CtxId) {
@@ -417,6 +396,7 @@ impl WriteLocalFactsUnchecked for TermDb {
     }
 }
 
+/*
 impl WriteFacts<CtxId, Ix> for TermDb {
     fn set_has_ty_unchecked(&mut self, ctx: CtxId, tm: Ix, ty: Ix) {
         self.x[ctx.0].set_has_ty_unchecked(tm, ty);
@@ -454,6 +434,7 @@ impl WriteFacts<CtxId, Ix> for TermDb {
         self.x[ctx.0].set_exists_is_inhab_unchecked(binder, ty);
     }
 }
+*/
 
 #[cfg(test)]
 mod test {

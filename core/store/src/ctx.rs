@@ -1,10 +1,9 @@
 use std::{collections::BTreeMap, ops::BitOr};
 
-use covalence_data::term::{Bv, DiscT, Fv, NodeT};
+use covalence_data::term::{Bv, DiscT, Fv, Node};
 use egg::{Analysis, DidMerge, EGraph, Language};
 
 use covalence_data::fact::{Pred0, Pred1};
-use covalence_data::univ::ULvl;
 
 use super::{CtxId, FvId, TermId};
 
@@ -96,27 +95,8 @@ impl Ctx {
         self.e.find(lhs.0) == self.e.find(rhs.0)
     }
 
-    pub fn has_ty(&self, tm: Ix, ty: Ix) -> bool {
-        let Some(has_ty) = self.lookup(NodeIx::HasTy([tm, ty])) else {
-            return false;
-        };
-        self.is_wf(has_ty)
-    }
-
     pub fn tm_flags(&self, tm: Ix) -> Pred1 {
         self.e[tm.0].data.flags
-    }
-
-    pub fn is_wf(&self, tm: Ix) -> bool {
-        self.e[tm.0].data.flags.contains(Pred1::IS_WF)
-    }
-
-    pub fn is_prop(&self, tm: Ix) -> bool {
-        self.e[tm.0].data.flags.contains(Pred1::IS_PROP)
-    }
-
-    pub fn is_univ(&self, tm: Ix) -> bool {
-        self.e[tm.0].data.flags.contains(Pred1::IS_UNIV)
     }
 
     pub fn set_flags_unchecked(&mut self, tm: Ix, flags: Pred1) -> bool {
@@ -131,95 +111,8 @@ impl Ctx {
         }
     }
 
-    pub fn set_is_wf_unchecked(&mut self, tm: Ix) -> bool {
-        self.set_flags_unchecked(tm, Pred1::IS_WF)
-    }
-
-    pub fn set_is_ty_unchecked(&mut self, tm: Ix) -> bool {
-        self.set_flags_unchecked(tm, Pred1::IS_TY)
-    }
-
-    pub fn set_is_inhab_unchecked(&mut self, tm: Ix) -> bool {
-        self.set_flags_unchecked(tm, Pred1::IS_INHAB)
-    }
-
-    pub fn set_is_empty_unchecked(&mut self, tm: Ix) -> bool {
-        self.set_flags_unchecked(tm, Pred1::IS_EMPTY)
-    }
-
-    pub fn set_is_prop_unchecked(&mut self, tm: Ix) -> bool {
-        self.set_flags_unchecked(tm, Pred1::IS_PROP)
-    }
-
     pub fn set_eq_unchecked(&mut self, lhs: Ix, rhs: Ix) -> bool {
         self.e.union(lhs.0, rhs.0)
-    }
-
-    pub fn set_has_ty_unchecked(&mut self, tm: Ix, ty: Ix) -> bool {
-        if self.is_univ(ty) {
-            self.set_is_ty_unchecked(tm);
-            if !self.is_prop(tm)
-                && let Some(u0) = self.lookup(NodeIx::U(ULvl::PROP))
-                && self.eq_in(ty, u0)
-            {
-                self.set_is_prop_unchecked(tm);
-            }
-        }
-        self.set_is_wf_unchecked(tm);
-        let has_ty = self.add(NodeIx::HasTy([tm, ty]));
-        self.set_is_inhab_unchecked(ty);
-        let unit = self.add(NodeIx::Unit);
-        self.set_eq_unchecked(has_ty, unit)
-    }
-
-    pub fn set_forall_eq_unchecked(&mut self, binder: Ix, lhs: Ix, rhs: Ix) -> bool {
-        self.set_is_ty_unchecked(binder);
-        let abs_lhs = self.add(NodeIx::Abs([binder, lhs]));
-        let abs_rhs = self.add(NodeIx::Abs([binder, rhs]));
-        self.set_eq_unchecked(abs_lhs, abs_rhs)
-    }
-
-    pub fn set_forall_is_wf_unchecked(&mut self, binder: Ix, tm: Ix) -> bool {
-        self.set_is_ty_unchecked(binder);
-        let tm = self.add(NodeIx::Abs([binder, tm]));
-        self.set_is_wf_unchecked(tm)
-    }
-
-    pub fn set_forall_is_ty_unchecked(&mut self, binder: Ix, ty: Ix) -> bool {
-        self.set_is_ty_unchecked(binder);
-        let pi = self.add(NodeIx::Pi([binder, ty]));
-        self.set_is_ty_unchecked(pi)
-    }
-
-    pub fn set_forall_is_prop_unchecked(&mut self, binder: Ix, ty: Ix) -> bool {
-        self.set_is_ty_unchecked(binder);
-        let pi = self.add(NodeIx::Pi([binder, ty]));
-        self.set_is_prop_unchecked(pi)
-    }
-
-    pub fn set_forall_has_ty_unchecked(&mut self, binder: Ix, tm: Ix, ty: Ix) -> bool {
-        self.set_is_ty_unchecked(binder);
-        let abs = self.add(NodeIx::Abs([binder, tm]));
-        let pi = self.add(NodeIx::Pi([binder, ty]));
-        self.set_has_ty_unchecked(abs, pi)
-    }
-
-    pub fn set_forall_is_inhab_unchecked(&mut self, binder: Ix, ty: Ix) -> bool {
-        self.set_is_ty_unchecked(binder);
-        let pi = self.add(NodeIx::Pi([binder, ty]));
-        self.set_is_inhab_unchecked(pi)
-    }
-
-    pub fn set_forall_is_empty_unchecked(&mut self, binder: Ix, ty: Ix) -> bool {
-        self.set_is_ty_unchecked(binder);
-        let sigma = self.add(NodeIx::Sigma([binder, ty]));
-        self.set_is_empty_unchecked(sigma)
-    }
-
-    pub fn set_exists_is_inhab_unchecked(&mut self, binder: Ix, ty: Ix) -> bool {
-        self.set_forall_is_ty_unchecked(binder, ty);
-        let sigma = self.add(NodeIx::Sigma([binder, ty]));
-        self.set_is_inhab_unchecked(sigma)
     }
 
     pub fn add_var_unchecked(&mut self, ctx: CtxId, ty: TermId) -> FvId {
@@ -324,7 +217,7 @@ impl Ctx {}
 #[repr(transparent)]
 pub struct Ix(egg::Id);
 
-pub type NodeIx = NodeT<CtxId, Ix>;
+pub type NodeIx = Node<CtxId, Ix>;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[repr(transparent)]

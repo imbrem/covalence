@@ -3,8 +3,7 @@ Facts which can be checked in the datastore
 */
 use std::ops::{Deref, DerefMut};
 
-use crate::data::term::Val;
-use crate::store::*;
+use crate::data::term::TmIn;
 
 pub use crate::data::fact::*;
 
@@ -187,7 +186,7 @@ impl<C, T> EqnIn<C, T> {
 }
 
 /// An equation-in-context between values
-pub type EqnInV<C, T> = EqnIn<C, Val<C, T>>;
+pub type EqnInV<C, T> = EqnIn<C, TmIn<C, T>>;
 
 /// A statement of well-formedness
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -196,7 +195,7 @@ pub struct IsWf<C, T> {
     pub tm: T,
 }
 
-pub type IsWfV<C, T> = IsWf<C, Val<C, T>>;
+pub type IsWfV<C, T> = IsWf<C, TmIn<C, T>>;
 
 /// A term is a valid type
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -205,7 +204,7 @@ pub struct IsTy<C, T> {
     pub tm: T,
 }
 
-pub type IsTyV<C, T> = IsTy<C, Val<C, T>>;
+pub type IsTyV<C, T> = IsTy<C, TmIn<C, T>>;
 
 /// A term is an inhabited type
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -214,7 +213,7 @@ pub struct IsInhab<C, T> {
     pub tm: T,
 }
 
-pub type IsInhabV<C, T> = IsInhab<C, Val<C, T>>;
+pub type IsInhabV<C, T> = IsInhab<C, TmIn<C, T>>;
 
 /// A term is an empty type
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -223,7 +222,7 @@ pub struct IsEmpty<C, T> {
     pub tm: T,
 }
 
-pub type IsEmptyV<C, T> = IsEmpty<C, Val<C, T>>;
+pub type IsEmptyV<C, T> = IsEmpty<C, TmIn<C, T>>;
 
 /// A term is a proposition
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -232,7 +231,7 @@ pub struct IsProp<C, T> {
     pub tm: T,
 }
 
-pub type IsPropV<C, T> = IsProp<C, Val<C, T>>;
+pub type IsPropV<C, T> = IsProp<C, TmIn<C, T>>;
 
 /// A typing derivation
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -242,7 +241,7 @@ pub struct HasTy<C, T> {
     pub ty: T,
 }
 
-pub type HasTyV<C, T> = HasTy<C, Val<C, T>>;
+pub type HasTyV<C, T> = HasTy<C, TmIn<C, T>>;
 
 /// A term is a type under a binder
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -252,7 +251,7 @@ pub struct ForallIsTy<C, T> {
     pub tm: T,
 }
 
-pub type ForallIsTyV<C, T> = ForallIsTy<C, Val<C, T>>;
+pub type ForallIsTyV<C, T> = ForallIsTy<C, TmIn<C, T>>;
 
 /// A typing derivation under a binder
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -263,7 +262,7 @@ pub struct ForallHasTy<C, T> {
     pub ty: T,
 }
 
-pub type HasTyUnderV<C, T> = ForallHasTy<C, Val<C, T>>;
+pub type HasTyUnderV<C, T> = ForallHasTy<C, TmIn<C, T>>;
 
 /// A term is always a proposition under a binder
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -273,7 +272,7 @@ pub struct ForallIsProp<C, T> {
     pub tm: T,
 }
 
-pub type ForallIsPropV<C, T> = ForallIsProp<C, Val<C, T>>;
+pub type ForallIsPropV<C, T> = ForallIsProp<C, TmIn<C, T>>;
 
 /// A universally quantified statement of inhabitance
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -283,7 +282,7 @@ pub struct ForallInhab<C, T> {
     pub tm: T,
 }
 
-pub type ForallInhabUnderV<C, T> = ForallInhab<C, Val<C, T>>;
+pub type ForallInhabUnderV<C, T> = ForallInhab<C, TmIn<C, T>>;
 
 /// An existentially quantified statement of inhabitance
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -293,7 +292,7 @@ pub struct ExistsInhabUnder<C, T> {
     pub ty: T,
 }
 
-pub type ExistsInhabUnderV<C, T> = ExistsInhabUnder<C, Val<C, T>>;
+pub type ExistsInhabUnderV<C, T> = ExistsInhabUnder<C, TmIn<C, T>>;
 
 /// A context is a subcontext of another
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -446,6 +445,7 @@ impl<C, T> From<ForallInhab<C, T>> for QAtomSeq<C, T> {
     }
 }
 
+/*
 impl<C, T, R> FactIn<C, R> for Forall<T>
 where
     C: Copy,
@@ -506,3 +506,4 @@ where
         }
     }
 }
+*/

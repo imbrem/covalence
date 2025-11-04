@@ -1,4 +1,25 @@
-use crate::fact::Pred0;
+use crate::{fact::Pred0, term::Fv};
+
+/// A datastore that can read contexts
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence::kernel::*;
+/// let ker : &dyn ReadCtx<CtxId, TermId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence::kernel::*;
+/// let ker : &dyn ReadCtx<CtxId, TermId> = &Kernel::new();
+/// ```
+pub trait ReadCtx<C, T> {
+    /// Get the number of variables this context has
+    fn num_vars(&self, ctx: C) -> u32;
+
+    /// Lookup the type of a variable
+    fn var_ty(&self, var: Fv<C>) -> T;
+}
 
 /// A datastore that can read relationships between contexts
 ///

@@ -1,6 +1,6 @@
 use crate::{
     fact::Pred1,
-    term::{Bv, Fv, NodeT, NodeVT, Val},
+    term::{Bv, Fv, Node, TmIn},
 };
 
 pub use crate::univ::{ReadUniv, WriteUniv};
@@ -19,9 +19,9 @@ pub type CtxId<D> = <D as TermIndex>::CtxId;
 
 pub type Ix<D> = <D as TermIndex>::Ix;
 
-pub type TermId<D> = Val<CtxId<D>, Ix<D>>;
+pub type TmId<D> = TmIn<CtxId<D>, Ix<D>>;
 
-pub type NodeIx<D> = NodeT<CtxId<D>, Ix<D>>;
+pub type NodeIx<D> = Node<CtxId<D>, Ix<D>>;
 
 pub type FvId<D> = Fv<CtxId<D>>;
 
@@ -42,7 +42,7 @@ pub trait ReadLocalTerm: TermIndex {
     // == Terms ==
 
     /// Get the value corresponding to a term
-    fn val(&self, ctx: CtxId<Self>, tm: Ix<Self>) -> TermId<Self>;
+    fn val(&self, ctx: CtxId<Self>, tm: Ix<Self>) -> TmId<Self>;
 
     /// Get the node corresponding to a term
     fn node(&self, ctx: CtxId<Self>, tm: Ix<Self>) -> &NodeIx<Self>;
@@ -51,7 +51,7 @@ pub trait ReadLocalTerm: TermIndex {
     fn lookup(&self, ctx: CtxId<Self>, tm: NodeIx<Self>) -> Option<Ix<Self>>;
 
     /// Lookup an import of a term into another context, returning a handle to it if it exists
-    fn lookup_import(&self, ctx: CtxId<Self>, val: TermId<Self>) -> Option<Ix<Self>>;
+    fn lookup_import(&self, ctx: CtxId<Self>, val: TmId<Self>) -> Option<Ix<Self>>;
 
     // == Syntactic information ==
 
@@ -69,16 +69,9 @@ pub trait ReadLocalTerm: TermIndex {
     fn may_have_var_from(&self, _ctx: CtxId<Self>, _tm: Ix<Self>, _vars: CtxId<Self>) -> bool {
         true
     }
-
-    // == Syntactic relations ==
-
-    /// Check whether two values resolve to the same value, after following imports
-    fn deref_eq(&self, lhs: TermId<Self>, rhs: TermId<Self>) -> bool;
-
-    /// Check whether two values are equal up to first imports
-    fn cons_eq(&self, lhs: TermId<Self>, rhs: TermId<Self>) -> bool;
 }
 
+/*
 impl<C: Copy, T> Val<C, T> {
     /// Get the base value pointed to by this value
     pub fn val(self, store: &(impl ReadLocalTerm<CtxId = C, Ix = T> + ?Sized)) -> Val<C, T> {
@@ -108,6 +101,7 @@ impl<C: Copy, T: Copy> Val<C, T> {
         self.node_ix(store).raw_node_val_in(self.ctx)
     }
 }
+    */
 
 /// A trait implemented by a datastore that can create hash-consed terms
 ///
@@ -153,7 +147,7 @@ pub trait WriteLocalTerm: TermIndex + WriteUniv {
     /// - If `src[tm] := import(src2, tm)`, then `import(ctx, src, tm) => import(ctx, src2, tm)`
     /// - `import(ctx, ctx, tm)` returns `tm`
     /// - otherwise, return an `Import` node
-    fn import(&mut self, ctx: CtxId<Self>, val: TermId<Self>) -> Ix<Self>;
+    fn import(&mut self, ctx: CtxId<Self>, val: TmId<Self>) -> Ix<Self>;
 
     // == Congruence management ==
 
@@ -244,7 +238,7 @@ pub trait WriteLocalFactsUnchecked: TermIndex {
     // == Variable and assumption manipulation ==
 
     /// Add a variable to the given context
-    fn add_var_unchecked(&mut self, ctx: CtxId<Self>, ty: TermId<Self>) -> FvId<Self>;
+    fn add_var_unchecked(&mut self, ctx: CtxId<Self>, ty: TmId<Self>) -> FvId<Self>;
 
     // == Cached information ==
 
@@ -272,6 +266,7 @@ pub trait LocalStoreUnchecked: ReadLocalStore + WriteLocalStoreUnchecked {}
 
 impl<D> LocalStoreUnchecked for D where D: ReadLocalStore + WriteLocalStoreUnchecked {}
 
+/*
 impl<C: Copy, T> NodeT<C, T> {
     /// Interpret this node in the given context
     pub fn val(self, ctx: C, store: &mut (impl RwTermDb<C, T> + ?Sized)) -> Val<C, T> {
@@ -305,27 +300,6 @@ impl<C: Copy, T> NodeT<C, T> {
     pub fn raw_node_val_in(self, ctx: C) -> NodeVT<C, T> {
         self.map_subterms(|tm| Val { ctx, tm })
     }
-}
-
-/// A datastore that can read contexts
-///
-/// This trait is `dyn`-safe:
-/// ```rust
-/// # use covalence::kernel::*;
-/// let ker : &dyn ReadCtx<CtxId, TermId> = &TermDb::new();
-/// ```
-/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
-/// functions for different kernel wrappers:
-/// ```rust,compile_fail
-/// # use covalence::kernel::*;
-/// let ker : &dyn ReadCtx<CtxId, TermId> = &Kernel::new();
-/// ```
-pub trait ReadCtx<C, T> {
-    /// Get the number of variables this context has
-    fn num_vars(&self, ctx: C) -> u32;
-
-    /// Lookup the type of a variable
-    fn var_ty(&self, var: Fv<C>) -> T;
 }
 
 impl<C: Copy> Fv<C> {
@@ -789,3 +763,4 @@ impl<C: Copy, T: Copy, D: ReadLocalTerm<CtxId = C, Ix = T> + ReadQuantFacts<C, T
         })
     }
 }
+*/

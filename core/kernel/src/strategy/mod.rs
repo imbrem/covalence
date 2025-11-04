@@ -27,7 +27,7 @@ pub trait Strategy<C, T, K: ?Sized> {
     /// Begin a goal
     fn start_goal(
         &mut self,
-        _goal: QAtomSeq<C, Val<C, T>>,
+        _goal: QAtomSeq<C, TmIn<C, T>>,
         _ker: &mut K,
     ) -> Result<(), Self::Fail> {
         Ok(())
@@ -36,24 +36,24 @@ pub trait Strategy<C, T, K: ?Sized> {
     /// Attempt to prove a goal
     fn prove_goal(
         &mut self,
-        goal: QAtomSeq<C, Val<C, T>>,
+        goal: QAtomSeq<C, TmIn<C, T>>,
         msg: &'static str,
         attempt_no: usize,
         ker: &mut K,
     ) -> Result<(), Self::Fail>;
 
     /// Called when a goal is proved
-    fn finish_goal(&mut self, _goal: QAtomSeq<C, Val<C, T>>, _ker: &mut K) {}
+    fn finish_goal(&mut self, _goal: QAtomSeq<C, TmIn<C, T>>, _ker: &mut K) {}
 
     // == Imports ==
 
     /// Attempt to import a value into the given context
-    fn import(&mut self, _ctx: C, _val: Val<C, T>, _ker: &mut K) -> Result<Option<T>, Self::Fail> {
+    fn import(&mut self, _ctx: C, _val: TmIn<C, T>, _ker: &mut K) -> Result<Option<T>, Self::Fail> {
         Ok(None)
     }
 
     /// Called when an import has succeeded
-    fn finish_import(&mut self, _ctx: C, _val: Val<C, T>, _ker: &mut K) {}
+    fn finish_import(&mut self, _ctx: C, _val: TmIn<C, T>, _ker: &mut K) {}
 
     // == Resolutions ==
 
@@ -63,7 +63,7 @@ pub trait Strategy<C, T, K: ?Sized> {
         _ctx: C,
         _val: NodeVT<C, T>,
         _ker: &mut K,
-    ) -> Result<Option<Val<C, T>>, Self::Fail> {
+    ) -> Result<Option<TmIn<C, T>>, Self::Fail> {
         Ok(None)
     }
 
@@ -76,7 +76,7 @@ impl<C, T, K: ?Sized> Strategy<C, T, K> for () {
 
     fn prove_goal(
         &mut self,
-        _goal: QAtomSeq<C, Val<C, T>>,
+        _goal: QAtomSeq<C, TmIn<C, T>>,
         msg: &'static str,
         _attempt_no: usize,
         _ker: &mut K,

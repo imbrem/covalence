@@ -1,6 +1,6 @@
 use bitflags::bitflags;
 
-use crate::term::NodeT;
+use crate::term::Node;
 
 bitflags! {
     /// A nullary predicate over contexts
@@ -194,15 +194,15 @@ pub const IS_UNIV: Pred1 = Pred1::IS_UNIV;
 /// A term indicates a contradiction
 pub const IS_CONTR: Pred1 = Pred1::IS_CONTR;
 
-impl<C, T> NodeT<C, T> {
+impl<C, T> Node<C, T> {
     /// Infer predicates for this term in the given context
     pub fn static_flags(&self) -> Pred1 {
         match self {
-            NodeT::U(_) => Pred1::IS_UNIV,
-            NodeT::Unit => Pred1::IS_TT,
-            NodeT::Empty => Pred1::IS_FF,
-            NodeT::Nats => Pred1::IS_INHAB,
-            NodeT::N64(_) | NodeT::Null => Pred1::IS_WF,
+            Node::U(_) => Pred1::IS_UNIV,
+            Node::Unit => Pred1::IS_TT,
+            Node::Empty => Pred1::IS_FF,
+            Node::Nats => Pred1::IS_INHAB,
+            Node::N64(_) | Node::Null => Pred1::IS_WF,
             _ => Pred1::default(),
         }
     }

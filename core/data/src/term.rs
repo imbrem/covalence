@@ -7,7 +7,7 @@ pub use crate::univ::ULvl;
 
 /// A term in `covalence`'s core calculus
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
-pub enum NodeT<C, T, I = Val<C, T>> {
+pub enum Node<C, T, I = TmIn<C, T>> {
     // == Term formers, corresponding to Tm from `gt3-lean` ==
     /// A free variable
     Fv(Fv<C>),
@@ -72,7 +72,7 @@ pub enum NodeT<C, T, I = Val<C, T>> {
 
 /// The discriminant of a term node
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub enum DiscT<C, T, I = Val<C, T>> {
+pub enum DiscT<C, T, I = TmIn<C, T>> {
     /// A free variable
     Fv(Fv<C>),
     /// A bound variable
@@ -133,129 +133,129 @@ pub enum DiscT<C, T, I = Val<C, T>> {
 pub type SynDiscIT<C, I> = DiscT<C, (), I>;
 
 /// A syntactic discriminant
-pub type SynDiscT<C, T> = SynDiscIT<C, Val<C, T>>;
+pub type SynDiscT<C, T> = SynDiscIT<C, TmIn<C, T>>;
 
-impl<C, T, I> NodeT<C, T, I> {
+impl<C, T, I> Node<C, T, I> {
     /// Construct a bound variable
-    pub const fn bv(ix: u32) -> NodeT<C, T, I> {
-        NodeT::Bv(Bv::new(ix))
+    pub const fn bv(ix: u32) -> Node<C, T, I> {
+        Node::Bv(Bv::new(ix))
     }
 
     /// Construct a substitution
-    pub const fn subst1(bound: T, body: T) -> NodeT<C, T, I> {
-        NodeT::Subst1(Bv::new(0), [bound, body])
+    pub const fn subst1(bound: T, body: T) -> Node<C, T, I> {
+        Node::Subst1(Bv::new(0), [bound, body])
     }
 
     /// Get this node's discriminant
     pub fn disc(self) -> DiscT<C, T, I> {
         match self {
-            NodeT::Fv(x) => DiscT::Fv(x),
-            NodeT::Bv(i) => DiscT::Bv(i),
-            NodeT::U(level) => DiscT::U(level),
-            NodeT::Empty => DiscT::Empty,
-            NodeT::Unit => DiscT::Unit,
-            NodeT::Null => DiscT::Null,
-            NodeT::Eqn(_) => DiscT::Eqn,
-            NodeT::Pi(_) => DiscT::Pi,
-            NodeT::Sigma(_) => DiscT::Sigma,
-            NodeT::Abs(_) => DiscT::Abs,
-            NodeT::App(_) => DiscT::App,
-            NodeT::Pair(_) => DiscT::Pair,
-            NodeT::Fst(_) => DiscT::Fst,
-            NodeT::Snd(_) => DiscT::Snd,
-            NodeT::Ite(_) => DiscT::Ite,
-            NodeT::Trunc(_) => DiscT::Trunc,
-            NodeT::Choose(_) => DiscT::Choose,
-            NodeT::Nats => DiscT::Nats,
-            NodeT::N64(n) => DiscT::N64(n),
-            NodeT::Succ(_) => DiscT::Succ,
-            NodeT::Natrec(_) => DiscT::Natrec,
-            NodeT::HasTy(_) => DiscT::HasTy,
-            NodeT::Invalid => DiscT::Invalid,
-            NodeT::Subst1(k, _) => DiscT::Subst1(k),
-            NodeT::BWk(s, _) => DiscT::BWk(s),
-            NodeT::Close(close) => DiscT::Close(close),
-            NodeT::Import(import) => DiscT::Import(import),
+            Node::Fv(x) => DiscT::Fv(x),
+            Node::Bv(i) => DiscT::Bv(i),
+            Node::U(level) => DiscT::U(level),
+            Node::Empty => DiscT::Empty,
+            Node::Unit => DiscT::Unit,
+            Node::Null => DiscT::Null,
+            Node::Eqn(_) => DiscT::Eqn,
+            Node::Pi(_) => DiscT::Pi,
+            Node::Sigma(_) => DiscT::Sigma,
+            Node::Abs(_) => DiscT::Abs,
+            Node::App(_) => DiscT::App,
+            Node::Pair(_) => DiscT::Pair,
+            Node::Fst(_) => DiscT::Fst,
+            Node::Snd(_) => DiscT::Snd,
+            Node::Ite(_) => DiscT::Ite,
+            Node::Trunc(_) => DiscT::Trunc,
+            Node::Choose(_) => DiscT::Choose,
+            Node::Nats => DiscT::Nats,
+            Node::N64(n) => DiscT::N64(n),
+            Node::Succ(_) => DiscT::Succ,
+            Node::Natrec(_) => DiscT::Natrec,
+            Node::HasTy(_) => DiscT::HasTy,
+            Node::Invalid => DiscT::Invalid,
+            Node::Subst1(k, _) => DiscT::Subst1(k),
+            Node::BWk(s, _) => DiscT::BWk(s),
+            Node::Close(close) => DiscT::Close(close),
+            Node::Import(import) => DiscT::Import(import),
         }
     }
 
     /// Get this node's syntactic discriminant
     pub fn syn_disc(self) -> SynDiscIT<C, I> {
         match self {
-            NodeT::Fv(x) => DiscT::Fv(x),
-            NodeT::Bv(i) => DiscT::Bv(i),
-            NodeT::U(level) => DiscT::U(level),
-            NodeT::Empty => DiscT::Empty,
-            NodeT::Unit => DiscT::Unit,
-            NodeT::Null => DiscT::Null,
-            NodeT::Eqn(_) => DiscT::Eqn,
-            NodeT::Pi(_) => DiscT::Pi,
-            NodeT::Sigma(_) => DiscT::Sigma,
-            NodeT::Abs(_) => DiscT::Abs,
-            NodeT::App(_) => DiscT::App,
-            NodeT::Pair(_) => DiscT::Pair,
-            NodeT::Fst(_) => DiscT::Fst,
-            NodeT::Snd(_) => DiscT::Snd,
-            NodeT::Ite(_) => DiscT::Ite,
-            NodeT::Trunc(_) => DiscT::Trunc,
-            NodeT::Choose(_) => DiscT::Choose,
-            NodeT::Nats => DiscT::Nats,
-            NodeT::N64(n) => DiscT::N64(n),
-            NodeT::Succ(_) => DiscT::Succ,
-            NodeT::Natrec(_) => DiscT::Natrec,
-            NodeT::HasTy(_) => DiscT::HasTy,
-            NodeT::Invalid => DiscT::Invalid,
-            NodeT::Subst1(k, _) => DiscT::Subst1(k),
-            NodeT::BWk(s, _) => DiscT::BWk(s),
-            NodeT::Close(close) => DiscT::Close(close.op()),
-            NodeT::Import(import) => DiscT::Import(import),
+            Node::Fv(x) => DiscT::Fv(x),
+            Node::Bv(i) => DiscT::Bv(i),
+            Node::U(level) => DiscT::U(level),
+            Node::Empty => DiscT::Empty,
+            Node::Unit => DiscT::Unit,
+            Node::Null => DiscT::Null,
+            Node::Eqn(_) => DiscT::Eqn,
+            Node::Pi(_) => DiscT::Pi,
+            Node::Sigma(_) => DiscT::Sigma,
+            Node::Abs(_) => DiscT::Abs,
+            Node::App(_) => DiscT::App,
+            Node::Pair(_) => DiscT::Pair,
+            Node::Fst(_) => DiscT::Fst,
+            Node::Snd(_) => DiscT::Snd,
+            Node::Ite(_) => DiscT::Ite,
+            Node::Trunc(_) => DiscT::Trunc,
+            Node::Choose(_) => DiscT::Choose,
+            Node::Nats => DiscT::Nats,
+            Node::N64(n) => DiscT::N64(n),
+            Node::Succ(_) => DiscT::Succ,
+            Node::Natrec(_) => DiscT::Natrec,
+            Node::HasTy(_) => DiscT::HasTy,
+            Node::Invalid => DiscT::Invalid,
+            Node::Subst1(k, _) => DiscT::Subst1(k),
+            Node::BWk(s, _) => DiscT::BWk(s),
+            Node::Close(close) => DiscT::Close(close.op()),
+            Node::Import(import) => DiscT::Import(import),
         }
     }
 
     /// Map this node's subterms and imports
-    pub fn map<U, J>(self, mut f: impl FnMut(T) -> U, g: impl FnOnce(I) -> J) -> NodeT<C, U, J> {
+    pub fn map<U, J>(self, mut f: impl FnMut(T) -> U, g: impl FnOnce(I) -> J) -> Node<C, U, J> {
         match self {
-            NodeT::Fv(x) => NodeT::Fv(x),
-            NodeT::Bv(i) => NodeT::Bv(i),
-            NodeT::U(level) => NodeT::U(level),
-            NodeT::Empty => NodeT::Empty,
-            NodeT::Unit => NodeT::Unit,
-            NodeT::Null => NodeT::Null,
-            NodeT::Eqn([a, b]) => NodeT::Eqn([f(a), f(b)]),
-            NodeT::Pi([a, b]) => NodeT::Pi([f(a), f(b)]),
-            NodeT::Sigma([a, b]) => NodeT::Sigma([f(a), f(b)]),
-            NodeT::Abs([a, b]) => NodeT::Abs([f(a), f(b)]),
-            NodeT::App([a, b]) => NodeT::App([f(a), f(b)]),
-            NodeT::Pair([a, b]) => NodeT::Pair([f(a), f(b)]),
-            NodeT::Fst([a]) => NodeT::Fst([f(a)]),
-            NodeT::Snd([a]) => NodeT::Snd([f(a)]),
-            NodeT::Ite([a, b, c]) => NodeT::Ite([f(a), f(b), f(c)]),
-            NodeT::Trunc([a]) => NodeT::Trunc([f(a)]),
-            NodeT::Choose([a, b]) => NodeT::Choose([f(a), f(b)]),
-            NodeT::Nats => NodeT::Nats,
-            NodeT::N64(n) => NodeT::N64(n),
-            NodeT::Succ([a]) => NodeT::Succ([f(a)]),
-            NodeT::Natrec([a, b, c]) => NodeT::Natrec([f(a), f(b), f(c)]),
-            NodeT::HasTy([a, b]) => NodeT::HasTy([f(a), f(b)]),
-            NodeT::Invalid => NodeT::Invalid,
-            NodeT::Subst1(k, [a, b]) => NodeT::Subst1(k, [f(a), f(b)]),
-            NodeT::BWk(k, [a]) => NodeT::BWk(k, [f(a)]),
-            NodeT::Close(close) => NodeT::Close(Close {
+            Node::Fv(x) => Node::Fv(x),
+            Node::Bv(i) => Node::Bv(i),
+            Node::U(level) => Node::U(level),
+            Node::Empty => Node::Empty,
+            Node::Unit => Node::Unit,
+            Node::Null => Node::Null,
+            Node::Eqn([a, b]) => Node::Eqn([f(a), f(b)]),
+            Node::Pi([a, b]) => Node::Pi([f(a), f(b)]),
+            Node::Sigma([a, b]) => Node::Sigma([f(a), f(b)]),
+            Node::Abs([a, b]) => Node::Abs([f(a), f(b)]),
+            Node::App([a, b]) => Node::App([f(a), f(b)]),
+            Node::Pair([a, b]) => Node::Pair([f(a), f(b)]),
+            Node::Fst([a]) => Node::Fst([f(a)]),
+            Node::Snd([a]) => Node::Snd([f(a)]),
+            Node::Ite([a, b, c]) => Node::Ite([f(a), f(b), f(c)]),
+            Node::Trunc([a]) => Node::Trunc([f(a)]),
+            Node::Choose([a, b]) => Node::Choose([f(a), f(b)]),
+            Node::Nats => Node::Nats,
+            Node::N64(n) => Node::N64(n),
+            Node::Succ([a]) => Node::Succ([f(a)]),
+            Node::Natrec([a, b, c]) => Node::Natrec([f(a), f(b), f(c)]),
+            Node::HasTy([a, b]) => Node::HasTy([f(a), f(b)]),
+            Node::Invalid => Node::Invalid,
+            Node::Subst1(k, [a, b]) => Node::Subst1(k, [f(a), f(b)]),
+            Node::BWk(k, [a]) => Node::BWk(k, [f(a)]),
+            Node::Close(close) => Node::Close(Close {
                 under: close.under,
                 var: close.var,
                 tm: f(close.tm),
             }),
-            NodeT::Import(import) => NodeT::Import(g(import)),
+            Node::Import(import) => Node::Import(g(import)),
         }
     }
 
     /// Map this node's subterms
-    pub fn map_subterms<U>(self, f: impl FnMut(T) -> U) -> NodeT<C, U, I> {
+    pub fn map_subterms<U>(self, f: impl FnMut(T) -> U) -> Node<C, U, I> {
         self.map(f, |x| x)
     }
 
     /// Map this node's imports
-    pub fn map_import<J>(self, g: impl FnOnce(I) -> J) -> NodeT<C, T, J> {
+    pub fn map_import<J>(self, g: impl FnOnce(I) -> J) -> Node<C, T, J> {
         self.map(|x| x, g)
     }
 
@@ -264,39 +264,39 @@ impl<C, T, I> NodeT<C, T, I> {
         self,
         mut f: impl FnMut(T) -> Result<U, E>,
         g: impl FnOnce(I) -> Result<J, E>,
-    ) -> Result<NodeT<C, U, J>, E> {
+    ) -> Result<Node<C, U, J>, E> {
         match self {
-            NodeT::Fv(x) => Ok(NodeT::Fv(x)),
-            NodeT::Bv(i) => Ok(NodeT::Bv(i)),
-            NodeT::U(level) => Ok(NodeT::U(level)),
-            NodeT::Empty => Ok(NodeT::Empty),
-            NodeT::Unit => Ok(NodeT::Unit),
-            NodeT::Null => Ok(NodeT::Null),
-            NodeT::Eqn([a, b]) => Ok(NodeT::Eqn([f(a)?, f(b)?])),
-            NodeT::Pi([a, b]) => Ok(NodeT::Pi([f(a)?, f(b)?])),
-            NodeT::Sigma([a, b]) => Ok(NodeT::Sigma([f(a)?, f(b)?])),
-            NodeT::Abs([a, b]) => Ok(NodeT::Abs([f(a)?, f(b)?])),
-            NodeT::App([a, b]) => Ok(NodeT::App([f(a)?, f(b)?])),
-            NodeT::Pair([a, b]) => Ok(NodeT::Pair([f(a)?, f(b)?])),
-            NodeT::Fst([a]) => Ok(NodeT::Fst([f(a)?])),
-            NodeT::Snd([a]) => Ok(NodeT::Snd([f(a)?])),
-            NodeT::Ite([a, b, c]) => Ok(NodeT::Ite([f(a)?, f(b)?, f(c)?])),
-            NodeT::Trunc([a]) => Ok(NodeT::Trunc([f(a)?])),
-            NodeT::Choose([a, b]) => Ok(NodeT::Choose([f(a)?, f(b)?])),
-            NodeT::Nats => Ok(NodeT::Nats),
-            NodeT::N64(n) => Ok(NodeT::N64(n)),
-            NodeT::Succ([a]) => Ok(NodeT::Succ([f(a)?])),
-            NodeT::Natrec([a, b, c]) => Ok(NodeT::Natrec([f(a)?, f(b)?, f(c)?])),
-            NodeT::HasTy([a, b]) => Ok(NodeT::HasTy([f(a)?, f(b)?])),
-            NodeT::Invalid => Ok(NodeT::Invalid),
-            NodeT::Subst1(k, [a, b]) => Ok(NodeT::Subst1(k, [f(a)?, f(b)?])),
-            NodeT::BWk(k, [a]) => Ok(NodeT::BWk(k, [f(a)?])),
-            NodeT::Close(close) => Ok(NodeT::Close(Close {
+            Node::Fv(x) => Ok(Node::Fv(x)),
+            Node::Bv(i) => Ok(Node::Bv(i)),
+            Node::U(level) => Ok(Node::U(level)),
+            Node::Empty => Ok(Node::Empty),
+            Node::Unit => Ok(Node::Unit),
+            Node::Null => Ok(Node::Null),
+            Node::Eqn([a, b]) => Ok(Node::Eqn([f(a)?, f(b)?])),
+            Node::Pi([a, b]) => Ok(Node::Pi([f(a)?, f(b)?])),
+            Node::Sigma([a, b]) => Ok(Node::Sigma([f(a)?, f(b)?])),
+            Node::Abs([a, b]) => Ok(Node::Abs([f(a)?, f(b)?])),
+            Node::App([a, b]) => Ok(Node::App([f(a)?, f(b)?])),
+            Node::Pair([a, b]) => Ok(Node::Pair([f(a)?, f(b)?])),
+            Node::Fst([a]) => Ok(Node::Fst([f(a)?])),
+            Node::Snd([a]) => Ok(Node::Snd([f(a)?])),
+            Node::Ite([a, b, c]) => Ok(Node::Ite([f(a)?, f(b)?, f(c)?])),
+            Node::Trunc([a]) => Ok(Node::Trunc([f(a)?])),
+            Node::Choose([a, b]) => Ok(Node::Choose([f(a)?, f(b)?])),
+            Node::Nats => Ok(Node::Nats),
+            Node::N64(n) => Ok(Node::N64(n)),
+            Node::Succ([a]) => Ok(Node::Succ([f(a)?])),
+            Node::Natrec([a, b, c]) => Ok(Node::Natrec([f(a)?, f(b)?, f(c)?])),
+            Node::HasTy([a, b]) => Ok(Node::HasTy([f(a)?, f(b)?])),
+            Node::Invalid => Ok(Node::Invalid),
+            Node::Subst1(k, [a, b]) => Ok(Node::Subst1(k, [f(a)?, f(b)?])),
+            Node::BWk(k, [a]) => Ok(Node::BWk(k, [f(a)?])),
+            Node::Close(close) => Ok(Node::Close(Close {
                 under: close.under,
                 var: close.var,
                 tm: f(close.tm)?,
             })),
-            NodeT::Import(import) => Ok(NodeT::Import(g(import)?)),
+            Node::Import(import) => Ok(Node::Import(g(import)?)),
         }
     }
 
@@ -304,7 +304,7 @@ impl<C, T, I> NodeT<C, T, I> {
     pub fn try_map_subterms<U, E>(
         self,
         f: impl FnMut(T) -> Result<U, E>,
-    ) -> Result<NodeT<C, U, I>, E> {
+    ) -> Result<Node<C, U, I>, E> {
         self.try_map(f, Ok)
     }
 
@@ -312,110 +312,110 @@ impl<C, T, I> NodeT<C, T, I> {
     pub fn try_map_import<J, E>(
         self,
         g: impl FnOnce(I) -> Result<J, E>,
-    ) -> Result<NodeT<C, T, J>, E> {
+    ) -> Result<Node<C, T, J>, E> {
         self.try_map(Ok, g)
     }
 
     /// Annotate this node's subterms with binders
-    pub fn with_binders(self) -> NodeT<C, (Bv, T), I> {
+    pub fn with_binders(self) -> Node<C, (Bv, T), I> {
         match self {
-            NodeT::Fv(x) => NodeT::Fv(x),
-            NodeT::Bv(i) => NodeT::Bv(i),
-            NodeT::U(level) => NodeT::U(level),
-            NodeT::Empty => NodeT::Empty,
-            NodeT::Unit => NodeT::Unit,
-            NodeT::Null => NodeT::Null,
-            NodeT::Eqn([a, b]) => NodeT::Eqn([(Bv(0), a), (Bv(0), b)]),
-            NodeT::Pi([a, b]) => NodeT::Pi([(Bv(0), a), (Bv(1), b)]),
-            NodeT::Sigma([a, b]) => NodeT::Sigma([(Bv(0), a), (Bv(1), b)]),
-            NodeT::Abs([a, b]) => NodeT::Abs([(Bv(0), a), (Bv(1), b)]),
-            NodeT::App([a, b]) => NodeT::App([(Bv(0), a), (Bv(0), b)]),
-            NodeT::Pair([a, b]) => NodeT::Pair([(Bv(0), a), (Bv(0), b)]),
-            NodeT::Fst([a]) => NodeT::Fst([(Bv(0), a)]),
-            NodeT::Snd([a]) => NodeT::Snd([(Bv(0), a)]),
-            NodeT::Ite([a, b, c]) => NodeT::Ite([(Bv(0), a), (Bv(0), b), (Bv(0), c)]),
-            NodeT::Trunc([a]) => NodeT::Trunc([(Bv(0), a)]),
-            NodeT::Choose([a, b]) => NodeT::Choose([(Bv(0), a), (Bv(1), b)]),
-            NodeT::Nats => NodeT::Nats,
-            NodeT::N64(n) => NodeT::N64(n),
-            NodeT::Succ([a]) => NodeT::Succ([(Bv(0), a)]),
-            NodeT::Natrec([a, b, c]) => NodeT::Natrec([(Bv(0), a), (Bv(0), b), (Bv(0), c)]),
-            NodeT::HasTy([a, b]) => NodeT::HasTy([(Bv(0), a), (Bv(0), b)]),
-            NodeT::Invalid => NodeT::Invalid,
-            NodeT::Subst1(k, [a, b]) => NodeT::Subst1(k, [(Bv(0), a), (Bv(1), b)]),
-            NodeT::BWk(k, [a]) => NodeT::BWk(k, [(Bv(0), a)]),
-            NodeT::Close(close) => NodeT::Close(Close {
+            Node::Fv(x) => Node::Fv(x),
+            Node::Bv(i) => Node::Bv(i),
+            Node::U(level) => Node::U(level),
+            Node::Empty => Node::Empty,
+            Node::Unit => Node::Unit,
+            Node::Null => Node::Null,
+            Node::Eqn([a, b]) => Node::Eqn([(Bv(0), a), (Bv(0), b)]),
+            Node::Pi([a, b]) => Node::Pi([(Bv(0), a), (Bv(1), b)]),
+            Node::Sigma([a, b]) => Node::Sigma([(Bv(0), a), (Bv(1), b)]),
+            Node::Abs([a, b]) => Node::Abs([(Bv(0), a), (Bv(1), b)]),
+            Node::App([a, b]) => Node::App([(Bv(0), a), (Bv(0), b)]),
+            Node::Pair([a, b]) => Node::Pair([(Bv(0), a), (Bv(0), b)]),
+            Node::Fst([a]) => Node::Fst([(Bv(0), a)]),
+            Node::Snd([a]) => Node::Snd([(Bv(0), a)]),
+            Node::Ite([a, b, c]) => Node::Ite([(Bv(0), a), (Bv(0), b), (Bv(0), c)]),
+            Node::Trunc([a]) => Node::Trunc([(Bv(0), a)]),
+            Node::Choose([a, b]) => Node::Choose([(Bv(0), a), (Bv(1), b)]),
+            Node::Nats => Node::Nats,
+            Node::N64(n) => Node::N64(n),
+            Node::Succ([a]) => Node::Succ([(Bv(0), a)]),
+            Node::Natrec([a, b, c]) => Node::Natrec([(Bv(0), a), (Bv(0), b), (Bv(0), c)]),
+            Node::HasTy([a, b]) => Node::HasTy([(Bv(0), a), (Bv(0), b)]),
+            Node::Invalid => Node::Invalid,
+            Node::Subst1(k, [a, b]) => Node::Subst1(k, [(Bv(0), a), (Bv(1), b)]),
+            Node::BWk(k, [a]) => Node::BWk(k, [(Bv(0), a)]),
+            Node::Close(close) => Node::Close(Close {
                 under: close.under,
                 var: close.var,
                 tm: (Bv(0), close.tm),
             }),
-            NodeT::Import(import) => NodeT::Import(import),
+            Node::Import(import) => Node::Import(import),
         }
     }
 
     /// Borrow this node
-    pub fn as_ref(&self) -> NodeT<&C, &T, &I> {
+    pub fn as_ref(&self) -> Node<&C, &T, &I> {
         match self {
-            NodeT::Fv(x) => NodeT::Fv(x.as_ref()),
-            NodeT::Bv(i) => NodeT::Bv(*i),
-            NodeT::U(level) => NodeT::U(*level),
-            NodeT::Empty => NodeT::Empty,
-            NodeT::Unit => NodeT::Unit,
-            NodeT::Null => NodeT::Null,
-            NodeT::Eqn([a, b]) => NodeT::Eqn([a, b]),
-            NodeT::Pi([a, b]) => NodeT::Pi([a, b]),
-            NodeT::Sigma([a, b]) => NodeT::Sigma([a, b]),
-            NodeT::Abs([a, b]) => NodeT::Abs([a, b]),
-            NodeT::App([a, b]) => NodeT::App([a, b]),
-            NodeT::Pair([a, b]) => NodeT::Pair([a, b]),
-            NodeT::Fst([a]) => NodeT::Fst([a]),
-            NodeT::Snd([a]) => NodeT::Snd([a]),
-            NodeT::Ite([a, b, c]) => NodeT::Ite([a, b, c]),
-            NodeT::Trunc([a]) => NodeT::Trunc([a]),
-            NodeT::Choose([a, b]) => NodeT::Choose([a, b]),
-            NodeT::Nats => NodeT::Nats,
-            NodeT::N64(n) => NodeT::N64(*n),
-            NodeT::Succ([a]) => NodeT::Succ([a]),
-            NodeT::Natrec([a, b, c]) => NodeT::Natrec([a, b, c]),
-            NodeT::HasTy([a, b]) => NodeT::HasTy([a, b]),
-            NodeT::Invalid => NodeT::Invalid,
-            NodeT::Subst1(k, [a, b]) => NodeT::Subst1(*k, [a, b]),
-            NodeT::BWk(k, [a]) => NodeT::BWk(*k, [a]),
-            NodeT::Close(close) => NodeT::Close(close.as_ref()),
-            NodeT::Import(import) => NodeT::Import(import),
+            Node::Fv(x) => Node::Fv(x.as_ref()),
+            Node::Bv(i) => Node::Bv(*i),
+            Node::U(level) => Node::U(*level),
+            Node::Empty => Node::Empty,
+            Node::Unit => Node::Unit,
+            Node::Null => Node::Null,
+            Node::Eqn([a, b]) => Node::Eqn([a, b]),
+            Node::Pi([a, b]) => Node::Pi([a, b]),
+            Node::Sigma([a, b]) => Node::Sigma([a, b]),
+            Node::Abs([a, b]) => Node::Abs([a, b]),
+            Node::App([a, b]) => Node::App([a, b]),
+            Node::Pair([a, b]) => Node::Pair([a, b]),
+            Node::Fst([a]) => Node::Fst([a]),
+            Node::Snd([a]) => Node::Snd([a]),
+            Node::Ite([a, b, c]) => Node::Ite([a, b, c]),
+            Node::Trunc([a]) => Node::Trunc([a]),
+            Node::Choose([a, b]) => Node::Choose([a, b]),
+            Node::Nats => Node::Nats,
+            Node::N64(n) => Node::N64(*n),
+            Node::Succ([a]) => Node::Succ([a]),
+            Node::Natrec([a, b, c]) => Node::Natrec([a, b, c]),
+            Node::HasTy([a, b]) => Node::HasTy([a, b]),
+            Node::Invalid => Node::Invalid,
+            Node::Subst1(k, [a, b]) => Node::Subst1(*k, [a, b]),
+            Node::BWk(k, [a]) => Node::BWk(*k, [a]),
+            Node::Close(close) => Node::Close(close.as_ref()),
+            Node::Import(import) => Node::Import(import),
         }
     }
 
     /// Borrow this node mutably
-    pub fn as_mut(&mut self) -> NodeT<&mut C, &mut T, &mut I> {
+    pub fn as_mut(&mut self) -> Node<&mut C, &mut T, &mut I> {
         match self {
-            NodeT::Fv(x) => NodeT::Fv(x.as_mut()),
-            NodeT::Bv(i) => NodeT::Bv(*i),
-            NodeT::U(level) => NodeT::U(*level),
-            NodeT::Empty => NodeT::Empty,
-            NodeT::Unit => NodeT::Unit,
-            NodeT::Null => NodeT::Null,
-            NodeT::Eqn([a, b]) => NodeT::Eqn([a, b]),
-            NodeT::Pi([a, b]) => NodeT::Pi([a, b]),
-            NodeT::Sigma([a, b]) => NodeT::Sigma([a, b]),
-            NodeT::Abs([a, b]) => NodeT::Abs([a, b]),
-            NodeT::App([a, b]) => NodeT::App([a, b]),
-            NodeT::Pair([a, b]) => NodeT::Pair([a, b]),
-            NodeT::Fst([a]) => NodeT::Fst([a]),
-            NodeT::Snd([a]) => NodeT::Snd([a]),
-            NodeT::Ite([a, b, c]) => NodeT::Ite([a, b, c]),
-            NodeT::Trunc([a]) => NodeT::Trunc([a]),
-            NodeT::Choose([a, b]) => NodeT::Choose([a, b]),
-            NodeT::Nats => NodeT::Nats,
-            NodeT::N64(n) => NodeT::N64(*n),
-            NodeT::Succ([a]) => NodeT::Succ([a]),
-            NodeT::Natrec([a, b, c]) => NodeT::Natrec([a, b, c]),
-            NodeT::HasTy([a, b]) => NodeT::HasTy([a, b]),
-            NodeT::Invalid => NodeT::Invalid,
-            NodeT::Subst1(k, [a, b]) => NodeT::Subst1(*k, [a, b]),
-            NodeT::BWk(k, [a]) => NodeT::BWk(*k, [a]),
-            NodeT::Close(close) => NodeT::Close(close.as_mut()),
-            NodeT::Import(import) => NodeT::Import(import),
+            Node::Fv(x) => Node::Fv(x.as_mut()),
+            Node::Bv(i) => Node::Bv(*i),
+            Node::U(level) => Node::U(*level),
+            Node::Empty => Node::Empty,
+            Node::Unit => Node::Unit,
+            Node::Null => Node::Null,
+            Node::Eqn([a, b]) => Node::Eqn([a, b]),
+            Node::Pi([a, b]) => Node::Pi([a, b]),
+            Node::Sigma([a, b]) => Node::Sigma([a, b]),
+            Node::Abs([a, b]) => Node::Abs([a, b]),
+            Node::App([a, b]) => Node::App([a, b]),
+            Node::Pair([a, b]) => Node::Pair([a, b]),
+            Node::Fst([a]) => Node::Fst([a]),
+            Node::Snd([a]) => Node::Snd([a]),
+            Node::Ite([a, b, c]) => Node::Ite([a, b, c]),
+            Node::Trunc([a]) => Node::Trunc([a]),
+            Node::Choose([a, b]) => Node::Choose([a, b]),
+            Node::Nats => Node::Nats,
+            Node::N64(n) => Node::N64(*n),
+            Node::Succ([a]) => Node::Succ([a]),
+            Node::Natrec([a, b, c]) => Node::Natrec([a, b, c]),
+            Node::HasTy([a, b]) => Node::HasTy([a, b]),
+            Node::Invalid => Node::Invalid,
+            Node::Subst1(k, [a, b]) => Node::Subst1(*k, [a, b]),
+            Node::BWk(k, [a]) => Node::BWk(*k, [a]),
+            Node::Close(close) => Node::Close(close.as_mut()),
+            Node::Import(import) => Node::Import(import),
         }
     }
 
@@ -425,33 +425,33 @@ impl<C, T, I> NodeT<C, T, I> {
     /// closure does _not_ respect congruence!
     pub fn children(&self) -> &[T] {
         match self {
-            NodeT::Fv(_) => &[],
-            NodeT::Bv(_) => &[],
-            NodeT::U(_) => &[],
-            NodeT::Empty => &[],
-            NodeT::Unit => &[],
-            NodeT::Null => &[],
-            NodeT::Eqn(xs) => &xs[..],
-            NodeT::Pi(xs) => &xs[..],
-            NodeT::Sigma(xs) => &xs[..],
-            NodeT::Abs(xs) => &xs[..],
-            NodeT::App(xs) => &xs[..],
-            NodeT::Pair(xs) => &xs[..],
-            NodeT::Fst(xs) => &xs[..],
-            NodeT::Snd(xs) => &xs[..],
-            NodeT::Ite(xs) => &xs[..],
-            NodeT::Trunc(xs) => &xs[..],
-            NodeT::Choose(xs) => &xs[..],
-            NodeT::Nats => &[],
-            NodeT::N64(_) => &[],
-            NodeT::Succ(xs) => &xs[..],
-            NodeT::Natrec(xs) => &xs[..],
-            NodeT::HasTy(xs) => &xs[..],
-            NodeT::Invalid => &[],
-            NodeT::Subst1(_, xs) => &xs[..],
-            NodeT::BWk(_, xs) => &xs[..],
-            NodeT::Close(_) => &[],
-            NodeT::Import(_) => &[],
+            Node::Fv(_) => &[],
+            Node::Bv(_) => &[],
+            Node::U(_) => &[],
+            Node::Empty => &[],
+            Node::Unit => &[],
+            Node::Null => &[],
+            Node::Eqn(xs) => &xs[..],
+            Node::Pi(xs) => &xs[..],
+            Node::Sigma(xs) => &xs[..],
+            Node::Abs(xs) => &xs[..],
+            Node::App(xs) => &xs[..],
+            Node::Pair(xs) => &xs[..],
+            Node::Fst(xs) => &xs[..],
+            Node::Snd(xs) => &xs[..],
+            Node::Ite(xs) => &xs[..],
+            Node::Trunc(xs) => &xs[..],
+            Node::Choose(xs) => &xs[..],
+            Node::Nats => &[],
+            Node::N64(_) => &[],
+            Node::Succ(xs) => &xs[..],
+            Node::Natrec(xs) => &xs[..],
+            Node::HasTy(xs) => &xs[..],
+            Node::Invalid => &[],
+            Node::Subst1(_, xs) => &xs[..],
+            Node::BWk(_, xs) => &xs[..],
+            Node::Close(_) => &[],
+            Node::Import(_) => &[],
         }
     }
 
@@ -461,33 +461,33 @@ impl<C, T, I> NodeT<C, T, I> {
     /// and closures will return an empty slice.
     pub fn children_mut(&mut self) -> &mut [T] {
         match self {
-            NodeT::Fv(_) => &mut [],
-            NodeT::Bv(_) => &mut [],
-            NodeT::U(_) => &mut [],
-            NodeT::Empty => &mut [],
-            NodeT::Unit => &mut [],
-            NodeT::Null => &mut [],
-            NodeT::Eqn(xs) => &mut xs[..],
-            NodeT::Pi(xs) => &mut xs[..],
-            NodeT::Sigma(xs) => &mut xs[..],
-            NodeT::Abs(xs) => &mut xs[..],
-            NodeT::App(xs) => &mut xs[..],
-            NodeT::Pair(xs) => &mut xs[..],
-            NodeT::Fst(xs) => &mut xs[..],
-            NodeT::Snd(xs) => &mut xs[..],
-            NodeT::Ite(xs) => &mut xs[..],
-            NodeT::Trunc(xs) => &mut xs[..],
-            NodeT::Choose(xs) => &mut xs[..],
-            NodeT::Nats => &mut [],
-            NodeT::N64(_) => &mut [],
-            NodeT::Succ(xs) => &mut xs[..],
-            NodeT::Natrec(xs) => &mut xs[..],
-            NodeT::HasTy(xs) => &mut xs[..],
-            NodeT::Invalid => &mut [],
-            NodeT::Subst1(_, xs) => &mut xs[..],
-            NodeT::BWk(_, xs) => &mut xs[..],
-            NodeT::Close(_) => &mut [],
-            NodeT::Import(_) => &mut [],
+            Node::Fv(_) => &mut [],
+            Node::Bv(_) => &mut [],
+            Node::U(_) => &mut [],
+            Node::Empty => &mut [],
+            Node::Unit => &mut [],
+            Node::Null => &mut [],
+            Node::Eqn(xs) => &mut xs[..],
+            Node::Pi(xs) => &mut xs[..],
+            Node::Sigma(xs) => &mut xs[..],
+            Node::Abs(xs) => &mut xs[..],
+            Node::App(xs) => &mut xs[..],
+            Node::Pair(xs) => &mut xs[..],
+            Node::Fst(xs) => &mut xs[..],
+            Node::Snd(xs) => &mut xs[..],
+            Node::Ite(xs) => &mut xs[..],
+            Node::Trunc(xs) => &mut xs[..],
+            Node::Choose(xs) => &mut xs[..],
+            Node::Nats => &mut [],
+            Node::N64(_) => &mut [],
+            Node::Succ(xs) => &mut xs[..],
+            Node::Natrec(xs) => &mut xs[..],
+            Node::HasTy(xs) => &mut xs[..],
+            Node::Invalid => &mut [],
+            Node::Subst1(_, xs) => &mut xs[..],
+            Node::BWk(_, xs) => &mut xs[..],
+            Node::Close(_) => &mut [],
+            Node::Import(_) => &mut [],
         }
     }
 
@@ -496,7 +496,7 @@ impl<C, T, I> NodeT<C, T, I> {
     /// Note that this includes the argument of a closure, unlike [`children`](#method.children).
     pub fn syn_children(&self) -> &[T] {
         match self {
-            NodeT::Close(cl) => std::slice::from_ref(&cl.tm),
+            Node::Close(cl) => std::slice::from_ref(&cl.tm),
             _ => self.children(),
         }
     }
@@ -507,7 +507,7 @@ impl<C, T, I> NodeT<C, T, I> {
     /// [`children_mut`](#method.children_mut).
     pub fn syn_children_mut(&mut self) -> &mut [T] {
         match self {
-            NodeT::Close(cl) => std::slice::from_mut(&mut cl.tm),
+            Node::Close(cl) => std::slice::from_mut(&mut cl.tm),
             _ => self.children_mut(),
         }
     }
@@ -516,21 +516,21 @@ impl<C, T, I> NodeT<C, T, I> {
     pub fn is_relocatable(&self) -> bool {
         matches!(
             self,
-            NodeT::Fv(_)
-                | NodeT::Bv(_)
-                | NodeT::U(_)
-                | NodeT::Empty
-                | NodeT::Unit
-                | NodeT::Null
-                | NodeT::Nats
-                | NodeT::N64(_)
-                | NodeT::Invalid
-                | NodeT::Import(_)
+            Node::Fv(_)
+                | Node::Bv(_)
+                | Node::U(_)
+                | Node::Empty
+                | Node::Unit
+                | Node::Null
+                | Node::Nats
+                | Node::N64(_)
+                | Node::Invalid
+                | Node::Import(_)
         )
     }
 
     /// If this term has no dependencies, return it
-    pub fn relocate(self) -> Option<NodeT<C, T, I>> {
+    pub fn relocate(self) -> Option<Node<C, T, I>> {
         if self.is_relocatable() {
             Some(self)
         } else {
@@ -541,14 +541,14 @@ impl<C, T, I> NodeT<C, T, I> {
     /// Compute a bound on this term's unbound variables
     pub fn bvi_with(&self, mut tm: impl FnMut(&T) -> Bv) -> Bv {
         match self {
-            NodeT::Bv(i) => i.succ(),
-            NodeT::Import(_) => Bv::INVALID,
-            NodeT::Close(Close {
+            Node::Bv(i) => i.succ(),
+            Node::Import(_) => Bv::INVALID,
+            Node::Close(Close {
                 under: k,
                 tm: a,
                 var,
             }) => tm(a).bvi_add_under(Bv(var.ix).succ(), *k),
-            NodeT::BWk(s, [a]) => s.bvi(tm(a)),
+            Node::BWk(s, [a]) => s.bvi(tm(a)),
             n => n
                 .as_ref()
                 .with_binders()
@@ -563,7 +563,7 @@ impl<C, T, I> NodeT<C, T, I> {
     /// Get this node as an import
     pub fn as_import(&self) -> Option<&I> {
         match self {
-            NodeT::Import(import) => Some(import),
+            Node::Import(import) => Some(import),
             _ => None,
         }
     }
@@ -571,7 +571,7 @@ impl<C, T, I> NodeT<C, T, I> {
     /// Get this node as a universe level
     pub fn as_level(&self) -> Option<ULvl> {
         match self {
-            NodeT::U(level) => Some(*level),
+            Node::U(level) => Some(*level),
             _ => None,
         }
     }
@@ -580,7 +580,7 @@ impl<C, T, I> NodeT<C, T, I> {
     pub fn is_unfoldable(&self) -> bool {
         matches!(
             self,
-            NodeT::Subst1(_, _) | NodeT::BWk(_, _) | NodeT::Close(_) | NodeT::Import(_)
+            Node::Subst1(_, _) | Node::BWk(_, _) | Node::Close(_) | Node::Import(_)
         )
     }
 }
@@ -915,93 +915,93 @@ impl<C, T> Close<C, T> {
 
 /// An import from another context
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct Val<C, T> {
+pub struct TmIn<C, T> {
     /// The context being imported from
     pub ctx: C,
     /// The term being imported (in `ctx`)
     pub tm: T,
 }
 
-impl<C, T> Val<C, T> {
+impl<C, T> TmIn<C, T> {
     /// Borrow this import
-    pub const fn as_ref(&self) -> Val<&C, &T> {
-        Val {
+    pub const fn as_ref(&self) -> TmIn<&C, &T> {
+        TmIn {
             ctx: &self.ctx,
             tm: &self.tm,
         }
     }
 
     /// Borrow this import mutably
-    pub const fn as_mut(&mut self) -> Val<&mut C, &mut T> {
-        Val {
+    pub const fn as_mut(&mut self) -> TmIn<&mut C, &mut T> {
+        TmIn {
             ctx: &mut self.ctx,
             tm: &mut self.tm,
         }
     }
 }
 
-pub type NodeVT<C, T> = NodeT<C, Val<C, T>, Val<C, T>>;
+pub type NodeVT<C, T> = Node<C, TmIn<C, T>, TmIn<C, T>>;
 
-pub type NodeT2<C, T> = NodeT<C, NodeT<C, T>, Val<C, T>>;
+pub type NodeT2<C, T> = Node<C, Node<C, T>, TmIn<C, T>>;
 
-pub type NodeVT2<C, T> = NodeT<C, NodeVT<C, T>, Val<C, T>>;
+pub type NodeVT2<C, T> = Node<C, NodeVT<C, T>, TmIn<C, T>>;
 
-impl<C, T> From<Fv<C>> for NodeT<C, T> {
+impl<C, T> From<Fv<C>> for Node<C, T> {
     fn from(x: Fv<C>) -> Self {
-        NodeT::Fv(x)
+        Node::Fv(x)
     }
 }
 
-impl<C: PartialEq, T> PartialEq<Fv<C>> for NodeT<C, T> {
+impl<C: PartialEq, T> PartialEq<Fv<C>> for Node<C, T> {
     fn eq(&self, other: &Fv<C>) -> bool {
         match self {
-            NodeT::Fv(this) => this == other,
+            Node::Fv(this) => this == other,
             _ => false,
         }
     }
 }
 
-impl<C: PartialEq, T> PartialEq<NodeT<C, T>> for Fv<C> {
-    fn eq(&self, other: &NodeT<C, T>) -> bool {
+impl<C: PartialEq, T> PartialEq<Node<C, T>> for Fv<C> {
+    fn eq(&self, other: &Node<C, T>) -> bool {
         other.eq(self)
     }
 }
 
-impl<C, T> From<Bv> for NodeT<C, T> {
+impl<C, T> From<Bv> for Node<C, T> {
     fn from(bv: Bv) -> Self {
-        NodeT::Bv(bv)
+        Node::Bv(bv)
     }
 }
 
-impl<C, T> PartialEq<Bv> for NodeT<C, T> {
+impl<C, T> PartialEq<Bv> for Node<C, T> {
     fn eq(&self, other: &Bv) -> bool {
         match self {
-            NodeT::Bv(this) => this == other,
+            Node::Bv(this) => this == other,
             _ => false,
         }
     }
 }
 
-impl<C, T> From<ULvl> for NodeT<C, T> {
+impl<C, T> From<ULvl> for Node<C, T> {
     fn from(level: ULvl) -> Self {
-        NodeT::U(level)
+        Node::U(level)
     }
 }
 
-impl<C, T> From<bool> for NodeT<C, T> {
+impl<C, T> From<bool> for Node<C, T> {
     fn from(value: bool) -> Self {
-        if value { NodeT::Unit } else { NodeT::Empty }
+        if value { Node::Unit } else { Node::Empty }
     }
 }
 
-impl<C, T> From<Val<C, T>> for NodeT<C, T> {
-    fn from(copy: Val<C, T>) -> Self {
-        NodeT::Import(copy)
+impl<C, T> From<TmIn<C, T>> for Node<C, T> {
+    fn from(copy: TmIn<C, T>) -> Self {
+        Node::Import(copy)
     }
 }
 
-impl<C, T> From<Close<C, T>> for NodeT<C, T> {
+impl<C, T> From<Close<C, T>> for Node<C, T> {
     fn from(close: Close<C, T>) -> Self {
-        NodeT::Close(close)
+        Node::Close(close)
     }
 }

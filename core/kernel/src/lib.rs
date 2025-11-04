@@ -16,9 +16,8 @@ pub mod strategy;
 
 // pub use crate::rule::ensure::{DeriveTrusted, WriteTrusted};
 pub use crate::store::{
-    LocalStore, LocalStoreUnchecked, ReadCtx, ReadCtxFacts, ReadCtxGraph, ReadFacts,
-    ReadLocalFacts, ReadLocalStore, ReadLocalTerm, ReadQuantFacts, ReadTermDb, ReadTermFacts,
-    ReadTermStore, WriteCtxFactsUnchecked, WriteCtxGraphUnchecked, WriteFacts,
+    LocalStore, LocalStoreUnchecked, ReadCtx, ReadCtxFacts, ReadCtxGraph, ReadLocalFacts,
+    ReadLocalStore, ReadLocalTerm, WriteCtxFactsUnchecked, WriteCtxGraphUnchecked,
     WriteLocalFactsUnchecked, WriteLocalStore, WriteLocalStoreUnchecked, WriteLocalTerm,
 };
 pub use covalence_data::univ::{ReadUniv, WriteUniv};
@@ -48,6 +47,7 @@ impl<D> Deref for Kernel<D> {
     }
 }
 
+/*
 impl<C, T, D: ReadTermDb<C, T>> ReadTermDb<C, T> for Kernel<D> {
     type Reader = D::Reader;
 
@@ -55,6 +55,7 @@ impl<C, T, D: ReadTermDb<C, T>> ReadTermDb<C, T> for Kernel<D> {
         self.0.read()
     }
 }
+*/
 
 impl<D: TermIndex> TermIndex for Kernel<D> {
     type CtxId = D::CtxId;
@@ -88,7 +89,7 @@ impl<D: WriteLocalTerm> WriteLocalTerm for Kernel<D> {
         self.0.add_raw(ctx, term)
     }
 
-    fn import(&mut self, ctx: CtxId<D>, val: TermId<D>) -> Ix<D> {
+    fn import(&mut self, ctx: CtxId<D>, val: TmId<D>) -> Ix<D> {
         self.0.import(ctx, val)
     }
 

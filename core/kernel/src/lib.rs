@@ -16,8 +16,8 @@ pub mod strategy;
 
 pub use crate::rule::ensure::{DeriveTrusted, WriteTrusted};
 pub use crate::store::{
-    ReadCtx, ReadCtxFacts, ReadCtxRel, ReadFacts, ReadQuantFacts, ReadTermDb, ReadTermFacts,
-    ReadTermIndex, ReadTermStore, WriteFacts, WriteTermIndex,
+    ReadCtx, ReadCtxFacts, ReadCtxRel, ReadFacts, ReadLocalFacts, ReadLocalTerm, ReadQuantFacts,
+    ReadTermDb, ReadTermFacts, ReadTermStore, WriteFacts, WriteLocalTerm,
 };
 pub use covalence_data::univ::{ReadUniv, WriteUniv};
 
@@ -54,7 +54,7 @@ impl<C, T, D: ReadTermDb<C, T>> ReadTermDb<C, T> for Kernel<D> {
     }
 }
 
-impl<D: IndexTypes> IndexTypes for Kernel<D> {
+impl<D: TermIndex> TermIndex for Kernel<D> {
     type CtxId = D::CtxId;
     type TermId = D::TermId;
 }
@@ -73,7 +73,7 @@ impl<D: WriteUniv> WriteUniv for Kernel<D> {
     }
 }
 
-impl<D: WriteTermIndex> WriteTermIndex for Kernel<D> {
+impl<D: WriteLocalTerm> WriteLocalTerm for Kernel<D> {
     fn new_ctx(&mut self) -> CtxId<D> {
         self.0.new_ctx()
     }

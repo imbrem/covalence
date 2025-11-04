@@ -12,7 +12,7 @@ pub use covalence_data::term::{Bv, Fv};
 pub use covalence_data::univ::ULvl;
 
 /// Writing for the `covalence` kernel
-pub trait Write<C, T>: WriteTrusted<C, T> + WriteTermIndex<CtxId = C, TermId = T>
+pub trait Write<C, T>: WriteTrusted<C, T> + WriteLocalTerm<CtxId = C, TermId = T>
 where
     C: Copy,
     T: Copy,
@@ -122,7 +122,7 @@ pub trait Derive<C, T, S>:
     WriteTrusted<C, T>
     + DeriveTrusted<C, T, S>
     + ReadTermDb<C, T>
-    + WriteTermIndex<CtxId = C, TermId = T>
+    + WriteLocalTerm<CtxId = C, TermId = T>
 where
     C: Copy + PartialEq,
     T: Copy + PartialEq,
@@ -147,7 +147,7 @@ impl<C, T, K> Write<C, T> for K
 where
     C: Copy,
     T: Copy,
-    K: WriteTrusted<C, T> + WriteTermIndex<CtxId = C, TermId = T>,
+    K: WriteTrusted<C, T> + WriteLocalTerm<CtxId = C, TermId = T>,
 {
 }
 
@@ -158,7 +158,7 @@ where
     K: WriteTrusted<C, T>
         + DeriveTrusted<C, T, S>
         + ReadTermDb<C, T>
-        + WriteTermIndex<CtxId = C, TermId = T>,
+        + WriteLocalTerm<CtxId = C, TermId = T>,
     S: Strategy<C, T, K>,
 {
 }

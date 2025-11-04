@@ -8,16 +8,16 @@ pub use crate::univ::{ReadUniv, WriteUniv};
 pub use crate::ctx::*;
 
 /// A term database with a given index kind
-pub trait IndexTypes {
+pub trait TermIndex {
     /// The context identifier type
     type CtxId: Copy;
     /// The term identifier type
     type TermId: Copy;
 }
 
-pub type CtxId<D> = <D as IndexTypes>::CtxId;
+pub type CtxId<D> = <D as TermIndex>::CtxId;
 
-pub type TermId<D> = <D as IndexTypes>::TermId;
+pub type TermId<D> = <D as TermIndex>::TermId;
 
 pub type ValId<D> = Val<CtxId<D>, TermId<D>>;
 
@@ -25,20 +25,20 @@ pub type NodeIx<D> = NodeT<CtxId<D>, TermId<D>>;
 
 pub type FvId<D> = Fv<CtxId<D>>;
 
-/// A datastore that can read terms and universe levels
+/// A datastore that can read local terms
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
 /// # use covalence::kernel::*;
-/// let ker : &dyn ReadTermIndex<CtxId = CtxId, TermId = TermId> = &TermDb::new();
+/// let ker : &dyn ReadLocalTerm<CtxId = CtxId, TermId = TermId> = &TermDb::new();
 /// ```
 /// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
 /// functions for different kernel wrappers:
 /// ```rust,compile_fail
 /// # use covalence::kernel::*;
-/// let ker : &dyn ReadTermIndex<CtxId = CtxId, TermId = TermId> = &Kernel::new();
+/// let ker : &dyn ReadLocalTerm<CtxId = CtxId, TermId = TermId> = &Kernel::new();
 /// ```
-pub trait ReadTermIndex: IndexTypes + ReadUniv {
+pub trait ReadLocalTerm: TermIndex + ReadUniv {
     // == Terms ==
 
     /// Get the value corresponding to a term
@@ -66,12 +66,7 @@ pub trait ReadTermIndex: IndexTypes + ReadUniv {
     }
 
     /// Check whether the term `tm` may depend on any variable from the context `vars`
-    fn may_have_var_from(
-        &self,
-        _ctx: CtxId<Self>,
-        _tm: TermId<Self>,
-        _vars: CtxId<Self>,
-    ) -> bool {
+    fn may_have_var_from(&self, _ctx: CtxId<Self>, _tm: TermId<Self>, _vars: CtxId<Self>) -> bool {
         true
     }
 
@@ -86,7 +81,7 @@ pub trait ReadTermIndex: IndexTypes + ReadUniv {
 
 impl<C: Copy, T> Val<C, T> {
     /// Get the base value pointed to by this value
-    pub fn val(self, store: &(impl ReadTermIndex<CtxId = C, TermId = T> + ?Sized)) -> Val<C, T> {
+    pub fn val(self, store: &(impl ReadLocalTerm<CtxId = C, TermId = T> + ?Sized)) -> Val<C, T> {
         store.val(self.ctx, self.tm)
     }
 }
@@ -95,7 +90,7 @@ impl<C: Copy, T: Copy> Val<C, T> {
     /// Get the node in `self.ctx` corresponding to this value
     pub fn node_ix(
         self,
-        store: &(impl ReadTermIndex<CtxId = C, TermId = T> + ?Sized),
+        store: &(impl ReadLocalTerm<CtxId = C, TermId = T> + ?Sized),
     ) -> NodeT<C, T> {
         *store.node(self.ctx, self.tm)
     }
@@ -103,7 +98,7 @@ impl<C: Copy, T: Copy> Val<C, T> {
     /// Get the node corresponding to this value
     pub fn node_val(
         self,
-        store: &(impl ReadTermIndex<CtxId = C, TermId = T> + ?Sized),
+        store: &(impl ReadLocalTerm<CtxId = C, TermId = T> + ?Sized),
     ) -> NodeVT<C, T> {
         self.node_ix(store).node_val_in(self.ctx, store)
     }
@@ -111,7 +106,7 @@ impl<C: Copy, T: Copy> Val<C, T> {
     /// Get the node corresponding to this value
     pub fn raw_node_val(
         self,
-        store: &(impl ReadTermIndex<CtxId = C, TermId = T> + ?Sized),
+        store: &(impl ReadLocalTerm<CtxId = C, TermId = T> + ?Sized),
     ) -> NodeVT<C, T> {
         self.node_ix(store).raw_node_val_in(self.ctx)
     }
@@ -122,9 +117,9 @@ impl<C: Copy, T: Copy> Val<C, T> {
 /// This trait is `dyn`-safe:
 /// ```rust
 /// # use covalence::kernel::*;
-/// let ker : &dyn WriteTermIndex<CtxId = CtxId, TermId = TermId> = &Kernel::default();
+/// let ker : &dyn WriteLocalTerm<CtxId = CtxId, TermId = TermId> = &Kernel::default();
 /// ```
-pub trait WriteTermIndex: IndexTypes + WriteUniv {
+pub trait WriteLocalTerm: TermIndex + WriteUniv {
     // == Term management ==
 
     /// Create a new context in this store
@@ -169,6 +164,38 @@ pub trait WriteTermIndex: IndexTypes + WriteUniv {
     fn propagate_in(&mut self, ctx: CtxId<Self>) -> usize;
 }
 
+/// A datastore that can read facts about local terms
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence::kernel::*;
+/// let ker : &dyn ReadLocalFacts<CtxId=CtxId, TermId=TermId> = &TermDb::new();
+/// ```
+/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
+/// functions for different kernel wrappers:
+/// ```rust,compile_fail
+/// # use covalence::kernel::*;
+/// let ker : &dyn ReadLocalFacts<CtxId=CtxId, TermId=TermId> = &Kernel::new();
+/// ```
+pub trait ReadLocalFacts: TermIndex {
+    // == Typing judgements ==
+
+    /// Get a term's flags in a given context
+    fn local_tm_flags(&self, ctx: CtxId<Self>, tm: TermId<Self>) -> Pred1;
+
+    /// Check whether the term `tm` satisfies predicate `pred` in `ctx`
+    ///
+    /// For details, see the helper methods in [`ReadTermStore`].
+    fn local_tm_satisfies(&self, ctx: CtxId<Self>, tm: TermId<Self>, pred: Pred1) -> bool {
+        self.local_tm_flags(ctx, tm).contains(pred)
+    }
+
+    /// Check whether the term `lhs` is equal to the term `rhs` in `ctx`
+    ///
+    /// Corresponds to `Ctx.KEq` in `gt3-lean`
+    fn local_eq(&self, ctx: CtxId<Self>, lhs: TermId<Self>, rhs: TermId<Self>) -> bool;
+}
+
 impl<C: Copy, T> NodeT<C, T> {
     /// Interpret this node in the given context
     pub fn val(self, ctx: C, store: &mut (impl RwTermDb<C, T> + ?Sized)) -> Val<C, T> {
@@ -193,7 +220,7 @@ impl<C: Copy, T> NodeT<C, T> {
     pub fn node_val_in(
         self,
         ctx: C,
-        store: &(impl ReadTermIndex<CtxId = C, TermId = T> + ?Sized),
+        store: &(impl ReadLocalTerm<CtxId = C, TermId = T> + ?Sized),
     ) -> NodeVT<C, T> {
         self.map_subterms(|tm| store.val(ctx, tm))
     }
@@ -227,7 +254,7 @@ pub trait ReadCtx<C, T> {
 
 impl<C: Copy> Fv<C> {
     /// Get this variable as a value
-    pub fn val<T>(self, store: &(impl ReadTermIndex<CtxId = C, TermId = T> + ?Sized)) -> Val<C, T> {
+    pub fn val<T>(self, store: &(impl ReadLocalTerm<CtxId = C, TermId = T> + ?Sized)) -> Val<C, T> {
         Val {
             ctx: self.ctx,
             tm: store
@@ -469,7 +496,7 @@ impl<D: ReadCtxFacts<C> + ReadQuantFacts<C, T>, C, T> ReadFacts<C, T> for D {}
 /// let ker : &dyn ReadTermStore<CtxId, TermId> = &Kernel::new();
 /// ```
 pub trait ReadTermStore<C, T>:
-    ReadCtx<C, T> + ReadCtxRel<C> + ReadTermIndex<CtxId = C, TermId = T> + ReadFacts<C, T>
+    ReadCtx<C, T> + ReadCtxRel<C> + ReadLocalTerm<CtxId = C, TermId = T> + ReadFacts<C, T>
 {
 }
 
@@ -477,7 +504,7 @@ impl<C, T, D> ReadTermStore<C, T> for D
 where
     C: Copy,
     T: Copy,
-    D: ReadCtx<C, T> + ReadCtxRel<C> + ReadTermIndex<CtxId = C, TermId = T> + ReadFacts<C, T>,
+    D: ReadCtx<C, T> + ReadCtxRel<C> + ReadLocalTerm<CtxId = C, TermId = T> + ReadFacts<C, T>,
 {
 }
 
@@ -490,9 +517,9 @@ pub trait ReadTermDb<C, T> {
 }
 
 /// A term database which we can read from and write to
-pub trait RwTermDb<C, T>: ReadTermDb<C, T> + WriteTermIndex<CtxId = C, TermId = T> {}
+pub trait RwTermDb<C, T>: ReadTermDb<C, T> + WriteLocalTerm<CtxId = C, TermId = T> {}
 
-impl<C, T, D: ReadTermDb<C, T> + WriteTermIndex<CtxId = C, TermId = T> + ?Sized> RwTermDb<C, T>
+impl<C, T, D: ReadTermDb<C, T> + WriteLocalTerm<CtxId = C, TermId = T> + ?Sized> RwTermDb<C, T>
     for D
 {
 }
@@ -600,7 +627,7 @@ pub trait WriteFacts<C, T> {
     fn set_bvi_unchecked(&mut self, ctx: C, tm: T, bvi: Bv);
 }
 
-impl<C: Copy, T: Copy, D: ReadTermIndex<CtxId = C, TermId = T> + ReadTermFacts<C, T> + ?Sized>
+impl<C: Copy, T: Copy, D: ReadLocalTerm<CtxId = C, TermId = T> + ReadTermFacts<C, T> + ?Sized>
     ReadTermFacts<C, Val<C, T>> for D
 {
     fn tm_flags(&self, ctx: C, tm: Val<C, T>) -> Pred1 {
@@ -635,7 +662,7 @@ impl<C: Copy, T: Copy, D: ReadTermIndex<CtxId = C, TermId = T> + ReadTermFacts<C
     }
 }
 
-impl<C: Copy, T: Copy, D: ReadTermIndex<CtxId = C, TermId = T> + ReadQuantFacts<C, T> + ?Sized>
+impl<C: Copy, T: Copy, D: ReadLocalTerm<CtxId = C, TermId = T> + ReadQuantFacts<C, T> + ?Sized>
     ReadQuantFacts<C, Val<C, T>> for D
 {
     fn forall_eq_in(&self, ctx: C, binder: Val<C, T>, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {

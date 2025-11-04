@@ -33,12 +33,12 @@ impl TermDb {
     }
 }
 
-impl IndexTypes for TermDb {
+impl TermIndex for TermDb {
     type CtxId = CtxId;
     type TermId = TermId;
 }
 
-impl ReadTermIndex for TermDb {
+impl ReadLocalTerm for TermDb {
     fn val(&self, ctx: CtxId, tm: TermId) -> ValId {
         match self.node(ctx, tm) {
             NodeIx::Import(val) => self.val(val.ctx, val.tm),
@@ -110,7 +110,7 @@ impl ReadUniv for TermDb {
     }
 }
 
-impl WriteTermIndex for TermDb {
+impl WriteLocalTerm for TermDb {
     fn new_ctx(&mut self) -> CtxId {
         let result = CtxId(self.x.insert(Ctx::new_ctx()));
         self.set_this(result);
@@ -246,6 +246,16 @@ impl ReadCtxRel<CtxId> for TermDb {
         } else {
             true
         }
+    }
+}
+
+impl ReadLocalFacts for TermDb {
+    fn local_tm_flags(&self, ctx: CtxId, tm: TermId) -> Pred1 {
+        self.x[ctx.0].tm_flags(tm)
+    }
+
+    fn local_eq(&self, ctx: CtxId, lhs: TermId, rhs: TermId) -> bool {
+        self.x[ctx.0].eq_in(lhs, rhs)
     }
 }
 

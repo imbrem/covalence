@@ -25,6 +25,24 @@ pub type NodeIx<D> = Node<CtxId<D>, Ix<D>>;
 
 pub type FvId<D> = Fv<CtxId<D>>;
 
+/// Traits implemented by a local store
+pub mod local_store {
+    pub use super::{
+        LocalStore, ReadCtx, ReadCtxFacts, ReadCtxGraph, ReadLocalFacts, ReadLocalStore,
+        ReadLocalTerm, ReadUniv, WriteLocalStore, WriteLocalTerm,
+    };
+}
+
+/// Traits implemented by an unchecked local store
+pub mod local_store_unchecked {
+    pub use super::local_store::*;
+
+    pub use super::{
+        LocalStoreUnchecked, WriteCtxFactsUnchecked, WriteCtxGraphUnchecked,
+        WriteLocalFactsUnchecked, WriteLocalStoreUnchecked,
+    };
+}
+
 /// A datastore that can read local terms
 ///
 /// This trait is `dyn`-safe:
@@ -48,7 +66,7 @@ pub trait ReadLocalTerm: TermIndex {
     fn lookup(&self, ctx: CtxId<Self>, tm: NodeIx<Self>) -> Option<Ix<Self>>;
 
     /// Lookup an import in `self`
-    /// 
+    ///
     /// Does _not_ traverse import chains
     fn lookup_import(&self, ctx: CtxId<Self>, tm: TmId<Self>) -> Option<Ix<Self>> {
         if tm.ctx == ctx {
@@ -166,6 +184,11 @@ pub trait ReadLocalFacts: TermIndex {
     ///
     /// Corresponds to `Ctx.KEq` in `gt3-lean`
     fn local_eq(&self, ctx: CtxId<Self>, lhs: Ix<Self>, rhs: Ix<Self>) -> bool;
+
+    /// Check whether the term `tm` has type `ty` in `ctx`
+    ///
+    /// Corresponds to `Ctx.KEq` in `gt3-lean`
+    fn local_has_ty(&self, ctx: CtxId<Self>, tm: Ix<Self>, ty: Ix<Self>) -> bool;
 }
 
 pub trait ReadLocalStore:
@@ -215,6 +238,9 @@ pub trait WriteLocalFactsUnchecked: TermIndex {
 
     /// Set two terms as equal in a given context
     fn set_eq_unchecked(&mut self, ctx: CtxId<Self>, lhs: Ix<Self>, rhs: Ix<Self>);
+
+    /// Set a term's type
+    fn set_has_ty_unchecked(&mut self, ctx: CtxId<Self>, tm: Ix<Self>, ty: Ix<Self>);
 
     // == Variable and assumption manipulation ==
 

@@ -3,8 +3,6 @@ Facts which can be checked in the datastore
 */
 use std::ops::{Deref, DerefMut};
 
-use crate::data::term::TmIn;
-
 pub use crate::data::fact::*;
 
 /// Logical composition for fact types
@@ -16,16 +14,34 @@ pub trait Fact<R: ?Sized> {
     fn check(&self, db: &R) -> bool;
 }
 
+/// A fact which can be converted to an equivalent fact
+pub trait EquivFact<F, R> {
+    /// Convert this fact into an equivalent fact
+    fn into_eqv(self, db: &R) -> F;
+}
+
 /// A fact about ("within") a given context
 pub trait FactIn<C, R: ?Sized> {
     /// Check this fact in the given context
     fn check_in(&self, ctx: &C, db: &R) -> bool;
 }
 
+/// A fact which can be converted to an equivalent fact in a given context
+pub trait EquivFactIn<F, C, R> {
+    /// Convert this fact into an equivalent fact
+    fn into_eqv_in(self, ctx: &C, db: &R) -> F;
+}
+
 /// A quantified fact within a given context
 pub trait FactUnder<C, Q, R: ?Sized> {
     /// Check this fact under the given quantifier in the given context
     fn check_under(&self, ctx: &C, binder: &Q, db: &R) -> bool;
+}
+
+/// A quantified fact which can be converted to an equivalent quantified fact
+pub trait EquivFactUnder<F, C, Q, R> {
+    /// Convert this fact into an equivalent fact
+    fn into_eqv_under(self, ctx: &C, binder: &Q, db: &R) -> F;
 }
 
 /// A _sequent_: a pair `Γ ⊢ S` of a context and a statement
@@ -60,6 +76,18 @@ impl<C, S> DerefMut for Seq<C, S> {
     }
 }
 
+impl<C: Clone, S, F, R> EquivFact<Seq<C, F>, R> for Seq<C, S>
+where
+    S: EquivFactIn<F, C, R>,
+{
+    fn into_eqv(self, db: &R) -> Seq<C, F> {
+        Seq {
+            ctx: self.ctx.clone(),
+            stmt: self.stmt.into_eqv_in(&self.ctx, db),
+        }
+    }
+}
+
 /// A quantified statement, of the form `Q . S`
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Quantified<Q, S> {
@@ -67,6 +95,18 @@ pub struct Quantified<Q, S> {
     pub binder: Q,
     /// The body of this statement
     pub body: S,
+}
+
+impl<C, Q: Clone, S, F, R> EquivFactIn<Quantified<Q, F>, C, R> for Quantified<Q, S>
+where
+    S: EquivFactUnder<F, C, Q, R>,
+{
+    fn into_eqv_in(self, ctx: &C, db: &R) -> Quantified<Q, F> {
+        Quantified {
+            binder: self.binder.clone(),
+            body: self.body.into_eqv_under(ctx, &self.binder, db),
+        }
+    }
 }
 
 impl<C, Q, S, R: ?Sized> FactIn<C, R> for Quantified<Q, S>
@@ -83,7 +123,7 @@ where
 /// An atomic formula on terms supported by the kernel
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum Atom<T> {
-    /// A nullary predicate predicate on contexts
+    /// A nullary predicate on contexts
     Pred0(Pred0),
     /// A unary predicate on terms-in-context
     Pred1(Pred1, T),
@@ -144,7 +184,7 @@ impl<T> Atom<T> {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Forall<T>(T);
 
-/// A quantified atomic formula
+/// A potentially-quantified atomic formula
 pub type QAtom<T> = Quantified<Option<Forall<T>>, Atom<T>>;
 
 /// An atomic sequent
@@ -152,6 +192,13 @@ pub type AtomSeq<C, T> = Seq<C, Atom<T>>;
 
 /// A quantified atomic sequent
 pub type QAtomSeq<C, T> = Seq<C, QAtom<T>>;
+
+/// A unary predicate holds on a term-in-context
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct HoldsIn<T> {
+    pub pred: Pred1,
+    pub tm: T,
+}
 
 impl<C, T> QAtomSeq<C, T> {
     pub fn contr(ctx: C) -> QAtomSeq<C, T> {
@@ -165,285 +212,54 @@ impl<C, T> QAtomSeq<C, T> {
     }
 }
 
+/// A unary predicate holds on a term
+pub type Holds<C, T> = Seq<C, HoldsIn<T>>;
+
 /// An equation
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct Eqn<T> {
-    pub lhs: T,
-    pub rhs: T,
-}
+pub struct Eqn<L, R = L>(pub L, pub R);
 
 /// An equation-in-context
-pub type EqnIn<C, T> = Seq<C, Eqn<T>>;
+pub type EqnIn<C, L, R = L> = Seq<C, Eqn<L, R>>;
 
-impl<C, T> EqnIn<C, T> {
+impl<C, L, R> EqnIn<C, L, R> {
     /// Construct a new equation-in-context
-    pub const fn new(ctx: C, lhs: T, rhs: T) -> Self {
+    pub const fn new(ctx: C, lhs: L, rhs: R) -> Self {
         Seq {
             ctx,
-            stmt: Eqn { lhs, rhs },
+            stmt: Eqn(lhs, rhs),
         }
     }
 }
 
-/// An equation-in-context between values
-pub type EqnInV<C, T> = EqnIn<C, TmIn<C, T>>;
-
-/// A statement of well-formedness
+/// A term has the given type
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct IsWf<C, T> {
-    pub ctx: C,
+pub struct HasTy<T, Ty = T> {
     pub tm: T,
+    pub ty: Ty,
 }
 
-pub type IsWfV<C, T> = IsWf<C, TmIn<C, T>>;
-
-/// A term is a valid type
+/// A term is well-formed
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct IsTy<C, T> {
-    pub ctx: C,
-    pub tm: T,
-}
+pub struct IsWf<T>(T);
 
-pub type IsTyV<C, T> = IsTy<C, TmIn<C, T>>;
-
-/// A term is an inhabited type
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct IsInhab<C, T> {
-    pub ctx: C,
-    pub tm: T,
-}
-
-pub type IsInhabV<C, T> = IsInhab<C, TmIn<C, T>>;
-
-/// A term is an empty type
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct IsEmpty<C, T> {
-    pub ctx: C,
-    pub tm: T,
-}
-
-pub type IsEmptyV<C, T> = IsEmpty<C, TmIn<C, T>>;
+/// A term is a type
+pub struct IsTy<T>(T);
 
 /// A term is a proposition
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct IsProp<C, T> {
-    pub ctx: C,
-    pub tm: T,
-}
+pub struct IsProp<T>(T);
 
-pub type IsPropV<C, T> = IsProp<C, TmIn<C, T>>;
+/// A term is an inhabited type
+pub struct IsInhab<T>(T);
 
-/// A typing derivation
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct HasTy<C, T> {
-    pub ctx: C,
-    pub tm: T,
-    pub ty: T,
-}
+/// A term is an empty type
+pub struct IsEmpty<T>(T);
 
-pub type HasTyV<C, T> = HasTy<C, TmIn<C, T>>;
+/// A term is the true proposition
+pub struct IsTrue<T>(T);
 
-/// A term is a type under a binder
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct ForallIsTy<C, T> {
-    pub ctx: C,
-    pub binder: T,
-    pub tm: T,
-}
-
-pub type ForallIsTyV<C, T> = ForallIsTy<C, TmIn<C, T>>;
-
-/// A typing derivation under a binder
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct ForallHasTy<C, T> {
-    pub ctx: C,
-    pub binder: T,
-    pub tm: T,
-    pub ty: T,
-}
-
-pub type HasTyUnderV<C, T> = ForallHasTy<C, TmIn<C, T>>;
-
-/// A term is always a proposition under a binder
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct ForallIsProp<C, T> {
-    pub ctx: C,
-    pub binder: T,
-    pub tm: T,
-}
-
-pub type ForallIsPropV<C, T> = ForallIsProp<C, TmIn<C, T>>;
-
-/// A universally quantified statement of inhabitance
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct ForallInhab<C, T> {
-    pub ctx: C,
-    pub binder: T,
-    pub tm: T,
-}
-
-pub type ForallInhabUnderV<C, T> = ForallInhab<C, TmIn<C, T>>;
-
-/// An existentially quantified statement of inhabitance
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct ExistsInhabUnder<C, T> {
-    pub ctx: C,
-    pub binder: T,
-    pub ty: T,
-}
-
-pub type ExistsInhabUnderV<C, T> = ExistsInhabUnder<C, TmIn<C, T>>;
-
-/// A context is a subcontext of another
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct IsSubctx<C> {
-    pub lo: C,
-    pub hi: C,
-}
-
-impl<C, T> From<EqnIn<C, T>> for QAtomSeq<C, T> {
-    fn from(g: EqnIn<C, T>) -> Self {
-        Seq {
-            ctx: g.ctx,
-            stmt: Quantified {
-                binder: None,
-                body: Atom::Eqn(g.stmt.lhs, g.stmt.rhs),
-            },
-            // binder: Quant::Null,
-            // rel: Some(GoalIn::Eq(g.lhs, g.rhs)),
-        }
-    }
-}
-
-impl<C, T> From<IsWf<C, T>> for QAtomSeq<C, T>
-where
-    C: Copy,
-    T: Copy,
-{
-    fn from(g: IsWf<C, T>) -> Self {
-        Seq {
-            ctx: g.ctx,
-            stmt: Quantified {
-                binder: None,
-                body: Atom::is_wf(g.tm),
-            },
-            // binder: Quant::Null,
-            // rel: Some(GoalIn::IsWf(g.tm)),
-        }
-    }
-}
-
-impl<C, T> From<IsTy<C, T>> for QAtomSeq<C, T> {
-    fn from(g: IsTy<C, T>) -> Self {
-        Seq {
-            ctx: g.ctx,
-            stmt: Quantified {
-                binder: None,
-                body: Atom::is_ty(g.tm),
-            },
-            // binder: Quant::Null,
-            // rel: Some(GoalIn::IsTy(g.tm)),
-        }
-    }
-}
-
-impl<C, T> From<IsInhab<C, T>> for QAtomSeq<C, T> {
-    fn from(g: IsInhab<C, T>) -> Self {
-        Seq {
-            ctx: g.ctx,
-            stmt: Quantified {
-                binder: None,
-                body: Atom::is_inhab(g.tm),
-            },
-            // binder: Quant::Null,
-            // rel: Some(GoalIn::IsInhab(g.tm)),
-        }
-    }
-}
-
-impl<C, T> From<IsEmpty<C, T>> for QAtomSeq<C, T> {
-    fn from(g: IsEmpty<C, T>) -> Self {
-        Seq {
-            ctx: g.ctx,
-            stmt: Quantified {
-                binder: None,
-                body: Atom::is_empty(g.tm),
-            },
-        }
-    }
-}
-
-impl<C, T: Copy> From<IsProp<C, T>> for QAtomSeq<C, T> {
-    fn from(g: IsProp<C, T>) -> Self {
-        QAtomSeq {
-            ctx: g.ctx,
-            stmt: Quantified {
-                binder: None,
-                body: Atom::is_prop(g.tm),
-            },
-        }
-    }
-}
-
-impl<C, T> From<HasTy<C, T>> for QAtomSeq<C, T> {
-    fn from(g: HasTy<C, T>) -> Self {
-        QAtomSeq {
-            ctx: g.ctx,
-            stmt: Quantified {
-                binder: None,
-                body: Atom::HasTy(g.tm, g.ty),
-            },
-        }
-    }
-}
-
-impl<C, T> From<ForallIsTy<C, T>> for QAtomSeq<C, T> {
-    fn from(g: ForallIsTy<C, T>) -> Self {
-        QAtomSeq {
-            ctx: g.ctx,
-            stmt: Quantified {
-                binder: Some(Forall(g.binder)),
-                body: Atom::is_ty(g.tm),
-            },
-        }
-    }
-}
-
-impl<C, T> From<ForallIsProp<C, T>> for QAtomSeq<C, T> {
-    fn from(g: ForallIsProp<C, T>) -> Self {
-        Seq {
-            ctx: g.ctx,
-            stmt: Quantified {
-                binder: Some(Forall(g.binder)),
-                body: Atom::is_prop(g.tm),
-            },
-        }
-    }
-}
-
-impl<C, T> From<ForallHasTy<C, T>> for QAtomSeq<C, T> {
-    fn from(g: ForallHasTy<C, T>) -> Self {
-        Seq {
-            ctx: g.ctx,
-            stmt: Quantified {
-                binder: Some(Forall(g.binder)),
-                body: Atom::HasTy(g.tm, g.ty),
-            },
-        }
-    }
-}
-
-impl<C, T> From<ForallInhab<C, T>> for QAtomSeq<C, T> {
-    fn from(g: ForallInhab<C, T>) -> Self {
-        Seq {
-            ctx: g.ctx,
-            stmt: Quantified {
-                binder: Some(Forall(g.binder)),
-                body: Atom::is_inhab(g.tm),
-            },
-        }
-    }
-}
+/// A term is the false proposition
+pub struct IsFalse<T>(T);
 
 /*
 impl<C, T, R> FactIn<C, R> for Forall<T>

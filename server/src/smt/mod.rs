@@ -119,8 +119,8 @@ impl SmtProblem {
     pub fn new(kernel: &mut Kernel) -> Self {
         //TODO: fix this
         let sort_ctx = kernel.new_ctx();
-        let var_ctx = kernel.new_ctx();//kernel.with_parent(sort_ctx);
-        let eqn_ctx = kernel.new_ctx();//kernel.with_parent(var_ctx);
+        let var_ctx = kernel.new_ctx(); //kernel.with_parent(sort_ctx);
+        let eqn_ctx = kernel.new_ctx(); //kernel.with_parent(var_ctx);
         Self {
             sort_ctx,
             var_ctx,

@@ -5,22 +5,19 @@ The `covalence` kernel, parametrized by a datastore `D`
 use std::ops::Deref;
 
 use crate::data::term::ULvl;
-use crate::store::*;
 
 pub use covalence_data as data;
 pub use covalence_data::store;
 
 pub mod fact;
+pub mod local;
 pub mod rule;
 pub mod strategy;
 
-// pub use crate::rule::ensure::{DeriveTrusted, WriteTrusted};
-pub use crate::store::{
-    LocalStore, LocalStoreUnchecked, ReadCtx, ReadCtxFacts, ReadCtxGraph, ReadLocalFacts,
-    ReadLocalStore, ReadLocalTerm, WriteCtxFactsUnchecked, WriteCtxGraphUnchecked,
-    WriteLocalFactsUnchecked, WriteLocalStore, WriteLocalStoreUnchecked, WriteLocalTerm,
-};
+pub use covalence_data::store::local_store_unchecked::*;
 pub use covalence_data::univ::{ReadUniv, WriteUniv};
+
+use covalence_data::store::*;
 
 pub use covalence_data::fact::{
     IS_CONTR, IS_EMPTY, IS_FF, IS_INHAB, IS_PROP, IS_SCOPED, IS_TT, IS_TY, IS_UNIV, IS_WF, Pred1,

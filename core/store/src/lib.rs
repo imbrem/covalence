@@ -199,6 +199,15 @@ impl ReadLocalFacts for TermDb {
     fn local_eq(&self, ctx: CtxId, lhs: Ix, rhs: Ix) -> bool {
         self.x[ctx.0].eq_in(lhs, rhs)
     }
+
+    fn local_has_ty(
+        &self,
+        ctx: covalence_data::store::CtxId<Self>,
+        tm: covalence_data::store::Ix<Self>,
+        ty: covalence_data::store::Ix<Self>,
+    ) -> bool {
+        self.x[ctx.0].has_ty(tm, ty)
+    }
 }
 
 /*
@@ -342,6 +351,10 @@ impl WriteLocalFactsUnchecked for TermDb {
 
     fn add_var_unchecked(&mut self, ctx: CtxId, ty: TmId) -> FvId {
         self.x[ctx.0].add_var_unchecked(ctx, ty)
+    }
+
+    fn set_has_ty_unchecked(&mut self, ctx: CtxId, tm: Ix, ty: Ix) {
+        self.x[ctx.0].set_has_ty_unchecked(tm, ty);
     }
 }
 

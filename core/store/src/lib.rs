@@ -387,7 +387,7 @@ impl ReadTermDb<CtxId, Ix> for TermDb {
     }
 }
 
-impl WriteFacts<CtxId, Ix> for TermDb {
+impl WriteLocalFactsUnchecked for TermDb {
     fn set_tm_flags_unchecked(&mut self, ctx: CtxId, tm: Ix, pred: Pred1) {
         self.x[ctx.0].set_flags_unchecked(tm, pred);
     }
@@ -404,6 +404,16 @@ impl WriteFacts<CtxId, Ix> for TermDb {
         self.x[ctx.0].set_eq_unchecked(lhs, rhs);
     }
 
+    fn add_var_unchecked(&mut self, ctx: CtxId, ty: TermId) -> FvId {
+        self.x[ctx.0].add_var_unchecked(ctx, ty)
+    }
+
+    fn set_bvi_unchecked(&mut self, ctx: CtxId, tm: Ix, bvi: Bv) {
+        self.x[ctx.0].set_bvi_unchecked(tm, bvi);
+    }
+}
+
+impl WriteFacts<CtxId, Ix> for TermDb {
     fn set_has_ty_unchecked(&mut self, ctx: CtxId, tm: Ix, ty: Ix) {
         self.x[ctx.0].set_has_ty_unchecked(tm, ty);
     }
@@ -438,14 +448,6 @@ impl WriteFacts<CtxId, Ix> for TermDb {
 
     fn set_exists_is_inhab_unchecked(&mut self, ctx: CtxId, binder: Ix, ty: Ix) {
         self.x[ctx.0].set_exists_is_inhab_unchecked(binder, ty);
-    }
-
-    fn add_var_unchecked(&mut self, ctx: CtxId, ty: TermId) -> FvId {
-        self.x[ctx.0].add_var_unchecked(ctx, ty)
-    }
-
-    fn set_bvi_unchecked(&mut self, ctx: CtxId, tm: Ix, bvi: Bv) {
-        self.x[ctx.0].set_bvi_unchecked(tm, bvi);
     }
 }
 

@@ -17,7 +17,7 @@ pub mod strategy;
 pub use crate::rule::ensure::{DeriveTrusted, WriteTrusted};
 pub use crate::store::{
     ReadCtx, ReadCtxFacts, ReadCtxRel, ReadFacts, ReadLocalFacts, ReadLocalTerm, ReadQuantFacts,
-    ReadTermDb, ReadTermFacts, ReadTermStore, WriteFacts, WriteLocalTerm,
+    ReadTermDb, ReadTermFacts, ReadTermStore, WriteFacts, WriteLocalFactsUnchecked, WriteLocalTerm,
 };
 pub use covalence_data::univ::{ReadUniv, WriteUniv};
 

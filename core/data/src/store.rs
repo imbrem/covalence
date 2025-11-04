@@ -88,10 +88,7 @@ impl<C: Copy, T> Val<C, T> {
 
 impl<C: Copy, T: Copy> Val<C, T> {
     /// Get the node in `self.ctx` corresponding to this value
-    pub fn node_ix(
-        self,
-        store: &(impl ReadLocalTerm<CtxId = C, Ix = T> + ?Sized),
-    ) -> NodeT<C, T> {
+    pub fn node_ix(self, store: &(impl ReadLocalTerm<CtxId = C, Ix = T> + ?Sized)) -> NodeT<C, T> {
         *store.node(self.ctx, self.tm)
     }
 
@@ -194,6 +191,47 @@ pub trait ReadLocalFacts: TermIndex {
     ///
     /// Corresponds to `Ctx.KEq` in `gt3-lean`
     fn local_eq(&self, ctx: CtxId<Self>, lhs: Ix<Self>, rhs: Ix<Self>) -> bool;
+}
+
+/// A trait implemented by a mutable datastore that can hold _unchecked_ facts about terms in a
+/// context.
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence::kernel::*;
+/// let db : &dyn WriteLocalFactsUnchecked<CtxId = CtxId, Ix = Ix> = &TermDb::default();
+/// ```
+/// We note that it is _not_ implemented by `Kernel`, since that would be unsafe:
+/// ```rust,compile_fail
+/// # use covalence::kernel::*;
+/// let db : &dyn WriteLocalFactsUnchecked<CtxId = CtxId, Ix = Ix> = &Kernel::new();
+/// ```
+pub trait WriteLocalFactsUnchecked: TermIndex {
+    // == Context predicates ==
+
+    /// Mark a context as contradictory
+    fn set_is_contr_unchecked(&mut self, ctx: CtxId<Self>);
+
+    /// Set a context's parent
+    fn set_parent_unchecked(&mut self, ctx: CtxId<Self>, parent: CtxId<Self>);
+
+    // == Typing judgements ==
+
+    /// Set a term's flags
+    fn set_tm_flags_unchecked(&mut self, ctx: CtxId<Self>, tm: Ix<Self>, pred: Pred1);
+
+    /// Set two terms as equal in a given context
+    fn set_eq_unchecked(&mut self, ctx: CtxId<Self>, lhs: Ix<Self>, rhs: Ix<Self>);
+
+    // == Variable and assumption manipulation ==
+
+    /// Add a variable to the given context
+    fn add_var_unchecked(&mut self, ctx: CtxId<Self>, ty: TermId<Self>) -> FvId<Self>;
+
+    // == Cached information ==
+
+    /// Set the bound-variable index of a term
+    fn set_bvi_unchecked(&mut self, ctx: CtxId<Self>, tm: Ix<Self>, bvi: Bv);
 }
 
 impl<C: Copy, T> NodeT<C, T> {
@@ -519,10 +557,7 @@ pub trait ReadTermDb<C, T> {
 /// A term database which we can read from and write to
 pub trait RwTermDb<C, T>: ReadTermDb<C, T> + WriteLocalTerm<CtxId = C, Ix = T> {}
 
-impl<C, T, D: ReadTermDb<C, T> + WriteLocalTerm<CtxId = C, Ix = T> + ?Sized> RwTermDb<C, T>
-    for D
-{
-}
+impl<C, T, D: ReadTermDb<C, T> + WriteLocalTerm<CtxId = C, Ix = T> + ?Sized> RwTermDb<C, T> for D {}
 
 /// A trait implemented by a mutable datastore that can hold _unchecked_ facts about terms in a
 /// context.
@@ -537,22 +572,9 @@ impl<C, T, D: ReadTermDb<C, T> + WriteLocalTerm<CtxId = C, Ix = T> + ?Sized> RwT
 /// # use covalence::kernel::*;
 /// let db : &dyn WriteFacts<CtxId, Ix> = &Kernel::new();
 /// ```
-pub trait WriteFacts<C, T> {
-    // == Context predicates ==
-
-    /// Mark a context as contradictory
-    fn set_is_contr_unchecked(&mut self, ctx: C);
-
-    /// Set a context's parent
-    fn set_parent_unchecked(&mut self, ctx: C, parent: C);
+pub trait WriteFacts<C, T>: WriteLocalFactsUnchecked<CtxId = C, Ix = T> {
 
     // == Typing judgements ==
-
-    /// Set a term's flags
-    fn set_tm_flags_unchecked(&mut self, ctx: C, tm: T, pred: Pred1);
-
-    /// Set two terms as equal in a given context
-    fn set_eq_unchecked(&mut self, ctx: C, lhs: T, rhs: T);
 
     /// Set the type of a term
     fn set_has_ty_unchecked(&mut self, ctx: C, tm: T, ty: T);
@@ -615,16 +637,6 @@ pub trait WriteFacts<C, T> {
 
     /// Mark a term as an inhabited type under a binder
     fn set_exists_is_inhab_unchecked(&mut self, ctx: C, binder: T, tm: T);
-
-    // == Variable and assumption manipulation ==
-
-    /// Add a variable to the given context
-    fn add_var_unchecked(&mut self, ctx: C, ty: Val<C, T>) -> Fv<C>;
-
-    // == Cached information ==
-
-    /// Set the bound-variable index of a term
-    fn set_bvi_unchecked(&mut self, ctx: C, tm: T, bvi: Bv);
 }
 
 impl<C: Copy, T: Copy, D: ReadLocalTerm<CtxId = C, Ix = T> + ReadTermFacts<C, T> + ?Sized>

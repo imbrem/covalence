@@ -196,12 +196,21 @@ where
         lvl: ULvl,
         strategy: &mut S,
     ) -> Result<HasTyV<C, T>, S::Fail> {
-        todo!()
-        // let tm = self.add(ctx, NodeT::U(lvl));
-        // let ty_lvl = self.succ(lvl);
-        // let ty = self.add(ctx, NodeT::U(ty_lvl));
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // HasTyIn { tm, ty }
+        strategy.start_rule("derive_univ", self)?;
+
+        strategy.commit_rule(self);
+
+        let tm = self.add_with(ctx, NodeT::U(lvl), strategy)?;
+        let ty_lvl = self.succ(lvl);
+        let ty = self.add_with(ctx, NodeT::U(ty_lvl), strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+
+        strategy.finish_rule(self);
+        Ok(HasTy {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_unit(

@@ -196,6 +196,7 @@ pub trait ReadLocalStore:
     + ReadLocalFacts
     + ReadUniv
     + ReadCtx<CtxId<Self>, Ix<Self>>
+    + ReadCtxFacts<CtxId<Self>>
     + ReadCtxGraph<CtxId<Self>>
 {
 }
@@ -205,6 +206,7 @@ impl<D> ReadLocalStore for D where
         + ReadLocalFacts
         + ReadUniv
         + ReadCtx<CtxId<D>, Ix<D>>
+        + ReadCtxFacts<CtxId<Self>>
         + ReadCtxGraph<CtxId<D>>
 {
 }

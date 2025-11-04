@@ -3,6 +3,11 @@ Facts which can be checked in the datastore
 */
 use std::ops::{Deref, DerefMut};
 
+use covalence_data::{
+    ctx::ReadCtxFacts,
+    store::{ReadLocalFacts, ReadLocalStore},
+};
+
 pub use crate::data::fact::*;
 
 /// Logical composition for fact types
@@ -234,32 +239,121 @@ impl<C, L, R> EqnIn<C, L, R> {
 
 /// A term has the given type
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct HasTy<T, Ty = T> {
+pub struct HasTy<T> {
     pub tm: T,
-    pub ty: Ty,
+    pub ty: T,
 }
+
+/// A term has the given type in a context
+pub type HasTyIn<C, T> = Seq<C, HasTy<T>>;
 
 /// A term is well-formed
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct IsWf<T>(T);
 
+/// A term is well-formed in a context
+pub type IsWfIn<C, T> = Seq<C, IsWf<T>>;
+
 /// A term is a type
 pub struct IsTy<T>(T);
+
+/// A term is a type in a context
+pub type IsTyIn<C, T> = Seq<C, IsTy<T>>;
 
 /// A term is a proposition
 pub struct IsProp<T>(T);
 
+/// A term is a proposition in a context
+pub type IsPropIn<C, T> = Seq<C, IsProp<T>>;
+
 /// A term is an inhabited type
 pub struct IsInhab<T>(T);
+
+/// A term is inhabited in a context
+pub type IsInhabIn<C, T> = Seq<C, IsInhab<T>>;
 
 /// A term is an empty type
 pub struct IsEmpty<T>(T);
 
+/// A term is empty in a context
+pub type IsEmptyIn<C, T> = Seq<C, IsEmpty<T>>;
+
 /// A term is the true proposition
 pub struct IsTrue<T>(T);
 
+/// A term is the true proposition in a context
+pub struct IsTrueIn<C, T>(C, T);
+
 /// A term is the false proposition
 pub struct IsFalse<T>(T);
+
+/// A term is the false proposition in a context
+pub struct IsFalseIn<C, T>(C, T);
+
+impl<C: Copy, R> FactIn<C, R> for Pred0
+where
+    R: ReadCtxFacts<C> + ?Sized,
+{
+    fn check_in(&self, ctx: &C, db: &R) -> bool {
+        db.ctx_satisfies(*ctx, *self)
+    }
+}
+
+impl<R> FactUnder<R::CtxId, Forall<R::Ix>, R> for Pred0
+where
+    R: ReadLocalStore + ?Sized,
+{
+    fn check_under(&self, ctx: &R::CtxId, binder: &Forall<R::Ix>, db: &R) -> bool {
+        db.ctx_satisfies(*ctx, *self)
+            || *self == Pred0::IS_CONTR && db.local_tm_satisfies(*ctx, binder.0, Pred1::IS_EMPTY)
+    }
+}
+
+impl<R> FactIn<R::CtxId, R> for Holds<R::CtxId, R::Ix>
+where
+    R: ReadLocalFacts + ?Sized,
+{
+    fn check_in(&self, ctx: &R::CtxId, db: &R) -> bool {
+        db.local_tm_satisfies(*ctx, self.tm, self.pred)
+    }
+}
+
+impl<R> FactIn<R::CtxId, R> for Eqn<R::Ix>
+where
+    R: ReadLocalFacts + ?Sized,
+{
+    fn check_in(&self, ctx: &R::CtxId, db: &R) -> bool {
+        db.local_eq(*ctx, self.0, self.1)
+    }
+}
+
+impl<R> FactIn<R::CtxId, R> for HasTy<R::Ix>
+where
+    R: ReadLocalFacts + ?Sized,
+{
+    fn check_in(&self, ctx: &R::CtxId, db: &R) -> bool {
+        db.local_has_ty(*ctx, self.tm, self.ty)
+    }
+}
+
+impl<C, T, R> FactIn<C, R> for Atom<T>
+where
+    Pred0: FactIn<C, R>,
+    HoldsIn<T>: FactIn<C, R>,
+    Eqn<T>: FactIn<C, R>,
+    HasTy<T>: FactIn<C, R>,
+    R: ?Sized,
+    T: Copy,
+{
+    fn check_in(&self, ctx: &C, db: &R) -> bool {
+        match *self {
+            Atom::Pred0(p) => p.check_in(ctx, db),
+            Atom::Pred1(p, tm) => HoldsIn { pred: p, tm }.check_in(ctx, db),
+            Atom::Eqn(lhs, rhs) => Eqn(lhs, rhs).check_in(ctx, db),
+            Atom::HasTy(tm, ty) => HasTy { tm, ty }.check_in(ctx, db),
+        }
+    }
+}
 
 /*
 impl<C, T, R> FactIn<C, R> for Forall<T>

@@ -1,6 +1,6 @@
 use covalence_kernel::strategy::Strategy;
-pub use covalence_kernel::*;
 
+pub use covalence_kernel::*;
 pub use covalence_store::*;
 
 pub type Kernel = covalence_kernel::Kernel<TermDb>;
@@ -8,7 +8,7 @@ pub type Kernel = covalence_kernel::Kernel<TermDb>;
 pub use covalence_data as data;
 use data::term::*;
 
-pub use covalence_data::term::{Fv, Bv};
+pub use covalence_data::term::{Bv, Fv};
 pub use covalence_data::univ::ULvl;
 
 /// Writing for the `covalence` kernel

@@ -1,5 +1,5 @@
 use crate::data::term::Close;
-use crate::data::term::{Fv, NodeT, ULvl, Val, Bv};
+use crate::data::term::{Bv, Fv, NodeT, ULvl, Val};
 use crate::fact::*;
 use crate::store::*;
 use crate::strategy::*;

@@ -17,7 +17,7 @@ pub mod strategy;
 pub use crate::rule::ensure::{DeriveTrusted, WriteTrusted};
 pub use crate::store::{
     ReadCtx, ReadCtxFacts, ReadCtxRel, ReadFacts, ReadQuantFacts, ReadTermDb, ReadTermFacts,
-    ReadTermIndex, ReadTermStore, WriteTermIndex,
+    ReadTermIndex, ReadTermStore, WriteFacts, WriteTermIndex,
 };
 pub use covalence_data::univ::{ReadUniv, WriteUniv};
 
@@ -74,23 +74,23 @@ impl<D: WriteUniv> WriteUniv for Kernel<D> {
 }
 
 impl<D: WriteTermIndex> WriteTermIndex for Kernel<D> {
-    fn new_ctx(&mut self) -> KCtxId<D> {
+    fn new_ctx(&mut self) -> CtxId<D> {
         self.0.new_ctx()
     }
 
-    fn with_parent(&mut self, parent: KCtxId<D>) -> KCtxId<D> {
+    fn with_parent(&mut self, parent: CtxId<D>) -> CtxId<D> {
         self.0.with_parent(parent)
     }
 
-    fn add_raw(&mut self, ctx: KCtxId<D>, term: KNodeIx<D>) -> KTermId<D> {
+    fn add_raw(&mut self, ctx: CtxId<D>, term: NodeIx<D>) -> TermId<D> {
         self.0.add_raw(ctx, term)
     }
 
-    fn import(&mut self, ctx: KCtxId<D>, val: KValId<D>) -> KTermId<D> {
+    fn import(&mut self, ctx: CtxId<D>, val: ValId<D>) -> TermId<D> {
         self.0.import(ctx, val)
     }
 
-    fn propagate_in(&mut self, ctx: KCtxId<D>) -> usize {
+    fn propagate_in(&mut self, ctx: CtxId<D>) -> usize {
         self.0.propagate_in(ctx)
     }
 }

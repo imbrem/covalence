@@ -1,9 +1,11 @@
 use crate::{
-    fact::{Pred0, Pred1},
+    fact::Pred1,
     term::{Bv, Fv, NodeT, NodeVT, Val},
 };
 
 pub use crate::univ::{ReadUniv, WriteUniv};
+
+pub use crate::ctx::*;
 
 /// A term database with a given index kind
 pub trait IndexTypes {
@@ -13,15 +15,15 @@ pub trait IndexTypes {
     type TermId: Copy;
 }
 
-pub type KCtxId<D> = <D as IndexTypes>::CtxId;
+pub type CtxId<D> = <D as IndexTypes>::CtxId;
 
-pub type KTermId<D> = <D as IndexTypes>::TermId;
+pub type TermId<D> = <D as IndexTypes>::TermId;
 
-pub type KValId<D> = Val<KCtxId<D>, KTermId<D>>;
+pub type ValId<D> = Val<CtxId<D>, TermId<D>>;
 
-pub type KNodeIx<D> = NodeT<KCtxId<D>, KTermId<D>>;
+pub type NodeIx<D> = NodeT<CtxId<D>, TermId<D>>;
 
-pub type KFvId<D> = Fv<KCtxId<D>>;
+pub type FvId<D> = Fv<CtxId<D>>;
 
 /// A datastore that can read terms and universe levels
 ///
@@ -40,49 +42,46 @@ pub trait ReadTermIndex: IndexTypes + ReadUniv {
     // == Terms ==
 
     /// Get the value corresponding to a term
-    fn val(&self, ctx: KCtxId<Self>, tm: KTermId<Self>) -> KValId<Self>;
+    fn val(&self, ctx: CtxId<Self>, tm: TermId<Self>) -> ValId<Self>;
 
     /// Get the node corresponding to a term
-    fn node(&self, ctx: KCtxId<Self>, tm: KTermId<Self>) -> &KNodeIx<Self>;
+    fn node(&self, ctx: CtxId<Self>, tm: TermId<Self>) -> &NodeIx<Self>;
 
     /// Lookup a term in the store
-    fn lookup(&self, ctx: KCtxId<Self>, tm: KNodeIx<Self>) -> Option<KTermId<Self>>;
+    fn lookup(&self, ctx: CtxId<Self>, tm: NodeIx<Self>) -> Option<TermId<Self>>;
 
     /// Lookup an import of a term into another context, returning a handle to it if it exists
-    fn lookup_import(&self, ctx: KCtxId<Self>, val: KValId<Self>) -> Option<KTermId<Self>>;
+    fn lookup_import(&self, ctx: CtxId<Self>, val: ValId<Self>) -> Option<TermId<Self>>;
 
     // == Syntactic information ==
 
     /// Get an upper bound on the de-Bruijn indices visible in `tm`
     ///
     /// TODO: reference lean
-    fn bvi(&self, ctx: KCtxId<Self>, tm: KTermId<Self>) -> Bv;
+    fn bvi(&self, ctx: CtxId<Self>, tm: TermId<Self>) -> Bv;
 
-    /// Check whether the term `tm` depends on the variable `var` in context `ctx`
-    fn has_var(&self, ctx: KCtxId<Self>, tm: KTermId<Self>, var: KFvId<Self>) -> bool;
-
-    /// Check whether the term `tm` depends on any variable from the context `vars`
-    fn has_var_from(&self, ctx: KCtxId<Self>, tm: KTermId<Self>, vars: KCtxId<Self>) -> bool;
-
-    /// Check whether the term `tm` may depend on the variable `var` in context `ctx`
-    fn may_have_var(&self, ctx: KCtxId<Self>, tm: KTermId<Self>, var: KFvId<Self>) -> bool;
+    /// Check whether the term `tm` may depend on the variable `var`
+    fn may_have_var(&self, ctx: CtxId<Self>, tm: TermId<Self>, var: FvId<Self>) -> bool {
+        self.may_have_var_from(ctx, tm, var.ctx)
+    }
 
     /// Check whether the term `tm` may depend on any variable from the context `vars`
-    fn may_have_var_from(&self, ctx: KCtxId<Self>, tm: KTermId<Self>, vars: KCtxId<Self>) -> bool;
+    fn may_have_var_from(
+        &self,
+        _ctx: CtxId<Self>,
+        _tm: TermId<Self>,
+        _vars: CtxId<Self>,
+    ) -> bool {
+        true
+    }
 
     // == Syntactic relations ==
 
     /// Check whether two values resolve to the same value, after following imports
-    fn deref_eq(&self, lhs: KValId<Self>, rhs: KValId<Self>) -> bool;
+    fn deref_eq(&self, lhs: ValId<Self>, rhs: ValId<Self>) -> bool;
 
     /// Check whether two values are equal up to first imports
-    fn cons_eq(&self, lhs: KValId<Self>, rhs: KValId<Self>) -> bool;
-
-    /// Check whether two values are syntactically equal
-    fn syn_eq(&self, lhs: KValId<Self>, rhs: KValId<Self>) -> bool;
-
-    /// Check whether two values are equal up to unfolding
-    fn unfold_eq(&self, lhs: KValId<Self>, rhs: KValId<Self>) -> bool;
+    fn cons_eq(&self, lhs: ValId<Self>, rhs: ValId<Self>) -> bool;
 }
 
 impl<C: Copy, T> Val<C, T> {
@@ -137,7 +136,7 @@ pub trait WriteTermIndex: IndexTypes + WriteUniv {
     /// let ctx = ker.new_ctx();
     /// assert_eq!(ker.num_vars(ctx), 0);
     /// ```
-    fn new_ctx(&mut self) -> KCtxId<Self>;
+    fn new_ctx(&mut self) -> CtxId<Self>;
 
     /// Create a new context in this store with the given parent
     ///
@@ -151,10 +150,10 @@ pub trait WriteTermIndex: IndexTypes + WriteUniv {
     /// assert!(ker.is_subctx(parent, child));
     /// assert!(ker.is_subctx(child, parent));
     /// ```
-    fn with_parent(&mut self, parent: KCtxId<Self>) -> KCtxId<Self>;
+    fn with_parent(&mut self, parent: CtxId<Self>) -> CtxId<Self>;
 
     /// Directly insert a term into the store, returning a handle to it
-    fn add_raw(&mut self, ctx: KCtxId<Self>, tm: KNodeIx<Self>) -> KTermId<Self>;
+    fn add_raw(&mut self, ctx: CtxId<Self>, tm: NodeIx<Self>) -> TermId<Self>;
 
     /// Import a term into another context, returning a handle to it
     ///
@@ -162,12 +161,12 @@ pub trait WriteTermIndex: IndexTypes + WriteUniv {
     /// - If `src[tm] := import(src2, tm)`, then `import(ctx, src, tm) => import(ctx, src2, tm)`
     /// - `import(ctx, ctx, tm)` returns `tm`
     /// - otherwise, return an `Import` node
-    fn import(&mut self, ctx: KCtxId<Self>, val: KValId<Self>) -> KTermId<Self>;
+    fn import(&mut self, ctx: CtxId<Self>, val: ValId<Self>) -> TermId<Self>;
 
     // == Congruence management ==
 
     /// Propagate congruence information _within_ a context
-    fn propagate_in(&mut self, ctx: KCtxId<Self>) -> usize;
+    fn propagate_in(&mut self, ctx: CtxId<Self>) -> usize;
 }
 
 impl<C: Copy, T> NodeT<C, T> {
@@ -258,168 +257,6 @@ impl<C: Copy> Fv<C> {
     //         Pred1::IS_WF
     //     }
     // }
-}
-
-/// A datastore that can read facts about contexts
-///
-/// This trait is `dyn`-safe:
-/// ```rust
-/// # use covalence::kernel::*;
-/// let ker : &dyn ReadCtxFacts<CtxId> = &TermDb::new();
-/// ```
-/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
-/// functions for different kernel wrappers:
-/// ```rust,compile_fail
-/// # use covalence::kernel::*;
-/// let ker : &dyn ReadCtxFacts<CtxId> = &Kernel::new();
-/// ```
-pub trait ReadCtxFacts<C> {
-    /// Get whether a context satisfies a nullary predicate
-    ///
-    /// TODO: reference lean
-    fn ctx_satisfies(&self, ctx: C, pred: Pred0) -> bool;
-
-    /// Get whether a context is contradictory
-    ///
-    /// TODO: reference lean
-    fn is_contr(&self, ctx: C) -> bool {
-        self.ctx_satisfies(ctx, Pred0::IS_CONTR)
-    }
-}
-
-/// A datastore that can read relationships between contexts
-///
-/// This trait is `dyn`-safe:
-/// ```rust
-/// # use covalence::kernel::*;
-/// let ker : &dyn ReadCtxRel<CtxId> = &TermDb::new();
-/// ```
-/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
-/// functions for different kernel wrappers:
-/// ```rust,compile_fail
-/// # use covalence::kernel::*;
-/// let ker : &dyn ReadCtxRel<CtxId> = &Kernel::new();
-/// ```
-pub trait ReadCtxRel<C> {
-    /// Get whether a context is a root context
-    ///
-    /// Note that a root context has no assumptions _or_ variables.
-    ///
-    /// TODO: reference Lean
-    fn is_root(&self, ctx: C) -> bool;
-
-    /// Check whether `lo` is an ancestor of `hi`
-    ///
-    /// Note that a context `ctx` is always an ancestor of itself
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::default();
-    /// let parent = ker.new_ctx();
-    /// let child = ker.with_parent(parent);
-    /// assert!(ker.is_ancestor(parent, child));
-    /// assert!(ker.is_ancestor(parent, parent));
-    /// assert!(ker.is_ancestor(child, child));
-    /// assert!(!ker.is_ancestor(child, parent));
-    /// ```
-    fn is_ancestor(&self, lo: C, hi: C) -> bool;
-
-    /// Check whether `lo` is _strict_ ancestor of `hi`
-    ///
-    /// A context `ctx` is never a strict ancestor of itself
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::default();
-    /// let parent = ker.new_ctx();
-    /// let child = ker.with_parent(parent);
-    /// assert!(ker.is_strict_ancestor(parent, child));
-    /// assert!(!ker.is_strict_ancestor(parent, parent));
-    /// assert!(!ker.is_strict_ancestor(child, child));
-    /// assert!(!ker.is_strict_ancestor(child, parent));
-    /// ```
-    fn is_strict_ancestor(&self, lo: C, hi: C) -> bool;
-
-    /// Check whether `lo` is a subcontext of `hi`
-    ///
-    /// This means that every variable in `lo` is contained in `hi`.
-    ///
-    /// Unlike [`is_ancestor`](#method.is_ancestor), this is _not_ monotonic: a context may be
-    /// modified so that it is not longer a subcontext of another, whereas if `lo` is an ancestor of
-    /// `hi`, all valid edits to a kernel will preserve this fact.
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::default();
-    /// let parent = ker.new_ctx();
-    /// let child = ker.with_parent(parent);
-    /// let grandchild = ker.with_parent(child);
-    /// for x in [parent, child, grandchild] {
-    ///     for y in [parent, child, grandchild] {
-    ///         assert!(ker.is_subctx(x, y));
-    ///     }
-    /// }
-    /// let n = ker.nats(child);
-    /// let x = ker.add_var(child, n, &mut ()).unwrap();
-    /// // ∅ is a subset of everything
-    /// assert!(ker.is_subctx(parent, child));
-    /// // {x} is not a subset of ∅
-    /// assert!(!ker.is_subctx(child, parent));
-    /// // These both contain exactly x
-    /// assert!(ker.is_subctx(child, grandchild));
-    /// assert!(ker.is_subctx(grandchild, child));
-    /// ```
-    fn is_subctx(&self, lo: C, hi: C) -> bool;
-
-    /// Check whether `lo` is a subcontext of `hi`'s parent(s)
-    ///
-    /// # Examples
-    /// ```rust
-    /// /*
-    /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::new();
-    /// let ctx = ker.new_ctx();
-    /// // The empty context is a subctx of everything
-    /// assert!(ker.is_subctx_of_parents(ctx, ctx));
-    /// let unit = ker.tt(ctx);
-    /// let x = ker.with_param(ctx, unit, &mut ()).unwrap();
-    /// let child = x.ctx;
-    /// assert!(ker.is_subctx_of_parents(ctx, child));
-    /// assert!(!ker.is_subctx_of_parents(child, ctx));
-    /// // Child is nonempty, so is not a subctx of its parent (ctx)
-    /// assert!(!ker.is_subctx_of_parents(child, child));
-    /// */
-    /// ```
-    fn is_subctx_of_parents(&self, lo: C, hi: C) -> bool;
-
-    /// Check whether `lo`'s parent(s) are a subcontext of `hi`
-    ///
-    /// # Examples
-    /// ```rust
-    /// /*
-    /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::new();
-    /// let ctx = ker.new_ctx();
-    /// // The empty context is a subctx of everything
-    /// assert!(ker.parents_are_subctx(ctx, ctx));
-    /// let unit = ker.tt(ctx);
-    /// let x = ker.with_param(ctx, unit, &mut ()).unwrap();
-    /// let child = x.ctx;
-    /// assert!(ker.parents_are_subctx(ctx, child));
-    /// assert!(ker.parents_are_subctx(child, ctx));
-    /// assert!(ker.parents_are_subctx(child, child));
-    /// let y = ker.with_param(child, unit, &mut ()).unwrap();
-    /// let grandchild = y.ctx;
-    /// assert!(ker.parents_are_subctx(ctx, grandchild));
-    /// assert!(ker.parents_are_subctx(grandchild, child));
-    /// // child is a parent of grandchild, but not of ctx!
-    /// assert!(!ker.parents_are_subctx(grandchild, ctx));
-    /// */
-    /// ```
-    fn parents_are_subctx(&self, lo: C, hi: C) -> bool;
 }
 
 /// A datastore that can read facts about terms-in-context.
@@ -665,13 +502,11 @@ impl<C, T, D: ReadTermDb<C, T> + WriteTermIndex<CtxId = C, TermId = T> + ?Sized>
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
-/// # use covalence::kernel::store::*;
 /// # use covalence::kernel::*;
 /// let db : &dyn WriteFacts<CtxId, TermId> = &TermDb::default();
 /// ```
 /// We note that it is _not_ implemented by `Kernel`, since that would be unsafe:
 /// ```rust,compile_fail
-/// # use covalence::kernel::store::*;
 /// # use covalence::kernel::*;
 /// let db : &dyn WriteFacts<CtxId, TermId> = &Kernel::new();
 /// ```

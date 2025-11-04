@@ -3,7 +3,11 @@ use crate::data::term::*;
 use crate::store::*;
 
 /// Infer predicates for this term in the given context
-pub fn infer_flags<C: Copy, T: Copy>(node: NodeT<C, T>, ctx: C, store: &impl ReadTermStore<C, T>) -> Pred1 {
+pub fn infer_flags<C: Copy, T: Copy>(
+    node: NodeT<C, T>,
+    ctx: C,
+    store: &impl ReadTermStore<C, T>,
+) -> Pred1 {
     let mut result = Pred1::default();
     match node {
         NodeT::Fv(var) => {
@@ -15,7 +19,7 @@ pub fn infer_flags<C: Copy, T: Copy>(node: NodeT<C, T>, ctx: C, store: &impl Rea
                 Pred1::IS_TY
             } else {
                 Pred1::IS_WF
-            }
+            };
         }
         NodeT::Pi([arg, res]) => {
             let arg_flags = store.tm_flags(ctx, arg);

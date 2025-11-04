@@ -1,8 +1,8 @@
 use typed_generational_arena::{SmallArena, SmallIndex};
 
 use covalence_data::fact::{Pred0, Pred1};
-use covalence_data::term::*;
 use covalence_data::store::*;
+use covalence_data::term::*;
 
 mod ctx;
 use ctx::*;
@@ -12,9 +12,9 @@ pub use ctx::{NodeIx, TermId};
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CtxId(SmallIndex<Ctx>);
 
-pub type ValId = KValId<TermDb>;
+pub type ValId = covalence_data::store::ValId<TermDb>;
 
-pub type FvId = KFvId<TermDb>;
+pub type FvId = covalence_data::store::FvId<TermDb>;
 
 /// A term store implemented using `egg`
 #[derive(Debug, Clone, Default)]
@@ -77,48 +77,6 @@ impl ReadTermIndex for TermDb {
         self.x[ctx.0].bvi(tm)
     }
 
-    fn has_var(&self, ctx: CtxId, tm: TermId, var: Fv<CtxId>) -> bool {
-        //TODO: optimize, a _lot_
-        match self.node(ctx, tm) {
-            NodeIx::Fv(v) => *v == var,
-            NodeIx::Import(imp) => self.may_have_var(imp.ctx, imp.tm, var),
-            n => n.children().iter().any(|&i| self.may_have_var(ctx, i, var)),
-        }
-    }
-
-    fn has_var_from(&self, ctx: CtxId, tm: TermId, vars: CtxId) -> bool {
-        //TODO: optimize, a _lot_
-        match self.node(ctx, tm) {
-            NodeIx::Fv(v) => v.ctx == vars,
-            NodeIx::Import(imp) => self.may_have_var_from(imp.ctx, imp.tm, vars),
-            n => n
-                .children()
-                .iter()
-                .any(|&i| self.may_have_var_from(ctx, i, vars)),
-        }
-    }
-
-    fn may_have_var(&self, ctx: CtxId, tm: TermId, var: FvId) -> bool {
-        //TODO: optimize, a _lot_
-        match self.node(ctx, tm) {
-            NodeIx::Fv(v) => *v == var,
-            NodeIx::Import(imp) => self.may_have_var(imp.ctx, imp.tm, var),
-            n => n.children().iter().any(|&i| self.may_have_var(ctx, i, var)),
-        }
-    }
-
-    fn may_have_var_from(&self, ctx: CtxId, tm: TermId, vars: CtxId) -> bool {
-        //TODO: optimize, a _lot_
-        match self.node(ctx, tm) {
-            NodeIx::Fv(v) => v.ctx == vars,
-            NodeIx::Import(imp) => self.may_have_var_from(imp.ctx, imp.tm, vars),
-            n => n
-                .children()
-                .iter()
-                .any(|&i| self.may_have_var_from(ctx, i, vars)),
-        }
-    }
-
     fn deref_eq(&self, lhs: Val<CtxId, TermId>, rhs: Val<CtxId, TermId>) -> bool {
         lhs == rhs || self.val(lhs.ctx, lhs.tm) == self.val(rhs.ctx, rhs.tm)
     }
@@ -127,37 +85,7 @@ impl ReadTermIndex for TermDb {
         if lhs == rhs {
             return true;
         }
-        let ln = lhs.node_val(self);
-        let rn = rhs.node_val(self);
-        ln.syn_disc() == rn.syn_disc()
-            && ln
-                .syn_children()
-                .iter()
-                .zip(rn.syn_children().iter())
-                .all(|(&l, &r)| self.cons_eq(l, r))
-    }
-
-    fn syn_eq(&self, lhs: ValId, rhs: ValId) -> bool {
-        if lhs == rhs {
-            return true;
-        }
-        match (lhs.node_val(self), rhs.node_val(self)) {
-            (NodeVT::Import(lhs), _) => self.syn_eq(lhs, rhs),
-            (_, NodeVT::Import(rhs)) => self.syn_eq(lhs, rhs),
-            (ln, rn) => {
-                ln.syn_disc() == rn.syn_disc()
-                    && ln
-                        .syn_children()
-                        .iter()
-                        .zip(rn.syn_children().iter())
-                        .all(|(&l, &r)| self.syn_eq(l, r))
-            }
-        }
-    }
-
-    fn unfold_eq(&self, lhs: Val<CtxId, TermId>, rhs: Val<CtxId, TermId>) -> bool {
-        //TODO: reduce here, later...
-        self.syn_eq(lhs, rhs)
+        lhs.node_val(self) == rhs.node_val(self)
     }
 }
 

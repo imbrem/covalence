@@ -1,5 +1,3 @@
-
-
 /// Deduction rules for the `covalence` kernel
 pub mod ensure;
 

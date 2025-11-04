@@ -1,7 +1,6 @@
 use typed_generational_arena::{SmallArena, SmallIndex};
 
 use crate::Pred1;
-use crate::api::generic::*;
 use crate::data::term::*;
 use crate::fact::Pred0;
 use crate::store::*;
@@ -211,7 +210,7 @@ impl WriteTermIndex for TermDb {
         } else {
             self.x[ctx.0].add(NodeT::Import(val))
         };
-        let bvi = val.bvi(self);
+        let bvi = self.bvi(val.ctx, val.tm);
         self.set_bvi_unchecked(ctx, result, bvi);
         result
     }

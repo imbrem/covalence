@@ -1,4 +1,4 @@
-use covalence_kernel::api::strategy::Strategy;
+use covalence_kernel::strategy::Strategy;
 pub use covalence_kernel::*;
 
 use data::term::*;

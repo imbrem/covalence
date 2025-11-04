@@ -4,7 +4,7 @@ use crate::{
     fact::Pred0,
 };
 
-pub use crate::api::univ::{ReadUniv, WriteUniv};
+pub use crate::univ::{ReadUniv, WriteUniv};
 
 /// A term database with a given index kind
 pub trait IndexTypes {
@@ -101,7 +101,6 @@ pub trait WriteTermIndex: IndexTypes + WriteUniv {
     /// # Example
     /// ```rust
     /// # use covalence_kernel::*;
-    /// # use covalence_kernel::api::error::kernel_error;
     /// # let mut ker = Kernel::new();
     /// let ctx = ker.new_ctx();
     /// assert_eq!(ker.num_vars(ctx), 0);

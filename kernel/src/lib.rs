@@ -10,20 +10,21 @@ This module is further subdivided into three primary components:
 - `kernel`, which instantiates the kernel in `rules` with the datastore
 */
 
-pub mod api;
 pub mod data;
 pub mod db;
 pub mod fact;
 pub mod kernel;
 pub mod rule;
 pub mod store;
+pub mod strategy;
+pub mod univ;
 
-pub use crate::api::derive::{DeriveTrusted, WriteTrusted};
-pub use crate::api::generic::*;
+pub use crate::rule::ensure::{DeriveTrusted, WriteTrusted};
 pub use crate::store::{
     ReadCtx, ReadCtxFacts, ReadCtxRel, ReadFacts, ReadQuantFacts, ReadTermDb, ReadTermFacts,
-    ReadTermIndex, ReadTermStore, ReadUniv, WriteTermIndex, WriteUniv,
+    ReadTermIndex, ReadTermStore, WriteTermIndex,
 };
+pub use crate::univ::{ReadUniv, WriteUniv};
 
 pub use crate::fact::{
     IS_CONTR, IS_EMPTY, IS_FF, IS_INHAB, IS_PROP, IS_SCOPED, IS_TT, IS_TY, IS_UNIV, IS_WF, Pred1,

@@ -1,13 +1,12 @@
 use crate::Bv;
-use crate::api::derive::*;
-use crate::api::error::kernel_error;
-use crate::api::strategy::*;
 use crate::data::term::Close;
 use crate::data::term::{Fv, NodeT, ULvl, Val};
 use crate::fact::*;
 use crate::store::*;
+use crate::strategy::*;
 
 use super::Kernel;
+use super::ensure::*;
 
 impl<C, T, D> WriteTrusted<C, T> for Kernel<D>
 where
@@ -33,7 +32,7 @@ where
     fn add_var(&mut self, ctx: C, ty: Val<C, T>, strategy: &mut S) -> Result<Fv<C>, S::Fail> {
         strategy.start_rule("add_var", self)?;
 
-        self.ensure_is_ty(ctx, ty, strategy, kernel_error::ADD_VAR_IS_TY)?;
+        self.ensure_is_ty(ctx, ty, strategy, "")?;
 
         strategy.commit_rule(self);
 
@@ -50,10 +49,10 @@ where
         strategy.start_rule("set_parent", self)?;
 
         if self.read().is_ancestor(ctx, parent) {
-            return Err(strategy.fail(kernel_error::SET_PARENT_WOULD_CYCLE, self));
+            return Err(strategy.fail("", self));
         }
         if !self.read().parents_are_subctx(ctx, parent) {
-            return Err(strategy.fail(kernel_error::SET_PARENT_NOT_SUBCTX, self));
+            return Err(strategy.fail("", self));
         }
 
         strategy.commit_rule(self);
@@ -79,10 +78,10 @@ where
         strategy.start_rule("derive_u_le", self)?;
 
         if !self.read().u_le(lo, hi) {
-            return Err(strategy.fail(kernel_error::DERIVE_U_LE_U_LE, self));
+            return Err(strategy.fail("", self));
         }
         let old = self.resolve(ctx, NodeT::U(lo), strategy)?;
-        self.ensure_has_ty(ctx, tm, old, strategy, kernel_error::DERIVE_U_LE_TM)?;
+        self.ensure_has_ty(ctx, tm, old, strategy, "")?;
 
         strategy.commit_rule(self);
 
@@ -112,12 +111,12 @@ where
 
         // This rule only supports single-variable closures
         if var.ix != 0 {
-            return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_IX_NONZERO, self));
+            return Err(strategy.fail("", self));
         }
 
         // The variable closed over must be valid
         if var.ix >= self.read().num_vars(var.ctx) {
-            return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_INVALID_VAR, self));
+            return Err(strategy.fail("", self));
         }
 
         // We begin by checking that Δ ⊢ a : B
@@ -126,7 +125,7 @@ where
             tm,
             ty,
             strategy,
-            kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_HAS_TY,
+            "",
         )?;
 
         // For foreign-context closures...
@@ -141,12 +140,12 @@ where
             // We might loosen this check later
             if self.read().num_vars(var.ctx) != 1 {
                 return Err(
-                    strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_TOO_MANY_VARS, self)
+                    strategy.fail("", self)
                 );
             }
             // We check that Δ = Δ', x : A where Δ' ≤ Γ
             if !self.read().parents_are_subctx(var.ctx, ctx) {
-                return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_ILL_SCOPED, self));
+                return Err(strategy.fail("", self));
             }
         }
 
@@ -174,7 +173,7 @@ where
 
         // Check the variable is well-scoped
         if !self.read().is_subctx(var.ctx, ctx) || var.ix >= self.read().num_vars(var.ctx) {
-            return Err(strategy.fail(kernel_error::DERIVE_FV_ILL_SCOPED, self));
+            return Err(strategy.fail("", self));
         }
 
         strategy.commit_rule(self);
@@ -288,8 +287,8 @@ where
     ) -> Result<HasTyV<C, T>, S::Fail> {
         strategy.start_rule("derive_eqn", self)?;
 
-        self.ensure_has_ty(ctx, lhs, ty, strategy, kernel_error::DERIVE_EQN_LHS)?;
-        self.ensure_has_ty(ctx, rhs, ty, strategy, kernel_error::DERIVE_EQN_RHS)?;
+        self.ensure_has_ty(ctx, lhs, ty, strategy, "")?;
+        self.ensure_has_ty(ctx, rhs, ty, strategy, "")?;
 
         strategy.commit_rule(self);
 
@@ -317,7 +316,7 @@ where
         strategy.start_rule("derive_pi", self)?;
 
         if !self.read().imax_le(arg_lvl, lvl, lvl) {
-            return Err(strategy.fail(kernel_error::DERIVE_PI_IMAX_LE, self));
+            return Err(strategy.fail("", self));
         }
 
         let arg_lvl_ty = self.resolve(ctx, NodeT::U(arg_lvl), strategy)?;
@@ -326,7 +325,7 @@ where
             arg_ty,
             arg_lvl_ty,
             strategy,
-            kernel_error::DERIVE_PI_ARG_TY,
+            "",
         )?;
 
         let ty = self.resolve(ctx, NodeT::U(lvl), strategy)?;
@@ -336,7 +335,7 @@ where
             res_ty,
             ty,
             strategy,
-            kernel_error::DERIVE_PI_RES_TY,
+            "",
         )?;
 
         strategy.commit_rule(self);
@@ -364,14 +363,14 @@ where
         strategy.start_rule("derive_sigma", self)?;
 
         let ty = self.resolve(ctx, NodeT::U(lvl), strategy)?;
-        self.ensure_has_ty(ctx, arg_ty, ty, strategy, kernel_error::DERIVE_SIGMA_ARG_TY)?;
+        self.ensure_has_ty(ctx, arg_ty, ty, strategy, "")?;
         self.ensure_forall_has_ty(
             ctx,
             arg_ty,
             res_ty,
             ty,
             strategy,
-            kernel_error::DERIVE_SIGMA_RES_TY,
+            "",
         )?;
 
         strategy.commit_rule(self);
@@ -404,7 +403,7 @@ where
             body,
             res_ty,
             strategy,
-            kernel_error::DERIVE_ABS_BODY,
+            "",
         )?;
 
         strategy.commit_rule(self);
@@ -432,9 +431,9 @@ where
     ) -> Result<HasTyV<C, T>, S::Fail> {
         strategy.start_rule("derive_app", self)?;
 
-        self.ensure_has_ty(ctx, arg, arg_ty, strategy, kernel_error::DERIVE_APP_ARG)?;
+        self.ensure_has_ty(ctx, arg, arg_ty, strategy, "")?;
         let pi = self.resolve(ctx, NodeT::Pi([arg_ty, res_ty]), strategy)?;
-        self.ensure_has_ty(ctx, func, pi, strategy, kernel_error::DERIVE_APP_FUNC)?;
+        self.ensure_has_ty(ctx, func, pi, strategy, "")?;
 
         strategy.commit_rule(self);
 
@@ -466,11 +465,11 @@ where
             arg_ty,
             res_ty,
             strategy,
-            kernel_error::DERIVE_PAIR_RES_TY,
+            "",
         )?;
-        self.ensure_has_ty(ctx, fst, arg_ty, strategy, kernel_error::DERIVE_PAIR_FST)?;
+        self.ensure_has_ty(ctx, fst, arg_ty, strategy, "")?;
         let snd_ty = self.resolve(ctx, NodeT::subst1(fst, res_ty), strategy)?;
-        self.ensure_has_ty(ctx, snd, snd_ty, strategy, kernel_error::DERIVE_PAIR_SND)?;
+        self.ensure_has_ty(ctx, snd, snd_ty, strategy, "")?;
 
         strategy.commit_rule(self);
 
@@ -497,7 +496,7 @@ where
         strategy.start_rule("derive_fst", self)?;
 
         let sigma = self.resolve(ctx, NodeT::Sigma([arg_ty, res_ty]), strategy)?;
-        self.ensure_has_ty(ctx, pair, sigma, strategy, kernel_error::DERIVE_FST_PAIR)?;
+        self.ensure_has_ty(ctx, pair, sigma, strategy, "")?;
 
         strategy.commit_rule(self);
 
@@ -524,7 +523,7 @@ where
         strategy.start_rule("derive_snd", self)?;
 
         let sigma = self.resolve(ctx, NodeT::Sigma([arg_ty, res_ty]), strategy)?;
-        self.ensure_has_ty(ctx, pair, sigma, strategy, kernel_error::DERIVE_SND_PAIR)?;
+        self.ensure_has_ty(ctx, pair, sigma, strategy, "")?;
 
         strategy.commit_rule(self);
 
@@ -552,14 +551,14 @@ where
     ) -> Result<HasTyV<C, T>, S::Fail> {
         strategy.start_rule("derive_dite", self)?;
 
-        self.ensure_is_prop(ctx, cond, strategy, kernel_error::DERIVE_DITE_COND)?;
+        self.ensure_is_prop(ctx, cond, strategy, "")?;
         self.ensure_forall_has_ty(
             ctx,
             cond,
             then_br,
             ty,
             strategy,
-            kernel_error::DERIVE_DITE_THEN_BR,
+            ""
         )?;
         let ff = self.resolve(ctx, NodeT::Empty, strategy)?;
         let not_cond = self.resolve(ctx, NodeT::Eqn([cond, ff]), strategy)?;
@@ -569,7 +568,7 @@ where
             else_br,
             ty,
             strategy,
-            kernel_error::DERIVE_DITE_ELSE_BR,
+            ""
         )?;
 
         strategy.commit_rule(self);
@@ -594,7 +593,7 @@ where
     ) -> Result<HasTyV<C, T>, S::Fail> {
         strategy.start_rule("derive_trunc", self)?;
 
-        self.ensure_is_ty(ctx, ty, strategy, kernel_error::DERIVE_TRUNC_TY)?;
+        self.ensure_is_ty(ctx, ty, strategy, "")?;
 
         strategy.commit_rule(self);
 
@@ -619,8 +618,8 @@ where
     ) -> Result<HasTyV<C, T>, S::Fail> {
         strategy.start_rule("derive_choose", self)?;
 
-        self.ensure_is_inhab(ctx, ty, strategy, kernel_error::DERIVE_CHOOSE_TY)?;
-        self.ensure_forall_is_prop(ctx, ty, pred, strategy, kernel_error::DERIVE_CHOOSE_PRED)?;
+        self.ensure_is_inhab(ctx, ty, strategy, "")?;
+        self.ensure_forall_is_prop(ctx, ty, pred, strategy, "")?;
 
         strategy.commit_rule(self);
 
@@ -645,7 +644,7 @@ where
         strategy.start_rule("derive_nats", self)?;
 
         if !self.read().u_le(ULvl::SET, lvl) {
-            return Err(strategy.fail(kernel_error::DERIVE_NATS_SET_LE_LVL, self));
+            return Err(strategy.fail("", self));
         }
 
         strategy.commit_rule(self);
@@ -688,7 +687,7 @@ where
         strategy.start_rule("derive_succ", self)?;
 
         let nats = self.resolve(ctx, NodeT::Nats, strategy)?;
-        self.ensure_has_ty(ctx, n, nats, strategy, kernel_error::DERIVE_SUCC_N)?;
+        self.ensure_has_ty(ctx, n, nats, strategy, "")?;
 
         strategy.commit_rule(self);
 
@@ -715,11 +714,11 @@ where
         strategy.start_rule("derive_natrec", self)?;
 
         let nats = self.resolve(ctx, NodeT::Nats, strategy)?;
-        self.ensure_is_ty_under(ctx, nats, mot, strategy, kernel_error::DERIVE_NATREC_MOT)?;
+        self.ensure_is_ty_under(ctx, nats, mot, strategy, "")?;
 
         let zero = self.resolve(ctx, NodeT::N64(0), strategy)?;
         let mot_zero = self.resolve(ctx, NodeT::subst1(zero, mot), strategy)?;
-        self.ensure_has_ty(ctx, z, mot_zero, strategy, kernel_error::DERIVE_NATREC_Z)?;
+        self.ensure_has_ty(ctx, z, mot_zero, strategy, "")?;
 
         // NOT succ bv 0, since bv 0 is the variable bound by the Π-type!
         let bv_one = self.resolve(ctx, NodeT::Bv(Bv(1)), strategy)?;
@@ -732,7 +731,7 @@ where
             s,
             mot_to_mot_succ,
             strategy,
-            kernel_error::DERIVE_NATREC_S,
+            "",
         )?;
 
         strategy.commit_rule(self);
@@ -765,7 +764,7 @@ where
             bound,
             bound_ty,
             strategy,
-            kernel_error::DERIVE_LET_BOUND,
+            "",
         )?;
         self.ensure_forall_has_ty(
             ctx,
@@ -773,7 +772,7 @@ where
             body,
             body_ty,
             strategy,
-            kernel_error::DERIVE_LET_BODY,
+            "",
         )?;
 
         strategy.commit_rule(self);

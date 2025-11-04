@@ -1,4 +1,4 @@
-use crate::api::strategy::*;
+use crate::strategy::*;
 use crate::data::term::NodeT;
 use crate::data::term::NodeVT;
 use crate::data::term::{Fv, ULvl, Val};

@@ -1,3 +1,4 @@
+use crate::Bv;
 use crate::api::derive::*;
 use crate::api::error::kernel_error;
 use crate::api::store::*;
@@ -684,13 +685,23 @@ where
         n: Val<C, T>,
         strategy: &mut S,
     ) -> Result<HasTyV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_succ")?;
-        // let nats = self.add(ctx, NodeT::Nats);
-        // self.ensure_has_ty(ctx, n, nats, strategy, kernel_error::DERIVE_SUCC_N)?;
-        // let tm = self.add(ctx, NodeT::Succ([n]));
-        // self.0.set_has_ty_unchecked(ctx, tm, nats);
-        // Ok(HasTyIn { tm, ty: nats }.finish_rule(ctx, strategy))
+        strategy.start_rule("derive_succ", self)?;
+
+        let nats = self.resolve(ctx, NodeT::Nats, strategy)?;
+        self.ensure_has_ty(ctx, n, nats, strategy, kernel_error::DERIVE_SUCC_N)?;
+
+        strategy.commit_rule(self);
+
+        let tm = self.add_with(ctx, NodeT::Succ([n]), strategy)?;
+        let ty = self.import_with(ctx, nats, strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+
+        strategy.finish_rule(self);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_natrec(
@@ -701,37 +712,40 @@ where
         s: Val<C, T>,
         strategy: &mut S,
     ) -> Result<HasTyV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_natrec")?;
-        // let nats = self.add(ctx, NodeT::Nats);
-        // self.ensure_is_ty_under(ctx, nats, mot, strategy, kernel_error::DERIVE_NATREC_MOT)?;
-        // debug_assert!(
-        //     self.read().bvi(ctx, mot) <= Bv(1),
-        //     "a term which is well-typed under a binder cannot have a bvi greater than one"
-        // );
-        // let zero = self.add(ctx, NodeT::N64(0));
-        // let mot_zero = self.subst(ctx, mot, zero);
-        // self.ensure_has_ty(ctx, z, mot_zero, strategy, kernel_error::DERIVE_NATREC_Z)?;
-        // let bv_one = self.add(ctx, NodeT::Bv(Bv(1)));
-        // let succ_bv_one = self.add(ctx, NodeT::Succ([bv_one]));
-        // debug_assert_eq!(self.read().bvi(ctx, succ_bv_one), Bv(2));
-        // let mot_succ_bv_one = self.subst(ctx, mot, succ_bv_one);
-        // debug_assert!(self.read().bvi(ctx, mot_succ_bv_one) <= Bv(2));
-        // let mot_to_mot_succ = self.add(ctx, NodeT::Pi([mot, mot_succ_bv_one]));
-        // debug_assert!(self.read().bvi(ctx, mot_to_mot_succ) <= Bv(1));
-        // self.ensure_has_ty_under(
-        //     ctx,
-        //     nats,
-        //     s,
-        //     mot_to_mot_succ,
-        //     strategy,
-        //     kernel_error::DERIVE_NATREC_S,
-        // )?;
+        strategy.start_rule("derive_natrec", self)?;
 
-        // let tm = self.add(ctx, NodeT::Natrec([mot, z, s]));
-        // let ty = self.add(ctx, NodeT::Pi([nats, mot]));
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // Ok(HasTyIn { tm, ty: nats }.finish_rule(ctx, strategy))
+        let nats = self.resolve(ctx, NodeT::Nats, strategy)?;
+        self.ensure_is_ty_under(ctx, nats, mot, strategy, kernel_error::DERIVE_NATREC_MOT)?;
+
+        let zero = self.resolve(ctx, NodeT::N64(0), strategy)?;
+        let mot_zero = self.resolve(ctx, NodeT::subst1(zero, mot), strategy)?;
+        self.ensure_has_ty(ctx, z, mot_zero, strategy, kernel_error::DERIVE_NATREC_Z)?;
+
+        let bv_one = self.resolve(ctx, NodeT::Bv(Bv(1)), strategy)?;
+        let succ_bv_one = self.resolve(ctx, NodeT::Succ([bv_one]), strategy)?;
+        let mot_succ_bv_one = self.resolve(ctx, NodeT::subst1(succ_bv_one, mot), strategy)?;
+        let mot_to_mot_succ = self.resolve(ctx, NodeT::Pi([mot, mot_succ_bv_one]), strategy)?;
+        self.ensure_forall_has_ty(
+            ctx,
+            nats,
+            s,
+            mot_to_mot_succ,
+            strategy,
+            kernel_error::DERIVE_NATREC_S,
+        )?;
+
+        strategy.commit_rule(self);
+
+        let tm = self.add_with(ctx, NodeT::Natrec([mot, z, s]), strategy)?;
+        let ty = self.add_with(ctx, NodeT::Pi([nats, mot]), strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+
+        strategy.finish_rule(self);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_let(

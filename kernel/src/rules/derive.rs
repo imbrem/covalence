@@ -520,20 +520,24 @@ where
         pair: Val<C, T>,
         strategy: &mut S,
     ) -> Result<HasTyV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_snd")?;
-        // let sigma = self.add(ctx, NodeT::Sigma([arg_ty, res_ty]));
-        // self.ensure_has_ty(ctx, pair, sigma, strategy, kernel_error::DERIVE_SND_PAIR)?;
-        // let fst = self.add(ctx, NodeT::Fst([pair]));
-        // self.0.set_has_ty_unchecked(ctx, fst, arg_ty);
-        // let tm = self.add(ctx, NodeT::Snd([pair]));
-        // let ty = self.subst(ctx, fst, res_ty);
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // if let &NodeT::Pair([a, b]) = self.read().node(ctx, pair) {
-        //     self.0.set_eq_unchecked(ctx, fst, a);
-        //     self.0.set_eq_unchecked(ctx, tm, b);
-        // }
-        // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+        strategy.start_rule("derive_snd", self)?;
+
+        let sigma = self.resolve(ctx, NodeT::Sigma([arg_ty, res_ty]), strategy)?;
+        self.ensure_has_ty(ctx, pair, sigma, strategy, kernel_error::DERIVE_SND_PAIR)?;
+
+        strategy.commit_rule(self);
+
+        let fst = self.resolve(ctx, NodeT::Fst([pair]), strategy)?;
+        let tm = self.add_with(ctx, NodeT::Snd([pair]), strategy)?;
+        let ty = self.add_with(ctx, NodeT::subst1(fst, res_ty), strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+
+        strategy.finish_rule(self);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_dite(

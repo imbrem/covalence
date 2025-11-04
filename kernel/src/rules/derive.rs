@@ -181,16 +181,25 @@ where
     where
         S: Strategy<C, T, Self>,
     {
-        todo!()
-        // strategy.start_rule("derive_fv")?;
-        // if !self.read().is_subctx(var.ctx, ctx) {
-        //     return Err(strategy.fail(kernel_error::DERIVE_FV_ILL_SCOPED));
-        // }
-        // //NOTE: this will crash if the variable is not in fact valid!
-        // let tm = self.add(ctx, NodeT::Fv(var));
-        // let ty = self.var_ty(ctx, var);
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+        strategy.start_rule("derive_fv", self)?;
+
+        // Check the variable is well-scoped
+        if !self.read().is_subctx(var.ctx, ctx) || var.ix >= self.read().num_vars(var.ctx) {
+            return Err(strategy.fail(kernel_error::DERIVE_FV_ILL_SCOPED, self));
+        }
+
+        strategy.commit_rule(self);
+
+        let tm = self.add_with(ctx, NodeT::Fv(var), strategy)?;
+        let ty = self.import_with(ctx, self.read().var_ty(var), strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+
+        strategy.finish_rule(self);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_univ(&mut self, ctx: C, lvl: ULvl) -> HasTyV<C, T> {

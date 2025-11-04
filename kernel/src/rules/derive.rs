@@ -202,7 +202,15 @@ where
         })
     }
 
-    fn derive_univ(&mut self, ctx: C, lvl: ULvl) -> HasTyV<C, T> {
+    fn derive_univ<S>(
+        &mut self,
+        ctx: C,
+        lvl: ULvl,
+        strategy: &mut S,
+    ) -> Result<HasTyV<C, T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
         todo!()
         // let tm = self.add(ctx, NodeT::U(lvl));
         // let ty_lvl = self.succ(lvl);
@@ -211,7 +219,15 @@ where
         // HasTyIn { tm, ty }
     }
 
-    fn derive_unit(&mut self, ctx: C, lvl: ULvl) -> HasTyV<C, T> {
+    fn derive_unit<S>(
+        &mut self,
+        ctx: C,
+        lvl: ULvl,
+        strategy: &mut S,
+    ) -> Result<HasTyV<C, T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
         todo!()
         // let tm = self.add(ctx, NodeT::Unit);
         // let ty = self.add(ctx, NodeT::U(lvl));
@@ -221,7 +237,10 @@ where
         // HasTyIn { tm, ty }
     }
 
-    fn derive_nil(&mut self, ctx: C) -> HasTyV<C, T> {
+    fn derive_nil<S>(&mut self, ctx: C, strategy: &mut S) -> Result<HasTyV<C, T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
         todo!()
         // let tm = self.add(ctx, NodeT::Null);
         // let ty = self.add(ctx, NodeT::Unit);
@@ -229,7 +248,15 @@ where
         // HasTyIn { tm, ty }
     }
 
-    fn derive_empty(&mut self, ctx: C, lvl: ULvl) -> HasTyV<C, T> {
+    fn derive_empty<S>(
+        &mut self,
+        ctx: C,
+        lvl: ULvl,
+        strategy: &mut S,
+    ) -> Result<HasTyV<C, T>, S::Fail>
+    where
+        S: Strategy<C, T, Self>,
+    {
         todo!()
         // let tm = self.add(ctx, NodeT::Empty);
         // let ty = self.add(ctx, NodeT::U(lvl));

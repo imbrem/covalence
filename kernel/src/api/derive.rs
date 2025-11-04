@@ -394,7 +394,14 @@ pub trait DeriveTrusted<C, T> {
     /// ```lean
     /// theorem Ctx.KHasTy.univ {Γ ℓ} (h : Ok Γ) : KHasTy Γ (.univ (ℓ + 1)) (.univ ℓ)
     /// ```
-    fn derive_univ(&mut self, ctx: C, lvl: ULvl) -> HasTy<C, Val<C, T>>;
+    fn derive_univ<S>(
+        &mut self,
+        ctx: C,
+        lvl: ULvl,
+        strategy: &mut S,
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
     /// Typecheck the unit type
     ///
@@ -408,7 +415,14 @@ pub trait DeriveTrusted<C, T> {
     /// ```lean
     /// theorem Ctx.KHasTy.unit {Γ ℓ} (h : Ok Γ) : KHasTy Γ (.univ ℓ) .unit
     /// ```
-    fn derive_unit(&mut self, ctx: C, lvl: ULvl) -> HasTy<C, Val<C, T>>;
+    fn derive_unit<S>(
+        &mut self,
+        ctx: C,
+        lvl: ULvl,
+        strategy: &mut S,
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
     /// Typecheck the unique value of the unit type
     ///
@@ -422,7 +436,9 @@ pub trait DeriveTrusted<C, T> {
     /// ```lean
     /// theorem Ctx.KHasTy.null {Γ} (h : Ok Γ) : KHasTy Γ .unit .null
     /// ```
-    fn derive_nil(&mut self, ctx: C) -> HasTy<C, Val<C, T>>;
+    fn derive_nil<S>(&mut self, ctx: C, strategy: &mut S) -> Result<HasTy<C, Val<C, T>>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
     /// Typecheck the unit type
     ///
@@ -436,7 +452,14 @@ pub trait DeriveTrusted<C, T> {
     /// ```lean
     /// theorem Ctx.KHasTy.empty {Γ ℓ} (h : Ok Γ) : KHasTy Γ (.univ ℓ) .empty
     /// ```
-    fn derive_empty(&mut self, ctx: C, lvl: ULvl) -> HasTy<C, Val<C, T>>;
+    fn derive_empty<S>(
+        &mut self,
+        ctx: C,
+        lvl: ULvl,
+        strategy: &mut S,
+    ) -> Result<HasTy<C, Val<C, T>>, S::Fail>
+    where
+        S: Strategy<C, T, Self>;
 
     /// Typecheck an equation between terms
     ///

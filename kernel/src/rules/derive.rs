@@ -797,21 +797,26 @@ where
         arg: Val<C, T>,
         strategy: &mut S,
     ) -> Result<EqnInV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_beta_abs")?;
-        // let &NodeT::Abs([arg_ty, body]) = self.read().node(ctx, tm) else {
-        //     return Err(strategy.fail("derive_beta_abs: tm ≡ abs A b"));
-        // };
-        // self.ensure_is_wf(ctx, tm, strategy, "derive_beta_abs: tm wf")?;
-        // self.ensure_has_ty(ctx, arg, arg_ty, strategy, "derive_beta_abs: arg")?;
-        // let tm_app = self.add(ctx, NodeT::App([tm, arg]));
-        // let tm_subst = self.subst(ctx, arg, body);
-        // self.0.set_eq_unchecked(ctx, tm_app, tm_subst);
-        // Ok(Eqn {
-        //     lhs: tm_app,
-        //     rhs: tm_subst,
-        // }
-        // .finish_rule(ctx, strategy))
+        strategy.start_rule("derive_beta_abs", self)?;
+
+        let NodeT::Abs([arg_ty, body]) = tm.node_val(self.read()) else {
+            return Err(strategy.fail("derive_beta_abs: tm ≡ abs A b", self));
+        };
+        self.ensure_is_wf(ctx, tm, strategy, "derive_beta_abs: tm wf")?;
+        self.ensure_has_ty(ctx, arg, arg_ty, strategy, "derive_beta_abs: arg")?;
+
+        strategy.commit_rule(self);
+
+        let lhs = self.add_with(ctx, NodeT::App([tm, arg]), strategy)?;
+        let rhs = self.add_with(ctx, NodeT::subst1(arg, body), strategy)?;
+        self.0.set_eq_unchecked(ctx, lhs, rhs);
+
+        strategy.finish_rule(self);
+        Ok(EqnInV::new(
+            ctx,
+            self.read().val(ctx, lhs),
+            self.read().val(ctx, rhs),
+        ))
     }
 
     fn derive_beta_tt(

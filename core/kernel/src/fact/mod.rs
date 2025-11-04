@@ -5,48 +5,27 @@ use std::ops::{Deref, DerefMut};
 
 use covalence_data::{
     ctx::ReadCtxFacts,
-    store::{ReadLocalFacts, ReadLocalStore},
+    store::{CtxId, Ix, ReadLocalFacts, ReadLocalStore},
 };
 
 pub use crate::data::fact::*;
 
-/// Logical composition for fact types
-mod logic;
-
-/// A fact which can be checked using a fact dataset
-pub trait Fact<R: ?Sized> {
-    /// Check whether this goal is true
-    fn check(&self, db: &R) -> bool;
+/// A database which can check facts
+pub trait CheckFact<F: ?Sized> {
+    /// Check whether the given fact holds in this database
+    fn check(&self, fact: &F) -> bool;
 }
 
-/// A fact which can be converted to an equivalent fact
-pub trait EquivFact<F, R> {
-    /// Convert this fact into an equivalent fact
-    fn into_eqv(self, db: &R) -> F;
-}
-
-/// A fact about ("within") a given context
-pub trait FactIn<C, R: ?Sized> {
+/// A database which can check facts about ("within") a given context
+pub trait CheckFactIn<C, F: ?Sized> {
     /// Check this fact in the given context
-    fn check_in(&self, ctx: &C, db: &R) -> bool;
+    fn check_in(&self, ctx: C, db: &F) -> bool;
 }
 
-/// A fact which can be converted to an equivalent fact in a given context
-pub trait EquivFactIn<F, C, R> {
-    /// Convert this fact into an equivalent fact
-    fn into_eqv_in(self, ctx: &C, db: &R) -> F;
-}
-
-/// A quantified fact within a given context
-pub trait FactUnder<C, Q, R: ?Sized> {
+/// A database which can check quantified facts within a given context
+pub trait CheckFactUnder<C, Q, F: ?Sized> {
     /// Check this fact under the given quantifier in the given context
-    fn check_under(&self, ctx: &C, binder: &Q, db: &R) -> bool;
-}
-
-/// A quantified fact which can be converted to an equivalent quantified fact
-pub trait EquivFactUnder<F, C, Q, R> {
-    /// Convert this fact into an equivalent fact
-    fn into_eqv_under(self, ctx: &C, binder: &Q, db: &R) -> F;
+    fn check_under(&self, ctx: C, binder: &Q, fact: &F) -> bool;
 }
 
 /// A _sequent_: a pair `Γ ⊢ S` of a context and a statement
@@ -58,12 +37,13 @@ pub struct Seq<C, S> {
     pub stmt: S,
 }
 
-impl<C, S, R: ?Sized> Fact<R> for Seq<C, S>
+impl<C, S, R: ?Sized> CheckFact<Seq<C, S>> for R
 where
-    S: FactIn<C, R>,
+    C: Copy,
+    R: CheckFactIn<C, S>,
 {
-    fn check(&self, db: &R) -> bool {
-        self.stmt.check_in(&self.ctx, db)
+    fn check(&self, fact: &Seq<C, S>) -> bool {
+        self.check_in(fact.ctx, &fact.stmt)
     }
 }
 
@@ -81,18 +61,6 @@ impl<C, S> DerefMut for Seq<C, S> {
     }
 }
 
-impl<C: Clone, S, F, R> EquivFact<Seq<C, F>, R> for Seq<C, S>
-where
-    S: EquivFactIn<F, C, R>,
-{
-    fn into_eqv(self, db: &R) -> Seq<C, F> {
-        Seq {
-            ctx: self.ctx.clone(),
-            stmt: self.stmt.into_eqv_in(&self.ctx, db),
-        }
-    }
-}
-
 /// A quantified statement, of the form `Q . S`
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Quantified<Q, S> {
@@ -102,26 +70,14 @@ pub struct Quantified<Q, S> {
     pub body: S,
 }
 
-impl<C, Q: Clone, S, F, R> EquivFactIn<Quantified<Q, F>, C, R> for Quantified<Q, S>
+impl<C, Q, S, R: ?Sized> CheckFactIn<C, Quantified<Q, S>> for R
 where
-    S: EquivFactUnder<F, C, Q, R>,
-{
-    fn into_eqv_in(self, ctx: &C, db: &R) -> Quantified<Q, F> {
-        Quantified {
-            binder: self.binder.clone(),
-            body: self.body.into_eqv_under(ctx, &self.binder, db),
-        }
-    }
-}
-
-impl<C, Q, S, R: ?Sized> FactIn<C, R> for Quantified<Q, S>
-where
-    Q: FactIn<C, R>,
-    S: FactUnder<C, Q, R>,
+    C: Copy,
+    R: CheckFactUnder<C, Q, S>,
 {
     /// Check this quantified statement in the given context
-    fn check_in(&self, ctx: &C, db: &R) -> bool {
-        self.body.check_under(ctx, &self.binder, db)
+    fn check_in(&self, ctx: C, fact: &Quantified<Q, S>) -> bool {
+        self.check_under(ctx, &fact.binder, &fact.body)
     }
 }
 
@@ -198,13 +154,6 @@ pub type AtomSeq<C, T> = Seq<C, Atom<T>>;
 /// A quantified atomic sequent
 pub type QAtomSeq<C, T> = Seq<C, QAtom<T>>;
 
-/// A unary predicate holds on a term-in-context
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct HoldsIn<T> {
-    pub pred: Pred1,
-    pub tm: T,
-}
-
 impl<C, T> QAtomSeq<C, T> {
     pub fn contr(ctx: C) -> QAtomSeq<C, T> {
         Seq {
@@ -214,6 +163,57 @@ impl<C, T> QAtomSeq<C, T> {
                 body: Atom::Pred0(Pred0::IS_CONTR),
             },
         }
+    }
+}
+/// A unary predicate holds on a term-in-context
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct HoldsIn<T> {
+    pub pred: Pred1,
+    pub tm: T,
+}
+
+impl<T> HoldsIn<T> {
+    pub const fn is_scoped(tm: T) -> Self {
+        HoldsIn {
+            pred: IS_SCOPED,
+            tm,
+        }
+    }
+
+    pub const fn is_wf(tm: T) -> Self {
+        HoldsIn { pred: IS_WF, tm }
+    }
+
+    pub const fn is_ty(tm: T) -> Self {
+        HoldsIn { pred: IS_TY, tm }
+    }
+
+    pub const fn is_prop(tm: T) -> Self {
+        HoldsIn { pred: IS_PROP, tm }
+    }
+
+    pub const fn is_inhab(tm: T) -> Self {
+        HoldsIn { pred: IS_INHAB, tm }
+    }
+
+    pub const fn is_empty(tm: T) -> Self {
+        HoldsIn { pred: IS_EMPTY, tm }
+    }
+
+    pub const fn is_true(tm: T) -> Self {
+        HoldsIn { pred: IS_TT, tm }
+    }
+
+    pub const fn is_false(tm: T) -> Self {
+        HoldsIn { pred: IS_FF, tm }
+    }
+
+    pub const fn is_univ(tm: T) -> Self {
+        HoldsIn { pred: IS_UNIV, tm }
+    }
+
+    pub const fn is_contr(tm: T) -> Self {
+        HoldsIn { pred: IS_CONTR, tm }
     }
 }
 
@@ -246,6 +246,66 @@ pub struct HasTy<T> {
 
 /// A term has the given type in a context
 pub type HasTyIn<C, T> = Seq<C, HasTy<T>>;
+
+impl<C: Copy, R> CheckFactIn<C, Pred0> for R
+where
+    R: ReadCtxFacts<C> + ?Sized,
+{
+    fn check_in(&self, ctx: C, pred: &Pred0) -> bool {
+        self.ctx_satisfies(ctx, *pred)
+    }
+}
+
+impl<R> CheckFactUnder<CtxId<R>, Forall<Ix<R>>, Pred0> for R
+where
+    R: ReadLocalStore + ?Sized,
+{
+    fn check_under(&self, ctx: CtxId<R>, binder: &Forall<Ix<R>>, pred: &Pred0) -> bool {
+        self.ctx_satisfies(ctx, *pred)
+            || *pred == Pred0::IS_CONTR && self.local_tm_satisfies(ctx, binder.0, Pred1::IS_EMPTY)
+    }
+}
+
+impl<R> CheckFactIn<CtxId<R>, Holds<CtxId<R>, Ix<R>>> for R
+where
+    R: ReadLocalFacts + ?Sized,
+{
+    fn check_in(&self, ctx: CtxId<R>, fact: &Holds<CtxId<R>, Ix<R>>) -> bool {
+        self.local_tm_satisfies(ctx, fact.tm, fact.pred)
+    }
+}
+
+impl<R> CheckFactIn<CtxId<R>, Eqn<Ix<R>>> for R
+where
+    R: ReadLocalFacts + ?Sized,
+{
+    fn check_in(&self, ctx: CtxId<R>, fact: &Eqn<Ix<R>>) -> bool {
+        self.local_eq(ctx, fact.0, fact.1)
+    }
+}
+
+impl<R> CheckFactIn<CtxId<R>, HasTy<Ix<R>>> for R
+where
+    R: ReadLocalFacts + ?Sized,
+{
+    fn check_in(&self, ctx: CtxId<R>, fact: &HasTy<Ix<R>>) -> bool {
+        self.local_has_ty(ctx, fact.tm, fact.ty)
+    }
+}
+
+impl<R> CheckFactIn<CtxId<R>, Atom<Ix<R>>> for R
+where
+    R: ReadLocalStore + ?Sized,
+{
+    fn check_in(&self, ctx: CtxId<R>, fact: &Atom<Ix<R>>) -> bool {
+        match fact {
+            Atom::Pred0(p) => self.ctx_satisfies(ctx, *p),
+            Atom::Pred1(p, tm) => self.local_tm_satisfies(ctx, *tm, *p),
+            Atom::Eqn(lhs, rhs) => self.local_eq(ctx, *lhs, *rhs),
+            Atom::HasTy(tm, ty) => self.local_has_ty(ctx, *tm, *ty),
+        }
+    }
+}
 
 /// A term is well-formed
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -289,71 +349,6 @@ pub struct IsFalse<T>(T);
 
 /// A term is the false proposition in a context
 pub struct IsFalseIn<C, T>(C, T);
-
-impl<C: Copy, R> FactIn<C, R> for Pred0
-where
-    R: ReadCtxFacts<C> + ?Sized,
-{
-    fn check_in(&self, ctx: &C, db: &R) -> bool {
-        db.ctx_satisfies(*ctx, *self)
-    }
-}
-
-impl<R> FactUnder<R::CtxId, Forall<R::Ix>, R> for Pred0
-where
-    R: ReadLocalStore + ?Sized,
-{
-    fn check_under(&self, ctx: &R::CtxId, binder: &Forall<R::Ix>, db: &R) -> bool {
-        db.ctx_satisfies(*ctx, *self)
-            || *self == Pred0::IS_CONTR && db.local_tm_satisfies(*ctx, binder.0, Pred1::IS_EMPTY)
-    }
-}
-
-impl<R> FactIn<R::CtxId, R> for Holds<R::CtxId, R::Ix>
-where
-    R: ReadLocalFacts + ?Sized,
-{
-    fn check_in(&self, ctx: &R::CtxId, db: &R) -> bool {
-        db.local_tm_satisfies(*ctx, self.tm, self.pred)
-    }
-}
-
-impl<R> FactIn<R::CtxId, R> for Eqn<R::Ix>
-where
-    R: ReadLocalFacts + ?Sized,
-{
-    fn check_in(&self, ctx: &R::CtxId, db: &R) -> bool {
-        db.local_eq(*ctx, self.0, self.1)
-    }
-}
-
-impl<R> FactIn<R::CtxId, R> for HasTy<R::Ix>
-where
-    R: ReadLocalFacts + ?Sized,
-{
-    fn check_in(&self, ctx: &R::CtxId, db: &R) -> bool {
-        db.local_has_ty(*ctx, self.tm, self.ty)
-    }
-}
-
-impl<C, T, R> FactIn<C, R> for Atom<T>
-where
-    Pred0: FactIn<C, R>,
-    HoldsIn<T>: FactIn<C, R>,
-    Eqn<T>: FactIn<C, R>,
-    HasTy<T>: FactIn<C, R>,
-    R: ?Sized,
-    T: Copy,
-{
-    fn check_in(&self, ctx: &C, db: &R) -> bool {
-        match *self {
-            Atom::Pred0(p) => p.check_in(ctx, db),
-            Atom::Pred1(p, tm) => HoldsIn { pred: p, tm }.check_in(ctx, db),
-            Atom::Eqn(lhs, rhs) => Eqn(lhs, rhs).check_in(ctx, db),
-            Atom::HasTy(tm, ty) => HasTy { tm, ty }.check_in(ctx, db),
-        }
-    }
-}
 
 /*
 impl<C, T, R> FactIn<C, R> for Forall<T>

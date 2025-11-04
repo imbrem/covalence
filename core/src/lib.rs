@@ -13,13 +13,6 @@ This module is further subdivided into three primary components:
 pub use covalence_data as data;
 pub use covalence_data::store;
 
-pub mod db;
-pub mod fact;
-pub mod kernel;
-pub mod rule;
-pub mod strategy;
-
-pub use crate::rule::ensure::{DeriveTrusted, WriteTrusted};
 pub use crate::store::{
     ReadCtx, ReadCtxFacts, ReadCtxRel, ReadFacts, ReadQuantFacts, ReadTermDb, ReadTermFacts,
     ReadTermIndex, ReadTermStore, WriteTermIndex,
@@ -35,12 +28,3 @@ pub use covalence_store::{CtxId, FvId, NodeIx, TermDb, TermId, ValId};
 
 #[doc(inline)]
 pub use covalence_data::term::{Bv, Fv, ULvl};
-
-pub type Kernel = crate::rule::Kernel<TermDb>;
-
-impl Kernel {
-    /// Construct a new, empty kernel
-    pub fn new() -> Kernel {
-        Kernel::default()
-    }
-}

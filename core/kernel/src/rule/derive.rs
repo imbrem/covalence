@@ -1,11 +1,11 @@
-use crate::Bv;
 use crate::data::term::Close;
-use crate::data::term::{Fv, NodeT, ULvl, Val};
+use crate::data::term::{Fv, NodeT, ULvl, Val, Bv};
 use crate::fact::*;
 use crate::store::*;
 use crate::strategy::*;
 
-use super::Kernel;
+use crate::Kernel;
+
 use super::ensure::*;
 
 impl<C, T, D> WriteTrusted<C, T> for Kernel<D>

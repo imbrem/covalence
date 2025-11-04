@@ -123,7 +123,7 @@ impl<C: Copy, T: Copy> Val<C, T> {
 /// This trait is `dyn`-safe:
 /// ```rust
 /// # use covalence::kernel::*;
-/// let ker : &dyn WriteTermIndex<CtxId = CtxId, TermId = TermId> = &Kernel::new();
+/// let ker : &dyn WriteTermIndex<CtxId = CtxId, TermId = TermId> = &Kernel::default();
 /// ```
 pub trait WriteTermIndex: IndexTypes + WriteUniv {
     // == Term management ==
@@ -133,7 +133,7 @@ pub trait WriteTermIndex: IndexTypes + WriteUniv {
     /// # Example
     /// ```rust
     /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::new();
+    /// # let mut ker = Kernel::default();
     /// let ctx = ker.new_ctx();
     /// assert_eq!(ker.num_vars(ctx), 0);
     /// ```
@@ -144,7 +144,7 @@ pub trait WriteTermIndex: IndexTypes + WriteUniv {
     /// # Example
     /// ```rust
     /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::new();
+    /// # let mut ker = Kernel::default();
     /// let parent = ker.new_ctx();
     /// let child = ker.with_parent(parent);
     /// // This is true since both contexts are currently empty
@@ -315,7 +315,7 @@ pub trait ReadCtxRel<C> {
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::new();
+    /// # let mut ker = Kernel::default();
     /// let parent = ker.new_ctx();
     /// let child = ker.with_parent(parent);
     /// assert!(ker.is_ancestor(parent, child));
@@ -332,7 +332,7 @@ pub trait ReadCtxRel<C> {
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::new();
+    /// # let mut ker = Kernel::default();
     /// let parent = ker.new_ctx();
     /// let child = ker.with_parent(parent);
     /// assert!(ker.is_strict_ancestor(parent, child));
@@ -353,7 +353,7 @@ pub trait ReadCtxRel<C> {
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::new();
+    /// # let mut ker = Kernel::default();
     /// let parent = ker.new_ctx();
     /// let child = ker.with_parent(parent);
     /// let grandchild = ker.with_parent(child);

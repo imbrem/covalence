@@ -300,7 +300,7 @@ where
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::new();
+    /// # let mut ker = Kernel::default();
     /// let ctx = ker.new_ctx();
     /// let prop = ker.prop(ctx);
     /// let x = ker.add_var(ctx, prop, &mut ()).unwrap().val(&*ker);
@@ -319,7 +319,7 @@ where
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::new();
+    /// # let mut ker = Kernel::default();
     /// let parent = ker.new_ctx();
     /// let child = ker.new_ctx();
     /// assert!(!ker.is_ancestor(parent, child));
@@ -694,7 +694,7 @@ where
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::new();
+    /// # let mut ker = Kernel::default();
     /// # let ctx = ker.new_ctx();
     /// let dn = ker.derive_nats(ctx, ULvl::SET, &mut ()).unwrap();
     /// assert_eq!(dn.tm.node_ix(&*ker), NodeIx::Nats);

@@ -64,7 +64,9 @@ name = "covalence"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.9.4",
- "covalence-core",
+ "covalence-data",
+ "covalence-kernel",
+ "covalence-store",
  "indexmap",
  "smallvec",
  "smol_str",
@@ -94,6 +96,7 @@ dependencies = [
 name = "covalence-kernel"
 version = "0.1.0"
 dependencies = [
+ "covalence",
  "covalence-data",
 ]
 

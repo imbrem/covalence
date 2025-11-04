@@ -1,9 +1,15 @@
-use covalence_core::strategy::Strategy;
-pub use covalence_core::*;
+use covalence_kernel::strategy::Strategy;
+pub use covalence_kernel::*;
 
+pub use covalence_store::*;
+
+pub type Kernel = covalence_kernel::Kernel<TermDb>;
+
+pub use covalence_data as data;
 use data::term::*;
 
-pub use covalence_core::data as data;
+pub use covalence_data::term::{Fv, Bv};
+pub use covalence_data::univ::ULvl;
 
 /// Writing for the `covalence` kernel
 pub trait Write<C, T>: WriteTrusted<C, T> + WriteTermIndex<CtxId = C, TermId = T>
@@ -16,7 +22,7 @@ where
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::new();
+    /// # let mut ker = Kernel::default();
     /// # let ctx = ker.new_ctx();
     /// let prop = ker.prop(ctx);
     /// assert!(ker.is_ty(ctx, prop));
@@ -33,7 +39,7 @@ where
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::new();
+    /// # let mut ker = Kernel::default();
     /// # let ctx = ker.new_ctx();
     /// let tt = ker.tt(ctx);
     /// assert!(ker.is_prop(ctx, tt));
@@ -49,7 +55,7 @@ where
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::new();
+    /// # let mut ker = Kernel::default();
     /// # let ctx = ker.new_ctx();
     /// let ff = ker.ff(ctx);
     /// assert!(ker.is_prop(ctx, ff));
@@ -65,7 +71,7 @@ where
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::new();
+    /// # let mut ker = Kernel::default();
     /// # let ctx = ker.new_ctx();
     /// let sets = ker.sets(ctx);
     /// assert!(ker.is_ty(ctx, sets));
@@ -80,7 +86,7 @@ where
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::new();
+    /// # let mut ker = Kernel::default();
     /// # let ctx = ker.new_ctx();
     /// let nats = ker.nats(ctx);
     /// assert!(ker.is_ty(ctx, nats));
@@ -95,7 +101,7 @@ where
     /// # Examples
     /// ```rust
     /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::new();
+    /// # let mut ker = Kernel::default();
     /// # let ctx = ker.new_ctx();
     /// let n = ker.n64(ctx, 50);
     /// assert!(ker.is_wf(ctx, n));

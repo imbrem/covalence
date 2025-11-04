@@ -145,7 +145,7 @@ impl CovalenceLsp {
     /// Initialize a new kernel
     pub fn new_kernel(&mut self) -> KernelId {
         let kid = KernelId(self.kernels.len());
-        self.kernels.push(Kernel::new());
+        self.kernels.push(Kernel::default());
         kid
     }
 

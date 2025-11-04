@@ -641,10 +641,6 @@ where
 
     /// Typecheck a dependent if-then-else
     ///
-    /// If the condition is inhabited, equates it to the (lazy substitution of) the then-branch
-    ///
-    /// If the condition is known empty, equates it to the (lazy substitution of) the else-branch
-    ///
     /// TODO: reference Lean
     fn derive_dite(
         &mut self,
@@ -756,6 +752,30 @@ where
         ctx: C,
         tm: Val<C, T>,
         arg: Val<C, T>,
+        strategy: &mut S,
+    ) -> Result<EqnInV<C, T>, S::Fail>;
+
+    /// Beta reduction for dependent if-then-else at true
+    ///
+    /// For well-formed `Γ ⊢ tm ≡ ite a b c; if a inhab then `Γ ⊢ tm ≡ b^*`
+    ///
+    /// TODO: reference Lean
+    fn derive_beta_tt(
+        &mut self,
+        ctx: C,
+        tm: Val<C, T>,
+        strategy: &mut S,
+    ) -> Result<EqnInV<C, T>, S::Fail>;
+
+    /// Beta reduction for dependent if-then-else at false
+    ///
+    /// For well-formed `Γ ⊢ tm ≡ ite a b c; if a empty then `Γ ⊢ tm ≡ c^*`
+    ///
+    /// TODO: reference Lean
+    fn derive_beta_ff(
+        &mut self,
+        ctx: C,
+        tm: Val<C, T>,
         strategy: &mut S,
     ) -> Result<EqnInV<C, T>, S::Fail>;
 

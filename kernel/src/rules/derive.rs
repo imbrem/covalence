@@ -549,39 +549,40 @@ where
         ty: Val<C, T>,
         strategy: &mut S,
     ) -> Result<HasTyV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_dite")?;
-        // self.ensure_is_prop(ctx, cond, strategy, kernel_error::DERIVE_DITE_COND)?;
-        // self.ensure_has_ty_under(
-        //     ctx,
-        //     cond,
-        //     then_br,
-        //     ty,
-        //     strategy,
-        //     kernel_error::DERIVE_DITE_THEN_BR,
-        // )?;
-        // let ff = self.add(ctx, NodeT::Empty);
-        // let not_cond = self.add(ctx, NodeT::Eqn([cond, ff]));
-        // self.ensure_has_ty_under(
-        //     ctx,
-        //     not_cond,
-        //     else_br,
-        //     ty,
-        //     strategy,
-        //     kernel_error::DERIVE_DITE_ELSE_BR,
-        // )?;
-        // let tm = self.add(ctx, NodeT::Ite([cond, then_br, else_br]));
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // if self.read().is_inhab(ctx, cond) {
-        //     let null = self.add(ctx, NodeT::Null);
-        //     let then_br_null = self.subst(ctx, null, then_br);
-        //     self.0.set_eq_unchecked(ctx, tm, then_br_null);
-        // } else if self.read().is_empty(ctx, cond) {
-        //     let null = self.add(ctx, NodeT::Null);
-        //     let else_br_null = self.subst(ctx, null, else_br);
-        //     self.0.set_eq_unchecked(ctx, tm, else_br_null);
-        // }
-        // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+        strategy.start_rule("derive_dite", self)?;
+
+        self.ensure_is_prop(ctx, cond, strategy, kernel_error::DERIVE_DITE_COND)?;
+        self.ensure_has_ty_under(
+            ctx,
+            cond,
+            then_br,
+            ty,
+            strategy,
+            kernel_error::DERIVE_DITE_THEN_BR,
+        )?;
+        let ff = self.resolve(ctx, NodeT::Empty, strategy)?;
+        let not_cond = self.resolve(ctx, NodeT::Eqn([cond, ff]), strategy)?;
+        self.ensure_has_ty_under(
+            ctx,
+            not_cond,
+            else_br,
+            ty,
+            strategy,
+            kernel_error::DERIVE_DITE_ELSE_BR,
+        )?;
+
+        strategy.commit_rule(self);
+
+        let tm = self.add_with(ctx, NodeT::Ite([cond, then_br, else_br]), strategy)?;
+        let ty = self.import_with(ctx, ty, strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+
+        strategy.finish_rule(self);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_trunc(
@@ -775,6 +776,24 @@ where
         //     rhs: tm_subst,
         // }
         // .finish_rule(ctx, strategy))
+    }
+
+    fn derive_beta_tt(
+        &mut self,
+        ctx: C,
+        tm: Val<C, T>,
+        strategy: &mut S,
+    ) -> Result<EqnInV<C, T>, S::Fail> {
+        todo!()
+    }
+
+    fn derive_beta_ff(
+        &mut self,
+        ctx: C,
+        tm: Val<C, T>,
+        strategy: &mut S,
+    ) -> Result<EqnInV<C, T>, S::Fail> {
+        todo!()
     }
 
     fn derive_beta_zero(

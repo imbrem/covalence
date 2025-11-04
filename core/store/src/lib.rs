@@ -7,12 +7,12 @@ use covalence_data::term::*;
 mod ctx;
 use ctx::*;
 
-pub use ctx::{NodeIx, TermId};
+pub use ctx::{Ix, NodeIx};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CtxId(SmallIndex<Ctx>);
 
-pub type ValId = covalence_data::store::ValId<TermDb>;
+pub type TermId = covalence_data::store::TermId<TermDb>;
 
 pub type FvId = covalence_data::store::FvId<TermDb>;
 
@@ -35,26 +35,26 @@ impl TermDb {
 
 impl TermIndex for TermDb {
     type CtxId = CtxId;
-    type TermId = TermId;
+    type Ix = Ix;
 }
 
 impl ReadLocalTerm for TermDb {
-    fn val(&self, ctx: CtxId, tm: TermId) -> ValId {
+    fn val(&self, ctx: CtxId, tm: Ix) -> TermId {
         match self.node(ctx, tm) {
             NodeIx::Import(val) => self.val(val.ctx, val.tm),
             _ => Val { ctx, tm },
         }
     }
 
-    fn node(&self, ctx: CtxId, tm: TermId) -> &NodeIx {
+    fn node(&self, ctx: CtxId, tm: Ix) -> &NodeIx {
         self.x[ctx.0].node(tm)
     }
 
-    fn lookup(&self, ctx: CtxId, tm: NodeIx) -> Option<TermId> {
+    fn lookup(&self, ctx: CtxId, tm: NodeIx) -> Option<Ix> {
         self.x[ctx.0].lookup(tm)
     }
 
-    fn lookup_import(&self, ctx: CtxId, val: ValId) -> Option<TermId> {
+    fn lookup_import(&self, ctx: CtxId, val: TermId) -> Option<Ix> {
         // NOTE: an import cycle will lead to a stack overflow here, but that should be an error But
         // think about it!
         //
@@ -72,16 +72,16 @@ impl ReadLocalTerm for TermDb {
         }
     }
 
-    fn bvi(&self, ctx: CtxId, tm: TermId) -> Bv {
+    fn bvi(&self, ctx: CtxId, tm: Ix) -> Bv {
         //TODO: compute the bvi if invalid
         self.x[ctx.0].bvi(tm)
     }
 
-    fn deref_eq(&self, lhs: Val<CtxId, TermId>, rhs: Val<CtxId, TermId>) -> bool {
+    fn deref_eq(&self, lhs: Val<CtxId, Ix>, rhs: Val<CtxId, Ix>) -> bool {
         lhs == rhs || self.val(lhs.ctx, lhs.tm) == self.val(rhs.ctx, rhs.tm)
     }
 
-    fn cons_eq(&self, lhs: ValId, rhs: ValId) -> bool {
+    fn cons_eq(&self, lhs: TermId, rhs: TermId) -> bool {
         if lhs == rhs {
             return true;
         }
@@ -124,11 +124,11 @@ impl WriteLocalTerm for TermDb {
         result
     }
 
-    fn add_raw(&mut self, ctx: CtxId, tm: NodeIx) -> TermId {
+    fn add_raw(&mut self, ctx: CtxId, tm: NodeIx) -> Ix {
         self.x[ctx.0].add(tm)
     }
 
-    fn import(&mut self, ctx: CtxId, val: ValId) -> TermId {
+    fn import(&mut self, ctx: CtxId, val: TermId) -> Ix {
         // NOTE: an import cycle will lead to a stack overflow here, but that should be an error But
         // think about it!
         //
@@ -187,7 +187,7 @@ impl ReadCtx<CtxId, TermId> for TermDb {
         self.x[ctx.0].num_vars()
     }
 
-    fn var_ty(&self, var: FvId) -> ValId {
+    fn var_ty(&self, var: FvId) -> TermId {
         self.x[var.ctx.0]
             .var_ty(var.ix)
             .expect("invalid variable index")
@@ -250,31 +250,31 @@ impl ReadCtxRel<CtxId> for TermDb {
 }
 
 impl ReadLocalFacts for TermDb {
-    fn local_tm_flags(&self, ctx: CtxId, tm: TermId) -> Pred1 {
+    fn local_tm_flags(&self, ctx: CtxId, tm: Ix) -> Pred1 {
         self.x[ctx.0].tm_flags(tm)
     }
 
-    fn local_eq(&self, ctx: CtxId, lhs: TermId, rhs: TermId) -> bool {
+    fn local_eq(&self, ctx: CtxId, lhs: Ix, rhs: Ix) -> bool {
         self.x[ctx.0].eq_in(lhs, rhs)
     }
 }
 
-impl ReadTermFacts<CtxId, TermId> for TermDb {
-    fn tm_flags(&self, ctx: CtxId, tm: TermId) -> Pred1 {
+impl ReadTermFacts<CtxId, Ix> for TermDb {
+    fn tm_flags(&self, ctx: CtxId, tm: Ix) -> Pred1 {
         self.x[ctx.0].tm_flags(tm)
     }
 
-    fn eq_in(&self, ctx: CtxId, lhs: TermId, rhs: TermId) -> bool {
+    fn eq_in(&self, ctx: CtxId, lhs: Ix, rhs: Ix) -> bool {
         self.x[ctx.0].eq_in(lhs, rhs)
     }
 
-    fn has_ty(&self, ctx: CtxId, tm: TermId, ty: TermId) -> bool {
+    fn has_ty(&self, ctx: CtxId, tm: Ix, ty: Ix) -> bool {
         self.x[ctx.0].has_ty(tm, ty)
     }
 }
 
-impl ReadQuantFacts<CtxId, TermId> for TermDb {
-    fn forall_eq_in(&self, ctx: CtxId, binder: TermId, lhs: TermId, rhs: TermId) -> bool {
+impl ReadQuantFacts<CtxId, Ix> for TermDb {
+    fn forall_eq_in(&self, ctx: CtxId, binder: Ix, lhs: Ix, rhs: Ix) -> bool {
         if !self.is_ty(ctx, binder) {
             return false;
         }
@@ -290,7 +290,7 @@ impl ReadQuantFacts<CtxId, TermId> for TermDb {
         self.eq_in(ctx, abs_lhs, abs_rhs)
     }
 
-    fn forall_has_ty(&self, ctx: CtxId, binder: TermId, tm: TermId, ty: TermId) -> bool {
+    fn forall_has_ty(&self, ctx: CtxId, binder: Ix, tm: Ix, ty: Ix) -> bool {
         if self.is_ty(ctx, binder) && self.has_ty(ctx, tm, ty) {
             return true;
         }
@@ -303,7 +303,7 @@ impl ReadQuantFacts<CtxId, TermId> for TermDb {
         self.has_ty(ctx, abs, pi)
     }
 
-    fn forall_is_wf(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+    fn forall_is_wf(&self, ctx: CtxId, binder: Ix, tm: Ix) -> bool {
         if !self.is_ty(ctx, binder) {
             return false;
         }
@@ -313,7 +313,7 @@ impl ReadQuantFacts<CtxId, TermId> for TermDb {
                 .is_some_and(|abs| self.is_wf(ctx, abs))
     }
 
-    fn forall_is_ty(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+    fn forall_is_ty(&self, ctx: CtxId, binder: Ix, tm: Ix) -> bool {
         if !self.is_ty(ctx, binder) {
             return false;
         }
@@ -324,7 +324,7 @@ impl ReadQuantFacts<CtxId, TermId> for TermDb {
                 .is_some_and(|pi| self.is_ty(ctx, pi))
     }
 
-    fn forall_is_prop(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+    fn forall_is_prop(&self, ctx: CtxId, binder: Ix, tm: Ix) -> bool {
         if !self.is_ty(ctx, binder) {
             return false;
         }
@@ -335,7 +335,7 @@ impl ReadQuantFacts<CtxId, TermId> for TermDb {
                 .is_some_and(|pi| self.is_prop(ctx, pi))
     }
 
-    fn forall_is_inhab(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+    fn forall_is_inhab(&self, ctx: CtxId, binder: Ix, tm: Ix) -> bool {
         if !self.is_ty(ctx, binder) {
             return false;
         }
@@ -347,7 +347,7 @@ impl ReadQuantFacts<CtxId, TermId> for TermDb {
                 .is_some_and(|pi| self.is_inhab(ctx, pi))
     }
 
-    fn forall_is_tt(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+    fn forall_is_tt(&self, ctx: CtxId, binder: Ix, tm: Ix) -> bool {
         if !self.is_ty(ctx, binder) {
             return false;
         }
@@ -359,7 +359,7 @@ impl ReadQuantFacts<CtxId, TermId> for TermDb {
                 .is_some_and(|pi| self.is_tt(ctx, pi))
     }
 
-    fn forall_is_empty(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+    fn forall_is_empty(&self, ctx: CtxId, binder: Ix, tm: Ix) -> bool {
         if !self.is_ty(ctx, binder) {
             return false;
         }
@@ -370,16 +370,16 @@ impl ReadQuantFacts<CtxId, TermId> for TermDb {
                 .is_some_and(|sigma| self.is_empty(ctx, sigma))
     }
 
-    fn forall_is_ff(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+    fn forall_is_ff(&self, ctx: CtxId, binder: Ix, tm: Ix) -> bool {
         self.forall_is_prop(ctx, binder, tm) && self.forall_is_empty(ctx, binder, tm)
     }
 
-    fn forall_is_contr(&self, ctx: CtxId, binder: TermId, tm: TermId) -> bool {
+    fn forall_is_contr(&self, ctx: CtxId, binder: Ix, tm: Ix) -> bool {
         self.is_empty(ctx, binder) && self.forall_is_wf(ctx, binder, tm)
     }
 }
 
-impl ReadTermDb<CtxId, TermId> for TermDb {
+impl ReadTermDb<CtxId, Ix> for TermDb {
     type Reader = TermDb;
 
     fn read(&self) -> &Self::Reader {
@@ -387,8 +387,8 @@ impl ReadTermDb<CtxId, TermId> for TermDb {
     }
 }
 
-impl WriteFacts<CtxId, TermId> for TermDb {
-    fn set_tm_flags_unchecked(&mut self, ctx: CtxId, tm: TermId, pred: Pred1) {
+impl WriteFacts<CtxId, Ix> for TermDb {
+    fn set_tm_flags_unchecked(&mut self, ctx: CtxId, tm: Ix, pred: Pred1) {
         self.x[ctx.0].set_flags_unchecked(tm, pred);
     }
 
@@ -400,51 +400,51 @@ impl WriteFacts<CtxId, TermId> for TermDb {
         self.x[ctx.0].set_parent_unchecked(parent);
     }
 
-    fn set_eq_unchecked(&mut self, ctx: CtxId, lhs: TermId, rhs: TermId) {
+    fn set_eq_unchecked(&mut self, ctx: CtxId, lhs: Ix, rhs: Ix) {
         self.x[ctx.0].set_eq_unchecked(lhs, rhs);
     }
 
-    fn set_has_ty_unchecked(&mut self, ctx: CtxId, tm: TermId, ty: TermId) {
+    fn set_has_ty_unchecked(&mut self, ctx: CtxId, tm: Ix, ty: Ix) {
         self.x[ctx.0].set_has_ty_unchecked(tm, ty);
     }
 
-    fn set_forall_eq_unchecked(&mut self, ctx: CtxId, binder: TermId, lhs: TermId, rhs: TermId) {
+    fn set_forall_eq_unchecked(&mut self, ctx: CtxId, binder: Ix, lhs: Ix, rhs: Ix) {
         self.x[ctx.0].set_forall_eq_unchecked(binder, lhs, rhs);
     }
 
-    fn set_forall_is_wf_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
+    fn set_forall_is_wf_unchecked(&mut self, ctx: CtxId, binder: Ix, tm: Ix) {
         self.x[ctx.0].set_forall_is_wf_unchecked(binder, tm);
     }
 
-    fn set_forall_is_ty_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
+    fn set_forall_is_ty_unchecked(&mut self, ctx: CtxId, binder: Ix, tm: Ix) {
         self.x[ctx.0].set_forall_is_ty_unchecked(binder, tm);
     }
 
-    fn set_forall_is_prop_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
+    fn set_forall_is_prop_unchecked(&mut self, ctx: CtxId, binder: Ix, tm: Ix) {
         self.x[ctx.0].set_forall_is_prop_unchecked(binder, tm);
     }
 
-    fn set_forall_has_ty_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId, ty: TermId) {
+    fn set_forall_has_ty_unchecked(&mut self, ctx: CtxId, binder: Ix, tm: Ix, ty: Ix) {
         self.x[ctx.0].set_forall_has_ty_unchecked(binder, tm, ty);
     }
 
-    fn set_forall_is_inhab_unchecked(&mut self, ctx: CtxId, binder: TermId, ty: TermId) {
+    fn set_forall_is_inhab_unchecked(&mut self, ctx: CtxId, binder: Ix, ty: Ix) {
         self.x[ctx.0].set_forall_is_inhab_unchecked(binder, ty);
     }
 
-    fn set_forall_is_empty_unchecked(&mut self, ctx: CtxId, binder: TermId, tm: TermId) {
+    fn set_forall_is_empty_unchecked(&mut self, ctx: CtxId, binder: Ix, tm: Ix) {
         self.x[ctx.0].set_forall_is_empty_unchecked(binder, tm);
     }
 
-    fn set_exists_is_inhab_unchecked(&mut self, ctx: CtxId, binder: TermId, ty: TermId) {
+    fn set_exists_is_inhab_unchecked(&mut self, ctx: CtxId, binder: Ix, ty: Ix) {
         self.x[ctx.0].set_exists_is_inhab_unchecked(binder, ty);
     }
 
-    fn add_var_unchecked(&mut self, ctx: CtxId, ty: ValId) -> FvId {
+    fn add_var_unchecked(&mut self, ctx: CtxId, ty: TermId) -> FvId {
         self.x[ctx.0].add_var_unchecked(ctx, ty)
     }
 
-    fn set_bvi_unchecked(&mut self, ctx: CtxId, tm: TermId, bvi: Bv) {
+    fn set_bvi_unchecked(&mut self, ctx: CtxId, tm: Ix, bvi: Bv) {
         self.x[ctx.0].set_bvi_unchecked(tm, bvi);
     }
 }

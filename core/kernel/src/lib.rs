@@ -56,7 +56,7 @@ impl<C, T, D: ReadTermDb<C, T>> ReadTermDb<C, T> for Kernel<D> {
 
 impl<D: TermIndex> TermIndex for Kernel<D> {
     type CtxId = D::CtxId;
-    type TermId = D::TermId;
+    type Ix = D::Ix;
 }
 
 impl<D: WriteUniv> WriteUniv for Kernel<D> {
@@ -82,11 +82,11 @@ impl<D: WriteLocalTerm> WriteLocalTerm for Kernel<D> {
         self.0.with_parent(parent)
     }
 
-    fn add_raw(&mut self, ctx: CtxId<D>, term: NodeIx<D>) -> TermId<D> {
+    fn add_raw(&mut self, ctx: CtxId<D>, term: NodeIx<D>) -> Ix<D> {
         self.0.add_raw(ctx, term)
     }
 
-    fn import(&mut self, ctx: CtxId<D>, val: ValId<D>) -> TermId<D> {
+    fn import(&mut self, ctx: CtxId<D>, val: TermId<D>) -> Ix<D> {
         self.0.import(ctx, val)
     }
 

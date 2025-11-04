@@ -6,7 +6,7 @@ use egg::{Analysis, DidMerge, EGraph, Language};
 use covalence_data::fact::{Pred0, Pred1};
 use covalence_data::univ::ULvl;
 
-use super::{CtxId, FvId, ValId};
+use super::{CtxId, FvId, TermId};
 
 #[derive(Debug, Clone)]
 #[repr(transparent)]
@@ -39,14 +39,14 @@ impl Ctx {
         self.e.analysis.this = Some(this);
     }
 
-    pub fn add(&mut self, node: NodeIx) -> TermId {
+    pub fn add(&mut self, node: NodeIx) -> Ix {
         // NOTE: an uncanonical insertion is necessary to roundtrip with lookup
-        let result = TermId(self.e.add_uncanonical(InnerNode(node)));
+        let result = Ix(self.e.add_uncanonical(InnerNode(node)));
         self.e.analysis.node_to_id.insert(InnerNode(node), result);
         result
     }
 
-    pub fn node(&self, id: TermId) -> &NodeIx {
+    pub fn node(&self, id: Ix) -> &NodeIx {
         let result = self.e.id_to_node(id.0);
         debug_assert_eq!(
             self.e.analysis.node_to_id.get(result),
@@ -56,7 +56,7 @@ impl Ctx {
         &result.0
     }
 
-    pub fn lookup(&self, node: NodeIx) -> Option<TermId> {
+    pub fn lookup(&self, node: NodeIx) -> Option<Ix> {
         let result = self.e.analysis.node_to_id.get(&InnerNode(node)).copied();
         debug_assert_eq!(
             result.map(|id| self.node(id)),
@@ -66,7 +66,7 @@ impl Ctx {
         result
     }
 
-    pub fn var_ty(&self, ix: u32) -> Option<ValId> {
+    pub fn var_ty(&self, ix: u32) -> Option<TermId> {
         self.e.analysis.vars.get(ix as usize).copied()
     }
 
@@ -92,34 +92,34 @@ impl Ctx {
         self.e.analysis.flags != old_flags
     }
 
-    pub fn eq_in(&self, lhs: TermId, rhs: TermId) -> bool {
+    pub fn eq_in(&self, lhs: Ix, rhs: Ix) -> bool {
         self.e.find(lhs.0) == self.e.find(rhs.0)
     }
 
-    pub fn has_ty(&self, tm: TermId, ty: TermId) -> bool {
+    pub fn has_ty(&self, tm: Ix, ty: Ix) -> bool {
         let Some(has_ty) = self.lookup(NodeIx::HasTy([tm, ty])) else {
             return false;
         };
         self.is_wf(has_ty)
     }
 
-    pub fn tm_flags(&self, tm: TermId) -> Pred1 {
+    pub fn tm_flags(&self, tm: Ix) -> Pred1 {
         self.e[tm.0].data.flags
     }
 
-    pub fn is_wf(&self, tm: TermId) -> bool {
+    pub fn is_wf(&self, tm: Ix) -> bool {
         self.e[tm.0].data.flags.contains(Pred1::IS_WF)
     }
 
-    pub fn is_prop(&self, tm: TermId) -> bool {
+    pub fn is_prop(&self, tm: Ix) -> bool {
         self.e[tm.0].data.flags.contains(Pred1::IS_PROP)
     }
 
-    pub fn is_univ(&self, tm: TermId) -> bool {
+    pub fn is_univ(&self, tm: Ix) -> bool {
         self.e[tm.0].data.flags.contains(Pred1::IS_UNIV)
     }
 
-    pub fn set_flags_unchecked(&mut self, tm: TermId, flags: Pred1) -> bool {
+    pub fn set_flags_unchecked(&mut self, tm: Ix, flags: Pred1) -> bool {
         let mut data = self.e[tm.0].data;
         let old_flags = data.flags;
         data.flags |= flags;
@@ -131,31 +131,31 @@ impl Ctx {
         }
     }
 
-    pub fn set_is_wf_unchecked(&mut self, tm: TermId) -> bool {
+    pub fn set_is_wf_unchecked(&mut self, tm: Ix) -> bool {
         self.set_flags_unchecked(tm, Pred1::IS_WF)
     }
 
-    pub fn set_is_ty_unchecked(&mut self, tm: TermId) -> bool {
+    pub fn set_is_ty_unchecked(&mut self, tm: Ix) -> bool {
         self.set_flags_unchecked(tm, Pred1::IS_TY)
     }
 
-    pub fn set_is_inhab_unchecked(&mut self, tm: TermId) -> bool {
+    pub fn set_is_inhab_unchecked(&mut self, tm: Ix) -> bool {
         self.set_flags_unchecked(tm, Pred1::IS_INHAB)
     }
 
-    pub fn set_is_empty_unchecked(&mut self, tm: TermId) -> bool {
+    pub fn set_is_empty_unchecked(&mut self, tm: Ix) -> bool {
         self.set_flags_unchecked(tm, Pred1::IS_EMPTY)
     }
 
-    pub fn set_is_prop_unchecked(&mut self, tm: TermId) -> bool {
+    pub fn set_is_prop_unchecked(&mut self, tm: Ix) -> bool {
         self.set_flags_unchecked(tm, Pred1::IS_PROP)
     }
 
-    pub fn set_eq_unchecked(&mut self, lhs: TermId, rhs: TermId) -> bool {
+    pub fn set_eq_unchecked(&mut self, lhs: Ix, rhs: Ix) -> bool {
         self.e.union(lhs.0, rhs.0)
     }
 
-    pub fn set_has_ty_unchecked(&mut self, tm: TermId, ty: TermId) -> bool {
+    pub fn set_has_ty_unchecked(&mut self, tm: Ix, ty: Ix) -> bool {
         if self.is_univ(ty) {
             self.set_is_ty_unchecked(tm);
             if !self.is_prop(tm)
@@ -172,57 +172,57 @@ impl Ctx {
         self.set_eq_unchecked(has_ty, unit)
     }
 
-    pub fn set_forall_eq_unchecked(&mut self, binder: TermId, lhs: TermId, rhs: TermId) -> bool {
+    pub fn set_forall_eq_unchecked(&mut self, binder: Ix, lhs: Ix, rhs: Ix) -> bool {
         self.set_is_ty_unchecked(binder);
         let abs_lhs = self.add(NodeIx::Abs([binder, lhs]));
         let abs_rhs = self.add(NodeIx::Abs([binder, rhs]));
         self.set_eq_unchecked(abs_lhs, abs_rhs)
     }
 
-    pub fn set_forall_is_wf_unchecked(&mut self, binder: TermId, tm: TermId) -> bool {
+    pub fn set_forall_is_wf_unchecked(&mut self, binder: Ix, tm: Ix) -> bool {
         self.set_is_ty_unchecked(binder);
         let tm = self.add(NodeIx::Abs([binder, tm]));
         self.set_is_wf_unchecked(tm)
     }
 
-    pub fn set_forall_is_ty_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
+    pub fn set_forall_is_ty_unchecked(&mut self, binder: Ix, ty: Ix) -> bool {
         self.set_is_ty_unchecked(binder);
         let pi = self.add(NodeIx::Pi([binder, ty]));
         self.set_is_ty_unchecked(pi)
     }
 
-    pub fn set_forall_is_prop_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
+    pub fn set_forall_is_prop_unchecked(&mut self, binder: Ix, ty: Ix) -> bool {
         self.set_is_ty_unchecked(binder);
         let pi = self.add(NodeIx::Pi([binder, ty]));
         self.set_is_prop_unchecked(pi)
     }
 
-    pub fn set_forall_has_ty_unchecked(&mut self, binder: TermId, tm: TermId, ty: TermId) -> bool {
+    pub fn set_forall_has_ty_unchecked(&mut self, binder: Ix, tm: Ix, ty: Ix) -> bool {
         self.set_is_ty_unchecked(binder);
         let abs = self.add(NodeIx::Abs([binder, tm]));
         let pi = self.add(NodeIx::Pi([binder, ty]));
         self.set_has_ty_unchecked(abs, pi)
     }
 
-    pub fn set_forall_is_inhab_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
+    pub fn set_forall_is_inhab_unchecked(&mut self, binder: Ix, ty: Ix) -> bool {
         self.set_is_ty_unchecked(binder);
         let pi = self.add(NodeIx::Pi([binder, ty]));
         self.set_is_inhab_unchecked(pi)
     }
 
-    pub fn set_forall_is_empty_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
+    pub fn set_forall_is_empty_unchecked(&mut self, binder: Ix, ty: Ix) -> bool {
         self.set_is_ty_unchecked(binder);
         let sigma = self.add(NodeIx::Sigma([binder, ty]));
         self.set_is_empty_unchecked(sigma)
     }
 
-    pub fn set_exists_is_inhab_unchecked(&mut self, binder: TermId, ty: TermId) -> bool {
+    pub fn set_exists_is_inhab_unchecked(&mut self, binder: Ix, ty: Ix) -> bool {
         self.set_forall_is_ty_unchecked(binder, ty);
         let sigma = self.add(NodeIx::Sigma([binder, ty]));
         self.set_is_inhab_unchecked(sigma)
     }
 
-    pub fn add_var_unchecked(&mut self, ctx: CtxId, ty: ValId) -> FvId {
+    pub fn add_var_unchecked(&mut self, ctx: CtxId, ty: TermId) -> FvId {
         // NOTE: this overflow should be impossible due to limitations of the E-graph, but better
         // safe than sorry...
         let ix: u32 = self
@@ -246,11 +246,11 @@ impl Ctx {
     //     unsafe { std::mem::transmute(this) }
     // }
 
-    pub fn bvi(&self, id: TermId) -> Bv {
+    pub fn bvi(&self, id: Ix) -> Bv {
         self.e[id.0].data.bvi
     }
 
-    pub fn set_bvi_unchecked(&mut self, id: TermId, bvi: Bv) {
+    pub fn set_bvi_unchecked(&mut self, id: Ix, bvi: Bv) {
         let mut data = self.e[id.0].data;
         if bvi >= data.bvi {
             return;
@@ -269,13 +269,13 @@ struct CtxData {
     /// This context's flags
     flags: Pred0,
     /// This context's variables, implemented as a map from indices to types
-    vars: Vec<ValId>,
+    vars: Vec<TermId>,
     /// A map from nodes to their TermId
     ///
     /// TODO: remove hack, but required for now for correctness of `lookup`
     ///
     /// Donald Knuth smiles on me this day, for avoiding temptation.
-    node_to_id: BTreeMap<InnerNode, TermId>,
+    node_to_id: BTreeMap<InnerNode, Ix>,
 }
 
 impl Analysis<InnerNode> for CtxData {
@@ -322,16 +322,16 @@ impl Ctx {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[repr(transparent)]
-pub struct TermId(egg::Id);
+pub struct Ix(egg::Id);
 
-pub type NodeIx = NodeT<CtxId, TermId>;
+pub type NodeIx = NodeT<CtxId, Ix>;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[repr(transparent)]
 struct InnerNode(NodeIx);
 
 impl Language for InnerNode {
-    type Discriminant = DiscT<CtxId, TermId>;
+    type Discriminant = DiscT<CtxId, Ix>;
 
     fn discriminant(&self) -> Self::Discriminant {
         self.0.disc()

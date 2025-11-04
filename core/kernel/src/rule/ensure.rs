@@ -6,7 +6,7 @@ use crate::store::*;
 use crate::strategy::*;
 
 pub trait Ensure<C: Copy, T: Copy + PartialEq>:
-    ReadTermDb<C, T> + WriteLocalTerm<CtxId = C, TermId = T>
+    ReadTermDb<C, T> + WriteLocalTerm<CtxId = C, Ix = T>
 {
     /// Attempt to prove a goal
     fn ensure_goal<S>(
@@ -278,7 +278,7 @@ impl<C, T, K> Ensure<C, T> for K
 where
     C: Copy,
     T: Copy + PartialEq,
-    K: ReadTermDb<C, T> + WriteLocalTerm<CtxId = C, TermId = T> + ?Sized,
+    K: ReadTermDb<C, T> + WriteLocalTerm<CtxId = C, Ix = T> + ?Sized,
 {
 }
 

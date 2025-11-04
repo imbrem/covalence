@@ -360,21 +360,31 @@ where
         res_ty: Val<C, T>,
         strategy: &mut S,
     ) -> Result<HasTyV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_sigma")?;
-        // let ty = self.add(ctx, NodeT::U(lvl));
-        // self.ensure_has_ty(ctx, arg_ty, ty, strategy, kernel_error::DERIVE_SIGMA_ARG_TY)?;
-        // self.ensure_has_ty_under(
-        //     ctx,
-        //     arg_ty,
-        //     res_ty,
-        //     ty,
-        //     strategy,
-        //     kernel_error::DERIVE_SIGMA_RES_TY,
-        // )?;
-        // let tm = self.add(ctx, NodeT::Sigma([arg_ty, res_ty]));
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+        strategy.start_rule("derive_sigma", self)?;
+
+        let ty = self.resolve(ctx, NodeT::U(lvl), strategy)?;
+        self.ensure_has_ty(ctx, arg_ty, ty, strategy, kernel_error::DERIVE_SIGMA_ARG_TY)?;
+        self.ensure_has_ty_under(
+            ctx,
+            arg_ty,
+            res_ty,
+            ty,
+            strategy,
+            kernel_error::DERIVE_SIGMA_RES_TY,
+        )?;
+
+        strategy.commit_rule(self);
+
+        let tm = self.add_with(ctx, NodeT::Sigma([arg_ty, res_ty]), strategy)?;
+        let ty = self.import_with(ctx, ty, strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+
+        strategy.finish_rule(self);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_abs(

@@ -11,4 +11,4 @@ smol_str = "0.3.2"
 typed-generational-arena = "0.2.9"
 winnow = "0.7.13"
 
-covalence_kernel = { path = "../kernel" }
+covalence-core = { path = "../core" }

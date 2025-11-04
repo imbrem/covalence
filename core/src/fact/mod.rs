@@ -124,7 +124,7 @@ bitflags! {
     ///
     /// We note the following relationships:
     /// ```rust
-    /// # use covalence_kernel::*;
+    /// # use covalence::kernel::*;
     /// assert!(IS_WF.contains(IS_SCOPED));
     /// assert_ne!(IS_SCOPED, IS_WF);
     /// assert!(IS_TY.contains(IS_WF));

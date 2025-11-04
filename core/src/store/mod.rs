@@ -28,13 +28,13 @@ pub type KFvId<D> = Fv<KCtxId<D>>;
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::*;
 /// let ker : &dyn ReadTermIndex<CtxId = CtxId, TermId = TermId> = &TermDb::new();
 /// ```
 /// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
 /// functions for different kernel wrappers:
 /// ```rust,compile_fail
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::*;
 /// let ker : &dyn ReadTermIndex<CtxId = CtxId, TermId = TermId> = &Kernel::new();
 /// ```
 pub trait ReadTermIndex: IndexTypes + ReadUniv {
@@ -90,7 +90,7 @@ pub trait ReadTermIndex: IndexTypes + ReadUniv {
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::*;
 /// let ker : &dyn WriteTermIndex<CtxId = CtxId, TermId = TermId> = &Kernel::new();
 /// ```
 pub trait WriteTermIndex: IndexTypes + WriteUniv {
@@ -100,7 +100,7 @@ pub trait WriteTermIndex: IndexTypes + WriteUniv {
     ///
     /// # Example
     /// ```rust
-    /// # use covalence_kernel::*;
+    /// # use covalence::kernel::*;
     /// # let mut ker = Kernel::new();
     /// let ctx = ker.new_ctx();
     /// assert_eq!(ker.num_vars(ctx), 0);
@@ -235,13 +235,13 @@ impl<C: Copy> Fv<C> {
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::*;
 /// let ker : &dyn ReadCtx<CtxId, TermId> = &TermDb::new();
 /// ```
 /// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
 /// functions for different kernel wrappers:
 /// ```rust,compile_fail
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::*;
 /// let ker : &dyn ReadCtx<CtxId, TermId> = &Kernel::new();
 /// ```
 pub trait ReadCtx<C, T> {
@@ -256,13 +256,13 @@ pub trait ReadCtx<C, T> {
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::*;
 /// let ker : &dyn ReadCtxFacts<CtxId> = &TermDb::new();
 /// ```
 /// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
 /// functions for different kernel wrappers:
 /// ```rust,compile_fail
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::*;
 /// let ker : &dyn ReadCtxFacts<CtxId> = &Kernel::new();
 /// ```
 pub trait ReadCtxFacts<C> {
@@ -283,13 +283,13 @@ pub trait ReadCtxFacts<C> {
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::*;
 /// let ker : &dyn ReadCtxRel<CtxId> = &TermDb::new();
 /// ```
 /// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
 /// functions for different kernel wrappers:
 /// ```rust,compile_fail
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::*;
 /// let ker : &dyn ReadCtxRel<CtxId> = &Kernel::new();
 /// ```
 pub trait ReadCtxRel<C> {
@@ -306,7 +306,7 @@ pub trait ReadCtxRel<C> {
     ///
     /// # Examples
     /// ```rust
-    /// # use covalence_kernel::*;
+    /// # use covalence::kernel::*;
     /// # let mut ker = Kernel::new();
     /// let parent = ker.new_ctx();
     /// let child = ker.with_parent(parent);
@@ -323,7 +323,7 @@ pub trait ReadCtxRel<C> {
     ///
     /// # Examples
     /// ```rust
-    /// # use covalence_kernel::*;
+    /// # use covalence::kernel::*;
     /// # let mut ker = Kernel::new();
     /// let parent = ker.new_ctx();
     /// let child = ker.with_parent(parent);
@@ -418,13 +418,13 @@ pub trait ReadCtxRel<C> {
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::*;
 /// let ker : &dyn ReadTermFacts<CtxId, TermId> = &TermDb::new();
 /// ```
 /// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
 /// functions for different kernel wrappers:
 /// ```rust,compile_fail
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::*;
 /// let ker : &dyn ReadTermFacts<CtxId, TermId> = &Kernel::new();
 /// ```
 pub trait ReadTermFacts<C, T>: ReadCtxFacts<C> {
@@ -511,13 +511,13 @@ pub trait ReadTermFacts<C, T>: ReadCtxFacts<C> {
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::*;
 /// let ker : &dyn ReadQuantFacts<CtxId, TermId> = &TermDb::new();
 /// ```
 /// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
 /// functions for different kernel wrappers:
 /// ```rust,compile_fail
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::*;
 /// let ker : &dyn ReadQuantFacts<CtxId, TermId> = &Kernel::new();
 /// ```
 pub trait ReadQuantFacts<C, T>: ReadTermFacts<C, T> {
@@ -597,13 +597,13 @@ pub trait ReadQuantFacts<C, T>: ReadTermFacts<C, T> {
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::*;
 /// let ker : &dyn ReadFacts<CtxId, TermId> = &TermDb::new();
 /// ```
 /// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
 /// functions for different kernel wrappers:
 /// ```rust,compile_fail
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::*;
 /// let ker : &dyn ReadFacts<CtxId, TermId> = &Kernel::new();
 /// ```
 pub trait ReadFacts<C, T>: ReadCtxFacts<C> + ReadQuantFacts<C, T> {}
@@ -614,13 +614,13 @@ impl<D: ReadCtxFacts<C> + ReadQuantFacts<C, T>, C, T> ReadFacts<C, T> for D {}
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::*;
 /// let ker : &dyn ReadTermStore<CtxId, TermId> = &TermDb::new();
 /// ```
 /// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
 /// functions for different kernel wrappers:
 /// ```rust,compile_fail
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::*;
 /// let ker : &dyn ReadTermStore<CtxId, TermId> = &Kernel::new();
 /// ```
 pub trait ReadTermStore<C, T>:
@@ -657,14 +657,14 @@ impl<C, T, D: ReadTermDb<C, T> + WriteTermIndex<CtxId = C, TermId = T> + ?Sized>
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
-/// # use covalence_kernel::store::*;
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::store::*;
+/// # use covalence::kernel::*;
 /// let db : &dyn WriteFacts<CtxId, TermId> = &TermDb::default();
 /// ```
 /// We note that it is _not_ implemented by `Kernel`, since that would be unsafe:
 /// ```rust,compile_fail
-/// # use covalence_kernel::store::*;
-/// # use covalence_kernel::*;
+/// # use covalence::kernel::store::*;
+/// # use covalence::kernel::*;
 /// let db : &dyn WriteFacts<CtxId, TermId> = &Kernel::new();
 /// ```
 pub trait WriteFacts<C, T> {

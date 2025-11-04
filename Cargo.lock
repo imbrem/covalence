@@ -64,13 +64,36 @@ name = "covalence"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.9.4",
- "covalence_kernel",
+ "covalence-core",
  "indexmap",
  "smallvec",
  "smol_str",
  "typed-generational-arena",
  "winnow",
 ]
+
+[[package]]
+name = "covalence-core"
+version = "0.1.0"
+dependencies = [
+ "bitflags 2.9.4",
+ "covalence",
+ "covalence-data",
+ "covalence-kernel",
+ "covalence-store",
+ "egg",
+ "indexmap",
+ "smallvec",
+ "typed-generational-arena",
+]
+
+[[package]]
+name = "covalence-data"
+version = "0.1.0"
+
+[[package]]
+name = "covalence-kernel"
+version = "0.1.0"
 
 [[package]]
 name = "covalence-lsp"
@@ -91,16 +114,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "covalence_kernel"
+name = "covalence-store"
 version = "0.1.0"
-dependencies = [
- "bitflags 2.9.4",
- "covalence",
- "egg",
- "indexmap",
- "smallvec",
- "typed-generational-arena",
-]
 
 [[package]]
 name = "crossbeam-channel"

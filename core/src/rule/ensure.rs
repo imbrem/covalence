@@ -693,7 +693,7 @@ where
     ///
     /// # Examples
     /// ```rust
-    /// # use covalence_kernel::*;
+    /// # use covalence::kernel::*;
     /// # let mut ker = Kernel::new();
     /// # let ctx = ker.new_ctx();
     /// let dn = ker.derive_nats(ctx, ULvl::SET, &mut ()).unwrap();

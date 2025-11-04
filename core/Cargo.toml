@@ -1,9 +1,12 @@
 [package]
-name = "covalence_kernel"
+name = "covalence-core"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+covalence-data = { path = "./data" }
+covalence-store = { path = "./store" }
+covalence-kernel = { path = "./kernel" }
 bitflags = "2.9.4"
 egg = "0.10.0"
 indexmap = "2.11.4"

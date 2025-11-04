@@ -631,7 +631,7 @@ impl Bv {
     ///
     /// # Examples
     /// ```rust
-    /// # use covalence_kernel::data::term::Bv;
+    /// # use covalence::kernel::data::term::Bv;
     /// for x in 0..100 {
     ///     assert_eq!(Bv(x).succ(), Bv(x + 1));
     /// }
@@ -649,19 +649,19 @@ impl Bv {
     /// Panics if:
     /// - The bound variable is invalid
     ///     ```rust,should_panic
-    ///     # use covalence_kernel::data::term::Bv;
+    ///     # use covalence::kernel::data::term::Bv;
     ///     Bv::INVALID.pred();
     ///     ```
     ///     
     /// - The bound variable is zero
     ///     ```rust,should_panic
-    ///     # use covalence_kernel::data::term::Bv;
+    ///     # use covalence::kernel::data::term::Bv;
     ///     Bv(0).pred();
     ///     ```
     ///
     /// # Examples
     /// ```rust
-    /// # use covalence_kernel::data::term::Bv;
+    /// # use covalence::kernel::data::term::Bv;
     /// for x in 0..100 {
     ///     assert_eq!(Bv(x).succ().pred(), Bv(x));
     /// }
@@ -680,7 +680,7 @@ impl Bv {
     ///
     /// # Examples
     /// ```rust
-    /// # use covalence_kernel::data::term::Bv;
+    /// # use covalence::kernel::data::term::Bv;
     /// for x in 0..100 {
     ///    assert!(Bv(x).is_valid());
     /// }
@@ -816,7 +816,7 @@ impl Shift {
     ///
     /// # Examples
     /// ```rust
-    /// # use covalence_kernel::data::term::*;
+    /// # use covalence::kernel::data::term::*;
     /// # for level in (0..10).map(Bv) { for shift in (0..10).map(Bv) {
     /// let shift = Shift::new(level, shift);
     /// assert_eq!(shift.bvi(Bv(0)), Bv(0));

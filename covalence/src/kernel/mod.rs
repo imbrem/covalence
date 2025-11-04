@@ -1,5 +1,5 @@
-use covalence_kernel::strategy::Strategy;
-pub use covalence_kernel::*;
+use covalence_core::strategy::Strategy;
+pub use covalence_core::*;
 
 use data::term::*;
 

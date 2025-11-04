@@ -20,7 +20,7 @@ pub use crate::api::derive::{DeriveTrusted, WriteTrusted};
 pub use crate::api::generic::*;
 pub use crate::api::store::{
     ReadCtx, ReadCtxFacts, ReadCtxRel, ReadFacts, ReadQuantFacts, ReadTerm, ReadTermDb,
-    ReadTermFacts, ReadTermStore, WriteTerm,
+    ReadTermFacts, ReadTermStore, ReadUniv, WriteTerm, WriteUniv,
 };
 
 pub use crate::fact::{

@@ -46,6 +46,20 @@ impl<D: TermIndex> TermIndex for Kernel<D> {
     type TermId = D::TermId;
 }
 
+impl<D: WriteUniv> WriteUniv for Kernel<D> {
+    fn succ(&mut self, level: ULvl) -> ULvl {
+        self.0.succ(level)
+    }
+
+    fn umax(&mut self, lhs: ULvl, rhs: ULvl) -> ULvl {
+        self.0.umax(lhs, rhs)
+    }
+
+    fn imax(&mut self, lhs: ULvl, rhs: ULvl) -> ULvl {
+        self.0.imax(lhs, rhs)
+    }
+}
+
 impl<C, T, D: WriteTerm<C, T>> WriteTerm<C, T> for Kernel<D> {
     fn new_ctx(&mut self) -> C {
         self.0.new_ctx()
@@ -61,18 +75,6 @@ impl<C, T, D: WriteTerm<C, T>> WriteTerm<C, T> for Kernel<D> {
 
     fn import(&mut self, ctx: C, val: Val<C, T>) -> T {
         self.0.import(ctx, val)
-    }
-
-    fn succ(&mut self, level: ULvl) -> ULvl {
-        self.0.succ(level)
-    }
-
-    fn umax(&mut self, lhs: ULvl, rhs: ULvl) -> ULvl {
-        self.0.umax(lhs, rhs)
-    }
-
-    fn imax(&mut self, lhs: ULvl, rhs: ULvl) -> ULvl {
-        self.0.imax(lhs, rhs)
     }
 
     fn propagate_in(&mut self, ctx: C) -> usize {

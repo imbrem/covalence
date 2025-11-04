@@ -161,7 +161,9 @@ impl ReadTerm<CtxId, TermId> for TermDb {
         //TODO: reduce here, later...
         self.syn_eq(lhs, rhs)
     }
+}
 
+impl ReadUniv for TermDb {
     fn u_le(&self, lo: ULvl, hi: ULvl) -> bool {
         lo.level <= hi.level
     }
@@ -214,6 +216,12 @@ impl WriteTerm<CtxId, TermId> for TermDb {
         result
     }
 
+    fn propagate_in(&mut self, ctx: CtxId) -> usize {
+        self.x[ctx.0].propagate_in()
+    }
+}
+
+impl WriteUniv for TermDb {
     fn succ(&mut self, level: ULvl) -> ULvl {
         //TODO: universe store and variables
         ULvl {
@@ -237,10 +245,6 @@ impl WriteTerm<CtxId, TermId> for TermDb {
                 lhs.level.max(rhs.level)
             },
         }
-    }
-
-    fn propagate_in(&mut self, ctx: CtxId) -> usize {
-        self.x[ctx.0].propagate_in()
     }
 }
 

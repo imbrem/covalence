@@ -72,8 +72,10 @@ pub trait ReadTerm<C, T> {
 
     /// Check whether two values are equal up to unfolding
     fn unfold_eq(&self, lhs: Val<C, T>, rhs: Val<C, T>) -> bool;
+}
 
-    // == Universe levels ==
+/// A datastore that can read universe levels
+pub trait ReadUniv {
     /// Check whether one universe is less than or equal to another
     fn u_le(&self, lo: ULvl, hi: ULvl) -> bool;
 
@@ -356,14 +358,14 @@ pub trait ReadCtxRel<C> {
     fn parents_are_subctx(&self, lo: C, hi: C) -> bool;
 }
 
-/// A trait implemented by a datastore that can create hash-consed terms and universe levels
+/// A trait implemented by a datastore that can create hash-consed terms
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
 /// # use covalence_kernel::*;
 /// let ker : &dyn WriteTerm<CtxId, TermId> = &Kernel::new();
 /// ```
-pub trait WriteTerm<C, T> {
+pub trait WriteTerm<C, T>: WriteUniv {
     // == Term management ==
 
     /// Create a new context in this store
@@ -403,8 +405,14 @@ pub trait WriteTerm<C, T> {
     /// - otherwise, return an `Import` node
     fn import(&mut self, ctx: C, val: Val<C, T>) -> T;
 
-    // == Universe management ==
+    // == Congruence management ==
 
+    /// Propagate congruence information _within_ a context
+    fn propagate_in(&mut self, ctx: C) -> usize;
+}
+
+///  A trait implemented by a datastore that can create hash-consed universe levels
+pub trait WriteUniv {
     /// Get the successor of a given universe level
     fn succ(&mut self, level: ULvl) -> ULvl;
 
@@ -413,11 +421,6 @@ pub trait WriteTerm<C, T> {
 
     /// Get the impredicatibe maximum of two universe levels
     fn imax(&mut self, lhs: ULvl, rhs: ULvl) -> ULvl;
-
-    // == Congruence management ==
-
-    /// Propagate congruence information _within_ a context
-    fn propagate_in(&mut self, ctx: C) -> usize;
 }
 
 /// A datastore that can read facts about terms-in-context.
@@ -630,15 +633,15 @@ impl<D: ReadCtxFacts<C> + ReadQuantFacts<C, T>, C, T> ReadFacts<C, T> for D {}
 /// let ker : &dyn ReadTermStore<CtxId, TermId> = &Kernel::new();
 /// ```
 pub trait ReadTermStore<C, T>:
-    ReadCtx<C, T> + ReadCtxRel<C> + ReadTerm<C, T> + ReadFacts<C, T>
+    ReadCtx<C, T> + ReadCtxRel<C> + ReadTerm<C, T> + ReadFacts<C, T> + ReadUniv
 {
 }
 
-impl<D: ReadCtx<C, T> + ReadCtxRel<C> + ReadTerm<C, T> + ReadFacts<C, T>, C, T> ReadTermStore<C, T>
-    for D
+impl<C, T, D> ReadTermStore<C, T> for D
 where
     C: Copy,
     T: Copy,
+    D: ReadCtx<C, T> + ReadCtxRel<C> + ReadTerm<C, T> + ReadFacts<C, T> + ReadUniv,
 {
 }
 

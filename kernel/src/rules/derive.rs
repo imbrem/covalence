@@ -13,7 +13,7 @@ impl<C, T, D> WriteTrusted<C, T> for Kernel<D>
 where
     C: Copy + PartialEq,
     T: Copy + PartialEq,
-    D: ReadTermDb<C, T> + WriteTerm<C, T> + WriteFacts<C, T>,
+    D: ReadTermDb<C, T> + WriteTermIndex<CtxId = C, TermId = T> + WriteFacts<C, T>,
 {
     fn add_ix(&mut self, ctx: C, tm: NodeT<C, T>) -> Val<C, T> {
         let flags = tm.infer_flags(ctx, self.read());
@@ -27,7 +27,7 @@ impl<C, T, D, S> DeriveTrusted<C, T, S> for Kernel<D>
 where
     C: Copy + PartialEq,
     T: Copy + PartialEq,
-    D: ReadTermDb<C, T> + WriteTerm<C, T> + WriteFacts<C, T>,
+    D: ReadTermDb<C, T> + WriteTermIndex<CtxId = C, TermId = T> + WriteFacts<C, T>,
     S: Strategy<C, T, Self>,
 {
     fn add_var(&mut self, ctx: C, ty: Val<C, T>, strategy: &mut S) -> Result<Fv<C>, S::Fail> {

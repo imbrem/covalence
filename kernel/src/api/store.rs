@@ -7,105 +7,158 @@ use crate::{
 pub use crate::api::univ::{ReadUniv, WriteUniv};
 
 /// A term database with a given index kind
-pub trait TermIndex {
+pub trait IndexTypes {
     /// The context identifier type
     type CtxId: Copy;
     /// The term identifier type
     type TermId: Copy;
 }
 
-pub type CtxId<D = crate::Kernel> = <D as TermIndex>::CtxId;
+pub type KCtxId<D> = <D as IndexTypes>::CtxId;
 
-pub type TermId<D = crate::Kernel> = <D as TermIndex>::TermId;
+pub type KTermId<D> = <D as IndexTypes>::TermId;
 
-pub type ValId<D = crate::Kernel> = Val<CtxId<D>, TermId<D>>;
+pub type KValId<D> = Val<KCtxId<D>, KTermId<D>>;
 
-pub type Node<D = crate::Kernel> = NodeT<CtxId<D>, TermId<D>>;
+pub type KNodeIx<D> = NodeT<KCtxId<D>, KTermId<D>>;
 
-pub type FvId<D = crate::Kernel> = Fv<CtxId<D>>;
+pub type KFvId<D> = Fv<KCtxId<D>>;
 
 /// A datastore that can read terms and universe levels
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
 /// # use covalence_kernel::*;
-/// let ker : &dyn ReadTerm<CtxId = CtxId, TermId = TermId> = &TermDb::new();
+/// let ker : &dyn ReadTermIndex<CtxId = CtxId, TermId = TermId> = &TermDb::new();
 /// ```
 /// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
 /// functions for different kernel wrappers:
 /// ```rust,compile_fail
 /// # use covalence_kernel::*;
-/// let ker : &dyn ReadTerm<CtxId = CtxId, TermId = TermId> = &Kernel::new();
+/// let ker : &dyn ReadTermIndex<CtxId = CtxId, TermId = TermId> = &Kernel::new();
 /// ```
-pub trait ReadTerm: TermIndex {
+pub trait ReadTermIndex: IndexTypes + ReadUniv {
     // == Terms ==
 
     /// Get the value corresponding to a term
-    fn val(&self, ctx: CtxId<Self>, tm: TermId<Self>) -> ValId<Self>;
+    fn val(&self, ctx: KCtxId<Self>, tm: KTermId<Self>) -> KValId<Self>;
 
     /// Get the node corresponding to a term
-    fn node(&self, ctx: CtxId<Self>, tm: TermId<Self>) -> &Node<Self>;
+    fn node(&self, ctx: KCtxId<Self>, tm: KTermId<Self>) -> &KNodeIx<Self>;
 
     /// Lookup a term in the store
-    fn lookup(&self, ctx: CtxId<Self>, tm: Node<Self>) -> Option<TermId<Self>>;
+    fn lookup(&self, ctx: KCtxId<Self>, tm: KNodeIx<Self>) -> Option<KTermId<Self>>;
 
     /// Lookup an import of a term into another context, returning a handle to it if it exists
-    fn lookup_import(&self, ctx: CtxId<Self>, val: ValId<Self>) -> Option<TermId<Self>>;
+    fn lookup_import(&self, ctx: KCtxId<Self>, val: KValId<Self>) -> Option<KTermId<Self>>;
 
     // == Syntactic information ==
 
     /// Get an upper bound on the de-Bruijn indices visible in `tm`
     ///
     /// TODO: reference lean
-    fn bvi(&self, ctx: CtxId<Self>, tm: TermId<Self>) -> Bv;
+    fn bvi(&self, ctx: KCtxId<Self>, tm: KTermId<Self>) -> Bv;
 
     /// Check whether the term `tm` depends on the variable `var` in context `ctx`
-    fn has_var(&self, ctx: CtxId<Self>, tm: TermId<Self>, var: FvId<Self>) -> bool;
+    fn has_var(&self, ctx: KCtxId<Self>, tm: KTermId<Self>, var: KFvId<Self>) -> bool;
 
     /// Check whether the term `tm` depends on any variable from the context `vars`
-    fn has_var_from(&self, ctx: CtxId<Self>, tm: TermId<Self>, vars: CtxId<Self>) -> bool;
+    fn has_var_from(&self, ctx: KCtxId<Self>, tm: KTermId<Self>, vars: KCtxId<Self>) -> bool;
 
     /// Check whether the term `tm` may depend on the variable `var` in context `ctx`
-    fn may_have_var(&self, ctx: CtxId<Self>, tm: TermId<Self>, var: FvId<Self>) -> bool;
+    fn may_have_var(&self, ctx: KCtxId<Self>, tm: KTermId<Self>, var: KFvId<Self>) -> bool;
 
     /// Check whether the term `tm` may depend on any variable from the context `vars`
-    fn may_have_var_from(&self, ctx: CtxId<Self>, tm: TermId<Self>, vars: CtxId<Self>) -> bool;
+    fn may_have_var_from(&self, ctx: KCtxId<Self>, tm: KTermId<Self>, vars: KCtxId<Self>) -> bool;
 
     // == Syntactic relations ==
 
     /// Check whether two values resolve to the same value, after following imports
-    fn deref_eq(&self, lhs: ValId<Self>, rhs: ValId<Self>) -> bool;
+    fn deref_eq(&self, lhs: KValId<Self>, rhs: KValId<Self>) -> bool;
 
     /// Check whether two values are equal up to first imports
-    fn cons_eq(&self, lhs: ValId<Self>, rhs: ValId<Self>) -> bool;
+    fn cons_eq(&self, lhs: KValId<Self>, rhs: KValId<Self>) -> bool;
 
     /// Check whether two values are syntactically equal
-    fn syn_eq(&self, lhs: ValId<Self>, rhs: ValId<Self>) -> bool;
+    fn syn_eq(&self, lhs: KValId<Self>, rhs: KValId<Self>) -> bool;
 
     /// Check whether two values are equal up to unfolding
-    fn unfold_eq(&self, lhs: ValId<Self>, rhs: ValId<Self>) -> bool;
+    fn unfold_eq(&self, lhs: KValId<Self>, rhs: KValId<Self>) -> bool;
+}
+
+/// A trait implemented by a datastore that can create hash-consed terms
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence_kernel::*;
+/// let ker : &dyn WriteTermIndex<CtxId = CtxId, TermId = TermId> = &Kernel::new();
+/// ```
+pub trait WriteTermIndex: IndexTypes + WriteUniv {
+    // == Term management ==
+
+    /// Create a new context in this store
+    ///
+    /// # Example
+    /// ```rust
+    /// # use covalence_kernel::*;
+    /// # use covalence_kernel::api::error::kernel_error;
+    /// # let mut ker = Kernel::new();
+    /// let ctx = ker.new_ctx();
+    /// assert_eq!(ker.num_vars(ctx), 0);
+    /// ```
+    fn new_ctx(&mut self) -> KCtxId<Self>;
+
+    /// Create a new context in this store with the given parent
+    ///
+    /// # Example
+    /// ```rust
+    /// # use covalence::kernel::*;
+    /// # let mut ker = Kernel::new();
+    /// let parent = ker.new_ctx();
+    /// let child = ker.with_parent(parent);
+    /// // This is true since both contexts are currently empty
+    /// assert!(ker.is_subctx(parent, child));
+    /// assert!(ker.is_subctx(child, parent));
+    /// ```
+    fn with_parent(&mut self, parent: KCtxId<Self>) -> KCtxId<Self>;
+
+    /// Directly insert a term into the store, returning a handle to it
+    fn add_raw(&mut self, ctx: KCtxId<Self>, tm: KNodeIx<Self>) -> KTermId<Self>;
+
+    /// Import a term into another context, returning a handle to it
+    ///
+    /// This automatically traverses import chains, and in particular:
+    /// - If `src[tm] := import(src2, tm)`, then `import(ctx, src, tm) => import(ctx, src2, tm)`
+    /// - `import(ctx, ctx, tm)` returns `tm`
+    /// - otherwise, return an `Import` node
+    fn import(&mut self, ctx: KCtxId<Self>, val: KValId<Self>) -> KTermId<Self>;
+
+    // == Congruence management ==
+
+    /// Propagate congruence information _within_ a context
+    fn propagate_in(&mut self, ctx: KCtxId<Self>) -> usize;
 }
 
 impl<C: Copy, T> Val<C, T> {
     /// Get the base value pointed to by this value
-    pub fn val(self, store: &impl ReadTerm<CtxId = C, TermId = T>) -> Val<C, T> {
+    pub fn val(self, store: &impl ReadTermIndex<CtxId = C, TermId = T>) -> Val<C, T> {
         store.val(self.ctx, self.tm)
     }
 }
 
 impl<C: Copy, T: Copy> Val<C, T> {
     /// Get the node in `self.ctx` corresponding to this value
-    pub fn node_ix(self, store: &impl ReadTerm<CtxId = C, TermId = T>) -> NodeT<C, T> {
+    pub fn node_ix(self, store: &impl ReadTermIndex<CtxId = C, TermId = T>) -> NodeT<C, T> {
         *store.node(self.ctx, self.tm)
     }
 
     /// Get the node corresponding to this value
-    pub fn node_val(self, store: &impl ReadTerm<CtxId = C, TermId = T>) -> NodeVT<C, T> {
+    pub fn node_val(self, store: &impl ReadTermIndex<CtxId = C, TermId = T>) -> NodeVT<C, T> {
         self.node_ix(store).node_val_in(self.ctx, store)
     }
 
     /// Get the node corresponding to this value
-    pub fn raw_node_val(self, store: &impl ReadTerm<CtxId = C, TermId = T>) -> NodeVT<C, T> {
+    pub fn raw_node_val(self, store: &impl ReadTermIndex<CtxId = C, TermId = T>) -> NodeVT<C, T> {
         self.node_ix(store).raw_node_val_in(self.ctx)
     }
 }
@@ -131,7 +184,11 @@ impl<C: Copy, T> NodeT<C, T> {
     }
 
     /// Interpret this node in the given context
-    pub fn node_val_in(self, ctx: C, store: &impl ReadTerm<CtxId = C, TermId = T>) -> NodeVT<C, T> {
+    pub fn node_val_in(
+        self,
+        ctx: C,
+        store: &impl ReadTermIndex<CtxId = C, TermId = T>,
+    ) -> NodeVT<C, T> {
         self.map_subterms(|tm| store.val(ctx, tm))
     }
 
@@ -143,7 +200,7 @@ impl<C: Copy, T> NodeT<C, T> {
 
 impl<C: Copy> Fv<C> {
     /// Get this variable as a value
-    pub fn val<T>(self, store: &(impl ReadTerm<CtxId = C, TermId = T> + ?Sized)) -> Val<C, T> {
+    pub fn val<T>(self, store: &(impl ReadTermIndex<CtxId = C, TermId = T> + ?Sized)) -> Val<C, T> {
         Val {
             ctx: self.ctx,
             tm: store
@@ -358,59 +415,6 @@ pub trait ReadCtxRel<C> {
     fn parents_are_subctx(&self, lo: C, hi: C) -> bool;
 }
 
-/// A trait implemented by a datastore that can create hash-consed terms
-///
-/// This trait is `dyn`-safe:
-/// ```rust
-/// # use covalence_kernel::*;
-/// let ker : &dyn WriteTerm<CtxId, TermId> = &Kernel::new();
-/// ```
-pub trait WriteTerm<C, T>: WriteUniv {
-    // == Term management ==
-
-    /// Create a new context in this store
-    ///
-    /// # Example
-    /// ```rust
-    /// # use covalence_kernel::*;
-    /// # use covalence_kernel::api::error::kernel_error;
-    /// # let mut ker = Kernel::new();
-    /// let ctx = ker.new_ctx();
-    /// assert_eq!(ker.num_vars(ctx), 0);
-    /// ```
-    fn new_ctx(&mut self) -> C;
-
-    /// Create a new context in this store with the given parent
-    ///
-    /// # Example
-    /// ```rust
-    /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::new();
-    /// let parent = ker.new_ctx();
-    /// let child = ker.with_parent(parent);
-    /// // This is true since both contexts are currently empty
-    /// assert!(ker.is_subctx(parent, child));
-    /// assert!(ker.is_subctx(child, parent));
-    /// ```
-    fn with_parent(&mut self, parent: C) -> C;
-
-    /// Directly insert a term into the store, returning a handle to it
-    fn add_raw(&mut self, ctx: C, tm: NodeT<C, T>) -> T;
-
-    /// Import a term into another context, returning a handle to it
-    ///
-    /// This automatically traverses import chains, and in particular:
-    /// - If `src[tm] := import(src2, tm)`, then `import(ctx, src, tm) => import(ctx, src2, tm)`
-    /// - `import(ctx, ctx, tm)` returns `tm`
-    /// - otherwise, return an `Import` node
-    fn import(&mut self, ctx: C, val: Val<C, T>) -> T;
-
-    // == Congruence management ==
-
-    /// Propagate congruence information _within_ a context
-    fn propagate_in(&mut self, ctx: C) -> usize;
-}
-
 /// A datastore that can read facts about terms-in-context.
 ///
 /// This trait is `dyn`-safe:
@@ -621,7 +625,7 @@ impl<D: ReadCtxFacts<C> + ReadQuantFacts<C, T>, C, T> ReadFacts<C, T> for D {}
 /// let ker : &dyn ReadTermStore<CtxId, TermId> = &Kernel::new();
 /// ```
 pub trait ReadTermStore<C, T>:
-    ReadCtx<C, T> + ReadCtxRel<C> + ReadTerm<CtxId = C, TermId = T> + ReadFacts<C, T> + ReadUniv
+    ReadCtx<C, T> + ReadCtxRel<C> + ReadTermIndex<CtxId = C, TermId = T> + ReadFacts<C, T>
 {
 }
 
@@ -629,7 +633,7 @@ impl<C, T, D> ReadTermStore<C, T> for D
 where
     C: Copy,
     T: Copy,
-    D: ReadCtx<C, T> + ReadCtxRel<C> + ReadTerm<CtxId = C, TermId = T> + ReadFacts<C, T> + ReadUniv,
+    D: ReadCtx<C, T> + ReadCtxRel<C> + ReadTermIndex<CtxId = C, TermId = T> + ReadFacts<C, T>,
 {
 }
 
@@ -642,9 +646,12 @@ pub trait ReadTermDb<C, T> {
 }
 
 /// A term database which we can read from and write to
-pub trait RwTermDb<C, T>: ReadTermDb<C, T> + WriteTerm<C, T> {}
+pub trait RwTermDb<C, T>: ReadTermDb<C, T> + WriteTermIndex<CtxId = C, TermId = T> {}
 
-impl<C, T, D: ReadTermDb<C, T> + WriteTerm<C, T> + ?Sized> RwTermDb<C, T> for D {}
+impl<C, T, D: ReadTermDb<C, T> + WriteTermIndex<CtxId = C, TermId = T> + ?Sized> RwTermDb<C, T>
+    for D
+{
+}
 
 /// A trait implemented by a mutable datastore that can hold _unchecked_ facts about terms in a
 /// context.
@@ -752,7 +759,7 @@ pub trait WriteFacts<C, T> {
     fn set_bvi_unchecked(&mut self, ctx: C, tm: T, bvi: Bv);
 }
 
-impl<C: Copy, T: Copy, D: ReadTerm<CtxId = C, TermId = T> + ReadTermFacts<C, T> + ?Sized>
+impl<C: Copy, T: Copy, D: ReadTermIndex<CtxId = C, TermId = T> + ReadTermFacts<C, T> + ?Sized>
     ReadTermFacts<C, Val<C, T>> for D
 {
     fn tm_flags(&self, ctx: C, tm: Val<C, T>) -> Pred1 {
@@ -787,7 +794,7 @@ impl<C: Copy, T: Copy, D: ReadTerm<CtxId = C, TermId = T> + ReadTermFacts<C, T> 
     }
 }
 
-impl<C: Copy, T: Copy, D: ReadTerm<CtxId = C, TermId = T> + ReadQuantFacts<C, T> + ?Sized>
+impl<C: Copy, T: Copy, D: ReadTermIndex<CtxId = C, TermId = T> + ReadQuantFacts<C, T> + ?Sized>
     ReadQuantFacts<C, Val<C, T>> for D
 {
     fn forall_eq_in(&self, ctx: C, binder: Val<C, T>, lhs: Val<C, T>, rhs: Val<C, T>) -> bool {

@@ -7,7 +7,7 @@ use crate::{Pred1, fact::Pred0, store::*};
 #[derive(Debug, Clone)]
 #[repr(transparent)]
 pub struct Ctx {
-    e: EGraph<Node, CtxData>,
+    e: EGraph<NodeIx, CtxData>,
 }
 
 impl Ctx {
@@ -35,14 +35,14 @@ impl Ctx {
         self.e.analysis.this = Some(this);
     }
 
-    pub fn add(&mut self, node: Node) -> TermId {
+    pub fn add(&mut self, node: NodeIx) -> TermId {
         // NOTE: an uncanonical insertion is necessary to roundtrip with lookup
         let result = TermId(self.e.add_uncanonical(node));
         self.e.analysis.node_to_id.insert(node, result);
         result
     }
 
-    pub fn node(&self, id: TermId) -> &Node {
+    pub fn node(&self, id: TermId) -> &NodeIx {
         let result = self.e.id_to_node(id.0);
         debug_assert_eq!(
             self.e.analysis.node_to_id.get(result),
@@ -52,7 +52,7 @@ impl Ctx {
         result
     }
 
-    pub fn lookup(&self, node: Node) -> Option<TermId> {
+    pub fn lookup(&self, node: NodeIx) -> Option<TermId> {
         let result = self.e.analysis.node_to_id.get(&node).copied();
         debug_assert_eq!(
             result.map(|id| self.node(id)),
@@ -93,7 +93,7 @@ impl Ctx {
     }
 
     pub fn has_ty(&self, tm: TermId, ty: TermId) -> bool {
-        let Some(has_ty) = self.lookup(Node::HasTy([tm, ty])) else {
+        let Some(has_ty) = self.lookup(NodeIx::HasTy([tm, ty])) else {
             return false;
         };
         self.is_wf(has_ty)
@@ -155,7 +155,7 @@ impl Ctx {
         if self.is_univ(ty) {
             self.set_is_ty_unchecked(tm);
             if !self.is_prop(tm)
-                && let Some(u0) = self.lookup(Node::U(ULvl::PROP))
+                && let Some(u0) = self.lookup(NodeIx::U(ULvl::PROP))
                 && self.eq_in(ty, u0)
             {
                 self.set_is_prop_unchecked(tm);
@@ -218,7 +218,7 @@ impl Ctx {
         self.set_is_inhab_unchecked(sigma)
     }
 
-    pub fn add_var_unchecked(&mut self, ctx: CtxId, ty: ValId) -> VarId {
+    pub fn add_var_unchecked(&mut self, ctx: CtxId, ty: ValId) -> FvId {
         // NOTE: this overflow should be impossible due to limitations of the E-graph, but better
         // safe than sorry...
         let ix: u32 = self
@@ -229,10 +229,10 @@ impl Ctx {
             .try_into()
             .expect("variable index overflow");
         self.e.analysis.vars.push(ty);
-        VarId { ctx, ix }
+        Fv { ctx, ix }
     }
 
-    fn from_ref(this: &EGraph<Node, CtxData>) -> &Self {
+    fn from_ref(this: &EGraph<NodeIx, CtxData>) -> &Self {
         // SAFETY: due to `#[repr(transparent)]`
         unsafe { std::mem::transmute(this) }
     }
@@ -271,13 +271,13 @@ struct CtxData {
     /// TODO: remove hack, but required for now for correctness of `lookup`
     ///
     /// Donald Knuth smiles on me this day, for avoiding temptation.
-    node_to_id: BTreeMap<Node, TermId>,
+    node_to_id: BTreeMap<NodeIx, TermId>,
 }
 
-impl Analysis<Node> for CtxData {
+impl Analysis<NodeIx> for CtxData {
     type Data = ClassData;
 
-    fn make(egraph: &mut EGraph<Node, Self>, enode: &Node) -> Self::Data {
+    fn make(egraph: &mut EGraph<NodeIx, Self>, enode: &NodeIx) -> Self::Data {
         let this = Ctx::from_ref(egraph);
         let bvi = enode.bvi_with(|x| this.bvi(*x));
         ClassData {
@@ -320,9 +320,9 @@ impl Ctx {}
 #[repr(transparent)]
 pub struct TermId(egg::Id);
 
-pub type Node = NodeT<CtxId, TermId>;
+pub type NodeIx = NodeT<CtxId, TermId>;
 
-impl Language for Node {
+impl Language for NodeIx {
     type Discriminant = DiscT<CtxId, TermId>;
 
     fn discriminant(&self) -> Self::Discriminant {

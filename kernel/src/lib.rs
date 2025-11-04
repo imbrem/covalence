@@ -19,8 +19,8 @@ pub mod store;
 pub use crate::api::derive::{DeriveTrusted, WriteTrusted};
 pub use crate::api::generic::*;
 pub use crate::api::store::{
-    ReadCtx, ReadCtxFacts, ReadCtxRel, ReadFacts, ReadQuantFacts, ReadTerm, ReadTermDb,
-    ReadTermFacts, ReadTermStore, ReadUniv, WriteTerm, WriteUniv,
+    ReadCtx, ReadCtxFacts, ReadCtxRel, ReadFacts, ReadQuantFacts, ReadTermDb, ReadTermFacts,
+    ReadTermIndex, ReadTermStore, ReadUniv, WriteTermIndex, WriteUniv,
 };
 
 pub use crate::fact::{
@@ -28,7 +28,7 @@ pub use crate::fact::{
 };
 
 #[doc(inline)]
-pub use crate::store::{CtxId, Node, TermDb, TermId, ValId};
+pub use crate::store::{CtxId, FvId, NodeIx, TermDb, TermId, ValId};
 
 #[doc(inline)]
 pub use crate::data::term::{Bv, Fv, ULvl};

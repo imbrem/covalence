@@ -4,7 +4,7 @@ pub use covalence_kernel::*;
 use data::term::*;
 
 /// Writing for the `covalence` kernel
-pub trait Write<C, T>: WriteTrusted<C, T> + WriteTerm<C, T>
+pub trait Write<C, T>: WriteTrusted<C, T> + WriteTermIndex<CtxId = C, TermId = T>
 where
     C: Copy,
     T: Copy,
@@ -111,7 +111,10 @@ where
 
 /// Derivations supported by the `covalence` kernel
 pub trait Derive<C, T, S>:
-    WriteTrusted<C, T> + DeriveTrusted<C, T, S> + ReadTermDb<C, T> + WriteTerm<C, T>
+    WriteTrusted<C, T>
+    + DeriveTrusted<C, T, S>
+    + ReadTermDb<C, T>
+    + WriteTermIndex<CtxId = C, TermId = T>
 where
     C: Copy + PartialEq,
     T: Copy + PartialEq,
@@ -136,7 +139,7 @@ impl<C, T, K> Write<C, T> for K
 where
     C: Copy,
     T: Copy,
-    K: WriteTrusted<C, T> + WriteTerm<C, T>,
+    K: WriteTrusted<C, T> + WriteTermIndex<CtxId = C, TermId = T>,
 {
 }
 
@@ -144,7 +147,10 @@ impl<C, T, S, K> Derive<C, T, S> for K
 where
     C: Copy + PartialEq,
     T: Copy + PartialEq,
-    K: WriteTrusted<C, T> + DeriveTrusted<C, T, S> + ReadTermDb<C, T> + WriteTerm<C, T>,
+    K: WriteTrusted<C, T>
+        + DeriveTrusted<C, T, S>
+        + ReadTermDb<C, T>
+        + WriteTermIndex<CtxId = C, TermId = T>,
     S: Strategy<C, T, K>,
 {
 }

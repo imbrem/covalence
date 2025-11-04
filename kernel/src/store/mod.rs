@@ -9,14 +9,14 @@ use crate::fact::Pred0;
 mod ctx;
 use ctx::*;
 
-pub use ctx::{Node, TermId};
+pub use ctx::{NodeIx, TermId};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CtxId(SmallIndex<Ctx>);
 
-pub type VarId = Fv<CtxId>;
+pub type ValId = KValId<TermDb>;
 
-pub type ValId = Val<CtxId, TermId>;
+pub type FvId = KFvId<TermDb>;
 
 /// A term store implemented using `egg`
 #[derive(Debug, Clone, Default)]
@@ -35,24 +35,24 @@ impl TermDb {
     }
 }
 
-impl TermIndex for TermDb {
+impl IndexTypes for TermDb {
     type CtxId = CtxId;
     type TermId = TermId;
 }
 
-impl ReadTerm for TermDb {
+impl ReadTermIndex for TermDb {
     fn val(&self, ctx: CtxId, tm: TermId) -> ValId {
         match self.node(ctx, tm) {
-            Node::Import(val) => self.val(val.ctx, val.tm),
+            NodeIx::Import(val) => self.val(val.ctx, val.tm),
             _ => Val { ctx, tm },
         }
     }
 
-    fn node(&self, ctx: CtxId, tm: TermId) -> &Node {
+    fn node(&self, ctx: CtxId, tm: TermId) -> &NodeIx {
         self.x[ctx.0].node(tm)
     }
 
-    fn lookup(&self, ctx: CtxId, tm: Node) -> Option<TermId> {
+    fn lookup(&self, ctx: CtxId, tm: NodeIx) -> Option<TermId> {
         self.x[ctx.0].lookup(tm)
     }
 
@@ -65,7 +65,7 @@ impl ReadTerm for TermDb {
         // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
         // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
         // inserting the import and hence fixing the `TermId`.
-        if let Node::Import(imp) = val.node_ix(self) {
+        if let NodeIx::Import(imp) = val.node_ix(self) {
             self.lookup_import(ctx, imp)
         } else if ctx == val.ctx {
             Some(val.tm)
@@ -82,8 +82,8 @@ impl ReadTerm for TermDb {
     fn has_var(&self, ctx: CtxId, tm: TermId, var: Fv<CtxId>) -> bool {
         //TODO: optimize, a _lot_
         match self.node(ctx, tm) {
-            Node::Fv(v) => *v == var,
-            Node::Import(imp) => self.may_have_var(imp.ctx, imp.tm, var),
+            NodeIx::Fv(v) => *v == var,
+            NodeIx::Import(imp) => self.may_have_var(imp.ctx, imp.tm, var),
             n => n.children().iter().any(|&i| self.may_have_var(ctx, i, var)),
         }
     }
@@ -91,8 +91,8 @@ impl ReadTerm for TermDb {
     fn has_var_from(&self, ctx: CtxId, tm: TermId, vars: CtxId) -> bool {
         //TODO: optimize, a _lot_
         match self.node(ctx, tm) {
-            Node::Fv(v) => v.ctx == vars,
-            Node::Import(imp) => self.may_have_var_from(imp.ctx, imp.tm, vars),
+            NodeIx::Fv(v) => v.ctx == vars,
+            NodeIx::Import(imp) => self.may_have_var_from(imp.ctx, imp.tm, vars),
             n => n
                 .children()
                 .iter()
@@ -100,11 +100,11 @@ impl ReadTerm for TermDb {
         }
     }
 
-    fn may_have_var(&self, ctx: CtxId, tm: TermId, var: VarId) -> bool {
+    fn may_have_var(&self, ctx: CtxId, tm: TermId, var: FvId) -> bool {
         //TODO: optimize, a _lot_
         match self.node(ctx, tm) {
-            Node::Fv(v) => *v == var,
-            Node::Import(imp) => self.may_have_var(imp.ctx, imp.tm, var),
+            NodeIx::Fv(v) => *v == var,
+            NodeIx::Import(imp) => self.may_have_var(imp.ctx, imp.tm, var),
             n => n.children().iter().any(|&i| self.may_have_var(ctx, i, var)),
         }
     }
@@ -112,8 +112,8 @@ impl ReadTerm for TermDb {
     fn may_have_var_from(&self, ctx: CtxId, tm: TermId, vars: CtxId) -> bool {
         //TODO: optimize, a _lot_
         match self.node(ctx, tm) {
-            Node::Fv(v) => v.ctx == vars,
-            Node::Import(imp) => self.may_have_var_from(imp.ctx, imp.tm, vars),
+            NodeIx::Fv(v) => v.ctx == vars,
+            NodeIx::Import(imp) => self.may_have_var_from(imp.ctx, imp.tm, vars),
             n => n
                 .children()
                 .iter()
@@ -177,7 +177,7 @@ impl ReadUniv for TermDb {
     }
 }
 
-impl WriteTerm<CtxId, TermId> for TermDb {
+impl WriteTermIndex for TermDb {
     fn new_ctx(&mut self) -> CtxId {
         let result = CtxId(self.x.insert(Ctx::new_ctx()));
         self.set_this(result);
@@ -191,7 +191,7 @@ impl WriteTerm<CtxId, TermId> for TermDb {
         result
     }
 
-    fn add_raw(&mut self, ctx: CtxId, tm: Node) -> TermId {
+    fn add_raw(&mut self, ctx: CtxId, tm: NodeIx) -> TermId {
         self.x[ctx.0].add(tm)
     }
 
@@ -204,7 +204,7 @@ impl WriteTerm<CtxId, TermId> for TermDb {
         // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
         // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
         // inserting the import and hence fixing the `TermId`.
-        let result = if let Node::Import(imp) = val.node_ix(self) {
+        let result = if let NodeIx::Import(imp) = val.node_ix(self) {
             self.import(ctx, imp)
         } else if ctx == val.ctx {
             return val.tm;
@@ -253,7 +253,7 @@ impl ReadCtx<CtxId, TermId> for TermDb {
         self.x[ctx.0].num_vars()
     }
 
-    fn var_ty(&self, var: VarId) -> ValId {
+    fn var_ty(&self, var: FvId) -> ValId {
         self.x[var.ctx.0]
             .var_ty(var.ix)
             .expect("invalid variable index")
@@ -496,7 +496,7 @@ impl WriteFacts<CtxId, TermId> for TermDb {
         self.x[ctx.0].set_exists_is_inhab_unchecked(binder, ty);
     }
 
-    fn add_var_unchecked(&mut self, ctx: CtxId, ty: ValId) -> VarId {
+    fn add_var_unchecked(&mut self, ctx: CtxId, ty: ValId) -> FvId {
         self.x[ctx.0].add_var_unchecked(ctx, ty)
     }
 

@@ -5,7 +5,9 @@ use crate::data::term::NodeVT;
 use crate::data::term::{Fv, ULvl, Val};
 use crate::fact::*;
 
-pub trait Ensure<C: Copy, T: Copy + PartialEq>: ReadTermDb<C, T> + WriteTerm<C, T> {
+pub trait Ensure<C: Copy, T: Copy + PartialEq>:
+    ReadTermDb<C, T> + WriteTermIndex<CtxId = C, TermId = T>
+{
     /// Attempt to prove a goal
     fn ensure_goal<S>(
         &mut self,
@@ -276,7 +278,7 @@ impl<C, T, K> Ensure<C, T> for K
 where
     C: Copy,
     T: Copy + PartialEq,
-    K: ReadTermDb<C, T> + WriteTerm<C, T> + ?Sized,
+    K: ReadTermDb<C, T> + WriteTermIndex<CtxId = C, TermId = T> + ?Sized,
 {
 }
 
@@ -371,15 +373,6 @@ where
     /// or, in Lean,
     /// ```lean
     /// theorem Ctx.KHasTy.fv {Γ x A} (hΓ : Ok Γ) (hA : Lookup Γ x A) : KHasTy Γ A.erase (.fv x)
-    /// ```
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence_kernel::*;
-    /// # use covalence_kernel::api::error::kernel_error;
-    /// # let mut ker = Kernel::new();
-    /// # let ctx = ker.new_ctx();
-    /// # let unit = Node::Unit;
     /// ```
     fn derive_fv(
         &mut self,
@@ -704,8 +697,8 @@ where
     /// # let mut ker = Kernel::new();
     /// # let ctx = ker.new_ctx();
     /// let dn = ker.derive_nats(ctx, ULvl::SET, &mut ()).unwrap();
-    /// assert_eq!(dn.tm.node_ix(&*ker), Node::Nats);
-    /// assert_eq!(dn.ty.node_ix(&*ker), Node::U(ULvl::SET));
+    /// assert_eq!(dn.tm.node_ix(&*ker), NodeIx::Nats);
+    /// assert_eq!(dn.ty.node_ix(&*ker), NodeIx::U(ULvl::SET));
     /// // assert!(ker.has_ty(ctx, dn.tm, dn.ty));
     /// ```
     fn derive_nats(

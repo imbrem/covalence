@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use crate::api::store::*;
-use crate::data::term::{NodeT, ULvl, Val};
+use crate::data::term::ULvl;
 
 /// Derivation rules for the `covalence` kernel
 mod derive;
@@ -41,7 +41,7 @@ impl<C, T, D: ReadTermDb<C, T>> ReadTermDb<C, T> for Kernel<D> {
     }
 }
 
-impl<D: TermIndex> TermIndex for Kernel<D> {
+impl<D: IndexTypes> IndexTypes for Kernel<D> {
     type CtxId = D::CtxId;
     type TermId = D::TermId;
 }
@@ -60,24 +60,24 @@ impl<D: WriteUniv> WriteUniv for Kernel<D> {
     }
 }
 
-impl<C, T, D: WriteTerm<C, T>> WriteTerm<C, T> for Kernel<D> {
-    fn new_ctx(&mut self) -> C {
+impl<D: WriteTermIndex> WriteTermIndex for Kernel<D> {
+    fn new_ctx(&mut self) -> KCtxId<D> {
         self.0.new_ctx()
     }
 
-    fn with_parent(&mut self, parent: C) -> C {
+    fn with_parent(&mut self, parent: KCtxId<D>) -> KCtxId<D> {
         self.0.with_parent(parent)
     }
 
-    fn add_raw(&mut self, ctx: C, term: NodeT<C, T>) -> T {
+    fn add_raw(&mut self, ctx: KCtxId<D>, term: KNodeIx<D>) -> KTermId<D> {
         self.0.add_raw(ctx, term)
     }
 
-    fn import(&mut self, ctx: C, val: Val<C, T>) -> T {
+    fn import(&mut self, ctx: KCtxId<D>, val: KValId<D>) -> KTermId<D> {
         self.0.import(ctx, val)
     }
 
-    fn propagate_in(&mut self, ctx: C) -> usize {
+    fn propagate_in(&mut self, ctx: KCtxId<D>) -> usize {
         self.0.propagate_in(ctx)
     }
 }

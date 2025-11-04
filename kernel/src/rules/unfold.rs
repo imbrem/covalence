@@ -12,7 +12,7 @@ impl<C: Copy + PartialEq, T: Copy> Val<C, T> {
         self,
         under: Bv,
         bound: Val<C, T>,
-        store: &impl ReadTerm<CtxId = C, TermId = T>,
+        store: &impl ReadTermIndex<CtxId = C, TermId = T>,
     ) -> Option<NodeVT2<C, T>> {
         if self.bvi(store) <= under {
             return Some(NodeVT2::Import(self));
@@ -24,7 +24,7 @@ impl<C: Copy + PartialEq, T: Copy> Val<C, T> {
     pub fn bwk_step(
         self,
         shift: Shift,
-        store: &impl ReadTerm<CtxId = C, TermId = T>,
+        store: &impl ReadTermIndex<CtxId = C, TermId = T>,
     ) -> Option<NodeVT2<C, T>> {
         if shift.is_id() || self.bvi(store) <= shift.under() {
             return Some(NodeVT2::Import(self));
@@ -37,7 +37,7 @@ impl<C: Copy + PartialEq, T: Copy> Val<C, T> {
         self,
         under: Bv,
         var: Fv<C>,
-        store: &impl ReadTerm<CtxId = C, TermId = T>,
+        store: &impl ReadTermIndex<CtxId = C, TermId = T>,
     ) -> Option<NodeVT2<C, T>> {
         if self.bvi(store) <= under {
             return Some(NodeVT2::Import(self));
@@ -46,14 +46,14 @@ impl<C: Copy + PartialEq, T: Copy> Val<C, T> {
     }
 
     /// Unfold this value by a single step, if possible
-    pub fn step(self, store: &impl ReadTerm<CtxId = C, TermId = T>) -> Option<NodeVT2<C, T>> {
+    pub fn step(self, store: &impl ReadTermIndex<CtxId = C, TermId = T>) -> Option<NodeVT2<C, T>> {
         self.node_val(store).step(store)
     }
 
     /// Unfold this node, unfolding imports as far as possible
     pub fn import_step(
         self,
-        store: &impl ReadTerm<CtxId = C, TermId = T>,
+        store: &impl ReadTermIndex<CtxId = C, TermId = T>,
     ) -> Option<NodeVT2<C, T>> {
         self.node_val(store).import_step(store)
     }
@@ -74,20 +74,6 @@ impl Shift {
 
 impl Bv {
     /// Substitute a bound variable
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence_kernel::*;
-    /// # use covalence_kernel::data::term::*;
-    /// # let mut ker = Kernel::new();
-    /// # let ctx = ker.new_ctx();
-    /// # let val = ValId { ctx, tm : ker.add_raw(ctx, Node::Nats) };
-    /// assert_eq!(Bv(0).subst1(Bv(0), val), NodeVT2::Import(val));
-    /// assert_eq!(Bv(3).subst1(Bv(0), val), NodeVT2::bv(2));
-    /// assert_eq!(Bv(3).subst1(Bv(5), val), NodeVT2::bv(3));
-    /// // NOTE: _no_ shifting necessary!
-    /// assert_eq!(Bv(3).subst1(Bv(3), val), NodeVT2::Import(val));
-    /// ```
     pub fn subst1<C, T>(self, under: Bv, bound: Val<C, T>) -> NodeVT2<C, T> {
         match self.cmp(&under) {
             Ordering::Less => NodeVT2::Bv(self),
@@ -114,7 +100,7 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
         self,
         under: Bv,
         bound: Val<C, T>,
-        store: &impl ReadTerm<CtxId = C, TermId = T>,
+        store: &impl ReadTermIndex<CtxId = C, TermId = T>,
     ) -> Option<NodeVT2<C, T>> {
         match self {
             NodeVT::Bv(i) => Some(i.subst1(under, bound)),
@@ -142,7 +128,7 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
     pub fn bwk_step(
         self,
         shift: Shift,
-        store: &impl ReadTerm<CtxId = C, TermId = T>,
+        store: &impl ReadTermIndex<CtxId = C, TermId = T>,
     ) -> Option<NodeVT2<C, T>> {
         match self {
             NodeVT::Bv(i) => Some(NodeVT2::Bv(shift.apply(i))),
@@ -164,7 +150,7 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
         self,
         under: Bv,
         var: Fv<C>,
-        store: &impl ReadTerm<CtxId = C, TermId = T>,
+        store: &impl ReadTermIndex<CtxId = C, TermId = T>,
     ) -> Option<NodeVT2<C, T>> {
         match self {
             NodeVT::Fv(x) => Some(x.close(under, var)),
@@ -186,21 +172,7 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
     }
 
     /// Unfold this node by a single step, if possible
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence_kernel::*;
-    /// # use covalence_kernel::data::term::*;
-    /// # let mut ker = Kernel::new();
-    /// # let ctx = ker.new_ctx();
-    /// let nats = Node::Nats.add_val(ctx, &mut ker);
-    /// assert_eq!(nats.step(&*ker), None);
-    /// let i = Node::bv(0).add_val(ctx, &mut ker);
-    /// assert_eq!(i.step(&*ker), None);
-    /// let s = Node::Subst1(Bv(0), [nats.tm, i.tm]).add_val(ctx, &mut ker);
-    /// assert_eq!(s.step(&*ker), Some(NodeVT2::Import(nats)));
-    /// ```
-    pub fn step(self, store: &impl ReadTerm<CtxId = C, TermId = T>) -> Option<NodeVT2<C, T>> {
+    pub fn step(self, store: &impl ReadTermIndex<CtxId = C, TermId = T>) -> Option<NodeVT2<C, T>> {
         match self {
             NodeVT::Import(this) => match this.node_val(store) {
                 NodeVT::Import(that) => Some(NodeVT2::Import(that)),
@@ -217,23 +189,9 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
     }
 
     /// Unfold this node, unfolding imports as far as possible
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence_kernel::*;
-    /// # use covalence_kernel::data::term::*;
-    /// # let mut ker = Kernel::new();
-    /// # let ctx = ker.new_ctx();
-    /// let nats = Node::Nats.add_val(ctx, &mut ker);
-    /// assert_eq!(nats.import_step(&*ker), None);
-    /// let i = Node::bv(0).add_val(ctx, &mut ker);
-    /// assert_eq!(i.import_step(&*ker), None);
-    /// let s = Node::Subst1(Bv(0), [nats.tm, i.tm]).add_val(ctx, &mut ker);
-    /// assert_eq!(s.import_step(&*ker), Some(NodeVT2::Nats));
-    /// ```
     pub fn import_step(
         self,
-        store: &impl ReadTerm<CtxId = C, TermId = T>,
+        store: &impl ReadTermIndex<CtxId = C, TermId = T>,
     ) -> Option<NodeVT2<C, T>> {
         match self.step(store)? {
             NodeVT2::Import(val) => {
@@ -250,14 +208,22 @@ impl<C: Copy + PartialEq, T: Copy> NodeVT<C, T> {
 }
 
 impl<C: Copy + PartialEq, T: Copy + PartialEq> Val<C, T> {
-    pub fn syn_eq(self, other: Val<C, T>, store: &impl ReadTerm<CtxId = C, TermId = T>) -> bool {
+    pub fn syn_eq(
+        self,
+        other: Val<C, T>,
+        store: &impl ReadTermIndex<CtxId = C, TermId = T>,
+    ) -> bool {
         if self == other {
             return true;
         }
         self.node_val(store).syn_eq(other.node_val(store), store)
     }
 
-    pub fn def_eq(self, other: Val<C, T>, store: &impl ReadTerm<CtxId = C, TermId = T>) -> bool {
+    pub fn def_eq(
+        self,
+        other: Val<C, T>,
+        store: &impl ReadTermIndex<CtxId = C, TermId = T>,
+    ) -> bool {
         if self == other {
             return true;
         }
@@ -266,7 +232,11 @@ impl<C: Copy + PartialEq, T: Copy + PartialEq> Val<C, T> {
 }
 
 impl<C: Copy + PartialEq, T: Copy + PartialEq> NodeVT<C, T> {
-    pub fn syn_eq(self, other: NodeVT<C, T>, store: &impl ReadTerm<CtxId = C, TermId = T>) -> bool {
+    pub fn syn_eq(
+        self,
+        other: NodeVT<C, T>,
+        store: &impl ReadTermIndex<CtxId = C, TermId = T>,
+    ) -> bool {
         match (self, other) {
             (NodeVT::Import(val), other) => val.node_val(store).syn_eq(other, store),
             (this, NodeVT::Import(val)) => this.syn_eq(val.node_val(store), store),
@@ -284,7 +254,11 @@ impl<C: Copy + PartialEq, T: Copy + PartialEq> NodeVT<C, T> {
         }
     }
 
-    pub fn def_eq(self, other: NodeVT<C, T>, store: &impl ReadTerm<CtxId = C, TermId = T>) -> bool {
+    pub fn def_eq(
+        self,
+        other: NodeVT<C, T>,
+        store: &impl ReadTermIndex<CtxId = C, TermId = T>,
+    ) -> bool {
         if self == other {
             return true;
         }

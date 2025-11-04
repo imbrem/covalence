@@ -591,19 +591,22 @@ where
         ty: Val<C, T>,
         strategy: &mut S,
     ) -> Result<HasTyV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_trunc")?;
-        // self.ensure_is_ty(ctx, ty, strategy, kernel_error::DERIVE_TRUNC_TY)?;
-        // let tm = self.add(ctx, NodeT::Trunc([ty]));
-        // let prop = self.add(ctx, NodeT::U(ULvl::PROP));
-        // self.0.set_has_ty_unchecked(ctx, tm, prop);
-        // if self.read().is_inhab(ctx, ty) {
-        //     self.0.set_is_inhab_unchecked(ctx, tm);
-        // }
-        // if self.read().is_empty(ctx, ty) {
-        //     self.0.set_is_empty_unchecked(ctx, tm);
-        // }
-        // Ok(HasTyIn { tm, ty: prop }.finish_rule(ctx, strategy))
+        strategy.start_rule("derive_trunc", self)?;
+
+        self.ensure_is_ty(ctx, ty, strategy, kernel_error::DERIVE_TRUNC_TY)?;
+
+        strategy.commit_rule(self);
+
+        let tm = self.add_with(ctx, NodeT::Trunc([ty]), strategy)?;
+        let ty = self.add_with(ctx, NodeT::U(ULvl::PROP), strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+
+        strategy.finish_rule(self);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_choose(

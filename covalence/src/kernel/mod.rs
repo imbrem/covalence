@@ -3,6 +3,8 @@ pub use covalence_core::*;
 
 use data::term::*;
 
+pub use covalence_core::data as data;
+
 /// Writing for the `covalence` kernel
 pub trait Write<C, T>: WriteTrusted<C, T> + WriteTermIndex<CtxId = C, TermId = T>
 where

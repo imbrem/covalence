@@ -3,6 +3,8 @@ use std::{
     ops::{Add, Sub},
 };
 
+pub use crate::univ::ULvl;
+
 /// A term in `covalence`'s core calculus
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
 pub enum NodeT<C, T, I = Val<C, T>> {
@@ -849,46 +851,6 @@ impl Shift {
             true
         } else {
             false
-        }
-    }
-}
-
-/// A universe level
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct ULvl {
-    pub(crate) level: i32,
-}
-
-impl ULvl {
-    /// The universe of propositions
-    pub const PROP: Self = ULvl { level: 0 };
-    // The universe of sets
-    pub const SET: Self = ULvl { level: 1 };
-
-    /// Construct a constant universe level
-    pub fn of_nat(level: u32) -> ULvl {
-        assert!(level <= i32::MAX as u32, "universe level out of bounds");
-        ULvl {
-            level: level as i32,
-        }
-    }
-
-    /// Get this universe level as a constant
-    pub fn as_const(self) -> Option<u32> {
-        if self.level >= 0 {
-            Some(self.level as u32)
-        } else {
-            None
-        }
-    }
-}
-
-impl Debug for ULvl {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.level >= 0 {
-            write!(f, "#u{}", self.level)
-        } else {
-            write!(f, "#uv{}", -self.level)
         }
     }
 }

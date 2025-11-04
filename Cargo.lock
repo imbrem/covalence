@@ -90,6 +90,10 @@ dependencies = [
 [[package]]
 name = "covalence-data"
 version = "0.1.0"
+dependencies = [
+ "bitflags 2.9.4",
+ "covalence",
+]
 
 [[package]]
 name = "covalence-kernel"

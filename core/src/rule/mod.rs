@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
-use crate::store::*;
 use crate::data::term::ULvl;
+use crate::store::*;
 
 /// Deduction rules for the `covalence` kernel
 pub mod ensure;

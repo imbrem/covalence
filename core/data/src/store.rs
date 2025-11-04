@@ -1,7 +1,6 @@
 use crate::{
-    Pred1,
-    data::term::{Bv, Fv, NodeT, NodeVT, Val},
-    fact::Pred0,
+    fact::{Pred0, Pred1},
+    term::{Bv, Fv, NodeT, NodeVT, Val},
 };
 
 pub use crate::univ::{ReadUniv, WriteUniv};
@@ -86,6 +85,39 @@ pub trait ReadTermIndex: IndexTypes + ReadUniv {
     fn unfold_eq(&self, lhs: KValId<Self>, rhs: KValId<Self>) -> bool;
 }
 
+impl<C: Copy, T> Val<C, T> {
+    /// Get the base value pointed to by this value
+    pub fn val(self, store: &(impl ReadTermIndex<CtxId = C, TermId = T> + ?Sized)) -> Val<C, T> {
+        store.val(self.ctx, self.tm)
+    }
+}
+
+impl<C: Copy, T: Copy> Val<C, T> {
+    /// Get the node in `self.ctx` corresponding to this value
+    pub fn node_ix(
+        self,
+        store: &(impl ReadTermIndex<CtxId = C, TermId = T> + ?Sized),
+    ) -> NodeT<C, T> {
+        *store.node(self.ctx, self.tm)
+    }
+
+    /// Get the node corresponding to this value
+    pub fn node_val(
+        self,
+        store: &(impl ReadTermIndex<CtxId = C, TermId = T> + ?Sized),
+    ) -> NodeVT<C, T> {
+        self.node_ix(store).node_val_in(self.ctx, store)
+    }
+
+    /// Get the node corresponding to this value
+    pub fn raw_node_val(
+        self,
+        store: &(impl ReadTermIndex<CtxId = C, TermId = T> + ?Sized),
+    ) -> NodeVT<C, T> {
+        self.node_ix(store).raw_node_val_in(self.ctx)
+    }
+}
+
 /// A trait implemented by a datastore that can create hash-consed terms
 ///
 /// This trait is `dyn`-safe:
@@ -138,30 +170,6 @@ pub trait WriteTermIndex: IndexTypes + WriteUniv {
     fn propagate_in(&mut self, ctx: KCtxId<Self>) -> usize;
 }
 
-impl<C: Copy, T> Val<C, T> {
-    /// Get the base value pointed to by this value
-    pub fn val(self, store: &impl ReadTermIndex<CtxId = C, TermId = T>) -> Val<C, T> {
-        store.val(self.ctx, self.tm)
-    }
-}
-
-impl<C: Copy, T: Copy> Val<C, T> {
-    /// Get the node in `self.ctx` corresponding to this value
-    pub fn node_ix(self, store: &impl ReadTermIndex<CtxId = C, TermId = T>) -> NodeT<C, T> {
-        *store.node(self.ctx, self.tm)
-    }
-
-    /// Get the node corresponding to this value
-    pub fn node_val(self, store: &impl ReadTermIndex<CtxId = C, TermId = T>) -> NodeVT<C, T> {
-        self.node_ix(store).node_val_in(self.ctx, store)
-    }
-
-    /// Get the node corresponding to this value
-    pub fn raw_node_val(self, store: &impl ReadTermIndex<CtxId = C, TermId = T>) -> NodeVT<C, T> {
-        self.node_ix(store).raw_node_val_in(self.ctx)
-    }
-}
-
 impl<C: Copy, T> NodeT<C, T> {
     /// Interpret this node in the given context
     pub fn val(self, ctx: C, store: &mut (impl RwTermDb<C, T> + ?Sized)) -> Val<C, T> {
@@ -186,7 +194,7 @@ impl<C: Copy, T> NodeT<C, T> {
     pub fn node_val_in(
         self,
         ctx: C,
-        store: &impl ReadTermIndex<CtxId = C, TermId = T>,
+        store: &(impl ReadTermIndex<CtxId = C, TermId = T> + ?Sized),
     ) -> NodeVT<C, T> {
         self.map_subterms(|tm| store.val(ctx, tm))
     }
@@ -194,40 +202,6 @@ impl<C: Copy, T> NodeT<C, T> {
     /// Tag this node's syntactic children with the given context
     pub fn raw_node_val_in(self, ctx: C) -> NodeVT<C, T> {
         self.map_subterms(|tm| Val { ctx, tm })
-    }
-}
-
-impl<C: Copy> Fv<C> {
-    /// Get this variable as a value
-    pub fn val<T>(self, store: &(impl ReadTermIndex<CtxId = C, TermId = T> + ?Sized)) -> Val<C, T> {
-        Val {
-            ctx: self.ctx,
-            tm: store
-                .lookup(self.ctx, NodeT::Fv(self))
-                .expect("valid variables should exist in their contexts"),
-        }
-    }
-
-    /// Get the type of this variable
-    pub fn ty<T>(self, store: &(impl ReadCtx<C, T> + ?Sized)) -> Val<C, T> {
-        store.var_ty(self)
-    }
-
-    /// Infer the flags of this variable in the given context
-    pub fn infer_flags<T: Copy>(
-        self,
-        ctx: C,
-        store: &(impl ReadTermStore<C, T> + ?Sized),
-    ) -> Pred1 {
-        // Reject invalid or ill-scoped variables
-        if store.num_vars(self.ctx) <= self.ix || !store.is_ancestor(ctx, self.ctx) {
-            return Pred1::default();
-        }
-        if ReadTermFacts::<C, Val<C, T>>::is_univ(store, ctx, self.ty(store)) {
-            Pred1::IS_TY
-        } else {
-            Pred1::IS_WF
-        }
     }
 }
 
@@ -250,6 +224,40 @@ pub trait ReadCtx<C, T> {
 
     /// Lookup the type of a variable
     fn var_ty(&self, var: Fv<C>) -> Val<C, T>;
+}
+
+impl<C: Copy> Fv<C> {
+    /// Get this variable as a value
+    pub fn val<T>(self, store: &(impl ReadTermIndex<CtxId = C, TermId = T> + ?Sized)) -> Val<C, T> {
+        Val {
+            ctx: self.ctx,
+            tm: store
+                .lookup(self.ctx, NodeT::Fv(self))
+                .expect("valid variables should exist in their contexts"),
+        }
+    }
+
+    /// Get the type of this variable
+    pub fn ty<T>(self, store: &(impl ReadCtx<C, T> + ?Sized)) -> Val<C, T> {
+        store.var_ty(self)
+    }
+
+    // /// Infer the flags of this variable in the given context
+    // pub fn infer_flags<T: Copy>(
+    //     self,
+    //     ctx: C,
+    //     store: &(impl ReadTermStore<C, T> + ?Sized),
+    // ) -> Pred1 {
+    //     // Reject invalid or ill-scoped variables
+    //     if store.num_vars(self.ctx) <= self.ix || !store.is_ancestor(ctx, self.ctx) {
+    //         return Pred1::default();
+    //     }
+    //     if ReadTermFacts::<C, Val<C, T>>::is_univ(store, ctx, self.ty(store)) {
+    //         Pred1::IS_TY
+    //     } else {
+    //         Pred1::IS_WF
+    //     }
+    // }
 }
 
 /// A datastore that can read facts about contexts

@@ -2,12 +2,12 @@ use std::{collections::BTreeMap, ops::BitOr};
 
 use egg::{Analysis, DidMerge, EGraph, Language};
 
-use crate::{Pred1, fact::Pred0, db::*};
+use crate::{Pred1, db::*, fact::Pred0};
 
 #[derive(Debug, Clone)]
 #[repr(transparent)]
 pub struct Ctx {
-    e: EGraph<NodeIx, CtxData>,
+    e: EGraph<InnerNode, CtxData>,
 }
 
 impl Ctx {
@@ -37,8 +37,8 @@ impl Ctx {
 
     pub fn add(&mut self, node: NodeIx) -> TermId {
         // NOTE: an uncanonical insertion is necessary to roundtrip with lookup
-        let result = TermId(self.e.add_uncanonical(node));
-        self.e.analysis.node_to_id.insert(node, result);
+        let result = TermId(self.e.add_uncanonical(InnerNode(node)));
+        self.e.analysis.node_to_id.insert(InnerNode(node), result);
         result
     }
 
@@ -49,11 +49,11 @@ impl Ctx {
             Some(&id),
             "Ctx::node and Ctx::add are out of sync",
         );
-        result
+        &result.0
     }
 
     pub fn lookup(&self, node: NodeIx) -> Option<TermId> {
-        let result = self.e.analysis.node_to_id.get(&node).copied();
+        let result = self.e.analysis.node_to_id.get(&InnerNode(node)).copied();
         debug_assert_eq!(
             result.map(|id| self.node(id)),
             if result.is_none() { None } else { Some(&node) },
@@ -232,7 +232,7 @@ impl Ctx {
         Fv { ctx, ix }
     }
 
-    fn from_ref(this: &EGraph<NodeIx, CtxData>) -> &Self {
+    fn from_ref(this: &EGraph<InnerNode, CtxData>) -> &Self {
         // SAFETY: due to `#[repr(transparent)]`
         unsafe { std::mem::transmute(this) }
     }
@@ -271,15 +271,15 @@ struct CtxData {
     /// TODO: remove hack, but required for now for correctness of `lookup`
     ///
     /// Donald Knuth smiles on me this day, for avoiding temptation.
-    node_to_id: BTreeMap<NodeIx, TermId>,
+    node_to_id: BTreeMap<InnerNode, TermId>,
 }
 
-impl Analysis<NodeIx> for CtxData {
+impl Analysis<InnerNode> for CtxData {
     type Data = ClassData;
 
-    fn make(egraph: &mut EGraph<NodeIx, Self>, enode: &NodeIx) -> Self::Data {
+    fn make(egraph: &mut EGraph<InnerNode, Self>, enode: &InnerNode) -> Self::Data {
         let this = Ctx::from_ref(egraph);
-        let bvi = enode.bvi_with(|x| this.bvi(*x));
+        let bvi = enode.0.bvi_with(|x| this.bvi(*x));
         ClassData {
             flags: Pred1::default(),
             bvi,
@@ -322,20 +322,24 @@ pub struct TermId(egg::Id);
 
 pub type NodeIx = NodeT<CtxId, TermId>;
 
-impl Language for NodeIx {
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[repr(transparent)]
+struct InnerNode(NodeIx);
+
+impl Language for InnerNode {
     type Discriminant = DiscT<CtxId, TermId>;
 
     fn discriminant(&self) -> Self::Discriminant {
-        self.disc()
+        self.0.disc()
     }
 
     fn matches(&self, other: &Self) -> bool {
-        self.disc() == other.disc()
+        self.0.disc() == other.0.disc()
     }
 
     fn children(&self) -> &[egg::Id] {
         // SAFETY: a `TermId` has the same representation as an `egg::Id`
-        let children = self.children();
+        let children = self.0.children();
         unsafe {
             std::slice::from_raw_parts(children as *const _ as *const egg::Id, children.len())
         }
@@ -343,7 +347,7 @@ impl Language for NodeIx {
 
     fn children_mut(&mut self) -> &mut [egg::Id] {
         // SAFETY: a `TermId` has the same representation as an `egg::Id`
-        let children = self.children_mut();
+        let children = self.0.children_mut();
         unsafe {
             std::slice::from_raw_parts_mut(children as *mut _ as *mut egg::Id, children.len())
         }

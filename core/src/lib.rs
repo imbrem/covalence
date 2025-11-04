@@ -10,23 +10,23 @@ This module is further subdivided into three primary components:
 - `kernel`, which instantiates the kernel in `rules` with the datastore
 */
 
-pub mod data;
+pub use covalence_data as data;
+pub use covalence_data::store;
+
 pub mod db;
 pub mod fact;
 pub mod kernel;
 pub mod rule;
-pub mod store;
 pub mod strategy;
-pub mod univ;
 
 pub use crate::rule::ensure::{DeriveTrusted, WriteTrusted};
 pub use crate::store::{
-    ReadCtx, ReadCtxFacts, ReadCtxRel, ReadFacts, ReadQuantFacts, ReadTermDb, ReadTermFacts,
-    ReadTermIndex, ReadTermStore, WriteTermIndex,
+    ReadCtxFacts, ReadCtxRel, ReadFacts, ReadQuantFacts, ReadTermDb, ReadTermFacts, ReadTermIndex,
+    ReadTermStore, WriteTermIndex, ReadCtx,
 };
-pub use crate::univ::{ReadUniv, WriteUniv};
+pub use covalence_data::univ::{ReadUniv, WriteUniv};
 
-pub use crate::fact::{
+pub use covalence_data::fact::{
     IS_CONTR, IS_EMPTY, IS_FF, IS_INHAB, IS_PROP, IS_SCOPED, IS_TT, IS_TY, IS_UNIV, IS_WF, Pred1,
 };
 
@@ -34,7 +34,7 @@ pub use crate::fact::{
 pub use crate::db::{CtxId, FvId, NodeIx, TermDb, TermId, ValId};
 
 #[doc(inline)]
-pub use crate::data::term::{Bv, Fv, ULvl};
+pub use covalence_data::term::{Bv, Fv, ULvl};
 
 pub type Kernel = crate::rule::Kernel<TermDb>;
 

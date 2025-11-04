@@ -64,8 +64,8 @@ impl ReadTermIndex for TermDb {
         // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
         // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
         // inserting the import and hence fixing the `TermId`.
-        if let NodeIx::Import(imp) = val.node_ix(self) {
-            self.lookup_import(ctx, imp)
+        if let NodeIx::Import(imp) = self.node(val.ctx, val.tm) {
+            self.lookup_import(ctx, *imp)
         } else if ctx == val.ctx {
             Some(val.tm)
         } else {
@@ -164,11 +164,18 @@ impl ReadTermIndex for TermDb {
 
 impl ReadUniv for TermDb {
     fn u_le(&self, lo: ULvl, hi: ULvl) -> bool {
-        lo.level <= hi.level
+        match (lo.as_const(), hi.as_const()) {
+            (Some(0), _) => true,
+            (Some(lo), Some(hi)) => lo <= hi,
+            _ => lo == hi,
+        }
     }
 
     fn u_lt(&self, lo: ULvl, hi: ULvl) -> bool {
-        lo.level < hi.level
+        match (lo.as_const(), hi.as_const()) {
+            (Some(lo), Some(hi)) => lo < hi,
+            _ => false,
+        }
     }
 
     fn imax_le(&self, lo_lhs: ULvl, lo_rhs: ULvl, hi: ULvl) -> bool {
@@ -203,8 +210,8 @@ impl WriteTermIndex for TermDb {
         // _not_ be mutable, and we can't get the `TermId` of an import without synthesizing an
         // invalid one (which is unspecified behaviour, but should not cause unsoundness) before
         // inserting the import and hence fixing the `TermId`.
-        let result = if let NodeIx::Import(imp) = val.node_ix(self) {
-            self.import(ctx, imp)
+        let result = if let NodeIx::Import(imp) = self.node(val.ctx, val.tm) {
+            self.import(ctx, *imp)
         } else if ctx == val.ctx {
             return val.tm;
         } else {
@@ -222,27 +229,28 @@ impl WriteTermIndex for TermDb {
 
 impl WriteUniv for TermDb {
     fn succ(&mut self, level: ULvl) -> ULvl {
-        //TODO: universe store and variables
-        ULvl {
-            level: level.level.checked_add(1).expect("universe level overflow"),
+        if let Some(level) = level.as_const() {
+            ULvl::of_nat(level + 1)
+        } else {
+            panic!("universe variables not implemented")
         }
     }
 
     fn umax(&mut self, lhs: ULvl, rhs: ULvl) -> ULvl {
-        //TODO: universe store and variables
-        ULvl {
-            level: lhs.level.max(rhs.level),
+        match (lhs.as_const(), rhs.as_const()) {
+            (Some(0), _) => rhs,
+            (_, Some(0)) => lhs,
+            (Some(l), Some(r)) => ULvl::of_nat(l.max(r)),
+            _ => panic!("universe variables not implemented"),
         }
     }
 
     fn imax(&mut self, lhs: ULvl, rhs: ULvl) -> ULvl {
-        //TODO: universe store and variables
-        ULvl {
-            level: if rhs.level == 0 {
-                0
-            } else {
-                lhs.level.max(rhs.level)
-            },
+        match (lhs.as_const(), rhs.as_const()) {
+            (Some(0), _) => rhs,
+            (_, Some(0)) => ULvl::PROP,
+            (Some(l), Some(r)) => ULvl::of_nat(l.max(r)),
+            _ => panic!("universe variables not implemented"),
         }
     }
 }

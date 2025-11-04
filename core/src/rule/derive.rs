@@ -15,7 +15,7 @@ where
     D: ReadTermDb<C, T> + WriteTermIndex<CtxId = C, TermId = T> + WriteFacts<C, T>,
 {
     fn add_ix(&mut self, ctx: C, tm: NodeT<C, T>) -> Val<C, T> {
-        let flags = tm.infer_flags(ctx, self.read());
+        let flags = super::pred::infer_flags(tm, ctx, self.read());
         let tm = self.0.add_raw(ctx, tm);
         self.0.set_tm_flags_unchecked(ctx, tm, flags);
         Val { ctx, tm }
@@ -120,13 +120,7 @@ where
         }
 
         // We begin by checking that Δ ⊢ a : B
-        self.ensure_has_ty(
-            var.ctx,
-            tm,
-            ty,
-            strategy,
-            "",
-        )?;
+        self.ensure_has_ty(var.ctx, tm, ty, strategy, "")?;
 
         // For foreign-context closures...
         if var.ctx != ctx {
@@ -139,9 +133,7 @@ where
             //
             // We might loosen this check later
             if self.read().num_vars(var.ctx) != 1 {
-                return Err(
-                    strategy.fail("", self)
-                );
+                return Err(strategy.fail("", self));
             }
             // We check that Δ = Δ', x : A where Δ' ≤ Γ
             if !self.read().parents_are_subctx(var.ctx, ctx) {
@@ -320,23 +312,10 @@ where
         }
 
         let arg_lvl_ty = self.resolve(ctx, NodeT::U(arg_lvl), strategy)?;
-        self.ensure_has_ty(
-            ctx,
-            arg_ty,
-            arg_lvl_ty,
-            strategy,
-            "",
-        )?;
+        self.ensure_has_ty(ctx, arg_ty, arg_lvl_ty, strategy, "")?;
 
         let ty = self.resolve(ctx, NodeT::U(lvl), strategy)?;
-        self.ensure_forall_has_ty(
-            ctx,
-            arg_ty,
-            res_ty,
-            ty,
-            strategy,
-            "",
-        )?;
+        self.ensure_forall_has_ty(ctx, arg_ty, res_ty, ty, strategy, "")?;
 
         strategy.commit_rule(self);
 
@@ -364,14 +343,7 @@ where
 
         let ty = self.resolve(ctx, NodeT::U(lvl), strategy)?;
         self.ensure_has_ty(ctx, arg_ty, ty, strategy, "")?;
-        self.ensure_forall_has_ty(
-            ctx,
-            arg_ty,
-            res_ty,
-            ty,
-            strategy,
-            "",
-        )?;
+        self.ensure_forall_has_ty(ctx, arg_ty, res_ty, ty, strategy, "")?;
 
         strategy.commit_rule(self);
 
@@ -397,14 +369,7 @@ where
     ) -> Result<HasTyV<C, T>, S::Fail> {
         strategy.start_rule("derive_abs", self)?;
 
-        self.ensure_forall_has_ty(
-            ctx,
-            arg_ty,
-            body,
-            res_ty,
-            strategy,
-            "",
-        )?;
+        self.ensure_forall_has_ty(ctx, arg_ty, body, res_ty, strategy, "")?;
 
         strategy.commit_rule(self);
 
@@ -460,13 +425,7 @@ where
     ) -> Result<HasTyV<C, T>, S::Fail> {
         strategy.start_rule("derive_pair", self)?;
 
-        self.ensure_is_ty_under(
-            ctx,
-            arg_ty,
-            res_ty,
-            strategy,
-            "",
-        )?;
+        self.ensure_is_ty_under(ctx, arg_ty, res_ty, strategy, "")?;
         self.ensure_has_ty(ctx, fst, arg_ty, strategy, "")?;
         let snd_ty = self.resolve(ctx, NodeT::subst1(fst, res_ty), strategy)?;
         self.ensure_has_ty(ctx, snd, snd_ty, strategy, "")?;
@@ -552,24 +511,10 @@ where
         strategy.start_rule("derive_dite", self)?;
 
         self.ensure_is_prop(ctx, cond, strategy, "")?;
-        self.ensure_forall_has_ty(
-            ctx,
-            cond,
-            then_br,
-            ty,
-            strategy,
-            ""
-        )?;
+        self.ensure_forall_has_ty(ctx, cond, then_br, ty, strategy, "")?;
         let ff = self.resolve(ctx, NodeT::Empty, strategy)?;
         let not_cond = self.resolve(ctx, NodeT::Eqn([cond, ff]), strategy)?;
-        self.ensure_forall_has_ty(
-            ctx,
-            not_cond,
-            else_br,
-            ty,
-            strategy,
-            ""
-        )?;
+        self.ensure_forall_has_ty(ctx, not_cond, else_br, ty, strategy, "")?;
 
         strategy.commit_rule(self);
 
@@ -725,14 +670,7 @@ where
         let succ_bv_one = self.resolve(ctx, NodeT::Succ([bv_one]), strategy)?;
         let mot_succ_bv_one = self.resolve(ctx, NodeT::subst1(succ_bv_one, mot), strategy)?;
         let mot_to_mot_succ = self.resolve(ctx, NodeT::Pi([mot, mot_succ_bv_one]), strategy)?;
-        self.ensure_forall_has_ty(
-            ctx,
-            nats,
-            s,
-            mot_to_mot_succ,
-            strategy,
-            "",
-        )?;
+        self.ensure_forall_has_ty(ctx, nats, s, mot_to_mot_succ, strategy, "")?;
 
         strategy.commit_rule(self);
 
@@ -759,21 +697,8 @@ where
     ) -> Result<HasTyV<C, T>, S::Fail> {
         strategy.start_rule("derive_let", self)?;
 
-        self.ensure_has_ty(
-            ctx,
-            bound,
-            bound_ty,
-            strategy,
-            "",
-        )?;
-        self.ensure_forall_has_ty(
-            ctx,
-            bound_ty,
-            body,
-            body_ty,
-            strategy,
-            "",
-        )?;
+        self.ensure_has_ty(ctx, bound, bound_ty, strategy, "")?;
+        self.ensure_forall_has_ty(ctx, bound_ty, body, body_ty, strategy, "")?;
 
         strategy.commit_rule(self);
 

@@ -440,7 +440,7 @@ where
         let tm = self.add_with(ctx, NodeT::App([func, arg]), strategy)?;
         let ty = self.add_with(ctx, NodeT::subst1(arg, res_ty), strategy)?;
         self.0.set_has_ty_unchecked(ctx, tm, ty);
-        
+
         strategy.finish_rule(self);
         Ok(HasTyV {
             ctx,
@@ -458,22 +458,31 @@ where
         snd: Val<C, T>,
         strategy: &mut S,
     ) -> Result<HasTyV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_pair")?;
-        // self.ensure_is_ty_under(
-        //     ctx,
-        //     arg_ty,
-        //     res_ty,
-        //     strategy,
-        //     kernel_error::DERIVE_PAIR_RES_TY,
-        // )?;
-        // self.ensure_has_ty(ctx, fst, arg_ty, strategy, kernel_error::DERIVE_PAIR_FST)?;
-        // let snd_ty = self.subst(ctx, fst, res_ty);
-        // self.ensure_has_ty(ctx, snd, snd_ty, strategy, kernel_error::DERIVE_PAIR_SND)?;
-        // let tm = self.add(ctx, NodeT::Pair([fst, snd]));
-        // let ty = self.add(ctx, NodeT::Sigma([arg_ty, res_ty]));
-        // self.0.set_has_ty_unchecked(ctx, tm, ty);
-        // Ok(HasTyIn { tm, ty }.finish_rule(ctx, strategy))
+        strategy.start_rule("derive_pair", self)?;
+
+        self.ensure_is_ty_under(
+            ctx,
+            arg_ty,
+            res_ty,
+            strategy,
+            kernel_error::DERIVE_PAIR_RES_TY,
+        )?;
+        self.ensure_has_ty(ctx, fst, arg_ty, strategy, kernel_error::DERIVE_PAIR_FST)?;
+        let snd_ty = self.resolve(ctx, NodeT::subst1(fst, res_ty), strategy)?;
+        self.ensure_has_ty(ctx, snd, snd_ty, strategy, kernel_error::DERIVE_PAIR_SND)?;
+
+        strategy.commit_rule(self);
+
+        let tm = self.add_with(ctx, NodeT::Pair([fst, snd]), strategy)?;
+        let ty = self.add_with(ctx, NodeT::Sigma([arg_ty, res_ty]), strategy)?;
+        self.0.set_has_ty_unchecked(ctx, tm, ty);
+
+        strategy.finish_rule(self);
+        Ok(HasTyV {
+            ctx,
+            tm: self.read().val(ctx, tm),
+            ty: self.read().val(ctx, ty),
+        })
     }
 
     fn derive_fst(

@@ -28,6 +28,8 @@ pub mod kernel_error {
     /// variable's type must be well-scoped in the parent context
     pub const DERIVE_CLOSE_HAS_TY_UNDER_ILL_SCOPED: &str =
         "derive_close_has_ty_under: variable's type may be ill-scoped";
+    pub const DERIVE_CLOSE_HAS_TY_UNDER_INVALID_VAR: &str =
+        "derive_close_has_ty_under: attempted to close over invalid variable";
     pub const DERIVE_CLOSE_HAS_TY_UNDER_TOO_MANY_VARS: &str =
         "derive_close_has_ty_under: variable's context must define exactly one variable";
     pub const DERIVE_CLOSE_HAS_TY_UNDER_INVALID_ASSUMPTION: &str =

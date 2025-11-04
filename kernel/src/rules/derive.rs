@@ -2,6 +2,7 @@ use crate::api::derive::*;
 use crate::api::error::kernel_error;
 use crate::api::store::*;
 use crate::api::strategy::*;
+use crate::data::term::Close;
 use crate::data::term::{Fv, NodeT, ULvl, Val};
 use crate::fact::*;
 
@@ -108,50 +109,67 @@ where
     where
         S: Strategy<C, T, Self>,
     {
-        todo!("derive_close_has_ty_under")
-        // strategy.start_rule("derive_close_has_ty_under")?;
-        // if var.ctx != ctx && var.ix != 0 {
-        //     return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_IX_NONZERO));
-        // }
-        // let import_tm = self.import(var.ctx, Val { ctx, tm });
-        // let import_ty = self.import(var.ctx, Val { ctx, tm: ty });
-        // self.ensure_has_ty(
-        //     var.ctx,
-        //     import_tm,
-        //     import_ty,
-        //     strategy,
-        //     kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_HAS_TY,
-        // )?;
-        // let binder = self.var_ty(ctx, var);
-        // debug_assert!(
-        //     self.read().is_ty(var.ctx, self.read().get_var_ty(var)),
-        //     "var is valid in its context"
-        // );
-        // if var.ctx != ctx {
-        //     debug_assert_ne!(
-        //         self.read().num_vars(var.ctx),
-        //         0,
-        //         "var is a valid variable, so there must be at least one variable"
-        //     );
-        //     // We check that `var` is the only variable in its context
-        //     if self.read().num_vars(var.ctx) != 1 {
-        //         return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_TOO_MANY_VARS));
-        //     }
-        //     // Finally, we check that the variable context's parent(s) are subcontexts of `ctx`
-        //     if !self.read().parents_are_subctx(var.ctx, ctx) {
-        //         return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_ILL_SCOPED));
-        //     }
-        // }
-        // let close_tm = self.close(ctx, var, tm);
-        // let close_ty = self.close(ctx, var, ty);
-        // self.0
-        //     .set_forall_has_ty_unchecked(ctx, binder, close_tm, close_ty);
-        // Ok(HasTyUnderIn {
-        //     tm: close_tm,
-        //     ty: close_ty,
-        //     binder,
-        // }
-        // .finish_rule(ctx, strategy))
+        strategy.start_rule("derive_close_has_ty_under", self)?;
+
+        // Let Γ = ctx, Δ = var.ctx, a = tm, B = ty
+
+        // This rule only supports single-variable closures
+        if var.ix != 0 {
+            return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_IX_NONZERO, self));
+        }
+
+        // The variable closed over must be valid
+        if var.ix >= self.read().num_vars(var.ctx) {
+            return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_INVALID_VAR, self));
+        }
+
+        // We begin by checking that Δ ⊢ a : B
+        self.ensure_has_ty(
+            var.ctx,
+            tm,
+            ty,
+            strategy,
+            kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_HAS_TY,
+        )?;
+
+        // For foreign-context closures...
+        if var.ctx != ctx {
+            debug_assert_ne!(
+                self.read().num_vars(var.ctx),
+                0,
+                "var is a valid variable, so there must be at least one variable"
+            );
+            // We check that `var` is the only variable in its context
+            //
+            // We might loosen this check later
+            if self.read().num_vars(var.ctx) != 1 {
+                return Err(
+                    strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_TOO_MANY_VARS, self)
+                );
+            }
+            // We check that Δ = Δ', x : A where Δ' ≤ Γ
+            if !self.read().parents_are_subctx(var.ctx, ctx) {
+                return Err(strategy.fail(kernel_error::DERIVE_CLOSE_HAS_TY_UNDER_ILL_SCOPED, self));
+            }
+        }
+
+        strategy.commit_rule(self);
+
+        let binder = self.read().var_ty(var);
+        let binder = self.import_with(ctx, binder, strategy)?;
+        let close_tm = self.add_with(ctx, NodeT::Close(Close::new(var, tm)), strategy)?;
+        let close_ty = self.add_with(ctx, NodeT::Close(Close::new(var, ty)), strategy)?;
+
+        self.0
+            .set_forall_has_ty_unchecked(ctx, binder, close_tm, close_ty);
+
+        strategy.finish_rule(self);
+        Ok(HasTyUnderV {
+            ctx,
+            tm: self.read().val(ctx, close_tm),
+            ty: self.read().val(ctx, close_ty),
+            binder: self.read().val(ctx, binder),
+        })
     }
 
     fn derive_fv<S>(

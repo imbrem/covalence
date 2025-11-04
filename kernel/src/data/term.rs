@@ -900,6 +900,15 @@ pub struct Close<C, T> {
 }
 
 impl<C, T> Close<C, T> {
+    /// Construct a new closure, under no variables
+    pub fn new(var: Fv<C>, tm: T) -> Close<C, T> {
+        Close {
+            under: Bv(0),
+            var,
+            tm,
+        }
+    }
+
     /// Borrow this closure
     pub fn as_ref(&self) -> Close<&C, &T> {
         Close {

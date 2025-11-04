@@ -5,13 +5,13 @@ use crate::{fact::Pred0, term::Fv};
 /// This trait is `dyn`-safe:
 /// ```rust
 /// # use covalence::kernel::*;
-/// let ker : &dyn ReadCtx<CtxId, TermId> = &TermDb::new();
+/// let ker : &dyn ReadCtx<CtxId, TmId> = &TermDb::new();
 /// ```
 /// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
 /// functions for different kernel wrappers:
 /// ```rust,compile_fail
 /// # use covalence::kernel::*;
-/// let ker : &dyn ReadCtx<CtxId, TermId> = &Kernel::new();
+/// let ker : &dyn ReadCtx<CtxId, TmId> = &Kernel::new();
 /// ```
 pub trait ReadCtx<C, T> {
     /// Get the number of variables this context has

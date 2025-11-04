@@ -5,7 +5,7 @@ use egg::{Analysis, DidMerge, EGraph, Language};
 
 use covalence_data::fact::{Pred0, Pred1};
 
-use super::{CtxId, FvId, TermId};
+use super::{CtxId, FvId, TmId};
 
 #[derive(Debug, Clone)]
 #[repr(transparent)]
@@ -65,7 +65,7 @@ impl Ctx {
         result
     }
 
-    pub fn var_ty(&self, ix: u32) -> Option<TermId> {
+    pub fn var_ty(&self, ix: u32) -> Option<TmId> {
         self.e.analysis.vars.get(ix as usize).copied()
     }
 
@@ -115,7 +115,7 @@ impl Ctx {
         self.e.union(lhs.0, rhs.0)
     }
 
-    pub fn add_var_unchecked(&mut self, ctx: CtxId, ty: TermId) -> FvId {
+    pub fn add_var_unchecked(&mut self, ctx: CtxId, ty: TmId) -> FvId {
         // NOTE: this overflow should be impossible due to limitations of the E-graph, but better
         // safe than sorry...
         let ix: u32 = self
@@ -162,7 +162,7 @@ struct CtxData {
     /// This context's flags
     flags: Pred0,
     /// This context's variables, implemented as a map from indices to types
-    vars: Vec<TermId>,
+    vars: Vec<TmId>,
     /// A map from nodes to their TermId
     ///
     /// TODO: remove hack, but required for now for correctness of `lookup`

@@ -12,7 +12,7 @@ pub use ctx::{Ix, NodeIx};
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CtxId(SmallIndex<Ctx>);
 
-pub type TermId = covalence_data::store::TmId<TermDb>;
+pub type TmId = covalence_data::store::TmId<TermDb>;
 
 pub type FvId = covalence_data::store::FvId<TermDb>;
 
@@ -39,7 +39,7 @@ impl TermIndex for TermDb {
 }
 
 impl ReadLocalTerm for TermDb {
-    fn val(&self, ctx: CtxId, tm: Ix) -> TermId {
+    fn val(&self, ctx: CtxId, tm: Ix) -> TmId {
         match self.node(ctx, tm) {
             NodeIx::Import(val) => self.val(val.ctx, val.tm),
             _ => TmIn { ctx, tm },
@@ -54,7 +54,7 @@ impl ReadLocalTerm for TermDb {
         self.x[ctx.0].lookup(tm)
     }
 
-    fn lookup_import(&self, ctx: CtxId, val: TermId) -> Option<Ix> {
+    fn lookup_import(&self, ctx: CtxId, val: TmId) -> Option<Ix> {
         // NOTE: an import cycle will lead to a stack overflow here, but that should be an error But
         // think about it!
         //
@@ -117,7 +117,7 @@ impl WriteLocalTerm for TermDb {
         self.x[ctx.0].add(tm)
     }
 
-    fn import(&mut self, ctx: CtxId, val: TermId) -> Ix {
+    fn import(&mut self, ctx: CtxId, val: TmId) -> Ix {
         // NOTE: an import cycle will lead to a stack overflow here, but that should be an error But
         // think about it!
         //
@@ -171,12 +171,12 @@ impl WriteUniv for TermDb {
     }
 }
 
-impl ReadCtx<CtxId, TermId> for TermDb {
+impl ReadCtx<CtxId, TmId> for TermDb {
     fn num_vars(&self, ctx: CtxId) -> u32 {
         self.x[ctx.0].num_vars()
     }
 
-    fn var_ty(&self, var: FvId) -> TermId {
+    fn var_ty(&self, var: FvId) -> TmId {
         self.x[var.ctx.0]
             .var_ty(var.ix)
             .expect("invalid variable index")
@@ -387,7 +387,7 @@ impl WriteLocalFactsUnchecked for TermDb {
         self.x[ctx.0].set_eq_unchecked(lhs, rhs);
     }
 
-    fn add_var_unchecked(&mut self, ctx: CtxId, ty: TermId) -> FvId {
+    fn add_var_unchecked(&mut self, ctx: CtxId, ty: TmId) -> FvId {
         self.x[ctx.0].add_var_unchecked(ctx, ty)
     }
 

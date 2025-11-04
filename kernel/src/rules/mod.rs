@@ -1,6 +1,5 @@
 use std::ops::Deref;
 
-use crate::api::derive::*;
 use crate::api::store::*;
 use crate::data::term::{NodeT, ULvl, Val};
 

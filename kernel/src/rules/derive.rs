@@ -819,189 +819,171 @@ where
         ))
     }
 
-    fn derive_beta_tt(
-        &mut self,
-        ctx: C,
-        tm: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail> {
-        todo!()
-    }
+    // fn derive_beta_zero(
+    //     &mut self,
+    //     ctx: C,
+    //     tm: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<EqnInV<C, T>, S::Fail> {
+    //     todo!()
+    //     // strategy.start_rule("derive_beta_zero")?;
+    //     // let &NodeT::Natrec([_mot, z, _s]) = self.read().node(ctx, tm) else {
+    //     //     return Err(strategy.fail("derive_beta_zero: tm ≡ natrec C z s"));
+    //     // };
+    //     // self.ensure_is_wf(ctx, tm, strategy, "derive_beta_zero: tm wf")?;
+    //     // let zero = self.add(ctx, NodeT::N64(0));
+    //     // let tm_zero = self.add(ctx, NodeT::App([tm, zero]));
+    //     // self.0.set_eq_unchecked(ctx, tm_zero, z);
+    //     // Ok(Eqn {
+    //     //     lhs: tm_zero,
+    //     //     rhs: zero,
+    //     // }
+    //     // .finish_rule(ctx, strategy))
+    // }
 
-    fn derive_beta_ff(
-        &mut self,
-        ctx: C,
-        tm: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail> {
-        todo!()
-    }
+    // fn derive_beta_succ(
+    //     &mut self,
+    //     ctx: C,
+    //     tm: Val<C, T>,
+    //     n: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<EqnInV<C, T>, S::Fail> {
+    //     todo!()
+    //     // strategy.start_rule("derive_beta_succ")?;
+    //     // let &NodeT::Natrec([_mot, _z, s]) = self.read().node(ctx, tm) else {
+    //     //     return Err(strategy.fail("derive_beta_zero: tm ≡ natrec C z s"));
+    //     // };
+    //     // self.ensure_is_wf(ctx, tm, strategy, "derive_beta_zero: tm wf")?;
+    //     // let nats = self.add(ctx, NodeT::Nats);
+    //     // self.ensure_has_ty(ctx, n, nats, strategy, "derive_beta_succ: n")?;
+    //     // let tm_n = self.add(ctx, NodeT::App([tm, n]));
+    //     // let s_n = self.subst(ctx, n, s);
+    //     // let s_n_tm_n = self.add(ctx, NodeT::App([s_n, tm_n]));
+    //     // let succ_n = self.add(ctx, NodeT::Succ([n]));
+    //     // let tm_succ_n = self.add(ctx, NodeT::App([tm, succ_n]));
+    //     // self.0.set_eq_unchecked(ctx, tm_succ_n, s_n_tm_n);
+    //     // Ok(Eqn {
+    //     //     lhs: tm_succ_n,
+    //     //     rhs: s_n_tm_n,
+    //     // }
+    //     // .finish_rule(ctx, strategy))
+    // }
 
-    fn derive_beta_zero(
-        &mut self,
-        ctx: C,
-        tm: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_beta_zero")?;
-        // let &NodeT::Natrec([_mot, z, _s]) = self.read().node(ctx, tm) else {
-        //     return Err(strategy.fail("derive_beta_zero: tm ≡ natrec C z s"));
-        // };
-        // self.ensure_is_wf(ctx, tm, strategy, "derive_beta_zero: tm wf")?;
-        // let zero = self.add(ctx, NodeT::N64(0));
-        // let tm_zero = self.add(ctx, NodeT::App([tm, zero]));
-        // self.0.set_eq_unchecked(ctx, tm_zero, z);
-        // Ok(Eqn {
-        //     lhs: tm_zero,
-        //     rhs: zero,
-        // }
-        // .finish_rule(ctx, strategy))
-    }
+    // fn derive_choose_spec(
+    //     &mut self,
+    //     ctx: C,
+    //     ty: Val<C, T>,
+    //     pred: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<IsInhabV<C, T>, S::Fail> {
+    //     todo!()
+    //     // strategy.start_rule("derive_choose_spec")?;
+    //     // self.ensure_exists_inhab_under(ctx, ty, pred, strategy, "derive_choose_spec: exists")?;
+    //     // let choose = self.add(ctx, NodeT::Choose([ty, pred]));
+    //     // let pred_choose = self.subst(ctx, choose, pred);
+    //     // self.0.set_has_ty_unchecked(ctx, choose, ty);
+    //     // self.0.set_is_prop_unchecked(ctx, pred_choose);
+    //     // self.0.set_is_inhab_unchecked(ctx, pred_choose);
+    //     // Ok(IsInhabIn(pred_choose).finish_rule(ctx, strategy))
+    // }
 
-    fn derive_beta_succ(
-        &mut self,
-        ctx: C,
-        tm: Val<C, T>,
-        n: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_beta_succ")?;
-        // let &NodeT::Natrec([_mot, _z, s]) = self.read().node(ctx, tm) else {
-        //     return Err(strategy.fail("derive_beta_zero: tm ≡ natrec C z s"));
-        // };
-        // self.ensure_is_wf(ctx, tm, strategy, "derive_beta_zero: tm wf")?;
-        // let nats = self.add(ctx, NodeT::Nats);
-        // self.ensure_has_ty(ctx, n, nats, strategy, "derive_beta_succ: n")?;
-        // let tm_n = self.add(ctx, NodeT::App([tm, n]));
-        // let s_n = self.subst(ctx, n, s);
-        // let s_n_tm_n = self.add(ctx, NodeT::App([s_n, tm_n]));
-        // let succ_n = self.add(ctx, NodeT::Succ([n]));
-        // let tm_succ_n = self.add(ctx, NodeT::App([tm, succ_n]));
-        // self.0.set_eq_unchecked(ctx, tm_succ_n, s_n_tm_n);
-        // Ok(Eqn {
-        //     lhs: tm_succ_n,
-        //     rhs: s_n_tm_n,
-        // }
-        // .finish_rule(ctx, strategy))
-    }
+    // fn derive_unit_ext(
+    //     &mut self,
+    //     ctx: C,
+    //     a: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<EqnInV<C, T>, S::Fail> {
+    //     todo!()
+    //     // strategy.start_rule("derive_unit_ext")?;
+    //     // let unit = self.add(ctx, NodeT::Unit);
+    //     // self.ensure_has_ty(ctx, a, unit, strategy, "derive_unit_ext: a")?;
+    //     // let null = self.add(ctx, NodeT::Null);
+    //     // self.0.set_eq_unchecked(ctx, a, null);
+    //     // Ok(Eqn { lhs: a, rhs: null }.finish_rule(ctx, strategy))
+    // }
 
-    fn derive_choose_spec(
-        &mut self,
-        ctx: C,
-        ty: Val<C, T>,
-        pred: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<IsInhabV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_choose_spec")?;
-        // self.ensure_exists_inhab_under(ctx, ty, pred, strategy, "derive_choose_spec: exists")?;
-        // let choose = self.add(ctx, NodeT::Choose([ty, pred]));
-        // let pred_choose = self.subst(ctx, choose, pred);
-        // self.0.set_has_ty_unchecked(ctx, choose, ty);
-        // self.0.set_is_prop_unchecked(ctx, pred_choose);
-        // self.0.set_is_inhab_unchecked(ctx, pred_choose);
-        // Ok(IsInhabIn(pred_choose).finish_rule(ctx, strategy))
-    }
+    // fn derive_prop_ext_tt(
+    //     &mut self,
+    //     ctx: C,
+    //     p: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<EqnInV<C, T>, S::Fail> {
+    //     todo!()
+    //     // strategy.start_rule("derive_prop_ext_tt")?;
+    //     // self.ensure_is_prop(ctx, a, strategy, "derive_prop_ext_tt: a prop")?;
+    //     // self.ensure_is_inhab(ctx, a, strategy, "derive_prop_ext_tt: a inhab")?;
+    //     // let unit = self.add(ctx, NodeT::Unit);
+    //     // self.0.set_eq_unchecked(ctx, a, unit);
+    //     // Ok(Eqn { lhs: a, rhs: unit }.finish_rule(ctx, strategy))
+    // }
 
-    fn derive_unit_ext(
-        &mut self,
-        ctx: C,
-        a: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_unit_ext")?;
-        // let unit = self.add(ctx, NodeT::Unit);
-        // self.ensure_has_ty(ctx, a, unit, strategy, "derive_unit_ext: a")?;
-        // let null = self.add(ctx, NodeT::Null);
-        // self.0.set_eq_unchecked(ctx, a, null);
-        // Ok(Eqn { lhs: a, rhs: null }.finish_rule(ctx, strategy))
-    }
+    // fn derive_prop_ext_ff(
+    //     &mut self,
+    //     ctx: C,
+    //     p: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<EqnInV<C, T>, S::Fail> {
+    //     todo!()
+    //     // strategy.start_rule("derive_prop_ext_ff")?;
+    //     // self.ensure_is_prop(ctx, a, strategy, "derive_prop_ext_ff: a prop")?;
+    //     // self.ensure_is_empty(ctx, a, strategy, "derive_prop_ext_ff: a empty")?;
+    //     // let empty = self.add(ctx, NodeT::Empty);
+    //     // self.0.set_eq_unchecked(ctx, a, empty);
+    //     // Ok(Eqn { lhs: a, rhs: empty }.finish_rule(ctx, strategy))
+    // }
 
-    fn derive_prop_ext_tt(
-        &mut self,
-        ctx: C,
-        p: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_prop_ext_tt")?;
-        // self.ensure_is_prop(ctx, a, strategy, "derive_prop_ext_tt: a prop")?;
-        // self.ensure_is_inhab(ctx, a, strategy, "derive_prop_ext_tt: a inhab")?;
-        // let unit = self.add(ctx, NodeT::Unit);
-        // self.0.set_eq_unchecked(ctx, a, unit);
-        // Ok(Eqn { lhs: a, rhs: unit }.finish_rule(ctx, strategy))
-    }
+    // fn derive_ext(
+    //     &mut self,
+    //     ctx: C,
+    //     lhs: Val<C, T>,
+    //     rhs: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<EqnInV<C, T>, S::Fail> {
+    //     todo!()
+    //     // strategy.start_rule("derive_ext")?;
+    //     // let eqn = self.add(ctx, NodeT::Eqn([lhs, rhs]));
+    //     // self.ensure_is_inhab(ctx, eqn, strategy, "derive_ext: eqn inhab")?;
+    //     // self.0.set_eq_unchecked(ctx, lhs, rhs);
+    //     // Ok(Eqn { lhs, rhs }.finish_rule(ctx, strategy))
+    // }
 
-    fn derive_prop_ext_ff(
-        &mut self,
-        ctx: C,
-        p: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_prop_ext_ff")?;
-        // self.ensure_is_prop(ctx, a, strategy, "derive_prop_ext_ff: a prop")?;
-        // self.ensure_is_empty(ctx, a, strategy, "derive_prop_ext_ff: a empty")?;
-        // let empty = self.add(ctx, NodeT::Empty);
-        // self.0.set_eq_unchecked(ctx, a, empty);
-        // Ok(Eqn { lhs: a, rhs: empty }.finish_rule(ctx, strategy))
-    }
+    // fn derive_pi_eta(
+    //     &mut self,
+    //     ctx: C,
+    //     ty: Val<C, T>,
+    //     f: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<EqnInV<C, T>, S::Fail> {
+    //     todo!()
+    //     // strategy.start_rule("derive_pi_eta")?;
+    //     // let &NodeT::Pi([arg_ty, _res_ty]) = self.read().node(ctx, ty) else {
+    //     //     return Err(strategy.fail("derive_pi_eta: ty ≡ pi A B"));
+    //     // };
+    //     // self.ensure_has_ty(ctx, f, ty, strategy, "derive_pi_eta: f")?;
+    //     // let bv_zero = self.add(ctx, NodeT::Bv(Bv(0)));
+    //     // let app_f_bv_zero = self.add(ctx, NodeT::App([f, bv_zero]));
+    //     // let eta = self.add(ctx, NodeT::Abs([arg_ty, app_f_bv_zero]));
+    //     // self.0.set_eq_unchecked(ctx, f, eta);
+    //     // Ok(Eqn { lhs: f, rhs: eta }.finish_rule(ctx, strategy))
+    // }
 
-    fn derive_ext(
-        &mut self,
-        ctx: C,
-        lhs: Val<C, T>,
-        rhs: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_ext")?;
-        // let eqn = self.add(ctx, NodeT::Eqn([lhs, rhs]));
-        // self.ensure_is_inhab(ctx, eqn, strategy, "derive_ext: eqn inhab")?;
-        // self.0.set_eq_unchecked(ctx, lhs, rhs);
-        // Ok(Eqn { lhs, rhs }.finish_rule(ctx, strategy))
-    }
-
-    fn derive_pi_eta(
-        &mut self,
-        ctx: C,
-        ty: Val<C, T>,
-        f: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_pi_eta")?;
-        // let &NodeT::Pi([arg_ty, _res_ty]) = self.read().node(ctx, ty) else {
-        //     return Err(strategy.fail("derive_pi_eta: ty ≡ pi A B"));
-        // };
-        // self.ensure_has_ty(ctx, f, ty, strategy, "derive_pi_eta: f")?;
-        // let bv_zero = self.add(ctx, NodeT::Bv(Bv(0)));
-        // let app_f_bv_zero = self.add(ctx, NodeT::App([f, bv_zero]));
-        // let eta = self.add(ctx, NodeT::Abs([arg_ty, app_f_bv_zero]));
-        // self.0.set_eq_unchecked(ctx, f, eta);
-        // Ok(Eqn { lhs: f, rhs: eta }.finish_rule(ctx, strategy))
-    }
-
-    fn derive_sigma_eta(
-        &mut self,
-        ctx: C,
-        ty: Val<C, T>,
-        p: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail> {
-        todo!()
-        // strategy.start_rule("derive_sigma_eta")?;
-        // let &NodeT::Sigma(_) = self.read().node(ctx, ty) else {
-        //     return Err(strategy.fail("derive_sigma_eta: ty ≡ sigma A B"));
-        // };
-        // self.ensure_has_ty(ctx, p, ty, strategy, "derive_sigma_eta: p")?;
-        // let fst_p = self.add(ctx, NodeT::Fst([p]));
-        // let snd_p = self.add(ctx, NodeT::Snd([p]));
-        // let eta = self.add(ctx, NodeT::Pair([fst_p, snd_p]));
-        // self.0.set_eq_unchecked(ctx, p, eta);
-        // Ok(Eqn { lhs: p, rhs: eta }.finish_rule(ctx, strategy))
-    }
+    // fn derive_sigma_eta(
+    //     &mut self,
+    //     ctx: C,
+    //     ty: Val<C, T>,
+    //     p: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<EqnInV<C, T>, S::Fail> {
+    //     todo!()
+    //     // strategy.start_rule("derive_sigma_eta")?;
+    //     // let &NodeT::Sigma(_) = self.read().node(ctx, ty) else {
+    //     //     return Err(strategy.fail("derive_sigma_eta: ty ≡ sigma A B"));
+    //     // };
+    //     // self.ensure_has_ty(ctx, p, ty, strategy, "derive_sigma_eta: p")?;
+    //     // let fst_p = self.add(ctx, NodeT::Fst([p]));
+    //     // let snd_p = self.add(ctx, NodeT::Snd([p]));
+    //     // let eta = self.add(ctx, NodeT::Pair([fst_p, snd_p]));
+    //     // self.0.set_eq_unchecked(ctx, p, eta);
+    //     // Ok(Eqn { lhs: p, rhs: eta }.finish_rule(ctx, strategy))
+    // }
 }

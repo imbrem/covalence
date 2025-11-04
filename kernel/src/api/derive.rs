@@ -775,140 +775,140 @@ where
         strategy: &mut S,
     ) -> Result<EqnInV<C, T>, S::Fail>;
 
-    /// Beta reduction for dependent if-then-else at true
-    ///
-    /// For well-formed `Γ ⊢ tm ≡ ite a b c; if a inhab then `Γ ⊢ tm ≡ b^*`
-    ///
-    /// TODO: reference Lean
-    fn derive_beta_tt(
-        &mut self,
-        ctx: C,
-        tm: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>;
+    // /// Beta reduction for dependent if-then-else at true
+    // ///
+    // /// For well-formed `Γ ⊢ tm ≡ ite a b c; if a inhab then `Γ ⊢ tm ≡ b^*`
+    // ///
+    // /// TODO: reference Lean
+    // fn derive_beta_tt(
+    //     &mut self,
+    //     ctx: C,
+    //     tm: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<EqnInV<C, T>, S::Fail>;
 
-    /// Beta reduction for dependent if-then-else at false
-    ///
-    /// For well-formed `Γ ⊢ tm ≡ ite a b c; if a empty then `Γ ⊢ tm ≡ c^*`
-    ///
-    /// TODO: reference Lean
-    fn derive_beta_ff(
-        &mut self,
-        ctx: C,
-        tm: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>;
+    // /// Beta reduction for dependent if-then-else at false
+    // ///
+    // /// For well-formed `Γ ⊢ tm ≡ ite a b c; if a empty then `Γ ⊢ tm ≡ c^*`
+    // ///
+    // /// TODO: reference Lean
+    // fn derive_beta_ff(
+    //     &mut self,
+    //     ctx: C,
+    //     tm: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<EqnInV<C, T>, S::Fail>;
 
-    /// Beta reduction for natural number recursors at zero
-    ///
-    /// For well-formed `Γ ⊢ tm ≡ natrec C z s`; `Γ ⊢ tm 0 = z`
-    ///
-    /// TODO: reference Lean
-    fn derive_beta_zero(
-        &mut self,
-        ctx: C,
-        tm: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>;
+    // /// Beta reduction for natural number recursors at zero
+    // ///
+    // /// For well-formed `Γ ⊢ tm ≡ natrec C z s`; `Γ ⊢ tm 0 = z`
+    // ///
+    // /// TODO: reference Lean
+    // fn derive_beta_zero(
+    //     &mut self,
+    //     ctx: C,
+    //     tm: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<EqnInV<C, T>, S::Fail>;
 
-    /// Beta reduction for natural number recursors at successors
-    ///
-    /// For well-formed `Γ ⊢ tm ≡ natrec C z s` and `Γ ⊢ n : ℕ`; `Γ ⊢ tm (succ n) = s^n (tm n)`
-    ///
-    /// TODO: reference Lean
-    fn derive_beta_succ(
-        &mut self,
-        ctx: C,
-        tm: Val<C, T>,
-        n: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>;
+    // /// Beta reduction for natural number recursors at successors
+    // ///
+    // /// For well-formed `Γ ⊢ tm ≡ natrec C z s` and `Γ ⊢ n : ℕ`; `Γ ⊢ tm (succ n) = s^n (tm n)`
+    // ///
+    // /// TODO: reference Lean
+    // fn derive_beta_succ(
+    //     &mut self,
+    //     ctx: C,
+    //     tm: Val<C, T>,
+    //     n: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<EqnInV<C, T>, S::Fail>;
 
-    /// Specification for choice
-    ///
-    /// If `∃A . φ` (encoded as Σ A . φ inhab) then `Γ ⊢ φ^(choose A φ)`
-    ///
-    /// TODO: reference lean
-    fn derive_choose_spec(
-        &mut self,
-        ctx: C,
-        ty: Val<C, T>,
-        pred: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<IsInhab<C, Val<C, T>>, S::Fail>;
+    // /// Specification for choice
+    // ///
+    // /// If `∃A . φ` (encoded as Σ A . φ inhab) then `Γ ⊢ φ^(choose A φ)`
+    // ///
+    // /// TODO: reference lean
+    // fn derive_choose_spec(
+    //     &mut self,
+    //     ctx: C,
+    //     ty: Val<C, T>,
+    //     pred: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<IsInhab<C, Val<C, T>>, S::Fail>;
 
-    /// Extensionality for the unit type
-    ///
-    /// If `Γ ⊢ a : 1` then `Γ ⊢ a ≡ * : 1`
-    ///
-    /// TODO: reference Lean
-    fn derive_unit_ext(
-        &mut self,
-        ctx: C,
-        a: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>;
+    // /// Extensionality for the unit type
+    // ///
+    // /// If `Γ ⊢ a : 1` then `Γ ⊢ a ≡ * : 1`
+    // ///
+    // /// TODO: reference Lean
+    // fn derive_unit_ext(
+    //     &mut self,
+    //     ctx: C,
+    //     a: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<EqnInV<C, T>, S::Fail>;
 
-    /// Extensionality for the true proposition
-    ///
-    /// If `Γ ⊢ a : 2` and `Γ ⊢ a inhab` then `Γ ⊢ a ≡ 1 : 2`
-    ///
-    /// TODO: reference Lean
-    fn derive_prop_ext_tt(
-        &mut self,
-        ctx: C,
-        a: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>;
+    // /// Extensionality for the true proposition
+    // ///
+    // /// If `Γ ⊢ a : 2` and `Γ ⊢ a inhab` then `Γ ⊢ a ≡ 1 : 2`
+    // ///
+    // /// TODO: reference Lean
+    // fn derive_prop_ext_tt(
+    //     &mut self,
+    //     ctx: C,
+    //     a: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<EqnInV<C, T>, S::Fail>;
 
-    /// Extensionality for the false proposition
-    ///
-    /// If `Γ ⊢ a : 2` and `Γ ⊢ a empty` then `Γ ⊢ a ≡ 0 : 2`
-    ///
-    /// TODO: reference Lean
-    fn derive_prop_ext_ff(
-        &mut self,
-        ctx: C,
-        a: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>;
+    // /// Extensionality for the false proposition
+    // ///
+    // /// If `Γ ⊢ a : 2` and `Γ ⊢ a empty` then `Γ ⊢ a ≡ 0 : 2`
+    // ///
+    // /// TODO: reference Lean
+    // fn derive_prop_ext_ff(
+    //     &mut self,
+    //     ctx: C,
+    //     a: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<EqnInV<C, T>, S::Fail>;
 
-    /// Extensionality
-    ///
-    /// If `Γ ⊢ a = b` then `Γ ⊢ a ≡ b`
-    ///
-    /// TODO: reference Lean
-    fn derive_ext(
-        &mut self,
-        ctx: C,
-        lhs: Val<C, T>,
-        rhs: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>;
+    // /// Extensionality
+    // ///
+    // /// If `Γ ⊢ a = b` then `Γ ⊢ a ≡ b`
+    // ///
+    // /// TODO: reference Lean
+    // fn derive_ext(
+    //     &mut self,
+    //     ctx: C,
+    //     lhs: Val<C, T>,
+    //     rhs: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<EqnInV<C, T>, S::Fail>;
 
-    /// Eta for functions
-    ///
-    /// If `Γ ⊢ f : Π A . B` then `Γ ⊢ f ≡ λx. f x : Π A . B`
-    ///
-    /// TODO: reference Lean
-    fn derive_pi_eta(
-        &mut self,
-        ctx: C,
-        ty: Val<C, T>,
-        f: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>;
+    // /// Eta for functions
+    // ///
+    // /// If `Γ ⊢ f : Π A . B` then `Γ ⊢ f ≡ λx. f x : Π A . B`
+    // ///
+    // /// TODO: reference Lean
+    // fn derive_pi_eta(
+    //     &mut self,
+    //     ctx: C,
+    //     ty: Val<C, T>,
+    //     f: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<EqnInV<C, T>, S::Fail>;
 
-    /// Eta for pairs
-    ///
-    /// If `Γ ⊢ p : Σ A . B` then `Γ ⊢ p ≡ (fst p, snd p) : Σ A . B`
-    ///
-    /// TODO: reference Lean
-    fn derive_sigma_eta(
-        &mut self,
-        ctx: C,
-        ty: Val<C, T>,
-        p: Val<C, T>,
-        strategy: &mut S,
-    ) -> Result<EqnInV<C, T>, S::Fail>;
+    // /// Eta for pairs
+    // ///
+    // /// If `Γ ⊢ p : Σ A . B` then `Γ ⊢ p ≡ (fst p, snd p) : Σ A . B`
+    // ///
+    // /// TODO: reference Lean
+    // fn derive_sigma_eta(
+    //     &mut self,
+    //     ctx: C,
+    //     ty: Val<C, T>,
+    //     p: Val<C, T>,
+    //     strategy: &mut S,
+    // ) -> Result<EqnInV<C, T>, S::Fail>;
 }

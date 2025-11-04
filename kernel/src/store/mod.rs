@@ -40,7 +40,7 @@ impl TermIndex for TermDb {
     type TermId = TermId;
 }
 
-impl ReadTerm<CtxId, TermId> for TermDb {
+impl ReadTerm for TermDb {
     fn val(&self, ctx: CtxId, tm: TermId) -> ValId {
         match self.node(ctx, tm) {
             Node::Import(val) => self.val(val.ctx, val.tm),

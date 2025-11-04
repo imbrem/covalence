@@ -18,3 +18,6 @@ pub mod error;
 
 /// API for visitors
 pub mod visit;
+
+/// API for universe management
+pub mod univ;

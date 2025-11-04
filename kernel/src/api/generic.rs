@@ -25,7 +25,7 @@ pub trait Bvi<S> {
     fn bvi(&self, store: &S) -> Bv;
 }
 
-impl<S: ReadTerm<C, T>, C: Copy, T: Copy> Bvi<S> for Val<C, T> {
+impl<S: ReadTerm> Bvi<S> for ValId<S> {
     fn bvi(&self, store: &S) -> Bv {
         store.bvi(self.ctx, self.tm)
     }

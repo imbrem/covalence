@@ -1,14 +1,17 @@
 /*!
 Facts which can be checked in the datastore
 */
-use std::ops::{Deref, DerefMut};
+use std::ops::{ControlFlow, Deref, DerefMut};
 
 use covalence_data::{
     ctx::ReadCtxFacts,
     store::{CtxId, Ix, ReadLocalFacts, ReadLocalStore},
 };
+use either::Either;
 
 pub use crate::data::fact::*;
+
+pub mod transformer;
 
 /// A database which can check facts
 pub trait CheckFact<F: ?Sized> {
@@ -165,6 +168,7 @@ impl<C, T> QAtomSeq<C, T> {
         }
     }
 }
+
 /// A unary predicate holds on a term-in-context
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct HoldsIn<T> {

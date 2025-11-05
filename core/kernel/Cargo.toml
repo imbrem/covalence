@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 covalence-data = { path = "../data" }
+either = "1.15.0"
 
 [dev-dependencies]
 covalence = { path = "../../covalence" }

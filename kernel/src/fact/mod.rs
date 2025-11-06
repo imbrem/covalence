@@ -3,6 +3,9 @@ Facts which can be checked in the datastore
 */
 use std::ops::{Deref, DerefMut};
 
+/// Logical combinators for facts
+pub mod logic;
+
 /// Predicates on terms-in-context supported by the kernel
 pub mod pred;
 
@@ -12,6 +15,9 @@ pub use pred::*;
 pub mod atom;
 
 pub use atom::*;
+
+/// Quantified facts
+pub mod quant;
 
 /// A database which can check facts
 pub trait CheckFact<F: ?Sized> {
@@ -24,13 +30,13 @@ pub trait SetFactUnchecked<F: ?Sized> {
     /// Store the given fact without checking it
     ///
     /// Returns whether the fact was successfully set
-    fn set_unchecked(&mut self, fact: F) -> bool;
+    fn set_unchecked(&mut self, fact: &F) -> bool;
 }
 
 /// A database which can check facts about ("within") a given context
 pub trait CheckFactIn<C, F: ?Sized> {
     /// Check this fact in the given context
-    fn check_in(&self, ctx: C, db: &F) -> bool;
+    fn check_in(&self, ctx: C, fact: &F) -> bool;
 }
 
 /// A database which can set unchecked facts about ("within") a given context
@@ -38,7 +44,7 @@ pub trait SetFactUncheckedIn<C, F: ?Sized> {
     /// Store the given fact in the given context without checking it
     ///
     /// Returns whether the fact was successfully set
-    fn set_unchecked_in(&mut self, ctx: C, fact: F) -> bool;
+    fn set_unchecked_in(&mut self, ctx: C, fact: &F) -> bool;
 }
 
 /// A _sequent_: a pair `Γ ⊢ S` of a context and a statement
@@ -65,8 +71,8 @@ where
     C: Copy,
     R: SetFactUncheckedIn<C, S>,
 {
-    fn set_unchecked(&mut self, fact: Seq<C, S>) -> bool {
-        self.set_unchecked_in(fact.ctx, fact.stmt)
+    fn set_unchecked(&mut self, fact: &Seq<C, S>) -> bool {
+        self.set_unchecked_in(fact.ctx, &fact.stmt)
     }
 }
 
@@ -84,39 +90,32 @@ impl<C, S> DerefMut for Seq<C, S> {
     }
 }
 
-/// A quantified statement, of the form `Q . S`
+/// An equation
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct Quantified<Q, S> {
-    /// The quantifier for this statement
-    pub binder: Q,
-    /// The body of this statement
-    pub body: S,
-}
+pub struct Eqn<L, R = L>(pub L, pub R);
 
-/// A universal quantifier
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct Forall<T>(T);
+/// An equation-in-context
+pub type EqnIn<C, L, R = L> = Seq<C, Eqn<L, R>>;
 
-/// A potentially-quantified atomic formula
-pub type QAtom<T> = Quantified<Option<Forall<T>>, Atom<T>>;
-
-/// An atomic sequent
-pub type AtomSeq<C, T> = Seq<C, Atom<T>>;
-
-/// A quantified atomic sequent
-pub type QAtomSeq<C, T> = Seq<C, QAtom<T>>;
-
-impl<C, T> QAtomSeq<C, T> {
-    pub fn contr(ctx: C) -> QAtomSeq<C, T> {
+impl<C, L, R> EqnIn<C, L, R> {
+    /// Construct a new equation-in-context
+    pub const fn new(ctx: C, lhs: L, rhs: R) -> Self {
         Seq {
             ctx,
-            stmt: Quantified {
-                binder: None,
-                body: Atom::Pred0(Pred0::IS_CONTR),
-            },
+            stmt: Eqn(lhs, rhs),
         }
     }
 }
+
+/// A term has the given type
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct HasTy<T> {
+    pub tm: T,
+    pub ty: T,
+}
+
+/// A term has the given type in a context
+pub type HasTyIn<C, T> = Seq<C, HasTy<T>>;
 
 /// A term is well-formed
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]

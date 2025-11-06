@@ -60,29 +60,5 @@ impl<T> Atom<T> {
     }
 }
 
-/// An equation
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct Eqn<L, R = L>(pub L, pub R);
-
-/// An equation-in-context
-pub type EqnIn<C, L, R = L> = Seq<C, Eqn<L, R>>;
-
-impl<C, L, R> EqnIn<C, L, R> {
-    /// Construct a new equation-in-context
-    pub const fn new(ctx: C, lhs: L, rhs: R) -> Self {
-        Seq {
-            ctx,
-            stmt: Eqn(lhs, rhs),
-        }
-    }
-}
-
-/// A term has the given type
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct HasTy<T> {
-    pub tm: T,
-    pub ty: T,
-}
-
-/// A term has the given type in a context
-pub type HasTyIn<C, T> = Seq<C, HasTy<T>>;
+/// An atomic sequent
+pub type AtomSeq<C, T> = Seq<C, Atom<T>>;

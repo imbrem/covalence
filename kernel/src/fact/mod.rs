@@ -21,6 +21,9 @@ use crate::data::term::Node;
 /// Quantified facts
 pub mod quant;
 
+/// Stable facts
+pub mod stable;
+
 /// A database which can check facts
 pub trait CheckFact<F: ?Sized> {
     /// Check whether the given fact holds in this database
@@ -58,7 +61,7 @@ pub struct Seq<C, S> {
     pub stmt: S,
 }
 
-impl<C, S, R: ?Sized> CheckFact<Seq<C, S>> for R
+impl<C, S, R> CheckFact<Seq<C, S>> for R
 where
     C: Copy,
     R: CheckFactIn<C, S>,
@@ -68,10 +71,10 @@ where
     }
 }
 
-impl<C, S, R: ?Sized> SetFactUnchecked<Seq<C, S>> for R
+impl<C, S, R> SetFactUnchecked<Seq<C, S>> for R
 where
     C: Copy,
-    R: SetFactUncheckedIn<C, S>,
+    R: SetFactUncheckedIn<C, S> + ?Sized,
 {
     fn set_unchecked(&mut self, fact: &Seq<C, S>) -> bool {
         self.set_unchecked_in(fact.ctx, &fact.stmt)

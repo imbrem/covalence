@@ -16,6 +16,8 @@ pub mod atom;
 
 pub use atom::*;
 
+use crate::data::term::Node;
+
 /// Quantified facts
 pub mod quant;
 
@@ -114,6 +116,18 @@ pub struct HasTy<T> {
     pub ty: T,
 }
 
+impl<C, T> From<HasTy<T>> for IsWf<Node<C, T>> {
+    fn from(ht: HasTy<T>) -> Self {
+        IsWf(Node::HasTy([ht.tm, ht.ty]))
+    }
+}
+
+impl<C, T> From<HasTy<T>> for HoldsIn<Node<C, T>> {
+    fn from(ht: HasTy<T>) -> Self {
+        HoldsIn::is_wf(Node::HasTy([ht.tm, ht.ty]))
+    }
+}
+
 /// A term has the given type in a context
 pub type HasTyIn<C, T> = Seq<C, HasTy<T>>;
 
@@ -159,3 +173,45 @@ pub struct IsFalse<T>(T);
 
 /// A term is the false proposition in a context
 pub struct IsFalseIn<C, T>(C, T);
+
+impl<T> From<IsWf<T>> for HoldsIn<T> {
+    fn from(iwf: IsWf<T>) -> Self {
+        HoldsIn::is_wf(iwf.0)
+    }
+}
+
+impl<T> From<IsTy<T>> for HoldsIn<T> {
+    fn from(ity: IsTy<T>) -> Self {
+        HoldsIn::is_ty(ity.0)
+    }
+}
+
+impl<T> From<IsProp<T>> for HoldsIn<T> {
+    fn from(iprop: IsProp<T>) -> Self {
+        HoldsIn::is_prop(iprop.0)
+    }
+}
+
+impl<T> From<IsInhab<T>> for HoldsIn<T> {
+    fn from(iinhab: IsInhab<T>) -> Self {
+        HoldsIn::is_inhab(iinhab.0)
+    }
+}
+
+impl<T> From<IsEmpty<T>> for HoldsIn<T> {
+    fn from(iempty: IsEmpty<T>) -> Self {
+        HoldsIn::is_empty(iempty.0)
+    }
+}
+
+impl<T> From<IsTrue<T>> for HoldsIn<T> {
+    fn from(itt: IsTrue<T>) -> Self {
+        HoldsIn::is_true(itt.0)
+    }
+}
+
+impl<T> From<IsFalse<T>> for HoldsIn<T> {
+    fn from(iff: IsFalse<T>) -> Self {
+        HoldsIn::is_false(iff.0)
+    }
+}

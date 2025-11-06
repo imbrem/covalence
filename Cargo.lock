@@ -22,9 +22,9 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "bitflags"
-version = "2.9.4"
+version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2261d10cca569e4643e526d8dc2e62e433cc8aba21ab764233731f8d369bf394"
+checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
 
 [[package]]
 name = "borsh"
@@ -63,8 +63,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 name = "covalence"
 version = "0.1.0"
 dependencies = [
- "bitflags 2.9.4",
- "covalence-data",
+ "bitflags 2.10.0",
  "covalence-kernel",
  "covalence-store",
  "indexmap",
@@ -75,19 +74,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "covalence-data"
-version = "0.1.0"
-dependencies = [
- "bitflags 2.9.4",
- "covalence",
-]
-
-[[package]]
 name = "covalence-kernel"
 version = "0.1.0"
 dependencies = [
+ "bitflags 2.10.0",
  "covalence",
- "covalence-data",
  "either",
 ]
 
@@ -113,7 +104,7 @@ dependencies = [
 name = "covalence-store"
 version = "0.1.0"
 dependencies = [
- "covalence-data",
+ "covalence-kernel",
  "egg",
  "indexmap",
  "smallvec",
@@ -541,7 +532,7 @@ version = "11.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "498cd0dc59d73224351ee52a95fee0f1a617a2eae0e7d9d720cc622c73a54186"
 dependencies = [
- "bitflags 2.9.4",
+ "bitflags 2.10.0",
 ]
 
 [[package]]

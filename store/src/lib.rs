@@ -1,8 +1,8 @@
 use typed_generational_arena::{SmallArena, SmallIndex};
 
-use covalence_data::fact::{Pred0, Pred1};
-use covalence_data::store::*;
-use covalence_data::term::*;
+use covalence_kernel::data::term::*;
+use covalence_kernel::fact::{Pred0, Pred1};
+use covalence_kernel::store::*;
 
 mod ctx;
 use ctx::*;
@@ -12,9 +12,9 @@ pub use ctx::{Ix, NodeIx};
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CtxId(SmallIndex<Ctx>);
 
-pub type TmId = covalence_data::store::TmId<TermDb>;
+pub type TmId = covalence_kernel::store::TmId<TermDb>;
 
-pub type FvId = covalence_data::store::FvId<TermDb>;
+pub type FvId = covalence_kernel::store::FvId<TermDb>;
 
 /// A term store implemented using `egg`
 #[derive(Debug, Clone, Default)]
@@ -47,7 +47,7 @@ impl ReadLocalTerm for TermDb {
         self.x[ctx.0].lookup(tm)
     }
 
-    fn bvi(&self, ctx: CtxId, tm: Ix) -> Bv {
+    fn local_bvi(&self, ctx: CtxId, tm: Ix) -> Bv {
         //TODO: compute the bvi if invalid
         self.x[ctx.0].bvi(tm)
     }
@@ -84,8 +84,8 @@ impl WriteLocalTerm for TermDb {
     fn cons_node_ix(&mut self, ctx: CtxId, tm: NodeIx) -> Ix {
         let ix = self.x[ctx.0].add(tm);
         let bvi = match tm {
-            Node::Import(tm) => self.bvi(tm.ctx, tm.ix),
-            tm => tm.bvi_with(|x| self.bvi(ctx, *x)),
+            Node::Import(tm) => self.local_bvi(tm.ctx, tm.ix),
+            tm => tm.bvi_with(|x| self.local_bvi(ctx, *x)),
         };
         self.x[ctx.0].set_bvi_unchecked(ix, bvi);
         ix
@@ -200,133 +200,10 @@ impl ReadLocalFacts for TermDb {
         self.x[ctx.0].eq_in(lhs, rhs)
     }
 
-    fn local_has_ty(
-        &self,
-        ctx: covalence_data::store::CtxId<Self>,
-        tm: covalence_data::store::Ix<Self>,
-        ty: covalence_data::store::Ix<Self>,
-    ) -> bool {
+    fn local_has_ty(&self, ctx: CtxId, tm: Ix, ty: Ix) -> bool {
         self.x[ctx.0].has_ty(tm, ty)
     }
 }
-
-/*
-impl ReadQuantFacts<CtxId, Ix> for TermDb {
-    fn forall_eq_in(&self, ctx: CtxId, binder: Ix, lhs: Ix, rhs: Ix) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        if self.eq_in(ctx, lhs, rhs) {
-            return true;
-        }
-        let Some(abs_lhs) = self.lookup(ctx, NodeT::Abs([binder, lhs])) else {
-            return false;
-        };
-        let Some(abs_rhs) = self.lookup(ctx, NodeT::Abs([binder, rhs])) else {
-            return false;
-        };
-        self.eq_in(ctx, abs_lhs, abs_rhs)
-    }
-
-    fn forall_has_ty(&self, ctx: CtxId, binder: Ix, tm: Ix, ty: Ix) -> bool {
-        if self.is_ty(ctx, binder) && self.has_ty(ctx, tm, ty) {
-            return true;
-        }
-        let Some(abs) = self.lookup(ctx, NodeT::Abs([binder, tm])) else {
-            return false;
-        };
-        let Some(pi) = self.lookup(ctx, NodeT::Pi([binder, ty])) else {
-            return false;
-        };
-        self.has_ty(ctx, abs, pi)
-    }
-
-    fn forall_is_wf(&self, ctx: CtxId, binder: Ix, tm: Ix) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        self.is_wf(ctx, tm)
-            || self
-                .lookup(ctx, NodeT::Abs([binder, tm]))
-                .is_some_and(|abs| self.is_wf(ctx, abs))
-    }
-
-    fn forall_is_ty(&self, ctx: CtxId, binder: Ix, tm: Ix) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        self.is_ty(ctx, tm)
-            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
-            || self
-                .lookup(ctx, NodeT::Pi([binder, tm]))
-                .is_some_and(|pi| self.is_ty(ctx, pi))
-    }
-
-    fn forall_is_prop(&self, ctx: CtxId, binder: Ix, tm: Ix) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        self.is_prop(ctx, tm)
-            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
-            || self
-                .lookup(ctx, NodeT::Pi([binder, tm]))
-                .is_some_and(|pi| self.is_prop(ctx, pi))
-    }
-
-    fn forall_is_inhab(&self, ctx: CtxId, binder: Ix, tm: Ix) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        self.is_inhab(ctx, tm)
-            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
-            || self.eq_in(ctx, tm, binder)
-            || self
-                .lookup(ctx, NodeT::Pi([binder, tm]))
-                .is_some_and(|pi| self.is_inhab(ctx, pi))
-    }
-
-    fn forall_is_tt(&self, ctx: CtxId, binder: Ix, tm: Ix) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        self.is_tt(ctx, tm)
-            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
-            || (self.is_prop(ctx, binder) && self.eq_in(ctx, tm, binder))
-            || self
-                .lookup(ctx, NodeT::Pi([binder, tm]))
-                .is_some_and(|pi| self.is_tt(ctx, pi))
-    }
-
-    fn forall_is_empty(&self, ctx: CtxId, binder: Ix, tm: Ix) -> bool {
-        if !self.is_ty(ctx, binder) {
-            return false;
-        }
-        self.is_empty(ctx, tm)
-            || (self.is_wf(ctx, tm) && self.is_empty(ctx, binder))
-            || self
-                .lookup(ctx, NodeT::Sigma([binder, tm]))
-                .is_some_and(|sigma| self.is_empty(ctx, sigma))
-    }
-
-    fn forall_is_ff(&self, ctx: CtxId, binder: Ix, tm: Ix) -> bool {
-        self.forall_is_prop(ctx, binder, tm) && self.forall_is_empty(ctx, binder, tm)
-    }
-
-    fn forall_is_contr(&self, ctx: CtxId, binder: Ix, tm: Ix) -> bool {
-        self.is_empty(ctx, binder) && self.forall_is_wf(ctx, binder, tm)
-    }
-}
-    */
-
-/*
-impl ReadTermDb<CtxId, Ix> for TermDb {
-    type Reader = TermDb;
-
-    fn read(&self) -> &Self::Reader {
-        self
-    }
-}
-*/
 
 impl WriteCtxGraphUnchecked<CtxId> for TermDb {
     fn set_parent_unchecked(&mut self, ctx: CtxId, parent: CtxId) {
@@ -357,46 +234,6 @@ impl WriteLocalFactsUnchecked for TermDb {
         self.x[ctx.0].set_has_ty_unchecked(tm, ty);
     }
 }
-
-/*
-impl WriteFacts<CtxId, Ix> for TermDb {
-    fn set_has_ty_unchecked(&mut self, ctx: CtxId, tm: Ix, ty: Ix) {
-        self.x[ctx.0].set_has_ty_unchecked(tm, ty);
-    }
-
-    fn set_forall_eq_unchecked(&mut self, ctx: CtxId, binder: Ix, lhs: Ix, rhs: Ix) {
-        self.x[ctx.0].set_forall_eq_unchecked(binder, lhs, rhs);
-    }
-
-    fn set_forall_is_wf_unchecked(&mut self, ctx: CtxId, binder: Ix, tm: Ix) {
-        self.x[ctx.0].set_forall_is_wf_unchecked(binder, tm);
-    }
-
-    fn set_forall_is_ty_unchecked(&mut self, ctx: CtxId, binder: Ix, tm: Ix) {
-        self.x[ctx.0].set_forall_is_ty_unchecked(binder, tm);
-    }
-
-    fn set_forall_is_prop_unchecked(&mut self, ctx: CtxId, binder: Ix, tm: Ix) {
-        self.x[ctx.0].set_forall_is_prop_unchecked(binder, tm);
-    }
-
-    fn set_forall_has_ty_unchecked(&mut self, ctx: CtxId, binder: Ix, tm: Ix, ty: Ix) {
-        self.x[ctx.0].set_forall_has_ty_unchecked(binder, tm, ty);
-    }
-
-    fn set_forall_is_inhab_unchecked(&mut self, ctx: CtxId, binder: Ix, ty: Ix) {
-        self.x[ctx.0].set_forall_is_inhab_unchecked(binder, ty);
-    }
-
-    fn set_forall_is_empty_unchecked(&mut self, ctx: CtxId, binder: Ix, tm: Ix) {
-        self.x[ctx.0].set_forall_is_empty_unchecked(binder, tm);
-    }
-
-    fn set_exists_is_inhab_unchecked(&mut self, ctx: CtxId, binder: Ix, ty: Ix) {
-        self.x[ctx.0].set_exists_is_inhab_unchecked(binder, ty);
-    }
-}
-*/
 
 #[cfg(test)]
 mod test {

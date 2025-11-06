@@ -11,6 +11,5 @@ smol_str = "0.3.2"
 typed-generational-arena = "0.2.9"
 winnow = "0.7.13"
 
-covalence-kernel = { path = "../core/kernel" }
-covalence-store = { path = "../core/store" }
-covalence-data   = { path = "../core/data" }
+covalence-kernel = { path = "../kernel" }
+covalence-store = { path = "../store" }

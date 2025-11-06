@@ -1,9 +1,3 @@
 [workspace]
 resolver = "3"
-members = [
-    "covalence",
-    "server",
-    "core/data",
-    "core/store",
-    "core/kernel",
-]
+members = ["covalence", "server", "store", "kernel"]

@@ -13,8 +13,6 @@ mod server;
 
 use server::CovalenceLsp;
 
-pub mod smt;
-
 pub mod utils;
 
 fn main() -> eyre::Result<()> {

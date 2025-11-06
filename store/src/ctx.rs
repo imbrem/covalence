@@ -1,9 +1,9 @@
 use std::{collections::BTreeMap, ops::BitOr};
 
-use covalence_data::term::{Bv, DiscT, Fv, Node};
+use covalence_kernel::data::term::{Bv, DiscT, Fv, Node};
 use egg::{Analysis, DidMerge, EGraph, Language};
 
-use covalence_data::fact::{Pred0, Pred1};
+use covalence_kernel::fact::{Pred0, Pred1};
 
 use super::{CtxId, FvId, TmId};
 

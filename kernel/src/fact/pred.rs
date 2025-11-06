@@ -1,6 +1,6 @@
 use bitflags::bitflags;
 
-use crate::term::Node;
+use crate::data::term::Node;
 
 bitflags! {
     /// A nullary predicate over contexts
@@ -45,7 +45,7 @@ bitflags! {
     ///
     /// We note the following relationships:
     /// ```rust
-    /// # use covalence::kernel::*;
+    /// # use covalence_kernel::fact::pred::*;
     /// assert!(IS_WF.contains(IS_SCOPED));
     /// assert_ne!(IS_SCOPED, IS_WF);
     /// assert!(IS_TY.contains(IS_WF));

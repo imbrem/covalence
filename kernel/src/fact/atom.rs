@@ -141,12 +141,3 @@ pub struct HasTy<T> {
 
 /// A term has the given type in a context
 pub type HasTyIn<C, T> = Seq<C, HasTy<T>>;
-
-impl<C: Copy, R> CheckFactIn<C, Pred0> for R
-where
-    R: ReadCtxFacts<C> + ?Sized,
-{
-    fn check_in(&self, ctx: C, pred: &Pred0) -> bool {
-        self.ctx_satisfies(ctx, *pred)
-    }
-}

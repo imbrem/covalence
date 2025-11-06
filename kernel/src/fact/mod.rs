@@ -3,12 +3,10 @@ Facts which can be checked in the datastore
 */
 use std::ops::{Deref, DerefMut};
 
-use covalence_data::{
-    ctx::ReadCtxFacts,
-    store::{CtxId, Ix, ReadLocalFacts, ReadLocalStore},
-};
+/// Predicates on terms-in-context supported by the kernel
+pub mod pred;
 
-pub use crate::data::fact::*;
+pub use pred::*;
 
 /// Atomic facts supported by the kernel
 pub mod atom;
@@ -120,47 +118,6 @@ impl<C, T> QAtomSeq<C, T> {
     }
 }
 
-impl<R> CheckFactIn<CtxId<R>, Holds<CtxId<R>, Ix<R>>> for R
-where
-    R: ReadLocalFacts + ?Sized,
-{
-    fn check_in(&self, ctx: CtxId<R>, fact: &Holds<CtxId<R>, Ix<R>>) -> bool {
-        self.local_tm_satisfies(ctx, fact.tm, fact.pred)
-    }
-}
-
-impl<R> CheckFactIn<CtxId<R>, Eqn<Ix<R>>> for R
-where
-    R: ReadLocalFacts + ?Sized,
-{
-    fn check_in(&self, ctx: CtxId<R>, fact: &Eqn<Ix<R>>) -> bool {
-        self.local_eq(ctx, fact.0, fact.1)
-    }
-}
-
-impl<R> CheckFactIn<CtxId<R>, HasTy<Ix<R>>> for R
-where
-    R: ReadLocalFacts + ?Sized,
-{
-    fn check_in(&self, ctx: CtxId<R>, fact: &HasTy<Ix<R>>) -> bool {
-        self.local_has_ty(ctx, fact.tm, fact.ty)
-    }
-}
-
-impl<R> CheckFactIn<CtxId<R>, Atom<Ix<R>>> for R
-where
-    R: ReadLocalStore + ?Sized,
-{
-    fn check_in(&self, ctx: CtxId<R>, fact: &Atom<Ix<R>>) -> bool {
-        match fact {
-            Atom::Pred0(p) => self.ctx_satisfies(ctx, *p),
-            Atom::Pred1(p, tm) => self.local_tm_satisfies(ctx, *tm, *p),
-            Atom::Eqn(lhs, rhs) => self.local_eq(ctx, *lhs, *rhs),
-            Atom::HasTy(tm, ty) => self.local_has_ty(ctx, *tm, *ty),
-        }
-    }
-}
-
 /// A term is well-formed
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct IsWf<T>(T);
@@ -203,66 +160,3 @@ pub struct IsFalse<T>(T);
 
 /// A term is the false proposition in a context
 pub struct IsFalseIn<C, T>(C, T);
-
-/*
-impl<C, T, R> FactIn<C, R> for Forall<T>
-where
-    C: Copy,
-    T: Copy,
-    R: ReadFacts<C, T> + ?Sized,
-{
-    /// Check this quantifier in the given context
-    fn check_in(&self, &ctx: &C, ker: &R) -> bool {
-        ker.is_ty(ctx, self.0)
-    }
-}
-
-impl<C, T, R> FactIn<C, R> for Atom<T>
-where
-    C: Copy,
-    T: Copy,
-    R: ReadTermFacts<C, T> + ?Sized,
-{
-    /// Check whether this goal is true
-    fn check_in(&self, &ctx: &C, ker: &R) -> bool {
-        match *self {
-            Atom::Pred0(p) => ker.ctx_satisfies(ctx, p),
-            Atom::Pred1(p, tm) => ker.tm_satisfies(ctx, tm, p),
-            Atom::Eqn(lhs, rhs) => ker.eq_in(ctx, lhs, rhs),
-            Atom::HasTy(tm, ty) => ker.has_ty(ctx, tm, ty),
-        }
-    }
-}
-
-impl<C, T, R> FactUnder<C, Forall<T>, R> for Atom<T>
-where
-    C: Copy,
-    T: Copy,
-    R: ReadQuantFacts<C, T> + ?Sized,
-{
-    /// Check whether this goal is true
-    fn check_under(&self, &ctx: &C, &Forall(binder): &Forall<T>, ker: &R) -> bool {
-        match *self {
-            Atom::Pred0(p) => ker.tm_satisfies(ctx, binder, p.forall()),
-            Atom::Pred1(p, tm) => ker.forall_satisfies(ctx, binder, tm, p),
-            Atom::Eqn(lhs, rhs) => ker.forall_eq_in(ctx, binder, lhs, rhs),
-            Atom::HasTy(tm, ty) => ker.forall_has_ty(ctx, binder, tm, ty),
-        }
-    }
-}
-
-impl<C, T, R> FactUnder<C, Option<Forall<T>>, R> for Atom<T>
-where
-    C: Copy,
-    T: Copy,
-    R: ReadQuantFacts<C, T> + ?Sized,
-{
-    /// Check whether this goal is true
-    fn check_under(&self, &ctx: &C, binder: &Option<Forall<T>>, ker: &R) -> bool {
-        match binder {
-            None => self.check_in(&ctx, ker),
-            Some(binder) => self.check_under(&ctx, binder, ker),
-        }
-    }
-}
-*/

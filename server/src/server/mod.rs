@@ -1,4 +1,3 @@
-use covalence::kernel::Kernel;
 use covalence::sexpr::{Commands, LocatingSlice, Parser};
 use indexmap::IndexMap;
 use tracing::{info, warn};
@@ -14,7 +13,7 @@ use lsp_types::{
     PublishDiagnosticsParams, Range, TextDocumentItem, Url,
 };
 
-use crate::{smt::SmtProblem, utils::LineMap};
+use crate::utils::LineMap;
 
 /// The covalence LSP
 pub struct CovalenceLsp {
@@ -24,8 +23,6 @@ pub struct CovalenceLsp {
     _params: InitializeParams,
     /// Currently open files
     file_data: IndexMap<Url, FileData>,
-    /// Currently initialized `covalence` kernels
-    kernels: Vec<Kernel>,
 }
 
 /// An internal identifier for an open file
@@ -35,17 +32,11 @@ pub struct FileId(usize);
 /// Data maintained for each currently open file
 #[derive(Debug, Clone, PartialEq)]
 pub struct FileData {
-    /// This file's interpretation
-    interp: FileState,
+    /// This file's state
+    state: FileState,
     /// This file's version number
     version: i32,
-    /// This file's associated Alethe kernel, if any
-    kernel: Option<KernelId>,
 }
-
-/// A kernel ID for the `covalence` LSP
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub struct KernelId(pub usize);
 
 /// A type of file the `covalence` LSP can handle
 #[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
@@ -57,12 +48,7 @@ pub enum FileState {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub struct SmtState {
-    /// The kernel to use
-    kid: KernelId,
-    /// The SMT problem state
-    problem: SmtProblem,
-}
+pub struct SmtState {}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct AletheState {}
@@ -98,7 +84,6 @@ impl CovalenceLsp {
             connection,
             _params: params,
             file_data: IndexMap::default(),
-            kernels: Vec::new(),
         }
     }
 
@@ -142,41 +127,22 @@ impl CovalenceLsp {
         Ok(())
     }
 
-    /// Initialize a new kernel
-    pub fn new_kernel(&mut self) -> KernelId {
-        let kid = KernelId(self.kernels.len());
-        self.kernels.push(Kernel::default());
-        kid
-    }
-
-    /// Get an available kernel for SMT use
-    pub fn get_free_smt_kernel(&mut self) -> KernelId {
-        //TODO: enable kernel recycling, sharing, etc.
-        self.new_kernel()
-    }
-
     /// Open a text document, if we can give it an interpretation
     pub fn open_document(&mut self, doc: &TextDocumentItem) -> Option<FileId> {
         // Existing file information overrides old file information
         if let Some(id) = self.file_id(&doc.uri) {
             return Some(id);
         };
-        let interp = match &*doc.language_id {
-            "smt" => {
-                let kid = self.get_free_smt_kernel();
-                let problem = SmtProblem::new(&mut self.kernels[kid.0]);
-                FileState::Smt(SmtState { kid, problem })
-            }
-            //TODO: implement Alethe proof support
+        let state = match &*doc.language_id {
+            "smt" => FileState::Smt(SmtState {}),
             "alethe" => FileState::Alethe(AletheState {}),
             _ => return None,
         };
         let (fid, old) = self.file_data.insert_full(
             doc.uri.clone(),
             FileData {
-                interp,
+                state,
                 version: doc.version,
-                kernel: None,
             },
         );
         assert_eq!(old, None);

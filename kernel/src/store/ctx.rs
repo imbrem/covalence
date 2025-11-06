@@ -1,4 +1,4 @@
-use crate::{fact::Pred0, term::Fv};
+use crate::{fact::Pred0, data::term::Fv};
 
 /// A datastore that can read contexts
 ///
@@ -6,12 +6,6 @@ use crate::{fact::Pred0, term::Fv};
 /// ```rust
 /// # use covalence::kernel::*;
 /// let ker : &dyn ReadCtx<CtxId, TmId> = &TermDb::new();
-/// ```
-/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
-/// functions for different kernel wrappers:
-/// ```rust,compile_fail
-/// # use covalence::kernel::*;
-/// let ker : &dyn ReadCtx<CtxId, TmId> = &Kernel::new();
 /// ```
 pub trait ReadCtx<C, T> {
     /// Get the number of variables this context has
@@ -27,12 +21,6 @@ pub trait ReadCtx<C, T> {
 /// ```rust
 /// # use covalence::kernel::*;
 /// let ker : &dyn ReadCtxGraph<CtxId> = &TermDb::new();
-/// ```
-/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
-/// functions for different kernel wrappers:
-/// ```rust,compile_fail
-/// # use covalence::kernel::*;
-/// let ker : &dyn ReadCtxGraph<CtxId> = &Kernel::new();
 /// ```
 pub trait ReadCtxGraph<C> {
     /// Get whether a context is a root context
@@ -164,11 +152,6 @@ pub trait ReadCtxGraph<C> {
 /// # use covalence::kernel::*;
 /// let ker : &dyn WriteCtxGraphUnchecked<CtxId> = &TermDb::new();
 /// ```
-/// We note that it is _not_ implemented by `Kernel`, since that would be unsound:
-/// ```rust,compile_fail
-/// # use covalence::kernel::*;
-/// let ker : &dyn WriteCtxGraphUnchecked<CtxId> = &Kernel::new();
-/// ```
 pub trait WriteCtxGraphUnchecked<C> {
     /// Set a context's parent
     fn set_parent_unchecked(&mut self, ctx: C, parent: C);
@@ -180,12 +163,6 @@ pub trait WriteCtxGraphUnchecked<C> {
 /// ```rust
 /// # use covalence::kernel::*;
 /// let ker : &dyn ReadCtxFacts<CtxId> = &TermDb::new();
-/// ```
-/// Note that this trait is _not_ implemented by the kernel, to avoid re-compiling read-only
-/// functions for different kernel wrappers:
-/// ```rust,compile_fail
-/// # use covalence::kernel::*;
-/// let ker : &dyn ReadCtxFacts<CtxId> = &Kernel::new();
 /// ```
 pub trait ReadCtxFacts<C> {
     /// Get whether a context satisfies a nullary predicate
@@ -207,11 +184,6 @@ pub trait ReadCtxFacts<C> {
 /// ```rust
 /// # use covalence::kernel::*;
 /// let ker : &dyn WriteCtxFactsUnchecked<CtxId> = &TermDb::new();
-/// ```
-/// We note that it is _not_ implemented by `Kernel`, since that would be unsound:
-/// ```rust,compile_fail
-/// # use covalence::kernel::*;
-/// let ker : &dyn WriteCtxFactsUnchecked<CtxId> = &Kernel::new();
 /// ```
 pub trait WriteCtxFactsUnchecked<C> {
     /// Mark a context as contradictory

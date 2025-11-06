@@ -60,61 +60,6 @@ impl<T> Atom<T> {
     }
 }
 
-/// A unary predicate holds on a term-in-context
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct HoldsIn<T> {
-    pub pred: Pred1,
-    pub tm: T,
-}
-
-impl<T> HoldsIn<T> {
-    pub const fn is_scoped(tm: T) -> Self {
-        HoldsIn {
-            pred: IS_SCOPED,
-            tm,
-        }
-    }
-
-    pub const fn is_wf(tm: T) -> Self {
-        HoldsIn { pred: IS_WF, tm }
-    }
-
-    pub const fn is_ty(tm: T) -> Self {
-        HoldsIn { pred: IS_TY, tm }
-    }
-
-    pub const fn is_prop(tm: T) -> Self {
-        HoldsIn { pred: IS_PROP, tm }
-    }
-
-    pub const fn is_inhab(tm: T) -> Self {
-        HoldsIn { pred: IS_INHAB, tm }
-    }
-
-    pub const fn is_empty(tm: T) -> Self {
-        HoldsIn { pred: IS_EMPTY, tm }
-    }
-
-    pub const fn is_true(tm: T) -> Self {
-        HoldsIn { pred: IS_TT, tm }
-    }
-
-    pub const fn is_false(tm: T) -> Self {
-        HoldsIn { pred: IS_FF, tm }
-    }
-
-    pub const fn is_univ(tm: T) -> Self {
-        HoldsIn { pred: IS_UNIV, tm }
-    }
-
-    pub const fn is_contr(tm: T) -> Self {
-        HoldsIn { pred: IS_CONTR, tm }
-    }
-}
-
-/// A unary predicate holds on a term
-pub type Holds<C, T> = Seq<C, HoldsIn<T>>;
-
 /// An equation
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Eqn<L, R = L>(pub L, pub R);

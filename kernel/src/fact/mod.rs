@@ -114,9 +114,9 @@ impl<C, L, R> EqnIn<C, L, R> {
 
 /// A term has the given type
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct HasTy<T> {
-    pub tm: T,
-    pub ty: T,
+pub struct HasTy<L, R = L> {
+    pub tm: L,
+    pub ty: R,
 }
 
 impl<C, T> From<HasTy<T>> for IsWf<Node<C, T>> {

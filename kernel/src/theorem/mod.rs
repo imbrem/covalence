@@ -11,6 +11,8 @@ use crate::{data::term::*, store::*};
 
 static NEXT_KERNEL_ID: AtomicU64 = AtomicU64::new(0);
 
+mod eqn;
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Kernel<D> {
     /// The kernel's underlying term store
@@ -160,7 +162,7 @@ pub struct CheckFailed<F>(F);
 
 impl<F: Display> Display for CheckFailed<F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "covalence kernel: failed to check fact: {}", self.0)
+        write!(f, "covalence failed to check fact: {}", self.0)
     }
 }
 
@@ -177,7 +179,7 @@ impl Display for IdMismatch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "covalence kernel: kernel ID mismatch: expected {}, got {}",
+            "covalence kernel ID mismatch: expected {}, got {}",
             self.expected, self.id
         )
     }
@@ -205,7 +207,7 @@ impl<D> Kernel<D> {
     /// Store a theorem in the database
     ///
     /// Returns an error on kernel ID mismatch
-    pub fn store_thm<F>(&mut self, thm: &Theorem<F>) -> Result<bool, IdMismatch>
+    pub fn try_store_theorem<F>(&mut self, thm: &Theorem<F>) -> Result<bool, IdMismatch>
     where
         F: StableFact,
         D: SetFactUnchecked<F>,
@@ -217,5 +219,17 @@ impl<D> Kernel<D> {
             });
         }
         Ok(self.db.set_unchecked(&thm.stmt))
+    }
+
+    /// Store a theorem in the database
+    ///
+    /// Panics on kernel ID mismatch
+    pub fn store_theorem<F>(&mut self, thm: &Theorem<F>) -> bool
+    where
+        F: StableFact,
+        D: SetFactUnchecked<F>,
+    {
+        self.try_store_theorem(thm)
+            .expect("store_theorem")
     }
 }

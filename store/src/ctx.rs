@@ -23,10 +23,6 @@ impl Ctx {
         }
     }
 
-    pub fn parent(&self) -> Option<CtxId> {
-        self.e.analysis.parent
-    }
-
     pub fn add_parent_unchecked(&mut self, parent: CtxId) -> Result<(), AddParentFailure> {
         if self.e.analysis.parent.is_some() {
             // FIXME: we don't currently support more than one parent per-context
@@ -81,6 +77,18 @@ impl Ctx {
 
     pub fn is_null_extension(&self) -> bool {
         self.e.analysis.vars.is_empty()
+    }
+
+    pub fn num_parents(&self) -> u32 {
+        if self.e.analysis.parent.is_some() {
+            1
+        } else {
+            0
+        }
+    }
+
+    pub fn parent(&self, n: u32) -> Option<CtxId> {
+        if n == 0 { self.e.analysis.parent } else { None }
     }
 
     pub fn nullary(&self) -> Pred0 {

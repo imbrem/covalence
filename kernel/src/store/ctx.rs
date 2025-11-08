@@ -33,6 +33,15 @@ pub trait ReadCtxGraph<C> {
     /// TODO: reference Lean
     fn is_root(&self, ctx: C) -> bool;
 
+    /// Get the number of parents this context has
+    fn num_parents(&self, ctx: C) -> u32;
+
+    /// Get the `n`th parent of this context, if any
+    fn parent(&self, ctx: C, n: u32) -> Option<C>;
+
+    /// Get whether `parent` is a parent of `child`
+    fn is_parent(&self, parent: C, child: C) -> bool;
+
     /// Check whether `lo` is an ancestor of `hi`
     ///
     /// Note that a context `ctx` is always an ancestor of itself

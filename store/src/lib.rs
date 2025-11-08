@@ -145,12 +145,24 @@ impl ReadCtxFacts<CtxId> for TermDb {
 impl ReadCtxGraph<CtxId> for TermDb {
     fn is_root(&self, ctx: CtxId) -> bool {
         //TODO: optimize
-        self.x[ctx.0].is_null_extension() && self.x[ctx.0].parent().is_none_or(|p| self.is_root(p))
+        self.x[ctx.0].is_null_extension() && self.x[ctx.0].parent(0).is_none_or(|p| self.is_root(p))
+    }
+
+    fn num_parents(&self, ctx: CtxId) -> u32 {
+        self.x[ctx.0].num_parents()
+    }
+
+    fn parent(&self, ctx: CtxId, n: u32) -> Option<CtxId> {
+        self.x[ctx.0].parent(n)
+    }
+
+    fn is_parent(&self, parent: CtxId, child: CtxId) -> bool {
+        self.x[child.0].parent(0) == Some(parent)
     }
 
     fn is_ancestor(&self, lo: CtxId, mut hi: CtxId) -> bool {
         while lo != hi {
-            hi = if let Some(parent) = self.x[hi.0].parent() {
+            hi = if let Some(parent) = self.x[hi.0].parent(0) {
                 parent
             } else {
                 return false;
@@ -165,7 +177,7 @@ impl ReadCtxGraph<CtxId> for TermDb {
 
     fn is_subctx(&self, mut lo: CtxId, hi: CtxId) -> bool {
         while self.x[lo.0].is_null_extension() {
-            if let Some(parent) = self.x[lo.0].parent() {
+            if let Some(parent) = self.x[lo.0].parent(0) {
                 lo = parent;
             } else {
                 return true;
@@ -175,7 +187,7 @@ impl ReadCtxGraph<CtxId> for TermDb {
     }
 
     fn is_subctx_of_parents(&self, lo: CtxId, hi: CtxId) -> bool {
-        if let Some(parent) = self.x[hi.0].parent() {
+        if let Some(parent) = self.x[hi.0].parent(0) {
             self.is_subctx(lo, parent)
         } else {
             self.is_root(lo)
@@ -183,7 +195,7 @@ impl ReadCtxGraph<CtxId> for TermDb {
     }
 
     fn parents_are_subctx(&self, lo: CtxId, hi: CtxId) -> bool {
-        if let Some(parent) = self.x[lo.0].parent() {
+        if let Some(parent) = self.x[lo.0].parent(0) {
             self.is_subctx(parent, hi)
         } else {
             true

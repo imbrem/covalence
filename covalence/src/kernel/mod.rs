@@ -5,3 +5,5 @@ pub use covalence_kernel::store::local_store_unchecked::*;
 pub use covalence_store::*;
 
 pub type Kernel = covalence_kernel::Kernel<TermDb>;
+
+pub trait KernelExt: TermIndex {}

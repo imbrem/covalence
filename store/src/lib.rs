@@ -124,7 +124,9 @@ impl WriteUniv for TermDb {
     }
 }
 
-impl ReadCtx<CtxId, TmId> for TermDb {
+impl ReadCtx<CtxId> for TermDb {
+    type VarId = TmId;
+
     fn num_vars(&self, ctx: CtxId) -> u32 {
         self.x[ctx.0].num_vars()
     }
@@ -133,12 +135,6 @@ impl ReadCtx<CtxId, TmId> for TermDb {
         self.x[var.ctx.0]
             .var_ty(var.ix)
             .expect("invalid variable index")
-    }
-}
-
-impl ReadCtxFacts<CtxId> for TermDb {
-    fn ctx_satisfies(&self, ctx: CtxId, pred: Pred0) -> bool {
-        self.x[ctx.0].nullary().contains(pred)
     }
 }
 

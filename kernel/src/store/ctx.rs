@@ -1,6 +1,6 @@
 use std::fmt::{self, Display};
 
-use crate::{data::term::Fv, fact::Pred0};
+use crate::data::term::Fv;
 use thiserror::Error;
 
 /// A datastore that can read contexts
@@ -8,14 +8,16 @@ use thiserror::Error;
 /// This trait is `dyn`-safe:
 /// ```rust
 /// # use covalence::kernel::*;
-/// let ker : &dyn ReadCtx<CtxId, TmId> = &TermDb::new();
+/// let ker : &dyn ReadCtx<CtxId, VarId = TmId> = &TermDb::new();
 /// ```
-pub trait ReadCtx<C, T> {
+pub trait ReadCtx<C> {
+    type VarId;
+
     /// Get the number of variables this context has
     fn num_vars(&self, ctx: C) -> u32;
 
     /// Lookup the type of a variable
-    fn var_ty(&self, var: Fv<C>) -> T;
+    fn var_ty(&self, var: Fv<C>) -> Self::VarId;
 }
 
 /// A datastore that can read relationships between contexts
@@ -197,25 +199,4 @@ impl Display for AddVarFailure {
 pub trait AddVarUnchecked<C, T> {
     /// Add a variable to the given context
     fn add_var_unchecked(&mut self, ctx: C, ty: T) -> Result<Fv<C>, AddVarFailure>;
-}
-
-/// A datastore that can read facts about contexts
-///
-/// This trait is `dyn`-safe:
-/// ```rust
-/// # use covalence::kernel::*;
-/// let ker : &dyn ReadCtxFacts<CtxId> = &TermDb::new();
-/// ```
-pub trait ReadCtxFacts<C> {
-    /// Get whether a context satisfies a nullary predicate
-    ///
-    /// TODO: reference lean
-    fn ctx_satisfies(&self, ctx: C, pred: Pred0) -> bool;
-
-    /// Get whether a context is contradictory
-    ///
-    /// TODO: reference lean
-    fn is_contr(&self, ctx: C) -> bool {
-        self.ctx_satisfies(ctx, Pred0::IS_CONTR)
-    }
 }

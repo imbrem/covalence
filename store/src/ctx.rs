@@ -91,10 +91,6 @@ impl Ctx {
         if n == 0 { self.e.analysis.parent } else { None }
     }
 
-    pub fn nullary(&self) -> Pred0 {
-        self.e.analysis.flags
-    }
-
     pub fn ctx_flags(&self) -> Pred0 {
         self.e.analysis.flags
     }

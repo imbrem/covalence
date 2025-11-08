@@ -30,8 +30,8 @@ pub type FvId<D> = Fv<CtxId<D>>;
 /// Traits implemented by a local store
 pub mod local_store {
     pub use super::{
-        LocalStore, ReadCtx, ReadCtxFacts, ReadCtxGraph, ReadLocalStore, ReadLocalTerm, ReadUniv,
-        TermIndex, WriteLocalStore, WriteLocalTerm,
+        LocalStore, ReadCtx, ReadCtxGraph, ReadLocalStore, ReadLocalTerm, ReadUniv, TermIndex,
+        WriteLocalStore, WriteLocalTerm,
     };
 }
 
@@ -40,7 +40,7 @@ pub mod local_store_unchecked {
     pub use super::local_store::*;
 
     pub use super::{
-        AddVarUnchecked, LocalStoreUnchecked, AddParentUnchecked, WriteLocalStoreUnchecked,
+        AddParentUnchecked, AddVarUnchecked, LocalStoreUnchecked, WriteLocalStoreUnchecked,
     };
 }
 
@@ -92,6 +92,16 @@ pub trait ReadLocalTerm: TermIndex {
     }
 }
 
+pub trait ReadLocalFacts:
+    TermIndex + CheckFactIn<CtxId<Self>, Holds<Ix<Self>>> + CheckFactIn<CtxId<Self>, Eqn<Ix<Self>>>
+{
+}
+
+impl<D> ReadLocalFacts for D where
+    D: TermIndex + CheckFactIn<CtxId<D>, Holds<Ix<D>>> + CheckFactIn<CtxId<D>, Eqn<Ix<D>>>
+{
+}
+
 /// A trait implemented by a datastore that can create hash-consed terms
 pub trait WriteLocalTerm: TermIndex {
     // == Term management ==
@@ -118,25 +128,21 @@ pub trait WriteLocalTerm: TermIndex {
 
 pub trait ReadLocalStore:
     ReadLocalTerm
-    + ReadUniv
-    + ReadCtx<CtxId<Self>, Ix<Self>>
-    + ReadCtxFacts<CtxId<Self>>
+    + ReadLocalFacts
+    + ReadCtx<CtxId<Self>, VarId = TmId<Self>>
     + ReadCtxGraph<CtxId<Self>>
     + CheckFactIn<CtxId<Self>, Pred0>
-    + CheckFactIn<CtxId<Self>, Holds<Ix<Self>>>
-    + CheckFactIn<CtxId<Self>, Eqn<Ix<Self>>>
+    + ReadUniv
 {
 }
 
 impl<D> ReadLocalStore for D where
     D: ReadLocalTerm
-        + ReadUniv
-        + ReadCtx<CtxId<D>, Ix<D>>
-        + ReadCtxFacts<CtxId<Self>>
+        + ReadLocalFacts
+        + ReadCtx<CtxId<D>, VarId = TmId<D>>
         + ReadCtxGraph<CtxId<D>>
         + CheckFactIn<CtxId<D>, Pred0>
-        + CheckFactIn<CtxId<D>, Holds<Ix<D>>>
-        + CheckFactIn<CtxId<D>, Eqn<Ix<D>>>
+        + ReadUniv
 {
 }
 
@@ -154,9 +160,7 @@ pub trait WriteLocalStoreUnchecked:
 }
 
 impl<D> WriteLocalStoreUnchecked for D where
-    D: WriteLocalStore
-        + AddVarUnchecked<CtxId<Self>, TmId<Self>>
-        + AddParentUnchecked<CtxId<D>>
+    D: WriteLocalStore + AddVarUnchecked<CtxId<Self>, TmId<Self>> + AddParentUnchecked<CtxId<D>>
 {
 }
 

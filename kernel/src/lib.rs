@@ -138,12 +138,14 @@ impl<D: WriteUniv> WriteUniv for Kernel<D> {
     }
 }
 
-impl<C, T, D: ReadCtx<C, T>> ReadCtx<C, T> for Kernel<D> {
+impl<C, D: ReadCtx<C>> ReadCtx<C> for Kernel<D> {
+    type VarId = D::VarId;
+
     fn num_vars(&self, ctx: C) -> u32 {
         self.db.num_vars(ctx)
     }
 
-    fn var_ty(&self, var: Fv<C>) -> T {
+    fn var_ty(&self, var: Fv<C>) -> D::VarId {
         self.db.var_ty(var)
     }
 }

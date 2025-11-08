@@ -1,4 +1,4 @@
-use crate::{fact::Pred0, data::term::Fv};
+use crate::{data::term::Fv, fact::Pred0};
 
 /// A datastore that can read contexts
 ///
@@ -157,6 +157,18 @@ pub trait WriteCtxGraphUnchecked<C> {
     fn set_parent_unchecked(&mut self, ctx: C, parent: C);
 }
 
+/// A datastore which can add variables to contexts _without checking validity_
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence::kernel::*;
+/// let db : &dyn AddVarUnchecked<CtxId, TmId> = &TermDb::default();
+/// ```
+pub trait AddVarUnchecked<C, T> {
+    /// Add a variable to the given context
+    fn add_var_unchecked(&mut self, ctx: C, ty: T) -> Fv<C>;
+}
+
 /// A datastore that can read facts about contexts
 ///
 /// This trait is `dyn`-safe:
@@ -176,16 +188,4 @@ pub trait ReadCtxFacts<C> {
     fn is_contr(&self, ctx: C) -> bool {
         self.ctx_satisfies(ctx, Pred0::IS_CONTR)
     }
-}
-
-/// A datastore that can write unchecked facts about contexts
-///
-/// This trait is `dyn`-safe:
-/// ```rust
-/// # use covalence::kernel::*;
-/// let ker : &dyn WriteCtxFactsUnchecked<CtxId> = &TermDb::new();
-/// ```
-pub trait WriteCtxFactsUnchecked<C> {
-    /// Mark a context as contradictory
-    fn set_is_contr_unchecked(&mut self, ctx: C);
 }

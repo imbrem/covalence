@@ -1,7 +1,7 @@
 use typed_generational_arena::{SmallArena, SmallIndex};
 
 use covalence_kernel::data::term::*;
-use covalence_kernel::fact::{Pred0, Pred1};
+use covalence_kernel::fact::{CheckFactIn, Eqn, Holds, Pred0, SetFactUncheckedIn};
 use covalence_kernel::store::*;
 
 mod ctx;
@@ -191,47 +191,54 @@ impl ReadCtxGraph<CtxId> for TermDb {
     }
 }
 
-impl ReadLocalFacts for TermDb {
-    fn local_tm_flags(&self, ctx: CtxId, tm: Ix) -> Pred1 {
-        self.x[ctx.0].tm_flags(tm)
-    }
-
-    fn local_eq(&self, ctx: CtxId, lhs: Ix, rhs: Ix) -> bool {
-        self.x[ctx.0].eq_in(lhs, rhs)
-    }
-
-    fn local_has_ty(&self, ctx: CtxId, tm: Ix, ty: Ix) -> bool {
-        self.x[ctx.0].has_ty(tm, ty)
-    }
-}
-
 impl WriteCtxGraphUnchecked<CtxId> for TermDb {
     fn set_parent_unchecked(&mut self, ctx: CtxId, parent: CtxId) {
         self.x[ctx.0].set_parent_unchecked(parent);
     }
 }
 
-impl WriteCtxFactsUnchecked<CtxId> for TermDb {
-    fn set_is_contr_unchecked(&mut self, ctx: CtxId) {
-        self.x[ctx.0].set_is_contr();
+impl CheckFactIn<CtxId, Pred0> for TermDb {
+    fn check_in(&self, ctx: CtxId, fact: &Pred0) -> bool {
+        self.x[ctx.0].ctx_flags().contains(*fact)
     }
 }
 
-impl WriteLocalFactsUnchecked for TermDb {
-    fn set_tm_flags_unchecked(&mut self, ctx: CtxId, tm: Ix, pred: Pred1) {
-        self.x[ctx.0].set_flags_unchecked(tm, pred);
+impl SetFactUncheckedIn<CtxId, Pred0> for TermDb {
+    fn set_unchecked_in(&mut self, ctx: CtxId, fact: &Pred0) -> bool {
+        self.x[ctx.0].set_ctx_flags(*fact);
+        true
     }
+}
 
-    fn set_eq_unchecked(&mut self, ctx: CtxId, lhs: Ix, rhs: Ix) {
-        self.x[ctx.0].set_eq_unchecked(lhs, rhs);
+impl CheckFactIn<CtxId, Holds<Ix>> for TermDb {
+    fn check_in(&self, ctx: CtxId, fact: &Holds<Ix>) -> bool {
+        self.x[ctx.0].tm_flags(fact.tm).contains(fact.pred)
     }
+}
 
+impl SetFactUncheckedIn<CtxId, Holds<Ix>> for TermDb {
+    fn set_unchecked_in(&mut self, ctx: CtxId, fact: &Holds<Ix>) -> bool {
+        self.x[ctx.0].set_tm_flags_unchecked(fact.tm, fact.pred);
+        true
+    }
+}
+
+impl CheckFactIn<CtxId, Eqn<Ix>> for TermDb {
+    fn check_in(&self, ctx: CtxId, fact: &Eqn<Ix>) -> bool {
+        self.x[ctx.0].eq_in(fact.0, fact.1)
+    }
+}
+
+impl SetFactUncheckedIn<CtxId, Eqn<Ix>> for TermDb {
+    fn set_unchecked_in(&mut self, ctx: CtxId, fact: &Eqn<Ix>) -> bool {
+        self.x[ctx.0].set_eq_unchecked(fact.0, fact.1);
+        true
+    }
+}
+
+impl AddVarUnchecked<CtxId, TmId> for TermDb {
     fn add_var_unchecked(&mut self, ctx: CtxId, ty: TmId) -> FvId {
         self.x[ctx.0].add_var_unchecked(ctx, ty)
-    }
-
-    fn set_has_ty_unchecked(&mut self, ctx: CtxId, tm: Ix, ty: Ix) {
-        self.x[ctx.0].set_has_ty_unchecked(tm, ty);
     }
 }
 

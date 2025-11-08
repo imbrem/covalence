@@ -8,8 +8,7 @@ use std::{
 
 use crate::{data::term::*, store::*};
 
-static NEXT_KERNEL_ID: AtomicU64 = AtomicU64::new(0);
-
+pub mod ctx;
 pub mod data;
 pub mod fact;
 pub mod rule;
@@ -18,6 +17,8 @@ pub mod theorem;
 pub mod univ;
 
 pub use theorem::Theorem;
+
+static NEXT_KERNEL_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Kernel<D> {

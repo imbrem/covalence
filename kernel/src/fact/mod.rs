@@ -125,9 +125,9 @@ impl<C, T> From<HasTy<T>> for IsWf<Node<C, T>> {
     }
 }
 
-impl<C, T> From<HasTy<T>> for HoldsIn<Node<C, T>> {
+impl<C, T> From<HasTy<T>> for Holds<Node<C, T>> {
     fn from(ht: HasTy<T>) -> Self {
-        HoldsIn::is_wf(Node::HasTy([ht.tm, ht.ty]))
+        Holds::is_wf(Node::HasTy([ht.tm, ht.ty]))
     }
 }
 
@@ -177,44 +177,44 @@ pub struct IsFalse<T>(T);
 /// A term is the false proposition in a context
 pub struct IsFalseIn<C, T>(C, T);
 
-impl<T> From<IsWf<T>> for HoldsIn<T> {
+impl<T> From<IsWf<T>> for Holds<T> {
     fn from(iwf: IsWf<T>) -> Self {
-        HoldsIn::is_wf(iwf.0)
+        Holds::is_wf(iwf.0)
     }
 }
 
-impl<T> From<IsTy<T>> for HoldsIn<T> {
+impl<T> From<IsTy<T>> for Holds<T> {
     fn from(ity: IsTy<T>) -> Self {
-        HoldsIn::is_ty(ity.0)
+        Holds::is_ty(ity.0)
     }
 }
 
-impl<T> From<IsProp<T>> for HoldsIn<T> {
+impl<T> From<IsProp<T>> for Holds<T> {
     fn from(iprop: IsProp<T>) -> Self {
-        HoldsIn::is_prop(iprop.0)
+        Holds::is_prop(iprop.0)
     }
 }
 
-impl<T> From<IsInhab<T>> for HoldsIn<T> {
+impl<T> From<IsInhab<T>> for Holds<T> {
     fn from(iinhab: IsInhab<T>) -> Self {
-        HoldsIn::is_inhab(iinhab.0)
+        Holds::is_inhab(iinhab.0)
     }
 }
 
-impl<T> From<IsEmpty<T>> for HoldsIn<T> {
+impl<T> From<IsEmpty<T>> for Holds<T> {
     fn from(iempty: IsEmpty<T>) -> Self {
-        HoldsIn::is_empty(iempty.0)
+        Holds::is_empty(iempty.0)
     }
 }
 
-impl<T> From<IsTrue<T>> for HoldsIn<T> {
+impl<T> From<IsTrue<T>> for Holds<T> {
     fn from(itt: IsTrue<T>) -> Self {
-        HoldsIn::is_true(itt.0)
+        Holds::is_true(itt.0)
     }
 }
 
-impl<T> From<IsFalse<T>> for HoldsIn<T> {
+impl<T> From<IsFalse<T>> for Holds<T> {
     fn from(iff: IsFalse<T>) -> Self {
-        HoldsIn::is_false(iff.0)
+        Holds::is_false(iff.0)
     }
 }

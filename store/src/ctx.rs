@@ -79,9 +79,13 @@ impl Ctx {
         self.e.analysis.flags
     }
 
-    pub fn set_is_contr(&mut self) -> bool {
+    pub fn ctx_flags(&self) -> Pred0 {
+        self.e.analysis.flags
+    }
+
+    pub fn set_ctx_flags(&mut self, flags: Pred0) -> bool {
         let old_flags = self.e.analysis.flags;
-        self.e.analysis.flags |= Pred0::IS_CONTR;
+        self.e.analysis.flags |= flags;
         self.e.analysis.flags != old_flags
     }
 
@@ -93,13 +97,7 @@ impl Ctx {
         self.e.find(lhs.0) == self.e.find(rhs.0)
     }
 
-    pub fn has_ty(&self, tm: Ix, ty: Ix) -> bool {
-        self.e
-            .lookup(InnerNode(NodeIx::HasTy([tm, ty])))
-            .is_some_and(|id| self.e[id].data.flags.contains(Pred1::IS_WF))
-    }
-
-    pub fn set_flags_unchecked(&mut self, tm: Ix, flags: Pred1) -> bool {
+    pub fn set_tm_flags_unchecked(&mut self, tm: Ix, flags: Pred1) -> bool {
         let mut data = self.e[tm.0].data;
         let old_flags = data.flags;
         data.flags |= flags;
@@ -113,11 +111,6 @@ impl Ctx {
 
     pub fn set_eq_unchecked(&mut self, lhs: Ix, rhs: Ix) {
         self.e.union(lhs.0, rhs.0);
-    }
-
-    pub fn set_has_ty_unchecked(&mut self, tm: Ix, ty: Ix) {
-        let id = self.add(NodeIx::HasTy([tm, ty]));
-        self.set_flags_unchecked(id, Pred1::IS_WF);
     }
 
     pub fn add_var_unchecked(&mut self, ctx: CtxId, ty: TmId) -> FvId {

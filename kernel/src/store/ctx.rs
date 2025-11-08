@@ -1,4 +1,7 @@
+use std::fmt::{self, Display};
+
 use crate::{data::term::Fv, fact::Pred0};
+use thiserror::Error;
 
 /// A datastore that can read contexts
 ///
@@ -145,16 +148,34 @@ pub trait ReadCtxGraph<C> {
     fn parents_are_subctx(&self, lo: C, hi: C) -> bool;
 }
 
-/// A datastore that can edit the relationships between contexts _without checking validity_.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Error)]
+pub struct AddParentFailure;
+
+impl Display for AddParentFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "failed to add parent to context")
+    }
+}
+
+/// A datastore that can add parents to contexts _without checking validity_
 ///
 /// This trait is `dyn`-safe:
 /// ```rust
 /// # use covalence::kernel::*;
-/// let ker : &dyn WriteCtxGraphUnchecked<CtxId> = &TermDb::new();
+/// let ker : &dyn AddParentUnchecked<CtxId> = &TermDb::new();
 /// ```
-pub trait WriteCtxGraphUnchecked<C> {
-    /// Set a context's parent
-    fn set_parent_unchecked(&mut self, ctx: C, parent: C);
+pub trait AddParentUnchecked<C> {
+    /// Add a parent to this context
+    fn add_parent_unchecked(&mut self, ctx: C, parent: C) -> Result<(), AddParentFailure>;
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Error)]
+pub struct AddVarFailure;
+
+impl Display for AddVarFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "failed to add variable to context")
+    }
 }
 
 /// A datastore which can add variables to contexts _without checking validity_
@@ -166,7 +187,7 @@ pub trait WriteCtxGraphUnchecked<C> {
 /// ```
 pub trait AddVarUnchecked<C, T> {
     /// Add a variable to the given context
-    fn add_var_unchecked(&mut self, ctx: C, ty: T) -> Fv<C>;
+    fn add_var_unchecked(&mut self, ctx: C, ty: T) -> Result<Fv<C>, AddVarFailure>;
 }
 
 /// A datastore that can read facts about contexts

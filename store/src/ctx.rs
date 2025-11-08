@@ -1,6 +1,9 @@
 use std::{collections::BTreeMap, ops::BitOr};
 
-use covalence_kernel::data::term::{Bv, DiscT, Fv, Node};
+use covalence_kernel::{
+    data::term::{Bv, DiscT, Fv, Node},
+    store::AddParentFailure,
+};
 use egg::{Analysis, DidMerge, EGraph, Language};
 
 use covalence_kernel::fact::{Pred0, Pred1};
@@ -24,8 +27,13 @@ impl Ctx {
         self.e.analysis.parent
     }
 
-    pub fn set_parent_unchecked(&mut self, parent: CtxId) {
+    pub fn add_parent_unchecked(&mut self, parent: CtxId) -> Result<(), AddParentFailure> {
+        if self.e.analysis.parent.is_some() {
+            // FIXME: we don't currently support more than one parent per-context
+            return Err(AddParentFailure);
+        }
         self.e.analysis.parent = Some(parent);
+        Ok(())
     }
 
     pub fn set_this(&mut self, this: CtxId) {

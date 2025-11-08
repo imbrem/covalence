@@ -191,9 +191,9 @@ impl ReadCtxGraph<CtxId> for TermDb {
     }
 }
 
-impl WriteCtxGraphUnchecked<CtxId> for TermDb {
-    fn set_parent_unchecked(&mut self, ctx: CtxId, parent: CtxId) {
-        self.x[ctx.0].set_parent_unchecked(parent);
+impl AddParentUnchecked<CtxId> for TermDb {
+    fn add_parent_unchecked(&mut self, ctx: CtxId, parent: CtxId) -> Result<(), AddParentFailure> {
+        self.x[ctx.0].add_parent_unchecked(parent)
     }
 }
 
@@ -237,8 +237,8 @@ impl SetFactUncheckedIn<CtxId, Eqn<Ix>> for TermDb {
 }
 
 impl AddVarUnchecked<CtxId, TmId> for TermDb {
-    fn add_var_unchecked(&mut self, ctx: CtxId, ty: TmId) -> FvId {
-        self.x[ctx.0].add_var_unchecked(ctx, ty)
+    fn add_var_unchecked(&mut self, ctx: CtxId, ty: TmId) -> Result<FvId, AddVarFailure> {
+        Ok(self.x[ctx.0].add_var_unchecked(ctx, ty))
     }
 }
 

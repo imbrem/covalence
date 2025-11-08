@@ -40,7 +40,7 @@ pub mod local_store_unchecked {
     pub use super::local_store::*;
 
     pub use super::{
-        AddVarUnchecked, LocalStoreUnchecked, WriteCtxGraphUnchecked, WriteLocalStoreUnchecked,
+        AddVarUnchecked, LocalStoreUnchecked, AddParentUnchecked, WriteLocalStoreUnchecked,
     };
 }
 
@@ -149,14 +149,14 @@ pub trait LocalStore: ReadLocalStore + WriteLocalStore {}
 impl<D> LocalStore for D where D: ReadLocalStore + WriteLocalStore {}
 
 pub trait WriteLocalStoreUnchecked:
-    WriteLocalStore + AddVarUnchecked<CtxId<Self>, TmId<Self>> + WriteCtxGraphUnchecked<CtxId<Self>>
+    WriteLocalStore + AddVarUnchecked<CtxId<Self>, TmId<Self>> + AddParentUnchecked<CtxId<Self>>
 {
 }
 
 impl<D> WriteLocalStoreUnchecked for D where
     D: WriteLocalStore
         + AddVarUnchecked<CtxId<Self>, TmId<Self>>
-        + WriteCtxGraphUnchecked<CtxId<D>>
+        + AddParentUnchecked<CtxId<D>>
 {
 }
 

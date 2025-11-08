@@ -1,7 +1,11 @@
 /*!
 Facts which can be checked in the datastore
 */
-use std::ops::{Deref, DerefMut};
+use std::{
+    fmt::{self, Display},
+    ops::{Deref, DerefMut},
+};
+use thiserror::Error;
 
 /// Logical combinators for facts
 pub mod logic;
@@ -30,18 +34,28 @@ pub trait CheckFact<F: ?Sized> {
     fn check(&self, fact: &F) -> bool;
 }
 
+/// A database which can check facts about ("within") a given context
+pub trait CheckFactIn<C, F: ?Sized> {
+    /// Check this fact in the given context
+    fn check_in(&self, ctx: C, fact: &F) -> bool;
+}
+
+/// An error indicating a failure to store a fact
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Error)]
+pub struct StoreFailure;
+
+impl Display for StoreFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "failed to store fact")
+    }
+}
+
 /// A database which can store unchecked facts
 pub trait SetFactUnchecked<F: ?Sized> {
     /// Store the given fact without checking it
     ///
     /// Returns whether the fact was successfully set
-    fn set_unchecked(&mut self, fact: &F) -> bool;
-}
-
-/// A database which can check facts about ("within") a given context
-pub trait CheckFactIn<C, F: ?Sized> {
-    /// Check this fact in the given context
-    fn check_in(&self, ctx: C, fact: &F) -> bool;
+    fn set_unchecked(&mut self, fact: &F) -> Result<(), StoreFailure>;
 }
 
 /// A database which can set unchecked facts about ("within") a given context
@@ -49,7 +63,7 @@ pub trait SetFactUncheckedIn<C, F: ?Sized> {
     /// Store the given fact in the given context without checking it
     ///
     /// Returns whether the fact was successfully set
-    fn set_unchecked_in(&mut self, ctx: C, fact: &F) -> bool;
+    fn set_unchecked_in(&mut self, ctx: C, fact: &F) -> Result<(), StoreFailure>;
 }
 
 /// A _sequent_: a pair `Γ ⊢ S` of a context and a statement
@@ -76,7 +90,7 @@ where
     C: Copy,
     R: SetFactUncheckedIn<C, S> + ?Sized,
 {
-    fn set_unchecked(&mut self, fact: &Seq<C, S>) -> bool {
+    fn set_unchecked(&mut self, fact: &Seq<C, S>) -> Result<(), StoreFailure> {
         self.set_unchecked_in(fact.ctx, &fact.stmt)
     }
 }
@@ -136,43 +150,43 @@ pub type HasTyIn<C, T> = Seq<C, HasTy<T>>;
 
 /// A term is well-formed
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct IsWf<T>(T);
+pub struct IsWf<T>(pub T);
 
 /// A term is well-formed in a context
 pub type IsWfIn<C, T> = Seq<C, IsWf<T>>;
 
 /// A term is a type
-pub struct IsTy<T>(T);
+pub struct IsTy<T>(pub T);
 
 /// A term is a type in a context
 pub type IsTyIn<C, T> = Seq<C, IsTy<T>>;
 
 /// A term is a proposition
-pub struct IsProp<T>(T);
+pub struct IsProp<T>(pub T);
 
 /// A term is a proposition in a context
 pub type IsPropIn<C, T> = Seq<C, IsProp<T>>;
 
 /// A term is an inhabited type
-pub struct IsInhab<T>(T);
+pub struct IsInhab<T>(pub T);
 
 /// A term is inhabited in a context
 pub type IsInhabIn<C, T> = Seq<C, IsInhab<T>>;
 
 /// A term is an empty type
-pub struct IsEmpty<T>(T);
+pub struct IsEmpty<T>(pub T);
 
 /// A term is empty in a context
 pub type IsEmptyIn<C, T> = Seq<C, IsEmpty<T>>;
 
 /// A term is the true proposition
-pub struct IsTrue<T>(T);
+pub struct IsTrue<T>(pub T);
 
 /// A term is the true proposition in a context
 pub struct IsTrueIn<C, T>(C, T);
 
 /// A term is the false proposition
-pub struct IsFalse<T>(T);
+pub struct IsFalse<T>(pub T);
 
 /// A term is the false proposition in a context
 pub struct IsFalseIn<C, T>(C, T);

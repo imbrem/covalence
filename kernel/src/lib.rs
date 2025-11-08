@@ -10,6 +10,7 @@ use crate::{data::term::*, store::*};
 
 pub mod ctx;
 pub mod data;
+pub mod error;
 pub mod fact;
 pub mod rule;
 pub mod store;

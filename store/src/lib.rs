@@ -1,7 +1,7 @@
 use typed_generational_arena::{SmallArena, SmallIndex};
 
 use covalence_kernel::data::term::*;
-use covalence_kernel::fact::{CheckFactIn, Eqn, Holds, Pred0, SetFactUncheckedIn};
+use covalence_kernel::fact::{CheckFactIn, Eqn, Holds, Pred0, SetFactUncheckedIn, StoreFailure};
 use covalence_kernel::store::*;
 
 mod ctx;
@@ -204,9 +204,9 @@ impl CheckFactIn<CtxId, Pred0> for TermDb {
 }
 
 impl SetFactUncheckedIn<CtxId, Pred0> for TermDb {
-    fn set_unchecked_in(&mut self, ctx: CtxId, fact: &Pred0) -> bool {
+    fn set_unchecked_in(&mut self, ctx: CtxId, fact: &Pred0) -> Result<(), StoreFailure> {
         self.x[ctx.0].set_ctx_flags(*fact);
-        true
+        Ok(())
     }
 }
 
@@ -217,9 +217,9 @@ impl CheckFactIn<CtxId, Holds<Ix>> for TermDb {
 }
 
 impl SetFactUncheckedIn<CtxId, Holds<Ix>> for TermDb {
-    fn set_unchecked_in(&mut self, ctx: CtxId, fact: &Holds<Ix>) -> bool {
+    fn set_unchecked_in(&mut self, ctx: CtxId, fact: &Holds<Ix>) -> Result<(), StoreFailure> {
         self.x[ctx.0].set_tm_flags_unchecked(fact.tm, fact.pred);
-        true
+        Ok(())
     }
 }
 
@@ -230,9 +230,9 @@ impl CheckFactIn<CtxId, Eqn<Ix>> for TermDb {
 }
 
 impl SetFactUncheckedIn<CtxId, Eqn<Ix>> for TermDb {
-    fn set_unchecked_in(&mut self, ctx: CtxId, fact: &Eqn<Ix>) -> bool {
+    fn set_unchecked_in(&mut self, ctx: CtxId, fact: &Eqn<Ix>) -> Result<(), StoreFailure> {
         self.x[ctx.0].set_eq_unchecked(fact.0, fact.1);
-        true
+        Ok(())
     }
 }
 

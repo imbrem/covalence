@@ -1,9 +1,10 @@
 use std::fmt::{self, Display};
 use thiserror::Error;
 
+use crate::Kernel;
+use crate::error::KernelError;
 use crate::fact::stable::StableFact;
 use crate::fact::{CheckFact, SetFactUnchecked};
-use crate::Kernel;
 
 mod eqn;
 
@@ -34,21 +35,12 @@ impl<F: Display> Display for CheckFailed<F> {
 }
 
 /// A kernel ID mismatch when attempting to use a theorem
-#[derive(Debug, Error)]
-pub struct IdMismatch {
-    /// The expected kernel ID
-    pub expected: u64,
-    /// The theorem's kernel ID
-    pub id: u64,
-}
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Ord, Error)]
+pub struct IdMismatch;
 
 impl Display for IdMismatch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "covalence kernel ID mismatch: expected {}, got {}",
-            self.expected, self.id
-        )
+        write!(f, "covalence kernel ID mismatch",)
     }
 }
 
@@ -71,31 +63,27 @@ impl<D> Kernel<D> {
         }
     }
 
-    /// Store a theorem in the database
+    /// Check this theorem belongs to this kernel
     ///
     /// Returns an error on kernel ID mismatch
-    pub fn try_store_theorem<F>(&mut self, thm: &Theorem<F>) -> Result<bool, IdMismatch>
-    where
-        F: StableFact,
-        D: SetFactUnchecked<F>,
-    {
+    pub fn theorem_belongs<F>(&self, thm: &Theorem<F>) -> Result<(), IdMismatch> {
         if thm.id != self.id() {
-            return Err(IdMismatch {
-                expected: self.id(),
-                id: thm.id,
-            });
+            Err(IdMismatch)
+        } else {
+            Ok(())
         }
-        Ok(self.db.set_unchecked(&thm.stmt))
     }
 
     /// Store a theorem in the database
     ///
-    /// Panics on kernel ID mismatch
-    pub fn store_theorem<F>(&mut self, thm: &Theorem<F>) -> bool
+    /// Returns an error on kernel ID mismatch
+    pub fn store_theorem<F>(&mut self, thm: &Theorem<F>) -> Result<(), KernelError>
     where
         F: StableFact,
         D: SetFactUnchecked<F>,
     {
-        self.try_store_theorem(thm).expect("store_theorem")
+        self.theorem_belongs(thm)?;
+        self.db.set_unchecked(&thm.stmt)?;
+        Ok(())
     }
 }

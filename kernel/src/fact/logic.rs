@@ -41,8 +41,8 @@ where
 
 /// `()` is interpreted as the true proposition `⊤`
 impl<R: ?Sized> SetFactUnchecked<()> for R {
-    fn set_unchecked(&mut self, _fact: &()) -> bool {
-        true
+    fn set_unchecked(&mut self, _fact: &()) -> Result<(), StoreFailure> {
+        Ok(())
     }
 }
 
@@ -51,8 +51,9 @@ impl<R: ?Sized, A, B> SetFactUnchecked<(A, B)> for R
 where
     R: SetFactUnchecked<A> + SetFactUnchecked<B>,
 {
-    fn set_unchecked(&mut self, fact: &(A, B)) -> bool {
-        self.set_unchecked(&fact.0) && self.set_unchecked(&fact.1)
+    fn set_unchecked(&mut self, fact: &(A, B)) -> Result<(), StoreFailure> {
+        self.set_unchecked(&fact.0)?;
+        self.set_unchecked(&fact.1)
     }
 }
 
@@ -61,7 +62,7 @@ impl<R: ?Sized, A, B> SetFactUnchecked<Either<A, B>> for R
 where
     R: SetFactUnchecked<A> + SetFactUnchecked<B>,
 {
-    fn set_unchecked(&mut self, fact: &Either<A, B>) -> bool {
+    fn set_unchecked(&mut self, fact: &Either<A, B>) -> Result<(), StoreFailure> {
         match fact {
             Either::Left(a) => self.set_unchecked(a),
             Either::Right(b) => self.set_unchecked(b),
@@ -110,8 +111,8 @@ where
 
 /// `()` is interpreted as the true proposition `⊤`
 impl<R: ?Sized, C> SetFactUncheckedIn<C, ()> for R {
-    fn set_unchecked_in(&mut self, _ctx: C, _fact: &()) -> bool {
-        true
+    fn set_unchecked_in(&mut self, _ctx: C, _fact: &()) -> Result<(), StoreFailure> {
+        Ok(())
     }
 }
 
@@ -121,8 +122,9 @@ where
     R: SetFactUncheckedIn<C, A> + SetFactUncheckedIn<C, B>,
     C: Copy,
 {
-    fn set_unchecked_in(&mut self, ctx: C, fact: &(A, B)) -> bool {
-        self.set_unchecked_in(ctx, &fact.0) && self.set_unchecked_in(ctx, &fact.1)
+    fn set_unchecked_in(&mut self, ctx: C, fact: &(A, B)) -> Result<(), StoreFailure> {
+        self.set_unchecked_in(ctx, &fact.0)?;
+        self.set_unchecked_in(ctx, &fact.1)
     }
 }
 
@@ -132,7 +134,7 @@ where
     R: SetFactUncheckedIn<C, A> + SetFactUncheckedIn<C, B>,
     C: Copy,
 {
-    fn set_unchecked_in(&mut self, ctx: C, fact: &Either<A, B>) -> bool {
+    fn set_unchecked_in(&mut self, ctx: C, fact: &Either<A, B>) -> Result<(), StoreFailure> {
         match fact {
             Either::Left(a) => self.set_unchecked_in(ctx, a),
             Either::Right(b) => self.set_unchecked_in(ctx, b),

@@ -4,6 +4,8 @@ pub use covalence_kernel::store::local_store_unchecked::*;
 
 pub use covalence_store::*;
 
+mod ctx;
+
 pub type Kernel = covalence_kernel::Kernel<TermDb>;
 
-pub trait KernelExt: TermIndex {}
+pub use ctx::KernelCtxExt;

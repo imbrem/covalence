@@ -21,6 +21,9 @@ pub enum KernelError {
     /// Would cause a cycle in the context graph
     #[error("covalence kernel error: adding this parent would cause a cycle")]
     WouldCycle,
+    /// Variable not found
+    #[error("covalence kernel error: variable not found")]
+    VarNotFound,
     /// Not implemented
     #[error("covalence kernel error: not implemented")]
     NotImplemented,

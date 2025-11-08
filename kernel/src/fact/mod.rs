@@ -146,7 +146,7 @@ impl<C, T> From<HasTy<T>> for Holds<Node<C, T>> {
 }
 
 /// A term has the given type in a context
-pub type HasTyIn<C, T> = Seq<C, HasTy<T>>;
+pub type HasTyIn<C, T, Ty = T> = Seq<C, HasTy<T, Ty>>;
 
 /// A term is well-formed
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]

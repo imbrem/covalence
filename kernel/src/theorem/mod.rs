@@ -1,4 +1,5 @@
 use std::fmt::{self, Display};
+use std::ops::Deref;
 use thiserror::Error;
 
 use crate::Kernel;
@@ -21,6 +22,26 @@ impl<T> Theorem<T> {
     /// Get the kernel ID this theorem belongs to
     pub fn id(self) -> u64 {
         self.id
+    }
+
+    /// Convert this theorem's statement into an equivalent one
+    pub fn stmt_into<U>(self) -> Theorem<U>
+    where
+        T: StableFact + Into<U>,
+        U: StableFact,
+    {
+        Theorem {
+            stmt: self.stmt.into(),
+            id: self.id,
+        }
+    }
+}
+
+impl<T> Deref for Theorem<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.stmt
     }
 }
 
@@ -45,6 +66,16 @@ impl Display for IdMismatch {
 }
 
 impl<D> Kernel<D> {
+    /// Construct a theorem in this kernel from a fact
+    ///
+    /// This is _unsound_ if the fact is not true!
+    pub(crate) fn new_thm<F>(&self, fact: F) -> Theorem<F> {
+        Theorem {
+            stmt: fact,
+            id: self.id(),
+        }
+    }
+
     /// Check whether a fact is true in the database
     ///
     /// If it is, return it as a theorem
@@ -54,10 +85,7 @@ impl<D> Kernel<D> {
         D: CheckFact<F>,
     {
         if self.db.check(&fact) {
-            Ok(Theorem {
-                stmt: fact,
-                id: self.id(),
-            })
+            Ok(self.new_thm(fact))
         } else {
             Err(CheckFailed(fact))
         }

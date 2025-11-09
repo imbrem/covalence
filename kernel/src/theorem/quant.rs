@@ -8,7 +8,7 @@ use crate::{
         quant::{CloseChildren, Quantified},
         stable::StableFact,
     },
-    store::{CtxId, LocalStoreUnchecked, TmId},
+    store::{CtxId, LocalStoreUnchecked, ReadCtx, ReadCtxGraph, TmId},
 };
 
 impl<C, S> Theorem<Seq<C, S>> {
@@ -82,6 +82,31 @@ impl<C, S> Seq<C, S> {
             },
         })
     }
+
+    pub fn close_var_single<T, D>(
+        self,
+        var_ty: VarTy<C, T>,
+        db: &D,
+    ) -> Result<Seq<C, Quantified<T, S::ClosedChildren>>, KernelError>
+    where
+        S: CloseChildren<C>,
+        C: Copy + PartialEq,
+        D: ReadCtxGraph<C> + ReadCtx<C>,
+    {
+        if !db.parents_are_subctx(var_ty.var.ctx, self.ctx) {
+            return Err(KernelError::CtxMismatch);
+        }
+        if !db.num_assumptions(var_ty.var.ctx) != 1 {
+            return Err(KernelError::SingleVarCtxExpected);
+        }
+        Ok(Seq {
+            ctx: self.ctx,
+            stmt: Quantified {
+                binder: var_ty.ty,
+                body: self.stmt.close_children(var_ty.var),
+            },
+        })
+    }
 }
 
 impl<D> Kernel<D>
@@ -99,26 +124,14 @@ where
         if seq.id != self.id() || var.id != self.id() {
             return Err(KernelError::IdMismatch);
         }
-        let seq = seq.stmt;
-        let var = var.stmt;
-        if !self.parents_are_subctx(var.var.ctx, seq.ctx) {
-            return Err(KernelError::CtxMismatch);
-        }
-        if self.num_assumptions(var.var.ctx) != 1 {
-            return Err(KernelError::SingleVarCtxExpected);
-        }
+        let ix = var.stmt.var.ix;
+        let stmt = seq.stmt.close_var_single(var.stmt, &self.db)?;
         debug_assert_eq!(
-            var.var.ix, 0,
-            "the only valid variable in a single-var ctx has index 0"
+            ix, 0,
+            "the only valid variable index in a single variable context is 0"
         );
         Ok(Theorem {
-            stmt: Seq {
-                ctx: seq.ctx,
-                stmt: Quantified {
-                    binder: var.ty,
-                    body: seq.stmt.close_children(var.var),
-                },
-            },
+            stmt,
             id: self.id(),
         })
     }

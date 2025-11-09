@@ -225,60 +225,239 @@ impl<C, T> Node<C, T> {
     }
 }
 
+mod into_pred1_sealed {
+    pub trait IntoPred1Sealed {}
+}
+
+use into_pred1_sealed::IntoPred1Sealed;
+
+pub trait IntoPred1: IntoPred1Sealed {
+    /// Convert this into a unary predicate
+    fn into_pred1(self) -> Pred1;
+}
+
+impl IntoPred1Sealed for Pred1 {}
+
+impl IntoPred1 for Pred1 {
+    fn into_pred1(self) -> Pred1 {
+        self
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
+pub struct Wf;
+
+impl IntoPred1Sealed for Wf {}
+
+impl IntoPred1 for Wf {
+    fn into_pred1(self) -> Pred1 {
+        IS_WF
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
+pub struct Ty;
+
+impl IntoPred1Sealed for Ty {}
+
+impl IntoPred1 for Ty {
+    fn into_pred1(self) -> Pred1 {
+        IS_TY
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
+pub struct Prop;
+
+impl IntoPred1Sealed for Prop {}
+
+impl IntoPred1 for Prop {
+    fn into_pred1(self) -> Pred1 {
+        IS_PROP
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
+pub struct Inhab;
+
+impl IntoPred1Sealed for Inhab {}
+
+impl IntoPred1 for Inhab {
+    fn into_pred1(self) -> Pred1 {
+        IS_INHAB
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
+pub struct Empty;
+
+impl IntoPred1Sealed for Empty {}
+
+impl IntoPred1 for Empty {
+    fn into_pred1(self) -> Pred1 {
+        IS_EMPTY
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
+pub struct Tt;
+
+impl IntoPred1Sealed for Tt {}
+
+impl IntoPred1 for Tt {
+    fn into_pred1(self) -> Pred1 {
+        IS_TT
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
+pub struct Ff;
+
+impl IntoPred1Sealed for Ff {}
+
+impl IntoPred1 for Ff {
+    fn into_pred1(self) -> Pred1 {
+        IS_FF
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
+pub struct Univ;
+
+impl IntoPred1Sealed for Univ {}
+
+impl IntoPred1 for Univ {
+    fn into_pred1(self) -> Pred1 {
+        IS_UNIV
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
+pub struct Contr;
+
+impl IntoPred1Sealed for Contr {}
+
+impl IntoPred1 for Contr {
+    fn into_pred1(self) -> Pred1 {
+        IS_CONTR
+    }
+}
+
 /// A nullary predicate holds for a context
 pub type HoldsFor<C> = Seq<C, Pred0>;
 
 /// A unary predicate holds on a term-in-context
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct Holds<T> {
-    pub pred: Pred1,
-    pub tm: T,
-}
+pub struct Holds<T>(pub Pred1, pub T);
 
 impl<T> Holds<T> {
     pub const fn is_scoped(tm: T) -> Self {
-        Holds {
-            pred: IS_SCOPED,
-            tm,
-        }
+        Holds(IS_SCOPED, tm)
     }
 
     pub const fn is_wf(tm: T) -> Self {
-        Holds { pred: IS_WF, tm }
+        Holds(IS_WF, tm)
     }
 
     pub const fn is_ty(tm: T) -> Self {
-        Holds { pred: IS_TY, tm }
+        Holds(IS_TY, tm)
     }
 
     pub const fn is_prop(tm: T) -> Self {
-        Holds { pred: IS_PROP, tm }
+        Holds(IS_PROP, tm)
     }
 
     pub const fn is_inhab(tm: T) -> Self {
-        Holds { pred: IS_INHAB, tm }
+        Holds(IS_INHAB, tm)
     }
 
     pub const fn is_empty(tm: T) -> Self {
-        Holds { pred: IS_EMPTY, tm }
+        Holds(IS_EMPTY, tm)
     }
 
     pub const fn is_true(tm: T) -> Self {
-        Holds { pred: IS_TT, tm }
+        Holds(IS_TT, tm)
     }
 
     pub const fn is_false(tm: T) -> Self {
-        Holds { pred: IS_FF, tm }
+        Holds(IS_FF, tm)
     }
 
     pub const fn is_univ(tm: T) -> Self {
-        Holds { pred: IS_UNIV, tm }
+        Holds(IS_UNIV, tm)
     }
 
     pub const fn is_contr(tm: T) -> Self {
-        Holds { pred: IS_CONTR, tm }
+        Holds(IS_CONTR, tm)
     }
 }
 
 /// A unary predicate holds on a term
 pub type HoldsIn<C, T> = Seq<C, Holds<T>>;
+
+/// A unary predicate holds on a term-in-context
+pub struct Is<P, T>(pub P, pub T);
+
+impl<D, C, P, T> CheckFactIn<C, Is<P, T>> for D
+where
+    P: IntoPred1 + Copy,
+    T: Copy,
+    D: CheckFactIn<C, Holds<T>>,
+{
+    fn check_in(&self, ctx: C, fact: &Is<P, T>) -> bool {
+        self.check_in(ctx, &Holds(fact.0.into_pred1(), fact.1))
+    }
+}
+
+/// A term is well-formed
+pub type IsWf<T> = Is<Wf, T>;
+
+/// A term is well-formed in a context
+pub type IsWfIn<C, T> = Seq<C, IsWf<T>>;
+
+/// A term is a type
+pub type IsTy<T> = Is<Ty, T>;
+
+/// A term is a type in a context
+pub type IsTyIn<C, T> = Seq<C, IsTy<T>>;
+
+/// A term is a proposition
+pub type IsProp<T> = Is<Prop, T>;
+
+/// A term is a proposition in a context
+pub type IsPropIn<C, T> = Seq<C, IsProp<T>>;
+
+/// A term is an inhabited type
+pub type IsInhab<T> = Is<Inhab, T>;
+
+/// A term is inhabited in a context
+pub type IsInhabIn<C, T> = Seq<C, IsInhab<T>>;
+
+/// A term is an empty type
+pub type IsEmpty<T> = Is<Empty, T>;
+
+/// A term is empty in a context
+pub type IsEmptyIn<C, T> = Seq<C, IsEmpty<T>>;
+
+/// A term is the true proposition
+pub type IsTrue<T> = Is<Tt, T>;
+
+/// A term is the true proposition in a context
+pub type IsTrueIn<C, T> = Seq<C, IsTrue<T>>;
+
+/// A term is the false proposition
+pub type IsFalse<T> = Is<Ff, T>;
+
+/// A term is the false proposition in a context
+pub type IsFalseIn<C, T> = Seq<C, IsFalse<T>>;
+
+impl<P, T> FromIffSealed<Is<P, T>> for Holds<T> where P: IntoPred1 + Copy {}
+
+impl<P, T> FromIff<Is<P, T>> for Holds<T>
+where
+    P: IntoPred1 + Copy,
+{
+    fn from_iff(value: Is<P, T>) -> Self {
+        Holds(value.0.into_pred1(), value.1)
+    }
+}

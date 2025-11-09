@@ -213,13 +213,13 @@ impl SetFactUncheckedIn<CtxId, Pred0> for TermDb {
 
 impl CheckFactIn<CtxId, Holds<Ix>> for TermDb {
     fn check_in(&self, ctx: CtxId, fact: &Holds<Ix>) -> bool {
-        self.x[ctx.0].tm_flags(fact.tm).contains(fact.pred)
+        self.x[ctx.0].tm_flags(fact.1).contains(fact.0)
     }
 }
 
 impl SetFactUncheckedIn<CtxId, Holds<Ix>> for TermDb {
     fn set_unchecked_in(&mut self, ctx: CtxId, fact: &Holds<Ix>) -> Result<(), StoreFailure> {
-        self.x[ctx.0].set_tm_flags_unchecked(fact.tm, fact.pred);
+        self.x[ctx.0].set_tm_flags_unchecked(fact.1, fact.0);
         Ok(())
     }
 }

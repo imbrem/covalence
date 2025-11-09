@@ -150,7 +150,7 @@ impl<C, D: ReadCtx<C>> ReadCtx<C> for Kernel<D> {
     }
 
     fn assumption(&self, ctx: C, ix: u32) -> D::VarId {
-        self.db.assumption(ctx, ix)
+        self.db.assumption(ctx,ix)
     }
     
     fn var_ty(&self, var: Fv<C>) -> D::VarId {

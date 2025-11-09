@@ -71,8 +71,8 @@ where
         ty: Theorem<IsTyIn<CtxId<D>, TmId<D>>>,
     ) -> Result<Theorem<VarTy<CtxId<D>, TmId<D>>>, KernelError> {
         self.theorem_belongs(&ty)?;
-        let var = self.db.add_var_unchecked(ty.stmt.ctx, ty.stmt.0)?;
-        Ok(self.new_thm(VarTy { var, ty: ty.0 }))
+        let var = self.db.add_var_unchecked(ty.stmt.ctx, ty.stmt.1)?;
+        Ok(self.new_thm(VarTy { var, ty: ty.1 }))
     }
 }
 

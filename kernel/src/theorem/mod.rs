@@ -10,6 +10,8 @@ use crate::fact::{CheckFact, SetFactUnchecked};
 
 mod eqn;
 
+mod quant;
+
 /// A proven theorem
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Theorem<T> {
@@ -151,22 +153,6 @@ impl<D> Kernel<D> {
         D: CheckFact<F>,
     {
         if self.db.check(fact) {
-            Ok(self.new_thm(fact))
-        } else {
-            Err(CheckFailed(fact))
-        }
-    }
-
-    /// Check whether a fact equivalent to this one is true in the database
-    ///
-    /// If it is, return it as a theorem
-    pub fn check_thm_iff<G, F>(&self, fact: F) -> Result<Theorem<F>, CheckFailed<F>>
-    where
-        F: Copy,
-        G: FromIff<F> + StableFact,
-        D: CheckFact<G>,
-    {
-        if self.db.check(&G::from_iff(fact)) {
             Ok(self.new_thm(fact))
         } else {
             Err(CheckFailed(fact))

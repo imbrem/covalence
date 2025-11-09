@@ -27,6 +27,9 @@ pub enum KernelError {
     /// Context mismatch
     #[error("covalence kernel error: context mismatch")]
     CtxMismatch,
+    /// Expected a single-variable context
+    #[error("covalence kernel error: expected a single-variable context")]
+    SingleVarCtxExpected,
     /// Not implemented
     #[error("covalence kernel error: not implemented")]
     NotImplemented,

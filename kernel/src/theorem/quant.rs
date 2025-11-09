@@ -1,5 +1,6 @@
 use crate::{
-    Theorem,
+    Kernel, Theorem,
+    ctx::VarTy,
     data::term::Fv,
     error::KernelError,
     fact::{
@@ -7,6 +8,7 @@ use crate::{
         quant::{CloseChildren, Quantified},
         stable::StableFact,
     },
+    store::{CtxId, LocalStoreUnchecked, TmId},
 };
 
 impl<C, S> Theorem<Seq<C, S>> {
@@ -78,6 +80,46 @@ impl<C, S> Seq<C, S> {
                 binder: var.stmt.ty,
                 body: self.stmt.close_children(var.stmt.tm),
             },
+        })
+    }
+}
+
+impl<D> Kernel<D>
+where
+    D: LocalStoreUnchecked,
+{
+    pub fn close_var_single<S, T>(
+        &self,
+        seq: Theorem<Seq<CtxId<D>, S>>,
+        var: Theorem<VarTy<CtxId<D>, T>>,
+    ) -> Result<Theorem<Seq<CtxId<D>, Quantified<T, S::ClosedChildren>>>, KernelError>
+    where
+        S: CloseChildren<CtxId<D>>,
+    {
+        if seq.id != self.id() || var.id != self.id() {
+            return Err(KernelError::IdMismatch);
+        }
+        let seq = seq.stmt;
+        let var = var.stmt;
+        if !self.parents_are_subctx(var.var.ctx, seq.ctx) {
+            return Err(KernelError::CtxMismatch);
+        }
+        if self.num_assumptions(var.var.ctx) != 1 {
+            return Err(KernelError::SingleVarCtxExpected);
+        }
+        debug_assert_eq!(
+            var.var.ix, 0,
+            "the only valid variable in a single-var ctx has index 0"
+        );
+        Ok(Theorem {
+            stmt: Seq {
+                ctx: seq.ctx,
+                stmt: Quantified {
+                    binder: var.ty,
+                    body: seq.stmt.close_children(var.var),
+                },
+            },
+            id: self.id(),
         })
     }
 }

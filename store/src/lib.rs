@@ -147,9 +147,8 @@ impl ReadCtx<CtxId> for TermDb {
 }
 
 impl ReadCtxGraph<CtxId> for TermDb {
-    fn is_root(&self, ctx: CtxId) -> bool {
-        //TODO: optimize
-        self.x[ctx.0].is_locally_empty() && self.x[ctx.0].parent(0).is_none_or(|p| self.is_root(p))
+    fn is_locally_empty(&self, ctx: CtxId) -> bool {
+        self.x[ctx.0].is_locally_empty()
     }
 
     fn num_parents(&self, ctx: CtxId) -> u32 {
@@ -161,34 +160,7 @@ impl ReadCtxGraph<CtxId> for TermDb {
     }
 
     fn is_parent(&self, parent: CtxId, child: CtxId) -> bool {
-        self.x[child.0].parent(0) == Some(parent)
-    }
-
-    fn is_ancestor(&self, lo: CtxId, hi: CtxId) -> bool {
-        lo == hi || self.is_ancestor_of_parents(lo, hi)
-    }
-
-    fn is_ancestor_of_parents(&self, lo: CtxId, hi: CtxId) -> bool {
-        (0..self.num_parents(hi)).any(|n| {
-            self.parent(hi, n)
-                .is_some_and(|hi| self.is_ancestor(lo, hi))
-        })
-    }
-
-    fn is_subctx(&self, lo: CtxId, hi: CtxId) -> bool {
-        lo == hi
-            || self.is_subctx_of_parents(lo, hi)
-            || (self.num_assumptions(lo) == 0 && self.parents_are_subctx(lo, hi))
-    }
-
-    fn is_subctx_of_parents(&self, lo: CtxId, hi: CtxId) -> bool {
-        (0..self.num_parents(hi))
-            .any(|n| self.parent(hi, n).is_some_and(|hi| self.is_subctx(lo, hi)))
-    }
-
-    fn parents_are_subctx(&self, lo: CtxId, hi: CtxId) -> bool {
-        (0..self.num_parents(lo))
-            .all(|n| self.parent(lo, n).is_some_and(|lo| self.is_subctx(lo, hi)))
+        self.x[parent.0].is_parent(child)
     }
 }
 

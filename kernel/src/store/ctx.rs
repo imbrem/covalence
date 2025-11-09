@@ -34,12 +34,24 @@ pub trait ReadCtx<C> {
 /// let ker : &dyn ReadCtxGraph<CtxId> = &TermDb::new();
 /// ```
 pub trait ReadCtxGraph<C> {
+    /// Get whether a context is locally empty
+    ///
+    /// TODO: reference Lean
+    fn is_locally_empty(&self, ctx: C) -> bool;
+
     /// Get whether a context is a root context
     ///
     /// Note that a root context has no assumptions _or_ variables.
     ///
     /// TODO: reference Lean
-    fn is_root(&self, ctx: C) -> bool;
+    fn is_root(&self, ctx: C) -> bool
+    where
+        C: Copy + PartialEq,
+    {
+        self.is_locally_empty(ctx)
+            && (0..self.num_parents(ctx))
+                .all(|n| self.parent(ctx, n).is_some_and(|ctx| self.is_root(ctx)))
+    }
 
     /// Get the number of parents this context has
     fn num_parents(&self, ctx: C) -> u32;
@@ -65,12 +77,25 @@ pub trait ReadCtxGraph<C> {
     /// assert!(ker.is_ancestor(child, child));
     /// assert!(!ker.is_ancestor(child, parent));
     /// ```
-    fn is_ancestor(&self, lo: C, hi: C) -> bool;
+    fn is_ancestor(&self, lo: C, hi: C) -> bool
+    where
+        C: Copy + PartialEq,
+    {
+        lo == hi || self.is_ancestor_of_parents(lo, hi)
+    }
 
     /// Check whether `lo` is an ancestor of the parents of `hi`
     ///
     /// Note that a context `ctx` is always an ancestor of itself
-    fn is_ancestor_of_parents(&self, lo: C, hi: C) -> bool;
+    fn is_ancestor_of_parents(&self, lo: C, hi: C) -> bool
+    where
+        C: Copy + PartialEq,
+    {
+        (0..self.num_parents(hi)).any(|n| {
+            self.parent(hi, n)
+                .is_some_and(|hi| self.is_ancestor(lo, hi))
+        })
+    }
 
     /// Check whether `lo` is a subcontext of `hi`
     ///
@@ -103,7 +128,15 @@ pub trait ReadCtxGraph<C> {
     /// assert!(ker.is_subctx(child, grandchild));
     /// assert!(ker.is_subctx(grandchild, child));
     /// ```
-    fn is_subctx(&self, lo: C, hi: C) -> bool;
+    fn is_subctx(&self, lo: C, hi: C) -> bool
+    where
+        C: Copy + PartialEq,
+    {
+        lo == hi
+            || self.is_subctx_of_parents(lo, hi)
+            || self.is_root(lo)
+            || (self.is_locally_empty(lo) && self.parents_are_subctx(lo, hi))
+    }
 
     /// Check whether `lo` is a subcontext of `hi`'s parent(s)
     ///
@@ -123,7 +156,13 @@ pub trait ReadCtxGraph<C> {
     /// // Child is nonempty, so is not a subctx of its parent (ctx)
     /// assert!(!ker.is_subctx_of_parents(child, child));
     /// ```
-    fn is_subctx_of_parents(&self, lo: C, hi: C) -> bool;
+    fn is_subctx_of_parents(&self, lo: C, hi: C) -> bool
+    where
+        C: Copy + PartialEq,
+    {
+        (0..self.num_parents(hi))
+            .any(|n| self.parent(hi, n).is_some_and(|hi| self.is_subctx(lo, hi)))
+    }
 
     /// Check whether `lo`'s parent(s) are a subcontext of `hi`
     ///
@@ -148,7 +187,13 @@ pub trait ReadCtxGraph<C> {
     /// // child is a parent of grandchild, but not of ctx!
     /// assert!(!ker.parents_are_subctx(grandchild, ctx));
     /// ```
-    fn parents_are_subctx(&self, lo: C, hi: C) -> bool;
+    fn parents_are_subctx(&self, lo: C, hi: C) -> bool
+    where
+        C: Copy + PartialEq,
+    {
+        (0..self.num_parents(lo))
+            .all(|n| self.parent(lo, n).is_some_and(|lo| self.is_subctx(lo, hi)))
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Error)]

@@ -7,6 +7,7 @@ use covalence_kernel::{
 use egg::{Analysis, DidMerge, EGraph, Language};
 
 use covalence_kernel::fact::{Pred0, Pred1};
+use indexmap::IndexSet;
 
 use super::{CtxId, FvId, TmId};
 
@@ -24,11 +25,7 @@ impl Ctx {
     }
 
     pub fn add_parent_unchecked(&mut self, parent: CtxId) -> Result<(), AddParentFailure> {
-        if self.e.analysis.parent.is_some() {
-            // FIXME: we don't currently support more than one parent per-context
-            return Err(AddParentFailure);
-        }
-        self.e.analysis.parent = Some(parent);
+        self.e.analysis.parents.insert(parent);
         Ok(())
     }
 
@@ -80,15 +77,15 @@ impl Ctx {
     }
 
     pub fn num_parents(&self) -> u32 {
-        if self.e.analysis.parent.is_some() {
-            1
-        } else {
-            0
-        }
+        self.e.analysis.parents.len() as u32
     }
 
     pub fn parent(&self, n: u32) -> Option<CtxId> {
-        if n == 0 { self.e.analysis.parent } else { None }
+        self.e.analysis.parents.get_index(n as usize).copied()
+    }
+
+    pub fn is_parent(&self, ctx: CtxId) -> bool {
+        self.e.analysis.parents.contains(&ctx)
     }
 
     pub fn ctx_flags(&self) -> Pred0 {
@@ -162,8 +159,8 @@ impl Ctx {
 struct CtxData {
     /// Pointer to self
     this: Option<CtxId>,
-    /// This context's parent, if any
-    parent: Option<CtxId>,
+    /// This context's parents
+    parents: IndexSet<CtxId>,
     /// This context's flags
     flags: Pred0,
     /// This context's variables, implemented as a map from indices to types

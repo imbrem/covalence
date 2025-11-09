@@ -16,6 +16,9 @@ pub(crate) use stable_facts_sealed::{StableFactCtxSealed, StableFactSealed};
 /// A stable fact is one which will stay true as the kernel evolves
 pub trait StableFact: StableFactSealed {}
 
+/// A fact-in-context is stable under weakening if it remains true when the context is weakened
+pub trait StableUnderWkn: StableFactSealed {}
+
 /// A stable fact context is one for which facts will stay true as the kernel evolves
 ///
 /// Note the context _itself_ may change, e.g. by adding (but not removing!) variables
@@ -63,24 +66,24 @@ impl<A: StableFact, B: StableFact> StableFact for Either<A, B> {}
 
 impl<R: TermIndex> StableFactCtx<R> for R::CtxId {}
 
-impl<C: StableFactCtx<Self>, F: StableFact> StableFact for Seq<C, F> {}
+impl<C: StableFactCtx<Self>, F: StableUnderWkn> StableFact for Seq<C, F> {}
 
-impl<L, R> StableFact for HasTy<L, R> {}
+impl<L, R> StableUnderWkn for HasTy<L, R> {}
 
-impl<L, R> StableFact for Eqn<L, R> {}
+impl<L, R> StableUnderWkn for Eqn<L, R> {}
 
-impl<T> StableFact for Holds<T> {}
+impl<T> StableUnderWkn for Holds<T> {}
 
-impl<T> StableFact for IsTy<T> {}
+impl<T> StableUnderWkn for IsTy<T> {}
 
-impl<T> StableFact for IsWf<T> {}
+impl<T> StableUnderWkn for IsWf<T> {}
 
-impl<T> StableFact for IsInhab<T> {}
+impl<T> StableUnderWkn for IsInhab<T> {}
 
-impl<T> StableFact for IsEmpty<T> {}
+impl<T> StableUnderWkn for IsEmpty<T> {}
 
-impl<T> StableFact for IsProp<T> {}
+impl<T> StableUnderWkn for IsProp<T> {}
 
-impl<T> StableFact for IsTrue<T> {}
+impl<T> StableUnderWkn for IsTrue<T> {}
 
-impl<T> StableFact for IsFalse<T> {}
+impl<T> StableUnderWkn for IsFalse<T> {}

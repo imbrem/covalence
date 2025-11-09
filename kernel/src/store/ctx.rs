@@ -205,6 +205,30 @@ impl Display for AddParentFailure {
     }
 }
 
+/// A datastore that can seal contexts
+///
+/// This trait is `dyn`-safe:
+/// ```rust
+/// # use covalence::kernel::*;
+/// let ker : &dyn SealCtx<CtxId> = &TermDb::new();
+/// ```
+pub trait SealCtx<C> {
+    /// Seal the given context's assumptions
+    fn seal_ctx_assumptions(&mut self, ctx: C);
+
+    /// Seal the given context's parents
+    fn seal_ctx_parents(&mut self, ctx: C);
+
+    /// Locally seal the given context
+    fn seal_ctx_local(&mut self, ctx: C);
+
+    /// Seal a context's extensions
+    fn seal_ctx_exts(&mut self, ctx: C);
+
+    /// Globally seal the given context
+    fn seal_ctx(&mut self, ctx: C);
+}
+
 /// A datastore that can add parents to contexts _without checking validity_
 ///
 /// This trait is `dyn`-safe:

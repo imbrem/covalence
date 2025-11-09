@@ -164,6 +164,34 @@ impl ReadCtxGraph<CtxId> for TermDb {
     }
 }
 
+impl SealCtx<CtxId> for TermDb {
+    fn seal_ctx_assumptions(&mut self, ctx: CtxId) {
+        self.x[ctx.0].set_ctx_flags(Pred0::ASSUME_SEALED);
+    }
+
+    fn seal_ctx_parents(&mut self, ctx: CtxId) {
+        self.x[ctx.0].set_ctx_flags(Pred0::PARENTS_SEALED);
+    }
+
+    fn seal_ctx_local(&mut self, ctx: CtxId) {
+        self.x[ctx.0].set_ctx_flags(Pred0::LOCAL_SEALED);
+    }
+
+    fn seal_ctx_exts(&mut self, ctx: CtxId) {
+        (0..self.num_parents(ctx)).for_each(|n| {
+            self.parent(ctx, n).map(|p| self.seal_ctx(p));
+        });
+    }
+
+    fn seal_ctx(&mut self, ctx: CtxId) {
+        if self.x[ctx.0].ctx_flags().contains(Pred0::GLOBAL_SEALED) {
+            return;
+        }
+        self.seal_ctx_exts(ctx);
+        self.x[ctx.0].set_ctx_flags(Pred0::GLOBAL_SEALED);
+    }
+}
+
 impl AddParentUnchecked<CtxId> for TermDb {
     fn add_parent_unchecked(&mut self, ctx: CtxId, parent: CtxId) -> Result<(), AddParentFailure> {
         self.x[ctx.0].add_parent_unchecked(parent)

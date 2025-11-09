@@ -30,8 +30,8 @@ pub type FvId<D> = Fv<CtxId<D>>;
 /// Traits implemented by a local store
 pub mod local_store {
     pub use super::{
-        LocalStore, ReadCtx, ReadCtxGraph, ReadLocalStore, ReadLocalTerm, ReadUniv, TermIndex,
-        WriteLocalStore, WriteLocalTerm,
+        LocalStore, ReadCtx, ReadCtxGraph, ReadLocalStore, ReadLocalTerm, ReadUniv, SealCtx,
+        TermIndex, WriteLocalStore, WriteLocalTerm,
     };
 }
 
@@ -146,9 +146,9 @@ impl<D> ReadLocalStore for D where
 {
 }
 
-pub trait WriteLocalStore: WriteLocalTerm + WriteUniv {}
+pub trait WriteLocalStore: WriteLocalTerm + WriteUniv + SealCtx<CtxId<Self>> {}
 
-impl<D> WriteLocalStore for D where D: WriteLocalTerm + WriteUniv {}
+impl<D> WriteLocalStore for D where D: WriteLocalTerm + WriteUniv + SealCtx<CtxId<D>> {}
 
 pub trait LocalStore: ReadLocalStore + WriteLocalStore {}
 

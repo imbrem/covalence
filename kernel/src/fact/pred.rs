@@ -8,8 +8,24 @@ bitflags! {
     /// ```
     #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Default, Ord, PartialOrd)]
     pub struct Pred0: u8 {
+        /// This context has sealed assumptions
+        const ASSUME_SEALED     = 0b00000001;
+        /// This context has sealed parents
+        const PARENTS_SEALED    = 0b00000010;
+        /// This context is locally sealed
+        const LOCAL_SEALED      = 0b00000011;
+        /// This context has sealed extensions
+        const EXTS_SEALED       = 0b00000110;
+        /// This context is globally sealed
+        const GLOBAL_SEALED     = 0b00000111;
         /// This context is contradictory
-        const IS_CONTR = 0b00000001;
+        const IS_CONTR          = 0b00001000;
+        /// This context is locally inhabited
+        const LOCAL_INHAB       = 0b00010001;
+        /// This context's extensions are inhabited
+        const EXTS_INHAB        = 0b00100110;
+        /// This context is globally inhabited
+        const GLOBAL_INHAB      = 0b00110111;
     }
 
     /// A unary predicate on terms-in-context

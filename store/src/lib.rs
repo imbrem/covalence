@@ -239,7 +239,7 @@ impl SetFactUncheckedIn<CtxId, Eqn<Ix>> for TermDb {
 
 impl AddVarUnchecked<CtxId, TmId> for TermDb {
     fn add_var_unchecked(&mut self, ctx: CtxId, ty: TmId) -> Result<FvId, AddVarFailure> {
-        Ok(self.x[ctx.0].add_var_unchecked(ctx, ty))
+        self.x[ctx.0].add_var_unchecked(ctx, ty)
     }
 }
 

@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, ops::BitOr};
 
 use covalence_kernel::{
     data::term::{Bv, DiscT, Fv, Node},
-    store::AddParentFailure,
+    store::{AddParentFailure, AddVarFailure},
 };
 use egg::{Analysis, DidMerge, EGraph, Language};
 
@@ -25,6 +25,9 @@ impl Ctx {
     }
 
     pub fn add_parent_unchecked(&mut self, parent: CtxId) -> Result<(), AddParentFailure> {
+        if self.ctx_flags().contains(Pred0::PARENTS_SEALED) {
+            return Err(AddParentFailure);
+        }
         self.e.analysis.parents.insert(parent);
         Ok(())
     }
@@ -122,9 +125,12 @@ impl Ctx {
         self.e.union(lhs.0, rhs.0);
     }
 
-    pub fn add_var_unchecked(&mut self, ctx: CtxId, ty: TmId) -> FvId {
+    pub fn add_var_unchecked(&mut self, ctx: CtxId, ty: TmId) -> Result<FvId, AddVarFailure> {
         // NOTE: this overflow should be impossible due to limitations of the E-graph, but better
         // safe than sorry...
+        if self.ctx_flags().contains(Pred0::ASSUME_SEALED) {
+            return Err(AddVarFailure);
+        }
         let ix: u32 = self
             .e
             .analysis
@@ -133,7 +139,7 @@ impl Ctx {
             .try_into()
             .expect("variable index overflow");
         self.e.analysis.vars.push(ty);
-        Fv { ctx, ix }
+        Ok(Fv { ctx, ix })
     }
 
     // fn from_mut(this: &mut EGraph<Node, CtxData>) -> &mut Self {

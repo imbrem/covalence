@@ -84,7 +84,7 @@ impl WriteLocalTerm for TermDb {
     fn cons_node_ix(&mut self, ctx: CtxId, tm: NodeIx) -> Ix {
         let ix = self.x[ctx.0].add(tm);
         let bvi = match tm {
-            Node::Import(tm) => self.local_bvi(tm.ctx, tm.ix),
+            Node::Quote(tm) => self.local_bvi(tm.ctx, tm.ix),
             tm => tm.bvi_with(|x| self.local_bvi(ctx, *x)),
         };
         self.x[ctx.0].set_bvi_unchecked(ix, bvi);

@@ -5,17 +5,17 @@ use crate::{
     error::KernelError,
     fact::{
         HasTyIn, IsTyIn, Seq,
-        quant::{CloseChildren, Quantified},
+        quant::{CloseChildren, Forall, Quantified},
         stable::StableFact,
     },
-    store::{CtxId, LocalStoreUnchecked, ReadCtx, ReadCtxGraph, TmId},
+    store::{CtxId, LocalStoreUnchecked, ReadCtx, ReadCtxGraph},
 };
 
 impl<C, S> Theorem<Seq<C, S>> {
     pub fn wk0<T>(
         self,
         binder: Theorem<IsTyIn<C, T>>,
-    ) -> Result<Theorem<Seq<C, Quantified<T, S>>>, KernelError>
+    ) -> Result<Theorem<Seq<C, Quantified<Forall<T>, S>>>, KernelError>
     where
         S: StableFact,
         C: PartialEq,
@@ -31,7 +31,7 @@ impl<C, S> Theorem<Seq<C, S>> {
     pub fn close_var_self<T>(
         self,
         var: Theorem<HasTyIn<C, Fv<C>, T>>,
-    ) -> Result<Theorem<Seq<C, Quantified<T, S::ClosedChildren>>>, KernelError>
+    ) -> Result<Theorem<Seq<C, Quantified<Forall<T>, S::ClosedChildren>>>, KernelError>
     where
         S: CloseChildren<C>,
         C: PartialEq,
@@ -46,7 +46,10 @@ impl<C, S> Theorem<Seq<C, S>> {
 }
 
 impl<C, S> Seq<C, S> {
-    pub fn wk0<T>(self, binder: IsTyIn<C, T>) -> Result<Seq<C, Quantified<T, S>>, KernelError>
+    pub fn wk0<T>(
+        self,
+        binder: IsTyIn<C, T>,
+    ) -> Result<Seq<C, Quantified<Forall<T>, S>>, KernelError>
     where
         S: StableFact,
         C: PartialEq,
@@ -57,7 +60,7 @@ impl<C, S> Seq<C, S> {
         Ok(Seq {
             ctx: self.ctx,
             stmt: Quantified {
-                binder: binder.stmt.1,
+                binder: Forall(binder.stmt.1),
                 body: self.stmt,
             },
         })
@@ -66,7 +69,7 @@ impl<C, S> Seq<C, S> {
     pub fn close_var_self<T>(
         self,
         var: HasTyIn<C, Fv<C>, T>,
-    ) -> Result<Seq<C, Quantified<T, S::ClosedChildren>>, KernelError>
+    ) -> Result<Seq<C, Quantified<Forall<T>, S::ClosedChildren>>, KernelError>
     where
         S: CloseChildren<C>,
         C: PartialEq,
@@ -77,7 +80,7 @@ impl<C, S> Seq<C, S> {
         Ok(Seq {
             ctx: self.ctx,
             stmt: Quantified {
-                binder: var.stmt.ty,
+                binder: Forall(var.stmt.ty),
                 body: self.stmt.close_children(var.stmt.tm),
             },
         })
@@ -87,7 +90,7 @@ impl<C, S> Seq<C, S> {
         self,
         var_ty: VarTy<C, T>,
         db: &D,
-    ) -> Result<Seq<C, Quantified<T, S::ClosedChildren>>, KernelError>
+    ) -> Result<Seq<C, Quantified<Forall<T>, S::ClosedChildren>>, KernelError>
     where
         S: CloseChildren<C>,
         C: Copy + PartialEq,
@@ -102,7 +105,7 @@ impl<C, S> Seq<C, S> {
         Ok(Seq {
             ctx: self.ctx,
             stmt: Quantified {
-                binder: var_ty.ty,
+                binder: Forall(var_ty.ty),
                 body: self.stmt.close_children(var_ty.var),
             },
         })
@@ -117,7 +120,7 @@ where
         &self,
         seq: Theorem<Seq<CtxId<D>, S>>,
         var: Theorem<VarTy<CtxId<D>, T>>,
-    ) -> Result<Theorem<Seq<CtxId<D>, Quantified<T, S::ClosedChildren>>>, KernelError>
+    ) -> Result<Theorem<Seq<CtxId<D>, Quantified<Forall<T>, S::ClosedChildren>>>, KernelError>
     where
         S: CloseChildren<CtxId<D>>,
     {

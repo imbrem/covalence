@@ -13,7 +13,7 @@ pub struct Quantified<Q, S> {
 
 /// A universal quantifier
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct Forall<T>(T);
+pub struct Forall<T>(pub T);
 
 mod close_children_sealed {
     pub trait CloseChildrenSealed<C> {}

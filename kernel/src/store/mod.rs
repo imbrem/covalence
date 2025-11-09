@@ -67,7 +67,7 @@ pub trait ReadLocalTerm: TermIndex {
         if tm.ctx == ctx {
             Some(tm.ix)
         } else {
-            self.lookup(ctx, Node::Import(tm))
+            self.lookup(ctx, Node::Quote(tm))
         }
     }
 

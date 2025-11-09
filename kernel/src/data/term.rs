@@ -58,6 +58,8 @@ pub enum Node<C, T, I = TmIn<C, T>> {
     Invalid,
 
     // == Meta-syntax ==
+    /// The identity function on a term
+    Id([T; 1]),
     /// A substitution under `k` binders
     Subst1(Bv, [T; 2]),
     /// A weakening by a shift
@@ -67,7 +69,7 @@ pub enum Node<C, T, I = TmIn<C, T>> {
 
     // == Imports from other contexts ==
     /// A direct import from another context
-    Import(I),
+    Quote(I),
 }
 
 /// The discriminant of a term node
@@ -125,8 +127,10 @@ pub enum DiscT<C, T, I = TmIn<C, T>> {
     BWk(Shift),
     /// A variable closure under `k` binders
     Close(Close<C, T>),
+    /// The identity function
+    Id,
     /// A direct import from another context
-    Import(I),
+    Quote(I),
 }
 
 /// A syntactic discriminant, over a given import type
@@ -172,10 +176,11 @@ impl<C, T, I> Node<C, T, I> {
             Node::Natrec(_) => DiscT::Natrec,
             Node::HasTy(_) => DiscT::HasTy,
             Node::Invalid => DiscT::Invalid,
+            Node::Id(_) => DiscT::Id,
             Node::Subst1(k, _) => DiscT::Subst1(k),
             Node::BWk(s, _) => DiscT::BWk(s),
             Node::Close(close) => DiscT::Close(close),
-            Node::Import(import) => DiscT::Import(import),
+            Node::Quote(import) => DiscT::Quote(import),
         }
     }
 
@@ -205,10 +210,11 @@ impl<C, T, I> Node<C, T, I> {
             Node::Natrec(_) => DiscT::Natrec,
             Node::HasTy(_) => DiscT::HasTy,
             Node::Invalid => DiscT::Invalid,
+            Node::Id(_) => DiscT::Id,
             Node::Subst1(k, _) => DiscT::Subst1(k),
             Node::BWk(s, _) => DiscT::BWk(s),
             Node::Close(close) => DiscT::Close(close.op()),
-            Node::Import(import) => DiscT::Import(import),
+            Node::Quote(import) => DiscT::Quote(import),
         }
     }
 
@@ -238,6 +244,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Natrec([a, b, c]) => Node::Natrec([f(a), f(b), f(c)]),
             Node::HasTy([a, b]) => Node::HasTy([f(a), f(b)]),
             Node::Invalid => Node::Invalid,
+            Node::Id([a]) => Node::Id([f(a)]),
             Node::Subst1(k, [a, b]) => Node::Subst1(k, [f(a), f(b)]),
             Node::BWk(k, [a]) => Node::BWk(k, [f(a)]),
             Node::Close(close) => Node::Close(Close {
@@ -245,7 +252,7 @@ impl<C, T, I> Node<C, T, I> {
                 var: close.var,
                 tm: f(close.tm),
             }),
-            Node::Import(import) => Node::Import(g(import)),
+            Node::Quote(import) => Node::Quote(g(import)),
         }
     }
 
@@ -289,6 +296,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Natrec([a, b, c]) => Ok(Node::Natrec([f(a)?, f(b)?, f(c)?])),
             Node::HasTy([a, b]) => Ok(Node::HasTy([f(a)?, f(b)?])),
             Node::Invalid => Ok(Node::Invalid),
+            Node::Id([a]) => Ok(Node::Id([f(a)?])),
             Node::Subst1(k, [a, b]) => Ok(Node::Subst1(k, [f(a)?, f(b)?])),
             Node::BWk(k, [a]) => Ok(Node::BWk(k, [f(a)?])),
             Node::Close(close) => Ok(Node::Close(Close {
@@ -296,7 +304,7 @@ impl<C, T, I> Node<C, T, I> {
                 var: close.var,
                 tm: f(close.tm)?,
             })),
-            Node::Import(import) => Ok(Node::Import(g(import)?)),
+            Node::Quote(import) => Ok(Node::Quote(g(import)?)),
         }
     }
 
@@ -342,6 +350,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Natrec([a, b, c]) => Node::Natrec([(Bv(0), a), (Bv(0), b), (Bv(0), c)]),
             Node::HasTy([a, b]) => Node::HasTy([(Bv(0), a), (Bv(0), b)]),
             Node::Invalid => Node::Invalid,
+            Node::Id([a]) => Node::Id([(Bv(0), a)]),
             Node::Subst1(k, [a, b]) => Node::Subst1(k, [(Bv(0), a), (Bv(1), b)]),
             Node::BWk(k, [a]) => Node::BWk(k, [(Bv(0), a)]),
             Node::Close(close) => Node::Close(Close {
@@ -349,7 +358,7 @@ impl<C, T, I> Node<C, T, I> {
                 var: close.var,
                 tm: (Bv(0), close.tm),
             }),
-            Node::Import(import) => Node::Import(import),
+            Node::Quote(import) => Node::Quote(import),
         }
     }
 
@@ -379,10 +388,11 @@ impl<C, T, I> Node<C, T, I> {
             Node::Natrec([a, b, c]) => Node::Natrec([a, b, c]),
             Node::HasTy([a, b]) => Node::HasTy([a, b]),
             Node::Invalid => Node::Invalid,
+            Node::Id([a]) => Node::Id([a]),
             Node::Subst1(k, [a, b]) => Node::Subst1(*k, [a, b]),
             Node::BWk(k, [a]) => Node::BWk(*k, [a]),
             Node::Close(close) => Node::Close(close.as_ref()),
-            Node::Import(import) => Node::Import(import),
+            Node::Quote(import) => Node::Quote(import),
         }
     }
 
@@ -412,10 +422,11 @@ impl<C, T, I> Node<C, T, I> {
             Node::Natrec([a, b, c]) => Node::Natrec([a, b, c]),
             Node::HasTy([a, b]) => Node::HasTy([a, b]),
             Node::Invalid => Node::Invalid,
+            Node::Id([a]) => Node::Id([a]),
             Node::Subst1(k, [a, b]) => Node::Subst1(*k, [a, b]),
             Node::BWk(k, [a]) => Node::BWk(*k, [a]),
             Node::Close(close) => Node::Close(close.as_mut()),
-            Node::Import(import) => Node::Import(import),
+            Node::Quote(import) => Node::Quote(import),
         }
     }
 
@@ -448,10 +459,11 @@ impl<C, T, I> Node<C, T, I> {
             Node::Natrec(xs) => &xs[..],
             Node::HasTy(xs) => &xs[..],
             Node::Invalid => &[],
+            Node::Id(xs) => &xs[..],
             Node::Subst1(_, xs) => &xs[..],
             Node::BWk(_, xs) => &xs[..],
             Node::Close(_) => &[],
-            Node::Import(_) => &[],
+            Node::Quote(_) => &[],
         }
     }
 
@@ -484,10 +496,11 @@ impl<C, T, I> Node<C, T, I> {
             Node::Natrec(xs) => &mut xs[..],
             Node::HasTy(xs) => &mut xs[..],
             Node::Invalid => &mut [],
+            Node::Id(xs) => &mut xs[..],
             Node::Subst1(_, xs) => &mut xs[..],
             Node::BWk(_, xs) => &mut xs[..],
             Node::Close(_) => &mut [],
-            Node::Import(_) => &mut [],
+            Node::Quote(_) => &mut [],
         }
     }
 
@@ -525,7 +538,7 @@ impl<C, T, I> Node<C, T, I> {
                 | Node::Nats
                 | Node::N64(_)
                 | Node::Invalid
-                | Node::Import(_)
+                | Node::Quote(_)
         )
     }
 
@@ -542,7 +555,7 @@ impl<C, T, I> Node<C, T, I> {
     pub fn bvi_with(&self, mut tm: impl FnMut(&T) -> Bv) -> Bv {
         match self {
             Node::Bv(i) => i.succ(),
-            Node::Import(_) => Bv::INVALID,
+            Node::Quote(_) => Bv::INVALID,
             Node::Close(Close {
                 under: k,
                 tm: a,
@@ -563,7 +576,7 @@ impl<C, T, I> Node<C, T, I> {
     /// Get this node as an import
     pub fn as_import(&self) -> Option<&I> {
         match self {
-            Node::Import(import) => Some(import),
+            Node::Quote(import) => Some(import),
             _ => None,
         }
     }
@@ -580,7 +593,7 @@ impl<C, T, I> Node<C, T, I> {
     pub fn is_unfoldable(&self) -> bool {
         matches!(
             self,
-            Node::Subst1(_, _) | Node::BWk(_, _) | Node::Close(_) | Node::Import(_)
+            Node::Subst1(_, _) | Node::BWk(_, _) | Node::Close(_) | Node::Quote(_)
         )
     }
 }
@@ -942,7 +955,7 @@ impl<C, T> TmIn<C, T> {
 
 pub type NodeVT<C, T> = Node<C, TmIn<C, T>, TmIn<C, T>>;
 
-pub type NodeT2<C, T> = Node<C, Node<C, T>, TmIn<C, T>>;
+pub type Node2<C, T, I = TmIn<C, T>> = Node<C, Node<C, T, I>, I>;
 
 pub type NodeVT2<C, T> = Node<C, NodeVT<C, T>, TmIn<C, T>>;
 
@@ -996,7 +1009,7 @@ impl<C, T> From<bool> for Node<C, T> {
 
 impl<C, T> From<TmIn<C, T>> for Node<C, T> {
     fn from(copy: TmIn<C, T>) -> Self {
-        Node::Import(copy)
+        Node::Quote(copy)
     }
 }
 

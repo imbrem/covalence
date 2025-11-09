@@ -13,6 +13,12 @@ use thiserror::Error;
 pub trait ReadCtx<C> {
     type VarId;
 
+    /// Get the number of assumptions this context has
+    fn num_assumptions(&self, ctx: C) -> u32;
+
+    /// Lookup the type of an assumption
+    fn assumption(&self, ctx: C, ix: u32) -> Self::VarId;
+
     /// Get the number of variables this context has
     fn num_vars(&self, ctx: C) -> u32;
 
@@ -61,22 +67,10 @@ pub trait ReadCtxGraph<C> {
     /// ```
     fn is_ancestor(&self, lo: C, hi: C) -> bool;
 
-    /// Check whether `lo` is _strict_ ancestor of `hi`
+    /// Check whether `lo` is an ancestor of the parents of `hi`
     ///
-    /// A context `ctx` is never a strict ancestor of itself
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use covalence::kernel::*;
-    /// # let mut ker = Kernel::default();
-    /// let parent = ker.new_ctx();
-    /// let child = ker.with_parent(parent);
-    /// assert!(ker.is_strict_ancestor(parent, child));
-    /// assert!(!ker.is_strict_ancestor(parent, parent));
-    /// assert!(!ker.is_strict_ancestor(child, child));
-    /// assert!(!ker.is_strict_ancestor(child, parent));
-    /// ```
-    fn is_strict_ancestor(&self, lo: C, hi: C) -> bool;
+    /// Note that a context `ctx` is always an ancestor of itself
+    fn is_ancestor_of_parents(&self, lo: C, hi: C) -> bool;
 
     /// Check whether `lo` is a subcontext of `hi`
     ///

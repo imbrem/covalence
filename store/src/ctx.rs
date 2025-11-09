@@ -75,7 +75,7 @@ impl Ctx {
         self.e.rebuild()
     }
 
-    pub fn is_null_extension(&self) -> bool {
+    pub fn is_locally_empty(&self) -> bool {
         self.e.analysis.vars.is_empty()
     }
 

@@ -140,11 +140,19 @@ impl<D: WriteUniv> WriteUniv for Kernel<D> {
 
 impl<C, D: ReadCtx<C>> ReadCtx<C> for Kernel<D> {
     type VarId = D::VarId;
+    
+    fn num_assumptions(&self, ctx: C) -> u32 {
+        self.db.num_assumptions(ctx)
+    }
 
     fn num_vars(&self, ctx: C) -> u32 {
         self.db.num_vars(ctx)
     }
 
+    fn assumption(&self, ctx: C, ix: u32) -> D::VarId {
+        self.db.assumption(ctx, ix)
+    }
+    
     fn var_ty(&self, var: Fv<C>) -> D::VarId {
         self.db.var_ty(var)
     }

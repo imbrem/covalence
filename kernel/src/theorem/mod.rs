@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::Kernel;
 use crate::error::KernelError;
-use crate::fact::implies::FromIff;
+use crate::fact::implies::{FromIff, TryFromIff};
 use crate::fact::stable::StableFact;
 use crate::fact::{CheckFact, SetFactUnchecked};
 
@@ -32,6 +32,14 @@ impl<T> Theorem<T> {
         Theorem {
             stmt: U::from_iff(self.stmt),
             id: self.id,
+        }
+    }
+
+    /// Try to convert this theorem into an equivalent one
+    pub fn try_into_iff<U: TryFromIff<T>>(self) -> Result<Theorem<U>, Theorem<T>> {
+        match U::try_from_iff(self.stmt) {
+            Ok(stmt) => Ok(Theorem { stmt, id: self.id }),
+            Err(stmt) => Err(Theorem { stmt, id: self.id }),
         }
     }
 

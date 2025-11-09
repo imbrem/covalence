@@ -1,7 +1,10 @@
 use bitflags::bitflags;
 
 use super::*;
-use crate::data::term::Node;
+use crate::{
+    data::term::Node,
+    fact::implies::{TryFromIff, TryFromIffSealed},
+};
 
 bitflags! {
     /// A nullary predicate over contexts
@@ -459,5 +462,20 @@ where
 {
     fn from_iff(value: Is<P, T>) -> Self {
         Holds(value.0.into_pred1(), value.1)
+    }
+}
+
+impl<P, T> TryFromIffSealed<Holds<T>> for Is<P, T> where P: IntoPred1 {}
+
+impl<P, T> TryFromIff<Holds<T>> for Is<P, T>
+where
+    P: IntoPred1 + Default,
+{
+    fn try_from_iff(value: Holds<T>) -> Result<Is<P, T>, Holds<T>> {
+        if value.0.contains(P::default().into_pred1()) {
+            Ok(Is(P::default(), value.1))
+        } else {
+            Err(value)
+        }
     }
 }

@@ -2,6 +2,7 @@ use crate::{
     error::KernelError,
     fact::{
         CheckFact, HasTy, HasTyIn, IsTyIn,
+        implies::{FromIff, FromIffSealed},
         stable::{StableFact, StableFactSealed},
     },
     *,
@@ -14,15 +15,34 @@ pub struct VarTy<C, T> {
     pub ty: T,
 }
 
-impl<C, T> From<VarTy<C, T>> for HasTyIn<C, Fv<C>, T>
+impl<C, T> FromIffSealed<VarTy<C, T>> for HasTyIn<C, Fv<C>, T> where C: Copy {}
+
+impl<C, T> FromIff<VarTy<C, T>> for HasTyIn<C, Fv<C>, T>
 where
     C: Copy,
 {
-    fn from(value: VarTy<C, T>) -> Self {
+    fn from_iff(value: VarTy<C, T>) -> Self {
         HasTyIn {
             ctx: value.var.ctx,
             stmt: HasTy {
                 tm: value.var,
+                ty: value.ty,
+            },
+        }
+    }
+}
+
+impl<C, T> FromIffSealed<VarTy<C, T>> for HasTyIn<C, Node<C, T>, T> where C: Copy {}
+
+impl<C, T> FromIff<VarTy<C, T>> for HasTyIn<C, Node<C, T>, T>
+where
+    C: Copy,
+{
+    fn from_iff(value: VarTy<C, T>) -> Self {
+        HasTyIn {
+            ctx: value.var.ctx,
+            stmt: HasTy {
+                tm: Node::Fv(value.var),
                 ty: value.ty,
             },
         }

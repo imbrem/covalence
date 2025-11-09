@@ -32,6 +32,42 @@ impl<T> Theorem<T> {
             id: self.id,
         }
     }
+
+    /// Get the statement of this theorem as a reference
+    pub fn as_ref(&self) -> Theorem<&T> {
+        Theorem {
+            stmt: &self.stmt,
+            id: self.id,
+        }
+    }
+
+    /// Get the statement of this theorem as a mutable reference
+    pub fn as_mut(&mut self) -> Theorem<&mut T> {
+        Theorem {
+            stmt: &mut self.stmt,
+            id: self.id,
+        }
+    }
+}
+
+impl<T: Clone> Theorem<&T> {
+    /// Clone the statement of this theorem
+    pub fn cloned(self) -> Theorem<T> {
+        Theorem {
+            stmt: self.stmt.clone(),
+            id: self.id,
+        }
+    }
+}
+
+impl<T: Copy> Theorem<&T> {
+    /// Copy the statement of this theorem
+    pub fn copied(self) -> Theorem<T> {
+        Theorem {
+            stmt: *self.stmt,
+            id: self.id,
+        }
+    }
 }
 
 impl<T> Deref for Theorem<T> {
@@ -92,6 +128,24 @@ impl<D> Kernel<D> {
     ///
     /// If it is, return it as a theorem
     pub fn check_thm_ref<'a, F>(&self, fact: &'a F) -> Result<Theorem<&'a F>, CheckFailed<&'a F>>
+    where
+        F: StableFact,
+        D: CheckFact<F>,
+    {
+        if self.db.check(fact) {
+            Ok(self.new_thm(fact))
+        } else {
+            Err(CheckFailed(fact))
+        }
+    }
+
+    /// Check whether a fact is true in the database
+    ///
+    /// If it is, return it as a theorem
+    pub fn check_thm_mut<'a, F>(
+        &self,
+        fact: &'a mut F,
+    ) -> Result<Theorem<&'a mut F>, CheckFailed<&'a mut F>>
     where
         F: StableFact,
         D: CheckFact<F>,

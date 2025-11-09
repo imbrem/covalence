@@ -4,6 +4,7 @@ use thiserror::Error;
 
 use crate::Kernel;
 use crate::error::KernelError;
+use crate::fact::implies::FromIff;
 use crate::fact::stable::StableFact;
 use crate::fact::{CheckFact, SetFactUnchecked};
 
@@ -24,14 +25,10 @@ impl<T> Theorem<T> {
         self.id
     }
 
-    /// Convert this theorem's statement into an equivalent one
-    pub fn stmt_into<U>(self) -> Theorem<U>
-    where
-        T: StableFact + Into<U>,
-        U: StableFact,
-    {
+    /// Convert this theorem into an equivalent one
+    pub fn into_iff<U: FromIff<T>>(self) -> Theorem<U> {
         Theorem {
-            stmt: self.stmt.into(),
+            stmt: U::from_iff(self.stmt),
             id: self.id,
         }
     }
@@ -85,6 +82,37 @@ impl<D> Kernel<D> {
         D: CheckFact<F>,
     {
         if self.db.check(&fact) {
+            Ok(self.new_thm(fact))
+        } else {
+            Err(CheckFailed(fact))
+        }
+    }
+
+    /// Check whether a fact is true in the database
+    ///
+    /// If it is, return it as a theorem
+    pub fn check_thm_ref<'a, F>(&self, fact: &'a F) -> Result<Theorem<&'a F>, CheckFailed<&'a F>>
+    where
+        F: StableFact,
+        D: CheckFact<F>,
+    {
+        if self.db.check(fact) {
+            Ok(self.new_thm(fact))
+        } else {
+            Err(CheckFailed(fact))
+        }
+    }
+
+    /// Check whether a fact equivalent to this one is true in the database
+    ///
+    /// If it is, return it as a theorem
+    pub fn check_thm_iff<G, F>(&self, fact: F) -> Result<Theorem<F>, CheckFailed<F>>
+    where
+        F: Copy,
+        G: FromIff<F> + StableFact,
+        D: CheckFact<G>,
+    {
+        if self.db.check(&G::from_iff(fact)) {
             Ok(self.new_thm(fact))
         } else {
             Err(CheckFailed(fact))

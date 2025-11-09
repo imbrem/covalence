@@ -20,13 +20,19 @@ pub mod atom;
 
 pub use atom::*;
 
-use crate::data::term::Node;
+use crate::{
+    data::term::Node,
+    fact::implies::{FromIff, FromIffSealed},
+};
 
 /// Quantified facts
 pub mod quant;
 
 /// Stable facts
 pub mod stable;
+
+/// Implication for facts
+pub mod implies;
 
 /// A database which can check facts
 pub trait CheckFact<F: ?Sized> {
@@ -109,6 +115,20 @@ impl<C, S> DerefMut for Seq<C, S> {
     }
 }
 
+impl<C, F, G> FromIffSealed<Seq<C, F>> for Seq<C, G> where G: FromIff<F> {}
+
+impl<C, F, G> FromIff<Seq<C, F>> for Seq<C, G>
+where
+    G: FromIff<F>,
+{
+    fn from_iff(fact: Seq<C, F>) -> Self {
+        Seq {
+            ctx: fact.ctx,
+            stmt: G::from_iff(fact.stmt),
+        }
+    }
+}
+
 /// An equation
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Eqn<L, R = L>(pub L, pub R);
@@ -133,15 +153,11 @@ pub struct HasTy<L, R = L> {
     pub ty: R,
 }
 
-impl<C, T> From<HasTy<T>> for IsWf<Node<C, T>> {
-    fn from(ht: HasTy<T>) -> Self {
-        IsWf(Node::HasTy([ht.tm, ht.ty]))
-    }
-}
+impl<C, T> FromIffSealed<HasTy<T>> for IsWf<Node<C, T>> {}
 
-impl<C, T> From<HasTy<T>> for Holds<Node<C, T>> {
-    fn from(ht: HasTy<T>) -> Self {
-        Holds::is_wf(Node::HasTy([ht.tm, ht.ty]))
+impl<C, T> FromIff<HasTy<T>> for IsWf<Node<C, T>> {
+    fn from_iff(ht: HasTy<T>) -> Self {
+        IsWf(Node::HasTy([ht.tm, ht.ty]))
     }
 }
 
@@ -191,44 +207,58 @@ pub struct IsFalse<T>(pub T);
 /// A term is the false proposition in a context
 pub struct IsFalseIn<C, T>(C, T);
 
-impl<T> From<IsWf<T>> for Holds<T> {
-    fn from(iwf: IsWf<T>) -> Self {
+impl<T> FromIffSealed<IsWf<T>> for Holds<T> {}
+
+impl<T> FromIff<IsWf<T>> for Holds<T> {
+    fn from_iff(iwf: IsWf<T>) -> Self {
         Holds::is_wf(iwf.0)
     }
 }
 
-impl<T> From<IsTy<T>> for Holds<T> {
-    fn from(ity: IsTy<T>) -> Self {
+impl<T> FromIffSealed<IsTy<T>> for Holds<T> {}
+
+impl<T> FromIff<IsTy<T>> for Holds<T> {
+    fn from_iff(ity: IsTy<T>) -> Self {
         Holds::is_ty(ity.0)
     }
 }
 
-impl<T> From<IsProp<T>> for Holds<T> {
-    fn from(iprop: IsProp<T>) -> Self {
+impl<T> FromIffSealed<IsProp<T>> for Holds<T> {}
+
+impl<T> FromIff<IsProp<T>> for Holds<T> {
+    fn from_iff(iprop: IsProp<T>) -> Self {
         Holds::is_prop(iprop.0)
     }
 }
 
-impl<T> From<IsInhab<T>> for Holds<T> {
-    fn from(iinhab: IsInhab<T>) -> Self {
+impl<T> FromIffSealed<IsInhab<T>> for Holds<T> {}
+
+impl<T> FromIff<IsInhab<T>> for Holds<T> {
+    fn from_iff(iinhab: IsInhab<T>) -> Self {
         Holds::is_inhab(iinhab.0)
     }
 }
 
-impl<T> From<IsEmpty<T>> for Holds<T> {
-    fn from(iempty: IsEmpty<T>) -> Self {
+impl<T> FromIffSealed<IsEmpty<T>> for Holds<T> {}
+
+impl<T> FromIff<IsEmpty<T>> for Holds<T> {
+    fn from_iff(iempty: IsEmpty<T>) -> Self {
         Holds::is_empty(iempty.0)
     }
 }
 
-impl<T> From<IsTrue<T>> for Holds<T> {
-    fn from(itt: IsTrue<T>) -> Self {
+impl<T> FromIffSealed<IsTrue<T>> for Holds<T> {}
+
+impl<T> FromIff<IsTrue<T>> for Holds<T> {
+    fn from_iff(itt: IsTrue<T>) -> Self {
         Holds::is_true(itt.0)
     }
 }
 
-impl<T> From<IsFalse<T>> for Holds<T> {
-    fn from(iff: IsFalse<T>) -> Self {
+impl<T> FromIffSealed<IsFalse<T>> for Holds<T> {}
+
+impl<T> FromIff<IsFalse<T>> for Holds<T> {
+    fn from_iff(iff: IsFalse<T>) -> Self {
         Holds::is_false(iff.0)
     }
 }

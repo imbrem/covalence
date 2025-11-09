@@ -37,13 +37,13 @@ impl<C, T> CloseChildren<C> for Holds<T> {
     }
 }
 
-impl<C, T> CloseChildrenSealed<C> for HasTy<T> {}
+impl<C, L, R> CloseChildrenSealed<C> for HasTy<L, R> {}
 
-impl<C, T> CloseChildren<C> for HasTy<T>
+impl<C, L, R> CloseChildren<C> for HasTy<L, R>
 where
     C: Copy,
 {
-    type ClosedChildren = HasTy<Close<C, T>>;
+    type ClosedChildren = HasTy<Close<C, L>, Close<C, R>>;
 
     fn close_children(self, var: Fv<C>) -> Self::ClosedChildren {
         HasTy {
@@ -53,13 +53,13 @@ where
     }
 }
 
-impl<C, T> CloseChildrenSealed<C> for Eqn<T> {}
+impl<C, L, R> CloseChildrenSealed<C> for Eqn<L, R> {}
 
-impl<C, T> CloseChildren<C> for Eqn<T>
+impl<C, L, R> CloseChildren<C> for Eqn<L, R>
 where
     C: Copy,
 {
-    type ClosedChildren = Eqn<Close<C, T>>;
+    type ClosedChildren = Eqn<Close<C, L>, Close<C, R>>;
 
     fn close_children(self, var: Fv<C>) -> Self::ClosedChildren {
         Eqn(Close::new(var, self.0), Close::new(var, self.1))

@@ -16,15 +16,24 @@ pub enum KernelError {
     #[error(transparent)]
     AddVarFailure(#[from] AddVarFailure),
     /// Theorem belongs to a different kernel
-    #[error(transparent)]
-    IdMismatch(#[from] IdMismatch),
+    #[error("covalence kernel error: theorem belongs to a different kernel")]
+    IdMismatch,
     /// Would cause a cycle in the context graph
     #[error("covalence kernel error: adding this parent would cause a cycle")]
     WouldCycle,
     /// Variable not found
     #[error("covalence kernel error: variable not found")]
     VarNotFound,
+    /// Context mismatch
+    #[error("covalence kernel error: context mismatch")]
+    CtxMismatch,
     /// Not implemented
     #[error("covalence kernel error: not implemented")]
     NotImplemented,
+}
+
+impl From<IdMismatch> for KernelError {
+    fn from(_: IdMismatch) -> Self {
+        KernelError::IdMismatch
+    }
 }

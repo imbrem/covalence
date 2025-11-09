@@ -58,6 +58,11 @@ impl<T> Theorem<T> {
             id: self.id,
         }
     }
+
+    /// Get the statement of this theorem by value
+    pub fn into_inner(self) -> T {
+        self.stmt
+    }
 }
 
 impl<T: Clone> Theorem<&T> {

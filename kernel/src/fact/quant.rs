@@ -1,4 +1,4 @@
-use crate::data::term::{Close, Fv};
+use crate::data::term::{Close1, Fv};
 
 use super::*;
 
@@ -30,10 +30,10 @@ pub trait CloseChildren<C>: CloseChildrenSealed<C> {
 impl<C, T> CloseChildrenSealed<C> for Holds<T> {}
 
 impl<C, T> CloseChildren<C> for Holds<T> {
-    type ClosedChildren = Holds<Close<C, T>>;
+    type ClosedChildren = Holds<Close1<C, T>>;
 
     fn close_children(self, var: Fv<C>) -> Self::ClosedChildren {
-        Holds(self.0, Close::new(var, self.1))
+        Holds(self.0, Close1::new(var, self.1))
     }
 }
 
@@ -43,12 +43,12 @@ impl<C, L, R> CloseChildren<C> for HasTy<L, R>
 where
     C: Copy,
 {
-    type ClosedChildren = HasTy<Close<C, L>, Close<C, R>>;
+    type ClosedChildren = HasTy<Close1<C, L>, Close1<C, R>>;
 
     fn close_children(self, var: Fv<C>) -> Self::ClosedChildren {
         HasTy {
-            tm: Close::new(var, self.tm),
-            ty: Close::new(var, self.ty),
+            tm: Close1::new(var, self.tm),
+            ty: Close1::new(var, self.ty),
         }
     }
 }
@@ -59,10 +59,10 @@ impl<C, L, R> CloseChildren<C> for Eqn<L, R>
 where
     C: Copy,
 {
-    type ClosedChildren = Eqn<Close<C, L>, Close<C, R>>;
+    type ClosedChildren = Eqn<Close1<C, L>, Close1<C, R>>;
 
     fn close_children(self, var: Fv<C>) -> Self::ClosedChildren {
-        Eqn(Close::new(var, self.0), Close::new(var, self.1))
+        Eqn(Close1::new(var, self.0), Close1::new(var, self.1))
     }
 }
 
@@ -72,9 +72,9 @@ impl<C, P, T> CloseChildren<C> for Is<P, T>
 where
     P: IntoPred1,
 {
-    type ClosedChildren = Is<P, Close<C, T>>;
+    type ClosedChildren = Is<P, Close1<C, T>>;
 
     fn close_children(self, var: Fv<C>) -> Self::ClosedChildren {
-        Is(self.0, Close::new(var, self.1))
+        Is(self.0, Close1::new(var, self.1))
     }
 }

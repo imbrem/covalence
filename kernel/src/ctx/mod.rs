@@ -49,9 +49,9 @@ where
     }
 }
 
-impl<C, T> StableFactSealed for VarTy<C, T> {}
+impl<D, C: Ctx<D>, T: Term<D>> StableFactSealed<D> for VarTy<C, T> {}
 
-impl<C, T> StableFact for VarTy<C, T> {}
+impl<D, C: Ctx<D>, T: Term<D>> StableFact<D> for VarTy<C, T> {}
 
 impl<D> CheckFact<VarTy<CtxId<D>, TmId<D>>> for D
 where

@@ -60,12 +60,22 @@ pub enum Node<C, T, I = TmIn<C, T>> {
     // == Meta-syntax ==
     /// The identity function on a term
     Id([T; 1]),
+
+    //TODO: identity tag
     /// A substitution under `k` binders
     Subst1(Bv, [T; 2]),
     /// A weakening by a shift
     BWk(Shift, [T; 1]),
-    /// A variable closure under `k` binders
-    Close(Close<C, T>),
+    /// A single variable closure
+    Close1(Close1<C, T>),
+
+    //TODO: close segment
+
+    //TODO: segment struct
+
+    //TODO: project n
+
+    //TODO: rest n
 
     // == Imports from other contexts ==
     /// A direct import from another context
@@ -126,7 +136,7 @@ pub enum DiscT<C, T, I = TmIn<C, T>> {
     /// A weakening by a shift
     BWk(Shift),
     /// A variable closure under `k` binders
-    Close(Close<C, T>),
+    Close1(Close1<C, T>),
     /// The identity function
     Id,
     /// A direct import from another context
@@ -179,7 +189,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Id(_) => DiscT::Id,
             Node::Subst1(k, _) => DiscT::Subst1(k),
             Node::BWk(s, _) => DiscT::BWk(s),
-            Node::Close(close) => DiscT::Close(close),
+            Node::Close1(close) => DiscT::Close1(close),
             Node::Quote(import) => DiscT::Quote(import),
         }
     }
@@ -213,7 +223,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Id(_) => DiscT::Id,
             Node::Subst1(k, _) => DiscT::Subst1(k),
             Node::BWk(s, _) => DiscT::BWk(s),
-            Node::Close(close) => DiscT::Close(close.op()),
+            Node::Close1(close) => DiscT::Close1(close.op()),
             Node::Quote(import) => DiscT::Quote(import),
         }
     }
@@ -247,7 +257,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Id([a]) => Node::Id([f(a)]),
             Node::Subst1(k, [a, b]) => Node::Subst1(k, [f(a), f(b)]),
             Node::BWk(k, [a]) => Node::BWk(k, [f(a)]),
-            Node::Close(close) => Node::Close(Close {
+            Node::Close1(close) => Node::Close1(Close1 {
                 under: close.under,
                 var: close.var,
                 tm: f(close.tm),
@@ -299,7 +309,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Id([a]) => Ok(Node::Id([f(a)?])),
             Node::Subst1(k, [a, b]) => Ok(Node::Subst1(k, [f(a)?, f(b)?])),
             Node::BWk(k, [a]) => Ok(Node::BWk(k, [f(a)?])),
-            Node::Close(close) => Ok(Node::Close(Close {
+            Node::Close1(close) => Ok(Node::Close1(Close1 {
                 under: close.under,
                 var: close.var,
                 tm: f(close.tm)?,
@@ -353,7 +363,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Id([a]) => Node::Id([(Bv(0), a)]),
             Node::Subst1(k, [a, b]) => Node::Subst1(k, [(Bv(0), a), (Bv(1), b)]),
             Node::BWk(k, [a]) => Node::BWk(k, [(Bv(0), a)]),
-            Node::Close(close) => Node::Close(Close {
+            Node::Close1(close) => Node::Close1(Close1 {
                 under: close.under,
                 var: close.var,
                 tm: (Bv(0), close.tm),
@@ -391,7 +401,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Id([a]) => Node::Id([a]),
             Node::Subst1(k, [a, b]) => Node::Subst1(*k, [a, b]),
             Node::BWk(k, [a]) => Node::BWk(*k, [a]),
-            Node::Close(close) => Node::Close(close.as_ref()),
+            Node::Close1(close) => Node::Close1(close.as_ref()),
             Node::Quote(import) => Node::Quote(import),
         }
     }
@@ -425,7 +435,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Id([a]) => Node::Id([a]),
             Node::Subst1(k, [a, b]) => Node::Subst1(*k, [a, b]),
             Node::BWk(k, [a]) => Node::BWk(*k, [a]),
-            Node::Close(close) => Node::Close(close.as_mut()),
+            Node::Close1(close) => Node::Close1(close.as_mut()),
             Node::Quote(import) => Node::Quote(import),
         }
     }
@@ -462,7 +472,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Id(xs) => &xs[..],
             Node::Subst1(_, xs) => &xs[..],
             Node::BWk(_, xs) => &xs[..],
-            Node::Close(_) => &[],
+            Node::Close1(_) => &[],
             Node::Quote(_) => &[],
         }
     }
@@ -499,7 +509,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Id(xs) => &mut xs[..],
             Node::Subst1(_, xs) => &mut xs[..],
             Node::BWk(_, xs) => &mut xs[..],
-            Node::Close(_) => &mut [],
+            Node::Close1(_) => &mut [],
             Node::Quote(_) => &mut [],
         }
     }
@@ -509,7 +519,7 @@ impl<C, T, I> Node<C, T, I> {
     /// Note that this includes the argument of a closure, unlike [`children`](#method.children).
     pub fn syn_children(&self) -> &[T] {
         match self {
-            Node::Close(cl) => std::slice::from_ref(&cl.tm),
+            Node::Close1(cl) => std::slice::from_ref(&cl.tm),
             _ => self.children(),
         }
     }
@@ -520,7 +530,7 @@ impl<C, T, I> Node<C, T, I> {
     /// [`children_mut`](#method.children_mut).
     pub fn syn_children_mut(&mut self) -> &mut [T] {
         match self {
-            Node::Close(cl) => std::slice::from_mut(&mut cl.tm),
+            Node::Close1(cl) => std::slice::from_mut(&mut cl.tm),
             _ => self.children_mut(),
         }
     }
@@ -556,11 +566,9 @@ impl<C, T, I> Node<C, T, I> {
         match self {
             Node::Bv(i) => i.succ(),
             Node::Quote(_) => Bv::INVALID,
-            Node::Close(Close {
-                under: k,
-                tm: a,
-                var,
-            }) => tm(a).bvi_add_under(Bv(var.ix).succ(), *k),
+            Node::Close1(Close1 {
+                under: k, tm: a, ..
+            }) => tm(a).bvi_under(*k),
             Node::BWk(s, [a]) => s.bvi(tm(a)),
             n => n
                 .as_ref()
@@ -593,7 +601,7 @@ impl<C, T, I> Node<C, T, I> {
     pub fn is_unfoldable(&self) -> bool {
         matches!(
             self,
-            Node::Subst1(_, _) | Node::BWk(_, _) | Node::Close(_) | Node::Quote(_)
+            Node::Subst1(_, _) | Node::BWk(_, _) | Node::Close1(_) | Node::Quote(_)
         )
     }
 }
@@ -870,7 +878,7 @@ impl Shift {
 
 /// A variable closure under `k` binders
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct Close<C, T> {
+pub struct Close1<C, T> {
     /// The number of binders being closed under
     pub under: Bv,
     /// The variable being closed over
@@ -879,10 +887,10 @@ pub struct Close<C, T> {
     pub tm: T,
 }
 
-impl<C, T> Close<C, T> {
+impl<C, T> Close1<C, T> {
     /// Construct a new closure, under no variables
-    pub fn new(var: Fv<C>, tm: T) -> Close<C, T> {
-        Close {
+    pub fn new(var: Fv<C>, tm: T) -> Close1<C, T> {
+        Close1 {
             under: Bv(0),
             var,
             tm,
@@ -890,8 +898,8 @@ impl<C, T> Close<C, T> {
     }
 
     /// Borrow this closure
-    pub fn as_ref(&self) -> Close<&C, &T> {
-        Close {
+    pub fn as_ref(&self) -> Close1<&C, &T> {
+        Close1 {
             under: self.under,
             var: self.var.as_ref(),
             tm: &self.tm,
@@ -899,8 +907,8 @@ impl<C, T> Close<C, T> {
     }
 
     /// Borrow this closure mutably
-    pub fn as_mut(&mut self) -> Close<&mut C, &mut T> {
-        Close {
+    pub fn as_mut(&mut self) -> Close1<&mut C, &mut T> {
+        Close1 {
             under: self.under,
             var: self.var.as_mut(),
             tm: &mut self.tm,
@@ -908,8 +916,8 @@ impl<C, T> Close<C, T> {
     }
 
     /// Lift this close under `n` binders
-    pub fn lift(self, n: Bv) -> Close<C, T> {
-        Close {
+    pub fn lift(self, n: Bv) -> Close1<C, T> {
+        Close1 {
             under: self.under + n,
             var: self.var,
             tm: self.tm,
@@ -917,8 +925,8 @@ impl<C, T> Close<C, T> {
     }
 
     /// Get this closure as an operation
-    pub fn op(self) -> Close<C, ()> {
-        Close {
+    pub fn op(self) -> Close1<C, ()> {
+        Close1 {
             under: self.under,
             var: self.var,
             tm: (),
@@ -959,13 +967,13 @@ pub type Node2<C, T, I = TmIn<C, T>> = Node<C, Node<C, T, I>, I>;
 
 pub type NodeVT2<C, T> = Node<C, NodeVT<C, T>, TmIn<C, T>>;
 
-impl<C, T> From<Fv<C>> for Node<C, T> {
+impl<C, T, I> From<Fv<C>> for Node<C, T, I> {
     fn from(x: Fv<C>) -> Self {
         Node::Fv(x)
     }
 }
 
-impl<C: PartialEq, T> PartialEq<Fv<C>> for Node<C, T> {
+impl<C: PartialEq, T, I> PartialEq<Fv<C>> for Node<C, T, I> {
     fn eq(&self, other: &Fv<C>) -> bool {
         match self {
             Node::Fv(this) => this == other,
@@ -974,19 +982,19 @@ impl<C: PartialEq, T> PartialEq<Fv<C>> for Node<C, T> {
     }
 }
 
-impl<C: PartialEq, T> PartialEq<Node<C, T>> for Fv<C> {
-    fn eq(&self, other: &Node<C, T>) -> bool {
+impl<C: PartialEq, T, I> PartialEq<Node<C, T, I>> for Fv<C> {
+    fn eq(&self, other: &Node<C, T, I>) -> bool {
         other.eq(self)
     }
 }
 
-impl<C, T> From<Bv> for Node<C, T> {
+impl<C, T, I> From<Bv> for Node<C, T, I> {
     fn from(bv: Bv) -> Self {
         Node::Bv(bv)
     }
 }
 
-impl<C, T> PartialEq<Bv> for Node<C, T> {
+impl<C, T, I> PartialEq<Bv> for Node<C, T, I> {
     fn eq(&self, other: &Bv) -> bool {
         match self {
             Node::Bv(this) => this == other,
@@ -995,9 +1003,30 @@ impl<C, T> PartialEq<Bv> for Node<C, T> {
     }
 }
 
-impl<C, T> From<ULvl> for Node<C, T> {
+impl<C, T, I> PartialEq<Node<C, T, I>> for Bv {
+    fn eq(&self, other: &Node<C, T, I>) -> bool {
+        other.eq(self)
+    }
+}
+
+impl<C, T, I> From<ULvl> for Node<C, T, I> {
     fn from(level: ULvl) -> Self {
         Node::U(level)
+    }
+}
+
+impl<C, T, I> PartialEq<Node<C, T, I>> for ULvl {
+    fn eq(&self, other: &Node<C, T, I>) -> bool {
+        match other {
+            Node::U(this) => this == self,
+            _ => false,
+        }
+    }
+}
+
+impl<C, T, I> PartialEq<ULvl> for Node<C, T, I> {
+    fn eq(&self, other: &ULvl) -> bool {
+        other.eq(self)
     }
 }
 
@@ -1013,8 +1042,31 @@ impl<C, T> From<TmIn<C, T>> for Node<C, T> {
     }
 }
 
-impl<C, T> From<Close<C, T>> for Node<C, T> {
-    fn from(close: Close<C, T>) -> Self {
-        Node::Close(close)
+impl<C, T, I> From<Close1<C, T>> for Node<C, T, I> {
+    fn from(close: Close1<C, T>) -> Self {
+        Node::Close1(close)
+    }
+}
+
+impl<C, T, I> PartialEq<Close1<C, T>> for Node<C, T, I>
+where
+    C: PartialEq,
+    T: PartialEq,
+{
+    fn eq(&self, other: &Close1<C, T>) -> bool {
+        match self {
+            Node::Close1(this) => this == other,
+            _ => false,
+        }
+    }
+}
+
+impl<C, T, I> PartialEq<Node<C, T, I>> for Close1<C, T>
+where
+    C: PartialEq,
+    T: PartialEq,
+{
+    fn eq(&self, other: &Node<C, T, I>) -> bool {
+        other.eq(self)
     }
 }

@@ -1,89 +1,88 @@
 use crate::{
-    fact::{Eqn, HasTy, Holds, IsEmpty, IsFalse, IsInhab, IsProp, IsTrue, IsTy, IsWf, Seq},
-    store::TermIndex,
+    fact::{Eqn, HasTy, Holds, IntoPred1, Is, Pred0, Seq},
+    store::{Ctx, LocalTerm},
 };
 
 /// Stable facts are sealed
 pub(crate) mod stable_facts_sealed {
-    pub trait StableFactSealed {}
+    pub trait StableFactSealed<D> {}
 
-    pub trait StableFactCtxSealed<D> {}
+    pub trait StableFactInSealed<C, D> {}
 }
 
 use either::Either;
-pub(crate) use stable_facts_sealed::{StableFactCtxSealed, StableFactSealed};
+pub(crate) use stable_facts_sealed::{StableFactInSealed, StableFactSealed};
 
 /// A stable fact is one which will stay true as the kernel evolves
-pub trait StableFact: StableFactSealed {}
+pub trait StableFact<D>: StableFactSealed<D> {}
 
-/// A fact-in-context is stable under weakening if it remains true when the context is weakened
-pub trait StableUnderWkn: StableFactSealed {}
+/// A fact is stable in a context if it remains true as that context evolves
+pub trait StableFactIn<C, D>: StableFactInSealed<C, D> {}
 
-/// A stable fact context is one for which facts will stay true as the kernel evolves
-///
-/// Note the context _itself_ may change, e.g. by adding (but not removing!) variables
-pub trait StableFactCtx<D>: StableFactCtxSealed<D> {}
+impl<D> StableFact<D> for () {}
 
-impl StableFactSealed for () {}
+impl<D, C: Ctx<D>> StableFactIn<C, D> for () {}
 
-impl StableFactSealed for bool {}
+impl<D> StableFact<D> for bool {}
 
-impl<A: StableFactSealed, B: StableFactSealed> StableFactSealed for (A, B) {}
+impl<D, C: Ctx<D>> StableFactIn<C, D> for bool {}
 
-impl<A: StableFactSealed, B: StableFactSealed> StableFactSealed for Either<A, B> {}
+impl<D, A: StableFact<D>, B: StableFact<D>> StableFact<D> for (A, B) {}
 
-impl<R: TermIndex> StableFactCtxSealed<R> for R::CtxId {}
+impl<D, C: Ctx<D>, A: StableFactIn<C, D>, B: StableFactIn<C, D>> StableFactIn<C, D> for (A, B) {}
 
-impl<C: StableFactCtxSealed<Self>, F: StableFactSealed> StableFactSealed for Seq<C, F> {}
+impl<D, A: StableFact<D>, B: StableFact<D>> StableFact<D> for Either<A, B> {}
 
-impl<L, R> StableFactSealed for HasTy<L, R> {}
+impl<D, C: Ctx<D>, A: StableFactIn<C, D>, B: StableFactIn<C, D>> StableFactIn<C, D>
+    for Either<A, B>
+{
+}
 
-impl<L, R> StableFactSealed for Eqn<L, R> {}
+impl<D, C: Ctx<D>, F: StableFactIn<C, D>> StableFact<D> for Seq<C, F> {}
 
-impl<T> StableFactSealed for Holds<T> {}
+impl<D, C: Ctx<D>> StableFactIn<C, D> for Pred0 {}
 
-impl<T> StableFactSealed for IsTy<T> {}
+impl<D, C: Ctx<D>, T: LocalTerm<C, D>> StableFactIn<C, D> for Holds<T> {}
 
-impl<T> StableFactSealed for IsWf<T> {}
+impl<D, C: Ctx<D>, L: LocalTerm<C, D>, R: LocalTerm<C, D>> StableFactIn<C, D> for Eqn<L, R> {}
 
-impl<T> StableFactSealed for IsInhab<T> {}
+impl<D, C: Ctx<D>, L: LocalTerm<C, D>, R: LocalTerm<C, D>> StableFactIn<C, D> for HasTy<L, R> {}
 
-impl<T> StableFactSealed for IsEmpty<T> {}
+impl<D, P: IntoPred1, C: Ctx<D>, T: LocalTerm<C, D>> StableFactIn<C, D> for Is<P, T> {}
 
-impl<T> StableFactSealed for IsProp<T> {}
+impl<D> StableFactSealed<D> for () {}
 
-impl<T> StableFactSealed for IsTrue<T> {}
+impl<D, C: Ctx<D>> StableFactInSealed<C, D> for () {}
 
-impl<T> StableFactSealed for IsFalse<T> {}
+impl<D> StableFactSealed<D> for bool {}
 
-impl StableFact for () {}
+impl<D, C: Ctx<D>> StableFactInSealed<C, D> for bool {}
 
-impl StableFact for bool {}
+impl<D, A: StableFactSealed<D>, B: StableFactSealed<D>> StableFactSealed<D> for (A, B) {}
 
-impl<A: StableFact, B: StableFact> StableFact for (A, B) {}
+impl<D, C: Ctx<D>, A: StableFactInSealed<C, D>, B: StableFactInSealed<C, D>>
+    StableFactInSealed<C, D> for (A, B)
+{
+}
 
-impl<A: StableFact, B: StableFact> StableFact for Either<A, B> {}
+impl<D, A: StableFactSealed<D>, B: StableFactSealed<D>> StableFactSealed<D> for Either<A, B> {}
 
-impl<R: TermIndex> StableFactCtx<R> for R::CtxId {}
+impl<D, C: Ctx<D>, A: StableFactInSealed<C, D>, B: StableFactInSealed<C, D>>
+    StableFactInSealed<C, D> for Either<A, B>
+{
+}
 
-impl<C: StableFactCtx<Self>, F: StableUnderWkn> StableFact for Seq<C, F> {}
+impl<D, C: Ctx<D>, F: StableFactInSealed<C, D>> StableFactSealed<D> for Seq<C, F> {}
 
-impl<L, R> StableUnderWkn for HasTy<L, R> {}
+impl<D, C: Ctx<D>> StableFactInSealed<C, D> for Pred0 {}
 
-impl<L, R> StableUnderWkn for Eqn<L, R> {}
+impl<D, C: Ctx<D>, T: LocalTerm<C, D>> StableFactInSealed<C, D> for Holds<T> {}
 
-impl<T> StableUnderWkn for Holds<T> {}
+impl<D, C: Ctx<D>, L: LocalTerm<C, D>, R: LocalTerm<C, D>> StableFactInSealed<C, D> for Eqn<L, R> {}
 
-impl<T> StableUnderWkn for IsTy<T> {}
+impl<D, C: Ctx<D>, L: LocalTerm<C, D>, R: LocalTerm<C, D>> StableFactInSealed<C, D>
+    for HasTy<L, R>
+{
+}
 
-impl<T> StableUnderWkn for IsWf<T> {}
-
-impl<T> StableUnderWkn for IsInhab<T> {}
-
-impl<T> StableUnderWkn for IsEmpty<T> {}
-
-impl<T> StableUnderWkn for IsProp<T> {}
-
-impl<T> StableUnderWkn for IsTrue<T> {}
-
-impl<T> StableUnderWkn for IsFalse<T> {}
+impl<D, P: IntoPred1, C: Ctx<D>, T: LocalTerm<C, D>> StableFactInSealed<C, D> for Is<P, T> {}

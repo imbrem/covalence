@@ -1,4 +1,4 @@
-use crate::data::term::{Fv, Node, TmIn};
+use crate::data::term::{Close1, Fv, Node, TmIn};
 use std::{
     fmt::{self, Debug},
     hash::Hash,
@@ -130,81 +130,80 @@ pub type NodeTm<D> = Node<CtxId<D>, TmId<D>>;
 pub type FvId<D> = Fv<CtxId<D>>;
 
 mod term_sealed {
-    pub trait TermSealed<D> {}
-
     pub trait CtxSealed<D> {}
+
+    pub trait TermSealed<C, D> {}
 }
 
 use term_sealed::{CtxSealed, TermSealed};
 
-/// A local term in the datastore
-///
-/// A _local_ term can be interpreted as a term given a context ID
-pub trait LocalTerm<D>: TermSealed<D> {}
-
-/// A term in the datastore
-///
-/// Unlike a local term, this may be interpreted without a context ID
-pub trait Term<D>: LocalTerm<D> {}
-
 /// A context in the datastore
 pub trait Ctx<D>: CtxSealed<D> {}
 
-impl<D: TermIndex> TermSealed<D> for Ix<D> {}
+impl<D> CtxSealed<D> for () {}
 
-impl<D: TermIndex> LocalTerm<D> for Ix<D> {}
+impl<D> Ctx<D> for () {}
 
 impl<D: TermIndex> CtxSealed<D> for CtxId<D> {}
 
 impl<D: TermIndex> Ctx<D> for CtxId<D> {}
 
-impl<D, C, T> TermSealed<D> for TmIn<C, T>
+/// A local term in the datastore
+///
+/// A _local_ term can be interpreted as a term given a context ID
+pub trait LocalTerm<C, D>: TermSealed<C, D> {}
+
+impl<D: TermIndex> TermSealed<CtxId<D>, D> for Ix<D> {}
+
+impl<D: TermIndex> LocalTerm<CtxId<D>, D> for Ix<D> {}
+
+impl<D, C, T, CO> TermSealed<CO, D> for TmIn<C, T>
 where
-    D: TermIndex,
     C: Ctx<D>,
-    T: LocalTerm<D>,
+    T: LocalTerm<C, D>,
+    CO: Ctx<D>,
 {
 }
 
-impl<D, C, T> LocalTerm<D> for TmIn<C, T>
+impl<D, C, T, CO> LocalTerm<CO, D> for TmIn<C, T>
 where
-    D: TermIndex,
     C: Ctx<D>,
-    T: LocalTerm<D>,
+    T: LocalTerm<C, D>,
+    CO: Ctx<D>,
 {
 }
 
-impl<D, C, T> Term<D> for TmIn<C, T>
+impl<D, C, T, I> TermSealed<C, D> for Node<C, T, I>
 where
-    D: TermIndex,
     C: Ctx<D>,
-    T: LocalTerm<D>,
+    T: TermSealed<C, D>,
+    I: TermSealed<C, D>,
 {
 }
 
-impl<D, C, T, I> TermSealed<D> for Node<C, T, I>
+impl<D, C, T, I> LocalTerm<C, D> for Node<C, T, I>
 where
-    D: TermIndex,
     C: Ctx<D>,
-    T: TermSealed<D>,
-    I: TermSealed<D>,
+    T: LocalTerm<C, D>,
+    I: LocalTerm<C, D>,
 {
 }
 
-impl<D, C, T, I> LocalTerm<D> for Node<C, T, I>
+impl<D, C> TermSealed<C, D> for Fv<C> where C: Ctx<D> {}
+
+impl<D, C> LocalTerm<C, D> for Fv<C> where C: Ctx<D> {}
+
+impl<D, CC, T, C> TermSealed<C, D> for Close1<CC, T>
 where
-    D: TermIndex,
     C: Ctx<D>,
-    T: LocalTerm<D>,
-    I: LocalTerm<D>,
+    CC: Ctx<D>,
+    T: TermSealed<C, D>,
 {
 }
 
-impl<D, C, T, I> Term<D> for Node<C, T, I>
-where
-    D: TermIndex,
-    C: Ctx<D>,
-    T: Term<D>,
-    I: Term<D>,
-{
-}
+/// A term in the datastore
+///
+/// Unlike a local term, this may be interpreted without a context ID
+pub trait Term<D>: LocalTerm<(), D> {}
+
+impl<D, T: LocalTerm<(), D>> Term<D> for T {}

@@ -19,7 +19,7 @@ impl<C, S, D> Theorem<Seq<C, S>, D> {
         binder: Theorem<IsTyIn<C, T>, D>,
     ) -> Result<Theorem<Seq<C, Quantified<Forall<T>, S>>, D>, KernelError>
     where
-        S: StableFact,
+        S: StableFact<D>,
         C: PartialEq + Ctx<D>,
     {
         if self.id != binder.id {
@@ -57,7 +57,6 @@ impl<C, S> Seq<C, S> {
         binder: IsTyIn<C, T>,
     ) -> Result<Seq<C, Quantified<Forall<T>, S>>, KernelError>
     where
-        S: StableFact,
         C: PartialEq,
     {
         if self.ctx != binder.ctx {

@@ -200,7 +200,7 @@ impl<D> Kernel<D> {
     /// If it is, return it as a theorem
     pub fn check_thm<F>(&self, fact: F) -> Result<Theorem<F, D>, CheckFailed<F>>
     where
-        F: StableFact,
+        F: StableFact<D>,
         D: CheckFact<F>,
     {
         if self.db.check(&fact) {
@@ -215,7 +215,7 @@ impl<D> Kernel<D> {
     /// If it is, return it as a theorem
     pub fn check_thm_ref<'a, F>(&self, fact: &'a F) -> Result<Theorem<&'a F, D>, CheckFailed<&'a F>>
     where
-        F: StableFact,
+        F: StableFact<D>,
         D: CheckFact<F>,
     {
         if self.db.check(fact) {
@@ -233,7 +233,7 @@ impl<D> Kernel<D> {
         fact: &'a mut F,
     ) -> Result<Theorem<&'a mut F, D>, CheckFailed<&'a mut F>>
     where
-        F: StableFact,
+        F: StableFact<D>,
         D: CheckFact<F>,
     {
         if self.db.check(fact) {
@@ -259,7 +259,7 @@ impl<D> Kernel<D> {
     /// Returns an error on kernel ID mismatch
     pub fn store_theorem<F>(&mut self, thm: &Theorem<F, D>) -> Result<(), KernelError>
     where
-        F: StableFact,
+        F: StableFact<D>,
         D: SetFactUnchecked<F>,
     {
         self.theorem_belongs(thm)?;

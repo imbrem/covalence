@@ -22,7 +22,7 @@ impl<C, T> Seq<C, Quantified<Forall<T>, IsWf<T>>> {
 impl<C, T, D> Theorem<Seq<C, Quantified<Forall<T>, IsWf<T>>>, D>
 where
     C: Ctx<D>,
-    T: LocalTerm<D>,
+    T: LocalTerm<C, D>,
 {
     pub fn abs_wf(self) -> Theorem<Seq<C, IsWf<Node<C, T>>>, D> {
         Theorem {
@@ -52,7 +52,7 @@ impl<C, T> Seq<C, Quantified<Forall<T>, IsTy<T>>> {
 impl<C, T, D> Theorem<Seq<C, Quantified<Forall<T>, IsTy<T>>>, D>
 where
     C: Ctx<D>,
-    T: LocalTerm<D>,
+    T: LocalTerm<C, D>,
 {
     pub fn pi_ty(self) -> Theorem<Seq<C, IsTy<Node<C, T>>>, D> {
         Theorem {
@@ -102,7 +102,7 @@ impl<C, T> Seq<C, Quantified<Forall<T>, HasTy<T>>> {
 impl<C, T, D> Theorem<Seq<C, Quantified<Forall<T>, HasTy<T>>>, D>
 where
     C: Ctx<D>,
-    T: LocalTerm<D>,
+    T: LocalTerm<C, D>,
 {
     pub fn abs_has_ty(self) -> Theorem<Seq<C, HasTy<Node<C, T>>>, D>
     where
@@ -115,7 +115,7 @@ where
         }
     }
 
-    pub fn abs_has_ty_wf<I: LocalTerm<D>>(self) -> Theorem<Seq<C, IsWf<Node2<C, T, I>>>, D> {
+    pub fn abs_has_ty_wf<I: LocalTerm<C, D>>(self) -> Theorem<Seq<C, IsWf<Node2<C, T, I>>>, D> {
         Theorem {
             stmt: self.stmt.abs_has_ty_wf(),
             id: self.id,

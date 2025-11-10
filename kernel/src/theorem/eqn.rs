@@ -93,8 +93,8 @@ impl<C, L, R> EqnIn<C, L, R> {
 impl<C, L, R, D> Theorem<EqnIn<C, L, R>, D>
 where
     C: Ctx<D>,
-    L: LocalTerm<D>,
-    R: LocalTerm<D>,
+    L: LocalTerm<C, D>,
+    R: LocalTerm<C, D>,
 {
     /// Swap the left- and right-hand sides of this equation
     pub fn symm(self) -> Theorem<EqnIn<C, R, L>, D> {
@@ -114,8 +114,8 @@ where
         C: PartialEq<C2>,
         R: PartialEq<L2>,
         C2: Ctx<D>,
-        L2: LocalTerm<D>,
-        R2: LocalTerm<D>,
+        L2: LocalTerm<C, D>,
+        R2: LocalTerm<C, D>,
     {
         if self.id != other.id {
             return Err(EqMismatch);

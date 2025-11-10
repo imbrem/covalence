@@ -253,6 +253,38 @@ impl<D> Kernel<D> {
         self.new_thm(thm)
     }
 
+    /// Cons a term into the context, returning it as an equation
+    pub fn cons_into_eqn<T>(
+        &mut self,
+        ctx: CtxId<D>,
+        tm: T,
+    ) -> Theorem<EqnIn<CtxId<D>, T, Ix<D>>, D>
+    where
+        T: Clone + Into<NodeIx<D>>,
+        D: TermIndex + WriteLocalTerm<D>,
+    {
+        let node = tm.clone().into();
+        let ix = self.db.cons_node_ix(ctx, node);
+        let thm = EqnIn::new(ctx, tm, ix);
+        self.new_thm(thm)
+    }
+
+    /// Cons a term into the context, returning it as an equation
+    pub fn cons_try_into_eqn<T>(
+        &mut self,
+        ctx: CtxId<D>,
+        tm: T,
+    ) -> Result<Theorem<EqnIn<CtxId<D>, T, Ix<D>>, D>, T::Error>
+    where
+        T: Clone + TryInto<NodeIx<D>>,
+        D: TermIndex + WriteLocalTerm<D>,
+    {
+        let node = tm.clone().try_into()?;
+        let ix = self.db.cons_node_ix(ctx, node);
+        let thm = EqnIn::new(ctx, tm, ix);
+        Ok(self.new_thm(thm))
+    }
+
     /// Get the node of a term in the context, returning the result as an equation
     pub fn node_eqn(
         &self,

@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use crate::{
     Theorem,
-    data::term::{Node, Node2},
+    data::term::{Abs, Node},
     fact::{
         HasTy, Is, IsTy, IsWf, Seq, Ty, Wf,
         quant::{Forall, Quantified},
@@ -85,15 +85,15 @@ impl<C, T> Seq<C, Quantified<Forall<T>, HasTy<T>>> {
         }
     }
 
-    pub fn abs_has_ty_wf<I>(self) -> Seq<C, IsWf<Node2<C, T, I>>> {
+    pub fn abs_has_ty_wf<I>(self) -> Seq<C, IsWf<Abs<T, Node<C, T, I>>>> {
         Seq {
             ctx: self.ctx,
             stmt: Is(
                 Wf,
-                Node2::Abs([
-                    Node::Id([self.stmt.binder.0]),
-                    Node::HasTy([self.stmt.body.tm, self.stmt.body.ty]),
-                ]),
+                Abs {
+                    ty: self.stmt.binder.0,
+                    body: Node::HasTy([self.stmt.body.tm, self.stmt.body.ty]),
+                },
             ),
         }
     }
@@ -115,7 +115,9 @@ where
         }
     }
 
-    pub fn abs_has_ty_wf<I: LocalTerm<C, D>>(self) -> Theorem<Seq<C, IsWf<Node2<C, T, I>>>, D> {
+    pub fn abs_has_ty_wf<I: LocalTerm<C, D>>(
+        self,
+    ) -> Theorem<Seq<C, IsWf<Abs<T, Node<C, T, I>>>>, D> {
         Theorem {
             stmt: self.stmt.abs_has_ty_wf(),
             id: self.id,

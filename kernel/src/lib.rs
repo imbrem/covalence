@@ -14,6 +14,7 @@ pub mod rule;
 pub mod store;
 pub mod theorem;
 pub mod univ;
+pub mod eqn;
 
 pub use theorem::Theorem;
 

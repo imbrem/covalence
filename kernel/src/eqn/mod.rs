@@ -1,0 +1,1 @@
+//TODO: general equation-like trait for () and `C`

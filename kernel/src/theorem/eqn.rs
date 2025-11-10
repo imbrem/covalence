@@ -91,12 +91,111 @@ impl<C, L, R> EqnIn<C, L, R> {
     }
 }
 
+impl<C, T, D> Theorem<EqnIn<C, T>, D>
+where
+    C: Ctx<D>,
+    T: LocalTerm<C, D>,
+{
+    /// Construct an equation from two equal terms
+    pub fn of_refl(id: KernelId, ctx: C, tm: T) -> Result<Theorem<EqnIn<C, T>, D>, KernelError>
+    where
+        T: Clone,
+    {
+        Ok(Theorem {
+            stmt: EqnIn {
+                ctx,
+                stmt: Eqn(tm.clone(), tm),
+            },
+            id,
+            store: PhantomData,
+        })
+    }
+}
+
+impl<C, T, D> Theorem<EqnIn<C, &T, T>, D>
+where
+    C: Ctx<D>,
+    T: LocalTerm<C, D>,
+{
+    /// A term is equal to its clone
+    pub fn eq_clone(
+        id: KernelId,
+        ctx: C,
+        tm: &T,
+    ) -> Result<Theorem<EqnIn<C, &T, T>, D>, KernelError>
+    where
+        T: Clone,
+    {
+        Ok(Theorem {
+            stmt: EqnIn {
+                ctx,
+                stmt: Eqn(tm, tm.clone()),
+            },
+            id,
+            store: PhantomData,
+        })
+    }
+}
+
 impl<C, L, R, D> Theorem<EqnIn<C, L, R>, D>
 where
     C: Ctx<D>,
     L: LocalTerm<C, D>,
     R: LocalTerm<C, D>,
 {
+    /// Construct an equation from two equal terms
+    pub fn of_eq(
+        id: KernelId,
+        ctx: C,
+        lhs: L,
+        rhs: R,
+    ) -> Result<Theorem<EqnIn<C, L, R>, D>, KernelError>
+    where
+        L: PartialEq<R>,
+    {
+        if lhs != rhs {
+            return Err(KernelError::EqMismatch);
+        }
+        Ok(Theorem {
+            stmt: EqnIn {
+                ctx,
+                stmt: Eqn(lhs, rhs),
+            },
+            id,
+            store: PhantomData,
+        })
+    }
+
+    /// Construct an equation using `Into`
+    pub fn eq_into(id: KernelId, ctx: C, lhs: L) -> Theorem<EqnIn<C, L, R>, D>
+    where
+        L: Clone + Into<R>,
+    {
+        Theorem {
+            stmt: EqnIn {
+                ctx,
+                stmt: Eqn(lhs.clone(), lhs.into()),
+            },
+            id,
+            store: PhantomData,
+        }
+    }
+
+    /// Construct an equation using `TryInto`
+    pub fn eq_try_into(id: KernelId, ctx: C, lhs: L) -> Result<Theorem<EqnIn<C, L, R>, D>, L::Error>
+    where
+        L: Clone + TryInto<R>,
+    {
+        Ok(Theorem {
+            stmt: EqnIn {
+                ctx,
+                stmt: Eqn(lhs.clone(), lhs.try_into()?),
+            },
+            id,
+            store: PhantomData,
+        })
+    }
+
     /// Swap the left- and right-hand sides of this equation
     pub fn symm(self) -> Theorem<EqnIn<C, R, L>, D> {
         Theorem {

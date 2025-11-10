@@ -61,7 +61,7 @@ pub enum Node<C, T, I = TmIn<C, T>> {
 
     // == Meta-syntax ==
     /// The identity function on a term
-    Id([T; 1]),
+    Id(u64, [T; 1]),
 
     //TODO: identity tag
     /// A substitution under `k` binders
@@ -146,7 +146,7 @@ pub enum DiscT<C, T, I = TmIn<C, T>> {
     /// A variable closure under `k` binders
     Close1(Close1<C, T>),
     /// The identity function
-    Id,
+    Id(u64),
     /// A direct import from another context
     Quote(I),
 }
@@ -194,7 +194,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Natrec(_) => DiscT::Natrec,
             Node::HasTy(_) => DiscT::HasTy,
             Node::Invalid => DiscT::Invalid,
-            Node::Id(_) => DiscT::Id,
+            Node::Id(n, _) => DiscT::Id(n),
             Node::Subst1(k, _) => DiscT::Subst1(k),
             Node::BWk(s, _) => DiscT::BWk(s),
             Node::Close1(close) => DiscT::Close1(close),
@@ -262,7 +262,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Natrec([a, b, c]) => Node::Natrec([f(a), f(b), f(c)]),
             Node::HasTy([a, b]) => Node::HasTy([f(a), f(b)]),
             Node::Invalid => Node::Invalid,
-            Node::Id([a]) => Node::Id([f(a)]),
+            Node::Id(n, [a]) => Node::Id(n, [f(a)]),
             Node::Subst1(k, [a, b]) => Node::Subst1(k, [f(a), f(b)]),
             Node::BWk(k, [a]) => Node::BWk(k, [f(a)]),
             Node::Close1(close) => Node::Close1(Close1 {
@@ -314,7 +314,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Natrec([a, b, c]) => Ok(Node::Natrec([f(a)?, f(b)?, f(c)?])),
             Node::HasTy([a, b]) => Ok(Node::HasTy([f(a)?, f(b)?])),
             Node::Invalid => Ok(Node::Invalid),
-            Node::Id([a]) => Ok(Node::Id([f(a)?])),
+            Node::Id(n, [a]) => Ok(Node::Id(n, [f(a)?])),
             Node::Subst1(k, [a, b]) => Ok(Node::Subst1(k, [f(a)?, f(b)?])),
             Node::BWk(k, [a]) => Ok(Node::BWk(k, [f(a)?])),
             Node::Close1(close) => Ok(Node::Close1(Close1 {
@@ -368,7 +368,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Natrec([a, b, c]) => Node::Natrec([(Bv(0), a), (Bv(0), b), (Bv(0), c)]),
             Node::HasTy([a, b]) => Node::HasTy([(Bv(0), a), (Bv(0), b)]),
             Node::Invalid => Node::Invalid,
-            Node::Id([a]) => Node::Id([(Bv(0), a)]),
+            Node::Id(n, [a]) => Node::Id(n, [(Bv(0), a)]),
             Node::Subst1(k, [a, b]) => Node::Subst1(k, [(Bv(0), a), (Bv(1), b)]),
             Node::BWk(k, [a]) => Node::BWk(k, [(Bv(0), a)]),
             Node::Close1(close) => Node::Close1(Close1 {
@@ -406,7 +406,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Natrec([a, b, c]) => Node::Natrec([a, b, c]),
             Node::HasTy([a, b]) => Node::HasTy([a, b]),
             Node::Invalid => Node::Invalid,
-            Node::Id([a]) => Node::Id([a]),
+            Node::Id(n, [a]) => Node::Id(*n, [a]),
             Node::Subst1(k, [a, b]) => Node::Subst1(*k, [a, b]),
             Node::BWk(k, [a]) => Node::BWk(*k, [a]),
             Node::Close1(close) => Node::Close1(close.as_ref()),
@@ -440,7 +440,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Natrec([a, b, c]) => Node::Natrec([a, b, c]),
             Node::HasTy([a, b]) => Node::HasTy([a, b]),
             Node::Invalid => Node::Invalid,
-            Node::Id([a]) => Node::Id([a]),
+            Node::Id(n, [a]) => Node::Id(*n, [a]),
             Node::Subst1(k, [a, b]) => Node::Subst1(*k, [a, b]),
             Node::BWk(k, [a]) => Node::BWk(*k, [a]),
             Node::Close1(close) => Node::Close1(close.as_mut()),
@@ -477,7 +477,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Natrec(xs) => &xs[..],
             Node::HasTy(xs) => &xs[..],
             Node::Invalid => &[],
-            Node::Id(xs) => &xs[..],
+            Node::Id(_, xs) => &xs[..],
             Node::Subst1(_, xs) => &xs[..],
             Node::BWk(_, xs) => &xs[..],
             Node::Close1(_) => &[],
@@ -514,7 +514,7 @@ impl<C, T, I> Node<C, T, I> {
             Node::Natrec(xs) => &mut xs[..],
             Node::HasTy(xs) => &mut xs[..],
             Node::Invalid => &mut [],
-            Node::Id(xs) => &mut xs[..],
+            Node::Id(_, xs) => &mut xs[..],
             Node::Subst1(_, xs) => &mut xs[..],
             Node::BWk(_, xs) => &mut xs[..],
             Node::Close1(_) => &mut [],
@@ -651,7 +651,7 @@ where
             }
             Node::HasTy([a, b]) => (Node::HasTy([a.0, b.0]), Node::HasTy([a.1, b.1])),
             Node::Invalid => (Node::Invalid, Node::Invalid),
-            Node::Id([a]) => (Node::Id([a.0]), Node::Id([a.1])),
+            Node::Id(n, [a]) => (Node::Id(n, [a.0]), Node::Id(n, [a.1])),
             Node::Subst1(k, [a, b]) => (Node::Subst1(k, [a.0, b.0]), Node::Subst1(k, [a.1, b.1])),
             Node::BWk(k, [a]) => (Node::BWk(k, [a.0]), Node::BWk(k, [a.1])),
             Node::Close1(close) => {
@@ -1051,6 +1051,17 @@ impl<C, T, I> From<Fv<C>> for Node<C, T, I> {
     }
 }
 
+impl<C, T, I> TryFrom<Node<C, T, I>> for Fv<C> {
+    type Error = Node<C, T, I>;
+
+    fn try_from(value: Node<C, T, I>) -> Result<Self, Self::Error> {
+        match value {
+            Node::Fv(x) => Ok(x),
+            _ => Err(value),
+        }
+    }
+}
+
 impl<C: PartialEq, T, I> PartialEq<Fv<C>> for Node<C, T, I> {
     fn eq(&self, other: &Fv<C>) -> bool {
         match self {
@@ -1069,6 +1080,17 @@ impl<C: PartialEq, T, I> PartialEq<Node<C, T, I>> for Fv<C> {
 impl<C, T, I> From<Bv> for Node<C, T, I> {
     fn from(bv: Bv) -> Self {
         Node::Bv(bv)
+    }
+}
+
+impl<C, T, I> TryFrom<Node<C, T, I>> for Bv {
+    type Error = Node<C, T, I>;
+
+    fn try_from(value: Node<C, T, I>) -> Result<Self, Self::Error> {
+        match value {
+            Node::Bv(bv) => Ok(bv),
+            _ => Err(value),
+        }
     }
 }
 
@@ -1093,6 +1115,17 @@ impl<C, T, I> From<ULvl> for Node<C, T, I> {
     }
 }
 
+impl<C, T, I> TryFrom<Node<C, T, I>> for ULvl {
+    type Error = Node<C, T, I>;
+
+    fn try_from(value: Node<C, T, I>) -> Result<Self, Self::Error> {
+        match value {
+            Node::U(level) => Ok(level),
+            _ => Err(value),
+        }
+    }
+}
+
 impl<C, T, I> PartialEq<Node<C, T, I>> for ULvl {
     fn eq(&self, other: &Node<C, T, I>) -> bool {
         match other {
@@ -1111,6 +1144,18 @@ impl<C, T, I> PartialEq<ULvl> for Node<C, T, I> {
 impl<C, T> From<bool> for Node<C, T> {
     fn from(value: bool) -> Self {
         if value { Node::Unit } else { Node::Empty }
+    }
+}
+
+impl<C, T, I> TryFrom<Node<C, T, I>> for bool {
+    type Error = Node<C, T, I>;
+
+    fn try_from(value: Node<C, T, I>) -> Result<Self, Self::Error> {
+        match value {
+            Node::Unit => Ok(true),
+            Node::Empty => Ok(false),
+            _ => Err(value),
+        }
     }
 }
 
@@ -1142,6 +1187,203 @@ where
 impl<C, T, I> PartialEq<Node<C, T, I>> for Close1<C, T>
 where
     C: PartialEq,
+    T: PartialEq,
+{
+    fn eq(&self, other: &Node<C, T, I>) -> bool {
+        other.eq(self)
+    }
+}
+
+/// An abstraction
+pub struct Abs<L, R = L> {
+    /// The type of the argument
+    pub ty: L,
+    /// The body of the abstraction
+    pub body: R,
+}
+
+impl<C, T, I> From<Abs<T>> for Node<C, T, I> {
+    fn from(abs: Abs<T>) -> Self {
+        Node::Abs([abs.ty, abs.body])
+    }
+}
+
+impl<C, T, I> TryFrom<Node<C, T, I>> for Abs<T> {
+    type Error = Node<C, T, I>;
+
+    fn try_from(value: Node<C, T, I>) -> Result<Self, Self::Error> {
+        match value {
+            Node::Abs([a, b]) => Ok(Abs { ty: a, body: b }),
+            other => Err(other),
+        }
+    }
+}
+
+impl<C, T, I> PartialEq<Abs<T>> for Node<C, T, I>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &Abs<T>) -> bool {
+        match self {
+            Node::Abs([a, b]) => a == &other.ty && b == &other.body,
+            _ => false,
+        }
+    }
+}
+
+impl<C, T, I> PartialEq<Node<C, T, I>> for Abs<T>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &Node<C, T, I>) -> bool {
+        other.eq(self)
+    }
+}
+
+/// A pi type
+pub struct Pi<L, R = L> {
+    /// The type of the argument
+    pub ty: L,
+    /// The body of the pi type
+    pub body: R,
+}
+
+impl<C, T, I> From<Pi<T>> for Node<C, T, I> {
+    fn from(pi: Pi<T>) -> Self {
+        Node::Pi([pi.ty, pi.body])
+    }
+}
+
+impl<C, T, I> TryFrom<Node<C, T, I>> for Pi<T> {
+    type Error = Node<C, T, I>;
+
+    fn try_from(value: Node<C, T, I>) -> Result<Self, Self::Error> {
+        match value {
+            Node::Pi([a, b]) => Ok(Pi { ty: a, body: b }),
+            other => Err(other),
+        }
+    }
+}
+
+impl<C, T, I> PartialEq<Pi<T>> for Node<C, T, I>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &Pi<T>) -> bool {
+        match self {
+            Node::Pi([a, b]) => a == &other.ty && b == &other.body,
+            _ => false,
+        }
+    }
+}
+
+impl<C, T, I> PartialEq<Node<C, T, I>> for Pi<T>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &Node<C, T, I>) -> bool {
+        other.eq(self)
+    }
+}
+
+/// A sigma type
+pub struct Sigma<L, R = L> {
+    /// The type of the first component
+    pub fst: L,
+    /// The type of the second component
+    pub snd: R,
+}
+
+impl<C, T, I> From<Sigma<T>> for Node<C, T, I>
+where
+    T: Clone,
+{
+    fn from(sigma: Sigma<T>) -> Self {
+        Node::Sigma([sigma.fst, sigma.snd])
+    }
+}
+
+impl<C, T, I> TryFrom<Node<C, T, I>> for Sigma<T>
+where
+    T: Clone,
+{
+    type Error = Node<C, T, I>;
+
+    fn try_from(value: Node<C, T, I>) -> Result<Self, Self::Error> {
+        match value {
+            Node::Sigma([a, b]) => Ok(Sigma { fst: a, snd: b }),
+            other => Err(other),
+        }
+    }
+}
+
+impl<C, T, I> PartialEq<Sigma<T>> for Node<C, T, I>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &Sigma<T>) -> bool {
+        match self {
+            Node::Sigma([a, b]) => a == &other.fst && b == &other.snd,
+            _ => false,
+        }
+    }
+}
+
+impl<C, T, I> PartialEq<Node<C, T, I>> for Sigma<T>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &Node<C, T, I>) -> bool {
+        other.eq(self)
+    }
+}
+
+/// A single substitution
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct Subst1<L, R = L> {
+    /// How many binders to substitute under
+    pub under: Bv,
+    /// The term to substitute in
+    pub bound: L,
+    /// The term to substitute into
+    pub body: R,
+}
+
+impl<C, T, I> From<Subst1<T>> for Node<C, T, I> {
+    fn from(subst: Subst1<T>) -> Self {
+        Node::Subst1(subst.under, [subst.bound, subst.body])
+    }
+}
+
+impl<C, T, I> TryFrom<Node<C, T, I>> for Subst1<T> {
+    type Error = Node<C, T, I>;
+
+    fn try_from(value: Node<C, T, I>) -> Result<Self, Self::Error> {
+        match value {
+            Node::Subst1(k, [a, b]) => Ok(Subst1 {
+                under: k,
+                bound: a,
+                body: b,
+            }),
+            other => Err(other),
+        }
+    }
+}
+
+impl<C, T, I> PartialEq<Subst1<T>> for Node<C, T, I>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &Subst1<T>) -> bool {
+        match self {
+            Node::Subst1(k, [a, b]) => k == &other.under && a == &other.bound && b == &other.body,
+            _ => false,
+        }
+    }
+}
+
+impl<C, T, I> PartialEq<Node<C, T, I>> for Subst1<T>
+where
     T: PartialEq,
 {
     fn eq(&self, other: &Node<C, T, I>) -> bool {

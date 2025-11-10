@@ -1,4 +1,4 @@
-use crate::data::term::{Close1, Fv, Node, TmIn};
+use crate::data::term::{Abs, Close1, Fv, Node, Pi, Sigma, Subst1, TmIn};
 use std::{
     fmt::{self, Debug},
     hash::Hash,
@@ -157,6 +157,20 @@ impl<D: TermIndex> TermSealed<CtxId<D>, D> for Ix<D> {}
 
 impl<D: TermIndex> LocalTerm<CtxId<D>, D> for Ix<D> {}
 
+impl<'a, D, C, T> TermSealed<C, D> for &'a T
+where
+    C: Ctx<D>,
+    T: TermSealed<C, D>,
+{
+}
+
+impl<'a, D, C, T> LocalTerm<C, D> for &'a T
+where
+    C: Ctx<D>,
+    T: LocalTerm<C, D>,
+{
+}
+
 impl<D, C, T, CO> TermSealed<CO, D> for TmIn<C, T>
 where
     C: Ctx<D>,
@@ -206,6 +220,70 @@ where
     C: Ctx<D>,
     CC: Ctx<D>,
     T: LocalTerm<C, D>,
+{
+}
+
+impl<D, C, L, R> TermSealed<C, D> for Abs<L, R>
+where
+    C: Ctx<D>,
+    L: TermSealed<C, D>,
+    R: TermSealed<C, D>,
+{
+}
+
+impl<D, C, L, R> LocalTerm<C, D> for Abs<L, R>
+where
+    C: Ctx<D>,
+    L: LocalTerm<C, D>,
+    R: LocalTerm<C, D>,
+{
+}
+
+impl<D, C, L, R> TermSealed<C, D> for Pi<L, R>
+where
+    C: Ctx<D>,
+    L: TermSealed<C, D>,
+    R: TermSealed<C, D>,
+{
+}
+
+impl<D, C, L, R> LocalTerm<C, D> for Pi<L, R>
+where
+    C: Ctx<D>,
+    L: LocalTerm<C, D>,
+    R: LocalTerm<C, D>,
+{
+}
+
+impl<D, C, L, R> TermSealed<C, D> for Sigma<L, R>
+where
+    C: Ctx<D>,
+    L: TermSealed<C, D>,
+    R: TermSealed<C, D>,
+{
+}
+
+impl<D, C, L, R> LocalTerm<C, D> for Sigma<L, R>
+where
+    C: Ctx<D>,
+    L: LocalTerm<C, D>,
+    R: LocalTerm<C, D>,
+{
+}
+
+impl<D, C, L, R> TermSealed<C, D> for Subst1<L, R>
+where
+    C: Ctx<D>,
+    L: TermSealed<C, D>,
+    R: TermSealed<C, D>,
+{
+}
+
+impl<D, C, L, R> LocalTerm<C, D> for Subst1<L, R>
+where
+    C: Ctx<D>,
+    L: LocalTerm<C, D>,
+    R: LocalTerm<C, D>,
 {
 }
 

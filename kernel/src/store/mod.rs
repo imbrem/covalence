@@ -44,6 +44,14 @@ impl<D: TermIndex> TermStore for D {
 pub trait ReadLocalTerm<D: TermIndex> {
     // == Terms ==
 
+    /// Get the value corresponding to the given term, traversing import chains
+    fn val(&self, ctx: CtxId<D>, tm: Ix<D>) -> TmId<D> {
+        if let Node::Quote(val) = self.node(ctx, tm) {
+            return self.val(val.ctx, val.ix);
+        }
+        TmId { ctx, ix: tm }
+    }
+
     /// Get the node corresponding to a term
     fn node(&self, ctx: CtxId<D>, tm: Ix<D>) -> NodeIx<D>;
 

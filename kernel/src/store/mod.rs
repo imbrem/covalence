@@ -45,7 +45,7 @@ pub trait ReadLocalTerm<D: TermIndex> {
     // == Terms ==
 
     /// Get the node corresponding to a term
-    fn node(&self, ctx: CtxId<D>, tm: Ix<D>) -> &NodeIx<D>;
+    fn node(&self, ctx: CtxId<D>, tm: Ix<D>) -> NodeIx<D>;
 
     /// Lookup a term in the store
     fn lookup(&self, ctx: CtxId<D>, tm: NodeIx<D>) -> Option<Ix<D>>;

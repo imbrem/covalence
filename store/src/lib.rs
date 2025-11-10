@@ -41,7 +41,7 @@ impl TermIndex for TermDb {
 }
 
 impl ReadLocalTerm<TermDb> for TermDb {
-    fn node(&self, ctx: CtxId, tm: Ix) -> &NodeIx {
+    fn node(&self, ctx: CtxId, tm: Ix) -> NodeIx {
         self.x[ctx.0].node(tm)
     }
 

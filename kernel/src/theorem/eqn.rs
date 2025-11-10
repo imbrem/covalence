@@ -152,7 +152,7 @@ where
 {
     pub fn congr<CO>(
         self,
-        id: u64,
+        id: KernelId,
         ctx: CO,
     ) -> Result<Theorem<EqnIn<CO, Node<CN, L, LI>, Node<CN, R, RI>>, D>, Self>
     where

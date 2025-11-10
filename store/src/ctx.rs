@@ -57,21 +57,21 @@ impl Ctx {
         result
     }
 
-    pub fn node(&self, ix: Ix) -> &NodeIx {
+    pub fn node(&self, ix: Ix) -> NodeIx {
         let result = self.e.id_to_node(ix_id(ix));
         debug_assert_eq!(
             self.e.analysis.node_to_id.get(result),
             Some(&ix),
             "Ctx::node and Ctx::add are out of sync",
         );
-        &result.0
+        result.0
     }
 
     pub fn lookup(&self, node: NodeIx) -> Option<Ix> {
         let result = self.e.analysis.node_to_id.get(&InnerNode(node)).copied();
         debug_assert_eq!(
             result.map(|id| self.node(id)),
-            if result.is_none() { None } else { Some(&node) },
+            if result.is_none() { None } else { Some(node) },
             "Ctx::node and Ctx::add are out of sync",
         );
         result

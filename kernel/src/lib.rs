@@ -1,17 +1,15 @@
 /*!
 The `covalence` kernel, parametrized by a datastore `D`
 */
-use std::{
-    ops::Deref,
-    sync::atomic::{self, AtomicU64},
-};
+use std::ops::Deref;
 
-use crate::{data::term::*, store::*};
+use crate::{data::term::*, id::KernelId, store::*};
 
 pub mod ctx;
 pub mod data;
 pub mod error;
 pub mod fact;
+pub mod id;
 pub mod rule;
 pub mod store;
 pub mod theorem;
@@ -19,14 +17,12 @@ pub mod univ;
 
 pub use theorem::Theorem;
 
-static NEXT_KERNEL_ID: AtomicU64 = AtomicU64::new(0);
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
 pub struct Kernel<D> {
     /// The kernel's underlying term store
     db: D,
     /// This kernel's unique identifier
-    id: u64,
+    id: KernelId,
 }
 
 impl<D> Kernel<D> {
@@ -39,21 +35,8 @@ impl<D> Kernel<D> {
     /// let k2 = Kernel::default();
     /// assert_ne!(k1.id(), k2.id());
     /// ```
-    pub fn id(&self) -> u64 {
+    pub fn id(&self) -> KernelId {
         self.id
-    }
-}
-
-impl<D: Default> Default for Kernel<D> {
-    fn default() -> Self {
-        let id = NEXT_KERNEL_ID.fetch_add(1, atomic::Ordering::SeqCst);
-        if id == u64::MAX {
-            panic!("exhausted kernel IDs");
-        }
-        Self {
-            db: D::default(),
-            id,
-        }
     }
 }
 
@@ -70,7 +53,7 @@ impl<D: TermIndex> TermStore for Kernel<D> {
 }
 
 impl<D: TermIndex + ReadLocalTerm<D>> ReadLocalTerm<D> for Kernel<D> {
-    fn node(&self, ctx: CtxId<D>, tm: Ix<D>) -> &NodeIx<D> {
+    fn node(&self, ctx: CtxId<D>, tm: Ix<D>) -> NodeIx<D> {
         self.db.node(ctx, tm)
     }
 

@@ -8,7 +8,9 @@ use crate::Kernel;
 use crate::error::KernelError;
 use crate::fact::logic::{Iff, Implies, TryIff};
 use crate::fact::stable::StableFact;
-use crate::fact::{CheckFact, SetFactUnchecked};
+use crate::fact::{CheckFact, EqnIn, SetFactUnchecked};
+use crate::id::KernelId;
+use crate::store::{CtxId, Ix, NodeIx, ReadLocalTerm, TermIndex, TmId, WriteLocalTerm};
 
 pub mod eqn;
 
@@ -19,7 +21,7 @@ pub struct Theorem<F, D> {
     /// The statement of this theorem
     pub(crate) stmt: F,
     /// The kernel ID this theorem belongs to
-    pub(crate) id: u64,
+    pub(crate) id: KernelId,
     /// The data store in use
     pub(crate) store: PhantomData<D>,
 }
@@ -80,7 +82,7 @@ impl<F: Debug, D> Debug for Theorem<F, D> {
 
 impl<F, D> Theorem<F, D> {
     /// Get the kernel ID this theorem belongs to
-    pub fn id(self) -> u64 {
+    pub fn id(self) -> KernelId {
         self.id
     }
 
@@ -235,6 +237,64 @@ impl<D> Kernel<D> {
             id: self.id(),
             store: PhantomData,
         }
+    }
+
+    /// Cons a term into the context, returning it as an equation
+    pub fn cons_eqn(
+        &mut self,
+        ctx: CtxId<D>,
+        tm: NodeIx<D>,
+    ) -> Theorem<EqnIn<CtxId<D>, NodeIx<D>, Ix<D>>, D>
+    where
+        D: TermIndex + WriteLocalTerm<D>,
+    {
+        let ix = self.db.cons_node_ix(ctx, tm);
+        let thm = EqnIn::new(ctx, tm, ix);
+        self.new_thm(thm)
+    }
+
+    /// Get the node of a term in the context, returning the result as an equation
+    pub fn node_eqn(
+        &self,
+        ctx: CtxId<D>,
+        ix: Ix<D>,
+    ) -> Theorem<EqnIn<CtxId<D>, Ix<D>, NodeIx<D>>, D>
+    where
+        D: TermIndex + ReadLocalTerm<D>,
+    {
+        let tm = self.db.node(ctx, ix);
+        let thm = EqnIn::new(ctx, ix, tm);
+        self.new_thm(thm)
+    }
+
+    /// Lookup a term in the context, returning the result as an equation
+    pub fn lookup_eqn(
+        &self,
+        ctx: CtxId<D>,
+        tm: NodeIx<D>,
+    ) -> Option<Theorem<EqnIn<CtxId<D>, NodeIx<D>, Ix<D>>, D>>
+    where
+        D: TermIndex + ReadLocalTerm<D>,
+    {
+        let ix = self.db.lookup(ctx, tm)?;
+        let thm = EqnIn::new(ctx, tm, ix);
+        Some(self.new_thm(thm))
+    }
+
+    /// Lookup an import in the context, returning the result as an equation
+    ///
+    /// Does not traverse import chains
+    pub fn lookup_import_eqn(
+        &self,
+        ctx: CtxId<D>,
+        tm: TmId<D>,
+    ) -> Option<Theorem<EqnIn<CtxId<D>, TmId<D>, Ix<D>>, D>>
+    where
+        D: TermIndex + ReadLocalTerm<D>,
+    {
+        let ix = self.db.lookup_import(ctx, tm)?;
+        let thm = EqnIn::new(ctx, tm, ix);
+        Some(self.new_thm(thm))
     }
 
     /// Check whether a fact is true in the database

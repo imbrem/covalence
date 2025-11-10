@@ -68,8 +68,8 @@ where
 {
     pub fn add_var(
         &mut self,
-        ty: Theorem<IsTyIn<CtxId<D>, TmId<D>>>,
-    ) -> Result<Theorem<VarTy<CtxId<D>, TmId<D>>>, KernelError> {
+        ty: Theorem<IsTyIn<CtxId<D>, TmId<D>>, D>,
+    ) -> Result<Theorem<VarTy<CtxId<D>, TmId<D>>, D>, KernelError> {
         self.theorem_belongs(&ty)?;
         let var = self.db.add_var_unchecked(ty.stmt.ctx, ty.stmt.1)?;
         Ok(self.new_thm(VarTy { var, ty: ty.1 }))
@@ -83,7 +83,7 @@ where
     pub fn get_var(
         &self,
         var: Fv<CtxId<D>>,
-    ) -> Result<Theorem<VarTy<CtxId<D>, TmId<D>>>, KernelError> {
+    ) -> Result<Theorem<VarTy<CtxId<D>, TmId<D>>, D>, KernelError> {
         if self.db.num_vars(var.ctx) <= var.ix {
             return Err(KernelError::VarNotFound);
         }

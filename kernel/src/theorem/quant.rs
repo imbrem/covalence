@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use crate::{
     Kernel, Theorem,
     ctx::VarTy,
@@ -11,11 +13,11 @@ use crate::{
     store::{CtxId, LocalStoreUnchecked, ReadCtx, ReadCtxGraph},
 };
 
-impl<C, S> Theorem<Seq<C, S>> {
+impl<C, S, D> Theorem<Seq<C, S>, D> {
     pub fn wk0<T>(
         self,
-        binder: Theorem<IsTyIn<C, T>>,
-    ) -> Result<Theorem<Seq<C, Quantified<Forall<T>, S>>>, KernelError>
+        binder: Theorem<IsTyIn<C, T>, D>,
+    ) -> Result<Theorem<Seq<C, Quantified<Forall<T>, S>>, D>, KernelError>
     where
         S: StableFact,
         C: PartialEq,
@@ -23,15 +25,17 @@ impl<C, S> Theorem<Seq<C, S>> {
         if self.id != binder.id {
             return Err(KernelError::IdMismatch);
         }
-        self.stmt
-            .wk0(binder.stmt)
-            .map(|stmt| Theorem { stmt, id: self.id })
+        self.stmt.wk0(binder.stmt).map(|stmt| Theorem {
+            stmt,
+            id: self.id,
+            store: PhantomData,
+        })
     }
 
     pub fn close_var_self<T>(
         self,
-        var: Theorem<HasTyIn<C, Fv<C>, T>>,
-    ) -> Result<Theorem<Seq<C, Quantified<Forall<T>, S::ClosedChildren>>>, KernelError>
+        var: Theorem<HasTyIn<C, Fv<C>, T>, D>,
+    ) -> Result<Theorem<Seq<C, Quantified<Forall<T>, S::ClosedChildren>>, D>, KernelError>
     where
         S: CloseChildren<C>,
         C: PartialEq,
@@ -39,9 +43,11 @@ impl<C, S> Theorem<Seq<C, S>> {
         if self.id != var.id {
             return Err(KernelError::IdMismatch);
         }
-        self.stmt
-            .close_var_self(var.stmt)
-            .map(|stmt| Theorem { stmt, id: self.id })
+        self.stmt.close_var_self(var.stmt).map(|stmt| Theorem {
+            stmt,
+            id: self.id,
+            store: PhantomData,
+        })
     }
 }
 
@@ -118,9 +124,9 @@ where
 {
     pub fn close_var_single<S, T>(
         &self,
-        seq: Theorem<Seq<CtxId<D>, S>>,
-        var: Theorem<VarTy<CtxId<D>, T>>,
-    ) -> Result<Theorem<Seq<CtxId<D>, Quantified<Forall<T>, S::ClosedChildren>>>, KernelError>
+        seq: Theorem<Seq<CtxId<D>, S>, D>,
+        var: Theorem<VarTy<CtxId<D>, T>, D>,
+    ) -> Result<Theorem<Seq<CtxId<D>, Quantified<Forall<T>, S::ClosedChildren>>, D>, KernelError>
     where
         S: CloseChildren<CtxId<D>>,
     {
@@ -136,6 +142,7 @@ where
         Ok(Theorem {
             stmt,
             id: self.id(),
+            store: PhantomData,
         })
     }
 }

@@ -108,20 +108,21 @@ impl<C, L, R> EqnIn<C, L, R> {
     }
 }
 
-impl<C, L, R> Theorem<EqnIn<C, L, R>> {
+impl<C, L, R, D> Theorem<EqnIn<C, L, R>, D> {
     /// Swap the left- and right-hand sides of this equation
-    pub fn symm(self) -> Theorem<EqnIn<C, R, L>> {
+    pub fn symm(self) -> Theorem<EqnIn<C, R, L>, D> {
         Theorem {
             stmt: self.stmt.symm(),
             id: self.id,
+            store: PhantomData,
         }
     }
 
     /// Transitivity of equality
     pub fn trans<L2, R2>(
         self,
-        other: Theorem<EqnIn<C, L2, R2>>,
-    ) -> Result<Theorem<EqnIn<C, L, R2>>, EqMismatch>
+        other: Theorem<EqnIn<C, L2, R2>, D>,
+    ) -> Result<Theorem<EqnIn<C, L, R2>, D>, EqMismatch>
     where
         (): InterEq<R, L2>,
         (): InterEq<C, C>,
@@ -132,17 +133,19 @@ impl<C, L, R> Theorem<EqnIn<C, L, R>> {
         Ok(Theorem {
             stmt: self.stmt.trans(other.stmt)?,
             id: self.id,
+            store: PhantomData,
         })
     }
 
     /// Borrow this equation-in-context
-    pub fn eq_as_ref<'a>(&'a self) -> Theorem<EqnIn<C, &'a L, &'a R>>
+    pub fn eq_as_ref<'a>(&'a self) -> Theorem<EqnIn<C, &'a L, &'a R>, D>
     where
         C: Copy,
     {
         Theorem {
             stmt: self.stmt.as_ref(),
             id: self.id,
+            store: PhantomData,
         }
     }
 }

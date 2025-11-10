@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use crate::{
     Theorem,
     data::term::{Node, Node2},
@@ -16,11 +18,12 @@ impl<C, T> Seq<C, Quantified<Forall<T>, IsWf<T>>> {
     }
 }
 
-impl<C, T> Theorem<Seq<C, Quantified<Forall<T>, IsWf<T>>>> {
-    pub fn abs_wf(self) -> Theorem<Seq<C, IsWf<Node<C, T>>>> {
+impl<C, T, D> Theorem<Seq<C, Quantified<Forall<T>, IsWf<T>>>, D> {
+    pub fn abs_wf(self) -> Theorem<Seq<C, IsWf<Node<C, T>>>, D> {
         Theorem {
             stmt: self.stmt.abs_wf(),
             id: self.id,
+            store: PhantomData,
         }
     }
 }
@@ -41,18 +44,20 @@ impl<C, T> Seq<C, Quantified<Forall<T>, IsTy<T>>> {
     }
 }
 
-impl<C, T> Theorem<Seq<C, Quantified<Forall<T>, IsTy<T>>>> {
-    pub fn pi_ty(self) -> Theorem<Seq<C, IsTy<Node<C, T>>>> {
+impl<C, T, D> Theorem<Seq<C, Quantified<Forall<T>, IsTy<T>>>, D> {
+    pub fn pi_ty(self) -> Theorem<Seq<C, IsTy<Node<C, T>>>, D> {
         Theorem {
             stmt: self.stmt.pi_ty(),
             id: self.id,
+            store: PhantomData,
         }
     }
 
-    pub fn sigma_ty(self) -> Theorem<Seq<C, IsTy<Node<C, T>>>> {
+    pub fn sigma_ty(self) -> Theorem<Seq<C, IsTy<Node<C, T>>>, D> {
         Theorem {
             stmt: self.stmt.sigma_ty(),
             id: self.id,
+            store: PhantomData,
         }
     }
 }
@@ -85,21 +90,23 @@ impl<C, T> Seq<C, Quantified<Forall<T>, HasTy<T>>> {
     }
 }
 
-impl<C, T> Theorem<Seq<C, Quantified<Forall<T>, HasTy<T>>>> {
-    pub fn abs_has_ty(self) -> Theorem<Seq<C, HasTy<Node<C, T>>>>
+impl<C, T, D> Theorem<Seq<C, Quantified<Forall<T>, HasTy<T>>>, D> {
+    pub fn abs_has_ty(self) -> Theorem<Seq<C, HasTy<Node<C, T>>>, D>
     where
         T: Clone,
     {
         Theorem {
             stmt: self.stmt.abs_has_ty(),
             id: self.id,
+            store: PhantomData,
         }
     }
 
-    pub fn abs_has_ty_wf<I>(self) -> Theorem<Seq<C, IsWf<Node2<C, T, I>>>> {
+    pub fn abs_has_ty_wf<I>(self) -> Theorem<Seq<C, IsWf<Node2<C, T, I>>>, D> {
         Theorem {
             stmt: self.stmt.abs_has_ty_wf(),
             id: self.id,
+            store: PhantomData,
         }
     }
 }

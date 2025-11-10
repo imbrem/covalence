@@ -8,7 +8,7 @@ use crate::{
         quant::{CloseChildren, Forall, Quantified},
         stable::StableFact,
     },
-    store::{CtxId, LocalStoreUnchecked, ReadCtx, ReadCtxGraph, TermIndex},
+    store::{CtxId, LocalStoreUnchecked, ReadCtx, ReadCtxGraph},
 };
 
 impl<C, S> Theorem<Seq<C, S>> {
@@ -114,7 +114,7 @@ impl<C, S> Seq<C, S> {
 
 impl<D> Kernel<D>
 where
-    D: TermIndex + LocalStoreUnchecked<Store = D>,
+    D: LocalStoreUnchecked,
 {
     pub fn close_var_single<S, T>(
         &self,

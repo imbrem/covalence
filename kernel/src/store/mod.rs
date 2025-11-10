@@ -41,23 +41,19 @@ impl<D: TermIndex> TermStore for D {
 }
 
 /// A datastore that can read local terms
-pub trait ReadLocalTerm: TermStore {
+pub trait ReadLocalTerm<D: TermIndex> {
     // == Terms ==
 
     /// Get the node corresponding to a term
-    fn node(&self, ctx: CtxId<Self::Store>, tm: Ix<Self::Store>) -> &NodeIx<Self::Store>;
+    fn node(&self, ctx: CtxId<D>, tm: Ix<D>) -> &NodeIx<D>;
 
     /// Lookup a term in the store
-    fn lookup(&self, ctx: CtxId<Self::Store>, tm: NodeIx<Self::Store>) -> Option<Ix<Self::Store>>;
+    fn lookup(&self, ctx: CtxId<D>, tm: NodeIx<D>) -> Option<Ix<D>>;
 
     /// Lookup an import in `self`
     ///
     /// Does _not_ traverse import chains
-    fn lookup_import(
-        &self,
-        ctx: CtxId<Self::Store>,
-        tm: TmId<Self::Store>,
-    ) -> Option<Ix<Self::Store>> {
+    fn lookup_import(&self, ctx: CtxId<D>, tm: TmId<D>) -> Option<Ix<D>> {
         if tm.ctx == ctx {
             Some(tm.ix)
         } else {
@@ -68,43 +64,33 @@ pub trait ReadLocalTerm: TermStore {
     // == Syntactic information ==
 
     /// Get an upper bound on the de-Bruijn indices visible in `tm`
-    fn local_bvi(&self, ctx: CtxId<Self::Store>, tm: Ix<Self::Store>) -> Bv;
+    fn local_bvi(&self, ctx: CtxId<D>, tm: Ix<D>) -> Bv;
 
     /// Check whether the term `tm` may depend on the variable `var`
-    fn local_may_have_var(
-        &self,
-        ctx: CtxId<Self::Store>,
-        tm: Ix<Self::Store>,
-        var: FvId<Self::Store>,
-    ) -> bool {
+    fn local_may_have_var(&self, ctx: CtxId<D>, tm: Ix<D>, var: FvId<D>) -> bool {
         self.local_may_have_var_from(ctx, tm, var.ctx)
     }
 
     /// Check whether the term `tm` may depend on any variable from the context `vars`
-    fn local_may_have_var_from(
-        &self,
-        _ctx: CtxId<Self::Store>,
-        _tm: Ix<Self::Store>,
-        _vars: CtxId<Self::Store>,
-    ) -> bool {
+    fn local_may_have_var_from(&self, _ctx: CtxId<D>, _tm: Ix<D>, _vars: CtxId<D>) -> bool {
         true
     }
 }
 
-pub trait ReadLocalFacts:
-    TermStore
-    + CheckFactIn<CtxId<Self::Store>, Holds<Ix<Self::Store>>>
-    + CheckFactIn<CtxId<Self::Store>, Eqn<Ix<Self::Store>>>
+pub trait ReadLocalFacts<D: TermIndex>:
+    CheckFactIn<CtxId<D>, Holds<Ix<D>>> + CheckFactIn<CtxId<D>, Eqn<Ix<D>>>
 {
 }
 
-impl<D> ReadLocalFacts for D where
-    D: TermIndex + CheckFactIn<CtxId<D>, Holds<Ix<D>>> + CheckFactIn<CtxId<D>, Eqn<Ix<D>>>
+impl<K, D> ReadLocalFacts<D> for K
+where
+    D: TermIndex,
+    K: CheckFactIn<CtxId<D>, Holds<Ix<D>>> + CheckFactIn<CtxId<D>, Eqn<Ix<D>>>,
 {
 }
 
 /// A trait implemented by a datastore that can create hash-consed terms
-pub trait WriteLocalTerm: TermStore {
+pub trait WriteLocalTerm<D: TermIndex> {
     // == Term management ==
 
     /// Create a new context in this store
@@ -116,60 +102,74 @@ pub trait WriteLocalTerm: TermStore {
     /// let ctx = ker.new_ctx();
     /// assert_eq!(ker.num_vars(ctx), 0);
     /// ```
-    fn new_ctx(&mut self) -> CtxId<Self::Store>;
+    fn new_ctx(&mut self) -> CtxId<D>;
 
     /// Directly insert a term into the store, returning a handle to it
-    fn cons_node_ix(&mut self, ctx: CtxId<Self::Store>, tm: NodeIx<Self::Store>)
-    -> Ix<Self::Store>;
+    fn cons_node_ix(&mut self, ctx: CtxId<D>, tm: NodeIx<D>) -> Ix<D>;
 
     // == Congruence management ==
 
     /// Propagate congruence information _within_ a context
-    fn propagate_in(&mut self, ctx: CtxId<Self::Store>) -> usize;
+    fn propagate_in(&mut self, ctx: CtxId<D>) -> usize;
 }
 
-pub trait ReadLocalStore:
-    ReadLocalTerm
-    + ReadLocalFacts
-    + ReadCtx<CtxId<Self::Store>, VarId = TmId<Self::Store>>
-    + ReadCtxGraph<CtxId<Self::Store>>
-    + CheckFactIn<CtxId<Self::Store>, Pred0>
+pub trait ReadLocalStore<D: TermIndex>:
+    ReadLocalTerm<D>
+    + ReadLocalFacts<D>
+    + ReadCtx<CtxId<D>, VarId = TmId<D>>
+    + ReadCtxGraph<CtxId<D>>
+    + CheckFactIn<CtxId<D>, Pred0>
     + ReadUniv
 {
 }
 
-impl<D> ReadLocalStore for D where
-    D: ReadLocalTerm
-        + ReadLocalFacts
-        + ReadCtx<CtxId<D::Store>, VarId = TmId<D::Store>>
-        + ReadCtxGraph<CtxId<D::Store>>
-        + CheckFactIn<CtxId<D::Store>, Pred0>
-        + ReadUniv
+impl<K, D> ReadLocalStore<D> for K
+where
+    D: TermIndex,
+    K: ReadLocalTerm<D>
+        + ReadLocalFacts<D>
+        + ReadCtx<CtxId<D>, VarId = TmId<D>>
+        + ReadCtxGraph<CtxId<D>>
+        + CheckFactIn<CtxId<D>, Pred0>
+        + ReadUniv,
 {
 }
 
-pub trait WriteLocalStore: WriteLocalTerm + WriteUniv + SealCtx<CtxId<Self::Store>> {}
+pub trait WriteLocalStore<D: TermIndex>: WriteLocalTerm<D> + WriteUniv + SealCtx<CtxId<D>> {}
 
-impl<D> WriteLocalStore for D where D: WriteLocalTerm + WriteUniv + SealCtx<CtxId<D::Store>> {}
+impl<K, D> WriteLocalStore<D> for K
+where
+    D: TermIndex,
+    K: WriteLocalTerm<D> + WriteUniv + SealCtx<CtxId<D>>,
+{
+}
 
-pub trait LocalStore: ReadLocalStore + WriteLocalStore {}
+pub trait LocalStore<D: TermIndex>: ReadLocalStore<D> + WriteLocalStore<D> {}
 
-impl<D> LocalStore for D where D: ReadLocalStore + WriteLocalStore {}
+impl<K, D> LocalStore<D> for K
+where
+    D: TermIndex,
+    K: ReadLocalStore<D> + WriteLocalStore<D>,
+{
+}
 
 pub trait WriteLocalStoreUnchecked:
-    WriteLocalStore
-    + AddVarUnchecked<CtxId<Self::Store>, TmId<Self::Store>>
-    + AddParentUnchecked<CtxId<Self::Store>>
+    TermIndex
+    + Sized
+    + WriteLocalStore<Self>
+    + AddVarUnchecked<CtxId<Self>, TmId<Self>>
+    + AddParentUnchecked<CtxId<Self>>
 {
 }
 
 impl<D> WriteLocalStoreUnchecked for D where
-    D: WriteLocalStore
-        + AddVarUnchecked<CtxId<D::Store>, TmId<D::Store>>
-        + AddParentUnchecked<CtxId<D::Store>>
+    D: TermIndex
+        + WriteLocalStore<D>
+        + AddVarUnchecked<CtxId<D>, TmId<D>>
+        + AddParentUnchecked<CtxId<D>>
 {
 }
 
-pub trait LocalStoreUnchecked: ReadLocalStore + WriteLocalStoreUnchecked {}
+pub trait LocalStoreUnchecked: ReadLocalStore<Self> + WriteLocalStoreUnchecked {}
 
-impl<D> LocalStoreUnchecked for D where D: ReadLocalStore + WriteLocalStoreUnchecked {}
+impl<D> LocalStoreUnchecked for D where D: ReadLocalStore<D> + WriteLocalStoreUnchecked {}

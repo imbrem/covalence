@@ -1,12 +1,12 @@
-use covalence_kernel::store::*;
+use covalence_kernel::{Kernel, store::*};
 
 pub trait KernelCtxExt: TermStore {
     fn with_parent(&mut self, ctx: CtxId<Self::Store>) -> CtxId<Self::Store>;
 }
 
-impl<D> KernelCtxExt for covalence_kernel::Kernel<D>
+impl<D> KernelCtxExt for Kernel<D>
 where
-    D: TermIndex + LocalStoreUnchecked<Store = D>,
+    D: LocalStoreUnchecked,
 {
     fn with_parent(&mut self, ctx: CtxId<D>) -> CtxId<D> {
         let result = self.new_ctx();

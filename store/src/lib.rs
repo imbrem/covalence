@@ -39,7 +39,7 @@ impl TermIndex for TermDb {
     type Ix = u32;
 }
 
-impl ReadLocalTerm for TermDb {
+impl ReadLocalTerm<TermDb> for TermDb {
     fn node(&self, ctx: CtxId, tm: Ix) -> &NodeIx {
         self.x[ctx.0].node(tm)
     }
@@ -75,7 +75,7 @@ impl ReadUniv for TermDb {
     }
 }
 
-impl WriteLocalTerm for TermDb {
+impl WriteLocalTerm<TermDb> for TermDb {
     fn new_ctx(&mut self) -> CtxId {
         let result = CtxId(self.x.insert(Ctx::new_ctx()));
         self.set_this(result);

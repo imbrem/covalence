@@ -69,7 +69,7 @@ impl<D: TermIndex> TermStore for Kernel<D> {
     type Store = D;
 }
 
-impl<D: TermIndex + TermStore<Store = D> + ReadLocalTerm> ReadLocalTerm for Kernel<D> {
+impl<D: TermIndex + ReadLocalTerm<D>> ReadLocalTerm<D> for Kernel<D> {
     fn node(&self, ctx: CtxId<D>, tm: Ix<D>) -> &NodeIx<D> {
         self.db.node(ctx, tm)
     }
@@ -95,7 +95,7 @@ impl<D: TermIndex + TermStore<Store = D> + ReadLocalTerm> ReadLocalTerm for Kern
     }
 }
 
-impl<D: TermIndex + TermStore<Store = D> + WriteLocalTerm> WriteLocalTerm for Kernel<D> {
+impl<D: TermIndex + WriteLocalTerm<D>> WriteLocalTerm<D> for Kernel<D> {
     fn new_ctx(&mut self) -> CtxId<D> {
         self.db.new_ctx()
     }

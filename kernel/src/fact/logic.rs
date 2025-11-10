@@ -2,6 +2,72 @@ use either::Either;
 
 use super::*;
 
+pub trait ImpliesIn<C, F, D> {
+    fn implies_in(self, ctx: &C) -> F;
+}
+
+pub trait Implies<F, D> {
+    fn implies(self) -> F;
+}
+
+impl<C, F, G, D> Implies<Seq<C, G>, D> for Seq<C, F>
+where
+    F: ImpliesIn<C, G, D>,
+{
+    fn implies(self) -> Seq<C, G> {
+        Seq {
+            stmt: self.stmt.implies_in(&self.ctx),
+            ctx: self.ctx,
+        }
+    }
+}
+
+pub trait IffIn<C, F, D> {
+    fn iff_in(self, ctx: &C) -> F;
+}
+
+pub trait Iff<F, D> {
+    fn iff(self) -> F;
+}
+
+impl<C, F, G, D> Iff<Seq<C, G>, D> for Seq<C, F>
+where
+    F: IffIn<C, G, D>,
+{
+    fn iff(self) -> Seq<C, G> {
+        Seq {
+            stmt: self.stmt.iff_in(&self.ctx),
+            ctx: self.ctx,
+        }
+    }
+}
+
+pub trait TryIffIn<C, F, D>: Sized {
+    fn try_iff_in(self, ctx: &C) -> Result<F, Self>;
+}
+
+pub trait TryIff<F, D>: Sized {
+    fn try_iff(self) -> Result<F, Self>;
+}
+
+impl<C, F, G, D> TryIff<Seq<C, G>, D> for Seq<C, F>
+where
+    F: TryIffIn<C, G, D>,
+{
+    fn try_iff(self) -> Result<Seq<C, G>, Self> {
+        match self.stmt.try_iff_in(&self.ctx) {
+            Ok(stmt) => Ok(Seq {
+                stmt,
+                ctx: self.ctx,
+            }),
+            Err(stmt) => Err(Seq {
+                stmt,
+                ctx: self.ctx,
+            }),
+        }
+    }
+}
+
 /// `()` is interpreted as the true proposition `⊤`
 impl<R: ?Sized> CheckFact<()> for R {
     fn check(&self, _fact: &()) -> bool {

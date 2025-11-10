@@ -1,10 +1,7 @@
 use bitflags::bitflags;
 
 use super::*;
-use crate::{
-    data::term::Node,
-    fact::implies::{TryFromIff, TryFromIffSealed},
-};
+use crate::{data::term::Node, fact::logic::TryIffIn};
 
 bitflags! {
     /// A nullary predicate over contexts
@@ -454,28 +451,27 @@ pub type IsFalse<T> = Is<Ff, T>;
 /// A term is the false proposition in a context
 pub type IsFalseIn<C, T> = Seq<C, IsFalse<T>>;
 
-impl<P, T> FromIffSealed<Is<P, T>> for Holds<T> where P: IntoPred1 + Copy {}
-
-impl<P, T> FromIff<Is<P, T>> for Holds<T>
+impl<D, C, P, T> IffIn<C, Holds<T>, D> for Is<P, T>
 where
+    C: Ctx<D>,
     P: IntoPred1 + Copy,
 {
-    fn from_iff(value: Is<P, T>) -> Self {
-        Holds(value.0.into_pred1(), value.1)
+    fn iff_in(self, _ctx: &C) -> Holds<T> {
+        Holds(self.0.into_pred1(), self.1)
     }
 }
 
-impl<P, T> TryFromIffSealed<Holds<T>> for Is<P, T> where P: IntoPred1 {}
-
-impl<P, T> TryFromIff<Holds<T>> for Is<P, T>
+impl<D, C, P, T> TryIffIn<C, Is<P, T>, D> for Holds<T>
 where
-    P: IntoPred1 + Default,
+    C: Ctx<D>,
+    P: IntoPred1 + Copy + Default,
+    D: CheckFactIn<C, Holds<T>>,
 {
-    fn try_from_iff(value: Holds<T>) -> Result<Is<P, T>, Holds<T>> {
-        if value.0.contains(P::default().into_pred1()) {
-            Ok(Is(P::default(), value.1))
+    fn try_iff_in(self, _ctx: &C) -> Result<Is<P, T>, Self> {
+        if self.0.contains(P::default().into_pred1()) {
+            Ok(Is(P::default(), self.1))
         } else {
-            Err(value)
+            Err(self)
         }
     }
 }

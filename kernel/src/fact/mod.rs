@@ -22,7 +22,8 @@ pub use atom::*;
 
 use crate::{
     data::term::Node,
-    fact::implies::{FromIff, FromIffSealed},
+    fact::logic::IffIn,
+    store::{Ctx, LocalTerm},
 };
 
 /// Quantified facts
@@ -30,9 +31,6 @@ pub mod quant;
 
 /// Stable facts
 pub mod stable;
-
-/// Implication for facts
-pub mod implies;
 
 /// A database which can check facts
 pub trait CheckFact<F: ?Sized> {
@@ -115,20 +113,6 @@ impl<C, S> DerefMut for Seq<C, S> {
     }
 }
 
-impl<C, F, G> FromIffSealed<Seq<C, F>> for Seq<C, G> where G: FromIff<F> {}
-
-impl<C, F, G> FromIff<Seq<C, F>> for Seq<C, G>
-where
-    G: FromIff<F>,
-{
-    fn from_iff(fact: Seq<C, F>) -> Self {
-        Seq {
-            ctx: fact.ctx,
-            stmt: G::from_iff(fact.stmt),
-        }
-    }
-}
-
 /// An equation
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Eqn<L, R = L>(pub L, pub R);
@@ -153,11 +137,14 @@ pub struct HasTy<L, R = L> {
     pub ty: R,
 }
 
-impl<C, T> FromIffSealed<HasTy<T>> for IsWf<Node<C, T>> {}
-
-impl<C, T> FromIff<HasTy<T>> for IsWf<Node<C, T>> {
-    fn from_iff(ht: HasTy<T>) -> Self {
-        Is(Wf, Node::HasTy([ht.tm, ht.ty]))
+impl<C, T, D, CO> IffIn<C, IsWf<Node<CO, T>>, D> for HasTy<T>
+where
+    C: Ctx<D>,
+    T: LocalTerm<C, D>,
+    CO: Ctx<D>,
+{
+    fn iff_in(self, _ctx: &C) -> IsWf<Node<CO, T>> {
+        Is(Wf, Node::HasTy([self.tm, self.ty]))
     }
 }
 

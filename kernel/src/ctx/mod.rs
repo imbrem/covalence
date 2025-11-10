@@ -2,8 +2,8 @@ use crate::{
     error::KernelError,
     fact::{
         CheckFact, HasTy, HasTyIn, IsTyIn,
-        implies::{FromIff, FromIffSealed},
-        stable::{StableFact, StableFactSealed},
+        logic::Iff,
+        stable::{FactSealed, StableFact},
     },
     *,
 };
@@ -15,41 +15,40 @@ pub struct VarTy<C, T> {
     pub ty: T,
 }
 
-impl<C, T> FromIffSealed<VarTy<C, T>> for HasTyIn<C, Fv<C>, T> where C: Copy {}
-
-impl<C, T> FromIff<VarTy<C, T>> for HasTyIn<C, Fv<C>, T>
+impl<D, C, T> Iff<HasTyIn<C, Fv<C>, T>, D> for VarTy<C, T>
 where
-    C: Copy,
+    C: Copy + Ctx<D>,
+    T: LocalTerm<C, D>,
 {
-    fn from_iff(value: VarTy<C, T>) -> Self {
+    fn iff(self) -> HasTyIn<C, Fv<C>, T> {
         HasTyIn {
-            ctx: value.var.ctx,
+            ctx: self.var.ctx,
             stmt: HasTy {
-                tm: value.var,
-                ty: value.ty,
+                tm: self.var,
+                ty: self.ty,
             },
         }
     }
 }
 
-impl<C, T> FromIffSealed<VarTy<C, T>> for HasTyIn<C, Node<C, T>, T> where C: Copy {}
-
-impl<C, T> FromIff<VarTy<C, T>> for HasTyIn<C, Node<C, T>, T>
+impl<D, C, T, I> Iff<HasTyIn<C, Node<C, T, I>, T>, D> for VarTy<C, T>
 where
-    C: Copy,
+    C: Copy + Ctx<D>,
+    T: LocalTerm<C, D>,
+    I: LocalTerm<C, D>,
 {
-    fn from_iff(value: VarTy<C, T>) -> Self {
+    fn iff(self) -> HasTyIn<C, Node<C, T, I>, T> {
         HasTyIn {
-            ctx: value.var.ctx,
+            ctx: self.var.ctx,
             stmt: HasTy {
-                tm: Node::Fv(value.var),
-                ty: value.ty,
+                tm: Node::Fv(self.var),
+                ty: self.ty,
             },
         }
     }
 }
 
-impl<D, C: Ctx<D>, T: Term<D>> StableFactSealed<D> for VarTy<C, T> {}
+impl<D, C: Ctx<D>, T: Term<D>> FactSealed<D> for VarTy<C, T> {}
 
 impl<D, C: Ctx<D>, T: Term<D>> StableFact<D> for VarTy<C, T> {}
 

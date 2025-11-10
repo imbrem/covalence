@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::Kernel;
 use crate::error::KernelError;
-use crate::fact::implies::{FromIff, TryFromIff};
+use crate::fact::logic::{Iff, Implies, TryIff};
 use crate::fact::stable::StableFact;
 use crate::fact::{CheckFact, SetFactUnchecked};
 
@@ -84,31 +84,6 @@ impl<F, D> Theorem<F, D> {
         self.id
     }
 
-    /// Convert this theorem into an equivalent one
-    pub fn into_iff<U: FromIff<F>>(self) -> Theorem<U, D> {
-        Theorem {
-            stmt: U::from_iff(self.stmt),
-            id: self.id,
-            store: PhantomData,
-        }
-    }
-
-    /// Try to convert this theorem into an equivalent one
-    pub fn try_into_iff<U: TryFromIff<F>>(self) -> Result<Theorem<U, D>, Theorem<F, D>> {
-        match U::try_from_iff(self.stmt) {
-            Ok(stmt) => Ok(Theorem {
-                stmt,
-                id: self.id,
-                store: PhantomData,
-            }),
-            Err(stmt) => Err(Theorem {
-                stmt,
-                id: self.id,
-                store: PhantomData,
-            }),
-        }
-    }
-
     /// Get the statement of this theorem as a reference
     pub fn as_ref(&self) -> Theorem<&F, D> {
         Theorem {
@@ -130,6 +105,55 @@ impl<F, D> Theorem<F, D> {
     /// Get the statement of this theorem by value
     pub fn into_inner(self) -> F {
         self.stmt
+    }
+}
+
+impl<F, G, D> Implies<Theorem<G, D>, D> for Theorem<F, D>
+where
+    F: StableFact<D> + Implies<G, D>,
+    G: StableFact<D>,
+{
+    fn implies(self) -> Theorem<G, D> {
+        Theorem {
+            stmt: self.stmt.implies(),
+            id: self.id,
+            store: PhantomData,
+        }
+    }
+}
+
+impl<F, G, D> Iff<Theorem<G, D>, D> for Theorem<F, D>
+where
+    F: StableFact<D> + Iff<G, D>,
+    G: StableFact<D>,
+{
+    fn iff(self) -> Theorem<G, D> {
+        Theorem {
+            stmt: self.stmt.iff(),
+            id: self.id,
+            store: PhantomData,
+        }
+    }
+}
+
+impl<F, G, D> TryIff<Theorem<G, D>, D> for Theorem<F, D>
+where
+    F: StableFact<D> + TryIff<G, D>,
+    G: StableFact<D>,
+{
+    fn try_iff(self) -> Result<Theorem<G, D>, Self> {
+        match self.stmt.try_iff() {
+            Ok(stmt) => Ok(Theorem {
+                stmt,
+                id: self.id,
+                store: PhantomData,
+            }),
+            Err(stmt) => Err(Theorem {
+                stmt,
+                id: self.id,
+                store: PhantomData,
+            }),
+        }
     }
 }
 

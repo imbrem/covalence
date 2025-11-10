@@ -39,7 +39,6 @@ pub enum Node<C, T, I = TmIn<C, T>> {
     Snd([T; 1]),
 
     //TODO: first/second projection function
-
     /// A dependent if-then-else
     Ite([T; 3]),
     /// A propositional truncation
@@ -203,39 +202,39 @@ impl<C, T, I> Node<C, T, I> {
         }
     }
 
-    /// Get this node's syntactic discriminant
-    pub fn syn_disc(self) -> SynDiscIT<C, I> {
-        match self {
-            Node::Fv(x) => DiscT::Fv(x),
-            Node::Bv(i) => DiscT::Bv(i),
-            Node::U(level) => DiscT::U(level),
-            Node::Empty => DiscT::Empty,
-            Node::Unit => DiscT::Unit,
-            Node::Null => DiscT::Null,
-            Node::Eqn(_) => DiscT::Eqn,
-            Node::Pi(_) => DiscT::Pi,
-            Node::Sigma(_) => DiscT::Sigma,
-            Node::Abs(_) => DiscT::Abs,
-            Node::App(_) => DiscT::App,
-            Node::Pair(_) => DiscT::Pair,
-            Node::Fst(_) => DiscT::Fst,
-            Node::Snd(_) => DiscT::Snd,
-            Node::Ite(_) => DiscT::Ite,
-            Node::Trunc(_) => DiscT::Trunc,
-            Node::Choose(_) => DiscT::Choose,
-            Node::Nats => DiscT::Nats,
-            Node::N64(n) => DiscT::N64(n),
-            Node::Succ(_) => DiscT::Succ,
-            Node::Natrec(_) => DiscT::Natrec,
-            Node::HasTy(_) => DiscT::HasTy,
-            Node::Invalid => DiscT::Invalid,
-            Node::Id(_) => DiscT::Id,
-            Node::Subst1(k, _) => DiscT::Subst1(k),
-            Node::BWk(s, _) => DiscT::BWk(s),
-            Node::Close1(close) => DiscT::Close1(close.op()),
-            Node::Quote(import) => DiscT::Quote(import),
-        }
-    }
+    // /// Get this node's syntactic discriminant
+    // pub fn syn_disc(self) -> SynDiscIT<C, I> {
+    //     match self {
+    //         Node::Fv(x) => DiscT::Fv(x),
+    //         Node::Bv(i) => DiscT::Bv(i),
+    //         Node::U(level) => DiscT::U(level),
+    //         Node::Empty => DiscT::Empty,
+    //         Node::Unit => DiscT::Unit,
+    //         Node::Null => DiscT::Null,
+    //         Node::Eqn(_) => DiscT::Eqn,
+    //         Node::Pi(_) => DiscT::Pi,
+    //         Node::Sigma(_) => DiscT::Sigma,
+    //         Node::Abs(_) => DiscT::Abs,
+    //         Node::App(_) => DiscT::App,
+    //         Node::Pair(_) => DiscT::Pair,
+    //         Node::Fst(_) => DiscT::Fst,
+    //         Node::Snd(_) => DiscT::Snd,
+    //         Node::Ite(_) => DiscT::Ite,
+    //         Node::Trunc(_) => DiscT::Trunc,
+    //         Node::Choose(_) => DiscT::Choose,
+    //         Node::Nats => DiscT::Nats,
+    //         Node::N64(n) => DiscT::N64(n),
+    //         Node::Succ(_) => DiscT::Succ,
+    //         Node::Natrec(_) => DiscT::Natrec,
+    //         Node::HasTy(_) => DiscT::HasTy,
+    //         Node::Invalid => DiscT::Invalid,
+    //         Node::Id(_) => DiscT::Id,
+    //         Node::Subst1(k, _) => DiscT::Subst1(k),
+    //         Node::BWk(s, _) => DiscT::BWk(s),
+    //         Node::Close1(close) => DiscT::Close1(close.op()),
+    //         Node::Quote(import) => DiscT::Quote(import),
+    //     }
+    // }
 
     /// Map this node's subterms and imports
     pub fn map<U, J>(self, mut f: impl FnMut(T) -> U, g: impl FnOnce(I) -> J) -> Node<C, U, J> {
@@ -544,6 +543,11 @@ impl<C, T, I> Node<C, T, I> {
         }
     }
 
+    /// Check whether this term former is a congruence
+    pub fn is_congr(&self) -> bool {
+        !matches!(self, Node::Close1(_))
+    }
+
     /// Check whether this term is relocatable
     pub fn is_relocatable(&self) -> bool {
         matches!(
@@ -612,6 +616,50 @@ impl<C, T, I> Node<C, T, I> {
             self,
             Node::Subst1(_, _) | Node::BWk(_, _) | Node::Close1(_) | Node::Quote(_)
         )
+    }
+}
+
+impl<C, LT, RT, LI, RI> Node<C, (LT, RT), (LI, RI)>
+where
+    C: Copy,
+{
+    /// Convert a node of pairs into a pair of nodes
+    pub fn into_pair(self) -> (Node<C, LT, LI>, Node<C, RT, RI>) {
+        match self {
+            Node::Fv(x) => (Node::Fv(x), Node::Fv(x)),
+            Node::Bv(i) => (Node::Bv(i), Node::Bv(i)),
+            Node::U(level) => (Node::U(level), Node::U(level)),
+            Node::Empty => (Node::Empty, Node::Empty),
+            Node::Unit => (Node::Unit, Node::Unit),
+            Node::Null => (Node::Null, Node::Null),
+            Node::Eqn([a, b]) => (Node::Eqn([a.0, b.0]), Node::Eqn([a.1, b.1])),
+            Node::Pi([a, b]) => (Node::Pi([a.0, b.0]), Node::Pi([a.1, b.1])),
+            Node::Sigma([a, b]) => (Node::Sigma([a.0, b.0]), Node::Sigma([a.1, b.1])),
+            Node::Abs([a, b]) => (Node::Abs([a.0, b.0]), Node::Abs([a.1, b.1])),
+            Node::App([a, b]) => (Node::App([a.0, b.0]), Node::App([a.1, b.1])),
+            Node::Pair([a, b]) => (Node::Pair([a.0, b.0]), Node::Pair([a.1, b.1])),
+            Node::Fst([a]) => (Node::Fst([a.0]), Node::Fst([a.1])),
+            Node::Snd([a]) => (Node::Snd([a.0]), Node::Snd([a.1])),
+            Node::Ite([a, b, c]) => (Node::Ite([a.0, b.0, c.0]), Node::Ite([a.1, b.1, c.1])),
+            Node::Trunc([a]) => (Node::Trunc([a.0]), Node::Trunc([a.1])),
+            Node::Choose([a, b]) => (Node::Choose([a.0, b.0]), Node::Choose([a.1, b.1])),
+            Node::Nats => (Node::Nats, Node::Nats),
+            Node::N64(n) => (Node::N64(n), Node::N64(n)),
+            Node::Succ([a]) => (Node::Succ([a.0]), Node::Succ([a.1])),
+            Node::Natrec([a, b, c]) => {
+                (Node::Natrec([a.0, b.0, c.0]), Node::Natrec([a.1, b.1, c.1]))
+            }
+            Node::HasTy([a, b]) => (Node::HasTy([a.0, b.0]), Node::HasTy([a.1, b.1])),
+            Node::Invalid => (Node::Invalid, Node::Invalid),
+            Node::Id([a]) => (Node::Id([a.0]), Node::Id([a.1])),
+            Node::Subst1(k, [a, b]) => (Node::Subst1(k, [a.0, b.0]), Node::Subst1(k, [a.1, b.1])),
+            Node::BWk(k, [a]) => (Node::BWk(k, [a.0]), Node::BWk(k, [a.1])),
+            Node::Close1(close) => {
+                let (lclose, rclose) = close.into_pair();
+                (Node::Close1(lclose), Node::Close1(rclose))
+            }
+            Node::Quote(import) => (Node::Quote(import.0), Node::Quote(import.1)),
+        }
     }
 }
 
@@ -940,6 +988,27 @@ impl<C, T> Close1<C, T> {
             var: self.var,
             tm: (),
         }
+    }
+}
+
+impl<C, LT, RT> Close1<C, (LT, RT)>
+where
+    C: Copy,
+{
+    /// Convert a close of pairs into a pair of closes
+    pub fn into_pair(self) -> (Close1<C, LT>, Close1<C, RT>) {
+        (
+            Close1 {
+                under: self.under,
+                var: self.var,
+                tm: self.tm.0,
+            },
+            Close1 {
+                under: self.under,
+                var: self.var,
+                tm: self.tm.1,
+            },
+        )
     }
 }
 

@@ -1,4 +1,5 @@
 use crate::{
+    data::term::Node,
     fact::{Eqn, EqnIn},
     store::{Ctx, LocalTerm},
 };
@@ -79,7 +80,7 @@ impl<C, L, R> EqnIn<C, L, R> {
     }
 
     /// Borrow this equation-in-context
-    pub fn as_ref<'a>(&'a self) -> EqnIn<C, &'a L, &'a R>
+    pub fn eqn_as_ref<'a>(&'a self) -> EqnIn<C, &'a L, &'a R>
     where
         C: Copy,
     {
@@ -131,9 +132,54 @@ where
         C: Copy,
     {
         Theorem {
-            stmt: self.stmt.as_ref(),
+            stmt: self.stmt.eqn_as_ref(),
             id: self.id,
             store: PhantomData,
         }
+    }
+}
+
+impl<CN, LC, RC, L, R, LI, RI, D>
+    Node<CN, Theorem<EqnIn<LC, L, R>, D>, Theorem<EqnIn<RC, LI, RI>, D>>
+where
+    CN: Copy + Ctx<D>,
+    LC: Ctx<D>,
+    RC: Ctx<D>,
+    L: LocalTerm<LC, D>,
+    R: LocalTerm<LC, D>,
+    LI: LocalTerm<RC, D>,
+    RI: LocalTerm<RC, D>,
+{
+    pub fn congr<CO>(
+        self,
+        id: u64,
+        ctx: CO,
+    ) -> Result<Theorem<EqnIn<CO, Node<CN, L, LI>, Node<CN, R, RI>>, D>, Self>
+    where
+        CO: Ctx<D> + PartialEq<LC> + PartialEq<RC>,
+    {
+        //TODO: allow non-congruence _if_ context is known-null
+        if !self.is_congr() {
+            return Err(self);
+        }
+        for child in self.syn_children() {
+            if id != child.id || ctx != child.ctx {
+                return Err(self);
+            }
+        }
+        let (lhs, rhs) = self
+            .map(
+                |tm| (tm.stmt.stmt.0, tm.stmt.stmt.1),
+                |qt| (qt.stmt.stmt.0, qt.stmt.stmt.1),
+            )
+            .into_pair();
+        Ok(Theorem {
+            stmt: EqnIn {
+                ctx,
+                stmt: Eqn(lhs, rhs),
+            },
+            id,
+            store: PhantomData,
+        })
     }
 }

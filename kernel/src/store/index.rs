@@ -1,0 +1,130 @@
+use crate::data::term::{Fv, Node, TmIn};
+use std::{
+    fmt::{self, Debug},
+    hash::Hash,
+};
+
+/// A term database with a given index kind
+///
+/// This trait specifies types for
+/// - A _context identifier_: a unique ID mapping to a context in the term database
+/// - A _local index_: an index into a context mapping to a term
+///
+/// In general, _identifiers_ `Id` like `CtxId` and `TmId` are _global_ identifiers w.r.t. the term
+/// database, while _indices_ `Ix` are _local_ identifiers which need to be _resolved_ w.r.t. a
+/// context to get their value.
+///
+/// In particular, a `TmId` is just a pair of a `CtxId` and an `Ix`, representing the term at local
+/// index `ix` in context `ctx`.
+pub trait TermIndex {
+    /// The context identifier type
+    type CtxId: Copy + Eq + Hash + Ord;
+    /// A local index for a term
+    type Ix: Copy + Eq + Hash + Ord;
+}
+
+/// A context identifier in a datastore with term index `D`
+///
+/// This is just a newtype wrapper around `<D as TermIndex>::CtxId` indicating that we mean to use
+/// this as a valid context identifier.
+pub struct CtxId<D: TermIndex + ?Sized>(pub <D as TermIndex>::CtxId);
+
+impl<D: TermIndex + ?Sized> Copy for CtxId<D> {}
+
+impl<D: TermIndex + ?Sized> Clone for CtxId<D> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<D: TermIndex + ?Sized> PartialEq for CtxId<D> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<D: TermIndex + ?Sized> Eq for CtxId<D> {}
+
+impl<D: TermIndex + ?Sized> PartialOrd for CtxId<D> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+
+impl<D: TermIndex + ?Sized> Ord for CtxId<D> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl<D: TermIndex + ?Sized> Hash for CtxId<D> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
+impl<D: TermIndex + ?Sized> Debug for CtxId<D>
+where
+    <D as TermIndex>::CtxId: Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("CtxId").field(&self.0).finish()
+    }
+}
+
+/// A local index in a datastore with term index `D`
+///
+/// This is just a newtype wrapper around `<D as TermIndex>::Ix` indicating that we mean to use
+/// this as a valid local index.
+pub struct Ix<D: TermIndex + ?Sized>(pub <D as TermIndex>::Ix);
+
+impl<D: TermIndex + ?Sized> Copy for Ix<D> {}
+
+impl<D: TermIndex + ?Sized> Clone for Ix<D> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<D: TermIndex + ?Sized> PartialEq for Ix<D> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<D: TermIndex + ?Sized> Eq for Ix<D> {}
+
+impl<D: TermIndex + ?Sized> PartialOrd for Ix<D> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+
+impl<D: TermIndex + ?Sized> Ord for Ix<D> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl<D: TermIndex + ?Sized> Hash for Ix<D> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
+impl<D: TermIndex + ?Sized> Debug for Ix<D>
+where
+    <D as TermIndex>::Ix: Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Ix").field(&self.0).finish()
+    }
+}
+
+pub type TmId<D> = TmIn<CtxId<D>, Ix<D>>;
+
+pub type NodeIx<D> = Node<CtxId<D>, Ix<D>>;
+
+pub type NodeTm<D> = Node<CtxId<D>, TmId<D>>;
+
+pub type FvId<D> = Fv<CtxId<D>>;

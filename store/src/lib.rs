@@ -7,10 +7,11 @@ use covalence_kernel::store::*;
 mod ctx;
 use ctx::*;
 
-pub use ctx::{Ix, NodeIx};
+pub type CtxId = covalence_kernel::store::CtxId<TermDb>;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct CtxId(SmallIndex<Ctx>);
+pub type Ix = covalence_kernel::store::Ix<TermDb>;
+
+pub type NodeIx = covalence_kernel::store::NodeIx<TermDb>;
 
 pub type TmId = covalence_kernel::store::TmId<TermDb>;
 
@@ -34,8 +35,8 @@ impl TermDb {
 }
 
 impl TermIndex for TermDb {
-    type CtxId = CtxId;
-    type Ix = Ix;
+    type CtxId = SmallIndex<Ctx>;
+    type Ix = u32;
 }
 
 impl ReadLocalTerm for TermDb {

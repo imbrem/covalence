@@ -65,12 +65,11 @@ impl<D> Deref for Kernel<D> {
     }
 }
 
-impl<D: TermIndex> TermIndex for Kernel<D> {
-    type CtxId = D::CtxId;
-    type Ix = D::Ix;
+impl<D: TermIndex> TermStore for Kernel<D> {
+    type Store = D;
 }
 
-impl<D: ReadLocalTerm> ReadLocalTerm for Kernel<D> {
+impl<D: TermIndex + TermStore<Store = D> + ReadLocalTerm> ReadLocalTerm for Kernel<D> {
     fn node(&self, ctx: CtxId<D>, tm: Ix<D>) -> &NodeIx<D> {
         self.db.node(ctx, tm)
     }
@@ -96,16 +95,16 @@ impl<D: ReadLocalTerm> ReadLocalTerm for Kernel<D> {
     }
 }
 
-impl<D: WriteLocalTerm> WriteLocalTerm for Kernel<D> {
+impl<D: TermIndex + TermStore<Store = D> + WriteLocalTerm> WriteLocalTerm for Kernel<D> {
     fn new_ctx(&mut self) -> CtxId<D> {
         self.db.new_ctx()
     }
 
-    fn cons_node_ix(&mut self, ctx: CtxId<Self>, tm: NodeIx<Self>) -> Ix<Self> {
+    fn cons_node_ix(&mut self, ctx: CtxId<D>, tm: NodeIx<D>) -> Ix<D> {
         self.db.cons_node_ix(ctx, tm)
     }
 
-    fn propagate_in(&mut self, ctx: CtxId<Self>) -> usize {
+    fn propagate_in(&mut self, ctx: CtxId<D>) -> usize {
         self.db.propagate_in(ctx)
     }
 }
@@ -140,7 +139,7 @@ impl<D: WriteUniv> WriteUniv for Kernel<D> {
 
 impl<C, D: ReadCtx<C>> ReadCtx<C> for Kernel<D> {
     type VarId = D::VarId;
-    
+
     fn num_assumptions(&self, ctx: C) -> u32 {
         self.db.num_assumptions(ctx)
     }
@@ -150,9 +149,9 @@ impl<C, D: ReadCtx<C>> ReadCtx<C> for Kernel<D> {
     }
 
     fn assumption(&self, ctx: C, ix: u32) -> D::VarId {
-        self.db.assumption(ctx,ix)
+        self.db.assumption(ctx, ix)
     }
-    
+
     fn var_ty(&self, var: Fv<C>) -> D::VarId {
         self.db.var_ty(var)
     }

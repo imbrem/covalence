@@ -1,13 +1,19 @@
-use std::{collections::BTreeMap, ops::BitOr};
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Debug},
+    ops::BitOr,
+};
 
 use covalence_kernel::{
-    data::term::{Bv, DiscT, Fv, Node},
+    data::term::{Bv, DiscT, Fv},
     store::{AddParentFailure, AddVarFailure},
 };
-use egg::{Analysis, DidMerge, EGraph, Language};
+use egg::{Analysis, DidMerge, EGraph, Id, Language};
 
 use covalence_kernel::fact::{Pred0, Pred1};
 use indexmap::IndexSet;
+
+use crate::{Ix, NodeIx};
 
 use super::{CtxId, FvId, TmId};
 
@@ -15,6 +21,14 @@ use super::{CtxId, FvId, TmId};
 #[repr(transparent)]
 pub struct Ctx {
     e: EGraph<InnerNode, CtxData>,
+}
+
+fn ix_id(ix: Ix) -> Id {
+    Id::from(ix.0 as usize)
+}
+
+fn id_ix(id: Id) -> Ix {
+    Ix(usize::from(id) as u32)
 }
 
 impl Ctx {
@@ -38,16 +52,16 @@ impl Ctx {
 
     pub fn add(&mut self, node: NodeIx) -> Ix {
         // NOTE: an uncanonical insertion is necessary to roundtrip with lookup
-        let result = Ix(self.e.add_uncanonical(InnerNode(node)));
+        let result = id_ix(self.e.add_uncanonical(InnerNode(node)));
         self.e.analysis.node_to_id.insert(InnerNode(node), result);
         result
     }
 
-    pub fn node(&self, id: Ix) -> &NodeIx {
-        let result = self.e.id_to_node(id.0);
+    pub fn node(&self, ix: Ix) -> &NodeIx {
+        let result = self.e.id_to_node(ix_id(ix));
         debug_assert_eq!(
             self.e.analysis.node_to_id.get(result),
-            Some(&id),
+            Some(&ix),
             "Ctx::node and Ctx::add are out of sync",
         );
         &result.0
@@ -102,19 +116,19 @@ impl Ctx {
     }
 
     pub fn tm_flags(&self, tm: Ix) -> Pred1 {
-        self.e[tm.0].data.flags
+        self.e[ix_id(tm)].data.flags
     }
 
     pub fn eq_in(&self, lhs: Ix, rhs: Ix) -> bool {
-        self.e.find(lhs.0) == self.e.find(rhs.0)
+        self.e.find(ix_id(lhs)) == self.e.find(ix_id(rhs))
     }
 
     pub fn set_tm_flags_unchecked(&mut self, tm: Ix, flags: Pred1) -> bool {
-        let mut data = self.e[tm.0].data;
+        let mut data = self.e[ix_id(tm)].data;
         let old_flags = data.flags;
         data.flags |= flags;
         if data.flags != old_flags {
-            self.e.set_analysis_data(tm.0, data);
+            self.e.set_analysis_data(ix_id(tm), data);
             true
         } else {
             false
@@ -122,7 +136,7 @@ impl Ctx {
     }
 
     pub fn set_eq_unchecked(&mut self, lhs: Ix, rhs: Ix) {
-        self.e.union(lhs.0, rhs.0);
+        self.e.union(ix_id(lhs), ix_id(rhs));
     }
 
     pub fn add_var_unchecked(&mut self, ctx: CtxId, ty: TmId) -> Result<FvId, AddVarFailure> {
@@ -148,16 +162,16 @@ impl Ctx {
     // }
 
     pub fn bvi(&self, id: Ix) -> Bv {
-        self.e[id.0].data.bvi
+        self.e[Id::from(id.0 as usize)].data.bvi
     }
 
-    pub fn set_bvi_unchecked(&mut self, id: Ix, bvi: Bv) {
-        let mut data = self.e[id.0].data;
+    pub fn set_bvi_unchecked(&mut self, ix: Ix, bvi: Bv) {
+        let mut data = self.e[ix_id(ix)].data;
         if bvi >= data.bvi {
             return;
         }
         data.bvi = bvi;
-        self.e.set_analysis_data(id.0, data);
+        self.e.set_analysis_data(ix_id(ix), data);
     }
 }
 
@@ -216,15 +230,15 @@ impl BitOr for ClassData {
 
 impl Ctx {}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
-#[repr(transparent)]
-pub struct Ix(egg::Id);
-
-pub type NodeIx = Node<CtxId, Ix>;
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[repr(transparent)]
 struct InnerNode(NodeIx);
+
+impl Debug for InnerNode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TODO")
+    }
+}
 
 impl Language for InnerNode {
     type Discriminant = DiscT<CtxId, Ix>;

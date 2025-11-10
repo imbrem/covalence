@@ -1,4 +1,7 @@
-use crate::fact::{Eqn, EqnIn};
+use crate::{
+    fact::{Eqn, EqnIn},
+    store::{Ctx, LocalTerm},
+};
 
 use super::*;
 
@@ -12,23 +15,9 @@ impl Display for EqMismatch {
     }
 }
 
-pub trait InterEq<L, R> {
-    fn inter_eq(&self, lhs: &L, rhs: &R) -> bool;
-}
-
-impl<L, R> InterEq<L, R> for ()
-where
-    L: PartialEq<R>,
-    R: PartialEq<L>,
-{
-    fn inter_eq(&self, lhs: &L, rhs: &R) -> bool {
-        lhs == rhs
-    }
-}
-
 impl<L, R> Eqn<L, R> {
     /// Swap the left- and right-hand sides of this equation
-    /// 
+    ///
     /// # Examples
     /// ```rust
     /// # use covalence_kernel::fact::Eqn;
@@ -40,7 +29,7 @@ impl<L, R> Eqn<L, R> {
     }
 
     /// Transitivity of equality
-    /// 
+    ///
     /// # Examples
     /// ```rust
     /// # use covalence_kernel::fact::Eqn;
@@ -51,25 +40,18 @@ impl<L, R> Eqn<L, R> {
     /// ```
     pub fn trans<L2, R2>(self, other: Eqn<L2, R2>) -> Result<Eqn<L, R2>, EqMismatch>
     where
-        (): InterEq<R, L2>,
+        R: PartialEq<L2>,
     {
-        if ().inter_eq(&self.1, &other.0) {
-            Ok(Eqn(self.0, other.1))
-        } else {
-            Err(EqMismatch)
+        if self.1 != other.0 {
+            return Err(EqMismatch);
         }
+        Ok(Eqn(self.0, other.1))
     }
 
     /// Borrow this equation
     pub fn as_ref<'a>(&'a self) -> Eqn<&'a L, &'a R> {
         Eqn(&self.0, &self.1)
     }
-
-    //TODO: localization
-
-    //TODO: congruence
-
-    //TODO: stepping
 }
 
 impl<C, L, R> EqnIn<C, L, R> {
@@ -82,12 +64,12 @@ impl<C, L, R> EqnIn<C, L, R> {
     }
 
     /// Transitivity of equality
-    pub fn trans<L2, R2>(self, other: EqnIn<C, L2, R2>) -> Result<EqnIn<C, L, R2>, EqMismatch>
+    pub fn trans<C2, L2, R2>(self, other: EqnIn<C2, L2, R2>) -> Result<EqnIn<C, L, R2>, EqMismatch>
     where
-        (): InterEq<R, L2>,
-        (): InterEq<C, C>,
+        C: PartialEq<C2>,
+        R: PartialEq<L2>,
     {
-        if !().inter_eq(&self.ctx, &other.ctx) {
+        if self.ctx != other.ctx {
             return Err(EqMismatch);
         }
         Ok(EqnIn {
@@ -108,7 +90,12 @@ impl<C, L, R> EqnIn<C, L, R> {
     }
 }
 
-impl<C, L, R, D> Theorem<EqnIn<C, L, R>, D> {
+impl<C, L, R, D> Theorem<EqnIn<C, L, R>, D>
+where
+    C: Ctx<D>,
+    L: LocalTerm<D>,
+    R: LocalTerm<D>,
+{
     /// Swap the left- and right-hand sides of this equation
     pub fn symm(self) -> Theorem<EqnIn<C, R, L>, D> {
         Theorem {
@@ -119,13 +106,16 @@ impl<C, L, R, D> Theorem<EqnIn<C, L, R>, D> {
     }
 
     /// Transitivity of equality
-    pub fn trans<L2, R2>(
+    pub fn trans<C2, L2, R2>(
         self,
-        other: Theorem<EqnIn<C, L2, R2>, D>,
+        other: Theorem<EqnIn<C2, L2, R2>, D>,
     ) -> Result<Theorem<EqnIn<C, L, R2>, D>, EqMismatch>
     where
-        (): InterEq<R, L2>,
-        (): InterEq<C, C>,
+        C: PartialEq<C2>,
+        R: PartialEq<L2>,
+        C2: Ctx<D>,
+        L2: LocalTerm<D>,
+        R2: LocalTerm<D>,
     {
         if self.id != other.id {
             return Err(EqMismatch);

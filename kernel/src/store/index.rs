@@ -128,3 +128,83 @@ pub type NodeIx<D> = Node<CtxId<D>, Ix<D>>;
 pub type NodeTm<D> = Node<CtxId<D>, TmId<D>>;
 
 pub type FvId<D> = Fv<CtxId<D>>;
+
+mod term_sealed {
+    pub trait TermSealed<D> {}
+
+    pub trait CtxSealed<D> {}
+}
+
+use term_sealed::{CtxSealed, TermSealed};
+
+/// A local term in the datastore
+///
+/// A _local_ term can be interpreted as a term given a context ID
+pub trait LocalTerm<D>: TermSealed<D> {}
+
+/// A term in the datastore
+///
+/// Unlike a local term, this may be interpreted without a context ID
+pub trait Term<D>: LocalTerm<D> {}
+
+/// A context in the datastore
+pub trait Ctx<D>: CtxSealed<D> {}
+
+impl<D: TermIndex> TermSealed<D> for Ix<D> {}
+
+impl<D: TermIndex> LocalTerm<D> for Ix<D> {}
+
+impl<D: TermIndex> CtxSealed<D> for CtxId<D> {}
+
+impl<D: TermIndex> Ctx<D> for CtxId<D> {}
+
+impl<D, C, T> TermSealed<D> for TmIn<C, T>
+where
+    D: TermIndex,
+    C: Ctx<D>,
+    T: LocalTerm<D>,
+{
+}
+
+impl<D, C, T> LocalTerm<D> for TmIn<C, T>
+where
+    D: TermIndex,
+    C: Ctx<D>,
+    T: LocalTerm<D>,
+{
+}
+
+impl<D, C, T> Term<D> for TmIn<C, T>
+where
+    D: TermIndex,
+    C: Ctx<D>,
+    T: LocalTerm<D>,
+{
+}
+
+impl<D, C, T, I> TermSealed<D> for Node<C, T, I>
+where
+    D: TermIndex,
+    C: Ctx<D>,
+    T: TermSealed<D>,
+    I: TermSealed<D>,
+{
+}
+
+impl<D, C, T, I> LocalTerm<D> for Node<C, T, I>
+where
+    D: TermIndex,
+    C: Ctx<D>,
+    T: LocalTerm<D>,
+    I: LocalTerm<D>,
+{
+}
+
+impl<D, C, T, I> Term<D> for Node<C, T, I>
+where
+    D: TermIndex,
+    C: Ctx<D>,
+    T: Term<D>,
+    I: Term<D>,
+{
+}

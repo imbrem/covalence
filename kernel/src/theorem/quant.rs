@@ -10,7 +10,7 @@ use crate::{
         quant::{CloseChildren, Forall, Quantified},
         stable::StableFact,
     },
-    store::{CtxId, LocalStoreUnchecked, ReadCtx, ReadCtxGraph},
+    store::{Ctx, CtxId, LocalStoreUnchecked, ReadCtx, ReadCtxGraph},
 };
 
 impl<C, S, D> Theorem<Seq<C, S>, D> {
@@ -20,7 +20,7 @@ impl<C, S, D> Theorem<Seq<C, S>, D> {
     ) -> Result<Theorem<Seq<C, Quantified<Forall<T>, S>>, D>, KernelError>
     where
         S: StableFact,
-        C: PartialEq,
+        C: PartialEq + Ctx<D>,
     {
         if self.id != binder.id {
             return Err(KernelError::IdMismatch);
@@ -38,7 +38,7 @@ impl<C, S, D> Theorem<Seq<C, S>, D> {
     ) -> Result<Theorem<Seq<C, Quantified<Forall<T>, S::ClosedChildren>>, D>, KernelError>
     where
         S: CloseChildren<C>,
-        C: PartialEq,
+        C: PartialEq + Ctx<D>,
     {
         if self.id != var.id {
             return Err(KernelError::IdMismatch);

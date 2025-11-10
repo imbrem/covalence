@@ -5,7 +5,8 @@ use covalence_kernel::fact::{CheckFactIn, Eqn, Holds, Pred0, SetFactUncheckedIn,
 use covalence_kernel::store::*;
 
 mod ctx;
-use ctx::*;
+
+use ctx::Ctx;
 
 pub type CtxId = covalence_kernel::store::CtxId<TermDb>;
 

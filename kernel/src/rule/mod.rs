@@ -7,6 +7,7 @@ use crate::{
         HasTy, Is, IsTy, IsWf, Seq, Ty, Wf,
         quant::{Forall, Quantified},
     },
+    store::{Ctx, LocalTerm},
 };
 
 impl<C, T> Seq<C, Quantified<Forall<T>, IsWf<T>>> {
@@ -18,7 +19,11 @@ impl<C, T> Seq<C, Quantified<Forall<T>, IsWf<T>>> {
     }
 }
 
-impl<C, T, D> Theorem<Seq<C, Quantified<Forall<T>, IsWf<T>>>, D> {
+impl<C, T, D> Theorem<Seq<C, Quantified<Forall<T>, IsWf<T>>>, D>
+where
+    C: Ctx<D>,
+    T: LocalTerm<D>,
+{
     pub fn abs_wf(self) -> Theorem<Seq<C, IsWf<Node<C, T>>>, D> {
         Theorem {
             stmt: self.stmt.abs_wf(),
@@ -44,7 +49,11 @@ impl<C, T> Seq<C, Quantified<Forall<T>, IsTy<T>>> {
     }
 }
 
-impl<C, T, D> Theorem<Seq<C, Quantified<Forall<T>, IsTy<T>>>, D> {
+impl<C, T, D> Theorem<Seq<C, Quantified<Forall<T>, IsTy<T>>>, D>
+where
+    C: Ctx<D>,
+    T: LocalTerm<D>,
+{
     pub fn pi_ty(self) -> Theorem<Seq<C, IsTy<Node<C, T>>>, D> {
         Theorem {
             stmt: self.stmt.pi_ty(),
@@ -90,7 +99,11 @@ impl<C, T> Seq<C, Quantified<Forall<T>, HasTy<T>>> {
     }
 }
 
-impl<C, T, D> Theorem<Seq<C, Quantified<Forall<T>, HasTy<T>>>, D> {
+impl<C, T, D> Theorem<Seq<C, Quantified<Forall<T>, HasTy<T>>>, D>
+where
+    C: Ctx<D>,
+    T: LocalTerm<D>,
+{
     pub fn abs_has_ty(self) -> Theorem<Seq<C, HasTy<Node<C, T>>>, D>
     where
         T: Clone,
@@ -102,7 +115,7 @@ impl<C, T, D> Theorem<Seq<C, Quantified<Forall<T>, HasTy<T>>>, D> {
         }
     }
 
-    pub fn abs_has_ty_wf<I>(self) -> Theorem<Seq<C, IsWf<Node2<C, T, I>>>, D> {
+    pub fn abs_has_ty_wf<I: LocalTerm<D>>(self) -> Theorem<Seq<C, IsWf<Node2<C, T, I>>>, D> {
         Theorem {
             stmt: self.stmt.abs_has_ty_wf(),
             id: self.id,

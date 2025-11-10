@@ -8,7 +8,7 @@ use crate::{
     fact::{
         HasTyIn, IsTyIn, Seq,
         quant::{CloseChildren, Forall, Quantified},
-        stable::StableFact,
+        stable::StableFactIn,
     },
     store::{Ctx, CtxId, LocalStoreUnchecked, ReadCtx, ReadCtxGraph},
 };
@@ -19,12 +19,10 @@ impl<C, S, D> Theorem<Seq<C, S>, D> {
         binder: Theorem<IsTyIn<C, T>, D>,
     ) -> Result<Theorem<Seq<C, Quantified<Forall<T>, S>>, D>, KernelError>
     where
-        S: StableFact<D>,
         C: PartialEq + Ctx<D>,
+        S: StableFactIn<C, D>,
     {
-        if self.id != binder.id {
-            return Err(KernelError::IdMismatch);
-        }
+        self.compat(&binder)?;
         self.stmt.wk0(binder.stmt).map(|stmt| Theorem {
             stmt,
             id: self.id,
@@ -35,14 +33,12 @@ impl<C, S, D> Theorem<Seq<C, S>, D> {
     pub fn close_var_self<T>(
         self,
         var: Theorem<HasTyIn<C, Fv<C>, T>, D>,
-    ) -> Result<Theorem<Seq<C, Quantified<Forall<T>, S::ClosedChildren>>, D>, KernelError>
+    ) -> Result<Theorem<Seq<C, Quantified<Forall<T>, S::Close1Children>>, D>, KernelError>
     where
-        S: CloseChildren<C>,
         C: PartialEq + Ctx<D>,
+        S: StableFactIn<C, D> + CloseChildren<C, D>,
     {
-        if self.id != var.id {
-            return Err(KernelError::IdMismatch);
-        }
+        self.compat(&var)?;
         self.stmt.close_var_self(var.stmt).map(|stmt| Theorem {
             stmt,
             id: self.id,
@@ -71,12 +67,12 @@ impl<C, S> Seq<C, S> {
         })
     }
 
-    pub fn close_var_self<T>(
+    pub fn close_var_self<T, D>(
         self,
         var: HasTyIn<C, Fv<C>, T>,
-    ) -> Result<Seq<C, Quantified<Forall<T>, S::ClosedChildren>>, KernelError>
+    ) -> Result<Seq<C, Quantified<Forall<T>, S::Close1Children>>, KernelError>
     where
-        S: CloseChildren<C>,
+        S: CloseChildren<C, D>,
         C: PartialEq,
     {
         if self.ctx != var.ctx {
@@ -86,7 +82,7 @@ impl<C, S> Seq<C, S> {
             ctx: self.ctx,
             stmt: Quantified {
                 binder: Forall(var.stmt.ty),
-                body: self.stmt.close_children(var.stmt.tm),
+                body: self.stmt.close1_children(var.stmt.tm),
             },
         })
     }
@@ -95,9 +91,9 @@ impl<C, S> Seq<C, S> {
         self,
         var_ty: VarTy<C, T>,
         db: &D,
-    ) -> Result<Seq<C, Quantified<Forall<T>, S::ClosedChildren>>, KernelError>
+    ) -> Result<Seq<C, Quantified<Forall<T>, S::Close1Children>>, KernelError>
     where
-        S: CloseChildren<C>,
+        S: CloseChildren<C, D>,
         C: Copy + PartialEq,
         D: ReadCtxGraph<C> + ReadCtx<C>,
     {
@@ -111,7 +107,7 @@ impl<C, S> Seq<C, S> {
             ctx: self.ctx,
             stmt: Quantified {
                 binder: Forall(var_ty.ty),
-                body: self.stmt.close_children(var_ty.var),
+                body: self.stmt.close1_children(var_ty.var),
             },
         })
     }
@@ -125,23 +121,18 @@ where
         &self,
         seq: Theorem<Seq<CtxId<D>, S>, D>,
         var: Theorem<VarTy<CtxId<D>, T>, D>,
-    ) -> Result<Theorem<Seq<CtxId<D>, Quantified<Forall<T>, S::ClosedChildren>>, D>, KernelError>
+    ) -> Result<Theorem<Seq<CtxId<D>, Quantified<Forall<T>, S::Close1Children>>, D>, KernelError>
     where
-        S: CloseChildren<CtxId<D>>,
+        S: StableFactIn<CtxId<D>, D> + CloseChildren<CtxId<D>, D>,
     {
-        if seq.id != self.id() || var.id != self.id() {
-            return Err(KernelError::IdMismatch);
-        }
+        self.thm_belongs(&seq)?;
+        self.thm_belongs(&var)?;
         let ix = var.stmt.var.ix;
         let stmt = seq.stmt.close_var_single(var.stmt, &self.db)?;
         debug_assert_eq!(
             ix, 0,
             "the only valid variable index in a single variable context is 0"
         );
-        Ok(Theorem {
-            stmt,
-            id: self.id(),
-            store: PhantomData,
-        })
+        Ok(self.new_thm(stmt))
     }
 }

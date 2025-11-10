@@ -37,6 +37,9 @@ pub enum Node<C, T, I = TmIn<C, T>> {
     Fst([T; 1]),
     /// The second projection of a pair
     Snd([T; 1]),
+
+    //TODO: first/second projection function
+
     /// A dependent if-then-else
     Ite([T; 3]),
     /// A propositional truncation
@@ -73,9 +76,15 @@ pub enum Node<C, T, I = TmIn<C, T>> {
 
     //TODO: segment struct
 
-    //TODO: project n
+    //TODO: project n [function]
 
-    //TODO: rest n
+    //TODO: rest n [function]
+
+    //TODO: project var [function]
+
+    //TODO: rest var [function]
+
+    //TODO: differential segment struct?
 
     // == Imports from other contexts ==
     /// A direct import from another context

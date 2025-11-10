@@ -1,4 +1,7 @@
-use crate::data::term::{Close1, Fv};
+use crate::{
+    data::term::{Close1, Fv},
+    fact::stable::StableFactIn,
+};
 
 use super::*;
 
@@ -15,37 +18,35 @@ pub struct Quantified<Q, S> {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Forall<T>(pub T);
 
-mod close_children_sealed {
-    pub trait CloseChildrenSealed<C> {}
+pub trait CloseChildren<C, D> {
+    type Close1Children: StableFactIn<C, D>;
+
+    fn close1_children(self, var: Fv<C>) -> Self::Close1Children;
+
+    //TODO: segment close
 }
 
-pub(crate) use close_children_sealed::CloseChildrenSealed;
+impl<D, C, T> CloseChildren<C, D> for Holds<T>
+where
+    C: Ctx<D>,
+    T: LocalTerm<C, D>,
+{
+    type Close1Children = Holds<Close1<C, T>>;
 
-pub trait CloseChildren<C>: CloseChildrenSealed<C> {
-    type ClosedChildren;
-
-    fn close_children(self, var: Fv<C>) -> Self::ClosedChildren;
-}
-
-impl<C, T> CloseChildrenSealed<C> for Holds<T> {}
-
-impl<C, T> CloseChildren<C> for Holds<T> {
-    type ClosedChildren = Holds<Close1<C, T>>;
-
-    fn close_children(self, var: Fv<C>) -> Self::ClosedChildren {
+    fn close1_children(self, var: Fv<C>) -> Self::Close1Children {
         Holds(self.0, Close1::new(var, self.1))
     }
 }
 
-impl<C, L, R> CloseChildrenSealed<C> for HasTy<L, R> {}
-
-impl<C, L, R> CloseChildren<C> for HasTy<L, R>
+impl<D, C, L, R> CloseChildren<C, D> for HasTy<L, R>
 where
-    C: Copy,
+    C: Ctx<D> + Copy,
+    L: LocalTerm<C, D>,
+    R: LocalTerm<C, D>,
 {
-    type ClosedChildren = HasTy<Close1<C, L>, Close1<C, R>>;
+    type Close1Children = HasTy<Close1<C, L>, Close1<C, R>>;
 
-    fn close_children(self, var: Fv<C>) -> Self::ClosedChildren {
+    fn close1_children(self, var: Fv<C>) -> Self::Close1Children {
         HasTy {
             tm: Close1::new(var, self.tm),
             ty: Close1::new(var, self.ty),
@@ -53,28 +54,28 @@ where
     }
 }
 
-impl<C, L, R> CloseChildrenSealed<C> for Eqn<L, R> {}
-
-impl<C, L, R> CloseChildren<C> for Eqn<L, R>
+impl<D, C, L, R> CloseChildren<C, D> for Eqn<L, R>
 where
-    C: Copy,
+    C: Ctx<D> + Copy,
+    L: LocalTerm<C, D>,
+    R: LocalTerm<C, D>,
 {
-    type ClosedChildren = Eqn<Close1<C, L>, Close1<C, R>>;
+    type Close1Children = Eqn<Close1<C, L>, Close1<C, R>>;
 
-    fn close_children(self, var: Fv<C>) -> Self::ClosedChildren {
+    fn close1_children(self, var: Fv<C>) -> Self::Close1Children {
         Eqn(Close1::new(var, self.0), Close1::new(var, self.1))
     }
 }
 
-impl<C, P, T> CloseChildrenSealed<C> for Is<P, T> where P: IntoPred1 {}
-
-impl<C, P, T> CloseChildren<C> for Is<P, T>
+impl<D, C, P, T> CloseChildren<C, D> for Is<P, T>
 where
     P: IntoPred1,
+    C: Ctx<D>,
+    T: LocalTerm<C, D>,
 {
-    type ClosedChildren = Is<P, Close1<C, T>>;
+    type Close1Children = Is<P, Close1<C, T>>;
 
-    fn close_children(self, var: Fv<C>) -> Self::ClosedChildren {
+    fn close1_children(self, var: Fv<C>) -> Self::Close1Children {
         Is(self.0, Close1::new(var, self.1))
     }
 }

@@ -10,9 +10,9 @@ use crate::fact::logic::{Iff, Implies, TryIff};
 use crate::fact::stable::StableFact;
 use crate::fact::{CheckFact, SetFactUnchecked};
 
-mod eqn;
+pub mod eqn;
 
-mod quant;
+pub mod quant;
 
 /// A proven theorem
 pub struct Theorem<F, D> {
@@ -105,6 +105,24 @@ impl<F, D> Theorem<F, D> {
     /// Get the statement of this theorem by value
     pub fn into_inner(self) -> F {
         self.stmt
+    }
+
+    /// Get whether this theorem is compatible with another theorem
+    pub fn compat<G>(&self, other: &Theorem<G, D>) -> Result<(), IdMismatch> {
+        if self.id != other.id {
+            return Err(IdMismatch);
+        }
+        Ok(())
+    }
+
+    /// A pair of theorems is a theorem of pairs
+    pub fn pair<G>(self, other: Theorem<G, D>) -> Result<Theorem<(F, G), D>, IdMismatch> {
+        self.compat(&other)?;
+        Ok(Theorem {
+            stmt: (self.stmt, other.stmt),
+            id: self.id,
+            store: PhantomData,
+        })
     }
 }
 
@@ -270,7 +288,7 @@ impl<D> Kernel<D> {
     /// Check this theorem belongs to this kernel
     ///
     /// Returns an error on kernel ID mismatch
-    pub fn theorem_belongs<F>(&self, thm: &Theorem<F, D>) -> Result<(), IdMismatch> {
+    pub fn thm_belongs<F>(&self, thm: &Theorem<F, D>) -> Result<(), IdMismatch> {
         if thm.id != self.id() {
             Err(IdMismatch)
         } else {
@@ -281,12 +299,12 @@ impl<D> Kernel<D> {
     /// Store a theorem in the database
     ///
     /// Returns an error on kernel ID mismatch
-    pub fn store_theorem<F>(&mut self, thm: &Theorem<F, D>) -> Result<(), KernelError>
+    pub fn store_thm<F>(&mut self, thm: &Theorem<F, D>) -> Result<(), KernelError>
     where
         F: StableFact<D>,
         D: SetFactUnchecked<F>,
     {
-        self.theorem_belongs(thm)?;
+        self.thm_belongs(thm)?;
         self.db.set_unchecked(&thm.stmt)?;
         Ok(())
     }

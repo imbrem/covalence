@@ -109,7 +109,7 @@ where
     pub fn trans<C2, L2, R2>(
         self,
         other: Theorem<EqnIn<C2, L2, R2>, D>,
-    ) -> Result<Theorem<EqnIn<C, L, R2>, D>, EqMismatch>
+    ) -> Result<Theorem<EqnIn<C, L, R2>, D>, KernelError>
     where
         C: PartialEq<C2>,
         R: PartialEq<L2>,
@@ -117,9 +117,7 @@ where
         L2: LocalTerm<C, D>,
         R2: LocalTerm<C, D>,
     {
-        if self.id != other.id {
-            return Err(EqMismatch);
-        }
+        self.compat(&other)?;
         Ok(Theorem {
             stmt: self.stmt.trans(other.stmt)?,
             id: self.id,

@@ -2,22 +2,25 @@ use thiserror::Error;
 
 use crate::fact::StoreFailure;
 use crate::store::{AddParentFailure, AddVarFailure};
-use crate::theorem::IdMismatch;
+use crate::theorem::{IdMismatch, eqn::EqMismatch};
 
 #[derive(Debug, Error, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum KernelError {
     /// Failed to store fact
-    #[error(transparent)]
-    StoreFailure(#[from] StoreFailure),
+    #[error("covalence store error: failed to store fact")]
+    StoreFailure,
     /// Failed to add parent to context
-    #[error(transparent)]
-    AddParentFailure(#[from] AddParentFailure),
+    #[error("covalence store error: failed to add parent to context")]
+    AddParentFailure,
     /// Failed to add variable to context
-    #[error(transparent)]
-    AddVarFailure(#[from] AddVarFailure),
+    #[error("covalence store error: failed to add variable to context")]
+    AddVarFailure,
     /// Theorem belongs to a different kernel
     #[error("covalence kernel error: theorem belongs to a different kernel")]
     IdMismatch,
+    /// Equality mismatch
+    #[error("covalence kernel error: equality mismatch")]
+    EqMismatch,
     /// Would cause a cycle in the context graph
     #[error("covalence kernel error: adding this parent would cause a cycle")]
     WouldCycle,
@@ -35,8 +38,32 @@ pub enum KernelError {
     NotImplemented,
 }
 
+impl From<StoreFailure> for KernelError {
+    fn from(_: StoreFailure) -> Self {
+        KernelError::StoreFailure
+    }
+}
+
+impl From<AddParentFailure> for KernelError {
+    fn from(_: AddParentFailure) -> Self {
+        KernelError::AddParentFailure
+    }
+}
+
+impl From<AddVarFailure> for KernelError {
+    fn from(_: AddVarFailure) -> Self {
+        KernelError::AddVarFailure
+    }
+}
+
 impl From<IdMismatch> for KernelError {
     fn from(_: IdMismatch) -> Self {
         KernelError::IdMismatch
+    }
+}
+
+impl From<EqMismatch> for KernelError {
+    fn from(_: EqMismatch) -> Self {
+        KernelError::EqMismatch
     }
 }

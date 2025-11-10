@@ -201,6 +201,14 @@ where
 {
 }
 
+impl<D, CC, T, C> LocalTerm<C, D> for Close1<CC, T>
+where
+    C: Ctx<D>,
+    CC: Ctx<D>,
+    T: LocalTerm<C, D>,
+{
+}
+
 /// A term in the datastore
 ///
 /// Unlike a local term, this may be interpreted without a context ID

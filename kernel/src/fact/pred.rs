@@ -110,18 +110,20 @@ bitflags! {
         /// A well-formed term under an empty context
         const IS_CONTR = 0b01111111;
 
-        /// The indicating well-formedness
-        const WF_BIT = 1 << 1;
+        /// The bit indicating scoped-ness
+        const SCOPED_BIT    = 1 << 0;
+        /// The bit indicating well-formedness
+        const WF_BIT        = 1 << 1;
         /// The bit indicating typehood
-        const TY_BIT = 1 << 2;
+        const TY_BIT        = 1 << 2;
         /// The bit indicating propositionality
-        const PROP_BIT = 1 << 3;
+        const PROP_BIT      = 1 << 3;
         /// The bit indicating inhabitance
-        const INHAB_BIT = 1 << 4;
+        const INHAB_BIT     = 1 << 4;
         /// The bit indicating emptiness
-        const EMPTY_BIT = 1 << 5;
+        const EMPTY_BIT     = 1 << 5;
         /// The bit indicating universes
-        const UNIV_BIT = 1 << 6;
+        const UNIV_BIT      = 1 << 6;
     }
 }
 
@@ -226,17 +228,17 @@ impl<C, T> Node<C, T> {
 }
 
 mod into_pred1_sealed {
-    pub trait IntoPred1Sealed {}
+    pub trait UnaryPredSealed {}
 }
 
-use into_pred1_sealed::IntoPred1Sealed;
+use into_pred1_sealed::UnaryPredSealed;
 
-pub trait IntoPred1: IntoPred1Sealed {
+pub trait IntoPred1: UnaryPredSealed {
     /// Convert this into a unary predicate
     fn into_pred1(self) -> Pred1;
 }
 
-impl IntoPred1Sealed for Pred1 {}
+impl UnaryPredSealed for Pred1 {}
 
 impl IntoPred1 for Pred1 {
     fn into_pred1(self) -> Pred1 {
@@ -244,10 +246,29 @@ impl IntoPred1 for Pred1 {
     }
 }
 
+impl UnaryPredSealed for () {}
+
+impl IntoPred1 for () {
+    fn into_pred1(self) -> Pred1 {
+        Pred1::default()
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
+pub struct Scoped;
+
+impl UnaryPredSealed for Scoped {}
+
+impl IntoPred1 for Scoped {
+    fn into_pred1(self) -> Pred1 {
+        IS_SCOPED
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
 pub struct Wf;
 
-impl IntoPred1Sealed for Wf {}
+impl UnaryPredSealed for Wf {}
 
 impl IntoPred1 for Wf {
     fn into_pred1(self) -> Pred1 {
@@ -258,7 +279,7 @@ impl IntoPred1 for Wf {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
 pub struct Ty;
 
-impl IntoPred1Sealed for Ty {}
+impl UnaryPredSealed for Ty {}
 
 impl IntoPred1 for Ty {
     fn into_pred1(self) -> Pred1 {
@@ -269,7 +290,7 @@ impl IntoPred1 for Ty {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
 pub struct Prop;
 
-impl IntoPred1Sealed for Prop {}
+impl UnaryPredSealed for Prop {}
 
 impl IntoPred1 for Prop {
     fn into_pred1(self) -> Pred1 {
@@ -280,7 +301,7 @@ impl IntoPred1 for Prop {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
 pub struct Inhab;
 
-impl IntoPred1Sealed for Inhab {}
+impl UnaryPredSealed for Inhab {}
 
 impl IntoPred1 for Inhab {
     fn into_pred1(self) -> Pred1 {
@@ -291,7 +312,7 @@ impl IntoPred1 for Inhab {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
 pub struct Empty;
 
-impl IntoPred1Sealed for Empty {}
+impl UnaryPredSealed for Empty {}
 
 impl IntoPred1 for Empty {
     fn into_pred1(self) -> Pred1 {
@@ -302,7 +323,7 @@ impl IntoPred1 for Empty {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
 pub struct Tt;
 
-impl IntoPred1Sealed for Tt {}
+impl UnaryPredSealed for Tt {}
 
 impl IntoPred1 for Tt {
     fn into_pred1(self) -> Pred1 {
@@ -313,7 +334,7 @@ impl IntoPred1 for Tt {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
 pub struct Ff;
 
-impl IntoPred1Sealed for Ff {}
+impl UnaryPredSealed for Ff {}
 
 impl IntoPred1 for Ff {
     fn into_pred1(self) -> Pred1 {
@@ -324,7 +345,7 @@ impl IntoPred1 for Ff {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
 pub struct Univ;
 
-impl IntoPred1Sealed for Univ {}
+impl UnaryPredSealed for Univ {}
 
 impl IntoPred1 for Univ {
     fn into_pred1(self) -> Pred1 {
@@ -335,7 +356,7 @@ impl IntoPred1 for Univ {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
 pub struct Contr;
 
-impl IntoPred1Sealed for Contr {}
+impl UnaryPredSealed for Contr {}
 
 impl IntoPred1 for Contr {
     fn into_pred1(self) -> Pred1 {

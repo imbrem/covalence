@@ -84,7 +84,7 @@ where
 
     fn to_eq(self, lhs: &I, state: &mut S) -> Result<&'a R, KernelError> {
         state.check(
-            &self.stmt.ctx,
+            &self.fact.ctx,
             self.id,
             self.0.relocatable() && self.1.relocatable(),
         )?;
@@ -107,7 +107,7 @@ where
 
     fn to_eq(self, lhs: &I, state: &mut S) -> Result<R, KernelError> {
         (&self).to_eq(lhs, state)?;
-        Ok(self.into_inner().stmt.1)
+        Ok(self.into_fact().form.1)
     }
 }
 

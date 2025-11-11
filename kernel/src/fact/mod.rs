@@ -38,8 +38,8 @@ pub trait CheckFact<F: ?Sized> {
     fn check(&self, fact: &F) -> bool;
 }
 
-/// A database which can check facts about ("within") a given context
-pub trait CheckFactIn<C, F: ?Sized> {
+/// A database which can check _formulas_: facts situated in a given context
+pub trait CheckFormula<C, F: ?Sized> {
     /// Check this fact in the given context
     fn check_in(&self, ctx: C, fact: &F) -> bool;
 }
@@ -70,22 +70,22 @@ pub trait SetFactUncheckedIn<C, F: ?Sized> {
     fn set_unchecked_in(&mut self, ctx: C, fact: &F) -> Result<(), StoreFailure>;
 }
 
-/// A _sequent_: a pair `Γ ⊢ S` of a context and a statement
+/// A _sequent_: a pair `Γ ⊢ φ` of a context and a formula in that context
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Seq<C, S> {
     /// The context for this sequent
     pub ctx: C,
-    /// The statement asserted
-    pub stmt: S,
+    /// The formula asserted in this context
+    pub form: S,
 }
 
 impl<C, S, R> CheckFact<Seq<C, S>> for R
 where
     C: Copy,
-    R: CheckFactIn<C, S>,
+    R: CheckFormula<C, S>,
 {
     fn check(&self, fact: &Seq<C, S>) -> bool {
-        self.check_in(fact.ctx, &fact.stmt)
+        self.check_in(fact.ctx, &fact.form)
     }
 }
 
@@ -95,7 +95,7 @@ where
     R: SetFactUncheckedIn<C, S> + ?Sized,
 {
     fn set_unchecked(&mut self, fact: &Seq<C, S>) -> Result<(), StoreFailure> {
-        self.set_unchecked_in(fact.ctx, &fact.stmt)
+        self.set_unchecked_in(fact.ctx, &fact.form)
     }
 }
 
@@ -103,13 +103,13 @@ impl<C, S> Deref for Seq<C, S> {
     type Target = S;
 
     fn deref(&self) -> &Self::Target {
-        &self.stmt
+        &self.form
     }
 }
 
 impl<C, S> DerefMut for Seq<C, S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.stmt
+        &mut self.form
     }
 }
 
@@ -125,7 +125,7 @@ impl<C, L, R> RwIn<C, L, R> {
     pub const fn new(ctx: C, lhs: L, rhs: R) -> Self {
         Seq {
             ctx,
-            stmt: Rw(lhs, rhs),
+            form: Rw(lhs, rhs),
         }
     }
 }
@@ -141,7 +141,7 @@ impl<C, T, Ty> HasTyIn<C, T, Ty> {
     pub const fn new(ctx: C, tm: T, ty: Ty) -> Self {
         Seq {
             ctx,
-            stmt: Is(Wf, HasTy::new(tm, ty)),
+            form: Is(Wf, HasTy::new(tm, ty)),
         }
     }
 }

@@ -8,7 +8,7 @@ use crate::Kernel;
 use crate::error::KernelError;
 use crate::fact::logic::{Iff, Implies, TryIff};
 use crate::fact::stable::StableFact;
-use crate::fact::{CheckFact, RwIn, SetFactUnchecked};
+use crate::fact::{CheckFact, RwIn, Seq, SetFactUnchecked};
 use crate::id::KernelId;
 use crate::store::{CtxId, Ix, NodeIx, ReadLocalTerm, TermIndex, TmId, WriteLocalTerm};
 
@@ -18,8 +18,8 @@ pub mod quant;
 
 /// A proven theorem
 pub struct Theorem<F, D> {
-    /// The statement of this theorem
-    pub(crate) stmt: F,
+    /// The fact which has been proved as a theorem
+    pub(crate) fact: F,
     /// The kernel ID this theorem belongs to
     pub(crate) id: KernelId,
     /// The data store in use
@@ -29,7 +29,7 @@ pub struct Theorem<F, D> {
 impl<F: Clone, D> Clone for Theorem<F, D> {
     fn clone(&self) -> Self {
         Theorem {
-            stmt: self.stmt.clone(),
+            fact: self.fact.clone(),
             id: self.id,
             store: PhantomData,
         }
@@ -40,7 +40,7 @@ impl<F: Copy, D> Copy for Theorem<F, D> {}
 
 impl<F: PartialEq, D> PartialEq for Theorem<F, D> {
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id && self.stmt == other.stmt
+        self.id == other.id && self.fact == other.fact
     }
 }
 
@@ -49,7 +49,7 @@ impl<F: Eq, D> Eq for Theorem<F, D> {}
 impl<F: PartialOrd, D> PartialOrd for Theorem<F, D> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         match self.id.cmp(&other.id) {
-            std::cmp::Ordering::Equal => self.stmt.partial_cmp(&other.stmt),
+            std::cmp::Ordering::Equal => self.fact.partial_cmp(&other.fact),
             ord => Some(ord),
         }
     }
@@ -58,7 +58,7 @@ impl<F: PartialOrd, D> PartialOrd for Theorem<F, D> {
 impl<F: Ord, D> Ord for Theorem<F, D> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match self.id.cmp(&other.id) {
-            std::cmp::Ordering::Equal => self.stmt.cmp(&other.stmt),
+            std::cmp::Ordering::Equal => self.fact.cmp(&other.fact),
             ord => ord,
         }
     }
@@ -67,7 +67,7 @@ impl<F: Ord, D> Ord for Theorem<F, D> {
 impl<F: Hash, D> Hash for Theorem<F, D> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.id.hash(state);
-        self.stmt.hash(state);
+        self.fact.hash(state);
     }
 }
 
@@ -75,7 +75,7 @@ impl<F: Debug, D> Debug for Theorem<F, D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Theorem")
             .field("id", &self.id)
-            .field("stmt", &self.stmt)
+            .field("fact", &self.fact)
             .finish()
     }
 }
@@ -89,7 +89,7 @@ impl<F, D> Theorem<F, D> {
     /// Get the statement of this theorem as a reference
     pub fn as_ref(&self) -> Theorem<&F, D> {
         Theorem {
-            stmt: &self.stmt,
+            fact: &self.fact,
             id: self.id,
             store: PhantomData,
         }
@@ -98,15 +98,15 @@ impl<F, D> Theorem<F, D> {
     /// Get the statement of this theorem as a mutable reference
     pub fn as_mut(&mut self) -> Theorem<&mut F, D> {
         Theorem {
-            stmt: &mut self.stmt,
+            fact: &mut self.fact,
             id: self.id,
             store: PhantomData,
         }
     }
 
-    /// Get the statement of this theorem by value
-    pub fn into_inner(self) -> F {
-        self.stmt
+    /// Get the underlying fact by value
+    pub fn into_fact(self) -> F {
+        self.fact
     }
 
     /// Get whether this theorem is compatible with another theorem
@@ -121,10 +121,17 @@ impl<F, D> Theorem<F, D> {
     pub fn pair<G>(self, other: Theorem<G, D>) -> Result<Theorem<(F, G), D>, IdMismatch> {
         self.compat(&other)?;
         Ok(Theorem {
-            stmt: (self.stmt, other.stmt),
+            fact: (self.fact, other.fact),
             id: self.id,
             store: PhantomData,
         })
+    }
+}
+
+impl<C, F, D> Theorem<Seq<C, F>, D> {
+    /// Get the formula of this sequent by value
+    pub fn into_form(self) -> F {
+        self.fact.form
     }
 }
 
@@ -135,7 +142,7 @@ where
 {
     fn implies(self) -> Theorem<G, D> {
         Theorem {
-            stmt: self.stmt.implies(),
+            fact: self.fact.implies(),
             id: self.id,
             store: PhantomData,
         }
@@ -149,7 +156,7 @@ where
 {
     fn iff(self) -> Theorem<G, D> {
         Theorem {
-            stmt: self.stmt.iff(),
+            fact: self.fact.iff(),
             id: self.id,
             store: PhantomData,
         }
@@ -162,14 +169,14 @@ where
     G: StableFact<D>,
 {
     fn try_iff(self) -> Result<Theorem<G, D>, Self> {
-        match self.stmt.try_iff() {
-            Ok(stmt) => Ok(Theorem {
-                stmt,
+        match self.fact.try_iff() {
+            Ok(fact) => Ok(Theorem {
+                fact,
                 id: self.id,
                 store: PhantomData,
             }),
-            Err(stmt) => Err(Theorem {
-                stmt,
+            Err(fact) => Err(Theorem {
+                fact,
                 id: self.id,
                 store: PhantomData,
             }),
@@ -181,7 +188,7 @@ impl<F: Clone, D> Theorem<&F, D> {
     /// Clone the statement of this theorem
     pub fn cloned(self) -> Theorem<F, D> {
         Theorem {
-            stmt: self.stmt.clone(),
+            fact: self.fact.clone(),
             id: self.id,
             store: PhantomData,
         }
@@ -192,7 +199,7 @@ impl<F: Copy, D> Theorem<&F, D> {
     /// Copy the statement of this theorem
     pub fn copied(self) -> Theorem<F, D> {
         Theorem {
-            stmt: *self.stmt,
+            fact: *self.fact,
             id: self.id,
             store: PhantomData,
         }
@@ -203,7 +210,7 @@ impl<F, D> Deref for Theorem<F, D> {
     type Target = F;
 
     fn deref(&self) -> &Self::Target {
-        &self.stmt
+        &self.fact
     }
 }
 
@@ -233,7 +240,7 @@ impl<D> Kernel<D> {
     /// This is _unsound_ if the fact is not true!
     pub(crate) fn new_thm<F>(&self, fact: F) -> Theorem<F, D> {
         Theorem {
-            stmt: fact,
+            fact,
             id: self.id(),
             store: PhantomData,
         }
@@ -254,11 +261,7 @@ impl<D> Kernel<D> {
     }
 
     /// Cons a term into the context, returning it as an equation
-    pub fn cons_into_eqn<T>(
-        &mut self,
-        ctx: CtxId<D>,
-        tm: T,
-    ) -> Theorem<RwIn<CtxId<D>, T, Ix<D>>, D>
+    pub fn cons_into_eqn<T>(&mut self, ctx: CtxId<D>, tm: T) -> Theorem<RwIn<CtxId<D>, T, Ix<D>>, D>
     where
         T: Clone + Into<NodeIx<D>>,
         D: TermIndex + WriteLocalTerm<D>,
@@ -286,11 +289,7 @@ impl<D> Kernel<D> {
     }
 
     /// Get the node of a term in the context, returning the result as an equation
-    pub fn node_eqn(
-        &self,
-        ctx: CtxId<D>,
-        ix: Ix<D>,
-    ) -> Theorem<RwIn<CtxId<D>, Ix<D>, NodeIx<D>>, D>
+    pub fn node_eqn(&self, ctx: CtxId<D>, ix: Ix<D>) -> Theorem<RwIn<CtxId<D>, Ix<D>, NodeIx<D>>, D>
     where
         D: TermIndex + ReadLocalTerm<D>,
     {
@@ -397,7 +396,7 @@ impl<D> Kernel<D> {
         D: SetFactUnchecked<F>,
     {
         self.thm_belongs(thm)?;
-        self.db.set_unchecked(&thm.stmt)?;
+        self.db.set_unchecked(&thm.fact)?;
         Ok(())
     }
 }

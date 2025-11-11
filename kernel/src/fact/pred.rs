@@ -419,11 +419,11 @@ pub type HoldsIn<C, T> = Seq<C, Holds<T>>;
 /// A unary predicate holds on a term-in-context
 pub struct Is<P, T>(pub P, pub T);
 
-impl<D, C, P, T> CheckFactIn<C, Is<P, T>> for D
+impl<D, C, P, T> CheckFormula<C, Is<P, T>> for D
 where
     P: IntoPred1 + Copy,
     T: Copy,
-    D: CheckFactIn<C, Holds<T>>,
+    D: CheckFormula<C, Holds<T>>,
 {
     fn check_in(&self, ctx: C, fact: &Is<P, T>) -> bool {
         self.check_in(ctx, &Holds(fact.0.into_pred1(), fact.1))
@@ -486,7 +486,7 @@ impl<D, C, P, T> TryIffIn<C, Is<P, T>, D> for Holds<T>
 where
     C: Ctx<D>,
     P: IntoPred1 + Copy + Default,
-    D: CheckFactIn<C, Holds<T>>,
+    D: CheckFormula<C, Holds<T>>,
 {
     fn try_iff_in(self, _ctx: &C) -> Result<Is<P, T>, Self> {
         if self.0.contains(P::default().into_pred1()) {

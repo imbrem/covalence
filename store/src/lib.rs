@@ -1,7 +1,7 @@
 use typed_generational_arena::{SmallArena, SmallIndex};
 
 use covalence_kernel::data::term::*;
-use covalence_kernel::fact::{CheckFactIn, Holds, Pred0, Rw, SetFactUncheckedIn, StoreFailure};
+use covalence_kernel::fact::{CheckFormula, Holds, Pred0, Rw, SetFactUncheckedIn, StoreFailure};
 use covalence_kernel::store::*;
 
 mod ctx;
@@ -203,7 +203,7 @@ impl AddParentUnchecked<CtxId> for TermDb {
     }
 }
 
-impl CheckFactIn<CtxId, Pred0> for TermDb {
+impl CheckFormula<CtxId, Pred0> for TermDb {
     fn check_in(&self, ctx: CtxId, fact: &Pred0) -> bool {
         self.x[ctx.0].ctx_flags().contains(*fact)
     }
@@ -216,7 +216,7 @@ impl SetFactUncheckedIn<CtxId, Pred0> for TermDb {
     }
 }
 
-impl CheckFactIn<CtxId, Holds<Ix>> for TermDb {
+impl CheckFormula<CtxId, Holds<Ix>> for TermDb {
     fn check_in(&self, ctx: CtxId, fact: &Holds<Ix>) -> bool {
         self.x[ctx.0].tm_flags(fact.1).contains(fact.0)
     }
@@ -229,7 +229,7 @@ impl SetFactUncheckedIn<CtxId, Holds<Ix>> for TermDb {
     }
 }
 
-impl CheckFactIn<CtxId, Rw<Ix>> for TermDb {
+impl CheckFormula<CtxId, Rw<Ix>> for TermDb {
     fn check_in(&self, ctx: CtxId, fact: &Rw<Ix>) -> bool {
         self.x[ctx.0].eq_in(fact.0, fact.1)
     }

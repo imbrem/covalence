@@ -60,7 +60,7 @@ impl<C, L, R> RwIn<C, L, R> {
     pub fn symm(self) -> RwIn<C, R, L> {
         RwIn {
             ctx: self.ctx,
-            stmt: self.stmt.symm(),
+            form: self.form.symm(),
         }
     }
 
@@ -75,7 +75,7 @@ impl<C, L, R> RwIn<C, L, R> {
         }
         Ok(RwIn {
             ctx: self.ctx,
-            stmt: self.stmt.trans(other.stmt)?,
+            form: self.form.trans(other.form)?,
         })
     }
 
@@ -86,7 +86,7 @@ impl<C, L, R> RwIn<C, L, R> {
     {
         RwIn {
             ctx: self.ctx,
-            stmt: self.stmt.as_ref(),
+            form: self.form.as_ref(),
         }
     }
 }
@@ -102,9 +102,9 @@ where
         T: Clone,
     {
         Ok(Theorem {
-            stmt: RwIn {
+            fact: RwIn {
                 ctx,
-                stmt: Rw(tm.clone(), tm),
+                form: Rw(tm.clone(), tm),
             },
             id,
             store: PhantomData,
@@ -123,9 +123,9 @@ where
         T: Clone,
     {
         Ok(Theorem {
-            stmt: RwIn {
+            fact: RwIn {
                 ctx,
-                stmt: Rw(tm, tm.clone()),
+                form: Rw(tm, tm.clone()),
             },
             id,
             store: PhantomData,
@@ -153,9 +153,9 @@ where
             return Err(KernelError::EqMismatch);
         }
         Ok(Theorem {
-            stmt: RwIn {
+            fact: RwIn {
                 ctx,
-                stmt: Rw(lhs, rhs),
+                form: Rw(lhs, rhs),
             },
             id,
             store: PhantomData,
@@ -168,9 +168,9 @@ where
         L: Clone + Into<R>,
     {
         Theorem {
-            stmt: RwIn {
+            fact: RwIn {
                 ctx,
-                stmt: Rw(lhs.clone(), lhs.into()),
+                form: Rw(lhs.clone(), lhs.into()),
             },
             id,
             store: PhantomData,
@@ -183,9 +183,9 @@ where
         L: Clone + TryInto<R>,
     {
         Ok(Theorem {
-            stmt: RwIn {
+            fact: RwIn {
                 ctx,
-                stmt: Rw(lhs.clone(), lhs.try_into()?),
+                form: Rw(lhs.clone(), lhs.try_into()?),
             },
             id,
             store: PhantomData,
@@ -195,7 +195,7 @@ where
     /// Swap the left- and right-hand sides of this equation
     pub fn symm(self) -> Theorem<RwIn<C, R, L>, D> {
         Theorem {
-            stmt: self.stmt.symm(),
+            fact: self.fact.symm(),
             id: self.id,
             store: PhantomData,
         }
@@ -215,7 +215,7 @@ where
     {
         self.compat(&other)?;
         Ok(Theorem {
-            stmt: self.stmt.trans(other.stmt)?,
+            fact: self.fact.trans(other.fact)?,
             id: self.id,
             store: PhantomData,
         })
@@ -227,7 +227,7 @@ where
         C: Copy,
     {
         Theorem {
-            stmt: self.stmt.eqn_as_ref(),
+            fact: self.fact.eqn_as_ref(),
             id: self.id,
             store: PhantomData,
         }
@@ -263,15 +263,15 @@ where
         }
         let (lhs, rhs) = self
             .map(
-                |tm| (tm.stmt.stmt.0, tm.stmt.stmt.1),
-                |qt| (qt.stmt.stmt.0, qt.stmt.stmt.1),
-                |syn| (syn.stmt.stmt.0, syn.stmt.stmt.1),
+                |tm| (tm.fact.form.0, tm.fact.form.1),
+                |qt| (qt.fact.form.0, qt.fact.form.1),
+                |syn| (syn.fact.form.0, syn.fact.form.1),
             )
             .into_pair();
         Ok(Theorem {
-            stmt: RwIn {
+            fact: RwIn {
                 ctx,
-                stmt: Rw(lhs, rhs),
+                form: Rw(lhs, rhs),
             },
             id,
             store: PhantomData,

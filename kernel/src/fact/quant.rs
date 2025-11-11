@@ -1,16 +1,16 @@
 use crate::{
     data::term::{Close1, Fv},
-    fact::stable::StableFactIn,
+    fact::stable::StableFormula,
 };
 
 use super::*;
 
-/// A quantified statement, of the form `Q . S`
+/// A quantified formula, of the form `Q . F`
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Quantified<Q, S> {
-    /// The quantifier for this statement
+    /// The quantifier for this formula
     pub binder: Q,
-    /// The body of this statement
+    /// The body of this formula
     pub body: S,
 }
 
@@ -18,12 +18,10 @@ pub struct Quantified<Q, S> {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Forall<T>(pub T);
 
-pub trait CloseChildren<C, D> {
-    type Close1Children: StableFactIn<C, D>;
+pub trait CloseChildren<C, D>: StableFormula<C, D> {
+    type Close1Children: StableFormula<C, D>;
 
     fn close1_children(self, var: Fv<C>) -> Self::Close1Children;
-
-    //TODO: segment close
 }
 
 impl<D, C, T> CloseChildren<C, D> for Holds<T>

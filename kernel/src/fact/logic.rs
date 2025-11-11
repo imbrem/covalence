@@ -16,7 +16,7 @@ where
 {
     fn implies(self) -> Seq<C, G> {
         Seq {
-            stmt: self.stmt.implies_in(&self.ctx),
+            form: self.form.implies_in(&self.ctx),
             ctx: self.ctx,
         }
     }
@@ -36,7 +36,7 @@ where
 {
     fn iff(self) -> Seq<C, G> {
         Seq {
-            stmt: self.stmt.iff_in(&self.ctx),
+            form: self.form.iff_in(&self.ctx),
             ctx: self.ctx,
         }
     }
@@ -55,13 +55,13 @@ where
     F: TryIffIn<C, G, D>,
 {
     fn try_iff(self) -> Result<Seq<C, G>, Self> {
-        match self.stmt.try_iff_in(&self.ctx) {
-            Ok(stmt) => Ok(Seq {
-                stmt,
+        match self.form.try_iff_in(&self.ctx) {
+            Ok(form) => Ok(Seq {
+                form,
                 ctx: self.ctx,
             }),
-            Err(stmt) => Err(Seq {
-                stmt,
+            Err(form) => Err(Seq {
+                form,
                 ctx: self.ctx,
             }),
         }
@@ -137,23 +137,23 @@ where
 }
 
 /// `()` is interpreted as the true proposition `⊤`
-impl<R: ?Sized, C> CheckFactIn<C, ()> for R {
+impl<R: ?Sized, C> CheckFormula<C, ()> for R {
     fn check_in(&self, _ctx: C, _db: &()) -> bool {
         true
     }
 }
 
 /// `bool` is interpreted as a proposition
-impl<R: ?Sized, C> CheckFactIn<C, bool> for R {
+impl<R: ?Sized, C> CheckFormula<C, bool> for R {
     fn check_in(&self, _ctx: C, fact: &bool) -> bool {
         *fact
     }
 }
 
 /// `(A, B)` is interpreted as the conjunction `A ∧ B`
-impl<R: ?Sized, C, A, B> CheckFactIn<C, (A, B)> for R
+impl<R: ?Sized, C, A, B> CheckFormula<C, (A, B)> for R
 where
-    R: CheckFactIn<C, A> + CheckFactIn<C, B>,
+    R: CheckFormula<C, A> + CheckFormula<C, B>,
     C: Copy,
 {
     fn check_in(&self, ctx: C, fact: &(A, B)) -> bool {
@@ -162,9 +162,9 @@ where
 }
 
 /// `Either<A, B>` is interpreted as the disjunction `A ∨ B`
-impl<R: ?Sized, C, A, B> CheckFactIn<C, Either<A, B>> for R
+impl<R: ?Sized, C, A, B> CheckFormula<C, Either<A, B>> for R
 where
-    R: CheckFactIn<C, A> + CheckFactIn<C, B>,
+    R: CheckFormula<C, A> + CheckFormula<C, B>,
     C: Copy,
 {
     fn check_in(&self, ctx: C, fact: &Either<A, B>) -> bool {

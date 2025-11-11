@@ -467,6 +467,16 @@ mk_kind1!(Succ, SuccK, Node::Succ, [Bv(0)]);
 mk_kind3!(Natrec, NatrecK, Node::Natrec, [Bv(1), Bv(1), Bv(0)]);
 mk_kind2!(HasTy, HasTyK, Node::HasTy, [Bv(0), Bv(0)]);
 
+impl<L, R> HasTy<L, R> {
+    pub const fn tm(&self) -> &L {
+        &self.1
+    }
+
+    pub const fn ty(&self) -> &R {
+        &self.2
+    }
+}
+
 impl<C, T, I, S> PartialEq<bool> for Node<C, T, I, S> {
     fn eq(&self, other: &bool) -> bool {
         match self {

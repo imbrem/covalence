@@ -8,7 +8,7 @@ use crate::{
     fact::{
         HasTyIn, IsTyIn, Seq,
         quant::{CloseChildren, Forall, Quantified},
-        stable::StableFactIn,
+        stable::StableFormula,
     },
     store::{Ctx, CtxId, LocalStoreUnchecked, ReadCtx, ReadCtxGraph},
 };
@@ -20,11 +20,11 @@ impl<C, S, D> Theorem<Seq<C, S>, D> {
     ) -> Result<Theorem<Seq<C, Quantified<Forall<T>, S>>, D>, KernelError>
     where
         C: PartialEq + Ctx<D>,
-        S: StableFactIn<C, D>,
+        S: StableFormula<C, D>,
     {
         self.compat(&binder)?;
-        self.stmt.wk0(binder.stmt).map(|stmt| Theorem {
-            stmt,
+        self.fact.wk0(binder.fact).map(|fact| Theorem {
+            fact,
             id: self.id,
             store: PhantomData,
         })
@@ -36,11 +36,11 @@ impl<C, S, D> Theorem<Seq<C, S>, D> {
     ) -> Result<Theorem<Seq<C, Quantified<Forall<T>, S::Close1Children>>, D>, KernelError>
     where
         C: PartialEq + Ctx<D>,
-        S: StableFactIn<C, D> + CloseChildren<C, D>,
+        S: StableFormula<C, D> + CloseChildren<C, D>,
     {
         self.compat(&var)?;
-        self.stmt.close_var_self(var.stmt).map(|stmt| Theorem {
-            stmt,
+        self.fact.close_var_self(var.fact).map(|fact| Theorem {
+            fact,
             id: self.id,
             store: PhantomData,
         })
@@ -60,9 +60,9 @@ impl<C, S> Seq<C, S> {
         }
         Ok(Seq {
             ctx: self.ctx,
-            stmt: Quantified {
-                binder: Forall(binder.stmt.1),
-                body: self.stmt,
+            form: Quantified {
+                binder: Forall(binder.form.1),
+                body: self.form,
             },
         })
     }
@@ -80,9 +80,9 @@ impl<C, S> Seq<C, S> {
         }
         Ok(Seq {
             ctx: self.ctx,
-            stmt: Quantified {
-                binder: Forall(var.stmt.1.2),
-                body: self.stmt.close1_children(var.stmt.1.1),
+            form: Quantified {
+                binder: Forall(var.form.1.2),
+                body: self.form.close1_children(var.form.1.1),
             },
         })
     }
@@ -105,9 +105,9 @@ impl<C, S> Seq<C, S> {
         }
         Ok(Seq {
             ctx: self.ctx,
-            stmt: Quantified {
+            form: Quantified {
                 binder: Forall(var_ty.ty),
-                body: self.stmt.close1_children(var_ty.var),
+                body: self.form.close1_children(var_ty.var),
             },
         })
     }
@@ -123,16 +123,16 @@ where
         var: Theorem<VarTy<CtxId<D>, T>, D>,
     ) -> Result<Theorem<Seq<CtxId<D>, Quantified<Forall<T>, S::Close1Children>>, D>, KernelError>
     where
-        S: StableFactIn<CtxId<D>, D> + CloseChildren<CtxId<D>, D>,
+        S: StableFormula<CtxId<D>, D> + CloseChildren<CtxId<D>, D>,
     {
         self.thm_belongs(&seq)?;
         self.thm_belongs(&var)?;
-        let ix = var.stmt.var.ix;
-        let stmt = seq.stmt.close_var_single(var.stmt, &self.db)?;
+        let ix = var.fact.var.ix;
+        let fact = seq.fact.close_var_single(var.fact, &self.db)?;
         debug_assert_eq!(
             ix, 0,
             "the only valid variable index in a single variable context is 0"
         );
-        Ok(self.new_thm(stmt))
+        Ok(self.new_thm(fact))
     }
 }

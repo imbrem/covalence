@@ -60,12 +60,24 @@ impl<D: TermIndex + ReadLocalTerm<D>> ReadLocalTerm<D> for Kernel<D> {
         self.db.node(ctx, tm)
     }
 
+    fn find(&self, ctx: CtxId<D>, tm: Ix<D>) -> Ix<D> {
+        self.db.find(ctx, tm)
+    }
+
+    fn ix(&self, ctx: CtxId<D>, tm: NodeIx<D>) -> Option<Ix<D>> {
+        self.db.ix(ctx, tm)
+    }
+
+    fn import_ix(&self, ctx: CtxId<D>, tm: TmId<D>) -> Option<Ix<D>> {
+        self.db.import_ix(ctx, tm)
+    }
+
     fn lookup(&self, ctx: CtxId<D>, tm: NodeIx<D>) -> Option<Ix<D>> {
         self.db.lookup(ctx, tm)
     }
 
-    fn lookup_import(&self, ctx: CtxId<D>, tm: TmId<D>) -> Option<Ix<D>> {
-        self.db.lookup_import(ctx, tm)
+    fn lookup_ix(&self, ctx: CtxId<D>, tm: TmId<D>) -> Option<Ix<D>> {
+        self.db.lookup_ix(ctx, tm)
     }
 
     fn local_bvi(&self, ctx: CtxId<D>, tm: Ix<D>) -> Bv {

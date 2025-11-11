@@ -55,15 +55,37 @@ pub trait ReadLocalTerm<D: TermIndex> {
     /// Get the node corresponding to a term
     fn node(&self, ctx: CtxId<D>, tm: Ix<D>) -> NodeIx<D>;
 
+    /// Get the canonical index of a term
+    fn find(&self, ctx: CtxId<D>, tm: Ix<D>) -> Ix<D>;
+
+    /// Get the index of a term in the store
+    fn ix(&self, ctx: CtxId<D>, tm: NodeIx<D>) -> Option<Ix<D>>;
+
     /// Lookup a term in the store
     fn lookup(&self, ctx: CtxId<D>, tm: NodeIx<D>) -> Option<Ix<D>>;
 
-    /// Lookup an import in `self`
+    /// Get the index of an import in `self`
     ///
     /// Does _not_ traverse import chains
-    fn lookup_import(&self, ctx: CtxId<D>, tm: TmId<D>) -> Option<Ix<D>> {
+    fn import_ix(&self, ctx: CtxId<D>, tm: TmId<D>) -> Option<Ix<D>> {
         if tm.ctx == ctx {
             Some(tm.ix)
+        } else {
+            self.ix(ctx, Node::Quote(tm))
+        }
+    }
+
+    /// Lookup the index of an import in `self`
+    ///
+    /// Traverses import chains
+    fn lookup_ix(&self, ctx: CtxId<D>, tm: TmId<D>) -> Option<Ix<D>> {
+        if let Node::Quote(tm) = self.node(tm.ctx, tm.ix) {
+            if let Some(ix) = self.lookup_ix(ctx, tm) {
+                return Some(ix);
+            }
+        }
+        if tm.ctx == ctx {
+            Some(self.find(ctx, tm.ix))
         } else {
             self.lookup(ctx, Node::Quote(tm))
         }

@@ -24,6 +24,12 @@ pub mod stable;
 
 pub use stable::*;
 
+/// Atomic formulas supported by the kernel
+pub mod atom;
+
+pub use atom::*;
+
+
 /// A database which can check _formulas_: facts situated in a given context
 pub trait CheckFormula<C, F: ?Sized> {
     /// Check this fact in the given context

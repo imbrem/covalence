@@ -6,11 +6,6 @@ use std::ops::{Deref, DerefMut};
 /// Logical combinators for facts
 pub mod logic;
 
-/// Atomic facts supported by the kernel
-pub mod atom;
-
-pub use atom::*;
-
 use crate::{
     data::term::HasTy,
     formula::{

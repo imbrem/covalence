@@ -47,6 +47,14 @@ impl ReadLocalTerm<TermDb> for TermDb {
         self.x[ctx.0].node(tm)
     }
 
+    fn ix(&self, ctx: CtxId, tm: NodeIx) -> Option<Ix> {
+        self.x[ctx.0].get(tm)
+    }
+
+    fn find(&self, ctx: CtxId, tm: Ix) -> Ix {
+        self.x[ctx.0].find(tm)
+    }
+
     fn lookup(&self, ctx: CtxId, tm: NodeIx) -> Option<Ix> {
         self.x[ctx.0].lookup(tm)
     }

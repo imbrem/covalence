@@ -307,7 +307,7 @@ impl<D> Kernel<D> {
     where
         D: TermIndex + ReadLocalTerm<D>,
     {
-        let ix = self.db.lookup(ctx, tm)?;
+        let ix = self.db.ix(ctx, tm)?;
         let thm = RwIn::new(ctx, tm, ix);
         Some(self.new_thm(thm))
     }
@@ -323,7 +323,7 @@ impl<D> Kernel<D> {
     where
         D: TermIndex + ReadLocalTerm<D>,
     {
-        let ix = self.db.lookup_import(ctx, tm)?;
+        let ix = self.db.import_ix(ctx, tm)?;
         let thm = RwIn::new(ctx, tm, ix);
         Some(self.new_thm(thm))
     }

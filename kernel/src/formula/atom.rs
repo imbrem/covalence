@@ -1,6 +1,4 @@
-use crate::formula::*;
-
-use super::*;
+use crate::{fact::Seq, formula::*};
 
 /// An atomic formula on terms supported by the kernel
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -62,5 +60,5 @@ impl<T> Atom<T> {
     }
 }
 
-/// An atomic sequent
+/// An atomic fact
 pub type AtomSeq<C, T> = Seq<C, Atom<T>>;

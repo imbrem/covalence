@@ -67,7 +67,11 @@ impl Ctx {
         result.0
     }
 
-    pub fn lookup(&self, node: NodeIx) -> Option<Ix> {
+    pub fn find(&self, ix: Ix) -> Ix {
+        id_ix(self.e.find(ix_id(ix)))
+    }
+
+    pub fn get(&self, node: NodeIx) -> Option<Ix> {
         let result = self.e.analysis.node_to_id.get(&InnerNode(node)).copied();
         debug_assert_eq!(
             result.map(|id| self.node(id)),
@@ -75,6 +79,10 @@ impl Ctx {
             "Ctx::node and Ctx::add are out of sync",
         );
         result
+    }
+
+    pub fn lookup(&self, node: NodeIx) -> Option<Ix> {
+        self.e.lookup(&mut InnerNode(node)).map(id_ix)
     }
 
     pub fn var_ty(&self, ix: u32) -> Option<TmId> {

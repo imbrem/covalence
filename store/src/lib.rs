@@ -1,7 +1,9 @@
 use typed_generational_arena::{SmallArena, SmallIndex};
 
 use covalence_kernel::data::term::*;
-use covalence_kernel::fact::{CheckFormula, Holds, Pred0, Rw, SetFactUncheckedIn, StoreFailure};
+use covalence_kernel::formula::{
+    CheckFormula, IntoPred1, Is, Pred0, Rw, SetFactUncheckedIn, StoreFailure,
+};
 use covalence_kernel::store::*;
 
 mod ctx;
@@ -184,7 +186,9 @@ impl SealCtx<CtxId> for TermDb {
 
     fn seal_ctx_exts(&mut self, ctx: CtxId) {
         (0..self.num_parents(ctx)).for_each(|n| {
-            self.parent(ctx, n).map(|p| self.seal_ctx(p));
+            if let Some(p) = self.parent(ctx, n) {
+                self.seal_ctx(p)
+            }
         });
     }
 
@@ -216,15 +220,15 @@ impl SetFactUncheckedIn<CtxId, Pred0> for TermDb {
     }
 }
 
-impl CheckFormula<CtxId, Holds<Ix>> for TermDb {
-    fn check_in(&self, ctx: CtxId, fact: &Holds<Ix>) -> bool {
-        self.x[ctx.0].tm_flags(fact.1).contains(fact.0)
+impl<P: IntoPred1 + Copy> CheckFormula<CtxId, Is<P, Ix>> for TermDb {
+    fn check_in(&self, ctx: CtxId, fact: &Is<P, Ix>) -> bool {
+        self.x[ctx.0].tm_flags(fact.1).contains(fact.0.into_pred1())
     }
 }
 
-impl SetFactUncheckedIn<CtxId, Holds<Ix>> for TermDb {
-    fn set_unchecked_in(&mut self, ctx: CtxId, fact: &Holds<Ix>) -> Result<(), StoreFailure> {
-        self.x[ctx.0].set_tm_flags_unchecked(fact.1, fact.0);
+impl<P: IntoPred1 + Copy> SetFactUncheckedIn<CtxId, Is<P, Ix>> for TermDb {
+    fn set_unchecked_in(&mut self, ctx: CtxId, fact: &Is<P, Ix>) -> Result<(), StoreFailure> {
+        self.x[ctx.0].set_tm_flags_unchecked(fact.1, fact.0.into_pred1());
         Ok(())
     }
 }

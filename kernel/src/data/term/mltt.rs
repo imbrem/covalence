@@ -139,12 +139,12 @@ pub struct Tm1<K, T>(pub K, pub T);
 
 impl<K: Copy, T> Tm1<K, T> {
     /// Get this term as a reference
-    pub fn as_ref<'a>(&'a self) -> Tm1<K, &'a T> {
+    pub fn as_ref(&self) -> Tm1<K, &T> {
         Tm1(self.0, &self.1)
     }
 
     /// Get this term as a mutable reference
-    pub fn as_mut<'a>(&'a mut self) -> Tm1<K, &'a mut T> {
+    pub fn as_mut(&mut self) -> Tm1<K, &mut T> {
         Tm1(self.0, &mut self.1)
     }
 }
@@ -162,12 +162,12 @@ pub struct Tm2<K, L, R = L>(pub K, pub L, pub R);
 
 impl<K: Copy, L, R> Tm2<K, L, R> {
     /// Get this term as a reference
-    pub fn as_ref<'a>(&'a self) -> Tm2<K, &'a L, &'a R> {
+    pub fn as_ref(&self) -> Tm2<K, &L, &R> {
         Tm2(self.0, &self.1, &self.2)
     }
 
     /// Get this term as a mutable reference
-    pub fn as_mut<'a>(&'a mut self) -> Tm2<K, &'a mut L, &'a mut R> {
+    pub fn as_mut(&mut self) -> Tm2<K, &mut L, &mut R> {
         Tm2(self.0, &mut self.1, &mut self.2)
     }
 }
@@ -186,12 +186,12 @@ pub struct Tm3<K, L, M = L, R = L>(pub K, pub L, pub M, pub R);
 
 impl<K: Copy, L, M, R> Tm3<K, L, M, R> {
     /// Get this term as a reference
-    pub fn as_ref<'a>(&'a self) -> Tm3<K, &'a L, &'a M, &'a R> {
+    pub fn as_ref(&self) -> Tm3<K, &L, &M, &R> {
         Tm3(self.0, &self.1, &self.2, &self.3)
     }
 
     /// Get this term as a mutable reference
-    pub fn as_mut<'a>(&'a mut self) -> Tm3<K, &'a mut L, &'a mut M, &'a mut R> {
+    pub fn as_mut(&mut self) -> Tm3<K, &mut L, &mut M, &mut R> {
         Tm3(self.0, &mut self.1, &mut self.2, &mut self.3)
     }
 }

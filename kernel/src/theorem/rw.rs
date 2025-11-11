@@ -50,7 +50,7 @@ impl<L, R> Rw<L, R> {
     }
 
     /// Borrow this equation
-    pub fn as_ref<'a>(&'a self) -> Rw<&'a L, &'a R> {
+    pub fn as_ref(&self) -> Rw<&L, &R> {
         Rw(&self.0, &self.1)
     }
 }
@@ -80,7 +80,7 @@ impl<C, L, R> RwIn<C, L, R> {
     }
 
     /// Borrow this equation-in-context
-    pub fn eqn_as_ref<'a>(&'a self) -> RwIn<C, &'a L, &'a R>
+    pub fn eqn_as_ref(&self) -> RwIn<C, &L, &R>
     where
         C: Copy,
     {
@@ -222,7 +222,7 @@ where
     }
 
     /// Borrow this equation-in-context
-    pub fn eq_as_ref<'a>(&'a self) -> Theorem<RwIn<C, &'a L, &'a R>, D>
+    pub fn eq_as_ref(&self) -> Theorem<RwIn<C, &L, &R>, D>
     where
         C: Copy,
     {

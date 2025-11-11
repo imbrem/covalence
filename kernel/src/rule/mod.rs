@@ -3,8 +3,9 @@ use std::marker::PhantomData;
 use crate::{
     Theorem,
     data::term::{Abs, HasTy, Pi, Sigma},
-    fact::{
-        HasTyIn, HasTyP, Is, IsTy, IsWf, IsWfIn, Seq, Ty, Wf,
+    fact::{HasTyIn, IsWfIn, Seq},
+    formula::{
+        HasTyP, Is, IsTy, IsWf, Ty, Wf,
         quant::{Forall, Quantified},
     },
     store::{Ctx, LocalTerm},

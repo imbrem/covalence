@@ -54,7 +54,7 @@ where
     }
 }
 
-impl<'a, C, I, L, R, S, D> MapToEqSealed<I, KernelError, S, D> for &'a Theorem<RwIn<C, L, R>, D>
+impl<C, I, L, R, S, D> MapToEqSealed<I, KernelError, S, D> for &Theorem<RwIn<C, L, R>, D>
 where
     C: Ctx<D>,
     I: LocalTerm<C, D>,
@@ -95,7 +95,7 @@ where
     }
 }
 
-impl<'a, C, I, L, R, S, D> MapToEq<I, KernelError, S, D> for Theorem<RwIn<C, L, R>, D>
+impl<C, I, L, R, S, D> MapToEq<I, KernelError, S, D> for Theorem<RwIn<C, L, R>, D>
 where
     C: Ctx<D>,
     I: LocalTerm<C, D> + PartialEq<L>,

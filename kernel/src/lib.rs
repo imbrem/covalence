@@ -1,6 +1,7 @@
 /*!
 The `covalence` kernel, parametrized by a datastore `D`
 */
+#![allow(clippy::type_complexity)]
 use std::ops::Deref;
 
 use crate::{data::term::*, id::KernelId, store::*};
@@ -9,12 +10,13 @@ pub mod ctx;
 pub mod data;
 pub mod error;
 pub mod fact;
+pub mod formula;
 pub mod id;
 pub mod rule;
+pub mod rw;
 pub mod store;
 pub mod theorem;
 pub mod univ;
-pub mod rw;
 
 pub use theorem::Theorem;
 

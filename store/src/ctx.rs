@@ -10,7 +10,7 @@ use covalence_kernel::{
 };
 use egg::{Analysis, DidMerge, EGraph, Id, Language};
 
-use covalence_kernel::fact::{Pred0, Pred1};
+use covalence_kernel::formula::{Pred0, Pred1};
 use indexmap::IndexSet;
 
 use crate::{Ix, NodeIx};
@@ -205,7 +205,7 @@ impl Analysis<InnerNode> for CtxData {
         let changed = DidMerge(*a == new, b == new);
         *a = new;
         if new.flags.is_contr() {
-            self.flags |= Pred0::IS_CONTR;
+            self.flags |= Pred0::CONTR;
         }
         changed
     }

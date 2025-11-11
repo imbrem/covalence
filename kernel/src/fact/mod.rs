@@ -1,19 +1,10 @@
 /*!
 Facts which can be checked in the datastore
 */
-use std::{
-    fmt::{self, Display},
-    ops::{Deref, DerefMut},
-};
-use thiserror::Error;
+use std::ops::{Deref, DerefMut};
 
 /// Logical combinators for facts
 pub mod logic;
-
-/// Predicates on terms-in-context supported by the kernel
-pub mod pred;
-
-pub use pred::*;
 
 /// Atomic facts supported by the kernel
 pub mod atom;
@@ -22,8 +13,10 @@ pub use atom::*;
 
 use crate::{
     data::term::HasTy,
-    fact::logic::IffIn,
-    store::{Ctx, LocalTerm},
+    formula::{
+        CheckFormula, HasTyP, Is, IsEmpty, IsFalse, IsInhab, IsProp, IsTrue, IsTy, IsWf, Pred0,
+        SetFactUncheckedIn, StoreFailure, Wf,
+    },
 };
 
 /// Quantified facts
@@ -38,36 +31,12 @@ pub trait CheckFact<F: ?Sized> {
     fn check(&self, fact: &F) -> bool;
 }
 
-/// A database which can check _formulas_: facts situated in a given context
-pub trait CheckFormula<C, F: ?Sized> {
-    /// Check this fact in the given context
-    fn check_in(&self, ctx: C, fact: &F) -> bool;
-}
-
-/// An error indicating a failure to store a fact
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Error)]
-pub struct StoreFailure;
-
-impl Display for StoreFailure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "failed to store fact")
-    }
-}
-
 /// A database which can store unchecked facts
 pub trait SetFactUnchecked<F: ?Sized> {
     /// Store the given fact without checking it
     ///
     /// Returns whether the fact was successfully set
     fn set_unchecked(&mut self, fact: &F) -> Result<(), StoreFailure>;
-}
-
-/// A database which can set unchecked facts about ("within") a given context
-pub trait SetFactUncheckedIn<C, F: ?Sized> {
-    /// Store the given fact in the given context without checking it
-    ///
-    /// Returns whether the fact was successfully set
-    fn set_unchecked_in(&mut self, ctx: C, fact: &F) -> Result<(), StoreFailure>;
 }
 
 /// A _sequent_: a pair `Γ ⊢ φ` of a context and a formula in that context
@@ -113,6 +82,12 @@ impl<C, S> DerefMut for Seq<C, S> {
     }
 }
 
+/// A nullary predicate holds for a context
+pub type HoldsFor<C> = Seq<C, Pred0>;
+
+/// A unary predicate holds on a term-in-context
+pub type IsIn<C, P, T> = Seq<C, Is<P, T>>;
+
 /// An equation
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Rw<L, R = L>(pub L, pub R);
@@ -130,9 +105,6 @@ impl<C, L, R> RwIn<C, L, R> {
     }
 }
 
-/// A term has the given type
-pub type HasTyP<T, Ty = T> = IsWf<HasTy<T, Ty>>;
-
 /// A term has the given type in a context
 pub type HasTyIn<C, T, Ty = T> = Seq<C, HasTyP<T, Ty>>;
 
@@ -145,3 +117,24 @@ impl<C, T, Ty> HasTyIn<C, T, Ty> {
         }
     }
 }
+
+/// A term is well-formed in a context
+pub type IsWfIn<C, T> = Seq<C, IsWf<T>>;
+
+/// A term is a type in a context
+pub type IsTyIn<C, T> = Seq<C, IsTy<T>>;
+
+/// A term is a proposition in a context
+pub type IsPropIn<C, T> = Seq<C, IsProp<T>>;
+
+/// A term is inhabited in a context
+pub type IsInhabIn<C, T> = Seq<C, IsInhab<T>>;
+
+/// A term is empty in a context
+pub type IsEmptyIn<C, T> = Seq<C, IsEmpty<T>>;
+
+/// A term is the true proposition in a context
+pub type IsTrueIn<C, T> = Seq<C, IsTrue<T>>;
+
+/// A term is the false proposition in a context
+pub type IsFalseIn<C, T> = Seq<C, IsFalse<T>>;

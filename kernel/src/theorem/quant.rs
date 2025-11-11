@@ -5,10 +5,10 @@ use crate::{
     ctx::VarTy,
     data::term::Fv,
     error::KernelError,
-    fact::{
-        HasTyIn, IsTyIn, Seq,
+    fact::{HasTyIn, IsTyIn, Seq},
+    formula::{
+        StableFormula,
         quant::{CloseChildren, Forall, Quantified},
-        stable::StableFormula,
     },
     store::{Ctx, CtxId, LocalStoreUnchecked, ReadCtx, ReadCtxGraph},
 };

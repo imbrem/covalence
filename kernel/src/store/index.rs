@@ -47,7 +47,7 @@ impl<D: TermIndex + ?Sized> Eq for CtxId<D> {}
 
 impl<D: TermIndex + ?Sized> PartialOrd for CtxId<D> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+        Some(self.cmp(other))
     }
 }
 
@@ -96,7 +96,7 @@ impl<D: TermIndex + ?Sized> Eq for Ix<D> {}
 
 impl<D: TermIndex + ?Sized> PartialOrd for Ix<D> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+        Some(self.cmp(other))
     }
 }
 
@@ -167,14 +167,14 @@ impl<D: TermIndex> LocalTerm<CtxId<D>, D> for Ix<D> {
     const RELOCATABLE: bool = false;
 }
 
-impl<'a, D, C, T> TermSealed<C, D> for &'a T
+impl<D, C, T> TermSealed<C, D> for &T
 where
     C: Ctx<D>,
     T: TermSealed<C, D>,
 {
 }
 
-impl<'a, D, C, T> LocalTerm<C, D> for &'a T
+impl<D, C, T> LocalTerm<C, D> for &T
 where
     C: Ctx<D>,
     T: LocalTerm<C, D>,

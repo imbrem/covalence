@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::fact::StoreFailure;
+use crate::formula::StoreFailure;
 use crate::store::{AddParentFailure, AddVarFailure};
 use crate::theorem::{IdMismatch, rw::EqMismatch};
 

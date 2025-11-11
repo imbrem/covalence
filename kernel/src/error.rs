@@ -4,7 +4,7 @@ use crate::fact::StoreFailure;
 use crate::store::{AddParentFailure, AddVarFailure};
 use crate::theorem::{IdMismatch, rw::EqMismatch};
 
-#[derive(Debug, Error, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Error, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum KernelError {
     /// Failed to store fact
     #[error("covalence store error: failed to store fact")]

@@ -151,11 +151,21 @@ impl<D: TermIndex> Ctx<D> for CtxId<D> {}
 /// A local term in the datastore
 ///
 /// A _local_ term can be interpreted as a term given a context ID
-pub trait LocalTerm<C, D>: TermSealed<C, D> {}
+pub trait LocalTerm<C, D>: TermSealed<C, D> {
+    /// Whether this term type can always be relocated
+    const RELOCATABLE: bool;
+
+    /// Whether this term can be relocated
+    fn relocatable(&self) -> bool {
+        Self::RELOCATABLE
+    }
+}
 
 impl<D: TermIndex> TermSealed<CtxId<D>, D> for Ix<D> {}
 
-impl<D: TermIndex> LocalTerm<CtxId<D>, D> for Ix<D> {}
+impl<D: TermIndex> LocalTerm<CtxId<D>, D> for Ix<D> {
+    const RELOCATABLE: bool = false;
+}
 
 impl<'a, D, C, T> TermSealed<C, D> for &'a T
 where
@@ -169,6 +179,11 @@ where
     C: Ctx<D>,
     T: LocalTerm<C, D>,
 {
+    const RELOCATABLE: bool = T::RELOCATABLE;
+
+    fn relocatable(&self) -> bool {
+        T::relocatable(*self)
+    }
 }
 
 impl<D, C, T, CO> TermSealed<CO, D> for TmIn<C, T>
@@ -185,6 +200,7 @@ where
     T: LocalTerm<C, D>,
     CO: Ctx<D>,
 {
+    const RELOCATABLE: bool = true;
 }
 
 impl<D, C, T, I> TermSealed<C, D> for Node<C, T, I>
@@ -201,11 +217,24 @@ where
     T: LocalTerm<C, D>,
     I: LocalTerm<C, D>,
 {
+    const RELOCATABLE: bool = T::RELOCATABLE && I::RELOCATABLE;
+
+    fn relocatable(&self) -> bool {
+        match self {
+            Node::Quote(tm) => tm.relocatable(),
+            this => this.syn_children().iter().all(|tm| tm.relocatable()),
+        }
+    }
 }
 
 impl<D, C> TermSealed<C, D> for Fv<C> where C: Ctx<D> {}
 
-impl<D, C> LocalTerm<C, D> for Fv<C> where C: Ctx<D> {}
+impl<D, C> LocalTerm<C, D> for Fv<C>
+where
+    C: Ctx<D>,
+{
+    const RELOCATABLE: bool = true;
+}
 
 impl<D, CC, T, C> TermSealed<C, D> for Close1<CC, T>
 where
@@ -221,6 +250,11 @@ where
     CC: Ctx<D>,
     T: LocalTerm<C, D>,
 {
+    const RELOCATABLE: bool = T::RELOCATABLE;
+
+    fn relocatable(&self) -> bool {
+        self.tm.relocatable()
+    }
 }
 
 impl<D, C, L, R> TermSealed<C, D> for Abs<L, R>
@@ -237,6 +271,11 @@ where
     L: LocalTerm<C, D>,
     R: LocalTerm<C, D>,
 {
+    const RELOCATABLE: bool = L::RELOCATABLE && R::RELOCATABLE;
+
+    fn relocatable(&self) -> bool {
+        self.ty.relocatable() && self.body.relocatable()
+    }
 }
 
 impl<D, C, L, R> TermSealed<C, D> for Pi<L, R>
@@ -253,6 +292,11 @@ where
     L: LocalTerm<C, D>,
     R: LocalTerm<C, D>,
 {
+    const RELOCATABLE: bool = L::RELOCATABLE && R::RELOCATABLE;
+
+    fn relocatable(&self) -> bool {
+        self.ty.relocatable() && self.body.relocatable()
+    }
 }
 
 impl<D, C, L, R> TermSealed<C, D> for Sigma<L, R>
@@ -269,6 +313,11 @@ where
     L: LocalTerm<C, D>,
     R: LocalTerm<C, D>,
 {
+    const RELOCATABLE: bool = L::RELOCATABLE && R::RELOCATABLE;
+
+    fn relocatable(&self) -> bool {
+        self.fst.relocatable() && self.snd.relocatable()
+    }
 }
 
 impl<D, C, L, R> TermSealed<C, D> for HasTy<L, R>
@@ -285,6 +334,11 @@ where
     L: LocalTerm<C, D>,
     R: LocalTerm<C, D>,
 {
+    const RELOCATABLE: bool = L::RELOCATABLE && R::RELOCATABLE;
+
+    fn relocatable(&self) -> bool {
+        L::relocatable(&self.tm) && R::relocatable(&self.ty)
+    }
 }
 
 impl<D, C, L, R> TermSealed<C, D> for Subst1<L, R>
@@ -301,6 +355,11 @@ where
     L: LocalTerm<C, D>,
     R: LocalTerm<C, D>,
 {
+    const RELOCATABLE: bool = L::RELOCATABLE && R::RELOCATABLE;
+
+    fn relocatable(&self) -> bool {
+        self.bound.relocatable() && self.body.relocatable()
+    }
 }
 
 /// A term in the datastore

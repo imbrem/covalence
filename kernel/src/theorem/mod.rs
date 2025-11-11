@@ -8,7 +8,7 @@ use crate::Kernel;
 use crate::error::KernelError;
 use crate::fact::logic::{Iff, Implies, TryIff};
 use crate::fact::stable::StableFact;
-use crate::fact::{CheckFact, EqnIn, SetFactUnchecked};
+use crate::fact::{CheckFact, RwIn, SetFactUnchecked};
 use crate::id::KernelId;
 use crate::store::{CtxId, Ix, NodeIx, ReadLocalTerm, TermIndex, TmId, WriteLocalTerm};
 
@@ -244,12 +244,12 @@ impl<D> Kernel<D> {
         &mut self,
         ctx: CtxId<D>,
         tm: NodeIx<D>,
-    ) -> Theorem<EqnIn<CtxId<D>, NodeIx<D>, Ix<D>>, D>
+    ) -> Theorem<RwIn<CtxId<D>, NodeIx<D>, Ix<D>>, D>
     where
         D: TermIndex + WriteLocalTerm<D>,
     {
         let ix = self.db.cons_node_ix(ctx, tm);
-        let thm = EqnIn::new(ctx, tm, ix);
+        let thm = RwIn::new(ctx, tm, ix);
         self.new_thm(thm)
     }
 
@@ -258,14 +258,14 @@ impl<D> Kernel<D> {
         &mut self,
         ctx: CtxId<D>,
         tm: T,
-    ) -> Theorem<EqnIn<CtxId<D>, T, Ix<D>>, D>
+    ) -> Theorem<RwIn<CtxId<D>, T, Ix<D>>, D>
     where
         T: Clone + Into<NodeIx<D>>,
         D: TermIndex + WriteLocalTerm<D>,
     {
         let node = tm.clone().into();
         let ix = self.db.cons_node_ix(ctx, node);
-        let thm = EqnIn::new(ctx, tm, ix);
+        let thm = RwIn::new(ctx, tm, ix);
         self.new_thm(thm)
     }
 
@@ -274,14 +274,14 @@ impl<D> Kernel<D> {
         &mut self,
         ctx: CtxId<D>,
         tm: T,
-    ) -> Result<Theorem<EqnIn<CtxId<D>, T, Ix<D>>, D>, T::Error>
+    ) -> Result<Theorem<RwIn<CtxId<D>, T, Ix<D>>, D>, T::Error>
     where
         T: Clone + TryInto<NodeIx<D>>,
         D: TermIndex + WriteLocalTerm<D>,
     {
         let node = tm.clone().try_into()?;
         let ix = self.db.cons_node_ix(ctx, node);
-        let thm = EqnIn::new(ctx, tm, ix);
+        let thm = RwIn::new(ctx, tm, ix);
         Ok(self.new_thm(thm))
     }
 
@@ -290,12 +290,12 @@ impl<D> Kernel<D> {
         &self,
         ctx: CtxId<D>,
         ix: Ix<D>,
-    ) -> Theorem<EqnIn<CtxId<D>, Ix<D>, NodeIx<D>>, D>
+    ) -> Theorem<RwIn<CtxId<D>, Ix<D>, NodeIx<D>>, D>
     where
         D: TermIndex + ReadLocalTerm<D>,
     {
         let tm = self.db.node(ctx, ix);
-        let thm = EqnIn::new(ctx, ix, tm);
+        let thm = RwIn::new(ctx, ix, tm);
         self.new_thm(thm)
     }
 
@@ -304,12 +304,12 @@ impl<D> Kernel<D> {
         &self,
         ctx: CtxId<D>,
         tm: NodeIx<D>,
-    ) -> Option<Theorem<EqnIn<CtxId<D>, NodeIx<D>, Ix<D>>, D>>
+    ) -> Option<Theorem<RwIn<CtxId<D>, NodeIx<D>, Ix<D>>, D>>
     where
         D: TermIndex + ReadLocalTerm<D>,
     {
         let ix = self.db.lookup(ctx, tm)?;
-        let thm = EqnIn::new(ctx, tm, ix);
+        let thm = RwIn::new(ctx, tm, ix);
         Some(self.new_thm(thm))
     }
 
@@ -320,12 +320,12 @@ impl<D> Kernel<D> {
         &self,
         ctx: CtxId<D>,
         tm: TmId<D>,
-    ) -> Option<Theorem<EqnIn<CtxId<D>, TmId<D>, Ix<D>>, D>>
+    ) -> Option<Theorem<RwIn<CtxId<D>, TmId<D>, Ix<D>>, D>>
     where
         D: TermIndex + ReadLocalTerm<D>,
     {
         let ix = self.db.lookup_import(ctx, tm)?;
-        let thm = EqnIn::new(ctx, tm, ix);
+        let thm = RwIn::new(ctx, tm, ix);
         Some(self.new_thm(thm))
     }
 

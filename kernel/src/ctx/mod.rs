@@ -1,7 +1,7 @@
 use crate::{
     error::KernelError,
     fact::{
-        CheckFact, HasTy, HasTyIn, IsTyIn,
+        CheckFact, HasTyIn, IsTyIn,
         logic::Iff,
         stable::{FactSealed, StableFact},
     },
@@ -21,13 +21,7 @@ where
     T: LocalTerm<C, D>,
 {
     fn iff(self) -> HasTyIn<C, Fv<C>, T> {
-        HasTyIn {
-            ctx: self.var.ctx,
-            stmt: HasTy {
-                tm: self.var,
-                ty: self.ty,
-            },
-        }
+        HasTyIn::new(self.var.ctx, self.var, self.ty)
     }
 }
 
@@ -38,13 +32,7 @@ where
     I: LocalTerm<C, D>,
 {
     fn iff(self) -> HasTyIn<C, Node<C, T, I>, T> {
-        HasTyIn {
-            ctx: self.var.ctx,
-            stmt: HasTy {
-                tm: Node::Fv(self.var),
-                ty: self.ty,
-            },
-        }
+        HasTyIn::new(self.var.ctx, Node::Fv(self.var), self.ty)
     }
 }
 

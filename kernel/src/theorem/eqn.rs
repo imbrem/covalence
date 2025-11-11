@@ -1,6 +1,6 @@
 use crate::{
     data::term::Node,
-    fact::{Eqn, EqnIn},
+    fact::{Rw, RwIn},
     store::{Ctx, LocalTerm},
 };
 
@@ -16,56 +16,56 @@ impl Display for EqMismatch {
     }
 }
 
-impl<L, R> Eqn<L, R> {
+impl<L, R> Rw<L, R> {
     /// Swap the left- and right-hand sides of this equation
     ///
     /// # Examples
     /// ```rust
-    /// # use covalence_kernel::fact::Eqn;
+    /// # use covalence_kernel::fact::Rw;
     /// # let x = 1; let y = 2;
-    /// assert_eq!(Eqn(x, y).symm(), Eqn(y, x));
+    /// assert_eq!(Rw(x, y).symm(), Rw(y, x));
     /// ```
-    pub fn symm(self) -> Eqn<R, L> {
-        Eqn(self.1, self.0)
+    pub fn symm(self) -> Rw<R, L> {
+        Rw(self.1, self.0)
     }
 
     /// Transitivity of equality
     ///
     /// # Examples
     /// ```rust
-    /// # use covalence_kernel::fact::Eqn;
+    /// # use covalence_kernel::fact::Rw;
     /// # let x = 1; let y = 2; let z = 3;
-    /// assert_eq!(Eqn(x, y).trans(Eqn(y, z)), Ok(Eqn(x, z)));
+    /// assert_eq!(Rw(x, y).trans(Rw(y, z)), Ok(Rw(x, z)));
     /// assert_ne!(y, z);
-    /// Eqn(x, y).trans(Eqn(z, x)).unwrap_err();
+    /// Rw(x, y).trans(Rw(z, x)).unwrap_err();
     /// ```
-    pub fn trans<L2, R2>(self, other: Eqn<L2, R2>) -> Result<Eqn<L, R2>, EqMismatch>
+    pub fn trans<L2, R2>(self, other: Rw<L2, R2>) -> Result<Rw<L, R2>, EqMismatch>
     where
         R: PartialEq<L2>,
     {
         if self.1 != other.0 {
             return Err(EqMismatch);
         }
-        Ok(Eqn(self.0, other.1))
+        Ok(Rw(self.0, other.1))
     }
 
     /// Borrow this equation
-    pub fn as_ref<'a>(&'a self) -> Eqn<&'a L, &'a R> {
-        Eqn(&self.0, &self.1)
+    pub fn as_ref<'a>(&'a self) -> Rw<&'a L, &'a R> {
+        Rw(&self.0, &self.1)
     }
 }
 
-impl<C, L, R> EqnIn<C, L, R> {
+impl<C, L, R> RwIn<C, L, R> {
     /// Swap the left- and right-hand sides of this equation
-    pub fn symm(self) -> EqnIn<C, R, L> {
-        EqnIn {
+    pub fn symm(self) -> RwIn<C, R, L> {
+        RwIn {
             ctx: self.ctx,
             stmt: self.stmt.symm(),
         }
     }
 
     /// Transitivity of equality
-    pub fn trans<C2, L2, R2>(self, other: EqnIn<C2, L2, R2>) -> Result<EqnIn<C, L, R2>, EqMismatch>
+    pub fn trans<C2, L2, R2>(self, other: RwIn<C2, L2, R2>) -> Result<RwIn<C, L, R2>, EqMismatch>
     where
         C: PartialEq<C2>,
         R: PartialEq<L2>,
@@ -73,38 +73,38 @@ impl<C, L, R> EqnIn<C, L, R> {
         if self.ctx != other.ctx {
             return Err(EqMismatch);
         }
-        Ok(EqnIn {
+        Ok(RwIn {
             ctx: self.ctx,
             stmt: self.stmt.trans(other.stmt)?,
         })
     }
 
     /// Borrow this equation-in-context
-    pub fn eqn_as_ref<'a>(&'a self) -> EqnIn<C, &'a L, &'a R>
+    pub fn eqn_as_ref<'a>(&'a self) -> RwIn<C, &'a L, &'a R>
     where
         C: Copy,
     {
-        EqnIn {
+        RwIn {
             ctx: self.ctx,
             stmt: self.stmt.as_ref(),
         }
     }
 }
 
-impl<C, T, D> Theorem<EqnIn<C, T>, D>
+impl<C, T, D> Theorem<RwIn<C, T>, D>
 where
     C: Ctx<D>,
     T: LocalTerm<C, D>,
 {
     /// Construct an equation from two equal terms
-    pub fn of_refl(id: KernelId, ctx: C, tm: T) -> Result<Theorem<EqnIn<C, T>, D>, KernelError>
+    pub fn of_refl(id: KernelId, ctx: C, tm: T) -> Result<Theorem<RwIn<C, T>, D>, KernelError>
     where
         T: Clone,
     {
         Ok(Theorem {
-            stmt: EqnIn {
+            stmt: RwIn {
                 ctx,
-                stmt: Eqn(tm.clone(), tm),
+                stmt: Rw(tm.clone(), tm),
             },
             id,
             store: PhantomData,
@@ -112,7 +112,7 @@ where
     }
 }
 
-impl<C, T, D> Theorem<EqnIn<C, &T, T>, D>
+impl<C, T, D> Theorem<RwIn<C, &T, T>, D>
 where
     C: Ctx<D>,
     T: LocalTerm<C, D>,
@@ -122,14 +122,14 @@ where
         id: KernelId,
         ctx: C,
         tm: &T,
-    ) -> Result<Theorem<EqnIn<C, &T, T>, D>, KernelError>
+    ) -> Result<Theorem<RwIn<C, &T, T>, D>, KernelError>
     where
         T: Clone,
     {
         Ok(Theorem {
-            stmt: EqnIn {
+            stmt: RwIn {
                 ctx,
-                stmt: Eqn(tm, tm.clone()),
+                stmt: Rw(tm, tm.clone()),
             },
             id,
             store: PhantomData,
@@ -137,7 +137,7 @@ where
     }
 }
 
-impl<C, L, R, D> Theorem<EqnIn<C, L, R>, D>
+impl<C, L, R, D> Theorem<RwIn<C, L, R>, D>
 where
     C: Ctx<D>,
     L: LocalTerm<C, D>,
@@ -149,7 +149,7 @@ where
         ctx: C,
         lhs: L,
         rhs: R,
-    ) -> Result<Theorem<EqnIn<C, L, R>, D>, KernelError>
+    ) -> Result<Theorem<RwIn<C, L, R>, D>, KernelError>
     where
         L: PartialEq<R>,
     {
@@ -157,9 +157,9 @@ where
             return Err(KernelError::EqMismatch);
         }
         Ok(Theorem {
-            stmt: EqnIn {
+            stmt: RwIn {
                 ctx,
-                stmt: Eqn(lhs, rhs),
+                stmt: Rw(lhs, rhs),
             },
             id,
             store: PhantomData,
@@ -167,14 +167,14 @@ where
     }
 
     /// Construct an equation using `Into`
-    pub fn eq_into(id: KernelId, ctx: C, lhs: L) -> Theorem<EqnIn<C, L, R>, D>
+    pub fn eq_into(id: KernelId, ctx: C, lhs: L) -> Theorem<RwIn<C, L, R>, D>
     where
         L: Clone + Into<R>,
     {
         Theorem {
-            stmt: EqnIn {
+            stmt: RwIn {
                 ctx,
-                stmt: Eqn(lhs.clone(), lhs.into()),
+                stmt: Rw(lhs.clone(), lhs.into()),
             },
             id,
             store: PhantomData,
@@ -182,14 +182,14 @@ where
     }
 
     /// Construct an equation using `TryInto`
-    pub fn eq_try_into(id: KernelId, ctx: C, lhs: L) -> Result<Theorem<EqnIn<C, L, R>, D>, L::Error>
+    pub fn eq_try_into(id: KernelId, ctx: C, lhs: L) -> Result<Theorem<RwIn<C, L, R>, D>, L::Error>
     where
         L: Clone + TryInto<R>,
     {
         Ok(Theorem {
-            stmt: EqnIn {
+            stmt: RwIn {
                 ctx,
-                stmt: Eqn(lhs.clone(), lhs.try_into()?),
+                stmt: Rw(lhs.clone(), lhs.try_into()?),
             },
             id,
             store: PhantomData,
@@ -197,7 +197,7 @@ where
     }
 
     /// Swap the left- and right-hand sides of this equation
-    pub fn symm(self) -> Theorem<EqnIn<C, R, L>, D> {
+    pub fn symm(self) -> Theorem<RwIn<C, R, L>, D> {
         Theorem {
             stmt: self.stmt.symm(),
             id: self.id,
@@ -208,8 +208,8 @@ where
     /// Transitivity of equality
     pub fn trans<C2, L2, R2>(
         self,
-        other: Theorem<EqnIn<C2, L2, R2>, D>,
-    ) -> Result<Theorem<EqnIn<C, L, R2>, D>, KernelError>
+        other: Theorem<RwIn<C2, L2, R2>, D>,
+    ) -> Result<Theorem<RwIn<C, L, R2>, D>, KernelError>
     where
         C: PartialEq<C2>,
         R: PartialEq<L2>,
@@ -226,7 +226,7 @@ where
     }
 
     /// Borrow this equation-in-context
-    pub fn eq_as_ref<'a>(&'a self) -> Theorem<EqnIn<C, &'a L, &'a R>, D>
+    pub fn eq_as_ref<'a>(&'a self) -> Theorem<RwIn<C, &'a L, &'a R>, D>
     where
         C: Copy,
     {
@@ -239,7 +239,7 @@ where
 }
 
 impl<CN, LC, RC, L, R, LI, RI, D>
-    Node<CN, Theorem<EqnIn<LC, L, R>, D>, Theorem<EqnIn<RC, LI, RI>, D>>
+    Node<CN, Theorem<RwIn<LC, L, R>, D>, Theorem<RwIn<RC, LI, RI>, D>>
 where
     CN: Copy + Ctx<D>,
     LC: Ctx<D>,
@@ -253,7 +253,7 @@ where
         self,
         id: KernelId,
         ctx: CO,
-    ) -> Result<Theorem<EqnIn<CO, Node<CN, L, LI>, Node<CN, R, RI>>, D>, Self>
+    ) -> Result<Theorem<RwIn<CO, Node<CN, L, LI>, Node<CN, R, RI>>, D>, Self>
     where
         CO: Ctx<D> + PartialEq<LC> + PartialEq<RC>,
     {
@@ -273,9 +273,9 @@ where
             )
             .into_pair();
         Ok(Theorem {
-            stmt: EqnIn {
+            stmt: RwIn {
                 ctx,
-                stmt: Eqn(lhs, rhs),
+                stmt: Rw(lhs, rhs),
             },
             id,
             store: PhantomData,

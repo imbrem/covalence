@@ -4,7 +4,7 @@ use crate::{
     Theorem,
     data::term::{Abs, Node},
     fact::{
-        HasTy, Is, IsTy, IsWf, Seq, Ty, Wf,
+        HasTyIn, HasTyP, Is, IsTy, IsWf, Seq, Ty, Wf,
         quant::{Forall, Quantified},
     },
     store::{Ctx, LocalTerm},
@@ -71,18 +71,16 @@ where
     }
 }
 
-impl<C, T> Seq<C, Quantified<Forall<T>, HasTy<T>>> {
-    pub fn abs_has_ty(self) -> Seq<C, HasTy<Node<C, T>>>
+impl<C, T> Seq<C, Quantified<Forall<T>, HasTyP<T>>> {
+    pub fn abs_has_ty(self) -> HasTyIn<C, Node<C, T>>
     where
         T: Clone,
     {
-        Seq {
-            ctx: self.ctx,
-            stmt: HasTy {
-                tm: Node::Abs([self.stmt.binder.0.clone(), self.stmt.body.tm]),
-                ty: Node::Pi([self.stmt.binder.0, self.stmt.body.ty]),
-            },
-        }
+        HasTyIn::new(
+            self.ctx,
+            Node::Abs([self.stmt.binder.0.clone(), self.stmt.body.1.tm]),
+            Node::Pi([self.stmt.binder.0, self.stmt.body.1.ty]),
+        )
     }
 
     pub fn abs_has_ty_wf<I>(self) -> Seq<C, IsWf<Abs<T, Node<C, T, I>>>> {
@@ -92,19 +90,19 @@ impl<C, T> Seq<C, Quantified<Forall<T>, HasTy<T>>> {
                 Wf,
                 Abs {
                     ty: self.stmt.binder.0,
-                    body: Node::HasTy([self.stmt.body.tm, self.stmt.body.ty]),
+                    body: Node::HasTy([self.stmt.body.1.tm, self.stmt.body.1.ty]),
                 },
             ),
         }
     }
 }
 
-impl<C, T, D> Theorem<Seq<C, Quantified<Forall<T>, HasTy<T>>>, D>
+impl<C, T, D> Theorem<Seq<C, Quantified<Forall<T>, HasTyP<T>>>, D>
 where
     C: Ctx<D>,
     T: LocalTerm<C, D>,
 {
-    pub fn abs_has_ty(self) -> Theorem<Seq<C, HasTy<Node<C, T>>>, D>
+    pub fn abs_has_ty(self) -> Theorem<HasTyIn<C, Node<C, T>>, D>
     where
         T: Clone,
     {

@@ -1,6 +1,6 @@
 use crate::{
     data::term::{Bv, Node},
-    fact::{CheckFactIn, Eqn, Holds, Pred0},
+    fact::{CheckFactIn, Rw, Holds, Pred0},
 };
 
 pub use crate::univ::{ReadUniv, WriteUniv};
@@ -86,14 +86,14 @@ pub trait ReadLocalTerm<D: TermIndex> {
 }
 
 pub trait ReadLocalFacts<D: TermIndex>:
-    CheckFactIn<CtxId<D>, Holds<Ix<D>>> + CheckFactIn<CtxId<D>, Eqn<Ix<D>>>
+    CheckFactIn<CtxId<D>, Holds<Ix<D>>> + CheckFactIn<CtxId<D>, Rw<Ix<D>>>
 {
 }
 
 impl<K, D> ReadLocalFacts<D> for K
 where
     D: TermIndex,
-    K: CheckFactIn<CtxId<D>, Holds<Ix<D>>> + CheckFactIn<CtxId<D>, Eqn<Ix<D>>>,
+    K: CheckFactIn<CtxId<D>, Holds<Ix<D>>> + CheckFactIn<CtxId<D>, Rw<Ix<D>>>,
 {
 }
 

@@ -1,5 +1,5 @@
 use crate::{
-    fact::{Eqn, HasTy, Holds, IntoPred1, Is, Pred0, Seq},
+    fact::{Holds, IntoPred1, Is, Pred0, Rw, Seq},
     store::{Ctx, LocalTerm},
 };
 
@@ -44,9 +44,7 @@ impl<D, C: Ctx<D>> StableFactIn<C, D> for Pred0 {}
 
 impl<D, C: Ctx<D>, T: LocalTerm<C, D>> StableFactIn<C, D> for Holds<T> {}
 
-impl<D, C: Ctx<D>, L: LocalTerm<C, D>, R: LocalTerm<C, D>> StableFactIn<C, D> for Eqn<L, R> {}
-
-impl<D, C: Ctx<D>, L: LocalTerm<C, D>, R: LocalTerm<C, D>> StableFactIn<C, D> for HasTy<L, R> {}
+impl<D, C: Ctx<D>, L: LocalTerm<C, D>, R: LocalTerm<C, D>> StableFactIn<C, D> for Rw<L, R> {}
 
 impl<D, P: IntoPred1, C: Ctx<D>, T: LocalTerm<C, D>> StableFactIn<C, D> for Is<P, T> {}
 
@@ -60,15 +58,12 @@ impl<D, C: Ctx<D>> FactInSealed<C, D> for bool {}
 
 impl<D, A: FactSealed<D>, B: FactSealed<D>> FactSealed<D> for (A, B) {}
 
-impl<D, C: Ctx<D>, A: FactInSealed<C, D>, B: FactInSealed<C, D>>
-    FactInSealed<C, D> for (A, B)
-{
-}
+impl<D, C: Ctx<D>, A: FactInSealed<C, D>, B: FactInSealed<C, D>> FactInSealed<C, D> for (A, B) {}
 
 impl<D, A: FactSealed<D>, B: FactSealed<D>> FactSealed<D> for Either<A, B> {}
 
-impl<D, C: Ctx<D>, A: FactInSealed<C, D>, B: FactInSealed<C, D>>
-    FactInSealed<C, D> for Either<A, B>
+impl<D, C: Ctx<D>, A: FactInSealed<C, D>, B: FactInSealed<C, D>> FactInSealed<C, D>
+    for Either<A, B>
 {
 }
 
@@ -78,11 +73,6 @@ impl<D, C: Ctx<D>> FactInSealed<C, D> for Pred0 {}
 
 impl<D, C: Ctx<D>, T: LocalTerm<C, D>> FactInSealed<C, D> for Holds<T> {}
 
-impl<D, C: Ctx<D>, L: LocalTerm<C, D>, R: LocalTerm<C, D>> FactInSealed<C, D> for Eqn<L, R> {}
-
-impl<D, C: Ctx<D>, L: LocalTerm<C, D>, R: LocalTerm<C, D>> FactInSealed<C, D>
-    for HasTy<L, R>
-{
-}
+impl<D, C: Ctx<D>, L: LocalTerm<C, D>, R: LocalTerm<C, D>> FactInSealed<C, D> for Rw<L, R> {}
 
 impl<D, P: IntoPred1, C: Ctx<D>, T: LocalTerm<C, D>> FactInSealed<C, D> for Is<P, T> {}

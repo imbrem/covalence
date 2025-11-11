@@ -1,7 +1,7 @@
 use typed_generational_arena::{SmallArena, SmallIndex};
 
 use covalence_kernel::data::term::*;
-use covalence_kernel::fact::{CheckFactIn, Eqn, Holds, Pred0, SetFactUncheckedIn, StoreFailure};
+use covalence_kernel::fact::{CheckFactIn, Rw, Holds, Pred0, SetFactUncheckedIn, StoreFailure};
 use covalence_kernel::store::*;
 
 mod ctx;
@@ -226,14 +226,14 @@ impl SetFactUncheckedIn<CtxId, Holds<Ix>> for TermDb {
     }
 }
 
-impl CheckFactIn<CtxId, Eqn<Ix>> for TermDb {
-    fn check_in(&self, ctx: CtxId, fact: &Eqn<Ix>) -> bool {
+impl CheckFactIn<CtxId, Rw<Ix>> for TermDb {
+    fn check_in(&self, ctx: CtxId, fact: &Rw<Ix>) -> bool {
         self.x[ctx.0].eq_in(fact.0, fact.1)
     }
 }
 
-impl SetFactUncheckedIn<CtxId, Eqn<Ix>> for TermDb {
-    fn set_unchecked_in(&mut self, ctx: CtxId, fact: &Eqn<Ix>) -> Result<(), StoreFailure> {
+impl SetFactUncheckedIn<CtxId, Rw<Ix>> for TermDb {
+    fn set_unchecked_in(&mut self, ctx: CtxId, fact: &Rw<Ix>) -> Result<(), StoreFailure> {
         self.x[ctx.0].set_eq_unchecked(fact.0, fact.1);
         Ok(())
     }

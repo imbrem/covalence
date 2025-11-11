@@ -1338,6 +1338,50 @@ where
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct HasTy<L, R = L> {
+    pub tm: L,
+    pub ty: R,
+}
+
+impl<C, T, I> From<HasTy<T>> for Node<C, T, I> {
+    fn from(has_ty: HasTy<T>) -> Self {
+        Node::HasTy([has_ty.tm, has_ty.ty])
+    }
+}
+
+impl<C, T, I> TryFrom<Node<C, T, I>> for HasTy<T> {
+    type Error = Node<C, T, I>;
+
+    fn try_from(value: Node<C, T, I>) -> Result<Self, Self::Error> {
+        match value {
+            Node::HasTy([a, b]) => Ok(HasTy { tm: a, ty: b }),
+            other => Err(other),
+        }
+    }
+}
+
+impl<C, T, I> PartialEq<HasTy<T>> for Node<C, T, I>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &HasTy<T>) -> bool {
+        match self {
+            Node::HasTy([a, b]) => a == &other.tm && b == &other.ty,
+            _ => false,
+        }
+    }
+}
+
+impl<C, T, I> PartialEq<Node<C, T, I>> for HasTy<T>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &Node<C, T, I>) -> bool {
+        other.eq(self)
+    }
+}
+
 /// A single substitution
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Subst1<L, R = L> {

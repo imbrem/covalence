@@ -1,4 +1,4 @@
-use crate::data::term::{Abs, Close1, Fv, Node, Pi, Sigma, Subst1, TmIn};
+use crate::data::term::{Abs, Close1, Fv, HasTy, Node, Pi, Sigma, Subst1, TmIn};
 use std::{
     fmt::{self, Debug},
     hash::Hash,
@@ -264,6 +264,22 @@ where
 }
 
 impl<D, C, L, R> LocalTerm<C, D> for Sigma<L, R>
+where
+    C: Ctx<D>,
+    L: LocalTerm<C, D>,
+    R: LocalTerm<C, D>,
+{
+}
+
+impl<D, C, L, R> TermSealed<C, D> for HasTy<L, R>
+where
+    C: Ctx<D>,
+    L: TermSealed<C, D>,
+    R: TermSealed<C, D>,
+{
+}
+
+impl<D, C, L, R> LocalTerm<C, D> for HasTy<L, R>
 where
     C: Ctx<D>,
     L: LocalTerm<C, D>,

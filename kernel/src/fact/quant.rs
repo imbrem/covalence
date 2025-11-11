@@ -38,32 +38,16 @@ where
     }
 }
 
-impl<D, C, L, R> CloseChildren<C, D> for HasTy<L, R>
+impl<D, C, L, R> CloseChildren<C, D> for Rw<L, R>
 where
     C: Ctx<D> + Copy,
     L: LocalTerm<C, D>,
     R: LocalTerm<C, D>,
 {
-    type Close1Children = HasTy<Close1<C, L>, Close1<C, R>>;
+    type Close1Children = Rw<Close1<C, L>, Close1<C, R>>;
 
     fn close1_children(self, var: Fv<C>) -> Self::Close1Children {
-        HasTy {
-            tm: Close1::new(var, self.tm),
-            ty: Close1::new(var, self.ty),
-        }
-    }
-}
-
-impl<D, C, L, R> CloseChildren<C, D> for Eqn<L, R>
-where
-    C: Ctx<D> + Copy,
-    L: LocalTerm<C, D>,
-    R: LocalTerm<C, D>,
-{
-    type Close1Children = Eqn<Close1<C, L>, Close1<C, R>>;
-
-    fn close1_children(self, var: Fv<C>) -> Self::Close1Children {
-        Eqn(Close1::new(var, self.0), Close1::new(var, self.1))
+        Rw(Close1::new(var, self.0), Close1::new(var, self.1))
     }
 }
 

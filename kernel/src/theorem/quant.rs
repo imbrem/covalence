@@ -81,8 +81,8 @@ impl<C, S> Seq<C, S> {
         Ok(Seq {
             ctx: self.ctx,
             stmt: Quantified {
-                binder: Forall(var.stmt.ty),
-                body: self.stmt.close1_children(var.stmt.tm),
+                binder: Forall(var.stmt.1.ty),
+                body: self.stmt.close1_children(var.stmt.1.tm),
             },
         })
     }

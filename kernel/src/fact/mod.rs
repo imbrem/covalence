@@ -21,7 +21,7 @@ pub mod atom;
 pub use atom::*;
 
 use crate::{
-    data::term::Node,
+    data::term::HasTy,
     fact::logic::IffIn,
     store::{Ctx, LocalTerm},
 };
@@ -115,38 +115,33 @@ impl<C, S> DerefMut for Seq<C, S> {
 
 /// An equation
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct Eqn<L, R = L>(pub L, pub R);
+pub struct Rw<L, R = L>(pub L, pub R);
 
 /// An equation-in-context
-pub type EqnIn<C, L, R = L> = Seq<C, Eqn<L, R>>;
+pub type RwIn<C, L, R = L> = Seq<C, Rw<L, R>>;
 
-impl<C, L, R> EqnIn<C, L, R> {
+impl<C, L, R> RwIn<C, L, R> {
     /// Construct a new equation-in-context
     pub const fn new(ctx: C, lhs: L, rhs: R) -> Self {
         Seq {
             ctx,
-            stmt: Eqn(lhs, rhs),
+            stmt: Rw(lhs, rhs),
         }
     }
 }
 
 /// A term has the given type
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct HasTy<L, R = L> {
-    pub tm: L,
-    pub ty: R,
-}
-
-impl<C, T, D, CO> IffIn<C, IsWf<Node<CO, T>>, D> for HasTy<T>
-where
-    C: Ctx<D>,
-    T: LocalTerm<C, D>,
-    CO: Ctx<D>,
-{
-    fn iff_in(self, _ctx: &C) -> IsWf<Node<CO, T>> {
-        Is(Wf, Node::HasTy([self.tm, self.ty]))
-    }
-}
+pub type HasTyP<T, Ty = T> = IsWf<HasTy<T, Ty>>;
 
 /// A term has the given type in a context
-pub type HasTyIn<C, T, Ty = T> = Seq<C, HasTy<T, Ty>>;
+pub type HasTyIn<C, T, Ty = T> = Seq<C, HasTyP<T, Ty>>;
+
+impl<C, T, Ty> HasTyIn<C, T, Ty> {
+    /// Construct a new `HasTyIn` fact
+    pub const fn new(ctx: C, tm: T, ty: Ty) -> Self {
+        Seq {
+            ctx,
+            stmt: Is(Wf, HasTy { tm, ty }),
+        }
+    }
+}

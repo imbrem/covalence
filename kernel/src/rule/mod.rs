@@ -2,19 +2,25 @@ use std::marker::PhantomData;
 
 use crate::{
     Theorem,
-    data::term::{Abs, Node},
+    data::term::{Abs, HasTy, Pi, Sigma},
     fact::{
-        HasTyIn, HasTyP, Is, IsTy, IsWf, Seq, Ty, Wf,
+        HasTyIn, HasTyP, Is, IsTy, IsWf, IsWfIn, Seq, Ty, Wf,
         quant::{Forall, Quantified},
     },
     store::{Ctx, LocalTerm},
 };
 
 impl<C, T> Seq<C, Quantified<Forall<T>, IsWf<T>>> {
-    pub fn abs_wf(self) -> Seq<C, IsWf<Node<C, T>>> {
+    pub fn abs_wf(self) -> Seq<C, IsWf<Abs<T>>> {
         Seq {
             ctx: self.ctx,
-            stmt: Is(Wf, Node::Abs([self.stmt.binder.0, self.stmt.body.1])),
+            stmt: Is(
+                Wf,
+                Abs {
+                    ty: self.stmt.binder.0,
+                    body: self.stmt.body.1,
+                },
+            ),
         }
     }
 }
@@ -24,7 +30,7 @@ where
     C: Ctx<D>,
     T: LocalTerm<C, D>,
 {
-    pub fn abs_wf(self) -> Theorem<Seq<C, IsWf<Node<C, T>>>, D> {
+    pub fn abs_wf(self) -> Theorem<Seq<C, IsWf<Abs<T>>>, D> {
         Theorem {
             stmt: self.stmt.abs_wf(),
             id: self.id,
@@ -34,17 +40,29 @@ where
 }
 
 impl<C, T> Seq<C, Quantified<Forall<T>, IsTy<T>>> {
-    pub fn pi_ty(self) -> Seq<C, IsTy<Node<C, T>>> {
+    pub fn pi_ty(self) -> Seq<C, IsTy<Pi<T>>> {
         Seq {
             ctx: self.ctx,
-            stmt: Is(Ty, Node::Pi([self.stmt.binder.0, self.stmt.body.1])),
+            stmt: Is(
+                Ty,
+                Pi {
+                    ty: self.stmt.binder.0,
+                    body: self.stmt.body.1,
+                },
+            ),
         }
     }
 
-    pub fn sigma_ty(self) -> Seq<C, IsTy<Node<C, T>>> {
+    pub fn sigma_ty(self) -> Seq<C, IsTy<Sigma<T>>> {
         Seq {
             ctx: self.ctx,
-            stmt: Is(Ty, Node::Sigma([self.stmt.binder.0, self.stmt.body.1])),
+            stmt: Is(
+                Ty,
+                Sigma {
+                    fst: self.stmt.binder.0,
+                    snd: self.stmt.body.1,
+                },
+            ),
         }
     }
 }
@@ -54,7 +72,7 @@ where
     C: Ctx<D>,
     T: LocalTerm<C, D>,
 {
-    pub fn pi_ty(self) -> Theorem<Seq<C, IsTy<Node<C, T>>>, D> {
+    pub fn pi_ty(self) -> Theorem<Seq<C, IsTy<Pi<T>>>, D> {
         Theorem {
             stmt: self.stmt.pi_ty(),
             id: self.id,
@@ -62,7 +80,7 @@ where
         }
     }
 
-    pub fn sigma_ty(self) -> Theorem<Seq<C, IsTy<Node<C, T>>>, D> {
+    pub fn sigma_ty(self) -> Theorem<Seq<C, IsTy<Sigma<T>>>, D> {
         Theorem {
             stmt: self.stmt.sigma_ty(),
             id: self.id,
@@ -71,40 +89,48 @@ where
     }
 }
 
-impl<C, T> Seq<C, Quantified<Forall<T>, HasTyP<T>>> {
-    pub fn abs_has_ty(self) -> HasTyIn<C, Node<C, T>>
+impl<C, L, R, RTy> Seq<C, Quantified<Forall<L>, HasTyP<R, RTy>>> {
+    pub fn abs_has_ty(self) -> HasTyIn<C, Abs<L, R>, Pi<L, RTy>>
     where
-        T: Clone,
+        L: Clone,
     {
         HasTyIn::new(
             self.ctx,
-            Node::Abs([self.stmt.binder.0.clone(), self.stmt.body.1.tm]),
-            Node::Pi([self.stmt.binder.0, self.stmt.body.1.ty]),
+            Abs {
+                ty: self.stmt.binder.0.clone(),
+                body: self.stmt.body.1.tm,
+            },
+            Pi {
+                ty: self.stmt.binder.0,
+                body: self.stmt.body.1.ty,
+            },
         )
     }
 
-    pub fn abs_has_ty_wf<I>(self) -> Seq<C, IsWf<Abs<T, Node<C, T, I>>>> {
+    pub fn abs_has_ty_wf(self) -> IsWfIn<C, Abs<L, HasTy<R, RTy>>> {
         Seq {
             ctx: self.ctx,
             stmt: Is(
                 Wf,
                 Abs {
                     ty: self.stmt.binder.0,
-                    body: Node::HasTy([self.stmt.body.1.tm, self.stmt.body.1.ty]),
+                    body: self.stmt.body.1,
                 },
             ),
         }
     }
 }
 
-impl<C, T, D> Theorem<Seq<C, Quantified<Forall<T>, HasTyP<T>>>, D>
+impl<C, L, R, RTy, D> Theorem<Seq<C, Quantified<Forall<L>, HasTyP<R, RTy>>>, D>
 where
     C: Ctx<D>,
-    T: LocalTerm<C, D>,
+    L: LocalTerm<C, D>,
+    R: LocalTerm<C, D>,
+    RTy: LocalTerm<C, D>,
 {
-    pub fn abs_has_ty(self) -> Theorem<HasTyIn<C, Node<C, T>>, D>
+    pub fn abs_has_ty(self) -> Theorem<HasTyIn<C, Abs<L, R>, Pi<L, RTy>>, D>
     where
-        T: Clone,
+        L: Clone,
     {
         Theorem {
             stmt: self.stmt.abs_has_ty(),
@@ -113,9 +139,7 @@ where
         }
     }
 
-    pub fn abs_has_ty_wf<I: LocalTerm<C, D>>(
-        self,
-    ) -> Theorem<Seq<C, IsWf<Abs<T, Node<C, T, I>>>>, D> {
+    pub fn abs_has_ty_wf(self) -> Theorem<IsWfIn<C, Abs<L, HasTy<R, RTy>>>, D> {
         Theorem {
             stmt: self.stmt.abs_has_ty_wf(),
             id: self.id,

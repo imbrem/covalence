@@ -1194,52 +1194,6 @@ where
     }
 }
 
-/// An abstraction
-pub struct Abs<L, R = L> {
-    /// The type of the argument
-    pub ty: L,
-    /// The body of the abstraction
-    pub body: R,
-}
-
-impl<C, T, I> From<Abs<T>> for Node<C, T, I> {
-    fn from(abs: Abs<T>) -> Self {
-        Node::Abs([abs.ty, abs.body])
-    }
-}
-
-impl<C, T, I> TryFrom<Node<C, T, I>> for Abs<T> {
-    type Error = Node<C, T, I>;
-
-    fn try_from(value: Node<C, T, I>) -> Result<Self, Self::Error> {
-        match value {
-            Node::Abs([a, b]) => Ok(Abs { ty: a, body: b }),
-            other => Err(other),
-        }
-    }
-}
-
-impl<C, T, I> PartialEq<Abs<T>> for Node<C, T, I>
-where
-    T: PartialEq,
-{
-    fn eq(&self, other: &Abs<T>) -> bool {
-        match self {
-            Node::Abs([a, b]) => a == &other.ty && b == &other.body,
-            _ => false,
-        }
-    }
-}
-
-impl<C, T, I> PartialEq<Node<C, T, I>> for Abs<T>
-where
-    T: PartialEq,
-{
-    fn eq(&self, other: &Node<C, T, I>) -> bool {
-        other.eq(self)
-    }
-}
-
 /// A pi type
 pub struct Pi<L, R = L> {
     /// The type of the argument
@@ -1330,6 +1284,52 @@ where
 }
 
 impl<C, T, I> PartialEq<Node<C, T, I>> for Sigma<T>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &Node<C, T, I>) -> bool {
+        other.eq(self)
+    }
+}
+
+/// An abstraction
+pub struct Abs<L, R = L> {
+    /// The type of the argument
+    pub ty: L,
+    /// The body of the abstraction
+    pub body: R,
+}
+
+impl<C, T, I> From<Abs<T>> for Node<C, T, I> {
+    fn from(abs: Abs<T>) -> Self {
+        Node::Abs([abs.ty, abs.body])
+    }
+}
+
+impl<C, T, I> TryFrom<Node<C, T, I>> for Abs<T> {
+    type Error = Node<C, T, I>;
+
+    fn try_from(value: Node<C, T, I>) -> Result<Self, Self::Error> {
+        match value {
+            Node::Abs([a, b]) => Ok(Abs { ty: a, body: b }),
+            other => Err(other),
+        }
+    }
+}
+
+impl<C, T, I> PartialEq<Abs<T>> for Node<C, T, I>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &Abs<T>) -> bool {
+        match self {
+            Node::Abs([a, b]) => a == &other.ty && b == &other.body,
+            _ => false,
+        }
+    }
+}
+
+impl<C, T, I> PartialEq<Node<C, T, I>> for Abs<T>
 where
     T: PartialEq,
 {

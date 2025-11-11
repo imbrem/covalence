@@ -12,7 +12,7 @@ use crate::fact::{CheckFact, RwIn, SetFactUnchecked};
 use crate::id::KernelId;
 use crate::store::{CtxId, Ix, NodeIx, ReadLocalTerm, TermIndex, TmId, WriteLocalTerm};
 
-pub mod eqn;
+pub mod rw;
 
 pub mod quant;
 

@@ -2,7 +2,7 @@ use thiserror::Error;
 
 use crate::fact::StoreFailure;
 use crate::store::{AddParentFailure, AddVarFailure};
-use crate::theorem::{IdMismatch, eqn::EqMismatch};
+use crate::theorem::{IdMismatch, rw::EqMismatch};
 
 #[derive(Debug, Error, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum KernelError {

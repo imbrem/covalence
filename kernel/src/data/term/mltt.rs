@@ -259,6 +259,18 @@ impl<C, T, I, S> PartialEq<Node<C, T, I, S>> for bool {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
 pub struct Eqn<L, R = L>(L, R);
 
+impl<L, R> Eqn<L, R> {
+    /// Get this equation as a reference
+    pub fn as_ref<'a>(&'a self) -> Eqn<&'a L, &'a R> {
+        Eqn(&self.0, &self.1)
+    }
+
+    /// Get this equation as a mutable reference
+    pub fn as_mut<'a>(&'a mut self) -> Eqn<&'a mut L, &'a mut R> {
+        Eqn(&mut self.0, &mut self.1)
+    }
+}
+
 impl<C, T, I, S> From<Eqn<T>> for Node<C, T, I, S> {
     fn from(eqn: Eqn<T>) -> Self {
         Node::Eqn([eqn.0, eqn.1])
@@ -306,6 +318,24 @@ pub struct Pi<L, R = L> {
     pub body: R,
 }
 
+impl<L, R> Pi<L, R> {
+    /// Get this pi type as a reference
+    pub fn as_ref<'a>(&'a self) -> Pi<&'a L, &'a R> {
+        Pi {
+            ty: &self.ty,
+            body: &self.body,
+        }
+    }
+
+    /// Get this pi type as a mutable reference
+    pub fn as_mut<'a>(&'a mut self) -> Pi<&'a mut L, &'a mut R> {
+        Pi {
+            ty: &mut self.ty,
+            body: &mut self.body,
+        }
+    }
+}
+
 impl<C, T, I, S> From<Pi<T>> for Node<C, T, I, S> {
     fn from(pi: Pi<T>) -> Self {
         Node::Pi([pi.ty, pi.body])
@@ -351,6 +381,24 @@ pub struct Sigma<L, R = L> {
     pub fst: L,
     /// The type of the second component
     pub snd: R,
+}
+
+impl<L, R> Sigma<L, R> {
+    /// Get this sigma type as a reference
+    pub fn as_ref<'a>(&'a self) -> Sigma<&'a L, &'a R> {
+        Sigma {
+            fst: &self.fst,
+            snd: &self.snd,
+        }
+    }
+
+    /// Get this sigma type as a mutable reference
+    pub fn as_mut<'a>(&'a mut self) -> Sigma<&'a mut L, &'a mut R> {
+        Sigma {
+            fst: &mut self.fst,
+            snd: &mut self.snd,
+        }
+    }
 }
 
 impl<C, T, I, S> From<Sigma<T>> for Node<C, T, I, S>
@@ -406,6 +454,24 @@ pub struct Abs<L, R = L> {
     pub body: R,
 }
 
+impl<L, R> Abs<L, R> {
+    /// Get this abstraction as a reference
+    pub fn as_ref<'a>(&'a self) -> Abs<&'a L, &'a R> {
+        Abs {
+            ty: &self.ty,
+            body: &self.body,
+        }
+    }
+
+    /// Get this abstraction as a mutable reference
+    pub fn as_mut<'a>(&'a mut self) -> Abs<&'a mut L, &'a mut R> {
+        Abs {
+            ty: &mut self.ty,
+            body: &mut self.body,
+        }
+    }
+}
+
 impl<C, T, I, S> From<Abs<T>> for Node<C, T, I, S> {
     fn from(abs: Abs<T>) -> Self {
         Node::Abs([abs.ty, abs.body])
@@ -444,10 +510,96 @@ where
     }
 }
 
+/// An application
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
+pub struct App<L, R = L> {
+    /// The function
+    pub func: L,
+    /// The argument
+    pub arg: R,
+}
+
+impl<L, R> App<L, R> {
+    /// Get this application as a reference
+    pub fn as_ref<'a>(&'a self) -> App<&'a L, &'a R> {
+        App {
+            func: &self.func,
+            arg: &self.arg,
+        }
+    }
+
+    /// Get this application as a mutable reference
+    pub fn as_mut<'a>(&'a mut self) -> App<&'a mut L, &'a mut R> {
+        App {
+            func: &mut self.func,
+            arg: &mut self.arg,
+        }
+    }
+}
+
+impl<C, T, I, S> From<App<T>> for Node<C, T, I, S> {
+    fn from(app: App<T>) -> Self {
+        Node::App([app.func, app.arg])
+    }
+}
+
+impl<C, T, I, S> TryFrom<Node<C, T, I, S>> for App<T> {
+    type Error = Node<C, T, I, S>;
+
+    fn try_from(value: Node<C, T, I, S>) -> Result<Self, Self::Error> {
+        match value {
+            Node::App([a, b]) => Ok(App { func: a, arg: b }),
+            other => Err(other),
+        }
+    }
+}
+
+impl<C, T, I, S> PartialEq<App<T>> for Node<C, T, I, S>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &App<T>) -> bool {
+        match self {
+            Node::App([a, b]) => a == &other.func && b == &other.arg,
+            _ => false,
+        }
+    }
+}
+
+impl<C, T, I, S> PartialEq<Node<C, T, I, S>> for App<T>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &Node<C, T, I, S>) -> bool {
+        other.eq(self)
+    }
+}
+
+/// A has-type assertion
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
 pub struct HasTy<L, R = L> {
+    /// The term
     pub tm: L,
+    /// The type
     pub ty: R,
+}
+
+impl<L, R> HasTy<L, R> {
+    /// Get this assertion as a reference
+    pub fn as_ref<'a>(&'a self) -> HasTy<&'a L, &'a R> {
+        HasTy {
+            tm: &self.tm,
+            ty: &self.ty,
+        }
+    }
+
+    /// Get this assertion as a mutable reference
+    pub fn as_mut<'a>(&'a mut self) -> HasTy<&'a mut L, &'a mut R> {
+        HasTy {
+            tm: &mut self.tm,
+            ty: &mut self.ty,
+        }
+    }
 }
 
 impl<C, T, I, S> From<HasTy<T>> for Node<C, T, I, S> {

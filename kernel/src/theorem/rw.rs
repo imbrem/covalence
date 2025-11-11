@@ -118,11 +118,7 @@ where
     T: LocalTerm<C, D>,
 {
     /// A term is equal to its clone
-    pub fn eq_clone(
-        id: KernelId,
-        ctx: C,
-        tm: &T,
-    ) -> Result<Theorem<RwIn<C, &T, T>, D>, KernelError>
+    pub fn eq_clone(id: KernelId, ctx: C, tm: &T) -> Result<Theorem<RwIn<C, &T, T>, D>, KernelError>
     where
         T: Clone,
     {
@@ -238,8 +234,7 @@ where
     }
 }
 
-impl<CN, LC, RC, L, R, LI, RI, D>
-    Node<CN, Theorem<RwIn<LC, L, R>, D>, Theorem<RwIn<RC, LI, RI>, D>>
+impl<CN, LC, RC, L, R, LI, RI, D> Node<CN, Theorem<RwIn<LC, L, R>, D>, Theorem<RwIn<RC, LI, RI>, D>>
 where
     CN: Copy + Ctx<D>,
     LC: Ctx<D>,
@@ -261,7 +256,7 @@ where
         if !self.is_congr() {
             return Err(self);
         }
-        for child in self.syn_children() {
+        for child in self.children() {
             if id != child.id || ctx != child.ctx {
                 return Err(self);
             }
@@ -270,6 +265,7 @@ where
             .map(
                 |tm| (tm.stmt.stmt.0, tm.stmt.stmt.1),
                 |qt| (qt.stmt.stmt.0, qt.stmt.stmt.1),
+                |syn| (syn.stmt.stmt.0, syn.stmt.stmt.1),
             )
             .into_pair();
         Ok(Theorem {

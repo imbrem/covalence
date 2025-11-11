@@ -1,7 +1,7 @@
 use typed_generational_arena::{SmallArena, SmallIndex};
 
 use covalence_kernel::data::term::*;
-use covalence_kernel::fact::{CheckFactIn, Rw, Holds, Pred0, SetFactUncheckedIn, StoreFailure};
+use covalence_kernel::fact::{CheckFactIn, Holds, Pred0, Rw, SetFactUncheckedIn, StoreFailure};
 use covalence_kernel::store::*;
 
 mod ctx;
@@ -85,10 +85,13 @@ impl WriteLocalTerm<TermDb> for TermDb {
 
     fn cons_node_ix(&mut self, ctx: CtxId, tm: NodeIx) -> Ix {
         let ix = self.x[ctx.0].add(tm);
-        let bvi = match tm {
-            Node::Quote(tm) => self.local_bvi(tm.ctx, tm.ix),
-            tm => tm.bvi_with(|x| self.local_bvi(ctx, *x)),
-        };
+        let bvi = tm
+            .map(
+                |ix| self.local_bvi(ctx, ix),
+                |tm| self.local_bvi(tm.ctx, tm.ix),
+                |ix| self.local_bvi(ctx, ix),
+            )
+            .max_bvi();
         self.x[ctx.0].set_bvi_unchecked(ix, bvi);
         ix
     }

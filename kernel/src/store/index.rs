@@ -222,7 +222,8 @@ where
     fn relocatable(&self) -> bool {
         match self {
             Node::Quote(tm) => tm.relocatable(),
-            this => this.syn_children().iter().all(|tm| tm.relocatable()),
+            Node::Close1(close) => close.relocatable(),
+            this => this.children().iter().all(|tm| tm.relocatable()),
         }
     }
 }

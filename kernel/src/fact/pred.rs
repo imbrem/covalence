@@ -46,7 +46,7 @@ bitflags! {
     /// Γ ⊢ P(Π A . B)
     /// ```
     ///
-    /// For the Σ-predicates `P ∈ {IS_SCOPED, IS_WF, IS_TY, IS_EMPTY}`, i.e. `P <= IS_EMPTY`, we
+    /// For the Σ-predicates `P ∈ {IS_SCOPED, IS_WF, IS_TY, IS_EMP}`, i.e. `P <= IS_EMP`, we
     /// have that
     /// ```text
     /// Γ ⊢ P(Σ A . B)
@@ -71,20 +71,20 @@ bitflags! {
     /// assert_ne!(IS_TY, IS_PROP);
     /// assert!(IS_INHAB.contains(IS_TY));
     /// assert_ne!(IS_TY, IS_INHAB);
-    /// assert!(IS_EMPTY.contains(IS_TY));
-    /// assert_ne!(IS_TY, IS_EMPTY);
+    /// assert!(IS_EMP.contains(IS_TY));
+    /// assert_ne!(IS_TY, IS_EMP);
     /// assert!(!IS_PROP.contains(IS_INHAB));
     /// assert!(!IS_INHAB.contains(IS_PROP));
-    /// assert!(!IS_PROP.contains(IS_EMPTY));
-    /// assert!(!IS_EMPTY.contains(IS_PROP));
-    /// assert!(!IS_INHAB.contains(IS_EMPTY));
-    /// assert!(!IS_EMPTY.contains(IS_INHAB));
+    /// assert!(!IS_PROP.contains(IS_EMP));
+    /// assert!(!IS_EMP.contains(IS_PROP));
+    /// assert!(!IS_INHAB.contains(IS_EMP));
+    /// assert!(!IS_EMP.contains(IS_INHAB));
     /// assert_eq!(IS_PROP | IS_INHAB, IS_TT);
-    /// assert_eq!(IS_PROP | IS_EMPTY, IS_FF);
+    /// assert_eq!(IS_PROP | IS_EMP, IS_FF);
     /// assert!(IS_UNIV.contains(IS_INHAB));
     /// assert_ne!(IS_INHAB, IS_UNIV);
     /// assert!(!IS_UNIV.contains(IS_PROP));
-    /// assert!(!IS_UNIV.contains(IS_EMPTY));
+    /// assert!(!IS_UNIV.contains(IS_EMP));
     /// assert_eq!(IS_CONTR, IS_TT | IS_FF | IS_UNIV);
     /// ```
     #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Default, Ord, PartialOrd)]
@@ -100,7 +100,7 @@ bitflags! {
         /// This term is an inhabited type
         const IS_INHAB  = 0b00010111;
         /// This term is an empty type
-        const IS_EMPTY  = 0b00100111;
+        const IS_EMP  = 0b00100111;
         /// This term is equal to the true proposition
         const IS_TT     = 0b00011111;
         /// This term is equal to the false proposition
@@ -131,7 +131,7 @@ impl Pred0 {
     /// Convert this nullary predicate into a unary predicate on a binder
     pub const fn forall(self) -> Pred1 {
         if self.contains(Pred0::IS_CONTR) {
-            Pred1::IS_EMPTY
+            Pred1::IS_EMP
         } else {
             Pred1::empty()
         }
@@ -141,7 +141,7 @@ impl Pred0 {
 impl Pred1 {
     /// Check whether these flags imply a contradiction
     pub const fn is_contr(self) -> bool {
-        self.contains(IS_INHAB.union(IS_EMPTY)) //|| self.contains(IS_UNIV.union(IS_PROP))
+        self.contains(IS_INHAB.union(IS_EMP)) //|| self.contains(IS_UNIV.union(IS_PROP))
     }
 
     /// Convert a bitset to a valid term
@@ -160,7 +160,7 @@ impl Pred1 {
             result = result.union(Pred1::IS_INHAB);
         }
         if self.contains(Pred1::EMPTY_BIT) {
-            result = result.union(Pred1::IS_EMPTY);
+            result = result.union(Pred1::IS_EMP);
         }
         if self.contains(Pred1::UNIV_BIT) {
             result = result.union(Pred1::IS_UNIV);
@@ -199,7 +199,7 @@ pub const IS_PROP: Pred1 = Pred1::IS_PROP;
 pub const IS_INHAB: Pred1 = Pred1::IS_INHAB;
 
 /// A term is an empty type
-pub const IS_EMPTY: Pred1 = Pred1::IS_EMPTY;
+pub const IS_EMP: Pred1 = Pred1::IS_EMP;
 
 /// A term is equal to the true proposition
 pub const IS_TT: Pred1 = Pred1::IS_TT;
@@ -310,13 +310,13 @@ impl IntoPred1 for Inhab {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
-pub struct Empty;
+pub struct Emp;
 
-impl UnaryPredSealed for Empty {}
+impl UnaryPredSealed for Emp {}
 
-impl IntoPred1 for Empty {
+impl IntoPred1 for Emp {
     fn into_pred1(self) -> Pred1 {
-        IS_EMPTY
+        IS_EMP
     }
 }
 
@@ -392,8 +392,8 @@ impl<T> Holds<T> {
         Holds(IS_INHAB, tm)
     }
 
-    pub const fn is_empty(tm: T) -> Self {
-        Holds(IS_EMPTY, tm)
+    pub const fn is_emp(tm: T) -> Self {
+        Holds(IS_EMP, tm)
     }
 
     pub const fn is_true(tm: T) -> Self {
@@ -455,7 +455,7 @@ pub type IsInhab<T> = Is<Inhab, T>;
 pub type IsInhabIn<C, T> = Seq<C, IsInhab<T>>;
 
 /// A term is an empty type
-pub type IsEmpty<T> = Is<Empty, T>;
+pub type IsEmpty<T> = Is<Emp, T>;
 
 /// A term is empty in a context
 pub type IsEmptyIn<C, T> = Seq<C, IsEmpty<T>>;

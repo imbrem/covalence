@@ -40,8 +40,8 @@ impl<T> Atom<T> {
     }
 
     /// A term is an empty type
-    pub const fn is_empty(tm: T) -> Self {
-        Atom::Pred1(IS_EMPTY, tm)
+    pub const fn is_emp(tm: T) -> Self {
+        Atom::Pred1(IS_EMP, tm)
     }
 
     /// A term is equal to the true proposition

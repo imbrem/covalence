@@ -119,125 +119,353 @@ impl<C, T, I, S> PartialEq<ULvl> for Node<C, T, I, S> {
     }
 }
 
-impl<C, T, I, S> From<()> for Node<C, T, I, S> {
-    fn from(_value: ()) -> Self {
-        Node::Unit
+mod kind_sealed {
+    pub trait KindSealed {}
+}
+
+use kind_sealed::KindSealed;
+
+/// A kind of term
+pub trait Kind<const N: usize>: KindSealed {
+    /// Get this term's binders
+    fn binders(&self) -> [Bv; N] {
+        [Bv::new(0); N]
     }
 }
 
-impl<C, T, I, S> TryFrom<Node<C, T, I, S>> for () {
-    type Error = Node<C, T, I, S>;
-
-    fn try_from(value: Node<C, T, I, S>) -> Result<Self, Self::Error> {
-        match value {
-            Node::Unit => Ok(()),
-            _ => Err(value),
-        }
-    }
-}
-
-impl<C, T, I, S> PartialEq<()> for Node<C, T, I, S> {
-    fn eq(&self, _other: &()) -> bool {
-        match self {
-            Node::Unit => true,
-            _ => false,
-        }
-    }
-}
-
-impl<C, T, I, S> PartialEq<Node<C, T, I, S>> for () {
-    fn eq(&self, other: &Node<C, T, I, S>) -> bool {
-        other.eq(self)
-    }
-}
-
+/// A unary term
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
-pub struct Null;
+pub struct Tm1<K, T>(pub K, pub T);
 
-impl<C, T, I, S> From<Null> for Node<C, T, I, S> {
-    fn from(_value: Null) -> Self {
-        Node::Null
+impl<K: Copy, T> Tm1<K, T> {
+    /// Get this term as a reference
+    pub fn as_ref<'a>(&'a self) -> Tm1<K, &'a T> {
+        Tm1(self.0, &self.1)
+    }
+
+    /// Get this term as a mutable reference
+    pub fn as_mut<'a>(&'a mut self) -> Tm1<K, &'a mut T> {
+        Tm1(self.0, &mut self.1)
     }
 }
 
-impl<C, T, I, S> TryFrom<Node<C, T, I, S>> for Null {
-    type Error = Node<C, T, I, S>;
-
-    fn try_from(value: Node<C, T, I, S>) -> Result<Self, Self::Error> {
-        match value {
-            Node::Null => Ok(Null),
-            _ => Err(value),
-        }
+impl<K: Kind<1>> Tm1<K, Bv> {
+    /// Get the bvi of this term
+    pub fn max_bvi(&self) -> Bv {
+        self.1 - self.0.binders()[0]
     }
 }
 
-impl<C, T, I, S> PartialEq<Null> for Node<C, T, I, S> {
-    fn eq(&self, _other: &Null) -> bool {
-        match self {
-            Node::Null => true,
-            _ => false,
-        }
-    }
-}
-
-impl<C, T, I, S> PartialEq<Node<C, T, I, S>> for Null {
-    fn eq(&self, other: &Node<C, T, I, S>) -> bool {
-        other.eq(self)
-    }
-}
-
+/// A binary term
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
-pub struct Empty;
+pub struct Tm2<K, L, R = L>(pub K, pub L, pub R);
 
-impl<C, T, I, S> From<Empty> for Node<C, T, I, S> {
-    fn from(_value: Empty) -> Self {
-        Node::Empty
+impl<K: Copy, L, R> Tm2<K, L, R> {
+    /// Get this term as a reference
+    pub fn as_ref<'a>(&'a self) -> Tm2<K, &'a L, &'a R> {
+        Tm2(self.0, &self.1, &self.2)
+    }
+
+    /// Get this term as a mutable reference
+    pub fn as_mut<'a>(&'a mut self) -> Tm2<K, &'a mut L, &'a mut R> {
+        Tm2(self.0, &mut self.1, &mut self.2)
     }
 }
 
-impl<C, T, I, S> TryFrom<Node<C, T, I, S>> for Empty {
-    type Error = Node<C, T, I, S>;
+impl<K: Kind<2>> Tm2<K, Bv, Bv> {
+    /// Get the maximum bvi of this term
+    pub fn max_bvi(&self) -> Bv {
+        let binders = self.0.binders();
+        (self.1 - binders[0]).max(self.2 - binders[1])
+    }
+}
 
-    fn try_from(value: Node<C, T, I, S>) -> Result<Self, Self::Error> {
-        match value {
-            Node::Empty => Ok(Empty),
-            _ => Err(value),
+/// A ternary term
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
+pub struct Tm3<K, L, M = L, R = L>(pub K, pub L, pub M, pub R);
+
+impl<K: Copy, L, M, R> Tm3<K, L, M, R> {
+    /// Get this term as a reference
+    pub fn as_ref<'a>(&'a self) -> Tm3<K, &'a L, &'a M, &'a R> {
+        Tm3(self.0, &self.1, &self.2, &self.3)
+    }
+
+    /// Get this term as a mutable reference
+    pub fn as_mut<'a>(&'a mut self) -> Tm3<K, &'a mut L, &'a mut M, &'a mut R> {
+        Tm3(self.0, &mut self.1, &mut self.2, &mut self.3)
+    }
+}
+
+impl<K: Kind<3>> Tm3<K, Bv, Bv, Bv> {
+    /// Get the maximum bvi of this term
+    pub fn max_bvi(&self) -> Bv {
+        let binders = self.0.binders();
+        (self.1 - binders[0])
+            .max(self.2 - binders[1])
+            .max(self.3 - binders[2])
+    }
+}
+
+macro_rules! impl_kind0 {
+    ($ty:tt, $node:path) => {
+        impl KindSealed for $ty {}
+
+        impl Kind<0> for $ty {}
+
+        impl<C, T, I, S> From<$ty> for Node<C, T, I, S> {
+            fn from(_value: $ty) -> Self {
+                $node
+            }
         }
-    }
-}
 
-impl<C, T, I, S> PartialEq<Empty> for Node<C, T, I, S> {
-    fn eq(&self, _other: &Empty) -> bool {
-        match self {
-            Node::Empty => true,
-            _ => false,
+        impl<C, T, I, S> TryFrom<Node<C, T, I, S>> for $ty {
+            type Error = Node<C, T, I, S>;
+
+            fn try_from(value: Node<C, T, I, S>) -> Result<Self, Self::Error> {
+                match value {
+                    $node => Ok($ty),
+                    _ => Err(value),
+                }
+            }
         }
-    }
-}
 
-impl<C, T, I, S> PartialEq<Node<C, T, I, S>> for Empty {
-    fn eq(&self, other: &Node<C, T, I, S>) -> bool {
-        other.eq(self)
-    }
-}
-
-impl<C, T, I, S> From<bool> for Node<C, T, I, S> {
-    fn from(value: bool) -> Self {
-        if value { Node::Unit } else { Node::Empty }
-    }
-}
-
-impl<C, T, I, S> TryFrom<Node<C, T, I, S>> for bool {
-    type Error = Node<C, T, I, S>;
-
-    fn try_from(value: Node<C, T, I, S>) -> Result<Self, Self::Error> {
-        match value {
-            Node::Unit => Ok(true),
-            Node::Empty => Ok(false),
-            _ => Err(value),
+        impl<C, T, I, S> PartialEq<$ty> for Node<C, T, I, S> {
+            fn eq(&self, _other: &$ty) -> bool {
+                match self {
+                    $node => true,
+                    _ => false,
+                }
+            }
         }
-    }
+
+        impl<C, T, I, S> PartialEq<Node<C, T, I, S>> for $ty {
+            fn eq(&self, other: &Node<C, T, I, S>) -> bool {
+                match other {
+                    $node => true,
+                    _ => false,
+                }
+            }
+        }
+    };
 }
+
+macro_rules! mk_kind0 {
+    ($ty:tt, $node:path) => {
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
+        pub struct $ty;
+
+        impl_kind0!($ty, $node);
+    };
+}
+
+macro_rules! mk_kind1 {
+    ($name:ident, $kname:ident, $node:path, $binders:expr) => {
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
+        pub struct $kname;
+
+        impl KindSealed for $kname {}
+
+        impl Kind<1> for $kname {
+            fn binders(&self) -> [Bv; 1] {
+                $binders
+            }
+        }
+
+        pub type $name<T> = Tm1<$kname, T>;
+
+        impl<T> $name<T> {
+            pub const fn new(tm: T) -> Self {
+                Tm1($kname, tm)
+            }
+        }
+
+        impl<C, T, I, S> From<$name<T>> for Node<C, T, I, S> {
+            fn from(value: $name<T>) -> Self {
+                $node([value.1])
+            }
+        }
+
+        impl<C, T, I, S> TryFrom<Node<C, T, I, S>> for $name<T> {
+            type Error = Node<C, T, I, S>;
+
+            fn try_from(value: Node<C, T, I, S>) -> Result<Self, Self::Error> {
+                match value {
+                    $node([a]) => Ok(Tm1($kname, a)),
+                    other => Err(other),
+                }
+            }
+        }
+
+        impl<C, T, I, S> PartialEq<$name<T>> for Node<C, T, I, S>
+        where
+            T: PartialEq,
+        {
+            fn eq(&self, other: &$name<T>) -> bool {
+                match self {
+                    $node([a]) => a == &other.1,
+                    _ => false,
+                }
+            }
+        }
+
+        impl<C, T, I, S> PartialEq<Node<C, T, I, S>> for $name<T>
+        where
+            T: PartialEq,
+        {
+            fn eq(&self, other: &Node<C, T, I, S>) -> bool {
+                match other {
+                    $node([a]) => a == &self.1,
+                    _ => false,
+                }
+            }
+        }
+    };
+}
+
+macro_rules! mk_kind2 {
+    ($name:ident, $kname:ident, $node:path, $binders:expr) => {
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
+        pub struct $kname;
+
+        impl KindSealed for $kname {}
+
+        impl Kind<2> for $kname {
+            fn binders(&self) -> [Bv; 2] {
+                $binders
+            }
+        }
+
+        pub type $name<L, R = L> = Tm2<$kname, L, R>;
+
+        impl<L, R> $name<L, R> {
+            pub const fn new(lhs: L, rhs: R) -> Self {
+                Tm2($kname, lhs, rhs)
+            }
+        }
+
+        impl<C, T, I, S> From<$name<T>> for Node<C, T, I, S> {
+            fn from(value: $name<T>) -> Self {
+                $node([value.1, value.2])
+            }
+        }
+
+        impl<C, T, I, S> TryFrom<Node<C, T, I, S>> for $name<T> {
+            type Error = Node<C, T, I, S>;
+
+            fn try_from(value: Node<C, T, I, S>) -> Result<Self, Self::Error> {
+                match value {
+                    $node([a, b]) => Ok(Tm2($kname, a, b)),
+                    other => Err(other),
+                }
+            }
+        }
+
+        impl<C, T, I, S> PartialEq<$name<T>> for Node<C, T, I, S>
+        where
+            T: PartialEq,
+        {
+            fn eq(&self, other: &$name<T>) -> bool {
+                match self {
+                    $node([a, b]) => a == &other.1 && b == &other.2,
+                    _ => false,
+                }
+            }
+        }
+
+        impl<C, T, I, S> PartialEq<Node<C, T, I, S>> for $name<T>
+        where
+            T: PartialEq,
+        {
+            fn eq(&self, other: &Node<C, T, I, S>) -> bool {
+                match other {
+                    $node([a, b]) => a == &self.1 && b == &self.2,
+                    _ => false,
+                }
+            }
+        }
+    };
+}
+
+macro_rules! mk_kind3 {
+    ($name:ident, $kname:ident, $node:path, $binders:expr) => {
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
+        pub struct $kname;
+
+        impl KindSealed for $kname {}
+
+        impl Kind<3> for $kname {
+            fn binders(&self) -> [Bv; 3] {
+                $binders
+            }
+        }
+
+        pub type $name<L, M = L, R = L> = Tm3<$kname, L, M, R>;
+
+        impl<L, M, R> $name<L, M, R> {
+            pub const fn new(lhs: L, mid: M, rhs: R) -> Self {
+                Tm3($kname, lhs, mid, rhs)
+            }
+        }
+
+        impl<C, T, I, S> From<$name<T>> for Node<C, T, I, S> {
+            fn from(value: $name<T>) -> Self {
+                $node([value.1, value.2, value.3])
+            }
+        }
+
+        impl<C, T, I, S> TryFrom<Node<C, T, I, S>> for $name<T> {
+            type Error = Node<C, T, I, S>;
+
+            fn try_from(value: Node<C, T, I, S>) -> Result<Self, Self::Error> {
+                match value {
+                    $node([a, b, c]) => Ok(Tm3($kname, a, b, c)),
+                    other => Err(other),
+                }
+            }
+        }
+
+        impl<C, T, I, S> PartialEq<$name<T>> for Node<C, T, I, S>
+        where
+            T: PartialEq,
+        {
+            fn eq(&self, other: &$name<T>) -> bool {
+                match self {
+                    $node([a, b, c]) => a == &other.1 && b == &other.2 && c == &other.3,
+                    _ => false,
+                }
+            }
+        }
+
+        impl<C, T, I, S> PartialEq<Node<C, T, I, S>> for $name<T>
+        where
+            T: PartialEq,
+        {
+            fn eq(&self, other: &Node<C, T, I, S>) -> bool {
+                match other {
+                    $node([a, b, c]) => a == &self.1 && b == &self.2 && c == &self.3,
+                    _ => false,
+                }
+            }
+        }
+    };
+}
+
+impl_kind0!((), Node::Unit);
+mk_kind0!(Null, Node::Null);
+mk_kind0!(Empty, Node::Empty);
+mk_kind2!(Eqn, EqnK, Node::Eqn, [Bv(0), Bv(0)]);
+mk_kind2!(Pi, PiK, Node::Pi, [Bv(0), Bv(1)]);
+mk_kind2!(Sigma, SigmaK, Node::Sigma, [Bv(0), Bv(1)]);
+mk_kind2!(Abs, AbsK, Node::Abs, [Bv(0), Bv(1)]);
+mk_kind2!(Pair, PairK, Node::Pair, [Bv(0), Bv(0)]);
+mk_kind1!(Fst, FstK, Node::Fst, [Bv(0)]);
+mk_kind1!(Snd, SndK, Node::Snd, [Bv(0)]);
+mk_kind3!(Ite, IteK, Node::Ite, [Bv(0), Bv(1), Bv(1)]);
+mk_kind1!(Trunc, TruncK, Node::Trunc, [Bv(0)]);
+mk_kind2!(Choose, ChooseK, Node::Choose, [Bv(0), Bv(1)]);
+mk_kind1!(Succ, SuccK, Node::Succ, [Bv(0)]);
+mk_kind3!(Natrec, NatrecK, Node::Natrec, [Bv(1), Bv(1), Bv(0)]);
+mk_kind2!(HasTy, HasTyK, Node::HasTy, [Bv(0), Bv(0)]);
 
 impl<C, T, I, S> PartialEq<bool> for Node<C, T, I, S> {
     fn eq(&self, other: &bool) -> bool {
@@ -250,391 +478,6 @@ impl<C, T, I, S> PartialEq<bool> for Node<C, T, I, S> {
 }
 
 impl<C, T, I, S> PartialEq<Node<C, T, I, S>> for bool {
-    fn eq(&self, other: &Node<C, T, I, S>) -> bool {
-        other.eq(self)
-    }
-}
-
-/// An equation
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
-pub struct Eqn<L, R = L>(L, R);
-
-impl<L, R> Eqn<L, R> {
-    /// Get this equation as a reference
-    pub fn as_ref<'a>(&'a self) -> Eqn<&'a L, &'a R> {
-        Eqn(&self.0, &self.1)
-    }
-
-    /// Get this equation as a mutable reference
-    pub fn as_mut<'a>(&'a mut self) -> Eqn<&'a mut L, &'a mut R> {
-        Eqn(&mut self.0, &mut self.1)
-    }
-}
-
-impl<C, T, I, S> From<Eqn<T>> for Node<C, T, I, S> {
-    fn from(eqn: Eqn<T>) -> Self {
-        Node::Eqn([eqn.0, eqn.1])
-    }
-}
-
-impl<C, T, I, S> TryFrom<Node<C, T, I, S>> for Eqn<T> {
-    type Error = Node<C, T, I, S>;
-
-    fn try_from(value: Node<C, T, I, S>) -> Result<Self, Self::Error> {
-        match value {
-            Node::Eqn([a, b]) => Ok(Eqn(a, b)),
-            other => Err(other),
-        }
-    }
-}
-
-impl<C, T, I, S> PartialEq<Eqn<T>> for Node<C, T, I, S>
-where
-    T: PartialEq,
-{
-    fn eq(&self, other: &Eqn<T>) -> bool {
-        match self {
-            Node::Eqn([a, b]) => a == &other.0 && b == &other.1,
-            _ => false,
-        }
-    }
-}
-
-impl<C, T, I, S> PartialEq<Node<C, T, I, S>> for Eqn<T>
-where
-    T: PartialEq,
-{
-    fn eq(&self, other: &Node<C, T, I, S>) -> bool {
-        other.eq(self)
-    }
-}
-
-/// A pi type
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
-pub struct Pi<L, R = L> {
-    /// The type of the argument
-    pub ty: L,
-    /// The body of the pi type
-    pub body: R,
-}
-
-impl<L, R> Pi<L, R> {
-    /// Get this pi type as a reference
-    pub fn as_ref<'a>(&'a self) -> Pi<&'a L, &'a R> {
-        Pi {
-            ty: &self.ty,
-            body: &self.body,
-        }
-    }
-
-    /// Get this pi type as a mutable reference
-    pub fn as_mut<'a>(&'a mut self) -> Pi<&'a mut L, &'a mut R> {
-        Pi {
-            ty: &mut self.ty,
-            body: &mut self.body,
-        }
-    }
-}
-
-impl<C, T, I, S> From<Pi<T>> for Node<C, T, I, S> {
-    fn from(pi: Pi<T>) -> Self {
-        Node::Pi([pi.ty, pi.body])
-    }
-}
-
-impl<C, T, I, S> TryFrom<Node<C, T, I, S>> for Pi<T> {
-    type Error = Node<C, T, I, S>;
-
-    fn try_from(value: Node<C, T, I, S>) -> Result<Self, Self::Error> {
-        match value {
-            Node::Pi([a, b]) => Ok(Pi { ty: a, body: b }),
-            other => Err(other),
-        }
-    }
-}
-
-impl<C, T, I, S> PartialEq<Pi<T>> for Node<C, T, I, S>
-where
-    T: PartialEq,
-{
-    fn eq(&self, other: &Pi<T>) -> bool {
-        match self {
-            Node::Pi([a, b]) => a == &other.ty && b == &other.body,
-            _ => false,
-        }
-    }
-}
-
-impl<C, T, I, S> PartialEq<Node<C, T, I, S>> for Pi<T>
-where
-    T: PartialEq,
-{
-    fn eq(&self, other: &Node<C, T, I, S>) -> bool {
-        other.eq(self)
-    }
-}
-
-/// A sigma type
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
-pub struct Sigma<L, R = L> {
-    /// The type of the first component
-    pub fst: L,
-    /// The type of the second component
-    pub snd: R,
-}
-
-impl<L, R> Sigma<L, R> {
-    /// Get this sigma type as a reference
-    pub fn as_ref<'a>(&'a self) -> Sigma<&'a L, &'a R> {
-        Sigma {
-            fst: &self.fst,
-            snd: &self.snd,
-        }
-    }
-
-    /// Get this sigma type as a mutable reference
-    pub fn as_mut<'a>(&'a mut self) -> Sigma<&'a mut L, &'a mut R> {
-        Sigma {
-            fst: &mut self.fst,
-            snd: &mut self.snd,
-        }
-    }
-}
-
-impl<C, T, I, S> From<Sigma<T>> for Node<C, T, I, S>
-where
-    T: Clone,
-{
-    fn from(sigma: Sigma<T>) -> Self {
-        Node::Sigma([sigma.fst, sigma.snd])
-    }
-}
-
-impl<C, T, I, S> TryFrom<Node<C, T, I, S>> for Sigma<T>
-where
-    T: Clone,
-{
-    type Error = Node<C, T, I, S>;
-
-    fn try_from(value: Node<C, T, I, S>) -> Result<Self, Self::Error> {
-        match value {
-            Node::Sigma([a, b]) => Ok(Sigma { fst: a, snd: b }),
-            other => Err(other),
-        }
-    }
-}
-
-impl<C, T, I, S> PartialEq<Sigma<T>> for Node<C, T, I, S>
-where
-    T: PartialEq,
-{
-    fn eq(&self, other: &Sigma<T>) -> bool {
-        match self {
-            Node::Sigma([a, b]) => a == &other.fst && b == &other.snd,
-            _ => false,
-        }
-    }
-}
-
-impl<C, T, I, S> PartialEq<Node<C, T, I, S>> for Sigma<T>
-where
-    T: PartialEq,
-{
-    fn eq(&self, other: &Node<C, T, I, S>) -> bool {
-        other.eq(self)
-    }
-}
-
-/// An abstraction
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
-pub struct Abs<L, R = L> {
-    /// The type of the argument
-    pub ty: L,
-    /// The body of the abstraction
-    pub body: R,
-}
-
-impl<L, R> Abs<L, R> {
-    /// Get this abstraction as a reference
-    pub fn as_ref<'a>(&'a self) -> Abs<&'a L, &'a R> {
-        Abs {
-            ty: &self.ty,
-            body: &self.body,
-        }
-    }
-
-    /// Get this abstraction as a mutable reference
-    pub fn as_mut<'a>(&'a mut self) -> Abs<&'a mut L, &'a mut R> {
-        Abs {
-            ty: &mut self.ty,
-            body: &mut self.body,
-        }
-    }
-}
-
-impl<C, T, I, S> From<Abs<T>> for Node<C, T, I, S> {
-    fn from(abs: Abs<T>) -> Self {
-        Node::Abs([abs.ty, abs.body])
-    }
-}
-
-impl<C, T, I, S> TryFrom<Node<C, T, I, S>> for Abs<T> {
-    type Error = Node<C, T, I, S>;
-
-    fn try_from(value: Node<C, T, I, S>) -> Result<Self, Self::Error> {
-        match value {
-            Node::Abs([a, b]) => Ok(Abs { ty: a, body: b }),
-            other => Err(other),
-        }
-    }
-}
-
-impl<C, T, I, S> PartialEq<Abs<T>> for Node<C, T, I, S>
-where
-    T: PartialEq,
-{
-    fn eq(&self, other: &Abs<T>) -> bool {
-        match self {
-            Node::Abs([a, b]) => a == &other.ty && b == &other.body,
-            _ => false,
-        }
-    }
-}
-
-impl<C, T, I, S> PartialEq<Node<C, T, I, S>> for Abs<T>
-where
-    T: PartialEq,
-{
-    fn eq(&self, other: &Node<C, T, I, S>) -> bool {
-        other.eq(self)
-    }
-}
-
-/// An application
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
-pub struct App<L, R = L> {
-    /// The function
-    pub func: L,
-    /// The argument
-    pub arg: R,
-}
-
-impl<L, R> App<L, R> {
-    /// Get this application as a reference
-    pub fn as_ref<'a>(&'a self) -> App<&'a L, &'a R> {
-        App {
-            func: &self.func,
-            arg: &self.arg,
-        }
-    }
-
-    /// Get this application as a mutable reference
-    pub fn as_mut<'a>(&'a mut self) -> App<&'a mut L, &'a mut R> {
-        App {
-            func: &mut self.func,
-            arg: &mut self.arg,
-        }
-    }
-}
-
-impl<C, T, I, S> From<App<T>> for Node<C, T, I, S> {
-    fn from(app: App<T>) -> Self {
-        Node::App([app.func, app.arg])
-    }
-}
-
-impl<C, T, I, S> TryFrom<Node<C, T, I, S>> for App<T> {
-    type Error = Node<C, T, I, S>;
-
-    fn try_from(value: Node<C, T, I, S>) -> Result<Self, Self::Error> {
-        match value {
-            Node::App([a, b]) => Ok(App { func: a, arg: b }),
-            other => Err(other),
-        }
-    }
-}
-
-impl<C, T, I, S> PartialEq<App<T>> for Node<C, T, I, S>
-where
-    T: PartialEq,
-{
-    fn eq(&self, other: &App<T>) -> bool {
-        match self {
-            Node::App([a, b]) => a == &other.func && b == &other.arg,
-            _ => false,
-        }
-    }
-}
-
-impl<C, T, I, S> PartialEq<Node<C, T, I, S>> for App<T>
-where
-    T: PartialEq,
-{
-    fn eq(&self, other: &Node<C, T, I, S>) -> bool {
-        other.eq(self)
-    }
-}
-
-/// A has-type assertion
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
-pub struct HasTy<L, R = L> {
-    /// The term
-    pub tm: L,
-    /// The type
-    pub ty: R,
-}
-
-impl<L, R> HasTy<L, R> {
-    /// Get this assertion as a reference
-    pub fn as_ref<'a>(&'a self) -> HasTy<&'a L, &'a R> {
-        HasTy {
-            tm: &self.tm,
-            ty: &self.ty,
-        }
-    }
-
-    /// Get this assertion as a mutable reference
-    pub fn as_mut<'a>(&'a mut self) -> HasTy<&'a mut L, &'a mut R> {
-        HasTy {
-            tm: &mut self.tm,
-            ty: &mut self.ty,
-        }
-    }
-}
-
-impl<C, T, I, S> From<HasTy<T>> for Node<C, T, I, S> {
-    fn from(has_ty: HasTy<T>) -> Self {
-        Node::HasTy([has_ty.tm, has_ty.ty])
-    }
-}
-
-impl<C, T, I, S> TryFrom<Node<C, T, I, S>> for HasTy<T> {
-    type Error = Node<C, T, I, S>;
-
-    fn try_from(value: Node<C, T, I, S>) -> Result<Self, Self::Error> {
-        match value {
-            Node::HasTy([a, b]) => Ok(HasTy { tm: a, ty: b }),
-            other => Err(other),
-        }
-    }
-}
-
-impl<C, T, I, S> PartialEq<HasTy<T>> for Node<C, T, I, S>
-where
-    T: PartialEq,
-{
-    fn eq(&self, other: &HasTy<T>) -> bool {
-        match self {
-            Node::HasTy([a, b]) => a == &other.tm && b == &other.ty,
-            _ => false,
-        }
-    }
-}
-
-impl<C, T, I, S> PartialEq<Node<C, T, I, S>> for HasTy<T>
-where
-    T: PartialEq,
-{
     fn eq(&self, other: &Node<C, T, I, S>) -> bool {
         other.eq(self)
     }

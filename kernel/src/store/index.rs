@@ -1,4 +1,4 @@
-use crate::data::term::{Abs, Close1, Fv, HasTy, Node, Pi, Sigma, Subst1, TmIn};
+use crate::data::term::{Close1, Fv, Kind, Node, Subst1, Tm1, Tm2, Tm3, TmIn};
 use std::{
     fmt::{self, Debug},
     hash::Hash,
@@ -237,6 +237,75 @@ where
     const RELOCATABLE: bool = true;
 }
 
+impl<D, C, K, T> TermSealed<C, D> for Tm1<K, T>
+where
+    C: Ctx<D>,
+    K: Kind<1>,
+    T: TermSealed<C, D>,
+{
+}
+
+impl<D, C, K, T> LocalTerm<C, D> for Tm1<K, T>
+where
+    C: Ctx<D>,
+    K: Kind<1>,
+    T: LocalTerm<C, D>,
+{
+    const RELOCATABLE: bool = T::RELOCATABLE;
+
+    fn relocatable(&self) -> bool {
+        self.1.relocatable()
+    }
+}
+
+impl<D, C, K, L, R> TermSealed<C, D> for Tm2<K, L, R>
+where
+    C: Ctx<D>,
+    K: Kind<2>,
+    L: TermSealed<C, D>,
+    R: TermSealed<C, D>,
+{
+}
+
+impl<D, C, K, L, R> LocalTerm<C, D> for Tm2<K, L, R>
+where
+    C: Ctx<D>,
+    K: Kind<2>,
+    L: LocalTerm<C, D>,
+    R: LocalTerm<C, D>,
+{
+    const RELOCATABLE: bool = L::RELOCATABLE && R::RELOCATABLE;
+
+    fn relocatable(&self) -> bool {
+        self.1.relocatable() && self.2.relocatable()
+    }
+}
+
+impl<D, C, K, L, M, R> TermSealed<C, D> for Tm3<K, L, M, R>
+where
+    C: Ctx<D>,
+    K: Kind<3>,
+    L: TermSealed<C, D>,
+    M: TermSealed<C, D>,
+    R: TermSealed<C, D>,
+{
+}
+
+impl<D, C, K, L, M, R> LocalTerm<C, D> for Tm3<K, L, M, R>
+where
+    C: Ctx<D>,
+    K: Kind<3>,
+    L: LocalTerm<C, D>,
+    M: LocalTerm<C, D>,
+    R: LocalTerm<C, D>,
+{
+    const RELOCATABLE: bool = L::RELOCATABLE && M::RELOCATABLE && R::RELOCATABLE;
+
+    fn relocatable(&self) -> bool {
+        self.1.relocatable() && self.2.relocatable() && self.3.relocatable()
+    }
+}
+
 impl<D, CC, T, C> TermSealed<C, D> for Close1<CC, T>
 where
     C: Ctx<D>,
@@ -255,90 +324,6 @@ where
 
     fn relocatable(&self) -> bool {
         self.tm.relocatable()
-    }
-}
-
-impl<D, C, L, R> TermSealed<C, D> for Abs<L, R>
-where
-    C: Ctx<D>,
-    L: TermSealed<C, D>,
-    R: TermSealed<C, D>,
-{
-}
-
-impl<D, C, L, R> LocalTerm<C, D> for Abs<L, R>
-where
-    C: Ctx<D>,
-    L: LocalTerm<C, D>,
-    R: LocalTerm<C, D>,
-{
-    const RELOCATABLE: bool = L::RELOCATABLE && R::RELOCATABLE;
-
-    fn relocatable(&self) -> bool {
-        self.ty.relocatable() && self.body.relocatable()
-    }
-}
-
-impl<D, C, L, R> TermSealed<C, D> for Pi<L, R>
-where
-    C: Ctx<D>,
-    L: TermSealed<C, D>,
-    R: TermSealed<C, D>,
-{
-}
-
-impl<D, C, L, R> LocalTerm<C, D> for Pi<L, R>
-where
-    C: Ctx<D>,
-    L: LocalTerm<C, D>,
-    R: LocalTerm<C, D>,
-{
-    const RELOCATABLE: bool = L::RELOCATABLE && R::RELOCATABLE;
-
-    fn relocatable(&self) -> bool {
-        self.ty.relocatable() && self.body.relocatable()
-    }
-}
-
-impl<D, C, L, R> TermSealed<C, D> for Sigma<L, R>
-where
-    C: Ctx<D>,
-    L: TermSealed<C, D>,
-    R: TermSealed<C, D>,
-{
-}
-
-impl<D, C, L, R> LocalTerm<C, D> for Sigma<L, R>
-where
-    C: Ctx<D>,
-    L: LocalTerm<C, D>,
-    R: LocalTerm<C, D>,
-{
-    const RELOCATABLE: bool = L::RELOCATABLE && R::RELOCATABLE;
-
-    fn relocatable(&self) -> bool {
-        self.fst.relocatable() && self.snd.relocatable()
-    }
-}
-
-impl<D, C, L, R> TermSealed<C, D> for HasTy<L, R>
-where
-    C: Ctx<D>,
-    L: TermSealed<C, D>,
-    R: TermSealed<C, D>,
-{
-}
-
-impl<D, C, L, R> LocalTerm<C, D> for HasTy<L, R>
-where
-    C: Ctx<D>,
-    L: LocalTerm<C, D>,
-    R: LocalTerm<C, D>,
-{
-    const RELOCATABLE: bool = L::RELOCATABLE && R::RELOCATABLE;
-
-    fn relocatable(&self) -> bool {
-        L::relocatable(&self.tm) && R::relocatable(&self.ty)
     }
 }
 

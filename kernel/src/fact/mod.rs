@@ -141,7 +141,7 @@ impl<C, T, Ty> HasTyIn<C, T, Ty> {
     pub const fn new(ctx: C, tm: T, ty: Ty) -> Self {
         Seq {
             ctx,
-            stmt: Is(Wf, HasTy { tm, ty }),
+            stmt: Is(Wf, HasTy::new(tm, ty)),
         }
     }
 }

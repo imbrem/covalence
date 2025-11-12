@@ -3,206 +3,311 @@ use crate::{
     data::term::{Kind, Node, Tm1, Tm2, Tm3},
     error::KernelError,
     fact::RwIn,
+    id::KernelId,
     store::{Ctx, LocalTerm},
 };
 
 mod transform_sealed {
-    use crate::{error::KernelError, id::KernelId};
+    use crate::{Kernel, store::Ctx};
 
-    pub trait MapIntoEqSealed<C, I, E, St, D> {}
+    pub trait TmRewriterSealed<C, I, O, St, D> {}
 
-    // pub trait MapToEqSealed<C, I, E, St, D> {}
+    pub trait ReadTransformState<C, D> {
+        fn db(&mut self) -> &Kernel<D>;
+    }
 
-    pub trait TransformState<C, D> {
-        fn check(&mut self, ctx: &C, id: KernelId, relocatable: bool) -> Result<(), KernelError>;
+    impl<C, D> ReadTransformState<C, D> for Kernel<D>
+    where
+        C: Ctx<D>,
+    {
+        fn db(&mut self) -> &Kernel<D> {
+            self
+        }
+    }
+
+    impl<C, D> ReadTransformState<C, D> for &Kernel<D>
+    where
+        C: Ctx<D>,
+    {
+        fn db(&mut self) -> &Kernel<D> {
+            self
+        }
+    }
+
+    pub trait WriteTransformState<C, D> {
+        fn db_mut(&mut self) -> &mut Kernel<D>;
+    }
+
+    impl<C, D> WriteTransformState<C, D> for Kernel<D>
+    where
+        C: Ctx<D>,
+    {
+        fn db_mut(&mut self) -> &mut Kernel<D> {
+            self
+        }
     }
 }
 
 use transform_sealed::{
-    MapIntoEqSealed,
+    TmRewriterSealed,
     // MapToEqSealed,
-    TransformState,
 };
 
-pub trait MapIntoEq<C, I, E, St, D>: MapIntoEqSealed<C, I, E, St, D> {
-    type IntoEq: LocalTerm<C, D>;
+/// A context in a kernel
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct CtxIn<C, K = KernelId>(pub K, pub C);
 
-    fn into_eq(self, lhs: I, state: &mut St) -> Result<Self::IntoEq, E>;
+/// Rewrite a term into an equivalent term given a kernel ID and context
+pub trait TmRewriter<C, I, O, St, D>: TmRewriterSealed<C, I, O, St, D> {
+    fn rewrite_tm(self, ctx: CtxIn<C>, lhs: I, state: &mut St) -> Result<O, KernelError>;
 
-    fn assert_into_defeq(&self) -> Result<(), KernelError> {
+    fn assert_defeq(&self) -> Result<(), KernelError> {
         Err(KernelError::RequireDefEq)
     }
 }
 
-impl<C, I, E, St, D> MapIntoEqSealed<C, I, E, St, D> for () {}
-
-impl<C, I, E, St, D> MapIntoEq<C, I, E, St, D> for ()
+impl<C, I, O, St, D> TmRewriterSealed<C, I, O, St, D> for ()
 where
     I: LocalTerm<C, D>,
+    O: LocalTerm<C, D>,
+    I: TryInto<O>,
 {
-    type IntoEq = I;
+}
 
-    fn into_eq(self, lhs: I, _state: &mut St) -> Result<I, E> {
-        Ok(lhs)
+impl<C, I, O, St, D> TmRewriter<C, I, O, St, D> for ()
+where
+    I: LocalTerm<C, D>,
+    O: LocalTerm<C, D>,
+    I: TryInto<O>,
+{
+    fn rewrite_tm(self, _ctx: CtxIn<C>, lhs: I, _state: &mut St) -> Result<O, KernelError> {
+        lhs.try_into().map_err(|_| KernelError::TryIntoFailure)
     }
 
-    fn assert_into_defeq(&self) -> Result<(), KernelError> {
+    fn assert_defeq(&self) -> Result<(), KernelError> {
         Ok(())
     }
 }
 
-impl<C, I, L, R, St, D> MapIntoEqSealed<C, I, KernelError, St, D> for Theorem<RwIn<C, L, R>, D>
+/// Remove an identity node
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
+pub struct RemoveId;
+
+/// Wrap a term in an identity `Node`
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
+pub struct IdNode;
+
+/// Wrap a term in a quote
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
+pub struct QuoteNode;
+
+/// Cons a `Node` in the ambient context
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
+pub struct ConsAmb;
+
+/// Get a `Node` in the ambient context
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
+pub struct GetAmb;
+
+/// Lookup a `Node` in the ambient context
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
+pub struct LookupAmb;
+
+/// Import a `TmId` into an `Ix` in the ambient context
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
+pub struct ImportAmb;
+
+/// Get the import of a `TmId` into an `Ix` in the ambient context
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
+pub struct GetImportAmb;
+
+/// Lookup the import of a `TmId` into an `Ix` in the ambient context
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
+pub struct LookupImportAmb;
+
+impl<C, I, O, L, R, St, D> TmRewriterSealed<C, I, O, St, D> for Theorem<RwIn<C, L, R>, D>
 where
-    C: Ctx<D>,
+    C: Ctx<D> + PartialEq,
     I: LocalTerm<C, D>,
+    O: LocalTerm<C, D>,
     L: LocalTerm<C, D>,
     R: LocalTerm<C, D>,
 {
 }
 
-impl<C, I, L, R, St, D> MapIntoEq<C, I, KernelError, St, D> for Theorem<RwIn<C, L, R>, D>
+impl<C, I, O, L, R, St, D> TmRewriter<C, I, O, St, D> for Theorem<RwIn<C, L, R>, D>
 where
-    C: Ctx<D>,
+    C: Ctx<D> + PartialEq,
     I: LocalTerm<C, D> + PartialEq<L>,
+    O: LocalTerm<C, D>,
     L: LocalTerm<C, D>,
-    R: LocalTerm<C, D>,
-    St: TransformState<C, D>,
+    R: LocalTerm<C, D> + TryInto<O>,
 {
-    type IntoEq = R;
-
-    fn into_eq(self, lhs: I, state: &mut St) -> Result<R, KernelError> {
-        state.check(
-            &self.fact.ctx,
-            self.id,
-            self.0.relocatable() && self.1.relocatable(),
-        )?;
+    fn rewrite_tm(self, ctx: CtxIn<C>, lhs: I, _state: &mut St) -> Result<O, KernelError> {
+        if self.id != ctx.0 {
+            return Err(KernelError::IdMismatch);
+        }
+        if self.ctx != ctx.1 {
+            return Err(KernelError::CtxMismatch);
+        }
         if lhs != self.0 {
             return Err(KernelError::EqMismatch);
         }
-        Ok(self.fact.form.1)
+        self.fact
+            .form
+            .1
+            .try_into()
+            .map_err(|_| KernelError::TryIntoFailure)
     }
 }
 
-impl<MT, MI, MS, C, CN, T, I, S, E, St, D> MapIntoEqSealed<C, Node<CN, T, I, S>, E, St, D>
-    for Node<CN, MT, MI, MS>
+impl<MT, MI, MS, C, CN, T, I, S, TO, IO, SO, St, D>
+    TmRewriterSealed<C, Node<CN, T, I, S>, Node<CN, TO, IO, SO>, St, D> for Node<CN, MT, MI, MS>
 where
-    MT: MapIntoEq<C, T, E, St, D>,
-    MI: MapIntoEq<C, I, E, St, D>,
-    MS: MapIntoEq<C, S, KernelError, St, D>,
+    MT: TmRewriter<C, T, TO, St, D>,
+    MI: TmRewriter<C, I, IO, St, D>,
+    MS: TmRewriter<C, S, SO, St, D>,
     C: Ctx<D>,
     CN: Ctx<D>,
     T: LocalTerm<C, D>,
     I: LocalTerm<C, D>,
+    S: LocalTerm<C, D>,
+    TO: LocalTerm<C, D>,
+    IO: LocalTerm<C, D>,
+    SO: LocalTerm<C, D>,
 {
 }
 
-impl<MT, MI, MS, C, CN, T, I, S, St, D> MapIntoEq<C, Node<CN, T, I, S>, KernelError, St, D>
-    for Node<CN, MT, MI, MS>
+impl<MT, MI, MS, C, CN, T, I, S, TO, IO, SO, St, D>
+    TmRewriter<C, Node<CN, T, I, S>, Node<CN, TO, IO, SO>, St, D> for Node<CN, MT, MI, MS>
 where
-    MT: MapIntoEq<C, T, KernelError, St, D>,
-    MI: MapIntoEq<C, I, KernelError, St, D>,
-    MS: MapIntoEq<C, S, KernelError, St, D>,
-    C: Ctx<D>,
+    MT: TmRewriter<C, T, TO, St, D>,
+    MI: TmRewriter<C, I, IO, St, D>,
+    MS: TmRewriter<C, S, SO, St, D>,
+    C: Ctx<D> + Copy,
     CN: Ctx<D> + PartialEq,
     T: LocalTerm<C, D>,
     I: LocalTerm<C, D>,
+    S: LocalTerm<C, D>,
+    TO: LocalTerm<C, D>,
+    IO: LocalTerm<C, D>,
+    SO: LocalTerm<C, D>,
 {
-    type IntoEq = Node<CN, MT::IntoEq, MI::IntoEq, MS::IntoEq>;
-
-    fn into_eq(self, lhs: Node<CN, T, I, S>, state: &mut St) -> Result<Self::IntoEq, KernelError> {
+    fn rewrite_tm(
+        self,
+        ctx: CtxIn<C>,
+        lhs: Node<CN, T, I, S>,
+        state: &mut St,
+    ) -> Result<Node<CN, TO, IO, SO>, KernelError> {
         let res = self.zip(lhs).map_err(|_| KernelError::ShapeMismatch)?;
-        res.try_map_children(|(map, tm)| map.into_eq(tm, state))?
-            .try_map_import(|(map, tm)| map.into_eq(tm, state))?
+        res.try_map_children(|(map, tm)| map.rewrite_tm(ctx, tm, state))?
+            .try_map_import(|(map, tm)| map.rewrite_tm(ctx, tm, state))?
             .try_map_closures(|(map, tm)| {
-                map.assert_into_defeq()?;
-                map.into_eq(tm, state)
+                map.assert_defeq()?;
+                map.rewrite_tm(ctx, tm, state)
             })
     }
 }
 
-impl<K, M, C, I, E, St, D> MapIntoEqSealed<C, Tm1<K, I>, E, St, D> for Tm1<K, M>
+impl<K, M, C, I, O, St, D> TmRewriterSealed<C, Tm1<K, I>, Tm1<K, O>, St, D> for Tm1<K, M>
 where
-    M: MapIntoEq<C, I, E, St, D>,
+    M: TmRewriter<C, I, O, St, D>,
     K: Kind<1>,
 {
 }
 
-impl<K, M, C, I, E, St, D> MapIntoEq<C, Tm1<K, I>, E, St, D> for Tm1<K, M>
+impl<K, M, C, I, O, St, D> TmRewriter<C, Tm1<K, I>, Tm1<K, O>, St, D> for Tm1<K, M>
 where
     C: Ctx<D>,
-    M: MapIntoEq<C, I, E, St, D>,
+    M: TmRewriter<C, I, O, St, D>,
     K: Kind<1>,
 {
-    type IntoEq = Tm1<K, M::IntoEq>;
-
-    fn into_eq(self, lhs: Tm1<K, I>, state: &mut St) -> Result<Self::IntoEq, E> {
-        Ok(Tm1(lhs.0, self.1.into_eq(lhs.1, state)?))
+    fn rewrite_tm(
+        self,
+        ctx: CtxIn<C>,
+        lhs: Tm1<K, I>,
+        state: &mut St,
+    ) -> Result<Tm1<K, O>, KernelError> {
+        Ok(Tm1(lhs.0, self.1.rewrite_tm(ctx, lhs.1, state)?))
     }
 }
 
-impl<K, M, C, CN, T, I, S, E, St, D> MapIntoEqSealed<C, Node<CN, T, I, S>, E, St, D> for Tm1<K, M>
+impl<K, M, C, CN, T, I, S, O, St, D> TmRewriterSealed<C, Node<CN, T, I, S>, Tm1<K, O>, St, D>
+    for Tm1<K, M>
 where
-    M: MapIntoEq<C, T, E, St, D>,
+    M: TmRewriter<C, T, O, St, D>,
     CN: Ctx<D>,
     T: LocalTerm<C, D>,
     I: LocalTerm<C, D>,
     S: LocalTerm<C, D>,
+    O: LocalTerm<C, D>,
     K: Kind<1>,
 {
 }
 
-impl<K, M, C, CN, T, I, S, St, D> MapIntoEq<C, Node<CN, T, I, S>, KernelError, St, D> for Tm1<K, M>
+impl<K, M, C, CN, T, I, S, O, St, D> TmRewriter<C, Node<CN, T, I, S>, Tm1<K, O>, St, D>
+    for Tm1<K, M>
 where
     C: Ctx<D>,
-    M: MapIntoEq<C, T, KernelError, St, D>,
+    M: TmRewriter<C, T, O, St, D>,
     CN: Ctx<D>,
     T: LocalTerm<C, D>,
     I: LocalTerm<C, D>,
     S: LocalTerm<C, D>,
+    O: LocalTerm<C, D>,
     K: Kind<1>,
     Node<CN, T, I, S>: TryInto<Tm1<K, T>>,
 {
-    type IntoEq = Tm1<K, M::IntoEq>;
-
-    fn into_eq(self, lhs: Node<CN, T, I, S>, state: &mut St) -> Result<Self::IntoEq, KernelError> {
-        self.into_eq(
+    fn rewrite_tm(
+        self,
+        ctx: CtxIn<C>,
+        lhs: Node<CN, T, I, S>,
+        state: &mut St,
+    ) -> Result<Tm1<K, O>, KernelError> {
+        self.rewrite_tm(
+            ctx,
             lhs.try_into().map_err(|_| KernelError::ShapeMismatch)?,
             state,
         )
     }
 }
 
-impl<K, ML, MR, C, IL, IR, E, St, D> MapIntoEqSealed<C, Tm2<K, IL, IR>, E, St, D> for Tm2<K, ML, MR>
+impl<K, ML, MR, C, IL, IR, LO, RO, St, D> TmRewriterSealed<C, Tm2<K, IL, IR>, Tm2<K, LO, RO>, St, D>
+    for Tm2<K, ML, MR>
 where
-    ML: MapIntoEq<C, IL, E, St, D>,
-    MR: MapIntoEq<C, IR, E, St, D>,
+    ML: TmRewriter<C, IL, LO, St, D>,
+    MR: TmRewriter<C, IR, RO, St, D>,
     K: Kind<2>,
 {
 }
 
-impl<K, ML, MR, C, IL, IR, E, St, D> MapIntoEq<C, Tm2<K, IL, IR>, E, St, D> for Tm2<K, ML, MR>
+impl<K, ML, MR, C, IL, IR, LO, RO, St, D> TmRewriter<C, Tm2<K, IL, IR>, Tm2<K, LO, RO>, St, D>
+    for Tm2<K, ML, MR>
 where
-    C: Ctx<D>,
-    ML: MapIntoEq<C, IL, E, St, D>,
-    MR: MapIntoEq<C, IR, E, St, D>,
+    C: Ctx<D> + Copy,
+    ML: TmRewriter<C, IL, LO, St, D>,
+    MR: TmRewriter<C, IR, RO, St, D>,
     K: Kind<2>,
 {
-    type IntoEq = Tm2<K, ML::IntoEq, MR::IntoEq>;
-
-    fn into_eq(self, lhs: Tm2<K, IL, IR>, state: &mut St) -> Result<Self::IntoEq, E> {
+    fn rewrite_tm(
+        self,
+        ctx: CtxIn<C>,
+        lhs: Tm2<K, IL, IR>,
+        state: &mut St,
+    ) -> Result<Tm2<K, LO, RO>, KernelError> {
         Ok(Tm2(
             lhs.0,
-            self.1.into_eq(lhs.1, state)?,
-            self.2.into_eq(lhs.2, state)?,
+            self.1.rewrite_tm(ctx, lhs.1, state)?,
+            self.2.rewrite_tm(ctx, lhs.2, state)?,
         ))
     }
 }
 
-impl<K, ML, MR, C, CN, T, I, S, E, St, D> MapIntoEqSealed<C, Node<CN, T, I, S>, E, St, D>
-    for Tm2<K, ML, MR>
+impl<K, ML, MR, C, CN, T, I, S, LO, RO, St, D>
+    TmRewriterSealed<C, Node<CN, T, I, S>, Tm2<K, LO, RO>, St, D> for Tm2<K, ML, MR>
 where
-    ML: MapIntoEq<C, T, E, St, D>,
-    MR: MapIntoEq<C, T, E, St, D>,
+    ML: TmRewriter<C, T, LO, St, D>,
+    MR: TmRewriter<C, T, RO, St, D>,
     CN: Ctx<D>,
     T: LocalTerm<C, D>,
     I: LocalTerm<C, D>,
@@ -211,12 +316,12 @@ where
 {
 }
 
-impl<K, ML, MR, C, CN, T, I, S, St, D> MapIntoEq<C, Node<CN, T, I, S>, KernelError, St, D>
-    for Tm2<K, ML, MR>
+impl<K, ML, MR, C, CN, T, I, S, LO, RO, St, D>
+    TmRewriter<C, Node<CN, T, I, S>, Tm2<K, LO, RO>, St, D> for Tm2<K, ML, MR>
 where
-    C: Ctx<D>,
-    ML: MapIntoEq<C, T, KernelError, St, D>,
-    MR: MapIntoEq<C, T, KernelError, St, D>,
+    C: Ctx<D> + Copy,
+    ML: TmRewriter<C, T, LO, St, D>,
+    MR: TmRewriter<C, T, RO, St, D>,
     CN: Ctx<D> + PartialEq,
     T: LocalTerm<C, D>,
     I: LocalTerm<C, D>,
@@ -224,53 +329,61 @@ where
     K: Kind<2>,
     Node<CN, T, I, S>: TryInto<Tm2<K, T, T>>,
 {
-    type IntoEq = Tm2<K, ML::IntoEq, MR::IntoEq>;
-
-    fn into_eq(self, lhs: Node<CN, T, I, S>, state: &mut St) -> Result<Self::IntoEq, KernelError> {
-        self.into_eq(
+    fn rewrite_tm(
+        self,
+        ctx: CtxIn<C>,
+        lhs: Node<CN, T, I, S>,
+        state: &mut St,
+    ) -> Result<Tm2<K, LO, RO>, KernelError> {
+        self.rewrite_tm(
+            ctx,
             lhs.try_into().map_err(|_| KernelError::ShapeMismatch)?,
             state,
         )
     }
 }
 
-impl<K, ML, MM, MR, C, IL, IM, IR, E, St, D> MapIntoEqSealed<C, Tm3<K, IL, IM, IR>, E, St, D>
-    for Tm3<K, ML, MM, MR>
+impl<K, ML, MM, MR, C, IL, IM, IR, LO, MO, RO, St, D>
+    TmRewriterSealed<C, Tm3<K, IL, IM, IR>, Tm3<K, LO, MO, RO>, St, D> for Tm3<K, ML, MM, MR>
 where
-    ML: MapIntoEq<C, IL, E, St, D>,
-    MM: MapIntoEq<C, IM, E, St, D>,
-    MR: MapIntoEq<C, IR, E, St, D>,
+    C: Ctx<D> + Copy,
+    ML: TmRewriter<C, IL, LO, St, D>,
+    MM: TmRewriter<C, IM, MO, St, D>,
+    MR: TmRewriter<C, IR, RO, St, D>,
     K: Kind<3>,
 {
 }
 
-impl<K, ML, MM, MR, C, IL, IM, IR, E, St, D> MapIntoEq<C, Tm3<K, IL, IM, IR>, E, St, D>
-    for Tm3<K, ML, MM, MR>
+impl<K, ML, MM, MR, C, IL, IM, IR, LO, MO, RO, St, D>
+    TmRewriter<C, Tm3<K, IL, IM, IR>, Tm3<K, LO, MO, RO>, St, D> for Tm3<K, ML, MM, MR>
 where
-    C: Ctx<D>,
-    ML: MapIntoEq<C, IL, E, St, D>,
-    MM: MapIntoEq<C, IM, E, St, D>,
-    MR: MapIntoEq<C, IR, E, St, D>,
+    C: Ctx<D> + Copy,
+    ML: TmRewriter<C, IL, LO, St, D>,
+    MM: TmRewriter<C, IM, MO, St, D>,
+    MR: TmRewriter<C, IR, RO, St, D>,
     K: Kind<3>,
 {
-    type IntoEq = Tm3<K, ML::IntoEq, MM::IntoEq, MR::IntoEq>;
-
-    fn into_eq(self, lhs: Tm3<K, IL, IM, IR>, state: &mut St) -> Result<Self::IntoEq, E> {
+    fn rewrite_tm(
+        self,
+        ctx: CtxIn<C>,
+        lhs: Tm3<K, IL, IM, IR>,
+        state: &mut St,
+    ) -> Result<Tm3<K, LO, MO, RO>, KernelError> {
         Ok(Tm3(
             lhs.0,
-            self.1.into_eq(lhs.1, state)?,
-            self.2.into_eq(lhs.2, state)?,
-            self.3.into_eq(lhs.3, state)?,
+            self.1.rewrite_tm(ctx, lhs.1, state)?,
+            self.2.rewrite_tm(ctx, lhs.2, state)?,
+            self.3.rewrite_tm(ctx, lhs.3, state)?,
         ))
     }
 }
 
-impl<K, ML, MM, MR, C, CN, T, I, S, E, St, D> MapIntoEqSealed<C, Node<CN, T, I, S>, E, St, D>
-    for Tm3<K, ML, MM, MR>
+impl<K, ML, MM, MR, C, CN, T, I, S, LO, MO, RO, St, D>
+    TmRewriterSealed<C, Node<CN, T, I, S>, Tm3<K, LO, MO, RO>, St, D> for Tm3<K, ML, MM, MR>
 where
-    ML: MapIntoEq<C, T, E, St, D>,
-    MM: MapIntoEq<C, T, E, St, D>,
-    MR: MapIntoEq<C, T, E, St, D>,
+    ML: TmRewriter<C, T, LO, St, D>,
+    MM: TmRewriter<C, T, MO, St, D>,
+    MR: TmRewriter<C, T, RO, St, D>,
     CN: Ctx<D>,
     T: LocalTerm<C, D>,
     I: LocalTerm<C, D>,
@@ -279,13 +392,13 @@ where
 {
 }
 
-impl<K, ML, MM, MR, C, CN, T, I, S, St, D> MapIntoEq<C, Node<CN, T, I, S>, KernelError, St, D>
-    for Tm3<K, ML, MM, MR>
+impl<K, ML, MM, MR, C, CN, T, I, S, LO, MO, RO, St, D>
+    TmRewriter<C, Node<CN, T, I, S>, Tm3<K, LO, MO, RO>, St, D> for Tm3<K, ML, MM, MR>
 where
-    C: Ctx<D>,
-    ML: MapIntoEq<C, T, KernelError, St, D>,
-    MM: MapIntoEq<C, T, KernelError, St, D>,
-    MR: MapIntoEq<C, T, KernelError, St, D>,
+    C: Ctx<D> + Copy,
+    ML: TmRewriter<C, T, LO, St, D>,
+    MM: TmRewriter<C, T, MO, St, D>,
+    MR: TmRewriter<C, T, RO, St, D>,
     CN: Ctx<D> + PartialEq,
     T: LocalTerm<C, D>,
     I: LocalTerm<C, D>,
@@ -293,35 +406,40 @@ where
     K: Kind<3>,
     Node<CN, T, I, S>: TryInto<Tm3<K, T, T, T>>,
 {
-    type IntoEq = Tm3<K, ML::IntoEq, MM::IntoEq, MR::IntoEq>;
-
-    fn into_eq(self, lhs: Node<CN, T, I, S>, state: &mut St) -> Result<Self::IntoEq, KernelError> {
-        self.into_eq(
+    fn rewrite_tm(
+        self,
+        ctx: CtxIn<C>,
+        lhs: Node<CN, T, I, S>,
+        state: &mut St,
+    ) -> Result<Tm3<K, LO, MO, RO>, KernelError> {
+        self.rewrite_tm(
+            ctx,
             lhs.try_into().map_err(|_| KernelError::ShapeMismatch)?,
             state,
         )
     }
 }
 
-impl<T, U, C, I, E, St, D> MapIntoEqSealed<C, I, E, St, D> for (T, U)
-where
-    T: MapIntoEq<C, I, E, St, D>,
-    U: MapIntoEq<C, T::IntoEq, E, St, D>,
-{
-}
+// impl<T, U, C, I, E, St, D> TmRewriterSealed<C, I, E, St, D> for (T, U)
+// where
+//     T: TmRewriter<C, I, E, St, D>,
+//     U: TmRewriter<C, T::IntoRw, E, St, D>,
+// {
+// }
 
-impl<T, U, C, I, E, St, D> MapIntoEq<C, I, E, St, D> for (T, U)
-where
-    T: MapIntoEq<C, I, E, St, D>,
-    U: MapIntoEq<C, T::IntoEq, E, St, D>,
-{
-    type IntoEq = U::IntoEq;
+// impl<T, U, C, I, E, St, D> TmRewriter<C, I, E, St, D> for (T, U)
+// where
+//     C: Ctx<D> + Copy,
+//     T: TmRewriter<C, I, E, St, D>,
+//     U: TmRewriter<C, T::IntoRw, E, St, D>,
+// {
+//     type IntoRw = U::IntoRw;
 
-    fn into_eq(self, lhs: I, state: &mut St) -> Result<Self::IntoEq, E> {
-        let mid = self.0.into_eq(lhs, state)?;
-        self.1.into_eq(mid, state)
-    }
-}
+//     fn rewrite_tm(self, id: KernelId, ctx: C, lhs: I, state: &mut St) -> Result<Self::IntoRw, E> {
+//         let mid = self.0.rewrite_tm(id, ctx, lhs, state)?;
+//         self.1.rewrite_tm(id, ctx, mid, state)
+//     }
+// }
 
 // pub trait MapToEq<C, I, E, St, D>: MapToEqSealed<C, I, E, St, D> {
 //     type ToEq: LocalTerm<C, D>;

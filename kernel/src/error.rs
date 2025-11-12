@@ -24,6 +24,9 @@ pub enum KernelError {
     /// Shape mismatch
     #[error("covalence kernel error: shape mismatch")]
     ShapeMismatch,
+    /// Shape mismatch
+    #[error("covalence kernel error: conversion failure")]
+    TryIntoFailure,
     /// Defeq required
     #[error("covalence kernel error: require definitional equality")]
     RequireDefEq,

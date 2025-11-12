@@ -79,10 +79,10 @@ pub trait ReadLocalTerm<D: TermIndex> {
     ///
     /// Traverses import chains
     fn lookup_ix(&self, ctx: CtxId<D>, tm: TmId<D>) -> Option<Ix<D>> {
-        if let Node::Quote(tm) = self.node(tm.ctx, tm.ix) {
-            if let Some(ix) = self.lookup_ix(ctx, tm) {
-                return Some(ix);
-            }
+        if let Node::Quote(tm) = self.node(tm.ctx, tm.ix)
+            && let Some(ix) = self.lookup_ix(ctx, tm)
+        {
+            return Some(ix);
         }
         if tm.ctx == ctx {
             Some(self.find(ctx, tm.ix))

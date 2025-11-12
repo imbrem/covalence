@@ -51,15 +51,6 @@ where
     }
 }
 
-impl<C, I, L, R, St, D> MapIntoEqSealed<C, I, KernelError, St, D> for &Theorem<RwIn<C, L, R>, D>
-where
-    C: Ctx<D>,
-    I: LocalTerm<C, D>,
-    L: LocalTerm<C, D>,
-    R: LocalTerm<C, D>,
-{
-}
-
 impl<C, I, L, R, St, D> MapIntoEqSealed<C, I, KernelError, St, D> for Theorem<RwIn<C, L, R>, D>
 where
     C: Ctx<D>,
@@ -494,6 +485,15 @@ where
 //         let mid = self.0.to_eq(lhs, state)?;
 //         self.1.into_eq(mid, state)
 //     }
+// }
+
+// impl<C, I, L, R, St, D> MapIntoEqSealed<C, I, KernelError, St, D> for &Theorem<RwIn<C, L, R>, D>
+// where
+//     C: Ctx<D>,
+//     I: LocalTerm<C, D>,
+//     L: LocalTerm<C, D>,
+//     R: LocalTerm<C, D>,
+// {
 // }
 
 // impl<'a, C, I, L, R, St, D> MapIntoEq<C, I, KernelError, St, D> for &'a Theorem<RwIn<C, L, R>, D>

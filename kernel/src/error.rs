@@ -21,6 +21,12 @@ pub enum KernelError {
     /// Equality mismatch
     #[error("covalence kernel error: equality mismatch")]
     EqMismatch,
+    /// Shape mismatch
+    #[error("covalence kernel error: shape mismatch")]
+    ShapeMismatch,
+    /// Defeq required
+    #[error("covalence kernel error: require definitional equality")]
+    RequireDefEq,
     /// Would cause a cycle in the context graph
     #[error("covalence kernel error: adding this parent would cause a cycle")]
     WouldCycle,

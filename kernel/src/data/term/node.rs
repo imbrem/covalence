@@ -148,7 +148,7 @@ impl<C, T, I, S> Node<C, T, I, S> {
     }
 
     /// Map this node's children, potentially returning an error
-    pub fn try_map_subterms<U, E>(
+    pub fn try_map_children<U, E>(
         self,
         f: impl FnMut(T) -> Result<U, E>,
     ) -> Result<Node<C, U, I, S>, E> {
@@ -161,6 +161,14 @@ impl<C, T, I, S> Node<C, T, I, S> {
         g: impl FnOnce(I) -> Result<J, E>,
     ) -> Result<Node<C, T, J, S>, E> {
         self.try_map(Ok, g, Ok)
+    }
+
+    /// Map this node's closures, potentially returning an error
+    pub fn try_map_closures<V, E>(
+        self,
+        syn: impl FnOnce(S) -> Result<V, E>,
+    ) -> Result<Node<C, T, I, V>, E> {
+        self.try_map(Ok, Ok, syn)
     }
 
     /// Map this node's subterms and imports
@@ -183,6 +191,11 @@ impl<C, T, I, S> Node<C, T, I, S> {
     /// Map this node's quotes
     pub fn map_quote<J>(self, g: impl FnOnce(I) -> J) -> Node<C, T, J, S> {
         self.map(|x| x, g, |x| x)
+    }
+
+    /// Map this node's closures
+    pub fn map_closures<V>(self, syn: impl FnOnce(S) -> V) -> Node<C, T, I, V> {
+        self.map(|x| x, |x| x, syn)
     }
 
     /// Get this node's discriminant
@@ -220,6 +233,43 @@ impl<C, T, I, S> Node<C, T, I, S> {
             Node::Subst1(k, [a, b]) => Node::Subst1(*k, [a, b]),
             Node::BWk(k, [a]) => Node::BWk(*k, [a]),
             Node::Close1(close) => Node::Close1(close.as_ref()),
+            Node::Quote(import) => Node::Quote(import),
+        }
+    }
+
+    /// Borrow this node's subterms
+    pub fn subterms_as_ref(&self) -> Node<C, &T, &I, &S>
+    where
+        C: Clone,
+    {
+        match self {
+            Node::Fv(x) => Node::Fv(x.clone()),
+            Node::Bv(i) => Node::Bv(*i),
+            Node::U(level) => Node::U(*level),
+            Node::Empty => Node::Empty,
+            Node::Unit => Node::Unit,
+            Node::Null => Node::Null,
+            Node::Eqn([a, b]) => Node::Eqn([a, b]),
+            Node::Pi([a, b]) => Node::Pi([a, b]),
+            Node::Sigma([a, b]) => Node::Sigma([a, b]),
+            Node::Abs([a, b]) => Node::Abs([a, b]),
+            Node::App([a, b]) => Node::App([a, b]),
+            Node::Pair([a, b]) => Node::Pair([a, b]),
+            Node::Fst([a]) => Node::Fst([a]),
+            Node::Snd([a]) => Node::Snd([a]),
+            Node::Ite([a, b, c]) => Node::Ite([a, b, c]),
+            Node::Trunc([a]) => Node::Trunc([a]),
+            Node::Choose([a, b]) => Node::Choose([a, b]),
+            Node::Nats => Node::Nats,
+            Node::N64(n) => Node::N64(*n),
+            Node::Succ([a]) => Node::Succ([a]),
+            Node::Natrec([a, b, c]) => Node::Natrec([a, b, c]),
+            Node::HasTy([a, b]) => Node::HasTy([a, b]),
+            Node::Invalid => Node::Invalid,
+            Node::Id(n, [a]) => Node::Id(*n, [a]),
+            Node::Subst1(k, [a, b]) => Node::Subst1(*k, [a, b]),
+            Node::BWk(k, [a]) => Node::BWk(*k, [a]),
+            Node::Close1(close) => Node::Close1(close.subterms_as_ref()),
             Node::Quote(import) => Node::Quote(import),
         }
     }
@@ -359,6 +409,65 @@ impl<C, T, I, S> Node<C, T, I, S> {
             self,
             Node::Subst1(_, _) | Node::BWk(_, _) | Node::Close1(_) | Node::Quote(_)
         )
+    }
+
+    /// Zip this node with another node of the same shape
+    pub fn zip<T2, I2, S2>(
+        self,
+        other: Node<C, T2, I2, S2>,
+    ) -> Result<Node<C, (T, T2), (I, I2), (S, S2)>, (Node<C, T, I, S>, Node<C, T2, I2, S2>)>
+    where
+        C: PartialEq,
+    {
+        match (self, other) {
+            (Node::Fv(x), Node::Fv(y)) if x == y => Ok(Node::Fv(x)),
+            (Node::Bv(i), Node::Bv(j)) if i == j => Ok(Node::Bv(i)),
+            (Node::U(level), Node::U(level2)) if level == level2 => Ok(Node::U(level)),
+            (Node::Empty, Node::Empty) => Ok(Node::Empty),
+            (Node::Unit, Node::Unit) => Ok(Node::Unit),
+            (Node::Null, Node::Null) => Ok(Node::Null),
+            (Node::Eqn([a1, b1]), Node::Eqn([a2, b2])) => Ok(Node::Eqn([(a1, a2), (b1, b2)])),
+            (Node::Pi([a1, b1]), Node::Pi([a2, b2])) => Ok(Node::Pi([(a1, a2), (b1, b2)])),
+            (Node::Sigma([a1, b1]), Node::Sigma([a2, b2])) => Ok(Node::Sigma([(a1, a2), (b1, b2)])),
+            (Node::Abs([a1, b1]), Node::Abs([a2, b2])) => Ok(Node::Abs([(a1, a2), (b1, b2)])),
+            (Node::App([a1, b1]), Node::App([a2, b2])) => Ok(Node::App([(a1, a2), (b1, b2)])),
+            (Node::Pair([a1, b1]), Node::Pair([a2, b2])) => Ok(Node::Pair([(a1, a2), (b1, b2)])),
+            (Node::Fst([a1]), Node::Fst([a2])) => Ok(Node::Fst([(a1, a2)])),
+            (Node::Snd([a1]), Node::Snd([a2])) => Ok(Node::Snd([(a1, a2)])),
+            (Node::Ite([a1, b1, c1]), Node::Ite([a2, b2, c2])) => {
+                Ok(Node::Ite([(a1, a2), (b1, b2), (c1, c2)]))
+            }
+            (Node::Trunc([a1]), Node::Trunc([a2])) => Ok(Node::Trunc([(a1, a2)])),
+            (Node::Choose([a1, b1]), Node::Choose([a2, b2])) => {
+                Ok(Node::Choose([(a1, a2), (b1, b2)]))
+            }
+            (Node::Nats, Node::Nats) => Ok(Node::Nats),
+            (Node::N64(n1), Node::N64(n2)) if n1 == n2 => Ok(Node::N64(n1)),
+            (Node::Succ([a1]), Node::Succ([a2])) => Ok(Node::Succ([(a1, a2)])),
+            (Node::Natrec([a1, b1, c1]), Node::Natrec([a2, b2, c2])) => {
+                Ok(Node::Natrec([(a1, a2), (b1, b2), (c1, c2)]))
+            }
+            (Node::HasTy([a1, b1]), Node::HasTy([a2, b2])) => Ok(Node::HasTy([(a1, a2), (b1, b2)])),
+            (Node::Invalid, Node::Invalid) => Ok(Node::Invalid),
+            (Node::Id(n1, [a1]), Node::Id(n2, [a2])) if n1 == n2 => Ok(Node::Id(n1, [(a1, a2)])),
+            (Node::Subst1(k1, [a1, b1]), Node::Subst1(k2, [a2, b2])) if k1 == k2 => {
+                Ok(Node::Subst1(k1, [(a1, a2), (b1, b2)]))
+            }
+            (Node::BWk(shift1, [a1]), Node::BWk(shift2, [a2])) if shift1 == shift2 => {
+                Ok(Node::BWk(shift1, [(a1, a2)]))
+            }
+            (Node::Close1(close1), Node::Close1(close2))
+                if close1.under == close2.under && close1.var == close2.var =>
+            {
+                Ok(Node::Close1(Close1 {
+                    under: close1.under,
+                    var: close1.var,
+                    tm: (close1.tm, close2.tm),
+                }))
+            }
+            (Node::Quote(import1), Node::Quote(import2)) => Ok(Node::Quote((import1, import2))),
+            (a, b) => Err((a, b)),
+        }
     }
 }
 

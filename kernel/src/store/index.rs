@@ -203,19 +203,23 @@ where
     const RELOCATABLE: bool = true;
 }
 
-impl<D, C, T, I> TermSealed<C, D> for Node<C, T, I>
+impl<D, C, CN, T, I, S> TermSealed<C, D> for Node<CN, T, I, S>
 where
     C: Ctx<D>,
+    CN: Ctx<D>,
     T: TermSealed<C, D>,
     I: TermSealed<C, D>,
+    S: TermSealed<C, D>,
 {
 }
 
-impl<D, C, T, I> LocalTerm<C, D> for Node<C, T, I>
+impl<D, C, CN, T, I, S> LocalTerm<C, D> for Node<CN, T, I, S>
 where
     C: Ctx<D>,
+    CN: Ctx<D>,
     T: LocalTerm<C, D>,
     I: LocalTerm<C, D>,
+    S: LocalTerm<C, D>,
 {
     const RELOCATABLE: bool = T::RELOCATABLE && I::RELOCATABLE;
 

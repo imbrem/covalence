@@ -67,6 +67,18 @@ impl<C, T> Close1<C, T> {
         }
     }
 
+    /// Borrow this closure's subterms
+    pub fn subterms_as_ref(&self) -> Close1<C, &T>
+    where
+        C: Clone,
+    {
+        Close1 {
+            under: self.under,
+            var: self.var.clone(),
+            tm: &self.tm,
+        }
+    }
+
     /// Borrow this closure mutably
     pub fn as_mut(&mut self) -> Close1<&mut C, &mut T> {
         Close1 {

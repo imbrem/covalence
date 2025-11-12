@@ -3,49 +3,49 @@ use crate::{
     data::term::{Kind, Node, Tm1, Tm2, Tm3},
     error::KernelError,
     fact::RwIn,
-    id::KernelId,
     store::{Ctx, LocalTerm},
+    theorem::CtxIn,
 };
 
 mod transform_sealed {
-    use crate::{Kernel, store::Ctx};
+    // use crate::{Kernel, store::Ctx};
 
     pub trait TmRewriterSealed<C, I, O, St, D> {}
 
-    pub trait ReadTransformState<C, D> {
-        fn db(&mut self) -> &Kernel<D>;
-    }
+    // pub trait ReadTransformState<C, D> {
+    //     fn db(&mut self) -> &Kernel<D>;
+    // }
 
-    impl<C, D> ReadTransformState<C, D> for Kernel<D>
-    where
-        C: Ctx<D>,
-    {
-        fn db(&mut self) -> &Kernel<D> {
-            self
-        }
-    }
+    // impl<C, D> ReadTransformState<C, D> for Kernel<D>
+    // where
+    //     C: Ctx<D>,
+    // {
+    //     fn db(&mut self) -> &Kernel<D> {
+    //         self
+    //     }
+    // }
 
-    impl<C, D> ReadTransformState<C, D> for &Kernel<D>
-    where
-        C: Ctx<D>,
-    {
-        fn db(&mut self) -> &Kernel<D> {
-            self
-        }
-    }
+    // impl<C, D> ReadTransformState<C, D> for &Kernel<D>
+    // where
+    //     C: Ctx<D>,
+    // {
+    //     fn db(&mut self) -> &Kernel<D> {
+    //         self
+    //     }
+    // }
 
-    pub trait WriteTransformState<C, D> {
-        fn db_mut(&mut self) -> &mut Kernel<D>;
-    }
+    // pub trait WriteTransformState<C, D> {
+    //     fn db_mut(&mut self) -> &mut Kernel<D>;
+    // }
 
-    impl<C, D> WriteTransformState<C, D> for Kernel<D>
-    where
-        C: Ctx<D>,
-    {
-        fn db_mut(&mut self) -> &mut Kernel<D> {
-            self
-        }
-    }
+    // impl<C, D> WriteTransformState<C, D> for Kernel<D>
+    // where
+    //     C: Ctx<D>,
+    // {
+    //     fn db_mut(&mut self) -> &mut Kernel<D> {
+    //         self
+    //     }
+    // }
 }
 
 use transform_sealed::{
@@ -53,13 +53,22 @@ use transform_sealed::{
     // MapToEqSealed,
 };
 
-/// A context in a kernel
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct CtxIn<C, K = KernelId>(pub K, pub C);
-
 /// Rewrite a term into an equivalent term given a kernel ID and context
 pub trait TmRewriter<C, I, O, St, D>: TmRewriterSealed<C, I, O, St, D> {
     fn rewrite_tm(self, ctx: CtxIn<C>, lhs: I, state: &mut St) -> Result<O, KernelError>;
+
+    fn assert_defeq(&self) -> Result<(), KernelError> {
+        Err(KernelError::RequireDefEq)
+    }
+}
+
+/// Generate a rewrite given a kernel ID and context
+pub trait IntoRw<C, I, O, St, D>: TmRewriterSealed<C, I, O, St, D> {
+    fn into_rw(
+        self,
+        ctx: CtxIn<C>,
+        state: &mut St,
+    ) -> Result<Theorem<RwIn<C, I, O>, D>, KernelError>;
 
     fn assert_defeq(&self) -> Result<(), KernelError> {
         Err(KernelError::RequireDefEq)
@@ -158,6 +167,41 @@ where
             .1
             .try_into()
             .map_err(|_| KernelError::TryIntoFailure)
+    }
+}
+
+impl<C, I, O, L, R, St, D> IntoRw<C, I, O, St, D> for Theorem<RwIn<C, L, R>, D>
+where
+    C: Ctx<D> + PartialEq,
+    I: LocalTerm<C, D>,
+    O: LocalTerm<C, D>,
+    L: LocalTerm<C, D> + TryInto<I>,
+    R: LocalTerm<C, D> + TryInto<O>,
+{
+    fn into_rw(
+        self,
+        ctx: CtxIn<C>,
+        _state: &mut St,
+    ) -> Result<Theorem<RwIn<C, I, O>, D>, KernelError> {
+        if self.id != ctx.0 {
+            return Err(KernelError::IdMismatch);
+        }
+        if self.ctx != ctx.1 {
+            return Err(KernelError::CtxMismatch);
+        }
+        let lhs = self
+            .fact
+            .form
+            .0
+            .try_into()
+            .map_err(|_| KernelError::TryIntoFailure)?;
+        let rhs = self
+            .fact
+            .form
+            .1
+            .try_into()
+            .map_err(|_| KernelError::TryIntoFailure)?;
+        Ok(Theorem::new_unchecked(ctx.0, RwIn::new(ctx.1, lhs, rhs)))
     }
 }
 

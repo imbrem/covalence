@@ -81,6 +81,15 @@ impl<F: Debug, D> Debug for Theorem<F, D> {
 }
 
 impl<F, D> Theorem<F, D> {
+    /// Construct a new theorem from a fact and a kernel ID
+    pub(crate) fn new_unchecked(id: KernelId, fact: F) -> Theorem<F, D> {
+        Theorem {
+            fact,
+            id,
+            store: PhantomData,
+        }
+    }
+
     /// Get the kernel ID this theorem belongs to
     pub fn id(self) -> KernelId {
         self.id
@@ -88,20 +97,12 @@ impl<F, D> Theorem<F, D> {
 
     /// Get the statement of this theorem as a reference
     pub fn as_ref(&self) -> Theorem<&F, D> {
-        Theorem {
-            fact: &self.fact,
-            id: self.id,
-            store: PhantomData,
-        }
+        Theorem::new_unchecked(self.id, &self.fact)
     }
 
     /// Get the statement of this theorem as a mutable reference
     pub fn as_mut(&mut self) -> Theorem<&mut F, D> {
-        Theorem {
-            fact: &mut self.fact,
-            id: self.id,
-            store: PhantomData,
-        }
+        Theorem::new_unchecked(self.id, &mut self.fact)
     }
 
     /// Get the underlying fact by value
@@ -120,18 +121,26 @@ impl<F, D> Theorem<F, D> {
     /// A pair of theorems is a theorem of pairs
     pub fn pair<G>(self, other: Theorem<G, D>) -> Result<Theorem<(F, G), D>, IdMismatch> {
         self.compat(&other)?;
-        Ok(Theorem {
-            fact: (self.fact, other.fact),
-            id: self.id,
-            store: PhantomData,
-        })
+        Ok(Theorem::new_unchecked(self.id, (self.fact, other.fact)))
     }
 }
+
+/// A context in a kernel
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct CtxIn<C, K = KernelId>(pub K, pub C);
 
 impl<C, F, D> Theorem<Seq<C, F>, D> {
     /// Get the formula of this sequent by value
     pub fn into_form(self) -> F {
         self.fact.form
+    }
+
+    /// Get the kernel-context pair of this sequent
+    pub fn ctx_in(&self) -> CtxIn<C, KernelId>
+    where
+        C: Copy,
+    {
+        CtxIn(self.id, self.fact.ctx)
     }
 }
 
@@ -141,11 +150,7 @@ where
     G: StableFact<D>,
 {
     fn implies(self) -> Theorem<G, D> {
-        Theorem {
-            fact: self.fact.implies(),
-            id: self.id,
-            store: PhantomData,
-        }
+        Theorem::new_unchecked(self.id, self.fact.implies())
     }
 }
 
@@ -155,11 +160,7 @@ where
     G: StableFact<D>,
 {
     fn iff(self) -> Theorem<G, D> {
-        Theorem {
-            fact: self.fact.iff(),
-            id: self.id,
-            store: PhantomData,
-        }
+        Theorem::new_unchecked(self.id, self.fact.iff())
     }
 }
 
@@ -170,16 +171,8 @@ where
 {
     fn try_iff(self) -> Result<Theorem<G, D>, Self> {
         match self.fact.try_iff() {
-            Ok(fact) => Ok(Theorem {
-                fact,
-                id: self.id,
-                store: PhantomData,
-            }),
-            Err(fact) => Err(Theorem {
-                fact,
-                id: self.id,
-                store: PhantomData,
-            }),
+            Ok(fact) => Ok(Theorem::new_unchecked(self.id, fact)),
+            Err(fact) => Err(Theorem::new_unchecked(self.id, fact)),
         }
     }
 }
@@ -187,22 +180,14 @@ where
 impl<F: Clone, D> Theorem<&F, D> {
     /// Clone the statement of this theorem
     pub fn cloned(self) -> Theorem<F, D> {
-        Theorem {
-            fact: self.fact.clone(),
-            id: self.id,
-            store: PhantomData,
-        }
+        Theorem::new_unchecked(self.id, self.fact.clone())
     }
 }
 
 impl<F: Copy, D> Theorem<&F, D> {
     /// Copy the statement of this theorem
     pub fn copied(self) -> Theorem<F, D> {
-        Theorem {
-            fact: *self.fact,
-            id: self.id,
-            store: PhantomData,
-        }
+        Theorem::new_unchecked(self.id, *self.fact)
     }
 }
 
@@ -239,11 +224,7 @@ impl<D> Kernel<D> {
     ///
     /// This is _unsound_ if the fact is not true!
     pub(crate) fn new_thm<F>(&self, fact: F) -> Theorem<F, D> {
-        Theorem {
-            fact,
-            id: self.id(),
-            store: PhantomData,
-        }
+        Theorem::new_unchecked(self.id(), fact)
     }
 
     /// Cons a term into the context, returning it as an equation

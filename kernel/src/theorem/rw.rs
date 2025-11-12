@@ -101,14 +101,13 @@ where
     where
         T: Clone,
     {
-        Ok(Theorem {
-            fact: RwIn {
+        Ok(Theorem::new_unchecked(
+            id,
+            RwIn {
                 ctx,
                 form: Rw(tm.clone(), tm),
             },
-            id,
-            store: PhantomData,
-        })
+        ))
     }
 }
 
@@ -122,14 +121,13 @@ where
     where
         T: Clone,
     {
-        Ok(Theorem {
-            fact: RwIn {
+        Ok(Theorem::new_unchecked(
+            id,
+            RwIn {
                 ctx,
                 form: Rw(tm, tm.clone()),
             },
-            id,
-            store: PhantomData,
-        })
+        ))
     }
 }
 
@@ -152,14 +150,13 @@ where
         if lhs != rhs {
             return Err(KernelError::EqMismatch);
         }
-        Ok(Theorem {
-            fact: RwIn {
+        Ok(Theorem::new_unchecked(
+            id,
+            RwIn {
                 ctx,
                 form: Rw(lhs, rhs),
             },
-            id,
-            store: PhantomData,
-        })
+        ))
     }
 
     /// Construct an equation using `Into`
@@ -167,14 +164,13 @@ where
     where
         L: Clone + Into<R>,
     {
-        Theorem {
-            fact: RwIn {
+        Theorem::new_unchecked(
+            id,
+            RwIn {
                 ctx,
                 form: Rw(lhs.clone(), lhs.into()),
             },
-            id,
-            store: PhantomData,
-        }
+        )
     }
 
     /// Construct an equation using `TryInto`
@@ -182,23 +178,18 @@ where
     where
         L: Clone + TryInto<R>,
     {
-        Ok(Theorem {
-            fact: RwIn {
+        Ok(Theorem::new_unchecked(
+            id,
+            RwIn {
                 ctx,
                 form: Rw(lhs.clone(), lhs.try_into()?),
             },
-            id,
-            store: PhantomData,
-        })
+        ))
     }
 
     /// Swap the left- and right-hand sides of this equation
     pub fn symm(self) -> Theorem<RwIn<C, R, L>, D> {
-        Theorem {
-            fact: self.fact.symm(),
-            id: self.id,
-            store: PhantomData,
-        }
+        Theorem::new_unchecked(self.id, self.fact.symm())
     }
 
     /// Transitivity of equality
@@ -214,11 +205,10 @@ where
         R2: LocalTerm<C, D>,
     {
         self.compat(&other)?;
-        Ok(Theorem {
-            fact: self.fact.trans(other.fact)?,
-            id: self.id,
-            store: PhantomData,
-        })
+        Ok(Theorem::new_unchecked(
+            self.id,
+            self.fact.trans(other.fact)?,
+        ))
     }
 
     /// Borrow this equation-in-context
@@ -226,11 +216,7 @@ where
     where
         C: Copy,
     {
-        Theorem {
-            fact: self.fact.eqn_as_ref(),
-            id: self.id,
-            store: PhantomData,
-        }
+        Theorem::new_unchecked(self.id, self.fact.eqn_as_ref())
     }
 }
 
@@ -268,13 +254,12 @@ where
                 |syn| (syn.fact.form.0, syn.fact.form.1),
             )
             .into_pair();
-        Ok(Theorem {
-            fact: RwIn {
+        Ok(Theorem::new_unchecked(
+            id,
+            RwIn {
                 ctx,
                 form: Rw(lhs, rhs),
             },
-            id,
-            store: PhantomData,
-        })
+        ))
     }
 }

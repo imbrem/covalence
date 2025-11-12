@@ -126,7 +126,7 @@ mod kind_sealed {
 use kind_sealed::KindSealed;
 
 /// A kind of term
-pub trait Kind<const N: usize>: KindSealed {
+pub trait Kind<const N: usize>: KindSealed + Sized {
     /// Get this term's binders
     fn binders(&self) -> [Bv; N] {
         [Bv::new(0); N]

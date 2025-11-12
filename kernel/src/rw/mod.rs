@@ -1,6 +1,6 @@
 use crate::{
     Theorem,
-    data::term::{Kind, Node, Tm1, Tm2},
+    data::term::{Kind, Node, Tm1, Tm2, Tm3},
     error::KernelError,
     fact::RwIn,
     store::{Ctx, LocalTerm},
@@ -149,6 +149,38 @@ where
     }
 }
 
+impl<K, M, C, CN, T, I, S, E, St, D> MapIntoEqSealed<C, Node<CN, T, I, S>, E, St, D> for Tm1<K, M>
+where
+    M: MapIntoEq<C, T, E, St, D>,
+    CN: Ctx<D>,
+    T: LocalTerm<C, D>,
+    I: LocalTerm<C, D>,
+    S: LocalTerm<C, D>,
+    K: Kind<1>,
+{
+}
+
+impl<K, M, C, CN, T, I, S, St, D> MapIntoEq<C, Node<CN, T, I, S>, KernelError, St, D> for Tm1<K, M>
+where
+    C: Ctx<D>,
+    M: MapIntoEq<C, T, KernelError, St, D>,
+    CN: Ctx<D>,
+    T: LocalTerm<C, D>,
+    I: LocalTerm<C, D>,
+    S: LocalTerm<C, D>,
+    K: Kind<1>,
+    Node<CN, T, I, S>: TryInto<Tm1<K, T>>,
+{
+    type IntoEq = Tm1<K, M::IntoEq>;
+
+    fn into_eq(self, lhs: Node<CN, T, I, S>, state: &mut St) -> Result<Self::IntoEq, KernelError> {
+        self.into_eq(
+            lhs.try_into().map_err(|_| KernelError::ShapeMismatch)?,
+            state,
+        )
+    }
+}
+
 impl<K, ML, MR, C, IL, IR, E, St, D> MapIntoEqSealed<C, Tm2<K, IL, IR>, E, St, D> for Tm2<K, ML, MR>
 where
     ML: MapIntoEq<C, IL, E, St, D>,
@@ -172,6 +204,111 @@ where
             self.1.into_eq(lhs.1, state)?,
             self.2.into_eq(lhs.2, state)?,
         ))
+    }
+}
+
+impl<K, ML, MR, C, CN, T, I, S, E, St, D> MapIntoEqSealed<C, Node<CN, T, I, S>, E, St, D>
+    for Tm2<K, ML, MR>
+where
+    ML: MapIntoEq<C, T, E, St, D>,
+    MR: MapIntoEq<C, T, E, St, D>,
+    CN: Ctx<D>,
+    T: LocalTerm<C, D>,
+    I: LocalTerm<C, D>,
+    S: LocalTerm<C, D>,
+    K: Kind<2>,
+{
+}
+
+impl<K, ML, MR, C, CN, T, I, S, St, D> MapIntoEq<C, Node<CN, T, I, S>, KernelError, St, D>
+    for Tm2<K, ML, MR>
+where
+    C: Ctx<D>,
+    ML: MapIntoEq<C, T, KernelError, St, D>,
+    MR: MapIntoEq<C, T, KernelError, St, D>,
+    CN: Ctx<D> + PartialEq,
+    T: LocalTerm<C, D>,
+    I: LocalTerm<C, D>,
+    S: LocalTerm<C, D>,
+    K: Kind<2>,
+    Node<CN, T, I, S>: TryInto<Tm2<K, T, T>>,
+{
+    type IntoEq = Tm2<K, ML::IntoEq, MR::IntoEq>;
+
+    fn into_eq(self, lhs: Node<CN, T, I, S>, state: &mut St) -> Result<Self::IntoEq, KernelError> {
+        self.into_eq(
+            lhs.try_into().map_err(|_| KernelError::ShapeMismatch)?,
+            state,
+        )
+    }
+}
+
+impl<K, ML, MM, MR, C, IL, IM, IR, E, St, D> MapIntoEqSealed<C, Tm3<K, IL, IM, IR>, E, St, D>
+    for Tm3<K, ML, MM, MR>
+where
+    ML: MapIntoEq<C, IL, E, St, D>,
+    MM: MapIntoEq<C, IM, E, St, D>,
+    MR: MapIntoEq<C, IR, E, St, D>,
+    K: Kind<3>,
+{
+}
+
+impl<K, ML, MM, MR, C, IL, IM, IR, E, St, D> MapIntoEq<C, Tm3<K, IL, IM, IR>, E, St, D>
+    for Tm3<K, ML, MM, MR>
+where
+    C: Ctx<D>,
+    ML: MapIntoEq<C, IL, E, St, D>,
+    MM: MapIntoEq<C, IM, E, St, D>,
+    MR: MapIntoEq<C, IR, E, St, D>,
+    K: Kind<3>,
+{
+    type IntoEq = Tm3<K, ML::IntoEq, MM::IntoEq, MR::IntoEq>;
+
+    fn into_eq(self, lhs: Tm3<K, IL, IM, IR>, state: &mut St) -> Result<Self::IntoEq, E> {
+        Ok(Tm3(
+            lhs.0,
+            self.1.into_eq(lhs.1, state)?,
+            self.2.into_eq(lhs.2, state)?,
+            self.3.into_eq(lhs.3, state)?,
+        ))
+    }
+}
+
+impl<K, ML, MM, MR, C, CN, T, I, S, E, St, D> MapIntoEqSealed<C, Node<CN, T, I, S>, E, St, D>
+    for Tm3<K, ML, MM, MR>
+where
+    ML: MapIntoEq<C, T, E, St, D>,
+    MM: MapIntoEq<C, T, E, St, D>,
+    MR: MapIntoEq<C, T, E, St, D>,
+    CN: Ctx<D>,
+    T: LocalTerm<C, D>,
+    I: LocalTerm<C, D>,
+    S: LocalTerm<C, D>,
+    K: Kind<3>,
+{
+}
+
+impl<K, ML, MM, MR, C, CN, T, I, S, St, D> MapIntoEq<C, Node<CN, T, I, S>, KernelError, St, D>
+    for Tm3<K, ML, MM, MR>
+where
+    C: Ctx<D>,
+    ML: MapIntoEq<C, T, KernelError, St, D>,
+    MM: MapIntoEq<C, T, KernelError, St, D>,
+    MR: MapIntoEq<C, T, KernelError, St, D>,
+    CN: Ctx<D> + PartialEq,
+    T: LocalTerm<C, D>,
+    I: LocalTerm<C, D>,
+    S: LocalTerm<C, D>,
+    K: Kind<3>,
+    Node<CN, T, I, S>: TryInto<Tm3<K, T, T, T>>,
+{
+    type IntoEq = Tm3<K, ML::IntoEq, MM::IntoEq, MR::IntoEq>;
+
+    fn into_eq(self, lhs: Node<CN, T, I, S>, state: &mut St) -> Result<Self::IntoEq, KernelError> {
+        self.into_eq(
+            lhs.try_into().map_err(|_| KernelError::ShapeMismatch)?,
+            state,
+        )
     }
 }
 

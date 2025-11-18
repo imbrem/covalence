@@ -423,15 +423,18 @@ pub trait GlobalTerm<D>: LocalTerm<(), D, ()> {}
 
 impl<D, T> GlobalTerm<D> for T where T: LocalTerm<(), D, ()> {}
 
-pub trait Segment<D: TermIndex, S = KernelId>: Ctx<D, S> {
-    fn segment_id(&self, db: &D) -> CtxId<D>;
+/// A segment is a context telescope associated with a well-defined interpretation ID
+///
+/// The segment context is _not_ necessarily the base context of the telescope, though!
+pub trait Segment<D: TermIndex, S = KernelId>: CtxTelescope<D, S> {
+    fn seg_ctx(&self, db: &D) -> CtxId<D>;
 }
 
 impl<D> Segment<D> for CtxId<D>
 where
     D: TermIndex,
 {
-    fn segment_id(&self, _db: &D) -> CtxId<D> {
+    fn seg_ctx(&self, _db: &D) -> CtxId<D> {
         *self
     }
 }
@@ -474,12 +477,12 @@ where
     }
 
     fn get_val(&self, ctx: C, db: &D) -> Option<TmId<D>> {
-        let ctx = ctx.segment_id(db);
+        let ctx = ctx.seg_ctx(db);
         Some(db.val(ctx, *self))
     }
 
     fn cons_val(&self, ctx: C, db: &mut D) -> TmId<D> {
-        let ctx = ctx.segment_id(db);
+        let ctx = ctx.seg_ctx(db);
         db.val(ctx, *self)
     }
 }
@@ -520,7 +523,7 @@ where
     fn get_subterms_in(&self, ctx: C, db: &D) -> Option<Self::IxSubterms> {
         self.as_ref()
             .try_map(
-                |ctx| Ok(ctx.segment_id(db)),
+                |ctx| Ok(ctx.seg_ctx(db)),
                 |tm| tm.get_in(ctx, db).ok_or(()),
                 |qt| qt.get_val(ctx, db).ok_or(()),
                 |syn| syn.get_in(ctx, db).ok_or(()),
@@ -541,7 +544,7 @@ where
     fn get_subterms_val(&self, ctx: C, db: &D) -> Option<Self::ValSubterms> {
         self.as_ref()
             .try_map(
-                |ctx| Ok(ctx.segment_id(db)),
+                |ctx| Ok(ctx.seg_ctx(db)),
                 |tm| tm.get_val(ctx, db).ok_or(()),
                 |qt| qt.get_val(ctx, db).ok_or(()),
                 |syn| syn.get_val(ctx, db).ok_or(()),

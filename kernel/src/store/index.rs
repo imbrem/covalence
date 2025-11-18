@@ -1,4 +1,8 @@
-use crate::data::term::{Close1, Fv, Kind, Node, Subst1, Tm1, Tm2, Tm3, TmIn};
+use crate::{
+    data::term::{Close1, Fv, Kind, Node, Subst1, Tm1, Tm2, Tm3, TmIn},
+    id::KernelId,
+    store::index::term_sealed::SessionSealed,
+};
 use std::{
     fmt::{self, Debug},
     hash::Hash,
@@ -130,28 +134,78 @@ pub type NodeTm<D> = Node<CtxId<D>, TmId<D>>;
 pub type FvId<D> = Fv<CtxId<D>>;
 
 mod term_sealed {
-    pub trait CtxSealed<D> {}
+    use crate::id::KernelId;
 
-    pub trait TermSealed<C, D> {}
+    pub trait SessionSealed<D> {}
+
+    pub trait CtxSealed<D, S = KernelId> {}
+
+    pub trait TelescopeSealed<C, D, S = KernelId> {}
+
+    pub trait TermSealed<C, D, S = KernelId> {}
 }
 
-use term_sealed::{CtxSealed, TermSealed};
+use term_sealed::{CtxSealed, TelescopeSealed, TermSealed};
+
+/// A region for a given datastore
+pub trait Session<D>: SessionSealed<D> {
+    /// Whether this is always the global session
+    const IS_GLOBAL: bool;
+
+    /// Whether this is the global session
+    fn is_global(&self) -> bool {
+        Self::IS_GLOBAL
+    }
+}
+
+impl<D> SessionSealed<D> for () {}
+
+impl<D> Session<D> for () {
+    const IS_GLOBAL: bool = true;
+}
+
+impl<D> SessionSealed<D> for KernelId {}
+
+impl<D> Session<D> for KernelId {
+    const IS_GLOBAL: bool = false;
+}
+
+/// A context in the datastore, potentially equipped with a telescope
+pub trait CtxTelescope<D, S = KernelId>: CtxSealed<D, S> {
+    /// This context's base component
+    type Base: Ctx<D, S>;
+}
 
 /// A context in the datastore
-pub trait Ctx<D>: CtxSealed<D> {}
+pub trait Ctx<D, S = KernelId>: CtxTelescope<D, S> {}
 
 impl<D> CtxSealed<D> for () {}
+
+impl<D> CtxTelescope<D> for () {
+    type Base = ();
+}
 
 impl<D> Ctx<D> for () {}
 
 impl<D: TermIndex> CtxSealed<D> for CtxId<D> {}
 
+impl<D: TermIndex> CtxTelescope<D> for CtxId<D> {
+    type Base = CtxId<D>;
+}
+
 impl<D: TermIndex> Ctx<D> for CtxId<D> {}
+
+/// A telescope in the datastore
+pub trait Telescope<C, D, S = KernelId>: TelescopeSealed<C, D, S> {}
+
+impl<C, D, S> TelescopeSealed<C, D, S> for () where C: Ctx<D, S> {}
+
+impl<C, D, S> Telescope<C, D, S> for () where C: Ctx<D, S> {}
 
 /// A local term in the datastore
 ///
 /// A _local_ term can be interpreted as a term given a context ID
-pub trait LocalTerm<C, D>: TermSealed<C, D> {
+pub trait LocalTerm<C, D, S = KernelId>: TermSealed<C, D, S> {
     /// Whether this term type can always be relocated
     const RELOCATABLE: bool;
 
@@ -167,17 +221,17 @@ impl<D: TermIndex> LocalTerm<CtxId<D>, D> for Ix<D> {
     const RELOCATABLE: bool = false;
 }
 
-impl<D, C, T> TermSealed<C, D> for &T
+impl<D, C, T, S> TermSealed<C, D, S> for &T
 where
-    C: Ctx<D>,
-    T: TermSealed<C, D>,
+    C: Ctx<D, S>,
+    T: TermSealed<C, D, S>,
 {
 }
 
-impl<D, C, T> LocalTerm<C, D> for &T
+impl<D, C, T, S> LocalTerm<C, D, S> for &T
 where
-    C: Ctx<D>,
-    T: LocalTerm<C, D>,
+    C: Ctx<D, S>,
+    T: LocalTerm<C, D, S>,
 {
     const RELOCATABLE: bool = T::RELOCATABLE;
 
@@ -186,42 +240,42 @@ where
     }
 }
 
-impl<D, C, T, CO> TermSealed<CO, D> for TmIn<C, T>
+impl<D, C, T, CO, S> TermSealed<CO, D, S> for TmIn<C, T>
 where
-    C: Ctx<D>,
-    T: LocalTerm<C, D>,
-    CO: Ctx<D>,
+    C: Ctx<D, S>,
+    T: LocalTerm<C, D, S>,
+    CO: Ctx<D, S>,
 {
 }
 
-impl<D, C, T, CO> LocalTerm<CO, D> for TmIn<C, T>
+impl<D, C, T, CO, S> LocalTerm<CO, D, S> for TmIn<C, T>
 where
-    C: Ctx<D>,
-    T: LocalTerm<C, D>,
-    CO: Ctx<D>,
+    C: Ctx<D, S>,
+    T: LocalTerm<C, D, S>,
+    CO: Ctx<D, S>,
 {
     const RELOCATABLE: bool = true;
 }
 
-impl<D, C, CN, T, I, S> TermSealed<C, D> for Node<CN, T, I, S>
+impl<D, C, CN, T, I, X, S> TermSealed<C, D, S> for Node<CN, T, I, X>
 where
-    C: Ctx<D>,
-    CN: Ctx<D>,
-    T: TermSealed<C, D>,
-    I: TermSealed<C, D>,
-    S: TermSealed<C, D>,
+    C: Ctx<D, S>,
+    CN: Ctx<D, S>,
+    T: TermSealed<C, D, S>,
+    I: TermSealed<C, D, S>,
+    X: TermSealed<C, D, S>,
 {
 }
 
-impl<D, C, CN, T, I, S> LocalTerm<C, D> for Node<CN, T, I, S>
+impl<D, C, CN, T, I, X, S> LocalTerm<C, D, S> for Node<CN, T, I, X>
 where
-    C: Ctx<D>,
-    CN: Ctx<D>,
-    T: LocalTerm<C, D>,
-    I: LocalTerm<C, D>,
-    S: LocalTerm<C, D>,
+    C: Ctx<D, S>,
+    CN: Ctx<D, S>,
+    T: LocalTerm<C, D, S>,
+    I: LocalTerm<C, D, S>,
+    X: LocalTerm<C, D, S>,
 {
-    const RELOCATABLE: bool = T::RELOCATABLE && I::RELOCATABLE;
+    const RELOCATABLE: bool = T::RELOCATABLE && I::RELOCATABLE && X::RELOCATABLE;
 
     fn relocatable(&self) -> bool {
         match self {
@@ -232,28 +286,28 @@ where
     }
 }
 
-impl<D, C> TermSealed<C, D> for Fv<C> where C: Ctx<D> {}
+impl<D, C, S> TermSealed<C, D, S> for Fv<C> where C: Ctx<D, S> {}
 
-impl<D, C> LocalTerm<C, D> for Fv<C>
+impl<D, C, S> LocalTerm<C, D, S> for Fv<C>
 where
-    C: Ctx<D>,
+    C: Ctx<D, S>,
 {
     const RELOCATABLE: bool = true;
 }
 
-impl<D, C, K, T> TermSealed<C, D> for Tm1<K, T>
+impl<D, C, K, T, S> TermSealed<C, D, S> for Tm1<K, T>
 where
-    C: Ctx<D>,
+    C: Ctx<D, S>,
     K: Kind<1>,
-    T: TermSealed<C, D>,
+    T: TermSealed<C, D, S>,
 {
 }
 
-impl<D, C, K, T> LocalTerm<C, D> for Tm1<K, T>
+impl<D, C, K, T, S> LocalTerm<C, D, S> for Tm1<K, T>
 where
-    C: Ctx<D>,
+    C: Ctx<D, S>,
     K: Kind<1>,
-    T: LocalTerm<C, D>,
+    T: LocalTerm<C, D, S>,
 {
     const RELOCATABLE: bool = T::RELOCATABLE;
 
@@ -262,21 +316,21 @@ where
     }
 }
 
-impl<D, C, K, L, R> TermSealed<C, D> for Tm2<K, L, R>
+impl<D, C, K, L, R, S> TermSealed<C, D, S> for Tm2<K, L, R>
 where
-    C: Ctx<D>,
+    C: Ctx<D, S>,
     K: Kind<2>,
-    L: TermSealed<C, D>,
-    R: TermSealed<C, D>,
+    L: TermSealed<C, D, S>,
+    R: TermSealed<C, D, S>,
 {
 }
 
-impl<D, C, K, L, R> LocalTerm<C, D> for Tm2<K, L, R>
+impl<D, C, K, L, R, S> LocalTerm<C, D, S> for Tm2<K, L, R>
 where
-    C: Ctx<D>,
+    C: Ctx<D, S>,
     K: Kind<2>,
-    L: LocalTerm<C, D>,
-    R: LocalTerm<C, D>,
+    L: LocalTerm<C, D, S>,
+    R: LocalTerm<C, D, S>,
 {
     const RELOCATABLE: bool = L::RELOCATABLE && R::RELOCATABLE;
 
@@ -285,23 +339,23 @@ where
     }
 }
 
-impl<D, C, K, L, M, R> TermSealed<C, D> for Tm3<K, L, M, R>
+impl<D, C, K, L, M, R, S> TermSealed<C, D, S> for Tm3<K, L, M, R>
 where
-    C: Ctx<D>,
+    C: Ctx<D, S>,
     K: Kind<3>,
-    L: TermSealed<C, D>,
-    M: TermSealed<C, D>,
-    R: TermSealed<C, D>,
+    L: TermSealed<C, D, S>,
+    M: TermSealed<C, D, S>,
+    R: TermSealed<C, D, S>,
 {
 }
 
-impl<D, C, K, L, M, R> LocalTerm<C, D> for Tm3<K, L, M, R>
+impl<D, C, K, L, M, R, S> LocalTerm<C, D, S> for Tm3<K, L, M, R>
 where
-    C: Ctx<D>,
+    C: Ctx<D, S>,
     K: Kind<3>,
-    L: LocalTerm<C, D>,
-    M: LocalTerm<C, D>,
-    R: LocalTerm<C, D>,
+    L: LocalTerm<C, D, S>,
+    M: LocalTerm<C, D, S>,
+    R: LocalTerm<C, D, S>,
 {
     const RELOCATABLE: bool = L::RELOCATABLE && M::RELOCATABLE && R::RELOCATABLE;
 
@@ -310,19 +364,19 @@ where
     }
 }
 
-impl<D, CC, T, C> TermSealed<C, D> for Close1<CC, T>
+impl<D, CC, T, C, S> TermSealed<C, D, S> for Close1<CC, T>
 where
-    C: Ctx<D>,
-    CC: Ctx<D>,
-    T: TermSealed<C, D>,
+    C: Ctx<D, S>,
+    CC: Ctx<D, S>,
+    T: TermSealed<C, D, S>,
 {
 }
 
-impl<D, CC, T, C> LocalTerm<C, D> for Close1<CC, T>
+impl<D, CC, T, C, S> LocalTerm<C, D, S> for Close1<CC, T>
 where
-    C: Ctx<D>,
-    CC: Ctx<D>,
-    T: LocalTerm<C, D>,
+    C: Ctx<D, S>,
+    CC: Ctx<D, S>,
+    T: LocalTerm<C, D, S>,
 {
     const RELOCATABLE: bool = T::RELOCATABLE;
 
@@ -331,19 +385,19 @@ where
     }
 }
 
-impl<D, C, L, R> TermSealed<C, D> for Subst1<L, R>
+impl<D, C, L, R, S> TermSealed<C, D, S> for Subst1<L, R>
 where
-    C: Ctx<D>,
-    L: TermSealed<C, D>,
-    R: TermSealed<C, D>,
+    C: Ctx<D, S>,
+    L: TermSealed<C, D, S>,
+    R: TermSealed<C, D, S>,
 {
 }
 
-impl<D, C, L, R> LocalTerm<C, D> for Subst1<L, R>
+impl<D, C, L, R, S> LocalTerm<C, D, S> for Subst1<L, R>
 where
-    C: Ctx<D>,
-    L: LocalTerm<C, D>,
-    R: LocalTerm<C, D>,
+    C: Ctx<D, S>,
+    L: LocalTerm<C, D, S>,
+    R: LocalTerm<C, D, S>,
 {
     const RELOCATABLE: bool = L::RELOCATABLE && R::RELOCATABLE;
 
@@ -355,6 +409,13 @@ where
 /// A term in the datastore
 ///
 /// Unlike a local term, this may be interpreted without a context ID
-pub trait Term<D>: LocalTerm<(), D> {}
+pub trait Term<D, S = KernelId>: LocalTerm<(), D, S> {}
 
-impl<D, T: LocalTerm<(), D>> Term<D> for T {}
+impl<D, T, S> Term<D, S> for T where T: LocalTerm<(), D, S> {}
+
+/// A global term
+///
+/// Unlike a (local) term, this may be interpreted without a context ID _or_ session ID
+pub trait GlobalTerm<D>: LocalTerm<(), D, ()> {}
+
+impl<D, T> GlobalTerm<D> for T where T: LocalTerm<(), D, ()> {}

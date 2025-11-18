@@ -4,7 +4,7 @@ use crate::{
     error::KernelError,
     fact::RwIn,
     store::{Ctx, LocalTerm},
-    theorem::CtxIn,
+    theorem::Env,
 };
 
 mod transform_sealed {
@@ -55,7 +55,7 @@ use transform_sealed::{
 
 /// Rewrite a term into an equivalent term given a kernel ID and context
 pub trait TmRewriter<C, I, O, St, D>: TmRewriterSealed<C, I, O, St, D> {
-    fn rewrite_tm(self, ctx: CtxIn<C>, lhs: I, state: &mut St) -> Result<O, KernelError>;
+    fn rewrite_tm(self, ctx: Env<C>, lhs: I, state: &mut St) -> Result<O, KernelError>;
 
     fn assert_defeq(&self) -> Result<(), KernelError> {
         Err(KernelError::RequireDefEq)
@@ -66,7 +66,7 @@ pub trait TmRewriter<C, I, O, St, D>: TmRewriterSealed<C, I, O, St, D> {
 pub trait IntoRw<C, I, O, St, D>: TmRewriterSealed<C, I, O, St, D> {
     fn into_rw(
         self,
-        ctx: CtxIn<C>,
+        ctx: Env<C>,
         state: &mut St,
     ) -> Result<Theorem<RwIn<C, I, O>, D>, KernelError>;
 
@@ -89,7 +89,7 @@ where
     O: LocalTerm<C, D>,
     I: TryInto<O>,
 {
-    fn rewrite_tm(self, _ctx: CtxIn<C>, lhs: I, _state: &mut St) -> Result<O, KernelError> {
+    fn rewrite_tm(self, _ctx: Env<C>, lhs: I, _state: &mut St) -> Result<O, KernelError> {
         lhs.try_into().map_err(|_| KernelError::TryIntoFailure)
     }
 
@@ -118,7 +118,7 @@ where
     R: LocalTerm<C, D>,
     T: LocalTerm<C, D> + TryInto<R>,
 {
-    fn rewrite_tm(self, _ctx: CtxIn<C>, lhs: L, _state: &mut St) -> Result<R, KernelError> {
+    fn rewrite_tm(self, _ctx: Env<C>, lhs: L, _state: &mut St) -> Result<R, KernelError> {
         if lhs != self.0 {
             return Err(KernelError::EqMismatch);
         }
@@ -135,7 +135,7 @@ where
 {
     fn into_rw(
         self,
-        ctx: CtxIn<C>,
+        ctx: Env<C>,
         _state: &mut St,
     ) -> Result<Theorem<RwIn<C, L, R>, D>, KernelError> {
         let lhs = self
@@ -202,8 +202,8 @@ where
     L: LocalTerm<C, D>,
     R: LocalTerm<C, D> + TryInto<O>,
 {
-    fn rewrite_tm(self, ctx: CtxIn<C>, lhs: I, _state: &mut St) -> Result<O, KernelError> {
-        if self.id != ctx.0 {
+    fn rewrite_tm(self, ctx: Env<C>, lhs: I, _state: &mut St) -> Result<O, KernelError> {
+        if self.session != ctx.0 {
             return Err(KernelError::IdMismatch);
         }
         if self.ctx != ctx.1 {
@@ -230,10 +230,10 @@ where
 {
     fn into_rw(
         self,
-        ctx: CtxIn<C>,
+        ctx: Env<C>,
         _state: &mut St,
     ) -> Result<Theorem<RwIn<C, I, O>, D>, KernelError> {
-        if self.id != ctx.0 {
+        if self.session != ctx.0 {
             return Err(KernelError::IdMismatch);
         }
         if self.ctx != ctx.1 {
@@ -289,7 +289,7 @@ where
 {
     fn rewrite_tm(
         self,
-        ctx: CtxIn<C>,
+        ctx: Env<C>,
         lhs: Node<CN, T, I, S>,
         state: &mut St,
     ) -> Result<Node<CN, TO, IO, SO>, KernelError> {
@@ -318,7 +318,7 @@ where
 {
     fn rewrite_tm(
         self,
-        ctx: CtxIn<C>,
+        ctx: Env<C>,
         lhs: Tm1<K, I>,
         state: &mut St,
     ) -> Result<Tm1<K, O>, KernelError> {
@@ -354,7 +354,7 @@ where
 {
     fn rewrite_tm(
         self,
-        ctx: CtxIn<C>,
+        ctx: Env<C>,
         lhs: Node<CN, T, I, S>,
         state: &mut St,
     ) -> Result<Tm1<K, O>, KernelError> {
@@ -385,7 +385,7 @@ where
 {
     fn rewrite_tm(
         self,
-        ctx: CtxIn<C>,
+        ctx: Env<C>,
         lhs: Tm2<K, IL, IR>,
         state: &mut St,
     ) -> Result<Tm2<K, LO, RO>, KernelError> {
@@ -425,7 +425,7 @@ where
 {
     fn rewrite_tm(
         self,
-        ctx: CtxIn<C>,
+        ctx: Env<C>,
         lhs: Node<CN, T, I, S>,
         state: &mut St,
     ) -> Result<Tm2<K, LO, RO>, KernelError> {
@@ -459,7 +459,7 @@ where
 {
     fn rewrite_tm(
         self,
-        ctx: CtxIn<C>,
+        ctx: Env<C>,
         lhs: Tm3<K, IL, IM, IR>,
         state: &mut St,
     ) -> Result<Tm3<K, LO, MO, RO>, KernelError> {
@@ -502,7 +502,7 @@ where
 {
     fn rewrite_tm(
         self,
-        ctx: CtxIn<C>,
+        ctx: Env<C>,
         lhs: Node<CN, T, I, S>,
         state: &mut St,
     ) -> Result<Tm3<K, LO, MO, RO>, KernelError> {

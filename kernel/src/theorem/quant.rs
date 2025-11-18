@@ -25,7 +25,7 @@ impl<C, S, D> Theorem<Seq<C, S>, D> {
         self.compat(&binder)?;
         self.fact.wk0(binder.fact).map(|fact| Theorem {
             fact,
-            id: self.id,
+            session: self.session,
             store: PhantomData,
         })
     }
@@ -41,7 +41,7 @@ impl<C, S, D> Theorem<Seq<C, S>, D> {
         self.compat(&var)?;
         self.fact.close_var_self(var.fact).map(|fact| Theorem {
             fact,
-            id: self.id,
+            session: self.session,
             store: PhantomData,
         })
     }

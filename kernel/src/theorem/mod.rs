@@ -19,12 +19,12 @@ pub mod rw;
 pub mod quant;
 
 /// A proven theorem
-pub struct Theorem<F, D> {
+pub struct Theorem<F, D, S = KernelId> {
     /// The fact which has been proved as a theorem
     pub(crate) fact: F,
-    /// The kernel ID this theorem belongs to
-    pub(crate) id: KernelId,
-    /// The data store in use
+    /// The kernel session this theorem belongs to
+    pub(crate) session: S,
+    /// A tag for the data store in use
     pub(crate) store: PhantomData<D>,
 }
 
@@ -32,7 +32,7 @@ impl<F: Clone, D> Clone for Theorem<F, D> {
     fn clone(&self) -> Self {
         Theorem {
             fact: self.fact.clone(),
-            id: self.id,
+            session: self.session,
             store: PhantomData,
         }
     }
@@ -42,7 +42,7 @@ impl<F: Copy, D> Copy for Theorem<F, D> {}
 
 impl<F: PartialEq, D> PartialEq for Theorem<F, D> {
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id && self.fact == other.fact
+        self.session == other.session && self.fact == other.fact
     }
 }
 
@@ -50,7 +50,7 @@ impl<F: Eq, D> Eq for Theorem<F, D> {}
 
 impl<F: PartialOrd, D> PartialOrd for Theorem<F, D> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match self.id.cmp(&other.id) {
+        match self.session.cmp(&other.session) {
             std::cmp::Ordering::Equal => self.fact.partial_cmp(&other.fact),
             ord => Some(ord),
         }
@@ -59,7 +59,7 @@ impl<F: PartialOrd, D> PartialOrd for Theorem<F, D> {
 
 impl<F: Ord, D> Ord for Theorem<F, D> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match self.id.cmp(&other.id) {
+        match self.session.cmp(&other.session) {
             std::cmp::Ordering::Equal => self.fact.cmp(&other.fact),
             ord => ord,
         }
@@ -68,7 +68,7 @@ impl<F: Ord, D> Ord for Theorem<F, D> {
 
 impl<F: Hash, D> Hash for Theorem<F, D> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
+        self.session.hash(state);
         self.fact.hash(state);
     }
 }
@@ -76,7 +76,7 @@ impl<F: Hash, D> Hash for Theorem<F, D> {
 impl<F: Debug, D> Debug for Theorem<F, D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Theorem")
-            .field("id", &self.id)
+            .field("id", &self.session)
             .field("fact", &self.fact)
             .finish()
     }
@@ -87,24 +87,24 @@ impl<F, D> Theorem<F, D> {
     pub(crate) fn new_unchecked(id: KernelId, fact: F) -> Theorem<F, D> {
         Theorem {
             fact,
-            id,
+            session: id,
             store: PhantomData,
         }
     }
 
     /// Get the kernel ID this theorem belongs to
     pub fn id(self) -> KernelId {
-        self.id
+        self.session
     }
 
     /// Get the statement of this theorem as a reference
     pub fn as_ref(&self) -> Theorem<&F, D> {
-        Theorem::new_unchecked(self.id, &self.fact)
+        Theorem::new_unchecked(self.session, &self.fact)
     }
 
     /// Get the statement of this theorem as a mutable reference
     pub fn as_mut(&mut self) -> Theorem<&mut F, D> {
-        Theorem::new_unchecked(self.id, &mut self.fact)
+        Theorem::new_unchecked(self.session, &mut self.fact)
     }
 
     /// Get the underlying fact by value
@@ -114,7 +114,7 @@ impl<F, D> Theorem<F, D> {
 
     /// Get whether this theorem is compatible with another theorem
     pub fn compat<G>(&self, other: &Theorem<G, D>) -> Result<(), IdMismatch> {
-        if self.id != other.id {
+        if self.session != other.session {
             return Err(IdMismatch);
         }
         Ok(())
@@ -123,7 +123,10 @@ impl<F, D> Theorem<F, D> {
     /// A pair of theorems is a theorem of pairs
     pub fn pair<G>(self, other: Theorem<G, D>) -> Result<Theorem<(F, G), D>, IdMismatch> {
         self.compat(&other)?;
-        Ok(Theorem::new_unchecked(self.id, (self.fact, other.fact)))
+        Ok(Theorem::new_unchecked(
+            self.session,
+            (self.fact, other.fact),
+        ))
     }
 }
 
@@ -133,14 +136,14 @@ where
     L: LocalTerm<C, D>,
     R: LocalTerm<C, D>,
 {
-    pub(crate) fn rw_unchecked(ctx: CtxIn<C>, lhs: L, rhs: R) -> Theorem<RwIn<C, L, R>, D> {
+    pub(crate) fn rw_unchecked(ctx: Env<C>, lhs: L, rhs: R) -> Theorem<RwIn<C, L, R>, D> {
         Theorem::new_unchecked(ctx.0, RwIn::new(ctx.1, lhs, rhs))
     }
 }
 
-/// A context in a kernel
+/// An _environment_ in which a theorem holds
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct CtxIn<C, K = KernelId>(pub K, pub C);
+pub struct Env<C, S = KernelId>(pub S, pub C);
 
 impl<C, F, D> Theorem<Seq<C, F>, D> {
     /// Get the formula of this sequent by value
@@ -149,11 +152,11 @@ impl<C, F, D> Theorem<Seq<C, F>, D> {
     }
 
     /// Get the kernel-context pair of this sequent
-    pub fn ctx_in(&self) -> CtxIn<C, KernelId>
+    pub fn ctx_in(&self) -> Env<C, KernelId>
     where
         C: Copy,
     {
-        CtxIn(self.id, self.fact.ctx)
+        Env(self.session, self.fact.ctx)
     }
 }
 
@@ -163,7 +166,7 @@ where
     G: StableFact<D>,
 {
     fn implies(self) -> Theorem<G, D> {
-        Theorem::new_unchecked(self.id, self.fact.implies())
+        Theorem::new_unchecked(self.session, self.fact.implies())
     }
 }
 
@@ -173,7 +176,7 @@ where
     G: StableFact<D>,
 {
     fn iff(self) -> Theorem<G, D> {
-        Theorem::new_unchecked(self.id, self.fact.iff())
+        Theorem::new_unchecked(self.session, self.fact.iff())
     }
 }
 
@@ -184,8 +187,8 @@ where
 {
     fn try_iff(self) -> Result<Theorem<G, D>, Self> {
         match self.fact.try_iff() {
-            Ok(fact) => Ok(Theorem::new_unchecked(self.id, fact)),
-            Err(fact) => Err(Theorem::new_unchecked(self.id, fact)),
+            Ok(fact) => Ok(Theorem::new_unchecked(self.session, fact)),
+            Err(fact) => Err(Theorem::new_unchecked(self.session, fact)),
         }
     }
 }
@@ -193,14 +196,14 @@ where
 impl<F: Clone, D> Theorem<&F, D> {
     /// Clone the statement of this theorem
     pub fn cloned(self) -> Theorem<F, D> {
-        Theorem::new_unchecked(self.id, self.fact.clone())
+        Theorem::new_unchecked(self.session, self.fact.clone())
     }
 }
 
 impl<F: Copy, D> Theorem<&F, D> {
     /// Copy the statement of this theorem
     pub fn copied(self) -> Theorem<F, D> {
-        Theorem::new_unchecked(self.id, *self.fact)
+        Theorem::new_unchecked(self.session, *self.fact)
     }
 }
 
@@ -374,7 +377,7 @@ impl<D> Kernel<D> {
     ///
     /// Returns an error on kernel ID mismatch
     pub fn thm_belongs<F>(&self, thm: &Theorem<F, D>) -> Result<(), IdMismatch> {
-        if thm.id != self.id() {
+        if thm.session != self.id() {
             Err(IdMismatch)
         } else {
             Ok(())

@@ -28,7 +28,7 @@ where
     pub fn abs_wf(self) -> Theorem<Seq<C, IsWf<Abs<T>>>, D> {
         Theorem {
             fact: self.fact.abs_wf(),
-            id: self.id,
+            session: self.session,
             store: PhantomData,
         }
     }
@@ -58,7 +58,7 @@ where
     pub fn pi_ty(self) -> Theorem<Seq<C, IsTy<Pi<T>>>, D> {
         Theorem {
             fact: self.fact.pi_ty(),
-            id: self.id,
+            session: self.session,
             store: PhantomData,
         }
     }
@@ -66,7 +66,7 @@ where
     pub fn sigma_ty(self) -> Theorem<Seq<C, IsTy<Sigma<T>>>, D> {
         Theorem {
             fact: self.fact.sigma_ty(),
-            id: self.id,
+            session: self.session,
             store: PhantomData,
         }
     }
@@ -105,7 +105,7 @@ where
     {
         Theorem {
             fact: self.fact.abs_has_ty(),
-            id: self.id,
+            session: self.session,
             store: PhantomData,
         }
     }
@@ -113,7 +113,7 @@ where
     pub fn abs_has_ty_wf(self) -> Theorem<IsWfIn<C, Abs<L, HasTy<R, RTy>>>, D> {
         Theorem {
             fact: self.fact.abs_has_ty_wf(),
-            id: self.id,
+            session: self.session,
             store: PhantomData,
         }
     }

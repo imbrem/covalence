@@ -36,37 +36,37 @@ pub trait SetFactUnchecked<F: ?Sized> {
 
 /// A _sequent_: a pair `Γ ⊢ φ` of a context and a formula in that context
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct Seq<C, S> {
+pub struct Seq<C, F> {
     /// The context for this sequent
     pub ctx: C,
     /// The formula asserted in this context
-    pub form: S,
+    pub form: F,
 }
 
-impl<C, S, R> CheckFact<Seq<C, S>> for R
+impl<C, F, D> CheckFact<Seq<C, F>> for D
 where
     C: Copy,
-    R: CheckFormula<C, S>,
+    D: CheckFormula<C, F>,
 {
-    fn check(&self, fact: &Seq<C, S>) -> bool {
+    fn check(&self, fact: &Seq<C, F>) -> bool {
         self.check_in(fact.ctx, &fact.form)
     }
 }
 
-impl<C, S, R> SetFactUnchecked<Seq<C, S>> for R
+impl<C, F, D> SetFactUnchecked<Seq<C, F>> for D
 where
     C: Copy,
-    R: SetFactUncheckedIn<C, S> + ?Sized,
+    D: SetFactUncheckedIn<C, F> + ?Sized,
 {
-    fn set_unchecked(&mut self, fact: &Seq<C, S>) -> Result<(), StoreFailure> {
+    fn set_unchecked(&mut self, fact: &Seq<C, F>) -> Result<(), StoreFailure> {
         self.set_unchecked_in(fact.ctx, &fact.form)
     }
 }
 
-impl<C, S> Deref for Seq<C, S> {
-    type Target = S;
+impl<C, F> Deref for Seq<C, F> {
+    type Target = F;
 
-    fn deref(&self) -> &Self::Target {
+    fn deref(&self) -> &F {
         &self.form
     }
 }

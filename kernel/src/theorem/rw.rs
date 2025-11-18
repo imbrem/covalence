@@ -189,7 +189,7 @@ where
 
     /// Swap the left- and right-hand sides of this equation
     pub fn symm(self) -> Theorem<RwIn<C, R, L>, D> {
-        Theorem::new_unchecked(self.id, self.fact.symm())
+        Theorem::new_unchecked(self.session, self.fact.symm())
     }
 
     /// Transitivity of equality
@@ -206,7 +206,7 @@ where
     {
         self.compat(&other)?;
         Ok(Theorem::new_unchecked(
-            self.id,
+            self.session,
             self.fact.trans(other.fact)?,
         ))
     }
@@ -216,7 +216,7 @@ where
     where
         C: Copy,
     {
-        Theorem::new_unchecked(self.id, self.fact.eqn_as_ref())
+        Theorem::new_unchecked(self.session, self.fact.eqn_as_ref())
     }
 }
 
@@ -243,7 +243,7 @@ where
             return Err(self);
         }
         for child in self.children() {
-            if id != child.id || ctx != child.ctx {
+            if id != child.session || ctx != child.ctx {
                 return Err(self);
             }
         }

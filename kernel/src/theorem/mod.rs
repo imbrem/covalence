@@ -10,7 +10,9 @@ use crate::fact::logic::{Iff, Implies, TryIff};
 use crate::fact::stable::StableFact;
 use crate::fact::{CheckFact, RwIn, Seq, SetFactUnchecked};
 use crate::id::KernelId;
-use crate::store::{CtxId, Ix, NodeIx, ReadLocalTerm, TermIndex, TmId, WriteLocalTerm};
+use crate::store::{
+    Ctx, CtxId, Ix, LocalTerm, NodeIx, ReadLocalTerm, TermIndex, TmId, WriteLocalTerm,
+};
 
 pub mod rw;
 
@@ -122,6 +124,17 @@ impl<F, D> Theorem<F, D> {
     pub fn pair<G>(self, other: Theorem<G, D>) -> Result<Theorem<(F, G), D>, IdMismatch> {
         self.compat(&other)?;
         Ok(Theorem::new_unchecked(self.id, (self.fact, other.fact)))
+    }
+}
+
+impl<C, L, R, D> Theorem<RwIn<C, L, R>, D>
+where
+    C: Ctx<D>,
+    L: LocalTerm<C, D>,
+    R: LocalTerm<C, D>,
+{
+    pub(crate) fn rw_unchecked(ctx: CtxIn<C>, lhs: L, rhs: R) -> Theorem<RwIn<C, L, R>, D> {
+        Theorem::new_unchecked(ctx.0, RwIn::new(ctx.1, lhs, rhs))
     }
 }
 

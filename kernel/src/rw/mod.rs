@@ -98,6 +98,56 @@ where
     }
 }
 
+/// Reflexivity at a given term
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
+pub struct Refl<T>(pub T);
+
+impl<C, L, R, T, St, D> TmRewriterSealed<C, L, R, St, D> for Refl<T>
+where
+    C: Ctx<D>,
+    L: LocalTerm<C, D>,
+    R: LocalTerm<C, D>,
+    T: LocalTerm<C, D>,
+{
+}
+
+impl<C, L, R, T, St, D> TmRewriter<C, L, R, St, D> for Refl<T>
+where
+    C: Ctx<D>,
+    L: LocalTerm<C, D> + PartialEq<T>,
+    R: LocalTerm<C, D>,
+    T: LocalTerm<C, D> + TryInto<R>,
+{
+    fn rewrite_tm(self, _ctx: CtxIn<C>, lhs: L, _state: &mut St) -> Result<R, KernelError> {
+        if lhs != self.0 {
+            return Err(KernelError::EqMismatch);
+        }
+        self.0.try_into().map_err(|_| KernelError::TryIntoFailure)
+    }
+}
+
+impl<C, L, R, T, St, D> IntoRw<C, L, R, St, D> for Refl<T>
+where
+    C: Ctx<D>,
+    L: LocalTerm<C, D>,
+    R: LocalTerm<C, D>,
+    T: LocalTerm<C, D> + Clone + TryInto<L> + TryInto<R>,
+{
+    fn into_rw(
+        self,
+        ctx: CtxIn<C>,
+        _state: &mut St,
+    ) -> Result<Theorem<RwIn<C, L, R>, D>, KernelError> {
+        let lhs = self
+            .0
+            .clone()
+            .try_into()
+            .map_err(|_| KernelError::TryIntoFailure)?;
+        let rhs = self.0.try_into().map_err(|_| KernelError::TryIntoFailure)?;
+        Ok(Theorem::rw_unchecked(ctx, lhs, rhs))
+    }
+}
+
 /// Remove an identity node
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
 pub struct RemoveId;
@@ -201,7 +251,7 @@ where
             .1
             .try_into()
             .map_err(|_| KernelError::TryIntoFailure)?;
-        Ok(Theorem::new_unchecked(ctx.0, RwIn::new(ctx.1, lhs, rhs)))
+        Ok(Theorem::rw_unchecked(ctx, lhs, rhs))
     }
 }
 

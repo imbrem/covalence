@@ -508,54 +508,34 @@ where
     }
 }
 
-impl<C, T, I, X, D, S> GetSubterms<C, D, S> for Node<C, T, I, X>
-where
-    D: TermIndex,
-    C: Segment<D, S> + Copy,
-    T: GetTerm<C, D, S>,
-    I: GetTerm<C, D, S>,
-    X: GetTerm<C, D, S>,
-{
-    type IxSubterms = NodeIx<D>;
+// impl<C, T, I, X, D, S> GetSubterms<C, D, S> for Node<C, T, I, X>
+// where
+//     D: TermIndex,
+//     C: Segment<D, S> + Copy,
+//     T: GetTerm<C, D, S>,
+//     I: GetTerm<C, D, S>,
+//     X: GetTerm<C, D, S>,
+// {
+//     type IxSubterms = NodeIx<D>;
 
-    type ValSubterms = NodeTm<D>;
+//     type ValSubterms = NodeTm<D>;
 
-    fn get_subterms_in(&self, ctx: C, db: &D) -> Option<Self::IxSubterms> {
-        self.as_ref()
-            .try_map(
-                |ctx| Ok(ctx.seg_ctx(db)),
-                |tm| tm.get_in(ctx, db).ok_or(()),
-                |qt| qt.get_val(ctx, db).ok_or(()),
-                |syn| syn.get_in(ctx, db).ok_or(()),
-            )
-            .ok()
-    }
+//     fn get_subterms_in(&self, ctx: C, db: &D) -> Option<Self::IxSubterms> {
+//         todo!()
+//     }
 
-    fn cons_subterms_in(&self, _ctx: C, _db: &mut D) -> Self::IxSubterms {
-        todo!()
-        // self.as_ref().map(
-        //     |ctx| ctx.segment_id(db),
-        //     |tm| tm.cons_in(ctx, db),
-        //     |qt| qt.cons_val(ctx, db),
-        //     |syn| syn.cons_in(ctx, db),
-        // )
-    }
+//     fn cons_subterms_in(&self, ctx: C, db: &mut D) -> Self::IxSubterms {
+//         todo!()
+//     }
 
-    fn get_subterms_val(&self, ctx: C, db: &D) -> Option<Self::ValSubterms> {
-        self.as_ref()
-            .try_map(
-                |ctx| Ok(ctx.seg_ctx(db)),
-                |tm| tm.get_val(ctx, db).ok_or(()),
-                |qt| qt.get_val(ctx, db).ok_or(()),
-                |syn| syn.get_val(ctx, db).ok_or(()),
-            )
-            .ok()
-    }
+//     fn get_subterms_val(&self, ctx: C, db: &D) -> Option<Self::ValSubterms> {
+//         todo!()
+//     }
 
-    fn cons_subterms_val(&self, _ctx: C, _db: &mut D) -> Self::ValSubterms {
-        todo!()
-    }
-}
+//     fn cons_subterms_val(&self, ctx: C, db: &mut D) -> Self::ValSubterms {
+//         todo!()
+//     }
+// }
 
 // impl<C, T, I, X, D, S> GetTerm<C, D, S> for Node<C, T, I, X>
 // where

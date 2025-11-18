@@ -1,5 +1,4 @@
 use crate::{
-    data::term::Node,
     fact::{Rw, RwIn},
     store::{Ctx, LocalTerm},
 };
@@ -217,50 +216,5 @@ where
         C: Copy,
     {
         Theorem::new_unchecked(self.session, self.fact.eqn_as_ref())
-    }
-}
-
-impl<CN, LC, RC, L, R, LI, RI, D> Node<CN, Theorem<RwIn<LC, L, R>, D>, Theorem<RwIn<RC, LI, RI>, D>>
-where
-    CN: Copy + Ctx<D>,
-    LC: Ctx<D>,
-    RC: Ctx<D>,
-    L: LocalTerm<LC, D>,
-    R: LocalTerm<LC, D>,
-    LI: LocalTerm<RC, D>,
-    RI: LocalTerm<RC, D>,
-{
-    pub fn congr<CO>(
-        self,
-        id: KernelId,
-        ctx: CO,
-    ) -> Result<Theorem<RwIn<CO, Node<CN, L, LI>, Node<CN, R, RI>>, D>, Self>
-    where
-        CO: Ctx<D> + PartialEq<LC> + PartialEq<RC>,
-    {
-        //TODO: allow non-congruence _if_ context is known-null
-        if !self.is_congr() {
-            return Err(self);
-        }
-        for child in self.children() {
-            if id != child.session || ctx != child.ctx {
-                return Err(self);
-            }
-        }
-        let (lhs, rhs) = self
-            .map(
-                |ctx| ctx,
-                |tm| (tm.fact.form.0, tm.fact.form.1),
-                |qt| (qt.fact.form.0, qt.fact.form.1),
-                |syn| (syn.fact.form.0, syn.fact.form.1),
-            )
-            .into_pair();
-        Ok(Theorem::new_unchecked(
-            id,
-            RwIn {
-                ctx,
-                form: Rw(lhs, rhs),
-            },
-        ))
     }
 }

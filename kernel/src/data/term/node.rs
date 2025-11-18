@@ -105,100 +105,108 @@ impl<C, T, I, S> Node<C, T, I, S> {
     }
 
     /// Map this node's subterms and imports, potentially returning an error
-    pub fn try_map<C2, U, J, V, E>(
+    pub fn try_map_with<M, C2, T2, I2, S2, St>(
         self,
-        ctx: impl FnMut(C) -> Result<C2, E>,
-        mut tm: impl FnMut(T) -> Result<U, E>,
-        quote: impl FnOnce(I) -> Result<J, E>,
-        syn: impl FnOnce(S) -> Result<V, E>,
-    ) -> Result<Node<C2, U, J, V>, E> {
+        map: &mut M,
+        state: &mut St,
+    ) -> Result<Node<C2, T2, I2, S2>, M::Error>
+    where
+        M: NodeMapper<C, T, I, S, C2, T2, I2, S2, St>,
+    {
         match self {
-            Node::Fv(x) => Ok(Node::Fv(x.try_map(ctx)?)),
+            Node::Fv(x) => Ok(Node::Fv(x.try_map(|ctx| map.try_ctx(ctx, state))?)),
             Node::Bv(i) => Ok(Node::Bv(i)),
             Node::U(level) => Ok(Node::U(level)),
             Node::Empty => Ok(Node::Empty),
             Node::Unit => Ok(Node::Unit),
             Node::Null => Ok(Node::Null),
-            Node::Eqn([a, b]) => Ok(Node::Eqn([tm(a)?, tm(b)?])),
-            Node::Pi([a, b]) => Ok(Node::Pi([tm(a)?, tm(b)?])),
-            Node::Sigma([a, b]) => Ok(Node::Sigma([tm(a)?, tm(b)?])),
-            Node::Abs([a, b]) => Ok(Node::Abs([tm(a)?, tm(b)?])),
-            Node::App([a, b]) => Ok(Node::App([tm(a)?, tm(b)?])),
-            Node::Pair([a, b]) => Ok(Node::Pair([tm(a)?, tm(b)?])),
-            Node::Fst([a]) => Ok(Node::Fst([tm(a)?])),
-            Node::Snd([a]) => Ok(Node::Snd([tm(a)?])),
-            Node::Ite([a, b, c]) => Ok(Node::Ite([tm(a)?, tm(b)?, tm(c)?])),
-            Node::Trunc([a]) => Ok(Node::Trunc([tm(a)?])),
-            Node::Choose([a, b]) => Ok(Node::Choose([tm(a)?, tm(b)?])),
+            Node::Eqn([a, b]) => Ok(Node::Eqn([map.try_tm(a, state)?, map.try_tm(b, state)?])),
+            Node::Pi([a, b]) => Ok(Node::Pi([map.try_tm(a, state)?, map.try_tm(b, state)?])),
+            Node::Sigma([a, b]) => Ok(Node::Sigma([map.try_tm(a, state)?, map.try_tm(b, state)?])),
+            Node::Abs([a, b]) => Ok(Node::Abs([map.try_tm(a, state)?, map.try_tm(b, state)?])),
+            Node::App([a, b]) => Ok(Node::App([map.try_tm(a, state)?, map.try_tm(b, state)?])),
+            Node::Pair([a, b]) => Ok(Node::Pair([map.try_tm(a, state)?, map.try_tm(b, state)?])),
+            Node::Fst([a]) => Ok(Node::Fst([map.try_tm(a, state)?])),
+            Node::Snd([a]) => Ok(Node::Snd([map.try_tm(a, state)?])),
+            Node::Ite([a, b, c]) => Ok(Node::Ite([
+                map.try_tm(a, state)?,
+                map.try_tm(b, state)?,
+                map.try_tm(c, state)?,
+            ])),
+            Node::Trunc([a]) => Ok(Node::Trunc([map.try_tm(a, state)?])),
+            Node::Choose([a, b]) => {
+                Ok(Node::Choose([map.try_tm(a, state)?, map.try_tm(b, state)?]))
+            }
             Node::Nats => Ok(Node::Nats),
             Node::N64(n) => Ok(Node::N64(n)),
-            Node::Succ([a]) => Ok(Node::Succ([tm(a)?])),
-            Node::Natrec([a, b, c]) => Ok(Node::Natrec([tm(a)?, tm(b)?, tm(c)?])),
-            Node::HasTy([a, b]) => Ok(Node::HasTy([tm(a)?, tm(b)?])),
+            Node::Succ([a]) => Ok(Node::Succ([map.try_tm(a, state)?])),
+            Node::Natrec([a, b, c]) => Ok(Node::Natrec([
+                map.try_tm(a, state)?,
+                map.try_tm(b, state)?,
+                map.try_tm(c, state)?,
+            ])),
+            Node::HasTy([a, b]) => Ok(Node::HasTy([map.try_tm(a, state)?, map.try_tm(b, state)?])),
             Node::Invalid => Ok(Node::Invalid),
-            Node::Id(n, [a]) => Ok(Node::Id(n, [tm(a)?])),
-            Node::Subst1(k, [a, b]) => Ok(Node::Subst1(k, [tm(a)?, tm(b)?])),
-            Node::BWk(k, [a]) => Ok(Node::BWk(k, [tm(a)?])),
-            Node::Close1(close) => Ok(Node::Close1(close.try_map(ctx, syn)?)),
-            Node::Quote(import) => Ok(Node::Quote(quote(import)?)),
+            Node::Id(n, [a]) => Ok(Node::Id(n, [map.try_tm(a, state)?])),
+            Node::Subst1(k, [a, b]) => Ok(Node::Subst1(
+                k,
+                [map.try_tm(a, state)?, map.try_tm(b, state)?],
+            )),
+            Node::BWk(k, [a]) => Ok(Node::BWk(k, [map.try_tm(a, state)?])),
+            Node::Close1(close) => Ok(Node::Close1(Close1 {
+                under: close.under,
+                var: close.var.try_map(|ctx| map.try_ctx(ctx, state))?,
+                tm: map.try_syn(close.tm, state)?,
+            })),
+            Node::Quote(import) => Ok(Node::Quote(map.try_quote(import, state)?)),
         }
     }
 
     /// Map this node's children, potentially returning an error
-    pub fn try_map_children<U, E>(
+    pub fn try_map_ix<T2, E>(
         self,
-        f: impl FnMut(T) -> Result<U, E>,
-    ) -> Result<Node<C, U, I, S>, E> {
-        self.try_map(Ok, f, Ok, Ok)
+        ix: impl FnMut(T) -> Result<T2, E>,
+    ) -> Result<Node<C, T2, I, S>, E> {
+        self.try_map_with(&mut TryMapIx(ix), &mut ())
     }
 
     /// Map this node's imports, potentially returning an error
-    pub fn try_map_import<J, E>(
+    pub fn try_map_quote<I2, E>(
         self,
-        g: impl FnOnce(I) -> Result<J, E>,
-    ) -> Result<Node<C, T, J, S>, E> {
-        self.try_map(Ok, Ok, g, Ok)
+        qt: impl FnMut(I) -> Result<I2, E>,
+    ) -> Result<Node<C, T, I2, S>, E> {
+        self.try_map_with(&mut TryMapQuote(qt), &mut ())
     }
 
     /// Map this node's closures, potentially returning an error
-    pub fn try_map_closures<V, E>(
+    pub fn try_map_syn<S2, E>(
         self,
-        syn: impl FnOnce(S) -> Result<V, E>,
-    ) -> Result<Node<C, T, I, V>, E> {
-        self.try_map(Ok, Ok, Ok, syn)
-    }
-
-    /// Map this node's subterms and imports
-    pub fn map<C2, U, J, V>(
-        self,
-        mut ctx: impl FnMut(C) -> C2,
-        mut tm: impl FnMut(T) -> U,
-        qt: impl FnOnce(I) -> J,
-        syn: impl FnOnce(S) -> V,
-    ) -> Node<C2, U, J, V> {
-        let res: Result<Node<C2, U, J, V>, Infallible> =
-            self.try_map(|x| Ok(ctx(x)), |x| Ok(tm(x)), |x| Ok(qt(x)), |x| Ok(syn(x)));
-        res.unwrap()
+        syn: impl FnMut(S) -> Result<S2, E>,
+    ) -> Result<Node<C, T, I, S2>, E> {
+        self.try_map_with(&mut TryMapSyn(syn), &mut ())
     }
 
     /// Map this node's subterms
-    pub fn map_children<U>(self, f: impl FnMut(T) -> U) -> Node<C, U, I, S> {
-        self.map(|x| x, f, |x| x, |x| x)
+    pub fn map_ix<T2>(self, mut tm: impl FnMut(T) -> T2) -> Node<C, T2, I, S> {
+        self.try_map_with(&mut TryMapIx(|x| Ok::<_, Infallible>(tm(x))), &mut ())
+            .unwrap()
     }
 
     /// Map this node's quotes
-    pub fn map_quote<J>(self, g: impl FnOnce(I) -> J) -> Node<C, T, J, S> {
-        self.map(|x| x, |x| x, g, |x| x)
+    pub fn map_quote<I2>(self, mut qt: impl FnMut(I) -> I2) -> Node<C, T, I2, S> {
+        self.try_map_with(&mut TryMapQuote(|x| Ok::<_, Infallible>(qt(x))), &mut ())
+            .unwrap()
     }
 
     /// Map this node's closures
-    pub fn map_closures<V>(self, syn: impl FnOnce(S) -> V) -> Node<C, T, I, V> {
-        self.map(|x| x, |x| x, |x| x, syn)
+    pub fn map_closures<S2>(self, mut syn: impl FnMut(S) -> S2) -> Node<C, T, I, S2> {
+        self.try_map_with(&mut TryMapSyn(|x| Ok::<_, Infallible>(syn(x))), &mut ())
+            .unwrap()
     }
 
     /// Get this node's discriminant
     pub fn disc(self) -> DiscT<C, S, I> {
-        self.map_children(|_| ())
+        self.map_ix(|_| ())
     }
 
     /// Borrow this node
@@ -466,6 +474,122 @@ impl<C, T, I, S> Node<C, T, I, S> {
             (Node::Quote(import1), Node::Quote(import2)) => Ok(Node::Quote((import1, import2))),
             (a, b) => Err((a, b)),
         }
+    }
+}
+
+pub trait NodeMapper<C, T, I, S, C2, T2, I2, S2, St = ()> {
+    type Error;
+
+    fn try_ctx(&mut self, ctx: C, state: &mut St) -> Result<C2, Self::Error>;
+
+    fn try_tm(&mut self, tm: T, state: &mut St) -> Result<T2, Self::Error>;
+
+    fn try_quote(&mut self, qt: I, state: &mut St) -> Result<I2, Self::Error>;
+
+    fn try_syn(&mut self, syn: S, state: &mut St) -> Result<S2, Self::Error>;
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct TryMapCtx<F>(pub F);
+
+impl<C, T, I, S, C2, E, St, F> NodeMapper<C, T, I, S, C2, T, I, S, St> for TryMapCtx<F>
+where
+    F: FnMut(C, &mut St) -> Result<C2, E>,
+{
+    type Error = E;
+
+    fn try_ctx(&mut self, ctx: C, state: &mut St) -> Result<C2, Self::Error> {
+        (self.0)(ctx, state)
+    }
+
+    fn try_tm(&mut self, tm: T, _state: &mut St) -> Result<T, Self::Error> {
+        Ok(tm)
+    }
+
+    fn try_quote(&mut self, qt: I, _state: &mut St) -> Result<I, Self::Error> {
+        Ok(qt)
+    }
+
+    fn try_syn(&mut self, syn: S, _state: &mut St) -> Result<S, Self::Error> {
+        Ok(syn)
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct TryMapIx<F>(pub F);
+
+impl<C, T, I, S, T2, E, St, F> NodeMapper<C, T, I, S, C, T2, I, S, St> for TryMapIx<F>
+where
+    F: FnMut(T) -> Result<T2, E>,
+{
+    type Error = E;
+
+    fn try_ctx(&mut self, ctx: C, _state: &mut St) -> Result<C, Self::Error> {
+        Ok(ctx)
+    }
+
+    fn try_tm(&mut self, tm: T, _state: &mut St) -> Result<T2, Self::Error> {
+        (self.0)(tm)
+    }
+
+    fn try_quote(&mut self, qt: I, _state: &mut St) -> Result<I, Self::Error> {
+        Ok(qt)
+    }
+
+    fn try_syn(&mut self, syn: S, _state: &mut St) -> Result<S, Self::Error> {
+        Ok(syn)
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct TryMapQuote<F>(pub F);
+
+impl<C, T, I, S, I2, E, St, F> NodeMapper<C, T, I, S, C, T, I2, S, St> for TryMapQuote<F>
+where
+    F: FnMut(I) -> Result<I2, E>,
+{
+    type Error = E;
+
+    fn try_ctx(&mut self, ctx: C, _state: &mut St) -> Result<C, Self::Error> {
+        Ok(ctx)
+    }
+
+    fn try_tm(&mut self, tm: T, _state: &mut St) -> Result<T, Self::Error> {
+        Ok(tm)
+    }
+
+    fn try_quote(&mut self, qt: I, _state: &mut St) -> Result<I2, Self::Error> {
+        (self.0)(qt)
+    }
+
+    fn try_syn(&mut self, syn: S, _state: &mut St) -> Result<S, Self::Error> {
+        Ok(syn)
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct TryMapSyn<F>(pub F);
+
+impl<C, T, I, S, S2, E, St, F> NodeMapper<C, T, I, S, C, T, I, S2, St> for TryMapSyn<F>
+where
+    F: FnMut(S) -> Result<S2, E>,
+{
+    type Error = E;
+
+    fn try_ctx(&mut self, ctx: C, _state: &mut St) -> Result<C, Self::Error> {
+        Ok(ctx)
+    }
+
+    fn try_tm(&mut self, tm: T, _state: &mut St) -> Result<T, Self::Error> {
+        Ok(tm)
+    }
+
+    fn try_quote(&mut self, qt: I, _state: &mut St) -> Result<I, Self::Error> {
+        Ok(qt)
+    }
+
+    fn try_syn(&mut self, syn: S, _state: &mut St) -> Result<S2, Self::Error> {
+        (self.0)(syn)
     }
 }
 

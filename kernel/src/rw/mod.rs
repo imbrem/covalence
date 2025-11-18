@@ -333,9 +333,9 @@ where
         state: &mut St,
     ) -> Result<Node<CN, TO, IO, SO>, KernelError> {
         let res = self.zip(lhs).map_err(|_| KernelError::ShapeMismatch)?;
-        res.try_map_children(|(map, tm)| map.rewrite_tm(ctx, tm, state))?
-            .try_map_import(|(map, tm)| map.rewrite_tm(ctx, tm, state))?
-            .try_map_closures(|(map, tm)| {
+        res.try_map_ix(|(map, tm)| map.rewrite_tm(ctx, tm, state))?
+            .try_map_quote(|(map, tm)| map.rewrite_tm(ctx, tm, state))?
+            .try_map_syn(|(map, tm)| {
                 map.assert_rewrite_defeq()?;
                 map.rewrite_tm(ctx, tm, state)
             })

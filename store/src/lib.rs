@@ -96,12 +96,9 @@ impl WriteLocalTerm<TermDb> for TermDb {
     fn cons_node_ix(&mut self, ctx: CtxId, tm: NodeIx) -> Ix {
         let ix = self.x[ctx.0].add(tm);
         let bvi = tm
-            .map(
-                |ctx| ctx,
-                |ix| self.local_bvi(ctx, ix),
-                |tm| self.local_bvi(tm.ctx, tm.ix),
-                |ix| self.local_bvi(ctx, ix),
-            )
+            .map_ix(|ix| self.local_bvi(ctx, ix))
+            .map_closures(|syn| self.local_bvi(ctx, syn))
+            .map_quote(|qt| self.local_bvi(qt.ctx, qt.ix))
             .max_bvi();
         self.x[ctx.0].set_bvi_unchecked(ix, bvi);
         ix

@@ -82,38 +82,48 @@ impl<F: Debug, D> Debug for Theorem<F, D> {
     }
 }
 
-impl<F, D> Theorem<F, D> {
-    /// Construct a new theorem from a fact and a kernel ID
-    pub(crate) fn new_unchecked(id: KernelId, fact: F) -> Theorem<F, D> {
+impl<F, D, S> Theorem<F, D, S> {
+    /// Construct a new theorem from a fact and a session ID
+    pub(crate) fn new_unchecked(session: S, fact: F) -> Theorem<F, D, S> {
         Theorem {
             fact,
-            session: id,
+            session,
             store: PhantomData,
         }
-    }
-
-    /// Get the kernel ID this theorem belongs to
-    pub fn id(self) -> KernelId {
-        self.session
-    }
-
-    /// Get the statement of this theorem as a reference
-    pub fn as_ref(&self) -> Theorem<&F, D> {
-        Theorem::new_unchecked(self.session, &self.fact)
-    }
-
-    /// Get the statement of this theorem as a mutable reference
-    pub fn as_mut(&mut self) -> Theorem<&mut F, D> {
-        Theorem::new_unchecked(self.session, &mut self.fact)
     }
 
     /// Get the underlying fact by value
     pub fn into_fact(self) -> F {
         self.fact
     }
+}
 
+impl<F, D, S> Theorem<F, D, S>
+where
+    S: Copy,
+{
+    /// Get the kernel ID this theorem belongs to
+    pub fn session(&self) -> S {
+        self.session
+    }
+
+    /// Get the statement of this theorem as a reference
+    pub fn as_ref(&self) -> Theorem<&F, D, S> {
+        Theorem::new_unchecked(self.session, &self.fact)
+    }
+
+    /// Get the statement of this theorem as a mutable reference
+    pub fn as_mut(&mut self) -> Theorem<&mut F, D, S> {
+        Theorem::new_unchecked(self.session, &mut self.fact)
+    }
+}
+
+impl<F, D, S> Theorem<F, D, S>
+where
+    S: Copy + PartialEq,
+{
     /// Get whether this theorem is compatible with another theorem
-    pub fn compat<G>(&self, other: &Theorem<G, D>) -> Result<(), IdMismatch> {
+    pub fn compat<G>(&self, other: &Theorem<G, D, S>) -> Result<(), IdMismatch> {
         if self.session != other.session {
             return Err(IdMismatch);
         }
@@ -121,7 +131,7 @@ impl<F, D> Theorem<F, D> {
     }
 
     /// A pair of theorems is a theorem of pairs
-    pub fn pair<G>(self, other: Theorem<G, D>) -> Result<Theorem<(F, G), D>, IdMismatch> {
+    pub fn pair<G>(self, other: Theorem<G, D, S>) -> Result<Theorem<(F, G), D, S>, IdMismatch> {
         self.compat(&other)?;
         Ok(Theorem::new_unchecked(
             self.session,
@@ -130,14 +140,30 @@ impl<F, D> Theorem<F, D> {
     }
 }
 
-impl<C, L, R, D> Theorem<RwIn<C, L, R>, D>
+pub type RwTheorem<C, L, R, D, S = KernelId> = Theorem<RwIn<C, L, R>, D, S>;
+
+impl<C, L, R, D, S> RwTheorem<C, L, R, D, S>
 where
-    C: Ctx<D>,
-    L: LocalTerm<C, D>,
-    R: LocalTerm<C, D>,
+    C: Ctx<D, S>,
+    L: LocalTerm<C, D, S>,
+    R: LocalTerm<C, D, S>,
 {
-    pub(crate) fn rw_unchecked(ctx: Env<C>, lhs: L, rhs: R) -> Theorem<RwIn<C, L, R>, D> {
+    pub(crate) fn rw_unchecked(ctx: Env<C, S>, lhs: L, rhs: R) -> RwTheorem<C, L, R, D, S> {
         Theorem::new_unchecked(ctx.0, RwIn::new(ctx.1, lhs, rhs))
+    }
+
+    pub(crate) fn try_map_rhs<R2, E>(
+        self,
+        rhs: impl FnOnce(R) -> Result<R2, E>,
+    ) -> Result<RwTheorem<C, L, R2, D, S>, E>
+    where
+        R2: LocalTerm<C, D, S>,
+    {
+        Ok(Theorem::rw_unchecked(
+            Env(self.session, self.fact.ctx),
+            self.fact.form.0,
+            rhs(self.fact.form.1)?,
+        ))
     }
 }
 

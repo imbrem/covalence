@@ -467,6 +467,16 @@ mk_kind1!(Succ, SuccK, Node::Succ, [Bv(0)]);
 mk_kind3!(Natrec, NatrecK, Node::Natrec, [Bv(1), Bv(1), Bv(0)]);
 mk_kind2!(HasTy, HasTyK, Node::HasTy, [Bv(0), Bv(0)]);
 
+impl<L, R> Eqn<L, R> {
+    pub const fn lhs(&self) -> &L {
+        &self.1
+    }
+
+    pub const fn rhs(&self) -> &R {
+        &self.2
+    }
+}
+
 impl<L, R> HasTy<L, R> {
     pub const fn tm(&self) -> &L {
         &self.1

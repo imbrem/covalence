@@ -249,6 +249,7 @@ where
         }
         let (lhs, rhs) = self
             .map(
+                |ctx| ctx,
                 |tm| (tm.fact.form.0, tm.fact.form.1),
                 |qt| (qt.fact.form.0, qt.fact.form.1),
                 |syn| (syn.fact.form.0, syn.fact.form.1),

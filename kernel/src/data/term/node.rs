@@ -105,45 +105,42 @@ impl<C, T, I, S> Node<C, T, I, S> {
     }
 
     /// Map this node's subterms and imports, potentially returning an error
-    pub fn try_map<U, J, V, E>(
+    pub fn try_map<C2, U, J, V, E>(
         self,
-        mut f: impl FnMut(T) -> Result<U, E>,
-        g: impl FnOnce(I) -> Result<J, E>,
+        ctx: impl FnMut(C) -> Result<C2, E>,
+        mut tm: impl FnMut(T) -> Result<U, E>,
+        quote: impl FnOnce(I) -> Result<J, E>,
         syn: impl FnOnce(S) -> Result<V, E>,
-    ) -> Result<Node<C, U, J, V>, E> {
+    ) -> Result<Node<C2, U, J, V>, E> {
         match self {
-            Node::Fv(x) => Ok(Node::Fv(x)),
+            Node::Fv(x) => Ok(Node::Fv(x.try_map(ctx)?)),
             Node::Bv(i) => Ok(Node::Bv(i)),
             Node::U(level) => Ok(Node::U(level)),
             Node::Empty => Ok(Node::Empty),
             Node::Unit => Ok(Node::Unit),
             Node::Null => Ok(Node::Null),
-            Node::Eqn([a, b]) => Ok(Node::Eqn([f(a)?, f(b)?])),
-            Node::Pi([a, b]) => Ok(Node::Pi([f(a)?, f(b)?])),
-            Node::Sigma([a, b]) => Ok(Node::Sigma([f(a)?, f(b)?])),
-            Node::Abs([a, b]) => Ok(Node::Abs([f(a)?, f(b)?])),
-            Node::App([a, b]) => Ok(Node::App([f(a)?, f(b)?])),
-            Node::Pair([a, b]) => Ok(Node::Pair([f(a)?, f(b)?])),
-            Node::Fst([a]) => Ok(Node::Fst([f(a)?])),
-            Node::Snd([a]) => Ok(Node::Snd([f(a)?])),
-            Node::Ite([a, b, c]) => Ok(Node::Ite([f(a)?, f(b)?, f(c)?])),
-            Node::Trunc([a]) => Ok(Node::Trunc([f(a)?])),
-            Node::Choose([a, b]) => Ok(Node::Choose([f(a)?, f(b)?])),
+            Node::Eqn([a, b]) => Ok(Node::Eqn([tm(a)?, tm(b)?])),
+            Node::Pi([a, b]) => Ok(Node::Pi([tm(a)?, tm(b)?])),
+            Node::Sigma([a, b]) => Ok(Node::Sigma([tm(a)?, tm(b)?])),
+            Node::Abs([a, b]) => Ok(Node::Abs([tm(a)?, tm(b)?])),
+            Node::App([a, b]) => Ok(Node::App([tm(a)?, tm(b)?])),
+            Node::Pair([a, b]) => Ok(Node::Pair([tm(a)?, tm(b)?])),
+            Node::Fst([a]) => Ok(Node::Fst([tm(a)?])),
+            Node::Snd([a]) => Ok(Node::Snd([tm(a)?])),
+            Node::Ite([a, b, c]) => Ok(Node::Ite([tm(a)?, tm(b)?, tm(c)?])),
+            Node::Trunc([a]) => Ok(Node::Trunc([tm(a)?])),
+            Node::Choose([a, b]) => Ok(Node::Choose([tm(a)?, tm(b)?])),
             Node::Nats => Ok(Node::Nats),
             Node::N64(n) => Ok(Node::N64(n)),
-            Node::Succ([a]) => Ok(Node::Succ([f(a)?])),
-            Node::Natrec([a, b, c]) => Ok(Node::Natrec([f(a)?, f(b)?, f(c)?])),
-            Node::HasTy([a, b]) => Ok(Node::HasTy([f(a)?, f(b)?])),
+            Node::Succ([a]) => Ok(Node::Succ([tm(a)?])),
+            Node::Natrec([a, b, c]) => Ok(Node::Natrec([tm(a)?, tm(b)?, tm(c)?])),
+            Node::HasTy([a, b]) => Ok(Node::HasTy([tm(a)?, tm(b)?])),
             Node::Invalid => Ok(Node::Invalid),
-            Node::Id(n, [a]) => Ok(Node::Id(n, [f(a)?])),
-            Node::Subst1(k, [a, b]) => Ok(Node::Subst1(k, [f(a)?, f(b)?])),
-            Node::BWk(k, [a]) => Ok(Node::BWk(k, [f(a)?])),
-            Node::Close1(close) => Ok(Node::Close1(Close1 {
-                under: close.under,
-                var: close.var,
-                tm: syn(close.tm)?,
-            })),
-            Node::Quote(import) => Ok(Node::Quote(g(import)?)),
+            Node::Id(n, [a]) => Ok(Node::Id(n, [tm(a)?])),
+            Node::Subst1(k, [a, b]) => Ok(Node::Subst1(k, [tm(a)?, tm(b)?])),
+            Node::BWk(k, [a]) => Ok(Node::BWk(k, [tm(a)?])),
+            Node::Close1(close) => Ok(Node::Close1(close.try_map(ctx, syn)?)),
+            Node::Quote(import) => Ok(Node::Quote(quote(import)?)),
         }
     }
 
@@ -152,7 +149,7 @@ impl<C, T, I, S> Node<C, T, I, S> {
         self,
         f: impl FnMut(T) -> Result<U, E>,
     ) -> Result<Node<C, U, I, S>, E> {
-        self.try_map(f, Ok, Ok)
+        self.try_map(Ok, f, Ok, Ok)
     }
 
     /// Map this node's imports, potentially returning an error
@@ -160,7 +157,7 @@ impl<C, T, I, S> Node<C, T, I, S> {
         self,
         g: impl FnOnce(I) -> Result<J, E>,
     ) -> Result<Node<C, T, J, S>, E> {
-        self.try_map(Ok, g, Ok)
+        self.try_map(Ok, Ok, g, Ok)
     }
 
     /// Map this node's closures, potentially returning an error
@@ -168,34 +165,35 @@ impl<C, T, I, S> Node<C, T, I, S> {
         self,
         syn: impl FnOnce(S) -> Result<V, E>,
     ) -> Result<Node<C, T, I, V>, E> {
-        self.try_map(Ok, Ok, syn)
+        self.try_map(Ok, Ok, Ok, syn)
     }
 
     /// Map this node's subterms and imports
-    pub fn map<U, J, V>(
+    pub fn map<C2, U, J, V>(
         self,
+        mut ctx: impl FnMut(C) -> C2,
         mut tm: impl FnMut(T) -> U,
         qt: impl FnOnce(I) -> J,
         syn: impl FnOnce(S) -> V,
-    ) -> Node<C, U, J, V> {
-        let res: Result<Node<C, U, J, V>, Infallible> =
-            self.try_map(|x| Ok(tm(x)), |x| Ok(qt(x)), |x| Ok(syn(x)));
+    ) -> Node<C2, U, J, V> {
+        let res: Result<Node<C2, U, J, V>, Infallible> =
+            self.try_map(|x| Ok(ctx(x)), |x| Ok(tm(x)), |x| Ok(qt(x)), |x| Ok(syn(x)));
         res.unwrap()
     }
 
     /// Map this node's subterms
     pub fn map_children<U>(self, f: impl FnMut(T) -> U) -> Node<C, U, I, S> {
-        self.map(f, |x| x, |x| x)
+        self.map(|x| x, f, |x| x, |x| x)
     }
 
     /// Map this node's quotes
     pub fn map_quote<J>(self, g: impl FnOnce(I) -> J) -> Node<C, T, J, S> {
-        self.map(|x| x, g, |x| x)
+        self.map(|x| x, |x| x, g, |x| x)
     }
 
     /// Map this node's closures
     pub fn map_closures<V>(self, syn: impl FnOnce(S) -> V) -> Node<C, T, I, V> {
-        self.map(|x| x, |x| x, syn)
+        self.map(|x| x, |x| x, |x| x, syn)
     }
 
     /// Get this node's discriminant

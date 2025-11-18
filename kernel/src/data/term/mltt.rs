@@ -21,6 +21,13 @@ impl<C> Fv<C> {
             ix: self.ix,
         }
     }
+
+    pub fn try_map<C2, E>(self, f: impl FnOnce(C) -> Result<C2, E>) -> Result<Fv<C2>, E> {
+        Ok(Fv {
+            ctx: f(self.ctx)?,
+            ix: self.ix,
+        })
+    }
 }
 
 impl<C, T, I, S> From<Fv<C>> for Node<C, T, I, S> {

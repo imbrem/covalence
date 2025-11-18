@@ -105,6 +105,19 @@ impl<C, T> Close1<C, T> {
             tm: (),
         }
     }
+
+    /// Map this closure
+    pub fn try_map<C2, T2, E>(
+        self,
+        ctx: impl FnOnce(C) -> Result<C2, E>,
+        tm: impl FnOnce(T) -> Result<T2, E>,
+    ) -> Result<Close1<C2, T2>, E> {
+        Ok(Close1 {
+            under: self.under,
+            var: self.var.try_map(ctx)?,
+            tm: tm(self.tm)?,
+        })
+    }
 }
 
 impl<C> Close1<C, Bv> {

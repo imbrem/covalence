@@ -97,6 +97,7 @@ impl WriteLocalTerm<TermDb> for TermDb {
         let ix = self.x[ctx.0].add(tm);
         let bvi = tm
             .map(
+                |ctx| ctx,
                 |ix| self.local_bvi(ctx, ix),
                 |tm| self.local_bvi(tm.ctx, tm.ix),
                 |ix| self.local_bvi(ctx, ix),

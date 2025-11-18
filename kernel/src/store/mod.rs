@@ -64,23 +64,25 @@ pub trait ReadLocalTerm<D: TermIndex> {
     /// Lookup a term in the store
     fn lookup(&self, ctx: CtxId<D>, tm: NodeIx<D>) -> Option<Ix<D>>;
 
-    /// Get the index of an import in `self`
+    /// Get the index of an import into `ctx`
     ///
-    /// Does _not_ traverse import chains
-    fn import_ix(&self, ctx: CtxId<D>, tm: TmId<D>) -> Option<Ix<D>> {
-        if tm.ctx == ctx {
+    /// Traverses quote chains
+    fn get_import(&self, ctx: CtxId<D>, tm: TmId<D>) -> Option<Ix<D>> {
+        if let Node::Quote(tm) = self.node(tm.ctx, tm.ix) {
+            self.get_import(ctx, tm)
+        } else if tm.ctx == ctx {
             Some(tm.ix)
         } else {
             self.ix(ctx, Node::Quote(tm))
         }
     }
 
-    /// Lookup the index of an import in `self`
+    /// Lookup the index of a quote into `ctx`
     ///
-    /// Traverses import chains
-    fn lookup_ix(&self, ctx: CtxId<D>, tm: TmId<D>) -> Option<Ix<D>> {
+    /// Traverses quote chains
+    fn lookup_import(&self, ctx: CtxId<D>, tm: TmId<D>) -> Option<Ix<D>> {
         if let Node::Quote(tm) = self.node(tm.ctx, tm.ix)
-            && let Some(ix) = self.lookup_ix(ctx, tm)
+            && let Some(ix) = self.lookup_import(ctx, tm)
         {
             return Some(ix);
         }
@@ -136,6 +138,22 @@ pub trait WriteLocalTerm<D: TermIndex> {
 
     /// Directly insert a term into the store, returning a handle to it
     fn cons_node_ix(&mut self, ctx: CtxId<D>, tm: NodeIx<D>) -> Ix<D>;
+
+    /// Import a term into the store, returning a handle to it
+    ///
+    /// Traverses import chains
+    fn import(&mut self, ctx: CtxId<D>, tm: TmId<D>) -> Ix<D>
+    where
+        Self: ReadLocalTerm<D>,
+    {
+        if let Node::Quote(val) = self.node(tm.ctx, tm.ix) {
+            self.import(ctx, val)
+        } else if tm.ctx == ctx {
+            tm.ix
+        } else {
+            self.cons_node_ix(ctx, Node::Quote(tm))
+        }
+    }
 
     // == Congruence management ==
 

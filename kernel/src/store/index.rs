@@ -1,7 +1,7 @@
 use crate::{
     data::term::{Close1, Fv, Kind, Node, Subst1, Tm1, Tm2, Tm3, TmIn},
     id::KernelId,
-    store::index::term_sealed::SessionSealed,
+    store::{ReadLocalTerm, WriteLocalTerm, index::term_sealed::SessionSealed},
 };
 use std::{
     fmt::{self, Debug},
@@ -129,7 +129,7 @@ pub type TmId<D> = TmIn<CtxId<D>, Ix<D>>;
 
 pub type NodeIx<D> = Node<CtxId<D>, Ix<D>>;
 
-pub type NodeTm<D> = Node<CtxId<D>, TmId<D>>;
+pub type NodeTm<D> = Node<CtxId<D>, TmId<D>, TmId<D>>;
 
 pub type FvId<D> = Fv<CtxId<D>>;
 
@@ -215,9 +215,12 @@ pub trait LocalTerm<C, D, S = KernelId>: TermSealed<C, D, S> {
     }
 }
 
-impl<D: TermIndex> TermSealed<CtxId<D>, D> for Ix<D> {}
+impl<C, D: TermIndex> TermSealed<C, D> for Ix<D> where C: Segment<D> {}
 
-impl<D: TermIndex> LocalTerm<CtxId<D>, D> for Ix<D> {
+impl<C, D: TermIndex> LocalTerm<C, D> for Ix<D>
+where
+    C: Segment<D>,
+{
     const RELOCATABLE: bool = false;
 }
 
@@ -419,3 +422,159 @@ impl<D, T, S> Term<D, S> for T where T: LocalTerm<(), D, S> {}
 pub trait GlobalTerm<D>: LocalTerm<(), D, ()> {}
 
 impl<D, T> GlobalTerm<D> for T where T: LocalTerm<(), D, ()> {}
+
+pub trait Segment<D: TermIndex, S = KernelId>: Ctx<D, S> {
+    fn segment_id(&self, db: &D) -> CtxId<D>;
+}
+
+impl<D> Segment<D> for CtxId<D>
+where
+    D: TermIndex,
+{
+    fn segment_id(&self, _db: &D) -> CtxId<D> {
+        *self
+    }
+}
+
+pub trait GetSubterms<C, D: TermIndex, S = KernelId> {
+    type IxSubterms;
+
+    type ValSubterms;
+
+    fn get_subterms_in(&self, ctx: C, db: &D) -> Option<Self::IxSubterms>;
+
+    fn cons_subterms_in(&self, ctx: C, db: &mut D) -> Self::IxSubterms;
+
+    fn get_subterms_val(&self, ctx: C, db: &D) -> Option<Self::ValSubterms>;
+
+    fn cons_subterms_val(&self, ctx: C, db: &mut D) -> Self::ValSubterms;
+}
+
+pub trait GetTerm<C, D: TermIndex, S = KernelId>: LocalTerm<C, D, S> {
+    fn get_in(&self, ctx: C, db: &D) -> Option<Ix<D>>;
+
+    fn cons_in(&self, ctx: C, db: &mut D) -> Ix<D>;
+
+    fn get_val(&self, ctx: C, db: &D) -> Option<TmId<D>>;
+
+    fn cons_val(&self, ctx: C, db: &mut D) -> TmId<D>;
+}
+
+impl<C, D> GetTerm<C, D> for Ix<D>
+where
+    D: TermIndex + ReadLocalTerm<D>,
+    C: Segment<D>,
+{
+    fn get_in(&self, _ctx: C, _db: &D) -> Option<Ix<D>> {
+        Some(*self)
+    }
+
+    fn cons_in(&self, _ctx: C, _db: &mut D) -> Ix<D> {
+        *self
+    }
+
+    fn get_val(&self, ctx: C, db: &D) -> Option<TmId<D>> {
+        let ctx = ctx.segment_id(db);
+        Some(db.val(ctx, *self))
+    }
+
+    fn cons_val(&self, ctx: C, db: &mut D) -> TmId<D> {
+        let ctx = ctx.segment_id(db);
+        db.val(ctx, *self)
+    }
+}
+
+impl<D> GetTerm<CtxId<D>, D> for TmId<D>
+where
+    D: TermIndex + ReadLocalTerm<D> + WriteLocalTerm<D>,
+{
+    fn get_in(&self, ctx: CtxId<D>, db: &D) -> Option<Ix<D>> {
+        db.lookup_import(ctx, *self)
+    }
+
+    fn cons_in(&self, ctx: CtxId<D>, db: &mut D) -> Ix<D> {
+        db.import(ctx, *self)
+    }
+
+    fn get_val(&self, _ctx: CtxId<D>, db: &D) -> Option<TmId<D>> {
+        Some(db.val(self.ctx, self.ix))
+    }
+
+    fn cons_val(&self, _ctx: CtxId<D>, db: &mut D) -> TmId<D> {
+        db.val(self.ctx, self.ix)
+    }
+}
+
+impl<C, T, I, X, D, S> GetSubterms<C, D, S> for Node<C, T, I, X>
+where
+    D: TermIndex,
+    C: Segment<D, S> + Copy,
+    T: GetTerm<C, D, S>,
+    I: GetTerm<C, D, S>,
+    X: GetTerm<C, D, S>,
+{
+    type IxSubterms = NodeIx<D>;
+
+    type ValSubterms = NodeTm<D>;
+
+    fn get_subterms_in(&self, ctx: C, db: &D) -> Option<Self::IxSubterms> {
+        self.as_ref()
+            .try_map(
+                |ctx| Ok(ctx.segment_id(db)),
+                |tm| tm.get_in(ctx, db).ok_or(()),
+                |qt| qt.get_val(ctx, db).ok_or(()),
+                |syn| syn.get_in(ctx, db).ok_or(()),
+            )
+            .ok()
+    }
+
+    fn cons_subterms_in(&self, _ctx: C, _db: &mut D) -> Self::IxSubterms {
+        todo!()
+        // self.as_ref().map(
+        //     |ctx| ctx.segment_id(db),
+        //     |tm| tm.cons_in(ctx, db),
+        //     |qt| qt.cons_val(ctx, db),
+        //     |syn| syn.cons_in(ctx, db),
+        // )
+    }
+
+    fn get_subterms_val(&self, ctx: C, db: &D) -> Option<Self::ValSubterms> {
+        self.as_ref()
+            .try_map(
+                |ctx| Ok(ctx.segment_id(db)),
+                |tm| tm.get_val(ctx, db).ok_or(()),
+                |qt| qt.get_val(ctx, db).ok_or(()),
+                |syn| syn.get_val(ctx, db).ok_or(()),
+            )
+            .ok()
+    }
+
+    fn cons_subterms_val(&self, _ctx: C, _db: &mut D) -> Self::ValSubterms {
+        todo!()
+    }
+}
+
+// impl<C, T, I, X, D, S> GetTerm<C, D, S> for Node<C, T, I, X>
+// where
+//     D: TermIndex,
+//     C: Ctx<D, S>,
+//     T: GetTerm<C, D, S>,
+//     I: GetTerm<C, D, S>,
+//     X: GetTerm<C, D, S>,
+// {
+//     fn get_in(&self, ctx: C, db: &D) -> Option<Ix<D>> {
+//         todo!()
+//     }
+
+//     fn cons_in(&self, ctx: C, db: &mut D) -> Ix<D> {
+//         todo!()
+//     }
+
+//     fn get_val(&self, ctx: C, db: &D) -> Option<TmId<D>> {
+//         todo!()
+//     }
+
+//     fn cons_val(&self, ctx: C, db: &mut D) -> TmId<D> {
+//         todo!()
+//     }
+// }

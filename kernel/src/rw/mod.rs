@@ -64,12 +64,12 @@ pub trait TmRewriter<C, I, O, St, D, S = KernelId>: TmRewriterSealed<C, I, O, St
 }
 
 /// Generate a rewrite given a kernel ID and context
-pub trait IntoRw<C, I, O, St, D, S = KernelId>: TmRewriterSealed<C, I, O, St, D, S> {
+pub trait IntoRw<C, L, R, St, D, S = KernelId>: TmRewriterSealed<C, L, R, St, D, S> {
     fn into_rw(
         self,
         ctx: Env<C, S>,
         state: &mut St,
-    ) -> Result<RwTheorem<C, I, O, D, S>, KernelError>;
+    ) -> Result<RwTheorem<C, L, R, D, S>, KernelError>;
 
     fn assert_into_rw_defeq(&self) -> Result<(), KernelError> {
         Err(KernelError::RequireDefEq)
@@ -88,9 +88,8 @@ where
 impl<C, I, O, St, D, S> TmRewriter<C, I, O, St, D, S> for ()
 where
     C: Ctx<D, S>,
-    I: LocalTerm<C, D, S>,
+    I: LocalTerm<C, D, S> + TryInto<O>,
     O: LocalTerm<C, D, S>,
-    I: TryInto<O>,
 {
     fn rewrite_tm(self, _ctx: Env<C, S>, lhs: I, _state: &mut St) -> Result<O, KernelError> {
         lhs.try_into().map_err(|_| KernelError::TryIntoFailure)
@@ -129,6 +128,32 @@ where
     }
 
     fn assert_rewrite_defeq(&self) -> Result<(), KernelError> {
+        Ok(())
+    }
+}
+
+impl<C, L, R, T, St, D, S> IntoRw<C, L, R, St, D, S> for Refl<T>
+where
+    C: Ctx<D, S>,
+    L: LocalTerm<C, D, S>,
+    R: LocalTerm<C, D, S>,
+    T: LocalTerm<C, D, S> + Clone + TryInto<L> + TryInto<R>,
+{
+    fn into_rw(
+        self,
+        ctx: Env<C, S>,
+        _state: &mut St,
+    ) -> Result<RwTheorem<C, L, R, D, S>, KernelError> {
+        let lhs = self
+            .0
+            .clone()
+            .try_into()
+            .map_err(|_| KernelError::TryIntoFailure)?;
+        let rhs = self.0.try_into().map_err(|_| KernelError::TryIntoFailure)?;
+        Ok(Theorem::rw_unchecked(ctx, lhs, rhs))
+    }
+
+    fn assert_into_rw_defeq(&self) -> Result<(), KernelError> {
         Ok(())
     }
 }
@@ -201,32 +226,6 @@ where
     }
 }
 
-impl<C, L, R, T, St, D, S> IntoRw<C, L, R, St, D, S> for Refl<T>
-where
-    C: Ctx<D, S>,
-    L: LocalTerm<C, D, S>,
-    R: LocalTerm<C, D, S>,
-    T: LocalTerm<C, D, S> + Clone + TryInto<L> + TryInto<R>,
-{
-    fn into_rw(
-        self,
-        ctx: Env<C, S>,
-        _state: &mut St,
-    ) -> Result<RwTheorem<C, L, R, D, S>, KernelError> {
-        let lhs = self
-            .0
-            .clone()
-            .try_into()
-            .map_err(|_| KernelError::TryIntoFailure)?;
-        let rhs = self.0.try_into().map_err(|_| KernelError::TryIntoFailure)?;
-        Ok(Theorem::rw_unchecked(ctx, lhs, rhs))
-    }
-
-    fn assert_into_rw_defeq(&self) -> Result<(), KernelError> {
-        Ok(())
-    }
-}
-
 impl<C, I, O, L, R, St, D> TmRewriterSealed<C, I, O, St, D> for Theorem<RwIn<C, L, R>, D>
 where
     C: Ctx<D> + PartialEq,
@@ -246,12 +245,7 @@ where
     R: LocalTerm<C, D> + TryInto<O>,
 {
     fn rewrite_tm(self, ctx: Env<C>, lhs: I, _state: &mut St) -> Result<O, KernelError> {
-        if self.session != ctx.0 {
-            return Err(KernelError::IdMismatch);
-        }
-        if self.ctx != ctx.1 {
-            return Err(KernelError::CtxMismatch);
-        }
+        self.env_compat(&ctx)?;
         if lhs != self.0 {
             return Err(KernelError::EqMismatch);
         }
@@ -272,12 +266,7 @@ where
     R: LocalTerm<C, D> + TryInto<O>,
 {
     fn into_rw(self, ctx: Env<C>, _state: &mut St) -> Result<RwTheorem<C, I, O, D>, KernelError> {
-        if self.session != ctx.0 {
-            return Err(KernelError::IdMismatch);
-        }
-        if self.ctx != ctx.1 {
-            return Err(KernelError::CtxMismatch);
-        }
+        self.env_compat(&ctx)?;
         let lhs = self
             .fact
             .form

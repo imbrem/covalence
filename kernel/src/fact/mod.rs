@@ -98,6 +98,16 @@ impl<C, L, R> RwIn<C, L, R> {
             form: Rw(lhs, rhs),
         }
     }
+
+    /// Get the left-hand side of this equation-in-context
+    pub const fn lhs(&self) -> &L {
+        &self.form.0
+    }
+
+    /// Get the right-hand side of this equation-in-context
+    pub const fn rhs(&self) -> &R {
+        &self.form.1
+    }
 }
 
 /// A term has the given type in a context

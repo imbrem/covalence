@@ -172,6 +172,20 @@ where
 pub struct Env<C, S = KernelId>(pub S, pub C);
 
 impl<C, F, D> Theorem<Seq<C, F>, D> {
+    /// Get whether this theorem is compatible with an environment
+    pub fn env_compat(&self, env: &Env<C>) -> Result<(), KernelError>
+    where
+        C: PartialEq,
+    {
+        if self.session != env.0 {
+            return Err(KernelError::IdMismatch);
+        }
+        if self.ctx != env.1 {
+            return Err(KernelError::CtxMismatch);
+        }
+        Ok(())
+    }
+
     /// Get the formula of this sequent by value
     pub fn into_form(self) -> F {
         self.fact.form

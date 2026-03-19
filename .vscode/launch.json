@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension (Desktop)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/extensions/covalence-vscode"
+      ],
+      "preLaunchTask": "build-extension"
+    },
+    {
+      "name": "Run Extension (Web)",
+      "type": "extensionHost",
+      "debugWebWorkerHost": true,
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/extensions/covalence-vscode",
+        "--extensionDevelopmentKind=web"
+      ],
+      "preLaunchTask": "build-extension"
+    }
+  ]
+}

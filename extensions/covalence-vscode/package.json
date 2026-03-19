@@ -1,0 +1,49 @@
+{
+  "name": "covalence-vscode",
+  "displayName": "Covalence",
+  "description": "Language support for Ion via the Covalence LSP",
+  "version": "0.1.0",
+  "publisher": "covalence",
+  "private": true,
+  "engines": {
+    "vscode": "^1.88.0"
+  },
+  "extensionDependencies": [
+    "ms-vscode.wasm-wasi-core"
+  ],
+  "categories": ["Programming Languages"],
+  "main": "./dist/desktop/extension.js",
+  "browser": "./dist/web/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "ion",
+        "aliases": ["Ion"],
+        "extensions": [".ion", ".10n"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "covalence.helloWorld",
+        "title": "Covalence: Hello World"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "dev": "bun run build && npx @vscode/test-web --coi --browser none --extensionId ms-vscode.wasm-wasi-core --extensionDevelopmentPath=."
+  },
+  "dependencies": {
+    "@vscode/wasm-wasi": "^1.0.1",
+    "@vscode/wasm-wasi-lsp": "^0.1.0-pre.8",
+    "vscode-languageclient": "10.0.0-next.12"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.11",
+    "@types/vscode": "^1.88.0",
+    "@vscode/test-web": "^0.0.62",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0"
+  }
+}

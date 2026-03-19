@@ -1,0 +1,10 @@
+{
+  "name": "covalence",
+  "private": true,
+  "workspaces": ["extensions/*"],
+  "scripts": {
+    "build": "bun run --filter covalence-vscode build",
+    "dev": "bun run --filter covalence-vscode dev",
+    "check": "cargo check"
+  }
+}

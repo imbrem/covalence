@@ -25,10 +25,9 @@ pub fn initialize_result() -> InitializeResult {
 pub fn handle_request(req: &Request) -> Option<Response> {
     match req.method.as_str() {
         "covalence/serializeBinaryIon" => {
-            let params: serde_json::Value = serde_json::from_value(req.params.clone()).ok()?;
-            let text = params.get("text")?.as_str()?;
+            let text = req.params.get("text")?.as_str()?;
             let result = serialize_binary_ion(text);
-            Some(Response::new_ok(req.id.clone(), serde_json::to_value(result).unwrap()))
+            Some(Response::new_ok(req.id.clone(), result))
         }
         _ => Some(Response::new_err(
             req.id.clone(),

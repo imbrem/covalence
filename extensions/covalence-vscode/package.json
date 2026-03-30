@@ -23,6 +23,13 @@
         "configuration": "./language-configuration.json"
       }
     ],
+    "grammars": [
+      {
+        "language": "ion",
+        "scopeName": "source.ion",
+        "path": "./syntaxes/ion.tmLanguage.json"
+      }
+    ],
     "commands": [
       {
         "command": "covalence.helloWorld",

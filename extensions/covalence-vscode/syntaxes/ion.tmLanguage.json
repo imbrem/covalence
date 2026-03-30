@@ -1,0 +1,436 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "ion",
+	"scopeName": "source.ion",
+	"comment": "Forked from https://github.com/amazon-ion/ion-vscode-plugin (Apache-2.0)",
+	"patterns": [
+		{
+			"include": "#values"
+		}
+	],
+	"repository": {
+		"keywords": {
+			"patterns": [
+				{
+					"match": "(?:null\\.null|null\\.bool|null\\.int|null\\.float|null\\.decimal|null\\.timestamp|null\\.string|null\\.symbol|null\\.blob|null\\.clob|null\\.struct|null\\.list|null\\.sexp|null)",
+					"name": "constant.language.null.ion"
+				},
+				{
+					"match": "\\b(?:true|false)\\b",
+					"name": "constant.language.bool.ion"
+				},
+				{
+					"match": "(?:[+-]inf|nan)\\b",
+					"name": "constant.language.special_float.ion"
+				}
+			]
+		},
+		"comments": {
+			"patterns": [
+				{
+					"match": "//[\\w\\W]*",
+					"name": "comment.line.double-slash.ion"
+				},
+				{
+					"begin": "/\\*",
+					"end": "\\*/",
+					"captures": {
+						"0": {
+							"name": "punctuation.definition.comment.ion"
+						}
+					},
+					"name": "comment.block.ion"
+				}
+			]
+		},
+		"strings": {
+			"patterns": [
+				{
+					"begin": "\"",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.definition.string.begin.ion"
+						}
+					},
+					"end": "\"",
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.definition.string.end.ion"
+						}
+					},
+					"name": "string.quoted.double.ion",
+					"patterns": [
+						{
+							"include": "#escape"
+						}
+					]
+				},
+				{
+					"begin": "\\'\\'\\'",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.definition.string.begin.ion"
+						}
+					},
+					"end": "\\'\\'\\'",
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.definition.string.end.ion"
+						}
+					},
+					"name": "string.quoted.triple.ion",
+					"patterns": [
+						{
+							"include": "#escape"
+						}
+					]
+				}
+			]
+		},
+		"numbers": {
+			"comment": "This is a copy from Antlr Ion.",
+			"patterns": [
+				{
+					"match": "(?:(?:000[1-9]|00[1-9]\\d|0[1-9]\\d{2}|[1-9]\\d{3})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])(?:T(?:(?:[01]\\d|2[0-3])\\:(?:[0-5]\\d)(?:\\:(?:[0-5]\\d(?:\\.\\d+)?))?(?:Z|[+-](?:[01]\\d|2[0-3])\\:(?:[0-5]\\d)))?)?|(?:000[1-9]|00[1-9]\\d|0[1-9]\\d{2}|[1-9]\\d{3})-(?:0[1-9]|1[0-2])T|(?:000[1-9]|00[1-9]\\d|0[1-9]\\d{2}|[1-9]\\d{3})T)",
+					"name": "constant.numeric.timestamp.ion",
+					"comment": "TIMESTAMP: (?:YEAR '-' MONTH '-' DAY ('T' HOUR ':' MINUTE (':' SECOND)? OFFSET?)? | YEAR '-' MONTH 'T' | YEAR 'T'), YEAR: (?:000[1-9]|00[1-9]\\d|0[1-9]\\d{2}|[1-9]\\d{3}), MONTH: (?:0[1-9]|1[0-2]), DAY: (?:0[1-9]|[12]\\d|3[01]), HOUR: (?:[01]\\d|2[0-3]), MINUTE: (?:[0-5]\\d), SECOND: (?:[0-5]\\d(?:\\.\\d+)?), OFFSET: (?:Z|[+-] HOUR \\: MINUTE)"
+				},
+				{
+					"match": "-?0[bB][01](?:_?[01])*",
+					"name": "constant.numeric.bin_integer.ion"
+				},
+				{
+					"match": "-?0[xX][\\h](?:_?[\\h])*",
+					"name": "constant.numeric.hex_integer.ion"
+				},
+				{
+					"match": "-?(?:0|[1-9](?:_?\\d)*)(?:\\.(?:\\d(?:_?\\d)*)?)?(?:[eE][+-]?\\d+)",
+					"name": "constant.numeric.float.ion"
+				},
+				{
+					"match": "-?(?:0|[1-9](?:_?\\d)*)(?:(?:(?:\\.(?:\\d(?:_?\\d)*)?)(?:[dD][+-]?\\d+)|\\.(?:\\d(?:_?\\d)*)?)|(?:[dD][+-]?\\d+))",
+					"name": "constant.numeric.decimal.ion"
+				},
+				{
+					"match": "-?(?:0|[1-9](?:_?\\d)*)",
+					"name": "constant.numeric.integer.ion"
+				}
+			]
+		},
+		"blob": {
+			"match": "(\\{\\{)\\s*((?:(?:[A-Za-z0-9+/]\\s*){4})*(?:(?:[A-Za-z0-9+/]\\s*){2}(?:=\\s*)(?:=\\s)|([?:A-Za-z0-9+/]\\s*){3}(?:=\\s*))?)\\s*(\\}\\})",
+			"captures": {
+				"0": {
+					"name": "meta.structure.blob.ion"
+				},
+				"1": {
+					"name": "punctuation.definition.blob.begin.ion"
+				},
+				"2": {
+					"name": "markup.inline.raw"
+				},
+				"3": {
+					"name": "punctuation.definition.blob.end.ion"
+				}
+			}
+		},
+		"clob": {
+			"begin": "\\{\\{",
+			"beginCaptures": {
+				"0": {
+					"name": "punctuation.definition.clob.begin.ion"
+				}
+			},
+			"end": "\\}\\}",
+			"endCaptures": {
+				"0": {
+					"name": "punctuation.definition.clob.end.ion"
+				}
+			},
+			"name": "meta.structure.clob.ion",
+			"patterns": [
+				{
+					"include": "#strings"
+				}
+			]
+		},
+		"symbols": {
+			"patterns": [
+				{
+					"include": "#quoted-symbols"
+				},
+				{
+					"include": "#unquoted-symbols"
+				}
+			]
+		},
+		"structs": {
+			"begin": "\\{",
+			"beginCaptures": {
+				"0": {
+					"name": "punctuation.definition.dictionary.begin.ion"
+				}
+			},
+			"end": "\\}",
+			"endCaptures": {
+				"0": {
+					"name": "punctuation.definition.dictionary.end.ion"
+				}
+			},
+			"name": "meta.structure.dictionary.ion",
+			"patterns": [
+				{
+					"begin": ":",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.separator.dictionary.key-value.ion"
+						}
+					},
+					"end": "(,)|(?=\\})",
+					"endCaptures": {
+						"1": {
+							"name": "punctuation.separator.dictionary.pair.ion"
+						}
+					},
+					"name": "meta.structure.dictionary.value.ion",
+					"patterns": [
+						{
+							"include": "#values"
+						},
+						{
+							"match": "[^\\s,]",
+							"name": "invalid.illegal.expected-dictionary-separator.ion"
+						}
+					]
+				},
+				{
+					"include": "#comments"
+				},
+				{
+					"patterns": [
+						{
+							"begin": "\"",
+							"beginCaptures": {
+								"0": {
+									"name": "punctuation.support.type.property-name.begin.ion"
+								}
+							},
+							"end": "\"",
+							"endCaptures": {
+								"0": {
+									"name": "punctuation.support.type.property-name.end.ion"
+								}
+							},
+							"name": "support.type.property-name.symbol.ion",
+							"patterns": [
+								{
+									"include": "#escape"
+								}
+							]
+						},
+						{
+							"begin": "\\'",
+							"beginCaptures": {
+								"0": {
+									"name": "punctuation.support.type.property-name.begin.ion"
+								}
+							},
+							"end": "\\'",
+							"endCaptures": {
+								"0": {
+									"name": "punctuation.support.type.property-name.end.ion"
+								}
+							},
+							"name": "support.type.property-name.symbol.ion",
+							"patterns": [
+								{
+									"include": "#escape"
+								}
+							]
+						},
+						{
+							"match": "[\\$_a-zA-Z][\\$_a-zA-Z0-9]*",
+							"name": "support.type.property-name.symbol.ion"
+						}
+					]
+				},
+				{
+					"match": "[^\\s\\}]",
+					"name": "invalid.illegal.expected-dictionary-separator.ion"
+				}
+			]
+		},
+		"arrays": {
+			"begin": "\\[",
+			"beginCaptures": {
+				"0": {
+					"name": "punctuation.definition.array.begin.ion"
+				}
+			},
+			"end": "\\]",
+			"endCaptures": {
+				"0": {
+					"name": "punctuation.definition.array.end.ion"
+				}
+			},
+			"name": "meta.structure.array.ion",
+			"patterns": [
+				{
+					"include": "#values"
+				},
+				{
+					"match": ",",
+					"name": "punctuation.separator.array.ion"
+				},
+				{
+					"match": "[^\\s\\]]",
+					"name": "invalid.illegal.expected-array-separator.ion"
+				}
+			]
+		},
+		"sexps": {
+			"begin": "\\(",
+			"beginCaptures": {
+				"0": {
+					"name": "punctuation.definition.sexps.begin.ion"
+				}
+			},
+			"end": "\\)",
+			"endCaptures": {
+				"0": {
+					"name": "punctuation.definition.sexps.end.ion"
+				}
+			},
+			"name": "meta.structure.sexp.ion",
+			"patterns": [
+				{
+					"include": "#values"
+				},
+				{
+					"match": "[\\!\\#\\%\\&\\*\\+\\-\\.\\/\\;\\<\\=\\>\\?\\@\\^\\`\\|\\~]",
+					"name": "variable.language.symbol.ion"
+				}
+			]
+		},
+		"annotations": {
+			"patterns": [
+				{
+					"match": "([\\$_a-zA-Z][\\$_a-zA-Z0-9]*)\\s*(\\:\\:)",
+					"captures": {
+						"1": {
+							"name": "support.type.annotation.ion"
+						},
+						"2": {
+							"name": "punctuation.separator.annotation.ion"
+						}
+					}
+				},
+				{
+					"match": "(\\'[^\\']*\\')\\s*(\\:\\:)",
+					"captures": {
+						"1": {
+							"patterns": [
+								{
+									"begin": "\\'",
+									"beginCaptures": {
+										"0": {
+											"name": "punctuation.definition.symbol.begin.ion"
+										}
+									},
+									"end": "[\\']",
+									"endCaptures": {
+										"0": {
+											"name": "punctuation.definition.symbol.end.ion"
+										}
+									},
+									"name": "support.type.annotation.ion",
+									"patterns": [
+										{
+											"include": "#escape"
+										}
+									]
+								}
+							]
+						},
+						"2": {
+							"name": "punctuation.separator.annotation.ion"
+						}
+					}
+				}
+			]
+		},
+		"quoted-symbols": {
+			"begin": "\\'",
+			"beginCaptures": {
+				"0": {
+					"name": "punctuation.definition.symbol.begin.ion"
+				}
+			},
+			"end": "\\'",
+			"endCaptures": {
+				"0": {
+					"name": "punctuation.definition.symbol.end.ion"
+				}
+			},
+			"name": "variable.language.symbol.ion",
+			"patterns": [
+				{
+					"include": "#escape"
+				}
+			]
+		},
+		"unquoted-symbols": {
+			"match": "[\\$_a-zA-Z][\\$_a-zA-Z0-9]*",
+			"name": "variable.language.symbol.ion"
+		},
+		"escape": {
+			"patterns": [
+				{
+					"match": "\\\\(?:[0abtnfrv/\"\\'\\?\\\\]|NL|x[\\h]{2}|u[\\h]{4}|U[\\h]{8})",
+					"name": "constant.character.escape.ion"
+				},
+				{
+					"match": "\\\\.",
+					"name": "invalid.illegal.unrecognized-string-escape.ion"
+				}
+			]
+		},
+		"values": {
+			"patterns": [
+				{
+					"include": "#annotations"
+				},
+				{
+					"include": "#keywords"
+				},
+				{
+					"include": "#comments"
+				},
+				{
+					"include": "#strings"
+				},
+				{
+					"include": "#numbers"
+				},
+				{
+					"include": "#blob"
+				},
+				{
+					"include": "#clob"
+				},
+				{
+					"include": "#symbols"
+				},
+				{
+					"include": "#structs"
+				},
+				{
+					"include": "#arrays"
+				},
+				{
+					"include": "#sexps"
+				}
+			]
+		}
+	}
+}

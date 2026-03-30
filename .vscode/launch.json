@@ -7,7 +7,7 @@
       "request": "launch",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}/extensions/covalence-vscode",
-        "${workspaceFolder}/extensions/covalence-vscode/test-workbench"
+        "${workspaceFolder}/test-workbench"
       ],
       "preLaunchTask": "build-extension"
     },
@@ -19,7 +19,7 @@
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}/extensions/covalence-vscode",
         "--extensionDevelopmentKind=web",
-        "${workspaceFolder}/extensions/covalence-vscode/test-workbench"
+        "${workspaceFolder}/test-workbench"
       ],
       "preLaunchTask": "build-extension"
     }

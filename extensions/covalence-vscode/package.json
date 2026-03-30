@@ -34,6 +34,14 @@
       {
         "command": "covalence.serializeBinaryIon",
         "title": "Covalence: Serialize to Binary Ion (Count Bytes)"
+      },
+      {
+        "command": "covalence.convertToIonBinary",
+        "title": "Covalence: Convert to Ion 1.0 Binary"
+      },
+      {
+        "command": "covalence.convertToIonText",
+        "title": "Covalence: Convert to Ion 1.0 Text"
       }
     ]
   },

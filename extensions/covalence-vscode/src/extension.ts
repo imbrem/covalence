@@ -39,7 +39,7 @@ function isBinaryIon(bytes: Uint8Array): boolean {
 
 /** Extract a filesystem path from a file: URI string (e.g. "file:///foo" → "/foo"). */
 function fileUriToPath(uri: string): string {
-  return uri.replace(/^file:\/\//, "");
+  return decodeURIComponent(uri.replace(/^file:\/\//, ""));
 }
 
 let client: LanguageClient | undefined;
@@ -243,8 +243,11 @@ export async function activate(context: ExtensionContext) {
         return;
       }
 
-      // Close text editor and reopen as binary Ion view
-      await commands.executeCommand("workbench.action.closeActiveEditor");
+      // Close without saving — we already wrote binary via the LSP, so a
+      // normal save would overwrite it with the stale text content.
+      await commands.executeCommand(
+        "workbench.action.revertAndCloseActiveEditor",
+      );
       await openAsBinaryIon(editor.document.uri);
 
       window.showInformationMessage("Converted to Ion 1.0 Binary.");
@@ -286,12 +289,17 @@ export async function activate(context: ExtensionContext) {
         return;
       }
 
-      // The editor shows decoded text Ion — write it directly to the file
+      // Capture the decoded text before closing — getText() includes unsaved edits.
       const text = editor.document.getText();
-      await workspace.fs.writeFile(fileUri, new TextEncoder().encode(text));
 
-      // Close binary editor and reopen as text
-      await commands.executeCommand("workbench.action.closeActiveEditor");
+      // Close without saving first to prevent the FSP from re-encoding to
+      // binary (which would overwrite the text we're about to write).
+      await commands.executeCommand(
+        "workbench.action.revertAndCloseActiveEditor",
+      );
+
+      // Now write text Ion to the real file
+      await workspace.fs.writeFile(fileUri, new TextEncoder().encode(text));
       const doc = await workspace.openTextDocument(fileUri);
       await window.showTextDocument(doc);
 

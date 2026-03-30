@@ -1,0 +1,65 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "SMT-LIB",
+  "scopeName": "source.smt",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#quoted-symbol" },
+    { "include": "#keyword" },
+    { "include": "#numeral" },
+    { "include": "#boolean" },
+    { "include": "#command" },
+    { "include": "#builtin-symbol" },
+    { "include": "#parens" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.semicolon.smt",
+      "match": ";.*$"
+    },
+    "string": {
+      "name": "string.quoted.double.smt",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.smt",
+          "match": "\\\\[\\\\\"ntra-z]|\\\\x[0-9a-fA-F]{2}|\\\\u[0-9a-fA-F]{4}|\\\\u\\{[0-9a-fA-F]+\\}|\\\\U[0-9a-fA-F]{8}"
+        }
+      ]
+    },
+    "quoted-symbol": {
+      "name": "variable.other.quoted.smt",
+      "begin": "\\|",
+      "end": "\\|"
+    },
+    "keyword": {
+      "name": "entity.other.attribute-name.smt",
+      "match": ":[a-zA-Z0-9~!@$%^&*_+\\-=<>.?/]+"
+    },
+    "numeral": {
+      "name": "constant.numeric.smt",
+      "match": "(?<=[\\s()])(?:#x[0-9a-fA-F]+|#b[01]+|[0-9]+(?:\\.[0-9]+)?)(?=[\\s();]|$)"
+    },
+    "boolean": {
+      "name": "constant.language.boolean.smt",
+      "match": "\\b(?:true|false)\\b"
+    },
+    "command": {
+      "name": "keyword.control.smt",
+      "match": "(?<=\\()\\s*(?:set-logic|set-info|set-option|declare-sort|define-sort|declare-fun|declare-const|define-fun|define-fun-rec|define-funs-rec|assert|check-sat|check-sat-assuming|get-assertions|get-proof|get-unsat-core|get-value|get-assignment|get-model|get-info|get-option|push|pop|exit|reset|reset-assertions|echo|declare-datatype|declare-datatypes|simplify|eval|assume|step|anchor)(?=[\\s()])"
+    },
+    "builtin-symbol": {
+      "name": "support.function.smt",
+      "match": "(?<=[\\s()])(?:not|and|or|xor|=>|ite|forall|exists|let|match|as|!|=|distinct|select|store|\\+|\\-|\\*|/|div|mod|abs|<=|>=|<|>)(?=[\\s()])"
+    },
+    "parens": {
+      "begin": "\\(",
+      "end": "\\)",
+      "beginCaptures": { "0": { "name": "punctuation.paren.open.smt" } },
+      "endCaptures": { "0": { "name": "punctuation.paren.close.smt" } },
+      "patterns": [{ "include": "$self" }]
+    }
+  }
+}

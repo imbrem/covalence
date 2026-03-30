@@ -46,7 +46,11 @@ export async function activate(context: ExtensionContext) {
   };
 
   const clientOptions: LanguageClientOptions = {
-    documentSelector: [{ language: "ion" }],
+    documentSelector: [
+      { language: "ion" },
+      { language: "smt" },
+      { language: "alethe" },
+    ],
     outputChannel: channel,
     uriConverters: createUriConverters(),
   };

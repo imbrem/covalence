@@ -32,8 +32,8 @@
     ],
     "commands": [
       {
-        "command": "covalence.helloWorld",
-        "title": "Covalence: Hello World"
+        "command": "covalence.serializeBinaryIon",
+        "title": "Covalence: Serialize to Binary Ion (Count Bytes)"
       }
     ]
   },

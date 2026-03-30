@@ -22,21 +22,31 @@ pub fn initialize_result() -> InitializeResult {
     }
 }
 
-const MESSAGE: &str = "Hello from Covalence LSP!";
-
 pub fn handle_request(req: &Request) -> Option<Response> {
     match req.method.as_str() {
-        "covalence/helloWorld" => {
-            let result = serde_json::json!({
-                "message": MESSAGE
-            });
-            Some(Response::new_ok(req.id.clone(), result))
+        "covalence/serializeBinaryIon" => {
+            let params: serde_json::Value = serde_json::from_value(req.params.clone()).ok()?;
+            let text = params.get("text")?.as_str()?;
+            let result = serialize_binary_ion(text);
+            Some(Response::new_ok(req.id.clone(), serde_json::to_value(result).unwrap()))
         }
         _ => Some(Response::new_err(
             req.id.clone(),
             lsp_server::ErrorCode::MethodNotFound as i32,
             format!("unknown method: {}", req.method),
         )),
+    }
+}
+
+fn serialize_binary_ion(text: &str) -> serde_json::Value {
+    use covalence_ion::ion_rs::{Element, v1_0::Binary};
+
+    match Element::read_all(text.as_bytes()) {
+        Ok(sequence) => match sequence.encode_as(Binary) {
+            Ok(bytes) => serde_json::json!({ "byteCount": bytes.len() }),
+            Err(e) => serde_json::json!({ "error": e.to_string() }),
+        },
+        Err(e) => serde_json::json!({ "error": e.to_string() }),
     }
 }
 

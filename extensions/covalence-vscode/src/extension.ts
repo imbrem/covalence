@@ -59,15 +59,34 @@ export async function activate(context: ExtensionContext) {
   );
 
   context.subscriptions.push(
-    commands.registerCommand("covalence.helloWorld", async () => {
+    commands.registerCommand("covalence.serializeBinaryIon", async () => {
       if (!client) {
         window.showErrorMessage("Covalence LSP is not running.");
         return;
       }
-      const result: { message: string } = await client.sendRequest(
-        "covalence/helloWorld",
-      );
-      window.showInformationMessage(result.message);
+      const editor = window.activeTextEditor;
+      if (!editor) {
+        window.showErrorMessage("No active editor.");
+        return;
+      }
+      const langId = editor.document.languageId;
+      const allowed = ["ion", "json", "jsonc", "json5", "jsonl"];
+      if (!allowed.includes(langId)) {
+        window.showErrorMessage(
+          `Unsupported language: ${langId}. Supported: ${allowed.join(", ")}`,
+        );
+        return;
+      }
+      const text = editor.document.getText();
+      const result: { byteCount?: number; error?: string } =
+        await client.sendRequest("covalence/serializeBinaryIon", { text });
+      if (result.error) {
+        window.showErrorMessage(`Ion serialization failed: ${result.error}`);
+      } else {
+        window.showInformationMessage(
+          `Binary Ion: ${result.byteCount} bytes`,
+        );
+      }
     }),
   );
 

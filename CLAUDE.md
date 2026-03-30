@@ -47,6 +47,10 @@ Memory is fixed at 160 pages (10 MB). This value must match in two places:
 - `scripts/build.ts`: linker args `--initial-memory=10485760 --max-memory=10485760`
 - `src/extension.ts`: `wasm.createProcess(... { initial: 160, maximum: 160, shared: true })`
 
+## Pull Request Checklist
+
+- Run `cargo fmt --all` before creating a PR to ensure consistent formatting.
+
 ## Conventions
 
 - Rust edition 2024 (nightly), workspace resolver 2

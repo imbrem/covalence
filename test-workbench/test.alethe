@@ -1,0 +1,2 @@
+(assume h1 (not (p a)))
+(assume h2 (forall ((z1 U)) (forall ((z2 U)) (p z2))))

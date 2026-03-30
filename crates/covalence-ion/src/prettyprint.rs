@@ -116,13 +116,20 @@ fn escape_string(s: &str) -> String {
         match c {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
             '\0' => out.push_str("\\0"),
+            '\x07' => out.push_str("\\a"),
+            '\x08' => out.push_str("\\b"),
+            '\t' => out.push_str("\\t"),
+            '\n' => out.push_str("\\n"),
+            '\x0b' => out.push_str("\\v"),
+            '\x0c' => out.push_str("\\f"),
+            '\r' => out.push_str("\\r"),
             c if c.is_control() => {
-                for byte in c.to_string().bytes() {
-                    out.push_str(&format!("\\x{:02x}", byte));
+                let cp = c as u32;
+                if cp <= 0xFFFF {
+                    out.push_str(&format!("\\u{:04x}", cp));
+                } else {
+                    out.push_str(&format!("\\U{:08x}", cp));
                 }
             }
             c => out.push(c),
@@ -137,10 +144,18 @@ fn escape_symbol(s: &str) -> String {
         match c {
             '\'' => out.push_str("\\'"),
             '\\' => out.push_str("\\\\"),
+            '\0' => out.push_str("\\0"),
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
-            '\0' => out.push_str("\\0"),
+            c if c.is_control() => {
+                let cp = c as u32;
+                if cp <= 0xFFFF {
+                    out.push_str(&format!("\\u{:04x}", cp));
+                } else {
+                    out.push_str(&format!("\\U{:08x}", cp));
+                }
+            }
             c => out.push(c),
         }
     }
@@ -331,5 +346,42 @@ mod tests {
     #[test]
     fn empty_input() {
         assert_eq!(format(""), "");
+    }
+
+    #[test]
+    fn roundtrip_preserves_semantics() {
+        let inputs = [
+            "null",
+            "null.struct",
+            "true",
+            "42",
+            "\"hello\\nworld\"",
+            "foo",
+            "'quoted symbol'",
+            "[1, 2, 3]",
+            "(a b c)",
+            "{ x: 1, y: \"two\" }",
+            "ann::42",
+            "a::b::[1, 2]",
+            "{ nested: { inner: [true, false] } }",
+        ];
+        for input in inputs {
+            let original = Element::read_all(input.as_bytes()).unwrap();
+            let formatted = format(input);
+            let reparsed = Element::read_all(formatted.as_bytes())
+                .unwrap_or_else(|e| panic!("failed to reparse formatted output for {input:?}: {e}\nformatted: {formatted:?}"));
+            assert_eq!(
+                original, reparsed,
+                "roundtrip mismatch for {input:?}\nformatted: {formatted:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn floats() {
+        assert_eq!(format("0e0"), "0e0");
+        assert_eq!(format("nan"), "nan");
+        assert_eq!(format("+inf"), "+inf");
+        assert_eq!(format("-inf"), "-inf");
     }
 }

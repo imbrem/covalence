@@ -49,8 +49,16 @@ impl Server {
                 Some(Response::new_ok(req.id.clone(), result))
             }
             lsp_types::request::Formatting::METHOD => {
-                let params: DocumentFormattingParams =
-                    serde_json::from_value(req.params.clone()).ok()?;
+                let params: DocumentFormattingParams = match serde_json::from_value(req.params.clone()) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        return Some(Response::new_err(
+                            req.id.clone(),
+                            lsp_server::ErrorCode::InvalidParams as i32,
+                            e.to_string(),
+                        ));
+                    }
+                };
                 let result = self.handle_formatting(&params);
                 Some(Response::new_ok(
                     req.id.clone(),
@@ -98,18 +106,20 @@ impl Server {
             lsp_types::notification::DidOpenTextDocument::METHOD => {
                 let params: lsp_types::DidOpenTextDocumentParams =
                     serde_json::from_value(params).ok()?;
-                let uri = params.text_document.uri.clone();
-                let text = params.text_document.text.clone();
-                self.documents.insert(uri, text.clone());
-                Some(publish_diagnostics(params.text_document.uri, &text))
+                let uri = params.text_document.uri;
+                let text = params.text_document.text;
+                let diagnostics = publish_diagnostics(uri.clone(), &text);
+                self.documents.insert(uri, text);
+                Some(diagnostics)
             }
             lsp_types::notification::DidChangeTextDocument::METHOD => {
                 let params: lsp_types::DidChangeTextDocumentParams =
                     serde_json::from_value(params).ok()?;
                 let change = params.content_changes.into_iter().last()?;
-                let uri = params.text_document.uri.clone();
-                self.documents.insert(uri, change.text.clone());
-                Some(publish_diagnostics(params.text_document.uri, &change.text))
+                let uri = params.text_document.uri;
+                let diagnostics = publish_diagnostics(uri.clone(), &change.text);
+                self.documents.insert(uri, change.text);
+                Some(diagnostics)
             }
             lsp_types::notification::DidCloseTextDocument::METHOD => {
                 let params: lsp_types::DidCloseTextDocumentParams =

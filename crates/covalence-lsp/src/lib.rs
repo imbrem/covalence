@@ -29,6 +29,12 @@ pub struct Server {
     documents: HashMap<Uri, String>,
 }
 
+/// Check if a URI refers to an S-expression file (.smt or .alethe).
+fn is_sexp_file(uri: &Uri) -> bool {
+    let path = uri.as_str();
+    path.ends_with(".smt") || path.ends_with(".smt2") || path.ends_with(".alethe")
+}
+
 impl Server {
     pub fn new() -> Self {
         Server {
@@ -109,12 +115,18 @@ impl Server {
         let uri = &params.text_document.uri;
         let text = self.documents.get(uri)?;
 
-        use covalence_ion::ion_rs::Element;
-        let ast = Element::read_all(text.as_bytes()).ok()?;
-
-        let mut buf = Vec::new();
-        covalence_ion::prettyprint(&ast, &mut buf).ok()?;
-        let formatted = String::from_utf8(buf).ok()?;
+        let formatted = if is_sexp_file(uri) {
+            let sexps = covalence_ion::sexp::parse(text).ok()?;
+            let mut buf = Vec::new();
+            covalence_ion::sexp::prettyprint(&sexps, &mut buf).ok()?;
+            String::from_utf8(buf).ok()?
+        } else {
+            use covalence_ion::ion_rs::Element;
+            let ast = Element::read_all(text.as_bytes()).ok()?;
+            let mut buf = Vec::new();
+            covalence_ion::prettyprint(&ast, &mut buf).ok()?;
+            String::from_utf8(buf).ok()?
+        };
 
         // Add trailing newline
         let formatted = if formatted.is_empty() {
@@ -216,6 +228,10 @@ fn serialize_binary_ion(text: &str) -> serde_json::Value {
 }
 
 pub fn diagnose(text: &str) -> Vec<Diagnostic> {
+    diagnose_ion(text)
+}
+
+fn diagnose_ion(text: &str) -> Vec<Diagnostic> {
     use covalence_ion::ion_rs::Element;
 
     match Element::read_all(text.as_bytes()) {
@@ -229,8 +245,30 @@ pub fn diagnose(text: &str) -> Vec<Diagnostic> {
     }
 }
 
+pub fn diagnose_sexp(text: &str) -> Vec<Diagnostic> {
+    match covalence_ion::sexp::parse(text) {
+        Ok(_) => vec![],
+        Err(e) => {
+            let (line, col) = covalence_ion::sexp::offset_to_line_col(text, e.offset);
+            vec![Diagnostic {
+                range: Range::new(
+                    Position::new(line, col),
+                    Position::new(line, col),
+                ),
+                severity: Some(DiagnosticSeverity::ERROR),
+                message: e.message,
+                ..Default::default()
+            }]
+        }
+    }
+}
+
 fn publish_diagnostics(uri: Uri, text: &str) -> lsp_server::Notification {
-    let diagnostics = diagnose(text);
+    let diagnostics = if is_sexp_file(&uri) {
+        diagnose_sexp(text)
+    } else {
+        diagnose_ion(text)
+    };
     let params = PublishDiagnosticsParams {
         uri,
         diagnostics,

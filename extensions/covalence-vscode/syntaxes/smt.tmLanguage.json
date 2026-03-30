@@ -1,0 +1,70 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "SMT-LIB",
+  "scopeName": "source.smt",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#quoted-symbol" },
+    { "include": "#keyword" },
+    { "include": "#numeral" },
+    { "include": "#boolean" },
+    { "include": "#command" },
+    { "include": "#proof-rule" },
+    { "include": "#builtin-symbol" },
+    { "include": "#parens" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.semicolon.smt",
+      "match": ";.*$"
+    },
+    "string": {
+      "name": "string.quoted.double.smt",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.smt",
+          "match": "\\\\[\\\\\"ntrabfv]|\\\\x[0-9a-fA-F]{2}|\\\\u[0-9a-fA-F]{4}|\\\\u\\{[0-9a-fA-F]+\\}|\\\\U[0-9a-fA-F]{8}"
+        }
+      ]
+    },
+    "quoted-symbol": {
+      "name": "variable.other.quoted.smt",
+      "begin": "\\|",
+      "end": "\\|"
+    },
+    "keyword": {
+      "name": "entity.other.attribute-name.smt",
+      "match": ":[a-zA-Z0-9~!@$%^&*_+\\-=<>.?/]+"
+    },
+    "numeral": {
+      "name": "constant.numeric.smt",
+      "match": "(?<=[\\s()])(?:#x[0-9a-fA-F]+|#b[01]+|[0-9]+(?:\\.[0-9]+)?)(?=[\\s();]|$)"
+    },
+    "boolean": {
+      "name": "constant.language.boolean.smt",
+      "match": "\\b(?:true|false)\\b"
+    },
+    "command": {
+      "name": "keyword.control.smt",
+      "match": "(?<=\\()\\s*(?:set-logic|set-info|set-option|declare-sort|define-sort|declare-fun|declare-const|define-fun|define-fun-rec|define-funs-rec|assert|check-sat|check-sat-assuming|get-assertions|get-proof|get-unsat-core|get-value|get-assignment|get-model|get-info|get-option|push|pop|exit|reset|reset-assertions|echo|declare-datatype|declare-datatypes|simplify|eval|assume|step|anchor)(?=[\\s()])"
+    },
+    "proof-rule": {
+      "name": "entity.name.function.proof-rule.smt",
+      "match": "(?<=[\\s()])(?:th_resolution|resolution|tautology|contraction|subproof|hole|trust|not_not|not_or|not_and|not_xor1|not_xor2|not_implies1|not_implies2|not_equiv1|not_equiv2|not_ite1|not_ite2|not_simplify|xor1|xor2|equiv1|equiv2|ite1|ite2|ite_intro|connective_def|and_pos|and_neg|or_pos|or_neg|xor_pos1|xor_pos2|xor_neg1|xor_neg2|implies_pos|implies_neg1|implies_neg2|equiv_pos1|equiv_pos2|equiv_neg1|equiv_neg2|ite_pos1|ite_pos2|ite_neg1|ite_neg2|eq_reflexive|eq_transitive|eq_congruent_pred|eq_congruent|refl|trans|cong|forall_inst|bind|sko_ex|sko_forall|onepoint|qnt_join|qnt_rm_unused|qnt_simplify|la_rw_eq|la_generic|la_disequality|la_tautology|lia_generic|la_totality|la_multiplied_pos|la_multiplied_neg|rewrite|rare_rewrite|all_simplify|and_simplify|or_simplify|implies_simplify|equiv_simplify|bool_simplify|ite_simplify|div_simplify|prod_simplify|unary_minus_simplify|minus_simplify|sum_simplify|comp_simplify|nary_elim|ac_simp|bfun_elim)(?=[\\s()])"
+    },
+    "builtin-symbol": {
+      "name": "support.function.smt",
+      "match": "(?<=[\\s()])(?:not|and|or|xor|=>|ite|forall|exists|let|match|as|!|=|distinct|select|store|\\+|\\-|\\*|/|div|mod|abs|<=|>=|<|>|cl|choice)(?=[\\s()])"
+    },
+    "parens": {
+      "begin": "\\(",
+      "end": "\\)",
+      "beginCaptures": { "0": { "name": "punctuation.paren.open.smt" } },
+      "endCaptures": { "0": { "name": "punctuation.paren.close.smt" } },
+      "patterns": [{ "include": "$self" }]
+    }
+  }
+}

@@ -162,7 +162,11 @@ export async function activate(context: ExtensionContext) {
     fileUriToPath(uriConverters.code2Protocol(uri));
 
   const clientOptions: LanguageClientOptions = {
-    documentSelector: [{ language: "ion" }],
+    documentSelector: [
+      { language: "ion" },
+      { language: "smt" },
+      { language: "alethe" },
+    ],
     outputChannel: channel,
     uriConverters,
   };

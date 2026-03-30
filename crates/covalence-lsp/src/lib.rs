@@ -2,6 +2,7 @@ use lsp_server::{Request, Response};
 use lsp_types::{
     Diagnostic, DiagnosticSeverity, InitializeResult, Position, PublishDiagnosticsParams, Range,
     ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
+    notification::Notification as _,
 };
 
 pub fn server_capabilities() -> ServerCapabilities {
@@ -53,45 +54,37 @@ pub fn diagnose(text: &str) -> Vec<Diagnostic> {
     }
 }
 
-fn publish_diagnostics(
-    uri: lsp_types::Uri,
-    text: &str,
-) -> lsp_server::Notification {
+fn publish_diagnostics(uri: lsp_types::Uri, text: &str) -> lsp_server::Notification {
     let diagnostics = diagnose(text);
     let params = PublishDiagnosticsParams {
         uri,
         diagnostics,
         version: None,
     };
-    lsp_server::Notification {
-        method: "textDocument/publishDiagnostics".to_owned(),
-        params: serde_json::to_value(params).unwrap(),
-    }
+    lsp_server::Notification::new(
+        lsp_types::notification::PublishDiagnostics::METHOD.to_owned(),
+        serde_json::to_value(params).unwrap(),
+    )
 }
 
-pub fn handle_notification(not: &lsp_server::Notification) -> Vec<lsp_server::Notification> {
-    match not.method.as_str() {
-        "textDocument/didOpen" => {
+pub fn handle_notification(not: lsp_server::Notification) -> Option<lsp_server::Notification> {
+    let lsp_server::Notification { method, params } = not;
+    match method.as_str() {
+        lsp_types::notification::DidOpenTextDocument::METHOD => {
             let params: lsp_types::DidOpenTextDocumentParams =
-                serde_json::from_value(not.params.clone()).unwrap();
-            vec![publish_diagnostics(
+                serde_json::from_value(params).ok()?;
+            Some(publish_diagnostics(
                 params.text_document.uri,
                 &params.text_document.text,
-            )]
+            ))
         }
-        "textDocument/didChange" => {
+        lsp_types::notification::DidChangeTextDocument::METHOD => {
             let params: lsp_types::DidChangeTextDocumentParams =
-                serde_json::from_value(not.params.clone()).unwrap();
-            if let Some(change) = params.content_changes.into_iter().last() {
-                vec![publish_diagnostics(
-                    params.text_document.uri,
-                    &change.text,
-                )]
-            } else {
-                vec![]
-            }
+                serde_json::from_value(params).ok()?;
+            let change = params.content_changes.into_iter().last()?;
+            Some(publish_diagnostics(params.text_document.uri, &change.text))
         }
-        _ => vec![],
+        _ => None,
     }
 }
 

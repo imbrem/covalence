@@ -43,7 +43,7 @@ fn main() {
                 }
             }
             Message::Notification(not) => {
-                for n in covalence_lsp::handle_notification(&not) {
+                if let Some(n) = covalence_lsp::handle_notification(not) {
                     connection.sender.send(Message::Notification(n)).unwrap();
                 }
             }

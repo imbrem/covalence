@@ -378,6 +378,35 @@ mod tests {
     }
 
     #[test]
+    fn string_escapes() {
+        // Named control character escapes
+        assert_eq!(format("\"\\0\""), "\"\\0\"");
+        assert_eq!(format("\"\\a\""), "\"\\a\"");
+        assert_eq!(format("\"\\b\""), "\"\\b\"");
+        assert_eq!(format("\"\\t\""), "\"\\t\"");
+        assert_eq!(format("\"\\n\""), "\"\\n\"");
+        assert_eq!(format("\"\\v\""), "\"\\v\"");
+        assert_eq!(format("\"\\f\""), "\"\\f\"");
+        assert_eq!(format("\"\\r\""), "\"\\r\"");
+        // Quote and backslash escaping
+        assert_eq!(format("\"hello\\\"world\""), "\"hello\\\"world\"");
+        assert_eq!(format("\"back\\\\slash\""), "\"back\\\\slash\"");
+        // Unicode escape for other control chars (e.g. U+001B ESC)
+        assert_eq!(format("\"\\x1b\""), "\"\\u001b\"");
+    }
+
+    #[test]
+    fn symbol_escapes() {
+        // Symbols with characters requiring quoting and escaping
+        assert_eq!(format("'has\\'quote'"), "'has\\'quote'");
+        assert_eq!(format("'has\\\\backslash'"), "'has\\\\backslash'");
+        assert_eq!(format("'has\\nnewline'"), "'has\\nnewline'");
+        assert_eq!(format("'has\\ttab'"), "'has\\ttab'");
+        // Unicode escape for control chars in symbols
+        assert_eq!(format("'esc\\x1b'"), "'esc\\u001b'");
+    }
+
+    #[test]
     fn floats() {
         assert_eq!(format("0e0"), "0e0");
         assert_eq!(format("nan"), "nan");

@@ -2,6 +2,23 @@ use lsp_server::{Connection, Message};
 use lsp_types::InitializeParams;
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.get(1).is_some_and(|a| a == "--diagnose") {
+        let path = args.get(2).expect("usage: covalence-lsp --diagnose <file>");
+        let text = std::fs::read_to_string(path).unwrap();
+        let diagnostics = covalence_lsp::diagnose(&text);
+        for d in &diagnostics {
+            let severity = match d.severity {
+                Some(lsp_types::DiagnosticSeverity::ERROR) => "error",
+                Some(lsp_types::DiagnosticSeverity::WARNING) => "warning",
+                _ => "info",
+            };
+            eprintln!("{}: {}", severity, d.message);
+        }
+        std::process::exit(if diagnostics.is_empty() { 0 } else { 1 });
+    }
+
     let (connection, io_threads) = Connection::stdio();
 
     let (init_id, _init_params) = connection.initialize_start().unwrap();
@@ -26,7 +43,9 @@ fn main() {
                 }
             }
             Message::Notification(not) => {
-                covalence_lsp::handle_notification(&not);
+                for n in covalence_lsp::handle_notification(&not) {
+                    connection.sender.send(Message::Notification(n)).unwrap();
+                }
             }
             Message::Response(_) => {}
         }

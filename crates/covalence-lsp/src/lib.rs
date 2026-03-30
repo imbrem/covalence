@@ -178,7 +178,7 @@ fn diagnose_ion(text: &str) -> Vec<Diagnostic> {
     }
 }
 
-fn diagnose_sexp(text: &str) -> Vec<Diagnostic> {
+pub fn diagnose_sexp(text: &str) -> Vec<Diagnostic> {
     match covalence_ion::sexp::parse(text) {
         Ok(_) => vec![],
         Err(e) => {

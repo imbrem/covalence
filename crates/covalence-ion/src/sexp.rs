@@ -339,7 +339,13 @@ impl<'a> Parser<'a> {
     fn parse_atom(&mut self) -> Result<SExp, ParseError> {
         let start = self.pos;
         while let Some(b) = self.peek() {
-            if b.is_ascii_whitespace() || b == b'(' || b == b')' || b == b';' || b == b'"' {
+            if b.is_ascii_whitespace()
+                || b == b'('
+                || b == b')'
+                || b == b';'
+                || b == b'"'
+                || b == b'|'
+            {
                 break;
             }
             self.advance();
@@ -419,6 +425,10 @@ fn escape_string(s: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\t' => out.push_str("\\t"),
             '\r' => out.push_str("\\r"),
+            '\x07' => out.push_str("\\a"),
+            '\x08' => out.push_str("\\b"),
+            '\x0c' => out.push_str("\\f"),
+            '\x0b' => out.push_str("\\v"),
             c => out.push(c),
         }
     }
@@ -612,6 +622,37 @@ mod tests {
         assert_eq!(offset_to_line_col(text, 3), (0, 3));
         assert_eq!(offset_to_line_col(text, 4), (1, 0));
         assert_eq!(offset_to_line_col(text, 8), (2, 0));
+    }
+
+    #[test]
+    fn atom_stops_at_pipe() {
+        assert_eq!(
+            parse("foo|bar|").unwrap(),
+            vec![
+                SExp::Atom("foo".into()),
+                SExp::QuotedSymbol("bar".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn roundtrip_control_chars() {
+        let inputs = [
+            r#""\a\b\f\v""#,
+            r#""\n\t\r""#,
+            r#""hello\"world""#,
+            r#""back\\slash""#,
+        ];
+        for input in inputs {
+            let parsed = parse(input).unwrap();
+            let mut buf = Vec::new();
+            prettyprint(&parsed, &mut buf).unwrap();
+            let output = String::from_utf8(buf).unwrap();
+            let reparsed = parse(&output).unwrap_or_else(|e| {
+                panic!("failed to reparse {input:?}: {e}\noutput: {output:?}")
+            });
+            assert_eq!(parsed, reparsed, "roundtrip mismatch for {input:?}");
+        }
     }
 
     #[test]

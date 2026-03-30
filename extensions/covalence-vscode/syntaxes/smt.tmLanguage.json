@@ -26,7 +26,7 @@
       "patterns": [
         {
           "name": "constant.character.escape.smt",
-          "match": "\\\\[\\\\\"ntra-z]|\\\\x[0-9a-fA-F]{2}|\\\\u[0-9a-fA-F]{4}|\\\\u\\{[0-9a-fA-F]+\\}|\\\\U[0-9a-fA-F]{8}"
+          "match": "\\\\[\\\\\"ntrabfv]|\\\\x[0-9a-fA-F]{2}|\\\\u[0-9a-fA-F]{4}|\\\\u\\{[0-9a-fA-F]+\\}|\\\\U[0-9a-fA-F]{8}"
         }
       ]
     },

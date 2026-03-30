@@ -251,10 +251,7 @@ pub fn diagnose_sexp(text: &str) -> Vec<Diagnostic> {
         Err(e) => {
             let (line, col) = covalence_ion::sexp::offset_to_line_col(text, e.offset);
             vec![Diagnostic {
-                range: Range::new(
-                    Position::new(line, col),
-                    Position::new(line, col),
-                ),
+                range: Range::new(Position::new(line, col), Position::new(line, col)),
                 severity: Some(DiagnosticSeverity::ERROR),
                 message: e.message,
                 ..Default::default()
@@ -333,8 +330,7 @@ mod tests {
     // SMT-LIB/Alethe uses `:keyword` syntax and `|pipe-quoted symbols|`,
     // neither of which is valid in Ion's text grammar.
 
-    const ALETHE_WITH_KEYWORDS_AND_PIPES: &str =
-        "(set-info :status |my proof|)";
+    const ALETHE_WITH_KEYWORDS_AND_PIPES: &str = "(set-info :status |my proof|)";
 
     #[test]
     fn alethe_keywords_and_pipes_valid_on_alethe_file() {
@@ -372,10 +368,7 @@ mod tests {
     fn alethe_keywords_and_pipes_errors_on_ion_file() {
         let mut server = Server::new();
         let notif = server
-            .handle_notification(did_open(
-                "file:///data.ion",
-                ALETHE_WITH_KEYWORDS_AND_PIPES,
-            ))
+            .handle_notification(did_open("file:///data.ion", ALETHE_WITH_KEYWORDS_AND_PIPES))
             .expect("should produce diagnostics notification");
         let diags = extract_diagnostics(&notif);
         assert!(
@@ -552,10 +545,7 @@ mod tests {
             .handle_notification(did_open("file:///proof.alethe", "(assert (= x 0)"))
             .expect("should produce diagnostics notification");
         let diags = extract_diagnostics(&notif);
-        assert!(
-            !diags.is_empty(),
-            "expected sexp error for unclosed paren"
-        );
+        assert!(!diags.is_empty(), "expected sexp error for unclosed paren");
         assert_eq!(diags[0].severity, Some(DiagnosticSeverity::ERROR));
     }
 
@@ -566,10 +556,7 @@ mod tests {
             .handle_notification(did_open("file:///data.ion", "{ name: }"))
             .expect("should produce diagnostics notification");
         let diags = extract_diagnostics(&notif);
-        assert!(
-            !diags.is_empty(),
-            "expected Ion error for malformed struct"
-        );
+        assert!(!diags.is_empty(), "expected Ion error for malformed struct");
         assert_eq!(diags[0].severity, Some(DiagnosticSeverity::ERROR));
     }
 }

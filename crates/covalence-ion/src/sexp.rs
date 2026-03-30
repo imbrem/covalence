@@ -608,9 +608,8 @@ mod tests {
             let mut buf = Vec::new();
             prettyprint(&parsed, &mut buf).unwrap();
             let output = String::from_utf8(buf).unwrap();
-            let reparsed = parse(&output).unwrap_or_else(|e| {
-                panic!("failed to reparse {input:?}: {e}\noutput: {output:?}")
-            });
+            let reparsed = parse(&output)
+                .unwrap_or_else(|e| panic!("failed to reparse {input:?}: {e}\noutput: {output:?}"));
             assert_eq!(parsed, reparsed, "roundtrip mismatch for {input:?}");
         }
     }
@@ -628,10 +627,7 @@ mod tests {
     fn atom_stops_at_pipe() {
         assert_eq!(
             parse("foo|bar|").unwrap(),
-            vec![
-                SExp::Atom("foo".into()),
-                SExp::QuotedSymbol("bar".into()),
-            ]
+            vec![SExp::Atom("foo".into()), SExp::QuotedSymbol("bar".into()),]
         );
     }
 
@@ -648,9 +644,8 @@ mod tests {
             let mut buf = Vec::new();
             prettyprint(&parsed, &mut buf).unwrap();
             let output = String::from_utf8(buf).unwrap();
-            let reparsed = parse(&output).unwrap_or_else(|e| {
-                panic!("failed to reparse {input:?}: {e}\noutput: {output:?}")
-            });
+            let reparsed = parse(&output)
+                .unwrap_or_else(|e| panic!("failed to reparse {input:?}: {e}\noutput: {output:?}"));
             assert_eq!(parsed, reparsed, "roundtrip mismatch for {input:?}");
         }
     }

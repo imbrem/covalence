@@ -32,18 +32,20 @@ fn main() {
 
     eprintln!("Covalence LSP initialized");
 
+    let mut server = covalence_lsp::Server::new();
+
     for msg in &connection.receiver {
         match msg {
             Message::Request(req) => {
                 if connection.handle_shutdown(&req).unwrap_or(false) {
                     break;
                 }
-                if let Some(resp) = covalence_lsp::handle_request(&req) {
+                if let Some(resp) = server.handle_request(&req) {
                     connection.sender.send(Message::Response(resp)).unwrap();
                 }
             }
             Message::Notification(not) => {
-                if let Some(n) = covalence_lsp::handle_notification(not) {
+                if let Some(n) = server.handle_notification(not) {
                     connection.sender.send(Message::Notification(n)).unwrap();
                 }
             }

@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 ion-rs = "1.0.0-rc.11"
+pretty = "0.12"

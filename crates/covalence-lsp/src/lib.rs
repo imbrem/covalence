@@ -27,8 +27,6 @@ pub fn initialize_result() -> InitializeResult {
     }
 }
 
-const MESSAGE: &str = "Hello from Covalence LSP!";
-
 pub struct Server {
     documents: HashMap<Uri, String>,
 }
@@ -42,23 +40,31 @@ impl Server {
 
     pub fn handle_request(&self, req: &Request) -> Option<Response> {
         match req.method.as_str() {
-            "covalence/helloWorld" => {
-                let result = serde_json::json!({
-                    "message": MESSAGE
-                });
-                Some(Response::new_ok(req.id.clone(), result))
-            }
-            lsp_types::request::Formatting::METHOD => {
-                let params: DocumentFormattingParams = match serde_json::from_value(req.params.clone()) {
-                    Ok(p) => p,
-                    Err(e) => {
+            "covalence/serializeBinaryIon" => {
+                let result = match req.params.get("text").and_then(|v| v.as_str()) {
+                    Some(text) => serialize_binary_ion(text),
+                    None => {
                         return Some(Response::new_err(
                             req.id.clone(),
                             lsp_server::ErrorCode::InvalidParams as i32,
-                            e.to_string(),
+                            "missing or invalid \"text\" parameter".to_owned(),
                         ));
                     }
                 };
+                Some(Response::new_ok(req.id.clone(), result))
+            }
+            lsp_types::request::Formatting::METHOD => {
+                let params: DocumentFormattingParams =
+                    match serde_json::from_value(req.params.clone()) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            return Some(Response::new_err(
+                                req.id.clone(),
+                                lsp_server::ErrorCode::InvalidParams as i32,
+                                e.to_string(),
+                            ));
+                        }
+                    };
                 let result = self.handle_formatting(&params);
                 Some(Response::new_ok(
                     req.id.clone(),
@@ -129,6 +135,18 @@ impl Server {
             }
             _ => None,
         }
+    }
+}
+
+fn serialize_binary_ion(text: &str) -> serde_json::Value {
+    use covalence_ion::ion_rs::{Element, v1_0::Binary};
+
+    match Element::read_all(text.as_bytes()) {
+        Ok(sequence) => match sequence.encode_as(Binary) {
+            Ok(bytes) => serde_json::json!({ "byteCount": bytes.len() }),
+            Err(e) => serde_json::json!({ "error": e.to_string() }),
+        },
+        Err(e) => serde_json::json!({ "error": e.to_string() }),
     }
 }
 

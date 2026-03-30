@@ -51,6 +51,34 @@ impl Server {
                 };
                 Some(Response::new_ok(req.id.clone(), result))
             }
+            "covalence/decodeBinaryIon" => {
+                let result = match req.params.get("path").and_then(|v| v.as_str()) {
+                    Some(path) => decode_binary_ion_file(path),
+                    None => {
+                        return Some(Response::new_err(
+                            req.id.clone(),
+                            lsp_server::ErrorCode::InvalidParams as i32,
+                            "missing or invalid \"path\" parameter".to_owned(),
+                        ));
+                    }
+                };
+                Some(Response::new_ok(req.id.clone(), result))
+            }
+            "covalence/encodeBinaryIon" => {
+                let path = req.params.get("path").and_then(|v| v.as_str());
+                let text = req.params.get("text").and_then(|v| v.as_str());
+                let result = match (path, text) {
+                    (Some(path), Some(text)) => encode_binary_ion_file(path, text),
+                    _ => {
+                        return Some(Response::new_err(
+                            req.id.clone(),
+                            lsp_server::ErrorCode::InvalidParams as i32,
+                            "missing or invalid \"path\" and/or \"text\" parameter".to_owned(),
+                        ));
+                    }
+                };
+                Some(Response::new_ok(req.id.clone(), result))
+            }
             lsp_types::request::Formatting::METHOD => {
                 let params: DocumentFormattingParams =
                     match serde_json::from_value(req.params.clone()) {
@@ -133,6 +161,45 @@ impl Server {
             }
             _ => None,
         }
+    }
+}
+
+fn decode_binary_ion_file(path: &str) -> serde_json::Value {
+    use covalence_ion::ion_rs::Element;
+
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) => return serde_json::json!({ "error": format!("file read error: {e}") }),
+    };
+
+    match Element::read_all(&bytes) {
+        Ok(sequence) => {
+            let mut buf = Vec::new();
+            match covalence_ion::prettyprint(&sequence, &mut buf) {
+                Ok(()) => {
+                    let text = String::from_utf8(buf).unwrap_or_default();
+                    let text = if text.is_empty() { text } else { text + "\n" };
+                    serde_json::json!({ "text": text })
+                }
+                Err(e) => serde_json::json!({ "error": format!("prettyprint error: {e}") }),
+            }
+        }
+        Err(e) => serde_json::json!({ "error": format!("Ion parse error: {e}") }),
+    }
+}
+
+fn encode_binary_ion_file(path: &str, text: &str) -> serde_json::Value {
+    use covalence_ion::ion_rs::{Element, v1_0::Binary};
+
+    match Element::read_all(text.as_bytes()) {
+        Ok(sequence) => match sequence.encode_as(Binary) {
+            Ok(bytes) => match std::fs::write(path, &bytes) {
+                Ok(()) => serde_json::json!({}),
+                Err(e) => serde_json::json!({ "error": format!("file write error: {e}") }),
+            },
+            Err(e) => serde_json::json!({ "error": format!("binary encode error: {e}") }),
+        },
+        Err(e) => serde_json::json!({ "error": format!("Ion parse error: {e}") }),
     }
 }
 

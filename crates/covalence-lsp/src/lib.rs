@@ -282,6 +282,8 @@ fn publish_diagnostics(uri: Uri, text: &str) -> lsp_server::Notification {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
 
     #[test]
@@ -295,5 +297,279 @@ mod tests {
     #[test]
     fn malformed_ion_has_errors() {
         assert!(!diagnose("{ name: }").is_empty());
+    }
+
+    // --- Integration tests: diagnostics via Server.handle_notification ---
+
+    /// Build a `textDocument/didOpen` notification for the given URI and content.
+    fn did_open(uri: &str, text: &str) -> lsp_server::Notification {
+        lsp_server::Notification::new(
+            lsp_types::notification::DidOpenTextDocument::METHOD.to_owned(),
+            serde_json::to_value(lsp_types::DidOpenTextDocumentParams {
+                text_document: lsp_types::TextDocumentItem {
+                    uri: Uri::from_str(uri).unwrap(),
+                    language_id: String::new(),
+                    version: 0,
+                    text: text.to_owned(),
+                },
+            })
+            .unwrap(),
+        )
+    }
+
+    /// Extract diagnostics from a `textDocument/publishDiagnostics` notification.
+    fn extract_diagnostics(notif: &lsp_server::Notification) -> Vec<Diagnostic> {
+        assert_eq!(
+            notif.method,
+            lsp_types::notification::PublishDiagnostics::METHOD
+        );
+        let params: PublishDiagnosticsParams =
+            serde_json::from_value(notif.params.clone()).unwrap();
+        params.diagnostics
+    }
+
+    // -- Valid Alethe/S-expression that is invalid Ion --
+    //
+    // SMT-LIB/Alethe uses `:keyword` syntax and `|pipe-quoted symbols|`,
+    // neither of which is valid in Ion's text grammar.
+
+    const ALETHE_WITH_KEYWORDS_AND_PIPES: &str =
+        "(set-info :status |my proof|)";
+
+    #[test]
+    fn alethe_keywords_and_pipes_valid_on_alethe_file() {
+        let mut server = Server::new();
+        let notif = server
+            .handle_notification(did_open(
+                "file:///proof.alethe",
+                ALETHE_WITH_KEYWORDS_AND_PIPES,
+            ))
+            .expect("should produce diagnostics notification");
+        let diags = extract_diagnostics(&notif);
+        assert!(
+            diags.is_empty(),
+            "expected no errors for valid Alethe with keywords/pipes: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn alethe_keywords_and_pipes_valid_on_smt2_file() {
+        let mut server = Server::new();
+        let notif = server
+            .handle_notification(did_open(
+                "file:///problem.smt2",
+                ALETHE_WITH_KEYWORDS_AND_PIPES,
+            ))
+            .expect("should produce diagnostics notification");
+        let diags = extract_diagnostics(&notif);
+        assert!(
+            diags.is_empty(),
+            "expected no errors for valid S-expression on .smt2: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn alethe_keywords_and_pipes_errors_on_ion_file() {
+        let mut server = Server::new();
+        let notif = server
+            .handle_notification(did_open(
+                "file:///data.ion",
+                ALETHE_WITH_KEYWORDS_AND_PIPES,
+            ))
+            .expect("should produce diagnostics notification");
+        let diags = extract_diagnostics(&notif);
+        assert!(
+            !diags.is_empty(),
+            "expected Ion parse errors for Alethe keywords/pipes"
+        );
+        assert_eq!(diags[0].severity, Some(DiagnosticSeverity::ERROR));
+    }
+
+    // -- Valid Ion that is also valid S-expression (no errors on either) --
+    //
+    // Ion's text format includes S-expressions `(...)`, structs `{...}`,
+    // and lists `[...]`. The sexp parser is very permissive: `{`, `}`, `[`,
+    // `]` are all parsed as atoms, so Ion content does not produce sexp
+    // errors. We verify both parsers accept this content and that the
+    // server routes to the correct one based on file extension.
+
+    const ION_STRUCT: &str = "{ name: \"hello\", value: 42 }";
+
+    #[test]
+    fn ion_struct_no_diagnostics_on_ion_file() {
+        let mut server = Server::new();
+        let notif = server
+            .handle_notification(did_open("file:///data.ion", ION_STRUCT))
+            .expect("should produce diagnostics notification");
+        let diags = extract_diagnostics(&notif);
+        assert!(
+            diags.is_empty(),
+            "expected no errors for valid Ion struct: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn ion_struct_no_diagnostics_on_alethe_file() {
+        // The sexp parser is permissive: `{`, `}` etc. are valid atoms,
+        // so this content parses without error even on an Alethe file.
+        let mut server = Server::new();
+        let notif = server
+            .handle_notification(did_open("file:///proof.alethe", ION_STRUCT))
+            .expect("should produce diagnostics notification");
+        let diags = extract_diagnostics(&notif);
+        assert!(
+            diags.is_empty(),
+            "sexp parser is permissive; Ion struct tokens parse as atoms: {diags:?}"
+        );
+    }
+
+    // -- Realistic Alethe proof: valid sexp, invalid Ion --
+    //
+    // Alethe proofs use `:rule`, `:premises` keywords that Ion rejects.
+
+    const ALETHE_PROOF: &str = "\
+(assume h1 (not (= (+ x 1) 2)))
+(step t1 (cl (= x 1)) :rule resolution :premises (h1))";
+
+    #[test]
+    fn alethe_proof_valid_on_alethe_file() {
+        let mut server = Server::new();
+        let notif = server
+            .handle_notification(did_open("file:///proof.alethe", ALETHE_PROOF))
+            .expect("should produce diagnostics notification");
+        let diags = extract_diagnostics(&notif);
+        assert!(
+            diags.is_empty(),
+            "expected no errors for Alethe proof: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn alethe_proof_errors_on_ion_file() {
+        let mut server = Server::new();
+        let notif = server
+            .handle_notification(did_open("file:///proof.ion", ALETHE_PROOF))
+            .expect("should produce diagnostics notification");
+        let diags = extract_diagnostics(&notif);
+        assert!(
+            !diags.is_empty(),
+            "expected Ion parse errors for Alethe proof (`:rule` etc. are invalid Ion)"
+        );
+        assert_eq!(diags[0].severity, Some(DiagnosticSeverity::ERROR));
+    }
+
+    // -- Realistic Ion document with struct/list/sexp --
+
+    const ION_DOCUMENT: &str = "\
+{
+  theorem: resolution,
+  premises: [h1, h2],
+  conclusion: (= x 1),
+}";
+
+    #[test]
+    fn ion_document_valid_on_ion_file() {
+        let mut server = Server::new();
+        let notif = server
+            .handle_notification(did_open("file:///data.ion", ION_DOCUMENT))
+            .expect("should produce diagnostics notification");
+        let diags = extract_diagnostics(&notif);
+        assert!(
+            diags.is_empty(),
+            "expected no errors for valid Ion document: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn ion_document_no_errors_on_alethe_file() {
+        // Sexp parser treats `{`, `}`, `[`, `]`, `,` as atom characters,
+        // so this valid Ion document also parses as valid (though meaningless)
+        // S-expressions.
+        let mut server = Server::new();
+        let notif = server
+            .handle_notification(did_open("file:///proof.alethe", ION_DOCUMENT))
+            .expect("should produce diagnostics notification");
+        let diags = extract_diagnostics(&notif);
+        assert!(
+            diags.is_empty(),
+            "sexp parser is permissive; Ion document tokens parse as atoms: {diags:?}"
+        );
+    }
+
+    // -- Pipe-quoted symbol is valid sexp, invalid Ion --
+
+    #[test]
+    fn pipe_quoted_symbol_valid_sexp_invalid_ion() {
+        assert!(diagnose_sexp("|hello world|").is_empty());
+        assert!(!diagnose_ion("|hello world|").is_empty());
+    }
+
+    // -- SMT keyword is valid sexp, invalid Ion --
+
+    #[test]
+    fn smt_keyword_valid_sexp_invalid_ion() {
+        assert!(diagnose_sexp(":status").is_empty());
+        assert!(!diagnose_ion(":status").is_empty());
+    }
+
+    // -- File extension routing: .smt uses sexp diagnostics --
+
+    #[test]
+    fn smt_extension_routes_to_sexp_diagnostics() {
+        // `:status` is a valid sexp atom but invalid Ion.
+        // On a .smt file the sexp parser should be used → no errors.
+        let mut server = Server::new();
+        let notif = server
+            .handle_notification(did_open("file:///problem.smt", ":status"))
+            .expect("should produce diagnostics notification");
+        let diags = extract_diagnostics(&notif);
+        assert!(
+            diags.is_empty(),
+            "expected .smt to use sexp parser (no errors for keyword): {diags:?}"
+        );
+    }
+
+    #[test]
+    fn ion_extension_routes_to_ion_diagnostics() {
+        // `:status` is invalid Ion. On a .ion file the Ion parser should be used → errors.
+        let mut server = Server::new();
+        let notif = server
+            .handle_notification(did_open("file:///data.ion", ":status"))
+            .expect("should produce diagnostics notification");
+        let diags = extract_diagnostics(&notif);
+        assert!(
+            !diags.is_empty(),
+            "expected .ion to use Ion parser (errors for keyword): {diags:?}"
+        );
+    }
+
+    // -- Malformed content produces errors on the matching file type --
+
+    #[test]
+    fn unclosed_paren_errors_on_alethe_file() {
+        let mut server = Server::new();
+        let notif = server
+            .handle_notification(did_open("file:///proof.alethe", "(assert (= x 0)"))
+            .expect("should produce diagnostics notification");
+        let diags = extract_diagnostics(&notif);
+        assert!(
+            !diags.is_empty(),
+            "expected sexp error for unclosed paren"
+        );
+        assert_eq!(diags[0].severity, Some(DiagnosticSeverity::ERROR));
+    }
+
+    #[test]
+    fn malformed_ion_struct_errors_on_ion_file() {
+        let mut server = Server::new();
+        let notif = server
+            .handle_notification(did_open("file:///data.ion", "{ name: }"))
+            .expect("should produce diagnostics notification");
+        let diags = extract_diagnostics(&notif);
+        assert!(
+            !diags.is_empty(),
+            "expected Ion error for malformed struct"
+        );
+        assert_eq!(diags[0].severity, Some(DiagnosticSeverity::ERROR));
     }
 }

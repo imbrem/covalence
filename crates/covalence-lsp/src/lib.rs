@@ -4,9 +4,7 @@ use lsp_server::{Request, Response};
 use lsp_types::{
     Diagnostic, DiagnosticSeverity, DocumentFormattingParams, InitializeResult, OneOf, Position,
     PublishDiagnosticsParams, Range, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
-    TextDocumentSyncKind, TextEdit, Uri,
-    notification::Notification as _,
-    request::Request as _,
+    TextDocumentSyncKind, TextEdit, Uri, notification::Notification as _, request::Request as _,
 };
 
 pub fn server_capabilities() -> ServerCapabilities {

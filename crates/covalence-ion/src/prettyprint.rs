@@ -9,7 +9,10 @@ const INDENT: isize = 2;
 /// Pretty-print a sequence of Ion elements to the given writer.
 pub fn prettyprint(ast: &Sequence, writer: &mut dyn io::Write) -> io::Result<()> {
     let arena = Arena::<()>::new();
-    let docs: Vec<_> = ast.iter().map(|elem| element_to_doc(&arena, elem)).collect();
+    let docs: Vec<_> = ast
+        .iter()
+        .map(|elem| element_to_doc(&arena, elem))
+        .collect();
     if docs.is_empty() {
         return Ok(());
     }
@@ -333,9 +336,13 @@ mod tests {
 
     #[test]
     fn nested_struct_breaks() {
-        let input = "{ alpha: 1, bravo: 2, charlie: 3, delta: 4, echo: 5, foxtrot: 6, golf: 7, hotel: 8 }";
+        let input =
+            "{ alpha: 1, bravo: 2, charlie: 3, delta: 4, echo: 5, foxtrot: 6, golf: 7, hotel: 8 }";
         let output = format(input);
-        assert!(output.contains('\n'), "long struct should break across lines: {output}");
+        assert!(
+            output.contains('\n'),
+            "long struct should break across lines: {output}"
+        );
     }
 
     #[test]

@@ -22,8 +22,7 @@ fn main() {
     let (connection, io_threads) = Connection::stdio();
 
     let (init_id, _init_params) = connection.initialize_start().unwrap();
-    let _init_params: InitializeParams =
-        serde_json::from_value(_init_params).unwrap();
+    let _init_params: InitializeParams = serde_json::from_value(_init_params).unwrap();
 
     let init_result = covalence_lsp::initialize_result();
     connection

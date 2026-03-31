@@ -7,9 +7,8 @@ fn main() {
     if args.get(1).is_some_and(|a| a == "--diagnose") {
         let path = args.get(2).expect("usage: covalence-lsp --diagnose <file>");
         let text = std::fs::read_to_string(path).unwrap();
-        let is_sexp = path.ends_with(".smt")
-            || path.ends_with(".smt2")
-            || path.ends_with(".alethe");
+        let is_sexp =
+            path.ends_with(".smt") || path.ends_with(".smt2") || path.ends_with(".alethe");
         let diagnostics = if is_sexp {
             covalence_lsp::diagnose_sexp(&text)
         } else {

@@ -328,14 +328,25 @@ export async function activate(context: ExtensionContext) {
         return;
       }
 
+      const hashKindItems = [{ label: "BLAKE3", value: "blake3" }];
+      const picked = await window.showQuickPick(hashKindItems, {
+        placeHolder: "Select hash function",
+      });
+      if (!picked) return;
+
       await clientReady;
       const result: { hash?: string; error?: string } =
-        await client.sendRequest("covalence/storeFile", { uri: toServerUri(editor.document.uri) });
+        await client.sendRequest("covalence/storeFile", {
+          uri: toServerUri(editor.document.uri),
+          hashKind: picked.value,
+        });
 
       if (result.error) {
         window.showErrorMessage(`Store failed: ${result.error}`);
       } else if (result.hash) {
-        window.showInformationMessage(`BLAKE3: ${result.hash}`);
+        window.showInformationMessage(
+          `${picked.label}: ${result.hash}`,
+        );
       }
     }),
   );
@@ -348,12 +359,18 @@ export async function activate(context: ExtensionContext) {
         return;
       }
 
+      // Multihash hex lengths: BLAKE3 = 68 chars (1e20 + 64 digest)
+      const VALID_MULTIHASH_LENGTHS = [68];
+
       const hash = await window.showInputBox({
-        prompt: "Enter BLAKE3 hash (64 hex characters)",
-        placeHolder: "e.g. af1349b9f5f9a1a6a0404dea36dcc949...",
+        prompt: "Enter multihash (hex-encoded, e.g. 1e20... for BLAKE3)",
+        placeHolder: "e.g. 1e20af1349b9f5f9a1a6a0404dea36dcc949...",
         validateInput: (value) => {
-          if (!/^[0-9a-fA-F]{64}$/.test(value)) {
-            return "Hash must be exactly 64 hexadecimal characters";
+          if (!/^[0-9a-fA-F]+$/.test(value)) {
+            return "Must be a hexadecimal string";
+          }
+          if (!VALID_MULTIHASH_LENGTHS.includes(value.length)) {
+            return `Expected ${VALID_MULTIHASH_LENGTHS.join(" or ")} hex characters (multihash-encoded)`;
           }
           return null;
         },

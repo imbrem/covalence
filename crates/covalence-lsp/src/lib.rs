@@ -132,6 +132,21 @@ impl Server {
                         ));
                     }
                 };
+                let hash_kind_str = req
+                    .params
+                    .get("hashKind")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("blake3");
+                let hash_kind = match parse_hash_kind(hash_kind_str) {
+                    Some(k) => k,
+                    None => {
+                        return Some(Response::new_err(
+                            req.id.clone(),
+                            lsp_server::ErrorCode::InvalidParams as i32,
+                            format!("unsupported hash kind: {hash_kind_str:?}"),
+                        ));
+                    }
+                };
                 let uri = match Uri::from_str(uri_str) {
                     Ok(u) => u,
                     Err(e) => {
@@ -162,14 +177,11 @@ impl Server {
                         ));
                     }
                 };
-                match store.store(text.as_bytes()) {
-                    Ok(hash) => {
-                        let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
-                        Some(Response::new_ok(
-                            req.id.clone(),
-                            serde_json::json!({ "hash": hex }),
-                        ))
-                    }
+                match store.store(hash_kind, text.as_bytes()) {
+                    Ok(multihash) => Some(Response::new_ok(
+                        req.id.clone(),
+                        serde_json::json!({ "hash": multihash.to_hex() }),
+                    )),
                     Err(e) => Some(Response::new_err(
                         req.id.clone(),
                         lsp_server::ErrorCode::InternalError as i32,
@@ -188,13 +200,14 @@ impl Server {
                         ));
                     }
                 };
-                let hash = match parse_hex_hash(hex) {
-                    Some(h) => h,
+                let multihash = match covalence_store::Multihash::from_hex(hex) {
+                    Some(mh) => mh,
                     None => {
                         return Some(Response::new_err(
                             req.id.clone(),
                             lsp_server::ErrorCode::InvalidParams as i32,
-                            "hash must be a 64-character hex string".to_owned(),
+                            "invalid multihash; expected hex-encoded multihash (e.g. 1e20...)"
+                                .to_owned(),
                         ));
                     }
                 };
@@ -208,7 +221,7 @@ impl Server {
                         ));
                     }
                 };
-                match store.lookup(&hash) {
+                match store.lookup(&multihash) {
                     Ok(Some(data)) => {
                         let text = String::from_utf8_lossy(&data).into_owned();
                         Some(Response::new_ok(
@@ -300,17 +313,12 @@ impl Server {
     }
 }
 
-/// Parse a 64-character hex string into a 32-byte hash.
-fn parse_hex_hash(hex: &str) -> Option<[u8; 32]> {
-    if hex.len() != 64 {
-        return None;
+/// Parse a hash kind string (e.g. "blake3") into a `HashKind`.
+fn parse_hash_kind(s: &str) -> Option<covalence_store::HashKind> {
+    match s {
+        "blake3" => Some(covalence_store::HashKind::Blake3),
+        _ => None,
     }
-    let mut hash = [0u8; 32];
-    for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
-        let s = std::str::from_utf8(chunk).ok()?;
-        hash[i] = u8::from_str_radix(s, 16).ok()?;
-    }
-    Some(hash)
 }
 
 fn decode_binary_ion_file(path: &str) -> serde_json::Value {

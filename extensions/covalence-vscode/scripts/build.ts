@@ -16,12 +16,24 @@ const WASM_MEMORY_BYTES = 160 * 65536; // 10485760
 console.log("Building WASM...");
 await $`cargo rustc -p covalence-lsp --target wasm32-wasip1-threads --release --bin covalence-lsp -- -Clink-arg=--initial-memory=${WASM_MEMORY_BYTES} -Clink-arg=--max-memory=${WASM_MEMORY_BYTES}`;
 
-// 2. Copy WASM binary to dist
-console.log("Copying WASM binary...");
+// 2. Build covalence-store WASM (browser target via wasm-pack)
+console.log("Building covalence-store WASM...");
+await $`wasm-pack build ${resolve(rootDir, "crates/covalence-store")} --target web --no-default-features --out-dir ${resolve(extDir, "dist/covalence-store")}`;
+
+// 3. Copy WASM binaries to dist
+console.log("Copying WASM binaries...");
 mkdirSync(resolve(extDir, "dist"), { recursive: true });
 cpSync(
   resolve(rootDir, "target/wasm32-wasip1-threads/release/covalence-lsp.wasm"),
   resolve(extDir, "dist/covalence-lsp.wasm"),
+);
+cpSync(
+  resolve(extDir, "dist/covalence-store/covalence_store_bg.wasm"),
+  resolve(extDir, "dist/covalence_store_bg.wasm"),
+);
+cpSync(
+  resolve(extDir, "dist/covalence-store/covalence_store.js"),
+  resolve(extDir, "dist/covalence_store.js"),
 );
 
 // Shared esbuild options
@@ -34,7 +46,7 @@ const shared: esbuild.BuildOptions = {
   format: "cjs",
 };
 
-// 3. Bundle for desktop (Node)
+// 4. Bundle for desktop (Node)
 console.log("Bundling desktop...");
 await esbuild.build({
   ...shared,
@@ -42,7 +54,7 @@ await esbuild.build({
   platform: "node",
 });
 
-// 4. Bundle for web (browser — alias vscode-languageclient/node to /browser)
+// 5. Bundle for web (browser — alias vscode-languageclient/node to /browser)
 console.log("Bundling web...");
 const langClientDir = resolve(
   require.resolve("vscode-languageclient/package.json"),

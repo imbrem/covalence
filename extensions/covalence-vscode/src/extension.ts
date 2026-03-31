@@ -1,4 +1,5 @@
 import {
+  CancellationToken,
   Disposable,
   EventEmitter,
   ExtensionContext,
@@ -6,6 +7,7 @@ import {
   FileStat,
   FileSystemProvider,
   FileType,
+  TextDocumentContentProvider,
   Uri,
   commands,
   languages,
@@ -25,6 +27,7 @@ import {
 } from "@vscode/wasm-wasi-lsp";
 
 const ION_BINARY_SCHEME = "ion-binary";
+const IROH_BLOB_SCHEME = "iroh-blob";
 
 // Ion Version Marker for Ion 1.0: 0xE0 0x01 0x00 0xEA
 function isBinaryIon(bytes: Uint8Array): boolean {
@@ -108,6 +111,36 @@ class IonBinaryFSProvider implements FileSystemProvider {
   rename(): void {
     throw new Error("Not supported");
   }
+}
+
+class IrohBlobContentProvider implements TextDocumentContentProvider {
+  private _blobCache = new Map<string, string>();
+
+  cacheBlob(hash: string, content: string): void {
+    this._blobCache.set(hash, content);
+  }
+
+  provideTextDocumentContent(uri: Uri, _token: CancellationToken): string {
+    const hash = uri.authority;
+    return this._blobCache.get(hash) ?? "";
+  }
+}
+
+/** Format raw bytes as a hex dump (16 bytes per line with ASCII sidebar). */
+function hexDump(bytes: Uint8Array): string {
+  const lines: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset += 16) {
+    const chunk = bytes.slice(offset, offset + 16);
+    const hex = Array.from(chunk)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join(" ");
+    const ascii = Array.from(chunk)
+      .map((b) => (b >= 0x20 && b <= 0x7e ? String.fromCharCode(b) : "."))
+      .join("");
+    const addr = offset.toString(16).padStart(8, "0");
+    lines.push(`${addr}  ${hex.padEnd(47)}  |${ascii}|`);
+  }
+  return lines.join("\n");
 }
 
 async function openAsBinaryIon(fileUri: Uri): Promise<void> {
@@ -308,6 +341,89 @@ export async function activate(context: ExtensionContext) {
       await window.showTextDocument(doc);
 
       window.showInformationMessage("Converted to Ion 1.0 Text.");
+    }),
+  );
+
+  // --- View Blob (iroh) ---
+  const blobProvider = new IrohBlobContentProvider();
+  context.subscriptions.push(
+    workspace.registerTextDocumentContentProvider(
+      IROH_BLOB_SCHEME,
+      blobProvider,
+    ),
+  );
+
+  // Load the covalence-store WASM module (wasm-bindgen output).
+  const storeWasmUri = Uri.joinPath(
+    context.extensionUri,
+    "dist",
+    "covalence_store_bg.wasm",
+  );
+  const storeJsUri = Uri.joinPath(
+    context.extensionUri,
+    "dist",
+    "covalence_store.js",
+  );
+
+  let storeModule: { fetch_blob: (ticket: string) => Promise<Uint8Array> } | undefined;
+
+  async function getStoreModule() {
+    if (storeModule) return storeModule;
+    // Dynamic import of the wasm-bindgen generated JS glue.
+    // The build step copies covalence_store.js and covalence_store_bg.wasm to dist/.
+    // We need to use a dynamic import for the JS module, but in the bundled extension
+    // we inline it via esbuild. The glue calls `new URL(..., import.meta.url)` to find
+    // the .wasm file, but we override the init path manually.
+    const glueBytes = await workspace.fs.readFile(storeJsUri);
+    const glueText = new TextDecoder().decode(glueBytes);
+    // Create a blob URL so we can dynamically import the JS module.
+    const blob = new Blob([glueText], { type: "application/javascript" });
+    const blobUrl = URL.createObjectURL(blob);
+    try {
+      const mod = await import(/* webpackIgnore: true */ blobUrl);
+      const wasmBytes = await workspace.fs.readFile(storeWasmUri);
+      await mod.default(wasmBytes);
+      storeModule = mod;
+      return mod;
+    } finally {
+      URL.revokeObjectURL(blobUrl);
+    }
+  }
+
+  context.subscriptions.push(
+    commands.registerCommand("covalence.viewBlob", async () => {
+      const ticket = await window.showInputBox({
+        prompt: "Enter an iroh blob ticket",
+        placeHolder: "blob...",
+      });
+      if (!ticket) return;
+
+      let store;
+      try {
+        store = await getStoreModule();
+      } catch (e: any) {
+        window.showErrorMessage(`Failed to load iroh store module: ${e.message ?? e}`);
+        return;
+      }
+
+      try {
+        await window.withProgress(
+          { location: { viewId: "" }, title: "Fetching blob from iroh..." },
+          async () => {
+            const bytes: Uint8Array = await store!.fetch_blob(ticket);
+            // Use the first 16 hex chars of the BLAKE3 hash (from the ticket) as a label.
+            const hashLabel = ticket.length > 20 ? ticket.slice(4, 20) : ticket.slice(0, 16);
+            const content = hexDump(bytes);
+            blobProvider.cacheBlob(hashLabel, content);
+
+            const uri = Uri.parse(`${IROH_BLOB_SCHEME}://${hashLabel}/blob.hex`);
+            const doc = await workspace.openTextDocument(uri);
+            await window.showTextDocument(doc, { preview: true });
+          },
+        );
+      } catch (e: any) {
+        window.showErrorMessage(`Failed to fetch blob: ${e.message ?? e}`);
+      }
     }),
   );
 

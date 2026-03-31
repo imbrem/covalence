@@ -1,3 +1,9 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
+
+[patch.crates-io]
+# Fix VarUInt::encoded_size_of using usize::BITS instead of u64::BITS,
+# which produces corrupt annotation wrapper lengths on wasm32 targets.
+# See: patches/ion-rs/src/binary/var_uint.rs line 38
+ion-rs = { path = "patches/ion-rs" }

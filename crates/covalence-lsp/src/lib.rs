@@ -205,14 +205,10 @@ fn encode_binary_ion_file(path: &str, text: &str) -> serde_json::Value {
 
     match Element::read_all(text.as_bytes()) {
         Ok(sequence) => match sequence.encode_as(Binary) {
-            Ok(bytes) => {
-                // Work around ion-rs VarUInt::encoded_size_of bug on wasm32
-                let bytes = covalence_ion::fixup_binary_ion(&bytes);
-                match std::fs::write(path, &bytes) {
-                    Ok(()) => serde_json::json!({}),
-                    Err(e) => serde_json::json!({ "error": format!("file write error: {e}") }),
-                }
-            }
+            Ok(bytes) => match std::fs::write(path, &bytes) {
+                Ok(()) => serde_json::json!({}),
+                Err(e) => serde_json::json!({ "error": format!("file write error: {e}") }),
+            },
             Err(e) => serde_json::json!({ "error": format!("binary encode error: {e}") }),
         },
         Err(e) => serde_json::json!({ "error": format!("Ion parse error: {e}") }),
@@ -224,11 +220,7 @@ fn serialize_binary_ion(text: &str) -> serde_json::Value {
 
     match Element::read_all(text.as_bytes()) {
         Ok(sequence) => match sequence.encode_as(Binary) {
-            Ok(bytes) => {
-                // Work around ion-rs VarUInt::encoded_size_of bug on wasm32
-                let bytes = covalence_ion::fixup_binary_ion(&bytes);
-                serde_json::json!({ "byteCount": bytes.len() })
-            }
+            Ok(bytes) => serde_json::json!({ "byteCount": bytes.len() }),
             Err(e) => serde_json::json!({ "error": e.to_string() }),
         },
         Err(e) => serde_json::json!({ "error": e.to_string() }),

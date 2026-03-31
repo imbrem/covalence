@@ -198,8 +198,6 @@ checksum = "a6524844f553e8da5999f3000cf11d3f1ff926bb03fc087441c7b86dee4a7d48"
 [[package]]
 name = "ion-rs"
 version = "1.0.0-rc.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1635de5984b66df8c9061125d02235c7e04c575d45cd93dbd85e14e307c06695"
 dependencies = [
  "arrayvec 0.7.6",
  "base64",

@@ -251,10 +251,7 @@ pub fn diagnose_sexp(text: &str) -> Vec<Diagnostic> {
         Err(e) => {
             let (line, col) = covalence_ion::sexp::offset_to_line_col(text, e.offset);
             vec![Diagnostic {
-                range: Range::new(
-                    Position::new(line, col),
-                    Position::new(line, col),
-                ),
+                range: Range::new(Position::new(line, col), Position::new(line, col)),
                 severity: Some(DiagnosticSeverity::ERROR),
                 message: e.message,
                 ..Default::default()

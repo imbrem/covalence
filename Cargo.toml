@@ -2,8 +2,21 @@
 resolver = "2"
 members = ["crates/*"]
 
-[patch.crates-io]
-# Fix VarUInt::encoded_size_of using usize::BITS instead of u64::BITS,
-# which produces corrupt annotation wrapper lengths on wasm32 targets.
-# See: patches/ion-rs/src/binary/var_uint.rs line 38
-ion-rs = { path = "patches/ion-rs" }
+# TODO: replace ion-rs 1.0.0-rc.11 with a patched fork once available.
+#
+# ion-rs has a wasm32 bug in VarUInt::encoded_size_of (src/binary/var_uint.rs:38):
+#
+#     let bits_used = usize::BITS as usize - leading_zeros;
+#                     ^^^^^^^^^^
+#   should be u64::BITS — on wasm32 usize::BITS is 32 while leading_zeros()
+#   counts from 64, causing underflow and corrupt annotation wrapper lengths.
+#
+# The fix is one line: change `usize::BITS` → `u64::BITS`.
+#
+# Until an upstream release or fork is available, covalence-ion includes a
+# binary_fixup module that post-processes the encoded output to correct the
+# annotation wrapper VarUInt lengths.
+#
+# To switch to a patched fork, uncomment and update:
+# [patch.crates-io]
+# ion-rs = { git = "https://github.com/imbrem/ion-rust", branch = "fix-varuint-wasm32" }

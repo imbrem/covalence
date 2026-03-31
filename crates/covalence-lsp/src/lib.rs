@@ -205,10 +205,14 @@ fn encode_binary_ion_file(path: &str, text: &str) -> serde_json::Value {
 
     match Element::read_all(text.as_bytes()) {
         Ok(sequence) => match sequence.encode_as(Binary) {
-            Ok(bytes) => match std::fs::write(path, &bytes) {
-                Ok(()) => serde_json::json!({}),
-                Err(e) => serde_json::json!({ "error": format!("file write error: {e}") }),
-            },
+            Ok(bytes) => {
+                // Work around ion-rs VarUInt::encoded_size_of bug on wasm32
+                let bytes = covalence_ion::fixup_binary_ion(&bytes);
+                match std::fs::write(path, &bytes) {
+                    Ok(()) => serde_json::json!({}),
+                    Err(e) => serde_json::json!({ "error": format!("file write error: {e}") }),
+                }
+            }
             Err(e) => serde_json::json!({ "error": format!("binary encode error: {e}") }),
         },
         Err(e) => serde_json::json!({ "error": format!("Ion parse error: {e}") }),
@@ -220,7 +224,11 @@ fn serialize_binary_ion(text: &str) -> serde_json::Value {
 
     match Element::read_all(text.as_bytes()) {
         Ok(sequence) => match sequence.encode_as(Binary) {
-            Ok(bytes) => serde_json::json!({ "byteCount": bytes.len() }),
+            Ok(bytes) => {
+                // Work around ion-rs VarUInt::encoded_size_of bug on wasm32
+                let bytes = covalence_ion::fixup_binary_ion(&bytes);
+                serde_json::json!({ "byteCount": bytes.len() })
+            }
             Err(e) => serde_json::json!({ "error": e.to_string() }),
         },
         Err(e) => serde_json::json!({ "error": e.to_string() }),
@@ -251,10 +259,7 @@ pub fn diagnose_sexp(text: &str) -> Vec<Diagnostic> {
         Err(e) => {
             let (line, col) = covalence_ion::sexp::offset_to_line_col(text, e.offset);
             vec![Diagnostic {
-                range: Range::new(
-                    Position::new(line, col),
-                    Position::new(line, col),
-                ),
+                range: Range::new(Position::new(line, col), Position::new(line, col)),
                 severity: Some(DiagnosticSeverity::ERROR),
                 message: e.message,
                 ..Default::default()
@@ -295,5 +300,60 @@ mod tests {
     #[test]
     fn malformed_ion_has_errors() {
         assert!(!diagnose("{ name: }").is_empty());
+    }
+
+    #[test]
+    fn binary_ion_roundtrip() {
+        use covalence_ion::ion_rs::{Element, v1_0::Binary};
+
+        // Simple roundtrip
+        let text = r#"{ name: "hello", value: 42, tags: [a, b, c], nested: { x: 1, y: 2 } }"#;
+        let sequence = Element::read_all(text.as_bytes()).expect("parse text Ion");
+        let bytes = sequence.encode_as(Binary).expect("encode as binary");
+        let decoded = Element::read_all(&bytes).expect("decode binary Ion");
+        assert_eq!(sequence, decoded);
+    }
+
+    #[test]
+    fn binary_ion_roundtrip_multi_value() {
+        use covalence_ion::ion_rs::{Element, v1_0::Binary};
+
+        // Multiple top-level values with quoted symbols, strings-in-list, null.struct
+        let text = r#"{ name: "hello", value: 42, tags: ["a", "b", "c"], nested: { x: 1, y: 2 } }
+null.struct
+['+', 1, 2]
+[true, false, null]"#;
+        let sequence = Element::read_all(text.as_bytes()).expect("parse text Ion");
+        let bytes = sequence.encode_as(Binary).expect("encode as binary");
+        let decoded = Element::read_all(&bytes).expect("decode binary Ion roundtrip");
+        assert_eq!(sequence, decoded);
+    }
+
+    #[test]
+    fn encode_decode_binary_ion_file_roundtrip() {
+        // Test the actual encode/decode file functions used by the LSP
+        let text = r#"{ name: "hello", value: 42, tags: ["a", "b", "c"], nested: { x: 1, y: 2 } }
+null.struct
+['+', 1, 2]
+[true, false, null]"#;
+
+        let tmp = std::env::temp_dir().join("covalence_test_roundtrip.ion");
+        let path = tmp.to_str().unwrap();
+
+        let encode_result = encode_binary_ion_file(path, text);
+        assert!(
+            encode_result.get("error").is_none(),
+            "encode error: {:?}",
+            encode_result
+        );
+
+        let decode_result = decode_binary_ion_file(path);
+        assert!(
+            decode_result.get("error").is_none(),
+            "decode error: {:?}",
+            decode_result
+        );
+
+        std::fs::remove_file(&tmp).ok();
     }
 }

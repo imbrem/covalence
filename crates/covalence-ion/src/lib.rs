@@ -4,3 +4,4 @@ mod prettyprint;
 pub use prettyprint::prettyprint;
 
 pub mod sexp;
+pub mod wasm;

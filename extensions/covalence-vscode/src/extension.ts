@@ -25,6 +25,7 @@ import {
 } from "@vscode/wasm-wasi-lsp";
 
 const ION_BINARY_SCHEME = "ion-binary";
+const WASM_BINARY_SCHEME = "wasm-binary";
 
 // Ion Version Marker for Ion 1.0: 0xE0 0x01 0x00 0xEA
 function isBinaryIon(bytes: Uint8Array): boolean {
@@ -110,6 +111,72 @@ class IonBinaryFSProvider implements FileSystemProvider {
   }
 }
 
+class WasmBinaryFSProvider implements FileSystemProvider {
+  private _emitter = new EventEmitter<FileChangeEvent[]>();
+  readonly onDidChangeFile = this._emitter.event;
+
+  watch(): Disposable {
+    return new Disposable(() => {});
+  }
+
+  async stat(uri: Uri): Promise<FileStat> {
+    const realUri = uri.with({ scheme: "file" });
+    return workspace.fs.stat(realUri);
+  }
+
+  readDirectory(): Thenable<[string, FileType][]> {
+    throw new Error("Not supported");
+  }
+
+  createDirectory(): void {
+    throw new Error("Not supported");
+  }
+
+  async readFile(uri: Uri): Promise<Uint8Array> {
+    await clientReady;
+    const path = toServerPath(uri.with({ scheme: "file" }));
+
+    const result: { text?: string; error?: string } =
+      await client!.sendRequest("covalence/decodeWasm", { path });
+
+    if (result.error) {
+      throw new Error(`Failed to decode WASM: ${result.error}`);
+    }
+
+    return new TextEncoder().encode(result.text || "");
+  }
+
+  async writeFile(uri: Uri, content: Uint8Array): Promise<void> {
+    await clientReady;
+    const path = toServerPath(uri.with({ scheme: "file" }));
+    const text = new TextDecoder().decode(content);
+
+    const result: { error?: string } = await client!.sendRequest(
+      "covalence/encodeWasm",
+      { path, text },
+    );
+
+    if (result.error) {
+      throw new Error(`Failed to encode WASM: ${result.error}`);
+    }
+  }
+
+  delete(): void {
+    throw new Error("Not supported");
+  }
+
+  rename(): void {
+    throw new Error("Not supported");
+  }
+}
+
+async function openAsWasmBinary(fileUri: Uri): Promise<void> {
+  const wasmUri = fileUri.with({ scheme: WASM_BINARY_SCHEME });
+  const doc = await workspace.openTextDocument(wasmUri);
+  await languages.setTextDocumentLanguage(doc, "wat");
+  await window.showTextDocument(doc);
+}
+
 async function openAsBinaryIon(fileUri: Uri): Promise<void> {
   const ionUri = fileUri.with({ scheme: ION_BINARY_SCHEME });
   const doc = await workspace.openTextDocument(ionUri);
@@ -121,11 +188,15 @@ export async function activate(context: ExtensionContext) {
   const channel = window.createOutputChannel("Covalence LSP");
   const wasm: Wasm = await Wasm.load();
 
-  // Register file system provider for binary Ion viewing/editing
+  // Register file system providers for binary viewing/editing
   context.subscriptions.push(
     workspace.registerFileSystemProvider(
       ION_BINARY_SCHEME,
       new IonBinaryFSProvider(),
+    ),
+    workspace.registerFileSystemProvider(
+      WASM_BINARY_SCHEME,
+      new WasmBinaryFSProvider(),
     ),
   );
 
@@ -166,6 +237,7 @@ export async function activate(context: ExtensionContext) {
       { language: "ion" },
       { language: "smt" },
       { language: "alethe" },
+      { language: "wat" },
     ],
     outputChannel: channel,
     uriConverters,
@@ -336,15 +408,27 @@ export async function activate(context: ExtensionContext) {
         }
       }
 
-      if (!shouldRedirect) return;
-      if (window.activeTextEditor !== editor) return;
+      if (shouldRedirect) {
+        if (window.activeTextEditor !== editor) return;
+        redirecting.add(key);
+        try {
+          await commands.executeCommand("workbench.action.closeActiveEditor");
+          await openAsBinaryIon(doc.uri);
+        } finally {
+          redirecting.delete(key);
+        }
+        return;
+      }
 
-      redirecting.add(key);
-      try {
-        await commands.executeCommand("workbench.action.closeActiveEditor");
-        await openAsBinaryIon(doc.uri);
-      } finally {
-        redirecting.delete(key);
+      if (doc.fileName.endsWith(".wasm")) {
+        if (window.activeTextEditor !== editor) return;
+        redirecting.add(key);
+        try {
+          await commands.executeCommand("workbench.action.closeActiveEditor");
+          await openAsWasmBinary(doc.uri);
+        } finally {
+          redirecting.delete(key);
+        }
       }
     }),
   );

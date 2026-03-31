@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use lsp_server::{Request, Response};
 use lsp_types::{
@@ -27,6 +28,7 @@ pub fn initialize_result() -> InitializeResult {
 
 pub struct Server {
     documents: HashMap<Uri, String>,
+    store: Option<covalence_store::ContentStore>,
 }
 
 /// Check if a URI refers to an S-expression file (.smt or .alethe).
@@ -39,6 +41,22 @@ impl Server {
     pub fn new() -> Self {
         Server {
             documents: HashMap::new(),
+            store: None,
+        }
+    }
+
+    /// Create a server with a content-addressed store at the given DB path.
+    pub fn with_store(store_path: &str) -> Self {
+        let store = match covalence_store::ContentStore::open(store_path) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                eprintln!("failed to open content store: {e}");
+                None
+            }
+        };
+        Server {
+            documents: HashMap::new(),
+            store,
         }
     }
 
@@ -102,6 +120,112 @@ impl Server {
                     req.id.clone(),
                     serde_json::to_value(result).unwrap(),
                 ))
+            }
+            "covalence/storeFile" => {
+                let uri_str = match req.params.get("uri").and_then(|v| v.as_str()) {
+                    Some(u) => u,
+                    None => {
+                        return Some(Response::new_err(
+                            req.id.clone(),
+                            lsp_server::ErrorCode::InvalidParams as i32,
+                            "missing or invalid \"uri\" parameter".to_owned(),
+                        ));
+                    }
+                };
+                let uri = match Uri::from_str(uri_str) {
+                    Ok(u) => u,
+                    Err(e) => {
+                        return Some(Response::new_err(
+                            req.id.clone(),
+                            lsp_server::ErrorCode::InvalidParams as i32,
+                            format!("invalid URI: {e}"),
+                        ));
+                    }
+                };
+                let text = match self.documents.get(&uri) {
+                    Some(t) => t,
+                    None => {
+                        return Some(Response::new_err(
+                            req.id.clone(),
+                            lsp_server::ErrorCode::InvalidParams as i32,
+                            "document not open".to_owned(),
+                        ));
+                    }
+                };
+                let store = match &self.store {
+                    Some(s) => s,
+                    None => {
+                        return Some(Response::new_err(
+                            req.id.clone(),
+                            lsp_server::ErrorCode::InternalError as i32,
+                            "content store not available".to_owned(),
+                        ));
+                    }
+                };
+                match store.store(text.as_bytes()) {
+                    Ok(hash) => {
+                        let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
+                        Some(Response::new_ok(
+                            req.id.clone(),
+                            serde_json::json!({ "hash": hex }),
+                        ))
+                    }
+                    Err(e) => Some(Response::new_err(
+                        req.id.clone(),
+                        lsp_server::ErrorCode::InternalError as i32,
+                        format!("store error: {e}"),
+                    )),
+                }
+            }
+            "covalence/lookupHash" => {
+                let hex = match req.params.get("hash").and_then(|v| v.as_str()) {
+                    Some(h) => h,
+                    None => {
+                        return Some(Response::new_err(
+                            req.id.clone(),
+                            lsp_server::ErrorCode::InvalidParams as i32,
+                            "missing or invalid \"hash\" parameter".to_owned(),
+                        ));
+                    }
+                };
+                let hash = match parse_hex_hash(hex) {
+                    Some(h) => h,
+                    None => {
+                        return Some(Response::new_err(
+                            req.id.clone(),
+                            lsp_server::ErrorCode::InvalidParams as i32,
+                            "hash must be a 64-character hex string".to_owned(),
+                        ));
+                    }
+                };
+                let store = match &self.store {
+                    Some(s) => s,
+                    None => {
+                        return Some(Response::new_err(
+                            req.id.clone(),
+                            lsp_server::ErrorCode::InternalError as i32,
+                            "content store not available".to_owned(),
+                        ));
+                    }
+                };
+                match store.lookup(&hash) {
+                    Ok(Some(data)) => {
+                        let text = String::from_utf8_lossy(&data).into_owned();
+                        Some(Response::new_ok(
+                            req.id.clone(),
+                            serde_json::json!({ "content": text }),
+                        ))
+                    }
+                    Ok(None) => Some(Response::new_ok(
+                        req.id.clone(),
+                        serde_json::json!({ "error": "hash not found" }),
+                    )),
+                    Err(e) => Some(Response::new_err(
+                        req.id.clone(),
+                        lsp_server::ErrorCode::InternalError as i32,
+                        format!("store error: {e}"),
+                    )),
+                }
             }
             _ => Some(Response::new_err(
                 req.id.clone(),
@@ -174,6 +298,19 @@ impl Server {
             _ => None,
         }
     }
+}
+
+/// Parse a 64-character hex string into a 32-byte hash.
+fn parse_hex_hash(hex: &str) -> Option<[u8; 32]> {
+    if hex.len() != 64 {
+        return None;
+    }
+    let mut hash = [0u8; 32];
+    for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
+        let s = std::str::from_utf8(chunk).ok()?;
+        hash[i] = u8::from_str_radix(s, 16).ok()?;
+    }
+    Some(hash)
 }
 
 fn decode_binary_ion_file(path: &str) -> serde_json::Value {

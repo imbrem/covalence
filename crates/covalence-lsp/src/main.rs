@@ -27,8 +27,8 @@ fn main() {
 
     let (connection, io_threads) = Connection::stdio();
 
-    let (init_id, _init_params) = connection.initialize_start().unwrap();
-    let _init_params: InitializeParams = serde_json::from_value(_init_params).unwrap();
+    let (init_id, init_value) = connection.initialize_start().unwrap();
+    let init_params: InitializeParams = serde_json::from_value(init_value).unwrap();
 
     let init_result = covalence_lsp::initialize_result();
     connection
@@ -37,7 +37,26 @@ fn main() {
 
     eprintln!("Covalence LSP initialized");
 
-    let mut server = covalence_lsp::Server::new();
+    // Determine workspace root for the content store DB.
+    let root_uri = init_params
+        .workspace_folders
+        .as_ref()
+        .and_then(|folders| folders.first())
+        .map(|f| f.uri.as_str().to_owned())
+        .or_else(|| {
+            #[allow(deprecated)]
+            init_params.root_uri.as_ref().map(|u| u.as_str().to_owned())
+        });
+
+    let mut server = if let Some(uri_str) = root_uri {
+        let root = uri_str.strip_prefix("file://").unwrap_or(&uri_str);
+        let db_path = format!("{root}/.covalence-store.db");
+        eprintln!("Content store: {db_path}");
+        covalence_lsp::Server::with_store(&db_path)
+    } else {
+        eprintln!("No workspace root; content store disabled");
+        covalence_lsp::Server::new()
+    };
 
     for msg in &connection.receiver {
         match msg {

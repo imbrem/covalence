@@ -64,6 +64,14 @@
       {
         "command": "covalence.convertToIonText",
         "title": "Covalence: Convert to Ion 1.0 Text"
+      },
+      {
+        "command": "covalence.storeFile",
+        "title": "Covalence: Store File in Content Store"
+      },
+      {
+        "command": "covalence.lookupHash",
+        "title": "Covalence: Lookup Hash in Content Store"
       }
     ]
   },

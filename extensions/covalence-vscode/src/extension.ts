@@ -51,6 +51,9 @@ const clientReady = new Promise<void>((resolve) => {
 /** Convert a VSCode URI to the server-side filesystem path the WASI process sees. */
 let toServerPath: (uri: Uri) => string;
 
+/** Convert a VSCode URI to the protocol URI string the LSP server sees. */
+let toServerUri: (uri: Uri) => string;
+
 class IonBinaryFSProvider implements FileSystemProvider {
   private _emitter = new EventEmitter<FileChangeEvent[]>();
   readonly onDidChangeFile = this._emitter.event;
@@ -160,6 +163,7 @@ export async function activate(context: ExtensionContext) {
   const uriConverters = createUriConverters();
   toServerPath = (uri: Uri) =>
     fileUriToPath(uriConverters.code2Protocol(uri));
+  toServerUri = (uri: Uri) => uriConverters.code2Protocol(uri);
 
   const clientOptions: LanguageClientOptions = {
     documentSelector: [
@@ -308,6 +312,67 @@ export async function activate(context: ExtensionContext) {
       await window.showTextDocument(doc);
 
       window.showInformationMessage("Converted to Ion 1.0 Text.");
+    }),
+  );
+
+  // --- Store File in Content Store ---
+  context.subscriptions.push(
+    commands.registerCommand("covalence.storeFile", async () => {
+      if (!client) {
+        window.showErrorMessage("Covalence LSP is not running.");
+        return;
+      }
+      const editor = window.activeTextEditor;
+      if (!editor) {
+        window.showErrorMessage("No active editor.");
+        return;
+      }
+
+      await clientReady;
+      const result: { hash?: string; error?: string } =
+        await client.sendRequest("covalence/storeFile", { uri: toServerUri(editor.document.uri) });
+
+      if (result.error) {
+        window.showErrorMessage(`Store failed: ${result.error}`);
+      } else if (result.hash) {
+        window.showInformationMessage(`BLAKE3: ${result.hash}`);
+      }
+    }),
+  );
+
+  // --- Lookup Hash in Content Store ---
+  context.subscriptions.push(
+    commands.registerCommand("covalence.lookupHash", async () => {
+      if (!client) {
+        window.showErrorMessage("Covalence LSP is not running.");
+        return;
+      }
+
+      const hash = await window.showInputBox({
+        prompt: "Enter BLAKE3 hash (64 hex characters)",
+        placeHolder: "e.g. af1349b9f5f9a1a6a0404dea36dcc949...",
+        validateInput: (value) => {
+          if (!/^[0-9a-fA-F]{64}$/.test(value)) {
+            return "Hash must be exactly 64 hexadecimal characters";
+          }
+          return null;
+        },
+      });
+      if (!hash) return;
+
+      await clientReady;
+      const result: { content?: string; error?: string } =
+        await client!.sendRequest("covalence/lookupHash", { hash });
+
+      if (result.error) {
+        window.showErrorMessage(`Lookup failed: ${result.error}`);
+        return;
+      }
+
+      const doc = await workspace.openTextDocument({
+        content: result.content || "",
+      });
+      await window.showTextDocument(doc);
     }),
   );
 

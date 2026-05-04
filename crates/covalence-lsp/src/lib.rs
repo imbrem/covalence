@@ -13,51 +13,7 @@ pub struct LspConfig<'a> {
     pub target: &'a str,
 }
 
-pub fn run_lsp(args: &[String], config: &LspConfig) {
-    match args.first().map(|s| s.as_str()) {
-        Some("--help" | "-h") => {
-            println!("cov lsp — Covalence Language Server Protocol server");
-            println!();
-            println!("Usage: cov lsp [OPTIONS]");
-            println!();
-            println!("By default, starts the LSP server on stdin/stdout.");
-            println!();
-            println!("Options:");
-            println!("  --vscode           Run inside VSCode WASI host");
-            println!("  --diagnose <file>  Run diagnostics on a file and exit");
-            println!("  -h, --help         Print this help message");
-            println!("  -V, --version      Print version");
-            return;
-        }
-        Some("--version" | "-V") => {
-            println!("cov lsp {} ({})", config.version, config.target);
-            return;
-        }
-        _ => {}
-    }
-
-    if args.first().is_some_and(|a| a == "--diagnose") {
-        let path = args.get(1).expect("usage: cov lsp --diagnose <file>");
-        let text = std::fs::read_to_string(path).unwrap();
-        let is_sexp =
-            path.ends_with(".smt") || path.ends_with(".smt2") || path.ends_with(".alethe");
-        let diagnostics = if is_sexp {
-            diagnose_sexp(&text)
-        } else {
-            diagnose(&text)
-        };
-        for d in &diagnostics {
-            let severity = match d.severity {
-                Some(DiagnosticSeverity::ERROR) => "error",
-                Some(DiagnosticSeverity::WARNING) => "warning",
-                _ => "info",
-            };
-            eprintln!("{}: {}", severity, d.message);
-        }
-        std::process::exit(if diagnostics.is_empty() { 0 } else { 1 });
-    }
-
-    // --vscode is accepted as a flag but is currently a no-op
+pub fn run_lsp(config: &LspConfig) {
     let (connection, io_threads) = Connection::stdio();
 
     let (init_id, _init_params) = connection.initialize_start().unwrap();
@@ -92,6 +48,25 @@ pub fn run_lsp(args: &[String], config: &LspConfig) {
     }
 
     io_threads.join().unwrap();
+}
+
+pub fn run_diagnose(path: &str) {
+    let text = std::fs::read_to_string(path).unwrap();
+    let is_sexp = path.ends_with(".smt") || path.ends_with(".smt2") || path.ends_with(".alethe");
+    let diagnostics = if is_sexp {
+        diagnose_sexp(&text)
+    } else {
+        diagnose(&text)
+    };
+    for d in &diagnostics {
+        let severity = match d.severity {
+            Some(DiagnosticSeverity::ERROR) => "error",
+            Some(DiagnosticSeverity::WARNING) => "warning",
+            _ => "info",
+        };
+        eprintln!("{severity}: {}", d.message);
+    }
+    std::process::exit(if diagnostics.is_empty() { 0 } else { 1 });
 }
 
 pub fn server_capabilities() -> ServerCapabilities {

@@ -8,10 +8,19 @@ name = "cov"
 path = "src/main.rs"
 
 [features]
-default = ["lsp", "cogit"]
+default = ["lsp", "cogit", "serve"]
 lsp = ["dep:covalence-lsp"]
 cogit = ["dep:covalence-git"]
+serve = []
 
 [dependencies]
 covalence-lsp = { path = "../covalence-lsp", optional = true }
 covalence-git = { path = "../covalence-git", optional = true }
+clap = { version = "4", features = ["derive"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+covalence-serve = { path = "../covalence-serve" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+color-eyre = "0.6"
+eyre = "0.6"

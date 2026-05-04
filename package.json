@@ -1,11 +1,14 @@
 {
   "name": "covalence",
   "private": true,
-  "workspaces": ["extensions/*"],
+  "workspaces": ["extensions/*", "apps/*", "packages/*"],
   "scripts": {
     "build": "bun run build:native && bun run build:wasm",
     "build:native": "cargo build -p covalence",
     "build:wasm": "bun run --filter covalence-vscode build",
+    "build:web": "bun run --filter covalence-web build",
+    "build:serve": "bun run build:web && cargo build -p covalence",
+    "dev:web": "bun run --filter covalence-web dev",
     "release": "bun run release:native && bun run release:wasm",
     "release:native": "cargo build -p covalence --release",
     "release:wasm": "bun run build:wasm",

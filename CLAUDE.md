@@ -1,6 +1,6 @@
 # Covalence
 
-Theorem prover with Ion language tooling. Monorepo with Rust crates and a VSCode browser extension.
+Theorem prover with Ion language tooling. Monorepo with Rust crates, a VSCode browser extension, and a SvelteKit web app.
 
 ## Build & Run
 
@@ -9,6 +9,9 @@ bun install                # install JS dependencies
 bun run build              # full build: native (debug) + WASM + esbuild
 bun run build:native       # native debug only (cargo build)
 bun run build:wasm         # WASM + esbuild only
+bun run build:web          # build SvelteKit web app (adapter-static)
+bun run build:serve        # build web app + native binary
+bun run dev:web            # SvelteKit dev server (proxies /api to localhost:3100)
 bun run release            # full release build: native (release) + WASM + esbuild
 bun run release:native     # native release only (cargo build --release)
 bun run code:browser       # build WASM + launch web VSCode (always WASM)
@@ -16,6 +19,16 @@ bun run code:desktop       # full build + launch desktop VSCode (native if avail
 cargo check                # check Rust crates
 cargo test                 # run Rust tests
 ```
+
+### Running the web server
+
+```sh
+bun run build:serve        # builds web app + native binary with serve
+cov serve --open           # start server on :3100, open browser
+cov serve --port 8080      # custom port
+```
+
+For frontend dev with hot reload, run `cov serve` and `bun run dev:web` in parallel — the Vite dev server proxies `/api` requests to `localhost:3100`.
 
 ## Prerequisites
 
@@ -27,13 +40,23 @@ cargo test                 # run Rust tests
 ## Repo Layout
 
 - `crates/covalence/` — Main binary crate (`cov` CLI)
-  - `src/main.rs` — Entry point, dispatches to `cov lsp`, `cov cog`, etc.
+  - `src/main.rs` — Entry point with clap derive; dispatches to `cov lsp`, `cov cog`, `cov serve`
   - `src/lib.rs` — Shared constants (`VERSION`, `TARGET`)
   - `build.rs` — Sets `COV_TARGET` env var from the Cargo build target triple
 - `crates/covalence-ion/` — Ion parsing library
 - `crates/covalence-lsp/` — Language server library (used by `cov lsp`)
-  - `src/lib.rs` — LSP handlers, `LspConfig`, `run_lsp()`, `server_capabilities`
+  - `src/lib.rs` — LSP handlers, `LspConfig`, `run_lsp()`, `run_diagnose()`, `server_capabilities`
 - `crates/covalence-git/` — Cogit VCS library (used by `cov cog`)
+- `crates/covalence-serve/` — Web server library (used by `cov serve`)
+  - `src/lib.rs` — `ServeConfig`, `run_serve()` — axum server with embedded static files
+  - `src/api.rs` — REST API handlers (`GET /api/info`)
+  - `src/static_files.rs` — rust-embed static file serving with SPA fallback
+  - `build.rs` — Warns if `apps/covalence-web/build/` is missing
+- `apps/covalence-web/` — SvelteKit web app (adapter-static, SPA mode)
+  - `src/lib/api.ts` — API client; base URL configurable via `VITE_COV_API_BASE` env var
+  - `src/routes/+page.svelte` — Landing page (fetches `/api/info`)
+  - `build/` — Static output embedded into the Rust binary (gitignored)
+- `packages/covalence-ui/` — Shared Svelte 5 component library (scaffold, for future use)
 - `extensions/covalence-vscode/` — VSCode extension (desktop + web)
   - `src/extension.ts` — Extension activation, commands, binary Ion FSP
   - `src/server.ts` — LSP server creation: detects native `cov` binary, falls back to WASM
@@ -41,6 +64,34 @@ cargo test                 # run Rust tests
   - `dist/` — Final bundles (gitignored)
 
 ## Architecture
+
+### CLI (`cov`)
+
+Uses clap derive for arg parsing, `color-eyre` for error reporting (native only), and `tracing` + `tracing-subscriber` for logging (default level: `info`, override with `RUST_LOG`).
+
+Features (all default, all compile on WASM except `serve` deps are target-gated):
+- `lsp` — `cov lsp` subcommand
+- `cogit` — `cov cog` subcommand
+- `serve` — `cov serve` subcommand (prints error on WASM; axum/tokio deps are `cfg(not(wasm))`)
+
+### Web server (`cov serve`)
+
+```
+cov serve [--port PORT] [--open]
+  → axum HTTP server on 127.0.0.1:PORT
+  → serves embedded SvelteKit static files (rust-embed)
+  → REST API: GET /api/info → { version, cog_version, target, cwd }
+  → SPA fallback: unmatched routes serve index.html
+```
+
+The SvelteKit app uses `adapter-static` (pure SPA, `ssr = false`) so it compiles to plain HTML/JS/CSS that gets embedded into the Rust binary at compile time.
+
+The frontend API base URL is configurable via `VITE_COV_API_BASE` (defaults to empty = same-origin). To host the static site separately (e.g. GitHub Pages) pointing at a remote backend:
+```sh
+VITE_COV_API_BASE=https://cov.example.com bun run build:web
+```
+
+### VSCode extension
 
 The extension supports two LSP transport modes, selected automatically by `src/server.ts`:
 
@@ -75,9 +126,12 @@ Note: because this is shared memory (`SharedArrayBuffer`), the full 2 GB is rese
 ## Conventions
 
 - Rust edition 2024 (stable ≥1.94.1 or nightly), workspace resolver 2
+- CLI: clap 4 (derive), color-eyre + eyre (native error handling), tracing (logging)
+- Web server: axum 0.8, tower-http (cors, trace), rust-embed (static files)
+- Frontend: SvelteKit + adapter-static (SPA), Svelte 5, Vite 6
 - TypeScript: strict mode, ES2022 target, bundler module resolution
 - Build tool: esbuild (CJS bundles for both desktop and web, with browser alias for web)
-- Package manager: Bun (workspace root), with `"workspaces": ["extensions/*"]`
+- Package manager: Bun (workspace root), with `"workspaces": ["extensions/*", "apps/*", "packages/*"]`
 - WASM target: `wasm32-wasip1-threads` via `cargo rustc`
 - LSP framework: `lsp-server` 0.7 + `lsp-types` 0.97 (rust-analyzer ecosystem)
 - Extension runtime: `@vscode/wasm-wasi` + `@vscode/wasm-wasi-lsp` (requires `ms-vscode.wasm-wasi-core`)

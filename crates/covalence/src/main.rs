@@ -13,7 +13,7 @@ struct Cli {
 enum Command {
     /// Cogit VCS
     #[cfg(feature = "cogit")]
-    Cog,
+    Cog(CogArgs),
 
     /// Start the LSP server
     #[cfg(feature = "lsp")]
@@ -22,6 +22,57 @@ enum Command {
     /// Start the web server
     #[cfg(feature = "serve")]
     Serve(ServeArgs),
+}
+
+#[cfg(feature = "cogit")]
+#[derive(clap::Args)]
+struct CogArgs {
+    #[command(subcommand)]
+    command: Option<CogCommand>,
+}
+
+#[cfg(feature = "cogit")]
+#[derive(Subcommand)]
+enum CogCommand {
+    /// Hash file contents with one or more algorithms
+    HashBlob(HashBlobArgs),
+}
+
+#[cfg(feature = "cogit")]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
+#[clap(rename_all = "snake_case")]
+enum HashAlgo {
+    Blake3,
+    GitSha1,
+    GitSha256,
+    Sha256,
+}
+
+#[cfg(feature = "cogit")]
+#[derive(clap::Args)]
+struct HashBlobArgs {
+    /// Hash algorithm(s) to use (repeatable)
+    #[arg(long = "hash", value_name = "ALGO")]
+    algos: Vec<HashAlgo>,
+
+    /// Shorthand for --hash blake3
+    #[arg(long)]
+    blake3: bool,
+
+    /// Shorthand for --hash sha256
+    #[arg(long)]
+    sha256: bool,
+
+    /// Shorthand for --hash git_sha1
+    #[arg(long)]
+    git: bool,
+
+    /// Output as JSONL (one JSON object per file)
+    #[arg(long)]
+    json: bool,
+
+    /// Paths to files to hash
+    paths: Vec<std::path::PathBuf>,
 }
 
 #[cfg(feature = "lsp")]
@@ -64,9 +115,39 @@ fn main() {
         None => println!("covalence {VERSION_LONG}"),
 
         #[cfg(feature = "cogit")]
-        Some(Command::Cog) => {
-            println!("cogit {} ({})", covalence_git::VERSION, covalence::TARGET);
-        }
+        Some(Command::Cog(args)) => match args.command {
+            None => println!("cogit {} ({})", covalence_git::VERSION, covalence::TARGET),
+            Some(CogCommand::HashBlob(args)) => {
+                let mut algos: Vec<HashAlgo> = args.algos;
+                if args.blake3 {
+                    algos.push(HashAlgo::Blake3);
+                }
+                if args.sha256 {
+                    algos.push(HashAlgo::Sha256);
+                }
+                if args.git {
+                    algos.push(HashAlgo::GitSha1);
+                }
+                algos.sort();
+                algos.dedup();
+                if algos.is_empty() {
+                    algos.push(HashAlgo::Blake3);
+                }
+                let algos: Vec<covalence_git::HashAlgo> = algos
+                    .iter()
+                    .map(|a| match a {
+                        HashAlgo::Blake3 => covalence_git::HashAlgo::Blake3,
+                        HashAlgo::GitSha1 => covalence_git::HashAlgo::GitSha1,
+                        HashAlgo::GitSha256 => covalence_git::HashAlgo::GitSha256,
+                        HashAlgo::Sha256 => covalence_git::HashAlgo::Sha256,
+                    })
+                    .collect();
+                if let Err(e) = covalence_git::hash_blob(&args.paths, &algos, args.json) {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            }
+        },
 
         #[cfg(feature = "lsp")]
         Some(Command::Lsp(args)) => {

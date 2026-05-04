@@ -1,0 +1,10 @@
+[package]
+name = "covalence-object"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+blake3 = "1"
+gix-hash = { version = "0.25", features = ["sha1", "sha256"] }
+rand = "0.9"
+sha2 = "0.10"

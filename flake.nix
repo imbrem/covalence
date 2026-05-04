@@ -38,12 +38,13 @@
           shellHook = ''
             export PATH="$PWD/target/release:$PWD/target/debug:$PATH"
             mkdir -p target/release target/debug
-            ln -sf cov target/release/cog
-            ln -sf cov target/debug/cog
+            rm -f target/release/cog target/debug/cog
+            printf '#!/bin/sh\nexec cov cog "$@"\n' > target/release/cog && chmod +x target/release/cog
+            printf '#!/bin/sh\nexec cov cog "$@"\n' > target/debug/cog && chmod +x target/debug/cog
             echo "covalence dev shell"
             echo "  cargo build -p covalence --release   build cov (release, preferred on PATH)"
             echo "  cargo build -p covalence             build cov (debug, fallback on PATH)"
-            echo "                                       'cog' is a symlink to 'cov' (argv[0] detection)"
+            echo "                                       'cog' is a wrapper that calls 'cov cog'"
             echo "  bun run build                        full build (native debug + wasm + esbuild)"
             echo "  bun run release                      full release build (native release + wasm + esbuild)"
             echo "  bun run code:browser                 build + launch web VSCode"

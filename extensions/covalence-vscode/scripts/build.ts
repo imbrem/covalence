@@ -14,21 +14,21 @@ const WASM_MEMORY_BYTES = 32768 * 65536; // 2147483648
 
 // 1. Build WASM (WASI target with threads)
 console.log("Building WASM...");
-await $`cargo rustc -p covalence-lsp --target wasm32-wasip1-threads --release --bin covalence-lsp -- -Clink-arg=--initial-memory=${WASM_MEMORY_BYTES} -Clink-arg=--max-memory=${WASM_MEMORY_BYTES}`;
+await $`cargo rustc -p covalence --target wasm32-wasip1-threads --release --bin cov -- -Clink-arg=--initial-memory=${WASM_MEMORY_BYTES} -Clink-arg=--max-memory=${WASM_MEMORY_BYTES}`;
 
 // 2. Copy WASM binary to dist
 console.log("Copying WASM binary...");
 mkdirSync(resolve(extDir, "dist"), { recursive: true });
 cpSync(
-  resolve(rootDir, "target/wasm32-wasip1-threads/release/covalence-lsp.wasm"),
-  resolve(extDir, "dist/covalence-lsp.wasm"),
+  resolve(rootDir, "target/wasm32-wasip1-threads/release/cov.wasm"),
+  resolve(extDir, "dist/cov.wasm"),
 );
 
 // Shared esbuild options
 const shared: esbuild.BuildOptions = {
   entryPoints: [resolve(extDir, "src/extension.ts")],
   bundle: true,
-  external: ["vscode"],
+  external: ["vscode", "child_process"],
   target: "es2022",
   sourcemap: true,
   format: "cjs",

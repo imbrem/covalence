@@ -52,6 +52,17 @@
         "path": "./syntaxes/smt.tmLanguage.json"
       }
     ],
+    "configuration": {
+      "title": "Covalence",
+      "properties": {
+        "covalence.server.path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to the native `cov` binary. When set, the extension uses the native binary instead of the built-in WASM server. Supports absolute paths and `${workspaceFolder}`.",
+          "scope": "machine-overridable"
+        }
+      }
+    },
     "commands": [
       {
         "command": "covalence.serializeBinaryIon",
@@ -64,12 +75,17 @@
       {
         "command": "covalence.convertToIonText",
         "title": "Covalence: Convert to Ion 1.0 Text"
+      },
+      {
+        "command": "covalence.restartLsp",
+        "title": "Covalence: Restart LSP"
       }
     ]
   },
   "scripts": {
     "build": "bun scripts/build.ts",
-    "dev": "bun run build && npx @vscode/test-web --coi --browser none --extensionId ms-vscode.wasm-wasi-core --extensionDevelopmentPath=."
+    "code:browser": "npx @vscode/test-web --coi --browser none --extensionId ms-vscode.wasm-wasi-core --extensionDevelopmentPath=.",
+    "code:desktop": "code --extensionDevelopmentPath=$PWD"
   },
   "dependencies": {
     "@vscode/wasm-wasi": "^1.0.1",

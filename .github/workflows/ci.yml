@@ -26,8 +26,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all
 
-  build-extension:
-    name: Build VSCode extension
+  build:
+    name: Build (native + WASM + extension)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

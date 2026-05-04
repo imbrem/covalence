@@ -6,9 +6,13 @@ Theorem prover with Ion language tooling. Monorepo with Rust crates and a VSCode
 
 ```sh
 bun install                # install JS dependencies
-bun run build              # full build: cargo rustc (WASI WASM) + esbuild
-bun run build:wasm         # WASM only
-bun run dev                # start dev server on localhost:3000 (open in browser)
+bun run build              # full build: native (debug) + WASM + esbuild
+bun run build:native       # native debug only (cargo build)
+bun run build:wasm         # WASM + esbuild only
+bun run release            # full release build: native (release) + WASM + esbuild
+bun run release:native     # native release only (cargo build --release)
+bun run code:browser       # build WASM + launch web VSCode (always WASM)
+bun run code:desktop       # full build + launch desktop VSCode (native if available, else WASM)
 cargo check                # check Rust crates
 cargo test                 # run Rust tests
 ```
@@ -22,30 +26,45 @@ cargo test                 # run Rust tests
 
 ## Repo Layout
 
-- `crates/covalence-ion/` — Ion parsing library (empty scaffold)
-- `crates/covalence-lsp/` — Language server, compiles to both native binary and WASI WASM
-  - `src/lib.rs` — Shared LSP handlers (`handle_request`, `handle_notification`, `server_capabilities`)
-  - `src/main.rs` — Binary entry point using `lsp-server::Connection::stdio()`
+- `crates/covalence/` — Main binary crate (`cov` CLI)
+  - `src/main.rs` — Entry point, dispatches to `cov lsp`, `cov cog`, etc.
+  - `src/lib.rs` — Shared constants (`VERSION`, `TARGET`)
+  - `build.rs` — Sets `COV_TARGET` env var from the Cargo build target triple
+- `crates/covalence-ion/` — Ion parsing library
+- `crates/covalence-lsp/` — Language server library (used by `cov lsp`)
+  - `src/lib.rs` — LSP handlers, `LspConfig`, `run_lsp()`, `server_capabilities`
+- `crates/covalence-git/` — Cogit VCS library (used by `cov cog`)
 - `extensions/covalence-vscode/` — VSCode extension (desktop + web)
-  - `src/extension.ts` — Loads WASM via `@vscode/wasm-wasi`, creates `LanguageClient`
+  - `src/extension.ts` — Extension activation, commands, binary Ion FSP
+  - `src/server.ts` — LSP server creation: detects native `cov` binary, falls back to WASM
   - `scripts/build.ts` — Build script (cargo rustc → esbuild → copy wasm)
   - `dist/` — Final bundles (gitignored)
 
 ## Architecture
 
-The Rust LSP binary compiles to `wasm32-wasip1-threads` via `cargo rustc`. It uses `lsp-server::Connection::stdio()` which spawns threads for reader/writer. The WASM binary runs inside a WASI process in the extension via `@vscode/wasm-wasi` and `@vscode/wasm-wasi-lsp`, which bridges WASI stdio to LSP `MessageTransports`.
+The extension supports two LSP transport modes, selected automatically by `src/server.ts`:
 
+**Native mode** (Linux desktop, when `cov` is available):
 ```
-VSCode ← LanguageClient ← @vscode/wasm-wasi-lsp ← WASI Process (Rust WASM) ← lsp-server
+VSCode ← LanguageClient ← stdio ← cov lsp (native binary)
 ```
+
+**WASM mode** (browser, or native not available):
+```
+VSCode ← LanguageClient ← @vscode/wasm-wasi-lsp ← WASI Process (cov.wasm) ← lsp-server
+```
+
+Detection order: `covalence.server.path` setting → `cov` on PATH (Linux only) → WASM fallback.
 
 The same `src/extension.ts` serves both desktop and web bundles. esbuild aliases `vscode-languageclient/node` → `vscode-languageclient/browser` for the web build.
+
+The target triple is set at build time via `crates/covalence/build.rs` (`COV_TARGET` env var) and passed into `covalence_lsp::run_lsp()` via `LspConfig`. The LSP server reports it in `serverInfo.version` during the initialize handshake.
 
 ### WASM Memory
 
 Memory is fixed at 32768 pages (2 GB). This value must match in two places:
 - `scripts/build.ts`: linker args `--initial-memory=2147483648 --max-memory=2147483648`
-- `src/extension.ts`: `wasm.createProcess(... { initial: 32768, maximum: 32768, shared: true })`
+- `src/server.ts`: `wasm.createProcess(... { initial: 32768, maximum: 32768, shared: true })`
 
 Note: because this is shared memory (`SharedArrayBuffer`), the full 2 GB is reserved as virtual address space. On Linux, physical RAM is only committed for pages actually touched (overcommit). On Windows, the full size may count against the system commit charge.
 

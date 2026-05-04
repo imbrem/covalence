@@ -1,11 +1,98 @@
 use std::collections::HashMap;
 
-use lsp_server::{Request, Response};
+use lsp_server::{Connection, Message, Request, Response};
 use lsp_types::{
-    Diagnostic, DiagnosticSeverity, DocumentFormattingParams, InitializeResult, OneOf, Position,
-    PublishDiagnosticsParams, Range, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
-    TextDocumentSyncKind, TextEdit, Uri, notification::Notification as _, request::Request as _,
+    Diagnostic, DiagnosticSeverity, DocumentFormattingParams, InitializeParams, InitializeResult,
+    OneOf, Position, PublishDiagnosticsParams, Range, ServerCapabilities, ServerInfo,
+    TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Uri,
+    notification::Notification as _, request::Request as _,
 };
+
+pub struct LspConfig<'a> {
+    pub version: &'a str,
+    pub target: &'a str,
+}
+
+pub fn run_lsp(args: &[String], config: &LspConfig) {
+    match args.first().map(|s| s.as_str()) {
+        Some("--help" | "-h") => {
+            println!("cov lsp — Covalence Language Server Protocol server");
+            println!();
+            println!("Usage: cov lsp [OPTIONS]");
+            println!();
+            println!("By default, starts the LSP server on stdin/stdout.");
+            println!();
+            println!("Options:");
+            println!("  --vscode           Run inside VSCode WASI host");
+            println!("  --diagnose <file>  Run diagnostics on a file and exit");
+            println!("  -h, --help         Print this help message");
+            println!("  -V, --version      Print version");
+            return;
+        }
+        Some("--version" | "-V") => {
+            println!("cov lsp {} ({})", config.version, config.target);
+            return;
+        }
+        _ => {}
+    }
+
+    if args.first().is_some_and(|a| a == "--diagnose") {
+        let path = args.get(1).expect("usage: cov lsp --diagnose <file>");
+        let text = std::fs::read_to_string(path).unwrap();
+        let is_sexp =
+            path.ends_with(".smt") || path.ends_with(".smt2") || path.ends_with(".alethe");
+        let diagnostics = if is_sexp {
+            diagnose_sexp(&text)
+        } else {
+            diagnose(&text)
+        };
+        for d in &diagnostics {
+            let severity = match d.severity {
+                Some(DiagnosticSeverity::ERROR) => "error",
+                Some(DiagnosticSeverity::WARNING) => "warning",
+                _ => "info",
+            };
+            eprintln!("{}: {}", severity, d.message);
+        }
+        std::process::exit(if diagnostics.is_empty() { 0 } else { 1 });
+    }
+
+    // --vscode is accepted as a flag but is currently a no-op
+    let (connection, io_threads) = Connection::stdio();
+
+    let (init_id, _init_params) = connection.initialize_start().unwrap();
+    let _init_params: InitializeParams = serde_json::from_value(_init_params).unwrap();
+
+    let init_result = initialize_result(config);
+    connection
+        .initialize_finish(init_id, serde_json::to_value(init_result).unwrap())
+        .unwrap();
+
+    eprintln!("Covalence LSP initialized");
+
+    let mut server = Server::new();
+
+    for msg in &connection.receiver {
+        match msg {
+            Message::Request(req) => {
+                if connection.handle_shutdown(&req).unwrap_or(false) {
+                    break;
+                }
+                if let Some(resp) = server.handle_request(&req) {
+                    connection.sender.send(Message::Response(resp)).unwrap();
+                }
+            }
+            Message::Notification(not) => {
+                if let Some(n) = server.handle_notification(not) {
+                    connection.sender.send(Message::Notification(n)).unwrap();
+                }
+            }
+            Message::Response(_) => {}
+        }
+    }
+
+    io_threads.join().unwrap();
+}
 
 pub fn server_capabilities() -> ServerCapabilities {
     ServerCapabilities {
@@ -15,12 +102,12 @@ pub fn server_capabilities() -> ServerCapabilities {
     }
 }
 
-pub fn initialize_result() -> InitializeResult {
+pub fn initialize_result(config: &LspConfig) -> InitializeResult {
     InitializeResult {
         capabilities: server_capabilities(),
         server_info: Some(ServerInfo {
             name: "covalence-lsp".into(),
-            version: Some(env!("CARGO_PKG_VERSION").into()),
+            version: Some(format!("{} ({})", config.version, config.target)),
         }),
     }
 }

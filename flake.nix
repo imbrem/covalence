@@ -36,11 +36,18 @@
           ];
 
           shellHook = ''
-            export PATH="$PWD/target/debug:$PATH"
+            export PATH="$PWD/target/release:$PWD/target/debug:$PATH"
+            mkdir -p target/release target/debug
+            ln -sf cov target/release/cog
+            ln -sf cov target/debug/cog
             echo "covalence dev shell"
-            echo "  cargo build --bin cog   build cog (available on PATH via target/debug)"
-            echo "  bun run build           full build (wasm + esbuild)"
-            echo "  bun run dev             dev server on localhost:3000"
+            echo "  cargo build -p covalence --release   build cov (release, preferred on PATH)"
+            echo "  cargo build -p covalence             build cov (debug, fallback on PATH)"
+            echo "                                       'cog' is a symlink to 'cov' (argv[0] detection)"
+            echo "  bun run build                        full build (native debug + wasm + esbuild)"
+            echo "  bun run release                      full release build (native release + wasm + esbuild)"
+            echo "  bun run code:browser                 build + launch web VSCode"
+            echo "  bun run code:desktop                 build + launch desktop VSCode"
           '';
         };
       }

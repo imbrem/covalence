@@ -3,8 +3,15 @@
   "private": true,
   "workspaces": ["extensions/*"],
   "scripts": {
-    "build": "bun run --filter covalence-vscode build",
-    "dev": "bun run --filter covalence-vscode dev",
+    "build": "bun run build:native && bun run build:wasm",
+    "build:native": "cargo build -p covalence",
+    "build:wasm": "bun run --filter covalence-vscode build",
+    "release": "bun run release:native && bun run release:wasm",
+    "release:native": "cargo build -p covalence --release",
+    "release:wasm": "bun run build:wasm",
+    "dev": "echo 'Use: bun run code:browser or bun run code:desktop' && exit 1",
+    "code:browser": "bun run build:wasm && bun run --filter covalence-vscode code:browser",
+    "code:desktop": "bun run build && bun run --filter covalence-vscode code:desktop",
     "check": "cargo check"
   }
 }

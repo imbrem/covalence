@@ -12,17 +12,8 @@ import {
   window,
   workspace,
 } from "vscode";
-import {
-  LanguageClient,
-  type LanguageClientOptions,
-  type ServerOptions,
-} from "vscode-languageclient/node";
-import { Wasm, type ProcessOptions } from "@vscode/wasm-wasi/v1";
-import {
-  createStdioOptions,
-  createUriConverters,
-  startServer,
-} from "@vscode/wasm-wasi-lsp";
+import { type LanguageClient } from "vscode-languageclient/node";
+import { createLspServer } from "./server";
 
 const ION_BINARY_SCHEME = "ion-binary";
 
@@ -37,18 +28,18 @@ function isBinaryIon(bytes: Uint8Array): boolean {
   );
 }
 
-/** Extract a filesystem path from a file: URI string (e.g. "file:///foo" → "/foo"). */
-function fileUriToPath(uri: string): string {
-  return decodeURIComponent(uri.replace(/^file:\/\//, ""));
-}
-
 let client: LanguageClient | undefined;
 let clientReadyResolve: () => void;
-const clientReady = new Promise<void>((resolve) => {
-  clientReadyResolve = resolve;
-});
+let clientReady: Promise<void>;
+resetClientReady();
 
-/** Convert a VSCode URI to the server-side filesystem path the WASI process sees. */
+function resetClientReady() {
+  clientReady = new Promise<void>((resolve) => {
+    clientReadyResolve = resolve;
+  });
+}
+
+/** Convert a VSCode URI to the filesystem path the LSP server sees. */
 let toServerPath: (uri: Uri) => string;
 
 class IonBinaryFSProvider implements FileSystemProvider {
@@ -119,7 +110,6 @@ async function openAsBinaryIon(fileUri: Uri): Promise<void> {
 
 export async function activate(context: ExtensionContext) {
   const channel = window.createOutputChannel("Covalence LSP");
-  const wasm: Wasm = await Wasm.load();
 
   // Register file system provider for binary Ion viewing/editing
   context.subscriptions.push(
@@ -129,53 +119,41 @@ export async function activate(context: ExtensionContext) {
     ),
   );
 
-  const serverOptions: ServerOptions = async () => {
-    const options: ProcessOptions = {
-      stdio: createStdioOptions(),
-      mountPoints: [{ kind: "workspaceFolder" }],
-    };
-
-    const filename = Uri.joinPath(
-      context.extensionUri,
-      "dist",
-      "covalence-lsp.wasm",
-    );
-    const bits = await workspace.fs.readFile(filename);
-    const module = await WebAssembly.compile(bits);
-    const process = await wasm.createProcess(
-      "covalence-lsp",
-      module,
-      { initial: 32768, maximum: 32768, shared: true },
-      options,
-    );
-
-    const decoder = new TextDecoder("utf-8");
-    process.stderr!.onData((data) => {
-      channel.append(decoder.decode(data));
+  async function startLsp() {
+    const server = await createLspServer({
+      context,
+      channel,
+      documentSelector: [
+        { language: "ion" },
+        { language: "smt" },
+        { language: "alethe" },
+      ],
     });
 
-    return startServer(process);
-  };
+    client = server.client;
+    toServerPath = server.toServerPath;
 
-  const uriConverters = createUriConverters();
-  toServerPath = (uri: Uri) =>
-    fileUriToPath(uriConverters.code2Protocol(uri));
+    await client.start();
+    clientReadyResolve();
 
-  const clientOptions: LanguageClientOptions = {
-    documentSelector: [
-      { language: "ion" },
-      { language: "smt" },
-      { language: "alethe" },
-    ],
-    outputChannel: channel,
-    uriConverters,
-  };
+    const serverVersion =
+      client.initializeResult?.serverInfo?.version ?? "unknown";
+    const startMsg = `Covalence LSP: ${serverVersion} (${server.mode})`;
+    channel.appendLine(startMsg);
+    window.showInformationMessage(startMsg);
+  }
 
-  client = new LanguageClient(
-    "covalence-lsp",
-    "Covalence LSP",
-    serverOptions,
-    clientOptions,
+  // --- Restart LSP command ---
+  context.subscriptions.push(
+    commands.registerCommand("covalence.restartLsp", async () => {
+      if (client) {
+        await client.stop();
+        client = undefined;
+      }
+      resetClientReady();
+      channel.appendLine("Restarting Covalence LSP...");
+      await startLsp();
+    }),
   );
 
   // --- Serialize Binary Ion command (existing) ---
@@ -349,9 +327,7 @@ export async function activate(context: ExtensionContext) {
     }),
   );
 
-  await client.start();
-  clientReadyResolve();
-  channel.appendLine("Covalence LSP started.");
+  await startLsp();
 }
 
 export async function deactivate() {

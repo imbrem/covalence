@@ -4,3 +4,4 @@ dist/
 /extensions/covalence-vscode/src/generated/
 .vscode-test-web/
 .worktrees/
+.direnv/

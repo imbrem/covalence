@@ -3,3 +3,4 @@ node_modules/
 dist/
 /extensions/covalence-vscode/src/generated/
 .vscode-test-web/
+.worktrees/

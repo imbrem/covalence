@@ -15,7 +15,7 @@ cargo test                 # run Rust tests
 
 ## Prerequisites
 
-- **Rust nightly** — required for `wasm32-wasip1-threads` thread support (stable Rust hardcodes `UNSUPPORTED_PLATFORM` for WASI thread spawning; nightly ≥1.96.0 removes this guard)
+- **Rust stable ≥1.94.1** — `wasm32-wasip1-threads` thread support works on stable since 1.94.1 (nightly also works)
 - **Rust targets**: `wasm32-wasip1-threads`, `wasm32-unknown-unknown`
 - **Bun** — JS package manager and build script runner
 - **wasm-pack**, **wasm-bindgen-cli**, **binaryen** (`wasm-opt`)
@@ -33,7 +33,7 @@ cargo test                 # run Rust tests
 
 ## Architecture
 
-The Rust LSP binary compiles to `wasm32-wasip1-threads` via `cargo rustc`. It uses `lsp-server::Connection::stdio()` which spawns threads for reader/writer — this requires **nightly Rust** (see Prerequisites). The WASM binary runs inside a WASI process in the extension via `@vscode/wasm-wasi` and `@vscode/wasm-wasi-lsp`, which bridges WASI stdio to LSP `MessageTransports`.
+The Rust LSP binary compiles to `wasm32-wasip1-threads` via `cargo rustc`. It uses `lsp-server::Connection::stdio()` which spawns threads for reader/writer. The WASM binary runs inside a WASI process in the extension via `@vscode/wasm-wasi` and `@vscode/wasm-wasi-lsp`, which bridges WASI stdio to LSP `MessageTransports`.
 
 ```
 VSCode ← LanguageClient ← @vscode/wasm-wasi-lsp ← WASI Process (Rust WASM) ← lsp-server
@@ -43,9 +43,11 @@ The same `src/extension.ts` serves both desktop and web bundles. esbuild aliases
 
 ### WASM Memory
 
-Memory is fixed at 160 pages (10 MB). This value must match in two places:
-- `scripts/build.ts`: linker args `--initial-memory=10485760 --max-memory=10485760`
-- `src/extension.ts`: `wasm.createProcess(... { initial: 160, maximum: 160, shared: true })`
+Memory is fixed at 32768 pages (2 GB). This value must match in two places:
+- `scripts/build.ts`: linker args `--initial-memory=2147483648 --max-memory=2147483648`
+- `src/extension.ts`: `wasm.createProcess(... { initial: 32768, maximum: 32768, shared: true })`
+
+Note: because this is shared memory (`SharedArrayBuffer`), the full 2 GB is reserved as virtual address space. On Linux, physical RAM is only committed for pages actually touched (overcommit). On Windows, the full size may count against the system commit charge.
 
 ## Pull Request Checklist
 
@@ -53,7 +55,7 @@ Memory is fixed at 160 pages (10 MB). This value must match in two places:
 
 ## Conventions
 
-- Rust edition 2024 (nightly), workspace resolver 2
+- Rust edition 2024 (stable ≥1.94.1 or nightly), workspace resolver 2
 - TypeScript: strict mode, ES2022 target, bundler module resolution
 - Build tool: esbuild (CJS bundles for both desktop and web, with browser alias for web)
 - Package manager: Bun (workspace root), with `"workspaces": ["extensions/*"]`

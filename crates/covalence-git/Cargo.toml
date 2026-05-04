@@ -1,0 +1,10 @@
+[package]
+name = "covalence-git"
+version = "0.0.0"
+edition = "2024"
+
+[[bin]]
+name = "cog"
+path = "src/main.rs"
+
+[dependencies]

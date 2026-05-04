@@ -145,7 +145,7 @@ export async function activate(context: ExtensionContext) {
     const process = await wasm.createProcess(
       "covalence-lsp",
       module,
-      { initial: 160, maximum: 160, shared: true },
+      { initial: 32768, maximum: 32768, shared: true },
       options,
     );
 

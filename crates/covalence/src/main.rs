@@ -46,6 +46,10 @@ struct ServeArgs {
     /// Open browser after starting
     #[arg(long)]
     open: bool,
+
+    /// Serve API only (no static frontend)
+    #[arg(long)]
+    api: bool,
 }
 
 fn main() {
@@ -78,7 +82,7 @@ fn main() {
         }
 
         #[cfg(feature = "serve")]
-        Some(Command::Serve(args)) => {
+        Some(Command::Serve(_args)) => {
             #[cfg(target_family = "wasm")]
             {
                 eprintln!("cov serve: not available on WASM targets");
@@ -86,7 +90,7 @@ fn main() {
             }
             #[cfg(not(target_family = "wasm"))]
             {
-                if let Err(e) = cmd_serve(args) {
+                if let Err(e) = cmd_serve(_args) {
                     eprintln!("{e:?}");
                     std::process::exit(1);
                 }
@@ -111,6 +115,7 @@ fn cmd_serve(args: ServeArgs) -> eyre::Result<()> {
         target: covalence::TARGET,
         port: args.port,
         open: args.open,
+        api_only: args.api,
     };
 
     tokio::runtime::Builder::new_multi_thread()

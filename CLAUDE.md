@@ -12,6 +12,7 @@ bun run build:wasm         # WASM + esbuild only
 bun run build:web          # build SvelteKit web app (adapter-static)
 bun run build:serve        # build web app + native binary
 bun run dev:web            # SvelteKit dev server (proxies /api to localhost:3100)
+bun run dev:serve          # reminder + dev:web (run cov serve --api in another terminal)
 bun run release            # full release build: native (release) + WASM + esbuild
 bun run release:native     # native release only (cargo build --release)
 bun run code:browser       # build WASM + launch web VSCode (always WASM)
@@ -26,9 +27,14 @@ cargo test                 # run Rust tests
 bun run build:serve        # builds web app + native binary with serve
 cov serve --open           # start server on :3100, open browser
 cov serve --port 8080      # custom port
+cov serve --api            # API only, no static frontend
 ```
 
-For frontend dev with hot reload, run `cov serve` and `bun run dev:web` in parallel — the Vite dev server proxies `/api` requests to `localhost:3100`.
+For frontend dev with hot reload, run `cov serve --api` and `bun run dev:web` in parallel — the Vite dev server proxies `/api` requests to `localhost:3100`. Override the proxy target with `COV_API`:
+```sh
+COV_API=http://localhost:8080 bun run dev:web   # custom port
+COV_API=https://cov.example.com bun run dev:web # remote backend
+```
 
 ## Prerequisites
 
@@ -49,12 +55,12 @@ For frontend dev with hot reload, run `cov serve` and `bun run dev:web` in paral
 - `crates/covalence-git/` — Cogit VCS library (used by `cov cog`)
 - `crates/covalence-serve/` — Web server library (used by `cov serve`)
   - `src/lib.rs` — `ServeConfig`, `run_serve()` — axum server with embedded static files
-  - `src/api.rs` — REST API handlers (`GET /api/info`)
-  - `src/static_files.rs` — rust-embed static file serving with SPA fallback
-  - `build.rs` — Warns if `apps/covalence-web/build/` is missing
+  - `src/api.rs` — REST API handlers (`GET /api/info`, `GET /api/health`)
+  - `src/static_files.rs` — rust-embed static file serving with SPA fallback (feature-gated on `static`)
+  - `build.rs` — Warns if `apps/covalence-web/build/` is missing (only when `static` feature enabled)
 - `apps/covalence-web/` — SvelteKit web app (adapter-static, SPA mode)
   - `src/lib/api.ts` — API client; base URL configurable via `VITE_COV_API_BASE` env var
-  - `src/routes/+page.svelte` — Landing page (fetches `/api/info`)
+  - `src/routes/+page.svelte` — Landing page with API health monitor (polls `/api/health` every `HEALTH_POLL_MS`)
   - `build/` — Static output embedded into the Rust binary (gitignored)
 - `packages/covalence-ui/` — Shared Svelte 5 component library (scaffold, for future use)
 - `extensions/covalence-vscode/` — VSCode extension (desktop + web)
@@ -77,12 +83,17 @@ Features (all default, all compile on WASM except `serve` deps are target-gated)
 ### Web server (`cov serve`)
 
 ```
-cov serve [--port PORT] [--open]
+cov serve [--port PORT] [--open] [--api]
   → axum HTTP server on 127.0.0.1:PORT
-  → serves embedded SvelteKit static files (rust-embed)
+  → serves embedded SvelteKit static files (rust-embed, requires "static" feature)
   → REST API: GET /api/info → { version, cog_version, target, cwd }
+  → REST API: GET /api/health → { status, version, cog_version, target, uptime_secs }
+  → --api: serve API only, skip static frontend
   → SPA fallback: unmatched routes serve index.html
 ```
+
+`covalence-serve` features (all default):
+- `static` — embeds SvelteKit build output via rust-embed; disable with `--no-default-features` to skip static assets entirely
 
 The SvelteKit app uses `adapter-static` (pure SPA, `ssr = false`) so it compiles to plain HTML/JS/CSS that gets embedded into the Rust binary at compile time.
 

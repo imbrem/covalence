@@ -52,32 +52,34 @@ impl Session {
                 };
                 let args = &items[1..];
                 match cmd {
-                    "load" => self.cmd_load(args),
-                    "load-url" => self.cmd_load_url(args),
-                    "load-file" => self.cmd_load_file(args),
+                    "store" => self.cmd_store(args),
+                    "store-url" => self.cmd_store_url(args),
+                    "store-file" => self.cmd_store_file(args),
+                    "read" => self.cmd_read(args),
+                    "read-wat" => self.cmd_read_wat(args),
                     "component" => self.cmd_wat("component", args),
                     "module" => self.cmd_wat("module", args),
                     "parse-module" => self.cmd_parse_module(args),
                     "parse-component" => self.cmd_parse_component(args),
                     "check-prop" => self.cmd_check_prop(args),
-                    "store" => self.cmd_store(args),
+                    "list" => self.cmd_list(args),
                     "help" => Ok(Self::cmd_help()),
                     _ => Err(format!("unknown command: {cmd}")),
                 }
             }
             SExp::Atom(s) if s == "help" => Ok(Self::cmd_help()),
-            SExp::Atom(s) if s == "store" => self.cmd_store(&[]),
+            SExp::Atom(s) if s == "list" => self.cmd_list(&[]),
             _ => Err("expected a command like (help) or (component ...)".into()),
         }
     }
 
-    fn cmd_load(&mut self, args: &[SExp]) -> Result<String, String> {
+    fn cmd_store(&mut self, args: &[SExp]) -> Result<String, String> {
         if args.len() != 1 {
-            return Err("usage: (load \"data\")".into());
+            return Err("usage: (store \"data\")".into());
         }
         let data = match &args[0] {
             SExp::String(s) => s.as_bytes().to_vec(),
-            _ => return Err("load expects a string argument".into()),
+            _ => return Err("store expects a string argument".into()),
         };
         let hash = self.store.insert(data);
         Ok(hash.to_string())
@@ -95,13 +97,13 @@ impl Session {
         Ok(hash.to_string())
     }
 
-    fn cmd_load_url(&mut self, args: &[SExp]) -> Result<String, String> {
+    fn cmd_store_url(&mut self, args: &[SExp]) -> Result<String, String> {
         if args.len() != 1 {
-            return Err("usage: (load-url \"https://...\")".into());
+            return Err("usage: (store-url \"https://...\")".into());
         }
         let url = match &args[0] {
             SExp::String(s) => s.as_str(),
-            _ => return Err("load-url expects a string argument".into()),
+            _ => return Err("store-url expects a string argument".into()),
         };
         let body = ureq::get(url)
             .call()
@@ -113,16 +115,16 @@ impl Session {
         Ok(hash.to_string())
     }
 
-    fn cmd_load_file(&mut self, args: &[SExp]) -> Result<String, String> {
+    fn cmd_store_file(&mut self, args: &[SExp]) -> Result<String, String> {
         if !self.allow_fs {
-            return Err("load-file is only available in CLI mode".into());
+            return Err("store-file is only available in CLI mode".into());
         }
         if args.len() != 1 {
-            return Err("usage: (load-file \"path/to/file\")".into());
+            return Err("usage: (store-file \"path/to/file\")".into());
         }
         let path = match &args[0] {
             SExp::String(s) => s.as_str(),
-            _ => return Err("load-file expects a string argument".into()),
+            _ => return Err("store-file expects a string argument".into()),
         };
         let data = std::fs::read(path).map_err(|e| format!("read error: {e}"))?;
         let hash = self.store.insert(data);
@@ -168,7 +170,25 @@ impl Session {
         Ok(result.to_string())
     }
 
-    fn cmd_store(&self, _args: &[SExp]) -> Result<String, String> {
+    fn cmd_read(&self, args: &[SExp]) -> Result<String, String> {
+        let hash = self.require_hash_arg(args, "read")?;
+        let data = self
+            .store
+            .get(&hash)
+            .ok_or_else(|| format!("blob not found: {hash}"))?;
+        String::from_utf8(data.to_vec()).map_err(|e| format!("blob is not valid UTF-8: {e}"))
+    }
+
+    fn cmd_read_wat(&self, args: &[SExp]) -> Result<String, String> {
+        let hash = self.require_hash_arg(args, "read-wat")?;
+        let data = self
+            .store
+            .get(&hash)
+            .ok_or_else(|| format!("blob not found: {hash}"))?;
+        wasmprinter::print_bytes(data).map_err(|e| format!("not a valid WASM module/component: {e}"))
+    }
+
+    fn cmd_list(&self, _args: &[SExp]) -> Result<String, String> {
         let hashes = self.store.hashes();
         if hashes.is_empty() {
             return Ok("(empty)".into());
@@ -179,15 +199,17 @@ impl Session {
 
     fn cmd_help() -> String {
         "\
-(load \"data\")             load string as blob, return hash
-(load-url \"url\")          fetch URL as blob, return hash
-(load-file \"path\")        load file as blob, return hash (CLI only)
+(store \"data\")            store string as blob, return hash
+(store-url \"url\")         fetch URL as blob, return hash
+(store-file \"path\")       store file as blob, return hash (CLI only)
+(read <hash>)              read blob as text
+(read-wat <hash>)          read blob as WAT (error if not valid WASM)
 (component ...)            compile WAT component, store as blob
 (module ...)               compile WAT module, store as blob
 (parse-module <hash>)      validate blob as WASM module
 (parse-component <hash>)   validate blob as WASM component
 (check-prop <hash>)        check if prop calls attest() on startup
-(store)                    list all blob hashes
+(list)                     list all blob hashes
 (help)                     show this help"
             .into()
     }

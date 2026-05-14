@@ -539,6 +539,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "ureq",
+ "wasmprinter 0.245.1",
  "wat",
 ]
 

@@ -24,3 +24,4 @@ covalence-sexp = { path = "../covalence-sexp" }
 covalence-object = { path = "../covalence-object" }
 ureq = "3"
 wat = "1.229"
+wasmprinter = "0.245"

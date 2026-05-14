@@ -1,6 +1,6 @@
 # Covalence
 
-Theorem prover with Ion language tooling. Monorepo with Rust crates, a VSCode browser extension, and a SvelteKit web app.
+Experimental VCS and theorem prover. Monorepo with Rust crates, a VSCode browser extension, and a SvelteKit web app.
 
 ## Build & Run
 

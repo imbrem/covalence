@@ -28,6 +28,7 @@
         devShells.default = pkgs.mkShell {
           buildInputs = [
             rustToolchain
+            pkgs.bashInteractive
             pkgs.bun
             pkgs.wasm-pack
             pkgs.wasm-bindgen-cli
@@ -36,6 +37,7 @@
           ];
 
           shellHook = ''
+            export SHELL="${pkgs.bashInteractive}/bin/bash"
             export PATH="$PWD/target/release:$PWD/target/debug:$PATH"
             mkdir -p target/release target/debug
             rm -f target/release/cog target/debug/cog

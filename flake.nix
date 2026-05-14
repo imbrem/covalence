@@ -17,7 +17,7 @@
         pkgs = import nixpkgs { inherit system overlays; };
 
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-          extensions = [ "rustfmt" "clippy" ];
+          extensions = [ "rust-src" "rust-analyzer" "rustfmt" "clippy" ];
           targets = [
             "wasm32-wasip1-threads"
             "wasm32-unknown-unknown"
@@ -34,6 +34,7 @@
             pkgs.wasm-bindgen-cli
             pkgs.binaryen
             pkgs.esbuild
+            pkgs.cargo-nextest
           ];
 
           shellHook = ''

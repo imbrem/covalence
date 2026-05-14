@@ -36,6 +36,23 @@ impl O256 {
         Self(rng.random())
     }
 
+    /// Create an O256 from a raw 32-byte array.
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    /// Parse an O256 from a 64-character hex string.
+    pub fn from_hex(hex: &str) -> Option<Self> {
+        if hex.len() != 64 {
+            return None;
+        }
+        let mut bytes = [0u8; 32];
+        for i in 0..32 {
+            bytes[i] = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
+        }
+        Some(Self(bytes))
+    }
+
     /// Return the raw 32-byte array.
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0

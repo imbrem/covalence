@@ -1,4 +1,6 @@
 mod api;
+pub mod blob_store;
+pub mod eval;
 #[cfg(feature = "static")]
 mod static_files;
 
@@ -31,7 +33,8 @@ pub async fn run_serve(config: ServeConfig) -> Result<()> {
 
     let app = Router::new()
         .route("/api/info", axum::routing::get(api::info))
-        .route("/api/health", axum::routing::get(api::health));
+        .route("/api/health", axum::routing::get(api::health))
+        .route("/api/repl", axum::routing::get(api::repl_ws));
 
     #[cfg(feature = "static")]
     let app = if !config.api_only {

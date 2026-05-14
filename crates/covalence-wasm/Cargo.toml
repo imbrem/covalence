@@ -1,0 +1,12 @@
+[package]
+name = "covalence-wasm"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+covalence-object = { path = "../covalence-object" }
+wasmtime = { version = "33", features = ["component-model"] }
+thiserror = "2"
+
+[dev-dependencies]
+wat = "1.229"

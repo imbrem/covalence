@@ -22,6 +22,10 @@ enum Command {
     /// Start the web server
     #[cfg(feature = "serve")]
     Serve(ServeArgs),
+
+    /// Start the interactive REPL
+    #[cfg(feature = "repl")]
+    Repl,
 }
 
 #[cfg(feature = "cogit")]
@@ -177,6 +181,22 @@ fn main() {
                 }
             }
         }
+
+        #[cfg(feature = "repl")]
+        Some(Command::Repl) => {
+            #[cfg(target_family = "wasm")]
+            {
+                eprintln!("cov repl: not available on WASM targets");
+                std::process::exit(1);
+            }
+            #[cfg(not(target_family = "wasm"))]
+            {
+                if let Err(e) = cmd_repl() {
+                    eprintln!("{e:?}");
+                    std::process::exit(1);
+                }
+            }
+        }
     }
 }
 
@@ -187,6 +207,91 @@ fn init_tracing() {
         .unwrap_or_else(|_| EnvFilter::new("info,hyper=warn,tower=warn"));
 
     tracing_subscriber::fmt().with_env_filter(filter).init();
+}
+
+#[cfg(all(feature = "repl", not(target_family = "wasm")))]
+fn cmd_repl() -> eyre::Result<()> {
+    use rustyline::DefaultEditor;
+
+    let mut session = covalence_serve::eval::Session::new(true).map_err(|e| eyre::eyre!(e))?;
+
+    println!("covalence {VERSION_LONG}");
+    println!("Type (help) for available commands.\n");
+
+    let mut rl = DefaultEditor::new()?;
+    let mut buf = String::new();
+
+    loop {
+        let prompt = if buf.is_empty() { "cov> " } else { "...> " };
+        match rl.readline(prompt) {
+            Ok(line) => {
+                let line = line.trim_end();
+                if buf.is_empty() && line.is_empty() {
+                    continue;
+                }
+                if !buf.is_empty() {
+                    buf.push('\n');
+                }
+                buf.push_str(line);
+
+                // Check if parens are balanced before evaluating.
+                if !parens_balanced(&buf) {
+                    continue;
+                }
+
+                let input = buf.trim();
+                if !input.is_empty() {
+                    let _ = rl.add_history_entry(input);
+                    let result = session.eval(input);
+                    if !result.is_empty() {
+                        println!("{result}");
+                    }
+                }
+                buf.clear();
+            }
+            Err(
+                rustyline::error::ReadlineError::Interrupted | rustyline::error::ReadlineError::Eof,
+            ) => {
+                break;
+            }
+            Err(e) => {
+                eprintln!("readline error: {e}");
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Check if parentheses are balanced (accounting for strings).
+#[cfg(all(feature = "repl", not(target_family = "wasm")))]
+fn parens_balanced(input: &str) -> bool {
+    let mut depth: i32 = 0;
+    let mut in_string = false;
+    let mut escape = false;
+    for ch in input.chars() {
+        if escape {
+            escape = false;
+            continue;
+        }
+        if in_string {
+            match ch {
+                '\\' => escape = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ';' => break, // rest is comment
+            _ => {}
+        }
+    }
+    depth <= 0
 }
 
 #[cfg(all(feature = "serve", not(target_family = "wasm")))]

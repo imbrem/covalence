@@ -8,7 +8,7 @@ default = ["static"]
 static = ["dep:rust-embed", "dep:mime_guess"]
 
 [dependencies]
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 rust-embed = { version = "8", optional = true }
 mime_guess = { version = "2", optional = true }
@@ -19,3 +19,8 @@ open = "5"
 eyre = "0.6"
 tracing = "0.1"
 covalence-git = { path = "../covalence-git" }
+covalence-wasm = { path = "../covalence-wasm" }
+covalence-sexp = { path = "../covalence-sexp" }
+covalence-object = { path = "../covalence-object" }
+ureq = "3"
+wat = "1.229"

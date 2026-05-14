@@ -8,10 +8,11 @@ name = "cov"
 path = "src/main.rs"
 
 [features]
-default = ["lsp", "cogit", "serve"]
+default = ["lsp", "cogit", "serve", "repl"]
 lsp = ["dep:covalence-lsp"]
 cogit = ["dep:covalence-git"]
 serve = []
+repl = ["dep:rustyline"]
 
 [dependencies]
 covalence-lsp = { path = "../covalence-lsp", optional = true }
@@ -24,3 +25,4 @@ covalence-serve = { path = "../covalence-serve" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 color-eyre = "0.6"
 eyre = "0.6"
+rustyline = { version = "15", optional = true }

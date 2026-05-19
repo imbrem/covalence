@@ -1,0 +1,17 @@
+[package]
+name = "covalence-repl"
+version = "0.0.0"
+edition = "2024"
+
+[features]
+default = []
+fetch = ["dep:ureq"]
+
+[dependencies]
+covalence-hash = { path = "../covalence-hash", default-features = false }
+covalence-sexp = { path = "../covalence-sexp" }
+covalence-wasm = { path = "../covalence-wasm", default-features = false }
+covalence-kernel = { path = "../covalence-kernel" }
+
+# fetch feature: URL fetching for store-url command
+ureq = { version = "3", optional = true }

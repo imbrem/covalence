@@ -1,0 +1,13 @@
+[package]
+name = "covalence-store"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+covalence-hash = { path = "../covalence-hash", default-features = false }
+covalence-sqlite = { path = "../covalence-sqlite", optional = true }
+
+[features]
+default = ["memory"]
+memory = []
+sqlite = ["dep:covalence-sqlite"]

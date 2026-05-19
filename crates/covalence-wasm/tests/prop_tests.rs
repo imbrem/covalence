@@ -1,40 +1,44 @@
+#![cfg(feature = "runtime")]
+
 use std::collections::HashMap;
 
-use covalence_object::O256;
-use covalence_wasm::{BlobLookup, PropResult, WasmEngine};
+use covalence_hash::O256;
+use covalence_store::ContentStore;
+use covalence_wasm::{PropResult, WasmEngine};
 
-/// Simple test blob store implementing BlobLookup.
+/// Simple test blob store implementing ContentStore.
 struct TestStore {
-    blobs: HashMap<O256, Option<Vec<u8>>>,
+    blobs: std::sync::RwLock<HashMap<O256, Option<Vec<u8>>>>,
 }
 
 impl TestStore {
     fn new() -> Self {
         TestStore {
-            blobs: HashMap::new(),
+            blobs: std::sync::RwLock::new(HashMap::new()),
         }
-    }
-
-    fn insert(&mut self, data: &[u8]) -> O256 {
-        let hash = O256::blob(data);
-        self.blobs.insert(hash, Some(data.to_vec()));
-        hash
-    }
-
-    /// Register a hash as known but without data.
-    #[allow(dead_code)]
-    fn insert_hash_only(&mut self, hash: O256) {
-        self.blobs.entry(hash).or_insert(None);
     }
 }
 
-impl BlobLookup for TestStore {
-    fn get_blob(&self, hash: &O256) -> Option<&[u8]> {
-        self.blobs.get(hash)?.as_deref()
+impl ContentStore<O256> for TestStore {
+    fn get(&self, key: &O256) -> Option<Vec<u8>> {
+        self.blobs.read().unwrap().get(key)?.clone()
     }
 
-    fn contains_blob(&self, hash: &O256) -> bool {
-        self.blobs.contains_key(hash)
+    fn put(&self, key: O256, data: &[u8]) {
+        self.blobs.write().unwrap().insert(key, Some(data.to_vec()));
+    }
+
+    fn insert(&self, data: &[u8]) -> O256 {
+        let hash = O256::blob(data);
+        self.blobs
+            .write()
+            .unwrap()
+            .insert(hash, Some(data.to_vec()));
+        hash
+    }
+
+    fn contains(&self, key: &O256) -> bool {
+        self.blobs.read().unwrap().contains_key(key)
     }
 }
 
@@ -48,11 +52,11 @@ fn wat(source: &str) -> Vec<u8> {
 }
 
 // ============================================================
-// Basic proposition checking: True / Unknown / False
+// Basic proposition deciding: True / Unknown / False
 // ============================================================
 
 #[test]
-fn trivial_true_prop() {
+fn trivial_true() {
     // Component that imports attest and calls it in its start function.
     let bytes = wat(r#"
         (component
@@ -73,14 +77,12 @@ fn trivial_true_prop() {
 
     let engine = engine();
     let store = TestStore::new();
-    let result = engine
-        .check_prop(&bytes, &store)
-        .expect("check_prop failed");
+    let result = engine.decide(&bytes, &store).expect("decide failed");
     assert_eq!(result, PropResult::True);
 }
 
 #[test]
-fn trivial_unknown_prop() {
+fn trivial_unknown() {
     // Component that imports attest but does NOT call it during startup.
     let bytes = wat(r#"
         (component
@@ -101,15 +103,13 @@ fn trivial_unknown_prop() {
 
     let engine = engine();
     let store = TestStore::new();
-    let result = engine
-        .check_prop(&bytes, &store)
-        .expect("check_prop failed");
+    let result = engine.decide(&bytes, &store).expect("decide failed");
     assert_eq!(result, PropResult::Unknown);
 }
 
 #[test]
-fn statically_false_prop() {
-    // Component that does NOT import attest at all.
+fn statically_false() {
+    // Component that does NOT import attest at all and has no deps.
     let bytes = wat(r#"
         (component
             (core module $m
@@ -122,38 +122,132 @@ fn statically_false_prop() {
 
     let engine = engine();
     let store = TestStore::new();
-    let result = engine
-        .check_prop(&bytes, &store)
-        .expect("check_prop failed");
+    let result = engine.decide(&bytes, &store).expect("decide failed");
     assert_eq!(result, PropResult::False);
 }
 
 #[test]
-fn empty_component_is_false() {
+fn empty_component_false() {
     // Minimal empty component — no imports, no start.
     let bytes = wat("(component)");
 
     let engine = engine();
     let store = TestStore::new();
-    let result = engine
-        .check_prop(&bytes, &store)
-        .expect("check_prop failed");
+    let result = engine.decide(&bytes, &store).expect("decide failed");
     assert_eq!(result, PropResult::False);
 }
 
 // ============================================================
-// Import resolution: lazy vs eager
+// Import linking — basic
 // ============================================================
 
 #[test]
-fn unknown_component_import_fails_eager() {
-    // In eager mode, unknown component imports must fail.
-    let fake_hash = "0000000000000000000000000000000000000000000000000000000000000000";
-    let source = format!(
+fn import_instance_forward_exports() {
+    // Dep exports "add", parent imports and calls it.
+    let store = TestStore::new();
+    let dep_bytes = wat(r#"
+        (component
+            (core module $m
+                (func $add (param i32 i32) (result i32)
+                    local.get 0
+                    local.get 1
+                    i32.add
+                )
+                (export "add" (func $add))
+            )
+            (core instance $i (instantiate $m))
+            (func $add (param "a" s32) (param "b" s32) (result s32)
+                (canon lift (core func $i "add"))
+            )
+            (export "add" (func $add))
+        )
+        "#);
+    let dep_hash = store.insert(&dep_bytes);
+    let dep_hex = dep_hash.to_string();
+
+    // Parent: imports the dep instance and uses add, then attests
+    let parent_bytes = wat(&format!(
         r#"
         (component
             (import "attest" (func $attest))
-            (import "component/{fake_hash}" (func $dep))
+            (import "component-{dep_hex}" (instance $lib
+                (export "add" (func (param "a" s32) (param "b" s32) (result s32)))
+            ))
+            (alias export $lib "add" (func $add))
+            (core module $m
+                (import "env" "attest" (func $attest))
+                (import "env" "add" (func $add (param i32 i32) (result i32)))
+                (func $start
+                    (drop (call $add (i32.const 1) (i32.const 2)))
+                    (call $attest)
+                )
+                (start $start)
+            )
+            (core func $attest_lowered (canon lower (func $attest)))
+            (core func $add_lowered (canon lower (func $add)))
+            (core instance $i (instantiate $m
+                (with "env" (instance
+                    (export "attest" (func $attest_lowered))
+                    (export "add" (func $add_lowered))
+                ))
+            ))
+        )
+        "#
+    ));
+
+    let engine = engine();
+    let result = engine.decide(&parent_bytes, &store).expect("decide failed");
+    assert_eq!(result, PropResult::True);
+}
+
+#[test]
+fn import_dep_calls_attest() {
+    // Dep imports attest and calls it → parent is True (transitive).
+    let store = TestStore::new();
+    let dep_bytes = wat(r#"
+        (component
+            (import "attest" (func $attest))
+            (core module $m
+                (import "env" "attest" (func $attest))
+                (func $start (call $attest))
+                (start $start)
+            )
+            (core func $attest_lowered (canon lower (func $attest)))
+            (core instance $i (instantiate $m
+                (with "env" (instance
+                    (export "attest" (func $attest_lowered))
+                ))
+            ))
+        )
+        "#);
+    let dep_hash = store.insert(&dep_bytes);
+    let dep_hex = dep_hash.to_string();
+
+    // Parent doesn't import attest directly, but imports the dep
+    let parent_bytes = wat(&format!(
+        r#"
+        (component
+            (import "component-{dep_hex}" (instance $lib))
+        )
+        "#
+    ));
+
+    let engine = engine();
+    let result = engine.decide(&parent_bytes, &store).expect("decide failed");
+    // The dep calls attest during its instantiation (shared store state),
+    // so the parent should be True.
+    assert_eq!(result, PropResult::True);
+}
+
+#[test]
+fn import_missing_hash_errors() {
+    // Hash not in store → error
+    let fake_hash = "0000000000000000000000000000000000000000000000000000000000000000";
+    let parent_bytes = wat(&format!(
+        r#"
+        (component
+            (import "attest" (func $attest))
+            (import "component-{fake_hash}" (instance $lib))
             (core module $m
                 (import "env" "attest" (func $attest))
                 (func $start (call $attest))
@@ -167,235 +261,449 @@ fn unknown_component_import_fails_eager() {
             ))
         )
         "#
-    );
-    let bytes = wat(&source);
+    ));
 
     let engine = engine();
     let store = TestStore::new();
-    let result = engine.check_prop_eager(&bytes, &store);
-    // Must fail — either at our pre-check (UnknownImport) or at component
-    // validation/linking.
+    let result = engine.decide(&parent_bytes, &store);
+    assert!(result.is_err(), "missing hash should fail");
+    assert!(
+        result.unwrap_err().to_string().contains("blob not found"),
+        "error should mention blob not found"
+    );
+}
+
+#[test]
+fn import_invalid_bytes_errors() {
+    // Hash contains garbage → error
+    let store = TestStore::new();
+    let garbage = b"not a valid wasm component";
+    let hash = store.insert(garbage);
+    let hash_hex = hash.to_string();
+
+    let parent_bytes = wat(&format!(
+        r#"
+        (component
+            (import "attest" (func $attest))
+            (import "component-{hash_hex}" (instance $lib))
+            (core module $m
+                (import "env" "attest" (func $attest))
+                (func $start (call $attest))
+                (start $start)
+            )
+            (core func $attest_lowered (canon lower (func $attest)))
+            (core instance $i (instantiate $m
+                (with "env" (instance
+                    (export "attest" (func $attest_lowered))
+                ))
+            ))
+        )
+        "#
+    ));
+
+    let engine = engine();
+    let result = engine.decide(&parent_bytes, &store);
+    assert!(result.is_err(), "invalid bytes should fail");
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("invalid component"),
+        "error should mention invalid component"
+    );
+}
+
+// ============================================================
+// Import linking — instance caching
+// ============================================================
+
+#[test]
+fn import_same_hash_shared_instance() {
+    // A dep that calls attest on instantiation — only instantiated once (cached).
+    let store = TestStore::new();
+    let dep_bytes = wat(r#"
+        (component
+            (import "attest" (func $attest))
+            (core module $m
+                (import "env" "attest" (func $attest))
+                (func $start (call $attest))
+                (start $start)
+            )
+            (core func $attest_lowered (canon lower (func $attest)))
+            (core instance $i (instantiate $m
+                (with "env" (instance
+                    (export "attest" (func $attest_lowered))
+                ))
+            ))
+        )
+        "#);
+    let dep_hash = store.insert(&dep_bytes);
+    let dep_hex = dep_hash.to_string();
+
+    let parent_bytes = wat(&format!(
+        r#"
+        (component
+            (import "component-{dep_hex}" (instance $lib1))
+        )
+        "#
+    ));
+
+    let engine = engine();
+    let result = engine.decide(&parent_bytes, &store).expect("decide failed");
+    assert_eq!(result, PropResult::True);
+}
+
+// ============================================================
+// Import linking — recursion & diamond deps
+// ============================================================
+
+#[test]
+fn import_dep_with_own_deps() {
+    // dep has its own cov:// deps, resolved recursively
+    let store = TestStore::new();
+
+    // Level-2 dep: just attests
+    let level2_bytes = wat(r#"
+        (component
+            (import "attest" (func $attest))
+            (core module $m
+                (import "env" "attest" (func $attest))
+                (func $start (call $attest))
+                (start $start)
+            )
+            (core func $attest_lowered (canon lower (func $attest)))
+            (core instance $i (instantiate $m
+                (with "env" (instance
+                    (export "attest" (func $attest_lowered))
+                ))
+            ))
+        )
+        "#);
+    let level2_hash = store.insert(&level2_bytes);
+    let level2_hex = level2_hash.to_string();
+
+    // Level-1 dep: imports level2
+    let level1_bytes = wat(&format!(
+        r#"
+        (component
+            (import "component-{level2_hex}" (instance $dep))
+        )
+        "#
+    ));
+    let level1_hash = store.insert(&level1_bytes);
+    let level1_hex = level1_hash.to_string();
+
+    // Parent: imports level1
+    let parent_bytes = wat(&format!(
+        r#"
+        (component
+            (import "component-{level1_hex}" (instance $lib))
+        )
+        "#
+    ));
+
+    let engine = engine();
+    let result = engine.decide(&parent_bytes, &store).expect("decide failed");
+    // level2 attests, which propagates through
+    assert_eq!(result, PropResult::True);
+}
+
+#[test]
+fn import_diamond_dep() {
+    // A imports B and C, both B and C import D → D instantiated once.
+    let store = TestStore::new();
+
+    // D: attests
+    let d_bytes = wat(r#"
+        (component
+            (import "attest" (func $attest))
+            (core module $m
+                (import "env" "attest" (func $attest))
+                (func $start (call $attest))
+                (start $start)
+            )
+            (core func $attest_lowered (canon lower (func $attest)))
+            (core instance $i (instantiate $m
+                (with "env" (instance
+                    (export "attest" (func $attest_lowered))
+                ))
+            ))
+        )
+        "#);
+    let d_hash = store.insert(&d_bytes);
+    let d_hex = d_hash.to_string();
+
+    // B: imports D, exports a constant
+    let b_bytes = wat(&format!(
+        r#"
+        (component
+            (import "component-{d_hex}" (instance $d))
+            (core module $m
+                (func $val (result i32) (i32.const 1))
+                (export "val" (func $val))
+            )
+            (core instance $i (instantiate $m))
+            (func $val (result s32) (canon lift (core func $i "val")))
+            (export "val" (func $val))
+        )
+        "#
+    ));
+    let b_hash = store.insert(&b_bytes);
+    let b_hex = b_hash.to_string();
+
+    // C: imports D, exports a different constant (distinct content → distinct hash)
+    let c_bytes = wat(&format!(
+        r#"
+        (component
+            (import "component-{d_hex}" (instance $d))
+            (core module $m
+                (func $val (result i32) (i32.const 2))
+                (export "val" (func $val))
+            )
+            (core instance $i (instantiate $m))
+            (func $val (result s32) (canon lift (core func $i "val")))
+            (export "val" (func $val))
+        )
+        "#
+    ));
+    let c_hash = store.insert(&c_bytes);
+    let c_hex = c_hash.to_string();
+
+    // A (parent): imports B and C
+    let parent_bytes = wat(&format!(
+        r#"
+        (component
+            (import "component-{b_hex}" (instance $b))
+            (import "component-{c_hex}" (instance $c))
+        )
+        "#
+    ));
+
+    let engine = engine();
+    let result = engine.decide(&parent_bytes, &store).expect("decide failed");
+    assert_eq!(result, PropResult::True);
+}
+
+// ============================================================
+// Import linking — exports
+// ============================================================
+
+#[test]
+fn import_dep_result_usable() {
+    // Parent uses return value from dep's export to decide whether to attest.
+    let store = TestStore::new();
+
+    // Dep exports a function that returns 42
+    let dep_bytes = wat(r#"
+        (component
+            (core module $m
+                (func $get_val (result i32) (i32.const 42))
+                (export "get-val" (func $get_val))
+            )
+            (core instance $i (instantiate $m))
+            (func $get_val (result s32)
+                (canon lift (core func $i "get-val"))
+            )
+            (export "get-val" (func $get_val))
+        )
+        "#);
+    let dep_hash = store.insert(&dep_bytes);
+    let dep_hex = dep_hash.to_string();
+
+    // Parent: imports dep, calls get-val, if result == 42 then attest
+    let parent_bytes = wat(&format!(
+        r#"
+        (component
+            (import "attest" (func $attest))
+            (import "component-{dep_hex}" (instance $lib
+                (export "get-val" (func (result s32)))
+            ))
+            (alias export $lib "get-val" (func $get_val))
+            (core module $m
+                (import "env" "attest" (func $attest))
+                (import "env" "get-val" (func $get_val (result i32)))
+                (func $start
+                    (if (i32.eq (call $get_val) (i32.const 42))
+                        (then (call $attest))
+                    )
+                )
+                (start $start)
+            )
+            (core func $attest_lowered (canon lower (func $attest)))
+            (core func $get_val_lowered (canon lower (func $get_val)))
+            (core instance $i (instantiate $m
+                (with "env" (instance
+                    (export "attest" (func $attest_lowered))
+                    (export "get-val" (func $get_val_lowered))
+                ))
+            ))
+        )
+        "#
+    ));
+
+    let engine = engine();
+    let result = engine.decide(&parent_bytes, &store).expect("decide failed");
+    assert_eq!(result, PropResult::True);
+}
+
+// ============================================================
+// Pre-check fix
+// ============================================================
+
+#[test]
+fn no_attest_but_has_import_dep_not_false() {
+    // Component with cov:// dep but no attest → NOT statically False
+    // (dep might transitively attest)
+    let store = TestStore::new();
+    let dep_bytes = wat(r#"
+        (component
+            (import "attest" (func $attest))
+            (core module $m
+                (import "env" "attest" (func $attest))
+                (func $start (call $attest))
+                (start $start)
+            )
+            (core func $attest_lowered (canon lower (func $attest)))
+            (core instance $i (instantiate $m
+                (with "env" (instance
+                    (export "attest" (func $attest_lowered))
+                ))
+            ))
+        )
+        "#);
+    let dep_hash = store.insert(&dep_bytes);
+    let dep_hex = dep_hash.to_string();
+
+    // Parent does NOT import attest, but imports dep that does attest
+    let parent_bytes = wat(&format!(
+        r#"
+        (component
+            (import "component-{dep_hex}" (instance $lib))
+        )
+        "#
+    ));
+
+    let engine = engine();
+    let result = engine.decide(&parent_bytes, &store).expect("decide failed");
+    // Should NOT be statically False — the dep attests
+    assert_eq!(result, PropResult::True);
+}
+
+#[test]
+fn no_attest_no_imports_is_false() {
+    // Component with neither attest nor deps → statically False
+    let bytes = wat(r#"
+        (component
+            (core module $m
+                (func $start)
+                (start $start)
+            )
+            (core instance $i (instantiate $m))
+        )
+        "#);
+
+    let engine = engine();
+    let store = TestStore::new();
+    let result = engine.decide(&bytes, &store).expect("decide failed");
+    assert_eq!(result, PropResult::False);
+}
+
+// ============================================================
+// Traps return Unknown
+// ============================================================
+
+#[test]
+fn trap_without_attest_returns_unknown() {
+    // Component that traps in its start function without calling attest.
+    let bytes = wat(r#"
+        (component
+            (import "attest" (func $attest))
+            (core module $m
+                (import "env" "attest" (func $attest))
+                (func $start (unreachable))
+                (start $start)
+            )
+            (core func $attest_lowered (canon lower (func $attest)))
+            (core instance $i (instantiate $m
+                (with "env" (instance
+                    (export "attest" (func $attest_lowered))
+                ))
+            ))
+        )
+        "#);
+
+    let engine = engine();
+    let store = TestStore::new();
+    let result = engine
+        .decide(&bytes, &store)
+        .expect("decide should not error on trap");
+    assert_eq!(result, PropResult::Unknown);
+}
+
+#[test]
+fn trap_after_attest_returns_true() {
+    // Component that calls attest then traps — attest was already called.
+    let bytes = wat(r#"
+        (component
+            (import "attest" (func $attest))
+            (core module $m
+                (import "env" "attest" (func $attest))
+                (func $start
+                    (call $attest)
+                    (unreachable)
+                )
+                (start $start)
+            )
+            (core func $attest_lowered (canon lower (func $attest)))
+            (core instance $i (instantiate $m
+                (with "env" (instance
+                    (export "attest" (func $attest_lowered))
+                ))
+            ))
+        )
+        "#);
+
+    let engine = engine();
+    let store = TestStore::new();
+    let result = engine
+        .decide(&bytes, &store)
+        .expect("decide should not error on trap");
+    assert_eq!(result, PropResult::True);
+}
+
+// ============================================================
+// Invalid component for decide
+// ============================================================
+
+#[test]
+fn decide_rejects_invalid_bytes() {
+    let engine = engine();
+    let store = TestStore::new();
+    let result = engine.decide(b"garbage bytes", &store);
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("invalid component")
+    );
+}
+
+#[test]
+fn decide_rejects_core_module() {
+    // A core WASM module is NOT a component.
+    let bytes = wat("(module)");
+    let engine = engine();
+    let store = TestStore::new();
+    let result = engine.decide(&bytes, &store);
     assert!(
         result.is_err(),
-        "unknown component import should fail in eager mode"
+        "core module should not be accepted as a prop"
     );
-}
-
-#[test]
-fn unknown_component_import_accepted_lazy() {
-    // In lazy mode (default), unknown component imports become traps.
-    let fake_hash = "0000000000000000000000000000000000000000000000000000000000000000";
-    let source = format!(
-        r#"
-        (component
-            (import "attest" (func $attest))
-            (import "component/{fake_hash}" (func $dep))
-            (core module $m
-                (import "env" "attest" (func $attest))
-                (func $start (call $attest))
-                (start $start)
-            )
-            (core func $attest_lowered (canon lower (func $attest)))
-            (core instance $i (instantiate $m
-                (with "env" (instance
-                    (export "attest" (func $attest_lowered))
-                ))
-            ))
-        )
-        "#
-    );
-    let bytes = wat(&source);
-
-    let engine = engine();
-    let store = TestStore::new();
-    let result = engine.check_prop(&bytes, &store);
-    // Should NOT produce UnknownImport — lazy mode replaces with traps.
-    match &result {
-        Err(e) => {
-            assert!(
-                !e.to_string().contains("unknown import"),
-                "lazy component import should not produce UnknownImport: {e}"
-            );
-        }
-        Ok(r) => {
-            // The component import is never called, attest IS called → True
-            assert_eq!(*r, PropResult::True, "expected True, got {r}");
-        }
-    }
-}
-
-#[test]
-fn unknown_prop_import_accepted() {
-    // Prop imports are always permissive (lazy only) — they become traps.
-    // Since the prop function is never called, this should succeed.
-    let fake_hash = "0000000000000000000000000000000000000000000000000000000000000000";
-    let source = format!(
-        r#"
-        (component
-            (import "attest" (func $attest))
-            (import "prop/{fake_hash}" (func $dep))
-            (core module $m
-                (import "env" "attest" (func $attest))
-                (func $start (call $attest))
-                (start $start)
-            )
-            (core func $attest_lowered (canon lower (func $attest)))
-            (core instance $i (instantiate $m
-                (with "env" (instance
-                    (export "attest" (func $attest_lowered))
-                ))
-            ))
-        )
-        "#
-    );
-    let bytes = wat(&source);
-
-    let engine = engine();
-    let store = TestStore::new();
-    let result = engine.check_prop(&bytes, &store);
-    match &result {
-        Err(e) => {
-            assert!(
-                !e.to_string().contains("unknown import"),
-                "prop import should not produce UnknownImport: {e}"
-            );
-        }
-        Ok(r) => {
-            assert_eq!(*r, PropResult::True, "expected True, got {r}");
-        }
-    }
-}
-
-#[test]
-fn unknown_prop_import_fails_even_in_eager_mode() {
-    // Props are ALWAYS lazy — check_prop_eager should still accept them.
-    let fake_hash = "0000000000000000000000000000000000000000000000000000000000000000";
-    let source = format!(
-        r#"
-        (component
-            (import "attest" (func $attest))
-            (import "prop/{fake_hash}" (func $dep))
-            (core module $m
-                (import "env" "attest" (func $attest))
-                (func $start (call $attest))
-                (start $start)
-            )
-            (core func $attest_lowered (canon lower (func $attest)))
-            (core instance $i (instantiate $m
-                (with "env" (instance
-                    (export "attest" (func $attest_lowered))
-                ))
-            ))
-        )
-        "#
-    );
-    let bytes = wat(&source);
-
-    let engine = engine();
-    let store = TestStore::new();
-    let result = engine.check_prop_eager(&bytes, &store);
-    // Props are always lazy — should NOT produce UnknownImport even in eager mode.
-    match &result {
-        Err(e) => {
-            assert!(
-                !e.to_string().contains("unknown import"),
-                "prop import should be lazy even in eager mode: {e}"
-            );
-        }
-        Ok(r) => {
-            assert_eq!(*r, PropResult::True, "expected True, got {r}");
-        }
-    }
-}
-
-#[test]
-fn known_component_import_accepted() {
-    // Register a hash in the store, then import it.
-    let mut store = TestStore::new();
-    let component_data = wat("(component)");
-    let hash = store.insert(&component_data);
-    let hash_hex = hash.to_string();
-
-    let source = format!(
-        r#"
-        (component
-            (import "attest" (func $attest))
-            (import "component/{hash_hex}" (func $dep))
-            (core module $m
-                (import "env" "attest" (func $attest))
-                (func $start (call $attest))
-                (start $start)
-            )
-            (core func $attest_lowered (canon lower (func $attest)))
-            (core instance $i (instantiate $m
-                (with "env" (instance
-                    (export "attest" (func $attest_lowered))
-                ))
-            ))
-        )
-        "#
-    );
-    let bytes = wat(&source);
-
-    let engine = engine();
-    // Both lazy and eager should pass — component hash is known.
-    let result = engine.check_prop_eager(&bytes, &store);
-    match &result {
-        Err(e) => {
-            assert!(
-                !e.to_string().contains("unknown import"),
-                "known component import should not produce UnknownImport: {e}"
-            );
-        }
-        Ok(_) => {}
-    }
-}
-
-#[test]
-fn known_prop_import_accepted() {
-    let mut store = TestStore::new();
-    let prop_data = wat("(component)");
-    let hash = store.insert(&prop_data);
-    let hash_hex = hash.to_string();
-
-    let source = format!(
-        r#"
-        (component
-            (import "attest" (func $attest))
-            (import "prop/{hash_hex}" (func $dep))
-            (core module $m
-                (import "env" "attest" (func $attest))
-                (func $start (call $attest))
-                (start $start)
-            )
-            (core func $attest_lowered (canon lower (func $attest)))
-            (core instance $i (instantiate $m
-                (with "env" (instance
-                    (export "attest" (func $attest_lowered))
-                ))
-            ))
-        )
-        "#
-    );
-    let bytes = wat(&source);
-
-    let engine = engine();
-    let result = engine.check_prop(&bytes, &store);
-    match &result {
-        Err(e) => {
-            assert!(
-                !e.to_string().contains("unknown import"),
-                "known prop import should not produce UnknownImport: {e}"
-            );
-        }
-        Ok(r) => {
-            assert_eq!(*r, PropResult::True, "expected True, got {r}");
-        }
-    }
 }
 
 // ============================================================
-// Module parsing
+// Module parsing (unchanged)
 // ============================================================
 
 #[test]
@@ -425,7 +733,7 @@ fn parse_invalid_module_fails() {
 }
 
 // ============================================================
-// Component parsing
+// Component parsing (unchanged)
 // ============================================================
 
 #[test]
@@ -494,9 +802,8 @@ fn unknown_blob_import_does_not_fail_precheck() {
 
     let engine = engine();
     let store = TestStore::new();
-    let result = engine.check_prop(&bytes, &store);
+    let result = engine.decide(&bytes, &store);
     // Should NOT fail with UnknownImport — blobs are lazy.
-    // May fail at linking/instantiation for other reasons, but not "unknown import".
     match &result {
         Err(e) => {
             assert!(
@@ -511,7 +818,7 @@ fn unknown_blob_import_does_not_fail_precheck() {
 #[test]
 fn known_blob_import_succeeds_if_unused() {
     // A component that imports a known blob but never calls the function.
-    let mut store = TestStore::new();
+    let store = TestStore::new();
     let blob_data = b"hello blob";
     let hash = store.insert(blob_data);
     let hash_hex = hash.to_string();
@@ -538,10 +845,7 @@ fn known_blob_import_succeeds_if_unused() {
     let bytes = wat(&source);
 
     let engine = engine();
-    let result = engine.check_prop(&bytes, &store);
-    // The blob function is never used, and attest IS called.
-    // Whether this succeeds depends on whether the linker can satisfy the
-    // blob import type. If it fails, it should be a link error, not unknown import.
+    let result = engine.decide(&bytes, &store);
     match &result {
         Err(e) => {
             assert!(
@@ -550,178 +854,7 @@ fn known_blob_import_succeeds_if_unused() {
             );
         }
         Ok(r) => {
-            // Ideally True — attest is called and blob is unused
             assert_eq!(*r, PropResult::True, "expected True, got {r}");
         }
     }
-}
-
-// ============================================================
-// Module import tests
-// ============================================================
-
-#[test]
-fn unknown_module_import_does_not_fail_precheck() {
-    // Module imports, like blob imports, should not cause immediate failure.
-    let fake_hash = "0000000000000000000000000000000000000000000000000000000000000000";
-    let source = format!(
-        r#"
-        (component
-            (import "attest" (func $attest))
-            (import "module/{fake_hash}" (func $mod_fn))
-            (core module $m
-                (import "env" "attest" (func $attest))
-                (func $start (call $attest))
-                (start $start)
-            )
-            (core func $attest_lowered (canon lower (func $attest)))
-            (core instance $i (instantiate $m
-                (with "env" (instance
-                    (export "attest" (func $attest_lowered))
-                ))
-            ))
-        )
-        "#
-    );
-    let bytes = wat(&source);
-
-    let engine = engine();
-    let store = TestStore::new();
-    let result = engine.check_prop(&bytes, &store);
-    match &result {
-        Err(e) => {
-            assert!(
-                !e.to_string().contains("unknown import"),
-                "module import should not cause UnknownImport: {e}"
-            );
-        }
-        Ok(_) => {}
-    }
-}
-
-// ============================================================
-// Calling unresolved imports traps
-// ============================================================
-
-#[test]
-fn calling_unresolved_prop_import_traps() {
-    // A component that imports an unknown prop AND calls it during start.
-    // The call should trap (instantiation error), not silently succeed.
-    let fake_hash = "0000000000000000000000000000000000000000000000000000000000000000";
-    let source = format!(
-        r#"
-        (component
-            (import "attest" (func $attest))
-            (import "prop/{fake_hash}" (func $dep))
-            (core module $m
-                (import "env" "attest" (func $attest))
-                (import "env" "dep" (func $dep))
-                (func $start
-                    (call $dep)
-                    (call $attest)
-                )
-                (start $start)
-            )
-            (core func $attest_lowered (canon lower (func $attest)))
-            (core func $dep_lowered (canon lower (func $dep)))
-            (core instance $i (instantiate $m
-                (with "env" (instance
-                    (export "attest" (func $attest_lowered))
-                    (export "dep" (func $dep_lowered))
-                ))
-            ))
-        )
-        "#
-    );
-    let bytes = wat(&source);
-
-    let engine = engine();
-    let store = TestStore::new();
-    let result = engine.check_prop(&bytes, &store);
-    // The prop import is a trap function — calling it should cause an
-    // instantiation error (trap during start).
-    assert!(
-        result.is_err(),
-        "calling unresolved prop import should trap"
-    );
-}
-
-#[test]
-fn calling_unresolved_lazy_component_import_traps() {
-    // A component that lazily imports an unknown component AND calls it.
-    // Default check_prop is lazy, so the import is accepted but calling traps.
-    let fake_hash = "0000000000000000000000000000000000000000000000000000000000000000";
-    let source = format!(
-        r#"
-        (component
-            (import "attest" (func $attest))
-            (import "component/{fake_hash}" (func $dep))
-            (core module $m
-                (import "env" "attest" (func $attest))
-                (import "env" "dep" (func $dep))
-                (func $start
-                    (call $dep)
-                    (call $attest)
-                )
-                (start $start)
-            )
-            (core func $attest_lowered (canon lower (func $attest)))
-            (core func $dep_lowered (canon lower (func $dep)))
-            (core instance $i (instantiate $m
-                (with "env" (instance
-                    (export "attest" (func $attest_lowered))
-                    (export "dep" (func $dep_lowered))
-                ))
-            ))
-        )
-        "#
-    );
-    let bytes = wat(&source);
-
-    let engine = engine();
-    let store = TestStore::new();
-    let result = engine.check_prop(&bytes, &store);
-    // Lazy mode accepts the import, but calling the trap function should
-    // cause an instantiation error.
-    match &result {
-        Err(e) => {
-            assert!(
-                !e.to_string().contains("unknown import"),
-                "lazy mode should not produce UnknownImport: {e}"
-            );
-            // Should be an instantiation error (trap)
-        }
-        Ok(_) => panic!("calling unresolved lazy component import should trap"),
-    }
-}
-
-// ============================================================
-// Invalid component for check_prop
-// ============================================================
-
-#[test]
-fn check_prop_rejects_invalid_bytes() {
-    let engine = engine();
-    let store = TestStore::new();
-    let result = engine.check_prop(b"garbage bytes", &store);
-    assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("invalid component")
-    );
-}
-
-#[test]
-fn check_prop_rejects_core_module() {
-    // A core WASM module is NOT a component.
-    let bytes = wat("(module)");
-    let engine = engine();
-    let store = TestStore::new();
-    let result = engine.check_prop(&bytes, &store);
-    assert!(
-        result.is_err(),
-        "core module should not be accepted as a prop"
-    );
 }

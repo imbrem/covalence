@@ -1,7 +1,7 @@
 use std::io;
 use std::path::Path;
 
-pub use covalence_object;
+pub use covalence_hash;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -28,18 +28,10 @@ impl HashAlgo {
 
 fn compute_hash(algo: HashAlgo, data: &[u8]) -> String {
     match algo {
-        HashAlgo::Blake3 => covalence_object::O256::blob(data).to_string(),
-        HashAlgo::Sha256 => covalence_object::O256::blob_sha256(data).to_string(),
-        HashAlgo::GitSha256 => covalence_object::O256::blob_git256(data).to_string(),
-        HashAlgo::GitSha1 => {
-            use covalence_object::gix_hash::Kind;
-            let mut hasher = covalence_object::gix_hash::hasher(Kind::Sha1);
-            let header = format!("blob {}\0", data.len());
-            hasher.update(header.as_bytes());
-            hasher.update(data);
-            let oid = hasher.try_finalize().expect("SHA-1 finalize");
-            oid.to_string()
-        }
+        HashAlgo::Blake3 => covalence_hash::O256::blob(data).to_string(),
+        HashAlgo::Sha256 => covalence_hash::O256::blob_sha256(data).to_string(),
+        HashAlgo::GitSha256 => covalence_hash::O256::blob_git256(data).to_string(),
+        HashAlgo::GitSha1 => covalence_hash::git_blob_sha1(data).to_string(),
     }
 }
 

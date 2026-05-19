@@ -1,0 +1,24 @@
+[package]
+name = "covalence-client"
+version = "0.0.0"
+edition = "2024"
+
+[features]
+default = ["sync", "async"]
+sync = ["dep:ureq"]
+async = ["dep:hyper", "dep:hyper-util", "dep:http-body-util", "dep:tokio"]
+
+[dependencies]
+covalence-kernel = { path = "../covalence-kernel" }
+covalence-hash = { path = "../covalence-hash", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# sync feature
+ureq = { version = "3", optional = true }
+
+# async feature
+hyper = { version = "1", features = ["client", "http1"], optional = true }
+hyper-util = { version = "0.1", features = ["client-legacy", "tokio", "http1"], optional = true }
+http-body-util = { version = "0.1", optional = true }
+tokio = { version = "1", features = ["net"], optional = true }

@@ -18,11 +18,18 @@ repl = ["dep:rustyline"]
 covalence-lsp = { path = "../covalence-lsp", optional = true }
 covalence-git = { path = "../covalence-git", optional = true }
 clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 covalence-serve = { path = "../covalence-serve" }
+covalence-repl = { path = "../covalence-repl", features = ["fetch"] }
+covalence-kernel = { path = "../covalence-kernel", features = ["engine", "sqlite"] }
+covalence-store = { path = "../covalence-store", features = ["sqlite"] }
+covalence-client = { path = "../covalence-client", features = ["sync"] }
+covalence-proto = { path = "../covalence-proto" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 color-eyre = "0.6"
 eyre = "0.6"
-rustyline = { version = "15", optional = true }
+rustyline = { version = "18", optional = true }
+memchr = "2"

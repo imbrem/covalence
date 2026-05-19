@@ -6,6 +6,7 @@ import {
   env,
   workspace,
 } from "vscode";
+
 import {
   LanguageClient,
   type LanguageClientOptions,
@@ -23,8 +24,6 @@ export type LspMode = "native" | "wasm";
 
 export interface LspServer {
   client: LanguageClient;
-  /** Convert a VSCode URI to the filesystem path the LSP server sees. */
-  toServerPath: (uri: Uri) => string;
   mode: LspMode;
   /** Human-readable description of what was launched (e.g. "native cov 0.1.0" or "wasm"). */
   description: string;
@@ -108,10 +107,6 @@ async function findNativeBinary(
   return probeBinary("cov", channel);
 }
 
-function fileUriToPath(uri: string): string {
-  return decodeURIComponent(uri.replace(/^file:\/\//, ""));
-}
-
 export async function createLspServer(opts: {
   context: ExtensionContext;
   channel: OutputChannel;
@@ -138,7 +133,6 @@ export async function createLspServer(opts: {
         serverOptions,
         clientOptions,
       ),
-      toServerPath: (uri) => uri.fsPath,
       mode: "native",
       description: `native ${nativeBinary.version}`,
     };
@@ -186,7 +180,6 @@ export async function createLspServer(opts: {
       serverOptions,
       clientOptions,
     ),
-    toServerPath: (uri) => fileUriToPath(uriConverters.code2Protocol(uri)),
     mode: "wasm",
     description: "wasm",
   };

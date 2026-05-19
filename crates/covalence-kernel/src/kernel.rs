@@ -1,0 +1,139 @@
+use std::collections::HashSet;
+use std::sync::{Arc, RwLock};
+
+use covalence_hash::O256;
+use covalence_store::{BlobStore, ContentStore, SharedMemoryStore};
+use covalence_wasm::WasmEngine;
+
+use crate::{AsyncBackend, BackendInfo, Decision, KernelError, SyncBackend};
+
+/// The execution kernel: owns a content-addressed store and a WASM engine.
+/// Clone is cheap (Arc internals).
+#[derive(Clone)]
+pub struct Kernel {
+    store: BlobStore<O256>,
+    engine: Arc<WasmEngine>,
+    /// Hashes previously decided as True.
+    true_set: Arc<RwLock<HashSet<O256>>>,
+    /// Hashes previously decided as False.
+    false_set: Arc<RwLock<HashSet<O256>>>,
+}
+
+impl Kernel {
+    /// Create a new kernel with a fresh in-memory store and engine.
+    pub fn new() -> Result<Self, KernelError> {
+        Self::with_store(BlobStore::new(SharedMemoryStore::new()))
+    }
+
+    /// Create a new kernel with the given store.
+    pub fn with_store(store: BlobStore<O256>) -> Result<Self, KernelError> {
+        let engine =
+            WasmEngine::new().map_err(|e| KernelError::Engine(format!("create engine: {e}")))?;
+        Ok(Self {
+            store,
+            engine: Arc::new(engine),
+            true_set: Arc::new(RwLock::new(HashSet::new())),
+            false_set: Arc::new(RwLock::new(HashSet::new())),
+        })
+    }
+
+    /// Direct access to the underlying store.
+    pub fn store(&self) -> &BlobStore<O256> {
+        &self.store
+    }
+
+    /// Direct access to the underlying engine.
+    pub fn engine(&self) -> &Arc<WasmEngine> {
+        &self.engine
+    }
+}
+
+impl SyncBackend for Kernel {
+    fn info(&self) -> BackendInfo {
+        let count = self.store.len().unwrap_or(0);
+        BackendInfo {
+            kind: "local".to_string(),
+            target: format!("{count} blobs"),
+        }
+    }
+
+    fn store_blob(&self, data: &[u8]) -> Result<O256, KernelError> {
+        Ok(self.store.insert(data))
+    }
+
+    fn get_blob(&self, hash: &O256) -> Result<Option<Vec<u8>>, KernelError> {
+        Ok(self.store.get(hash))
+    }
+
+    fn has_blob(&self, hash: &O256) -> Result<bool, KernelError> {
+        Ok(self.store.contains(hash))
+    }
+
+    fn blob_count(&self) -> Result<Option<usize>, KernelError> {
+        Ok(self.store.len())
+    }
+
+    fn decide(&self, hash: &O256) -> Result<Decision, KernelError> {
+        // Check cache
+        if self.true_set.read().unwrap().contains(hash) {
+            return Ok(Decision::True);
+        }
+        if self.false_set.read().unwrap().contains(hash) {
+            return Ok(Decision::False);
+        }
+
+        let data = self
+            .store
+            .get(hash)
+            .ok_or_else(|| KernelError::NotFound(format!("blob not found: {hash}")))?;
+        let result = self
+            .engine
+            .decide(&data, &self.store)
+            .map_err(|e| KernelError::Engine(format!("{e}")))?;
+
+        // Map PropResult → Decision and cache
+        let decision = match result {
+            covalence_wasm::PropResult::True => Decision::True,
+            covalence_wasm::PropResult::Unknown => Decision::Unknown,
+            covalence_wasm::PropResult::False => Decision::False,
+        };
+
+        match decision {
+            Decision::True => {
+                self.true_set.write().unwrap().insert(*hash);
+            }
+            Decision::False => {
+                self.false_set.write().unwrap().insert(*hash);
+            }
+            Decision::Unknown => {}
+        }
+
+        Ok(decision)
+    }
+}
+
+impl AsyncBackend for Kernel {
+    fn info(&self) -> BackendInfo {
+        SyncBackend::info(self)
+    }
+
+    async fn store_blob(&self, data: &[u8]) -> Result<O256, KernelError> {
+        SyncBackend::store_blob(self, data)
+    }
+
+    async fn get_blob(&self, hash: &O256) -> Result<Option<Vec<u8>>, KernelError> {
+        SyncBackend::get_blob(self, hash)
+    }
+
+    async fn has_blob(&self, hash: &O256) -> Result<bool, KernelError> {
+        SyncBackend::has_blob(self, hash)
+    }
+
+    async fn blob_count(&self) -> Result<Option<usize>, KernelError> {
+        SyncBackend::blob_count(self)
+    }
+
+    async fn decide(&self, hash: &O256) -> Result<Decision, KernelError> {
+        SyncBackend::decide(self, hash)
+    }
+}

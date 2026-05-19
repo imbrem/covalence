@@ -18,12 +18,51 @@
 		'block', 'loop', 'if', 'else', 'end', 'br', 'br_if', 'br_table',
 		'return', 'call', 'call_indirect',
 		'load', 'load-url', 'load-file', 'store', 'help',
-		'parse-module', 'parse-component', 'check-prop',
+		'parse-module', 'parse-component', 'decide',
 		'i32', 'i64', 'f32', 'f64', 'v128', 'funcref', 'externref',
 	]);
 
 	function escHtml(s: string): string {
 		return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	}
+
+	/** Heuristic: is this output structured code (S-expression or hashes) vs. prose (help, status)? */
+	function isCodeOutput(text: string): boolean {
+		const trimmed = text.trim();
+		if (!trimmed) return false;
+		const lines = trimmed.split('\n');
+		// All lines are 64-char hex hashes
+		if (lines.every(l => /^[a-f0-9]{64}$/.test(l.trim()))) return true;
+		// Looks like an S-expression block: starts with ( and last line ends with )
+		const first = lines[0].trimStart();
+		const last = lines[lines.length - 1].trimEnd();
+		if (first.startsWith('(') && last.endsWith(')')) {
+			// Exclude help-style output: lines with text after the closing paren
+			// e.g. '(store "data")   description here'
+			// Check first line: if there's content after the top-level close paren, it's prose
+			let depth = 0, inStr = false, escaped = false;
+			for (let i = 0; i < first.length; i++) {
+				const ch = first[i];
+				if (escaped) { escaped = false; continue; }
+				if (inStr) {
+					if (ch === '\\') escaped = true;
+					else if (ch === '"') inStr = false;
+					continue;
+				}
+				if (ch === '"') inStr = true;
+				else if (ch === '(') depth++;
+				else if (ch === ')') {
+					depth--;
+					if (depth === 0 && i < first.length - 1) {
+						// There's content after the first top-level sexp closes
+						const rest = first.slice(i + 1).trim();
+						if (rest && !rest.startsWith('(') && !rest.startsWith(';')) return false;
+					}
+				}
+			}
+			return true;
+		}
+		return false;
 	}
 
 	function highlight(text: string): string {
@@ -325,7 +364,7 @@
 				{:else if line.kind === 'error'}
 					<div class="line error">{line.text}</div>
 				{:else}
-					<div class="line output">{@html highlight(line.text)}</div>
+					<div class="line output">{@html isCodeOutput(line.text) ? highlight(line.text) : escHtml(line.text)}</div>
 				{/if}
 			{/each}
 		</div>

@@ -1,10 +1,21 @@
 use std::fmt;
-
-pub use gix_hash;
+use std::hash;
 
 /// A 256-bit value — either a content-addressed hash or a random identifier.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct O256([u8; 32]);
+
+impl hash::Hash for O256 {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        state.write(&self.0);
+    }
+}
+
+impl Default for O256 {
+    fn default() -> Self {
+        Self([0u8; 32])
+    }
+}
 
 impl O256 {
     /// Create an O256 from the BLAKE3 hash of the given bytes.
@@ -19,13 +30,9 @@ impl O256 {
     }
 
     /// Create an O256 from a git blob SHA-256 (header + content).
+    #[cfg(feature = "git")]
     pub fn blob_git256(data: &[u8]) -> Self {
-        use gix_hash::Kind;
-        let mut hasher = gix_hash::hasher(Kind::Sha256);
-        let header = format!("blob {}\0", data.len());
-        hasher.update(header.as_bytes());
-        hasher.update(data);
-        let oid = hasher.try_finalize().expect("git SHA-256 finalize");
+        let oid = crate::git_blob_sha256(data);
         let mut buf = [0u8; 32];
         buf.copy_from_slice(oid.as_bytes());
         Self(buf)

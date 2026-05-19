@@ -1,23 +1,19 @@
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use covalence_object::O256;
-use wasmtime::component::{Component, Linker};
+use covalence_hash::O256;
+use covalence_store::ContentStore;
+use wasmtime::component::{Component, Func, Linker};
 use wasmtime::{Engine, Module, Store};
 
-/// Trait for looking up blobs by hash. Implemented by blob stores.
-pub trait BlobLookup {
-    /// Get blob data by hash. Returns None if hash is unknown or data unavailable.
-    fn get_blob(&self, hash: &O256) -> Option<&[u8]>;
-    /// Check if a hash is known (either with or without data).
-    fn contains_blob(&self, hash: &O256) -> bool;
-}
+use crate::parse::{ComponentInfo, ModuleInfo};
 
 /// Host state threaded through wasmtime's Store.
 struct HostState {
     attested: bool,
 }
 
-/// Result of checking a proposition.
+/// Result of deciding a proposition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PropResult {
     /// The proposition called `attest()` during startup — decidably true.
@@ -40,56 +36,6 @@ impl fmt::Display for PropResult {
     }
 }
 
-/// Summary of a parsed WASM module's imports and exports.
-#[derive(Debug)]
-pub struct ModuleInfo {
-    pub imports: Vec<(String, String)>,
-    pub exports: Vec<String>,
-}
-
-impl fmt::Display for ModuleInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "module: {} imports, {} exports",
-            self.imports.len(),
-            self.exports.len()
-        )?;
-        for (module, name) in &self.imports {
-            write!(f, "\n  import {module}::{name}")?;
-        }
-        for name in &self.exports {
-            write!(f, "\n  export {name}")?;
-        }
-        Ok(())
-    }
-}
-
-/// Summary of a parsed WASM component's imports and exports.
-#[derive(Debug)]
-pub struct ComponentInfo {
-    pub imports: Vec<String>,
-    pub exports: Vec<String>,
-}
-
-impl fmt::Display for ComponentInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "component: {} imports, {} exports",
-            self.imports.len(),
-            self.exports.len()
-        )?;
-        for name in &self.imports {
-            write!(f, "\n  import {name}")?;
-        }
-        for name in &self.exports {
-            write!(f, "\n  export {name}")?;
-        }
-        Ok(())
-    }
-}
-
 /// Categorized import from a proposition component.
 #[derive(Debug)]
 enum ImportKind {
@@ -99,10 +45,8 @@ enum ImportKind {
     Blob(O256),
     /// A WASM module by hash: "module/{hex}".
     Module(O256),
-    /// A component by hash: "component/{hex}".
-    Component(O256),
-    /// A proposition by hash: "prop/{hex}".
-    Prop(O256),
+    /// An instance import: "component-{hash}".
+    Import(O256),
     /// Unknown import name.
     Unknown(String),
 }
@@ -121,14 +65,9 @@ fn categorize_import(name: &str) -> ImportKind {
             return ImportKind::Module(hash);
         }
     }
-    if let Some(hex) = name.strip_prefix("component/") {
+    if let Some(hex) = name.strip_prefix("component-") {
         if let Some(hash) = O256::from_hex(hex) {
-            return ImportKind::Component(hash);
-        }
-    }
-    if let Some(hex) = name.strip_prefix("prop/") {
-        if let Some(hash) = O256::from_hex(hex) {
-            return ImportKind::Prop(hash);
+            return ImportKind::Import(hash);
         }
     }
     ImportKind::Unknown(name.to_string())
@@ -171,65 +110,58 @@ impl WasmEngine {
         Ok(ComponentInfo { imports, exports })
     }
 
-    /// Check if a proposition (WASM component) is decidably true,
+    /// Decide if a proposition (WASM component) is true,
     /// i.e. whether its start function calls `attest()`.
     ///
     /// The component may import:
     /// - `"attest"`: a function that marks the proposition as true
     /// - `"blob/{hash}"`: a blob from the store (lazy — traps if data unavailable)
     /// - `"module/{hash}"`: a core WASM module from the store
-    /// - `"component/{hash}"`: a component from the store
-    /// - `"prop/{hash}"`: another proposition (always lazy — unresolved become traps)
+    /// - `"component-{hash}"`: an instance import (linked recursively)
     ///
-    /// When `lazy` is true, unknown component imports also become traps rather
-    /// than failing eagerly. Prop imports are always lazy regardless of this flag.
-    pub fn check_prop(
+    /// Instance imports are resolved eagerly from the store.
+    pub fn decide(
         &self,
         bytes: &[u8],
-        blobs: &dyn BlobLookup,
-    ) -> Result<PropResult, PropError> {
-        self.check_prop_inner(bytes, blobs, true)
-    }
-
-    /// Like [`check_prop`](Self::check_prop) but with eager component resolution:
-    /// unknown component imports produce an immediate error.
-    pub fn check_prop_eager(
-        &self,
-        bytes: &[u8],
-        blobs: &dyn BlobLookup,
-    ) -> Result<PropResult, PropError> {
-        self.check_prop_inner(bytes, blobs, false)
-    }
-
-    fn check_prop_inner(
-        &self,
-        bytes: &[u8],
-        blobs: &dyn BlobLookup,
-        lazy: bool,
+        blobs: &dyn ContentStore<O256>,
     ) -> Result<PropResult, PropError> {
         let component = Component::new(&self.engine, bytes)
             .map_err(|e| PropError::InvalidComponent(e.to_string()))?;
 
         let ty = component.component_type();
 
-        // Classify all imports
+        // Classify all imports and collect dep hashes
         let mut imports_attest = false;
+        let mut import_deps: Vec<O256> = Vec::new();
         for (name, _) in ty.imports(&self.engine) {
             match categorize_import(name) {
                 ImportKind::Attest => imports_attest = true,
-                ImportKind::Component(hash) => {
-                    // In eager mode, components must be known
-                    if !lazy && !blobs.contains_blob(&hash) {
-                        return Err(PropError::UnknownImport(name.to_string()));
-                    }
+                ImportKind::Import(hash) => {
+                    import_deps.push(hash);
                 }
                 _ => {}
             }
         }
 
-        // If attest is not imported at all, this prop is statically false
-        if !imports_attest {
+        // Pre-check: if attest is not imported AND there are no deps that
+        // could transitively attest, this prop is statically false
+        if !imports_attest && import_deps.is_empty() {
             return Ok(PropResult::False);
+        }
+
+        let mut store = Store::new(&self.engine, HostState { attested: false });
+        let mut instance_cache: HashMap<O256, Vec<(String, Func)>> = HashMap::new();
+        let mut resolving: HashSet<O256> = HashSet::new();
+
+        // Pre-resolve all import deps (instantiate them into the store)
+        for dep_hash in &import_deps {
+            self.resolve_import(
+                dep_hash,
+                blobs,
+                &mut store,
+                &mut instance_cache,
+                &mut resolving,
+            )?;
         }
 
         let mut linker: Linker<HostState> = Linker::new(&self.engine);
@@ -251,7 +183,7 @@ impl WasmEngine {
                         .map_err(|e| PropError::LinkError(e.to_string()))?;
                 }
                 ImportKind::Blob(hash) => {
-                    let data = blobs.get_blob(&hash).map(|d| d.to_vec());
+                    let data = blobs.get(&hash);
                     linker
                         .root()
                         .func_wrap(
@@ -268,25 +200,24 @@ impl WasmEngine {
                         .map_err(|e| PropError::LinkError(e.to_string()))?;
                 }
                 ImportKind::Module(_hash) => {
-                    // For MVP: module linking is complex.
-                    // Unknown modules left unlinked — instantiation will fail if used.
+                    // Module linking is complex — left unlinked.
                 }
-                ImportKind::Component(_hash) | ImportKind::Prop(_hash) => {
-                    // Prop imports are always lazy. Component imports are lazy
-                    // when `lazy` is true, otherwise already validated above.
-                    // Provide an unconditional trap for unresolved imports.
-                    let import_name = name.to_string();
-                    linker
-                        .root()
-                        .func_wrap(
-                            name,
-                            move |_cx: wasmtime::StoreContextMut<'_, HostState>, _args: ()| {
-                                Err::<(), _>(wasmtime::Error::msg(format!(
-                                    "unresolved import: {import_name}"
-                                )))
-                            },
-                        )
+                ImportKind::Import(hash) => {
+                    // Instance-typed import: wire cached dep exports into linker
+                    let exports = instance_cache.get(&hash).cloned().unwrap_or_default();
+
+                    let mut root = linker.root();
+                    let mut li = root
+                        .instance(name)
                         .map_err(|e| PropError::LinkError(e.to_string()))?;
+
+                    for (export_name, export_func) in exports {
+                        li.func_new(&export_name, move |mut cx, _ty, args, results| {
+                            export_func.call(&mut cx, args, results)?;
+                            Ok(())
+                        })
+                        .map_err(|e| PropError::LinkError(e.to_string()))?;
+                    }
                 }
                 ImportKind::Unknown(ref _name) => {
                     // Unknown import pattern — leave unlinked, instantiation will fail
@@ -294,24 +225,154 @@ impl WasmEngine {
             }
         }
 
-        let host = HostState { attested: false };
-        let mut store = Store::new(&self.engine, host);
+        // Instantiate the component — this runs the start function.
+        // A trap during instantiation means the start function didn't complete;
+        // if attest was already called before the trap, result is True,
+        // otherwise Unknown (we can't determine the result).
+        let instantiation = linker.instantiate(&mut store, &component);
 
-        // Instantiate the component — this runs the start function
-        let _instance = linker
-            .instantiate(&mut store, &component)
-            .map_err(|e| PropError::InstantiationError(e.to_string()))?;
+        if instantiation.is_err() {
+            return Ok(if store.data().attested {
+                PropResult::True
+            } else {
+                PropResult::Unknown
+            });
+        }
 
         Ok(if store.data().attested {
             PropResult::True
-        } else {
+        } else if imports_attest {
             // Imported attest but didn't call it during startup
             PropResult::Unknown
+        } else {
+            // No attest import, deps didn't transitively attest
+            PropResult::False
         })
+    }
+
+    /// Resolve a `component-{hash}` import: load, compile, and
+    /// instantiate the dep component (recursively resolving its own deps).
+    /// Caches instances by hash and detects cycles.
+    fn resolve_import(
+        &self,
+        dep_hash: &O256,
+        blobs: &dyn ContentStore<O256>,
+        store: &mut Store<HostState>,
+        instance_cache: &mut HashMap<O256, Vec<(String, Func)>>,
+        resolving: &mut HashSet<O256>,
+    ) -> Result<(), PropError> {
+        // Check cache first
+        if instance_cache.contains_key(dep_hash) {
+            return Ok(());
+        }
+
+        // Cycle detection
+        if !resolving.insert(*dep_hash) {
+            return Err(PropError::CycleDetected(format!(
+                "cycle detected resolving: {}",
+                dep_hash
+            )));
+        }
+
+        // Load bytes from store
+        let dep_bytes = blobs
+            .get(dep_hash)
+            .ok_or_else(|| PropError::UnknownImport(format!("blob not found: {}", dep_hash)))?;
+
+        let dep_component = Component::new(&self.engine, &dep_bytes)
+            .map_err(|e| PropError::InvalidComponent(format!("dep {}: {e}", dep_hash)))?;
+
+        let dep_ty = dep_component.component_type();
+
+        // Collect this dep's own import deps first (recursive resolution)
+        let mut sub_deps: Vec<O256> = Vec::new();
+        for (name, _) in dep_ty.imports(&self.engine) {
+            if let ImportKind::Import(hash) = categorize_import(name) {
+                sub_deps.push(hash);
+            }
+        }
+        for sub_hash in &sub_deps {
+            self.resolve_import(sub_hash, blobs, store, instance_cache, resolving)?;
+        }
+
+        // Build a linker for this dep
+        let mut dep_linker: Linker<HostState> = Linker::new(&self.engine);
+
+        for (name, _) in dep_ty.imports(&self.engine) {
+            let import_kind = categorize_import(name);
+            match import_kind {
+                ImportKind::Attest => {
+                    dep_linker
+                        .root()
+                        .func_wrap(
+                            name,
+                            |mut cx: wasmtime::StoreContextMut<'_, HostState>, _args: ()| {
+                                cx.data_mut().attested = true;
+                                Ok(())
+                            },
+                        )
+                        .map_err(|e| PropError::LinkError(e.to_string()))?;
+                }
+                ImportKind::Blob(hash) => {
+                    let data = blobs.get(&hash);
+                    dep_linker
+                        .root()
+                        .func_wrap(
+                            name,
+                            move |_cx: wasmtime::StoreContextMut<'_, HostState>,
+                                  _args: ()|
+                                  -> wasmtime::Result<(Vec<u8>,)> {
+                                match &data {
+                                    Some(d) => Ok((d.clone(),)),
+                                    None => Err(wasmtime::Error::msg("blob data not available")),
+                                }
+                            },
+                        )
+                        .map_err(|e| PropError::LinkError(e.to_string()))?;
+                }
+                ImportKind::Module(_hash) => {}
+                ImportKind::Import(hash) => {
+                    let exports = instance_cache.get(&hash).cloned().unwrap_or_default();
+
+                    let mut root = dep_linker.root();
+                    let mut li = root
+                        .instance(name)
+                        .map_err(|e| PropError::LinkError(e.to_string()))?;
+
+                    for (export_name, export_func) in exports {
+                        li.func_new(&export_name, move |mut cx, _ty, args, results| {
+                            export_func.call(&mut cx, args, results)?;
+                            Ok(())
+                        })
+                        .map_err(|e| PropError::LinkError(e.to_string()))?;
+                    }
+                }
+                ImportKind::Unknown(_) => {}
+            }
+        }
+
+        // Instantiate the dep
+        let instance = dep_linker
+            .instantiate(&mut *store, &dep_component)
+            .map_err(|e| PropError::InstantiationError(format!("dep {}: {e}", dep_hash)))?;
+
+        // Collect exported functions
+        let mut exports = Vec::new();
+        for (export_name, _) in dep_ty.exports(&self.engine) {
+            if let Some(func) = instance.get_func(&mut *store, export_name) {
+                exports.push((export_name.to_string(), func));
+            }
+        }
+
+        // Remove from resolving set, add to cache
+        resolving.remove(dep_hash);
+        instance_cache.insert(*dep_hash, exports);
+
+        Ok(())
     }
 }
 
-/// Errors from proposition checking.
+/// Errors from proposition deciding.
 #[derive(Debug, thiserror::Error)]
 pub enum PropError {
     #[error("invalid component: {0}")]
@@ -322,4 +383,6 @@ pub enum PropError {
     LinkError(String),
     #[error("instantiation error: {0}")]
     InstantiationError(String),
+    #[error("cycle detected: {0}")]
+    CycleDetected(String),
 }

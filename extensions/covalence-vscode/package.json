@@ -1,7 +1,7 @@
 {
   "name": "covalence-vscode",
   "displayName": "Covalence",
-  "description": "Language support for Ion via the Covalence LSP",
+  "description": "Language support for Covalence (SMT-LIB, Alethe, WAT)",
   "version": "0.1.0",
   "publisher": "covalence",
   "private": true,
@@ -17,12 +17,6 @@
   "contributes": {
     "languages": [
       {
-        "id": "ion",
-        "aliases": ["Ion"],
-        "extensions": [".ion", ".10n"],
-        "configuration": "./language-configuration.json"
-      },
-      {
         "id": "smt",
         "aliases": ["SMT-LIB", "SMT"],
         "extensions": [".smt", ".smt2"],
@@ -33,14 +27,21 @@
         "aliases": ["Alethe"],
         "extensions": [".alethe"],
         "configuration": "./smt-language-configuration.json"
+      },
+      {
+        "id": "cov",
+        "aliases": ["Covalence"],
+        "extensions": [".cov"],
+        "configuration": "./smt-language-configuration.json"
+      },
+      {
+        "id": "wat",
+        "aliases": ["WAT", "WebAssembly Text"],
+        "extensions": [".wat"],
+        "configuration": "./wat-language-configuration.json"
       }
     ],
     "grammars": [
-      {
-        "language": "ion",
-        "scopeName": "source.ion",
-        "path": "./syntaxes/ion.tmLanguage.json"
-      },
       {
         "language": "smt",
         "scopeName": "source.smt",
@@ -50,6 +51,16 @@
         "language": "alethe",
         "scopeName": "source.smt",
         "path": "./syntaxes/smt.tmLanguage.json"
+      },
+      {
+        "language": "cov",
+        "scopeName": "source.smt",
+        "path": "./syntaxes/smt.tmLanguage.json"
+      },
+      {
+        "language": "wat",
+        "scopeName": "source.wat",
+        "path": "./syntaxes/wat.tmLanguage.json"
       }
     ],
     "configuration": {
@@ -64,18 +75,6 @@
       }
     },
     "commands": [
-      {
-        "command": "covalence.serializeBinaryIon",
-        "title": "Covalence: Serialize to Binary Ion (Count Bytes)"
-      },
-      {
-        "command": "covalence.convertToIonBinary",
-        "title": "Covalence: Convert to Ion 1.0 Binary"
-      },
-      {
-        "command": "covalence.convertToIonText",
-        "title": "Covalence: Convert to Ion 1.0 Text"
-      },
       {
         "command": "covalence.restartLsp",
         "title": "Covalence: Restart LSP"

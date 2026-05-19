@@ -1,5 +1,8 @@
 use clap::{Parser, Subcommand};
 
+#[cfg(all(feature = "repl", not(target_family = "wasm")))]
+mod highlight;
+
 const VERSION_LONG: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("COV_TARGET"), ")");
 
 #[derive(Parser)]
@@ -25,7 +28,7 @@ enum Command {
 
     /// Start the interactive REPL
     #[cfg(feature = "repl")]
-    Repl,
+    Repl(ReplArgs),
 }
 
 #[cfg(feature = "cogit")]
@@ -105,6 +108,51 @@ struct ServeArgs {
     /// Serve API only (no static frontend)
     #[arg(long)]
     api: bool,
+
+    /// Listen on Unix socket only (no TCP)
+    #[arg(long)]
+    socket_only: bool,
+
+    /// Use SQLite store for persistence (optional path; defaults to XDG data dir)
+    #[arg(long, num_args = 0..=1, default_missing_value = "")]
+    store: Option<String>,
+
+    /// Use in-memory store (default, conflicts with --store)
+    #[arg(long, conflicts_with = "store")]
+    memory: bool,
+}
+
+#[cfg(feature = "repl")]
+#[derive(clap::Args)]
+struct ReplArgs {
+    /// Force standalone mode (no server discovery)
+    #[arg(long)]
+    standalone: bool,
+
+    /// Connect to a specific server (Unix socket path or HTTP URL)
+    #[arg(long)]
+    connect: Option<String>,
+
+    /// Syntax highlighting: auto (default), always, or never.
+    /// Respects NO_COLOR env var when set to auto.
+    #[arg(long, default_value = "auto")]
+    color: ColorMode,
+
+    /// Use SQLite store for persistence (optional path; defaults to XDG data dir)
+    #[arg(long, num_args = 0..=1, default_missing_value = "")]
+    store: Option<String>,
+
+    /// Use in-memory store (default, conflicts with --store)
+    #[arg(long, conflicts_with = "store")]
+    memory: bool,
+}
+
+#[cfg(feature = "repl")]
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum ColorMode {
+    Auto,
+    Always,
+    Never,
 }
 
 fn main() {
@@ -183,7 +231,7 @@ fn main() {
         }
 
         #[cfg(feature = "repl")]
-        Some(Command::Repl) => {
+        Some(Command::Repl(_args)) => {
             #[cfg(target_family = "wasm")]
             {
                 eprintln!("cov repl: not available on WASM targets");
@@ -191,7 +239,7 @@ fn main() {
             }
             #[cfg(not(target_family = "wasm"))]
             {
-                if let Err(e) = cmd_repl() {
+                if let Err(e) = cmd_repl(_args) {
                     eprintln!("{e:?}");
                     std::process::exit(1);
                 }
@@ -210,15 +258,51 @@ fn init_tracing() {
 }
 
 #[cfg(all(feature = "repl", not(target_family = "wasm")))]
-fn cmd_repl() -> eyre::Result<()> {
-    use rustyline::DefaultEditor;
+fn cmd_repl(args: ReplArgs) -> eyre::Result<()> {
+    use rustyline::Editor;
 
-    let mut session = covalence_serve::eval::Session::new(true).map_err(|e| eyre::eyre!(e))?;
+    let color = match args.color {
+        ColorMode::Always => true,
+        ColorMode::Never => false,
+        ColorMode::Auto => {
+            // Respect NO_COLOR convention; also check if stdout is a terminal
+            std::env::var_os("NO_COLOR").is_none()
+                && std::io::IsTerminal::is_terminal(&std::io::stdout())
+        }
+    };
+
+    let backend: Box<dyn covalence_kernel::SyncBackend> = if let Some(ref url) = args.connect {
+        Box::new(covalence_client::SyncHttpBackend::new(url.clone()))
+    } else if args.standalone {
+        let store = resolve_store(args.store)?;
+        let kernel = covalence_kernel::Kernel::with_store(store).map_err(|e| eyre::eyre!("{e}"))?;
+        Box::new(kernel)
+    } else {
+        // Auto-discovery: try to find a running server, fall back to kernel
+        let cwd = std::env::current_dir().ok();
+        let servers = covalence_proto::discovery::discover_servers(cwd.as_deref());
+        if let Some(url) = servers.first().and_then(|(_, desc)| desc.url.as_ref()) {
+            println!(
+                "connected to server {} (pid {})",
+                servers[0].1.id, servers[0].1.pid
+            );
+            Box::new(covalence_client::SyncHttpBackend::new(url.clone()))
+        } else {
+            let store = resolve_store(args.store)?;
+            let kernel =
+                covalence_kernel::Kernel::with_store(store).map_err(|e| eyre::eyre!("{e}"))?;
+            Box::new(kernel)
+        }
+    };
+
+    let mut session = covalence_repl::Session::new(backend, true, true);
 
     println!("covalence {VERSION_LONG}");
     println!("Type (help) for available commands.\n");
 
-    let mut rl = DefaultEditor::new()?;
+    let helper = highlight::SexpHelper { color };
+    let mut rl = Editor::new()?;
+    rl.set_helper(Some(helper));
     let mut buf = String::new();
 
     loop {
@@ -244,7 +328,7 @@ fn cmd_repl() -> eyre::Result<()> {
                     let _ = rl.add_history_entry(input);
                     let result = session.eval(input);
                     if !result.is_empty() {
-                        println!("{result}");
+                        println!("{}", highlight::highlight_output(&result, color));
                     }
                 }
                 buf.clear();
@@ -294,18 +378,56 @@ fn parens_balanced(input: &str) -> bool {
     depth <= 0
 }
 
+#[cfg(not(target_family = "wasm"))]
+fn resolve_store(
+    store_arg: Option<String>,
+) -> eyre::Result<covalence_store::BlobStore<covalence_store::O256>> {
+    use covalence_store::{BlobStore, SharedMemoryStore};
+
+    match store_arg {
+        None => Ok(BlobStore::new(SharedMemoryStore::new())),
+        Some(path) if path.is_empty() => {
+            // --store with no argument: use XDG default path
+            let db_path = covalence_proto::config::default_store_path()
+                .ok_or_else(|| eyre::eyre!("cannot determine default store path"))?;
+            if let Some(parent) = db_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            tracing::info!("store: {}", db_path.display());
+            let sqlite = covalence_store::SqliteStore::open(&db_path)
+                .map_err(|e| eyre::eyre!("open store: {e}"))?;
+            Ok(BlobStore::new(sqlite))
+        }
+        Some(path) => {
+            // --store PATH: use explicit path
+            let db_path = std::path::PathBuf::from(&path);
+            if let Some(parent) = db_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            tracing::info!("store: {}", db_path.display());
+            let sqlite = covalence_store::SqliteStore::open(&db_path)
+                .map_err(|e| eyre::eyre!("open store: {e}"))?;
+            Ok(BlobStore::new(sqlite))
+        }
+    }
+}
+
 #[cfg(all(feature = "serve", not(target_family = "wasm")))]
 fn cmd_serve(args: ServeArgs) -> eyre::Result<()> {
+    let store = resolve_store(args.store)?;
     let config = covalence_serve::ServeConfig {
         version: covalence::VERSION,
         target: covalence::TARGET,
         port: args.port,
         open: args.open,
         api_only: args.api,
+        socket_only: args.socket_only,
+        store,
     };
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?
-        .block_on(covalence_serve::run_serve(config))
+        .block_on(covalence_serve::run_serve(config))?;
+    Ok(())
 }

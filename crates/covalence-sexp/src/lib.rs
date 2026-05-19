@@ -1,4 +1,3 @@
-use std::fmt;
 use std::io;
 
 use pretty::{Arena, DocAllocator, DocBuilder};
@@ -20,19 +19,12 @@ pub enum SExp {
 }
 
 /// A parse error with byte offset.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("offset {offset}: {message}")]
 pub struct ParseError {
     pub offset: usize,
     pub message: String,
 }
-
-impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "offset {}: {}", self.offset, self.message)
-    }
-}
-
-impl std::error::Error for ParseError {}
 
 /// Parse a string into a sequence of S-expressions.
 pub fn parse(input: &str) -> Result<Vec<SExp>, ParseError> {

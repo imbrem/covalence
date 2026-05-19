@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Write(*.rs)|Edit(*.rs)",
+            "command": "cargo fmt --all --quiet"
+          }
+        ]
+      }
+    ]
+  }
+}

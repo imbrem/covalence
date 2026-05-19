@@ -1,0 +1,16 @@
+[package]
+name = "covalence-kernel"
+version = "0.0.0"
+edition = "2024"
+
+[features]
+default = []
+engine = ["dep:covalence-wasm", "dep:covalence-store"]
+sqlite = ["engine", "covalence-store/sqlite"]
+
+[dependencies]
+covalence-hash = { path = "../covalence-hash", default-features = false }
+thiserror = "2"
+# engine-only deps
+covalence-store = { path = "../covalence-store", optional = true }
+covalence-wasm = { path = "../covalence-wasm", features = ["runtime"], optional = true }

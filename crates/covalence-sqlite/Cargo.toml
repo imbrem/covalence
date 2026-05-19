@@ -1,0 +1,11 @@
+[package]
+name = "covalence-sqlite"
+version = "0.0.0"
+edition = "2024"
+
+[features]
+default = ["bundled"]
+bundled = ["rusqlite/bundled"]
+
+[dependencies]
+rusqlite = { version = "0.39" }

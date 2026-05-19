@@ -38,6 +38,16 @@ impl SyncHttpBackend {
         }
     }
 
+    fn head(&self, path: &str) -> Result<u16, KernelError> {
+        if let Some(ref socket) = self.socket_path {
+            unix_head(socket, path)
+        } else {
+            let url = format!("{}{}", self.base_url, path);
+            let resp = ureq::head(&url).call().map_err(ureq_error)?;
+            Ok(resp.status().as_u16())
+        }
+    }
+
     fn post_bytes(&self, path: &str, body: &[u8]) -> Result<Vec<u8>, KernelError> {
         if let Some(ref socket) = self.socket_path {
             unix_post(socket, path, body)
@@ -104,6 +114,51 @@ fn unix_post(socket_path: &str, path: &str, body: &[u8]) -> Result<Vec<u8>, Kern
     parse_http_response(&response)
 }
 
+/// Perform a HEAD request over a Unix domain socket using raw HTTP/1.1.
+#[cfg(unix)]
+fn unix_head(socket_path: &str, path: &str) -> Result<u16, KernelError> {
+    use std::io::{Read, Write};
+    use std::os::unix::net::UnixStream;
+
+    let mut stream = UnixStream::connect(socket_path)
+        .map_err(|e| KernelError::Store(format!("unix connect: {e}")))?;
+
+    let request = format!("HEAD {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|e| KernelError::Store(format!("write: {e}")))?;
+
+    let mut response = Vec::new();
+    stream
+        .read_to_end(&mut response)
+        .map_err(|e| KernelError::Store(format!("read: {e}")))?;
+
+    // Parse just the status line
+    let header_end = response
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .ok_or_else(|| KernelError::Store("malformed HTTP response".to_string()))?;
+    let header_str = std::str::from_utf8(&response[..header_end])
+        .map_err(|_| KernelError::Store("invalid HTTP headers".to_string()))?;
+    let status_line = header_str
+        .lines()
+        .next()
+        .ok_or_else(|| KernelError::Store("empty response".to_string()))?;
+    let status: u16 = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(500);
+    Ok(status)
+}
+
+#[cfg(not(unix))]
+fn unix_head(_socket_path: &str, _path: &str) -> Result<u16, KernelError> {
+    Err(KernelError::Store(
+        "Unix domain sockets not supported on this platform".to_string(),
+    ))
+}
+
 #[cfg(not(unix))]
 fn unix_get(_socket_path: &str, _path: &str) -> Result<Vec<u8>, KernelError> {
     Err(KernelError::Store(
@@ -158,8 +213,8 @@ struct HashResponse {
 }
 
 #[derive(Deserialize)]
-struct BlobListResponse {
-    hashes: Vec<String>,
+struct BlobStatsResponse {
+    count: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -198,8 +253,8 @@ impl SyncBackend for SyncHttpBackend {
 
     fn has_blob(&self, hash: &O256) -> Result<bool, KernelError> {
         let path = format!("/api/blobs/{hash}");
-        match self.get(&path) {
-            Ok(_) => Ok(true),
+        match self.head(&path) {
+            Ok(status) => Ok(status == 200),
             Err(KernelError::NotFound(_)) => Ok(false),
             Err(e) => Err(e),
         }
@@ -207,9 +262,9 @@ impl SyncBackend for SyncHttpBackend {
 
     fn blob_count(&self) -> Result<Option<usize>, KernelError> {
         let resp = self.get("/api/blobs")?;
-        let json: BlobListResponse =
+        let json: BlobStatsResponse =
             serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
-        Ok(Some(json.hashes.len()))
+        Ok(json.count)
     }
 
     fn decide(&self, hash: &O256) -> Result<Decision, KernelError> {

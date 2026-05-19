@@ -38,16 +38,26 @@ impl SqliteStore {
     }
 
     /// Collect all hashes in the store.
-    pub fn hashes(&self) -> Vec<O256> {
+    pub fn hashes(&self) -> Result<Vec<O256>, crate::StoreError> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT hash FROM blobs").unwrap();
-        stmt.query_map([], |row| {
-            let bytes: Vec<u8> = row.get(0)?;
-            Ok(O256::from_bytes(bytes.try_into().unwrap_or([0u8; 32])))
-        })
-        .unwrap()
-        .filter_map(|r| r.ok())
-        .collect()
+        let mut stmt = conn
+            .prepare("SELECT hash FROM blobs")
+            .map_err(|e| crate::StoreError::Io(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| {
+                let bytes: Vec<u8> = row.get(0)?;
+                Ok(bytes)
+            })
+            .map_err(|e| crate::StoreError::Io(e.to_string()))?;
+        let mut hashes = Vec::new();
+        for row in rows {
+            let bytes = row.map_err(|e| crate::StoreError::Io(e.to_string()))?;
+            let arr: [u8; 32] = bytes.try_into().map_err(|v: Vec<u8>| {
+                crate::StoreError::Io(format!("hash has wrong length: {}", v.len()))
+            })?;
+            hashes.push(O256::from_bytes(arr));
+        }
+        Ok(hashes)
     }
 }
 
@@ -62,19 +72,20 @@ impl ContentStore<O256> for SqliteStore {
         .ok()
     }
 
-    fn put(&self, key: O256, data: &[u8]) {
+    fn put(&self, key: O256, data: &[u8]) -> Result<(), crate::StoreError> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT OR IGNORE INTO blobs (hash, data) VALUES (?1, ?2)",
             covalence_sqlite::params![key.as_bytes().as_slice(), data],
         )
-        .ok();
+        .map_err(|e| crate::StoreError::Io(e.to_string()))?;
+        Ok(())
     }
 
-    fn insert(&self, data: &[u8]) -> O256 {
+    fn insert(&self, data: &[u8]) -> Result<O256, crate::StoreError> {
         let hash = O256::blob(data);
-        self.put(hash, data);
-        hash
+        self.put(hash, data)?;
+        Ok(hash)
     }
 
     fn contains(&self, key: &O256) -> bool {
@@ -103,15 +114,15 @@ mod tests {
     #[test]
     fn insert_and_get() {
         let store = SqliteStore::memory().unwrap();
-        let hash = store.insert(b"hello");
+        let hash = store.insert(b"hello").unwrap();
         assert_eq!(store.get(&hash), Some(b"hello".to_vec()));
     }
 
     #[test]
     fn content_addressed() {
         let store = SqliteStore::memory().unwrap();
-        let h1 = store.insert(b"data");
-        let h2 = store.insert(b"data");
+        let h1 = store.insert(b"data").unwrap();
+        let h2 = store.insert(b"data").unwrap();
         assert_eq!(h1, h2);
         assert_eq!(store.len(), Some(1));
     }
@@ -127,9 +138,9 @@ mod tests {
     #[test]
     fn hashes_list() {
         let store = SqliteStore::memory().unwrap();
-        let h1 = store.insert(b"a");
-        let h2 = store.insert(b"b");
-        let hashes = store.hashes();
+        let h1 = store.insert(b"a").unwrap();
+        let h2 = store.insert(b"b").unwrap();
+        let hashes = store.hashes().unwrap();
         assert_eq!(hashes.len(), 2);
         assert!(hashes.contains(&h1));
         assert!(hashes.contains(&h2));
@@ -144,7 +155,7 @@ mod tests {
 
         let hash = {
             let store = SqliteStore::open(&path).unwrap();
-            store.insert(b"persistent")
+            store.insert(b"persistent").unwrap()
         };
 
         // Reopen and verify data persists

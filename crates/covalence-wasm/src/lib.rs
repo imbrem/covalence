@@ -1,5 +1,5 @@
 mod validate;
-pub use validate::{validate_wat, wasm_to_wat};
+pub use validate::{compile_wat, wasm_to_wat};
 
 pub mod parse;
 pub use parse::{ComponentInfo, ModuleInfo, parse_component, parse_module};

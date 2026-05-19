@@ -41,12 +41,12 @@ impl fmt::Display for PropResult {
 enum ImportKind {
     /// The `attest()` function.
     Attest,
-    /// A blob by hash: "blob/{hex}".
+    /// A blob by hash: "blob-{hex}".
     Blob(O256),
-    /// A WASM module by hash: "module/{hex}".
+    /// A WASM module by hash: "module-{hex}".
     Module(O256),
-    /// An instance import: "component-{hash}".
-    Import(O256),
+    /// A component instance by hash: "component-{hash}".
+    Component(O256),
     /// Unknown import name.
     Unknown(String),
 }
@@ -55,19 +55,19 @@ fn categorize_import(name: &str) -> ImportKind {
     if name == "attest" {
         return ImportKind::Attest;
     }
-    if let Some(hex) = name.strip_prefix("blob/") {
+    if let Some(hex) = name.strip_prefix("blob-") {
         if let Some(hash) = O256::from_hex(hex) {
             return ImportKind::Blob(hash);
         }
     }
-    if let Some(hex) = name.strip_prefix("module/") {
+    if let Some(hex) = name.strip_prefix("module-") {
         if let Some(hash) = O256::from_hex(hex) {
             return ImportKind::Module(hash);
         }
     }
     if let Some(hex) = name.strip_prefix("component-") {
         if let Some(hash) = O256::from_hex(hex) {
-            return ImportKind::Import(hash);
+            return ImportKind::Component(hash);
         }
     }
     ImportKind::Unknown(name.to_string())
@@ -115,9 +115,9 @@ impl WasmEngine {
     ///
     /// The component may import:
     /// - `"attest"`: a function that marks the proposition as true
-    /// - `"blob/{hash}"`: a blob from the store (lazy — traps if data unavailable)
-    /// - `"module/{hash}"`: a core WASM module from the store
-    /// - `"component-{hash}"`: an instance import (linked recursively)
+    /// - `"blob-{hash}"`: a blob from the store (lazy — traps if data unavailable)
+    /// - `"module-{hash}"`: a core WASM module from the store
+    /// - `"component-{hash}"`: a component instance (linked recursively)
     ///
     /// Instance imports are resolved eagerly from the store.
     pub fn decide(
@@ -136,7 +136,7 @@ impl WasmEngine {
         for (name, _) in ty.imports(&self.engine) {
             match categorize_import(name) {
                 ImportKind::Attest => imports_attest = true,
-                ImportKind::Import(hash) => {
+                ImportKind::Component(hash) => {
                     import_deps.push(hash);
                 }
                 _ => {}
@@ -164,12 +164,45 @@ impl WasmEngine {
             )?;
         }
 
+        let linker = self.build_linker(&component, blobs, &instance_cache)?;
+
+        // Instantiate the component — this runs the start function.
+        // A trap during instantiation means the start function didn't complete;
+        // if attest was already called before the trap, result is True,
+        // otherwise Unknown (we can't determine the result).
+        let instantiation = linker.instantiate(&mut store, &component);
+
+        if instantiation.is_err() {
+            return Ok(if store.data().attested {
+                PropResult::True
+            } else {
+                PropResult::Unknown
+            });
+        }
+
+        Ok(if store.data().attested {
+            PropResult::True
+        } else if imports_attest {
+            // Imported attest but didn't call it during startup
+            PropResult::Unknown
+        } else {
+            // No attest import, deps didn't transitively attest
+            PropResult::False
+        })
+    }
+
+    /// Build a linker for a component, wiring up attest, blob, and component imports.
+    fn build_linker(
+        &self,
+        component: &Component,
+        blobs: &dyn ContentStore<O256>,
+        instance_cache: &HashMap<O256, Vec<(String, Func)>>,
+    ) -> Result<Linker<HostState>, PropError> {
+        let ty = component.component_type();
         let mut linker: Linker<HostState> = Linker::new(&self.engine);
 
-        // Provide host implementations for each import
-        for (name, _ty) in ty.imports(&self.engine) {
-            let import_kind = categorize_import(name);
-            match import_kind {
+        for (name, _) in ty.imports(&self.engine) {
+            match categorize_import(name) {
                 ImportKind::Attest => {
                     linker
                         .root()
@@ -202,8 +235,7 @@ impl WasmEngine {
                 ImportKind::Module(_hash) => {
                     // Module linking is complex — left unlinked.
                 }
-                ImportKind::Import(hash) => {
-                    // Instance-typed import: wire cached dep exports into linker
+                ImportKind::Component(hash) => {
                     let exports = instance_cache.get(&hash).cloned().unwrap_or_default();
 
                     let mut root = linker.root();
@@ -219,35 +251,11 @@ impl WasmEngine {
                         .map_err(|e| PropError::LinkError(e.to_string()))?;
                     }
                 }
-                ImportKind::Unknown(ref _name) => {
-                    // Unknown import pattern — leave unlinked, instantiation will fail
-                }
+                ImportKind::Unknown(_) => {}
             }
         }
 
-        // Instantiate the component — this runs the start function.
-        // A trap during instantiation means the start function didn't complete;
-        // if attest was already called before the trap, result is True,
-        // otherwise Unknown (we can't determine the result).
-        let instantiation = linker.instantiate(&mut store, &component);
-
-        if instantiation.is_err() {
-            return Ok(if store.data().attested {
-                PropResult::True
-            } else {
-                PropResult::Unknown
-            });
-        }
-
-        Ok(if store.data().attested {
-            PropResult::True
-        } else if imports_attest {
-            // Imported attest but didn't call it during startup
-            PropResult::Unknown
-        } else {
-            // No attest import, deps didn't transitively attest
-            PropResult::False
-        })
+        Ok(linker)
     }
 
     /// Resolve a `component-{hash}` import: load, compile, and
@@ -277,7 +285,7 @@ impl WasmEngine {
         // Load bytes from store
         let dep_bytes = blobs
             .get(dep_hash)
-            .ok_or_else(|| PropError::UnknownImport(format!("blob not found: {}", dep_hash)))?;
+            .ok_or_else(|| PropError::MissingDep(format!("blob not found: {}", dep_hash)))?;
 
         let dep_component = Component::new(&self.engine, &dep_bytes)
             .map_err(|e| PropError::InvalidComponent(format!("dep {}: {e}", dep_hash)))?;
@@ -287,7 +295,7 @@ impl WasmEngine {
         // Collect this dep's own import deps first (recursive resolution)
         let mut sub_deps: Vec<O256> = Vec::new();
         for (name, _) in dep_ty.imports(&self.engine) {
-            if let ImportKind::Import(hash) = categorize_import(name) {
+            if let ImportKind::Component(hash) = categorize_import(name) {
                 sub_deps.push(hash);
             }
         }
@@ -295,61 +303,7 @@ impl WasmEngine {
             self.resolve_import(sub_hash, blobs, store, instance_cache, resolving)?;
         }
 
-        // Build a linker for this dep
-        let mut dep_linker: Linker<HostState> = Linker::new(&self.engine);
-
-        for (name, _) in dep_ty.imports(&self.engine) {
-            let import_kind = categorize_import(name);
-            match import_kind {
-                ImportKind::Attest => {
-                    dep_linker
-                        .root()
-                        .func_wrap(
-                            name,
-                            |mut cx: wasmtime::StoreContextMut<'_, HostState>, _args: ()| {
-                                cx.data_mut().attested = true;
-                                Ok(())
-                            },
-                        )
-                        .map_err(|e| PropError::LinkError(e.to_string()))?;
-                }
-                ImportKind::Blob(hash) => {
-                    let data = blobs.get(&hash);
-                    dep_linker
-                        .root()
-                        .func_wrap(
-                            name,
-                            move |_cx: wasmtime::StoreContextMut<'_, HostState>,
-                                  _args: ()|
-                                  -> wasmtime::Result<(Vec<u8>,)> {
-                                match &data {
-                                    Some(d) => Ok((d.clone(),)),
-                                    None => Err(wasmtime::Error::msg("blob data not available")),
-                                }
-                            },
-                        )
-                        .map_err(|e| PropError::LinkError(e.to_string()))?;
-                }
-                ImportKind::Module(_hash) => {}
-                ImportKind::Import(hash) => {
-                    let exports = instance_cache.get(&hash).cloned().unwrap_or_default();
-
-                    let mut root = dep_linker.root();
-                    let mut li = root
-                        .instance(name)
-                        .map_err(|e| PropError::LinkError(e.to_string()))?;
-
-                    for (export_name, export_func) in exports {
-                        li.func_new(&export_name, move |mut cx, _ty, args, results| {
-                            export_func.call(&mut cx, args, results)?;
-                            Ok(())
-                        })
-                        .map_err(|e| PropError::LinkError(e.to_string()))?;
-                    }
-                }
-                ImportKind::Unknown(_) => {}
-            }
-        }
+        let dep_linker = self.build_linker(&dep_component, blobs, instance_cache)?;
 
         // Instantiate the dep
         let instance = dep_linker
@@ -377,8 +331,8 @@ impl WasmEngine {
 pub enum PropError {
     #[error("invalid component: {0}")]
     InvalidComponent(String),
-    #[error("unknown import: {0}")]
-    UnknownImport(String),
+    #[error("missing dep: {0}")]
+    MissingDep(String),
     #[error("link error: {0}")]
     LinkError(String),
     #[error("instantiation error: {0}")]

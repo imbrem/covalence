@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 covalence-hash = { path = "../covalence-hash", default-features = false }
 covalence-sqlite = { path = "../covalence-sqlite", optional = true }
+thiserror = "2"
 
 [features]
 default = ["memory"]

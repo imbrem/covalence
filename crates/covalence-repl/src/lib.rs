@@ -93,7 +93,7 @@ impl Session {
             sexp_to_wat(arg, &mut wat);
         }
         wat.push(')');
-        let wasm = covalence_wasm::validate_wat(&wat).map_err(|e| e.to_string())?;
+        let wasm = covalence_wasm::compile_wat(&wat).map_err(|e| e.to_string())?;
         let hash = self.backend.store_blob(&wasm).map_err(|e| e.to_string())?;
         Ok(hash.to_string())
     }

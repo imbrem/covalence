@@ -87,12 +87,13 @@ impl ContentStore<O256> for SharedMemoryStore {
         self.0.read().unwrap().get(key).map(|s| s.to_vec())
     }
 
-    fn put(&self, key: O256, data: &[u8]) {
+    fn put(&self, key: O256, data: &[u8]) -> Result<(), crate::StoreError> {
         self.0.write().unwrap().put(key, data);
+        Ok(())
     }
 
-    fn insert(&self, data: &[u8]) -> O256 {
-        self.0.write().unwrap().insert(data)
+    fn insert(&self, data: &[u8]) -> Result<O256, crate::StoreError> {
+        Ok(self.0.write().unwrap().insert(data))
     }
 
     fn contains(&self, key: &O256) -> bool {
@@ -130,7 +131,7 @@ mod tests {
     #[test]
     fn shared_store() {
         let store = SharedMemoryStore::new();
-        let hash = store.insert(b"hello");
+        let hash = store.insert(b"hello").unwrap();
         assert_eq!(ContentStore::get(&store, &hash), Some(b"hello".to_vec()));
         assert!(store.contains(&hash));
         assert_eq!(store.len(), Some(1));
@@ -139,7 +140,7 @@ mod tests {
     #[test]
     fn blobstore_clone_shares() {
         let store = BlobStore::new(SharedMemoryStore::new());
-        let hash = store.insert(b"shared");
+        let hash = store.insert(b"shared").unwrap();
         let clone = store.clone();
         assert_eq!(clone.get(&hash), Some(b"shared".to_vec()));
     }

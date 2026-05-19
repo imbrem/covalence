@@ -58,7 +58,9 @@ impl SyncBackend for Kernel {
     }
 
     fn store_blob(&self, data: &[u8]) -> Result<O256, KernelError> {
-        Ok(self.store.insert(data))
+        self.store
+            .insert(data)
+            .map_err(|e| KernelError::Store(e.to_string()))
     }
 
     fn get_blob(&self, hash: &O256) -> Result<Option<Vec<u8>>, KernelError> {

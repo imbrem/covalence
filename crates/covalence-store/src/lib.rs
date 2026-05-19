@@ -2,6 +2,13 @@ use std::sync::Arc;
 
 pub use covalence_hash::O256;
 
+/// Errors from store operations.
+#[derive(Debug, thiserror::Error)]
+pub enum StoreError {
+    #[error("store I/O error: {0}")]
+    Io(String),
+}
+
 /// Content-addressed store trait.
 ///
 /// Self-contained interface for content-addressed storage. Designed to be
@@ -11,10 +18,10 @@ pub trait ContentStore<K>: Send + Sync {
     fn get(&self, key: &K) -> Option<Vec<u8>>;
 
     /// Store data under the given key.
-    fn put(&self, key: K, data: &[u8]);
+    fn put(&self, key: K, data: &[u8]) -> Result<(), StoreError>;
 
     /// Hash and store data, returning the content key.
-    fn insert(&self, data: &[u8]) -> K;
+    fn insert(&self, data: &[u8]) -> Result<K, StoreError>;
 
     /// Check whether a key exists. Default checks via `get`.
     fn contains(&self, key: &K) -> bool {
@@ -50,11 +57,11 @@ impl<K: Send + Sync> ContentStore<K> for BlobStore<K> {
         self.0.get(key)
     }
 
-    fn put(&self, key: K, data: &[u8]) {
+    fn put(&self, key: K, data: &[u8]) -> Result<(), StoreError> {
         self.0.put(key, data)
     }
 
-    fn insert(&self, data: &[u8]) -> K {
+    fn insert(&self, data: &[u8]) -> Result<K, StoreError> {
         self.0.insert(data)
     }
 

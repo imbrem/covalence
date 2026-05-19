@@ -225,7 +225,7 @@ pub fn diagnose_sexp(text: &str) -> Vec<Diagnostic> {
 }
 
 pub fn diagnose_wat(text: &str) -> Vec<Diagnostic> {
-    match covalence_wasm::validate_wat(text) {
+    match covalence_wasm::compile_wat(text) {
         Ok(_) => vec![],
         Err(e) => vec![Diagnostic {
             range: Range::new(Position::new(0, 0), Position::new(u32::MAX, u32::MAX)),

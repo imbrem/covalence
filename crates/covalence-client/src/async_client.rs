@@ -113,6 +113,63 @@ impl AsyncHttpBackend {
         Ok(body)
     }
 
+    async fn head(&self, path: &str) -> Result<u16, KernelError> {
+        if let Some(ref socket_path) = self.socket_path {
+            self.unix_head(socket_path, path).await
+        } else {
+            let url = format!("{}{}", self.base_url, path);
+            self.tcp_head(&url).await
+        }
+    }
+
+    async fn tcp_head(&self, url: &str) -> Result<u16, KernelError> {
+        let client = Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
+        let uri: hyper::Uri = url
+            .parse()
+            .map_err(|e| KernelError::Store(format!("invalid URL: {e}")))?;
+
+        let req = hyper::Request::builder()
+            .method("HEAD")
+            .uri(uri)
+            .body(Full::new(Bytes::new()))
+            .map_err(|e| KernelError::Store(format!("build request: {e}")))?;
+
+        let resp = client
+            .request(req)
+            .await
+            .map_err(|e| KernelError::Store(format!("request: {e}")))?;
+
+        Ok(resp.status().as_u16())
+    }
+
+    async fn unix_head(&self, socket_path: &str, path: &str) -> Result<u16, KernelError> {
+        use hyper::Request;
+        use hyper_util::rt::TokioIo;
+        use tokio::net::UnixStream;
+
+        let stream = UnixStream::connect(socket_path)
+            .await
+            .map_err(|e| KernelError::Store(format!("unix connect: {e}")))?;
+        let io = TokioIo::new(stream);
+
+        let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
+            .await
+            .map_err(|e| KernelError::Store(format!("handshake: {e}")))?;
+        tokio::spawn(conn);
+
+        let req = Request::head(path)
+            .header("host", "localhost")
+            .body(Full::<Bytes>::new(Bytes::new()))
+            .map_err(|e| KernelError::Store(format!("build request: {e}")))?;
+
+        let resp = sender
+            .send_request(req)
+            .await
+            .map_err(|e| KernelError::Store(format!("request: {e}")))?;
+
+        Ok(resp.status().as_u16())
+    }
+
     async fn post_bytes(&self, path: &str, data: &[u8]) -> Result<Vec<u8>, KernelError> {
         if let Some(ref socket_path) = self.socket_path {
             self.unix_post(socket_path, path, data).await
@@ -216,8 +273,8 @@ struct HashResponse {
 }
 
 #[derive(Deserialize)]
-struct BlobListResponse {
-    hashes: Vec<String>,
+struct BlobStatsResponse {
+    count: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -256,8 +313,8 @@ impl AsyncBackend for AsyncHttpBackend {
 
     async fn has_blob(&self, hash: &O256) -> Result<bool, KernelError> {
         let path = format!("/api/blobs/{hash}");
-        match self.get(&path).await {
-            Ok(_) => Ok(true),
+        match self.head(&path).await {
+            Ok(status) => Ok(status == 200),
             Err(KernelError::NotFound(_)) => Ok(false),
             Err(e) => Err(e),
         }
@@ -265,9 +322,9 @@ impl AsyncBackend for AsyncHttpBackend {
 
     async fn blob_count(&self) -> Result<Option<usize>, KernelError> {
         let resp = self.get("/api/blobs").await?;
-        let json: BlobListResponse =
+        let json: BlobStatsResponse =
             serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
-        Ok(Some(json.hashes.len()))
+        Ok(json.count)
     }
 
     async fn decide(&self, hash: &O256) -> Result<Decision, KernelError> {

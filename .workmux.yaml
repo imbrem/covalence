@@ -80,9 +80,8 @@ worktree_dir: .worktrees
 # These block window creation - use for short tasks only.
 # Use "<global>" to inherit from global config.
 # Set to empty list to disable: `post_create: []`
-# post_create:
-#   - "<global>"
-#   - mise use
+post_create:
+  - direnv allow
 
 # Commands to run before merging (e.g., linting, tests).
 # Aborts the merge if any command fails.

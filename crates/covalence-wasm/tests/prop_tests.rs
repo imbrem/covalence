@@ -24,17 +24,18 @@ impl ContentStore<O256> for TestStore {
         self.blobs.read().unwrap().get(key)?.clone()
     }
 
-    fn put(&self, key: O256, data: &[u8]) {
+    fn put(&self, key: O256, data: &[u8]) -> Result<(), covalence_store::StoreError> {
         self.blobs.write().unwrap().insert(key, Some(data.to_vec()));
+        Ok(())
     }
 
-    fn insert(&self, data: &[u8]) -> O256 {
+    fn insert(&self, data: &[u8]) -> Result<O256, covalence_store::StoreError> {
         let hash = O256::blob(data);
         self.blobs
             .write()
             .unwrap()
             .insert(hash, Some(data.to_vec()));
-        hash
+        Ok(hash)
     }
 
     fn contains(&self, key: &O256) -> bool {
@@ -162,7 +163,7 @@ fn import_instance_forward_exports() {
             (export "add" (func $add))
         )
         "#);
-    let dep_hash = store.insert(&dep_bytes);
+    let dep_hash = store.insert(&dep_bytes).unwrap();
     let dep_hex = dep_hash.to_string();
 
     // Parent: imports the dep instance and uses add, then attests
@@ -220,7 +221,7 @@ fn import_dep_calls_attest() {
             ))
         )
         "#);
-    let dep_hash = store.insert(&dep_bytes);
+    let dep_hash = store.insert(&dep_bytes).unwrap();
     let dep_hex = dep_hash.to_string();
 
     // Parent doesn't import attest directly, but imports the dep
@@ -278,7 +279,7 @@ fn import_invalid_bytes_errors() {
     // Hash contains garbage → error
     let store = TestStore::new();
     let garbage = b"not a valid wasm component";
-    let hash = store.insert(garbage);
+    let hash = store.insert(garbage).unwrap();
     let hash_hex = hash.to_string();
 
     let parent_bytes = wat(&format!(
@@ -337,7 +338,7 @@ fn import_same_hash_shared_instance() {
             ))
         )
         "#);
-    let dep_hash = store.insert(&dep_bytes);
+    let dep_hash = store.insert(&dep_bytes).unwrap();
     let dep_hex = dep_hash.to_string();
 
     let parent_bytes = wat(&format!(
@@ -379,7 +380,7 @@ fn import_dep_with_own_deps() {
             ))
         )
         "#);
-    let level2_hash = store.insert(&level2_bytes);
+    let level2_hash = store.insert(&level2_bytes).unwrap();
     let level2_hex = level2_hash.to_string();
 
     // Level-1 dep: imports level2
@@ -390,7 +391,7 @@ fn import_dep_with_own_deps() {
         )
         "#
     ));
-    let level1_hash = store.insert(&level1_bytes);
+    let level1_hash = store.insert(&level1_bytes).unwrap();
     let level1_hex = level1_hash.to_string();
 
     // Parent: imports level1
@@ -430,7 +431,7 @@ fn import_diamond_dep() {
             ))
         )
         "#);
-    let d_hash = store.insert(&d_bytes);
+    let d_hash = store.insert(&d_bytes).unwrap();
     let d_hex = d_hash.to_string();
 
     // B: imports D, exports a constant
@@ -448,7 +449,7 @@ fn import_diamond_dep() {
         )
         "#
     ));
-    let b_hash = store.insert(&b_bytes);
+    let b_hash = store.insert(&b_bytes).unwrap();
     let b_hex = b_hash.to_string();
 
     // C: imports D, exports a different constant (distinct content → distinct hash)
@@ -466,7 +467,7 @@ fn import_diamond_dep() {
         )
         "#
     ));
-    let c_hash = store.insert(&c_bytes);
+    let c_hash = store.insert(&c_bytes).unwrap();
     let c_hex = c_hash.to_string();
 
     // A (parent): imports B and C
@@ -507,7 +508,7 @@ fn import_dep_result_usable() {
             (export "get-val" (func $get_val))
         )
         "#);
-    let dep_hash = store.insert(&dep_bytes);
+    let dep_hash = store.insert(&dep_bytes).unwrap();
     let dep_hex = dep_hash.to_string();
 
     // Parent: imports dep, calls get-val, if result == 42 then attest
@@ -571,7 +572,7 @@ fn no_attest_but_has_import_dep_not_false() {
             ))
         )
         "#);
-    let dep_hash = store.insert(&dep_bytes);
+    let dep_hash = store.insert(&dep_bytes).unwrap();
     let dep_hex = dep_hash.to_string();
 
     // Parent does NOT import attest, but imports dep that does attest
@@ -783,7 +784,7 @@ fn unknown_blob_import_does_not_fail_precheck() {
         r#"
         (component
             (import "attest" (func $attest))
-            (import "blob/{fake_hash}" (func $blob (result (list u8))))
+            (import "blob-{fake_hash}" (func $blob (result (list u8))))
             (core module $m
                 (import "env" "attest" (func $attest))
                 (func $start (call $attest))
@@ -803,11 +804,11 @@ fn unknown_blob_import_does_not_fail_precheck() {
     let engine = engine();
     let store = TestStore::new();
     let result = engine.decide(&bytes, &store);
-    // Should NOT fail with UnknownImport — blobs are lazy.
+    // Should NOT fail with MissingDep — blobs are lazy.
     match &result {
         Err(e) => {
             assert!(
-                !e.to_string().contains("unknown import"),
+                !e.to_string().contains("missing dep"),
                 "blob import should be lazy (not rejected in pre-check): {e}"
             );
         }
@@ -820,14 +821,14 @@ fn known_blob_import_succeeds_if_unused() {
     // A component that imports a known blob but never calls the function.
     let store = TestStore::new();
     let blob_data = b"hello blob";
-    let hash = store.insert(blob_data);
+    let hash = store.insert(blob_data).unwrap();
     let hash_hex = hash.to_string();
 
     let source = format!(
         r#"
         (component
             (import "attest" (func $attest))
-            (import "blob/{hash_hex}" (func $blob (result (list u8))))
+            (import "blob-{hash_hex}" (func $blob (result (list u8))))
             (core module $m
                 (import "env" "attest" (func $attest))
                 (func $start (call $attest))
@@ -849,8 +850,8 @@ fn known_blob_import_succeeds_if_unused() {
     match &result {
         Err(e) => {
             assert!(
-                !e.to_string().contains("unknown import"),
-                "known blob should not produce UnknownImport: {e}"
+                !e.to_string().contains("missing dep"),
+                "known blob should not produce MissingDep: {e}"
             );
         }
         Ok(r) => {

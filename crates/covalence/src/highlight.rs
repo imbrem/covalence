@@ -12,6 +12,7 @@ const DIM: &str = "\x1b[2m"; // parens, comments
 const ITALIC: &str = "\x1b[3m"; // comments
 
 const KEYWORDS: &[&str] = &[
+    // WAT component-model structural keywords
     "module",
     "component",
     "import",
@@ -32,32 +33,13 @@ const KEYWORDS: &[&str] = &[
     "data",
     "start",
     "local",
-    "block",
-    "loop",
-    "if",
-    "else",
-    "end",
-    "br",
-    "br_if",
-    "br_table",
-    "return",
-    "call",
-    "call_indirect",
-    "load",
-    "load-url",
-    "load-file",
+    "alias",
+    // REPL commands
     "store",
     "help",
     "parse-module",
     "parse-component",
     "decide",
-    "i32",
-    "i64",
-    "f32",
-    "f64",
-    "v128",
-    "funcref",
-    "externref",
 ];
 
 fn is_keyword(s: &str) -> bool {

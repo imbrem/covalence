@@ -89,6 +89,10 @@ struct LspArgs {
     #[arg(long)]
     diagnose: Option<String>,
 
+    /// Print version and exit
+    #[arg(long)]
+    version: bool,
+
     /// Run inside VSCode WASI host
     #[arg(long, hide = true)]
     vscode: bool,
@@ -203,6 +207,10 @@ fn main() {
 
         #[cfg(feature = "lsp")]
         Some(Command::Lsp(args)) => {
+            if args.version {
+                println!("covalence-lsp {VERSION_LONG}");
+                return;
+            }
             let config = covalence_lsp::LspConfig {
                 version: covalence::VERSION,
                 target: covalence::TARGET,

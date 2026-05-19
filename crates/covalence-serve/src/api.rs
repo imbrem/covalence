@@ -58,7 +58,7 @@ pub async fn health(
 }
 
 // ---------------------------------------------------------------------------
-// WebSocket REPL (legacy, kept for backward compat)
+// WebSocket REPL
 // ---------------------------------------------------------------------------
 
 pub async fn repl_ws(
@@ -116,13 +116,18 @@ pub async fn blob_store(
     axum::extract::State(state): axum::extract::State<crate::AppState>,
     body: Bytes,
 ) -> impl IntoResponse {
-    let hash = state.kernel.store().insert(&body);
-    (
-        StatusCode::CREATED,
-        Json(HashResponse {
-            hash: hash.to_string(),
-        }),
-    )
+    match state.kernel.store().insert(&body) {
+        Ok(hash) => Ok((
+            StatusCode::CREATED,
+            Json(HashResponse {
+                hash: hash.to_string(),
+            }),
+        )),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("store error: {e}"),
+        )),
+    }
 }
 
 /// GET /api/blobs — blob count → { "count": N }
@@ -176,7 +181,7 @@ pub async fn blob_head(
 // Eval endpoint
 // ---------------------------------------------------------------------------
 
-/// POST /api/eval — evaluate S-expression (body = text/plain) → text/plain result
+/// POST /api/eval — stateless: evaluate S-expression (body = text/plain) → text/plain result
 pub async fn eval(
     axum::extract::State(state): axum::extract::State<crate::AppState>,
     body: String,
@@ -241,7 +246,10 @@ pub async fn blob_store_url(
             .into_body()
             .read_to_vec()
             .map_err(|e| format!("read error: {e}"))?;
-        let hash = kernel.store().insert(&body);
+        let hash = kernel
+            .store()
+            .insert(&body)
+            .map_err(|e| format!("store error: {e}"))?;
         Ok::<_, String>(hash)
     })
     .await
@@ -268,17 +276,21 @@ pub async fn blob_store_file(
     axum::extract::State(state): axum::extract::State<crate::AppState>,
     Json(req): Json<FileRequest>,
 ) -> impl IntoResponse {
-    match std::fs::read(&req.path) {
-        Ok(data) => {
-            let hash = state.kernel.store().insert(&data);
-            Ok((
-                StatusCode::CREATED,
-                Json(HashResponse {
-                    hash: hash.to_string(),
-                }),
-            ))
-        }
-        Err(e) => Err((StatusCode::BAD_REQUEST, format!("read error: {e}"))),
+    let data = match std::fs::read(&req.path) {
+        Ok(d) => d,
+        Err(e) => return Err((StatusCode::BAD_REQUEST, format!("read error: {e}"))),
+    };
+    match state.kernel.store().insert(&data) {
+        Ok(hash) => Ok((
+            StatusCode::CREATED,
+            Json(HashResponse {
+                hash: hash.to_string(),
+            }),
+        )),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("store error: {e}"),
+        )),
     }
 }
 

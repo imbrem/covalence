@@ -7,7 +7,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use covalence_wasm::{validate_wat, wasm_to_wat};
+use covalence_wasm::{compile_wat, wasm_to_wat};
 
 fn fixture_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -23,7 +23,7 @@ fn fixture_path(name: &str) -> PathBuf {
 #[test]
 fn parse_add_wat_file() {
     let wat = fs::read_to_string(fixture_path("add.wat")).unwrap();
-    let wasm = validate_wat(&wat).unwrap();
+    let wasm = compile_wat(&wat).unwrap();
     assert!(wasm.starts_with(b"\0asm"), "valid WASM header");
     assert!(wasm.len() > 8, "non-trivial module");
 }
@@ -31,14 +31,14 @@ fn parse_add_wat_file() {
 #[test]
 fn parse_imports_wat_file() {
     let wat = fs::read_to_string(fixture_path("imports.wat")).unwrap();
-    let wasm = validate_wat(&wat).unwrap();
+    let wasm = compile_wat(&wat).unwrap();
     assert!(wasm.starts_with(b"\0asm"));
 }
 
 #[test]
 fn parse_tables_wat_file() {
     let wat = fs::read_to_string(fixture_path("tables.wat")).unwrap();
-    let wasm = validate_wat(&wat).unwrap();
+    let wasm = compile_wat(&wat).unwrap();
     assert!(wasm.starts_with(b"\0asm"));
 }
 
@@ -49,7 +49,7 @@ fn parse_tables_wat_file() {
 #[test]
 fn roundtrip_add_module() {
     let wat = fs::read_to_string(fixture_path("add.wat")).unwrap();
-    let wasm1 = validate_wat(&wat).unwrap();
+    let wasm1 = compile_wat(&wat).unwrap();
     let wat2 = wasm_to_wat(&wasm1).unwrap();
 
     // WAT output should contain key identifiers
@@ -59,7 +59,7 @@ fn roundtrip_add_module() {
     assert!(wat2.contains("i32.add"), "instruction present");
 
     // Re-parse WAT back to binary and verify functional equivalence via WAT
-    let wasm2 = validate_wat(&wat2).unwrap();
+    let wasm2 = compile_wat(&wat2).unwrap();
     let wat3 = wasm_to_wat(&wasm2).unwrap();
     assert_eq!(wat2, wat3, "WAT roundtrip is stable");
 }
@@ -67,14 +67,14 @@ fn roundtrip_add_module() {
 #[test]
 fn roundtrip_imports_module() {
     let wat = fs::read_to_string(fixture_path("imports.wat")).unwrap();
-    let wasm1 = validate_wat(&wat).unwrap();
+    let wasm1 = compile_wat(&wat).unwrap();
     let wat2 = wasm_to_wat(&wasm1).unwrap();
 
     assert!(wat2.contains("\"env\""), "import module present");
     assert!(wat2.contains("\"log\""), "import name present");
     assert!(wat2.contains("Hello, WebAssembly!"), "data segment present");
 
-    let wasm2 = validate_wat(&wat2).unwrap();
+    let wasm2 = compile_wat(&wat2).unwrap();
     let wat3 = wasm_to_wat(&wasm2).unwrap();
     assert_eq!(wat2, wat3, "WAT roundtrip is stable");
 }
@@ -82,12 +82,12 @@ fn roundtrip_imports_module() {
 #[test]
 fn roundtrip_tables_module() {
     let wat = fs::read_to_string(fixture_path("tables.wat")).unwrap();
-    let wasm1 = validate_wat(&wat).unwrap();
+    let wasm1 = compile_wat(&wat).unwrap();
     let wat2 = wasm_to_wat(&wasm1).unwrap();
 
     assert!(wat2.contains("call_indirect"), "call_indirect present");
 
-    let wasm2 = validate_wat(&wat2).unwrap();
+    let wasm2 = compile_wat(&wat2).unwrap();
     let wat3 = wasm_to_wat(&wasm2).unwrap();
     assert_eq!(wat2, wat3, "WAT roundtrip is stable");
 }
@@ -99,7 +99,7 @@ fn roundtrip_tables_module() {
 #[test]
 fn custom_section_preserved_in_add_module() {
     let wat = fs::read_to_string(fixture_path("add.wat")).unwrap();
-    let wasm = validate_wat(&wat).unwrap();
+    let wasm = compile_wat(&wat).unwrap();
     let wat2 = wasm_to_wat(&wasm).unwrap();
     assert!(
         wat2.contains("build-info"),
@@ -107,7 +107,7 @@ fn custom_section_preserved_in_add_module() {
     );
 
     // Roundtrip again — still present
-    let wasm2 = validate_wat(&wat2).unwrap();
+    let wasm2 = compile_wat(&wat2).unwrap();
     let wat3 = wasm_to_wat(&wasm2).unwrap();
     assert!(
         wat3.contains("build-info"),
@@ -118,7 +118,7 @@ fn custom_section_preserved_in_add_module() {
 #[test]
 fn custom_section_preserved_in_imports_module() {
     let wat = fs::read_to_string(fixture_path("imports.wat")).unwrap();
-    let wasm = validate_wat(&wat).unwrap();
+    let wasm = compile_wat(&wat).unwrap();
     let wat2 = wasm_to_wat(&wasm).unwrap();
     assert!(
         wat2.contains("source-map"),
@@ -138,7 +138,7 @@ fn custom_section_with_binary_payload() {
     let wat = wasm_to_wat(&wasm).unwrap();
     assert!(wat.contains("debug-data"));
 
-    let wasm2 = validate_wat(&wat).unwrap();
+    let wasm2 = compile_wat(&wat).unwrap();
     let wat2 = wasm_to_wat(&wasm2).unwrap();
     assert!(
         wat2.contains("debug-data"),
@@ -192,7 +192,7 @@ fn decode_programmatic_wasm_binary() {
     assert!(wat.contains("produced-by"));
 
     // Roundtrip back
-    let wasm2 = validate_wat(&wat).unwrap();
+    let wasm2 = compile_wat(&wat).unwrap();
     assert_eq!(wasm, wasm2);
 }
 
@@ -203,7 +203,7 @@ fn decode_programmatic_wasm_binary() {
 #[test]
 fn save_modified_wat_view() {
     let original_wat = fs::read_to_string(fixture_path("add.wat")).unwrap();
-    let original_wasm = validate_wat(&original_wat).unwrap();
+    let original_wasm = compile_wat(&original_wat).unwrap();
 
     let wat_view = wasm_to_wat(&original_wasm).unwrap();
     assert!(wat_view.contains("i32.add"));
@@ -214,7 +214,7 @@ fn save_modified_wat_view() {
     assert!(!modified_wat.contains("i32.add"));
 
     // Re-serialize to binary
-    let modified_wasm = validate_wat(&modified_wat).unwrap();
+    let modified_wasm = compile_wat(&modified_wat).unwrap();
     assert!(modified_wasm.starts_with(b"\0asm"));
     assert_ne!(original_wasm, modified_wasm, "binary changed after edit");
 
@@ -227,11 +227,11 @@ fn save_modified_wat_view() {
 #[test]
 fn save_modified_wat_preserves_custom_sections() {
     let original_wat = fs::read_to_string(fixture_path("add.wat")).unwrap();
-    let original_wasm = validate_wat(&original_wat).unwrap();
+    let original_wasm = compile_wat(&original_wat).unwrap();
     let wat_view = wasm_to_wat(&original_wasm).unwrap();
 
     let modified_wat = wat_view.replace("i32.sub", "i32.xor");
-    let modified_wasm = validate_wat(&modified_wat).unwrap();
+    let modified_wasm = compile_wat(&modified_wat).unwrap();
     let verify_wat = wasm_to_wat(&modified_wasm).unwrap();
 
     assert!(verify_wat.contains("i32.xor"), "edit preserved");
@@ -247,7 +247,7 @@ fn save_modified_wat_preserves_custom_sections() {
 
 #[test]
 fn error_on_invalid_wat() {
-    let result = validate_wat("(module (func (invalid-instruction)))");
+    let result = compile_wat("(module (func (invalid-instruction)))");
     assert!(result.is_err());
 }
 
@@ -265,6 +265,6 @@ fn error_on_truncated_wasm() {
 
 #[test]
 fn error_on_empty_input() {
-    assert!(validate_wat("").is_err());
+    assert!(compile_wat("").is_err());
     assert!(wasm_to_wat(b"").is_err());
 }

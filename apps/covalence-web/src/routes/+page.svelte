@@ -12,14 +12,12 @@
 
 	// --- Syntax highlighting ---
 	const KEYWORDS = new Set([
+		// WAT component-model structural keywords
 		'module', 'component', 'import', 'export', 'func', 'param', 'result',
 		'type', 'instance', 'core', 'canon', 'lift', 'lower',
-		'memory', 'table', 'global', 'elem', 'data', 'start', 'local',
-		'block', 'loop', 'if', 'else', 'end', 'br', 'br_if', 'br_table',
-		'return', 'call', 'call_indirect',
-		'load', 'load-url', 'load-file', 'store', 'help',
-		'parse-module', 'parse-component', 'decide',
-		'i32', 'i64', 'f32', 'f64', 'v128', 'funcref', 'externref',
+		'memory', 'table', 'global', 'elem', 'data', 'start', 'local', 'alias',
+		// REPL commands
+		'store', 'help', 'parse-module', 'parse-component', 'decide',
 	]);
 
 	function escHtml(s: string): string {

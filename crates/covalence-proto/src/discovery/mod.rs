@@ -100,8 +100,8 @@ mod imp {
         let registry = registry_dir();
         let sockets = sockets_dir();
 
-        fs::create_dir_all(&registry).map_err(|e| DiscoveryError::Io(e.to_string()))?;
-        fs::create_dir_all(&sockets).map_err(|e| DiscoveryError::Io(e.to_string()))?;
+        fs::create_dir_all(&registry)?;
+        fs::create_dir_all(&sockets)?;
 
         let socket_path = sockets.join(format!("{id}.sock"));
         let descriptor_path = registry.join(format!("{id}.json"));
@@ -129,10 +129,9 @@ mod imp {
 
         // Write atomically: temp file + rename
         let tmp_path = registry.join(format!("{id}.json.tmp"));
-        let content = serde_json::to_string_pretty(&descriptor)
-            .map_err(|e| DiscoveryError::Io(e.to_string()))?;
-        fs::write(&tmp_path, &content).map_err(|e| DiscoveryError::Io(e.to_string()))?;
-        fs::rename(&tmp_path, &descriptor_path).map_err(|e| DiscoveryError::Io(e.to_string()))?;
+        let content = serde_json::to_string_pretty(&descriptor)?;
+        fs::write(&tmp_path, &content)?;
+        fs::rename(&tmp_path, &descriptor_path)?;
 
         Ok(Registration {
             id,
@@ -177,9 +176,10 @@ mod imp {
         _port: Option<u16>,
         _socket_only: bool,
     ) -> Result<Registration, DiscoveryError> {
-        Err(DiscoveryError::Io(
-            "not supported on this platform".to_string(),
-        ))
+        Err(DiscoveryError::Io(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "not supported on this platform",
+        )))
     }
 
     /// Unregister a server instance. No-op on this platform.

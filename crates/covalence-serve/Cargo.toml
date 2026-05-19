@@ -23,7 +23,6 @@ covalence-git = { path = "../covalence-git" }
 covalence-hash = { path = "../covalence-hash", default-features = false }
 covalence-store = { path = "../covalence-store" }
 covalence-kernel = { path = "../covalence-kernel", features = ["engine"] }
-covalence-sexp = { path = "../covalence-sexp" }
 covalence-repl = { path = "../covalence-repl" }
 covalence-proto = { path = "../covalence-proto", features = ["discovery"] }
 ureq = "3"

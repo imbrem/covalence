@@ -79,20 +79,17 @@ The CLI REPL (`cov repl`) uses rustyline with ANSI syntax highlighting.
 
 ### REST API & Server
 
-`covalence-serve` exposes the kernel over HTTP (axum):
+`covalence-serve` exposes the kernel over HTTP (axum).
+The server deals only with binary data — WAT compilation and
+module/component parsing are client-side concerns.
 
 - `POST /api/blobs` — store blob, get hash
 - `GET /api/blobs` — blob count
 - `GET /api/blobs/{hash}` — retrieve blob
 - `HEAD /api/blobs/{hash}` — existence check
+- `GET /api/decide/{hash}` — decide proposition
 - `POST /api/eval` — evaluate S-expression
 - `GET /api/repl` — WebSocket REPL session
-- `POST /api/wat/module` — compile WAT module
-- `POST /api/wat/component` — compile WAT component
-- `GET /api/wat/{hash}` — decompile to WAT
-- `GET /api/parse/module/{hash}` — module imports/exports
-- `GET /api/parse/component/{hash}` — component imports/exports
-- `GET /api/decide/{hash}` — decide proposition
 
 Service discovery via `$XDG_RUNTIME_DIR/covalence/registry/`.
 Serves both TCP and Unix domain sockets.

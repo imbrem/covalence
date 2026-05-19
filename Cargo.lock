@@ -504,7 +504,6 @@ dependencies = [
  "covalence-repl",
  "covalence-sexp",
  "covalence-store",
- "covalence-wasm",
  "mime_guess",
  "open",
  "rust-embed",

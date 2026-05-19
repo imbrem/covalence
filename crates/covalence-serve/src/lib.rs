@@ -151,13 +151,7 @@ pub fn build_router(state: AppState, api_only: bool) -> Router {
         .route("/api/blobs/{hash}", get(api::blob_get).head(api::blob_head))
         // Eval endpoint
         .route("/api/eval", post(api::eval))
-        // WAT/WASM endpoints
-        .route("/api/wat/module", post(api::wat_module))
-        .route("/api/wat/component", post(api::wat_component))
-        .route("/api/wat/{hash}", get(api::wat_decompile))
-        // Parse/analysis endpoints
-        .route("/api/parse/module/{hash}", get(api::parse_module))
-        .route("/api/parse/component/{hash}", get(api::parse_component))
+        // Decide endpoint
         .route("/api/decide/{hash}", get(api::decide));
 
     #[cfg(feature = "static")]

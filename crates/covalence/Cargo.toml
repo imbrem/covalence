@@ -26,6 +26,7 @@ covalence-serve = { path = "../covalence-serve" }
 covalence-repl = { path = "../covalence-repl", features = ["fetch"] }
 covalence-kernel = { path = "../covalence-kernel", features = ["engine", "sqlite"] }
 covalence-store = { path = "../covalence-store", features = ["sqlite"] }
+covalence-wasm = { path = "../covalence-wasm", default-features = false }
 covalence-client = { path = "../covalence-client", features = ["sync"] }
 covalence-proto = { path = "../covalence-proto" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

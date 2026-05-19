@@ -405,6 +405,7 @@ dependencies = [
  "covalence-repl",
  "covalence-serve",
  "covalence-store",
+ "covalence-wasm",
  "eyre",
  "memchr",
  "rustyline",

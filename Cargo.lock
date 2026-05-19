@@ -399,18 +399,22 @@ dependencies = [
  "color-eyre",
  "covalence-client",
  "covalence-git",
+ "covalence-hash",
  "covalence-kernel",
  "covalence-lsp",
  "covalence-proto",
  "covalence-repl",
  "covalence-serve",
  "covalence-store",
+ "covalence-wasm",
  "eyre",
  "memchr",
  "rustyline",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "wat",
 ]
 
 [[package]]

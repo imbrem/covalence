@@ -1,5 +1,5 @@
 {
-  description = "Covalence — theorem prover with Ion language tooling";
+  description = "Covalence — LCF-style theorem prover using WASM components";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";

@@ -1,142 +1,184 @@
 # MVP Design
 
-This document contains some the features required for `covalence` MVP.
+This document tracks the MVP for `covalence` — an LCF-style theorem prover
+based on the Curry-Howard correspondence using WASM components.
 
-We're going to iterate on this quite a bit, and improve the implementation,
-but this is what we should start with.
+The top half describes what we have; the bottom half describes what we still need.
 
-## Definitions and Environment
+---
 
-We have the following basic definitions:
+## What We Have
 
-- A blob is a sequence of bytes of finite length -- potentially empty. 
-  Value semantics: two blobs are equal iff they have equal length + equal bytes.
+### Definitions
 
-- A WASM module means a WASM 3 module as per the WASM 3 specification
-  -- including multiple memories, multiple tables, and WASM GC.
+- A **blob** is a finite byte sequence with value semantics (equal iff same length + same bytes).
 
-  All modules nested in WASM components are interpreted as WASM 3 modules
-  -- 
-  we strictly validate that no features not defined in the WASM 3 specification may be used.
+- A **WASM component** is a component-model binary, content-addressed by its BLAKE3 hash.
 
-We'll assume we have, for an MVP:
+- A **name** is a `u256` (BLAKE3 digest). Encoding/decoding to blobs is just the 32-byte representation.
 
-- A set of (short) _names_ `name` with partial encoding/decoding to blobs:
-  - `decode : blob -> name`
-  - `encode : name -> blob`
-  - s.t. for all b, `encode(decode(b)) = b` iff `decode(b)` is defined
+- Our hash function is BLAKE3: `H : blob -> name`, with default key `DATA`.
 
-  Note in particular this means that 
-  
-    - we _may_ have some names with no encoding --
-        dually, _most_ blobs are not valid names! Valid names should be _short_.
+### Content-Addressed Store
 
-    - `encode` and `decode`, where defined, are injective
+- `covalence-hash` provides `O256` — a 256-bit BLAKE3 content hash.
+- `covalence-store` provides `ContentStore<K>` trait + `BlobStore<K>` (Arc wrapper), with `MemoryStore` and `SqliteStore` backends.
+- Blobs are stored and retrieved by hash. The store is used by the kernel, REPL, REST API, and remote client.
 
-- An cryptographic _keyed_ hash function `H : K -> blob -> name`, 
-    where `K` is a type of keys equipped with a _distinct_:
-    - "default key" `DATA : K`
-    - key corresponding to each _name_ `K_name : name -> K`
-    - key corresponding to each "context" blob `K_blob : blob -> K`
+### Proposition Deciding (the WASM engine)
 
-    These must have _no_ overlap
+`covalence-wasm` loads, links, and executes WASM components via wasmtime.
 
-    We write `H(b)` as a shorthand for the default hash `H(DATA, b)`.
+A **proposition** is a component that may import `attest()`. A prop is **true**
+if one can instantiate it and get it to call `attest()`.
 
-    Note BLAKE3 satisfies the above, where
-    - `name == u256`, encoding is just as bytes
-    - hashing with the default key is just BLAKE3 hashing
-    - hashing with `K_name(o)` is BLAKE3 keyed hashing with key `o`
-    - hashing with `K_blob(c)` is BLAKE3 key derivation hashing with context `c`
+The engine (`WasmEngine::decide()`) works as follows:
 
-- The ability to load, link, and execute WASM components
+1. Load the component, classify all imports:
+   - `"attest"` → host function that sets `attested = true`
+   - `"blob/{hash}"` → lazy blob from store (traps if unavailable)
+   - `"module/{hash}"` → core module from store (categorized but **not yet linked**)
+   - `"component-{hash}"` → instance import, resolved recursively from store
 
-Later, we'll integrate a blob store, etc 
--- but for now we need the actual execution framework,
-so we want to keep things as minimal as possible to start,
-but easily extensible 
--- components and props will be able to import a lot more,
-and we'll be adding a _few_ more object types too.
+2. Static pre-check: no `attest` import AND no component deps → `False`
 
-## MVP Prover API
+3. Recursively pre-instantiate all `component-{hash}` deps (cycle detection + instance caching)
 
-Our goal is to define an _LCF-style theorem prover_ 
-based on the Curry-Howard correspondence using WASM.
+4. Instantiate the main component (runs start function)
 
-Let's break down what that means -- in terms of our two primary object types:
+5. Result:
+   - `attested = true` → **True** (even if a trap occurred after attestation)
+   - `attested = false` + `attest` was imported → **Unknown**
+   - No `attest` import + no deps → **False**
 
-- A _component_ is a WASM component as per the component model.
+### Kernel
 
-  This is represented as a binary blob encoded 
-  using the standard binary encoding of the component model --
-  we'll fix a particular version and set of features, and anything else
-  we will consider _invalid_.
+`covalence-kernel` wraps the store and engine with decision caching (True/False sets).
+Implements both `SyncBackend` (dyn-compatible) and `AsyncBackend` (async, for the server).
 
-  Components may import the following:
+### REPL
 
-  - A blob API containing:
+`covalence-repl` provides an S-expression REPL (`Session`) backed by any `SyncBackend`:
 
-    - Resources:
+| Command | Description |
+|---|---|
+| `(store "data")` | store string as blob, return hash |
+| `(store-url "url")` | fetch URL, store as blob |
+| `(store-file "path")` | store file as blob (CLI only) |
+| `(read <hash>)` | read blob as UTF-8 |
+| `(read-wat <hash>)` | decompile blob as WAT |
+| `(module ...)` | compile WAT module, store, return hash |
+| `(component ...)` | compile WAT component, store, return hash |
+| `(parse-module <hash>)` | inspect module imports/exports |
+| `(parse-component <hash>)` | inspect component imports/exports |
+| `(decide <hash>)` | decide proposition |
+| `(status)` | show backend info + blob count |
+| `(help)` | list commands |
 
-      - `blob` -- an opaque sequence of bytes 
-         -- may be _lazily loaded_ (e.g. from a blob store), in which case we only fetch the data we need about it as necessary.
+The CLI REPL (`cov repl`) uses rustyline with ANSI syntax highlighting.
 
-         If we ever can't find any data about a blob (or at any time) the implementation may trap
+### REST API & Server
 
-    - Functions:
+`covalence-serve` exposes the kernel over HTTP (axum):
 
-      - `cons(vector<u8>) -> blob` -- create a blob from the given data
+- `POST /api/blobs` — store blob, get hash
+- `GET /api/blobs` — blob count
+- `GET /api/blobs/{hash}` — retrieve blob
+- `HEAD /api/blobs/{hash}` — existence check
+- `POST /api/eval` — evaluate S-expression
+- `GET /api/repl` — WebSocket REPL session
+- `POST /api/wat/module` — compile WAT module
+- `POST /api/wat/component` — compile WAT component
+- `GET /api/wat/{hash}` — decompile to WAT
+- `GET /api/parse/module/{hash}` — module imports/exports
+- `GET /api/parse/component/{hash}` — component imports/exports
+- `GET /api/decide/{hash}` — decide proposition
 
-      - `cat(blob, blob) -> blob` -- concatenate two blobs together
+Service discovery via `$XDG_RUNTIME_DIR/covalence/registry/`.
+Serves both TCP and Unix domain sockets.
 
-      - `eq(blob, blob) -> bool` -- check whether two blobs are equal
+### Remote Client
 
-      - `length(blob) -> u64` -- get the length of a blob
+`covalence-client` implements `SyncBackend` over HTTP (TCP or Unix socket),
+making the kernel remotable — the REPL can connect to a running `cov serve`.
 
-      - `slice(blob, u64, u64) -> vector<u8>` -- slice a byte range of a blob -- _might_ not trap even if invalid until we `read` it
+### LSP
 
-      - `read(blob) -> vector<u8>` -- materialize a blob into a `vector<u8>`
+`covalence-lsp` provides diagnostics and formatting for `.smt`, `.smt2`, `.alethe`, `.cov` (S-expression) and `.wat` (WAT) files.
 
-  - A blob, by its hash + "blob/"
+### Cogit (VCS)
 
-  - A WASM module, by the hash of its binary format blob + "module/"
-    -- this gives us the module to instantiate
+Minimal so far: `cov cog hash-blob` hashes files using BLAKE3, SHA-256, or Git SHA-1/SHA-256.
 
-  - A component, by the hash of its binary format blob + "component/"
-    
-    - Either as a component -- just giving us the entire component to instantiate (including wiring imports)
+---
 
-    - Or by importing exports _from_ the component -- in which case instatiating it and linking it is up to the runtime
+## What We Still Need
 
-- A _proposition_ (_prop_) is just a component which may additionally:
+### 1. Prop/Component Distinction
 
-    - Import a function `attest()`
+The current engine treats everything as `component-{hash}` instance imports.
+The design calls for a clear separation:
 
-    - Import other props by the hash of their binary format blob + "prop/"
-      -- note a props may import components, but components may _not_ import props
-      (though we may wire a component's imports to a props within a props 
-       -- since _inside_ a props a props import is a component like any other)
+- **Components** may import: blobs, modules, other components
+- **Props** may additionally import: `attest()`, other props by `prop/{hash}`
+- **Components may NOT import props** — props are a strictly richer category
 
-    - A prop is _true_ if and only if one can:
+This means:
+- Add `ImportKind::Prop(O256)` alongside the existing `ImportKind::Import`
+- Rename `component-{hash}` to `component/{hash}` for consistency with blob/module prefixes
+- Enforce that a plain component cannot import `attest()` or `prop/{hash}`
+- Inside a prop, a `prop/{hash}` import is wired as a component instance (since inside a prop, imported props look like any other component)
 
-        - Instantiate the component, calling its `start` function if it has one (i.e. standard WASM component initialization)
+### 2. Blob API (Host Functions)
 
-        - Call any of its exported functions with any arguments so as to get it to call `attest()`
+Props and components should be able to manipulate blobs from inside WASM.
+Currently blobs are stored/retrieved but not accessible as a resource type.
 
-        In particular, a prop is true if its `start` function calls `attest()`
+We need to expose via the component model:
 
-- A _proof_ of a prop is simply a sequence of calls to the proposition which cause it to call `attest()`. 
+- **Resource**: `blob` — an opaque, lazily-loaded byte sequence
+- **Functions**:
+  - `cons(vector<u8>) -> blob` — create a blob
+  - `cat(blob, blob) -> blob` — concatenate
+  - `eq(blob, blob) -> bool` — equality
+  - `length(blob) -> u64` — length
+  - `slice(blob, u64, u64) -> vector<u8>` — extract byte range
+  - `read(blob) -> vector<u8>` — materialize
 
-  A natural encoding of a proof is hence simply as a component with the prop as an import
+### 3. Module Linking
 
-- If we think about this for a second, this makes the proof, indirectly, into a prop _itself_ 
-  -- the only difference is that it does not call `attest()` directly, but only through its (single) import.
+`module/{hash}` imports are categorized but left unlinked.
+Need to load core modules from the store and link them into the component.
 
-- This leads us to our first two _inference rules_:
+### 4. Keyed Hashing
 
-    - If `P` is a prop, then it implies the _disjunction_ of its (prop) imports
-      -- where `attest()` is viewed as the "true" prop
-    
-    - In particular, a prop with no prop imports (including `attest()`) is _false_
+BLAKE3 supports keyed hashing and key derivation, which the design uses:
+- Default key `DATA` — plain BLAKE3 (this is what we have)
+- `K_name(o)` — BLAKE3 keyed hash with key `o` (a name/u256)
+- `K_blob(c)` — BLAKE3 key derivation with context `c` (a blob)
 
-  We'll build up inference rules, and interfaces using them, later, but we'll focus on the MVP now.
+These must be distinct (no overlap between key spaces).
+`covalence-hash` needs keyed and derive modes.
+
+### 5. Proofs as Components
+
+A **proof** of a prop P is a component that imports P and drives it to call `attest()`.
+This makes the proof itself a prop (it imports a prop, making it a prop; but it doesn't call attest directly — only through its import).
+
+This gives us our first **inference rules**:
+
+- If P is a prop, it implies the _disjunction_ of its prop imports
+  (where `attest()` is the "true" prop)
+- A prop with no prop imports (including `attest()`) is **false**
+
+These are already partially reflected in the engine's True/Unknown/False logic,
+but they need to be formalized and made explicit — especially the notion
+of "proof" as a first-class object that can be stored, hashed, and referenced.
+
+### 6. Beyond MVP (Future)
+
+- Full cogit VCS — commits, trees, history, content-addressed object graph
+- More inference rules and interfaces
+- SMT integration
+- Type theory / proof terms
+- Richer component interfaces

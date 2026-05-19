@@ -216,8 +216,8 @@ struct HashResponse {
 }
 
 #[derive(Deserialize)]
-struct BlobListResponse {
-    hashes: Vec<String>,
+struct BlobCountResponse {
+    count: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -265,9 +265,9 @@ impl AsyncBackend for AsyncHttpBackend {
 
     async fn blob_count(&self) -> Result<Option<usize>, KernelError> {
         let resp = self.get("/api/blobs").await?;
-        let json: BlobListResponse =
+        let json: BlobCountResponse =
             serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
-        Ok(Some(json.hashes.len()))
+        Ok(json.count)
     }
 
     async fn decide(&self, hash: &O256) -> Result<Decision, KernelError> {

@@ -158,8 +158,8 @@ struct HashResponse {
 }
 
 #[derive(Deserialize)]
-struct BlobListResponse {
-    hashes: Vec<String>,
+struct BlobCountResponse {
+    count: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -207,9 +207,9 @@ impl SyncBackend for SyncHttpBackend {
 
     fn blob_count(&self) -> Result<Option<usize>, KernelError> {
         let resp = self.get("/api/blobs")?;
-        let json: BlobListResponse =
+        let json: BlobCountResponse =
             serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
-        Ok(Some(json.hashes.len()))
+        Ok(json.count)
     }
 
     fn decide(&self, hash: &O256) -> Result<Decision, KernelError> {

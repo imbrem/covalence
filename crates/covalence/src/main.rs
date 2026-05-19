@@ -329,8 +329,8 @@ fn cmd_repl(args: ReplArgs) -> eyre::Result<()> {
         }
     };
 
-    let backend: Box<dyn covalence_kernel::SyncBackend> = if let Some(ref url) = args.connect {
-        Box::new(covalence_client::SyncHttpBackend::new(url.clone()))
+    let backend: Box<dyn covalence_kernel::SyncBackend> = if let Some(ref addr) = args.connect {
+        connect_backend(addr)
     } else if args.standalone {
         let store = resolve_store(args.store)?;
         let kernel = covalence_kernel::Kernel::with_store(store).map_err(|e| eyre::eyre!("{e}"))?;
@@ -436,6 +436,20 @@ fn parens_balanced(input: &str) -> bool {
     depth <= 0
 }
 
+/// Create a backend from a `--connect` value.
+/// Paths (starting with `/` or `./`) and `unix:` prefixed strings use Unix domain sockets;
+/// everything else is treated as an HTTP URL.
+#[cfg(not(target_family = "wasm"))]
+fn connect_backend(addr: &str) -> Box<dyn covalence_kernel::SyncBackend> {
+    if let Some(path) = addr.strip_prefix("unix:") {
+        Box::new(covalence_client::SyncHttpBackend::unix(path.to_string()))
+    } else if addr.starts_with('/') || addr.starts_with("./") {
+        Box::new(covalence_client::SyncHttpBackend::unix(addr.to_string()))
+    } else {
+        Box::new(covalence_client::SyncHttpBackend::new(addr.to_string()))
+    }
+}
+
 #[cfg(not(target_family = "wasm"))]
 fn resolve_store(
     store_arg: Option<String>,
@@ -479,8 +493,8 @@ fn cmd_decide(args: DecideArgs) -> eyre::Result<()> {
         eyre::bail!("no input files");
     }
 
-    let backend: Box<dyn covalence_kernel::SyncBackend> = if let Some(ref url) = args.connect {
-        Box::new(covalence_client::SyncHttpBackend::new(url.clone()))
+    let backend: Box<dyn covalence_kernel::SyncBackend> = if let Some(ref addr) = args.connect {
+        connect_backend(addr)
     } else if args.standalone {
         let store = resolve_store(args.store)?;
         let kernel = covalence_kernel::Kernel::with_store(store).map_err(|e| eyre::eyre!("{e}"))?;

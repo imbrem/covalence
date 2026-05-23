@@ -31,7 +31,7 @@ fn compute_hash(algo: HashAlgo, data: &[u8]) -> String {
         HashAlgo::Blake3 => covalence_hash::O256::blob(data).to_string(),
         HashAlgo::Sha256 => covalence_hash::O256::blob_sha256(data).to_string(),
         HashAlgo::GitSha256 => covalence_hash::O256::blob_git256(data).to_string(),
-        HashAlgo::GitSha1 => covalence_hash::git_blob_sha1(data).to_string(),
+        HashAlgo::GitSha1 => covalence_hash::git::blob_sha1(data).to_string(),
     }
 }
 

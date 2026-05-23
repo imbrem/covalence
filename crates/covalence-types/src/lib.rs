@@ -121,6 +121,16 @@ impl From<bool> for Decision {
     }
 }
 
+impl From<Option<bool>> for Decision {
+    /// `Some(true) → Sat`, `Some(false) → Unsat`, `None → Unknown`.
+    fn from(opt: Option<bool>) -> Self {
+        match opt {
+            Some(b) => Decision::from(b),
+            None => Decision::Unknown,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Predicates and combinators
 // ---------------------------------------------------------------------------
@@ -195,6 +205,16 @@ impl Decision {
     /// Material implication: `self → other` ≡ `¬self ∨ other`.
     pub const fn implies(self, other: Decision) -> Decision {
         self.not().or(other)
+    }
+
+    /// Convert to `Option<bool>`: `Sat → Some(true)`, `Unsat → Some(false)`,
+    /// `Unknown → None`.
+    pub const fn to_bool(self) -> Option<bool> {
+        match self {
+            Decision::Sat => Some(true),
+            Decision::Unsat => Some(false),
+            Decision::Unknown => None,
+        }
     }
 }
 
@@ -278,6 +298,27 @@ mod tests {
     fn from_bool() {
         assert_eq!(Decision::from(true), Sat);
         assert_eq!(Decision::from(false), Unsat);
+    }
+
+    #[test]
+    fn from_option_bool() {
+        assert_eq!(Decision::from(Some(true)), Sat);
+        assert_eq!(Decision::from(Some(false)), Unsat);
+        assert_eq!(Decision::from(None), Unknown);
+    }
+
+    #[test]
+    fn to_bool() {
+        assert_eq!(Sat.to_bool(), Some(true));
+        assert_eq!(Unsat.to_bool(), Some(false));
+        assert_eq!(Unknown.to_bool(), None);
+    }
+
+    #[test]
+    fn option_bool_roundtrip() {
+        for d in [Sat, Unknown, Unsat] {
+            assert_eq!(Decision::from(d.to_bool()), d);
+        }
     }
 
     #[test]

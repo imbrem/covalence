@@ -456,6 +456,7 @@ version = "0.0.0"
 dependencies = [
  "covalence-hash",
  "covalence-store",
+ "covalence-types",
  "covalence-wasm",
  "thiserror 2.0.18",
  "wat",
@@ -502,6 +503,7 @@ name = "covalence-sat"
 version = "0.0.0"
 dependencies = [
  "covalence-types",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

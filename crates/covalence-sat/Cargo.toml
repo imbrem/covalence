@@ -6,3 +6,6 @@ edition = "2024"
 [dependencies]
 covalence-types = { path = "../covalence-types" }
 thiserror = "2"
+
+[dev-dependencies]
+varisat = "0.2"

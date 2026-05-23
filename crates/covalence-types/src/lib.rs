@@ -1,3 +1,5 @@
+pub use bytes;
+
 use std::fmt;
 use std::str::FromStr;
 

@@ -1,6 +1,8 @@
+mod dir;
 mod object;
 mod util;
 
+pub use dir::{DirBuilder, DirEntry, DirMode, HashDir};
 pub use object::{Blake3Ctx, COV_ROOT, CovRoot, HashCtx, O256, Sha256};
 pub use util::{IdentityBuildHasher, IdentityHasher};
 

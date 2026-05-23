@@ -86,6 +86,61 @@ impl HashCtx for Git {
     }
 }
 
+// --- HashDir impls: hash a directory listing as a git tree ---
+
+use crate::dir::{DirEntry, DirMode, HashDir};
+
+/// Serialize entries in git tree format and hash with the given git hash function.
+fn git_tree_bytes(entries: &[DirEntry<'_>], hash_len: usize) -> Vec<u8> {
+    debug_assert!(
+        entries.windows(2).all(|w| w[0].name < w[1].name),
+        "entries must be sorted and unique by name",
+    );
+
+    let mut buf = Vec::new();
+    for entry in entries {
+        let mode_str = match entry.mode {
+            DirMode::Blob => "100644",
+            DirMode::Dir => "40000",
+        };
+        buf.extend_from_slice(mode_str.as_bytes());
+        buf.push(b' ');
+        buf.extend_from_slice(entry.name.as_bytes());
+        buf.push(0);
+        buf.extend_from_slice(&entry.hash.as_bytes()[..hash_len]);
+    }
+    buf
+}
+
+impl HashDir for GitSha1 {
+    fn hash_dir(&self, entries: &[DirEntry<'_>]) -> O256 {
+        let buf = git_tree_bytes(entries, 20);
+        let oid = tree_sha1(&buf);
+        let mut out = [0u8; 32];
+        out[..oid.as_bytes().len()].copy_from_slice(oid.as_bytes());
+        O256::from_bytes(out)
+    }
+}
+
+impl HashDir for GitSha256 {
+    fn hash_dir(&self, entries: &[DirEntry<'_>]) -> O256 {
+        let buf = git_tree_bytes(entries, 32);
+        let oid = tree_sha256(&buf);
+        let mut out = [0u8; 32];
+        out.copy_from_slice(oid.as_bytes());
+        O256::from_bytes(out)
+    }
+}
+
+impl HashDir for Git {
+    fn hash_dir(&self, entries: &[DirEntry<'_>]) -> O256 {
+        match self {
+            Git::Sha1 => GitSha1.hash_dir(entries),
+            Git::Sha256 => GitSha256.hash_dir(entries),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,5 +187,88 @@ mod tests {
     fn git_enum_dispatches() {
         assert_eq!(Git::Sha1.tag("hello"), GitSha1.tag("hello"));
         assert_eq!(Git::Sha256.tag("hello"), GitSha256.tag("hello"));
+    }
+
+    // --- HashDir (git tree) tests ---
+
+    #[test]
+    fn git_sha1_manual_format() {
+        let hash = O256::blob("content");
+        let entries = [DirEntry {
+            name: "file.txt",
+            mode: DirMode::Blob,
+            hash,
+        }];
+
+        let mut expected_buf = Vec::new();
+        expected_buf.extend_from_slice(b"100644 file.txt\0");
+        expected_buf.extend_from_slice(&hash.as_bytes()[..20]);
+
+        let oid = tree_sha1(&expected_buf);
+        let mut expected = [0u8; 32];
+        expected[..oid.as_bytes().len()].copy_from_slice(oid.as_bytes());
+
+        assert_eq!(GitSha1.hash_dir(&entries), O256::from_bytes(expected));
+    }
+
+    #[test]
+    fn git_sha256_manual_format() {
+        let hash = O256::blob("content");
+        let entries = [DirEntry {
+            name: "file.txt",
+            mode: DirMode::Blob,
+            hash,
+        }];
+
+        let mut expected_buf = Vec::new();
+        expected_buf.extend_from_slice(b"100644 file.txt\0");
+        expected_buf.extend_from_slice(hash.as_bytes());
+
+        let oid = tree_sha256(&expected_buf);
+        let mut expected = [0u8; 32];
+        expected.copy_from_slice(oid.as_bytes());
+
+        assert_eq!(GitSha256.hash_dir(&entries), O256::from_bytes(expected));
+    }
+
+    #[test]
+    fn git_dir_mode_format() {
+        let hash = O256::blob("sub");
+        let entries = [DirEntry {
+            name: "subdir",
+            mode: DirMode::Dir,
+            hash,
+        }];
+
+        let mut expected_buf = Vec::new();
+        expected_buf.extend_from_slice(b"40000 subdir\0");
+        expected_buf.extend_from_slice(&hash.as_bytes()[..20]);
+
+        let oid = tree_sha1(&expected_buf);
+        let mut expected = [0u8; 32];
+        expected[..oid.as_bytes().len()].copy_from_slice(oid.as_bytes());
+
+        assert_eq!(GitSha1.hash_dir(&entries), O256::from_bytes(expected));
+    }
+
+    #[test]
+    fn git_enum_dispatch() {
+        let entries = [DirEntry {
+            name: "test",
+            mode: DirMode::Blob,
+            hash: O256::blob("data"),
+        }];
+        assert_eq!(Git::Sha1.hash_dir(&entries), GitSha1.hash_dir(&entries));
+        assert_eq!(Git::Sha256.hash_dir(&entries), GitSha256.hash_dir(&entries));
+    }
+
+    #[test]
+    fn convenience_method_git256() {
+        let entries = [DirEntry {
+            name: "test",
+            mode: DirMode::Blob,
+            hash: O256::blob("data"),
+        }];
+        assert_eq!(O256::dir_git256(&entries), GitSha256.hash_dir(&entries));
     }
 }

@@ -182,6 +182,19 @@ impl O256 {
         crate::git::GitSha256.tag(data)
     }
 
+    /// Hash a sorted, unique directory listing using BLAKE3 keyed mode.
+    pub fn dir(entries: &[crate::DirEntry<'_>]) -> Self {
+        use crate::HashDir;
+        ().hash_dir(entries)
+    }
+
+    /// Hash a sorted, unique directory listing using git SHA-256 tree format.
+    #[cfg(feature = "git")]
+    pub fn dir_git256(entries: &[crate::DirEntry<'_>]) -> Self {
+        use crate::HashDir;
+        crate::git::GitSha256.hash_dir(entries)
+    }
+
     /// Create an O256 from a random 256-bit value.
     pub fn random(rng: &mut impl rand::Rng) -> Self {
         Self(rng.random())

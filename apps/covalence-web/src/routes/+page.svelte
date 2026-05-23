@@ -1,14 +1,6 @@
 <script lang="ts">
-	import { fetchApi } from '$lib/api';
-	import { connectRepl } from '$lib/ws';
-
-	interface Health {
-		status: string;
-		version: string;
-		cog_version: string;
-		target: string;
-		uptime_secs: number;
-	}
+	import { client } from '$lib/api';
+	import type { HealthResponse } from 'covalence-client';
 
 	// --- Syntax highlighting ---
 	const KEYWORDS = new Set([
@@ -207,7 +199,7 @@
 	}
 
 	function initWs() {
-		const socket = connectRepl();
+		const socket = client.connectRepl();
 		socket.onopen = () => {
 			ws = socket;
 			wsConnected = true;
@@ -292,7 +284,7 @@
 	// --- Health status ---
 	const HEALTH_POLL_MS = 1000;
 	let healthy = $state(false);
-	let lastHealth: Health | null = $state(null);
+	let lastHealth: HealthResponse | null = $state(null);
 	let connectedSince: number | null = $state(null);
 	let connectedDuration = $state(0);
 	let timer: ReturnType<typeof setTimeout> | null = null;
@@ -300,7 +292,7 @@
 
 	async function poll() {
 		try {
-			lastHealth = await fetchApi<Health>('/api/health');
+			lastHealth = await client.health();
 			if (!healthy) {
 				healthy = true;
 				connectedSince = Date.now();

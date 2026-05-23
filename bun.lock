@@ -8,6 +8,9 @@
     "apps/covalence-web": {
       "name": "covalence-web",
       "version": "0.0.0",
+      "dependencies": {
+        "covalence-client": "workspace:*",
+      },
       "devDependencies": {
         "@sveltejs/adapter-static": "^3.0.0",
         "@sveltejs/kit": "^2.0.0",
@@ -32,6 +35,10 @@
         "esbuild": "^0.24.0",
         "typescript": "^5.7.0",
       },
+    },
+    "packages/covalence-client": {
+      "name": "covalence-client",
+      "version": "0.0.0",
     },
     "packages/covalence-ui": {
       "name": "covalence-ui",
@@ -259,6 +266,8 @@
     "cookies": ["cookies@0.9.1", "", { "dependencies": { "depd": "~2.0.0", "keygrip": "~1.1.0" } }, "sha512-TG2hpqe4ELx54QER/S3HQ9SRVnQnGBtKUz5bLQWtYAQ+o6GpgMs6sYUvaiJjVxb+UXwhRhAEP3m7LbsIZ77Hmw=="],
 
     "core-util-is": ["core-util-is@1.0.3", "", {}, "sha512-ZQBvi1DcpJ4GDqanjucZ2Hj3wEO5pZDS89BWbkcrvdxksJorwUDDZamX9ldFkp9aw2lmBDLgkObEA4DWNJ9FYQ=="],
+
+    "covalence-client": ["covalence-client@workspace:packages/covalence-client"],
 
     "covalence-ui": ["covalence-ui@workspace:packages/covalence-ui"],
 

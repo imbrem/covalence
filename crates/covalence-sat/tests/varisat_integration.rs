@@ -1,6 +1,9 @@
 //! Integration test: connect covalence-sat to the varisat CDCL solver.
 
-use covalence_sat::{Cnf, Decision, Model, SolveError, Solver};
+use covalence_sat::{
+    Clause, Cnf, Decision, DratProof, DratStep, Model, NaiveDratChecker, SolveError, Solver,
+    check_proof,
+};
 
 /// Thin wrapper around [`varisat::Solver`] implementing our [`Solver`] trait.
 struct Varisat;
@@ -226,4 +229,104 @@ fn large_random_sat() {
 
     let model = Varisat.solve(&cnf).expect("constructed to be SAT");
     assert_eq!(model.eval_cnf(&cnf), Decision::Sat);
+}
+
+// --------------------------------------------------------------------
+// DRAT verification tests
+// --------------------------------------------------------------------
+
+#[test]
+fn drat_trivial_unsat() {
+    // {x} ∧ {¬x}, proof: Add(∅)
+    // AT check for ∅: no literals to negate → empty assignment.
+    // Unit prop: {x} forces x=true, then {¬x} has all lits false → CONFLICT.
+    let mut cnf = Cnf::new();
+    let x = cnf.fresh();
+    cnf.clause([x]);
+    cnf.clause([!x]);
+
+    let proof = DratProof::new([DratStep::Add(Clause::new([]))]);
+    let mut checker = NaiveDratChecker::new(&cnf);
+    assert!(check_proof(&mut checker, &proof));
+}
+
+#[test]
+fn drat_three_clause_unsat() {
+    // {x,y} ∧ {x,¬y} ∧ {¬x}, proof: [Add({x}), Add(∅)]
+    //
+    // Step 1 — Add({x}):
+    //   Negate x → assign x=false.
+    //   Unit prop: {¬x} satisfied (skip). {x,y}: x false, y unset → unit, assign y=true.
+    //   {x,¬y}: x false, ¬y false → CONFLICT. AT ✓
+    //
+    // Step 2 — Add(∅):
+    //   Empty assignment. Unit prop: {¬x} → x=false. {x}: x false → CONFLICT. AT ✓
+    let mut cnf = Cnf::new();
+    let x = cnf.fresh();
+    let y = cnf.fresh();
+    cnf.clause([x, y]);
+    cnf.clause([x, !y]);
+    cnf.clause([!x]);
+
+    let proof = DratProof::new([
+        DratStep::Add(Clause::new([x])),
+        DratStep::Add(Clause::new([])),
+    ]);
+    let mut checker = NaiveDratChecker::new(&cnf);
+    assert!(check_proof(&mut checker, &proof));
+}
+
+#[test]
+fn drat_with_deletion() {
+    // {x} ∧ {¬x}: derive ∅, delete it, then re-derive ∅.
+    let mut cnf = Cnf::new();
+    let x = cnf.fresh();
+    cnf.clause([x]);
+    cnf.clause([!x]);
+
+    let proof = DratProof::new([
+        DratStep::Add(Clause::new([])),
+        DratStep::Delete(Clause::new([])),
+        DratStep::Add(Clause::new([])),
+    ]);
+    let mut checker = NaiveDratChecker::new(&cnf);
+    assert!(check_proof(&mut checker, &proof));
+}
+
+#[test]
+fn drat_invalid_proof_rejected() {
+    // {x,y} ∧ {x,¬y} ∧ {¬x,y} ∧ {¬x,¬y} — UNSAT but no unit clauses.
+    // ∅ is NOT AT without intermediate derivations.
+    let mut cnf = Cnf::new();
+    let x = cnf.fresh();
+    let y = cnf.fresh();
+    cnf.clause([x, y]);
+    cnf.clause([x, !y]);
+    cnf.clause([!x, y]);
+    cnf.clause([!x, !y]);
+
+    let proof = DratProof::new([DratStep::Add(Clause::new([]))]);
+    let mut checker = NaiveDratChecker::new(&cnf);
+    assert!(!check_proof(&mut checker, &proof));
+}
+
+#[test]
+fn drat_solver_plus_verifier() {
+    // Use varisat to confirm UNSAT, then verify a hand-crafted DRAT proof
+    // for the same formula.
+    //
+    // Formula: {x} ∧ {¬x}
+    let mut cnf = Cnf::new();
+    let x = cnf.fresh();
+    cnf.clause([x]);
+    cnf.clause([!x]);
+
+    // SAT solver confirms UNSAT.
+    let err = Varisat.solve(&cnf).expect_err("should be UNSAT");
+    assert!(matches!(err, SolveError::Unsat));
+
+    // DRAT proof independently confirms UNSAT.
+    let proof = DratProof::new([DratStep::Add(Clause::new([]))]);
+    let mut checker = NaiveDratChecker::new(&cnf);
+    assert!(check_proof(&mut checker, &proof));
 }

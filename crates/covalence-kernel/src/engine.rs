@@ -36,7 +36,7 @@ enum ImportKind {
     /// A blob by hash: "blob-{hex}".
     Blob(O256),
     /// A WASM module by hash: "module-{hex}".
-    Module(O256),
+    Module,
     /// A component instance by hash: "component-{hash}".
     Component(O256),
     /// A proved component instance by hash: "prove-{hash}".
@@ -60,8 +60,8 @@ fn categorize_import(name: &str) -> ImportKind {
         }
     }
     if let Some(hex) = name.strip_prefix("module-") {
-        if let Some(hash) = O256::from_hex(hex) {
-            return ImportKind::Module(hash);
+        if O256::from_hex(hex).is_some() {
+            return ImportKind::Module;
         }
     }
     if let Some(hex) = name.strip_prefix("component-") {
@@ -319,7 +319,7 @@ impl WasmEngine {
                         )
                         .map_err(|e| DecideError::LinkError(e.to_string()))?;
                 }
-                ImportKind::Module(_hash) => {
+                ImportKind::Module => {
                     // Module linking is complex — left unlinked.
                 }
                 ImportKind::Component(hash) => {

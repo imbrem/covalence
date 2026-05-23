@@ -57,6 +57,17 @@ Detailed architecture and subsystem documentation is available as Claude-only sk
 
 - Run `cargo fmt --all` before creating a PR to ensure consistent formatting.
 
+## Wrapper Crates
+
+Several `covalence-*` crates exist to wrap external dependencies. All usage of the underlying library should go through the wrapper crate, never import the dependency directly:
+
+- **covalence-wasm** — wraps `wasmtime`, `wat`, `wasmparser`, `wasmprinter`. Re-exports `wasmtime` via `covalence_wasm::engine::wasmtime`. Will grow custom WASM helpers over time.
+- **covalence-hash** — wraps `blake3` and provides the `O256` content-addressed hash type.
+- **covalence-sqlite** — wraps `rusqlite`. Provides `SqliteStore` implementing `ContentStore`.
+- **covalence-git** — wraps `sha1`, `sha2` for git-compatible hashing. Provides `hash_blob` CLI utility.
+
+This ensures dependencies are centralized and can be extended with project-specific functionality without touching every consumer.
+
 ## Conventions
 
 - Rust edition 2024 (stable ≥1.94.1 or nightly), workspace resolver 2

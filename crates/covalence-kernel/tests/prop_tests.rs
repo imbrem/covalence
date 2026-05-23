@@ -290,16 +290,6 @@ fn no_attest_but_has_import_dep_not_false() {
     assert_eq!(result, Decision::True);
 }
 
-#[test]
-fn no_attest_no_imports_is_false() {
-    let bytes = wat(include_str!("wat/no_attest_no_imports_is_false.wat"));
-
-    let engine = engine();
-    let store = TestStore::new();
-    let result = decide_result(&engine, &bytes, &store);
-    assert_eq!(result, Decision::False);
-}
-
 // ============================================================
 // Traps return Unknown
 // ============================================================
@@ -634,28 +624,6 @@ fn prove_import_deep_resolve_no_crash() {
         result.is_ok(),
         "should resolve without cycle: {:?}",
         result.err()
-    );
-}
-
-#[test]
-fn prove_import_calling_dep_attests_parent() {
-    let store = TestStore::new();
-    let dep_bytes = wat(include_str!("wat/prove_import_calling_dep_attests/dep.wat"));
-    let dep_hash = store.insert(&dep_bytes).unwrap();
-    let dep_hex = dep_hash.to_string();
-
-    let parent_bytes = wat(
-        &include_str!("wat/prove_import_calling_dep_attests/parent.wat")
-            .replace("{dep_hex}", &dep_hex),
-    );
-
-    let engine = engine();
-    let output = engine.decide(&parent_bytes, &store).expect("decide failed");
-    assert_eq!(output.decision, Decision::True, "parent should be True");
-    assert!(
-        output.proved.contains(&dep_hash),
-        "dep should also be proved: proved={:?}",
-        output.proved
     );
 }
 

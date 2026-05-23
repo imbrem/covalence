@@ -292,3 +292,56 @@ def test_server_sqlite_persistence():
             status, body, _ = api(srv, f"/blobs/{h}")
             assert status == 200
             assert body == b"persist me"
+
+
+# ---------------------------------------------------------------------------
+# Multi-server isolation
+# ---------------------------------------------------------------------------
+
+def test_multi_server_isolation():
+    """Two concurrent servers have independent stores."""
+    with covalence.serve() as srv_a, covalence.serve() as srv_b:
+        assert srv_a.port != srv_b.port
+
+        # Store in A, absent from B
+        status, data = api_json(srv_a, "/blobs", method="POST", body=b"only in A")
+        h_a = data["hash"]
+        assert status == 201
+
+        status_b, _, _ = api(srv_b, f"/blobs/{h_a}")
+        assert status_b == 404
+
+        # Store in B, absent from A
+        status, data = api_json(srv_b, "/blobs", method="POST", body=b"only in B")
+        h_b = data["hash"]
+        assert status == 201
+
+        status_a, _, _ = api(srv_a, f"/blobs/{h_b}")
+        assert status_a == 404
+
+        # Each server still has its own data
+        status_a2, body_a, _ = api(srv_a, f"/blobs/{h_a}")
+        assert status_a2 == 200
+        assert body_a == b"only in A"
+
+        status_b2, body_b, _ = api(srv_b, f"/blobs/{h_b}")
+        assert status_b2 == 200
+        assert body_b == b"only in B"
+
+
+def test_multi_server_independent_decide():
+    """Two concurrent servers can decide propositions independently."""
+    k = covalence.local()
+    wasm_true = k.get_blob(k.compile_wat(TRIVIAL_TRUE))
+    wasm_false = k.get_blob(k.compile_wat("(component)"))
+
+    with covalence.serve() as srv_a, covalence.serve() as srv_b:
+        # Store true prop in A, false prop in B
+        _, data_a = api_json(srv_a, "/blobs", method="POST", body=wasm_true)
+        _, data_b = api_json(srv_b, "/blobs", method="POST", body=wasm_false)
+
+        _, result_a = api_json(srv_a, f"/decide/{data_a['hash']}")
+        assert result_a["result"] == "sat"
+
+        _, result_b = api_json(srv_b, f"/decide/{data_b['hash']}")
+        assert result_b["result"] == "unsat"

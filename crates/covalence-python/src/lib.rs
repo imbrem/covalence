@@ -1,4 +1,5 @@
 mod backend;
+mod default;
 mod git;
 mod hash;
 mod server;
@@ -38,6 +39,14 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Server
     m.add_function(wrap_pyfunction!(server::serve, m)?)?;
+
+    // Module-level convenience functions (lazy default backend)
+    m.add_function(wrap_pyfunction!(default::store, m)?)?;
+    m.add_function(wrap_pyfunction!(default::store_str, m)?)?;
+    m.add_function(wrap_pyfunction!(default::get, m)?)?;
+    m.add_function(wrap_pyfunction!(default::has, m)?)?;
+    m.add_function(wrap_pyfunction!(default::compile_wat, m)?)?;
+    m.add_function(wrap_pyfunction!(default::decide, m)?)?;
 
     Ok(())
 }

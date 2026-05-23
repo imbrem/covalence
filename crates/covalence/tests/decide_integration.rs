@@ -196,7 +196,8 @@ decide_tests! {
 
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(stdout.trim().is_empty(), "unknown should produce no stdout, got: {stdout}");
+        let line = stdout.trim();
+        assert!(line.ends_with(" unknown"), "expected '{{hash}} unknown', got: {line}");
     }
 
     fn multiple_files(connect) {
@@ -214,9 +215,10 @@ decide_tests! {
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
         let lines: Vec<&str> = stdout.lines().collect();
-        assert_eq!(lines.len(), 2, "expected 2 lines (true + false), got: {stdout}");
+        assert_eq!(lines.len(), 3, "expected 3 lines (true + false + unknown), got: {stdout}");
         assert!(lines[0].ends_with(" true"));
         assert!(lines[1].ends_with(" false"));
+        assert!(lines[2].ends_with(" unknown"));
     }
 
     fn compiled_wasm_file(connect) {

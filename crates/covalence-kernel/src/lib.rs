@@ -1,10 +1,12 @@
 mod traits;
-pub use traits::{AsyncBackend, BackendInfo, Decision, KernelError, SyncBackend};
+pub use traits::{AsyncBackend, BackendInfo, DecideOutput, Decision, KernelError, SyncBackend};
+
+#[cfg(feature = "engine")]
+mod engine;
+#[cfg(feature = "engine")]
+pub use engine::{DecideError, WasmEngine};
 
 #[cfg(feature = "engine")]
 mod kernel;
 #[cfg(feature = "engine")]
 pub use kernel::Kernel;
-
-#[cfg(feature = "engine")]
-pub use covalence_wasm::{PropError, WasmEngine};

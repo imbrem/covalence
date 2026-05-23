@@ -1,5 +1,5 @@
 use covalence_hash::O256;
-use covalence_kernel::{AsyncBackend, BackendInfo, Decision, KernelError};
+use covalence_kernel::{AsyncBackend, BackendInfo, DecideOutput, Decision, KernelError};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper_util::client::legacy::Client;
@@ -280,6 +280,8 @@ struct BlobStatsResponse {
 #[derive(Deserialize)]
 struct DecideResponse {
     result: String,
+    #[serde(default)]
+    proved: Vec<String>,
 }
 
 impl AsyncBackend for AsyncHttpBackend {
@@ -327,13 +329,20 @@ impl AsyncBackend for AsyncHttpBackend {
         Ok(json.count)
     }
 
-    async fn decide(&self, hash: &O256) -> Result<Decision, KernelError> {
+    async fn decide(&self, hash: &O256) -> Result<DecideOutput, KernelError> {
         let path = format!("/api/decide/{hash}");
         let resp = self.get(&path).await?;
         let json: DecideResponse =
             serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
-        json.result
+        let decision: Decision = json
+            .result
             .parse()
-            .map_err(|e: String| KernelError::Store(e))
+            .map_err(|e: String| KernelError::Store(e))?;
+        let proved: Vec<O256> = json
+            .proved
+            .iter()
+            .filter_map(|h| O256::from_hex(h))
+            .collect();
+        Ok(DecideOutput { decision, proved })
     }
 }

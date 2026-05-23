@@ -4,7 +4,7 @@ version = "0.0.0"
 edition = "2024"
 
 [features]
-runtime = ["dep:wasmtime", "dep:covalence-hash", "dep:covalence-store"]
+runtime = ["dep:wasmtime"]
 
 [dependencies]
 thiserror = "2"
@@ -12,9 +12,7 @@ wat = "1.249"
 wasmprinter = "0.249"
 wasmparser = "0.249"
 # runtime-only deps
-wasmtime = { version = "44", features = ["component-model"], optional = true }
-covalence-hash = { path = "../covalence-hash", default-features = false, optional = true }
-covalence-store = { path = "../covalence-store", default-features = false, optional = true }
+wasmtime = { version = "44", features = ["component-model", "gc"], optional = true }
 
 [dev-dependencies]
 wasm-encoder = "0.249"

@@ -168,10 +168,13 @@ impl Session {
 
     fn cmd_decide(&self, args: &[SExp]) -> Result<String, String> {
         let hash = self.require_hash_arg(args, "decide")?;
-        self.backend
-            .decide(&hash)
-            .map(|d| d.to_string())
-            .map_err(|e| e.to_string())
+        let output = self.backend.decide(&hash).map_err(|e| e.to_string())?;
+        let mut lines = Vec::new();
+        for proved_hash in &output.proved {
+            lines.push(format!("{proved_hash} true"));
+        }
+        lines.push(format!("{hash} {}", output.decision));
+        Ok(lines.join("\n"))
     }
 
     fn cmd_read(&self, args: &[SExp]) -> Result<String, String> {

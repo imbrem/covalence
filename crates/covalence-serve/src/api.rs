@@ -201,7 +201,7 @@ pub async fn eval(
 // Decide endpoint
 // ---------------------------------------------------------------------------
 
-/// GET /api/decide/:hash — decide proposition → { "result": "true"|"unknown"|"false" }
+/// GET /api/decide/:hash — decide proposition → { "result": "...", "proved": [...] }
 pub async fn decide(
     axum::extract::State(state): axum::extract::State<crate::AppState>,
     Path(hash_hex): Path<String>,
@@ -217,8 +217,9 @@ pub async fn decide(
             .unwrap_or_else(|e| Err(format!("task error: {e}")));
 
     match result {
-        Ok(r) => Ok(Json(DecideResponse {
-            result: r.to_string(),
+        Ok(output) => Ok(Json(DecideResponse {
+            result: output.decision.to_string(),
+            proved: output.proved.iter().map(|h| h.to_string()).collect(),
         })),
         Err(e) => Err((StatusCode::BAD_REQUEST, e)),
     }
@@ -227,6 +228,7 @@ pub async fn decide(
 #[derive(Serialize)]
 pub struct DecideResponse {
     pub result: String,
+    pub proved: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------

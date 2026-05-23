@@ -14,3 +14,8 @@ thiserror = "2"
 # engine-only deps
 covalence-store = { path = "../covalence-store", optional = true }
 covalence-wasm = { path = "../covalence-wasm", features = ["runtime"], optional = true }
+
+[dev-dependencies]
+covalence-hash = { path = "../covalence-hash" }
+covalence-store = { path = "../covalence-store" }
+wat = "1.249"

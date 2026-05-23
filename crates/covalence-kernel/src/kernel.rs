@@ -3,9 +3,10 @@ use std::sync::{Arc, RwLock};
 
 use covalence_hash::O256;
 use covalence_store::{BlobStore, ContentStore, SharedMemoryStore};
-use covalence_wasm::WasmEngine;
 
-use crate::{AsyncBackend, BackendInfo, Decision, KernelError, SyncBackend};
+use crate::{
+    AsyncBackend, BackendInfo, DecideOutput, Decision, KernelError, SyncBackend, WasmEngine,
+};
 
 /// The execution kernel: owns a content-addressed store and a WASM engine.
 /// Clone is cheap (Arc internals).
@@ -75,42 +76,45 @@ impl SyncBackend for Kernel {
         Ok(self.store.len())
     }
 
-    fn decide(&self, hash: &O256) -> Result<Decision, KernelError> {
+    fn decide(&self, hash: &O256) -> Result<DecideOutput, KernelError> {
         // Check cache
         if self.true_set.read().unwrap().contains(hash) {
-            return Ok(Decision::True);
+            return Ok(DecideOutput {
+                decision: Decision::True,
+                proved: vec![],
+            });
         }
         if self.false_set.read().unwrap().contains(hash) {
-            return Ok(Decision::False);
+            return Ok(DecideOutput {
+                decision: Decision::False,
+                proved: vec![],
+            });
         }
 
         let data = self
             .store
             .get(hash)
             .ok_or_else(|| KernelError::NotFound(format!("blob not found: {hash}")))?;
-        let result = self
+        let output = self
             .engine
             .decide(&data, &self.store)
             .map_err(|e| KernelError::Engine(format!("{e}")))?;
 
-        // Map PropResult → Decision and cache
-        let decision = match result {
-            covalence_wasm::PropResult::True => Decision::True,
-            covalence_wasm::PropResult::Unknown => Decision::Unknown,
-            covalence_wasm::PropResult::False => Decision::False,
-        };
-
-        match decision {
-            Decision::True => {
-                self.true_set.write().unwrap().insert(*hash);
+        // Cache all proved hashes + the queried hash
+        {
+            let mut true_set = self.true_set.write().unwrap();
+            for proved_hash in &output.proved {
+                true_set.insert(*proved_hash);
             }
-            Decision::False => {
-                self.false_set.write().unwrap().insert(*hash);
+            if output.decision == Decision::True {
+                true_set.insert(*hash);
             }
-            Decision::Unknown => {}
+        }
+        if output.decision == Decision::False {
+            self.false_set.write().unwrap().insert(*hash);
         }
 
-        Ok(decision)
+        Ok(output)
     }
 }
 
@@ -135,7 +139,7 @@ impl AsyncBackend for Kernel {
         SyncBackend::blob_count(self)
     }
 
-    async fn decide(&self, hash: &O256) -> Result<Decision, KernelError> {
+    async fn decide(&self, hash: &O256) -> Result<DecideOutput, KernelError> {
         SyncBackend::decide(self, hash)
     }
 }

@@ -48,6 +48,15 @@ impl FromStr for Decision {
     }
 }
 
+/// Output from deciding a proposition, including transitively proved hashes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecideOutput {
+    /// The decision for the queried hash.
+    pub decision: Decision,
+    /// Hashes proved True during this decide (on the prove stack when attest was called).
+    pub proved: Vec<O256>,
+}
+
 /// Information about a backend.
 pub struct BackendInfo {
     /// "local" or "http"
@@ -63,7 +72,7 @@ pub trait SyncBackend: Send {
     fn get_blob(&self, hash: &O256) -> Result<Option<Vec<u8>>, KernelError>;
     fn has_blob(&self, hash: &O256) -> Result<bool, KernelError>;
     fn blob_count(&self) -> Result<Option<usize>, KernelError>;
-    fn decide(&self, hash: &O256) -> Result<Decision, KernelError>;
+    fn decide(&self, hash: &O256) -> Result<DecideOutput, KernelError>;
 }
 
 /// Asynchronous backend trait — NOT dyn-compatible (uses native async fn).
@@ -75,5 +84,5 @@ pub trait AsyncBackend: Send + Sync {
     async fn get_blob(&self, hash: &O256) -> Result<Option<Vec<u8>>, KernelError>;
     async fn has_blob(&self, hash: &O256) -> Result<bool, KernelError>;
     async fn blob_count(&self) -> Result<Option<usize>, KernelError>;
-    async fn decide(&self, hash: &O256) -> Result<Decision, KernelError>;
+    async fn decide(&self, hash: &O256) -> Result<DecideOutput, KernelError>;
 }

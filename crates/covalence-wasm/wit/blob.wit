@@ -1,0 +1,12 @@
+package cov:blob;
+
+interface api {
+    resource blob {
+        /// Read the blob's bytes. Traps if data is unavailable.
+        read: func() -> list<u8>;
+
+        /// Compare two blobs for equality by hash.
+        /// Works even if blob data is not available.
+        eq: func(other: borrow<blob>) -> bool;
+    }
+}

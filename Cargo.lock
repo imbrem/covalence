@@ -458,6 +458,7 @@ dependencies = [
  "covalence-store",
  "covalence-wasm",
  "thiserror 2.0.18",
+ "wat",
 ]
 
 [[package]]
@@ -547,8 +548,6 @@ dependencies = [
 name = "covalence-wasm"
 version = "0.0.0"
 dependencies = [
- "covalence-hash",
- "covalence-store",
  "thiserror 2.0.18",
  "wasm-encoder 0.249.0",
  "wasmparser 0.249.0",

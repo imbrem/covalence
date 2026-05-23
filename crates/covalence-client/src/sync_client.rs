@@ -1,5 +1,5 @@
 use covalence_hash::O256;
-use covalence_kernel::{BackendInfo, Decision, KernelError, SyncBackend};
+use covalence_kernel::{BackendInfo, DecideOutput, Decision, KernelError, SyncBackend};
 use serde::Deserialize;
 
 /// Blocking HTTP backend using ureq (TCP) or raw HTTP/1.1 (Unix domain socket).
@@ -220,6 +220,8 @@ struct BlobStatsResponse {
 #[derive(Deserialize)]
 struct DecideResponse {
     result: String,
+    #[serde(default)]
+    proved: Vec<String>,
 }
 
 impl SyncBackend for SyncHttpBackend {
@@ -267,14 +269,21 @@ impl SyncBackend for SyncHttpBackend {
         Ok(json.count)
     }
 
-    fn decide(&self, hash: &O256) -> Result<Decision, KernelError> {
+    fn decide(&self, hash: &O256) -> Result<DecideOutput, KernelError> {
         let path = format!("/api/decide/{hash}");
         let resp = self.get(&path)?;
         let json: DecideResponse =
             serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
-        json.result
+        let decision: Decision = json
+            .result
             .parse()
-            .map_err(|e: String| KernelError::Store(e))
+            .map_err(|e: String| KernelError::Store(e))?;
+        let proved: Vec<O256> = json
+            .proved
+            .iter()
+            .filter_map(|h| O256::from_hex(h))
+            .collect();
+        Ok(DecideOutput { decision, proved })
     }
 }
 

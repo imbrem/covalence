@@ -1,0 +1,19 @@
+[package]
+name = "covalence-python"
+version = "0.0.0"
+edition = "2024"
+
+[lib]
+name = "covalence"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = "0.28"
+covalence-hash = { path = "../covalence-hash" }
+covalence-kernel = { path = "../covalence-kernel", features = ["engine", "sqlite"] }
+covalence-store = { path = "../covalence-store", features = ["memory", "sqlite"] }
+covalence-wasm = { path = "../covalence-wasm" }
+covalence-repl = { path = "../covalence-repl" }
+covalence-serve = { path = "../covalence-serve", default-features = false, features = ["sqlite"] }
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }

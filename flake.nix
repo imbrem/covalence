@@ -23,6 +23,10 @@
             "wasm32-unknown-unknown"
           ];
         };
+
+        python = pkgs.python3.withPackages (ps: [
+          ps.pytest
+        ]);
       in
       {
         devShells.default = pkgs.mkShell {
@@ -35,6 +39,10 @@
             pkgs.binaryen
             pkgs.esbuild
             pkgs.cargo-nextest
+
+            # Python bindings
+            python
+            pkgs.maturin
           ];
 
           shellHook = ''
@@ -52,6 +60,10 @@
             echo "  bun run release                      full release build (native release + wasm + esbuild)"
             echo "  bun run code:browser                 build + launch web VSCode"
             echo "  bun run code:desktop                 build + launch desktop VSCode"
+            echo ""
+            echo "  cd crates/covalence-python"
+            echo "  maturin develop                      build Python bindings (editable)"
+            echo "  pytest tests/                        run Python tests"
           '';
         };
       }

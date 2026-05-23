@@ -1,5 +1,5 @@
 (component
-    (import "component-{d_hex}" (instance $d))
+    (import "link-{d_hex}" (instance $d))
     (core module $m
         (func $val (result i32) (i32.const 2))
         (export "val" (func $val))

@@ -1,3 +1,3 @@
 (component
-    (import "component-{level1_hex}" (instance $lib))
+    (import "link-{level1_hex}" (instance $lib))
 )

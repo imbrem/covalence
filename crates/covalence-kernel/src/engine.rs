@@ -1,3 +1,32 @@
+//! WASM-based proposition engine.
+//!
+//! A **proposition** is a WASM component whose start function may call
+//! `attest()` to declare itself true. The engine decides propositions by
+//! compiling and instantiating them, observing whether `attest()` is called.
+//!
+//! ## Import system
+//!
+//! Components declare dependencies via specially-named imports. The three
+//! instance import types map to a container model:
+//!
+//! | Import prefix | Semantics | Instance sharing |
+//! |---------------|-----------|-----------------|
+//! | `link-{hash}` | Shared instance in the container | Cached by hash |
+//! | `copy-{hash}` | Instance embedded in the importer | Always fresh |
+//! | `prove-{hash}` | Container boundary (nested scope) | Isolated + lazy |
+//!
+//! **Link** deps are eagerly instantiated once and shared across all importers
+//! within the same linking scope (the "diamond dep" pattern).
+//!
+//! **Copy** deps are eagerly instantiated per import site — each `copy-{hash}`
+//! gets a fresh instance with its own mutable state. Sub-link-deps of a copy
+//! still participate in the shared cache.
+//!
+//! **Prove** deps are lazily instantiated on first function call, with fully
+//! isolated link-instances. When a function is called through a prove-dep,
+//! the dep's hash is pushed onto a prove stack; if `attest()` fires while
+//! the hash is on the stack, that hash is recorded as proved.
+
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -20,28 +49,31 @@ struct HostState {
     attested: bool,
     table: ResourceTable,
     /// Stack of prove-dep hashes currently being called through.
-    /// When attest() is called, all hashes on this stack are proved.
+    /// When attest() is called, all hashes on this stack are marked as proved.
     prove_stack: Vec<O256>,
-    /// Hashes proved during this decide (were on prove_stack when attest was called).
+    /// Hashes that were on the prove stack when attest() was called.
     proved: HashSet<O256>,
 }
 
 /// Categorized import from a proposition component.
 #[derive(Debug)]
 enum ImportKind {
-    /// The `attest()` function.
+    /// The `attest()` function — calling it marks the proposition as true.
     Attest,
     /// The blob interface: "cov:blob/api".
     BlobInterface,
-    /// A blob by hash: "blob-{hex}".
+    /// A content-addressed blob by hash: "blob-{hex}".
     Blob(O256),
-    /// A WASM module by hash: "module-{hex}".
-    Module,
-    /// A component instance by hash: "component-{hash}".
-    Component(O256),
-    /// A proved component instance by hash: "prove-{hash}".
-    /// Lazily linked; when a function is called through this instance,
-    /// the hash is pushed onto the prove stack and popped on return.
+    /// A shared component instance by hash: "link-{hash}".
+    /// All importers of the same hash within a linking scope share one instance.
+    Link(O256),
+    /// A fresh (unshared) component instance by hash: "copy-{hash}".
+    /// Each import site gets its own instance; sub-link-deps still share.
+    Copy(O256),
+    /// A proof-composition dep by hash: "prove-{hash}".
+    /// Lazily instantiated with isolated link-instances. Calling a function
+    /// through this dep pushes its hash onto the prove stack; if `attest()`
+    /// fires while the hash is on the stack, it is recorded as proved.
     Prove(O256),
     /// Unknown import name.
     Unknown(String),
@@ -59,14 +91,14 @@ fn categorize_import(name: &str) -> ImportKind {
             return ImportKind::Blob(hash);
         }
     }
-    if let Some(hex) = name.strip_prefix("module-") {
-        if O256::from_hex(hex).is_some() {
-            return ImportKind::Module;
+    if let Some(hex) = name.strip_prefix("link-") {
+        if let Some(hash) = O256::from_hex(hex) {
+            return ImportKind::Link(hash);
         }
     }
-    if let Some(hex) = name.strip_prefix("component-") {
+    if let Some(hex) = name.strip_prefix("copy-") {
         if let Some(hash) = O256::from_hex(hex) {
-            return ImportKind::Component(hash);
+            return ImportKind::Copy(hash);
         }
     }
     if let Some(hex) = name.strip_prefix("prove-") {
@@ -77,9 +109,30 @@ fn categorize_import(name: &str) -> ImportKind {
     ImportKind::Unknown(name.to_string())
 }
 
-/// A lazily-linked prove-dep component. The component is compiled and its
-/// linker is prepared, but instantiation is deferred until the first
-/// function call through the prove-dep.
+/// Wire pre-resolved exports into a linker instance slot.
+fn wire_instance_exports(
+    linker: &mut Linker<HostState>,
+    name: &str,
+    exports: Vec<(String, Func)>,
+) -> Result<(), DecideError> {
+    let mut root = linker.root();
+    let mut li = root
+        .instance(name)
+        .map_err(|e| DecideError::LinkError(e.to_string()))?;
+    for (export_name, export_func) in exports {
+        li.func_new(&export_name, move |mut cx, _ty, args, results| {
+            export_func.call(&mut cx, args, results)?;
+            Ok(())
+        })
+        .map_err(|e| DecideError::LinkError(e.to_string()))?;
+    }
+    Ok(())
+}
+
+/// A deferred prove-dep. The component is compiled and its linker prepared,
+/// but instantiation is deferred until the first function call through the
+/// prove-dep wrapper. This avoids instantiating prove-deps that are never
+/// called.
 struct LazyProve {
     linker: Linker<HostState>,
     component: Component,
@@ -102,14 +155,24 @@ impl WasmEngine {
     /// Decide if a proposition (WASM component) is true,
     /// i.e. whether its start function calls `attest()`.
     ///
-    /// The component may import:
-    /// - `"attest"`: a function that marks the proposition as true
-    /// - `"blob-{hash}"`: a blob from the store (lazy — traps if data unavailable)
-    /// - `"module-{hash}"`: a core WASM module from the store
-    /// - `"component-{hash}"`: a component instance (linked recursively, eager)
-    /// - `"prove-{hash}"`: a component instance (linked lazily); calling a
-    ///   function through this instance pushes the hash onto a prove stack.
-    ///   When `attest()` is called, all hashes on the prove stack are proved.
+    /// ## Import types
+    ///
+    /// - `"attest"`: a zero-argument function that marks this proposition as
+    ///   true. Calling it also proves every hash currently on the prove stack.
+    /// - `"blob-{hash}"`: a content-addressed blob from the store, surfaced
+    ///   as a `cov:blob/api` resource (lazy — traps if data is unavailable).
+    /// - `"link-{hash}"`: a **shared** component instance (linked recursively,
+    ///   eagerly instantiated). All importers of the same hash share one
+    ///   instance within the same linking scope.
+    /// - `"copy-{hash}"`: a **fresh** component instance per import site.
+    ///   Eagerly instantiated like `link`, but never cached — each occurrence
+    ///   gets its own instance. Sub-link-deps of a copy still use the shared
+    ///   instance cache.
+    /// - `"prove-{hash}"`: a component instance used for proof composition.
+    ///   Lazily instantiated on first function call. When called, the hash
+    ///   is pushed onto the prove stack; if `attest()` fires while the hash
+    ///   is on the stack, that hash is recorded as proved. The prove-dep gets
+    ///   isolated link-instances (not shared with the parent).
     ///
     /// Returns a `DecideOutput` with the decision and any hashes proved.
     pub fn decide(
@@ -124,12 +187,14 @@ impl WasmEngine {
 
         // Classify all imports and collect dep hashes
         let mut imports_attest = false;
-        let mut import_deps: Vec<O256> = Vec::new();
+        let mut link_deps: Vec<O256> = Vec::new();
+        let mut copy_deps: Vec<(String, O256)> = Vec::new();
         let mut prove_deps: Vec<O256> = Vec::new();
         for (name, _) in ty.imports(&self.engine) {
             match categorize_import(name) {
                 ImportKind::Attest => imports_attest = true,
-                ImportKind::Component(hash) => import_deps.push(hash),
+                ImportKind::Link(hash) => link_deps.push(hash),
+                ImportKind::Copy(hash) => copy_deps.push((name.to_string(), hash)),
                 ImportKind::Prove(hash) => prove_deps.push(hash),
                 _ => {}
             }
@@ -137,7 +202,8 @@ impl WasmEngine {
 
         // Pre-check: if attest is not imported AND there are no deps that
         // could transitively attest, this prop is statically false
-        if !imports_attest && import_deps.is_empty() && prove_deps.is_empty() {
+        if !imports_attest && link_deps.is_empty() && copy_deps.is_empty() && prove_deps.is_empty()
+        {
             return Ok(DecideOutput {
                 decision: Decision::False,
                 proved: vec![],
@@ -169,8 +235,8 @@ impl WasmEngine {
             )?;
         }
 
-        // Pre-resolve all component import deps (instantiate eagerly)
-        for dep_hash in &import_deps {
+        // Pre-resolve all link deps (shared instances, instantiated eagerly)
+        for dep_hash in &link_deps {
             self.resolve_import(
                 dep_hash,
                 blobs,
@@ -181,7 +247,27 @@ impl WasmEngine {
             )?;
         }
 
-        let linker = self.build_linker(&component, blobs, &instance_cache, &lazy_proves)?;
+        // Resolve copy deps (fresh instance per import site)
+        let mut copy_cache: HashMap<String, Vec<(String, Func)>> = HashMap::new();
+        for (import_name, dep_hash) in &copy_deps {
+            let exports = self.resolve_copy(
+                dep_hash,
+                blobs,
+                &mut store,
+                &mut instance_cache,
+                &mut lazy_proves,
+                &mut resolving,
+            )?;
+            copy_cache.insert(import_name.clone(), exports);
+        }
+
+        let linker = self.build_linker(
+            &component,
+            blobs,
+            &instance_cache,
+            &lazy_proves,
+            &copy_cache,
+        )?;
 
         // Instantiate the component — this runs the start function.
         // A trap during instantiation means the start function didn't complete;
@@ -215,13 +301,15 @@ impl WasmEngine {
         Ok(DecideOutput { decision, proved })
     }
 
-    /// Build a linker for a component, wiring up attest, blob, component, and prove imports.
+    /// Build a linker for a component, wiring up attest, blob, link, copy,
+    /// and prove imports.
     fn build_linker(
         &self,
         component: &Component,
         blobs: &dyn ContentStore<O256>,
         instance_cache: &HashMap<O256, Vec<(String, Func)>>,
         lazy_proves: &HashMap<O256, Arc<LazyProve>>,
+        copy_cache: &HashMap<String, Vec<(String, Func)>>,
     ) -> Result<Linker<HostState>, DecideError> {
         let ty = component.component_type();
         let mut linker: Linker<HostState> = Linker::new(&self.engine);
@@ -319,24 +407,13 @@ impl WasmEngine {
                         )
                         .map_err(|e| DecideError::LinkError(e.to_string()))?;
                 }
-                ImportKind::Module => {
-                    // Module linking is complex — left unlinked.
-                }
-                ImportKind::Component(hash) => {
+                ImportKind::Link(hash) => {
                     let exports = instance_cache.get(&hash).cloned().unwrap_or_default();
-
-                    let mut root = linker.root();
-                    let mut li = root
-                        .instance(name)
-                        .map_err(|e| DecideError::LinkError(e.to_string()))?;
-
-                    for (export_name, export_func) in exports {
-                        li.func_new(&export_name, move |mut cx, _ty, args, results| {
-                            export_func.call(&mut cx, args, results)?;
-                            Ok(())
-                        })
-                        .map_err(|e| DecideError::LinkError(e.to_string()))?;
-                    }
+                    wire_instance_exports(&mut linker, name, exports)?;
+                }
+                ImportKind::Copy(_) => {
+                    let exports = copy_cache.get(name).cloned().unwrap_or_default();
+                    wire_instance_exports(&mut linker, name, exports)?;
                 }
                 ImportKind::Prove(hash) => {
                     let lazy = lazy_proves.get(&hash).cloned().ok_or_else(|| {
@@ -417,9 +494,72 @@ impl WasmEngine {
         Ok(linker)
     }
 
-    /// Resolve a `component-{hash}` import: load, compile, and
-    /// instantiate the dep component (recursively resolving its own deps).
-    /// Caches instances by hash and detects cycles.
+    /// Collect and recursively resolve link/copy/prove sub-deps for a
+    /// compiled component. Returns a copy cache (keyed by import name)
+    /// for any `copy-{hash}` sub-imports.
+    fn resolve_sub_deps(
+        &self,
+        dep_component: &Component,
+        blobs: &dyn ContentStore<O256>,
+        store: &mut Store<HostState>,
+        instance_cache: &mut HashMap<O256, Vec<(String, Func)>>,
+        lazy_proves: &mut HashMap<O256, Arc<LazyProve>>,
+        resolving: &mut HashSet<O256>,
+    ) -> Result<HashMap<String, Vec<(String, Func)>>, DecideError> {
+        let dep_ty = dep_component.component_type();
+
+        let mut link_sub_deps: Vec<O256> = Vec::new();
+        let mut copy_sub_deps: Vec<(String, O256)> = Vec::new();
+        let mut prove_sub_deps: Vec<O256> = Vec::new();
+        for (name, _) in dep_ty.imports(&self.engine) {
+            match categorize_import(name) {
+                ImportKind::Link(hash) => link_sub_deps.push(hash),
+                ImportKind::Copy(hash) => copy_sub_deps.push((name.to_string(), hash)),
+                ImportKind::Prove(hash) => prove_sub_deps.push(hash),
+                _ => {}
+            }
+        }
+        for sub_hash in &link_sub_deps {
+            self.resolve_import(
+                sub_hash,
+                blobs,
+                store,
+                instance_cache,
+                lazy_proves,
+                resolving,
+            )?;
+        }
+        for sub_hash in &prove_sub_deps {
+            self.resolve_prove(
+                sub_hash,
+                blobs,
+                store,
+                instance_cache,
+                lazy_proves,
+                resolving,
+            )?;
+        }
+
+        let mut copy_cache: HashMap<String, Vec<(String, Func)>> = HashMap::new();
+        for (import_name, dep_hash) in &copy_sub_deps {
+            let exports = self.resolve_copy(
+                dep_hash,
+                blobs,
+                store,
+                instance_cache,
+                lazy_proves,
+                resolving,
+            )?;
+            copy_cache.insert(import_name.clone(), exports);
+        }
+
+        Ok(copy_cache)
+    }
+
+    /// Resolve a `link-{hash}` import: load, compile, and instantiate the
+    /// dep component (recursively resolving its own deps). Caches instances
+    /// by hash (shared across all importers in the same scope) and detects
+    /// cycles.
     fn resolve_import(
         &self,
         dep_hash: &O256,
@@ -429,7 +569,7 @@ impl WasmEngine {
         lazy_proves: &mut HashMap<O256, Arc<LazyProve>>,
         resolving: &mut HashSet<O256>,
     ) -> Result<(), DecideError> {
-        // Check cache first
+        // Check cache first — shared instance already exists
         if instance_cache.contains_key(dep_hash) {
             return Ok(());
         }
@@ -452,38 +592,22 @@ impl WasmEngine {
 
         let dep_ty = dep_component.component_type();
 
-        // Collect this dep's own sub-deps (recursive resolution)
-        let mut comp_sub_deps: Vec<O256> = Vec::new();
-        let mut prove_sub_deps: Vec<O256> = Vec::new();
-        for (name, _) in dep_ty.imports(&self.engine) {
-            match categorize_import(name) {
-                ImportKind::Component(hash) => comp_sub_deps.push(hash),
-                ImportKind::Prove(hash) => prove_sub_deps.push(hash),
-                _ => {}
-            }
-        }
-        for sub_hash in &comp_sub_deps {
-            self.resolve_import(
-                sub_hash,
-                blobs,
-                store,
-                instance_cache,
-                lazy_proves,
-                resolving,
-            )?;
-        }
-        for sub_hash in &prove_sub_deps {
-            self.resolve_prove(
-                sub_hash,
-                blobs,
-                store,
-                instance_cache,
-                lazy_proves,
-                resolving,
-            )?;
-        }
+        let copy_cache = self.resolve_sub_deps(
+            &dep_component,
+            blobs,
+            store,
+            instance_cache,
+            lazy_proves,
+            resolving,
+        )?;
 
-        let dep_linker = self.build_linker(&dep_component, blobs, instance_cache, lazy_proves)?;
+        let dep_linker = self.build_linker(
+            &dep_component,
+            blobs,
+            instance_cache,
+            lazy_proves,
+            &copy_cache,
+        )?;
 
         // Instantiate the dep
         let instance = dep_linker
@@ -505,9 +629,80 @@ impl WasmEngine {
         Ok(())
     }
 
+    /// Resolve a `copy-{hash}` import: load, compile, and instantiate a
+    /// fresh (unshared) instance of the dep component. Unlike `resolve_import`,
+    /// this never checks or populates the shared instance cache — each call
+    /// produces a new instance. Sub-link-deps of the copy still use the
+    /// shared `instance_cache`. Cycle detection still applies.
+    fn resolve_copy(
+        &self,
+        dep_hash: &O256,
+        blobs: &dyn ContentStore<O256>,
+        store: &mut Store<HostState>,
+        instance_cache: &mut HashMap<O256, Vec<(String, Func)>>,
+        lazy_proves: &mut HashMap<O256, Arc<LazyProve>>,
+        resolving: &mut HashSet<O256>,
+    ) -> Result<Vec<(String, Func)>, DecideError> {
+        // Cycle detection (no cache check — always fresh)
+        if !resolving.insert(*dep_hash) {
+            return Err(DecideError::CycleDetected(format!(
+                "cycle detected resolving copy dep: {}",
+                dep_hash
+            )));
+        }
+
+        let dep_bytes = blobs
+            .get(dep_hash)
+            .ok_or_else(|| DecideError::MissingDep(format!("blob not found: {}", dep_hash)))?;
+
+        let dep_component = Component::new(&self.engine, &dep_bytes)
+            .map_err(|e| DecideError::InvalidComponent(format!("copy dep {}: {e}", dep_hash)))?;
+
+        let dep_ty = dep_component.component_type();
+
+        // Sub-link-deps use the shared instance_cache
+        let copy_cache = self.resolve_sub_deps(
+            &dep_component,
+            blobs,
+            store,
+            instance_cache,
+            lazy_proves,
+            resolving,
+        )?;
+
+        let dep_linker = self.build_linker(
+            &dep_component,
+            blobs,
+            instance_cache,
+            lazy_proves,
+            &copy_cache,
+        )?;
+
+        let instance = dep_linker
+            .instantiate(&mut *store, &dep_component)
+            .map_err(|e| DecideError::InstantiationError(format!("copy dep {}: {e}", dep_hash)))?;
+
+        let mut exports = Vec::new();
+        for (export_name, _) in dep_ty.exports(&self.engine) {
+            if let Some(func) = instance.get_func(&mut *store, export_name) {
+                exports.push((export_name.to_string(), func));
+            }
+        }
+
+        resolving.remove(dep_hash);
+        // No cache store — the exports are returned directly to the caller
+        Ok(exports)
+    }
+
     /// Resolve a `prove-{hash}` import: load, compile, and prepare a lazy
-    /// linker. The component is NOT instantiated until the first function
-    /// call through the prove-dep wrapper.
+    /// linker for proof composition. The component is NOT instantiated until
+    /// the first function call through the prove-dep wrapper.
+    ///
+    /// Prove-deps get **isolated** link-instances: their sub-deps are resolved
+    /// into fresh local caches, not the parent's shared cache. This prevents
+    /// the parent from sharing mutable state (e.g. a union-find) with the
+    /// prove-dep — the only way to interact with the prove-dep's internals
+    /// is through its exports.
     fn resolve_prove(
         &self,
         dep_hash: &O256,
@@ -522,7 +717,7 @@ impl WasmEngine {
             return Ok(());
         }
 
-        // Cycle detection (shared with component resolution)
+        // Cycle detection (shared with link/copy resolution)
         if !resolving.insert(*dep_hash) {
             return Err(DecideError::CycleDetected(format!(
                 "cycle detected resolving prove dep: {}",
@@ -538,49 +733,28 @@ impl WasmEngine {
         let dep_component = Component::new(&self.engine, &dep_bytes)
             .map_err(|e| DecideError::InvalidComponent(format!("prove dep {}: {e}", dep_hash)))?;
 
-        let dep_ty = dep_component.component_type();
-
-        // Resolve sub-deps into an ISOLATED scope so this prove-dep gets
-        // its own component instances.  This prevents a parent from sharing
-        // mutable state (e.g. a union-find) with a prove-dep — the only way
-        // to interact with the prove-dep's internals is through its exports.
+        // Isolated caches for prove-dep sub-deps
         let mut local_instances: HashMap<O256, Vec<(String, Func)>> = HashMap::new();
         let mut local_proves: HashMap<O256, Arc<LazyProve>> = HashMap::new();
 
-        let mut comp_sub_deps: Vec<O256> = Vec::new();
-        let mut prove_sub_deps: Vec<O256> = Vec::new();
-        for (name, _) in dep_ty.imports(&self.engine) {
-            match categorize_import(name) {
-                ImportKind::Component(hash) => comp_sub_deps.push(hash),
-                ImportKind::Prove(hash) => prove_sub_deps.push(hash),
-                _ => {}
-            }
-        }
-        for sub_hash in &comp_sub_deps {
-            self.resolve_import(
-                sub_hash,
-                blobs,
-                store,
-                &mut local_instances,
-                &mut local_proves,
-                resolving,
-            )?;
-        }
-        for sub_hash in &prove_sub_deps {
-            self.resolve_prove(
-                sub_hash,
-                blobs,
-                store,
-                &mut local_instances,
-                &mut local_proves,
-                resolving,
-            )?;
-        }
+        let copy_cache = self.resolve_sub_deps(
+            &dep_component,
+            blobs,
+            store,
+            &mut local_instances,
+            &mut local_proves,
+            resolving,
+        )?;
 
         // Build linker using the isolated caches (the linker clones what it
         // needs, so the local maps can be dropped after this).
-        let dep_linker =
-            self.build_linker(&dep_component, blobs, &local_instances, &local_proves)?;
+        let dep_linker = self.build_linker(
+            &dep_component,
+            blobs,
+            &local_instances,
+            &local_proves,
+            &copy_cache,
+        )?;
 
         let lazy = Arc::new(LazyProve {
             linker: dep_linker,

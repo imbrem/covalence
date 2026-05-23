@@ -1,7 +1,7 @@
 mod object;
 mod util;
 
-pub use object::{Blake3Ctx, HashCtx, O256, Sha256};
+pub use object::{Blake3Ctx, COV_ROOT, CovRoot, HashCtx, O256, Sha256};
 pub use util::{IdentityBuildHasher, IdentityHasher};
 
 pub use blake3;

@@ -1,6 +1,6 @@
 (component
     (import "attest" (func $attest))
-    (import "component-{fake_hash}" (instance $lib))
+    (import "link-{fake_hash}" (instance $lib))
     (core module $m
         (import "env" "attest" (func $attest))
         (func $start (call $attest))

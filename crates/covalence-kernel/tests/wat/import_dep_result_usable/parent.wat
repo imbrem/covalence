@@ -1,6 +1,6 @@
 (component
     (import "attest" (func $attest))
-    (import "component-{dep_hex}" (instance $lib
+    (import "link-{dep_hex}" (instance $lib
         (export "get-val" (func (result s32)))
     ))
     (alias export $lib "get-val" (func $get_val))

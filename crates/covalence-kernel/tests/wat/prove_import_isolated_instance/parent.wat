@@ -1,6 +1,6 @@
 (component
     (import "attest" (func $attest))
-    (import "component-{c_hex}" (instance $c
+    (import "link-{c_hex}" (instance $c
         (export "inc" (func (result s32)))
     ))
     (import "prove-{b_hex}" (instance $b

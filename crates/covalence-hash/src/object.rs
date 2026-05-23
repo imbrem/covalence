@@ -91,6 +91,11 @@ impl Blake3Ctx {
     pub fn new(ctx: &str) -> Self {
         Self(blake3::hazmat::hash_derive_key_context(ctx))
     }
+
+    /// Create a hashing context from a pre-computed context key.
+    pub const fn from_context_key(key: [u8; 32]) -> Self {
+        Self(key)
+    }
 }
 
 impl HashCtx for Blake3Ctx {
@@ -111,6 +116,44 @@ impl HashCtx for Sha256 {
         O256::from_bytes(sha2::Sha256::digest(data.as_ref()).into())
     }
 }
+
+/// The root Covalence hashing context.
+///
+/// All Covalence content hashes are derived under this context, ensuring
+/// domain separation from any other BLAKE3 usage.
+///
+/// ```
+/// use covalence_hash::{HashCtx, COV_ROOT};
+///
+/// let h = COV_ROOT.tag("hello");
+/// assert_eq!(
+///     h.to_string(),
+///     covalence_hash::Blake3Ctx::new("covalence development").tag("hello").to_string(),
+/// );
+/// ```
+pub struct CovRoot(Blake3Ctx);
+
+impl CovRoot {
+    /// Pre-computed context key for "covalence development".
+    const CONTEXT_KEY: [u8; 32] = [
+        0x5e, 0x04, 0xe0, 0xd7, 0x3f, 0x7a, 0x7e, 0x63, 0xa2, 0x0d, 0xf4, 0x15, 0xf8, 0x15, 0x24,
+        0x48, 0x0a, 0xd9, 0xcd, 0xc8, 0x0d, 0x0c, 0x7c, 0x94, 0xc4, 0x33, 0xc1, 0x96, 0x6d, 0xa7,
+        0xc9, 0x14,
+    ];
+
+    pub const fn new() -> Self {
+        Self(Blake3Ctx::from_context_key(Self::CONTEXT_KEY))
+    }
+}
+
+impl HashCtx for CovRoot {
+    fn tag(&self, data: impl AsRef<[u8]>) -> O256 {
+        self.0.tag(data)
+    }
+}
+
+/// The global Covalence root hashing context.
+pub const COV_ROOT: CovRoot = CovRoot::new();
 
 impl O256 {
     /// Create an O256 from the BLAKE3 hash of the given bytes.
@@ -277,5 +320,18 @@ mod tests {
         assert_ne!(blob, keyed);
         assert_ne!(blob, derived);
         assert_ne!(keyed, derived);
+    }
+
+    #[test]
+    fn cov_root_context_key_matches_runtime() {
+        // Verify the pre-computed const key matches what blake3 computes at runtime.
+        let runtime = Blake3Ctx::new("covalence development");
+        assert_eq!(COV_ROOT.tag("hello"), runtime.tag("hello"));
+    }
+
+    #[test]
+    fn cov_root_is_const() {
+        // COV_ROOT is usable in const position.
+        const _: CovRoot = COV_ROOT;
     }
 }

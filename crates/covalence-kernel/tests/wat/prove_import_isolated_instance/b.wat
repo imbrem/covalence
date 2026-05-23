@@ -1,5 +1,5 @@
 (component
-    (import "component-{c_hex}" (instance $c
+    (import "link-{c_hex}" (instance $c
         (export "inc" (func (result s32)))
     ))
     (alias export $c "inc" (func $c_inc))

@@ -1,6 +1,6 @@
 (component
     (import "attest" (func $attest))
-    (import "component-{hash_hex}" (instance $lib))
+    (import "link-{hash_hex}" (instance $lib))
     (core module $m
         (import "env" "attest" (func $attest))
         (func $start (call $attest))

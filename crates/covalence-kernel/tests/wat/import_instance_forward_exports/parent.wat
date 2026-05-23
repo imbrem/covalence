@@ -1,6 +1,6 @@
 (component
     (import "attest" (func $attest))
-    (import "component-{dep_hex}" (instance $lib
+    (import "link-{dep_hex}" (instance $lib
         (export "add" (func (param "a" s32) (param "b" s32) (result s32)))
     ))
     (alias export $lib "add" (func $add))

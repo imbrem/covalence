@@ -1,11 +1,11 @@
 (component
     (import "attest" (func $attest))
-    (import "component-{uf_hex}" (instance $uf
+    (import "link-{uf_hex}" (instance $uf
         (export "make" (func (result s32)))
         (export "find" (func (param "x" s32) (result s32)))
         (export "union" (func (param "a" s32) (param "b" s32)))
     ))
-    (import "component-{map_hex}" (instance $map
+    (import "link-{map_hex}" (instance $map
         (export "lookup" (func (param "a" s32) (param "b" s32) (result s32)))
         (export "insert" (func (param "a" s32) (param "b" s32) (param "val" s32)))
     ))

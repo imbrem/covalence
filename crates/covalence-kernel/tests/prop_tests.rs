@@ -696,6 +696,46 @@ fn prove_equational_reasoning_assoc() {
     );
 }
 
+// ============================================================
+// Copy imports — fresh (unshared) instances
+// ============================================================
+
+#[test]
+fn copy_import_fresh_instance() {
+    let store = TestStore::new();
+
+    // D: counter component (inc returns old value, then increments)
+    let d_bytes = wat(include_str!("wat/copy_import_fresh_instance/d.wat"));
+    let d_hash = store.insert(&d_bytes).unwrap();
+    let d_hex = d_hash.to_string();
+
+    // B: imports D as copy, exports go = D.inc
+    let b_bytes =
+        wat(&include_str!("wat/copy_import_fresh_instance/b.wat").replace("{d_hex}", &d_hex));
+    let b_hash = store.insert(&b_bytes).unwrap();
+    let b_hex = b_hash.to_string();
+
+    // C: imports D as copy, exports run = D.inc
+    let c_bytes =
+        wat(&include_str!("wat/copy_import_fresh_instance/c.wat").replace("{d_hex}", &d_hex));
+    let c_hash = store.insert(&c_bytes).unwrap();
+    let c_hex = c_hash.to_string();
+
+    // Parent: links D, B, C; verifies 3 separate D instances
+    let parent_bytes = wat(&include_str!("wat/copy_import_fresh_instance/parent.wat")
+        .replace("{d_hex}", &d_hex)
+        .replace("{b_hex}", &b_hex)
+        .replace("{c_hex}", &c_hex));
+
+    let engine = engine();
+    let result = decide_result(&engine, &parent_bytes, &store);
+    assert_eq!(
+        result,
+        Decision::True,
+        "copy imports should produce fresh (unshared) instances"
+    );
+}
+
 #[test]
 fn prove_import_gets_isolated_component_instance() {
     let store = TestStore::new();

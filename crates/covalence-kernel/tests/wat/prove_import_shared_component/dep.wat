@@ -1,5 +1,5 @@
 (component
-    (import "component-{shared_hex}" (instance $shared
+    (import "link-{shared_hex}" (instance $shared
         (export "val" (func (result s32)))
     ))
     (core module $m

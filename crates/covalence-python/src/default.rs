@@ -8,6 +8,7 @@ use pyo3::types::PyBytes;
 use covalence_kernel::{Kernel, SyncBackend};
 
 use crate::backend::parse_hash;
+use crate::component::{HashOrComponent, extract_bytes, parse_hash_or_component};
 use crate::hash::O256;
 use crate::worker::{KernelTask, kernel_call, spawn_kernel_worker};
 
@@ -24,13 +25,15 @@ fn default_tx() -> PyResult<&'static Sender<KernelTask>> {
     Ok(DEFAULT.get().unwrap())
 }
 
-/// Store a blob and return its hash.
+/// Store data and return its hash. Accepts bytes, str, or Component.
 #[pyfunction]
-pub fn store(py: Python<'_>, data: &[u8]) -> PyResult<O256> {
+pub fn store(py: Python<'_>, data: &Bound<'_, PyAny>) -> PyResult<O256> {
     let tx = default_tx()?;
-    let data = data.to_vec();
-    kernel_call(py, tx, move |k| SyncBackend::store_blob(k, &data).map(O256))?
-        .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    let bytes = extract_bytes(data)?;
+    kernel_call(py, tx, move |k| {
+        SyncBackend::store_blob(k, &bytes).map(O256)
+    })?
+    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
 }
 
 /// Store a UTF-8 string as a blob and return its hash.
@@ -74,13 +77,20 @@ pub fn compile_wat(py: Python<'_>, wat: &str) -> PyResult<O256> {
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))
 }
 
-/// Decide a stored WASM proposition by hash.
+/// Decide a WASM proposition. Accepts O256, hex string, or Component.
+/// When given a Component, stores and decides in a single worker round-trip.
 #[pyfunction]
 pub fn decide<'py>(py: Python<'py>, hash: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     let tx = default_tx()?;
-    let h = parse_hash(hash)?;
-    let output = kernel_call(py, tx, move |k| SyncBackend::decide(k, &h))?
-        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let parsed = parse_hash_or_component(hash)?;
+    let output = match parsed {
+        HashOrComponent::Hash(h) => kernel_call(py, tx, move |k| SyncBackend::decide(k, &h))?,
+        HashOrComponent::Component(wasm) => kernel_call(py, tx, move |k| {
+            let h = SyncBackend::store_blob(k, &wasm)?;
+            SyncBackend::decide(k, &h)
+        })?,
+    }
+    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     let dict = pyo3::types::PyDict::new(py);
     dict.set_item("decision", output.decision.to_string())?;
     let proved: Vec<String> = output.proved.iter().map(|h| h.to_string()).collect();

@@ -1,4 +1,5 @@
 mod backend;
+mod component;
 mod default;
 mod git;
 mod hash;
@@ -17,6 +18,7 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<git::GitHasher>()?;
     m.add_class::<backend::Backend>()?;
     m.add_class::<session::Session>()?;
+    m.add_class::<component::Component>()?;
     m.add_class::<server::Server>()?;
 
     // Hasher constructors

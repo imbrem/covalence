@@ -7,6 +7,7 @@ use pyo3::types::PyBytes;
 use covalence_kernel::{Kernel, SyncBackend};
 use covalence_store::BlobStore;
 
+use crate::component::{HashOrComponent, extract_bytes, parse_hash_or_component};
 use crate::hash::O256;
 use crate::worker::{KernelTask, kernel_call, spawn_kernel_worker};
 
@@ -29,6 +30,15 @@ pub struct Backend {
 
 #[pymethods]
 impl Backend {
+    /// Store data and return its hash. Accepts bytes, str, or Component.
+    fn store(&self, py: Python<'_>, data: &Bound<'_, PyAny>) -> PyResult<O256> {
+        let bytes = extract_bytes(data)?;
+        kernel_call(py, &self.tx, move |k| {
+            SyncBackend::store_blob(k, &bytes).map(O256)
+        })?
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
     fn store_blob(&self, py: Python<'_>, data: &[u8]) -> PyResult<O256> {
         let data = data.to_vec();
         kernel_call(py, &self.tx, move |k| {
@@ -81,14 +91,24 @@ impl Backend {
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Decide a WASM proposition. Accepts O256, hex string, or Component.
+    /// When given a Component, stores and decides in a single worker round-trip.
     fn decide<'py>(
         &self,
         py: Python<'py>,
         hash: &Bound<'py, PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let h = parse_hash(hash)?;
-        let output = kernel_call(py, &self.tx, move |k| SyncBackend::decide(k, &h))?
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let parsed = parse_hash_or_component(hash)?;
+        let output = match parsed {
+            HashOrComponent::Hash(h) => {
+                kernel_call(py, &self.tx, move |k| SyncBackend::decide(k, &h))?
+            }
+            HashOrComponent::Component(wasm) => kernel_call(py, &self.tx, move |k| {
+                let h = SyncBackend::store_blob(k, &wasm)?;
+                SyncBackend::decide(k, &h)
+            })?,
+        }
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         let dict = pyo3::types::PyDict::new(py);
         dict.set_item("decision", output.decision.to_string())?;
         let proved: Vec<String> = output.proved.iter().map(|h| h.to_string()).collect();

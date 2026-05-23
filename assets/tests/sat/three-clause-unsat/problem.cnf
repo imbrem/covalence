@@ -1,0 +1,5 @@
+c three-clause-unsat: {x,y} ∧ {x,¬y} ∧ {¬x}
+p cnf 2 3
+1 2 0
+1 -2 0
+-1 0

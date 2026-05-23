@@ -1,0 +1,6 @@
+c four-clause-unsat: {x,y} ∧ {x,¬y} ∧ {¬x,y} ∧ {¬x,¬y}
+p cnf 2 4
+1 2 0
+1 -2 0
+-1 2 0
+-1 -2 0

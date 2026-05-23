@@ -74,6 +74,11 @@ impl fmt::Display for Var {
 pub struct Lit(NonZeroI32);
 
 impl Lit {
+    /// Create a literal from a raw DIMACS integer. Returns `None` if zero.
+    pub fn from_dimacs(dimacs_val: i32) -> Option<Self> {
+        NonZeroI32::new(dimacs_val).map(Lit)
+    }
+
     /// The underlying variable.
     pub fn var(self) -> Var {
         // Safe: absolute value of a NonZeroI32 is a positive NonZeroI32
@@ -189,7 +194,7 @@ impl fmt::Display for Clause {
 /// assert_eq!(cnf.num_vars(), 2);
 /// assert_eq!(cnf.num_clauses(), 2);
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Cnf {
     num_vars: u32,
     clauses: Vec<Clause>,
@@ -224,6 +229,12 @@ impl Cnf {
     /// Number of clauses.
     pub fn num_clauses(&self) -> usize {
         self.clauses.len()
+    }
+
+    /// Create a CNF from a declared variable count and pre-built clauses.
+    /// Used by the DIMACS parser where `num_vars` comes from the header.
+    pub fn from_parts(num_vars: u32, clauses: Vec<Clause>) -> Self {
+        Cnf { num_vars, clauses }
     }
 
     /// Iterate over the clauses of this formula.

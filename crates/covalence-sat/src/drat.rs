@@ -1,7 +1,7 @@
 use crate::{Clause, Cnf, Lit, Model};
 
 /// A single DRAT proof step.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DratStep {
     /// Add a clause (must be an Asymmetric Tautology w.r.t. active clauses).
     Add(Clause),
@@ -10,7 +10,7 @@ pub enum DratStep {
 }
 
 /// A DRAT proof — a sequence of clause addition/deletion steps.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DratProof(Vec<DratStep>);
 
 impl DratProof {

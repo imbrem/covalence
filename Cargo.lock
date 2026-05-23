@@ -498,6 +498,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-sat"
+version = "0.0.0"
+dependencies = [
+ "covalence-types",
+]
+
+[[package]]
 name = "covalence-serve"
 version = "0.0.0"
 dependencies = [
@@ -529,6 +536,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-smt"
+version = "0.0.0"
+dependencies = [
+ "covalence-sat",
+ "covalence-sexp",
+ "covalence-types",
+]
+
+[[package]]
 name = "covalence-sqlite"
 version = "0.0.0"
 dependencies = [
@@ -541,6 +557,13 @@ version = "0.0.0"
 dependencies = [
  "covalence-hash",
  "covalence-sqlite",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "covalence-types"
+version = "0.0.0"
+dependencies = [
  "thiserror 2.0.18",
 ]
 

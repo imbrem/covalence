@@ -65,6 +65,9 @@ Several `covalence-*` crates exist to wrap external dependencies. All usage of t
 - **covalence-hash** — wraps `blake3` and provides the `O256` content-addressed hash type.
 - **covalence-sqlite** — wraps `rusqlite`. Provides `SqliteStore` implementing `ContentStore`.
 - **covalence-git** — wraps `sha1`, `sha2` for git-compatible hashing. Provides `hash_blob` CLI utility.
+- **covalence-types** — shared types used across the ecosystem (e.g. `Decision`).
+- **covalence-sat** — SAT formulas, DIMACS, DRAT proofs, solver traits. Depends on `covalence-types`.
+- **covalence-smt** — SMT-LIB2 terms, theories, Alethe proofs. Depends on `covalence-types`, `covalence-sat`, `covalence-sexp`.
 
 This ensures dependencies are centralized and can be extended with project-specific functionality without touching every consumer.
 

@@ -337,7 +337,7 @@ impl AsyncBackend for AsyncHttpBackend {
         let decision: Decision = json
             .result
             .parse()
-            .map_err(|e: String| KernelError::Store(e))?;
+            .map_err(|e: covalence_kernel::ParseDecisionError| KernelError::Store(e.to_string()))?;
         let proved: Vec<O256> = json
             .proved
             .iter()

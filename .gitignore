@@ -4,6 +4,7 @@ dist/
 /extensions/covalence-vscode/src/generated/
 .vscode-test-web/
 .worktrees/
+.claude/worktrees/
 .direnv/
 .svelte-kit/
 /apps/covalence-web/build/

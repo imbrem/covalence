@@ -1,7 +1,6 @@
-use std::fmt;
-use std::str::FromStr;
-
 use covalence_hash::O256;
+
+pub use covalence_types::{Decision, ParseDecisionError};
 
 /// Errors from kernel operations.
 #[derive(Debug, thiserror::Error)]
@@ -14,46 +13,12 @@ pub enum KernelError {
     NotFound(String),
 }
 
-/// Result of deciding a proposition.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Decision {
-    /// The proposition called `attest()` during startup — decidably true.
-    True,
-    /// The proposition imports `attest()` but did not call it during startup.
-    Unknown,
-    /// The proposition does not import `attest()` at all — statically false.
-    False,
-}
-
-impl fmt::Display for Decision {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Decision::True => write!(f, "true"),
-            Decision::Unknown => write!(f, "unknown"),
-            Decision::False => write!(f, "false"),
-        }
-    }
-}
-
-impl FromStr for Decision {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "true" => Ok(Decision::True),
-            "unknown" => Ok(Decision::Unknown),
-            "false" => Ok(Decision::False),
-            _ => Err(format!("invalid decision: {s:?}")),
-        }
-    }
-}
-
 /// Output from deciding a proposition, including transitively proved hashes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecideOutput {
     /// The decision for the queried hash.
     pub decision: Decision,
-    /// Hashes proved True during this decide (on the prove stack when attest was called).
+    /// Hashes proved Sat during this decide (on the prove stack when attest was called).
     pub proved: Vec<O256>,
 }
 

@@ -172,7 +172,7 @@ decide_tests! {
         assert!(out.status.success(), "exit code: {:?}", out.status);
         let stdout = String::from_utf8_lossy(&out.stdout);
         let line = stdout.trim();
-        assert!(line.ends_with(" true"), "expected '{{hash}} true', got: {line}");
+        assert!(line.ends_with(" sat"), "expected '{{hash}} sat', got: {line}");
         assert_eq!(line.split_whitespace().count(), 2);
         let hash = line.split_whitespace().next().unwrap();
         assert_eq!(hash.len(), 64, "hash should be 64 hex chars: {hash}");
@@ -186,7 +186,7 @@ decide_tests! {
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
         let line = stdout.trim();
-        assert!(line.ends_with(" false"), "expected '{{hash}} false', got: {line}");
+        assert!(line.ends_with(" unsat"), "expected '{{hash}} unsat', got: {line}");
     }
 
     fn unknown_proposition_prints_nothing(connect) {
@@ -215,9 +215,9 @@ decide_tests! {
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
         let lines: Vec<&str> = stdout.lines().collect();
-        assert_eq!(lines.len(), 3, "expected 3 lines (true + false + unknown), got: {stdout}");
-        assert!(lines[0].ends_with(" true"));
-        assert!(lines[1].ends_with(" false"));
+        assert_eq!(lines.len(), 3, "expected 3 lines (sat + unsat + unknown), got: {stdout}");
+        assert!(lines[0].ends_with(" sat"));
+        assert!(lines[1].ends_with(" unsat"));
         assert!(lines[2].ends_with(" unknown"));
     }
 
@@ -231,7 +231,7 @@ decide_tests! {
 
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(stdout.trim().ends_with(" true"));
+        assert!(stdout.trim().ends_with(" sat"));
     }
 
     fn force_format_wat(connect) {
@@ -243,7 +243,7 @@ decide_tests! {
 
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(stdout.trim().ends_with(" true"));
+        assert!(stdout.trim().ends_with(" sat"));
     }
 
     fn force_format_wasm(connect) {
@@ -256,7 +256,7 @@ decide_tests! {
 
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(stdout.trim().ends_with(" false"));
+        assert!(stdout.trim().ends_with(" unsat"));
     }
 
     fn auto_detects_wasm_by_magic_bytes(connect) {
@@ -269,7 +269,7 @@ decide_tests! {
 
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(stdout.trim().ends_with(" true"));
+        assert!(stdout.trim().ends_with(" sat"));
     }
 
     fn same_content_produces_same_hash(connect) {

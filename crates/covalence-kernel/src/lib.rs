@@ -1,5 +1,7 @@
 mod traits;
-pub use traits::{AsyncBackend, BackendInfo, DecideOutput, Decision, KernelError, SyncBackend};
+pub use traits::{
+    AsyncBackend, BackendInfo, DecideOutput, Decision, KernelError, ParseDecisionError, SyncBackend,
+};
 
 #[cfg(feature = "engine")]
 mod engine;

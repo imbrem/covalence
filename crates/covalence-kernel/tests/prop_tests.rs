@@ -58,7 +58,7 @@ fn decide_result(engine: &WasmEngine, bytes: &[u8], store: &TestStore) -> Decisi
 }
 
 // ============================================================
-// Basic proposition deciding: True / Unknown / False
+// Basic proposition deciding: Sat / Unknown / Unsat
 // ============================================================
 
 #[test]
@@ -68,7 +68,7 @@ fn trivial_true() {
     let engine = engine();
     let store = TestStore::new();
     let result = decide_result(&engine, &bytes, &store);
-    assert_eq!(result, Decision::True);
+    assert_eq!(result, Decision::Sat);
 }
 
 #[test]
@@ -88,7 +88,7 @@ fn statically_false() {
     let engine = engine();
     let store = TestStore::new();
     let result = decide_result(&engine, &bytes, &store);
-    assert_eq!(result, Decision::False);
+    assert_eq!(result, Decision::Unsat);
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn empty_component_false() {
     let engine = engine();
     let store = TestStore::new();
     let result = decide_result(&engine, &bytes, &store);
-    assert_eq!(result, Decision::False);
+    assert_eq!(result, Decision::Unsat);
 }
 
 // ============================================================
@@ -119,7 +119,7 @@ fn import_instance_forward_exports() {
 
     let engine = engine();
     let result = decide_result(&engine, &parent_bytes, &store);
-    assert_eq!(result, Decision::True);
+    assert_eq!(result, Decision::Sat);
 }
 
 #[test]
@@ -134,7 +134,7 @@ fn import_dep_calls_attest() {
 
     let engine = engine();
     let result = decide_result(&engine, &parent_bytes, &store);
-    assert_eq!(result, Decision::True);
+    assert_eq!(result, Decision::Sat);
 }
 
 #[test]
@@ -193,7 +193,7 @@ fn import_same_hash_shared_instance() {
 
     let engine = engine();
     let result = decide_result(&engine, &parent_bytes, &store);
-    assert_eq!(result, Decision::True);
+    assert_eq!(result, Decision::Sat);
 }
 
 // ============================================================
@@ -218,7 +218,7 @@ fn import_dep_with_own_deps() {
 
     let engine = engine();
     let result = decide_result(&engine, &parent_bytes, &store);
-    assert_eq!(result, Decision::True);
+    assert_eq!(result, Decision::Sat);
 }
 
 #[test]
@@ -243,7 +243,7 @@ fn import_diamond_dep() {
 
     let engine = engine();
     let result = decide_result(&engine, &parent_bytes, &store);
-    assert_eq!(result, Decision::True);
+    assert_eq!(result, Decision::Sat);
 }
 
 // ============================================================
@@ -264,7 +264,7 @@ fn import_dep_result_usable() {
 
     let engine = engine();
     let result = decide_result(&engine, &parent_bytes, &store);
-    assert_eq!(result, Decision::True);
+    assert_eq!(result, Decision::Sat);
 }
 
 // ============================================================
@@ -287,7 +287,7 @@ fn no_attest_but_has_import_dep_not_false() {
 
     let engine = engine();
     let result = decide_result(&engine, &parent_bytes, &store);
-    assert_eq!(result, Decision::True);
+    assert_eq!(result, Decision::Sat);
 }
 
 // ============================================================
@@ -317,7 +317,7 @@ fn trap_after_attest_returns_true() {
         .decide(&bytes, &store)
         .expect("decide should not error on trap")
         .decision;
-    assert_eq!(result, Decision::True);
+    assert_eq!(result, Decision::Sat);
 }
 
 // ============================================================
@@ -397,7 +397,7 @@ fn known_blob_import_succeeds_if_unused() {
         Ok(output) => {
             assert_eq!(
                 output.decision,
-                Decision::True,
+                Decision::Sat,
                 "expected True, got {:?}",
                 output.decision
             );
@@ -420,7 +420,7 @@ fn blob_read_returns_data() {
 
     let engine = engine();
     let result = engine.decide(&bytes, &store).expect("decide failed");
-    assert_eq!(result.decision, Decision::True);
+    assert_eq!(result.decision, Decision::Sat);
 }
 
 #[test]
@@ -435,7 +435,7 @@ fn blob_eq_same_hash() {
 
     let engine = engine();
     let result = engine.decide(&bytes, &store).expect("decide failed");
-    assert_eq!(result.decision, Decision::True);
+    assert_eq!(result.decision, Decision::Sat);
 }
 
 #[test]
@@ -452,7 +452,7 @@ fn blob_eq_different_hash() {
 
     let engine = engine();
     let result = engine.decide(&bytes, &store).expect("decide failed");
-    assert_eq!(result.decision, Decision::True);
+    assert_eq!(result.decision, Decision::Sat);
 }
 
 #[test]
@@ -467,7 +467,7 @@ fn blob_eq_without_data() {
     let engine = engine();
     let store = TestStore::new();
     let result = engine.decide(&bytes, &store).expect("decide failed");
-    assert_eq!(result.decision, Decision::True);
+    assert_eq!(result.decision, Decision::Sat);
 }
 
 // ============================================================
@@ -488,7 +488,7 @@ fn prove_import_attests_through_dep() {
 
     let engine = engine();
     let output = engine.decide(&parent_bytes, &store).expect("decide failed");
-    assert_eq!(output.decision, Decision::True);
+    assert_eq!(output.decision, Decision::Sat);
     assert!(
         output.proved.contains(&dep_hash),
         "dep should be proved: proved={:?}",
@@ -533,7 +533,7 @@ fn prove_import_not_called_not_proved() {
 
     let engine = engine();
     let output = engine.decide(&parent_bytes, &store).expect("decide failed");
-    assert_eq!(output.decision, Decision::True, "parent should be True");
+    assert_eq!(output.decision, Decision::Sat, "parent should be True");
     assert!(
         !output.proved.contains(&dep_hash),
         "dep should NOT be proved (never called): proved={:?}",
@@ -592,7 +592,7 @@ fn prove_import_shared_component_only_proves_through_call() {
 
     let engine = engine();
     let output = engine.decide(&parent_bytes, &store).expect("decide failed");
-    assert_eq!(output.decision, Decision::True);
+    assert_eq!(output.decision, Decision::Sat);
     assert!(
         !output.proved.contains(&dep_hash),
         "dep should NOT be proved (shared attested during eager init, not through prove): proved={:?}",
@@ -673,7 +673,7 @@ fn prove_equational_reasoning_assoc() {
 
     assert_eq!(
         output.decision,
-        Decision::True,
+        Decision::Sat,
         "proof of associativity should be True"
     );
     assert!(
@@ -731,7 +731,7 @@ fn copy_import_fresh_instance() {
     let result = decide_result(&engine, &parent_bytes, &store);
     assert_eq!(
         result,
-        Decision::True,
+        Decision::Sat,
         "copy imports should produce fresh (unshared) instances"
     );
 }
@@ -759,7 +759,7 @@ fn prove_import_gets_isolated_component_instance() {
     let output = engine.decide(&parent_bytes, &store).expect("decide failed");
     assert_eq!(
         output.decision,
-        Decision::True,
+        Decision::Sat,
         "parent should be True (prove-dep got isolated component instance)"
     );
 }

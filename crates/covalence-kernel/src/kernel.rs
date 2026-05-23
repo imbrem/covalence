@@ -14,10 +14,10 @@ use crate::{
 pub struct Kernel {
     store: BlobStore<O256>,
     engine: Arc<WasmEngine>,
-    /// Hashes previously decided as True.
-    true_set: Arc<RwLock<HashSet<O256>>>,
-    /// Hashes previously decided as False.
-    false_set: Arc<RwLock<HashSet<O256>>>,
+    /// Hashes previously decided as Sat.
+    sat_set: Arc<RwLock<HashSet<O256>>>,
+    /// Hashes previously decided as Unsat.
+    unsat_set: Arc<RwLock<HashSet<O256>>>,
 }
 
 impl Kernel {
@@ -33,8 +33,8 @@ impl Kernel {
         Ok(Self {
             store,
             engine: Arc::new(engine),
-            true_set: Arc::new(RwLock::new(HashSet::new())),
-            false_set: Arc::new(RwLock::new(HashSet::new())),
+            sat_set: Arc::new(RwLock::new(HashSet::new())),
+            unsat_set: Arc::new(RwLock::new(HashSet::new())),
         })
     }
 
@@ -78,15 +78,15 @@ impl SyncBackend for Kernel {
 
     fn decide(&self, hash: &O256) -> Result<DecideOutput, KernelError> {
         // Check cache
-        if self.true_set.read().unwrap().contains(hash) {
+        if self.sat_set.read().unwrap().contains(hash) {
             return Ok(DecideOutput {
-                decision: Decision::True,
+                decision: Decision::Sat,
                 proved: vec![],
             });
         }
-        if self.false_set.read().unwrap().contains(hash) {
+        if self.unsat_set.read().unwrap().contains(hash) {
             return Ok(DecideOutput {
-                decision: Decision::False,
+                decision: Decision::Unsat,
                 proved: vec![],
             });
         }
@@ -102,16 +102,16 @@ impl SyncBackend for Kernel {
 
         // Cache all proved hashes + the queried hash
         {
-            let mut true_set = self.true_set.write().unwrap();
+            let mut sat_set = self.sat_set.write().unwrap();
             for proved_hash in &output.proved {
-                true_set.insert(*proved_hash);
+                sat_set.insert(*proved_hash);
             }
-            if output.decision == Decision::True {
-                true_set.insert(*hash);
+            if output.decision == Decision::Sat {
+                sat_set.insert(*hash);
             }
         }
-        if output.decision == Decision::False {
-            self.false_set.write().unwrap().insert(*hash);
+        if output.decision == Decision::Unsat {
+            self.unsat_set.write().unwrap().insert(*hash);
         }
 
         Ok(output)

@@ -10,6 +10,7 @@ sqlite = ["engine", "covalence-store/sqlite"]
 
 [dependencies]
 covalence-hash = { path = "../covalence-hash", default-features = false }
+covalence-types = { path = "../covalence-types" }
 thiserror = "2"
 # engine-only deps
 covalence-store = { path = "../covalence-store", optional = true }

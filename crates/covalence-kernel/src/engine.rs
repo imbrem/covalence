@@ -45,7 +45,7 @@ struct BlobHandle {
 }
 
 /// Host state threaded through wasmtime's Store.
-struct HostState {
+pub(crate) struct HostState {
     attested: bool,
     table: ResourceTable,
     /// Stack of prove-dep hashes currently being called through.
@@ -53,6 +53,17 @@ struct HostState {
     prove_stack: Vec<O256>,
     /// Hashes that were on the prove stack when attest() was called.
     proved: HashSet<O256>,
+}
+
+impl HostState {
+    fn new() -> Self {
+        HostState {
+            attested: false,
+            table: ResourceTable::new(),
+            prove_stack: Vec::new(),
+            proved: HashSet::new(),
+        }
+    }
 }
 
 /// Categorized import from a proposition component.
@@ -139,6 +150,555 @@ struct LazyProve {
     instance: Mutex<Option<wasmtime::component::Instance>>,
 }
 
+// ---------------------------------------------------------------------------
+// ImportManifest — classifies a component's imports
+// ---------------------------------------------------------------------------
+
+/// Pre-classified import manifest for a component.
+pub(crate) struct ImportManifest {
+    /// Overall decision based on static analysis of imports.
+    /// - `Unsat` if no attest/link/copy/prove imports exist.
+    /// - `Unknown` otherwise (might become Sat at runtime).
+    decision: Decision,
+    link_deps: Vec<O256>,
+    copy_deps: Vec<(String, O256)>,
+    prove_deps: Vec<O256>,
+}
+
+impl ImportManifest {
+    /// Classify all imports of a component and determine the static decision.
+    fn classify(engine: &Engine, component: &Component) -> Self {
+        let ty = component.component_type();
+
+        let mut imports_attest = false;
+        let mut link_deps: Vec<O256> = Vec::new();
+        let mut copy_deps: Vec<(String, O256)> = Vec::new();
+        let mut prove_deps: Vec<O256> = Vec::new();
+
+        for (name, _) in ty.imports(engine) {
+            match categorize_import(name) {
+                ImportKind::Attest => imports_attest = true,
+                ImportKind::Link(hash) => link_deps.push(hash),
+                ImportKind::Copy(hash) => copy_deps.push((name.to_string(), hash)),
+                ImportKind::Prove(hash) => prove_deps.push(hash),
+                _ => {}
+            }
+        }
+
+        let decision = if !imports_attest
+            && link_deps.is_empty()
+            && copy_deps.is_empty()
+            && prove_deps.is_empty()
+        {
+            Decision::Unsat
+        } else {
+            Decision::Unknown
+        };
+
+        ImportManifest {
+            decision,
+            link_deps,
+            copy_deps,
+            prove_deps,
+        }
+    }
+
+    /// Check whether any import is a `blob-{hash}` import.
+    fn has_blob_imports(engine: &Engine, component: &Component) -> bool {
+        let ty = component.component_type();
+        ty.imports(engine)
+            .any(|(name, _)| matches!(categorize_import(name), ImportKind::Blob(_)))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// LinkScope — instance caching and recursive dependency resolution
+// ---------------------------------------------------------------------------
+
+/// Linking scope: caches shared instances and lazy prove-deps during
+/// recursive dependency resolution.
+///
+/// `resolving` is passed as a parameter (not a field) because
+/// `resolve_prove` creates a child `LinkScope` with isolated caches
+/// but shared cycle detection.
+pub(crate) struct LinkScope<'a> {
+    engine: &'a Engine,
+    instance_cache: HashMap<O256, Vec<(String, Func)>>,
+    lazy_proves: HashMap<O256, Arc<LazyProve>>,
+}
+
+impl<'a> LinkScope<'a> {
+    fn new(engine: &'a Engine) -> Self {
+        LinkScope {
+            engine,
+            instance_cache: HashMap::new(),
+            lazy_proves: HashMap::new(),
+        }
+    }
+
+    /// Resolve all dependencies and build a linker for the component.
+    pub(crate) fn link(
+        &mut self,
+        component: &Component,
+        manifest: &ImportManifest,
+        blobs: &dyn ContentStore<O256>,
+        store: &mut Store<HostState>,
+    ) -> Result<Linker<HostState>, DecideError> {
+        let mut resolving: HashSet<O256> = HashSet::new();
+
+        // Resolve prove deps (compile + prepare lazy linker)
+        for dep_hash in &manifest.prove_deps {
+            self.resolve_prove(dep_hash, blobs, store, &mut resolving)?;
+        }
+
+        // Pre-resolve all link deps (shared instances, instantiated eagerly)
+        for dep_hash in &manifest.link_deps {
+            self.resolve_import(dep_hash, blobs, store, &mut resolving)?;
+        }
+
+        // Resolve copy deps (fresh instance per import site)
+        let mut copy_cache: HashMap<String, Vec<(String, Func)>> = HashMap::new();
+        for (import_name, dep_hash) in &manifest.copy_deps {
+            let exports = self.resolve_copy(dep_hash, blobs, store, &mut resolving)?;
+            copy_cache.insert(import_name.clone(), exports);
+        }
+
+        build_linker(
+            self.engine,
+            component,
+            blobs,
+            &self.instance_cache,
+            &self.lazy_proves,
+            &copy_cache,
+        )
+    }
+
+    /// Collect and recursively resolve link/copy/prove sub-deps for a
+    /// compiled component. Returns a copy cache (keyed by import name)
+    /// for any `copy-{hash}` sub-imports.
+    fn resolve_sub_deps(
+        &mut self,
+        dep_component: &Component,
+        blobs: &dyn ContentStore<O256>,
+        store: &mut Store<HostState>,
+        resolving: &mut HashSet<O256>,
+    ) -> Result<HashMap<String, Vec<(String, Func)>>, DecideError> {
+        let dep_ty = dep_component.component_type();
+
+        let mut link_sub_deps: Vec<O256> = Vec::new();
+        let mut copy_sub_deps: Vec<(String, O256)> = Vec::new();
+        let mut prove_sub_deps: Vec<O256> = Vec::new();
+        for (name, _) in dep_ty.imports(self.engine) {
+            match categorize_import(name) {
+                ImportKind::Link(hash) => link_sub_deps.push(hash),
+                ImportKind::Copy(hash) => copy_sub_deps.push((name.to_string(), hash)),
+                ImportKind::Prove(hash) => prove_sub_deps.push(hash),
+                _ => {}
+            }
+        }
+        for sub_hash in &link_sub_deps {
+            self.resolve_import(sub_hash, blobs, store, resolving)?;
+        }
+        for sub_hash in &prove_sub_deps {
+            self.resolve_prove(sub_hash, blobs, store, resolving)?;
+        }
+
+        let mut copy_cache: HashMap<String, Vec<(String, Func)>> = HashMap::new();
+        for (import_name, dep_hash) in &copy_sub_deps {
+            let exports = self.resolve_copy(dep_hash, blobs, store, resolving)?;
+            copy_cache.insert(import_name.clone(), exports);
+        }
+
+        Ok(copy_cache)
+    }
+
+    /// Resolve a `link-{hash}` import: load, compile, and instantiate the
+    /// dep component (recursively resolving its own deps). Caches instances
+    /// by hash (shared across all importers in the same scope) and detects
+    /// cycles.
+    fn resolve_import(
+        &mut self,
+        dep_hash: &O256,
+        blobs: &dyn ContentStore<O256>,
+        store: &mut Store<HostState>,
+        resolving: &mut HashSet<O256>,
+    ) -> Result<(), DecideError> {
+        // Check cache first — shared instance already exists
+        if self.instance_cache.contains_key(dep_hash) {
+            return Ok(());
+        }
+
+        // Cycle detection
+        if !resolving.insert(*dep_hash) {
+            return Err(DecideError::CycleDetected(format!(
+                "cycle detected resolving: {}",
+                dep_hash
+            )));
+        }
+
+        // Load bytes from store
+        let dep_bytes = blobs
+            .get(dep_hash)
+            .ok_or_else(|| DecideError::MissingDep(format!("blob not found: {}", dep_hash)))?;
+
+        let dep_component = Component::new(self.engine, &dep_bytes)
+            .map_err(|e| DecideError::InvalidComponent(format!("dep {}: {e}", dep_hash)))?;
+
+        let dep_ty = dep_component.component_type();
+
+        let copy_cache = self.resolve_sub_deps(&dep_component, blobs, store, resolving)?;
+
+        let dep_linker = build_linker(
+            self.engine,
+            &dep_component,
+            blobs,
+            &self.instance_cache,
+            &self.lazy_proves,
+            &copy_cache,
+        )?;
+
+        // Instantiate the dep
+        let instance = dep_linker
+            .instantiate(&mut *store, &dep_component)
+            .map_err(|e| DecideError::InstantiationError(format!("dep {}: {e}", dep_hash)))?;
+
+        // Collect exported functions
+        let mut exports = Vec::new();
+        for (export_name, _) in dep_ty.exports(self.engine) {
+            if let Some(func) = instance.get_func(&mut *store, export_name) {
+                exports.push((export_name.to_string(), func));
+            }
+        }
+
+        // Remove from resolving set, add to cache
+        resolving.remove(dep_hash);
+        self.instance_cache.insert(*dep_hash, exports);
+
+        Ok(())
+    }
+
+    /// Resolve a `copy-{hash}` import: load, compile, and instantiate a
+    /// fresh (unshared) instance of the dep component. Unlike `resolve_import`,
+    /// this never checks or populates the shared instance cache — each call
+    /// produces a new instance. Sub-link-deps of the copy still use the
+    /// shared `instance_cache`. Cycle detection still applies.
+    fn resolve_copy(
+        &mut self,
+        dep_hash: &O256,
+        blobs: &dyn ContentStore<O256>,
+        store: &mut Store<HostState>,
+        resolving: &mut HashSet<O256>,
+    ) -> Result<Vec<(String, Func)>, DecideError> {
+        // Cycle detection (no cache check — always fresh)
+        if !resolving.insert(*dep_hash) {
+            return Err(DecideError::CycleDetected(format!(
+                "cycle detected resolving copy dep: {}",
+                dep_hash
+            )));
+        }
+
+        let dep_bytes = blobs
+            .get(dep_hash)
+            .ok_or_else(|| DecideError::MissingDep(format!("blob not found: {}", dep_hash)))?;
+
+        let dep_component = Component::new(self.engine, &dep_bytes)
+            .map_err(|e| DecideError::InvalidComponent(format!("copy dep {}: {e}", dep_hash)))?;
+
+        let dep_ty = dep_component.component_type();
+
+        // Sub-link-deps use the shared instance_cache
+        let copy_cache = self.resolve_sub_deps(&dep_component, blobs, store, resolving)?;
+
+        let dep_linker = build_linker(
+            self.engine,
+            &dep_component,
+            blobs,
+            &self.instance_cache,
+            &self.lazy_proves,
+            &copy_cache,
+        )?;
+
+        let instance = dep_linker
+            .instantiate(&mut *store, &dep_component)
+            .map_err(|e| DecideError::InstantiationError(format!("copy dep {}: {e}", dep_hash)))?;
+
+        let mut exports = Vec::new();
+        for (export_name, _) in dep_ty.exports(self.engine) {
+            if let Some(func) = instance.get_func(&mut *store, export_name) {
+                exports.push((export_name.to_string(), func));
+            }
+        }
+
+        resolving.remove(dep_hash);
+        // No cache store — the exports are returned directly to the caller
+        Ok(exports)
+    }
+
+    /// Resolve a `prove-{hash}` import: load, compile, and prepare a lazy
+    /// linker for proof composition. The component is NOT instantiated until
+    /// the first function call through the prove-dep wrapper.
+    ///
+    /// Prove-deps get **isolated** link-instances: their sub-deps are resolved
+    /// into fresh local caches, not the parent's shared cache. This prevents
+    /// the parent from sharing mutable state (e.g. a union-find) with the
+    /// prove-dep — the only way to interact with the prove-dep's internals
+    /// is through its exports.
+    fn resolve_prove(
+        &mut self,
+        dep_hash: &O256,
+        blobs: &dyn ContentStore<O256>,
+        store: &mut Store<HostState>,
+        resolving: &mut HashSet<O256>,
+    ) -> Result<(), DecideError> {
+        // Already resolved
+        if self.lazy_proves.contains_key(dep_hash) {
+            return Ok(());
+        }
+
+        // Cycle detection (shared with link/copy resolution)
+        if !resolving.insert(*dep_hash) {
+            return Err(DecideError::CycleDetected(format!(
+                "cycle detected resolving prove dep: {}",
+                dep_hash
+            )));
+        }
+
+        // Load bytes from store
+        let dep_bytes = blobs
+            .get(dep_hash)
+            .ok_or_else(|| DecideError::MissingDep(format!("blob not found: {}", dep_hash)))?;
+
+        let dep_component = Component::new(self.engine, &dep_bytes)
+            .map_err(|e| DecideError::InvalidComponent(format!("prove dep {}: {e}", dep_hash)))?;
+
+        // Isolated caches for prove-dep sub-deps
+        let mut child = LinkScope::new(self.engine);
+
+        let copy_cache = child.resolve_sub_deps(&dep_component, blobs, store, resolving)?;
+
+        // Build linker using the isolated caches (the linker clones what it
+        // needs, so the local maps can be dropped after this).
+        let dep_linker = build_linker(
+            self.engine,
+            &dep_component,
+            blobs,
+            &child.instance_cache,
+            &child.lazy_proves,
+            &copy_cache,
+        )?;
+
+        let lazy = Arc::new(LazyProve {
+            linker: dep_linker,
+            component: dep_component,
+            instance: Mutex::new(None),
+        });
+
+        resolving.remove(dep_hash);
+        self.lazy_proves.insert(*dep_hash, lazy);
+
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// build_linker — free function (avoids borrow conflicts)
+// ---------------------------------------------------------------------------
+
+/// Build a linker for a component, wiring up attest, blob, link, copy,
+/// and prove imports.
+fn build_linker(
+    engine: &Engine,
+    component: &Component,
+    blobs: &dyn ContentStore<O256>,
+    instance_cache: &HashMap<O256, Vec<(String, Func)>>,
+    lazy_proves: &HashMap<O256, Arc<LazyProve>>,
+    copy_cache: &HashMap<String, Vec<(String, Func)>>,
+) -> Result<Linker<HostState>, DecideError> {
+    let ty = component.component_type();
+    let mut linker: Linker<HostState> = Linker::new(engine);
+
+    // Check if any blob imports exist — if so, register the blob interface.
+    let has_blob_imports = ImportManifest::has_blob_imports(engine, component);
+
+    if has_blob_imports {
+        let blob_ty = ResourceType::host::<BlobHandle>();
+        let mut root = linker.root();
+        let mut api = root
+            .instance("cov:blob/api")
+            .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+        // Register the blob resource type with a destructor.
+        api.resource(
+            "blob",
+            blob_ty,
+            |mut cx: StoreContextMut<'_, HostState>, rep| {
+                cx.data_mut()
+                    .table
+                    .delete(Resource::<BlobHandle>::new_own(rep))?;
+                Ok(())
+            },
+        )
+        .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+        // [method]blob.read: (borrow<blob>) -> list<u8>
+        api.func_wrap(
+            "[method]blob.read",
+            |cx: StoreContextMut<'_, HostState>,
+             (blob,): (Resource<BlobHandle>,)|
+             -> wasmtime::Result<(Vec<u8>,)> {
+                let handle = cx.data().table.get(&blob)?;
+                match &handle.data {
+                    Some(d) => Ok((d.clone(),)),
+                    None => Err(wasmtime::Error::msg("blob data not available")),
+                }
+            },
+        )
+        .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+        // [method]blob.eq: (borrow<blob>, borrow<blob>) -> bool
+        api.func_wrap(
+            "[method]blob.eq",
+            |cx: StoreContextMut<'_, HostState>,
+             (a, b): (Resource<BlobHandle>, Resource<BlobHandle>)|
+             -> wasmtime::Result<(bool,)> {
+                let ha = cx.data().table.get(&a)?.hash;
+                let hb = cx.data().table.get(&b)?.hash;
+                Ok((ha == hb,))
+            },
+        )
+        .map_err(|e| DecideError::LinkError(e.to_string()))?;
+    }
+
+    for (name, _) in ty.imports(engine) {
+        match categorize_import(name) {
+            ImportKind::Attest => {
+                linker
+                    .root()
+                    .func_wrap(name, |mut cx: StoreContextMut<'_, HostState>, _args: ()| {
+                        let state = cx.data_mut();
+                        state.attested = true;
+                        // Prove all hashes currently on the prove stack
+                        let stack: Vec<O256> = state.prove_stack.clone();
+                        for hash in stack {
+                            state.proved.insert(hash);
+                        }
+                        Ok(())
+                    })
+                    .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+            ImportKind::BlobInterface => {
+                // Already registered above.
+            }
+            ImportKind::Blob(hash) => {
+                let data = blobs.get(&hash);
+                linker
+                    .root()
+                    .func_wrap(
+                        name,
+                        move |mut cx: StoreContextMut<'_, HostState>,
+                              _args: ()|
+                              -> wasmtime::Result<(Resource<BlobHandle>,)> {
+                            let handle = BlobHandle {
+                                hash,
+                                data: data.clone(),
+                            };
+                            let resource = cx.data_mut().table.push(handle)?;
+                            Ok((resource,))
+                        },
+                    )
+                    .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+            ImportKind::Link(hash) => {
+                let exports = instance_cache.get(&hash).cloned().unwrap_or_default();
+                wire_instance_exports(&mut linker, name, exports)?;
+            }
+            ImportKind::Copy(_) => {
+                let exports = copy_cache.get(name).cloned().unwrap_or_default();
+                wire_instance_exports(&mut linker, name, exports)?;
+            }
+            ImportKind::Prove(hash) => {
+                let lazy = lazy_proves.get(&hash).cloned().ok_or_else(|| {
+                    DecideError::LinkError(format!("prove dep not resolved: {hash}"))
+                })?;
+
+                let prove_ty = lazy.component.component_type();
+                let mut root = linker.root();
+                let mut li = root
+                    .instance(name)
+                    .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+                for (export_name, _) in prove_ty.exports(engine) {
+                    let lazy = lazy.clone();
+                    let export_name_owned = export_name.to_string();
+                    let prove_hash = hash;
+                    li.func_new(export_name, move |mut cx, _ty, args, results| {
+                        // Push prove hash BEFORE lazy instantiation so the
+                        // dep's start function sees it on the stack.
+                        cx.data_mut().prove_stack.push(prove_hash);
+
+                        // Lazy instantiation
+                        let init_result = {
+                            let mut guard = lazy.instance.lock().unwrap();
+                            if guard.is_none() {
+                                match lazy.linker.instantiate(&mut cx, &lazy.component) {
+                                    Ok(inst) => {
+                                        *guard = Some(inst);
+                                        Ok(())
+                                    }
+                                    Err(e) => Err(e),
+                                }
+                            } else {
+                                Ok(())
+                            }
+                        };
+                        if let Err(e) = init_result {
+                            cx.data_mut().prove_stack.pop();
+                            return Err(e);
+                        }
+
+                        // Get the real function from the instance
+                        let func = {
+                            let guard = lazy.instance.lock().unwrap();
+                            let instance = guard.as_ref().unwrap();
+                            instance
+                                .get_func(&mut cx, &export_name_owned)
+                                .ok_or_else(|| {
+                                    wasmtime::Error::msg(format!(
+                                        "export not found: {}",
+                                        export_name_owned
+                                    ))
+                                })
+                        };
+                        let func = match func {
+                            Ok(f) => f,
+                            Err(e) => {
+                                cx.data_mut().prove_stack.pop();
+                                return Err(e);
+                            }
+                        };
+
+                        // Call, then pop
+                        let call_result = func.call(&mut cx, args, results);
+                        cx.data_mut().prove_stack.pop();
+
+                        call_result
+                    })
+                    .map_err(|e| DecideError::LinkError(e.to_string()))?;
+                }
+            }
+            ImportKind::Unknown(ref unknown) => {
+                return Err(DecideError::LinkError(format!("unknown import: {unknown}")));
+            }
+        }
+    }
+
+    Ok(linker)
+}
+
+// ---------------------------------------------------------------------------
+// WasmEngine — public API
+// ---------------------------------------------------------------------------
+
 /// WASM engine backed by wasmtime.
 pub struct WasmEngine {
     engine: Engine,
@@ -182,96 +742,22 @@ impl WasmEngine {
     ) -> Result<DecideOutput, DecideError> {
         let component = Component::new(&self.engine, bytes)
             .map_err(|e| DecideError::InvalidComponent(e.to_string()))?;
+        let manifest = ImportManifest::classify(&self.engine, &component);
 
-        let ty = component.component_type();
-
-        // Classify all imports and collect dep hashes
-        let mut imports_attest = false;
-        let mut link_deps: Vec<O256> = Vec::new();
-        let mut copy_deps: Vec<(String, O256)> = Vec::new();
-        let mut prove_deps: Vec<O256> = Vec::new();
-        for (name, _) in ty.imports(&self.engine) {
-            match categorize_import(name) {
-                ImportKind::Attest => imports_attest = true,
-                ImportKind::Link(hash) => link_deps.push(hash),
-                ImportKind::Copy(hash) => copy_deps.push((name.to_string(), hash)),
-                ImportKind::Prove(hash) => prove_deps.push(hash),
-                _ => {}
-            }
-        }
-
-        // Pre-check: if attest is not imported AND there are no deps that
-        // could transitively attest, this prop is statically false
-        if !imports_attest && link_deps.is_empty() && copy_deps.is_empty() && prove_deps.is_empty()
-        {
+        if manifest.decision == Decision::Unsat {
             return Ok(DecideOutput {
-                decision: Decision::False,
+                decision: Decision::Unsat,
                 proved: vec![],
             });
         }
 
-        let mut store = Store::new(
-            &self.engine,
-            HostState {
-                attested: false,
-                table: ResourceTable::new(),
-                prove_stack: Vec::new(),
-                proved: HashSet::new(),
-            },
-        );
-        let mut instance_cache: HashMap<O256, Vec<(String, Func)>> = HashMap::new();
-        let mut lazy_proves: HashMap<O256, Arc<LazyProve>> = HashMap::new();
-        let mut resolving: HashSet<O256> = HashSet::new();
-
-        // Resolve prove deps (compile + prepare lazy linker)
-        for dep_hash in &prove_deps {
-            self.resolve_prove(
-                dep_hash,
-                blobs,
-                &mut store,
-                &mut instance_cache,
-                &mut lazy_proves,
-                &mut resolving,
-            )?;
-        }
-
-        // Pre-resolve all link deps (shared instances, instantiated eagerly)
-        for dep_hash in &link_deps {
-            self.resolve_import(
-                dep_hash,
-                blobs,
-                &mut store,
-                &mut instance_cache,
-                &mut lazy_proves,
-                &mut resolving,
-            )?;
-        }
-
-        // Resolve copy deps (fresh instance per import site)
-        let mut copy_cache: HashMap<String, Vec<(String, Func)>> = HashMap::new();
-        for (import_name, dep_hash) in &copy_deps {
-            let exports = self.resolve_copy(
-                dep_hash,
-                blobs,
-                &mut store,
-                &mut instance_cache,
-                &mut lazy_proves,
-                &mut resolving,
-            )?;
-            copy_cache.insert(import_name.clone(), exports);
-        }
-
-        let linker = self.build_linker(
-            &component,
-            blobs,
-            &instance_cache,
-            &lazy_proves,
-            &copy_cache,
-        )?;
+        let mut store = Store::new(&self.engine, HostState::new());
+        let mut scope = LinkScope::new(&self.engine);
+        let linker = scope.link(&component, &manifest, blobs, &mut store)?;
 
         // Instantiate the component — this runs the start function.
         // A trap during instantiation means the start function didn't complete;
-        // if attest was already called before the trap, result is True,
+        // if attest was already called before the trap, result is Sat,
         // otherwise Unknown (we can't determine the result).
         let instantiation = linker.instantiate(&mut store, &component);
 
@@ -280,7 +766,7 @@ impl WasmEngine {
         if instantiation.is_err() {
             return Ok(DecideOutput {
                 decision: if store.data().attested {
-                    Decision::True
+                    Decision::Sat
                 } else {
                     Decision::Unknown
                 },
@@ -288,484 +774,14 @@ impl WasmEngine {
             });
         }
 
-        let decision = if store.data().attested {
-            Decision::True
-        } else if imports_attest {
-            // Imported attest but didn't call it during startup
-            Decision::Unknown
-        } else {
-            // No attest import, deps didn't transitively attest
-            Decision::False
-        };
-
-        Ok(DecideOutput { decision, proved })
-    }
-
-    /// Build a linker for a component, wiring up attest, blob, link, copy,
-    /// and prove imports.
-    fn build_linker(
-        &self,
-        component: &Component,
-        blobs: &dyn ContentStore<O256>,
-        instance_cache: &HashMap<O256, Vec<(String, Func)>>,
-        lazy_proves: &HashMap<O256, Arc<LazyProve>>,
-        copy_cache: &HashMap<String, Vec<(String, Func)>>,
-    ) -> Result<Linker<HostState>, DecideError> {
-        let ty = component.component_type();
-        let mut linker: Linker<HostState> = Linker::new(&self.engine);
-
-        // Check if any blob imports exist — if so, register the blob interface.
-        let has_blob_imports = ty
-            .imports(&self.engine)
-            .any(|(name, _)| matches!(categorize_import(name), ImportKind::Blob(_)));
-
-        if has_blob_imports {
-            let blob_ty = ResourceType::host::<BlobHandle>();
-            let mut root = linker.root();
-            let mut api = root
-                .instance("cov:blob/api")
-                .map_err(|e| DecideError::LinkError(e.to_string()))?;
-
-            // Register the blob resource type with a destructor.
-            api.resource(
-                "blob",
-                blob_ty,
-                |mut cx: StoreContextMut<'_, HostState>, rep| {
-                    cx.data_mut()
-                        .table
-                        .delete(Resource::<BlobHandle>::new_own(rep))?;
-                    Ok(())
-                },
-            )
-            .map_err(|e| DecideError::LinkError(e.to_string()))?;
-
-            // [method]blob.read: (borrow<blob>) -> list<u8>
-            api.func_wrap(
-                "[method]blob.read",
-                |cx: StoreContextMut<'_, HostState>,
-                 (blob,): (Resource<BlobHandle>,)|
-                 -> wasmtime::Result<(Vec<u8>,)> {
-                    let handle = cx.data().table.get(&blob)?;
-                    match &handle.data {
-                        Some(d) => Ok((d.clone(),)),
-                        None => Err(wasmtime::Error::msg("blob data not available")),
-                    }
-                },
-            )
-            .map_err(|e| DecideError::LinkError(e.to_string()))?;
-
-            // [method]blob.eq: (borrow<blob>, borrow<blob>) -> bool
-            api.func_wrap(
-                "[method]blob.eq",
-                |cx: StoreContextMut<'_, HostState>,
-                 (a, b): (Resource<BlobHandle>, Resource<BlobHandle>)|
-                 -> wasmtime::Result<(bool,)> {
-                    let ha = cx.data().table.get(&a)?.hash;
-                    let hb = cx.data().table.get(&b)?.hash;
-                    Ok((ha == hb,))
-                },
-            )
-            .map_err(|e| DecideError::LinkError(e.to_string()))?;
-        }
-
-        for (name, _) in ty.imports(&self.engine) {
-            match categorize_import(name) {
-                ImportKind::Attest => {
-                    linker
-                        .root()
-                        .func_wrap(name, |mut cx: StoreContextMut<'_, HostState>, _args: ()| {
-                            let state = cx.data_mut();
-                            state.attested = true;
-                            // Prove all hashes currently on the prove stack
-                            let stack: Vec<O256> = state.prove_stack.clone();
-                            for hash in stack {
-                                state.proved.insert(hash);
-                            }
-                            Ok(())
-                        })
-                        .map_err(|e| DecideError::LinkError(e.to_string()))?;
-                }
-                ImportKind::BlobInterface => {
-                    // Already registered above.
-                }
-                ImportKind::Blob(hash) => {
-                    let data = blobs.get(&hash);
-                    linker
-                        .root()
-                        .func_wrap(
-                            name,
-                            move |mut cx: StoreContextMut<'_, HostState>,
-                                  _args: ()|
-                                  -> wasmtime::Result<(Resource<BlobHandle>,)> {
-                                let handle = BlobHandle {
-                                    hash,
-                                    data: data.clone(),
-                                };
-                                let resource = cx.data_mut().table.push(handle)?;
-                                Ok((resource,))
-                            },
-                        )
-                        .map_err(|e| DecideError::LinkError(e.to_string()))?;
-                }
-                ImportKind::Link(hash) => {
-                    let exports = instance_cache.get(&hash).cloned().unwrap_or_default();
-                    wire_instance_exports(&mut linker, name, exports)?;
-                }
-                ImportKind::Copy(_) => {
-                    let exports = copy_cache.get(name).cloned().unwrap_or_default();
-                    wire_instance_exports(&mut linker, name, exports)?;
-                }
-                ImportKind::Prove(hash) => {
-                    let lazy = lazy_proves.get(&hash).cloned().ok_or_else(|| {
-                        DecideError::LinkError(format!("prove dep not resolved: {hash}"))
-                    })?;
-
-                    let prove_ty = lazy.component.component_type();
-                    let mut root = linker.root();
-                    let mut li = root
-                        .instance(name)
-                        .map_err(|e| DecideError::LinkError(e.to_string()))?;
-
-                    for (export_name, _) in prove_ty.exports(&self.engine) {
-                        let lazy = lazy.clone();
-                        let export_name_owned = export_name.to_string();
-                        let prove_hash = hash;
-                        li.func_new(export_name, move |mut cx, _ty, args, results| {
-                            // Push prove hash BEFORE lazy instantiation so the
-                            // dep's start function sees it on the stack.
-                            cx.data_mut().prove_stack.push(prove_hash);
-
-                            // Lazy instantiation
-                            let init_result = {
-                                let mut guard = lazy.instance.lock().unwrap();
-                                if guard.is_none() {
-                                    match lazy.linker.instantiate(&mut cx, &lazy.component) {
-                                        Ok(inst) => {
-                                            *guard = Some(inst);
-                                            Ok(())
-                                        }
-                                        Err(e) => Err(e),
-                                    }
-                                } else {
-                                    Ok(())
-                                }
-                            };
-                            if let Err(e) = init_result {
-                                cx.data_mut().prove_stack.pop();
-                                return Err(e);
-                            }
-
-                            // Get the real function from the instance
-                            let func = {
-                                let guard = lazy.instance.lock().unwrap();
-                                let instance = guard.as_ref().unwrap();
-                                instance
-                                    .get_func(&mut cx, &export_name_owned)
-                                    .ok_or_else(|| {
-                                        wasmtime::Error::msg(format!(
-                                            "export not found: {}",
-                                            export_name_owned
-                                        ))
-                                    })
-                            };
-                            let func = match func {
-                                Ok(f) => f,
-                                Err(e) => {
-                                    cx.data_mut().prove_stack.pop();
-                                    return Err(e);
-                                }
-                            };
-
-                            // Call, then pop
-                            let call_result = func.call(&mut cx, args, results);
-                            cx.data_mut().prove_stack.pop();
-
-                            call_result
-                        })
-                        .map_err(|e| DecideError::LinkError(e.to_string()))?;
-                    }
-                }
-                ImportKind::Unknown(ref unknown) => {
-                    return Err(DecideError::LinkError(format!("unknown import: {unknown}")));
-                }
-            }
-        }
-
-        Ok(linker)
-    }
-
-    /// Collect and recursively resolve link/copy/prove sub-deps for a
-    /// compiled component. Returns a copy cache (keyed by import name)
-    /// for any `copy-{hash}` sub-imports.
-    fn resolve_sub_deps(
-        &self,
-        dep_component: &Component,
-        blobs: &dyn ContentStore<O256>,
-        store: &mut Store<HostState>,
-        instance_cache: &mut HashMap<O256, Vec<(String, Func)>>,
-        lazy_proves: &mut HashMap<O256, Arc<LazyProve>>,
-        resolving: &mut HashSet<O256>,
-    ) -> Result<HashMap<String, Vec<(String, Func)>>, DecideError> {
-        let dep_ty = dep_component.component_type();
-
-        let mut link_sub_deps: Vec<O256> = Vec::new();
-        let mut copy_sub_deps: Vec<(String, O256)> = Vec::new();
-        let mut prove_sub_deps: Vec<O256> = Vec::new();
-        for (name, _) in dep_ty.imports(&self.engine) {
-            match categorize_import(name) {
-                ImportKind::Link(hash) => link_sub_deps.push(hash),
-                ImportKind::Copy(hash) => copy_sub_deps.push((name.to_string(), hash)),
-                ImportKind::Prove(hash) => prove_sub_deps.push(hash),
-                _ => {}
-            }
-        }
-        for sub_hash in &link_sub_deps {
-            self.resolve_import(
-                sub_hash,
-                blobs,
-                store,
-                instance_cache,
-                lazy_proves,
-                resolving,
-            )?;
-        }
-        for sub_hash in &prove_sub_deps {
-            self.resolve_prove(
-                sub_hash,
-                blobs,
-                store,
-                instance_cache,
-                lazy_proves,
-                resolving,
-            )?;
-        }
-
-        let mut copy_cache: HashMap<String, Vec<(String, Func)>> = HashMap::new();
-        for (import_name, dep_hash) in &copy_sub_deps {
-            let exports = self.resolve_copy(
-                dep_hash,
-                blobs,
-                store,
-                instance_cache,
-                lazy_proves,
-                resolving,
-            )?;
-            copy_cache.insert(import_name.clone(), exports);
-        }
-
-        Ok(copy_cache)
-    }
-
-    /// Resolve a `link-{hash}` import: load, compile, and instantiate the
-    /// dep component (recursively resolving its own deps). Caches instances
-    /// by hash (shared across all importers in the same scope) and detects
-    /// cycles.
-    fn resolve_import(
-        &self,
-        dep_hash: &O256,
-        blobs: &dyn ContentStore<O256>,
-        store: &mut Store<HostState>,
-        instance_cache: &mut HashMap<O256, Vec<(String, Func)>>,
-        lazy_proves: &mut HashMap<O256, Arc<LazyProve>>,
-        resolving: &mut HashSet<O256>,
-    ) -> Result<(), DecideError> {
-        // Check cache first — shared instance already exists
-        if instance_cache.contains_key(dep_hash) {
-            return Ok(());
-        }
-
-        // Cycle detection
-        if !resolving.insert(*dep_hash) {
-            return Err(DecideError::CycleDetected(format!(
-                "cycle detected resolving: {}",
-                dep_hash
-            )));
-        }
-
-        // Load bytes from store
-        let dep_bytes = blobs
-            .get(dep_hash)
-            .ok_or_else(|| DecideError::MissingDep(format!("blob not found: {}", dep_hash)))?;
-
-        let dep_component = Component::new(&self.engine, &dep_bytes)
-            .map_err(|e| DecideError::InvalidComponent(format!("dep {}: {e}", dep_hash)))?;
-
-        let dep_ty = dep_component.component_type();
-
-        let copy_cache = self.resolve_sub_deps(
-            &dep_component,
-            blobs,
-            store,
-            instance_cache,
-            lazy_proves,
-            resolving,
-        )?;
-
-        let dep_linker = self.build_linker(
-            &dep_component,
-            blobs,
-            instance_cache,
-            lazy_proves,
-            &copy_cache,
-        )?;
-
-        // Instantiate the dep
-        let instance = dep_linker
-            .instantiate(&mut *store, &dep_component)
-            .map_err(|e| DecideError::InstantiationError(format!("dep {}: {e}", dep_hash)))?;
-
-        // Collect exported functions
-        let mut exports = Vec::new();
-        for (export_name, _) in dep_ty.exports(&self.engine) {
-            if let Some(func) = instance.get_func(&mut *store, export_name) {
-                exports.push((export_name.to_string(), func));
-            }
-        }
-
-        // Remove from resolving set, add to cache
-        resolving.remove(dep_hash);
-        instance_cache.insert(*dep_hash, exports);
-
-        Ok(())
-    }
-
-    /// Resolve a `copy-{hash}` import: load, compile, and instantiate a
-    /// fresh (unshared) instance of the dep component. Unlike `resolve_import`,
-    /// this never checks or populates the shared instance cache — each call
-    /// produces a new instance. Sub-link-deps of the copy still use the
-    /// shared `instance_cache`. Cycle detection still applies.
-    fn resolve_copy(
-        &self,
-        dep_hash: &O256,
-        blobs: &dyn ContentStore<O256>,
-        store: &mut Store<HostState>,
-        instance_cache: &mut HashMap<O256, Vec<(String, Func)>>,
-        lazy_proves: &mut HashMap<O256, Arc<LazyProve>>,
-        resolving: &mut HashSet<O256>,
-    ) -> Result<Vec<(String, Func)>, DecideError> {
-        // Cycle detection (no cache check — always fresh)
-        if !resolving.insert(*dep_hash) {
-            return Err(DecideError::CycleDetected(format!(
-                "cycle detected resolving copy dep: {}",
-                dep_hash
-            )));
-        }
-
-        let dep_bytes = blobs
-            .get(dep_hash)
-            .ok_or_else(|| DecideError::MissingDep(format!("blob not found: {}", dep_hash)))?;
-
-        let dep_component = Component::new(&self.engine, &dep_bytes)
-            .map_err(|e| DecideError::InvalidComponent(format!("copy dep {}: {e}", dep_hash)))?;
-
-        let dep_ty = dep_component.component_type();
-
-        // Sub-link-deps use the shared instance_cache
-        let copy_cache = self.resolve_sub_deps(
-            &dep_component,
-            blobs,
-            store,
-            instance_cache,
-            lazy_proves,
-            resolving,
-        )?;
-
-        let dep_linker = self.build_linker(
-            &dep_component,
-            blobs,
-            instance_cache,
-            lazy_proves,
-            &copy_cache,
-        )?;
-
-        let instance = dep_linker
-            .instantiate(&mut *store, &dep_component)
-            .map_err(|e| DecideError::InstantiationError(format!("copy dep {}: {e}", dep_hash)))?;
-
-        let mut exports = Vec::new();
-        for (export_name, _) in dep_ty.exports(&self.engine) {
-            if let Some(func) = instance.get_func(&mut *store, export_name) {
-                exports.push((export_name.to_string(), func));
-            }
-        }
-
-        resolving.remove(dep_hash);
-        // No cache store — the exports are returned directly to the caller
-        Ok(exports)
-    }
-
-    /// Resolve a `prove-{hash}` import: load, compile, and prepare a lazy
-    /// linker for proof composition. The component is NOT instantiated until
-    /// the first function call through the prove-dep wrapper.
-    ///
-    /// Prove-deps get **isolated** link-instances: their sub-deps are resolved
-    /// into fresh local caches, not the parent's shared cache. This prevents
-    /// the parent from sharing mutable state (e.g. a union-find) with the
-    /// prove-dep — the only way to interact with the prove-dep's internals
-    /// is through its exports.
-    fn resolve_prove(
-        &self,
-        dep_hash: &O256,
-        blobs: &dyn ContentStore<O256>,
-        store: &mut Store<HostState>,
-        _instance_cache: &mut HashMap<O256, Vec<(String, Func)>>,
-        lazy_proves: &mut HashMap<O256, Arc<LazyProve>>,
-        resolving: &mut HashSet<O256>,
-    ) -> Result<(), DecideError> {
-        // Already resolved
-        if lazy_proves.contains_key(dep_hash) {
-            return Ok(());
-        }
-
-        // Cycle detection (shared with link/copy resolution)
-        if !resolving.insert(*dep_hash) {
-            return Err(DecideError::CycleDetected(format!(
-                "cycle detected resolving prove dep: {}",
-                dep_hash
-            )));
-        }
-
-        // Load bytes from store
-        let dep_bytes = blobs
-            .get(dep_hash)
-            .ok_or_else(|| DecideError::MissingDep(format!("blob not found: {}", dep_hash)))?;
-
-        let dep_component = Component::new(&self.engine, &dep_bytes)
-            .map_err(|e| DecideError::InvalidComponent(format!("prove dep {}: {e}", dep_hash)))?;
-
-        // Isolated caches for prove-dep sub-deps
-        let mut local_instances: HashMap<O256, Vec<(String, Func)>> = HashMap::new();
-        let mut local_proves: HashMap<O256, Arc<LazyProve>> = HashMap::new();
-
-        let copy_cache = self.resolve_sub_deps(
-            &dep_component,
-            blobs,
-            store,
-            &mut local_instances,
-            &mut local_proves,
-            resolving,
-        )?;
-
-        // Build linker using the isolated caches (the linker clones what it
-        // needs, so the local maps can be dropped after this).
-        let dep_linker = self.build_linker(
-            &dep_component,
-            blobs,
-            &local_instances,
-            &local_proves,
-            &copy_cache,
-        )?;
-
-        let lazy = Arc::new(LazyProve {
-            linker: dep_linker,
-            component: dep_component,
-            instance: Mutex::new(None),
-        });
-
-        resolving.remove(dep_hash);
-        lazy_proves.insert(*dep_hash, lazy);
-
-        Ok(())
+        Ok(DecideOutput {
+            decision: if store.data().attested {
+                Decision::Sat
+            } else {
+                manifest.decision
+            },
+            proved,
+        })
     }
 }
 

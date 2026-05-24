@@ -1,7 +1,17 @@
-use covalence_hash::DirMode;
+use std::collections::BTreeMap;
+
 use covalence_hash::O256;
 
-use crate::table::{FieldSpec, RowSchema, TableError, min_bytes, read_le, write_le};
+use crate::table::{FieldSpec, RowCodec, RowSchema, TableError, min_bytes, read_le, write_le};
+
+/// The mode of a directory entry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+#[repr(u8)]
+pub enum DirMode {
+    Blob = 0,
+    Dir = 1,
+}
 
 /// Well-known ref hash for a directory mode variant.
 fn mode_ref(mode: DirMode) -> O256 {
@@ -18,20 +28,126 @@ fn mode_from_ref(hash: &O256) -> Result<DirMode, TableError> {
     Err(TableError::UnknownDirMode)
 }
 
-/// Owned directory row for building.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DirRow {
-    pub name: Vec<u8>,
+/// A directory row, generic over the name type.
+///
+/// - `DirRow<Vec<u8>>` — owned, used for building tables.
+/// - `DirRow<&[u8]>` — borrowed, returned by the parser.
+/// - `DirRow<&str>` — convenient for building directories by name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DirRow<N> {
+    pub name: N,
     pub mode: DirMode,
     pub child: O256,
 }
 
-/// Borrowed directory row returned by the parser.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DirRowRef<'a> {
-    pub name: &'a [u8],
-    pub mode: DirMode,
-    pub child: O256,
+/// Hash a sorted, unique directory listing into an [`O256`].
+pub trait HashDir {
+    fn hash_dir<N: AsRef<[u8]>>(&self, rows: &[DirRow<N>]) -> O256;
+}
+
+/// BLAKE3 keyed-hash implementation: domain-separated from blob hashes.
+///
+/// Each entry is serialized as `{mode_u8}{name}\0{hash_32bytes}`.
+/// The concatenated entries are hashed with BLAKE3 keyed mode using
+/// `key = O256::blob("tree")`, ensuring disjointness from plain BLAKE3 hashes.
+impl HashDir for () {
+    fn hash_dir<N: AsRef<[u8]>>(&self, rows: &[DirRow<N>]) -> O256 {
+        debug_assert!(
+            rows.windows(2)
+                .all(|w| w[0].name.as_ref() < w[1].name.as_ref()),
+            "entries must be sorted and unique by name",
+        );
+
+        let key = O256::blob("tree");
+        let mut hasher = covalence_hash::blake3::Hasher::new_keyed(key.as_bytes());
+        for row in rows {
+            hasher.update(&[row.mode as u8]);
+            hasher.update(row.name.as_ref());
+            hasher.update(&[0]);
+            hasher.update(row.child.as_bytes());
+        }
+        O256::from_bytes(*hasher.finalize().as_bytes())
+    }
+}
+
+/// Hash a sorted, unique directory listing using BLAKE3 keyed mode.
+pub fn dir_hash<N: AsRef<[u8]>>(rows: &[DirRow<N>]) -> O256 {
+    ().hash_dir(rows)
+}
+
+/// Collects directory entries, sorts by name, and deduplicates (last-wins).
+///
+/// Callers never need to worry about ordering or duplicate names:
+///
+/// ```
+/// use covalence_object::{DirBuilder, DirMode, DirRow};
+/// use covalence_hash::O256;
+///
+/// let mut b = DirBuilder::new();
+/// b.entry("z.txt", DirMode::Blob, O256::blob("z"))
+///  .entry("a.txt", DirMode::Blob, O256::blob("a"));
+///
+/// let entries = b.build();
+/// assert_eq!(entries[0].name, "a.txt");
+/// assert_eq!(entries[1].name, "z.txt");
+/// ```
+pub struct DirBuilder<'a> {
+    entries: BTreeMap<&'a str, (DirMode, O256)>,
+}
+
+impl<'a> DirBuilder<'a> {
+    /// Create an empty builder.
+    pub fn new() -> Self {
+        Self {
+            entries: BTreeMap::new(),
+        }
+    }
+
+    /// Add or replace an entry. If `name` already exists, the new value wins.
+    pub fn entry(&mut self, name: &'a str, mode: DirMode, child: O256) -> &mut Self {
+        self.entries.insert(name, (mode, child));
+        self
+    }
+
+    /// Build a sorted, deduplicated `Vec<DirRow<&str>>`.
+    pub fn build(&self) -> Vec<DirRow<&'a str>> {
+        self.iter().collect()
+    }
+
+    /// Iterate over entries in sorted order.
+    pub fn iter(&self) -> impl Iterator<Item = DirRow<&'a str>> + '_ {
+        self.entries
+            .iter()
+            .map(|(&name, &(mode, child))| DirRow { name, mode, child })
+    }
+
+    /// Returns `true` if the builder contains no entries.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Returns the number of unique entries.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Hash the directory with the default BLAKE3 keyed-hash.
+    pub fn hash(&self) -> O256 {
+        let entries = self.build();
+        ().hash_dir(&entries)
+    }
+
+    /// Hash the directory with a custom [`HashDir`] implementation.
+    pub fn hash_with(&self, ctx: &impl HashDir) -> O256 {
+        let entries = self.build();
+        ctx.hash_dir(&entries)
+    }
+}
+
+impl Default for DirBuilder<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Directory table schema: `(name: Blob, mode: Ref, child: Dep)`.
@@ -41,26 +157,26 @@ pub struct DirRowRef<'a> {
 /// - `collect()` auto-pushes both when rows are added.
 pub struct Dir;
 
-impl RowSchema for Dir {
-    type Row = DirRow;
-    type RowRef<'a> = DirRowRef<'a>;
+impl RowCodec for Dir {
+    type Row = DirRow<Vec<u8>>;
+    type RowRef<'a> = DirRow<&'a [u8]>;
 
-    fn collect(&self, row: &DirRow, refs: &mut Vec<O256>, deps: &mut Vec<O256>) {
+    fn collect(&self, row: &DirRow<Vec<u8>>, refs: &mut Vec<O256>, deps: &mut Vec<O256>) {
         refs.push(mode_ref(row.mode));
         deps.push(row.child);
     }
 
-    fn field_specs(&self, num_refs: usize, num_deps: usize) -> Vec<FieldSpec> {
-        vec![
+    fn row_schema(&self, num_refs: usize, num_deps: usize) -> RowSchema {
+        RowSchema::new(vec![
             FieldSpec::blob(),
             FieldSpec::ref_index(min_bytes(num_refs)),
             FieldSpec::dep_index(min_bytes(num_deps)),
-        ]
+        ])
     }
 
     fn encode(
         &self,
-        row: &DirRow,
+        row: &DirRow<Vec<u8>>,
         sorted_refs: &[O256],
         sorted_deps: &[O256],
         ref_w: u8,
@@ -86,7 +202,7 @@ impl RowSchema for Dir {
         fields: Vec<&'a [u8]>,
         refs: &[O256],
         deps: &[O256],
-    ) -> Result<DirRowRef<'a>, TableError> {
+    ) -> Result<DirRow<&'a [u8]>, TableError> {
         if fields.len() != 3 {
             return Err(TableError::SchemaMismatch {
                 expected: 3,
@@ -101,14 +217,245 @@ impl RowSchema for Dir {
         let mode = mode_from_ref(&refs[ref_idx])?;
         let child = deps[dep_idx];
 
-        Ok(DirRowRef { name, mode, child })
+        Ok(DirRow { name, mode, child })
     }
+}
+
+// ---------------------------------------------------------------------------
+// Git tree serialization (behind `git` feature)
+// ---------------------------------------------------------------------------
+
+/// Serialize directory rows in git tree format.
+///
+/// Each entry is `"{mode} {name}\0{hash_bytes}"` where mode is the octal
+/// string (`"100644"` for blobs, `"40000"` for directories) and `hash_bytes`
+/// is the raw hash truncated to `hash_len` bytes.
+///
+/// Rows must be sorted and unique by name (debug-asserted).
+#[cfg(feature = "git")]
+pub fn git_tree_bytes<N: AsRef<[u8]>>(rows: &[DirRow<N>], hash_len: usize) -> Vec<u8> {
+    debug_assert!(
+        rows.windows(2)
+            .all(|w| w[0].name.as_ref() < w[1].name.as_ref()),
+        "rows must be sorted and unique by name",
+    );
+
+    let mut buf = Vec::new();
+    for row in rows {
+        let mode_str = match row.mode {
+            DirMode::Blob => "100644",
+            DirMode::Dir => "40000",
+        };
+        buf.extend_from_slice(mode_str.as_bytes());
+        buf.push(b' ');
+        buf.extend_from_slice(row.name.as_ref());
+        buf.push(0);
+        buf.extend_from_slice(&row.child.as_bytes()[..hash_len]);
+    }
+    buf
+}
+
+/// Hash directory rows as a git tree using SHA-1.
+///
+/// Returns an `O256` with the 20-byte SHA-1 in the first 20 bytes and zeros
+/// in the remaining 12.
+#[cfg(feature = "git")]
+pub fn git_tree_sha1<N: AsRef<[u8]>>(rows: &[DirRow<N>]) -> O256 {
+    let buf = git_tree_bytes(rows, 20);
+    let oid = covalence_hash::git::tree_sha1(&buf);
+    let mut out = [0u8; 32];
+    out[..oid.as_bytes().len()].copy_from_slice(oid.as_bytes());
+    O256::from_bytes(out)
+}
+
+/// Hash directory rows as a git tree using SHA-256.
+#[cfg(feature = "git")]
+pub fn git_tree_sha256<N: AsRef<[u8]>>(rows: &[DirRow<N>]) -> O256 {
+    let buf = git_tree_bytes(rows, 32);
+    let oid = covalence_hash::git::tree_sha256(&buf);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(oid.as_bytes());
+    O256::from_bytes(out)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::table::{TableBuilder, TableParser};
+
+    // --- HashDir / DirBuilder tests (moved from covalence-hash::dir) ---
+
+    fn sample_rows() -> [DirRow<&'static str>; 2] {
+        [
+            DirRow {
+                name: "bar.txt",
+                mode: DirMode::Blob,
+                child: O256::blob("bar content"),
+            },
+            DirRow {
+                name: "foo.txt",
+                mode: DirMode::Blob,
+                child: O256::blob("foo content"),
+            },
+        ]
+    }
+
+    #[test]
+    fn empty_dir_hash() {
+        let h: O256 = ().hash_dir::<&str>(&[]);
+        // Empty dir should produce a valid non-zero hash.
+        assert_ne!(h, O256::default());
+    }
+
+    #[test]
+    fn determinism() {
+        let rows = sample_rows();
+        let h1 = ().hash_dir(&rows);
+        let h2 = ().hash_dir(&rows);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn domain_separation_dir_vs_blob() {
+        let rows = sample_rows();
+        let dh = ().hash_dir(&rows);
+
+        // Manually serialize the same way the impl does.
+        let mut raw = Vec::new();
+        for row in &rows {
+            raw.push(row.mode as u8);
+            raw.extend_from_slice(row.name.as_bytes());
+            raw.push(0);
+            raw.extend_from_slice(row.child.as_bytes());
+        }
+        let blob_hash = O256::blob(&raw);
+        assert_ne!(dh, blob_hash);
+    }
+
+    #[test]
+    fn mode_matters() {
+        let blob_row = [DirRow {
+            name: "x",
+            mode: DirMode::Blob,
+            child: O256::blob("data"),
+        }];
+        let dir_row = [DirRow {
+            name: "x",
+            mode: DirMode::Dir,
+            child: O256::blob("data"),
+        }];
+        assert_ne!(().hash_dir(&blob_row), ().hash_dir(&dir_row));
+    }
+
+    #[test]
+    fn sort_order() {
+        let mut rows = [
+            DirRow {
+                name: "z",
+                mode: DirMode::Blob,
+                child: O256::blob("z"),
+            },
+            DirRow {
+                name: "a",
+                mode: DirMode::Blob,
+                child: O256::blob("a"),
+            },
+        ];
+        rows.sort();
+        assert_eq!(rows[0].name, "a");
+        assert_eq!(rows[1].name, "z");
+    }
+
+    #[test]
+    #[should_panic(expected = "sorted and unique")]
+    #[cfg(debug_assertions)]
+    fn panics_on_unsorted() {
+        let rows = [
+            DirRow {
+                name: "z",
+                mode: DirMode::Blob,
+                child: O256::blob("z"),
+            },
+            DirRow {
+                name: "a",
+                mode: DirMode::Blob,
+                child: O256::blob("a"),
+            },
+        ];
+        ().hash_dir(&rows);
+    }
+
+    #[test]
+    #[should_panic(expected = "sorted and unique")]
+    #[cfg(debug_assertions)]
+    fn panics_on_duplicate_name() {
+        let rows = [
+            DirRow {
+                name: "x",
+                mode: DirMode::Blob,
+                child: O256::blob("a"),
+            },
+            DirRow {
+                name: "x",
+                mode: DirMode::Dir,
+                child: O256::blob("b"),
+            },
+        ];
+        ().hash_dir(&rows);
+    }
+
+    #[test]
+    fn dir_hash_convenience() {
+        let rows = sample_rows();
+        assert_eq!(dir_hash(&rows), ().hash_dir(&rows));
+    }
+
+    #[test]
+    fn builder_sorts() {
+        let mut b = DirBuilder::new();
+        b.entry("z", DirMode::Blob, O256::blob("z"))
+            .entry("a", DirMode::Blob, O256::blob("a"))
+            .entry("m", DirMode::Blob, O256::blob("m"));
+        let entries = b.build();
+        assert_eq!(entries[0].name, "a");
+        assert_eq!(entries[1].name, "m");
+        assert_eq!(entries[2].name, "z");
+    }
+
+    #[test]
+    fn builder_dedup_last_wins() {
+        let mut b = DirBuilder::new();
+        b.entry("x", DirMode::Blob, O256::blob("first")).entry(
+            "x",
+            DirMode::Dir,
+            O256::blob("second"),
+        );
+        assert_eq!(b.len(), 1);
+        let entries = b.build();
+        assert_eq!(entries[0].mode, DirMode::Dir);
+        assert_eq!(entries[0].child, O256::blob("second"));
+    }
+
+    #[test]
+    fn builder_empty() {
+        let b = DirBuilder::new();
+        assert!(b.is_empty());
+        assert_eq!(b.len(), 0);
+        assert_eq!(b.build(), vec![]);
+        // Empty builder hash matches empty raw hash.
+        assert_eq!(b.hash(), ().hash_dir::<&str>(&[]));
+    }
+
+    #[test]
+    fn builder_hash_matches_raw() {
+        let mut b = DirBuilder::new();
+        b.entry("bar.txt", DirMode::Blob, O256::blob("bar content"))
+            .entry("foo.txt", DirMode::Blob, O256::blob("foo content"));
+        let rows = sample_rows();
+        assert_eq!(b.hash(), ().hash_dir(&rows));
+    }
+
+    // --- Table codec tests ---
 
     #[test]
     fn dir_roundtrip() {
@@ -211,12 +558,97 @@ mod tests {
     }
 
     #[test]
-    fn empty_dir() {
+    fn empty_dir_table() {
         let builder = TableBuilder::new(Dir);
         let blob = builder.build();
         let parser = TableParser::new(&blob, Dir).unwrap();
         assert_eq!(parser.num_entries(), 0);
         assert_eq!(parser.num_refs(), 0);
         assert_eq!(parser.num_deps(), 0);
+    }
+
+    // --- Git tree tests ---
+
+    #[cfg(feature = "git")]
+    mod git_tests {
+        use super::*;
+
+        #[test]
+        fn git_sha1_manual_format() {
+            let hash = O256::blob("content");
+            let rows = [DirRow {
+                name: b"file.txt".as_slice(),
+                mode: DirMode::Blob,
+                child: hash,
+            }];
+
+            let mut expected_buf = Vec::new();
+            expected_buf.extend_from_slice(b"100644 file.txt\0");
+            expected_buf.extend_from_slice(&hash.as_bytes()[..20]);
+
+            let oid = covalence_hash::git::tree_sha1(&expected_buf);
+            let mut expected = [0u8; 32];
+            expected[..oid.as_bytes().len()].copy_from_slice(oid.as_bytes());
+
+            assert_eq!(git_tree_sha1(&rows), O256::from_bytes(expected));
+        }
+
+        #[test]
+        fn git_sha256_manual_format() {
+            let hash = O256::blob("content");
+            let rows = [DirRow {
+                name: b"file.txt".as_slice(),
+                mode: DirMode::Blob,
+                child: hash,
+            }];
+
+            let mut expected_buf = Vec::new();
+            expected_buf.extend_from_slice(b"100644 file.txt\0");
+            expected_buf.extend_from_slice(hash.as_bytes());
+
+            let oid = covalence_hash::git::tree_sha256(&expected_buf);
+            let mut expected = [0u8; 32];
+            expected.copy_from_slice(oid.as_bytes());
+
+            assert_eq!(git_tree_sha256(&rows), O256::from_bytes(expected));
+        }
+
+        #[test]
+        fn git_dir_mode_format() {
+            let hash = O256::blob("sub");
+            let rows = [DirRow {
+                name: b"subdir".as_slice(),
+                mode: DirMode::Dir,
+                child: hash,
+            }];
+
+            let mut expected_buf = Vec::new();
+            expected_buf.extend_from_slice(b"40000 subdir\0");
+            expected_buf.extend_from_slice(&hash.as_bytes()[..20]);
+
+            let oid = covalence_hash::git::tree_sha1(&expected_buf);
+            let mut expected = [0u8; 32];
+            expected[..oid.as_bytes().len()].copy_from_slice(oid.as_bytes());
+
+            assert_eq!(git_tree_sha1(&rows), O256::from_bytes(expected));
+        }
+
+        #[test]
+        fn git_tree_owned_names() {
+            let hash = O256::blob("data");
+            // Works with owned Vec<u8> names too.
+            let rows = [DirRow {
+                name: b"owned.txt".to_vec(),
+                mode: DirMode::Blob,
+                child: hash,
+            }];
+            let borrowed_rows = [DirRow {
+                name: b"owned.txt".as_slice(),
+                mode: DirMode::Blob,
+                child: hash,
+            }];
+            assert_eq!(git_tree_sha1(&rows), git_tree_sha1(&borrowed_rows));
+            assert_eq!(git_tree_sha256(&rows), git_tree_sha256(&borrowed_rows));
+        }
     }
 }

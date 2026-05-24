@@ -523,6 +523,7 @@ name = "covalence-python"
 version = "0.0.0"
 dependencies = [
  "axum",
+ "covalence-git",
  "covalence-hash",
  "covalence-kernel",
  "covalence-repl",

@@ -21,6 +21,7 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<session::Session>()?;
     m.add_class::<component::Component>()?;
     m.add_class::<store::Store>()?;
+    m.add_class::<git::GitStore>()?;
     m.add_class::<server::Server>()?;
 
     // Hasher constructors

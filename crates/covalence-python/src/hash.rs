@@ -5,7 +5,7 @@ use pyo3::types::PyBytes;
 use covalence_hash::{Blake3Ctx, HashCtx, Sha256};
 
 /// 256-bit hash value. Also acts as a BLAKE3 keyed-hash key.
-#[pyclass(from_py_object)]
+#[pyclass(frozen, from_py_object)]
 #[derive(Clone)]
 pub struct O256(pub covalence_hash::O256);
 

@@ -9,6 +9,7 @@ use covalence_store::BlobStore;
 
 use crate::component::{HashOrComponent, extract_bytes, parse_hash_or_component};
 use crate::hash::O256;
+use crate::store::Store;
 use crate::worker::{KernelTask, kernel_call, spawn_kernel_worker};
 
 pub fn parse_hash(obj: &Bound<'_, PyAny>) -> PyResult<covalence_hash::O256> {
@@ -126,9 +127,15 @@ impl Backend {
 }
 
 /// Create an in-memory backend (no networking).
+/// Optionally accepts a Store to use as the backing store.
 #[pyfunction]
-pub fn local() -> PyResult<Backend> {
-    let kernel = Kernel::new().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+#[pyo3(signature = (store=None))]
+pub fn local(store: Option<&Store>) -> PyResult<Backend> {
+    let kernel = match store {
+        Some(s) => Kernel::with_store(s.blob_store()),
+        None => Kernel::new(),
+    }
+    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     let tx = spawn_kernel_worker(kernel);
     Ok(Backend { tx })
 }

@@ -10,5 +10,5 @@ git = ["dep:gix-hash"]
 [dependencies]
 blake3 = "1"
 gix-hash = { version = "0.25", features = ["sha1", "sha256"], optional = true }
-rand = "0.9"
+covalence-rand = { path = "../covalence-rand" }
 sha2 = "0.10"

@@ -1,6 +1,8 @@
 use std::fmt;
 use std::hash;
 
+use covalence_rand::RngExt;
+
 /// A hashing context that tags data to produce [`O256`] values.
 ///
 /// Each implementor defines an independent hash function. BLAKE3's three
@@ -196,7 +198,7 @@ impl O256 {
     }
 
     /// Create an O256 from a random 256-bit value.
-    pub fn random(rng: &mut impl rand::Rng) -> Self {
+    pub fn random(rng: &mut impl covalence_rand::Rng) -> Self {
         Self(rng.random())
     }
 

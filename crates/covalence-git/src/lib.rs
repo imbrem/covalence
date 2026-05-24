@@ -4,11 +4,19 @@ use std::path::Path;
 pub use covalence_hash;
 pub use covalence_hash::gix_hash;
 
-#[cfg(feature = "object-store")]
+#[cfg(any(feature = "object-store", feature = "lfs"))]
 pub use covalence_store;
 
 #[cfg(feature = "object-store")]
 pub mod store;
+
+#[cfg(feature = "odb")]
+pub use gix_object;
+#[cfg(feature = "odb")]
+pub use gix_odb;
+
+#[cfg(feature = "lfs")]
+pub mod lfs;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 

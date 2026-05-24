@@ -534,6 +534,7 @@ dependencies = [
  "covalence-git",
  "covalence-hash",
  "covalence-kernel",
+ "covalence-object",
  "covalence-repl",
  "covalence-serve",
  "covalence-store",

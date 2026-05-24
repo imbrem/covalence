@@ -1,4 +1,9 @@
 mod varint;
 
+mod dir;
 mod table;
-pub use table::{FieldSpec, FieldType, TableBuilder, TableError, TableParser, min_bytes};
+
+pub use dir::{Dir, DirRow, DirRowRef};
+pub use table::{
+    DynSchema, FieldSpec, FieldType, RowSchema, TableBuilder, TableError, TableParser, min_bytes,
+};

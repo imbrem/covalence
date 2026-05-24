@@ -506,6 +506,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-object"
+version = "0.0.0"
+dependencies = [
+ "covalence-hash",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "covalence-proto"
 version = "0.0.0"
 dependencies = [

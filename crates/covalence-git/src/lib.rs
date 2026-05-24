@@ -2,6 +2,13 @@ use std::io;
 use std::path::Path;
 
 pub use covalence_hash;
+pub use covalence_hash::gix_hash;
+
+#[cfg(feature = "object-store")]
+pub use covalence_store;
+
+#[cfg(feature = "object-store")]
+pub mod store;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 

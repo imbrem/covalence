@@ -1,11 +1,16 @@
-use pyo3::exceptions::PyRuntimeError;
+use std::path::PathBuf;
+
+use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
+
+use covalence_hash::gix_hash;
+use covalence_store::ContentStore;
 
 use crate::hash::O256;
 
 /// Git object hash (SHA-1 or SHA-256).
-#[pyclass(from_py_object)]
+#[pyclass(frozen, from_py_object)]
 #[derive(Clone)]
 pub struct GitObject {
     hex: String,
@@ -28,7 +33,7 @@ impl GitObject {
     /// Convert to O256 (SHA-256 only, raises on SHA-1).
     fn to_o256(&self) -> PyResult<O256> {
         if self.kind != "sha256" {
-            return Err(pyo3::exceptions::PyValueError::new_err(
+            return Err(PyValueError::new_err(
                 "cannot convert SHA-1 git object to O256 (20 bytes, not 32)",
             ));
         }
@@ -62,10 +67,10 @@ impl GitObject {
     }
 }
 
-fn oid_to_git_object(oid: covalence_hash::gix_hash::ObjectId) -> GitObject {
+pub(crate) fn oid_to_git_object(oid: gix_hash::ObjectId) -> GitObject {
     let kind = match oid.kind() {
-        covalence_hash::gix_hash::Kind::Sha1 => "sha1",
-        covalence_hash::gix_hash::Kind::Sha256 => "sha256",
+        gix_hash::Kind::Sha1 => "sha1",
+        gix_hash::Kind::Sha256 => "sha256",
         _ => "unknown",
     };
     GitObject {
@@ -75,18 +80,147 @@ fn oid_to_git_object(oid: covalence_hash::gix_hash::ObjectId) -> GitObject {
     }
 }
 
+/// Parse a Python object as a git ObjectId.
+/// Accepts GitObject or hex string (40 for SHA-1, 64 for SHA-256).
+fn parse_git_hash(obj: &Bound<'_, PyAny>) -> PyResult<gix_hash::ObjectId> {
+    if let Ok(g) = obj.extract::<PyRef<GitObject>>() {
+        return gix_hash::ObjectId::try_from(&g.raw[..])
+            .map_err(|e| PyValueError::new_err(e.to_string()));
+    }
+    if let Ok(hex) = obj.extract::<String>() {
+        return gix_hash::ObjectId::from_hex(hex.as_bytes())
+            .map_err(|e| PyValueError::new_err(e.to_string()));
+    }
+    Err(PyTypeError::new_err("expected GitObject or hex string"))
+}
+
+/// Parse an algo name into a gix_hash::Kind.
+fn parse_algo(algo: &str) -> PyResult<gix_hash::Kind> {
+    match algo {
+        "sha1" => Ok(gix_hash::Kind::Sha1),
+        "sha256" => Ok(gix_hash::Kind::Sha256),
+        _ => Err(PyValueError::new_err(format!(
+            "unknown algo {algo:?}, expected \"sha1\" or \"sha256\""
+        ))),
+    }
+}
+
+fn kind_to_str(kind: gix_hash::Kind) -> &'static str {
+    match kind {
+        gix_hash::Kind::Sha1 => "sha1",
+        gix_hash::Kind::Sha256 => "sha256",
+        _ => "unknown",
+    }
+}
+
+// ---------------------------------------------------------------------------
+// GitStore — content-addressed git loose object store
+// ---------------------------------------------------------------------------
+
+use covalence_git::store::{GitObjectStore, LooseBackend};
+
+/// Content-addressed git object store (loose objects).
+#[pyclass]
+pub struct GitStore {
+    inner: GitObjectStore<LooseBackend>,
+    path: PathBuf,
+    algo: &'static str,
+}
+
+#[pymethods]
+impl GitStore {
+    /// Create a GitStore backed by a loose object directory.
+    #[new]
+    #[pyo3(signature = (path, algo="sha1"))]
+    fn new(path: &str, algo: &str) -> PyResult<Self> {
+        let kind = parse_algo(algo)?;
+        let path_buf = PathBuf::from(path);
+        let backend = LooseBackend::new(&path_buf, kind);
+        Ok(Self {
+            inner: GitObjectStore::new(backend),
+            path: path_buf,
+            algo: kind_to_str(kind),
+        })
+    }
+
+    /// Create a GitStore from a repository root (uses .git/objects).
+    #[staticmethod]
+    #[pyo3(signature = (path, algo="sha1"))]
+    fn from_repo(path: &str, algo: &str) -> PyResult<Self> {
+        let kind = parse_algo(algo)?;
+        let repo_path = PathBuf::from(path);
+        let objects_path = repo_path.join(".git").join("objects");
+        let backend = LooseBackend::from_repo(&repo_path, kind);
+        Ok(Self {
+            inner: GitObjectStore::new(backend),
+            path: objects_path,
+            algo: kind_to_str(kind),
+        })
+    }
+
+    /// Hash and store data as a blob, returning its GitObject key.
+    fn insert(&self, data: &[u8]) -> PyResult<GitObject> {
+        self.inner
+            .insert(data)
+            .map(oid_to_git_object)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Retrieve data by key. Returns bytes or None.
+    fn get<'py>(
+        &self,
+        py: Python<'py>,
+        key: &Bound<'py, PyAny>,
+    ) -> PyResult<Option<Bound<'py, PyBytes>>> {
+        let oid = parse_git_hash(key)?;
+        Ok(self.inner.get(&oid).map(|data| PyBytes::new(py, &data)))
+    }
+
+    /// Store data under the given key.
+    fn put(&self, key: &Bound<'_, PyAny>, data: &[u8]) -> PyResult<()> {
+        let oid = parse_git_hash(key)?;
+        self.inner
+            .put(oid, data)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Check whether a key exists in the store.
+    fn contains(&self, key: &Bound<'_, PyAny>) -> PyResult<bool> {
+        let oid = parse_git_hash(key)?;
+        Ok(self.inner.contains(&oid))
+    }
+
+    fn __contains__(&self, key: &Bound<'_, PyAny>) -> PyResult<bool> {
+        self.contains(key)
+    }
+
+    /// The hash algorithm used by this store.
+    #[getter]
+    fn algo(&self) -> &str {
+        self.algo
+    }
+
+    fn __repr__(&self) -> String {
+        format!("GitStore({}, {})", self.algo, self.path.display())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// GitHasher
+// ---------------------------------------------------------------------------
+
 /// Git hashing strategy that produces GitObject values.
 #[pyclass]
 pub struct GitHasher {
-    kind: covalence_hash::gix_hash::Kind,
+    kind: gix_hash::Kind,
 }
 
 #[pymethods]
 impl GitHasher {
     fn hash_blob(&self, data: &[u8]) -> GitObject {
         let oid = match self.kind {
-            covalence_hash::gix_hash::Kind::Sha1 => covalence_hash::git::blob_sha1(data),
-            covalence_hash::gix_hash::Kind::Sha256 => covalence_hash::git::blob_sha256(data),
+            gix_hash::Kind::Sha1 => covalence_hash::git::blob_sha1(data),
+            gix_hash::Kind::Sha256 => covalence_hash::git::blob_sha256(data),
             _ => unreachable!("only sha1 and sha256 are supported"),
         };
         oid_to_git_object(oid)
@@ -99,8 +233,8 @@ impl GitHasher {
 
     fn hash_tree(&self, data: &[u8]) -> GitObject {
         let oid = match self.kind {
-            covalence_hash::gix_hash::Kind::Sha1 => covalence_hash::git::tree_sha1(data),
-            covalence_hash::gix_hash::Kind::Sha256 => covalence_hash::git::tree_sha256(data),
+            gix_hash::Kind::Sha1 => covalence_hash::git::tree_sha1(data),
+            gix_hash::Kind::Sha256 => covalence_hash::git::tree_sha256(data),
             _ => unreachable!("only sha1 and sha256 are supported"),
         };
         oid_to_git_object(oid)
@@ -111,7 +245,7 @@ impl GitHasher {
 #[pyfunction]
 pub fn git_sha1() -> GitHasher {
     GitHasher {
-        kind: covalence_hash::gix_hash::Kind::Sha1,
+        kind: gix_hash::Kind::Sha1,
     }
 }
 
@@ -119,6 +253,6 @@ pub fn git_sha1() -> GitHasher {
 #[pyfunction]
 pub fn git_sha256() -> GitHasher {
     GitHasher {
-        kind: covalence_hash::gix_hash::Kind::Sha256,
+        kind: gix_hash::Kind::Sha256,
     }
 }

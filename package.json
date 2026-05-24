@@ -16,6 +16,8 @@
     "dev": "echo 'Use: bun run code:browser or bun run code:desktop' && exit 1",
     "code:browser": "bun run build:wasm && bun run --filter covalence-vscode code:browser",
     "code:desktop": "bun run build && bun run --filter covalence-vscode code:desktop",
-    "check": "cargo check"
+    "check": "cargo check",
+    "build:python": "cd crates/covalence-python && source .venv/bin/activate && maturin develop",
+    "test:python": "cd crates/covalence-python && source .venv/bin/activate && pytest tests/ -v"
   }
 }

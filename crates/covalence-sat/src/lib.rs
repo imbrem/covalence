@@ -1,5 +1,6 @@
 pub use covalence_types::Decision;
 
+pub mod advised;
 mod drat;
 mod formula;
 mod model;

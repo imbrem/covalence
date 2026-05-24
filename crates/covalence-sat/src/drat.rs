@@ -198,19 +198,19 @@ impl DratVerifier for NaiveDratChecker {
 
 /// Map a literal to its watch-list index.
 /// Positive lit for var v → `2*(v-1)`, negative → `2*(v-1)+1`.
-fn lit_watch_idx(lit: Lit) -> usize {
+pub(crate) fn lit_watch_idx(lit: Lit) -> usize {
     let v = (lit.var().index() - 1) as usize;
     2 * v + if lit.is_neg() { 1 } else { 0 }
 }
 
 /// Look up a literal's truth value in a flat assignment array (indexed by var-1).
-fn assign_get(assign: &[Decision], lit: Lit) -> Decision {
+pub(crate) fn assign_get(assign: &[Decision], lit: Lit) -> Decision {
     let val = assign[(lit.var().index() - 1) as usize];
     if lit.is_pos() { val } else { val.not() }
 }
 
 /// Set a literal to true, recording the variable index on the trail.
-fn assign_set_true(assign: &mut [Decision], trail: &mut Vec<usize>, lit: Lit) {
+pub(crate) fn assign_set_true(assign: &mut [Decision], trail: &mut Vec<usize>, lit: Lit) {
     let vi = (lit.var().index() - 1) as usize;
     assign[vi] = if lit.is_pos() {
         Decision::Sat

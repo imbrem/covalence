@@ -5,6 +5,7 @@ mod git;
 mod hash;
 mod server;
 mod session;
+mod store;
 mod worker;
 
 use pyo3::prelude::*;
@@ -19,6 +20,7 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<backend::Backend>()?;
     m.add_class::<session::Session>()?;
     m.add_class::<component::Component>()?;
+    m.add_class::<store::Store>()?;
     m.add_class::<server::Server>()?;
 
     // Hasher constructors

@@ -6,6 +6,7 @@ mod hash;
 mod server;
 mod session;
 mod store;
+mod table;
 mod worker;
 
 use pyo3::prelude::*;
@@ -23,6 +24,9 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<store::Store>()?;
     m.add_class::<git::GitStore>()?;
     m.add_class::<server::Server>()?;
+    m.add_class::<table::PyRowSchema>()?;
+    m.add_class::<table::PyTableBuilder>()?;
+    m.add_class::<table::PyDirectoryBuilder>()?;
 
     // Hasher constructors
     m.add_function(wrap_pyfunction!(hash::blake3, m)?)?;

@@ -9,4 +9,29 @@ interface api {
         /// Works even if blob data is not available.
         eq: func(other: borrow<blob>) -> bool;
     }
+
+    resource name {
+        /// Create a name from a blob (cons: blob -> name).
+        /// Puts the blob's data to the store.
+        constructor(b: borrow<blob>);
+
+        /// Get the blob associated with this name (uncons: name -> blob).
+        /// Constructs a lazy blob from the store.
+        uncons: func() -> blob;
+
+        /// Compare two names for equality.
+        eq: func(other: borrow<name>) -> bool;
+
+        /// Create a tagged name (cons: name -> blob -> name).
+        /// Implemented via keyed hash.
+        cons: static func(tag: borrow<name>, b: borrow<blob>) -> name;
+
+        /// Get the representation blob for this name.
+        /// Currently works like uncons.
+        repr: func() -> blob;
+
+        /// Get the tag of this name.
+        /// Currently always traps.
+        %tag: func() -> name;
+    }
 }

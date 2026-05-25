@@ -31,7 +31,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use covalence_hash::O256;
-use covalence_store::ContentStore;
+use covalence_store::{BlobStore, ContentStore};
 use covalence_wasm::engine::wasmtime;
 use wasmtime::component::{Component, Func, Linker, Resource, ResourceTable, ResourceType};
 use wasmtime::{Engine, Store, StoreContextMut};
@@ -42,6 +42,11 @@ use crate::{DecideOutput, Decision};
 struct BlobHandle {
     hash: O256,
     data: Option<Vec<u8>>,
+}
+
+/// Host-side representation of a name resource.
+struct NameHandle {
+    hash: O256,
 }
 
 /// Host state threaded through wasmtime's Store.
@@ -203,11 +208,16 @@ impl ImportManifest {
         }
     }
 
-    /// Check whether any import is a `blob-{hash}` import.
-    fn has_blob_imports(engine: &Engine, component: &Component) -> bool {
+    /// Check whether the component imports the `cov:blob/api` interface
+    /// (directly or via `blob-{hash}` imports that reference its types).
+    fn needs_api(engine: &Engine, component: &Component) -> bool {
         let ty = component.component_type();
-        ty.imports(engine)
-            .any(|(name, _)| matches!(categorize_import(name), ImportKind::Blob(_)))
+        ty.imports(engine).any(|(name, _)| {
+            matches!(
+                categorize_import(name),
+                ImportKind::BlobInterface | ImportKind::Blob(_)
+            )
+        })
     }
 }
 
@@ -241,7 +251,7 @@ impl<'a> LinkScope<'a> {
         &mut self,
         component: &Component,
         manifest: &ImportManifest,
-        blobs: &dyn ContentStore<O256>,
+        blobs: &BlobStore<O256>,
         store: &mut Store<HostState>,
     ) -> Result<Linker<HostState>, DecideError> {
         let mut resolving: HashSet<O256> = HashSet::new();
@@ -279,7 +289,7 @@ impl<'a> LinkScope<'a> {
     fn resolve_sub_deps(
         &mut self,
         dep_component: &Component,
-        blobs: &dyn ContentStore<O256>,
+        blobs: &BlobStore<O256>,
         store: &mut Store<HostState>,
         resolving: &mut HashSet<O256>,
     ) -> Result<HashMap<String, Vec<(String, Func)>>, DecideError> {
@@ -319,7 +329,7 @@ impl<'a> LinkScope<'a> {
     fn resolve_import(
         &mut self,
         dep_hash: &O256,
-        blobs: &dyn ContentStore<O256>,
+        blobs: &BlobStore<O256>,
         store: &mut Store<HostState>,
         resolving: &mut HashSet<O256>,
     ) -> Result<(), DecideError> {
@@ -385,7 +395,7 @@ impl<'a> LinkScope<'a> {
     fn resolve_copy(
         &mut self,
         dep_hash: &O256,
-        blobs: &dyn ContentStore<O256>,
+        blobs: &BlobStore<O256>,
         store: &mut Store<HostState>,
         resolving: &mut HashSet<O256>,
     ) -> Result<Vec<(String, Func)>, DecideError> {
@@ -446,7 +456,7 @@ impl<'a> LinkScope<'a> {
     fn resolve_prove(
         &mut self,
         dep_hash: &O256,
-        blobs: &dyn ContentStore<O256>,
+        blobs: &BlobStore<O256>,
         store: &mut Store<HostState>,
         resolving: &mut HashSet<O256>,
     ) -> Result<(), DecideError> {
@@ -509,7 +519,7 @@ impl<'a> LinkScope<'a> {
 fn build_linker(
     engine: &Engine,
     component: &Component,
-    blobs: &dyn ContentStore<O256>,
+    blobs: &BlobStore<O256>,
     instance_cache: &HashMap<O256, Vec<(String, Func)>>,
     lazy_proves: &HashMap<O256, Arc<LazyProve>>,
     copy_cache: &HashMap<String, Vec<(String, Func)>>,
@@ -517,10 +527,11 @@ fn build_linker(
     let ty = component.component_type();
     let mut linker: Linker<HostState> = Linker::new(engine);
 
-    // Check if any blob imports exist — if so, register the blob interface.
-    let has_blob_imports = ImportManifest::has_blob_imports(engine, component);
+    // Register the cov:blob/api interface if the component imports it
+    // (either directly or via blob-{hash} imports).
+    let needs_api = ImportManifest::needs_api(engine, component);
 
-    if has_blob_imports {
+    if needs_api {
         let blob_ty = ResourceType::host::<BlobHandle>();
         let mut root = linker.root();
         let mut api = root
@@ -564,6 +575,130 @@ fn build_linker(
                 let ha = cx.data().table.get(&a)?.hash;
                 let hb = cx.data().table.get(&b)?.hash;
                 Ok((ha == hb,))
+            },
+        )
+        .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+        // --- name resource ---
+
+        let name_ty = ResourceType::host::<NameHandle>();
+        api.resource(
+            "name",
+            name_ty,
+            |mut cx: StoreContextMut<'_, HostState>, rep| {
+                cx.data_mut()
+                    .table
+                    .delete(Resource::<NameHandle>::new_own(rep))?;
+                Ok(())
+            },
+        )
+        .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+        // [constructor]name: (borrow<blob>) -> own<name>
+        {
+            let store = blobs.clone();
+            api.func_wrap(
+                "[constructor]name",
+                move |mut cx: StoreContextMut<'_, HostState>,
+                      (blob,): (Resource<BlobHandle>,)|
+                      -> wasmtime::Result<(Resource<NameHandle>,)> {
+                    let handle = cx.data().table.get(&blob)?;
+                    let hash = handle.hash;
+                    let data = handle.data.clone();
+                    if let Some(ref data) = data {
+                        store
+                            .put(hash, data)
+                            .map_err(|e| wasmtime::Error::msg(format!("store put: {e}")))?;
+                    }
+                    let name = NameHandle { hash };
+                    let resource = cx.data_mut().table.push(name)?;
+                    Ok((resource,))
+                },
+            )
+            .map_err(|e| DecideError::LinkError(e.to_string()))?;
+        }
+
+        // [method]name.uncons: (borrow<name>) -> own<blob>
+        {
+            let store = blobs.clone();
+            api.func_wrap(
+                "[method]name.uncons",
+                move |mut cx: StoreContextMut<'_, HostState>,
+                      (name_res,): (Resource<NameHandle>,)|
+                      -> wasmtime::Result<(Resource<BlobHandle>,)> {
+                    let hash = cx.data().table.get(&name_res)?.hash;
+                    let data = store.get(&hash);
+                    let blob = BlobHandle { hash, data };
+                    let resource = cx.data_mut().table.push(blob)?;
+                    Ok((resource,))
+                },
+            )
+            .map_err(|e| DecideError::LinkError(e.to_string()))?;
+        }
+
+        // [method]name.eq: (borrow<name>, borrow<name>) -> bool
+        api.func_wrap(
+            "[method]name.eq",
+            |cx: StoreContextMut<'_, HostState>,
+             (a, b): (Resource<NameHandle>, Resource<NameHandle>)|
+             -> wasmtime::Result<(bool,)> {
+                let ha = cx.data().table.get(&a)?.hash;
+                let hb = cx.data().table.get(&b)?.hash;
+                Ok((ha == hb,))
+            },
+        )
+        .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+        // [static]name.cons: (borrow<name>, borrow<blob>) -> own<name>
+        api.func_wrap(
+            "[static]name.cons",
+            |mut cx: StoreContextMut<'_, HostState>,
+             (tag, blob): (Resource<NameHandle>, Resource<BlobHandle>)|
+             -> wasmtime::Result<(Resource<NameHandle>,)> {
+                let tag_hash = cx.data().table.get(&tag)?.hash;
+                let blob_data = cx
+                    .data()
+                    .table
+                    .get(&blob)?
+                    .data
+                    .as_ref()
+                    .ok_or_else(|| wasmtime::Error::msg("blob data not available"))?
+                    .clone();
+                let name_hash = tag_hash.tag(&blob_data);
+                let name = NameHandle { hash: name_hash };
+                let resource = cx.data_mut().table.push(name)?;
+                Ok((resource,))
+            },
+        )
+        .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+        // [method]name.repr: (borrow<name>) -> own<blob>
+        // Currently works like uncons.
+        {
+            let store = blobs.clone();
+            api.func_wrap(
+                "[method]name.repr",
+                move |mut cx: StoreContextMut<'_, HostState>,
+                      (name_res,): (Resource<NameHandle>,)|
+                      -> wasmtime::Result<(Resource<BlobHandle>,)> {
+                    let hash = cx.data().table.get(&name_res)?.hash;
+                    let data = store.get(&hash);
+                    let blob = BlobHandle { hash, data };
+                    let resource = cx.data_mut().table.push(blob)?;
+                    Ok((resource,))
+                },
+            )
+            .map_err(|e| DecideError::LinkError(e.to_string()))?;
+        }
+
+        // [method]name.tag: (borrow<name>) -> own<name>
+        // Currently always traps.
+        api.func_wrap(
+            "[method]name.tag",
+            |_cx: StoreContextMut<'_, HostState>,
+             (_name_res,): (Resource<NameHandle>,)|
+             -> wasmtime::Result<(Resource<NameHandle>,)> {
+                Err(wasmtime::Error::msg("name.tag not yet implemented"))
             },
         )
         .map_err(|e| DecideError::LinkError(e.to_string()))?;
@@ -738,7 +873,7 @@ impl WasmEngine {
     pub fn decide(
         &self,
         bytes: &[u8],
-        blobs: &dyn ContentStore<O256>,
+        blobs: &BlobStore<O256>,
     ) -> Result<DecideOutput, DecideError> {
         let component = Component::new(&self.engine, bytes)
             .map_err(|e| DecideError::InvalidComponent(e.to_string()))?;

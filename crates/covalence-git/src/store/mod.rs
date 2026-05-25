@@ -14,9 +14,13 @@
 
 mod backend;
 mod loose;
+#[cfg(feature = "odb")]
+mod odb;
 
 pub use backend::{GitBackend, GitObject, GitObjectKind};
 pub use loose::LooseBackend;
+#[cfg(feature = "odb")]
+pub use odb::OdbBackend;
 
 use covalence_hash::gix_hash;
 use covalence_store::{ContentStore, StoreError};

@@ -1033,3 +1033,111 @@ fn store_nested_no_parent_access() {
         "parent attested before trap; nested store can't see root keys"
     );
 }
+
+// ============================================================
+// Store: try-get, assert-exists, try-exists
+// ============================================================
+
+#[test]
+fn store_try_get_existing() {
+    let bytes = wat(include_str!("wat/store_try_get_existing/component.wat"));
+
+    let engine = engine();
+    let store = test_store();
+    let result = decide_result(&engine, &bytes, &store);
+    assert_eq!(
+        result,
+        Decision::Sat,
+        "try-get existing key should return Some with correct value"
+    );
+}
+
+#[test]
+fn store_try_get_missing() {
+    let bytes = wat(include_str!("wat/store_try_get_missing/component.wat"));
+
+    let engine = engine();
+    let store = test_store();
+    let result = decide_result(&engine, &bytes, &store);
+    assert_eq!(
+        result,
+        Decision::Sat,
+        "try-get missing key should return None"
+    );
+}
+
+#[test]
+fn store_assert_exists_after_set() {
+    let bytes = wat(include_str!(
+        "wat/store_assert_exists_after_set/component.wat"
+    ));
+
+    let engine = engine();
+    let store = test_store();
+    let result = decide_result(&engine, &bytes, &store);
+    assert_eq!(
+        result,
+        Decision::Sat,
+        "assert-exists after set should not trap"
+    );
+}
+
+#[test]
+fn store_assert_exists_ns_alone_traps() {
+    let bytes = wat(include_str!(
+        "wat/store_assert_exists_ns_alone_traps/component.wat"
+    ));
+
+    let engine = engine();
+    let store = test_store();
+    let result = decide_result(&engine, &bytes, &store);
+    assert_eq!(
+        result,
+        Decision::Unknown,
+        "ns alone does not create presence; assert-exists should trap"
+    );
+}
+
+#[test]
+fn store_assert_exists_missing_traps() {
+    let bytes = wat(include_str!(
+        "wat/store_assert_exists_missing_traps/component.wat"
+    ));
+
+    let engine = engine();
+    let store = test_store();
+    let result = decide_result(&engine, &bytes, &store);
+    assert_eq!(
+        result,
+        Decision::Unknown,
+        "assert-exists on empty store should trap"
+    );
+}
+
+#[test]
+fn store_try_exists_after_set() {
+    let bytes = wat(include_str!("wat/store_try_exists_after_set/component.wat"));
+
+    let engine = engine();
+    let store = test_store();
+    let result = decide_result(&engine, &bytes, &store);
+    assert_eq!(
+        result,
+        Decision::Sat,
+        "try-exists after set should return Some"
+    );
+}
+
+#[test]
+fn store_try_exists_missing() {
+    let bytes = wat(include_str!("wat/store_try_exists_missing/component.wat"));
+
+    let engine = engine();
+    let store = test_store();
+    let result = decide_result(&engine, &bytes, &store);
+    assert_eq!(
+        result,
+        Decision::Sat,
+        "try-exists on empty store should return None"
+    );
+}

@@ -7,7 +7,7 @@
         (export "root" (func (result (own 0))))
         (export "[method]store.set" (func (param "self" (borrow 0)) (param "key" string) (param "value" (list u8))))
         (export "[method]store.get" (func (param "self" (borrow 0)) (param "key" string) (result (list u8))))
-        (export "[method]store.dir" (func (param "self" (borrow 0)) (param "key" string) (result (own 0))))
+        (export "[method]store.ns" (func (param "self" (borrow 0)) (param "key" string) (result (own 0))))
         (export "[method]store.clone" (func (param "self" (borrow 0)) (result (own 0))))
         (export "[method]store.read-only" (func (param "self" (borrow 0)) (result (own 0))))
         (export "new" (func (result (own 0))))
@@ -16,7 +16,7 @@
     (alias export $store-api "root" (func $root))
     (alias export $store-api "[method]store.set" (func $store-set))
     (alias export $store-api "[method]store.get" (func $store-get))
-    (alias export $store-api "[method]store.dir" (func $store-dir))
+    (alias export $store-api "[method]store.ns" (func $store-ns))
 
     (core module $alloc_mod
         (memory 1)
@@ -38,7 +38,7 @@
     (core func $root_lowered (canon lower (func $root)))
     (core func $store_set_lowered (canon lower (func $store-set) (memory $mem) (realloc $realloc_fn)))
     (core func $store_get_lowered (canon lower (func $store-get) (memory $mem) (realloc $realloc_fn)))
-    (core func $store_dir_lowered (canon lower (func $store-dir) (memory $mem) (realloc $realloc_fn)))
+    (core func $store_ns_lowered (canon lower (func $store-ns) (memory $mem) (realloc $realloc_fn)))
     (core func $store_drop_lowered (canon resource.drop $store))
 
     (core module $m
@@ -47,7 +47,7 @@
         (import "env" "root" (func $root (result i32)))
         (import "env" "store-set" (func $store_set (param i32 i32 i32 i32 i32)))
         (import "env" "store-get" (func $store_get (param i32 i32 i32 i32)))
-        (import "env" "store-dir" (func $store_dir (param i32 i32 i32) (result i32)))
+        (import "env" "store-ns" (func $store_ns (param i32 i32 i32) (result i32)))
         (import "env" "store-drop" (func $store_drop (param i32)))
 
         ;; Data: "ns" at 0, "key" at 4, [42] at 8
@@ -61,7 +61,7 @@
             ;; Get root
             (local.set $root_h (call $root))
             ;; Open sub-store "ns"
-            (local.set $sub_h (call $store_dir (local.get $root_h) (i32.const 0) (i32.const 2)))
+            (local.set $sub_h (call $store_ns (local.get $root_h) (i32.const 0) (i32.const 2)))
             ;; Set "key" → [42] in sub-store
             (call $store_set (local.get $sub_h) (i32.const 4) (i32.const 3) (i32.const 8) (i32.const 1))
             ;; Get "key" from sub-store → retptr at 64
@@ -88,7 +88,7 @@
             (export "root" (func $root_lowered))
             (export "store-set" (func $store_set_lowered))
             (export "store-get" (func $store_get_lowered))
-            (export "store-dir" (func $store_dir_lowered))
+            (export "store-ns" (func $store_ns_lowered))
             (export "store-drop" (func $store_drop_lowered))
         ))
     ))

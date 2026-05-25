@@ -7,7 +7,7 @@
         (export "root" (func (result (own 0))))
         (export "[method]store.set" (func (param "self" (borrow 0)) (param "key" string) (param "value" (list u8))))
         (export "[method]store.get" (func (param "self" (borrow 0)) (param "key" string) (result (list u8))))
-        (export "[method]store.dir" (func (param "self" (borrow 0)) (param "key" string) (result (own 0))))
+        (export "[method]store.ns" (func (param "self" (borrow 0)) (param "key" string) (result (own 0))))
         (export "[method]store.clone" (func (param "self" (borrow 0)) (result (own 0))))
         (export "[method]store.read-only" (func (param "self" (borrow 0)) (result (own 0))))
         (export "new" (func (result (own 0))))
@@ -15,7 +15,7 @@
     (alias export $store-api "store" (type $store))
     (alias export $store-api "root" (func $root))
     (alias export $store-api "[method]store.set" (func $store-set))
-    (alias export $store-api "[method]store.dir" (func $store-dir))
+    (alias export $store-api "[method]store.ns" (func $store-ns))
 
     (core module $alloc_mod
         (memory 1)
@@ -35,14 +35,14 @@
 
     (core func $root_lowered (canon lower (func $root)))
     (core func $store_set_lowered (canon lower (func $store-set) (memory $mem) (realloc $realloc_fn)))
-    (core func $store_dir_lowered (canon lower (func $store-dir) (memory $mem) (realloc $realloc_fn)))
+    (core func $store_ns_lowered (canon lower (func $store-ns) (memory $mem) (realloc $realloc_fn)))
     (core func $store_drop_lowered (canon resource.drop $store))
 
     (core module $m
         (import "alloc" "memory" (memory 1))
         (import "env" "root" (func $root (result i32)))
         (import "env" "store-set" (func $store_set (param i32 i32 i32 i32 i32)))
-        (import "env" "store-dir" (func $store_dir (param i32 i32 i32) (result i32)))
+        (import "env" "store-ns" (func $store_ns (param i32 i32 i32) (result i32)))
         (import "env" "store-drop" (func $store_drop (param i32)))
 
         ;; "sandbox" at 0, "data" at 8, [55] at 16
@@ -55,7 +55,7 @@
             (local $r i32)
             (local $sub i32)
             (local.set $r (call $root))
-            (local.set $sub (call $store_dir (local.get $r) (i32.const 0) (i32.const 7)))
+            (local.set $sub (call $store_ns (local.get $r) (i32.const 0) (i32.const 7)))
             ;; Set "data" → [55] in sandbox
             (call $store_set (local.get $sub) (i32.const 8) (i32.const 4) (i32.const 16) (i32.const 1))
             (call $store_drop (local.get $sub))
@@ -68,7 +68,7 @@
             (local $r i32)
             (local $sub i32)
             (local.set $r (call $root))
-            (local.set $sub (call $store_dir (local.get $r) (i32.const 0) (i32.const 7)))
+            (local.set $sub (call $store_ns (local.get $r) (i32.const 0) (i32.const 7)))
             (call $store_drop (local.get $r))
             (local.get $sub)
         )
@@ -79,7 +79,7 @@
         (with "env" (instance
             (export "root" (func $root_lowered))
             (export "store-set" (func $store_set_lowered))
-            (export "store-dir" (func $store_dir_lowered))
+            (export "store-ns" (func $store_ns_lowered))
             (export "store-drop" (func $store_drop_lowered))
         ))
     ))

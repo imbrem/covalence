@@ -47,9 +47,18 @@
 //! - `new()` → a fresh anonymous store (not shared)
 //! - `set(borrow<store>, key, value)` — insert/overwrite
 //! - `get(borrow<store>, key) → value` — lookup (traps if missing)
-//! - `dir(borrow<store>, key) → own<store>` — sub-store navigation
+//! - `try-get(borrow<store>, key) → option<value>` — lookup (None if missing)
+//! - `assert-exists(borrow<store>, key)` — traps if key never set
+//! - `try-exists(borrow<store>, key) → bool` — true if set, false otherwise
+//! - `ns(borrow<store>, key) → own<store>` — sub-namespace navigation
 //! - `clone(borrow<store>) → own<store>` — duplicate handle (same data)
 //! - `read-only(borrow<store>) → own<store>` — read-only clone (set traps)
+//!
+//! Supported key/value types: u8, s8, u16, s16, u32, s32, u64, s64, string,
+//! `list<T>` for integer element types, `borrow<blob>` / `own<blob>`, and
+//! `borrow<name>` / `own<name>`. Blob and name values are stored by hash
+//! (without fetching blob data) and are distinct from each other even when
+//! their hashes coincide.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -79,6 +88,9 @@ struct NameHandle {
 struct StoreData {
     values: HashMap<Vec<u8>, Vec<u8>>,
     children: HashMap<Vec<u8>, Arc<Mutex<StoreData>>>,
+    /// Bare keys (serialized without trailing type tag) that have been
+    /// touched by set(). Used by assert-exists / try-exists.
+    touched: HashSet<Vec<u8>>,
 }
 
 impl StoreData {
@@ -86,6 +98,7 @@ impl StoreData {
         StoreData {
             values: HashMap::new(),
             children: HashMap::new(),
+            touched: HashSet::new(),
         }
     }
 }
@@ -598,6 +611,9 @@ const TAG_LIST_U32: u8 = 0x15;
 const TAG_LIST_S32: u8 = 0x16;
 const TAG_LIST_U64: u8 = 0x17;
 const TAG_LIST_S64: u8 = 0x18;
+// Resource types (stored by O256 hash)
+const TAG_BLOB: u8 = 0x20;
+const TAG_NAME: u8 = 0x21;
 
 /// Map a component-model `Type` (from the function signature) to a type tag.
 fn component_type_to_tag(ty: &wasmtime::component::types::Type) -> wasmtime::Result<u8> {
@@ -624,12 +640,21 @@ fn component_type_to_tag(ty: &wasmtime::component::types::Type) -> wasmtime::Res
                 Type::U64 => Ok(TAG_LIST_U64),
                 Type::S64 => Ok(TAG_LIST_S64),
                 _ => Err(wasmtime::Error::msg(format!(
-                    "map store: unsupported list element type: {elem:?}"
+                    "store: unsupported list element type: {elem:?}"
                 ))),
             }
         }
+        Type::Own(rt) | Type::Borrow(rt) => {
+            if *rt == ResourceType::host::<BlobHandle>() {
+                Ok(TAG_BLOB)
+            } else if *rt == ResourceType::host::<NameHandle>() {
+                Ok(TAG_NAME)
+            } else {
+                Err(wasmtime::Error::msg("store: unsupported resource type"))
+            }
+        }
         _ => Err(wasmtime::Error::msg(format!(
-            "map store: unsupported type: {ty:?}"
+            "store: unsupported type: {ty:?}"
         ))),
     }
 }
@@ -866,8 +891,68 @@ fn deserialize_val(bytes: &[u8]) -> wasmtime::Result<Val> {
                 .collect(),
         )),
         tag => Err(wasmtime::Error::msg(format!(
-            "map store: unknown type tag {tag:#x}"
+            "store: unknown type tag {tag:#x}"
         ))),
+    }
+}
+
+/// Serialize a store key/value, handling resource types (blob, name) by hash.
+fn serialize_store_val(
+    val: &Val,
+    cx: &mut StoreContextMut<'_, HostState>,
+) -> wasmtime::Result<Vec<u8>> {
+    match val {
+        Val::Resource(ra) => {
+            // Try blob first
+            if let Ok(resource) = ra.try_into_resource::<BlobHandle>(&mut *cx) {
+                let hash = cx.data().table.get(&resource)?.hash;
+                let mut buf = vec![TAG_BLOB];
+                buf.extend_from_slice(hash.as_bytes());
+                return Ok(buf);
+            }
+            // Try name
+            if let Ok(resource) = ra.try_into_resource::<NameHandle>(&mut *cx) {
+                let hash = cx.data().table.get(&resource)?.hash;
+                let mut buf = vec![TAG_NAME];
+                buf.extend_from_slice(hash.as_bytes());
+                return Ok(buf);
+            }
+            Err(wasmtime::Error::msg("store: unsupported resource type"))
+        }
+        _ => serialize_val(val),
+    }
+}
+
+/// Deserialize a store value, creating resource handles for blob/name types.
+fn deserialize_store_val(
+    bytes: &[u8],
+    cx: &mut StoreContextMut<'_, HostState>,
+    blobs: &BlobStore<O256>,
+) -> wasmtime::Result<Val> {
+    if bytes.is_empty() {
+        return Err(wasmtime::Error::msg("store: empty serialized value"));
+    }
+    match bytes[0] {
+        TAG_BLOB => {
+            let hash_bytes: [u8; 32] = bytes[1..33]
+                .try_into()
+                .map_err(|_| wasmtime::Error::msg("store: truncated blob hash"))?;
+            let hash = O256::from_bytes(hash_bytes);
+            let data = blobs.get(&hash);
+            let handle = BlobHandle { hash, data };
+            let resource = cx.data_mut().table.push(handle)?;
+            Ok(Val::Resource(ResourceAny::try_from_resource(resource, cx)?))
+        }
+        TAG_NAME => {
+            let hash_bytes: [u8; 32] = bytes[1..33]
+                .try_into()
+                .map_err(|_| wasmtime::Error::msg("store: truncated name hash"))?;
+            let hash = O256::from_bytes(hash_bytes);
+            let handle = NameHandle { hash };
+            let resource = cx.data_mut().table.push(handle)?;
+            Ok(Val::Resource(ResourceAny::try_from_resource(resource, cx)?))
+        }
+        _ => deserialize_val(bytes),
     }
 }
 
@@ -1248,34 +1333,40 @@ fn build_linker(
                         return Err(wasmtime::Error::msg("store is read-only"));
                     }
                     let val_tag = component_type_to_tag(&ty.params().nth(2).unwrap().1)?;
-                    let mut key = serialize_val(&args[1])?;
+                    let mut key = serialize_store_val(&args[1], &mut cx)?;
+                    let bare_key = key.clone();
                     key.push(val_tag);
-                    let value = serialize_val(&args[2])?;
-                    data.lock().unwrap().values.insert(key, value);
+                    let value = serialize_store_val(&args[2], &mut cx)?;
+                    let mut store = data.lock().unwrap();
+                    store.touched.insert(bare_key);
+                    store.values.insert(key, value);
                     Ok(())
                 })
                 .map_err(|e| DecideError::LinkError(e.to_string()))?;
 
                 // [method]store.get(borrow<store>, key) -> value
-                inst.func_new("[method]store.get", move |mut cx, ty, args, results| {
-                    let resource_any = extract_resource(&args[0])?;
-                    let resource = resource_any.try_into_resource::<StoreHandle>(&mut cx)?;
-                    let data = cx.data().table.get(&resource)?.data.clone();
-                    let val_tag = component_type_to_tag(&ty.results().next().unwrap())?;
-                    let mut key = serialize_val(&args[1])?;
-                    key.push(val_tag);
-                    match data.lock().unwrap().values.get(&key).cloned() {
-                        Some(v) => {
-                            results[0] = deserialize_val(&v)?;
-                            Ok(())
+                {
+                    let blobs_for_get = blobs.clone();
+                    inst.func_new("[method]store.get", move |mut cx, ty, args, results| {
+                        let resource_any = extract_resource(&args[0])?;
+                        let resource = resource_any.try_into_resource::<StoreHandle>(&mut cx)?;
+                        let data = cx.data().table.get(&resource)?.data.clone();
+                        let val_tag = component_type_to_tag(&ty.results().next().unwrap())?;
+                        let mut key = serialize_store_val(&args[1], &mut cx)?;
+                        key.push(val_tag);
+                        match data.lock().unwrap().values.get(&key).cloned() {
+                            Some(v) => {
+                                results[0] = deserialize_store_val(&v, &mut cx, &blobs_for_get)?;
+                                Ok(())
+                            }
+                            None => Err(wasmtime::Error::msg("key not found in store")),
                         }
-                        None => Err(wasmtime::Error::msg("key not found in store")),
-                    }
-                })
-                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+                    })
+                    .map_err(|e| DecideError::LinkError(e.to_string()))?;
+                }
 
-                // [method]store.dir(borrow<store>, key) -> own<store>
-                inst.func_new("[method]store.dir", move |mut cx, ty, args, results| {
+                // [method]store.ns(borrow<store>, key) -> own<store>
+                inst.func_new("[method]store.ns", move |mut cx, ty, args, results| {
                     let resource_any = extract_resource(&args[0])?;
                     let resource = resource_any.try_into_resource::<StoreHandle>(&mut cx)?;
                     let (parent_data, parent_writable) = {
@@ -1283,7 +1374,7 @@ fn build_linker(
                         (h.data.clone(), h.writable)
                     };
                     let key_tag = component_type_to_tag(&ty.params().nth(1).unwrap().1)?;
-                    let mut key = serialize_val(&args[1])?;
+                    let mut key = serialize_store_val(&args[1], &mut cx)?;
                     key.push(key_tag);
                     let child_data = {
                         let mut pd = parent_data.lock().unwrap();
@@ -1339,6 +1430,71 @@ fn build_linker(
                     },
                 )
                 .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+                // [method]store.try-get(borrow<store>, key) -> option<value>
+                {
+                    let blobs_for_try_get = blobs.clone();
+                    inst.func_new("[method]store.try-get", move |mut cx, ty, args, results| {
+                        let resource_any = extract_resource(&args[0])?;
+                        let resource = resource_any.try_into_resource::<StoreHandle>(&mut cx)?;
+                        let data = cx.data().table.get(&resource)?.data.clone();
+                        let result_ty = ty.results().next().unwrap();
+                        let val_tag = match &result_ty {
+                            wasmtime::component::types::Type::Option(opt) => {
+                                component_type_to_tag(&opt.ty())?
+                            }
+                            _ => {
+                                return Err(wasmtime::Error::msg(
+                                    "try-get: expected option result",
+                                ));
+                            }
+                        };
+                        let mut key = serialize_store_val(&args[1], &mut cx)?;
+                        key.push(val_tag);
+                        match data.lock().unwrap().values.get(&key).cloned() {
+                            Some(v) => {
+                                let val = deserialize_store_val(&v, &mut cx, &blobs_for_try_get)?;
+                                results[0] = Val::Option(Some(Box::new(val)));
+                                Ok(())
+                            }
+                            None => {
+                                results[0] = Val::Option(None);
+                                Ok(())
+                            }
+                        }
+                    })
+                    .map_err(|e| DecideError::LinkError(e.to_string()))?;
+                }
+
+                // [method]store.assert-exists(borrow<store>, key)
+                inst.func_new(
+                    "[method]store.assert-exists",
+                    move |mut cx, _ty, args, _results| {
+                        let resource_any = extract_resource(&args[0])?;
+                        let resource = resource_any.try_into_resource::<StoreHandle>(&mut cx)?;
+                        let data = cx.data().table.get(&resource)?.data.clone();
+                        let key = serialize_store_val(&args[1], &mut cx)?;
+                        if !data.lock().unwrap().touched.contains(&key) {
+                            return Err(wasmtime::Error::msg("key does not exist in store"));
+                        }
+                        Ok(())
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+                // [method]store.try-exists(borrow<store>, key) -> bool
+                inst.func_new(
+                    "[method]store.try-exists",
+                    move |mut cx, _ty, args, results| {
+                        let resource_any = extract_resource(&args[0])?;
+                        let resource = resource_any.try_into_resource::<StoreHandle>(&mut cx)?;
+                        let data = cx.data().table.get(&resource)?.data.clone();
+                        let key = serialize_store_val(&args[1], &mut cx)?;
+                        results[0] = Val::Bool(data.lock().unwrap().touched.contains(&key));
+                        Ok(())
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
             }
             ImportKind::Unknown(ref unknown) => {
                 return Err(DecideError::LinkError(format!("unknown import: {unknown}")));
@@ -1389,7 +1545,9 @@ impl WasmEngine {
     ///   isolated link-instances (not shared with the parent).
     /// - `"store"`: a hierarchical key-value store resource with `root()`,
     ///   `new()`, `set(borrow, key, value)`, `get(borrow, key) → value`,
-    ///   `dir(borrow, key) → own`, `clone(borrow) → own`, and
+    ///   `try-get(borrow, key) → option<value>`,
+    ///   `assert-exists(borrow, key)`, `try-exists(borrow, key) → option<()>`,
+    ///   `ns(borrow, key) → own`, `clone(borrow) → own`, and
     ///   `read-only(borrow) → own`. Shared within a container (via `root`),
     ///   isolated across prove-dep boundaries. Strictly typed: each
     ///   (key\_type, value\_type) combination is disjoint.

@@ -7,7 +7,7 @@
         (export "root" (func (result (own 0))))
         (export "[method]store.set" (func (param "self" (borrow 0)) (param "key" string) (param "value" (list u8))))
         (export "[method]store.get" (func (param "self" (borrow 0)) (param "key" string) (result (list u8))))
-        (export "[method]store.dir" (func (param "self" (borrow 0)) (param "key" string) (result (own 0))))
+        (export "[method]store.ns" (func (param "self" (borrow 0)) (param "key" string) (result (own 0))))
         (export "[method]store.clone" (func (param "self" (borrow 0)) (result (own 0))))
         (export "[method]store.read-only" (func (param "self" (borrow 0)) (result (own 0))))
         (export "new" (func (result (own 0))))

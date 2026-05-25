@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
+use pyo3::types::{PyBytes, PyDict, PyList};
 
 use covalence_hash::gix_hash;
 use covalence_store::ContentStore;
@@ -255,4 +255,45 @@ pub fn git_sha256() -> GitHasher {
     GitHasher {
         kind: gix_hash::Kind::Sha256,
     }
+}
+
+/// Parse raw git tree bytes and convert to directory rows.
+///
+/// - `data`: raw git tree body bytes
+/// - `hash_map`: dict mapping raw hash bytes → O256
+/// - `hash_len`: hash length in bytes (20 for SHA-1, 32 for SHA-256)
+///
+/// Returns a list of dicts with "name" (bytes), "mode" (str), "child" (O256).
+/// Raises `ValueError` if any hash in the tree is not present in `hash_map`.
+#[pyfunction]
+#[pyo3(signature = (data, hash_map, hash_len=20))]
+pub fn git_tree_to_dir_rows<'py>(
+    py: Python<'py>,
+    data: &[u8],
+    hash_map: &Bound<'py, PyDict>,
+    hash_len: usize,
+) -> PyResult<Bound<'py, PyList>> {
+    // First parse entries so we can look up hashes with proper error handling.
+    let entries = covalence_object::parse_git_tree(data, hash_len)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+    let result = PyList::empty(py);
+    for entry in &entries {
+        let mode = covalence_object::DirMode::from_git_mode(entry.mode)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        let key = PyBytes::new(py, entry.hash);
+        let val = hash_map.get_item(&key)?.ok_or_else(|| {
+            let hex: String = entry.hash.iter().map(|b| format!("{b:02x}")).collect();
+            PyValueError::new_err(format!("hash not found in hash_map: {hex}"))
+        })?;
+        let child: crate::hash::O256 = val.extract()?;
+
+        let row_dict = PyDict::new(py);
+        row_dict.set_item("name", PyBytes::new(py, entry.name))?;
+        row_dict.set_item("mode", mode.name())?;
+        row_dict.set_item("child", child.into_pyobject(py)?)?;
+        result.append(row_dict)?;
+    }
+    Ok(result)
 }

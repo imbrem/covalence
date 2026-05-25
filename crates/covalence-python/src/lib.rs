@@ -38,6 +38,7 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Git hasher constructors
     m.add_function(wrap_pyfunction!(git::git_sha1, m)?)?;
     m.add_function(wrap_pyfunction!(git::git_sha256, m)?)?;
+    m.add_function(wrap_pyfunction!(git::git_tree_to_dir_rows, m)?)?;
 
     // Backend constructors
     m.add_function(wrap_pyfunction!(backend::local, m)?)?;

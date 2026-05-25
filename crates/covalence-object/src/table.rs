@@ -59,6 +59,11 @@ impl FieldSpec {
         Self::new(width, FieldType::Dep)
     }
 
+    /// Fixed-width raw blob field (e.g. 2 bytes for a u16 mode).
+    pub const fn fixed(width: u8) -> Self {
+        Self::new(width, FieldType::Blob)
+    }
+
     fn is_dynamic(self) -> bool {
         self.repr == 0xFF
     }
@@ -95,8 +100,8 @@ pub enum TableError {
     EntryTooShort { index: usize },
     #[error("offset table entry width {0} is not 1, 2, 4, or 8")]
     BadOffsetWidth(u8),
-    #[error("unknown dir mode ref")]
-    UnknownDirMode,
+    #[error("invalid git tree: {0}")]
+    InvalidGitTree(String),
     #[error("schema mismatch: expected {expected} fields, got {got}")]
     SchemaMismatch { expected: usize, got: usize },
 }

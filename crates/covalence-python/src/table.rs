@@ -267,11 +267,14 @@ impl PyDirectoryBuilder {
             name.extract::<Vec<u8>>()?
         };
         let dir_mode = match mode {
-            "blob" => DirMode::Blob,
-            "dir" => DirMode::Dir,
+            "blob" | "regular" => DirMode::REGULAR,
+            "executable" => DirMode::EXECUTABLE,
+            "symlink" => DirMode::SYMLINK,
+            "dir" => DirMode::DIR,
+            "submodule" => DirMode::SUBMODULE,
             _ => {
                 return Err(PyValueError::new_err(format!(
-                    "unknown mode: {mode:?} (expected \"blob\" or \"dir\")"
+                    "unknown mode: {mode:?} (expected \"blob\", \"regular\", \"executable\", \"symlink\", \"dir\", or \"submodule\")"
                 )));
             }
         };
@@ -327,11 +330,7 @@ impl PyDirectoryBuilder {
                 .map_err(|e| PyValueError::new_err(e.to_string()))?;
             let row_dict = PyDict::new(py);
             row_dict.set_item("name", PyBytes::new(py, row.name))?;
-            let mode_str = match row.mode {
-                DirMode::Blob => "blob",
-                DirMode::Dir => "dir",
-                _ => "unknown",
-            };
+            let mode_str = row.mode.name();
             row_dict.set_item("mode", mode_str)?;
             row_dict.set_item("child", O256(row.child).into_pyobject(py)?)?;
             rows_list.append(row_dict)?;

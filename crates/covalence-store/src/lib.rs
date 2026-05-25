@@ -2,11 +2,20 @@ use std::sync::Arc;
 
 pub use covalence_hash::O256;
 
+mod object;
+pub use object::{AnyObject, Blob, Commit, Object, ObjectKind, ObjectStore, Tag, Tree};
+
 /// Errors from store operations.
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
     #[error("store I/O error: {0}")]
     Io(String),
+
+    #[error("type mismatch: expected {expected:?}, got {got:?}")]
+    KindMismatch {
+        expected: ObjectKind,
+        got: ObjectKind,
+    },
 }
 
 /// Content-addressed store trait.

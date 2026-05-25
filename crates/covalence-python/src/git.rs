@@ -5,9 +5,32 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
 
 use covalence_hash::gix_hash;
-use covalence_store::ContentStore;
+use covalence_store::{ContentStore, Object, ObjectKind, ObjectStore};
 
 use crate::hash::O256;
+
+/// Parse a Python kind string into an ObjectKind.
+fn parse_object_kind(kind: &str) -> PyResult<ObjectKind> {
+    match kind {
+        "blob" => Ok(ObjectKind::Blob),
+        "tree" => Ok(ObjectKind::Tree),
+        "commit" => Ok(ObjectKind::Commit),
+        "tag" => Ok(ObjectKind::Tag),
+        _ => Err(PyValueError::new_err(format!(
+            "unknown object kind {kind:?}, expected \"blob\", \"tree\", \"commit\", or \"tag\""
+        ))),
+    }
+}
+
+/// Convert an ObjectKind to its string name.
+fn object_kind_str(kind: ObjectKind) -> &'static str {
+    match kind {
+        ObjectKind::Blob => "blob",
+        ObjectKind::Tree => "tree",
+        ObjectKind::Commit => "commit",
+        ObjectKind::Tag => "tag",
+    }
+}
 
 /// Git object hash (SHA-1 or SHA-256).
 #[pyclass(frozen, from_py_object)]
@@ -165,8 +188,7 @@ impl GitStore {
 
     /// Hash and store data as a blob, returning its GitObject key.
     fn insert(&self, data: &[u8]) -> PyResult<GitObject> {
-        self.inner
-            .insert(data)
+        ContentStore::insert(&self.inner, data)
             .map(oid_to_git_object)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
@@ -178,21 +200,20 @@ impl GitStore {
         key: &Bound<'py, PyAny>,
     ) -> PyResult<Option<Bound<'py, PyBytes>>> {
         let oid = parse_git_hash(key)?;
-        Ok(self.inner.get(&oid).map(|data| PyBytes::new(py, &data)))
+        Ok(ContentStore::get(&self.inner, &oid).map(|data| PyBytes::new(py, &data)))
     }
 
     /// Store data under the given key.
     fn put(&self, key: &Bound<'_, PyAny>, data: &[u8]) -> PyResult<()> {
         let oid = parse_git_hash(key)?;
-        self.inner
-            .put(oid, data)
+        ContentStore::put(&self.inner, oid, data)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
     /// Check whether a key exists in the store.
     fn contains(&self, key: &Bound<'_, PyAny>) -> PyResult<bool> {
         let oid = parse_git_hash(key)?;
-        Ok(self.inner.contains(&oid))
+        Ok(ContentStore::contains(&self.inner, &oid))
     }
 
     fn __contains__(&self, key: &Bound<'_, PyAny>) -> PyResult<bool> {
@@ -207,6 +228,79 @@ impl GitStore {
 
     fn __repr__(&self) -> String {
         format!("GitStore({}, {})", self.algo, self.path.display())
+    }
+
+    // -- Typed object store API -----------------------------------------------
+
+    /// Insert a typed object. `kind` is one of "blob", "tree", "commit", "tag".
+    fn insert_object(&self, kind: &str, data: &[u8]) -> PyResult<GitObject> {
+        let obj_kind = parse_object_kind(kind)?;
+        let typed_data = data.to_vec();
+        let oid = match obj_kind {
+            ObjectKind::Blob => {
+                ObjectStore::insert(&self.inner, &covalence_store::Blob(typed_data))
+            }
+            ObjectKind::Tree => {
+                ObjectStore::insert(&self.inner, &covalence_store::Tree(typed_data))
+            }
+            ObjectKind::Commit => {
+                ObjectStore::insert(&self.inner, &covalence_store::Commit(typed_data))
+            }
+            ObjectKind::Tag => ObjectStore::insert(&self.inner, &covalence_store::Tag(typed_data)),
+        };
+        oid.map(oid_to_git_object)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Get a typed object. Returns `(kind, data)` tuple or None if not found.
+    fn get_object<'py>(
+        &self,
+        py: Python<'py>,
+        key: &Bound<'py, PyAny>,
+    ) -> PyResult<Option<(String, Bound<'py, PyBytes>)>> {
+        let oid = parse_git_hash(key)?;
+        match self.inner.get_any(&oid) {
+            Ok(Some(obj)) => {
+                let kind_str = object_kind_str(obj.kind);
+                Ok(Some((kind_str.to_owned(), PyBytes::new(py, &obj.data))))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => Err(PyRuntimeError::new_err(e.to_string())),
+        }
+    }
+
+    /// Get object data with type checking. Returns bytes or None.
+    /// Raises TypeError if the stored object has a different kind.
+    fn get_typed<'py>(
+        &self,
+        py: Python<'py>,
+        key: &Bound<'py, PyAny>,
+        kind: &str,
+    ) -> PyResult<Option<Bound<'py, PyBytes>>> {
+        let oid = parse_git_hash(key)?;
+        let obj_kind = parse_object_kind(kind)?;
+        let result = match obj_kind {
+            ObjectKind::Blob => ObjectStore::<_, covalence_store::Blob>::get(&self.inner, &oid)
+                .map(|opt| opt.map(|b| b.into_data())),
+            ObjectKind::Tree => ObjectStore::<_, covalence_store::Tree>::get(&self.inner, &oid)
+                .map(|opt| opt.map(|t| t.into_data())),
+            ObjectKind::Commit => ObjectStore::<_, covalence_store::Commit>::get(&self.inner, &oid)
+                .map(|opt| opt.map(|c| c.into_data())),
+            ObjectKind::Tag => ObjectStore::<_, covalence_store::Tag>::get(&self.inner, &oid)
+                .map(|opt| opt.map(|t| t.into_data())),
+        };
+        match result {
+            Ok(Some(data)) => Ok(Some(PyBytes::new(py, &data))),
+            Ok(None) => Ok(None),
+            Err(covalence_store::StoreError::KindMismatch { expected, got }) => {
+                Err(PyTypeError::new_err(format!(
+                    "type mismatch: expected {}, got {}",
+                    object_kind_str(expected),
+                    object_kind_str(got),
+                )))
+            }
+            Err(e) => Err(PyRuntimeError::new_err(e.to_string())),
+        }
     }
 }
 

@@ -4,7 +4,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use covalence_hash::gix_hash;
-use covalence_store::StoreError;
+use covalence_store::{ObjectKind, StoreError};
 
 /// The type of a git object.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -43,6 +43,28 @@ impl FromStr for GitObjectKind {
             "commit" => Ok(Self::Commit),
             "tag" => Ok(Self::Tag),
             _ => Err(()),
+        }
+    }
+}
+
+impl From<GitObjectKind> for ObjectKind {
+    fn from(k: GitObjectKind) -> Self {
+        match k {
+            GitObjectKind::Blob => Self::Blob,
+            GitObjectKind::Tree => Self::Tree,
+            GitObjectKind::Commit => Self::Commit,
+            GitObjectKind::Tag => Self::Tag,
+        }
+    }
+}
+
+impl From<ObjectKind> for GitObjectKind {
+    fn from(k: ObjectKind) -> Self {
+        match k {
+            ObjectKind::Blob => Self::Blob,
+            ObjectKind::Tree => Self::Tree,
+            ObjectKind::Commit => Self::Commit,
+            ObjectKind::Tag => Self::Tag,
         }
     }
 }

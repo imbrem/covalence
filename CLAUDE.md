@@ -68,6 +68,7 @@ Several `covalence-*` crates exist to wrap external dependencies. All usage of t
 - **covalence-rand** — wraps `rand` (latest). All randomness usage should go through this crate.
 - **covalence-sig** — wraps `ed25519-dalek` for EdDSA signatures. Also re-exports a pinned `rand_core` 0.6 as `dalek_rand_core` (exception to the `covalence-rand` rule, required for `ed25519-dalek` compatibility).
 - **covalence-parse** — wraps `winnow` for parser combinators. Provides `leb128` module for unsigned LEB128 (varint) encoding/decoding.
+- **covalence-sexp** — S-expression parser with event-based architecture and dialect support. Three layers: `SExpVisitor` (SAX-style events + dialect config), `SExpBuilder`/`TreeBuilder` (bottom-up tree construction), and `SExp` (concrete type with `smol_str`). Three dialects: `CovalenceDialect` (default — `;;` line comments, `(; ;)` block comments, `b""` bytestrings, `|...|` quoted symbols), `SmtLibDialect` (`;` line comments), `WatDialect` (`""` → bytestrings, no `|...|`). API: `parse()` (Covalence), `parse_smt()` (SMT-LIB), `parse_wat()` (WAT), `parse_with()` (generic).
 - **covalence-types** — shared types used across the ecosystem (e.g. `Decision`).
 - **covalence-sat** — SAT formulas, DIMACS, DRAT proofs, solver traits. Depends on `covalence-types`.
 - **covalence-smt** — SMT-LIB2 terms, theories, Alethe proofs. Depends on `covalence-types`, `covalence-sat`, `covalence-sexp`.

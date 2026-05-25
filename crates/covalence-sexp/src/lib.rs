@@ -1,353 +1,43 @@
-use std::io;
+mod builder;
+pub mod dialect;
+mod parser;
+mod pretty;
+mod types;
+mod visitor;
 
-use pretty::{Arena, DocAllocator, DocBuilder};
+pub use builder::{DefaultBuilder, SExpBuilder, TreeBuilder};
+pub use dialect::{CovalenceDialect, Dialect, SmtLibDialect, WatDialect};
+pub use parser::parse_with;
+pub use pretty::prettyprint;
+pub use types::{Bytes, ParseError, SExp, StringKind};
+pub use visitor::SExpVisitor;
 
-const DEFAULT_WIDTH: usize = 80;
-const INDENT: isize = 2;
-
-/// A parsed S-expression.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SExp {
-    /// An atom: symbol, numeral, keyword, etc. Stored as-is from the source.
-    Atom(String),
-    /// A quoted string (contents are unescaped).
-    String(String),
-    /// A quoted symbol `|...|` (contents stored without pipes).
-    QuotedSymbol(String),
-    /// A parenthesized list of S-expressions.
-    List(Vec<SExp>),
-}
-
-/// A parse error with byte offset.
-#[derive(Debug, Clone, thiserror::Error)]
-#[error("offset {offset}: {message}")]
-pub struct ParseError {
-    pub offset: usize,
-    pub message: String,
-}
-
-/// Parse a string into a sequence of S-expressions.
+/// Parse S-expressions using the Covalence dialect (default).
+///
+/// `;;` line comments, `(; ;)` block comments, `"..."` → String,
+/// `b"..."` → ByteString, `|...|` quoted symbols.
 pub fn parse(input: &str) -> Result<Vec<SExp>, ParseError> {
-    let mut parser = Parser::new(input);
-    let mut result = Vec::new();
-    loop {
-        parser.skip_whitespace_and_comments();
-        if parser.is_eof() {
-            break;
-        }
-        result.push(parser.parse_sexp()?);
-    }
-    Ok(result)
+    parse_dialect(input, CovalenceDialect)
 }
 
-struct Parser<'a> {
-    input: &'a str,
-    pos: usize,
+/// Parse S-expressions using the SMT-LIB dialect.
+///
+/// `;` line comments, `"..."` → String, `|...|` quoted symbols.
+pub fn parse_smt(input: &str) -> Result<Vec<SExp>, ParseError> {
+    parse_dialect(input, SmtLibDialect)
 }
 
-impl<'a> Parser<'a> {
-    fn new(input: &'a str) -> Self {
-        Parser { input, pos: 0 }
-    }
+/// Parse S-expressions using the WAT dialect.
+///
+/// `;;` line comments, `(; ;)` block comments, `"..."` → ByteString.
+pub fn parse_wat(input: &str) -> Result<Vec<SExp>, ParseError> {
+    parse_dialect(input, WatDialect)
+}
 
-    fn is_eof(&self) -> bool {
-        self.pos >= self.input.len()
-    }
-
-    fn peek(&self) -> Option<u8> {
-        self.input.as_bytes().get(self.pos).copied()
-    }
-
-    fn advance(&mut self) {
-        self.pos += 1;
-    }
-
-    fn skip_whitespace_and_comments(&mut self) {
-        loop {
-            // Skip whitespace
-            while let Some(b) = self.peek() {
-                if b.is_ascii_whitespace() {
-                    self.advance();
-                } else {
-                    break;
-                }
-            }
-            // Skip line comments starting with ;
-            if self.peek() == Some(b';') {
-                while let Some(b) = self.peek() {
-                    self.advance();
-                    if b == b'\n' {
-                        break;
-                    }
-                }
-            } else {
-                break;
-            }
-        }
-    }
-
-    fn parse_sexp(&mut self) -> Result<SExp, ParseError> {
-        match self.peek() {
-            None => Err(ParseError {
-                offset: self.pos,
-                message: "unexpected end of input".into(),
-            }),
-            Some(b'(') => self.parse_list(),
-            Some(b'"') => self.parse_string(),
-            Some(b'|') => self.parse_quoted_symbol(),
-            Some(b')') => Err(ParseError {
-                offset: self.pos,
-                message: "unexpected ')'".into(),
-            }),
-            Some(_) => self.parse_atom(),
-        }
-    }
-
-    fn parse_list(&mut self) -> Result<SExp, ParseError> {
-        let open = self.pos;
-        self.advance(); // skip '('
-        let mut items = Vec::new();
-        loop {
-            self.skip_whitespace_and_comments();
-            if self.is_eof() {
-                return Err(ParseError {
-                    offset: open,
-                    message: "unclosed '('".into(),
-                });
-            }
-            if self.peek() == Some(b')') {
-                self.advance();
-                return Ok(SExp::List(items));
-            }
-            items.push(self.parse_sexp()?);
-        }
-    }
-
-    fn parse_string(&mut self) -> Result<SExp, ParseError> {
-        let start = self.pos;
-        self.advance(); // skip opening '"'
-        let mut s = String::new();
-        loop {
-            match self.peek() {
-                None => {
-                    return Err(ParseError {
-                        offset: start,
-                        message: "unterminated string".into(),
-                    });
-                }
-                Some(b'"') => {
-                    self.advance();
-                    return Ok(SExp::String(s));
-                }
-                Some(b'\\') => {
-                    self.advance();
-                    match self.peek() {
-                        Some(b'\\') => {
-                            s.push('\\');
-                            self.advance();
-                        }
-                        Some(b'"') => {
-                            s.push('"');
-                            self.advance();
-                        }
-                        Some(b'n') => {
-                            s.push('\n');
-                            self.advance();
-                        }
-                        Some(b't') => {
-                            s.push('\t');
-                            self.advance();
-                        }
-                        Some(b'r') => {
-                            s.push('\r');
-                            self.advance();
-                        }
-                        Some(b'a') => {
-                            s.push('\x07');
-                            self.advance();
-                        }
-                        Some(b'b') => {
-                            s.push('\x08');
-                            self.advance();
-                        }
-                        Some(b'f') => {
-                            s.push('\x0c');
-                            self.advance();
-                        }
-                        Some(b'v') => {
-                            s.push('\x0b');
-                            self.advance();
-                        }
-                        Some(b'x') => {
-                            self.advance();
-                            let c = self.parse_hex_escape(2, start)?;
-                            s.push(c);
-                        }
-                        Some(b'u') => {
-                            self.advance();
-                            if self.peek() == Some(b'{') {
-                                self.advance();
-                                let c = self.parse_hex_escape_until_brace(start)?;
-                                s.push(c);
-                            } else {
-                                let c = self.parse_hex_escape(4, start)?;
-                                s.push(c);
-                            }
-                        }
-                        Some(b'U') => {
-                            self.advance();
-                            let c = self.parse_hex_escape(8, start)?;
-                            s.push(c);
-                        }
-                        Some(other) => {
-                            // Be permissive: keep the backslash + char
-                            s.push('\\');
-                            s.push(other as char);
-                            self.advance();
-                        }
-                        None => {
-                            return Err(ParseError {
-                                offset: start,
-                                message: "unterminated string escape".into(),
-                            });
-                        }
-                    }
-                }
-                Some(_) => {
-                    // Handle multi-byte UTF-8 properly
-                    let remaining = &self.input[self.pos..];
-                    if let Some(c) = remaining.chars().next() {
-                        s.push(c);
-                        self.pos += c.len_utf8();
-                    }
-                }
-            }
-        }
-    }
-
-    fn parse_hex_escape(&mut self, digits: usize, string_start: usize) -> Result<char, ParseError> {
-        let mut n: u32 = 0;
-        for _ in 0..digits {
-            match self.peek() {
-                Some(b) if b.is_ascii_hexdigit() => {
-                    n = n * 16
-                        + match b {
-                            b'0'..=b'9' => (b - b'0') as u32,
-                            b'a'..=b'f' => (b - b'a' + 10) as u32,
-                            b'A'..=b'F' => (b - b'A' + 10) as u32,
-                            _ => unreachable!(),
-                        };
-                    self.advance();
-                }
-                _ => {
-                    return Err(ParseError {
-                        offset: string_start,
-                        message: "invalid hex escape".into(),
-                    });
-                }
-            }
-        }
-        char::from_u32(n).ok_or_else(|| ParseError {
-            offset: string_start,
-            message: format!("invalid unicode codepoint: U+{:04X}", n),
-        })
-    }
-
-    fn parse_hex_escape_until_brace(&mut self, string_start: usize) -> Result<char, ParseError> {
-        let mut n: u32 = 0;
-        let mut count = 0;
-        loop {
-            match self.peek() {
-                Some(b'}') => {
-                    self.advance();
-                    if count == 0 {
-                        return Err(ParseError {
-                            offset: string_start,
-                            message: "empty \\u{} escape".into(),
-                        });
-                    }
-                    return char::from_u32(n).ok_or_else(|| ParseError {
-                        offset: string_start,
-                        message: format!("invalid unicode codepoint: U+{:04X}", n),
-                    });
-                }
-                Some(b) if b.is_ascii_hexdigit() => {
-                    n = n * 16
-                        + match b {
-                            b'0'..=b'9' => (b - b'0') as u32,
-                            b'a'..=b'f' => (b - b'a' + 10) as u32,
-                            b'A'..=b'F' => (b - b'A' + 10) as u32,
-                            _ => unreachable!(),
-                        };
-                    count += 1;
-                    self.advance();
-                }
-                _ => {
-                    return Err(ParseError {
-                        offset: string_start,
-                        message: "invalid \\u{...} escape".into(),
-                    });
-                }
-            }
-        }
-    }
-
-    fn parse_quoted_symbol(&mut self) -> Result<SExp, ParseError> {
-        let start = self.pos;
-        self.advance(); // skip opening '|'
-        let mut s = String::new();
-        loop {
-            match self.peek() {
-                None => {
-                    return Err(ParseError {
-                        offset: start,
-                        message: "unterminated quoted symbol".into(),
-                    });
-                }
-                Some(b'|') => {
-                    self.advance();
-                    return Ok(SExp::QuotedSymbol(s));
-                }
-                Some(b'\\') => {
-                    // SMT-LIB says no backslashes inside |...|,
-                    // but we're permissive: just include it
-                    s.push('\\');
-                    self.advance();
-                }
-                Some(_) => {
-                    let remaining = &self.input[self.pos..];
-                    if let Some(c) = remaining.chars().next() {
-                        s.push(c);
-                        self.pos += c.len_utf8();
-                    }
-                }
-            }
-        }
-    }
-
-    fn parse_atom(&mut self) -> Result<SExp, ParseError> {
-        let start = self.pos;
-        while let Some(b) = self.peek() {
-            if b.is_ascii_whitespace()
-                || b == b'('
-                || b == b')'
-                || b == b';'
-                || b == b'"'
-                || b == b'|'
-            {
-                break;
-            }
-            self.advance();
-        }
-        let text = &self.input[start..self.pos];
-        if text.is_empty() {
-            return Err(ParseError {
-                offset: start,
-                message: "expected atom".into(),
-            });
-        }
-        Ok(SExp::Atom(text.to_owned()))
-    }
+fn parse_dialect<D: Dialect>(input: &str, dialect: D) -> Result<Vec<SExp>, ParseError> {
+    let mut visitor = TreeBuilder::new(DefaultBuilder, dialect);
+    parse_with(input, &mut visitor)?;
+    Ok(visitor.into_results())
 }
 
 /// Compute (line, col) from byte offset in source text (0-based).
@@ -366,62 +56,6 @@ pub fn offset_to_line_col(text: &str, offset: usize) -> (u32, u32) {
         }
     }
     (line, col)
-}
-
-/// Pretty-print a sequence of S-expressions.
-pub fn prettyprint(sexps: &[SExp], writer: &mut dyn io::Write) -> io::Result<()> {
-    let arena = Arena::<()>::new();
-    let docs: Vec<_> = sexps.iter().map(|s| sexp_to_doc(&arena, s)).collect();
-    if docs.is_empty() {
-        return Ok(());
-    }
-    let doc = arena.intersperse(docs, arena.hardline());
-    doc.1.render(DEFAULT_WIDTH, writer)
-}
-
-fn sexp_to_doc<'a>(arena: &'a Arena<'a>, sexp: &SExp) -> DocBuilder<'a, Arena<'a>> {
-    match sexp {
-        SExp::Atom(s) => arena.text(s.clone()),
-        SExp::String(s) => arena.text(format!("\"{}\"", escape_string(s))),
-        SExp::QuotedSymbol(s) => arena.text(format!("|{}|", s)),
-        SExp::List(items) => {
-            if items.is_empty() {
-                return arena.text("()");
-            }
-            let elems: Vec<_> = items.iter().map(|s| sexp_to_doc(arena, s)).collect();
-            let sep = arena.line();
-            arena
-                .text("(")
-                .append(
-                    arena
-                        .line_()
-                        .append(arena.intersperse(elems, sep))
-                        .nest(INDENT),
-                )
-                .append(arena.line_())
-                .append(arena.text(")"))
-                .group()
-        }
-    }
-}
-
-fn escape_string(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\t' => out.push_str("\\t"),
-            '\r' => out.push_str("\\r"),
-            '\x07' => out.push_str("\\a"),
-            '\x08' => out.push_str("\\b"),
-            '\x0c' => out.push_str("\\f"),
-            '\x0b' => out.push_str("\\v"),
-            c => out.push(c),
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -451,7 +85,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_string() {
+    fn parse_string_basic() {
         assert_eq!(
             parse(r#""hello world""#).unwrap(),
             vec![SExp::String("hello world".into())]
@@ -471,7 +105,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_quoted_symbol() {
+    fn parse_quoted_symbol_basic() {
         assert_eq!(
             parse("|hello world|").unwrap(),
             vec![SExp::QuotedSymbol("hello world".into())]
@@ -511,13 +145,13 @@ mod tests {
     }
 
     #[test]
-    fn parse_comments() {
+    fn parse_comments_double_semicolon() {
         assert_eq!(
-            parse("; comment\nfoo").unwrap(),
+            parse(";; comment\nfoo").unwrap(),
             vec![SExp::Atom("foo".into())]
         );
         assert_eq!(
-            parse("(a ; comment\nb)").unwrap(),
+            parse("(a ;; comment\nb)").unwrap(),
             vec![SExp::List(vec![
                 SExp::Atom("a".into()),
                 SExp::Atom("b".into()),
@@ -643,6 +277,6 @@ mod tests {
     fn parse_empty() {
         assert_eq!(parse("").unwrap(), vec![]);
         assert_eq!(parse("  \n  ").unwrap(), vec![]);
-        assert_eq!(parse("; just a comment\n").unwrap(), vec![]);
+        assert_eq!(parse(";; just a comment\n").unwrap(), vec![]);
     }
 }

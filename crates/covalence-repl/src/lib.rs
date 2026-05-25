@@ -262,6 +262,20 @@ fn sexp_to_wat(sexp: &SExp, out: &mut String) {
             }
             out.push('"');
         }
+        SExp::ByteString(bytes) => {
+            out.push('"');
+            for &b in bytes {
+                if b == b'"' || b == b'\\' {
+                    out.push('\\');
+                    out.push(b as char);
+                } else if b.is_ascii_graphic() || b == b' ' {
+                    out.push(b as char);
+                } else {
+                    out.push_str(&format!("\\{b:02x}"));
+                }
+            }
+            out.push('"');
+        }
         SExp::QuotedSymbol(s) => {
             out.push('|');
             out.push_str(s);

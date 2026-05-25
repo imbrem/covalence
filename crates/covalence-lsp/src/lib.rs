@@ -52,7 +52,9 @@ pub fn run_lsp(config: &LspConfig) {
 
 pub fn run_diagnose(path: &str) {
     let text = std::fs::read_to_string(path).unwrap();
-    let diagnostics = if is_sexp_path(path) {
+    let diagnostics = if is_smt_path(path) {
+        diagnose_smt(&text)
+    } else if is_cov_path(path) {
         diagnose_sexp(&text)
     } else if is_wat_path(path) {
         diagnose_wat(&text)
@@ -92,18 +94,29 @@ pub struct Server {
     documents: HashMap<Uri, String>,
 }
 
-/// Check if a URI refers to an S-expression file.
+/// Check if a URI refers to an S-expression file (any dialect).
 fn is_sexp_file(uri: &Uri) -> bool {
-    let path = uri.as_str();
-    is_sexp_path(path)
+    is_sexp_path(uri.as_str())
 }
 
-/// Check if a path refers to an S-expression file.
+/// Check if a URI refers to an SMT-LIB file.
+fn is_smt_file(uri: &Uri) -> bool {
+    is_smt_path(uri.as_str())
+}
+
+/// Check if a path refers to an SMT-LIB file.
+fn is_smt_path(path: &str) -> bool {
+    path.ends_with(".smt") || path.ends_with(".smt2") || path.ends_with(".alethe")
+}
+
+/// Check if a path refers to a Covalence file.
+fn is_cov_path(path: &str) -> bool {
+    path.ends_with(".cov")
+}
+
+/// Check if a path refers to an S-expression file (any dialect).
 fn is_sexp_path(path: &str) -> bool {
-    path.ends_with(".smt")
-        || path.ends_with(".smt2")
-        || path.ends_with(".alethe")
-        || path.ends_with(".cov")
+    is_smt_path(path) || is_cov_path(path)
 }
 
 /// Check if a URI refers to a WAT file.
@@ -114,6 +127,18 @@ fn is_wat_file(uri: &Uri) -> bool {
 /// Check if a path refers to a WAT file.
 fn is_wat_path(path: &str) -> bool {
     path.ends_with(".wat")
+}
+
+/// Parse sexp using the right dialect for the given URI.
+fn parse_sexp_for_uri(
+    uri: &Uri,
+    text: &str,
+) -> Result<Vec<covalence_sexp::SExp>, covalence_sexp::ParseError> {
+    if is_smt_file(uri) {
+        covalence_sexp::parse_smt(text)
+    } else {
+        covalence_sexp::parse(text)
+    }
 }
 
 impl Server {
@@ -156,7 +181,7 @@ impl Server {
         let text = self.documents.get(uri)?;
 
         if is_sexp_file(uri) {
-            let sexps = covalence_sexp::parse(text).ok()?;
+            let sexps = parse_sexp_for_uri(uri, text).ok()?;
             let mut buf = Vec::new();
             covalence_sexp::prettyprint(&sexps, &mut buf).ok()?;
             let formatted = String::from_utf8(buf).ok()?;
@@ -210,7 +235,18 @@ impl Server {
 }
 
 pub fn diagnose_sexp(text: &str) -> Vec<Diagnostic> {
-    match covalence_sexp::parse(text) {
+    diagnose_parse_result(covalence_sexp::parse(text), text)
+}
+
+pub fn diagnose_smt(text: &str) -> Vec<Diagnostic> {
+    diagnose_parse_result(covalence_sexp::parse_smt(text), text)
+}
+
+fn diagnose_parse_result(
+    result: Result<Vec<covalence_sexp::SExp>, covalence_sexp::ParseError>,
+    text: &str,
+) -> Vec<Diagnostic> {
+    match result {
         Ok(_) => vec![],
         Err(e) => {
             let (line, col) = covalence_sexp::offset_to_line_col(text, e.offset);
@@ -237,7 +273,9 @@ pub fn diagnose_wat(text: &str) -> Vec<Diagnostic> {
 }
 
 fn publish_diagnostics(uri: Uri, text: &str) -> lsp_server::Notification {
-    let diagnostics = if is_sexp_file(&uri) {
+    let diagnostics = if is_smt_file(&uri) {
+        diagnose_smt(text)
+    } else if is_sexp_file(&uri) {
         diagnose_sexp(text)
     } else if is_wat_file(&uri) {
         diagnose_wat(text)

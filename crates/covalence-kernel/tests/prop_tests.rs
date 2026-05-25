@@ -838,12 +838,12 @@ fn name_tag_traps() {
 }
 
 // ============================================================
-// Key-value store (map-{name}) imports
+// Store resource imports
 // ============================================================
 
 #[test]
-fn kv_store_basic() {
-    let bytes = wat(include_str!("wat/kv_store_basic/component.wat"));
+fn store_basic_set_get() {
+    let bytes = wat(include_str!("wat/store_basic/component.wat"));
 
     let engine = engine();
     let store = test_store();
@@ -852,8 +852,8 @@ fn kv_store_basic() {
 }
 
 #[test]
-fn kv_store_get_missing_traps() {
-    let bytes = wat(include_str!("wat/kv_store_get_missing_traps/component.wat"));
+fn store_get_missing_traps() {
+    let bytes = wat(include_str!("wat/store_get_missing_traps/component.wat"));
 
     let engine = engine();
     let store = test_store();
@@ -866,76 +866,18 @@ fn kv_store_get_missing_traps() {
 }
 
 #[test]
-fn kv_store_shared_across_link_deps() {
-    let store = test_store();
-
-    let writer_bytes = wat(include_str!(
-        "wat/kv_store_shared_across_link_deps/writer.wat"
-    ));
-    let writer_hash = store.insert(&writer_bytes).unwrap();
-    let writer_hex = writer_hash.to_string();
-
-    let reader_bytes = wat(include_str!(
-        "wat/kv_store_shared_across_link_deps/reader.wat"
-    ));
-    let reader_hash = store.insert(&reader_bytes).unwrap();
-    let reader_hex = reader_hash.to_string();
-
-    let parent_bytes = wat(
-        &include_str!("wat/kv_store_shared_across_link_deps/parent.wat")
-            .replace("{writer_hex}", &writer_hex)
-            .replace("{reader_hex}", &reader_hex),
-    );
-
-    let engine = engine();
-    let result = decide_result(&engine, &parent_bytes, &store);
-    assert_eq!(
-        result,
-        Decision::Sat,
-        "link-deps should share the same KV store"
-    );
-}
-
-#[test]
-fn kv_store_isolated_prove_dep() {
-    let store = test_store();
-
-    let dep_bytes = wat(include_str!("wat/kv_store_isolated_prove_dep/dep.wat"));
-    let dep_hash = store.insert(&dep_bytes).unwrap();
-    let dep_hex = dep_hash.to_string();
-
-    let parent_bytes =
-        wat(&include_str!("wat/kv_store_isolated_prove_dep/parent.wat")
-            .replace("{dep_hex}", &dep_hex));
-
-    let engine = engine();
-    let output = engine.decide(&parent_bytes, &store).expect("decide failed");
-    assert_eq!(
-        output.decision,
-        Decision::Sat,
-        "parent attested before prove-dep trapped"
-    );
-}
-
-#[test]
-fn kv_store_only_not_decidable() {
-    let bytes = wat(include_str!(
-        "wat/kv_store_only_not_decidable/component.wat"
-    ));
+fn store_open_sub_store() {
+    let bytes = wat(include_str!("wat/store_open_sub_store/component.wat"));
 
     let engine = engine();
     let store = test_store();
     let result = decide_result(&engine, &bytes, &store);
-    assert_eq!(
-        result,
-        Decision::Unsat,
-        "KV store alone (no attest) should be Unsat"
-    );
+    assert_eq!(result, Decision::Sat, "sub-store set/get should work");
 }
 
 #[test]
-fn kv_store_overwrite() {
-    let bytes = wat(include_str!("wat/kv_store_overwrite/component.wat"));
+fn store_overwrite() {
+    let bytes = wat(include_str!("wat/store_overwrite/component.wat"));
 
     let engine = engine();
     let store = test_store();
@@ -948,33 +890,77 @@ fn kv_store_overwrite() {
 }
 
 #[test]
-fn kv_store_two_independent_stores() {
-    let bytes = wat(include_str!(
-        "wat/kv_store_two_independent_stores/component.wat"
-    ));
+fn store_shared_across_link_deps() {
+    let store = test_store();
+
+    let writer_bytes = wat(include_str!("wat/store_shared_across_link_deps/writer.wat"));
+    let writer_hash = store.insert(&writer_bytes).unwrap();
+    let writer_hex = writer_hash.to_string();
+
+    let reader_bytes = wat(include_str!("wat/store_shared_across_link_deps/reader.wat"));
+    let reader_hash = store.insert(&reader_bytes).unwrap();
+    let reader_hex = reader_hash.to_string();
+
+    let parent_bytes = wat(
+        &include_str!("wat/store_shared_across_link_deps/parent.wat")
+            .replace("{writer_hex}", &writer_hex)
+            .replace("{reader_hex}", &reader_hex),
+    );
+
+    let engine = engine();
+    let result = decide_result(&engine, &parent_bytes, &store);
+    assert_eq!(
+        result,
+        Decision::Sat,
+        "link-deps should share the same store root"
+    );
+}
+
+#[test]
+fn store_isolated_prove_dep() {
+    let store = test_store();
+
+    let dep_bytes = wat(include_str!("wat/store_isolated_prove_dep/dep.wat"));
+    let dep_hash = store.insert(&dep_bytes).unwrap();
+    let dep_hex = dep_hash.to_string();
+
+    let parent_bytes = wat(
+        &include_str!("wat/store_isolated_prove_dep/parent.wat").replace("{dep_hex}", &dep_hex)
+    );
+
+    let engine = engine();
+    let output = engine.decide(&parent_bytes, &store).expect("decide failed");
+    assert_eq!(
+        output.decision,
+        Decision::Sat,
+        "parent attested before prove-dep trapped"
+    );
+}
+
+#[test]
+fn store_only_not_decidable() {
+    let bytes = wat(include_str!("wat/store_only_not_decidable/component.wat"));
 
     let engine = engine();
     let store = test_store();
     let result = decide_result(&engine, &bytes, &store);
     assert_eq!(
         result,
-        Decision::Sat,
-        "map-a and map-b should be independent stores"
+        Decision::Unsat,
+        "store alone (no attest) should be Unsat"
     );
 }
 
 #[test]
-fn kv_store_parent_child_independent() {
+fn store_parent_child_independent() {
     let store = test_store();
 
-    let dep_bytes = wat(include_str!(
-        "wat/kv_store_parent_child_independent/dep.wat"
-    ));
+    let dep_bytes = wat(include_str!("wat/store_parent_child_independent/dep.wat"));
     let dep_hash = store.insert(&dep_bytes).unwrap();
     let dep_hex = dep_hash.to_string();
 
     let parent_bytes = wat(
-        &include_str!("wat/kv_store_parent_child_independent/parent.wat")
+        &include_str!("wat/store_parent_child_independent/parent.wat")
             .replace("{dep_hex}", &dep_hex),
     );
 
@@ -989,5 +975,61 @@ fn kv_store_parent_child_independent() {
         output.proved.contains(&dep_hash),
         "prove-dep should be proved: proved={:?}",
         output.proved
+    );
+}
+
+#[test]
+fn store_nested_hierarchy() {
+    let bytes = wat(include_str!("wat/store_nested_hierarchy/component.wat"));
+
+    let engine = engine();
+    let store = test_store();
+    let result = decide_result(&engine, &bytes, &store);
+    assert_eq!(
+        result,
+        Decision::Sat,
+        "multi-level dir navigation should persist data"
+    );
+}
+
+#[test]
+fn store_child_returns_nested() {
+    let store = test_store();
+
+    let child_bytes = wat(include_str!("wat/store_child_returns_nested/child.wat"));
+    let child_hash = store.insert(&child_bytes).unwrap();
+    let child_hex = child_hash.to_string();
+
+    let parent_bytes = wat(&include_str!("wat/store_child_returns_nested/parent.wat")
+        .replace("{child_hex}", &child_hex));
+
+    let engine = engine();
+    let result = decide_result(&engine, &parent_bytes, &store);
+    assert_eq!(
+        result,
+        Decision::Sat,
+        "parent should read nested store data returned by child"
+    );
+}
+
+#[test]
+fn store_nested_no_parent_access() {
+    let store = test_store();
+
+    let child_bytes = wat(include_str!("wat/store_nested_no_parent_access/child.wat"));
+    let child_hash = store.insert(&child_bytes).unwrap();
+    let child_hex = child_hash.to_string();
+
+    let parent_bytes = wat(
+        &include_str!("wat/store_nested_no_parent_access/parent.wat")
+            .replace("{child_hex}", &child_hex),
+    );
+
+    let engine = engine();
+    let output = engine.decide(&parent_bytes, &store).expect("decide failed");
+    assert_eq!(
+        output.decision,
+        Decision::Sat,
+        "parent attested before trap; nested store can't see root keys"
     );
 }

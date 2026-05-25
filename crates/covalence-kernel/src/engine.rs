@@ -20,7 +20,7 @@
 //! | `link-{hash}` | Shared instance in the container | Cached by hash |
 //! | `copy-{hash}` | Instance embedded in the importer | Always fresh |
 //! | `prove-{hash}` | Container boundary (nested scope) | Isolated + lazy |
-//! | `map-{name}` | Named key-value store | Shared in container |
+//! | `store` | Hierarchical KV store resource | Shared in container |
 //!
 //! **Link** deps are eagerly instantiated once and shared across all importers
 //! within the same linking scope (the "diamond dep" pattern).
@@ -34,13 +34,22 @@
 //! the dep's hash is pushed onto a prove stack; if `attest()` fires while
 //! the hash is on the stack, that hash is recorded as proved.
 //!
-//! **Map** stores provide a key-value store (`get`/`set`) shared across all
+//! **Store** provides a hierarchical key-value resource shared across all
 //! components in the same container. Prove-dep boundaries create fresh,
-//! isolated stores. Maps are **strictly typed**: each (key\_type, value\_type)
-//! combination is disjoint (e.g. `map<u8,u8>` and `map<u16,u8>` don't share
+//! isolated stores. The store is **strictly typed**: each (key\_type, value\_type)
+//! combination is disjoint (e.g. `store<u8,u8>` and `store<u16,u8>` don't share
 //! state). Supported types for keys and values: u8, s8, u16, s16, u32, s32,
 //! u64, s64, string, and `list<T>` for any of those integer types (where
 //! `list<u8>` serves as the blob type).
+//!
+//! The store resource API:
+//! - `root()` → the container's shared root store
+//! - `new()` → a fresh anonymous store (not shared)
+//! - `set(borrow<store>, key, value)` — insert/overwrite
+//! - `get(borrow<store>, key) → value` — lookup (traps if missing)
+//! - `dir(borrow<store>, key) → own<store>` — sub-store navigation
+//! - `clone(borrow<store>) → own<store>` — duplicate handle (same data)
+//! - `read-only(borrow<store>) → own<store>` — read-only clone (set traps)
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -48,7 +57,9 @@ use std::sync::{Arc, Mutex};
 use covalence_hash::O256;
 use covalence_store::{BlobStore, ContentStore};
 use covalence_wasm::engine::wasmtime;
-use wasmtime::component::{Component, Func, Linker, Resource, ResourceTable, ResourceType, Val};
+use wasmtime::component::{
+    Component, Func, Linker, Resource, ResourceAny, ResourceTable, ResourceType, Val,
+};
 use wasmtime::{Engine, Store, StoreContextMut};
 
 use crate::{DecideOutput, Decision};
@@ -62,6 +73,27 @@ struct BlobHandle {
 /// Host-side representation of a name resource.
 struct NameHandle {
     hash: O256,
+}
+
+/// Hierarchical key-value store data, backing the `store` resource.
+struct StoreData {
+    values: HashMap<Vec<u8>, Vec<u8>>,
+    children: HashMap<Vec<u8>, Arc<Mutex<StoreData>>>,
+}
+
+impl StoreData {
+    fn new() -> Self {
+        StoreData {
+            values: HashMap::new(),
+            children: HashMap::new(),
+        }
+    }
+}
+
+/// A handle to a `StoreData`, optionally read-only.
+struct StoreHandle {
+    data: Arc<Mutex<StoreData>>,
+    writable: bool,
 }
 
 /// Host state threaded through wasmtime's Store.
@@ -106,9 +138,9 @@ enum ImportKind {
     /// through this dep pushes its hash onto the prove stack; if `attest()`
     /// fires while the hash is on the stack, it is recorded as proved.
     Prove(O256),
-    /// A named key-value store: `map-{name}`.
-    /// Shared within a container, isolated across prove-dep boundaries.
-    Map(String),
+    /// The store resource interface: "store".
+    /// Provides a hierarchical KV store shared within a container.
+    Store,
     /// Unknown import name.
     Unknown(String),
 }
@@ -140,8 +172,8 @@ fn categorize_import(name: &str) -> ImportKind {
             return ImportKind::Prove(hash);
         }
     }
-    if let Some(store_name) = name.strip_prefix("map-") {
-        return ImportKind::Map(store_name.to_string());
+    if name == "store" {
+        return ImportKind::Store;
     }
     ImportKind::Unknown(name.to_string())
 }
@@ -189,7 +221,8 @@ pub(crate) struct ImportManifest {
     link_deps: Vec<O256>,
     copy_deps: Vec<(String, O256)>,
     prove_deps: Vec<O256>,
-    kv_stores: Vec<String>,
+    #[allow(dead_code)] // stored for future use (read-only imports)
+    has_store: bool,
 }
 
 impl ImportManifest {
@@ -201,7 +234,7 @@ impl ImportManifest {
         let mut link_deps: Vec<O256> = Vec::new();
         let mut copy_deps: Vec<(String, O256)> = Vec::new();
         let mut prove_deps: Vec<O256> = Vec::new();
-        let mut kv_stores: Vec<String> = Vec::new();
+        let mut has_store = false;
 
         for (name, _) in ty.imports(engine) {
             match categorize_import(name) {
@@ -209,7 +242,7 @@ impl ImportManifest {
                 ImportKind::Link(hash) => link_deps.push(hash),
                 ImportKind::Copy(hash) => copy_deps.push((name.to_string(), hash)),
                 ImportKind::Prove(hash) => prove_deps.push(hash),
-                ImportKind::Map(store_name) => kv_stores.push(store_name),
+                ImportKind::Store => has_store = true,
                 _ => {}
             }
         }
@@ -229,7 +262,7 @@ impl ImportManifest {
             link_deps,
             copy_deps,
             prove_deps,
-            kv_stores,
+            has_store,
         }
     }
 
@@ -260,7 +293,7 @@ pub(crate) struct LinkScope<'a> {
     engine: &'a Engine,
     instance_cache: HashMap<O256, Vec<(String, Func)>>,
     lazy_proves: HashMap<O256, Arc<LazyProve>>,
-    kv_stores: HashMap<String, Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>>>,
+    root_store: Arc<Mutex<StoreData>>,
 }
 
 impl<'a> LinkScope<'a> {
@@ -269,7 +302,7 @@ impl<'a> LinkScope<'a> {
             engine,
             instance_cache: HashMap::new(),
             lazy_proves: HashMap::new(),
-            kv_stores: HashMap::new(),
+            root_store: Arc::new(Mutex::new(StoreData::new())),
         }
     }
 
@@ -300,13 +333,6 @@ impl<'a> LinkScope<'a> {
             copy_cache.insert(import_name.clone(), exports);
         }
 
-        // Pre-create KV stores from manifest
-        for store_name in &manifest.kv_stores {
-            self.kv_stores
-                .entry(store_name.clone())
-                .or_insert_with(|| Arc::new(Mutex::new(HashMap::new())));
-        }
-
         build_linker(
             self.engine,
             component,
@@ -314,7 +340,7 @@ impl<'a> LinkScope<'a> {
             &self.instance_cache,
             &self.lazy_proves,
             &copy_cache,
-            &self.kv_stores,
+            &self.root_store,
         )
     }
 
@@ -338,11 +364,6 @@ impl<'a> LinkScope<'a> {
                 ImportKind::Link(hash) => link_sub_deps.push(hash),
                 ImportKind::Copy(hash) => copy_sub_deps.push((name.to_string(), hash)),
                 ImportKind::Prove(hash) => prove_sub_deps.push(hash),
-                ImportKind::Map(store_name) => {
-                    self.kv_stores
-                        .entry(store_name)
-                        .or_insert_with(|| Arc::new(Mutex::new(HashMap::new())));
-                }
                 _ => {}
             }
         }
@@ -405,7 +426,7 @@ impl<'a> LinkScope<'a> {
             &self.instance_cache,
             &self.lazy_proves,
             &copy_cache,
-            &self.kv_stores,
+            &self.root_store,
         )?;
 
         // Instantiate the dep
@@ -467,7 +488,7 @@ impl<'a> LinkScope<'a> {
             &self.instance_cache,
             &self.lazy_proves,
             &copy_cache,
-            &self.kv_stores,
+            &self.root_store,
         )?;
 
         let instance = dep_linker
@@ -537,7 +558,7 @@ impl<'a> LinkScope<'a> {
             &child.instance_cache,
             &child.lazy_proves,
             &copy_cache,
-            &child.kv_stores,
+            &child.root_store,
         )?;
 
         let lazy = Arc::new(LazyProve {
@@ -854,8 +875,16 @@ fn deserialize_val(bytes: &[u8]) -> wasmtime::Result<Val> {
 // build_linker — free function (avoids borrow conflicts)
 // ---------------------------------------------------------------------------
 
+/// Extract a `ResourceAny` from a `Val::Resource`.
+fn extract_resource(val: &Val) -> wasmtime::Result<ResourceAny> {
+    match val {
+        Val::Resource(r) => Ok(*r),
+        _ => Err(wasmtime::Error::msg("expected resource")),
+    }
+}
+
 /// Build a linker for a component, wiring up attest, blob, link, copy,
-/// prove, and map imports.
+/// prove, and store imports.
 fn build_linker(
     engine: &Engine,
     component: &Component,
@@ -863,7 +892,7 @@ fn build_linker(
     instance_cache: &HashMap<O256, Vec<(String, Func)>>,
     lazy_proves: &HashMap<O256, Arc<LazyProve>>,
     copy_cache: &HashMap<String, Vec<(String, Func)>>,
-    kv_stores: &HashMap<String, Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>>>,
+    root_store: &Arc<Mutex<StoreData>>,
 ) -> Result<Linker<HostState>, DecideError> {
     let ty = component.component_type();
     let mut linker: Linker<HostState> = Linker::new(engine);
@@ -1162,49 +1191,153 @@ fn build_linker(
                     .map_err(|e| DecideError::LinkError(e.to_string()))?;
                 }
             }
-            ImportKind::Map(ref store_name) => {
-                let store = kv_stores
-                    .get(store_name)
-                    .cloned()
-                    .expect("kv store not pre-created");
-                let store_for_set = store.clone();
-                let store_for_get = store;
-                let err_name = store_name.clone();
-
+            ImportKind::Store => {
+                let store_ty = ResourceType::host::<StoreHandle>();
                 let mut root = linker.root();
                 let mut inst = root
                     .instance(name)
                     .map_err(|e| DecideError::LinkError(e.to_string()))?;
 
-                // set(key, value) — strict typing: value type tag is
-                // appended to the serialized key so that map<K,V1> and
-                // map<K,V2> are disjoint.
-                inst.func_new("set", move |_cx, ty, args, _results| {
-                    let val_tag = component_type_to_tag(&ty.params().nth(1).unwrap().1)?;
-                    let mut key = serialize_val(&args[0])?;
-                    key.push(val_tag);
-                    let value = serialize_val(&args[1])?;
-                    store_for_set.lock().unwrap().insert(key, value);
+                // Register resource type with destructor
+                inst.resource(
+                    "store",
+                    store_ty,
+                    |mut cx: StoreContextMut<'_, HostState>, rep| {
+                        cx.data_mut()
+                            .table
+                            .delete(Resource::<StoreHandle>::new_own(rep))?;
+                        Ok(())
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+                // root() -> own<store>
+                let root_for_root = root_store.clone();
+                inst.func_new("root", move |mut cx, _ty, _args, results| {
+                    let handle = StoreHandle {
+                        data: root_for_root.clone(),
+                        writable: true,
+                    };
+                    let resource = cx.data_mut().table.push(handle)?;
+                    results[0] = Val::Resource(ResourceAny::try_from_resource(resource, &mut cx)?);
                     Ok(())
                 })
                 .map_err(|e| DecideError::LinkError(e.to_string()))?;
 
-                // get(key) -> value — uses result type tag for strict typing.
-                inst.func_new("get", move |_cx, ty, args, results| {
-                    let val_tag = component_type_to_tag(&ty.results().next().unwrap())?;
-                    let mut key = serialize_val(&args[0])?;
+                // new() -> own<store>
+                inst.func_new("new", move |mut cx, _ty, _args, results| {
+                    let handle = StoreHandle {
+                        data: Arc::new(Mutex::new(StoreData::new())),
+                        writable: true,
+                    };
+                    let resource = cx.data_mut().table.push(handle)?;
+                    results[0] = Val::Resource(ResourceAny::try_from_resource(resource, &mut cx)?);
+                    Ok(())
+                })
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+                // [method]store.set(borrow<store>, key, value)
+                inst.func_new("[method]store.set", move |mut cx, ty, args, _results| {
+                    let resource_any = extract_resource(&args[0])?;
+                    let resource = resource_any.try_into_resource::<StoreHandle>(&mut cx)?;
+                    let (data, writable) = {
+                        let h = cx.data().table.get(&resource)?;
+                        (h.data.clone(), h.writable)
+                    };
+                    if !writable {
+                        return Err(wasmtime::Error::msg("store is read-only"));
+                    }
+                    let val_tag = component_type_to_tag(&ty.params().nth(2).unwrap().1)?;
+                    let mut key = serialize_val(&args[1])?;
                     key.push(val_tag);
-                    match store_for_get.lock().unwrap().get(&key).cloned() {
+                    let value = serialize_val(&args[2])?;
+                    data.lock().unwrap().values.insert(key, value);
+                    Ok(())
+                })
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+                // [method]store.get(borrow<store>, key) -> value
+                inst.func_new("[method]store.get", move |mut cx, ty, args, results| {
+                    let resource_any = extract_resource(&args[0])?;
+                    let resource = resource_any.try_into_resource::<StoreHandle>(&mut cx)?;
+                    let data = cx.data().table.get(&resource)?.data.clone();
+                    let val_tag = component_type_to_tag(&ty.results().next().unwrap())?;
+                    let mut key = serialize_val(&args[1])?;
+                    key.push(val_tag);
+                    match data.lock().unwrap().values.get(&key).cloned() {
                         Some(v) => {
                             results[0] = deserialize_val(&v)?;
                             Ok(())
                         }
-                        None => Err(wasmtime::Error::msg(format!(
-                            "key not found in map-{}",
-                            err_name
-                        ))),
+                        None => Err(wasmtime::Error::msg("key not found in store")),
                     }
                 })
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+                // [method]store.dir(borrow<store>, key) -> own<store>
+                inst.func_new("[method]store.dir", move |mut cx, ty, args, results| {
+                    let resource_any = extract_resource(&args[0])?;
+                    let resource = resource_any.try_into_resource::<StoreHandle>(&mut cx)?;
+                    let (parent_data, parent_writable) = {
+                        let h = cx.data().table.get(&resource)?;
+                        (h.data.clone(), h.writable)
+                    };
+                    let key_tag = component_type_to_tag(&ty.params().nth(1).unwrap().1)?;
+                    let mut key = serialize_val(&args[1])?;
+                    key.push(key_tag);
+                    let child_data = {
+                        let mut pd = parent_data.lock().unwrap();
+                        pd.children
+                            .entry(key)
+                            .or_insert_with(|| Arc::new(Mutex::new(StoreData::new())))
+                            .clone()
+                    };
+                    let child = StoreHandle {
+                        data: child_data,
+                        writable: parent_writable,
+                    };
+                    let child_resource = cx.data_mut().table.push(child)?;
+                    results[0] =
+                        Val::Resource(ResourceAny::try_from_resource(child_resource, &mut cx)?);
+                    Ok(())
+                })
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+                // [method]store.clone(borrow<store>) -> own<store>
+                inst.func_new("[method]store.clone", move |mut cx, _ty, args, results| {
+                    let resource_any = extract_resource(&args[0])?;
+                    let resource = resource_any.try_into_resource::<StoreHandle>(&mut cx)?;
+                    let (data, writable) = {
+                        let h = cx.data().table.get(&resource)?;
+                        (h.data.clone(), h.writable)
+                    };
+                    let cloned = StoreHandle { data, writable };
+                    let cloned_resource = cx.data_mut().table.push(cloned)?;
+                    results[0] =
+                        Val::Resource(ResourceAny::try_from_resource(cloned_resource, &mut cx)?);
+                    Ok(())
+                })
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+                // [method]store.read-only(borrow<store>) -> own<store>
+                inst.func_new(
+                    "[method]store.read-only",
+                    move |mut cx, _ty, args, results| {
+                        let resource_any = extract_resource(&args[0])?;
+                        let resource = resource_any.try_into_resource::<StoreHandle>(&mut cx)?;
+                        let data = cx.data().table.get(&resource)?.data.clone();
+                        let frozen = StoreHandle {
+                            data,
+                            writable: false,
+                        };
+                        let frozen_resource = cx.data_mut().table.push(frozen)?;
+                        results[0] = Val::Resource(ResourceAny::try_from_resource(
+                            frozen_resource,
+                            &mut cx,
+                        )?);
+                        Ok(())
+                    },
+                )
                 .map_err(|e| DecideError::LinkError(e.to_string()))?;
             }
             ImportKind::Unknown(ref unknown) => {
@@ -1254,12 +1387,12 @@ impl WasmEngine {
     ///   is pushed onto the prove stack; if `attest()` fires while the hash
     ///   is on the stack, that hash is recorded as proved. The prove-dep gets
     ///   isolated link-instances (not shared with the parent).
-    /// - `"map-{name}"`: a named key-value store with `get(key) -> value` and
-    ///   `set(key, value)`. Shared within a container, isolated across
-    ///   prove-dep boundaries. Strictly typed: each (key\_type, value\_type)
-    ///   combination is disjoint. Supports u8, s8, u16, s16, u32, s32, u64,
-    ///   s64, string, and `list<T>` (integer element types) for both keys
-    ///   and values.
+    /// - `"store"`: a hierarchical key-value store resource with `root()`,
+    ///   `new()`, `set(borrow, key, value)`, `get(borrow, key) → value`,
+    ///   `dir(borrow, key) → own`, `clone(borrow) → own`, and
+    ///   `read-only(borrow) → own`. Shared within a container (via `root`),
+    ///   isolated across prove-dep boundaries. Strictly typed: each
+    ///   (key\_type, value\_type) combination is disjoint.
     ///
     /// Returns a `DecideOutput` with the decision and any hashes proved.
     pub fn decide(

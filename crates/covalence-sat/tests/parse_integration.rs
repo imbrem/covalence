@@ -3,7 +3,9 @@
 use std::path::PathBuf;
 
 use covalence_sat::{
-    Decision, DratProof, Model, NaiveDratChecker, Solver, check_proof,
+    Decision, DratProof, Model, NaiveDratChecker, Solver,
+    advised::{self, DratChecker, NaiveMultiDratChecker},
+    check_proof,
     parse::{
         parse_dimacs, parse_drat_binary, parse_drat_text, write_dimacs_to_string,
         write_drat_binary_to_vec, write_drat_text_to_string,
@@ -254,7 +256,16 @@ impl covalence_sat::Solver for Varisat {
 
 #[test]
 fn varisat_confirms_unsat_then_drat_verifies() {
-    for problem in &["trivial-unsat", "three-clause-unsat", "four-clause-unsat"] {
+    for problem in &[
+        "trivial-unsat",
+        "three-clause-unsat",
+        "four-clause-unsat",
+        "example-4-vars",
+        "example-5-vars",
+        "example-Schur",
+        "uuf-30-1",
+        "uuf-50-2",
+    ] {
         let cnf = load_cnf(problem);
 
         // Varisat confirms UNSAT.
@@ -266,11 +277,12 @@ fn varisat_confirms_unsat_then_drat_verifies() {
             "{problem}: expected Unsat, got {err:?}"
         );
 
-        // DRAT proof independently verifies.
+        // DRAT proof independently verifies (RAT-capable checker).
         let proof = load_drat(problem);
-        let mut checker = NaiveDratChecker::new(&cnf);
+        let mut checker = NaiveMultiDratChecker::new();
+        let fid = checker.create(&cnf);
         assert!(
-            check_proof(&mut checker, &proof),
+            advised::check(&mut checker, fid, &proof),
             "{problem}: DRAT verification failed"
         );
     }
@@ -295,6 +307,11 @@ fn dimacs_roundtrip_all_assets() {
         "four-clause-unsat",
         "simple-sat",
         "empty-clause",
+        "example-4-vars",
+        "example-5-vars",
+        "example-Schur",
+        "uuf-30-1",
+        "uuf-50-2",
     ] {
         let cnf = load_cnf(problem);
         let output = write_dimacs_to_string(&cnf);
@@ -310,11 +327,155 @@ fn dimacs_roundtrip_all_assets() {
 
 #[test]
 fn drat_text_roundtrip_all_assets() {
-    for problem in &["trivial-unsat", "three-clause-unsat", "four-clause-unsat"] {
+    for problem in &[
+        "trivial-unsat",
+        "three-clause-unsat",
+        "four-clause-unsat",
+        "example-4-vars",
+        "example-5-vars",
+        "example-Schur",
+        "uuf-30-1",
+        "uuf-50-2",
+    ] {
         let proof = load_drat(problem);
         let output = write_drat_text_to_string(&proof);
         let proof2 = parse_drat_text(&output)
             .unwrap_or_else(|e| panic!("{problem} DRAT text roundtrip parse failed: {e}"));
         assert_eq!(proof, proof2, "{problem} DRAT text roundtrip mismatch");
+    }
+}
+
+// --------------------------------------------------------------------
+// drat-trim example structure tests
+// --------------------------------------------------------------------
+
+#[test]
+fn example_4_vars_structure() {
+    let cnf = load_cnf("example-4-vars");
+    assert_eq!(cnf.num_vars(), 4);
+    assert_eq!(cnf.num_clauses(), 8);
+    // All ternary clauses.
+    for clause in cnf.clauses() {
+        assert_eq!(clause.len(), 3);
+    }
+}
+
+#[test]
+fn example_5_vars_structure() {
+    let cnf = load_cnf("example-5-vars");
+    assert_eq!(cnf.num_vars(), 5);
+    assert_eq!(cnf.num_clauses(), 8);
+
+    // Proof introduces auxiliary variable 6 (proper DRAT, not just DRUP).
+    let proof = load_drat("example-5-vars");
+    let has_var_6 = proof.steps().iter().any(|step| match step {
+        covalence_sat::DratStep::Add(c) | covalence_sat::DratStep::Delete(c) => {
+            c.lits().iter().any(|l| l.var().index() == 6)
+        }
+    });
+    assert!(has_var_6, "proof should introduce auxiliary variable 6");
+}
+
+#[test]
+fn example_schur_structure() {
+    let cnf = load_cnf("example-Schur");
+    assert_eq!(cnf.num_vars(), 9);
+    assert_eq!(cnf.num_clauses(), 32);
+}
+
+#[test]
+fn uuf_30_1_structure() {
+    let cnf = load_cnf("uuf-30-1");
+    assert_eq!(cnf.num_vars(), 30);
+    assert_eq!(cnf.num_clauses(), 127);
+    // All 3-SAT clauses.
+    for clause in cnf.clauses() {
+        assert_eq!(clause.len(), 3);
+    }
+}
+
+#[test]
+fn uuf_50_2_structure() {
+    let cnf = load_cnf("uuf-50-2");
+    assert_eq!(cnf.num_vars(), 50);
+    assert_eq!(cnf.num_clauses(), 209);
+}
+
+// --------------------------------------------------------------------
+// RAT-capable verification through all drat-trim examples
+// --------------------------------------------------------------------
+
+/// Verify a proof using the RAT-capable NaiveMultiDratChecker.
+fn verify_all(problem: &str) {
+    let cnf = load_cnf(problem);
+    let proof = load_drat(problem);
+
+    let mut checker = NaiveMultiDratChecker::new();
+    let fid = checker.create(&cnf);
+    assert!(
+        advised::check(&mut checker, fid, &proof),
+        "{problem}: verification failed"
+    );
+}
+
+#[test]
+fn all_checkers_example_schur() {
+    verify_all("example-Schur");
+}
+
+#[test]
+fn all_checkers_uuf_30_1() {
+    verify_all("uuf-30-1");
+}
+
+#[test]
+fn all_checkers_uuf_50_2() {
+    verify_all("uuf-50-2");
+}
+
+#[test]
+fn all_checkers_example_4_vars() {
+    verify_all("example-4-vars");
+}
+
+#[test]
+fn all_checkers_example_5_vars() {
+    verify_all("example-5-vars");
+}
+
+#[test]
+fn all_checkers_existing_proofs() {
+    for problem in &["trivial-unsat", "three-clause-unsat", "four-clause-unsat"] {
+        verify_all(problem);
+    }
+}
+
+// --------------------------------------------------------------------
+// Binary DRAT roundtrip for drat-trim examples
+// --------------------------------------------------------------------
+
+#[test]
+fn drat_trim_binary_roundtrip() {
+    for problem in &[
+        "example-4-vars",
+        "example-5-vars",
+        "example-Schur",
+        "uuf-30-1",
+        "uuf-50-2",
+    ] {
+        let proof = load_drat(problem);
+        let binary = write_drat_binary_to_vec(&proof);
+        let proof2 = parse_drat_binary(&binary)
+            .unwrap_or_else(|e| panic!("{problem} binary roundtrip parse failed: {e}"));
+        assert_eq!(proof, proof2, "{problem} binary roundtrip mismatch");
+
+        // Also verify the binary-parsed proof.
+        let cnf = load_cnf(problem);
+        let mut checker = NaiveMultiDratChecker::new();
+        let fid = checker.create(&cnf);
+        assert!(
+            advised::check(&mut checker, fid, &proof2),
+            "{problem}: binary-parsed proof failed verification"
+        );
     }
 }

@@ -106,7 +106,7 @@ fn decode_varint(data: &[u8], offset: usize) -> Result<(u32, usize), ParseError>
 /// Parse a standard binary DRAT proof.
 ///
 /// Binary format (drat-trim/CaDiCaL convention):
-/// - Optional `d` byte (0x64) for deletion
+/// - `a` byte (0x61) for addition, `d` byte (0x64) for deletion
 /// - Literals as varint: `(var << 1) | sign` where sign=1 means negative
 /// - Each byte: 7 data bits + MSB continuation flag
 /// - Clause terminated by `0x00`
@@ -115,12 +115,19 @@ pub fn parse_drat_binary(input: &[u8]) -> Result<DratProof, ParseError> {
     let mut pos = 0;
 
     while pos < input.len() {
-        let is_delete = input[pos] == b'd';
-        if is_delete {
-            pos += 1;
-            if pos >= input.len() {
-                return Err(ParseError::UnexpectedEof);
+        let is_delete = match input[pos] {
+            b'a' => {
+                pos += 1;
+                false
             }
+            b'd' => {
+                pos += 1;
+                true
+            }
+            _ => return Err(ParseError::InvalidBinaryEncoding { offset: pos }),
+        };
+        if pos >= input.len() {
+            return Err(ParseError::UnexpectedEof);
         }
 
         let mut lits = Vec::new();
@@ -206,6 +213,7 @@ pub fn write_drat_binary(proof: &DratProof, writer: &mut dyn Write) -> io::Resul
     for step in proof.steps() {
         match step {
             DratStep::Add(clause) => {
+                buf.push(b'a');
                 for lit in clause.lits() {
                     encode_lit_varint(*lit, &mut buf);
                 }
@@ -296,8 +304,8 @@ mod tests {
 
     #[test]
     fn binary_basic() {
-        // Add clause {1, -2}: lit 1 = (1<<1)|0 = 2, lit -2 = (2<<1)|1 = 5
-        let data: Vec<u8> = vec![0x02, 0x05, 0x00];
+        // Add clause {1, -2}: a, lit 1 = (1<<1)|0 = 2, lit -2 = (2<<1)|1 = 5
+        let data: Vec<u8> = vec![b'a', 0x02, 0x05, 0x00];
         let proof = parse_drat_binary(&data).unwrap();
         assert_eq!(proof.len(), 1);
         let step = &proof.steps()[0];
@@ -323,7 +331,7 @@ mod tests {
         // 200 = 0b11001000
         // varint: first byte = 200 & 0x7F = 0x48, set continuation: 0xC8
         // second byte = 200 >> 7 = 1, no continuation: 0x01
-        let data: Vec<u8> = vec![0xC8, 0x01, 0x00];
+        let data: Vec<u8> = vec![b'a', 0xC8, 0x01, 0x00];
         let proof = parse_drat_binary(&data).unwrap();
         assert_eq!(proof.len(), 1);
         if let DratStep::Add(c) = &proof.steps()[0] {
@@ -333,7 +341,7 @@ mod tests {
 
     #[test]
     fn binary_empty_clause() {
-        let data: Vec<u8> = vec![0x00];
+        let data: Vec<u8> = vec![b'a', 0x00];
         let proof = parse_drat_binary(&data).unwrap();
         assert_eq!(proof.len(), 1);
         assert!(matches!(&proof.steps()[0], DratStep::Add(c) if c.is_empty()));

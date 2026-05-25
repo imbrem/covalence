@@ -2,9 +2,8 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyString, PyTuple};
 
-use covalence_hash::DirMode;
 use covalence_object::{
-    Dir, DirRow, DynSchema, FieldSpec, FieldType, TableBuilder as RustTableBuilder,
+    Dir, DirMode, DirRow, FieldSpec, FieldType, RowSchema, TableBuilder as RustTableBuilder,
     TableParser as RustTableParser,
 };
 
@@ -93,30 +92,37 @@ fn format_field_spec(spec: &FieldSpec) -> String {
 /// Dynamic table builder using a RowSchema.
 #[pyclass(name = "TableBuilder")]
 pub struct PyTableBuilder {
-    inner: RustTableBuilder<DynSchema>,
+    inner: Option<RustTableBuilder<RowSchema>>,
+}
+
+impl PyTableBuilder {
+    fn builder_mut(&mut self) -> PyResult<&mut RustTableBuilder<RowSchema>> {
+        self.inner
+            .as_mut()
+            .ok_or_else(|| PyValueError::new_err("builder already consumed by build()"))
+    }
 }
 
 #[pymethods]
 impl PyTableBuilder {
     #[new]
     fn new(schema: &PyRowSchema) -> Self {
-        let dyn_schema = DynSchema::new(schema.specs.clone());
         Self {
-            inner: RustTableBuilder::new(dyn_schema),
+            inner: Some(RustTableBuilder::new(RowSchema::new(schema.specs.clone()))),
         }
     }
 
     /// Add a ref hash. Accepts O256 or hex string.
     fn push_ref(&mut self, key: &Bound<'_, PyAny>) -> PyResult<()> {
         let h = parse_hash(key)?;
-        self.inner.push_ref(h);
+        self.builder_mut()?.push_ref(h);
         Ok(())
     }
 
     /// Add a dep hash. Accepts O256 or hex string.
     fn push_dep(&mut self, key: &Bound<'_, PyAny>) -> PyResult<()> {
         let h = parse_hash(key)?;
-        self.inner.push_dep(h);
+        self.builder_mut()?.push_dep(h);
         Ok(())
     }
 
@@ -127,14 +133,18 @@ impl PyTableBuilder {
             let bytes: Vec<u8> = item.extract()?;
             row.push(bytes);
         }
-        self.inner.push_row(row);
+        self.builder_mut()?.push_row(row);
         Ok(())
     }
 
-    /// Build the table blob.
-    fn build<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
-        let blob = self.inner.build();
-        PyBytes::new(py, &blob)
+    /// Build the table blob (consumes the builder).
+    fn build<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
+        let builder = self
+            .inner
+            .take()
+            .ok_or_else(|| PyValueError::new_err("builder already consumed by build()"))?;
+        let table = builder.build();
+        Ok(PyBytes::new(py, table.as_bytes()))
     }
 
     /// Parse a table blob (dynamic schema auto-detected from header).
@@ -220,7 +230,15 @@ fn field_spec_to_py<'py>(py: Python<'py>, spec: &FieldSpec) -> PyResult<Bound<'p
 /// Directory table builder using the typed Dir schema.
 #[pyclass(name = "DirectoryBuilder")]
 pub struct PyDirectoryBuilder {
-    inner: RustTableBuilder<Dir>,
+    inner: Option<RustTableBuilder<Dir>>,
+}
+
+impl PyDirectoryBuilder {
+    fn builder_mut(&mut self) -> PyResult<&mut RustTableBuilder<Dir>> {
+        self.inner
+            .as_mut()
+            .ok_or_else(|| PyValueError::new_err("builder already consumed by build()"))
+    }
 }
 
 #[pymethods]
@@ -228,7 +246,7 @@ impl PyDirectoryBuilder {
     #[new]
     fn new() -> Self {
         Self {
-            inner: RustTableBuilder::new(Dir),
+            inner: Some(RustTableBuilder::new(Dir)),
         }
     }
 
@@ -258,7 +276,7 @@ impl PyDirectoryBuilder {
             }
         };
         let child_hash = parse_hash(child)?;
-        self.inner.push_row(DirRow {
+        self.builder_mut()?.push_row(DirRow {
             name: name_bytes,
             mode: dir_mode,
             child: child_hash,
@@ -266,10 +284,14 @@ impl PyDirectoryBuilder {
         Ok(())
     }
 
-    /// Build the directory table blob.
-    fn build<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
-        let blob = self.inner.build();
-        PyBytes::new(py, &blob)
+    /// Build the directory table blob (consumes the builder).
+    fn build<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
+        let builder = self
+            .inner
+            .take()
+            .ok_or_else(|| PyValueError::new_err("builder already consumed by build()"))?;
+        let table = builder.build();
+        Ok(PyBytes::new(py, table.as_bytes()))
     }
 
     /// Parse a directory table blob.

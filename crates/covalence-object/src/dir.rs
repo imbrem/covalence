@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 
 use covalence_hash::O256;
 
-use crate::table::{FieldSpec, RowCodec, RowSchema, TableError, min_bytes, read_le, write_le};
+use crate::table::{
+    FieldSpec, RowCodec, RowSchema, Table, TableError, min_bytes, read_le, write_le,
+};
 
 /// The mode of a directory entry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -219,6 +221,35 @@ impl RowCodec for Dir {
 
         Ok(DirRow { name, mode, child })
     }
+
+    fn prepare(&self, rows: &mut [DirRow<Vec<u8>>]) {
+        rows.sort_by(|a, b| a.name.cmp(&b.name));
+        assert!(
+            rows.windows(2).all(|w| w[0].name != w[1].name),
+            "directory rows must have unique names",
+        );
+    }
+}
+
+impl Table<Dir> {
+    /// Look up a directory entry by name (binary search, O(log n)).
+    ///
+    /// Relies on [`Dir::prepare`] having sorted rows by name.
+    pub fn get(&self, name: &[u8]) -> Result<Option<DirRow<&[u8]>>, TableError> {
+        let n = self.num_entries();
+        let mut lo = 0usize;
+        let mut hi = n;
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            let row = self.row(mid)?;
+            match row.name.cmp(name) {
+                std::cmp::Ordering::Equal => return Ok(Some(row)),
+                std::cmp::Ordering::Less => lo = mid + 1,
+                std::cmp::Ordering::Greater => hi = mid,
+            }
+        }
+        Ok(None)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -281,7 +312,7 @@ pub fn git_tree_sha256<N: AsRef<[u8]>>(rows: &[DirRow<N>]) -> O256 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::table::{TableBuilder, TableParser};
+    use crate::table::TableBuilder;
 
     // --- HashDir / DirBuilder tests (moved from covalence-hash::dir) ---
 
@@ -480,26 +511,26 @@ mod tests {
             child: child_src,
         });
 
-        let blob = builder.build();
-        let parser = TableParser::new(&blob, Dir).unwrap();
+        let table = builder.build();
 
-        assert_eq!(parser.num_entries(), 3);
+        assert_eq!(table.num_entries(), 3);
         // 2 mode refs (Blob, Dir) — sorted and deduped.
-        assert_eq!(parser.num_refs(), 2);
+        assert_eq!(table.num_refs(), 2);
         // 3 child deps.
-        assert_eq!(parser.num_deps(), 3);
+        assert_eq!(table.num_deps(), 3);
 
-        let row0 = parser.row(0).unwrap();
-        assert_eq!(row0.name, b"b.txt");
+        // Dir::prepare sorts by name, so rows are now in sorted order.
+        let row0 = table.row(0).unwrap();
+        assert_eq!(row0.name, b"a.txt");
         assert_eq!(row0.mode, DirMode::Blob);
-        assert_eq!(row0.child, child_b);
+        assert_eq!(row0.child, child_a);
 
-        let row1 = parser.row(1).unwrap();
-        assert_eq!(row1.name, b"a.txt");
+        let row1 = table.row(1).unwrap();
+        assert_eq!(row1.name, b"b.txt");
         assert_eq!(row1.mode, DirMode::Blob);
-        assert_eq!(row1.child, child_a);
+        assert_eq!(row1.child, child_b);
 
-        let row2 = parser.row(2).unwrap();
+        let row2 = table.row(2).unwrap();
         assert_eq!(row2.name, b"src");
         assert_eq!(row2.mode, DirMode::Dir);
         assert_eq!(row2.child, child_src);
@@ -513,11 +544,9 @@ mod tests {
             mode: DirMode::Blob,
             child: O256::blob("x"),
         });
-        // No manual push_ref/push_dep needed.
-        let blob = builder.build();
-        let parser = TableParser::new(&blob, Dir).unwrap();
-        assert_eq!(parser.num_refs(), 1); // Blob mode ref
-        assert_eq!(parser.num_deps(), 1); // child dep
+        let table = builder.build();
+        assert_eq!(table.num_refs(), 1); // Blob mode ref
+        assert_eq!(table.num_deps(), 1); // child dep
     }
 
     #[test]
@@ -535,10 +564,9 @@ mod tests {
             child: O256::blob("b"),
         });
 
-        let blob = builder.build();
-        let parser = TableParser::new(&blob, Dir).unwrap();
-        assert_eq!(parser.num_refs(), 1); // same Blob mode deduped
-        assert_eq!(parser.num_deps(), 2);
+        let table = builder.build();
+        assert_eq!(table.num_refs(), 1); // same Blob mode deduped
+        assert_eq!(table.num_deps(), 2);
     }
 
     #[test]
@@ -559,12 +587,89 @@ mod tests {
 
     #[test]
     fn empty_dir_table() {
-        let builder = TableBuilder::new(Dir);
-        let blob = builder.build();
-        let parser = TableParser::new(&blob, Dir).unwrap();
-        assert_eq!(parser.num_entries(), 0);
-        assert_eq!(parser.num_refs(), 0);
-        assert_eq!(parser.num_deps(), 0);
+        let table = TableBuilder::new(Dir).build();
+        assert_eq!(table.num_entries(), 0);
+        assert_eq!(table.num_refs(), 0);
+        assert_eq!(table.num_deps(), 0);
+    }
+
+    #[test]
+    fn prepare_sorts_rows() {
+        let mut builder = TableBuilder::new(Dir);
+        builder.push_row(DirRow {
+            name: b"z".to_vec(),
+            mode: DirMode::Blob,
+            child: O256::blob("z"),
+        });
+        builder.push_row(DirRow {
+            name: b"a".to_vec(),
+            mode: DirMode::Blob,
+            child: O256::blob("a"),
+        });
+        builder.push_row(DirRow {
+            name: b"m".to_vec(),
+            mode: DirMode::Dir,
+            child: O256::blob("m"),
+        });
+        let table = builder.build();
+        assert_eq!(table.row(0).unwrap().name, b"a");
+        assert_eq!(table.row(1).unwrap().name, b"m");
+        assert_eq!(table.row(2).unwrap().name, b"z");
+    }
+
+    #[test]
+    #[should_panic(expected = "unique names")]
+    fn prepare_panics_on_duplicate_names() {
+        let mut builder = TableBuilder::new(Dir);
+        builder.push_row(DirRow {
+            name: b"x".to_vec(),
+            mode: DirMode::Blob,
+            child: O256::blob("a"),
+        });
+        builder.push_row(DirRow {
+            name: b"x".to_vec(),
+            mode: DirMode::Dir,
+            child: O256::blob("b"),
+        });
+        let _ = builder.build();
+    }
+
+    #[test]
+    fn table_get_finds_entry() {
+        let child_a = O256::blob("a");
+        let child_m = O256::blob("m");
+        let child_z = O256::blob("z");
+
+        let mut builder = TableBuilder::new(Dir);
+        builder.push_row(DirRow {
+            name: b"z.txt".to_vec(),
+            mode: DirMode::Blob,
+            child: child_z,
+        });
+        builder.push_row(DirRow {
+            name: b"a.txt".to_vec(),
+            mode: DirMode::Blob,
+            child: child_a,
+        });
+        builder.push_row(DirRow {
+            name: b"m.txt".to_vec(),
+            mode: DirMode::Dir,
+            child: child_m,
+        });
+        let table = builder.build();
+
+        let found = table.get(b"m.txt").unwrap().unwrap();
+        assert_eq!(found.name, b"m.txt");
+        assert_eq!(found.mode, DirMode::Dir);
+        assert_eq!(found.child, child_m);
+
+        let found = table.get(b"a.txt").unwrap().unwrap();
+        assert_eq!(found.child, child_a);
+
+        let found = table.get(b"z.txt").unwrap().unwrap();
+        assert_eq!(found.child, child_z);
+
+        assert!(table.get(b"missing").unwrap().is_none());
     }
 
     // --- Git tree tests ---

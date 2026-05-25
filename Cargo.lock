@@ -572,12 +572,14 @@ name = "covalence-python"
 version = "0.0.0"
 dependencies = [
  "axum",
+ "bytes",
  "covalence-git",
  "covalence-hash",
  "covalence-kernel",
  "covalence-object",
  "covalence-repl",
  "covalence-serve",
+ "covalence-sexp",
  "covalence-store",
  "covalence-wasm",
  "pyo3",

@@ -5,6 +5,7 @@ mod git;
 mod hash;
 mod server;
 mod session;
+mod sexp;
 mod store;
 mod table;
 mod worker;
@@ -48,6 +49,13 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Server
     m.add_function(wrap_pyfunction!(server::serve, m)?)?;
+
+    // S-expression types
+    m.add_class::<sexp::PySExp>()?;
+    m.add_class::<sexp::PyPySExp>()?;
+    m.add_function(wrap_pyfunction!(sexp::parse_sexp, m)?)?;
+    m.add_function(wrap_pyfunction!(sexp::parse_sexp_smt, m)?)?;
+    m.add_function(wrap_pyfunction!(sexp::parse_sexp_wat, m)?)?;
 
     // Module-level convenience functions (lazy default backend)
     m.add_function(wrap_pyfunction!(default::store, m)?)?;

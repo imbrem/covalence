@@ -9,32 +9,32 @@ pub use builder::{DefaultBuilder, SExpBuilder, TreeBuilder};
 pub use dialect::{CovalenceDialect, Dialect, SmtLibDialect, WatDialect};
 pub use parser::parse_with;
 pub use pretty::prettyprint;
-pub use types::{Bytes, ParseError, SExp, StringKind};
+pub use types::{Atom, Bytes, ParseError, SExp, SExpr};
 pub use visitor::SExpVisitor;
 
 /// Parse S-expressions using the Covalence dialect (default).
 ///
-/// `;;` line comments, `(; ;)` block comments, `"..."` → String,
-/// `b"..."` → ByteString, `|...|` quoted symbols.
-pub fn parse(input: &str) -> Result<Vec<SExp>, ParseError> {
+/// `;;` line comments, `(; ;)` block comments, `"..."` → Str(format=""),
+/// `b"..."` → Str(format="b"), `|...|` quoted symbols.
+pub fn parse(input: &str) -> Result<Vec<SExpr>, ParseError> {
     parse_dialect(input, CovalenceDialect)
 }
 
 /// Parse S-expressions using the SMT-LIB dialect.
 ///
-/// `;` line comments, `"..."` → String, `|...|` quoted symbols.
-pub fn parse_smt(input: &str) -> Result<Vec<SExp>, ParseError> {
+/// `;` line comments, `"..."` → Str(format=""), `|...|` quoted symbols.
+pub fn parse_smt(input: &str) -> Result<Vec<SExpr>, ParseError> {
     parse_dialect(input, SmtLibDialect)
 }
 
 /// Parse S-expressions using the WAT dialect.
 ///
-/// `;;` line comments, `(; ;)` block comments, `"..."` → ByteString.
-pub fn parse_wat(input: &str) -> Result<Vec<SExp>, ParseError> {
+/// `;;` line comments, `(; ;)` block comments, `"..."` → Str(format="").
+pub fn parse_wat(input: &str) -> Result<Vec<SExpr>, ParseError> {
     parse_dialect(input, WatDialect)
 }
 
-fn parse_dialect<D: Dialect>(input: &str, dialect: D) -> Result<Vec<SExp>, ParseError> {
+fn parse_dialect<D: Dialect>(input: &str, dialect: D) -> Result<Vec<SExpr>, ParseError> {
     let mut visitor = TreeBuilder::new(DefaultBuilder, dialect);
     parse_with(input, &mut visitor)?;
     Ok(visitor.into_results())
@@ -71,24 +71,24 @@ mod tests {
 
     #[test]
     fn parse_atom() {
-        assert_eq!(parse("foo").unwrap(), vec![SExp::Atom("foo".into())]);
+        assert_eq!(parse("foo").unwrap(), vec![SExp::symbol("foo")]);
     }
 
     #[test]
     fn parse_keyword() {
-        assert_eq!(parse(":key").unwrap(), vec![SExp::Atom(":key".into())]);
+        assert_eq!(parse(":key").unwrap(), vec![SExp::symbol(":key")]);
     }
 
     #[test]
     fn parse_numeral() {
-        assert_eq!(parse("42").unwrap(), vec![SExp::Atom("42".into())]);
+        assert_eq!(parse("42").unwrap(), vec![SExp::symbol("42")]);
     }
 
     #[test]
     fn parse_string_basic() {
         assert_eq!(
             parse(r#""hello world""#).unwrap(),
-            vec![SExp::String("hello world".into())]
+            vec![SExp::string("", b"hello world".as_slice())]
         );
     }
 
@@ -96,19 +96,20 @@ mod tests {
     fn parse_string_escapes() {
         assert_eq!(
             parse(r#""a\"b\\c""#).unwrap(),
-            vec![SExp::String("a\"b\\c".into())]
+            vec![SExp::string("", b"a\"b\\c".as_slice())]
         );
         assert_eq!(
             parse(r#""line\nbreak""#).unwrap(),
-            vec![SExp::String("line\nbreak".into())]
+            vec![SExp::string("", b"line\nbreak".as_slice())]
         );
     }
 
     #[test]
     fn parse_quoted_symbol_basic() {
+        // Quoted symbols are now folded into Symbol
         assert_eq!(
             parse("|hello world|").unwrap(),
-            vec![SExp::QuotedSymbol("hello world".into())]
+            vec![SExp::symbol("hello world")]
         );
     }
 
@@ -122,9 +123,9 @@ mod tests {
         assert_eq!(
             parse("(+ 1 2)").unwrap(),
             vec![SExp::List(vec![
-                SExp::Atom("+".into()),
-                SExp::Atom("1".into()),
-                SExp::Atom("2".into()),
+                SExp::symbol("+"),
+                SExp::symbol("1"),
+                SExp::symbol("2"),
             ])]
         );
     }
@@ -134,11 +135,11 @@ mod tests {
         assert_eq!(
             parse("(assert (= x 0))").unwrap(),
             vec![SExp::List(vec![
-                SExp::Atom("assert".into()),
+                SExp::symbol("assert"),
                 SExp::List(vec![
-                    SExp::Atom("=".into()),
-                    SExp::Atom("x".into()),
-                    SExp::Atom("0".into()),
+                    SExp::symbol("="),
+                    SExp::symbol("x"),
+                    SExp::symbol("0"),
                 ]),
             ])]
         );
@@ -146,16 +147,10 @@ mod tests {
 
     #[test]
     fn parse_comments_double_semicolon() {
-        assert_eq!(
-            parse(";; comment\nfoo").unwrap(),
-            vec![SExp::Atom("foo".into())]
-        );
+        assert_eq!(parse(";; comment\nfoo").unwrap(), vec![SExp::symbol("foo")]);
         assert_eq!(
             parse("(a ;; comment\nb)").unwrap(),
-            vec![SExp::List(vec![
-                SExp::Atom("a".into()),
-                SExp::Atom("b".into()),
-            ])]
+            vec![SExp::List(vec![SExp::symbol("a"), SExp::symbol("b"),])]
         );
     }
 
@@ -250,7 +245,7 @@ mod tests {
     fn atom_stops_at_pipe() {
         assert_eq!(
             parse("foo|bar|").unwrap(),
-            vec![SExp::Atom("foo".into()), SExp::QuotedSymbol("bar".into()),]
+            vec![SExp::symbol("foo"), SExp::symbol("bar")]
         );
     }
 
@@ -278,5 +273,38 @@ mod tests {
         assert_eq!(parse("").unwrap(), vec![]);
         assert_eq!(parse("  \n  ").unwrap(), vec![]);
         assert_eq!(parse(";; just a comment\n").unwrap(), vec![]);
+    }
+
+    #[test]
+    fn map_transforms_atoms() {
+        let sexp = SExp::List(vec![
+            SExp::symbol("hello"),
+            SExp::string("", b"world".as_slice()),
+        ]);
+        let mapped = sexp.map(&mut |atom| match atom {
+            Atom::Symbol(s) => s.to_uppercase(),
+            Atom::Str { bytes, .. } => String::from_utf8_lossy(&bytes).to_string(),
+        });
+        assert_eq!(
+            mapped,
+            SExp::List(vec![
+                SExp::Atom("HELLO".to_string()),
+                SExp::Atom("world".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn format_prefix_parsing() {
+        // b"data" → Str { format: "b", bytes: b"data" }
+        assert_eq!(
+            parse(r#"b"data""#).unwrap(),
+            vec![SExp::string("b", b"data".as_slice())]
+        );
+        // json"hello" → Str { format: "json", bytes: b"hello" }
+        assert_eq!(
+            parse(r#"json"hello""#).unwrap(),
+            vec![SExp::string("json", b"hello".as_slice())]
+        );
     }
 }

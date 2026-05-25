@@ -1,8 +1,7 @@
 use super::Dialect;
-use crate::StringKind;
 
 /// Covalence dialect: `;;` line comments, `(; ;)` nested block comments,
-/// `"..."` → String, `b"..."` → ByteString, `|...|` quoted symbols.
+/// `"..."` → Str(format=""), `b"..."` → Str(format="b"), `|...|` quoted symbols.
 pub struct CovalenceDialect;
 
 impl Dialect for CovalenceDialect {
@@ -12,14 +11,6 @@ impl Dialect for CovalenceDialect {
 
     fn quoted_symbol_delim(&self) -> Option<u8> {
         Some(b'|')
-    }
-
-    fn bare_string_kind(&self) -> StringKind {
-        StringKind::String
-    }
-
-    fn supports_byte_prefix(&self) -> bool {
-        true
     }
 }
 

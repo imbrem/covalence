@@ -1,7 +1,7 @@
 pub use covalence_kernel::{BackendInfo, KernelError, SyncBackend};
 
 use covalence_hash::O256;
-use covalence_sexp::SExp;
+use covalence_sexp::{Atom, SExp, SExpr};
 
 /// A REPL session that evaluates S-expression commands locally,
 /// delegating storage and WASM execution to a SyncBackend.
@@ -44,12 +44,12 @@ impl Session {
     }
 
     /// Evaluate a single S-expression command.
-    pub fn eval_sexp(&mut self, sexp: &SExp) -> Result<String, String> {
+    pub fn eval_sexp(&mut self, sexp: &SExpr) -> Result<String, String> {
         match sexp {
             SExp::List(items) if !items.is_empty() => {
-                let cmd = match &items[0] {
-                    SExp::Atom(s) => s.as_str(),
-                    _ => return Err("command must be an atom".into()),
+                let cmd = match items[0].as_symbol() {
+                    Some(s) => s,
+                    None => return Err("command must be an atom".into()),
                 };
                 let args = &items[1..];
                 match cmd {
@@ -68,25 +68,25 @@ impl Session {
                     _ => Err(format!("unknown command: {cmd}")),
                 }
             }
-            SExp::Atom(s) if s == "help" => Ok(Self::cmd_help()),
-            SExp::Atom(s) if s == "status" => Ok(self.cmd_status()),
+            _ if sexp.as_symbol() == Some("help") => Ok(Self::cmd_help()),
+            _ if sexp.as_symbol() == Some("status") => Ok(self.cmd_status()),
             _ => Err("expected a command like (help) or (component ...)".into()),
         }
     }
 
-    fn cmd_store(&mut self, args: &[SExp]) -> Result<String, String> {
+    fn cmd_store(&mut self, args: &[SExpr]) -> Result<String, String> {
         if args.len() != 1 {
             return Err("usage: (store \"data\")".into());
         }
-        let data = match &args[0] {
-            SExp::String(s) => s.as_bytes().to_vec(),
+        let data = match args[0].as_str() {
+            Some(("", bytes)) => bytes.to_vec(),
             _ => return Err("store expects a string argument".into()),
         };
         let hash = self.backend.store_blob(&data).map_err(|e| e.to_string())?;
         Ok(hash.to_string())
     }
 
-    fn cmd_wat(&mut self, keyword: &str, args: &[SExp]) -> Result<String, String> {
+    fn cmd_wat(&mut self, keyword: &str, args: &[SExpr]) -> Result<String, String> {
         let mut wat = format!("({keyword}");
         for arg in args {
             wat.push(' ');
@@ -98,15 +98,17 @@ impl Session {
         Ok(hash.to_string())
     }
 
-    fn cmd_store_url(&mut self, args: &[SExp]) -> Result<String, String> {
+    fn cmd_store_url(&mut self, args: &[SExpr]) -> Result<String, String> {
         if !self.allow_fetch {
             return Err("store-url is not available in this mode".into());
         }
         if args.len() != 1 {
             return Err("usage: (store-url \"https://...\")".into());
         }
-        let _url = match &args[0] {
-            SExp::String(s) => s.as_str(),
+        let _url = match args[0].as_str() {
+            Some(("", bytes)) => {
+                std::str::from_utf8(bytes).map_err(|e| format!("URL is not valid UTF-8: {e}"))?
+            }
             _ => return Err("store-url expects a string argument".into()),
         };
         #[cfg(feature = "fetch")]
@@ -126,15 +128,17 @@ impl Session {
         }
     }
 
-    fn cmd_store_file(&mut self, args: &[SExp]) -> Result<String, String> {
+    fn cmd_store_file(&mut self, args: &[SExpr]) -> Result<String, String> {
         if !self.allow_fs {
             return Err("store-file is only available in CLI mode".into());
         }
         if args.len() != 1 {
             return Err("usage: (store-file \"path/to/file\")".into());
         }
-        let path = match &args[0] {
-            SExp::String(s) => s.as_str(),
+        let path = match args[0].as_str() {
+            Some(("", bytes)) => {
+                std::str::from_utf8(bytes).map_err(|e| format!("path is not valid UTF-8: {e}"))?
+            }
             _ => return Err("store-file expects a string argument".into()),
         };
         let data = std::fs::read(path).map_err(|e| format!("read error: {e}"))?;
@@ -142,7 +146,7 @@ impl Session {
         Ok(hash.to_string())
     }
 
-    fn cmd_parse_module(&self, args: &[SExp]) -> Result<String, String> {
+    fn cmd_parse_module(&self, args: &[SExpr]) -> Result<String, String> {
         let hash = self.require_hash_arg(args, "parse-module")?;
         let data = self
             .backend
@@ -154,7 +158,7 @@ impl Session {
             .map_err(|e| e.to_string())
     }
 
-    fn cmd_parse_component(&self, args: &[SExp]) -> Result<String, String> {
+    fn cmd_parse_component(&self, args: &[SExpr]) -> Result<String, String> {
         let hash = self.require_hash_arg(args, "parse-component")?;
         let data = self
             .backend
@@ -166,7 +170,7 @@ impl Session {
             .map_err(|e| e.to_string())
     }
 
-    fn cmd_decide(&self, args: &[SExp]) -> Result<String, String> {
+    fn cmd_decide(&self, args: &[SExpr]) -> Result<String, String> {
         let hash = self.require_hash_arg(args, "decide")?;
         let output = self.backend.decide(&hash).map_err(|e| e.to_string())?;
         let mut lines = Vec::new();
@@ -177,7 +181,7 @@ impl Session {
         Ok(lines.join("\n"))
     }
 
-    fn cmd_read(&self, args: &[SExp]) -> Result<String, String> {
+    fn cmd_read(&self, args: &[SExpr]) -> Result<String, String> {
         let hash = self.require_hash_arg(args, "read")?;
         let data = self
             .backend
@@ -187,7 +191,7 @@ impl Session {
         String::from_utf8(data).map_err(|e| format!("blob is not valid UTF-8: {e}"))
     }
 
-    fn cmd_read_wat(&self, args: &[SExp]) -> Result<String, String> {
+    fn cmd_read_wat(&self, args: &[SExpr]) -> Result<String, String> {
         let hash = self.require_hash_arg(args, "read-wat")?;
         let data = self
             .backend
@@ -235,52 +239,38 @@ impl Session {
             .join("\n")
     }
 
-    fn require_hash_arg(&self, args: &[SExp], cmd: &str) -> Result<O256, String> {
+    fn require_hash_arg(&self, args: &[SExpr], cmd: &str) -> Result<O256, String> {
         if args.len() != 1 {
             return Err(format!("usage: ({cmd} <hash>)"));
         }
-        let hex = match &args[0] {
-            SExp::Atom(s) => s.as_str(),
-            _ => return Err(format!("{cmd} expects a hash (64 hex chars)")),
+        let hex = match args[0].as_symbol() {
+            Some(s) => s,
+            None => return Err(format!("{cmd} expects a hash (64 hex chars)")),
         };
         O256::from_hex(hex).ok_or_else(|| format!("invalid hash: {hex}"))
     }
 }
 
 /// Serialize an SExp back to WAT-compatible text.
-fn sexp_to_wat(sexp: &SExp, out: &mut String) {
+fn sexp_to_wat(sexp: &SExpr, out: &mut String) {
     match sexp {
-        SExp::Atom(s) => out.push_str(s),
-        SExp::String(s) => {
-            out.push('"');
-            for ch in s.chars() {
-                match ch {
-                    '"' => out.push_str("\\\""),
-                    '\\' => out.push_str("\\\\"),
-                    _ => out.push(ch),
+        SExp::Atom(atom) => match atom {
+            Atom::Symbol(s) => out.push_str(s),
+            Atom::Str { bytes, .. } => {
+                out.push('"');
+                for &b in &**bytes {
+                    if b == b'"' || b == b'\\' {
+                        out.push('\\');
+                        out.push(b as char);
+                    } else if b.is_ascii_graphic() || b == b' ' {
+                        out.push(b as char);
+                    } else {
+                        out.push_str(&format!("\\{b:02x}"));
+                    }
                 }
+                out.push('"');
             }
-            out.push('"');
-        }
-        SExp::ByteString(bytes) => {
-            out.push('"');
-            for &b in bytes {
-                if b == b'"' || b == b'\\' {
-                    out.push('\\');
-                    out.push(b as char);
-                } else if b.is_ascii_graphic() || b == b' ' {
-                    out.push(b as char);
-                } else {
-                    out.push_str(&format!("\\{b:02x}"));
-                }
-            }
-            out.push('"');
-        }
-        SExp::QuotedSymbol(s) => {
-            out.push('|');
-            out.push_str(s);
-            out.push('|');
-        }
+        },
         SExp::List(items) => {
             out.push('(');
             for (i, item) in items.iter().enumerate() {

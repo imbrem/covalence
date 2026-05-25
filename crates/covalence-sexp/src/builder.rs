@@ -1,8 +1,10 @@
 use bytes::Bytes;
+use smol_str::SmolStr;
 
-use crate::SExp;
-use crate::StringKind;
+use crate::Atom;
+use crate::SExpr;
 use crate::dialect::Dialect;
+use crate::types::SExp;
 use crate::visitor::SExpVisitor;
 
 /// Bottom-up builder for S-expression trees.
@@ -10,35 +12,33 @@ pub trait SExpBuilder {
     type Output;
 
     fn build_atom(&mut self, text: &str) -> Self::Output;
-    fn build_string(&mut self, content: &str) -> Self::Output;
-    fn build_bytestring(&mut self, content: &[u8]) -> Self::Output;
+    fn build_string(&mut self, format: &str, bytes: &[u8]) -> Self::Output;
     fn build_quoted_symbol(&mut self, content: &str) -> Self::Output;
     fn build_list(&mut self, children: Vec<Self::Output>) -> Self::Output;
 }
 
-/// Default builder that produces `SExp` values.
+/// Default builder that produces `SExpr` values.
 pub struct DefaultBuilder;
 
 impl SExpBuilder for DefaultBuilder {
-    type Output = SExp;
+    type Output = SExpr;
 
-    fn build_atom(&mut self, text: &str) -> SExp {
-        SExp::Atom(text.into())
+    fn build_atom(&mut self, text: &str) -> SExpr {
+        SExp::Atom(Atom::Symbol(SmolStr::from(text)))
     }
 
-    fn build_string(&mut self, content: &str) -> SExp {
-        SExp::String(content.into())
+    fn build_string(&mut self, format: &str, bytes: &[u8]) -> SExpr {
+        SExp::Atom(Atom::Str {
+            format: SmolStr::from(format),
+            bytes: Bytes::copy_from_slice(bytes),
+        })
     }
 
-    fn build_bytestring(&mut self, content: &[u8]) -> SExp {
-        SExp::ByteString(Bytes::copy_from_slice(content))
+    fn build_quoted_symbol(&mut self, content: &str) -> SExpr {
+        SExp::Atom(Atom::Symbol(SmolStr::from(content)))
     }
 
-    fn build_quoted_symbol(&mut self, content: &str) -> SExp {
-        SExp::QuotedSymbol(content.into())
-    }
-
-    fn build_list(&mut self, children: Vec<SExp>) -> SExp {
+    fn build_list(&mut self, children: Vec<SExpr>) -> SExpr {
         SExp::List(children)
     }
 }
@@ -75,14 +75,6 @@ impl<B: SExpBuilder, D: Dialect> SExpVisitor for TreeBuilder<B, D> {
         self.dialect.quoted_symbol_delim()
     }
 
-    fn bare_string_kind(&self) -> StringKind {
-        self.dialect.bare_string_kind()
-    }
-
-    fn supports_byte_prefix(&self) -> bool {
-        self.dialect.supports_byte_prefix()
-    }
-
     fn open_list(&mut self) {
         self.stack.push(vec![]);
     }
@@ -98,13 +90,8 @@ impl<B: SExpBuilder, D: Dialect> SExpVisitor for TreeBuilder<B, D> {
         self.stack.last_mut().unwrap().push(node);
     }
 
-    fn string(&mut self, content: &str) {
-        let node = self.builder.build_string(content);
-        self.stack.last_mut().unwrap().push(node);
-    }
-
-    fn bytestring(&mut self, content: &[u8]) {
-        let node = self.builder.build_bytestring(content);
+    fn string(&mut self, format: &str, bytes: &[u8]) {
+        let node = self.builder.build_string(format, bytes);
         self.stack.last_mut().unwrap().push(node);
     }
 

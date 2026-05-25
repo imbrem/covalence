@@ -1,10 +1,10 @@
-use covalence_sexp::{Bytes, SExp, parse_wat};
+use covalence_sexp::{SExp, parse_wat};
 
 #[test]
 fn double_semicolon_comment() {
     assert_eq!(
         parse_wat(";; comment\n(module)").unwrap(),
-        vec![SExp::List(vec![SExp::Atom("module".into())])]
+        vec![SExp::List(vec![SExp::symbol("module")])]
     );
 }
 
@@ -12,15 +12,15 @@ fn double_semicolon_comment() {
 fn block_comment() {
     assert_eq!(
         parse_wat("(; comment ;)(module)").unwrap(),
-        vec![SExp::List(vec![SExp::Atom("module".into())])]
+        vec![SExp::List(vec![SExp::symbol("module")])]
     );
 }
 
 #[test]
-fn string_is_bytestring() {
+fn string_is_bytes() {
     assert_eq!(
         parse_wat(r#""hello""#).unwrap(),
-        vec![SExp::ByteString(Bytes::from_static(b"hello"))]
+        vec![SExp::string("", b"hello".as_slice())]
     );
 }
 
@@ -28,25 +28,21 @@ fn string_is_bytestring() {
 fn dollar_ident() {
     assert_eq!(
         parse_wat("$func_name").unwrap(),
-        vec![SExp::Atom("$func_name".into())]
+        vec![SExp::symbol("$func_name")]
     );
 }
 
 #[test]
 fn no_quoted_symbols() {
     // |...| is not a quoted symbol in WAT — | is a regular atom character
-    assert_eq!(
-        parse_wat("|foo|").unwrap(),
-        vec![SExp::Atom("|foo|".into())]
-    );
+    assert_eq!(parse_wat("|foo|").unwrap(), vec![SExp::symbol("|foo|")]);
 }
 
 #[test]
-fn no_byte_prefix() {
-    // b"..." not supported in WAT; b is an atom, "data" is a bytestring
+fn b_prefix_becomes_format() {
+    // b"..." not specially handled in WAT; b becomes format prefix
     let result = parse_wat(r#"b"data""#).unwrap();
-    assert_eq!(result[0], SExp::Atom("b".into()));
-    assert_eq!(result[1], SExp::ByteString(Bytes::from_static(b"data")));
+    assert_eq!(result[0], SExp::string("b", b"data".as_slice()));
 }
 
 #[test]
@@ -56,7 +52,7 @@ fn wat_module() {
     assert_eq!(result.len(), 1);
     match &result[0] {
         SExp::List(items) => {
-            assert_eq!(items[0], SExp::Atom("module".into()));
+            assert_eq!(items[0], SExp::symbol("module"));
         }
         _ => panic!("expected list"),
     }
@@ -66,7 +62,7 @@ fn wat_module() {
 fn nested_block_comment() {
     assert_eq!(
         parse_wat("(; outer (; nested ;) end ;)(module)").unwrap(),
-        vec![SExp::List(vec![SExp::Atom("module".into())])]
+        vec![SExp::List(vec![SExp::symbol("module")])]
     );
 }
 
@@ -75,6 +71,6 @@ fn byte_string_hex_escape() {
     // WAT strings use \hh for hex bytes
     assert_eq!(
         parse_wat(r#""\00\FF""#).unwrap(),
-        vec![SExp::ByteString(Bytes::from_static(&[0x00, 0xFF]))]
+        vec![SExp::string("", vec![0x00, 0xFF])]
     );
 }

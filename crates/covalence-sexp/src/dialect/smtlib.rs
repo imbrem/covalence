@@ -1,7 +1,6 @@
 use super::Dialect;
-use crate::StringKind;
 
-/// SMT-LIB dialect: `;` line comments, `|...|` quoted symbols, `"..."` → String.
+/// SMT-LIB dialect: `;` line comments, `|...|` quoted symbols, `"..."` → Str(format="").
 pub struct SmtLibDialect;
 
 impl Dialect for SmtLibDialect {
@@ -18,14 +17,6 @@ impl Dialect for SmtLibDialect {
 
     fn quoted_symbol_delim(&self) -> Option<u8> {
         Some(b'|')
-    }
-
-    fn bare_string_kind(&self) -> StringKind {
-        StringKind::String
-    }
-
-    fn supports_byte_prefix(&self) -> bool {
-        false
     }
 }
 

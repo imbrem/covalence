@@ -1,6 +1,6 @@
 use covalence_parse::winnow::{Parser, token::take_while};
 
-use crate::types::{ParseError, StringKind};
+use crate::types::ParseError;
 use crate::visitor::SExpVisitor;
 
 /// Parse S-expressions from `input`, dispatching events to `visitor`.
@@ -21,7 +21,6 @@ pub fn parse_with<V: SExpVisitor>(input: &str, visitor: &mut V) -> Result<(), Pa
             break;
         }
 
-        let offset = original.len() - stream.len();
         let b = stream.as_bytes()[0];
 
         match b {
@@ -33,7 +32,7 @@ pub fn parse_with<V: SExpVisitor>(input: &str, visitor: &mut V) -> Result<(), Pa
             b')' => {
                 if depth == 0 {
                     return Err(ParseError {
-                        offset,
+                        offset: original.len() - stream.len(),
                         message: "unexpected ')'".into(),
                     });
                 }
@@ -42,20 +41,27 @@ pub fn parse_with<V: SExpVisitor>(input: &str, visitor: &mut V) -> Result<(), Pa
                 depth -= 1;
             }
             b'"' => {
-                parse_string_token(&mut stream, visitor, original)?;
-            }
-            b'b' if visitor.supports_byte_prefix()
-                && stream.len() > 1
-                && stream.as_bytes()[1] == b'"' =>
-            {
-                stream = &stream[1..]; // skip 'b'
-                parse_bytestring_token(&mut stream, visitor, original)?;
+                // Bare string: format=""
+                let start = original.len() - stream.len();
+                stream = &stream[1..]; // skip opening '"'
+                let bytes = parse_string_body(&mut stream, start)?;
+                visitor.string("", &bytes);
             }
             _ if Some(b) == visitor.quoted_symbol_delim() => {
                 parse_quoted_symbol_token(&mut stream, visitor, original)?;
             }
             _ => {
-                parse_atom_token(&mut stream, visitor, original)?;
+                // Parse atom text, then check for format"..." prefix
+                let atom_text = scan_atom_text(&mut stream, visitor)?;
+                if !stream.is_empty() && stream.as_bytes()[0] == b'"' {
+                    // atom immediately precedes " → format prefix
+                    let start = original.len() - stream.len();
+                    stream = &stream[1..]; // skip opening '"'
+                    let bytes = parse_string_body(&mut stream, start)?;
+                    visitor.string(atom_text, &bytes);
+                } else {
+                    visitor.atom(atom_text);
+                }
             }
         }
     }
@@ -63,40 +69,43 @@ pub fn parse_with<V: SExpVisitor>(input: &str, visitor: &mut V) -> Result<(), Pa
     Ok(())
 }
 
-fn parse_string_token<V: SExpVisitor>(
-    stream: &mut &str,
-    visitor: &mut V,
-    original: &str,
-) -> Result<(), ParseError> {
-    let start = original.len() - stream.len();
-    *stream = &stream[1..]; // skip opening '"'
-    match visitor.bare_string_kind() {
-        StringKind::String => {
-            let s = parse_utf8_string_body(stream, start)?;
-            visitor.string(&s);
+/// Scan atom text without emitting an event. Returns a reference to the text.
+fn scan_atom_text<'a, V: SExpVisitor>(
+    stream: &mut &'a str,
+    visitor: &V,
+) -> Result<&'a str, ParseError> {
+    let qsd = visitor.quoted_symbol_delim();
+    let text: &str = take_while(1.., move |c: char| {
+        if !c.is_ascii() {
+            return true;
         }
-        StringKind::ByteString => {
-            let bytes = parse_byte_string_body(stream, start)?;
-            visitor.bytestring(&bytes);
-        }
-    }
-    Ok(())
+        let b = c as u8;
+        !b.is_ascii_whitespace() && !matches!(b, b'(' | b')' | b';' | b'"') && Some(b) != qsd
+    })
+    .parse_next(stream)
+    .map_err(
+        |_: covalence_parse::winnow::error::ErrMode<
+            covalence_parse::winnow::error::ContextError,
+        >| {
+            ParseError {
+                offset: 0,
+                message: "expected atom".into(),
+            }
+        },
+    )?;
+
+    Ok(text)
 }
 
-fn parse_bytestring_token<V: SExpVisitor>(
-    stream: &mut &str,
-    visitor: &mut V,
-    original: &str,
-) -> Result<(), ParseError> {
-    let start = original.len() - stream.len();
-    *stream = &stream[1..]; // skip opening '"'
-    let bytes = parse_byte_string_body(stream, start)?;
-    visitor.bytestring(&bytes);
-    Ok(())
-}
-
-fn parse_utf8_string_body(stream: &mut &str, start: usize) -> Result<String, ParseError> {
-    let mut s = String::new();
+/// Unified string body parser — always produces bytes.
+///
+/// Named escapes: `\n`, `\t`, `\r`, `\a`, `\b`, `\f`, `\v`, `\\`, `\"`
+/// Hex escapes: `\xHH` (2 hex digits with prefix), `\HH` (2 hex digits, WAT-style)
+/// Unicode: `\u{H+}`, `\uHHHH`, `\UHHHHHHHH` → UTF-8 encoded bytes
+/// Permissive: unknown `\X` → backslash + X as bytes
+/// Unescaped text: UTF-8 bytes
+fn parse_string_body(stream: &mut &str, start: usize) -> Result<Vec<u8>, ParseError> {
+    let mut bytes = Vec::new();
     loop {
         if stream.is_empty() {
             return Err(ParseError {
@@ -107,15 +116,17 @@ fn parse_utf8_string_body(stream: &mut &str, start: usize) -> Result<String, Par
         match stream.as_bytes()[0] {
             b'"' => {
                 *stream = &stream[1..];
-                return Ok(s);
+                return Ok(bytes);
             }
             b'\\' => {
                 *stream = &stream[1..];
-                parse_string_escape(stream, &mut s, start)?;
+                parse_string_escape(stream, &mut bytes, start)?;
             }
             _ => {
                 let c = stream.chars().next().unwrap();
-                s.push(c);
+                let mut buf = [0u8; 4];
+                let encoded = c.encode_utf8(&mut buf);
+                bytes.extend_from_slice(encoded.as_bytes());
                 *stream = &stream[c.len_utf8()..];
             }
         }
@@ -124,7 +135,7 @@ fn parse_utf8_string_body(stream: &mut &str, start: usize) -> Result<String, Par
 
 fn parse_string_escape(
     stream: &mut &str,
-    out: &mut String,
+    out: &mut Vec<u8>,
     start: usize,
 ) -> Result<(), ParseError> {
     if stream.is_empty() {
@@ -136,37 +147,57 @@ fn parse_string_escape(
     let b = stream.as_bytes()[0];
     *stream = &stream[1..];
     match b {
-        b'\\' => out.push('\\'),
-        b'"' => out.push('"'),
-        b'n' => out.push('\n'),
-        b't' => out.push('\t'),
-        b'r' => out.push('\r'),
-        b'a' => out.push('\x07'),
-        b'b' => out.push('\x08'),
-        b'f' => out.push('\x0c'),
-        b'v' => out.push('\x0b'),
+        b'\\' => out.push(b'\\'),
+        b'"' => out.push(b'"'),
+        b'n' => out.push(b'\n'),
+        b't' => out.push(b'\t'),
+        b'r' => out.push(b'\r'),
+        b'a' => out.push(0x07),
+        b'b' => out.push(0x08),
+        b'f' => out.push(0x0c),
+        b'v' => out.push(0x0b),
         b'x' => {
-            let c = parse_hex_char(stream, 2, start)?;
-            out.push(c);
+            let byte = parse_hex_byte(stream, start)?;
+            out.push(byte);
         }
         b'u' => {
             if stream.starts_with('{') {
                 *stream = &stream[1..];
                 let c = parse_hex_char_until_brace(stream, start)?;
-                out.push(c);
+                let mut buf = [0u8; 4];
+                let encoded = c.encode_utf8(&mut buf);
+                out.extend_from_slice(encoded.as_bytes());
             } else {
                 let c = parse_hex_char(stream, 4, start)?;
-                out.push(c);
+                let mut buf = [0u8; 4];
+                let encoded = c.encode_utf8(&mut buf);
+                out.extend_from_slice(encoded.as_bytes());
             }
         }
         b'U' => {
             let c = parse_hex_char(stream, 8, start)?;
-            out.push(c);
+            let mut buf = [0u8; 4];
+            let encoded = c.encode_utf8(&mut buf);
+            out.extend_from_slice(encoded.as_bytes());
+        }
+        // Direct hex escape: \hh (two hex digits without prefix)
+        _ if b.is_ascii_hexdigit() => {
+            let second = stream
+                .as_bytes()
+                .first()
+                .filter(|b| b.is_ascii_hexdigit())
+                .ok_or_else(|| ParseError {
+                    offset: start,
+                    message: "invalid hex escape".into(),
+                })?;
+            let byte = hex_val(b) as u8 * 16 + hex_val(*second) as u8;
+            *stream = &stream[1..];
+            out.push(byte);
         }
         other => {
-            // Permissive: keep backslash + char
-            out.push('\\');
-            out.push(other as char);
+            // Permissive: keep backslash + byte
+            out.push(b'\\');
+            out.push(other);
         }
     }
     Ok(())
@@ -235,81 +266,6 @@ fn hex_val(b: u8) -> u32 {
         b'A'..=b'F' => (b - b'A' + 10) as u32,
         _ => unreachable!(),
     }
-}
-
-fn parse_byte_string_body(stream: &mut &str, start: usize) -> Result<Vec<u8>, ParseError> {
-    let mut bytes = Vec::new();
-    loop {
-        if stream.is_empty() {
-            return Err(ParseError {
-                offset: start,
-                message: "unterminated string".into(),
-            });
-        }
-        match stream.as_bytes()[0] {
-            b'"' => {
-                *stream = &stream[1..];
-                return Ok(bytes);
-            }
-            b'\\' => {
-                *stream = &stream[1..];
-                parse_byte_escape(stream, &mut bytes, start)?;
-            }
-            _ => {
-                let c = stream.chars().next().unwrap();
-                let mut buf = [0u8; 4];
-                let encoded = c.encode_utf8(&mut buf);
-                bytes.extend_from_slice(encoded.as_bytes());
-                *stream = &stream[c.len_utf8()..];
-            }
-        }
-    }
-}
-
-fn parse_byte_escape(stream: &mut &str, out: &mut Vec<u8>, start: usize) -> Result<(), ParseError> {
-    if stream.is_empty() {
-        return Err(ParseError {
-            offset: start,
-            message: "unterminated string escape".into(),
-        });
-    }
-    let b = stream.as_bytes()[0];
-    *stream = &stream[1..];
-    match b {
-        b'\\' => out.push(b'\\'),
-        b'"' => out.push(b'"'),
-        b'n' => out.push(b'\n'),
-        b't' => out.push(b'\t'),
-        b'r' => out.push(b'\r'),
-        b'a' => out.push(0x07),
-        b'b' => out.push(0x08),
-        b'f' => out.push(0x0c),
-        b'v' => out.push(0x0b),
-        b'x' => {
-            let byte = parse_hex_byte(stream, start)?;
-            out.push(byte);
-        }
-        // Direct hex escape: \hh (two hex digits without prefix)
-        _ if b.is_ascii_hexdigit() => {
-            let second = stream
-                .as_bytes()
-                .first()
-                .filter(|b| b.is_ascii_hexdigit())
-                .ok_or_else(|| ParseError {
-                    offset: start,
-                    message: "invalid hex escape in bytestring".into(),
-                })?;
-            let byte = hex_val(b) as u8 * 16 + hex_val(*second) as u8;
-            *stream = &stream[1..];
-            out.push(byte);
-        }
-        other => {
-            // Permissive: keep backslash + byte
-            out.push(b'\\');
-            out.push(other);
-        }
-    }
-    Ok(())
 }
 
 fn parse_hex_byte(stream: &mut &str, start: usize) -> Result<u8, ParseError> {
@@ -383,33 +339,4 @@ fn parse_quoted_symbol_token<V: SExpVisitor>(
             *stream = &stream[c.len_utf8()..];
         }
     }
-}
-
-fn parse_atom_token<V: SExpVisitor>(
-    stream: &mut &str,
-    visitor: &mut V,
-    original: &str,
-) -> Result<(), ParseError> {
-    let qsd = visitor.quoted_symbol_delim();
-    let text: &str = take_while(1.., move |c: char| {
-        if !c.is_ascii() {
-            return true;
-        }
-        let b = c as u8;
-        !b.is_ascii_whitespace() && !matches!(b, b'(' | b')' | b';' | b'"') && Some(b) != qsd
-    })
-    .parse_next(stream)
-    .map_err(
-        |_: covalence_parse::winnow::error::ErrMode<
-            covalence_parse::winnow::error::ContextError,
-        >| {
-            ParseError {
-                offset: original.len() - stream.len(),
-                message: "expected atom".into(),
-            }
-        },
-    )?;
-
-    visitor.atom(text);
-    Ok(())
 }

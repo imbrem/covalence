@@ -4,7 +4,7 @@ use covalence_sexp::{SExp, parse_smt};
 fn semicolon_line_comment() {
     assert_eq!(
         parse_smt("; comment\nfoo").unwrap(),
-        vec![SExp::Atom("foo".into())]
+        vec![SExp::symbol("foo")]
     );
 }
 
@@ -12,10 +12,7 @@ fn semicolon_line_comment() {
 fn comment_in_list() {
     assert_eq!(
         parse_smt("(a ; comment\nb)").unwrap(),
-        vec![SExp::List(vec![
-            SExp::Atom("a".into()),
-            SExp::Atom("b".into()),
-        ])]
+        vec![SExp::List(vec![SExp::symbol("a"), SExp::symbol("b"),])]
     );
 }
 
@@ -23,25 +20,25 @@ fn comment_in_list() {
 fn quoted_symbol() {
     assert_eq!(
         parse_smt("|hello world|").unwrap(),
-        vec![SExp::QuotedSymbol("hello world".into())]
+        vec![SExp::symbol("hello world")]
     );
 }
 
 #[test]
-fn string_is_utf8() {
+fn string_is_bytes() {
     assert_eq!(
         parse_smt(r#""hello""#).unwrap(),
-        vec![SExp::String("hello".into())]
+        vec![SExp::string("", b"hello".as_slice())]
     );
 }
 
 #[test]
 fn no_byte_prefix() {
-    // b"..." is not supported in SMT-LIB; 'b' parses as atom, '"..."' as string
+    // b"..." is not specially handled in SMT-LIB; 'b' becomes a format prefix
+    // since the parser unconditionally treats atom before " as format prefix.
     let result = parse_smt(r#"b"data""#).unwrap();
-    assert_eq!(result.len(), 2);
-    assert_eq!(result[0], SExp::Atom("b".into()));
-    assert_eq!(result[1], SExp::String("data".into()));
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0], SExp::string("b", b"data".as_slice()));
 }
 
 #[test]
@@ -61,7 +58,7 @@ fn no_block_comments() {
 fn quoted_symbol_with_escaped_pipe() {
     assert_eq!(
         parse_smt(r#"|my\|piped\|symbol|"#).unwrap(),
-        vec![SExp::QuotedSymbol("my|piped|symbol".into())]
+        vec![SExp::symbol("my|piped|symbol")]
     );
 }
 

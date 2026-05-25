@@ -1,4 +1,4 @@
-use covalence_sexp::{Bytes, SExp, parse, parse_smt, prettyprint};
+use covalence_sexp::{SExp, parse, parse_smt, prettyprint};
 
 fn roundtrip_cov(input: &str) {
     let parsed = parse(input).unwrap();
@@ -83,9 +83,10 @@ fn roundtrip_bytestring() {
     let parsed = parse(input).unwrap();
     assert_eq!(
         parsed,
-        vec![SExp::ByteString(Bytes::from_static(&[
-            0xFF, 0x00, b'h', b'e', b'l', b'l', b'o'
-        ]))]
+        vec![SExp::string(
+            "b",
+            vec![0xFF, 0x00, b'h', b'e', b'l', b'l', b'o']
+        )]
     );
     let mut buf = Vec::new();
     prettyprint(&parsed, &mut buf).unwrap();
@@ -93,4 +94,17 @@ fn roundtrip_bytestring() {
     let reparsed = parse(&output)
         .unwrap_or_else(|e| panic!("failed to reparse {input:?}: {e}\noutput: {output:?}"));
     assert_eq!(parsed, reparsed, "roundtrip mismatch for {input:?}");
+}
+
+#[test]
+fn roundtrip_format_prefix() {
+    // Format prefix strings should roundtrip correctly
+    let input = r#"b"hello""#;
+    let parsed = parse(input).unwrap();
+    let mut buf = Vec::new();
+    prettyprint(&parsed, &mut buf).unwrap();
+    let output = String::from_utf8(buf).unwrap();
+    assert_eq!(output, r#"b"hello""#);
+    let reparsed = parse(&output).unwrap();
+    assert_eq!(parsed, reparsed);
 }

@@ -133,7 +133,7 @@ fn is_wat_path(path: &str) -> bool {
 fn parse_sexp_for_uri(
     uri: &Uri,
     text: &str,
-) -> Result<Vec<covalence_sexp::SExp>, covalence_sexp::ParseError> {
+) -> Result<Vec<covalence_sexp::SExpr>, covalence_sexp::ParseError> {
     if is_smt_file(uri) {
         covalence_sexp::parse_smt(text)
     } else {
@@ -243,7 +243,7 @@ pub fn diagnose_smt(text: &str) -> Vec<Diagnostic> {
 }
 
 fn diagnose_parse_result(
-    result: Result<Vec<covalence_sexp::SExp>, covalence_sexp::ParseError>,
+    result: Result<Vec<covalence_sexp::SExpr>, covalence_sexp::ParseError>,
     text: &str,
 ) -> Vec<Diagnostic> {
     match result {

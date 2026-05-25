@@ -1,18 +1,15 @@
-use covalence_sexp::{Bytes, SExp, parse};
+use covalence_sexp::{SExp, parse};
 
 #[test]
 fn double_semicolon_line_comment() {
-    assert_eq!(
-        parse(";; comment\nfoo").unwrap(),
-        vec![SExp::Atom("foo".into())]
-    );
+    assert_eq!(parse(";; comment\nfoo").unwrap(), vec![SExp::symbol("foo")]);
 }
 
 #[test]
 fn block_comment() {
     assert_eq!(
         parse("(; block comment ;) foo").unwrap(),
-        vec![SExp::Atom("foo".into())]
+        vec![SExp::symbol("foo")]
     );
 }
 
@@ -20,7 +17,7 @@ fn block_comment() {
 fn nested_block_comment() {
     assert_eq!(
         parse("(; outer (; inner ;) still outer ;) foo").unwrap(),
-        vec![SExp::Atom("foo".into())]
+        vec![SExp::symbol("foo")]
     );
 }
 
@@ -28,18 +25,15 @@ fn nested_block_comment() {
 fn block_comment_in_list() {
     assert_eq!(
         parse("(a (;comment;) b)").unwrap(),
-        vec![SExp::List(vec![
-            SExp::Atom("a".into()),
-            SExp::Atom("b".into()),
-        ])]
+        vec![SExp::List(vec![SExp::symbol("a"), SExp::symbol("b"),])]
     );
 }
 
 #[test]
-fn bare_string_is_utf8() {
+fn bare_string_is_bytes() {
     assert_eq!(
         parse(r#""hello""#).unwrap(),
-        vec![SExp::String("hello".into())]
+        vec![SExp::string("", b"hello".as_slice())]
     );
 }
 
@@ -47,7 +41,7 @@ fn bare_string_is_utf8() {
 fn byte_prefix_string() {
     assert_eq!(
         parse(r#"b"data""#).unwrap(),
-        vec![SExp::ByteString(Bytes::from_static(b"data"))]
+        vec![SExp::string("b", b"data".as_slice())]
     );
 }
 
@@ -55,7 +49,7 @@ fn byte_prefix_string() {
 fn byte_string_hex_x_escape() {
     assert_eq!(
         parse(r#"b"\xFF\x00""#).unwrap(),
-        vec![SExp::ByteString(Bytes::from_static(&[0xFF, 0x00]))]
+        vec![SExp::string("b", vec![0xFF, 0x00])]
     );
 }
 
@@ -63,7 +57,7 @@ fn byte_string_hex_x_escape() {
 fn byte_string_direct_hex() {
     assert_eq!(
         parse(r#"b"\FF\00""#).unwrap(),
-        vec![SExp::ByteString(Bytes::from_static(&[0xFF, 0x00]))]
+        vec![SExp::string("b", vec![0xFF, 0x00])]
     );
 }
 
@@ -71,7 +65,7 @@ fn byte_string_direct_hex() {
 fn quoted_symbol_with_pipes() {
     assert_eq!(
         parse(r#"|my\|piped\|symbol|"#).unwrap(),
-        vec![SExp::QuotedSymbol("my|piped|symbol".into())]
+        vec![SExp::symbol("my|piped|symbol")]
     );
 }
 
@@ -79,7 +73,7 @@ fn quoted_symbol_with_pipes() {
 fn quoted_symbol_with_escaped_backslash() {
     assert_eq!(
         parse(r#"|back\\slash|"#).unwrap(),
-        vec![SExp::QuotedSymbol("back\\slash".into())]
+        vec![SExp::symbol("back\\slash")]
     );
 }
 
@@ -95,7 +89,7 @@ fn semicolon_stops_atom() {
     // ; is always an atom delimiter, so foo;;comment parses correctly
     assert_eq!(
         parse("foo;;comment\nbar").unwrap(),
-        vec![SExp::Atom("foo".into()), SExp::Atom("bar".into())]
+        vec![SExp::symbol("foo"), SExp::symbol("bar")]
     );
 }
 
@@ -103,7 +97,7 @@ fn semicolon_stops_atom() {
 fn block_comment_multiline() {
     let input = "(;\n  This is a\n  multi-line\n  block comment\n;)\n(ok)";
     let result = parse(input).unwrap();
-    assert_eq!(result, vec![SExp::List(vec![SExp::Atom("ok".into())])]);
+    assert_eq!(result, vec![SExp::List(vec![SExp::symbol("ok")])]);
 }
 
 #[test]
@@ -119,4 +113,13 @@ fn covalence_superset_of_smt() {
     for input in inputs {
         assert!(parse(input).is_ok(), "failed to parse: {input}");
     }
+}
+
+#[test]
+fn format_prefix_custom() {
+    // Any atom before " becomes a format prefix
+    assert_eq!(
+        parse(r#"json"hello""#).unwrap(),
+        vec![SExp::string("json", b"hello".as_slice())]
+    );
 }

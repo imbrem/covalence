@@ -64,43 +64,8 @@ pub fn parse_drat_text(input: &str) -> Result<DratProof, ParseError> {
 fn encode_lit_varint(lit: Lit, out: &mut Vec<u8>) {
     let var = lit.var().index() as u32;
     let sign = if lit.is_neg() { 1u32 } else { 0u32 };
-    let mut val = (var << 1) | sign;
-
-    loop {
-        let mut byte = (val & 0x7F) as u8;
-        val >>= 7;
-        if val != 0 {
-            byte |= 0x80; // continuation bit
-        }
-        out.push(byte);
-        if val == 0 {
-            break;
-        }
-    }
-}
-
-/// Decode a varint from binary DRAT data, returning the decoded value and bytes consumed.
-fn decode_varint(data: &[u8], offset: usize) -> Result<(u32, usize), ParseError> {
-    let mut result: u32 = 0;
-    let mut shift = 0u32;
-    let mut pos = offset;
-
-    loop {
-        if pos >= data.len() {
-            return Err(ParseError::UnexpectedEof);
-        }
-        let byte = data[pos];
-        pos += 1;
-
-        result |= ((byte & 0x7F) as u32) << shift;
-        if byte & 0x80 == 0 {
-            return Ok((result, pos));
-        }
-        shift += 7;
-        if shift >= 32 {
-            return Err(ParseError::InvalidBinaryEncoding { offset });
-        }
-    }
+    let val = (var << 1) | sign;
+    covalence_parse::leb128::encode_u32(val, out);
 }
 
 /// Parse a standard binary DRAT proof.
@@ -143,8 +108,16 @@ pub fn parse_drat_binary(input: &[u8]) -> Result<DratProof, ParseError> {
                 break;
             }
 
-            let (val, new_pos) = decode_varint(input, pos)?;
-            pos = new_pos;
+            let (val, consumed) =
+                covalence_parse::leb128::decode_u32(&input[pos..]).map_err(|e| match e {
+                    covalence_parse::leb128::DecodeError::UnexpectedEof => {
+                        ParseError::UnexpectedEof
+                    }
+                    covalence_parse::leb128::DecodeError::Overflow { .. } => {
+                        ParseError::InvalidBinaryEncoding { offset: pos }
+                    }
+                })?;
+            pos += consumed;
 
             if val == 0 {
                 break;
@@ -349,12 +322,14 @@ mod tests {
 
     #[test]
     fn varint_encode_decode_edge_cases() {
+        use covalence_parse::leb128::decode_u32;
+
         // Test single-byte values.
         for var in [1, 2, 63] {
             let lit = Lit::from_dimacs(var).unwrap();
             let mut buf = Vec::new();
             encode_lit_varint(lit, &mut buf);
-            let (decoded, _) = decode_varint(&buf, 0).unwrap();
+            let (decoded, _) = decode_u32(&buf).unwrap();
             let dec_var = (decoded >> 1) as i32;
             assert_eq!(dec_var, var);
         }
@@ -364,7 +339,7 @@ mod tests {
             let lit = Lit::from_dimacs(var).unwrap();
             let mut buf = Vec::new();
             encode_lit_varint(lit, &mut buf);
-            let (decoded, _) = decode_varint(&buf, 0).unwrap();
+            let (decoded, _) = decode_u32(&buf).unwrap();
             let dec_var = (decoded >> 1) as i32;
             let dec_sign = decoded & 1;
             assert_eq!(dec_var, var);
@@ -375,7 +350,7 @@ mod tests {
         let lit = Lit::from_dimacs(-42).unwrap();
         let mut buf = Vec::new();
         encode_lit_varint(lit, &mut buf);
-        let (decoded, _) = decode_varint(&buf, 0).unwrap();
+        let (decoded, _) = decode_u32(&buf).unwrap();
         let dec_var = (decoded >> 1) as i32;
         let dec_sign = decoded & 1;
         assert_eq!(dec_var, 42);

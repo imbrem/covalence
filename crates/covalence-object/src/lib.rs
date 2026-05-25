@@ -1,5 +1,3 @@
-mod varint;
-
 mod dir;
 mod table;
 

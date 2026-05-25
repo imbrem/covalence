@@ -1,6 +1,6 @@
 use covalence_hash::O256;
 
-use crate::varint;
+use covalence_parse::leb128;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -349,20 +349,20 @@ impl<S: RowCodec> TableBuilder<S> {
         mh.push(0); // placeholder for mh_size
 
         mh.push(0x20);
-        varint::encode(ref_end as u64, &mut mh);
+        leb128::encode_u64(ref_end as u64, &mut mh);
 
         mh.push(0x20);
-        varint::encode(dep_end as u64, &mut mh);
+        leb128::encode_u64(dep_end as u64, &mut mh);
 
         mh.push(ot_w as u8);
-        varint::encode(ot_end as u64, &mut mh);
+        leb128::encode_u64(ot_end as u64, &mut mh);
 
         mh.push(0xFF);
-        varint::encode(data_end as u64, &mut mh);
+        leb128::encode_u64(data_end as u64, &mut mh);
 
         let schema_bytes = field_specs.len() * 2;
         mh.push(0x00);
-        varint::encode(schema_bytes as u64, &mut mh);
+        leb128::encode_u64(schema_bytes as u64, &mut mh);
         for field in field_specs {
             mh.push(field.repr);
             mh.push(field.field_type as u8);
@@ -811,7 +811,8 @@ pub(crate) fn parse_header(data: &[u8]) -> Result<ParsedHeader, TableError> {
                 });
             }
             *pos += 1;
-            let (end, consumed) = varint::decode(&mh[*pos..]).ok_or(TableError::TruncatedVarint)?;
+            let (end, consumed) =
+                leb128::decode_u64(&mh[*pos..]).map_err(|_| TableError::TruncatedVarint)?;
             *pos += consumed;
             Ok((width, end as usize))
         };
@@ -834,7 +835,8 @@ pub(crate) fn parse_header(data: &[u8]) -> Result<ParsedHeader, TableError> {
         return Err(TableError::BadOffsetWidth(mh[pos]));
     }
     pos += 1;
-    let (ot_end_val, consumed) = varint::decode(&mh[pos..]).ok_or(TableError::TruncatedVarint)?;
+    let (ot_end_val, consumed) =
+        leb128::decode_u64(&mh[pos..]).map_err(|_| TableError::TruncatedVarint)?;
     pos += consumed;
     let ot_end = ot_end_val as usize;
 
@@ -846,7 +848,8 @@ pub(crate) fn parse_header(data: &[u8]) -> Result<ParsedHeader, TableError> {
         });
     }
     pos += 1;
-    let (data_end_val, consumed) = varint::decode(&mh[pos..]).ok_or(TableError::TruncatedVarint)?;
+    let (data_end_val, consumed) =
+        leb128::decode_u64(&mh[pos..]).map_err(|_| TableError::TruncatedVarint)?;
     pos += consumed;
     let data_end = data_end_val as usize;
 
@@ -858,7 +861,8 @@ pub(crate) fn parse_header(data: &[u8]) -> Result<ParsedHeader, TableError> {
         });
     }
     pos += 1;
-    let (schema_len, consumed) = varint::decode(&mh[pos..]).ok_or(TableError::TruncatedVarint)?;
+    let (schema_len, consumed) =
+        leb128::decode_u64(&mh[pos..]).map_err(|_| TableError::TruncatedVarint)?;
     pos += consumed;
 
     if schema_len % 2 != 0 {

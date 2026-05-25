@@ -1,0 +1,8 @@
+[package]
+name = "covalence-parse"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+thiserror = "2"
+winnow = "0.7"

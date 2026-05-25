@@ -532,7 +532,16 @@ name = "covalence-object"
 version = "0.0.0"
 dependencies = [
  "covalence-hash",
+ "covalence-parse",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "covalence-parse"
+version = "0.0.0"
+dependencies = [
+ "thiserror 2.0.18",
+ "winnow 0.7.15",
 ]
 
 [[package]]
@@ -587,6 +596,7 @@ dependencies = [
 name = "covalence-sat"
 version = "0.0.0"
 dependencies = [
+ "covalence-parse",
  "covalence-types",
  "thiserror 2.0.18",
  "varisat",
@@ -4167,6 +4177,9 @@ name = "winnow"
 version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "winnow"

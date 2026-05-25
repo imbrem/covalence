@@ -9,4 +9,5 @@ git = ["covalence-hash/git"]
 
 [dependencies]
 covalence-hash = { path = "../covalence-hash", default-features = false }
+covalence-parse = { path = "../covalence-parse" }
 thiserror = "2"

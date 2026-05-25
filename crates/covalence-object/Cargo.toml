@@ -3,6 +3,10 @@ name = "covalence-object"
 version = "0.0.0"
 edition = "2024"
 
+[features]
+default = ["git"]
+git = ["covalence-hash/git"]
+
 [dependencies]
 covalence-hash = { path = "../covalence-hash", default-features = false }
 thiserror = "2"

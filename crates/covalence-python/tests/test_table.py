@@ -148,7 +148,7 @@ def test_directory_builder_roundtrip():
     # Check first row
     r0 = rows[0]
     assert r0["name"] == b"hello.txt"
-    assert r0["mode"] == "blob"
+    assert r0["mode"] == "regular"
     assert r0["child"] == child_a
 
     # Check second row
@@ -190,7 +190,7 @@ def test_directory_builder_bad_mode():
     db = covalence.DirectoryBuilder()
     child = covalence.O256.blob(b"data")
     with pytest.raises(ValueError, match="unknown mode"):
-        db.push("file.txt", "symlink", child)
+        db.push("file.txt", "nope", child)
 
 
 def test_directory_builder_deps_are_children():

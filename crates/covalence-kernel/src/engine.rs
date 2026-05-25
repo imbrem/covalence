@@ -4,16 +4,23 @@
 //! `attest()` to declare itself true. The engine decides propositions by
 //! compiling and instantiating them, observing whether `attest()` is called.
 //!
+//! ## Container hierarchy
+//!
+//! - **Container** — a collection of components with a distinguished root.
+//!   `prove-{hash}` creates nested containers with isolated state.
+//! - **Component** — a WASM component with typed imports and exports.
+//! - **Module** — a WASM core module within a component (not yet used directly).
+//!
 //! ## Import system
 //!
-//! Components declare dependencies via specially-named imports. The three
-//! instance import types map to a container model:
+//! Components declare dependencies via specially-named imports:
 //!
-//! | Import prefix | Semantics | Instance sharing |
-//! |---------------|-----------|-----------------|
+//! | Import prefix | Semantics | Sharing |
+//! |---------------|-----------|---------|
 //! | `link-{hash}` | Shared instance in the container | Cached by hash |
 //! | `copy-{hash}` | Instance embedded in the importer | Always fresh |
 //! | `prove-{hash}` | Container boundary (nested scope) | Isolated + lazy |
+//! | `map-{name}` | Named key-value store | Shared in container |
 //!
 //! **Link** deps are eagerly instantiated once and shared across all importers
 //! within the same linking scope (the "diamond dep" pattern).
@@ -26,6 +33,14 @@
 //! isolated link-instances. When a function is called through a prove-dep,
 //! the dep's hash is pushed onto a prove stack; if `attest()` fires while
 //! the hash is on the stack, that hash is recorded as proved.
+//!
+//! **Map** stores provide a key-value store (`get`/`set`) shared across all
+//! components in the same container. Prove-dep boundaries create fresh,
+//! isolated stores. Maps are **strictly typed**: each (key\_type, value\_type)
+//! combination is disjoint (e.g. `map<u8,u8>` and `map<u16,u8>` don't share
+//! state). Supported types for keys and values: u8, s8, u16, s16, u32, s32,
+//! u64, s64, string, and `list<T>` for any of those integer types (where
+//! `list<u8>` serves as the blob type).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -33,7 +48,7 @@ use std::sync::{Arc, Mutex};
 use covalence_hash::O256;
 use covalence_store::{BlobStore, ContentStore};
 use covalence_wasm::engine::wasmtime;
-use wasmtime::component::{Component, Func, Linker, Resource, ResourceTable, ResourceType};
+use wasmtime::component::{Component, Func, Linker, Resource, ResourceTable, ResourceType, Val};
 use wasmtime::{Engine, Store, StoreContextMut};
 
 use crate::{DecideOutput, Decision};
@@ -91,6 +106,9 @@ enum ImportKind {
     /// through this dep pushes its hash onto the prove stack; if `attest()`
     /// fires while the hash is on the stack, it is recorded as proved.
     Prove(O256),
+    /// A named key-value store: `map-{name}`.
+    /// Shared within a container, isolated across prove-dep boundaries.
+    Map(String),
     /// Unknown import name.
     Unknown(String),
 }
@@ -121,6 +139,9 @@ fn categorize_import(name: &str) -> ImportKind {
         if let Some(hash) = O256::from_hex(hex) {
             return ImportKind::Prove(hash);
         }
+    }
+    if let Some(store_name) = name.strip_prefix("map-") {
+        return ImportKind::Map(store_name.to_string());
     }
     ImportKind::Unknown(name.to_string())
 }
@@ -168,6 +189,7 @@ pub(crate) struct ImportManifest {
     link_deps: Vec<O256>,
     copy_deps: Vec<(String, O256)>,
     prove_deps: Vec<O256>,
+    kv_stores: Vec<String>,
 }
 
 impl ImportManifest {
@@ -179,6 +201,7 @@ impl ImportManifest {
         let mut link_deps: Vec<O256> = Vec::new();
         let mut copy_deps: Vec<(String, O256)> = Vec::new();
         let mut prove_deps: Vec<O256> = Vec::new();
+        let mut kv_stores: Vec<String> = Vec::new();
 
         for (name, _) in ty.imports(engine) {
             match categorize_import(name) {
@@ -186,6 +209,7 @@ impl ImportManifest {
                 ImportKind::Link(hash) => link_deps.push(hash),
                 ImportKind::Copy(hash) => copy_deps.push((name.to_string(), hash)),
                 ImportKind::Prove(hash) => prove_deps.push(hash),
+                ImportKind::Map(store_name) => kv_stores.push(store_name),
                 _ => {}
             }
         }
@@ -205,6 +229,7 @@ impl ImportManifest {
             link_deps,
             copy_deps,
             prove_deps,
+            kv_stores,
         }
     }
 
@@ -235,6 +260,7 @@ pub(crate) struct LinkScope<'a> {
     engine: &'a Engine,
     instance_cache: HashMap<O256, Vec<(String, Func)>>,
     lazy_proves: HashMap<O256, Arc<LazyProve>>,
+    kv_stores: HashMap<String, Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>>>,
 }
 
 impl<'a> LinkScope<'a> {
@@ -243,6 +269,7 @@ impl<'a> LinkScope<'a> {
             engine,
             instance_cache: HashMap::new(),
             lazy_proves: HashMap::new(),
+            kv_stores: HashMap::new(),
         }
     }
 
@@ -273,6 +300,13 @@ impl<'a> LinkScope<'a> {
             copy_cache.insert(import_name.clone(), exports);
         }
 
+        // Pre-create KV stores from manifest
+        for store_name in &manifest.kv_stores {
+            self.kv_stores
+                .entry(store_name.clone())
+                .or_insert_with(|| Arc::new(Mutex::new(HashMap::new())));
+        }
+
         build_linker(
             self.engine,
             component,
@@ -280,6 +314,7 @@ impl<'a> LinkScope<'a> {
             &self.instance_cache,
             &self.lazy_proves,
             &copy_cache,
+            &self.kv_stores,
         )
     }
 
@@ -303,6 +338,11 @@ impl<'a> LinkScope<'a> {
                 ImportKind::Link(hash) => link_sub_deps.push(hash),
                 ImportKind::Copy(hash) => copy_sub_deps.push((name.to_string(), hash)),
                 ImportKind::Prove(hash) => prove_sub_deps.push(hash),
+                ImportKind::Map(store_name) => {
+                    self.kv_stores
+                        .entry(store_name)
+                        .or_insert_with(|| Arc::new(Mutex::new(HashMap::new())));
+                }
                 _ => {}
             }
         }
@@ -365,6 +405,7 @@ impl<'a> LinkScope<'a> {
             &self.instance_cache,
             &self.lazy_proves,
             &copy_cache,
+            &self.kv_stores,
         )?;
 
         // Instantiate the dep
@@ -426,6 +467,7 @@ impl<'a> LinkScope<'a> {
             &self.instance_cache,
             &self.lazy_proves,
             &copy_cache,
+            &self.kv_stores,
         )?;
 
         let instance = dep_linker
@@ -495,6 +537,7 @@ impl<'a> LinkScope<'a> {
             &child.instance_cache,
             &child.lazy_proves,
             &copy_cache,
+            &child.kv_stores,
         )?;
 
         let lazy = Arc::new(LazyProve {
@@ -511,11 +554,308 @@ impl<'a> LinkScope<'a> {
 }
 
 // ---------------------------------------------------------------------------
+// KV store value serialization
+// ---------------------------------------------------------------------------
+
+// Type tags for serialization. Each scalar/list type gets a unique tag so
+// that maps are strictly typed: map<u8,u8> and map<u16,u8> are disjoint.
+const TAG_U8: u8 = 0x01;
+const TAG_S8: u8 = 0x02;
+const TAG_U16: u8 = 0x03;
+const TAG_S16: u8 = 0x04;
+const TAG_U32: u8 = 0x05;
+const TAG_S32: u8 = 0x06;
+const TAG_U64: u8 = 0x07;
+const TAG_S64: u8 = 0x08;
+const TAG_STRING: u8 = 0x09;
+// Lists: 0x10 + element scalar tag
+const TAG_LIST_U8: u8 = 0x11;
+const TAG_LIST_S8: u8 = 0x12;
+const TAG_LIST_U16: u8 = 0x13;
+const TAG_LIST_S16: u8 = 0x14;
+const TAG_LIST_U32: u8 = 0x15;
+const TAG_LIST_S32: u8 = 0x16;
+const TAG_LIST_U64: u8 = 0x17;
+const TAG_LIST_S64: u8 = 0x18;
+
+/// Map a component-model `Type` (from the function signature) to a type tag.
+fn component_type_to_tag(ty: &wasmtime::component::types::Type) -> wasmtime::Result<u8> {
+    use wasmtime::component::types::Type;
+    match ty {
+        Type::U8 => Ok(TAG_U8),
+        Type::S8 => Ok(TAG_S8),
+        Type::U16 => Ok(TAG_U16),
+        Type::S16 => Ok(TAG_S16),
+        Type::U32 => Ok(TAG_U32),
+        Type::S32 => Ok(TAG_S32),
+        Type::U64 => Ok(TAG_U64),
+        Type::S64 => Ok(TAG_S64),
+        Type::String => Ok(TAG_STRING),
+        Type::List(list) => {
+            let elem = list.ty();
+            match &elem {
+                Type::U8 => Ok(TAG_LIST_U8),
+                Type::S8 => Ok(TAG_LIST_S8),
+                Type::U16 => Ok(TAG_LIST_U16),
+                Type::S16 => Ok(TAG_LIST_S16),
+                Type::U32 => Ok(TAG_LIST_U32),
+                Type::S32 => Ok(TAG_LIST_S32),
+                Type::U64 => Ok(TAG_LIST_U64),
+                Type::S64 => Ok(TAG_LIST_S64),
+                _ => Err(wasmtime::Error::msg(format!(
+                    "map store: unsupported list element type: {elem:?}"
+                ))),
+            }
+        }
+        _ => Err(wasmtime::Error::msg(format!(
+            "map store: unsupported type: {ty:?}"
+        ))),
+    }
+}
+
+/// Serialize a component-model `Val` to a tagged byte sequence.
+///
+/// Supported scalar types: u8, s8, u16, s16, u32, s32, u64, s64, string.
+/// Supported list types: list<u8> (blob), list<s8>, list<u16..u64>, list<s16..s64>.
+fn serialize_val(val: &Val) -> wasmtime::Result<Vec<u8>> {
+    match val {
+        Val::U8(n) => Ok(vec![TAG_U8, *n]),
+        Val::S8(n) => Ok(vec![TAG_S8, *n as u8]),
+        Val::U16(n) => {
+            let mut buf = vec![TAG_U16];
+            buf.extend_from_slice(&n.to_le_bytes());
+            Ok(buf)
+        }
+        Val::S16(n) => {
+            let mut buf = vec![TAG_S16];
+            buf.extend_from_slice(&n.to_le_bytes());
+            Ok(buf)
+        }
+        Val::U32(n) => {
+            let mut buf = vec![TAG_U32];
+            buf.extend_from_slice(&n.to_le_bytes());
+            Ok(buf)
+        }
+        Val::S32(n) => {
+            let mut buf = vec![TAG_S32];
+            buf.extend_from_slice(&n.to_le_bytes());
+            Ok(buf)
+        }
+        Val::U64(n) => {
+            let mut buf = vec![TAG_U64];
+            buf.extend_from_slice(&n.to_le_bytes());
+            Ok(buf)
+        }
+        Val::S64(n) => {
+            let mut buf = vec![TAG_S64];
+            buf.extend_from_slice(&n.to_le_bytes());
+            Ok(buf)
+        }
+        Val::String(s) => {
+            let mut buf = vec![TAG_STRING];
+            buf.extend_from_slice(s.as_bytes());
+            Ok(buf)
+        }
+        Val::List(elems) => serialize_list(elems),
+        _ => Err(wasmtime::Error::msg("map store: unsupported value type")),
+    }
+}
+
+/// Serialize a list Val to tagged bytes. The tag encodes the element type.
+fn serialize_list(elems: &[Val]) -> wasmtime::Result<Vec<u8>> {
+    if elems.is_empty() {
+        // Empty list — we still need the tag. Infer from context is hard,
+        // but an empty list serializes to just the tag with no data.
+        // The caller should use component_type_to_tag for the full key.
+        // Use a generic list-u8 tag; the strict-typing key prefix
+        // disambiguates anyway.
+        return Ok(vec![TAG_LIST_U8]);
+    }
+    match &elems[0] {
+        Val::U8(_) => {
+            let mut buf = vec![TAG_LIST_U8];
+            for v in elems {
+                match v {
+                    Val::U8(b) => buf.push(*b),
+                    _ => return Err(wasmtime::Error::msg("map store: heterogeneous list")),
+                }
+            }
+            Ok(buf)
+        }
+        Val::S8(_) => {
+            let mut buf = vec![TAG_LIST_S8];
+            for v in elems {
+                match v {
+                    Val::S8(b) => buf.push(*b as u8),
+                    _ => return Err(wasmtime::Error::msg("map store: heterogeneous list")),
+                }
+            }
+            Ok(buf)
+        }
+        Val::U16(_) => {
+            let mut buf = vec![TAG_LIST_U16];
+            for v in elems {
+                match v {
+                    Val::U16(n) => buf.extend_from_slice(&n.to_le_bytes()),
+                    _ => return Err(wasmtime::Error::msg("map store: heterogeneous list")),
+                }
+            }
+            Ok(buf)
+        }
+        Val::S16(_) => {
+            let mut buf = vec![TAG_LIST_S16];
+            for v in elems {
+                match v {
+                    Val::S16(n) => buf.extend_from_slice(&n.to_le_bytes()),
+                    _ => return Err(wasmtime::Error::msg("map store: heterogeneous list")),
+                }
+            }
+            Ok(buf)
+        }
+        Val::U32(_) => {
+            let mut buf = vec![TAG_LIST_U32];
+            for v in elems {
+                match v {
+                    Val::U32(n) => buf.extend_from_slice(&n.to_le_bytes()),
+                    _ => return Err(wasmtime::Error::msg("map store: heterogeneous list")),
+                }
+            }
+            Ok(buf)
+        }
+        Val::S32(_) => {
+            let mut buf = vec![TAG_LIST_S32];
+            for v in elems {
+                match v {
+                    Val::S32(n) => buf.extend_from_slice(&n.to_le_bytes()),
+                    _ => return Err(wasmtime::Error::msg("map store: heterogeneous list")),
+                }
+            }
+            Ok(buf)
+        }
+        Val::U64(_) => {
+            let mut buf = vec![TAG_LIST_U64];
+            for v in elems {
+                match v {
+                    Val::U64(n) => buf.extend_from_slice(&n.to_le_bytes()),
+                    _ => return Err(wasmtime::Error::msg("map store: heterogeneous list")),
+                }
+            }
+            Ok(buf)
+        }
+        Val::S64(_) => {
+            let mut buf = vec![TAG_LIST_S64];
+            for v in elems {
+                match v {
+                    Val::S64(n) => buf.extend_from_slice(&n.to_le_bytes()),
+                    _ => return Err(wasmtime::Error::msg("map store: heterogeneous list")),
+                }
+            }
+            Ok(buf)
+        }
+        _ => Err(wasmtime::Error::msg(
+            "map store: unsupported list element type",
+        )),
+    }
+}
+
+/// Deserialize a tagged byte sequence back to a component-model `Val`.
+fn deserialize_val(bytes: &[u8]) -> wasmtime::Result<Val> {
+    if bytes.is_empty() {
+        return Err(wasmtime::Error::msg("map store: empty serialized value"));
+    }
+    let data = &bytes[1..];
+    match bytes[0] {
+        TAG_U8 => {
+            if data.is_empty() {
+                return Err(wasmtime::Error::msg("map store: truncated u8"));
+            }
+            Ok(Val::U8(data[0]))
+        }
+        TAG_S8 => {
+            if data.is_empty() {
+                return Err(wasmtime::Error::msg("map store: truncated s8"));
+            }
+            Ok(Val::S8(data[0] as i8))
+        }
+        TAG_U16 => {
+            Ok(Val::U16(u16::from_le_bytes(data[..2].try_into().map_err(
+                |_| wasmtime::Error::msg("map store: truncated u16"),
+            )?)))
+        }
+        TAG_S16 => {
+            Ok(Val::S16(i16::from_le_bytes(data[..2].try_into().map_err(
+                |_| wasmtime::Error::msg("map store: truncated s16"),
+            )?)))
+        }
+        TAG_U32 => {
+            Ok(Val::U32(u32::from_le_bytes(data[..4].try_into().map_err(
+                |_| wasmtime::Error::msg("map store: truncated u32"),
+            )?)))
+        }
+        TAG_S32 => {
+            Ok(Val::S32(i32::from_le_bytes(data[..4].try_into().map_err(
+                |_| wasmtime::Error::msg("map store: truncated s32"),
+            )?)))
+        }
+        TAG_U64 => {
+            Ok(Val::U64(u64::from_le_bytes(data[..8].try_into().map_err(
+                |_| wasmtime::Error::msg("map store: truncated u64"),
+            )?)))
+        }
+        TAG_S64 => {
+            Ok(Val::S64(i64::from_le_bytes(data[..8].try_into().map_err(
+                |_| wasmtime::Error::msg("map store: truncated s64"),
+            )?)))
+        }
+        TAG_STRING => {
+            let s = std::str::from_utf8(data)
+                .map_err(|e| wasmtime::Error::msg(format!("map store: invalid UTF-8: {e}")))?;
+            Ok(Val::String(s.to_string()))
+        }
+        TAG_LIST_U8 => Ok(Val::List(data.iter().map(|&b| Val::U8(b)).collect())),
+        TAG_LIST_S8 => Ok(Val::List(data.iter().map(|&b| Val::S8(b as i8)).collect())),
+        TAG_LIST_U16 => Ok(Val::List(
+            data.chunks_exact(2)
+                .map(|c| Val::U16(u16::from_le_bytes([c[0], c[1]])))
+                .collect(),
+        )),
+        TAG_LIST_S16 => Ok(Val::List(
+            data.chunks_exact(2)
+                .map(|c| Val::S16(i16::from_le_bytes([c[0], c[1]])))
+                .collect(),
+        )),
+        TAG_LIST_U32 => Ok(Val::List(
+            data.chunks_exact(4)
+                .map(|c| Val::U32(u32::from_le_bytes(c.try_into().unwrap())))
+                .collect(),
+        )),
+        TAG_LIST_S32 => Ok(Val::List(
+            data.chunks_exact(4)
+                .map(|c| Val::S32(i32::from_le_bytes(c.try_into().unwrap())))
+                .collect(),
+        )),
+        TAG_LIST_U64 => Ok(Val::List(
+            data.chunks_exact(8)
+                .map(|c| Val::U64(u64::from_le_bytes(c.try_into().unwrap())))
+                .collect(),
+        )),
+        TAG_LIST_S64 => Ok(Val::List(
+            data.chunks_exact(8)
+                .map(|c| Val::S64(i64::from_le_bytes(c.try_into().unwrap())))
+                .collect(),
+        )),
+        tag => Err(wasmtime::Error::msg(format!(
+            "map store: unknown type tag {tag:#x}"
+        ))),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // build_linker — free function (avoids borrow conflicts)
 // ---------------------------------------------------------------------------
 
 /// Build a linker for a component, wiring up attest, blob, link, copy,
-/// and prove imports.
+/// prove, and map imports.
 fn build_linker(
     engine: &Engine,
     component: &Component,
@@ -523,6 +863,7 @@ fn build_linker(
     instance_cache: &HashMap<O256, Vec<(String, Func)>>,
     lazy_proves: &HashMap<O256, Arc<LazyProve>>,
     copy_cache: &HashMap<String, Vec<(String, Func)>>,
+    kv_stores: &HashMap<String, Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>>>,
 ) -> Result<Linker<HostState>, DecideError> {
     let ty = component.component_type();
     let mut linker: Linker<HostState> = Linker::new(engine);
@@ -821,6 +1162,51 @@ fn build_linker(
                     .map_err(|e| DecideError::LinkError(e.to_string()))?;
                 }
             }
+            ImportKind::Map(ref store_name) => {
+                let store = kv_stores
+                    .get(store_name)
+                    .cloned()
+                    .expect("kv store not pre-created");
+                let store_for_set = store.clone();
+                let store_for_get = store;
+                let err_name = store_name.clone();
+
+                let mut root = linker.root();
+                let mut inst = root
+                    .instance(name)
+                    .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+                // set(key, value) — strict typing: value type tag is
+                // appended to the serialized key so that map<K,V1> and
+                // map<K,V2> are disjoint.
+                inst.func_new("set", move |_cx, ty, args, _results| {
+                    let val_tag = component_type_to_tag(&ty.params().nth(1).unwrap().1)?;
+                    let mut key = serialize_val(&args[0])?;
+                    key.push(val_tag);
+                    let value = serialize_val(&args[1])?;
+                    store_for_set.lock().unwrap().insert(key, value);
+                    Ok(())
+                })
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+                // get(key) -> value — uses result type tag for strict typing.
+                inst.func_new("get", move |_cx, ty, args, results| {
+                    let val_tag = component_type_to_tag(&ty.results().next().unwrap())?;
+                    let mut key = serialize_val(&args[0])?;
+                    key.push(val_tag);
+                    match store_for_get.lock().unwrap().get(&key).cloned() {
+                        Some(v) => {
+                            results[0] = deserialize_val(&v)?;
+                            Ok(())
+                        }
+                        None => Err(wasmtime::Error::msg(format!(
+                            "key not found in map-{}",
+                            err_name
+                        ))),
+                    }
+                })
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
             ImportKind::Unknown(ref unknown) => {
                 return Err(DecideError::LinkError(format!("unknown import: {unknown}")));
             }
@@ -868,6 +1254,12 @@ impl WasmEngine {
     ///   is pushed onto the prove stack; if `attest()` fires while the hash
     ///   is on the stack, that hash is recorded as proved. The prove-dep gets
     ///   isolated link-instances (not shared with the parent).
+    /// - `"map-{name}"`: a named key-value store with `get(key) -> value` and
+    ///   `set(key, value)`. Shared within a container, isolated across
+    ///   prove-dep boundaries. Strictly typed: each (key\_type, value\_type)
+    ///   combination is disjoint. Supports u8, s8, u16, s16, u32, s32, u64,
+    ///   s64, string, and `list<T>` (integer element types) for both keys
+    ///   and values.
     ///
     /// Returns a `DecideOutput` with the decision and any hashes proved.
     pub fn decide(

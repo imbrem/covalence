@@ -2,12 +2,35 @@ use std::path::PathBuf;
 
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
+use pyo3::types::{PyBytes, PyDict, PyList};
 
 use covalence_hash::gix_hash;
-use covalence_store::ContentStore;
+use covalence_store::{ContentStore, Object, ObjectKind, ObjectStore};
 
 use crate::hash::O256;
+
+/// Parse a Python kind string into an ObjectKind.
+fn parse_object_kind(kind: &str) -> PyResult<ObjectKind> {
+    match kind {
+        "blob" => Ok(ObjectKind::Blob),
+        "tree" => Ok(ObjectKind::Tree),
+        "commit" => Ok(ObjectKind::Commit),
+        "tag" => Ok(ObjectKind::Tag),
+        _ => Err(PyValueError::new_err(format!(
+            "unknown object kind {kind:?}, expected \"blob\", \"tree\", \"commit\", or \"tag\""
+        ))),
+    }
+}
+
+/// Convert an ObjectKind to its string name.
+fn object_kind_str(kind: ObjectKind) -> &'static str {
+    match kind {
+        ObjectKind::Blob => "blob",
+        ObjectKind::Tree => "tree",
+        ObjectKind::Commit => "commit",
+        ObjectKind::Tag => "tag",
+    }
+}
 
 /// Git object hash (SHA-1 or SHA-256).
 #[pyclass(frozen, from_py_object)]
@@ -30,17 +53,22 @@ impl GitObject {
         self.kind
     }
 
-    /// Convert to O256 (SHA-256 only, raises on SHA-1).
+    /// Convert to O256 using identity mapping (SHA-256 only).
+    ///
+    /// Only valid for SHA-256 git objects (32 bytes). For SHA-1, you must
+    /// provide a hash mapping (e.g. via `git_tree_to_dir_rows`).
     fn to_o256(&self) -> PyResult<O256> {
-        if self.kind != "sha256" {
-            return Err(PyValueError::new_err(
-                "cannot convert SHA-1 git object to O256 (20 bytes, not 32)",
-            ));
+        if self.raw.len() == 32 {
+            let bytes: [u8; 32] = self.raw[..].try_into().unwrap();
+            Ok(O256(covalence_hash::O256::from_bytes(bytes)))
+        } else {
+            Err(PyValueError::new_err(format!(
+                "to_o256() only supports SHA-256 (32 bytes) via identity mapping; \
+                 this GitObject is {} ({} bytes). Provide a hash_map for SHA-1.",
+                self.kind,
+                self.raw.len()
+            )))
         }
-        let arr: [u8; 32] = self.raw[..32]
-            .try_into()
-            .map_err(|_| PyRuntimeError::new_err("unexpected length"))?;
-        Ok(O256(covalence_hash::O256::from_bytes(arr)))
     }
 
     fn __str__(&self) -> &str {
@@ -160,8 +188,7 @@ impl GitStore {
 
     /// Hash and store data as a blob, returning its GitObject key.
     fn insert(&self, data: &[u8]) -> PyResult<GitObject> {
-        self.inner
-            .insert(data)
+        ContentStore::insert(&self.inner, data)
             .map(oid_to_git_object)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
@@ -173,21 +200,20 @@ impl GitStore {
         key: &Bound<'py, PyAny>,
     ) -> PyResult<Option<Bound<'py, PyBytes>>> {
         let oid = parse_git_hash(key)?;
-        Ok(self.inner.get(&oid).map(|data| PyBytes::new(py, &data)))
+        Ok(ContentStore::get(&self.inner, &oid).map(|data| PyBytes::new(py, &data)))
     }
 
     /// Store data under the given key.
     fn put(&self, key: &Bound<'_, PyAny>, data: &[u8]) -> PyResult<()> {
         let oid = parse_git_hash(key)?;
-        self.inner
-            .put(oid, data)
+        ContentStore::put(&self.inner, oid, data)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
     /// Check whether a key exists in the store.
     fn contains(&self, key: &Bound<'_, PyAny>) -> PyResult<bool> {
         let oid = parse_git_hash(key)?;
-        Ok(self.inner.contains(&oid))
+        Ok(ContentStore::contains(&self.inner, &oid))
     }
 
     fn __contains__(&self, key: &Bound<'_, PyAny>) -> PyResult<bool> {
@@ -202,6 +228,79 @@ impl GitStore {
 
     fn __repr__(&self) -> String {
         format!("GitStore({}, {})", self.algo, self.path.display())
+    }
+
+    // -- Typed object store API -----------------------------------------------
+
+    /// Insert a typed object. `kind` is one of "blob", "tree", "commit", "tag".
+    fn insert_object(&self, kind: &str, data: &[u8]) -> PyResult<GitObject> {
+        let obj_kind = parse_object_kind(kind)?;
+        let typed_data = data.to_vec();
+        let oid = match obj_kind {
+            ObjectKind::Blob => {
+                ObjectStore::insert(&self.inner, &covalence_store::Blob(typed_data))
+            }
+            ObjectKind::Tree => {
+                ObjectStore::insert(&self.inner, &covalence_store::Tree(typed_data))
+            }
+            ObjectKind::Commit => {
+                ObjectStore::insert(&self.inner, &covalence_store::Commit(typed_data))
+            }
+            ObjectKind::Tag => ObjectStore::insert(&self.inner, &covalence_store::Tag(typed_data)),
+        };
+        oid.map(oid_to_git_object)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Get a typed object. Returns `(kind, data)` tuple or None if not found.
+    fn get_object<'py>(
+        &self,
+        py: Python<'py>,
+        key: &Bound<'py, PyAny>,
+    ) -> PyResult<Option<(String, Bound<'py, PyBytes>)>> {
+        let oid = parse_git_hash(key)?;
+        match self.inner.get_any(&oid) {
+            Ok(Some(obj)) => {
+                let kind_str = object_kind_str(obj.kind);
+                Ok(Some((kind_str.to_owned(), PyBytes::new(py, &obj.data))))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => Err(PyRuntimeError::new_err(e.to_string())),
+        }
+    }
+
+    /// Get object data with type checking. Returns bytes or None.
+    /// Raises TypeError if the stored object has a different kind.
+    fn get_typed<'py>(
+        &self,
+        py: Python<'py>,
+        key: &Bound<'py, PyAny>,
+        kind: &str,
+    ) -> PyResult<Option<Bound<'py, PyBytes>>> {
+        let oid = parse_git_hash(key)?;
+        let obj_kind = parse_object_kind(kind)?;
+        let result = match obj_kind {
+            ObjectKind::Blob => ObjectStore::<_, covalence_store::Blob>::get(&self.inner, &oid)
+                .map(|opt| opt.map(|b| b.into_data())),
+            ObjectKind::Tree => ObjectStore::<_, covalence_store::Tree>::get(&self.inner, &oid)
+                .map(|opt| opt.map(|t| t.into_data())),
+            ObjectKind::Commit => ObjectStore::<_, covalence_store::Commit>::get(&self.inner, &oid)
+                .map(|opt| opt.map(|c| c.into_data())),
+            ObjectKind::Tag => ObjectStore::<_, covalence_store::Tag>::get(&self.inner, &oid)
+                .map(|opt| opt.map(|t| t.into_data())),
+        };
+        match result {
+            Ok(Some(data)) => Ok(Some(PyBytes::new(py, &data))),
+            Ok(None) => Ok(None),
+            Err(covalence_store::StoreError::KindMismatch { expected, got }) => {
+                Err(PyTypeError::new_err(format!(
+                    "type mismatch: expected {}, got {}",
+                    object_kind_str(expected),
+                    object_kind_str(got),
+                )))
+            }
+            Err(e) => Err(PyRuntimeError::new_err(e.to_string())),
+        }
     }
 }
 
@@ -255,4 +354,60 @@ pub fn git_sha256() -> GitHasher {
     GitHasher {
         kind: gix_hash::Kind::Sha256,
     }
+}
+
+/// Parse raw git tree bytes and convert to directory rows.
+///
+/// - `data`: raw git tree body bytes
+/// - `hash_map`: `dict[bytes, O256]` mapping raw git hash bytes → O256.
+///   Required for SHA-1 (`hash_len=20`). Optional for SHA-256 (`hash_len=32`),
+///   where `None` means identity mapping (git SHA-256 IS the O256).
+/// - `hash_len`: hash length in bytes (20 for SHA-1, 32 for SHA-256)
+///
+/// Returns a list of dicts with "name" (bytes), "mode" (str), "child" (O256).
+/// Raises `ValueError` if a hash key is missing from `hash_map`.
+#[pyfunction]
+#[pyo3(signature = (data, hash_map=None, hash_len=20))]
+pub fn git_tree_to_dir_rows<'py>(
+    py: Python<'py>,
+    data: &[u8],
+    hash_map: Option<&Bound<'py, PyDict>>,
+    hash_len: usize,
+) -> PyResult<Bound<'py, PyList>> {
+    if hash_map.is_none() && hash_len != 32 {
+        return Err(PyValueError::new_err(format!(
+            "hash_map is required for hash_len={hash_len} (only hash_len=32 supports identity mapping)"
+        )));
+    }
+
+    let entries = covalence_object::parse_git_tree(data, hash_len)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+    let result = PyList::empty(py);
+    for entry in &entries {
+        let mode = covalence_object::DirMode::from_git_mode(entry.mode)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        let child = if let Some(map) = hash_map {
+            let key = PyBytes::new(py, entry.hash);
+            let val = map.get_item(&key)?.ok_or_else(|| {
+                let hex: String = entry.hash.iter().map(|b| format!("{b:02x}")).collect();
+                PyValueError::new_err(format!("hash not found in hash_map: {hex}"))
+            })?;
+            val.extract::<crate::hash::O256>()?
+        } else {
+            // Identity mapping: hash_len=32, use git SHA-256 directly as O256.
+            let bytes: [u8; 32] = entry.hash.try_into().map_err(|_| {
+                PyValueError::new_err("identity mapping requires exactly 32-byte hashes")
+            })?;
+            crate::hash::O256(covalence_hash::O256::from_bytes(bytes))
+        };
+
+        let row_dict = PyDict::new(py);
+        row_dict.set_item("name", PyBytes::new(py, entry.name))?;
+        row_dict.set_item("mode", mode.name())?;
+        row_dict.set_item("child", child.into_pyobject(py)?)?;
+        result.append(row_dict)?;
+    }
+    Ok(result)
 }

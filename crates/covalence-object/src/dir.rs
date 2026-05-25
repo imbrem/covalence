@@ -6,28 +6,74 @@ use crate::table::{
     FieldSpec, RowCodec, RowSchema, Table, TableError, min_bytes, read_le, write_le,
 };
 
-/// The mode of a directory entry.
+/// The mode of a directory entry, stored as a u16 holding the git octal mode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-#[repr(u8)]
-pub enum DirMode {
-    Blob = 0,
-    Dir = 1,
-}
+pub struct DirMode(pub u16);
 
-/// Well-known ref hash for a directory mode variant.
-fn mode_ref(mode: DirMode) -> O256 {
-    O256::blob([mode as u8])
-}
+impl DirMode {
+    /// Regular file (git `100644`).
+    pub const REGULAR: Self = Self(0o100644);
+    /// Executable file (git `100755`).
+    pub const EXECUTABLE: Self = Self(0o100755);
+    /// Symbolic link (git `120000`).
+    pub const SYMLINK: Self = Self(0o120000);
+    /// Directory / tree (git `40000`).
+    pub const DIR: Self = Self(0o40000);
+    /// Git submodule (git `160000`).
+    pub const SUBMODULE: Self = Self(0o160000);
 
-/// Recover `DirMode` from its ref hash.
-fn mode_from_ref(hash: &O256) -> Result<DirMode, TableError> {
-    for mode in [DirMode::Blob, DirMode::Dir] {
-        if mode_ref(mode) == *hash {
-            return Ok(mode);
+    /// Whether this mode represents a tree/directory.
+    pub fn is_dir(self) -> bool {
+        self == Self::DIR
+    }
+
+    /// Compute the O256 mode ref for use in directory hashing.
+    /// Key = O256::blob("GIT_MODE"), data = mode LE bytes.
+    pub fn mode_ref(self) -> O256 {
+        let key = O256::blob("GIT_MODE");
+        let mut hasher = covalence_hash::blake3::Hasher::new_keyed(key.as_bytes());
+        hasher.update(&self.0.to_le_bytes());
+        O256::from_bytes(*hasher.finalize().as_bytes())
+    }
+
+    /// Parse a git tree mode string (e.g. `b"100644"`) into a `DirMode`.
+    pub fn from_git_mode(mode: &[u8]) -> Result<Self, TableError> {
+        match mode {
+            b"100644" => Ok(Self::REGULAR),
+            b"100755" => Ok(Self::EXECUTABLE),
+            b"120000" => Ok(Self::SYMLINK),
+            b"40000" => Ok(Self::DIR),
+            b"160000" => Ok(Self::SUBMODULE),
+            _ => Err(TableError::InvalidGitTree(format!(
+                "unknown mode: {:?}",
+                String::from_utf8_lossy(mode)
+            ))),
         }
     }
-    Err(TableError::UnknownDirMode)
+
+    /// Git mode octal string for serialization.
+    pub fn git_mode_str(self) -> &'static str {
+        match self {
+            Self::REGULAR => "100644",
+            Self::EXECUTABLE => "100755",
+            Self::SYMLINK => "120000",
+            Self::DIR => "40000",
+            Self::SUBMODULE => "160000",
+            _ => panic!("no git mode string for DirMode({})", self.0),
+        }
+    }
+
+    /// Human-readable name for the mode.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::REGULAR => "regular",
+            Self::EXECUTABLE => "executable",
+            Self::SYMLINK => "symlink",
+            Self::DIR => "dir",
+            Self::SUBMODULE => "submodule",
+            _ => "unknown",
+        }
+    }
 }
 
 /// A directory row, generic over the name type.
@@ -49,7 +95,7 @@ pub trait HashDir {
 
 /// BLAKE3 keyed-hash implementation: domain-separated from blob hashes.
 ///
-/// Each entry is serialized as `{mode_u8}{name}\0{hash_32bytes}`.
+/// Each entry contributes `{mode_ref_32bytes}{name}\0{hash_32bytes}`.
 /// The concatenated entries are hashed with BLAKE3 keyed mode using
 /// `key = O256::blob("tree")`, ensuring disjointness from plain BLAKE3 hashes.
 impl HashDir for () {
@@ -63,7 +109,7 @@ impl HashDir for () {
         let key = O256::blob("tree");
         let mut hasher = covalence_hash::blake3::Hasher::new_keyed(key.as_bytes());
         for row in rows {
-            hasher.update(&[row.mode as u8]);
+            hasher.update(row.mode.mode_ref().as_bytes());
             hasher.update(row.name.as_ref());
             hasher.update(&[0]);
             hasher.update(row.child.as_bytes());
@@ -86,8 +132,8 @@ pub fn dir_hash<N: AsRef<[u8]>>(rows: &[DirRow<N>]) -> O256 {
 /// use covalence_hash::O256;
 ///
 /// let mut b = DirBuilder::new();
-/// b.entry("z.txt", DirMode::Blob, O256::blob("z"))
-///  .entry("a.txt", DirMode::Blob, O256::blob("a"));
+/// b.entry("z.txt", DirMode::REGULAR, O256::blob("z"))
+///  .entry("a.txt", DirMode::REGULAR, O256::blob("a"));
 ///
 /// let entries = b.build();
 /// assert_eq!(entries[0].name, "a.txt");
@@ -152,26 +198,25 @@ impl Default for DirBuilder<'_> {
     }
 }
 
-/// Directory table schema: `(name: Blob, mode: Ref, child: Dep)`.
+/// Directory table schema: `(name: Blob, mode: Fixed(2), child: Dep)`.
 ///
-/// - Each `DirMode` variant maps to a deterministic ref hash.
+/// - Mode is stored inline as a 2-byte LE u16.
 /// - Each child `O256` is registered as a dep.
-/// - `collect()` auto-pushes both when rows are added.
+/// - `collect()` auto-pushes deps when rows are added.
 pub struct Dir;
 
 impl RowCodec for Dir {
     type Row = DirRow<Vec<u8>>;
     type RowRef<'a> = DirRow<&'a [u8]>;
 
-    fn collect(&self, row: &DirRow<Vec<u8>>, refs: &mut Vec<O256>, deps: &mut Vec<O256>) {
-        refs.push(mode_ref(row.mode));
+    fn collect(&self, row: &DirRow<Vec<u8>>, _refs: &mut Vec<O256>, deps: &mut Vec<O256>) {
         deps.push(row.child);
     }
 
-    fn row_schema(&self, num_refs: usize, num_deps: usize) -> RowSchema {
+    fn row_schema(&self, _num_refs: usize, num_deps: usize) -> RowSchema {
         RowSchema::new(vec![
             FieldSpec::blob(),
-            FieldSpec::ref_index(min_bytes(num_refs)),
+            FieldSpec::fixed(2),
             FieldSpec::dep_index(min_bytes(num_deps)),
         ])
     }
@@ -179,30 +224,29 @@ impl RowCodec for Dir {
     fn encode(
         &self,
         row: &DirRow<Vec<u8>>,
-        sorted_refs: &[O256],
+        _sorted_refs: &[O256],
         sorted_deps: &[O256],
-        ref_w: u8,
+        _ref_w: u8,
         dep_w: u8,
     ) -> Vec<Vec<u8>> {
-        let ref_idx = sorted_refs
-            .binary_search(&mode_ref(row.mode))
-            .expect("mode ref missing from sorted refs");
         let dep_idx = sorted_deps
             .binary_search(&row.child)
             .expect("child dep missing from sorted deps");
 
-        let mut ref_bytes = Vec::new();
-        write_le(ref_idx as u64, ref_w as usize, &mut ref_bytes);
         let mut dep_bytes = Vec::new();
         write_le(dep_idx as u64, dep_w as usize, &mut dep_bytes);
 
-        vec![row.name.clone(), ref_bytes, dep_bytes]
+        vec![
+            row.name.clone(),
+            row.mode.0.to_le_bytes().to_vec(),
+            dep_bytes,
+        ]
     }
 
     fn decode<'a>(
         &self,
         fields: Vec<&'a [u8]>,
-        refs: &[O256],
+        _refs: &[O256],
         deps: &[O256],
     ) -> Result<DirRow<&'a [u8]>, TableError> {
         if fields.len() != 3 {
@@ -213,10 +257,9 @@ impl RowCodec for Dir {
         }
 
         let name = fields[0];
-        let ref_idx = read_le(fields[1], fields[1].len()) as usize;
+        let mode_val = u16::from_le_bytes([fields[1][0], fields[1][1]]);
+        let mode = DirMode(mode_val);
         let dep_idx = read_le(fields[2], fields[2].len()) as usize;
-
-        let mode = mode_from_ref(&refs[ref_idx])?;
         let child = deps[dep_idx];
 
         Ok(DirRow { name, mode, child })
@@ -273,11 +316,7 @@ pub fn git_tree_bytes<N: AsRef<[u8]>>(rows: &[DirRow<N>], hash_len: usize) -> Ve
 
     let mut buf = Vec::new();
     for row in rows {
-        let mode_str = match row.mode {
-            DirMode::Blob => "100644",
-            DirMode::Dir => "40000",
-        };
-        buf.extend_from_slice(mode_str.as_bytes());
+        buf.extend_from_slice(row.mode.git_mode_str().as_bytes());
         buf.push(b' ');
         buf.extend_from_slice(row.name.as_ref());
         buf.push(0);
@@ -309,6 +348,179 @@ pub fn git_tree_sha256<N: AsRef<[u8]>>(rows: &[DirRow<N>]) -> O256 {
     O256::from_bytes(out)
 }
 
+/// A raw entry parsed from git tree bytes.
+#[cfg(feature = "git")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitTreeEntry<'a> {
+    pub mode: &'a [u8],
+    pub name: &'a [u8],
+    pub hash: &'a [u8],
+}
+
+/// Parse raw git tree body bytes into entries.
+///
+/// Each entry in a git tree is `"{mode} {name}\0{hash_bytes}"` where `hash_bytes`
+/// is `hash_len` bytes (20 for SHA-1, 32 for SHA-256).
+#[cfg(feature = "git")]
+pub fn parse_git_tree(data: &[u8], hash_len: usize) -> Result<Vec<GitTreeEntry<'_>>, TableError> {
+    let mut entries = Vec::new();
+    let mut pos = 0;
+    while pos < data.len() {
+        // Find the space separating mode from name.
+        let space = data[pos..]
+            .iter()
+            .position(|&b| b == b' ')
+            .ok_or_else(|| TableError::InvalidGitTree("missing space after mode".to_string()))?;
+        let mode = &data[pos..pos + space];
+        pos += space + 1;
+
+        // Find the null byte terminating the name.
+        let null = data[pos..]
+            .iter()
+            .position(|&b| b == 0)
+            .ok_or_else(|| TableError::InvalidGitTree("missing null after name".to_string()))?;
+        let name = &data[pos..pos + null];
+        pos += null + 1;
+
+        // Read hash_len bytes.
+        if pos + hash_len > data.len() {
+            return Err(TableError::InvalidGitTree(format!(
+                "truncated hash: need {} bytes at offset {}, got {}",
+                hash_len,
+                pos,
+                data.len() - pos
+            )));
+        }
+        let hash = &data[pos..pos + hash_len];
+        pos += hash_len;
+
+        entries.push(GitTreeEntry { mode, name, hash });
+    }
+    Ok(entries)
+}
+
+/// Parse a git tree and convert to `DirRow` entries.
+///
+/// `map_hash` converts raw git hash bytes (20 or 32) to `O256`.
+#[cfg(feature = "git")]
+pub fn git_tree_to_dir_rows(
+    data: &[u8],
+    hash_len: usize,
+    mut map_hash: impl FnMut(&[u8]) -> O256,
+) -> Result<Vec<DirRow<Vec<u8>>>, TableError> {
+    let entries = parse_git_tree(data, hash_len)?;
+    let mut rows = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let mode = DirMode::from_git_mode(entry.mode)?;
+        let child = map_hash(entry.hash);
+        rows.push(DirRow {
+            name: entry.name.to_vec(),
+            mode,
+            child,
+        });
+    }
+    Ok(rows)
+}
+
+/// Bidirectional mapping between covalence O256 content hashes and git object hashes.
+///
+/// Required for serializing/deserializing git trees, since git hashes (SHA-1 or SHA-256)
+/// and covalence hashes (BLAKE3) are independent hashes of the same content.
+///
+/// For SHA-256 repos where you choose to store the git SHA-256 directly as O256
+/// (identity mapping), use [`Sha256Identity`].
+#[cfg(feature = "git")]
+pub trait HashMapping {
+    /// Git hash length in bytes (20 for SHA-1, 32 for SHA-256).
+    fn hash_len(&self) -> usize;
+
+    /// Resolve a git object hash to the corresponding covalence O256 hash.
+    fn git_to_cov(&self, git_hash: &[u8]) -> Option<O256>;
+
+    /// Resolve a covalence O256 hash to the corresponding git object hash.
+    fn cov_to_git(&self, o256: &O256) -> Option<Vec<u8>>;
+}
+
+/// Identity mapping for SHA-256 repos: O256 *is* the git SHA-256 hash.
+///
+/// This is only valid when the covalence store uses git SHA-256 as its
+/// content-addressing scheme (i.e. O256 = git SHA-256 of the object).
+#[cfg(feature = "git")]
+pub struct Sha256Identity;
+
+#[cfg(feature = "git")]
+impl HashMapping for Sha256Identity {
+    fn hash_len(&self) -> usize {
+        32
+    }
+
+    fn git_to_cov(&self, git_hash: &[u8]) -> Option<O256> {
+        let bytes: [u8; 32] = git_hash.try_into().ok()?;
+        Some(O256::from_bytes(bytes))
+    }
+
+    fn cov_to_git(&self, o256: &O256) -> Option<Vec<u8>> {
+        Some(o256.as_bytes().to_vec())
+    }
+}
+
+/// Serialize directory rows as a git tree, using a [`HashMapping`] to convert
+/// each child O256 to its git object hash.
+///
+/// Returns `Err` if any child hash cannot be resolved.
+#[cfg(feature = "git")]
+pub fn git_tree_bytes_mapped<N: AsRef<[u8]>>(
+    rows: &[DirRow<N>],
+    mapping: &impl HashMapping,
+) -> Result<Vec<u8>, TableError> {
+    debug_assert!(
+        rows.windows(2)
+            .all(|w| w[0].name.as_ref() < w[1].name.as_ref()),
+        "rows must be sorted and unique by name",
+    );
+
+    let mut buf = Vec::new();
+    for row in rows {
+        let git_hash = mapping.cov_to_git(&row.child).ok_or_else(|| {
+            TableError::InvalidGitTree(format!(
+                "no git hash for O256 {:?}",
+                &row.child.as_bytes()[..8]
+            ))
+        })?;
+        buf.extend_from_slice(row.mode.git_mode_str().as_bytes());
+        buf.push(b' ');
+        buf.extend_from_slice(row.name.as_ref());
+        buf.push(0);
+        buf.extend_from_slice(&git_hash);
+    }
+    Ok(buf)
+}
+
+/// Parse a git tree using a [`HashMapping`] to convert git hashes to O256.
+///
+/// Returns `Err` if any git hash cannot be resolved.
+#[cfg(feature = "git")]
+pub fn git_tree_to_dir_rows_mapped(
+    data: &[u8],
+    mapping: &impl HashMapping,
+) -> Result<Vec<DirRow<Vec<u8>>>, TableError> {
+    let entries = parse_git_tree(data, mapping.hash_len())?;
+    let mut rows = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let mode = DirMode::from_git_mode(entry.mode)?;
+        let child = mapping.git_to_cov(entry.hash).ok_or_else(|| {
+            let hex: String = entry.hash.iter().map(|b| format!("{b:02x}")).collect();
+            TableError::InvalidGitTree(format!("no O256 for git hash {hex}"))
+        })?;
+        rows.push(DirRow {
+            name: entry.name.to_vec(),
+            mode,
+            child,
+        });
+    }
+    Ok(rows)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -320,12 +532,12 @@ mod tests {
         [
             DirRow {
                 name: "bar.txt",
-                mode: DirMode::Blob,
+                mode: DirMode::REGULAR,
                 child: O256::blob("bar content"),
             },
             DirRow {
                 name: "foo.txt",
-                mode: DirMode::Blob,
+                mode: DirMode::REGULAR,
                 child: O256::blob("foo content"),
             },
         ]
@@ -354,7 +566,7 @@ mod tests {
         // Manually serialize the same way the impl does.
         let mut raw = Vec::new();
         for row in &rows {
-            raw.push(row.mode as u8);
+            raw.extend_from_slice(row.mode.mode_ref().as_bytes());
             raw.extend_from_slice(row.name.as_bytes());
             raw.push(0);
             raw.extend_from_slice(row.child.as_bytes());
@@ -367,12 +579,12 @@ mod tests {
     fn mode_matters() {
         let blob_row = [DirRow {
             name: "x",
-            mode: DirMode::Blob,
+            mode: DirMode::REGULAR,
             child: O256::blob("data"),
         }];
         let dir_row = [DirRow {
             name: "x",
-            mode: DirMode::Dir,
+            mode: DirMode::DIR,
             child: O256::blob("data"),
         }];
         assert_ne!(().hash_dir(&blob_row), ().hash_dir(&dir_row));
@@ -383,12 +595,12 @@ mod tests {
         let mut rows = [
             DirRow {
                 name: "z",
-                mode: DirMode::Blob,
+                mode: DirMode::REGULAR,
                 child: O256::blob("z"),
             },
             DirRow {
                 name: "a",
-                mode: DirMode::Blob,
+                mode: DirMode::REGULAR,
                 child: O256::blob("a"),
             },
         ];
@@ -404,12 +616,12 @@ mod tests {
         let rows = [
             DirRow {
                 name: "z",
-                mode: DirMode::Blob,
+                mode: DirMode::REGULAR,
                 child: O256::blob("z"),
             },
             DirRow {
                 name: "a",
-                mode: DirMode::Blob,
+                mode: DirMode::REGULAR,
                 child: O256::blob("a"),
             },
         ];
@@ -423,12 +635,12 @@ mod tests {
         let rows = [
             DirRow {
                 name: "x",
-                mode: DirMode::Blob,
+                mode: DirMode::REGULAR,
                 child: O256::blob("a"),
             },
             DirRow {
                 name: "x",
-                mode: DirMode::Dir,
+                mode: DirMode::DIR,
                 child: O256::blob("b"),
             },
         ];
@@ -444,9 +656,9 @@ mod tests {
     #[test]
     fn builder_sorts() {
         let mut b = DirBuilder::new();
-        b.entry("z", DirMode::Blob, O256::blob("z"))
-            .entry("a", DirMode::Blob, O256::blob("a"))
-            .entry("m", DirMode::Blob, O256::blob("m"));
+        b.entry("z", DirMode::REGULAR, O256::blob("z"))
+            .entry("a", DirMode::REGULAR, O256::blob("a"))
+            .entry("m", DirMode::REGULAR, O256::blob("m"));
         let entries = b.build();
         assert_eq!(entries[0].name, "a");
         assert_eq!(entries[1].name, "m");
@@ -456,14 +668,14 @@ mod tests {
     #[test]
     fn builder_dedup_last_wins() {
         let mut b = DirBuilder::new();
-        b.entry("x", DirMode::Blob, O256::blob("first")).entry(
+        b.entry("x", DirMode::REGULAR, O256::blob("first")).entry(
             "x",
-            DirMode::Dir,
+            DirMode::DIR,
             O256::blob("second"),
         );
         assert_eq!(b.len(), 1);
         let entries = b.build();
-        assert_eq!(entries[0].mode, DirMode::Dir);
+        assert_eq!(entries[0].mode, DirMode::DIR);
         assert_eq!(entries[0].child, O256::blob("second"));
     }
 
@@ -480,8 +692,8 @@ mod tests {
     #[test]
     fn builder_hash_matches_raw() {
         let mut b = DirBuilder::new();
-        b.entry("bar.txt", DirMode::Blob, O256::blob("bar content"))
-            .entry("foo.txt", DirMode::Blob, O256::blob("foo content"));
+        b.entry("bar.txt", DirMode::REGULAR, O256::blob("bar content"))
+            .entry("foo.txt", DirMode::REGULAR, O256::blob("foo content"));
         let rows = sample_rows();
         assert_eq!(b.hash(), ().hash_dir(&rows));
     }
@@ -497,92 +709,84 @@ mod tests {
         let mut builder = TableBuilder::new(Dir);
         builder.push_row(DirRow {
             name: b"b.txt".to_vec(),
-            mode: DirMode::Blob,
+            mode: DirMode::REGULAR,
             child: child_b,
         });
         builder.push_row(DirRow {
             name: b"a.txt".to_vec(),
-            mode: DirMode::Blob,
+            mode: DirMode::REGULAR,
             child: child_a,
         });
         builder.push_row(DirRow {
             name: b"src".to_vec(),
-            mode: DirMode::Dir,
+            mode: DirMode::DIR,
             child: child_src,
         });
 
         let table = builder.build();
 
         assert_eq!(table.num_entries(), 3);
-        // 2 mode refs (Blob, Dir) — sorted and deduped.
-        assert_eq!(table.num_refs(), 2);
+        // Mode is stored inline — no refs needed.
+        assert_eq!(table.num_refs(), 0);
         // 3 child deps.
         assert_eq!(table.num_deps(), 3);
 
         // Dir::prepare sorts by name, so rows are now in sorted order.
         let row0 = table.row(0).unwrap();
         assert_eq!(row0.name, b"a.txt");
-        assert_eq!(row0.mode, DirMode::Blob);
+        assert_eq!(row0.mode, DirMode::REGULAR);
         assert_eq!(row0.child, child_a);
 
         let row1 = table.row(1).unwrap();
         assert_eq!(row1.name, b"b.txt");
-        assert_eq!(row1.mode, DirMode::Blob);
+        assert_eq!(row1.mode, DirMode::REGULAR);
         assert_eq!(row1.child, child_b);
 
         let row2 = table.row(2).unwrap();
         assert_eq!(row2.name, b"src");
-        assert_eq!(row2.mode, DirMode::Dir);
+        assert_eq!(row2.mode, DirMode::DIR);
         assert_eq!(row2.child, child_src);
     }
 
     #[test]
-    fn auto_collects_refs_and_deps() {
+    fn auto_collects_deps() {
         let mut builder = TableBuilder::new(Dir);
         builder.push_row(DirRow {
             name: b"x".to_vec(),
-            mode: DirMode::Blob,
+            mode: DirMode::REGULAR,
             child: O256::blob("x"),
         });
         let table = builder.build();
-        assert_eq!(table.num_refs(), 1); // Blob mode ref
+        assert_eq!(table.num_refs(), 0); // mode is inline
         assert_eq!(table.num_deps(), 1); // child dep
     }
 
     #[test]
-    fn dedup_same_mode() {
+    fn multiple_entries_no_refs() {
         let mut builder = TableBuilder::new(Dir);
-        // Two Blob entries — should deduplicate the mode ref.
         builder.push_row(DirRow {
             name: b"a".to_vec(),
-            mode: DirMode::Blob,
+            mode: DirMode::REGULAR,
             child: O256::blob("a"),
         });
         builder.push_row(DirRow {
             name: b"b".to_vec(),
-            mode: DirMode::Blob,
+            mode: DirMode::REGULAR,
             child: O256::blob("b"),
         });
 
         let table = builder.build();
-        assert_eq!(table.num_refs(), 1); // same Blob mode deduped
+        assert_eq!(table.num_refs(), 0); // mode stored inline
         assert_eq!(table.num_deps(), 2);
     }
 
     #[test]
     fn mode_ref_deterministic() {
-        // Same mode always produces the same ref hash.
-        assert_eq!(mode_ref(DirMode::Blob), mode_ref(DirMode::Blob));
-        assert_eq!(mode_ref(DirMode::Dir), mode_ref(DirMode::Dir));
+        // Same mode always produces the same mode_ref hash.
+        assert_eq!(DirMode::REGULAR.mode_ref(), DirMode::REGULAR.mode_ref());
+        assert_eq!(DirMode::DIR.mode_ref(), DirMode::DIR.mode_ref());
         // Different modes produce different hashes.
-        assert_ne!(mode_ref(DirMode::Blob), mode_ref(DirMode::Dir));
-    }
-
-    #[test]
-    fn mode_ref_roundtrip() {
-        for mode in [DirMode::Blob, DirMode::Dir] {
-            assert_eq!(mode_from_ref(&mode_ref(mode)).unwrap(), mode);
-        }
+        assert_ne!(DirMode::REGULAR.mode_ref(), DirMode::DIR.mode_ref());
     }
 
     #[test]
@@ -598,17 +802,17 @@ mod tests {
         let mut builder = TableBuilder::new(Dir);
         builder.push_row(DirRow {
             name: b"z".to_vec(),
-            mode: DirMode::Blob,
+            mode: DirMode::REGULAR,
             child: O256::blob("z"),
         });
         builder.push_row(DirRow {
             name: b"a".to_vec(),
-            mode: DirMode::Blob,
+            mode: DirMode::REGULAR,
             child: O256::blob("a"),
         });
         builder.push_row(DirRow {
             name: b"m".to_vec(),
-            mode: DirMode::Dir,
+            mode: DirMode::DIR,
             child: O256::blob("m"),
         });
         let table = builder.build();
@@ -623,12 +827,12 @@ mod tests {
         let mut builder = TableBuilder::new(Dir);
         builder.push_row(DirRow {
             name: b"x".to_vec(),
-            mode: DirMode::Blob,
+            mode: DirMode::REGULAR,
             child: O256::blob("a"),
         });
         builder.push_row(DirRow {
             name: b"x".to_vec(),
-            mode: DirMode::Dir,
+            mode: DirMode::DIR,
             child: O256::blob("b"),
         });
         let _ = builder.build();
@@ -643,24 +847,24 @@ mod tests {
         let mut builder = TableBuilder::new(Dir);
         builder.push_row(DirRow {
             name: b"z.txt".to_vec(),
-            mode: DirMode::Blob,
+            mode: DirMode::REGULAR,
             child: child_z,
         });
         builder.push_row(DirRow {
             name: b"a.txt".to_vec(),
-            mode: DirMode::Blob,
+            mode: DirMode::REGULAR,
             child: child_a,
         });
         builder.push_row(DirRow {
             name: b"m.txt".to_vec(),
-            mode: DirMode::Dir,
+            mode: DirMode::DIR,
             child: child_m,
         });
         let table = builder.build();
 
         let found = table.get(b"m.txt").unwrap().unwrap();
         assert_eq!(found.name, b"m.txt");
-        assert_eq!(found.mode, DirMode::Dir);
+        assert_eq!(found.mode, DirMode::DIR);
         assert_eq!(found.child, child_m);
 
         let found = table.get(b"a.txt").unwrap().unwrap();
@@ -683,7 +887,7 @@ mod tests {
             let hash = O256::blob("content");
             let rows = [DirRow {
                 name: b"file.txt".as_slice(),
-                mode: DirMode::Blob,
+                mode: DirMode::REGULAR,
                 child: hash,
             }];
 
@@ -703,7 +907,7 @@ mod tests {
             let hash = O256::blob("content");
             let rows = [DirRow {
                 name: b"file.txt".as_slice(),
-                mode: DirMode::Blob,
+                mode: DirMode::REGULAR,
                 child: hash,
             }];
 
@@ -723,7 +927,7 @@ mod tests {
             let hash = O256::blob("sub");
             let rows = [DirRow {
                 name: b"subdir".as_slice(),
-                mode: DirMode::Dir,
+                mode: DirMode::DIR,
                 child: hash,
             }];
 
@@ -744,16 +948,448 @@ mod tests {
             // Works with owned Vec<u8> names too.
             let rows = [DirRow {
                 name: b"owned.txt".to_vec(),
-                mode: DirMode::Blob,
+                mode: DirMode::REGULAR,
                 child: hash,
             }];
             let borrowed_rows = [DirRow {
                 name: b"owned.txt".as_slice(),
-                mode: DirMode::Blob,
+                mode: DirMode::REGULAR,
                 child: hash,
             }];
             assert_eq!(git_tree_sha1(&rows), git_tree_sha1(&borrowed_rows));
             assert_eq!(git_tree_sha256(&rows), git_tree_sha256(&borrowed_rows));
+        }
+
+        // --- Git tree parser tests ---
+
+        /// Build a lookup map from truncated hash (first `hash_len` bytes) → full O256.
+        fn hash_lookup(
+            hashes: &[O256],
+            hash_len: usize,
+        ) -> std::collections::HashMap<Vec<u8>, O256> {
+            hashes
+                .iter()
+                .map(|h| (h.as_bytes()[..hash_len].to_vec(), *h))
+                .collect()
+        }
+
+        #[test]
+        fn full_roundtrip_sha256() {
+            // With hash_len=32, the full O256 is preserved byte-for-byte.
+            let h1 = O256::blob("alpha_content");
+            let h2 = O256::blob("beta_content");
+            let h3 = O256::blob("gamma_content");
+            let rows = [
+                DirRow {
+                    name: b"alpha".as_slice(),
+                    mode: DirMode::REGULAR,
+                    child: h1,
+                },
+                DirRow {
+                    name: b"beta".as_slice(),
+                    mode: DirMode::DIR,
+                    child: h2,
+                },
+                DirRow {
+                    name: b"gamma".as_slice(),
+                    mode: DirMode::EXECUTABLE,
+                    child: h3,
+                },
+            ];
+
+            let tree_data = git_tree_bytes(&rows, 32);
+            let dir_rows = git_tree_to_dir_rows(&tree_data, 32, |raw| {
+                O256::from_bytes(raw.try_into().unwrap())
+            })
+            .unwrap();
+
+            assert_eq!(dir_rows.len(), 3);
+            for (orig, parsed) in rows.iter().zip(&dir_rows) {
+                assert_eq!(parsed.name, orig.name);
+                assert_eq!(parsed.mode, orig.mode);
+                assert_eq!(
+                    parsed.child, orig.child,
+                    "child hash must round-trip exactly"
+                );
+            }
+        }
+
+        #[test]
+        fn full_roundtrip_sha1_with_lookup() {
+            // With hash_len=20, we need a lookup map to recover full O256.
+            let h1 = O256::blob("file_a");
+            let h2 = O256::blob("file_b");
+            let h3 = O256::blob("subdir");
+            let rows = [
+                DirRow {
+                    name: b"a.txt".as_slice(),
+                    mode: DirMode::REGULAR,
+                    child: h1,
+                },
+                DirRow {
+                    name: b"b.txt".as_slice(),
+                    mode: DirMode::EXECUTABLE,
+                    child: h2,
+                },
+                DirRow {
+                    name: b"src".as_slice(),
+                    mode: DirMode::DIR,
+                    child: h3,
+                },
+            ];
+
+            let lookup = hash_lookup(&[h1, h2, h3], 20);
+            let tree_data = git_tree_bytes(&rows, 20);
+            let dir_rows = git_tree_to_dir_rows(&tree_data, 20, |raw| {
+                *lookup.get(raw).expect("hash must be in lookup")
+            })
+            .unwrap();
+
+            assert_eq!(dir_rows.len(), 3);
+            for (orig, parsed) in rows.iter().zip(&dir_rows) {
+                assert_eq!(parsed.name, orig.name);
+                assert_eq!(parsed.mode, orig.mode);
+                assert_eq!(
+                    parsed.child, orig.child,
+                    "child hash must round-trip via lookup"
+                );
+            }
+        }
+
+        #[test]
+        fn roundtrip_all_modes() {
+            // Every mode survives the round-trip.
+            let h = O256::blob("x");
+            let rows = [
+                DirRow {
+                    name: b"a".as_slice(),
+                    mode: DirMode::REGULAR,
+                    child: h,
+                },
+                DirRow {
+                    name: b"b".as_slice(),
+                    mode: DirMode::DIR,
+                    child: h,
+                },
+                DirRow {
+                    name: b"c".as_slice(),
+                    mode: DirMode::EXECUTABLE,
+                    child: h,
+                },
+                DirRow {
+                    name: b"d".as_slice(),
+                    mode: DirMode::SYMLINK,
+                    child: h,
+                },
+                DirRow {
+                    name: b"e".as_slice(),
+                    mode: DirMode::SUBMODULE,
+                    child: h,
+                },
+            ];
+
+            let tree_data = git_tree_bytes(&rows, 32);
+            let dir_rows = git_tree_to_dir_rows(&tree_data, 32, |raw| {
+                O256::from_bytes(raw.try_into().unwrap())
+            })
+            .unwrap();
+
+            assert_eq!(dir_rows.len(), 5);
+            for (orig, parsed) in rows.iter().zip(&dir_rows) {
+                assert_eq!(parsed.name, orig.name);
+                assert_eq!(parsed.mode, orig.mode);
+                assert_eq!(parsed.child, orig.child);
+            }
+        }
+
+        #[test]
+        fn parse_raw_entries() {
+            // Verify parse_git_tree returns correct raw fields.
+            let hash = O256::blob("content");
+            let rows = [DirRow {
+                name: b"file.txt".as_slice(),
+                mode: DirMode::REGULAR,
+                child: hash,
+            }];
+            let tree_data = git_tree_bytes(&rows, 20);
+            let entries = parse_git_tree(&tree_data, 20).unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].mode, b"100644");
+            assert_eq!(entries[0].name, b"file.txt");
+            assert_eq!(entries[0].hash, &hash.as_bytes()[..20]);
+        }
+
+        #[test]
+        fn parse_empty_tree() {
+            let entries = parse_git_tree(&[], 20).unwrap();
+            assert!(entries.is_empty());
+        }
+
+        #[test]
+        fn parse_truncated_hash() {
+            let hash = O256::blob("x");
+            let rows = [DirRow {
+                name: b"f".as_slice(),
+                mode: DirMode::REGULAR,
+                child: hash,
+            }];
+            let mut data = git_tree_bytes(&rows, 20);
+            data.truncate(data.len() - 5);
+            let err = parse_git_tree(&data, 20).unwrap_err();
+            assert!(err.to_string().contains("truncated hash"));
+        }
+
+        #[test]
+        fn parse_missing_null() {
+            let data = b"100644 file";
+            let err = parse_git_tree(data, 20).unwrap_err();
+            assert!(err.to_string().contains("missing null"));
+        }
+
+        #[test]
+        fn parse_missing_space() {
+            let data = b"100644file\x00";
+            let err = parse_git_tree(data, 20).unwrap_err();
+            assert!(err.to_string().contains("missing space"));
+        }
+
+        #[test]
+        fn roundtrip_preserves_git_hash() {
+            // Verify that serializing → parsing → re-serializing gives the same bytes.
+            let h1 = O256::blob("a");
+            let h2 = O256::blob("b");
+            let rows = [
+                DirRow {
+                    name: b"foo".as_slice(),
+                    mode: DirMode::REGULAR,
+                    child: h1,
+                },
+                DirRow {
+                    name: b"sub".as_slice(),
+                    mode: DirMode::DIR,
+                    child: h2,
+                },
+            ];
+
+            // Serialize once.
+            let tree_data = git_tree_bytes(&rows, 20);
+            let sha1_orig = git_tree_sha1(&rows);
+
+            // Parse back and re-serialize.
+            let lookup = hash_lookup(&[h1, h2], 20);
+            let parsed =
+                git_tree_to_dir_rows(&tree_data, 20, |raw| *lookup.get(raw).unwrap()).unwrap();
+            let tree_data_2 = git_tree_bytes(&parsed, 20);
+
+            assert_eq!(tree_data, tree_data_2, "re-serialized bytes must match");
+            assert_eq!(sha1_orig, git_tree_sha1(&parsed), "git SHA-1 must match");
+        }
+
+        #[test]
+        fn hash_determinism() {
+            let h = O256::blob("content");
+            let rows = [
+                DirRow {
+                    name: b"a.txt".as_slice(),
+                    mode: DirMode::REGULAR,
+                    child: h,
+                },
+                DirRow {
+                    name: b"src".as_slice(),
+                    mode: DirMode::DIR,
+                    child: h,
+                },
+            ];
+            assert_eq!(dir_hash(&rows), dir_hash(&rows));
+            assert_eq!(git_tree_sha1(&rows), git_tree_sha1(&rows));
+        }
+
+        // --- HashMapping trait tests ---
+
+        #[test]
+        fn sha256_identity_roundtrip() {
+            // Sha256Identity: O256 IS the git SHA-256, so round-trip is lossless.
+            let h1 = O256::blob("file1");
+            let h2 = O256::blob("subdir");
+            let rows = [
+                DirRow {
+                    name: b"a.txt".as_slice(),
+                    mode: DirMode::REGULAR,
+                    child: h1,
+                },
+                DirRow {
+                    name: b"sub".as_slice(),
+                    mode: DirMode::DIR,
+                    child: h2,
+                },
+            ];
+
+            let mapping = Sha256Identity;
+            let tree = git_tree_bytes_mapped(&rows, &mapping).unwrap();
+            let parsed = git_tree_to_dir_rows_mapped(&tree, &mapping).unwrap();
+
+            for (orig, p) in rows.iter().zip(&parsed) {
+                assert_eq!(p.name, orig.name);
+                assert_eq!(p.mode, orig.mode);
+                assert_eq!(p.child, orig.child);
+            }
+        }
+
+        #[test]
+        fn sha1_hashmap_roundtrip() {
+            // For SHA-1, we need a real bidirectional lookup.
+            use std::collections::HashMap;
+
+            let h1 = O256::blob("alpha");
+            let h2 = O256::blob("beta");
+
+            // Simulate git SHA-1 hashes (arbitrary 20-byte values).
+            let git_h1: Vec<u8> = vec![0xAA; 20];
+            let git_h2: Vec<u8> = vec![0xBB; 20];
+
+            // Build bidirectional maps.
+            let mut git_to_cov: HashMap<Vec<u8>, O256> = HashMap::new();
+            git_to_cov.insert(git_h1.clone(), h1);
+            git_to_cov.insert(git_h2.clone(), h2);
+
+            let mut cov_to_git: HashMap<O256, Vec<u8>> = HashMap::new();
+            cov_to_git.insert(h1, git_h1.clone());
+            cov_to_git.insert(h2, git_h2.clone());
+
+            // Implement HashMapping for the pair of maps.
+            struct Sha1Map<'a> {
+                g2c: &'a HashMap<Vec<u8>, O256>,
+                c2g: &'a HashMap<O256, Vec<u8>>,
+            }
+            impl HashMapping for Sha1Map<'_> {
+                fn hash_len(&self) -> usize {
+                    20
+                }
+                fn git_to_cov(&self, git_hash: &[u8]) -> Option<O256> {
+                    self.g2c.get(git_hash).copied()
+                }
+                fn cov_to_git(&self, o256: &O256) -> Option<Vec<u8>> {
+                    self.c2g.get(o256).cloned()
+                }
+            }
+
+            let mapping = Sha1Map {
+                g2c: &git_to_cov,
+                c2g: &cov_to_git,
+            };
+
+            let rows = [
+                DirRow {
+                    name: b"a.txt".as_slice(),
+                    mode: DirMode::REGULAR,
+                    child: h1,
+                },
+                DirRow {
+                    name: b"b".as_slice(),
+                    mode: DirMode::DIR,
+                    child: h2,
+                },
+            ];
+
+            // Serialize with mapping.
+            let tree = git_tree_bytes_mapped(&rows, &mapping).unwrap();
+
+            // Verify the raw bytes contain the git hashes, not the O256 values.
+            assert!(tree.windows(20).any(|w| w == git_h1.as_slice()));
+            assert!(tree.windows(20).any(|w| w == git_h2.as_slice()));
+
+            // Parse back with the same mapping.
+            let parsed = git_tree_to_dir_rows_mapped(&tree, &mapping).unwrap();
+
+            for (orig, p) in rows.iter().zip(&parsed) {
+                assert_eq!(p.name, orig.name);
+                assert_eq!(p.mode, orig.mode);
+                assert_eq!(p.child, orig.child);
+            }
+        }
+
+        #[test]
+        fn mapped_missing_cov_to_git_errors() {
+            // If cov_to_git returns None, serialization should fail.
+            let h = O256::blob("orphan");
+            let rows = [DirRow {
+                name: b"f".as_slice(),
+                mode: DirMode::REGULAR,
+                child: h,
+            }];
+
+            // Sha256Identity will work for any O256 (it's identity).
+            // Use a custom mapping that rejects everything.
+            struct EmptyMap;
+            impl HashMapping for EmptyMap {
+                fn hash_len(&self) -> usize {
+                    20
+                }
+                fn git_to_cov(&self, _: &[u8]) -> Option<O256> {
+                    None
+                }
+                fn cov_to_git(&self, _: &O256) -> Option<Vec<u8>> {
+                    None
+                }
+            }
+
+            let err = git_tree_bytes_mapped(&rows, &EmptyMap).unwrap_err();
+            assert!(err.to_string().contains("no git hash for O256"));
+        }
+
+        #[test]
+        fn mapped_missing_git_to_cov_errors() {
+            // If git_to_cov returns None, parsing should fail.
+            struct EmptyMap;
+            impl HashMapping for EmptyMap {
+                fn hash_len(&self) -> usize {
+                    20
+                }
+                fn git_to_cov(&self, _: &[u8]) -> Option<O256> {
+                    None
+                }
+                fn cov_to_git(&self, _: &O256) -> Option<Vec<u8>> {
+                    None
+                }
+            }
+
+            // Build valid git tree bytes manually.
+            let h = O256::blob("x");
+            let rows = [DirRow {
+                name: b"f".as_slice(),
+                mode: DirMode::REGULAR,
+                child: h,
+            }];
+            let tree = git_tree_bytes(&rows, 20);
+
+            let err = git_tree_to_dir_rows_mapped(&tree, &EmptyMap).unwrap_err();
+            assert!(err.to_string().contains("no O256 for git hash"));
+        }
+
+        #[test]
+        fn mapped_re_serializes_identically() {
+            // Serialize → parse → re-serialize gives identical bytes.
+            let mapping = Sha256Identity;
+            let h1 = O256::blob("one");
+            let h2 = O256::blob("two");
+            let rows = [
+                DirRow {
+                    name: b"x".as_slice(),
+                    mode: DirMode::EXECUTABLE,
+                    child: h1,
+                },
+                DirRow {
+                    name: b"y".as_slice(),
+                    mode: DirMode::SYMLINK,
+                    child: h2,
+                },
+            ];
+
+            let tree1 = git_tree_bytes_mapped(&rows, &mapping).unwrap();
+            let parsed = git_tree_to_dir_rows_mapped(&tree1, &mapping).unwrap();
+            let tree2 = git_tree_bytes_mapped(&parsed, &mapping).unwrap();
+
+            assert_eq!(tree1, tree2);
         }
     }
 }

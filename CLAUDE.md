@@ -65,6 +65,8 @@ Several `covalence-*` crates exist to wrap external dependencies. All usage of t
 - **covalence-hash** — wraps `blake3` and provides the `O256` content-addressed hash type.
 - **covalence-sqlite** — wraps `rusqlite`. Provides `SqliteStore` implementing `ContentStore`.
 - **covalence-git** — wraps `sha1`, `sha2` for git-compatible hashing. Provides `hash_blob` CLI utility.
+- **covalence-rand** — wraps `rand` (latest). All randomness usage should go through this crate.
+- **covalence-sig** — wraps `ed25519-dalek` for EdDSA signatures. Also re-exports a pinned `rand_core` 0.6 as `dalek_rand_core` (exception to the `covalence-rand` rule, required for `ed25519-dalek` compatibility).
 - **covalence-types** — shared types used across the ecosystem (e.g. `Decision`).
 - **covalence-sat** — SAT formulas, DIMACS, DRAT proofs, solver traits. Depends on `covalence-types`.
 - **covalence-smt** — SMT-LIB2 terms, theories, Alethe proofs. Depends on `covalence-types`, `covalence-sat`, `covalence-sexp`.

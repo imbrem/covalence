@@ -422,6 +422,105 @@ pub fn git_tree_to_dir_rows(
     Ok(rows)
 }
 
+/// Bidirectional mapping between covalence O256 content hashes and git object hashes.
+///
+/// Required for serializing/deserializing git trees, since git hashes (SHA-1 or SHA-256)
+/// and covalence hashes (BLAKE3) are independent hashes of the same content.
+///
+/// For SHA-256 repos where you choose to store the git SHA-256 directly as O256
+/// (identity mapping), use [`Sha256Identity`].
+#[cfg(feature = "git")]
+pub trait HashMapping {
+    /// Git hash length in bytes (20 for SHA-1, 32 for SHA-256).
+    fn hash_len(&self) -> usize;
+
+    /// Resolve a git object hash to the corresponding covalence O256 hash.
+    fn git_to_cov(&self, git_hash: &[u8]) -> Option<O256>;
+
+    /// Resolve a covalence O256 hash to the corresponding git object hash.
+    fn cov_to_git(&self, o256: &O256) -> Option<Vec<u8>>;
+}
+
+/// Identity mapping for SHA-256 repos: O256 *is* the git SHA-256 hash.
+///
+/// This is only valid when the covalence store uses git SHA-256 as its
+/// content-addressing scheme (i.e. O256 = git SHA-256 of the object).
+#[cfg(feature = "git")]
+pub struct Sha256Identity;
+
+#[cfg(feature = "git")]
+impl HashMapping for Sha256Identity {
+    fn hash_len(&self) -> usize {
+        32
+    }
+
+    fn git_to_cov(&self, git_hash: &[u8]) -> Option<O256> {
+        let bytes: [u8; 32] = git_hash.try_into().ok()?;
+        Some(O256::from_bytes(bytes))
+    }
+
+    fn cov_to_git(&self, o256: &O256) -> Option<Vec<u8>> {
+        Some(o256.as_bytes().to_vec())
+    }
+}
+
+/// Serialize directory rows as a git tree, using a [`HashMapping`] to convert
+/// each child O256 to its git object hash.
+///
+/// Returns `Err` if any child hash cannot be resolved.
+#[cfg(feature = "git")]
+pub fn git_tree_bytes_mapped<N: AsRef<[u8]>>(
+    rows: &[DirRow<N>],
+    mapping: &impl HashMapping,
+) -> Result<Vec<u8>, TableError> {
+    debug_assert!(
+        rows.windows(2)
+            .all(|w| w[0].name.as_ref() < w[1].name.as_ref()),
+        "rows must be sorted and unique by name",
+    );
+
+    let mut buf = Vec::new();
+    for row in rows {
+        let git_hash = mapping.cov_to_git(&row.child).ok_or_else(|| {
+            TableError::InvalidGitTree(format!(
+                "no git hash for O256 {:?}",
+                &row.child.as_bytes()[..8]
+            ))
+        })?;
+        buf.extend_from_slice(row.mode.git_mode_str().as_bytes());
+        buf.push(b' ');
+        buf.extend_from_slice(row.name.as_ref());
+        buf.push(0);
+        buf.extend_from_slice(&git_hash);
+    }
+    Ok(buf)
+}
+
+/// Parse a git tree using a [`HashMapping`] to convert git hashes to O256.
+///
+/// Returns `Err` if any git hash cannot be resolved.
+#[cfg(feature = "git")]
+pub fn git_tree_to_dir_rows_mapped(
+    data: &[u8],
+    mapping: &impl HashMapping,
+) -> Result<Vec<DirRow<Vec<u8>>>, TableError> {
+    let entries = parse_git_tree(data, mapping.hash_len())?;
+    let mut rows = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let mode = DirMode::from_git_mode(entry.mode)?;
+        let child = mapping.git_to_cov(entry.hash).ok_or_else(|| {
+            let hex: String = entry.hash.iter().map(|b| format!("{b:02x}")).collect();
+            TableError::InvalidGitTree(format!("no O256 for git hash {hex}"))
+        })?;
+        rows.push(DirRow {
+            name: entry.name.to_vec(),
+            mode,
+            child,
+        });
+    }
+    Ok(rows)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1103,6 +1202,194 @@ mod tests {
             ];
             assert_eq!(dir_hash(&rows), dir_hash(&rows));
             assert_eq!(git_tree_sha1(&rows), git_tree_sha1(&rows));
+        }
+
+        // --- HashMapping trait tests ---
+
+        #[test]
+        fn sha256_identity_roundtrip() {
+            // Sha256Identity: O256 IS the git SHA-256, so round-trip is lossless.
+            let h1 = O256::blob("file1");
+            let h2 = O256::blob("subdir");
+            let rows = [
+                DirRow {
+                    name: b"a.txt".as_slice(),
+                    mode: DirMode::REGULAR,
+                    child: h1,
+                },
+                DirRow {
+                    name: b"sub".as_slice(),
+                    mode: DirMode::DIR,
+                    child: h2,
+                },
+            ];
+
+            let mapping = Sha256Identity;
+            let tree = git_tree_bytes_mapped(&rows, &mapping).unwrap();
+            let parsed = git_tree_to_dir_rows_mapped(&tree, &mapping).unwrap();
+
+            for (orig, p) in rows.iter().zip(&parsed) {
+                assert_eq!(p.name, orig.name);
+                assert_eq!(p.mode, orig.mode);
+                assert_eq!(p.child, orig.child);
+            }
+        }
+
+        #[test]
+        fn sha1_hashmap_roundtrip() {
+            // For SHA-1, we need a real bidirectional lookup.
+            use std::collections::HashMap;
+
+            let h1 = O256::blob("alpha");
+            let h2 = O256::blob("beta");
+
+            // Simulate git SHA-1 hashes (arbitrary 20-byte values).
+            let git_h1: Vec<u8> = vec![0xAA; 20];
+            let git_h2: Vec<u8> = vec![0xBB; 20];
+
+            // Build bidirectional maps.
+            let mut git_to_cov: HashMap<Vec<u8>, O256> = HashMap::new();
+            git_to_cov.insert(git_h1.clone(), h1);
+            git_to_cov.insert(git_h2.clone(), h2);
+
+            let mut cov_to_git: HashMap<O256, Vec<u8>> = HashMap::new();
+            cov_to_git.insert(h1, git_h1.clone());
+            cov_to_git.insert(h2, git_h2.clone());
+
+            // Implement HashMapping for the pair of maps.
+            struct Sha1Map<'a> {
+                g2c: &'a HashMap<Vec<u8>, O256>,
+                c2g: &'a HashMap<O256, Vec<u8>>,
+            }
+            impl HashMapping for Sha1Map<'_> {
+                fn hash_len(&self) -> usize {
+                    20
+                }
+                fn git_to_cov(&self, git_hash: &[u8]) -> Option<O256> {
+                    self.g2c.get(git_hash).copied()
+                }
+                fn cov_to_git(&self, o256: &O256) -> Option<Vec<u8>> {
+                    self.c2g.get(o256).cloned()
+                }
+            }
+
+            let mapping = Sha1Map {
+                g2c: &git_to_cov,
+                c2g: &cov_to_git,
+            };
+
+            let rows = [
+                DirRow {
+                    name: b"a.txt".as_slice(),
+                    mode: DirMode::REGULAR,
+                    child: h1,
+                },
+                DirRow {
+                    name: b"b".as_slice(),
+                    mode: DirMode::DIR,
+                    child: h2,
+                },
+            ];
+
+            // Serialize with mapping.
+            let tree = git_tree_bytes_mapped(&rows, &mapping).unwrap();
+
+            // Verify the raw bytes contain the git hashes, not the O256 values.
+            assert!(tree.windows(20).any(|w| w == git_h1.as_slice()));
+            assert!(tree.windows(20).any(|w| w == git_h2.as_slice()));
+
+            // Parse back with the same mapping.
+            let parsed = git_tree_to_dir_rows_mapped(&tree, &mapping).unwrap();
+
+            for (orig, p) in rows.iter().zip(&parsed) {
+                assert_eq!(p.name, orig.name);
+                assert_eq!(p.mode, orig.mode);
+                assert_eq!(p.child, orig.child);
+            }
+        }
+
+        #[test]
+        fn mapped_missing_cov_to_git_errors() {
+            // If cov_to_git returns None, serialization should fail.
+            let h = O256::blob("orphan");
+            let rows = [DirRow {
+                name: b"f".as_slice(),
+                mode: DirMode::REGULAR,
+                child: h,
+            }];
+
+            // Sha256Identity will work for any O256 (it's identity).
+            // Use a custom mapping that rejects everything.
+            struct EmptyMap;
+            impl HashMapping for EmptyMap {
+                fn hash_len(&self) -> usize {
+                    20
+                }
+                fn git_to_cov(&self, _: &[u8]) -> Option<O256> {
+                    None
+                }
+                fn cov_to_git(&self, _: &O256) -> Option<Vec<u8>> {
+                    None
+                }
+            }
+
+            let err = git_tree_bytes_mapped(&rows, &EmptyMap).unwrap_err();
+            assert!(err.to_string().contains("no git hash for O256"));
+        }
+
+        #[test]
+        fn mapped_missing_git_to_cov_errors() {
+            // If git_to_cov returns None, parsing should fail.
+            struct EmptyMap;
+            impl HashMapping for EmptyMap {
+                fn hash_len(&self) -> usize {
+                    20
+                }
+                fn git_to_cov(&self, _: &[u8]) -> Option<O256> {
+                    None
+                }
+                fn cov_to_git(&self, _: &O256) -> Option<Vec<u8>> {
+                    None
+                }
+            }
+
+            // Build valid git tree bytes manually.
+            let h = O256::blob("x");
+            let rows = [DirRow {
+                name: b"f".as_slice(),
+                mode: DirMode::REGULAR,
+                child: h,
+            }];
+            let tree = git_tree_bytes(&rows, 20);
+
+            let err = git_tree_to_dir_rows_mapped(&tree, &EmptyMap).unwrap_err();
+            assert!(err.to_string().contains("no O256 for git hash"));
+        }
+
+        #[test]
+        fn mapped_re_serializes_identically() {
+            // Serialize → parse → re-serialize gives identical bytes.
+            let mapping = Sha256Identity;
+            let h1 = O256::blob("one");
+            let h2 = O256::blob("two");
+            let rows = [
+                DirRow {
+                    name: b"x".as_slice(),
+                    mode: DirMode::EXECUTABLE,
+                    child: h1,
+                },
+                DirRow {
+                    name: b"y".as_slice(),
+                    mode: DirMode::SYMLINK,
+                    child: h2,
+                },
+            ];
+
+            let tree1 = git_tree_bytes_mapped(&rows, &mapping).unwrap();
+            let parsed = git_tree_to_dir_rows_mapped(&tree1, &mapping).unwrap();
+            let tree2 = git_tree_bytes_mapped(&parsed, &mapping).unwrap();
+
+            assert_eq!(tree1, tree2);
         }
     }
 }

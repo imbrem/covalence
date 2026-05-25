@@ -30,17 +30,22 @@ impl GitObject {
         self.kind
     }
 
-    /// Convert to O256 (SHA-256 only, raises on SHA-1).
+    /// Convert to O256 using identity mapping (SHA-256 only).
+    ///
+    /// Only valid for SHA-256 git objects (32 bytes). For SHA-1, you must
+    /// provide a hash mapping (e.g. via `git_tree_to_dir_rows`).
     fn to_o256(&self) -> PyResult<O256> {
-        if self.kind != "sha256" {
-            return Err(PyValueError::new_err(
-                "cannot convert SHA-1 git object to O256 (20 bytes, not 32)",
-            ));
+        if self.raw.len() == 32 {
+            let bytes: [u8; 32] = self.raw[..].try_into().unwrap();
+            Ok(O256(covalence_hash::O256::from_bytes(bytes)))
+        } else {
+            Err(PyValueError::new_err(format!(
+                "to_o256() only supports SHA-256 (32 bytes) via identity mapping; \
+                 this GitObject is {} ({} bytes). Provide a hash_map for SHA-1.",
+                self.kind,
+                self.raw.len()
+            )))
         }
-        let arr: [u8; 32] = self.raw[..32]
-            .try_into()
-            .map_err(|_| PyRuntimeError::new_err("unexpected length"))?;
-        Ok(O256(covalence_hash::O256::from_bytes(arr)))
     }
 
     fn __str__(&self) -> &str {
@@ -260,20 +265,27 @@ pub fn git_sha256() -> GitHasher {
 /// Parse raw git tree bytes and convert to directory rows.
 ///
 /// - `data`: raw git tree body bytes
-/// - `hash_map`: dict mapping raw hash bytes → O256
+/// - `hash_map`: `dict[bytes, O256]` mapping raw git hash bytes → O256.
+///   Required for SHA-1 (`hash_len=20`). Optional for SHA-256 (`hash_len=32`),
+///   where `None` means identity mapping (git SHA-256 IS the O256).
 /// - `hash_len`: hash length in bytes (20 for SHA-1, 32 for SHA-256)
 ///
 /// Returns a list of dicts with "name" (bytes), "mode" (str), "child" (O256).
-/// Raises `ValueError` if any hash in the tree is not present in `hash_map`.
+/// Raises `ValueError` if a hash key is missing from `hash_map`.
 #[pyfunction]
-#[pyo3(signature = (data, hash_map, hash_len=20))]
+#[pyo3(signature = (data, hash_map=None, hash_len=20))]
 pub fn git_tree_to_dir_rows<'py>(
     py: Python<'py>,
     data: &[u8],
-    hash_map: &Bound<'py, PyDict>,
+    hash_map: Option<&Bound<'py, PyDict>>,
     hash_len: usize,
 ) -> PyResult<Bound<'py, PyList>> {
-    // First parse entries so we can look up hashes with proper error handling.
+    if hash_map.is_none() && hash_len != 32 {
+        return Err(PyValueError::new_err(format!(
+            "hash_map is required for hash_len={hash_len} (only hash_len=32 supports identity mapping)"
+        )));
+    }
+
     let entries = covalence_object::parse_git_tree(data, hash_len)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
@@ -282,12 +294,20 @@ pub fn git_tree_to_dir_rows<'py>(
         let mode = covalence_object::DirMode::from_git_mode(entry.mode)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-        let key = PyBytes::new(py, entry.hash);
-        let val = hash_map.get_item(&key)?.ok_or_else(|| {
-            let hex: String = entry.hash.iter().map(|b| format!("{b:02x}")).collect();
-            PyValueError::new_err(format!("hash not found in hash_map: {hex}"))
-        })?;
-        let child: crate::hash::O256 = val.extract()?;
+        let child = if let Some(map) = hash_map {
+            let key = PyBytes::new(py, entry.hash);
+            let val = map.get_item(&key)?.ok_or_else(|| {
+                let hex: String = entry.hash.iter().map(|b| format!("{b:02x}")).collect();
+                PyValueError::new_err(format!("hash not found in hash_map: {hex}"))
+            })?;
+            val.extract::<crate::hash::O256>()?
+        } else {
+            // Identity mapping: hash_len=32, use git SHA-256 directly as O256.
+            let bytes: [u8; 32] = entry.hash.try_into().map_err(|_| {
+                PyValueError::new_err("identity mapping requires exactly 32-byte hashes")
+            })?;
+            crate::hash::O256(covalence_hash::O256::from_bytes(bytes))
+        };
 
         let row_dict = PyDict::new(py);
         row_dict.set_item("name", PyBytes::new(py, entry.name))?;

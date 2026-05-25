@@ -863,38 +863,103 @@ mod tests {
 
         // --- Git tree parser tests ---
 
-        #[test]
-        fn parse_roundtrip_sha1() {
-            let hash = O256::blob("content");
-            let rows = [DirRow {
-                name: b"file.txt".as_slice(),
-                mode: DirMode::REGULAR,
-                child: hash,
-            }];
-            let tree_data = git_tree_bytes(&rows, 20);
-            let entries = parse_git_tree(&tree_data, 20).unwrap();
-            assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0].mode, b"100644");
-            assert_eq!(entries[0].name, b"file.txt");
-            assert_eq!(entries[0].hash, &hash.as_bytes()[..20]);
+        /// Build a lookup map from truncated hash (first `hash_len` bytes) → full O256.
+        fn hash_lookup(
+            hashes: &[O256],
+            hash_len: usize,
+        ) -> std::collections::HashMap<Vec<u8>, O256> {
+            hashes
+                .iter()
+                .map(|h| (h.as_bytes()[..hash_len].to_vec(), *h))
+                .collect()
         }
 
         #[test]
-        fn parse_roundtrip_sha256() {
-            let hash = O256::blob("content");
-            let rows = [DirRow {
-                name: b"file.txt".as_slice(),
-                mode: DirMode::REGULAR,
-                child: hash,
-            }];
+        fn full_roundtrip_sha256() {
+            // With hash_len=32, the full O256 is preserved byte-for-byte.
+            let h1 = O256::blob("alpha_content");
+            let h2 = O256::blob("beta_content");
+            let h3 = O256::blob("gamma_content");
+            let rows = [
+                DirRow {
+                    name: b"alpha".as_slice(),
+                    mode: DirMode::REGULAR,
+                    child: h1,
+                },
+                DirRow {
+                    name: b"beta".as_slice(),
+                    mode: DirMode::DIR,
+                    child: h2,
+                },
+                DirRow {
+                    name: b"gamma".as_slice(),
+                    mode: DirMode::EXECUTABLE,
+                    child: h3,
+                },
+            ];
+
             let tree_data = git_tree_bytes(&rows, 32);
-            let entries = parse_git_tree(&tree_data, 32).unwrap();
-            assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0].hash, hash.as_bytes());
+            let dir_rows = git_tree_to_dir_rows(&tree_data, 32, |raw| {
+                O256::from_bytes(raw.try_into().unwrap())
+            })
+            .unwrap();
+
+            assert_eq!(dir_rows.len(), 3);
+            for (orig, parsed) in rows.iter().zip(&dir_rows) {
+                assert_eq!(parsed.name, orig.name);
+                assert_eq!(parsed.mode, orig.mode);
+                assert_eq!(
+                    parsed.child, orig.child,
+                    "child hash must round-trip exactly"
+                );
+            }
         }
 
         #[test]
-        fn convert_all_modes() {
+        fn full_roundtrip_sha1_with_lookup() {
+            // With hash_len=20, we need a lookup map to recover full O256.
+            let h1 = O256::blob("file_a");
+            let h2 = O256::blob("file_b");
+            let h3 = O256::blob("subdir");
+            let rows = [
+                DirRow {
+                    name: b"a.txt".as_slice(),
+                    mode: DirMode::REGULAR,
+                    child: h1,
+                },
+                DirRow {
+                    name: b"b.txt".as_slice(),
+                    mode: DirMode::EXECUTABLE,
+                    child: h2,
+                },
+                DirRow {
+                    name: b"src".as_slice(),
+                    mode: DirMode::DIR,
+                    child: h3,
+                },
+            ];
+
+            let lookup = hash_lookup(&[h1, h2, h3], 20);
+            let tree_data = git_tree_bytes(&rows, 20);
+            let dir_rows = git_tree_to_dir_rows(&tree_data, 20, |raw| {
+                *lookup.get(raw).expect("hash must be in lookup")
+            })
+            .unwrap();
+
+            assert_eq!(dir_rows.len(), 3);
+            for (orig, parsed) in rows.iter().zip(&dir_rows) {
+                assert_eq!(parsed.name, orig.name);
+                assert_eq!(parsed.mode, orig.mode);
+                assert_eq!(
+                    parsed.child, orig.child,
+                    "child hash must round-trip via lookup"
+                );
+            }
+        }
+
+        #[test]
+        fn roundtrip_all_modes() {
+            // Every mode survives the round-trip.
             let h = O256::blob("x");
             let rows = [
                 DirRow {
@@ -923,20 +988,36 @@ mod tests {
                     child: h,
                 },
             ];
-            let tree_data = git_tree_bytes(&rows, 20);
-            let dir_rows = git_tree_to_dir_rows(&tree_data, 20, |raw| {
-                let mut out = [0u8; 32];
-                out[..raw.len()].copy_from_slice(raw);
-                O256::from_bytes(out)
+
+            let tree_data = git_tree_bytes(&rows, 32);
+            let dir_rows = git_tree_to_dir_rows(&tree_data, 32, |raw| {
+                O256::from_bytes(raw.try_into().unwrap())
             })
             .unwrap();
 
             assert_eq!(dir_rows.len(), 5);
-            assert_eq!(dir_rows[0].mode, DirMode::REGULAR);
-            assert_eq!(dir_rows[1].mode, DirMode::DIR);
-            assert_eq!(dir_rows[2].mode, DirMode::EXECUTABLE);
-            assert_eq!(dir_rows[3].mode, DirMode::SYMLINK);
-            assert_eq!(dir_rows[4].mode, DirMode::SUBMODULE);
+            for (orig, parsed) in rows.iter().zip(&dir_rows) {
+                assert_eq!(parsed.name, orig.name);
+                assert_eq!(parsed.mode, orig.mode);
+                assert_eq!(parsed.child, orig.child);
+            }
+        }
+
+        #[test]
+        fn parse_raw_entries() {
+            // Verify parse_git_tree returns correct raw fields.
+            let hash = O256::blob("content");
+            let rows = [DirRow {
+                name: b"file.txt".as_slice(),
+                mode: DirMode::REGULAR,
+                child: hash,
+            }];
+            let tree_data = git_tree_bytes(&rows, 20);
+            let entries = parse_git_tree(&tree_data, 20).unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].mode, b"100644");
+            assert_eq!(entries[0].name, b"file.txt");
+            assert_eq!(entries[0].hash, &hash.as_bytes()[..20]);
         }
 
         #[test]
@@ -947,7 +1028,6 @@ mod tests {
 
         #[test]
         fn parse_truncated_hash() {
-            // Build a valid entry then chop off some hash bytes.
             let hash = O256::blob("x");
             let rows = [DirRow {
                 name: b"f".as_slice(),
@@ -955,14 +1035,13 @@ mod tests {
                 child: hash,
             }];
             let mut data = git_tree_bytes(&rows, 20);
-            data.truncate(data.len() - 5); // remove 5 hash bytes
+            data.truncate(data.len() - 5);
             let err = parse_git_tree(&data, 20).unwrap_err();
             assert!(err.to_string().contains("truncated hash"));
         }
 
         #[test]
         fn parse_missing_null() {
-            // "100644 file" with no null byte and no hash
             let data = b"100644 file";
             let err = parse_git_tree(data, 20).unwrap_err();
             assert!(err.to_string().contains("missing null"));
@@ -970,51 +1049,41 @@ mod tests {
 
         #[test]
         fn parse_missing_space() {
-            // No space at all
             let data = b"100644file\x00";
             let err = parse_git_tree(data, 20).unwrap_err();
-            // The parser will interpret everything up to the first space as mode,
-            // and since the null comes before a space, it'll report "missing space".
             assert!(err.to_string().contains("missing space"));
         }
 
         #[test]
-        fn multi_entry_roundtrip() {
+        fn roundtrip_preserves_git_hash() {
+            // Verify that serializing → parsing → re-serializing gives the same bytes.
             let h1 = O256::blob("a");
             let h2 = O256::blob("b");
-            let h3 = O256::blob("c");
             let rows = [
                 DirRow {
-                    name: b"alpha".as_slice(),
+                    name: b"foo".as_slice(),
                     mode: DirMode::REGULAR,
                     child: h1,
                 },
                 DirRow {
-                    name: b"beta".as_slice(),
+                    name: b"sub".as_slice(),
                     mode: DirMode::DIR,
                     child: h2,
                 },
-                DirRow {
-                    name: b"gamma".as_slice(),
-                    mode: DirMode::EXECUTABLE,
-                    child: h3,
-                },
             ];
-            let tree_data = git_tree_bytes(&rows, 20);
-            let dir_rows = git_tree_to_dir_rows(&tree_data, 20, |raw| {
-                let mut out = [0u8; 32];
-                out[..raw.len()].copy_from_slice(raw);
-                O256::from_bytes(out)
-            })
-            .unwrap();
 
-            assert_eq!(dir_rows.len(), 3);
-            assert_eq!(dir_rows[0].name, b"alpha");
-            assert_eq!(dir_rows[0].mode, DirMode::REGULAR);
-            assert_eq!(dir_rows[1].name, b"beta");
-            assert_eq!(dir_rows[1].mode, DirMode::DIR);
-            assert_eq!(dir_rows[2].name, b"gamma");
-            assert_eq!(dir_rows[2].mode, DirMode::EXECUTABLE);
+            // Serialize once.
+            let tree_data = git_tree_bytes(&rows, 20);
+            let sha1_orig = git_tree_sha1(&rows);
+
+            // Parse back and re-serialize.
+            let lookup = hash_lookup(&[h1, h2], 20);
+            let parsed =
+                git_tree_to_dir_rows(&tree_data, 20, |raw| *lookup.get(raw).unwrap()).unwrap();
+            let tree_data_2 = git_tree_bytes(&parsed, 20);
+
+            assert_eq!(tree_data, tree_data_2, "re-serialized bytes must match");
+            assert_eq!(sha1_orig, git_tree_sha1(&parsed), "git SHA-1 must match");
         }
 
         #[test]

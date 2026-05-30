@@ -1,0 +1,36 @@
+# assume.art — proves {p} |- p  (where p : bool)
+#
+# assume(p) gives the theorem with p as both hypothesis and conclusion.
+
+# --- build bool type ---
+"bool"
+typeOp
+nil
+opType
+0
+def
+pop
+
+# --- build variable p : bool ---
+"p"
+0
+ref
+var
+varTerm
+1
+def
+pop
+
+# --- assume(p) gives {p} |- p ---
+1
+ref
+assume
+
+# --- export: thm(theorem, hyps=[p], concl=p) ---
+1
+ref
+nil
+cons
+1
+ref
+thm

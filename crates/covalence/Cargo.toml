@@ -8,15 +8,16 @@ name = "cov"
 path = "src/main.rs"
 
 [features]
-default = ["lsp", "cogit", "serve", "repl"]
+default = ["lsp", "cogit", "serve", "repl", "hol"]
 lsp = ["dep:covalence-lsp"]
 cogit = ["dep:covalence-git"]
 serve = []
 repl = ["dep:rustyline"]
+hol = ["dep:covalence-hol", "dep:covalence-opentheory"]
 
 [dependencies]
 covalence-lsp = { path = "../covalence-lsp", optional = true }
-covalence-git = { path = "../covalence-git", optional = true }
+covalence-git = { path = "../covalence-git", optional = true, features = ["clone"] }
 clap = { version = "4", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -24,8 +25,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 covalence-serve = { path = "../covalence-serve" }
 covalence-repl = { path = "../covalence-repl", features = ["fetch"] }
-covalence-kernel = { path = "../covalence-kernel", features = ["engine", "sqlite"] }
+covalence-kernel = { path = "../covalence-kernel", features = ["engine", "sqlite", "hol"] }
 covalence-store = { path = "../covalence-store", features = ["sqlite"] }
+covalence-hol = { path = "../covalence-hol", optional = true }
+covalence-opentheory = { path = "../covalence-opentheory", optional = true }
 covalence-wasm = { path = "../covalence-wasm", default-features = false }
 covalence-client = { path = "../covalence-client", features = ["sync"] }
 covalence-proto = { path = "../covalence-proto" }
@@ -38,4 +41,5 @@ memchr = "2"
 [dev-dependencies]
 tempfile = "3"
 covalence-hash = { path = "../covalence-hash" }
+serde_json = "1"
 wat = "1"

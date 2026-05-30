@@ -1,0 +1,89 @@
+# refl.art — proves |- x = x  (where x : bool)
+#
+# Stack machine trace:
+#   "bool" typeOp nil opType     → bool_ty            (dict 0)
+#   "x" <bool_ty> var            → Var(x, bool)       (dict 1)
+#   <x> varTerm refl             → Thm(|- x = x)
+#   thm export:
+#     expected concl: (= x) x   (built via constTerm + appTerm)
+#     expected hyps:  nil
+
+# --- build bool type and cache ---
+"bool"
+typeOp
+nil
+opType
+0
+def
+pop
+
+# --- build variable x : bool ---
+"x"
+0
+ref
+var
+1
+def
+varTerm
+2
+def
+pop
+
+# --- refl(x) gives |- x = x ---
+2
+ref
+refl
+
+# --- export: thm(theorem, hyps_list, expected_concl) ---
+# hyps = []
+nil
+
+# expected conclusion: (= x) x
+# We need  (= : bool -> bool -> bool) applied to x twice.
+# Build the equality type: bool -> bool -> bool
+"->"
+typeOp
+0
+ref
+0
+ref
+nil
+cons
+cons
+opType
+3
+def
+pop
+
+"->"
+typeOp
+0
+ref
+3
+ref
+nil
+cons
+cons
+opType
+4
+def
+pop
+
+# Build (= : (bool -> bool -> bool))
+"="
+const
+4
+ref
+constTerm
+
+# Apply to x: (= x)
+2
+ref
+appTerm
+
+# Apply to x again: (= x) x
+2
+ref
+appTerm
+
+thm

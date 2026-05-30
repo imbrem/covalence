@@ -4,7 +4,9 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
+use crate::container::Container;
 use crate::hash::O256;
+use crate::module::Module;
 
 /// Returns true if bytes represent a WASM component (not a core module).
 /// Components have encoding byte 0x0d at offset 4; modules have 0x01.
@@ -57,7 +59,7 @@ impl Component {
 impl Component {
     /// Create a Component from WAT text. The WAT must describe a component, not a module.
     #[staticmethod]
-    fn from_wat(text: &str) -> PyResult<Self> {
+    pub fn from_wat(text: &str) -> PyResult<Self> {
         let wasm =
             covalence_wasm::compile_wat(text).map_err(|e| PyValueError::new_err(e.to_string()))?;
         Self::from_wasm_bytes(wasm)
@@ -130,7 +132,7 @@ impl Component {
     }
 }
 
-/// Extract bytes from a Python object: bytes | str | Component -> Vec<u8>.
+/// Extract bytes from a Python object: bytes | str | Component | Module | Container -> Vec<u8>.
 pub fn extract_bytes(obj: &Bound<'_, PyAny>) -> PyResult<Vec<u8>> {
     if let Ok(data) = obj.extract::<Vec<u8>>() {
         return Ok(data);
@@ -141,7 +143,15 @@ pub fn extract_bytes(obj: &Bound<'_, PyAny>) -> PyResult<Vec<u8>> {
     if let Ok(comp) = obj.extract::<PyRef<Component>>() {
         return Ok(comp.wasm_bytes().to_vec());
     }
-    Err(PyTypeError::new_err("expected bytes, str, or Component"))
+    if let Ok(m) = obj.extract::<PyRef<Module>>() {
+        return Ok(m.wasm_bytes().to_vec());
+    }
+    if let Ok(c) = obj.extract::<PyRef<Container>>() {
+        return Ok(c.wasm_bytes().to_vec());
+    }
+    Err(PyTypeError::new_err(
+        "expected bytes, str, Component, Module, or Container",
+    ))
 }
 
 /// Hash-or-component for polymorphic `decide()`.

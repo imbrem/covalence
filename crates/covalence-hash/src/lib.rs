@@ -1,6 +1,8 @@
+pub mod names;
 mod object;
 mod util;
 
+pub use names::{SAT, UNSAT};
 pub use object::{Blake3Ctx, COV_ROOT, CovRoot, HashCtx, O256, Sha256};
 pub use util::{IdentityBuildHasher, IdentityHasher};
 

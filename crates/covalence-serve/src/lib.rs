@@ -5,7 +5,10 @@ mod static_files;
 
 use axum::Router;
 use covalence_kernel::Kernel;
-use covalence_store::{BlobStore, O256};
+use covalence_store::{
+    BlobStore, GitObjectType, GitPrefixStore, GitTaggedObjectStore, O256, SharedMemoryStore,
+    TaggedBlobStore,
+};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
@@ -25,12 +28,17 @@ pub enum ServeError {
     Io(#[from] std::io::Error),
 }
 
+pub type TaggedStore = TaggedBlobStore<O256, GitObjectType>;
+pub type ObjectStoreGit = GitTaggedObjectStore<TaggedStore>;
+
 #[derive(Clone)]
 pub struct AppState {
     pub version: &'static str,
     pub target: &'static str,
     pub started: std::time::Instant,
     pub kernel: Kernel,
+    pub tagged_store: TaggedStore,
+    pub object_store: ObjectStoreGit,
 }
 
 pub struct ServeConfig {
@@ -45,13 +53,21 @@ pub struct ServeConfig {
     pub store: BlobStore<O256>,
 }
 
+pub fn new_tagged_store() -> TaggedStore {
+    TaggedBlobStore::new(GitPrefixStore::new(SharedMemoryStore::new()))
+}
+
 pub async fn run_serve(config: ServeConfig) -> Result<(), ServeError> {
     let kernel = Kernel::with_store(config.store)?;
+    let tagged_store = new_tagged_store();
+    let object_store = GitTaggedObjectStore::new(tagged_store.clone());
     let state = AppState {
         version: config.version,
         target: config.target,
         started: std::time::Instant::now(),
         kernel,
+        tagged_store,
+        object_store,
     };
 
     let app = build_router(state, config.api_only);
@@ -137,7 +153,7 @@ impl Drop for RegistrationGuard {
 
 /// Build the axum Router with all API routes.
 pub fn build_router(state: AppState, api_only: bool) -> Router {
-    use axum::routing::{get, post};
+    use axum::routing::{get, head, post};
 
     let app = Router::new()
         // Existing
@@ -152,7 +168,40 @@ pub fn build_router(state: AppState, api_only: bool) -> Router {
         // Eval endpoint
         .route("/api/eval", post(api::eval))
         // Decide endpoint
-        .route("/api/decide/{hash}", get(api::decide));
+        .route("/api/decide/{hash}", get(api::decide))
+        // Tagged store endpoints
+        .route(
+            "/api/tagged",
+            post(api::tagged_insert).get(api::tagged_count),
+        )
+        .route(
+            "/api/tagged/{hash}",
+            get(api::tagged_get)
+                .put(api::tagged_put)
+                .head(api::tagged_head),
+        )
+        .route("/api/tagged/kind/{kind}", post(api::tagged_insert_tagged))
+        .route("/api/tagged/repr/{hash}", get(api::tagged_get_repr))
+        .route("/api/tagged/tag/{hash}", get(api::tagged_get_tag))
+        // Object store endpoints
+        .route("/api/objects/blob", post(api::object_insert_blob))
+        .route("/api/objects/tree", post(api::object_insert_tree))
+        .route("/api/objects/blob/{hash}", get(api::object_get_blob))
+        .route("/api/objects/tree/{hash}", get(api::object_get_tree))
+        .route("/api/objects/tree/{hash}/ls", get(api::tree_ls))
+        .route(
+            "/api/objects/tree/{hash}/path/{*path}",
+            get(api::tree_get_path),
+        )
+        .route("/api/objects/tree/{hash}/git", get(api::tree_get_git))
+        .route("/api/objects/tree/json", post(api::tree_insert_json))
+        .route("/api/objects/tree/git", post(api::tree_insert_git))
+        .route("/api/objects/info/{hash}", get(api::object_info))
+        .route("/api/objects/{hash}", head(api::object_head))
+        .route(
+            "/api/objects/any/{param}",
+            get(api::object_get_any).post(api::object_insert_any),
+        );
 
     #[cfg(feature = "static")]
     let app = if !api_only {

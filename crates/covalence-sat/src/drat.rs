@@ -1,9 +1,15 @@
 use crate::{Clause, Cnf, Decision, Lit, Model};
 
+/// Order-independent clause matching: same set of literals regardless of order.
+fn lits_match(a: &[Lit], b: &[Lit]) -> bool {
+    a.len() == b.len() && a.iter().all(|lit| b.contains(lit))
+}
+
 /// A single DRAT proof step.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DratStep {
-    /// Add a clause (must be an Asymmetric Tautology w.r.t. active clauses).
+    /// Add a clause (must be an Asymmetric Tautology or Resolution
+    /// Asymmetric Tautology w.r.t. active clauses).
     Add(Clause),
     /// Delete a clause from the active set.
     Delete(Clause),
@@ -35,14 +41,13 @@ impl DratProof {
     }
 }
 
-/// Abstract DRAT verifier.
+/// Abstract DRAT checker.
 ///
 /// Implementations maintain a set of active clauses and check that
-/// each added clause is an Asymmetric Tautology (AT).
-/// Designed to be implementable both as a pure Rust checker and
-/// as a wrapper over the WASM kernel engine.
-pub trait DratVerifier {
-    /// Check that `clause` is AT w.r.t. active clauses, and if so, add it.
+/// each added clause is an Asymmetric Tautology (AT) or Resolution
+/// Asymmetric Tautology (RAT).
+pub trait DratChecker {
+    /// Check that `clause` is AT or RAT w.r.t. active clauses, and if so, add it.
     fn add_clause(&mut self, clause: &Clause) -> bool;
 
     /// Remove a clause from the active set.
@@ -52,22 +57,22 @@ pub trait DratVerifier {
     fn is_complete(&self) -> bool;
 }
 
-/// Drive a verifier through all steps of a DRAT proof.
-/// Returns true iff every Add step is AT and the empty clause is derived.
-pub fn check_proof(verifier: &mut impl DratVerifier, proof: &DratProof) -> bool {
+/// Drive a checker through all steps of a DRAT proof.
+/// Returns true iff every Add step is AT or RAT and the empty clause is derived.
+pub fn check_proof(checker: &mut impl DratChecker, proof: &DratProof) -> bool {
     for step in proof.steps() {
         match step {
             DratStep::Add(clause) => {
-                if !verifier.add_clause(clause) {
+                if !checker.add_clause(clause) {
                     return false;
                 }
             }
             DratStep::Delete(clause) => {
-                verifier.delete_clause(clause);
+                checker.delete_clause(clause);
             }
         }
     }
-    verifier.is_complete()
+    checker.is_complete()
 }
 
 /// Simple O(n²) DRAT checker: full clause scan per unit propagation round.
@@ -155,36 +160,87 @@ impl NaiveDratChecker {
             }
         }
     }
+
+    /// RAT check: returns true if `candidate` is a Resolution Asymmetric
+    /// Tautology w.r.t. the current active clauses using `pivot`.
+    ///
+    /// For each active clause D containing ¬pivot, the resolvent
+    /// (candidate ∪ D) \ {pivot, ¬pivot} must be AT.
+    fn is_rat(&self, candidate: &[Lit], pivot: Lit) -> bool {
+        let neg_pivot = !pivot;
+
+        for (clause_lits, active) in &self.clauses {
+            if !*active {
+                continue;
+            }
+            if !clause_lits.contains(&neg_pivot) {
+                continue;
+            }
+
+            // Compute resolvent: (candidate ∪ clause_lits) \ {pivot, ¬pivot}.
+            let mut resolvent: Vec<Lit> = Vec::new();
+            for &lit in candidate {
+                if lit != pivot && lit != neg_pivot && !resolvent.contains(&lit) {
+                    resolvent.push(lit);
+                }
+            }
+            for &lit in clause_lits {
+                if lit != pivot && lit != neg_pivot && !resolvent.contains(&lit) {
+                    resolvent.push(lit);
+                }
+            }
+
+            let mut model = Model::new(self.num_vars);
+            model.push();
+            let at = self.is_at(&resolvent, &mut model);
+
+            if !at {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 
-impl DratVerifier for NaiveDratChecker {
+impl DratChecker for NaiveDratChecker {
     fn add_clause(&mut self, clause: &Clause) -> bool {
+        // Track num_vars in case the proof introduces new variables.
+        for &lit in clause.lits() {
+            let idx = lit.var().index() as u32;
+            if idx > self.num_vars {
+                self.num_vars = idx;
+            }
+        }
+
+        let lits = clause.lits();
+
+        // AT check first.
         let mut model = Model::new(self.num_vars);
         model.push();
+        let valid = if self.is_at(lits, &mut model) {
+            true
+        } else if !lits.is_empty() {
+            // RAT check: try each literal as pivot (matching drat-trim).
+            lits.iter().any(|&pivot| self.is_rat(lits, pivot))
+        } else {
+            false
+        };
 
-        let at = self.is_at(clause.lits(), &mut model);
-
-        if at {
+        if valid {
             if clause.is_empty() {
                 self.complete = true;
             }
-            // Track num_vars in case the proof introduces new variables.
-            for &lit in clause.lits() {
-                let idx = lit.var().index() as u32;
-                if idx > self.num_vars {
-                    self.num_vars = idx;
-                }
-            }
-            self.clauses.push((clause.lits().to_vec(), true));
+            self.clauses.push((lits.to_vec(), true));
         }
 
-        at
+        valid
     }
 
     fn delete_clause(&mut self, clause: &Clause) {
-        let target: &[Lit] = clause.lits();
+        let target = clause.lits();
         for (lits, active) in &mut self.clauses {
-            if *active && lits.as_slice() == target {
+            if *active && lits_match(lits, target) {
                 *active = false;
                 return;
             }
@@ -426,30 +482,86 @@ impl WatchedDratChecker {
 
         false
     }
+
+    /// RAT check: returns true if `candidate` is a Resolution Asymmetric
+    /// Tautology w.r.t. the current active clauses using `pivot`.
+    ///
+    /// For each active clause D containing ¬pivot, the resolvent
+    /// (candidate ∪ D) \ {pivot, ¬pivot} must be AT.
+    fn is_rat(&mut self, candidate: &[Lit], pivot: Lit) -> bool {
+        let neg_pivot = !pivot;
+
+        // Collect resolvents first to avoid borrow conflicts with is_at.
+        let mut resolvents: Vec<Vec<Lit>> = Vec::new();
+        for ci in 0..self.clauses.len() {
+            if !self.clauses[ci].active {
+                continue;
+            }
+            if !self.clauses[ci].lits.contains(&neg_pivot) {
+                continue;
+            }
+
+            let mut resolvent: Vec<Lit> = Vec::new();
+            for &lit in candidate {
+                if lit != pivot && lit != neg_pivot && !resolvent.contains(&lit) {
+                    resolvent.push(lit);
+                }
+            }
+            for &lit in &self.clauses[ci].lits {
+                if lit != pivot && lit != neg_pivot && !resolvent.contains(&lit) {
+                    resolvent.push(lit);
+                }
+            }
+            resolvents.push(resolvent);
+        }
+
+        // Check AT for all resolvents.
+        for resolvent in &resolvents {
+            if !self.is_at(resolvent) {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 
-impl DratVerifier for WatchedDratChecker {
+impl DratChecker for WatchedDratChecker {
     fn add_clause(&mut self, clause: &Clause) -> bool {
         for &lit in clause.lits() {
             self.ensure_var(lit.var().index() as u32);
         }
 
-        let at = self.is_at(clause.lits());
+        let lits = clause.lits();
 
-        if at {
+        // AT check first.
+        let valid = if self.is_at(lits) {
+            true
+        } else if !lits.is_empty() {
+            // RAT check: try each literal as pivot (matching drat-trim).
+            // We need to copy lits since is_rat borrows &mut self.
+            let lits_owned: Vec<Lit> = lits.to_vec();
+            lits_owned
+                .iter()
+                .any(|&pivot| self.is_rat(&lits_owned, pivot))
+        } else {
+            false
+        };
+
+        if valid {
             if clause.is_empty() {
                 self.complete = true;
             }
             self.push_clause(clause.lits().to_vec());
         }
 
-        at
+        valid
     }
 
     fn delete_clause(&mut self, clause: &Clause) {
         let target = clause.lits();
         for c in &mut self.clauses {
-            if c.active && c.lits == target {
+            if c.active && lits_match(&c.lits, target) {
                 c.active = false;
                 return;
             }
@@ -508,5 +620,59 @@ mod tests {
         let proof = DratProof::new([DratStep::Add(Clause::new([]))]);
         assert!(!proof.is_empty());
         assert_eq!(proof.len(), 1);
+    }
+
+    // -- RAT tests --
+
+    #[test]
+    fn rat_clause_accepted() {
+        // All 8 ternary clauses over 3 vars — unsatisfiable.
+        // {a} is NOT AT but IS RAT with pivot a.
+        let mut cnf = Cnf::new();
+        let a = cnf.fresh();
+        let b = cnf.fresh();
+        let c = cnf.fresh();
+        cnf.clause([a, b, c]);
+        cnf.clause([a, b, !c]);
+        cnf.clause([a, !b, c]);
+        cnf.clause([a, !b, !c]);
+        cnf.clause([!a, b, c]);
+        cnf.clause([!a, b, !c]);
+        cnf.clause([!a, !b, c]);
+        cnf.clause([!a, !b, !c]);
+
+        let proof = DratProof::new([
+            DratStep::Add(Clause::new([a])), // RAT
+            DratStep::Add(Clause::new([b])), // AT
+            DratStep::Add(Clause::new([])),  // AT
+        ]);
+
+        let mut naive = NaiveDratChecker::new(&cnf);
+        assert!(check_proof(&mut naive, &proof));
+
+        let mut watched = WatchedDratChecker::new(&cnf);
+        assert!(check_proof(&mut watched, &proof));
+    }
+
+    #[test]
+    fn vacuous_rat_new_variable() {
+        // Adding a clause with a variable not in any existing clause
+        // is vacuously RAT (no clause contains ¬pivot).
+        let mut cnf = Cnf::new();
+        let x = cnf.fresh();
+        cnf.clause([x]);
+        cnf.clause([!x]);
+
+        let d = Lit::from_dimacs(3).unwrap(); // new variable not in CNF
+        let proof = DratProof::new([
+            DratStep::Add(Clause::new([d])), // vacuous RAT
+            DratStep::Add(Clause::new([])),  // AT
+        ]);
+
+        let mut naive = NaiveDratChecker::new(&cnf);
+        assert!(check_proof(&mut naive, &proof));
+
+        let mut watched = WatchedDratChecker::new(&cnf);
+        assert!(check_proof(&mut watched, &proof));
     }
 }

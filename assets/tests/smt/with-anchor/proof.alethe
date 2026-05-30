@@ -1,0 +1,6 @@
+(assume h1 (forall ((x Int)) (or (p x) (q x))))
+(anchor :step t3 :args ((x Int)))
+(assume h2 (not (or (p x) (q x))))
+(step t1 (cl (p x) (q x)) :rule or_intro)
+(step t2 (cl) :rule resolution :premises (h2 t1))
+(step t3 (cl (not (forall ((x Int)) (or (p x) (q x))))) :rule subproof :discharge (h2))

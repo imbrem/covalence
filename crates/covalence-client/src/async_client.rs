@@ -4,13 +4,18 @@ use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
-use serde::Deserialize;
+
+use crate::types::{BlobStatsResponse, DecideResponse, HashResponse, ObjectInfoResponse};
+
+type HttpClient = Client<hyper_util::client::legacy::connect::HttpConnector, Full<Bytes>>;
 
 /// Async HTTP backend using hyper. Supports TCP and Unix domain sockets.
 pub struct AsyncHttpBackend {
     base_url: String,
     /// If set, connect via Unix domain socket instead of TCP.
     socket_path: Option<String>,
+    /// Reusable HTTP client for TCP connections.
+    client: HttpClient,
 }
 
 impl AsyncHttpBackend {
@@ -19,6 +24,7 @@ impl AsyncHttpBackend {
         Self {
             base_url,
             socket_path: None,
+            client: Client::builder(TokioExecutor::new()).build_http(),
         }
     }
 
@@ -27,6 +33,7 @@ impl AsyncHttpBackend {
         Self {
             base_url: "http://localhost".to_string(),
             socket_path: Some(socket_path),
+            client: Client::builder(TokioExecutor::new()).build_http(),
         }
     }
 
@@ -41,11 +48,11 @@ impl AsyncHttpBackend {
     }
 
     async fn tcp_get(&self, url: &str) -> Result<Vec<u8>, KernelError> {
-        let client = Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
         let uri: hyper::Uri = url
             .parse()
             .map_err(|e| KernelError::Store(format!("invalid URL: {e}")))?;
-        let resp = client
+        let resp = self
+            .client
             .get(uri)
             .await
             .map_err(|e| KernelError::Store(format!("request: {e}")))?;
@@ -123,7 +130,6 @@ impl AsyncHttpBackend {
     }
 
     async fn tcp_head(&self, url: &str) -> Result<u16, KernelError> {
-        let client = Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
         let uri: hyper::Uri = url
             .parse()
             .map_err(|e| KernelError::Store(format!("invalid URL: {e}")))?;
@@ -134,7 +140,8 @@ impl AsyncHttpBackend {
             .body(Full::new(Bytes::new()))
             .map_err(|e| KernelError::Store(format!("build request: {e}")))?;
 
-        let resp = client
+        let resp = self
+            .client
             .request(req)
             .await
             .map_err(|e| KernelError::Store(format!("request: {e}")))?;
@@ -180,7 +187,6 @@ impl AsyncHttpBackend {
     }
 
     async fn tcp_post(&self, url: &str, data: &[u8]) -> Result<Vec<u8>, KernelError> {
-        let client = Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
         let uri: hyper::Uri = url
             .parse()
             .map_err(|e| KernelError::Store(format!("invalid URL: {e}")))?;
@@ -192,7 +198,8 @@ impl AsyncHttpBackend {
             .body(Full::new(Bytes::from(data.to_vec())))
             .map_err(|e| KernelError::Store(format!("build request: {e}")))?;
 
-        let resp = client
+        let resp = self
+            .client
             .request(req)
             .await
             .map_err(|e| KernelError::Store(format!("request: {e}")))?;
@@ -267,23 +274,6 @@ impl AsyncHttpBackend {
     }
 }
 
-#[derive(Deserialize)]
-struct HashResponse {
-    hash: String,
-}
-
-#[derive(Deserialize)]
-struct BlobStatsResponse {
-    count: Option<usize>,
-}
-
-#[derive(Deserialize)]
-struct DecideResponse {
-    result: String,
-    #[serde(default)]
-    proved: Vec<String>,
-}
-
 impl AsyncBackend for AsyncHttpBackend {
     fn info(&self) -> BackendInfo {
         BackendInfo {
@@ -327,6 +317,27 @@ impl AsyncBackend for AsyncHttpBackend {
         let json: BlobStatsResponse =
             serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
         Ok(json.count)
+    }
+
+    async fn store_tree(&self, data: &[u8]) -> Result<O256, KernelError> {
+        let resp = self.post_bytes("/api/objects/tree", data).await?;
+        let json: HashResponse =
+            serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
+        O256::from_hex(&json.hash)
+            .ok_or_else(|| KernelError::Store(format!("invalid hash: {}", json.hash)))
+    }
+
+    async fn is_tree(&self, hash: &O256) -> Result<bool, KernelError> {
+        let path = format!("/api/objects/info/{hash}");
+        match self.get(&path).await {
+            Ok(resp) => {
+                let json: ObjectInfoResponse = serde_json::from_slice(&resp)
+                    .map_err(|e| KernelError::Store(format!("parse: {e}")))?;
+                Ok(json.kind == "tree")
+            }
+            Err(KernelError::NotFound(_)) => Ok(false),
+            Err(e) => Err(e),
+        }
     }
 
     async fn decide(&self, hash: &O256) -> Result<DecideOutput, KernelError> {

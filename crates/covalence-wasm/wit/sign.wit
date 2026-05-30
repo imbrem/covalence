@@ -1,0 +1,21 @@
+package cov:sign;
+
+interface api {
+    use cov:blob/api.{blob};
+
+    resource principal {
+        constructor(bytes: list<u8>);
+        bytes: func() -> list<u8>;
+        eq: func(other: borrow<principal>) -> bool;
+    }
+
+    /// Opaque — no serialization. Scheme-specific serialization will be added later.
+    resource signature {
+        verify: func(by: borrow<principal>, data: borrow<blob>) -> bool;
+    }
+
+    resource signer {
+        principal: func() -> principal;
+        sign: func(data: borrow<blob>) -> signature;
+    }
+}

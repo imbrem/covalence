@@ -7,20 +7,31 @@ An experimental LCF-style theorem prover and VCS using WASM components.
 ```
 crates/
   covalence/           CLI binary (cov)
-  covalence-hash/      BLAKE3 content hashing (O256)
-  covalence-store/     Content-addressed blob store
+  covalence-hash/      BLAKE3 + SHA-256 + git hashing (O256)
+  covalence-store/     Content-addressed blob store, tagged/object stores
+  covalence-object/    Object serialization (Dir, Table, git tree format)
   covalence-kernel/    Execution kernel (store + WASM engine)
-  covalence-wasm/      WASM component loading, linking, proposition deciding
+  covalence-wasm/      WASM loading, linking, ModuleBuilder, Val/ValType
   covalence-repl/      S-expression REPL
   covalence-serve/     HTTP/WebSocket server (axum)
-  covalence-client/    Remote kernel client
+  covalence-client/    Remote kernel client (sync + async)
   covalence-lsp/       Language server
-  covalence-sexp/      S-expression parser
-  covalence-git/       Cogit VCS library
+  covalence-sexp/      S-expression parser (multi-dialect)
+  covalence-smt/       SMT-LIB2 terms, theories, Alethe proofs
+  covalence-sat/       SAT formulas, DIMACS, DRAT proofs
+  covalence-types/     Shared types (Decision, etc.)
+  covalence-parse/     Parser combinators (winnow), LEB128
+  covalence-git/       Git object stores (loose, odb, LFS)
+  covalence-sig/       EdDSA signatures (ed25519-dalek)
+  covalence-rand/      Random number generation
   covalence-proto/     Service discovery
-  covalence-sqlite/    SQLite utilities
+  covalence-sqlite/    SQLite wrapper (rusqlite)
+  covalence-python/    Python bindings (PyO3)
 apps/
   covalence-web/       SvelteKit web app
+packages/
+  covalence-client/    TypeScript client library
+  covalence-ui/        Svelte UI components
 extensions/
   covalence-vscode/    VSCode extension (desktop + web)
 ```

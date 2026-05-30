@@ -3,6 +3,7 @@
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use covalence_hash::gix_hash;
 use covalence_store::StoreError;
@@ -122,8 +123,12 @@ impl GitBackend for LooseBackend {
                 .map_err(|e| StoreError::Io(format!("mkdir {}: {e}", parent.display())))?;
         }
 
-        // Atomic write: temp file in the objects dir, then rename into place.
-        let tmp = self.objects_dir.join(format!("tmp_obj_{id}"));
+        // Atomic write: temp file with unique name, then rename into place.
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let tmp = self
+            .objects_dir
+            .join(format!("tmp_obj_{}_{n}", std::process::id()));
         fs::write(&tmp, &compressed)
             .map_err(|e| StoreError::Io(format!("write {}: {e}", tmp.display())))?;
         fs::rename(&tmp, &path)

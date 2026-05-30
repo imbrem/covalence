@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { client } from '$lib/api';
-	import type { HealthResponse } from 'covalence-client';
+	import type { ObjectInfoResponse } from 'covalence-client';
+	import {
+		init, destroy, send, setOutputEl, formatDuration, doPoll,
+		getLines, getInput, setInput, getHistory, getHistoryIndex, setHistoryIndex,
+		isWsConnected, isHealthy, getLastHealth, getConnectedDuration,
+	} from '$lib/repl.svelte';
 
 	// --- Syntax highlighting ---
 	const KEYWORDS = new Set([
@@ -8,50 +13,27 @@
 		'module', 'component', 'import', 'export', 'func', 'param', 'result',
 		'type', 'instance', 'core', 'canon', 'lift', 'lower',
 		'memory', 'table', 'global', 'elem', 'data', 'start', 'local', 'alias',
-		// REPL commands
-		'store', 'help', 'parse-module', 'parse-component', 'decide',
+		// Forsp REPL commands
+		'store', 'store-url', 'store-file', 'read', 'read-wat',
+		'compile-wat', 'parse-module', 'parse-component',
+		'decide', 'prove', 'hash', 'print', 'status', 'help',
 	]);
 
 	function escHtml(s: string): string {
-		return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+		return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 	}
 
-	/** Heuristic: is this output structured code (S-expression or hashes) vs. prose (help, status)? */
+	/** Heuristic: is this output structured code (hashes, WAT, decide output) vs. prose (help, status)? */
 	function isCodeOutput(text: string): boolean {
 		const trimmed = text.trim();
 		if (!trimmed) return false;
 		const lines = trimmed.split('\n');
-		// All lines are 64-char hex hashes
-		if (lines.every(l => /^[a-f0-9]{64}$/.test(l.trim()))) return true;
-		// Looks like an S-expression block: starts with ( and last line ends with )
+		// Lines containing 64-char hex hashes (plain hashes, or "hash true"/"hash sat" from decide)
+		if (lines.every(l => /[a-f0-9]{64}/.test(l.trim()))) return true;
+		// Looks like WAT/S-expression output (e.g. from read-wat)
 		const first = lines[0].trimStart();
 		const last = lines[lines.length - 1].trimEnd();
-		if (first.startsWith('(') && last.endsWith(')')) {
-			// Exclude help-style output: lines with text after the closing paren
-			// e.g. '(store "data")   description here'
-			// Check first line: if there's content after the top-level close paren, it's prose
-			let depth = 0, inStr = false, escaped = false;
-			for (let i = 0; i < first.length; i++) {
-				const ch = first[i];
-				if (escaped) { escaped = false; continue; }
-				if (inStr) {
-					if (ch === '\\') escaped = true;
-					else if (ch === '"') inStr = false;
-					continue;
-				}
-				if (ch === '"') inStr = true;
-				else if (ch === '(') depth++;
-				else if (ch === ')') {
-					depth--;
-					if (depth === 0 && i < first.length - 1) {
-						// There's content after the first top-level sexp closes
-						const rest = first.slice(i + 1).trim();
-						if (rest && !rest.startsWith('(') && !rest.startsWith(';')) return false;
-					}
-				}
-			}
-			return true;
-		}
+		if (first.startsWith('(') && last.endsWith(')')) return true;
 		return false;
 	}
 
@@ -89,13 +71,16 @@
 				let end = i;
 				while (end < text.length && !/[\s()";|]/.test(text[end])) end++;
 				const atom = text.slice(i, end);
-				let cls: string;
-				if (KEYWORDS.has(atom)) cls = 'hl-keyword';
-				else if (/^-?[0-9]/.test(atom) || /^0x[0-9a-fA-F]+$/.test(atom)) cls = 'hl-number';
-				else if (atom.startsWith('$')) cls = 'hl-var';
-				else if (/^[a-f0-9]{64}$/.test(atom)) cls = 'hl-hash';
-				else cls = 'hl-atom';
-				out += `<span class="${cls}">${escHtml(atom)}</span>`;
+				if (/^[a-f0-9]{64}$/.test(atom)) {
+					out += `<a class="hl-hash" href="/view/${atom}" data-hash="${atom}">${escHtml(atom)}</a>`;
+				} else {
+					let cls: string;
+					if (KEYWORDS.has(atom)) cls = 'hl-keyword';
+					else if (/^-?[0-9]/.test(atom) || /^0x[0-9a-fA-F]+$/.test(atom)) cls = 'hl-number';
+					else if (atom.startsWith('$') || atom.startsWith('^') || atom.startsWith("'")) cls = 'hl-var';
+					else cls = 'hl-atom';
+					out += `<span class="${cls}">${escHtml(atom)}</span>`;
+				}
 				i = end;
 			}
 		}
@@ -118,7 +103,7 @@
 			else if (ch === '(') depth++;
 			else if (ch === ')') depth--;
 		}
-		return depth <= 0;
+		return depth === 0;
 	}
 
 	// --- LISP indentation ---
@@ -150,9 +135,7 @@
 			if (ch === '(') {
 				const parenCol = col;
 				col++; i++;
-				// Skip spaces after paren
 				while (i < before.length && before[i] === ' ') { col++; i++; }
-				// Read head atom
 				const headStart = i;
 				while (i < before.length && !/[\s()";|]/.test(before[i])) { col++; i++; }
 				const head = before.slice(headStart, i);
@@ -161,7 +144,6 @@
 				if (!head || SPECIAL_FORMS.has(head)) {
 					argCol = parenCol + 2;
 				} else {
-					// Align with first argument (column after head + space)
 					argCol = (i < before.length && before[i] === ' ') ? col + 1 : col;
 				}
 				stack.push({ col: parenCol, argCol });
@@ -175,64 +157,18 @@
 		return stack[stack.length - 1].argCol;
 	}
 
-	// --- REPL state ---
-	interface ReplLine {
-		kind: 'input' | 'output' | 'error';
-		text: string;
-	}
-
-	let lines: ReplLine[] = $state([]);
-	let input = $state('');
-	let history: string[] = $state([]);
-	let historyIndex = $state(-1);
-	let ws: WebSocket | null = $state(null);
-	let wsConnected = $state(false);
-	let outputEl: HTMLElement;
-	let inputEl: HTMLTextAreaElement;
+	// --- Use shared REPL state ---
+	let lines = $derived(getLines());
+	let input = $derived(getInput());
+	let wsConnected = $derived(isWsConnected());
+	let healthy = $derived(isHealthy());
+	let lastHealth = $derived(getLastHealth());
+	let connectedDuration = $derived(getConnectedDuration());
 
 	let highlightedInput = $derived(highlight(input));
 
-	function scrollToBottom() {
-		requestAnimationFrame(() => {
-			if (outputEl) outputEl.scrollTop = outputEl.scrollHeight;
-		});
-	}
-
-	function initWs() {
-		const socket = client.connectRepl();
-		socket.onopen = () => {
-			ws = socket;
-			wsConnected = true;
-		};
-		socket.onmessage = (e) => {
-			if (typeof e.data === 'string' && e.data.length > 0) {
-				const kind = e.data.startsWith('error:') || e.data.startsWith('parse error:')
-					? 'error' as const
-					: 'output' as const;
-				lines.push({ kind, text: e.data });
-				scrollToBottom();
-			}
-		};
-		socket.onclose = () => {
-			wsConnected = false;
-			ws = null;
-			setTimeout(initWs, 2000);
-		};
-		socket.onerror = () => {
-			wsConnected = false;
-		};
-	}
-
-	function send() {
-		const cmd = input.trim();
-		if (!cmd || !ws) return;
-		lines.push({ kind: 'input', text: cmd });
-		history.push(cmd);
-		historyIndex = -1;
-		ws.send(cmd);
-		input = '';
-		scrollToBottom();
-	}
+	let outputEl: HTMLElement;
+	let inputEl: HTMLTextAreaElement;
 
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key === 'Enter' && !e.shiftKey) {
@@ -240,12 +176,12 @@
 				e.preventDefault();
 				send();
 			} else {
-				// Insert newline with LISP indentation
 				e.preventDefault();
 				const pos = inputEl.selectionStart;
 				const indent = calcIndent(input, pos);
 				const ins = '\n' + ' '.repeat(indent);
-				input = input.slice(0, pos) + ins + input.slice(pos);
+				const newVal = input.slice(0, pos) + ins + input.slice(pos);
+				setInput(newVal);
 				requestAnimationFrame(() => {
 					const newPos = pos + ins.length;
 					inputEl.selectionStart = newPos;
@@ -255,99 +191,171 @@
 		} else if (e.key === 'Tab') {
 			e.preventDefault();
 			const pos = inputEl.selectionStart;
-			input = input.slice(0, pos) + '  ' + input.slice(pos);
+			setInput(input.slice(0, pos) + '  ' + input.slice(pos));
 			requestAnimationFrame(() => {
 				inputEl.selectionStart = pos + 2;
 				inputEl.selectionEnd = pos + 2;
 			});
 		} else if (e.key === 'ArrowUp' && !input.includes('\n')) {
 			e.preventDefault();
+			const history = getHistory();
+			let historyIndex = getHistoryIndex();
 			if (history.length === 0) return;
 			if (historyIndex === -1) historyIndex = history.length;
 			if (historyIndex > 0) {
 				historyIndex--;
-				input = history[historyIndex];
+				setHistoryIndex(historyIndex);
+				setInput(history[historyIndex]);
 			}
 		} else if (e.key === 'ArrowDown' && !input.includes('\n')) {
 			e.preventDefault();
+			const history = getHistory();
+			let historyIndex = getHistoryIndex();
 			if (historyIndex === -1) return;
 			if (historyIndex < history.length - 1) {
 				historyIndex++;
-				input = history[historyIndex];
+				setHistoryIndex(historyIndex);
+				setInput(history[historyIndex]);
 			} else {
-				historyIndex = -1;
-				input = '';
+				setHistoryIndex(-1);
+				setInput('');
 			}
 		}
 	}
 
-	// --- Health status ---
-	const HEALTH_POLL_MS = 1000;
-	let healthy = $state(false);
-	let lastHealth: HealthResponse | null = $state(null);
-	let connectedSince: number | null = $state(null);
-	let connectedDuration = $state(0);
-	let timer: ReturnType<typeof setTimeout> | null = null;
-	let tickTimer: ReturnType<typeof setInterval> | null = null;
+	// --- Tooltip state ---
+	let tooltipText = $state('');
+	let tooltipPreview = $state('');
+	let tooltipX = $state(0);
+	let tooltipY = $state(0);
+	let tooltipVisible = $state(false);
+	const infoCache = new Map<string, ObjectInfoResponse>();
+	const blobCache = new Map<string, Uint8Array>();
 
-	async function poll() {
-		try {
-			lastHealth = await client.health();
-			if (!healthy) {
-				healthy = true;
-				connectedSince = Date.now();
-				startTick();
-			}
-		} catch {
-			if (healthy) {
-				healthy = false;
-				connectedSince = null;
-				connectedDuration = 0;
-				stopTick();
-			}
-		}
-		timer = setTimeout(poll, HEALTH_POLL_MS);
-	}
+	/** Max bytes to show inline in tooltip preview. */
+	const TOOLTIP_MAX_PREVIEW = 120;
 
-	function startTick() {
-		stopTick();
-		tickTimer = setInterval(() => {
-			if (connectedSince != null) {
-				connectedDuration = Math.floor((Date.now() - connectedSince) / 1000);
-			}
-		}, 1000);
-	}
-
-	function stopTick() {
-		if (tickTimer != null) {
-			clearInterval(tickTimer);
-			tickTimer = null;
+	function onOutputMouseOver(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		if (target.tagName === 'A' && target.classList.contains('hl-hash')) {
+			const hash = target.dataset.hash;
+			if (!hash) return;
+			showTooltip(hash, target);
 		}
 	}
 
-	function formatDuration(secs: number): string {
-		const h = Math.floor(secs / 3600);
-		const m = Math.floor((secs % 3600) / 60);
-		const s = secs % 60;
-		if (h > 0) return `${h}h ${m}m ${s}s`;
-		if (m > 0) return `${m}m ${s}s`;
-		return `${s}s`;
+	function onOutputMouseOut(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		if (target.tagName === 'A' && target.classList.contains('hl-hash')) {
+			tooltipVisible = false;
+		}
+	}
+
+	/** Check if bytes are likely printable UTF-8 text. */
+	function isTextData(data: Uint8Array): boolean {
+		for (let i = 0; i < data.length; i++) {
+			const b = data[i];
+			if (b === 0) return false;
+			if (b < 0x20 && b !== 0x09 && b !== 0x0a && b !== 0x0d) return false;
+		}
+		return true;
+	}
+
+	/** Format binary bytes as escaped hex string: \x89\x50... */
+	function formatBinaryPreview(data: Uint8Array, maxLen: number): string {
+		let out = '';
+		for (let i = 0; i < data.length && out.length < maxLen; i++) {
+			const b = data[i];
+			if (b >= 0x20 && b <= 0x7e) {
+				out += String.fromCharCode(b);
+			} else {
+				out += `\\x${b.toString(16).padStart(2, '0')}`;
+			}
+		}
+		if (out.length > maxLen) out = out.slice(0, maxLen);
+		if (data.length > maxLen / 2) out += '\u2026';
+		return out;
+	}
+
+	/** Build an inline preview string for a small blob. */
+	function buildPreview(data: Uint8Array): string {
+		if (data.length === 0) return '(empty)';
+		if (isTextData(data)) {
+			const text = new TextDecoder('utf-8', { fatal: false }).decode(data);
+			if (text.length <= TOOLTIP_MAX_PREVIEW) return text;
+			return text.slice(0, TOOLTIP_MAX_PREVIEW) + '\u2026';
+		}
+		return formatBinaryPreview(data, TOOLTIP_MAX_PREVIEW);
+	}
+
+	async function showTooltip(hash: string, el: HTMLElement) {
+		const rect = el.getBoundingClientRect();
+		tooltipX = rect.left;
+		tooltipY = rect.top - 4;
+
+		let info = infoCache.get(hash);
+		if (!info) {
+			tooltipText = 'loading\u2026';
+			tooltipPreview = '';
+			tooltipVisible = true;
+			const fetched = await client.objectInfo(hash);
+			if (fetched) {
+				infoCache.set(hash, fetched);
+				info = fetched;
+			} else {
+				tooltipText = 'not found';
+				return;
+			}
+		}
+		tooltipText = `${info.kind} \u00b7 ${formatSize(info.size)}`;
+		tooltipPreview = '';
+		tooltipVisible = true;
+
+		// For small blobs, fetch data and show inline preview
+		if (info.kind === 'blob' && info.size <= TOOLTIP_MAX_PREVIEW * 4) {
+			let data = blobCache.get(hash);
+			if (!data) {
+				const fetched = await client.getObjectBlob(hash);
+				if (fetched) {
+					blobCache.set(hash, fetched);
+					data = fetched;
+				}
+			}
+			if (data) {
+				tooltipPreview = buildPreview(data);
+			}
+		}
+	}
+
+	function formatSize(bytes: number): string {
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	}
+
+	function onInputChange(e: Event) {
+		setInput((e.target as HTMLTextAreaElement).value);
 	}
 
 	$effect(() => {
-		initWs();
-		poll();
-		return () => {
-			if (timer != null) clearTimeout(timer);
-			stopTick();
-			if (ws) ws.close();
-		};
+		init();
+		return () => destroy();
+	});
+
+	$effect(() => {
+		if (outputEl) setOutputEl(outputEl);
 	});
 </script>
 
 <div class="app">
 	<div class="repl">
-		<div class="repl-output" bind:this={outputEl}>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="repl-output"
+			bind:this={outputEl}
+			onmouseover={onOutputMouseOver}
+			onmouseout={onOutputMouseOut}
+		>
 			{#each lines as line}
 				{#if line.kind === 'input'}
 					<div class="line input"><span class="prompt">cov&gt;</span> {@html highlight(line.text)}</div>
@@ -364,11 +372,12 @@
 				<pre class="input-highlight" aria-hidden="true">{@html highlightedInput}&nbsp;</pre>
 				<!-- svelte-ignore a11y_autofocus -->
 				<textarea
-					bind:value={input}
+					value={input}
+					oninput={onInputChange}
 					bind:this={inputEl}
 					onkeydown={onKeydown}
 					rows="1"
-					placeholder={wsConnected ? '(help)' : 'connecting...'}
+					placeholder={wsConnected ? 'help' : 'connecting...'}
 					disabled={!wsConnected}
 					autofocus
 				></textarea>
@@ -376,13 +385,23 @@
 		</div>
 	</div>
 
+	{#if tooltipVisible}
+		<div class="hash-tooltip" style="left:{tooltipX}px;top:{tooltipY}px">
+			<div class="tooltip-info">{tooltipText}</div>
+			{#if tooltipPreview}
+				<div class="tooltip-preview">{tooltipPreview}</div>
+			{/if}
+		</div>
+	{/if}
+
 	<footer class="status-bar">
 		<button
 			class="health-dot"
 			class:healthy
 			class:unhealthy={!healthy}
-			onclick={() => poll()}
+			onclick={() => doPoll()}
 			title={healthy ? 'API connected' : 'API unreachable'}
+			aria-label={healthy ? 'API connected' : 'API unreachable'}
 		></button>
 		<span class="status-text">
 			{#if healthy && lastHealth}
@@ -518,13 +537,53 @@
 	.input-highlight :global(.hl-var) { color: #c9a0f5; }
 
 	.line :global(.hl-hash),
-	.input-highlight :global(.hl-hash) { color: #f5c07c; opacity: 0.8; }
+	.input-highlight :global(.hl-hash) {
+		color: #f5c07c;
+		opacity: 0.8;
+		text-decoration: none;
+		cursor: pointer;
+	}
+
+	.line :global(.hl-hash:hover) {
+		text-decoration: underline;
+		opacity: 1;
+	}
 
 	.line :global(.hl-comment),
 	.input-highlight :global(.hl-comment) { color: var(--muted); font-style: italic; }
 
 	.line :global(.hl-atom),
 	.input-highlight :global(.hl-atom) { color: var(--fg); }
+
+	/* --- Tooltip --- */
+	.hash-tooltip {
+		position: fixed;
+		transform: translateY(-100%);
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		padding: 0.25rem 0.5rem;
+		font-size: 0.75rem;
+		color: var(--fg);
+		pointer-events: none;
+		z-index: 100;
+		max-width: 500px;
+	}
+
+	.hash-tooltip .tooltip-info {
+		white-space: nowrap;
+	}
+
+	.hash-tooltip .tooltip-preview {
+		color: var(--muted);
+		white-space: pre-wrap;
+		word-break: break-all;
+		font-family: var(--font-mono);
+		font-size: 0.7rem;
+		margin-top: 0.15rem;
+		border-top: 1px solid var(--border);
+		padding-top: 0.15rem;
+	}
 
 	/* --- Status bar --- */
 	.status-bar {

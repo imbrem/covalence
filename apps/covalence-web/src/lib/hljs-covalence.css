@@ -1,0 +1,87 @@
+/*
+ * Covalence highlight.js theme
+ * Matches the REPL's syntax highlight colors.
+ */
+
+.hljs {
+	color: var(--fg, #e0e0e0);
+	background: transparent;
+}
+
+/* Keywords, built-ins */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-type {
+	color: #7cc4f5;
+}
+
+/* Strings, regex */
+.hljs-string,
+.hljs-regexp,
+.hljs-addition {
+	color: #a8e6a3;
+}
+
+/* Numbers, literals */
+.hljs-number,
+.hljs-literal,
+.hljs-symbol,
+.hljs-bullet {
+	color: #f5c07c;
+}
+
+/* Variables, template vars, attributes */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-attr {
+	color: #c9a0f5;
+}
+
+/* Functions, sections */
+.hljs-title,
+.hljs-section {
+	color: #7cc4f5;
+	font-weight: 500;
+}
+
+/* Comments */
+.hljs-comment,
+.hljs-quote {
+	color: var(--muted, #888);
+	font-style: italic;
+}
+
+/* Deletions / diffs */
+.hljs-deletion {
+	color: #f87171;
+}
+
+/* Meta / preprocessor */
+.hljs-meta,
+.hljs-meta .hljs-keyword {
+	color: #f5c07c;
+}
+
+/* Emphasis */
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: 700;
+}
+
+/* Links */
+.hljs-link {
+	text-decoration: underline;
+}
+
+/* Tags (XML/HTML) */
+.hljs-tag {
+	color: var(--fg, #e0e0e0);
+}
+
+.hljs-name {
+	color: #7cc4f5;
+}

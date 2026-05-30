@@ -46,6 +46,16 @@ pub fn tree_sha256(data: impl AsRef<[u8]>) -> gix_hash::ObjectId {
     object_hash(gix_hash::Kind::Sha256, "tree", data.as_ref())
 }
 
+/// Hash data as a git commit using SHA-1 (does not validate commit format).
+pub fn commit_sha1(data: impl AsRef<[u8]>) -> gix_hash::ObjectId {
+    object_hash(gix_hash::Kind::Sha1, "commit", data.as_ref())
+}
+
+/// Hash data as a git commit using SHA-256 (does not validate commit format).
+pub fn commit_sha256(data: impl AsRef<[u8]>) -> gix_hash::ObjectId {
+    object_hash(gix_hash::Kind::Sha256, "commit", data.as_ref())
+}
+
 /// Git SHA-1 blob hashing context.
 pub struct GitSha1;
 
@@ -132,5 +142,19 @@ mod tests {
     fn git_enum_dispatches() {
         assert_eq!(Git::Sha1.tag("hello"), GitSha1.tag("hello"));
         assert_eq!(Git::Sha256.tag("hello"), GitSha256.tag("hello"));
+    }
+
+    #[test]
+    fn commit_sha1_matches_git() {
+        // printf 'tree 4b82...\nauthor ...\ncommitter ...\n\ntest commit\n' | git hash-object -t commit --stdin
+        let commit_bytes = b"tree 4b825dc642cb6eb9a060e54bf899d69f82597401\n\
+            author Test User <test@example.com> 1000000000 +0000\n\
+            committer Test User <test@example.com> 1000000000 +0000\n\
+            \n\
+            test commit\n";
+        assert_eq!(
+            commit_sha1(commit_bytes).to_string(),
+            "e1db426cfe2e239b11128fb96eaeadba3d77af61",
+        );
     }
 }

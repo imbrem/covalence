@@ -9,7 +9,7 @@ const rootDir = resolve(extDir, "../..");
 const require = createRequire(import.meta.url);
 
 // WASM memory: 32768 pages × 64 KB = 2 GB
-// Must match createProcess({ initial: 32768, maximum: 32768 }) in extension.ts
+// Must match createProcess({ initial: 32768, maximum: 32768 }) in server.ts
 const WASM_MEMORY_BYTES = 32768 * 65536; // 2147483648
 
 // 1. Build WASM (WASI target with threads)

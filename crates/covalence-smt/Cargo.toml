@@ -3,7 +3,11 @@ name = "covalence-smt"
 version = "0.0.0"
 edition = "2024"
 
+[features]
+cvc5 = []
+
 [dependencies]
 covalence-types = { path = "../covalence-types" }
 covalence-sat = { path = "../covalence-sat" }
 covalence-sexp = { path = "../covalence-sexp" }
+thiserror = "2"

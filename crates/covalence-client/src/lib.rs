@@ -1,3 +1,5 @@
+mod types;
+
 #[cfg(feature = "sync")]
 mod sync_client;
 #[cfg(feature = "sync")]

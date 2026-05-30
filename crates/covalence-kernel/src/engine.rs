@@ -64,7 +64,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use covalence_hash::O256;
-use covalence_store::{BlobStore, ContentStore};
+use covalence_store::{BlobStore, ContentStore, KvStore, MemoryKvStore};
 use covalence_wasm::engine::wasmtime;
 use wasmtime::component::{
     Component, Func, Linker, Resource, ResourceAny, ResourceTable, ResourceType, Val,
@@ -84,29 +84,43 @@ struct NameHandle {
     hash: O256,
 }
 
-/// Hierarchical key-value store data, backing the `store` resource.
-struct StoreData {
-    values: HashMap<Vec<u8>, Vec<u8>>,
-    children: HashMap<Vec<u8>, Arc<Mutex<StoreData>>>,
-    /// Bare keys (serialized without trailing type tag) that have been
-    /// touched by set(). Used by assert-exists / try-exists.
-    touched: HashSet<Vec<u8>>,
+/// Host-side representation of a principal resource (public key).
+struct PrincipalHandle {
+    key: covalence_sig::VerifyingKey,
 }
 
-impl StoreData {
-    fn new() -> Self {
-        StoreData {
-            values: HashMap::new(),
-            children: HashMap::new(),
-            touched: HashSet::new(),
-        }
-    }
+/// Host-side representation of a signature resource (opaque).
+struct SignatureHandle {
+    sig: covalence_sig::Signature,
 }
 
-/// A handle to a `StoreData`, optionally read-only.
+/// Host-side representation of a signer resource (keypair).
+struct SignerHandle {
+    key: covalence_sig::SigningKey,
+}
+
+/// A handle to a KV store, optionally read-only.
 struct StoreHandle {
-    data: Arc<Mutex<StoreData>>,
+    data: Arc<dyn KvStore>,
     writable: bool,
+}
+
+/// Host-side representation of a HOL Light type resource.
+#[cfg(feature = "hol")]
+struct HolTypeHandle {
+    ty: covalence_hol::TypeId,
+}
+
+/// Host-side representation of a HOL Light term resource.
+#[cfg(feature = "hol")]
+struct TermHandle {
+    term: covalence_hol::TermId,
+}
+
+/// Host-side representation of a HOL Light theorem resource.
+#[cfg(feature = "hol")]
+struct ThmHandle {
+    thm: covalence_hol::ThmId,
 }
 
 /// Host state threaded through wasmtime's Store.
@@ -154,8 +168,26 @@ enum ImportKind {
     /// The store resource interface: "store".
     /// Provides a hierarchical KV store shared within a container.
     Store,
+    /// The signing interface: "cov:sign/api".
+    SignInterface,
+    /// A generate-signer host function (test/dev only).
+    GenerateSigner,
+    /// The HOL Light kernel interface: "cov:hol/kernel".
+    #[cfg(feature = "hol")]
+    HolKernelInterface,
     /// Unknown import name.
     Unknown(String),
+}
+
+/// Check that every import name is a recognized kernel import.
+/// Returns Ok(()) if valid, Err(name) for the first unknown import.
+pub fn validate_container_imports(import_names: &[String]) -> Result<(), String> {
+    for name in import_names {
+        if let ImportKind::Unknown(s) = categorize_import(name) {
+            return Err(s);
+        }
+    }
+    Ok(())
 }
 
 fn categorize_import(name: &str) -> ImportKind {
@@ -187,6 +219,16 @@ fn categorize_import(name: &str) -> ImportKind {
     }
     if name == "store" {
         return ImportKind::Store;
+    }
+    if name == "cov:sign/api" {
+        return ImportKind::SignInterface;
+    }
+    if name == "generate-signer" {
+        return ImportKind::GenerateSigner;
+    }
+    #[cfg(feature = "hol")]
+    if name == "cov:hol/kernel" {
+        return ImportKind::HolKernelInterface;
     }
     ImportKind::Unknown(name.to_string())
 }
@@ -279,6 +321,26 @@ impl ImportManifest {
         }
     }
 
+    /// Check whether the component imports the `cov:sign/api` interface
+    /// or the `generate-signer` host function.
+    fn needs_sign_api(engine: &Engine, component: &Component) -> bool {
+        let ty = component.component_type();
+        ty.imports(engine).any(|(name, _)| {
+            matches!(
+                categorize_import(name),
+                ImportKind::SignInterface | ImportKind::GenerateSigner
+            )
+        })
+    }
+
+    /// Check whether the component imports the `cov:hol/kernel` interface.
+    #[cfg(feature = "hol")]
+    fn needs_hol_api(engine: &Engine, component: &Component) -> bool {
+        let ty = component.component_type();
+        ty.imports(engine)
+            .any(|(name, _)| matches!(categorize_import(name), ImportKind::HolKernelInterface))
+    }
+
     /// Check whether the component imports the `cov:blob/api` interface
     /// (directly or via `blob-{hash}` imports that reference its types).
     fn needs_api(engine: &Engine, component: &Component) -> bool {
@@ -306,7 +368,7 @@ pub(crate) struct LinkScope<'a> {
     engine: &'a Engine,
     instance_cache: HashMap<O256, Vec<(String, Func)>>,
     lazy_proves: HashMap<O256, Arc<LazyProve>>,
-    root_store: Arc<Mutex<StoreData>>,
+    root_store: Arc<dyn KvStore>,
 }
 
 impl<'a> LinkScope<'a> {
@@ -315,7 +377,7 @@ impl<'a> LinkScope<'a> {
             engine,
             instance_cache: HashMap::new(),
             lazy_proves: HashMap::new(),
-            root_store: Arc::new(Mutex::new(StoreData::new())),
+            root_store: Arc::new(MemoryKvStore::new()),
         }
     }
 
@@ -960,6 +1022,74 @@ fn deserialize_store_val(
 // build_linker — free function (avoids borrow conflicts)
 // ---------------------------------------------------------------------------
 
+/// Serialize a HOL type to a canonical byte representation.
+#[cfg(feature = "hol")]
+fn hol_type_to_bytes(arena: &covalence_hol::HolArena, ty: covalence_hol::TypeId) -> Vec<u8> {
+    let mut buf = Vec::new();
+    hol_type_to_bytes_acc(arena, ty, &mut buf);
+    buf
+}
+
+#[cfg(feature = "hol")]
+fn hol_type_to_bytes_acc(
+    arena: &covalence_hol::HolArena,
+    ty: covalence_hol::TypeId,
+    buf: &mut Vec<u8>,
+) {
+    match arena.get_type(ty) {
+        covalence_hol::HolTypeDef::Tyvar(n) => {
+            buf.push(0);
+            buf.extend_from_slice(&n.to_le_bytes());
+        }
+        covalence_hol::HolTypeDef::Tyapp(n, args) => {
+            buf.push(1);
+            buf.extend_from_slice(&n.to_le_bytes());
+            buf.extend_from_slice(&(args.len() as u32).to_le_bytes());
+            for arg in args {
+                hol_type_to_bytes_acc(arena, arg, buf);
+            }
+        }
+    }
+}
+
+/// Serialize a HOL term to a canonical byte representation.
+#[cfg(feature = "hol")]
+fn hol_term_to_bytes(arena: &covalence_hol::HolArena, tm: covalence_hol::TermId) -> Vec<u8> {
+    let mut buf = Vec::new();
+    hol_term_to_bytes_acc(arena, tm, &mut buf);
+    buf
+}
+
+#[cfg(feature = "hol")]
+fn hol_term_to_bytes_acc(
+    arena: &covalence_hol::HolArena,
+    tm: covalence_hol::TermId,
+    buf: &mut Vec<u8>,
+) {
+    match arena.get_term(tm) {
+        covalence_hol::TermDef::Var(n, ty) => {
+            buf.push(0);
+            buf.extend_from_slice(&n.to_le_bytes());
+            hol_type_to_bytes_acc(arena, ty, buf);
+        }
+        covalence_hol::TermDef::Const(n, ty) => {
+            buf.push(1);
+            buf.extend_from_slice(&n.to_le_bytes());
+            hol_type_to_bytes_acc(arena, ty, buf);
+        }
+        covalence_hol::TermDef::Comb(f, x) => {
+            buf.push(2);
+            hol_term_to_bytes_acc(arena, f, buf);
+            hol_term_to_bytes_acc(arena, x, buf);
+        }
+        covalence_hol::TermDef::Abs(v, b) => {
+            buf.push(3);
+            hol_term_to_bytes_acc(arena, v, buf);
+            hol_term_to_bytes_acc(arena, b, buf);
+        }
+    }
+}
+
 /// Extract a `ResourceAny` from a `Val::Resource`.
 fn extract_resource(val: &Val) -> wasmtime::Result<ResourceAny> {
     match val {
@@ -977,7 +1107,7 @@ fn build_linker(
     instance_cache: &HashMap<O256, Vec<(String, Func)>>,
     lazy_proves: &HashMap<O256, Arc<LazyProve>>,
     copy_cache: &HashMap<String, Vec<(String, Func)>>,
-    root_store: &Arc<Mutex<StoreData>>,
+    root_store: &Arc<dyn KvStore>,
 ) -> Result<Linker<HostState>, DecideError> {
     let ty = component.component_type();
     let mut linker: Linker<HostState> = Linker::new(engine);
@@ -1159,6 +1289,929 @@ fn build_linker(
         .map_err(|e| DecideError::LinkError(e.to_string()))?;
     }
 
+    // Register the cov:sign/api interface if the component imports it
+    // (directly or via generate-signer).
+    let needs_sign_api = ImportManifest::needs_sign_api(engine, component);
+
+    if needs_sign_api {
+        // sign API implies blob API — ensure cov:blob/api is always registered.
+        // (The blob API was already registered above if needs_api was true.
+        //  If not, this is a sign-only component — blob types are still needed
+        //  for the sign/verify methods that take borrow<blob>.)
+
+        let principal_ty = ResourceType::host::<PrincipalHandle>();
+        let signature_ty = ResourceType::host::<SignatureHandle>();
+        let signer_ty = ResourceType::host::<SignerHandle>();
+
+        let mut root = linker.root();
+        let mut api = root
+            .instance("cov:sign/api")
+            .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+        // --- principal resource ---
+        api.resource(
+            "principal",
+            principal_ty,
+            |mut cx: StoreContextMut<'_, HostState>, rep| {
+                cx.data_mut()
+                    .table
+                    .delete(Resource::<PrincipalHandle>::new_own(rep))?;
+                Ok(())
+            },
+        )
+        .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+        // [constructor]principal: (list<u8>) -> own<principal>
+        api.func_wrap(
+            "[constructor]principal",
+            |mut cx: StoreContextMut<'_, HostState>,
+             (bytes,): (Vec<u8>,)|
+             -> wasmtime::Result<(Resource<PrincipalHandle>,)> {
+                let key_bytes: [u8; 32] = bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| wasmtime::Error::msg("principal: expected exactly 32 bytes"))?;
+                let key = covalence_sig::VerifyingKey::from_bytes(&key_bytes)
+                    .map_err(|e| wasmtime::Error::msg(format!("invalid public key: {e}")))?;
+                let handle = PrincipalHandle { key };
+                let resource = cx.data_mut().table.push(handle)?;
+                Ok((resource,))
+            },
+        )
+        .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+        // [method]principal.bytes: (borrow<principal>) -> list<u8>
+        api.func_wrap(
+            "[method]principal.bytes",
+            |cx: StoreContextMut<'_, HostState>,
+             (principal,): (Resource<PrincipalHandle>,)|
+             -> wasmtime::Result<(Vec<u8>,)> {
+                let handle = cx.data().table.get(&principal)?;
+                Ok((handle.key.to_bytes().to_vec(),))
+            },
+        )
+        .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+        // [method]principal.eq: (borrow<principal>, borrow<principal>) -> bool
+        api.func_wrap(
+            "[method]principal.eq",
+            |cx: StoreContextMut<'_, HostState>,
+             (a, b): (Resource<PrincipalHandle>, Resource<PrincipalHandle>)|
+             -> wasmtime::Result<(bool,)> {
+                let ka = cx.data().table.get(&a)?.key;
+                let kb = cx.data().table.get(&b)?.key;
+                Ok((ka == kb,))
+            },
+        )
+        .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+        // --- signature resource (opaque) ---
+        api.resource(
+            "signature",
+            signature_ty,
+            |mut cx: StoreContextMut<'_, HostState>, rep| {
+                cx.data_mut()
+                    .table
+                    .delete(Resource::<SignatureHandle>::new_own(rep))?;
+                Ok(())
+            },
+        )
+        .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+        // [method]signature.verify: (borrow<signature>, borrow<principal>, borrow<blob>) -> bool
+        api.func_wrap(
+            "[method]signature.verify",
+            |cx: StoreContextMut<'_, HostState>,
+             (sig_res, principal_res, blob_res): (
+                Resource<SignatureHandle>,
+                Resource<PrincipalHandle>,
+                Resource<BlobHandle>,
+            )|
+             -> wasmtime::Result<(bool,)> {
+                let sig = cx.data().table.get(&sig_res)?.sig;
+                let key = cx.data().table.get(&principal_res)?.key;
+                let hash = cx.data().table.get(&blob_res)?.hash;
+                let result = covalence_sig::Verifier::verify(&key, hash.as_bytes(), &sig);
+                Ok((result.is_ok(),))
+            },
+        )
+        .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+        // --- signer resource ---
+        api.resource(
+            "signer",
+            signer_ty,
+            |mut cx: StoreContextMut<'_, HostState>, rep| {
+                cx.data_mut()
+                    .table
+                    .delete(Resource::<SignerHandle>::new_own(rep))?;
+                Ok(())
+            },
+        )
+        .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+        // [method]signer.principal: (borrow<signer>) -> own<principal>
+        api.func_wrap(
+            "[method]signer.principal",
+            |mut cx: StoreContextMut<'_, HostState>,
+             (signer_res,): (Resource<SignerHandle>,)|
+             -> wasmtime::Result<(Resource<PrincipalHandle>,)> {
+                let verifying_key = cx.data().table.get(&signer_res)?.key.verifying_key();
+                let handle = PrincipalHandle { key: verifying_key };
+                let resource = cx.data_mut().table.push(handle)?;
+                Ok((resource,))
+            },
+        )
+        .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+        // [method]signer.sign: (borrow<signer>, borrow<blob>) -> own<signature>
+        api.func_wrap(
+            "[method]signer.sign",
+            |mut cx: StoreContextMut<'_, HostState>,
+             (signer_res, blob_res): (Resource<SignerHandle>, Resource<BlobHandle>)|
+             -> wasmtime::Result<(Resource<SignatureHandle>,)> {
+                let signing_key = &cx.data().table.get(&signer_res)?.key;
+                let hash = cx.data().table.get(&blob_res)?.hash;
+                let sig = covalence_sig::Signer::sign(signing_key, hash.as_bytes());
+                let handle = SignatureHandle { sig };
+                let resource = cx.data_mut().table.push(handle)?;
+                Ok((resource,))
+            },
+        )
+        .map_err(|e| DecideError::LinkError(e.to_string()))?;
+    }
+
+    // Register the cov:hol/kernel interface if the component imports it.
+    #[cfg(feature = "hol")]
+    {
+        use covalence_hol::{HolLightKernel, HolLightTerms, HolLightTypes};
+
+        if ImportManifest::needs_hol_api(engine, component) {
+            let kernel = Arc::new(Mutex::new(covalence_hol::HolKernel::new(
+                covalence_hol::FUN_TYCON_ID,
+                covalence_hol::BOOL_TYCON_ID,
+                covalence_hol::EQ_CONST_ID,
+            )));
+            let names = Arc::new(Mutex::new(covalence_opentheory::NameTable::new()));
+
+            let hol_type_ty = ResourceType::host::<HolTypeHandle>();
+            let term_res_ty = ResourceType::host::<TermHandle>();
+            let thm_res_ty = ResourceType::host::<ThmHandle>();
+
+            let mut root = linker.root();
+            let mut api = root
+                .instance("cov:hol/kernel")
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+            // --- hol-type resource ---
+            api.resource(
+                "hol-type",
+                hol_type_ty,
+                |mut cx: StoreContextMut<'_, HostState>, rep| {
+                    cx.data_mut()
+                        .table
+                        .delete(Resource::<HolTypeHandle>::new_own(rep))?;
+                    Ok(())
+                },
+            )
+            .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+            // --- term resource ---
+            api.resource(
+                "term",
+                term_res_ty,
+                |mut cx: StoreContextMut<'_, HostState>, rep| {
+                    cx.data_mut()
+                        .table
+                        .delete(Resource::<TermHandle>::new_own(rep))?;
+                    Ok(())
+                },
+            )
+            .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+            // --- thm resource ---
+            api.resource(
+                "thm",
+                thm_res_ty,
+                |mut cx: StoreContextMut<'_, HostState>, rep| {
+                    cx.data_mut()
+                        .table
+                        .delete(Resource::<ThmHandle>::new_own(rep))?;
+                    Ok(())
+                },
+            )
+            .map_err(|e| DecideError::LinkError(e.to_string()))?;
+
+            // [method]hol-type.to-bytes: (borrow<hol-type>) -> list<u8>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "[method]hol-type.to-bytes",
+                    move |cx: StoreContextMut<'_, HostState>,
+                          (ty_res,): (Resource<HolTypeHandle>,)|
+                          -> wasmtime::Result<(Vec<u8>,)> {
+                        let ty = cx.data().table.get(&ty_res)?.ty;
+                        let k = kernel.lock().unwrap();
+                        Ok((hol_type_to_bytes(k.arena(), ty),))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // [method]hol-type.eq: (borrow<hol-type>, borrow<hol-type>) -> bool
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "[method]hol-type.eq",
+                    move |cx: StoreContextMut<'_, HostState>,
+                          (a, b): (Resource<HolTypeHandle>, Resource<HolTypeHandle>)|
+                          -> wasmtime::Result<(bool,)> {
+                        let ty_a = cx.data().table.get(&a)?.ty;
+                        let ty_b = cx.data().table.get(&b)?.ty;
+                        let k = kernel.lock().unwrap();
+                        Ok((k.type_eq(ty_a, ty_b),))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // [method]term.to-bytes: (borrow<term>) -> list<u8>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "[method]term.to-bytes",
+                    move |cx: StoreContextMut<'_, HostState>,
+                          (tm_res,): (Resource<TermHandle>,)|
+                          -> wasmtime::Result<(Vec<u8>,)> {
+                        let tm = cx.data().table.get(&tm_res)?.term;
+                        let k = kernel.lock().unwrap();
+                        Ok((hol_term_to_bytes(k.arena(), tm),))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // [method]term.eq: (borrow<term>, borrow<term>) -> bool
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "[method]term.eq",
+                    move |cx: StoreContextMut<'_, HostState>,
+                          (a, b): (Resource<TermHandle>, Resource<TermHandle>)|
+                          -> wasmtime::Result<(bool,)> {
+                        let tm_a = cx.data().table.get(&a)?.term;
+                        let tm_b = cx.data().table.get(&b)?.term;
+                        let k = kernel.lock().unwrap();
+                        Ok((k.aconv(tm_a, tm_b),))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // [method]term.type-of: (borrow<term>) -> own<hol-type>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "[method]term.type-of",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (tm_res,): (Resource<TermHandle>,)|
+                          -> wasmtime::Result<(Resource<HolTypeHandle>,)> {
+                        let tm = cx.data().table.get(&tm_res)?.term;
+                        let ty = kernel.lock().unwrap().type_of(tm);
+                        let handle = HolTypeHandle { ty };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // [method]thm.hyps: (borrow<thm>) -> list<term>
+            {
+                let kernel = kernel.clone();
+                api.func_new("[method]thm.hyps", move |mut cx, _ty, args, results| {
+                    let resource_any = extract_resource(&args[0])?;
+                    let resource = resource_any.try_into_resource::<ThmHandle>(&mut cx)?;
+                    let thm = cx.data().table.get(&resource)?.thm;
+                    let hyps = kernel.lock().unwrap().hyps(thm);
+                    let mut term_vals = Vec::new();
+                    for hyp in hyps {
+                        let handle = TermHandle { term: hyp };
+                        let r = cx.data_mut().table.push(handle)?;
+                        term_vals.push(Val::Resource(ResourceAny::try_from_resource(r, &mut cx)?));
+                    }
+                    results[0] = Val::List(term_vals);
+                    Ok(())
+                })
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // [method]thm.concl: (borrow<thm>) -> own<term>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "[method]thm.concl",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (thm_res,): (Resource<ThmHandle>,)|
+                          -> wasmtime::Result<(Resource<TermHandle>,)> {
+                        let thm = cx.data().table.get(&thm_res)?.thm;
+                        let concl = kernel.lock().unwrap().concl(thm);
+                        let handle = TermHandle { term: concl };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // --- type constructors ---
+
+            // tyvar: (string) -> own<hol-type>
+            {
+                let kernel = kernel.clone();
+                let names = names.clone();
+                api.func_wrap(
+                    "tyvar",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (name,): (String,)|
+                          -> wasmtime::Result<(Resource<HolTypeHandle>,)> {
+                        let name_id = names.lock().unwrap().intern_str(&name);
+                        let ty = kernel.lock().unwrap().mk_tyvar(name_id);
+                        let handle = HolTypeHandle { ty };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // tyapp: (string, list<borrow<hol-type>>) -> own<hol-type>
+            {
+                let kernel = kernel.clone();
+                let names = names.clone();
+                api.func_new("tyapp", move |mut cx, _ty, args, results| {
+                    let name = match &args[0] {
+                        Val::String(s) => s.clone(),
+                        _ => return Err(wasmtime::Error::msg("tyapp: expected string")),
+                    };
+                    let name_id = names.lock().unwrap().intern_str(&name);
+                    let arg_list = match &args[1] {
+                        Val::List(l) => l.clone(),
+                        _ => return Err(wasmtime::Error::msg("tyapp: expected list")),
+                    };
+                    let mut type_args = Vec::new();
+                    for arg_val in &arg_list {
+                        let ra = extract_resource(arg_val)?;
+                        let r = ra.try_into_resource::<HolTypeHandle>(&mut cx)?;
+                        type_args.push(cx.data().table.get(&r)?.ty);
+                    }
+                    let result_ty = kernel
+                        .lock()
+                        .unwrap()
+                        .mk_type_validated(name_id, type_args)
+                        .map_err(|e| wasmtime::Error::msg(format!("tyapp: {e}")))?;
+                    let handle = HolTypeHandle { ty: result_ty };
+                    let r = cx.data_mut().table.push(handle)?;
+                    results[0] = Val::Resource(ResourceAny::try_from_resource(r, &mut cx)?);
+                    Ok(())
+                })
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // bool-type: () -> own<hol-type>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "bool-type",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          _args: ()|
+                          -> wasmtime::Result<(Resource<HolTypeHandle>,)> {
+                        let ty = kernel.lock().unwrap().bool_type();
+                        let handle = HolTypeHandle { ty };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // fun-type: (borrow<hol-type>, borrow<hol-type>) -> own<hol-type>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "fun-type",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (dom, cod): (Resource<HolTypeHandle>, Resource<HolTypeHandle>)|
+                          -> wasmtime::Result<(Resource<HolTypeHandle>,)> {
+                        let dom_ty = cx.data().table.get(&dom)?.ty;
+                        let cod_ty = cx.data().table.get(&cod)?.ty;
+                        let ty = kernel.lock().unwrap().fun_type(dom_ty, cod_ty);
+                        let handle = HolTypeHandle { ty };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // --- term constructors ---
+
+            // mk-var: (string, borrow<hol-type>) -> own<term>
+            {
+                let kernel = kernel.clone();
+                let names = names.clone();
+                api.func_wrap(
+                    "mk-var",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (name, ty_res): (String, Resource<HolTypeHandle>)|
+                          -> wasmtime::Result<(Resource<TermHandle>,)> {
+                        let name_id = names.lock().unwrap().intern_str(&name);
+                        let ty = cx.data().table.get(&ty_res)?.ty;
+                        let term = kernel.lock().unwrap().mk_var(name_id, ty);
+                        let handle = TermHandle { term };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // mk-const: (string, borrow<hol-type>) -> own<term>
+            {
+                let kernel = kernel.clone();
+                let names = names.clone();
+                api.func_wrap(
+                    "mk-const",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (name, ty_res): (String, Resource<HolTypeHandle>)|
+                          -> wasmtime::Result<(Resource<TermHandle>,)> {
+                        let name_id = names.lock().unwrap().intern_str(&name);
+                        let ty = cx.data().table.get(&ty_res)?.ty;
+                        let term = kernel
+                            .lock()
+                            .unwrap()
+                            .mk_const_validated(name_id, ty)
+                            .map_err(|e| wasmtime::Error::msg(format!("mk-const: {e}")))?;
+                        let handle = TermHandle { term };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // mk-comb: (borrow<term>, borrow<term>) -> own<term>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "mk-comb",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (f, x): (Resource<TermHandle>, Resource<TermHandle>)|
+                          -> wasmtime::Result<(Resource<TermHandle>,)> {
+                        let f_term = cx.data().table.get(&f)?.term;
+                        let x_term = cx.data().table.get(&x)?.term;
+                        let term = kernel.lock().unwrap().mk_comb(f_term, x_term);
+                        let handle = TermHandle { term };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // mk-abs: (borrow<term>, borrow<term>) -> own<term>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "mk-abs",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (var, body): (Resource<TermHandle>, Resource<TermHandle>)|
+                          -> wasmtime::Result<(Resource<TermHandle>,)> {
+                        let var_term = cx.data().table.get(&var)?.term;
+                        let body_term = cx.data().table.get(&body)?.term;
+                        let term = kernel.lock().unwrap().mk_abs(var_term, body_term);
+                        let handle = TermHandle { term };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // mk-eq: (borrow<term>, borrow<term>) -> own<term>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "mk-eq",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (lhs, rhs): (Resource<TermHandle>, Resource<TermHandle>)|
+                          -> wasmtime::Result<(Resource<TermHandle>,)> {
+                        let lhs_term = cx.data().table.get(&lhs)?.term;
+                        let rhs_term = cx.data().table.get(&rhs)?.term;
+                        let term = kernel.lock().unwrap().mk_eq(lhs_term, rhs_term);
+                        let handle = TermHandle { term };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // --- 10 inference rules ---
+
+            // refl: (borrow<term>) -> own<thm>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "refl",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (tm,): (Resource<TermHandle>,)|
+                          -> wasmtime::Result<(Resource<ThmHandle>,)> {
+                        let term = cx.data().table.get(&tm)?.term;
+                        let thm = kernel
+                            .lock()
+                            .unwrap()
+                            .refl(term)
+                            .map_err(|e| wasmtime::Error::msg(format!("refl: {e}")))?;
+                        let handle = ThmHandle { thm };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // trans: (borrow<thm>, borrow<thm>) -> own<thm>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "trans",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (th1, th2): (Resource<ThmHandle>, Resource<ThmHandle>)|
+                          -> wasmtime::Result<(Resource<ThmHandle>,)> {
+                        let thm1 = cx.data().table.get(&th1)?.thm;
+                        let thm2 = cx.data().table.get(&th2)?.thm;
+                        let result = kernel
+                            .lock()
+                            .unwrap()
+                            .trans(thm1, thm2)
+                            .map_err(|e| wasmtime::Error::msg(format!("trans: {e}")))?;
+                        let handle = ThmHandle { thm: result };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // mk-comb-rule: (borrow<thm>, borrow<thm>) -> own<thm>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "mk-comb-rule",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (th1, th2): (Resource<ThmHandle>, Resource<ThmHandle>)|
+                          -> wasmtime::Result<(Resource<ThmHandle>,)> {
+                        let thm1 = cx.data().table.get(&th1)?.thm;
+                        let thm2 = cx.data().table.get(&th2)?.thm;
+                        let result = kernel
+                            .lock()
+                            .unwrap()
+                            .mk_comb_rule(thm1, thm2)
+                            .map_err(|e| wasmtime::Error::msg(format!("mk-comb-rule: {e}")))?;
+                        let handle = ThmHandle { thm: result };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // abs-rule: (borrow<term>, borrow<thm>) -> own<thm>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "abs-rule",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (var, th): (Resource<TermHandle>, Resource<ThmHandle>)|
+                          -> wasmtime::Result<(Resource<ThmHandle>,)> {
+                        let var_term = cx.data().table.get(&var)?.term;
+                        let thm = cx.data().table.get(&th)?.thm;
+                        let result = kernel
+                            .lock()
+                            .unwrap()
+                            .abs_rule(var_term, thm)
+                            .map_err(|e| wasmtime::Error::msg(format!("abs-rule: {e}")))?;
+                        let handle = ThmHandle { thm: result };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // beta-conv: (borrow<term>) -> own<thm>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "beta-conv",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (tm,): (Resource<TermHandle>,)|
+                          -> wasmtime::Result<(Resource<ThmHandle>,)> {
+                        let term = cx.data().table.get(&tm)?.term;
+                        let thm = kernel
+                            .lock()
+                            .unwrap()
+                            .beta_conv(term)
+                            .map_err(|e| wasmtime::Error::msg(format!("beta-conv: {e}")))?;
+                        let handle = ThmHandle { thm };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // assume-rule: (borrow<term>) -> own<thm>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "assume-rule",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (tm,): (Resource<TermHandle>,)|
+                          -> wasmtime::Result<(Resource<ThmHandle>,)> {
+                        let term = cx.data().table.get(&tm)?.term;
+                        let thm = kernel
+                            .lock()
+                            .unwrap()
+                            .assume_rule(term)
+                            .map_err(|e| wasmtime::Error::msg(format!("assume-rule: {e}")))?;
+                        let handle = ThmHandle { thm };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // eq-mp: (borrow<thm>, borrow<thm>) -> own<thm>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "eq-mp",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (th1, th2): (Resource<ThmHandle>, Resource<ThmHandle>)|
+                          -> wasmtime::Result<(Resource<ThmHandle>,)> {
+                        let thm1 = cx.data().table.get(&th1)?.thm;
+                        let thm2 = cx.data().table.get(&th2)?.thm;
+                        let result = kernel
+                            .lock()
+                            .unwrap()
+                            .eq_mp(thm1, thm2)
+                            .map_err(|e| wasmtime::Error::msg(format!("eq-mp: {e}")))?;
+                        let handle = ThmHandle { thm: result };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // deduct-antisym: (borrow<thm>, borrow<thm>) -> own<thm>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "deduct-antisym",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (th1, th2): (Resource<ThmHandle>, Resource<ThmHandle>)|
+                          -> wasmtime::Result<(Resource<ThmHandle>,)> {
+                        let thm1 = cx.data().table.get(&th1)?.thm;
+                        let thm2 = cx.data().table.get(&th2)?.thm;
+                        let result = kernel
+                            .lock()
+                            .unwrap()
+                            .deduct_antisym(thm1, thm2)
+                            .map_err(|e| wasmtime::Error::msg(format!("deduct-antisym: {e}")))?;
+                        let handle = ThmHandle { thm: result };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // inst-term: (list<tuple<borrow<term>, borrow<term>>>, borrow<thm>) -> own<thm>
+            {
+                let kernel = kernel.clone();
+                api.func_new("inst-term", move |mut cx, _ty, args, results| {
+                    let pairs_list = match &args[0] {
+                        Val::List(l) => l.clone(),
+                        _ => return Err(wasmtime::Error::msg("inst-term: expected list")),
+                    };
+                    let th_ra = extract_resource(&args[1])?;
+                    let th_r = th_ra.try_into_resource::<ThmHandle>(&mut cx)?;
+                    let thm = cx.data().table.get(&th_r)?.thm;
+
+                    let mut pairs = Vec::new();
+                    for pair_val in &pairs_list {
+                        let tuple = match pair_val {
+                            Val::Tuple(t) => t,
+                            _ => return Err(wasmtime::Error::msg("inst-term: expected tuple")),
+                        };
+                        let new_ra = extract_resource(&tuple[0])?;
+                        let new_r = new_ra.try_into_resource::<TermHandle>(&mut cx)?;
+                        let new_term = cx.data().table.get(&new_r)?.term;
+                        let old_ra = extract_resource(&tuple[1])?;
+                        let old_r = old_ra.try_into_resource::<TermHandle>(&mut cx)?;
+                        let old_term = cx.data().table.get(&old_r)?.term;
+                        pairs.push((new_term, old_term));
+                    }
+
+                    let result = kernel
+                        .lock()
+                        .unwrap()
+                        .inst_rule(&pairs, thm)
+                        .map_err(|e| wasmtime::Error::msg(format!("inst-term: {e}")))?;
+                    let handle = ThmHandle { thm: result };
+                    let r = cx.data_mut().table.push(handle)?;
+                    results[0] = Val::Resource(ResourceAny::try_from_resource(r, &mut cx)?);
+                    Ok(())
+                })
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // inst-type-rule: (list<tuple<borrow<hol-type>, borrow<hol-type>>>, borrow<thm>) -> own<thm>
+            {
+                let kernel = kernel.clone();
+                api.func_new("inst-type-rule", move |mut cx, _ty, args, results| {
+                    let pairs_list = match &args[0] {
+                        Val::List(l) => l.clone(),
+                        _ => return Err(wasmtime::Error::msg("inst-type-rule: expected list")),
+                    };
+                    let th_ra = extract_resource(&args[1])?;
+                    let th_r = th_ra.try_into_resource::<ThmHandle>(&mut cx)?;
+                    let thm = cx.data().table.get(&th_r)?.thm;
+
+                    let mut pairs = Vec::new();
+                    for pair_val in &pairs_list {
+                        let tuple = match pair_val {
+                            Val::Tuple(t) => t,
+                            _ => {
+                                return Err(wasmtime::Error::msg("inst-type-rule: expected tuple"));
+                            }
+                        };
+                        let new_ra = extract_resource(&tuple[0])?;
+                        let new_r = new_ra.try_into_resource::<HolTypeHandle>(&mut cx)?;
+                        let new_ty = cx.data().table.get(&new_r)?.ty;
+                        let old_ra = extract_resource(&tuple[1])?;
+                        let old_r = old_ra.try_into_resource::<HolTypeHandle>(&mut cx)?;
+                        let old_ty = cx.data().table.get(&old_r)?.ty;
+                        let k = kernel.lock().unwrap();
+                        let old_name = k.dest_tyvar(old_ty).ok_or_else(|| {
+                            wasmtime::Error::msg("inst-type-rule: old type must be a type variable")
+                        })?;
+                        drop(k);
+                        pairs.push((new_ty, old_name));
+                    }
+
+                    let result = kernel
+                        .lock()
+                        .unwrap()
+                        .inst_type_rule(&pairs, thm)
+                        .map_err(|e| wasmtime::Error::msg(format!("inst-type-rule: {e}")))?;
+                    let handle = ThmHandle { thm: result };
+                    let r = cx.data_mut().table.push(handle)?;
+                    results[0] = Val::Resource(ResourceAny::try_from_resource(r, &mut cx)?);
+                    Ok(())
+                })
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // --- definitions ---
+
+            // new-axiom: (borrow<term>) -> own<thm>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "new-axiom",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (tm,): (Resource<TermHandle>,)|
+                          -> wasmtime::Result<(Resource<ThmHandle>,)> {
+                        let term = cx.data().table.get(&tm)?.term;
+                        let thm = kernel
+                            .lock()
+                            .unwrap()
+                            .new_axiom(term)
+                            .map_err(|e| wasmtime::Error::msg(format!("new-axiom: {e}")))?;
+                        let handle = ThmHandle { thm };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // new-basic-definition: (borrow<term>) -> own<thm>
+            {
+                let kernel = kernel.clone();
+                api.func_wrap(
+                    "new-basic-definition",
+                    move |mut cx: StoreContextMut<'_, HostState>,
+                          (tm,): (Resource<TermHandle>,)|
+                          -> wasmtime::Result<(Resource<ThmHandle>,)> {
+                        let term = cx.data().table.get(&tm)?.term;
+                        let thm =
+                            kernel
+                                .lock()
+                                .unwrap()
+                                .new_basic_definition(term)
+                                .map_err(|e| {
+                                    wasmtime::Error::msg(format!("new-basic-definition: {e}"))
+                                })?;
+                        let handle = ThmHandle { thm };
+                        let resource = cx.data_mut().table.push(handle)?;
+                        Ok((resource,))
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+
+            // new-basic-type-definition: (string, string, string, borrow<thm>) -> tuple<thm, thm>
+            {
+                let kernel = kernel.clone();
+                let names = names.clone();
+                api.func_new(
+                    "new-basic-type-definition",
+                    move |mut cx, _ty, args, results| {
+                        let tyname = match &args[0] {
+                            Val::String(s) => s.clone(),
+                            _ => {
+                                return Err(wasmtime::Error::msg(
+                                    "new-basic-type-definition: expected string",
+                                ));
+                            }
+                        };
+                        let abs_name = match &args[1] {
+                            Val::String(s) => s.clone(),
+                            _ => {
+                                return Err(wasmtime::Error::msg(
+                                    "new-basic-type-definition: expected string",
+                                ));
+                            }
+                        };
+                        let rep_name = match &args[2] {
+                            Val::String(s) => s.clone(),
+                            _ => {
+                                return Err(wasmtime::Error::msg(
+                                    "new-basic-type-definition: expected string",
+                                ));
+                            }
+                        };
+                        let th_ra = extract_resource(&args[3])?;
+                        let th_r = th_ra.try_into_resource::<ThmHandle>(&mut cx)?;
+                        let thm = cx.data().table.get(&th_r)?.thm;
+
+                        let mut n = names.lock().unwrap();
+                        let tyname_id = n.intern_str(&tyname);
+                        let abs_id = n.intern_str(&abs_name);
+                        let rep_id = n.intern_str(&rep_name);
+                        drop(n);
+
+                        let mut n = names.lock().unwrap();
+                        let abs_var_name = n.intern_str("a");
+                        let rep_var_name = n.intern_str("r");
+                        drop(n);
+
+                        let (thm1, thm2) = kernel
+                            .lock()
+                            .unwrap()
+                            .new_basic_type_definition(
+                                tyname_id,
+                                abs_id,
+                                rep_id,
+                                abs_var_name,
+                                rep_var_name,
+                                thm,
+                            )
+                            .map_err(|e| {
+                                wasmtime::Error::msg(format!("new-basic-type-definition: {e}"))
+                            })?;
+
+                        let h1 = ThmHandle { thm: thm1 };
+                        let h2 = ThmHandle { thm: thm2 };
+                        let r1 = cx.data_mut().table.push(h1)?;
+                        let r2 = cx.data_mut().table.push(h2)?;
+                        let ra1 = ResourceAny::try_from_resource(r1, &mut cx)?;
+                        let ra2 = ResourceAny::try_from_resource(r2, &mut cx)?;
+                        results[0] = Val::Tuple(vec![Val::Resource(ra1), Val::Resource(ra2)]);
+                        Ok(())
+                    },
+                )
+                .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+        }
+    }
+
     for (name, _) in ty.imports(engine) {
         match categorize_import(name) {
             ImportKind::Attest => {
@@ -1312,7 +2365,7 @@ fn build_linker(
                 // new() -> own<store>
                 inst.func_new("new", move |mut cx, _ty, _args, results| {
                     let handle = StoreHandle {
-                        data: Arc::new(Mutex::new(StoreData::new())),
+                        data: Arc::new(MemoryKvStore::new()),
                         writable: true,
                     };
                     let resource = cx.data_mut().table.push(handle)?;
@@ -1337,9 +2390,8 @@ fn build_linker(
                     let bare_key = key.clone();
                     key.push(val_tag);
                     let value = serialize_store_val(&args[2], &mut cx)?;
-                    let mut store = data.lock().unwrap();
-                    store.touched.insert(bare_key);
-                    store.values.insert(key, value);
+                    data.touch(&bare_key);
+                    data.set(&key, &value);
                     Ok(())
                 })
                 .map_err(|e| DecideError::LinkError(e.to_string()))?;
@@ -1354,7 +2406,7 @@ fn build_linker(
                         let val_tag = component_type_to_tag(&ty.results().next().unwrap())?;
                         let mut key = serialize_store_val(&args[1], &mut cx)?;
                         key.push(val_tag);
-                        match data.lock().unwrap().values.get(&key).cloned() {
+                        match data.get(&key) {
                             Some(v) => {
                                 results[0] = deserialize_store_val(&v, &mut cx, &blobs_for_get)?;
                                 Ok(())
@@ -1376,13 +2428,7 @@ fn build_linker(
                     let key_tag = component_type_to_tag(&ty.params().nth(1).unwrap().1)?;
                     let mut key = serialize_store_val(&args[1], &mut cx)?;
                     key.push(key_tag);
-                    let child_data = {
-                        let mut pd = parent_data.lock().unwrap();
-                        pd.children
-                            .entry(key)
-                            .or_insert_with(|| Arc::new(Mutex::new(StoreData::new())))
-                            .clone()
-                    };
+                    let child_data = parent_data.ns(&key);
                     let child = StoreHandle {
                         data: child_data,
                         writable: parent_writable,
@@ -1402,7 +2448,10 @@ fn build_linker(
                         let h = cx.data().table.get(&resource)?;
                         (h.data.clone(), h.writable)
                     };
-                    let cloned = StoreHandle { data, writable };
+                    let cloned = StoreHandle {
+                        data: data.dup(),
+                        writable,
+                    };
                     let cloned_resource = cx.data_mut().table.push(cloned)?;
                     results[0] =
                         Val::Resource(ResourceAny::try_from_resource(cloned_resource, &mut cx)?);
@@ -1418,7 +2467,7 @@ fn build_linker(
                         let resource = resource_any.try_into_resource::<StoreHandle>(&mut cx)?;
                         let data = cx.data().table.get(&resource)?.data.clone();
                         let frozen = StoreHandle {
-                            data,
+                            data: data.dup(),
                             writable: false,
                         };
                         let frozen_resource = cx.data_mut().table.push(frozen)?;
@@ -1451,7 +2500,7 @@ fn build_linker(
                         };
                         let mut key = serialize_store_val(&args[1], &mut cx)?;
                         key.push(val_tag);
-                        match data.lock().unwrap().values.get(&key).cloned() {
+                        match data.get(&key) {
                             Some(v) => {
                                 let val = deserialize_store_val(&v, &mut cx, &blobs_for_try_get)?;
                                 results[0] = Val::Option(Some(Box::new(val)));
@@ -1474,7 +2523,7 @@ fn build_linker(
                         let resource = resource_any.try_into_resource::<StoreHandle>(&mut cx)?;
                         let data = cx.data().table.get(&resource)?.data.clone();
                         let key = serialize_store_val(&args[1], &mut cx)?;
-                        if !data.lock().unwrap().touched.contains(&key) {
+                        if !data.touched(&key) {
                             return Err(wasmtime::Error::msg("key does not exist in store"));
                         }
                         Ok(())
@@ -1490,11 +2539,36 @@ fn build_linker(
                         let resource = resource_any.try_into_resource::<StoreHandle>(&mut cx)?;
                         let data = cx.data().table.get(&resource)?.data.clone();
                         let key = serialize_store_val(&args[1], &mut cx)?;
-                        results[0] = Val::Bool(data.lock().unwrap().touched.contains(&key));
+                        results[0] = Val::Bool(data.touched(&key));
                         Ok(())
                     },
                 )
                 .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+            ImportKind::SignInterface => {
+                // Already registered above.
+            }
+            ImportKind::GenerateSigner => {
+                linker
+                    .root()
+                    .func_wrap(
+                        name,
+                        |mut cx: StoreContextMut<'_, HostState>,
+                         _args: ()|
+                         -> wasmtime::Result<(Resource<SignerHandle>,)> {
+                            let key = covalence_sig::SigningKey::generate(
+                                &mut covalence_sig::dalek_rand_core::OsRng,
+                            );
+                            let handle = SignerHandle { key };
+                            let resource = cx.data_mut().table.push(handle)?;
+                            Ok((resource,))
+                        },
+                    )
+                    .map_err(|e| DecideError::LinkError(e.to_string()))?;
+            }
+            #[cfg(feature = "hol")]
+            ImportKind::HolKernelInterface => {
+                // Already registered above.
             }
             ImportKind::Unknown(ref unknown) => {
                 return Err(DecideError::LinkError(format!("unknown import: {unknown}")));
@@ -1510,6 +2584,7 @@ fn build_linker(
 // ---------------------------------------------------------------------------
 
 /// WASM engine backed by wasmtime.
+#[derive(Clone)]
 pub struct WasmEngine {
     engine: Engine,
 }
@@ -1616,4 +2691,15 @@ pub enum DecideError {
     InstantiationError(String),
     #[error("cycle detected: {0}")]
     CycleDetected(String),
+}
+
+impl crate::Evaluator<BlobStore<O256>> for WasmEngine {
+    fn decide(
+        &self,
+        bytes: &[u8],
+        store: &BlobStore<O256>,
+    ) -> Result<DecideOutput, crate::KernelError> {
+        self.decide(bytes, store)
+            .map_err(|e| crate::KernelError::Engine(format!("{e}")))
+    }
 }

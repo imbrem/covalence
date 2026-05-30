@@ -33,6 +33,22 @@ export interface BlobStatsResponse {
 
 /** GET /api/decide/:hash */
 export interface DecideResponse {
-  result: string;
+  result: Decision;
   proved: Hash[];
+}
+
+/** Object kinds returned by the object store. */
+export type ObjectKind = 'blob' | 'tree' | 'commit' | 'tag';
+
+/** GET /api/objects/info/:hash */
+export interface ObjectInfoResponse {
+  kind: ObjectKind;
+  size: number;
+}
+
+/** Entry in a tree listing. */
+export interface TreeEntry {
+  name: string;
+  mode: string;
+  hash: Hash;
 }

@@ -8,11 +8,9 @@ runtime = ["dep:wasmtime"]
 
 [dependencies]
 thiserror = "2"
+wasm-encoder = "0.249"
 wat = "1.249"
 wasmprinter = "0.249"
 wasmparser = "0.249"
 # runtime-only deps
 wasmtime = { version = "44", features = ["component-model", "gc"], optional = true }
-
-[dev-dependencies]
-wasm-encoder = "0.249"

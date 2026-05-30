@@ -1,6 +1,7 @@
 use covalence_hash::O256;
 use covalence_kernel::{BackendInfo, DecideOutput, Decision, KernelError, SyncBackend};
-use serde::Deserialize;
+
+use crate::types::{BlobStatsResponse, DecideResponse, HashResponse, ObjectInfoResponse};
 
 /// Blocking HTTP backend using ureq (TCP) or raw HTTP/1.1 (Unix domain socket).
 pub struct SyncHttpBackend {
@@ -148,7 +149,7 @@ fn unix_head(socket_path: &str, path: &str) -> Result<u16, KernelError> {
         .split_whitespace()
         .nth(1)
         .and_then(|s| s.parse().ok())
-        .unwrap_or(500);
+        .ok_or_else(|| KernelError::Store("malformed HTTP status line".to_string()))?;
     Ok(status)
 }
 
@@ -193,7 +194,7 @@ fn parse_http_response(response: &[u8]) -> Result<Vec<u8>, KernelError> {
         .split_whitespace()
         .nth(1)
         .and_then(|s| s.parse().ok())
-        .unwrap_or(500);
+        .ok_or_else(|| KernelError::Store("malformed HTTP status line".to_string()))?;
 
     let body = response[header_end + 4..].to_vec();
 
@@ -205,23 +206,6 @@ fn parse_http_response(response: &[u8]) -> Result<Vec<u8>, KernelError> {
         return Err(KernelError::Store(format!("HTTP {status}: {msg}")));
     }
     Ok(body)
-}
-
-#[derive(Deserialize)]
-struct HashResponse {
-    hash: String,
-}
-
-#[derive(Deserialize)]
-struct BlobStatsResponse {
-    count: Option<usize>,
-}
-
-#[derive(Deserialize)]
-struct DecideResponse {
-    result: String,
-    #[serde(default)]
-    proved: Vec<String>,
 }
 
 impl SyncBackend for SyncHttpBackend {
@@ -267,6 +251,27 @@ impl SyncBackend for SyncHttpBackend {
         let json: BlobStatsResponse =
             serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
         Ok(json.count)
+    }
+
+    fn store_tree(&self, data: &[u8]) -> Result<O256, KernelError> {
+        let resp = self.post_bytes("/api/objects/tree", data)?;
+        let json: HashResponse =
+            serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
+        O256::from_hex(&json.hash)
+            .ok_or_else(|| KernelError::Store(format!("invalid hash: {}", json.hash)))
+    }
+
+    fn is_tree(&self, hash: &O256) -> Result<bool, KernelError> {
+        let path = format!("/api/objects/info/{hash}");
+        match self.get(&path) {
+            Ok(resp) => {
+                let json: ObjectInfoResponse = serde_json::from_slice(&resp)
+                    .map_err(|e| KernelError::Store(format!("parse: {e}")))?;
+                Ok(json.kind == "tree")
+            }
+            Err(KernelError::NotFound(_)) => Ok(false),
+            Err(e) => Err(e),
+        }
     }
 
     fn decide(&self, hash: &O256) -> Result<DecideOutput, KernelError> {

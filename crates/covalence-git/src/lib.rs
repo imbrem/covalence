@@ -18,6 +18,9 @@ pub use gix_odb;
 #[cfg(feature = "lfs")]
 pub mod lfs;
 
+#[cfg(feature = "clone")]
+pub mod clone;
+
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Hash algorithm for `hash_blob`.

@@ -1,0 +1,29 @@
+package cov:kernel;
+
+interface api {
+    /// A validated WASM core module.
+    resource module {
+        /// Validate and store a core module from raw bytes.
+        constructor(bytes: list<u8>);
+    }
+
+    /// A validated WASM component.
+    resource component {
+        /// Validate and store a component from raw bytes.
+        constructor(bytes: list<u8>);
+    }
+
+    /// A container: a validated component whose imports conform to the
+    /// kernel's expected format, ready for proving.
+    resource container {
+        /// Validate and store a container from raw component bytes.
+        constructor(bytes: list<u8>);
+    }
+
+    /// A running instance of a container (opaque for now).
+    resource instance {}
+
+    /// Prove a container by instantiating it as a nested proof scope.
+    /// Behaves as if the container were a prove-{hash} dependency.
+    prove: func(c: borrow<container>) -> instance;
+}

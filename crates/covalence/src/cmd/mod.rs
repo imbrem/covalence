@@ -3,6 +3,8 @@ use clap::Subcommand;
 #[cfg(feature = "cogit")]
 pub mod cog;
 pub mod decide;
+#[cfg(all(feature = "hol", not(target_family = "wasm")))]
+pub mod hol;
 #[cfg(feature = "lsp")]
 pub mod lsp;
 #[cfg(feature = "repl")]
@@ -15,6 +17,10 @@ pub enum Command {
     /// Cogit VCS
     #[cfg(feature = "cogit")]
     Cog(cog::CogArgs),
+
+    /// HOL Light kernel
+    #[cfg(all(feature = "hol", not(target_family = "wasm")))]
+    Hol(hol::HolArgs),
 
     /// Start the LSP server
     #[cfg(feature = "lsp")]
@@ -38,6 +44,29 @@ pub fn run_or_exit(result: eyre::Result<()>) {
     if let Err(e) = result {
         eprintln!("{e:?}");
         std::process::exit(1);
+    }
+}
+
+/// Load persisted covalence tree hashes from a GitStore's `cov_trees` table
+/// and register them with the kernel so `is_tree()` returns true.
+#[cfg(all(feature = "cogit", not(target_family = "wasm")))]
+pub fn load_git_trees(kernel: &covalence_kernel::Kernel, store_arg: Option<&str>) {
+    let db_path = match store_arg {
+        None => return, // in-memory store — no persisted trees
+        Some("") => match covalence_proto::config::default_store_path() {
+            Some(p) => p,
+            None => return,
+        },
+        Some(path) => std::path::PathBuf::from(path),
+    };
+    let git_store =
+        match covalence_git::store::GitStore::open(&db_path, covalence_git::gix_hash::Kind::Sha1) {
+            Ok(s) => s,
+            Err(_) => return, // store doesn't exist or can't be opened — skip silently
+        };
+    let hashes = git_store.cov_tree_hashes();
+    for hash in hashes {
+        kernel.register_tree(hash);
     }
 }
 

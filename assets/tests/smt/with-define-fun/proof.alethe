@@ -1,0 +1,4 @@
+(define-fun f ((x Int)) Bool (= x 0))
+(assume h1 (f 0))
+(assume h2 (not (f 0)))
+(step t1 (cl) :rule resolution :premises (h1 h2))

@@ -8,8 +8,8 @@ default = []
 fetch = ["dep:ureq"]
 
 [dependencies]
+covalence-forsp = { path = "../covalence-forsp" }
 covalence-hash = { path = "../covalence-hash", default-features = false }
-covalence-sexp = { path = "../covalence-sexp" }
 covalence-wasm = { path = "../covalence-wasm", default-features = false }
 covalence-kernel = { path = "../covalence-kernel" }
 

@@ -9,6 +9,7 @@ use covalence_kernel::{Kernel, SyncBackend};
 
 use crate::backend::parse_hash;
 use crate::component::{HashOrComponent, extract_bytes, parse_hash_or_component};
+use crate::container::Container;
 use crate::hash::O256;
 use crate::worker::{KernelTask, kernel_call, spawn_kernel_worker};
 
@@ -75,6 +76,24 @@ pub fn compile_wat(py: Python<'_>, wat: &str) -> PyResult<O256> {
     let tx = default_tx()?;
     kernel_call(py, tx, move |k| SyncBackend::store_blob(k, &wasm).map(O256))?
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+}
+
+/// Prove a container: store it, run it, and if Sat add the container's
+/// own hash to the proved set.
+#[pyfunction]
+pub fn prove<'py>(py: Python<'py>, container: &Container) -> PyResult<Bound<'py, PyAny>> {
+    let tx = default_tx()?;
+    let wasm = container.wasm_bytes().to_vec();
+    let output = kernel_call(py, tx, move |k| {
+        let h = SyncBackend::store_blob(k, &wasm)?;
+        k.prove_container(&h)
+    })?
+    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let dict = pyo3::types::PyDict::new(py);
+    dict.set_item("decision", output.decision.to_string())?;
+    let proved: Vec<String> = output.proved.iter().map(|h| h.to_string()).collect();
+    dict.set_item("proved", proved)?;
+    Ok(dict.into_any())
 }
 
 /// Decide a WASM proposition. Accepts O256, hex string, or Component.

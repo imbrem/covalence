@@ -1,11 +1,10 @@
+#![cfg(feature = "drat")]
 //! Integration tests for the DIMACS/DRAT parsers, loading shared test asset files.
 
 use std::path::PathBuf;
 
 use covalence_sat::{
-    Decision, DratProof, Model, NaiveDratChecker, Solver,
-    advised::{self, DratChecker, NaiveMultiDratChecker},
-    check_proof,
+    Decision, DratProof, Model, NaiveDratChecker, Solver, WatchedDratChecker, check_proof,
     parse::{
         parse_dimacs, parse_drat_binary, parse_drat_text, write_dimacs_to_string,
         write_drat_binary_to_vec, write_drat_text_to_string,
@@ -277,13 +276,17 @@ fn varisat_confirms_unsat_then_drat_verifies() {
             "{problem}: expected Unsat, got {err:?}"
         );
 
-        // DRAT proof independently verifies (RAT-capable checker).
+        // DRAT proof independently verifies (both checkers support RAT).
         let proof = load_drat(problem);
-        let mut checker = NaiveMultiDratChecker::new();
-        let fid = checker.create(&cnf);
+        let mut naive = NaiveDratChecker::new(&cnf);
         assert!(
-            advised::check(&mut checker, fid, &proof),
-            "{problem}: DRAT verification failed"
+            check_proof(&mut naive, &proof),
+            "{problem}: NaiveDratChecker verification failed"
+        );
+        let mut watched = WatchedDratChecker::new(&cnf);
+        assert!(
+            check_proof(&mut watched, &proof),
+            "{problem}: WatchedDratChecker verification failed"
         );
     }
 }
@@ -405,48 +408,53 @@ fn uuf_50_2_structure() {
 // RAT-capable verification through all drat-trim examples
 // --------------------------------------------------------------------
 
-/// Verify a proof using the RAT-capable NaiveMultiDratChecker.
-fn verify_all(problem: &str) {
+/// Verify a proof using both NaiveDratChecker and WatchedDratChecker.
+fn verify_both(problem: &str) {
     let cnf = load_cnf(problem);
     let proof = load_drat(problem);
 
-    let mut checker = NaiveMultiDratChecker::new();
-    let fid = checker.create(&cnf);
+    let mut naive = NaiveDratChecker::new(&cnf);
     assert!(
-        advised::check(&mut checker, fid, &proof),
-        "{problem}: verification failed"
+        check_proof(&mut naive, &proof),
+        "{problem}: NaiveDratChecker verification failed"
+    );
+
+    let mut watched = WatchedDratChecker::new(&cnf);
+    assert!(
+        check_proof(&mut watched, &proof),
+        "{problem}: WatchedDratChecker verification failed"
     );
 }
 
 #[test]
 fn all_checkers_example_schur() {
-    verify_all("example-Schur");
+    verify_both("example-Schur");
 }
 
 #[test]
 fn all_checkers_uuf_30_1() {
-    verify_all("uuf-30-1");
+    verify_both("uuf-30-1");
 }
 
 #[test]
 fn all_checkers_uuf_50_2() {
-    verify_all("uuf-50-2");
+    verify_both("uuf-50-2");
 }
 
 #[test]
 fn all_checkers_example_4_vars() {
-    verify_all("example-4-vars");
+    verify_both("example-4-vars");
 }
 
 #[test]
 fn all_checkers_example_5_vars() {
-    verify_all("example-5-vars");
+    verify_both("example-5-vars");
 }
 
 #[test]
 fn all_checkers_existing_proofs() {
     for problem in &["trivial-unsat", "three-clause-unsat", "four-clause-unsat"] {
-        verify_all(problem);
+        verify_both(problem);
     }
 }
 
@@ -469,13 +477,17 @@ fn drat_trim_binary_roundtrip() {
             .unwrap_or_else(|e| panic!("{problem} binary roundtrip parse failed: {e}"));
         assert_eq!(proof, proof2, "{problem} binary roundtrip mismatch");
 
-        // Also verify the binary-parsed proof.
+        // Also verify the binary-parsed proof with both checkers.
         let cnf = load_cnf(problem);
-        let mut checker = NaiveMultiDratChecker::new();
-        let fid = checker.create(&cnf);
+        let mut naive = NaiveDratChecker::new(&cnf);
         assert!(
-            advised::check(&mut checker, fid, &proof2),
-            "{problem}: binary-parsed proof failed verification"
+            check_proof(&mut naive, &proof2),
+            "{problem}: NaiveDratChecker binary-parsed proof failed verification"
+        );
+        let mut watched = WatchedDratChecker::new(&cnf);
+        assert!(
+            check_proof(&mut watched, &proof2),
+            "{problem}: WatchedDratChecker binary-parsed proof failed verification"
         );
     }
 }

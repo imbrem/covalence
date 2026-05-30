@@ -1,0 +1,9 @@
+[package]
+name = "covalence-metamath"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+covalence-types = { path = "../covalence-types" }
+indexmap = "2"
+thiserror = "2"

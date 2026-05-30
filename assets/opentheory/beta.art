@@ -1,0 +1,98 @@
+# beta.art — proves |- (\x. x) x = x  (where x : bool)
+#
+# betaConv((\x. x) x) gives |- (\x. x) x = x
+
+# --- build bool type ---
+"bool"
+typeOp
+nil
+opType
+0
+def
+pop
+
+# --- build variable x : bool ---
+"x"
+0
+ref
+var
+1
+def
+varTerm
+2
+def
+pop
+
+# --- build (\x. x) ---
+1
+ref
+2
+ref
+absTerm
+3
+def
+pop
+
+# --- build (\x. x) x ---
+3
+ref
+2
+ref
+appTerm
+
+# --- betaConv gives |- (\x. x) x = x ---
+betaConv
+
+# --- export: thm(theorem, hyps=[], concl = (\x.x) x = x) ---
+nil
+
+# Build expected conclusion: (= ((\x.x) x)) x
+# eq type: bool -> bool -> bool
+"->"
+typeOp
+0
+ref
+0
+ref
+nil
+cons
+cons
+opType
+4
+def
+pop
+
+"->"
+typeOp
+0
+ref
+4
+ref
+nil
+cons
+cons
+opType
+5
+def
+pop
+
+"="
+const
+5
+ref
+constTerm
+
+# (= ((\x.x) x))
+3
+ref
+2
+ref
+appTerm
+appTerm
+
+# ((= ((\x.x) x)) x)
+2
+ref
+appTerm
+
+thm

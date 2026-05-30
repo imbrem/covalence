@@ -19,6 +19,9 @@ bun run code:browser       # build WASM + launch web VSCode (always WASM)
 bun run code:desktop       # full build + launch desktop VSCode (native if available, else WASM)
 cargo check                # check Rust crates
 cargo test                 # run Rust tests
+bun test                   # run all tests (Rust + Python)
+bun run test:python        # run Python tests only
+bun run build:python       # build Python extension (maturin develop)
 ```
 
 ### Running the web server
@@ -55,23 +58,39 @@ Detailed architecture and subsystem documentation is available as Claude-only sk
 
 ## Pull Request Checklist
 
-- Run `cargo fmt --all` before creating a PR to ensure consistent formatting.
+- Run `bun test` to execute all tests (Rust + Python). The test runner handles venv activation automatically, including in git worktrees.
 
 ## Wrapper Crates
 
 Several `covalence-*` crates exist to wrap external dependencies. All usage of the underlying library should go through the wrapper crate, never import the dependency directly:
 
-- **covalence-wasm** — wraps `wasmtime`, `wat`, `wasmparser`, `wasmprinter`. Re-exports `wasmtime` via `covalence_wasm::engine::wasmtime`. Will grow custom WASM helpers over time.
-- **covalence-hash** — wraps `blake3` and provides the `O256` content-addressed hash type.
-- **covalence-sqlite** — wraps `rusqlite`. Provides `SqliteStore` implementing `ContentStore`.
-- **covalence-git** — wraps `sha1`, `sha2` for git-compatible hashing. Provides `hash_blob` CLI utility.
+- **covalence-wasm** — wraps `wat`, `wasmparser`, `wasmprinter`, `wasm-encoder`, and optionally `wasmtime` (behind the `runtime` feature). Re-exports `wasmtime` via `covalence_wasm::engine::wasmtime`. Provides `ModuleBuilder` for programmatic WASM construction and `Val`/`ValType` component model types.
+- **covalence-hash** — wraps `blake3`, `sha2`, and optionally `gix-hash` (default `git` feature). Provides the `O256` content-addressed hash type, `HashCtx` trait with multiple hashing contexts (BLAKE3, SHA-256, git), `ContentHash`/`ContentId` traits, and `CovRoot` for domain-separated hashing.
+- **covalence-sqlite** — wraps `rusqlite`. Provides `open()` and `open_memory()` helpers with recommended SQLite pragmas (WAL mode, NORMAL sync, busy timeout).
+- **covalence-git** — git-compatible object storage and hashing. Provides `hash_blob` utility, loose/odb object store backends, and Git LFS support. Depends on `covalence-hash` for hashing.
 - **covalence-rand** — wraps `rand` (latest). All randomness usage should go through this crate.
 - **covalence-sig** — wraps `ed25519-dalek` for EdDSA signatures. Also re-exports a pinned `rand_core` 0.6 as `dalek_rand_core` (exception to the `covalence-rand` rule, required for `ed25519-dalek` compatibility).
 - **covalence-parse** — wraps `winnow` for parser combinators. Provides `leb128` module for unsigned LEB128 (varint) encoding/decoding.
 - **covalence-sexp** — S-expression parser with event-based architecture and dialect support. Parametric `SExp<A>` type generic over atom type; default `SExpr = SExp<Atom>` where `Atom` is `Symbol(SmolStr)` or `Str { format: SmolStr, bytes: Bytes }`. Three layers: `SExpVisitor` (SAX-style events + dialect config), `SExpBuilder`/`TreeBuilder` (bottom-up tree construction), and `SExp` (concrete type). Unified string body parser: all strings produce `(format, bytes)` — bare `"..."` has format="" and any atom before `"` becomes a format prefix (e.g. `b"..."` → format="b", `json"..."` → format="json"). Quoted symbols `|...|` fold into `Atom::Symbol`. Three dialects: `CovalenceDialect` (default — `;;` line comments, `(; ;)` block comments, `|...|` quoted symbols), `SmtLibDialect` (`;` line comments, `|...|`), `WatDialect` (`;;`/`(; ;)` comments, no `|...|`). API: `parse()` (Covalence), `parse_smt()` (SMT-LIB), `parse_wat()` (WAT), `parse_with()` (generic). `SExp::map()`/`map_ref()` for atom type transformation.
 - **covalence-types** — shared types used across the ecosystem (e.g. `Decision`).
-- **covalence-sat** — SAT formulas, DIMACS, DRAT proofs, solver traits. Depends on `covalence-types`.
+- **covalence-sat** — SAT formulas, DIMACS, DRAT proofs, solver traits. Depends on `covalence-types`, `covalence-parse`. Optional `wasm` feature adds `covalence-wasm`.
 - **covalence-smt** — SMT-LIB2 terms, theories, Alethe proofs. Depends on `covalence-types`, `covalence-sat`, `covalence-sexp`.
+- **covalence-num** — wraps `num-bigint`, `num-traits`, `num-integer`. Provides `Nat` (non-negative) and `Int` (signed) arbitrary-precision integer types, `Sign` enum, and `NatConvertError`. Subtraction on `Nat` saturates to zero; use `checked_sub` for the fallible path.
+
+## Core Crates
+
+The following crates provide the main application functionality:
+
+- **covalence-store** — content-addressed blob store. Provides `ContentStore` trait, `BlobStore`, `TaggedStore`/`TaggedBlobStore`, `ObjectStore`/`KeyedObjectStore`, `GitPrefixStore`, `SharedMemoryStore`, `KvStore`, and `SqliteStore` (behind the `sqlite` feature, depends on `covalence-sqlite`).
+- **covalence-object** — object serialization. Provides `Dir`/`DirBuilder` (directory structures with mode, name, child), `Table`/`TableBuilder` (row-based tables with LEB128 encoding), and git tree format conversion.
+- **covalence-kernel** — execution kernel with WASM engine integration, store, and optional signature verification.
+- **covalence-repl** — S-expression REPL with kernel integration.
+- **covalence-serve** — HTTP/WebSocket server (axum 0.8) with REST API, REPL WebSocket, and optional static file embedding.
+- **covalence-client** — remote kernel client (sync via ureq, async via hyper).
+- **covalence-lsp** — language server using `lsp-server` 0.7 + `lsp-types` 0.97.
+- **covalence-proto** — service discovery and configuration (Unix sockets, JSON descriptors).
+- **covalence-python** — Python bindings via PyO3 0.28.
+- **covalence** — CLI binary (`cov`) using clap 4 + color-eyre.
 
 This ensures dependencies are centralized and can be extended with project-specific functionality without touching every consumer.
 

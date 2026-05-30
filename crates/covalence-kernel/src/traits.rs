@@ -22,6 +22,11 @@ pub struct DecideOutput {
     pub proved: Vec<O256>,
 }
 
+/// Evaluates propositions and produces decisions.
+pub trait Evaluator<S>: Send + Sync {
+    fn decide(&self, bytes: &[u8], store: &S) -> Result<DecideOutput, KernelError>;
+}
+
 /// Information about a backend.
 pub struct BackendInfo {
     /// "local" or "http"
@@ -38,6 +43,17 @@ pub trait SyncBackend: Send {
     fn has_blob(&self, hash: &O256) -> Result<bool, KernelError>;
     fn blob_count(&self) -> Result<Option<usize>, KernelError>;
     fn decide(&self, hash: &O256) -> Result<DecideOutput, KernelError>;
+
+    /// Store tree data, returning a tree-tagged hash.
+    fn store_tree(&self, data: &[u8]) -> Result<O256, KernelError> {
+        self.store_blob(data)
+    }
+
+    /// Check whether a hash refers to a tree.
+    fn is_tree(&self, hash: &O256) -> Result<bool, KernelError> {
+        let _ = hash;
+        Ok(false)
+    }
 }
 
 /// Asynchronous backend trait — NOT dyn-compatible (uses native async fn).
@@ -50,4 +66,15 @@ pub trait AsyncBackend: Send + Sync {
     async fn has_blob(&self, hash: &O256) -> Result<bool, KernelError>;
     async fn blob_count(&self) -> Result<Option<usize>, KernelError>;
     async fn decide(&self, hash: &O256) -> Result<DecideOutput, KernelError>;
+
+    /// Store tree data, returning a tree-tagged hash.
+    async fn store_tree(&self, data: &[u8]) -> Result<O256, KernelError> {
+        self.store_blob(data).await
+    }
+
+    /// Check whether a hash refers to a tree.
+    async fn is_tree(&self, hash: &O256) -> Result<bool, KernelError> {
+        let _ = hash;
+        Ok(false)
+    }
 }

@@ -42,7 +42,7 @@ pub trait HashCtx {
 
 /// A 256-bit value — either a content-addressed hash or a random identifier.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct O256([u8; 32]);
+pub struct O256(pub(crate) [u8; 32]);
 
 impl hash::Hash for O256 {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {

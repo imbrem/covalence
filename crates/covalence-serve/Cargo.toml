@@ -21,7 +21,8 @@ thiserror = "2"
 tracing = "0.1"
 covalence-git = { path = "../covalence-git" }
 covalence-hash = { path = "../covalence-hash", default-features = false }
-covalence-store = { path = "../covalence-store" }
+covalence-object = { path = "../covalence-object" }
+covalence-store = { path = "../covalence-store", features = ["memory"] }
 covalence-kernel = { path = "../covalence-kernel", features = ["engine"] }
 covalence-repl = { path = "../covalence-repl" }
 covalence-proto = { path = "../covalence-proto", features = ["discovery"] }

@@ -8,6 +8,7 @@ use covalence_kernel::{Kernel, SyncBackend};
 use covalence_store::BlobStore;
 
 use crate::component::{HashOrComponent, extract_bytes, parse_hash_or_component};
+use crate::container::Container;
 use crate::hash::O256;
 use crate::store::Store;
 use crate::worker::{KernelTask, kernel_call, spawn_kernel_worker};
@@ -109,6 +110,22 @@ impl Backend {
                 SyncBackend::decide(k, &h)
             })?,
         }
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let dict = pyo3::types::PyDict::new(py);
+        dict.set_item("decision", output.decision.to_string())?;
+        let proved: Vec<String> = output.proved.iter().map(|h| h.to_string()).collect();
+        dict.set_item("proved", proved)?;
+        Ok(dict.into_any())
+    }
+
+    /// Prove a container: store it, run it, and if Sat add the container's
+    /// own hash to the proved set. Accepts a Container.
+    fn prove<'py>(&self, py: Python<'py>, container: &Container) -> PyResult<Bound<'py, PyAny>> {
+        let wasm = container.wasm_bytes().to_vec();
+        let output = kernel_call(py, &self.tx, move |k| {
+            let h = SyncBackend::store_blob(k, &wasm)?;
+            k.prove_container(&h)
+        })?
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         let dict = pyo3::types::PyDict::new(py);
         dict.set_item("decision", output.decision.to_string())?;

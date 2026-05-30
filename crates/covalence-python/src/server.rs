@@ -91,11 +91,15 @@ pub fn serve(port: u16, store: Option<&str>) -> PyResult<Server> {
             let actual_port = tcp.local_addr().unwrap().port();
             let _ = port_tx.send(Ok(actual_port));
 
+            let tagged_store = covalence_serve::new_tagged_store();
+            let object_store = covalence_store::GitTaggedObjectStore::new(tagged_store.clone());
             let state = covalence_serve::AppState {
                 version: "python",
                 target: "covalence-python",
                 started: std::time::Instant::now(),
                 kernel,
+                tagged_store,
+                object_store,
             };
 
             let app = covalence_serve::build_router(state, true);

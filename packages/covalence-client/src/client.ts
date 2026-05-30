@@ -6,6 +6,8 @@ import type {
   HashResponse,
   BlobStatsResponse,
   DecideResponse,
+  ObjectInfoResponse,
+  TreeEntry,
 } from './types.js';
 
 export interface CovalenceClientOptions {
@@ -71,6 +73,26 @@ export class CovalenceClient {
 
   async decide(hash: Hash): Promise<DecideResponse> {
     return this.fetchJson<DecideResponse>(`/api/decide/${hash}`);
+  }
+
+  // --- Objects ---
+
+  async objectInfo(hash: Hash): Promise<ObjectInfoResponse | null> {
+    const res = await this.fetch(`${this.baseUrl}/api/objects/info/${hash}`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new CovalenceError(res.status, `${res.status} ${res.statusText}`);
+    return res.json();
+  }
+
+  async treeLs(hash: Hash): Promise<TreeEntry[]> {
+    return this.fetchJson<TreeEntry[]>(`/api/objects/tree/${hash}/ls`);
+  }
+
+  async getObjectBlob(hash: Hash): Promise<Uint8Array | null> {
+    const res = await this.fetch(`${this.baseUrl}/api/objects/blob/${hash}`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new CovalenceError(res.status, `${res.status} ${res.statusText}`);
+    return new Uint8Array(await res.arrayBuffer());
   }
 
   // --- Convenience ---

@@ -29,11 +29,33 @@ impl DirMode {
 
     /// Compute the O256 mode ref for use in directory hashing.
     /// Key = O256::blob("GIT_MODE"), data = mode LE bytes.
+    ///
+    /// Results for the five known modes are cached as statics to avoid
+    /// re-deriving the BLAKE3 keyed hash on every call.
     pub fn mode_ref(self) -> O256 {
-        let key = O256::blob("GIT_MODE");
-        let mut hasher = covalence_hash::blake3::Hasher::new_keyed(key.as_bytes());
-        hasher.update(&self.0.to_le_bytes());
-        O256::from_bytes(*hasher.finalize().as_bytes())
+        use std::sync::LazyLock;
+
+        fn compute(mode: u16) -> O256 {
+            let key = O256::blob("GIT_MODE");
+            let mut hasher = covalence_hash::blake3::Hasher::new_keyed(key.as_bytes());
+            hasher.update(&mode.to_le_bytes());
+            O256::from_bytes(*hasher.finalize().as_bytes())
+        }
+
+        static REGULAR: LazyLock<O256> = LazyLock::new(|| compute(DirMode::REGULAR.0));
+        static EXECUTABLE: LazyLock<O256> = LazyLock::new(|| compute(DirMode::EXECUTABLE.0));
+        static SYMLINK: LazyLock<O256> = LazyLock::new(|| compute(DirMode::SYMLINK.0));
+        static DIR: LazyLock<O256> = LazyLock::new(|| compute(DirMode::DIR.0));
+        static SUBMODULE: LazyLock<O256> = LazyLock::new(|| compute(DirMode::SUBMODULE.0));
+
+        match self {
+            Self::REGULAR => *REGULAR,
+            Self::EXECUTABLE => *EXECUTABLE,
+            Self::SYMLINK => *SYMLINK,
+            Self::DIR => *DIR,
+            Self::SUBMODULE => *SUBMODULE,
+            _ => compute(self.0),
+        }
     }
 
     /// Parse a git tree mode string (e.g. `b"100644"`) into a `DirMode`.
@@ -275,6 +297,16 @@ impl RowCodec for Dir {
 }
 
 impl Table<Dir> {
+    /// Compute the canonical directory hash from the table's sorted entries.
+    pub fn dir_hash(&self) -> O256 {
+        let n = self.num_entries();
+        let mut rows = Vec::with_capacity(n);
+        for i in 0..n {
+            rows.push(self.row(i).expect("valid row in freshly built table"));
+        }
+        dir_hash(&rows)
+    }
+
     /// Look up a directory entry by name (binary search, O(log n)).
     ///
     /// Relies on [`Dir::prepare`] having sorted rows by name.

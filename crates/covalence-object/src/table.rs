@@ -102,6 +102,8 @@ pub enum TableError {
     BadOffsetWidth(u8),
     #[error("invalid git tree: {0}")]
     InvalidGitTree(String),
+    #[error("invalid git commit: {0}")]
+    InvalidGitCommit(String),
     #[error("schema mismatch: expected {expected} fields, got {got}")]
     SchemaMismatch { expected: usize, got: usize },
 }

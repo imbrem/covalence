@@ -1,0 +1,526 @@
+use covalence_hash::O256;
+
+use super::*;
+
+// --- test foreign prims ---
+
+struct TestIO {
+    output: String,
+}
+
+impl TestIO {
+    fn new() -> Self {
+        TestIO {
+            output: String::new(),
+        }
+    }
+}
+
+impl ForeignPrims for TestIO {
+    fn call(&mut self, name: &str, ctx: &mut FCtx<'_>) -> Result<bool, FError> {
+        match name {
+            "print" => {
+                let val = ctx.try_pop()?;
+                let s = ctx.show(val);
+                self.output.push_str(&s);
+                self.output.push('\n');
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+}
+
+// --- parsing & printing ---
+
+#[test]
+fn parse_atom() {
+    let mut f = Forsp::new();
+    let v = f.read_one("hello").unwrap();
+    assert_eq!(f.show(v), "hello");
+}
+
+#[test]
+fn parse_int() {
+    let mut f = Forsp::new();
+    let v = f.read_one("42").unwrap();
+    assert_eq!(f.show(v), "42");
+}
+
+#[test]
+fn parse_negative_int() {
+    let mut f = Forsp::new();
+    let v = f.read_one("-7").unwrap();
+    assert_eq!(f.show(v), "-7");
+}
+
+#[test]
+fn parse_list() {
+    let mut f = Forsp::new();
+    let v = f.read_one("(a b c)").unwrap();
+    assert_eq!(f.show(v), "(a b c)");
+}
+
+#[test]
+fn parse_nested_list() {
+    let mut f = Forsp::new();
+    let v = f.read_one("(a (b c) d)").unwrap();
+    assert_eq!(f.show(v), "(a (b c) d)");
+}
+
+#[test]
+fn parse_empty_list() {
+    let mut f = Forsp::new();
+    let v = f.read_one("()").unwrap();
+    assert!(v.is_nil());
+    assert_eq!(f.show(v), "()");
+}
+
+#[test]
+fn parse_improper_list() {
+    let mut f = Forsp::new();
+    let v = f.read_one("(a . b)").unwrap();
+    assert_eq!(f.heap.tag(v), Tag::Cons);
+    assert_eq!(f.show(v), "(a . b)");
+}
+
+#[test]
+fn sugar_splice_in_body() {
+    let mut f = Forsp::new();
+    let v = f.read("$x").unwrap();
+    assert_eq!(f.show(v), "(quote x pop)");
+}
+
+#[test]
+fn sugar_push_in_body() {
+    let mut f = Forsp::new();
+    let v = f.read("^x").unwrap();
+    assert_eq!(f.show(v), "(quote x push)");
+}
+
+#[test]
+fn sugar_quote_in_body() {
+    let mut f = Forsp::new();
+    let v = f.read("'x").unwrap();
+    assert_eq!(f.show(v), "(quote x)");
+}
+
+#[test]
+fn sugar_in_list() {
+    let mut f = Forsp::new();
+    let v = f.read_one("($x $y ^x)").unwrap();
+    assert_eq!(f.show(v), "(quote x pop quote y pop quote x push)");
+}
+
+#[test]
+fn sugar_quote_list() {
+    let mut f = Forsp::new();
+    let v = f.read("'(a b)").unwrap();
+    assert_eq!(f.show(v), "(quote (a b))");
+}
+
+#[test]
+fn comment_skipping() {
+    let mut f = Forsp::new();
+    let v = f.read("; comment\nhello").unwrap();
+    assert_eq!(f.show(v), "(hello)");
+}
+
+// --- evaluator ---
+
+#[test]
+fn push_int() {
+    let mut f = Forsp::new();
+    f.run("42").unwrap();
+    assert_eq!(f.pop_int(), 42);
+}
+
+#[test]
+fn basic_arithmetic() {
+    let mut f = Forsp::new();
+    f.run("3 4 +").unwrap();
+    assert_eq!(f.pop_int(), 7);
+}
+
+#[test]
+fn subtraction() {
+    let mut f = Forsp::new();
+    f.run("10 3 -").unwrap();
+    assert_eq!(f.pop_int(), 7);
+}
+
+#[test]
+fn multiplication() {
+    let mut f = Forsp::new();
+    f.run("6 7 *").unwrap();
+    assert_eq!(f.pop_int(), 42);
+}
+
+#[test]
+fn variable_binding() {
+    let mut f = Forsp::new();
+    f.run("42 $x ^x").unwrap();
+    assert_eq!(f.pop_int(), 42);
+}
+
+#[test]
+fn closure_force() {
+    let mut f = Forsp::new();
+    f.run("(42) force").unwrap();
+    assert_eq!(f.pop_int(), 42);
+}
+
+#[test]
+fn closure_with_binding() {
+    let mut f = Forsp::new();
+    f.run("($x ^x 1 +) $inc  10 inc").unwrap();
+    assert_eq!(f.pop_int(), 11);
+}
+
+#[test]
+fn church_true() {
+    let mut f = Forsp::new();
+    f.run("($x $y ^x) $true  1 2 true").unwrap();
+    assert_eq!(f.pop_int(), 2);
+}
+
+#[test]
+fn church_false() {
+    let mut f = Forsp::new();
+    f.run("($x $y ^y) $false  1 2 false").unwrap();
+    assert_eq!(f.pop_int(), 1);
+}
+
+#[test]
+fn cons_car_cdr() {
+    let mut f = Forsp::new();
+    f.run("2 1 cons $pair  ^pair car  ^pair cdr").unwrap();
+    assert_eq!(f.pop_int(), 2);
+    assert_eq!(f.pop_int(), 1);
+}
+
+#[test]
+fn eq_same() {
+    let mut f = Forsp::new();
+    f.run("'a 'a eq").unwrap();
+    assert_eq!(f.pop_atom(), "t");
+}
+
+#[test]
+fn eq_different() {
+    let mut f = Forsp::new();
+    f.run("'a 'b eq").unwrap();
+    assert!(f.pop().is_nil());
+}
+
+#[test]
+fn cswap_nil_swaps() {
+    let mut f = Forsp::new();
+    f.run("1 2 '() cswap").unwrap();
+    assert_eq!(f.pop_int(), 1);
+    assert_eq!(f.pop_int(), 2);
+}
+
+#[test]
+fn cswap_nonnil_no_swap() {
+    let mut f = Forsp::new();
+    f.run("1 2 't cswap").unwrap();
+    assert_eq!(f.pop_int(), 2);
+    assert_eq!(f.pop_int(), 1);
+}
+
+#[test]
+fn tag_int() {
+    let mut f = Forsp::new();
+    f.run("42 tag").unwrap();
+    assert_eq!(f.pop_atom(), "num");
+    assert_eq!(f.pop_int(), 42);
+}
+
+#[test]
+fn lexical_scoping() {
+    let mut f = Forsp::new();
+    f.run("1 $x  ($x 2 $x ^x) $f  99 f  ^x").unwrap();
+    let outer_x = f.pop_int();
+    let inner_x = f.pop_int();
+    assert_eq!(inner_x, 2);
+    assert_eq!(outer_x, 1);
+}
+
+#[test]
+fn if_true_branch() {
+    let mut f = Forsp::new();
+    f.run(
+        "
+        ($a $b ^a) $nip
+        ($cond $else $then ^else ^then ^cond cswap nip force) $if
+        (10) (20) 't if
+    ",
+    )
+    .unwrap();
+    assert_eq!(f.pop_int(), 10);
+}
+
+#[test]
+fn if_false_branch() {
+    let mut f = Forsp::new();
+    f.run(
+        "
+        ($a $b ^a) $nip
+        ($cond $else $then ^else ^then ^cond cswap nip force) $if
+        (10) (20) '() if
+    ",
+    )
+    .unwrap();
+    assert_eq!(f.pop_int(), 20);
+}
+
+#[test]
+fn recursive_factorial() {
+    let mut f = Forsp::new();
+    f.run(
+        "
+        ($a $b ^a) $nip
+        ($cond $else $then ^else ^then ^cond cswap nip force) $if
+
+        ($self $n
+            (1)
+            (^n  ^n 1 - ^self ^self force  *)
+            ^n 1 eq
+            if
+        ) $fact-impl
+
+        ($n ^n ^fact-impl ^fact-impl force) $fact
+
+        5 fact
+    ",
+    )
+    .unwrap();
+    assert_eq!(f.pop_int(), 120);
+}
+
+#[test]
+fn stack_introspection() {
+    let mut f = Forsp::new();
+    f.run("1 2 3 stack").unwrap();
+    let s = f.pop();
+    assert_eq!(f.show(s), "(3 2 1)");
+}
+
+#[test]
+fn nested_closures() {
+    let mut f = Forsp::new();
+    f.run(
+        "
+        ($n ($x ^x ^n +)) $make-adder
+        5 make-adder $add5
+        10 add5 force
+    ",
+    )
+    .unwrap();
+    assert_eq!(f.pop_int(), 15);
+}
+
+#[test]
+fn roundtrip_show_read() {
+    let mut f = Forsp::new();
+    let original = "(a (b 42) c)";
+    let v = f.read_one(original).unwrap();
+    assert_eq!(f.show(v), original);
+}
+
+#[test]
+fn improper_list_roundtrip() {
+    let mut f = Forsp::new();
+    let v = f.read_one("(1 2 . 3)").unwrap();
+    assert_eq!(f.show(v), "(1 2 . 3)");
+}
+
+// --- error cases ---
+
+#[test]
+fn error_stack_underflow() {
+    let mut f = Forsp::new();
+    let err = f.run("+").unwrap_err();
+    assert!(matches!(err, FError::StackUnderflow));
+}
+
+#[test]
+fn error_unbound_variable() {
+    let mut f = Forsp::new();
+    let err = f.run("nonexistent").unwrap_err();
+    assert!(matches!(err, FError::Unbound(_)));
+}
+
+#[test]
+fn error_type_mismatch() {
+    let mut f = Forsp::new();
+    let err = f.run("'a 'b +").unwrap_err();
+    assert!(matches!(err, FError::Type { .. }));
+}
+
+#[test]
+fn error_dangling_quote() {
+    let mut f = Forsp::new();
+    let err = f.run("quote").unwrap_err();
+    assert!(matches!(err, FError::DanglingQuote));
+}
+
+// --- foreign prims ---
+
+#[test]
+fn foreign_print() {
+    let mut f = Forsp::new_with(TestIO::new());
+    f.run("42 print").unwrap();
+    assert_eq!(f.foreign.output.trim(), "42");
+}
+
+#[test]
+fn foreign_print_list() {
+    let mut f = Forsp::new_with(TestIO::new());
+    f.run("'(1 2 3) print").unwrap();
+    assert_eq!(f.foreign.output.trim(), "(1 2 3)");
+}
+
+#[test]
+fn foreign_multiple_prints() {
+    let mut f = Forsp::new_with(TestIO::new());
+    f.run("1 print 2 print 3 print").unwrap();
+    assert_eq!(f.foreign.output, "1\n2\n3\n");
+}
+
+#[test]
+fn foreign_unknown_returns_unbound() {
+    let mut f = Forsp::new_with(TestIO::new());
+    let err = f.run("nonexistent").unwrap_err();
+    assert!(matches!(err, FError::Unbound(_)));
+}
+
+#[test]
+fn env_overrides_foreign() {
+    // Symbol definitions take precedence over foreign prims.
+    let mut f = Forsp::new_with(TestIO::new());
+    // Define `print` as a no-op that just drops the value.
+    f.run("($x) $print  42 print").unwrap();
+    // Our foreign print was NOT called.
+    assert_eq!(f.foreign.output, "");
+}
+
+#[test]
+fn foreign_in_closure() {
+    let mut f = Forsp::new_with(TestIO::new());
+    f.run("($x ^x print) $show  42 show").unwrap();
+    assert_eq!(f.foreign.output.trim(), "42");
+}
+
+// --- Hash and Blob types ---
+
+#[test]
+fn hash_self_eval() {
+    let mut f = Forsp::new();
+    let h = O256::blob(b"hello");
+    let v = f.heap.hash(h);
+    f.push(v);
+    // Hash values are self-evaluating — they should survive eval.
+    assert_eq!(f.heap.tag(f.try_peek().unwrap()), Tag::Hash);
+    assert_eq!(f.pop_hash(), h);
+}
+
+#[test]
+fn hash_parse_hex() {
+    let mut f = Forsp::new();
+    let h = O256::blob(b"hello");
+    let hex = h.to_string();
+    let v = f.read_one(&hex).unwrap();
+    assert_eq!(f.heap.tag(v), Tag::Hash);
+    assert_eq!(f.heap.as_hash(v), h);
+}
+
+#[test]
+fn hash_roundtrip() {
+    let mut f = Forsp::new();
+    let h = O256::blob(b"test");
+    let v = f.heap.hash(h);
+    let shown = f.show(v);
+    assert_eq!(shown, h.to_string());
+}
+
+#[test]
+fn hash_equality() {
+    let mut f = Forsp::new();
+    let h = O256::blob(b"hello");
+    let hex = h.to_string();
+    // Push two copies via parsing and test eq.
+    f.run(&format!("{hex} {hex} eq")).unwrap();
+    assert_eq!(f.pop_atom(), "t");
+}
+
+#[test]
+fn hash_inequality() {
+    let mut f = Forsp::new();
+    let h1 = O256::blob(b"hello");
+    let h2 = O256::blob(b"world");
+    f.run(&format!("{h1} {h2} eq")).unwrap();
+    assert!(f.pop().is_nil());
+}
+
+#[test]
+fn hash_tag() {
+    let mut f = Forsp::new();
+    let h = O256::blob(b"hello");
+    let hex = h.to_string();
+    f.run(&format!("{hex} tag")).unwrap();
+    assert_eq!(f.pop_atom(), "hash");
+}
+
+#[test]
+fn blob_from_string() {
+    let mut f = Forsp::new();
+    let v = f.read_one("\"hello\"").unwrap();
+    assert_eq!(f.heap.tag(v), Tag::Blob);
+    assert_eq!(f.heap.as_blob(v), b"hello");
+}
+
+#[test]
+fn blob_self_eval() {
+    let mut f = Forsp::new();
+    f.run("\"hello\"").unwrap();
+    assert_eq!(f.heap.tag(f.try_peek().unwrap()), Tag::Blob);
+    assert_eq!(f.pop_blob(), b"hello");
+}
+
+#[test]
+fn blob_equality() {
+    let mut f = Forsp::new();
+    f.run("\"hello\" \"hello\" eq").unwrap();
+    assert_eq!(f.pop_atom(), "t");
+}
+
+#[test]
+fn blob_inequality() {
+    let mut f = Forsp::new();
+    f.run("\"hello\" \"world\" eq").unwrap();
+    assert!(f.pop().is_nil());
+}
+
+#[test]
+fn blob_tag() {
+    let mut f = Forsp::new();
+    f.run("\"hello\" tag").unwrap();
+    assert_eq!(f.pop_atom(), "blob");
+}
+
+#[test]
+fn blob_in_foreign_print() {
+    let mut f = Forsp::new_with(TestIO::new());
+    f.run("\"hello\" print").unwrap();
+    assert_eq!(f.foreign.output.trim(), "\"hello\"");
+}
+
+#[test]
+fn hash_in_foreign_print() {
+    let mut f = Forsp::new_with(TestIO::new());
+    let h = O256::blob(b"hello");
+    f.run(&format!("{h} print")).unwrap();
+    assert_eq!(f.foreign.output.trim(), &h.to_string());
+}

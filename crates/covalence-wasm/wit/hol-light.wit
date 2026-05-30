@@ -1,0 +1,51 @@
+package cov:hol;
+
+interface kernel {
+    resource hol-type {
+        to-bytes: func() -> list<u8>;
+        eq: func(other: borrow<hol-type>) -> bool;
+    }
+
+    resource term {
+        to-bytes: func() -> list<u8>;
+        eq: func(other: borrow<term>) -> bool;
+        type-of: func() -> hol-type;
+    }
+
+    resource thm {
+        hyps: func() -> list<term>;
+        concl: func() -> term;
+    }
+
+    // Type constructors
+    tyvar: func(name: string) -> hol-type;
+    tyapp: func(name: string, args: list<borrow<hol-type>>) -> hol-type;
+    bool-type: func() -> hol-type;
+    fun-type: func(domain: borrow<hol-type>, codomain: borrow<hol-type>) -> hol-type;
+
+    // Term constructors
+    mk-var: func(name: string, ty: borrow<hol-type>) -> term;
+    mk-const: func(name: string, ty: borrow<hol-type>) -> term;
+    mk-comb: func(f: borrow<term>, x: borrow<term>) -> term;
+    mk-abs: func(var: borrow<term>, body: borrow<term>) -> term;
+    mk-eq: func(lhs: borrow<term>, rhs: borrow<term>) -> term;
+
+    // 10 inference rules
+    refl: func(tm: borrow<term>) -> thm;
+    trans: func(th1: borrow<thm>, th2: borrow<thm>) -> thm;
+    mk-comb-rule: func(th1: borrow<thm>, th2: borrow<thm>) -> thm;
+    abs-rule: func(var: borrow<term>, th: borrow<thm>) -> thm;
+    beta-conv: func(tm: borrow<term>) -> thm;
+    assume-rule: func(tm: borrow<term>) -> thm;
+    eq-mp: func(th1: borrow<thm>, th2: borrow<thm>) -> thm;
+    deduct-antisym: func(th1: borrow<thm>, th2: borrow<thm>) -> thm;
+    inst-term: func(pairs: list<tuple<borrow<term>, borrow<term>>>, th: borrow<thm>) -> thm;
+    inst-type-rule: func(pairs: list<tuple<borrow<hol-type>, borrow<hol-type>>>, th: borrow<thm>) -> thm;
+
+    // Definitions
+    new-axiom: func(tm: borrow<term>) -> thm;
+    new-basic-definition: func(tm: borrow<term>) -> thm;
+    new-basic-type-definition: func(
+        tyname: string, abs-name: string, rep-name: string, th: borrow<thm>,
+    ) -> tuple<thm, thm>;
+}

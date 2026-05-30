@@ -1141,3 +1141,98 @@ fn store_try_exists_missing() {
         "try-exists on empty store should return None"
     );
 }
+
+// ============================================================
+// Signing API
+// ============================================================
+
+#[test]
+fn sign_verify_roundtrip() {
+    let store = test_store();
+    let blob_data = b"hello signing";
+    let hash = store.insert(blob_data).unwrap();
+    let hash_hex = hash.to_string();
+
+    let bytes =
+        wat(&include_str!("wat/sign_verify_roundtrip/component.wat")
+            .replace("{hash_hex}", &hash_hex));
+
+    let engine = engine();
+    let result = decide_result(&engine, &bytes, &store);
+    assert_eq!(result, Decision::Sat);
+}
+
+#[test]
+fn sign_verify_wrong_principal() {
+    let store = test_store();
+    let blob_data = b"hello signing";
+    let hash = store.insert(blob_data).unwrap();
+    let hash_hex = hash.to_string();
+
+    let bytes = wat(
+        &include_str!("wat/sign_verify_wrong_principal/component.wat")
+            .replace("{hash_hex}", &hash_hex),
+    );
+
+    let engine = engine();
+    let result = decide_result(&engine, &bytes, &store);
+    assert_eq!(result, Decision::Sat);
+}
+
+#[test]
+fn sign_verify_different_blob() {
+    let store = test_store();
+    let hash_a = store.insert(b"blob a").unwrap();
+    let hash_b = store.insert(b"blob b").unwrap();
+    let hex_a = hash_a.to_string();
+    let hex_b = hash_b.to_string();
+
+    let bytes = wat(
+        &include_str!("wat/sign_verify_different_blob/component.wat")
+            .replace("{hex_a}", &hex_a)
+            .replace("{hex_b}", &hex_b),
+    );
+
+    let engine = engine();
+    let result = decide_result(&engine, &bytes, &store);
+    assert_eq!(result, Decision::Sat);
+}
+
+#[test]
+fn principal_eq() {
+    let bytes = wat(include_str!("wat/principal_eq/component.wat"));
+
+    let engine = engine();
+    let store = test_store();
+    let result = decide_result(&engine, &bytes, &store);
+    assert_eq!(result, Decision::Sat);
+}
+
+#[test]
+fn principal_bytes_roundtrip() {
+    let bytes = wat(include_str!("wat/principal_bytes_roundtrip/component.wat"));
+
+    let engine = engine();
+    let store = test_store();
+    let result = decide_result(&engine, &bytes, &store);
+    assert_eq!(result, Decision::Sat);
+}
+
+// ============================================================
+// HOL Light kernel: REFL proof via WASM resource interface
+// ============================================================
+
+#[test]
+#[cfg(feature = "hol")]
+fn hol_refl_proof() {
+    let bytes = wat(include_str!("wat/hol_refl/component.wat"));
+
+    let engine = engine();
+    let store = test_store();
+    let result = decide_result(&engine, &bytes, &store);
+    assert_eq!(
+        result,
+        Decision::Sat,
+        "HOL REFL proof via WASM should succeed"
+    );
+}

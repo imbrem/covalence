@@ -16,11 +16,15 @@ mod backend;
 mod loose;
 #[cfg(feature = "odb")]
 mod odb;
+#[cfg(feature = "sqlite")]
+mod sqlite_store;
 
 pub use backend::{GitBackend, GitObject, GitObjectKind};
 pub use loose::LooseBackend;
 #[cfg(feature = "odb")]
 pub use odb::OdbBackend;
+#[cfg(feature = "sqlite")]
+pub use sqlite_store::GitStore;
 
 use covalence_hash::gix_hash;
 use covalence_store::{AnyObject, ContentStore, Object, ObjectKind, ObjectStore, StoreError};

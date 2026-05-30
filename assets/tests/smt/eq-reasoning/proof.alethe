@@ -1,0 +1,6 @@
+(assume h1 (= a b))
+(assume h2 (not (= b c)))
+(assume h3 (= a c))
+(step t1 (cl (not (= a b)) (= b a)) :rule eq_symmetric :premises (h1))
+(step t2 (cl (not (= a c)) (not (= a b)) (= b c)) :rule eq_transitive :premises (h1 h3))
+(step t3 (cl) :rule resolution :premises (h2 t2))

@@ -32,7 +32,7 @@
         "id": "cov",
         "aliases": ["Covalence"],
         "extensions": [".cov"],
-        "configuration": "./smt-language-configuration.json"
+        "configuration": "./cov-language-configuration.json"
       },
       {
         "id": "wat",

@@ -7,11 +7,16 @@ edition = "2024"
 object-store = ["dep:covalence-store", "dep:flate2"]
 odb = ["object-store", "dep:gix-odb", "dep:gix-object"]
 lfs = ["dep:covalence-store"]
+sqlite = ["object-store", "dep:covalence-sqlite"]
+clone = ["sqlite", "dep:ureq", "dep:covalence-object"]
 
 [dependencies]
 covalence-hash = { path = "../covalence-hash" }
+covalence-sqlite = { path = "../covalence-sqlite", optional = true }
 covalence-store = { path = "../covalence-store", optional = true, default-features = false }
 flate2 = { version = "1", optional = true }
 gix-odb = { version = "0.80", optional = true }
 gix-object = { version = "0.60", optional = true }
+covalence-object = { path = "../covalence-object", optional = true }
 serde_json = "1"
+ureq = { version = "3", optional = true }

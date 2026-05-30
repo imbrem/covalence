@@ -1,6 +1,10 @@
+mod commit;
 mod dir;
 mod table;
 
+pub use commit::{GitCommit, GitCommitBuilder, GitSignature};
+#[cfg(feature = "git")]
+pub use commit::{git_commit_sha1, git_commit_sha256};
 pub use dir::{Dir, DirBuilder, DirMode, DirRow, HashDir, dir_hash};
 #[cfg(feature = "git")]
 pub use dir::{

@@ -9,4 +9,7 @@ export type {
   HashResponse,
   BlobStatsResponse,
   DecideResponse,
+  ObjectKind,
+  ObjectInfoResponse,
+  TreeEntry,
 } from './types.js';

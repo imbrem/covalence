@@ -24,4 +24,7 @@ pub enum ParseError {
 
     #[error("invalid binary encoding at offset {offset}")]
     InvalidBinaryEncoding { offset: usize },
+
+    #[error("line {line}: unterminated antecedent list (missing trailing 0)")]
+    UnterminatedAntecedents { line: usize },
 }

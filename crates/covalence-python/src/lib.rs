@@ -1,13 +1,26 @@
 mod backend;
 mod component;
+mod component_builder;
+mod compression;
+mod container;
+mod container_builder;
 mod default;
 mod git;
 mod hash;
+mod kvstore;
+mod module;
+mod module_builder;
+mod object_store;
+mod sat;
 mod server;
 mod session;
 mod sexp;
+mod signing;
 mod store;
+mod system_builder;
 mod table;
+mod tagged_store;
+mod val;
 mod worker;
 
 use pyo3::prelude::*;
@@ -22,12 +35,30 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<backend::Backend>()?;
     m.add_class::<session::Session>()?;
     m.add_class::<component::Component>()?;
+    m.add_class::<module::Module>()?;
+    m.add_class::<container::Container>()?;
     m.add_class::<store::Store>()?;
+    m.add_class::<tagged_store::PyTaggedStore>()?;
+    m.add_class::<object_store::PyObjectStore>()?;
     m.add_class::<git::GitStore>()?;
     m.add_class::<server::Server>()?;
     m.add_class::<table::PyRowSchema>()?;
     m.add_class::<table::PyTableBuilder>()?;
     m.add_class::<table::PyDirectoryBuilder>()?;
+    m.add_class::<kvstore::KvStore>()?;
+    m.add_class::<val::PyVal>()?;
+    m.add_class::<val::PyValType>()?;
+    m.add_class::<signing::Principal>()?;
+    m.add_class::<signing::Signature>()?;
+    m.add_class::<signing::Signer>()?;
+
+    // Builder types
+    m.add_class::<container_builder::ContainerBuilder>()?;
+    m.add_class::<component_builder::ComponentBuilder>()?;
+    m.add_class::<module_builder::ModuleBuilder>()?;
+    m.add_class::<module_builder::FuncBuilder>()?;
+    m.add_class::<module_builder::FuncRef>()?;
+    m.add_class::<module_builder::InstanceRef>()?;
 
     // Hasher constructors
     m.add_function(wrap_pyfunction!(hash::blake3, m)?)?;
@@ -58,6 +89,19 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sexp::parse_sexp_smt, m)?)?;
     m.add_function(wrap_pyfunction!(sexp::parse_sexp_wat, m)?)?;
 
+    // SAT / DRAT
+    m.add_class::<sat::PyCnf>()?;
+    m.add_class::<sat::PyDratProof>()?;
+    m.add_function(wrap_pyfunction!(sat::parse_dimacs_str, m)?)?;
+    m.add_function(wrap_pyfunction!(sat::parse_drat_text_str, m)?)?;
+    m.add_function(wrap_pyfunction!(sat::parse_drat_binary_bytes, m)?)?;
+    m.add_function(wrap_pyfunction!(sat::check_drat, m)?)?;
+    m.add_function(wrap_pyfunction!(sat::load_dimacs, m)?)?;
+    m.add_function(wrap_pyfunction!(sat::load_drat, m)?)?;
+
+    // Compression
+    m.add_function(wrap_pyfunction!(compression::read_compressed, m)?)?;
+
     // Module-level convenience functions (lazy default backend)
     m.add_function(wrap_pyfunction!(default::store, m)?)?;
     m.add_function(wrap_pyfunction!(default::store_str, m)?)?;
@@ -65,6 +109,7 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(default::has, m)?)?;
     m.add_function(wrap_pyfunction!(default::compile_wat, m)?)?;
     m.add_function(wrap_pyfunction!(default::decide, m)?)?;
+    m.add_function(wrap_pyfunction!(default::prove, m)?)?;
 
     Ok(())
 }

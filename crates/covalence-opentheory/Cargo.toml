@@ -1,0 +1,11 @@
+[package]
+name = "covalence-opentheory"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+covalence-hol = { path = "../covalence-hol" }
+smol_str = "0.3"
+thiserror = "2"
+
+[dev-dependencies]

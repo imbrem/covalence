@@ -1,3 +1,4 @@
+#![cfg(feature = "drat")]
 //! Integration test: connect covalence-sat to the varisat CDCL solver.
 
 use covalence_sat::{

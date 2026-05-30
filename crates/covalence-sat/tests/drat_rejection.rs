@@ -1,10 +1,11 @@
+#![cfg(feature = "drat")]
 //! DRAT proof rejection tests.
 //!
 //! Each test constructs a CNF formula and an invalid DRAT proof, then verifies
 //! that both [`NaiveDratChecker`] and [`WatchedDratChecker`] reject the proof.
 
 use covalence_sat::{
-    Clause, Cnf, DratProof, DratStep, DratVerifier, NaiveDratChecker, WatchedDratChecker,
+    Clause, Cnf, DratChecker, DratProof, DratStep, NaiveDratChecker, WatchedDratChecker,
     check_proof,
 };
 

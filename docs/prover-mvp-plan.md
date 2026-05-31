@@ -106,20 +106,28 @@ moves:
 
 **Scope.** Stand up the new arena in `covalence-kernel`:
 
-- Separate ID namespaces (`BuiltinId` baked into the enum;
-  `TypeName`, `ConstName`, `VarName`, `ConceptId` each in its own
-  table).
-- `TypeDef` and `TermDef` enums with builtin variants (`Bool`,
-  `Bits`, `Fun`, `Eq`, `True`, `False`, `Bits(Inline | Indirect)`).
-  Long bit-string literals go through an arena-side `bitvectors`
-  table indexed by `BitsId`. No content addressing in the kernel —
-  `Indirect` is an internal arena index, not a hash.
-- Arena-aware canonical IDs: `TermUfEntry { canonical: (ArenaId,
-  TermId), closed }` and `TypeUfEntry { canonical: (ArenaId, TypeId)
-  }` (Phase 3 adds the equality predicates; Phase 1 stands up the
-  storage).
-- `TermRef = Local(TermId) | Foreign(ArenaId, TermId)` and the same
-  for `TypeRef`.
+- Separate ID namespaces (no shared `NameId`): `TypeName`, `ConstName`,
+  `VarName`, `ConceptId` each in its own table. Builtins (§3.2 of the
+  architecture doc) are TermDef/TypeDef enum variants, not entries in
+  any namespace.
+- **One** `TermDef` enum with every kind of term as a variant:
+  structural ones (`Bound`, `Free`, `Const`, `Comb`, `Abs`) and
+  builtins (`True`, `False`, `Eq(_, _)`, `Bits(_)`). Same for
+  `TypeDef` (`Bool`, `Bits`, `Fun`, `TVar`, `Tyapp`). No
+  "well-known" magic name IDs or side tables.
+- `BitsValue = Inline([u8; N]) | Indirect(BitsId)`; long bit-string
+  literals go through an arena-side `bitvectors` table indexed by
+  `BitsId`. No content addressing in the kernel — `Indirect` is an
+  internal arena index, not a hash.
+- **Arena identity is by pointer** — no `ArenaId` u32 anywhere.
+  Canonical references are `(Arc<Arena>, TermId)` / `(Arc<Arena>,
+  TypeId)`. Two canonicals are equal when their `Arc<Arena>`s are
+  `Arc::ptr_eq` and their inner IDs match.
+- `TermRef = Local(TermId) | Foreign(Arc<Arena>, TermId)` and the
+  same for `TypeRef`.
+- UF storage stood up: `TermUfEntry { canonical: (Arc<Arena>,
+  TermId), closed }`, `TypeUfEntry { canonical: (Arc<Arena>, TypeId)
+  }`. Equality predicates over them land in Phase 3.
 - Frozen-vs-mutable arenas; `Arc<Arena>` for frozen.
 - Structural tables append-only at the user level; the kernel
   reserves `rewrite(t, new_def)` as a privileged primitive (exposed
@@ -403,15 +411,15 @@ Primitives (all wired through `covalence-shell`):
 
 ## Open Questions
 
-- **Phase 0.** What's the right granularity for breaking existing
-  consumers — keep them compiling against a stub `covalence-kernel`,
-  or temporarily exclude them from the workspace until Phase 7 lands?
-  Lean keep-compiling-with-stubs so we don't lose CI coverage.
-- **Phase 1.** `ArenaId` allocation strategy: monotonic u32 from a
-  kernel-global counter. Content hashes of frozen arenas live
-  outside the kernel.
-- **Phase 1.** `Bits::Inline` size cutoff before promoting to
-  `Bits::Indirect(BitsId)`. 256 bits is a reasonable default.
+- **Phase 0.** Done — landed as commits `phase 0a` / `phase 0b` /
+  `phase 0c` on top of `better plan`.
+- **Phase 1.** Arena identity uses `Arc<Arena>` pointer equality —
+  no allocation strategy needed. (We considered a kernel-issued u32
+  `ArenaId` table; rejected in favour of pointer identity because
+  it sidesteps allocation bookkeeping and works correctly across
+  threads as long as the `Arc` is alive.)
+- **Phase 1.** `BitsValue::Inline` size cutoff before promoting to
+  `Indirect(BitsId)`. 256 bits is a reasonable default.
 - **Phase 1.** What's the `Store` trait actually need to expose?
   Likely just `put(bytes) -> name`, `get(name) -> Option<bytes>`
   for MVP. The kernel itself barely uses it; mostly for arena

@@ -76,7 +76,6 @@ Union-find state is mutable throughout.
 
 ```
 Arena {
-  id: ArenaId,                       // kernel-assigned, unique
   types: Vec<TypeDef>,               // indexed by TypeId, append-only
   terms: Vec<TermDef>,               // indexed by TermId; mutable via kernel rewrite
   bitvectors: Vec<Bits>,             // side table for bit strings too large to inline
@@ -87,14 +86,28 @@ Arena {
 }
 
 TermUfEntry {
-  canonical: (ArenaId, TermId),      // arena-aware canonical pointer
+  canonical: (Arc<Arena>, TermId),   // arena-aware canonical pointer (see §4.1)
   closed: bool,                      // no Free vars or dangling Bound reachable
 }
 
 TypeUfEntry {
-  canonical: (ArenaId, TypeId),      // arena-aware canonical pointer
+  canonical: (Arc<Arena>, TypeId),   // arena-aware canonical pointer
 }
 ```
+
+**Arena identity is by pointer**: there is no kernel-assigned arena
+identifier. Two canonical IDs `(arena_a, id_a)` and `(arena_b, id_b)`
+are equal iff `arena_a` and `arena_b` point at the *same allocation*
+(pointer equality via `Arc::ptr_eq`) and `id_a == id_b`. There is no
+"arena number" table; identity is the arena itself.
+
+This matters in subtle ways:
+
+- Cloning a frozen arena's `Arc` and storing it in two places leaves
+  identity unchanged — both are still the same arena.
+- Two structurally-identical arenas that happen to share content but
+  live at different allocations are **not** the same arena; their
+  contents are compared structurally, never canonically.
 
 The type UF parallels the term UF. The kernel provides **no rule to
 introduce arbitrary type unions** — there's no analog of `union(a, b)`
@@ -120,9 +133,9 @@ Key properties:
 - **The kernel may mutate `terms[id]` to an equal `TermDef`.** This is
   the [rewrite primitive](#44-rewrite); it's not the user's privilege
   but the kernel's, and only along an existing UF equivalence.
-- **Canonical IDs are arena-aware tuples `(ArenaId, TermId)`** and
-  `(ArenaId, TypeId)`. A bare ID is *not* a canonical name across
-  arenas — see §4 for why.
+- **Canonical IDs are arena-aware tuples `(Arc<Arena>, TermId)`** and
+  `(Arc<Arena>, TypeId)`. Identity is by `Arc::ptr_eq`. A bare ID is
+  *not* a canonical name across arenas — see §4 for why.
 - **Imports** are `Arc`'d frozen arenas this arena may reference. Terms
   can reach across via `Comb`/`Abs` children pointing at imported
   terms; equalities cannot, except by manual user-driven unions inside
@@ -141,8 +154,8 @@ Arenas can **freeze**, becoming `Arc<Arena>` and read-only. Other
 arenas hold these as `Arc`'d entries in `imports`. To reference a term
 in a frozen arena, the local arena either:
 
-- Allocates a `Comb`/`Abs` whose child is a `Foreign(arena_id,
-  term_id)` handle (see TermDef in §3.2), or
+- Allocates a `Comb`/`Abs` whose child is a `Foreign(arena, term_id)`
+  handle holding an `Arc<Arena>` to the source (see TermDef in §3.2), or
 - Re-allocates the term structurally in the local arena, importing
   only the part it needs.
 
@@ -179,6 +192,17 @@ points at, and may be any HOL term (typically of type `bool`).
 
 Prop is `Clone` (cheap via `Arc` sharing of the Context; the owning
 arena is per-Prop).
+
+**SMT-language analogy.** A `Context` plays the role of an SMT
+**Formula** (a conjunction of asserted constraints — here, of
+assumption Props). An `Arena` plays the role of an SMT **Clause**
+(a self-contained line of reasoning with its own equality state). A
+`Prop` is then literally a `(Formula, Clause)` pair: "given these
+assumptions, here is the chunk of reasoning establishing the
+conclusion." The analogy is structural, not exact — clauses in
+DPLL-style SAT are disjunctions of literals — but the
+Formula-vs-Clause split is the same separation between *global
+assertions* and *local derivation state*.
 
 ### 2.4 Thm
 
@@ -280,82 +304,108 @@ hand outside the kernel is error-prone.
 
 ### 3.1 Locally nameless
 
-Terms use **de Bruijn indices for bound variables + named free
-variables**:
+There is **one** `TermDef` enum, with one variant per kind of term —
+no out-of-band tables of "well-known" terms, no magic name IDs, no
+sentinel constants. Terms use **de Bruijn indices for bound variables
++ named free variables**:
 
 ```rust
 TermDef =
+  // -- general shapes --
   | Bound(u32)                       // de Bruijn index
   | Free(VarName, TypeRef)           // named free variable, typed
   | Const(ConstName, TypeRef)        // user-declared constant at an instance
   | Comb(TermRef, TermRef)           // application
   | Abs(VarName, TypeRef, TermRef)   // binder; VarName is a hint only
-  // -- builtins (see §3.2) --
-  | True                             // primitive
-  | False                            // primitive
-  | Eq(TermRef, TermRef)             // primitive equality
+  // -- builtin variants (see §3.2 for the rationale) --
+  | True                             // the boolean true
+  | False                            // the boolean false
+  | Eq(TermRef, TermRef)             // primitive polymorphic equality
   | Bits(BitsValue)                  // primitive bit string
 
 BitsValue =
   | Inline([u8; N])                  // short literal stored in-line
   | Indirect(BitsId)                 // index into arena.bitvectors
 
-TermRef = Local(TermId) | Foreign(ArenaId, TermId)
-TypeRef = Local(TypeId) | Foreign(ArenaId, TypeId)
+TermRef = Local(TermId) | Foreign(Arc<Arena>, TermId)
+TypeRef = Local(TypeId) | Foreign(Arc<Arena>, TypeId)
 ```
+
+Likewise, `TypeDef` is one enum whose variants are listed in §3.2.
+There is no separate "builtin type table" alongside it — `Bool`,
+`Bits`, `Fun`, `TVar`, `Tyapp` are all just `TypeDef` variants.
 
 Bound-var substitution doesn't need any alpha-renaming dance; structural
 equality of `TermDef`s already gives α-equivalence.
 
 A `TermRef`/`TypeRef` is the type used for child links. `Local(_)`
-points to this arena's table; `Foreign(a, _)` points to
-`imports.find(a)`'s. Equality checks transparently follow either.
+points to this arena's table; `Foreign(arena, _)` points into the
+arena handed in via the `Arc<Arena>`. Equality checks transparently
+follow either.
 
 ### 3.2 Builtins
 
-Builtins are kernel-supplied TermDef/TypeDef variants — not entries in
-user namespaces.
+Builtins are **TermDef/TypeDef enum variants** — not entries in user
+namespaces, not magic constants in a side table, not sentinel name
+IDs. They appear in the same enum as everything else; an inference
+rule that pattern-matches on `TermDef` sees them right next to
+`Bound`, `Comb`, etc.
 
-**TypeDef builtins:**
+This keeps the kernel code simple (no "is this name the well-known
+`bool_id`?" lookups), and keeps the logic minimal at the same time
+(builtins are exactly those things the kernel needs to *construct*
+intrinsically — `bool` as a type, `True`/`False`/`Eq` because the
+logic is built on equality, and `bits` because the arena needs a
+primitive infinite type for bit strings).
+
+**TypeDef variants in full:**
 
 | Variant | Logical type |
 |---|---|
-| `Bool` | `bool` |
-| `Bits` | `bits` (replaces HOL Light's `ind` as the primitive infinite type) |
-| `Fun(TypeRef, TypeRef)` | `α → β` |
+| `Bool` | `bool` (builtin) |
+| `Bits` | `bits` (builtin — replaces HOL Light's `ind` as the primitive infinite type) |
+| `Fun(TypeRef, TypeRef)` | `α → β` (builtin) |
 | `TVar(TypeVarId)` | polymorphic type variable |
-| `Tyapp(TypeName, Vec<TypeRef>)` | user-declared type constructor instance |
+| `Tyapp(TypeName, Vec<TypeRef>)` | user-declared type constructor instance (the only path through the user-side TypeName namespace) |
 
-**TermDef builtins:**
+**TermDef variants in full** (combining §3.1's list with the builtins,
+since they all live in the one enum):
 
-| Variant | What it represents |
-|---|---|
-| `True`, `False` | the booleans |
-| `Eq(a, b)` | `a = b` (polymorphic) |
-| `Bits(BitsValue)` | a bit string |
+| Variant | What it represents | Source |
+|---|---|---|
+| `Bound(u32)` | de Bruijn index | structural |
+| `Free(VarName, TypeRef)` | free variable | user VarName |
+| `Const(ConstName, TypeRef)` | constant at an instance | user ConstName |
+| `Comb(TermRef, TermRef)` | application | structural |
+| `Abs(VarName, TypeRef, TermRef)` | binder | structural |
+| `True`, `False` | the booleans | **builtin** |
+| `Eq(TermRef, TermRef)` | polymorphic equality | **builtin** |
+| `Bits(BitsValue)` | bit string literal | **builtin** |
 
 We keep `True`/`False` baked in even though HOL Light defines them —
 the goal is to simplify the *code*, not the typing rules. A baked-in
 `True` lets the bootstrap not have to thread Hilbert choice into the
 very first definitions.
 
-`Bits` has two representations chosen at insertion time, both producing
-the same logical value:
+**`Bits` representation.** `BitsValue` has two cases chosen at
+insertion time, both producing the same logical value:
 
 - **`Inline(bytes)`** — the bit string is stored directly inside the
-  TermDef. Cheap, no extra indirection. Used for short literals (cut-off
-  is an implementation knob; e.g. 256 bits).
+  TermDef. Cheap, no extra indirection. Used for short literals
+  (cut-off is an implementation knob; e.g. 256 bits).
 - **`Indirect(BitsId)`** — the bit string lives in the arena's
-  `bitvectors` table at `BitsId`. Used for longer literals so we don't
-  inflate every TermDef-sized object.
+  `bitvectors` table at `BitsId`. Used for longer literals so we
+  don't inflate every TermDef-sized object.
 
-Both representations are kernel-internal and equivalent at every level
-of the equality predicates (§4). The kernel never talks to a content
-store about them.
+Both representations are kernel-internal and equivalent at every
+level of the equality predicates (§4). The kernel never talks to a
+content store about them — `Indirect` is just an internal arena
+index.
 
 User-defined constants (`Const(name, ty)`) and user-defined type
-constructors (`Tyapp(name, args)`) are the only paths from the
-user-side namespaces (§2.1) into TermDef/TypeDef.
+constructors (`Tyapp(name, args)`) are the only TermDef/TypeDef
+variants that read from the user-side namespaces (§2.1). Every other
+variant is either structural or a builtin enum case.
 
 ### 3.3 Closed vs open terms
 
@@ -392,10 +442,11 @@ facts on the user's behalf.
 
 ### 4.1 Canonical IDs are arena-tagged
 
-Each `TermUfEntry` stores `canonical: (ArenaId, TermId)`. Same for
+Each `TermUfEntry` stores `canonical: (Arc<Arena>, TermId)`. Same for
 `TypeUfEntry`. To check "are `a` and `b` known equal in this arena's
-view?", you walk both canonical chains and compare the final tuples —
-including the arena tag.
+view?", you walk both canonical chains and compare the final tuples
+— pointer equality on the `Arc<Arena>` (via `Arc::ptr_eq`) plus
+equality on the local ID.
 
 This matters for the **diamond import** case:
 
@@ -407,12 +458,14 @@ This matters for the **diamond import** case:
        A
 ```
 
-Arena `A` imports both `B` and `C`, which both import `D`. If both `B`
-and `C` import a term `x ∈ D`, then in `A`'s view both copies have
-`canonical = (D, x_id)` — they regain UF identity through their shared
-ancestor. But terms that *originated* in `B` and `C` separately can
-only ever be compared **structurally** in `A`, since `A` is not in a
-position to assume any equality not explicitly proved.
+Arena `A` imports both `B` and `C`, which both import `D`. If both
+`B` and `C` import a term `x ∈ D`, then in `A`'s view both copies
+have `canonical = (Arc<D>, x_id)` — and because both copies use the
+*same* `Arc<D>` allocation, pointer equality holds and they regain
+UF identity through their shared ancestor. But terms that
+*originated* in `B` and `C` separately can only ever be compared
+**structurally** in `A`, since `A` is not in a position to assume any
+equality not explicitly proved.
 
 This is what makes "(arena, index)" the correct canonical identity.
 Using a bare ID would silently collapse the diamond and unsound unions
@@ -519,7 +572,8 @@ structural reasoning:
 
 - **Foreign-import propagation.** Importing the *same* type from a
   shared ancestor arena makes both copies share a canonical
-  (`(ArenaId, TypeId)` of the source).
+  (`(Arc<Arena>, TypeId)` of the source; pointer-equal because they
+  hold the same `Arc` allocation).
 - **Congruence steps.** If `Tyapp(f, [a₁, …, aₙ])` and `Tyapp(f, [b₁,
   …, bₙ])` have all `aᵢ` known canonically equal, the kernel can
   union the two applications via the type analog of
@@ -891,8 +945,9 @@ The kernel's soundness reduces to seven invariants:
    them.
 4. **Canonical identity is arena-aware.** Two terms (or types) in
    different arenas with the same `TermId` (or `TypeId`) are not
-   assumed equal; the canonical tuple `(ArenaId, TermId)` (or
-   `(ArenaId, TypeId)`) is what matters.
+   assumed equal; the canonical tuple `(Arc<Arena>, TermId)` (or
+   `(Arc<Arena>, TypeId)`) is what matters — identity is by
+   `Arc::ptr_eq`, never by content.
 5. **Concept theory axioms have the shape `… ⇒ c[α](…) = true`.**
    This applies only to the constant family side; the kernel checks
    the conclusion shape and accepts the axiom. The trivial model
@@ -920,21 +975,28 @@ Thms.
 ## 10. Glossary
 
 - **Arena** — pool of types, terms, bitvectors, plus term UF and type
-  UF state.
-- **ArenaId** — unique identifier of an arena; part of every
-  canonical-ID tuple.
-- **Builtin** — kernel-supplied TermDef/TypeDef variant (e.g. `Eq`,
-  `True`, `Bool`, `Bits`). Not in any user namespace.
+  UF state. SMT-analogously, a *clause*: a self-contained line of
+  local reasoning.
+- **Arena identity** — by pointer: two `Arc<Arena>` are the same
+  arena iff `Arc::ptr_eq` holds. No kernel-issued arena number; the
+  arena *is* its allocation.
+- **Builtin** — TermDef/TypeDef enum variant supplied by the kernel
+  (`Bool`, `Bits`, `Fun`, `True`, `False`, `Eq`, `Bits(_)`). Not in
+  any user namespace. Pattern-matched alongside the structural
+  variants — no separate well-known-name table.
 - **Concept** — polymorphic constant family whose theory is set by a
   capability holder; the kernel's only extension point.
 - **Context** — kernel-encapsulated assumption store with an
-  inspection API; attached to every Prop.
+  inspection API; attached to every Prop. SMT-analogously, a
+  *formula*: the global conjunction of assertions.
 - **Observation** — a particular point-fact `c[α](t₁, …, tₙ) = true`,
   represented as a theory axiom or directly as a UF union.
 - **Owner** — holder of a `ConceptHandle`. The capability granting
   authority to write to a concept's theory.
 - **Prop** — structured proposition: `(arena, context, concl)`. Not
-  necessarily true.
+  necessarily true. SMT-analogously, a (formula, clause) pair: the
+  Context is the formula (global assertions), the Arena is the
+  clause (local reasoning).
 - **Rewrite** — kernel primitive that mutates a term's structural form
   in place to a provably-equal one. Optimisation, not soundness.
 - **Root concept** — the kernel's one built-in concept; the authority

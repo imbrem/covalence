@@ -559,6 +559,9 @@ dependencies = [
 [[package]]
 name = "covalence-kernel"
 version = "0.0.0"
+dependencies = [
+ "smol_str",
+]
 
 [[package]]
 name = "covalence-lean"

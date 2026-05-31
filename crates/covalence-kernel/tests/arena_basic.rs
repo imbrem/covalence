@@ -912,7 +912,7 @@ fn beta_reduces_identity() {
     let mut a = Arena::new();
     let body = a.alloc_term(TermDef::Bound(0));
     let t = a.alloc_term(TermDef::True);
-    let result = a.beta_reduce(TermRef::local(body), TermRef::local(t));
+    let result = a.subst(TermRef::local(body), 0, TermRef::local(t));
     assert_eq!(result, TermRef::local(t));
 }
 
@@ -925,7 +925,7 @@ fn beta_substitutes_into_arg_position() {
     let b0 = a.alloc_term(TermDef::Bound(0));
     let body = a.alloc_term(TermDef::Op1(PrimOp1::LogicalNot, TermRef::local(b0)));
     let t = a.alloc_term(TermDef::True);
-    let result = a.beta_reduce(TermRef::local(body), TermRef::local(t));
+    let result = a.subst(TermRef::local(body), 0, TermRef::local(t));
     let id = result.as_local().unwrap();
     match a.term_def(id) {
         TermDef::Op1(PrimOp1::LogicalNot, x) => {
@@ -949,7 +949,7 @@ fn beta_decrements_outer_bound_indices() {
     let bool_ty = a.bool_ty();
     let b1 = a.alloc_term(TermDef::Bound(1));
     let t = a.alloc_term(TermDef::True);
-    let result = a.beta_reduce(TermRef::local(b1), TermRef::local(t));
+    let result = a.subst(TermRef::local(b1), 0, TermRef::local(t));
     let id = result.as_local().unwrap();
     // Bound(1) was bound by the outer binder (not the one we're
     // substituting), so it should decrement to Bound(0).
@@ -973,7 +973,7 @@ fn beta_under_nested_abs_shifts_replacement() {
     let b1 = a.alloc_term(TermDef::Bound(1));
     let inner = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(b1)));
     let b0 = a.alloc_term(TermDef::Bound(0));
-    let result = a.beta_reduce(TermRef::local(inner), TermRef::local(b0));
+    let result = a.subst(TermRef::local(inner), 0, TermRef::local(b0));
     // Result should be λ_:bool. Bound(1).
     let abs_id = result.as_local().unwrap();
     match a.term_def(abs_id) {

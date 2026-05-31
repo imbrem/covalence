@@ -181,6 +181,15 @@ impl Arena {
         self.uf_terms[id.0 as usize].type_info = info;
     }
 
+    /// Is `t` well-typed (has a known `Typed(_)` info)?
+    ///
+    /// `Thm` rules typically require their inputs to be well-typed;
+    /// arena-level congruence operations (`union`,
+    /// `union_if_congruent_step`) don't.
+    pub fn is_well_typed(&self, t: TermId) -> bool {
+        self.term_uf(t).type_info.is_typed()
+    }
+
     // ---- union-find primitives --------------------------------------------
 
     /// Walk a [`TermRef`]'s canonical chain within **this** arena
@@ -377,6 +386,15 @@ impl Arena {
     /// simplifications on partial-literal arguments, LiftOpN
     /// reductions, etc.) land in subsequent commits.
     pub fn reduce(&mut self, t: TermRef) -> TermRef {
+        // Only fire on well-typed local terms — reduction of ill-typed
+        // or open terms could produce nonsense. Congruence-style
+        // operations (union, union_if_congruent_step) remain
+        // unrestricted; reduce is the rule-application form.
+        if let Some(local) = t.as_local() {
+            if !self.is_well_typed(local) {
+                return t;
+            }
+        }
         let new_t = self.try_reduce_step(t);
         if new_t != t {
             let _ = self.union(t, new_t);
@@ -671,15 +689,12 @@ impl Arena {
     /// account for the binders between its original site and the
     /// substitution point.
     ///
-    /// The usual `(λ. body) arg` reduction is `subst(body, 0, arg)`.
+    /// The arena exposes only the raw substitution; the
+    /// β-reduction equality (i.e. that `(λ. body) arg = subst(body,
+    /// 0, arg)` is a *theorem*) is enforced at the `Thm` layer via
+    /// [`Thm::beta`](crate::prop::Thm::beta).
     pub fn subst(&mut self, t: TermRef, depth: u32, replacement: TermRef) -> TermRef {
         self.subst_inner(t, depth, replacement)
-    }
-
-    /// Convenience for the standard β-reduction: given `Abs(α, body)`
-    /// and an argument term, return `body[Bound(0) := arg]`.
-    pub fn beta_reduce(&mut self, body: TermRef, arg: TermRef) -> TermRef {
-        self.subst_inner(body, 0, arg)
     }
 
     fn shift_inner(&mut self, t: TermRef, cutoff: u32, amount: u32) -> TermRef {

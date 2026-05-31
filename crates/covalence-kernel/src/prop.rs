@@ -26,7 +26,7 @@ use std::sync::Arc;
 
 use crate::arena::Arena;
 use crate::id::TermId;
-use crate::primop::PrimOp1;
+use crate::primop::{PrimOp1, PrimOp2};
 use crate::term::{TermDef, TermRef};
 
 // ---------------------------------------------------------------------------
@@ -157,27 +157,30 @@ impl Thm {
 
     // ---- inference rules ---------------------------------------------------
 
-    /// **Reflexivity.** Build the `Thm` `ctx ⊢ t = t` for any term `t`.
-    ///
-    /// Internally allocates the `Eq(t, t)` term in the arena. The
-    /// resulting `Thm`'s conclusion is the `TermId` of that fresh
-    /// equality.
-    pub fn refl(arena: &mut Arena, ctx: Arc<Context>, t: TermId) -> Self {
-        let eq = arena.alloc_term(TermDef::Eq(TermRef::local(t), TermRef::local(t)));
-        Self {
-            prop: Prop::new(ctx, eq),
+    /// **Reflexivity.** Build the `Thm` `ctx ⊢ t = t` for any
+    /// well-typed term `t`. Allocates `Eq(t, t)` in the arena.
+    pub fn refl(arena: &mut Arena, ctx: Arc<Context>, t: TermId) -> Result<Self, ProofError> {
+        if !arena.is_well_typed(t) {
+            return Err(ProofError::IllTypedInput);
         }
+        let eq = arena.alloc_term(TermDef::Eq(TermRef::local(t), TermRef::local(t)));
+        Ok(Self {
+            prop: Prop::new(ctx, eq),
+        })
     }
 
-    /// **Assumption rule.** If `assumption` is a `Prop` in `ctx`,
-    /// derive the `Thm` `ctx ⊢ assumption.concl`.
-    ///
-    /// Returns `Err(ProofError::AssumptionNotInContext)` if the
-    /// `Prop` isn't part of the supplied context (by `Arc::ptr_eq`
-    /// identity).
-    pub fn assume(ctx: Arc<Context>, assumption: Arc<Prop>) -> Result<Self, ProofError> {
+    /// **Assumption rule.** If `assumption` is a well-typed `Prop`
+    /// in `ctx`, derive the `Thm` `ctx ⊢ assumption.concl`.
+    pub fn assume(
+        arena: &Arena,
+        ctx: Arc<Context>,
+        assumption: Arc<Prop>,
+    ) -> Result<Self, ProofError> {
         if !ctx.contains_prop(&assumption) {
             return Err(ProofError::AssumptionNotInContext);
+        }
+        if !arena.is_well_typed(assumption.concl) {
+            return Err(ProofError::IllTypedInput);
         }
         Ok(Self {
             prop: Prop::new(ctx, assumption.concl),
@@ -185,31 +188,31 @@ impl Thm {
     }
 
     /// **Weakening / add-assumption.** Take a Thm `ctx ⊢ q` and a
-    /// fresh `Prop` `p`; produce `ctx, p ⊢ q`. The new assumption is
-    /// stacked on top of the old context.
-    ///
-    /// Always succeeds — adding an assumption never invalidates a
-    /// proof.
-    pub fn add_assumption(self, new_assumption: Arc<Prop>) -> Self {
-        let new_ctx = Context::extend(self.prop.context, new_assumption);
-        Self {
-            prop: Prop::new(new_ctx, self.prop.concl),
+    /// well-typed `Prop` `p`; produce `ctx, p ⊢ q`.
+    pub fn add_assumption(
+        self,
+        arena: &Arena,
+        new_assumption: Arc<Prop>,
+    ) -> Result<Self, ProofError> {
+        if !arena.is_well_typed(new_assumption.concl) {
+            return Err(ProofError::IllTypedInput);
         }
+        let new_ctx = Context::extend(self.prop.context, new_assumption);
+        Ok(Self {
+            prop: Prop::new(new_ctx, self.prop.concl),
+        })
     }
 
-    /// **Ex falso → negation.** From a Thm `ctx ⊢ False`, derive
-    /// `ctx ⊢ ¬p` for an arbitrary proposition `p`. The new
-    /// conclusion is `Op1(LogicalNot, p)`, allocated in the arena.
-    ///
-    /// Soundness: anything follows from False, including `¬p`.
-    ///
-    /// Returns `Err(ProofError::ConclusionNotFalse)` if `thm`'s
-    /// conclusion isn't the literal `False`.
+    /// **Ex falso → negation.** From a Thm `ctx ⊢ False` and a
+    /// well-typed proposition `p`, derive `ctx ⊢ ¬p`.
     pub fn not_from_false(
         arena: &mut Arena,
         thm_false: Thm,
         p: TermId,
     ) -> Result<Self, ProofError> {
+        if !arena.is_well_typed(p) {
+            return Err(ProofError::IllTypedInput);
+        }
         if !matches!(arena.term_def(thm_false.prop.concl), TermDef::False) {
             return Err(ProofError::ConclusionNotFalse);
         }
@@ -220,11 +223,11 @@ impl Thm {
     }
 
     /// **Symmetry of equality.** From `ctx ⊢ a = b`, derive
-    /// `ctx ⊢ b = a`. The new equality is allocated in the arena.
-    ///
-    /// Returns `ProofError::ExpectedEquality` if `thm`'s conclusion
-    /// isn't an `Eq` shape.
+    /// `ctx ⊢ b = a`.
     pub fn sym(arena: &mut Arena, thm: Thm) -> Result<Self, ProofError> {
+        if !arena.is_well_typed(thm.prop.concl) {
+            return Err(ProofError::IllTypedInput);
+        }
         let (a, b) = match *arena.term_def(thm.prop.concl) {
             TermDef::Eq(a, b) => (a, b),
             _ => return Err(ProofError::ExpectedEquality),
@@ -237,12 +240,11 @@ impl Thm {
 
     /// **Transitivity of equality.** From `ctx ⊢ a = b` and
     /// `ctx ⊢ b' = c` where `b ≡ b'` at UF level 0, derive
-    /// `ctx ⊢ a = c`.
-    ///
-    /// Both Thms must share the same context (by `Arc::ptr_eq`).
-    /// Combining different contexts requires explicit `add_assumption`
-    /// to align them first.
+    /// `ctx ⊢ a = c`. Contexts must match.
     pub fn trans(arena: &mut Arena, ab: Thm, bc: Thm) -> Result<Self, ProofError> {
+        if !arena.is_well_typed(ab.prop.concl) || !arena.is_well_typed(bc.prop.concl) {
+            return Err(ProofError::IllTypedInput);
+        }
         if !Arc::ptr_eq(&ab.prop.context, &bc.prop.context) {
             return Err(ProofError::ContextMismatch);
         }
@@ -263,12 +265,12 @@ impl Thm {
         })
     }
 
-    /// **Equality modus ponens.** From `ctx ⊢ p = q` and
-    /// `ctx ⊢ p'` where `p ≡ p'` at UF level 0, derive `ctx ⊢ q`.
-    ///
-    /// `q` must be a local term (the kernel can't store a foreign
-    /// ref as a Thm conclusion directly).
+    /// **Equality modus ponens.** From `ctx ⊢ p = q` and `ctx ⊢ p'`
+    /// where `p ≡ p'` at UF level 0, derive `ctx ⊢ q`.
     pub fn eq_mp(arena: &mut Arena, pq: Thm, p_thm: Thm) -> Result<Self, ProofError> {
+        if !arena.is_well_typed(pq.prop.concl) || !arena.is_well_typed(p_thm.prop.concl) {
+            return Err(ProofError::IllTypedInput);
+        }
         if !Arc::ptr_eq(&pq.prop.context, &p_thm.prop.context) {
             return Err(ProofError::ContextMismatch);
         }
@@ -282,6 +284,83 @@ impl Thm {
         let q_id = q.as_local().ok_or(ProofError::ForeignConclusion)?;
         Ok(Self {
             prop: Prop::new(pq.prop.context, q_id),
+        })
+    }
+
+    /// **Modus ponens.** From `ctx ⊢ Imp(p, q)` and `ctx ⊢ p'` where
+    /// `p ≡ p'` at UF level 0, derive `ctx ⊢ q`.
+    pub fn mp(arena: &mut Arena, imp: Thm, ant: Thm) -> Result<Self, ProofError> {
+        if !arena.is_well_typed(imp.prop.concl) || !arena.is_well_typed(ant.prop.concl) {
+            return Err(ProofError::IllTypedInput);
+        }
+        if !Arc::ptr_eq(&imp.prop.context, &ant.prop.context) {
+            return Err(ProofError::ContextMismatch);
+        }
+        let (p, q) = match *arena.term_def(imp.prop.concl) {
+            TermDef::Op2(PrimOp2::LogicalImp, p, q) => (p, q),
+            _ => return Err(ProofError::ExpectedImplication),
+        };
+        if !arena.eq_at_level_0(p, TermRef::local(ant.prop.concl)) {
+            return Err(ProofError::LhsMismatch);
+        }
+        let q_id = q.as_local().ok_or(ProofError::ForeignConclusion)?;
+        Ok(Self {
+            prop: Prop::new(imp.prop.context, q_id),
+        })
+    }
+
+    /// **Congruence on application (`MK_COMB`).** From `ctx ⊢ f = g`
+    /// and `ctx ⊢ x = y`, derive `ctx ⊢ Comb(f, x) = Comb(g, y)`.
+    ///
+    /// This is a congruence rule — it permits **ill-typed** terms in
+    /// its inputs, mirroring the arena-level
+    /// [`union_if_congruent_step`](crate::Arena::union_if_congruent_step).
+    /// The resulting `Eq`'s well-typedness depends on the inputs;
+    /// downstream rules will enforce typing as needed.
+    pub fn mk_comb(arena: &mut Arena, fg: Thm, xy: Thm) -> Result<Self, ProofError> {
+        if !Arc::ptr_eq(&fg.prop.context, &xy.prop.context) {
+            return Err(ProofError::ContextMismatch);
+        }
+        let (f, g) = match *arena.term_def(fg.prop.concl) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => return Err(ProofError::ExpectedEquality),
+        };
+        let (x, y) = match *arena.term_def(xy.prop.concl) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => return Err(ProofError::ExpectedEquality),
+        };
+        let fx = arena.alloc_term(TermDef::Comb(f, x));
+        let gy = arena.alloc_term(TermDef::Comb(g, y));
+        let eq = arena.alloc_term(TermDef::Eq(TermRef::local(fx), TermRef::local(gy)));
+        Ok(Self {
+            prop: Prop::new(fg.prop.context, eq),
+        })
+    }
+
+    /// **β-reduction.** Given a well-typed redex
+    /// `comb = Comb(Abs(α, body), arg)`, derive
+    /// `ctx ⊢ comb = body[Bound(0) := arg]`.
+    pub fn beta(
+        arena: &mut Arena,
+        ctx: Arc<Context>,
+        comb: TermId,
+    ) -> Result<Self, ProofError> {
+        if !arena.is_well_typed(comb) {
+            return Err(ProofError::IllTypedInput);
+        }
+        let (abs_ref, arg_ref) = match *arena.term_def(comb) {
+            TermDef::Comb(f, x) => (f, x),
+            _ => return Err(ProofError::ExpectedBetaRedex),
+        };
+        let abs_id = abs_ref.as_local().ok_or(ProofError::ExpectedBetaRedex)?;
+        let body_ref = match *arena.term_def(abs_id) {
+            TermDef::Abs(_, body) => body,
+            _ => return Err(ProofError::ExpectedBetaRedex),
+        };
+        let reduced = arena.subst(body_ref, 0, arg_ref);
+        let eq = arena.alloc_term(TermDef::Eq(TermRef::local(comb), reduced));
+        Ok(Self {
+            prop: Prop::new(ctx, eq),
         })
     }
 }
@@ -312,6 +391,14 @@ pub enum ProofError {
     /// `eq_mp`: the equality's RHS is a foreign ref. The kernel
     /// can't yet record a foreign conclusion as a Thm.
     ForeignConclusion,
+    /// `mp`: the Thm's conclusion isn't an `Op2(LogicalImp, _, _)`.
+    ExpectedImplication,
+    /// `beta`: the term isn't a `Comb(Abs(_, _), _)` shape.
+    ExpectedBetaRedex,
+    /// One of the Thm rule's term inputs isn't well-typed
+    /// (`TypeInfo::Typed`). Congruence-style rules (`mk_comb`) are
+    /// exempt; all others require their inputs to type-check.
+    IllTypedInput,
 }
 
 impl std::fmt::Display for ProofError {
@@ -330,6 +417,9 @@ impl std::fmt::Display for ProofError {
             ProofError::ForeignConclusion => {
                 write!(f, "equality RHS is a foreign ref; cannot record as Thm conclusion")
             }
+            ProofError::ExpectedImplication => write!(f, "expected an Imp conclusion"),
+            ProofError::ExpectedBetaRedex => write!(f, "expected a Comb(Abs(_, _), _) redex"),
+            ProofError::IllTypedInput => write!(f, "rule input is not well-typed"),
         }
     }
 }

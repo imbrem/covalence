@@ -13,6 +13,8 @@ For the exhaustive list of kernel primitive operations, their type
 signatures, host-side reduction semantics, minimal axioms, and the
 macro-defined symbolic rewrite layer, see
 [`prover-primops.md`](./prover-primops.md).
+For the S-expression debug syntax (used by the REPL and printer),
+see [`prover-sexpr.md`](./prover-sexpr.md).
 
 ---
 

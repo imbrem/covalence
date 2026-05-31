@@ -423,6 +423,32 @@ concept system.
 - Shell test: a component without a handle to a concept cannot
   observe it (the host linker refuses).
 
+### Phase 7b — S-expression debug syntax (parser + printer)
+
+**Scope.** Build the untrusted S-expression parser/printer for the
+kernel's term and type language. Spec is
+[`prover-sexpr.md`](./prover-sexpr.md).
+
+- Lives in `covalence-shell` (or a thin sub-crate). Uses
+  `covalence-sexp` (`CovalenceDialect`).
+- `parse_term`/`parse_type` walk an `SExpr` and emit `TermRef` /
+  `TypeRef` via kernel allocators. Named binders translated to de
+  Bruijn during the walk; bound names captured in
+  `arena.abs_hints` for round-trip display.
+- `print_term`/`print_type` recursively reconstruct an
+  S-expression, using display hints where available and
+  capture-avoiding fresh names otherwise.
+
+**Deliverables.**
+- `covalence-shell/src/sexpr.rs` (parser + printer).
+- A round-trip test for every `TermKind` / `TypeKind` / `PrimOp1` /
+  `PrimOp2` variant.
+
+**Acceptance.**
+- Round-trip parses are structural identity on the resulting
+  `TermRef`s.
+- A new kernel primop forces a parser test to fail until handled.
+
 ### Phase 8 — REPL bindings + MVP demo
 
 **Scope.** Add Forsp primitives to the REPL for the new operations
@@ -430,6 +456,8 @@ and run the MVP demo end-to-end.
 
 Primitives (all wired through `covalence-shell`):
 
+- `<string> parse-term` → `<term-ref>` (uses Phase 7b)
+- `<term-ref> print-term` → prints the S-expression
 - `<kind> declare-anonymous-concept`
 - `<handle> <arg1> <arg2> ... <n> observe`
 - `<assumption-prop> add-context-assumption`

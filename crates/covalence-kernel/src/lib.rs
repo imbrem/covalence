@@ -9,11 +9,13 @@
 pub mod arena;
 pub mod id;
 pub mod primop;
+pub mod prop;
 pub mod term;
 pub mod ty;
 pub mod uf;
 
 pub use arena::{Arena, UnionError};
+pub use prop::{Context, ProofError, Prop, Thm};
 pub use id::{
     BitsId, BytesId, ForeignTermId, ForeignTypeId, ImportId, IntId, NatId, StrId, TermId,
     TyArgsId, TypeId,

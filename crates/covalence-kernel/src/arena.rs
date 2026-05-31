@@ -12,6 +12,15 @@ use crate::id::{
     TyArgsId, TypeId,
 };
 use crate::term::{TermDef, TermKind, TermRef};
+
+/// Errors returned by [`Arena::union`] and friends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum UnionError {
+    /// Both refs terminate at foreign canonicals — there's no local
+    /// UF slot to mutate. Callers can wrap one in a local term and
+    /// retry.
+    BothForeign,
+}
 use crate::ty::{BuiltinTy, TypeDef, TypeInfo, TypeInfoKind, TypeRef, TypeRefKind};
 use crate::uf::{TermUfEntry, TypeUfEntry};
 
@@ -170,6 +179,146 @@ impl Arena {
     /// setter.
     pub fn set_type_info(&mut self, id: TermId, info: TypeInfo) {
         self.uf_terms[id.0 as usize].type_info = info;
+    }
+
+    // ---- union-find primitives --------------------------------------------
+
+    /// Walk a [`TermRef`]'s canonical chain within **this** arena
+    /// only — stop at the local self-canonical or at the first
+    /// foreign hop. Cheap; no `Arc` traversal. For full cross-arena
+    /// resolution use [`canonical_term`](Self::canonical_term).
+    pub fn canonical_local(&self, r: TermRef) -> TermRef {
+        let mut cur = r;
+        loop {
+            let Some(id) = cur.as_local() else { return cur };
+            let next = self.term_uf(id).canonical;
+            if next == cur {
+                return cur;
+            }
+            cur = next;
+        }
+    }
+
+    /// Record an equality between two terms in the UF.
+    ///
+    /// Walks both terms to their local canonicals and updates one's
+    /// canonical pointer to point at the other. **Unchecked**: the
+    /// kernel does not verify that `a = b` — callers must have a
+    /// proof (or be performing a trusted internal step like
+    /// β-reduction).
+    ///
+    /// Returns [`UnionError::BothForeign`] only when both refs
+    /// terminate at foreign canonicals; in that case neither side
+    /// has a local UF slot to mutate. Callers can work around this
+    /// by allocating a local term that wraps one of the foreign
+    /// refs and unioning that.
+    pub fn union(&mut self, a: TermRef, b: TermRef) -> Result<(), UnionError> {
+        let a_canon = self.canonical_local(a);
+        let b_canon = self.canonical_local(b);
+        if a_canon == b_canon {
+            return Ok(()); // already in same class
+        }
+        if let Some(a_local) = a_canon.as_local() {
+            self.uf_terms[a_local.0 as usize].canonical = b_canon;
+            return Ok(());
+        }
+        if let Some(b_local) = b_canon.as_local() {
+            self.uf_terms[b_local.0 as usize].canonical = a_canon;
+            return Ok(());
+        }
+        Err(UnionError::BothForeign)
+    }
+
+    /// Are `a` and `b` known equal at level 0 — same canonical
+    /// (modulo this arena's local UF)?
+    ///
+    /// For full cross-arena equality use the canonical-walk through
+    /// [`canonical_term`](Self::canonical_term) and compare the
+    /// `(Arc<Arena>, TermId)` results.
+    pub fn eq_at_level_0(&self, a: TermRef, b: TermRef) -> bool {
+        self.canonical_local(a) == self.canonical_local(b)
+    }
+
+    /// LCF-style "ratchet up one congruence level" helper.
+    ///
+    /// If `a` and `b` decompose into the same `TermDef` shape and
+    /// their corresponding sub-children are already
+    /// `eq_at_level_0`, perform the union. Returns `Ok(true)` if the
+    /// union fired, `Ok(false)` if the shapes don't match or
+    /// children aren't congruent.
+    ///
+    /// Both refs must resolve to local terms for shape inspection;
+    /// foreign-canonical refs return `Ok(false)`.
+    pub fn union_if_congruent_step(&mut self, a: TermRef, b: TermRef) -> Result<bool, UnionError> {
+        // Walk to local canonicals first so we compare structural
+        // shapes of the current representatives.
+        let a_canon = self.canonical_local(a);
+        let b_canon = self.canonical_local(b);
+        if a_canon == b_canon {
+            return Ok(true);
+        }
+        let (Some(a_local), Some(b_local)) = (a_canon.as_local(), b_canon.as_local()) else {
+            return Ok(false);
+        };
+        let a_def = *self.term_def(a_local);
+        let b_def = *self.term_def(b_local);
+        if !self.shapes_congruent_step(&a_def, &b_def) {
+            return Ok(false);
+        }
+        // Children matched; record the union.
+        self.union(a_canon, b_canon)?;
+        Ok(true)
+    }
+
+    /// True iff `a` and `b` are the same `TermDef` variant with all
+    /// corresponding `TermRef` children already `eq_at_level_0`.
+    /// Used by [`union_if_congruent_step`](Self::union_if_congruent_step).
+    fn shapes_congruent_step(&self, a: &TermDef, b: &TermDef) -> bool {
+        use TermDef::*;
+        match (*a, *b) {
+            // Nullary shapes — equal iff the def itself matches.
+            (True, True) | (False, False) => true,
+            (Bound(i), Bound(j)) => i == j,
+            (U8(i), U8(j)) => i == j,
+            (U16(i), U16(j)) => i == j,
+            (U32(i), U32(j)) => i == j,
+            (U64(i), U64(j)) => i == j,
+            (I8(i), I8(j)) => i == j,
+            (I16(i), I16(j)) => i == j,
+            (I32(i), I32(j)) => i == j,
+            (I64(i), I64(j)) => i == j,
+            (IntInline(i), IntInline(j)) => i == j,
+            (IntStored(i), IntStored(j)) => i == j,
+            (NatInline(i), NatInline(j)) => i == j,
+            (NatStored(i), NatStored(j)) => i == j,
+            (BitsStored(i), BitsStored(j)) => i == j,
+            (BytesStored(i), BytesStored(j)) => i == j,
+            (Id(t1), Id(t2)) => t1 == t2,
+            (LiftOp1(o1), LiftOp1(o2)) => o1 == o2,
+            (LiftOp2(o1), LiftOp2(o2)) => o1 == o2,
+            // Atoms with names + types.
+            (Free(n1, t1), Free(n2, t2)) => n1 == n2 && t1 == t2,
+            (Const(n1, t1), Const(n2, t2)) => n1 == n2 && t1 == t2,
+            // One-child + (sometimes) type shapes.
+            (Forall(p1), Forall(p2)) | (Exists(p1), Exists(p2)) => self.eq_at_level_0(p1, p2),
+            (Eps(t1, p1), Eps(t2, p2)) => t1 == t2 && self.eq_at_level_0(p1, p2),
+            (Op1(o1, x1), Op1(o2, x2)) => o1 == o2 && self.eq_at_level_0(x1, x2),
+            // Two-child shapes.
+            (Comb(f1, x1), Comb(f2, x2))
+            | (Eq(f1, x1), Eq(f2, x2))
+            | (Ne(f1, x1), Ne(f2, x2))
+            | (Comp(f1, x1), Comp(f2, x2))
+            | (Iter(f1, x1), Iter(f2, x2))
+            | (Ite(f1, x1), Ite(f2, x2)) => {
+                self.eq_at_level_0(f1, f2) && self.eq_at_level_0(x1, x2)
+            }
+            (Op2(o1, a1, b1), Op2(o2, a2, b2)) => {
+                o1 == o2 && self.eq_at_level_0(a1, a2) && self.eq_at_level_0(b1, b2)
+            }
+            // Abs: types match and bodies match.
+            (Abs(t1, b1), Abs(t2, b2)) => t1 == t2 && self.eq_at_level_0(b1, b2),
+            _ => false, // different variants
+        }
     }
 
     // ---- substitution & shifting (locally-nameless) ------------------------

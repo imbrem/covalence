@@ -991,13 +991,161 @@ fn subst_skips_irrelevant_subterms_fast() {
     // A closed subterm (no dangling Bound) doesn't need shifting/
     // substituting; subst should reuse the original TermRef.
     let mut a = Arena::new();
-    let bool_ty = a.bool_ty();
-    let _ = bool_ty;
     let t = a.alloc_term(TermDef::True); // closed
     let arg = a.alloc_term(TermDef::False);
     // subst(True, 0, False) = True (no Bound(0) inside).
     let result = a.subst(TermRef::local(t), 0, TermRef::local(arg));
     assert_eq!(result, TermRef::local(t));
+}
+
+// ---------------------------------------------------------------------------
+// Union-find primitives.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fresh_terms_not_equal_at_level_0() {
+    let mut a = Arena::new();
+    let x = a.alloc_term(TermDef::True);
+    let y = a.alloc_term(TermDef::False);
+    assert!(!a.eq_at_level_0(TermRef::local(x), TermRef::local(y)));
+}
+
+#[test]
+fn term_is_equal_to_itself() {
+    let mut a = Arena::new();
+    let x = a.alloc_term(TermDef::True);
+    assert!(a.eq_at_level_0(TermRef::local(x), TermRef::local(x)));
+}
+
+#[test]
+fn union_makes_two_terms_equal() {
+    let mut a = Arena::new();
+    // Two separately-allocated NatInline(5) terms — different TermIds,
+    // same logical value. Initially not eq at level 0.
+    let n1 = a.alloc_term(TermDef::nat_inline(5));
+    let n2 = a.alloc_term(TermDef::nat_inline(5));
+    assert!(!a.eq_at_level_0(TermRef::local(n1), TermRef::local(n2)));
+    a.union(TermRef::local(n1), TermRef::local(n2)).unwrap();
+    assert!(a.eq_at_level_0(TermRef::local(n1), TermRef::local(n2)));
+}
+
+#[test]
+fn union_is_transitive_via_walk() {
+    let mut a = Arena::new();
+    let x = a.alloc_term(TermDef::nat_inline(1));
+    let y = a.alloc_term(TermDef::nat_inline(2));
+    let z = a.alloc_term(TermDef::nat_inline(3));
+    a.union(TermRef::local(x), TermRef::local(y)).unwrap();
+    a.union(TermRef::local(y), TermRef::local(z)).unwrap();
+    // After x→y→z, x and z resolve to the same canonical.
+    assert!(a.eq_at_level_0(TermRef::local(x), TermRef::local(z)));
+}
+
+#[test]
+fn union_self_is_noop() {
+    let mut a = Arena::new();
+    let x = a.alloc_term(TermDef::True);
+    let canon_before = a.canonical_local(TermRef::local(x));
+    a.union(TermRef::local(x), TermRef::local(x)).unwrap();
+    let canon_after = a.canonical_local(TermRef::local(x));
+    assert_eq!(canon_before, canon_after);
+}
+
+#[test]
+fn union_if_congruent_step_succeeds_on_matching_combs() {
+    use covalence_kernel::PrimOp1;
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let bool_to_bool = a.alloc_type(TypeDef::Fun(bool_ty, bool_ty));
+    let neg = alloc_const(&mut a, "not", bool_to_bool);
+    let t = a.alloc_term(TermDef::True);
+    // Two structurally-identical Comb(neg, True) terms with separate TermIds.
+    let app1 = a.alloc_term(TermDef::Comb(TermRef::local(neg), TermRef::local(t)));
+    let app2 = a.alloc_term(TermDef::Comb(TermRef::local(neg), TermRef::local(t)));
+    assert!(!a.eq_at_level_0(TermRef::local(app1), TermRef::local(app2)));
+    // Children (neg and t) are already eq at level 0 (literally same TermIds).
+    let fired = a
+        .union_if_congruent_step(TermRef::local(app1), TermRef::local(app2))
+        .unwrap();
+    assert!(fired);
+    assert!(a.eq_at_level_0(TermRef::local(app1), TermRef::local(app2)));
+    let _ = PrimOp1::LogicalNot;
+}
+
+#[test]
+fn union_if_congruent_step_propagates_via_children_union() {
+    let mut a = Arena::new();
+    // x and y are two distinct nat literals; we union them.
+    let x = a.alloc_term(TermDef::nat_inline(7));
+    let y = a.alloc_term(TermDef::nat_inline(7));
+    a.union(TermRef::local(x), TermRef::local(y)).unwrap();
+    // Now Op1(NatSucc, x) and Op1(NatSucc, y) should match via cong.
+    use covalence_kernel::PrimOp1;
+    let sx = a.alloc_term(TermDef::Op1(PrimOp1::NatSucc, TermRef::local(x)));
+    let sy = a.alloc_term(TermDef::Op1(PrimOp1::NatSucc, TermRef::local(y)));
+    assert!(!a.eq_at_level_0(TermRef::local(sx), TermRef::local(sy)));
+    let fired = a
+        .union_if_congruent_step(TermRef::local(sx), TermRef::local(sy))
+        .unwrap();
+    assert!(fired);
+    assert!(a.eq_at_level_0(TermRef::local(sx), TermRef::local(sy)));
+}
+
+#[test]
+fn union_if_congruent_step_fails_on_different_shapes() {
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    let n = a.alloc_term(TermDef::nat_inline(0));
+    let fired = a
+        .union_if_congruent_step(TermRef::local(t), TermRef::local(n))
+        .unwrap();
+    assert!(!fired);
+    assert!(!a.eq_at_level_0(TermRef::local(t), TermRef::local(n)));
+}
+
+#[test]
+fn union_if_congruent_step_fails_when_children_not_equal() {
+    let mut a = Arena::new();
+    use covalence_kernel::PrimOp1;
+    // Two NatSucc applied to different unequal nat literals.
+    let x = a.alloc_term(TermDef::nat_inline(1));
+    let y = a.alloc_term(TermDef::nat_inline(2));
+    let sx = a.alloc_term(TermDef::Op1(PrimOp1::NatSucc, TermRef::local(x)));
+    let sy = a.alloc_term(TermDef::Op1(PrimOp1::NatSucc, TermRef::local(y)));
+    let fired = a
+        .union_if_congruent_step(TermRef::local(sx), TermRef::local(sy))
+        .unwrap();
+    assert!(!fired);
+}
+
+#[test]
+fn canonical_local_stops_at_foreign() {
+    let mut d = Arena::new();
+    let d_bool = d.bool_ty();
+    let c = alloc_const(&mut d, "c", d_bool);
+    let d_frozen = d.freeze();
+    let mut a = Arena::new();
+    let imp = a.add_import(d_frozen.clone());
+    let foreign_ref = a.foreign_term_ref(imp, c);
+    // canonical_local returns the foreign ref unchanged.
+    let canon = a.canonical_local(foreign_ref);
+    assert_eq!(canon, foreign_ref);
+}
+
+#[test]
+fn union_with_foreign_lhs_updates_local_canonical() {
+    // Local term l, foreign term f. union(l, f) sets l's canonical to f.
+    let mut d = Arena::new();
+    let d_bool = d.bool_ty();
+    let foreign_const = alloc_const(&mut d, "c", d_bool);
+    let d_frozen = d.freeze();
+    let mut a = Arena::new();
+    let imp = a.add_import(d_frozen);
+    let f_ref = a.foreign_term_ref(imp, foreign_const);
+    let l = a.alloc_term(TermDef::True);
+    a.union(TermRef::local(l), f_ref).unwrap();
+    assert_eq!(a.canonical_local(TermRef::local(l)), f_ref);
+    assert!(a.eq_at_level_0(TermRef::local(l), f_ref));
 }
 
 #[test]

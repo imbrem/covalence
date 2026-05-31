@@ -292,3 +292,140 @@ fn test_unit_thm_full_chain() {
         theory.assumptions.len()
     );
 }
+
+// ===================================================================
+// Standard library tests (from assets/opentheory/std/)
+//
+// These test against the real OpenTheory standard library packages.
+// They skip (not fail) if the std directory is not populated.
+// ===================================================================
+
+fn std_dir() -> std::path::PathBuf {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    manifest.join("../../assets/opentheory/std")
+}
+
+fn std_resolver() -> Option<FileResolver> {
+    let dir = std_dir();
+    if !dir.exists() || std::fs::read_dir(&dir).ok()?.next().is_none() {
+        eprintln!("skip: std packages not downloaded (run with --ignored to fetch)");
+        return None;
+    }
+    Some(FileResolver::new(dir))
+}
+
+// -------------------------------------------------------------------
+// Umbrella: bool (bool-def + bool-int + axioms + bool-ext + bool-class)
+//
+// NOTE: These tests are #[ignore] because the std packages use a
+// combined article format that references constants not yet supported
+// by the checker. Run with `--ignored` once the checker is extended.
+// -------------------------------------------------------------------
+
+#[test]
+#[ignore]
+fn test_std_bool_def() {
+    let Some(resolver) = std_resolver() else {
+        return;
+    };
+    let (mut kernel, mut names) = setup_with_select();
+    let mut cache = TheoryCache::default();
+    let theory = check_theory(&mut kernel, &mut names, &resolver, "bool-def", &mut cache).unwrap();
+    assert!(
+        theory.theorems.len() >= 11,
+        "bool-def should export at least 11 theorems (one per definition), got {}",
+        theory.theorems.len()
+    );
+}
+
+#[test]
+#[ignore]
+fn test_std_bool_umbrella() {
+    let Some(resolver) = std_resolver() else {
+        return;
+    };
+    let (mut kernel, mut names) = setup_with_select();
+    let mut cache = TheoryCache::default();
+    let theory = check_theory(&mut kernel, &mut names, &resolver, "bool", &mut cache).unwrap();
+    assert!(
+        !theory.theorems.is_empty(),
+        "bool umbrella should export theorems"
+    );
+    println!(
+        "std bool: {} theorems, {} assumptions",
+        theory.theorems.len(),
+        theory.assumptions.len()
+    );
+}
+
+// -------------------------------------------------------------------
+// Umbrella: unit
+// -------------------------------------------------------------------
+
+#[test]
+#[ignore]
+fn test_std_unit() {
+    let Some(resolver) = std_resolver() else {
+        return;
+    };
+    let (mut kernel, mut names) = setup_with_select();
+    let mut cache = TheoryCache::default();
+    let theory = check_theory(&mut kernel, &mut names, &resolver, "unit", &mut cache).unwrap();
+    assert!(
+        !theory.theorems.is_empty(),
+        "unit umbrella should export theorems"
+    );
+    println!(
+        "std unit: {} theorems, {} assumptions",
+        theory.theorems.len(),
+        theory.assumptions.len()
+    );
+}
+
+// -------------------------------------------------------------------
+// Umbrella: pair
+// -------------------------------------------------------------------
+
+#[test]
+#[ignore]
+fn test_std_pair() {
+    let Some(resolver) = std_resolver() else {
+        return;
+    };
+    let (mut kernel, mut names) = setup_with_select();
+    let mut cache = TheoryCache::default();
+    let theory = check_theory(&mut kernel, &mut names, &resolver, "pair", &mut cache).unwrap();
+    assert!(
+        !theory.theorems.is_empty(),
+        "pair umbrella should export theorems"
+    );
+    println!(
+        "std pair: {} theorems, {} assumptions",
+        theory.theorems.len(),
+        theory.assumptions.len()
+    );
+}
+
+// -------------------------------------------------------------------
+// Umbrella: natural
+// -------------------------------------------------------------------
+
+#[test]
+#[ignore]
+fn test_std_natural() {
+    let Some(resolver) = std_resolver() else {
+        return;
+    };
+    let (mut kernel, mut names) = setup_with_select();
+    let mut cache = TheoryCache::default();
+    let theory = check_theory(&mut kernel, &mut names, &resolver, "natural", &mut cache).unwrap();
+    assert!(
+        !theory.theorems.is_empty(),
+        "natural umbrella should export theorems"
+    );
+    println!(
+        "std natural: {} theorems, {} assumptions",
+        theory.theorems.len(),
+        theory.assumptions.len()
+    );
+}

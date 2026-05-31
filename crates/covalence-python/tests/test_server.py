@@ -208,7 +208,7 @@ def test_store_blob_from_file(server):
 
 def test_eval(server):
     status, body, headers = api(
-        server, "/eval", method="POST", body="(status)",
+        server, "/eval", method="POST", body="status",
         content_type="text/plain",
     )
     assert status == 200
@@ -217,7 +217,7 @@ def test_eval(server):
 
 def test_eval_store(server):
     status, body, _ = api(
-        server, "/eval", method="POST", body='(store "via eval")',
+        server, "/eval", method="POST", body='"via eval" store',
         content_type="text/plain",
     )
     assert status == 200

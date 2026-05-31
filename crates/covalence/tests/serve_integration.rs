@@ -136,12 +136,9 @@ fn repl_store_and_read_roundtrip() {
         "hash should be hex: {hash}"
     );
 
-    // `read` pushes a blob; show formats it as "hello world" (with quotes)
-    let read_output = session.eval(&format!("{hash} read print"));
-    assert!(
-        read_output.contains("hello world"),
-        "read output should contain content: {read_output}"
-    );
+    // `read` pushes a blob; the REPL displays blobs as quoted strings.
+    let read_output = session.eval(&format!("{hash} read"));
+    assert_eq!(read_output.trim(), r#""hello world""#);
 }
 
 #[test]
@@ -149,7 +146,15 @@ fn repl_help_lists_commands() {
     let server = start_server();
     let mut session = server.session();
     let output = session.eval("help");
-    for cmd in ["store", "read", "compile-wat", "decide", "status", "help"] {
+    for cmd in [
+        "store",
+        "read",
+        "compile-wat",
+        "parse-component",
+        "decide",
+        "status",
+        "help",
+    ] {
         assert!(
             output.contains(cmd),
             "help should mention '{cmd}': {output}"
@@ -158,17 +163,17 @@ fn repl_help_lists_commands() {
 }
 
 #[test]
-fn repl_compile_wat_and_read_wat() {
+fn repl_module_compile_and_read_wat() {
     let server = start_server();
     let mut session = server.session();
 
-    // Compile a minimal WAT module via compile-wat
+    // Compile a minimal WAT module: push WAT source as a blob, call compile-wat.
     let hash_output = session.eval(r#""(module (func (export \"f\")))" compile-wat"#);
     let hash = hash_output.trim();
     assert_eq!(hash.len(), 64, "expected 64-char hex hash, got: {hash}");
 
-    // Decompile back to WAT — read-wat pushes a blob, print it
-    let wat_output = session.eval(&format!("{hash} read-wat print"));
+    // Decompile back to WAT
+    let wat_output = session.eval(&format!("{hash} read-wat"));
     assert!(
         wat_output.contains("module"),
         "WAT output should contain 'module': {wat_output}"
@@ -217,17 +222,11 @@ fn server_state_persists_across_requests() {
         "different content should produce different hashes"
     );
 
-    let read1 = session.eval(&format!("{hash1} read print"));
-    assert!(
-        read1.contains("first"),
-        "read should contain 'first': {read1}"
-    );
+    let read1 = session.eval(&format!("{hash1} read"));
+    assert_eq!(read1.trim(), r#""first""#);
 
-    let read2 = session.eval(&format!("{hash2} read print"));
-    assert!(
-        read2.contains("second"),
-        "read should contain 'second': {read2}"
-    );
+    let read2 = session.eval(&format!("{hash2} read"));
+    assert_eq!(read2.trim(), r#""second""#);
 }
 
 #[test]
@@ -238,7 +237,7 @@ fn repl_unknown_command_returns_error() {
     // Should contain an error indication
     let lower = output.to_lowercase();
     assert!(
-        lower.contains("unbound") || lower.contains("error"),
+        lower.contains("unbound") || lower.contains("error") || lower.contains("unrecognized"),
         "unknown command should produce error: {output}"
     );
 }

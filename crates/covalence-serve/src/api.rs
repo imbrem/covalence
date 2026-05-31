@@ -10,7 +10,7 @@ use covalence_object::{
     Dir, DirMode, DirRow, Sha256Identity, Table, TableBuilder, git_tree_bytes_mapped,
     git_tree_to_dir_rows_mapped,
 };
-use covalence_store::{Blob, ContentStore, GitObjectType, ObjectStore, StoreError};
+use covalence_store::{Blob, ContentStore, GitObjectType, ObjectStore, StoreError, Tree};
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -481,19 +481,22 @@ pub async fn object_insert_blob(
     }
 }
 
-/// POST /api/objects/tree — insert tree (body = Table<Dir> bytes) → 201 { "hash": "<hex>" }
+/// POST /api/objects/tree — insert tree → 201 { "hash": "<hex>" }
 pub async fn object_insert_tree(
     axum::extract::State(state): axum::extract::State<crate::AppState>,
     body: Bytes,
 ) -> impl IntoResponse {
-    match SyncBackend::store_tree(&state.kernel, &body) {
+    match ObjectStore::insert(&state.object_store, &Tree(body.to_vec())) {
         Ok(hash) => Ok((
             StatusCode::CREATED,
             Json(HashResponse {
                 hash: hash.to_string(),
             }),
         )),
-        Err(e) => Err((StatusCode::BAD_REQUEST, format!("{e}"))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("store error: {e}"),
+        )),
     }
 }
 
@@ -523,17 +526,21 @@ pub async fn object_get_blob(
     }
 }
 
-/// GET /api/objects/tree/:hash — get tree → bytes or 404
+/// GET /api/objects/tree/:hash — get tree → bytes or 404 or error
 pub async fn object_get_tree(
     axum::extract::State(state): axum::extract::State<crate::AppState>,
     Path(hash_hex): Path<String>,
 ) -> impl IntoResponse {
     let hash = parse_hash_param(&hash_hex)?;
-    let data = get_tree_data(&state, &hash)?;
-    Ok::<_, (StatusCode, String)>((
-        [(axum::http::header::CONTENT_TYPE, "application/octet-stream")],
-        data,
-    ))
+    let result: Result<Option<Tree>, StoreError> = ObjectStore::get(&state.object_store, &hash);
+    match result {
+        Ok(Some(tree)) => Ok((
+            [(axum::http::header::CONTENT_TYPE, "application/octet-stream")],
+            tree.0,
+        )),
+        Ok(None) => Err((StatusCode::NOT_FOUND, "not found".to_string())),
+        Err(e) => Err((StatusCode::CONFLICT, format!("{e}"))),
+    }
 }
 
 /// HEAD /api/objects/:hash — contains (any type) → 200/404
@@ -544,9 +551,9 @@ pub async fn object_head(
     let Ok(hash) = parse_hash_param(&hash_hex) else {
         return StatusCode::BAD_REQUEST;
     };
-    // Check kernel store (trees + blobs) first, then typed object store.
-    if state.kernel.store().contains(&hash)
-        || ObjectStore::<_, Blob>::contains(&state.object_store, &hash)
+    // Check both blob and tree types (contains() checks both for KeyedObjectStore).
+    if ObjectStore::<_, Blob>::contains(&state.object_store, &hash)
+        || ObjectStore::<_, Tree>::contains(&state.object_store, &hash)
     {
         StatusCode::OK
     } else {
@@ -560,30 +567,6 @@ pub async fn object_get_any(
     Path(hash_hex): Path<String>,
 ) -> impl IntoResponse {
     let hash = parse_hash_param(&hash_hex)?;
-
-    // Check kernel store first (trees live here)
-    if let Some(data) = state.kernel.store().get(&hash) {
-        let kind = if SyncBackend::is_tree(&state.kernel, &hash).unwrap_or(false) {
-            "tree"
-        } else {
-            "blob"
-        };
-        return Ok((
-            [
-                (
-                    axum::http::header::CONTENT_TYPE,
-                    "application/octet-stream".to_owned(),
-                ),
-                (
-                    axum::http::header::HeaderName::from_static("x-object-kind"),
-                    kind.to_owned(),
-                ),
-            ],
-            data,
-        ));
-    }
-
-    // Fall back to typed object store
     match state.object_store.get_any(&hash) {
         Ok(Some(obj)) => {
             let kind = format!("{:?}", obj.kind).to_lowercase();
@@ -612,44 +595,28 @@ pub async fn object_insert_any(
     Path(kind): Path<String>,
     body: Bytes,
 ) -> impl IntoResponse {
-    match kind.as_str() {
-        "tree" => {
-            // Trees go through the kernel (validates Table<Dir>, uses dir_hash)
-            match SyncBackend::store_tree(&state.kernel, &body) {
-                Ok(hash) => Ok((
-                    StatusCode::CREATED,
-                    Json(HashResponse {
-                        hash: hash.to_string(),
-                    }),
-                )),
-                Err(e) => Err((StatusCode::BAD_REQUEST, format!("{e}"))),
-            }
-        }
-        "blob" | "commit" | "tag" => {
-            let obj_kind = match kind.as_str() {
-                "blob" => covalence_store::ObjectKind::Blob,
-                "commit" => covalence_store::ObjectKind::Commit,
-                "tag" => covalence_store::ObjectKind::Tag,
-                _ => unreachable!(),
-            };
-            let obj = covalence_store::AnyObject {
-                kind: obj_kind,
-                data: body.to_vec(),
-            };
-            match state.object_store.insert_any(&obj) {
-                Ok(hash) => Ok((
-                    StatusCode::CREATED,
-                    Json(HashResponse {
-                        hash: hash.to_string(),
-                    }),
-                )),
-                Err(e) => Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("store error: {e}"),
-                )),
-            }
-        }
-        _ => Err((StatusCode::BAD_REQUEST, format!("unknown kind: {kind}"))),
+    let obj_kind = match kind.as_str() {
+        "blob" => covalence_store::ObjectKind::Blob,
+        "tree" => covalence_store::ObjectKind::Tree,
+        "commit" => covalence_store::ObjectKind::Commit,
+        "tag" => covalence_store::ObjectKind::Tag,
+        _ => return Err((StatusCode::BAD_REQUEST, format!("unknown kind: {kind}"))),
+    };
+    let obj = covalence_store::AnyObject {
+        kind: obj_kind,
+        data: body.to_vec(),
+    };
+    match state.object_store.insert_any(&obj) {
+        Ok(hash) => Ok((
+            StatusCode::CREATED,
+            Json(HashResponse {
+                hash: hash.to_string(),
+            }),
+        )),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("store error: {e}"),
+        )),
     }
 }
 
@@ -664,26 +631,16 @@ pub struct ObjectInfoResponse {
 }
 
 /// GET /api/objects/info/{hash} — object metadata → { "kind": "...", "size": N }
+///
+/// Checks the Git-tagged object store first, then falls back to the kernel's
+/// content-addressed blob store (where REPL `(store ...)` puts data).
 pub async fn object_info(
     axum::extract::State(state): axum::extract::State<crate::AppState>,
     Path(hash_hex): Path<String>,
 ) -> impl IntoResponse {
     let hash = parse_hash_param(&hash_hex)?;
 
-    // 1. Check kernel blob store (trees and blobs live here)
-    if let Some(data) = state.kernel.store().get(&hash) {
-        let kind = if SyncBackend::is_tree(&state.kernel, &hash).unwrap_or(false) {
-            "tree"
-        } else {
-            "blob"
-        };
-        return Ok(Json(ObjectInfoResponse {
-            kind: kind.to_string(),
-            size: data.len(),
-        }));
-    }
-
-    // 2. Check the typed object store (tagged blobs, etc.)
+    // 1. Check the typed object store (trees, tagged blobs, etc.)
     match state.object_store.get_any(&hash) {
         Ok(Some(obj)) => {
             return Ok(Json(ObjectInfoResponse {
@@ -695,6 +652,14 @@ pub async fn object_info(
             return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("{e}")));
         }
         Ok(None) => {}
+    }
+
+    // 2. Fall back to the kernel blob store
+    if let Some(data) = state.kernel.store().get(&hash) {
+        return Ok(Json(ObjectInfoResponse {
+            kind: "blob".to_string(),
+            size: data.len(),
+        }));
     }
 
     Err((StatusCode::NOT_FOUND, "not found".to_string()))
@@ -723,14 +688,12 @@ fn mode_from_name(s: &str) -> Result<DirMode, (StatusCode, String)> {
 }
 
 fn get_tree_data(state: &crate::AppState, hash: &O256) -> Result<Vec<u8>, (StatusCode, String)> {
-    if !SyncBackend::is_tree(&state.kernel, hash).unwrap_or(false) {
-        return Err((StatusCode::NOT_FOUND, "tree not found".to_string()));
+    let result: Result<Option<Tree>, StoreError> = ObjectStore::get(&state.object_store, hash);
+    match result {
+        Ok(Some(tree)) => Ok(tree.0),
+        Ok(None) => Err((StatusCode::NOT_FOUND, "tree not found".to_string())),
+        Err(e) => Err((StatusCode::CONFLICT, format!("{e}"))),
     }
-    state
-        .kernel
-        .store()
-        .get(hash)
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "tree not found".to_string()))
 }
 
 /// GET /api/objects/tree/{hash}/ls — list tree entries → JSON array
@@ -829,7 +792,7 @@ pub async fn tree_insert_json(
         });
     }
     let table = builder.build();
-    match SyncBackend::store_tree(&state.kernel, table.as_bytes()) {
+    match ObjectStore::insert(&state.object_store, &Tree(table.into_bytes())) {
         Ok(hash) => Ok((
             StatusCode::CREATED,
             Json(HashResponse {
@@ -888,7 +851,7 @@ pub async fn tree_insert_git(
     }
     let table = builder.build();
 
-    match SyncBackend::store_tree(&state.kernel, table.as_bytes()) {
+    match ObjectStore::insert(&state.object_store, &Tree(table.into_bytes())) {
         Ok(hash) => Ok((
             StatusCode::CREATED,
             Json(HashResponse {

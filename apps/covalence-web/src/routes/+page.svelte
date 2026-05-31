@@ -13,27 +13,46 @@
 		'module', 'component', 'import', 'export', 'func', 'param', 'result',
 		'type', 'instance', 'core', 'canon', 'lift', 'lower',
 		'memory', 'table', 'global', 'elem', 'data', 'start', 'local', 'alias',
-		// Forsp REPL commands
-		'store', 'store-url', 'store-file', 'read', 'read-wat',
-		'compile-wat', 'parse-module', 'parse-component',
-		'decide', 'prove', 'hash', 'print', 'status', 'help',
+		// REPL commands
+		'store', 'help', 'parse-module', 'parse-component', 'decide',
 	]);
 
 	function escHtml(s: string): string {
 		return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 	}
 
-	/** Heuristic: is this output structured code (hashes, WAT, decide output) vs. prose (help, status)? */
+	/** Heuristic: is this output structured code (S-expression or hashes) vs. prose (help, status)? */
 	function isCodeOutput(text: string): boolean {
 		const trimmed = text.trim();
 		if (!trimmed) return false;
 		const lines = trimmed.split('\n');
-		// Lines containing 64-char hex hashes (plain hashes, or "hash true"/"hash sat" from decide)
-		if (lines.every(l => /[a-f0-9]{64}/.test(l.trim()))) return true;
-		// Looks like WAT/S-expression output (e.g. from read-wat)
+		// All lines are 64-char hex hashes
+		if (lines.every(l => /^[a-f0-9]{64}$/.test(l.trim()))) return true;
+		// Looks like an S-expression block: starts with ( and last line ends with )
 		const first = lines[0].trimStart();
 		const last = lines[lines.length - 1].trimEnd();
-		if (first.startsWith('(') && last.endsWith(')')) return true;
+		if (first.startsWith('(') && last.endsWith(')')) {
+			let depth = 0, inStr = false, escaped = false;
+			for (let i = 0; i < first.length; i++) {
+				const ch = first[i];
+				if (escaped) { escaped = false; continue; }
+				if (inStr) {
+					if (ch === '\\') escaped = true;
+					else if (ch === '"') inStr = false;
+					continue;
+				}
+				if (ch === '"') inStr = true;
+				else if (ch === '(') depth++;
+				else if (ch === ')') {
+					depth--;
+					if (depth === 0 && i < first.length - 1) {
+						const rest = first.slice(i + 1).trim();
+						if (rest && !rest.startsWith('(') && !rest.startsWith(';')) return false;
+					}
+				}
+			}
+			return true;
+		}
 		return false;
 	}
 
@@ -77,7 +96,7 @@
 					let cls: string;
 					if (KEYWORDS.has(atom)) cls = 'hl-keyword';
 					else if (/^-?[0-9]/.test(atom) || /^0x[0-9a-fA-F]+$/.test(atom)) cls = 'hl-number';
-					else if (atom.startsWith('$') || atom.startsWith('^') || atom.startsWith("'")) cls = 'hl-var';
+					else if (atom.startsWith('$')) cls = 'hl-var';
 					else cls = 'hl-atom';
 					out += `<span class="${cls}">${escHtml(atom)}</span>`;
 				}
@@ -225,15 +244,10 @@
 
 	// --- Tooltip state ---
 	let tooltipText = $state('');
-	let tooltipPreview = $state('');
 	let tooltipX = $state(0);
 	let tooltipY = $state(0);
 	let tooltipVisible = $state(false);
 	const infoCache = new Map<string, ObjectInfoResponse>();
-	const blobCache = new Map<string, Uint8Array>();
-
-	/** Max bytes to show inline in tooltip preview. */
-	const TOOLTIP_MAX_PREVIEW = 120;
 
 	function onOutputMouseOver(e: MouseEvent) {
 		const target = e.target as HTMLElement;
@@ -251,43 +265,6 @@
 		}
 	}
 
-	/** Check if bytes are likely printable UTF-8 text. */
-	function isTextData(data: Uint8Array): boolean {
-		for (let i = 0; i < data.length; i++) {
-			const b = data[i];
-			if (b === 0) return false;
-			if (b < 0x20 && b !== 0x09 && b !== 0x0a && b !== 0x0d) return false;
-		}
-		return true;
-	}
-
-	/** Format binary bytes as escaped hex string: \x89\x50... */
-	function formatBinaryPreview(data: Uint8Array, maxLen: number): string {
-		let out = '';
-		for (let i = 0; i < data.length && out.length < maxLen; i++) {
-			const b = data[i];
-			if (b >= 0x20 && b <= 0x7e) {
-				out += String.fromCharCode(b);
-			} else {
-				out += `\\x${b.toString(16).padStart(2, '0')}`;
-			}
-		}
-		if (out.length > maxLen) out = out.slice(0, maxLen);
-		if (data.length > maxLen / 2) out += '\u2026';
-		return out;
-	}
-
-	/** Build an inline preview string for a small blob. */
-	function buildPreview(data: Uint8Array): string {
-		if (data.length === 0) return '(empty)';
-		if (isTextData(data)) {
-			const text = new TextDecoder('utf-8', { fatal: false }).decode(data);
-			if (text.length <= TOOLTIP_MAX_PREVIEW) return text;
-			return text.slice(0, TOOLTIP_MAX_PREVIEW) + '\u2026';
-		}
-		return formatBinaryPreview(data, TOOLTIP_MAX_PREVIEW);
-	}
-
 	async function showTooltip(hash: string, el: HTMLElement) {
 		const rect = el.getBoundingClientRect();
 		tooltipX = rect.left;
@@ -296,7 +273,6 @@
 		let info = infoCache.get(hash);
 		if (!info) {
 			tooltipText = 'loading\u2026';
-			tooltipPreview = '';
 			tooltipVisible = true;
 			const fetched = await client.objectInfo(hash);
 			if (fetched) {
@@ -308,23 +284,7 @@
 			}
 		}
 		tooltipText = `${info.kind} \u00b7 ${formatSize(info.size)}`;
-		tooltipPreview = '';
 		tooltipVisible = true;
-
-		// For small blobs, fetch data and show inline preview
-		if (info.kind === 'blob' && info.size <= TOOLTIP_MAX_PREVIEW * 4) {
-			let data = blobCache.get(hash);
-			if (!data) {
-				const fetched = await client.getObjectBlob(hash);
-				if (fetched) {
-					blobCache.set(hash, fetched);
-					data = fetched;
-				}
-			}
-			if (data) {
-				tooltipPreview = buildPreview(data);
-			}
-		}
 	}
 
 	function formatSize(bytes: number): string {
@@ -377,7 +337,7 @@
 					bind:this={inputEl}
 					onkeydown={onKeydown}
 					rows="1"
-					placeholder={wsConnected ? 'help' : 'connecting...'}
+					placeholder={wsConnected ? '(help)' : 'connecting...'}
 					disabled={!wsConnected}
 					autofocus
 				></textarea>
@@ -387,10 +347,7 @@
 
 	{#if tooltipVisible}
 		<div class="hash-tooltip" style="left:{tooltipX}px;top:{tooltipY}px">
-			<div class="tooltip-info">{tooltipText}</div>
-			{#if tooltipPreview}
-				<div class="tooltip-preview">{tooltipPreview}</div>
-			{/if}
+			{tooltipText}
 		</div>
 	{/if}
 
@@ -567,22 +524,7 @@
 		color: var(--fg);
 		pointer-events: none;
 		z-index: 100;
-		max-width: 500px;
-	}
-
-	.hash-tooltip .tooltip-info {
 		white-space: nowrap;
-	}
-
-	.hash-tooltip .tooltip-preview {
-		color: var(--muted);
-		white-space: pre-wrap;
-		word-break: break-all;
-		font-family: var(--font-mono);
-		font-size: 0.7rem;
-		margin-top: 0.15rem;
-		border-top: 1px solid var(--border);
-		padding-top: 0.15rem;
 	}
 
 	/* --- Status bar --- */

@@ -188,20 +188,20 @@ def test_local_persistent_survives_reopen():
 
 def test_session_local():
     s = covalence.session_local()
-    result = s.eval("(help)")
+    result = s.eval("help")
     assert "store" in result
     assert "decide" in result
 
 
 def test_session_eval():
     s = covalence.session_local()
-    result = s.eval('(store "hello")')
+    result = s.eval('"hello" store')
     assert len(result) == 64  # hex hash
 
 
 def test_session_eval_sequence():
     """Session should maintain state across eval calls."""
     s = covalence.session_local()
-    h = s.eval('(store "hello")')
-    result = s.eval(f'(read {h})')
+    h = s.eval('"hello" store')
+    result = s.eval(f'{h} read')
     assert "hello" in result

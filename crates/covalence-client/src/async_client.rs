@@ -5,7 +5,7 @@ use hyper::body::Bytes;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 
-use crate::types::{BlobStatsResponse, DecideResponse, HashResponse, ObjectInfoResponse};
+use crate::types::{BlobStatsResponse, DecideResponse, HashResponse};
 
 type HttpClient = Client<hyper_util::client::legacy::connect::HttpConnector, Full<Bytes>>;
 
@@ -317,27 +317,6 @@ impl AsyncBackend for AsyncHttpBackend {
         let json: BlobStatsResponse =
             serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
         Ok(json.count)
-    }
-
-    async fn store_tree(&self, data: &[u8]) -> Result<O256, KernelError> {
-        let resp = self.post_bytes("/api/objects/tree", data).await?;
-        let json: HashResponse =
-            serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
-        O256::from_hex(&json.hash)
-            .ok_or_else(|| KernelError::Store(format!("invalid hash: {}", json.hash)))
-    }
-
-    async fn is_tree(&self, hash: &O256) -> Result<bool, KernelError> {
-        let path = format!("/api/objects/info/{hash}");
-        match self.get(&path).await {
-            Ok(resp) => {
-                let json: ObjectInfoResponse = serde_json::from_slice(&resp)
-                    .map_err(|e| KernelError::Store(format!("parse: {e}")))?;
-                Ok(json.kind == "tree")
-            }
-            Err(KernelError::NotFound(_)) => Ok(false),
-            Err(e) => Err(e),
-        }
     }
 
     async fn decide(&self, hash: &O256) -> Result<DecideOutput, KernelError> {

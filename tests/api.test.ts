@@ -50,15 +50,21 @@ beforeAll(() => {
 
   socketPath = findSocket(runtime, Date.now() + 10_000);
 
-  // The TS client uses fetch over HTTP, not Unix sockets. We need a TCP server.
-  // Instead, test using raw fetch over Unix socket via Bun's unix socket support.
-  // For simplicity, we'll test using direct fetch to the socket.
+  // The TS client uses fetch over HTTP. We tunnel it to the Unix socket via
+  // Bun's `{ unix }` fetch option, rewriting URLs to a placeholder HTTP host.
   client = new CovalenceClient({
-    baseUrl: "",
-    fetch: (input: string | URL | Request, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      return fetch(`unix://${socketPath}${url}`, init);
-    },
+    baseUrl: "http://localhost",
+    fetch: ((input: string | URL | Request, init?: RequestInit) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      return fetch(url, { ...init, unix: socketPath } as RequestInit & {
+        unix: string;
+      });
+    }) as typeof fetch,
   });
 });
 
@@ -74,10 +80,11 @@ afterAll(() => {
 
 /** Store blob via the object store endpoint (not the kernel blob store). */
 async function storeObjectBlob(data: Uint8Array): Promise<string> {
-  const res = await fetch(`unix://${socketPath}/api/objects/blob`, {
+  const res = await fetch("http://localhost/api/objects/blob", {
     method: "POST",
     body: data,
-  });
+    unix: socketPath,
+  } as RequestInit & { unix: string });
   if (!res.ok) throw new Error(`store object blob: ${res.status}`);
   const json = (await res.json()) as { hash: string };
   return json.hash;
@@ -128,11 +135,12 @@ test("store tree via JSON and list entries", async () => {
   const treeBody = JSON.stringify([
     { name: "hello.txt", mode: "regular", hash: blobHash },
   ]);
-  const res = await fetch(`unix://${socketPath}/api/objects/tree/json`, {
+  const res = await fetch("http://localhost/api/objects/tree/json", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: treeBody,
-  });
+    unix: socketPath,
+  } as RequestInit & { unix: string });
   expect(res.ok).toBe(true);
   const { hash: treeHash } = (await res.json()) as { hash: string };
 

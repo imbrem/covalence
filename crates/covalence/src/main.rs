@@ -28,7 +28,7 @@ fn main() {
         #[cfg(feature = "cogit")]
         Some(cmd::Command::Cog(args)) => cmd::cog::run(args),
 
-        #[cfg(all(feature = "hol", not(target_family = "wasm")))]
+        #[cfg(feature = "hol")]
         Some(cmd::Command::Hol(args)) => cmd::hol::run(args),
 
         #[cfg(feature = "lsp")]

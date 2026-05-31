@@ -16,8 +16,3 @@ pub(crate) struct DecideResponse {
     #[serde(default)]
     pub proved: Vec<String>,
 }
-
-#[derive(Deserialize)]
-pub(crate) struct ObjectInfoResponse {
-    pub kind: String,
-}

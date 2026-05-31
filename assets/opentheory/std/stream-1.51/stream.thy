@@ -1,0 +1,35 @@
+name: stream
+version: 1.51
+description: Infinite stream types
+author: Joe Leslie-Hurd <joe@gilith.com>
+license: MIT
+homepage: http://opentheory.gilith.com/?pkg=stream
+requires: base
+show: "Data.Bool"
+show: "Data.List"
+show: "Data.Pair"
+show: "Data.Stream"
+show: "Function"
+show: "Number.Natural"
+show: "Set"
+hol-light-int-file: hol-light.int
+hol-light-thm-file: hol-light.art
+haskell-category: List
+haskell-int-file: haskell.int
+haskell-src-file: haskell.art
+
+def {
+  package: stream-def-1.36
+  checksum: d095373c35d2ddb55a8ceed5aba9350ef4518020
+}
+
+thm {
+  import: def
+  package: stream-thm-1.39
+  checksum: c51dbedf1b312b3279abe54ba64d13ddeb86365e
+}
+
+main {
+  import: def
+  import: thm
+}

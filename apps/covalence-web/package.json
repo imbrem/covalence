@@ -10,8 +10,7 @@
   },
   "dependencies": {
     "covalence-client": "workspace:*",
-    "covalence-ui": "workspace:*",
-    "highlight.js": "^11.11.1"
+    "covalence-ui": "workspace:*"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.0",

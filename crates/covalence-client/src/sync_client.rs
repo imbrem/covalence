@@ -1,7 +1,7 @@
 use covalence_hash::O256;
 use covalence_kernel::{BackendInfo, DecideOutput, Decision, KernelError, SyncBackend};
 
-use crate::types::{BlobStatsResponse, DecideResponse, HashResponse, ObjectInfoResponse};
+use crate::types::{BlobStatsResponse, DecideResponse, HashResponse};
 
 /// Blocking HTTP backend using ureq (TCP) or raw HTTP/1.1 (Unix domain socket).
 pub struct SyncHttpBackend {
@@ -251,27 +251,6 @@ impl SyncBackend for SyncHttpBackend {
         let json: BlobStatsResponse =
             serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
         Ok(json.count)
-    }
-
-    fn store_tree(&self, data: &[u8]) -> Result<O256, KernelError> {
-        let resp = self.post_bytes("/api/objects/tree", data)?;
-        let json: HashResponse =
-            serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
-        O256::from_hex(&json.hash)
-            .ok_or_else(|| KernelError::Store(format!("invalid hash: {}", json.hash)))
-    }
-
-    fn is_tree(&self, hash: &O256) -> Result<bool, KernelError> {
-        let path = format!("/api/objects/info/{hash}");
-        match self.get(&path) {
-            Ok(resp) => {
-                let json: ObjectInfoResponse = serde_json::from_slice(&resp)
-                    .map_err(|e| KernelError::Store(format!("parse: {e}")))?;
-                Ok(json.kind == "tree")
-            }
-            Err(KernelError::NotFound(_)) => Ok(false),
-            Err(e) => Err(e),
-        }
     }
 
     fn decide(&self, hash: &O256) -> Result<DecideOutput, KernelError> {

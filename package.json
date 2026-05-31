@@ -2,6 +2,9 @@
   "name": "covalence",
   "private": true,
   "workspaces": ["extensions/*", "apps/*", "packages/*"],
+  "devDependencies": {
+    "covalence-client": "workspace:*"
+  },
   "scripts": {
     "build": "bun run build:native && bun run build:wasm",
     "build:native": "cargo build -p covalence",

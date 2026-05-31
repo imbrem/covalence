@@ -4,6 +4,8 @@
 //! programs against the abstract `HolLightKernel` trait from `covalence-hol`.
 
 pub mod error;
+#[cfg(feature = "fetch")]
+pub mod fetch;
 pub mod interp;
 pub mod machine;
 pub mod name;
@@ -13,6 +15,8 @@ pub mod resolve;
 pub mod theory;
 
 pub use error::OtError;
+#[cfg(feature = "fetch")]
+pub use fetch::{CachingUrlResolver, OPENTHEORY_REPO, UrlResolver};
 pub use interp::ArticleInterp;
 pub use machine::{ArticleMachine, ArticleResult};
 pub use name::{NameTable, OtName};
@@ -21,4 +25,4 @@ pub use reader::read_article;
 pub use resolve::{
     FileResolver, Theory, TheoryCache, TheoryResolver, check_theory, register_select,
 };
-pub use theory::{TheoryFile, parse_theory_file};
+pub use theory::{TheoryBlock, TheoryFile, parse_theory_file};

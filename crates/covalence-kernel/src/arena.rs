@@ -331,12 +331,31 @@ impl Arena {
     /// Compute `(bound_depth, has_free)` for a TermDef whose children
     /// have already been allocated (their UF entries are populated).
     /// Used by [`alloc_term`](Self::alloc_term).
+    ///
+    /// Only `Abs` binds a variable (decrements `bound_depth` by one).
+    /// Every other variant just propagates from its children — no
+    /// other shape introduces or removes a binder.
     fn term_props(&self, def: &TermDef) -> (u32, bool) {
+        // Fast paths for the per-op variants: just propagate.
+        if let Some((_, child)) = def.as_op1() {
+            return self.ref_props(child);
+        }
+        if let Some((_, a, b)) = def.as_op2() {
+            let (a_bd, a_hf) = self.ref_props(a);
+            let (b_bd, b_hf) = self.ref_props(b);
+            return (a_bd.max(b_bd), a_hf || b_hf);
+        }
         match def {
-            // -- de Bruijn / binders --
+            // -- de Bruijn (the only "open" non-Free shape) --
             TermDef::Bound(i) => (i + 1, false),
+            // -- the only binder --
+            TermDef::Abs(_, body) => {
+                let (b_bd, b_hf) = self.ref_props(*body);
+                (b_bd.saturating_sub(1), b_hf)
+            }
+            // -- free variables --
             TermDef::Free(_, _) => (0, true),
-            TermDef::Const(_, _) => (0, false),
+            // -- two-child propagation --
             TermDef::Comb(f, x)
             | TermDef::Eq(f, x)
             | TermDef::Ne(f, x)
@@ -347,22 +366,22 @@ impl Arena {
                 let (x_bd, x_hf) = self.ref_props(*x);
                 (f_bd.max(x_bd), f_hf || x_hf)
             }
-            TermDef::Abs(_, body) => {
-                let (b_bd, b_hf) = self.ref_props(*body);
-                (b_bd.saturating_sub(1), b_hf)
-            }
-            // -- single-child term children --
+            // -- single-child propagation --
             TermDef::Forall(p) | TermDef::Exists(p) | TermDef::Eps(_, p) => self.ref_props(*p),
-            // -- truth literals --
-            TermDef::True | TermDef::False => (0, false),
-            // -- type-only / op-only combinators --
-            TermDef::Id(_) | TermDef::LiftOp1(_) | TermDef::LiftOp2(_) => (0, false),
-            // -- fixed-width / arbitrary-precision literals --
-            TermDef::U8(_) | TermDef::U16(_) | TermDef::U32(_) | TermDef::U64(_)
+            // -- closed leaves --
+            TermDef::Const(_, _)
+            | TermDef::True
+            | TermDef::False
+            | TermDef::Id(_)
+            | TermDef::LiftOp1(_)
+            | TermDef::LiftOp2(_)
+            | TermDef::U8(_) | TermDef::U16(_) | TermDef::U32(_) | TermDef::U64(_)
             | TermDef::I8(_) | TermDef::I16(_) | TermDef::I32(_) | TermDef::I64(_)
             | TermDef::IntInline(_) | TermDef::IntStored(_)
             | TermDef::NatInline(_) | TermDef::NatStored(_)
             | TermDef::BitsStored(_) | TermDef::BytesStored(_) => (0, false),
+            // -- per-op variants handled by the fast paths above --
+            _ => unreachable!("per-op variant should have been caught by as_op1 / as_op2"),
         }
     }
 

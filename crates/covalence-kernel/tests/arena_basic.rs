@@ -534,6 +534,61 @@ fn alloc_combinator_variants() {
 }
 
 #[test]
+fn per_op_variants_with_accessors() {
+    use covalence_kernel::{PrimOp1, PrimOp2};
+
+    let mut a = Arena::new();
+    let nat_ty = a.alloc_type(TypeDef::Nat);
+    let x = alloc_free(&mut a, "x", TypeRef::local(nat_ty));
+    let y = alloc_free(&mut a, "y", TypeRef::local(nat_ty));
+
+    // Unary primop application: NatSucc(x)
+    let succ_x = a.alloc_term(TermDef::NatSucc(TermRef::local(x)));
+    let (op, child) = a.term_def(succ_x).as_op1().expect("as_op1");
+    assert_eq!(op, PrimOp1::NatSucc);
+    assert_eq!(child.as_local(), Some(x));
+
+    // Binary primop application: NatAdd(x, y)
+    let add_xy = a.alloc_term(TermDef::NatAdd(TermRef::local(x), TermRef::local(y)));
+    let (op2, a_ref, b_ref) = a.term_def(add_xy).as_op2().expect("as_op2");
+    assert_eq!(op2, PrimOp2::NatAdd);
+    assert_eq!(a_ref.as_local(), Some(x));
+    assert_eq!(b_ref.as_local(), Some(y));
+
+    // Non-op variants return None.
+    let t = a.alloc_term(TermDef::True);
+    assert!(a.term_def(t).as_op1().is_none());
+    assert!(a.term_def(t).as_op2().is_none());
+
+    // A fixed-width op
+    let u32_x = a.alloc_term(TermDef::U32(42));
+    let popcount = a.alloc_term(TermDef::U32Popcount(TermRef::local(u32_x)));
+    let (op, _) = a.term_def(popcount).as_op1().unwrap();
+    assert_eq!(op, PrimOp1::U32Popcount);
+}
+
+#[test]
+fn per_op_closed_flag_propagates() {
+    let mut a = Arena::new();
+    let nat_ty = a.alloc_type(TypeDef::Nat);
+
+    let x = alloc_free(&mut a, "x", TypeRef::local(nat_ty));
+    let zero = a.alloc_term(TermDef::NatInline(0));
+
+    // NatAdd(free, closed) is open
+    let open_add = a.alloc_term(TermDef::NatAdd(TermRef::local(x), TermRef::local(zero)));
+    assert!(!a.term_uf(open_add).closed());
+    assert!(a.term_uf(open_add).has_free);
+
+    // NatAdd(closed, closed) is closed
+    let closed_add = a.alloc_term(TermDef::NatAdd(
+        TermRef::local(zero),
+        TermRef::local(zero),
+    ));
+    assert!(a.term_uf(closed_add).closed());
+}
+
+#[test]
 fn combinator_closed_flags() {
     use covalence_kernel::PrimOp1;
     let mut a = Arena::new();

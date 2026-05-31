@@ -1,8 +1,7 @@
 //! Type-level data: `TypeDef` (the single enum with builtin + user variants)
 //! and `TypeRef` (local or foreign-arena reference).
 
-use crate::id::{ForeignTypeId, TypeId};
-use crate::name::{TypeName, TypeVarId};
+use crate::id::{ForeignTypeId, StrId, TyArgsId, TypeId};
 
 /// Reference to a type in the *current* arena's namespace.
 ///
@@ -60,20 +59,39 @@ impl TypeRef {
 
 /// The kernel's type language.
 ///
-/// `Bool`, `Bits`, and `Fun` are builtins — they're plain enum variants,
-/// not entries in any user-facing namespace. `TVar` and `Tyapp` are the
-/// only variants that read from the user-side namespace.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Every variant is `Copy`: variable-sized payloads (type-variable
+/// names, Tyapp arg lists) live in arena interning tables and appear
+/// here only as `StrId` / `TyArgsId`.
+///
+/// The primitive type cluster (`Bool`, `Bits`, `Bytes`, `Int`, `Nat`,
+/// the fixed-width `uN`/`iN` types) plus `Fun` are kernel builtins —
+/// no user-side namespace involved. `TVar(StrId)` and `Tyapp(StrId,
+/// TyArgsId)` are the only variants that read from the user-side
+/// namespace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TypeDef {
-    /// The builtin boolean type.
+    // -- builtin primitive types --
     Bool,
-    /// The builtin bit-string type — replaces HOL Light's `ind` as the
-    /// primitive infinite type.
     Bits,
+    Bytes,
+    Int,
+    Nat,
+    U8,
+    U16,
+    U32,
+    U64,
+    I8,
+    I16,
+    I32,
+    I64,
+    // -- type formers --
     /// The function type `α → β`. Builtin.
     Fun(TypeRef, TypeRef),
-    /// A polymorphic type variable, e.g. `'a`.
-    TVar(TypeVarId),
+    /// A polymorphic type variable, e.g. `'a` — name interned in
+    /// `arena.strings`.
+    TVar(StrId),
     /// A user-declared type constructor applied to its arguments.
-    Tyapp(TypeName, Vec<TypeRef>),
+    /// `name` is interned in `arena.strings`; `args` is a list in
+    /// `arena.tyargs`.
+    Tyapp(StrId, TyArgsId),
 }

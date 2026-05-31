@@ -426,3 +426,66 @@ fn packed_refs_are_u32_sized() {
     assert_eq!(std::mem::size_of::<TermRef>(), 4);
     assert_eq!(std::mem::size_of::<TypeRef>(), 4);
 }
+
+// ---------------------------------------------------------------------------
+// Expanded primitive type set.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn alloc_all_primitive_types() {
+    let mut a = Arena::new();
+    let prims = [
+        TypeDef::Bool,
+        TypeDef::Bits,
+        TypeDef::Bytes,
+        TypeDef::Int,
+        TypeDef::Nat,
+        TypeDef::U8,
+        TypeDef::U16,
+        TypeDef::U32,
+        TypeDef::U64,
+        TypeDef::I8,
+        TypeDef::I16,
+        TypeDef::I32,
+        TypeDef::I64,
+    ];
+    for p in &prims {
+        let id = a.alloc_type(*p);
+        assert_eq!(a.type_def(id), p);
+    }
+}
+
+#[test]
+fn alloc_tvar_uses_str_id() {
+    let mut a = Arena::new();
+    let name = a.intern_string("'a".into());
+    let id = a.alloc_type(TypeDef::TVar(name));
+    match a.type_def(id) {
+        TypeDef::TVar(s) => assert_eq!(a.string(*s).as_str(), "'a"),
+        other => panic!("expected TVar, got {other:?}"),
+    }
+}
+
+#[test]
+fn alloc_tyapp_uses_str_id_and_tyargs_id() {
+    let mut a = Arena::new();
+    let bool_ty = a.alloc_type(TypeDef::Bool);
+    let name = a.intern_string("list".into());
+    let args = a.intern_tyargs(vec![TypeRef::local(bool_ty)]);
+    let id = a.alloc_type(TypeDef::Tyapp(name, args));
+    match a.type_def(id) {
+        TypeDef::Tyapp(n, ar) => {
+            assert_eq!(a.string(*n).as_str(), "list");
+            let arg_list = a.tyargs(*ar);
+            assert_eq!(arg_list.len(), 1);
+            assert_eq!(arg_list[0].as_local(), Some(bool_ty));
+        }
+        other => panic!("expected Tyapp, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_def_is_copy() {
+    fn assert_copy<T: Copy>() {}
+    assert_copy::<TypeDef>();
+}

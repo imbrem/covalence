@@ -172,6 +172,210 @@ impl Arena {
         self.uf_terms[id.0 as usize].type_info = info;
     }
 
+    // ---- substitution & shifting (locally-nameless) ------------------------
+
+    /// Shift every dangling `Bound(i)` with `i ≥ cutoff` by `amount`,
+    /// leaving variables bound *within* `t` unchanged. This is the
+    /// classical de-Bruijn shift used to lift a term across a fresh
+    /// binder.
+    ///
+    /// Allocates new TermDef entries for shifted subterms; subterms
+    /// whose `Bound` indices are all below `cutoff` are returned
+    /// unchanged. Foreign refs are not walked — they're treated
+    /// opaquely (typically they're closed anyway).
+    pub fn shift(&mut self, t: TermRef, cutoff: u32, amount: u32) -> TermRef {
+        if amount == 0 {
+            return t;
+        }
+        self.shift_inner(t, cutoff, amount)
+    }
+
+    /// β-style substitution: replace every `Bound(depth)` in `t` with
+    /// `replacement`, shifting `replacement`'s dangling indices to
+    /// account for the binders between its original site and the
+    /// substitution point.
+    ///
+    /// The usual `(λ. body) arg` reduction is `subst(body, 0, arg)`.
+    pub fn subst(&mut self, t: TermRef, depth: u32, replacement: TermRef) -> TermRef {
+        self.subst_inner(t, depth, replacement)
+    }
+
+    /// Convenience for the standard β-reduction: given `Abs(α, body)`
+    /// and an argument term, return `body[Bound(0) := arg]`.
+    pub fn beta_reduce(&mut self, body: TermRef, arg: TermRef) -> TermRef {
+        self.subst_inner(body, 0, arg)
+    }
+
+    fn shift_inner(&mut self, t: TermRef, cutoff: u32, amount: u32) -> TermRef {
+        let local_id = match t.as_local() {
+            Some(id) => id,
+            None => return t,
+        };
+        // Fast path: subterm has no dangling Bound at or above cutoff.
+        let depth_here = self.term_uf(local_id).type_info.unbound_depth();
+        if depth_here <= cutoff {
+            return t;
+        }
+        let def = *self.term_def(local_id);
+        let new_def = self.shift_def(def, cutoff, amount);
+        if new_def == def {
+            return t;
+        }
+        TermRef::local(self.alloc_term(new_def))
+    }
+
+    fn shift_def(&mut self, def: TermDef, cutoff: u32, amount: u32) -> TermDef {
+        match def {
+            TermDef::Bound(i) => {
+                if i >= cutoff {
+                    TermDef::Bound(i + amount)
+                } else {
+                    def
+                }
+            }
+            TermDef::Abs(ty, body) => {
+                let new_body = self.shift_inner(body, cutoff + 1, amount);
+                TermDef::Abs(ty, new_body)
+            }
+            // Two-child shapes.
+            TermDef::Comb(a, b) => TermDef::Comb(
+                self.shift_inner(a, cutoff, amount),
+                self.shift_inner(b, cutoff, amount),
+            ),
+            TermDef::Eq(a, b) => TermDef::Eq(
+                self.shift_inner(a, cutoff, amount),
+                self.shift_inner(b, cutoff, amount),
+            ),
+            TermDef::Ne(a, b) => TermDef::Ne(
+                self.shift_inner(a, cutoff, amount),
+                self.shift_inner(b, cutoff, amount),
+            ),
+            TermDef::Comp(a, b) => TermDef::Comp(
+                self.shift_inner(a, cutoff, amount),
+                self.shift_inner(b, cutoff, amount),
+            ),
+            TermDef::Iter(a, b) => TermDef::Iter(
+                self.shift_inner(a, cutoff, amount),
+                self.shift_inner(b, cutoff, amount),
+            ),
+            TermDef::Ite(a, b) => TermDef::Ite(
+                self.shift_inner(a, cutoff, amount),
+                self.shift_inner(b, cutoff, amount),
+            ),
+            TermDef::Op2(op, a, b) => TermDef::Op2(
+                op,
+                self.shift_inner(a, cutoff, amount),
+                self.shift_inner(b, cutoff, amount),
+            ),
+            // One-child shapes.
+            TermDef::Forall(p) => TermDef::Forall(self.shift_inner(p, cutoff, amount)),
+            TermDef::Exists(p) => TermDef::Exists(self.shift_inner(p, cutoff, amount)),
+            TermDef::Eps(ty, p) => TermDef::Eps(ty, self.shift_inner(p, cutoff, amount)),
+            TermDef::Op1(op, x) => TermDef::Op1(op, self.shift_inner(x, cutoff, amount)),
+            // Leaves (no TermRef children).
+            TermDef::Free(_, _)
+            | TermDef::Const(_, _)
+            | TermDef::True
+            | TermDef::False
+            | TermDef::Id(_)
+            | TermDef::LiftOp1(_)
+            | TermDef::LiftOp2(_)
+            | TermDef::U8(_) | TermDef::U16(_) | TermDef::U32(_) | TermDef::U64(_)
+            | TermDef::I8(_) | TermDef::I16(_) | TermDef::I32(_) | TermDef::I64(_)
+            | TermDef::IntInline(_) | TermDef::IntStored(_)
+            | TermDef::NatInline(_) | TermDef::NatStored(_)
+            | TermDef::BitsStored(_) | TermDef::BytesStored(_) => def,
+        }
+    }
+
+    fn subst_inner(&mut self, t: TermRef, depth: u32, replacement: TermRef) -> TermRef {
+        let local_id = match t.as_local() {
+            Some(id) => id,
+            None => return t,
+        };
+        let depth_here = self.term_uf(local_id).type_info.unbound_depth();
+        if depth_here == 0 || depth_here <= depth {
+            return t;
+        }
+        let def = *self.term_def(local_id);
+
+        // Bound at the target depth: substitute directly, returning the
+        // (possibly shifted) replacement ref — NOT a copy of its def.
+        if let TermDef::Bound(i) = def {
+            if i == depth {
+                return self.shift_inner(replacement, 0, depth);
+            } else if i > depth {
+                // Outer-bound index decrements by one (we removed a binder
+                // layer by substituting the inner Bound away).
+                return TermRef::local(self.alloc_term(TermDef::Bound(i - 1)));
+            } else {
+                return t;
+            }
+        }
+
+        let new_def = self.subst_children(def, depth, replacement);
+        if new_def == def {
+            return t;
+        }
+        TermRef::local(self.alloc_term(new_def))
+    }
+
+    fn subst_children(&mut self, def: TermDef, depth: u32, replacement: TermRef) -> TermDef {
+        match def {
+            // Bound handled in subst_inner above.
+            TermDef::Bound(_) => def,
+            TermDef::Abs(ty, body) => {
+                let new_body = self.subst_inner(body, depth + 1, replacement);
+                TermDef::Abs(ty, new_body)
+            }
+            TermDef::Comb(a, b) => TermDef::Comb(
+                self.subst_inner(a, depth, replacement),
+                self.subst_inner(b, depth, replacement),
+            ),
+            TermDef::Eq(a, b) => TermDef::Eq(
+                self.subst_inner(a, depth, replacement),
+                self.subst_inner(b, depth, replacement),
+            ),
+            TermDef::Ne(a, b) => TermDef::Ne(
+                self.subst_inner(a, depth, replacement),
+                self.subst_inner(b, depth, replacement),
+            ),
+            TermDef::Comp(a, b) => TermDef::Comp(
+                self.subst_inner(a, depth, replacement),
+                self.subst_inner(b, depth, replacement),
+            ),
+            TermDef::Iter(a, b) => TermDef::Iter(
+                self.subst_inner(a, depth, replacement),
+                self.subst_inner(b, depth, replacement),
+            ),
+            TermDef::Ite(a, b) => TermDef::Ite(
+                self.subst_inner(a, depth, replacement),
+                self.subst_inner(b, depth, replacement),
+            ),
+            TermDef::Op2(op, a, b) => TermDef::Op2(
+                op,
+                self.subst_inner(a, depth, replacement),
+                self.subst_inner(b, depth, replacement),
+            ),
+            TermDef::Forall(p) => TermDef::Forall(self.subst_inner(p, depth, replacement)),
+            TermDef::Exists(p) => TermDef::Exists(self.subst_inner(p, depth, replacement)),
+            TermDef::Eps(ty, p) => TermDef::Eps(ty, self.subst_inner(p, depth, replacement)),
+            TermDef::Op1(op, x) => TermDef::Op1(op, self.subst_inner(x, depth, replacement)),
+            TermDef::Free(_, _)
+            | TermDef::Const(_, _)
+            | TermDef::True
+            | TermDef::False
+            | TermDef::Id(_)
+            | TermDef::LiftOp1(_)
+            | TermDef::LiftOp2(_)
+            | TermDef::U8(_) | TermDef::U16(_) | TermDef::U32(_) | TermDef::U64(_)
+            | TermDef::I8(_) | TermDef::I16(_) | TermDef::I32(_) | TermDef::I64(_)
+            | TermDef::IntInline(_) | TermDef::IntStored(_)
+            | TermDef::NatInline(_) | TermDef::NatStored(_)
+            | TermDef::BitsStored(_) | TermDef::BytesStored(_) => def,
+        }
+    }
+
     fn infer_term(&mut self, id: TermId, ctx: &mut Vec<TypeRef>) -> TypeInfo {
         // Cached Typed values are context-independent (a term's
         // structural type doesn't depend on the surrounding ctx), so

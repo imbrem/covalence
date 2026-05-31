@@ -858,6 +858,148 @@ fn infer_on_open_term_with_bound_indices_inside_abs() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Substitution / shifting / β-reduction.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn shift_leaves_closed_terms_alone() {
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    let shifted = a.shift(TermRef::local(t), 0, 5);
+    assert_eq!(shifted, TermRef::local(t));
+}
+
+#[test]
+fn shift_increments_dangling_bound() {
+    let mut a = Arena::new();
+    let b0 = a.alloc_term(TermDef::Bound(0));
+    let shifted = a.shift(TermRef::local(b0), 0, 3);
+    let id = shifted.as_local().unwrap();
+    assert_eq!(a.term_def(id), &TermDef::Bound(3));
+}
+
+#[test]
+fn shift_respects_cutoff() {
+    // Bound(0) below cutoff=1 stays unchanged; Bound(2) above is shifted.
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let b0 = a.alloc_term(TermDef::Bound(0));
+    let b2 = a.alloc_term(TermDef::Bound(2));
+    let comb = a.alloc_term(TermDef::Comb(TermRef::local(b0), TermRef::local(b2)));
+    // Wrap in Abs to introduce a binder so cutoff=1 makes sense locally.
+    let abs = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(comb)));
+    // Shift the Abs's body by amount=5 with cutoff=1.
+    // Bound(0) refers to the Abs binder; Bound(2) is the dangling
+    // index — should shift to Bound(7).
+    let shifted_body = a.shift(TermRef::local(comb), 1, 5);
+    let new_comb = shifted_body.as_local().unwrap();
+    match a.term_def(new_comb) {
+        TermDef::Comb(f, x) => {
+            let f_def = a.term_def(f.as_local().unwrap());
+            let x_def = a.term_def(x.as_local().unwrap());
+            assert_eq!(f_def, &TermDef::Bound(0)); // unchanged
+            assert_eq!(x_def, &TermDef::Bound(7)); // 2 + 5
+        }
+        other => panic!("expected Comb, got {other:?}"),
+    }
+    let _ = abs; // satisfy unused-var lint
+}
+
+#[test]
+fn beta_reduces_identity() {
+    // (λ_:bool. Bound(0)) True → True
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let body = a.alloc_term(TermDef::Bound(0));
+    let t = a.alloc_term(TermDef::True);
+    let result = a.beta_reduce(TermRef::local(body), TermRef::local(t));
+    assert_eq!(result, TermRef::local(t));
+}
+
+#[test]
+fn beta_substitutes_into_arg_position() {
+    // (λ_:bool. Op1(LogicalNot, Bound(0))) True → Op1(LogicalNot, True)
+    use covalence_kernel::PrimOp1;
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let b0 = a.alloc_term(TermDef::Bound(0));
+    let body = a.alloc_term(TermDef::Op1(PrimOp1::LogicalNot, TermRef::local(b0)));
+    let t = a.alloc_term(TermDef::True);
+    let result = a.beta_reduce(TermRef::local(body), TermRef::local(t));
+    let id = result.as_local().unwrap();
+    match a.term_def(id) {
+        TermDef::Op1(PrimOp1::LogicalNot, x) => {
+            assert_eq!(x.as_local(), Some(t));
+        }
+        other => panic!("expected Op1(Not, _), got {other:?}"),
+    }
+    // After β, the result is locally closed and bool-typed.
+    assert!(a.term_uf(id).closed());
+    assert_eq!(a.term_uf(id).type_info, TypeInfo::typed(bool_ty));
+}
+
+#[test]
+fn beta_decrements_outer_bound_indices() {
+    // λ_:bool. ((λ_:bool. Bound(1)) True)
+    // After β-reducing the inner abs+true: λ_:bool. Bound(0)
+    // (Outer Bound(1) of the inner body refers to the OUTER binder;
+    // after substitution removes the inner binder, that Bound becomes
+    // Bound(0).)
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let b1 = a.alloc_term(TermDef::Bound(1));
+    let t = a.alloc_term(TermDef::True);
+    let result = a.beta_reduce(TermRef::local(b1), TermRef::local(t));
+    let id = result.as_local().unwrap();
+    // Bound(1) was bound by the outer binder (not the one we're
+    // substituting), so it should decrement to Bound(0).
+    assert_eq!(a.term_def(id), &TermDef::Bound(0));
+    let _ = bool_ty;
+}
+
+#[test]
+fn beta_under_nested_abs_shifts_replacement() {
+    // body  = λ_:bool. Bound(1)   — body has dangling Bound(1).
+    // β-reduce(body, depth=0, arg=Bound(0))
+    // → λ_:bool. Bound(0_shifted_by_1) = λ_:bool. Bound(1)
+    //   (Bound(0) gets shifted up by 1 when crossing the nested Abs.)
+    // Actually we substitute body[Bound(0) ↦ arg], but body's outermost
+    // expression IS an Abs, so we go under it. Bound(1) inside the
+    // nested Abs refers to the outer-er binder (the one we're
+    // substituting away). It becomes arg, shifted by depth=1.
+    // arg = Bound(0); shifted by 1 = Bound(1).
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let b1 = a.alloc_term(TermDef::Bound(1));
+    let inner = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(b1)));
+    let b0 = a.alloc_term(TermDef::Bound(0));
+    let result = a.beta_reduce(TermRef::local(inner), TermRef::local(b0));
+    // Result should be λ_:bool. Bound(1).
+    let abs_id = result.as_local().unwrap();
+    match a.term_def(abs_id) {
+        TermDef::Abs(_, body_ref) => {
+            let body_def = a.term_def(body_ref.as_local().unwrap());
+            assert_eq!(body_def, &TermDef::Bound(1));
+        }
+        other => panic!("expected Abs, got {other:?}"),
+    }
+}
+
+#[test]
+fn subst_skips_irrelevant_subterms_fast() {
+    // A closed subterm (no dangling Bound) doesn't need shifting/
+    // substituting; subst should reuse the original TermRef.
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let _ = bool_ty;
+    let t = a.alloc_term(TermDef::True); // closed
+    let arg = a.alloc_term(TermDef::False);
+    // subst(True, 0, False) = True (no Bound(0) inside).
+    let result = a.subst(TermRef::local(t), 0, TermRef::local(arg));
+    assert_eq!(result, TermRef::local(t));
+}
+
 #[test]
 fn typeref_decodes_to_kind() {
     let mut a = Arena::new();

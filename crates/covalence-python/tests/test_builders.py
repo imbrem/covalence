@@ -123,6 +123,7 @@ class TestContainerBuilder:
         m.attest()
         container = c.build()
         k = covalence.local()
+        pytest.skip("kernel.prove removed during phase 0")
         result = k.prove(container)
         assert result["decision"] == "sat"
 
@@ -146,6 +147,7 @@ class TestContainerBuilder:
         parent_m.attest()
         parent = parent_c.build()
 
+        pytest.skip("kernel.prove removed during phase 0")
         result = k.prove(parent)
         assert result["decision"] == "sat"
         assert dep_hex in result["proved"]
@@ -223,6 +225,7 @@ class TestContainerBuilder:
         m.call(ref, "go")
         m.attest()
         container = c.build()
+        pytest.skip("kernel.prove removed during phase 0")
         result = k.prove(container)
         assert result["decision"] == "sat"
 
@@ -243,6 +246,7 @@ class TestContainerBuilder:
         m.call(ref, "go")
         m.attest()
         container = c.build()
+        pytest.skip("kernel.prove removed during phase 0")
         result = k.prove(container)
         assert result["decision"] == "sat"
 
@@ -263,6 +267,7 @@ class TestContainerBuilder:
         m.call(ref, "go")
         m.attest()
         container = c.build()
+        pytest.skip("kernel.prove removed during phase 0")
         result = k.prove(container)
         assert result["decision"] == "sat"
 
@@ -285,6 +290,7 @@ class TestContainerBuilder:
         m.call(ref, "go")
         m.attest()
         container = c.build()
+        pytest.skip("kernel.prove removed during phase 0")
         result = k.prove(container)
         assert result["decision"] == "sat"
 
@@ -314,6 +320,7 @@ class TestContainerBuilder:
         parent_m.attest()
         parent = parent_c.build()
 
+        pytest.skip("kernel.prove removed during phase 0")
         result = k.prove(parent)
         assert result["decision"] == "sat"
         assert str(dep.hash) in result["proved"]

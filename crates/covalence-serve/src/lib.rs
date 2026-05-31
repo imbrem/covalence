@@ -167,8 +167,6 @@ pub fn build_router(state: AppState, api_only: bool) -> Router {
         .route("/api/blobs/{hash}", get(api::blob_get).head(api::blob_head))
         // Eval endpoint
         .route("/api/eval", post(api::eval))
-        // Decide endpoint
-        .route("/api/decide/{hash}", get(api::decide))
         // Tagged store endpoints
         .route(
             "/api/tagged",

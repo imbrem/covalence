@@ -7,8 +7,7 @@ use pyo3::types::PyBytes;
 use covalence_kernel::{Kernel, SyncBackend};
 use covalence_store::BlobStore;
 
-use crate::component::{HashOrComponent, extract_bytes, parse_hash_or_component};
-use crate::container::Container;
+use crate::component::extract_bytes;
 use crate::hash::O256;
 use crate::store::Store;
 use crate::worker::{KernelTask, kernel_call, spawn_kernel_worker};
@@ -91,47 +90,6 @@ impl Backend {
             SyncBackend::store_blob(k, &wasm).map(O256)
         })?
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))
-    }
-
-    /// Decide a WASM proposition. Accepts O256, hex string, or Component.
-    /// When given a Component, stores and decides in a single worker round-trip.
-    fn decide<'py>(
-        &self,
-        py: Python<'py>,
-        hash: &Bound<'py, PyAny>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let parsed = parse_hash_or_component(hash)?;
-        let output = match parsed {
-            HashOrComponent::Hash(h) => {
-                kernel_call(py, &self.tx, move |k| SyncBackend::decide(k, &h))?
-            }
-            HashOrComponent::Component(wasm) => kernel_call(py, &self.tx, move |k| {
-                let h = SyncBackend::store_blob(k, &wasm)?;
-                SyncBackend::decide(k, &h)
-            })?,
-        }
-        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        let dict = pyo3::types::PyDict::new(py);
-        dict.set_item("decision", output.decision.to_string())?;
-        let proved: Vec<String> = output.proved.iter().map(|h| h.to_string()).collect();
-        dict.set_item("proved", proved)?;
-        Ok(dict.into_any())
-    }
-
-    /// Prove a container: store it, run it, and if Sat add the container's
-    /// own hash to the proved set. Accepts a Container.
-    fn prove<'py>(&self, py: Python<'py>, container: &Container) -> PyResult<Bound<'py, PyAny>> {
-        let wasm = container.wasm_bytes().to_vec();
-        let output = kernel_call(py, &self.tx, move |k| {
-            let h = SyncBackend::store_blob(k, &wasm)?;
-            k.prove_container(&h)
-        })?
-        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        let dict = pyo3::types::PyDict::new(py);
-        dict.set_item("decision", output.decision.to_string())?;
-        let proved: Vec<String> = output.proved.iter().map(|h| h.to_string()).collect();
-        dict.set_item("proved", proved)?;
-        Ok(dict.into_any())
     }
 
     fn info<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {

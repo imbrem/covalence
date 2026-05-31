@@ -226,46 +226,6 @@ def test_eval_store(server):
 
 
 # ---------------------------------------------------------------------------
-# /api/decide — proposition deciding
-# ---------------------------------------------------------------------------
-
-def test_decide_true(server):
-    # First store the component via the blob API (compile WAT locally)
-    k = covalence.local()
-    wasm_hash = k.compile_wat(TRIVIAL_TRUE)
-    wasm_bytes = k.get_blob(wasm_hash)
-
-    # Store the compiled WASM in the server
-    status, data = api_json(server, "/blobs", method="POST", body=wasm_bytes)
-    assert status == 201
-    h = data["hash"]
-
-    # Decide
-    status2, result = api_json(server, f"/decide/{h}")
-    assert status2 == 200
-    assert result["result"] == "sat"
-    assert isinstance(result["proved"], list)
-
-
-def test_decide_false(server):
-    k = covalence.local()
-    wasm_hash = k.compile_wat("(component)")
-    wasm_bytes = k.get_blob(wasm_hash)
-
-    status, data = api_json(server, "/blobs", method="POST", body=wasm_bytes)
-    h = data["hash"]
-
-    status2, result = api_json(server, f"/decide/{h}")
-    assert status2 == 200
-    assert result["result"] == "unsat"
-
-
-def test_decide_bad_hash(server):
-    status, _, _ = api(server, "/decide/not-a-hash")
-    assert status == 400
-
-
-# ---------------------------------------------------------------------------
 # Persistence across requests
 # ---------------------------------------------------------------------------
 
@@ -329,19 +289,3 @@ def test_multi_server_isolation():
         assert body_b == b"only in B"
 
 
-def test_multi_server_independent_decide():
-    """Two concurrent servers can decide propositions independently."""
-    k = covalence.local()
-    wasm_true = k.get_blob(k.compile_wat(TRIVIAL_TRUE))
-    wasm_false = k.get_blob(k.compile_wat("(component)"))
-
-    with covalence.serve() as srv_a, covalence.serve() as srv_b:
-        # Store true prop in A, false prop in B
-        _, data_a = api_json(srv_a, "/blobs", method="POST", body=wasm_true)
-        _, data_b = api_json(srv_b, "/blobs", method="POST", body=wasm_false)
-
-        _, result_a = api_json(srv_a, f"/decide/{data_a['hash']}")
-        assert result_a["result"] == "sat"
-
-        _, result_b = api_json(srv_b, f"/decide/{data_b['hash']}")
-        assert result_b["result"] == "unsat"

@@ -154,26 +154,3 @@ pub fn extract_bytes(obj: &Bound<'_, PyAny>) -> PyResult<Vec<u8>> {
     ))
 }
 
-/// Hash-or-component for polymorphic `decide()`.
-pub enum HashOrComponent {
-    Hash(covalence_hash::O256),
-    Component(Vec<u8>),
-}
-
-/// Parse a Python object into either a hash (O256/hex string) or Component.
-pub fn parse_hash_or_component(obj: &Bound<'_, PyAny>) -> PyResult<HashOrComponent> {
-    if let Ok(o) = obj.extract::<PyRef<O256>>() {
-        return Ok(HashOrComponent::Hash(o.0));
-    }
-    if let Ok(hex) = obj.extract::<String>() {
-        let h = covalence_hash::O256::from_hex(&hex)
-            .ok_or_else(|| PyValueError::new_err("invalid hex hash (expected 64 hex chars)"))?;
-        return Ok(HashOrComponent::Hash(h));
-    }
-    if let Ok(comp) = obj.extract::<PyRef<Component>>() {
-        return Ok(HashOrComponent::Component(comp.wasm_bytes().to_vec()));
-    }
-    Err(PyTypeError::new_err(
-        "expected O256, hex string, or Component",
-    ))
-}

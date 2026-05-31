@@ -20,10 +20,6 @@ impl ForeignPrims for ReplPrims {
             "read-wat" => self.cmd_read_wat(ctx),
             "store-url" => self.cmd_store_url(ctx),
             "store-file" => self.cmd_store_file(ctx),
-            "decide" => self.cmd_decide(ctx),
-            "prove" => self.cmd_prove(ctx),
-            "parse-module" => self.cmd_parse_module(ctx),
-            "parse-component" => self.cmd_parse_component(ctx),
             "compile-wat" => self.cmd_compile_wat(ctx),
             "status" => self.cmd_status(ctx),
             "help" => self.cmd_help(ctx),
@@ -132,58 +128,6 @@ impl ReplPrims {
         Ok(())
     }
 
-    /// `decide`: hash → (prints decision + proved hashes)
-    fn cmd_decide(&mut self, ctx: &mut FCtx<'_>) -> Result<(), FError> {
-        let hash = ctx.try_pop_hash()?;
-        let output = self.backend.decide(&hash).map_err(Self::backend_err)?;
-        for proved_hash in &output.proved {
-            self.emit(&format!("{proved_hash} true"));
-        }
-        self.emit(&format!("{hash} {}", output.decision));
-        Ok(())
-    }
-
-    /// `prove`: hash → (decide + add self to proved set)
-    fn cmd_prove(&mut self, ctx: &mut FCtx<'_>) -> Result<(), FError> {
-        let hash = ctx.try_pop_hash()?;
-        let mut output = self.backend.decide(&hash).map_err(Self::backend_err)?;
-        if output.decision == covalence_kernel::Decision::Sat && !output.proved.contains(&hash) {
-            output.proved.push(hash);
-        }
-        for proved_hash in &output.proved {
-            self.emit(&format!("{proved_hash} true"));
-        }
-        self.emit(&format!("{hash} {}", output.decision));
-        Ok(())
-    }
-
-    /// `parse-module`: hash → (prints module imports/exports)
-    fn cmd_parse_module(&mut self, ctx: &mut FCtx<'_>) -> Result<(), FError> {
-        let hash = ctx.try_pop_hash()?;
-        let data = self
-            .backend
-            .get_blob(&hash)
-            .map_err(Self::backend_err)?
-            .ok_or_else(|| FError::Parse(format!("blob not found: {hash}")))?;
-        let info = covalence_wasm::parse_module(&data).map_err(|e| FError::Parse(e.to_string()))?;
-        self.emit(&info.to_string());
-        Ok(())
-    }
-
-    /// `parse-component`: hash → (prints component imports/exports)
-    fn cmd_parse_component(&mut self, ctx: &mut FCtx<'_>) -> Result<(), FError> {
-        let hash = ctx.try_pop_hash()?;
-        let data = self
-            .backend
-            .get_blob(&hash)
-            .map_err(Self::backend_err)?
-            .ok_or_else(|| FError::Parse(format!("blob not found: {hash}")))?;
-        let info =
-            covalence_wasm::parse_component(&data).map_err(|e| FError::Parse(e.to_string()))?;
-        self.emit(&info.to_string());
-        Ok(())
-    }
-
     /// `compile-wat`: blob → hash (compile WAT source to WASM, store)
     fn cmd_compile_wat(&mut self, ctx: &mut FCtx<'_>) -> Result<(), FError> {
         let wat_bytes = ctx.try_pop_blob()?;
@@ -219,13 +163,6 @@ impl ReplPrims {
             ("<hash> read", "read blob by hash"),
             ("<hash> read-wat", "decompile WASM to WAT"),
             ("\"(module ...)\" compile-wat", "compile WAT to WASM, store"),
-            ("<hash> parse-module", "inspect module imports/exports"),
-            (
-                "<hash> parse-component",
-                "inspect component imports/exports",
-            ),
-            ("<hash> decide", "decide proposition"),
-            ("<hash> prove", "prove container (decide + add self)"),
             ("\"data\" hash", "hash blob (BLAKE3) without storing"),
             ("<val> print", "print a value"),
             ("status", "show backend info"),

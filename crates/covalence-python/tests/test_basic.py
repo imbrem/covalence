@@ -115,39 +115,10 @@ def test_store_large_blob():
     assert k.get_blob(h) == data
 
 
-def test_compile_wat_and_decide():
-    k = covalence.local()
-    h = k.compile_wat(TRIVIAL_TRUE)
-    result = k.decide(h)
-    assert result["decision"] == "sat"
-
-
-def test_compile_wat_false():
-    k = covalence.local()
-    h = k.compile_wat("(component)")
-    result = k.decide(h)
-    assert result["decision"] == "unsat"
-
-
 def test_compile_wat_invalid():
     k = covalence.local()
     with pytest.raises(ValueError):
         k.compile_wat("not valid wat at all")
-
-
-def test_decide_returns_proved():
-    k = covalence.local()
-    h = k.compile_wat(TRIVIAL_TRUE)
-    result = k.decide(h)
-    assert "proved" in result
-    assert isinstance(result["proved"], list)
-
-
-def test_decide_with_hex():
-    k = covalence.local()
-    h = k.compile_wat(TRIVIAL_TRUE)
-    result = k.decide(h.hex)
-    assert result["decision"] == "sat"
 
 
 def test_multiple_backends_independent():
@@ -190,7 +161,7 @@ def test_session_local():
     s = covalence.session_local()
     result = s.eval("help")
     assert "store" in result
-    assert "decide" in result
+    assert "read" in result
 
 
 def test_session_eval():

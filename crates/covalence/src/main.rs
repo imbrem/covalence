@@ -55,16 +55,6 @@ fn main() {
             #[cfg(not(target_family = "wasm"))]
             cmd::run_or_exit(cmd::repl::run(_args));
         }
-
-        Some(cmd::Command::Decide(_args)) => {
-            #[cfg(target_family = "wasm")]
-            {
-                eprintln!("cov decide: not available on WASM targets");
-                std::process::exit(1);
-            }
-            #[cfg(not(target_family = "wasm"))]
-            cmd::run_or_exit(cmd::decide::run(_args));
-        }
     }
 }
 

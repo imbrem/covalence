@@ -108,8 +108,6 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(default::get, m)?)?;
     m.add_function(wrap_pyfunction!(default::has, m)?)?;
     m.add_function(wrap_pyfunction!(default::compile_wat, m)?)?;
-    m.add_function(wrap_pyfunction!(default::decide, m)?)?;
-    m.add_function(wrap_pyfunction!(default::prove, m)?)?;
 
     Ok(())
 }

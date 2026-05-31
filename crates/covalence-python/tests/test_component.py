@@ -185,22 +185,6 @@ def test_store_bad_type():
 
 
 # ---------------------------------------------------------------------------
-# Polymorphic decide (module-level)
-# ---------------------------------------------------------------------------
-
-def test_decide_component_sat():
-    c = covalence.Component.from_wat(TRIVIAL_TRUE)
-    result = covalence.decide(c)
-    assert result["decision"] == "sat"
-
-
-def test_decide_component_unsat():
-    c = covalence.Component.from_wat(TRIVIAL_FALSE)
-    result = covalence.decide(c)
-    assert result["decision"] == "unsat"
-
-
-# ---------------------------------------------------------------------------
 # Backend.store (polymorphic)
 # ---------------------------------------------------------------------------
 
@@ -222,14 +206,3 @@ def test_backend_store_component():
     h = k.store(c)
     assert h == c.hash
     assert k.has_blob(h)
-
-
-# ---------------------------------------------------------------------------
-# Backend.decide (polymorphic)
-# ---------------------------------------------------------------------------
-
-def test_backend_decide_component():
-    k = covalence.local()
-    c = covalence.Component.from_wat(TRIVIAL_TRUE)
-    result = k.decide(c)
-    assert result["decision"] == "sat"

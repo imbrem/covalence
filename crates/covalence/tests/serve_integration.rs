@@ -150,8 +150,6 @@ fn repl_help_lists_commands() {
         "store",
         "read",
         "compile-wat",
-        "parse-component",
-        "decide",
         "status",
         "help",
     ] {

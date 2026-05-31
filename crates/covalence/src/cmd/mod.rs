@@ -2,7 +2,6 @@ use clap::Subcommand;
 
 #[cfg(feature = "cogit")]
 pub mod cog;
-pub mod decide;
 #[cfg(feature = "hol")]
 pub mod hol;
 #[cfg(feature = "lsp")]
@@ -33,9 +32,6 @@ pub enum Command {
     /// Start the interactive REPL
     #[cfg(feature = "repl")]
     Repl(repl::ReplArgs),
-
-    /// Decide a proposition from a WAT or WASM file
-    Decide(decide::DecideArgs),
 }
 
 /// Run a fallible command, printing errors and exiting on failure.

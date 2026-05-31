@@ -5,7 +5,7 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use covalence_hash::O256;
-use covalence_kernel::{Kernel, SyncBackend};
+use covalence_kernel::Kernel;
 use covalence_object::{
     Dir, DirMode, DirRow, Sha256Identity, Table, TableBuilder, git_tree_bytes_mapped,
     git_tree_to_dir_rows_mapped,
@@ -199,40 +199,6 @@ pub async fn eval(
     .unwrap_or_else(|e| format!("error: {e}"));
 
     ([(axum::http::header::CONTENT_TYPE, "text/plain")], result)
-}
-
-// ---------------------------------------------------------------------------
-// Decide endpoint
-// ---------------------------------------------------------------------------
-
-/// GET /api/decide/:hash — decide proposition → { "result": "...", "proved": [...] }
-pub async fn decide(
-    axum::extract::State(state): axum::extract::State<crate::AppState>,
-    Path(hash_hex): Path<String>,
-) -> impl IntoResponse {
-    let hash = match O256::from_hex(&hash_hex) {
-        Some(h) => h,
-        None => return Err((StatusCode::BAD_REQUEST, "invalid hash".to_string())),
-    };
-    let kernel = state.kernel.clone();
-    let result =
-        tokio::task::spawn_blocking(move || kernel.decide(&hash).map_err(|e| e.to_string()))
-            .await
-            .unwrap_or_else(|e| Err(format!("task error: {e}")));
-
-    match result {
-        Ok(output) => Ok(Json(DecideResponse {
-            result: output.decision.to_string(),
-            proved: output.proved.iter().map(|h| h.to_string()).collect(),
-        })),
-        Err(e) => Err((StatusCode::BAD_REQUEST, e)),
-    }
-}
-
-#[derive(Serialize)]
-pub struct DecideResponse {
-    pub result: String,
-    pub proved: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------

@@ -544,6 +544,19 @@ Primitives (all wired through `covalence-shell`):
   freeze/thaw if at all.
 - **Phase 2.** Free-variable naming: interned strings vs opaque IDs.
   Probably interned strings for printing.
+- **Phase 2 (open).** Intrinsically-typed terms — replace the
+  `bound_depth: u32` field in `TermUfEntry` with a packed `i32`
+  (or sized type) that's either a `TypeRef` (the term's computed
+  type, when it's locally closed and well-typed) or `Unbound(N)`
+  (an unbound-de-Bruijn count) or `Unbound(MAX)` (an ill-typed
+  sentinel). The kernel computes the type at `alloc_term` time,
+  walking each variant's typing rule. Per-term storage becomes
+  4 i32s — `(type, tag, lhs, rhs)` — up from 3 today. Pros:
+  HOL-style intrinsic typing; type-checking is O(1) per allocation.
+  Cons: requires implementing the typing rules for every TermDef
+  variant up front; adds 4 bytes per term; needs a story for type
+  inference under binders. Defer until Phase 2 — for now we keep
+  `bound_depth` + `has_free` and check types lazily.
 - **Phase 3.** Should `eq_at_level(_, _, ∞)` be a real primitive or
   computed by a library wrapping a level counter? Trivial either
   way.

@@ -655,6 +655,80 @@ fn inst_rejects_type_mismatched_replacement() {
 }
 
 #[test]
+fn deduct_antisym_yields_eq_of_concls() {
+    // ⊢ True (assume True from ctx {True}) + ⊢ True (likewise) → ⊢ True = True
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    let assum = std::sync::Arc::new(Prop::new(Context::empty(), t));
+    let ctx = Context::extend(Context::empty(), assum.clone());
+    let thm_p = Thm::assume(&a, ctx.clone(), assum.clone()).unwrap();
+    let thm_q = Thm::assume(&a, ctx, assum).unwrap();
+    let thm = Thm::deduct_antisym_rule(&mut a, thm_p, thm_q).unwrap();
+    match a.term_def(thm.concl()) {
+        TermDef::Eq(l, r) => {
+            assert_eq!(a.term_def(l.as_local().unwrap()), &TermDef::True);
+            assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::True);
+        }
+        other => panic!("expected Eq, got {other:?}"),
+    }
+    // Both A1 and A2 contained {True} = {q} and {p} respectively, so both got
+    // removed — the result context is empty.
+    assert!(thm.context().is_empty());
+}
+
+#[test]
+fn deduct_antisym_cancels_each_concl_from_other_ctx() {
+    // Canonical use case. A1 = {p, q, y}, thm_p = A1 ⊢ p. A2 = {p, q, z},
+    // thm_q = A2 ⊢ q. (A1 \ {q}) ∪ (A2 \ {p}) = {p, y} ∪ {q, z}, deduped
+    // by canonical → {p, y, q, z}. Result concl: p = q.
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let pname = a.intern_string("p".into());
+    let qname = a.intern_string("q".into());
+    let yname = a.intern_string("y".into());
+    let zname = a.intern_string("z".into());
+    let p = a.alloc_term(TermDef::Free(pname, bool_ty));
+    let q = a.alloc_term(TermDef::Free(qname, bool_ty));
+    let y = a.alloc_term(TermDef::Free(yname, bool_ty));
+    let z = a.alloc_term(TermDef::Free(zname, bool_ty));
+    let assum_p = std::sync::Arc::new(Prop::new(Context::empty(), p));
+    let assum_q = std::sync::Arc::new(Prop::new(Context::empty(), q));
+    let assum_y = std::sync::Arc::new(Prop::new(Context::empty(), y));
+    let assum_z = std::sync::Arc::new(Prop::new(Context::empty(), z));
+
+    let ctx1 = Context::flat(vec![assum_p.clone(), assum_q.clone(), assum_y.clone()]);
+    let thm_p = Thm::assume(&a, ctx1, assum_p.clone()).unwrap();
+    let ctx2 = Context::flat(vec![assum_p.clone(), assum_q.clone(), assum_z.clone()]);
+    let thm_q = Thm::assume(&a, ctx2, assum_q.clone()).unwrap();
+
+    let thm = Thm::deduct_antisym_rule(&mut a, thm_p, thm_q).unwrap();
+    assert_eq!(thm.context().len(), 4);
+    match a.term_def(thm.concl()) {
+        TermDef::Eq(l, r) => {
+            assert_eq!(*l, TermRef::local(p));
+            assert_eq!(*r, TermRef::local(q));
+        }
+        other => panic!("expected Eq(p, q), got {other:?}"),
+    }
+}
+
+#[test]
+fn deduct_antisym_rejects_type_mismatched_concls() {
+    // p : bool (True), q : Nat (0). Eq(p, q) would be ill-typed.
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    let n = a.alloc_term(TermDef::nat_inline(0));
+    let assum_t = std::sync::Arc::new(Prop::new(Context::empty(), t));
+    let assum_n = std::sync::Arc::new(Prop::new(Context::empty(), n));
+    let ctx_t = Context::extend(Context::empty(), assum_t.clone());
+    let ctx_n = Context::extend(Context::empty(), assum_n.clone());
+    let thm_p = Thm::assume(&a, ctx_t, assum_t).unwrap();
+    let thm_q = Thm::assume(&a, ctx_n, assum_n).unwrap();
+    let err = Thm::deduct_antisym_rule(&mut a, thm_p, thm_q).unwrap_err();
+    assert_eq!(err, ProofError::TypeMismatch);
+}
+
+#[test]
 fn abs_rejects_non_equality_thm() {
     // Thm::assume on a non-Eq concl — abs should reject.
     let mut a = Arena::new();

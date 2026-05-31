@@ -466,6 +466,65 @@ impl Thm {
         })
     }
 
+    /// **Deduction theorem (`DEDUCT_ANTISYM_RULE`).** From
+    /// `A₁ ⊢ p` and `A₂ ⊢ q`, derive
+    /// `(A₁ \ {q}) ∪ (A₂ \ {p}) ⊢ p = q`.
+    ///
+    /// Both Thms' conclusions must be well-typed and share a type
+    /// (otherwise the resulting `Eq` is ill-typed). Assumptions are
+    /// matched by canonical (UF level 0) equality and the union is
+    /// deduplicated by canonical concl.
+    pub fn deduct_antisym_rule(
+        arena: &mut Arena,
+        thm_p: Thm,
+        thm_q: Thm,
+    ) -> Result<Self, ProofError> {
+        if !arena.is_well_typed(thm_p.prop.concl) || !arena.is_well_typed(thm_q.prop.concl) {
+            return Err(ProofError::IllTypedInput);
+        }
+        let p_ty = arena.infer(thm_p.prop.concl).as_type().ok_or(ProofError::IllTypedInput)?;
+        let q_ty = arena.infer(thm_q.prop.concl).as_type().ok_or(ProofError::IllTypedInput)?;
+        if p_ty != q_ty {
+            return Err(ProofError::TypeMismatch);
+        }
+        let p_ref = TermRef::local(thm_p.prop.concl);
+        let q_ref = TermRef::local(thm_q.prop.concl);
+
+        let mut assumptions: Vec<Arc<Prop>> = Vec::new();
+        let mut seen: Vec<TermRef> = Vec::new();
+        let push = |arena: &Arena,
+                        assum: Arc<Prop>,
+                        exclude: TermRef,
+                        assumptions: &mut Vec<Arc<Prop>>,
+                        seen: &mut Vec<TermRef>| {
+            let concl_ref = TermRef::local(assum.concl);
+            if arena.eq_at_level_0(concl_ref, exclude) {
+                return;
+            }
+            let canon = arena.canonical_local(concl_ref);
+            if seen.iter().any(|s| *s == canon) {
+                return;
+            }
+            seen.push(canon);
+            assumptions.push(assum);
+        };
+        let ctx1 = thm_p.prop.context.clone();
+        for i in 0..ctx1.len() {
+            let assum = ctx1.assumption(i).expect("len/index invariant").clone();
+            push(arena, assum, q_ref, &mut assumptions, &mut seen);
+        }
+        let ctx2 = thm_q.prop.context.clone();
+        for i in 0..ctx2.len() {
+            let assum = ctx2.assumption(i).expect("len/index invariant").clone();
+            push(arena, assum, p_ref, &mut assumptions, &mut seen);
+        }
+        let new_ctx = Context::flat(assumptions);
+        let eq = arena.alloc_term(TermDef::Eq(p_ref, q_ref));
+        Ok(Self {
+            prop: Prop::new(new_ctx, eq),
+        })
+    }
+
     /// **Top-level reduction.** Apply one rule from the §10 catalog
     /// (literal-arg evaluation, numeral normalisation, `Comb(Id, _)`,
     /// `Comb(Ite(lit, _), _)`, …) to `t` and derive

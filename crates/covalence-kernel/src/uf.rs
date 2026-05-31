@@ -3,7 +3,7 @@
 //! and the union primitives land in Phase 3.
 
 use crate::term::TermRef;
-use crate::ty::TypeRef;
+use crate::ty::{TypeInfo, TypeRef};
 
 /// One entry in `Arena.uf_terms`, parallel to one entry in `Arena.terms`.
 ///
@@ -11,20 +11,20 @@ use crate::ty::TypeRef;
 /// Local(self_id)`). Unions retarget `canonical` to point at another
 /// term, possibly in a foreign arena.
 ///
-/// `bound_depth` and `has_free` together let us answer "is this term
-/// closed?" in O(1) at every allocation: the kernel reads the children's
-/// stored entries to compute the parent's, rather than re-walking the
-/// whole subtree.
+/// `type_info` carries the term's computed type (or its unbound-depth /
+/// ill-typed sentinel) — see [`TypeInfo`]. Combined with `has_free`,
+/// it answers "is this term closed?" in O(1).
 #[derive(Debug, Clone)]
 pub struct TermUfEntry {
     /// The canonical representative of this term's UF class. Points
     /// somewhere reachable from the current arena (locally or via a
     /// foreign-import Arc).
     pub canonical: TermRef,
-    /// The smallest `n` such that this term, if wrapped in `n`
-    /// additional lambdas, would have no dangling `Bound(_)`. `0`
-    /// means no dangling indices.
-    pub bound_depth: u32,
+    /// Type info for this term — `Typed(t)` when the kernel could
+    /// compute the type at insertion, `Unbound(n)` when the term has
+    /// `n` dangling de Bruijn indices, `IllTyped` when the term is
+    /// locally closed but no typing rule applies.
+    pub type_info: TypeInfo,
     /// Whether any `Free(_, _)` is reachable from this term.
     pub has_free: bool,
 }
@@ -33,7 +33,12 @@ impl TermUfEntry {
     /// True iff this term is closed — no free variables and no
     /// dangling de Bruijn indices.
     pub fn closed(&self) -> bool {
-        self.bound_depth == 0 && !self.has_free
+        self.type_info.is_locally_closed() && !self.has_free
+    }
+
+    /// For backward-compatibility tests: the dangling-bound count.
+    pub fn bound_depth(&self) -> u32 {
+        self.type_info.unbound_depth()
     }
 }
 

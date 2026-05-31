@@ -57,6 +57,59 @@ impl TypeRef {
     }
 }
 
+/// Type information attached to a term at allocation time.
+///
+/// Locally-closed, well-typed terms get `Typed(t)`; the term's type
+/// is `t` and the kernel intends to enforce it. Terms with dangling
+/// de Bruijn indices get `Unbound(n)` — `n` is the count of dangling
+/// indices, i.e. how many more binders need to wrap this term before
+/// it's locally closed. Terms that are locally closed but whose type
+/// can't be derived from the children's types (mismatched Comb,
+/// missing typing rule, etc.) get `IllTyped` as a sentinel.
+///
+/// **Soundness note.** A term with `IllTyped` is perfectly allowed
+/// to sit in the arena; `alloc_term` never rejects. Only when a
+/// `Thm` is constructed does the kernel assert that *all* terms in
+/// the relevant arena are well-typed (along with the proof itself).
+/// Ill-typed terms cannot appear in a `Thm`'s Prop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TypeInfo {
+    Typed(TypeRef),
+    Unbound(u32),
+    IllTyped,
+}
+
+impl TypeInfo {
+    /// True iff the term is locally closed — no dangling Bound.
+    /// Includes the `Typed` and `IllTyped` cases.
+    pub fn is_locally_closed(self) -> bool {
+        !matches!(self, TypeInfo::Unbound(n) if n > 0)
+    }
+
+    /// True iff the term has a known type.
+    pub fn is_typed(self) -> bool {
+        matches!(self, TypeInfo::Typed(_))
+    }
+
+    /// Returns the term's type if known.
+    pub fn as_type(self) -> Option<TypeRef> {
+        if let TypeInfo::Typed(t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    /// The dangling-bound count for an `Unbound` info; `0` for any
+    /// closed info.
+    pub fn unbound_depth(self) -> u32 {
+        match self {
+            TypeInfo::Unbound(n) => n,
+            _ => 0,
+        }
+    }
+}
+
 /// The kernel's type language.
 ///
 /// Every variant is `Copy`: variable-sized payloads (type-variable

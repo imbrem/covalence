@@ -2,6 +2,7 @@
 //! and `TermRef` (local or foreign-arena reference).
 
 use crate::id::{BitsId, BytesId, ForeignTermId, IntId, NatId, StrId, TermId};
+use crate::primop::{PrimOp1, PrimOp2};
 use crate::ty::TypeRef;
 
 /// Reference to a term in the *current* arena's namespace.
@@ -93,6 +94,32 @@ pub enum TermDef {
     False,
     /// Polymorphic primitive equality.
     Eq(TermRef, TermRef),
+    /// Polymorphic inequality (sugar for `Not (Eq a b)`).
+    Ne(TermRef, TermRef),
+
+    // -- quantifiers and choice --
+    /// `∀ x : α. P x` — `P : α → bool`; α inferred from `P`'s domain.
+    Forall(TermRef),
+    /// `∃ x : α. P x`.
+    Exists(TermRef),
+    /// Hilbert choice `ε`. Result type α; predicate has type `α → bool`.
+    Eps(TypeRef, TermRef),
+
+    // -- combinators (pointless programming) --
+    /// Identity function: `α → α`.
+    Id(TypeRef),
+    /// Function composition: `Comp(f, g) = λx. f (g x)`.
+    Comp(TermRef, TermRef),
+    /// Bounded iteration: `Iter(n, f) : α → α` where `f : α → α`. α
+    /// inferred one step from `f`'s domain.
+    Iter(TermRef, TermRef),
+    /// If-then-else, partially applied: `Ite(cond, then) : α → α`.
+    /// Else-branch supplied via `Comb`. α inferred from `then`.
+    Ite(TermRef, TermRef),
+    /// η-expansion of a unary primop into a function value.
+    LiftOp1(PrimOp1),
+    /// η-expansion of a binary primop into a function value.
+    LiftOp2(PrimOp2),
 
     // -- literals: fixed-width unsigned --
     U8(u8),

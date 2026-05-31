@@ -337,7 +337,12 @@ impl Arena {
             TermDef::Bound(i) => (i + 1, false),
             TermDef::Free(_, _) => (0, true),
             TermDef::Const(_, _) => (0, false),
-            TermDef::Comb(f, x) | TermDef::Eq(f, x) => {
+            TermDef::Comb(f, x)
+            | TermDef::Eq(f, x)
+            | TermDef::Ne(f, x)
+            | TermDef::Comp(f, x)
+            | TermDef::Iter(f, x)
+            | TermDef::Ite(f, x) => {
                 let (f_bd, f_hf) = self.ref_props(*f);
                 let (x_bd, x_hf) = self.ref_props(*x);
                 (f_bd.max(x_bd), f_hf || x_hf)
@@ -346,8 +351,12 @@ impl Arena {
                 let (b_bd, b_hf) = self.ref_props(*body);
                 (b_bd.saturating_sub(1), b_hf)
             }
+            // -- single-child term children --
+            TermDef::Forall(p) | TermDef::Exists(p) | TermDef::Eps(_, p) => self.ref_props(*p),
             // -- truth literals --
             TermDef::True | TermDef::False => (0, false),
+            // -- type-only / op-only combinators --
+            TermDef::Id(_) | TermDef::LiftOp1(_) | TermDef::LiftOp2(_) => (0, false),
             // -- fixed-width / arbitrary-precision literals --
             TermDef::U8(_) | TermDef::U16(_) | TermDef::U32(_) | TermDef::U64(_)
             | TermDef::I8(_) | TermDef::I16(_) | TermDef::I32(_) | TermDef::I64(_)

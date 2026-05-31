@@ -468,3 +468,102 @@ fn type_def_is_copy() {
     fn assert_copy<T: Copy>() {}
     assert_copy::<TypeDef>();
 }
+
+// ---------------------------------------------------------------------------
+// Combinators: Ite / Iter / Eps / Forall / Exists / Ne / Id / Comp /
+// LiftOp1 / LiftOp2.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn alloc_combinator_variants() {
+    use covalence_kernel::{PrimOp1, PrimOp2};
+
+    let mut a = Arena::new();
+    let bool_ty = a.alloc_type(TypeDef::Bool);
+    let nat_ty = a.alloc_type(TypeDef::Nat);
+
+    // A few sample terms.
+    let t = a.alloc_term(TermDef::True);
+    let f = a.alloc_term(TermDef::False);
+    let zero = a.alloc_term(TermDef::NatInline(0));
+
+    // Ne(true, false)
+    let ne = a.alloc_term(TermDef::Ne(TermRef::local(t), TermRef::local(f)));
+    assert!(matches!(a.term_def(ne), TermDef::Ne(_, _)));
+
+    // Id(bool)
+    let id_bool = a.alloc_term(TermDef::Id(TypeRef::local(bool_ty)));
+    assert!(matches!(a.term_def(id_bool), TermDef::Id(_)));
+
+    // Comp(true, false) — types are nonsensical for true Comp use, but
+    // we're testing storage, not type checking.
+    let comp = a.alloc_term(TermDef::Comp(TermRef::local(t), TermRef::local(f)));
+    assert!(matches!(a.term_def(comp), TermDef::Comp(_, _)));
+
+    // Iter(0, NatSucc-lifted)
+    let succ_lifted = a.alloc_term(TermDef::LiftOp1(PrimOp1::NatSucc));
+    let iter = a.alloc_term(TermDef::Iter(
+        TermRef::local(zero),
+        TermRef::local(succ_lifted),
+    ));
+    assert!(matches!(a.term_def(iter), TermDef::Iter(_, _)));
+
+    // Ite(true, true)
+    let ite = a.alloc_term(TermDef::Ite(TermRef::local(t), TermRef::local(t)));
+    assert!(matches!(a.term_def(ite), TermDef::Ite(_, _)));
+
+    // Eps(nat, predicate)
+    let pred = a.alloc_term(TermDef::Bound(0));
+    let pred_abs = a.alloc_term(TermDef::Abs(TypeRef::local(nat_ty), TermRef::local(pred)));
+    let eps = a.alloc_term(TermDef::Eps(
+        TypeRef::local(nat_ty),
+        TermRef::local(pred_abs),
+    ));
+    assert!(matches!(a.term_def(eps), TermDef::Eps(_, _)));
+
+    // Forall, Exists with a closed predicate.
+    let always_true = a.alloc_term(TermDef::Abs(TypeRef::local(nat_ty), TermRef::local(t)));
+    let forall = a.alloc_term(TermDef::Forall(TermRef::local(always_true)));
+    let exists = a.alloc_term(TermDef::Exists(TermRef::local(always_true)));
+    assert!(matches!(a.term_def(forall), TermDef::Forall(_)));
+    assert!(matches!(a.term_def(exists), TermDef::Exists(_)));
+
+    // LiftOp2
+    let add_lifted = a.alloc_term(TermDef::LiftOp2(PrimOp2::NatAdd));
+    assert!(matches!(a.term_def(add_lifted), TermDef::LiftOp2(_)));
+}
+
+#[test]
+fn combinator_closed_flags() {
+    use covalence_kernel::PrimOp1;
+    let mut a = Arena::new();
+    let bool_ty = a.alloc_type(TypeDef::Bool);
+
+    // Id / LiftOp / LiftOp2: closed regardless.
+    let id = a.alloc_term(TermDef::Id(TypeRef::local(bool_ty)));
+    assert!(a.term_uf(id).closed());
+    let lift = a.alloc_term(TermDef::LiftOp1(PrimOp1::LogicalNot));
+    assert!(a.term_uf(lift).closed());
+
+    // Forall over a free var: open.
+    let x = alloc_free(&mut a, "x", TypeRef::local(bool_ty));
+    let forall_x = a.alloc_term(TermDef::Forall(TermRef::local(x)));
+    assert!(!a.term_uf(forall_x).closed());
+    assert!(a.term_uf(forall_x).has_free);
+
+    // Ne propagates from both sides.
+    let t = a.alloc_term(TermDef::True);
+    let ne_closed = a.alloc_term(TermDef::Ne(TermRef::local(t), TermRef::local(t)));
+    assert!(a.term_uf(ne_closed).closed());
+    let ne_open = a.alloc_term(TermDef::Ne(TermRef::local(t), TermRef::local(x)));
+    assert!(!a.term_uf(ne_open).closed());
+
+    // Eps propagates from its predicate body.
+    let body = a.alloc_term(TermDef::Bound(0));
+    let pred = a.alloc_term(TermDef::Abs(TypeRef::local(bool_ty), TermRef::local(body)));
+    let eps = a.alloc_term(TermDef::Eps(
+        TypeRef::local(bool_ty),
+        TermRef::local(pred),
+    ));
+    assert!(a.term_uf(eps).closed());
+}

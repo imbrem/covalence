@@ -115,7 +115,7 @@ moves:
   that would otherwise blow up `TermDef`/`TypeDef`: `strings`,
   `bytes`, `bits`, `ints` (default `int` feature), `nats`,
   `tyargs`. Plus foreign-arena side tables (`foreign_terms`,
-  `foreign_types`) and the side tables for `Ite`/`Iter`/abs hints.
+  `foreign_types`) and the abs-display-hint side table.
 - **Arena identity is by pointer** — no `ArenaId` u32 anywhere.
   Stored canonical references are `(Arc<Arena>, TermId)` /
   `(Arc<Arena>, TypeId)`. Two canonicals are equal when the
@@ -141,7 +141,8 @@ shape:
   decouples the public API from storage.
 - The (tag, lhs, rhs) **3-u32 invariant**: every TermDef variant
   has ≤ 8 bytes payload. Achieved by one variant per primop (no
-  embedded `PrimOpN` byte) and by side-tabling `Ite` and `Iter`.
+  embedded `PrimOpN` byte) and by partial-applying `Ite` and `Iter`
+  (their remaining args come through `Comb`).
 - TermRef and TypeRef become packed `u32` newtypes (bit 31 =
   local/foreign flag, bottom 31 bits = index). Foreign refs go via
   `arena.foreign_terms`/`foreign_types`.
@@ -158,7 +159,9 @@ shape:
   - literals: `U8(u8)..U64(u64)`, `I8(i8)..I64(i64)`,
     `IntInline(i64)`, `IntStored(IntId)`, `NatInline(u64)`,
     `NatStored(NatId)`, `BitsStored(BitsId)`, `BytesStored(BytesId)`.
-  - side-table primitives: `IteStored(IteId)`, `IterStored(IterId)`.
+  - combinators (inline, partial): `Ite(TypeRef, TermRef)`,
+    `Iter(TypeRef, TermRef)`, `Eps(TypeRef, TermRef)`,
+    `Id(TypeRef)`, `Comp(TermRef, TermRef)`.
   - one variant per `PrimOp1`/`PrimOp2` from
     [`prover-primops.md`](./prover-primops.md) (e.g. `NatAdd(t,
     t)`, `LogicalNot(t)`, …). TermKind groups them under

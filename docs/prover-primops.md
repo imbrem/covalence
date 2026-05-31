@@ -68,21 +68,35 @@ x` are similarly reduction rules, not axioms.
 
 ## 2. Ite
 
-`Ite(branch_ty, cond, then, else) : branch_ty`
+`Ite(branch_ty, cond) : α → α → α` (where `α = branch_ty`).
+
+Ite is a *partially-applied* primitive: it takes the type and the
+boolean condition inline, and yields a function `α → α → α`. The
+two branches are supplied through `Comb`, exactly like any other
+binary function value:
+
+```
+Comb (Comb (Ite ty cond) then_branch) else_branch  :  α
+```
+
+This shape is what keeps Ite within the (tag, lhs, rhs) 3-u32
+invariant: payload is `TypeRef + TermRef = 8 bytes`, no side table
+needed.
 
 | Sig | Reduction (on literal cond) |
 |---|---|
-| `bool → α → α → α` (here `α = branch_ty`) | `Ite ty True a b → a`; `Ite ty False a b → b` |
+| `bool → α → α → α` (here `α = branch_ty`) | `Comb (Comb (Ite ty True) a) b → a`; `Comb (Comb (Ite ty False) a) b → b` |
 
 The `branch_ty` field is carried explicitly so the term is
 self-describing for typechecking; without it we'd have to recompute
 the type of `then`/`else` every time we look at an `Ite`.
 
-**One axiom:** `Ite ty (Not b) x y = Ite ty b y x` — negating the
-condition flips the branches. This is the only Ite fact that isn't
-a reduction rule (it doesn't fire on a literal condition; it's used
-to canonicalise nested Ites). All other Ite equalities collapse to
-reduction-rule applications once `cond` becomes a literal.
+**One axiom:** `Comb (Comb (Ite ty (Not b)) x) y = Comb (Comb (Ite
+ty b) y) x` — negating the condition flips the branches. This is
+the only Ite fact that isn't a reduction rule (it doesn't fire on
+a literal condition; it's used to canonicalise nested Ites). All
+other Ite equalities collapse to reduction-rule applications once
+`cond` becomes a literal.
 
 ---
 
@@ -104,10 +118,15 @@ for `nat` is a numeral: `NatInline 5` (not `succ (succ (succ (succ
 
 ### PrimOp2
 
-All comparisons return `bool`. All arithmetic on `nat` is total
-(`NatSub` saturates to `0`; `NatDiv`/`NatMod` by `0` are total but
-unspecified — `n div 0 = 0`, `n mod 0 = 0` for definiteness; any
-provable property *requires* the divisor to be nonzero).
+All comparisons return `bool`. All arithmetic on `nat` is total:
+`NatSub` saturates to `0`, and `NatDiv`/`NatMod` by `0` are pinned
+to `0` by axiom (§9.8). Any user theorem requiring meaningful
+quotient behavior conditions on `divisor ≠ 0`.
+
+Bitwise ops on `nat` treat values as **infinite zero-extended bit
+strings** — they're well-defined for `And`, `Or`, `Xor`, `Shl`, but
+not `Not` (which would yield infinite ones). `Popcount` is
+well-defined since a finite `nat` has finitely many 1-bits.
 
 | Op | Sig | Reduction (on literals) | Identity / zero reductions |
 |---|---|---|---|
@@ -116,9 +135,25 @@ provable property *requires* the divisor to be nonzero).
 | `NatMul` | `nat → nat → nat` | host `*` | `mul a 0 → 0`; `mul 0 a → 0`; `mul a 1 → a`; `mul 1 a → a` |
 | `NatDiv` | `nat → nat → nat` | host `/` | `div a 1 → a`; `div 0 a → 0` |
 | `NatMod` | `nat → nat → nat` | host `%` | `mod a 1 → 0`; `mod 0 a → 0` |
+| `NatPow` | `nat → nat → nat` | host `pow` | `pow a 0 → 1`; `pow 0 (succ _) → 0`; `pow a 1 → a` |
+| `NatAnd` | `nat → nat → nat` | host bitwise AND | `and a 0 → 0`; `and 0 a → 0` |
+| `NatOr` | `nat → nat → nat` | host bitwise OR | `or a 0 → a`; `or 0 a → a` |
+| `NatXor` | `nat → nat → nat` | host bitwise XOR | `xor a 0 → a`; `xor a a → 0` |
+| `NatShl` | `nat → nat → nat` | host `<<` (`a << b = a * 2^b`) | `shl a 0 → a`; `shl 0 b → 0` |
+| `NatShr` | `nat → nat → nat` | host `>>` (`a >> b = a / 2^b`) | `shr a 0 → a`; `shr 0 b → 0` |
 | `NatEq` | `nat → nat → bool` | host `==` | `eq a a → True` |
 | `NatLt` | `nat → nat → bool` | host `<` | `lt a 0 → False` |
 | `NatLe` | `nat → nat → bool` | host `<=` | `le 0 a → True` |
+
+### PrimOp1 (bit counting)
+
+| Op | Sig | Reduction |
+|---|---|---|
+| `NatPopcount` | `nat → nat` | host `popcount` |
+
+(`NatNot` is **not** a primop — would require infinitely many output
+bits for any finite input. Use `IntNot` on the corresponding `int`
+if you need it.)
 
 Recursion equations like `add a (succ b) = succ (add a b)` are
 **manual rules** (§11), not reduction rules: applying them
@@ -139,24 +174,37 @@ contains:
   identities, `IntNeg` as additive inverse).
 - An order axiom `IntLt` matches `NatLt` on non-negative values.
 
+Bitwise ops on `int` treat values as **infinite sign-extended bit
+strings** (two's-complement view). All of `And`, `Or`, `Xor`, `Not`,
+`Shl`, `Shr` are well-defined this way. `Popcount` is not in the
+primop list for `int` — it'd be infinite for negative `int`s; use
+`Int_To_Nat` after taking the absolute value if you need it.
+
 ### PrimOp1
 
-| Op | Sig | Reduction | Axioms |
-|---|---|---|---|
-| `IntNeg` | `int → int` | host `-i` | `neg (neg i) = i`; `neg 0 = 0`; `add i (neg i) = 0` |
+| Op | Sig | Reduction |
+|---|---|---|
+| `IntNeg` | `int → int` | host `-i` |
+| `IntNot` | `int → int` | bitwise complement = `-i - 1` (two's-complement) |
 
 ### PrimOp2
 
-| Op | Sig | Reduction | Axioms |
+| Op | Sig | Reduction (on literals) | Identity / zero reductions |
 |---|---|---|---|
-| `IntAdd` | `int → int → int` | host `+` | ring laws |
-| `IntSub` | `int → int → int` | host `-` | `sub i j = add i (neg j)` |
-| `IntMul` | `int → int → int` | host `*` | ring laws |
-| `IntDiv` | `int → int → int` | host `div` (truncating toward zero) | `div_mod_spec` analogous to `nat`; sign convention pinned by the host implementation |
-| `IntMod` | `int → int → int` | host `mod` (sign of dividend) | same |
-| `IntEq` | `int → int → bool` | host `==` | reflexive/symmetric/transitive |
-| `IntLt` | `int → int → bool` | host `<` | total order axioms; agrees with `NatLt` on `int_of_nat`-images |
-| `IntLe` | `int → int → bool` | host `<=` | `le i j = Or (lt i j) (eq i j)` |
+| `IntAdd` | `int → int → int` | host `+` | `add i 0 → i`; `add 0 i → i` |
+| `IntSub` | `int → int → int` | host `-` | `sub i 0 → i` |
+| `IntMul` | `int → int → int` | host `*` | `mul i 0 → 0`; `mul 0 i → 0`; `mul i 1 → i`; `mul 1 i → i` |
+| `IntDiv` | `int → int → int` | host `div` (truncating toward zero) | `div i 1 → i`; `div 0 i → 0` |
+| `IntMod` | `int → int → int` | host `mod` (sign of dividend) | `mod i 1 → 0`; `mod 0 i → 0` |
+| `IntPow` | `int → nat → int` | host `pow` | `pow i 0 → 1`; `pow i 1 → i`; `pow 0 (succ _) → 0` |
+| `IntAnd` | `int → int → int` | host bitwise AND (sign-extended) | `and i 0 → 0` |
+| `IntOr` | `int → int → int` | host bitwise OR | `or i 0 → i`; `or i (neg 1) → neg 1` |
+| `IntXor` | `int → int → int` | host bitwise XOR | `xor i 0 → i`; `xor i i → 0` |
+| `IntShl` | `int → nat → int` | host `<<` (`i << b = i * 2^b`) | `shl i 0 → i`; `shl 0 b → 0` |
+| `IntShr` | `int → nat → int` | host arithmetic shift right (sign-extending) | `shr i 0 → i` |
+| `IntEq` | `int → int → bool` | host `==` | `eq i i → True` |
+| `IntLt` | `int → int → bool` | host `<` | — |
+| `IntLe` | `int → int → bool` | host `<=` | `le i i → True` |
 
 ---
 
@@ -179,25 +227,48 @@ they prove properties through the cast equations. The kernel still
 *reduces* via the host's native ops for speed; the axioms ensure the
 reduction is consistent.
 
+The fixed-width primops mirror WASM's `iN.*` instruction set
+closely — same wrapping semantics, same bit-counting ops, same
+rotates and shifts. Where WASM has separate signed/unsigned
+variants (`i32.div_s` vs `i32.div_u`), Covalence exposes each on the
+type that natively expects that interpretation: `i32.div_s` is
+`I32_Div`, `i32.div_u` is `U32_Div`.
+
 ### PrimOp1 (per fixed-width T)
 
-| Op | Sig | Reduction | Axioms |
-|---|---|---|---|
-| `T_Not` (unsigned only) | `T → T` | host `!x` (bitwise) | `T_Not x = T_of_nat ((2^N - 1) sub (nat_of_T x))` |
-| `T_Of_<S>` (cast from S to T) | `S → T` | host cast | cast-equation determines value uniquely |
+| Op | Sig | Reduction |
+|---|---|---|
+| `T_Not` | `T → T` | host bitwise NOT |
+| `T_Popcount` | `T → T` | count of 1-bits (returned as `T`, matching WASM's `iN.popcnt`) |
+| `T_Clz` | `T → T` | count leading zeros |
+| `T_Ctz` | `T → T` | count trailing zeros |
+| `T_Eqz` | `T → bool` | `x == 0` (handy because it shows up everywhere in WASM) |
+| `T_Of_<S>` (cast from S to T) | `S → T` | host cast |
 
 ### PrimOp2 (per fixed-width T)
 
-| Op | Sig | Reduction | Axioms |
-|---|---|---|---|
-| `T_Add` | `T → T → T` | host wrapping `+` | `T_Add x y = T_of_nat ((nat_of_T x) add (nat_of_T y))` |
-| `T_Sub` | `T → T → T` | host wrapping `-` | analogous |
-| `T_Mul` | `T → T → T` | host wrapping `*` | analogous |
-| `T_Div` | `T → T → T` | host `/` (defined on `y ≠ 0`) | via cast-spec |
-| `T_Mod` | `T → T → T` | host `%` | via cast-spec |
-| `T_Eq`/`T_Lt`/`T_Le` | `T → T → bool` | host comparisons | agree with `nat`/`int` analogs through the casts |
-| `T_And`/`T_Or`/`T_Xor` | `T → T → T` | bitwise | defined via `bits` representation: `T_And x y = T_of_bits (BitsAnd (bits_of_T x) (bits_of_T y))` (likewise Or/Xor) |
-| `T_Shl`/`T_Shr` | `T → T → T` | wrapping shift | defined via `nat` multiplication / division by `2^k` modulo `2^N` |
+| Op | Sig | Reduction |
+|---|---|---|
+| `T_Add` | `T → T → T` | host wrapping `+` |
+| `T_Sub` | `T → T → T` | host wrapping `-` |
+| `T_Mul` | `T → T → T` | host wrapping `*` |
+| `T_Div` | `T → T → T` | host `/` (zero-divisor pinned to 0, §9.8) |
+| `T_Mod` | `T → T → T` | host `%` (zero-divisor pinned to 0, §9.8) |
+| `T_Pow` | `T → nat → T` | host wrapping `pow` (exponent is `nat`, base is `T`) |
+| `T_And` | `T → T → T` | bitwise AND |
+| `T_Or` | `T → T → T` | bitwise OR |
+| `T_Xor` | `T → T → T` | bitwise XOR |
+| `T_Shl` | `T → nat → T` | wrapping shift left |
+| `T_Shr` | `T → nat → T` | shift right (logical for unsigned T, arithmetic for signed T) |
+| `T_Rotl` | `T → nat → T` | rotate left |
+| `T_Rotr` | `T → nat → T` | rotate right |
+| `T_Eq` | `T → T → bool` | host `==` |
+| `T_Lt` | `T → T → bool` | host `<` (unsigned for uN, signed for iN) |
+| `T_Le` | `T → T → bool` | host `<=` |
+
+Axioms for each op are exactly the via-cast equations of §9.7
+(round-trip + via-nat/int eq/lt) — everything else is reduction-
+rule territory.
 
 ---
 
@@ -320,33 +391,35 @@ variables, and they let the kernel pattern-match common shapes (e.g.
 |---|---|---|---|
 | `Id(α)` | `α → α` | none — `Id` is a value, not an evaluator | `Comb(Id(α), x) = x` |
 | `Comp(f, g)` | `(β → γ) → (α → β) → (α → γ)` | none on `Comp` itself; `Comb(Comp(f, g), x)` reduces to `Comb(f, Comb(g, x))` | the previous equation; equivalently `Comp(f, g) = λx. f (g x)` |
-| `Iter(α, n, f)` | `nat → (α → α) → (α → α)` | none on `Iter`; equality to `Id`/`Comp` chains via the axioms below | see below |
+| `Iter(α, n)` | `nat → (α → α) → (α → α)` | none on `Iter`; equality to `Id`/`Comp` chains via the axioms below | see below |
 
 ### Storage shape
 
 - `Id(α)` carries a single `TypeRef` — 4 bytes payload, fits in the
   3-u32 invariant.
 - `Comp(f, g)` carries two `TermRef`s — 8 bytes, fits inline.
-- `Iter(α, n, f)` has a `TypeRef` + two `TermRef`s = 12 bytes
-  payload — doesn't fit. Side-tabled in `arena.iters: Vec<(TypeRef,
-  TermRef, TermRef)>` with a single-u32 `IterId` in TermDef.
+- `Iter(α, n)` carries a `TypeRef` + one `TermRef` (the iteration
+  count `n`) = 8 bytes — fits inline. Like `Ite`, the remaining
+  argument (the function to iterate) is supplied through `Comb`.
 
 ### `Iter` axioms (via `Comp`/`Id`)
 
-`Iter` is characterised by two equations that **both** hold (they
-are provably equal given the equational theory of `Comp`):
+`Iter` is partially applied: `Iter α n` is the "iterate-n-times"
+combinator, awaiting the function to iterate. It's characterised by
+two `succ`-equations that **both** hold (they're provably equal
+given the equational theory of `Comp`):
 
 ```
-Iter(α, 0,        f) = Id(α)
-Iter(α, succ(n),  f) = Comp(f, Iter(α, n, f))      -- outer-first
-Iter(α, succ(n),  f) = Comp(Iter(α, n, f), f)      -- inner-first
+Comb (Iter α 0)        f  =  Id α
+Comb (Iter α (succ n)) f  =  Comp f (Comb (Iter α n) f)   -- outer-first
+Comb (Iter α (succ n)) f  =  Comp (Comb (Iter α n) f) f   -- inner-first
 ```
 
-Combined with the nat-induction axiom (§8.6), these uniquely
+Combined with the nat-induction axiom (§8.7), these uniquely
 characterise `Iter`. The two `succ`-cases together with induction
 also prove `Iter`'s key shift-invariance lemma —
-`Comp(f, Iter(α, n, f)) = Comp(Iter(α, n, f), f)` — without further
-axioms.
+`Comp f (Comb (Iter α n) f) = Comp (Comb (Iter α n) f) f` —
+without further axioms.
 
 ### Arithmetic derived from `Iter`
 
@@ -354,10 +427,12 @@ With `Iter` in hand, the standard arithmetic ops are *derived*
 (not axiomatized independently — though we *also* expose them as
 primops for efficient host-side reduction; see §3 above):
 
-- `add n m = Comb(Iter(nat, m, NatSucc), n)` — `m` successors
+- `add n m = Comb (Comb (Iter nat m) NatSucc) n` — `m` successors
   applied to `n`.
-- `mul n m = Comb(Iter(nat, m, NatAdd n), 0)`.
-- `pow n m = Comb(Iter(nat, m, NatMul n), 1)`.
+- `mul n m = Comb (Comb (Iter nat m) (NatAdd-by-n)) 0`.
+- `pow n m = Comb (Comb (Iter nat m) (NatMul-by-n)) 1`.
+
+(Where `NatAdd-by-n` means the partially-applied `λx. add n x`.)
 
 The defining axiom of `add`'s primop (`add n 0 = n`; `add n (succ
 m) = succ (add n m)`) is then *redundant* with the `Iter` characterization
@@ -486,11 +561,11 @@ like `xor_def` etc. are reduction rules (left-to-right normal form).
 
 | Name | Statement | Source |
 |---|---|---|
-| `ite_negate` | `Ite ty (Not b) x y = Ite ty b y x` | §2 |
+| `ite_negate` | `Comb (Comb (Ite ty (Not b)) x) y = Comb (Comb (Ite ty b) y) x` | §2 |
 
-Reduction on literal cond (`Ite ty True a b → a`, etc.) is in §10 —
-it's a fact of `bool`'s finite structure plus the typing of `Ite`,
-not a separate postulate.
+Reduction on literal cond (`Comb (Comb (Ite ty True) a) b → a`,
+etc.) is in §10 — it's a fact of `bool`'s finite structure plus the
+typing of `Ite`, not a separate postulate.
 
 ### 9.3. Epsilon (Hilbert choice)
 
@@ -507,9 +582,9 @@ existence elimination) derives from it.
 |---|---|---|
 | `id_ax` | `Comb (Id α) x = x` | §8.6 |
 | `comp_def` | `Comb (Comp f g) x = Comb f (Comb g x)` | §8.6 |
-| `iter_zero` | `Iter α 0 f = Id α` | §8.6 |
-| `iter_succ_outer` | `Iter α (succ n) f = Comp f (Iter α n f)` | §8.6 |
-| `iter_succ_inner` | `Iter α (succ n) f = Comp (Iter α n f) f` | §8.6 |
+| `iter_zero` | `Comb (Iter α 0) f = Id α` | §8.6 |
+| `iter_succ_outer` | `Comb (Iter α (succ n)) f = Comp f (Comb (Iter α n) f)` | §8.6 |
+| `iter_succ_inner` | `Comb (Iter α (succ n)) f = Comp (Comb (Iter α n) f) f` | §8.6 |
 
 The last two are equivalent given `induct_nat` (§9.5); both are
 listed because each is the natural symbolic rule to apply depending
@@ -598,7 +673,29 @@ bitwise ops are all reduction-rule-only — there is no
 from the host implementation. This keeps the axiom list short and
 trusts the cast bijection + host arithmetic.
 
-### 9.8. Summary
+### 9.8. Partial-function pinning (division by zero)
+
+`div` and `mod` are total on `nat`, `int`, and every `uN`/`iN`, so
+they need a definite value at `divisor = 0`. We axiomatize the
+simplest possible choice — **always zero**:
+
+| Name | Statement |
+|---|---|
+| `nat_div_zero` | `div n 0 = 0` |
+| `nat_mod_zero` | `mod n 0 = 0` |
+| `int_div_zero` | `div i 0 = 0` |
+| `int_mod_zero` | `mod i 0 = 0` |
+| `T_div_zero` | `T_Div x 0 = 0` for each `T ∈ {u8…u64, i8…i64}` |
+| `T_mod_zero` | `T_Mod x 0 = 0` analogously |
+
+Any user theorem requiring meaningful div/mod behavior conditions
+on `divisor ≠ 0` explicitly; the kernel guarantees nothing else.
+This is the lightest possible spec — no Euclidean axiom, no quotient
+bounds, just "div/mod by 0 is 0." More involved properties (e.g.
+`d ≠ 0 → n = div n d * d + mod n d`) live in user space, derived
+from the host's reduction behavior plus this pinning.
+
+### 9.9. Summary
 
 The kernel's trusted axiom set is exactly the axioms above:
 
@@ -611,8 +708,10 @@ The kernel's trusted axiom set is exactly the axioms above:
 - 13 integer ring/order axioms
 - 4 × 16 = 64 fixed-width-bijection axioms (4 axioms × 16 types
   u8..u64,i8..i64; can be a single quantified schema)
+- 2 × (2 + 1 + 16) = ~38 div/mod-by-zero axioms (nat, int, 16 ×
+  uN/iN; trivially one schema)
 
-**Total: ~100 axiom schemata.** Far less than the previous draft —
+**Total: ~140 axiom schemata.** Far less than the previous draft —
 the reduction- and manual-rule lists carry the rest. This is a
 one-time audit; new primops add to the rule lists, not to this
 list, unless they introduce a new postulate.
@@ -695,8 +794,8 @@ representation (`NatInline n`, `IntInline i`, `U32 n`, etc.).
 
 | Rule | Source |
 |---|---|
-| `Ite ty True a b → a` | §2 |
-| `Ite ty False a b → b` | §2 |
+| `Comb (Comb (Ite ty True) a) b → a` | §2 |
+| `Comb (Comb (Ite ty False) a) b → b` | §2 |
 
 (The `ite_negate` axiom of §9.2 is *not* a reduction rule — it'd
 loop with itself. It's available as a manual rule, §11.)
@@ -707,7 +806,7 @@ loop with itself. It's available as a manual rule, §11.)
 |---|---|
 | `Comb (Id α) x → x` | §8.6 |
 | `Comb (Comp f g) x → Comb f (Comb g x)` | §8.6 |
-| `Iter α (NatInline 0) f → Id α` | §8.6 |
+| `Comb (Iter α (NatInline 0)) f → Id α` | §8.6 |
 
 The `succ` cases of `iter_succ_outer`/`iter_succ_inner` are *not*
 reductions — they'd unfold indefinitely on a symbolic `n`. Manual

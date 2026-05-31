@@ -421,9 +421,13 @@ pub(crate) enum TermDef {
     Comb(TermRef, TermRef),
     Abs(TypeRef, TermRef),
     Eq(TermRef, TermRef),
-    // ite is variable-arity; cond + then + else + branch_ty don't fit
-    // 8 bytes, so it sits in arena.ites and the variant carries an IteId
-    IteStored(IteId),
+    // partially-applied: just branch type + bool cond; branches via Comb
+    Ite(TypeRef, TermRef),
+    // partially-applied: just element type + nat count; f via Comb
+    Iter(TypeRef, TermRef),
+    Eps(TypeRef, TermRef),  // Hilbert choice
+    Id(TypeRef),
+    Comp(TermRef, TermRef),
     // literals as above; storage may be inline or via *Id into a table
     ...
     // one variant per primop kind, so the (variant, child, child) shape
@@ -459,11 +463,12 @@ Two consequences worth calling out:
   ignores them; only printers consult them. Dropping them keeps the
   variant within the 8-byte payload budget *and* makes the equality-
   by-structure check trivially α-equivalent.
-- **`Ite` is special.** Because it has three children and a type
-  argument, it can't fit in 8 bytes of inline payload. It lives in
-  `arena.ites: Vec<(TypeRef, TermRef, TermRef, TermRef)>` and the
-  TermDef variant is `IteStored(IteId)`. `TermKind::Ite` unpacks the
-  entry for the public API.
+- **`Ite` is partially applied** to keep the 3-u32 invariant.
+  `Ite(α, cond)` carries the branch type and the boolean — 8 bytes
+  inline. The two branches are supplied via `Comb`, so a fully-
+  applied if-then-else is `Comb (Comb (Ite α cond) then) else`.
+  `Iter` follows the same pattern: `Iter(α, n) : (α → α) → (α → α)`,
+  with the function-to-iterate supplied via `Comb`.
 
 `TypeDef` follows the same Copy + 3-u32 invariant; it's public
 because the variant set is small enough that pattern-matching is
@@ -528,11 +533,11 @@ storage efficiency.
 | `True`, `False` | boolean literals | **builtin** |
 | `Op1(PrimOp1, TermRef)` | unary primitive op (logic, arithmetic, casts) | **builtin** (§3.4) |
 | `Op2(PrimOp2, TermRef, TermRef)` | binary primitive op | **builtin** (§3.4) |
-| `Ite(TypeRef, TermRef, TermRef, TermRef)` | if-then-else (branch type, cond, then, else) | **builtin** |
+| `Ite(TypeRef, TermRef)` | if-then-else: `(α → α → α)` for the given cond; branches via `Comb` | **builtin** (§3.4) |
 | `Eps(TypeRef, TermRef)` | Hilbert choice: `(α → bool) → α` | **builtin** (§3.4) |
 | `Id(TypeRef)` | identity combinator: `α → α` | **builtin** (§3.4) |
 | `Comp(TermRef, TermRef)` | function composition: `(β → γ) → (α → β) → (α → γ)` | **builtin** (§3.4) |
-| `Iter(TypeRef, TermRef, TermRef)` | bounded iter: `nat → (α → α) → (α → α)` (side-tabled) | **builtin** (§3.4) |
+| `Iter(TypeRef, TermRef)` | iter-n-times: `(α → α) → (α → α)`; f via `Comb` | **builtin** (§3.4) |
 | `U8(u8)` … `U64(u64)` | unsigned fixed-width literal | **builtin** |
 | `I8(i8)` … `I64(i64)` | signed fixed-width literal | **builtin** |
 | `IntInline(i64)` / `IntStored(IntId)` | arbitrary-precision integer literal | **builtin** |
@@ -628,28 +633,31 @@ the source of truth; this section names the categories.
 The kernel exposes a small set of polymorphic combinators in
 addition to the per-type primops:
 
-- `Ite(branch_ty, cond, then, else)` — first-class if-then-else;
-  reduces to `then`/`else` on a literal condition. Side-tabled
-  because it has 4 children.
-- `Eps(α, P)` — Hilbert choice: returns *some* element of `α`
+- `Ite(α, cond) : α → α → α` — if-then-else. Carries the branch
+  type and the boolean inline (8 bytes payload); both branches
+  supplied through `Comb`. Reduces to the matching branch on a
+  literal condition.
+- `Eps(α, P) : α` — Hilbert choice; returns *some* element of `α`
   satisfying `P`, governed by `select_ax: P x → P (Eps α P)`. The
   *only* nontrivial existence axiom in the prelude.
-- `Id(α)` — identity, `Comb (Id α) x = x`.
-- `Comp(f, g)` — composition, `Comb (Comp f g) x = Comb f (Comb g x)`.
-  Equivalent to `λx. f (g x)`.
-- `Iter(α, n, f) : α → α` — bounded iteration. Side-tabled.
-  Characterized by `Iter α 0 f = Id α`, `Iter α (succ n) f = Comp f
-  (Iter α n f)` (and the inner-first variant). Combined with
-  `induct_nat`, these axioms uniquely determine `Iter`. Arithmetic
-  ops then derive as `add n m = Comb (Iter nat m NatSucc) n`, etc.
+- `Id(α) : α → α` — identity; `Comb (Id α) x = x`.
+- `Comp(f, g) : (β → γ) → (α → β) → (α → γ)` — function composition;
+  `Comb (Comp f g) x = Comb f (Comb g x)`. Equivalent to
+  `λx. f (g x)`.
+- `Iter(α, n) : (α → α) → (α → α)` — bounded iteration. Carries
+  the element type and the count inline (8 bytes payload); the
+  function-to-iterate supplied via `Comb`. Characterised by
+  `Comb (Iter α 0) f = Id α` and
+  `Comb (Iter α (succ n)) f = Comp f (Comb (Iter α n) f)`
+  (and the inner-first variant). Combined with `induct_nat`, these
+  axioms uniquely determine `Iter`. Arithmetic ops then derive as
+  `add n m = Comb (Comb (Iter nat m) NatSucc) n`, etc.
+
+All five combinators preserve the (tag, lhs, rhs) 3-u32 inline
+invariant — none use side tables.
 
 See [prover-primops.md](./prover-primops.md) §8.5–8.6 for full
 axioms and motivation.
-
-`Ite` and `Iter` exceed the (tag, lhs, rhs) inline budget, so they
-live in side tables (`arena.ites`, `arena.iters`) with a single-u32
-`IteId`/`IterId` payload in `TermDef`. `Eps`, `Id`, and `Comp` fit
-inline.
 
 #### Three rewriting layers
 

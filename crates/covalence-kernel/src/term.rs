@@ -5,6 +5,37 @@ use crate::id::{BitsId, BytesId, ForeignTermId, IntId, NatId, StrId, TermId};
 use crate::primop::{PrimOp1, PrimOp2};
 use crate::ty::TypeRef;
 
+/// Crate-internal newtype wrapping a `u64` as two `u32`s.
+///
+/// Storing 64-bit literal payloads as raw `u64` would force 8-byte
+/// enum alignment, pushing `TermDef` past the 3-u32 invariant.
+/// `Packed64` stores the same value as `[u32; 2]` — 4-byte aligned —
+/// and exposes `from_u64` / `to_u64` / `from_i64` / `to_i64` for
+/// conversion. The newtype is `pub(crate)` so external code cannot
+/// construct or destructure it directly; use the smart constructors
+/// (`TermDef::nat_inline`, `u64_literal`, …) and `arena.kind()` to
+/// see the logical scalar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Packed64(pub(crate) [u32; 2]);
+
+impl Packed64 {
+    pub(crate) const fn from_u64(v: u64) -> Self {
+        Self([v as u32, (v >> 32) as u32])
+    }
+
+    pub(crate) const fn to_u64(self) -> u64 {
+        (self.0[0] as u64) | ((self.0[1] as u64) << 32)
+    }
+
+    pub(crate) const fn from_i64(v: i64) -> Self {
+        Self::from_u64(v as u64)
+    }
+
+    pub(crate) const fn to_i64(self) -> i64 {
+        self.to_u64() as i64
+    }
+}
+
 /// Public view of a term.
 ///
 /// This is the stable API for inspecting terms. `TermDef` (the
@@ -177,20 +208,19 @@ macro_rules! define_term_def {
 
             // -- literals: fixed-width --
             //
-            // The 64-bit variants are stored as `[u32; 2]` (low, high
-            // halves) rather than `u64` / `i64` directly — the latter
-            // would force 8-byte enum alignment and push TermDef from
-            // 12 bytes (3 u32s) to 16. Use the `*_value` accessors to
-            // get the logical scalar back.
-            U8(u8), U16(u16), U32(u32), U64([u32; 2]),
-            I8(i8), I16(i16), I32(i32), I64([u32; 2]),
+            // The 64-bit variants carry a `Packed64` rather than a raw
+            // `u64` / `i64`; this avoids 8-byte enum alignment and keeps
+            // TermDef at 12 bytes. Use the smart constructors
+            // (`u64_literal`, `i64_literal`, …) and `arena.kind()`.
+            U8(u8), U16(u16), U32(u32), U64(Packed64),
+            I8(i8), I16(i16), I32(i32), I64(Packed64),
 
             // -- literals: arbitrary-precision --
             //
-            // Same `[u32; 2]` packing applies to the inline forms.
-            IntInline([u32; 2]),
+            // Inline forms are `Packed64`-wrapped.
+            IntInline(Packed64),
             IntStored(IntId),
-            NatInline([u32; 2]),
+            NatInline(Packed64),
             NatStored(NatId),
 
             // -- literals: bit / byte strings --
@@ -205,46 +235,24 @@ macro_rules! define_term_def {
         }
 
         impl TermDef {
-            /// Pack a `u64` value into the `[u32; 2]` payload used by
-            /// the inline-u64 variants (`U64`, `NatInline`).
-            pub const fn pack_u64(v: u64) -> [u32; 2] {
-                [v as u32, (v >> 32) as u32]
-            }
-
-            /// Unpack a `[u32; 2]` back into a `u64`.
-            pub const fn unpack_u64(packed: [u32; 2]) -> u64 {
-                (packed[0] as u64) | ((packed[1] as u64) << 32)
-            }
-
-            /// Pack an `i64` value into a `[u32; 2]` payload.
-            pub const fn pack_i64(v: i64) -> [u32; 2] {
-                Self::pack_u64(v as u64)
-            }
-
-            /// Unpack a `[u32; 2]` back into an `i64`.
-            pub const fn unpack_i64(packed: [u32; 2]) -> i64 {
-                Self::unpack_u64(packed) as i64
-            }
-
-            /// Smart constructor for a `U64` literal — saves the
-            /// caller from writing `TermDef::U64(TermDef::pack_u64(v))`.
+            /// Smart constructor for a `U64` literal.
             pub const fn u64_literal(v: u64) -> Self {
-                TermDef::U64(Self::pack_u64(v))
+                TermDef::U64(Packed64::from_u64(v))
             }
 
             /// Smart constructor for an `I64` literal.
             pub const fn i64_literal(v: i64) -> Self {
-                TermDef::I64(Self::pack_i64(v))
+                TermDef::I64(Packed64::from_i64(v))
             }
 
             /// Smart constructor for an inline `Nat`.
             pub const fn nat_inline(v: u64) -> Self {
-                TermDef::NatInline(Self::pack_u64(v))
+                TermDef::NatInline(Packed64::from_u64(v))
             }
 
             /// Smart constructor for an inline `Int`.
             pub const fn int_inline(v: i64) -> Self {
-                TermDef::IntInline(Self::pack_i64(v))
+                TermDef::IntInline(Packed64::from_i64(v))
             }
 
             /// If this is an applied unary primop, return `(op, child)`.

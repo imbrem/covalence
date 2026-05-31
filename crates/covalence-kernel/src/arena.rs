@@ -151,19 +151,19 @@ impl Arena {
             TermDef::U8(v) => TermKind::U8(v),
             TermDef::U16(v) => TermKind::U16(v),
             TermDef::U32(v) => TermKind::U32(v),
-            TermDef::U64(packed) => TermKind::U64(TermDef::unpack_u64(packed)),
+            TermDef::U64(packed) => TermKind::U64(packed.to_u64()),
             TermDef::I8(v) => TermKind::I8(v),
             TermDef::I16(v) => TermKind::I16(v),
             TermDef::I32(v) => TermKind::I32(v),
-            TermDef::I64(packed) => TermKind::I64(TermDef::unpack_i64(packed)),
+            TermDef::I64(packed) => TermKind::I64(packed.to_i64()),
             // Materialise arbitrary-precision literals — hide the
             // inline-vs-stored split.
             TermDef::IntInline(packed) => {
-                TermKind::Int(covalence_types::Int::from(TermDef::unpack_i64(packed)))
+                TermKind::Int(covalence_types::Int::from(packed.to_i64()))
             }
             TermDef::IntStored(id) => TermKind::Int(self.int(id).clone()),
             TermDef::NatInline(packed) => {
-                TermKind::Nat(covalence_types::Nat::from(TermDef::unpack_u64(packed)))
+                TermKind::Nat(covalence_types::Nat::from(packed.to_u64()))
             }
             TermDef::NatStored(id) => TermKind::Nat(self.nat(id).clone()),
             TermDef::BitsStored(id) => TermKind::Bits(self.bits(id).clone()),

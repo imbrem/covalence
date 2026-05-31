@@ -19,6 +19,6 @@ pub use id::{
     TyArgsId, TypeId,
 };
 pub use primop::{PrimOp1, PrimOp2};
-pub use term::{TermDef, TermKind, TermRef};
+pub use term::{Packed64, TermDef, TermKind, TermRef};
 pub use ty::{TypeDef, TypeRef};
 pub use uf::{TermUfEntry, TypeUfEntry};

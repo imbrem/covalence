@@ -118,9 +118,54 @@ impl Arena {
     /// Project a term to its public-API [`TermKind`] view. Use this
     /// for pattern matching in user code — the underlying `TermDef`
     /// has one variant per primop and is intended as internal
-    /// storage.
+    /// storage. Arbitrary-precision literals are materialised: a
+    /// `TermDef::NatStored(id)` becomes `TermKind::Nat(self.nat(id).clone())`,
+    /// hiding the inline-vs-stored split entirely.
     pub fn kind(&self, id: TermId) -> TermKind {
-        self.term_def(id).to_kind()
+        let def = self.term_def(id);
+        if let Some((op, x)) = def.as_op1() {
+            return TermKind::Op1(op, x);
+        }
+        if let Some((op, a, b)) = def.as_op2() {
+            return TermKind::Op2(op, a, b);
+        }
+        match *def {
+            TermDef::Bound(i) => TermKind::Bound(i),
+            TermDef::Free(n, t) => TermKind::Free(n, t),
+            TermDef::Const(n, t) => TermKind::Const(n, t),
+            TermDef::Comb(f, x) => TermKind::Comb(f, x),
+            TermDef::Abs(t, b) => TermKind::Abs(t, b),
+            TermDef::True => TermKind::True,
+            TermDef::False => TermKind::False,
+            TermDef::Eq(a, b) => TermKind::Eq(a, b),
+            TermDef::Ne(a, b) => TermKind::Ne(a, b),
+            TermDef::Forall(p) => TermKind::Forall(p),
+            TermDef::Exists(p) => TermKind::Exists(p),
+            TermDef::Eps(t, p) => TermKind::Eps(t, p),
+            TermDef::Id(t) => TermKind::Id(t),
+            TermDef::Comp(f, g) => TermKind::Comp(f, g),
+            TermDef::Iter(n, f) => TermKind::Iter(n, f),
+            TermDef::Ite(c, t) => TermKind::Ite(c, t),
+            TermDef::LiftOp1(op) => TermKind::LiftOp1(op),
+            TermDef::LiftOp2(op) => TermKind::LiftOp2(op),
+            TermDef::U8(v) => TermKind::U8(v),
+            TermDef::U16(v) => TermKind::U16(v),
+            TermDef::U32(v) => TermKind::U32(v),
+            TermDef::U64(v) => TermKind::U64(v),
+            TermDef::I8(v) => TermKind::I8(v),
+            TermDef::I16(v) => TermKind::I16(v),
+            TermDef::I32(v) => TermKind::I32(v),
+            TermDef::I64(v) => TermKind::I64(v),
+            // Materialise arbitrary-precision literals — hide the
+            // inline-vs-stored split.
+            TermDef::IntInline(v) => TermKind::Int(covalence_types::Int::from(v)),
+            TermDef::IntStored(id) => TermKind::Int(self.int(id).clone()),
+            TermDef::NatInline(v) => TermKind::Nat(covalence_types::Nat::from(v)),
+            TermDef::NatStored(id) => TermKind::Nat(self.nat(id).clone()),
+            TermDef::BitsStored(v) => TermKind::BitsStored(v),
+            TermDef::BytesStored(v) => TermKind::BytesStored(v),
+            _ => unreachable!("per-op variant handled by as_op1/as_op2 above"),
+        }
     }
 
     /// Look up an imported arena.

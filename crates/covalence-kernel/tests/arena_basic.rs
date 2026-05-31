@@ -534,6 +534,27 @@ fn alloc_combinator_variants() {
 }
 
 #[test]
+fn kind_materialises_nat_and_int_uniformly() {
+    use covalence_types::{Int, Nat};
+
+    let mut a = Arena::new();
+
+    // Inline Nat and stored Nat both surface as TermKind::Nat.
+    let n_small = a.alloc_term(TermDef::NatInline(42));
+    let n_big_id = a.intern_nat(Nat::from(u128::MAX));
+    let n_big = a.alloc_term(TermDef::NatStored(n_big_id));
+    assert_eq!(a.kind(n_small), TermKind::Nat(Nat::from(42u64)));
+    assert_eq!(a.kind(n_big), TermKind::Nat(Nat::from(u128::MAX)));
+
+    // Inline Int and stored Int both surface as TermKind::Int.
+    let i_small = a.alloc_term(TermDef::IntInline(-7));
+    let i_big_id = a.intern_int(Int::from(i128::MIN));
+    let i_big = a.alloc_term(TermDef::IntStored(i_big_id));
+    assert_eq!(a.kind(i_small), TermKind::Int(Int::from(-7i64)));
+    assert_eq!(a.kind(i_big), TermKind::Int(Int::from(i128::MIN)));
+}
+
+#[test]
 fn kind_folds_per_op_variants_into_op1_op2() {
     use covalence_kernel::{PrimOp1, PrimOp2};
 
@@ -567,7 +588,7 @@ fn kind_folds_per_op_variants_into_op1_op2() {
     let t = a.alloc_term(TermDef::True);
     assert_eq!(a.kind(t), TermKind::True);
     let n = a.alloc_term(TermDef::NatInline(42));
-    assert_eq!(a.kind(n), TermKind::NatInline(42));
+    assert_eq!(a.kind(n), TermKind::Nat(covalence_types::Nat::from(42u64)));
 }
 
 #[test]

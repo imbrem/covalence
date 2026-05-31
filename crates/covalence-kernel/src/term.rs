@@ -11,11 +11,14 @@ use crate::ty::TypeRef;
 /// internal storage) has one variant per primop — ~270 cases —
 /// because the (tag, lhs, rhs) 3-u32 invariant requires the
 /// discriminant to carry the op kind. `TermKind` folds the per-op
-/// variants back into `Op1(PrimOp1, _)` and `Op2(PrimOp2, _, _)`
-/// for ergonomic pattern matching.
+/// variants back into `Op1(PrimOp1, _)` and `Op2(PrimOp2, _, _)`,
+/// and presents arbitrary-precision literals as full `Nat`/`Int`
+/// values (the inline-vs-stored split is a TermDef-level
+/// implementation detail).
 ///
-/// Get one via [`Arena::kind`](crate::arena::Arena::kind).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Get one via [`Arena::kind`](crate::arena::Arena::kind). Not
+/// `Copy` because materialising `Nat`/`Int` may allocate.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TermKind {
     // -- structural --
     Bound(u32),
@@ -47,7 +50,7 @@ pub enum TermKind {
     Op1(PrimOp1, TermRef),
     Op2(PrimOp2, TermRef, TermRef),
 
-    // -- literals --
+    // -- literals: fixed-width --
     U8(u8),
     U16(u16),
     U32(u32),
@@ -56,62 +59,16 @@ pub enum TermKind {
     I16(i16),
     I32(i32),
     I64(i64),
-    IntInline(i64),
-    IntStored(IntId),
-    NatInline(u64),
-    NatStored(NatId),
+    // -- literals: arbitrary-precision (materialised regardless of
+    //    whether the underlying TermDef variant was Inline or Stored) --
+    Nat(covalence_types::Nat),
+    Int(covalence_types::Int),
+    // -- bit / byte string literals (still opaque-id for now;
+    //    materialisation requires arena lookup) --
     BitsStored(BitsId),
     BytesStored(BytesId),
 }
 
-impl TermDef {
-    /// Project a `TermDef` to its public-API view. The per-op
-    /// variants fold into `Op1` / `Op2`; everything else maps
-    /// one-to-one.
-    pub fn to_kind(&self) -> TermKind {
-        if let Some((op, x)) = self.as_op1() {
-            return TermKind::Op1(op, x);
-        }
-        if let Some((op, a, b)) = self.as_op2() {
-            return TermKind::Op2(op, a, b);
-        }
-        match *self {
-            TermDef::Bound(i) => TermKind::Bound(i),
-            TermDef::Free(n, t) => TermKind::Free(n, t),
-            TermDef::Const(n, t) => TermKind::Const(n, t),
-            TermDef::Comb(f, x) => TermKind::Comb(f, x),
-            TermDef::Abs(t, b) => TermKind::Abs(t, b),
-            TermDef::True => TermKind::True,
-            TermDef::False => TermKind::False,
-            TermDef::Eq(a, b) => TermKind::Eq(a, b),
-            TermDef::Ne(a, b) => TermKind::Ne(a, b),
-            TermDef::Forall(p) => TermKind::Forall(p),
-            TermDef::Exists(p) => TermKind::Exists(p),
-            TermDef::Eps(t, p) => TermKind::Eps(t, p),
-            TermDef::Id(t) => TermKind::Id(t),
-            TermDef::Comp(f, g) => TermKind::Comp(f, g),
-            TermDef::Iter(n, f) => TermKind::Iter(n, f),
-            TermDef::Ite(c, t) => TermKind::Ite(c, t),
-            TermDef::LiftOp1(op) => TermKind::LiftOp1(op),
-            TermDef::LiftOp2(op) => TermKind::LiftOp2(op),
-            TermDef::U8(v) => TermKind::U8(v),
-            TermDef::U16(v) => TermKind::U16(v),
-            TermDef::U32(v) => TermKind::U32(v),
-            TermDef::U64(v) => TermKind::U64(v),
-            TermDef::I8(v) => TermKind::I8(v),
-            TermDef::I16(v) => TermKind::I16(v),
-            TermDef::I32(v) => TermKind::I32(v),
-            TermDef::I64(v) => TermKind::I64(v),
-            TermDef::IntInline(v) => TermKind::IntInline(v),
-            TermDef::IntStored(v) => TermKind::IntStored(v),
-            TermDef::NatInline(v) => TermKind::NatInline(v),
-            TermDef::NatStored(v) => TermKind::NatStored(v),
-            TermDef::BitsStored(v) => TermKind::BitsStored(v),
-            TermDef::BytesStored(v) => TermKind::BytesStored(v),
-            _ => unreachable!("per-op variant handled by as_op1/as_op2 above"),
-        }
-    }
-}
 
 /// Reference to a term in the *current* arena's namespace.
 ///

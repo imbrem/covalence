@@ -11,7 +11,7 @@ use crate::id::{
     BitsId, BytesId, ForeignTermId, ForeignTypeId, ImportId, IntId, NatId, StrId, TermId,
     TyArgsId, TypeId,
 };
-use crate::term::{TermDef, TermRef};
+use crate::term::{TermDef, TermKind, TermRef};
 use crate::ty::{TypeDef, TypeRef};
 use crate::uf::{TermUfEntry, TypeUfEntry};
 
@@ -113,6 +113,14 @@ impl Arena {
     /// Read a term definition by local id.
     pub fn term_def(&self, id: TermId) -> &TermDef {
         &self.terms[id.0 as usize]
+    }
+
+    /// Project a term to its public-API [`TermKind`] view. Use this
+    /// for pattern matching in user code — the underlying `TermDef`
+    /// has one variant per primop and is intended as internal
+    /// storage.
+    pub fn kind(&self, id: TermId) -> TermKind {
+        self.term_def(id).to_kind()
     }
 
     /// Look up an imported arena.

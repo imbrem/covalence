@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use covalence_kernel::{Arena, TermDef, TermRef, TypeDef, TypeRef};
+use covalence_kernel::{Arena, TermDef, TermKind, TermRef, TypeDef, TypeRef};
 
 /// Helper: intern a name and build a Free term in one go.
 fn alloc_free(a: &mut Arena, name: &str, ty: TypeRef) -> covalence_kernel::TermId {
@@ -531,6 +531,43 @@ fn alloc_combinator_variants() {
     // LiftOp2
     let add_lifted = a.alloc_term(TermDef::LiftOp2(PrimOp2::NatAdd));
     assert!(matches!(a.term_def(add_lifted), TermDef::LiftOp2(_)));
+}
+
+#[test]
+fn kind_folds_per_op_variants_into_op1_op2() {
+    use covalence_kernel::{PrimOp1, PrimOp2};
+
+    let mut a = Arena::new();
+    let nat_ty = a.alloc_type(TypeDef::Nat);
+    let x = alloc_free(&mut a, "x", TypeRef::local(nat_ty));
+    let y = alloc_free(&mut a, "y", TypeRef::local(nat_ty));
+
+    // NatSucc(x) in TermDef becomes TermKind::Op1(NatSucc, x).
+    let succ = a.alloc_term(TermDef::NatSucc(TermRef::local(x)));
+    match a.kind(succ) {
+        TermKind::Op1(op, child) => {
+            assert_eq!(op, PrimOp1::NatSucc);
+            assert_eq!(child.as_local(), Some(x));
+        }
+        other => panic!("expected Op1, got {other:?}"),
+    }
+
+    // NatAdd(x, y) in TermDef becomes TermKind::Op2(NatAdd, x, y).
+    let add = a.alloc_term(TermDef::NatAdd(TermRef::local(x), TermRef::local(y)));
+    match a.kind(add) {
+        TermKind::Op2(op, a_ref, b_ref) => {
+            assert_eq!(op, PrimOp2::NatAdd);
+            assert_eq!(a_ref.as_local(), Some(x));
+            assert_eq!(b_ref.as_local(), Some(y));
+        }
+        other => panic!("expected Op2, got {other:?}"),
+    }
+
+    // Non-op variants pass through identically.
+    let t = a.alloc_term(TermDef::True);
+    assert_eq!(a.kind(t), TermKind::True);
+    let n = a.alloc_term(TermDef::NatInline(42));
+    assert_eq!(a.kind(n), TermKind::NatInline(42));
 }
 
 #[test]

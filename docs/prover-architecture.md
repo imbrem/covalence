@@ -78,22 +78,48 @@ Union-find state is mutable throughout.
 Arena {
   types: Vec<TypeDef>,               // indexed by TypeId, append-only
   terms: Vec<TermDef>,               // indexed by TermId; mutable via kernel rewrite
-  bitvectors: Vec<Bits>,             // side table for bit strings too large to inline
   uf_terms: Vec<TermUfEntry>,        // one per term, mutable
   uf_types: Vec<TypeUfEntry>,        // one per type, mutable (see §4.6)
   imports: Vec<Arc<Arena>>,          // frozen arenas this one references
-  // ...
+
+  // -- interning tables: variable-sized payloads pulled out of TermDef
+  //    so the enum itself stays Copy (see §3.1) --
+  strings:    IndexSet<SmolStr>,     // names: VarName, ConstName, TypeName, TypeVarId
+  bytes:      Vec<Vec<u8>>,          // byte-string literals (and bits >> 64 bits)
+  bits:       Vec<Bits>,             // bit-string literals with explicit bit-length
+  ints:       Vec<Int>,              // arbitrary-precision int literals
+  nats:       Vec<Nat>,              // arbitrary-precision nat literals
+  tyargs:     Vec<Vec<TypeRef>>,     // arg lists for Tyapp
 }
 
 TermUfEntry {
-  canonical: (Arc<Arena>, TermId),   // arena-aware canonical pointer (see §4.1)
-  closed: bool,                      // no Free vars or dangling Bound reachable
+  canonical: TermRef,                // arena-aware (§4.1); Local or Foreign(import, id)
+  bound_depth: u32, has_free: bool,  // closed() = bound_depth == 0 && !has_free
 }
 
 TypeUfEntry {
-  canonical: (Arc<Arena>, TypeId),   // arena-aware canonical pointer
+  canonical: TypeRef,                // same shape
 }
 ```
+
+The **interning tables** are how the kernel keeps `TermDef` (and the
+`TermRef`/`TypeRef` it embeds) `Copy`. Anything bigger than a few `u32`s
+goes through a table:
+
+- A free-variable's name is a `StrId` (index into `strings`), not a
+  `SmolStr` carried inline.
+- A long bit-string is a `BitsId` (index into `bits`); a short one is
+  inline as `BitsInline { len, data }` directly in the `TermDef`
+  variant (see §3.2).
+- Arbitrary-precision int/nat literals are `IntId` / `NatId` when
+  large, inline as `i64` / `u64` when they fit.
+- Bytes literals are always `BytesId`.
+- A `Tyapp(name, args)`'s arg list is a `TyArgsId`.
+
+Foreign-arena refs are `Foreign(ImportId, id)` where `ImportId` is an
+index into `arena.imports`, not an `Arc<Arena>` carried inline (the
+Arc lives in the imports table). Both `TermRef` and `TypeRef` are
+therefore plain `(enum_tag, u32, u32)` — `Copy`.
 
 **Arena identity is by pointer**: there is no kernel-assigned arena
 identifier. Two canonical IDs `(arena_a, id_a)` and `(arena_b, id_b)`
@@ -343,41 +369,64 @@ hand outside the kernel is error-prone.
 There is **one** `TermDef` enum, with one variant per kind of term —
 no out-of-band tables of "well-known" terms, no magic name IDs, no
 sentinel constants. Terms use **de Bruijn indices for bound variables
-+ named free variables**:
++ named free variables**. `TermDef` (and `TypeDef`) are **`Copy`**:
+variable-sized payloads (names, byte strings, big-ints, type-arg
+lists) live in per-arena interning tables (§2.2) and appear in
+`TermDef` only as `u32` IDs.
 
 ```rust
+// All variants Copy. Variable payloads sit in arena tables.
 TermDef =
-  // -- general shapes --
+  // -- structural --
   | Bound(u32)                       // de Bruijn index
-  | Free(VarName, TypeRef)           // named free variable, typed
-  | Const(ConstName, TypeRef)        // user-declared constant at an instance
+  | Free(NameRef, TypeRef)           // named free variable, typed
+  | Const(StrId, TypeRef)            // user-declared constant at a type instance
   | Comb(TermRef, TermRef)           // application
-  | Abs(VarName, TypeRef, TermRef)   // binder; VarName is a hint only
-  // -- builtin variants (see §3.2 for the rationale) --
-  | True                             // the boolean true
-  | False                            // the boolean false
+  | Abs(NameRef, TypeRef, TermRef)   // binder (NameRef is a display hint)
+  // -- truth + equality --
+  | True
+  | False
   | Eq(TermRef, TermRef)             // primitive polymorphic equality
-  | Bits(BitsValue)                  // primitive bit string
+  // -- literal values --
+  | BitsInline { bits: u64, len: u8 }   // ≤ 64 bits inline
+  | BitsStored(BitsId)                  // longer bits, in arena.bits
+  | BytesStored(BytesId)                // byte strings, in arena.bytes
+  | IntInline(i64)
+  | IntStored(IntId)                    // |x| > i64::MAX, in arena.ints
+  | NatInline(u64)
+  | NatStored(NatId)                    // > u64::MAX, in arena.nats
+  | U8(u8)  | U16(u16) | U32(u32) | U64(u64)   // fixed-width unsigned literals
+  | I8(i8)  | I16(i16) | I32(i32) | I64(i64)   // fixed-width signed literals
+  // -- computational primitives (see §3.4) --
+  | Prim(PrimOp)                        // a kernel-known function value
 
-BitsValue =
-  | Inline([u8; N])                  // short literal stored in-line
-  | Indirect(BitsId)                 // index into arena.bitvectors
+// Names can be either an interned string or a small-integer label.
+NameRef =
+  | Interned(StrId)   // index into arena.strings (SmolStr table)
+  | Small(u32)        // small-int-named fresh var (no interning)
 
-TermRef = Local(TermId) | Foreign(Arc<Arena>, TermId)
-TypeRef = Local(TypeId) | Foreign(Arc<Arena>, TypeId)
+// References between terms / types. Both Copy.
+TermRef =
+  | Local(TermId)
+  | Foreign { import: ImportId, id: TermId }
+
+TypeRef =
+  | Local(TypeId)
+  | Foreign { import: ImportId, id: TypeId }
 ```
 
-Likewise, `TypeDef` is one enum whose variants are listed in §3.2.
-There is no separate "builtin type table" alongside it — `Bool`,
-`Bits`, `Fun`, `TVar`, `Tyapp` are all just `TypeDef` variants.
+`TypeDef` is also `Copy` and is listed in §3.2; its `Tyapp` arg list
+goes through `arena.tyargs` for the same reason — to keep the enum
+fixed-size.
 
 Bound-var substitution doesn't need any alpha-renaming dance; structural
 equality of `TermDef`s already gives α-equivalence.
 
 A `TermRef`/`TypeRef` is the type used for child links. `Local(_)`
-points to this arena's table; `Foreign(arena, _)` points into the
-arena handed in via the `Arc<Arena>`. Equality checks transparently
-follow either.
+points to this arena's table; `Foreign { import, id }` resolves
+through `arena.imports[import]` — an `Arc<Arena>` — into that
+arena's table. Arena identity (§2.2) is still by pointer:
+`Arc::ptr_eq(a.imports[i], b.imports[j])`.
 
 ### 3.2 Builtins
 
@@ -387,56 +436,54 @@ IDs. They appear in the same enum as everything else; an inference
 rule that pattern-matches on `TermDef` sees them right next to
 `Bound`, `Comb`, etc.
 
-This keeps the kernel code simple (no "is this name the well-known
-`bool_id`?" lookups), and keeps the logic minimal at the same time
-(builtins are exactly those things the kernel needs to *construct*
-intrinsically — `bool` as a type, `True`/`False`/`Eq` because the
-logic is built on equality, and `bits` because the arena needs a
-primitive infinite type for bit strings).
+We accept a relatively rich set of builtins (more than HOL Light's
+`= : α → α → bool` alone) in exchange for shorter time-to-MVP and
+efficient FFI. The trade-off is documented in §3.4: each builtin
+function-value has a minimal HOL axiomatization, and the kernel's
+trust surface grows by the size of the `Prim` enum plus its
+reduction machinery. If we later want to reclaim the ultra-minimalism,
+we can move pieces out of the kernel into untrusted extension traits
+without touching the logic.
 
-**TypeDef variants in full:**
+**TypeDef variants in full** (all `Copy`):
 
-| Variant | Logical type |
-|---|---|
-| `Bool` | `bool` (builtin) |
-| `Bits` | `bits` (builtin — replaces HOL Light's `ind` as the primitive infinite type) |
-| `Fun(TypeRef, TypeRef)` | `α → β` (builtin) |
-| `TVar(TypeVarId)` | polymorphic type variable |
-| `Tyapp(TypeName, Vec<TypeRef>)` | user-declared type constructor instance (the only path through the user-side TypeName namespace) |
+| Variant | Logical type | Notes |
+|---|---|---|
+| `Bool` | `bool` | builtin |
+| `Bits` | `bits` | primitive infinite type — bit strings of arbitrary length |
+| `Bytes` | `bytes` | byte strings; the kernel ships this as a primitive but the user-side trust assumption `bytes ≅ list u8` connects it to a list theory |
+| `Int` | `int` | arbitrary-precision signed integer |
+| `Nat` | `nat` | arbitrary-precision unsigned integer (≥ 0) |
+| `U8`,`U16`,`U32`,`U64` | fixed-width unsigned | matches WASM `iN` for FFI |
+| `I8`,`I16`,`I32`,`I64` | fixed-width signed | same, signed |
+| `Fun(TypeRef, TypeRef)` | `α → β` | builtin |
+| `TVar(StrId)` | polymorphic type variable | name interned in `arena.strings` |
+| `Tyapp(StrId, TyArgsId)` | user-declared type constructor instance | arg list via `arena.tyargs` |
 
-**TermDef variants in full** (combining §3.1's list with the builtins,
-since they all live in the one enum):
+**TermDef variants in full** (all `Copy`):
 
 | Variant | What it represents | Source |
 |---|---|---|
 | `Bound(u32)` | de Bruijn index | structural |
-| `Free(VarName, TypeRef)` | free variable | user VarName |
-| `Const(ConstName, TypeRef)` | constant at an instance | user ConstName |
+| `Free(NameRef, TypeRef)` | free variable | user/kernel-fresh |
+| `Const(StrId, TypeRef)` | user-declared HOL constant at an instance | user ConstName |
 | `Comb(TermRef, TermRef)` | application | structural |
-| `Abs(VarName, TypeRef, TermRef)` | binder | structural |
-| `True`, `False` | the booleans | **builtin** |
+| `Abs(NameRef, TypeRef, TermRef)` | binder | structural |
+| `True`, `False` | booleans | **builtin** |
 | `Eq(TermRef, TermRef)` | polymorphic equality | **builtin** |
-| `Bits(BitsValue)` | bit string literal | **builtin** |
+| `BitsInline { bits, len }` | bit string ≤ 64 bits | **builtin** |
+| `BitsStored(BitsId)` | bit string in arena.bits | **builtin** |
+| `BytesStored(BytesId)` | byte string in arena.bytes | **builtin** |
+| `IntInline(i64)` / `IntStored(IntId)` | integer literal | **builtin** |
+| `NatInline(u64)` / `NatStored(NatId)` | natural literal | **builtin** |
+| `U8(u8)` … `U64(u64)` | unsigned fixed-width literal | **builtin** |
+| `I8(i8)` … `I64(i64)` | signed fixed-width literal | **builtin** |
+| `Prim(PrimOp)` | a built-in function value (§3.4) | **builtin** |
 
 We keep `True`/`False` baked in even though HOL Light defines them —
 the goal is to simplify the *code*, not the typing rules. A baked-in
 `True` lets the bootstrap not have to thread Hilbert choice into the
 very first definitions.
-
-**`Bits` representation.** `BitsValue` has two cases chosen at
-insertion time, both producing the same logical value:
-
-- **`Inline(bytes)`** — the bit string is stored directly inside the
-  TermDef. Cheap, no extra indirection. Used for short literals
-  (cut-off is an implementation knob; e.g. 256 bits).
-- **`Indirect(BitsId)`** — the bit string lives in the arena's
-  `bitvectors` table at `BitsId`. Used for longer literals so we
-  don't inflate every TermDef-sized object.
-
-Both representations are kernel-internal and equivalent at every
-level of the equality predicates (§4). The kernel never talks to a
-content store about them — `Indirect` is just an internal arena
-index.
 
 User-defined constants (`Const(name, ty)`) and user-defined type
 constructors (`Tyapp(name, args)`) are the only TermDef/TypeDef
@@ -457,11 +504,154 @@ restriction is on **non-congruence unions** (§4):
 The closed flag is stored on each `TermUfEntry` and set once at
 insertion.
 
-### 3.4 Library types
+### 3.4 Computational primitives
 
-Standard-library types (`blob`, `i32`, `i64`, `nat`, `nat list`, …) are
-defined on top of `bits` via the usual HOL type-defining-theorem
-mechanism. There is no special-case kernel knowledge of them.
+The kernel ships a small enum `PrimOp` listing every built-in
+function value — typecasts, arithmetic, comparisons, length, indexing,
+etc. — over the primitive types of §3.2. A `Prim(PrimOp)` term is a
+HOL constant of a known type; applications go through `Comb` like any
+other constant.
+
+The rationale is shorter time-to-MVP: rather than axiomatize every
+primitive type from scratch over `bits` (HOL-Light minimalism), the
+kernel ships concrete operational behavior on its primitive types,
+plus a **minimal axiomatization** that characterizes each operation
+abstractly. Higher-level theorems (commutativity, distributivity,
+…) are derived in user space.
+
+#### PrimOp sketch
+
+(Not an exhaustive list; final naming/grouping is part of the
+implementation.)
+
+- **`nat`** — `NatZero`, `NatSucc`, `NatPred` (with `pred 0 = 0`),
+  `NatAdd`, `NatSub` (saturating), `NatMul`, `NatDiv`, `NatMod`,
+  `NatEq`, `NatLt`, `NatLe`.
+- **`int`** — `IntZero`, `IntNeg`, `IntAdd`, `IntSub`, `IntMul`,
+  `IntDiv`, `IntMod`, `IntEq`, `IntLt`, `IntLe`.
+- **Fixed-width signed/unsigned** — for each `T ∈ {u8,u16,u32,u64,
+  i8,i16,i32,i64}`: `T_Add`, `T_Sub`, `T_Mul`, `T_Div`, `T_Mod`,
+  `T_Eq`, `T_Lt`, `T_Le`, plus bitwise `T_And`, `T_Or`, `T_Xor`,
+  `T_Not`, `T_Shl`, `T_Shr` where they make sense.
+- **`bits`** — `BitsLen` (→ `nat`), `BitsEmpty`, `BitsCons` (prepend
+  a bool), `BitsConcat`, `BitsSlice`, `BitsAnd`, `BitsOr`, `BitsXor`,
+  `BitsNot`, `BitsEq`.
+- **`bytes`** — `BytesLen` (→ `nat`), `BytesEmpty`, `BytesCons`
+  (prepend a `u8`), `BytesHead` (→ `u8`, defined on non-empty),
+  `BytesTail` (→ `bytes`, defined on non-empty), `BytesConcat`,
+  `BytesSlice`, `BytesIndex`, `BytesEq`, plus the converters
+  `BytesToBits` / `BitsToBytes` (the latter requires `BitsLen` to be
+  divisible by 8).
+- **Type casts** — every pair (`u8` ↔ `u16`/`u32`/`u64`, sign
+  extensions, truncations, `nat` ↔ `int`, `u64` ↔ `nat`, `i64` ↔
+  `int`, `bits` ↔ `bytes` when length divides 8, etc.). Each cast is
+  characterized by its underlying mathematical function.
+
+#### Reduce: basic ops as LCF calls
+
+The kernel exposes a primitive
+
+```rust
+fn reduce(arena, term_ref) -> Result<(), KernelError>
+```
+
+When `term_ref` resolves to an application of a `Prim(op)` to
+literal arguments (e.g. `Comb(Comb(Prim(NatAdd), NatInline(5)),
+NatInline(3))`), the kernel computes the result (`NatInline(8)`)
+using the host's arithmetic and adds the equality to the UF —
+either by **rewriting** the term in place to the result's def
+(§4.4) or by **unioning** with a freshly-allocated result term
+(§4.3), at the caller's choice. Both are kernel-controlled, so the
+operation is sound.
+
+Equivalently: `reduce` is composable from the lower-level §4
+primitives. A user-space implementation of the same operation looks
+like
+
+1. `t' = kernel.copy_term(t)` — fresh TermId in `t`'s UF class.
+2. Compute the literal result outside the kernel.
+3. `kernel.rewrite(t', result_def)` with a proof — and the only
+   proof the kernel will accept for this rewrite *is* the
+   computation itself.
+
+So either path bottoms out at the same trust unit (the kernel's
+host-arithmetic implementation). `reduce` is the convenience
+primitive; the §4 ones are the building blocks. The kernel is free
+to fuse the copy + rewrite into one allocation.
+
+This is an explicit LCF-style call: the kernel never reduces on its
+own. Users invoke `reduce` exactly where they want the cost. The
+kernel never reduces with a non-literal argument either — `add x 0
+= x` is a *theorem*, derived from the axioms below, not a reduction.
+
+#### Minimal axiomatization
+
+Each primitive comes with a minimal HOL axiomatization in the kernel
+prelude — *just enough* to characterize it. Anything else is derived
+in user space.
+
+- **`nat`** is characterized by Peano-minus-induction:
+  - `0 ≠ succ n`
+  - `succ m = succ n → m = n`
+  - Induction is *derived* from these plus Hilbert choice (`ε`):
+    given a predicate, `ε` picks a counterexample if one exists;
+    `succ`-injectivity + zero-distinct means there can't be one for
+    a P satisfying the induction premises. Used once in the
+    standard library; never re-derived.
+- **`nat` arithmetic** is characterized by its recursion equations:
+  `add n 0 = n`, `add n (succ m) = succ (add n m)`; similarly for
+  `sub` (saturating: `sub n 0 = n`, `sub 0 m = 0`, `sub (succ n)
+  (succ m) = sub n m`), `mul`, `div`, `mod`.
+- **`int`** is characterized as the ordered commutative ring obtained
+  by quotienting `nat × nat` (or equivalently axiomatized directly:
+  zero, neg, add with the ring laws). The kernel's prelude contains
+  the bijection with `nat × nat` and the ring axioms; everything
+  else derives.
+- **Fixed-width `uN` / `iN`** are characterized by their bijection
+  with `nat / 2^N` (resp. `int / 2^N` with sign-bit interpretation),
+  i.e. the standard wrapping arithmetic. Each op's recursion
+  equations follow from the bijection.
+- **`bits` and `bytes`** are characterized via their length / cons /
+  index equations (essentially: they're free monoids over `bool`
+  and `u8` respectively).
+
+The kernel ships these axioms as a small *prelude Prop* every other
+Prop has access to (architecturally: the prelude sits in the root
+Context, see §2.5). The prelude is the kernel's only contribution
+to the user's axiom set; everything else is the user's choice.
+
+#### Trust surface
+
+The trust surface added by the primitive system is:
+
+1. **The `Prim` enum is complete and well-typed.** Each variant has
+   a fixed HOL type the kernel knows, and the kernel rejects
+   applications that don't match.
+2. **`reduce` computes correctly.** The host's `i64::wrapping_add`
+   implementation must match the abstract semantics in the
+   `IntAdd` axiom, etc. This is the kernel's "trusted compute"
+   layer.
+3. **The prelude axioms are consistent.** Standard ring/order
+   axioms; the kernel doesn't validate consistency, but the
+   axiomatization is small enough to inspect by hand.
+
+These are bounded — `Prim` has on the order of 100 variants and
+each is mechanically traceable to its axiom and its reduce
+implementation. Bugs here can produce wrong Thms (unlike bugs in
+untrusted code), so the prelude + reduce machinery need careful
+review.
+
+### 3.5 Library types
+
+Types that *aren't* kernel primitives (lists, options, pairs,
+records, …) are defined in user-space via the usual HOL
+type-defining-theorem mechanism. There is no kernel knowledge of
+them. The kernel primitives of §3.2 (`int`, `nat`, `bits`, `bytes`,
+the fixed-width integers) cover the cases where efficient FFI
+matters; everything else goes through user-defined types.
+
+`blob` in particular is a useful alias for `bytes` in the standard
+library; it's not a kernel concept.
 
 ---
 
@@ -548,25 +738,40 @@ children for the purposes of fanout. If you union `a` with `b` and
 later want `f(a) = f(b)`, you call `union_if_congruent_step(f(a),
 f(b))` explicitly.
 
-### 4.4 Rewrite
+### 4.4 Rewrite and copy
 
-In addition to UF unions, the kernel exposes a **rewrite** primitive
-that mutates a term's structural form in place:
+In addition to UF unions, the kernel exposes two **structural
+manipulation** primitives:
 
 - **`rewrite(t, new_def)`** — caller has either a proof of, or a UF
   witness for, `t = (the term defined by new_def)`. The kernel
   replaces `terms[t].definition` with `new_def`. After rewrite, any
   other term holding a child `TermRef::Local(t)` will see the new
   structural form.
+- **`copy_term(t) -> TermId`** — allocate a fresh `TermId` with the
+  *same* `TermDef` as `t` and place it in `t`'s UF class
+  (`canonical = canonical_term(t)`, plus the inherited
+  `bound_depth` and `has_free`). No new equality is introduced; this
+  is just a new handle to the same class. Always sound — the kernel
+  is doing an internal-only union of `t` with a freshly-allocated
+  copy.
 
-Why have this in addition to `union`? Pure UF is enough for soundness
-but not always for efficiency. If `Comb(f, x)` is known to equal
-`body`, every traversal of the larger term will still hit `Comb(f,
-x)` structurally; `union` only redirects the canonical, not the
-shape. Rewriting `Comb(f, x)` to `body` outright makes subsequent
+Why `rewrite`? Pure UF is enough for soundness but not always for
+efficiency. If `Comb(f, x)` is known to equal `body`, every
+traversal of the larger term will still hit `Comb(f, x)`
+structurally; `union` only redirects the canonical, not the shape.
+Rewriting `Comb(f, x)` to `body` outright makes subsequent
 structural operations skip the application.
 
-Soundness is preserved because:
+Why `copy_term`? It gives untrusted code (tactics, the user-space
+`reduce` wrapper of §3.4) a way to set up a rewrite *target* without
+disturbing the original handle: copy `t`, then rewrite the copy.
+The kernel can recognise this idiom and fuse the two operations
+into a single allocation. It is also useful for "naming" a
+subterm — handing different bits of tactical code a unique `TermId`
+they can mutate without contention.
+
+Soundness for `rewrite` is preserved because:
 
 - The kernel only accepts a rewrite when the new definition is in the
   same UF class as the old one (or comes with a Thm proving the
@@ -574,9 +779,9 @@ Soundness is preserved because:
 - The UF state is updated accordingly so canonical lookups remain
   consistent.
 
-Rewrite is a kernel primitive but expected to be used sparingly — most
-proof code should just `union`. Rewrite is for hot paths and for
-explicit canonicalisation by tactics.
+Both primitives are expected to be used sparingly — most proof code
+should just `union`. They are for hot paths and for explicit
+canonicalisation by tactics.
 
 ### 4.5 Why no closure or search?
 

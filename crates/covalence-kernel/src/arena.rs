@@ -321,6 +321,35 @@ impl Arena {
         }
     }
 
+    // ---- rewrite (architecture §4.4) ---------------------------------------
+
+    /// Replace term `t`'s stored `TermDef` with `new_def` **in place**,
+    /// re-computing its type info and free-var flag from the new
+    /// shape.
+    ///
+    /// **Unchecked.** The kernel does not verify that `new_def` is
+    /// equal to t's old def — soundness lives at the `Thm` layer,
+    /// not here (same policy as `union` and `set_type_info`). After
+    /// rewrite, any term holding a child `TermRef::Local(t)` sees
+    /// the new structural form, so an unsound rewrite leaks
+    /// throughout the arena. Callers must have a proof (or be doing
+    /// a trusted internal step like the §10 reduction rules,
+    /// implemented in [`reduce`](Self::reduce)).
+    ///
+    /// Note on scope: this primitive does *one* in-place rewrite of
+    /// *one* term. Recursive / strategic rewriting (walk subterms,
+    /// fixpoint, etc.) is **out of kernel scope** by design —
+    /// untrusted external code composes the kernel's top-level
+    /// rewrite calls into whatever strategy it wants. The kernel
+    /// stays small.
+    pub fn rewrite(&mut self, t: TermId, new_def: TermDef) {
+        let (new_info, new_hf) = self.compute_term_props(&new_def);
+        self.terms[t.0 as usize] = new_def;
+        let entry = &mut self.uf_terms[t.0 as usize];
+        entry.type_info = new_info;
+        entry.has_free = new_hf;
+    }
+
     // ---- reduction (Phase 3b §10) ------------------------------------------
 
     /// Apply one step of reduction at the top of `t`. If a rule

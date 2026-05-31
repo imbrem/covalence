@@ -1354,6 +1354,80 @@ fn reduce_noop_on_unreducible() {
     assert_eq!(r, TermRef::local(x));
 }
 
+// ---------------------------------------------------------------------------
+// Rewrite primitive (§4.4).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn rewrite_replaces_term_def_in_place() {
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    assert_eq!(a.term_def(t), &TermDef::True);
+    // Stomp it with False — kernel doesn't validate.
+    a.rewrite(t, TermDef::False);
+    assert_eq!(a.term_def(t), &TermDef::False);
+}
+
+#[test]
+fn rewrite_updates_type_info() {
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    assert_eq!(a.term_uf(t).type_info, TypeInfo::typed(a.bool_ty()));
+    // Rewrite to a nat literal — type_info now reflects nat.
+    a.rewrite(t, TermDef::nat_inline(42));
+    assert_eq!(a.term_uf(t).type_info, TypeInfo::typed(a.nat_ty()));
+}
+
+#[test]
+fn rewrite_updates_has_free_flag() {
+    let mut a = Arena::new();
+    // Start with a closed term.
+    let t = a.alloc_term(TermDef::True);
+    assert!(!a.term_uf(t).has_free);
+    // Rewrite to a Free variable — has_free now true.
+    let name = a.intern_string("x".into());
+    let bool_ty = a.bool_ty();
+    a.rewrite(t, TermDef::Free(name, bool_ty));
+    assert!(a.term_uf(t).has_free);
+    assert!(!a.term_uf(t).closed());
+}
+
+#[test]
+fn rewrite_propagates_to_parents() {
+    // A parent term holding a Local(t) child sees the new shape of t.
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    let parent = a.alloc_term(TermDef::Op1(
+        covalence_kernel::PrimOp1::LogicalNot,
+        TermRef::local(t),
+    ));
+    // Originally: Not(True). reduce → False.
+    let r = a.reduce(TermRef::local(parent));
+    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::False);
+    // Now rewrite t to False (unchecked).
+    a.rewrite(t, TermDef::False);
+    // Parent's Op1 still points at the same TermId; structural lookup
+    // of t now returns False. Reducing parent again gives True.
+    let r2 = a.reduce(TermRef::local(parent));
+    assert_eq!(a.term_def(r2.as_local().unwrap()), &TermDef::True);
+}
+
+#[test]
+fn rewrite_preserves_term_id_and_uf_canonical_chain() {
+    // The TermId is reused. Pre-rewrite unions also stay in effect.
+    let mut a = Arena::new();
+    let x = a.alloc_term(TermDef::True);
+    let y = a.alloc_term(TermDef::False);
+    // Union them first.
+    a.union(TermRef::local(x), TermRef::local(y)).unwrap();
+    assert!(a.eq_at_level_0(TermRef::local(x), TermRef::local(y)));
+    // Rewrite x to a different shape — the union still holds.
+    a.rewrite(x, TermDef::nat_inline(0));
+    assert!(a.eq_at_level_0(TermRef::local(x), TermRef::local(y)));
+    // x's def is updated.
+    assert_eq!(a.term_def(x), &TermDef::nat_inline(0));
+}
+
 #[test]
 fn typeref_decodes_to_kind() {
     let mut a = Arena::new();

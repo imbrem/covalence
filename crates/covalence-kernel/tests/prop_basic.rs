@@ -366,30 +366,65 @@ fn mp_rejects_non_implication() {
 }
 
 #[test]
-fn mk_comb_propagates_equality_to_applications() {
+fn cong_at_depth_1_subsumes_mk_comb() {
+    // The classical MK_COMB rule (Comb-congruence) falls out of
+    // depth-1 cong: if f ≡ g and x ≡ y, then Comb(f, x) ≡ Comb(g, y).
     let mut a = Arena::new();
-    // fg : f = f via refl on a Const f. xy : x = x via refl.
     let bool_ty = a.bool_ty();
     let f_to_b = a.alloc_type(covalence_kernel::TypeDef::Fun(bool_ty, bool_ty));
     let name_f = a.intern_string("f".into());
     let f = a.alloc_term(TermDef::Const(name_f, f_to_b));
     let x = a.alloc_term(TermDef::True);
+    let fx_1 = a.alloc_term(TermDef::Comb(TermRef::local(f), TermRef::local(x)));
+    let fx_2 = a.alloc_term(TermDef::Comb(TermRef::local(f), TermRef::local(x)));
 
     let ctx = Context::empty();
-    let fg = Thm::refl(&mut a, ctx.clone(), f).unwrap();
-    let xy = Thm::refl(&mut a, ctx.clone(), x).unwrap();
-    let comb_eq = Thm::mk_comb(&mut a, fg, xy).unwrap();
-    // Conclusion is Eq(Comb(f, x), Comb(f, x)).
-    match a.term_def(comb_eq.concl()) {
+    let thm = Thm::cong(
+        &mut a,
+        ctx,
+        TermRef::local(fx_1),
+        TermRef::local(fx_2),
+        1,
+    )
+    .unwrap();
+    match a.term_def(thm.concl()) {
         TermDef::Eq(l, r) => {
-            // Both sides are Comb(f, x).
-            let l_def = a.term_def(l.as_local().unwrap());
-            let r_def = a.term_def(r.as_local().unwrap());
-            assert!(matches!(l_def, TermDef::Comb(_, _)));
-            assert!(matches!(r_def, TermDef::Comb(_, _)));
+            assert_eq!(*l, TermRef::local(fx_1));
+            assert_eq!(*r, TermRef::local(fx_2));
         }
-        other => panic!("expected Eq(Comb, Comb), got {other:?}"),
+        other => panic!("expected Eq, got {other:?}"),
     }
+}
+
+#[test]
+fn cong_rejects_non_congruent_terms() {
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    let f = a.alloc_term(TermDef::False);
+    let ctx = Context::empty();
+    let err = Thm::cong(&mut a, ctx, TermRef::local(t), TermRef::local(f), 5)
+        .unwrap_err();
+    assert_eq!(err, ProofError::NotCongruent);
+}
+
+#[test]
+fn cong_accepts_ill_typed_inputs() {
+    // Congruence is the only rule exempt from well-typed-input —
+    // confirm an obviously ill-typed term (Comb of mismatched
+    // function-arg types) can still take part in a cong proof.
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let b_to_b = a.alloc_type(covalence_kernel::TypeDef::Fun(bool_ty, bool_ty));
+    let name_g = a.intern_string("g".into());
+    let g = a.alloc_term(TermDef::Const(name_g, b_to_b));
+    let n = a.alloc_term(TermDef::nat_inline(0));
+    // Comb(g, n) — g expects bool, gets nat → ill-typed.
+    let bad = a.alloc_term(TermDef::Comb(TermRef::local(g), TermRef::local(n)));
+    assert!(!a.is_well_typed(bad));
+    let ctx = Context::empty();
+    let thm =
+        Thm::cong(&mut a, ctx, TermRef::local(bad), TermRef::local(bad), 0).unwrap();
+    assert!(matches!(a.term_def(thm.concl()), TermDef::Eq(_, _)));
 }
 
 #[test]
@@ -446,4 +481,43 @@ fn thm_field_is_kernel_only() {
     let thm = Thm::refl(&mut a, Context::empty(), t).unwrap();
     let prop_ref = thm.prop();
     let _: &Prop = prop_ref;
+}
+
+#[test]
+fn reduce_yields_eq_of_original_and_reduced() {
+    // Not(True) reduces to False — the Thm carries that equality.
+    use covalence_kernel::PrimOp1;
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    let not_t = a.alloc_term(TermDef::Op1(PrimOp1::LogicalNot, TermRef::local(t)));
+    let thm = Thm::reduce(&mut a, Context::empty(), not_t).unwrap();
+    match a.term_def(thm.concl()) {
+        TermDef::Eq(l, r) => {
+            assert_eq!(*l, TermRef::local(not_t));
+            assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::False);
+        }
+        other => panic!("expected Eq, got {other:?}"),
+    }
+}
+
+#[test]
+fn reduce_rejects_unreducible_term() {
+    // A bare True has no rule firing — reduce errors.
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    let err = Thm::reduce(&mut a, Context::empty(), t).unwrap_err();
+    assert_eq!(err, ProofError::NotReducible);
+}
+
+#[test]
+fn reduce_rejects_ill_typed_input() {
+    // Op1 applied to a wrong-type arg is ill-typed; reduce refuses.
+    use covalence_kernel::PrimOp1;
+    let mut a = Arena::new();
+    let n = a.alloc_term(TermDef::nat_inline(3));
+    // LogicalNot on a Nat — ill-typed.
+    let bad = a.alloc_term(TermDef::Op1(PrimOp1::LogicalNot, TermRef::local(n)));
+    assert!(!a.is_well_typed(bad));
+    let err = Thm::reduce(&mut a, Context::empty(), bad).unwrap_err();
+    assert_eq!(err, ProofError::IllTypedInput);
 }

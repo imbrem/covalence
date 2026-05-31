@@ -27,6 +27,7 @@ use std::sync::Arc;
 use crate::arena::Arena;
 use crate::id::TermId;
 use crate::primop::{PrimOp1, PrimOp2};
+use crate::reduce;
 use crate::term::{TermDef, TermRef};
 
 // ---------------------------------------------------------------------------
@@ -309,31 +310,29 @@ impl Thm {
         })
     }
 
-    /// **Congruence on application (`MK_COMB`).** From `ctx ⊢ f = g`
-    /// and `ctx ⊢ x = y`, derive `ctx ⊢ Comb(f, x) = Comb(g, y)`.
+    /// **General congruence.** If `a` and `b` are structurally
+    /// congruent walking children to depth `depth` (i.e.
+    /// [`Arena::eq_at_level`] returns true), derive
+    /// `ctx ⊢ a = b`.
     ///
-    /// This is a congruence rule — it permits **ill-typed** terms in
-    /// its inputs, mirroring the arena-level
-    /// [`union_if_congruent_step`](crate::Arena::union_if_congruent_step).
-    /// The resulting `Eq`'s well-typedness depends on the inputs;
-    /// downstream rules will enforce typing as needed.
-    pub fn mk_comb(arena: &mut Arena, fg: Thm, xy: Thm) -> Result<Self, ProofError> {
-        if !Arc::ptr_eq(&fg.prop.context, &xy.prop.context) {
-            return Err(ProofError::ContextMismatch);
+    /// This is the kernel's *only* rule exempt from the well-typed
+    /// input invariant — congruence reasons about the term shape
+    /// alone, not its type. `MK_COMB` (the classical HOL rule) is
+    /// the special case `depth = 1` applied to two `Comb` shells:
+    /// it falls out of this rule with no extra primitive.
+    pub fn cong(
+        arena: &mut Arena,
+        ctx: Arc<Context>,
+        a: TermRef,
+        b: TermRef,
+        depth: u32,
+    ) -> Result<Self, ProofError> {
+        if !arena.eq_at_level(a, b, depth) {
+            return Err(ProofError::NotCongruent);
         }
-        let (f, g) = match *arena.term_def(fg.prop.concl) {
-            TermDef::Eq(l, r) => (l, r),
-            _ => return Err(ProofError::ExpectedEquality),
-        };
-        let (x, y) = match *arena.term_def(xy.prop.concl) {
-            TermDef::Eq(l, r) => (l, r),
-            _ => return Err(ProofError::ExpectedEquality),
-        };
-        let fx = arena.alloc_term(TermDef::Comb(f, x));
-        let gy = arena.alloc_term(TermDef::Comb(g, y));
-        let eq = arena.alloc_term(TermDef::Eq(TermRef::local(fx), TermRef::local(gy)));
+        let eq = arena.alloc_term(TermDef::Eq(a, b));
         Ok(Self {
-            prop: Prop::new(fg.prop.context, eq),
+            prop: Prop::new(ctx, eq),
         })
     }
 
@@ -359,6 +358,29 @@ impl Thm {
         };
         let reduced = arena.subst(body_ref, 0, arg_ref);
         let eq = arena.alloc_term(TermDef::Eq(TermRef::local(comb), reduced));
+        Ok(Self {
+            prop: Prop::new(ctx, eq),
+        })
+    }
+
+    /// **Top-level reduction.** Apply one rule from the §10 catalog
+    /// (literal-arg evaluation, numeral normalisation, `Comb(Id, _)`,
+    /// `Comb(Ite(lit, _), _)`, …) to `t` and derive
+    /// `ctx ⊢ t = reduce::step(t)`.
+    ///
+    /// Returns [`ProofError::NotReducible`] if no rule fires.
+    /// Requires `t` to be well-typed — like every non-congruence
+    /// rule.
+    pub fn reduce(
+        arena: &mut Arena,
+        ctx: Arc<Context>,
+        t: TermId,
+    ) -> Result<Self, ProofError> {
+        if !arena.is_well_typed(t) {
+            return Err(ProofError::IllTypedInput);
+        }
+        let reduced = reduce::step(arena, TermRef::local(t)).ok_or(ProofError::NotReducible)?;
+        let eq = arena.alloc_term(TermDef::Eq(TermRef::local(t), reduced));
         Ok(Self {
             prop: Prop::new(ctx, eq),
         })
@@ -396,9 +418,13 @@ pub enum ProofError {
     /// `beta`: the term isn't a `Comb(Abs(_, _), _)` shape.
     ExpectedBetaRedex,
     /// One of the Thm rule's term inputs isn't well-typed
-    /// (`TypeInfo::Typed`). Congruence-style rules (`mk_comb`) are
+    /// (`TypeInfo::Typed`). Congruence (`cong`) is the only rule
     /// exempt; all others require their inputs to type-check.
     IllTypedInput,
+    /// `cong`: the two terms aren't congruent at the requested depth.
+    NotCongruent,
+    /// `reduce`: no §10 rule fires on the given term.
+    NotReducible,
 }
 
 impl std::fmt::Display for ProofError {
@@ -420,6 +446,8 @@ impl std::fmt::Display for ProofError {
             ProofError::ExpectedImplication => write!(f, "expected an Imp conclusion"),
             ProofError::ExpectedBetaRedex => write!(f, "expected a Comb(Abs(_, _), _) redex"),
             ProofError::IllTypedInput => write!(f, "rule input is not well-typed"),
+            ProofError::NotCongruent => write!(f, "terms are not congruent at the requested depth"),
+            ProofError::NotReducible => write!(f, "no reduction rule fires on this term"),
         }
     }
 }

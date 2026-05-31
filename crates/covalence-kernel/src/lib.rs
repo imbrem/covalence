@@ -10,6 +10,7 @@ pub mod arena;
 pub mod id;
 pub mod primop;
 pub mod prop;
+pub mod reduce;
 pub mod term;
 pub mod ty;
 pub mod uf;

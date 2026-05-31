@@ -11,7 +11,7 @@ use crate::id::{
     BitsId, BytesId, ForeignTermId, ForeignTypeId, ImportId, IntId, NatId, StrId, TermId,
     TyArgsId, TypeId,
 };
-use crate::term::{TermDef, TermKind, TermRef};
+use crate::term::{Deps, TermDef, TermKind, TermRef};
 
 /// Errors returned by [`Arena::union`] and friends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -185,7 +185,7 @@ impl Arena {
     ///
     /// `Thm` rules typically require their inputs to be well-typed;
     /// arena-level congruence operations (`union`,
-    /// `union_if_congruent_step`) don't.
+    /// `union_if_congruent`) don't.
     pub fn is_well_typed(&self, t: TermId) -> bool {
         self.term_uf(t).type_info.is_typed()
     }
@@ -248,85 +248,70 @@ impl Arena {
         self.canonical_local(a) == self.canonical_local(b)
     }
 
-    /// LCF-style "ratchet up one congruence level" helper.
+    /// General **congruence at depth `d`**: if `a` and `b` are
+    /// structurally congruent walking children to depth `d`, union
+    /// them. Returns `Ok(true)` on success, `Ok(false)` if the
+    /// shapes don't match at the requested depth.
     ///
-    /// If `a` and `b` decompose into the same `TermDef` shape and
-    /// their corresponding sub-children are already
-    /// `eq_at_level_0`, perform the union. Returns `Ok(true)` if the
-    /// union fired, `Ok(false)` if the shapes don't match or
-    /// children aren't congruent.
+    /// Depth semantics:
     ///
-    /// Both refs must resolve to local terms for shape inspection;
-    /// foreign-canonical refs return `Ok(false)`.
-    pub fn union_if_congruent_step(&mut self, a: TermRef, b: TermRef) -> Result<bool, UnionError> {
-        // Walk to local canonicals first so we compare structural
-        // shapes of the current representatives.
-        let a_canon = self.canonical_local(a);
-        let b_canon = self.canonical_local(b);
-        if a_canon == b_canon {
-            return Ok(true);
-        }
-        let (Some(a_local), Some(b_local)) = (a_canon.as_local(), b_canon.as_local()) else {
+    /// - `d = 0`: trivially succeed iff `a` and `b` are already
+    ///   `eq_at_level_0` (same canonical) — no shape walk.
+    /// - `d = 1`: same `TermDef` variant + corresponding children are
+    ///   `eq_at_level_0` — this is the classical "one-step congruence"
+    ///   that subsumes HOL's `MK_COMB`.
+    /// - `d = n`: same variant + each child pair is congruent at
+    ///   depth `n - 1`.
+    ///
+    /// Refs that terminate at foreign canonicals return `Ok(false)`
+    /// for the shape comparison (we'd need to chase into the
+    /// imported arena — deferred).
+    pub fn union_if_congruent(
+        &mut self,
+        a: TermRef,
+        b: TermRef,
+        depth: u32,
+    ) -> Result<bool, UnionError> {
+        if !self.eq_at_level(a, b, depth) {
             return Ok(false);
-        };
-        let a_def = *self.term_def(a_local);
-        let b_def = *self.term_def(b_local);
-        if !self.shapes_congruent_step(&a_def, &b_def) {
-            return Ok(false);
         }
-        // Children matched; record the union.
-        self.union(a_canon, b_canon)?;
+        self.union(a, b)?;
         Ok(true)
     }
 
-    /// True iff `a` and `b` are the same `TermDef` variant with all
-    /// corresponding `TermRef` children already `eq_at_level_0`.
-    /// Used by [`union_if_congruent_step`](Self::union_if_congruent_step).
-    fn shapes_congruent_step(&self, a: &TermDef, b: &TermDef) -> bool {
-        use TermDef::*;
-        match (*a, *b) {
-            // Nullary shapes — equal iff the def itself matches.
-            (True, True) | (False, False) => true,
-            (Bound(i), Bound(j)) => i == j,
-            (U8(i), U8(j)) => i == j,
-            (U16(i), U16(j)) => i == j,
-            (U32(i), U32(j)) => i == j,
-            (U64(i), U64(j)) => i == j,
-            (I8(i), I8(j)) => i == j,
-            (I16(i), I16(j)) => i == j,
-            (I32(i), I32(j)) => i == j,
-            (I64(i), I64(j)) => i == j,
-            (IntInline(i), IntInline(j)) => i == j,
-            (IntStored(i), IntStored(j)) => i == j,
-            (NatInline(i), NatInline(j)) => i == j,
-            (NatStored(i), NatStored(j)) => i == j,
-            (BitsStored(i), BitsStored(j)) => i == j,
-            (BytesStored(i), BytesStored(j)) => i == j,
-            (Id(t1), Id(t2)) => t1 == t2,
-            (LiftOp1(o1), LiftOp1(o2)) => o1 == o2,
-            (LiftOp2(o1), LiftOp2(o2)) => o1 == o2,
-            // Atoms with names + types.
-            (Free(n1, t1), Free(n2, t2)) => n1 == n2 && t1 == t2,
-            (Const(n1, t1), Const(n2, t2)) => n1 == n2 && t1 == t2,
-            // One-child + (sometimes) type shapes.
-            (Forall(p1), Forall(p2)) | (Exists(p1), Exists(p2)) => self.eq_at_level_0(p1, p2),
-            (Eps(t1, p1), Eps(t2, p2)) => t1 == t2 && self.eq_at_level_0(p1, p2),
-            (Op1(o1, x1), Op1(o2, x2)) => o1 == o2 && self.eq_at_level_0(x1, x2),
-            // Two-child shapes.
-            (Comb(f1, x1), Comb(f2, x2))
-            | (Eq(f1, x1), Eq(f2, x2))
-            | (Ne(f1, x1), Ne(f2, x2))
-            | (Comp(f1, x1), Comp(f2, x2))
-            | (Iter(f1, x1), Iter(f2, x2))
-            | (Ite(f1, x1), Ite(f2, x2)) => {
-                self.eq_at_level_0(f1, f2) && self.eq_at_level_0(x1, x2)
+    /// Are `a` and `b` known equal at congruence level `d`?
+    ///
+    /// - `d = 0`: same canonical (`eq_at_level_0`).
+    /// - `d = n > 0`: same `TermDef` shape (variant + non-dep payload)
+    ///   with each pair of `TermRef` deps `eq_at_level(_, _, d - 1)`.
+    pub fn eq_at_level(&self, a: TermRef, b: TermRef, depth: u32) -> bool {
+        let a_canon = self.canonical_local(a);
+        let b_canon = self.canonical_local(b);
+        if a_canon == b_canon {
+            return true;
+        }
+        if depth == 0 {
+            return false;
+        }
+        let (Some(a_local), Some(b_local)) = (a_canon.as_local(), b_canon.as_local()) else {
+            return false;
+        };
+        let a_def = *self.term_def(a_local);
+        let b_def = *self.term_def(b_local);
+        // Shape match: same variant + same non-dep payload.
+        let sentinel = TermRef::from_raw(0);
+        if a_def.with_zeroed_deps(sentinel) != b_def.with_zeroed_deps(sentinel) {
+            return false;
+        }
+        let cdepth = depth - 1;
+        match (a_def.deps(), b_def.deps()) {
+            (Deps::None, Deps::None) => true,
+            (Deps::One(x), Deps::One(y)) => self.eq_at_level(x, y, cdepth),
+            (Deps::Two(x1, x2), Deps::Two(y1, y2)) => {
+                self.eq_at_level(x1, y1, cdepth) && self.eq_at_level(x2, y2, cdepth)
             }
-            (Op2(o1, a1, b1), Op2(o2, a2, b2)) => {
-                o1 == o2 && self.eq_at_level_0(a1, a2) && self.eq_at_level_0(b1, b2)
-            }
-            // Abs: types match and bodies match.
-            (Abs(t1, b1), Abs(t2, b2)) => t1 == t2 && self.eq_at_level_0(b1, b2),
-            _ => false, // different variants
+            // Shape check above already ensured matching arities.
+            _ => unreachable!("shape-equal defs must have matching dep arity"),
         }
     }
 
@@ -351,319 +336,16 @@ impl Arena {
     /// untrusted external code composes the kernel's top-level
     /// rewrite calls into whatever strategy it wants. The kernel
     /// stays small.
+    ///
+    /// Rule logic (literal-arg evaluation, numeral normalisation,
+    /// …) lives in the [`crate::reduce`] module and is exposed via
+    /// [`crate::Thm::reduce`]. Arena is rule-blind.
     pub fn rewrite(&mut self, t: TermId, new_def: TermDef) {
         let (new_info, new_hf) = self.compute_term_props(&new_def);
         self.terms[t.0 as usize] = new_def;
         let entry = &mut self.uf_terms[t.0 as usize];
         entry.type_info = new_info;
         entry.has_free = new_hf;
-    }
-
-    // ---- reduction (Phase 3b §10) ------------------------------------------
-
-    /// Apply one step of reduction at the top of `t`. If a rule
-    /// fires, returns the reduced term and records the equality
-    /// `t ≡ reduced` in the UF; otherwise returns `t` unchanged.
-    ///
-    /// Currently implements a representative subset of the catalog
-    /// in `docs/prover-primops.md` §10:
-    ///
-    /// - **Literal-arg evaluation (§10.1)** for the boolean logic
-    ///   ops, the basic nat/int arithmetic ops, and a few comparison
-    ///   primitives.
-    /// - **Numeral normalisation (§10.2)** for `NatSucc(NatInline)`,
-    ///   `NatPred(NatInline)`, and `IntNeg(IntInline)`.
-    /// - **Ite-on-literal-cond (§10.5)** —
-    ///   `Comb(Comb(Ite(True, a), b), …)` style reductions on the
-    ///   partially-applied `Ite` happen via the outer `Comb` rules
-    ///   once those land. For now we reduce a fully-saturated
-    ///   `Comb(Comb(Ite(cond, then), else), _)` pattern when `cond`
-    ///   is a literal — but the simpler in-the-arena form is to
-    ///   reduce `Ite(cond, then)` itself when applied via Comb.
-    /// - **Identity combinator (§10.6)**: `Comb(Id(_), x) → x`.
-    ///
-    /// More rules (identity/zero arithmetic, logical-op
-    /// simplifications on partial-literal arguments, LiftOpN
-    /// reductions, etc.) land in subsequent commits.
-    pub fn reduce(&mut self, t: TermRef) -> TermRef {
-        // Only fire on well-typed local terms — reduction of ill-typed
-        // or open terms could produce nonsense. Congruence-style
-        // operations (union, union_if_congruent_step) remain
-        // unrestricted; reduce is the rule-application form.
-        if let Some(local) = t.as_local() {
-            if !self.is_well_typed(local) {
-                return t;
-            }
-        }
-        let new_t = self.try_reduce_step(t);
-        if new_t != t {
-            let _ = self.union(t, new_t);
-        }
-        new_t
-    }
-
-    fn try_reduce_step(&mut self, t: TermRef) -> TermRef {
-        let Some(local_id) = t.as_local() else {
-            return t;
-        };
-        let def = *self.term_def(local_id);
-        match def {
-            TermDef::Op1(op, x) => self.try_reduce_op1(op, x).unwrap_or(t),
-            TermDef::Op2(op, a, b) => self.try_reduce_op2(op, a, b).unwrap_or(t),
-            TermDef::Comb(f, x) => self.try_reduce_comb(f, x).unwrap_or(t),
-            _ => t,
-        }
-    }
-
-    fn try_reduce_op1(
-        &mut self,
-        op: crate::primop::PrimOp1,
-        x: TermRef,
-    ) -> Option<TermRef> {
-        use crate::primop::PrimOp1::*;
-        let x_id = x.as_local()?;
-        let x_def = *self.term_def(x_id);
-        let new_def = match (op, x_def) {
-            // Boolean negation.
-            (LogicalNot, TermDef::True) => TermDef::False,
-            (LogicalNot, TermDef::False) => TermDef::True,
-            // Naturals: numeral normalisation.
-            (NatSucc, TermDef::NatInline(p)) => {
-                let v = p.to_u64();
-                if let Some(next) = v.checked_add(1) {
-                    TermDef::nat_inline(next)
-                } else {
-                    use covalence_types::Nat;
-                    let big = Nat::from(v) + Nat::from(1u64);
-                    let id = self.intern_nat(big);
-                    TermDef::NatStored(id)
-                }
-            }
-            (NatPred, TermDef::NatInline(p)) => {
-                let v = p.to_u64();
-                TermDef::nat_inline(v.saturating_sub(1))
-            }
-            (NatPopcount, TermDef::NatInline(p)) => {
-                TermDef::nat_inline(p.to_u64().count_ones() as u64)
-            }
-            // Integer negation.
-            (IntNeg, TermDef::IntInline(p)) => {
-                let v = p.to_i64();
-                if let Some(neg) = v.checked_neg() {
-                    TermDef::int_inline(neg)
-                } else {
-                    // i64::MIN — fall through to no reduction; caller
-                    // can handle via a wider int.
-                    return None;
-                }
-            }
-            // Fixed-width: bitwise NOT.
-            (U8Not, TermDef::U8(v)) => TermDef::U8(!v),
-            (U16Not, TermDef::U16(v)) => TermDef::U16(!v),
-            (U32Not, TermDef::U32(v)) => TermDef::U32(!v),
-            (U64Not, TermDef::U64(p)) => TermDef::u64_literal(!p.to_u64()),
-            (I8Not, TermDef::I8(v)) => TermDef::I8(!v),
-            (I16Not, TermDef::I16(v)) => TermDef::I16(!v),
-            (I32Not, TermDef::I32(v)) => TermDef::I32(!v),
-            (I64Not, TermDef::I64(p)) => TermDef::i64_literal(!p.to_i64()),
-            // Fixed-width: popcount.
-            (U8Popcount, TermDef::U8(v)) => TermDef::U8(v.count_ones() as u8),
-            (U16Popcount, TermDef::U16(v)) => TermDef::U16(v.count_ones() as u16),
-            (U32Popcount, TermDef::U32(v)) => TermDef::U32(v.count_ones()),
-            (U64Popcount, TermDef::U64(p)) => TermDef::u64_literal(p.to_u64().count_ones() as u64),
-            // Fixed-width: eqz.
-            (U8Eqz, TermDef::U8(v)) => if v == 0 { TermDef::True } else { TermDef::False },
-            (U16Eqz, TermDef::U16(v)) => if v == 0 { TermDef::True } else { TermDef::False },
-            (U32Eqz, TermDef::U32(v)) => if v == 0 { TermDef::True } else { TermDef::False },
-            (U64Eqz, TermDef::U64(p)) => {
-                if p.to_u64() == 0 { TermDef::True } else { TermDef::False }
-            }
-            _ => return None,
-        };
-        Some(TermRef::local(self.alloc_term(new_def)))
-    }
-
-    fn try_reduce_op2(
-        &mut self,
-        op: crate::primop::PrimOp2,
-        a: TermRef,
-        b: TermRef,
-    ) -> Option<TermRef> {
-        use crate::primop::PrimOp2::*;
-        let a_id = a.as_local()?;
-        let b_id = b.as_local()?;
-        let a_def = *self.term_def(a_id);
-        let b_def = *self.term_def(b_id);
-        let new_def = match (op, a_def, b_def) {
-            // Boolean: full truth tables on literal args.
-            (LogicalAnd, TermDef::True, TermDef::True) => TermDef::True,
-            (LogicalAnd, TermDef::False, _) | (LogicalAnd, _, TermDef::False) => TermDef::False,
-            (LogicalOr, TermDef::True, _) | (LogicalOr, _, TermDef::True) => TermDef::True,
-            (LogicalOr, TermDef::False, TermDef::False) => TermDef::False,
-            (LogicalXor, TermDef::True, TermDef::True) => TermDef::False,
-            (LogicalXor, TermDef::True, TermDef::False) => TermDef::True,
-            (LogicalXor, TermDef::False, TermDef::True) => TermDef::True,
-            (LogicalXor, TermDef::False, TermDef::False) => TermDef::False,
-            (LogicalImp, TermDef::True, TermDef::True) => TermDef::True,
-            (LogicalImp, TermDef::True, TermDef::False) => TermDef::False,
-            (LogicalImp, TermDef::False, _) => TermDef::True,
-            (LogicalNand, x, y) => self.reduce_via_other_2(LogicalAnd, x, y, true)?,
-            (LogicalNor, x, y) => self.reduce_via_other_2(LogicalOr, x, y, true)?,
-
-            // Naturals: arithmetic on inline literals.
-            (NatAdd, TermDef::NatInline(p), TermDef::NatInline(q)) => {
-                let (av, bv) = (p.to_u64(), q.to_u64());
-                if let Some(sum) = av.checked_add(bv) {
-                    TermDef::nat_inline(sum)
-                } else {
-                    use covalence_types::Nat;
-                    let big = Nat::from(av) + Nat::from(bv);
-                    let id = self.intern_nat(big);
-                    TermDef::NatStored(id)
-                }
-            }
-            (NatSub, TermDef::NatInline(p), TermDef::NatInline(q)) => {
-                TermDef::nat_inline(p.to_u64().saturating_sub(q.to_u64()))
-            }
-            (NatMul, TermDef::NatInline(p), TermDef::NatInline(q)) => {
-                let (av, bv) = (p.to_u64(), q.to_u64());
-                if let Some(prod) = av.checked_mul(bv) {
-                    TermDef::nat_inline(prod)
-                } else {
-                    use covalence_types::Nat;
-                    let big = Nat::from(av) * Nat::from(bv);
-                    let id = self.intern_nat(big);
-                    TermDef::NatStored(id)
-                }
-            }
-            (NatDiv, TermDef::NatInline(_), TermDef::NatInline(q)) if q.to_u64() == 0 => {
-                TermDef::nat_inline(0) // axiom: div by 0 = 0
-            }
-            (NatMod, TermDef::NatInline(_), TermDef::NatInline(q)) if q.to_u64() == 0 => {
-                TermDef::nat_inline(0)
-            }
-            (NatDiv, TermDef::NatInline(p), TermDef::NatInline(q)) => {
-                TermDef::nat_inline(p.to_u64() / q.to_u64())
-            }
-            (NatMod, TermDef::NatInline(p), TermDef::NatInline(q)) => {
-                TermDef::nat_inline(p.to_u64() % q.to_u64())
-            }
-            (NatEq, TermDef::NatInline(p), TermDef::NatInline(q)) => {
-                if p.to_u64() == q.to_u64() { TermDef::True } else { TermDef::False }
-            }
-            (NatLt, TermDef::NatInline(p), TermDef::NatInline(q)) => {
-                if p.to_u64() < q.to_u64() { TermDef::True } else { TermDef::False }
-            }
-            (NatLe, TermDef::NatInline(p), TermDef::NatInline(q)) => {
-                if p.to_u64() <= q.to_u64() { TermDef::True } else { TermDef::False }
-            }
-
-            // Integers: arithmetic on inline literals.
-            (IntAdd, TermDef::IntInline(p), TermDef::IntInline(q)) => {
-                let (av, bv) = (p.to_i64(), q.to_i64());
-                if let Some(sum) = av.checked_add(bv) {
-                    TermDef::int_inline(sum)
-                } else {
-                    use covalence_types::Int;
-                    let big = Int::from(av) + Int::from(bv);
-                    let id = self.intern_int(big);
-                    TermDef::IntStored(id)
-                }
-            }
-            (IntSub, TermDef::IntInline(p), TermDef::IntInline(q)) => {
-                let (av, bv) = (p.to_i64(), q.to_i64());
-                if let Some(diff) = av.checked_sub(bv) {
-                    TermDef::int_inline(diff)
-                } else {
-                    use covalence_types::Int;
-                    let big = Int::from(av) - Int::from(bv);
-                    let id = self.intern_int(big);
-                    TermDef::IntStored(id)
-                }
-            }
-            (IntMul, TermDef::IntInline(p), TermDef::IntInline(q)) => {
-                let (av, bv) = (p.to_i64(), q.to_i64());
-                if let Some(prod) = av.checked_mul(bv) {
-                    TermDef::int_inline(prod)
-                } else {
-                    use covalence_types::Int;
-                    let big = Int::from(av) * Int::from(bv);
-                    let id = self.intern_int(big);
-                    TermDef::IntStored(id)
-                }
-            }
-            (IntEq, TermDef::IntInline(p), TermDef::IntInline(q)) => {
-                if p.to_i64() == q.to_i64() { TermDef::True } else { TermDef::False }
-            }
-            (IntLt, TermDef::IntInline(p), TermDef::IntInline(q)) => {
-                if p.to_i64() < q.to_i64() { TermDef::True } else { TermDef::False }
-            }
-            (IntLe, TermDef::IntInline(p), TermDef::IntInline(q)) => {
-                if p.to_i64() <= q.to_i64() { TermDef::True } else { TermDef::False }
-            }
-
-            // Fixed-width: wrapping arithmetic. (One representative
-            // family — u32 — for now; full coverage is mechanical.)
-            (U32Add, TermDef::U32(av), TermDef::U32(bv)) => TermDef::U32(av.wrapping_add(bv)),
-            (U32Sub, TermDef::U32(av), TermDef::U32(bv)) => TermDef::U32(av.wrapping_sub(bv)),
-            (U32Mul, TermDef::U32(av), TermDef::U32(bv)) => TermDef::U32(av.wrapping_mul(bv)),
-            (U32And, TermDef::U32(av), TermDef::U32(bv)) => TermDef::U32(av & bv),
-            (U32Or, TermDef::U32(av), TermDef::U32(bv)) => TermDef::U32(av | bv),
-            (U32Xor, TermDef::U32(av), TermDef::U32(bv)) => TermDef::U32(av ^ bv),
-            (U32Eq, TermDef::U32(av), TermDef::U32(bv)) => {
-                if av == bv { TermDef::True } else { TermDef::False }
-            }
-
-            _ => return None,
-        };
-        Some(TermRef::local(self.alloc_term(new_def)))
-    }
-
-    /// Helper: reduce `op(a, b)` indirectly via another op, optionally
-    /// negating the result (used for `Nand` = `Not (And ...)`,
-    /// `Nor` = `Not (Or ...)`).
-    fn reduce_via_other_2(
-        &mut self,
-        op: crate::primop::PrimOp2,
-        a: TermDef,
-        b: TermDef,
-        negate: bool,
-    ) -> Option<TermDef> {
-        // Allocate temp terms so we can dispatch through try_reduce_op2.
-        let a_id = self.alloc_term(a);
-        let b_id = self.alloc_term(b);
-        let result = self.try_reduce_op2(op, TermRef::local(a_id), TermRef::local(b_id))?;
-        let result_def = *self.term_def(result.as_local()?);
-        Some(if negate {
-            match result_def {
-                TermDef::True => TermDef::False,
-                TermDef::False => TermDef::True,
-                _ => return None,
-            }
-        } else {
-            result_def
-        })
-    }
-
-    fn try_reduce_comb(&mut self, f: TermRef, x: TermRef) -> Option<TermRef> {
-        // Comb(Id(_), x) → x.
-        let f_id = f.as_local()?;
-        let f_def = *self.term_def(f_id);
-        if let TermDef::Id(_) = f_def {
-            return Some(x);
-        }
-        // Comb(Ite(cond, then), else) — the partially-applied Ite.
-        // The Comb supplies the else-branch as x. On a literal cond,
-        // we pick the appropriate branch.
-        if let TermDef::Ite(cond, then_branch) = f_def {
-            let cond_id = cond.as_local()?;
-            match self.term_def(cond_id) {
-                TermDef::True => return Some(then_branch),
-                TermDef::False => return Some(x),
-                _ => {}
-            }
-        }
-        None
     }
 
     // ---- substitution & shifting (locally-nameless) ------------------------

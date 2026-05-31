@@ -262,4 +262,56 @@ impl TermDef {
             None
         }
     }
+
+    /// The `TermRef` dependencies of this def (0, 1, or 2 children).
+    /// Type-ref dependencies (e.g. `Abs(TypeRef, _)`, `Eps(TypeRef, _)`,
+    /// `Id(TypeRef)`) are *not* term deps and are not reported here —
+    /// they're part of the shape and must match exactly.
+    pub fn deps(&self) -> Deps {
+        use TermDef::*;
+        match *self {
+            Bound(_) | Free(..) | Const(..) | True | False | Id(_) | LiftOp1(_) | LiftOp2(_)
+            | U8(_) | U16(_) | U32(_) | U64(_) | I8(_) | I16(_) | I32(_) | I64(_)
+            | IntInline(_) | IntStored(_) | NatInline(_) | NatStored(_)
+            | BitsStored(_) | BytesStored(_) => Deps::None,
+            Forall(p) | Exists(p) | Op1(_, p) => Deps::One(p),
+            Eps(_, p) | Abs(_, p) => Deps::One(p),
+            Comb(a, b) | Eq(a, b) | Ne(a, b) | Comp(a, b) | Iter(a, b) | Ite(a, b)
+            | Op2(_, a, b) => Deps::Two(a, b),
+        }
+    }
+
+    /// Return a copy of this def with all `TermRef` deps replaced by
+    /// `sentinel`. Useful as a shape key: two defs share a shape iff
+    /// `a.with_zeroed_deps(s) == b.with_zeroed_deps(s)`.
+    pub fn with_zeroed_deps(&self, sentinel: TermRef) -> TermDef {
+        use TermDef::*;
+        match *self {
+            Forall(_) => Forall(sentinel),
+            Exists(_) => Exists(sentinel),
+            Op1(o, _) => Op1(o, sentinel),
+            Eps(t, _) => Eps(t, sentinel),
+            Abs(t, _) => Abs(t, sentinel),
+            Comb(_, _) => Comb(sentinel, sentinel),
+            Eq(_, _) => Eq(sentinel, sentinel),
+            Ne(_, _) => Ne(sentinel, sentinel),
+            Comp(_, _) => Comp(sentinel, sentinel),
+            Iter(_, _) => Iter(sentinel, sentinel),
+            Ite(_, _) => Ite(sentinel, sentinel),
+            Op2(o, _, _) => Op2(o, sentinel, sentinel),
+            other => other,
+        }
+    }
+}
+
+/// The `TermRef` dependencies of a [`TermDef`].
+///
+/// The kernel's term language has at most two `TermRef` children per
+/// def; this enum makes that bound explicit so callers don't need a
+/// per-variant match.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Deps {
+    None,
+    One(TermRef),
+    Two(TermRef, TermRef),
 }

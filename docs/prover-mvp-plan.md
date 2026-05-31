@@ -167,7 +167,8 @@ shape:
     `Forall(TermRef)`, `Exists(TermRef)` (quantifiers; α inferred
     from predicate),
     `Ne(TermRef, TermRef)` (inequality sugar),
-    `Id(TypeRef)`, `Comp(TermRef, TermRef)`.
+    `Id(TypeRef)`, `Comp(TermRef, TermRef)`,
+    `LiftOp1(PrimOp1)` / `LiftOp2(PrimOp2)` (η-expanded primops).
     The K combinator (`λ_:β. a`) is *not* a separate primitive —
     use `Abs(β, a)` directly.
   - one variant per `PrimOp1`/`PrimOp2` from

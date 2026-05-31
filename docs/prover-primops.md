@@ -413,6 +413,8 @@ variables, and they let the kernel pattern-match common shapes (e.g.
 |---|---|---|---|
 | `Id(α)` | `α → α` | none — `Id` is a value, not an evaluator | `Comb(Id(α), x) = x` |
 | `Comp(f, g)` | `(β → γ) → (α → β) → (α → γ)` | none on `Comp` itself; `Comb(Comp(f, g), x)` reduces to `Comb(f, Comb(g, x))` | the previous equation; equivalently `Comp(f, g) = λx. f (g x)` |
+| `LiftOp1(op)` | `α → β` where `(α → β) = sig(op)` for `op : PrimOp1` | `Comb(LiftOp1(op), x) → Op1(op, x)` | `lift_op1_def`: `LiftOp1(op) = Abs(α, Op1(op, Bound(0)))` |
+| `LiftOp2(op)` | `α → β → γ` where `(α → β → γ) = sig(op)` for `op : PrimOp2` | `Comb(Comb(LiftOp2(op), x), y) → Op2(op, x, y)` | `lift_op2_def`: `LiftOp2(op) = Abs(α, Abs(β, Op2(op, Bound(1), Bound(0))))` |
 | `Iter(n, f)` | `nat → (α → α) → (α → α)` (curried via `Comb`) | none on `Iter`; equality to `Id`/`Comp` chains via the axioms below | see below |
 
 ### Storage shape
@@ -422,6 +424,9 @@ variables, and they let the kernel pattern-match common shapes (e.g.
   it's just `Abs(β, a)` (assuming `a` is closed under the binder,
   which is the typical case). Removing `Constant` shrinks the
   combinator family by one without losing expressiveness.
+- `LiftOp1(op)` carries a `PrimOp1` discriminant — 4 bytes payload
+  (1-byte enum, padded to a u32 slot).
+- `LiftOp2(op)` carries a `PrimOp2` discriminant — same.
 - `Comp(f, g)` carries two `TermRef`s — 8 bytes.
 - `Iter(n, f)` carries two `TermRef`s — 8 bytes. **No explicit
   `TypeRef`**; the element type `α` is inferred from `f`'s type
@@ -461,13 +466,38 @@ plus the host's reduction — but we keep the equation around because
 without unfolding to `Iter`, and (b) it's the spec the host
 implementation is audited against. Same story for `mul`, `pow`, etc.
 
+### Why `LiftOp1` / `LiftOp2`?
+
+Primops are TermDef variants with *applied* arguments — `Op2(NatAdd,
+a, b)` is a value of type `nat`, not a function. To use a primop in
+a higher-order position (pass to `Comp`, `Iter`, `Forall`, …), you
+need it as a function value: `λx. Not x` rather than `Op1(Not, …)`.
+
+`LiftOp1(op)` and `LiftOp2(op)` *are* those function values. Their
+reduction rules (§10) collapse the lambda eagerly when a `Comb`
+supplies all arguments, so the round-trip `Comb (LiftOp1 op) x →
+Op1(op, x)` keeps applied terms in their compact primop form. But
+when used pointlessly — `Comp (LiftOp1 Not) f`, `Iter n (LiftOp1
+NatSucc)` — they just sit as function values.
+
+The user's classic example:
+
+```
+Not (Forall f) = Exists (Comp (LiftOp1 Not) f)
+```
+
+Without lifting, the RHS would have to be `Exists (Abs α (Op1(Not,
+Comb(f, Bound(0)))))` — same meaning but the binder makes the
+shape opaque to the macro engine.
+
 ### Trust note
 
-`Id`, `Comp`, and `Iter` collectively add three kernel-trusted
-combinators. Their soundness is one-paragraph each: `Id` is the
-identity function; `Comp` is the lambda above; `Iter` is the
-function-power-iteration combinator defined by recursion on `nat`
-(via the two cases + induction). Auditable mechanically.
+`Id`, `Comp`, `Iter`, `LiftOp1`, and `LiftOp2` collectively add five
+kernel-trusted combinators. Their soundness is one-paragraph each:
+`Id` is the identity function; `Comp` is the composition lambda;
+`Iter` is function-power-iteration on `nat` (via the two cases +
+induction); `LiftOpN op` is the canonical η-expansion of the primop
+into a lambda. Auditable mechanically.
 
 ## 8.7. Induction principles
 
@@ -617,6 +647,8 @@ without further postulation.
 | `iter_zero` | `Iter 0 f = Id (dom(f))` | §8.6 |
 | `iter_succ_outer` | `Iter (succ n) f = Comp f (Iter n f)` | §8.6 |
 | `iter_succ_inner` | `Iter (succ n) f = Comp (Iter n f) f` | §8.6 |
+| `lift_op1_def` | `LiftOp1(op) = Abs(α, Op1(op, Bound(0)))` where (α → β) = sig(op) | §8.6 |
+| `lift_op2_def` | `LiftOp2(op) = Abs(α, Abs(β, Op2(op, Bound(1), Bound(0))))` where (α → β → γ) = sig(op) | §8.6 |
 
 The last two are equivalent given `induct_nat` (§9.5); both are
 listed because each is the natural symbolic rule to apply depending
@@ -735,8 +767,9 @@ The kernel's trusted axiom set is exactly the axioms above:
 - 1 Ite axiom
 - 4 quantifier/choice axioms (`select_ax`, `forall_def`,
   `exists_def`, `ne_def`)
-- 5 combinator axioms (`id_ax`, `comp_def`, `iter_zero`,
-  `iter_succ_outer`, `iter_succ_inner`)
+- 7 combinator axioms (`id_ax`, `comp_def`, `iter_zero`,
+  `iter_succ_outer`, `iter_succ_inner`, `lift_op1_def`,
+  `lift_op2_def`)
 - 3 × 3 = 9 axioms for inductive types (nat / bits / bytes:
   constructors-distinct + injective + induction)
 - 13 integer ring/order axioms
@@ -878,6 +911,8 @@ loop with itself. It's available as a manual rule, §11.)
 | `Comb (Id α) x → x` | §8.6 |
 | `Comb (Comp f g) x → Comb f (Comb g x)` | §8.6 |
 | `Iter (NatInline 0) f → Id (dom(f))` | §8.6 |
+| `Comb (LiftOp1 op) x → Op1(op, x)` | §8.6 |
+| `Comb (Comb (LiftOp2 op) x) y → Op2(op, x, y)` | §8.6 |
 | `Ne a b → Not (Eq a b)` | §8.5 (`ne_def` unfolded) |
 
 The `succ` cases of `iter_succ_outer`/`iter_succ_inner` are *not*

@@ -431,6 +431,8 @@ pub(crate) enum TermDef {
     Ne(TermRef, TermRef),     // ≠
     Id(TypeRef),
     Comp(TermRef, TermRef),
+    LiftOp1(PrimOp1),         // η-expansion of a unary primop
+    LiftOp2(PrimOp2),         // η-expansion of a binary primop
     // literals as above; storage may be inline or via *Id into a table
     ...
     // one variant per primop kind, so the (variant, child, child) shape
@@ -543,6 +545,8 @@ storage efficiency.
 | `Eps(TypeRef, TermRef)` | Hilbert choice: `(α → bool) → α` | **builtin** (§3.4) |
 | `Id(TypeRef)` | identity combinator: `α → α` | **builtin** (§3.4) |
 | `Comp(TermRef, TermRef)` | function composition: `(β → γ) → (α → β) → (α → γ)` | **builtin** (§3.4) |
+| `LiftOp1(PrimOp1)` | η-expansion of a unary primop into a function value | **builtin** (§3.4) |
+| `LiftOp2(PrimOp2)` | η-expansion of a binary primop into a function value | **builtin** (§3.4) |
 | `Iter(TermRef, TermRef)` | iter-n-times: `Iter(n, f) : α → α`; α inferred from `f`'s domain | **builtin** (§3.4) |
 | `U8(u8)` … `U64(u64)` | unsigned fixed-width literal | **builtin** |
 | `I8(i8)` … `I64(i64)` | signed fixed-width literal | **builtin** |
@@ -656,6 +660,12 @@ addition to the per-type primops:
   unfolded `Eq … (Abs …)`.
 - `Ne(a, b) : bool` — sugar for `Not (Eq a b)`, defined by
   `ne_def`. Same legibility win.
+- `LiftOp1(op)` / `LiftOp2(op)` — η-expansion of a primop into a
+  function value. `Comb (LiftOp1 op) x → Op1(op, x)` and analogously
+  for binary, so applied forms collapse back to the compact primop.
+  These exist so primops are usable in higher-order positions (e.g.
+  `Comp (LiftOp1 Not) f` for "negate after f"). Storage: 4 bytes
+  (just the PrimOpN discriminant).
 - `Comp(f, g) : (β → γ) → (α → β) → (α → γ)` — function composition;
   `Comb (Comp f g) x = Comb f (Comb g x)`. Equivalent to
   `λx. f (g x)`.
@@ -668,7 +678,7 @@ addition to the per-type primops:
   axioms uniquely determine `Iter`. Arithmetic ops then derive as
   `add n m = Comb (Comb (Iter nat m) NatSucc) n`, etc.
 
-All five combinators (plus `Forall`/`Exists`/`Ne`) preserve the
+All seven combinators (plus `Forall`/`Exists`/`Ne`) preserve the
 (tag, lhs, rhs) 3-u32 inline invariant — none use side tables.
 
 See [prover-primops.md](./prover-primops.md) §8.5–8.6 for full

@@ -8,11 +8,10 @@ use std::sync::Arc;
 use smol_str::SmolStr;
 
 use crate::id::{
-    BitsId, BytesId, ForeignTermId, ForeignTypeId, ImportId, StrId, TermId, TyArgsId, TypeId,
+    BitsId, BytesId, ForeignTermId, ForeignTypeId, ImportId, IntId, NatId, StrId, TermId,
+    TyArgsId, TypeId,
 };
-#[cfg(feature = "int")]
-use crate::id::{IntId, NatId};
-use crate::term::{BITS_INLINE_MAX_BYTES, BitsValue, TermDef, TermRef};
+use crate::term::{TermDef, TermRef};
 use crate::ty::{TypeDef, TypeRef};
 use crate::uf::{TermUfEntry, TypeUfEntry};
 
@@ -38,10 +37,7 @@ pub struct Arena {
     strings: Vec<SmolStr>,
     bytes: Vec<Vec<u8>>,
     bits: Vec<Vec<u8>>,
-    // Behind the default `int` feature of covalence-types.
-    #[cfg(feature = "int")]
     ints: Vec<covalence_types::Int>,
-    #[cfg(feature = "int")]
     nats: Vec<covalence_types::Nat>,
     tyargs: Vec<Vec<TypeRef>>,
 
@@ -52,6 +48,12 @@ pub struct Arena {
     foreign_terms: Vec<(ImportId, TermId)>,
     /// Side table for foreign-arena type references; same scheme.
     foreign_types: Vec<(ImportId, TypeId)>,
+
+    /// Display-hint side table for `Abs` terms. Indexed by TermId,
+    /// parallel to `terms`. `None` for non-`Abs` terms and for `Abs`
+    /// terms whose binder was never given a hint. Hints never affect
+    /// correctness — only printing.
+    abs_hints: Vec<Option<StrId>>,
 }
 
 impl Arena {
@@ -66,13 +68,12 @@ impl Arena {
             strings: Vec::new(),
             bytes: Vec::new(),
             bits: Vec::new(),
-            #[cfg(feature = "int")]
             ints: Vec::new(),
-            #[cfg(feature = "int")]
             nats: Vec::new(),
             tyargs: Vec::new(),
             foreign_terms: Vec::new(),
             foreign_types: Vec::new(),
+            abs_hints: Vec::new(),
         }
     }
 
@@ -134,13 +135,11 @@ impl Arena {
         &self.strings[id.0 as usize]
     }
 
-    #[cfg(feature = "int")]
     /// Read an interned big-int by local id.
     pub fn int(&self, id: IntId) -> &covalence_types::Int {
         &self.ints[id.0 as usize]
     }
 
-    #[cfg(feature = "int")]
     /// Read an interned big-nat by local id.
     pub fn nat(&self, id: NatId) -> &covalence_types::Nat {
         &self.nats[id.0 as usize]
@@ -207,17 +206,28 @@ impl Arena {
         id
     }
 
-    /// Allocate a bit-string value. Chooses `Inline` for short strings
-    /// and `Indirect` for longer ones based on
-    /// [`BITS_INLINE_MAX_BYTES`].
-    pub fn alloc_bits(&mut self, bytes: Vec<u8>) -> BitsValue {
-        if bytes.len() <= BITS_INLINE_MAX_BYTES {
-            BitsValue::Inline(bytes)
-        } else {
-            let id = BitsId(self.bits.len() as u32);
-            self.bits.push(bytes);
-            BitsValue::Indirect(id)
+    /// Intern a bit string. Always appends; callers who want dedup
+    /// should dedup at their own layer.
+    pub fn intern_bits(&mut self, bits: Vec<u8>) -> BitsId {
+        let id = BitsId(self.bits.len() as u32);
+        self.bits.push(bits);
+        id
+    }
+
+    /// Look up the display hint for an `Abs` term, if any.
+    pub fn abs_hint(&self, id: TermId) -> Option<StrId> {
+        self.abs_hints.get(id.0 as usize).copied().flatten()
+    }
+
+    /// Set the display hint for an `Abs` term. No-op for non-`Abs`
+    /// terms; the kernel doesn't validate the term's shape since
+    /// hints never affect correctness.
+    pub fn set_abs_hint(&mut self, id: TermId, hint: StrId) {
+        let idx = id.0 as usize;
+        if idx >= self.abs_hints.len() {
+            self.abs_hints.resize(idx + 1, None);
         }
+        self.abs_hints[idx] = Some(hint);
     }
 
     /// Intern a `SmolStr`. Returns the existing id if already present.
@@ -238,7 +248,6 @@ impl Arena {
         id
     }
 
-    #[cfg(feature = "int")]
     /// Intern a big-int literal.
     pub fn intern_int(&mut self, i: covalence_types::Int) -> IntId {
         let id = IntId(self.ints.len() as u32);
@@ -246,7 +255,6 @@ impl Arena {
         id
     }
 
-    #[cfg(feature = "int")]
     /// Intern a big-nat literal.
     pub fn intern_nat(&mut self, n: covalence_types::Nat) -> NatId {
         let id = NatId(self.nats.len() as u32);
@@ -325,19 +333,27 @@ impl Arena {
     /// Used by [`alloc_term`](Self::alloc_term).
     fn term_props(&self, def: &TermDef) -> (u32, bool) {
         match def {
+            // -- de Bruijn / binders --
             TermDef::Bound(i) => (i + 1, false),
             TermDef::Free(_, _) => (0, true),
             TermDef::Const(_, _) => (0, false),
-            TermDef::True | TermDef::False | TermDef::Bits(_) => (0, false),
             TermDef::Comb(f, x) | TermDef::Eq(f, x) => {
                 let (f_bd, f_hf) = self.ref_props(*f);
                 let (x_bd, x_hf) = self.ref_props(*x);
                 (f_bd.max(x_bd), f_hf || x_hf)
             }
-            TermDef::Abs(_, _, body) => {
+            TermDef::Abs(_, body) => {
                 let (b_bd, b_hf) = self.ref_props(*body);
                 (b_bd.saturating_sub(1), b_hf)
             }
+            // -- truth literals --
+            TermDef::True | TermDef::False => (0, false),
+            // -- fixed-width / arbitrary-precision literals --
+            TermDef::U8(_) | TermDef::U16(_) | TermDef::U32(_) | TermDef::U64(_)
+            | TermDef::I8(_) | TermDef::I16(_) | TermDef::I32(_) | TermDef::I64(_)
+            | TermDef::IntInline(_) | TermDef::IntStored(_)
+            | TermDef::NatInline(_) | TermDef::NatStored(_)
+            | TermDef::BitsStored(_) | TermDef::BytesStored(_) => (0, false),
         }
     }
 

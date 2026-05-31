@@ -3,10 +3,6 @@ name = "covalence-kernel"
 version = "0.0.0"
 edition = "2024"
 
-[features]
-default = ["int"]
-int = ["covalence-types/int"]
-
 [dependencies]
 smol_str = "0.3"
-covalence-types = { path = "../covalence-types", default-features = false }
+covalence-types = { path = "../covalence-types" }

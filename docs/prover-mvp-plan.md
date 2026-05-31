@@ -159,12 +159,17 @@ shape:
   - literals: `U8(u8)..U64(u64)`, `I8(i8)..I64(i64)`,
     `IntInline(i64)`, `IntStored(IntId)`, `NatInline(u64)`,
     `NatStored(NatId)`, `BitsStored(BitsId)`, `BytesStored(BytesId)`.
-  - combinators (all inline, partial-application where applicable):
+  - combinators / logical sugar (all inline; partial-application
+    where applicable):
     `Ite(TermRef, TermRef)` (cond, then; else via Comb),
     `Iter(TermRef, TermRef)` (n, f; α inferred from f),
     `Eps(TypeRef, TermRef)` (Hilbert choice),
-    `Id(TypeRef)`, `Constant(TermRef, TypeRef)`,
-    `Comp(TermRef, TermRef)`.
+    `Forall(TermRef)`, `Exists(TermRef)` (quantifiers; α inferred
+    from predicate),
+    `Ne(TermRef, TermRef)` (inequality sugar),
+    `Id(TypeRef)`, `Comp(TermRef, TermRef)`.
+    The K combinator (`λ_:β. a`) is *not* a separate primitive —
+    use `Abs(β, a)` directly.
   - one variant per `PrimOp1`/`PrimOp2` from
     [`prover-primops.md`](./prover-primops.md) (e.g. `NatAdd(t,
     t)`, `LogicalNot(t)`, …). TermKind groups them under

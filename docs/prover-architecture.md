@@ -425,9 +425,11 @@ pub(crate) enum TermDef {
     Ite(TypeRef, TermRef),
     // partially-applied: just element type + nat count; f via Comb
     Iter(TypeRef, TermRef),
-    Eps(TypeRef, TermRef),  // Hilbert choice
+    Eps(TypeRef, TermRef),    // Hilbert choice
+    Forall(TermRef),          // ∀ over predicate of inferred domain
+    Exists(TermRef),          // ∃ likewise
+    Ne(TermRef, TermRef),     // ≠
     Id(TypeRef),
-    Constant(TermRef, TypeRef),  // K combinator
     Comp(TermRef, TermRef),
     // literals as above; storage may be inline or via *Id into a table
     ...
@@ -531,13 +533,15 @@ storage efficiency.
 | `Comb(TermRef, TermRef)` | application | structural |
 | `Abs(TypeRef, TermRef)` | binder; display hint via side table | structural |
 | `Eq(TermRef, TermRef)` | polymorphic equality | **builtin** |
+| `Ne(TermRef, TermRef)` | polymorphic inequality (sugar for `Not (Eq …)`) | **builtin** |
+| `Forall(TermRef)` | universal quantifier over `P : α → bool` | **builtin** |
+| `Exists(TermRef)` | existential quantifier over `P : α → bool` | **builtin** |
 | `True`, `False` | boolean literals | **builtin** |
 | `Op1(PrimOp1, TermRef)` | unary primitive op (logic, arithmetic, casts) | **builtin** (§3.4) |
 | `Op2(PrimOp2, TermRef, TermRef)` | binary primitive op | **builtin** (§3.4) |
 | `Ite(TermRef, TermRef)` | if-then-else: `Ite(cond, then) : α → α`, else via `Comb`; α inferred from `then` | **builtin** (§3.4) |
 | `Eps(TypeRef, TermRef)` | Hilbert choice: `(α → bool) → α` | **builtin** (§3.4) |
 | `Id(TypeRef)` | identity combinator: `α → α` | **builtin** (§3.4) |
-| `Constant(TermRef, TypeRef)` | K combinator: `β → α` where α = type_of(value) | **builtin** (§3.4) |
 | `Comp(TermRef, TermRef)` | function composition: `(β → γ) → (α → β) → (α → γ)` | **builtin** (§3.4) |
 | `Iter(TermRef, TermRef)` | iter-n-times: `Iter(n, f) : α → α`; α inferred from `f`'s domain | **builtin** (§3.4) |
 | `U8(u8)` … `U64(u64)` | unsigned fixed-width literal | **builtin** |
@@ -642,9 +646,16 @@ addition to the per-type primops:
 - `Eps(α, P) : α` — Hilbert choice; returns *some* element of `α`
   satisfying `P`, governed by `select_ax: P x → P (Eps α P)`. The
   *only* nontrivial existence axiom in the prelude.
-- `Id(α) : α → α` — identity; `Comb (Id α) x = x`.
-- `Constant(a, β) : β → α` (where `α = type_of(a)`) — K combinator;
-  `Comb (Constant a β) x = a`. Pointless form of `Ite True a`.
+- `Id(α) : α → α` — identity; `Comb (Id α) x = x`. The constant
+  function `λ_:β. a` is just `Abs(β, a)` — no separate `Constant`
+  primitive.
+- `Forall(P)` and `Exists(P)` over `P : α → bool` — quantifiers
+  defined by `forall_def: Forall P = (P = Abs α True)` and
+  `exists_def: Exists P = Ne P (Abs α False)`. First-class so
+  axioms read like `Forall (Abs nat (λn. …))` rather than
+  unfolded `Eq … (Abs …)`.
+- `Ne(a, b) : bool` — sugar for `Not (Eq a b)`, defined by
+  `ne_def`. Same legibility win.
 - `Comp(f, g) : (β → γ) → (α → β) → (α → γ)` — function composition;
   `Comb (Comp f g) x = Comb f (Comb g x)`. Equivalent to
   `λx. f (g x)`.
@@ -657,8 +668,8 @@ addition to the per-type primops:
   axioms uniquely determine `Iter`. Arithmetic ops then derive as
   `add n m = Comb (Comb (Iter nat m) NatSucc) n`, etc.
 
-All six combinators preserve the (tag, lhs, rhs) 3-u32 inline
-invariant — none use side tables.
+All five combinators (plus `Forall`/`Exists`/`Ne`) preserve the
+(tag, lhs, rhs) 3-u32 inline invariant — none use side tables.
 
 See [prover-primops.md](./prover-primops.md) §8.5–8.6 for full
 axioms and motivation.
@@ -691,6 +702,17 @@ all bottoming out at kernel-trusted primitives:
 Audit cost is exactly the three lists. New primops add to the rule
 lists; the axiom list grows only when a primitive introduces a new
 postulate.
+
+**Locally-closed precondition (all three layers).** Every rewrite —
+axiom instantiation, reduction-rule firing, manual-rule firing —
+requires the term being rewritten *and* every metavariable
+substitution to be **locally closed**: zero dangling `Bound(_)`
+indices. Free variables are fine. Open de Bruijn indices are not,
+because syntactic rewrites that rearrange shape (composition
+unfolding, primop reduction, induction-schema instantiation, …)
+can change the binding distance of a `Bound(_)` and silently break
+semantics. The arena tracks `bound_depth` in O(1) (§2.2), so the
+check is one comparison per rewrite.
 
 #### Reduce: basic ops as LCF calls
 

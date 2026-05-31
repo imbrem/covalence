@@ -343,37 +343,62 @@ have to walk the host implementation.
 
 ---
 
-## 8.5. Epsilon (Hilbert choice)
+## 8.5. Quantifiers and choice
 
-The kernel ships Hilbert's choice operator as a first-class
-primitive. Given any predicate, ε picks *some* element satisfying
-it — and if none exists, picks an arbitrary element of the type.
+The kernel ships three first-class quantifier-related primitives,
+plus a not-equal sugar:
 
 | Op | Sig | Reduction | Axioms |
 |---|---|---|---|
-| `Eps(α, P)` | `(α → bool) → α` | none | `select_ax`: `∀ P x. P x → P (Eps α P)` |
+| `Eps(α, P)` | `(α → bool) → α` (Hilbert choice) | none | `select_ax`: `∀ P x. P x → P (Eps α P)` |
+| `Forall(P)` | `(α → bool) → bool` | none | `forall_def`: `Forall P = (P = Abs(α, True))` where `α = dom(P)` |
+| `Exists(P)` | `(α → bool) → bool` | none | `exists_def`: `Exists P = Ne P (Abs(α, False))` |
+| `Ne(a, b)` | `α → α → bool` | none | `ne_def`: `Ne a b = Not (Eq a b)` |
 
-### Storage shape
+### Storage shapes
 
-`Eps(α, P)` carries a `TypeRef` + a `TermRef` = 8 bytes payload —
-fits inline in the 3-u32 invariant.
+- `Eps(α, P)`: `TypeRef + TermRef = 8 bytes`.
+- `Forall(P)`: `TermRef = 4 bytes`. α is inferred from `P`'s domain.
+- `Exists(P)`: `TermRef = 4 bytes`. α likewise.
+- `Ne(a, b)`: `TermRef + TermRef = 8 bytes`. α is inferred from `a`'s
+  type.
 
-### Role in the bootstrap
+All fit the 3-u32 invariant.
+
+### Why first-class?
+
+The point of these is **simpler axiom statements**. Without
+`Forall`/`Exists`/`Ne`, the prelude would have to spell out
+quantifiers and inequalities via raw `Eq`/`Not`/`Abs` chains every
+time — and every axiom involving `∀n. P n` would have to be a
+predicate equality. With these primitives:
+
+- `select_ax` reads `Forall (Abs α (λx. Imp (P x) (P (Eps α P))))`
+  — recognisable at a glance.
+- `induct_nat` reads as the obvious schema, with `Forall` doing the
+  outer binding.
+- Inequality (`a ≠ b`) is a one-character primop instead of
+  unfolding `Not (Eq a b)` everywhere.
+
+The defining equations of §9 unfold each of these to its
+`Eq`/`Not`/`Abs` form, so the trust unit is unchanged. They earn
+their slots because **axiom legibility is part of the audit**.
+
+### Role of `Eps` in the bootstrap
 
 `Eps` is the bottom of the foundational stack. It's the only
 primitive whose definition cannot be reduced to anything more
 elementary — it's a postulated choice function, and `select_ax` is
-the only axiom characterising it. Everything else uses `Eps` as a
-building block:
+the only nontrivial axiom characterising it. Everything else uses
+`Eps` as a building block:
 
 - **Induction over `nat`** is derived from Peano's `(0 ≠ succ,
   succ-injective)` + `select_ax`: given a predicate failing
-  somewhere, `Eps` picks a counterexample; minimality follows from
-  well-foundedness. (Derived in the prelude, used once, never
-  re-derived.)
+  somewhere, `Eps` picks a counterexample. (Derived in the prelude,
+  used once, never re-derived.)
 - **Definite description**: `the_one P` is `Eps α P` when `P`
-  uniquely determines its element. Used to derive partial functions.
-- **Existence elimination**: from `∃x. P x`, take `w = Eps α P` and
+  uniquely determines its element.
+- **Existence elimination**: from `Exists P`, take `w = Eps α P` and
   use `select_ax` to conclude `P w`.
 
 ## 8.6. Combinators: `Id`, `Comp`, `Iter`
@@ -387,15 +412,16 @@ variables, and they let the kernel pattern-match common shapes (e.g.
 | Op | Sig | Reduction | Axioms |
 |---|---|---|---|
 | `Id(α)` | `α → α` | none — `Id` is a value, not an evaluator | `Comb(Id(α), x) = x` |
-| `Constant(a, β)` | `β → α` where `α = type_of(a)` | `Comb(Constant(a, β), x) → a` | the previous equation |
 | `Comp(f, g)` | `(β → γ) → (α → β) → (α → γ)` | none on `Comp` itself; `Comb(Comp(f, g), x)` reduces to `Comb(f, Comb(g, x))` | the previous equation; equivalently `Comp(f, g) = λx. f (g x)` |
 | `Iter(n, f)` | `nat → (α → α) → (α → α)` (curried via `Comb`) | none on `Iter`; equality to `Id`/`Comp` chains via the axioms below | see below |
 
 ### Storage shape
 
-- `Id(α)` carries a single `TypeRef` — 4 bytes payload.
-- `Constant(a, β)` carries a `TermRef` + a `TypeRef` — 8 bytes; α
-  is inferred from `a`'s type, β is given explicitly.
+- `Id(α)` carries a single `TypeRef` — 4 bytes payload. The
+  constant function `λ_:β. a` is **not a separate primitive** —
+  it's just `Abs(β, a)` (assuming `a` is closed under the binder,
+  which is the typical case). Removing `Constant` shrinks the
+  combinator family by one without losing expressiveness.
 - `Comp(f, g)` carries two `TermRef`s — 8 bytes.
 - `Iter(n, f)` carries two `TermRef`s — 8 bytes. **No explicit
   `TypeRef`**; the element type `α` is inferred from `f`'s type
@@ -437,10 +463,9 @@ implementation is audited against. Same story for `mul`, `pow`, etc.
 
 ### Trust note
 
-`Id`, `Constant`, `Comp`, and `Iter` collectively add four kernel-
-trusted combinators. Their soundness is one-paragraph each: `Id` is
-the identity function; `Constant a` is the constant function
-returning `a`; `Comp` is the lambda above; `Iter` is the
+`Id`, `Comp`, and `Iter` collectively add three kernel-trusted
+combinators. Their soundness is one-paragraph each: `Id` is the
+identity function; `Comp` is the lambda above; `Iter` is the
 function-power-iteration combinator defined by recursion on `nat`
 (via the two cases + induction). Auditable mechanically.
 
@@ -530,6 +555,11 @@ links back to the section that motivates it. Audit cost is exactly
 "review this list" — there is nothing else in the kernel's trusted
 axiom set.
 
+**Closedness precondition.** Like reduction (§10) and manual rules
+(§11), axiom instantiation only fires when every metavariable
+substitutes to a **locally-closed** term — no dangling `Bound(_)`
+indices. Free variables are fine. See §10 for the rationale.
+
 What's *not* here: equational defining rules like `add a 0 = a` or
 `Not True = False`. Those collapse to reduction (§10) or manual
 (§11) rules; their soundness is part of the rule-list audit, not
@@ -561,21 +591,28 @@ Reduction on literal cond (`Comb (Ite True a) b → a`, etc.) is in
 §10 — it's a fact of `bool`'s finite structure plus the typing of
 `Ite`, not a separate postulate.
 
-### 9.3. Epsilon (Hilbert choice)
+### 9.3. Quantifiers, choice, inequality
 
 | Name | Statement | Source |
 |---|---|---|
-| `select_ax` | `∀ P x. P x → P (Eps α P)` | §8.5 |
+| `select_ax` | `Forall (Abs α (λx. Imp (P x) (P (Eps α P))))` | §8.5 |
+| `forall_def` | `Forall P = (P = Abs(α, True))` where α = dom(P) | §8.5 |
+| `exists_def` | `Exists P = Ne P (Abs(α, False))` | §8.5 |
+| `ne_def` | `Ne a b = Not (Eq a b)` | §8.5 |
 
-The *only* axiom about `Eps`. Everything else (definite description,
-existence elimination) derives from it.
+`select_ax` is the *only* nontrivial existence axiom in the
+prelude. `forall_def`, `exists_def`, and `ne_def` are
+**definitional axioms** — each unfolds its primitive to an
+equivalent expression using already-axiomatised primitives. They're
+in the axiom list (rather than the rule lists) because the prelude
+*defines* what these names mean; reduction rules can quote them
+without further postulation.
 
 ### 9.4. Combinators
 
 | Name | Statement | Source |
 |---|---|---|
 | `id_ax` | `Comb (Id α) x = x` | §8.6 |
-| `constant_ax` | `Comb (Constant a β) x = a` (x : β) | §8.6 |
 | `comp_def` | `Comb (Comp f g) x = Comb f (Comb g x)` | §8.6 |
 | `iter_zero` | `Iter 0 f = Id (dom(f))` | §8.6 |
 | `iter_succ_outer` | `Iter (succ n) f = Comp f (Iter n f)` | §8.6 |
@@ -696,8 +733,9 @@ The kernel's trusted axiom set is exactly the axioms above:
 
 - 7 logic/equality/bool axioms
 - 1 Ite axiom
-- 1 epsilon axiom
-- 6 combinator axioms (`id_ax`, `constant_ax`, `comp_def`, `iter_zero`,
+- 4 quantifier/choice axioms (`select_ax`, `forall_def`,
+  `exists_def`, `ne_def`)
+- 5 combinator axioms (`id_ax`, `comp_def`, `iter_zero`,
   `iter_succ_outer`, `iter_succ_inner`)
 - 3 × 3 = 9 axioms for inductive types (nat / bits / bytes:
   constructors-distinct + injective + induction)
@@ -724,6 +762,36 @@ A rule like `add a 0 → a` is justified by the prelude axioms (here,
 the `iter_zero` + `id_ax` chain proves `add a 0 = a`), but the
 rule itself is a kernel facility, not an axiom. The audit unit is
 "each rule's LHS = RHS is derivable in the axiom list."
+
+### Precondition: **all rewrites require locally-closed terms**
+
+A term is **locally closed** when every `Bound(_)` index inside it
+is captured by an enclosing `Abs` — i.e. its `bound_depth` is 0
+(see arena §2.2). Free variables (`Free(name, ty)`) are fine; *open*
+de Bruijn indices are not.
+
+This restriction is **universal across the three layers**:
+
+- **Axioms (§9).** Instantiating an axiom schema requires every
+  metavariable substitution to bind to a locally-closed term.
+- **Reduction rules (§10).** `reduce(t)` rejects if `t` or any
+  subterm visited during the rewrite is not locally closed.
+- **Manual rules (§11).** `try_rewrite_manual(rule_id, t)` checks
+  the same precondition.
+
+Why: any rewrite that rearranges syntactic shape — `Comb (Comp f g)
+x → Comb f (Comb g x)`, `Iter 0 f → Id (dom(f))`, even axiom
+substitution like `induct_nat`'s `?P` — risks moving a `Bound(_)`
+index to a position where its binding distance changes. Dangling
+indices mean different terms before and after the move can have
+different *meanings*; closed children eliminate that risk.
+
+The kernel's arena tracks `bound_depth` and `has_free` per term in
+O(1) (see arena §2.2), so the closedness check is one comparison.
+Rewriting a subterm under a binder is still possible — but the
+kernel walks the binder *with* its body as a unit, and the body is
+checked closed *relative to the new binder structure* before
+substitution fires.
 
 ### Order of application
 
@@ -808,9 +876,9 @@ loop with itself. It's available as a manual rule, §11.)
 | Rule | Source |
 |---|---|
 | `Comb (Id α) x → x` | §8.6 |
-| `Comb (Constant a β) x → a` | §8.6 |
 | `Comb (Comp f g) x → Comb f (Comb g x)` | §8.6 |
 | `Iter (NatInline 0) f → Id (dom(f))` | §8.6 |
+| `Ne a b → Not (Eq a b)` | §8.5 (`ne_def` unfolded) |
 
 The `succ` cases of `iter_succ_outer`/`iter_succ_inner` are *not*
 reductions — they'd unfold indefinitely on a symbolic `n`. Manual
@@ -833,6 +901,10 @@ user invocation: `kernel.try_rewrite_manual(rule_id, t)`. They are
 not required to be terminating or confluent — that's the user's
 responsibility to manage.
 
+Manual rules share §10's **locally-closed precondition**: `t` and
+every metavariable's substitution must have `bound_depth = 0` for
+the rule to fire. Open-term rewrites are rejected.
+
 Manual rules are how the user unfolds recursive definitions one
 layer at a time, applies canonicalisations the reduce engine
 won't auto-apply, and accesses the equational consequences of
@@ -852,8 +924,13 @@ Iter(succ(?n), ?f) → Comp (Iter(?n, ?f)) ?f    ;; inner
 
 ;; canonicalisations
 ite_negate:    Comb (Ite (Not(?c)) ?a) ?b → Comb (Ite ?c ?b) ?a
-ite_true_K:    Ite(True, ?a)  → Constant(?a, ?β)   ;; pointless form
 ite_false_id:  Ite(False, ?a) → Id(type_of(?a))    ;; pointless form
+
+;; quantifier / inequality unfolding (manual because we usually
+;; prefer the primop form — the unfolding is for when you have to
+;; reach for raw Eq/Not/Abs reasoning)
+forall_unfold: Forall(?P) → Eq ?P (Abs(dom(?P), True))
+exists_unfold: Exists(?P) → Ne ?P (Abs(dom(?P), False))
 
 ;; cast equations (when reduction doesn't fire)
 T_of_nat(nat_of_T(?x)) → ?x        ;; via cast round-trip

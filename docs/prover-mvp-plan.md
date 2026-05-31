@@ -52,20 +52,22 @@ acceptance tests before merge.
 - Separate ID namespaces (`BuiltinId` baked into the enum;
   `TypeName`, `ConstName`, `VarName`, `ConceptId` each in its own
   table).
-- Immutable `TypeDef` and `TermDef` enums with builtin variants
-  (`Bool`, `Bits`, `Fun`, `Eq`, `True`, `False`, `BitsLit`,
-  `BitsHashed`). User constants and type constructors are the only
-  paths through the user-side tables.
-- Arena-aware canonical IDs: each `UfEntry` holds
-  `canonical: (ArenaId, TermId)` and a `closed: bool` flag.
+- `TypeDef` and `TermDef` enums with builtin variants (`Bool`,
+  `Bits`, `Fun`, `Eq`, `True`, `False`, `Bits(Inline | Indirect)`).
+  Long bit-string literals go through an arena-side `bitvectors`
+  table indexed by `BitsId`. No content-addressing knowledge in the
+  kernel — `Indirect` is just an internal arena index, not a hash.
+- Arena-aware canonical IDs: `TermUfEntry { canonical: (ArenaId,
+  TermId), closed }` and `TypeUfEntry { canonical: (ArenaId, TypeId)
+  }` (see Phase 3 for the type-side equality predicates; Phase 1
+  just stands up the storage).
 - `TermRef = Local(TermId) | Foreign(ArenaId, TermId)` for cross-arena
-  child links inside `Comb`/`Abs`.
-- Frozen-vs-mutable distinction; `Arc<Arena>` for frozen.
-- Append-only immutable structural side; UF state mutates separately.
-
-No `definition: TermDef` field on UF entries — the structural form is
-fixed at insertion. "Rewriting" no longer exists as a primitive; it's
-implicit in the UF.
+  child links inside `Comb`/`Abs`. Same shape for `TypeRef`.
+- Frozen-vs-mutable distinction; `Arc<Arena>` for frozen arenas.
+- Structural tables append-only at the user level. The kernel
+  reserves `rewrite(t, new_def)` as a privileged primitive (Phase 3
+  exposes it once the equality predicates exist to validate the
+  replacement).
 
 **Deliverables.**
 - `covalence-hol/src/arena.rs` rewritten.
@@ -102,67 +104,87 @@ shape.
   fails; congruence unions on open terms via
   `union_if_congruent_step` succeed.
 
-### Phase 3 — Equality predicates and `union_if_congruent_step`
+### Phase 3 — Equality predicates, congruence step, rewrite
 
 **Scope.** Add the equality-at-level family and the explicit
-congruence step.
+congruence step, *for both terms and types*. Expose the `rewrite`
+primitive.
 
 - `eq_at_level(a, b, k)` for `k ∈ {0, 1, …, ∞}`, transparently
-  following foreign-arena pointers.
+  following foreign-arena pointers. Same shape for
+  `type_eq_at_level`.
 - `union_if_congruent_step(a, b)` — if `a` and `b` decompose to the
   same shape and corresponding children are `eq_at_level(_, _, 0)`,
-  union them; otherwise return failure (no error).
-- Remove any leftover "automatic congruence" code from Phase 1's
-  union path.
+  union them; otherwise return failure (no error). Same shape for
+  the type-level analog.
+- `rewrite(t, new_def)` — replace `terms[t].definition` with
+  `new_def`, requiring that the kernel can verify `t = new_def` via
+  the UF (or via a supplied Thm). Mutates the structural form in
+  place; the canonical pointer stays consistent.
+- Remove any leftover "automatic congruence" code from Phase 1.
 
 **Deliverables.**
-- `covalence-hol/src/uf.rs` (or wherever these live) with the new
-  builtins.
-- Rewrite of `MK_COMB` to be a thin wrapper around
+- `covalence-hol/src/uf.rs` (or wherever) with the equality and
+  congruence-step builtins.
+- The `rewrite` primitive with its validity check.
+- `MK_COMB` rewritten as a thin wrapper around
   `union_if_congruent_step`.
 
 **Acceptance.**
-- The level-0 / level-1 / level-∞ semantics each have direct tests.
+- The level-0 / level-1 / level-∞ semantics each have direct tests
+  for terms and for types.
 - A failing congruence-step test (children not yet equal) returns
   failure cleanly without polluting the UF.
-- An accepted congruence-step test produces a new union and updates
-  level-0 equality lookups accordingly.
+- An accepted congruence-step test updates level-0 equality
+  lookups.
+- `rewrite` accepts a valid replacement and reflects the new form
+  in downstream traversals; rejects an unjustified replacement.
 
-### Phase 4 — Prop / Thm / Context
+### Phase 4 — Prop / Thm / Context (with Context API)
 
 **Scope.** Introduce the data layer above the arena.
 
-- `Prop = { arena, assumptions: Vec<Arc<Prop>> }`.
+- `Prop = { arena, context: Arc<Context>, concl: TermId }`. The
+  assumption list lives inside the Context, not on the Prop directly
+  — this encapsulates the assumption API.
 - `Thm` as a compile-time-tagged Prop (newtype or phantom — pick at
-  implementation time; lean toward phantom for §8 phantom-pair
-  with `Prop<Untrusted>`).
+  implementation time; lean phantom for the §8 pair with
+  `Prop<Untrusted>`).
 - `Context = { assumptions: Vec<Arc<Prop>>, parent: Option<Arc<Context>> }`.
-- `Thm` carries `Arc<Context>`.
+- `Context` inspection API: `len`, `assumption(i)`,
+  `assumption_context(i)`, `find_equality(i, lhs, rhs)`, `parent()`.
+  The kernel never searches the Context implicitly; tactics walk it
+  explicitly.
 - Two new inference rules: `add_assumption` and `not_from_false`.
 - Kernel's old `axioms: Vec<ThmId>` removed; "axioms" are Props in
   the root Context.
 
 **Deliverables.**
-- `covalence-hol/src/prop.rs`, `thm.rs`, `context.rs`.
+- `covalence-hol/src/{prop,thm,context}.rs`.
 - Existing rules ported.
 
 **Acceptance.**
 - Push a context, prove a Thm under it, pop the context — the Thm's
   Context remains valid via Arc.
 - `add_assumption` and `not_from_false` round-trip tests.
+- `Context::find_equality` returns matches for unioned-in-an-
+  assumption equalities; returns no-match for unrelated terms.
 - Nonlinear Thm: clone a Thm, derive two distinct consequences,
   combine.
 
 ### Phase 5 — Anonymous concepts API (Rust-only)
 
-**Scope.** Add the anonymous-concept system.
+**Scope.** Add the anonymous-concept system. Constants only; the
+**conceptType type hierarchy** (architecture §6.4) is *not* in MVP —
+concepts here are constant families, no opaque types yet.
 
 - `Kernel::declare_anonymous_concept(kind) -> ConceptHandle`.
 - `ConceptHandle::add_theory_axiom(prop)` — kernel validates
   conclusion shape `… ⇒ c[α](…) = true`.
 - On accepted axiom: kernel `union`s the conclusion's
   `c[α](t₁,…,tₙ)` with `True` in the UF.
-- No `enter()`, no `attest_all()`, no named/root concept yet.
+- No `enter()`, no `attest_all()`, no named/root concept, no
+  `conceptType` declarations.
 
 **Deliverables.**
 - `covalence-hol/src/concept.rs`.
@@ -174,6 +196,28 @@ congruence step.
 - Owner-axiom shape check rejects `c(x) = false`, accepts the legal
   shapes, accepts axioms with arbitrary HOL premises whose conclusion
   matches.
+
+### Phase 5b — Prop-as-bool and Context-as-bool imports
+
+**Scope.** Add the two meta-level import operations from architecture
+§2.5:
+
+- `import_prop_as_bool(p) -> TermId` — produces a bool term in the
+  current arena representing "Prop `p` is true."
+- `import_context_as_bool(ctx) -> TermId` — produces a bool term
+  representing "every assumption in `ctx` holds."
+
+These are kernel primitives because they need to weave foreign-arena
+references correctly. Useful for stating cross-context relations
+(e.g. `isValidSignature(key, sig, import_prop_as_bool(p))`) without
+having to materialise the Prop's contents at the meta level.
+
+**Deliverables.**
+- `Kernel::import_prop_as_bool`, `Kernel::import_context_as_bool`.
+
+**Acceptance.**
+- Round-trip: build a Prop, import its bool form into a fresh arena,
+  prove a meta-statement about it, reduce back to the original.
 
 ### Phase 6 — Serialisation (Prop only, no concepts)
 
@@ -260,12 +304,20 @@ once MVP is demonstrated.
   semantics. The MVP user supplies the trust assumption directly.
 - **Signed import.** `isValidSignature` as a concept, cross-process
   Thm import.
-- **Content-addressed type definitions and function values.** The
-  subtype-plus-spec pattern from architecture §7.4.
+- **Concept-owned type hierarchy (`conceptType`).** Architecture
+  §6.4 — concepts get the constant-family API in MVP, not the
+  type-hierarchy API. Type isomorphism axioms enter after MVP.
+- **Content-addressed types and function values.** Architecture
+  §§7.4/7.5 — uses the `conceptType` mechanism, so this lands
+  together with it.
 - **Definition splitting** (the "import the declaration without the
   body" pattern from architecture §7.3) — supported architecturally
   by the foreign-import machinery, but no first-class API or library
   utilities for it yet.
+- **Type-level `union_if_congruent_step` exposure as a user-facing
+  rule.** The type UF infrastructure is in place from Phase 3; we'll
+  let tactics use it from a library wrapper once we have a concrete
+  need.
 - **Goal API.** Untrusted "partially proved Prop" type with a tactic
   language.
 - **Sub-capabilities (`enter()`).** Owner hands out narrower
@@ -285,7 +337,7 @@ once MVP is demonstrated.
 
 | Crate | Phase touch | Nature of change |
 |---|---|---|
-| `covalence-hol` | 1, 2, 3, 4, 5, 6 | Heavy: arena rewrite with namespaces and builtins, locally-nameless terms, level-k equality, Prop/Thm/Context, concepts, serialisation. |
+| `covalence-hol` | 1, 2, 3, 4, 5, 5b, 6 | Heavy: arena rewrite with namespaces and builtins, locally-nameless terms, level-k equality (terms+types), rewrite primitive, Prop/Thm/Context with inspection API, concepts, prop/context-as-bool imports, serialisation. |
 | `covalence-opentheory` | 1, 2, 4 | Port over each kernel-API change. Generic-over-`HolLightKernel` shape preserved. |
 | `covalence-kernel` | 1, 2, 4, 7 | HOL bridge rewrite each time the trait changes; new `cov:hol/observe` in phase 7. |
 | `covalence-repl` | 8 | New Forsp primitives. |
@@ -303,12 +355,12 @@ These don't block starting on Phase 1, but should be resolved before
 the phase they're listed under.
 
 - **Phase 1.** `ArenaId` allocation strategy: monotonic u32 from a
-  kernel-global counter, vs. the arena's content hash (for frozen
-  arenas only). Likely monotonic for live arenas, hash for serialised
-  ones — but the canonical-tuple shape is the same either way.
-- **Phase 1.** `BitsLit` size cutoff before falling back to
-  `BitsHashed`. Pick when implementing — 256 bits is a reasonable
-  default.
+  kernel-global counter. Content hashes of frozen arenas live
+  *outside* the kernel (in the runtime around it), so kernel-side
+  IDs stay opaque.
+- **Phase 1.** `Bits::Inline` size cutoff before promoting to
+  `Bits::Indirect(BitsId)`. Pick when implementing — 256 bits is a
+  reasonable default.
 - **Phase 2.** Free-variable naming: `VarName` interned strings vs.
   opaque IDs. Probably interned strings for printing.
 - **Phase 3.** Should `eq_at_level(_, _, ∞)` be a real primitive or

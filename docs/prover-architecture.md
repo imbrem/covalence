@@ -38,8 +38,9 @@ The kernel's role is to:
 
 The kernel has **no built-in notion of**: content addressing, hashing,
 signatures, WASM, oracles, axioms (the user's "axioms" are just assumptions
-in the root [Context](#26-context-stack)), tactics, proof terms, or
-automatic equality reasoning beyond what the inference rules do explicitly.
+in the root [Context](#26-context)), tactics, proof terms, automatic
+equality reasoning beyond what the inference rules do explicitly, or
+automatic search/lookup of facts beyond explicit API calls.
 
 ---
 
@@ -63,80 +64,120 @@ separate maps in the relevant tables; a `ConstName` and a `VarName` with
 the same string content are distinct.
 
 Inside the arena, builtins don't go through the name tables at all —
-they're TermDef/TypeDef variants directly (§3.2). This makes the most
-common terms (equality, true/false, bits literals, function types)
-allocation-cheap and gives the kernel a precise list of what it admits
-without consulting any table.
+they're TermDef/TypeDef variants directly (§3.2).
 
 ### 2.2 Arena
 
-An **Arena** is an immutable, append-only pool of types and terms, plus
-*mutable* union-find state stored alongside.
+An **Arena** is a pool of types, terms, bitvectors, and union-find
+state. Its structural tables (types, terms, bitvectors) are append-only
+at the user level; the kernel may **mutate a term's structural form in
+place to replace it with a provably-equal one** (see §4.4 "Rewrite").
+Union-find state is mutable throughout.
 
 ```
 Arena {
-  id: ArenaId,                    // kernel-assigned, unique
-  types: Vec<TypeDef>,            // immutable, indexed by TypeId
-  terms: Vec<TermDef>,            // immutable, indexed by TermId
-  uf: Vec<UfEntry>,               // one per term, mutable
-  imports: Vec<Arc<Arena>>,       // frozen arenas this one references
+  id: ArenaId,                       // kernel-assigned, unique
+  types: Vec<TypeDef>,               // indexed by TypeId, append-only
+  terms: Vec<TermDef>,               // indexed by TermId; mutable via kernel rewrite
+  bitvectors: Vec<Bits>,             // side table for bit strings too large to inline
+  uf_terms: Vec<TermUfEntry>,        // one per term, mutable
+  uf_types: Vec<TypeUfEntry>,        // one per type, mutable (see §4.6)
+  imports: Vec<Arc<Arena>>,          // frozen arenas this one references
   // ...
 }
 
-UfEntry {
-  canonical: (ArenaId, TermId),   // arena-aware canonical pointer
-  closed: bool,                   // no Free vars or dangling Bound reachable
+TermUfEntry {
+  canonical: (ArenaId, TermId),      // arena-aware canonical pointer
+  closed: bool,                      // no Free vars or dangling Bound reachable
+}
+
+TypeUfEntry {
+  canonical: (ArenaId, TypeId),      // arena-aware canonical pointer
 }
 ```
 
+The type UF parallels the term UF. The kernel provides **no rule to
+introduce arbitrary type unions** — there's no analog of `union(a, b)`
+that takes a "proof" of `a = b` at the type level, because we
+deliberately don't have a type-level equality predicate in the logic.
+What the type UF *does* support is **caching derived type equalities
+via congruence** (same shape as the term side: structural decomp,
+foreign-import propagation, level-k equality predicates). The reason
+to maintain it is that types imported across the diamond import case
+need the same arena-aware canonical treatment as terms, and downstream
+tooling sometimes wants to ask "are these two types the same?"
+without re-walking the structural form each time.
+
+For introducing genuine isomorphisms between types — the
+content-addressed-types use case — the user declares an opaque type
+and an asserted bijection axiom (§7.4); the bijection lives at the
+*term* level, so the type UF doesn't get unsoundly populated.
+
 Key properties:
 
-- **TermDef and TypeDef are immutable** once allocated. The arena is
-  append-only at the structural level. Equalities live entirely in the
-  UF state.
-- **Canonical IDs are arena-aware tuples `(ArenaId, TermId)`.** A
-  `TermId` alone is *not* a canonical name across arenas — see §4 for
-  why.
-- **Imports** are `Arc`'d frozen arenas this arena may reference (foreign
-  imports). Terms can reach across via `Comb`/`Abs` children pointing at
-  imported terms; equalities cannot, except by manual user-driven
-  unions inside this arena.
+- **Structural tables are append-only from the user's view.** Terms
+  and types are added; user-level code never sees a slot removed.
+- **The kernel may mutate `terms[id]` to an equal `TermDef`.** This is
+  the [rewrite primitive](#44-rewrite); it's not the user's privilege
+  but the kernel's, and only along an existing UF equivalence.
+- **Canonical IDs are arena-aware tuples `(ArenaId, TermId)`** and
+  `(ArenaId, TypeId)`. A bare ID is *not* a canonical name across
+  arenas — see §4 for why.
+- **Imports** are `Arc`'d frozen arenas this arena may reference. Terms
+  can reach across via `Comb`/`Abs` children pointing at imported
+  terms; equalities cannot, except by manual user-driven unions inside
+  this arena.
 - **Closed flag** is computed once at term insertion. Cheaper than
   walking the term every time we need to know.
+- **Bitvector side table.** Short bit-string literals are stored
+  inline inside `TermDef` (see §3.2); long ones live in `bitvectors`
+  and the term holds an index. This is purely an arena representation
+  choice — it isn't visible to the logic, and it has no relation to
+  hashes or content addressing.
 
 #### Foreign imports
 
-Arenas can **freeze**, becoming `Arc<Arena>` and read-only. Other arenas
-hold these as `Arc`'d entries in `imports`. To reference a term in a
-frozen arena, the local arena either:
+Arenas can **freeze**, becoming `Arc<Arena>` and read-only. Other
+arenas hold these as `Arc`'d entries in `imports`. To reference a term
+in a frozen arena, the local arena either:
 
-- Allocates a `Comb`/`Abs` whose child is a `Foreign(arena_id, term_id)`
-  handle (see TermDef in §3.2), or
-- Re-allocates the term structurally in the local arena, importing only
-  the part it needs.
+- Allocates a `Comb`/`Abs` whose child is a `Foreign(arena_id,
+  term_id)` handle (see TermDef in §3.2), or
+- Re-allocates the term structurally in the local arena, importing
+  only the part it needs.
 
 Unfreezing clones the arena into a fresh mutable one with the same
 indices.
 
 #### Fresh variables
 
-Both arenas and theorems can mint fresh free-variable names that are
-guaranteed not to clash with anything in the local arena or its
-imports. This is the substitute for ad-hoc gensyms.
+Both arenas and theorems can mint fresh free-variable names guaranteed
+not to clash with anything in the local arena or its imports. This is
+the substitute for ad-hoc gensyms.
 
 ### 2.3 Prop
 
-A **Prop** is a `(arena, assumptions)` pair, where:
+A **Prop** is `(arena, context)`:
 
-- `arena` is the Arena above.
-- `assumptions: Vec<Arc<Prop>>` lists other Props this one depends on.
+```
+Prop {
+  arena: Arena,         // owned
+  context: Arc<Context>, // the assumptions and their lookup API
+  concl: TermId,        // distinguished conclusion in `arena`
+}
+```
+
+Crucially, the Prop's assumptions live **inside the Context** — not
+directly on the Prop. This encapsulates the assumption API: anything
+the user wants to do with assumptions (look them up, find equalities
+inside them, check their own assumptions) goes through Context's
+methods rather than directly touching a `Vec<Arc<Prop>>`.
 
 A Prop is **not** by itself a theorem — it's just a structured
-proposition. The "conclusion" is whatever the arena's distinguished
-`concl: TermId` points at, and may be any HOL term (typically of type
-`bool`).
+proposition with a context. The conclusion is whatever its `concl: TermId`
+points at, and may be any HOL term (typically of type `bool`).
 
-Prop is `Clone` (cheap via `Arc` sharing of assumptions; the owning
+Prop is `Clone` (cheap via `Arc` sharing of the Context; the owning
 arena is per-Prop).
 
 ### 2.4 Thm
@@ -157,24 +198,80 @@ rules) or consumed and mutated (rules that grow the arena take
 `Goal` — a runtime "partially-proved Prop" — is **not** part of the
 trusted kernel. Goals live in an untrusted convenience library on top.
 
-### 2.5 Context Stack
+### 2.5 Context
 
-A **Context** is `{ assumptions: Vec<Arc<Prop>>, parent: Option<Arc<Context>> }`.
+A **Context** is the kernel's encapsulated assumption store, plus the
+API for inspecting it. Structurally:
+
+```
+Context {
+  assumptions: Vec<Arc<Prop>>,
+  parent: Option<Arc<Context>>,
+}
+```
+
 It's a recursive linked list of assumption layers; pushing a context is
-cheap. Looking up "is `p` an active assumption?" walks the chain.
+cheap. The root Context contains the user's chosen trust base — anything
+the kernel would have called an "axiom" in classical HOL is just a Prop
+in the root Context here. The kernel itself adds nothing to any Context.
 
-Thms hold `Arc<Context>`. The **root** Context contains the user's
-chosen trust base — anything the kernel would have called an "axiom"
-in classical HOL is just a Prop in the root Context here. The kernel
-itself adds nothing to any Context.
+What makes Context more than a `Vec<Arc<Prop>>` is its **inspection
+API** — paralleling the no-auto-congruence rule. Just as the kernel
+won't search for equalities across UF classes for you, it won't search
+the Context for relevant facts either. You walk it.
+
+Sketch of the inspection API:
+
+| Method | Returns |
+|---|---|
+| `len()` | number of assumptions in the current layer |
+| `assumption(i)` | `Arc<Prop>` — the i-th assumption |
+| `assumption_context(i)` | `Arc<Context>` — the i-th assumption's *own* context |
+| `find_equality(i, lhs, rhs)` | whether assumption `i` proves `lhs = rhs` |
+| `parent()` | `Option<Arc<Context>>` for walking up the stack |
+
+The key constraint these reflect: **you can't import a fact from an
+assumption Prop until you've satisfied that Prop's own assumptions.**
+The Context API lets the user inspect what an assumption depends on
+(`assumption_context(i)`) so they can discharge those assumptions in
+their current context before importing.
+
+This makes "I want to use the equality `a = b` that this assumption
+provides" an explicit kernel call rather than an implicit search. The
+kernel doesn't search; it answers questions the user knows enough to
+ask.
+
+#### Importing a Context as a boolean term
+
+The kernel provides an operation `import_context_as_bool(ctx) -> TermId`
+that takes a Context and produces a HOL bool term in the current arena
+representing "every assumption in `ctx` holds." Concretely, if the
+context's assumptions are `[A₁, …, Aₙ]`, the resulting term is the
+conjunction (or some canonical n-ary AND) of each `Aᵢ`'s conclusion
+form.
+
+Similarly `import_prop_as_bool(p) -> TermId` produces a bool term for
+a whole Prop — i.e. "the Prop is true," materialised as `context_bool
+⇒ concl`.
+
+These two operations are how we **talk about contexts and props at the
+meta level inside HOL**. It looks strange — a prop manipulating
+references to other props — but it's exactly what lets us state things
+like "this context implies that context" or "these two props are
+extensionally equal as boolean statements" inside the kernel's own
+logic.
+
+These operations are kernel primitives because they have to weave
+foreign-arena references into the target arena correctly; doing so by
+hand outside the kernel is error-prone.
 
 ### 2.6 Summary
 
 | Object | Owns | References |
 |---|---|---|
-| `Arena` | immutable types/terms + mutable UF state | frozen `Arc<Arena>`s as imports |
-| `Prop` | one `Arena` | `Vec<Arc<Prop>>` assumptions |
-| `Thm` | a `Prop` that the kernel has validated | `Arc<Context>` |
+| `Arena` | types/terms/bitvectors + UF state | frozen `Arc<Arena>`s as imports |
+| `Prop` | one `Arena`, a `concl: TermId` | `Arc<Context>` |
+| `Thm` | a `Prop` that the kernel has validated | (same as Prop) |
 | `Context` | `Vec<Arc<Prop>>` | `Option<Arc<Context>>` parent |
 
 ---
@@ -189,32 +286,35 @@ variables**:
 ```rust
 TermDef =
   | Bound(u32)                       // de Bruijn index
-  | Free(VarNameId, TypeId)          // named free variable, typed
-  | Const(ConstName, TypeId)         // user-declared constant at an instance
+  | Free(VarName, TypeRef)           // named free variable, typed
+  | Const(ConstName, TypeRef)        // user-declared constant at an instance
   | Comb(TermRef, TermRef)           // application
-  | Abs(VarNameId, TypeId, TermRef)  // binder; VarNameId is a hint only
+  | Abs(VarName, TypeRef, TermRef)   // binder; VarName is a hint only
   // -- builtins (see §3.2) --
-  | Eq(TermRef, TermRef)             // primitive equality
   | True                             // primitive
   | False                            // primitive
-  | BitsLit(SmallBits)               // short bits literal, inline
-  | BitsHashed(O256)                 // long bits, by content hash
+  | Eq(TermRef, TermRef)             // primitive equality
+  | Bits(BitsValue)                  // primitive bit string
+
+BitsValue =
+  | Inline([u8; N])                  // short literal stored in-line
+  | Indirect(BitsId)                 // index into arena.bitvectors
 
 TermRef = Local(TermId) | Foreign(ArenaId, TermId)
+TypeRef = Local(TypeId) | Foreign(ArenaId, TypeId)
 ```
 
 Bound-var substitution doesn't need any alpha-renaming dance; structural
 equality of `TermDef`s already gives α-equivalence.
 
-A `TermRef` is the type used for child links inside `Comb`, `Abs`, etc.
-`Local(TermId)` points to this arena's `terms[id]`; `Foreign(a, id)`
-points to `imports.find(a).terms[id]`. The two are interchangeable
-operationally; equality checks transparently follow either.
+A `TermRef`/`TypeRef` is the type used for child links. `Local(_)`
+points to this arena's table; `Foreign(a, _)` points to
+`imports.find(a)`'s. Equality checks transparently follow either.
 
 ### 3.2 Builtins
 
-Builtins are **kernel-supplied** TermDef/TypeDef variants — not entries
-in the user namespace.
+Builtins are kernel-supplied TermDef/TypeDef variants — not entries in
+user namespaces.
 
 **TypeDef builtins:**
 
@@ -226,39 +326,36 @@ in the user namespace.
 | `TVar(TypeVarId)` | polymorphic type variable |
 | `Tyapp(TypeName, Vec<TypeRef>)` | user-declared type constructor instance |
 
-(TypeRef is the type analog of TermRef.)
-
 **TermDef builtins:**
 
 | Variant | What it represents |
 |---|---|
-| `Eq(a, b)` | `a = b` (polymorphic) |
 | `True`, `False` | the booleans |
-| `BitsLit(bits)` | bit string literal stored inline (≲ a few hundred bits) |
-| `BitsHashed(O256)` | bit string stored by its content hash; the bytes live elsewhere |
+| `Eq(a, b)` | `a = b` (polymorphic) |
+| `Bits(BitsValue)` | a bit string |
 
-`Eq`, `True`, `False` are baked in because (a) `=` is the only primitive
-constant in HOL Light, and we keep that minimalism, (b) `True`/`False`
-are constants of `Bool` that the kernel constructs natively — defining
-them via Hilbert choice as HOL Light does would be a circular setup
-problem when `Eq` is also a variant.
+We keep `True`/`False` baked in even though HOL Light defines them —
+the goal is to simplify the *code*, not the typing rules. A baked-in
+`True` lets the bootstrap not have to thread Hilbert choice into the
+very first definitions.
 
-`BitsLit` vs `BitsHashed` is a **transparent representation
-optimization**. Logically both denote a `bits` value; the kernel auto-
-chooses based on length. `BitsHashed` lets us treat large blobs without
-loading them — the bytes are fetched from outside the kernel when
-actually needed (e.g. printing, equality up to the contents). Two
-`BitsHashed(h)` with the same hash compare equal at level 1 (§4)
-without loading anything. `BitsHashed` is also the only place the
-kernel knowingly produces an `O256` — and even here, it's just a
-referent, not a trust-bearing identity. The hash function itself
-remains outside the kernel; the runtime decides how `BitsHashed(h)`
-gets materialised.
+`Bits` has two representations chosen at insertion time, both producing
+the same logical value:
+
+- **`Inline(bytes)`** — the bit string is stored directly inside the
+  TermDef. Cheap, no extra indirection. Used for short literals (cut-off
+  is an implementation knob; e.g. 256 bits).
+- **`Indirect(BitsId)`** — the bit string lives in the arena's
+  `bitvectors` table at `BitsId`. Used for longer literals so we don't
+  inflate every TermDef-sized object.
+
+Both representations are kernel-internal and equivalent at every level
+of the equality predicates (§4). The kernel never talks to a content
+store about them.
 
 User-defined constants (`Const(name, ty)`) and user-defined type
-constructors (`Tyapp(name, args)`) are the only paths from the user-
-side namespaces (§2.1) into TermDef/TypeDef. Everything else is either
-a builtin variant or a structural form (`Comb`/`Abs`/`Bound`/`Free`).
+constructors (`Tyapp(name, args)`) are the only paths from the
+user-side namespaces (§2.1) into TermDef/TypeDef.
 
 ### 3.3 Closed vs open terms
 
@@ -271,37 +368,34 @@ restriction is on **non-congruence unions** (§4):
   has to wrap them in a binder first to do nontrivial equality
   reasoning.
 
-This is the kernel's way of refusing to commit to a "free variable
-theory" (à la Isabelle/Pure's `vars` machinery). Open terms are kept
-around for structural purposes (so you can build `Abs(_, _, body)` over
-them); nontrivial equalities between them must be wrapped inside a
-binder first.
-
-The closed flag is stored on each `UfEntry` and set once at insertion
-(constant time, since the constructor knows the children).
+The closed flag is stored on each `TermUfEntry` and set once at
+insertion.
 
 ### 3.4 Library types
 
 Standard-library types (`blob`, `i32`, `i64`, `nat`, `nat list`, …) are
 defined on top of `bits` via the usual HOL type-defining-theorem
-mechanism (see §7.4 for the content-addressed flavour). There is no
-special-case kernel knowledge of them.
+mechanism. There is no special-case kernel knowledge of them.
 
 ---
 
-## 4. Union-Find: Equality without Closure
+## 4. Union-Find: Equality without Closure or Search
 
 The UF is the equality engine, but it does **not perform automatic
 congruence closure**. Every union is explicit. The kernel's job is to
 record and look up equalities the user has proved; *strategy* for how
 to propagate congruences lives in untrusted code.
 
+The same "no automatic work" discipline applies to assumption lookup
+(§2.5 Context inspection API) — the kernel doesn't search for relevant
+facts on the user's behalf.
+
 ### 4.1 Canonical IDs are arena-tagged
 
-Each `UfEntry` stores `canonical: (ArenaId, TermId)`. To check
-"are `a` and `b` known equal in this arena's view?", you walk both
-canonical chains and compare the final tuples — including the arena
-tag.
+Each `TermUfEntry` stores `canonical: (ArenaId, TermId)`. Same for
+`TypeUfEntry`. To check "are `a` and `b` known equal in this arena's
+view?", you walk both canonical chains and compare the final tuples —
+including the arena tag.
 
 This matters for the **diamond import** case:
 
@@ -321,8 +415,8 @@ only ever be compared **structurally** in `A`, since `A` is not in a
 position to assume any equality not explicitly proved.
 
 This is what makes "(arena, index)" the correct canonical identity.
-Using a bare `TermId` would silently collapse the diamond and unsound
-unions could leak across.
+Using a bare ID would silently collapse the diamond and unsound unions
+could leak across.
 
 ### 4.2 Equality predicates with explicit congruence levels
 
@@ -336,11 +430,12 @@ how much congruence reasoning to apply:
   corresponding sub-children are `eq_at_level(_, _, k-1)`.
 - **`eq_at_level(a, b, ∞)`** — exhaustive structural recursion.
 
-This subsumes both pure UF equality (level 0) and full structural
-α-equivalence (level ∞), with intermediate levels useful as bounded
-"how much congruence to try" budgets in user-written tactics.
-
 The kernel doesn't pick a level; callers do.
+
+The analogous family exists for types (`type_eq_at_level`) once the
+type UF infrastructure is in place. At MVP these predicates exist but
+only ever return non-trivial answers from structural identity, since
+the kernel provides no rules to *introduce* type unions yet (§4.6).
 
 ### 4.3 Union primitives
 
@@ -355,7 +450,7 @@ Two writes:
   returns failure.
 
 `union_if_congruent_step` is the kernel's analog of HOL Light's
-`MK_COMB` rule: it lets the user "ratchet up" one level of congruence
+`MK_COMB`: it lets the user "ratchet up" one level of congruence
 explicitly, given that the children are already known equal.
 
 **No congruence closure** is automatic. There is no use-list maintained
@@ -364,13 +459,44 @@ children for the purposes of fanout. If you union `a` with `b` and
 later want `f(a) = f(b)`, you call `union_if_congruent_step(f(a),
 f(b))` explicitly.
 
-### 4.4 Why no closure?
+### 4.4 Rewrite
+
+In addition to UF unions, the kernel exposes a **rewrite** primitive
+that mutates a term's structural form in place:
+
+- **`rewrite(t, new_def)`** — caller has either a proof of, or a UF
+  witness for, `t = (the term defined by new_def)`. The kernel
+  replaces `terms[t].definition` with `new_def`. After rewrite, any
+  other term holding a child `TermRef::Local(t)` will see the new
+  structural form.
+
+Why have this in addition to `union`? Pure UF is enough for soundness
+but not always for efficiency. If `Comb(f, x)` is known to equal
+`body`, every traversal of the larger term will still hit `Comb(f,
+x)` structurally; `union` only redirects the canonical, not the
+shape. Rewriting `Comb(f, x)` to `body` outright makes subsequent
+structural operations skip the application.
+
+Soundness is preserved because:
+
+- The kernel only accepts a rewrite when the new definition is in the
+  same UF class as the old one (or comes with a Thm proving the
+  equality).
+- The UF state is updated accordingly so canonical lookups remain
+  consistent.
+
+Rewrite is a kernel primitive but expected to be used sparingly — most
+proof code should just `union`. Rewrite is for hot paths and for
+explicit canonicalisation by tactics.
+
+### 4.5 Why no closure or search?
 
 Three reasons:
 
-1. **Performance is the user's call.** Congruence closure is sometimes
-   exactly what you want and sometimes ruinously expensive. Putting it
-   in the kernel commits everyone to one policy.
+1. **Performance is the user's call.** Congruence closure and fact
+   search are sometimes exactly what you want and sometimes ruinously
+   expensive. Putting them in the kernel commits everyone to one
+   policy.
 2. **The trust surface is smaller.** No use-lists, no propagation
    queues, no invariants for "if X changes the canonical of Y, the
    use-list must be visited." `union(a, b)` is a single write.
@@ -380,7 +506,39 @@ Three reasons:
    explicitly does so*.
 
 Library code on top of the kernel can implement closure strategies
-(e.g. a `cogit-style` saturating loop) as an untrusted utility.
+and fact-search strategies as untrusted utilities.
+
+### 4.6 Type union-find as derived-equality cache
+
+The arena's `uf_types` mirrors `uf_terms` structurally. The kernel
+exposes `type_eq_at_level(a, b, k)` predicates analogous to the term
+side.
+
+It is **purely a cache for derived equalities** that fall out of
+structural reasoning:
+
+- **Foreign-import propagation.** Importing the *same* type from a
+  shared ancestor arena makes both copies share a canonical
+  (`(ArenaId, TypeId)` of the source).
+- **Congruence steps.** If `Tyapp(f, [a₁, …, aₙ])` and `Tyapp(f, [b₁,
+  …, bₙ])` have all `aᵢ` known canonically equal, the kernel can
+  union the two applications via the type analog of
+  `union_if_congruent_step`.
+
+There is **no kernel rule** to introduce arbitrary type unions — no
+analog of `union(a, b)` taking a "proof" of `a = b` at the type
+level, because we deliberately do not have a type-equality proposition
+in the logic. Type equalities at this level are only ever structural
+or congruential, never propositional. This avoids the typing-rule
+complications of user-driven type isomorphisms (a term well-typed
+under one set of type equalities is generally ill-typed under
+another).
+
+Isomorphisms between *types* — what you actually want for
+content-addressed types and for importing object-logic theorems —
+happen at the **term level**, via bijection axioms on opaque types
+declared through the concept system (§6.4 and §7.4). The type UF
+stays purely structural.
 
 ---
 
@@ -405,11 +563,10 @@ All ten HOL Light rules, adapted to mutate an owned `Thm`:
 | INST | `&mut Thm` |
 | INST_TYPE | `&mut Thm` |
 
-Each rule grows the arena (immutably appending new terms/types) and
-calls `union` on the UF when it produces a new equality. Where a rule
-needs to combine two theorems' arenas, it does so via the foreign-import
-mechanism: the smaller of the two arenas is frozen and imported into the
-larger one.
+Each rule grows the arena (appending new terms/types) and calls
+`union` on the UF when it produces a new equality. Where a rule needs
+to combine two theorems' arenas, it does so via the foreign-import
+mechanism.
 
 ### 5.2 Assumption-manipulation rules
 
@@ -418,21 +575,15 @@ The two non-HOL inferences this kernel adds:
 - **add-assumption** — produce a Thm whose conclusion is conditional
   on a new assumption.
 - **assumption-eliminates-false** — if an assumption `A` (a Prop) can
-  derive `false = true` via the kernel's rules, then `not A` becomes a
-  `Thm`.
-
-These are the assumption-stack counterparts of HOL's discharge/eliminate
-patterns.
+  derive `false = true` via the kernel's rules, then `not A` becomes
+  a `Thm`.
 
 ### 5.3 Definitions
 
 Standard `new_basic_definition` and `new_basic_type_definition` from
-HOL Light, with two twists:
-
-- The resulting Thm goes into the *Context*, not into a kernel-global
-  axiom list. The kernel keeps no axiom list at all.
-- Type definitions can be content-addressed (§7.4 and §8) so that the
-  same definition imported from two places is the same constant.
+HOL Light, with the twist that the resulting Thm goes into the
+*Context*, not into a kernel-global axiom list. The kernel keeps no
+axiom list at all.
 
 ---
 
@@ -458,29 +609,19 @@ who may write to which sub-namespaces.
 Everyone else gets **anonymous** concepts:
 
 - `kernel.declare_anonymous_concept(kind) -> ConceptHandle` — returns a
-  capability for a fresh, unnamed concept. The handle is the only way
-  to identify it.
+  capability for a fresh, unnamed concept.
 - Anonymous concepts **cannot be serialised** — there's nothing to
-  name them by. Their theory is in-memory only and dies with the
-  process.
-- They're the right primitive for short-lived facts (e.g. "the WASM
-  module currently executing observed this tuple").
+  name them by.
 
 For **serialisable / cross-process** concepts, the user goes through
 the root concept's naming protocol. We start with anonymous concepts
 only; the naming protocol lands in a later phase. The expected shape:
 
-> "There is one root concept. Every other 'named' concept is just a
+> There is one root concept. Every other 'named' concept is just a
 > partial application of the root: `rootConcept(name, args)` where
-> `name` is a `bits` value (typically a content hash of the
-> sub-concept's declaration). Whoever holds the capability for a
+> `name` is a `bits` value. Whoever holds the capability for a
 > particular `name` prefix can write theory axioms within that
-> sub-namespace."
-
-This unifies "anyone can define a concept" with "the kernel decides
-who writes where": there isn't a separate namespace system — there's
-the one root concept, and naming is just type-parameter instantiation
-in the right argument slot.
+> sub-namespace.
 
 For MVP, only anonymous concepts exist. Naming is deferred.
 
@@ -496,16 +637,14 @@ The premises and `tᵢ`s are arbitrary HOL terms; premises may reference
 *other* concepts, equalities, free variables — anything the kernel can
 express.
 
-`handle.add_theory_axiom(prop)` checks the conclusion shape (the
-positive `c[α](…) = true` form, possibly under arbitrary premises) and
-accepts `prop` as a member of `c`'s theory — that is, the Prop becomes
-an assumption in the relevant Context.
+`handle.add_theory_axiom(prop)` checks the conclusion shape and
+accepts `prop` as a member of `c`'s theory.
 
-Soundness is preserved because, for *any* theory of this shape, the
+Soundness is preserved because for *any* theory of this shape, the
 trivial model `c[α] = (λx₁…xₙ. true)` satisfies every axiom. The owner
 is therefore choosing the strongest possible theory (everything is
-`true`), restricted only by the premises they attach. Users of `c` get
-exactly what the owner has declared and what they assume about it.
+`true`), restricted only by the premises they attach. Users of `c`
+get exactly what the owner has declared and what they assume about it.
 
 Notable cases:
 
@@ -514,13 +653,6 @@ Notable cases:
   premises.
 - **Universal regions** (`∀x. c[α](x) = true`) are axioms with bound
   variables in the conclusion.
-
-There is no separate side table of observations, no `attest_all`
-primitive in the trusted kernel. Painting whole regions of a concept
-*efficiently* (e.g. "for all `x : nat`, `c(x, 0) = true`") is supported
-by adding a universally-quantified theory axiom — once it's in the
-Context, the UF can resolve `c[nat](?, 0)`-shaped queries against it
-trivially.
 
 The `enter()` sub-capability (give me a handle to write only to
 `c[α, β]` for fixed `β`) is **not** part of the trusted core. It lives
@@ -536,9 +668,58 @@ Observations are structurally indistinguishable from "normal"
 equalities like `(1 + 1) = 2`. The UF doesn't track which unions came
 from concept theory.
 
+### 6.4 Concept-owned type hierarchy
+
+In addition to the constant family `c[α₁, …, αₙ]`, every concept `c`
+implicitly owns an **infinite hierarchy of opaque types**:
+
+```
+conceptType[c, s₁, …, sₙ]
+```
+
+where `s₁, …, sₙ` are bit-string labels (in practice usually short
+strings). For each label sequence, this is a fresh opaque type
+constructor in the user-side TypeName namespace, but its naming and
+ownership flow through the concept system. Only the holder of `c`'s
+ConceptHandle may declare these types and assert theory axioms about
+them.
+
+What can `c`'s owner say about a `conceptType[c, …]`? In the same
+spirit as concept theory axioms, the owner can add axioms whose
+conclusion shape is restricted in kernel-checked ways:
+
+- **Existence-of-bijection axioms.** Conclusion of the form
+  `∃ abs : A → conceptType[c, …], rep : conceptType[c, …] → A. abs ∘ rep
+  = id ∧ rep ∘ abs = id`, for any HOL type expression `A` the owner
+  chooses. This is the type-isomorphism-by-axiom mechanism — the
+  declared opaque type is asserted to be in bijection with `A`,
+  giving it the shape `A` has.
+- **Trivial existence axioms** (the singleton case): `∃ x :
+  conceptType[c, …]. true`. By itself, this just asserts the type is
+  nonempty.
+
+The kernel checks the conclusion shape (a bijection assertion against
+some user-supplied target type, or a nonemptiness assertion) and
+accepts the Prop as a member of `c`'s type theory.
+
+Soundness is preserved by the same trivial-model argument as for
+concept theory axioms in general: every consistent collection of
+"this type is in bijection with that type" axioms has a model in
+which each declared opaque type is concretely interpreted as the
+target type from its bijection (or as any singleton, if no bijection
+is given). The user is responsible for not asserting a contradictory
+pair of bijections (e.g. asserting `conceptType[c, "x"] ≅ {0}` and
+`conceptType[c, "x"] ≅ {0, 1}` — but the kernel can't actively
+prevent that without solving model-checking).
+
+This unifies "anyone can declare types" with the concept ownership
+model: type declarations are owned by concepts, not free-floating.
+For MVP only the trivial existence axiom shape is supported; the
+bijection axiom shape lands when we tackle content-addressed types.
+
 ---
 
-## 7. Definitions and Content Addressing
+## 7. Definitions and the Outside-the-Kernel Store
 
 ### 7.1 Definitions are just (arena, index)
 
@@ -555,34 +736,28 @@ both `c` and the option to unfold it on demand. If `A` doesn't need
 the body, it never has to materialise `body`'s structural form — `A`
 just references `(D, c_id)`.
 
-### 7.2 Content-addressed definitions
+### 7.2 Content addressing is entirely outside the kernel
 
-The kernel itself has no knowledge of hashing or the content store.
-But we *do* want to be able to import a definition and some facts
-about it without loading the entire defining arena. The mechanism:
+The kernel has **no knowledge** of hashing, of any content-addressable
+store, of `O256`, or of any specific naming scheme for arenas. From
+the kernel's view, foreign imports are `Arc<Arena>` values that
+arrived from somewhere — that "somewhere" is the runtime's
+responsibility.
 
-- The defining arena, once frozen, can be content-addressed
-  externally (the runtime hashes its bytes and stores it).
-- Other arenas hold the source arena as `Arc<Arena>` plus the
-  source's hash (which they treat as opaque, via the `BitsHashed`
-  builtin if they want to manipulate it as a term).
-- The runtime — *not* the kernel — knows how to fetch an arena by
-  hash and materialise it as an `Arc<Arena>`.
+The runtime around the kernel may:
 
-This **does slightly break** the "content addressing is not special"
-principle: the *runtime around the kernel* has to know how to fetch
-arenas from a store. But the *kernel itself* still doesn't — it
-receives `Arc<Arena>`s already loaded. From the kernel's view, an
-imported arena is just an imported arena.
+- Hash a frozen arena's bytes and store it in a CAS.
+- Look up arenas by hash.
+- Materialise a `BitsHashed`-equivalent reference as actual bytes by
+  consulting the store.
 
-The `BitsHashed(O256)` builtin (§3.2) is what lets the kernel *talk
-about* content hashes as `bits` values inside HOL terms, without
-endorsing any particular hash function. The relationship between
-`BitsHashed(h)` and the actual bytes it refers to is established
-entirely by user-written theory axioms on the `storeContains` concept
-(§7.5).
+But these are *runtime* actions on opaque byte buffers. They never
+enter the kernel's type theory. If you want to **talk about** a hash
+inside HOL, you build a `bits` term holding the hash bytes, and let
+user-written concept theory (e.g. `storeContains`) relate that `bits`
+value to the bytes it names. The kernel sees only the bits.
 
-### 7.3 The mechanism for "definition plus facts, without the body"
+### 7.3 The "definition plus facts, without the body" pattern
 
 Recipe for "I want to refer to `c` and use a few of its theorems
 without loading its body":
@@ -592,34 +767,58 @@ without loading its body":
 2. Arena `D₁` extends `D₀` with the actual definition theorem
    `|- c = body` plus everything that depends on the body.
 3. A consumer imports `D₀` only; `c` is in scope, its headline
-   theorems are in scope, but no `body` ever gets materialised.
+   theorems are in scope, but `body` is never materialised.
 4. If the consumer later needs the body, it imports `D₁` (which
    foreign-imports `D₀`, so identities line up).
 
 The kernel doesn't enforce this split — it's just a pattern enabled
 by the foreign-import / canonical-arena-id machinery.
 
-### 7.4 Type definitions via subtype + spec
+### 7.4 Content-addressed types via concept-owned bijections
 
-For content-addressable *functions*, the design direction is:
+Content addressing of types reuses the concept-owned type hierarchy
+(§6.4): a "content-addressed type" is just a `conceptType[c, hash]`
+declared under some concept `c` together with a bijection axiom
+asserting `conceptType[c, hash] ≅ <spec>` for some HOL type
+expression `<spec>`.
 
-- Define a type `T = { x : A → B | spec(x) }` where `spec` uniquely
-  determines a function.
-- The spec is a closed `bool` term, hence content-addressable.
-- Recover the function as `f = ε x. x ∈ T` (Hilbert choice). Since `T`
-  is a singleton, `ε` picks the unique inhabitant.
+To unfold a content-addressed type to its target, the user applies
+the bijection axiom (which is just an ordinary HOL `∃` statement;
+elimination via Skolemisation gives `abs` and `rep` functions). To
+re-fold, apply `abs`. No kernel knowledge of hashing or content
+addressing is involved — the `hash` value is just a `bits` label
+chosen by the user, and the bijection is just an asserted axiom.
 
-A "content-addressed function" is then a `(spec_hash, T, f)` triple,
-where the consumer can verify `spec_hash` matches the spec they expect
-without having to know the function's HOL term form. Two consumers
-referring to the same `spec_hash` agree on `f` extensionally without
-sharing any structural representation.
+For complex type expressions, the user chains bijections:
+`conceptType[c, parentHash] ≅ Tyapp(F, [conceptType[c, child1Hash],
+conceptType[c, child2Hash]])`, then unfolds children separately as
+needed. Each step is an explicit `∃`-elimination — there is no
+automatic unfolding.
 
-This is **not in MVP**; it's the design direction for after we can
-serialise theorems at all. The MVP uses the standard HOL definition
-mechanism (no content-addressing of function values).
+This is **extremely explicit**, and we accept that, because complex
+meta-level proofs aren't the kernel's job: they belong in object
+logics (Isabelle/HOL, etc.). The kernel's content-addressed types
+exist primarily to support importing *batches of object-logic
+theorems* under an assumption like "object logic `L` is sound" —
+the import surface uses a uniform translation pattern, not ad-hoc
+proofs.
 
-### 7.5 Standard-library concept: the store
+### 7.5 Content-addressed function values (future direction)
+
+For content-addressable *function values*, the eventual design
+direction is to combine §7.4 with Hilbert choice:
+
+- Declare a `conceptType[c, hash]`.
+- Assert that it's a singleton subtype of `A → B` carved out by some
+  spec `P` — i.e., bijection with `{ x : A → B | spec(x) }`.
+- The function value is `f = ε x. x ∈ conceptType[c, hash]`.
+
+A "content-addressed function" is then a `(spec_hash, type, f)`
+triple. Consumers verify `spec_hash` matches the spec they expect
+without sharing any structural representation of the function term.
+This is not MVP work.
+
+### 7.6 Standard-library concept: the store
 
 The content-addressed store is a *standard-library concept*, not a
 kernel feature.
@@ -629,18 +828,18 @@ storeContains : bits → bits → bool
 ```
 
 `storeContains(name, blob)` is a concept owned by the store's
-implementer. Its theory includes:
+implementer. Its theory (axioms with conclusion `storeContains(…) =
+true`) is whatever the store's owner declares. Users add trust
+assumptions like:
 
-- `∀ b. storeContains(hash(b), b) = true` — every blob in the store
-  is named by its content hash. (`hash` is itself a HOL constant
-  whose properties live in further concept theory or user
-  assumptions.)
+- `∀ b. storeContains(hash(b), b) = true` — every blob is named by its
+  content hash.
 - `∀ h b₁ b₂. storeContains(h, b₁) ∧ storeContains(h, b₂) ⇒ b₁ = b₂`
   — no collisions.
 
-The kernel doesn't know what BLAKE3 is, or that `BitsHashed(h)` and
-`storeContains(h, _)` ought to agree. That agreement is exactly the
-theory the store owner declares.
+The `hash` function above is itself a HOL constant whose properties
+live in further user assumptions. The kernel doesn't know BLAKE3, or
+any hash function, at all.
 
 ---
 
@@ -651,7 +850,7 @@ Each `Prop` has a flat byte serialisation. Deserialisation yields an
 `Prop<Untrusted>`.
 
 An untrusted Prop is always safely **embeddable as a HOL `bool` term**
-(just a structural decomposition; no soundness risk). Lifting an
+(just structural decomposition; no soundness risk). Lifting an
 untrusted Prop to a Thm requires either:
 
 - A concept observation firing (the runtime asserts truth via a
@@ -661,57 +860,77 @@ untrusted Prop to a Thm requires either:
 The deserialisation path itself never produces a `Thm` directly.
 
 Anonymous concepts are **not serialisable** — they have no name. The
-root-concept / named-concept design (§6.1) is the road to
-serialisable cross-process facts.
+root-concept / named-concept design (§6.1) is the road to serialisable
+cross-process facts.
+
+The Context-as-bool and Prop-as-bool operations (§2.5) interact with
+serialisation in an interesting way: a deserialised Prop's
+*conclusion-as-bool* form can be talked about even before the Prop
+itself is reified into a Thm. This is what lets the
+`isValidSignature(key, sig, serialise(pred))` pattern work — we can
+state the signature relation in HOL terms without first trusting the
+deserialised Prop.
 
 ---
 
 ## 9. Soundness Story
 
-The kernel's soundness reduces to five invariants:
+The kernel's soundness reduces to seven invariants:
 
 1. **Thm construction is kernel-only.** All inference rules are sound
    in plain HOL.
 2. **No automatic congruence closure.** Every UF union either comes
-   from a Thm or from explicit `union_if_congruent_step` calls that
-   the user authored. The kernel never propagates equalities on its
-   own.
-3. **Canonical identity is arena-aware.** Two terms in different
-   arenas with the same `TermId` are not assumed equal; the canonical
-   tuple `(ArenaId, TermId)` is what matters. Diamond imports
-   correctly regain identity only through shared ancestors.
-4. **Concept theory axioms have the shape `… ⇒ c[α](…) = true`.**
-   Every such theory is satisfied by the trivial model where `c` is
-   always true.
-5. **Trust enters only via the root Context.** Anything the user
+   from a Thm or from explicit `union_if_congruent_step` calls.
+3. **No automatic search.** The Context API exposes what's there for
+   inspection but never volunteers a fact. Users discharge nested
+   assumption Props' contexts explicitly before importing facts from
+   them.
+4. **Canonical identity is arena-aware.** Two terms (or types) in
+   different arenas with the same `TermId` (or `TypeId`) are not
+   assumed equal; the canonical tuple `(ArenaId, TermId)` (or
+   `(ArenaId, TypeId)`) is what matters.
+5. **Concept theory axioms have the shape `… ⇒ c[α](…) = true`** for
+   constants, and bijection-existence (or trivial nonemptiness) for
+   concept-owned types. Every such theory has a trivial model
+   (concept is always true / opaque type is its bijection target or
+   a singleton).
+6. **No type-equality propositions.** The type UF caches derived
+   equalities (foreign-import propagation, congruence) only. Type
+   isomorphisms enter at the term level via bijection axioms — they
+   never become silent type-level identifications.
+7. **Trust enters only via the root Context.** Anything the user
    wants to believe is an explicit `Prop` they added to the Context.
    The kernel never silently trusts a runtime, a key, or a signature.
 
 Anything outside these invariants — tactics, decision procedures, WASM
 modules, the convenience `Goal` type, the `enter()` sub-capability,
 content-addressed extraction, signed import, congruence-closure
-strategies — is **untrusted**. Bugs in untrusted code can produce
-wrong answers but cannot produce wrong Thms.
+strategies, assumption-search strategies — is **untrusted**. Bugs in
+untrusted code can produce wrong answers but cannot produce wrong
+Thms.
 
 ---
 
 ## 10. Glossary
 
-- **Arena** — pool of types and terms (immutable) plus union-find
-  state (mutable).
+- **Arena** — pool of types, terms, bitvectors, plus term UF and type
+  UF state.
 - **ArenaId** — unique identifier of an arena; part of every
   canonical-ID tuple.
 - **Builtin** — kernel-supplied TermDef/TypeDef variant (e.g. `Eq`,
   `True`, `Bool`, `Bits`). Not in any user namespace.
 - **Concept** — polymorphic constant family whose theory is set by a
   capability holder; the kernel's only extension point.
-- **Context** — recursive stack of assumption Props attached to a Thm.
+- **Context** — kernel-encapsulated assumption store with an
+  inspection API; attached to every Prop.
 - **Observation** — a particular point-fact `c[α](t₁, …, tₙ) = true`,
   represented as a theory axiom or directly as a UF union.
 - **Owner** — holder of a `ConceptHandle`. The capability granting
   authority to write to a concept's theory.
-- **Prop** — structured proposition: arena + assumption vector. Not
+- **Prop** — structured proposition: `(arena, context, concl)`. Not
   necessarily true.
+- **Rewrite** — kernel primitive that mutates a term's structural form
+  in place to a provably-equal one. Optimisation, not soundness.
 - **Root concept** — the kernel's one built-in concept; the authority
   root for naming sub-concepts.
 - **Theory axiom** — a Prop with conclusion `… ⇒ c[α](…) = true`,
@@ -719,8 +938,14 @@ wrong answers but cannot produce wrong Thms.
 - **Thm** — a Prop the kernel has validated. Compile-time-only
   distinction from Prop.
 - **Trust assumption** — a Prop in the root Context relating concepts
-  to facts the kernel itself can't observe (e.g. "this signature
-  scheme is unforgeable").
+  to facts the kernel itself can't observe.
+- **Type UF** — union-find on types; purely a cache for derived
+  equalities (foreign-import propagation, congruence). No primitives
+  to introduce arbitrary type unions; isomorphisms happen at the
+  term level via bijection axioms on opaque types (§6.4, §7.4).
+- **conceptType** — opaque type constructor owned by a concept. The
+  concept's owner can declare instances `conceptType[c, s₁, …, sₙ]`
+  and assert bijection-existence axioms about them.
 - **`union_if_congruent_step`** — the LCF-style helper that performs
   one level of congruence-based union explicitly. The kernel's
   substitute for automatic closure.

@@ -106,57 +106,79 @@ moves:
 
 **Scope.** Stand up the new arena in `covalence-kernel`:
 
-- Separate ID namespaces (no shared `NameId`): `TypeName`, `ConstName`,
-  `VarName`, `ConceptId` each in its own table. Builtins (§3.2 of the
-  architecture doc) are TermDef/TypeDef enum variants, not entries in
-  any namespace.
-- **One** `TermDef` enum with every kind of term as a variant:
-  structural ones (`Bound`, `Free`, `Const`, `Comb`, `Abs`) and
-  builtins (`True`, `False`, `Eq(_, _)`, `Bits(_)`). Same for
-  `TypeDef` (`Bool`, `Bits`, `Fun`, `TVar`, `Tyapp`). No
-  "well-known" magic name IDs or side tables.
-- `BitsValue = Inline([u8; N]) | Indirect(BitsId)`; long bit-string
-  literals go through an arena-side `bitvectors` table indexed by
-  `BitsId`. No content addressing in the kernel — `Indirect` is an
-  internal arena index, not a hash.
+- Separate ID namespaces are abolished: free-variable names,
+  constant names, type-constructor names, and type-variable names
+  all live in the same per-arena `strings` interning table indexed
+  by `StrId`. Disambiguation is by which `TermKind`/`TypeKind`
+  variant the name appears in.
+- The arena holds interning tables for the variable-length payloads
+  that would otherwise blow up `TermDef`/`TypeDef`: `strings`,
+  `bytes`, `bits`, `ints` (default `int` feature), `nats`,
+  `tyargs`. Plus foreign-arena side tables (`foreign_terms`,
+  `foreign_types`) and the side tables for `Ite`/`Iter`/abs hints.
 - **Arena identity is by pointer** — no `ArenaId` u32 anywhere.
   Stored canonical references are `(Arc<Arena>, TermId)` /
   `(Arc<Arena>, TypeId)`. Two canonicals are equal when the
   `Arc<Arena>`s are `Arc::ptr_eq` and the inner IDs match.
-- Read paths take **`&Arena`** where possible to avoid Arc refcount
-  bumps; pointer-equality crosses the `Arc<Arena>` / `&Arena`
-  boundary cleanly (compare both as `*const Arena`).
-- `TermRef = Local(TermId) | Foreign(Arc<Arena>, TermId)` for stored
-  state (e.g. inside a TermDef); read APIs typically project the
-  `Arc` to a `&Arena` for traversal.
-- UF storage stood up: `TermUfEntry { canonical: (Arc<Arena>,
-  TermId), closed }`, `TypeUfEntry { canonical: (Arc<Arena>, TypeId)
-  }`. Equality predicates over them land in Phase 3 and take
-  `&Arena` arguments.
 - Frozen-vs-mutable arenas; `Arc<Arena>` for frozen.
+- `add_import(arc)` returns an `ImportId` and dedupes on
+  `Arc::ptr_eq`.
 - Structural tables append-only at the user level; the kernel
   reserves `rewrite(t, new_def)` as a privileged primitive (exposed
   in Phase 3 once the equality predicates can validate the
-  replacement).
+  replacement). `copy_term(t)` lands here too.
 
-**Deliverables.**
-- `covalence-kernel/src/arena.rs` and supporting modules.
-- Abstract `Store` trait sketch (see *Abstract traits* note below);
-  no concrete implementation yet.
+**Status: ✅ landed.** Arena + interning + foreign refs + canonical
+walks shipped as `kernel: arena interning tables + Copy
+TermRef/TypeRef` (commit on `code-review`).
 
-**Acceptance.**
-- `cargo test -p covalence-kernel` green.
-- Property test: random sequences of `union(...)` calls preserve the
-  invariant that two terms are level-0-equal iff they should be.
-- Diamond-import test: arenas D, B, C, A as in the architecture doc
-  §4.1; verify shared-D subterms regain UF identity while
-  B-originated vs C-originated terms remain structurally distinct
-  unless explicitly unioned.
+**Phase 1b — Copy TermDef + new builtins + Op1/Op2/Ite/Iter.** This
+substep transforms the Phase-1 arena into the final term/type
+shape:
 
-**Abstract traits note.** From Phase 1 onward, the kernel's `Store`
-and (later) `Executor` are `trait` interfaces, not concrete types.
-The kernel never imports `wasmtime` or `covalence-sqlite` directly.
-The `covalence-shell` crate is what supplies concrete impls.
+- TermDef goes **private**; users interact through a public
+  `TermKind` enum + fallible getters (`as_comb`, `as_abs`, …). This
+  decouples the public API from storage.
+- The (tag, lhs, rhs) **3-u32 invariant**: every TermDef variant
+  has ≤ 8 bytes payload. Achieved by one variant per primop (no
+  embedded `PrimOpN` byte) and by side-tabling `Ite` and `Iter`.
+- TermRef and TypeRef become packed `u32` newtypes (bit 31 =
+  local/foreign flag, bottom 31 bits = index). Foreign refs go via
+  `arena.foreign_terms`/`foreign_types`.
+- `Abs` loses its name field; display hints live in
+  `arena.abs_hints: Vec<Option<StrId>>` (or HashMap). Names don't
+  affect correctness so they leave the structural enum.
+- TypeDef gets every primitive type: `Bool`, `Bits`, `Bytes`, `Int`,
+  `Nat`, `U8..U64`, `I8..I64`, plus `Fun`, `TVar(StrId)`,
+  `Tyapp(StrId, TyArgsId)`.
+- TermDef variants:
+  - structural: `Bound(u32)`, `Free(StrId, TypeRef)`,
+    `Const(StrId, TypeRef)`, `Comb(TermRef, TermRef)`,
+    `Abs(TypeRef, TermRef)`, `Eq(TermRef, TermRef)`, `True`, `False`.
+  - literals: `U8(u8)..U64(u64)`, `I8(i8)..I64(i64)`,
+    `IntInline(i64)`, `IntStored(IntId)`, `NatInline(u64)`,
+    `NatStored(NatId)`, `BitsStored(BitsId)`, `BytesStored(BytesId)`.
+  - side-table primitives: `IteStored(IteId)`, `IterStored(IterId)`.
+  - one variant per `PrimOp1`/`PrimOp2` from
+    [`prover-primops.md`](./prover-primops.md) (e.g. `NatAdd(t,
+    t)`, `LogicalNot(t)`, …). TermKind groups them under
+    `Op1(PrimOp1, _)`/`Op2(PrimOp2, _, _)` for pattern-matching
+    ergonomics.
+
+**Deliverables for 1b.**
+- Rewritten `term.rs`/`ty.rs` honoring the invariants above.
+- `lib.rs` re-exporting `TermKind`/`TypeDef` (and `PrimOp1`/
+  `PrimOp2`).
+- Side tables (`abs_hints`, `ites`, `iters`) in `arena.rs`.
+- `compile_error!` or property test verifying
+  `std::mem::size_of::<TermDef>() == 12`.
+- Public getters: `kind(t) -> TermKind`, `as_comb`, `as_abs`,
+  `as_op1`, `as_op2`, `as_ite`, `as_iter`, `display_hint(id)`.
+
+**Acceptance for 1b.**
+- All existing Phase-1 tests pass against the new types.
+- The size-of assertion holds.
+- A round-trip test exercises every TermKind variant.
 
 ### Phase 2 — Locally-nameless terms + closed/open
 
@@ -208,6 +230,46 @@ congruence step, for both terms and types. Expose `rewrite`.
   polluting the UF.
 - `rewrite` accepts a valid replacement and reflects the new form in
   downstream traversals; rejects an unjustified replacement.
+
+### Phase 3b — Computational + symbolic primop reduction
+
+**Scope.** Wire up the two reduction layers from
+[`prover-primops.md`](./prover-primops.md):
+
+- **Computational `reduce(t)`.** When `t` is `Op1(op, lit)` or
+  `Op2(op, lit, lit)` (or `Ite(_, True, …, …)` / `Iter(_, 0|succ, …,
+  …)`), the kernel evaluates via the host implementation listed in
+  the primops doc. Two emission modes: rewrite-in-place (§4.4) or
+  union-with-fresh-literal (§4.3), caller's choice.
+- **Symbolic `try_rewrite_macro(t)`.** The kernel ships a static
+  list of `(LHS pattern, RHS template)` rewrite macros, generated
+  from the axiom catalog. Pattern-matches against `t`'s shape and
+  emits a UF union if any macro fires.
+
+The macro list is the **only thing** the user must audit to trust
+the symbolic-rewrite layer. Implementation is a simple pattern
+matcher + substitution; both LHS and RHS use the existing
+`TermKind` shape with schematic metavariables.
+
+**Deliverables.**
+- `covalence-kernel/src/reduce.rs` for the computational path.
+- `covalence-kernel/src/rewrite_macro.rs` for the symbolic path
+  (data table + matcher).
+- The full macro list, derived from prover-primops.md §1–§7
+  axioms.
+- A property test running random literals through `reduce` against
+  the host's reference implementation.
+
+**Acceptance.**
+- `reduce(Op2(NatAdd, NatInline(5), NatInline(3)))` produces a
+  Thm-style equality `add 5 3 = 8` and unions the two terms in UF.
+- `try_rewrite_macro(Op2(NatAdd, x, NatInline(0)))` for arbitrary
+  `x` emits `add x 0 = x` via the `add(?a, 0) → ?a` macro.
+- The macro list is exhaustively listed; no rule fires that isn't
+  in the list.
+- A self-check test asserts each macro's LHS = RHS holds in the
+  prelude axioms (mechanically: verify by running a few-step proof
+  using the equational axioms).
 
 ### Phase 4 — Prop / Thm / Context (with Context API)
 

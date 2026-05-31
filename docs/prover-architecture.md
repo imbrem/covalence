@@ -9,6 +9,10 @@ that live in code (file layout, exact function signatures) are out of scope
 here.
 
 For the staged build-out, see [`prover-mvp-plan.md`](./prover-mvp-plan.md).
+For the exhaustive list of kernel primitive operations, their type
+signatures, host-side reduction semantics, minimal axioms, and the
+macro-defined symbolic rewrite layer, see
+[`prover-primops.md`](./prover-primops.md).
 
 ---
 
@@ -366,66 +370,115 @@ hand outside the kernel is error-prone.
 
 ### 3.1 Locally nameless
 
-There is **one** `TermDef` enum, with one variant per kind of term —
-no out-of-band tables of "well-known" terms, no magic name IDs, no
-sentinel constants. Terms use **de Bruijn indices for bound variables
-+ named free variables**. `TermDef` (and `TypeDef`) are **`Copy`**:
-variable-sized payloads (names, byte strings, big-ints, type-arg
-lists) live in per-arena interning tables (§2.2) and appear in
-`TermDef` only as `u32` IDs.
+Terms use **de Bruijn indices for bound variables + named free
+variables**. The kernel's internal `TermDef` enum is private; users
+interact through the public `TermKind` enum and fallible getters.
+This decouples the public API from the storage layout and lets us
+swap the internal representation without churning callers.
+
+#### Internal layout invariant: 3 × u32
+
+`TermDef` is `Copy` and every variant fits in **(tag, lhs, rhs)** —
+12 bytes total. Variable-sized payloads (names, byte strings,
+big-ints, type-arg lists) live in per-arena tables (§2.2); foreign-
+arena refs live in a side table (below); and *display hints* (the
+human-readable name of an `Abs`) live in an optional side table
+because they never affect correctness. Concretely:
 
 ```rust
-// All variants Copy. Variable payloads sit in arena tables.
-TermDef =
-  // -- structural --
-  | Bound(u32)                       // de Bruijn index
-  | Free(NameRef, TypeRef)           // named free variable, typed
-  | Const(StrId, TypeRef)            // user-declared constant at a type instance
-  | Comb(TermRef, TermRef)           // application
-  | Abs(NameRef, TypeRef, TermRef)   // binder (NameRef is a display hint)
-  // -- truth + equality --
-  | True
-  | False
-  | Eq(TermRef, TermRef)             // primitive polymorphic equality
-  // -- literal values --
-  | BitsInline { bits: u64, len: u8 }   // ≤ 64 bits inline
-  | BitsStored(BitsId)                  // longer bits, in arena.bits
-  | BytesStored(BytesId)                // byte strings, in arena.bytes
-  | IntInline(i64)
-  | IntStored(IntId)                    // |x| > i64::MAX, in arena.ints
-  | NatInline(u64)
-  | NatStored(NatId)                    // > u64::MAX, in arena.nats
-  | U8(u8)  | U16(u16) | U32(u32) | U64(u64)   // fixed-width unsigned literals
-  | I8(i8)  | I16(i16) | I32(i32) | I64(i64)   // fixed-width signed literals
-  // -- computational primitives (see §3.4) --
-  | Prim(PrimOp)                        // a kernel-known function value
+// Public view — kernel consumers pattern-match on this. Stable.
+pub enum TermKind {
+    Bound(u32),
+    Free(StrId, TypeRef),
+    Const(StrId, TypeRef),
+    Comb(TermRef, TermRef),
+    Abs(TypeRef, TermRef),            // no name; see arena.abs_hints
+    Eq(TermRef, TermRef),
+    True, False,
+    // primitives
+    Op1(PrimOp1, TermRef),            // unary primitive
+    Op2(PrimOp2, TermRef, TermRef),   // binary primitive
+    Ite(TypeRef, TermRef, TermRef, TermRef),  // if-then-else, branch type carried
+    // literals
+    U8(u8) | U16(u16) | U32(u32) | U64(u64),
+    I8(i8) | I16(i16) | I32(i32) | I64(i64),
+    IntInline(i64) | IntStored(IntId),
+    NatInline(u64) | NatStored(NatId),
+    BitsStored(BitsId),
+    BytesStored(BytesId),
+}
 
-// Names can be either an interned string or a small-integer label.
-NameRef =
-  | Interned(StrId)   // index into arena.strings (SmolStr table)
-  | Small(u32)        // small-int-named fresh var (no interning)
+// Private internal representation. May change. Most variants are
+// 1-2 u32s of payload; primops are per-op variants so the (op, lhs,
+// rhs) shape fits 3 u32s without an extra tag byte. Op1/Op2 in
+// TermKind reconstruct the grouping.
+pub(crate) enum TermDef {
+    // structural
+    True, False,
+    Bound(u32),
+    Free(StrId, TypeRef),
+    Const(StrId, TypeRef),
+    Comb(TermRef, TermRef),
+    Abs(TypeRef, TermRef),
+    Eq(TermRef, TermRef),
+    // ite is variable-arity; cond + then + else + branch_ty don't fit
+    // 8 bytes, so it sits in arena.ites and the variant carries an IteId
+    IteStored(IteId),
+    // literals as above; storage may be inline or via *Id into a table
+    ...
+    // one variant per primop kind, so the (variant, child, child) shape
+    // is exactly (tag, lhs, rhs) — no embedded PrimOp byte
+    NatSucc(TermRef),     NatPred(TermRef),    IntNeg(TermRef),
+    NatAdd(TermRef, TermRef), NatSub(TermRef, TermRef), ...
+    LogicalNot(TermRef),
+    LogicalAnd(TermRef, TermRef), LogicalOr(TermRef, TermRef),
+    LogicalXor(TermRef, TermRef), LogicalNand(TermRef, TermRef),
+    LogicalNor(TermRef, TermRef), LogicalImp(TermRef, TermRef),
+    BytesLen(TermRef), BytesHead(TermRef), BytesTail(TermRef),
+    BytesConcat(TermRef, TermRef), BytesCons(TermRef, TermRef),
+    BytesIndex(TermRef, TermRef), BytesEq(TermRef, TermRef),
+    BitsLen(TermRef),
+    BitsToBytes(TermRef), BytesToBits(TermRef),
+    NatToInt(TermRef), IntToNat(TermRef),
+    // ...full list in §3.4 and docs/prover-primops.md
+}
 
-// References between terms / types. Both Copy.
-TermRef =
-  | Local(TermId)
-  | Foreign { import: ImportId, id: TermId }
-
-TypeRef =
-  | Local(TypeId)
-  | Foreign { import: ImportId, id: TypeId }
+// TermRef / TypeRef are packed u32 — bit 31 is the local/foreign
+// flag, bits 0-30 are an index. Local: index into arena.terms /
+// arena.types. Foreign: index into arena.foreign_terms /
+// arena.foreign_types — side tables of (ImportId, id) pairs.
+pub struct TermRef(u32);
+pub struct TypeRef(u32);
 ```
 
-`TypeDef` is also `Copy` and is listed in §3.2; its `Tyapp` arg list
-goes through `arena.tyargs` for the same reason — to keep the enum
-fixed-size.
+Two consequences worth calling out:
 
-Bound-var substitution doesn't need any alpha-renaming dance; structural
-equality of `TermDef`s already gives α-equivalence.
+- **`Abs` has no name field.** Display hints (the original parameter
+  name a user wrote) are pinned to `TermId`s in
+  `arena.abs_hints: HashMap<TermId, StrId>` (or similar). The kernel
+  ignores them; only printers consult them. Dropping them keeps the
+  variant within the 8-byte payload budget *and* makes the equality-
+  by-structure check trivially α-equivalent.
+- **`Ite` is special.** Because it has three children and a type
+  argument, it can't fit in 8 bytes of inline payload. It lives in
+  `arena.ites: Vec<(TypeRef, TermRef, TermRef, TermRef)>` and the
+  TermDef variant is `IteStored(IteId)`. `TermKind::Ite` unpacks the
+  entry for the public API.
 
-A `TermRef`/`TypeRef` is the type used for child links. `Local(_)`
-points to this arena's table; `Foreign { import, id }` resolves
-through `arena.imports[import]` — an `Arc<Arena>` — into that
-arena's table. Arena identity (§2.2) is still by pointer:
+`TypeDef` follows the same Copy + 3-u32 invariant; it's public
+because the variant set is small enough that pattern-matching is
+ergonomic. `TyArgsId` is the indirection for variadic `Tyapp`
+arguments.
+
+Bound-var substitution doesn't need any alpha-renaming dance;
+structural equality of `TermDef`s already gives α-equivalence —
+display hints stripped, de Bruijn indices intact.
+
+A `TermRef`/`TypeRef` is the type used for child links. Local refs
+point to the current arena's table; foreign refs resolve through
+`arena.foreign_terms[i]` (or `_types`) → `(ImportId, id)` →
+`arena.imports[ImportId]` → an `Arc<Arena>` → that arena's table.
+Arena identity (§2.2) is still by pointer:
 `Arc::ptr_eq(a.imports[i], b.imports[j])`.
 
 ### 3.2 Builtins
@@ -460,33 +513,48 @@ without touching the logic.
 | `TVar(StrId)` | polymorphic type variable | name interned in `arena.strings` |
 | `Tyapp(StrId, TyArgsId)` | user-declared type constructor instance | arg list via `arena.tyargs` |
 
-**TermDef variants in full** (all `Copy`):
+**TermKind variants in full** — the public view. The private
+`TermDef` may have a different (typically more granular) layout for
+storage efficiency.
 
 | Variant | What it represents | Source |
 |---|---|---|
 | `Bound(u32)` | de Bruijn index | structural |
-| `Free(NameRef, TypeRef)` | free variable | user/kernel-fresh |
-| `Const(StrId, TypeRef)` | user-declared HOL constant at an instance | user ConstName |
+| `Free(StrId, TypeRef)` | free variable, named, typed | user/kernel-fresh |
+| `Const(StrId, TypeRef)` | user-declared HOL constant at an instance | user |
 | `Comb(TermRef, TermRef)` | application | structural |
-| `Abs(NameRef, TypeRef, TermRef)` | binder | structural |
-| `True`, `False` | booleans | **builtin** |
+| `Abs(TypeRef, TermRef)` | binder; display hint via side table | structural |
 | `Eq(TermRef, TermRef)` | polymorphic equality | **builtin** |
-| `BitsInline { bits, len }` | bit string ≤ 64 bits | **builtin** |
-| `BitsStored(BitsId)` | bit string in arena.bits | **builtin** |
-| `BytesStored(BytesId)` | byte string in arena.bytes | **builtin** |
-| `IntInline(i64)` / `IntStored(IntId)` | integer literal | **builtin** |
-| `NatInline(u64)` / `NatStored(NatId)` | natural literal | **builtin** |
+| `True`, `False` | boolean literals | **builtin** |
+| `Op1(PrimOp1, TermRef)` | unary primitive op (logic, arithmetic, casts) | **builtin** (§3.4) |
+| `Op2(PrimOp2, TermRef, TermRef)` | binary primitive op | **builtin** (§3.4) |
+| `Ite(TypeRef, TermRef, TermRef, TermRef)` | if-then-else (branch type, cond, then, else) | **builtin** |
 | `U8(u8)` … `U64(u64)` | unsigned fixed-width literal | **builtin** |
 | `I8(i8)` … `I64(i64)` | signed fixed-width literal | **builtin** |
-| `Prim(PrimOp)` | a built-in function value (§3.4) | **builtin** |
+| `IntInline(i64)` / `IntStored(IntId)` | arbitrary-precision integer literal | **builtin** |
+| `NatInline(u64)` / `NatStored(NatId)` | arbitrary-precision natural literal | **builtin** |
+| `BitsStored(BitsId)` | bit string literal | **builtin** |
+| `BytesStored(BytesId)` | byte string literal | **builtin** |
 
-We keep `True`/`False` baked in even though HOL Light defines them —
-the goal is to simplify the *code*, not the typing rules. A baked-in
-`True` lets the bootstrap not have to thread Hilbert choice into the
-very first definitions.
+`True`/`False` and `Eq` are baked in. The goal is simpler *code*,
+not minimal typing rules — a baked-in `True` skips threading Hilbert
+choice through the bootstrap.
+
+**Logical operators** (`Op1(LogicalNot, _)` and `Op2(LogicalAnd, ...)`
+etc.) are first-class primops rather than user-space definitions.
+Listing them in §3.4 with their reduction tables lets the kernel
+reduce concrete Boolean expressions cheaply — important for
+discharging hypothesis sets in tactics.
+
+**`Ite`** is first-class for the same reason. A naive
+encoding via `Comb` and a polymorphic `ite : bool → α → α → α`
+constant would require traversing two `Comb`s to recognize the
+shape; here the kernel can pattern-match `TermKind::Ite` directly,
+reduce on a literal `True`/`False` condition, and emit equality
+between the term and the matching branch via §4.4 rewrite.
 
 User-defined constants (`Const(name, ty)`) and user-defined type
-constructors (`Tyapp(name, args)`) are the only TermDef/TypeDef
+constructors (`Tyapp(name, args)`) are the only TermKind/TypeDef
 variants that read from the user-side namespaces (§2.1). Every other
 variant is either structural or a builtin enum case.
 
@@ -506,46 +574,85 @@ insertion.
 
 ### 3.4 Computational primitives
 
-The kernel ships a small enum `PrimOp` listing every built-in
-function value — typecasts, arithmetic, comparisons, length, indexing,
-etc. — over the primitive types of §3.2. A `Prim(PrimOp)` term is a
-HOL constant of a known type; applications go through `Comb` like any
-other constant.
+The kernel ships two small enums `PrimOp1` (unary) and `PrimOp2`
+(binary) listing every built-in function — Boolean logic, arithmetic
+over `nat`/`int`/uN/iN, comparisons, length/index, casts, and the
+`bits`/`bytes` accessors. They appear in TermKind as `Op1(PrimOp1,
+_)` / `Op2(PrimOp2, _, _)`, plus the dedicated `Ite(_, _, _, _)`
+form for if-then-else.
 
 The rationale is shorter time-to-MVP: rather than axiomatize every
 primitive type from scratch over `bits` (HOL-Light minimalism), the
 kernel ships concrete operational behavior on its primitive types,
 plus a **minimal axiomatization** that characterizes each operation
-abstractly. Higher-level theorems (commutativity, distributivity,
-…) are derived in user space.
+abstractly. Higher-level theorems (commutativity, distributivity, …)
+are derived in user space.
 
-#### PrimOp sketch
+The complete `PrimOp1`/`PrimOp2` catalog — with type signatures,
+host-side reduction semantics, and minimal axioms — lives in
+**[docs/prover-primops.md](./prover-primops.md)**. That document is
+the source of truth; this section names the categories.
 
-(Not an exhaustive list; final naming/grouping is part of the
-implementation.)
+#### PrimOp1 (unary) categories
 
-- **`nat`** — `NatZero`, `NatSucc`, `NatPred` (with `pred 0 = 0`),
-  `NatAdd`, `NatSub` (saturating), `NatMul`, `NatDiv`, `NatMod`,
-  `NatEq`, `NatLt`, `NatLe`.
-- **`int`** — `IntZero`, `IntNeg`, `IntAdd`, `IntSub`, `IntMul`,
-  `IntDiv`, `IntMod`, `IntEq`, `IntLt`, `IntLe`.
-- **Fixed-width signed/unsigned** — for each `T ∈ {u8,u16,u32,u64,
-  i8,i16,i32,i64}`: `T_Add`, `T_Sub`, `T_Mul`, `T_Div`, `T_Mod`,
-  `T_Eq`, `T_Lt`, `T_Le`, plus bitwise `T_And`, `T_Or`, `T_Xor`,
-  `T_Not`, `T_Shl`, `T_Shr` where they make sense.
-- **`bits`** — `BitsLen` (→ `nat`), `BitsEmpty`, `BitsCons` (prepend
-  a bool), `BitsConcat`, `BitsSlice`, `BitsAnd`, `BitsOr`, `BitsXor`,
-  `BitsNot`, `BitsEq`.
-- **`bytes`** — `BytesLen` (→ `nat`), `BytesEmpty`, `BytesCons`
-  (prepend a `u8`), `BytesHead` (→ `u8`, defined on non-empty),
-  `BytesTail` (→ `bytes`, defined on non-empty), `BytesConcat`,
-  `BytesSlice`, `BytesIndex`, `BytesEq`, plus the converters
-  `BytesToBits` / `BitsToBytes` (the latter requires `BitsLen` to be
-  divisible by 8).
-- **Type casts** — every pair (`u8` ↔ `u16`/`u32`/`u64`, sign
-  extensions, truncations, `nat` ↔ `int`, `u64` ↔ `nat`, `i64` ↔
-  `int`, `bits` ↔ `bytes` when length divides 8, etc.). Each cast is
-  characterized by its underlying mathematical function.
+- **Booleans** — `LogicalNot`.
+- **Naturals** — `NatSucc`, `NatPred` (pred 0 = 0).
+- **Integers** — `IntNeg`.
+- **Bytes** — `BytesLen`, `BytesHead`, `BytesTail`, `BytesIsEmpty`.
+- **Bits** — `BitsLen`, `BitsIsEmpty`.
+- **Casts** — `NatToInt`, `IntToNat` (clamped at 0), `BytesToBits`,
+  `BitsToBytes` (defined iff bit length % 8 = 0), and the matrix of
+  uN↔iN/Nat/Int sign-extensions and truncations.
+
+#### PrimOp2 (binary) categories
+
+- **Booleans** — `LogicalAnd`, `LogicalOr`, `LogicalXor`,
+  `LogicalNand`, `LogicalNor`, `LogicalImp`.
+- **Naturals** — `NatAdd`, `NatSub` (saturating), `NatMul`,
+  `NatDiv`, `NatMod`, `NatEq`, `NatLt`, `NatLe`.
+- **Integers** — `IntAdd`, `IntSub`, `IntMul`, `IntDiv`, `IntMod`,
+  `IntEq`, `IntLt`, `IntLe`.
+- **Fixed-width** — for each `T ∈ {u8…u64, i8…i64}`: `T_Add`,
+  `T_Sub`, `T_Mul`, `T_Div`, `T_Mod`, `T_Eq`, `T_Lt`, `T_Le`, plus
+  bitwise `T_And`, `T_Or`, `T_Xor`, `T_Shl`, `T_Shr` (no `T_Not` —
+  that's a unary, see `PrimOp1`).
+- **Bytes** — `BytesConcat`, `BytesCons`, `BytesIndex`, `BytesEq`.
+- **Bits** — `BitsConcat`, `BitsCons`, `BitsIndex`, `BitsEq`.
+
+#### Ite and Iter
+
+- `Ite(branch_ty, cond, then, else)` reduces to `then` on `True` and
+  to `else` on `False`. Branch type is carried so the term is
+  typecheckable without re-deriving types of subterms.
+- `Iter(α, n, f, x)` is the bounded fixed-point combinator: applies
+  `f` to `x` `n` times. With `Iter` in the prelude, arithmetic ops
+  like `add`/`mul`/`pow` are *derived* (not axiomatized
+  independently); see prover-primops.md §8.5.
+
+Both have more children than fit the (tag, lhs, rhs) invariant, so
+they live in side tables (`arena.ites`, `arena.iters`) with a single-
+u32 `IteId`/`IterId` payload in `TermDef`.
+
+#### Two reduction layers
+
+The kernel's rewrite/equality machinery has two complementary modes,
+both bottoming out at kernel-trusted primitives:
+
+1. **Computational rewrites.** When *every* argument to a primop is
+   a literal, the kernel evaluates via the host implementation
+   (`reduce`, see prover-primops.md §10). Fast path for concrete
+   arithmetic.
+2. **Canonical symbolic rewrites.** A small list of macro-defined
+   directed rules — these *are* the axiom catalog of prover-primops
+   §1–§7, recast as rewrites (`try_rewrite_macro`, §9 there). Used
+   when an argument isn't literal, or when the caller wants symbolic
+   simplification.
+
+Together they cover both ends: full host eval on literals, and
+just-enough symbolic reasoning to unfold definitions a step at a
+time. Audit cost is exactly "review the axiom catalog" + "review
+the macro list" — a bounded job, sized to the primop catalog
+itself.
 
 #### Reduce: basic ops as LCF calls
 

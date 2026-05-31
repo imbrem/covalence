@@ -231,43 +231,53 @@ congruence step, for both terms and types. Expose `rewrite`.
 - `rewrite` accepts a valid replacement and reflects the new form in
   downstream traversals; rejects an unjustified replacement.
 
-### Phase 3b — Computational + symbolic primop reduction
+### Phase 3b — `reduce` + reduction rules + manual rules
 
-**Scope.** Wire up the two reduction layers from
-[`prover-primops.md`](./prover-primops.md):
+**Scope.** Wire up the three-layer rewriting model from
+[`prover-primops.md`](./prover-primops.md): axioms (§9), reduction
+rules (§10), manual rules (§11).
 
-- **Computational `reduce(t)`.** When `t` is `Op1(op, lit)` or
-  `Op2(op, lit, lit)` (or `Ite(_, True, …, …)` / `Iter(_, 0|succ, …,
-  …)`), the kernel evaluates via the host implementation listed in
-  the primops doc. Two emission modes: rewrite-in-place (§4.4) or
-  union-with-fresh-literal (§4.3), caller's choice.
-- **Symbolic `try_rewrite_macro(t)`.** The kernel ships a static
-  list of `(LHS pattern, RHS template)` rewrite macros, generated
-  from the axiom catalog. Pattern-matches against `t`'s shape and
-  emits a UF union if any macro fires.
+- **`kernel.reduce(t)`.** Walks the §10 reduction-rule list in
+  order (literal-arg eval → numeral normalization → identity/zero
+  simplifications → logical-op simplifications → Ite-on-literal-cond
+  → combinator reductions). Confluent + terminating by construction.
+  Emits a UF union or rewrite-in-place per caller choice.
+- **`kernel.try_rewrite_manual(rule_id, t)`.** Looks up `rule_id` in
+  the §11 manual-rule table, pattern-matches against `t`, applies
+  if it fires. No automatic chaining — user invokes one rule at a
+  time. Used for recursive unfoldings (`add a (succ b) → succ (add
+  a b)`), `Iter` unfolding, and canonicalisations (`ite_negate`).
 
-The macro list is the **only thing** the user must audit to trust
-the symbolic-rewrite layer. Implementation is a simple pattern
-matcher + substitution; both LHS and RHS use the existing
-`TermKind` shape with schematic metavariables.
+The reduction-rule list and manual-rule list are **what the user
+must audit** to trust the rewriter beyond the axioms. Each rule's
+`LHS = RHS` must be derivable from the §9 axioms. Implementation is
+a simple pattern matcher + substitution; both LHS and RHS use the
+existing `TermKind` shape with schematic metavariables.
 
 **Deliverables.**
-- `covalence-kernel/src/reduce.rs` for the computational path.
-- `covalence-kernel/src/rewrite_macro.rs` for the symbolic path
-  (data table + matcher).
-- The full macro list, derived from prover-primops.md §1–§7
-  axioms.
-- A property test running random literals through `reduce` against
-  the host's reference implementation.
+- `covalence-kernel/src/reduce.rs` — the auto-applied reduction
+  engine.
+- `covalence-kernel/src/rewrite_manual.rs` — the user-invoked rule
+  table.
+- The full reduction-rule list, ordered, derived from prover-primops
+  §10.
+- The full manual-rule list, derived from prover-primops §11.
+- Property tests:
+  - Random literals through `reduce` against host reference impl.
+  - Confluence: applying reductions in different traversal orders
+    yields the same normal form.
+  - Termination: any term reduces in finite steps.
 
 **Acceptance.**
 - `reduce(Op2(NatAdd, NatInline(5), NatInline(3)))` produces a
-  Thm-style equality `add 5 3 = 8` and unions the two terms in UF.
-- `try_rewrite_macro(Op2(NatAdd, x, NatInline(0)))` for arbitrary
-  `x` emits `add x 0 = x` via the `add(?a, 0) → ?a` macro.
-- The macro list is exhaustively listed; no rule fires that isn't
+  Thm-style equality `add 5 3 = 8` and unions the two terms.
+- `reduce(Op2(NatAdd, x, NatInline(0)))` for arbitrary `x` emits
+  `add x 0 = x` via the identity simplification.
+- `try_rewrite_manual(add_succ_unfold, Op2(NatAdd, x, Succ(y)))` for
+  symbolic `x` and `y` yields `Succ(Op2(NatAdd, x, y))`.
+- The rule lists are exhaustively listed; no rule fires that isn't
   in the list.
-- A self-check test asserts each macro's LHS = RHS holds in the
+- A self-check test asserts each rule's `LHS = RHS` holds in the
   prelude axioms (mechanically: verify by running a few-step proof
   using the equational axioms).
 

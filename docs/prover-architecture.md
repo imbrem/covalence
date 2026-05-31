@@ -651,26 +651,34 @@ live in side tables (`arena.ites`, `arena.iters`) with a single-u32
 `IteId`/`IterId` payload in `TermDef`. `Eps`, `Id`, and `Comp` fit
 inline.
 
-#### Two reduction layers
+#### Three rewriting layers
 
-The kernel's rewrite/equality machinery has two complementary modes,
-both bottoming out at kernel-trusted primitives:
+The kernel's rewrite/equality machinery splits into three lists,
+all bottoming out at kernel-trusted primitives:
 
-1. **Computational rewrites.** When *every* argument to a primop is
-   a literal, the kernel evaluates via the host implementation
-   (`reduce`, see prover-primops.md §10). Fast path for concrete
-   arithmetic.
-2. **Canonical symbolic rewrites.** A small list of macro-defined
-   directed rules — these *are* the axiom catalog of prover-primops
-   §1–§7, recast as rewrites (`try_rewrite_macro`, §9 there). Used
-   when an argument isn't literal, or when the caller wants symbolic
-   simplification.
+1. **Axioms (prover-primops.md §9).** Irreducible postulates: Peano
+   + induction (nat, bits, bytes), the ring/order axioms (int), the
+   uN/iN bijection axioms, `select_ax` (epsilon), `eta_ax`, `eq_ext`,
+   `bool_cases`/`bool_distinct`, the combinator equations
+   (`id_ax`, `comp_def`, `iter_zero`/`iter_succ_*`), and the
+   `ite_negate` axiom. ~100 schemata; one-time audit.
+2. **Reduction rules (§10).** Auto-applied by `kernel.reduce(t)` in
+   a fixed, confluent, terminating, ordered list. Covers literal-
+   arg evaluation, numeral normalization (`succ N → N+1` for
+   literal `N`), identity/zero simplifications (`add a 0 → a`,
+   `And a True → a`), and `Ite` on a literal condition. Each rule
+   has `LHS = RHS` derivable in the axioms.
+3. **Manual rules (§11).** User-invoked rewrites that don't fit
+   reduction's discipline — typically recursive unfoldings
+   (`add a (succ b) → succ (add a b)`, `Iter α (succ n) f → Comp f
+   (Iter α n f)`) and canonicalisations (`Ite ty (Not b) x y →
+   Ite ty b y x`). Each rule has `LHS = RHS` derivable in the
+   axioms, but the kernel does not enforce termination — that's the
+   caller's problem.
 
-Together they cover both ends: full host eval on literals, and
-just-enough symbolic reasoning to unfold definitions a step at a
-time. Audit cost is exactly "review the axiom catalog" + "review
-the macro list" — a bounded job, sized to the primop catalog
-itself.
+Audit cost is exactly the three lists. New primops add to the rule
+lists; the axiom list grows only when a primitive introduces a new
+postulate.
 
 #### Reduce: basic ops as LCF calls
 

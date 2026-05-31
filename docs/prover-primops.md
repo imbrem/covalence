@@ -11,21 +11,22 @@ categories; here we list each op with:
 - the **minimal axioms** the kernel prelude ships, characterizing the
   op without needing reduction.
 
-The kernel's rewrite/equality machinery is split into two layers:
+The kernel's rewrite/equality machinery has three layers:
 
-- **Computational rewrites (§11).** When all arguments to a primop
-  are literals, the kernel evaluates via host code and emits the
-  literal result as an equality. Fast path for concrete arithmetic.
-- **Canonical symbolic rewrites (§10).** A small list of macro-defined
-  directed rules — these *are* the axioms / characterizations of
-  this catalog, just turned into rewrites. Used when an argument
-  isn't a literal (`add a 0 = a` for arbitrary `a`), or when the
-  caller wants symbolic simplification rather than evaluation.
+- **Axioms (§9).** Irreducible postulates. Reviewed for semantic
+  soundness; nothing else justifies them.
+- **Reduction rules (§10).** Auto-applied by `kernel.reduce(t)` in a
+  fixed, ordered, confluent, terminating list. Justified by
+  derivability from the axioms. Includes literal-arg evaluation,
+  numeral normalization, identity/zero simplifications, and the
+  Ite-on-literal-cond rules.
+- **Manual rules (§11).** User-invoked rewrites — recursive
+  unfoldings, canonicalisations, cast equations. Same justification
+  as reductions but applied only on demand (typically because they'd
+  loop otherwise).
 
-Together they cover both ends of the spectrum: full host evaluation
-on literals, and just-enough symbolic reasoning to unfold a
-definition by one layer at a time. The trust surface is exactly:
-"the axiom catalog below" + "the macro list."
+The trust surface is exactly the three lists. Reviewing them is the
+entire kernel-soundness audit.
 
 > **Conventions.** `α`, `β` are type variables. `→` is the HOL
 > function arrow. We use `n`, `m` for `nat` and `i`, `j` for `int`.
@@ -47,21 +48,21 @@ The kernel ships `True`, `False`, and `Eq` as TermKind cases, plus
 the following logical primitives. All have type `bool → bool` (Op1)
 or `bool → bool → bool` (Op2).
 
-| Op | Sig | Reduction (on literals) | Defining axioms |
-|---|---|---|---|
-| `LogicalNot` | `bool → bool` | `Not True = False`; `Not False = True` | `Not True = False`, `Not False = True` |
-| `LogicalAnd` | `bool → bool → bool` | full table | `And x True = x`, `And x False = False` |
-| `LogicalOr` | `bool → bool → bool` | full table | `Or x True = True`, `Or x False = x` |
-| `LogicalXor` | `bool → bool → bool` | full table | `Xor x True = Not x`, `Xor x False = x` |
-| `LogicalNand` | `bool → bool → bool` | full table | `Nand x y = Not (And x y)` |
-| `LogicalNor` | `bool → bool → bool` | full table | `Nor x y = Not (Or x y)` |
-| `LogicalImp` | `bool → bool → bool` | full table | `Imp x y = Or (Not x) y` |
+| Op | Sig | Reduction (on literals) |
+|---|---|---|
+| `LogicalNot` | `bool → bool` | `Not True → False`; `Not False → True` |
+| `LogicalAnd` | `bool → bool → bool` | full 2×2 table |
+| `LogicalOr` | `bool → bool → bool` | full 2×2 table |
+| `LogicalXor` | `bool → bool → bool` | full 2×2 table |
+| `LogicalNand` | `bool → bool → bool` | full 2×2 table |
+| `LogicalNor` | `bool → bool → bool` | full 2×2 table |
+| `LogicalImp` | `bool → bool → bool` | full 2×2 table |
 
-The "defining axiom" rows for `And`/`Or` are equational because the
-second-argument table is enough together with `True`/`False`
-distinctness; `Nand`/`Nor`/`Imp`/`Xor` are derived in terms of
-`And`/`Or`/`Not`, so user-space proofs of properties go through the
-two base operators.
+**No defining axioms.** The domain `bool` has exactly two values, so
+each logical op is fully characterised by its (finite) truth table.
+The kernel handles those via the reduction rules of §10 — there is
+nothing to postulate. Identity simplifications like `And x True →
+x` are similarly reduction rules, not axioms.
 
 ---
 
@@ -69,46 +70,61 @@ two base operators.
 
 `Ite(branch_ty, cond, then, else) : branch_ty`
 
-| Sig | Reduction | Axioms |
-|---|---|---|
-| `bool → α → α → α` (here `α = branch_ty`) | `Ite ty True a b = a`; `Ite ty False a b = b` | the two reduction rules, plus a typing rule that `cond : bool` and `then, else : branch_ty` |
+| Sig | Reduction (on literal cond) |
+|---|---|
+| `bool → α → α → α` (here `α = branch_ty`) | `Ite ty True a b → a`; `Ite ty False a b → b` |
 
 The `branch_ty` field is carried explicitly so the term is
 self-describing for typechecking; without it we'd have to recompute
 the type of `then`/`else` every time we look at an `Ite`.
 
+**One axiom:** `Ite ty (Not b) x y = Ite ty b y x` — negating the
+condition flips the branches. This is the only Ite fact that isn't
+a reduction rule (it doesn't fire on a literal condition; it's used
+to canonicalise nested Ites). All other Ite equalities collapse to
+reduction-rule applications once `cond` becomes a literal.
+
 ---
 
 ## 3. Naturals (`nat`)
 
-`nat` is characterised in the prelude by Peano-minus-induction:
-**(P1)** `0 ≠ succ n`, **(P2)** `succ m = succ n → m = n`. Induction
-is derived once from these plus Hilbert choice.
+`nat` is axiomatized by **full Peano** — `peano_distinct` (`0 ≠
+succ n`), `peano_inj` (`succ m = succ n → m = n`), and `induct_nat`
+(the induction schema). All three are first-class axioms in the
+prelude (see §9 for the canonical list). The literal normal form
+for `nat` is a numeral: `NatInline 5` (not `succ (succ (succ (succ
+(succ 0))))`).
 
 ### PrimOp1
 
-| Op | Sig | Reduction | Axioms |
-|---|---|---|---|
-| `NatSucc` | `nat → nat` | `succ n = n + 1` | introduced via (P2) |
-| `NatPred` | `nat → nat` | `pred 0 = 0`; `pred (succ n) = n` | the two equations |
+| Op | Sig | Reduction |
+|---|---|---|
+| `NatSucc` | `nat → nat` | `succ (NatInline n) → NatInline (n+1)` (numeral normalization) |
+| `NatPred` | `nat → nat` | `pred (NatInline 0) → NatInline 0`; `pred (NatInline n+1) → NatInline n` |
 
 ### PrimOp2
 
 All comparisons return `bool`. All arithmetic on `nat` is total
 (`NatSub` saturates to `0`; `NatDiv`/`NatMod` by `0` are total but
-unspecified — `0 div 0 = 0`, `0 mod 0 = 0` for definiteness; any
+unspecified — `n div 0 = 0`, `n mod 0 = 0` for definiteness; any
 provable property *requires* the divisor to be nonzero).
 
-| Op | Sig | Reduction | Recursion / defining axioms |
+| Op | Sig | Reduction (on literals) | Identity / zero reductions |
 |---|---|---|---|
-| `NatAdd` | `nat → nat → nat` | host `+` | `add n 0 = n`; `add n (succ m) = succ (add n m)` |
-| `NatSub` | `nat → nat → nat` | saturating | `sub n 0 = n`; `sub 0 m = 0`; `sub (succ n) (succ m) = sub n m` |
-| `NatMul` | `nat → nat → nat` | host `*` | `mul n 0 = 0`; `mul n (succ m) = add (mul n m) n` |
-| `NatDiv` | `nat → nat → nat` | host `/` (zero-divisor returns 0) | (characterised via div_mod_spec, below) |
-| `NatMod` | `nat → nat → nat` | host `%` (zero-divisor returns 0) | `div_mod_spec`: `n = add (mul (div n d) d) (mod n d)`, with `lt (mod n d) d` for `d ≠ 0` |
-| `NatEq` | `nat → nat → bool` | host `==` | `eq n n = True`; `eq 0 (succ _) = False`; `eq (succ n) (succ m) = eq n m` |
-| `NatLt` | `nat → nat → bool` | host `<` | `lt n 0 = False`; `lt 0 (succ _) = True`; `lt (succ n) (succ m) = lt n m` |
-| `NatLe` | `nat → nat → bool` | host `<=` | `le n m = Or (lt n m) (eq n m)` |
+| `NatAdd` | `nat → nat → nat` | host `+` | `add a 0 → a`; `add 0 a → a` |
+| `NatSub` | `nat → nat → nat` | saturating | `sub a 0 → a` |
+| `NatMul` | `nat → nat → nat` | host `*` | `mul a 0 → 0`; `mul 0 a → 0`; `mul a 1 → a`; `mul 1 a → a` |
+| `NatDiv` | `nat → nat → nat` | host `/` | `div a 1 → a`; `div 0 a → 0` |
+| `NatMod` | `nat → nat → nat` | host `%` | `mod a 1 → 0`; `mod 0 a → 0` |
+| `NatEq` | `nat → nat → bool` | host `==` | `eq a a → True` |
+| `NatLt` | `nat → nat → bool` | host `<` | `lt a 0 → False` |
+| `NatLe` | `nat → nat → bool` | host `<=` | `le 0 a → True` |
+
+Recursion equations like `add a (succ b) = succ (add a b)` are
+**manual rules** (§11), not reduction rules: applying them
+automatically would loop with numeral normalization (`succ N → N+1`
+for literal `N` would conflict with `add a (succ b) → succ (add a
+b)` which introduces `succ`s).
 
 ---
 
@@ -440,38 +456,41 @@ generator is `induct_nat`.
 ## 9. Complete axiom list
 
 This section is the **canonical list** of every axiom shipped in the
-kernel prelude. Each entry names the axiom, gives its statement,
-and links back to the section that motivates it. Audit cost is
-exactly "review this list" — there is nothing else in the kernel's
-trusted axiom set.
+kernel prelude. Each entry names the axiom, gives its statement, and
+links back to the section that motivates it. Audit cost is exactly
+"review this list" — there is nothing else in the kernel's trusted
+axiom set.
 
-### 9.1. Logic & equality
+What's *not* here: equational defining rules like `add a 0 = a` or
+`Not True = False`. Those collapse to reduction (§10) or manual
+(§11) rules; their soundness is part of the rule-list audit, not
+the axiom-list audit.
+
+### 9.1. Equality, functions, and bool
 
 | Name | Statement | Source |
 |---|---|---|
 | `eq_refl` | `∀ x : α. x = x` | builtin Eq |
 | `eq_subst` | `x = y → P x → P y` (Leibniz) | builtin Eq |
 | `eq_ext` (functional ext) | `(∀ x. f x = g x) → f = g` | builtin Eq |
-| `eta_ax` | `(λ x. f x) = f` when `f` doesn't depend on `x` | binder primitive |
+| `eta_ax` | `(λ x. f x) = f` when `x ∉ FV(f)` | binder primitive |
 | `bool_distinct` | `True ≠ False` | Boolean primitive |
 | `bool_cases` | `∀ b : bool. b = True ∨ b = False` | Boolean primitive |
-| `not_true` | `Not True = False` | §1 Booleans |
-| `not_false` | `Not False = True` | §1 Booleans |
-| `and_true` | `And b True = b` | §1 |
-| `and_false` | `And b False = False` | §1 |
-| `or_true` | `Or b True = True` | §1 |
-| `or_false` | `Or b False = b` | §1 |
-| `xor_def` | `Xor x y = Not (Eq x y)` | §1 (derived) |
-| `nand_def` | `Nand x y = Not (And x y)` | §1 (derived) |
-| `nor_def` | `Nor x y = Not (Or x y)` | §1 (derived) |
-| `imp_def` | `Imp x y = Or (Not x) y` | §1 (derived) |
+
+Logical ops (`Not`, `And`, `Or`, `Xor`, `Nand`, `Nor`, `Imp`) have
+**no defining axioms** — they're fully characterised by their finite
+truth tables, which live in the reduction rules of §10. Equivalences
+like `xor_def` etc. are reduction rules (left-to-right normal form).
 
 ### 9.2. Ite
 
 | Name | Statement | Source |
 |---|---|---|
-| `ite_true` | `Ite ty True a b = a` | §2 |
-| `ite_false` | `Ite ty False a b = b` | §2 |
+| `ite_negate` | `Ite ty (Not b) x y = Ite ty b y x` | §2 |
+
+Reduction on literal cond (`Ite ty True a b → a`, etc.) is in §10 —
+it's a fact of `bool`'s finite structure plus the typing of `Ite`,
+not a separate postulate.
 
 ### 9.3. Epsilon (Hilbert choice)
 
@@ -479,7 +498,8 @@ trusted axiom set.
 |---|---|---|
 | `select_ax` | `∀ P x. P x → P (Eps α P)` | §8.5 |
 
-This is the only axiom about `Eps`.
+The *only* axiom about `Eps`. Everything else (definite description,
+existence elimination) derives from it.
 
 ### 9.4. Combinators
 
@@ -491,215 +511,267 @@ This is the only axiom about `Eps`.
 | `iter_succ_outer` | `Iter α (succ n) f = Comp f (Iter α n f)` | §8.6 |
 | `iter_succ_inner` | `Iter α (succ n) f = Comp (Iter α n f) f` | §8.6 |
 
-The last two are equivalent given `induct_nat` (§9.6); both are
-shipped because either is the natural symbolic rewrite to apply
-depending on which side has the literal `succ`.
+The last two are equivalent given `induct_nat` (§9.5); both are
+listed because each is the natural symbolic rule to apply depending
+on which side has the literal `succ`. In practice these fire as
+**manual rules** (§11), not reductions.
 
-### 9.5. Equational definitions of arithmetic primops
+### 9.5. Inductive types: constructors, distinctness, induction
 
-These are the "behavior axioms" for the arithmetic primops — the
-specs the host implementation is audited against and the rewrites
-the macro engine ships (§10 macros).
+The primitive inductive types ship a constructor pair plus an
+induction schema. Arithmetic and comparison primops on these types
+are characterised via reduction rules + manual rules — not as
+axioms.
 
 **Naturals** (§3):
 
 | Name | Statement |
 |---|---|
-| `nat_pred_zero` | `pred 0 = 0` |
-| `nat_pred_succ` | `pred (succ n) = n` |
-| `nat_add_zero` | `add n 0 = n` |
-| `nat_add_succ` | `add n (succ m) = succ (add n m)` |
-| `nat_sub_zero_r` | `sub n 0 = n` |
-| `nat_sub_zero_l` | `sub 0 m = 0` |
-| `nat_sub_succ` | `sub (succ n) (succ m) = sub n m` |
-| `nat_mul_zero` | `mul n 0 = 0` |
-| `nat_mul_succ` | `mul n (succ m) = add (mul n m) n` |
-| `nat_div_mod_spec` | `n = add (mul (div n d) d) (mod n d) ∧ (d ≠ 0 → lt (mod n d) d)` |
-| `nat_eq_refl` | `eq n n = True` |
-| `nat_eq_zero_succ` | `eq 0 (succ _) = False` |
-| `nat_eq_succ_succ` | `eq (succ n) (succ m) = eq n m` |
-| `nat_lt_zero_r` | `lt n 0 = False` |
-| `nat_lt_zero_l_succ` | `lt 0 (succ _) = True` |
-| `nat_lt_succ_succ` | `lt (succ n) (succ m) = lt n m` |
-| `nat_le_def` | `le n m = Or (lt n m) (eq n m)` |
-
-**Integers** (§4):
-
-| Name | Statement |
-|---|---|
-| `int_of_nat_inj` | `int_of_nat n = int_of_nat m → n = m` |
-| `int_add_assoc` | `add (add i j) k = add i (add j k)` |
-| `int_add_comm` | `add i j = add j i` |
-| `int_add_zero` | `add i 0 = i` |
-| `int_neg_add` | `add i (neg i) = 0` |
-| `int_mul_assoc` | `mul (mul i j) k = mul i (mul j k)` |
-| `int_mul_comm` | `mul i j = mul j i` |
-| `int_mul_one` | `mul i 1 = i` |
-| `int_distrib` | `mul i (add j k) = add (mul i j) (mul i k)` |
-| `int_sub_def` | `sub i j = add i (neg j)` |
-| `int_div_mod_spec` | analogous to nat, with sign convention pinned |
-| `int_lt_trichotomy` | `lt i j ∨ eq i j ∨ lt j i` |
-| `int_lt_trans` | `lt i j → lt j k → lt i k` |
-| `int_le_def` | `le i j = Or (lt i j) (eq i j)` |
-
-**Fixed-width** (§5): for each `T ∈ {u8…u64, i8…i64}` and each
-op `O ∈ {Add, Sub, Mul, Div, Mod, Lt, Le, Eq, And, Or, Xor, Shl,
-Shr}`, an axiom `T_O_via_cast` of the form
-
-```
-T_O x y = T_of_nat ( (nat_of_T x) O' (nat_of_T y) )
-```
-
-where `O'` is the corresponding `nat`/`int` op modulo `2^N`. (Signed
-variants substitute `int_of_T`/`T_of_int`.) Plus the cast round-trips:
-
-| Name | Statement |
-|---|---|
-| `T_of_nat_of_T` | `T_of_nat (nat_of_T x) = x` |
-| `nat_of_T_of_nat` | `nat_of_T (T_of_nat n) = n mod 2^N` |
+| `peano_distinct` | `0 ≠ succ n` |
+| `peano_inj` | `succ m = succ n → m = n` |
+| `induct_nat` | `P 0 → (∀ n. P n → P (succ n)) → ∀ n. P n` |
 
 **Bits** (§6):
 
 | Name | Statement |
 |---|---|
-| `bits_len_empty` | `len empty = 0` |
-| `bits_len_cons` | `len (cons b w) = succ (len w)` |
-| `bits_is_empty_empty` | `is_empty empty = True` |
-| `bits_is_empty_cons` | `is_empty (cons _ _) = False` |
-| `bits_concat_empty` | `concat empty w = w` |
-| `bits_concat_cons` | `concat (cons b w) v = cons b (concat w v)` |
-| `bits_index_cons_zero` | `index (cons b w) 0 = b` |
-| `bits_index_cons_succ` | `index (cons _ w) (succ i) = index w i` |
-| `bits_index_empty` | `index empty _ = False` (pinned) |
-| `bits_ext` | `(∀ i. lt i (len w) → index w i = index v i) ∧ len w = len v → w = v` |
+| `bits_distinct` | `empty ≠ cons b w` |
+| `bits_inj` | `cons b w = cons c v → b = c ∧ w = v` |
+| `induct_bits` | `P empty → (∀ b w. P w → P (cons b w)) → ∀ w. P w` |
 
-**Bytes** (§7): analogous to bits, with `cons : u8 → bytes → bytes`
-and `head`/`tail`/`index` returning `u8`.
+**Bytes** (§7):
 
-### 9.6. Induction principles
+| Name | Statement |
+|---|---|
+| `bytes_distinct` | `empty ≠ cons b bs` |
+| `bytes_inj` | `cons b bs = cons c cs → b = c ∧ bs = cs` |
+| `induct_bytes` | `P empty → (∀ b bs. P bs → P (cons b bs)) → ∀ bs. P bs` |
 
-| Name | Statement | Source |
-|---|---|---|
-| `peano_distinct` | `0 ≠ succ n` | §3 |
-| `peano_inj` | `succ m = succ n → m = n` | §3 |
-| `induct_nat` | `P 0 → (∀ n. P n → P (succ n)) → ∀ n. P n` | §8.7 |
-| `induct_bits` | `P empty → (∀ b w. P w → P (cons b w)) → ∀ w. P w` | §8.7 |
-| `induct_bytes` | analogous to bits, over `u8` cons | §8.7 |
+Extensionality lemmas (e.g. `bits_ext`: equal-by-length-and-index)
+are derivable from these three plus `eq_ext` — not axiomatised.
 
-### 9.7. Cast definitions
+### 9.6. Integers (`int`)
 
-Per §8, every cast `f : S → T` ships its defining equation, e.g.
-`U64_of_Nat n = n mod 2^64`, `Nat_of_U64 x = nat_of_T x`,
-`BytesToBits bs = …packed bits…` (with `len = 8 * len bs`),
-`BitsToBytes w` defined iff `len w mod 8 = 0`. The full list of
-casts is mechanical from the type catalog (§3.2 of the architecture
-doc).
+`int` is the ordered commutative ring obtained from `nat × nat`;
+this is captured by the ring/order axioms together with the
+embedding `int_of_nat`. Induction over `int` is **derived** (split
+on sign, induct on magnitude in `nat`).
+
+| Name | Statement |
+|---|---|
+| `int_of_nat_inj` | `int_of_nat n = int_of_nat m → n = m` |
+| `int_add_assoc` | `(i + j) + k = i + (j + k)` |
+| `int_add_comm` | `i + j = j + i` |
+| `int_add_zero` | `i + 0 = i` |
+| `int_neg_inv` | `i + (neg i) = 0` |
+| `int_mul_assoc` | `(i * j) * k = i * (j * k)` |
+| `int_mul_comm` | `i * j = j * i` |
+| `int_mul_one` | `i * 1 = i` |
+| `int_distrib` | `i * (j + k) = i * j + i * k` |
+| `int_lt_trichotomy` | `lt i j ∨ eq i j ∨ lt j i` |
+| `int_lt_trans` | `lt i j → lt j k → lt i k` |
+| `int_lt_add` | `lt i j → lt (i + k) (j + k)` |
+| `int_lt_mul_pos` | `lt 0 k → (lt i j → lt (i * k) (j * k))` |
+
+`sub`/`div`/`mod` are reduction-rule-only: `sub i j → i + (neg j)`
+(§10.3), and `div`/`mod` are pinned by the host's Euclidean
+division — see §10.1 (literal-arg evaluation) and the manual cast-
+equation rules of §11.
+
+### 9.7. Fixed-width integers
+
+Each fixed-width type `T` of width `N` is axiomatized by its
+bijection with `nat / 2^N` (unsigned) or `int / 2^N` with
+two's-complement reading (signed). Per type:
+
+| Name | Statement |
+|---|---|
+| `T_of_nat_of_T` | `T_of_nat (nat_of_T x) = x` (round-trip) |
+| `nat_of_T_of_nat` | `nat_of_T (T_of_nat n) = n mod 2^N` |
+| `T_eq_via_nat` | `T_Eq x y = NatEq (nat_of_T x) (nat_of_T y)` |
+| `T_lt_via_nat` | `T_Lt x y = NatLt (nat_of_T x) (nat_of_T y)` |
+
+For signed types, substitute `int_of_T`/`T_of_int` and use the
+matching axioms over `int`. Arithmetic ops (`T_Add`, …) and the
+bitwise ops are all reduction-rule-only — there is no
+`T_Add_via_cast` axiom, just a reduction rule deriving the result
+from the host implementation. This keeps the axiom list short and
+trusts the cast bijection + host arithmetic.
 
 ### 9.8. Summary
 
-The kernel's trusted axiom set is exactly the axioms above. Concrete
-count (approximate): ~50 boolean/equality/control axioms +
-~25 nat/int axioms + ~15 × (uN/iN) = ~225 fixed-width axioms (or a
-single quantified schema per op) + ~12 bits + ~12 bytes + 5 induction
-+ ~40 casts ≈ **350 axiom schemata**. This is a one-time audit;
-the kernel grows only when a new primop is added, and each
-addition is mechanical against the rules in this document.
+The kernel's trusted axiom set is exactly the axioms above:
 
-## 10. Macro-defined symbolic rewrites
+- 7 logic/equality/bool axioms
+- 1 Ite axiom
+- 1 epsilon axiom
+- 5 combinator axioms
+- 3 × 3 = 9 axioms for inductive types (nat / bits / bytes:
+  constructors-distinct + injective + induction)
+- 13 integer ring/order axioms
+- 4 × 16 = 64 fixed-width-bijection axioms (4 axioms × 16 types
+  u8..u64,i8..i64; can be a single quantified schema)
 
-The kernel ships a fixed list of **symbolic rewrite macros** that
-generate kernel-trusted equalities the user can apply without
-host-side computation. These exist alongside the `reduce` machinery
-(§11) for two reasons:
+**Total: ~100 axiom schemata.** Far less than the previous draft —
+the reduction- and manual-rule lists carry the rest. This is a
+one-time audit; new primops add to the rule lists, not to this
+list, unless they introduce a new postulate.
 
-1. **Non-literal arguments.** `add a 0 = a` for an arbitrary `a` is a
-   *theorem* the kernel can dispatch without an evaluator;
-   host-side reduction is only available on literals.
-2. **Defining-equations as rewrite rules.** A macro like
-   `add(a, succ(b)) → succ(add(a, b))` *is* the recursion equation
-   from the axiom list — just turned into a directed rule the kernel
-   can apply.
+## 10. Reduction rules (auto-applied by `reduce`)
 
-Concretely the kernel exposes:
+The kernel's `reduce(t)` primitive walks a **fixed, ordered** list of
+directed rewrite rules and applies the first match. The list is
+required to be **confluent and terminating** so `reduce` is
+deterministic — running it always reaches the same normal form
+regardless of where it starts in a term.
 
-```rust
-fn try_rewrite_macro(arena, term_ref) -> Result<Option<TermRef>, ...>
-```
+A rule like `add a 0 → a` is justified by the prelude axioms (here,
+the `iter_zero` + `id_ax` chain proves `add a 0 = a`), but the
+rule itself is a kernel facility, not an axiom. The audit unit is
+"each rule's LHS = RHS is derivable in the axiom list."
 
-It walks the macro list, attempting to pattern-match the term's
-shape against each rule's LHS. If a rule matches, the kernel
-constructs the RHS substitution and emits a UF union (or in-place
-rewrite, caller's choice — same options as `reduce`).
+### Order of application
 
-### Trust surface
+Within a term, `reduce` applies rules bottom-up. Within the rule
+list, rules are tried in the order listed below; the first match
+wins.
 
-The macro list is the **only** thing the user has to audit to trust
-the kernel's symbolic rewriter:
+### 10.1. Literal-arg evaluation (highest priority)
 
-- Each macro is a pair `(LHS pattern, RHS template)` where the LHS
-  and RHS are HOL term shapes (built from kernel primitives,
-  schematic metavariables, and side conditions).
-- A macro is **sound** iff its LHS = RHS is derivable in the
-  prelude axioms. This is a property of the macro alone, not of the
-  rest of the kernel — auditable independently.
-- The kernel's macro engine is small (pattern matcher + substitution)
-  and shared across all macros.
+For every primop, when **all** value arguments are literals of the
+right type, evaluate via the host implementation and emit the
+literal result.
 
-So instead of axiomatizing each of `add`, `mul`, `pow`, …, the
-prelude declares **one** set of soundness-justified macros and the
-kernel mechanically applies them on demand. The trust surface
-becomes "review the macro list," not "review every axiom."
+- All `Op1`/`Op2` arithmetic: `Op2(NatAdd, NatInline 5, NatInline 3)
+  → NatInline 8`, etc.
+- Boolean truth tables: `LogicalAnd(True, True) → True`,
+  `LogicalNot(False) → True`, all 14 cases for the 7 logical ops.
+- Comparisons: `NatLt(NatInline 2, NatInline 3) → True`, etc.
+- Casts: `U8_Of_U16(U16 256) → U8 0` (truncation), etc.
+- Bytes/bits ops on literal arguments: `BytesLen(BytesStored id) →
+  NatInline (host_len(id))`, etc.
+
+### 10.2. Numeral normalization
+
+`nat`, `int`, fixed-width literals all have a canonical
+representation (`NatInline n`, `IntInline i`, `U32 n`, etc.).
+
+| Rule | Description |
+|---|---|
+| `succ(NatInline n) → NatInline (n+1)` | absorb succ into literal |
+| `pred(NatInline 0) → NatInline 0` | saturate |
+| `pred(NatInline (n+1)) → NatInline n` | absorb pred |
+| `IntNeg(IntInline i) → IntInline (-i)` | absorb negation |
+
+### 10.3. Identity / zero / one simplifications
+
+| Rule | Source |
+|---|---|
+| `add a 0 → a`, `add 0 a → a` | §3 |
+| `sub a 0 → a` | §3 |
+| `mul a 0 → 0`, `mul 0 a → 0` | §3 |
+| `mul a 1 → a`, `mul 1 a → a` | §3 |
+| `div a 1 → a`, `div 0 a → 0` | §3 |
+| `mod a 1 → 0`, `mod 0 a → 0` | §3 |
+| `IntAdd a 0 → a` etc. | §4 |
+| `IntMul a 1 → a`, `IntMul a 0 → 0` etc. | §4 |
+| Same family for each uN/iN | §5 |
+
+### 10.4. Logical-op identity simplifications
+
+| Rule | Source |
+|---|---|
+| `And a True → a`, `And True a → a` | §1 |
+| `And a False → False`, `And False a → False` | §1 |
+| `Or a True → True`, `Or True a → True` | §1 |
+| `Or a False → a`, `Or False a → a` | §1 |
+| `Not (Not a) → a` (involution) | §1 |
+| `Imp a True → True`, `Imp True a → a` | §1 |
+| `Imp False a → True` | §1 |
+| `Xor a False → a`, `Xor a True → Not a` | §1 |
+| Same family for `Nand`, `Nor` (as `Not (And ...)` etc.) | §1 |
+
+### 10.5. Ite on literal cond
+
+| Rule | Source |
+|---|---|
+| `Ite ty True a b → a` | §2 |
+| `Ite ty False a b → b` | §2 |
+
+(The `ite_negate` axiom of §9.2 is *not* a reduction rule — it'd
+loop with itself. It's available as a manual rule, §11.)
+
+### 10.6. Combinator reductions
+
+| Rule | Source |
+|---|---|
+| `Comb (Id α) x → x` | §8.6 |
+| `Comb (Comp f g) x → Comb f (Comb g x)` | §8.6 |
+| `Iter α (NatInline 0) f → Id α` | §8.6 |
+
+The `succ` cases of `iter_succ_outer`/`iter_succ_inner` are *not*
+reductions — they'd unfold indefinitely on a symbolic `n`. Manual
+rules only.
+
+### 10.7. Termination + confluence
+
+Each block above is independently terminating. Across blocks, the
+ordering (literal-eval → numeral-normalize → identity → logical-
+identity → ite → combinator) plus the bottom-up walk gives
+confluence. Property test: random terms reach the same normal form
+regardless of traversal order.
+
+---
+
+## 11. Manual rules (user-invoked rewrites)
+
+Unlike §10 reductions, **manual rules** are applied only on explicit
+user invocation: `kernel.try_rewrite_manual(rule_id, t)`. They are
+not required to be terminating or confluent — that's the user's
+responsibility to manage.
+
+Manual rules are how the user unfolds recursive definitions one
+layer at a time, applies canonicalisations the reduce engine
+won't auto-apply, and accesses the equational consequences of
+axioms in directed form.
 
 ### Examples
 
 ```
-;; recursion equations as rewrites
-add(?a, 0)         → ?a
+;; recursion equations (would loop with numeral normalization)
 add(?a, succ(?b))  → succ(add(?a, ?b))
-
-mul(?a, 0)         → 0
 mul(?a, succ(?b))  → add(mul(?a, ?b), ?a)
+pow(?a, succ(?b))  → mul(pow(?a, ?b), ?a)
 
-;; logical identities
-Or(?a, False)      → ?a
-Or(?a, True)       → True
-And(?a, True)      → ?a
-And(?a, False)     → False
-Not(Not(?a))       → ?a
+;; iter unfolding (would loop on symbolic n)
+Iter(?ty, succ(?n), ?f) → Comp ?f (Iter(?ty, ?n, ?f))    ;; outer
+Iter(?ty, succ(?n), ?f) → Comp (Iter(?ty, ?n, ?f)) ?f    ;; inner
 
-;; ite reductions on literal conditions
-Ite(?ty, True,  ?t, ?e) → ?t
-Ite(?ty, False, ?t, ?e) → ?e
+;; canonicalisations
+ite_negate:  Ite(?ty, Not(?b), ?x, ?y) → Ite(?ty, ?b, ?y, ?x)
 
-;; iter unfolding
-Iter(?ty, 0,        ?f, ?x) → ?x
-Iter(?ty, succ(?n), ?f, ?x) → ?f (Iter(?ty, ?n, ?f, ?x))
+;; cast equations (when reduction doesn't fire)
+T_of_nat(nat_of_T(?x)) → ?x        ;; via cast round-trip
+nat_of_T(T_of_nat(?n)) → ?n mod 2^N
+
+;; int reductions defined-via-other-ops
+IntSub(?i, ?j) → IntAdd(?i, IntNeg(?j))
 ```
 
-(Notation: `?x` is a schematic metavariable; concrete kernel-side
-rules use a fixed binder convention.)
+The full list lives in `crates/covalence-kernel/src/rewrite_manual.rs`
+(once Phase 3b lands). Each rule is named for cross-reference from
+proof scripts.
 
-### Generation strategy
+### Trust unit
 
-The macro list is **generated** from the axiom catalog in §1–§7 via
-a small build-time procedure:
-
-1. For each defining equation (`add n 0 = n`, etc.) emit the
-   left-to-right directed rule.
-2. For each "extensional axiom" (e.g. `eq w v = True ↔ structural`)
-   skip — those don't shape-direct.
-3. For each derived identity the prelude exposes (e.g. logical
-   identities), emit if and only if it's derivable from the base
-   equations *and* the audit cost is low (one or two steps to
-   verify).
-
-Today this is a hand-maintained list. Later it can be generated by
-a verifier that takes the axiom catalog as input and emits the
-rewrite list as output — eliminating even the manual audit.
+A manual rule is **sound** iff `LHS = RHS` is derivable in the
+prelude axioms. The pattern-match/substitute machinery is shared
+with `reduce` (§10); only the firing policy differs. Audit cost:
+review each rule individually for axiomatic justification.
 
 ---
 
-## 11. The Reduce Primitive
+## 12. The Reduce Primitive
 
 `kernel.reduce(t)` recognises a `TermKind` that is either:
 
@@ -720,7 +792,7 @@ If `t` is shaped wrong (non-literal arg, or wrong-type literal),
 
 ---
 
-## 12. Trust Surface Summary
+## 13. Trust Surface Summary
 
 The trust surface added by this primop catalog is:
 

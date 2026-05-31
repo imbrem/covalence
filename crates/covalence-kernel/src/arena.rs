@@ -12,28 +12,8 @@ use crate::id::{
     TyArgsId, TypeId,
 };
 use crate::term::{TermDef, TermKind, TermRef};
-use crate::ty::{TypeDef, TypeInfo, TypeRef};
+use crate::ty::{BuiltinTy, TypeDef, TypeInfo, TypeInfoKind, TypeRef, TypeRefKind};
 use crate::uf::{TermUfEntry, TypeUfEntry};
-
-/// Layout of pre-allocated primitive types: the [`TypeDef`] at index
-/// `i` of `PRIMITIVE_TYPES` is allocated at `TypeId(i)` during
-/// [`Arena::new`]. Order is significant — accessors and the
-/// `is_primitive_def` deduper depend on it.
-const PRIMITIVE_TYPES: &[TypeDef] = &[
-    TypeDef::Bool,  // 0
-    TypeDef::Bits,  // 1
-    TypeDef::Bytes, // 2
-    TypeDef::Int,   // 3
-    TypeDef::Nat,   // 4
-    TypeDef::U8,    // 5
-    TypeDef::U16,   // 6
-    TypeDef::U32,   // 7
-    TypeDef::U64,   // 8
-    TypeDef::I8,    // 9
-    TypeDef::I16,   // 10
-    TypeDef::I32,   // 11
-    TypeDef::I64,   // 12
-];
 
 /// A pool of types, terms, value literals, and union-find state.
 ///
@@ -77,19 +57,16 @@ pub struct Arena {
 }
 
 impl Arena {
-    /// Build an empty mutable arena with the primitive types
-    /// (`bool`, `bits`, `bytes`, `int`, `nat`, `uN`, `iN`)
-    /// pre-allocated at well-known [`TypeId`]s — see [`PRIMITIVE_TYPES`].
-    /// Type inference at [`alloc_term`](Self::alloc_term) refers to
-    /// these by their stable IDs, so callers shouldn't allocate
-    /// duplicate primitives; [`alloc_type`](Self::alloc_type)
-    /// dedupes on nullary primitives.
+    /// Build an empty mutable arena. Primitive types are not arena-
+    /// allocated — they live as builtin-tagged [`TypeRef`]s. Callers
+    /// reach them via [`bool_ty`](Self::bool_ty),
+    /// [`nat_ty`](Self::nat_ty), and friends.
     pub fn new() -> Self {
-        let mut arena = Self {
-            types: Vec::with_capacity(PRIMITIVE_TYPES.len()),
+        Self {
+            types: Vec::new(),
             terms: Vec::new(),
             uf_terms: Vec::new(),
-            uf_types: Vec::with_capacity(PRIMITIVE_TYPES.len()),
+            uf_types: Vec::new(),
             imports: Vec::new(),
             strings: Vec::new(),
             bytes: Vec::new(),
@@ -100,45 +77,28 @@ impl Arena {
             foreign_terms: Vec::new(),
             foreign_types: Vec::new(),
             abs_hints: Vec::new(),
-        };
-        for def in PRIMITIVE_TYPES {
-            let id = TypeId(arena.types.len() as u32);
-            arena.types.push(*def);
-            arena.uf_types.push(TypeUfEntry {
-                canonical: TypeRef::local(id),
-            });
         }
-        arena
     }
 
     // -- primitive-type accessors ---------------------------------------
 
-    /// `bool` as a [`TypeRef`].
-    pub fn bool_ty(&self) -> TypeRef { TypeRef::local(TypeId(0)) }
-    /// `bits` as a [`TypeRef`].
-    pub fn bits_ty(&self) -> TypeRef { TypeRef::local(TypeId(1)) }
-    /// `bytes` as a [`TypeRef`].
-    pub fn bytes_ty(&self) -> TypeRef { TypeRef::local(TypeId(2)) }
-    /// `int` as a [`TypeRef`].
-    pub fn int_ty(&self) -> TypeRef { TypeRef::local(TypeId(3)) }
-    /// `nat` as a [`TypeRef`].
-    pub fn nat_ty(&self) -> TypeRef { TypeRef::local(TypeId(4)) }
-    /// `u8`/`u16`/`u32`/`u64` as a [`TypeRef`].
-    pub fn u8_ty(&self) -> TypeRef { TypeRef::local(TypeId(5)) }
-    pub fn u16_ty(&self) -> TypeRef { TypeRef::local(TypeId(6)) }
-    pub fn u32_ty(&self) -> TypeRef { TypeRef::local(TypeId(7)) }
-    pub fn u64_ty(&self) -> TypeRef { TypeRef::local(TypeId(8)) }
-    /// `i8`/`i16`/`i32`/`i64` as a [`TypeRef`].
-    pub fn i8_ty(&self) -> TypeRef { TypeRef::local(TypeId(9)) }
-    pub fn i16_ty(&self) -> TypeRef { TypeRef::local(TypeId(10)) }
-    pub fn i32_ty(&self) -> TypeRef { TypeRef::local(TypeId(11)) }
-    pub fn i64_ty(&self) -> TypeRef { TypeRef::local(TypeId(12)) }
+    pub fn bool_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::Bool) }
+    pub fn bits_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::Bits) }
+    pub fn bytes_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::Bytes) }
+    pub fn int_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::Int) }
+    pub fn nat_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::Nat) }
+    pub fn u8_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::U8) }
+    pub fn u16_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::U16) }
+    pub fn u32_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::U32) }
+    pub fn u64_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::U64) }
+    pub fn i8_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::I8) }
+    pub fn i16_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::I16) }
+    pub fn i32_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::I32) }
+    pub fn i64_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::I64) }
 
-    /// If `def` is a nullary primitive type, return its pre-allocated
-    /// [`TypeId`]; otherwise `None`.
-    fn primitive_type_id(def: &TypeDef) -> Option<TypeId> {
-        let idx = PRIMITIVE_TYPES.iter().position(|p| p == def)?;
-        Some(TypeId(idx as u32))
+    /// `TypeRef` for the primitive corresponding to a [`BuiltinTy`].
+    pub fn builtin_ty(&self, ty: BuiltinTy) -> TypeRef {
+        TypeRef::builtin(ty)
     }
 
     /// Freeze this arena, producing an `Arc<Arena>` suitable for use as
@@ -300,23 +260,22 @@ impl Arena {
 
     // -- allocators ------------------------------------------------------
 
-    /// Allocate a type. Returns the local id. The new entry is its own
-    /// canonical (no equalities asserted).
+    /// Allocate a type. Returns a [`TypeRef`].
     ///
-    /// Nullary primitive types are deduped — calling
-    /// `alloc_type(TypeDef::Bool)` always returns `TypeId(0)`, the
-    /// pre-allocated `bool`. This makes equality checks at the kernel
-    /// level work even when callers separately allocate primitives.
-    pub fn alloc_type(&mut self, def: TypeDef) -> TypeId {
-        if let Some(id) = Self::primitive_type_id(&def) {
-            return id;
+    /// For nullary primitive `TypeDef`s (Bool, Bits, …, I64), the
+    /// kernel returns the matching builtin TypeRef without writing
+    /// to `arena.types`. For everything else (Fun, TVar, Tyapp), a
+    /// new entry is appended and a fresh local TypeRef returned.
+    pub fn alloc_type(&mut self, def: TypeDef) -> TypeRef {
+        if let Some(b) = def.as_builtin() {
+            return TypeRef::builtin(b);
         }
         let id = TypeId(self.types.len() as u32);
         self.types.push(def);
         self.uf_types.push(TypeUfEntry {
             canonical: TypeRef::local(id),
         });
-        id
+        TypeRef::local(id)
     }
 
     /// Allocate a term. Returns the local id. The new entry is its own
@@ -460,11 +419,30 @@ impl Arena {
         (entry.type_info, entry.has_free)
     }
 
-    /// Resolve a `TypeRef` to its underlying `TypeDef` if it's local.
-    /// Foreign types return `None` for now — typing rules treat them
-    /// opaquely.
-    fn type_def_of(&self, r: TypeRef) -> Option<TypeDef> {
-        r.as_local().map(|id| *self.type_def(id))
+    /// Resolve a `TypeRef` to its underlying `TypeDef`.
+    /// Builtins map back to their nullary `TypeDef` variants;
+    /// local types look up via `self.types`; foreign types return
+    /// `None` (typing rules treat them opaquely for now).
+    pub fn type_def_of(&self, r: TypeRef) -> Option<TypeDef> {
+        match r.decode() {
+            TypeRefKind::Local(id) => Some(*self.type_def(id)),
+            TypeRefKind::Foreign(_) => None,
+            TypeRefKind::Builtin(b) => Some(match b {
+                BuiltinTy::Bool => TypeDef::Bool,
+                BuiltinTy::Bits => TypeDef::Bits,
+                BuiltinTy::Bytes => TypeDef::Bytes,
+                BuiltinTy::Int => TypeDef::Int,
+                BuiltinTy::Nat => TypeDef::Nat,
+                BuiltinTy::U8 => TypeDef::U8,
+                BuiltinTy::U16 => TypeDef::U16,
+                BuiltinTy::U32 => TypeDef::U32,
+                BuiltinTy::U64 => TypeDef::U64,
+                BuiltinTy::I8 => TypeDef::I8,
+                BuiltinTy::I16 => TypeDef::I16,
+                BuiltinTy::I32 => TypeDef::I32,
+                BuiltinTy::I64 => TypeDef::I64,
+            }),
+        }
     }
 
     /// Compute `(type_info, has_free)` for a `TermDef` whose children
@@ -478,28 +456,28 @@ impl Arena {
     fn compute_term_props(&mut self, def: &TermDef) -> (TypeInfo, bool) {
         match def {
             // ---- locally-open atoms ----------------------------------------
-            TermDef::Bound(i) => (TypeInfo::Unbound(i + 1), false),
-            TermDef::Free(_, ty) => (TypeInfo::Typed(*ty), true),
+            TermDef::Bound(i) => (TypeInfo::unbound(i + 1), false),
+            TermDef::Free(_, ty) => (TypeInfo::typed(*ty), true),
 
             // ---- closed atoms with a known type ----------------------------
-            TermDef::Const(_, ty) => (TypeInfo::Typed(*ty), false),
-            TermDef::True | TermDef::False => (TypeInfo::Typed(self.bool_ty()), false),
-            TermDef::U8(_) => (TypeInfo::Typed(self.u8_ty()), false),
-            TermDef::U16(_) => (TypeInfo::Typed(self.u16_ty()), false),
-            TermDef::U32(_) => (TypeInfo::Typed(self.u32_ty()), false),
-            TermDef::U64(_) => (TypeInfo::Typed(self.u64_ty()), false),
-            TermDef::I8(_) => (TypeInfo::Typed(self.i8_ty()), false),
-            TermDef::I16(_) => (TypeInfo::Typed(self.i16_ty()), false),
-            TermDef::I32(_) => (TypeInfo::Typed(self.i32_ty()), false),
-            TermDef::I64(_) => (TypeInfo::Typed(self.i64_ty()), false),
+            TermDef::Const(_, ty) => (TypeInfo::typed(*ty), false),
+            TermDef::True | TermDef::False => (TypeInfo::typed(self.bool_ty()), false),
+            TermDef::U8(_) => (TypeInfo::typed(self.u8_ty()), false),
+            TermDef::U16(_) => (TypeInfo::typed(self.u16_ty()), false),
+            TermDef::U32(_) => (TypeInfo::typed(self.u32_ty()), false),
+            TermDef::U64(_) => (TypeInfo::typed(self.u64_ty()), false),
+            TermDef::I8(_) => (TypeInfo::typed(self.i8_ty()), false),
+            TermDef::I16(_) => (TypeInfo::typed(self.i16_ty()), false),
+            TermDef::I32(_) => (TypeInfo::typed(self.i32_ty()), false),
+            TermDef::I64(_) => (TypeInfo::typed(self.i64_ty()), false),
             TermDef::IntInline(_) | TermDef::IntStored(_) => {
-                (TypeInfo::Typed(self.int_ty()), false)
+                (TypeInfo::typed(self.int_ty()), false)
             }
             TermDef::NatInline(_) | TermDef::NatStored(_) => {
-                (TypeInfo::Typed(self.nat_ty()), false)
+                (TypeInfo::typed(self.nat_ty()), false)
             }
-            TermDef::BitsStored(_) => (TypeInfo::Typed(self.bits_ty()), false),
-            TermDef::BytesStored(_) => (TypeInfo::Typed(self.bytes_ty()), false),
+            TermDef::BitsStored(_) => (TypeInfo::typed(self.bits_ty()), false),
+            TermDef::BytesStored(_) => (TypeInfo::typed(self.bytes_ty()), false),
 
             // ---- structural with typing rules ------------------------------
             TermDef::Comb(f, x) => self.compute_comb(*f, *x),
@@ -507,30 +485,27 @@ impl Arena {
             TermDef::Eq(a, b) | TermDef::Ne(a, b) => self.compute_eq_like(*a, *b),
             TermDef::Forall(p) | TermDef::Exists(p) => self.compute_quant(*p),
             TermDef::Eps(elem_ty, p) => self.compute_eps(*elem_ty, *p),
-            TermDef::Id(ty) => (TypeInfo::Typed(self.intern_fun(*ty, *ty)), false),
+            TermDef::Id(ty) => (TypeInfo::typed(self.intern_fun(*ty, *ty)), false),
 
-            // ---- ops / combinators / lifts — propagation only for now -----
-            //
-            // These need primop-signature tables (Op1/Op2) and Fun-decomp
-            // (Comp, Iter, Ite, LiftOpN) to type-check properly. We
-            // propagate the dangling-bound count and the has_free flag,
-            // and mark the term IllTyped when locally closed — until
-            // the signature table lands the kernel can't derive the
-            // result type. Subsequent Thm-construction will reject
-            // these, but they're allowed to sit in the arena.
-            TermDef::Comp(a, b)
-            | TermDef::Iter(a, b)
-            | TermDef::Ite(a, b)
-            | TermDef::Op2(_, a, b) => {
-                let (a_info, a_hf) = self.ref_props(*a);
-                let (b_info, b_hf) = self.ref_props(*b);
-                (propagate2_until_typed(a_info, b_info), a_hf || b_hf)
+            // ---- applied primops via signature tables ----------------------
+            TermDef::Op1(op, x) => self.compute_op1(*op, *x),
+            TermDef::Op2(op, a, b) => self.compute_op2(*op, *a, *b),
+
+            // ---- lifted primops: η-expanded function values ---------------
+            TermDef::LiftOp1(op) => {
+                let (dom, cod) = op.sig();
+                (TypeInfo::typed(self.intern_fun(dom, cod)), false)
             }
-            TermDef::Op1(_, x) => {
-                let (info, hf) = self.ref_props(*x);
-                (propagate1_until_typed(info), hf)
+            TermDef::LiftOp2(op) => {
+                let (in1, in2, out) = op.sig();
+                let curried = self.intern_fun(in2, out); // in2 -> out
+                (TypeInfo::typed(self.intern_fun(in1, curried)), false)
             }
-            TermDef::LiftOp1(_) | TermDef::LiftOp2(_) => (TypeInfo::IllTyped, false),
+
+            // ---- structural combinators / control flow ---------------------
+            TermDef::Comp(f, g) => self.compute_comp(*f, *g),
+            TermDef::Iter(n, f) => self.compute_iter(*n, *f),
+            TermDef::Ite(cond, then_branch) => self.compute_ite(*cond, *then_branch),
         }
     }
 
@@ -540,98 +515,192 @@ impl Arena {
         let (f_info, f_hf) = self.ref_props(f);
         let (x_info, x_hf) = self.ref_props(x);
         let has_free = f_hf || x_hf;
-        // Open / ill-typed propagation.
-        let f_ty = match f_info {
-            TypeInfo::Typed(t) => t,
-            TypeInfo::Unbound(_) => return (propagate2_until_typed(f_info, x_info), has_free),
-            TypeInfo::IllTyped => return (TypeInfo::IllTyped, has_free),
+        let f_ty = match f_info.decode() {
+            TypeInfoKind::Typed(t) => t,
+            TypeInfoKind::Unbound(_) => return (propagate2_until_typed(f_info, x_info), has_free),
+            TypeInfoKind::IllTyped => return (TypeInfo::ILL_TYPED, has_free),
         };
-        let x_ty = match x_info {
-            TypeInfo::Typed(t) => t,
-            TypeInfo::Unbound(_) => return (propagate2_until_typed(f_info, x_info), has_free),
-            TypeInfo::IllTyped => return (TypeInfo::IllTyped, has_free),
+        let x_ty = match x_info.decode() {
+            TypeInfoKind::Typed(t) => t,
+            TypeInfoKind::Unbound(_) => return (propagate2_until_typed(f_info, x_info), has_free),
+            TypeInfoKind::IllTyped => return (TypeInfo::ILL_TYPED, has_free),
         };
         match self.type_def_of(f_ty) {
-            Some(TypeDef::Fun(dom, cod)) if dom == x_ty => (TypeInfo::Typed(cod), has_free),
-            // Either f isn't a function, the domain mismatches, or f's
-            // type is foreign-and-opaque. All ill-typed for now.
-            _ => (TypeInfo::IllTyped, has_free),
+            Some(TypeDef::Fun(dom, cod)) if dom == x_ty => (TypeInfo::typed(cod), has_free),
+            _ => (TypeInfo::ILL_TYPED, has_free),
         }
     }
 
-    /// Typing rule for `Abs(α, body)`. If `body` is typed `τ`, the
-    /// result is `α → τ`. If `body` is `Unbound(n)`, drop the depth by
-    /// one (the new binder binds the outermost `Bound`). If `n` was 1
-    /// the body becomes locally closed but its type is unknown until a
-    /// later typing pass — mark `IllTyped` to flag that.
+    /// Typing rule for `Abs(α, body)`. See [`TermDef::Abs`].
     fn compute_abs(&mut self, param_ty: TypeRef, body: TermRef) -> (TypeInfo, bool) {
         let (body_info, has_free) = self.ref_props(body);
-        let info = match body_info {
-            TypeInfo::Typed(body_ty) => {
-                TypeInfo::Typed(self.intern_fun(param_ty, body_ty))
-            }
-            TypeInfo::Unbound(0) | TypeInfo::IllTyped => TypeInfo::IllTyped,
-            TypeInfo::Unbound(n) => {
+        let info = match body_info.decode() {
+            TypeInfoKind::Typed(body_ty) => TypeInfo::typed(self.intern_fun(param_ty, body_ty)),
+            TypeInfoKind::Unbound(0) | TypeInfoKind::IllTyped => TypeInfo::ILL_TYPED,
+            TypeInfoKind::Unbound(n) => {
                 let next = n - 1;
                 if next == 0 {
-                    // Body became locally closed; full type requires a
-                    // proper typing pass under the binder. Defer.
-                    TypeInfo::IllTyped
+                    TypeInfo::ILL_TYPED
                 } else {
-                    TypeInfo::Unbound(next)
+                    TypeInfo::unbound(next)
                 }
             }
         };
         (info, has_free)
     }
 
-    /// Typing rule for `Eq(a, b)` / `Ne(a, b)`: requires the same
-    /// type on both sides; result is `bool`.
+    /// Typing rule for `Eq(a, b)` / `Ne(a, b)`.
     fn compute_eq_like(&mut self, a: TermRef, b: TermRef) -> (TypeInfo, bool) {
         let (a_info, a_hf) = self.ref_props(a);
         let (b_info, b_hf) = self.ref_props(b);
         let has_free = a_hf || b_hf;
-        match (a_info, b_info) {
-            (TypeInfo::Typed(ta), TypeInfo::Typed(tb)) if ta == tb => {
-                (TypeInfo::Typed(self.bool_ty()), has_free)
+        match (a_info.decode(), b_info.decode()) {
+            (TypeInfoKind::Typed(ta), TypeInfoKind::Typed(tb)) if ta == tb => {
+                (TypeInfo::typed(self.bool_ty()), has_free)
             }
-            (TypeInfo::Typed(_), TypeInfo::Typed(_)) => (TypeInfo::IllTyped, has_free),
+            (TypeInfoKind::Typed(_), TypeInfoKind::Typed(_)) => (TypeInfo::ILL_TYPED, has_free),
             _ => (propagate2_until_typed(a_info, b_info), has_free),
         }
     }
 
-    /// Typing rule for `Forall(p)` / `Exists(p)`: requires `p : α → bool`
-    /// for some `α`; result is `bool`.
-    fn compute_quant(&self, p: TermRef) -> (TypeInfo, bool) {
+    /// Typing rule for `Forall(p)` / `Exists(p)`.
+    fn compute_quant(&mut self, p: TermRef) -> (TypeInfo, bool) {
         let (p_info, has_free) = self.ref_props(p);
-        let p_ty = match p_info {
-            TypeInfo::Typed(t) => t,
-            TypeInfo::Unbound(_) => return (p_info, has_free),
-            TypeInfo::IllTyped => return (TypeInfo::IllTyped, has_free),
+        let p_ty = match p_info.decode() {
+            TypeInfoKind::Typed(t) => t,
+            TypeInfoKind::Unbound(_) => return (p_info, has_free),
+            TypeInfoKind::IllTyped => return (TypeInfo::ILL_TYPED, has_free),
         };
         let bool_ref = self.bool_ty();
         match self.type_def_of(p_ty) {
             Some(TypeDef::Fun(_dom, cod)) if cod == bool_ref => {
-                (TypeInfo::Typed(bool_ref), has_free)
+                (TypeInfo::typed(bool_ref), has_free)
             }
-            _ => (TypeInfo::IllTyped, has_free),
+            _ => (TypeInfo::ILL_TYPED, has_free),
         }
     }
 
-    /// Typing rule for `Eps(α, p)`: requires `p : α → bool`; result is `α`.
-    fn compute_eps(&self, elem_ty: TypeRef, p: TermRef) -> (TypeInfo, bool) {
+    /// Typing rule for `Eps(α, p)`.
+    fn compute_eps(&mut self, elem_ty: TypeRef, p: TermRef) -> (TypeInfo, bool) {
         let (p_info, has_free) = self.ref_props(p);
-        let p_ty = match p_info {
-            TypeInfo::Typed(t) => t,
-            TypeInfo::Unbound(_) => return (p_info, has_free),
-            TypeInfo::IllTyped => return (TypeInfo::IllTyped, has_free),
+        let p_ty = match p_info.decode() {
+            TypeInfoKind::Typed(t) => t,
+            TypeInfoKind::Unbound(_) => return (p_info, has_free),
+            TypeInfoKind::IllTyped => return (TypeInfo::ILL_TYPED, has_free),
         };
         let bool_ref = self.bool_ty();
         match self.type_def_of(p_ty) {
             Some(TypeDef::Fun(dom, cod)) if dom == elem_ty && cod == bool_ref => {
-                (TypeInfo::Typed(elem_ty), has_free)
+                (TypeInfo::typed(elem_ty), has_free)
             }
-            _ => (TypeInfo::IllTyped, has_free),
+            _ => (TypeInfo::ILL_TYPED, has_free),
+        }
+    }
+
+    /// Typing rule for `Op1(op, x)`: lookup `op`'s `(input, output)`
+    /// signature; requires `x : input`; result is `output`.
+    fn compute_op1(&mut self, op: crate::primop::PrimOp1, x: TermRef) -> (TypeInfo, bool) {
+        let (x_info, has_free) = self.ref_props(x);
+        let (input, output) = op.sig();
+        match x_info.decode() {
+            TypeInfoKind::Typed(t) if t == input => (TypeInfo::typed(output), has_free),
+            TypeInfoKind::Typed(_) => (TypeInfo::ILL_TYPED, has_free),
+            TypeInfoKind::Unbound(_) => (x_info, has_free),
+            TypeInfoKind::IllTyped => (TypeInfo::ILL_TYPED, has_free),
+        }
+    }
+
+    /// Typing rule for `Op2(op, a, b)`: signature `(in1, in2, output)`.
+    fn compute_op2(
+        &mut self,
+        op: crate::primop::PrimOp2,
+        a: TermRef,
+        bx: TermRef,
+    ) -> (TypeInfo, bool) {
+        let (a_info, a_hf) = self.ref_props(a);
+        let (b_info, b_hf) = self.ref_props(bx);
+        let has_free = a_hf || b_hf;
+        let (in1, in2, output) = op.sig();
+        match (a_info.decode(), b_info.decode()) {
+            (TypeInfoKind::Typed(ta), TypeInfoKind::Typed(tb)) if ta == in1 && tb == in2 => {
+                (TypeInfo::typed(output), has_free)
+            }
+            (TypeInfoKind::Typed(_), TypeInfoKind::Typed(_)) => (TypeInfo::ILL_TYPED, has_free),
+            (TypeInfoKind::IllTyped, _) | (_, TypeInfoKind::IllTyped) => {
+                (TypeInfo::ILL_TYPED, has_free)
+            }
+            _ => (propagate2_until_typed(a_info, b_info), has_free),
+        }
+    }
+
+    /// Typing rule for `Comp(f, g)`: `f : β → γ`, `g : α → β` → `α → γ`.
+    fn compute_comp(&mut self, f: TermRef, g: TermRef) -> (TypeInfo, bool) {
+        let (f_info, f_hf) = self.ref_props(f);
+        let (g_info, g_hf) = self.ref_props(g);
+        let has_free = f_hf || g_hf;
+        let f_ty = match f_info.decode() {
+            TypeInfoKind::Typed(t) => t,
+            TypeInfoKind::Unbound(_) => return (propagate2_until_typed(f_info, g_info), has_free),
+            TypeInfoKind::IllTyped => return (TypeInfo::ILL_TYPED, has_free),
+        };
+        let g_ty = match g_info.decode() {
+            TypeInfoKind::Typed(t) => t,
+            TypeInfoKind::Unbound(_) => return (propagate2_until_typed(f_info, g_info), has_free),
+            TypeInfoKind::IllTyped => return (TypeInfo::ILL_TYPED, has_free),
+        };
+        let (f_dom, f_cod) = match self.type_def_of(f_ty) {
+            Some(TypeDef::Fun(a, b)) => (a, b),
+            _ => return (TypeInfo::ILL_TYPED, has_free),
+        };
+        let (g_dom, g_cod) = match self.type_def_of(g_ty) {
+            Some(TypeDef::Fun(a, b)) => (a, b),
+            _ => return (TypeInfo::ILL_TYPED, has_free),
+        };
+        if g_cod != f_dom {
+            return (TypeInfo::ILL_TYPED, has_free);
+        }
+        (TypeInfo::typed(self.intern_fun(g_dom, f_cod)), has_free)
+    }
+
+    /// Typing rule for `Iter(n, f)`: `n : nat`, `f : α → α` → `α → α`.
+    fn compute_iter(&mut self, n: TermRef, f: TermRef) -> (TypeInfo, bool) {
+        let (n_info, n_hf) = self.ref_props(n);
+        let (f_info, f_hf) = self.ref_props(f);
+        let has_free = n_hf || f_hf;
+        let nat_ref = self.nat_ty();
+        let f_ty = match (n_info.decode(), f_info.decode()) {
+            (TypeInfoKind::IllTyped, _) | (_, TypeInfoKind::IllTyped) => {
+                return (TypeInfo::ILL_TYPED, has_free)
+            }
+            (TypeInfoKind::Unbound(_), _) | (_, TypeInfoKind::Unbound(_)) => {
+                return (propagate2_until_typed(n_info, f_info), has_free)
+            }
+            (TypeInfoKind::Typed(nt), TypeInfoKind::Typed(ft)) if nt == nat_ref => ft,
+            _ => return (TypeInfo::ILL_TYPED, has_free),
+        };
+        match self.type_def_of(f_ty) {
+            Some(TypeDef::Fun(dom, cod)) if dom == cod => (TypeInfo::typed(f_ty), has_free),
+            _ => (TypeInfo::ILL_TYPED, has_free),
+        }
+    }
+
+    /// Typing rule for `Ite(cond, then)`: `cond : bool`, `then : α` → `α → α`.
+    fn compute_ite(&mut self, cond: TermRef, then_branch: TermRef) -> (TypeInfo, bool) {
+        let (c_info, c_hf) = self.ref_props(cond);
+        let (t_info, t_hf) = self.ref_props(then_branch);
+        let has_free = c_hf || t_hf;
+        let bool_ref = self.bool_ty();
+        match (c_info.decode(), t_info.decode()) {
+            (TypeInfoKind::IllTyped, _) | (_, TypeInfoKind::IllTyped) => {
+                (TypeInfo::ILL_TYPED, has_free)
+            }
+            (TypeInfoKind::Unbound(_), _) | (_, TypeInfoKind::Unbound(_)) => {
+                (propagate2_until_typed(c_info, t_info), has_free)
+            }
+            (TypeInfoKind::Typed(ct), TypeInfoKind::Typed(tt)) if ct == bool_ref => {
+                (TypeInfo::typed(self.intern_fun(tt, tt)), has_free)
+            }
+            _ => (TypeInfo::ILL_TYPED, has_free),
         }
     }
 
@@ -656,22 +725,14 @@ impl Arena {
 /// doesn't apply — IllTyped dominates, then Unbound(max), then
 /// IllTyped as the closed-but-no-rule fallback.
 fn propagate2_until_typed(a: TypeInfo, b: TypeInfo) -> TypeInfo {
-    if matches!(a, TypeInfo::IllTyped) || matches!(b, TypeInfo::IllTyped) {
-        return TypeInfo::IllTyped;
+    if a.is_ill_typed() || b.is_ill_typed() {
+        return TypeInfo::ILL_TYPED;
     }
     let depth = a.unbound_depth().max(b.unbound_depth());
     if depth > 0 {
-        TypeInfo::Unbound(depth)
+        TypeInfo::unbound(depth)
     } else {
-        TypeInfo::IllTyped
-    }
-}
-
-fn propagate1_until_typed(a: TypeInfo) -> TypeInfo {
-    match a {
-        TypeInfo::Typed(_) => TypeInfo::IllTyped,
-        TypeInfo::Unbound(n) if n > 0 => TypeInfo::Unbound(n),
-        _ => TypeInfo::IllTyped,
+        TypeInfo::ILL_TYPED
     }
 }
 

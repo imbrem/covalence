@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use covalence_kernel::{Arena, Context, PrimOp1, ProofError, Prop, TermDef, Thm};
+use covalence_kernel::{Arena, Context, PrimOp1, ProofError, Prop, TermDef, TermRef, Thm};
 
 #[test]
 fn empty_context_is_empty() {
@@ -228,6 +228,124 @@ fn nonlinear_thm_clone_combine() {
     assert_eq!(thm1.concl(), thm2.concl());
     assert!(thm1.context().contains_prop(&p_extra));
     assert!(thm2.context().contains_prop(&p_extra));
+}
+
+#[test]
+fn sym_flips_equality() {
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    let refl_thm = Thm::refl(&mut a, Context::empty(), t);
+    // refl gives Eq(t, t), which is symmetric to itself.
+    let flipped = Thm::sym(&mut a, refl_thm).unwrap();
+    match a.term_def(flipped.concl()) {
+        TermDef::Eq(l, r) => {
+            assert_eq!(l.as_local(), Some(t));
+            assert_eq!(r.as_local(), Some(t));
+        }
+        other => panic!("expected Eq, got {other:?}"),
+    }
+}
+
+#[test]
+fn sym_rejects_non_equality() {
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    let assumption_prop = Arc::new(Prop::new(Context::empty(), t));
+    let ctx = Context::extend(Context::empty(), assumption_prop.clone());
+    let thm = Thm::assume(ctx, assumption_prop).unwrap();
+    // Conclusion is `True`, not an Eq.
+    let err = Thm::sym(&mut a, thm).unwrap_err();
+    assert_eq!(err, ProofError::ExpectedEquality);
+}
+
+#[test]
+fn trans_chains_equalities() {
+    // We construct a = b and b = c via refl + sym + manual allocation;
+    // for the MVP, the cleanest demo uses refl alone since we lack
+    // congruence rules. Two refl Thms on the same term give us
+    // (t = t) and (t = t), which chain to (t = t).
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    let ctx = Context::empty();
+    let ab = Thm::refl(&mut a, ctx.clone(), t);
+    let bc = Thm::refl(&mut a, ctx.clone(), t);
+    let ac = Thm::trans(&mut a, ab, bc).unwrap();
+    match a.term_def(ac.concl()) {
+        TermDef::Eq(l, r) => {
+            assert_eq!(l.as_local(), Some(t));
+            assert_eq!(r.as_local(), Some(t));
+        }
+        other => panic!("expected Eq, got {other:?}"),
+    }
+}
+
+#[test]
+fn trans_via_uf_midpoint_match() {
+    // Build two structurally-distinct nat literal terms for the same
+    // value, union them, then trans should accept them as a valid
+    // midpoint.
+    let mut a = Arena::new();
+    let n1 = a.alloc_term(TermDef::nat_inline(5));
+    let n2 = a.alloc_term(TermDef::nat_inline(5));
+    a.union(TermRef::local(n1), TermRef::local(n2)).unwrap();
+
+    // ab : n1 = n1  (refl on n1)
+    // bc : n2 = n2  (refl on n2)
+    // After union, n1 ≡ n2 at level 0, so the trans midpoints match.
+    let ctx = Context::empty();
+    let ab = Thm::refl(&mut a, ctx.clone(), n1);
+    let bc = Thm::refl(&mut a, ctx.clone(), n2);
+    let ac = Thm::trans(&mut a, ab, bc).unwrap();
+    match a.term_def(ac.concl()) {
+        TermDef::Eq(l, r) => {
+            assert_eq!(l.as_local(), Some(n1));
+            assert_eq!(r.as_local(), Some(n2));
+        }
+        other => panic!("expected Eq, got {other:?}"),
+    }
+}
+
+#[test]
+fn trans_rejects_context_mismatch() {
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    let prop = Arc::new(Prop::new(Context::empty(), t));
+    let ctx1 = Context::empty();
+    let ctx2 = Context::extend(Context::empty(), prop);
+    let ab = Thm::refl(&mut a, ctx1, t);
+    let bc = Thm::refl(&mut a, ctx2, t);
+    let err = Thm::trans(&mut a, ab, bc).unwrap_err();
+    assert_eq!(err, ProofError::ContextMismatch);
+}
+
+#[test]
+fn eq_mp_derives_rhs_from_lhs() {
+    // We want: ctx ⊢ p = q and ctx ⊢ p ⇒ ctx ⊢ q.
+    // Easiest setup: put p in the context, assume it, and build
+    // p = p via refl. eq_mp then gives us q = p back.
+    let mut a = Arena::new();
+    let p = a.alloc_term(TermDef::True);
+    let p_prop = Arc::new(Prop::new(Context::empty(), p));
+    let ctx = Context::extend(Context::empty(), p_prop.clone());
+    let p_thm = Thm::assume(ctx.clone(), p_prop).unwrap();
+    let pq = Thm::refl(&mut a, ctx.clone(), p);
+    // pq is p = p, so eq_mp(pq, p_thm) ⊢ p.
+    let q_thm = Thm::eq_mp(&mut a, pq, p_thm).unwrap();
+    assert_eq!(q_thm.concl(), p);
+}
+
+#[test]
+fn eq_mp_rejects_lhs_mismatch() {
+    let mut a = Arena::new();
+    let p = a.alloc_term(TermDef::True);
+    let q = a.alloc_term(TermDef::False);
+    let q_prop = Arc::new(Prop::new(Context::empty(), q));
+    let ctx = Context::extend(Context::empty(), q_prop.clone());
+    let q_thm = Thm::assume(ctx.clone(), q_prop).unwrap();
+    // pq = p = p. eq_mp(pq, q_thm) — q_thm.concl is q, doesn't match p.
+    let pq = Thm::refl(&mut a, ctx.clone(), p);
+    let err = Thm::eq_mp(&mut a, pq, q_thm).unwrap_err();
+    assert_eq!(err, ProofError::LhsMismatch);
 }
 
 #[test]

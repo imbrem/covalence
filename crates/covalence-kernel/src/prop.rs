@@ -218,6 +218,72 @@ impl Thm {
             prop: Prop::new(thm_false.prop.context, not_p),
         })
     }
+
+    /// **Symmetry of equality.** From `ctx ⊢ a = b`, derive
+    /// `ctx ⊢ b = a`. The new equality is allocated in the arena.
+    ///
+    /// Returns `ProofError::ExpectedEquality` if `thm`'s conclusion
+    /// isn't an `Eq` shape.
+    pub fn sym(arena: &mut Arena, thm: Thm) -> Result<Self, ProofError> {
+        let (a, b) = match *arena.term_def(thm.prop.concl) {
+            TermDef::Eq(a, b) => (a, b),
+            _ => return Err(ProofError::ExpectedEquality),
+        };
+        let flipped = arena.alloc_term(TermDef::Eq(b, a));
+        Ok(Self {
+            prop: Prop::new(thm.prop.context, flipped),
+        })
+    }
+
+    /// **Transitivity of equality.** From `ctx ⊢ a = b` and
+    /// `ctx ⊢ b' = c` where `b ≡ b'` at UF level 0, derive
+    /// `ctx ⊢ a = c`.
+    ///
+    /// Both Thms must share the same context (by `Arc::ptr_eq`).
+    /// Combining different contexts requires explicit `add_assumption`
+    /// to align them first.
+    pub fn trans(arena: &mut Arena, ab: Thm, bc: Thm) -> Result<Self, ProofError> {
+        if !Arc::ptr_eq(&ab.prop.context, &bc.prop.context) {
+            return Err(ProofError::ContextMismatch);
+        }
+        let (a, b1) = match *arena.term_def(ab.prop.concl) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => return Err(ProofError::ExpectedEquality),
+        };
+        let (b2, c) = match *arena.term_def(bc.prop.concl) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => return Err(ProofError::ExpectedEquality),
+        };
+        if !arena.eq_at_level_0(b1, b2) {
+            return Err(ProofError::MidpointMismatch);
+        }
+        let ac = arena.alloc_term(TermDef::Eq(a, c));
+        Ok(Self {
+            prop: Prop::new(ab.prop.context, ac),
+        })
+    }
+
+    /// **Equality modus ponens.** From `ctx ⊢ p = q` and
+    /// `ctx ⊢ p'` where `p ≡ p'` at UF level 0, derive `ctx ⊢ q`.
+    ///
+    /// `q` must be a local term (the kernel can't store a foreign
+    /// ref as a Thm conclusion directly).
+    pub fn eq_mp(arena: &mut Arena, pq: Thm, p_thm: Thm) -> Result<Self, ProofError> {
+        if !Arc::ptr_eq(&pq.prop.context, &p_thm.prop.context) {
+            return Err(ProofError::ContextMismatch);
+        }
+        let (p, q) = match *arena.term_def(pq.prop.concl) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => return Err(ProofError::ExpectedEquality),
+        };
+        if !arena.eq_at_level_0(p, TermRef::local(p_thm.prop.concl)) {
+            return Err(ProofError::LhsMismatch);
+        }
+        let q_id = q.as_local().ok_or(ProofError::ForeignConclusion)?;
+        Ok(Self {
+            prop: Prop::new(pq.prop.context, q_id),
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -232,6 +298,20 @@ pub enum ProofError {
     /// `not_from_false` requires the Thm's conclusion to be the
     /// literal `False`.
     ConclusionNotFalse,
+    /// A rule expected the Thm's conclusion to be an `Eq` shape.
+    ExpectedEquality,
+    /// `trans` / `eq_mp`: the two Thms have different contexts.
+    /// Use `add_assumption` to align them first.
+    ContextMismatch,
+    /// `trans`: the two equalities' midpoint terms aren't equal at
+    /// UF level 0.
+    MidpointMismatch,
+    /// `eq_mp`: the equality's LHS doesn't match the second Thm's
+    /// conclusion at UF level 0.
+    LhsMismatch,
+    /// `eq_mp`: the equality's RHS is a foreign ref. The kernel
+    /// can't yet record a foreign conclusion as a Thm.
+    ForeignConclusion,
 }
 
 impl std::fmt::Display for ProofError {
@@ -242,6 +322,13 @@ impl std::fmt::Display for ProofError {
             }
             ProofError::ConclusionNotFalse => {
                 write!(f, "expected the Thm's conclusion to be False")
+            }
+            ProofError::ExpectedEquality => write!(f, "expected an Eq conclusion"),
+            ProofError::ContextMismatch => write!(f, "contexts do not match"),
+            ProofError::MidpointMismatch => write!(f, "equalities do not chain"),
+            ProofError::LhsMismatch => write!(f, "equality LHS does not match Thm conclusion"),
+            ProofError::ForeignConclusion => {
+                write!(f, "equality RHS is a foreign ref; cannot record as Thm conclusion")
             }
         }
     }

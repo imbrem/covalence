@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use covalence_kernel::{Arena, TermDef, TermKind, TermRef, TypeDef, TypeRef};
+use covalence_kernel::{Arena, PrimOp2, TermDef, TermKind, TermRef, TypeDef, TypeRef};
 
 /// Helper: intern a name and build a Free term in one go.
 fn alloc_free(a: &mut Arena, name: &str, ty: TypeRef) -> covalence_kernel::TermId {
@@ -412,11 +412,11 @@ fn packed_refs_are_u32_sized() {
 
 #[test]
 fn term_def_fits_three_u32s() {
-    // The (tag, lhs, rhs) 3-u32 invariant (architecture §3.1). All
-    // 64-bit literal variants (U64, I64, NatInline, IntInline) are
-    // packed as `[u32; 2]` rather than `u64`/`i64` to keep the enum
-    // 4-byte-aligned — otherwise the 8-byte alignment forced by raw
-    // u64/i64 would push the total to 16 bytes.
+    // (tag, lhs, rhs) 3-u32 invariant. The `Op2(PrimOp2, TermRef,
+    // TermRef)` variant fits in 12 bytes because Rust packs the
+    // u8-sized PrimOp2 into the 3 bytes of alignment padding that
+    // would otherwise sit before the first TermRef — and the enum
+    // discriminant slots into the same space.
     assert_eq!(std::mem::size_of::<TermDef>(), 12);
     assert_eq!(std::mem::align_of::<TermDef>(), 4);
 }
@@ -579,7 +579,7 @@ fn kind_folds_per_op_variants_into_op1_op2() {
     let y = alloc_free(&mut a, "y", TypeRef::local(nat_ty));
 
     // NatSucc(x) in TermDef becomes TermKind::Op1(NatSucc, x).
-    let succ = a.alloc_term(TermDef::NatSucc(TermRef::local(x)));
+    let succ = a.alloc_term(TermDef::Op1(PrimOp1::NatSucc, TermRef::local(x)));
     match a.kind(succ) {
         TermKind::Op1(op, child) => {
             assert_eq!(op, PrimOp1::NatSucc);
@@ -589,7 +589,7 @@ fn kind_folds_per_op_variants_into_op1_op2() {
     }
 
     // NatAdd(x, y) in TermDef becomes TermKind::Op2(NatAdd, x, y).
-    let add = a.alloc_term(TermDef::NatAdd(TermRef::local(x), TermRef::local(y)));
+    let add = a.alloc_term(TermDef::Op2(PrimOp2::NatAdd, TermRef::local(x), TermRef::local(y)));
     match a.kind(add) {
         TermKind::Op2(op, a_ref, b_ref) => {
             assert_eq!(op, PrimOp2::NatAdd);
@@ -616,13 +616,13 @@ fn per_op_variants_with_accessors() {
     let y = alloc_free(&mut a, "y", TypeRef::local(nat_ty));
 
     // Unary primop application: NatSucc(x)
-    let succ_x = a.alloc_term(TermDef::NatSucc(TermRef::local(x)));
+    let succ_x = a.alloc_term(TermDef::Op1(PrimOp1::NatSucc, TermRef::local(x)));
     let (op, child) = a.term_def(succ_x).as_op1().expect("as_op1");
     assert_eq!(op, PrimOp1::NatSucc);
     assert_eq!(child.as_local(), Some(x));
 
     // Binary primop application: NatAdd(x, y)
-    let add_xy = a.alloc_term(TermDef::NatAdd(TermRef::local(x), TermRef::local(y)));
+    let add_xy = a.alloc_term(TermDef::Op2(PrimOp2::NatAdd, TermRef::local(x), TermRef::local(y)));
     let (op2, a_ref, b_ref) = a.term_def(add_xy).as_op2().expect("as_op2");
     assert_eq!(op2, PrimOp2::NatAdd);
     assert_eq!(a_ref.as_local(), Some(x));
@@ -635,7 +635,7 @@ fn per_op_variants_with_accessors() {
 
     // A fixed-width op
     let u32_x = a.alloc_term(TermDef::U32(42));
-    let popcount = a.alloc_term(TermDef::U32Popcount(TermRef::local(u32_x)));
+    let popcount = a.alloc_term(TermDef::Op1(PrimOp1::U32Popcount, TermRef::local(u32_x)));
     let (op, _) = a.term_def(popcount).as_op1().unwrap();
     assert_eq!(op, PrimOp1::U32Popcount);
 }
@@ -649,12 +649,13 @@ fn per_op_closed_flag_propagates() {
     let zero = a.alloc_term(TermDef::nat_inline(0));
 
     // NatAdd(free, closed) is open
-    let open_add = a.alloc_term(TermDef::NatAdd(TermRef::local(x), TermRef::local(zero)));
+    let open_add = a.alloc_term(TermDef::Op2(PrimOp2::NatAdd, TermRef::local(x), TermRef::local(zero)));
     assert!(!a.term_uf(open_add).closed());
     assert!(a.term_uf(open_add).has_free);
 
     // NatAdd(closed, closed) is closed
-    let closed_add = a.alloc_term(TermDef::NatAdd(
+    let closed_add = a.alloc_term(TermDef::Op2(
+        PrimOp2::NatAdd,
         TermRef::local(zero),
         TermRef::local(zero),
     ));

@@ -410,10 +410,10 @@ pub enum TermKind {
     BytesStored(BytesId),
 }
 
-// Private internal representation. May change. Most variants are
-// 1-2 u32s of payload; primops are per-op variants so the (op, lhs,
-// rhs) shape fits 3 u32s without an extra tag byte. Op1/Op2 in
-// TermKind reconstruct the grouping.
+// Private internal representation. May change. Applied primops use
+// a single Op1/Op2 variant each with the op kind inlined as a u8.
+// Rust packs the discriminant into the alignment padding, so the
+// whole enum stays at 12 bytes — the (tag, lhs, rhs) 3-u32 shape.
 pub(crate) enum TermDef {
     // structural
     True, False,
@@ -423,10 +423,10 @@ pub(crate) enum TermDef {
     Comb(TermRef, TermRef),
     Abs(TypeRef, TermRef),
     Eq(TermRef, TermRef),
-    // partially-applied: just branch type + bool cond; branches via Comb
-    Ite(TypeRef, TermRef),
-    // partially-applied: just element type + nat count; f via Comb
-    Iter(TypeRef, TermRef),
+    // partial-applied: cond + then; branches via Comb; α inferred from then
+    Ite(TermRef, TermRef),
+    // partial-applied: n + f; α inferred from f's domain
+    Iter(TermRef, TermRef),
     Eps(TypeRef, TermRef),    // Hilbert choice
     Forall(TermRef),          // ∀ over predicate of inferred domain
     Exists(TermRef),          // ∃ likewise
@@ -435,23 +435,15 @@ pub(crate) enum TermDef {
     Comp(TermRef, TermRef),
     LiftOp1(PrimOp1),         // η-expansion of a unary primop
     LiftOp2(PrimOp2),         // η-expansion of a binary primop
-    // literals as above; storage may be inline or via *Id into a table
-    ...
-    // one variant per primop kind, so the (variant, child, child) shape
-    // is exactly (tag, lhs, rhs) — no embedded PrimOp byte
-    NatSucc(TermRef),     NatPred(TermRef),    IntNeg(TermRef),
-    NatAdd(TermRef, TermRef), NatSub(TermRef, TermRef), ...
-    LogicalNot(TermRef),
-    LogicalAnd(TermRef, TermRef), LogicalOr(TermRef, TermRef),
-    LogicalXor(TermRef, TermRef), LogicalNand(TermRef, TermRef),
-    LogicalNor(TermRef, TermRef), LogicalImp(TermRef, TermRef),
-    BytesLen(TermRef), BytesHead(TermRef), BytesTail(TermRef),
-    BytesConcat(TermRef, TermRef), BytesCons(TermRef, TermRef),
-    BytesIndex(TermRef, TermRef), BytesEq(TermRef, TermRef),
-    BitsLen(TermRef),
-    BitsToBytes(TermRef), BytesToBits(TermRef),
-    NatToInt(TermRef), IntToNat(TermRef),
-    // ...full list in §3.4 and docs/prover-primops.md
+    // applied primops — single variant each, op kind inlined as u8
+    Op1(PrimOp1, TermRef),
+    Op2(PrimOp2, TermRef, TermRef),
+    // literals (Packed64 wraps u64/i64 to keep enum 4-byte aligned)
+    U8(u8), U16(u16), U32(u32), U64(Packed64),
+    I8(i8), I16(i16), I32(i32), I64(Packed64),
+    IntInline(Packed64), IntStored(IntId),
+    NatInline(Packed64), NatStored(NatId),
+    BitsStored(BitsId), BytesStored(BytesId),
 }
 
 // TermRef / TypeRef are packed u32 — bit 31 is the local/foreign

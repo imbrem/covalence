@@ -393,15 +393,6 @@ impl Arena {
     /// Every other variant just propagates from its children — no
     /// other shape introduces or removes a binder.
     fn term_props(&self, def: &TermDef) -> (u32, bool) {
-        // Fast paths for the per-op variants: just propagate.
-        if let Some((_, child)) = def.as_op1() {
-            return self.ref_props(child);
-        }
-        if let Some((_, a, b)) = def.as_op2() {
-            let (a_bd, a_hf) = self.ref_props(a);
-            let (b_bd, b_hf) = self.ref_props(b);
-            return (a_bd.max(b_bd), a_hf || b_hf);
-        }
         match def {
             // -- de Bruijn (the only "open" non-Free shape) --
             TermDef::Bound(i) => (i + 1, false),
@@ -412,19 +403,23 @@ impl Arena {
             }
             // -- free variables --
             TermDef::Free(_, _) => (0, true),
+            // -- single-child propagation --
+            TermDef::Forall(p)
+            | TermDef::Exists(p)
+            | TermDef::Eps(_, p)
+            | TermDef::Op1(_, p) => self.ref_props(*p),
             // -- two-child propagation --
             TermDef::Comb(f, x)
             | TermDef::Eq(f, x)
             | TermDef::Ne(f, x)
             | TermDef::Comp(f, x)
             | TermDef::Iter(f, x)
-            | TermDef::Ite(f, x) => {
+            | TermDef::Ite(f, x)
+            | TermDef::Op2(_, f, x) => {
                 let (f_bd, f_hf) = self.ref_props(*f);
                 let (x_bd, x_hf) = self.ref_props(*x);
                 (f_bd.max(x_bd), f_hf || x_hf)
             }
-            // -- single-child propagation --
-            TermDef::Forall(p) | TermDef::Exists(p) | TermDef::Eps(_, p) => self.ref_props(*p),
             // -- closed leaves --
             TermDef::Const(_, _)
             | TermDef::True
@@ -437,8 +432,6 @@ impl Arena {
             | TermDef::IntInline(_) | TermDef::IntStored(_)
             | TermDef::NatInline(_) | TermDef::NatStored(_)
             | TermDef::BitsStored(_) | TermDef::BytesStored(_) => (0, false),
-            // -- per-op variants handled by the fast paths above --
-            _ => unreachable!("per-op variant should have been caught by as_op1 / as_op2"),
         }
     }
 

@@ -595,16 +595,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "covalence-num"
-version = "0.0.0"
-dependencies = [
- "num-bigint",
- "num-integer",
- "num-traits",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "covalence-object"
 version = "0.0.0"
 dependencies = [
@@ -784,6 +774,9 @@ name = "covalence-types"
 version = "0.0.0"
 dependencies = [
  "bytes",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
  "thiserror 2.0.18",
 ]
 

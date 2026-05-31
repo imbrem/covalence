@@ -120,14 +120,19 @@ moves:
   `BitsId`. No content addressing in the kernel — `Indirect` is an
   internal arena index, not a hash.
 - **Arena identity is by pointer** — no `ArenaId` u32 anywhere.
-  Canonical references are `(Arc<Arena>, TermId)` / `(Arc<Arena>,
-  TypeId)`. Two canonicals are equal when their `Arc<Arena>`s are
-  `Arc::ptr_eq` and their inner IDs match.
-- `TermRef = Local(TermId) | Foreign(Arc<Arena>, TermId)` and the
-  same for `TypeRef`.
+  Stored canonical references are `(Arc<Arena>, TermId)` /
+  `(Arc<Arena>, TypeId)`. Two canonicals are equal when the
+  `Arc<Arena>`s are `Arc::ptr_eq` and the inner IDs match.
+- Read paths take **`&Arena`** where possible to avoid Arc refcount
+  bumps; pointer-equality crosses the `Arc<Arena>` / `&Arena`
+  boundary cleanly (compare both as `*const Arena`).
+- `TermRef = Local(TermId) | Foreign(Arc<Arena>, TermId)` for stored
+  state (e.g. inside a TermDef); read APIs typically project the
+  `Arc` to a `&Arena` for traversal.
 - UF storage stood up: `TermUfEntry { canonical: (Arc<Arena>,
   TermId), closed }`, `TypeUfEntry { canonical: (Arc<Arena>, TypeId)
-  }`. Equality predicates over them land in Phase 3.
+  }`. Equality predicates over them land in Phase 3 and take
+  `&Arena` arguments.
 - Frozen-vs-mutable arenas; `Arc<Arena>` for frozen.
 - Structural tables append-only at the user level; the kernel
   reserves `rewrite(t, new_def)` as a privileged primitive (exposed
@@ -413,11 +418,12 @@ Primitives (all wired through `covalence-shell`):
 
 - **Phase 0.** Done — landed as commits `phase 0a` / `phase 0b` /
   `phase 0c` on top of `better plan`.
-- **Phase 1.** Arena identity uses `Arc<Arena>` pointer equality —
-  no allocation strategy needed. (We considered a kernel-issued u32
-  `ArenaId` table; rejected in favour of pointer identity because
-  it sidesteps allocation bookkeeping and works correctly across
-  threads as long as the `Arc` is alive.)
+- **Phase 1.** Arena identity uses `Arc<Arena>` for stored
+  references and `&'a Arena` for borrowed read paths. Pointer
+  equality (`Arc::ptr_eq` / `std::ptr::eq`) works across both. No
+  kernel-issued u32 `ArenaId` table (considered, rejected as
+  unnecessary bookkeeping). For functions wanting either, the
+  `ArenaRef<'a>` enum in architecture §2.2 is available.
 - **Phase 1.** `BitsValue::Inline` size cutoff before promoting to
   `Indirect(BitsId)`. 256 bits is a reasonable default.
 - **Phase 1.** What's the `Store` trait actually need to expose?

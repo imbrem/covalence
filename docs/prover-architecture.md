@@ -98,8 +98,41 @@ TypeUfEntry {
 **Arena identity is by pointer**: there is no kernel-assigned arena
 identifier. Two canonical IDs `(arena_a, id_a)` and `(arena_b, id_b)`
 are equal iff `arena_a` and `arena_b` point at the *same allocation*
-(pointer equality via `Arc::ptr_eq`) and `id_a == id_b`. There is no
-"arena number" table; identity is the arena itself.
+and `id_a == id_b`. There is no "arena number" table; identity is the
+arena itself.
+
+The kernel uses two flavours of arena reference and treats them as
+identity-equivalent:
+
+- **`Arc<Arena>`** — the default, used wherever an arena reference
+  needs to be **stored** (UF entries' canonical pointers,
+  `Foreign(_, _)` term references inside another arena's TermDef,
+  `Prop`/`Thm` fields that outlive their constructor). Identity via
+  `Arc::ptr_eq`.
+- **`&'a Arena`** — used wherever an arena reference is purely
+  **borrowed for the duration of a call**: hot read paths, in-place
+  congruence checks, building a new term whose source arenas already
+  outlive the borrow. Avoids the Arc refcount bump. Identity via
+  `std::ptr::eq` on the underlying `*const Arena`.
+
+Identity comparisons **work across the boundary**:
+`Arc::as_ptr(arc)` gives the same `*const Arena` as
+`r as *const Arena` for `r: &Arena` referring to the same allocation,
+so an `Arc<Arena>` stored in a UF entry can be compared by pointer
+against a `&Arena` passed into a query.
+
+When an API needs to be polymorphic over "I want either form here,"
+an explicit enum
+
+```rust
+enum ArenaRef<'a> {
+    Arc(Arc<Arena>),
+    Borrowed(&'a Arena),
+}
+```
+
+is a reasonable shape; for most read paths a plain `&Arena` argument
+is enough.
 
 This matters in subtle ways:
 
@@ -108,6 +141,9 @@ This matters in subtle ways:
 - Two structurally-identical arenas that happen to share content but
   live at different allocations are **not** the same arena; their
   contents are compared structurally, never canonically.
+- A `&Arena` obtained by dereferencing an `Arc<Arena>` has the same
+  pointer identity as that Arc — passing the borrow into a query and
+  later coming back with the Arc keeps the identity intact.
 
 The type UF parallels the term UF. The kernel provides **no rule to
 introduce arbitrary type unions** — there's no analog of `union(a, b)`
@@ -945,9 +981,10 @@ The kernel's soundness reduces to seven invariants:
    them.
 4. **Canonical identity is arena-aware.** Two terms (or types) in
    different arenas with the same `TermId` (or `TypeId`) are not
-   assumed equal; the canonical tuple `(Arc<Arena>, TermId)` (or
-   `(Arc<Arena>, TypeId)`) is what matters — identity is by
-   `Arc::ptr_eq`, never by content.
+   assumed equal; the canonical tuple `(arena-ref, TermId)` (or
+   `(arena-ref, TypeId)`) is what matters — identity is by pointer
+   (`Arc::ptr_eq` for stored `Arc<Arena>`, `std::ptr::eq` for
+   borrowed `&Arena`, equivalent across both), never by content.
 5. **Concept theory axioms have the shape `… ⇒ c[α](…) = true`.**
    This applies only to the constant family side; the kernel checks
    the conclusion shape and accepts the axiom. The trivial model
@@ -977,9 +1014,12 @@ Thms.
 - **Arena** — pool of types, terms, bitvectors, plus term UF and type
   UF state. SMT-analogously, a *clause*: a self-contained line of
   local reasoning.
-- **Arena identity** — by pointer: two `Arc<Arena>` are the same
-  arena iff `Arc::ptr_eq` holds. No kernel-issued arena number; the
-  arena *is* its allocation.
+- **Arena identity** — by pointer: two arena references are the same
+  arena iff they point to the same allocation. Stored references are
+  `Arc<Arena>` (identity via `Arc::ptr_eq`); ephemeral read paths use
+  `&'a Arena` (identity via `std::ptr::eq`); the two forms are
+  identity-equivalent. No kernel-issued arena number; the arena *is*
+  its allocation.
 - **Builtin** — TermDef/TypeDef enum variant supplied by the kernel
   (`Bool`, `Bits`, `Fun`, `True`, `False`, `Eq`, `Bits(_)`). Not in
   any user namespace. Pattern-matched alongside the structural

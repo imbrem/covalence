@@ -58,7 +58,7 @@ pub fn new_tagged_store() -> TaggedStore {
 }
 
 pub async fn run_serve(config: ServeConfig) -> Result<(), ServeError> {
-    let kernel = Kernel::with_store(config.store)?;
+    let kernel = Kernel::with_store(config.store);
     let tagged_store = new_tagged_store();
     let object_store = GitTaggedObjectStore::new(tagged_store.clone());
     let state = AppState {

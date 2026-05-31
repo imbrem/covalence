@@ -561,15 +561,9 @@ name = "covalence-kernel"
 version = "0.0.0"
 dependencies = [
  "covalence-hash",
- "covalence-hol",
  "covalence-object",
- "covalence-opentheory",
- "covalence-sig",
  "covalence-store",
- "covalence-types",
- "covalence-wasm",
  "thiserror 2.0.18",
- "wat",
 ]
 
 [[package]]

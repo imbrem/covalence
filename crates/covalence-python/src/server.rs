@@ -67,8 +67,7 @@ pub fn serve(port: u16, store: Option<&str>) -> PyResult<Server> {
         None => BlobStore::new(covalence_store::SharedMemoryStore::new()),
     };
 
-    let kernel =
-        Kernel::with_store(blob_store).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let kernel = Kernel::with_store(blob_store);
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
     let (port_tx, port_rx) = mpsc::channel::<Result<u16, String>>();

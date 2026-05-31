@@ -3,25 +3,8 @@ name = "covalence-kernel"
 version = "0.0.0"
 edition = "2024"
 
-[features]
-default = []
-engine = ["dep:covalence-wasm", "dep:covalence-store", "dep:covalence-sig", "dep:covalence-object"]
-hol = ["engine", "dep:covalence-hol", "dep:covalence-opentheory"]
-sqlite = ["engine", "covalence-store/sqlite"]
-
 [dependencies]
 covalence-hash = { path = "../covalence-hash", default-features = false }
-covalence-types = { path = "../covalence-types" }
-thiserror = "2"
-# engine-only deps
-covalence-store = { path = "../covalence-store", optional = true }
-covalence-sig = { path = "../covalence-sig", optional = true }
-covalence-object = { path = "../covalence-object", optional = true }
-covalence-wasm = { path = "../covalence-wasm", features = ["runtime"], optional = true }
-covalence-hol = { path = "../covalence-hol", optional = true }
-covalence-opentheory = { path = "../covalence-opentheory", optional = true }
-
-[dev-dependencies]
-covalence-hash = { path = "../covalence-hash" }
 covalence-store = { path = "../covalence-store" }
-wat = "1.249"
+covalence-object = { path = "../covalence-object" }
+thiserror = "2"

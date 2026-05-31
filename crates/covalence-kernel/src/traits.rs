@@ -1,30 +1,12 @@
 use covalence_hash::O256;
 
-pub use covalence_types::{Decision, ParseDecisionError};
-
 /// Errors from kernel operations.
 #[derive(Debug, thiserror::Error)]
 pub enum KernelError {
-    #[error("engine error: {0}")]
-    Engine(String),
     #[error("store error: {0}")]
     Store(String),
     #[error("not found: {0}")]
     NotFound(String),
-}
-
-/// Output from deciding a proposition, including transitively proved hashes.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DecideOutput {
-    /// The decision for the queried hash.
-    pub decision: Decision,
-    /// Hashes proved Sat during this decide (on the prove stack when attest was called).
-    pub proved: Vec<O256>,
-}
-
-/// Evaluates propositions and produces decisions.
-pub trait Evaluator<S>: Send + Sync {
-    fn decide(&self, bytes: &[u8], store: &S) -> Result<DecideOutput, KernelError>;
 }
 
 /// Information about a backend.
@@ -42,7 +24,6 @@ pub trait SyncBackend: Send {
     fn get_blob(&self, hash: &O256) -> Result<Option<Vec<u8>>, KernelError>;
     fn has_blob(&self, hash: &O256) -> Result<bool, KernelError>;
     fn blob_count(&self) -> Result<Option<usize>, KernelError>;
-    fn decide(&self, hash: &O256) -> Result<DecideOutput, KernelError>;
 
     /// Store tree data, returning a tree-tagged hash.
     fn store_tree(&self, data: &[u8]) -> Result<O256, KernelError> {
@@ -65,7 +46,6 @@ pub trait AsyncBackend: Send + Sync {
     async fn get_blob(&self, hash: &O256) -> Result<Option<Vec<u8>>, KernelError>;
     async fn has_blob(&self, hash: &O256) -> Result<bool, KernelError>;
     async fn blob_count(&self) -> Result<Option<usize>, KernelError>;
-    async fn decide(&self, hash: &O256) -> Result<DecideOutput, KernelError>;
 
     /// Store tree data, returning a tree-tagged hash.
     async fn store_tree(&self, data: &[u8]) -> Result<O256, KernelError> {

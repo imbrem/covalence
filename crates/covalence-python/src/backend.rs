@@ -109,8 +109,7 @@ pub fn local(store: Option<&Store>) -> PyResult<Backend> {
     let kernel = match store {
         Some(s) => Kernel::with_store(s.blob_store()),
         None => Kernel::new(),
-    }
-    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    };
     let tx = spawn_kernel_worker(kernel);
     Ok(Backend { tx })
 }
@@ -120,8 +119,7 @@ pub fn local(store: Option<&Store>) -> PyResult<Backend> {
 pub fn local_persistent(path: &str) -> PyResult<Backend> {
     let store = covalence_store::SqliteStore::open(path)
         .map_err(|e| PyRuntimeError::new_err(format!("sqlite open: {e}")))?;
-    let kernel = Kernel::with_store(BlobStore::new(store))
-        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let kernel = Kernel::with_store(BlobStore::new(store));
     let tx = spawn_kernel_worker(kernel);
     Ok(Backend { tx })
 }

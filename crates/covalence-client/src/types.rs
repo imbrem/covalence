@@ -9,10 +9,3 @@ pub(crate) struct HashResponse {
 pub(crate) struct BlobStatsResponse {
     pub count: Option<usize>,
 }
-
-#[derive(Deserialize)]
-pub(crate) struct DecideResponse {
-    pub result: String,
-    #[serde(default)]
-    pub proved: Vec<String>,
-}

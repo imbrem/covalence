@@ -1,6 +1,5 @@
 use std::sync::mpsc;
 
-use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
 use covalence_kernel::Kernel;
@@ -24,7 +23,7 @@ impl Session {
 /// Create a REPL session backed by a fresh in-memory kernel.
 #[pyfunction]
 pub fn session_local() -> PyResult<Session> {
-    let kernel = Kernel::new().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let kernel = Kernel::new();
     let repl = covalence_repl::Session::new(Box::new(kernel), true, false);
     let tx = spawn_session_worker(repl);
     Ok(Session { tx })

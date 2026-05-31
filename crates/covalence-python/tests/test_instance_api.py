@@ -124,31 +124,10 @@ def test_container_empty():
     assert c.exports == []
 
 
-def test_container_rejects_unknown_import():
-    wat = """
-    (component
-        (import "unknown-import" (func))
-    )
-    """
-    with pytest.raises(ValueError, match="unknown kernel import"):
-        covalence.Container.from_wat(wat)
-
-
 def test_container_from_component():
     comp = covalence.Component.from_wat(TRIVIAL_TRUE)
     c = covalence.Container.from_component(comp)
     assert c.hash == comp.hash
-
-
-def test_container_from_component_rejects_unknown():
-    wat = """
-    (component
-        (import "unknown-import" (func))
-    )
-    """
-    comp = covalence.Component.from_wat(wat)
-    with pytest.raises(ValueError, match="unknown kernel import"):
-        covalence.Container.from_component(comp)
 
 
 def test_container_repr():

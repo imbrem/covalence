@@ -4,9 +4,8 @@ version = "0.0.0"
 edition = "2024"
 
 [features]
-default = ["static", "sqlite"]
+default = ["static"]
 static = ["dep:rust-embed", "dep:mime_guess"]
-sqlite = ["covalence-kernel/sqlite"]
 
 [dependencies]
 axum = { version = "0.8", features = ["ws"] }
@@ -23,7 +22,7 @@ covalence-git = { path = "../covalence-git" }
 covalence-hash = { path = "../covalence-hash", default-features = false }
 covalence-object = { path = "../covalence-object" }
 covalence-store = { path = "../covalence-store", features = ["memory"] }
-covalence-kernel = { path = "../covalence-kernel", features = ["engine"] }
+covalence-kernel = { path = "../covalence-kernel" }
 covalence-repl = { path = "../covalence-repl" }
 covalence-proto = { path = "../covalence-proto", features = ["discovery"] }
 ureq = "3"

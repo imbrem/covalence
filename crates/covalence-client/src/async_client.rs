@@ -1,11 +1,11 @@
 use covalence_hash::O256;
-use covalence_kernel::{AsyncBackend, BackendInfo, DecideOutput, Decision, KernelError};
+use covalence_kernel::{AsyncBackend, BackendInfo, KernelError};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 
-use crate::types::{BlobStatsResponse, DecideResponse, HashResponse};
+use crate::types::{BlobStatsResponse, HashResponse};
 
 type HttpClient = Client<hyper_util::client::legacy::connect::HttpConnector, Full<Bytes>>;
 
@@ -319,20 +319,4 @@ impl AsyncBackend for AsyncHttpBackend {
         Ok(json.count)
     }
 
-    async fn decide(&self, hash: &O256) -> Result<DecideOutput, KernelError> {
-        let path = format!("/api/decide/{hash}");
-        let resp = self.get(&path).await?;
-        let json: DecideResponse =
-            serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
-        let decision: Decision = json
-            .result
-            .parse()
-            .map_err(|e: covalence_kernel::ParseDecisionError| KernelError::Store(e.to_string()))?;
-        let proved: Vec<O256> = json
-            .proved
-            .iter()
-            .filter_map(|h| O256::from_hex(h))
-            .collect();
-        Ok(DecideOutput { decision, proved })
-    }
 }

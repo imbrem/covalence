@@ -25,7 +25,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 covalence-serve = { path = "../covalence-serve" }
 covalence-repl = { path = "../covalence-repl", features = ["fetch"] }
-covalence-kernel = { path = "../covalence-kernel", features = ["engine", "sqlite", "hol"] }
+covalence-kernel = { path = "../covalence-kernel" }
 covalence-store = { path = "../covalence-store", features = ["sqlite"] }
 covalence-hol = { path = "../covalence-hol", optional = true }
 covalence-opentheory = { path = "../covalence-opentheory", optional = true }

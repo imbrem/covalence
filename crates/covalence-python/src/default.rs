@@ -18,7 +18,7 @@ fn default_tx() -> PyResult<&'static Sender<KernelTask>> {
     if let Some(tx) = DEFAULT.get() {
         return Ok(tx);
     }
-    let kernel = Kernel::new().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let kernel = Kernel::new();
     let tx = spawn_kernel_worker(kernel);
     // Another thread may have raced us; that's fine — use whichever won.
     let _ = DEFAULT.set(tx);

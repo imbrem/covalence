@@ -33,8 +33,6 @@ impl Container {
         }
         let info = covalence_wasm::parse_component(&wasm)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        covalence_kernel::validate_container_imports(&info.imports)
-            .map_err(|name| PyValueError::new_err(format!("unknown kernel import: {name}")))?;
         Ok(Container {
             wasm,
             imports: info.imports,

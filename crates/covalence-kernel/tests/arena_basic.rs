@@ -1427,6 +1427,89 @@ fn rewrite_preserves_term_id_and_uf_canonical_chain() {
     assert_eq!(a.term_def(x), &TermDef::nat_inline(0));
 }
 
+// ---------------------------------------------------------------------------
+// abstract_over / contains_free.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn abstract_over_replaces_free_with_bound() {
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let xname = a.intern_string("x".into());
+    let x = a.alloc_term(TermDef::Free(xname, bool_ty));
+    let r = a.abstract_over(TermRef::local(x), xname, bool_ty, 0);
+    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bound(0));
+}
+
+#[test]
+fn abstract_over_leaves_other_frees_alone() {
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let xname = a.intern_string("x".into());
+    let yname = a.intern_string("y".into());
+    let y = a.alloc_term(TermDef::Free(yname, bool_ty));
+    let r = a.abstract_over(TermRef::local(y), xname, bool_ty, 0);
+    // y is untouched.
+    assert_eq!(r, TermRef::local(y));
+}
+
+#[test]
+fn abstract_over_bumps_depth_under_inner_abs() {
+    // λx. Comb(f, x_outer) — abstracting x_outer should produce
+    // λx. Comb(f, Bound(1)) since we crossed one Abs.
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let b_to_b = a.alloc_type(TypeDef::Fun(bool_ty, bool_ty));
+    let xname = a.intern_string("x".into());
+    let fname = a.intern_string("f".into());
+    let x_free = a.alloc_term(TermDef::Free(xname, bool_ty));
+    let f = a.alloc_term(TermDef::Free(fname, b_to_b));
+    let comb = a.alloc_term(TermDef::Comb(TermRef::local(f), TermRef::local(x_free)));
+    // Wrap in a fresh Abs (binder unrelated to x).
+    let outer = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(comb)));
+    // Abstract over x_free at depth 0 → inside the outer Abs, depth becomes 1.
+    let r = a.abstract_over(TermRef::local(outer), xname, bool_ty, 0);
+    let r_def = *a.term_def(r.as_local().unwrap());
+    let body = match r_def {
+        TermDef::Abs(_, b) => b,
+        other => panic!("expected Abs, got {other:?}"),
+    };
+    let body_def = *a.term_def(body.as_local().unwrap());
+    match body_def {
+        TermDef::Comb(_, arg) => {
+            assert_eq!(a.term_def(arg.as_local().unwrap()), &TermDef::Bound(1));
+        }
+        other => panic!("expected Comb under Abs, got {other:?}"),
+    }
+}
+
+#[test]
+fn contains_free_detects_target_variable() {
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let xname = a.intern_string("x".into());
+    let yname = a.intern_string("y".into());
+    let x = a.alloc_term(TermDef::Free(xname, bool_ty));
+    let y = a.alloc_term(TermDef::Free(yname, bool_ty));
+    // Eq(x, y) contains x.
+    let eq = a.alloc_term(TermDef::Eq(TermRef::local(x), TermRef::local(y)));
+    assert!(a.contains_free(TermRef::local(eq), xname, bool_ty));
+    assert!(a.contains_free(TermRef::local(eq), yname, bool_ty));
+    // Different type for the same name → not present.
+    let nat_ty = a.nat_ty();
+    assert!(!a.contains_free(TermRef::local(eq), xname, nat_ty));
+}
+
+#[test]
+fn contains_free_uses_has_free_fast_path() {
+    // A closed term (no Frees) returns false without walking.
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let t = a.alloc_term(TermDef::True);
+    let xname = a.intern_string("x".into());
+    assert!(!a.contains_free(TermRef::local(t), xname, bool_ty));
+}
+
 #[test]
 fn typeref_decodes_to_kind() {
     let mut a = Arena::new();

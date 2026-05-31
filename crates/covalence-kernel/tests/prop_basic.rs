@@ -521,3 +521,83 @@ fn reduce_rejects_ill_typed_input() {
     let err = Thm::reduce(&mut a, Context::empty(), bad).unwrap_err();
     assert_eq!(err, ProofError::IllTypedInput);
 }
+
+#[test]
+fn abs_binds_free_var_in_both_sides_of_equality() {
+    // refl(x) gives ⊢ x = x. abs(_, x, bool) gives ⊢ (λ_:bool. Bound(0))
+    // = (λ_:bool. Bound(0)).
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let xname = a.intern_string("x".into());
+    let x = a.alloc_term(TermDef::Free(xname, bool_ty));
+
+    let refl_x = Thm::refl(&mut a, Context::empty(), x).unwrap();
+    let thm = Thm::abs(&mut a, refl_x, xname, bool_ty).unwrap();
+    let (l, r) = match a.term_def(thm.concl()) {
+        TermDef::Eq(l, r) => (*l, *r),
+        other => panic!("expected Eq, got {other:?}"),
+    };
+    let l_def = *a.term_def(l.as_local().unwrap());
+    let r_def = *a.term_def(r.as_local().unwrap());
+    match (l_def, r_def) {
+        (TermDef::Abs(ty1, b1), TermDef::Abs(ty2, b2)) => {
+            assert_eq!(ty1, bool_ty);
+            assert_eq!(ty2, bool_ty);
+            assert_eq!(a.term_def(b1.as_local().unwrap()), &TermDef::Bound(0));
+            assert_eq!(a.term_def(b2.as_local().unwrap()), &TermDef::Bound(0));
+        }
+        other => panic!("expected Abs/Abs, got {other:?}"),
+    }
+}
+
+#[test]
+fn abs_rejects_variable_free_in_assumption() {
+    // Assumption: x = True (where x is the variable we'd bind). Trying
+    // to abs over x with this assumption in scope would let the binder
+    // capture x's reference.
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let xname = a.intern_string("x".into());
+    let x = a.alloc_term(TermDef::Free(xname, bool_ty));
+    let t = a.alloc_term(TermDef::True);
+    let x_eq_true = a.alloc_term(TermDef::Eq(TermRef::local(x), TermRef::local(t)));
+
+    let assum = std::sync::Arc::new(Prop::new(Context::empty(), x_eq_true));
+    let ctx = Context::extend(Context::empty(), assum);
+    let refl_x = Thm::refl(&mut a, ctx, x).unwrap();
+    let err = Thm::abs(&mut a, refl_x, xname, bool_ty).unwrap_err();
+    assert_eq!(err, ProofError::VariableEscapesAssumption);
+}
+
+#[test]
+fn abs_allows_variable_not_free_in_assumption() {
+    // Assumption mentions a different free `y` — abs over `x` is fine.
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let xname = a.intern_string("x".into());
+    let yname = a.intern_string("y".into());
+    let x = a.alloc_term(TermDef::Free(xname, bool_ty));
+    let y = a.alloc_term(TermDef::Free(yname, bool_ty));
+    let t = a.alloc_term(TermDef::True);
+    let y_eq_true = a.alloc_term(TermDef::Eq(TermRef::local(y), TermRef::local(t)));
+
+    let assum = std::sync::Arc::new(Prop::new(Context::empty(), y_eq_true));
+    let ctx = Context::extend(Context::empty(), assum);
+    let refl_x = Thm::refl(&mut a, ctx, x).unwrap();
+    let thm = Thm::abs(&mut a, refl_x, xname, bool_ty).unwrap();
+    assert!(matches!(a.term_def(thm.concl()), TermDef::Eq(_, _)));
+}
+
+#[test]
+fn abs_rejects_non_equality_thm() {
+    // Thm::assume on a non-Eq concl — abs should reject.
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    let assum = std::sync::Arc::new(Prop::new(Context::empty(), t));
+    let ctx = Context::extend(Context::empty(), assum.clone());
+    let thm_t = Thm::assume(&a, ctx, assum).unwrap();
+    let bool_ty = a.bool_ty();
+    let xname = a.intern_string("x".into());
+    let err = Thm::abs(&mut a, thm_t, xname, bool_ty).unwrap_err();
+    assert_eq!(err, ProofError::ExpectedEquality);
+}

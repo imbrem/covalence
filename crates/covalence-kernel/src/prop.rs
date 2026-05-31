@@ -25,10 +25,11 @@
 use std::sync::Arc;
 
 use crate::arena::Arena;
-use crate::id::TermId;
+use crate::id::{StrId, TermId};
 use crate::primop::{PrimOp1, PrimOp2};
 use crate::reduce;
 use crate::term::{TermDef, TermRef};
+use crate::ty::TypeRef;
 
 // ---------------------------------------------------------------------------
 // Context
@@ -363,6 +364,46 @@ impl Thm {
         })
     }
 
+    /// **Abstraction (`ABS`).** From `ctx ⊢ s = t`, derive
+    /// `ctx ⊢ (λ(name: ty). s) = (λ(name: ty). t)` — i.e. bind the
+    /// free variable `Free(name, ty)` in both sides under a fresh
+    /// `Abs(ty, _)`.
+    ///
+    /// The classical side condition: `Free(name, ty)` must **not**
+    /// appear free in any assumption of `ctx`. Otherwise the binder
+    /// would capture the assumption's variable, breaking
+    /// substitutivity. Returns
+    /// [`ProofError::VariableEscapesAssumption`] if violated.
+    pub fn abs(
+        arena: &mut Arena,
+        thm: Thm,
+        name: StrId,
+        ty: TypeRef,
+    ) -> Result<Self, ProofError> {
+        if !arena.is_well_typed(thm.prop.concl) {
+            return Err(ProofError::IllTypedInput);
+        }
+        let (s, t) = match *arena.term_def(thm.prop.concl) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => return Err(ProofError::ExpectedEquality),
+        };
+        let ctx = thm.prop.context.clone();
+        for i in 0..ctx.len() {
+            let assum = ctx.assumption(i).expect("len/index invariant");
+            if arena.contains_free(TermRef::local(assum.concl), name, ty) {
+                return Err(ProofError::VariableEscapesAssumption);
+            }
+        }
+        let s_body = arena.abstract_over(s, name, ty, 0);
+        let t_body = arena.abstract_over(t, name, ty, 0);
+        let s_abs = arena.alloc_term(TermDef::Abs(ty, s_body));
+        let t_abs = arena.alloc_term(TermDef::Abs(ty, t_body));
+        let eq = arena.alloc_term(TermDef::Eq(TermRef::local(s_abs), TermRef::local(t_abs)));
+        Ok(Self {
+            prop: Prop::new(thm.prop.context, eq),
+        })
+    }
+
     /// **Top-level reduction.** Apply one rule from the §10 catalog
     /// (literal-arg evaluation, numeral normalisation, `Comb(Id, _)`,
     /// `Comb(Ite(lit, _), _)`, …) to `t` and derive
@@ -425,6 +466,9 @@ pub enum ProofError {
     NotCongruent,
     /// `reduce`: no §10 rule fires on the given term.
     NotReducible,
+    /// `abs`: the variable being abstracted occurs free in one of
+    /// the context's assumptions — would be captured by the binder.
+    VariableEscapesAssumption,
 }
 
 impl std::fmt::Display for ProofError {
@@ -448,6 +492,9 @@ impl std::fmt::Display for ProofError {
             ProofError::IllTypedInput => write!(f, "rule input is not well-typed"),
             ProofError::NotCongruent => write!(f, "terms are not congruent at the requested depth"),
             ProofError::NotReducible => write!(f, "no reduction rule fires on this term"),
+            ProofError::VariableEscapesAssumption => {
+                write!(f, "abstraction variable occurs free in an assumption")
+            }
         }
     }
 }

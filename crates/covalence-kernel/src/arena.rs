@@ -379,6 +379,125 @@ impl Arena {
         self.subst_inner(t, depth, replacement)
     }
 
+    /// Close `t` over the free variable `Free(name, ty)`: replace
+    /// every such occurrence with `Bound(depth + d)` where `d` is the
+    /// number of `Abs` binders crossed. Dual of [`subst`](Self::subst).
+    ///
+    /// `depth` is the de-Bruijn index assigned at the *outermost*
+    /// occurrence — callers typically pass `0` and then wrap the
+    /// result in `Abs(ty, _)` to bind it. The `Thm::abs` rule does
+    /// exactly this.
+    ///
+    /// Fast path: terms with no free vars (`has_free = false`) are
+    /// returned unchanged without a walk.
+    pub fn abstract_over(
+        &mut self,
+        t: TermRef,
+        name: StrId,
+        ty: TypeRef,
+        depth: u32,
+    ) -> TermRef {
+        self.abstract_inner(t, name, ty, depth)
+    }
+
+    /// Does `t` contain a `Free(name, ty)` occurrence anywhere in its
+    /// local subtree? Foreign refs are treated opaquely (return
+    /// `false`).
+    pub fn contains_free(&self, t: TermRef, name: StrId, ty: TypeRef) -> bool {
+        self.contains_free_inner(t, name, ty)
+    }
+
+    fn contains_free_inner(&self, t: TermRef, name: StrId, ty: TypeRef) -> bool {
+        let Some(id) = t.as_local() else { return false };
+        if !self.term_uf(id).has_free {
+            return false;
+        }
+        let def = *self.term_def(id);
+        if let TermDef::Free(n, ty2) = def {
+            return n == name && ty2 == ty;
+        }
+        match def.deps() {
+            Deps::None => false,
+            Deps::One(c) => self.contains_free_inner(c, name, ty),
+            Deps::Two(a, b) => {
+                self.contains_free_inner(a, name, ty) || self.contains_free_inner(b, name, ty)
+            }
+        }
+    }
+
+    fn abstract_inner(
+        &mut self,
+        t: TermRef,
+        name: StrId,
+        ty: TypeRef,
+        depth: u32,
+    ) -> TermRef {
+        let Some(id) = t.as_local() else { return t };
+        if !self.term_uf(id).has_free {
+            return t;
+        }
+        let def = *self.term_def(id);
+        if let TermDef::Free(n, ty2) = def {
+            if n == name && ty2 == ty {
+                return TermRef::local(self.alloc_term(TermDef::Bound(depth)));
+            }
+            return t;
+        }
+        let new_def = self.abstract_children(def, name, ty, depth);
+        if new_def == def {
+            return t;
+        }
+        TermRef::local(self.alloc_term(new_def))
+    }
+
+    fn abstract_children(
+        &mut self,
+        def: TermDef,
+        name: StrId,
+        ty: TypeRef,
+        depth: u32,
+    ) -> TermDef {
+        use TermDef::*;
+        match def {
+            Abs(ty_a, body) => Abs(ty_a, self.abstract_inner(body, name, ty, depth + 1)),
+            Forall(p) => Forall(self.abstract_inner(p, name, ty, depth)),
+            Exists(p) => Exists(self.abstract_inner(p, name, ty, depth)),
+            Op1(o, p) => Op1(o, self.abstract_inner(p, name, ty, depth)),
+            Eps(ty_e, p) => Eps(ty_e, self.abstract_inner(p, name, ty, depth)),
+            Comb(a, b) => Comb(
+                self.abstract_inner(a, name, ty, depth),
+                self.abstract_inner(b, name, ty, depth),
+            ),
+            Eq(a, b) => Eq(
+                self.abstract_inner(a, name, ty, depth),
+                self.abstract_inner(b, name, ty, depth),
+            ),
+            Ne(a, b) => Ne(
+                self.abstract_inner(a, name, ty, depth),
+                self.abstract_inner(b, name, ty, depth),
+            ),
+            Comp(a, b) => Comp(
+                self.abstract_inner(a, name, ty, depth),
+                self.abstract_inner(b, name, ty, depth),
+            ),
+            Iter(a, b) => Iter(
+                self.abstract_inner(a, name, ty, depth),
+                self.abstract_inner(b, name, ty, depth),
+            ),
+            Ite(a, b) => Ite(
+                self.abstract_inner(a, name, ty, depth),
+                self.abstract_inner(b, name, ty, depth),
+            ),
+            Op2(o, a, b) => Op2(
+                o,
+                self.abstract_inner(a, name, ty, depth),
+                self.abstract_inner(b, name, ty, depth),
+            ),
+            // Free is handled in abstract_inner; everything else is a leaf.
+            other => other,
+        }
+    }
+
     fn shift_inner(&mut self, t: TermRef, cutoff: u32, amount: u32) -> TermRef {
         let local_id = match t.as_local() {
             Some(id) => id,

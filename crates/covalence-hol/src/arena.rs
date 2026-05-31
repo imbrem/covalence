@@ -340,12 +340,7 @@ pub fn vsubst(
     tm: TermId,
     pairs: &[(TermId, TermId)],
 ) -> Result<TermId, HolError> {
-    let relevant: Vec<(TermId, TermId)> = pairs
-        .iter()
-        .filter(|&&(_, old)| vfree_in(arena, old, tm))
-        .copied()
-        .collect();
-    if relevant.is_empty() {
+    if !pairs.iter().any(|&(_, old)| vfree_in(arena, old, tm)) {
         return Ok(tm);
     }
     vsubst_inner(arena, tm, pairs)

@@ -116,8 +116,12 @@ impl HolKernel {
         arena::dest_eq(&self.arena, self.eq_id, tm)
     }
 
-    fn is_bool(&self, tm: TermId) -> bool {
-        arena::is_bool(&self.arena, self.bool_id, tm)
+    fn is_bool(&mut self, tm: TermId) -> bool {
+        let ty = arena::type_of(&mut self.arena, tm);
+        match self.arena.get_type(ty) {
+            HolTypeDef::Tyapp(n, args) => n == self.bool_id && args.is_empty(),
+            _ => false,
+        }
     }
 
     /// Merge two hypothesis lists (dedup by alpha-equivalence).
@@ -528,9 +532,15 @@ impl HolLightKernel for HolKernel {
         if !rhs_frees.is_empty() {
             return Err(HolError::BadDefinition("RHS has free variables".into()));
         }
+        // LHS type must equal RHS type — otherwise `c = t` is ill-typed.
+        let rhs_ty = arena::type_of(&mut self.arena, rhs);
+        if !arena::types_eq(&self.arena, ty, rhs_ty) {
+            return Err(HolError::TypeMismatch(
+                "new_basic_definition: LHS and RHS have different types".into(),
+            ));
+        }
         // Type variables in RHS must be a subset of type variables in LHS type.
         let lhs_tyvars = arena::tyvars(&self.arena, ty);
-        let rhs_ty = arena::type_of(&mut self.arena, rhs);
         let rhs_tyvars = arena::tyvars(&self.arena, rhs_ty);
         for tv in &rhs_tyvars {
             if !lhs_tyvars.contains(tv) {

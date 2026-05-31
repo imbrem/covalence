@@ -108,9 +108,13 @@ impl PureKernel {
         self.arena.alloc_type(TypDef::Type(self.fun_id, vec![a, b]))
     }
 
-    /// Check if a term has type `prop`.
-    fn is_prop(&self, tm: TermId) -> bool {
-        arena::is_prop(&self.arena, self.fun_id, self.prop_id, tm)
+    /// Check if a term has type `prop`. Allocates function types if needed.
+    fn is_prop(&mut self, tm: TermId) -> bool {
+        let ty = arena::type_of(&mut self.arena, tm, self.fun_id);
+        match self.arena.get_type(ty) {
+            TypDef::Type(n, args) => n == self.prop_id && args.is_empty(),
+            _ => false,
+        }
     }
 
     /// Make an implication: `A ==> B`.
@@ -475,7 +479,14 @@ impl IsabelleKernel for PureKernel {
 
     fn forall_elim(&mut self, t: Self::Term, th: Self::Thm) -> Result<Self::Thm, PureError> {
         let thm = self.arena.get_thm(th);
-        let (_hint, _ty, body) = self.dest_all_term(thm.concl).ok_or(PureError::NotAForall)?;
+        let (_hint, binder_ty, body) =
+            self.dest_all_term(thm.concl).ok_or(PureError::NotAForall)?;
+        let t_ty = arena::type_of(&mut self.arena, t, self.fun_id);
+        if !arena::types_eq(&self.arena, t_ty, binder_ty) {
+            return Err(PureError::TypeMismatch(
+                "forall_elim: instantiation type does not match binder type".into(),
+            ));
+        }
         let concl = arena::subst_bound(&mut self.arena, body, t);
         let hyps = thm.hyps;
         Ok(self.arena.alloc_thm(ThmDef { hyps, concl }))

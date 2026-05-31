@@ -885,36 +885,42 @@ fn deserialize_val(bytes: &[u8]) -> wasmtime::Result<Val> {
             }
             Ok(Val::S8(data[0] as i8))
         }
-        TAG_U16 => {
-            Ok(Val::U16(u16::from_le_bytes(data[..2].try_into().map_err(
-                |_| wasmtime::Error::msg("map store: truncated u16"),
-            )?)))
-        }
-        TAG_S16 => {
-            Ok(Val::S16(i16::from_le_bytes(data[..2].try_into().map_err(
-                |_| wasmtime::Error::msg("map store: truncated s16"),
-            )?)))
-        }
-        TAG_U32 => {
-            Ok(Val::U32(u32::from_le_bytes(data[..4].try_into().map_err(
-                |_| wasmtime::Error::msg("map store: truncated u32"),
-            )?)))
-        }
-        TAG_S32 => {
-            Ok(Val::S32(i32::from_le_bytes(data[..4].try_into().map_err(
-                |_| wasmtime::Error::msg("map store: truncated s32"),
-            )?)))
-        }
-        TAG_U64 => {
-            Ok(Val::U64(u64::from_le_bytes(data[..8].try_into().map_err(
-                |_| wasmtime::Error::msg("map store: truncated u64"),
-            )?)))
-        }
-        TAG_S64 => {
-            Ok(Val::S64(i64::from_le_bytes(data[..8].try_into().map_err(
-                |_| wasmtime::Error::msg("map store: truncated s64"),
-            )?)))
-        }
+        TAG_U16 => Ok(Val::U16(u16::from_le_bytes(
+            data.get(..2)
+                .ok_or_else(|| wasmtime::Error::msg("map store: truncated u16"))?
+                .try_into()
+                .unwrap(),
+        ))),
+        TAG_S16 => Ok(Val::S16(i16::from_le_bytes(
+            data.get(..2)
+                .ok_or_else(|| wasmtime::Error::msg("map store: truncated s16"))?
+                .try_into()
+                .unwrap(),
+        ))),
+        TAG_U32 => Ok(Val::U32(u32::from_le_bytes(
+            data.get(..4)
+                .ok_or_else(|| wasmtime::Error::msg("map store: truncated u32"))?
+                .try_into()
+                .unwrap(),
+        ))),
+        TAG_S32 => Ok(Val::S32(i32::from_le_bytes(
+            data.get(..4)
+                .ok_or_else(|| wasmtime::Error::msg("map store: truncated s32"))?
+                .try_into()
+                .unwrap(),
+        ))),
+        TAG_U64 => Ok(Val::U64(u64::from_le_bytes(
+            data.get(..8)
+                .ok_or_else(|| wasmtime::Error::msg("map store: truncated u64"))?
+                .try_into()
+                .unwrap(),
+        ))),
+        TAG_S64 => Ok(Val::S64(i64::from_le_bytes(
+            data.get(..8)
+                .ok_or_else(|| wasmtime::Error::msg("map store: truncated s64"))?
+                .try_into()
+                .unwrap(),
+        ))),
         TAG_STRING => {
             let s = std::str::from_utf8(data)
                 .map_err(|e| wasmtime::Error::msg(format!("map store: invalid UTF-8: {e}")))?;
@@ -996,9 +1002,11 @@ fn deserialize_store_val(
     }
     match bytes[0] {
         TAG_BLOB => {
-            let hash_bytes: [u8; 32] = bytes[1..33]
+            let hash_bytes: [u8; 32] = bytes
+                .get(1..33)
+                .ok_or_else(|| wasmtime::Error::msg("store: truncated blob hash"))?
                 .try_into()
-                .map_err(|_| wasmtime::Error::msg("store: truncated blob hash"))?;
+                .unwrap();
             let hash = O256::from_bytes(hash_bytes);
             let data = blobs.get(&hash);
             let handle = BlobHandle { hash, data };
@@ -1006,9 +1014,11 @@ fn deserialize_store_val(
             Ok(Val::Resource(ResourceAny::try_from_resource(resource, cx)?))
         }
         TAG_NAME => {
-            let hash_bytes: [u8; 32] = bytes[1..33]
+            let hash_bytes: [u8; 32] = bytes
+                .get(1..33)
+                .ok_or_else(|| wasmtime::Error::msg("store: truncated name hash"))?
                 .try_into()
-                .map_err(|_| wasmtime::Error::msg("store: truncated name hash"))?;
+                .unwrap();
             let hash = O256::from_bytes(hash_bytes);
             let handle = NameHandle { hash };
             let resource = cx.data_mut().table.push(handle)?;

@@ -2,42 +2,28 @@
 //! and `TermRef` (local or foreign-arena reference). Plus `BitsValue` for
 //! bit-string literals.
 
-use std::sync::Arc;
-
-use crate::arena::Arena;
-use crate::id::{BitsId, TermId};
+use crate::id::{BitsId, ImportId, TermId};
 use crate::name::{ConstName, VarName};
 use crate::ty::TypeRef;
 
-/// Reference to a term, possibly in a foreign (imported) arena.
+/// Reference to a term in the *current* arena's namespace.
 ///
-/// Identity semantics mirror [`TypeRef`]: `Foreign(a, id) == Foreign(b, id)`
-/// iff `Arc::ptr_eq(a, b)`.
-#[derive(Debug, Clone)]
+/// `Local(id)` indexes the current arena's `terms` table. `Foreign(import,
+/// id)` indexes the `terms` table of `arena.imports[import]`. To resolve a
+/// chain of Foreign refs through multiple arenas, use
+/// [`Arena::canonical_term`](crate::arena::Arena::canonical_term), which
+/// returns the final `(Arc<Arena>, TermId)` pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TermRef {
     Local(TermId),
-    Foreign(Arc<Arena>, TermId),
+    Foreign(ImportId, TermId),
 }
-
-impl PartialEq for TermRef {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (TermRef::Local(a), TermRef::Local(b)) => a == b,
-            (TermRef::Foreign(a_arc, a_id), TermRef::Foreign(b_arc, b_id)) => {
-                Arc::ptr_eq(a_arc, b_arc) && a_id == b_id
-            }
-            _ => false,
-        }
-    }
-}
-
-impl Eq for TermRef {}
 
 /// A bit-string value as it appears inside `TermDef::Bits`.
 ///
 /// `Inline` carries the bytes directly inside the TermDef (cheap, used
-/// for short literals). `Indirect` points at the arena's bitvectors
-/// side table (used for longer strings to keep TermDef small).
+/// for short literals). `Indirect` points at the arena's bits side table
+/// (used for longer strings to keep TermDef small).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BitsValue {
     Inline(Vec<u8>),

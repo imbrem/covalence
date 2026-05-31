@@ -1,39 +1,21 @@
 //! Type-level data: `TypeDef` (the single enum with builtin + user variants)
 //! and `TypeRef` (local or foreign-arena reference).
 
-use std::sync::Arc;
-
-use crate::arena::Arena;
-use crate::id::TypeId;
+use crate::id::{ImportId, TypeId};
 use crate::name::{TypeName, TypeVarId};
 
-/// Reference to a type, possibly in a foreign (imported) arena.
+/// Reference to a type in the *current* arena's namespace.
 ///
-/// `Local(id)` resolves against the current arena's `types` table.
-/// `Foreign(arena, id)` holds an `Arc<Arena>` for the source and an
-/// index into its `types`. Two `TypeRef`s denote the same type when
-/// their arena allocations are pointer-equal and their inner IDs
-/// match (see architecture §2.2).
-#[derive(Debug, Clone)]
+/// `Local(id)` indexes the current arena's `types` table. `Foreign(import,
+/// id)` indexes the `types` table of `arena.imports[import]`. To resolve a
+/// chain of Foreign refs through multiple arenas, use
+/// [`Arena::canonical_type`](crate::arena::Arena::canonical_type), which
+/// returns the final `(Arc<Arena>, TypeId)` pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TypeRef {
     Local(TypeId),
-    Foreign(Arc<Arena>, TypeId),
+    Foreign(ImportId, TypeId),
 }
-
-impl PartialEq for TypeRef {
-    /// Pointer equality on the arena, value equality on the id.
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (TypeRef::Local(a), TypeRef::Local(b)) => a == b,
-            (TypeRef::Foreign(a_arc, a_id), TypeRef::Foreign(b_arc, b_id)) => {
-                Arc::ptr_eq(a_arc, b_arc) && a_id == b_id
-            }
-            _ => false,
-        }
-    }
-}
-
-impl Eq for TypeRef {}
 
 /// The kernel's type language.
 ///

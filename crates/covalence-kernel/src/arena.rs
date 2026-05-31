@@ -1,16 +1,20 @@
-//! The Arena: pool of types, terms, and bitvectors, plus union-find
-//! state. Identity is by pointer (see architecture §2.2): a freshly
-//! built Arena is mutable; freezing produces an `Arc<Arena>` that other
-//! arenas may import via foreign-arena references.
+//! The Arena: pool of types, terms, and value tables, plus union-find
+//! state. Identity is by pointer (see architecture §2.2): a freshly built
+//! Arena is mutable; freezing produces an `Arc<Arena>` that other arenas
+//! may import via foreign-arena references.
 
 use std::sync::Arc;
 
-use crate::id::{BitsId, TermId, TypeId};
+use smol_str::SmolStr;
+
+use crate::id::{BitsId, BytesId, ImportId, StrId, TermId, TyArgsId, TypeId};
+#[cfg(feature = "int")]
+use crate::id::{IntId, NatId};
 use crate::term::{BITS_INLINE_MAX_BYTES, BitsValue, TermDef, TermRef};
 use crate::ty::{TypeDef, TypeRef};
 use crate::uf::{TermUfEntry, TypeUfEntry};
 
-/// A pool of types, terms, and bitvectors with union-find state.
+/// A pool of types, terms, value literals, and union-find state.
 ///
 /// Build one mutably (`Arena::new`, `alloc_type`, `alloc_term`, …),
 /// then `freeze()` it into an `Arc<Arena>` for sharing as a foreign
@@ -19,13 +23,25 @@ use crate::uf::{TermUfEntry, TypeUfEntry};
 pub struct Arena {
     types: Vec<TypeDef>,
     terms: Vec<TermDef>,
-    bitvectors: Vec<Vec<u8>>,
     uf_terms: Vec<TermUfEntry>,
     uf_types: Vec<TypeUfEntry>,
     /// Frozen arenas this one references. Carrying them here keeps
     /// them alive even if no `TermRef::Foreign` currently mentions
-    /// them; it also lets serialization enumerate dependencies.
+    /// them; it also lets serialization enumerate dependencies. Indexed
+    /// by [`ImportId`].
     imports: Vec<Arc<Arena>>,
+
+    // -- interning tables: variable-sized payloads pulled out of
+    //    TermDef / TypeDef so those enums can stay (or become) Copy.
+    strings: Vec<SmolStr>,
+    bytes: Vec<Vec<u8>>,
+    bits: Vec<Vec<u8>>,
+    // Behind the default `int` feature of covalence-types.
+    #[cfg(feature = "int")]
+    ints: Vec<covalence_types::Int>,
+    #[cfg(feature = "int")]
+    nats: Vec<covalence_types::Nat>,
+    tyargs: Vec<Vec<TypeRef>>,
 }
 
 impl Arena {
@@ -34,10 +50,17 @@ impl Arena {
         Self {
             types: Vec::new(),
             terms: Vec::new(),
-            bitvectors: Vec::new(),
             uf_terms: Vec::new(),
             uf_types: Vec::new(),
             imports: Vec::new(),
+            strings: Vec::new(),
+            bytes: Vec::new(),
+            bits: Vec::new(),
+            #[cfg(feature = "int")]
+            ints: Vec::new(),
+            #[cfg(feature = "int")]
+            nats: Vec::new(),
+            tyargs: Vec::new(),
         }
     }
 
@@ -55,12 +78,16 @@ impl Arena {
         (**frozen).clone()
     }
 
-    /// Register `import` as a foreign-arena import. Repeated calls
-    /// with the same arena are silently deduped by `Arc::ptr_eq`.
-    pub fn add_import(&mut self, import: Arc<Arena>) {
-        if !self.imports.iter().any(|a| Arc::ptr_eq(a, &import)) {
-            self.imports.push(import);
+    /// Register `import` as a foreign-arena import, returning the
+    /// `ImportId` to use in `TermRef::Foreign` / `TypeRef::Foreign`.
+    /// Repeated calls with the same arena are deduped by `Arc::ptr_eq`.
+    pub fn add_import(&mut self, import: Arc<Arena>) -> ImportId {
+        if let Some(pos) = self.imports.iter().position(|a| Arc::ptr_eq(a, &import)) {
+            return ImportId(pos as u32);
         }
+        let id = ImportId(self.imports.len() as u32);
+        self.imports.push(import);
+        id
     }
 
     // -- accessors -------------------------------------------------------
@@ -75,9 +102,41 @@ impl Arena {
         &self.terms[id.0 as usize]
     }
 
-    /// Read a bitvector by local id.
+    /// Look up an imported arena.
+    pub fn import(&self, id: ImportId) -> &Arc<Arena> {
+        &self.imports[id.0 as usize]
+    }
+
+    /// Read a bit string by local id.
     pub fn bits(&self, id: BitsId) -> &[u8] {
-        &self.bitvectors[id.0 as usize]
+        &self.bits[id.0 as usize]
+    }
+
+    /// Read a byte string by local id.
+    pub fn bytes_value(&self, id: BytesId) -> &[u8] {
+        &self.bytes[id.0 as usize]
+    }
+
+    /// Read an interned string by local id.
+    pub fn string(&self, id: StrId) -> &SmolStr {
+        &self.strings[id.0 as usize]
+    }
+
+    #[cfg(feature = "int")]
+    /// Read an interned big-int by local id.
+    pub fn int(&self, id: IntId) -> &covalence_types::Int {
+        &self.ints[id.0 as usize]
+    }
+
+    #[cfg(feature = "int")]
+    /// Read an interned big-nat by local id.
+    pub fn nat(&self, id: NatId) -> &covalence_types::Nat {
+        &self.nats[id.0 as usize]
+    }
+
+    /// Read an interned type-arg list by local id.
+    pub fn tyargs(&self, id: TyArgsId) -> &[TypeRef] {
+        &self.tyargs[id.0 as usize]
     }
 
     /// The local UF entry for a term.
@@ -103,8 +162,8 @@ impl Arena {
         self.terms.len() as u32
     }
 
-    pub fn num_bitvectors(&self) -> u32 {
-        self.bitvectors.len() as u32
+    pub fn num_bits(&self) -> u32 {
+        self.bits.len() as u32
     }
 
     // -- allocators ------------------------------------------------------
@@ -143,10 +202,51 @@ impl Arena {
         if bytes.len() <= BITS_INLINE_MAX_BYTES {
             BitsValue::Inline(bytes)
         } else {
-            let id = BitsId(self.bitvectors.len() as u32);
-            self.bitvectors.push(bytes);
+            let id = BitsId(self.bits.len() as u32);
+            self.bits.push(bytes);
             BitsValue::Indirect(id)
         }
+    }
+
+    /// Intern a `SmolStr`. Returns the existing id if already present.
+    pub fn intern_string(&mut self, s: SmolStr) -> StrId {
+        if let Some(pos) = self.strings.iter().position(|x| x == &s) {
+            return StrId(pos as u32);
+        }
+        let id = StrId(self.strings.len() as u32);
+        self.strings.push(s);
+        id
+    }
+
+    /// Intern a byte-string literal. Always appends; no dedup (callers
+    /// who care about sharing should dedup at their own layer).
+    pub fn intern_bytes(&mut self, b: Vec<u8>) -> BytesId {
+        let id = BytesId(self.bytes.len() as u32);
+        self.bytes.push(b);
+        id
+    }
+
+    #[cfg(feature = "int")]
+    /// Intern a big-int literal.
+    pub fn intern_int(&mut self, i: covalence_types::Int) -> IntId {
+        let id = IntId(self.ints.len() as u32);
+        self.ints.push(i);
+        id
+    }
+
+    #[cfg(feature = "int")]
+    /// Intern a big-nat literal.
+    pub fn intern_nat(&mut self, n: covalence_types::Nat) -> NatId {
+        let id = NatId(self.nats.len() as u32);
+        self.nats.push(n);
+        id
+    }
+
+    /// Intern a type-argument list.
+    pub fn intern_tyargs(&mut self, args: Vec<TypeRef>) -> TyArgsId {
+        let id = TyArgsId(self.tyargs.len() as u32);
+        self.tyargs.push(args);
+        id
     }
 
     // -- closed-flag computation ----------------------------------------
@@ -156,10 +256,10 @@ impl Arena {
     /// Returns `(bound_depth, has_free)`: the smallest `n` such that
     /// the term would be closed if wrapped in `n` more lambdas, and
     /// whether any `Free(_, _)` is reachable.
-    fn ref_props(&self, r: &TermRef) -> (u32, bool) {
+    fn ref_props(&self, r: TermRef) -> (u32, bool) {
         let entry = match r {
-            TermRef::Local(id) => self.term_uf(*id),
-            TermRef::Foreign(arena, id) => arena.term_uf(*id),
+            TermRef::Local(id) => self.term_uf(id),
+            TermRef::Foreign(imp, id) => self.import(imp).term_uf(id),
         };
         (entry.bound_depth, entry.has_free)
     }
@@ -174,12 +274,12 @@ impl Arena {
             TermDef::Const(_, _) => (0, false),
             TermDef::True | TermDef::False | TermDef::Bits(_) => (0, false),
             TermDef::Comb(f, x) | TermDef::Eq(f, x) => {
-                let (f_bd, f_hf) = self.ref_props(f);
-                let (x_bd, x_hf) = self.ref_props(x);
+                let (f_bd, f_hf) = self.ref_props(*f);
+                let (x_bd, x_hf) = self.ref_props(*x);
                 (f_bd.max(x_bd), f_hf || x_hf)
             }
             TermDef::Abs(_, _, body) => {
-                let (b_bd, b_hf) = self.ref_props(body);
+                let (b_bd, b_hf) = self.ref_props(*body);
                 (b_bd.saturating_sub(1), b_hf)
             }
         }
@@ -188,53 +288,56 @@ impl Arena {
     // -- canonical walks -------------------------------------------------
 
     /// Resolve a term reference to its current UF canonical, chasing
-    /// canonical chains across arenas. Returns a `TermRef` whose UF
-    /// entry points at itself (the chain's fixed point).
-    pub fn canonical_term(&self, r: &TermRef) -> TermRef {
-        let mut cur = r.clone();
+    /// canonical chains across arenas.
+    ///
+    /// Returns a `(Arc<Arena>, TermId)` pair: the arena whose UF entry
+    /// at that id is self-canonical (`canonical = Local(id)`), and the
+    /// id itself. Two canonicals are equal iff their arenas are
+    /// `Arc::ptr_eq` and their ids are equal.
+    pub fn canonical_term(self_arc: &Arc<Arena>, r: TermRef) -> (Arc<Arena>, TermId) {
+        let (mut cur_arena, mut cur_id) = match r {
+            TermRef::Local(id) => (self_arc.clone(), id),
+            TermRef::Foreign(imp, id) => (self_arc.import(imp).clone(), id),
+        };
         loop {
-            // Read the raw canonical stored at `cur`'s UF entry.
-            let raw_next = match &cur {
-                TermRef::Local(id) => self.term_uf(*id).canonical.clone(),
-                TermRef::Foreign(arena, id) => arena.term_uf(*id).canonical.clone(),
-            };
-            // If `cur` is a Foreign ref into some arena, then a Local
-            // canonical there is "Local in that arena," not in self.
-            // Rewrap to keep us anchored at the right arena.
-            let next = match (&cur, raw_next) {
-                (TermRef::Foreign(arena, _), TermRef::Local(other)) => {
-                    TermRef::Foreign(arena.clone(), other)
+            let next = cur_arena.term_uf(cur_id).canonical;
+            match next {
+                TermRef::Local(other) => {
+                    if other == cur_id {
+                        return (cur_arena, cur_id);
+                    }
+                    cur_id = other;
                 }
-                (_, next) => next,
-            };
-            // Compare the *rewrapped* next to cur. A self-canonical entry
-            // (Local(id) at index id, or Foreign(arc, id) whose source
-            // arena has term_uf(id).canonical = Local(id)) terminates here.
-            if refs_point_same(&cur, &next) {
-                return cur;
+                TermRef::Foreign(imp, other) => {
+                    let next_arena = cur_arena.import(imp).clone();
+                    cur_arena = next_arena;
+                    cur_id = other;
+                }
             }
-            cur = next;
         }
     }
 
     /// Resolve a type reference to its current UF canonical.
-    pub fn canonical_type(&self, r: &TypeRef) -> TypeRef {
-        let mut cur = r.clone();
+    pub fn canonical_type(self_arc: &Arc<Arena>, r: TypeRef) -> (Arc<Arena>, TypeId) {
+        let (mut cur_arena, mut cur_id) = match r {
+            TypeRef::Local(id) => (self_arc.clone(), id),
+            TypeRef::Foreign(imp, id) => (self_arc.import(imp).clone(), id),
+        };
         loop {
-            let raw_next = match &cur {
-                TypeRef::Local(id) => self.type_uf(*id).canonical.clone(),
-                TypeRef::Foreign(arena, id) => arena.type_uf(*id).canonical.clone(),
-            };
-            let next = match (&cur, raw_next) {
-                (TypeRef::Foreign(arena, _), TypeRef::Local(other)) => {
-                    TypeRef::Foreign(arena.clone(), other)
+            let next = cur_arena.type_uf(cur_id).canonical;
+            match next {
+                TypeRef::Local(other) => {
+                    if other == cur_id {
+                        return (cur_arena, cur_id);
+                    }
+                    cur_id = other;
                 }
-                (_, next) => next,
-            };
-            if type_refs_point_same(&cur, &next) {
-                return cur;
+                TypeRef::Foreign(imp, other) => {
+                    let next_arena = cur_arena.import(imp).clone();
+                    cur_arena = next_arena;
+                    cur_id = other;
+                }
             }
-            cur = next;
         }
     }
 }
@@ -242,30 +345,5 @@ impl Arena {
 impl Default for Arena {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// Compare two `TermRef`s for pointer-equality of their arena and
-/// equality of their inner id. `Local` is treated as referring to
-/// "this arena" — but since this helper is private to `canonical_term`
-/// (which works within a single arena context), `Local` vs `Local`
-/// just compares ids.
-fn refs_point_same(a: &TermRef, b: &TermRef) -> bool {
-    match (a, b) {
-        (TermRef::Local(x), TermRef::Local(y)) => x == y,
-        (TermRef::Foreign(arc_a, x), TermRef::Foreign(arc_b, y)) => {
-            Arc::ptr_eq(arc_a, arc_b) && x == y
-        }
-        _ => false,
-    }
-}
-
-fn type_refs_point_same(a: &TypeRef, b: &TypeRef) -> bool {
-    match (a, b) {
-        (TypeRef::Local(x), TypeRef::Local(y)) => x == y,
-        (TypeRef::Foreign(arc_a, x), TypeRef::Foreign(arc_b, y)) => {
-            Arc::ptr_eq(arc_a, arc_b) && x == y
-        }
-        _ => false,
     }
 }

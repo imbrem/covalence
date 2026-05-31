@@ -14,7 +14,9 @@ pub mod ty;
 pub mod uf;
 
 pub use arena::Arena;
-pub use id::{BitsId, TermId, TypeId};
+pub use id::{BitsId, BytesId, ImportId, StrId, TermId, TyArgsId, TypeId};
+#[cfg(feature = "int")]
+pub use id::{IntId, NatId};
 pub use name::{ConstName, TypeName, TypeVarId, VarName};
 pub use term::{BITS_INLINE_MAX_BYTES, BitsValue, TermDef, TermRef};
 pub use ty::{TypeDef, TypeRef};

@@ -560,6 +560,7 @@ dependencies = [
 name = "covalence-kernel"
 version = "0.0.0"
 dependencies = [
+ "covalence-types",
  "smol_str",
 ]
 

@@ -1,17 +1,63 @@
 //! Index handles into the Arena's internal tables.
 //!
-//! These are local to one Arena. To name a term across arenas, use the
-//! `TermRef::Foreign(arc, id)` form from `term.rs`.
+//! Every variant is `Copy` and `u32`-sized — that's what lets `TermRef` and
+//! `TypeRef` (and through them `TermDef` / `TypeDef`) stay `Copy`. The
+//! variable-sized payloads (names, byte strings, big-ints, type-arg lists,
+//! foreign arenas) live in per-arena interning tables and are referenced
+//! by these handles.
 
-/// Index into `Arena.types`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct TypeId(pub u32);
+macro_rules! id_type {
+    ($(#[$attr:meta])* $name:ident) => {
+        $(#[$attr])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        pub struct $name(pub u32);
+    };
+}
 
-/// Index into `Arena.terms`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct TermId(pub u32);
+id_type! {
+    /// Index into `Arena.types`.
+    TypeId
+}
 
-/// Index into `Arena.bitvectors`. Carried inside `BitsValue::Indirect`
-/// to point at a bit string too large to inline in the TermDef.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct BitsId(pub u32);
+id_type! {
+    /// Index into `Arena.terms`.
+    TermId
+}
+
+id_type! {
+    /// Index into `Arena.imports`. A `TermRef::Foreign(import, id)` or
+    /// `TypeRef::Foreign(import, id)` resolves through this table.
+    ImportId
+}
+
+id_type! {
+    /// Index into `Arena.strings`. Interned `SmolStr` names (variable,
+    /// constant, type, and type-variable names).
+    StrId
+}
+
+id_type! {
+    /// Index into `Arena.bytes`. Byte-string literals and bit strings
+    /// too large to inline in `TermDef`.
+    BytesId
+}
+
+id_type! {
+    /// Index into `Arena.bits`. Bit-string literals (length > 64 bits).
+    BitsId
+}
+
+id_type! {
+    /// Index into `Arena.ints`. Big-int literals (|value| > i64::MAX).
+    IntId
+}
+
+id_type! {
+    /// Index into `Arena.nats`. Big-nat literals (value > u64::MAX).
+    NatId
+}
+
+id_type! {
+    /// Index into `Arena.tyargs`. Argument lists for `TypeDef::Tyapp`.
+    TyArgsId
+}

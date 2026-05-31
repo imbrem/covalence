@@ -13,10 +13,10 @@ categories; here we list each op with:
 
 The kernel's rewrite/equality machinery is split into two layers:
 
-- **Computational rewrites (§10).** When all arguments to a primop
+- **Computational rewrites (§11).** When all arguments to a primop
   are literals, the kernel evaluates via host code and emits the
   literal result as an equality. Fast path for concrete arithmetic.
-- **Canonical symbolic rewrites (§9).** A small list of macro-defined
+- **Canonical symbolic rewrites (§10).** A small list of macro-defined
   directed rules — these *are* the axioms / characterizations of
   this catalog, just turned into rewrites. Used when an argument
   isn't a literal (`add a 0 = a` for arbitrary `a`), or when the
@@ -259,42 +259,358 @@ have to walk the host implementation.
 
 ---
 
-## 8.5. `iter` and the recursion combinator
+## 8.5. Epsilon (Hilbert choice)
 
-In addition to the per-type ops above, the kernel ships a single
-polymorphic primitive:
+The kernel ships Hilbert's choice operator as a first-class
+primitive. Given any predicate, ε picks *some* element satisfying
+it — and if none exists, picks an arbitrary element of the type.
 
 | Op | Sig | Reduction | Axioms |
 |---|---|---|---|
-| `Iter` | `nat → (α → α) → α → α` | `iter ty 0 f x = x`; `iter ty (succ n) f x = f (iter ty n f x)` | the two equations |
+| `Eps(α, P)` | `(α → bool) → α` | none | `select_ax`: `∀ P x. P x → P (Eps α P)` |
 
-This is the bounded fixed-point combinator: `iter n f x` applies `f`
-to `x` exactly `n` times. (As a `PrimOpN`, `iter` has 3 children
-plus a type argument, so it'd violate the 3-u32 invariant if stored
-inline; like `Ite` it lives in a side table — `arena.iters` — with a
-single-u32 `IterId` payload in `TermDef`.)
+### Storage shape
 
-Why it earns a slot: `iter` is the building block from which the
-kernel's recursive arithmetic axiomatization is derived. With `iter`
-in hand:
+`Eps(α, P)` carries a `TypeRef` + a `TermRef` = 8 bytes payload —
+fits inline in the 3-u32 invariant.
 
-- `add n m = iter nat m succ n` — `m` successors applied to `n`.
-- `mul n m = iter nat m (add n) 0`.
-- `pow n m = iter nat m (mul n) 1`.
+### Role in the bootstrap
 
-Concretely, the **prelude** ships `iter` plus a single Peano-pair
-`(zero ≠ succ, succ-injective)` plus Hilbert choice; everything
-else — induction, `add`'s commutativity, `mul`'s associativity, etc.
-— is derived in user space.
+`Eps` is the bottom of the foundational stack. It's the only
+primitive whose definition cannot be reduced to anything more
+elementary — it's a postulated choice function, and `select_ax` is
+the only axiom characterising it. Everything else uses `Eps` as a
+building block:
+
+- **Induction over `nat`** is derived from Peano's `(0 ≠ succ,
+  succ-injective)` + `select_ax`: given a predicate failing
+  somewhere, `Eps` picks a counterexample; minimality follows from
+  well-foundedness. (Derived in the prelude, used once, never
+  re-derived.)
+- **Definite description**: `the_one P` is `Eps α P` when `P`
+  uniquely determines its element. Used to derive partial functions.
+- **Existence elimination**: from `∃x. P x`, take `w = Eps α P` and
+  use `select_ax` to conclude `P w`.
+
+## 8.6. Combinators: `Id`, `Comp`, `Iter`
+
+The kernel ships three polymorphic combinators for **pointless**
+(point-free) programming. Their utility is twofold: they let us
+state primop axioms equationally without dragging around bound
+variables, and they let the kernel pattern-match common shapes (e.g.
+`Comp(f, g)` applied to literal data) for cheap reduction.
+
+| Op | Sig | Reduction | Axioms |
+|---|---|---|---|
+| `Id(α)` | `α → α` | none — `Id` is a value, not an evaluator | `Comb(Id(α), x) = x` |
+| `Comp(f, g)` | `(β → γ) → (α → β) → (α → γ)` | none on `Comp` itself; `Comb(Comp(f, g), x)` reduces to `Comb(f, Comb(g, x))` | the previous equation; equivalently `Comp(f, g) = λx. f (g x)` |
+| `Iter(α, n, f)` | `nat → (α → α) → (α → α)` | none on `Iter`; equality to `Id`/`Comp` chains via the axioms below | see below |
+
+### Storage shape
+
+- `Id(α)` carries a single `TypeRef` — 4 bytes payload, fits in the
+  3-u32 invariant.
+- `Comp(f, g)` carries two `TermRef`s — 8 bytes, fits inline.
+- `Iter(α, n, f)` has a `TypeRef` + two `TermRef`s = 12 bytes
+  payload — doesn't fit. Side-tabled in `arena.iters: Vec<(TypeRef,
+  TermRef, TermRef)>` with a single-u32 `IterId` in TermDef.
+
+### `Iter` axioms (via `Comp`/`Id`)
+
+`Iter` is characterised by two equations that **both** hold (they
+are provably equal given the equational theory of `Comp`):
+
+```
+Iter(α, 0,        f) = Id(α)
+Iter(α, succ(n),  f) = Comp(f, Iter(α, n, f))      -- outer-first
+Iter(α, succ(n),  f) = Comp(Iter(α, n, f), f)      -- inner-first
+```
+
+Combined with the nat-induction axiom (§8.6), these uniquely
+characterise `Iter`. The two `succ`-cases together with induction
+also prove `Iter`'s key shift-invariance lemma —
+`Comp(f, Iter(α, n, f)) = Comp(Iter(α, n, f), f)` — without further
+axioms.
+
+### Arithmetic derived from `Iter`
+
+With `Iter` in hand, the standard arithmetic ops are *derived*
+(not axiomatized independently — though we *also* expose them as
+primops for efficient host-side reduction; see §3 above):
+
+- `add n m = Comb(Iter(nat, m, NatSucc), n)` — `m` successors
+  applied to `n`.
+- `mul n m = Comb(Iter(nat, m, NatAdd n), 0)`.
+- `pow n m = Comb(Iter(nat, m, NatMul n), 1)`.
+
+The defining axiom of `add`'s primop (`add n 0 = n`; `add n (succ
+m) = succ (add n m)`) is then *redundant* with the `Iter` characterization
+plus the host's reduction — but we keep the equation around because
+(a) it's the natural way to symbolically rewrite `add(?a, 0)` to `?a`
+without unfolding to `Iter`, and (b) it's the spec the host
+implementation is audited against. Same story for `mul`, `pow`, etc.
+
+### Trust note
+
+`Id`, `Comp`, and `Iter` collectively add three kernel-trusted
+combinators. Their soundness is one-paragraph: `Id` is the identity
+function (by its single equation); `Comp` is the lambda above (by
+unfolding); `Iter` is the function-power-iteration combinator
+defined by recursion on `nat` (by the two cases + induction).
+Auditable mechanically.
+
+## 8.7. Induction principles
+
+The prelude ships a first-class induction axiom for each kernel
+primitive inductive type. These are HOL theorems (Props in the root
+Context), not primops — they appear in TermDef only as `Const(name,
+ty)` referring to the prelude.
+
+### `nat`
+
+```
+induct_nat
+  : ∀ P : nat → bool.
+      P 0 →
+      (∀ n : nat. P n → P (succ n)) →
+      ∀ n : nat. P n
+```
+
+This is the *only* nat axiom needed beyond the Peano pair (`0 ≠
+succ n`, `succ-injective`); everything else — uniqueness of `Iter`,
+strong induction, well-foundedness — is derived.
+
+### `bits`
+
+```
+induct_bits
+  : ∀ P : bits → bool.
+      P empty →
+      (∀ b : bool. ∀ w : bits. P w → P (cons b w)) →
+      ∀ w : bits. P w
+```
+
+### `bytes`
+
+```
+induct_bytes
+  : ∀ P : bytes → bool.
+      P empty →
+      (∀ b : u8. ∀ bs : bytes. P bs → P (cons b bs)) →
+      ∀ bs : bytes. P bs
+```
+
+### `int`
+
+`int` is induction-free in the prelude — it's specified as the
+ordered commutative ring obtained from `nat × nat`, with the lift
+`int_of_nat`. Induction over `int` is *derived* (split on sign,
+induct over magnitude in `nat`). The prelude exposes the standard
+ring + order axioms instead of an induction axiom directly.
+
+### Fixed-width
+
+`uN`/`iN` types are induction-free likewise — they're characterised
+by their bijection with `nat / 2^N` (or `int / 2^N`). Any
+case-splitting on a `u8` is derived by the user enumerating its
+256 values via `induct_nat` on the magnitude.
+
+### Why first-class?
+
+We could in principle *axiomatize each iter rule* and derive
+induction from it (the standard HOL approach), or *axiomatize
+induction* and characterise iter as the unique function satisfying
+the two equations of §8.5. We do the latter because:
+
+- The induction principle is the natural "audit unit" — it's the
+  thing mathematicians recognize and that other systems (Coq, HOL
+  Light, Isabelle) export.
+- It's the thing soundness translations care about — lifting `nat`
+  into an object logic means lifting `induct_nat`.
+- It's strictly more expressive than the iter rules alone; once you
+  have induction you can re-derive iter-uniqueness, well-foundedness,
+  primitive recursion, etc.
+
+The two iter rules are still in the prelude (§8.5) — but their role
+is *specifying iter's behavior*, not *generating it*. The
+generator is `induct_nat`.
 
 ---
 
-## 9. Macro-defined symbolic rewrites
+## 9. Complete axiom list
+
+This section is the **canonical list** of every axiom shipped in the
+kernel prelude. Each entry names the axiom, gives its statement,
+and links back to the section that motivates it. Audit cost is
+exactly "review this list" — there is nothing else in the kernel's
+trusted axiom set.
+
+### 9.1. Logic & equality
+
+| Name | Statement | Source |
+|---|---|---|
+| `eq_refl` | `∀ x : α. x = x` | builtin Eq |
+| `eq_subst` | `x = y → P x → P y` (Leibniz) | builtin Eq |
+| `eq_ext` (functional ext) | `(∀ x. f x = g x) → f = g` | builtin Eq |
+| `eta_ax` | `(λ x. f x) = f` when `f` doesn't depend on `x` | binder primitive |
+| `bool_distinct` | `True ≠ False` | Boolean primitive |
+| `bool_cases` | `∀ b : bool. b = True ∨ b = False` | Boolean primitive |
+| `not_true` | `Not True = False` | §1 Booleans |
+| `not_false` | `Not False = True` | §1 Booleans |
+| `and_true` | `And b True = b` | §1 |
+| `and_false` | `And b False = False` | §1 |
+| `or_true` | `Or b True = True` | §1 |
+| `or_false` | `Or b False = b` | §1 |
+| `xor_def` | `Xor x y = Not (Eq x y)` | §1 (derived) |
+| `nand_def` | `Nand x y = Not (And x y)` | §1 (derived) |
+| `nor_def` | `Nor x y = Not (Or x y)` | §1 (derived) |
+| `imp_def` | `Imp x y = Or (Not x) y` | §1 (derived) |
+
+### 9.2. Ite
+
+| Name | Statement | Source |
+|---|---|---|
+| `ite_true` | `Ite ty True a b = a` | §2 |
+| `ite_false` | `Ite ty False a b = b` | §2 |
+
+### 9.3. Epsilon (Hilbert choice)
+
+| Name | Statement | Source |
+|---|---|---|
+| `select_ax` | `∀ P x. P x → P (Eps α P)` | §8.5 |
+
+This is the only axiom about `Eps`.
+
+### 9.4. Combinators
+
+| Name | Statement | Source |
+|---|---|---|
+| `id_ax` | `Comb (Id α) x = x` | §8.6 |
+| `comp_def` | `Comb (Comp f g) x = Comb f (Comb g x)` | §8.6 |
+| `iter_zero` | `Iter α 0 f = Id α` | §8.6 |
+| `iter_succ_outer` | `Iter α (succ n) f = Comp f (Iter α n f)` | §8.6 |
+| `iter_succ_inner` | `Iter α (succ n) f = Comp (Iter α n f) f` | §8.6 |
+
+The last two are equivalent given `induct_nat` (§9.6); both are
+shipped because either is the natural symbolic rewrite to apply
+depending on which side has the literal `succ`.
+
+### 9.5. Equational definitions of arithmetic primops
+
+These are the "behavior axioms" for the arithmetic primops — the
+specs the host implementation is audited against and the rewrites
+the macro engine ships (§10 macros).
+
+**Naturals** (§3):
+
+| Name | Statement |
+|---|---|
+| `nat_pred_zero` | `pred 0 = 0` |
+| `nat_pred_succ` | `pred (succ n) = n` |
+| `nat_add_zero` | `add n 0 = n` |
+| `nat_add_succ` | `add n (succ m) = succ (add n m)` |
+| `nat_sub_zero_r` | `sub n 0 = n` |
+| `nat_sub_zero_l` | `sub 0 m = 0` |
+| `nat_sub_succ` | `sub (succ n) (succ m) = sub n m` |
+| `nat_mul_zero` | `mul n 0 = 0` |
+| `nat_mul_succ` | `mul n (succ m) = add (mul n m) n` |
+| `nat_div_mod_spec` | `n = add (mul (div n d) d) (mod n d) ∧ (d ≠ 0 → lt (mod n d) d)` |
+| `nat_eq_refl` | `eq n n = True` |
+| `nat_eq_zero_succ` | `eq 0 (succ _) = False` |
+| `nat_eq_succ_succ` | `eq (succ n) (succ m) = eq n m` |
+| `nat_lt_zero_r` | `lt n 0 = False` |
+| `nat_lt_zero_l_succ` | `lt 0 (succ _) = True` |
+| `nat_lt_succ_succ` | `lt (succ n) (succ m) = lt n m` |
+| `nat_le_def` | `le n m = Or (lt n m) (eq n m)` |
+
+**Integers** (§4):
+
+| Name | Statement |
+|---|---|
+| `int_of_nat_inj` | `int_of_nat n = int_of_nat m → n = m` |
+| `int_add_assoc` | `add (add i j) k = add i (add j k)` |
+| `int_add_comm` | `add i j = add j i` |
+| `int_add_zero` | `add i 0 = i` |
+| `int_neg_add` | `add i (neg i) = 0` |
+| `int_mul_assoc` | `mul (mul i j) k = mul i (mul j k)` |
+| `int_mul_comm` | `mul i j = mul j i` |
+| `int_mul_one` | `mul i 1 = i` |
+| `int_distrib` | `mul i (add j k) = add (mul i j) (mul i k)` |
+| `int_sub_def` | `sub i j = add i (neg j)` |
+| `int_div_mod_spec` | analogous to nat, with sign convention pinned |
+| `int_lt_trichotomy` | `lt i j ∨ eq i j ∨ lt j i` |
+| `int_lt_trans` | `lt i j → lt j k → lt i k` |
+| `int_le_def` | `le i j = Or (lt i j) (eq i j)` |
+
+**Fixed-width** (§5): for each `T ∈ {u8…u64, i8…i64}` and each
+op `O ∈ {Add, Sub, Mul, Div, Mod, Lt, Le, Eq, And, Or, Xor, Shl,
+Shr}`, an axiom `T_O_via_cast` of the form
+
+```
+T_O x y = T_of_nat ( (nat_of_T x) O' (nat_of_T y) )
+```
+
+where `O'` is the corresponding `nat`/`int` op modulo `2^N`. (Signed
+variants substitute `int_of_T`/`T_of_int`.) Plus the cast round-trips:
+
+| Name | Statement |
+|---|---|
+| `T_of_nat_of_T` | `T_of_nat (nat_of_T x) = x` |
+| `nat_of_T_of_nat` | `nat_of_T (T_of_nat n) = n mod 2^N` |
+
+**Bits** (§6):
+
+| Name | Statement |
+|---|---|
+| `bits_len_empty` | `len empty = 0` |
+| `bits_len_cons` | `len (cons b w) = succ (len w)` |
+| `bits_is_empty_empty` | `is_empty empty = True` |
+| `bits_is_empty_cons` | `is_empty (cons _ _) = False` |
+| `bits_concat_empty` | `concat empty w = w` |
+| `bits_concat_cons` | `concat (cons b w) v = cons b (concat w v)` |
+| `bits_index_cons_zero` | `index (cons b w) 0 = b` |
+| `bits_index_cons_succ` | `index (cons _ w) (succ i) = index w i` |
+| `bits_index_empty` | `index empty _ = False` (pinned) |
+| `bits_ext` | `(∀ i. lt i (len w) → index w i = index v i) ∧ len w = len v → w = v` |
+
+**Bytes** (§7): analogous to bits, with `cons : u8 → bytes → bytes`
+and `head`/`tail`/`index` returning `u8`.
+
+### 9.6. Induction principles
+
+| Name | Statement | Source |
+|---|---|---|
+| `peano_distinct` | `0 ≠ succ n` | §3 |
+| `peano_inj` | `succ m = succ n → m = n` | §3 |
+| `induct_nat` | `P 0 → (∀ n. P n → P (succ n)) → ∀ n. P n` | §8.7 |
+| `induct_bits` | `P empty → (∀ b w. P w → P (cons b w)) → ∀ w. P w` | §8.7 |
+| `induct_bytes` | analogous to bits, over `u8` cons | §8.7 |
+
+### 9.7. Cast definitions
+
+Per §8, every cast `f : S → T` ships its defining equation, e.g.
+`U64_of_Nat n = n mod 2^64`, `Nat_of_U64 x = nat_of_T x`,
+`BytesToBits bs = …packed bits…` (with `len = 8 * len bs`),
+`BitsToBytes w` defined iff `len w mod 8 = 0`. The full list of
+casts is mechanical from the type catalog (§3.2 of the architecture
+doc).
+
+### 9.8. Summary
+
+The kernel's trusted axiom set is exactly the axioms above. Concrete
+count (approximate): ~50 boolean/equality/control axioms +
+~25 nat/int axioms + ~15 × (uN/iN) = ~225 fixed-width axioms (or a
+single quantified schema per op) + ~12 bits + ~12 bytes + 5 induction
++ ~40 casts ≈ **350 axiom schemata**. This is a one-time audit;
+the kernel grows only when a new primop is added, and each
+addition is mechanical against the rules in this document.
+
+## 10. Macro-defined symbolic rewrites
 
 The kernel ships a fixed list of **symbolic rewrite macros** that
 generate kernel-trusted equalities the user can apply without
 host-side computation. These exist alongside the `reduce` machinery
-(§10) for two reasons:
+(§11) for two reasons:
 
 1. **Non-literal arguments.** `add a 0 = a` for an arbitrary `a` is a
    *theorem* the kernel can dispatch without an evaluator;
@@ -383,7 +699,7 @@ rewrite list as output — eliminating even the manual audit.
 
 ---
 
-## 10. The Reduce Primitive
+## 11. The Reduce Primitive
 
 `kernel.reduce(t)` recognises a `TermKind` that is either:
 
@@ -404,7 +720,7 @@ If `t` is shaped wrong (non-literal arg, or wrong-type literal),
 
 ---
 
-## 10. Trust Surface Summary
+## 12. Trust Surface Summary
 
 The trust surface added by this primop catalog is:
 

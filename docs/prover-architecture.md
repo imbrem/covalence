@@ -529,6 +529,10 @@ storage efficiency.
 | `Op1(PrimOp1, TermRef)` | unary primitive op (logic, arithmetic, casts) | **builtin** (§3.4) |
 | `Op2(PrimOp2, TermRef, TermRef)` | binary primitive op | **builtin** (§3.4) |
 | `Ite(TypeRef, TermRef, TermRef, TermRef)` | if-then-else (branch type, cond, then, else) | **builtin** |
+| `Eps(TypeRef, TermRef)` | Hilbert choice: `(α → bool) → α` | **builtin** (§3.4) |
+| `Id(TypeRef)` | identity combinator: `α → α` | **builtin** (§3.4) |
+| `Comp(TermRef, TermRef)` | function composition: `(β → γ) → (α → β) → (α → γ)` | **builtin** (§3.4) |
+| `Iter(TypeRef, TermRef, TermRef)` | bounded iter: `nat → (α → α) → (α → α)` (side-tabled) | **builtin** (§3.4) |
 | `U8(u8)` … `U64(u64)` | unsigned fixed-width literal | **builtin** |
 | `I8(i8)` … `I64(i64)` | signed fixed-width literal | **builtin** |
 | `IntInline(i64)` / `IntStored(IntId)` | arbitrary-precision integer literal | **builtin** |
@@ -619,19 +623,33 @@ the source of truth; this section names the categories.
 - **Bytes** — `BytesConcat`, `BytesCons`, `BytesIndex`, `BytesEq`.
 - **Bits** — `BitsConcat`, `BitsCons`, `BitsIndex`, `BitsEq`.
 
-#### Ite and Iter
+#### Combinators, choice, and control flow
 
-- `Ite(branch_ty, cond, then, else)` reduces to `then` on `True` and
-  to `else` on `False`. Branch type is carried so the term is
-  typecheckable without re-deriving types of subterms.
-- `Iter(α, n, f, x)` is the bounded fixed-point combinator: applies
-  `f` to `x` `n` times. With `Iter` in the prelude, arithmetic ops
-  like `add`/`mul`/`pow` are *derived* (not axiomatized
-  independently); see prover-primops.md §8.5.
+The kernel exposes a small set of polymorphic combinators in
+addition to the per-type primops:
 
-Both have more children than fit the (tag, lhs, rhs) invariant, so
-they live in side tables (`arena.ites`, `arena.iters`) with a single-
-u32 `IteId`/`IterId` payload in `TermDef`.
+- `Ite(branch_ty, cond, then, else)` — first-class if-then-else;
+  reduces to `then`/`else` on a literal condition. Side-tabled
+  because it has 4 children.
+- `Eps(α, P)` — Hilbert choice: returns *some* element of `α`
+  satisfying `P`, governed by `select_ax: P x → P (Eps α P)`. The
+  *only* nontrivial existence axiom in the prelude.
+- `Id(α)` — identity, `Comb (Id α) x = x`.
+- `Comp(f, g)` — composition, `Comb (Comp f g) x = Comb f (Comb g x)`.
+  Equivalent to `λx. f (g x)`.
+- `Iter(α, n, f) : α → α` — bounded iteration. Side-tabled.
+  Characterized by `Iter α 0 f = Id α`, `Iter α (succ n) f = Comp f
+  (Iter α n f)` (and the inner-first variant). Combined with
+  `induct_nat`, these axioms uniquely determine `Iter`. Arithmetic
+  ops then derive as `add n m = Comb (Iter nat m NatSucc) n`, etc.
+
+See [prover-primops.md](./prover-primops.md) §8.5–8.6 for full
+axioms and motivation.
+
+`Ite` and `Iter` exceed the (tag, lhs, rhs) inline budget, so they
+live in side tables (`arena.ites`, `arena.iters`) with a single-u32
+`IteId`/`IterId` payload in `TermDef`. `Eps`, `Id`, and `Comp` fit
+inline.
 
 #### Two reduction layers
 

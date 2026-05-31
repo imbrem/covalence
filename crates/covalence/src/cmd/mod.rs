@@ -47,7 +47,7 @@ pub fn run_or_exit(result: eyre::Result<()>) {
 /// Paths (starting with `/` or `./`) and `unix:` prefixed strings use Unix domain sockets;
 /// everything else is treated as an HTTP URL.
 #[cfg(not(target_family = "wasm"))]
-pub fn connect_backend(addr: &str) -> Box<dyn covalence_kernel::SyncBackend> {
+pub fn connect_backend(addr: &str) -> Box<dyn covalence_shell::SyncBackend> {
     if let Some(path) = addr.strip_prefix("unix:") {
         Box::new(covalence_client::SyncHttpBackend::unix(path.to_string()))
     } else if addr.starts_with('/') || addr.starts_with("./") {

@@ -4,7 +4,7 @@ pub mod eval;
 mod static_files;
 
 use axum::Router;
-use covalence_kernel::Kernel;
+use covalence_shell::Kernel;
 use covalence_store::{
     BlobStore, GitObjectType, GitPrefixStore, GitTaggedObjectStore, O256, SharedMemoryStore,
     TaggedBlobStore,
@@ -15,7 +15,7 @@ use tower_http::trace::TraceLayer;
 #[derive(Debug, thiserror::Error)]
 pub enum ServeError {
     #[error("failed to create kernel: {0}")]
-    Kernel(#[from] covalence_kernel::KernelError),
+    Kernel(#[from] covalence_shell::KernelError),
     #[error("service registration failed: {0}")]
     Registration(#[from] covalence_proto::DiscoveryError),
     #[error("failed to bind to {addr}: {source}")]

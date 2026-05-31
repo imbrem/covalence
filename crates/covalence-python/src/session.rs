@@ -2,7 +2,7 @@ use std::sync::mpsc;
 
 use pyo3::prelude::*;
 
-use covalence_kernel::Kernel;
+use covalence_shell::Kernel;
 
 use crate::worker::{SessionTask, session_call, spawn_session_worker};
 

@@ -1,0 +1,11 @@
+[package]
+name = "covalence-shell"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+covalence-hash = { path = "../covalence-hash", default-features = false }
+covalence-store = { path = "../covalence-store" }
+covalence-object = { path = "../covalence-object" }
+covalence-kernel = { path = "../covalence-kernel" }
+thiserror = "2"

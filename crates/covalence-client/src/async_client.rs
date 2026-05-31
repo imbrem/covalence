@@ -1,5 +1,5 @@
 use covalence_hash::O256;
-use covalence_kernel::{AsyncBackend, BackendInfo, KernelError};
+use covalence_shell::{AsyncBackend, BackendInfo, KernelError};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper_util::client::legacy::Client;

@@ -5,7 +5,7 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
-use covalence_kernel::{Kernel, SyncBackend};
+use covalence_shell::{Kernel, SyncBackend};
 
 use crate::backend::parse_hash;
 use crate::component::extract_bytes;

@@ -479,12 +479,12 @@ dependencies = [
  "covalence-git",
  "covalence-hash",
  "covalence-hol",
- "covalence-kernel",
  "covalence-lsp",
  "covalence-opentheory",
  "covalence-proto",
  "covalence-repl",
  "covalence-serve",
+ "covalence-shell",
  "covalence-store",
  "covalence-wasm",
  "eyre",
@@ -503,7 +503,7 @@ name = "covalence-client"
 version = "0.0.0"
 dependencies = [
  "covalence-hash",
- "covalence-kernel",
+ "covalence-shell",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -559,12 +559,6 @@ dependencies = [
 [[package]]
 name = "covalence-kernel"
 version = "0.0.0"
-dependencies = [
- "covalence-hash",
- "covalence-object",
- "covalence-store",
- "thiserror 2.0.18",
-]
 
 [[package]]
 name = "covalence-lean"
@@ -656,12 +650,12 @@ dependencies = [
  "bzip2",
  "covalence-git",
  "covalence-hash",
- "covalence-kernel",
  "covalence-object",
  "covalence-repl",
  "covalence-sat",
  "covalence-serve",
  "covalence-sexp",
+ "covalence-shell",
  "covalence-sig",
  "covalence-store",
  "covalence-wasm",
@@ -685,7 +679,7 @@ version = "0.0.0"
 dependencies = [
  "covalence-forsp",
  "covalence-hash",
- "covalence-kernel",
+ "covalence-shell",
  "covalence-wasm",
  "ureq",
 ]
@@ -708,10 +702,10 @@ dependencies = [
  "axum",
  "covalence-git",
  "covalence-hash",
- "covalence-kernel",
  "covalence-object",
  "covalence-proto",
  "covalence-repl",
+ "covalence-shell",
  "covalence-store",
  "mime_guess",
  "open",
@@ -733,6 +727,17 @@ dependencies = [
  "covalence-parse",
  "pretty",
  "smol_str",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "covalence-shell"
+version = "0.0.0"
+dependencies = [
+ "covalence-hash",
+ "covalence-kernel",
+ "covalence-object",
+ "covalence-store",
  "thiserror 2.0.18",
 ]
 

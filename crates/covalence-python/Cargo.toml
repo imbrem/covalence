@@ -12,7 +12,7 @@ pyo3 = "0.28"
 bytes = "1"
 covalence-hash = { path = "../covalence-hash" }
 covalence-sexp = { path = "../covalence-sexp" }
-covalence-kernel = { path = "../covalence-kernel" }
+covalence-shell = { path = "../covalence-shell" }
 covalence-store = { path = "../covalence-store", features = ["memory", "sqlite"] }
 covalence-git = { path = "../covalence-git", features = ["object-store"] }
 covalence-sig = { path = "../covalence-sig" }

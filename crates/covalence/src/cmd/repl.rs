@@ -75,11 +75,11 @@ pub fn run(args: ReplArgs) -> eyre::Result<()> {
         }
     };
 
-    let backend: Box<dyn covalence_kernel::SyncBackend> = if let Some(ref addr) = args.connect {
+    let backend: Box<dyn covalence_shell::SyncBackend> = if let Some(ref addr) = args.connect {
         super::connect_backend(addr)
     } else if args.standalone {
         let store = super::resolve_store(args.store)?;
-        let kernel = covalence_kernel::Kernel::with_store(store);
+        let kernel = covalence_shell::Kernel::with_store(store);
         Box::new(kernel)
     } else {
         // Auto-discovery: try to find a running server, fall back to kernel
@@ -93,7 +93,7 @@ pub fn run(args: ReplArgs) -> eyre::Result<()> {
             Box::new(covalence_client::SyncHttpBackend::new(url.clone()))
         } else {
             let store = super::resolve_store(args.store)?;
-            let kernel = covalence_kernel::Kernel::with_store(store);
+            let kernel = covalence_shell::Kernel::with_store(store);
             Box::new(kernel)
         }
     };

@@ -1,4 +1,4 @@
-pub use covalence_kernel::{BackendInfo, KernelError, SyncBackend};
+pub use covalence_shell::{BackendInfo, KernelError, SyncBackend};
 
 use covalence_forsp::{FCtx, FError, ForeignPrims, Forsp};
 use covalence_hash::O256;

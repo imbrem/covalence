@@ -1,4 +1,4 @@
-use covalence_kernel::Kernel;
+use covalence_shell::Kernel;
 use covalence_repl::Session;
 
 /// Create a Session backed by the given Kernel.

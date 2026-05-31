@@ -7,7 +7,7 @@ use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 
 use covalence_client::SyncHttpBackend;
-use covalence_kernel::SyncBackend;
+use covalence_shell::SyncBackend;
 use covalence_repl::Session;
 use tempfile::TempDir;
 

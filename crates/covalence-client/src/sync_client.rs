@@ -1,5 +1,5 @@
 use covalence_hash::O256;
-use covalence_kernel::{BackendInfo, KernelError, SyncBackend};
+use covalence_shell::{BackendInfo, KernelError, SyncBackend};
 
 use crate::types::{BlobStatsResponse, HashResponse};
 

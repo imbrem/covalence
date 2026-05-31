@@ -11,7 +11,7 @@ fetch = ["dep:ureq"]
 covalence-forsp = { path = "../covalence-forsp" }
 covalence-hash = { path = "../covalence-hash", default-features = false }
 covalence-wasm = { path = "../covalence-wasm", default-features = false }
-covalence-kernel = { path = "../covalence-kernel" }
+covalence-shell = { path = "../covalence-shell" }
 
 # fetch feature: URL fetching for store-url command
 ureq = { version = "3", optional = true }

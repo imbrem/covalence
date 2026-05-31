@@ -9,7 +9,7 @@ sync = ["dep:ureq"]
 async = ["dep:hyper", "dep:hyper-util", "dep:http-body-util", "dep:tokio"]
 
 [dependencies]
-covalence-kernel = { path = "../covalence-kernel" }
+covalence-shell = { path = "../covalence-shell" }
 covalence-hash = { path = "../covalence-hash", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

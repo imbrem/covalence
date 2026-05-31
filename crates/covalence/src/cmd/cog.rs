@@ -179,7 +179,7 @@ fn push_to_server(
     store: &covalence_git::store::GitStore,
     backend: &covalence_client::SyncHttpBackend,
 ) -> std::io::Result<()> {
-    use covalence_kernel::SyncBackend;
+    use covalence_shell::SyncBackend;
 
     let blobs = store
         .all_blob_data()

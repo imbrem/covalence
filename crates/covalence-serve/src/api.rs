@@ -5,7 +5,7 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use covalence_hash::O256;
-use covalence_kernel::Kernel;
+use covalence_shell::Kernel;
 use covalence_object::{
     Dir, DirMode, DirRow, Sha256Identity, Table, TableBuilder, git_tree_bytes_mapped,
     git_tree_to_dir_rows_mapped,

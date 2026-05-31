@@ -4,7 +4,7 @@ use std::thread;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
-use covalence_kernel::Kernel;
+use covalence_shell::Kernel;
 use covalence_store::BlobStore;
 
 /// Background embedded HTTP server.

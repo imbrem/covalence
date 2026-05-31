@@ -1,5 +1,5 @@
-mod traits;
-pub use traits::{AsyncBackend, BackendInfo, KernelError, SyncBackend};
-
-mod kernel;
-pub use kernel::Kernel;
+//! Covalence HOL kernel.
+//!
+//! Empty stub — the new kernel modules (Arena, Prop, Thm, Context,
+//! concepts, inference rules) land in subsequent phases per
+//! `docs/prover-mvp-plan.md`.

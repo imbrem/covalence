@@ -4,7 +4,7 @@ use std::thread;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
-use covalence_kernel::Kernel;
+use covalence_shell::Kernel;
 
 /// Type-erased task: a closure that runs on the worker's owned state.
 pub type KernelTask = Box<dyn FnOnce(&Kernel) + Send>;

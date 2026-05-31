@@ -67,10 +67,10 @@ fn alloc_literal_variants() {
     // fixed-width
     let _u8 = a.alloc_term(TermDef::U8(0xFF));
     let _i32 = a.alloc_term(TermDef::I32(-1));
-    let _u64 = a.alloc_term(TermDef::U64(u64::MAX));
+    let _u64 = a.alloc_term(TermDef::u64_literal(u64::MAX));
     // arbitrary-precision inline
-    let _nat = a.alloc_term(TermDef::NatInline(42));
-    let _int = a.alloc_term(TermDef::IntInline(-42));
+    let _nat = a.alloc_term(TermDef::nat_inline(42));
+    let _int = a.alloc_term(TermDef::int_inline(-42));
     // arbitrary-precision stored
     use covalence_types::{Int, Nat};
     let big_nat = a.intern_nat(Nat::from(u128::MAX));
@@ -78,8 +78,11 @@ fn alloc_literal_variants() {
     let _ns = a.alloc_term(TermDef::NatStored(big_nat));
     let _is = a.alloc_term(TermDef::IntStored(big_int));
     // bits / bytes
-    let bits_id = a.intern_bits(vec![0xAA, 0x55]);
-    let bytes_id = a.intern_bytes(vec![0xDE, 0xAD, 0xBE, 0xEF]);
+    use bytes::Bytes;
+    use covalence_types::Bits;
+    let bits_id = a
+        .intern_bits(Bits::from_bytes(Bytes::from_static(&[0xAA, 0x55]), 16).unwrap());
+    let bytes_id = a.intern_bytes(Bytes::from_static(&[0xDE, 0xAD, 0xBE, 0xEF]));
     let _bs = a.alloc_term(TermDef::BitsStored(bits_id));
     let _bys = a.alloc_term(TermDef::BytesStored(bytes_id));
 }
@@ -95,7 +98,7 @@ fn closed_true_for_constants_and_builtins() {
     let t = a.alloc_term(TermDef::True);
     let f = a.alloc_term(TermDef::False);
     let c = alloc_const(&mut a, "foo", TypeRef::local(bool_ty));
-    let n = a.alloc_term(TermDef::NatInline(7));
+    let n = a.alloc_term(TermDef::nat_inline(7));
 
     for id in [t, f, c, n] {
         assert!(a.term_uf(id).closed(), "term {id:?} should be closed");
@@ -348,11 +351,12 @@ fn intern_string_dedupes() {
 
 #[test]
 fn intern_bytes_and_tyargs() {
+    use bytes::Bytes;
     let mut a = Arena::new();
     let bool_ty = a.alloc_type(TypeDef::Bool);
 
-    let by = a.intern_bytes(vec![1, 2, 3]);
-    assert_eq!(a.bytes_value(by), &[1, 2, 3]);
+    let by = a.intern_bytes(Bytes::from_static(&[1, 2, 3]));
+    assert_eq!(&a.bytes_value(by)[..], &[1u8, 2, 3][..]);
 
     let args = a.intern_tyargs(vec![TypeRef::local(bool_ty)]);
     assert_eq!(a.tyargs(args), &[TypeRef::local(bool_ty)]);
@@ -404,6 +408,17 @@ fn _refs_and_defs_are_copy() {
 fn packed_refs_are_u32_sized() {
     assert_eq!(std::mem::size_of::<TermRef>(), 4);
     assert_eq!(std::mem::size_of::<TypeRef>(), 4);
+}
+
+#[test]
+fn term_def_fits_three_u32s() {
+    // The (tag, lhs, rhs) 3-u32 invariant (architecture §3.1). All
+    // 64-bit literal variants (U64, I64, NatInline, IntInline) are
+    // packed as `[u32; 2]` rather than `u64`/`i64` to keep the enum
+    // 4-byte-aligned — otherwise the 8-byte alignment forced by raw
+    // u64/i64 would push the total to 16 bytes.
+    assert_eq!(std::mem::size_of::<TermDef>(), 12);
+    assert_eq!(std::mem::align_of::<TermDef>(), 4);
 }
 
 // ---------------------------------------------------------------------------
@@ -485,7 +500,7 @@ fn alloc_combinator_variants() {
     // A few sample terms.
     let t = a.alloc_term(TermDef::True);
     let f = a.alloc_term(TermDef::False);
-    let zero = a.alloc_term(TermDef::NatInline(0));
+    let zero = a.alloc_term(TermDef::nat_inline(0));
 
     // Ne(true, false)
     let ne = a.alloc_term(TermDef::Ne(TermRef::local(t), TermRef::local(f)));
@@ -540,14 +555,14 @@ fn kind_materialises_nat_and_int_uniformly() {
     let mut a = Arena::new();
 
     // Inline Nat and stored Nat both surface as TermKind::Nat.
-    let n_small = a.alloc_term(TermDef::NatInline(42));
+    let n_small = a.alloc_term(TermDef::nat_inline(42));
     let n_big_id = a.intern_nat(Nat::from(u128::MAX));
     let n_big = a.alloc_term(TermDef::NatStored(n_big_id));
     assert_eq!(a.kind(n_small), TermKind::Nat(Nat::from(42u64)));
     assert_eq!(a.kind(n_big), TermKind::Nat(Nat::from(u128::MAX)));
 
     // Inline Int and stored Int both surface as TermKind::Int.
-    let i_small = a.alloc_term(TermDef::IntInline(-7));
+    let i_small = a.alloc_term(TermDef::int_inline(-7));
     let i_big_id = a.intern_int(Int::from(i128::MIN));
     let i_big = a.alloc_term(TermDef::IntStored(i_big_id));
     assert_eq!(a.kind(i_small), TermKind::Int(Int::from(-7i64)));
@@ -587,7 +602,7 @@ fn kind_folds_per_op_variants_into_op1_op2() {
     // Non-op variants pass through identically.
     let t = a.alloc_term(TermDef::True);
     assert_eq!(a.kind(t), TermKind::True);
-    let n = a.alloc_term(TermDef::NatInline(42));
+    let n = a.alloc_term(TermDef::nat_inline(42));
     assert_eq!(a.kind(n), TermKind::Nat(covalence_types::Nat::from(42u64)));
 }
 
@@ -631,7 +646,7 @@ fn per_op_closed_flag_propagates() {
     let nat_ty = a.alloc_type(TypeDef::Nat);
 
     let x = alloc_free(&mut a, "x", TypeRef::local(nat_ty));
-    let zero = a.alloc_term(TermDef::NatInline(0));
+    let zero = a.alloc_term(TermDef::nat_inline(0));
 
     // NatAdd(free, closed) is open
     let open_add = a.alloc_term(TermDef::NatAdd(TermRef::local(x), TermRef::local(zero)));

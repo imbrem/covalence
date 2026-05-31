@@ -63,10 +63,10 @@ pub enum TermKind {
     //    whether the underlying TermDef variant was Inline or Stored) --
     Nat(covalence_types::Nat),
     Int(covalence_types::Int),
-    // -- bit / byte string literals (still opaque-id for now;
-    //    materialisation requires arena lookup) --
-    BitsStored(BitsId),
-    BytesStored(BytesId),
+    // -- bit / byte string literals (also materialised; the "Stored"
+    //    bit is a storage detail of TermDef, hidden here) --
+    Bits(covalence_types::Bits),
+    Bytes(bytes::Bytes),
 }
 
 
@@ -176,13 +176,21 @@ macro_rules! define_term_def {
             LiftOp2(PrimOp2),
 
             // -- literals: fixed-width --
-            U8(u8), U16(u16), U32(u32), U64(u64),
-            I8(i8), I16(i16), I32(i32), I64(i64),
+            //
+            // The 64-bit variants are stored as `[u32; 2]` (low, high
+            // halves) rather than `u64` / `i64` directly — the latter
+            // would force 8-byte enum alignment and push TermDef from
+            // 12 bytes (3 u32s) to 16. Use the `*_value` accessors to
+            // get the logical scalar back.
+            U8(u8), U16(u16), U32(u32), U64([u32; 2]),
+            I8(i8), I16(i16), I32(i32), I64([u32; 2]),
 
             // -- literals: arbitrary-precision --
-            IntInline(i64),
+            //
+            // Same `[u32; 2]` packing applies to the inline forms.
+            IntInline([u32; 2]),
             IntStored(IntId),
-            NatInline(u64),
+            NatInline([u32; 2]),
             NatStored(NatId),
 
             // -- literals: bit / byte strings --
@@ -197,6 +205,48 @@ macro_rules! define_term_def {
         }
 
         impl TermDef {
+            /// Pack a `u64` value into the `[u32; 2]` payload used by
+            /// the inline-u64 variants (`U64`, `NatInline`).
+            pub const fn pack_u64(v: u64) -> [u32; 2] {
+                [v as u32, (v >> 32) as u32]
+            }
+
+            /// Unpack a `[u32; 2]` back into a `u64`.
+            pub const fn unpack_u64(packed: [u32; 2]) -> u64 {
+                (packed[0] as u64) | ((packed[1] as u64) << 32)
+            }
+
+            /// Pack an `i64` value into a `[u32; 2]` payload.
+            pub const fn pack_i64(v: i64) -> [u32; 2] {
+                Self::pack_u64(v as u64)
+            }
+
+            /// Unpack a `[u32; 2]` back into an `i64`.
+            pub const fn unpack_i64(packed: [u32; 2]) -> i64 {
+                Self::unpack_u64(packed) as i64
+            }
+
+            /// Smart constructor for a `U64` literal — saves the
+            /// caller from writing `TermDef::U64(TermDef::pack_u64(v))`.
+            pub const fn u64_literal(v: u64) -> Self {
+                TermDef::U64(Self::pack_u64(v))
+            }
+
+            /// Smart constructor for an `I64` literal.
+            pub const fn i64_literal(v: i64) -> Self {
+                TermDef::I64(Self::pack_i64(v))
+            }
+
+            /// Smart constructor for an inline `Nat`.
+            pub const fn nat_inline(v: u64) -> Self {
+                TermDef::NatInline(Self::pack_u64(v))
+            }
+
+            /// Smart constructor for an inline `Int`.
+            pub const fn int_inline(v: i64) -> Self {
+                TermDef::IntInline(Self::pack_i64(v))
+            }
+
             /// If this is an applied unary primop, return `(op, child)`.
             pub fn as_op1(&self) -> Option<(PrimOp1, TermRef)> {
                 match self {

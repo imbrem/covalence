@@ -35,8 +35,8 @@ pub struct Arena {
     // -- interning tables: variable-sized payloads pulled out of
     //    TermDef / TypeDef so those enums can stay (or become) Copy.
     strings: Vec<SmolStr>,
-    bytes: Vec<Vec<u8>>,
-    bits: Vec<Vec<u8>>,
+    bytes: Vec<bytes::Bytes>,
+    bits: Vec<covalence_types::Bits>,
     ints: Vec<covalence_types::Int>,
     nats: Vec<covalence_types::Nat>,
     tyargs: Vec<Vec<TypeRef>>,
@@ -151,19 +151,23 @@ impl Arena {
             TermDef::U8(v) => TermKind::U8(v),
             TermDef::U16(v) => TermKind::U16(v),
             TermDef::U32(v) => TermKind::U32(v),
-            TermDef::U64(v) => TermKind::U64(v),
+            TermDef::U64(packed) => TermKind::U64(TermDef::unpack_u64(packed)),
             TermDef::I8(v) => TermKind::I8(v),
             TermDef::I16(v) => TermKind::I16(v),
             TermDef::I32(v) => TermKind::I32(v),
-            TermDef::I64(v) => TermKind::I64(v),
+            TermDef::I64(packed) => TermKind::I64(TermDef::unpack_i64(packed)),
             // Materialise arbitrary-precision literals — hide the
             // inline-vs-stored split.
-            TermDef::IntInline(v) => TermKind::Int(covalence_types::Int::from(v)),
+            TermDef::IntInline(packed) => {
+                TermKind::Int(covalence_types::Int::from(TermDef::unpack_i64(packed)))
+            }
             TermDef::IntStored(id) => TermKind::Int(self.int(id).clone()),
-            TermDef::NatInline(v) => TermKind::Nat(covalence_types::Nat::from(v)),
+            TermDef::NatInline(packed) => {
+                TermKind::Nat(covalence_types::Nat::from(TermDef::unpack_u64(packed)))
+            }
             TermDef::NatStored(id) => TermKind::Nat(self.nat(id).clone()),
-            TermDef::BitsStored(v) => TermKind::BitsStored(v),
-            TermDef::BytesStored(v) => TermKind::BytesStored(v),
+            TermDef::BitsStored(id) => TermKind::Bits(self.bits(id).clone()),
+            TermDef::BytesStored(id) => TermKind::Bytes(self.bytes_value(id).clone()),
             _ => unreachable!("per-op variant handled by as_op1/as_op2 above"),
         }
     }
@@ -174,12 +178,12 @@ impl Arena {
     }
 
     /// Read a bit string by local id.
-    pub fn bits(&self, id: BitsId) -> &[u8] {
+    pub fn bits(&self, id: BitsId) -> &covalence_types::Bits {
         &self.bits[id.0 as usize]
     }
 
     /// Read a byte string by local id.
-    pub fn bytes_value(&self, id: BytesId) -> &[u8] {
+    pub fn bytes_value(&self, id: BytesId) -> &bytes::Bytes {
         &self.bytes[id.0 as usize]
     }
 
@@ -261,7 +265,7 @@ impl Arena {
 
     /// Intern a bit string. Always appends; callers who want dedup
     /// should dedup at their own layer.
-    pub fn intern_bits(&mut self, bits: Vec<u8>) -> BitsId {
+    pub fn intern_bits(&mut self, bits: covalence_types::Bits) -> BitsId {
         let id = BitsId(self.bits.len() as u32);
         self.bits.push(bits);
         id
@@ -295,7 +299,7 @@ impl Arena {
 
     /// Intern a byte-string literal. Always appends; no dedup (callers
     /// who care about sharing should dedup at their own layer).
-    pub fn intern_bytes(&mut self, b: Vec<u8>) -> BytesId {
+    pub fn intern_bytes(&mut self, b: bytes::Bytes) -> BytesId {
         let id = BytesId(self.bytes.len() as u32);
         self.bytes.push(b);
         id

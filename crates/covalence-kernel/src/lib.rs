@@ -9,6 +9,7 @@
 pub mod arena;
 pub mod id;
 pub mod name;
+pub mod primop;
 pub mod term;
 pub mod ty;
 pub mod uf;
@@ -20,6 +21,7 @@ pub use id::{
 #[cfg(feature = "int")]
 pub use id::{IntId, NatId};
 pub use name::{ConstName, TypeName, TypeVarId, VarName};
+pub use primop::{PrimOp1, PrimOp2};
 pub use term::{BITS_INLINE_MAX_BYTES, BitsValue, TermDef, TermRef};
 pub use ty::{TypeDef, TypeRef};
 pub use uf::{TermUfEntry, TypeUfEntry};

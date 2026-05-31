@@ -68,35 +68,32 @@ x` are similarly reduction rules, not axioms.
 
 ## 2. Ite
 
-`Ite(branch_ty, cond) : α → α → α` (where `α = branch_ty`).
+`Ite(cond, then) : α → α` where `α = type_of(then)`.
 
-Ite is a *partially-applied* primitive: it takes the type and the
-boolean condition inline, and yields a function `α → α → α`. The
-two branches are supplied through `Comb`, exactly like any other
-binary function value:
+Ite is a partially-applied primitive: the condition and the
+*then-branch* go inline (two `TermRef`s), and the result is a
+function awaiting the *else-branch* through `Comb`. There is **no
+explicit `TypeRef`** — the branch type is inferred from `then` in
+one step. The else-branch is type-checked against this inferred α
+when the `Comb` is built.
 
 ```
-Comb (Comb (Ite ty cond) then_branch) else_branch  :  α
+Comb (Ite cond then) else_branch  :  α
 ```
 
-This shape is what keeps Ite within the (tag, lhs, rhs) 3-u32
-invariant: payload is `TypeRef + TermRef = 8 bytes`, no side table
-needed.
+Payload: `TermRef + TermRef = 8 bytes`, fitting the (tag, lhs, rhs)
+3-u32 invariant.
 
 | Sig | Reduction (on literal cond) |
 |---|---|
-| `bool → α → α → α` (here `α = branch_ty`) | `Comb (Comb (Ite ty True) a) b → a`; `Comb (Comb (Ite ty False) a) b → b` |
+| `bool → α → α → α` (curried via Comb) | `Comb (Ite True a) b → a`; `Comb (Ite False a) b → b` |
 
-The `branch_ty` field is carried explicitly so the term is
-self-describing for typechecking; without it we'd have to recompute
-the type of `then`/`else` every time we look at an `Ite`.
-
-**One axiom:** `Comb (Comb (Ite ty (Not b)) x) y = Comb (Comb (Ite
-ty b) y) x` — negating the condition flips the branches. This is
-the only Ite fact that isn't a reduction rule (it doesn't fire on
-a literal condition; it's used to canonicalise nested Ites). All
-other Ite equalities collapse to reduction-rule applications once
-`cond` becomes a literal.
+**One axiom:** `Comb (Ite (Not c) a) b = Comb (Ite c b) a` —
+negating the condition flips the branches. This is the only Ite
+fact that isn't a reduction rule (it doesn't fire on a literal
+condition; it's used to canonicalise nested Ites). All other Ite
+equalities collapse to reduction-rule applications once `cond`
+becomes a literal.
 
 ---
 
@@ -390,36 +387,33 @@ variables, and they let the kernel pattern-match common shapes (e.g.
 | Op | Sig | Reduction | Axioms |
 |---|---|---|---|
 | `Id(α)` | `α → α` | none — `Id` is a value, not an evaluator | `Comb(Id(α), x) = x` |
+| `Constant(a, β)` | `β → α` where `α = type_of(a)` | `Comb(Constant(a, β), x) → a` | the previous equation |
 | `Comp(f, g)` | `(β → γ) → (α → β) → (α → γ)` | none on `Comp` itself; `Comb(Comp(f, g), x)` reduces to `Comb(f, Comb(g, x))` | the previous equation; equivalently `Comp(f, g) = λx. f (g x)` |
-| `Iter(α, n)` | `nat → (α → α) → (α → α)` | none on `Iter`; equality to `Id`/`Comp` chains via the axioms below | see below |
+| `Iter(n, f)` | `nat → (α → α) → (α → α)` (curried via `Comb`) | none on `Iter`; equality to `Id`/`Comp` chains via the axioms below | see below |
 
 ### Storage shape
 
-- `Id(α)` carries a single `TypeRef` — 4 bytes payload, fits in the
-  3-u32 invariant.
-- `Comp(f, g)` carries two `TermRef`s — 8 bytes, fits inline.
-- `Iter(α, n)` carries a `TypeRef` + one `TermRef` (the iteration
-  count `n`) = 8 bytes — fits inline. Like `Ite`, the remaining
-  argument (the function to iterate) is supplied through `Comb`.
+- `Id(α)` carries a single `TypeRef` — 4 bytes payload.
+- `Constant(a, β)` carries a `TermRef` + a `TypeRef` — 8 bytes; α
+  is inferred from `a`'s type, β is given explicitly.
+- `Comp(f, g)` carries two `TermRef`s — 8 bytes.
+- `Iter(n, f)` carries two `TermRef`s — 8 bytes. **No explicit
+  `TypeRef`**; the element type `α` is inferred from `f`'s type
+  (`f : α → α`) in one step. `Iter n f` *is* the iterated function
+  (type `α → α`), ready to be applied to a value.
 
 ### `Iter` axioms (via `Comp`/`Id`)
 
-`Iter` is partially applied: `Iter α n` is the "iterate-n-times"
-combinator, awaiting the function to iterate. It's characterised by
-two `succ`-equations that **both** hold (they're provably equal
-given the equational theory of `Comp`):
-
 ```
-Comb (Iter α 0)        f  =  Id α
-Comb (Iter α (succ n)) f  =  Comp f (Comb (Iter α n) f)   -- outer-first
-Comb (Iter α (succ n)) f  =  Comp (Comb (Iter α n) f) f   -- inner-first
+Iter 0        f  =  Id α                          where α = dom(f)
+Iter (succ n) f  =  Comp f (Iter n f)             -- outer-first
+Iter (succ n) f  =  Comp (Iter n f) f             -- inner-first
 ```
 
 Combined with the nat-induction axiom (§8.7), these uniquely
 characterise `Iter`. The two `succ`-cases together with induction
 also prove `Iter`'s key shift-invariance lemma —
-`Comp f (Comb (Iter α n) f) = Comp (Comb (Iter α n) f) f` —
-without further axioms.
+`Comp f (Iter n f) = Comp (Iter n f) f` — without further axioms.
 
 ### Arithmetic derived from `Iter`
 
@@ -427,12 +421,12 @@ With `Iter` in hand, the standard arithmetic ops are *derived*
 (not axiomatized independently — though we *also* expose them as
 primops for efficient host-side reduction; see §3 above):
 
-- `add n m = Comb (Comb (Iter nat m) NatSucc) n` — `m` successors
-  applied to `n`.
-- `mul n m = Comb (Comb (Iter nat m) (NatAdd-by-n)) 0`.
-- `pow n m = Comb (Comb (Iter nat m) (NatMul-by-n)) 1`.
+- `add n m = Comb (Iter m NatSucc) n` — `m` successors applied to `n`.
+- `mul n m = Comb (Iter m (NatAdd-by-n)) 0`.
+- `pow n m = Comb (Iter m (NatMul-by-n)) 1`.
 
-(Where `NatAdd-by-n` means the partially-applied `λx. add n x`.)
+(Where `NatAdd-by-n` means the partially-applied `λx. add n x`,
+constructed as a HOL `Abs`.)
 
 The defining axiom of `add`'s primop (`add n 0 = n`; `add n (succ
 m) = succ (add n m)`) is then *redundant* with the `Iter` characterization
@@ -443,12 +437,12 @@ implementation is audited against. Same story for `mul`, `pow`, etc.
 
 ### Trust note
 
-`Id`, `Comp`, and `Iter` collectively add three kernel-trusted
-combinators. Their soundness is one-paragraph: `Id` is the identity
-function (by its single equation); `Comp` is the lambda above (by
-unfolding); `Iter` is the function-power-iteration combinator
-defined by recursion on `nat` (by the two cases + induction).
-Auditable mechanically.
+`Id`, `Constant`, `Comp`, and `Iter` collectively add four kernel-
+trusted combinators. Their soundness is one-paragraph each: `Id` is
+the identity function; `Constant a` is the constant function
+returning `a`; `Comp` is the lambda above; `Iter` is the
+function-power-iteration combinator defined by recursion on `nat`
+(via the two cases + induction). Auditable mechanically.
 
 ## 8.7. Induction principles
 
@@ -561,11 +555,11 @@ like `xor_def` etc. are reduction rules (left-to-right normal form).
 
 | Name | Statement | Source |
 |---|---|---|
-| `ite_negate` | `Comb (Comb (Ite ty (Not b)) x) y = Comb (Comb (Ite ty b) y) x` | §2 |
+| `ite_negate` | `Comb (Ite (Not c) a) b = Comb (Ite c b) a` | §2 |
 
-Reduction on literal cond (`Comb (Comb (Ite ty True) a) b → a`,
-etc.) is in §10 — it's a fact of `bool`'s finite structure plus the
-typing of `Ite`, not a separate postulate.
+Reduction on literal cond (`Comb (Ite True a) b → a`, etc.) is in
+§10 — it's a fact of `bool`'s finite structure plus the typing of
+`Ite`, not a separate postulate.
 
 ### 9.3. Epsilon (Hilbert choice)
 
@@ -581,10 +575,11 @@ existence elimination) derives from it.
 | Name | Statement | Source |
 |---|---|---|
 | `id_ax` | `Comb (Id α) x = x` | §8.6 |
+| `constant_ax` | `Comb (Constant a β) x = a` (x : β) | §8.6 |
 | `comp_def` | `Comb (Comp f g) x = Comb f (Comb g x)` | §8.6 |
-| `iter_zero` | `Comb (Iter α 0) f = Id α` | §8.6 |
-| `iter_succ_outer` | `Comb (Iter α (succ n)) f = Comp f (Comb (Iter α n) f)` | §8.6 |
-| `iter_succ_inner` | `Comb (Iter α (succ n)) f = Comp (Comb (Iter α n) f) f` | §8.6 |
+| `iter_zero` | `Iter 0 f = Id (dom(f))` | §8.6 |
+| `iter_succ_outer` | `Iter (succ n) f = Comp f (Iter n f)` | §8.6 |
+| `iter_succ_inner` | `Iter (succ n) f = Comp (Iter n f) f` | §8.6 |
 
 The last two are equivalent given `induct_nat` (§9.5); both are
 listed because each is the natural symbolic rule to apply depending
@@ -702,7 +697,8 @@ The kernel's trusted axiom set is exactly the axioms above:
 - 7 logic/equality/bool axioms
 - 1 Ite axiom
 - 1 epsilon axiom
-- 5 combinator axioms
+- 6 combinator axioms (`id_ax`, `constant_ax`, `comp_def`, `iter_zero`,
+  `iter_succ_outer`, `iter_succ_inner`)
 - 3 × 3 = 9 axioms for inductive types (nat / bits / bytes:
   constructors-distinct + injective + induction)
 - 13 integer ring/order axioms
@@ -794,8 +790,15 @@ representation (`NatInline n`, `IntInline i`, `U32 n`, etc.).
 
 | Rule | Source |
 |---|---|
-| `Comb (Comb (Ite ty True) a) b → a` | §2 |
-| `Comb (Comb (Ite ty False) a) b → b` | §2 |
+| `Comb (Ite True a) b → a` | §2 |
+| `Comb (Ite False a) b → b` | §2 |
+
+Equivalently (and the reason `Constant`/`Id` are first-class): when
+the else-branch's type β is known,
+`Ite True a ≡ Constant(a, β)` and `Ite False a ≡ Id(β)`. Users
+working pointlessly can introduce these via the manual rule of §11;
+the auto-reduce keeps the direct form because β isn't visible
+until the `Comb` is taken.
 
 (The `ite_negate` axiom of §9.2 is *not* a reduction rule — it'd
 loop with itself. It's available as a manual rule, §11.)
@@ -805,8 +808,9 @@ loop with itself. It's available as a manual rule, §11.)
 | Rule | Source |
 |---|---|
 | `Comb (Id α) x → x` | §8.6 |
+| `Comb (Constant a β) x → a` | §8.6 |
 | `Comb (Comp f g) x → Comb f (Comb g x)` | §8.6 |
-| `Comb (Iter α (NatInline 0)) f → Id α` | §8.6 |
+| `Iter (NatInline 0) f → Id (dom(f))` | §8.6 |
 
 The `succ` cases of `iter_succ_outer`/`iter_succ_inner` are *not*
 reductions — they'd unfold indefinitely on a symbolic `n`. Manual
@@ -843,11 +847,13 @@ mul(?a, succ(?b))  → add(mul(?a, ?b), ?a)
 pow(?a, succ(?b))  → mul(pow(?a, ?b), ?a)
 
 ;; iter unfolding (would loop on symbolic n)
-Iter(?ty, succ(?n), ?f) → Comp ?f (Iter(?ty, ?n, ?f))    ;; outer
-Iter(?ty, succ(?n), ?f) → Comp (Iter(?ty, ?n, ?f)) ?f    ;; inner
+Iter(succ(?n), ?f) → Comp ?f (Iter(?n, ?f))    ;; outer
+Iter(succ(?n), ?f) → Comp (Iter(?n, ?f)) ?f    ;; inner
 
 ;; canonicalisations
-ite_negate:  Ite(?ty, Not(?b), ?x, ?y) → Ite(?ty, ?b, ?y, ?x)
+ite_negate:    Comb (Ite (Not(?c)) ?a) ?b → Comb (Ite ?c ?b) ?a
+ite_true_K:    Ite(True, ?a)  → Constant(?a, ?β)   ;; pointless form
+ite_false_id:  Ite(False, ?a) → Id(type_of(?a))    ;; pointless form
 
 ;; cast equations (when reduction doesn't fire)
 T_of_nat(nat_of_T(?x)) → ?x        ;; via cast round-trip

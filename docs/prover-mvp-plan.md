@@ -159,9 +159,12 @@ shape:
   - literals: `U8(u8)..U64(u64)`, `I8(i8)..I64(i64)`,
     `IntInline(i64)`, `IntStored(IntId)`, `NatInline(u64)`,
     `NatStored(NatId)`, `BitsStored(BitsId)`, `BytesStored(BytesId)`.
-  - combinators (inline, partial): `Ite(TypeRef, TermRef)`,
-    `Iter(TypeRef, TermRef)`, `Eps(TypeRef, TermRef)`,
-    `Id(TypeRef)`, `Comp(TermRef, TermRef)`.
+  - combinators (all inline, partial-application where applicable):
+    `Ite(TermRef, TermRef)` (cond, then; else via Comb),
+    `Iter(TermRef, TermRef)` (n, f; α inferred from f),
+    `Eps(TypeRef, TermRef)` (Hilbert choice),
+    `Id(TypeRef)`, `Constant(TermRef, TypeRef)`,
+    `Comp(TermRef, TermRef)`.
   - one variant per `PrimOp1`/`PrimOp2` from
     [`prover-primops.md`](./prover-primops.md) (e.g. `NatAdd(t,
     t)`, `LogicalNot(t)`, …). TermKind groups them under

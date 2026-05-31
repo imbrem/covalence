@@ -427,6 +427,7 @@ pub(crate) enum TermDef {
     Iter(TypeRef, TermRef),
     Eps(TypeRef, TermRef),  // Hilbert choice
     Id(TypeRef),
+    Constant(TermRef, TypeRef),  // K combinator
     Comp(TermRef, TermRef),
     // literals as above; storage may be inline or via *Id into a table
     ...
@@ -463,12 +464,12 @@ Two consequences worth calling out:
   ignores them; only printers consult them. Dropping them keeps the
   variant within the 8-byte payload budget *and* makes the equality-
   by-structure check trivially α-equivalent.
-- **`Ite` is partially applied** to keep the 3-u32 invariant.
-  `Ite(α, cond)` carries the branch type and the boolean — 8 bytes
-  inline. The two branches are supplied via `Comb`, so a fully-
-  applied if-then-else is `Comb (Comb (Ite α cond) then) else`.
-  `Iter` follows the same pattern: `Iter(α, n) : (α → α) → (α → α)`,
-  with the function-to-iterate supplied via `Comb`.
+- **`Ite` and `Iter` use type inference, not an explicit `TypeRef`.**
+  `Ite(cond, then)` infers the branch type α from `type_of(then)`
+  in one step; the else-branch is supplied via `Comb` and checked
+  against α. `Iter(n, f)` infers α from `dom(f)` and *is* the
+  iterated function directly (type `α → α`). Both store two
+  `TermRef`s — 8 bytes inline, no side table.
 
 `TypeDef` follows the same Copy + 3-u32 invariant; it's public
 because the variant set is small enough that pattern-matching is
@@ -533,11 +534,12 @@ storage efficiency.
 | `True`, `False` | boolean literals | **builtin** |
 | `Op1(PrimOp1, TermRef)` | unary primitive op (logic, arithmetic, casts) | **builtin** (§3.4) |
 | `Op2(PrimOp2, TermRef, TermRef)` | binary primitive op | **builtin** (§3.4) |
-| `Ite(TypeRef, TermRef)` | if-then-else: `(α → α → α)` for the given cond; branches via `Comb` | **builtin** (§3.4) |
+| `Ite(TermRef, TermRef)` | if-then-else: `Ite(cond, then) : α → α`, else via `Comb`; α inferred from `then` | **builtin** (§3.4) |
 | `Eps(TypeRef, TermRef)` | Hilbert choice: `(α → bool) → α` | **builtin** (§3.4) |
 | `Id(TypeRef)` | identity combinator: `α → α` | **builtin** (§3.4) |
+| `Constant(TermRef, TypeRef)` | K combinator: `β → α` where α = type_of(value) | **builtin** (§3.4) |
 | `Comp(TermRef, TermRef)` | function composition: `(β → γ) → (α → β) → (α → γ)` | **builtin** (§3.4) |
-| `Iter(TypeRef, TermRef)` | iter-n-times: `(α → α) → (α → α)`; f via `Comb` | **builtin** (§3.4) |
+| `Iter(TermRef, TermRef)` | iter-n-times: `Iter(n, f) : α → α`; α inferred from `f`'s domain | **builtin** (§3.4) |
 | `U8(u8)` … `U64(u64)` | unsigned fixed-width literal | **builtin** |
 | `I8(i8)` … `I64(i64)` | signed fixed-width literal | **builtin** |
 | `IntInline(i64)` / `IntStored(IntId)` | arbitrary-precision integer literal | **builtin** |
@@ -641,6 +643,8 @@ addition to the per-type primops:
   satisfying `P`, governed by `select_ax: P x → P (Eps α P)`. The
   *only* nontrivial existence axiom in the prelude.
 - `Id(α) : α → α` — identity; `Comb (Id α) x = x`.
+- `Constant(a, β) : β → α` (where `α = type_of(a)`) — K combinator;
+  `Comb (Constant a β) x = a`. Pointless form of `Ite True a`.
 - `Comp(f, g) : (β → γ) → (α → β) → (α → γ)` — function composition;
   `Comb (Comp f g) x = Comb f (Comb g x)`. Equivalent to
   `λx. f (g x)`.
@@ -653,7 +657,7 @@ addition to the per-type primops:
   axioms uniquely determine `Iter`. Arithmetic ops then derive as
   `add n m = Comb (Comb (Iter nat m) NatSucc) n`, etc.
 
-All five combinators preserve the (tag, lhs, rhs) 3-u32 inline
+All six combinators preserve the (tag, lhs, rhs) 3-u32 inline
 invariant — none use side tables.
 
 See [prover-primops.md](./prover-primops.md) §8.5–8.6 for full

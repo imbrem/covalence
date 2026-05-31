@@ -26,6 +26,7 @@ use std::sync::Arc;
 
 use crate::arena::Arena;
 use crate::id::TermId;
+use crate::primop::PrimOp1;
 use crate::term::{TermDef, TermRef};
 
 // ---------------------------------------------------------------------------
@@ -182,6 +183,41 @@ impl Thm {
             prop: Prop::new(ctx, assumption.concl),
         })
     }
+
+    /// **Weakening / add-assumption.** Take a Thm `ctx ⊢ q` and a
+    /// fresh `Prop` `p`; produce `ctx, p ⊢ q`. The new assumption is
+    /// stacked on top of the old context.
+    ///
+    /// Always succeeds — adding an assumption never invalidates a
+    /// proof.
+    pub fn add_assumption(self, new_assumption: Arc<Prop>) -> Self {
+        let new_ctx = Context::extend(self.prop.context, new_assumption);
+        Self {
+            prop: Prop::new(new_ctx, self.prop.concl),
+        }
+    }
+
+    /// **Ex falso → negation.** From a Thm `ctx ⊢ False`, derive
+    /// `ctx ⊢ ¬p` for an arbitrary proposition `p`. The new
+    /// conclusion is `Op1(LogicalNot, p)`, allocated in the arena.
+    ///
+    /// Soundness: anything follows from False, including `¬p`.
+    ///
+    /// Returns `Err(ProofError::ConclusionNotFalse)` if `thm`'s
+    /// conclusion isn't the literal `False`.
+    pub fn not_from_false(
+        arena: &mut Arena,
+        thm_false: Thm,
+        p: TermId,
+    ) -> Result<Self, ProofError> {
+        if !matches!(arena.term_def(thm_false.prop.concl), TermDef::False) {
+            return Err(ProofError::ConclusionNotFalse);
+        }
+        let not_p = arena.alloc_term(TermDef::Op1(PrimOp1::LogicalNot, TermRef::local(p)));
+        Ok(Self {
+            prop: Prop::new(thm_false.prop.context, not_p),
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -193,6 +229,9 @@ impl Thm {
 pub enum ProofError {
     /// The assumption Prop isn't in the context chain.
     AssumptionNotInContext,
+    /// `not_from_false` requires the Thm's conclusion to be the
+    /// literal `False`.
+    ConclusionNotFalse,
 }
 
 impl std::fmt::Display for ProofError {
@@ -200,6 +239,9 @@ impl std::fmt::Display for ProofError {
         match self {
             ProofError::AssumptionNotInContext => {
                 write!(f, "assumption is not in the supplied context")
+            }
+            ProofError::ConclusionNotFalse => {
+                write!(f, "expected the Thm's conclusion to be False")
             }
         }
     }

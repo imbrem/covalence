@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use covalence_kernel::{Arena, Context, ProofError, Prop, TermDef, Thm};
+use covalence_kernel::{Arena, Context, PrimOp1, ProofError, Prop, TermDef, Thm};
 
 #[test]
 fn empty_context_is_empty() {
@@ -137,6 +137,97 @@ fn refl_can_be_cloned_and_used_twice() {
     let thm = Thm::refl(&mut a, Context::empty(), t);
     let thm2 = thm.clone();
     assert_eq!(thm.concl(), thm2.concl());
+}
+
+#[test]
+fn add_assumption_extends_context() {
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    let thm = Thm::refl(&mut a, Context::empty(), t);
+    let original_concl = thm.concl();
+
+    // Add an assumption — Prop carrying False.
+    let f = a.alloc_term(TermDef::False);
+    let extra = Arc::new(Prop::new(Context::empty(), f));
+    let weakened = thm.add_assumption(extra.clone());
+
+    // Conclusion unchanged, context now contains the new assumption.
+    assert_eq!(weakened.concl(), original_concl);
+    assert_eq!(weakened.context().len(), 1);
+    assert!(weakened.context().contains_prop(&extra));
+}
+
+#[test]
+fn add_assumption_stacks_multiple() {
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    let thm = Thm::refl(&mut a, Context::empty(), t);
+
+    let p1 = Arc::new(Prop::new(Context::empty(), t));
+    let f = a.alloc_term(TermDef::False);
+    let p2 = Arc::new(Prop::new(Context::empty(), f));
+
+    let weakened = thm.add_assumption(p1.clone()).add_assumption(p2.clone());
+    assert_eq!(weakened.context().len(), 2);
+    assert!(weakened.context().contains_prop(&p1));
+    assert!(weakened.context().contains_prop(&p2));
+}
+
+#[test]
+fn not_from_false_derives_negation() {
+    // ctx ⊢ False  ⇒  ctx ⊢ ¬p for any p.
+    let mut a = Arena::new();
+    // First we need a Thm with conclusion False. Use assume on a
+    // Prop carrying False that's in the context.
+    let false_term = a.alloc_term(TermDef::False);
+    let false_prop = Arc::new(Prop::new(Context::empty(), false_term));
+    let ctx = Context::extend(Context::empty(), false_prop.clone());
+    let thm_false = Thm::assume(ctx.clone(), false_prop).unwrap();
+
+    // Now derive ¬True.
+    let t = a.alloc_term(TermDef::True);
+    let not_t = Thm::not_from_false(&mut a, thm_false, t).unwrap();
+
+    // Conclusion should be Op1(LogicalNot, True).
+    match a.term_def(not_t.concl()) {
+        TermDef::Op1(PrimOp1::LogicalNot, x) => {
+            assert_eq!(x.as_local(), Some(t));
+        }
+        other => panic!("expected Op1(LogicalNot, True), got {other:?}"),
+    }
+    // Context preserved.
+    assert!(Arc::ptr_eq(not_t.context(), &ctx));
+}
+
+#[test]
+fn not_from_false_rejects_non_false_conclusion() {
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    let thm = Thm::refl(&mut a, Context::empty(), t);
+    // refl's conclusion is Eq(t, t), not False. not_from_false rejects.
+    let p = a.alloc_term(TermDef::True);
+    let err = Thm::not_from_false(&mut a, thm, p).unwrap_err();
+    assert_eq!(err, ProofError::ConclusionNotFalse);
+}
+
+#[test]
+fn nonlinear_thm_clone_combine() {
+    // Take a Thm, clone it, derive two consequences (via weakening
+    // into different extended contexts), use both.
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    let thm = Thm::refl(&mut a, Context::empty(), t);
+
+    let f = a.alloc_term(TermDef::False);
+    let p_extra = Arc::new(Prop::new(Context::empty(), f));
+
+    let thm1 = thm.clone().add_assumption(p_extra.clone());
+    let thm2 = thm.add_assumption(p_extra.clone());
+
+    // Both derived Thms have the same conclusion (the original refl).
+    assert_eq!(thm1.concl(), thm2.concl());
+    assert!(thm1.context().contains_prop(&p_extra));
+    assert!(thm2.context().contains_prop(&p_extra));
 }
 
 #[test]

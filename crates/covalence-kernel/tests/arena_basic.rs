@@ -1501,6 +1501,37 @@ fn contains_free_detects_target_variable() {
 }
 
 #[test]
+fn subst_free_replaces_target_variable() {
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let xname = a.intern_string("x".into());
+    let x = a.alloc_term(TermDef::Free(xname, bool_ty));
+    let t = a.alloc_term(TermDef::True);
+    let r = a.subst_free(TermRef::local(x), xname, bool_ty, TermRef::local(t));
+    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::True);
+}
+
+#[test]
+fn subst_free_shifts_replacement_under_inner_abs() {
+    // λ_:bool. x  — substituting x with a Bound(0) (open replacement)
+    // should shift the replacement to Bound(1) inside the inner Abs.
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let xname = a.intern_string("x".into());
+    let x = a.alloc_term(TermDef::Free(xname, bool_ty));
+    // Build λ_:bool. x — Abs wrapping the Free.
+    let body = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(x)));
+    let open_b0 = a.alloc_term(TermDef::Bound(0));
+    let r = a.subst_free(TermRef::local(body), xname, bool_ty, TermRef::local(open_b0));
+    let r_def = *a.term_def(r.as_local().unwrap());
+    let inner = match r_def {
+        TermDef::Abs(_, b) => b,
+        other => panic!("expected Abs, got {other:?}"),
+    };
+    assert_eq!(a.term_def(inner.as_local().unwrap()), &TermDef::Bound(1));
+}
+
+#[test]
 fn contains_free_uses_has_free_fast_path() {
     // A closed term (no Frees) returns false without walking.
     let mut a = Arena::new();

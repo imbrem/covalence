@@ -589,6 +589,72 @@ fn abs_allows_variable_not_free_in_assumption() {
 }
 
 #[test]
+fn inst_substitutes_free_in_conclusion() {
+    // refl(x) gives ⊢ x = x. inst with True for x gives ⊢ True = True.
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let xname = a.intern_string("x".into());
+    let x = a.alloc_term(TermDef::Free(xname, bool_ty));
+    let t = a.alloc_term(TermDef::True);
+
+    let refl_x = Thm::refl(&mut a, Context::empty(), x).unwrap();
+    let thm = Thm::inst(&mut a, refl_x, xname, bool_ty, TermRef::local(t)).unwrap();
+    match a.term_def(thm.concl()) {
+        TermDef::Eq(l, r) => {
+            assert_eq!(a.term_def(l.as_local().unwrap()), &TermDef::True);
+            assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::True);
+        }
+        other => panic!("expected Eq, got {other:?}"),
+    }
+}
+
+#[test]
+fn inst_substitutes_in_context_assumptions() {
+    // Assumption: y = True. Thm: y ⊢ y (via assume).
+    // INST x ↦ True (irrelevant — x doesn't appear). Result still has y in ctx.
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let xname = a.intern_string("x".into());
+    let yname = a.intern_string("y".into());
+    let _x = a.alloc_term(TermDef::Free(xname, bool_ty));
+    let y = a.alloc_term(TermDef::Free(yname, bool_ty));
+    let t = a.alloc_term(TermDef::True);
+
+    // Context: { x = True } where x is the variable we'll INST.
+    let x_free = a.alloc_term(TermDef::Free(xname, bool_ty));
+    let x_eq_true = a.alloc_term(TermDef::Eq(TermRef::local(x_free), TermRef::local(t)));
+    let assum = std::sync::Arc::new(Prop::new(Context::empty(), x_eq_true));
+    let ctx = Context::extend(Context::empty(), assum);
+    let refl_y = Thm::refl(&mut a, ctx, y).unwrap();
+    let thm = Thm::inst(&mut a, refl_y, xname, bool_ty, TermRef::local(t)).unwrap();
+    // Context should now have True = True (x substituted to True).
+    let new_ctx = thm.context();
+    assert_eq!(new_ctx.len(), 1);
+    let new_assum_concl = new_ctx.assumption(0).unwrap().concl;
+    match a.term_def(new_assum_concl) {
+        TermDef::Eq(l, r) => {
+            assert_eq!(a.term_def(l.as_local().unwrap()), &TermDef::True);
+            assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::True);
+        }
+        other => panic!("expected Eq(True, True), got {other:?}"),
+    }
+}
+
+#[test]
+fn inst_rejects_type_mismatched_replacement() {
+    // x : bool, replacement is a Nat — type mismatch.
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let xname = a.intern_string("x".into());
+    let x = a.alloc_term(TermDef::Free(xname, bool_ty));
+    let n = a.alloc_term(TermDef::nat_inline(7));
+    let refl_x = Thm::refl(&mut a, Context::empty(), x).unwrap();
+    let err =
+        Thm::inst(&mut a, refl_x, xname, bool_ty, TermRef::local(n)).unwrap_err();
+    assert_eq!(err, ProofError::TypeMismatch);
+}
+
+#[test]
 fn abs_rejects_non_equality_thm() {
     // Thm::assume on a non-Eq concl — abs should reject.
     let mut a = Arena::new();

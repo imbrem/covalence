@@ -64,6 +64,16 @@ impl Context {
         })
     }
 
+    /// Build a flat root-level context from a list of assumptions.
+    /// Equivalent to `extend`-ing each assumption onto `empty()` but
+    /// avoids the per-assumption Arc chain.
+    pub fn flat(assumptions: Vec<Arc<Prop>>) -> Arc<Self> {
+        Arc::new(Self {
+            locals: assumptions,
+            parent: None,
+        })
+    }
+
     /// Total number of assumptions including ancestors.
     pub fn len(&self) -> usize {
         self.parent.as_ref().map_or(0, |p| p.len()) + self.locals.len()
@@ -404,6 +414,58 @@ impl Thm {
         })
     }
 
+    /// **Term instantiation (`INST`).** From `ctx ⊢ p`, derive
+    /// `ctx[name := replacement] ⊢ p[name := replacement]` — replace
+    /// every `Free(name, ty)` in both the context's assumptions and
+    /// the conclusion with `replacement`.
+    ///
+    /// `replacement` must be well-typed and its type must match `ty`
+    /// — otherwise the resulting term would be ill-typed at the
+    /// substituted sites.
+    pub fn inst(
+        arena: &mut Arena,
+        thm: Thm,
+        name: StrId,
+        ty: TypeRef,
+        replacement: TermRef,
+    ) -> Result<Self, ProofError> {
+        if !arena.is_well_typed(thm.prop.concl) {
+            return Err(ProofError::IllTypedInput);
+        }
+        let rep_id = replacement.as_local().ok_or(ProofError::ForeignConclusion)?;
+        if !arena.is_well_typed(rep_id) {
+            return Err(ProofError::IllTypedInput);
+        }
+        let rep_ty = arena.infer(rep_id).as_type().ok_or(ProofError::IllTypedInput)?;
+        if rep_ty != ty {
+            return Err(ProofError::TypeMismatch);
+        }
+        // Substitute in every assumption to build the new context.
+        let old_ctx = thm.prop.context.clone();
+        let mut new_assumptions = Vec::with_capacity(old_ctx.len());
+        for i in 0..old_ctx.len() {
+            let assum = old_ctx.assumption(i).expect("len/index invariant");
+            let new_concl_ref = arena.subst_free(
+                TermRef::local(assum.concl),
+                name,
+                ty,
+                replacement,
+            );
+            let new_concl = new_concl_ref.as_local().ok_or(ProofError::ForeignConclusion)?;
+            new_assumptions.push(std::sync::Arc::new(Prop::new(
+                assum.context.clone(),
+                new_concl,
+            )));
+        }
+        let new_ctx = Context::flat(new_assumptions);
+        // Substitute in the conclusion.
+        let new_concl_ref = arena.subst_free(TermRef::local(thm.prop.concl), name, ty, replacement);
+        let new_concl = new_concl_ref.as_local().ok_or(ProofError::ForeignConclusion)?;
+        Ok(Self {
+            prop: Prop::new(new_ctx, new_concl),
+        })
+    }
+
     /// **Top-level reduction.** Apply one rule from the §10 catalog
     /// (literal-arg evaluation, numeral normalisation, `Comb(Id, _)`,
     /// `Comb(Ite(lit, _), _)`, …) to `t` and derive
@@ -469,6 +531,9 @@ pub enum ProofError {
     /// `abs`: the variable being abstracted occurs free in one of
     /// the context's assumptions — would be captured by the binder.
     VariableEscapesAssumption,
+    /// `inst`: replacement term's type doesn't match the variable's
+    /// declared type.
+    TypeMismatch,
 }
 
 impl std::fmt::Display for ProofError {
@@ -495,6 +560,7 @@ impl std::fmt::Display for ProofError {
             ProofError::VariableEscapesAssumption => {
                 write!(f, "abstraction variable occurs free in an assumption")
             }
+            ProofError::TypeMismatch => write!(f, "replacement type doesn't match variable type"),
         }
     }
 }

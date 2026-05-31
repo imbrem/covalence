@@ -400,6 +400,23 @@ impl Arena {
         self.abstract_inner(t, name, ty, depth)
     }
 
+    /// Replace every `Free(name, ty)` in `t` with `replacement`,
+    /// shifting `replacement`'s dangling `Bound` indices when
+    /// crossing internal `Abs` binders.
+    ///
+    /// Like [`subst`](Self::subst), but keyed on a named free
+    /// variable rather than a de-Bruijn index. The
+    /// `Thm::inst` rule wraps this with the kernel-level checks.
+    pub fn subst_free(
+        &mut self,
+        t: TermRef,
+        name: StrId,
+        ty: TypeRef,
+        replacement: TermRef,
+    ) -> TermRef {
+        self.subst_free_inner(t, name, ty, replacement, 0)
+    }
+
     /// Does `t` contain a `Free(name, ty)` occurrence anywhere in its
     /// local subtree? Foreign refs are treated opaquely (return
     /// `false`).
@@ -422,6 +439,82 @@ impl Arena {
             Deps::Two(a, b) => {
                 self.contains_free_inner(a, name, ty) || self.contains_free_inner(b, name, ty)
             }
+        }
+    }
+
+    fn subst_free_inner(
+        &mut self,
+        t: TermRef,
+        name: StrId,
+        ty: TypeRef,
+        replacement: TermRef,
+        binder_depth: u32,
+    ) -> TermRef {
+        let Some(id) = t.as_local() else { return t };
+        if !self.term_uf(id).has_free {
+            return t;
+        }
+        let def = *self.term_def(id);
+        if let TermDef::Free(n, ty2) = def {
+            if n == name && ty2 == ty {
+                // Replacement crosses `binder_depth` Abs layers on the way in;
+                // lift its dangling Bound indices accordingly.
+                return self.shift(replacement, 0, binder_depth);
+            }
+            return t;
+        }
+        let new_def = self.subst_free_children(def, name, ty, replacement, binder_depth);
+        if new_def == def {
+            return t;
+        }
+        TermRef::local(self.alloc_term(new_def))
+    }
+
+    fn subst_free_children(
+        &mut self,
+        def: TermDef,
+        name: StrId,
+        ty: TypeRef,
+        replacement: TermRef,
+        bd: u32,
+    ) -> TermDef {
+        use TermDef::*;
+        match def {
+            Abs(ty_a, body) => Abs(ty_a, self.subst_free_inner(body, name, ty, replacement, bd + 1)),
+            Forall(p) => Forall(self.subst_free_inner(p, name, ty, replacement, bd)),
+            Exists(p) => Exists(self.subst_free_inner(p, name, ty, replacement, bd)),
+            Op1(o, p) => Op1(o, self.subst_free_inner(p, name, ty, replacement, bd)),
+            Eps(ty_e, p) => Eps(ty_e, self.subst_free_inner(p, name, ty, replacement, bd)),
+            Comb(a, b) => Comb(
+                self.subst_free_inner(a, name, ty, replacement, bd),
+                self.subst_free_inner(b, name, ty, replacement, bd),
+            ),
+            Eq(a, b) => Eq(
+                self.subst_free_inner(a, name, ty, replacement, bd),
+                self.subst_free_inner(b, name, ty, replacement, bd),
+            ),
+            Ne(a, b) => Ne(
+                self.subst_free_inner(a, name, ty, replacement, bd),
+                self.subst_free_inner(b, name, ty, replacement, bd),
+            ),
+            Comp(a, b) => Comp(
+                self.subst_free_inner(a, name, ty, replacement, bd),
+                self.subst_free_inner(b, name, ty, replacement, bd),
+            ),
+            Iter(a, b) => Iter(
+                self.subst_free_inner(a, name, ty, replacement, bd),
+                self.subst_free_inner(b, name, ty, replacement, bd),
+            ),
+            Ite(a, b) => Ite(
+                self.subst_free_inner(a, name, ty, replacement, bd),
+                self.subst_free_inner(b, name, ty, replacement, bd),
+            ),
+            Op2(o, a, b) => Op2(
+                o,
+                self.subst_free_inner(a, name, ty, replacement, bd),
+                self.subst_free_inner(b, name, ty, replacement, bd),
+            ),
+            other => other,
         }
     }
 

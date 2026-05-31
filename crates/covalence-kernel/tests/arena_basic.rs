@@ -18,18 +18,18 @@ fn alloc_builtin_types() {
     let bool_id = a.alloc_type(TypeDef::Bool);
     let bits_id = a.alloc_type(TypeDef::Bits);
     let fun_id = a.alloc_type(TypeDef::Fun(
-        TypeRef::Local(bool_id),
-        TypeRef::Local(bits_id),
+        TypeRef::local(bool_id),
+        TypeRef::local(bits_id),
     ));
 
     assert_eq!(a.type_def(bool_id), &TypeDef::Bool);
     assert_eq!(a.type_def(bits_id), &TypeDef::Bits);
     match a.type_def(fun_id) {
-        TypeDef::Fun(TypeRef::Local(d), TypeRef::Local(c)) => {
-            assert_eq!(*d, bool_id);
-            assert_eq!(*c, bits_id);
+        TypeDef::Fun(d, c) => {
+            assert_eq!(d.as_local(), Some(bool_id));
+            assert_eq!(c.as_local(), Some(bits_id));
         }
-        other => panic!("expected Fun(Local, Local), got {other:?}"),
+        other => panic!("expected Fun, got {other:?}"),
     }
 }
 
@@ -38,14 +38,14 @@ fn alloc_builtin_terms() {
     let mut a = Arena::new();
     let t = a.alloc_term(TermDef::True);
     let f = a.alloc_term(TermDef::False);
-    let eq = a.alloc_term(TermDef::Eq(TermRef::Local(t), TermRef::Local(f)));
+    let eq = a.alloc_term(TermDef::Eq(TermRef::local(t), TermRef::local(f)));
 
     assert_eq!(a.term_def(t), &TermDef::True);
     assert_eq!(a.term_def(f), &TermDef::False);
     match a.term_def(eq) {
-        TermDef::Eq(TermRef::Local(l), TermRef::Local(r)) => {
-            assert_eq!(*l, t);
-            assert_eq!(*r, f);
+        TermDef::Eq(l, r) => {
+            assert_eq!(l.as_local(), Some(t));
+            assert_eq!(r.as_local(), Some(f));
         }
         other => panic!("expected Eq, got {other:?}"),
     }
@@ -81,7 +81,7 @@ fn closed_true_for_constants_and_builtins() {
     let f = a.alloc_term(TermDef::False);
     let c = a.alloc_term(TermDef::Const(
         ConstName::new("foo"),
-        TypeRef::Local(bool_ty),
+        TypeRef::local(bool_ty),
     ));
     let bits = a.alloc_term(TermDef::Bits(BitsValue::Inline(vec![0xff])));
 
@@ -94,7 +94,7 @@ fn closed_true_for_constants_and_builtins() {
 fn closed_false_for_free_var() {
     let mut a = Arena::new();
     let bool_ty = a.alloc_type(TypeDef::Bool);
-    let x = a.alloc_term(TermDef::Free(VarName::new("x"), TypeRef::Local(bool_ty)));
+    let x = a.alloc_term(TermDef::Free(VarName::new("x"), TypeRef::local(bool_ty)));
     assert!(!a.term_uf(x).closed());
     assert!(a.term_uf(x).has_free);
 }
@@ -103,20 +103,22 @@ fn closed_false_for_free_var() {
 fn closed_propagates_through_comb() {
     let mut a = Arena::new();
     let bool_ty = a.alloc_type(TypeDef::Bool);
-    let bool_to_bool =
-        a.alloc_type(TypeDef::Fun(TypeRef::Local(bool_ty), TypeRef::Local(bool_ty)));
+    let bool_to_bool = a.alloc_type(TypeDef::Fun(
+        TypeRef::local(bool_ty),
+        TypeRef::local(bool_ty),
+    ));
 
     let t = a.alloc_term(TermDef::True);
     let neg = a.alloc_term(TermDef::Const(
         ConstName::new("not"),
-        TypeRef::Local(bool_to_bool),
+        TypeRef::local(bool_to_bool),
     ));
-    let app = a.alloc_term(TermDef::Comb(TermRef::Local(neg), TermRef::Local(t)));
+    let app = a.alloc_term(TermDef::Comb(TermRef::local(neg), TermRef::local(t)));
     assert!(a.term_uf(app).closed());
 
     // With a free var inside, openness propagates.
-    let x = a.alloc_term(TermDef::Free(VarName::new("x"), TypeRef::Local(bool_ty)));
-    let app_open = a.alloc_term(TermDef::Comb(TermRef::Local(neg), TermRef::Local(x)));
+    let x = a.alloc_term(TermDef::Free(VarName::new("x"), TypeRef::local(bool_ty)));
+    let app_open = a.alloc_term(TermDef::Comb(TermRef::local(neg), TermRef::local(x)));
     assert!(!a.term_uf(app_open).closed());
 }
 
@@ -133,8 +135,8 @@ fn abs_binds_one_level_of_bound() {
     // Wrapping it in one Abs binds it.
     let abs = a.alloc_term(TermDef::Abs(
         VarName::new("x"),
-        TypeRef::Local(bool_ty),
-        TermRef::Local(b0),
+        TypeRef::local(bool_ty),
+        TermRef::local(b0),
     ));
     assert_eq!(a.term_uf(abs).bound_depth, 0);
     assert!(a.term_uf(abs).closed());
@@ -150,8 +152,8 @@ fn abs_needs_two_levels_for_bound_one() {
 
     let inner = a.alloc_term(TermDef::Abs(
         VarName::new("y"),
-        TypeRef::Local(bool_ty),
-        TermRef::Local(b1),
+        TypeRef::local(bool_ty),
+        TermRef::local(b1),
     ));
     // After one Abs, bound_depth drops to 1 — still open.
     assert_eq!(a.term_uf(inner).bound_depth, 1);
@@ -159,8 +161,8 @@ fn abs_needs_two_levels_for_bound_one() {
 
     let outer = a.alloc_term(TermDef::Abs(
         VarName::new("x"),
-        TypeRef::Local(bool_ty),
-        TermRef::Local(inner),
+        TypeRef::local(bool_ty),
+        TermRef::local(inner),
     ));
     // After two Abs's, it's closed.
     assert_eq!(a.term_uf(outer).bound_depth, 0);
@@ -176,7 +178,7 @@ fn fresh_term_is_self_canonical() {
     let mut a = Arena::new();
     let t = a.alloc_term(TermDef::True);
     let arc = a.freeze();
-    let canon = Arena::canonical_term(&arc, TermRef::Local(t));
+    let canon = Arena::canonical_term(&arc, TermRef::local(t));
     assert!(Arc::ptr_eq(&canon.0, &arc));
     assert_eq!(canon.1, t);
 }
@@ -186,7 +188,7 @@ fn fresh_type_is_self_canonical() {
     let mut a = Arena::new();
     let b = a.alloc_type(TypeDef::Bool);
     let arc = a.freeze();
-    let canon = Arena::canonical_type(&arc, TypeRef::Local(b));
+    let canon = Arena::canonical_type(&arc, TypeRef::local(b));
     assert!(Arc::ptr_eq(&canon.0, &arc));
     assert_eq!(canon.1, b);
 }
@@ -235,18 +237,29 @@ fn foreign_ref_resolves_back_to_source() {
     let bool_ty_d = d.alloc_type(TypeDef::Bool);
     let c_d = d.alloc_term(TermDef::Const(
         ConstName::new("c"),
-        TypeRef::Local(bool_ty_d),
+        TypeRef::local(bool_ty_d),
     ));
     let d_frozen = d.freeze();
 
     // Arena a imports d and reads back the constant.
     let mut a = Arena::new();
     let imp_d = a.add_import(d_frozen.clone());
+    let foreign_ref = a.foreign_term_ref(imp_d, c_d);
     let a_arc = a.freeze();
-    let canon = Arena::canonical_term(&a_arc, TermRef::Foreign(imp_d, c_d));
+    let canon = Arena::canonical_term(&a_arc, foreign_ref);
     // Canonical is back in d.
     assert!(Arc::ptr_eq(&canon.0, &d_frozen));
     assert_eq!(canon.1, c_d);
+}
+
+#[test]
+fn foreign_term_ref_dedupes() {
+    let d = Arena::new().freeze();
+    let mut a = Arena::new();
+    let imp = a.add_import(d.clone());
+    let r1 = a.foreign_term_ref(imp, covalence_kernel::TermId(0));
+    let r2 = a.foreign_term_ref(imp, covalence_kernel::TermId(0));
+    assert_eq!(r1, r2);
 }
 
 #[test]
@@ -262,60 +275,37 @@ fn add_import_dedupes() {
 
 // ---------------------------------------------------------------------------
 // Diamond-import test (architecture §4.1).
-//
-//        D
-//       / \
-//      B   C
-//       \ /
-//        A
-//
-// Both B and C foreign-import the same term x ∈ D. From A's view, the
-// canonical chain walks through B (or C) → D and bottoms out at the
-// same `(Arc<D>, x_d)` pair. Because both routes ultimately hand back
-// `Arc::ptr_eq` arenas pointing at D and the same TermId, the two
-// canonicals are equal.
 // ---------------------------------------------------------------------------
 
 #[test]
 fn diamond_import_regains_canonical_identity() {
-    // Build D first and freeze it. This is the shared ancestor.
+    // Build D first and freeze it.
     let mut d = Arena::new();
     let bool_d = d.alloc_type(TypeDef::Bool);
-    let x_d = d.alloc_term(TermDef::Free(VarName::new("x"), TypeRef::Local(bool_d)));
+    let x_d = d.alloc_term(TermDef::Free(VarName::new("x"), TypeRef::local(bool_d)));
     let d_frozen = d.freeze();
 
-    // Build B importing D. Imp id for D in B.
+    // Build B importing D.
     let mut b = Arena::new();
     let imp_d_in_b = b.add_import(d_frozen.clone());
+    let x_in_b = b.foreign_term_ref(imp_d_in_b, x_d);
 
     // Build C importing D similarly.
     let mut c = Arena::new();
     let imp_d_in_c = c.add_import(d_frozen.clone());
+    let x_in_c = c.foreign_term_ref(imp_d_in_c, x_d);
 
     let b_frozen = b.freeze();
     let c_frozen = c.freeze();
 
-    // Build A importing both B and C.
+    // Build A importing both.
     let mut a = Arena::new();
     let _imp_b = a.add_import(b_frozen.clone());
     let _imp_c = a.add_import(c_frozen.clone());
     let a_arc = a.freeze();
 
-    // Construct two routes to x: via B and via C. Both should resolve
-    // to the same canonical (Arc<D>, x_d).
-    //
-    // In A's view, the b-side handle is a Foreign(imp_b_in_a, ...)
-    // where ... is a TermRef inside B's namespace. But the route we're
-    // testing is: A has a TermRef pointing into B that wraps a B-Foreign
-    // pointing into D. Concretely, what we have access to from A is
-    // limited: we'd need to allocate a term in B that re-exports x.
-    //
-    // Simplest setup: ask the canonical resolver to walk from each of
-    // B and C directly — that's what would happen if A held a child
-    // TermRef referring to such a re-export. Both walks should bottom
-    // out at (Arc<D>, x_d).
-    let canon_via_b = Arena::canonical_term(&b_frozen, TermRef::Foreign(imp_d_in_b, x_d));
-    let canon_via_c = Arena::canonical_term(&c_frozen, TermRef::Foreign(imp_d_in_c, x_d));
+    let canon_via_b = Arena::canonical_term(&b_frozen, x_in_b);
+    let canon_via_c = Arena::canonical_term(&c_frozen, x_in_c);
 
     assert!(
         Arc::ptr_eq(&canon_via_b.0, &canon_via_c.0),
@@ -328,24 +318,19 @@ fn diamond_import_regains_canonical_identity() {
     assert_eq!(canon_via_b.1, x_d);
     assert_eq!(canon_via_c.1, x_d);
 
-    // And from A, walking through B's re-export reaches the same place.
-    // Touch a_arc so the build doesn't optimize it out — and to assert
-    // A's imports survived freeze.
     assert_eq!(a_arc.imports().len(), 2);
 }
 
 #[test]
 fn distinct_arenas_with_same_content_are_not_canonically_equal() {
-    // Two separately-built arenas that contain "the same" term are
-    // *not* the same arena. Identity is by pointer.
     let mut a1 = Arena::new();
     let b1 = a1.alloc_type(TypeDef::Bool);
-    let _t1 = a1.alloc_term(TermDef::Free(VarName::new("x"), TypeRef::Local(b1)));
+    let _t1 = a1.alloc_term(TermDef::Free(VarName::new("x"), TypeRef::local(b1)));
     let a1_frozen = a1.freeze();
 
     let mut a2 = Arena::new();
     let b2 = a2.alloc_type(TypeDef::Bool);
-    let _t2 = a2.alloc_term(TermDef::Free(VarName::new("x"), TypeRef::Local(b2)));
+    let _t2 = a2.alloc_term(TermDef::Free(VarName::new("x"), TypeRef::local(b2)));
     let a2_frozen = a2.freeze();
 
     assert!(
@@ -353,15 +338,14 @@ fn distinct_arenas_with_same_content_are_not_canonically_equal() {
         "fresh allocations must be pointer-distinct"
     );
 
-    // A third arena that imports both — the ImportIds for a1 and a2
-    // are distinct, so the corresponding Foreign refs compare unequal
-    // even though they share a TermId(0).
+    // A third arena that imports both — foreign refs into a1 vs a2
+    // get distinct foreign-table entries even with the same TermId.
     let mut a3 = Arena::new();
     let imp_a1 = a3.add_import(a1_frozen.clone());
     let imp_a2 = a3.add_import(a2_frozen.clone());
     assert_ne!(imp_a1, imp_a2);
-    let r1 = TermRef::Foreign(imp_a1, covalence_kernel::TermId(0));
-    let r2 = TermRef::Foreign(imp_a2, covalence_kernel::TermId(0));
+    let r1 = a3.foreign_term_ref(imp_a1, covalence_kernel::TermId(0));
+    let r2 = a3.foreign_term_ref(imp_a2, covalence_kernel::TermId(0));
     assert_ne!(r1, r2);
 }
 
@@ -371,13 +355,9 @@ fn distinct_arenas_with_same_content_are_not_canonically_equal() {
 
 #[test]
 fn const_and_var_names_are_distinct_types() {
-    // This is a compile-time check more than a runtime one: ConstName
-    // and VarName are distinct types even when they hold the same
-    // string content, so callers can't accidentally swap them.
     let c = ConstName::new("foo");
     let v = VarName::new("foo");
     assert_eq!(c.as_str(), v.as_str());
-    // (No direct equality possible — they're different types.)
 }
 
 #[test]
@@ -412,8 +392,8 @@ fn intern_bytes_and_tyargs() {
     let by = a.intern_bytes(vec![1, 2, 3]);
     assert_eq!(a.bytes_value(by), &[1, 2, 3]);
 
-    let args = a.intern_tyargs(vec![TypeRef::Local(bool_ty)]);
-    assert_eq!(a.tyargs(args), &[TypeRef::Local(bool_ty)]);
+    let args = a.intern_tyargs(vec![TypeRef::local(bool_ty)]);
+    assert_eq!(a.tyargs(args), &[TypeRef::local(bool_ty)]);
 }
 
 #[cfg(feature = "int")]
@@ -435,4 +415,14 @@ fn _ref_is_copy() {
     fn assert_copy<T: Copy>() {}
     assert_copy::<TermRef>();
     assert_copy::<TypeRef>();
+}
+
+// ---------------------------------------------------------------------------
+// Packed-ref shape: TermRef and TypeRef are u32-sized.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn packed_refs_are_u32_sized() {
+    assert_eq!(std::mem::size_of::<TermRef>(), 4);
+    assert_eq!(std::mem::size_of::<TypeRef>(), 4);
 }

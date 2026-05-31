@@ -61,3 +61,15 @@ id_type! {
     /// Index into `Arena.tyargs`. Argument lists for `TypeDef::Tyapp`.
     TyArgsId
 }
+
+id_type! {
+    /// Index into `Arena.foreign_terms`. Bottom 31 bits of a foreign
+    /// [`TermRef`](crate::term::TermRef).
+    ForeignTermId
+}
+
+id_type! {
+    /// Index into `Arena.foreign_types`. Bottom 31 bits of a foreign
+    /// [`TypeRef`](crate::ty::TypeRef).
+    ForeignTypeId
+}

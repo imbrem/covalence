@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use smol_str::SmolStr;
 
-use crate::id::{BitsId, BytesId, ImportId, StrId, TermId, TyArgsId, TypeId};
+use crate::id::{
+    BitsId, BytesId, ForeignTermId, ForeignTypeId, ImportId, StrId, TermId, TyArgsId, TypeId,
+};
 #[cfg(feature = "int")]
 use crate::id::{IntId, NatId};
 use crate::term::{BITS_INLINE_MAX_BYTES, BitsValue, TermDef, TermRef};
@@ -42,6 +44,14 @@ pub struct Arena {
     #[cfg(feature = "int")]
     nats: Vec<covalence_types::Nat>,
     tyargs: Vec<Vec<TypeRef>>,
+
+    /// Side table for foreign-arena term references. The packed
+    /// [`TermRef`](crate::term::TermRef) carries a foreign-flag bit
+    /// plus an index into this vec; entries hold the source
+    /// `(ImportId, TermId)` pair.
+    foreign_terms: Vec<(ImportId, TermId)>,
+    /// Side table for foreign-arena type references; same scheme.
+    foreign_types: Vec<(ImportId, TypeId)>,
 }
 
 impl Arena {
@@ -61,6 +71,8 @@ impl Arena {
             #[cfg(feature = "int")]
             nats: Vec::new(),
             tyargs: Vec::new(),
+            foreign_terms: Vec::new(),
+            foreign_types: Vec::new(),
         }
     }
 
@@ -174,7 +186,7 @@ impl Arena {
         let id = TypeId(self.types.len() as u32);
         self.types.push(def);
         self.uf_types.push(TypeUfEntry {
-            canonical: TypeRef::Local(id),
+            canonical: TypeRef::local(id),
         });
         id
     }
@@ -188,7 +200,7 @@ impl Arena {
         let id = TermId(self.terms.len() as u32);
         self.terms.push(def);
         self.uf_terms.push(TermUfEntry {
-            canonical: TermRef::Local(id),
+            canonical: TermRef::local(id),
             bound_depth,
             has_free,
         });
@@ -249,6 +261,47 @@ impl Arena {
         id
     }
 
+    /// Build a foreign [`TermRef`] pointing at `id` inside the arena
+    /// registered under `import`. Dedupes against existing entries in
+    /// `foreign_terms`.
+    pub fn foreign_term_ref(&mut self, import: ImportId, id: TermId) -> TermRef {
+        let entry = (import, id);
+        let idx = match self.foreign_terms.iter().position(|e| *e == entry) {
+            Some(i) => i,
+            None => {
+                let i = self.foreign_terms.len();
+                self.foreign_terms.push(entry);
+                i
+            }
+        };
+        TermRef::foreign(ForeignTermId(idx as u32))
+    }
+
+    /// Build a foreign [`TypeRef`]; analogous to
+    /// [`foreign_term_ref`](Self::foreign_term_ref).
+    pub fn foreign_type_ref(&mut self, import: ImportId, id: TypeId) -> TypeRef {
+        let entry = (import, id);
+        let idx = match self.foreign_types.iter().position(|e| *e == entry) {
+            Some(i) => i,
+            None => {
+                let i = self.foreign_types.len();
+                self.foreign_types.push(entry);
+                i
+            }
+        };
+        TypeRef::foreign(ForeignTypeId(idx as u32))
+    }
+
+    /// Look up a foreign-term entry by its side-table id.
+    pub fn foreign_term(&self, id: ForeignTermId) -> (ImportId, TermId) {
+        self.foreign_terms[id.0 as usize]
+    }
+
+    /// Look up a foreign-type entry.
+    pub fn foreign_type(&self, id: ForeignTypeId) -> (ImportId, TypeId) {
+        self.foreign_types[id.0 as usize]
+    }
+
     // -- closed-flag computation ----------------------------------------
 
     /// Read a TermRef's stored properties — O(1).
@@ -257,9 +310,12 @@ impl Arena {
     /// the term would be closed if wrapped in `n` more lambdas, and
     /// whether any `Free(_, _)` is reachable.
     fn ref_props(&self, r: TermRef) -> (u32, bool) {
-        let entry = match r {
-            TermRef::Local(id) => self.term_uf(id),
-            TermRef::Foreign(imp, id) => self.import(imp).term_uf(id),
+        let entry = if let Some(local) = r.as_local() {
+            self.term_uf(local)
+        } else {
+            let foreign = r.as_foreign().expect("ref must be local or foreign");
+            let (import, source_id) = self.foreign_term(foreign);
+            self.import(import).term_uf(source_id)
         };
         (entry.bound_depth, entry.has_free)
     }
@@ -295,50 +351,63 @@ impl Arena {
     /// id itself. Two canonicals are equal iff their arenas are
     /// `Arc::ptr_eq` and their ids are equal.
     pub fn canonical_term(self_arc: &Arc<Arena>, r: TermRef) -> (Arc<Arena>, TermId) {
-        let (mut cur_arena, mut cur_id) = match r {
-            TermRef::Local(id) => (self_arc.clone(), id),
-            TermRef::Foreign(imp, id) => (self_arc.import(imp).clone(), id),
-        };
+        let (mut cur_arena, mut cur_id) = resolve_term_ref(self_arc, r);
         loop {
             let next = cur_arena.term_uf(cur_id).canonical;
-            match next {
-                TermRef::Local(other) => {
-                    if other == cur_id {
-                        return (cur_arena, cur_id);
-                    }
-                    cur_id = other;
+            if let Some(other) = next.as_local() {
+                if other == cur_id {
+                    return (cur_arena, cur_id);
                 }
-                TermRef::Foreign(imp, other) => {
-                    let next_arena = cur_arena.import(imp).clone();
-                    cur_arena = next_arena;
-                    cur_id = other;
-                }
+                cur_id = other;
+            } else {
+                let foreign = next.as_foreign().expect("ref must be local or foreign");
+                let (import, source_id) = cur_arena.foreign_term(foreign);
+                cur_arena = cur_arena.import(import).clone();
+                cur_id = source_id;
             }
         }
     }
 
     /// Resolve a type reference to its current UF canonical.
     pub fn canonical_type(self_arc: &Arc<Arena>, r: TypeRef) -> (Arc<Arena>, TypeId) {
-        let (mut cur_arena, mut cur_id) = match r {
-            TypeRef::Local(id) => (self_arc.clone(), id),
-            TypeRef::Foreign(imp, id) => (self_arc.import(imp).clone(), id),
-        };
+        let (mut cur_arena, mut cur_id) = resolve_type_ref(self_arc, r);
         loop {
             let next = cur_arena.type_uf(cur_id).canonical;
-            match next {
-                TypeRef::Local(other) => {
-                    if other == cur_id {
-                        return (cur_arena, cur_id);
-                    }
-                    cur_id = other;
+            if let Some(other) = next.as_local() {
+                if other == cur_id {
+                    return (cur_arena, cur_id);
                 }
-                TypeRef::Foreign(imp, other) => {
-                    let next_arena = cur_arena.import(imp).clone();
-                    cur_arena = next_arena;
-                    cur_id = other;
-                }
+                cur_id = other;
+            } else {
+                let foreign = next.as_foreign().expect("ref must be local or foreign");
+                let (import, source_id) = cur_arena.foreign_type(foreign);
+                cur_arena = cur_arena.import(import).clone();
+                cur_id = source_id;
             }
         }
+    }
+}
+
+/// Decode a [`TermRef`] in `self_arc`'s namespace to a global
+/// `(Arc<Arena>, TermId)` pair without walking the canonical chain.
+fn resolve_term_ref(self_arc: &Arc<Arena>, r: TermRef) -> (Arc<Arena>, TermId) {
+    if let Some(local) = r.as_local() {
+        (self_arc.clone(), local)
+    } else {
+        let foreign = r.as_foreign().expect("ref must be local or foreign");
+        let (import, source_id) = self_arc.foreign_term(foreign);
+        (self_arc.import(import).clone(), source_id)
+    }
+}
+
+/// Type-side analogue of [`resolve_term_ref`].
+fn resolve_type_ref(self_arc: &Arc<Arena>, r: TypeRef) -> (Arc<Arena>, TypeId) {
+    if let Some(local) = r.as_local() {
+        (self_arc.clone(), local)
+    } else {
+        let foreign = r.as_foreign().expect("ref must be local or foreign");
+        let (import, source_id) = self_arc.foreign_type(foreign);
+        (self_arc.import(import).clone(), source_id)
     }
 }
 

@@ -677,45 +677,44 @@ implicitly owns an **infinite hierarchy of opaque types**:
 conceptType[c, s₁, …, sₙ]
 ```
 
-where `s₁, …, sₙ` are bit-string labels (in practice usually short
-strings). For each label sequence, this is a fresh opaque type
-constructor in the user-side TypeName namespace, but its naming and
-ownership flow through the concept system. Only the holder of `c`'s
-ConceptHandle may declare these types and assert theory axioms about
-them.
+where `s₁, …, sₙ` are bit-string labels. For each label sequence,
+this is a fresh opaque type constructor whose **declaration** is
+owned by `c` — only the holder of `c`'s ConceptHandle can declare
+that a particular `conceptType[c, s₁, …, sₙ]` is in scope. (For
+implementation purposes the type lives in the user-side TypeName
+namespace, but its identity and ownership flow through the concept.)
 
-What can `c`'s owner say about a `conceptType[c, …]`? In the same
-spirit as concept theory axioms, the owner can add axioms whose
-conclusion shape is restricted in kernel-checked ways:
+`conceptType` is **literally just opaque type declarations**. The
+kernel attaches no built-in semantics: declared conceptTypes have no
+inhabitants the kernel knows about, no relation to any other type,
+and no relation to hashing, content addressing, or any external
+naming scheme. The labels `s₁, …, sₙ` are just bit strings as far as
+the kernel cares.
 
-- **Existence-of-bijection axioms.** Conclusion of the form
-  `∃ abs : A → conceptType[c, …], rep : conceptType[c, …] → A. abs ∘ rep
-  = id ∧ rep ∘ abs = id`, for any HOL type expression `A` the owner
-  chooses. This is the type-isomorphism-by-axiom mechanism — the
-  declared opaque type is asserted to be in bijection with `A`,
-  giving it the shape `A` has.
-- **Trivial existence axioms** (the singleton case): `∃ x :
-  conceptType[c, …]. true`. By itself, this just asserts the type is
-  nonempty.
+**The owner cannot assert anything about a `conceptType`** — owner
+authority is restricted to declaring that the type exists (and
+declaring concept *constant* family theory via §6.2). Any
+*claim* about a conceptType — that it's nonempty, that it's in
+bijection with some other type, that it's a subtype, anything —
+enters as a **user-side assumption in the Context**, no different
+from any other trust assumption.
 
-The kernel checks the conclusion shape (a bijection assertion against
-some user-supplied target type, or a nonemptiness assertion) and
-accepts the Prop as a member of `c`'s type theory.
+This is the same shape as concepts themselves: just as the owner of
+`c` doesn't make `c` *true* (they declare axioms saying when it's
+true; everyone else assumes whatever they want), the owner of `c`
+doesn't give `conceptType[c, …]` any structure — they just say it
+exists, and the user assumes whatever they want about it.
 
-Soundness is preserved by the same trivial-model argument as for
-concept theory axioms in general: every consistent collection of
-"this type is in bijection with that type" axioms has a model in
-which each declared opaque type is concretely interpreted as the
-target type from its bijection (or as any singleton, if no bijection
-is given). The user is responsible for not asserting a contradictory
-pair of bijections (e.g. asserting `conceptType[c, "x"] ≅ {0}` and
-`conceptType[c, "x"] ≅ {0, 1}` — but the kernel can't actively
-prevent that without solving model-checking).
+Why have owner-declared types at all, then, rather than letting
+anyone declare any opaque type? Because ownership is what makes the
+type **named** in a non-conflicting way: two parties working
+independently won't accidentally pick the same labels under
+different concepts. The hierarchy is essentially a namespace
+mechanism for opaque types.
 
-This unifies "anyone can declare types" with the concept ownership
-model: type declarations are owned by concepts, not free-floating.
-For MVP only the trivial existence axiom shape is supported; the
-bijection axiom shape lands when we tackle content-addressed types.
+Downstream uses of this primitive include content addressing (§7.4),
+but those are uses built on top of the mechanism, not the
+mechanism's purpose.
 
 ---
 
@@ -777,17 +776,22 @@ by the foreign-import / canonical-arena-id machinery.
 ### 7.4 Content-addressed types via concept-owned bijections
 
 Content addressing of types reuses the concept-owned type hierarchy
-(§6.4): a "content-addressed type" is just a `conceptType[c, hash]`
-declared under some concept `c` together with a bijection axiom
-asserting `conceptType[c, hash] ≅ <spec>` for some HOL type
-expression `<spec>`.
+(§6.4): a "content-addressed type" is a `conceptType[c, hash]`
+declared under some concept `c`, together with a **user-side
+trust assumption** in the Context that asserts `conceptType[c,
+hash] ≅ <spec>` for some HOL type expression `<spec>`.
+
+The kernel itself does not endorse the bijection — declaring
+`conceptType[c, hash]` and assuming `conceptType[c, hash] ≅ <spec>`
+are two distinct operations: the owner of `c` does the first; the
+user does the second by adding the bijection to their root Context.
 
 To unfold a content-addressed type to its target, the user applies
-the bijection axiom (which is just an ordinary HOL `∃` statement;
-elimination via Skolemisation gives `abs` and `rep` functions). To
-re-fold, apply `abs`. No kernel knowledge of hashing or content
-addressing is involved — the `hash` value is just a `bits` label
-chosen by the user, and the bijection is just an asserted axiom.
+the bijection assumption (an ordinary HOL `∃` statement; elimination
+via Skolemisation gives `abs` and `rep` functions). To re-fold,
+apply `abs`. No kernel knowledge of hashing or content addressing is
+involved — the `hash` value is just a `bits` label chosen by the
+user.
 
 For complex type expressions, the user chains bijections:
 `conceptType[c, parentHash] ≅ Tyapp(F, [conceptType[c, child1Hash],
@@ -889,11 +893,13 @@ The kernel's soundness reduces to seven invariants:
    different arenas with the same `TermId` (or `TypeId`) are not
    assumed equal; the canonical tuple `(ArenaId, TermId)` (or
    `(ArenaId, TypeId)`) is what matters.
-5. **Concept theory axioms have the shape `… ⇒ c[α](…) = true`** for
-   constants, and bijection-existence (or trivial nonemptiness) for
-   concept-owned types. Every such theory has a trivial model
-   (concept is always true / opaque type is its bijection target or
-   a singleton).
+5. **Concept theory axioms have the shape `… ⇒ c[α](…) = true`.**
+   This applies only to the constant family side; the kernel checks
+   the conclusion shape and accepts the axiom. The trivial model
+   (`c` is always true) satisfies every such theory. The kernel does
+   *not* accept any owner-asserted axiom about a `conceptType` —
+   conceptTypes are pure opaque declarations, and any claim about
+   them enters as a normal user-side assumption in the Context.
 6. **No type-equality propositions.** The type UF caches derived
    equalities (foreign-import propagation, congruence) only. Type
    isomorphisms enter at the term level via bijection axioms — they

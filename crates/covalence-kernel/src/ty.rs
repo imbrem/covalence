@@ -278,7 +278,7 @@ impl TypeInfo {
     /// ill-typed.
     pub fn unbound_depth(self) -> u32 {
         if self.0 < BUILTIN_FLOOR {
-            ((BUILTIN_FLOOR - 1 - self.0) as u32)
+            (BUILTIN_FLOOR - 1 - self.0) as u32
         } else {
             0
         }

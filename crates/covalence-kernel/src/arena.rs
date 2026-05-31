@@ -139,6 +139,298 @@ impl Arena {
         &self.terms[id.0 as usize]
     }
 
+    /// Re-infer the type of a term, walking under binders if needed.
+    ///
+    /// `alloc_term` caches a type at insertion but can only handle the
+    /// "easy" cases — for example, `Abs(α, Bound(0))` gets `IllTyped`
+    /// at insertion because re-walking the body under the new binder
+    /// isn't done eagerly. `infer` does that walk: it pushes binder
+    /// types into a context as it descends, so `Bound(i)` resolves to
+    /// the i-th enclosing binder's type. The result is then cached in
+    /// the UF entry so subsequent calls are O(1).
+    ///
+    /// If the cached type is already `Typed(_)`, `infer` returns
+    /// immediately. Cached `Unbound`/`IllTyped` entries are re-walked
+    /// (a subsequent `Thm` construction may still reject them).
+    pub fn infer(&mut self, id: TermId) -> TypeInfo {
+        let cached = self.term_uf(id).type_info;
+        if cached.is_typed() {
+            return cached;
+        }
+        let mut ctx: Vec<TypeRef> = Vec::new();
+        let info = self.infer_term(id, &mut ctx);
+        self.uf_terms[id.0 as usize].type_info = info;
+        info
+    }
+
+    /// **Unchecked** setter for a term's `type_info`. The kernel does
+    /// not validate the supplied type against the term's structure —
+    /// ill-typedness in the arena is allowed (see [`TypeInfo`]).
+    /// Soundness is enforced by `Thm`, not by `alloc_term` or this
+    /// setter.
+    pub fn set_type_info(&mut self, id: TermId, info: TypeInfo) {
+        self.uf_terms[id.0 as usize].type_info = info;
+    }
+
+    fn infer_term(&mut self, id: TermId, ctx: &mut Vec<TypeRef>) -> TypeInfo {
+        // Cached Typed values are context-independent (a term's
+        // structural type doesn't depend on the surrounding ctx), so
+        // we can reuse them. Unbound/IllTyped need re-walking — we
+        // may now have enough binder context to resolve them.
+        let cached = self.term_uf(id).type_info;
+        if cached.is_typed() {
+            return cached;
+        }
+        let def = *self.term_def(id);
+        self.infer_def(&def, ctx)
+    }
+
+    fn infer_ref(&mut self, r: TermRef, ctx: &mut Vec<TypeRef>) -> TypeInfo {
+        if let Some(local) = r.as_local() {
+            self.infer_term(local, ctx)
+        } else {
+            // Foreign — use the cached value as-is.
+            self.ref_props(r).0
+        }
+    }
+
+    fn infer_def(&mut self, def: &TermDef, ctx: &mut Vec<TypeRef>) -> TypeInfo {
+        match def {
+            // ---- de Bruijn: resolve via ctx --------------------------------
+            TermDef::Bound(i) => {
+                let depth = *i as usize;
+                if depth < ctx.len() {
+                    TypeInfo::typed(ctx[ctx.len() - 1 - depth])
+                } else {
+                    TypeInfo::unbound((depth - ctx.len() + 1) as u32)
+                }
+            }
+            // ---- atoms with declared types --------------------------------
+            TermDef::Free(_, ty) | TermDef::Const(_, ty) => TypeInfo::typed(*ty),
+            TermDef::True | TermDef::False => TypeInfo::typed(self.bool_ty()),
+            TermDef::U8(_) => TypeInfo::typed(self.u8_ty()),
+            TermDef::U16(_) => TypeInfo::typed(self.u16_ty()),
+            TermDef::U32(_) => TypeInfo::typed(self.u32_ty()),
+            TermDef::U64(_) => TypeInfo::typed(self.u64_ty()),
+            TermDef::I8(_) => TypeInfo::typed(self.i8_ty()),
+            TermDef::I16(_) => TypeInfo::typed(self.i16_ty()),
+            TermDef::I32(_) => TypeInfo::typed(self.i32_ty()),
+            TermDef::I64(_) => TypeInfo::typed(self.i64_ty()),
+            TermDef::IntInline(_) | TermDef::IntStored(_) => TypeInfo::typed(self.int_ty()),
+            TermDef::NatInline(_) | TermDef::NatStored(_) => TypeInfo::typed(self.nat_ty()),
+            TermDef::BitsStored(_) => TypeInfo::typed(self.bits_ty()),
+            TermDef::BytesStored(_) => TypeInfo::typed(self.bytes_ty()),
+
+            // ---- the binder --------------------------------------------------
+            TermDef::Abs(param_ty, body) => {
+                ctx.push(*param_ty);
+                let body_info = self.infer_ref(*body, ctx);
+                ctx.pop();
+                match body_info.decode() {
+                    TypeInfoKind::Typed(body_ty) => {
+                        TypeInfo::typed(self.intern_fun(*param_ty, body_ty))
+                    }
+                    TypeInfoKind::Unbound(n) if n > 0 => {
+                        // Body still has dangling Bound — propagate.
+                        TypeInfo::unbound(n)
+                    }
+                    _ => TypeInfo::ILL_TYPED,
+                }
+            }
+
+            // ---- combinators / control flow / primops ---------------------
+            TermDef::Comb(f, x) => self.infer_comb(*f, *x, ctx),
+            TermDef::Eq(a, b) | TermDef::Ne(a, b) => self.infer_eq_like(*a, *b, ctx),
+            TermDef::Forall(p) | TermDef::Exists(p) => self.infer_quant(*p, ctx),
+            TermDef::Eps(elem_ty, p) => self.infer_eps(*elem_ty, *p, ctx),
+            TermDef::Id(ty) => TypeInfo::typed(self.intern_fun(*ty, *ty)),
+            TermDef::Comp(f, g) => self.infer_comp(*f, *g, ctx),
+            TermDef::Iter(n, f) => self.infer_iter(*n, *f, ctx),
+            TermDef::Ite(c, t) => self.infer_ite(*c, *t, ctx),
+            TermDef::Op1(op, x) => self.infer_op1(*op, *x, ctx),
+            TermDef::Op2(op, a, b) => self.infer_op2(*op, *a, *b, ctx),
+            TermDef::LiftOp1(op) => {
+                let (dom, cod) = op.sig();
+                TypeInfo::typed(self.intern_fun(dom, cod))
+            }
+            TermDef::LiftOp2(op) => {
+                let (in1, in2, out) = op.sig();
+                let curried = self.intern_fun(in2, out);
+                TypeInfo::typed(self.intern_fun(in1, curried))
+            }
+        }
+    }
+
+    fn infer_comb(&mut self, f: TermRef, x: TermRef, ctx: &mut Vec<TypeRef>) -> TypeInfo {
+        let f_info = self.infer_ref(f, ctx);
+        let x_info = self.infer_ref(x, ctx);
+        let f_ty = match f_info.decode() {
+            TypeInfoKind::Typed(t) => t,
+            TypeInfoKind::Unbound(_) => return propagate2_until_typed(f_info, x_info),
+            TypeInfoKind::IllTyped => return TypeInfo::ILL_TYPED,
+        };
+        let x_ty = match x_info.decode() {
+            TypeInfoKind::Typed(t) => t,
+            TypeInfoKind::Unbound(_) => return propagate2_until_typed(f_info, x_info),
+            TypeInfoKind::IllTyped => return TypeInfo::ILL_TYPED,
+        };
+        match self.type_def_of(f_ty) {
+            Some(TypeDef::Fun(dom, cod)) if dom == x_ty => TypeInfo::typed(cod),
+            _ => TypeInfo::ILL_TYPED,
+        }
+    }
+
+    fn infer_eq_like(&mut self, a: TermRef, b: TermRef, ctx: &mut Vec<TypeRef>) -> TypeInfo {
+        let a_info = self.infer_ref(a, ctx);
+        let b_info = self.infer_ref(b, ctx);
+        match (a_info.decode(), b_info.decode()) {
+            (TypeInfoKind::Typed(ta), TypeInfoKind::Typed(tb)) if ta == tb => {
+                TypeInfo::typed(self.bool_ty())
+            }
+            (TypeInfoKind::Typed(_), TypeInfoKind::Typed(_)) => TypeInfo::ILL_TYPED,
+            _ => propagate2_until_typed(a_info, b_info),
+        }
+    }
+
+    fn infer_quant(&mut self, p: TermRef, ctx: &mut Vec<TypeRef>) -> TypeInfo {
+        let p_info = self.infer_ref(p, ctx);
+        let p_ty = match p_info.decode() {
+            TypeInfoKind::Typed(t) => t,
+            TypeInfoKind::Unbound(_) => return p_info,
+            TypeInfoKind::IllTyped => return TypeInfo::ILL_TYPED,
+        };
+        let bool_ref = self.bool_ty();
+        match self.type_def_of(p_ty) {
+            Some(TypeDef::Fun(_dom, cod)) if cod == bool_ref => TypeInfo::typed(bool_ref),
+            _ => TypeInfo::ILL_TYPED,
+        }
+    }
+
+    fn infer_eps(
+        &mut self,
+        elem_ty: TypeRef,
+        p: TermRef,
+        ctx: &mut Vec<TypeRef>,
+    ) -> TypeInfo {
+        let p_info = self.infer_ref(p, ctx);
+        let p_ty = match p_info.decode() {
+            TypeInfoKind::Typed(t) => t,
+            TypeInfoKind::Unbound(_) => return p_info,
+            TypeInfoKind::IllTyped => return TypeInfo::ILL_TYPED,
+        };
+        let bool_ref = self.bool_ty();
+        match self.type_def_of(p_ty) {
+            Some(TypeDef::Fun(dom, cod)) if dom == elem_ty && cod == bool_ref => {
+                TypeInfo::typed(elem_ty)
+            }
+            _ => TypeInfo::ILL_TYPED,
+        }
+    }
+
+    fn infer_op1(
+        &mut self,
+        op: crate::primop::PrimOp1,
+        x: TermRef,
+        ctx: &mut Vec<TypeRef>,
+    ) -> TypeInfo {
+        let x_info = self.infer_ref(x, ctx);
+        let (input, output) = op.sig();
+        match x_info.decode() {
+            TypeInfoKind::Typed(t) if t == input => TypeInfo::typed(output),
+            TypeInfoKind::Typed(_) => TypeInfo::ILL_TYPED,
+            TypeInfoKind::Unbound(_) => x_info,
+            TypeInfoKind::IllTyped => TypeInfo::ILL_TYPED,
+        }
+    }
+
+    fn infer_op2(
+        &mut self,
+        op: crate::primop::PrimOp2,
+        a: TermRef,
+        bx: TermRef,
+        ctx: &mut Vec<TypeRef>,
+    ) -> TypeInfo {
+        let a_info = self.infer_ref(a, ctx);
+        let b_info = self.infer_ref(bx, ctx);
+        let (in1, in2, output) = op.sig();
+        match (a_info.decode(), b_info.decode()) {
+            (TypeInfoKind::Typed(ta), TypeInfoKind::Typed(tb)) if ta == in1 && tb == in2 => {
+                TypeInfo::typed(output)
+            }
+            (TypeInfoKind::Typed(_), TypeInfoKind::Typed(_)) => TypeInfo::ILL_TYPED,
+            (TypeInfoKind::IllTyped, _) | (_, TypeInfoKind::IllTyped) => TypeInfo::ILL_TYPED,
+            _ => propagate2_until_typed(a_info, b_info),
+        }
+    }
+
+    fn infer_comp(&mut self, f: TermRef, g: TermRef, ctx: &mut Vec<TypeRef>) -> TypeInfo {
+        let f_info = self.infer_ref(f, ctx);
+        let g_info = self.infer_ref(g, ctx);
+        let f_ty = match f_info.decode() {
+            TypeInfoKind::Typed(t) => t,
+            TypeInfoKind::Unbound(_) => return propagate2_until_typed(f_info, g_info),
+            TypeInfoKind::IllTyped => return TypeInfo::ILL_TYPED,
+        };
+        let g_ty = match g_info.decode() {
+            TypeInfoKind::Typed(t) => t,
+            TypeInfoKind::Unbound(_) => return propagate2_until_typed(f_info, g_info),
+            TypeInfoKind::IllTyped => return TypeInfo::ILL_TYPED,
+        };
+        let (f_dom, f_cod) = match self.type_def_of(f_ty) {
+            Some(TypeDef::Fun(a, b)) => (a, b),
+            _ => return TypeInfo::ILL_TYPED,
+        };
+        let (g_dom, g_cod) = match self.type_def_of(g_ty) {
+            Some(TypeDef::Fun(a, b)) => (a, b),
+            _ => return TypeInfo::ILL_TYPED,
+        };
+        if g_cod != f_dom {
+            return TypeInfo::ILL_TYPED;
+        }
+        TypeInfo::typed(self.intern_fun(g_dom, f_cod))
+    }
+
+    fn infer_iter(&mut self, n: TermRef, f: TermRef, ctx: &mut Vec<TypeRef>) -> TypeInfo {
+        let n_info = self.infer_ref(n, ctx);
+        let f_info = self.infer_ref(f, ctx);
+        let nat_ref = self.nat_ty();
+        let f_ty = match (n_info.decode(), f_info.decode()) {
+            (TypeInfoKind::IllTyped, _) | (_, TypeInfoKind::IllTyped) => {
+                return TypeInfo::ILL_TYPED
+            }
+            (TypeInfoKind::Unbound(_), _) | (_, TypeInfoKind::Unbound(_)) => {
+                return propagate2_until_typed(n_info, f_info)
+            }
+            (TypeInfoKind::Typed(nt), TypeInfoKind::Typed(ft)) if nt == nat_ref => ft,
+            _ => return TypeInfo::ILL_TYPED,
+        };
+        match self.type_def_of(f_ty) {
+            Some(TypeDef::Fun(dom, cod)) if dom == cod => TypeInfo::typed(f_ty),
+            _ => TypeInfo::ILL_TYPED,
+        }
+    }
+
+    fn infer_ite(
+        &mut self,
+        cond: TermRef,
+        then_branch: TermRef,
+        ctx: &mut Vec<TypeRef>,
+    ) -> TypeInfo {
+        let c_info = self.infer_ref(cond, ctx);
+        let t_info = self.infer_ref(then_branch, ctx);
+        let bool_ref = self.bool_ty();
+        match (c_info.decode(), t_info.decode()) {
+            (TypeInfoKind::IllTyped, _) | (_, TypeInfoKind::IllTyped) => TypeInfo::ILL_TYPED,
+            (TypeInfoKind::Unbound(_), _) | (_, TypeInfoKind::Unbound(_)) => {
+                propagate2_until_typed(c_info, t_info)
+            }
+            (TypeInfoKind::Typed(ct), TypeInfoKind::Typed(tt)) if ct == bool_ref => {
+                TypeInfo::typed(self.intern_fun(tt, tt))
+            }
+            _ => TypeInfo::ILL_TYPED,
+        }
+    }
+
     /// Project a term to its public-API [`TermKind`] view. Use this
     /// for pattern matching in user code — the underlying `TermDef`
     /// has one variant per primop and is intended as internal

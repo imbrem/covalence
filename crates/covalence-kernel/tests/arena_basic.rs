@@ -737,6 +737,127 @@ fn comp_mismatched_middle_type_is_ill_typed() {
     assert_eq!(a.term_uf(bad).type_info, TypeInfo::ILL_TYPED);
 }
 
+// ---------------------------------------------------------------------------
+// Phase B+: `infer` (re-walk under binders) and `set_type_info` (unchecked).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn infer_resolves_abs_over_bound_zero() {
+    // λ_:bool. Bound(0) — alloc_term marks it IllTyped because the
+    // re-walk under the binder isn't done eagerly. `infer` does it.
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let b0 = a.alloc_term(TermDef::Bound(0));
+    let abs = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(b0)));
+    // Cached type at insertion is IllTyped.
+    assert_eq!(a.term_uf(abs).type_info, TypeInfo::ILL_TYPED);
+    // infer walks under the binder and computes bool → bool.
+    let inferred = a.infer(abs);
+    let abs_ty = inferred.as_type().expect("inferred typed");
+    match a.type_def_of(abs_ty) {
+        Some(TypeDef::Fun(d, c)) => {
+            assert_eq!(d, bool_ty);
+            assert_eq!(c, bool_ty);
+        }
+        other => panic!("expected bool → bool, got {other:?}"),
+    }
+    // The inferred type is cached, so a second call is O(1) and the
+    // cache is now Typed.
+    assert!(a.term_uf(abs).type_info.is_typed());
+    assert_eq!(a.infer(abs), inferred);
+}
+
+#[test]
+fn infer_handles_nested_abs() {
+    // λ_:bool. λ_:nat. Bound(1) — outer bool binder is what Bound(1)
+    // refers to from inside the inner Abs. So the term is
+    // bool → nat → bool.
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let nat_ty = a.nat_ty();
+    let b1 = a.alloc_term(TermDef::Bound(1));
+    let inner = a.alloc_term(TermDef::Abs(nat_ty, TermRef::local(b1)));
+    let outer = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(inner)));
+    let outer_info = a.infer(outer);
+    let outer_ty = outer_info.as_type().expect("outer typed");
+    // Walk the Fun chain: outer = bool → (nat → bool).
+    let (d, c) = match a.type_def_of(outer_ty) {
+        Some(TypeDef::Fun(d, c)) => (d, c),
+        other => panic!("expected outer Fun, got {other:?}"),
+    };
+    assert_eq!(d, bool_ty);
+    let (d2, c2) = match a.type_def_of(c) {
+        Some(TypeDef::Fun(d, c)) => (d, c),
+        other => panic!("expected inner Fun, got {other:?}"),
+    };
+    assert_eq!(d2, nat_ty);
+    assert_eq!(c2, bool_ty);
+}
+
+#[test]
+fn infer_returns_cached_typed_immediately() {
+    // For a term that's already typed at insertion (NatSucc applied
+    // to a nat literal), infer just returns the cached value.
+    use covalence_kernel::PrimOp1;
+    let mut a = Arena::new();
+    let n = a.alloc_term(TermDef::nat_inline(7));
+    let s = a.alloc_term(TermDef::Op1(PrimOp1::NatSucc, TermRef::local(n)));
+    let cached = a.term_uf(s).type_info;
+    assert!(cached.is_typed());
+    assert_eq!(a.infer(s), cached);
+}
+
+#[test]
+fn infer_caches_result() {
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let b0 = a.alloc_term(TermDef::Bound(0));
+    let abs = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(b0)));
+    assert_eq!(a.term_uf(abs).type_info, TypeInfo::ILL_TYPED);
+    let info = a.infer(abs);
+    // After infer, the cache is updated.
+    assert_eq!(a.term_uf(abs).type_info, info);
+    assert!(info.is_typed());
+}
+
+#[test]
+fn set_type_info_unchecked_overrides_cache() {
+    // Demonstrates the unchecked setter: we can stamp any TypeInfo
+    // on a term, even one inconsistent with its structure. Soundness
+    // is the Thm wrapper's job, not the arena's.
+    let mut a = Arena::new();
+    let t = a.alloc_term(TermDef::True);
+    // Pre-condition: True is typed as bool.
+    assert_eq!(a.term_uf(t).type_info, TypeInfo::typed(a.bool_ty()));
+    // Stomp it with a nonsensical type.
+    a.set_type_info(t, TypeInfo::typed(a.nat_ty()));
+    assert_eq!(a.term_uf(t).type_info, TypeInfo::typed(a.nat_ty()));
+    // Or mark it ill-typed.
+    a.set_type_info(t, TypeInfo::ILL_TYPED);
+    assert_eq!(a.term_uf(t).type_info, TypeInfo::ILL_TYPED);
+}
+
+#[test]
+fn infer_on_open_term_with_bound_indices_inside_abs() {
+    // λ_:nat. Op1(NatSucc, Bound(0)) — body uses Bound(0) of type
+    // nat, NatSucc : nat → nat. Result: nat → nat.
+    use covalence_kernel::PrimOp1;
+    let mut a = Arena::new();
+    let nat_ty = a.nat_ty();
+    let b0 = a.alloc_term(TermDef::Bound(0));
+    let body = a.alloc_term(TermDef::Op1(PrimOp1::NatSucc, TermRef::local(b0)));
+    let abs = a.alloc_term(TermDef::Abs(nat_ty, TermRef::local(body)));
+    let info = a.infer(abs);
+    let abs_ty = info.as_type().expect("typed");
+    match a.type_def_of(abs_ty) {
+        Some(TypeDef::Fun(d, c)) => {
+            assert_eq!(d, nat_ty);
+            assert_eq!(c, nat_ty);
+        }
+        other => panic!("expected nat → nat, got {other:?}"),
+    }
+}
+
 #[test]
 fn typeref_decodes_to_kind() {
     let mut a = Arena::new();

@@ -89,19 +89,30 @@ Arena {
 
   // Interning tables for variable-sized payloads referenced by
   // TermDef / TypeDef sealed-id handles.
-  strings: IndexSet<SmolStr>,
-  bytes:   Vec<Vec<u8>>,
-  ints:    Vec<Int>,
-  nats:    Vec<Nat>,
-  tyargs:  Vec<Vec<TypeRef>>,
+  strings:      IndexSet<SmolStr>,
+  bytes:        Vec<Vec<u8>>,
+  ints:         Vec<Int>,
+  nats:         Vec<Nat>,
+  tyargs:       Vec<Vec<TypeRef>>,
+  term_substs:  Vec<TermSubst>,         // interned, addressed by TermSubstId
+  type_substs:  Vec<TypeSubst>,         // interned, addressed by TypeSubstId
 }
 
 Import {
-  source: Arc<Arena>,
-  term_subst: HashMap<StrId, TermId>,   // names in `source` → terms in the *importing* arena
-  type_subst: HashMap<StrId, TypeId>,   // type-var names in `source` → types in this arena
+  source:     Arc<Arena>,
+  term_subst: TermSubstId,              // index into term_substs
+  type_subst: TypeSubstId,              // index into type_substs
 }
+
+TermSubst { map: HashMap<StrId, TermId> }   // source-name → term in importing arena
+TypeSubst { map: HashMap<StrId, TypeId> }   // source-tyvar → type in importing arena
 ```
+
+Putting the substitutions behind a sealed `TermSubstId` /
+`TypeSubstId` gives them the same treatment as every other
+variable-sized payload — the representation is private to the
+kernel and free to change (e.g., to a more compact `Vec` of
+pairs, or to a small-int variable scheme once we make that move).
 
 The **interning tables** keep `TermDef` (and the `TermRef` / `TypeRef`
 it embeds) `Copy`. Anything bigger than a few `u32`s goes through a
@@ -200,18 +211,31 @@ arenas import them by calling `add_import(source, term_subst,
 type_subst)`. The result is an `ImportId` pointing at the new entry
 in `arena.imports`.
 
-The **substitution** is a map from names (the imported arena's free
-variables / type variables, identified by `StrId`) to terms / types
-in the *importing* arena. When a `TermDef::Foreign(import_id,
-source_id)` is interpreted:
+The **substitution** maps source-arena names (the imported arena's
+free variables / type variables, identified by `StrId`) to terms /
+types in the *importing* arena. When a
+`TermDef::Foreign(import_id, source_id)` is interpreted:
 
-- For every `Free(name, ty)` in the source term that's mapped by
-  `term_subst`, the result substitutes the mapped term.
-- For every `TVar(name)` in source types that's mapped by
-  `type_subst`, the result substitutes the mapped type.
+- For every `Free(name, ty)` in the source term whose name is
+  mapped by the import's `TermSubst`, the result substitutes the
+  mapped term.
+- For every `TVar(name)` in source types whose name is mapped by
+  the import's `TypeSubst`, the result substitutes the mapped type.
 - **Anything not mapped** — free variables and type variables
   alike — resolves to `epsilon(λ_. true) : α`, a definite but
   unconstrained inhabitant of the relevant type.
+
+> **Future direction (variable IDs).** Today free-variable and
+> type-variable names are `StrId` handles into the arena's string
+> table. The plan is to switch to small-integer variable IDs (a
+> dedicated `VarId` / `TyVarId` rather than reused `StrId`s). That
+> makes substitution maps cheaper (dense arrays keyed by integer)
+> and enables importing **ranges** of variables — e.g. "shift all
+> free-variable IDs ≥ N in the source by k" — which is the
+> efficient analog of α-renaming during composition of imports.
+> This change is forward-compatible with the substitution-table
+> model above: the IDs become a different sealed type, and the
+> `TermSubst` representation switches.
 
 Imported terms must be **locally closed** (no dangling de Bruijn
 indices) before the substitution is applied. Any imported `Bound(i)`
@@ -407,6 +431,16 @@ private `TermDef` / `TypeDef`. Exactly which primops and primitive
 types are baked in is a kernel-private detail and may change between
 revisions; the canonical list lives in [`prover-primops.md`].
 
+The kernel's long-term goal is **vanilla HOL plus our builtins and
+the existential operators** — nothing else. Convenience
+constructors like `Id`, `Comp`, `Iter`, `Ite`, `LiftOp1`, `LiftOp2`
+that exist in today's `TermDef` will move out into user-level
+constants with their own axioms; only the structural HOL shapes
+(`Bound`, `Free`, `Const`, `Comb`, `Abs`, `Eq`), the existentials
+(`Forall`, `Exists`, `Eps`), and the primop families
+(`Op1` / `Op2` and their literals) will remain in the core term
+language.
+
 We accept a richer-than-HOL-Light set of builtins in exchange for
 shorter time-to-MVP and efficient FFI. The trade-off is that each
 builtin function-value has a minimal HOL axiomatization (§3.4) and
@@ -566,18 +600,19 @@ all bottoming out at kernel-trusted primitives:
    (`id_ax`, `comp_def`, `iter_zero`/`iter_succ_*`), and the
    `ite_negate` axiom. ~100 schemata; one-time audit.
 2. **Reduction rules (§10).** Auto-applied by `kernel.reduce(t)` in
-   a fixed, confluent, terminating, ordered list. Covers literal-
-   arg evaluation, numeral normalization (`succ N → N+1` for
-   literal `N`), identity/zero simplifications (`add a 0 → a`,
-   `And a True → a`), and `Ite` on a literal condition. Each rule
-   has `LHS = RHS` derivable in the axioms.
+   a fixed, confluent, terminating, ordered list. **Only
+   fully-constant inputs fire.** Concretely: a primop applied to
+   literal arguments returns its computed literal result; nothing
+   else reduces. Algebraic identities (`add a 0 = a`), short-circuit
+   shortcuts (`And False x = False`), definitional unfoldings
+   (`Comb (Id α) x = x`, `Ite True x y = x`), and recursive
+   simplifications all become **theorems** proved against the
+   axioms — they are not kernel reductions.
 3. **Manual rules (§11).** User-invoked rewrites that don't fit
    reduction's discipline — typically recursive unfoldings
-   (`add a (succ b) → succ (add a b)`, `Iter α (succ n) f → Comp f
-   (Iter α n f)`) and canonicalisations (`Ite ty (Not b) x y →
-   Ite ty b y x`). Each rule has `LHS = RHS` derivable in the
-   axioms, but the kernel does not enforce termination — that's the
-   caller's problem.
+   (`add a (succ b) = succ (add a b)`) and canonicalisations. Each
+   rule has `LHS = RHS` derivable in the axioms, but the kernel
+   does not enforce termination — that's the caller's problem.
 
 Audit cost is exactly the three lists. New primops add to the rule
 lists; the axiom list grows only when a primitive introduces a new
@@ -630,6 +665,9 @@ This is an explicit LCF-style call: the kernel never reduces on its
 own. Users invoke `reduce` exactly where they want the cost. The
 kernel never reduces with a non-literal argument either — `add x 0
 = x` is a *theorem*, derived from the axioms below, not a reduction.
+Even short-circuit cases like `And False x = False` and `Or True x
+= True` are theorems, not reductions: the kernel's reducer fires
+only when **every** input is a literal.
 
 #### Minimal axiomatization
 

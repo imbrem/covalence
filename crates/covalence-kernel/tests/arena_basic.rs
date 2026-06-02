@@ -1255,45 +1255,6 @@ fn reduce_nat_popcount() {
 }
 
 #[test]
-fn reduce_id_combinator() {
-    // Comb(Id(τ), x) → x
-    let mut a = Arena::new();
-    let bool_ty = a.bool_ty();
-    let id = a.alloc_term(TermDef::Id(bool_ty));
-    let t = a.alloc_term(TermDef::True);
-    let app = a.alloc_term(TermDef::Comb(TermRef::local(id), TermRef::local(t)));
-    let r = reduce::step(&mut a, TermRef::local(app)).unwrap_or(TermRef::local(app));
-    assert_eq!(r, TermRef::local(t));
-}
-
-#[test]
-fn reduce_ite_on_true_picks_then_branch() {
-    // Comb(Comb(Ite(True, then), else), …) — really we test the
-    // Comb-with-Ite pattern Comb(Comb(Ite(cond, then), else)) where
-    // the outer Comb application supplies the else branch.
-    let mut a = Arena::new();
-    let cond = a.alloc_term(TermDef::True);
-    let then_b = a.alloc_term(TermDef::nat_inline(7));
-    let else_b = a.alloc_term(TermDef::nat_inline(9));
-    let ite = a.alloc_term(TermDef::Ite(TermRef::local(cond), TermRef::local(then_b)));
-    let app = a.alloc_term(TermDef::Comb(TermRef::local(ite), TermRef::local(else_b)));
-    let r = reduce::step(&mut a, TermRef::local(app)).unwrap_or(TermRef::local(app));
-    assert_eq!(r, TermRef::local(then_b));
-}
-
-#[test]
-fn reduce_ite_on_false_picks_else_branch() {
-    let mut a = Arena::new();
-    let cond = a.alloc_term(TermDef::False);
-    let then_b = a.alloc_term(TermDef::nat_inline(7));
-    let else_b = a.alloc_term(TermDef::nat_inline(9));
-    let ite = a.alloc_term(TermDef::Ite(TermRef::local(cond), TermRef::local(then_b)));
-    let app = a.alloc_term(TermDef::Comb(TermRef::local(ite), TermRef::local(else_b)));
-    let r = reduce::step(&mut a, TermRef::local(app)).unwrap_or(TermRef::local(app));
-    assert_eq!(r, TermRef::local(else_b));
-}
-
-#[test]
 fn reduce_noop_on_unreducible() {
     // A free variable can't be reduced — reduce returns it unchanged.
     let mut a = Arena::new();

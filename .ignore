@@ -1,0 +1,5 @@
+# Files for scc / ripgrep / other tools that honor .ignore.
+# Not for git — see .gitignore for that.
+
+# OpenTheory article files are large checked-in fixtures, not code.
+*.art

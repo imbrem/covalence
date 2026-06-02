@@ -1,24 +1,21 @@
-//! Top-level reduction rules (`docs/prover-primops.md` §10).
+//! Top-level reduction rules.
 //!
-//! These are the rule definitions that fire when an outside caller
-//! asks "is this term reducible at the top?" The arena itself is
-//! definition-blind — it only exposes `rewrite`, `union`, `subst`,
-//! and the congruence/equality predicates. The judgement that a
-//! particular reduction produces a *true* equality lives in the
-//! [`Thm`](crate::Thm) layer; this module provides the pure
-//! computation that builds the reduced term so [`Thm::reduce`] can
-//! wrap it in a kernel-checked `Eq`.
+//! The kernel only reduces **fully-constant** expressions: a primop
+//! applied to literals returns its computed literal result.
+//! Algebraic identities like `a + 0 = a`, short-circuit shortcuts
+//! like `LogicalAnd False x = False`, and definitional unfoldings
+//! like `Comb(Id, x) = x` are not kernel reductions — they're
+//! ordinary theorems proved against the kernel's axioms.
 //!
 //! Current coverage:
 //!
-//! - **Literal-arg evaluation (§10.1)** for the boolean logic ops,
-//!   basic nat/int arithmetic, comparison primitives, and a few
-//!   fixed-width ops.
-//! - **Numeral normalisation (§10.2)** for `NatSucc(NatInline)`,
-//!   `NatPred(NatInline)`, and `IntNeg(IntInline)`.
-//! - **Ite-on-literal-cond (§10.5)** for `Comb(Ite(cond, then), else)`
-//!   when `cond` is a literal.
-//! - **Identity combinator (§10.6)**: `Comb(Id(_), x) → x`.
+//! - **Boolean primops** — full truth tables on `(True, False)` args.
+//! - **`Nat`** — `Succ`, `Pred`, `Popcount` on inline literals;
+//!   `Add`, `Sub`, `Mul`, `Div`, `Mod`, `Eq`, `Lt`, `Le` on pairs of
+//!   inline literals. (`NatDiv` and `NatMod` saturate to zero on a
+//!   zero divisor — both args must still be literals.)
+//! - **`Int`** — `Neg` on an inline literal; `Add`, `Sub`, `Mul`,
+//!   `Eq`, `Lt`, `Le` on pairs of inline literals.
 
 use crate::arena::Arena;
 use crate::primop::{PrimOp1, PrimOp2};
@@ -34,7 +31,6 @@ pub fn step(arena: &mut Arena, t: TermRef) -> Option<TermRef> {
     match def {
         TermDef::Op1(op, x) => reduce_op1(arena, op, x),
         TermDef::Op2(op, a, b) => reduce_op2(arena, op, a, b),
-        TermDef::Comb(f, x) => reduce_comb(arena, f, x),
         _ => None,
     }
 }
@@ -60,8 +56,7 @@ fn reduce_op1(arena: &mut Arena, op: PrimOp1, x: TermRef) -> Option<TermRef> {
             }
         }
         (NatPred, TermDef::NatInline(p)) => {
-            let v = p.to_u64();
-            TermDef::nat_inline(v.saturating_sub(1))
+            TermDef::nat_inline(p.to_u64().saturating_sub(1))
         }
         (NatPopcount, TermDef::NatInline(p)) => {
             TermDef::nat_inline(p.to_u64().count_ones() as u64)
@@ -88,10 +83,14 @@ fn reduce_op2(arena: &mut Arena, op: PrimOp2, a: TermRef, b: TermRef) -> Option<
     let a_def = *arena.term_def(a_id);
     let b_def = *arena.term_def(b_id);
     let new_def = match (op, a_def, b_def) {
-        // Boolean: full truth tables on literal args.
+        // Boolean: full truth tables. Both args must be literals.
         (LogicalAnd, TermDef::True, TermDef::True) => TermDef::True,
-        (LogicalAnd, TermDef::False, _) | (LogicalAnd, _, TermDef::False) => TermDef::False,
-        (LogicalOr, TermDef::True, _) | (LogicalOr, _, TermDef::True) => TermDef::True,
+        (LogicalAnd, TermDef::True, TermDef::False) => TermDef::False,
+        (LogicalAnd, TermDef::False, TermDef::True) => TermDef::False,
+        (LogicalAnd, TermDef::False, TermDef::False) => TermDef::False,
+        (LogicalOr, TermDef::True, TermDef::True) => TermDef::True,
+        (LogicalOr, TermDef::True, TermDef::False) => TermDef::True,
+        (LogicalOr, TermDef::False, TermDef::True) => TermDef::True,
         (LogicalOr, TermDef::False, TermDef::False) => TermDef::False,
         (LogicalXor, TermDef::True, TermDef::True) => TermDef::False,
         (LogicalXor, TermDef::True, TermDef::False) => TermDef::True,
@@ -99,9 +98,16 @@ fn reduce_op2(arena: &mut Arena, op: PrimOp2, a: TermRef, b: TermRef) -> Option<
         (LogicalXor, TermDef::False, TermDef::False) => TermDef::False,
         (LogicalImp, TermDef::True, TermDef::True) => TermDef::True,
         (LogicalImp, TermDef::True, TermDef::False) => TermDef::False,
-        (LogicalImp, TermDef::False, _) => TermDef::True,
-        (LogicalNand, x, y) => reduce_via_other_2(arena, LogicalAnd, x, y, true)?,
-        (LogicalNor, x, y) => reduce_via_other_2(arena, LogicalOr, x, y, true)?,
+        (LogicalImp, TermDef::False, TermDef::True) => TermDef::True,
+        (LogicalImp, TermDef::False, TermDef::False) => TermDef::True,
+        (LogicalNand, TermDef::True, TermDef::True) => TermDef::False,
+        (LogicalNand, TermDef::True, TermDef::False) => TermDef::True,
+        (LogicalNand, TermDef::False, TermDef::True) => TermDef::True,
+        (LogicalNand, TermDef::False, TermDef::False) => TermDef::True,
+        (LogicalNor, TermDef::True, TermDef::True) => TermDef::False,
+        (LogicalNor, TermDef::True, TermDef::False) => TermDef::False,
+        (LogicalNor, TermDef::False, TermDef::True) => TermDef::False,
+        (LogicalNor, TermDef::False, TermDef::False) => TermDef::True,
 
         // Naturals: arithmetic on inline literals.
         (NatAdd, TermDef::NatInline(p), TermDef::NatInline(q)) => {
@@ -129,17 +135,16 @@ fn reduce_op2(arena: &mut Arena, op: PrimOp2, a: TermRef, b: TermRef) -> Option<
                 TermDef::NatStored(id)
             }
         }
-        (NatDiv, TermDef::NatInline(_), TermDef::NatInline(q)) if q.to_u64() == 0 => {
-            TermDef::nat_inline(0) // axiom: div by 0 = 0
-        }
-        (NatMod, TermDef::NatInline(_), TermDef::NatInline(q)) if q.to_u64() == 0 => {
-            TermDef::nat_inline(0)
-        }
         (NatDiv, TermDef::NatInline(p), TermDef::NatInline(q)) => {
-            TermDef::nat_inline(p.to_u64() / q.to_u64())
+            let qv = q.to_u64();
+            // Axiom: divide-by-zero saturates to zero.
+            let result = if qv == 0 { 0 } else { p.to_u64() / qv };
+            TermDef::nat_inline(result)
         }
         (NatMod, TermDef::NatInline(p), TermDef::NatInline(q)) => {
-            TermDef::nat_inline(p.to_u64() % q.to_u64())
+            let qv = q.to_u64();
+            let result = if qv == 0 { 0 } else { p.to_u64() % qv };
+            TermDef::nat_inline(result)
         }
         (NatEq, TermDef::NatInline(p), TermDef::NatInline(q)) => {
             if p.to_u64() == q.to_u64() { TermDef::True } else { TermDef::False }
@@ -198,48 +203,4 @@ fn reduce_op2(arena: &mut Arena, op: PrimOp2, a: TermRef, b: TermRef) -> Option<
         _ => return None,
     };
     Some(TermRef::local(arena.alloc_term(new_def)))
-}
-
-/// Reduce `op(a, b)` indirectly via another op, optionally negating
-/// the result (used for `Nand` = `Not (And ...)`, `Nor` = `Not (Or
-/// ...)`).
-fn reduce_via_other_2(
-    arena: &mut Arena,
-    op: PrimOp2,
-    a: TermDef,
-    b: TermDef,
-    negate: bool,
-) -> Option<TermDef> {
-    let a_id = arena.alloc_term(a);
-    let b_id = arena.alloc_term(b);
-    let result = reduce_op2(arena, op, TermRef::local(a_id), TermRef::local(b_id))?;
-    let result_def = *arena.term_def(result.as_local()?);
-    Some(if negate {
-        match result_def {
-            TermDef::True => TermDef::False,
-            TermDef::False => TermDef::True,
-            _ => return None,
-        }
-    } else {
-        result_def
-    })
-}
-
-fn reduce_comb(arena: &mut Arena, f: TermRef, x: TermRef) -> Option<TermRef> {
-    // Comb(Id(_), x) → x.
-    let f_id = f.as_local()?;
-    let f_def = *arena.term_def(f_id);
-    if let TermDef::Id(_) = f_def {
-        return Some(x);
-    }
-    // Comb(Ite(cond, then), else) on a literal cond → branch.
-    if let TermDef::Ite(cond, then_branch) = f_def {
-        let cond_id = cond.as_local()?;
-        match arena.term_def(cond_id) {
-            TermDef::True => return Some(then_branch),
-            TermDef::False => return Some(x),
-            _ => {}
-        }
-    }
-    None
 }

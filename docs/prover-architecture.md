@@ -74,58 +74,52 @@ they're TermDef/TypeDef variants directly (§3.2).
 
 ### 2.2 Arena
 
-An **Arena** is a pool of types, terms, bitvectors, and union-find
-state. Its structural tables (types, terms, bitvectors) are append-only
-at the user level; the kernel may **mutate a term's structural form in
-place to replace it with a provably-equal one** (see §4.4 "Rewrite").
-Union-find state is mutable throughout.
+An **Arena** is a pool of types and terms plus per-arena interning
+tables and a list of imports. Its structural tables are append-only
+at the user level; the kernel may **mutate a term's structural form
+in place to replace it with a provably-equal one** (see §4.4
+"Rewrite"). Union-find on terms (§4) is a separate structure that
+references arenas — the arena itself carries no equality state.
 
 ```
 Arena {
-  types: Vec<TypeDef>,               // indexed by TypeId, append-only
-  terms: Vec<TermDef>,               // indexed by TermId; mutable via kernel rewrite
-  uf_terms: Vec<TermUfEntry>,        // one per term, mutable
-  uf_types: Vec<TypeUfEntry>,        // one per type, mutable (see §4.6)
-  imports: Vec<Arc<Arena>>,          // frozen arenas this one references
+  types: Vec<TypeDef>,         // indexed by TypeId, append-only
+  terms: Vec<TermDef>,         // indexed by TermId; mutable via kernel rewrite
+  imports: Vec<Import>,        // foreign arenas + their substitutions
 
-  // -- interning tables: variable-sized payloads pulled out of TermDef
-  //    so the enum itself stays Copy (see §3.1) --
-  strings:    IndexSet<SmolStr>,     // names: VarName, ConstName, TypeName, TypeVarId
-  bytes:      Vec<Vec<u8>>,          // byte-string literals (and bits >> 64 bits)
-  bits:       Vec<Bits>,             // bit-string literals with explicit bit-length
-  ints:       Vec<Int>,              // arbitrary-precision int literals
-  nats:       Vec<Nat>,              // arbitrary-precision nat literals
-  tyargs:     Vec<Vec<TypeRef>>,     // arg lists for Tyapp
+  // Interning tables for variable-sized payloads referenced by
+  // TermDef / TypeDef sealed-id handles.
+  strings: IndexSet<SmolStr>,
+  bytes:   Vec<Vec<u8>>,
+  ints:    Vec<Int>,
+  nats:    Vec<Nat>,
+  tyargs:  Vec<Vec<TypeRef>>,
 }
 
-TermUfEntry {
-  canonical: TermRef,                // arena-aware (§4.1); Local or Foreign(import, id)
-  bound_depth: u32, has_free: bool,  // closed() = bound_depth == 0 && !has_free
-}
-
-TypeUfEntry {
-  canonical: TypeRef,                // same shape
+Import {
+  source: Arc<Arena>,
+  term_subst: HashMap<StrId, TermId>,   // names in `source` → terms in the *importing* arena
+  type_subst: HashMap<StrId, TypeId>,   // type-var names in `source` → types in this arena
 }
 ```
 
-The **interning tables** are how the kernel keeps `TermDef` (and the
-`TermRef`/`TypeRef` it embeds) `Copy`. Anything bigger than a few `u32`s
-goes through a table:
+The **interning tables** keep `TermDef` (and the `TermRef` / `TypeRef`
+it embeds) `Copy`. Anything bigger than a few `u32`s goes through a
+table:
 
 - A free-variable's name is a `StrId` (index into `strings`), not a
   `SmolStr` carried inline.
-- A long bit-string is a `BitsId` (index into `bits`); a short one is
-  inline as `BitsInline { len, data }` directly in the `TermDef`
-  variant (see §3.2).
 - Arbitrary-precision int/nat literals are `IntId` / `NatId` when
-  large, inline as `i64` / `u64` when they fit.
+  large, inline when they fit.
 - Bytes literals are always `BytesId`.
 - A `Tyapp(name, args)`'s arg list is a `TyArgsId`.
 
-Foreign-arena refs are `Foreign(ImportId, id)` where `ImportId` is an
-index into `arena.imports`, not an `Arc<Arena>` carried inline (the
-Arc lives in the imports table). Both `TermRef` and `TypeRef` are
-therefore plain `(enum_tag, u32, u32)` — `Copy`.
+Foreign-arena references are **structural** in this kernel: a
+`TermDef::Foreign(ImportId, TermId)` is a regular allocated term in
+the importing arena that resolves to a term in the imported arena via
+`arena.imports[i].source`. The same shape applies for
+`TypeDef::Foreign(ImportId, TypeId)`. There are no side tables of
+foreign IDs.
 
 **Arena identity is by pointer**: there is no kernel-assigned arena
 identifier. Two canonical IDs `(arena_a, id_a)` and `(arena_b, id_b)`
@@ -177,22 +171,11 @@ This matters in subtle ways:
   pointer identity as that Arc — passing the borrow into a query and
   later coming back with the Arc keeps the identity intact.
 
-The type UF parallels the term UF. The kernel provides **no rule to
-introduce arbitrary type unions** — there's no analog of `union(a, b)`
-that takes a "proof" of `a = b` at the type level, because we
-deliberately don't have a type-level equality predicate in the logic.
-What the type UF *does* support is **caching derived type equalities
-via congruence** (same shape as the term side: structural decomp,
-foreign-import propagation, level-k equality predicates). The reason
-to maintain it is that types imported across the diamond import case
-need the same arena-aware canonical treatment as terms, and downstream
-tooling sometimes wants to ask "are these two types the same?"
-without re-walking the structural form each time.
-
-For introducing genuine isomorphisms between types — the
-content-addressed-types use case — the user declares an opaque type
-and an asserted bijection axiom (§7.4); the bijection lives at the
-*term* level, so the type UF doesn't get unsoundly populated.
+Types have **no union-find**. The kernel offers no proposition for
+"these two types are equal" — types are compared structurally only.
+Genuine isomorphisms between types (the content-addressed-types use
+case) are reflected at the **term** level via bijection axioms on
+opaque types declared through the concept system (§6.4 / §7.4).
 
 Key properties:
 
@@ -201,31 +184,46 @@ Key properties:
 - **The kernel may mutate `terms[id]` to an equal `TermDef`.** This is
   the [rewrite primitive](#44-rewrite); it's not the user's privilege
   but the kernel's, and only along an existing UF equivalence.
-- **Canonical IDs are arena-aware tuples `(Arc<Arena>, TermId)`** and
-  `(Arc<Arena>, TypeId)`. Identity is by `Arc::ptr_eq`. A bare ID is
-  *not* a canonical name across arenas — see §4 for why.
-- **Imports** are `Arc`'d frozen arenas this arena may reference. Terms
-  can reach across via `Comb`/`Abs` children pointing at imported
-  terms; equalities cannot, except by manual user-driven unions inside
-  this arena.
+- **Canonical IDs are arena-aware tuples `(Arc<Arena>, TermId)`.**
+  Identity is by `Arc::ptr_eq`. A bare `TermId` is *not* a canonical
+  name across arenas — see §4 for why.
+- **Imports carry substitutions** (see "Foreign imports" below).
+  Terms in this arena can name a foreign term via
+  `TermDef::Foreign(import_id, source_id)`.
 - **Closed flag** is computed once at term insertion. Cheaper than
   walking the term every time we need to know.
-- **Bitvector side table.** Short bit-string literals are stored
-  inline inside `TermDef` (see §3.2); long ones live in `bitvectors`
-  and the term holds an index. This is purely an arena representation
-  choice — it isn't visible to the logic, and it has no relation to
-  hashes or content addressing.
 
 #### Foreign imports
 
 Arenas can **freeze**, becoming `Arc<Arena>` and read-only. Other
-arenas hold these as `Arc`'d entries in `imports`. To reference a term
-in a frozen arena, the local arena either:
+arenas import them by calling `add_import(source, term_subst,
+type_subst)`. The result is an `ImportId` pointing at the new entry
+in `arena.imports`.
 
-- Allocates a `Comb`/`Abs` whose child is a `Foreign(arena, term_id)`
-  handle holding an `Arc<Arena>` to the source (see TermDef in §3.2), or
-- Re-allocates the term structurally in the local arena, importing
-  only the part it needs.
+The **substitution** is a map from names (the imported arena's free
+variables / type variables, identified by `StrId`) to terms / types
+in the *importing* arena. When a `TermDef::Foreign(import_id,
+source_id)` is interpreted:
+
+- For every `Free(name, ty)` in the source term that's mapped by
+  `term_subst`, the result substitutes the mapped term.
+- For every `TVar(name)` in source types that's mapped by
+  `type_subst`, the result substitutes the mapped type.
+- **Anything not mapped** — free variables and type variables
+  alike — resolves to `epsilon(λ_. true) : α`, a definite but
+  unconstrained inhabitant of the relevant type.
+
+Imported terms must be **locally closed** (no dangling de Bruijn
+indices) before the substitution is applied. Any imported `Bound(i)`
+that survives import is interpreted as `epsilon(λ_. true) : α` of
+the appropriate type. This is forward-compatible with adding a real
+de-Bruijn substitution on imports later — indices beyond the
+substitution's reach simply default to epsilon.
+
+The substitution model reifies the theory DAG inside imports:
+re-exporting a theorem from arena `A` through arena `B` to arena `C`
+just composes the substitutions. There is no separate "theory" or
+"signature" object; the import edge *is* the theory translation.
 
 Unfreezing clones the arena into a fresh mutable one with the same
 indices.
@@ -373,203 +371,81 @@ hand outside the kernel is error-prone.
 ### 3.1 Locally nameless
 
 Terms use **de Bruijn indices for bound variables + named free
-variables**. The kernel's internal `TermDef` enum is private; users
-interact through the public `TermKind` enum and fallible getters.
-This decouples the public API from the storage layout and lets us
-swap the internal representation without churning callers.
+variables**. The kernel's internal `TermDef` and `TypeDef` enums
+are **private** to the crate; users interact through the public
+`TermKind` view (and fallible getters) for terms, and through
+opaque `TypeRef` accessors for types. The internal representation
+is free to change without churning callers — including which
+primitive types and operators the kernel ships.
 
-#### Internal layout invariant: 3 × u32
+The public `TermKind` lists every term shape the kernel currently
+distinguishes (binders, application, equality, the primops, the
+literal flavours). `TermDef` may store these more compactly — for
+instance, arbitrary-precision literals may have separate "inline"
+and "interned" representations — but `TermKind` collapses storage
+details and presents the logical value.
 
-`TermDef` is `Copy` and every variant fits in **(tag, lhs, rhs)** —
-12 bytes total. Variable-sized payloads (names, byte strings,
-big-ints, type-arg lists) live in per-arena tables (§2.2); foreign-
-arena refs live in a side table (below); and *display hints* (the
-human-readable name of an `Abs`) live in an optional side table
-because they never affect correctness. Concretely:
-
-```rust
-// Public view — kernel consumers pattern-match on this. Stable.
-pub enum TermKind {
-    Bound(u32),
-    Free(StrId, TypeRef),
-    Const(StrId, TypeRef),
-    Comb(TermRef, TermRef),
-    Abs(TypeRef, TermRef),            // no name; see arena.abs_hints
-    Eq(TermRef, TermRef),
-    True, False,
-    // primitives
-    Op1(PrimOp1, TermRef),            // unary primitive
-    Op2(PrimOp2, TermRef, TermRef),   // binary primitive
-    Ite(TypeRef, TermRef, TermRef, TermRef),  // if-then-else, branch type carried
-    // literals
-    U8(u8) | U16(u16) | U32(u32) | U64(u64),
-    I8(i8) | I16(i16) | I32(i32) | I64(i64),
-    IntInline(i64) | IntStored(IntId),
-    NatInline(u64) | NatStored(NatId),
-    BitsStored(BitsId),
-    BytesStored(BytesId),
-}
-
-// Private internal representation. May change. Applied primops use
-// a single Op1/Op2 variant each with the op kind inlined as a u8.
-// Rust packs the discriminant into the alignment padding, so the
-// whole enum stays at 12 bytes — the (tag, lhs, rhs) 3-u32 shape.
-pub(crate) enum TermDef {
-    // structural
-    True, False,
-    Bound(u32),
-    Free(StrId, TypeRef),
-    Const(StrId, TypeRef),
-    Comb(TermRef, TermRef),
-    Abs(TypeRef, TermRef),
-    Eq(TermRef, TermRef),
-    // partial-applied: cond + then; branches via Comb; α inferred from then
-    Ite(TermRef, TermRef),
-    // partial-applied: n + f; α inferred from f's domain
-    Iter(TermRef, TermRef),
-    Eps(TypeRef, TermRef),    // Hilbert choice
-    Forall(TermRef),          // ∀ over predicate of inferred domain
-    Exists(TermRef),          // ∃ likewise
-    Ne(TermRef, TermRef),     // ≠
-    Id(TypeRef),
-    Comp(TermRef, TermRef),
-    LiftOp1(PrimOp1),         // η-expansion of a unary primop
-    LiftOp2(PrimOp2),         // η-expansion of a binary primop
-    // applied primops — single variant each, op kind inlined as u8
-    Op1(PrimOp1, TermRef),
-    Op2(PrimOp2, TermRef, TermRef),
-    // literals (Packed64 wraps u64/i64 to keep enum 4-byte aligned)
-    U8(u8), U16(u16), U32(u32), U64(Packed64),
-    I8(i8), I16(i16), I32(i32), I64(Packed64),
-    IntInline(Packed64), IntStored(IntId),
-    NatInline(Packed64), NatStored(NatId),
-    BitsStored(BitsId), BytesStored(BytesId),
-}
-
-// TermRef / TypeRef are packed u32 — bit 31 is the local/foreign
-// flag, bits 0-30 are an index. Local: index into arena.terms /
-// arena.types. Foreign: index into arena.foreign_terms /
-// arena.foreign_types — side tables of (ImportId, id) pairs.
-pub struct TermRef(u32);
-pub struct TypeRef(u32);
-```
-
-Two consequences worth calling out:
-
-- **`Abs` has no name field.** Display hints (the original parameter
-  name a user wrote) are pinned to `TermId`s in
-  `arena.abs_hints: HashMap<TermId, StrId>` (or similar). The kernel
-  ignores them; only printers consult them. Dropping them keeps the
-  variant within the 8-byte payload budget *and* makes the equality-
-  by-structure check trivially α-equivalent.
-- **`Ite` and `Iter` use type inference, not an explicit `TypeRef`.**
-  `Ite(cond, then)` infers the branch type α from `type_of(then)`
-  in one step; the else-branch is supplied via `Comb` and checked
-  against α. `Iter(n, f)` infers α from `dom(f)` and *is* the
-  iterated function directly (type `α → α`). Both store two
-  `TermRef`s — 8 bytes inline, no side table.
-
-`TypeDef` follows the same Copy + 3-u32 invariant; it's public
-because the variant set is small enough that pattern-matching is
-ergonomic. `TyArgsId` is the indirection for variadic `Tyapp`
-arguments.
+A `TermRef` is an opaque reference to a term in the current arena.
+Foreign-arena terms appear as a `TermDef::Foreign(ImportId, TermId)`
+allocation in the importing arena, so they're regular local terms
+with a structural marker telling the kernel which substitution to
+apply. The same shape applies to `TypeDef::Foreign(ImportId,
+TypeId)`. There is **no separate side-table or packed-flag
+machinery** distinguishing "local vs foreign" refs.
 
 Bound-var substitution doesn't need any alpha-renaming dance;
 structural equality of `TermDef`s already gives α-equivalence —
-display hints stripped, de Bruijn indices intact.
-
-A `TermRef`/`TypeRef` is the type used for child links. Local refs
-point to the current arena's table; foreign refs resolve through
-`arena.foreign_terms[i]` (or `_types`) → `(ImportId, id)` →
-`arena.imports[ImportId]` → an `Arc<Arena>` → that arena's table.
-Arena identity (§2.2) is still by pointer:
-`Arc::ptr_eq(a.imports[i], b.imports[j])`.
+display hints stripped, de Bruijn indices intact. (Display hints —
+the original parameter name a user wrote — live at the
+pretty-printer layer; the kernel never reads them.)
 
 ### 3.2 Builtins
 
-Builtins are **TermDef/TypeDef enum variants** — not entries in user
-namespaces, not magic constants in a side table, not sentinel name
-IDs. They appear in the same enum as everything else; an inference
-rule that pattern-matches on `TermDef` sees them right next to
-`Bound`, `Comb`, etc.
+The kernel reserves a small set of **builtin** type and term
+constructors that pattern-match alongside the structural ones in the
+private `TermDef` / `TypeDef`. Exactly which primops and primitive
+types are baked in is a kernel-private detail and may change between
+revisions; the canonical list lives in [`prover-primops.md`].
 
-We accept a relatively rich set of builtins (more than HOL Light's
-`= : α → α → bool` alone) in exchange for shorter time-to-MVP and
-efficient FFI. The trade-off is documented in §3.4: each builtin
-function-value has a minimal HOL axiomatization, and the kernel's
-trust surface grows by the size of the `Prim` enum plus its
-reduction machinery. If we later want to reclaim the ultra-minimalism,
-we can move pieces out of the kernel into untrusted extension traits
-without touching the logic.
+We accept a richer-than-HOL-Light set of builtins in exchange for
+shorter time-to-MVP and efficient FFI. The trade-off is that each
+builtin function-value has a minimal HOL axiomatization (§3.4) and
+the kernel's trust surface grows by the size of the primop enums
+plus their reduction machinery. Pieces can move out of the kernel
+into untrusted extension traits later without touching the logic.
 
-**TypeDef variants in full** (all `Copy`):
+#### Logically present today (MVP)
 
-| Variant | Logical type | Notes |
-|---|---|---|
-| `Bool` | `bool` | builtin |
-| `Bits` | `bits` | primitive infinite type — bit strings of arbitrary length |
-| `Bytes` | `bytes` | byte strings; the kernel ships this as a primitive but the user-side trust assumption `bytes ≅ list u8` connects it to a list theory |
-| `Int` | `int` | arbitrary-precision signed integer |
-| `Nat` | `nat` | arbitrary-precision unsigned integer (≥ 0) |
-| `U8`,`U16`,`U32`,`U64` | fixed-width unsigned | matches WASM `iN` for FFI |
-| `I8`,`I16`,`I32`,`I64` | fixed-width signed | same, signed |
-| `Fun(TypeRef, TypeRef)` | `α → β` | builtin |
-| `TVar(StrId)` | polymorphic type variable | name interned in `arena.strings` |
-| `Tyapp(StrId, TyArgsId)` | user-declared type constructor instance | arg list via `arena.tyargs` |
+- **Types**: `bool`, `bytes`, `int` (arbitrary precision signed),
+  `nat` (arbitrary precision unsigned). Type formers: `α → β`,
+  `TVar`, user-declared `Tyapp`.
+- **Terms**: the structural shapes (`Bound`, `Free`, `Const`,
+  `Comb`, `Abs`), polymorphic equality / inequality, the
+  quantifiers `∀` / `∃`, the Hilbert choice operator `ε`, the
+  combinators `Id` / `Comp` / `Iter` / `Ite`, the boolean
+  literals, arbitrary-precision integer literals, and byte
+  string literals.
+- **Primops**: the boolean truth-table operators, the basic
+  arithmetic on `nat` and `int`, and a handful of bytes
+  operations.
 
-**TermKind variants in full** — the public view. The private
-`TermDef` may have a different (typically more granular) layout for
-storage efficiency.
+Fixed-width integers (`u8` … `u64`, `i8` … `i64`) and bit-string
+literals (`Bits`) were intentionally postponed for MVP — they'll
+return with the same shape once the rest of the kernel API has
+settled.
 
-| Variant | What it represents | Source |
-|---|---|---|
-| `Bound(u32)` | de Bruijn index | structural |
-| `Free(StrId, TypeRef)` | free variable, named, typed | user/kernel-fresh |
-| `Const(StrId, TypeRef)` | user-declared HOL constant at an instance | user |
-| `Comb(TermRef, TermRef)` | application | structural |
-| `Abs(TypeRef, TermRef)` | binder; display hint via side table | structural |
-| `Eq(TermRef, TermRef)` | polymorphic equality | **builtin** |
-| `Ne(TermRef, TermRef)` | polymorphic inequality (sugar for `Not (Eq …)`) | **builtin** |
-| `Forall(TermRef)` | universal quantifier over `P : α → bool` | **builtin** |
-| `Exists(TermRef)` | existential quantifier over `P : α → bool` | **builtin** |
-| `True`, `False` | boolean literals | **builtin** |
-| `Op1(PrimOp1, TermRef)` | unary primitive op (logic, arithmetic, casts) | **builtin** (§3.4) |
-| `Op2(PrimOp2, TermRef, TermRef)` | binary primitive op | **builtin** (§3.4) |
-| `Ite(TermRef, TermRef)` | if-then-else: `Ite(cond, then) : α → α`, else via `Comb`; α inferred from `then` | **builtin** (§3.4) |
-| `Eps(TypeRef, TermRef)` | Hilbert choice: `(α → bool) → α` | **builtin** (§3.4) |
-| `Id(TypeRef)` | identity combinator: `α → α` | **builtin** (§3.4) |
-| `Comp(TermRef, TermRef)` | function composition: `(β → γ) → (α → β) → (α → γ)` | **builtin** (§3.4) |
-| `LiftOp1(PrimOp1)` | η-expansion of a unary primop into a function value | **builtin** (§3.4) |
-| `LiftOp2(PrimOp2)` | η-expansion of a binary primop into a function value | **builtin** (§3.4) |
-| `Iter(TermRef, TermRef)` | iter-n-times: `Iter(n, f) : α → α`; α inferred from `f`'s domain | **builtin** (§3.4) |
-| `U8(u8)` … `U64(u64)` | unsigned fixed-width literal | **builtin** |
-| `I8(i8)` … `I64(i64)` | signed fixed-width literal | **builtin** |
-| `IntInline(i64)` / `IntStored(IntId)` | arbitrary-precision integer literal | **builtin** |
-| `NatInline(u64)` / `NatStored(NatId)` | arbitrary-precision natural literal | **builtin** |
-| `BitsStored(BitsId)` | bit string literal | **builtin** |
-| `BytesStored(BytesId)` | byte string literal | **builtin** |
-
-`True`/`False` and `Eq` are baked in. The goal is simpler *code*,
-not minimal typing rules — a baked-in `True` skips threading Hilbert
-choice through the bootstrap.
-
-**Logical operators** (`Op1(LogicalNot, _)` and `Op2(LogicalAnd, ...)`
-etc.) are first-class primops rather than user-space definitions.
-Listing them in §3.4 with their reduction tables lets the kernel
-reduce concrete Boolean expressions cheaply — important for
-discharging hypothesis sets in tactics.
-
-**`Ite`** is first-class for the same reason. A naive
+**`Ite`** is first-class so the kernel can pattern-match on it
+directly and reduce on a literal `True`/`False` condition. A naïve
 encoding via `Comb` and a polymorphic `ite : bool → α → α → α`
 constant would require traversing two `Comb`s to recognize the
-shape; here the kernel can pattern-match `TermKind::Ite` directly,
-reduce on a literal `True`/`False` condition, and emit equality
-between the term and the matching branch via §4.4 rewrite.
+shape.
 
 User-defined constants (`Const(name, ty)`) and user-defined type
-constructors (`Tyapp(name, args)`) are the only TermKind/TypeDef
-variants that read from the user-side namespaces (§2.1). Every other
-variant is either structural or a builtin enum case.
+constructors (`Tyapp(name, args)`) are the only `TermKind`/`TypeDef`
+shapes that read from the user-side namespaces (§2.1). Every other
+variant is either structural or a builtin.
+
+[`prover-primops.md`]: ./prover-primops.md
 
 ### 3.3 Closed vs open terms
 
@@ -824,6 +700,46 @@ matters; everything else goes through user-defined types.
 `blob` in particular is a useful alias for `bytes` in the standard
 library; it's not a kernel concept.
 
+### 3.6 Subset types are unconditionally well-formed
+
+HOL Light's `new_type_definition` introduces an opaque type `t` from
+a predicate `P : α → bool` **and requires a proof** `∃x. P x` that
+the carrier is inhabited. The introduction axiom is then
+`(∀a:t. P (rep a)) ∧ (∀x:α. P x ⇔ rep (abs x) = x)` (or equivalent),
+with `abs : α → t` and `rep : t → α` as the bijection.
+
+Covalence drops the inhabitation side-condition. The introduction
+axiom is instead:
+
+```
+abs (rep a) = a                       — unconditional
+rep (abs x) = x  ⇔  P x ∨ ¬∃y. P y    — modified
+```
+
+When `P` is inhabited (`∃y. P y` holds) the right-hand side
+collapses to `P x`, recovering HOL Light's behaviour: `rep` is an
+injection whose image is exactly `{x | P x}`. When `P` is **not**
+inhabited, the disjunct `¬∃y. P y` becomes `true` and the second
+equation degenerates to `rep (abs x) = x` for *every* `x` — making
+`abs` and `rep` mutual inverses on the whole carrier. The subset
+type is then iso to its carrier.
+
+The win: **every well-formed type expression is decidably
+well-formed by structural inspection alone.** The kernel does not
+need to admit a witness theorem to typecheck `t = subset α P`.
+Untrusted code can run a type-checker that traverses
+`TypeDef` / `Tyapp` shapes without round-tripping through the proof
+engine — the kernel is needed only for deciding *equalities*.
+
+Soundness is preserved because:
+
+- The "empty subset" case is logically vacuous: any property
+  derived from `rep (abs x) = x` is consistent (it never fires
+  in models where `P` has the standard interpretation).
+- Choice (`ε`) is already in the kernel; the user can recover
+  HOL Light's inhabitation guarantee for a particular `t` by
+  proving `∃y. P y` separately and using it as needed.
+
 ---
 
 ## 4. Union-Find: Equality without Closure or Search
@@ -837,13 +753,23 @@ The same "no automatic work" discipline applies to assumption lookup
 (§2.5 Context inspection API) — the kernel doesn't search for relevant
 facts on the user's behalf.
 
+**Types have no UF.** The kernel offers no propositional equality
+on types, so there is nothing to canonicalise. Two types are equal
+iff they are structurally equal modulo their imports' substitutions
+(§2.2).
+
+**The term UF is external to the arena.** A separate `TermUf` data
+structure holds one entry per allocated term, indexed by
+`(Arc<Arena>, TermId)`. Arenas can be queried, frozen, and imported
+without touching equality state; UFs reference arenas but arenas do
+not reference UFs.
+
 ### 4.1 Canonical IDs are arena-tagged
 
-Each `TermUfEntry` stores `canonical: (Arc<Arena>, TermId)`. Same for
-`TypeUfEntry`. To check "are `a` and `b` known equal in this arena's
-view?", you walk both canonical chains and compare the final tuples
-— pointer equality on the `Arc<Arena>` (via `Arc::ptr_eq`) plus
-equality on the local ID.
+Each UF entry stores `canonical: (Arc<Arena>, TermId)`. To check
+"are `a` and `b` known equal in this UF's view?", walk both canonical
+chains and compare the final tuples — pointer equality on the
+`Arc<Arena>` (via `Arc::ptr_eq`) plus equality on the local ID.
 
 This matters for the **diamond import** case:
 
@@ -882,10 +808,9 @@ how much congruence reasoning to apply:
 
 The kernel doesn't pick a level; callers do.
 
-The analogous family exists for types (`type_eq_at_level`) once the
-type UF infrastructure is in place. At MVP these predicates exist but
-only ever return non-trivial answers from structural identity, since
-the kernel provides no rules to *introduce* type unions yet (§4.6).
+There is no analogous family for types: types compare structurally
+modulo their imports' substitutions, with no kernel-mediated
+canonicalisation.
 
 ### 4.3 Union primitives
 
@@ -917,8 +842,8 @@ manipulation** primitives:
 - **`rewrite(t, new_def)`** — caller has either a proof of, or a UF
   witness for, `t = (the term defined by new_def)`. The kernel
   replaces `terms[t].definition` with `new_def`. After rewrite, any
-  other term holding a child `TermRef::Local(t)` will see the new
-  structural form.
+  other term holding a `TermRef` to `t` will see the new structural
+  form.
 - **`copy_term(t) -> TermId`** — allocate a fresh `TermId` with the
   *same* `TermDef` as `t` and place it in `t`'s UF class
   (`canonical = canonical_term(t)`, plus the inherited
@@ -972,39 +897,6 @@ Three reasons:
 
 Library code on top of the kernel can implement closure strategies
 and fact-search strategies as untrusted utilities.
-
-### 4.6 Type union-find as derived-equality cache
-
-The arena's `uf_types` mirrors `uf_terms` structurally. The kernel
-exposes `type_eq_at_level(a, b, k)` predicates analogous to the term
-side.
-
-It is **purely a cache for derived equalities** that fall out of
-structural reasoning:
-
-- **Foreign-import propagation.** Importing the *same* type from a
-  shared ancestor arena makes both copies share a canonical
-  (`(Arc<Arena>, TypeId)` of the source; pointer-equal because they
-  hold the same `Arc` allocation).
-- **Congruence steps.** If `Tyapp(f, [a₁, …, aₙ])` and `Tyapp(f, [b₁,
-  …, bₙ])` have all `aᵢ` known canonically equal, the kernel can
-  union the two applications via the type analog of
-  `union_if_congruent_step`.
-
-There is **no kernel rule** to introduce arbitrary type unions — no
-analog of `union(a, b)` taking a "proof" of `a = b` at the type
-level, because we deliberately do not have a type-equality proposition
-in the logic. Type equalities at this level are only ever structural
-or congruential, never propositional. This avoids the typing-rule
-complications of user-driven type isomorphisms (a term well-typed
-under one set of type equalities is generally ill-typed under
-another).
-
-Isomorphisms between *types* — what you actually want for
-content-addressed types and for importing object-logic theorems —
-happen at the **term level**, via bijection axioms on opaque types
-declared through the concept system (§6.4 and §7.4). The type UF
-stays purely structural.
 
 ---
 

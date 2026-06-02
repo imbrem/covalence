@@ -48,6 +48,23 @@ in the root [Context](#26-context)), tactics, proof terms, automatic
 equality reasoning beyond what the inference rules do explicitly, or
 automatic search/lookup of facts beyond explicit API calls.
 
+### 1.1 The core invariant: well-formedness is syntactic
+
+> **The empty context is never privileged.** Axioms are assumptions
+> in the root context; oracles enter the same way. Therefore:
+> well-formedness of a type or a term — whether it can be *formed*
+> at all — must be decidable **purely by syntactic inspection**,
+> never by consulting what is provable.
+
+Anything else couples the type system to a particular set of axioms
+and silently changes when assumptions are added or removed. Every
+primitive in the kernel that classically *would* inspect provability
+(HOL Light's `new_type_definition`, `new_specification`, …) has to
+be reworked so the proof obligation lands at the **use site** as an
+ordinary hypothesis, never at the formation site as a side condition.
+This is the principle behind the subset-type modification of §3.6
+and the syntactic side conditions on type operators.
+
 ---
 
 ## 2. Core Data Model
@@ -448,6 +465,19 @@ the kernel's trust surface grows by the size of the primop enums
 plus their reduction machinery. Pieces can move out of the kernel
 into untrusted extension traits later without touching the logic.
 
+The general principle is **derive, don't trust** — primitive status
+should only buy you something derivation can't. For *most*
+structural types (sums, options, sexpr-style cons cells, …) a
+typedef-plus-representation-hint gives the same runtime layout as a
+hard-coded primitive while keeping the trusted core small. The
+kernel today still ships `pair` / `unit` / `sum` and a few related
+shapes as primitives **for now** — they make MVP implementation
+easier — but the long-term direction is to push them through the
+untrusted API on top of a smaller trusted core (e.g. a 2-pointer
+cell that all of `pair`, `sum`, `option`, sexpr cells can compile
+into). This is exactly why the kernel's term and type
+representations are kept opaque (§3.1).
+
 #### Logically present today (MVP)
 
 - **Types**: `bool`, `bytes`, `int` (arbitrary precision signed),
@@ -738,13 +768,23 @@ matters; everything else goes through user-defined types.
 `blob` in particular is a useful alias for `bytes` in the standard
 library; it's not a kernel concept.
 
-### 3.6 Subset types are unconditionally well-formed
+### 3.6 Subset types and type-operator formation
+
+Per the core invariant (§1.1), every well-formedness check on a
+type expression has to be **purely syntactic**. This subsection
+spells out how the classical HOL Light primitives are reworked to
+keep that promise.
+
+#### Subset types are unconditionally well-formed
 
 HOL Light's `new_type_definition` introduces an opaque type `t` from
 a predicate `P : α → bool` **and requires a proof** `∃x. P x` that
 the carrier is inhabited. The introduction axiom is then
 `(∀a:t. P (rep a)) ∧ (∀x:α. P x ⇔ rep (abs x) = x)` (or equivalent),
-with `abs : α → t` and `rep : t → α` as the bijection.
+with `abs : α → t` and `rep : t → α` as the bijection. The
+inhabitation requirement is exactly the kind of side condition the
+core invariant forbids: it inspects what is provable to decide
+whether the type can be formed.
 
 Covalence drops the inhabitation side-condition. The introduction
 axiom is instead:
@@ -760,23 +800,94 @@ injection whose image is exactly `{x | P x}`. When `P` is **not**
 inhabited, the disjunct `¬∃y. P y` becomes `true` and the second
 equation degenerates to `rep (abs x) = x` for *every* `x` — making
 `abs` and `rep` mutual inverses on the whole carrier. The subset
-type is then iso to its carrier.
+type is then iso to its carrier (a consistent reading: the empty
+`{x | P x}` doesn't constrain anything).
 
-The win: **every well-formed type expression is decidably
-well-formed by structural inspection alone.** The kernel does not
-need to admit a witness theorem to typecheck `t = subset α P`.
-Untrusted code can run a type-checker that traverses
-`TypeDef` / `Tyapp` shapes without round-tripping through the proof
-engine — the kernel is needed only for deciding *equalities*.
+`rep (abs (ε P)) = ε P` holds unconditionally — the same
+Hilbert-epsilon bargain we already pay for term-level existentials,
+lifted to type formation. The nonemptiness obligation moves from
+a meta-level side condition to an object-level disjunct that
+propagates to use sites, where an assumption `P a` discharges
+`∃y. P y` and collapses the disjunct to ordinary behaviour. The
+cost lands exactly where the user hasn't established inhabitation
+— which is correct.
 
-Soundness is preserved because:
+#### Other existence obligations follow the same pattern
 
-- The "empty subset" case is logically vacuous: any property
-  derived from `rep (abs x) = x` is consistent (it never fires
-  in models where `P` has the standard interpretation).
-- Choice (`ε`) is already in the kernel; the user can recover
-  HOL Light's inhabitation guarantee for a particular `t` by
-  proving `∃y. P y` separately and using it as needed.
+The disjunct trick handles the typedef nonemptiness case; the
+remaining classical existence side conditions get the same
+treatment:
+
+- **`new_specification`** is already `ε`-derived; stop discharging
+  the existence side condition, expose the same disjunct at use
+  sites.
+- **`new_definition`** has trivial existence (the witness is the
+  body); only syntactic conditions remain — closedness,
+  type-variable scoping.
+- **`new_type`** (opaque-type introduction) and the standard
+  **infinity axiom**: the kernel ships no inhabitation built-in.
+  If the user wants `t` inhabited they assume `∃x : t. True`; the
+  assumption sits in the context, never in the formation rule.
+
+None of these consults the assumption set, so all are consistent
+with the core invariant.
+
+#### Syntactic side conditions on `subset P`
+
+To form the subset type `subset P` the kernel checks, by structural
+recursion on `P`, that:
+
+- **`P` is locally closed.** No escaping de Bruijn indices.
+- **`fv(P) = ∅`.** No free term variables. (A free term variable
+  in `P` would make the *type* depend on a term context — the
+  real hazard. Free type variables are fine; see below.)
+- **Free type variables in `P` are permitted** — they make
+  `subset P` a polymorphic type operator parameterised by those
+  variables.
+
+All three are decidable by structural inspection — none touches the
+assumption set or the UF.
+
+#### Type-variable ordering: user-provided
+
+The order of a type operator's parameters is part of its
+**interface**, not an artifact of how its defining predicate is
+written. The user declares the order at definition time (the
+Isabelle convention), and the kernel checks that the declared list
+is a permutation of `tyvars(P)`. Occurrence order would couple the
+operator's interface to the internal shape of `P` — innocuous
+refactors of `P` would silently permute the operator's arguments.
+
+There are two regimes for tyvar ordering across the kernel:
+
+- **Declared order** wherever a user-facing interface exists —
+  type operators, polymorphic constants.
+- **Canonical order** (occurrence over a normal form) for purely
+  internal machinery — serialisation, auto-generalisation,
+  content-addressing of operators with no user-declared list.
+
+#### Content-addressed identity for type operators
+
+A type operator's identity is `(normalised P, declared tyvar
+order)`. The user-facing name is a **namespace binding** pointing
+at that address — it is not the identity. Two operators with the
+same `P` but different declared orders are *genuinely different*
+operators (different interfaces), so they hash differently.
+
+The canonical tyvar ordering used by the normaliser must be the
+same one used by constant polymorphism and by serialisation, or
+the same logical object hashes differently along different paths.
+Threading one canonical order through all three is part of the
+content-addressing contract.
+
+#### Why this matters operationally
+
+**Every well-formed type expression is decidably well-formed by
+structural inspection alone.** The kernel does not need to admit a
+witness theorem to typecheck `t = subset α P`. Untrusted code can
+run a type-checker that traverses `TypeDef` / `Tyapp` shapes
+without round-tripping through the proof engine — the kernel is
+needed only for deciding *equalities*.
 
 ---
 

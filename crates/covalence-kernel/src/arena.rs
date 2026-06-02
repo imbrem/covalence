@@ -119,6 +119,71 @@ impl Arena {
         &self.terms[id.0 as usize]
     }
 
+    /// Try one **primitive-op reduction step** on `t`.
+    ///
+    /// Fires when `t` resolves to a primop (`Op1` / `Op2`) applied to
+    /// fully-literal arguments (booleans, inline / interned nat / int
+    /// literals). Returns the freshly-allocated reduced term, or
+    /// `None` if no rule applies, or if any required dereference fails
+    /// (today only on unusual encodings; in future, on hash-only
+    /// imports the kernel can't see into).
+    ///
+    /// Foreign-arena children are **transparently dereferenced** —
+    /// `Op1(NatSucc, foreign-import-of-NatInline(4))` reduces to local
+    /// `NatInline(5)`. The reduction is purely a computational fact
+    /// (every input is a literal); algebraic identities and
+    /// definitional unfoldings are theorems, not reductions.
+    pub fn reduce_primop(&mut self, t: crate::term::TermRef) -> Option<crate::term::TermRef> {
+        let result = {
+            let (active, def) = self.deref_term(t)?;
+            crate::reduce::compute(active, def)?
+        };
+        let id = self.alloc_prim_result(result);
+        Some(crate::term::TermRef::local(id))
+    }
+
+    fn alloc_prim_result(&mut self, r: crate::reduce::PrimResult) -> TermId {
+        use crate::reduce::PrimResult;
+        match r {
+            PrimResult::Def(d) => self.alloc_term(d),
+            PrimResult::NatBig(n) => {
+                let id = self.intern_nat(n);
+                self.alloc_term(TermDef::NatStored(id))
+            }
+            PrimResult::IntBig(i) => {
+                let id = self.intern_int(i);
+                self.alloc_term(TermDef::IntStored(id))
+            }
+        }
+    }
+
+    /// Follow foreign-arena references starting from `r` and return the
+    /// resulting `TermDef` together with the arena that hosts it.
+    ///
+    /// `r` is interpreted in this arena's namespace; on each foreign hop,
+    /// the walker descends into the imported arena and re-resolves the
+    /// source id there. The returned `TermDef`'s `TermRef` children are
+    /// valid in the **returned** arena, not necessarily in `self`.
+    ///
+    /// Returns `None` when the chain cannot be fully resolved — today
+    /// that's only an unexpected encoding; the eventual cause will be
+    /// **hash-only imports** (arenas referenced by content hash whose
+    /// bodies we can't inspect locally). Callers must treat the
+    /// fallibility as "the kernel can't see far enough to decide".
+    pub fn deref_term<'a>(&'a self, r: TermRef) -> Option<(&'a Arena, TermDef)> {
+        let mut cur: &Arena = self;
+        let mut r_in_cur = r;
+        loop {
+            if let Some(local) = r_in_cur.as_local() {
+                return Some((cur, *cur.term_def(local)));
+            }
+            let foreign = r_in_cur.as_foreign()?;
+            let (import_id, source_id) = cur.foreign_term(foreign);
+            cur = &cur.imports[import_id.0 as usize];
+            r_in_cur = TermRef::local(source_id);
+        }
+    }
+
     /// Re-infer the type of a term, walking under binders if needed.
     ///
     /// `alloc_term` caches a type at insertion but can only handle the

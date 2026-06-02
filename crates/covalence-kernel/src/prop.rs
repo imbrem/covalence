@@ -27,7 +27,6 @@ use std::sync::Arc;
 use crate::arena::Arena;
 use crate::id::{StrId, TermId};
 use crate::primop::{PrimOp1, PrimOp2};
-use crate::reduce;
 use crate::term::{TermDef, TermRef};
 use crate::ty::TypeRef;
 
@@ -541,7 +540,9 @@ impl Thm {
         if !arena.is_well_typed(t) {
             return Err(ProofError::IllTypedInput);
         }
-        let reduced = reduce::step(arena, TermRef::local(t)).ok_or(ProofError::NotReducible)?;
+        let reduced = arena
+            .reduce_primop(TermRef::local(t))
+            .ok_or(ProofError::NotReducible)?;
         let eq = arena.alloc_term(TermDef::Eq(TermRef::local(t), reduced));
         Ok(Self {
             prop: Prop::new(ctx, eq),

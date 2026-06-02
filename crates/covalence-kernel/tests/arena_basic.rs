@@ -5,7 +5,6 @@
 use std::sync::Arc;
 
 use covalence_kernel::{Arena, PrimOp2, TermDef, TermRef, TypeDef, TypeInfo, TypeRef};
-use covalence_kernel::reduce;
 use covalence_kernel::ty::{BuiltinTy, TypeRefKind};
 
 /// Helper: intern a name and build a Free term in one go.
@@ -1127,7 +1126,7 @@ fn reduce_logical_not_on_true() {
     let mut a = Arena::new();
     let t = a.alloc_term(TermDef::Bool(true));
     let not_t = a.alloc_term(TermDef::Op1(PrimOp1::LogicalNot, TermRef::local(t)));
-    let reduced = reduce::step(&mut a, TermRef::local(not_t)).unwrap_or(TermRef::local(not_t));
+    let reduced = a.reduce_primop(TermRef::local(not_t)).unwrap_or(TermRef::local(not_t));
     assert_eq!(a.term_def(reduced.as_local().unwrap()), &TermDef::Bool(false));
 }
 
@@ -1137,13 +1136,13 @@ fn reduce_logical_and_truth_table() {
     let t = a.alloc_term(TermDef::Bool(true));
     let f = a.alloc_term(TermDef::Bool(false));
     let tt = a.alloc_term(TermDef::Op2(PrimOp2::LogicalAnd, TermRef::local(t), TermRef::local(t)));
-    let r = reduce::step(&mut a, TermRef::local(tt)).unwrap_or(TermRef::local(tt));
+    let r = a.reduce_primop(TermRef::local(tt)).unwrap_or(TermRef::local(tt));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(true));
     let tf = a.alloc_term(TermDef::Op2(PrimOp2::LogicalAnd, TermRef::local(t), TermRef::local(f)));
-    let r = reduce::step(&mut a, TermRef::local(tf)).unwrap_or(TermRef::local(tf));
+    let r = a.reduce_primop(TermRef::local(tf)).unwrap_or(TermRef::local(tf));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(false));
     let ft = a.alloc_term(TermDef::Op2(PrimOp2::LogicalAnd, TermRef::local(f), TermRef::local(t)));
-    let r = reduce::step(&mut a, TermRef::local(ft)).unwrap_or(TermRef::local(ft));
+    let r = a.reduce_primop(TermRef::local(ft)).unwrap_or(TermRef::local(ft));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(false));
 }
 
@@ -1153,7 +1152,7 @@ fn reduce_nat_succ() {
     let mut a = Arena::new();
     let five = a.alloc_term(TermDef::nat_inline(5));
     let succ_five = a.alloc_term(TermDef::Op1(PrimOp1::NatSucc, TermRef::local(five)));
-    let r = reduce::step(&mut a, TermRef::local(succ_five)).unwrap_or(TermRef::local(succ_five));
+    let r = a.reduce_primop(TermRef::local(succ_five)).unwrap_or(TermRef::local(succ_five));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::nat_inline(6));
 }
 
@@ -1167,7 +1166,7 @@ fn reduce_nat_add() {
         TermRef::local(five),
         TermRef::local(three),
     ));
-    let r = reduce::step(&mut a, TermRef::local(sum)).unwrap_or(TermRef::local(sum));
+    let r = a.reduce_primop(TermRef::local(sum)).unwrap_or(TermRef::local(sum));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::nat_inline(8));
 }
 
@@ -1181,7 +1180,7 @@ fn reduce_nat_overflow_promotes_to_stored() {
         TermRef::local(big),
         TermRef::local(one),
     ));
-    let r = reduce::step(&mut a, TermRef::local(sum)).unwrap_or(TermRef::local(sum));
+    let r = a.reduce_primop(TermRef::local(sum)).unwrap_or(TermRef::local(sum));
     let def = a.term_def(r.as_local().unwrap());
     match def {
         TermDef::NatStored(id) => {
@@ -1203,7 +1202,7 @@ fn reduce_nat_div_by_zero_pinned_to_zero() {
         TermRef::local(x),
         TermRef::local(zero),
     ));
-    let r = reduce::step(&mut a, TermRef::local(q)).unwrap_or(TermRef::local(q));
+    let r = a.reduce_primop(TermRef::local(q)).unwrap_or(TermRef::local(q));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::nat_inline(0));
 }
 
@@ -1218,7 +1217,7 @@ fn reduce_nat_comparisons() {
         TermRef::local(two),
         TermRef::local(three),
     ));
-    let r = reduce::step(&mut a, TermRef::local(lt)).unwrap_or(TermRef::local(lt));
+    let r = a.reduce_primop(TermRef::local(lt)).unwrap_or(TermRef::local(lt));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(true));
     // 3 ≤ 2 = False
     let le = a.alloc_term(TermDef::Op2(
@@ -1226,7 +1225,7 @@ fn reduce_nat_comparisons() {
         TermRef::local(three),
         TermRef::local(two),
     ));
-    let r = reduce::step(&mut a, TermRef::local(le)).unwrap_or(TermRef::local(le));
+    let r = a.reduce_primop(TermRef::local(le)).unwrap_or(TermRef::local(le));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(false));
 }
 
@@ -1240,7 +1239,7 @@ fn reduce_int_arithmetic() {
         TermRef::local(five),
         TermRef::local(neg_three),
     ));
-    let r = reduce::step(&mut a, TermRef::local(sum)).unwrap_or(TermRef::local(sum));
+    let r = a.reduce_primop(TermRef::local(sum)).unwrap_or(TermRef::local(sum));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::int_inline(2));
 }
 
@@ -1250,7 +1249,7 @@ fn reduce_nat_popcount() {
     let mut a = Arena::new();
     let v = a.alloc_term(TermDef::nat_inline(0xF0F0));
     let pop = a.alloc_term(TermDef::Op1(PrimOp1::NatPopcount, TermRef::local(v)));
-    let r = reduce::step(&mut a, TermRef::local(pop)).unwrap_or(TermRef::local(pop));
+    let r = a.reduce_primop(TermRef::local(pop)).unwrap_or(TermRef::local(pop));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::nat_inline(8));
 }
 
@@ -1260,7 +1259,7 @@ fn reduce_noop_on_unreducible() {
     let mut a = Arena::new();
     let nat = a.nat_ty();
     let x = alloc_free(&mut a, "x", nat);
-    let r = reduce::step(&mut a, TermRef::local(x)).unwrap_or(TermRef::local(x));
+    let r = a.reduce_primop(TermRef::local(x)).unwrap_or(TermRef::local(x));
     assert_eq!(r, TermRef::local(x));
 }
 
@@ -1312,13 +1311,13 @@ fn rewrite_propagates_to_parents() {
         TermRef::local(t),
     ));
     // Originally: Not(True). reduce → False.
-    let r = reduce::step(&mut a, TermRef::local(parent)).unwrap_or(TermRef::local(parent));
+    let r = a.reduce_primop(TermRef::local(parent)).unwrap_or(TermRef::local(parent));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(false));
     // Now rewrite t to False (unchecked).
     a.rewrite(t, TermDef::Bool(false));
     // Parent's Op1 still points at the same TermId; structural lookup
     // of t now returns False. Reducing parent again gives True.
-    let r2 = reduce::step(&mut a, TermRef::local(parent)).unwrap_or(TermRef::local(parent));
+    let r2 = a.reduce_primop(TermRef::local(parent)).unwrap_or(TermRef::local(parent));
     assert_eq!(a.term_def(r2.as_local().unwrap()), &TermDef::Bool(true));
 }
 

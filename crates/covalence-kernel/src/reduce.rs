@@ -1,206 +1,167 @@
-//! Top-level reduction rules.
+//! Computation table for the kernel's single `reduce_primop`.
 //!
-//! The kernel only reduces **fully-constant** expressions: a primop
-//! applied to literals returns its computed literal result.
-//! Algebraic identities like `a + 0 = a`, short-circuit shortcuts
-//! like `LogicalAnd False x = False`, and definitional unfoldings
-//! like `Comb(Id, x) = x` are not kernel reductions — they're
-//! ordinary theorems proved against the kernel's axioms.
+//! Public entry point is [`Arena::reduce_primop`](crate::Arena::reduce_primop).
+//! This module only owns the per-op pure-computation tables, kept separate
+//! from `arena.rs` so the audit surface for "what does the kernel reduce?"
+//! lives in one ~150-line file.
 //!
-//! Current coverage:
-//!
-//! - **Boolean primops** — full truth tables on `(True, False)` args.
-//! - **`Nat`** — `Succ`, `Pred`, `Popcount` on inline literals;
-//!   `Add`, `Sub`, `Mul`, `Div`, `Mod`, `Eq`, `Lt`, `Le` on pairs of
-//!   inline literals. (`NatDiv` and `NatMod` saturate to zero on a
-//!   zero divisor — both args must still be literals.)
-//! - **`Int`** — `Neg` on an inline literal; `Add`, `Sub`, `Mul`,
-//!   `Eq`, `Lt`, `Le` on pairs of inline literals.
+//! Discipline: a primop reduces **iff every input is a literal**. No
+//! algebraic identities, no short-circuits, no definitional unfoldings.
+//! Those are theorems over the kernel's axioms, not kernel reductions.
 
 use crate::arena::Arena;
 use crate::primop::{PrimOp1, PrimOp2};
-use crate::term::{TermDef, TermRef};
+use crate::term::TermDef;
 
-/// Try one top-level reduction step on `t`. Returns the reduced
-/// `TermRef` if a rule fires, otherwise `None`. The arena's UF is
-/// **not** modified — equality recording is the caller's
-/// responsibility (typically via [`Thm::reduce`](crate::Thm::reduce)).
-pub fn step(arena: &mut Arena, t: TermRef) -> Option<TermRef> {
-    let local_id = t.as_local()?;
-    let def = *arena.term_def(local_id);
+/// What `compute` produces — either a plain `TermDef` (no interning
+/// needed) or a payload that has to land in `arena`'s interning tables.
+pub(crate) enum PrimResult {
+    Def(TermDef),
+    NatBig(covalence_types::Nat),
+    IntBig(covalence_types::Int),
+}
+
+/// Try to reduce `def` (the top-level term being reduced) interpreted in
+/// `arena`. `def` is expected to be an applied primop; child literals are
+/// dereferenced through `arena` (transparently following foreign
+/// imports). Returns `None` if no rule fires or any child can't be
+/// dereferenced.
+pub(crate) fn compute(arena: &Arena, def: TermDef) -> Option<PrimResult> {
     match def {
-        TermDef::Op1(op, x) => reduce_op1(arena, op, x),
-        TermDef::Op2(op, a, b) => reduce_op2(arena, op, a, b),
+        TermDef::Op1(op, x) => {
+            let (_, x_def) = arena.deref_term(x)?;
+            apply_op1(op, x_def)
+        }
+        TermDef::Op2(op, a, b) => {
+            let (_, a_def) = arena.deref_term(a)?;
+            let (_, b_def) = arena.deref_term(b)?;
+            apply_op2(op, a_def, b_def)
+        }
         _ => None,
     }
 }
 
-fn reduce_op1(arena: &mut Arena, op: PrimOp1, x: TermRef) -> Option<TermRef> {
+fn apply_op1(op: PrimOp1, x: TermDef) -> Option<PrimResult> {
     use PrimOp1::*;
-    let x_id = x.as_local()?;
-    let x_def = *arena.term_def(x_id);
-    let new_def = match (op, x_def) {
-        // Boolean negation.
-        (LogicalNot, TermDef::Bool(true)) => TermDef::Bool(false),
-        (LogicalNot, TermDef::Bool(false)) => TermDef::Bool(true),
-        // Naturals: numeral normalisation.
+    let def = match (op, x) {
+        (LogicalNot, TermDef::Bool(a)) => TermDef::Bool(!a),
         (NatSucc, TermDef::NatInline(p)) => {
             let v = p.to_u64();
-            if let Some(next) = v.checked_add(1) {
-                TermDef::nat_inline(next)
-            } else {
-                use covalence_types::Nat;
-                let big = Nat::from(v) + Nat::from(1u64);
-                let id = arena.intern_nat(big);
-                TermDef::NatStored(id)
-            }
+            return Some(match v.checked_add(1) {
+                Some(n) => PrimResult::Def(TermDef::nat_inline(n)),
+                None => {
+                    use covalence_types::Nat;
+                    PrimResult::NatBig(Nat::from(v) + Nat::from(1u64))
+                }
+            });
         }
-        (NatPred, TermDef::NatInline(p)) => {
-            TermDef::nat_inline(p.to_u64().saturating_sub(1))
-        }
-        (NatPopcount, TermDef::NatInline(p)) => {
-            TermDef::nat_inline(p.to_u64().count_ones() as u64)
-        }
-        // Integer negation.
+        (NatPred, TermDef::NatInline(p)) => TermDef::nat_inline(p.to_u64().saturating_sub(1)),
+        (NatPopcount, TermDef::NatInline(p)) => TermDef::nat_inline(p.to_u64().count_ones() as u64),
         (IntNeg, TermDef::IntInline(p)) => {
             let v = p.to_i64();
-            if let Some(neg) = v.checked_neg() {
-                TermDef::int_inline(neg)
-            } else {
-                // i64::MIN — fall through; caller can handle via a wider int.
-                return None;
-            }
+            // i64::MIN can't be negated to i64; defer to a wider int caller.
+            TermDef::int_inline(v.checked_neg()?)
         }
         _ => return None,
     };
-    Some(TermRef::local(arena.alloc_term(new_def)))
+    Some(PrimResult::Def(def))
 }
 
-fn reduce_op2(arena: &mut Arena, op: PrimOp2, a: TermRef, b: TermRef) -> Option<TermRef> {
+fn apply_op2(op: PrimOp2, a: TermDef, b: TermDef) -> Option<PrimResult> {
     use PrimOp2::*;
-    let a_id = a.as_local()?;
-    let b_id = b.as_local()?;
-    let a_def = *arena.term_def(a_id);
-    let b_def = *arena.term_def(b_id);
-    let new_def = match (op, a_def, b_def) {
-        // Boolean: full truth tables. Both args must be literals.
-        (LogicalAnd, TermDef::Bool(true), TermDef::Bool(true)) => TermDef::Bool(true),
-        (LogicalAnd, TermDef::Bool(true), TermDef::Bool(false)) => TermDef::Bool(false),
-        (LogicalAnd, TermDef::Bool(false), TermDef::Bool(true)) => TermDef::Bool(false),
-        (LogicalAnd, TermDef::Bool(false), TermDef::Bool(false)) => TermDef::Bool(false),
-        (LogicalOr, TermDef::Bool(true), TermDef::Bool(true)) => TermDef::Bool(true),
-        (LogicalOr, TermDef::Bool(true), TermDef::Bool(false)) => TermDef::Bool(true),
-        (LogicalOr, TermDef::Bool(false), TermDef::Bool(true)) => TermDef::Bool(true),
-        (LogicalOr, TermDef::Bool(false), TermDef::Bool(false)) => TermDef::Bool(false),
-        (LogicalXor, TermDef::Bool(true), TermDef::Bool(true)) => TermDef::Bool(false),
-        (LogicalXor, TermDef::Bool(true), TermDef::Bool(false)) => TermDef::Bool(true),
-        (LogicalXor, TermDef::Bool(false), TermDef::Bool(true)) => TermDef::Bool(true),
-        (LogicalXor, TermDef::Bool(false), TermDef::Bool(false)) => TermDef::Bool(false),
-        (LogicalImp, TermDef::Bool(true), TermDef::Bool(true)) => TermDef::Bool(true),
-        (LogicalImp, TermDef::Bool(true), TermDef::Bool(false)) => TermDef::Bool(false),
-        (LogicalImp, TermDef::Bool(false), TermDef::Bool(true)) => TermDef::Bool(true),
-        (LogicalImp, TermDef::Bool(false), TermDef::Bool(false)) => TermDef::Bool(true),
-        (LogicalNand, TermDef::Bool(true), TermDef::Bool(true)) => TermDef::Bool(false),
-        (LogicalNand, TermDef::Bool(true), TermDef::Bool(false)) => TermDef::Bool(true),
-        (LogicalNand, TermDef::Bool(false), TermDef::Bool(true)) => TermDef::Bool(true),
-        (LogicalNand, TermDef::Bool(false), TermDef::Bool(false)) => TermDef::Bool(true),
-        (LogicalNor, TermDef::Bool(true), TermDef::Bool(true)) => TermDef::Bool(false),
-        (LogicalNor, TermDef::Bool(true), TermDef::Bool(false)) => TermDef::Bool(false),
-        (LogicalNor, TermDef::Bool(false), TermDef::Bool(true)) => TermDef::Bool(false),
-        (LogicalNor, TermDef::Bool(false), TermDef::Bool(false)) => TermDef::Bool(true),
+    let def = match (op, a, b) {
+        // -- booleans: full truth tables --
+        (LogicalAnd, TermDef::Bool(x), TermDef::Bool(y)) => TermDef::Bool(x && y),
+        (LogicalOr, TermDef::Bool(x), TermDef::Bool(y)) => TermDef::Bool(x || y),
+        (LogicalXor, TermDef::Bool(x), TermDef::Bool(y)) => TermDef::Bool(x ^ y),
+        (LogicalImp, TermDef::Bool(x), TermDef::Bool(y)) => TermDef::Bool(!x || y),
+        (LogicalNand, TermDef::Bool(x), TermDef::Bool(y)) => TermDef::Bool(!(x && y)),
+        (LogicalNor, TermDef::Bool(x), TermDef::Bool(y)) => TermDef::Bool(!(x || y)),
 
-        // Naturals: arithmetic on inline literals.
+        // -- naturals: arithmetic + comparisons --
         (NatAdd, TermDef::NatInline(p), TermDef::NatInline(q)) => {
             let (av, bv) = (p.to_u64(), q.to_u64());
-            if let Some(sum) = av.checked_add(bv) {
-                TermDef::nat_inline(sum)
-            } else {
-                use covalence_types::Nat;
-                let big = Nat::from(av) + Nat::from(bv);
-                let id = arena.intern_nat(big);
-                TermDef::NatStored(id)
-            }
+            return Some(match av.checked_add(bv) {
+                Some(n) => PrimResult::Def(TermDef::nat_inline(n)),
+                None => {
+                    use covalence_types::Nat;
+                    PrimResult::NatBig(Nat::from(av) + Nat::from(bv))
+                }
+            });
         }
         (NatSub, TermDef::NatInline(p), TermDef::NatInline(q)) => {
             TermDef::nat_inline(p.to_u64().saturating_sub(q.to_u64()))
         }
         (NatMul, TermDef::NatInline(p), TermDef::NatInline(q)) => {
             let (av, bv) = (p.to_u64(), q.to_u64());
-            if let Some(prod) = av.checked_mul(bv) {
-                TermDef::nat_inline(prod)
-            } else {
-                use covalence_types::Nat;
-                let big = Nat::from(av) * Nat::from(bv);
-                let id = arena.intern_nat(big);
-                TermDef::NatStored(id)
-            }
+            return Some(match av.checked_mul(bv) {
+                Some(n) => PrimResult::Def(TermDef::nat_inline(n)),
+                None => {
+                    use covalence_types::Nat;
+                    PrimResult::NatBig(Nat::from(av) * Nat::from(bv))
+                }
+            });
         }
         (NatDiv, TermDef::NatInline(p), TermDef::NatInline(q)) => {
-            let qv = q.to_u64();
-            // Axiom: divide-by-zero saturates to zero.
-            let result = if qv == 0 { 0 } else { p.to_u64() / qv };
-            TermDef::nat_inline(result)
+            let (pv, qv) = (p.to_u64(), q.to_u64());
+            TermDef::nat_inline(if qv == 0 { 0 } else { pv / qv })
         }
         (NatMod, TermDef::NatInline(p), TermDef::NatInline(q)) => {
-            let qv = q.to_u64();
-            let result = if qv == 0 { 0 } else { p.to_u64() % qv };
-            TermDef::nat_inline(result)
+            let (pv, qv) = (p.to_u64(), q.to_u64());
+            TermDef::nat_inline(if qv == 0 { 0 } else { pv % qv })
         }
         (NatEq, TermDef::NatInline(p), TermDef::NatInline(q)) => {
-            if p.to_u64() == q.to_u64() { TermDef::Bool(true) } else { TermDef::Bool(false) }
+            TermDef::Bool(p.to_u64() == q.to_u64())
         }
         (NatLt, TermDef::NatInline(p), TermDef::NatInline(q)) => {
-            if p.to_u64() < q.to_u64() { TermDef::Bool(true) } else { TermDef::Bool(false) }
+            TermDef::Bool(p.to_u64() < q.to_u64())
         }
         (NatLe, TermDef::NatInline(p), TermDef::NatInline(q)) => {
-            if p.to_u64() <= q.to_u64() { TermDef::Bool(true) } else { TermDef::Bool(false) }
+            TermDef::Bool(p.to_u64() <= q.to_u64())
         }
 
-        // Integers: arithmetic on inline literals.
+        // -- integers: arithmetic + comparisons --
         (IntAdd, TermDef::IntInline(p), TermDef::IntInline(q)) => {
             let (av, bv) = (p.to_i64(), q.to_i64());
-            if let Some(sum) = av.checked_add(bv) {
-                TermDef::int_inline(sum)
-            } else {
-                use covalence_types::Int;
-                let big = Int::from(av) + Int::from(bv);
-                let id = arena.intern_int(big);
-                TermDef::IntStored(id)
-            }
+            return Some(match av.checked_add(bv) {
+                Some(n) => PrimResult::Def(TermDef::int_inline(n)),
+                None => {
+                    use covalence_types::Int;
+                    PrimResult::IntBig(Int::from(av) + Int::from(bv))
+                }
+            });
         }
         (IntSub, TermDef::IntInline(p), TermDef::IntInline(q)) => {
             let (av, bv) = (p.to_i64(), q.to_i64());
-            if let Some(diff) = av.checked_sub(bv) {
-                TermDef::int_inline(diff)
-            } else {
-                use covalence_types::Int;
-                let big = Int::from(av) - Int::from(bv);
-                let id = arena.intern_int(big);
-                TermDef::IntStored(id)
-            }
+            return Some(match av.checked_sub(bv) {
+                Some(n) => PrimResult::Def(TermDef::int_inline(n)),
+                None => {
+                    use covalence_types::Int;
+                    PrimResult::IntBig(Int::from(av) - Int::from(bv))
+                }
+            });
         }
         (IntMul, TermDef::IntInline(p), TermDef::IntInline(q)) => {
             let (av, bv) = (p.to_i64(), q.to_i64());
-            if let Some(prod) = av.checked_mul(bv) {
-                TermDef::int_inline(prod)
-            } else {
-                use covalence_types::Int;
-                let big = Int::from(av) * Int::from(bv);
-                let id = arena.intern_int(big);
-                TermDef::IntStored(id)
-            }
+            return Some(match av.checked_mul(bv) {
+                Some(n) => PrimResult::Def(TermDef::int_inline(n)),
+                None => {
+                    use covalence_types::Int;
+                    PrimResult::IntBig(Int::from(av) * Int::from(bv))
+                }
+            });
         }
         (IntEq, TermDef::IntInline(p), TermDef::IntInline(q)) => {
-            if p.to_i64() == q.to_i64() { TermDef::Bool(true) } else { TermDef::Bool(false) }
+            TermDef::Bool(p.to_i64() == q.to_i64())
         }
         (IntLt, TermDef::IntInline(p), TermDef::IntInline(q)) => {
-            if p.to_i64() < q.to_i64() { TermDef::Bool(true) } else { TermDef::Bool(false) }
+            TermDef::Bool(p.to_i64() < q.to_i64())
         }
         (IntLe, TermDef::IntInline(p), TermDef::IntInline(q)) => {
-            if p.to_i64() <= q.to_i64() { TermDef::Bool(true) } else { TermDef::Bool(false) }
+            TermDef::Bool(p.to_i64() <= q.to_i64())
         }
 
         _ => return None,
     };
-    Some(TermRef::local(arena.alloc_term(new_def)))
+    Some(PrimResult::Def(def))
 }

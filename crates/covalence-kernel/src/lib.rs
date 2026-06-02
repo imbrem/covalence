@@ -12,7 +12,7 @@ pub mod id;
 pub mod kernel;
 pub mod primop;
 pub mod prop;
-pub mod reduce;
+mod reduce;
 pub mod term;
 pub mod ty;
 pub mod uf;

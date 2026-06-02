@@ -57,15 +57,7 @@ pub enum TermKind {
     Exists(TermRef),
     Eps(TypeRef, TermRef),
 
-    // -- combinators --
-    Id(TypeRef),
-    Comp(TermRef, TermRef),
-    Iter(TermRef, TermRef),
-    Ite(TermRef, TermRef),
-    LiftOp1(PrimOp1),
-    LiftOp2(PrimOp2),
-
-    // -- applied primops (folded from per-op TermDef variants) --
+    // -- applied primops --
     Op1(PrimOp1, TermRef),
     Op2(PrimOp2, TermRef, TermRef),
 
@@ -146,15 +138,7 @@ pub enum TermDef {
     Exists(TermRef),
     Eps(TypeRef, TermRef),
 
-    // -- combinators --
-    Id(TypeRef),
-    Comp(TermRef, TermRef),
-    Iter(TermRef, TermRef),
-    Ite(TermRef, TermRef),
-    LiftOp1(PrimOp1),
-    LiftOp2(PrimOp2),
-
-    // -- applied primops (op kind inlined) --
+    // -- applied primops --
     Op1(PrimOp1, TermRef),
     Op2(PrimOp2, TermRef, TermRef),
 
@@ -198,19 +182,18 @@ impl TermDef {
     }
 
     /// The `TermRef` dependencies of this def (0, 1, or 2 children).
-    /// Type-ref dependencies (e.g. `Abs(TypeRef, _)`, `Eps(TypeRef, _)`,
-    /// `Id(TypeRef)`) are *not* term deps and are not reported here —
-    /// they're part of the shape and must match exactly.
+    /// Type-ref dependencies (e.g. `Abs(TypeRef, _)`, `Eps(TypeRef, _)`)
+    /// are *not* term deps and are not reported here — they're part of
+    /// the shape and must match exactly.
     pub fn deps(&self) -> Deps {
         use TermDef::*;
         match *self {
-            Bound(_) | Free(..) | Const(..) | Bool(_) | Id(_) | LiftOp1(_) | LiftOp2(_)
+            Bound(_) | Free(..) | Const(..) | Bool(_)
             | IntInline(_) | IntStored(_) | NatInline(_) | NatStored(_)
             | BytesStored(_) => Deps::None,
             Forall(p) | Exists(p) | Op1(_, p) => Deps::One(p),
             Eps(_, p) | Abs(_, p) => Deps::One(p),
-            Comb(a, b) | Eq(a, b) | Ne(a, b) | Comp(a, b) | Iter(a, b) | Ite(a, b)
-            | Op2(_, a, b) => Deps::Two(a, b),
+            Comb(a, b) | Eq(a, b) | Ne(a, b) | Op2(_, a, b) => Deps::Two(a, b),
         }
     }
 
@@ -228,9 +211,6 @@ impl TermDef {
             Comb(_, _) => Comb(sentinel, sentinel),
             Eq(_, _) => Eq(sentinel, sentinel),
             Ne(_, _) => Ne(sentinel, sentinel),
-            Comp(_, _) => Comp(sentinel, sentinel),
-            Iter(_, _) => Iter(sentinel, sentinel),
-            Ite(_, _) => Ite(sentinel, sentinel),
             Op2(o, _, _) => Op2(o, sentinel, sentinel),
             other => other,
         }

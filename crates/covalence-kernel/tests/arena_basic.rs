@@ -498,21 +498,6 @@ fn eq_mismatched_types_is_ill_typed() {
 }
 
 #[test]
-fn id_is_typed_as_alpha_to_alpha() {
-    let mut a = Arena::new();
-    let bool_ty = a.bool_ty();
-    let id = a.alloc_term(TermDef::Id(bool_ty));
-    let id_ty = a.term_uf(id).type_info.as_type().unwrap();
-    match a.type_def_of(id_ty) {
-        Some(TypeDef::Fun(d, c)) => {
-            assert_eq!(d, bool_ty);
-            assert_eq!(c, bool_ty);
-        }
-        other => panic!("expected Fun, got {other:?}"),
-    }
-}
-
-#[test]
 fn ill_typed_terms_can_sit_in_the_arena() {
     let mut a = Arena::new();
     let t = a.alloc_term(TermDef::Bool(true));
@@ -523,7 +508,7 @@ fn ill_typed_terms_can_sit_in_the_arena() {
 }
 
 // ---------------------------------------------------------------------------
-// Phase B: PrimOp signature lookup for Op1/Op2/Comp/Iter/Ite/LiftOpN.
+// PrimOp signature lookup for Op1/Op2.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -594,116 +579,6 @@ fn op2_shift_takes_nat_count() {
         TermRef::local(n),
     ));
     assert_eq!(a.term_uf(shifted).type_info, TypeInfo::typed(a.int_ty()));
-}
-
-#[test]
-fn lift_op1_is_typed_as_function() {
-    use covalence_kernel::PrimOp1;
-    let mut a = Arena::new();
-    let lifted = a.alloc_term(TermDef::LiftOp1(PrimOp1::NatSucc));
-    // Should be nat → nat.
-    let ty = a.term_uf(lifted).type_info.as_type().unwrap();
-    match a.type_def_of(ty) {
-        Some(TypeDef::Fun(d, c)) => {
-            assert_eq!(d, a.nat_ty());
-            assert_eq!(c, a.nat_ty());
-        }
-        other => panic!("expected Fun(nat, nat), got {other:?}"),
-    }
-}
-
-#[test]
-fn lift_op2_is_typed_as_curried_function() {
-    let mut a = Arena::new();
-    // NatAdd lifted is nat → (nat → nat).
-    let lifted = a.alloc_term(TermDef::LiftOp2(PrimOp2::NatAdd));
-    let outer = a.term_uf(lifted).type_info.as_type().unwrap();
-    let (dom, cod) = match a.type_def_of(outer) {
-        Some(TypeDef::Fun(d, c)) => (d, c),
-        other => panic!("expected outer Fun, got {other:?}"),
-    };
-    assert_eq!(dom, a.nat_ty());
-    // The codomain is nat → nat (an inner Fun).
-    match a.type_def_of(cod) {
-        Some(TypeDef::Fun(d2, c2)) => {
-            assert_eq!(d2, a.nat_ty());
-            assert_eq!(c2, a.nat_ty());
-        }
-        other => panic!("expected inner Fun(nat, nat), got {other:?}"),
-    }
-}
-
-#[test]
-fn iter_well_typed_returns_alpha_to_alpha() {
-    use covalence_kernel::PrimOp1;
-    let mut a = Arena::new();
-    let n = a.alloc_term(TermDef::nat_inline(5));
-    let succ = a.alloc_term(TermDef::LiftOp1(PrimOp1::NatSucc));
-    // Iter(n, succ) : nat → nat.
-    let it = a.alloc_term(TermDef::Iter(TermRef::local(n), TermRef::local(succ)));
-    let ty = a.term_uf(it).type_info.as_type().unwrap();
-    match a.type_def_of(ty) {
-        Some(TypeDef::Fun(d, c)) => {
-            assert_eq!(d, a.nat_ty());
-            assert_eq!(c, a.nat_ty());
-        }
-        other => panic!("expected nat→nat, got {other:?}"),
-    }
-}
-
-#[test]
-fn ite_typed_as_alpha_to_alpha() {
-    let mut a = Arena::new();
-    let cond = a.alloc_term(TermDef::Bool(true));
-    let then_b = a.alloc_term(TermDef::nat_inline(7));
-    let ite = a.alloc_term(TermDef::Ite(TermRef::local(cond), TermRef::local(then_b)));
-    let ty = a.term_uf(ite).type_info.as_type().unwrap();
-    match a.type_def_of(ty) {
-        Some(TypeDef::Fun(d, c)) => {
-            assert_eq!(d, a.nat_ty());
-            assert_eq!(c, a.nat_ty());
-        }
-        other => panic!("expected nat→nat, got {other:?}"),
-    }
-}
-
-#[test]
-fn ite_wrong_cond_is_ill_typed() {
-    let mut a = Arena::new();
-    let n = a.alloc_term(TermDef::nat_inline(0));
-    let then_b = a.alloc_term(TermDef::Bool(true));
-    let bad = a.alloc_term(TermDef::Ite(TermRef::local(n), TermRef::local(then_b)));
-    assert_eq!(a.term_uf(bad).type_info, TypeInfo::ILL_TYPED);
-}
-
-#[test]
-fn comp_well_typed_composes_arrows() {
-    use covalence_kernel::PrimOp1;
-    let mut a = Arena::new();
-    // f : nat → nat (NatSucc lifted)
-    let f = a.alloc_term(TermDef::LiftOp1(PrimOp1::NatSucc));
-    let g = a.alloc_term(TermDef::LiftOp1(PrimOp1::NatSucc));
-    // Comp f g : nat → nat
-    let comp = a.alloc_term(TermDef::Comp(TermRef::local(f), TermRef::local(g)));
-    let ty = a.term_uf(comp).type_info.as_type().unwrap();
-    match a.type_def_of(ty) {
-        Some(TypeDef::Fun(d, c)) => {
-            assert_eq!(d, a.nat_ty());
-            assert_eq!(c, a.nat_ty());
-        }
-        other => panic!("expected nat→nat, got {other:?}"),
-    }
-}
-
-#[test]
-fn comp_mismatched_middle_type_is_ill_typed() {
-    use covalence_kernel::PrimOp1;
-    let mut a = Arena::new();
-    // f : nat → nat, g : int → int — middle types don't compose.
-    let f = a.alloc_term(TermDef::LiftOp1(PrimOp1::NatSucc));
-    let g = a.alloc_term(TermDef::LiftOp1(PrimOp1::IntNeg));
-    let bad = a.alloc_term(TermDef::Comp(TermRef::local(f), TermRef::local(g)));
-    assert_eq!(a.term_uf(bad).type_info, TypeInfo::ILL_TYPED);
 }
 
 // ---------------------------------------------------------------------------

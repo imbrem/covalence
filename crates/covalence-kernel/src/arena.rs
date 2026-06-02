@@ -533,18 +533,6 @@ impl Arena {
                 self.subst_free_inner(a, name, ty, replacement, bd),
                 self.subst_free_inner(b, name, ty, replacement, bd),
             ),
-            Comp(a, b) => Comp(
-                self.subst_free_inner(a, name, ty, replacement, bd),
-                self.subst_free_inner(b, name, ty, replacement, bd),
-            ),
-            Iter(a, b) => Iter(
-                self.subst_free_inner(a, name, ty, replacement, bd),
-                self.subst_free_inner(b, name, ty, replacement, bd),
-            ),
-            Ite(a, b) => Ite(
-                self.subst_free_inner(a, name, ty, replacement, bd),
-                self.subst_free_inner(b, name, ty, replacement, bd),
-            ),
             Op2(o, a, b) => Op2(
                 o,
                 self.subst_free_inner(a, name, ty, replacement, bd),
@@ -605,18 +593,6 @@ impl Arena {
                 self.abstract_inner(a, name, ty, depth),
                 self.abstract_inner(b, name, ty, depth),
             ),
-            Comp(a, b) => Comp(
-                self.abstract_inner(a, name, ty, depth),
-                self.abstract_inner(b, name, ty, depth),
-            ),
-            Iter(a, b) => Iter(
-                self.abstract_inner(a, name, ty, depth),
-                self.abstract_inner(b, name, ty, depth),
-            ),
-            Ite(a, b) => Ite(
-                self.abstract_inner(a, name, ty, depth),
-                self.abstract_inner(b, name, ty, depth),
-            ),
             Op2(o, a, b) => Op2(
                 o,
                 self.abstract_inner(a, name, ty, depth),
@@ -671,18 +647,6 @@ impl Arena {
                 self.shift_inner(a, cutoff, amount),
                 self.shift_inner(b, cutoff, amount),
             ),
-            TermDef::Comp(a, b) => TermDef::Comp(
-                self.shift_inner(a, cutoff, amount),
-                self.shift_inner(b, cutoff, amount),
-            ),
-            TermDef::Iter(a, b) => TermDef::Iter(
-                self.shift_inner(a, cutoff, amount),
-                self.shift_inner(b, cutoff, amount),
-            ),
-            TermDef::Ite(a, b) => TermDef::Ite(
-                self.shift_inner(a, cutoff, amount),
-                self.shift_inner(b, cutoff, amount),
-            ),
             TermDef::Op2(op, a, b) => TermDef::Op2(
                 op,
                 self.shift_inner(a, cutoff, amount),
@@ -696,11 +660,7 @@ impl Arena {
             // Leaves (no TermRef children).
             TermDef::Free(_, _)
             | TermDef::Const(_, _)
-            | TermDef::Bool(true)
-            | TermDef::Bool(false)
-            | TermDef::Id(_)
-            | TermDef::LiftOp1(_)
-            | TermDef::LiftOp2(_)
+            | TermDef::Bool(_)
             | TermDef::IntInline(_) | TermDef::IntStored(_)
             | TermDef::NatInline(_) | TermDef::NatStored(_)
             | TermDef::BytesStored(_) => def,
@@ -759,18 +719,6 @@ impl Arena {
                 self.subst_inner(a, depth, replacement),
                 self.subst_inner(b, depth, replacement),
             ),
-            TermDef::Comp(a, b) => TermDef::Comp(
-                self.subst_inner(a, depth, replacement),
-                self.subst_inner(b, depth, replacement),
-            ),
-            TermDef::Iter(a, b) => TermDef::Iter(
-                self.subst_inner(a, depth, replacement),
-                self.subst_inner(b, depth, replacement),
-            ),
-            TermDef::Ite(a, b) => TermDef::Ite(
-                self.subst_inner(a, depth, replacement),
-                self.subst_inner(b, depth, replacement),
-            ),
             TermDef::Op2(op, a, b) => TermDef::Op2(
                 op,
                 self.subst_inner(a, depth, replacement),
@@ -782,11 +730,7 @@ impl Arena {
             TermDef::Op1(op, x) => TermDef::Op1(op, self.subst_inner(x, depth, replacement)),
             TermDef::Free(_, _)
             | TermDef::Const(_, _)
-            | TermDef::Bool(true)
-            | TermDef::Bool(false)
-            | TermDef::Id(_)
-            | TermDef::LiftOp1(_)
-            | TermDef::LiftOp2(_)
+            | TermDef::Bool(_)
             | TermDef::IntInline(_) | TermDef::IntStored(_)
             | TermDef::NatInline(_) | TermDef::NatStored(_)
             | TermDef::BytesStored(_) => def,
@@ -855,21 +799,8 @@ impl Arena {
             TermDef::Eq(a, b) | TermDef::Ne(a, b) => self.infer_eq_like(*a, *b, ctx),
             TermDef::Forall(p) | TermDef::Exists(p) => self.infer_quant(*p, ctx),
             TermDef::Eps(elem_ty, p) => self.infer_eps(*elem_ty, *p, ctx),
-            TermDef::Id(ty) => TypeInfo::typed(self.intern_fun(*ty, *ty)),
-            TermDef::Comp(f, g) => self.infer_comp(*f, *g, ctx),
-            TermDef::Iter(n, f) => self.infer_iter(*n, *f, ctx),
-            TermDef::Ite(c, t) => self.infer_ite(*c, *t, ctx),
             TermDef::Op1(op, x) => self.infer_op1(*op, *x, ctx),
             TermDef::Op2(op, a, b) => self.infer_op2(*op, *a, *b, ctx),
-            TermDef::LiftOp1(op) => {
-                let (dom, cod) = op.sig();
-                TypeInfo::typed(self.intern_fun(dom, cod))
-            }
-            TermDef::LiftOp2(op) => {
-                let (in1, in2, out) = op.sig();
-                let curried = self.intern_fun(in2, out);
-                TypeInfo::typed(self.intern_fun(in1, curried))
-            }
         }
     }
 
@@ -975,74 +906,6 @@ impl Arena {
         }
     }
 
-    fn infer_comp(&mut self, f: TermRef, g: TermRef, ctx: &mut Vec<TypeRef>) -> TypeInfo {
-        let f_info = self.infer_ref(f, ctx);
-        let g_info = self.infer_ref(g, ctx);
-        let f_ty = match f_info.decode() {
-            TypeInfoKind::Typed(t) => t,
-            TypeInfoKind::Unbound(_) => return propagate2_until_typed(f_info, g_info),
-            TypeInfoKind::IllTyped => return TypeInfo::ILL_TYPED,
-        };
-        let g_ty = match g_info.decode() {
-            TypeInfoKind::Typed(t) => t,
-            TypeInfoKind::Unbound(_) => return propagate2_until_typed(f_info, g_info),
-            TypeInfoKind::IllTyped => return TypeInfo::ILL_TYPED,
-        };
-        let (f_dom, f_cod) = match self.type_def_of(f_ty) {
-            Some(TypeDef::Fun(a, b)) => (a, b),
-            _ => return TypeInfo::ILL_TYPED,
-        };
-        let (g_dom, g_cod) = match self.type_def_of(g_ty) {
-            Some(TypeDef::Fun(a, b)) => (a, b),
-            _ => return TypeInfo::ILL_TYPED,
-        };
-        if g_cod != f_dom {
-            return TypeInfo::ILL_TYPED;
-        }
-        TypeInfo::typed(self.intern_fun(g_dom, f_cod))
-    }
-
-    fn infer_iter(&mut self, n: TermRef, f: TermRef, ctx: &mut Vec<TypeRef>) -> TypeInfo {
-        let n_info = self.infer_ref(n, ctx);
-        let f_info = self.infer_ref(f, ctx);
-        let nat_ref = self.nat_ty();
-        let f_ty = match (n_info.decode(), f_info.decode()) {
-            (TypeInfoKind::IllTyped, _) | (_, TypeInfoKind::IllTyped) => {
-                return TypeInfo::ILL_TYPED
-            }
-            (TypeInfoKind::Unbound(_), _) | (_, TypeInfoKind::Unbound(_)) => {
-                return propagate2_until_typed(n_info, f_info)
-            }
-            (TypeInfoKind::Typed(nt), TypeInfoKind::Typed(ft)) if nt == nat_ref => ft,
-            _ => return TypeInfo::ILL_TYPED,
-        };
-        match self.type_def_of(f_ty) {
-            Some(TypeDef::Fun(dom, cod)) if dom == cod => TypeInfo::typed(f_ty),
-            _ => TypeInfo::ILL_TYPED,
-        }
-    }
-
-    fn infer_ite(
-        &mut self,
-        cond: TermRef,
-        then_branch: TermRef,
-        ctx: &mut Vec<TypeRef>,
-    ) -> TypeInfo {
-        let c_info = self.infer_ref(cond, ctx);
-        let t_info = self.infer_ref(then_branch, ctx);
-        let bool_ref = self.bool_ty();
-        match (c_info.decode(), t_info.decode()) {
-            (TypeInfoKind::IllTyped, _) | (_, TypeInfoKind::IllTyped) => TypeInfo::ILL_TYPED,
-            (TypeInfoKind::Unbound(_), _) | (_, TypeInfoKind::Unbound(_)) => {
-                propagate2_until_typed(c_info, t_info)
-            }
-            (TypeInfoKind::Typed(ct), TypeInfoKind::Typed(tt)) if ct == bool_ref => {
-                TypeInfo::typed(self.intern_fun(tt, tt))
-            }
-            _ => TypeInfo::ILL_TYPED,
-        }
-    }
-
     /// Project a term to its public [`TermKind`] view. Arbitrary-
     /// precision literals are materialised as full
     /// [`Nat`](covalence_types::Nat) / [`Int`](covalence_types::Int)
@@ -1068,12 +931,6 @@ impl Arena {
             TermDef::Forall(p) => TermKind::Forall(p),
             TermDef::Exists(p) => TermKind::Exists(p),
             TermDef::Eps(t, p) => TermKind::Eps(t, p),
-            TermDef::Id(t) => TermKind::Id(t),
-            TermDef::Comp(f, g) => TermKind::Comp(f, g),
-            TermDef::Iter(n, f) => TermKind::Iter(n, f),
-            TermDef::Ite(c, t) => TermKind::Ite(c, t),
-            TermDef::LiftOp1(op) => TermKind::LiftOp1(op),
-            TermDef::LiftOp2(op) => TermKind::LiftOp2(op),
             // Materialise arbitrary-precision literals — hide the
             // inline-vs-stored split.
             TermDef::IntInline(packed) => {
@@ -1317,27 +1174,9 @@ impl Arena {
             TermDef::Eq(a, b) | TermDef::Ne(a, b) => self.compute_eq_like(*a, *b),
             TermDef::Forall(p) | TermDef::Exists(p) => self.compute_quant(*p),
             TermDef::Eps(elem_ty, p) => self.compute_eps(*elem_ty, *p),
-            TermDef::Id(ty) => (TypeInfo::typed(self.intern_fun(*ty, *ty)), false),
-
             // ---- applied primops via signature tables ----------------------
             TermDef::Op1(op, x) => self.compute_op1(*op, *x),
             TermDef::Op2(op, a, b) => self.compute_op2(*op, *a, *b),
-
-            // ---- lifted primops: η-expanded function values ---------------
-            TermDef::LiftOp1(op) => {
-                let (dom, cod) = op.sig();
-                (TypeInfo::typed(self.intern_fun(dom, cod)), false)
-            }
-            TermDef::LiftOp2(op) => {
-                let (in1, in2, out) = op.sig();
-                let curried = self.intern_fun(in2, out); // in2 -> out
-                (TypeInfo::typed(self.intern_fun(in1, curried)), false)
-            }
-
-            // ---- structural combinators / control flow ---------------------
-            TermDef::Comp(f, g) => self.compute_comp(*f, *g),
-            TermDef::Iter(n, f) => self.compute_iter(*n, *f),
-            TermDef::Ite(cond, then_branch) => self.compute_ite(*cond, *then_branch),
         }
     }
 
@@ -1462,77 +1301,6 @@ impl Arena {
                 (TypeInfo::ILL_TYPED, has_free)
             }
             _ => (propagate2_until_typed(a_info, b_info), has_free),
-        }
-    }
-
-    /// Typing rule for `Comp(f, g)`: `f : β → γ`, `g : α → β` → `α → γ`.
-    fn compute_comp(&mut self, f: TermRef, g: TermRef) -> (TypeInfo, bool) {
-        let (f_info, f_hf) = self.ref_props(f);
-        let (g_info, g_hf) = self.ref_props(g);
-        let has_free = f_hf || g_hf;
-        let f_ty = match f_info.decode() {
-            TypeInfoKind::Typed(t) => t,
-            TypeInfoKind::Unbound(_) => return (propagate2_until_typed(f_info, g_info), has_free),
-            TypeInfoKind::IllTyped => return (TypeInfo::ILL_TYPED, has_free),
-        };
-        let g_ty = match g_info.decode() {
-            TypeInfoKind::Typed(t) => t,
-            TypeInfoKind::Unbound(_) => return (propagate2_until_typed(f_info, g_info), has_free),
-            TypeInfoKind::IllTyped => return (TypeInfo::ILL_TYPED, has_free),
-        };
-        let (f_dom, f_cod) = match self.type_def_of(f_ty) {
-            Some(TypeDef::Fun(a, b)) => (a, b),
-            _ => return (TypeInfo::ILL_TYPED, has_free),
-        };
-        let (g_dom, g_cod) = match self.type_def_of(g_ty) {
-            Some(TypeDef::Fun(a, b)) => (a, b),
-            _ => return (TypeInfo::ILL_TYPED, has_free),
-        };
-        if g_cod != f_dom {
-            return (TypeInfo::ILL_TYPED, has_free);
-        }
-        (TypeInfo::typed(self.intern_fun(g_dom, f_cod)), has_free)
-    }
-
-    /// Typing rule for `Iter(n, f)`: `n : nat`, `f : α → α` → `α → α`.
-    fn compute_iter(&mut self, n: TermRef, f: TermRef) -> (TypeInfo, bool) {
-        let (n_info, n_hf) = self.ref_props(n);
-        let (f_info, f_hf) = self.ref_props(f);
-        let has_free = n_hf || f_hf;
-        let nat_ref = self.nat_ty();
-        let f_ty = match (n_info.decode(), f_info.decode()) {
-            (TypeInfoKind::IllTyped, _) | (_, TypeInfoKind::IllTyped) => {
-                return (TypeInfo::ILL_TYPED, has_free)
-            }
-            (TypeInfoKind::Unbound(_), _) | (_, TypeInfoKind::Unbound(_)) => {
-                return (propagate2_until_typed(n_info, f_info), has_free)
-            }
-            (TypeInfoKind::Typed(nt), TypeInfoKind::Typed(ft)) if nt == nat_ref => ft,
-            _ => return (TypeInfo::ILL_TYPED, has_free),
-        };
-        match self.type_def_of(f_ty) {
-            Some(TypeDef::Fun(dom, cod)) if dom == cod => (TypeInfo::typed(f_ty), has_free),
-            _ => (TypeInfo::ILL_TYPED, has_free),
-        }
-    }
-
-    /// Typing rule for `Ite(cond, then)`: `cond : bool`, `then : α` → `α → α`.
-    fn compute_ite(&mut self, cond: TermRef, then_branch: TermRef) -> (TypeInfo, bool) {
-        let (c_info, c_hf) = self.ref_props(cond);
-        let (t_info, t_hf) = self.ref_props(then_branch);
-        let has_free = c_hf || t_hf;
-        let bool_ref = self.bool_ty();
-        match (c_info.decode(), t_info.decode()) {
-            (TypeInfoKind::IllTyped, _) | (_, TypeInfoKind::IllTyped) => {
-                (TypeInfo::ILL_TYPED, has_free)
-            }
-            (TypeInfoKind::Unbound(_), _) | (_, TypeInfoKind::Unbound(_)) => {
-                (propagate2_until_typed(c_info, t_info), has_free)
-            }
-            (TypeInfoKind::Typed(ct), TypeInfoKind::Typed(tt)) if ct == bool_ref => {
-                (TypeInfo::typed(self.intern_fun(tt, tt)), has_free)
-            }
-            _ => (TypeInfo::ILL_TYPED, has_free),
         }
     }
 

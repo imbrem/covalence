@@ -63,8 +63,7 @@ impl Kernel {
     pub fn bool_ty(&self) -> TypeRef { self.arena.bool_ty() }
     pub fn nat_ty(&self) -> TypeRef { self.arena.nat_ty() }
     pub fn int_ty(&self) -> TypeRef { self.arena.int_ty() }
-    pub fn u32_ty(&self) -> TypeRef { self.arena.u32_ty() }
-    pub fn u64_ty(&self) -> TypeRef { self.arena.u64_ty() }
+    pub fn bytes_ty(&self) -> TypeRef { self.arena.bytes_ty() }
 
     pub fn fun_ty(&mut self, dom: TypeRef, cod: TypeRef) -> TypeRef {
         self.arena.alloc_type(TypeDef::Fun(dom, cod))
@@ -85,8 +84,6 @@ impl Kernel {
 
     pub fn nat(&mut self, n: u64) -> TermRef { self.alloc(TermDef::nat_inline(n)) }
     pub fn int(&mut self, n: i64) -> TermRef { self.alloc(TermDef::int_inline(n)) }
-    pub fn u32(&mut self, n: u32) -> TermRef { self.alloc(TermDef::U32(n)) }
-    pub fn u64(&mut self, n: u64) -> TermRef { self.alloc(TermDef::u64_literal(n)) }
 
     pub fn free(&mut self, name: &str, ty: TypeRef) -> TermRef {
         let n = self.intern(name);

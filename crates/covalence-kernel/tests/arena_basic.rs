@@ -28,20 +28,20 @@ fn alloc_const(a: &mut Arena, name: &str, ty: TypeRef) -> covalence_kernel::Term
 fn alloc_builtin_types_returns_builtin_typerefs() {
     let mut a = Arena::new();
     let bool_ty = a.alloc_type(TypeDef::Bool);
-    let bits_ty = a.alloc_type(TypeDef::Bits);
+    let nat_ty = a.alloc_type(TypeDef::Nat);
     // alloc_type dedupes nullary primitives to the BuiltinTy TypeRef.
     assert_eq!(bool_ty, a.bool_ty());
-    assert_eq!(bits_ty, a.bits_ty());
+    assert_eq!(nat_ty, a.nat_ty());
     assert!(bool_ty.is_builtin());
     assert_eq!(bool_ty.as_builtin(), Some(BuiltinTy::Bool));
 
     // Fun is user-allocated and gets a local TypeRef.
-    let fun_ty = a.alloc_type(TypeDef::Fun(bool_ty, bits_ty));
+    let fun_ty = a.alloc_type(TypeDef::Fun(bool_ty, nat_ty));
     assert!(fun_ty.is_local());
     match a.type_def_of(fun_ty) {
         Some(TypeDef::Fun(d, c)) => {
             assert_eq!(d, bool_ty);
-            assert_eq!(c, bits_ty);
+            assert_eq!(c, nat_ty);
         }
         other => panic!("expected Fun, got {other:?}"),
     }
@@ -68,10 +68,6 @@ fn alloc_builtin_terms() {
 #[test]
 fn alloc_literal_variants() {
     let mut a = Arena::new();
-    // fixed-width
-    let _u8 = a.alloc_term(TermDef::U8(0xFF));
-    let _i32 = a.alloc_term(TermDef::I32(-1));
-    let _u64 = a.alloc_term(TermDef::u64_literal(u64::MAX));
     // arbitrary-precision inline
     let _nat = a.alloc_term(TermDef::nat_inline(42));
     let _int = a.alloc_term(TermDef::int_inline(-42));
@@ -81,13 +77,9 @@ fn alloc_literal_variants() {
     let big_int = a.intern_int(Int::from(i128::MIN));
     let _ns = a.alloc_term(TermDef::NatStored(big_nat));
     let _is = a.alloc_term(TermDef::IntStored(big_int));
-    // bits / bytes
+    // bytes
     use bytes::Bytes;
-    use covalence_types::Bits;
-    let bits_id =
-        a.intern_bits(Bits::from_bytes(Bytes::from_static(&[0xAA, 0x55]), 16).unwrap());
     let bytes_id = a.intern_bytes(Bytes::from_static(&[0xDE, 0xAD, 0xBE, 0xEF]));
-    let _bs = a.alloc_term(TermDef::BitsStored(bits_id));
     let _bys = a.alloc_term(TermDef::BytesStored(bytes_id));
 }
 
@@ -379,18 +371,9 @@ fn alloc_all_primitive_types() {
     let mut a = Arena::new();
     for (def, expected) in [
         (TypeDef::Bool, BuiltinTy::Bool),
-        (TypeDef::Bits, BuiltinTy::Bits),
         (TypeDef::Bytes, BuiltinTy::Bytes),
         (TypeDef::Int, BuiltinTy::Int),
         (TypeDef::Nat, BuiltinTy::Nat),
-        (TypeDef::U8, BuiltinTy::U8),
-        (TypeDef::U16, BuiltinTy::U16),
-        (TypeDef::U32, BuiltinTy::U32),
-        (TypeDef::U64, BuiltinTy::U64),
-        (TypeDef::I8, BuiltinTy::I8),
-        (TypeDef::I16, BuiltinTy::I16),
-        (TypeDef::I32, BuiltinTy::I32),
-        (TypeDef::I64, BuiltinTy::I64),
     ] {
         let r = a.alloc_type(def);
         assert_eq!(r.as_builtin(), Some(expected));
@@ -447,12 +430,10 @@ fn literals_get_concrete_types() {
     let mut a = Arena::new();
     let t = a.alloc_term(TermDef::True);
     let n = a.alloc_term(TermDef::nat_inline(42));
-    let u8v = a.alloc_term(TermDef::U8(7));
-    let i64v = a.alloc_term(TermDef::i64_literal(-1));
+    let i = a.alloc_term(TermDef::int_inline(-1));
     assert_eq!(a.term_uf(t).type_info, TypeInfo::typed(a.bool_ty()));
     assert_eq!(a.term_uf(n).type_info, TypeInfo::typed(a.nat_ty()));
-    assert_eq!(a.term_uf(u8v).type_info, TypeInfo::typed(a.u8_ty()));
-    assert_eq!(a.term_uf(i64v).type_info, TypeInfo::typed(a.i64_ty()));
+    assert_eq!(a.term_uf(i).type_info, TypeInfo::typed(a.int_ty()));
 }
 
 #[test]
@@ -566,10 +547,10 @@ fn op1_well_typed_gets_output_type() {
     let n = a.alloc_term(TermDef::nat_inline(7));
     let s = a.alloc_term(TermDef::Op1(PrimOp1::NatSucc, TermRef::local(n)));
     assert_eq!(a.term_uf(s).type_info, TypeInfo::typed(a.nat_ty()));
-    // U64Eqz : u64 → bool
-    let u = a.alloc_term(TermDef::u64_literal(0));
-    let z = a.alloc_term(TermDef::Op1(PrimOp1::U64Eqz, TermRef::local(u)));
-    assert_eq!(a.term_uf(z).type_info, TypeInfo::typed(a.bool_ty()));
+    // IntNeg : int → int
+    let i = a.alloc_term(TermDef::int_inline(0));
+    let z = a.alloc_term(TermDef::Op1(PrimOp1::IntNeg, TermRef::local(i)));
+    assert_eq!(a.term_uf(z).type_info, TypeInfo::typed(a.int_ty()));
 }
 
 #[test]
@@ -617,15 +598,15 @@ fn op2_wrong_input_is_ill_typed() {
 #[test]
 fn op2_shift_takes_nat_count() {
     let mut a = Arena::new();
-    // U32Shl : u32 → nat → u32
-    let v = a.alloc_term(TermDef::U32(0xFF));
+    // IntShl : int → nat → int
+    let v = a.alloc_term(TermDef::int_inline(0xFF));
     let n = a.alloc_term(TermDef::nat_inline(4));
     let shifted = a.alloc_term(TermDef::Op2(
-        PrimOp2::U32Shl,
+        PrimOp2::IntShl,
         TermRef::local(v),
         TermRef::local(n),
     ));
-    assert_eq!(a.term_uf(shifted).type_info, TypeInfo::typed(a.u32_ty()));
+    assert_eq!(a.term_uf(shifted).type_info, TypeInfo::typed(a.int_ty()));
 }
 
 #[test]
@@ -731,9 +712,9 @@ fn comp_well_typed_composes_arrows() {
 fn comp_mismatched_middle_type_is_ill_typed() {
     use covalence_kernel::PrimOp1;
     let mut a = Arena::new();
-    // f : nat → nat, g : u8 → u8 — middle types don't compose.
+    // f : nat → nat, g : int → int — middle types don't compose.
     let f = a.alloc_term(TermDef::LiftOp1(PrimOp1::NatSucc));
-    let g = a.alloc_term(TermDef::LiftOp1(PrimOp1::U8Popcount));
+    let g = a.alloc_term(TermDef::LiftOp1(PrimOp1::IntNeg));
     let bad = a.alloc_term(TermDef::Comp(TermRef::local(f), TermRef::local(g)));
     assert_eq!(a.term_uf(bad).type_info, TypeInfo::ILL_TYPED);
 }
@@ -1276,32 +1257,13 @@ fn reduce_int_arithmetic() {
 }
 
 #[test]
-fn reduce_u32_wrapping() {
-    let mut a = Arena::new();
-    let big = a.alloc_term(TermDef::U32(u32::MAX));
-    let one = a.alloc_term(TermDef::U32(1));
-    // u32::MAX + 1 wraps to 0.
-    let sum = a.alloc_term(TermDef::Op2(
-        PrimOp2::U32Add,
-        TermRef::local(big),
-        TermRef::local(one),
-    ));
-    let r = reduce::step(&mut a, TermRef::local(sum)).unwrap_or(TermRef::local(sum));
-    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::U32(0));
-}
-
-#[test]
-fn reduce_u32_popcount_and_eqz() {
+fn reduce_nat_popcount() {
     use covalence_kernel::PrimOp1;
     let mut a = Arena::new();
-    let v = a.alloc_term(TermDef::U32(0xF0F0_0000));
-    let pop = a.alloc_term(TermDef::Op1(PrimOp1::U32Popcount, TermRef::local(v)));
+    let v = a.alloc_term(TermDef::nat_inline(0xF0F0));
+    let pop = a.alloc_term(TermDef::Op1(PrimOp1::NatPopcount, TermRef::local(v)));
     let r = reduce::step(&mut a, TermRef::local(pop)).unwrap_or(TermRef::local(pop));
-    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::U32(8));
-    let zero = a.alloc_term(TermDef::U32(0));
-    let eqz = a.alloc_term(TermDef::Op1(PrimOp1::U32Eqz, TermRef::local(zero)));
-    let r = reduce::step(&mut a, TermRef::local(eqz)).unwrap_or(TermRef::local(eqz));
-    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::True);
+    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::nat_inline(8));
 }
 
 #[test]

@@ -17,7 +17,7 @@
 //! -1                                 IllTyped sentinel (also the
 //!                                    "first builtin slot").
 //! -2 ..= -BuiltinTy::COUNT - 1       Current builtin types (Bool=-2,
-//!                                    Bits=-3, …, I64=-14).
+//!                                    Bytes=-3, Int=-4, Nat=-5).
 //! -BuiltinTy::COUNT - 2 ..= -65536   Reserved builtin slots for future
 //!                                    additions.
 //! -65537 ..= i32::MIN                Unbound depth: Unbound(n) = -65537 - n.
@@ -36,48 +36,31 @@ use crate::id::{ForeignTypeId, StrId, TyArgsId, TypeId};
 /// required.
 ///
 /// Each variant encodes as a small negative integer (-2 for `Bool`,
-/// -3 for `Bits`, …, -14 for `I64`). The slot at -1 is reserved for
-/// [`TypeInfo::ILL_TYPED`]; future builtins can be added in slots up
-/// to [`BUILTIN_SLOTS`].
+/// -3 for `Bytes`, -4 for `Int`, -5 for `Nat`). The slot at -1 is
+/// reserved for [`TypeInfo::ILL_TYPED`]; future builtins (Bits and
+/// fixed-width ints will return) can be added in slots up to
+/// [`BUILTIN_SLOTS`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum BuiltinTy {
     Bool = 2,
-    Bits = 3,
-    Bytes = 4,
-    Int = 5,
-    Nat = 6,
-    U8 = 7,
-    U16 = 8,
-    U32 = 9,
-    U64 = 10,
-    I8 = 11,
-    I16 = 12,
-    I32 = 13,
-    I64 = 14,
+    Bytes = 3,
+    Int = 4,
+    Nat = 5,
 }
 
 impl BuiltinTy {
     /// Number of builtin types currently defined.
-    pub const COUNT: u8 = 13;
+    pub const COUNT: u8 = 4;
 
     /// Decode from the small-negative encoding (`-2..=-(COUNT + 1)`).
     pub fn from_encoded(neg: i32) -> Option<Self> {
         use BuiltinTy::*;
         Some(match neg {
             -2 => Bool,
-            -3 => Bits,
-            -4 => Bytes,
-            -5 => Int,
-            -6 => Nat,
-            -7 => U8,
-            -8 => U16,
-            -9 => U32,
-            -10 => U64,
-            -11 => I8,
-            -12 => I16,
-            -13 => I32,
-            -14 => I64,
+            -3 => Bytes,
+            -4 => Int,
+            -5 => Nat,
             _ => return None,
         })
     }
@@ -319,7 +302,7 @@ pub enum TypeInfoKind {
 /// **user-allocated** types only — primitive types live as
 /// [`BuiltinTy`] inside [`TypeRef`] and never get an arena entry.
 ///
-/// The primitive variants here (`Bool` … `I64`) are accepted by
+/// The primitive variants here (`Bool`, `Bytes`, `Int`, `Nat`) are accepted by
 /// [`alloc_type`](crate::arena::Arena::alloc_type) for convenience;
 /// the call returns the matching builtin TypeRef without writing to
 /// `arena.types`.
@@ -327,18 +310,9 @@ pub enum TypeInfoKind {
 pub enum TypeDef {
     // -- primitive aliases (dedupe to BuiltinTy in alloc_type) --
     Bool,
-    Bits,
     Bytes,
     Int,
     Nat,
-    U8,
-    U16,
-    U32,
-    U64,
-    I8,
-    I16,
-    I32,
-    I64,
     // -- type formers (user-allocated) --
     /// The function type `α → β`. Stored in `arena.types`.
     Fun(TypeRef, TypeRef),
@@ -350,23 +324,14 @@ pub enum TypeDef {
 }
 
 impl TypeDef {
-    /// If this `TypeDef` is a nullary primitive (Bool, Bits, …, I64),
-    /// return the matching builtin. Otherwise `None`.
+    /// If this `TypeDef` is a nullary primitive, return the matching
+    /// builtin. Otherwise `None`.
     pub fn as_builtin(self) -> Option<BuiltinTy> {
         Some(match self {
             TypeDef::Bool => BuiltinTy::Bool,
-            TypeDef::Bits => BuiltinTy::Bits,
             TypeDef::Bytes => BuiltinTy::Bytes,
             TypeDef::Int => BuiltinTy::Int,
             TypeDef::Nat => BuiltinTy::Nat,
-            TypeDef::U8 => BuiltinTy::U8,
-            TypeDef::U16 => BuiltinTy::U16,
-            TypeDef::U32 => BuiltinTy::U32,
-            TypeDef::U64 => BuiltinTy::U64,
-            TypeDef::I8 => BuiltinTy::I8,
-            TypeDef::I16 => BuiltinTy::I16,
-            TypeDef::I32 => BuiltinTy::I32,
-            TypeDef::I64 => BuiltinTy::I64,
             _ => return None,
         })
     }
@@ -380,18 +345,9 @@ mod tests {
     fn builtin_typeref_roundtrip() {
         for ty in [
             BuiltinTy::Bool,
-            BuiltinTy::Bits,
             BuiltinTy::Bytes,
             BuiltinTy::Int,
             BuiltinTy::Nat,
-            BuiltinTy::U8,
-            BuiltinTy::U16,
-            BuiltinTy::U32,
-            BuiltinTy::U64,
-            BuiltinTy::I8,
-            BuiltinTy::I16,
-            BuiltinTy::I32,
-            BuiltinTy::I64,
         ] {
             let r = TypeRef::builtin(ty);
             assert!(r.is_builtin());

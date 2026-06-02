@@ -8,7 +8,7 @@
 //!
 //! Sealing policy: `TermId` and `TypeId` are fully public (the natural
 //! identity of a term / type the user receives from `alloc_term` /
-//! `alloc_type`). The rest — `BitsId`, `BytesId`, `IntId`, `NatId`,
+//! `alloc_type`). The rest — `BytesId`, `IntId`, `NatId`,
 //! `StrId`, `TyArgsId`, `ImportId`, `ForeignTermId`, `ForeignTypeId` —
 //! are **sealed**: the type is public so callers can hold and compare
 //! them, but the inner u32 is `pub(crate)`, so only the kernel can
@@ -57,11 +57,6 @@ id_type_sealed! {
 id_type_sealed! {
     /// Index into `Arena.bytes`. Byte-string literals.
     BytesId
-}
-
-id_type_sealed! {
-    /// Index into `Arena.bits`. Bit-string literals.
-    BitsId
 }
 
 id_type_sealed! {

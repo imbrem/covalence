@@ -8,7 +8,7 @@ use std::sync::Arc;
 use smol_str::SmolStr;
 
 use crate::id::{
-    BitsId, BytesId, ForeignTermId, ForeignTypeId, ImportId, IntId, NatId, StrId, TermId,
+    BytesId, ForeignTermId, ForeignTypeId, ImportId, IntId, NatId, StrId, TermId,
     TyArgsId, TypeId,
 };
 use crate::term::{Deps, TermDef, TermKind, TermRef};
@@ -45,7 +45,6 @@ pub struct Arena {
     //    TermDef / TypeDef so those enums can stay (or become) Copy.
     strings: Vec<SmolStr>,
     bytes: Vec<bytes::Bytes>,
-    bits: Vec<covalence_types::Bits>,
     ints: Vec<covalence_types::Int>,
     nats: Vec<covalence_types::Nat>,
     tyargs: Vec<Vec<TypeRef>>,
@@ -79,7 +78,6 @@ impl Arena {
             imports: Vec::new(),
             strings: Vec::new(),
             bytes: Vec::new(),
-            bits: Vec::new(),
             ints: Vec::new(),
             nats: Vec::new(),
             tyargs: Vec::new(),
@@ -92,18 +90,9 @@ impl Arena {
     // -- primitive-type accessors ---------------------------------------
 
     pub fn bool_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::Bool) }
-    pub fn bits_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::Bits) }
     pub fn bytes_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::Bytes) }
     pub fn int_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::Int) }
     pub fn nat_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::Nat) }
-    pub fn u8_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::U8) }
-    pub fn u16_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::U16) }
-    pub fn u32_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::U32) }
-    pub fn u64_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::U64) }
-    pub fn i8_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::I8) }
-    pub fn i16_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::I16) }
-    pub fn i32_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::I32) }
-    pub fn i64_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::I64) }
 
     /// `TypeRef` for the primitive corresponding to a [`BuiltinTy`].
     pub fn builtin_ty(&self, ty: BuiltinTy) -> TypeRef {
@@ -665,11 +654,9 @@ impl Arena {
             | TermDef::Id(_)
             | TermDef::LiftOp1(_)
             | TermDef::LiftOp2(_)
-            | TermDef::U8(_) | TermDef::U16(_) | TermDef::U32(_) | TermDef::U64(_)
-            | TermDef::I8(_) | TermDef::I16(_) | TermDef::I32(_) | TermDef::I64(_)
             | TermDef::IntInline(_) | TermDef::IntStored(_)
             | TermDef::NatInline(_) | TermDef::NatStored(_)
-            | TermDef::BitsStored(_) | TermDef::BytesStored(_) => def,
+            | TermDef::BytesStored(_) => def,
         }
     }
 
@@ -753,11 +740,9 @@ impl Arena {
             | TermDef::Id(_)
             | TermDef::LiftOp1(_)
             | TermDef::LiftOp2(_)
-            | TermDef::U8(_) | TermDef::U16(_) | TermDef::U32(_) | TermDef::U64(_)
-            | TermDef::I8(_) | TermDef::I16(_) | TermDef::I32(_) | TermDef::I64(_)
             | TermDef::IntInline(_) | TermDef::IntStored(_)
             | TermDef::NatInline(_) | TermDef::NatStored(_)
-            | TermDef::BitsStored(_) | TermDef::BytesStored(_) => def,
+            | TermDef::BytesStored(_) => def,
         }
     }
 
@@ -797,17 +782,8 @@ impl Arena {
             // ---- atoms with declared types --------------------------------
             TermDef::Free(_, ty) | TermDef::Const(_, ty) => TypeInfo::typed(*ty),
             TermDef::True | TermDef::False => TypeInfo::typed(self.bool_ty()),
-            TermDef::U8(_) => TypeInfo::typed(self.u8_ty()),
-            TermDef::U16(_) => TypeInfo::typed(self.u16_ty()),
-            TermDef::U32(_) => TypeInfo::typed(self.u32_ty()),
-            TermDef::U64(_) => TypeInfo::typed(self.u64_ty()),
-            TermDef::I8(_) => TypeInfo::typed(self.i8_ty()),
-            TermDef::I16(_) => TypeInfo::typed(self.i16_ty()),
-            TermDef::I32(_) => TypeInfo::typed(self.i32_ty()),
-            TermDef::I64(_) => TypeInfo::typed(self.i64_ty()),
             TermDef::IntInline(_) | TermDef::IntStored(_) => TypeInfo::typed(self.int_ty()),
             TermDef::NatInline(_) | TermDef::NatStored(_) => TypeInfo::typed(self.nat_ty()),
-            TermDef::BitsStored(_) => TypeInfo::typed(self.bits_ty()),
             TermDef::BytesStored(_) => TypeInfo::typed(self.bytes_ty()),
 
             // ---- the binder --------------------------------------------------
@@ -1053,14 +1029,6 @@ impl Arena {
             TermDef::Ite(c, t) => TermKind::Ite(c, t),
             TermDef::LiftOp1(op) => TermKind::LiftOp1(op),
             TermDef::LiftOp2(op) => TermKind::LiftOp2(op),
-            TermDef::U8(v) => TermKind::U8(v),
-            TermDef::U16(v) => TermKind::U16(v),
-            TermDef::U32(v) => TermKind::U32(v),
-            TermDef::U64(packed) => TermKind::U64(packed.to_u64()),
-            TermDef::I8(v) => TermKind::I8(v),
-            TermDef::I16(v) => TermKind::I16(v),
-            TermDef::I32(v) => TermKind::I32(v),
-            TermDef::I64(packed) => TermKind::I64(packed.to_i64()),
             // Materialise arbitrary-precision literals — hide the
             // inline-vs-stored split.
             TermDef::IntInline(packed) => {
@@ -1071,7 +1039,6 @@ impl Arena {
                 TermKind::Nat(covalence_types::Nat::from(packed.to_u64()))
             }
             TermDef::NatStored(id) => TermKind::Nat(self.nat(id).clone()),
-            TermDef::BitsStored(id) => TermKind::Bits(self.bits(id).clone()),
             TermDef::BytesStored(id) => TermKind::Bytes(self.bytes_value(id).clone()),
             _ => unreachable!("per-op variant handled by as_op1/as_op2 above"),
         }
@@ -1080,11 +1047,6 @@ impl Arena {
     /// Look up an imported arena.
     pub fn import(&self, id: ImportId) -> &Arc<Arena> {
         &self.imports[id.0 as usize]
-    }
-
-    /// Read a bit string by local id.
-    pub fn bits(&self, id: BitsId) -> &covalence_types::Bits {
-        &self.bits[id.0 as usize]
     }
 
     /// Read a byte string by local id.
@@ -1135,10 +1097,6 @@ impl Arena {
         self.terms.len() as u32
     }
 
-    pub fn num_bits(&self) -> u32 {
-        self.bits.len() as u32
-    }
-
     // -- allocators ------------------------------------------------------
 
     /// Allocate a type. Returns a [`TypeRef`].
@@ -1179,14 +1137,6 @@ impl Arena {
             type_info,
             has_free,
         });
-        id
-    }
-
-    /// Intern a bit string. Always appends; callers who want dedup
-    /// should dedup at their own layer.
-    pub fn intern_bits(&mut self, bits: covalence_types::Bits) -> BitsId {
-        let id = BitsId(self.bits.len() as u32);
-        self.bits.push(bits);
         id
     }
 
@@ -1310,18 +1260,9 @@ impl Arena {
             TypeRefKind::Foreign(_) => None,
             TypeRefKind::Builtin(b) => Some(match b {
                 BuiltinTy::Bool => TypeDef::Bool,
-                BuiltinTy::Bits => TypeDef::Bits,
                 BuiltinTy::Bytes => TypeDef::Bytes,
                 BuiltinTy::Int => TypeDef::Int,
                 BuiltinTy::Nat => TypeDef::Nat,
-                BuiltinTy::U8 => TypeDef::U8,
-                BuiltinTy::U16 => TypeDef::U16,
-                BuiltinTy::U32 => TypeDef::U32,
-                BuiltinTy::U64 => TypeDef::U64,
-                BuiltinTy::I8 => TypeDef::I8,
-                BuiltinTy::I16 => TypeDef::I16,
-                BuiltinTy::I32 => TypeDef::I32,
-                BuiltinTy::I64 => TypeDef::I64,
             }),
         }
     }
@@ -1343,21 +1284,12 @@ impl Arena {
             // ---- closed atoms with a known type ----------------------------
             TermDef::Const(_, ty) => (TypeInfo::typed(*ty), false),
             TermDef::True | TermDef::False => (TypeInfo::typed(self.bool_ty()), false),
-            TermDef::U8(_) => (TypeInfo::typed(self.u8_ty()), false),
-            TermDef::U16(_) => (TypeInfo::typed(self.u16_ty()), false),
-            TermDef::U32(_) => (TypeInfo::typed(self.u32_ty()), false),
-            TermDef::U64(_) => (TypeInfo::typed(self.u64_ty()), false),
-            TermDef::I8(_) => (TypeInfo::typed(self.i8_ty()), false),
-            TermDef::I16(_) => (TypeInfo::typed(self.i16_ty()), false),
-            TermDef::I32(_) => (TypeInfo::typed(self.i32_ty()), false),
-            TermDef::I64(_) => (TypeInfo::typed(self.i64_ty()), false),
             TermDef::IntInline(_) | TermDef::IntStored(_) => {
                 (TypeInfo::typed(self.int_ty()), false)
             }
             TermDef::NatInline(_) | TermDef::NatStored(_) => {
                 (TypeInfo::typed(self.nat_ty()), false)
             }
-            TermDef::BitsStored(_) => (TypeInfo::typed(self.bits_ty()), false),
             TermDef::BytesStored(_) => (TypeInfo::typed(self.bytes_ty()), false),
 
             // ---- structural with typing rules ------------------------------

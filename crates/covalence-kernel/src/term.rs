@@ -1,7 +1,7 @@
 //! Term-level data: `TermDef` (one enum with structural + builtin variants)
 //! and `TermRef` (local or foreign-arena reference).
 
-use crate::id::{BitsId, BytesId, ForeignTermId, IntId, NatId, StrId, TermId};
+use crate::id::{BytesId, ForeignTermId, IntId, NatId, StrId, TermId};
 use crate::primop::{PrimOp1, PrimOp2};
 use crate::ty::TypeRef;
 
@@ -81,22 +81,12 @@ pub enum TermKind {
     Op1(PrimOp1, TermRef),
     Op2(PrimOp2, TermRef, TermRef),
 
-    // -- literals: fixed-width --
-    U8(u8),
-    U16(u16),
-    U32(u32),
-    U64(u64),
-    I8(i8),
-    I16(i16),
-    I32(i32),
-    I64(i64),
     // -- literals: arbitrary-precision (materialised regardless of
     //    whether the underlying TermDef variant was Inline or Stored) --
     Nat(covalence_types::Nat),
     Int(covalence_types::Int),
-    // -- bit / byte string literals (also materialised; the "Stored"
-    //    bit is a storage detail of TermDef, hidden here) --
-    Bits(covalence_types::Bits),
+    // -- byte string literal (materialised; the "Stored" bit is a
+    //    storage detail of TermDef, hidden here) --
     Bytes(bytes::Bytes),
 }
 
@@ -200,41 +190,17 @@ pub enum TermDef {
     Op1(PrimOp1, TermRef),
     Op2(PrimOp2, TermRef, TermRef),
 
-    // -- literals: fixed-width --
-    //
-    // The 64-bit variants carry a `Packed64` rather than a raw
-    // `u64` / `i64`; this avoids 8-byte enum alignment.
-    U8(u8),
-    U16(u16),
-    U32(u32),
-    U64(Packed64),
-    I8(i8),
-    I16(i16),
-    I32(i32),
-    I64(Packed64),
-
     // -- literals: arbitrary-precision --
     IntInline(Packed64),
     IntStored(IntId),
     NatInline(Packed64),
     NatStored(NatId),
 
-    // -- literals: bit / byte strings --
-    BitsStored(BitsId),
+    // -- literals: byte string --
     BytesStored(BytesId),
 }
 
 impl TermDef {
-    /// Smart constructor for a `U64` literal.
-    pub const fn u64_literal(v: u64) -> Self {
-        TermDef::U64(Packed64::from_u64(v))
-    }
-
-    /// Smart constructor for an `I64` literal.
-    pub const fn i64_literal(v: i64) -> Self {
-        TermDef::I64(Packed64::from_i64(v))
-    }
-
     /// Smart constructor for an inline `Nat`.
     pub const fn nat_inline(v: u64) -> Self {
         TermDef::NatInline(Packed64::from_u64(v))
@@ -271,9 +237,8 @@ impl TermDef {
         use TermDef::*;
         match *self {
             Bound(_) | Free(..) | Const(..) | True | False | Id(_) | LiftOp1(_) | LiftOp2(_)
-            | U8(_) | U16(_) | U32(_) | U64(_) | I8(_) | I16(_) | I32(_) | I64(_)
             | IntInline(_) | IntStored(_) | NatInline(_) | NatStored(_)
-            | BitsStored(_) | BytesStored(_) => Deps::None,
+            | BytesStored(_) => Deps::None,
             Forall(p) | Exists(p) | Op1(_, p) => Deps::One(p),
             Eps(_, p) | Abs(_, p) => Deps::One(p),
             Comb(a, b) | Eq(a, b) | Ne(a, b) | Comp(a, b) | Iter(a, b) | Ite(a, b)

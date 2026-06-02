@@ -76,27 +76,6 @@ fn reduce_op1(arena: &mut Arena, op: PrimOp1, x: TermRef) -> Option<TermRef> {
                 return None;
             }
         }
-        // Fixed-width: bitwise NOT.
-        (U8Not, TermDef::U8(v)) => TermDef::U8(!v),
-        (U16Not, TermDef::U16(v)) => TermDef::U16(!v),
-        (U32Not, TermDef::U32(v)) => TermDef::U32(!v),
-        (U64Not, TermDef::U64(p)) => TermDef::u64_literal(!p.to_u64()),
-        (I8Not, TermDef::I8(v)) => TermDef::I8(!v),
-        (I16Not, TermDef::I16(v)) => TermDef::I16(!v),
-        (I32Not, TermDef::I32(v)) => TermDef::I32(!v),
-        (I64Not, TermDef::I64(p)) => TermDef::i64_literal(!p.to_i64()),
-        // Fixed-width: popcount.
-        (U8Popcount, TermDef::U8(v)) => TermDef::U8(v.count_ones() as u8),
-        (U16Popcount, TermDef::U16(v)) => TermDef::U16(v.count_ones() as u16),
-        (U32Popcount, TermDef::U32(v)) => TermDef::U32(v.count_ones()),
-        (U64Popcount, TermDef::U64(p)) => TermDef::u64_literal(p.to_u64().count_ones() as u64),
-        // Fixed-width: eqz.
-        (U8Eqz, TermDef::U8(v)) => if v == 0 { TermDef::True } else { TermDef::False },
-        (U16Eqz, TermDef::U16(v)) => if v == 0 { TermDef::True } else { TermDef::False },
-        (U32Eqz, TermDef::U32(v)) => if v == 0 { TermDef::True } else { TermDef::False },
-        (U64Eqz, TermDef::U64(p)) => {
-            if p.to_u64() == 0 { TermDef::True } else { TermDef::False }
-        }
         _ => return None,
     };
     Some(TermRef::local(arena.alloc_term(new_def)))
@@ -214,17 +193,6 @@ fn reduce_op2(arena: &mut Arena, op: PrimOp2, a: TermRef, b: TermRef) -> Option<
         }
         (IntLe, TermDef::IntInline(p), TermDef::IntInline(q)) => {
             if p.to_i64() <= q.to_i64() { TermDef::True } else { TermDef::False }
-        }
-
-        // Fixed-width: wrapping arithmetic. (Representative family.)
-        (U32Add, TermDef::U32(av), TermDef::U32(bv)) => TermDef::U32(av.wrapping_add(bv)),
-        (U32Sub, TermDef::U32(av), TermDef::U32(bv)) => TermDef::U32(av.wrapping_sub(bv)),
-        (U32Mul, TermDef::U32(av), TermDef::U32(bv)) => TermDef::U32(av.wrapping_mul(bv)),
-        (U32And, TermDef::U32(av), TermDef::U32(bv)) => TermDef::U32(av & bv),
-        (U32Or, TermDef::U32(av), TermDef::U32(bv)) => TermDef::U32(av | bv),
-        (U32Xor, TermDef::U32(av), TermDef::U32(bv)) => TermDef::U32(av ^ bv),
-        (U32Eq, TermDef::U32(av), TermDef::U32(bv)) => {
-            if av == bv { TermDef::True } else { TermDef::False }
         }
 
         _ => return None,

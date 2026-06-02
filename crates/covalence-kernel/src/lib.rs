@@ -20,7 +20,7 @@ pub use arena::{Arena, UnionError};
 pub use kernel::Kernel;
 pub use prop::{Context, ProofError, Prop, Thm};
 pub use id::{
-    BitsId, BytesId, ForeignTermId, ForeignTypeId, ImportId, IntId, NatId, StrId, TermId,
+    BytesId, ForeignTermId, ForeignTypeId, ImportId, IntId, NatId, StrId, TermId,
     TyArgsId, TypeId,
 };
 pub use primop::{PrimOp1, PrimOp2};

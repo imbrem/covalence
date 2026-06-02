@@ -7,3 +7,6 @@ edition = "2024"
 bytes = "1"
 smol_str = "0.3"
 covalence-types = { path = "../covalence-types" }
+
+[dev-dependencies]
+covalence-sexp = { path = "../covalence-sexp" }

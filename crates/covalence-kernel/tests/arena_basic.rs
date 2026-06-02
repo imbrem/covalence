@@ -334,18 +334,6 @@ fn intern_int_and_nat() {
     assert_eq!(a.nat(n), &Nat::from(99u64));
 }
 
-#[test]
-fn abs_hint_stored_and_retrieved() {
-    let mut a = Arena::new();
-    let bool_ty = a.bool_ty();
-    let body = a.alloc_term(TermDef::Bound(0));
-    let abs = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(body)));
-    assert!(a.abs_hint(abs).is_none());
-    let name = a.intern_string("x".into());
-    a.set_abs_hint(abs, name);
-    assert_eq!(a.abs_hint(abs), Some(name));
-}
-
 fn _refs_and_defs_are_copy() {
     fn assert_copy<T: Copy>() {}
     assert_copy::<TermRef>();

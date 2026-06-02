@@ -1,29 +1,19 @@
-//! Union-find storage. Phase 1 lays down the data structures and the
-//! canonical-walking logic; the equality predicates `eq_at_level(_, _, k)`
-//! and the union primitives land in Phase 3.
+//! Union-find storage for term equality.
 
 use crate::term::TermRef;
-use crate::ty::{TypeInfo, TypeRef};
+use crate::ty::TypeInfo;
 
-/// One entry in `Arena.uf_terms`, parallel to one entry in `Arena.terms`.
+/// One UF entry per allocated term.
 ///
 /// Each newly allocated term starts canonical-to-itself (`canonical =
 /// Local(self_id)`). Unions retarget `canonical` to point at another
 /// term, possibly in a foreign arena.
-///
-/// `type_info` carries the term's computed type (or its unbound-depth /
-/// ill-typed sentinel) — see [`TypeInfo`]. Combined with `has_free`,
-/// it answers "is this term closed?" in O(1).
 #[derive(Debug, Clone)]
 pub struct TermUfEntry {
-    /// The canonical representative of this term's UF class. Points
-    /// somewhere reachable from the current arena (locally or via a
-    /// foreign-import Arc).
+    /// The canonical representative of this term's UF class.
     pub canonical: TermRef,
-    /// Type info for this term — `Typed(t)` when the kernel could
-    /// compute the type at insertion, `Unbound(n)` when the term has
-    /// `n` dangling de Bruijn indices, `IllTyped` when the term is
-    /// locally closed but no typing rule applies.
+    /// Type info computed at insertion — `Typed(t)`, `Unbound(n)`,
+    /// or `IllTyped`.
     pub type_info: TypeInfo,
     /// Whether any `Free(_, _)` is reachable from this term.
     pub has_free: bool,
@@ -40,11 +30,4 @@ impl TermUfEntry {
     pub fn bound_depth(&self) -> u32 {
         self.type_info.unbound_depth()
     }
-}
-
-/// One entry in `Arena.uf_types`, parallel to one entry in `Arena.types`.
-#[derive(Debug, Clone)]
-pub struct TypeUfEntry {
-    /// The canonical representative of this type's UF class.
-    pub canonical: TypeRef,
 }

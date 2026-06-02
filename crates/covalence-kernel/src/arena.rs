@@ -24,7 +24,7 @@ pub enum UnionError {
     BothForeign,
 }
 use crate::ty::{BuiltinTy, TypeDef, TypeInfo, TypeInfoKind, TypeRef, TypeRefKind};
-use crate::uf::{TermUfEntry, TypeUfEntry};
+use crate::uf::TermUfEntry;
 
 /// A pool of types, terms, interned literals, and union-find state.
 ///
@@ -36,7 +36,6 @@ pub struct Arena {
     types: Vec<TypeDef>,
     terms: Vec<TermDef>,
     uf_terms: Vec<TermUfEntry>,
-    uf_types: Vec<TypeUfEntry>,
     imports: Vec<Arc<Arena>>,
 
     // Interning tables for variable-sized payloads.
@@ -48,10 +47,6 @@ pub struct Arena {
 
     foreign_terms: Vec<(ImportId, TermId)>,
     foreign_types: Vec<(ImportId, TypeId)>,
-
-    /// Display hint per `Abs` term — never affects correctness, only
-    /// pretty-printing.
-    abs_hints: Vec<Option<StrId>>,
 }
 
 impl Arena {
@@ -63,7 +58,6 @@ impl Arena {
             types: Vec::new(),
             terms: Vec::new(),
             uf_terms: Vec::new(),
-            uf_types: Vec::new(),
             imports: Vec::new(),
             strings: Vec::new(),
             bytes: Vec::new(),
@@ -72,7 +66,6 @@ impl Arena {
             tyargs: Vec::new(),
             foreign_terms: Vec::new(),
             foreign_types: Vec::new(),
-            abs_hints: Vec::new(),
         }
     }
 
@@ -1066,11 +1059,6 @@ impl Arena {
         &self.uf_terms[id.0 as usize]
     }
 
-    /// The local UF entry for a type.
-    pub fn type_uf(&self, id: TypeId) -> &TypeUfEntry {
-        &self.uf_types[id.0 as usize]
-    }
-
     /// The frozen arenas this arena imports from.
     pub fn imports(&self) -> &[Arc<Arena>] {
         &self.imports
@@ -1098,9 +1086,6 @@ impl Arena {
         }
         let id = TypeId(self.types.len() as u32);
         self.types.push(def);
-        self.uf_types.push(TypeUfEntry {
-            canonical: TypeRef::local(id),
-        });
         TypeRef::local(id)
     }
 
@@ -1125,22 +1110,6 @@ impl Arena {
             has_free,
         });
         id
-    }
-
-    /// Look up the display hint for an `Abs` term, if any.
-    pub fn abs_hint(&self, id: TermId) -> Option<StrId> {
-        self.abs_hints.get(id.0 as usize).copied().flatten()
-    }
-
-    /// Set the display hint for an `Abs` term. No-op for non-`Abs`
-    /// terms; the kernel doesn't validate the term's shape since
-    /// hints never affect correctness.
-    pub fn set_abs_hint(&mut self, id: TermId, hint: StrId) {
-        let idx = id.0 as usize;
-        if idx >= self.abs_hints.len() {
-            self.abs_hints.resize(idx + 1, None);
-        }
-        self.abs_hints[idx] = Some(hint);
     }
 
     /// Intern a `SmolStr`. Returns the existing id if already present.
@@ -1512,9 +1481,6 @@ impl Arena {
         }
         let id = TypeId(self.types.len() as u32);
         self.types.push(target);
-        self.uf_types.push(TypeUfEntry {
-            canonical: TypeRef::local(id),
-        });
         TypeRef::local(id)
     }
 }
@@ -1563,24 +1529,6 @@ impl Arena {
         }
     }
 
-    /// Resolve a type reference to its current UF canonical.
-    pub fn canonical_type(self_arc: &Arc<Arena>, r: TypeRef) -> (Arc<Arena>, TypeId) {
-        let (mut cur_arena, mut cur_id) = resolve_type_ref(self_arc, r);
-        loop {
-            let next = cur_arena.type_uf(cur_id).canonical;
-            if let Some(other) = next.as_local() {
-                if other == cur_id {
-                    return (cur_arena, cur_id);
-                }
-                cur_id = other;
-            } else {
-                let foreign = next.as_foreign().expect("ref must be local or foreign");
-                let (import, source_id) = cur_arena.foreign_type(foreign);
-                cur_arena = cur_arena.import(import).clone();
-                cur_id = source_id;
-            }
-        }
-    }
 }
 
 /// Decode a [`TermRef`] in `self_arc`'s namespace to a global
@@ -1591,17 +1539,6 @@ fn resolve_term_ref(self_arc: &Arc<Arena>, r: TermRef) -> (Arc<Arena>, TermId) {
     } else {
         let foreign = r.as_foreign().expect("ref must be local or foreign");
         let (import, source_id) = self_arc.foreign_term(foreign);
-        (self_arc.import(import).clone(), source_id)
-    }
-}
-
-/// Type-side analogue of [`resolve_term_ref`].
-fn resolve_type_ref(self_arc: &Arc<Arena>, r: TypeRef) -> (Arc<Arena>, TypeId) {
-    if let Some(local) = r.as_local() {
-        (self_arc.clone(), local)
-    } else {
-        let foreign = r.as_foreign().expect("ref must be local or foreign");
-        let (import, source_id) = self_arc.foreign_type(foreign);
         (self_arc.import(import).clone(), source_id)
     }
 }

@@ -48,9 +48,14 @@ COV_API=https://cov.example.com bun run dev:web # remote backend
 - **Bun** — JS package manager and build script runner
 - **wasm-pack**, **wasm-bindgen-cli**, **binaryen** (`wasm-opt`)
 
-## Reference Skills
+## Reference Docs
 
-Detailed architecture and subsystem documentation is available as Claude-only skills (auto-loaded when relevant):
+Two design docs at the repo root drive everything above the build system:
+
+- **[`ARCHITECTURE.md`](./ARCHITECTURE.md)** — canonical design and philosophy. The mirror principle, the three planes (logic / execution / content / format), the disjunct trick, the profunctor model, base-shift. Read this first if you're touching the kernel or the store.
+- **[`AGENTS.md`](./AGENTS.md)** — the operational distillation: TCB boundary, kernel primitive list, "looks like a bug but is intended" guarantees, grep-target invariants, suggested build order. Read fully before writing kernel code.
+
+Subsystem skills (auto-loaded when relevant):
 - **architecture** — Repo layout, dependency graph, key rules, CLI features, REPL commands
 - **wasm-guide** — covalence-wasm features, proposition deciding, WASM memory config
 - **vscode-extension** — VSCode extension transport modes, LSP details

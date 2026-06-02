@@ -1,12 +1,15 @@
-# Prover Architecture
+# Prover Architecture (implementation notes)
+
+> **The canonical design doc is now [`ARCHITECTURE.md`](../ARCHITECTURE.md)** at
+> the repo root, with operational guidance for AI agents in
+> [`AGENTS.md`](../AGENTS.md). This file is kept as a reference for the kernel's
+> current Rust-level details (arena fields, MVP status, refactor notes) — it
+> elaborates on, and may temporarily diverge from, the canonical doc where MVP
+> shortcuts apply.
 
 This document describes the architecture of the Covalence prover kernel — a
 HOL-based metalogic intended to glue together object logics, evaluators, and
 cryptographic trust schemes without baking any of them into the kernel itself.
-
-It is the canonical reference for the kernel's design. Implementation details
-that live in code (file layout, exact function signatures) are out of scope
-here.
 
 For the staged build-out, see [`prover-mvp-plan.md`](./prover-mvp-plan.md).
 For the exhaustive list of kernel primitive operations, their type
@@ -15,6 +18,95 @@ macro-defined symbolic rewrite layer, see
 [`prover-primops.md`](./prover-primops.md).
 For the S-expression debug syntax (used by the REPL and printer),
 see [`prover-sexpr.md`](./prover-sexpr.md).
+
+---
+
+## What this is
+
+This is a system for building mathematical certainty out of parts you
+don't individually have to trust, and for storing the result like a
+version-controlled filesystem. It works like a hall of mirrors: many
+independent ways of checking the same claim, where confidence comes
+from their agreement rather than from any one of them being
+authoritative. It refuses convenient lies — never "this is universally
+true," only "this is true within this specific, named collection of
+things I can point at" — and tracks honestly what it assumes at every
+step. The trusted core is kept deliberately tiny (a small proof
+checker whose rules are purely mechanical, never depending on what's
+already been proved), and everything clever — fast formats, decision
+procedures, foreign systems — sits outside that core where a mistake
+gets caught rather than believed. You can always add another mirror
+if you're not yet satisfied; there's no fixed ceiling on certainty,
+you stop when you're sure enough. The whole thing mounts as an
+ordinary folder tree so a person (or an AI agent) can `ls`, `cat`,
+and `mount` it, while underneath it's a content-addressed store where
+the only thing you ultimately trust is a human looking at the
+simplest possible statement.
+
+---
+
+## At a glance
+
+A content-addressed store plus a WASM-component evaluator carry
+everything. The trusted core is an LCF kernel for a variant of HOL
+with one overriding invariant — **well-formedness is purely
+syntactic, never provability-dependent** (§1.1) — which is what lets
+the empty context stop being privileged: there is no
+axiom/oracle/assumption distinction. An oracle is just an authority
+that may add Horn clauses whose heads are its own opaque relations
+(conservative, since an uninterpreted head always has a model). Terms
+are arena indices; theorems live in a union-find over them; frozen
+arenas are content-addressed, giving a theory DAG.
+
+The kernel's target shape is roughly 8–10 primitives by **deriving,
+not trusting**: `pair` / `unit` / `DOWHILE` (Elgot iteration) plus
+`bits` / `blob` carriers stay primitive; `sum`, `option`, sexpr cells,
+`ITER`, `num` and so on are derived with a native `(tag, a, b)`
+representation, so derivation costs no runtime speed. Type-operator
+identity is `(normalised predicate, declared tyvar order)`, not the
+name. (MVP is more permissive — see §3.2.)
+
+Above the kernel you work **metalogically**: define internal logics
+as HOL theories, prove `provable_L(P)`, connect logics by
+embedding / equiconsistency edges so adequacy is reachability from a
+human-inspected silvered node; verify sound-not-complete decision
+procedures against an assumed WASM spec; borrow strength by assuming
+consistency only when forced. The same mirror-and-edge pattern
+recurs on the **execution plane** (executors emulate each other;
+trust by consensus, not by any one engine) and the **content plane**
+(stores compose and degrade under *scoped* no-collision / no-forgery
+assumptions, never the global lie; SHAttered is handled by "this
+repo is collision-free" staying true while "SHA-1 is secure" is
+refuted). Cryptographic assumptions become "a global store lacks
+$BAD, and my local store maps into it." Confidence is quantitative
+via a probabilistic internal logic, with independence modelled as a
+correlation term. Because every logic is data, a functor
+HOL → NewBase transports the whole development; the base is just
+another node.
+
+**Storage is the VCS.** Git-like trees for paths plus Dolt-style
+prolly-tree tables for data, both content-addressed and in the TCB
+(a false read asserts a false fact). Reads carry Merkle witnesses;
+merges produced by untrusted code emit a checkable certificate. It
+mounts as a real filesystem: a path `R[fn, fn, fn | A, B, C, D]` is
+directories for the left columns and a `.self` table for the right
+tuple. "Mount Q at P" is literally the clause `∀x. Q(x) ⇒ P(x)`,
+sound for free because the body is an oracle. Symbolic values are
+symlinks (dangling is normal), materialised values are files, and
+`st_mode` is the discriminator. Formats are themselves a plane:
+`valid(format, data)` is an oracle fact; a typed value is the
+keyed-BLAKE3 identity `keyed(format_id, payload)`; format IDs are
+256-bit (infinite formats by nesting); `Name256` is just `blob`
+refined to length 32 — carrier plus refinement, the universal
+answer to "dedicated type or raw blob."
+
+### The philosophical spine
+
+A non-collapsed **computational trinity** — computation, proof, and
+evidence kept deliberately distinct. Running a program yields a
+**fact**, not a proof; this is the same conservativity that keeps
+oracles from lying. Trinitarianism plus a first-class epistemology
+of evidence.
 
 ---
 

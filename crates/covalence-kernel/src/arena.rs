@@ -529,10 +529,6 @@ impl Arena {
                 self.subst_free_inner(a, name, ty, replacement, bd),
                 self.subst_free_inner(b, name, ty, replacement, bd),
             ),
-            Ne(a, b) => Ne(
-                self.subst_free_inner(a, name, ty, replacement, bd),
-                self.subst_free_inner(b, name, ty, replacement, bd),
-            ),
             Op2(o, a, b) => Op2(
                 o,
                 self.subst_free_inner(a, name, ty, replacement, bd),
@@ -589,10 +585,6 @@ impl Arena {
                 self.abstract_inner(a, name, ty, depth),
                 self.abstract_inner(b, name, ty, depth),
             ),
-            Ne(a, b) => Ne(
-                self.abstract_inner(a, name, ty, depth),
-                self.abstract_inner(b, name, ty, depth),
-            ),
             Op2(o, a, b) => Op2(
                 o,
                 self.abstract_inner(a, name, ty, depth),
@@ -640,10 +632,6 @@ impl Arena {
                 self.shift_inner(b, cutoff, amount),
             ),
             TermDef::Eq(a, b) => TermDef::Eq(
-                self.shift_inner(a, cutoff, amount),
-                self.shift_inner(b, cutoff, amount),
-            ),
-            TermDef::Ne(a, b) => TermDef::Ne(
                 self.shift_inner(a, cutoff, amount),
                 self.shift_inner(b, cutoff, amount),
             ),
@@ -712,10 +700,6 @@ impl Arena {
                 self.subst_inner(b, depth, replacement),
             ),
             TermDef::Eq(a, b) => TermDef::Eq(
-                self.subst_inner(a, depth, replacement),
-                self.subst_inner(b, depth, replacement),
-            ),
-            TermDef::Ne(a, b) => TermDef::Ne(
                 self.subst_inner(a, depth, replacement),
                 self.subst_inner(b, depth, replacement),
             ),
@@ -796,7 +780,7 @@ impl Arena {
 
             // ---- combinators / control flow / primops ---------------------
             TermDef::Comb(f, x) => self.infer_comb(*f, *x, ctx),
-            TermDef::Eq(a, b) | TermDef::Ne(a, b) => self.infer_eq_like(*a, *b, ctx),
+            TermDef::Eq(a, b) => self.infer_eq_like(*a, *b, ctx),
             TermDef::Forall(p) | TermDef::Exists(p) => self.infer_quant(*p, ctx),
             TermDef::Eps(elem_ty, p) => self.infer_eps(*elem_ty, *p, ctx),
             TermDef::Op1(op, x) => self.infer_op1(*op, *x, ctx),
@@ -927,7 +911,6 @@ impl Arena {
             TermDef::Bool(true) => TermKind::Bool(true),
             TermDef::Bool(false) => TermKind::Bool(false),
             TermDef::Eq(a, b) => TermKind::Eq(a, b),
-            TermDef::Ne(a, b) => TermKind::Ne(a, b),
             TermDef::Forall(p) => TermKind::Forall(p),
             TermDef::Exists(p) => TermKind::Exists(p),
             TermDef::Eps(t, p) => TermKind::Eps(t, p),
@@ -1171,7 +1154,7 @@ impl Arena {
             // ---- structural with typing rules ------------------------------
             TermDef::Comb(f, x) => self.compute_comb(*f, *x),
             TermDef::Abs(param_ty, body) => self.compute_abs(*param_ty, *body),
-            TermDef::Eq(a, b) | TermDef::Ne(a, b) => self.compute_eq_like(*a, *b),
+            TermDef::Eq(a, b) => self.compute_eq_like(*a, *b),
             TermDef::Forall(p) | TermDef::Exists(p) => self.compute_quant(*p),
             TermDef::Eps(elem_ty, p) => self.compute_eps(*elem_ty, *p),
             // ---- applied primops via signature tables ----------------------

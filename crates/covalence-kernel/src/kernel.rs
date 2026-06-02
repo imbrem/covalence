@@ -96,7 +96,14 @@ impl Kernel {
     }
 
     pub fn eq(&mut self, a: TermRef, b: TermRef) -> TermRef { self.alloc(TermDef::Eq(a, b)) }
-    pub fn ne(&mut self, a: TermRef, b: TermRef) -> TermRef { self.alloc(TermDef::Ne(a, b)) }
+
+    /// Build `a ≠ b` as `Not(Eq(a, b))`. `Ne` is no longer a kernel
+    /// primitive — the builder constructs the derived form.
+    pub fn ne(&mut self, a: TermRef, b: TermRef) -> TermRef {
+        let eq = self.alloc(TermDef::Eq(a, b));
+        self.alloc(TermDef::Op1(PrimOp1::LogicalNot, eq))
+    }
+
     pub fn comb(&mut self, f: TermRef, x: TermRef) -> TermRef { self.alloc(TermDef::Comb(f, x)) }
     pub fn op1(&mut self, op: PrimOp1, x: TermRef) -> TermRef { self.alloc(TermDef::Op1(op, x)) }
     pub fn op2(&mut self, op: PrimOp2, a: TermRef, b: TermRef) -> TermRef {

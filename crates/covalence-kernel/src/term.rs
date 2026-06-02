@@ -50,7 +50,6 @@ pub enum TermKind {
     // -- truth + equality --
     Bool(bool),
     Eq(TermRef, TermRef),
-    Ne(TermRef, TermRef),
 
     // -- quantifiers + choice --
     Forall(TermRef),
@@ -131,7 +130,6 @@ pub enum TermDef {
     // -- truth + equality --
     Bool(bool),
     Eq(TermRef, TermRef),
-    Ne(TermRef, TermRef),
 
     // -- quantifiers and choice --
     Forall(TermRef),
@@ -193,7 +191,7 @@ impl TermDef {
             | BytesStored(_) => Deps::None,
             Forall(p) | Exists(p) | Op1(_, p) => Deps::One(p),
             Eps(_, p) | Abs(_, p) => Deps::One(p),
-            Comb(a, b) | Eq(a, b) | Ne(a, b) | Op2(_, a, b) => Deps::Two(a, b),
+            Comb(a, b) | Eq(a, b) | Op2(_, a, b) => Deps::Two(a, b),
         }
     }
 
@@ -210,7 +208,6 @@ impl TermDef {
             Abs(t, _) => Abs(t, sentinel),
             Comb(_, _) => Comb(sentinel, sentinel),
             Eq(_, _) => Eq(sentinel, sentinel),
-            Ne(_, _) => Ne(sentinel, sentinel),
             Op2(o, _, _) => Op2(o, sentinel, sentinel),
             other => other,
         }

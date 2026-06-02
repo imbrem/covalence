@@ -139,7 +139,6 @@ impl Driver {
         match def {
             Comb(a, b) => Comb(cm(a), cm(b)),
             Eq(a, b) => Eq(cm(a), cm(b)),
-            Ne(a, b) => Ne(cm(a), cm(b)),
             Op2(o, a, b) => Op2(o, cm(a), cm(b)),
             Op1(o, x) => Op1(o, cm(x)),
             Forall(x) => Forall(cm(x)),

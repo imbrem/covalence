@@ -225,7 +225,7 @@ impl Thm {
         if !arena.is_well_typed(p) {
             return Err(ProofError::IllTypedInput);
         }
-        if !matches!(arena.term_def(thm_false.prop.concl), TermDef::False) {
+        if !matches!(arena.term_def(thm_false.prop.concl), TermDef::Bool(false)) {
             return Err(ProofError::ConclusionNotFalse);
         }
         let not_p = arena.alloc_term(TermDef::Op1(PrimOp1::LogicalNot, TermRef::local(p)));

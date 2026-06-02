@@ -50,12 +50,12 @@ fn alloc_builtin_types_returns_builtin_typerefs() {
 #[test]
 fn alloc_builtin_terms() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
-    let f = a.alloc_term(TermDef::False);
+    let t = a.alloc_term(TermDef::Bool(true));
+    let f = a.alloc_term(TermDef::Bool(false));
     let eq = a.alloc_term(TermDef::Eq(TermRef::local(t), TermRef::local(f)));
 
-    assert_eq!(a.term_def(t), &TermDef::True);
-    assert_eq!(a.term_def(f), &TermDef::False);
+    assert_eq!(a.term_def(t), &TermDef::Bool(true));
+    assert_eq!(a.term_def(f), &TermDef::Bool(false));
     match a.term_def(eq) {
         TermDef::Eq(l, r) => {
             assert_eq!(l.as_local(), Some(t));
@@ -91,8 +91,8 @@ fn alloc_literal_variants() {
 fn closed_true_for_constants_and_builtins() {
     let mut a = Arena::new();
     let bool_ty = a.bool_ty();
-    let t = a.alloc_term(TermDef::True);
-    let f = a.alloc_term(TermDef::False);
+    let t = a.alloc_term(TermDef::Bool(true));
+    let f = a.alloc_term(TermDef::Bool(false));
     let c = alloc_const(&mut a, "foo", bool_ty);
     let n = a.alloc_term(TermDef::nat_inline(7));
 
@@ -116,7 +116,7 @@ fn closed_propagates_through_comb() {
     let bool_ty = a.bool_ty();
     let bool_to_bool = a.alloc_type(TypeDef::Fun(bool_ty, bool_ty));
 
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let neg = alloc_const(&mut a, "not", bool_to_bool);
     let app = a.alloc_term(TermDef::Comb(TermRef::local(neg), TermRef::local(t)));
     assert!(a.term_uf(app).closed());
@@ -164,7 +164,7 @@ fn abs_needs_two_levels_for_bound_one() {
 #[test]
 fn fresh_term_is_self_canonical() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let arc = a.freeze();
     let canon = Arena::canonical_term(&arc, TermRef::local(t));
     assert!(Arc::ptr_eq(&canon.0, &arc));
@@ -178,21 +178,21 @@ fn fresh_term_is_self_canonical() {
 #[test]
 fn freeze_then_read() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let frozen = a.freeze();
-    assert_eq!(frozen.term_def(t), &TermDef::True);
+    assert_eq!(frozen.term_def(t), &TermDef::Bool(true));
 }
 
 #[test]
 fn unfreeze_keeps_indices() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let frozen = a.freeze();
     let mut thawed = Arena::unfreeze(&frozen);
 
-    assert_eq!(thawed.term_def(t), &TermDef::True);
-    let f = thawed.alloc_term(TermDef::False);
-    assert_eq!(thawed.term_def(f), &TermDef::False);
+    assert_eq!(thawed.term_def(t), &TermDef::Bool(true));
+    let f = thawed.alloc_term(TermDef::Bool(false));
+    assert_eq!(thawed.term_def(f), &TermDef::Bool(false));
 
     let frozen_again = thawed.freeze();
     assert!(
@@ -416,7 +416,7 @@ fn alloc_type_dedupes_primitives() {
 #[test]
 fn literals_get_concrete_types() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let n = a.alloc_term(TermDef::nat_inline(42));
     let i = a.alloc_term(TermDef::int_inline(-1));
     assert_eq!(a.term_uf(t).type_info, TypeInfo::typed(a.bool_ty()));
@@ -447,7 +447,7 @@ fn comb_well_typed_unfolds_function_type() {
     let bool_ty = a.bool_ty();
     let bool_to_bool = a.alloc_type(TypeDef::Fun(bool_ty, bool_ty));
     let neg = alloc_const(&mut a, "not", bool_to_bool);
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let app = a.alloc_term(TermDef::Comb(TermRef::local(neg), TermRef::local(t)));
     assert_eq!(a.term_uf(app).type_info, TypeInfo::typed(bool_ty));
 }
@@ -467,7 +467,7 @@ fn comb_mismatched_domain_is_ill_typed() {
 fn abs_with_typed_body_gets_fun_type() {
     let mut a = Arena::new();
     let bool_ty = a.bool_ty();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let abs = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(t)));
     let abs_ty = a.term_uf(abs).type_info.as_type().expect("abs typed");
     match a.type_def_of(abs_ty) {
@@ -483,8 +483,8 @@ fn abs_with_typed_body_gets_fun_type() {
 fn eq_well_typed_yields_bool() {
     let mut a = Arena::new();
     let bool_ty = a.bool_ty();
-    let t = a.alloc_term(TermDef::True);
-    let f = a.alloc_term(TermDef::False);
+    let t = a.alloc_term(TermDef::Bool(true));
+    let f = a.alloc_term(TermDef::Bool(false));
     let eq = a.alloc_term(TermDef::Eq(TermRef::local(t), TermRef::local(f)));
     assert_eq!(a.term_uf(eq).type_info, TypeInfo::typed(bool_ty));
 }
@@ -492,7 +492,7 @@ fn eq_well_typed_yields_bool() {
 #[test]
 fn eq_mismatched_types_is_ill_typed() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let n = a.alloc_term(TermDef::nat_inline(0));
     let eq = a.alloc_term(TermDef::Eq(TermRef::local(t), TermRef::local(n)));
     assert_eq!(a.term_uf(eq).type_info, TypeInfo::ILL_TYPED);
@@ -516,7 +516,7 @@ fn id_is_typed_as_alpha_to_alpha() {
 #[test]
 fn ill_typed_terms_can_sit_in_the_arena() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let n = a.alloc_term(TermDef::nat_inline(0));
     let bad = a.alloc_term(TermDef::Eq(TermRef::local(t), TermRef::local(n)));
     assert_eq!(a.term_uf(bad).type_info, TypeInfo::ILL_TYPED);
@@ -546,7 +546,7 @@ fn op1_wrong_input_type_is_ill_typed() {
     use covalence_kernel::PrimOp1;
     let mut a = Arena::new();
     // NatSucc applied to a bool: ill-typed.
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let bad = a.alloc_term(TermDef::Op1(PrimOp1::NatSucc, TermRef::local(t)));
     assert_eq!(a.term_uf(bad).type_info, TypeInfo::ILL_TYPED);
 }
@@ -574,7 +574,7 @@ fn op2_well_typed_gets_output_type() {
 fn op2_wrong_input_is_ill_typed() {
     let mut a = Arena::new();
     let x = a.alloc_term(TermDef::nat_inline(5));
-    let b = a.alloc_term(TermDef::True);
+    let b = a.alloc_term(TermDef::Bool(true));
     let bad = a.alloc_term(TermDef::Op2(
         PrimOp2::NatAdd,
         TermRef::local(x),
@@ -655,7 +655,7 @@ fn iter_well_typed_returns_alpha_to_alpha() {
 #[test]
 fn ite_typed_as_alpha_to_alpha() {
     let mut a = Arena::new();
-    let cond = a.alloc_term(TermDef::True);
+    let cond = a.alloc_term(TermDef::Bool(true));
     let then_b = a.alloc_term(TermDef::nat_inline(7));
     let ite = a.alloc_term(TermDef::Ite(TermRef::local(cond), TermRef::local(then_b)));
     let ty = a.term_uf(ite).type_info.as_type().unwrap();
@@ -672,7 +672,7 @@ fn ite_typed_as_alpha_to_alpha() {
 fn ite_wrong_cond_is_ill_typed() {
     let mut a = Arena::new();
     let n = a.alloc_term(TermDef::nat_inline(0));
-    let then_b = a.alloc_term(TermDef::True);
+    let then_b = a.alloc_term(TermDef::Bool(true));
     let bad = a.alloc_term(TermDef::Ite(TermRef::local(n), TermRef::local(then_b)));
     assert_eq!(a.term_uf(bad).type_info, TypeInfo::ILL_TYPED);
 }
@@ -796,7 +796,7 @@ fn set_type_info_unchecked_overrides_cache() {
     // on a term, even one inconsistent with its structure. Soundness
     // is the Thm wrapper's job, not the arena's.
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     // Pre-condition: True is typed as bool.
     assert_eq!(a.term_uf(t).type_info, TypeInfo::typed(a.bool_ty()));
     // Stomp it with a nonsensical type.
@@ -835,7 +835,7 @@ fn infer_on_open_term_with_bound_indices_inside_abs() {
 #[test]
 fn shift_leaves_closed_terms_alone() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let shifted = a.shift(TermRef::local(t), 0, 5);
     assert_eq!(shifted, TermRef::local(t));
 }
@@ -881,7 +881,7 @@ fn beta_reduces_identity() {
     // (λ_:bool. Bound(0)) True → True
     let mut a = Arena::new();
     let body = a.alloc_term(TermDef::Bound(0));
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let result = a.subst(TermRef::local(body), 0, TermRef::local(t));
     assert_eq!(result, TermRef::local(t));
 }
@@ -894,7 +894,7 @@ fn beta_substitutes_into_arg_position() {
     let bool_ty = a.bool_ty();
     let b0 = a.alloc_term(TermDef::Bound(0));
     let body = a.alloc_term(TermDef::Op1(PrimOp1::LogicalNot, TermRef::local(b0)));
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let result = a.subst(TermRef::local(body), 0, TermRef::local(t));
     let id = result.as_local().unwrap();
     match a.term_def(id) {
@@ -918,7 +918,7 @@ fn beta_decrements_outer_bound_indices() {
     let mut a = Arena::new();
     let bool_ty = a.bool_ty();
     let b1 = a.alloc_term(TermDef::Bound(1));
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let result = a.subst(TermRef::local(b1), 0, TermRef::local(t));
     let id = result.as_local().unwrap();
     // Bound(1) was bound by the outer binder (not the one we're
@@ -960,8 +960,8 @@ fn subst_skips_irrelevant_subterms_fast() {
     // A closed subterm (no dangling Bound) doesn't need shifting/
     // substituting; subst should reuse the original TermRef.
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True); // closed
-    let arg = a.alloc_term(TermDef::False);
+    let t = a.alloc_term(TermDef::Bool(true)); // closed
+    let arg = a.alloc_term(TermDef::Bool(false));
     // subst(True, 0, False) = True (no Bound(0) inside).
     let result = a.subst(TermRef::local(t), 0, TermRef::local(arg));
     assert_eq!(result, TermRef::local(t));
@@ -974,15 +974,15 @@ fn subst_skips_irrelevant_subterms_fast() {
 #[test]
 fn fresh_terms_not_equal_at_level_0() {
     let mut a = Arena::new();
-    let x = a.alloc_term(TermDef::True);
-    let y = a.alloc_term(TermDef::False);
+    let x = a.alloc_term(TermDef::Bool(true));
+    let y = a.alloc_term(TermDef::Bool(false));
     assert!(!a.eq_at_level_0(TermRef::local(x), TermRef::local(y)));
 }
 
 #[test]
 fn term_is_equal_to_itself() {
     let mut a = Arena::new();
-    let x = a.alloc_term(TermDef::True);
+    let x = a.alloc_term(TermDef::Bool(true));
     assert!(a.eq_at_level_0(TermRef::local(x), TermRef::local(x)));
 }
 
@@ -1013,7 +1013,7 @@ fn union_is_transitive_via_walk() {
 #[test]
 fn union_self_is_noop() {
     let mut a = Arena::new();
-    let x = a.alloc_term(TermDef::True);
+    let x = a.alloc_term(TermDef::Bool(true));
     let canon_before = a.canonical_local(TermRef::local(x));
     a.union(TermRef::local(x), TermRef::local(x)).unwrap();
     let canon_after = a.canonical_local(TermRef::local(x));
@@ -1027,7 +1027,7 @@ fn union_if_congruent_step_succeeds_on_matching_combs() {
     let bool_ty = a.bool_ty();
     let bool_to_bool = a.alloc_type(TypeDef::Fun(bool_ty, bool_ty));
     let neg = alloc_const(&mut a, "not", bool_to_bool);
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     // Two structurally-identical Comb(neg, True) terms with separate TermIds.
     let app1 = a.alloc_term(TermDef::Comb(TermRef::local(neg), TermRef::local(t)));
     let app2 = a.alloc_term(TermDef::Comb(TermRef::local(neg), TermRef::local(t)));
@@ -1063,7 +1063,7 @@ fn union_if_congruent_step_propagates_via_children_union() {
 #[test]
 fn union_if_congruent_step_fails_on_different_shapes() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let n = a.alloc_term(TermDef::nat_inline(0));
     let fired = a
         .union_if_congruent(TermRef::local(t), TermRef::local(n), 1)
@@ -1111,7 +1111,7 @@ fn union_with_foreign_lhs_updates_local_canonical() {
     let mut a = Arena::new();
     let imp = a.add_import(d_frozen);
     let f_ref = a.foreign_term_ref(imp, foreign_const);
-    let l = a.alloc_term(TermDef::True);
+    let l = a.alloc_term(TermDef::Bool(true));
     a.union(TermRef::local(l), f_ref).unwrap();
     assert_eq!(a.canonical_local(TermRef::local(l)), f_ref);
     assert!(a.eq_at_level_0(TermRef::local(l), f_ref));
@@ -1125,26 +1125,26 @@ fn union_with_foreign_lhs_updates_local_canonical() {
 fn reduce_logical_not_on_true() {
     use covalence_kernel::PrimOp1;
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let not_t = a.alloc_term(TermDef::Op1(PrimOp1::LogicalNot, TermRef::local(t)));
     let reduced = reduce::step(&mut a, TermRef::local(not_t)).unwrap_or(TermRef::local(not_t));
-    assert_eq!(a.term_def(reduced.as_local().unwrap()), &TermDef::False);
+    assert_eq!(a.term_def(reduced.as_local().unwrap()), &TermDef::Bool(false));
 }
 
 #[test]
 fn reduce_logical_and_truth_table() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
-    let f = a.alloc_term(TermDef::False);
+    let t = a.alloc_term(TermDef::Bool(true));
+    let f = a.alloc_term(TermDef::Bool(false));
     let tt = a.alloc_term(TermDef::Op2(PrimOp2::LogicalAnd, TermRef::local(t), TermRef::local(t)));
     let r = reduce::step(&mut a, TermRef::local(tt)).unwrap_or(TermRef::local(tt));
-    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::True);
+    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(true));
     let tf = a.alloc_term(TermDef::Op2(PrimOp2::LogicalAnd, TermRef::local(t), TermRef::local(f)));
     let r = reduce::step(&mut a, TermRef::local(tf)).unwrap_or(TermRef::local(tf));
-    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::False);
+    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(false));
     let ft = a.alloc_term(TermDef::Op2(PrimOp2::LogicalAnd, TermRef::local(f), TermRef::local(t)));
     let r = reduce::step(&mut a, TermRef::local(ft)).unwrap_or(TermRef::local(ft));
-    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::False);
+    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(false));
 }
 
 #[test]
@@ -1219,7 +1219,7 @@ fn reduce_nat_comparisons() {
         TermRef::local(three),
     ));
     let r = reduce::step(&mut a, TermRef::local(lt)).unwrap_or(TermRef::local(lt));
-    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::True);
+    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(true));
     // 3 ≤ 2 = False
     let le = a.alloc_term(TermDef::Op2(
         PrimOp2::NatLe,
@@ -1227,7 +1227,7 @@ fn reduce_nat_comparisons() {
         TermRef::local(two),
     ));
     let r = reduce::step(&mut a, TermRef::local(le)).unwrap_or(TermRef::local(le));
-    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::False);
+    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(false));
 }
 
 #[test]
@@ -1271,17 +1271,17 @@ fn reduce_noop_on_unreducible() {
 #[test]
 fn rewrite_replaces_term_def_in_place() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
-    assert_eq!(a.term_def(t), &TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
+    assert_eq!(a.term_def(t), &TermDef::Bool(true));
     // Stomp it with False — kernel doesn't validate.
-    a.rewrite(t, TermDef::False);
-    assert_eq!(a.term_def(t), &TermDef::False);
+    a.rewrite(t, TermDef::Bool(false));
+    assert_eq!(a.term_def(t), &TermDef::Bool(false));
 }
 
 #[test]
 fn rewrite_updates_type_info() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     assert_eq!(a.term_uf(t).type_info, TypeInfo::typed(a.bool_ty()));
     // Rewrite to a nat literal — type_info now reflects nat.
     a.rewrite(t, TermDef::nat_inline(42));
@@ -1292,7 +1292,7 @@ fn rewrite_updates_type_info() {
 fn rewrite_updates_has_free_flag() {
     let mut a = Arena::new();
     // Start with a closed term.
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     assert!(!a.term_uf(t).has_free);
     // Rewrite to a Free variable — has_free now true.
     let name = a.intern_string("x".into());
@@ -1306,28 +1306,28 @@ fn rewrite_updates_has_free_flag() {
 fn rewrite_propagates_to_parents() {
     // A parent term holding a Local(t) child sees the new shape of t.
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let parent = a.alloc_term(TermDef::Op1(
         covalence_kernel::PrimOp1::LogicalNot,
         TermRef::local(t),
     ));
     // Originally: Not(True). reduce → False.
     let r = reduce::step(&mut a, TermRef::local(parent)).unwrap_or(TermRef::local(parent));
-    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::False);
+    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(false));
     // Now rewrite t to False (unchecked).
-    a.rewrite(t, TermDef::False);
+    a.rewrite(t, TermDef::Bool(false));
     // Parent's Op1 still points at the same TermId; structural lookup
     // of t now returns False. Reducing parent again gives True.
     let r2 = reduce::step(&mut a, TermRef::local(parent)).unwrap_or(TermRef::local(parent));
-    assert_eq!(a.term_def(r2.as_local().unwrap()), &TermDef::True);
+    assert_eq!(a.term_def(r2.as_local().unwrap()), &TermDef::Bool(true));
 }
 
 #[test]
 fn rewrite_preserves_term_id_and_uf_canonical_chain() {
     // The TermId is reused. Pre-rewrite unions also stay in effect.
     let mut a = Arena::new();
-    let x = a.alloc_term(TermDef::True);
-    let y = a.alloc_term(TermDef::False);
+    let x = a.alloc_term(TermDef::Bool(true));
+    let y = a.alloc_term(TermDef::Bool(false));
     // Union them first.
     a.union(TermRef::local(x), TermRef::local(y)).unwrap();
     assert!(a.eq_at_level_0(TermRef::local(x), TermRef::local(y)));
@@ -1417,9 +1417,9 @@ fn subst_free_replaces_target_variable() {
     let bool_ty = a.bool_ty();
     let xname = a.intern_string("x".into());
     let x = a.alloc_term(TermDef::Free(xname, bool_ty));
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let r = a.subst_free(TermRef::local(x), xname, bool_ty, TermRef::local(t));
-    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::True);
+    assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(true));
 }
 
 #[test]
@@ -1447,7 +1447,7 @@ fn contains_free_uses_has_free_fast_path() {
     // A closed term (no Frees) returns false without walking.
     let mut a = Arena::new();
     let bool_ty = a.bool_ty();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let xname = a.intern_string("x".into());
     assert!(!a.contains_free(TermRef::local(t), xname, bool_ty));
 }

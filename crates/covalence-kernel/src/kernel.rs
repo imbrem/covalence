@@ -79,8 +79,8 @@ impl Kernel {
         self.arena.intern_string(s.into())
     }
 
-    pub fn true_(&mut self) -> TermRef { self.alloc(TermDef::True) }
-    pub fn false_(&mut self) -> TermRef { self.alloc(TermDef::False) }
+    pub fn true_(&mut self) -> TermRef { self.alloc(TermDef::Bool(true)) }
+    pub fn false_(&mut self) -> TermRef { self.alloc(TermDef::Bool(false)) }
 
     pub fn nat(&mut self, n: u64) -> TermRef { self.alloc(TermDef::nat_inline(n)) }
     pub fn int(&mut self, n: i64) -> TermRef { self.alloc(TermDef::int_inline(n)) }

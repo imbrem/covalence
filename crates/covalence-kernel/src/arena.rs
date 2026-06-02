@@ -631,8 +631,8 @@ impl Arena {
             // Leaves (no TermRef children).
             TermDef::Free(_, _)
             | TermDef::Const(_, _)
-            | TermDef::True
-            | TermDef::False
+            | TermDef::Bool(true)
+            | TermDef::Bool(false)
             | TermDef::Id(_)
             | TermDef::LiftOp1(_)
             | TermDef::LiftOp2(_)
@@ -717,8 +717,8 @@ impl Arena {
             TermDef::Op1(op, x) => TermDef::Op1(op, self.subst_inner(x, depth, replacement)),
             TermDef::Free(_, _)
             | TermDef::Const(_, _)
-            | TermDef::True
-            | TermDef::False
+            | TermDef::Bool(true)
+            | TermDef::Bool(false)
             | TermDef::Id(_)
             | TermDef::LiftOp1(_)
             | TermDef::LiftOp2(_)
@@ -763,7 +763,7 @@ impl Arena {
             }
             // ---- atoms with declared types --------------------------------
             TermDef::Free(_, ty) | TermDef::Const(_, ty) => TypeInfo::typed(*ty),
-            TermDef::True | TermDef::False => TypeInfo::typed(self.bool_ty()),
+            TermDef::Bool(true) | TermDef::Bool(false) => TypeInfo::typed(self.bool_ty()),
             TermDef::IntInline(_) | TermDef::IntStored(_) => TypeInfo::typed(self.int_ty()),
             TermDef::NatInline(_) | TermDef::NatStored(_) => TypeInfo::typed(self.nat_ty()),
             TermDef::BytesStored(_) => TypeInfo::typed(self.bytes_ty()),
@@ -996,8 +996,8 @@ impl Arena {
             TermDef::Const(n, t) => TermKind::Const(n, t),
             TermDef::Comb(f, x) => TermKind::Comb(f, x),
             TermDef::Abs(t, b) => TermKind::Abs(t, b),
-            TermDef::True => TermKind::True,
-            TermDef::False => TermKind::False,
+            TermDef::Bool(true) => TermKind::Bool(true),
+            TermDef::Bool(false) => TermKind::Bool(false),
             TermDef::Eq(a, b) => TermKind::Eq(a, b),
             TermDef::Ne(a, b) => TermKind::Ne(a, b),
             TermDef::Forall(p) => TermKind::Forall(p),
@@ -1237,7 +1237,7 @@ impl Arena {
 
             // ---- closed atoms with a known type ----------------------------
             TermDef::Const(_, ty) => (TypeInfo::typed(*ty), false),
-            TermDef::True | TermDef::False => (TypeInfo::typed(self.bool_ty()), false),
+            TermDef::Bool(true) | TermDef::Bool(false) => (TypeInfo::typed(self.bool_ty()), false),
             TermDef::IntInline(_) | TermDef::IntStored(_) => {
                 (TypeInfo::typed(self.int_ty()), false)
             }

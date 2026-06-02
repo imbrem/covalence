@@ -438,8 +438,8 @@ impl Driver {
             TermKind::Int(n) => format!("(int {n})"),
             TermKind::Free(n, _) => self.arena().string(n).to_string(),
             TermKind::Bound(i) => format!("(bound {i})"),
-            TermKind::True => "true".to_string(),
-            TermKind::False => "false".to_string(),
+            TermKind::Bool(true) => "true".to_string(),
+            TermKind::Bool(false) => "false".to_string(),
             TermKind::Comb(f, x) => {
                 format!("(comb {} {})", self.render_termref(f), self.render_termref(x))
             }

@@ -41,8 +41,8 @@ fn reduce_op1(arena: &mut Arena, op: PrimOp1, x: TermRef) -> Option<TermRef> {
     let x_def = *arena.term_def(x_id);
     let new_def = match (op, x_def) {
         // Boolean negation.
-        (LogicalNot, TermDef::True) => TermDef::False,
-        (LogicalNot, TermDef::False) => TermDef::True,
+        (LogicalNot, TermDef::Bool(true)) => TermDef::Bool(false),
+        (LogicalNot, TermDef::Bool(false)) => TermDef::Bool(true),
         // Naturals: numeral normalisation.
         (NatSucc, TermDef::NatInline(p)) => {
             let v = p.to_u64();
@@ -84,30 +84,30 @@ fn reduce_op2(arena: &mut Arena, op: PrimOp2, a: TermRef, b: TermRef) -> Option<
     let b_def = *arena.term_def(b_id);
     let new_def = match (op, a_def, b_def) {
         // Boolean: full truth tables. Both args must be literals.
-        (LogicalAnd, TermDef::True, TermDef::True) => TermDef::True,
-        (LogicalAnd, TermDef::True, TermDef::False) => TermDef::False,
-        (LogicalAnd, TermDef::False, TermDef::True) => TermDef::False,
-        (LogicalAnd, TermDef::False, TermDef::False) => TermDef::False,
-        (LogicalOr, TermDef::True, TermDef::True) => TermDef::True,
-        (LogicalOr, TermDef::True, TermDef::False) => TermDef::True,
-        (LogicalOr, TermDef::False, TermDef::True) => TermDef::True,
-        (LogicalOr, TermDef::False, TermDef::False) => TermDef::False,
-        (LogicalXor, TermDef::True, TermDef::True) => TermDef::False,
-        (LogicalXor, TermDef::True, TermDef::False) => TermDef::True,
-        (LogicalXor, TermDef::False, TermDef::True) => TermDef::True,
-        (LogicalXor, TermDef::False, TermDef::False) => TermDef::False,
-        (LogicalImp, TermDef::True, TermDef::True) => TermDef::True,
-        (LogicalImp, TermDef::True, TermDef::False) => TermDef::False,
-        (LogicalImp, TermDef::False, TermDef::True) => TermDef::True,
-        (LogicalImp, TermDef::False, TermDef::False) => TermDef::True,
-        (LogicalNand, TermDef::True, TermDef::True) => TermDef::False,
-        (LogicalNand, TermDef::True, TermDef::False) => TermDef::True,
-        (LogicalNand, TermDef::False, TermDef::True) => TermDef::True,
-        (LogicalNand, TermDef::False, TermDef::False) => TermDef::True,
-        (LogicalNor, TermDef::True, TermDef::True) => TermDef::False,
-        (LogicalNor, TermDef::True, TermDef::False) => TermDef::False,
-        (LogicalNor, TermDef::False, TermDef::True) => TermDef::False,
-        (LogicalNor, TermDef::False, TermDef::False) => TermDef::True,
+        (LogicalAnd, TermDef::Bool(true), TermDef::Bool(true)) => TermDef::Bool(true),
+        (LogicalAnd, TermDef::Bool(true), TermDef::Bool(false)) => TermDef::Bool(false),
+        (LogicalAnd, TermDef::Bool(false), TermDef::Bool(true)) => TermDef::Bool(false),
+        (LogicalAnd, TermDef::Bool(false), TermDef::Bool(false)) => TermDef::Bool(false),
+        (LogicalOr, TermDef::Bool(true), TermDef::Bool(true)) => TermDef::Bool(true),
+        (LogicalOr, TermDef::Bool(true), TermDef::Bool(false)) => TermDef::Bool(true),
+        (LogicalOr, TermDef::Bool(false), TermDef::Bool(true)) => TermDef::Bool(true),
+        (LogicalOr, TermDef::Bool(false), TermDef::Bool(false)) => TermDef::Bool(false),
+        (LogicalXor, TermDef::Bool(true), TermDef::Bool(true)) => TermDef::Bool(false),
+        (LogicalXor, TermDef::Bool(true), TermDef::Bool(false)) => TermDef::Bool(true),
+        (LogicalXor, TermDef::Bool(false), TermDef::Bool(true)) => TermDef::Bool(true),
+        (LogicalXor, TermDef::Bool(false), TermDef::Bool(false)) => TermDef::Bool(false),
+        (LogicalImp, TermDef::Bool(true), TermDef::Bool(true)) => TermDef::Bool(true),
+        (LogicalImp, TermDef::Bool(true), TermDef::Bool(false)) => TermDef::Bool(false),
+        (LogicalImp, TermDef::Bool(false), TermDef::Bool(true)) => TermDef::Bool(true),
+        (LogicalImp, TermDef::Bool(false), TermDef::Bool(false)) => TermDef::Bool(true),
+        (LogicalNand, TermDef::Bool(true), TermDef::Bool(true)) => TermDef::Bool(false),
+        (LogicalNand, TermDef::Bool(true), TermDef::Bool(false)) => TermDef::Bool(true),
+        (LogicalNand, TermDef::Bool(false), TermDef::Bool(true)) => TermDef::Bool(true),
+        (LogicalNand, TermDef::Bool(false), TermDef::Bool(false)) => TermDef::Bool(true),
+        (LogicalNor, TermDef::Bool(true), TermDef::Bool(true)) => TermDef::Bool(false),
+        (LogicalNor, TermDef::Bool(true), TermDef::Bool(false)) => TermDef::Bool(false),
+        (LogicalNor, TermDef::Bool(false), TermDef::Bool(true)) => TermDef::Bool(false),
+        (LogicalNor, TermDef::Bool(false), TermDef::Bool(false)) => TermDef::Bool(true),
 
         // Naturals: arithmetic on inline literals.
         (NatAdd, TermDef::NatInline(p), TermDef::NatInline(q)) => {
@@ -147,13 +147,13 @@ fn reduce_op2(arena: &mut Arena, op: PrimOp2, a: TermRef, b: TermRef) -> Option<
             TermDef::nat_inline(result)
         }
         (NatEq, TermDef::NatInline(p), TermDef::NatInline(q)) => {
-            if p.to_u64() == q.to_u64() { TermDef::True } else { TermDef::False }
+            if p.to_u64() == q.to_u64() { TermDef::Bool(true) } else { TermDef::Bool(false) }
         }
         (NatLt, TermDef::NatInline(p), TermDef::NatInline(q)) => {
-            if p.to_u64() < q.to_u64() { TermDef::True } else { TermDef::False }
+            if p.to_u64() < q.to_u64() { TermDef::Bool(true) } else { TermDef::Bool(false) }
         }
         (NatLe, TermDef::NatInline(p), TermDef::NatInline(q)) => {
-            if p.to_u64() <= q.to_u64() { TermDef::True } else { TermDef::False }
+            if p.to_u64() <= q.to_u64() { TermDef::Bool(true) } else { TermDef::Bool(false) }
         }
 
         // Integers: arithmetic on inline literals.
@@ -191,13 +191,13 @@ fn reduce_op2(arena: &mut Arena, op: PrimOp2, a: TermRef, b: TermRef) -> Option<
             }
         }
         (IntEq, TermDef::IntInline(p), TermDef::IntInline(q)) => {
-            if p.to_i64() == q.to_i64() { TermDef::True } else { TermDef::False }
+            if p.to_i64() == q.to_i64() { TermDef::Bool(true) } else { TermDef::Bool(false) }
         }
         (IntLt, TermDef::IntInline(p), TermDef::IntInline(q)) => {
-            if p.to_i64() < q.to_i64() { TermDef::True } else { TermDef::False }
+            if p.to_i64() < q.to_i64() { TermDef::Bool(true) } else { TermDef::Bool(false) }
         }
         (IntLe, TermDef::IntInline(p), TermDef::IntInline(q)) => {
-            if p.to_i64() <= q.to_i64() { TermDef::True } else { TermDef::False }
+            if p.to_i64() <= q.to_i64() { TermDef::Bool(true) } else { TermDef::Bool(false) }
         }
 
         _ => return None,

@@ -48,8 +48,7 @@ pub enum TermKind {
     Abs(TypeRef, TermRef),
 
     // -- truth + equality --
-    True,
-    False,
+    Bool(bool),
     Eq(TermRef, TermRef),
     Ne(TermRef, TermRef),
 
@@ -138,8 +137,7 @@ pub enum TermDef {
     Abs(TypeRef, TermRef),
 
     // -- truth + equality --
-    True,
-    False,
+    Bool(bool),
     Eq(TermRef, TermRef),
     Ne(TermRef, TermRef),
 
@@ -206,7 +204,7 @@ impl TermDef {
     pub fn deps(&self) -> Deps {
         use TermDef::*;
         match *self {
-            Bound(_) | Free(..) | Const(..) | True | False | Id(_) | LiftOp1(_) | LiftOp2(_)
+            Bound(_) | Free(..) | Const(..) | Bool(_) | Id(_) | LiftOp1(_) | LiftOp2(_)
             | IntInline(_) | IntStored(_) | NatInline(_) | NatStored(_)
             | BytesStored(_) => Deps::None,
             Forall(p) | Exists(p) | Op1(_, p) => Deps::One(p),

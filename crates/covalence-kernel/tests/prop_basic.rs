@@ -17,7 +17,7 @@ fn empty_context_is_empty() {
 #[test]
 fn extend_grows_context() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let p = Arc::new(Prop::new(Context::empty(), t));
     let ctx = Context::extend(Context::empty(), p.clone());
     assert_eq!(ctx.len(), 1);
@@ -29,8 +29,8 @@ fn extend_grows_context() {
 #[test]
 fn nested_contexts_chain_through_parent() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
-    let f = a.alloc_term(TermDef::False);
+    let t = a.alloc_term(TermDef::Bool(true));
+    let f = a.alloc_term(TermDef::Bool(false));
 
     let p1 = Arc::new(Prop::new(Context::empty(), t));
     let p2 = Arc::new(Prop::new(Context::empty(), f));
@@ -47,7 +47,7 @@ fn nested_contexts_chain_through_parent() {
 #[test]
 fn contains_prop_searches_chain() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let p = Arc::new(Prop::new(Context::empty(), t));
 
     let root = Context::empty();
@@ -56,7 +56,7 @@ fn contains_prop_searches_chain() {
     let ctx = Context::extend(root.clone(), p.clone());
     assert!(ctx.contains_prop(&p));
 
-    let f = a.alloc_term(TermDef::False);
+    let f = a.alloc_term(TermDef::Bool(false));
     let q = Arc::new(Prop::new(Context::empty(), f));
     let ctx2 = Context::extend(ctx, q.clone());
     assert!(ctx2.contains_prop(&p));
@@ -70,7 +70,7 @@ fn contains_prop_searches_chain() {
 #[test]
 fn thm_refl_concludes_eq() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let thm = Thm::refl(&mut a, Context::empty(), t).unwrap();
     match a.term_def(thm.concl()) {
         TermDef::Eq(l, r) => {
@@ -94,7 +94,7 @@ fn thm_refl_rejects_ill_typed_input() {
 #[test]
 fn thm_assume_extracts_assumption_concl() {
     let mut a = Arena::new();
-    let f = a.alloc_term(TermDef::False);
+    let f = a.alloc_term(TermDef::Bool(false));
     let prop = Arc::new(Prop::new(Context::empty(), f));
     let ctx = Context::extend(Context::empty(), prop.clone());
     let thm = Thm::assume(&a, ctx.clone(), prop.clone()).unwrap();
@@ -105,7 +105,7 @@ fn thm_assume_extracts_assumption_concl() {
 #[test]
 fn thm_assume_rejects_prop_not_in_ctx() {
     let mut a = Arena::new();
-    let f = a.alloc_term(TermDef::False);
+    let f = a.alloc_term(TermDef::Bool(false));
     let prop = Arc::new(Prop::new(Context::empty(), f));
     let err = Thm::assume(&a, Context::empty(), prop).unwrap_err();
     assert_eq!(err, ProofError::AssumptionNotInContext);
@@ -114,7 +114,7 @@ fn thm_assume_rejects_prop_not_in_ctx() {
 #[test]
 fn context_survives_pop_via_arc() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let prop = Arc::new(Prop::new(Context::empty(), t));
 
     let thm = {
@@ -129,7 +129,7 @@ fn context_survives_pop_via_arc() {
 #[test]
 fn refl_can_be_cloned() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let thm = Thm::refl(&mut a, Context::empty(), t).unwrap();
     let thm2 = thm.clone();
     assert_eq!(thm.concl(), thm2.concl());
@@ -138,11 +138,11 @@ fn refl_can_be_cloned() {
 #[test]
 fn add_assumption_extends_context() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let thm = Thm::refl(&mut a, Context::empty(), t).unwrap();
     let original_concl = thm.concl();
 
-    let f = a.alloc_term(TermDef::False);
+    let f = a.alloc_term(TermDef::Bool(false));
     let extra = Arc::new(Prop::new(Context::empty(), f));
     let weakened = thm.add_assumption(&a, extra.clone()).unwrap();
 
@@ -154,7 +154,7 @@ fn add_assumption_extends_context() {
 #[test]
 fn add_assumption_rejects_ill_typed() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let thm = Thm::refl(&mut a, Context::empty(), t).unwrap();
     // A Prop carrying an ill-typed conclusion.
     let b0 = a.alloc_term(TermDef::Bound(0));
@@ -166,11 +166,11 @@ fn add_assumption_rejects_ill_typed() {
 #[test]
 fn add_assumption_stacks_multiple() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let thm = Thm::refl(&mut a, Context::empty(), t).unwrap();
 
     let p1 = Arc::new(Prop::new(Context::empty(), t));
-    let f = a.alloc_term(TermDef::False);
+    let f = a.alloc_term(TermDef::Bool(false));
     let p2 = Arc::new(Prop::new(Context::empty(), f));
 
     let weakened = thm
@@ -186,11 +186,11 @@ fn add_assumption_stacks_multiple() {
 #[test]
 fn not_from_false_derives_negation() {
     let mut a = Arena::new();
-    let false_term = a.alloc_term(TermDef::False);
+    let false_term = a.alloc_term(TermDef::Bool(false));
     let false_prop = Arc::new(Prop::new(Context::empty(), false_term));
     let ctx = Context::extend(Context::empty(), false_prop.clone());
     let thm_false = Thm::assume(&a, ctx.clone(), false_prop).unwrap();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let not_t = Thm::not_from_false(&mut a, thm_false, t).unwrap();
     match a.term_def(not_t.concl()) {
         TermDef::Op1(PrimOp1::LogicalNot, x) => {
@@ -204,9 +204,9 @@ fn not_from_false_derives_negation() {
 #[test]
 fn not_from_false_rejects_non_false_conclusion() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let thm = Thm::refl(&mut a, Context::empty(), t).unwrap();
-    let p = a.alloc_term(TermDef::True);
+    let p = a.alloc_term(TermDef::Bool(true));
     let err = Thm::not_from_false(&mut a, thm, p).unwrap_err();
     assert_eq!(err, ProofError::ConclusionNotFalse);
 }
@@ -214,10 +214,10 @@ fn not_from_false_rejects_non_false_conclusion() {
 #[test]
 fn nonlinear_thm_clone_combine() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let thm = Thm::refl(&mut a, Context::empty(), t).unwrap();
 
-    let f = a.alloc_term(TermDef::False);
+    let f = a.alloc_term(TermDef::Bool(false));
     let p_extra = Arc::new(Prop::new(Context::empty(), f));
 
     let thm1 = thm.clone().add_assumption(&a, p_extra.clone()).unwrap();
@@ -231,7 +231,7 @@ fn nonlinear_thm_clone_combine() {
 #[test]
 fn sym_flips_equality() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let refl_thm = Thm::refl(&mut a, Context::empty(), t).unwrap();
     let flipped = Thm::sym(&mut a, refl_thm).unwrap();
     match a.term_def(flipped.concl()) {
@@ -246,7 +246,7 @@ fn sym_flips_equality() {
 #[test]
 fn sym_rejects_non_equality() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let assumption_prop = Arc::new(Prop::new(Context::empty(), t));
     let ctx = Context::extend(Context::empty(), assumption_prop.clone());
     let thm = Thm::assume(&a, ctx, assumption_prop).unwrap();
@@ -257,7 +257,7 @@ fn sym_rejects_non_equality() {
 #[test]
 fn trans_chains_equalities() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let ctx = Context::empty();
     let ab = Thm::refl(&mut a, ctx.clone(), t).unwrap();
     let bc = Thm::refl(&mut a, ctx.clone(), t).unwrap();
@@ -294,7 +294,7 @@ fn trans_via_uf_midpoint_match() {
 #[test]
 fn trans_rejects_context_mismatch() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let prop = Arc::new(Prop::new(Context::empty(), t));
     let ctx1 = Context::empty();
     let ctx2 = Context::extend(Context::empty(), prop);
@@ -307,7 +307,7 @@ fn trans_rejects_context_mismatch() {
 #[test]
 fn eq_mp_derives_rhs_from_lhs() {
     let mut a = Arena::new();
-    let p = a.alloc_term(TermDef::True);
+    let p = a.alloc_term(TermDef::Bool(true));
     let p_prop = Arc::new(Prop::new(Context::empty(), p));
     let ctx = Context::extend(Context::empty(), p_prop.clone());
     let p_thm = Thm::assume(&a, ctx.clone(), p_prop).unwrap();
@@ -319,8 +319,8 @@ fn eq_mp_derives_rhs_from_lhs() {
 #[test]
 fn eq_mp_rejects_lhs_mismatch() {
     let mut a = Arena::new();
-    let p = a.alloc_term(TermDef::True);
-    let q = a.alloc_term(TermDef::False);
+    let p = a.alloc_term(TermDef::Bool(true));
+    let q = a.alloc_term(TermDef::Bool(false));
     let q_prop = Arc::new(Prop::new(Context::empty(), q));
     let ctx = Context::extend(Context::empty(), q_prop.clone());
     let q_thm = Thm::assume(&a, ctx.clone(), q_prop).unwrap();
@@ -334,8 +334,8 @@ fn mp_derives_consequent_from_implication() {
     // We need a Thm whose conclusion is Op2(LogicalImp, p, q), and
     // a Thm whose conclusion is p. Easiest: assume both.
     let mut a = Arena::new();
-    let p = a.alloc_term(TermDef::True);
-    let q = a.alloc_term(TermDef::False);
+    let p = a.alloc_term(TermDef::Bool(true));
+    let q = a.alloc_term(TermDef::Bool(false));
     let imp = a.alloc_term(TermDef::Op2(
         PrimOp2::LogicalImp,
         TermRef::local(p),
@@ -356,7 +356,7 @@ fn mp_derives_consequent_from_implication() {
 #[test]
 fn mp_rejects_non_implication() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let prop_t = Arc::new(Prop::new(Context::empty(), t));
     let ctx = Context::extend(Context::empty(), prop_t.clone());
     let thm = Thm::assume(&a, ctx.clone(), prop_t.clone()).unwrap();
@@ -374,7 +374,7 @@ fn cong_at_depth_1_subsumes_mk_comb() {
     let f_to_b = a.alloc_type(covalence_kernel::TypeDef::Fun(bool_ty, bool_ty));
     let name_f = a.intern_string("f".into());
     let f = a.alloc_term(TermDef::Const(name_f, f_to_b));
-    let x = a.alloc_term(TermDef::True);
+    let x = a.alloc_term(TermDef::Bool(true));
     let fx_1 = a.alloc_term(TermDef::Comb(TermRef::local(f), TermRef::local(x)));
     let fx_2 = a.alloc_term(TermDef::Comb(TermRef::local(f), TermRef::local(x)));
 
@@ -399,8 +399,8 @@ fn cong_at_depth_1_subsumes_mk_comb() {
 #[test]
 fn cong_rejects_non_congruent_terms() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
-    let f = a.alloc_term(TermDef::False);
+    let t = a.alloc_term(TermDef::Bool(true));
+    let f = a.alloc_term(TermDef::Bool(false));
     let ctx = Context::empty();
     let err = Thm::cong(&mut a, ctx, TermRef::local(t), TermRef::local(f), 5)
         .unwrap_err();
@@ -437,7 +437,7 @@ fn beta_reduces_redex_to_equality() {
     // Abs body uses Bound(0), so the Abs (before infer) is marked
     // IllTyped at alloc_term. Run infer to get its proper type.
     let _ = a.infer(abs);
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let comb = a.alloc_term(TermDef::Comb(TermRef::local(abs), TermRef::local(t)));
     // The Comb of (bool→bool) and bool is well-typed.
     let thm = Thm::beta(&mut a, Context::empty(), comb).unwrap();
@@ -454,7 +454,7 @@ fn beta_reduces_redex_to_equality() {
 #[test]
 fn beta_rejects_non_redex() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let err = Thm::beta(&mut a, Context::empty(), t).unwrap_err();
     assert_eq!(err, ProofError::ExpectedBetaRedex);
 }
@@ -468,7 +468,7 @@ fn beta_rejects_ill_typed_redex() {
     let abs = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(b0)));
     // Don't run infer — abs's cached type_info stays IllTyped. The
     // Comb on it is therefore also not well-typed at alloc.
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let comb = a.alloc_term(TermDef::Comb(TermRef::local(abs), TermRef::local(t)));
     let err = Thm::beta(&mut a, Context::empty(), comb).unwrap_err();
     assert_eq!(err, ProofError::IllTypedInput);
@@ -477,7 +477,7 @@ fn beta_rejects_ill_typed_redex() {
 #[test]
 fn thm_field_is_kernel_only() {
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let thm = Thm::refl(&mut a, Context::empty(), t).unwrap();
     let prop_ref = thm.prop();
     let _: &Prop = prop_ref;
@@ -488,13 +488,13 @@ fn reduce_yields_eq_of_original_and_reduced() {
     // Not(True) reduces to False — the Thm carries that equality.
     use covalence_kernel::PrimOp1;
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let not_t = a.alloc_term(TermDef::Op1(PrimOp1::LogicalNot, TermRef::local(t)));
     let thm = Thm::reduce(&mut a, Context::empty(), not_t).unwrap();
     match a.term_def(thm.concl()) {
         TermDef::Eq(l, r) => {
             assert_eq!(*l, TermRef::local(not_t));
-            assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::False);
+            assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(false));
         }
         other => panic!("expected Eq, got {other:?}"),
     }
@@ -504,7 +504,7 @@ fn reduce_yields_eq_of_original_and_reduced() {
 fn reduce_rejects_unreducible_term() {
     // A bare True has no rule firing — reduce errors.
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let err = Thm::reduce(&mut a, Context::empty(), t).unwrap_err();
     assert_eq!(err, ProofError::NotReducible);
 }
@@ -559,7 +559,7 @@ fn abs_rejects_variable_free_in_assumption() {
     let bool_ty = a.bool_ty();
     let xname = a.intern_string("x".into());
     let x = a.alloc_term(TermDef::Free(xname, bool_ty));
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let x_eq_true = a.alloc_term(TermDef::Eq(TermRef::local(x), TermRef::local(t)));
 
     let assum = std::sync::Arc::new(Prop::new(Context::empty(), x_eq_true));
@@ -578,7 +578,7 @@ fn abs_allows_variable_not_free_in_assumption() {
     let yname = a.intern_string("y".into());
     let x = a.alloc_term(TermDef::Free(xname, bool_ty));
     let y = a.alloc_term(TermDef::Free(yname, bool_ty));
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let y_eq_true = a.alloc_term(TermDef::Eq(TermRef::local(y), TermRef::local(t)));
 
     let assum = std::sync::Arc::new(Prop::new(Context::empty(), y_eq_true));
@@ -595,14 +595,14 @@ fn inst_substitutes_free_in_conclusion() {
     let bool_ty = a.bool_ty();
     let xname = a.intern_string("x".into());
     let x = a.alloc_term(TermDef::Free(xname, bool_ty));
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
 
     let refl_x = Thm::refl(&mut a, Context::empty(), x).unwrap();
     let thm = Thm::inst(&mut a, refl_x, xname, bool_ty, TermRef::local(t)).unwrap();
     match a.term_def(thm.concl()) {
         TermDef::Eq(l, r) => {
-            assert_eq!(a.term_def(l.as_local().unwrap()), &TermDef::True);
-            assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::True);
+            assert_eq!(a.term_def(l.as_local().unwrap()), &TermDef::Bool(true));
+            assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(true));
         }
         other => panic!("expected Eq, got {other:?}"),
     }
@@ -618,7 +618,7 @@ fn inst_substitutes_in_context_assumptions() {
     let yname = a.intern_string("y".into());
     let _x = a.alloc_term(TermDef::Free(xname, bool_ty));
     let y = a.alloc_term(TermDef::Free(yname, bool_ty));
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
 
     // Context: { x = True } where x is the variable we'll INST.
     let x_free = a.alloc_term(TermDef::Free(xname, bool_ty));
@@ -633,8 +633,8 @@ fn inst_substitutes_in_context_assumptions() {
     let new_assum_concl = new_ctx.assumption(0).unwrap().concl;
     match a.term_def(new_assum_concl) {
         TermDef::Eq(l, r) => {
-            assert_eq!(a.term_def(l.as_local().unwrap()), &TermDef::True);
-            assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::True);
+            assert_eq!(a.term_def(l.as_local().unwrap()), &TermDef::Bool(true));
+            assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(true));
         }
         other => panic!("expected Eq(True, True), got {other:?}"),
     }
@@ -658,7 +658,7 @@ fn inst_rejects_type_mismatched_replacement() {
 fn deduct_antisym_yields_eq_of_concls() {
     // ⊢ True (assume True from ctx {True}) + ⊢ True (likewise) → ⊢ True = True
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let assum = std::sync::Arc::new(Prop::new(Context::empty(), t));
     let ctx = Context::extend(Context::empty(), assum.clone());
     let thm_p = Thm::assume(&a, ctx.clone(), assum.clone()).unwrap();
@@ -666,8 +666,8 @@ fn deduct_antisym_yields_eq_of_concls() {
     let thm = Thm::deduct_antisym_rule(&mut a, thm_p, thm_q).unwrap();
     match a.term_def(thm.concl()) {
         TermDef::Eq(l, r) => {
-            assert_eq!(a.term_def(l.as_local().unwrap()), &TermDef::True);
-            assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::True);
+            assert_eq!(a.term_def(l.as_local().unwrap()), &TermDef::Bool(true));
+            assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(true));
         }
         other => panic!("expected Eq, got {other:?}"),
     }
@@ -716,7 +716,7 @@ fn deduct_antisym_cancels_each_concl_from_other_ctx() {
 fn deduct_antisym_rejects_type_mismatched_concls() {
     // p : bool (True), q : Nat (0). Eq(p, q) would be ill-typed.
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let n = a.alloc_term(TermDef::nat_inline(0));
     let assum_t = std::sync::Arc::new(Prop::new(Context::empty(), t));
     let assum_n = std::sync::Arc::new(Prop::new(Context::empty(), n));
@@ -732,7 +732,7 @@ fn deduct_antisym_rejects_type_mismatched_concls() {
 fn abs_rejects_non_equality_thm() {
     // Thm::assume on a non-Eq concl — abs should reject.
     let mut a = Arena::new();
-    let t = a.alloc_term(TermDef::True);
+    let t = a.alloc_term(TermDef::Bool(true));
     let assum = std::sync::Arc::new(Prop::new(Context::empty(), t));
     let ctx = Context::extend(Context::empty(), assum.clone());
     let thm_t = Thm::assume(&a, ctx, assum).unwrap();

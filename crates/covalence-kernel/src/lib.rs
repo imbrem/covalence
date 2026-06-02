@@ -1,10 +1,11 @@
 //! Covalence HOL kernel.
 //!
 //! See `docs/prover-architecture.md` for the conceptual model and
-//! `docs/prover-mvp-plan.md` for the staged build-out. This crate is
-//! mid-rewrite; Phase 1 stands up the arena, term/type enums, and
-//! union-find storage. Equality predicates, inference rules, Prop/Thm,
-//! and concepts land in later phases.
+//! `docs/prover-mvp-plan.md` for the staged build-out.
+//!
+//! Surface layers:
+//! - [`Kernel`] — ergonomic facade with term builders + proof methods.
+//! - [`Arena`] + [`Thm`] — the lower-level primitives.
 
 pub mod arena;
 pub mod id;

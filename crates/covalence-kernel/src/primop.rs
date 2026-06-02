@@ -17,8 +17,12 @@ const fn b(t: BuiltinTy) -> TypeRef {
 }
 
 /// Unary primitive operations.
+///
+/// **Non-exhaustive.** Future kernel revisions can introduce new
+/// primops; downstream `match`es must include a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u8)]
+#[non_exhaustive]
 pub enum PrimOp1 {
     // -- booleans (§1) --
     LogicalNot,
@@ -43,8 +47,12 @@ pub enum PrimOp1 {
 }
 
 /// Binary primitive operations.
+///
+/// **Non-exhaustive.** Future kernel revisions can introduce new
+/// primops; downstream `match`es must include a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u8)]
+#[non_exhaustive]
 pub enum PrimOp2 {
     // -- booleans (§1) --
     LogicalAnd,

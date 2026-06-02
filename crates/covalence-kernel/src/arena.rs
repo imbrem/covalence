@@ -1,7 +1,9 @@
-//! The Arena: pool of types, terms, and value tables, plus union-find
-//! state. Identity is by pointer (see architecture §2.2): a freshly built
-//! Arena is mutable; freezing produces an `Arc<Arena>` that other arenas
-//! may import via foreign-arena references.
+//! The [`Arena`]: a pool of types, terms, and interned literals
+//! plus union-find equality state.
+//!
+//! Identity is by pointer (see architecture §2.2). A freshly built
+//! arena is mutable; freezing it produces an `Arc<Arena>` that other
+//! arenas may import via foreign-arena references.
 
 use std::sync::Arc;
 
@@ -24,51 +26,38 @@ pub enum UnionError {
 use crate::ty::{BuiltinTy, TypeDef, TypeInfo, TypeInfoKind, TypeRef, TypeRefKind};
 use crate::uf::{TermUfEntry, TypeUfEntry};
 
-/// A pool of types, terms, value literals, and union-find state.
+/// A pool of types, terms, interned literals, and union-find state.
 ///
 /// Build one mutably (`Arena::new`, `alloc_type`, `alloc_term`, …),
-/// then `freeze()` it into an `Arc<Arena>` for sharing as a foreign
-/// import. Frozen arenas are immutable.
+/// then [`freeze`](Self::freeze) it into an `Arc<Arena>` for sharing
+/// as a foreign import. Frozen arenas are immutable.
 #[derive(Debug, Clone)]
 pub struct Arena {
     types: Vec<TypeDef>,
     terms: Vec<TermDef>,
     uf_terms: Vec<TermUfEntry>,
     uf_types: Vec<TypeUfEntry>,
-    /// Frozen arenas this one references. Carrying them here keeps
-    /// them alive even if no `TermRef::Foreign` currently mentions
-    /// them; it also lets serialization enumerate dependencies. Indexed
-    /// by [`ImportId`].
     imports: Vec<Arc<Arena>>,
 
-    // -- interning tables: variable-sized payloads pulled out of
-    //    TermDef / TypeDef so those enums can stay (or become) Copy.
+    // Interning tables for variable-sized payloads.
     strings: Vec<SmolStr>,
     bytes: Vec<bytes::Bytes>,
     ints: Vec<covalence_types::Int>,
     nats: Vec<covalence_types::Nat>,
     tyargs: Vec<Vec<TypeRef>>,
 
-    /// Side table for foreign-arena term references. The packed
-    /// [`TermRef`](crate::term::TermRef) carries a foreign-flag bit
-    /// plus an index into this vec; entries hold the source
-    /// `(ImportId, TermId)` pair.
     foreign_terms: Vec<(ImportId, TermId)>,
-    /// Side table for foreign-arena type references; same scheme.
     foreign_types: Vec<(ImportId, TypeId)>,
 
-    /// Display-hint side table for `Abs` terms. Indexed by TermId,
-    /// parallel to `terms`. `None` for non-`Abs` terms and for `Abs`
-    /// terms whose binder was never given a hint. Hints never affect
-    /// correctness — only printing.
+    /// Display hint per `Abs` term — never affects correctness, only
+    /// pretty-printing.
     abs_hints: Vec<Option<StrId>>,
 }
 
 impl Arena {
-    /// Build an empty mutable arena. Primitive types are not arena-
-    /// allocated — they live as builtin-tagged [`TypeRef`]s. Callers
-    /// reach them via [`bool_ty`](Self::bool_ty),
-    /// [`nat_ty`](Self::nat_ty), and friends.
+    /// Build an empty mutable arena. Builtin types ([`bool_ty`](Self::bool_ty),
+    /// [`nat_ty`](Self::nat_ty), …) are kernel-known and never get an
+    /// arena entry.
     pub fn new() -> Self {
         Self {
             types: Vec::new(),
@@ -996,12 +985,10 @@ impl Arena {
         }
     }
 
-    /// Project a term to its public-API [`TermKind`] view. Use this
-    /// for pattern matching in user code — the underlying `TermDef`
-    /// has one variant per primop and is intended as internal
-    /// storage. Arbitrary-precision literals are materialised: a
-    /// `TermDef::NatStored(id)` becomes `TermKind::Nat(self.nat(id).clone())`,
-    /// hiding the inline-vs-stored split entirely.
+    /// Project a term to its public [`TermKind`] view. Arbitrary-
+    /// precision literals are materialised as full
+    /// [`Nat`](covalence_types::Nat) / [`Int`](covalence_types::Int)
+    /// values regardless of how they're stored internally.
     pub fn kind(&self, id: TermId) -> TermKind {
         let def = self.term_def(id);
         if let Some((op, x)) = def.as_op1() {
@@ -1250,10 +1237,8 @@ impl Arena {
         (entry.type_info, entry.has_free)
     }
 
-    /// Resolve a `TypeRef` to its underlying `TypeDef`.
-    /// Builtins map back to their nullary `TypeDef` variants;
-    /// local types look up via `self.types`; foreign types return
-    /// `None` (typing rules treat them opaquely for now).
+    /// Resolve a [`TypeRef`] to its underlying [`TypeDef`]. Returns
+    /// `None` for foreign types — typing rules treat them opaquely.
     pub fn type_def_of(&self, r: TypeRef) -> Option<TypeDef> {
         match r.decode() {
             TypeRefKind::Local(id) => Some(*self.type_def(id)),

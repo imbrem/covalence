@@ -1,30 +1,11 @@
-//! Type-level data: `TypeDef`, `TypeRef`, `TypeInfo`, and the
-//! `BuiltinTy` enum of pre-defined primitive types.
+//! Type-level data: [`TypeDef`], [`TypeRef`], [`TypeInfo`], and the
+//! [`BuiltinTy`] enum of pre-defined primitive types.
 //!
-//! ## Encoding sketch (i32, packed)
-//!
-//! Both [`TypeRef`] and [`TypeInfo`] are i32 newtypes. The
-//! representation is **fully encapsulated** — callers go through
-//! `decode()` for pattern matching and the smart constructors
-//! (`local`, `foreign`, `builtin`, `typed`, `unbound`, `ILL_TYPED`)
-//! for construction. The raw integer is an implementation detail.
-//!
-//! ```text
-//! i32 range                          Meaning
-//! ─────────────────────────────────────────────────────────────────
-//! 0 ..= i32::MAX                     Allocated type. Bit 30 = foreign,
-//!                                    bits 0..29 = id.
-//! -1                                 IllTyped sentinel (also the
-//!                                    "first builtin slot").
-//! -2 ..= -BuiltinTy::COUNT - 1       Current builtin types (Bool=-2,
-//!                                    Bytes=-3, Int=-4, Nat=-5).
-//! -BuiltinTy::COUNT - 2 ..= -65536   Reserved builtin slots for future
-//!                                    additions.
-//! -65537 ..= i32::MIN                Unbound depth: Unbound(n) = -65537 - n.
-//! ```
-//!
-//! So **every TypeRef is also a valid `TypeInfo::Typed(...)`** —
-//! the same i32 value works for both.
+//! All three references ([`TypeRef`], [`TypeInfo`]) are opaque — the
+//! kernel does not promise any particular byte representation.
+//! Construct via the smart constructors ([`TypeRef::local`],
+//! [`TypeRef::builtin`], [`TypeInfo::typed`], [`TypeInfo::ILL_TYPED`],
+//! …) and pattern-match via `decode()`.
 
 use crate::id::{ForeignTypeId, StrId, TyArgsId, TypeId};
 
@@ -33,13 +14,8 @@ use crate::id::{ForeignTypeId, StrId, TyArgsId, TypeId};
 // ---------------------------------------------------------------------------
 
 /// The kernel's primitive types — kernel-known, no arena allocation
-/// required.
-///
-/// Each variant encodes as a small negative integer (-2 for `Bool`,
-/// -3 for `Bytes`, -4 for `Int`, -5 for `Nat`). The slot at -1 is
-/// reserved for [`TypeInfo::ILL_TYPED`]; future builtins (Bits and
-/// fixed-width ints will return) can be added in slots up to
-/// [`BUILTIN_SLOTS`].
+/// required. Reach them via [`TypeRef::builtin`] or the convenience
+/// accessors on [`Arena`](crate::Arena).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum BuiltinTy {
@@ -53,8 +29,7 @@ impl BuiltinTy {
     /// Number of builtin types currently defined.
     pub const COUNT: u8 = 4;
 
-    /// Decode from the small-negative encoding (`-2..=-(COUNT + 1)`).
-    pub fn from_encoded(neg: i32) -> Option<Self> {
+    pub(crate) fn from_encoded(neg: i32) -> Option<Self> {
         use BuiltinTy::*;
         Some(match neg {
             -2 => Bool,
@@ -65,22 +40,21 @@ impl BuiltinTy {
         })
     }
 
-    /// Encode as the small-negative TypeRef/TypeInfo value.
-    pub const fn encoded(self) -> i32 {
+    pub(crate) const fn encoded(self) -> i32 {
         -(self as u8 as i32)
     }
 }
 
 // ---------------------------------------------------------------------------
-// Encoding constants
+// Internal encoding constants (all crate-private)
 // ---------------------------------------------------------------------------
 
 /// Number of i32 slots reserved for builtin types, including the
-/// [`TypeInfo::ILL_TYPED`] sentinel at slot -1. The kernel grants
-/// itself room for a lot more builtins than it currently needs.
-pub const BUILTIN_SLOTS: i32 = 65536;
+/// IllTyped sentinel. The kernel grants itself room for a lot more
+/// builtins than it currently needs.
+pub(crate) const BUILTIN_SLOTS: i32 = 65536;
 
-/// IllTyped sentinel — slot -1, the first reserved builtin slot.
+/// IllTyped sentinel.
 const ILL_TYPED_ENCODED: i32 = -1;
 
 /// Most-negative i32 value still interpreted as a (current or future)
@@ -89,16 +63,16 @@ const BUILTIN_FLOOR: i32 = -BUILTIN_SLOTS;
 
 /// Bit 30 of the positive (allocated) range marks foreign refs.
 const FOREIGN_FLAG_BIT: i32 = 1 << 30;
-/// Mask for the id within the allocated range (bits 0..29).
+/// Mask for the id within the allocated range.
 const ALLOC_ID_MASK: i32 = FOREIGN_FLAG_BIT - 1;
 
 // ---------------------------------------------------------------------------
 // TypeRef
 // ---------------------------------------------------------------------------
 
-/// Reference to a type. Packed i32 — opaque to callers; construct via
+/// Reference to a type. Opaque — construct via
 /// [`TypeRef::local`] / [`TypeRef::foreign`] / [`TypeRef::builtin`],
-/// inspect via [`TypeRef::decode`] or the `is_*`/`as_*` predicates.
+/// inspect via [`TypeRef::decode`] or the `is_*` / `as_*` predicates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypeRef(i32);
 
@@ -112,7 +86,7 @@ pub enum TypeRefKind {
 }
 
 impl TypeRef {
-    /// Build a local reference. Panics in debug builds if `id` exceeds 2^30 - 1.
+    /// Build a reference to a type allocated in the current arena.
     pub fn local(id: TypeId) -> Self {
         debug_assert!(
             id.0 <= ALLOC_ID_MASK as u32,
@@ -121,7 +95,7 @@ impl TypeRef {
         Self(id.0 as i32)
     }
 
-    /// Build a foreign reference. Panics in debug builds if `id` exceeds 2^30 - 1.
+    /// Build a reference to a type imported from a foreign arena.
     pub fn foreign(id: ForeignTypeId) -> Self {
         debug_assert!(
             id.0 <= ALLOC_ID_MASK as u32,
@@ -173,21 +147,11 @@ impl TypeRef {
         } else if let Some(builtin) = self.as_builtin() {
             TypeRefKind::Builtin(builtin)
         } else {
-            // Hitting this means the i32 is in a reserved range we
-            // haven't assigned (e.g., a future-builtin slot or the
-            // IllTyped sentinel — but only the TypeInfo wrapper
-            // should hold IllTyped). Treat as builtin for robustness.
-            unreachable!("TypeRef i32 value {} doesn't decode", self.0);
+            unreachable!("TypeRef internal encoding {} doesn't decode", self.0);
         }
     }
 
-    /// The raw i32 representation (for serialisation / debugging).
-    pub fn to_raw(self) -> i32 {
-        self.0
-    }
-
-    /// Wrap a raw i32. Caller asserts it's a valid TypeRef encoding.
-    pub fn from_raw(raw: i32) -> Self {
+    pub(crate) fn from_raw(raw: i32) -> Self {
         Self(raw)
     }
 }
@@ -196,23 +160,24 @@ impl TypeRef {
 // TypeInfo
 // ---------------------------------------------------------------------------
 
-/// Type information attached to a term at allocation time. Opaque
-/// i32 — see module-level encoding sketch. Pattern-match by calling
-/// [`TypeInfo::decode`] to get a [`TypeInfoKind`].
+/// Type information attached to a term at allocation time. Opaque —
+/// pattern-match by calling [`TypeInfo::decode`] to get a
+/// [`TypeInfoKind`], or use [`TypeInfo::is_typed`] / [`as_type`].
 ///
 /// **Soundness note.** A term with `TypeInfoKind::IllTyped` is
 /// perfectly allowed to sit in the arena; `alloc_term` never rejects.
 /// Only when a `Thm` is constructed does the kernel assert that all
 /// terms in the relevant arena are well-typed.
+///
+/// [`as_type`]: TypeInfo::as_type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypeInfo(i32);
 
 impl TypeInfo {
-    /// The IllTyped sentinel — slot -1 in the builtin range.
+    /// The IllTyped sentinel.
     pub const ILL_TYPED: TypeInfo = TypeInfo(ILL_TYPED_ENCODED);
 
-    /// Build a `Typed` info from a TypeRef. Every TypeRef encoding is
-    /// also a valid TypeInfo encoding.
+    /// Build a `Typed` info from a TypeRef.
     pub const fn typed(t: TypeRef) -> Self {
         Self(t.0)
     }
@@ -298,14 +263,13 @@ pub enum TypeInfoKind {
 // TypeDef
 // ---------------------------------------------------------------------------
 
-/// The kernel's type language. Stored in `arena.types` for
-/// **user-allocated** types only — primitive types live as
-/// [`BuiltinTy`] inside [`TypeRef`] and never get an arena entry.
+/// The kernel's type language.
 ///
-/// The primitive variants here (`Bool`, `Bytes`, `Int`, `Nat`) are accepted by
-/// [`alloc_type`](crate::arena::Arena::alloc_type) for convenience;
-/// the call returns the matching builtin TypeRef without writing to
-/// `arena.types`.
+/// The primitive variants (`Bool`, `Bytes`, `Int`, `Nat`) are
+/// accepted by [`alloc_type`](crate::Arena::alloc_type) as a
+/// convenience and dedupe to the matching [`BuiltinTy`]
+/// [`TypeRef`]. Type formers (`Fun`, `TVar`, `Tyapp`) become local
+/// allocations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TypeDef {
     // -- primitive aliases (dedupe to BuiltinTy in alloc_type) --
@@ -314,10 +278,9 @@ pub enum TypeDef {
     Int,
     Nat,
     // -- type formers (user-allocated) --
-    /// The function type `α → β`. Stored in `arena.types`.
+    /// The function type `α → β`.
     Fun(TypeRef, TypeRef),
-    /// A polymorphic type variable, e.g. `'a` — name interned in
-    /// `arena.strings`.
+    /// A polymorphic type variable, e.g. `'a`.
     TVar(StrId),
     /// A user-declared type constructor applied to its arguments.
     Tyapp(StrId, TyArgsId),

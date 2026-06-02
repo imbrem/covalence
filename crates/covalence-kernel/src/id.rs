@@ -1,20 +1,14 @@
-//! Index handles into the Arena's internal tables.
+//! Identity handles for things stored in an arena.
 //!
-//! Every variant is `Copy` and `u32`-sized — that's what lets `TermRef` and
-//! `TypeRef` (and through them `TermDef` / `TypeDef`) stay `Copy`. The
-//! variable-sized payloads (names, byte strings, big-ints, type-arg lists,
-//! foreign arenas) live in per-arena interning tables and are referenced
-//! by these handles.
-//!
-//! Sealing policy: `TermId` and `TypeId` are fully public (the natural
-//! identity of a term / type the user receives from `alloc_term` /
-//! `alloc_type`). The rest — `BytesId`, `IntId`, `NatId`,
-//! `StrId`, `TyArgsId`, `ImportId`, `ForeignTermId`, `ForeignTypeId` —
-//! are **sealed**: the type is public so callers can hold and compare
-//! them, but the inner u32 is `pub(crate)`, so only the kernel can
-//! construct them. External code receives these IDs from kernel methods
+//! [`TermId`] and [`TypeId`] are fully public — they're the natural
+//! identity returned by [`alloc_term`](crate::Arena::alloc_term) /
+//! [`alloc_type`](crate::Arena::alloc_type). The rest — `BytesId`,
+//! `IntId`, `NatId`, `StrId`, `TyArgsId`, `ImportId`, `ForeignTermId`,
+//! `ForeignTypeId` — are **sealed**: the type is public so callers
+//! can hold and compare them, but only the kernel can construct
+//! them. External code receives these IDs from kernel methods
 //! (`intern_string`, `add_import`, …) and matches on them inside
-//! `TermDef` / `TypeDef` variants without rebuilding them.
+//! `TermDef` / `TypeDef` variants.
 
 macro_rules! id_type_pub {
     ($(#[$attr:meta])* $name:ident) => {
@@ -33,55 +27,54 @@ macro_rules! id_type_sealed {
 }
 
 id_type_pub! {
-    /// Index into `Arena.types`.
+    /// Identity of a type allocated in an arena.
     TypeId
 }
 
 id_type_pub! {
-    /// Index into `Arena.terms`.
+    /// Identity of a term allocated in an arena.
     TermId
 }
 
 id_type_sealed! {
-    /// Index into `Arena.imports`. A `TermRef::Foreign(import, id)` or
-    /// `TypeRef::Foreign(import, id)` resolves through this table.
+    /// Identity of a foreign arena imported into the current arena.
     ImportId
 }
 
 id_type_sealed! {
-    /// Index into `Arena.strings`. Interned `SmolStr` names (variable,
-    /// constant, type, and type-variable names).
+    /// Identity of an interned string (variable, constant, or type-
+    /// variable name).
     StrId
 }
 
 id_type_sealed! {
-    /// Index into `Arena.bytes`. Byte-string literals.
+    /// Identity of an interned byte-string literal.
     BytesId
 }
 
 id_type_sealed! {
-    /// Index into `Arena.ints`. Big-int literals (|value| > i64::MAX).
+    /// Identity of an interned arbitrary-precision integer literal.
     IntId
 }
 
 id_type_sealed! {
-    /// Index into `Arena.nats`. Big-nat literals (value > u64::MAX).
+    /// Identity of an interned arbitrary-precision natural literal.
     NatId
 }
 
 id_type_sealed! {
-    /// Index into `Arena.tyargs`. Argument lists for `TypeDef::Tyapp`.
+    /// Identity of an interned argument list for [`TypeDef::Tyapp`](crate::TypeDef::Tyapp).
     TyArgsId
 }
 
 id_type_sealed! {
-    /// Index into `Arena.foreign_terms`. Bottom 31 bits of a foreign
-    /// [`TermRef`](crate::term::TermRef).
+    /// Foreign-term handle — paired with an [`ImportId`] inside the
+    /// arena to resolve to a term in the imported arena.
     ForeignTermId
 }
 
 id_type_sealed! {
-    /// Index into `Arena.foreign_types`. Bottom 31 bits of a foreign
-    /// [`TypeRef`](crate::ty::TypeRef).
+    /// Foreign-type handle — paired with an [`ImportId`] inside the
+    /// arena to resolve to a type in the imported arena.
     ForeignTypeId
 }

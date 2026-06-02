@@ -1,20 +1,15 @@
-//! Term-level data: `TermDef` (one enum with structural + builtin variants)
-//! and `TermRef` (local or foreign-arena reference).
+//! Term-level data: [`TermDef`] (the structural term language),
+//! [`TermKind`] (the stable inspection view), and [`TermRef`] (a
+//! reference to a term — local to one arena or imported from
+//! another).
 
 use crate::id::{BytesId, ForeignTermId, IntId, NatId, StrId, TermId};
 use crate::primop::{PrimOp1, PrimOp2};
 use crate::ty::TypeRef;
 
-/// Crate-internal newtype wrapping a `u64` as two `u32`s.
-///
-/// Storing 64-bit literal payloads as raw `u64` would force 8-byte
-/// enum alignment, pushing `TermDef` past the 3-u32 invariant.
-/// `Packed64` stores the same value as `[u32; 2]` — 4-byte aligned —
-/// and exposes `from_u64` / `to_u64` / `from_i64` / `to_i64` for
-/// conversion. The newtype is `pub(crate)` so external code cannot
-/// construct or destructure it directly; use the smart constructors
-/// (`TermDef::nat_inline`, `u64_literal`, …) and `arena.kind()` to
-/// see the logical scalar.
+/// Opaque storage cell for inline 64-bit literal payloads.
+/// Constructable only inside the crate; external callers see logical
+/// `u64` / `i64` values via [`TermKind`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Packed64(pub(crate) [u32; 2]);
 
@@ -36,19 +31,13 @@ impl Packed64 {
     }
 }
 
-/// Public view of a term.
+/// Stable, ergonomic view of a term. Get one via
+/// [`Arena::kind`](crate::Arena::kind).
 ///
-/// This is the stable API for inspecting terms. `TermDef` (the
-/// internal storage) has one variant per primop — ~270 cases —
-/// because the (tag, lhs, rhs) 3-u32 invariant requires the
-/// discriminant to carry the op kind. `TermKind` folds the per-op
-/// variants back into `Op1(PrimOp1, _)` and `Op2(PrimOp2, _, _)`,
-/// and presents arbitrary-precision literals as full `Nat`/`Int`
-/// values (the inline-vs-stored split is a TermDef-level
-/// implementation detail).
-///
-/// Get one via [`Arena::kind`](crate::arena::Arena::kind). Not
-/// `Copy` because materialising `Nat`/`Int` may allocate.
+/// `TermKind` presents arbitrary-precision literals as full
+/// [`Nat`](covalence_types::Nat) / [`Int`](covalence_types::Int)
+/// values, hiding any storage split inside [`TermDef`]. Not `Copy`
+/// because materialising arbitrary-precision literals may allocate.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TermKind {
     // -- structural --
@@ -81,28 +70,20 @@ pub enum TermKind {
     Op1(PrimOp1, TermRef),
     Op2(PrimOp2, TermRef, TermRef),
 
-    // -- literals: arbitrary-precision (materialised regardless of
-    //    whether the underlying TermDef variant was Inline or Stored) --
+    // -- literals: arbitrary-precision --
     Nat(covalence_types::Nat),
     Int(covalence_types::Int),
-    // -- byte string literal (materialised; the "Stored" bit is a
-    //    storage detail of TermDef, hidden here) --
+    // -- byte string literal --
     Bytes(bytes::Bytes),
 }
 
 
-/// Reference to a term in the *current* arena's namespace.
+/// Opaque reference to a term — local to the current arena or
+/// imported from a foreign one. Construct via [`TermRef::local`] or
+/// [`TermRef::foreign`]; pattern-match via `as_local` / `as_foreign`.
 ///
-/// A bit-packed u32. The top bit is the local/foreign discriminator:
-/// - bit 31 = 0: **local**. Bottom 31 bits are a [`TermId`] into the
-///   current arena's `terms` table.
-/// - bit 31 = 1: **foreign**. Bottom 31 bits are a [`ForeignTermId`]
-///   into the current arena's `foreign_terms` side table, which holds
-///   `(ImportId, TermId)` pairs.
-///
-/// Either flavour resolves through the arena. To chase canonical
-/// chains across arenas, use
-/// [`Arena::canonical_term`](crate::arena::Arena::canonical_term).
+/// To chase canonical chains across arenas use
+/// [`Arena::canonical_term`](crate::Arena::canonical_term).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TermRef(u32);
 
@@ -110,14 +91,13 @@ const FOREIGN_BIT: u32 = 1 << 31;
 const INDEX_MASK: u32 = !FOREIGN_BIT;
 
 impl TermRef {
-    /// Build a local reference. Panics if `id.0 > 2^31 - 1`.
+    /// Build a reference to a term in the current arena.
     pub fn local(id: TermId) -> Self {
         debug_assert!(id.0 & FOREIGN_BIT == 0, "TermId out of range for packed ref");
         Self(id.0 & INDEX_MASK)
     }
 
-    /// Build a foreign reference. Allocated via
-    /// [`Arena::foreign_term_ref`](crate::arena::Arena::foreign_term_ref).
+    /// Build a reference to a term imported from a foreign arena.
     pub fn foreign(id: ForeignTermId) -> Self {
         debug_assert!(id.0 & FOREIGN_BIT == 0, "ForeignTermId out of range for packed ref");
         Self(id.0 | FOREIGN_BIT)
@@ -139,25 +119,15 @@ impl TermRef {
         self.is_foreign().then_some(ForeignTermId(self.0 & INDEX_MASK))
     }
 
-    pub fn to_raw(self) -> u32 {
-        self.0
-    }
-
-    pub fn from_raw(raw: u32) -> Self {
+    pub(crate) fn from_raw(raw: u32) -> Self {
         Self(raw)
     }
 }
 
-/// The kernel's term language.
-///
-/// Storage layout: 12 bytes total — the (tag, lhs, rhs) 3-u32
-/// invariant. Applied primops use two variants — `Op1(PrimOp1,
-/// TermRef)` and `Op2(PrimOp2, TermRef, TermRef)` — with the op
-/// kind inlined as a `u8` in the payload. The earlier sketch of
-/// one variant per primop (~270 variants) collapsed under its own
-/// weight; the embedded-op layout is dramatically simpler and Rust
-/// packs the discriminant into the alignment padding so the size
-/// is the same.
+/// The kernel's term language — the structural form stored at each
+/// allocated term. `Copy` and packed for size; for ergonomic
+/// inspection prefer [`TermKind`] via
+/// [`Arena::kind`](crate::Arena::kind).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TermDef {
     // -- structural --

@@ -224,7 +224,7 @@ fn foreign_ref_resolves_back_to_source() {
 
     let mut a = Arena::new();
     // (no UF needed)
-    let imp_d = a.add_import(d_frozen.clone());
+    let imp_d = a.add_import(d_frozen.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
     let foreign_ref = a.foreign_term_ref(imp_d, c_d);
     let a_arc = a.freeze();
     let canon = Arena::canonical_term(&a_arc, foreign_ref);
@@ -237,7 +237,7 @@ fn foreign_term_ref_dedupes() {
     let d = Arena::new().freeze();
     let mut a = Arena::new();
     // (no UF needed)
-    let imp = a.add_import(d.clone());
+    let imp = a.add_import(d.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
     let r1 = a.foreign_term_ref(imp, covalence_kernel::TermId(0));
     let r2 = a.foreign_term_ref(imp, covalence_kernel::TermId(0));
     assert_eq!(r1, r2);
@@ -248,11 +248,11 @@ fn add_import_dedupes() {
     let d = Arena::new().freeze();
     let mut a = Arena::new();
     // (no UF needed)
-    let i1 = a.add_import(d.clone());
-    let i2 = a.add_import(d.clone());
+    let i1 = a.add_import(d.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
+    let i2 = a.add_import(d.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
     assert_eq!(i1, i2);
     assert_eq!(a.imports().len(), 1);
-    assert!(Arc::ptr_eq(&a.imports()[0], &d));
+    assert!(Arc::ptr_eq(&a.imports()[0].arena, &d));
 }
 
 #[test]
@@ -263,11 +263,11 @@ fn diamond_import_regains_canonical_identity() {
     let d_frozen = d.freeze();
 
     let mut b = Arena::new();
-    let imp_d_in_b = b.add_import(d_frozen.clone());
+    let imp_d_in_b = b.add_import(d_frozen.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
     let x_in_b = b.foreign_term_ref(imp_d_in_b, x_d);
 
     let mut c = Arena::new();
-    let imp_d_in_c = c.add_import(d_frozen.clone());
+    let imp_d_in_c = c.add_import(d_frozen.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
     let x_in_c = c.foreign_term_ref(imp_d_in_c, x_d);
 
     let b_frozen = b.freeze();
@@ -275,8 +275,8 @@ fn diamond_import_regains_canonical_identity() {
 
     let mut a = Arena::new();
     // (no UF needed)
-    let _imp_b = a.add_import(b_frozen.clone());
-    let _imp_c = a.add_import(c_frozen.clone());
+    let _imp_b = a.add_import(b_frozen.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
+    let _imp_c = a.add_import(c_frozen.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
     let a_arc = a.freeze();
 
     let canon_via_b = Arena::canonical_term(&b_frozen, x_in_b);
@@ -304,8 +304,8 @@ fn distinct_arenas_with_same_content_are_not_canonically_equal() {
     assert!(!Arc::ptr_eq(&a1_frozen, &a2_frozen));
 
     let mut a3 = Arena::new();
-    let imp_a1 = a3.add_import(a1_frozen.clone());
-    let imp_a2 = a3.add_import(a2_frozen.clone());
+    let imp_a1 = a3.add_import(a1_frozen.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
+    let imp_a2 = a3.add_import(a2_frozen.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
     assert_ne!(imp_a1, imp_a2);
     let r1 = a3.foreign_term_ref(imp_a1, covalence_kernel::TermId(0));
     let r2 = a3.foreign_term_ref(imp_a2, covalence_kernel::TermId(0));
@@ -1027,7 +1027,7 @@ fn canonical_local_stops_at_foreign() {
     let d_frozen = d.freeze();
     let mut a = Arena::new();
     let uf = TermUf::new();
-    let imp = a.add_import(d_frozen.clone());
+    let imp = a.add_import(d_frozen.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
     let foreign_ref = a.foreign_term_ref(imp, c);
     // canonical_local returns the foreign ref unchanged.
     let canon = uf.canonical_local(foreign_ref);
@@ -1043,7 +1043,7 @@ fn union_with_foreign_lhs_updates_local_canonical() {
     let d_frozen = d.freeze();
     let mut a = Arena::new();
     let mut uf = TermUf::new();
-    let imp = a.add_import(d_frozen);
+    let imp = a.add_import(d_frozen, covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
     let f_ref = a.foreign_term_ref(imp, foreign_const);
     let l = a.alloc_term(TermDef::Bool(true));
     uf.union(TermRef::local(l), f_ref).unwrap();

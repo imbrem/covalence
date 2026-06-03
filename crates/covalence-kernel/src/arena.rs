@@ -10,9 +10,10 @@ use std::sync::Arc;
 use smol_str::SmolStr;
 
 use crate::id::{
-    BytesId, ImportId, IntId, NatId, StrId, TermId,
-    TyArgsId, TypeId,
+    BytesId, ImportId, IntId, NatId, StrId, TermId, TermSubstId,
+    TyArgsId, TypeId, TypeSubstId,
 };
+use crate::subst::{TermSubst, TypeSubst};
 use crate::term::{Deps, TermDef, TermKind, TermRef};
 
 /// Errors returned by [`Arena::union`] and friends.
@@ -42,7 +43,7 @@ pub struct Arena {
     /// Cached structural properties (type info + free-var flag) per
     /// allocated term, computed at alloc time. Parallel to `terms`.
     term_props: Vec<TermProps>,
-    imports: Vec<Arc<Arena>>,
+    imports: Vec<Import>,
 
     // Interning tables for variable-sized payloads.
     strings: Vec<SmolStr>,
@@ -50,6 +51,19 @@ pub struct Arena {
     ints: Vec<covalence_types::Int>,
     nats: Vec<covalence_types::Nat>,
     tyargs: Vec<Vec<TypeRef>>,
+    term_substs: Vec<TermSubst>,
+    type_substs: Vec<TypeSubst>,
+}
+
+/// An import edge in an arena: a frozen source arena plus a pair of
+/// substitutions that translate source-arena names into local refs.
+/// Unmapped names default to the epsilon-of-true sentinel when the
+/// kernel walks through this edge (see [`Arena::deref_term`]).
+#[derive(Debug, Clone)]
+pub struct Import {
+    pub arena: Arc<Arena>,
+    pub term_subst: TermSubstId,
+    pub type_subst: TypeSubstId,
 }
 
 impl Arena {
@@ -67,7 +81,57 @@ impl Arena {
             ints: Vec::new(),
             nats: Vec::new(),
             tyargs: Vec::new(),
+            // Slot 0 of each substitution table is reserved for the
+            // identity (empty) substitution.
+            term_substs: vec![TermSubst::empty()],
+            type_substs: vec![TypeSubst::empty()],
         }
+    }
+
+    /// The `TermSubstId` of the always-empty substitution.
+    /// Unmapped names default to epsilon-of-true.
+    pub fn empty_term_subst(&self) -> TermSubstId {
+        TermSubstId(0)
+    }
+
+    /// The `TypeSubstId` of the always-empty substitution.
+    /// Unmapped names default to epsilon-of-true.
+    pub fn empty_type_subst(&self) -> TypeSubstId {
+        TypeSubstId(0)
+    }
+
+    /// Read an interned term substitution.
+    pub fn term_subst(&self, id: TermSubstId) -> &TermSubst {
+        &self.term_substs[id.0 as usize]
+    }
+
+    /// Read an interned type substitution.
+    pub fn type_subst(&self, id: TypeSubstId) -> &TypeSubst {
+        &self.type_substs[id.0 as usize]
+    }
+
+    /// Intern a [`TermSubst`]. Returns the id of an equal existing entry
+    /// when present (so the empty substitution always rounds-trips to
+    /// `TermSubstId(0)`).
+    pub fn intern_term_subst(&mut self, subst: TermSubst) -> TermSubstId {
+        if let Some(pos) = self.term_substs.iter().position(|s| *s == subst) {
+            return TermSubstId(pos as u32);
+        }
+        let id = TermSubstId(self.term_substs.len() as u32);
+        self.term_substs.push(subst);
+        id
+    }
+
+    /// Intern a [`TypeSubst`]. Returns the id of an equal existing entry
+    /// when present (so the empty substitution always rounds-trips to
+    /// `TypeSubstId(0)`).
+    pub fn intern_type_subst(&mut self, subst: TypeSubst) -> TypeSubstId {
+        if let Some(pos) = self.type_substs.iter().position(|s| *s == subst) {
+            return TypeSubstId(pos as u32);
+        }
+        let id = TypeSubstId(self.type_substs.len() as u32);
+        self.type_substs.push(subst);
+        id
     }
 
     // -- primitive-type accessors ---------------------------------------
@@ -96,15 +160,35 @@ impl Arena {
         (**frozen).clone()
     }
 
-    /// Register `import` as a foreign-arena import, returning the
-    /// `ImportId` to use in `TermRef::Foreign` / `TypeRef::Foreign`.
-    /// Repeated calls with the same arena are deduped by `Arc::ptr_eq`.
-    pub fn add_import(&mut self, import: Arc<Arena>) -> ImportId {
-        if let Some(pos) = self.imports.iter().position(|a| Arc::ptr_eq(a, &import)) {
+    /// Register `arena` as a foreign-arena import, returning the
+    /// `ImportId` to use in [`TermDef::Foreign`] / [`TypeDef::Foreign`].
+    ///
+    /// The substitution arguments translate `arena`'s free-variable
+    /// names (and type-variable names) into refs local to `self`.
+    /// Unmapped names default to epsilon-of-true at deref time.
+    ///
+    /// Imports are deduped on `(Arc::ptr_eq(arena), term_subst,
+    /// type_subst)`: two imports of the same source arena under
+    /// different substitutions are distinct.
+    pub fn add_import(
+        &mut self,
+        arena: Arc<Arena>,
+        term_subst: TermSubstId,
+        type_subst: TypeSubstId,
+    ) -> ImportId {
+        if let Some(pos) = self.imports.iter().position(|imp| {
+            Arc::ptr_eq(&imp.arena, &arena)
+                && imp.term_subst == term_subst
+                && imp.type_subst == type_subst
+        }) {
             return ImportId(pos as u32);
         }
         let id = ImportId(self.imports.len() as u32);
-        self.imports.push(import);
+        self.imports.push(Import {
+            arena,
+            term_subst,
+            type_subst,
+        });
         id
     }
 
@@ -179,7 +263,7 @@ impl Arena {
         loop {
             let def = *cur.term_def(id);
             if let TermDef::Foreign(import_id, source_id) = def {
-                cur = &cur.imports[import_id.0 as usize];
+                cur = &cur.imports[import_id.0 as usize].arena;
                 id = source_id;
             } else {
                 return Some((cur, def));
@@ -670,9 +754,9 @@ impl Arena {
             // translation will land in Phase E. Out-of-range
             // source_id yields IllTyped.
             TermDef::Foreign(import_id, source_id) => {
-                let import = self.import(*import_id);
-                if (source_id.0 as usize) < import.num_terms() as usize {
-                    import.term_props(*source_id).type_info
+                let source = &self.import(*import_id).arena;
+                if (source_id.0 as usize) < source.num_terms() as usize {
+                    source.term_props(*source_id).type_info
                 } else {
                     TypeInfo::ILL_TYPED
                 }
@@ -822,8 +906,8 @@ impl Arena {
         }
     }
 
-    /// Look up an imported arena.
-    pub fn import(&self, id: ImportId) -> &Arc<Arena> {
+    /// Look up an import edge (source arena + substitutions).
+    pub fn import(&self, id: ImportId) -> &Import {
         &self.imports[id.0 as usize]
     }
 
@@ -858,8 +942,9 @@ impl Arena {
         &self.term_props[id.0 as usize]
     }
 
-    /// The frozen arenas this arena imports from.
-    pub fn imports(&self) -> &[Arc<Arena>] {
+    /// The frozen arenas this arena imports from (with their
+    /// substitutions).
+    pub fn imports(&self) -> &[Import] {
         &self.imports
     }
 
@@ -1074,9 +1159,9 @@ impl Arena {
             // Out-of-range source_id (e.g. forward reference into
             // an empty foreign arena) yields IllTyped.
             TermDef::Foreign(import_id, source_id) => {
-                let import = self.import(*import_id);
-                if (source_id.0 as usize) < import.num_terms() as usize {
-                    let entry = import.term_props(*source_id);
+                let source = &self.import(*import_id).arena;
+                if (source_id.0 as usize) < source.num_terms() as usize {
+                    let entry = source.term_props(*source_id);
                     (entry.type_info, entry.has_free)
                 } else {
                     (TypeInfo::ILL_TYPED, false)
@@ -1256,7 +1341,7 @@ impl Arena {
         let mut cur = self_arc.clone();
         let mut id = r.as_local().expect("TermRef must be local");
         while let TermDef::Foreign(import_id, source_id) = *cur.term_def(id) {
-            cur = cur.import(import_id).clone();
+            cur = cur.import(import_id).arena.clone();
             id = source_id;
         }
         (cur, id)

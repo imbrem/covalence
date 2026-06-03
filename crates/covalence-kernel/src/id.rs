@@ -67,3 +67,25 @@ id_type_sealed! {
     TyArgsId
 }
 
+id_type_sealed! {
+    /// Identity of an interned term substitution (used by import edges).
+    TermSubstId
+}
+
+impl TermSubstId {
+    /// The reserved id for the always-empty substitution. Every
+    /// [`crate::Arena`] is initialised with this slot pre-allocated.
+    pub const EMPTY: Self = Self(0);
+}
+
+id_type_sealed! {
+    /// Identity of an interned type substitution (used by import edges).
+    TypeSubstId
+}
+
+impl TypeSubstId {
+    /// The reserved id for the always-empty substitution. Every
+    /// [`crate::Arena`] is initialised with this slot pre-allocated.
+    pub const EMPTY: Self = Self(0);
+}
+

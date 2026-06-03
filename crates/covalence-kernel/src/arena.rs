@@ -252,18 +252,41 @@ impl Arena {
     /// source id there. The returned `TermDef`'s `TermRef` children are
     /// valid in the **returned** arena, not necessarily in `self`.
     ///
-    /// Returns `None` when the chain cannot be fully resolved — today
-    /// that's only an unexpected encoding; the eventual cause will be
+    /// **Substitution semantics (partial — see refactor plan Phase E3).**
+    /// When a foreign hop lands on a `Free(name, _)` leaf in the source
+    /// arena, the import edge's term substitution is consulted: a mapped
+    /// name yields the image (a `TermRef` in the *importing* arena), and
+    /// the walker resumes there. An *unmapped* name produces `None` —
+    /// callers must treat that as "the kernel can't see this term".
+    /// Substitution is not yet applied recursively to compound terms
+    /// (e.g. `Comb`, `Abs`); that lands in a follow-up.
+    ///
+    /// Returns `None` when the chain cannot be fully resolved. Causes
+    /// today: unmapped substitution name; unusual encodings; eventually
     /// **hash-only imports** (arenas referenced by content hash whose
-    /// bodies we can't inspect locally). Callers must treat the
-    /// fallibility as "the kernel can't see far enough to decide".
+    /// bodies we can't inspect locally).
     pub fn deref_term<'a>(&'a self, r: TermRef) -> Option<(&'a Arena, TermDef)> {
         let mut cur: &Arena = self;
         let mut id = r.as_local()?;
         loop {
             let def = *cur.term_def(id);
             if let TermDef::Foreign(import_id, source_id) = def {
-                cur = &cur.imports[import_id.0 as usize].arena;
+                let import = &cur.imports[import_id.0 as usize];
+                // Peek at source's top-level def: a Free leaf gets the
+                // edge's substitution applied; compound source terms
+                // fall through to a transparent walk.
+                if let TermDef::Free(name, _) = *import.arena.term_def(source_id) {
+                    let subst = cur.term_subst(import.term_subst);
+                    match subst.lookup(name) {
+                        Some(image) => {
+                            // Image lives in `cur` (the importing arena).
+                            id = image.as_local()?;
+                            continue;
+                        }
+                        None => return None,
+                    }
+                }
+                cur = &import.arena;
                 id = source_id;
             } else {
                 return Some((cur, def));

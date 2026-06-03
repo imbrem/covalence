@@ -244,6 +244,59 @@ fn foreign_term_ref_dedupes() {
 }
 
 #[test]
+fn import_subst_applies_to_top_level_free_leaf() {
+    // Source arena `d` has a Free `x : bool`.
+    let mut d = Arena::new();
+    let d_bool = d.bool_ty();
+    let x_d = alloc_free(&mut d, "x", d_bool);
+    // The substitution map keys against the source arena's string table.
+    let x_name_in_d = d.intern_string("x".into());
+    let d_frozen = d.freeze();
+
+    // Importing arena `a`: install a substitution mapping `x` to a
+    // local Free `y : bool`.
+    let mut a = Arena::new();
+    let a_bool = a.bool_ty();
+    let y_a = alloc_free(&mut a, "y", a_bool);
+    let subst = covalence_kernel::TermSubst {
+        entries: vec![(x_name_in_d, covalence_kernel::TermRef::local(y_a))],
+    };
+    let sid = a.intern_term_subst(subst);
+    let imp = a.add_import(d_frozen, sid, covalence_kernel::TypeSubstId::EMPTY);
+    let foreign_x = a.foreign_term_ref(imp, x_d);
+
+    // Dereffing the foreign ref now lands on `Free("y", bool)` in `a`.
+    let (host, def) = a.deref_term(foreign_x).expect("mapped name should resolve");
+    assert!(std::ptr::eq(host, &a));
+    match def {
+        TermDef::Free(name, ty) => {
+            assert_eq!(a.string(name).as_str(), "y");
+            assert_eq!(ty, a_bool);
+        }
+        other => panic!("expected Free, got {other:?}"),
+    }
+}
+
+#[test]
+fn import_subst_unmapped_name_returns_none() {
+    let mut d = Arena::new();
+    let d_bool = d.bool_ty();
+    let x_d = alloc_free(&mut d, "x", d_bool);
+    let d_frozen = d.freeze();
+
+    // Import `d` under an empty substitution. The Free `x` is unmapped.
+    let mut a = Arena::new();
+    let imp = a.add_import(
+        d_frozen,
+        covalence_kernel::TermSubstId::EMPTY,
+        covalence_kernel::TypeSubstId::EMPTY,
+    );
+    let foreign_x = a.foreign_term_ref(imp, x_d);
+
+    assert!(a.deref_term(foreign_x).is_none());
+}
+
+#[test]
 fn add_import_dedupes() {
     let d = Arena::new().freeze();
     let mut a = Arena::new();

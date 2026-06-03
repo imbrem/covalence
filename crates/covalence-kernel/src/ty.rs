@@ -237,15 +237,18 @@ pub enum TypeInfoKind {
 // TypeDef
 // ---------------------------------------------------------------------------
 
-/// The kernel's type language.
+/// Internal storage shape of a kernel type.
+///
+/// `pub(crate)` so the kernel can change the representation without
+/// breaking downstream callers. External consumers read types via
+/// [`TypeKind`] (returned by [`Arena::type_kind`](crate::Arena::type_kind)
+/// or via the opaque [`TypeRef`] handle).
 ///
 /// The primitive variants (`Bool`, `Bytes`, `Int`, `Nat`) are
-/// accepted by [`alloc_type`](crate::Arena::alloc_type) as a
-/// convenience and dedupe to the matching [`BuiltinTy`]
-/// [`TypeRef`]. Type formers (`Fun`, `TVar`, `Tyapp`) become local
-/// allocations.
+/// accepted by `alloc_type` as a convenience and dedupe to the
+/// matching [`BuiltinTy`] [`TypeRef`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TypeDef {
+pub(crate) enum TypeDef {
     // -- primitive aliases (dedupe to BuiltinTy in alloc_type) --
     Bool,
     Bytes,
@@ -259,15 +262,13 @@ pub enum TypeDef {
     /// A user-declared type constructor applied to its arguments.
     Tyapp(StrId, TyArgsId),
     /// Foreign reference: a type in an imported arena.
-    /// `Foreign(i, source_id)` points at `arena.imports[i]`'s type
-    /// `source_id`.
     Foreign(crate::id::ImportId, TypeId),
 }
 
 impl TypeDef {
     /// If this `TypeDef` is a nullary primitive, return the matching
     /// builtin. Otherwise `None`.
-    pub fn as_builtin(self) -> Option<BuiltinTy> {
+    pub(crate) fn as_builtin(self) -> Option<BuiltinTy> {
         Some(match self {
             TypeDef::Bool => BuiltinTy::Bool,
             TypeDef::Bytes => BuiltinTy::Bytes,
@@ -276,6 +277,25 @@ impl TypeDef {
             _ => return None,
         })
     }
+}
+
+/// Public, stable view of a kernel type. Returned by
+/// [`Arena::type_kind`](crate::Arena::type_kind).
+///
+/// Mirrors [`TermKind`](crate::term::TermKind) on the type side:
+/// pattern-match on this rather than on the internal `TypeDef`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TypeKind {
+    /// A builtin primitive type (`Bool` / `Bytes` / `Int` / `Nat`).
+    Builtin(BuiltinTy),
+    /// Function type `α → β`.
+    Fun(TypeRef, TypeRef),
+    /// Polymorphic type variable.
+    TVar(StrId),
+    /// User-declared type constructor applied to its arguments.
+    Tyapp(StrId, TyArgsId),
+    /// Foreign-arena reference.
+    Foreign(crate::id::ImportId, TypeId),
 }
 
 #[cfg(test)]

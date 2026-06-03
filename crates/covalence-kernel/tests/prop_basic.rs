@@ -396,7 +396,7 @@ fn cong_at_depth_1_subsumes_mk_comb() {
     let mut a = Arena::new();
     let uf = TermUf::new();
     let bool_ty = a.bool_ty();
-    let f_to_b = a.alloc_type(covalence_kernel::TypeDef::Fun(bool_ty, bool_ty));
+    let f_to_b = a.alloc_fun_ty(bool_ty, bool_ty);
     let name_f = a.intern_string("f".into());
     let f = a.alloc_term(TermDef::Const(name_f, f_to_b));
     let x = a.alloc_term(TermDef::Bool(true));
@@ -443,7 +443,7 @@ fn cong_accepts_ill_typed_inputs() {
     let mut a = Arena::new();
     let uf = TermUf::new();
     let bool_ty = a.bool_ty();
-    let b_to_b = a.alloc_type(covalence_kernel::TypeDef::Fun(bool_ty, bool_ty));
+    let b_to_b = a.alloc_fun_ty(bool_ty, bool_ty);
     let name_g = a.intern_string("g".into());
     let g = a.alloc_term(TermDef::Const(name_g, b_to_b));
     let n = a.alloc_term(TermDef::nat_inline(0));

@@ -25,5 +25,5 @@ pub use id::{
 };
 pub use primop::{PrimOp1, PrimOp2};
 pub use term::{Packed64, TermDef, TermKind, TermRef};
-pub use ty::{TypeDef, TypeInfo, TypeRef};
+pub use ty::{TypeInfo, TypeKind, TypeRef};
 pub use uf::{TermProps, TermUf};

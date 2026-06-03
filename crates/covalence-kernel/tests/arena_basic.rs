@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use covalence_kernel::{Arena, PrimOp2, TermDef, TermRef, TermUf, TypeDef, TypeInfo, TypeRef};
+use covalence_kernel::{Arena, PrimOp2, TermDef, TermRef, TermUf, TypeInfo, TypeKind, TypeRef};
 use covalence_kernel::ty::{BuiltinTy, TypeRefKind};
 
 /// Helper: intern a name and build a Free term in one go.
@@ -27,8 +27,8 @@ fn alloc_const(a: &mut Arena, name: &str, ty: TypeRef) -> covalence_kernel::Term
 fn alloc_builtin_types_returns_builtin_typerefs() {
     let mut a = Arena::new();
     // (no UF needed)
-    let bool_ty = a.alloc_type(TypeDef::Bool);
-    let nat_ty = a.alloc_type(TypeDef::Nat);
+    let bool_ty = a.bool_ty();
+    let nat_ty = a.nat_ty();
     // alloc_type dedupes nullary primitives to the BuiltinTy TypeRef.
     assert_eq!(bool_ty, a.bool_ty());
     assert_eq!(nat_ty, a.nat_ty());
@@ -36,10 +36,10 @@ fn alloc_builtin_types_returns_builtin_typerefs() {
     assert_eq!(bool_ty.as_builtin(), Some(BuiltinTy::Bool));
 
     // Fun is user-allocated and gets a local TypeRef.
-    let fun_ty = a.alloc_type(TypeDef::Fun(bool_ty, nat_ty));
+    let fun_ty = a.alloc_fun_ty(bool_ty, nat_ty);
     assert!(fun_ty.is_local());
-    match a.type_def_of(fun_ty) {
-        Some(TypeDef::Fun(d, c)) => {
+    match a.type_ref_kind(fun_ty) {
+        Some(TypeKind::Fun(d, c)) => {
             assert_eq!(d, bool_ty);
             assert_eq!(c, nat_ty);
         }
@@ -119,7 +119,7 @@ fn closed_propagates_through_comb() {
     let mut a = Arena::new();
     // (no UF needed)
     let bool_ty = a.bool_ty();
-    let bool_to_bool = a.alloc_type(TypeDef::Fun(bool_ty, bool_ty));
+    let bool_to_bool = a.alloc_fun_ty(bool_ty, bool_ty);
 
     let t = a.alloc_term(TermDef::Bool(true));
     let neg = alloc_const(&mut a, "not", bool_to_bool);
@@ -356,7 +356,7 @@ fn _refs_and_defs_are_copy() {
     assert_copy::<TermRef>();
     assert_copy::<TypeRef>();
     assert_copy::<TermDef>();
-    assert_copy::<TypeDef>();
+    assert_copy::<TypeKind>();
 }
 
 #[test]
@@ -373,15 +373,14 @@ fn term_def_fits_three_u32s() {
 
 #[test]
 fn alloc_all_primitive_types() {
-    let mut a = Arena::new();
+    let a = Arena::new();
     // (no UF needed)
-    for (def, expected) in [
-        (TypeDef::Bool, BuiltinTy::Bool),
-        (TypeDef::Bytes, BuiltinTy::Bytes),
-        (TypeDef::Int, BuiltinTy::Int),
-        (TypeDef::Nat, BuiltinTy::Nat),
+    for (r, expected) in [
+        (a.bool_ty(), BuiltinTy::Bool),
+        (a.bytes_ty(), BuiltinTy::Bytes),
+        (a.int_ty(), BuiltinTy::Int),
+        (a.nat_ty(), BuiltinTy::Nat),
     ] {
-        let r = a.alloc_type(def);
         assert_eq!(r.as_builtin(), Some(expected));
     }
 }
@@ -391,22 +390,22 @@ fn alloc_tvar_and_tyapp_user_allocated() {
     let mut a = Arena::new();
     // (no UF needed)
     let name = a.intern_string("'a".into());
-    let r_tvar = a.alloc_type(TypeDef::TVar(name));
+    let r_tvar = a.alloc_tvar(name);
     assert!(r_tvar.is_local());
-    match a.type_def_of(r_tvar) {
-        Some(TypeDef::TVar(s)) => assert_eq!(a.string(s).as_str(), "'a"),
+    match a.type_ref_kind(r_tvar) {
+        Some(TypeKind::TVar(s)) => assert_eq!(a.string(s).as_str(), "'a"),
         other => panic!("expected TVar, got {other:?}"),
     }
     let list_name = a.intern_string("list".into());
     let args = a.intern_tyargs(vec![a.bool_ty()]);
-    let r_tyapp = a.alloc_type(TypeDef::Tyapp(list_name, args));
+    let r_tyapp = a.alloc_tyapp(list_name, args);
     assert!(r_tyapp.is_local());
 }
 
 #[test]
-fn type_def_is_copy() {
+fn type_kind_is_copy() {
     fn assert_copy<T: Copy>() {}
-    assert_copy::<TypeDef>();
+    assert_copy::<TypeKind>();
 }
 
 // ---------------------------------------------------------------------------
@@ -415,21 +414,21 @@ fn type_def_is_copy() {
 
 #[test]
 fn primitives_are_builtins_no_arena_entries() {
-    let mut a = Arena::new();
+    let a = Arena::new();
     // (no UF needed)
-    let _b = a.alloc_type(TypeDef::Bool);
-    let _b2 = a.alloc_type(TypeDef::Bool);
-    let _n = a.alloc_type(TypeDef::Nat);
+    let _b = a.bool_ty();
+    let _b2 = a.bool_ty();
+    let _n = a.nat_ty();
     // No arena types allocated for nullary primitives.
     assert_eq!(a.num_types(), 0);
 }
 
 #[test]
 fn alloc_type_dedupes_primitives() {
-    let mut a = Arena::new();
+    let a = Arena::new();
     // (no UF needed)
-    let r1 = a.alloc_type(TypeDef::Bool);
-    let r2 = a.alloc_type(TypeDef::Bool);
+    let r1 = a.bool_ty();
+    let r2 = a.bool_ty();
     assert_eq!(r1, r2);
     assert_eq!(r1, a.bool_ty());
 }
@@ -470,7 +469,7 @@ fn comb_well_typed_unfolds_function_type() {
     let mut a = Arena::new();
     // (no UF needed)
     let bool_ty = a.bool_ty();
-    let bool_to_bool = a.alloc_type(TypeDef::Fun(bool_ty, bool_ty));
+    let bool_to_bool = a.alloc_fun_ty(bool_ty, bool_ty);
     let neg = alloc_const(&mut a, "not", bool_to_bool);
     let t = a.alloc_term(TermDef::Bool(true));
     let app = a.alloc_term(TermDef::Comb(TermRef::local(neg), TermRef::local(t)));
@@ -482,7 +481,7 @@ fn comb_mismatched_domain_is_ill_typed() {
     let mut a = Arena::new();
     // (no UF needed)
     let bool_ty = a.bool_ty();
-    let bool_to_bool = a.alloc_type(TypeDef::Fun(bool_ty, bool_ty));
+    let bool_to_bool = a.alloc_fun_ty(bool_ty, bool_ty);
     let neg = alloc_const(&mut a, "not", bool_to_bool);
     let n = a.alloc_term(TermDef::nat_inline(0));
     let bad = a.alloc_term(TermDef::Comb(TermRef::local(neg), TermRef::local(n)));
@@ -497,8 +496,8 @@ fn abs_with_typed_body_gets_fun_type() {
     let t = a.alloc_term(TermDef::Bool(true));
     let abs = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(t)));
     let abs_ty = a.term_props(abs).type_info.as_type().expect("abs typed");
-    match a.type_def_of(abs_ty) {
-        Some(TypeDef::Fun(d, c)) => {
+    match a.type_ref_kind(abs_ty) {
+        Some(TypeKind::Fun(d, c)) => {
             assert_eq!(d, bool_ty);
             assert_eq!(c, bool_ty);
         }
@@ -635,8 +634,8 @@ fn infer_resolves_abs_over_bound_zero() {
     // infer walks under the binder and computes bool → bool.
     let inferred = a.infer(abs);
     let abs_ty = inferred.as_type().expect("inferred typed");
-    match a.type_def_of(abs_ty) {
-        Some(TypeDef::Fun(d, c)) => {
+    match a.type_ref_kind(abs_ty) {
+        Some(TypeKind::Fun(d, c)) => {
             assert_eq!(d, bool_ty);
             assert_eq!(c, bool_ty);
         }
@@ -663,13 +662,13 @@ fn infer_handles_nested_abs() {
     let outer_info = a.infer(outer);
     let outer_ty = outer_info.as_type().expect("outer typed");
     // Walk the Fun chain: outer = bool → (nat → bool).
-    let (d, c) = match a.type_def_of(outer_ty) {
-        Some(TypeDef::Fun(d, c)) => (d, c),
+    let (d, c) = match a.type_ref_kind(outer_ty) {
+        Some(TypeKind::Fun(d, c)) => (d, c),
         other => panic!("expected outer Fun, got {other:?}"),
     };
     assert_eq!(d, bool_ty);
-    let (d2, c2) = match a.type_def_of(c) {
-        Some(TypeDef::Fun(d, c)) => (d, c),
+    let (d2, c2) = match a.type_ref_kind(c) {
+        Some(TypeKind::Fun(d, c)) => (d, c),
         other => panic!("expected inner Fun, got {other:?}"),
     };
     assert_eq!(d2, nat_ty);
@@ -735,8 +734,8 @@ fn infer_on_open_term_with_bound_indices_inside_abs() {
     let abs = a.alloc_term(TermDef::Abs(nat_ty, TermRef::local(body)));
     let info = a.infer(abs);
     let abs_ty = info.as_type().expect("typed");
-    match a.type_def_of(abs_ty) {
-        Some(TypeDef::Fun(d, c)) => {
+    match a.type_ref_kind(abs_ty) {
+        Some(TypeKind::Fun(d, c)) => {
             assert_eq!(d, nat_ty);
             assert_eq!(c, nat_ty);
         }
@@ -955,7 +954,7 @@ fn union_if_congruent_step_succeeds_on_matching_combs() {
     let mut a = Arena::new();
     let mut uf = TermUf::new();
     let bool_ty = a.bool_ty();
-    let bool_to_bool = a.alloc_type(TypeDef::Fun(bool_ty, bool_ty));
+    let bool_to_bool = a.alloc_fun_ty(bool_ty, bool_ty);
     let neg = alloc_const(&mut a, "not", bool_to_bool);
     let t = a.alloc_term(TermDef::Bool(true));
     // Two structurally-identical Comb(neg, True) terms with separate TermIds.
@@ -1323,7 +1322,7 @@ fn abstract_over_bumps_depth_under_inner_abs() {
     let mut a = Arena::new();
     // (no UF needed)
     let bool_ty = a.bool_ty();
-    let b_to_b = a.alloc_type(TypeDef::Fun(bool_ty, bool_ty));
+    let b_to_b = a.alloc_fun_ty(bool_ty, bool_ty);
     let xname = a.intern_string("x".into());
     let fname = a.intern_string("f".into());
     let x_free = a.alloc_term(TermDef::Free(xname, bool_ty));
@@ -1416,7 +1415,7 @@ fn typeref_decodes_to_kind() {
     let bool_ty = a.bool_ty();
     assert!(matches!(bool_ty.decode(), TypeRefKind::Builtin(BuiltinTy::Bool)));
     let name = a.intern_string("'a".into());
-    let tvar = a.alloc_type(TypeDef::TVar(name));
+    let tvar = a.alloc_tvar(name);
     match tvar.decode() {
         TypeRefKind::Local(_) => (),
         other => panic!("expected Local, got {other:?}"),

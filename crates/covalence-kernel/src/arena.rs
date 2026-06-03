@@ -23,7 +23,7 @@ pub enum UnionError {
     /// retry.
     BothForeign,
 }
-use crate::ty::{BuiltinTy, TypeDef, TypeInfo, TypeInfoKind, TypeRef, TypeRefKind};
+use crate::ty::{BuiltinTy, TypeDef, TypeInfo, TypeInfoKind, TypeKind, TypeRef, TypeRefKind};
 use crate::uf::TermProps;
 
 /// A pool of types, terms, and interned literals.
@@ -110,8 +110,10 @@ impl Arena {
 
     // -- accessors -------------------------------------------------------
 
-    /// Read a type definition by local id.
-    pub fn type_def(&self, id: TypeId) -> &TypeDef {
+    /// Read a type definition by local id. **Internal-only** — the
+    /// `TypeDef` shape is `pub(crate)`. External callers use
+    /// [`type_kind`](Self::type_kind) instead.
+    pub(crate) fn type_def(&self, id: TypeId) -> &TypeDef {
         &self.types[id.0 as usize]
     }
 
@@ -871,19 +873,57 @@ impl Arena {
 
     // -- allocators ------------------------------------------------------
 
-    /// Allocate a type. Returns a [`TypeRef`].
-    ///
-    /// For nullary primitive `TypeDef`s (Bool, Bits, …, I64), the
-    /// kernel returns the matching builtin TypeRef without writing
-    /// to `arena.types`. For everything else (Fun, TVar, Tyapp), a
-    /// new entry is appended and a fresh local TypeRef returned.
-    pub fn alloc_type(&mut self, def: TypeDef) -> TypeRef {
+    /// Internal type-allocator. External callers use the per-shape
+    /// methods ([`alloc_fun_ty`](Self::alloc_fun_ty),
+    /// [`alloc_tvar`](Self::alloc_tvar), [`alloc_tyapp`](Self::alloc_tyapp))
+    /// or the builtin accessors ([`bool_ty`](Self::bool_ty), …).
+    pub(crate) fn alloc_type(&mut self, def: TypeDef) -> TypeRef {
         if let Some(b) = def.as_builtin() {
             return TypeRef::builtin(b);
         }
         let id = TypeId(self.types.len() as u32);
         self.types.push(def);
         TypeRef::local(id)
+    }
+
+    /// Allocate the function type `α → β`.
+    pub fn alloc_fun_ty(&mut self, dom: TypeRef, cod: TypeRef) -> TypeRef {
+        self.alloc_type(TypeDef::Fun(dom, cod))
+    }
+
+    /// Allocate a polymorphic type variable.
+    pub fn alloc_tvar(&mut self, name: StrId) -> TypeRef {
+        self.alloc_type(TypeDef::TVar(name))
+    }
+
+    /// Allocate a user-declared type-constructor application.
+    pub fn alloc_tyapp(&mut self, name: StrId, args: TyArgsId) -> TypeRef {
+        self.alloc_type(TypeDef::Tyapp(name, args))
+    }
+
+    /// Public view of an allocated type. Use this to pattern-match
+    /// on a type's shape (mirrors [`kind`](Self::kind) for terms).
+    pub fn type_kind(&self, id: TypeId) -> TypeKind {
+        match *self.type_def(id) {
+            TypeDef::Bool => TypeKind::Builtin(BuiltinTy::Bool),
+            TypeDef::Bytes => TypeKind::Builtin(BuiltinTy::Bytes),
+            TypeDef::Int => TypeKind::Builtin(BuiltinTy::Int),
+            TypeDef::Nat => TypeKind::Builtin(BuiltinTy::Nat),
+            TypeDef::Fun(a, b) => TypeKind::Fun(a, b),
+            TypeDef::TVar(s) => TypeKind::TVar(s),
+            TypeDef::Tyapp(s, args) => TypeKind::Tyapp(s, args),
+            TypeDef::Foreign(import_id, source_id) => TypeKind::Foreign(import_id, source_id),
+        }
+    }
+
+    /// Project a [`TypeRef`] to its public [`TypeKind`] view. Returns
+    /// `None` for foreign references (use [`type_kind`](Self::type_kind)
+    /// on the resolved id for those).
+    pub fn type_ref_kind(&self, r: TypeRef) -> Option<TypeKind> {
+        match r.decode() {
+            TypeRefKind::Local(id) => Some(self.type_kind(id)),
+            TypeRefKind::Builtin(b) => Some(TypeKind::Builtin(b)),
+        }
     }
 
     /// Allocate a term. Returns the local id. The new entry is its own
@@ -982,7 +1022,7 @@ impl Arena {
     /// Returns the [`TypeDef::Foreign`] variant directly for foreign
     /// references — callers walking the chain should match on it and
     /// recurse into the imported arena.
-    pub fn type_def_of(&self, r: TypeRef) -> Option<TypeDef> {
+    pub(crate) fn type_def_of(&self, r: TypeRef) -> Option<TypeDef> {
         match r.decode() {
             TypeRefKind::Local(id) => Some(*self.type_def(id)),
             TypeRefKind::Builtin(b) => Some(match b {

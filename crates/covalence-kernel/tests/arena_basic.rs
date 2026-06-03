@@ -244,17 +244,15 @@ fn foreign_term_ref_dedupes() {
 }
 
 #[test]
-fn import_subst_applies_to_top_level_free_leaf() {
-    // Source arena `d` has a Free `x : bool`.
+fn import_term_subst_replaces_mapped_free() {
+    // Source arena `d` has Free `x : bool`. Importing arena `a` maps
+    // `x` to a local Free `y : bool`. The materialised import is `y`.
     let mut d = Arena::new();
     let d_bool = d.bool_ty();
     let x_d = alloc_free(&mut d, "x", d_bool);
-    // The substitution map keys against the source arena's string table.
     let x_name_in_d = d.intern_string("x".into());
     let d_frozen = d.freeze();
 
-    // Importing arena `a`: install a substitution mapping `x` to a
-    // local Free `y : bool`.
     let mut a = Arena::new();
     let a_bool = a.bool_ty();
     let y_a = alloc_free(&mut a, "y", a_bool);
@@ -265,35 +263,155 @@ fn import_subst_applies_to_top_level_free_leaf() {
     let imp = a.add_import(d_frozen, sid, covalence_kernel::TypeSubstId::EMPTY);
     let foreign_x = a.foreign_term_ref(imp, x_d);
 
-    // Dereffing the foreign ref now lands on `Free("y", bool)` in `a`.
-    let (host, def) = a.deref_term(foreign_x).expect("mapped name should resolve");
+    // The materialised ref IS the image — same TermRef as `y_a` directly.
+    assert_eq!(foreign_x, covalence_kernel::TermRef::local(y_a));
+}
+
+#[test]
+fn import_type_subst_instantiates_polymorphic_identity() {
+    // Source has the polymorphic identity term: λ(x:'a). x — i.e.
+    // Abs('a, Bound(0)). Importing under σ_ty = {'a → Nat} should
+    // produce λ(x:Nat). x.
+    let mut d = Arena::new();
+    let alpha_d = d.intern_string("'a".into());
+    let alpha_ty_d = d.alloc_tvar(alpha_d);
+    let bound0 = d.alloc_term(TermDef::Bound(0));
+    let id_alpha = d.alloc_term(TermDef::Abs(alpha_ty_d, TermRef::local(bound0)));
+    let alpha_in_d = alpha_d;
+    let d_frozen = d.freeze();
+
+    let mut a = Arena::new();
+    let nat_ty = a.nat_ty();
+    let type_subst = covalence_kernel::TypeSubst {
+        entries: vec![(alpha_in_d, nat_ty)],
+    };
+    let tsid = a.intern_type_subst(type_subst);
+    let imp = a.add_import(d_frozen, covalence_kernel::TermSubstId::EMPTY, tsid);
+    let foreign_id = a.foreign_term_ref(imp, id_alpha);
+
+    let (host, def) = a.deref_term(foreign_id).expect("materialised");
     assert!(std::ptr::eq(host, &a));
     match def {
-        TermDef::Free(name, ty) => {
-            assert_eq!(a.string(name).as_str(), "y");
-            assert_eq!(ty, a_bool);
+        TermDef::Abs(ty, body) => {
+            assert_eq!(ty, nat_ty, "binder type should be Nat after substitution");
+            // body should be Bound(0).
+            let body_id = body.as_local().unwrap();
+            assert_eq!(a.term_def(body_id), &TermDef::Bound(0));
         }
-        other => panic!("expected Free, got {other:?}"),
+        other => panic!("expected Abs, got {other:?}"),
     }
 }
 
 #[test]
-fn import_subst_unmapped_name_returns_none() {
+fn import_type_subst_through_tyapp() {
+    // Source has Free `xs : list 'a`. Import under σ_ty = {'a → Nat}
+    // yields a local Free `xs : list Nat`.
     let mut d = Arena::new();
-    let d_bool = d.bool_ty();
-    let x_d = alloc_free(&mut d, "x", d_bool);
+    let alpha_d = d.intern_string("'a".into());
+    let alpha_ty_d = d.alloc_tvar(alpha_d);
+    let list_name = d.intern_string("list".into());
+    let args = d.intern_tyargs(vec![alpha_ty_d]);
+    let list_alpha = d.alloc_tyapp(list_name, args);
+    let xs_d = alloc_free(&mut d, "xs", list_alpha);
+    let alpha_in_d = alpha_d;
     let d_frozen = d.freeze();
 
-    // Import `d` under an empty substitution. The Free `x` is unmapped.
     let mut a = Arena::new();
-    let imp = a.add_import(
-        d_frozen,
-        covalence_kernel::TermSubstId::EMPTY,
-        covalence_kernel::TypeSubstId::EMPTY,
-    );
+    let nat_ty = a.nat_ty();
+    let type_subst = covalence_kernel::TypeSubst {
+        entries: vec![(alpha_in_d, nat_ty)],
+    };
+    let tsid = a.intern_type_subst(type_subst);
+    let imp = a.add_import(d_frozen, covalence_kernel::TermSubstId::EMPTY, tsid);
+    let foreign_xs = a.foreign_term_ref(imp, xs_d);
+
+    let (_, def) = a.deref_term(foreign_xs).expect("materialised");
+    let ty = match def {
+        TermDef::Free(name, ty) => {
+            assert_eq!(a.string(name).as_str(), "xs");
+            ty
+        }
+        other => panic!("expected Free, got {other:?}"),
+    };
+    match a.type_ref_kind(ty) {
+        Some(TypeKind::Tyapp(name, args)) => {
+            assert_eq!(a.string(name).as_str(), "list");
+            let args = a.tyargs(args);
+            assert_eq!(args.len(), 1);
+            assert_eq!(args[0], nat_ty, "list arg should be Nat after substitution");
+        }
+        other => panic!("expected Tyapp(list, [Nat]), got {other:?}"),
+    }
+}
+
+#[test]
+fn import_type_subst_through_fun_arrow() {
+    // Source has Const `f : 'a → 'a`. Import under σ_ty = {'a → Bool}
+    // produces a local Const `f : Bool → Bool`.
+    let mut d = Arena::new();
+    let alpha_d = d.intern_string("'a".into());
+    let alpha_ty_d = d.alloc_tvar(alpha_d);
+    let f_ty = d.alloc_fun_ty(alpha_ty_d, alpha_ty_d);
+    let f_d = alloc_const(&mut d, "f", f_ty);
+    let alpha_in_d = alpha_d;
+    let d_frozen = d.freeze();
+
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let type_subst = covalence_kernel::TypeSubst {
+        entries: vec![(alpha_in_d, bool_ty)],
+    };
+    let tsid = a.intern_type_subst(type_subst);
+    let imp = a.add_import(d_frozen, covalence_kernel::TermSubstId::EMPTY, tsid);
+    let foreign_f = a.foreign_term_ref(imp, f_d);
+
+    let (_, def) = a.deref_term(foreign_f).expect("materialised");
+    match def {
+        TermDef::Const(name, ty) => {
+            assert_eq!(a.string(name).as_str(), "f");
+            // ty should be Bool → Bool.
+            match a.type_ref_kind(ty) {
+                Some(TypeKind::Fun(dom, cod)) => {
+                    assert_eq!(dom, bool_ty);
+                    assert_eq!(cod, bool_ty);
+                }
+                other => panic!("expected Fun(Bool, Bool), got {other:?}"),
+            }
+        }
+        other => panic!("expected Const, got {other:?}"),
+    }
+}
+
+#[test]
+fn import_term_subst_default_carries_unmapped_name() {
+    // With an empty term-subst but a non-empty type-subst, materialisation
+    // still kicks in: Free `x : α` in source becomes Free `x : <σ_ty(α)>`
+    // in target. The name `x` is interned locally (identity carry).
+    let mut d = Arena::new();
+    let alpha_d = d.intern_string("'a".into());
+    let alpha_ty_d = d.alloc_tvar(alpha_d);
+    let x_d = alloc_free(&mut d, "x", alpha_ty_d);
+    let d_frozen = d.freeze();
+
+    let mut a = Arena::new();
+    // Type substitution: 'a → Nat
+    let alpha_in_d = alpha_d;
+    let type_subst = covalence_kernel::TypeSubst {
+        entries: vec![(alpha_in_d, a.nat_ty())],
+    };
+    let tsid = a.intern_type_subst(type_subst);
+    let imp = a.add_import(d_frozen, covalence_kernel::TermSubstId::EMPTY, tsid);
     let foreign_x = a.foreign_term_ref(imp, x_d);
 
-    assert!(a.deref_term(foreign_x).is_none());
+    let (host, def) = a.deref_term(foreign_x).expect("materialised");
+    assert!(std::ptr::eq(host, &a));
+    match def {
+        TermDef::Free(name, ty) => {
+            assert_eq!(a.string(name).as_str(), "x");
+            assert_eq!(ty, a.nat_ty(), "type variable should be substituted to Nat");
+        }
+        other => panic!("expected Free, got {other:?}"),
+    }
 }
 
 #[test]

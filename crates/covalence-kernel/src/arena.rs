@@ -252,41 +252,23 @@ impl Arena {
     /// source id there. The returned `TermDef`'s `TermRef` children are
     /// valid in the **returned** arena, not necessarily in `self`.
     ///
-    /// **Substitution semantics (partial — see refactor plan Phase E3).**
-    /// When a foreign hop lands on a `Free(name, _)` leaf in the source
-    /// arena, the import edge's term substitution is consulted: a mapped
-    /// name yields the image (a `TermRef` in the *importing* arena), and
-    /// the walker resumes there. An *unmapped* name produces `None` —
-    /// callers must treat that as "the kernel can't see this term".
-    /// Substitution is not yet applied recursively to compound terms
-    /// (e.g. `Comb`, `Abs`); that lands in a follow-up.
+    /// Substitution semantics: import edges with non-empty
+    /// substitutions are materialised eagerly at
+    /// [`foreign_term_ref`](Self::foreign_term_ref) time, so foreign
+    /// chains that survive into [`deref_term`] are always pure
+    /// pointer hops (no live substitution is consulted here).
     ///
-    /// Returns `None` when the chain cannot be fully resolved. Causes
-    /// today: unmapped substitution name; unusual encodings; eventually
-    /// **hash-only imports** (arenas referenced by content hash whose
-    /// bodies we can't inspect locally).
+    /// Returns `None` when the chain cannot be fully resolved — today
+    /// only on unusual encodings; eventually on **hash-only imports**
+    /// (arenas referenced by content hash whose bodies we can't
+    /// inspect locally).
     pub fn deref_term<'a>(&'a self, r: TermRef) -> Option<(&'a Arena, TermDef)> {
         let mut cur: &Arena = self;
         let mut id = r.as_local()?;
         loop {
             let def = *cur.term_def(id);
             if let TermDef::Foreign(import_id, source_id) = def {
-                let import = &cur.imports[import_id.0 as usize];
-                // Peek at source's top-level def: a Free leaf gets the
-                // edge's substitution applied; compound source terms
-                // fall through to a transparent walk.
-                if let TermDef::Free(name, _) = *import.arena.term_def(source_id) {
-                    let subst = cur.term_subst(import.term_subst);
-                    match subst.lookup(name) {
-                        Some(image) => {
-                            // Image lives in `cur` (the importing arena).
-                            id = image.as_local()?;
-                            continue;
-                        }
-                        None => return None,
-                    }
-                }
-                cur = &import.arena;
+                cur = &cur.imports[import_id.0 as usize].arena;
                 id = source_id;
             } else {
                 return Some((cur, def));
@@ -1093,27 +1075,241 @@ impl Arena {
     }
 
     /// Build a foreign [`TermRef`] pointing at `id` inside the arena
-    /// registered under `import`. Allocates a [`TermDef::Foreign`]
-    /// term in this arena (deduped — repeat calls with the same
-    /// `(import, id)` return the same [`TermRef`]).
+    /// registered under `import`.
+    ///
+    /// **With empty substitutions** (`TermSubstId::EMPTY` and
+    /// `TypeSubstId::EMPTY` on the import edge): allocates an opaque
+    /// [`TermDef::Foreign`] leaf in this arena — deduped, preserves
+    /// pointer-identity across diamond imports.
+    ///
+    /// **With non-empty substitutions**: eagerly materialises the
+    /// σ-translated form of `source`'s term tree as fresh local
+    /// allocations. The result is a local term whose free-variable
+    /// names and type-variable names have been mapped through the
+    /// import edge's substitutions; unmapped names default to the
+    /// identity substitution (the source name is interned locally with
+    /// the corresponding type translated). Substitution is HOL-style:
+    /// applied uniformly to all type / term subterms.
     pub fn foreign_term_ref(&mut self, import: ImportId, id: TermId) -> TermRef {
-        let target = TermDef::Foreign(import, id);
-        if let Some(pos) = self.terms.iter().position(|d| *d == target) {
-            return TermRef::local(TermId(pos as u32));
+        let imp = &self.imports[import.0 as usize];
+        if imp.term_subst == TermSubstId::EMPTY && imp.type_subst == TypeSubstId::EMPTY {
+            let target = TermDef::Foreign(import, id);
+            if let Some(pos) = self.terms.iter().position(|d| *d == target) {
+                return TermRef::local(TermId(pos as u32));
+            }
+            let local = self.alloc_term(target);
+            return TermRef::local(local);
         }
-        let local = self.alloc_term(target);
-        TermRef::local(local)
+        self.materialize_import_term(import, id)
     }
 
     /// Build a foreign [`TypeRef`]; analogous to
-    /// [`foreign_term_ref`](Self::foreign_term_ref). Deduped.
+    /// [`foreign_term_ref`](Self::foreign_term_ref). With empty
+    /// substitutions, allocates an opaque [`TypeDef::Foreign`] leaf;
+    /// with a non-empty type substitution, eagerly materialises the
+    /// translated form as fresh local types.
     pub fn foreign_type_ref(&mut self, import: ImportId, id: TypeId) -> TypeRef {
-        let target = TypeDef::Foreign(import, id);
-        if let Some(pos) = self.types.iter().position(|d| *d == target) {
-            return TypeRef::local(TypeId(pos as u32));
+        let imp = &self.imports[import.0 as usize];
+        if imp.type_subst == TypeSubstId::EMPTY {
+            let target = TypeDef::Foreign(import, id);
+            if let Some(pos) = self.types.iter().position(|d| *d == target) {
+                return TypeRef::local(TypeId(pos as u32));
+            }
+            let local = self.alloc_type(target);
+            return TypeRef::local(local.as_local().expect("Foreign TypeDef must be local"));
         }
-        let local = self.alloc_type(target);
-        TypeRef::local(local.as_local().expect("Foreign TypeDef must be local"))
+        self.materialize_import_type(import, id)
+    }
+
+    /// Walk the import edge's source-arena term and produce a fully
+    /// substituted local term. See [`foreign_term_ref`](Self::foreign_term_ref).
+    fn materialize_import_term(&mut self, import: ImportId, source_id: TermId) -> TermRef {
+        let imp = self.imports[import.0 as usize].clone();
+        let term_subst = self.term_substs[imp.term_subst.0 as usize].clone();
+        let type_subst = self.type_substs[imp.type_subst.0 as usize].clone();
+        self.materialize_term(&imp.arena, source_id, &term_subst, &type_subst)
+    }
+
+    /// Walk the import edge's source-arena type and produce a fully
+    /// substituted local type. See [`foreign_type_ref`](Self::foreign_type_ref).
+    fn materialize_import_type(&mut self, import: ImportId, source_id: TypeId) -> TypeRef {
+        let imp = self.imports[import.0 as usize].clone();
+        let type_subst = self.type_substs[imp.type_subst.0 as usize].clone();
+        self.materialize_type(&imp.arena, source_id, &type_subst)
+    }
+
+    /// Translate a source-arena `TermRef` into a local `TermRef` under
+    /// the given substitutions. Handles foreign refs in source by
+    /// chaining through the source's own import edges (using the
+    /// source's substitutions for the inner hop).
+    fn materialize_term_ref(
+        &mut self,
+        source: &Arena,
+        r: TermRef,
+        term_subst: &TermSubst,
+        type_subst: &TypeSubst,
+    ) -> TermRef {
+        let id = r.as_local().expect("TermRef must be local");
+        self.materialize_term(source, id, term_subst, type_subst)
+    }
+
+    fn materialize_term(
+        &mut self,
+        source: &Arena,
+        source_id: TermId,
+        term_subst: &TermSubst,
+        type_subst: &TypeSubst,
+    ) -> TermRef {
+        let def = *source.term_def(source_id);
+        match def {
+            TermDef::Bool(b) => TermRef::local(self.alloc_term(TermDef::Bool(b))),
+            TermDef::Bound(i) => TermRef::local(self.alloc_term(TermDef::Bound(i))),
+            TermDef::Free(name, ty) => {
+                if let Some(image) = term_subst.lookup(name) {
+                    return image;
+                }
+                let name_str = source.string(name).clone();
+                let local_name = self.intern_string(name_str);
+                let local_ty = self.materialize_type_ref(source, ty, type_subst);
+                TermRef::local(self.alloc_term(TermDef::Free(local_name, local_ty)))
+            }
+            TermDef::Const(name, ty) => {
+                let name_str = source.string(name).clone();
+                let local_name = self.intern_string(name_str);
+                let local_ty = self.materialize_type_ref(source, ty, type_subst);
+                TermRef::local(self.alloc_term(TermDef::Const(local_name, local_ty)))
+            }
+            TermDef::Comb(f, x) => {
+                let lf = self.materialize_term_ref(source, f, term_subst, type_subst);
+                let lx = self.materialize_term_ref(source, x, term_subst, type_subst);
+                TermRef::local(self.alloc_term(TermDef::Comb(lf, lx)))
+            }
+            TermDef::Abs(ty, body) => {
+                let lty = self.materialize_type_ref(source, ty, type_subst);
+                let lbody = self.materialize_term_ref(source, body, term_subst, type_subst);
+                TermRef::local(self.alloc_term(TermDef::Abs(lty, lbody)))
+            }
+            TermDef::Eq(a, b) => {
+                let la = self.materialize_term_ref(source, a, term_subst, type_subst);
+                let lb = self.materialize_term_ref(source, b, term_subst, type_subst);
+                TermRef::local(self.alloc_term(TermDef::Eq(la, lb)))
+            }
+            TermDef::Forall(p) => {
+                let lp = self.materialize_term_ref(source, p, term_subst, type_subst);
+                TermRef::local(self.alloc_term(TermDef::Forall(lp)))
+            }
+            TermDef::Exists(p) => {
+                let lp = self.materialize_term_ref(source, p, term_subst, type_subst);
+                TermRef::local(self.alloc_term(TermDef::Exists(lp)))
+            }
+            TermDef::Eps(ty, p) => {
+                let lty = self.materialize_type_ref(source, ty, type_subst);
+                let lp = self.materialize_term_ref(source, p, term_subst, type_subst);
+                TermRef::local(self.alloc_term(TermDef::Eps(lty, lp)))
+            }
+            TermDef::Op1(op, x) => {
+                let lx = self.materialize_term_ref(source, x, term_subst, type_subst);
+                TermRef::local(self.alloc_term(TermDef::Op1(op, lx)))
+            }
+            TermDef::Op2(op, a, b) => {
+                let la = self.materialize_term_ref(source, a, term_subst, type_subst);
+                let lb = self.materialize_term_ref(source, b, term_subst, type_subst);
+                TermRef::local(self.alloc_term(TermDef::Op2(op, la, lb)))
+            }
+            TermDef::NatInline(_) | TermDef::IntInline(_) => {
+                TermRef::local(self.alloc_term(def))
+            }
+            TermDef::NatStored(nid) => {
+                let n = source.nat(nid).clone();
+                let local_nid = self.intern_nat(n);
+                TermRef::local(self.alloc_term(TermDef::NatStored(local_nid)))
+            }
+            TermDef::IntStored(iid) => {
+                let i = source.int(iid).clone();
+                let local_iid = self.intern_int(i);
+                TermRef::local(self.alloc_term(TermDef::IntStored(local_iid)))
+            }
+            TermDef::BytesStored(bid) => {
+                let bv = source.bytes_value(bid).clone();
+                let local_bid = self.intern_bytes(bv);
+                TermRef::local(self.alloc_term(TermDef::BytesStored(local_bid)))
+            }
+            TermDef::Foreign(inner_import, inner_source_id) => {
+                // Source's own foreign edge — chain through using the
+                // source's substitutions for the inner hop. (Composition
+                // with the outer substitutions is left for a follow-up;
+                // for now we honor the inner edge's substitutions
+                // verbatim.)
+                let inner_imp = source.imports[inner_import.0 as usize].clone();
+                let inner_term_subst =
+                    source.term_substs[inner_imp.term_subst.0 as usize].clone();
+                let inner_type_subst =
+                    source.type_substs[inner_imp.type_subst.0 as usize].clone();
+                self.materialize_term(
+                    &inner_imp.arena,
+                    inner_source_id,
+                    &inner_term_subst,
+                    &inner_type_subst,
+                )
+            }
+        }
+    }
+
+    fn materialize_type_ref(
+        &mut self,
+        source: &Arena,
+        r: TypeRef,
+        type_subst: &TypeSubst,
+    ) -> TypeRef {
+        match r.decode() {
+            TypeRefKind::Builtin(_) => r,
+            TypeRefKind::Local(id) => self.materialize_type(source, id, type_subst),
+        }
+    }
+
+    fn materialize_type(
+        &mut self,
+        source: &Arena,
+        source_id: TypeId,
+        type_subst: &TypeSubst,
+    ) -> TypeRef {
+        let def = *source.type_def(source_id);
+        match def {
+            TypeDef::Bool => self.bool_ty(),
+            TypeDef::Bytes => self.bytes_ty(),
+            TypeDef::Int => self.int_ty(),
+            TypeDef::Nat => self.nat_ty(),
+            TypeDef::Fun(d, c) => {
+                let ld = self.materialize_type_ref(source, d, type_subst);
+                let lc = self.materialize_type_ref(source, c, type_subst);
+                self.alloc_fun_ty(ld, lc)
+            }
+            TypeDef::TVar(name) => {
+                if let Some(image) = type_subst.lookup(name) {
+                    return image;
+                }
+                let name_str = source.string(name).clone();
+                let local_name = self.intern_string(name_str);
+                self.alloc_tvar(local_name)
+            }
+            TypeDef::Tyapp(name, args_id) => {
+                let name_str = source.string(name).clone();
+                let local_name = self.intern_string(name_str);
+                let source_args: Vec<TypeRef> = source.tyargs(args_id).to_vec();
+                let local_args: Vec<TypeRef> = source_args
+                    .into_iter()
+                    .map(|a| self.materialize_type_ref(source, a, type_subst))
+                    .collect();
+                let local_args_id = self.intern_tyargs(local_args);
+                self.alloc_tyapp(local_name, local_args_id)
+            }
+            TypeDef::Foreign(inner_import, inner_source_id) => {
+                let inner_imp = source.imports[inner_import.0 as usize].clone();
+                let inner_type_subst =
+                    source.type_substs[inner_imp.type_subst.0 as usize].clone();
+                self.materialize_type(&inner_imp.arena, inner_source_id, &inner_type_subst)
+            }
+        }
     }
 
     // -- type / closedness computation ----------------------------------

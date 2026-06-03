@@ -432,6 +432,87 @@ fn import_term_subst_default_carries_unmapped_name() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Phase G: subset typedef.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn alloc_subset_ty_accepts_well_formed_predicate() {
+    // Predicate λ(n:Nat). true. A closed term of type Nat → Bool.
+    let mut a = Arena::new();
+    let nat_ty = a.nat_ty();
+    let bool_true = a.alloc_term(TermDef::Bool(true));
+    let p = a.alloc_term(TermDef::Abs(nat_ty, TermRef::local(bool_true)));
+
+    let subset = a
+        .alloc_subset_ty(nat_ty, p)
+        .expect("predicate is closed, no free vars, Nat → Bool");
+    assert!(subset.is_local());
+    match a.type_ref_kind(subset) {
+        Some(TypeKind::Subset(alpha, pid)) => {
+            assert_eq!(alpha, nat_ty);
+            assert_eq!(pid, p);
+        }
+        other => panic!("expected Subset, got {other:?}"),
+    }
+}
+
+#[test]
+fn alloc_subset_ty_rejects_open_predicate() {
+    // Bound(0) by itself isn't locally closed.
+    use covalence_kernel::SubsetError;
+    let mut a = Arena::new();
+    let nat_ty = a.nat_ty();
+    let bad = a.alloc_term(TermDef::Bound(0));
+    assert_eq!(
+        a.alloc_subset_ty(nat_ty, bad),
+        Err(SubsetError::PredicateNotLocallyClosed),
+    );
+}
+
+#[test]
+fn alloc_subset_ty_rejects_predicate_with_free_var() {
+    use covalence_kernel::SubsetError;
+    let mut a = Arena::new();
+    let nat_ty = a.nat_ty();
+    let bool_ty = a.bool_ty();
+    // Free var `x : Bool` then wrapped — λ(_:Nat). x.
+    let x = alloc_free(&mut a, "x", bool_ty);
+    let p = a.alloc_term(TermDef::Abs(nat_ty, TermRef::local(x)));
+    assert_eq!(
+        a.alloc_subset_ty(nat_ty, p),
+        Err(SubsetError::PredicateHasFreeVars),
+    );
+}
+
+#[test]
+fn alloc_subset_ty_rejects_wrong_type() {
+    use covalence_kernel::SubsetError;
+    let mut a = Arena::new();
+    let nat_ty = a.nat_ty();
+    // Predicate is just Bool(true) — type Bool, not Nat → Bool.
+    let bad = a.alloc_term(TermDef::Bool(true));
+    assert_eq!(
+        a.alloc_subset_ty(nat_ty, bad),
+        Err(SubsetError::PredicateNotPredicateType),
+    );
+}
+
+#[test]
+fn alloc_subset_ty_rejects_mismatched_domain() {
+    // Predicate type is Nat → Bool but caller asks for subset of Bool.
+    use covalence_kernel::SubsetError;
+    let mut a = Arena::new();
+    let nat_ty = a.nat_ty();
+    let bool_ty = a.bool_ty();
+    let bool_true = a.alloc_term(TermDef::Bool(true));
+    let p = a.alloc_term(TermDef::Abs(nat_ty, TermRef::local(bool_true)));
+    assert_eq!(
+        a.alloc_subset_ty(bool_ty, p),
+        Err(SubsetError::PredicateNotPredicateType),
+    );
+}
+
 #[test]
 fn add_import_dedupes() {
     let d = Arena::new().freeze();

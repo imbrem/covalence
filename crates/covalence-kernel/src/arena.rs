@@ -24,6 +24,21 @@ pub enum UnionError {
     /// retry.
     BothForeign,
 }
+
+/// Errors returned by [`Arena::alloc_subset_ty`] when the predicate
+/// fails a well-formedness side condition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SubsetError {
+    /// `term_props(p).bound_depth() != 0` — predicate has surviving
+    /// De-Bruijn indices.
+    PredicateNotLocallyClosed,
+    /// Predicate has at least one free variable.
+    PredicateHasFreeVars,
+    /// Predicate's type is not `α → bool`.
+    PredicateNotPredicateType,
+    /// Predicate id is out of bounds.
+    PredicateOutOfRange,
+}
 use crate::ty::{BuiltinTy, TypeDef, TypeInfo, TypeInfoKind, TypeKind, TypeRef, TypeRefKind};
 use crate::uf::TermProps;
 
@@ -991,6 +1006,51 @@ impl Arena {
         self.alloc_type(TypeDef::Tyapp(name, args))
     }
 
+    /// Allocate a subset type `{ x : α | P x }` (Phase G).
+    ///
+    /// Side conditions enforced (returned as [`SubsetError`] otherwise):
+    /// - `p` references a term in this arena.
+    /// - That term is locally closed (`bound_depth() == 0`).
+    /// - It has no free variables (`has_free == false`).
+    /// - Its cached type is `α → bool`.
+    ///
+    /// On success returns a fresh local [`TypeRef`] whose underlying
+    /// [`TypeDef`] is `Subset(α, p)`. The two HOL axioms — `abs(rep a)
+    /// = a` and `rep(abs x) = x ⇔ P x ∨ ¬∃y. P y` — are derivable from
+    /// [`Thm::subset_axioms`](crate::Thm::subset_axioms) once
+    /// implemented.
+    pub fn alloc_subset_ty(
+        &mut self,
+        alpha: TypeRef,
+        p: TermId,
+    ) -> Result<TypeRef, SubsetError> {
+        if (p.0 as usize) >= self.terms.len() {
+            return Err(SubsetError::PredicateOutOfRange);
+        }
+        let props = self.term_props(p);
+        if props.bound_depth() != 0 {
+            return Err(SubsetError::PredicateNotLocallyClosed);
+        }
+        if props.has_free {
+            return Err(SubsetError::PredicateHasFreeVars);
+        }
+        let p_ty = props
+            .type_info
+            .as_type()
+            .ok_or(SubsetError::PredicateNotPredicateType)?;
+        let (dom, cod) = match self.type_def_of(p_ty) {
+            Some(TypeDef::Fun(d, c)) => (d, c),
+            _ => return Err(SubsetError::PredicateNotPredicateType),
+        };
+        if cod != self.bool_ty() {
+            return Err(SubsetError::PredicateNotPredicateType);
+        }
+        if dom != alpha {
+            return Err(SubsetError::PredicateNotPredicateType);
+        }
+        Ok(self.alloc_type(TypeDef::Subset(alpha, p)))
+    }
+
     /// Public view of an allocated type. Use this to pattern-match
     /// on a type's shape (mirrors [`kind`](Self::kind) for terms).
     pub fn type_kind(&self, id: TypeId) -> TypeKind {
@@ -1002,6 +1062,7 @@ impl Arena {
             TypeDef::Fun(a, b) => TypeKind::Fun(a, b),
             TypeDef::TVar(s) => TypeKind::TVar(s),
             TypeDef::Tyapp(s, args) => TypeKind::Tyapp(s, args),
+            TypeDef::Subset(alpha, p) => TypeKind::Subset(alpha, p),
             TypeDef::Foreign(import_id, source_id) => TypeKind::Foreign(import_id, source_id),
         }
     }
@@ -1319,6 +1380,18 @@ impl Arena {
                     .collect();
                 let local_args_id = self.intern_tyargs(local_args);
                 self.alloc_tyapp(local_name, local_args_id)
+            }
+            TypeDef::Subset(alpha, p) => {
+                // Predicate P is closed (no free term vars) by Subset's
+                // invariant — only types carried inside P need σ_ty applied.
+                let local_alpha = self.materialize_type_ref(source, alpha, type_subst);
+                let empty_term_subst = TermSubst::empty();
+                let local_p = self
+                    .materialize_term(source, p, &empty_term_subst, type_subst)
+                    .as_local()
+                    .expect("materialized predicate must be local");
+                self.alloc_subset_ty(local_alpha, local_p)
+                    .expect("subset materialisation reproduces well-formed predicate")
             }
             TypeDef::Foreign(inner_import, inner_source_id) => {
                 let inner_imp = source.imports[inner_import.0 as usize].clone();

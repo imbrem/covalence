@@ -7,7 +7,7 @@
 //! [`TypeRef::builtin`], [`TypeInfo::typed`], [`TypeInfo::ILL_TYPED`],
 //! …) and pattern-match via `decode()`.
 
-use crate::id::{StrId, TyArgsId, TypeId};
+use crate::id::{StrId, TermId, TyArgsId, TypeId};
 
 // ---------------------------------------------------------------------------
 // Builtin primitive types
@@ -261,6 +261,14 @@ pub(crate) enum TypeDef {
     TVar(StrId),
     /// A user-declared type constructor applied to its arguments.
     Tyapp(StrId, TyArgsId),
+    /// Subset type `{ x : α | P x }` introduced via the unconditional
+    /// disjunct trick. `P` must be locally closed, have no free
+    /// variables, and carry the type `α → bool`.
+    ///
+    /// Two axioms become derivable via [`Thm::subset_axioms`]:
+    ///   1. `∀ a:Subset(α,P). abs(rep a) = a`
+    ///   2. `∀ x:α. rep(abs x) = x ⇔ P x ∨ ¬∃y. P y`
+    Subset(TypeRef, TermId),
     /// Foreign reference: a type in an imported arena.
     Foreign(crate::id::ImportId, TypeId),
 }
@@ -294,6 +302,10 @@ pub enum TypeKind {
     TVar(StrId),
     /// User-declared type constructor applied to its arguments.
     Tyapp(StrId, TyArgsId),
+    /// Subset type `{ x : α | P x }` introduced via the disjunct
+    /// trick. Predicate `P : α → bool` is locally closed and has no
+    /// free variables.
+    Subset(TypeRef, TermId),
     /// Foreign-arena reference.
     Foreign(crate::id::ImportId, TypeId),
 }

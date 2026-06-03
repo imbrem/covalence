@@ -18,7 +18,7 @@ pub mod term;
 pub mod ty;
 pub mod uf;
 
-pub use arena::{Arena, UnionError};
+pub use arena::{Arena, SubsetError, UnionError};
 pub use kernel::Kernel;
 pub use prop::{Context, ProofError, Prop, Thm};
 pub use id::{

@@ -3,12 +3,12 @@
 //! [`TermId`] and [`TypeId`] are fully public — they're the natural
 //! identity returned by [`alloc_term`](crate::Arena::alloc_term) /
 //! [`alloc_type`](crate::Arena::alloc_type). The rest — `BytesId`,
-//! `IntId`, `NatId`, `StrId`, `TyArgsId`, `ImportId`, `ForeignTermId`,
-//! `ForeignTypeId` — are **sealed**: the type is public so callers
-//! can hold and compare them, but only the kernel can construct
-//! them. External code receives these IDs from kernel methods
-//! (`intern_string`, `add_import`, …) and matches on them inside
-//! `TermDef` / `TypeDef` variants.
+//! `IntId`, `NatId`, `StrId`, `TyArgsId`, `ImportId` — are
+//! **sealed**: the type is public so callers can hold and compare
+//! them, but only the kernel can construct them. External code
+//! receives these IDs from kernel methods (`intern_string`,
+//! `add_import`, …) and matches on them inside `TermDef` /
+//! `TypeDef` variants.
 
 macro_rules! id_type_pub {
     ($(#[$attr:meta])* $name:ident) => {
@@ -67,14 +67,3 @@ id_type_sealed! {
     TyArgsId
 }
 
-id_type_sealed! {
-    /// Foreign-term handle — paired with an [`ImportId`] inside the
-    /// arena to resolve to a term in the imported arena.
-    ForeignTermId
-}
-
-id_type_sealed! {
-    /// Foreign-type handle — paired with an [`ImportId`] inside the
-    /// arena to resolve to a type in the imported arena.
-    ForeignTypeId
-}

@@ -3,7 +3,7 @@
 //! reference to a term — local to one arena or imported from
 //! another).
 
-use crate::id::{BytesId, ForeignTermId, IntId, NatId, StrId, TermId};
+use crate::id::{BytesId, ImportId, IntId, NatId, StrId, TermId};
 use crate::primop::{PrimOp1, PrimOp2};
 use crate::ty::TypeRef;
 
@@ -65,48 +65,36 @@ pub enum TermKind {
     Int(covalence_types::Int),
     // -- byte string literal --
     Bytes(bytes::Bytes),
+    // -- foreign reference (resolves into an imported arena) --
+    Foreign(ImportId, TermId),
 }
 
 
-/// Opaque reference to a term — local to the current arena or
-/// imported from a foreign one. Construct via [`TermRef::local`] or
-/// [`TermRef::foreign`]; pattern-match via `as_local` / `as_foreign`.
+/// Opaque reference to a term in the current arena.
 ///
-/// To chase canonical chains across arenas use
+/// Every reference is a [`TermId`] — foreign-arena references appear
+/// as [`TermDef::Foreign`] structural variants, not as a separate
+/// kind of `TermRef`. To chase canonical chains across arenas use
 /// [`Arena::canonical_term`](crate::Arena::canonical_term).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TermRef(u32);
 
-const FOREIGN_BIT: u32 = 1 << 31;
-const INDEX_MASK: u32 = !FOREIGN_BIT;
-
 impl TermRef {
     /// Build a reference to a term in the current arena.
     pub fn local(id: TermId) -> Self {
-        debug_assert!(id.0 & FOREIGN_BIT == 0, "TermId out of range for packed ref");
-        Self(id.0 & INDEX_MASK)
+        Self(id.0)
     }
 
-    /// Build a reference to a term imported from a foreign arena.
-    pub fn foreign(id: ForeignTermId) -> Self {
-        debug_assert!(id.0 & FOREIGN_BIT == 0, "ForeignTermId out of range for packed ref");
-        Self(id.0 | FOREIGN_BIT)
+    /// The local [`TermId`] this ref points at.
+    pub fn id(self) -> TermId {
+        TermId(self.0)
     }
 
-    pub fn is_local(self) -> bool {
-        self.0 & FOREIGN_BIT == 0
-    }
-
-    pub fn is_foreign(self) -> bool {
-        !self.is_local()
-    }
-
+    /// Backwards-compatible alias for [`Self::id`]. Always succeeds
+    /// now that there is no foreign-flag bit; returned as `Option`
+    /// for source-compatibility with the legacy API.
     pub fn as_local(self) -> Option<TermId> {
-        self.is_local().then_some(TermId(self.0))
-    }
-
-    pub fn as_foreign(self) -> Option<ForeignTermId> {
-        self.is_foreign().then_some(ForeignTermId(self.0 & INDEX_MASK))
+        Some(TermId(self.0))
     }
 
     pub(crate) fn from_raw(raw: u32) -> Self {
@@ -148,6 +136,10 @@ pub enum TermDef {
 
     // -- literals: byte string --
     BytesStored(BytesId),
+
+    // -- foreign reference: a term in an imported arena. `Foreign(i,
+    //    source_id)` points at `arena.imports[i]`'s term `source_id`.
+    Foreign(ImportId, TermId),
 }
 
 impl TermDef {
@@ -188,7 +180,7 @@ impl TermDef {
         match *self {
             Bound(_) | Free(..) | Const(..) | Bool(_)
             | IntInline(_) | IntStored(_) | NatInline(_) | NatStored(_)
-            | BytesStored(_) => Deps::None,
+            | BytesStored(_) | Foreign(..) => Deps::None,
             Forall(p) | Exists(p) | Op1(_, p) => Deps::One(p),
             Eps(_, p) | Abs(_, p) => Deps::One(p),
             Comb(a, b) | Eq(a, b) | Op2(_, a, b) => Deps::Two(a, b),

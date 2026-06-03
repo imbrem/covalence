@@ -7,7 +7,7 @@
 //! [`TypeRef::builtin`], [`TypeInfo::typed`], [`TypeInfo::ILL_TYPED`],
 //! …) and pattern-match via `decode()`.
 
-use crate::id::{ForeignTypeId, StrId, TyArgsId, TypeId};
+use crate::id::{StrId, TyArgsId, TypeId};
 
 // ---------------------------------------------------------------------------
 // Builtin primitive types
@@ -61,18 +61,16 @@ const ILL_TYPED_ENCODED: i32 = -1;
 /// builtin / ill-typed sentinel.
 const BUILTIN_FLOOR: i32 = -BUILTIN_SLOTS;
 
-/// Bit 30 of the positive (allocated) range marks foreign refs.
-const FOREIGN_FLAG_BIT: i32 = 1 << 30;
-/// Mask for the id within the allocated range.
-const ALLOC_ID_MASK: i32 = FOREIGN_FLAG_BIT - 1;
-
 // ---------------------------------------------------------------------------
 // TypeRef
 // ---------------------------------------------------------------------------
 
 /// Reference to a type. Opaque — construct via
-/// [`TypeRef::local`] / [`TypeRef::foreign`] / [`TypeRef::builtin`],
-/// inspect via [`TypeRef::decode`] or the `is_*` / `as_*` predicates.
+/// [`TypeRef::local`] / [`TypeRef::builtin`], inspect via
+/// [`TypeRef::decode`] or the `is_*` / `as_*` predicates.
+///
+/// Foreign-arena types appear as [`TypeDef::Foreign`] structural
+/// variants, not as a separate kind of `TypeRef`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypeRef(i32);
 
@@ -81,27 +79,14 @@ pub struct TypeRef(i32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TypeRefKind {
     Local(TypeId),
-    Foreign(ForeignTypeId),
     Builtin(BuiltinTy),
 }
 
 impl TypeRef {
     /// Build a reference to a type allocated in the current arena.
     pub fn local(id: TypeId) -> Self {
-        debug_assert!(
-            id.0 <= ALLOC_ID_MASK as u32,
-            "TypeId out of range for packed TypeRef"
-        );
+        debug_assert!(id.0 as i32 >= 0, "TypeId out of range for packed TypeRef");
         Self(id.0 as i32)
-    }
-
-    /// Build a reference to a type imported from a foreign arena.
-    pub fn foreign(id: ForeignTypeId) -> Self {
-        debug_assert!(
-            id.0 <= ALLOC_ID_MASK as u32,
-            "ForeignTypeId out of range for packed TypeRef"
-        );
-        Self((id.0 as i32) | FOREIGN_FLAG_BIT)
     }
 
     /// Build a reference to a builtin primitive type.
@@ -118,20 +103,11 @@ impl TypeRef {
     }
 
     pub fn is_local(self) -> bool {
-        self.is_allocated() && (self.0 & FOREIGN_FLAG_BIT) == 0
-    }
-
-    pub fn is_foreign(self) -> bool {
-        self.is_allocated() && (self.0 & FOREIGN_FLAG_BIT) != 0
+        self.is_allocated()
     }
 
     pub fn as_local(self) -> Option<TypeId> {
-        self.is_local().then(|| TypeId((self.0 & ALLOC_ID_MASK) as u32))
-    }
-
-    pub fn as_foreign(self) -> Option<ForeignTypeId> {
-        self.is_foreign()
-            .then(|| ForeignTypeId((self.0 & ALLOC_ID_MASK) as u32))
+        self.is_local().then(|| TypeId(self.0 as u32))
     }
 
     pub fn as_builtin(self) -> Option<BuiltinTy> {
@@ -142,8 +118,6 @@ impl TypeRef {
     pub fn decode(self) -> TypeRefKind {
         if let Some(local) = self.as_local() {
             TypeRefKind::Local(local)
-        } else if let Some(foreign) = self.as_foreign() {
-            TypeRefKind::Foreign(foreign)
         } else if let Some(builtin) = self.as_builtin() {
             TypeRefKind::Builtin(builtin)
         } else {
@@ -284,6 +258,10 @@ pub enum TypeDef {
     TVar(StrId),
     /// A user-declared type constructor applied to its arguments.
     Tyapp(StrId, TyArgsId),
+    /// Foreign reference: a type in an imported arena.
+    /// `Foreign(i, source_id)` points at `arena.imports[i]`'s type
+    /// `source_id`.
+    Foreign(crate::id::ImportId, TypeId),
 }
 
 impl TypeDef {
@@ -324,18 +302,9 @@ mod tests {
     fn local_typeref_roundtrip() {
         let r = TypeRef::local(TypeId(42));
         assert!(r.is_local());
-        assert!(!r.is_foreign());
         assert!(!r.is_builtin());
         assert_eq!(r.as_local(), Some(TypeId(42)));
         assert_eq!(r.decode(), TypeRefKind::Local(TypeId(42)));
-    }
-
-    #[test]
-    fn foreign_typeref_roundtrip() {
-        let r = TypeRef::foreign(ForeignTypeId(7));
-        assert!(r.is_foreign());
-        assert_eq!(r.as_foreign(), Some(ForeignTypeId(7)));
-        assert_eq!(r.decode(), TypeRefKind::Foreign(ForeignTypeId(7)));
     }
 
     #[test]

@@ -21,8 +21,7 @@ pub use arena::{Arena, UnionError};
 pub use kernel::Kernel;
 pub use prop::{Context, ProofError, Prop, Thm};
 pub use id::{
-    BytesId, ForeignTermId, ForeignTypeId, ImportId, IntId, NatId, StrId, TermId,
-    TyArgsId, TypeId,
+    BytesId, ImportId, IntId, NatId, StrId, TermId, TyArgsId, TypeId,
 };
 pub use primop::{PrimOp1, PrimOp2};
 pub use term::{Packed64, TermDef, TermKind, TermRef};

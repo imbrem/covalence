@@ -15,11 +15,13 @@ use crate::primop::{PrimOp1, PrimOp2};
 use crate::prop::{Context, Prop, ProofError, Thm};
 use crate::term::{TermDef, TermKind, TermRef};
 use crate::ty::{TypeDef, TypeRef};
+use crate::uf::TermUf;
 
-/// High-level kernel facade: arena + current context + ergonomic
-/// constructors. See module docs.
+/// High-level kernel facade: arena + UF + current context +
+/// ergonomic constructors. See module docs.
 pub struct Kernel {
     arena: Arena,
+    uf: TermUf,
     ctx: Arc<Context>,
 }
 
@@ -27,6 +29,7 @@ impl Kernel {
     pub fn new() -> Self {
         Self {
             arena: Arena::new(),
+            uf: TermUf::new(),
             ctx: Context::empty(),
         }
     }
@@ -37,6 +40,14 @@ impl Kernel {
 
     pub fn arena_mut(&mut self) -> &mut Arena {
         &mut self.arena
+    }
+
+    pub fn uf(&self) -> &TermUf {
+        &self.uf
+    }
+
+    pub fn uf_mut(&mut self) -> &mut TermUf {
+        &mut self.uf
     }
 
     pub fn context(&self) -> &Arc<Context> {
@@ -129,9 +140,14 @@ impl Kernel {
         t.as_local().map(|id| *self.arena.term_def(id))
     }
 
-    /// Apply [`Thm::eq_mp`]-style canonical equality at level 0.
+    /// Apply canonical equality at level 0 via the session's UF.
     pub fn eq_at_level_0(&self, a: TermRef, b: TermRef) -> bool {
-        self.arena.eq_at_level_0(a, b)
+        self.uf.eq_at_level_0(a, b)
+    }
+
+    /// Record an equality in the session's UF.
+    pub fn union(&mut self, a: TermRef, b: TermRef) -> Result<(), crate::arena::UnionError> {
+        self.uf.union(a, b)
     }
 
     // ---- inference rules ---------------------------------------------------
@@ -161,19 +177,19 @@ impl Kernel {
     }
 
     pub fn trans(&mut self, ab: Thm, bc: Thm) -> Result<Thm, ProofError> {
-        Thm::trans(&mut self.arena, ab, bc)
+        Thm::trans(&mut self.arena, &self.uf, ab, bc)
     }
 
     pub fn eq_mp(&mut self, pq: Thm, p_thm: Thm) -> Result<Thm, ProofError> {
-        Thm::eq_mp(&mut self.arena, pq, p_thm)
+        Thm::eq_mp(&mut self.arena, &self.uf, pq, p_thm)
     }
 
     pub fn mp(&mut self, imp: Thm, ant: Thm) -> Result<Thm, ProofError> {
-        Thm::mp(&mut self.arena, imp, ant)
+        Thm::mp(&mut self.arena, &self.uf, imp, ant)
     }
 
     pub fn cong(&mut self, a: TermRef, b: TermRef, depth: u32) -> Result<Thm, ProofError> {
-        Thm::cong(&mut self.arena, self.ctx.clone(), a, b, depth)
+        Thm::cong(&mut self.arena, &self.uf, self.ctx.clone(), a, b, depth)
     }
 
     pub fn beta(&mut self, comb: TermRef) -> Result<Thm, ProofError> {
@@ -201,7 +217,7 @@ impl Kernel {
     }
 
     pub fn deduct_antisym_rule(&mut self, thm_p: Thm, thm_q: Thm) -> Result<Thm, ProofError> {
-        Thm::deduct_antisym_rule(&mut self.arena, thm_p, thm_q)
+        Thm::deduct_antisym_rule(&mut self.arena, &self.uf, thm_p, thm_q)
     }
 }
 

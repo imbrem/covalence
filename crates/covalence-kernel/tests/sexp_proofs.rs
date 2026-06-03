@@ -124,7 +124,7 @@ impl Driver {
             self.intern_memo.entry(raw).or_insert(this);
             if let Some(&existing) = self.canon_memo.get(&canon) {
                 if existing != this {
-                    let _ = self.kernel.arena_mut().union(this, existing);
+                    let _ = self.kernel.uf_mut().union(this, existing);
                 }
             } else {
                 self.canon_memo.insert(canon, this);
@@ -133,8 +133,8 @@ impl Driver {
     }
 
     fn canonicalize_def(&self, def: TermDef) -> TermDef {
-        let arena = self.kernel.arena();
-        let cm = |r: TermRef| arena.canonical_local(r);
+        let uf = self.kernel.uf();
+        let cm = |r: TermRef| uf.canonical_local(r);
         use TermDef::*;
         match def {
             Comb(a, b) => Comb(cm(a), cm(b)),
@@ -402,7 +402,6 @@ impl Driver {
         let a = self.eval_term(a)?;
         let b = self.eval_term(b)?;
         self.kernel
-            .arena_mut()
             .union(a, b)
             .map_err(|e| DriverError::Eval(format!("union: {e:?}")))?;
         Ok(Value::Unit)

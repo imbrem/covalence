@@ -24,18 +24,24 @@ pub enum UnionError {
     BothForeign,
 }
 use crate::ty::{BuiltinTy, TypeDef, TypeInfo, TypeInfoKind, TypeRef, TypeRefKind};
-use crate::uf::TermUfEntry;
+use crate::uf::TermProps;
 
-/// A pool of types, terms, interned literals, and union-find state.
+/// A pool of types, terms, and interned literals.
 ///
 /// Build one mutably (`Arena::new`, `alloc_type`, `alloc_term`, …),
 /// then [`freeze`](Self::freeze) it into an `Arc<Arena>` for sharing
 /// as a foreign import. Frozen arenas are immutable.
+///
+/// Arenas hold **structural** state only. Equality state (union-find)
+/// lives in a separate [`TermUf`](crate::TermUf) — many UFs can
+/// coexist over the same arena.
 #[derive(Debug, Clone)]
 pub struct Arena {
     types: Vec<TypeDef>,
     terms: Vec<TermDef>,
-    uf_terms: Vec<TermUfEntry>,
+    /// Cached structural properties (type info + free-var flag) per
+    /// allocated term, computed at alloc time. Parallel to `terms`.
+    term_props: Vec<TermProps>,
     imports: Vec<Arc<Arena>>,
 
     // Interning tables for variable-sized payloads.
@@ -44,7 +50,6 @@ pub struct Arena {
     ints: Vec<covalence_types::Int>,
     nats: Vec<covalence_types::Nat>,
     tyargs: Vec<Vec<TypeRef>>,
-
 }
 
 impl Arena {
@@ -55,7 +60,7 @@ impl Arena {
         Self {
             types: Vec::new(),
             terms: Vec::new(),
-            uf_terms: Vec::new(),
+            term_props: Vec::new(),
             imports: Vec::new(),
             strings: Vec::new(),
             bytes: Vec::new(),
@@ -194,13 +199,13 @@ impl Arena {
     /// immediately. Cached `Unbound`/`IllTyped` entries are re-walked
     /// (a subsequent `Thm` construction may still reject them).
     pub fn infer(&mut self, id: TermId) -> TypeInfo {
-        let cached = self.term_uf(id).type_info;
+        let cached = self.term_props(id).type_info;
         if cached.is_typed() {
             return cached;
         }
         let mut ctx: Vec<TypeRef> = Vec::new();
         let info = self.infer_term(id, &mut ctx);
-        self.uf_terms[id.0 as usize].type_info = info;
+        self.term_props[id.0 as usize].type_info = info;
         info
     }
 
@@ -210,141 +215,14 @@ impl Arena {
     /// Soundness is enforced by `Thm`, not by `alloc_term` or this
     /// setter.
     pub fn set_type_info(&mut self, id: TermId, info: TypeInfo) {
-        self.uf_terms[id.0 as usize].type_info = info;
+        self.term_props[id.0 as usize].type_info = info;
     }
 
     /// Is `t` well-typed (has a known `Typed(_)` info)?
     ///
-    /// `Thm` rules typically require their inputs to be well-typed;
-    /// arena-level congruence operations (`union`,
-    /// `union_if_congruent`) don't.
+    /// `Thm` rules typically require their inputs to be well-typed.
     pub fn is_well_typed(&self, t: TermId) -> bool {
-        self.term_uf(t).type_info.is_typed()
-    }
-
-    // ---- union-find primitives --------------------------------------------
-
-    /// Walk a [`TermRef`]'s canonical chain within **this** arena
-    /// only — stop at the local self-canonical or at the first
-    /// foreign hop. Cheap; no `Arc` traversal. For full cross-arena
-    /// resolution use [`canonical_term`](Self::canonical_term).
-    pub fn canonical_local(&self, r: TermRef) -> TermRef {
-        let mut cur = r;
-        loop {
-            let Some(id) = cur.as_local() else { return cur };
-            let next = self.term_uf(id).canonical;
-            if next == cur {
-                return cur;
-            }
-            cur = next;
-        }
-    }
-
-    /// Record an equality between two terms in the UF.
-    ///
-    /// Walks both terms to their local canonicals and updates one's
-    /// canonical pointer to point at the other. **Unchecked**: the
-    /// kernel does not verify that `a = b` — callers must have a
-    /// proof (or be performing a trusted internal step like
-    /// β-reduction).
-    ///
-    /// Returns [`UnionError::BothForeign`] only when both refs
-    /// terminate at foreign canonicals; in that case neither side
-    /// has a local UF slot to mutate. Callers can work around this
-    /// by allocating a local term that wraps one of the foreign
-    /// refs and unioning that.
-    pub fn union(&mut self, a: TermRef, b: TermRef) -> Result<(), UnionError> {
-        let a_canon = self.canonical_local(a);
-        let b_canon = self.canonical_local(b);
-        if a_canon == b_canon {
-            return Ok(()); // already in same class
-        }
-        if let Some(a_local) = a_canon.as_local() {
-            self.uf_terms[a_local.0 as usize].canonical = b_canon;
-            return Ok(());
-        }
-        if let Some(b_local) = b_canon.as_local() {
-            self.uf_terms[b_local.0 as usize].canonical = a_canon;
-            return Ok(());
-        }
-        Err(UnionError::BothForeign)
-    }
-
-    /// Are `a` and `b` known equal at level 0 — same canonical
-    /// (modulo this arena's local UF)?
-    ///
-    /// For full cross-arena equality use the canonical-walk through
-    /// [`canonical_term`](Self::canonical_term) and compare the
-    /// `(Arc<Arena>, TermId)` results.
-    pub fn eq_at_level_0(&self, a: TermRef, b: TermRef) -> bool {
-        self.canonical_local(a) == self.canonical_local(b)
-    }
-
-    /// General **congruence at depth `d`**: if `a` and `b` are
-    /// structurally congruent walking children to depth `d`, union
-    /// them. Returns `Ok(true)` on success, `Ok(false)` if the
-    /// shapes don't match at the requested depth.
-    ///
-    /// Depth semantics:
-    ///
-    /// - `d = 0`: trivially succeed iff `a` and `b` are already
-    ///   `eq_at_level_0` (same canonical) — no shape walk.
-    /// - `d = 1`: same `TermDef` variant + corresponding children are
-    ///   `eq_at_level_0` — this is the classical "one-step congruence"
-    ///   that subsumes HOL's `MK_COMB`.
-    /// - `d = n`: same variant + each child pair is congruent at
-    ///   depth `n - 1`.
-    ///
-    /// Refs that terminate at foreign canonicals return `Ok(false)`
-    /// for the shape comparison (we'd need to chase into the
-    /// imported arena — deferred).
-    pub fn union_if_congruent(
-        &mut self,
-        a: TermRef,
-        b: TermRef,
-        depth: u32,
-    ) -> Result<bool, UnionError> {
-        if !self.eq_at_level(a, b, depth) {
-            return Ok(false);
-        }
-        self.union(a, b)?;
-        Ok(true)
-    }
-
-    /// Are `a` and `b` known equal at congruence level `d`?
-    ///
-    /// - `d = 0`: same canonical (`eq_at_level_0`).
-    /// - `d = n > 0`: same `TermDef` shape (variant + non-dep payload)
-    ///   with each pair of `TermRef` deps `eq_at_level(_, _, d - 1)`.
-    pub fn eq_at_level(&self, a: TermRef, b: TermRef, depth: u32) -> bool {
-        let a_canon = self.canonical_local(a);
-        let b_canon = self.canonical_local(b);
-        if a_canon == b_canon {
-            return true;
-        }
-        if depth == 0 {
-            return false;
-        }
-        let (Some(a_local), Some(b_local)) = (a_canon.as_local(), b_canon.as_local()) else {
-            return false;
-        };
-        let a_def = *self.term_def(a_local);
-        let b_def = *self.term_def(b_local);
-        // Shape match: same variant + same non-dep payload.
-        let sentinel = TermRef::from_raw(0);
-        if a_def.with_zeroed_deps(sentinel) != b_def.with_zeroed_deps(sentinel) {
-            return false;
-        }
-        let cdepth = depth - 1;
-        match (a_def.deps(), b_def.deps()) {
-            (Deps::None, Deps::None) => true,
-            (Deps::One(x), Deps::One(y)) => self.eq_at_level(x, y, cdepth),
-            (Deps::Two(x1, x2), Deps::Two(y1, y2)) => {
-                self.eq_at_level(x1, y1, cdepth) && self.eq_at_level(x2, y2, cdepth)
-            }
-            // Shape check above already ensured matching arities.
-            _ => unreachable!("shape-equal defs must have matching dep arity"),
-        }
+        self.term_props(t).type_info.is_typed()
     }
 
     // ---- rewrite (architecture §4.4) ---------------------------------------
@@ -375,7 +253,7 @@ impl Arena {
     pub fn rewrite(&mut self, t: TermId, new_def: TermDef) {
         let (new_info, new_hf) = self.compute_term_props(&new_def);
         self.terms[t.0 as usize] = new_def;
-        let entry = &mut self.uf_terms[t.0 as usize];
+        let entry = &mut self.term_props[t.0 as usize];
         entry.type_info = new_info;
         entry.has_free = new_hf;
     }
@@ -458,7 +336,7 @@ impl Arena {
 
     fn contains_free_inner(&self, t: TermRef, name: StrId, ty: TypeRef) -> bool {
         let Some(id) = t.as_local() else { return false };
-        if !self.term_uf(id).has_free {
+        if !self.term_props(id).has_free {
             return false;
         }
         let def = *self.term_def(id);
@@ -483,7 +361,7 @@ impl Arena {
         binder_depth: u32,
     ) -> TermRef {
         let Some(id) = t.as_local() else { return t };
-        if !self.term_uf(id).has_free {
+        if !self.term_props(id).has_free {
             return t;
         }
         let def = *self.term_def(id);
@@ -542,7 +420,7 @@ impl Arena {
         depth: u32,
     ) -> TermRef {
         let Some(id) = t.as_local() else { return t };
-        if !self.term_uf(id).has_free {
+        if !self.term_props(id).has_free {
             return t;
         }
         let def = *self.term_def(id);
@@ -597,7 +475,7 @@ impl Arena {
             None => return t,
         };
         // Fast path: subterm has no dangling Bound at or above cutoff.
-        let depth_here = self.term_uf(local_id).type_info.unbound_depth();
+        let depth_here = self.term_props(local_id).type_info.unbound_depth();
         if depth_here <= cutoff {
             return t;
         }
@@ -659,7 +537,7 @@ impl Arena {
             Some(id) => id,
             None => return t,
         };
-        let depth_here = self.term_uf(local_id).type_info.unbound_depth();
+        let depth_here = self.term_props(local_id).type_info.unbound_depth();
         if depth_here == 0 || depth_here <= depth {
             return t;
         }
@@ -726,7 +604,7 @@ impl Arena {
         // structural type doesn't depend on the surrounding ctx), so
         // we can reuse them. Unbound/IllTyped need re-walking — we
         // may now have enough binder context to resolve them.
-        let cached = self.term_uf(id).type_info;
+        let cached = self.term_props(id).type_info;
         if cached.is_typed() {
             return cached;
         }
@@ -792,7 +670,7 @@ impl Arena {
             TermDef::Foreign(import_id, source_id) => {
                 let import = self.import(*import_id);
                 if (source_id.0 as usize) < import.num_terms() as usize {
-                    import.term_uf(*source_id).type_info
+                    import.term_props(*source_id).type_info
                 } else {
                     TypeInfo::ILL_TYPED
                 }
@@ -972,9 +850,10 @@ impl Arena {
         &self.tyargs[id.0 as usize]
     }
 
-    /// The local UF entry for a term.
-    pub fn term_uf(&self, id: TermId) -> &TermUfEntry {
-        &self.uf_terms[id.0 as usize]
+    /// The cached structural properties (type info + free-var flag)
+    /// for an allocated term.
+    pub fn term_props(&self, id: TermId) -> &TermProps {
+        &self.term_props[id.0 as usize]
     }
 
     /// The frozen arenas this arena imports from.
@@ -1022,11 +901,7 @@ impl Arena {
         let (type_info, has_free) = self.compute_term_props(&def);
         let id = TermId(self.terms.len() as u32);
         self.terms.push(def);
-        self.uf_terms.push(TermUfEntry {
-            canonical: TermRef::local(id),
-            type_info,
-            has_free,
-        });
+        self.term_props.push(TermProps { type_info, has_free });
         id
     }
 
@@ -1098,7 +973,7 @@ impl Arena {
     /// Read a TermRef's stored type info and free-var flag — O(1).
     fn ref_props(&self, r: TermRef) -> (TypeInfo, bool) {
         let local = r.as_local().expect("TermRef must be local");
-        let entry = self.term_uf(local);
+        let entry = self.term_props(local);
         (entry.type_info, entry.has_free)
     }
 
@@ -1161,7 +1036,7 @@ impl Arena {
             TermDef::Foreign(import_id, source_id) => {
                 let import = self.import(*import_id);
                 if (source_id.0 as usize) < import.num_terms() as usize {
-                    let entry = import.term_uf(*source_id);
+                    let entry = import.term_props(*source_id);
                     (entry.type_info, entry.has_free)
                 } else {
                     (TypeInfo::ILL_TYPED, false)
@@ -1327,44 +1202,24 @@ impl Arena {
 
     // -- canonical walks -------------------------------------------------
 
-    /// Resolve a term reference to its current UF canonical, chasing
-    /// canonical chains across arenas.
+    /// Resolve a term reference structurally — walk through any
+    /// [`TermDef::Foreign`] chain to its landing arena + local id.
     ///
-    /// Returns a `(Arc<Arena>, TermId)` pair: the arena whose UF entry
-    /// at that id is self-canonical (`canonical = Local(id)`), and the
-    /// id itself. Two canonicals are equal iff their arenas are
-    /// `Arc::ptr_eq` and their ids are equal.
+    /// Returns a `(Arc<Arena>, TermId)` pair: the arena whose
+    /// `terms[id]` is *not* a `Foreign` variant. Two canonicals are
+    /// equal iff their arenas are `Arc::ptr_eq` and their ids are
+    /// equal.
+    ///
+    /// This is a purely structural walk — equality state (UF) lives
+    /// outside the arena (see [`TermUf`](crate::TermUf)).
     pub fn canonical_term(self_arc: &Arc<Arena>, r: TermRef) -> (Arc<Arena>, TermId) {
-        let (mut cur_arena, mut cur_id) = resolve_term_ref(self_arc, r);
-        loop {
-            // Follow `TermDef::Foreign` chains structurally — every
-            // foreign hop is a regular allocated term whose def is
-            // `Foreign(import_id, source_id)`.
-            while let TermDef::Foreign(import_id, source_id) =
-                *cur_arena.term_def(cur_id)
-            {
-                cur_arena = cur_arena.import(import_id).clone();
-                cur_id = source_id;
-            }
-            let next = cur_arena.term_uf(cur_id).canonical;
-            let other = next.as_local().expect("UF canonical is always local");
-            if other == cur_id {
-                return (cur_arena, cur_id);
-            }
-            cur_id = other;
+        let mut cur = self_arc.clone();
+        let mut id = r.as_local().expect("TermRef must be local");
+        while let TermDef::Foreign(import_id, source_id) = *cur.term_def(id) {
+            cur = cur.import(import_id).clone();
+            id = source_id;
         }
-    }
-}
-
-/// Decode a [`TermRef`] in `self_arc`'s namespace to a global
-/// `(Arc<Arena>, TermId)` pair without walking the canonical chain.
-/// Resolves a single `TermDef::Foreign` hop if present.
-fn resolve_term_ref(self_arc: &Arc<Arena>, r: TermRef) -> (Arc<Arena>, TermId) {
-    let local = r.as_local().expect("TermRef must be local");
-    if let TermDef::Foreign(import_id, source_id) = *self_arc.term_def(local) {
-        (self_arc.import(import_id).clone(), source_id)
-    } else {
-        (self_arc.clone(), local)
+        (cur, id)
     }
 }
 

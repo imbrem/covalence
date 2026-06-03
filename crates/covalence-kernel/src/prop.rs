@@ -29,6 +29,7 @@ use crate::id::{StrId, TermId};
 use crate::primop::{PrimOp1, PrimOp2};
 use crate::term::{TermDef, TermRef};
 use crate::ty::TypeRef;
+use crate::uf::TermUf;
 
 // ---------------------------------------------------------------------------
 // Context
@@ -252,7 +253,7 @@ impl Thm {
     /// **Transitivity of equality.** From `ctx ⊢ a = b` and
     /// `ctx ⊢ b' = c` where `b ≡ b'` at UF level 0, derive
     /// `ctx ⊢ a = c`. Contexts must match.
-    pub fn trans(arena: &mut Arena, ab: Thm, bc: Thm) -> Result<Self, ProofError> {
+    pub fn trans(arena: &mut Arena, uf: &TermUf, ab: Thm, bc: Thm) -> Result<Self, ProofError> {
         if !arena.is_well_typed(ab.prop.concl) || !arena.is_well_typed(bc.prop.concl) {
             return Err(ProofError::IllTypedInput);
         }
@@ -267,7 +268,7 @@ impl Thm {
             TermDef::Eq(l, r) => (l, r),
             _ => return Err(ProofError::ExpectedEquality),
         };
-        if !arena.eq_at_level_0(b1, b2) {
+        if !uf.eq_at_level_0(b1, b2) {
             return Err(ProofError::MidpointMismatch);
         }
         let ac = arena.alloc_term(TermDef::Eq(a, c));
@@ -278,7 +279,7 @@ impl Thm {
 
     /// **Equality modus ponens.** From `ctx ⊢ p = q` and `ctx ⊢ p'`
     /// where `p ≡ p'` at UF level 0, derive `ctx ⊢ q`.
-    pub fn eq_mp(arena: &mut Arena, pq: Thm, p_thm: Thm) -> Result<Self, ProofError> {
+    pub fn eq_mp(arena: &mut Arena, uf: &TermUf, pq: Thm, p_thm: Thm) -> Result<Self, ProofError> {
         if !arena.is_well_typed(pq.prop.concl) || !arena.is_well_typed(p_thm.prop.concl) {
             return Err(ProofError::IllTypedInput);
         }
@@ -289,7 +290,7 @@ impl Thm {
             TermDef::Eq(l, r) => (l, r),
             _ => return Err(ProofError::ExpectedEquality),
         };
-        if !arena.eq_at_level_0(p, TermRef::local(p_thm.prop.concl)) {
+        if !uf.eq_at_level_0(p, TermRef::local(p_thm.prop.concl)) {
             return Err(ProofError::LhsMismatch);
         }
         let q_id = q.as_local().ok_or(ProofError::ForeignConclusion)?;
@@ -300,7 +301,7 @@ impl Thm {
 
     /// **Modus ponens.** From `ctx ⊢ Imp(p, q)` and `ctx ⊢ p'` where
     /// `p ≡ p'` at UF level 0, derive `ctx ⊢ q`.
-    pub fn mp(arena: &mut Arena, imp: Thm, ant: Thm) -> Result<Self, ProofError> {
+    pub fn mp(arena: &mut Arena, uf: &TermUf, imp: Thm, ant: Thm) -> Result<Self, ProofError> {
         if !arena.is_well_typed(imp.prop.concl) || !arena.is_well_typed(ant.prop.concl) {
             return Err(ProofError::IllTypedInput);
         }
@@ -311,7 +312,7 @@ impl Thm {
             TermDef::Op2(PrimOp2::LogicalImp, p, q) => (p, q),
             _ => return Err(ProofError::ExpectedImplication),
         };
-        if !arena.eq_at_level_0(p, TermRef::local(ant.prop.concl)) {
+        if !uf.eq_at_level_0(p, TermRef::local(ant.prop.concl)) {
             return Err(ProofError::LhsMismatch);
         }
         let q_id = q.as_local().ok_or(ProofError::ForeignConclusion)?;
@@ -322,7 +323,7 @@ impl Thm {
 
     /// **General congruence.** If `a` and `b` are structurally
     /// congruent walking children to depth `depth` (i.e.
-    /// [`Arena::eq_at_level`] returns true), derive
+    /// [`TermUf::eq_at_level`] returns true), derive
     /// `ctx ⊢ a = b`.
     ///
     /// This is the kernel's *only* rule exempt from the well-typed
@@ -332,12 +333,13 @@ impl Thm {
     /// it falls out of this rule with no extra primitive.
     pub fn cong(
         arena: &mut Arena,
+        uf: &TermUf,
         ctx: Arc<Context>,
         a: TermRef,
         b: TermRef,
         depth: u32,
     ) -> Result<Self, ProofError> {
-        if !arena.eq_at_level(a, b, depth) {
+        if !uf.eq_at_level(arena, a, b, depth) {
             return Err(ProofError::NotCongruent);
         }
         let eq = arena.alloc_term(TermDef::Eq(a, b));
@@ -475,6 +477,7 @@ impl Thm {
     /// deduplicated by canonical concl.
     pub fn deduct_antisym_rule(
         arena: &mut Arena,
+        uf: &TermUf,
         thm_p: Thm,
         thm_q: Thm,
     ) -> Result<Self, ProofError> {
@@ -491,16 +494,16 @@ impl Thm {
 
         let mut assumptions: Vec<Arc<Prop>> = Vec::new();
         let mut seen: Vec<TermRef> = Vec::new();
-        let push = |arena: &Arena,
+        let push = |uf: &TermUf,
                         assum: Arc<Prop>,
                         exclude: TermRef,
                         assumptions: &mut Vec<Arc<Prop>>,
                         seen: &mut Vec<TermRef>| {
             let concl_ref = TermRef::local(assum.concl);
-            if arena.eq_at_level_0(concl_ref, exclude) {
+            if uf.eq_at_level_0(concl_ref, exclude) {
                 return;
             }
-            let canon = arena.canonical_local(concl_ref);
+            let canon = uf.canonical_local(concl_ref);
             if seen.iter().any(|s| *s == canon) {
                 return;
             }
@@ -510,12 +513,12 @@ impl Thm {
         let ctx1 = thm_p.prop.context.clone();
         for i in 0..ctx1.len() {
             let assum = ctx1.assumption(i).expect("len/index invariant").clone();
-            push(arena, assum, q_ref, &mut assumptions, &mut seen);
+            push(uf, assum, q_ref, &mut assumptions, &mut seen);
         }
         let ctx2 = thm_q.prop.context.clone();
         for i in 0..ctx2.len() {
             let assum = ctx2.assumption(i).expect("len/index invariant").clone();
-            push(arena, assum, p_ref, &mut assumptions, &mut seen);
+            push(uf, assum, p_ref, &mut assumptions, &mut seen);
         }
         let new_ctx = Context::flat(assumptions);
         let eq = arena.alloc_term(TermDef::Eq(p_ref, q_ref));

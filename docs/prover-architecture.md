@@ -614,7 +614,7 @@ restriction is on **non-congruence unions** (§4):
   has to wrap them in a binder first to do nontrivial equality
   reasoning.
 
-The closed flag is stored on each `TermUfEntry` and set once at
+The closed flag is stored on each `TermProps` entry and set once at
 insertion.
 
 ### 3.4 Computational primitives

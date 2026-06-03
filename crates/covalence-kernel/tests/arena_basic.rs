@@ -303,6 +303,24 @@ fn import_type_subst_instantiates_polymorphic_identity() {
 }
 
 #[test]
+#[should_panic(expected = "locally closed")]
+fn import_rejects_non_locally_closed_source() {
+    // Source's Bound(0) is not locally closed (no enclosing binder).
+    // Importing it directly must be rejected (Phase E4).
+    let mut d = Arena::new();
+    let bad = d.alloc_term(TermDef::Bound(0));
+    let d_frozen = d.freeze();
+
+    let mut a = Arena::new();
+    let imp = a.add_import(
+        d_frozen,
+        covalence_kernel::TermSubstId::EMPTY,
+        covalence_kernel::TypeSubstId::EMPTY,
+    );
+    let _ = a.foreign_term_ref(imp, bad);
+}
+
+#[test]
 fn import_type_subst_through_tyapp() {
     // Source has Free `xs : list 'a`. Import under σ_ty = {'a → Nat}
     // yields a local Free `xs : list Nat`.

@@ -1090,7 +1090,24 @@ impl Arena {
     /// identity substitution (the source name is interned locally with
     /// the corresponding type translated). Substitution is HOL-style:
     /// applied uniformly to all type / term subterms.
+    ///
+    /// **Locally-closed requirement (Phase E4).** The source term must
+    /// be locally closed pre-substitution (bound-depth 0) — surviving
+    /// free De-Bruijn indices are currently forbidden and cause a
+    /// panic. The architecture reserves an epsilon-of-true default for
+    /// them as a forward-compat hook.
     pub fn foreign_term_ref(&mut self, import: ImportId, id: TermId) -> TermRef {
+        let imp = &self.imports[import.0 as usize];
+        let source = &imp.arena;
+        if (id.0 as usize) < source.terms.len() {
+            let depth = source.term_props(id).bound_depth();
+            assert!(
+                depth == 0,
+                "foreign_term_ref: source term has surviving De-Bruijn \
+                 index (bound_depth={depth}); imported terms must be \
+                 locally closed pre-substitution"
+            );
+        }
         let imp = &self.imports[import.0 as usize];
         if imp.term_subst == TermSubstId::EMPTY && imp.type_subst == TypeSubstId::EMPTY {
             let target = TermDef::Foreign(import, id);

@@ -496,7 +496,7 @@ impl Arena {
     ) -> TermDef {
         use TermDef::*;
         match def {
-            Abs(ty_a, body) => Abs(ty_a, self.subst_free_inner(body, name, ty, replacement, bd + 1)),
+            Lam(ty_a, body) => Lam(ty_a, self.subst_free_inner(body, name, ty, replacement, bd + 1)),
             Forall(p) => Forall(self.subst_free_inner(p, name, ty, replacement, bd)),
             Exists(p) => Exists(self.subst_free_inner(p, name, ty, replacement, bd)),
             Op1(o, p) => Op1(o, self.subst_free_inner(p, name, ty, replacement, bd)),
@@ -552,7 +552,7 @@ impl Arena {
     ) -> TermDef {
         use TermDef::*;
         match def {
-            Abs(ty_a, body) => Abs(ty_a, self.abstract_inner(body, name, ty, depth + 1)),
+            Lam(ty_a, body) => Lam(ty_a, self.abstract_inner(body, name, ty, depth + 1)),
             Forall(p) => Forall(self.abstract_inner(p, name, ty, depth)),
             Exists(p) => Exists(self.abstract_inner(p, name, ty, depth)),
             Op1(o, p) => Op1(o, self.abstract_inner(p, name, ty, depth)),
@@ -602,9 +602,9 @@ impl Arena {
                     def
                 }
             }
-            TermDef::Abs(ty, body) => {
+            TermDef::Lam(ty, body) => {
                 let new_body = self.shift_inner(body, cutoff + 1, amount);
-                TermDef::Abs(ty, new_body)
+                TermDef::Lam(ty, new_body)
             }
             // Two-child shapes.
             TermDef::Comb(a, b) => TermDef::Comb(
@@ -634,6 +634,7 @@ impl Arena {
             | TermDef::IntInline(_) | TermDef::IntStored(_)
             | TermDef::NatInline(_) | TermDef::NatStored(_)
             | TermDef::BytesStored(_)
+            | TermDef::Abs(_) | TermDef::Rep(_)
             | TermDef::Foreign(_, _) => def,
         }
     }
@@ -674,9 +675,9 @@ impl Arena {
         match def {
             // Bound handled in subst_inner above.
             TermDef::Bound(_) => def,
-            TermDef::Abs(ty, body) => {
+            TermDef::Lam(ty, body) => {
                 let new_body = self.subst_inner(body, depth + 1, replacement);
-                TermDef::Abs(ty, new_body)
+                TermDef::Lam(ty, new_body)
             }
             TermDef::Comb(a, b) => TermDef::Comb(
                 self.subst_inner(a, depth, replacement),
@@ -701,6 +702,7 @@ impl Arena {
             | TermDef::IntInline(_) | TermDef::IntStored(_)
             | TermDef::NatInline(_) | TermDef::NatStored(_)
             | TermDef::BytesStored(_)
+            | TermDef::Abs(_) | TermDef::Rep(_)
             | TermDef::Foreign(_, _) => def,
         }
     }
@@ -746,7 +748,7 @@ impl Arena {
             TermDef::BytesStored(_) => TypeInfo::typed(self.bytes_ty()),
 
             // ---- the binder --------------------------------------------------
-            TermDef::Abs(param_ty, body) => {
+            TermDef::Lam(param_ty, body) => {
                 ctx.push(*param_ty);
                 let body_info = self.infer_ref(*body, ctx);
                 ctx.pop();
@@ -769,6 +771,10 @@ impl Arena {
             TermDef::Eps(elem_ty, p) => self.infer_eps(*elem_ty, *p, ctx),
             TermDef::Op1(op, x) => self.infer_op1(*op, *x, ctx),
             TermDef::Op2(op, a, b) => self.infer_op2(*op, *a, *b, ctx),
+
+            // ---- subset operations ---------------------------------------
+            TermDef::Abs(subset_ty) => self.infer_subset_abs(*subset_ty),
+            TermDef::Rep(subset_ty) => self.infer_subset_rep(*subset_ty),
             // Foreign refs: forward the source term's cached info.
             // Its TypeRef interprets in the foreign arena's namespace;
             // translation will land in Phase E. Out-of-range
@@ -850,6 +856,24 @@ impl Arena {
         }
     }
 
+    /// Type of the subset-abstraction function: `α → subset_ty`.
+    fn infer_subset_abs(&mut self, subset_ty: TypeRef) -> TypeInfo {
+        let alpha = match self.type_def_of(subset_ty) {
+            Some(TypeDef::Subset(alpha, _)) => alpha,
+            _ => return TypeInfo::ILL_TYPED,
+        };
+        TypeInfo::typed(self.intern_fun(alpha, subset_ty))
+    }
+
+    /// Type of the subset-projection function: `subset_ty → α`.
+    fn infer_subset_rep(&mut self, subset_ty: TypeRef) -> TypeInfo {
+        let alpha = match self.type_def_of(subset_ty) {
+            Some(TypeDef::Subset(alpha, _)) => alpha,
+            _ => return TypeInfo::ILL_TYPED,
+        };
+        TypeInfo::typed(self.intern_fun(subset_ty, alpha))
+    }
+
     fn infer_op1(
         &mut self,
         op: crate::primop::PrimOp1,
@@ -903,7 +927,7 @@ impl Arena {
             TermDef::Free(n, t) => TermKind::Free(n, t),
             TermDef::Const(n, t) => TermKind::Const(n, t),
             TermDef::Comb(f, x) => TermKind::Comb(f, x),
-            TermDef::Abs(t, b) => TermKind::Abs(t, b),
+            TermDef::Lam(t, b) => TermKind::Lam(t, b),
             TermDef::Bool(true) => TermKind::Bool(true),
             TermDef::Bool(false) => TermKind::Bool(false),
             TermDef::Eq(a, b) => TermKind::Eq(a, b),
@@ -1262,10 +1286,10 @@ impl Arena {
                 let lx = self.materialize_term_ref(source, x, term_subst, type_subst);
                 TermRef::local(self.alloc_term(TermDef::Comb(lf, lx)))
             }
-            TermDef::Abs(ty, body) => {
+            TermDef::Lam(ty, body) => {
                 let lty = self.materialize_type_ref(source, ty, type_subst);
                 let lbody = self.materialize_term_ref(source, body, term_subst, type_subst);
-                TermRef::local(self.alloc_term(TermDef::Abs(lty, lbody)))
+                TermRef::local(self.alloc_term(TermDef::Lam(lty, lbody)))
             }
             TermDef::Eq(a, b) => {
                 let la = self.materialize_term_ref(source, a, term_subst, type_subst);
@@ -1306,6 +1330,14 @@ impl Arena {
                 let i = source.int(iid).clone();
                 let local_iid = self.intern_int(i);
                 TermRef::local(self.alloc_term(TermDef::IntStored(local_iid)))
+            }
+            TermDef::Abs(subset_ty) => {
+                let local_subset = self.materialize_type_ref(source, subset_ty, type_subst);
+                TermRef::local(self.alloc_term(TermDef::Abs(local_subset)))
+            }
+            TermDef::Rep(subset_ty) => {
+                let local_subset = self.materialize_type_ref(source, subset_ty, type_subst);
+                TermRef::local(self.alloc_term(TermDef::Rep(local_subset)))
             }
             TermDef::BytesStored(bid) => {
                 let bv = source.bytes_value(bid).clone();
@@ -1455,13 +1487,16 @@ impl Arena {
 
             // ---- structural with typing rules ------------------------------
             TermDef::Comb(f, x) => self.compute_comb(*f, *x),
-            TermDef::Abs(param_ty, body) => self.compute_abs(*param_ty, *body),
+            TermDef::Lam(param_ty, body) => self.compute_abs(*param_ty, *body),
             TermDef::Eq(a, b) => self.compute_eq_like(*a, *b),
             TermDef::Forall(p) | TermDef::Exists(p) => self.compute_quant(*p),
             TermDef::Eps(elem_ty, p) => self.compute_eps(*elem_ty, *p),
             // ---- applied primops via signature tables ----------------------
             TermDef::Op1(op, x) => self.compute_op1(*op, *x),
             TermDef::Op2(op, a, b) => self.compute_op2(*op, *a, *b),
+            // ---- subset operations ----------------------------------------
+            TermDef::Abs(subset_ty) => (self.compute_subset_abs(*subset_ty), false),
+            TermDef::Rep(subset_ty) => (self.compute_subset_rep(*subset_ty), false),
             // Foreign refs: forward the source's cached props.
             // Type-info translation lands in Phase E; for now we
             // verbatim-copy and accept the same-namespace caveat.
@@ -1501,7 +1536,27 @@ impl Arena {
         }
     }
 
-    /// Typing rule for `Abs(α, body)`. See [`TermDef::Abs`].
+    /// Typing rule for `Abs(α, body)`. See [`TermDef::Lam`].
+    /// Cached typing rule for a subset-abstraction leaf `Abs(σ)` where
+    /// `σ = Subset(α, P)`. The leaf has type `α → σ`.
+    fn compute_subset_abs(&mut self, subset_ty: TypeRef) -> TypeInfo {
+        let alpha = match self.type_def_of(subset_ty) {
+            Some(TypeDef::Subset(alpha, _)) => alpha,
+            _ => return TypeInfo::ILL_TYPED,
+        };
+        TypeInfo::typed(self.intern_fun(alpha, subset_ty))
+    }
+
+    /// Cached typing rule for a subset-projection leaf `Rep(σ)`. The
+    /// leaf has type `σ → α`.
+    fn compute_subset_rep(&mut self, subset_ty: TypeRef) -> TypeInfo {
+        let alpha = match self.type_def_of(subset_ty) {
+            Some(TypeDef::Subset(alpha, _)) => alpha,
+            _ => return TypeInfo::ILL_TYPED,
+        };
+        TypeInfo::typed(self.intern_fun(subset_ty, alpha))
+    }
+
     fn compute_abs(&mut self, param_ty: TypeRef, body: TermRef) -> (TypeInfo, bool) {
         let (body_info, has_free) = self.ref_props(body);
         let info = match body_info.decode() {

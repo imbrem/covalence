@@ -141,7 +141,7 @@ fn abs_binds_one_level_of_bound() {
     assert_eq!(a.term_props(b0).bound_depth(), 1);
     assert!(!a.term_props(b0).closed());
 
-    let abs = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(b0)));
+    let abs = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(b0)));
     assert_eq!(a.term_props(abs).bound_depth(), 0);
     assert!(a.term_props(abs).closed());
 }
@@ -155,11 +155,11 @@ fn abs_needs_two_levels_for_bound_one() {
     let b1 = a.alloc_term(TermDef::Bound(1));
     assert_eq!(a.term_props(b1).bound_depth(), 2);
 
-    let inner = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(b1)));
+    let inner = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(b1)));
     assert_eq!(a.term_props(inner).bound_depth(), 1);
     assert!(!a.term_props(inner).closed());
 
-    let outer = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(inner)));
+    let outer = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(inner)));
     assert_eq!(a.term_props(outer).bound_depth(), 0);
     assert!(a.term_props(outer).closed());
 }
@@ -276,7 +276,7 @@ fn import_type_subst_instantiates_polymorphic_identity() {
     let alpha_d = d.intern_string("'a".into());
     let alpha_ty_d = d.alloc_tvar(alpha_d);
     let bound0 = d.alloc_term(TermDef::Bound(0));
-    let id_alpha = d.alloc_term(TermDef::Abs(alpha_ty_d, TermRef::local(bound0)));
+    let id_alpha = d.alloc_term(TermDef::Lam(alpha_ty_d, TermRef::local(bound0)));
     let alpha_in_d = alpha_d;
     let d_frozen = d.freeze();
 
@@ -292,7 +292,7 @@ fn import_type_subst_instantiates_polymorphic_identity() {
     let (host, def) = a.deref_term(foreign_id).expect("materialised");
     assert!(std::ptr::eq(host, &a));
     match def {
-        TermDef::Abs(ty, body) => {
+        TermDef::Lam(ty, body) => {
             assert_eq!(ty, nat_ty, "binder type should be Nat after substitution");
             // body should be Bound(0).
             let body_id = body.as_local().unwrap();
@@ -442,7 +442,7 @@ fn alloc_subset_ty_accepts_well_formed_predicate() {
     let mut a = Arena::new();
     let nat_ty = a.nat_ty();
     let bool_true = a.alloc_term(TermDef::Bool(true));
-    let p = a.alloc_term(TermDef::Abs(nat_ty, TermRef::local(bool_true)));
+    let p = a.alloc_term(TermDef::Lam(nat_ty, TermRef::local(bool_true)));
 
     let subset = a
         .alloc_subset_ty(nat_ty, p)
@@ -478,7 +478,7 @@ fn alloc_subset_ty_rejects_predicate_with_free_var() {
     let bool_ty = a.bool_ty();
     // Free var `x : Bool` then wrapped — λ(_:Nat). x.
     let x = alloc_free(&mut a, "x", bool_ty);
-    let p = a.alloc_term(TermDef::Abs(nat_ty, TermRef::local(x)));
+    let p = a.alloc_term(TermDef::Lam(nat_ty, TermRef::local(x)));
     assert_eq!(
         a.alloc_subset_ty(nat_ty, p),
         Err(SubsetError::PredicateHasFreeVars),
@@ -506,7 +506,7 @@ fn alloc_subset_ty_rejects_mismatched_domain() {
     let nat_ty = a.nat_ty();
     let bool_ty = a.bool_ty();
     let bool_true = a.alloc_term(TermDef::Bool(true));
-    let p = a.alloc_term(TermDef::Abs(nat_ty, TermRef::local(bool_true)));
+    let p = a.alloc_term(TermDef::Lam(nat_ty, TermRef::local(bool_true)));
     assert_eq!(
         a.alloc_subset_ty(bool_ty, p),
         Err(SubsetError::PredicateNotPredicateType),
@@ -764,7 +764,7 @@ fn abs_with_typed_body_gets_fun_type() {
     // (no UF needed)
     let bool_ty = a.bool_ty();
     let t = a.alloc_term(TermDef::Bool(true));
-    let abs = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(t)));
+    let abs = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(t)));
     let abs_ty = a.term_props(abs).type_info.as_type().expect("abs typed");
     match a.type_ref_kind(abs_ty) {
         Some(TypeKind::Fun(d, c)) => {
@@ -898,7 +898,7 @@ fn infer_resolves_abs_over_bound_zero() {
     // (no UF needed)
     let bool_ty = a.bool_ty();
     let b0 = a.alloc_term(TermDef::Bound(0));
-    let abs = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(b0)));
+    let abs = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(b0)));
     // Cached type at insertion is IllTyped.
     assert_eq!(a.term_props(abs).type_info, TypeInfo::ILL_TYPED);
     // infer walks under the binder and computes bool → bool.
@@ -927,8 +927,8 @@ fn infer_handles_nested_abs() {
     let bool_ty = a.bool_ty();
     let nat_ty = a.nat_ty();
     let b1 = a.alloc_term(TermDef::Bound(1));
-    let inner = a.alloc_term(TermDef::Abs(nat_ty, TermRef::local(b1)));
-    let outer = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(inner)));
+    let inner = a.alloc_term(TermDef::Lam(nat_ty, TermRef::local(b1)));
+    let outer = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(inner)));
     let outer_info = a.infer(outer);
     let outer_ty = outer_info.as_type().expect("outer typed");
     // Walk the Fun chain: outer = bool → (nat → bool).
@@ -965,7 +965,7 @@ fn infer_caches_result() {
     // (no UF needed)
     let bool_ty = a.bool_ty();
     let b0 = a.alloc_term(TermDef::Bound(0));
-    let abs = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(b0)));
+    let abs = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(b0)));
     assert_eq!(a.term_props(abs).type_info, TypeInfo::ILL_TYPED);
     let info = a.infer(abs);
     // After infer, the cache is updated.
@@ -1001,7 +1001,7 @@ fn infer_on_open_term_with_bound_indices_inside_abs() {
     let nat_ty = a.nat_ty();
     let b0 = a.alloc_term(TermDef::Bound(0));
     let body = a.alloc_term(TermDef::Op1(PrimOp1::NatSucc, TermRef::local(b0)));
-    let abs = a.alloc_term(TermDef::Abs(nat_ty, TermRef::local(body)));
+    let abs = a.alloc_term(TermDef::Lam(nat_ty, TermRef::local(body)));
     let info = a.infer(abs);
     let abs_ty = info.as_type().expect("typed");
     match a.type_ref_kind(abs_ty) {
@@ -1046,7 +1046,7 @@ fn shift_respects_cutoff() {
     let b2 = a.alloc_term(TermDef::Bound(2));
     let comb = a.alloc_term(TermDef::Comb(TermRef::local(b0), TermRef::local(b2)));
     // Wrap in Abs to introduce a binder so cutoff=1 makes sense locally.
-    let abs = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(comb)));
+    let abs = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(comb)));
     // Shift the Abs's body by amount=5 with cutoff=1.
     // Bound(0) refers to the Abs binder; Bound(2) is the dangling
     // index — should shift to Bound(7).
@@ -1133,13 +1133,13 @@ fn beta_under_nested_abs_shifts_replacement() {
     // (no UF needed)
     let bool_ty = a.bool_ty();
     let b1 = a.alloc_term(TermDef::Bound(1));
-    let inner = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(b1)));
+    let inner = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(b1)));
     let b0 = a.alloc_term(TermDef::Bound(0));
     let result = a.subst(TermRef::local(inner), 0, TermRef::local(b0));
     // Result should be λ_:bool. Bound(1).
     let abs_id = result.as_local().unwrap();
     match a.term_def(abs_id) {
-        TermDef::Abs(_, body_ref) => {
+        TermDef::Lam(_, body_ref) => {
             let body_def = a.term_def(body_ref.as_local().unwrap());
             assert_eq!(body_def, &TermDef::Bound(1));
         }
@@ -1599,12 +1599,12 @@ fn abstract_over_bumps_depth_under_inner_abs() {
     let f = a.alloc_term(TermDef::Free(fname, b_to_b));
     let comb = a.alloc_term(TermDef::Comb(TermRef::local(f), TermRef::local(x_free)));
     // Wrap in a fresh Abs (binder unrelated to x).
-    let outer = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(comb)));
+    let outer = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(comb)));
     // Abstract over x_free at depth 0 → inside the outer Abs, depth becomes 1.
     let r = a.abstract_over(TermRef::local(outer), xname, bool_ty, 0);
     let r_def = *a.term_def(r.as_local().unwrap());
     let body = match r_def {
-        TermDef::Abs(_, b) => b,
+        TermDef::Lam(_, b) => b,
         other => panic!("expected Abs, got {other:?}"),
     };
     let body_def = *a.term_def(body.as_local().unwrap());
@@ -1656,12 +1656,12 @@ fn subst_free_shifts_replacement_under_inner_abs() {
     let xname = a.intern_string("x".into());
     let x = a.alloc_term(TermDef::Free(xname, bool_ty));
     // Build λ_:bool. x — Abs wrapping the Free.
-    let body = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(x)));
+    let body = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(x)));
     let open_b0 = a.alloc_term(TermDef::Bound(0));
     let r = a.subst_free(TermRef::local(body), xname, bool_ty, TermRef::local(open_b0));
     let r_def = *a.term_def(r.as_local().unwrap());
     let inner = match r_def {
-        TermDef::Abs(_, b) => b,
+        TermDef::Lam(_, b) => b,
         other => panic!("expected Abs, got {other:?}"),
     };
     assert_eq!(a.term_def(inner.as_local().unwrap()), &TermDef::Bound(1));

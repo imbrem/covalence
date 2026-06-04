@@ -28,7 +28,7 @@ use crate::arena::Arena;
 use crate::id::{StrId, TermId};
 use crate::primop::{PrimOp1, PrimOp2};
 use crate::term::{TermDef, TermRef};
-use crate::ty::TypeRef;
+use crate::ty::{TypeKind, TypeRef};
 use crate::uf::TermUf;
 
 // ---------------------------------------------------------------------------
@@ -365,7 +365,7 @@ impl Thm {
         };
         let abs_id = abs_ref.as_local().ok_or(ProofError::ExpectedBetaRedex)?;
         let body_ref = match *arena.term_def(abs_id) {
-            TermDef::Abs(_, body) => body,
+            TermDef::Lam(_, body) => body,
             _ => return Err(ProofError::ExpectedBetaRedex),
         };
         let reduced = arena.subst(body_ref, 0, arg_ref);
@@ -407,8 +407,8 @@ impl Thm {
         }
         let s_body = arena.abstract_over(s, name, ty, 0);
         let t_body = arena.abstract_over(t, name, ty, 0);
-        let s_abs = arena.alloc_term(TermDef::Abs(ty, s_body));
-        let t_abs = arena.alloc_term(TermDef::Abs(ty, t_body));
+        let s_abs = arena.alloc_term(TermDef::Lam(ty, s_body));
+        let t_abs = arena.alloc_term(TermDef::Lam(ty, t_body));
         let eq = arena.alloc_term(TermDef::Eq(TermRef::local(s_abs), TermRef::local(t_abs)));
         Ok(Self {
             prop: Prop::new(thm.prop.context, eq),
@@ -527,6 +527,113 @@ impl Thm {
         })
     }
 
+    /// **Subset-type axioms (Phase G2).** Given a subset type
+    /// `σ = Subset(α, P)`, build the two HOL axioms and register them
+    /// as known-true by unioning each conclusion term with `Bool(true)`
+    /// in the supplied [`TermUf`]. Returns the two Thms:
+    ///
+    ///   1. `⊢ ∀ a:σ. abs(rep a) = a`
+    ///   2. `⊢ ∀ x:α. (rep(abs x) = x) ⇔ (P x ∨ ¬∃y:α. P y)`
+    ///
+    /// The disjunct on axiom 2 is what makes the kernel free to
+    /// introduce subset types unconditionally: when the predicate is
+    /// inhabited the disjunct's RHS contains `P x`, recovering the
+    /// usual HOL Light biconditional; when the predicate is empty
+    /// (`¬∃y. P y` is true) the biconditional collapses to `rep(abs x)
+    /// = x ⇔ true`, which is trivially consistent.
+    ///
+    /// Returns [`ProofError::ExpectedSubsetType`] when `subset_ty`
+    /// isn't a [`crate::ty::TypeKind::Subset`].
+    pub fn subset_axioms(
+        arena: &mut Arena,
+        uf: &mut TermUf,
+        ctx: Arc<Context>,
+        subset_ty: TypeRef,
+    ) -> Result<(Self, Self), ProofError> {
+        let (alpha, p_id) = match arena.type_ref_kind(subset_ty) {
+            Some(TypeKind::Subset(alpha, p)) => (alpha, p),
+            _ => return Err(ProofError::ExpectedSubsetType),
+        };
+
+        // abs : α → σ and rep : σ → α.
+        let abs_fn = arena.alloc_term(TermDef::Abs(subset_ty));
+        let rep_fn = arena.alloc_term(TermDef::Rep(subset_ty));
+        let abs_ref = TermRef::local(abs_fn);
+        let rep_ref = TermRef::local(rep_fn);
+        let p_ref = TermRef::local(p_id);
+
+        // --- Axiom 1: ∀ a:σ. abs(rep a) = a ----------------------------
+        let bound0_t1 = arena.alloc_term(TermDef::Bound(0));
+        let rep_b0 =
+            arena.alloc_term(TermDef::Comb(rep_ref, TermRef::local(bound0_t1)));
+        let abs_rep_b0 =
+            arena.alloc_term(TermDef::Comb(abs_ref, TermRef::local(rep_b0)));
+        let eq1 = arena.alloc_term(TermDef::Eq(
+            TermRef::local(abs_rep_b0),
+            TermRef::local(bound0_t1),
+        ));
+        let lam1 = arena.alloc_term(TermDef::Lam(subset_ty, TermRef::local(eq1)));
+        let axiom1 = arena.alloc_term(TermDef::Forall(TermRef::local(lam1)));
+
+        // --- Axiom 2: ∀ x:α. (rep(abs x) = x) ⇔ (P x ∨ ¬∃y:α. P y) -----
+        // Build under one binder (the outer ∀x), so Bound(0) refers to x.
+        let bound0_t2 = arena.alloc_term(TermDef::Bound(0));
+        let abs_x =
+            arena.alloc_term(TermDef::Comb(abs_ref, TermRef::local(bound0_t2)));
+        let rep_abs_x =
+            arena.alloc_term(TermDef::Comb(rep_ref, TermRef::local(abs_x)));
+        let lhs = arena.alloc_term(TermDef::Eq(
+            TermRef::local(rep_abs_x),
+            TermRef::local(bound0_t2),
+        ));
+
+        // P x — `Comb(P, Bound(0))` with x at the outer binder.
+        let p_x = arena.alloc_term(TermDef::Comb(p_ref, TermRef::local(bound0_t2)));
+
+        // ∃ y:α. P y — under the inner ∃, the bound variable is
+        // Bound(0); P was closed pre-allocation so it carries no
+        // surviving De-Bruijn indices.
+        let bound0_inner = arena.alloc_term(TermDef::Bound(0));
+        let p_y =
+            arena.alloc_term(TermDef::Comb(p_ref, TermRef::local(bound0_inner)));
+        let lam_p_y = arena.alloc_term(TermDef::Lam(alpha, TermRef::local(p_y)));
+        let exists_p =
+            arena.alloc_term(TermDef::Exists(TermRef::local(lam_p_y)));
+        let not_exists_p =
+            arena.alloc_term(TermDef::Op1(PrimOp1::LogicalNot, TermRef::local(exists_p)));
+
+        let rhs = arena.alloc_term(TermDef::Op2(
+            PrimOp2::LogicalOr,
+            TermRef::local(p_x),
+            TermRef::local(not_exists_p),
+        ));
+
+        // Iff is Eq on bool.
+        let iff = arena.alloc_term(TermDef::Eq(
+            TermRef::local(lhs),
+            TermRef::local(rhs),
+        ));
+        let lam2 = arena.alloc_term(TermDef::Lam(alpha, TermRef::local(iff)));
+        let axiom2 = arena.alloc_term(TermDef::Forall(TermRef::local(lam2)));
+
+        // Register both axioms as known-true by union with Bool(true)
+        // in the UF.
+        let truth = arena.alloc_term(TermDef::Bool(true));
+        let truth_ref = TermRef::local(truth);
+        // BothForeign is unreachable: each axiom term and `truth` are
+        // fresh local allocations.
+        let _ = uf.union(TermRef::local(axiom1), truth_ref);
+        let _ = uf.union(TermRef::local(axiom2), truth_ref);
+
+        let thm1 = Self {
+            prop: Prop::new(ctx.clone(), axiom1),
+        };
+        let thm2 = Self {
+            prop: Prop::new(ctx, axiom2),
+        };
+        Ok((thm1, thm2))
+    }
+
     /// **Top-level reduction.** Apply one rule from the §10 catalog
     /// (literal-arg evaluation, numeral normalisation, `Comb(Id, _)`,
     /// `Comb(Ite(lit, _), _)`, …) to `t` and derive
@@ -597,6 +704,8 @@ pub enum ProofError {
     /// `inst`: replacement term's type doesn't match the variable's
     /// declared type.
     TypeMismatch,
+    /// `subset_axioms`: the type argument isn't a Subset(α, P).
+    ExpectedSubsetType,
 }
 
 impl std::fmt::Display for ProofError {
@@ -624,6 +733,7 @@ impl std::fmt::Display for ProofError {
                 write!(f, "abstraction variable occurs free in an assumption")
             }
             ProofError::TypeMismatch => write!(f, "replacement type doesn't match variable type"),
+            ProofError::ExpectedSubsetType => write!(f, "expected a subset type"),
         }
     }
 }

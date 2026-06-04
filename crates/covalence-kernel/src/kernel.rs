@@ -127,7 +127,7 @@ impl Kernel {
     pub fn lam(&mut self, name: &str, ty: TypeRef, body: TermRef) -> TermRef {
         let n = self.intern(name);
         let abstracted = self.arena.abstract_over(body, n, ty, 0);
-        self.alloc(TermDef::Abs(ty, abstracted))
+        self.alloc(TermDef::Lam(ty, abstracted))
     }
 
     // ---- inspection --------------------------------------------------------

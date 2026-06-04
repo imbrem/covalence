@@ -464,7 +464,7 @@ fn beta_reduces_redex_to_equality() {
     // (no UF needed)
     let bool_ty = a.bool_ty();
     let b0 = a.alloc_term(TermDef::Bound(0));
-    let abs = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(b0)));
+    let abs = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(b0)));
     // Abs body uses Bound(0), so the Abs (before infer) is marked
     // IllTyped at alloc_term. Run infer to get its proper type.
     let _ = a.infer(abs);
@@ -498,7 +498,7 @@ fn beta_rejects_ill_typed_redex() {
     // (no UF needed)
     let bool_ty = a.bool_ty();
     let b0 = a.alloc_term(TermDef::Bound(0));
-    let abs = a.alloc_term(TermDef::Abs(bool_ty, TermRef::local(b0)));
+    let abs = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(b0)));
     // Don't run infer — abs's cached type_info stays IllTyped. The
     // Comb on it is therefore also not well-typed at alloc.
     let t = a.alloc_term(TermDef::Bool(true));
@@ -578,7 +578,7 @@ fn abs_binds_free_var_in_both_sides_of_equality() {
     let l_def = *a.term_def(l.as_local().unwrap());
     let r_def = *a.term_def(r.as_local().unwrap());
     match (l_def, r_def) {
-        (TermDef::Abs(ty1, b1), TermDef::Abs(ty2, b2)) => {
+        (TermDef::Lam(ty1, b1), TermDef::Lam(ty2, b2)) => {
             assert_eq!(ty1, bool_ty);
             assert_eq!(ty2, bool_ty);
             assert_eq!(a.term_def(b1.as_local().unwrap()), &TermDef::Bound(0));
@@ -787,4 +787,50 @@ fn abs_rejects_non_equality_thm() {
     let xname = a.intern_string("x".into());
     let err = Thm::abs(&mut a, thm_t, xname, bool_ty).unwrap_err();
     assert_eq!(err, ProofError::ExpectedEquality);
+}
+
+// ---------------------------------------------------------------------------
+// Subset axioms (Phase G2)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn subset_axioms_produces_two_thms_and_unions_with_true() {
+    let mut a = Arena::new();
+    let mut uf = TermUf::new();
+    let nat_ty = a.nat_ty();
+    // Predicate λ(n:Nat). true — accept everything.
+    let bool_true = a.alloc_term(TermDef::Bool(true));
+    let p = a.alloc_term(TermDef::Lam(nat_ty, TermRef::local(bool_true)));
+    let subset = a.alloc_subset_ty(nat_ty, p).expect("well-formed subset");
+
+    let (thm1, thm2) =
+        Thm::subset_axioms(&mut a, &mut uf, Context::empty(), subset).expect("subset axioms");
+
+    // Axiom 1 conclusion is Forall(Lam(subset, Eq(...))).
+    match a.term_def(thm1.concl()) {
+        TermDef::Forall(_) => {}
+        other => panic!("axiom 1: expected Forall, got {other:?}"),
+    }
+    // Axiom 2 conclusion is Forall(Lam(alpha=nat, Eq(LHS, RHS))).
+    match a.term_def(thm2.concl()) {
+        TermDef::Forall(_) => {}
+        other => panic!("axiom 2: expected Forall, got {other:?}"),
+    }
+
+    // Both axioms are now UF-equal to a Bool(true) leaf. alloc_term
+    // does not dedup, so check the canonical's def rather than an
+    // identical TermId.
+    let canon1 = uf.canonical_local(TermRef::local(thm1.concl()));
+    let canon2 = uf.canonical_local(TermRef::local(thm2.concl()));
+    assert_eq!(a.term_def(canon1.as_local().unwrap()), &TermDef::Bool(true));
+    assert_eq!(a.term_def(canon2.as_local().unwrap()), &TermDef::Bool(true));
+}
+
+#[test]
+fn subset_axioms_rejects_non_subset_type() {
+    let mut a = Arena::new();
+    let mut uf = TermUf::new();
+    let bool_ty = a.bool_ty();
+    let err = Thm::subset_axioms(&mut a, &mut uf, Context::empty(), bool_ty).unwrap_err();
+    assert_eq!(err, ProofError::ExpectedSubsetType);
 }

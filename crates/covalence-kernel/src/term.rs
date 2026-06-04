@@ -7,6 +7,13 @@ use crate::id::{BytesId, ImportId, IntId, NatId, StrId, TermId};
 use crate::primop::{PrimOp1, PrimOp2};
 use crate::ty::TypeRef;
 
+// `TermDef::Abs(TypeRef)` / `TermDef::Rep(TypeRef)` carry the subset
+// TypeRef (`Subset(α, P)`) and represent the abstraction / projection
+// functions of that subset type — `Abs : α → Subset` and `Rep :
+// Subset → α`. The kernel-generated subset axioms (Phase G2) are
+// asserted via UF-union against `Bool(true)` after they're built out
+// of these two leaves.
+
 /// Opaque storage cell for inline 64-bit literal payloads.
 /// Constructable only inside the crate; external callers see logical
 /// `u64` / `i64` values via [`TermKind`].
@@ -45,7 +52,8 @@ pub enum TermKind {
     Free(StrId, TypeRef),
     Const(StrId, TypeRef),
     Comb(TermRef, TermRef),
-    Abs(TypeRef, TermRef),
+    /// Lambda abstraction `λ(x : ty). body` (locally-nameless body).
+    Lam(TypeRef, TermRef),
 
     // -- truth + equality --
     Bool(bool),
@@ -55,6 +63,12 @@ pub enum TermKind {
     Forall(TermRef),
     Exists(TermRef),
     Eps(TypeRef, TermRef),
+
+    // -- subset operations (Phase G) --
+    /// `Abs : α → Subset(α, P)` for the given subset TypeRef.
+    Abs(TypeRef),
+    /// `Rep : Subset(α, P) → α` for the given subset TypeRef.
+    Rep(TypeRef),
 
     // -- applied primops --
     Op1(PrimOp1, TermRef),
@@ -113,7 +127,8 @@ pub enum TermDef {
     Free(StrId, TypeRef),
     Const(StrId, TypeRef),
     Comb(TermRef, TermRef),
-    Abs(TypeRef, TermRef),
+    /// Lambda binder `λ(_ : ty). body` (locally-nameless body).
+    Lam(TypeRef, TermRef),
 
     // -- truth + equality --
     Bool(bool),
@@ -123,6 +138,14 @@ pub enum TermDef {
     Forall(TermRef),
     Exists(TermRef),
     Eps(TypeRef, TermRef),
+
+    // -- subset operations (Phase G) --
+    /// Subset abstraction function `α → Subset(α, P)`. The `TypeRef`
+    /// must point at a [`crate::ty::TypeDef::Subset`] in the arena
+    /// (enforced by the kernel-level type-check on the term).
+    Abs(TypeRef),
+    /// Subset projection function `Subset(α, P) → α`.
+    Rep(TypeRef),
 
     // -- applied primops --
     Op1(PrimOp1, TermRef),
@@ -180,9 +203,9 @@ impl TermDef {
         match *self {
             Bound(_) | Free(..) | Const(..) | Bool(_)
             | IntInline(_) | IntStored(_) | NatInline(_) | NatStored(_)
-            | BytesStored(_) | Foreign(..) => Deps::None,
+            | BytesStored(_) | Abs(_) | Rep(_) | Foreign(..) => Deps::None,
             Forall(p) | Exists(p) | Op1(_, p) => Deps::One(p),
-            Eps(_, p) | Abs(_, p) => Deps::One(p),
+            Eps(_, p) | Lam(_, p) => Deps::One(p),
             Comb(a, b) | Eq(a, b) | Op2(_, a, b) => Deps::Two(a, b),
         }
     }
@@ -197,7 +220,7 @@ impl TermDef {
             Exists(_) => Exists(sentinel),
             Op1(o, _) => Op1(o, sentinel),
             Eps(t, _) => Eps(t, sentinel),
-            Abs(t, _) => Abs(t, sentinel),
+            Lam(t, _) => Lam(t, sentinel),
             Comb(_, _) => Comb(sentinel, sentinel),
             Eq(_, _) => Eq(sentinel, sentinel),
             Op2(o, _, _) => Op2(o, sentinel, sentinel),

@@ -144,7 +144,7 @@ impl Driver {
             Forall(x) => Forall(cm(x)),
             Exists(x) => Exists(cm(x)),
             Eps(t, x) => Eps(t, cm(x)),
-            Abs(t, x) => Abs(t, cm(x)),
+            Lam(t, x) => Lam(t, cm(x)),
             other => other,
         }
     }
@@ -266,7 +266,7 @@ impl Driver {
         let body = self.eval_term(body)?;
         let n = self.kernel.arena_mut().intern_string(name.into());
         let abstracted = self.kernel.arena_mut().abstract_over(body, n, ty, 0);
-        let result = self.intern_term(TermDef::Abs(ty, abstracted));
+        let result = self.intern_term(TermDef::Lam(ty, abstracted));
         // Resolve cached type info under binders so downstream Thm
         // rules read this as well-typed.
         if let Some(id) = result.as_local() {
@@ -441,7 +441,7 @@ impl Driver {
             TermKind::Eq(a, b) => {
                 format!("(eq {} {})", self.render_termref(a), self.render_termref(b))
             }
-            TermKind::Abs(ty, body) => format!(
+            TermKind::Lam(ty, body) => format!(
                 "(lam {} {})",
                 self.render_ty(ty),
                 self.render_termref(body)

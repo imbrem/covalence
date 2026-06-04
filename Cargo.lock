@@ -561,6 +561,7 @@ name = "covalence-kernel"
 version = "0.0.0"
 dependencies = [
  "bytes",
+ "covalence-hash",
  "covalence-sexp",
  "covalence-types",
  "smol_str",

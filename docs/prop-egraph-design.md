@@ -34,13 +34,11 @@ object so that "a proof" is a value, not a tuple of references.
 ## Target shape
 
 ```rust
-/// An assertion plus the proof environment in which it is interpreted.
+/// A proof environment: an E-graph plus an optional precondition.
 /// Anyone can construct a Prop; the kernel makes no claim about truth.
 pub struct Prop {
     /// E-graph: term/type allocator + union-find state.
     pub egraph: Egraph,
-    /// The conclusion term (a TermId in `egraph.arena`).
-    pub concl: TermId,
     /// Single chained precondition, or None for unconditional Props.
     /// A chain of preconditions encodes "assumption set".
     pub precondition: Option<Arc<Prop>>,
@@ -52,26 +50,30 @@ pub struct Egraph {
     pub uf: TermUf,
 }
 
-/// A Prop whose conclusion has been UF-equated with `Bool(true)` by a
-/// kernel-sanctioned rule. Constructible only via the inference-rule
+/// A Prop where the kernel has performed at least one UF-union
+/// justified by an inference rule. Constructible only via those rule
 /// methods.
 pub struct Thm(Prop);
 ```
 
-A `Prop` represents one sequent. A chain of preconditions
-`P_n ← P_{n-1} ← ... ← P_1 ← None` encodes the assumption set
-`{P_1.concl, ..., P_{n-1}.concl}` for `P_n.concl`. Each link is
-`Arc<Prop>`, so weakening / re-export shares structure.
+**The E-graph is the conclusion.** There is no separate `concl` field.
+"What this Thm proves" = any term `t` in `prop.egraph` for which
+`uf.canonical_local(t) == uf.canonical_local(Bool(true))`. Callers
+pattern-match against the egraph to extract the statements they care
+about.
 
-The E-graph is the *only* equality reasoning state. Inference rules
-mutate it in place: they look for a pattern, build any missing terms,
-and `uf.union(matched, target)` — typically against `Bool(true)`.
+A chain of preconditions `P_n ← P_{n-1} ← ... ← P_1 ← None` encodes
+the assumption set: `P_n` claims its egraph-truths hold *given* every
+predecessor's egraph-truths. Each link is `Arc<Prop>`, so weakening
+and re-export share structure.
 
-A `Thm(Prop)` is a Prop where the kernel has verified that
-`uf.canonical(concl) == uf.canonical(Bool(true))` *as a result of
-having executed a kernel rule that justifies the union*. Untrusted
-code can build arbitrary Props with arbitrary unions; the trust
-boundary is the `Thm` constructor.
+Inference rules mutate the egraph in place: they pattern-match for a
+shape (e.g. `Eq(t, t)` for `refl`), build any missing terms, and
+`uf.union(matched, Bool(true))` — or, for purely equational rules,
+`uf.union(lhs, rhs)`. A `Thm(Prop)` is the witness that the kernel
+performed those unions. Untrusted code can build arbitrary Props and
+mash arbitrary unions into their UFs; the trust boundary is the `Thm`
+constructor.
 
 ## Mapping current concepts
 
@@ -80,11 +82,12 @@ boundary is the `Thm` constructor.
 | `Arena` | `Egraph::arena` |
 | `TermUf` | `Egraph::uf` |
 | `Context` (chain of `Arc<Prop>`) | `Prop::precondition` (chained `Arc<Prop>`) |
-| `Prop { context, concl }` | `Prop { egraph, concl, precondition }` |
-| `Thm { prop }` | `Thm(Prop)` — exact same shape |
-| Rule: `Thm::refl(arena, ctx, t)` | Method: `Thm::refl(prop) -> Thm` (consumes a Prop with the right shape, unions `Eq(t, t)` with `true`) |
-| Rule: `Thm::trans(arena, uf, ab, bc)` | Method on Thm that combines two parent Thms — see "cross-Prop composition" below |
+| `Prop { context, concl }` | `Prop { egraph, precondition }` — no concl field |
+| `Thm { prop }` | `Thm(Prop)` — same wrapper, no concl |
+| Rule: `Thm::refl(arena, ctx, t)` | Method: `Thm::refl(&mut self, t)` — pattern-match `Eq(t, t)` in the egraph and union it with `Bool(true)` |
+| Rule: `Thm::trans(arena, uf, ab, bc)` | Method that combines two parent Thms — see "cross-Prop composition" below |
 | `Kernel { arena, uf, ctx }` | Goes away; or shrinks to a thin scratchpad |
+| `thm.concl()` | Gone. Callers track the `TermId` they expected externally and check `uf.canonical_local(t) == uf.canonical_local(Bool(true))` themselves. |
 
 ## Inference rules as mutating methods
 
@@ -103,9 +106,10 @@ Example: reflexivity becomes
 
 ```rust
 impl Thm {
-    pub fn refl(self, t: TermId) -> Result<Self, ProofError> {
-        // self.0 is the underlying Prop.
-        let Prop { mut egraph, concl: _, precondition } = self.0;
+    /// Pattern-match (or build) `Eq(t, t)` in self.egraph and union it
+    /// with Bool(true). Self is mutated; the same Thm is returned.
+    pub fn refl(&mut self, t: TermId) -> Result<(), ProofError> {
+        let egraph = &mut self.0.egraph;
         if !egraph.arena.is_well_typed(t) {
             return Err(ProofError::IllTypedInput);
         }
@@ -114,17 +118,19 @@ impl Thm {
         let truth = egraph.arena.alloc_term(TermDef::Bool(true));
         egraph.uf.union(TermRef::local(eq), TermRef::local(truth))
             .expect("fresh local terms");
-        Ok(Thm(Prop { egraph, concl: eq, precondition }))
+        Ok(())
     }
 }
 ```
 
 The pattern is identical for every rule: build (or recognise) the
-shape, side-conditions, union.
+shape, side-conditions, union. The caller knows which `TermId` they
+just unioned with `true` and can query the egraph for it later.
 
 `subset_axioms` (already implemented in Phase G2) is the prototype.
 It builds two axiom terms and unions each with `Bool(true)`. The
-redesign generalises that pattern.
+redesign generalises that pattern — every rule becomes a "build /
+match a shape, union with `true`" method.
 
 ## Cross-Prop composition
 
@@ -196,13 +202,10 @@ methods. Tests now exercise the precondition-chain shape end to end.
    addressing), we'll want canonical hash computations that don't
    mutate — but those want `&Arena`, not `&Egraph`. Defer.
 
-2. **Should a Prop's Arena be content-addressed at construction?**
-   The plan's Phase H targets per-arena content hashes. If a Prop's
-   identity is its arena's hash, two proofs of "the same theorem" hash
-   the same iff their Egraphs hash the same — but Egraphs include UF
-   state, which is derivation-order-sensitive. The fix is to hash only
-   the structural arena, not the UF. Treat this as a Phase H
-   constraint.
+2. **Hashing.**
+   Phase H wants per-arena content hashes. The egraph's UF state is
+   derivation-order-sensitive, so hashing must cover only the
+   structural arena. Treat this as a Phase H constraint, not Phase P.
 
 3. **How are preconditions deduplicated?**
    Today `deduct_antisym_rule` deduplicates assumptions by canonical
@@ -214,19 +217,27 @@ methods. Tests now exercise the precondition-chain shape end to end.
    - Surface a `Prop::canonicalise(&Egraph) -> Prop` that rewrites the
      chain in some host Egraph. Defer until a rule needs it.
 
-4. **Does the precondition itself carry an E-graph, or just a
-   conclusion?** A precondition is a `Prop`, which carries its own
-   Egraph. That's redundant if the chain lives entirely inside one
-   host arena. Two options:
+4. **Does the precondition itself carry an E-graph?** A precondition
+   is a `Prop`, which carries its own Egraph. That's redundant if the
+   chain lives entirely inside one host arena. Two options:
    - **Self-contained chain:** each Prop owns its arena. Cross-arena
      reasoning goes through imports.
    - **Host-bound chain:** each Prop's `precondition` is a `TermId`
-     in the same arena, not an `Arc<Prop>`. The chain is just a
-     linked list of terms in one host arena.
+     in the same arena, not an `Arc<Prop>`. The chain is a linked list
+     of terms in one host arena.
    The self-contained variant matches the user's wording most
    literally. The host-bound variant is cheaper and aligns with how
    `Context` works today. **Recommend self-contained** so a Prop is
    genuinely a value; revisit if memory pressure shows up.
+
+5. **How does the caller know "what they proved"?**
+   With no `concl` field, the Thm just carries the egraph. A caller
+   that wanted to prove `P` builds `P` in the egraph, runs rules, and
+   afterwards checks `egraph.uf.canonical_local(p_ref) ==
+   egraph.uf.canonical_local(bool_true_ref)`. The TermId `p_ref` is
+   the caller's responsibility to remember; the Thm doesn't track it.
+   This is the egraph idiom — the proof state is what's in the egraph,
+   not a named target.
 
 ## Audit-surface impact
 

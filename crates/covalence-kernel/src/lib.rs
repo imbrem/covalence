@@ -10,6 +10,7 @@
 pub mod arena;
 pub mod egraph;
 pub mod eprop;
+pub mod hash;
 pub mod id;
 pub mod kernel;
 pub mod primop;

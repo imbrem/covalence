@@ -1002,6 +1002,24 @@ impl Arena {
         &self.imports
     }
 
+    // ---- crate-internal table accessors for content hashing (Phase H) ----
+    pub(crate) fn all_types(&self) -> &[TypeDef] { &self.types }
+    pub(crate) fn all_terms(&self) -> &[TermDef] { &self.terms }
+    pub(crate) fn all_term_props(&self) -> &[TermProps] { &self.term_props }
+    pub(crate) fn all_strings(&self) -> &[SmolStr] { &self.strings }
+    pub(crate) fn all_bytes(&self) -> &[bytes::Bytes] { &self.bytes }
+    pub(crate) fn all_ints(&self) -> &[covalence_types::Int] { &self.ints }
+    pub(crate) fn all_nats(&self) -> &[covalence_types::Nat] { &self.nats }
+    pub(crate) fn all_tyargs(&self) -> &[Vec<TypeRef>] { &self.tyargs }
+    pub(crate) fn all_term_substs(&self) -> &[TermSubst] { &self.term_substs }
+    pub(crate) fn all_type_substs(&self) -> &[TypeSubst] { &self.type_substs }
+
+    /// Compute the BLAKE3 content hash of this arena. See
+    /// [`crate::hash::arena`] for details.
+    pub fn hash(&self) -> covalence_hash::O256 {
+        crate::hash::arena(self)
+    }
+
     pub fn num_types(&self) -> u32 {
         self.types.len() as u32
     }

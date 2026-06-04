@@ -17,6 +17,8 @@
 
 use std::sync::Arc;
 
+use covalence_hash::blake3;
+
 use crate::egraph::Egraph;
 use crate::id::TermId;
 use crate::prop::ProofError;
@@ -58,6 +60,22 @@ impl EProp {
         }
         out
     }
+
+    /// BLAKE3 content hash of this EProp. Hashes the embedded
+    /// arena's structural state plus the precondition chain's
+    /// EProp hashes.
+    pub fn hash(&self) -> covalence_hash::O256 {
+        let arena_hash = self.egraph.arena.hash();
+        let mut h = blake3::Hasher::new();
+        h.update(b"eprop:");
+        h.update(arena_hash.as_bytes());
+        h.update(&(self.precondition_chain().len() as u64).to_le_bytes());
+        for p in self.precondition_chain() {
+            let ph = p.hash();
+            h.update(ph.as_bytes());
+        }
+        covalence_hash::O256::from_bytes(*h.finalize().as_bytes())
+    }
 }
 
 /// A kernel-verified `EProp`. Constructible only via the rule
@@ -89,6 +107,11 @@ impl EThm {
     /// two terms I care about, does the Thm prove they're equal?"
     pub fn eq(&self, a: TermRef, b: TermRef) -> bool {
         self.0.egraph.uf.eq_at_level_0(a, b)
+    }
+
+    /// BLAKE3 content hash of the underlying EProp.
+    pub fn hash(&self) -> covalence_hash::O256 {
+        self.0.hash()
     }
 
     /// **Reflexivity (egraph form).** Build `Eq(t, t)` in

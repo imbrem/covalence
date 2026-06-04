@@ -171,6 +171,12 @@ impl Prop {
         }
         out
     }
+
+    /// BLAKE3 content hash of this Prop against its arena. See
+    /// [`crate::hash::prop`].
+    pub fn hash(&self, arena: &Arena) -> covalence_hash::O256 {
+        crate::hash::prop(self, arena.hash())
+    }
 }
 
 // ---------------------------------------------------------------------------

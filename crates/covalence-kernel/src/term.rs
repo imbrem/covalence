@@ -114,6 +114,11 @@ impl TermRef {
     pub(crate) fn from_raw(raw: u32) -> Self {
         Self(raw)
     }
+
+    /// Raw encoding (Phase H content hashing).
+    pub(crate) fn raw(self) -> u32 {
+        self.0
+    }
 }
 
 /// The kernel's term language — the structural form stored at each

@@ -128,6 +128,11 @@ impl TypeRef {
     pub(crate) fn from_raw(raw: i32) -> Self {
         Self(raw)
     }
+
+    /// Raw encoding (Phase H content hashing).
+    pub(crate) fn raw(self) -> i32 {
+        self.0
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -215,6 +220,11 @@ impl TypeInfo {
         } else {
             TypeInfoKind::Unbound(self.unbound_depth())
         }
+    }
+
+    /// Raw encoding (Phase H content hashing).
+    pub(crate) fn encoded_for_hash(self) -> i32 {
+        self.0
     }
 }
 

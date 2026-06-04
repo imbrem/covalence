@@ -159,21 +159,27 @@ inference rules become mutating methods on `Thm` that pattern-match
 and union. Scope and migration roadmap in
 [`prop-egraph-design.md`](./prop-egraph-design.md).
 
-Phase P **precedes** Phase H — content addressing wants to hash the
-structural part of a Prop's Egraph, and the Prop redesign defines
-what "the structural part" actually is.
+Phase P is no longer a migration — `EProp` / `EThm` live alongside the
+legacy `Prop` / `Thm` indefinitely. The plan committed P1 (Egraph
+wrapper), P2 (precondition chain on legacy Prop), and a `refl` rule
+in the new shape (`EThm::refl`) as a prototype. Further rule
+conversion happens at the user's request only.
 
-## Phase H — content-addressed type identity
+## Phase H — content-addressed type identity (done)
 
-- **H1.** Canonicalisation pass: normalise a type expression, then
-  hash `(normalised P, declared tyvar order)` for each type
-  operator. One canonical tyvar ordering threaded through
-  serialisation, polymorphism, and the normaliser.
-- **H2.** Surface as `Arena::freeze() -> Arc<FrozenArena>` carrying
-  the BLAKE3 hash. Imports can then check identity by hash, not by
-  pointer.
+Implemented as a single hash over linear arena buffers — **no
+canonicalisation**. The invariant is `hash → bytes` injective; the
+reverse is **not** required (two arenas built with different
+allocation orders that express the same logical content hash
+differently). The kernel doesn't compute semantic equivalence.
 
-After H: same theory → same hash regardless of derivation order.
+- **H1.** `Arena::hash() -> O256` streams every table (`types`,
+  `terms`, `term_props`, `imports` recursively, interned
+  strings/bytes/ints/nats, tyargs, substitutions) through
+  BLAKE3 with per-section domain-separation tags.
+- **H2.** `Prop::hash(&Arena) -> O256` combines the arena hash with
+  the concl TermId and the context / precondition-chain entries.
+  `EProp::hash() / EThm::hash()` operate on the embedded egraph.
 
 ---
 

@@ -25,9 +25,10 @@ pub enum UnionError {
     BothForeign,
 }
 
-/// Errors returned by [`Arena::alloc_subset_ty`] when the predicate
-/// fails a well-formedness side condition.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Errors returned by [`Arena::alloc_subset_ty`] and
+/// [`Arena::declare_type_operator`] when the predicate fails a
+/// well-formedness side condition.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SubsetError {
     /// `term_props(p).bound_depth() != 0` — predicate has surviving
     /// De-Bruijn indices.
@@ -38,6 +39,15 @@ pub enum SubsetError {
     PredicateNotPredicateType,
     /// Predicate id is out of bounds.
     PredicateOutOfRange,
+    /// `declare_type_operator`: a tyvar appearing in the parent type
+    /// or predicate is missing from the declared order list.
+    DeclaredOrderMissingTyvar(StrId),
+    /// `declare_type_operator`: the declared order lists a tyvar name
+    /// that does not appear in the parent type or predicate.
+    DeclaredOrderExtraTyvar(StrId),
+    /// `declare_type_operator`: the declared order lists the same
+    /// tyvar name twice.
+    DeclaredOrderDuplicateTyvar(StrId),
 }
 use crate::ty::{BuiltinTy, TypeDef, TypeInfo, TypeInfoKind, TypeKind, TypeRef, TypeRefKind};
 use crate::uf::TermProps;
@@ -1073,6 +1083,170 @@ impl Arena {
             return Err(SubsetError::PredicateNotPredicateType);
         }
         Ok(self.alloc_type(TypeDef::Subset(alpha, p)))
+    }
+
+    /// Declare a polymorphic subset type, supplying an explicit
+    /// **type-variable ordering** (Phase G3).
+    ///
+    /// Like [`alloc_subset_ty`](Self::alloc_subset_ty), but also
+    /// validates that `declared_order` is exactly the set of free
+    /// type-variable names appearing in `parent` ∪ `p`, listed once
+    /// each in whatever order the caller wants.
+    ///
+    /// The order matters for content-addressed type identity (Phase
+    /// H): two subset declarations whose underlying predicates are
+    /// structurally identical hash the same iff their declared orders
+    /// also match.
+    ///
+    /// Returns the same [`TypeRef`] `alloc_subset_ty` would produce
+    /// — the order itself is not (yet) stored in the [`TypeDef`].
+    pub fn declare_type_operator(
+        &mut self,
+        parent: TypeRef,
+        p: TermId,
+        declared_order: Vec<StrId>,
+    ) -> Result<TypeRef, SubsetError> {
+        // Collect the actual tyvar set in (parent, p).
+        let mut found = std::collections::HashSet::new();
+        self.collect_tyvars_in_type(parent, &mut found);
+        if (p.0 as usize) < self.terms.len() {
+            self.collect_tyvars_in_term(p, &mut std::collections::HashSet::new(), &mut found);
+        }
+
+        // No duplicates in declared_order.
+        let mut declared = std::collections::HashSet::new();
+        for name in &declared_order {
+            if !declared.insert(*name) {
+                return Err(SubsetError::DeclaredOrderDuplicateTyvar(*name));
+            }
+        }
+
+        // declared ⊇ found (every actual tyvar is declared).
+        for name in &found {
+            if !declared.contains(name) {
+                return Err(SubsetError::DeclaredOrderMissingTyvar(*name));
+            }
+        }
+        // declared ⊆ found (no extras).
+        for name in &declared {
+            if !found.contains(name) {
+                return Err(SubsetError::DeclaredOrderExtraTyvar(*name));
+            }
+        }
+
+        // All checks pass — same as alloc_subset_ty.
+        self.alloc_subset_ty(parent, p)
+    }
+
+    /// Walk a [`TypeRef`] and accumulate every free [`TVar`] name into
+    /// `out`. Builtins, foreign refs, and bound positions contribute
+    /// nothing.
+    fn collect_tyvars_in_type(&self, r: TypeRef, out: &mut std::collections::HashSet<StrId>) {
+        let id = match r.decode() {
+            TypeRefKind::Builtin(_) => return,
+            TypeRefKind::Local(id) => id,
+        };
+        match *self.type_def(id) {
+            TypeDef::Bool | TypeDef::Bytes | TypeDef::Int | TypeDef::Nat => {}
+            TypeDef::Fun(a, b) => {
+                self.collect_tyvars_in_type(a, out);
+                self.collect_tyvars_in_type(b, out);
+            }
+            TypeDef::TVar(name) => {
+                out.insert(name);
+            }
+            TypeDef::Tyapp(_, args) => {
+                let args_vec: Vec<TypeRef> = self.tyargs(args).to_vec();
+                for arg in args_vec {
+                    self.collect_tyvars_in_type(arg, out);
+                }
+            }
+            TypeDef::Subset(parent, _p) => {
+                // P's tyvars are walked by collect_tyvars_in_term if
+                // the caller has reached this Subset via a term. Here
+                // we only need the parent — nested Subset types are
+                // rare and would be a separate G3 design point.
+                self.collect_tyvars_in_type(parent, out);
+            }
+            TypeDef::Foreign(_, _) => {}
+        }
+    }
+
+    /// Walk a term and accumulate every free [`TVar`] name visible in
+    /// any of its type annotations. Uses `visited` to avoid retracing
+    /// shared sub-terms.
+    fn collect_tyvars_in_term(
+        &self,
+        id: TermId,
+        visited: &mut std::collections::HashSet<TermId>,
+        out: &mut std::collections::HashSet<StrId>,
+    ) {
+        if !visited.insert(id) {
+            return;
+        }
+        let def = *self.term_def(id);
+        match def {
+            TermDef::Bound(_)
+            | TermDef::Bool(_)
+            | TermDef::IntInline(_)
+            | TermDef::IntStored(_)
+            | TermDef::NatInline(_)
+            | TermDef::NatStored(_)
+            | TermDef::BytesStored(_)
+            | TermDef::Foreign(_, _) => {}
+            TermDef::Free(_, ty) | TermDef::Const(_, ty) => {
+                self.collect_tyvars_in_type(ty, out);
+            }
+            TermDef::Comb(f, x) => {
+                if let Some(fid) = f.as_local() {
+                    self.collect_tyvars_in_term(fid, visited, out);
+                }
+                if let Some(xid) = x.as_local() {
+                    self.collect_tyvars_in_term(xid, visited, out);
+                }
+            }
+            TermDef::Lam(ty, body) => {
+                self.collect_tyvars_in_type(ty, out);
+                if let Some(bid) = body.as_local() {
+                    self.collect_tyvars_in_term(bid, visited, out);
+                }
+            }
+            TermDef::Eq(a, b) => {
+                if let Some(aid) = a.as_local() {
+                    self.collect_tyvars_in_term(aid, visited, out);
+                }
+                if let Some(bid) = b.as_local() {
+                    self.collect_tyvars_in_term(bid, visited, out);
+                }
+            }
+            TermDef::Forall(p) | TermDef::Exists(p) => {
+                if let Some(pid) = p.as_local() {
+                    self.collect_tyvars_in_term(pid, visited, out);
+                }
+            }
+            TermDef::Eps(ty, p) => {
+                self.collect_tyvars_in_type(ty, out);
+                if let Some(pid) = p.as_local() {
+                    self.collect_tyvars_in_term(pid, visited, out);
+                }
+            }
+            TermDef::Op1(_, x) => {
+                if let Some(xid) = x.as_local() {
+                    self.collect_tyvars_in_term(xid, visited, out);
+                }
+            }
+            TermDef::Op2(_, a, b) => {
+                if let Some(aid) = a.as_local() {
+                    self.collect_tyvars_in_term(aid, visited, out);
+                }
+                if let Some(bid) = b.as_local() {
+                    self.collect_tyvars_in_term(bid, visited, out);
+                }
+            }
+            TermDef::Abs(subset_ty) | TermDef::Rep(subset_ty) => {
+                self.collect_tyvars_in_type(subset_ty, out);
+            }
+        }
     }
 
     /// Public view of an allocated type. Use this to pattern-match

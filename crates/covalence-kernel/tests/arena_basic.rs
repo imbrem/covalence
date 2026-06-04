@@ -513,6 +513,92 @@ fn alloc_subset_ty_rejects_mismatched_domain() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Phase G3: declare_type_operator with tyvar ordering.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn declare_type_operator_accepts_nullary_subset() {
+    // No tyvars in (Nat, λ(_:Nat). true) — declared_order = [] is valid.
+    let mut a = Arena::new();
+    let nat_ty = a.nat_ty();
+    let bool_true = a.alloc_term(TermDef::Bool(true));
+    let p = a.alloc_term(TermDef::Lam(nat_ty, TermRef::local(bool_true)));
+    let r = a.declare_type_operator(nat_ty, p, vec![]).unwrap();
+    assert!(r.is_local());
+}
+
+#[test]
+fn declare_type_operator_accepts_unary_polymorphic() {
+    // Parent is 'a, predicate is λ(x:'a). true. declared_order = ['a].
+    let mut a = Arena::new();
+    let alpha_name = a.intern_string("'a".into());
+    let alpha_ty = a.alloc_tvar(alpha_name);
+    let bool_true = a.alloc_term(TermDef::Bool(true));
+    let p = a.alloc_term(TermDef::Lam(alpha_ty, TermRef::local(bool_true)));
+    let r = a.declare_type_operator(alpha_ty, p, vec![alpha_name]).unwrap();
+    assert!(r.is_local());
+}
+
+#[test]
+fn declare_type_operator_rejects_missing_tyvar() {
+    use covalence_kernel::SubsetError;
+    let mut a = Arena::new();
+    let alpha_name = a.intern_string("'a".into());
+    let alpha_ty = a.alloc_tvar(alpha_name);
+    let bool_true = a.alloc_term(TermDef::Bool(true));
+    let p = a.alloc_term(TermDef::Lam(alpha_ty, TermRef::local(bool_true)));
+    // Forgetting 'a from the declared list.
+    assert_eq!(
+        a.declare_type_operator(alpha_ty, p, vec![]),
+        Err(SubsetError::DeclaredOrderMissingTyvar(alpha_name)),
+    );
+}
+
+#[test]
+fn declare_type_operator_rejects_extra_tyvar() {
+    use covalence_kernel::SubsetError;
+    let mut a = Arena::new();
+    let nat_ty = a.nat_ty();
+    let bool_true = a.alloc_term(TermDef::Bool(true));
+    let p = a.alloc_term(TermDef::Lam(nat_ty, TermRef::local(bool_true)));
+    let extra = a.intern_string("'b".into());
+    assert_eq!(
+        a.declare_type_operator(nat_ty, p, vec![extra]),
+        Err(SubsetError::DeclaredOrderExtraTyvar(extra)),
+    );
+}
+
+#[test]
+fn declare_type_operator_rejects_duplicate_tyvar() {
+    use covalence_kernel::SubsetError;
+    let mut a = Arena::new();
+    let alpha_name = a.intern_string("'a".into());
+    let alpha_ty = a.alloc_tvar(alpha_name);
+    let bool_true = a.alloc_term(TermDef::Bool(true));
+    let p = a.alloc_term(TermDef::Lam(alpha_ty, TermRef::local(bool_true)));
+    assert_eq!(
+        a.declare_type_operator(alpha_ty, p, vec![alpha_name, alpha_name]),
+        Err(SubsetError::DeclaredOrderDuplicateTyvar(alpha_name)),
+    );
+}
+
+#[test]
+fn declare_type_operator_accepts_any_permutation() {
+    // Parent is 'a → 'b (a function type with two tyvars). Predicate
+    // λ(_:'a → 'b). true. Both ['a, 'b] and ['b, 'a] are valid orders.
+    let mut a = Arena::new();
+    let alpha = a.intern_string("'a".into());
+    let beta = a.intern_string("'b".into());
+    let alpha_ty = a.alloc_tvar(alpha);
+    let beta_ty = a.alloc_tvar(beta);
+    let fun_ty = a.alloc_fun_ty(alpha_ty, beta_ty);
+    let bool_true = a.alloc_term(TermDef::Bool(true));
+    let p = a.alloc_term(TermDef::Lam(fun_ty, TermRef::local(bool_true)));
+    assert!(a.declare_type_operator(fun_ty, p, vec![alpha, beta]).is_ok());
+    assert!(a.declare_type_operator(fun_ty, p, vec![beta, alpha]).is_ok());
+}
+
 #[test]
 fn add_import_dedupes() {
     let d = Arena::new().freeze();

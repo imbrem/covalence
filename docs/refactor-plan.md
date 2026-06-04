@@ -151,6 +151,18 @@ Light's `new_type_definition` with the unconditional version
 After G: every well-formed type is decidably well-formed without
 touching the proof engine.
 
+## Phase P — Prop-as-E-graph redesign
+
+Reframe the kernel's core data model so a `Prop` is a self-contained
+E-graph + designated conclusion + optional precondition chain, and
+inference rules become mutating methods on `Thm` that pattern-match
+and union. Scope and migration roadmap in
+[`prop-egraph-design.md`](./prop-egraph-design.md).
+
+Phase P **precedes** Phase H — content addressing wants to hash the
+structural part of a Prop's Egraph, and the Prop redesign defines
+what "the structural part" actually is.
+
 ## Phase H — content-addressed type identity
 
 - **H1.** Canonicalisation pass: normalise a type expression, then

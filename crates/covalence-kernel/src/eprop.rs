@@ -1,18 +1,19 @@
-//! Phase P: Prop-as-E-graph (no concl field).
+//! Phase P: Prop-as-E-graph (no concl field, user-tracked truth).
 //!
 //! `EProp` is the proof environment: an [`Egraph`] plus an optional
-//! precondition chain. There is **no** concl field — the egraph IS
-//! the conclusion. "What an [`EThm`] proves" = any `TermId` in
-//! `prop.egraph` whose UF canonical equals `Bool(true)`'s canonical.
+//! precondition chain. **No concl field** — the egraph IS the
+//! conclusion. The kernel does not designate a canonical truth term
+//! either; userspace allocates `Bool(true)` (or any other sentinel)
+//! itself and passes that `TermRef` into every rule that should mark
+//! a pattern as known-true.
 //!
-//! Inference rules are mutating methods on [`EThm`]: they
-//! pattern-match a shape in the egraph (or build it), discharge any
-//! side-conditions, and call `uf.union(matched, Bool(true))`.
+//! The user-facing query is [`EThm::eq`]: "are these two TermRefs
+//! UF-equal in this Thm's egraph?" Users build the terms they care
+//! about, accumulate facts via rule calls on one big Thm, and query
+//! equality at the end.
 //!
-//! These types live alongside the legacy `Prop` / `Thm` during the
-//! Phase P migration. When every rule has been converted (Phase P5)
-//! the legacy types are removed and these are renamed to `Prop` /
-//! `Thm`.
+//! Lives alongside the legacy `Prop` / `Thm` indefinitely — both
+//! APIs coexist.
 
 use std::sync::Arc;
 
@@ -57,13 +58,6 @@ impl EProp {
         }
         out
     }
-
-    /// Is `t` UF-equal to the canonical `Bool(true)` in this Prop's
-    /// egraph? Lazily ensures the canonical truth ref exists.
-    pub fn knows_true(&mut self, t: TermRef) -> bool {
-        let truth = self.egraph.true_ref();
-        self.egraph.uf.eq_at_level_0(t, truth)
-    }
 }
 
 /// A kernel-verified `EProp`. Constructible only via the rule
@@ -78,37 +72,34 @@ impl EThm {
     }
 
     /// Consume the wrapper, returning the underlying [`EProp`].
-    /// Untrusted code can construct a new `EProp` and inspect its
-    /// state — but it cannot wrap it back into an `EThm` without
-    /// going through a rule constructor.
     pub fn into_inner(self) -> EProp {
         self.0
     }
 
-    /// Promote a fresh, vacuously-true `EProp` to an `EThm`. Used as
-    /// the seed for proof construction: subsequent rule calls extend
-    /// its egraph with derived facts.
-    ///
-    /// The seed performs the canonical union `Bool(true) =
-    /// Bool(true)` (a no-op) so the resulting `EThm` carries at least
-    /// the trivially-true fact `⊢ true`.
-    pub fn truth(prop: EProp) -> Self {
-        let mut prop = prop;
-        // Ensure the canonical Bool(true) ref exists; subsequent rule
-        // unions against truth land in one equivalence class.
-        let _ = prop.egraph.true_ref();
+    /// Promote a fresh `EProp` to an `EThm` without performing any
+    /// unions. The result is the trivially-empty Thm: nothing is yet
+    /// marked equal beyond the implicit reflexive `t = t` of the UF.
+    /// Used as the seed for proof construction.
+    pub fn empty(prop: EProp) -> Self {
         Self(prop)
     }
 
-    /// **Reflexivity rule (egraph form).** Build `Eq(t, t)` in
-    /// `self.prop.egraph` and union it with `Bool(true)` in the UF.
-    /// The caller remembers `t` (and the freshly built `Eq` ref if it
-    /// needs it) to query truth later.
+    /// Query the Thm: are `a` and `b` UF-equal at level 0?
+    /// This is the primary user-facing operation — "given a Thm and
+    /// two terms I care about, does the Thm prove they're equal?"
+    pub fn eq(&self, a: TermRef, b: TermRef) -> bool {
+        self.0.egraph.uf.eq_at_level_0(a, b)
+    }
+
+    /// **Reflexivity (egraph form).** Build `Eq(t, t)` in
+    /// `self.prop.egraph` and union it with `truth` in the UF.
+    /// The `truth` ref is supplied by the caller — typically a
+    /// `Bool(true)` they allocated up front and reuse across rules.
     ///
     /// Returns the `TermRef` of the freshly-built `Eq(t, t)` so the
-    /// caller can pattern-match against this Thm without a separate
-    /// search.
-    pub fn refl(&mut self, t: TermId) -> Result<TermRef, ProofError> {
+    /// caller can query this Thm later (e.g.,
+    /// `thm.eq(eq_ref, truth)`).
+    pub fn refl(&mut self, t: TermId, truth: TermRef) -> Result<TermRef, ProofError> {
         let egraph = &mut self.0.egraph;
         if !egraph.arena.is_well_typed(t) {
             return Err(ProofError::IllTypedInput);
@@ -117,11 +108,10 @@ impl EThm {
             .arena
             .alloc_term(TermDef::Eq(TermRef::local(t), TermRef::local(t)));
         let eq_ref = TermRef::local(eq);
-        let truth = egraph.true_ref();
         egraph
             .uf
             .union(eq_ref, truth)
-            .expect("fresh local terms cannot be both-foreign");
+            .expect("user truth ref must be a local term");
         Ok(eq_ref)
     }
 }

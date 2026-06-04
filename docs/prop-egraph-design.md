@@ -1,9 +1,9 @@
 # Prop-as-E-graph redesign — scope
 
-**Status:** scoping (no code yet). Once accepted, this becomes the
-spine of the next refactor phase; all subsequent work (Phase H
-content-addressed identity, kernel rule additions, etc.) layers on top
-of this shape.
+**Status:** in progress. `EProp` / `EThm` live alongside the legacy
+`Prop` / `Thm` indefinitely — both APIs coexist; this is *not* a
+migration. The Phase P direction will be revisited in a future
+rewrite, so don't plan a tear-down of the legacy types.
 
 ## Motivating sentence
 
@@ -57,10 +57,21 @@ pub struct Thm(Prop);
 ```
 
 **The E-graph is the conclusion.** There is no separate `concl` field.
-"What this Thm proves" = any term `t` in `prop.egraph` for which
-`uf.canonical_local(t) == uf.canonical_local(Bool(true))`. Callers
-pattern-match against the egraph to extract the statements they care
-about.
+"What this Thm proves" = any pair of terms `a`, `b` in `prop.egraph`
+for which `uf.canonical_local(a) == uf.canonical_local(b)`. The
+user-facing query is `thm.eq(a, b)` — "given these two `TermRef`s,
+does this Thm prove they're equal?"
+
+**No canonical truth in the kernel.** Userspace allocates whatever
+`Bool(true)` (or other sentinel) it wants to use as a "known true"
+target and threads that `TermRef` through every rule that should
+mark something as true. The kernel does not pick a canonical
+`Bool(true)`; the trusted core just unions whatever the user
+designates.
+
+**One big Thm.** The idiomatic flow is to seed one `EThm` at proof
+start, accumulate facts via rule calls, and query equality at the
+end. Not "produce a new Thm per rule and stitch them together".
 
 A chain of preconditions `P_n ← P_{n-1} ← ... ← P_1 ← None` encodes
 the assumption set: `P_n` claims its egraph-truths hold *given* every
@@ -105,32 +116,31 @@ A rule's body now does three things:
 Example: reflexivity becomes
 
 ```rust
-impl Thm {
-    /// Pattern-match (or build) `Eq(t, t)` in self.egraph and union it
-    /// with Bool(true). Self is mutated; the same Thm is returned.
-    pub fn refl(&mut self, t: TermId) -> Result<(), ProofError> {
+impl EThm {
+    /// Build `Eq(t, t)` in self.egraph and union it with the
+    /// user-supplied `truth` ref. Returns the freshly-built Eq
+    /// TermRef so the caller can query later.
+    pub fn refl(&mut self, t: TermId, truth: TermRef)
+        -> Result<TermRef, ProofError>
+    {
         let egraph = &mut self.0.egraph;
         if !egraph.arena.is_well_typed(t) {
             return Err(ProofError::IllTypedInput);
         }
         let eq = egraph.arena.alloc_term(TermDef::Eq(
             TermRef::local(t), TermRef::local(t)));
-        let truth = egraph.arena.alloc_term(TermDef::Bool(true));
-        egraph.uf.union(TermRef::local(eq), TermRef::local(truth))
-            .expect("fresh local terms");
-        Ok(())
+        let eq_ref = TermRef::local(eq);
+        egraph.uf.union(eq_ref, truth)
+            .expect("user truth ref is local");
+        Ok(eq_ref)
     }
 }
 ```
 
-The pattern is identical for every rule: build (or recognise) the
-shape, side-conditions, union. The caller knows which `TermId` they
-just unioned with `true` and can query the egraph for it later.
-
-`subset_axioms` (already implemented in Phase G2) is the prototype.
-It builds two axiom terms and unions each with `Bool(true)`. The
-redesign generalises that pattern — every rule becomes a "build /
-match a shape, union with `true`" method.
+The pattern is identical for every rule: build / recognise a shape,
+discharge side-conditions, union (against `truth` or against another
+term). The caller passes `truth` through every rule and queries the
+result with `thm.eq(eq_ref, truth)`.
 
 ## Cross-Prop composition
 
@@ -166,34 +176,36 @@ can copy equalities across the import edge if it becomes a bottleneck.
 - Cloning a Thm clones the whole Prop (Arena + UF + precondition Arc).
   Tests will exercise that the precondition Arc-shares.
 
-## Migration roadmap (P1–P5)
+## Migration roadmap
 
-Stage the migration so each step keeps tests green.
+The new shape lives alongside the legacy `Prop` / `Thm` indefinitely.
+There is no plan to remove the legacy types in Phase P — both APIs
+coexist; cleanup happens in a future rewrite.
 
-**P1.** Introduce `Egraph { arena, uf }` as a thin wrapper. Provide a
-forwarding API that delegates to `arena` / `uf` directly. No call-site
-changes.
+**P1 (done).** Introduce `Egraph { arena, uf }` as a thin wrapper.
+The `Kernel` facade holds one Egraph; rule signatures unchanged.
 
-**P2.** Add the new `Prop { egraph, concl, precondition }` shape
-alongside the existing one. The existing `Prop { context, concl }`
-becomes a *view* derived from the new shape: walking the
-`precondition` chain reproduces the old assumption list. Tests touch
-only the public surface; internal kernel code starts using the new
-shape.
+**P2 (done).** Add `precondition: Option<Arc<Prop>>` to legacy Prop
+so the chain shape is in place. Constructors default it to `None`.
 
-**P3.** Convert each inference rule one at a time. Order suggested:
-`refl`, `assume`, `add_assumption`, `not_from_false`, `sym`, `trans`,
-`eq_mp`, `mp`, `cong`, `beta`, `abs`, `inst`, `deduct_antisym_rule`,
-`reduce`. Each conversion lands as a separate commit; previous rules
-keep the legacy signature available behind a shim until the last one
-flips.
+**P3 (in progress).** Introduce `EProp` / `EThm` as new types
+(`crates/covalence-kernel/src/eprop.rs`). Implement each inference
+rule as a method on `EThm` that takes a `truth: TermRef` and
+performs a UF-union. Legacy `Thm` rules stay; the new ones are
+additive. Rules to port in this style: `refl` (done), `assume`,
+`add_assumption`, `not_from_false`, `sym`, `trans`, `eq_mp`, `mp`,
+`cong`, `beta`, `abs` (lambda binder), `inst`, `deduct_antisym_rule`,
+`reduce`, `subset_axioms`.
 
-**P4.** Cross-Prop composition: implement the import-and-host shape
-for binary rules. This will likely surface gaps in the Phase E
-substitution path (e.g., UF lift), to be addressed as discovered.
+**P4 (later).** Cross-Prop composition: when a rule combines two
+EThms (e.g., trans), reuse Phase E's import substitution to bring
+the second Thm's egraph into the first one as a foreign sub-arena.
+Likely surfaces gaps in the substitution path (e.g., UF lift across
+imports).
 
-**P5.** Remove the legacy `Context` type and any leftover shim
-methods. Tests now exercise the precondition-chain shape end to end.
+Older drafts of this doc included a "P5 cleanup" phase that would
+have renamed `EProp` → `Prop`. That is **not** the current plan; the
+two type families coexist.
 
 ## Open design questions
 
@@ -232,12 +244,12 @@ methods. Tests now exercise the precondition-chain shape end to end.
 
 5. **How does the caller know "what they proved"?**
    With no `concl` field, the Thm just carries the egraph. A caller
-   that wanted to prove `P` builds `P` in the egraph, runs rules, and
-   afterwards checks `egraph.uf.canonical_local(p_ref) ==
-   egraph.uf.canonical_local(bool_true_ref)`. The TermId `p_ref` is
-   the caller's responsibility to remember; the Thm doesn't track it.
-   This is the egraph idiom — the proof state is what's in the egraph,
-   not a named target.
+   that wanted to prove `P` builds `P` in the egraph, runs rules
+   threading their chosen `truth: TermRef` through, and afterwards
+   queries `thm.eq(p_ref, truth)`. The `TermRef`s are the caller's
+   responsibility to remember; the Thm doesn't track them. This is
+   the egraph idiom — the proof state is what's in the UF, not a
+   named target.
 
 ## Audit-surface impact
 

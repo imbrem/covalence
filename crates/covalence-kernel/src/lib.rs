@@ -9,6 +9,7 @@
 
 pub mod arena;
 pub mod egraph;
+pub mod eprop;
 pub mod id;
 pub mod kernel;
 pub mod primop;
@@ -21,6 +22,7 @@ pub mod uf;
 
 pub use arena::{Arena, SubsetError, UnionError};
 pub use egraph::Egraph;
+pub use eprop::{EProp, EThm};
 pub use kernel::Kernel;
 pub use prop::{Context, ProofError, Prop, Thm};
 pub use id::{

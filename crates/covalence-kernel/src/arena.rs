@@ -11,7 +11,7 @@ use smol_str::SmolStr;
 
 use crate::id::{
     BytesId, ImportId, IntId, NatId, StrId, TermId, TermSubstId,
-    TyArgsId, TypeId, TypeSubstId,
+    TyArgsId, TyVarId, TypeId, TypeSubstId, VarId,
 };
 use crate::subst::{TermSubst, TypeSubst};
 use crate::term::{Deps, TermDef, TermKind, TermRef};
@@ -78,6 +78,12 @@ pub struct Arena {
     tyargs: Vec<Vec<TypeRef>>,
     term_substs: Vec<TermSubst>,
     type_substs: Vec<TypeSubst>,
+
+    // Phase F1: per-arena monotonic counters for the forthcoming
+    // VarId / TyVarId. Allocators only — the IDs are not yet wired
+    // into TermDef::Free / TypeDef::TVar (that's Phase F2).
+    next_var: u32,
+    next_tyvar: u32,
 }
 
 /// An import edge in an arena: a frozen source arena plus a pair of
@@ -110,7 +116,23 @@ impl Arena {
             // identity (empty) substitution.
             term_substs: vec![TermSubst::empty()],
             type_substs: vec![TypeSubst::empty()],
+            next_var: 0,
+            next_tyvar: 0,
         }
+    }
+
+    /// Allocate a fresh [`VarId`] (Phase F1). Monotonic per arena.
+    pub fn alloc_var(&mut self) -> VarId {
+        let id = VarId(self.next_var);
+        self.next_var = self.next_var.checked_add(1).expect("VarId overflow");
+        id
+    }
+
+    /// Allocate a fresh [`TyVarId`] (Phase F1). Monotonic per arena.
+    pub fn alloc_tyvar_id(&mut self) -> TyVarId {
+        let id = TyVarId(self.next_tyvar);
+        self.next_tyvar = self.next_tyvar.checked_add(1).expect("TyVarId overflow");
+        id
     }
 
     /// The `TermSubstId` of the always-empty substitution.

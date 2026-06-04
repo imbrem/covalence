@@ -27,7 +27,8 @@ pub use eprop::{EProp, EThm};
 pub use kernel::Kernel;
 pub use prop::{Context, ProofError, Prop, Thm};
 pub use id::{
-    BytesId, ImportId, IntId, NatId, StrId, TermId, TermSubstId, TyArgsId, TypeId, TypeSubstId,
+    BytesId, ImportId, IntId, NatId, StrId, TermId, TermSubstId, TyArgsId, TyVarId, TypeId,
+    TypeSubstId, VarId,
 };
 pub use primop::{PrimOp1, PrimOp2};
 pub use subst::{TermSubst, TypeSubst};

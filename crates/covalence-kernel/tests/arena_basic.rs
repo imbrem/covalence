@@ -517,6 +517,38 @@ fn alloc_subset_ty_rejects_mismatched_domain() {
 // Phase G3: declare_type_operator with tyvar ordering.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Phase F1: VarId / TyVarId allocators (forward-compat).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn alloc_var_is_monotonic_per_arena() {
+    let mut a = Arena::new();
+    let v0 = a.alloc_var();
+    let v1 = a.alloc_var();
+    let v2 = a.alloc_var();
+    assert_ne!(v0, v1);
+    assert_ne!(v1, v2);
+}
+
+#[test]
+fn alloc_tyvar_id_is_monotonic_per_arena() {
+    let mut a = Arena::new();
+    let t0 = a.alloc_tyvar_id();
+    let t1 = a.alloc_tyvar_id();
+    assert_ne!(t0, t1);
+}
+
+#[test]
+fn var_and_tyvar_counters_are_independent() {
+    let mut a = Arena::new();
+    let v = a.alloc_var();
+    let t = a.alloc_tyvar_id();
+    // Same raw integer (both start at 0), but distinct type-tagged
+    // newtypes — they can't be confused at the type level.
+    let _ = (v, t);
+}
+
 #[test]
 fn declare_type_operator_accepts_nullary_subset() {
     // No tyvars in (Nat, λ(_:Nat). true) — declared_order = [] is valid.

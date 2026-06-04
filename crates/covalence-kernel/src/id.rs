@@ -68,6 +68,27 @@ id_type_sealed! {
 }
 
 id_type_sealed! {
+    /// Identity of a free term-variable in a [`crate::Arena`].
+    ///
+    /// Phase F1 (forward-compat hook): a per-arena monotonic
+    /// integer that the kernel will eventually use in place of
+    /// [`StrId`] inside `TermDef::Free`. The printer-facing
+    /// [`StrId`] becomes a separate "display name" side-table; the
+    /// `VarId` carries the identity. Not yet wired into
+    /// `TermDef::Free` — see Phase F2.
+    VarId
+}
+
+id_type_sealed! {
+    /// Identity of a type-variable in a [`crate::Arena`].
+    ///
+    /// Phase F1 (forward-compat hook): a per-arena monotonic
+    /// integer that will eventually replace [`StrId`] inside
+    /// `TypeDef::TVar`. Not yet wired in — see Phase F2.
+    TyVarId
+}
+
+id_type_sealed! {
     /// Identity of an interned term substitution (used by import edges).
     TermSubstId
 }

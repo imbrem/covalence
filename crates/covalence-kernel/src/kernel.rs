@@ -10,6 +10,7 @@
 use std::sync::Arc;
 
 use crate::arena::Arena;
+use crate::egraph::Egraph;
 use crate::id::StrId;
 use crate::primop::{PrimOp1, PrimOp2};
 use crate::prop::{Context, Prop, ProofError, Thm};
@@ -17,37 +18,43 @@ use crate::term::{TermDef, TermKind, TermRef};
 use crate::ty::{TypeDef, TypeRef};
 use crate::uf::TermUf;
 
-/// High-level kernel facade: arena + UF + current context +
+/// High-level kernel facade: E-graph + current context +
 /// ergonomic constructors. See module docs.
 pub struct Kernel {
-    arena: Arena,
-    uf: TermUf,
+    egraph: Egraph,
     ctx: Arc<Context>,
 }
 
 impl Kernel {
     pub fn new() -> Self {
         Self {
-            arena: Arena::new(),
-            uf: TermUf::new(),
+            egraph: Egraph::new(),
             ctx: Context::empty(),
         }
     }
 
+    pub fn egraph(&self) -> &Egraph {
+        &self.egraph
+    }
+
+    pub fn egraph_mut(&mut self) -> &mut Egraph {
+        &mut self.egraph
+    }
+
     pub fn arena(&self) -> &Arena {
-        &self.arena
+        &self.egraph.arena
     }
 
     pub fn arena_mut(&mut self) -> &mut Arena {
-        &mut self.arena
+        &mut self.egraph.arena
     }
 
     pub fn uf(&self) -> &TermUf {
-        &self.uf
+        &self.egraph.uf
     }
 
     pub fn uf_mut(&mut self) -> &mut TermUf {
-        &mut self.uf
+        &mut self.egraph.uf
     }
 
     pub fn context(&self) -> &Arc<Context> {
@@ -71,23 +78,23 @@ impl Kernel {
 
     // ---- type constructors -------------------------------------------------
 
-    pub fn bool_ty(&self) -> TypeRef { self.arena.bool_ty() }
-    pub fn nat_ty(&self) -> TypeRef { self.arena.nat_ty() }
-    pub fn int_ty(&self) -> TypeRef { self.arena.int_ty() }
-    pub fn bytes_ty(&self) -> TypeRef { self.arena.bytes_ty() }
+    pub fn bool_ty(&self) -> TypeRef { self.egraph.arena.bool_ty() }
+    pub fn nat_ty(&self) -> TypeRef { self.egraph.arena.nat_ty() }
+    pub fn int_ty(&self) -> TypeRef { self.egraph.arena.int_ty() }
+    pub fn bytes_ty(&self) -> TypeRef { self.egraph.arena.bytes_ty() }
 
     pub fn fun_ty(&mut self, dom: TypeRef, cod: TypeRef) -> TypeRef {
-        self.arena.alloc_type(TypeDef::Fun(dom, cod))
+        self.egraph.arena.alloc_type(TypeDef::Fun(dom, cod))
     }
 
     // ---- term constructors -------------------------------------------------
 
     fn alloc(&mut self, def: TermDef) -> TermRef {
-        TermRef::local(self.arena.alloc_term(def))
+        TermRef::local(self.egraph.arena.alloc_term(def))
     }
 
     fn intern(&mut self, s: &str) -> StrId {
-        self.arena.intern_string(s.into())
+        self.egraph.arena.intern_string(s.into())
     }
 
     pub fn true_(&mut self) -> TermRef { self.alloc(TermDef::Bool(true)) }
@@ -126,28 +133,28 @@ impl Kernel {
     /// [`Arena::abstract_over`] and wraps in `Abs`.
     pub fn lam(&mut self, name: &str, ty: TypeRef, body: TermRef) -> TermRef {
         let n = self.intern(name);
-        let abstracted = self.arena.abstract_over(body, n, ty, 0);
+        let abstracted = self.egraph.arena.abstract_over(body, n, ty, 0);
         self.alloc(TermDef::Lam(ty, abstracted))
     }
 
     // ---- inspection --------------------------------------------------------
 
     pub fn kind(&self, t: TermRef) -> Option<TermKind> {
-        t.as_local().map(|id| self.arena.kind(id))
+        t.as_local().map(|id| self.egraph.arena.kind(id))
     }
 
     pub fn def(&self, t: TermRef) -> Option<TermDef> {
-        t.as_local().map(|id| *self.arena.term_def(id))
+        t.as_local().map(|id| *self.egraph.arena.term_def(id))
     }
 
     /// Apply canonical equality at level 0 via the session's UF.
     pub fn eq_at_level_0(&self, a: TermRef, b: TermRef) -> bool {
-        self.uf.eq_at_level_0(a, b)
+        self.egraph.uf.eq_at_level_0(a, b)
     }
 
     /// Record an equality in the session's UF.
     pub fn union(&mut self, a: TermRef, b: TermRef) -> Result<(), crate::arena::UnionError> {
-        self.uf.union(a, b)
+        self.egraph.uf.union(a, b)
     }
 
     // ---- inference rules ---------------------------------------------------
@@ -157,48 +164,48 @@ impl Kernel {
     }
 
     pub fn refl(&mut self, t: TermRef) -> Result<Thm, ProofError> {
-        Thm::refl(&mut self.arena, self.ctx.clone(), Self::as_id(t)?)
+        Thm::refl(&mut self.egraph.arena, self.ctx.clone(), Self::as_id(t)?)
     }
 
     pub fn assume(&mut self, assumption: Arc<Prop>) -> Result<Thm, ProofError> {
-        Thm::assume(&self.arena, self.ctx.clone(), assumption)
+        Thm::assume(&self.egraph.arena, self.ctx.clone(), assumption)
     }
 
     pub fn add_assumption(&mut self, thm: Thm, new_assum: Arc<Prop>) -> Result<Thm, ProofError> {
-        thm.add_assumption(&self.arena, new_assum)
+        thm.add_assumption(&self.egraph.arena, new_assum)
     }
 
     pub fn not_from_false(&mut self, thm_false: Thm, p: TermRef) -> Result<Thm, ProofError> {
-        Thm::not_from_false(&mut self.arena, thm_false, Self::as_id(p)?)
+        Thm::not_from_false(&mut self.egraph.arena, thm_false, Self::as_id(p)?)
     }
 
     pub fn sym(&mut self, thm: Thm) -> Result<Thm, ProofError> {
-        Thm::sym(&mut self.arena, thm)
+        Thm::sym(&mut self.egraph.arena, thm)
     }
 
     pub fn trans(&mut self, ab: Thm, bc: Thm) -> Result<Thm, ProofError> {
-        Thm::trans(&mut self.arena, &self.uf, ab, bc)
+        Thm::trans(&mut self.egraph.arena, &self.egraph.uf, ab, bc)
     }
 
     pub fn eq_mp(&mut self, pq: Thm, p_thm: Thm) -> Result<Thm, ProofError> {
-        Thm::eq_mp(&mut self.arena, &self.uf, pq, p_thm)
+        Thm::eq_mp(&mut self.egraph.arena, &self.egraph.uf, pq, p_thm)
     }
 
     pub fn mp(&mut self, imp: Thm, ant: Thm) -> Result<Thm, ProofError> {
-        Thm::mp(&mut self.arena, &self.uf, imp, ant)
+        Thm::mp(&mut self.egraph.arena, &self.egraph.uf, imp, ant)
     }
 
     pub fn cong(&mut self, a: TermRef, b: TermRef, depth: u32) -> Result<Thm, ProofError> {
-        Thm::cong(&mut self.arena, &self.uf, self.ctx.clone(), a, b, depth)
+        Thm::cong(&mut self.egraph.arena, &self.egraph.uf, self.ctx.clone(), a, b, depth)
     }
 
     pub fn beta(&mut self, comb: TermRef) -> Result<Thm, ProofError> {
-        Thm::beta(&mut self.arena, self.ctx.clone(), Self::as_id(comb)?)
+        Thm::beta(&mut self.egraph.arena, self.ctx.clone(), Self::as_id(comb)?)
     }
 
     pub fn abs(&mut self, thm: Thm, name: &str, ty: TypeRef) -> Result<Thm, ProofError> {
         let n = self.intern(name);
-        Thm::abs(&mut self.arena, thm, n, ty)
+        Thm::abs(&mut self.egraph.arena, thm, n, ty)
     }
 
     pub fn inst(
@@ -209,15 +216,15 @@ impl Kernel {
         replacement: TermRef,
     ) -> Result<Thm, ProofError> {
         let n = self.intern(name);
-        Thm::inst(&mut self.arena, thm, n, ty, replacement)
+        Thm::inst(&mut self.egraph.arena, thm, n, ty, replacement)
     }
 
     pub fn reduce(&mut self, t: TermRef) -> Result<Thm, ProofError> {
-        Thm::reduce(&mut self.arena, self.ctx.clone(), Self::as_id(t)?)
+        Thm::reduce(&mut self.egraph.arena, self.ctx.clone(), Self::as_id(t)?)
     }
 
     pub fn deduct_antisym_rule(&mut self, thm_p: Thm, thm_q: Thm) -> Result<Thm, ProofError> {
-        Thm::deduct_antisym_rule(&mut self.arena, &self.uf, thm_p, thm_q)
+        Thm::deduct_antisym_rule(&mut self.egraph.arena, &self.egraph.uf, thm_p, thm_q)
     }
 }
 

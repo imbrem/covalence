@@ -123,10 +123,21 @@ impl Context {
 ///
 /// Verified propositions are [`Thm`]s, which wrap a `Prop` with a
 /// kernel-only constructor.
+///
+/// **Phase P migration.** The `precondition` field is the new
+/// per-Prop assumption link (a singly-linked chain via `Arc<Prop>`).
+/// It coexists with the legacy `context: Arc<Context>` during the
+/// transition; new rules populate it, old rules ignore it. Once
+/// every rule maintains the chain (Phase P3) the legacy `context`
+/// will be removed (Phase P5).
 #[derive(Debug, Clone)]
 pub struct Prop {
     pub context: Arc<Context>,
     pub concl: TermId,
+    /// Single chained precondition. `None` for unconditional Props.
+    /// A chain `P_n ← P_{n-1} ← … ← None` encodes the assumption set
+    /// `{P_1.concl, …, P_{n-1}.concl}` for `P_n`.
+    pub precondition: Option<Arc<Prop>>,
 }
 
 impl Prop {
@@ -134,8 +145,31 @@ impl Prop {
     /// the conclusion isn't required to be a `bool`-typed term.
     /// Lifting to `Thm` (which is what enforces correctness) is the
     /// validation step.
+    ///
+    /// The new precondition chain is left empty; use
+    /// [`with_precondition`](Self::with_precondition) to push one on.
     pub fn new(context: Arc<Context>, concl: TermId) -> Self {
-        Self { context, concl }
+        Self { context, concl, precondition: None }
+    }
+
+    /// Set this Prop's immediate precondition. Older Props in the
+    /// chain remain shared via `Arc`.
+    pub fn with_precondition(mut self, pre: Arc<Prop>) -> Self {
+        self.precondition = Some(pre);
+        self
+    }
+
+    /// Walk the precondition chain into a `Vec` (innermost first).
+    /// Used by the new rule shape; the legacy `context` field is the
+    /// authoritative assumption set during the Phase P migration.
+    pub fn precondition_chain(&self) -> Vec<Arc<Prop>> {
+        let mut out = Vec::new();
+        let mut cur = self.precondition.clone();
+        while let Some(p) = cur {
+            cur = p.precondition.clone();
+            out.push(p);
+        }
+        out
     }
 }
 

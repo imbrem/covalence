@@ -28,6 +28,26 @@ fn extend_grows_context() {
 }
 
 #[test]
+fn precondition_chain_walks_innermost_first() {
+    // Phase P2: walk a chained precondition list and verify ordering
+    // is innermost-first. With three nested preconditions p1 → p2 → p3,
+    // p3.precondition_chain() yields [p2, p1].
+    let mut a = Arena::new();
+    let t1 = a.alloc_term(TermDef::Bool(true));
+    let t2 = a.alloc_term(TermDef::Bool(false));
+    let t3 = a.alloc_term(TermDef::Bool(true));
+
+    let p1 = Arc::new(Prop::new(Context::empty(), t1));
+    let p2 = Arc::new(Prop::new(Context::empty(), t2).with_precondition(p1.clone()));
+    let p3 = Prop::new(Context::empty(), t3).with_precondition(p2.clone());
+
+    let chain = p3.precondition_chain();
+    assert_eq!(chain.len(), 2);
+    assert!(Arc::ptr_eq(&chain[0], &p2));
+    assert!(Arc::ptr_eq(&chain[1], &p1));
+}
+
+#[test]
 fn nested_contexts_chain_through_parent() {
     let mut a = Arena::new();
     // (no UF needed)

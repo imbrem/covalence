@@ -32,7 +32,12 @@ covalence-opentheory = { path = "../covalence-opentheory", optional = true }
 covalence-wasm = { path = "../covalence-wasm", default-features = false }
 covalence-client = { path = "../covalence-client", features = ["sync"] }
 covalence-proto = { path = "../covalence-proto" }
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+covalence-object = { path = "../covalence-object" }
+covalence-hash = { path = "../covalence-hash" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+covalence-fuse = { path = "../covalence-fuse" }
 color-eyre = "0.6"
 eyre = "0.6"
 rustyline = { version = "18", optional = true }

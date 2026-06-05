@@ -13,6 +13,14 @@ pub enum CogCommand {
 
     /// Clone a git repository into a covalence store
     Clone(CloneArgs),
+
+    /// Mount a tree object (by O256 hash) as a read-only FUSE filesystem
+    ///
+    /// Linux-only scaffold. No range requests; reading a large file pulls
+    /// the entire blob into memory per syscall. Intended for cog repos full
+    /// of small text files and for agent/LLM-driven inspection.
+    #[cfg(target_os = "linux")]
+    Mount(MountArgs),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
@@ -61,6 +69,26 @@ pub struct HashBlobArgs {
     paths: Vec<std::path::PathBuf>,
 }
 
+#[cfg(target_os = "linux")]
+#[derive(clap::Args)]
+pub struct MountArgs {
+    /// Tree object hash (hex-encoded O256, 64 hex chars).
+    pub hash: String,
+
+    /// Mountpoint directory (must exist and be empty).
+    pub mountpoint: std::path::PathBuf,
+
+    /// SQLite store path. If omitted, attempts server auto-discovery and
+    /// errors out if no running covalence server is found.
+    #[arg(long)]
+    pub store: Option<std::path::PathBuf>,
+
+    /// Allow other users to access the mount (passes `allow_other` to FUSE).
+    /// Requires `user_allow_other` in /etc/fuse.conf.
+    #[arg(long)]
+    pub allow_other: bool,
+}
+
 #[derive(clap::Args)]
 pub struct CloneArgs {
     /// Repository URL (HTTP/HTTPS)
@@ -94,6 +122,13 @@ pub fn run(args: CogArgs) {
         }
         Some(CogCommand::Clone(args)) => {
             if let Err(e) = run_clone(args) {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+        #[cfg(target_os = "linux")]
+        Some(CogCommand::Mount(args)) => {
+            if let Err(e) = run_mount(args) {
                 eprintln!("{e}");
                 std::process::exit(1);
             }
@@ -220,3 +255,157 @@ fn run_hash_blob(args: HashBlobArgs) -> std::io::Result<()> {
     let algos: Vec<covalence_git::HashAlgo> = algos.into_iter().map(Into::into).collect();
     covalence_git::hash_blob(&args.paths, &algos, args.json)
 }
+
+// ---------------------------------------------------------------------------
+// cov cog mount — Linux-only FUSE scaffold
+// ---------------------------------------------------------------------------
+//
+// !!! TEMPORARY SCAFFOLD !!!
+//
+// The mount uses covalence-fuse's TreeFs, which has NO RANGE REQUESTS: every
+// FUSE `read` pulls the full blob into memory and slices. That makes mounting
+// large media catastrophic. The next major iteration introduces an
+// async-range store trait in covalence-store; rewrite this command to use it
+// then. See covalence-fuse's crate docs for the full rationale.
+
+#[cfg(target_os = "linux")]
+fn run_mount(args: MountArgs) -> std::io::Result<()> {
+    use covalence_fuse::{TreeFsConfig, mount_tree};
+    use covalence_hash::O256;
+
+    let root: O256 = parse_o256(&args.hash).map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("hash: {e}"))
+    })?;
+
+    let store = resolve_mount_store(args.store.as_deref())?;
+
+    if !args.mountpoint.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!(
+                "mountpoint {} must exist and be a directory",
+                args.mountpoint.display()
+            ),
+        ));
+    }
+
+    let cfg = TreeFsConfig {
+        allow_other: args.allow_other,
+        ..TreeFsConfig::default()
+    };
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+
+    eprintln!(
+        "Mounting {} at {} (read-only, no range requests).",
+        args.hash,
+        args.mountpoint.display(),
+    );
+    eprintln!("Ctrl-C to unmount.");
+
+    rt.block_on(async move {
+        tokio::select! {
+            res = mount_tree(store, root, &args.mountpoint, cfg) => res,
+            _ = tokio::signal::ctrl_c() => {
+                eprintln!("\nunmounting...");
+                Ok(())
+            }
+        }
+    })?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn parse_o256(s: &str) -> Result<covalence_hash::O256, String> {
+    if s.len() != 64 {
+        return Err(format!("expected 64 hex chars, got {}", s.len()));
+    }
+    let mut bytes = [0u8; 32];
+    for i in 0..32 {
+        let hi = hex_nibble(s.as_bytes()[i * 2])?;
+        let lo = hex_nibble(s.as_bytes()[i * 2 + 1])?;
+        bytes[i] = (hi << 4) | lo;
+    }
+    Ok(covalence_hash::O256::from_bytes(bytes))
+}
+
+#[cfg(target_os = "linux")]
+fn hex_nibble(b: u8) -> Result<u8, String> {
+    match b {
+        b'0'..=b'9' => Ok(b - b'0'),
+        b'a'..=b'f' => Ok(b - b'a' + 10),
+        b'A'..=b'F' => Ok(b - b'A' + 10),
+        _ => Err(format!("bad hex char: {:?}", b as char)),
+    }
+}
+
+/// Pick a content store for the mount: explicit `--store` SQLite, else
+/// auto-discover a running covalence server and wrap its sync HTTP backend.
+#[cfg(target_os = "linux")]
+fn resolve_mount_store(
+    store: Option<&std::path::Path>,
+) -> std::io::Result<covalence_store::BlobStore<covalence_hash::O256>> {
+    use covalence_store::{BlobStore, SqliteStore};
+
+    if let Some(path) = store {
+        let sqlite = SqliteStore::open(path)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        return Ok(BlobStore::new(sqlite));
+    }
+
+    let cwd = std::env::current_dir().ok();
+    let servers = covalence_proto::discovery::discover_servers(cwd.as_deref());
+    let url = servers
+        .iter()
+        .find_map(|(_, desc)| desc.url.clone())
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no --store path and no running covalence server discovered; \
+                 pass --store <path> or start `cov serve` first",
+            )
+        })?;
+    let backend = covalence_client::SyncHttpBackend::new(url);
+    Ok(BlobStore::new(BackendContentStore(backend)))
+}
+
+/// Adapter that exposes a [`SyncHttpBackend`] as a [`ContentStore<O256>`].
+///
+/// Read-only: `put`/`insert` are wired to error because the tree mount never
+/// writes. If we ever support a writable mount, plumb those through the
+/// server's blob upload endpoint.
+#[cfg(target_os = "linux")]
+struct BackendContentStore(covalence_client::SyncHttpBackend);
+
+#[cfg(target_os = "linux")]
+impl covalence_store::ContentStore<covalence_hash::O256> for BackendContentStore {
+    fn get(&self, key: &covalence_hash::O256) -> Option<Vec<u8>> {
+        use covalence_shell::SyncBackend;
+        self.0.get_blob(key).ok().flatten()
+    }
+
+    fn put(
+        &self,
+        _key: covalence_hash::O256,
+        _data: &[u8],
+    ) -> Result<(), covalence_store::StoreError> {
+        Err(covalence_store::StoreError::Io(
+            "BackendContentStore is read-only".to_string(),
+        ))
+    }
+
+    fn insert(&self, _data: &[u8]) -> Result<covalence_hash::O256, covalence_store::StoreError> {
+        Err(covalence_store::StoreError::Io(
+            "BackendContentStore is read-only".to_string(),
+        ))
+    }
+
+    fn contains(&self, key: &covalence_hash::O256) -> bool {
+        use covalence_shell::SyncBackend;
+        self.0.has_blob(key).unwrap_or(false)
+    }
+}
+

@@ -186,6 +186,14 @@ impl Prop {
 /// A kernel-verified `Prop`. Constructible only via the inference-
 /// rule methods below (or future rules); cannot be built by external
 /// code from a bare `Prop`.
+///
+/// ## ⚠️ Experimental kernel — not the final version
+///
+/// This whole kernel is staging code. Several inference rules
+/// have known soundness-affecting holes and the eventual rewrite
+/// will change their signatures. In particular [`Thm::abs_unchecked`]
+/// skips a soundness check. See the [crate-level docs](crate) for
+/// the full list of caveats.
 #[derive(Debug, Clone)]
 pub struct Thm {
     prop: Prop,

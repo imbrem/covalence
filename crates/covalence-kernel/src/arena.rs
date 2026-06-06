@@ -4,6 +4,10 @@
 //! Identity is by pointer (see architecture §2.2). A freshly built
 //! arena is mutable; freezing it produces an `Arc<Arena>` that other
 //! arenas may import via foreign-arena references.
+//!
+//! ⚠️ Staging code — see [crate-level docs](crate) for the list of
+//! known holes (linear-scan dedup, auto-`infer` papering over stale
+//! caches, opaque `Subset` handling in `subst_tyvar_in_type`, etc.).
 
 use std::sync::Arc;
 

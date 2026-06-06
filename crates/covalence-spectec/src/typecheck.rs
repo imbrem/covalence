@@ -333,8 +333,18 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
             )
         }
         Expr::Cmp { span, op, ty: _, e1, e2 } => {
+            // Bidirectional inference: pick the more-specific side as
+            // the expected type for the other. This routes `Eps`
+            // against `T?` through the `Opt(None)` coercion, etc.
             let (e1, t1) = infer_exp(env, *e1);
-            let (e2, t2) = infer_exp(env, *e2);
+            let (e2, t2) = if !is_unknown(&t1) {
+                let mut scope = RuleScope::default();
+                let new_e2 = check_exp_against_scope(env, *e2, &t1, &mut scope);
+                let (_, t2) = infer_exp(env, new_e2.clone());
+                (new_e2, t2)
+            } else {
+                infer_exp(env, *e2)
+            };
             let op_ty = infer_cmpop(&op, &t1, &t2);
             (
                 Expr::Cmp {
@@ -368,6 +378,14 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
                 },
                 t,
             )
+        }
+        Expr::Call { span, name, args } => {
+            let t = env
+                .defs
+                .get(&name)
+                .map(|sig| sig.ret.clone())
+                .unwrap_or_else(unknown_typ);
+            (Expr::Call { span, name, args }, t)
         }
         Expr::Case { span, head, args } => {
             let params = env.ctor_params.get(&head);

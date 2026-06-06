@@ -66,6 +66,18 @@ pub struct TypeEnv {
     /// `numtype → {valtype}` and `reftype → {valtype}` (plus any
     /// further outer types via transitivity).
     pub subtypes: BTreeMap<String, std::collections::BTreeSet<String>>,
+    /// Single-case headless variants whose template is exactly
+    /// `T1 ; T2` — i.e. MixOp `["", ";", ""]`. Maps the syntax name
+    /// to the two per-hole argument types. Used by
+    /// [`check_exp_against_scope`] to split an expression like
+    /// `e1 ; e2` against the variant's mixfix template and wrap as
+    /// a `Case` with MixOp `["", ";", ""]`.
+    ///
+    /// Scope limit (task #35): only the `;`-separator form is
+    /// registered. The general "headless single-case variant
+    /// unfolding" infrastructure (task #32's Step 2 — juxtaposition,
+    /// `mut? T`, `T1 -> T2`, etc.) lands separately.
+    pub headless_semi: BTreeMap<String, Vec<Typ>>,
 }
 
 #[derive(Debug, Clone)]
@@ -219,6 +231,19 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
     }
     env.subtypes = closed;
 
+    // Single-case headless `_ ; _` variants. Task #35 scope: only the
+    // `;`-separator form (`syntax config = state; instr*`,
+    // `syntax state = store; frame`). Heuristic: pick syntaxes that
+    // have exactly one Variant profile with exactly one alt whose
+    // headless-fragment walk produces `[Hole, Lit(;), Hole]`.
+    for syn in &doc.syntax {
+        let semi = match single_semi_headless_alt(syn, ctx) {
+            Some(types) => types,
+            None => continue,
+        };
+        env.headless_semi.insert(syn.name.clone(), semi);
+    }
+
     env
 }
 
@@ -242,6 +267,57 @@ fn is_case_head_str(name: &str) -> bool {
         }
     }
     saw_letter
+}
+
+/// If `syn` is a single-case headless variant whose template is exactly
+/// `T1 ; T2` — fragments `[Hole, Lit(;), Hole]` after the headless walk
+/// — return the two per-hole argument types. `None` otherwise.
+///
+/// Used by `build_env` to populate [`TypeEnv::headless_semi`] for
+/// task #35.
+fn single_semi_headless_alt(
+    syn: &crate::ast_doc::DocSyntax,
+    ctx: &crate::elab::ElabContext,
+) -> Option<Vec<Typ>> {
+    // Exactly one Variant profile.
+    let mut variant_profiles = syn
+        .merged
+        .profiles
+        .iter()
+        .filter(|p| matches!(p.body.as_ref(), Some(crate::cst::SyntaxBody::Variant(_))));
+    let prof = variant_profiles.next()?;
+    if variant_profiles.next().is_some() {
+        return None;
+    }
+    let alts = syn.merged.alts_for_profile(prof.profile.as_deref());
+    if alts.len() != 1 {
+        return None;
+    }
+    let alt = &alts[0];
+    let (frags, hole_toks) = crate::elab::alt_to_headless_with_holes(alt, &ctx.type_names)?;
+    // Must be exactly [Hole, Lit(;), Hole].
+    if frags.len() != 3 {
+        return None;
+    }
+    use crate::mixfix::Fragment;
+    if !matches!(frags[0], Fragment::Hole(_)) {
+        return None;
+    }
+    if !matches!(frags[2], Fragment::Hole(_)) {
+        return None;
+    }
+    match &frags[1] {
+        Fragment::Lit(crate::token::Token::Semi) => {}
+        _ => return None,
+    }
+    if hole_toks.len() != 2 {
+        return None;
+    }
+    let types: Vec<Typ> = hole_toks
+        .iter()
+        .map(|toks| crate::ast_doc::typ_expr_to_spectec(toks, ctx))
+        .collect();
+    Some(types)
 }
 
 /// Convenience alias for the type we use internally — directly the
@@ -406,7 +482,7 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
                 t,
             )
         }
-        Expr::Case { span, head, args } => {
+        Expr::Case { span, head, args, op } => {
             let params = env.ctor_params.get(&head);
             let new_args: Vec<Expr> = if let Some(params) = params
                 && params.len() == args.len()
@@ -424,6 +500,7 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
                     span,
                     head,
                     args: new_args,
+                    op,
                 },
                 t,
             )
@@ -1399,5 +1476,86 @@ mod tests {
         );
         // Falls back to unknown_typ (currently SpecTecTyp::Bool).
         assert!(matches!(t, ast::SpecTecTyp::Bool));
+    }
+
+    #[test]
+    fn env_records_headless_semi_variant() {
+        // `syntax state = store; frame` is a single-case headless
+        // variant whose MixOp is `["", ";", ""]`. Task #35 registers
+        // it under `env.headless_semi` so the `;`-splitter can
+        // match expressions against it.
+        let src = r#"
+            syntax store = nat
+            syntax frame = nat
+            syntax state = store; frame
+        "#;
+        let (doc, ctx) = build(src);
+        let env = build_env(&doc, &ctx);
+        let arg_types = env
+            .headless_semi
+            .get("state")
+            .expect("`state` should be a headless-semi variant");
+        assert_eq!(arg_types.len(), 2);
+        assert!(matches!(&arg_types[0], Typ::Var { x, .. } if x == "store"));
+        assert!(matches!(&arg_types[1], Typ::Var { x, .. } if x == "frame"));
+    }
+
+    #[test]
+    fn headless_semi_splits_raw_pattern() {
+        // `def $store((s; f)) = s` — the pattern `(s; f)` should
+        // split against `state`'s `_; _` template into a `Case` of
+        // `[Var(s), Var(f)]` with op `["", ";", ""]`.
+        let src = r#"
+            syntax store = nat
+            syntax frame = nat
+            syntax state = store; frame
+        "#;
+        let (doc, ctx) = build(src);
+        let env = build_env(&doc, &ctx);
+
+        let toks = crate::lex::lex(
+            crate::source::FileId::new(0),
+            "(s; f)",
+        )
+        .unwrap();
+        let tr = crate::cst::TokenRun {
+            span: crate::source::Span::new(crate::source::FileId::new(0), 0, 6),
+            tokens: toks,
+        };
+        let _ = (&doc, &ctx); // build was needed for env; explicitly drop now.
+        let expected = Typ::Var { x: "state".into(), as1: vec![] };
+        let split = crate::ast_doc::try_split_headless_semi_expr(
+            &tr,
+            &ctx,
+            &env,
+            &expected,
+        )
+        .expect("split should fire against state");
+        let Expr::Case { head, args, op, .. } = split else {
+            panic!("expected Case");
+        };
+        assert_eq!(head, "state");
+        assert_eq!(op.as_deref().map(|p| p.to_vec()), Some(vec!["".to_string(), ";".to_string(), "".to_string()]));
+        assert_eq!(args.len(), 2);
+        assert!(matches!(&args[0], Expr::Var { name, .. } if name == "s"));
+        assert!(matches!(&args[1], Expr::Var { name, .. } if name == "f"));
+    }
+
+    #[test]
+    fn env_does_not_register_non_semi_headless() {
+        // `syntax fieldtype = mut storagetype` is a headless variant
+        // but with NO `;` separator (juxtaposition). Task #35 should
+        // NOT register it; the general unfolding lives in task #32.
+        let src = r#"
+            syntax mut = MUT
+            syntax storagetype = nat
+            syntax fieldtype = mut storagetype
+        "#;
+        let (doc, ctx) = build(src);
+        let env = build_env(&doc, &ctx);
+        assert!(
+            env.headless_semi.get("fieldtype").is_none(),
+            "fieldtype is juxtaposition, not `;` — task #35 must not register it"
+        );
     }
 }

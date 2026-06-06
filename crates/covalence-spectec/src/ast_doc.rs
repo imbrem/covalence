@@ -433,6 +433,14 @@ fn token_run_to_expr_against(
     if tr.tokens.is_empty() {
         return raw_sentinel();
     }
+    // Task #35: before any other classification, try to split the
+    // token-run at a top-level `;` when the expected type is a
+    // single-case headless `_ ; _` variant (e.g. `state = store;
+    // frame`, `config = state; instr*`). The match drives the
+    // mixfix template that no other classifier reaches.
+    if let Some(case) = try_split_headless_semi_expr(tr, ctx, env, expected) {
+        return expr_to_spectec(&case, ctx);
+    }
     match crate::elab::classify_token_run(tr, ctx) {
         Some(expr) => {
             let expr = crate::typecheck::check_exp_against(env, expr, expected);
@@ -440,6 +448,143 @@ fn token_run_to_expr_against(
         }
         None => raw_sentinel(),
     }
+}
+
+/// Try to split a token-run at a top-level `;` against a single-case
+/// headless `_ ; _` variant in `env.headless_semi`. Returns the
+/// synthesised `Case { op: Some(["", ";", ""]), args: [e1, e2] }` on
+/// success. Returns `None` when `expected` doesn't resolve to a
+/// registered headless-semi variant, the token-run has no top-level
+/// `;`, or the split produces the wrong number of parts.
+///
+/// Used both by [`token_run_to_expr_against`] (for clause RHSes /
+/// arg-pat lowerings) and by `clause_ps` (to recover the inner
+/// `Var`s for the per-clause binding list).
+pub(crate) fn try_split_headless_semi_expr(
+    tr: &crate::cst::TokenRun,
+    ctx: &ElabContext,
+    env: &crate::typecheck::TypeEnv,
+    expected: &spectec_ast::SpecTecTyp,
+) -> Option<crate::elab::Expr> {
+    let name = match expected {
+        spectec_ast::SpecTecTyp::Var { x, .. } => x,
+        _ => return None,
+    };
+    let arg_types = env.headless_semi.get(name)?;
+    // Parens-stripping: `(s; f)` is just `s; f` for splitting
+    // purposes. The classifier already collapses single-comma-chunk
+    // parens, but for `;` the classifier returns Raw with parens
+    // intact.
+    let toks = strip_outer_parens(&tr.tokens);
+    let parts = split_top_semi(toks)?;
+    if parts.len() != arg_types.len() {
+        return None;
+    }
+    let span = tr.span;
+    let args: Vec<crate::elab::Expr> = parts
+        .into_iter()
+        .zip(arg_types.iter())
+        .map(|(part_tokens, et)| {
+            let part_span = part_tokens
+                .iter()
+                .map(|s| s.span)
+                .reduce(crate::source::Span::join)
+                .unwrap_or(span);
+            let part_tr = crate::cst::TokenRun {
+                span: part_span,
+                tokens: part_tokens.to_vec(),
+            };
+            // Recurse: a chunk may itself contain a top-level `;`
+            // against another headless-semi type (e.g. nested
+            // `config = state; instr*` whose first hole is `state`,
+            // another headless-semi variant).
+            if let Some(inner) = try_split_headless_semi_expr(&part_tr, ctx, env, et) {
+                return inner;
+            }
+            let classified = crate::elab::classify_token_run(&part_tr, ctx)
+                .unwrap_or_else(|| crate::elab::Expr::Raw(part_tr));
+            crate::typecheck::check_exp_against(env, classified, et)
+        })
+        .collect();
+    Some(crate::elab::Expr::Case {
+        span,
+        head: name.clone(),
+        args,
+        op: Some(vec![String::new(), ";".to_string(), String::new()]),
+    })
+}
+
+/// Strip a single outer `( ... )` pair from `toks` if the rest is
+/// depth-balanced. Mirrors the singleton-collapse the existing
+/// classifier does, but for `;` (which the classifier doesn't
+/// handle).
+fn strip_outer_parens(toks: &[crate::token::Spanned]) -> &[crate::token::Spanned] {
+    if toks.len() < 2 {
+        return toks;
+    }
+    let first = matches!(toks.first().map(|s| &s.token), Some(crate::token::Token::LParen));
+    let last = matches!(toks.last().map(|s| &s.token), Some(crate::token::Token::RParen));
+    if !first || !last {
+        return toks;
+    }
+    let inner = &toks[1..toks.len() - 1];
+    let mut depth: i32 = 0;
+    for t in inner {
+        match &t.token {
+            crate::token::Token::LParen
+            | crate::token::Token::LBracket
+            | crate::token::Token::LBrace => depth += 1,
+            crate::token::Token::RParen
+            | crate::token::Token::RBracket
+            | crate::token::Token::RBrace => {
+                depth -= 1;
+                if depth < 0 {
+                    return toks;
+                }
+            }
+            _ => {}
+        }
+    }
+    if depth != 0 {
+        return toks;
+    }
+    inner
+}
+
+/// Split a token-run at every top-level `;` (depth-0 outside parens,
+/// brackets, braces). Returns `None` if there is no top-level `;` —
+/// i.e. there's nothing to split.
+fn split_top_semi(toks: &[crate::token::Spanned]) -> Option<Vec<&[crate::token::Spanned]>> {
+    let mut depth: i32 = 0;
+    let mut parts: Vec<&[crate::token::Spanned]> = Vec::new();
+    let mut chunk_start = 0usize;
+    let mut found = false;
+    for (i, t) in toks.iter().enumerate() {
+        match &t.token {
+            crate::token::Token::LParen
+            | crate::token::Token::LBracket
+            | crate::token::Token::LBrace => depth += 1,
+            crate::token::Token::RParen
+            | crate::token::Token::RBracket
+            | crate::token::Token::RBrace => depth -= 1,
+            crate::token::Token::Semi if depth == 0 => {
+                parts.push(&toks[chunk_start..i]);
+                chunk_start = i + 1;
+                found = true;
+            }
+            _ => {}
+        }
+    }
+    if !found {
+        return None;
+    }
+    parts.push(&toks[chunk_start..]);
+    // Empty chunks (e.g. trailing `;`) disqualify the split — we'd
+    // produce a Raw-sentinel that doesn't match the OCaml shape.
+    if parts.iter().any(|p| p.is_empty()) {
+        return None;
+    }
+    Some(parts)
 }
 
 fn mixop_for(name: &str, ctx: &ElabContext) -> spectec_ast::MixOp {
@@ -577,11 +722,17 @@ pub fn expr_to_spectec(e: &Expr, ctx: &ElabContext) -> spectec_ast::SpecTecExp {
             e1: Box::new(expr_to_spectec(e, ctx)),
             i: *index,
         },
-        Expr::Case { head, args, .. } => {
-            // For case constructors OCaml uses just `[head]` as the
-            // MixOp — the arg structure goes into `e1` as a `Tup`.
-            // (Relations' MixOps remain full mixfix templates.)
-            let op = mixop_from_name(head);
+        Expr::Case { head, args, op, .. } => {
+            // For named case constructors OCaml uses just `[head]` as
+            // the MixOp — the arg structure goes into `e1` as a `Tup`.
+            // For headless single-case variants synthesised by the
+            // type-checker (e.g. `state = store; frame`), the `op`
+            // field carries the actual MixOp parts (`["", ";", ""]`)
+            // so we don't collapse to `[head]`.
+            let op = match op {
+                Some(parts) => spectec_ast::MixOp::new(parts.clone()),
+                None => mixop_from_name(head),
+            };
             let inner = S::Tup {
                 es: args.iter().map(|a| expr_to_spectec(a, ctx)).collect(),
             };
@@ -648,10 +799,24 @@ fn clause_ps(
     let mut positional: std::collections::BTreeMap<String, spectec_ast::SpecTecTyp> =
         std::collections::BTreeMap::new();
     for (i, tr) in arg_pats.iter().enumerate() {
-        let Some(expr) = crate::elab::classify_token_run(tr, ctx) else {
-            continue;
+        // Task #35: when the def's sig position is a headless `_ ; _`
+        // variant, split the pattern so the inner `Var`s (`s`, `f`
+        // in `(s; f)`) get collected into the binding order. Without
+        // this, `clause_ps` walks an opaque `Raw` and misses them.
+        let sig_t = sig_ps.get(i).and_then(|p| match p {
+            spectec_ast::SpecTecParam::Exp { t, .. } => Some(t.clone()),
+            _ => None,
+        });
+        let expr = if let Some(t) = &sig_t
+            && let Some(split) = try_split_headless_semi_expr(tr, ctx, env, t)
+        {
+            split
+        } else {
+            let Some(expr) = crate::elab::classify_token_run(tr, ctx) else {
+                continue;
+            };
+            crate::typecheck::check_exp(env, expr)
         };
-        let expr = crate::typecheck::check_exp(env, expr);
         // Positional capture: bare-Var pat or Iter-of-Var pat. For
         // iter cases, record under the bare name (the iter-suffix
         // lookup in `clause_ps` re-wraps the type per pattern).
@@ -675,6 +840,23 @@ fn clause_ps(
                 t.clone()
             };
             positional.entry(pat_name).or_insert(t_base);
+        }
+        // Task #35: positional capture inside a headless-semi split.
+        // For `def $store((s; f))` the synthesised pattern is
+        // `Case[s, f]` whose hole types come from
+        // `env.headless_semi[state] = [store, frame]`. Record each
+        // inner Var against its arg-type so the per-clause `ps`
+        // names get the right type (`s : store`, `f : frame`),
+        // matching OCaml's `Clause.ps` shape.
+        if let crate::elab::Expr::Case { head, args, op: Some(_), .. } = &expr
+            && let Some(arg_types) = env.headless_semi.get(head)
+            && args.len() == arg_types.len()
+        {
+            for (a, et) in args.iter().zip(arg_types.iter()) {
+                if let crate::elab::Expr::Var { name, .. } = a {
+                    positional.entry(name.clone()).or_insert(et.clone());
+                }
+            }
         }
         crate::typecheck::collect_var_names_in_expr(&expr, &mut order, &mut seen);
     }

@@ -874,10 +874,20 @@ pub enum Expr {
     /// The "case-like" head is any identifier whose first character is
     /// uppercase, or that begins with an underscore (`NOP`, `BLOCK`,
     /// `I32`, `_IDX`, ...).
+    ///
+    /// `op` is the explicit MixOp parts to emit on lowering. `None`
+    /// falls back to `[head]` (the OCaml convention for named case
+    /// constructors). `Some(parts)` is used for headless single-case
+    /// variants synthesised by the type-checker — e.g. splitting
+    /// `e1 ; e2` against `syntax config = state; instr*` produces a
+    /// `Case { head: "config", args: [e1, e2], op: Some(vec!["", ";", ""]) }`
+    /// so the converter emits `MixOp(["", ";", ""])` rather than
+    /// `MixOp(["config"])`.
     Case {
         span: Span,
         head: String,
         args: Vec<Expr>,
+        op: Option<Vec<String>>,
     },
     /// Inverse case match: `e :> NAME` — extracts the operand of a
     /// known case constructor.
@@ -1705,6 +1715,7 @@ fn classify_simple_expression(
                 span,
                 head: name.clone(),
                 args: Vec::new(),
+                op: None,
             },
             Token::Ident(name) => Expr::Var {
                 span,
@@ -1810,6 +1821,7 @@ fn classify_simple_expression(
                 span,
                 head: head_name,
                 args,
+                op: None,
             });
         }
 
@@ -1866,6 +1878,7 @@ fn pratt_leaf(
                 span,
                 head: name,
                 args: Vec::new(),
+                op: None,
             }));
         }
         Token::Ident(name) => Expr::Var { span, name: name.clone() },
@@ -1942,6 +1955,7 @@ fn tree_to_expr(tree: Tree<Expr>, table: &OpTable, span: Span) -> Expr {
                 span,
                 head,
                 args: iter_args,
+                op: None,
             }
         }
     }

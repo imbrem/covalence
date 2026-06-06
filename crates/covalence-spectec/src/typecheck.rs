@@ -53,6 +53,12 @@ pub struct TypeEnv {
     /// Duplicates (same head in multiple syntax defs) are resolved
     /// by first-seen wins.
     pub ctors: BTreeMap<String, ast::SpecTecTyp>,
+    /// Case constructor → per-arg-position parameter types, by
+    /// constructor head name. For `REF nul^? heaptype`, maps
+    /// `"REF"` to `[NULL?, heaptype]`. Used in `infer_exp` for
+    /// `Expr::Case` so that arg subtype coercions (e.g. `NULL <:
+    /// NULL?` → `Opt(Some(NULL))`) get inserted.
+    pub ctor_params: BTreeMap<String, Vec<ast::SpecTecTyp>>,
     /// Variant subtype map (transitive). Each `T1 → {T2 names}`
     /// captures every type T1 is a subtype of via being one of T2's
     /// variant alternatives. E.g. for
@@ -117,6 +123,22 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
     let mut direct_sub: BTreeMap<String, std::collections::BTreeSet<String>> = BTreeMap::new();
     for syn in &doc.syntax {
         for prof in &syn.merged.profiles {
+            // `syntax null = NULL` aliases-to-a-case-head register
+            // the head as a 0-arg ctor of the outer syntax type.
+            if let Some(crate::cst::SyntaxBody::Alias(tr)) = &prof.body
+                && tr.tokens.len() == 1
+                && let crate::token::Spanned {
+                    token: crate::token::Token::Ident(head),
+                    ..
+                } = &tr.tokens[0]
+                && is_case_head_str(head)
+            {
+                env.ctors.entry(head.clone()).or_insert_with(|| Typ::Var {
+                    x: syn.name.clone(),
+                    as1: Vec::new(),
+                });
+                env.ctor_params.entry(head.clone()).or_insert_with(Vec::new);
+            }
             if let Some(crate::cst::SyntaxBody::Variant(_)) = &prof.body {
                 let alts = syn.merged.alts_for_profile(prof.profile.as_deref());
                 for alt in &alts {
@@ -133,6 +155,22 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
                             x: syn.name.clone(),
                             as1: Vec::new(),
                         });
+                        if !env.ctor_params.contains_key(head) {
+                            if let Some((_, _, hole_toks)) =
+                                crate::elab::alt_to_constructor_with_holes(
+                                    alt,
+                                    &ctx.type_names,
+                                )
+                            {
+                                let params: Vec<Typ> = hole_toks
+                                    .iter()
+                                    .map(|toks| {
+                                        crate::ast_doc::typ_expr_to_spectec(toks, ctx)
+                                    })
+                                    .collect();
+                                env.ctor_params.insert(head.clone(), params);
+                            }
+                        }
                     } else if toks.len() == 1 && ctx.type_names.contains(head) {
                         // Type-inclusion alt: head is the only token
                         // and it's a declared type → `head <: syn.name`.
@@ -320,7 +358,17 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
             )
         }
         Expr::Case { span, head, args } => {
-            let new_args = args.into_iter().map(|a| infer_exp(env, a).0).collect();
+            let params = env.ctor_params.get(&head);
+            let new_args: Vec<Expr> = if let Some(params) = params
+                && params.len() == args.len()
+            {
+                args.into_iter()
+                    .zip(params.iter())
+                    .map(|(a, expected)| check_exp_against(env, a, expected))
+                    .collect()
+            } else {
+                args.into_iter().map(|a| infer_exp(env, a).0).collect()
+            };
             let t = env.ctors.get(&head).cloned().unwrap_or_else(unknown_typ);
             (
                 Expr::Case {
@@ -554,6 +602,13 @@ fn coerce(env: &TypeEnv, e: Expr, span: crate::source::Span, actual: Typ, expect
         };
     }
     if sub_typ(env, &actual, &expected) {
+        // OCaml's elaborator is "case-polymorphic": a `Case{HEAD}` whose
+        // ctor is a member of `expected` via variant-subtyping is typed
+        // at `expected` directly, no `Sub` wrap. `Sub` is only inserted
+        // for non-Case values (Var refs, calls, etc.) whose type widens.
+        if matches!(e, Expr::Case { .. }) && is_variant_subtype(env, &actual, &expected) {
+            return e;
+        }
         Expr::Sub {
             span,
             from_ty: actual,
@@ -562,6 +617,17 @@ fn coerce(env: &TypeEnv, e: Expr, span: crate::source::Span, actual: Typ, expect
         }
     } else {
         e
+    }
+}
+
+/// `true` when `t1 <: t2` purely via variant-alt inclusion (the
+/// `env.subtypes` map). Numeric promotion and iter widening are
+/// excluded — those still get `Sub` per OCaml convention.
+fn is_variant_subtype(env: &TypeEnv, t1: &Typ, t2: &Typ) -> bool {
+    if let (Typ::Var { x: a, .. }, Typ::Var { x: b, .. }) = (t1, t2) {
+        env.subtypes.get(a).is_some_and(|s| s.contains(b))
+    } else {
+        false
     }
 }
 
@@ -726,7 +792,7 @@ pub fn collect_rule_params(
         .collect()
 }
 
-fn collect_var_names_in_expr(
+pub fn collect_var_names_in_expr(
     e: &Expr,
     order: &mut Vec<String>,
     seen: &mut std::collections::BTreeSet<String>,

@@ -302,7 +302,7 @@ fn is_declared_metavar(name: &str, var_names: &HashSet<String>) -> bool {
     var_names.contains(base)
 }
 
-fn metavar_base(name: &str) -> &str {
+pub fn metavar_base(name: &str) -> &str {
     // Strip trailing primes.
     let mut end = name.len();
     while end > 0 && name.as_bytes()[end - 1] == b'\'' {

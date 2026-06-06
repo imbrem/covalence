@@ -344,7 +344,7 @@ fn to_spectec_ast_flat(
                     })
                     .collect();
                 spectec_ast::SpecTecClause::Clause {
-                    ps: Vec::new(),
+                    ps: clause_ps(&c.arg_pats, &c.premises, &ps, env, ctx),
                     as_,
                     e,
                     prs,
@@ -358,6 +358,9 @@ fn to_spectec_ast_flat(
             clauses,
         });
     }
+
+    // (helper for the loop above is defined out-of-line as
+    //  `clause_ps` below.)
 
     // Gram entries from grammars. Productions still get a single
     // placeholder Prod per body; the production-splitting slice will
@@ -612,9 +615,9 @@ pub fn expr_to_spectec(e: &Expr, ctx: &ElabContext) -> spectec_ast::SpecTecExp {
             nt2: num_typ_to_spectec(to),
             e1: Box::new(expr_to_spectec(e, ctx)),
         },
-        Expr::Sub { e, .. } => S::Sub {
-            t1: placeholder_typ(),
-            t2: placeholder_typ(),
+        Expr::Sub { e, from_ty, to_ty, .. } => S::Sub {
+            t1: from_ty.clone(),
+            t2: to_ty.clone(),
             e1: Box::new(expr_to_spectec(e, ctx)),
         },
         // `eps` lowers to the empty list (SpecTec's notion of "empty
@@ -624,6 +627,59 @@ pub fn expr_to_spectec(e: &Expr, ctx: &ElabContext) -> spectec_ast::SpecTecExp {
         // differential test so we can track lowering coverage.
         Expr::Raw(_) => raw_sentinel(),
     }
+}
+
+/// Collect the per-clause `ps` (local binding list) for a def
+/// clause. Walks each arg pattern + premise token run for `Var`
+/// occurrences (in source order, first-seen-wins) and emits one
+/// `Param::Exp` per binding. Type comes from the def's sig `ps` by
+/// name when available, else `Var(name)` as a fallback.
+fn clause_ps(
+    arg_pats: &[crate::cst::TokenRun],
+    premises: &[crate::cst::TokenRun],
+    sig_ps: &[spectec_ast::SpecTecParam],
+    env: &crate::typecheck::TypeEnv,
+    ctx: &crate::elab::ElabContext,
+) -> Vec<spectec_ast::SpecTecParam> {
+    let mut order: Vec<String> = Vec::new();
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut visit = |tr: &crate::cst::TokenRun| {
+        let Some(expr) = crate::elab::classify_token_run(tr, ctx) else {
+            return;
+        };
+        let expr = crate::typecheck::check_exp(env, expr);
+        crate::typecheck::collect_var_names_in_expr(&expr, &mut order, &mut seen);
+    };
+    for tr in arg_pats {
+        visit(tr);
+    }
+    for tr in premises {
+        visit(tr);
+    }
+    order
+        .into_iter()
+        .map(|name| {
+            // Look up in sig_ps for a matching Exp param first.
+            for p in sig_ps {
+                if let spectec_ast::SpecTecParam::Exp { x, t } = p
+                    && *x == name
+                {
+                    return spectec_ast::SpecTecParam::Exp {
+                        x: name.clone(),
+                        t: t.clone(),
+                    };
+                }
+            }
+            // Fallback: type is the metavar's syntax type or Var(name).
+            let t = env.vars.get(crate::elab::metavar_base(&name))
+                .cloned()
+                .unwrap_or_else(|| spectec_ast::SpecTecTyp::Var {
+                    x: name.clone(),
+                    as1: Vec::new(),
+                });
+            spectec_ast::SpecTecParam::Exp { x: name, t }
+        })
+        .collect()
 }
 
 /// Sentinel value for un-elaborated expressions. Chosen so it's
@@ -963,9 +1019,19 @@ pub fn chunk_to_syntax_param(chunk: &[crate::token::Spanned]) -> Option<spectec_
             t: placeholder_typ_for_chunk(ty),
         });
     }
-    // Bare `X` (single ident).
+    // Bare `X` (single ident). OCaml treats this as an Exp param
+    // whose type is the variable `X` itself (most-specific reading
+    // — `X` is then resolved to `nat` etc. via its syntax decl).
+    // Explicit type params come from `syntax X` syntactic form,
+    // handled above.
     if let [Spanned { token: Ident(n), .. }] = chunk {
-        return Some(spectec_ast::SpecTecParam::Typ { x: n.clone() });
+        return Some(spectec_ast::SpecTecParam::Exp {
+            x: n.clone(),
+            t: spectec_ast::SpecTecTyp::Var {
+                x: n.clone(),
+                as1: Vec::new(),
+            },
+        });
     }
     // Anything else: treat as an unnamed Exp param whose type is the
     // whole chunk.

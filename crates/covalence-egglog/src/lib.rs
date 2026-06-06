@@ -25,6 +25,8 @@
 pub mod ast;
 pub mod bridge;
 pub mod error;
+#[cfg(feature = "external-egglog")]
+pub mod external;
 pub mod ingest;
 pub mod kernel_bridge;
 pub mod lower;

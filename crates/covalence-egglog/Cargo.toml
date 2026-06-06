@@ -7,7 +7,16 @@ edition = "2024"
 covalence-sexp = { path = "../covalence-sexp" }
 covalence-shell = { path = "../covalence-shell" }
 covalence-types = { path = "../covalence-types" }
+egglog = { version = "2", optional = true }
 thiserror = "2"
+
+[features]
+default = []
+# Take upstream `egglog` (2.x) as a dependency and expose driver helpers
+# that run real `(prove …)` queries and convert the resulting proof
+# DAG into our local types. Without this feature the crate compiles
+# without any external solver dep.
+external-egglog = ["dep:egglog"]
 
 [dev-dependencies]
 covalence-kernel = { path = "../covalence-kernel" }

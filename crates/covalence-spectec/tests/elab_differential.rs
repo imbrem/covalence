@@ -209,6 +209,31 @@ fn diff_against_wasm_spec_ast() {
     let their_sub = count_sub_nodes(&reference);
     eprintln!("  Sub coercions: ours {ours_sub}, theirs {their_sub}");
 
+    // Deep structural equality: for every (kind, name) on both sides,
+    // does our `SpecTecDef` equal OCaml's via `PartialEq`?
+    let deep = deep_equal_report(&ours, &reference);
+    eprintln!("  per-kind deep structural equality:");
+    eprintln!(
+        "    Typ:  {} / {} ({:.1}%)",
+        deep.typ_eq, deep.typ_total,
+        100.0 * deep.typ_eq as f64 / deep.typ_total.max(1) as f64,
+    );
+    eprintln!(
+        "    Rel:  {} / {} ({:.1}%)",
+        deep.rel_eq, deep.rel_total,
+        100.0 * deep.rel_eq as f64 / deep.rel_total.max(1) as f64,
+    );
+    eprintln!(
+        "    Dec:  {} / {} ({:.1}%)",
+        deep.dec_eq, deep.dec_total,
+        100.0 * deep.dec_eq as f64 / deep.dec_total.max(1) as f64,
+    );
+    eprintln!(
+        "    Gram: {} / {} ({:.1}%)",
+        deep.gram_eq, deep.gram_total,
+        100.0 * deep.gram_eq as f64 / deep.gram_total.max(1) as f64,
+    );
+
     let arity_report = arity_match_report(&ours, &reference);
     eprintln!("  per-kind arity match (same body-count for same-name def):");
     eprintln!(
@@ -431,6 +456,86 @@ fn count_dec_with_ps(defs: &[SpecTecDef]) -> usize {
     }
     for d in defs { walk(d, &mut n); }
     n
+}
+
+#[derive(Default)]
+struct DeepEqReport {
+    typ_eq: usize,
+    typ_total: usize,
+    rel_eq: usize,
+    rel_total: usize,
+    dec_eq: usize,
+    dec_total: usize,
+    gram_eq: usize,
+    gram_total: usize,
+}
+
+fn deep_equal_report(ours: &[SpecTecDef], theirs: &[SpecTecDef]) -> DeepEqReport {
+    let our_map = build_def_map(ours);
+    let their_map = build_def_map(theirs);
+    let mut r = DeepEqReport::default();
+    for ((kind, name), ours_def) in &our_map {
+        let Some(theirs_def) = their_map.get(&(kind.clone(), name.clone())) else {
+            continue;
+        };
+        match kind.as_str() {
+            "Typ" => {
+                r.typ_total += 1;
+                if ours_def == theirs_def {
+                    r.typ_eq += 1;
+                }
+            }
+            "Rel" => {
+                r.rel_total += 1;
+                if ours_def == theirs_def {
+                    r.rel_eq += 1;
+                }
+            }
+            "Dec" => {
+                r.dec_total += 1;
+                if ours_def == theirs_def {
+                    r.dec_eq += 1;
+                }
+            }
+            "Gram" => {
+                r.gram_total += 1;
+                if ours_def == theirs_def {
+                    r.gram_eq += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    r
+}
+
+fn build_def_map(defs: &[SpecTecDef]) -> BTreeMap<(String, String), SpecTecDef> {
+    let mut out = BTreeMap::new();
+    fn walk(d: &SpecTecDef, out: &mut BTreeMap<(String, String), SpecTecDef>) {
+        match d {
+            SpecTecDef::Typ { x, .. } => {
+                out.insert(("Typ".into(), x.clone()), d.clone());
+            }
+            SpecTecDef::Rel { x, .. } => {
+                out.insert(("Rel".into(), x.clone()), d.clone());
+            }
+            SpecTecDef::Dec { x, .. } => {
+                out.insert(("Dec".into(), x.clone()), d.clone());
+            }
+            SpecTecDef::Gram { x, .. } => {
+                out.insert(("Gram".into(), x.clone()), d.clone());
+            }
+            SpecTecDef::Rec { ds } => {
+                for d in ds {
+                    walk(d, out);
+                }
+            }
+        }
+    }
+    for d in defs {
+        walk(d, &mut out);
+    }
+    out
 }
 
 #[derive(Default)]

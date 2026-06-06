@@ -2274,6 +2274,89 @@ mod tests {
     }
 
     #[test]
+    fn aconv_recognizes_raw_forall_vs_folded() {
+        // `Forall(λx. body)` (folded) and `Comb(Const "!", λx. body)`
+        // (raw) should be α-equivalent under HOL Light convention.
+        let mut d = driver();
+        d.register_name(100, "Data.Bool.!");
+        let b = d.bool_type();
+        let a = d.mk_tyvar(101);
+        let a_bool = d.fun_type(a, b);
+        let forall_const_ty = d.fun_type(a_bool, b);
+        // Build a body `λx:α. x = x` (some predicate).
+        let x = d.mk_var(200, a);
+        let eq_body = d.mk_eq(x, x);
+        let lam = d.mk_abs(x, eq_body).unwrap();
+        // Folded form via mk_comb (auto-folds since base name "!").
+        let folded = {
+            let c = d.mk_const(100, forall_const_ty);
+            d.mk_comb(c, lam)
+        };
+        // Raw form via direct alloc, bypassing mk_comb fold.
+        let raw = {
+            let c = d.mk_const(100, forall_const_ty);
+            let id = d.arena_mut().alloc_term(TermDef::Comb(c, lam));
+            TermRef::local(id)
+        };
+        // Folded should be `Forall(lam)`, raw should be `Comb(c, lam)`.
+        // Distinct TermRefs.
+        assert_ne!(folded, raw);
+        // But aconv-equivalent.
+        assert!(
+            d.aconv(folded, raw),
+            "Forall(λ) and Comb(Const \"!\", λ) should be α-equivalent"
+        );
+    }
+
+    #[test]
+    fn aconv_recognizes_raw_op2_vs_folded() {
+        let mut d = driver();
+        d.register_name(200, "==>");
+        let b = d.bool_type();
+        let bb = d.fun_type(b, b);
+        let bbb = d.fun_type(b, bb);
+        let p = d.mk_var(10, b);
+        let q = d.mk_var(11, b);
+        // Folded: Op2(LogicalImp, p, q).
+        let folded = {
+            let c = d.mk_const(200, bbb);
+            let inner = d.mk_comb(c, p);
+            d.mk_comb(inner, q)
+        };
+        // Raw: Comb(Comb(Const "==>", p), q) — bypass fold by
+        // directly allocating both Combs.
+        let raw = {
+            let c_id = {
+                let c = d.mk_const(200, bbb);
+                c.as_local().unwrap()
+            };
+            let inner_id = d
+                .arena_mut()
+                .alloc_term(TermDef::Comb(TermRef::local(c_id), p));
+            let outer_id = d
+                .arena_mut()
+                .alloc_term(TermDef::Comb(TermRef::local(inner_id), q));
+            TermRef::local(outer_id)
+        };
+        // Folded path went through the fold (so it's Op2). Raw is
+        // straight Combs.
+        assert_ne!(folded, raw);
+        assert!(d.aconv(folded, raw));
+    }
+
+    #[test]
+    fn intern_tyargs_dedup_makes_nullary_tyapps_eq() {
+        // Regression test for the polymorphic-instance bug:
+        // two independent `alloc_tyapp("foo", [])` calls must
+        // resolve to the same TypeRef.
+        let mut d = driver();
+        d.register_name(50, "Data.Unit.unit");
+        let t1 = d.mk_tyapp(50, vec![]);
+        let t2 = d.mk_tyapp(50, vec![]);
+        assert_eq!(t1, t2);
+    }
+
+    #[test]
     fn types_bool_and_fun_roundtrip() {
         let mut d = driver();
         let b = d.bool_type();

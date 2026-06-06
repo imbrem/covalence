@@ -380,12 +380,31 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
             )
         }
         Expr::Call { span, name, args } => {
-            let t = env
-                .defs
-                .get(&name)
-                .map(|sig| sig.ret.clone())
-                .unwrap_or_else(unknown_typ);
-            (Expr::Call { span, name, args }, t)
+            // Coerce each arg against the def's declared param type,
+            // mirroring the `ctor_params` handling for `Case`.
+            let sig = env.defs.get(&name).cloned();
+            let new_args: Vec<Expr> = if let Some(sig) = &sig {
+                args.into_iter()
+                    .enumerate()
+                    .map(|(i, a)| match sig.params.get(i) {
+                        Some(ast::SpecTecParam::Exp { t, .. }) => {
+                            check_exp_against(env, a, t)
+                        }
+                        _ => infer_exp(env, a).0,
+                    })
+                    .collect()
+            } else {
+                args.into_iter().map(|a| infer_exp(env, a).0).collect()
+            };
+            let t = sig.map(|s| s.ret).unwrap_or_else(unknown_typ);
+            (
+                Expr::Call {
+                    span,
+                    name,
+                    args: new_args,
+                },
+                t,
+            )
         }
         Expr::Case { span, head, args } => {
             let params = env.ctor_params.get(&head);
@@ -868,6 +887,11 @@ pub fn collect_var_names_in_expr(
             }
         }
         Expr::Case { args, .. } => {
+            for a in args {
+                collect_var_names_in_expr(a, order, seen);
+            }
+        }
+        Expr::Call { args, .. } => {
             for a in args {
                 collect_var_names_in_expr(a, order, seen);
             }

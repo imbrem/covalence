@@ -714,10 +714,11 @@ pub enum Expr {
     /// Parenthesised sequence — `()` is the empty tuple, `(x)` collapses
     /// to `x`, `(x, y)` is a 2-tuple.
     Tup { span: Span, items: Vec<Expr> },
-    /// Function call: `$name(arg, ...)`. Args are kept as raw token
-    /// runs until elaboration of the `$()` arithmetic-escape grammar
-    /// lands.
-    Call { span: Span, name: String, args: Vec<TokenRun> },
+    /// Function call: `$name(arg, ...)`. Args are elaborated to
+    /// `Expr`s at construction time so the typechecker can coerce
+    /// each against the callee's parameter type (analogous to how
+    /// `Case` args are typed against `ctor_params`).
+    Call { span: Span, name: String, args: Vec<Expr> },
     /// `<inner><iter-suffix>` — postfix iteration on an expression.
     /// `bindings` is the inferred binder list (see `IterBinding`).
     Iter {
@@ -2096,7 +2097,7 @@ fn arith_last_muldiv(toks: &[Spanned]) -> Option<(usize, BinOp)> {
 fn try_classify_call(
     toks: &[Spanned],
     span: Span,
-    _ctx: &ElabContext,
+    ctx: &ElabContext,
 ) -> Result<Option<Expr>, Diagnostic> {
     if toks.len() < 4 {
         return Ok(None);
@@ -2118,7 +2119,7 @@ fn try_classify_call(
         return Ok(None);
     }
     let inner = &toks[3..toks.len() - 1];
-    let args = split_top_comma(inner)
+    let args: Vec<Expr> = split_top_comma(inner)
         .into_iter()
         .map(|slice| {
             let arg_span = slice
@@ -2126,10 +2127,12 @@ fn try_classify_call(
                 .map(|s| s.span)
                 .reduce(Span::join)
                 .unwrap_or(span);
-            TokenRun {
-                span: arg_span,
-                tokens: slice.to_vec(),
-            }
+            classify_simple_expression(slice, arg_span, ctx).unwrap_or_else(|_| {
+                Expr::Raw(TokenRun {
+                    span: arg_span,
+                    tokens: slice.to_vec(),
+                })
+            })
         })
         .collect();
     Ok(Some(Expr::Call {

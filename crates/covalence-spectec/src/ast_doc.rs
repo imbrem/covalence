@@ -551,20 +551,15 @@ pub fn expr_to_spectec(e: &Expr, ctx: &ElabContext) -> spectec_ast::SpecTecExp {
         Expr::Tup { items, .. } => S::Tup {
             es: items.iter().map(|i| expr_to_spectec(i, ctx)).collect(),
         },
-        Expr::Call { name, args, .. } => {
-            // Look up the def's parameter types from the env (if any
-            // env is reachable — for now we don't thread one through
-            // expr_to_spectec, so fall back to untyped lowering).
-            S::Call {
-                x: name.clone(),
-                as1: args
-                    .iter()
-                    .map(|tr| spectec_ast::SpecTecArg::Exp {
-                        e: token_run_to_expr(tr, ctx),
-                    })
-                    .collect(),
-            }
-        }
+        Expr::Call { name, args, .. } => S::Call {
+            x: name.clone(),
+            as1: args
+                .iter()
+                .map(|arg| spectec_ast::SpecTecArg::Exp {
+                    e: expr_to_spectec(arg, ctx),
+                })
+                .collect(),
+        },
         Expr::Iter {
             inner,
             kind,

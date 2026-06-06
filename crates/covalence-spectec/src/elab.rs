@@ -21,7 +21,7 @@
 
 use std::collections::HashSet;
 
-use crate::cst::{RuleDecl, Top, TokenRun};
+use crate::cst::{Alt, RuleDecl, SyntaxBody, Top, TokenRun};
 use crate::mixfix::{Fragment, OpId, OpTable, Precedence};
 use crate::source::{Diagnostic, Span};
 use crate::token::{Spanned, Token};
@@ -31,6 +31,11 @@ use crate::token::{Spanned, Token};
 /// bottom of the binding tower. Higher precedences come into play with
 /// syntax-constructor and arithmetic operators (added later).
 pub const REL_HOLE_PREC: Precedence = 0;
+
+/// Default precedence for syntax-variant constructor arg holes.
+/// Constructors bind tighter than relations (so `C |- (BLOCK x y) : t`
+/// associates the way you'd expect), so we use a high precedence here.
+pub const CTOR_HOLE_PREC: Precedence = 100;
 
 /// Result of running [`build_table`].
 #[derive(Debug, Default)]
@@ -63,16 +68,33 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
         }
     }
 
-    // Pass 2: extract operators from relation templates.
+    // Pass 2: extract operators.
+    //   - Each `Top::Relation` template becomes one Op (relation-level
+    //     precedence, holes interspersed with literals).
+    //   - Each `SyntaxBody::Variant` alternative whose head looks like a
+    //     case constructor becomes one Op (high precedence, with the
+    //     head as a leading Lit and remaining type expressions as Holes).
     let mut op_table = OpTable::new();
     for top in tops {
-        if let Top::Relation(r) = top {
-            match template_to_fragments(&r.template, &type_names) {
-                Ok(frags) => {
-                    op_table.add(r.name.text.clone(), frags);
+        match top {
+            Top::Relation(r) => {
+                match template_to_fragments(&r.template, &type_names) {
+                    Ok(frags) => {
+                        op_table.add(r.name.text.clone(), frags);
+                    }
+                    Err(d) => diags.push(d),
                 }
-                Err(d) => diags.push(d),
             }
+            Top::Syntax(s) => {
+                if let Some(SyntaxBody::Variant(alts)) = &s.body {
+                    for alt in alts {
+                        if let Some((name, frags)) = alt_to_constructor(alt, &type_names) {
+                            op_table.add(name, frags);
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
@@ -156,6 +178,51 @@ fn skip_type_suffix(toks: &[Spanned]) -> usize {
         }
     }
     i
+}
+
+/// Try to extract a constructor operator from a variant alternative.
+///
+/// Returns `Some((name, fragments))` if the alt looks like a case
+/// constructor (head is a SpecTec-convention case name like `NOP`,
+/// `BLOCK`, `I32`, `_IDX`). Returns `None` for type-inclusion alts like
+/// `| numtype | reftype` and other shapes we don't yet recognise.
+///
+/// Fragments: `[Lit(head_ident_token)] ++ <type-fragments of remaining tokens>`,
+/// where type-fragments are produced by walking the remaining tokens
+/// with the same logic that `template_to_fragments` uses for relation
+/// holes (declared type names become `Hole`s; literals stay literals).
+pub fn alt_to_constructor(
+    alt: &Alt,
+    type_names: &HashSet<String>,
+) -> Option<(String, Vec<Fragment>)> {
+    let toks = &alt.body.tokens;
+    let head_tok = toks.first()?;
+    let head_name = match &head_tok.token {
+        Token::Ident(n) if is_case_head(n) => n.clone(),
+        _ => return None,
+    };
+    let rest = &toks[1..];
+    let mut frags = vec![Fragment::Lit(head_tok.token.clone())];
+    let mut i = 0;
+    while i < rest.len() {
+        match &rest[i].token {
+            Token::Ident(name) if type_names.contains(name) => {
+                frags.push(Fragment::Hole(CTOR_HOLE_PREC));
+                i += 1 + skip_type_suffix(&rest[i + 1..]);
+            }
+            Token::LParen => {
+                frags.push(Fragment::Hole(CTOR_HOLE_PREC));
+                let consumed = skip_balanced(&rest[i..]);
+                i += consumed;
+                i += skip_type_suffix(&rest[i..]);
+            }
+            _ => {
+                frags.push(Fragment::Lit(rest[i].token.clone()));
+                i += 1;
+            }
+        }
+    }
+    Some((head_name, frags))
 }
 
 // ---------- minimal Expr AST + conclusion elaboration ----------
@@ -976,6 +1043,67 @@ mod tests {
     fn empty_input_gives_empty_table() {
         let ctx = build_from_str("");
         assert_eq!(ctx.op_table.iter().count(), 0);
+    }
+
+    #[test]
+    fn variant_constructors_become_ops() {
+        let src = r#"
+            syntax numtype = | I32 | I64 | F32 | F64
+        "#;
+        let ctx = build_from_str(src);
+        for name in &["I32", "I64", "F32", "F64"] {
+            assert!(
+                ctx.op_table.iter().any(|o| o.name == *name),
+                "expected op for `{name}`"
+            );
+        }
+    }
+
+    #[test]
+    fn variant_constructors_with_args() {
+        let src = r#"
+            syntax heaptype = nat
+            syntax null = NULL
+            syntax reftype = | REF null? heaptype
+        "#;
+        let ctx = build_from_str(src);
+        let op = ctx.op_table.iter().find(|o| o.name == "REF").unwrap();
+        // Lit(REF), Hole (null?), Hole (heaptype) — but only if both
+        // null and heaptype are declared as syntax. `null` is declared.
+        assert!(matches!(op.fragments[0], Fragment::Lit(_)));
+        let hole_count = op
+            .fragments
+            .iter()
+            .filter(|f| matches!(f, Fragment::Hole(_)))
+            .count();
+        assert_eq!(hole_count, 2, "expected REF to have 2 args");
+    }
+
+    #[test]
+    fn type_inclusion_alt_does_not_become_constructor() {
+        // `syntax valtype = | numtype | reftype` — these aren't case
+        // constructors, they're type inclusions. No ops added for them.
+        let src = r#"
+            syntax numtype = nat
+            syntax reftype = nat
+            syntax valtype = | numtype | reftype
+        "#;
+        let ctx = build_from_str(src);
+        let names: Vec<_> = ctx.op_table.iter().map(|o| o.name.clone()).collect();
+        // No op named "numtype" or "reftype" should be in the table.
+        assert!(!names.contains(&"numtype".to_string()));
+        assert!(!names.contains(&"reftype".to_string()));
+    }
+
+    #[test]
+    fn nullary_constructors_have_just_a_lit() {
+        let src = r#"
+            syntax instr = | NOP | UNREACHABLE
+        "#;
+        let ctx = build_from_str(src);
+        let nop = ctx.op_table.iter().find(|o| o.name == "NOP").unwrap();
+        assert_eq!(nop.fragments.len(), 1);
+        assert!(matches!(nop.fragments[0], Fragment::Lit(_)));
     }
 
     #[test]

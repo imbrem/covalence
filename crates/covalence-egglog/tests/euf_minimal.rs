@@ -2,10 +2,11 @@
 //!
 //! Exercises the *stable boundary*: trait + driver + `KernelEgglogBridge`
 //! impl against `covalence_kernel::Kernel`. Currently wired:
-//! [`Justification::Fiat`], [`Justification::Trans`], [`Justification::Sym`].
-//! The remaining justifications (`Rule`, `MergeFn`, `Congr`) should surface
-//! [`BridgeError::NotImplemented`] tagged with the variant name so a future
-//! Stage knows exactly what to wire next.
+//! [`Justification::Fiat`], [`Justification::Trans`], [`Justification::Sym`],
+//! [`Justification::Congr`] — i.e. the full EUF axiom set. The remaining
+//! justifications (`Rule`, `MergeFn`) should surface
+//! [`BridgeError::NotImplemented`] tagged with the variant name so a
+//! future Stage knows exactly what to wire next.
 
 use covalence_egglog::{
     BridgeError, EgglogBridge, KernelEgglogBridge, Proof, ProofStore, Proposition, Term, TermDag,
@@ -289,8 +290,15 @@ fn trans_with_symmetrised_premise() {
 // Still-unwired justifications surface NotImplemented tagged with variant
 // =====================================================================
 
+// =====================================================================
+// Congr — single child substitution closes a unary application
+// =====================================================================
+
 #[test]
-fn congr_is_not_implemented_yet() {
+fn congr_unary_application_closes() {
+    // `a = b` (Fiat), reflexive `f(a) = f(a)` (Fiat) ⊢ `f(a) = f(b)`
+    // (Congr at child index 0). Reflexive Fiat discharges via `refl` in
+    // `fiat`, so this also exercises the refl branch.
     let mut kernel = Kernel::new();
     let mut bridge = KernelEgglogBridge::new(&mut kernel);
     bridge.declare_sort("U").unwrap();
@@ -322,9 +330,68 @@ fn congr_is_not_implemented_yet() {
         },
     });
 
-    let err = ingest_proof_store(&mut bridge, &store, &dag, cong)
-        .expect_err("congr is not wired yet");
-    assert!(matches!(err, BridgeError::NotImplemented(s) if s == "congr"));
+    let _thm = ingest_proof_store(&mut bridge, &store, &dag, cong)
+        .expect("congr should close f(a) = f(b) from a = b");
+}
+
+// =====================================================================
+// Congr — chained substitution on a binary application
+// =====================================================================
+
+#[test]
+fn congr_chained_on_binary_application() {
+    // `a₁ = b₁`, `a₂ = b₂` (Fiats) ⊢ `g(a₁, a₂) = g(b₁, b₂)` via two
+    // Congr steps over an initial reflexive frame.
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelEgglogBridge::new(&mut kernel);
+    bridge.declare_sort("U").unwrap();
+    bridge.declare_constructor("a1", &[], "U").unwrap();
+    bridge.declare_constructor("a2", &[], "U").unwrap();
+    bridge.declare_constructor("b1", &[], "U").unwrap();
+    bridge.declare_constructor("b2", &[], "U").unwrap();
+    bridge.declare_constructor("g", &["U", "U"], "U").unwrap();
+
+    let mut dag = TermDag::new();
+    let t_a1 = dag.alloc(Term::Const("a1".into()));
+    let t_a2 = dag.alloc(Term::Const("a2".into()));
+    let t_b1 = dag.alloc(Term::Const("b1".into()));
+    let t_b2 = dag.alloc(Term::Const("b2".into()));
+    let t_g_aa = dag.alloc(Term::App("g".into(), vec![t_a1, t_a2]));
+    let t_g_ba = dag.alloc(Term::App("g".into(), vec![t_b1, t_a2]));
+    let t_g_bb = dag.alloc(Term::App("g".into(), vec![t_b1, t_b2]));
+
+    let mut store = ProofStore::new();
+    let a1b1 = store.alloc(Proof {
+        proposition: Proposition::new(t_a1, t_b1),
+        justification: Justification::Fiat,
+    });
+    let a2b2 = store.alloc(Proof {
+        proposition: Proposition::new(t_a2, t_b2),
+        justification: Justification::Fiat,
+    });
+    let refl = store.alloc(Proof {
+        proposition: Proposition::new(t_g_aa, t_g_aa),
+        justification: Justification::Fiat,
+    });
+    let cong1 = store.alloc(Proof {
+        proposition: Proposition::new(t_g_aa, t_g_ba),
+        justification: Justification::Congr {
+            proof: refl,
+            child_index: 0,
+            child_proof: a1b1,
+        },
+    });
+    let cong2 = store.alloc(Proof {
+        proposition: Proposition::new(t_g_aa, t_g_bb),
+        justification: Justification::Congr {
+            proof: cong1,
+            child_index: 1,
+            child_proof: a2b2,
+        },
+    });
+
+    let _thm = ingest_proof_store(&mut bridge, &store, &dag, cong2)
+        .expect("two chained Congr steps should close g(a1,a2) = g(b1,b2)");
 }
 
 #[test]

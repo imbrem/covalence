@@ -22,9 +22,14 @@
 //!     and [`Justification::Sym`](crate::proof::Justification::Sym) by
 //!     calling through to the prover's own primitives — the kernel
 //!     validates the shape of the input theorems.
-//!   - Every remaining justification (`Rule`, `MergeFn`, `Congr`) falls
-//!     through to the trait default, returning
-//!     [`BridgeError::NotImplemented`] tagged with the variant.
+//!   - Implements [`Justification::Congr`](crate::proof::Justification::Congr)
+//!     by injecting both premise equalities into the UF and closing the
+//!     conclusion via `Prover::cong`. Egglog's `child_index` is implicit:
+//!     the kernel walks the term tree and reconciles wherever the UF
+//!     says two subterms are equal.
+//!   - The remaining justifications (`Rule`, `MergeFn`) fall through to
+//!     the trait default, returning [`BridgeError::NotImplemented`]
+//!     tagged with the variant.
 
 use std::collections::HashMap;
 
@@ -289,5 +294,45 @@ impl<'a, P: Prover> EgglogBridge for KernelEgglogBridge<'a, P> {
         _dag: &TermDag,
     ) -> Result<Self::Thm, BridgeError> {
         Ok(self.prover.sym(ab)?)
+    }
+
+    fn congr(
+        &mut self,
+        prop: &Proposition,
+        proof_thm: Self::Thm,
+        _child_index: usize,
+        child_thm: Self::Thm,
+        dag: &TermDag,
+    ) -> Result<Self::Thm, BridgeError> {
+        // Inject both premise equalities into the kernel's UF. Egglog's
+        // `child_index` is implicit for us — the kernel's `cong` walks the
+        // term tree itself and reconciles wherever the UF says two
+        // subterms are equal. Same pattern as covalence-alethe's
+        // `rule_cong`.
+        self.inject_equality(&proof_thm)?;
+        self.inject_equality(&child_thm)?;
+
+        let lhs = self.materialise(prop.lhs, dag)?;
+        let rhs = self.materialise(prop.rhs, dag)?;
+
+        // Depth 32 is generously larger than anything egglog emits — egglog
+        // Congr steps move by a single child position, but our kernel's
+        // cong takes the whole tree at once and we don't want a recursion
+        // cap to surface as a spurious failure.
+        Ok(self.prover.cong(lhs, rhs, 32)?)
+    }
+}
+
+impl<'a, P: Prover> KernelEgglogBridge<'a, P> {
+    /// Destructure `th`'s conclusion as an equality and `union` its two
+    /// sides into the kernel's UF. Used by [`EgglogBridge::congr`] to make
+    /// premise equalities visible to `Prover::cong`.
+    fn inject_equality(&mut self, th: &P::Thm) -> Result<(), BridgeError> {
+        let concl = self.prover.conclusion(th)?;
+        let (a, b) = self.prover.dest_eq(concl).ok_or_else(|| {
+            BridgeError::Malformed("congr premise is not an equality".into())
+        })?;
+        self.prover.union(a, b)?;
+        Ok(())
     }
 }

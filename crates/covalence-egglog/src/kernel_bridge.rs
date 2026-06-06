@@ -27,9 +27,16 @@
 //!     conclusion via `Prover::cong`. Egglog's `child_index` is implicit:
 //!     the kernel walks the term tree and reconciles wherever the UF
 //!     says two subterms are equal.
-//!   - The remaining justifications (`Rule`, `MergeFn`) fall through to
-//!     the trait default, returning [`BridgeError::NotImplemented`]
-//!     tagged with the variant.
+//!   - Implements [`Justification::Rule`](crate::proof::Justification::Rule)
+//!     as a **trusted shim**: the rule's conclusion equality is added to
+//!     the UF unconditionally (`Prover::union`) and closed via `cong` at
+//!     depth 0. This mirrors covalence-alethe's `hole TRUST_THEORY_REWRITE`
+//!     pattern — same trust point. A later Stage will replace it with
+//!     kernel-checked rewrites that confirm the rule body actually
+//!     entails the conclusion under the given substitution.
+//!   - [`Justification::MergeFn`](crate::proof::Justification::MergeFn)
+//!     falls through to the trait default, returning
+//!     [`BridgeError::NotImplemented`].
 
 use std::collections::HashMap;
 
@@ -38,7 +45,8 @@ use covalence_shell::Prover;
 use crate::bridge::EgglogBridge;
 use crate::error::BridgeError;
 use crate::proof::{
-    Justification, ProofId, ProofStore, Proposition, Term, TermDag, TermId, topological_order,
+    Justification, ProofId, ProofStore, Proposition, Term, TermDag, TermId,
+    topological_order,
 };
 
 /// Bridge an egglog proof DAG into any `P: Prover`.
@@ -294,6 +302,33 @@ impl<'a, P: Prover> EgglogBridge for KernelEgglogBridge<'a, P> {
         _dag: &TermDag,
     ) -> Result<Self::Thm, BridgeError> {
         Ok(self.prover.sym(ab)?)
+    }
+
+    fn rule(
+        &mut self,
+        _name: &str,
+        prop: &Proposition,
+        _premise_thms: &[Self::Thm],
+        _substitution: &HashMap<String, TermId>,
+        dag: &TermDag,
+    ) -> Result<Self::Thm, BridgeError> {
+        // **Trust point.** Stage 3 ships a `:hole`-style shim: we don't
+        // verify that egglog's rule body actually entails the conclusion
+        // under the given substitution. We just record the conclusion as
+        // a UF union and close via `cong` at depth 0 — same shape as
+        // covalence-alethe's `hole TRUST_THEORY_REWRITE`.
+        //
+        // A later Stage will replace this with kernel-checked rewrites:
+        // build the rule's LHS/RHS under σ, confirm the premise Thms
+        // entail the LHS≡RHS shape, then derive the conclusion without
+        // any new trust.
+        let lhs = self.materialise(prop.lhs, dag)?;
+        let rhs = self.materialise(prop.rhs, dag)?;
+        if lhs == rhs {
+            return Ok(self.prover.refl(lhs)?);
+        }
+        self.prover.union(lhs, rhs)?;
+        Ok(self.prover.cong(lhs, rhs, 0)?)
     }
 
     fn congr(

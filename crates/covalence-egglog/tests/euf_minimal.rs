@@ -3,10 +3,11 @@
 //! Exercises the *stable boundary*: trait + driver + `KernelEgglogBridge`
 //! impl against `covalence_kernel::Kernel`. Currently wired:
 //! [`Justification::Fiat`], [`Justification::Trans`], [`Justification::Sym`],
-//! [`Justification::Congr`] — i.e. the full EUF axiom set. The remaining
-//! justifications (`Rule`, `MergeFn`) should surface
-//! [`BridgeError::NotImplemented`] tagged with the variant name so a
-//! future Stage knows exactly what to wire next.
+//! [`Justification::Congr`] (full EUF axiom set), and
+//! [`Justification::Rule`] as a trusted shim (analogous to Alethe's
+//! `hole TRUST_THEORY_REWRITE`). The remaining justification (`MergeFn`)
+//! should surface [`BridgeError::NotImplemented`] tagged with the variant
+//! name so a future Stage knows exactly what to wire next.
 
 use covalence_egglog::{
     BridgeError, EgglogBridge, KernelEgglogBridge, Proof, ProofStore, Proposition, Term, TermDag,
@@ -394,8 +395,14 @@ fn congr_chained_on_binary_application() {
         .expect("two chained Congr steps should close g(a1,a2) = g(b1,b2)");
 }
 
+// =====================================================================
+// Rule — trusted shim that closes a user-named rewrite
+// =====================================================================
+
 #[test]
-fn rule_is_not_implemented_yet() {
+fn rule_trusted_shim_closes_equality() {
+    // `(rewrite a b)` produces a Rule-justified `a = b`. The Stage-3
+    // trusted shim accepts it without checking the rule body.
     use std::collections::HashMap;
 
     let mut kernel = Kernel::new();
@@ -412,13 +419,95 @@ fn rule_is_not_implemented_yet() {
     let rule_step = store.alloc(Proof {
         proposition: Proposition::new(t_a, t_b),
         justification: Justification::Rule {
-            name: "my-rule".into(),
+            name: "ab-rewrite".into(),
             premise_proofs: vec![],
             substitution: HashMap::new(),
         },
     });
 
-    let err = ingest_proof_store(&mut bridge, &store, &dag, rule_step)
-        .expect_err("rule is not wired yet");
-    assert!(matches!(err, BridgeError::NotImplemented(s) if s == "rule:my-rule"));
+    let _thm = ingest_proof_store(&mut bridge, &store, &dag, rule_step)
+        .expect("trusted Rule shim should close a = b");
+}
+
+// =====================================================================
+// Rule + Trans — combine a user-rewrite with a fact
+// =====================================================================
+
+#[test]
+fn rule_then_trans_chains_with_fiat() {
+    // Rule-justified `a = b` (a user rewrite, trusted) chained via Trans
+    // with a Fiat-justified `b = c` (a top-level union) → `a = c`.
+    use std::collections::HashMap;
+
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelEgglogBridge::new(&mut kernel);
+    bridge.declare_sort("U").unwrap();
+    bridge.declare_constructor("a", &[], "U").unwrap();
+    bridge.declare_constructor("b", &[], "U").unwrap();
+    bridge.declare_constructor("c", &[], "U").unwrap();
+
+    let mut dag = TermDag::new();
+    let t_a = dag.alloc(Term::Const("a".into()));
+    let t_b = dag.alloc(Term::Const("b".into()));
+    let t_c = dag.alloc(Term::Const("c".into()));
+
+    let mut store = ProofStore::new();
+    let ab_rule = store.alloc(Proof {
+        proposition: Proposition::new(t_a, t_b),
+        justification: Justification::Rule {
+            name: "ab-rewrite".into(),
+            premise_proofs: vec![],
+            substitution: HashMap::new(),
+        },
+    });
+    let bc_fact = store.alloc(Proof {
+        proposition: Proposition::new(t_b, t_c),
+        justification: Justification::Fiat,
+    });
+    let ac = store.alloc(Proof {
+        proposition: Proposition::new(t_a, t_c),
+        justification: Justification::Trans(ab_rule, bc_fact),
+    });
+
+    let _thm = ingest_proof_store(&mut bridge, &store, &dag, ac)
+        .expect("trans over (Rule, Fiat) should produce a = c");
+}
+
+// =====================================================================
+// MergeFn still surfaces NotImplemented
+// =====================================================================
+
+#[test]
+fn merge_fn_is_not_implemented_yet() {
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelEgglogBridge::new(&mut kernel);
+    bridge.declare_sort("U").unwrap();
+    bridge.declare_constructor("a", &[], "U").unwrap();
+    bridge.declare_constructor("b", &[], "U").unwrap();
+
+    let mut dag = TermDag::new();
+    let t_a = dag.alloc(Term::Const("a".into()));
+    let t_b = dag.alloc(Term::Const("b".into()));
+
+    let mut store = ProofStore::new();
+    let aa = store.alloc(Proof {
+        proposition: Proposition::new(t_a, t_a),
+        justification: Justification::Fiat,
+    });
+    let bb = store.alloc(Proof {
+        proposition: Proposition::new(t_b, t_b),
+        justification: Justification::Fiat,
+    });
+    let merge = store.alloc(Proof {
+        proposition: Proposition::new(t_a, t_b),
+        justification: Justification::MergeFn {
+            function: "max".into(),
+            old_proof: aa,
+            new_proof: bb,
+        },
+    });
+
+    let err = ingest_proof_store(&mut bridge, &store, &dag, merge)
+        .expect_err("merge_fn is not wired yet");
+    assert!(matches!(err, BridgeError::NotImplemented(s) if s == "merge_fn:max"));
 }

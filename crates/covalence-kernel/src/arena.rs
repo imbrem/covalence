@@ -1542,7 +1542,19 @@ impl Arena {
     }
 
     /// Intern a type-argument list.
+    ///
+    /// Dedups by structural equality of the argument vector so that
+    /// two `Tyapp` allocations with the same args resolve to the
+    /// same `TyArgsId` — and therefore to the same `TypeRef` after
+    /// `alloc_type`'s structural dedup. Without this, every
+    /// independent `intern_tyargs(vec![])` produced a fresh
+    /// `TyArgsId` and inflated every nullary `Tyapp` to a distinct
+    /// `TypeRef`, breaking polymorphic-instance equality across
+    /// rules.
     pub fn intern_tyargs(&mut self, args: Vec<TypeRef>) -> TyArgsId {
+        if let Some(pos) = self.tyargs.iter().position(|a| *a == args) {
+            return TyArgsId(pos as u32);
+        }
         let id = TyArgsId(self.tyargs.len() as u32);
         self.tyargs.push(args);
         id

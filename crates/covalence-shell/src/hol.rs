@@ -1042,17 +1042,15 @@ impl HolPrim {
         for i in 0..ctx.len() {
             let assum = ctx.assumption(i).expect("len/index invariant");
             let assum_ref = TermRef::local(assum.concl);
-            // Filter by Arc::ptr_eq first (the canonical path).
+            // (1) Arc::ptr_eq — the canonical path.
             if self.trusted_props.iter().any(|p| Arc::ptr_eq(p, assum)) {
                 continue;
             }
-            // Fallback: TermId concl match.
+            // (2) TermId match — same content, different Arc.
             if self.trusted_props.iter().any(|p| p.concl == assum.concl) {
                 continue;
             }
-            // Stronger fallback: structural `term_eq` match. inst_type
-            // can rebuild a trusted Prop with a structurally different
-            // shape (e.g. raw vs folded form post-substitution).
+            // (3) Structural `term_eq` — same shape, different TermId.
             if self
                 .trusted_props
                 .iter()
@@ -1060,11 +1058,52 @@ impl HolPrim {
             {
                 continue;
             }
+            // (4) "Definitional shape" — concl is `Eq(Const(name), _)`
+            //     where `name` is in the term-constants table. This
+            //     catches inst_type-rewritten definitional equations
+            //     where the Const's type was specialized but the name
+            //     still refers to a registered constant. Such Props
+            //     are conceptually still definitions — HOL Light
+            //     treats them as implicit axioms regardless of the
+            //     polymorphic instance.
+            if self.is_definitional_eq(assum_ref) {
+                continue;
+            }
             if !out.contains(&assum_ref) {
                 out.push(assum_ref);
             }
         }
         Ok(out)
+    }
+
+    /// Detect a concl of the form `Eq(Const(name), _)` (or
+    /// `Eq(_, Const(name))`) where `name` is a registered term
+    /// constant. Used by [`Self::hyps`] to filter inst_type-rewritten
+    /// definitional equations.
+    fn is_definitional_eq(&self, concl: TermRef) -> bool {
+        let id = match concl.as_local() {
+            Some(i) => i,
+            None => return false,
+        };
+        let (lhs, rhs) = match *self.arena().term_def(id) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => return false,
+        };
+        self.is_registered_const(lhs) || self.is_registered_const(rhs)
+    }
+
+    fn is_registered_const(&self, t: TermRef) -> bool {
+        let id = match t.as_local() {
+            Some(i) => i,
+            None => return false,
+        };
+        let s = match *self.arena().term_def(id) {
+            TermDef::Const(s, _) => s,
+            _ => return false,
+        };
+        self.name_of(s)
+            .map(|n| self.term_constants.contains_key(&n))
+            .unwrap_or(false)
     }
 
     /// Conclusion of a theorem.

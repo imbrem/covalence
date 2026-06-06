@@ -113,6 +113,26 @@ impl TreeFs {
         Table::parse(blob, Dir).map_err(|e| FuseError::Table(e.to_string()))
     }
 
+    /// Resolve the on-disk size of a file inode, fetching the blob if the
+    /// size hasn't been realized yet.
+    ///
+    /// **NO RANGE / NO HEAD.** The current `ContentStore` trait has no
+    /// size-only call, so the only way to learn a blob's length is to pull
+    /// the whole thing. We cache the result in the inode table so subsequent
+    /// `getattr`/`readdirplus` calls don't re-fetch. Delete this and the
+    /// underlying fetch when the async-range store lands.
+    async fn realize_size(&self, ino: u64, hash: O256) -> Result<u64, FuseError> {
+        if let Some(entry) = self.inodes.get(ino) {
+            if let Some(size) = entry.size {
+                return Ok(size);
+            }
+        }
+        let blob = self.fetch_blob(hash).await?;
+        let size = blob.len() as u64;
+        self.inodes.set_size(ino, size);
+        Ok(size)
+    }
+
     fn file_attr(&self, ino: u64, mode: DirMode, size: u64) -> FileAttr {
         let (kind, perm) = mode_to_fuse(mode);
         FileAttr {
@@ -170,10 +190,14 @@ impl Filesystem for TreeFs {
         let row = row.ok_or(FuseError::NotFound)?;
 
         let ino = self.inodes.intern(row.child, row.mode);
-        // Size of files is realized lazily — on lookup we report 0 unless the
-        // inode table already learned the real size. This avoids forcing a
-        // blob fetch per `ls`.
-        let size = self.inodes.get(ino).and_then(|e| e.size).unwrap_or(0);
+        // Files need a real size so the kernel will issue `read(2)` calls;
+        // directories don't, and SUBMODULE is shown as an empty dir. Anything
+        // else (symlink target length, etc.) is realized on demand.
+        let size = if row.mode.is_dir() || row.mode == DirMode::SUBMODULE {
+            0
+        } else {
+            self.realize_size(ino, row.child).await?
+        };
         let attr = self.file_attr(ino, row.mode, size);
 
         Ok(ReplyEntry {
@@ -191,7 +215,11 @@ impl Filesystem for TreeFs {
         _flags: u32,
     ) -> FuseResult<ReplyAttr> {
         let entry = self.inodes.get(inode).ok_or(Errno::from(libc::ENOENT))?;
-        let size = entry.size.unwrap_or(0);
+        let size = if entry.mode.is_dir() || entry.mode == DirMode::SUBMODULE {
+            0
+        } else {
+            self.realize_size(inode, entry.hash).await?
+        };
         Ok(ReplyAttr {
             ttl: TTL,
             attr: self.file_attr(inode, entry.mode, size),
@@ -240,6 +268,7 @@ impl Filesystem for TreeFs {
         _fh: u64,
         offset: i64,
     ) -> FuseResult<ReplyDirectory<Self::DirEntryStream<'_>>> {
+        tracing::debug!("readdir ino={parent} offset={offset}");
         let parent_entry = self.inodes.get(parent).ok_or(Errno::from(libc::ENOENT))?;
         if !parent_entry.mode.is_dir() {
             return Err(FuseError::NotADir(parent_entry.hash).into());
@@ -280,6 +309,83 @@ impl Filesystem for TreeFs {
         let skip = offset.max(0) as usize;
         let tail: Vec<_> = entries.into_iter().skip(skip).collect();
         Ok(ReplyDirectory {
+            entries: stream::iter(tail),
+        })
+    }
+
+    /// `readdirplus` — readdir + per-entry lookup attrs in one round trip.
+    ///
+    /// Modern Linux kernels enable `FUSE_DO_READDIRPLUS` in the init handshake,
+    /// after which `getdents64` on a FUSE directory routes here instead of to
+    /// [`Self::readdir`]. If we left the default `ENOSYS` impl in place, the
+    /// kernel returns empty listings on every `ls` until it gives up and falls
+    /// back, which manifests as silently-empty directories.
+    async fn readdirplus(
+        &self,
+        _req: Request,
+        parent: u64,
+        _fh: u64,
+        offset: u64,
+        _lock_owner: u64,
+    ) -> FuseResult<ReplyDirectoryPlus<Self::DirEntryPlusStream<'_>>> {
+        tracing::debug!("readdirplus ino={parent} offset={offset}");
+        let parent_entry = self.inodes.get(parent).ok_or(Errno::from(libc::ENOENT))?;
+        if !parent_entry.mode.is_dir() {
+            return Err(FuseError::NotADir(parent_entry.hash).into());
+        }
+        let table = self.load_dir(parent_entry.hash).await?;
+
+        let parent_attr = self.file_attr(parent, parent_entry.mode, 0);
+        let mut entries: Vec<FuseResult<DirectoryEntryPlus>> = Vec::new();
+        entries.push(Ok(DirectoryEntryPlus {
+            inode: parent,
+            generation: 0,
+            kind: FileType::Directory,
+            name: OsString::from("."),
+            offset: 1,
+            attr: parent_attr,
+            entry_ttl: TTL,
+            attr_ttl: TTL,
+        }));
+        entries.push(Ok(DirectoryEntryPlus {
+            inode: parent,
+            generation: 0,
+            kind: FileType::Directory,
+            name: OsString::from(".."),
+            offset: 2,
+            attr: parent_attr,
+            entry_ttl: TTL,
+            attr_ttl: TTL,
+        }));
+
+        let n = table.num_entries();
+        for i in 0..n {
+            let row = table
+                .row(i)
+                .map_err(|e| FuseError::Table(e.to_string()))?;
+            let ino = self.inodes.intern(row.child, row.mode);
+            let (kind, _perm) = mode_to_fuse(row.mode);
+            let size = if row.mode.is_dir() || row.mode == DirMode::SUBMODULE {
+                0
+            } else {
+                self.realize_size(ino, row.child).await?
+            };
+            let attr = self.file_attr(ino, row.mode, size);
+            entries.push(Ok(DirectoryEntryPlus {
+                inode: ino,
+                generation: 0,
+                kind,
+                name: OsStr::from_bytes(row.name).to_os_string(),
+                offset: (i as i64) + 3,
+                attr,
+                entry_ttl: TTL,
+                attr_ttl: TTL,
+            }));
+        }
+
+        let skip = offset as usize;
+        let tail: Vec<_> = entries.into_iter().skip(skip).collect();
+        Ok(ReplyDirectoryPlus {
             entries: stream::iter(tail),
         })
     }

@@ -25,6 +25,7 @@
 use std::fmt::Debug;
 
 use covalence_kernel::primop::{PrimOp1, PrimOp2};
+use covalence_types::Int;
 
 /// Errors any `Prover` impl may return.
 #[derive(Debug, thiserror::Error)]
@@ -118,6 +119,34 @@ pub trait Prover {
     fn int_lit(&mut self, n: i64) -> Result<Self::Term, ProverError>;
     fn nat_lit(&mut self, n: u64) -> Result<Self::Term, ProverError>;
 
+    /// Arbitrary-precision integer literal. cvc5 (and any real SMT solver)
+    /// emits literals far outside `i64` range; the bridge translates them
+    /// through this method.
+    ///
+    /// Default: `NotImplemented`. The kernel impl will lower it onto the
+    /// arbitrary-precision int constructor once that lands; until then the
+    /// `i64` fast path covers the test fixtures.
+    fn int_lit_big(&mut self, _n: &Int) -> Result<Self::Term, ProverError> {
+        Err(ProverError::NotImplemented("int_lit_big".into()))
+    }
+
+    /// `ite(c, a, b)` — if-then-else over any sort. cvc5's preprocessor lifts
+    /// `ite` even in nominally QF_UFLIA problems, so the bridge needs a term
+    /// constructor regardless of whether the kernel surfaces it as a primop
+    /// or as a defined symbol.
+    ///
+    /// Default: `NotImplemented`. The redesigned kernel can either expose a
+    /// dedicated `TermDef::Ite` variant or define `ite` via subset types; the
+    /// trait stays agnostic.
+    fn ite(
+        &mut self,
+        _c: Self::Term,
+        _a: Self::Term,
+        _b: Self::Term,
+    ) -> Result<Self::Term, ProverError> {
+        Err(ProverError::NotImplemented("ite".into()))
+    }
+
     /// Free variable: a named, typed variable that occurs free in the term.
     fn free_var(&mut self, name: &str, ty: Self::Type) -> Result<Self::Term, ProverError>;
 
@@ -196,6 +225,33 @@ pub trait Prover {
     /// if so. Used by rules that consume premise equalities (`cong`,
     /// `eq_mp`, …) and need access to the sides.
     fn dest_eq(&self, t: Self::Term) -> Option<(Self::Term, Self::Term)>;
+
+    /// Destructure `t` as `ite(c, a, b)`, if so. Mirrors [`Self::ite`] on the
+    /// inspection side.
+    ///
+    /// Default: `None`. Backends without an ITE constructor have nothing to
+    /// destructure; the bridge falls through to other shapes.
+    fn dest_ite(&self, _t: Self::Term) -> Option<(Self::Term, Self::Term, Self::Term)> {
+        None
+    }
+
+    /// Destructure `t` as a propositional disjunction `(a ∨ b)`, returning
+    /// `Some((a, b))` if so. Useful for resolution / clause-shape rules
+    /// where the bridge needs to walk the left-folded `Or` tree to find a
+    /// pivot literal.
+    ///
+    /// Default: `None`.
+    fn dest_or(&self, _t: Self::Term) -> Option<(Self::Term, Self::Term)> {
+        None
+    }
+
+    /// Destructure `t` as a propositional negation `¬a`. Symmetric to
+    /// [`Self::dest_or`] / [`Self::dest_eq`].
+    ///
+    /// Default: `None`.
+    fn dest_not(&self, _t: Self::Term) -> Option<Self::Term> {
+        None
+    }
 
     // -----------------------------------------------------------------
     // Context (assumption management)
@@ -305,4 +361,119 @@ pub trait Prover {
     /// this single primitive rather than each rule deriving its own
     /// case-split.
     fn tautology_intro(&mut self, t: Self::Term) -> Result<Self::Thm, ProverError>;
+
+    // -----------------------------------------------------------------
+    // Subproof / Deduction Theorem
+    // -----------------------------------------------------------------
+
+    /// Deduction Theorem: `Γ, p ⊢ q` ↦ `Γ ⊢ p ⇒ q`.
+    ///
+    /// The dual of [`Self::mp`] / [`Self::push_assumption`]; needed for
+    /// closing Alethe `anchor` scopes. The bridge tracks anchor frames
+    /// locally and uses this to lift the inner conclusion into the outer
+    /// context.
+    ///
+    /// Default: `NotImplemented`. The redesigned kernel is expected to ship
+    /// this as a single rule (or to compose it from `add_assumption` +
+    /// `mp` + a new `imp_intro`).
+    fn discharge(
+        &mut self,
+        _thm: Self::Thm,
+        _p: Self::Prop,
+    ) -> Result<Self::Thm, ProverError> {
+        Err(ProverError::NotImplemented("discharge".into()))
+    }
+
+    // -----------------------------------------------------------------
+    // Clause-level resolution
+    // -----------------------------------------------------------------
+
+    /// Atomic propositional resolution.
+    ///
+    /// Given `Γ ⊢ C₁` and `Γ ⊢ C₂` with `C₁ = … ∨ pivot ∨ …` and
+    /// `C₂ = … ∨ ¬pivot ∨ …` (left-folded disjunctions; either side may
+    /// carry the negated literal), derive `Γ ⊢ C₁' ∨ C₂'` with the pivot
+    /// pair removed.
+    ///
+    /// Today's `resolution` Alethe rule discharges via [`Self::tautology_intro`]
+    /// (sound but 2ⁿ in the number of Bool atoms). This primitive is the
+    /// linear-cost replacement cvc5 proofs need at scale; it'll desugar to
+    /// `or_elim` + `mp` in the rewritten kernel.
+    ///
+    /// Default: `NotImplemented`.
+    fn resolve(
+        &mut self,
+        _c1: Self::Thm,
+        _c2: Self::Thm,
+        _pivot: Self::Term,
+    ) -> Result<Self::Thm, ProverError> {
+        Err(ProverError::NotImplemented("resolve".into()))
+    }
+
+    // -----------------------------------------------------------------
+    // Linear integer arithmetic
+    // -----------------------------------------------------------------
+
+    /// `Γ ⊢ t` if `t` is a linear-integer-arithmetic tautology.
+    ///
+    /// Decides QF_LIA Bool combinations of `IntLe`/`IntLt`/`IntEq` over
+    /// `IntAdd`/`IntMul`-by-constant/`IntNeg`/`int_lit*` terms, with free
+    /// `Int` variables existentially quantified at the top. Internally this
+    /// is the LIA analog of [`Self::tautology_intro`]: brute-force isn't
+    /// available, so the kernel-side implementation is expected to combine
+    /// (a) the propositional truth-table check over the LIA literals'
+    /// Bool structure, and (b) a Farkas/Fourier-Motzkin search for each
+    /// satisfying literal assignment.
+    ///
+    /// The bridge falls through to this primitive when an Alethe step has
+    /// no Farkas hints (rare — cvc5 emits hints for `la_generic` — but
+    /// `lia_generic` and some `*_simplify` paths do).
+    ///
+    /// Default: `NotImplemented`. See also [`Self::farkas`] for the
+    /// hint-driven faster path.
+    fn lia_tautology(&mut self, _t: Self::Term) -> Result<Self::Thm, ProverError> {
+        Err(ProverError::NotImplemented("lia_tautology".into()))
+    }
+
+    /// Farkas-certificate-checked refutation.
+    ///
+    /// Given premises `Γ ⊢ φᵢ` where each `φᵢ` is a linear-arith atom
+    /// (`Σⱼ aᵢⱼ·xⱼ ⨂ᵢ bᵢ` with `⨂ᵢ ∈ {≤, <, =}`) and matching nonneg
+    /// integer coefficients `λᵢ`, derive `Γ ⊢ False` by checking that
+    /// `Σᵢ λᵢ · (LHSᵢ - RHSᵢ)` reduces to a positive constant under
+    /// LIA normalization — i.e. the certificate witnesses unsatisfiability.
+    ///
+    /// This is the cvc5 `la_generic` shape: the `:args` carry the `λᵢ`,
+    /// the negated clause literals are the premises (the bridge negates
+    /// them up-front via `assume` + `discharge` once `discharge` lands).
+    ///
+    /// Returns `ProverError::Other` if the lengths mismatch; the
+    /// soundness check itself fails closed with `NotATautology` once the
+    /// kernel implementation lands.
+    ///
+    /// Default: `NotImplemented`. The intended desugaring is documented in
+    /// the next paragraph and is expected to be a *derived* shell-level
+    /// rule once the std-lib lemmas (sign-preserving multiplication,
+    /// additivity, integer tightening) are in place.
+    ///
+    /// # Desugaring sketch
+    ///
+    /// For each premise `Γ ⊢ Lᵢ ≤ Rᵢ` (or `<`, or `=`):
+    /// 1. Normalize to `Γ ⊢ (Lᵢ - Rᵢ) ≤ 0` via `int_le_sub_iff`.
+    /// 2. Scale by `λᵢ` via `int_le_mul_nonneg` (needs `0 ≤ λᵢ`,
+    ///    discharged by literal evaluation).
+    /// 3. Equalities split into two scaled inequalities (signed coefficient
+    ///    handled by the `λᵢ` being interpreted as `±|λᵢ|`).
+    ///
+    /// Then iteratively combine via `int_le_add_compat` to get
+    /// `Γ ⊢ Σᵢ λᵢ(Lᵢ - Rᵢ) ≤ 0`, run [`Self::reduce`] on the LHS to fold
+    /// to a constant `k`, and conclude `k ≤ 0` contradicts `0 < k` (a
+    /// literal-evaluation step).
+    fn farkas(
+        &mut self,
+        _premises: &[Self::Thm],
+        _coeffs: &[Int],
+    ) -> Result<Self::Thm, ProverError> {
+        Err(ProverError::NotImplemented("farkas".into()))
+    }
 }

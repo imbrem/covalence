@@ -119,6 +119,36 @@ impl HashCtx for Sha256 {
     }
 }
 
+/// Raw SHA-1 hashing context (FIPS PUB 180-4 §6.1) — 20-byte output.
+///
+/// This is the bare SHA-1 primitive, NOT git-flavoured blob-framed SHA-1
+/// (which is `git::GitSha1`). It is used by `covalence-wasm-spec` to
+/// differentially test WASM SHA-1 components against a trusted Rust impl.
+///
+/// We use the `sha1` crate directly (rather than `gix-hash`'s
+/// collision-detected `sha1_checked`) because the collision detection
+/// changes the digest on prepared collision attacks — the spec WASM
+/// implements plain SHA-1, so the reference must match plain SHA-1 too.
+#[cfg(feature = "sha1")]
+pub struct Sha1Ctx;
+
+#[cfg(feature = "sha1")]
+impl HashCtx for Sha1Ctx {
+    fn tag(&self, data: impl AsRef<[u8]>) -> O256 {
+        let digest = sha1(data.as_ref());
+        let mut buf = [0u8; 32];
+        buf[..20].copy_from_slice(&digest);
+        O256::from_bytes(buf)
+    }
+}
+
+/// One-shot raw SHA-1 of `data`, returning the 20-byte digest.
+#[cfg(feature = "sha1")]
+pub fn sha1(data: &[u8]) -> [u8; 20] {
+    use sha1::Digest;
+    sha1::Sha1::digest(data).into()
+}
+
 /// The root Covalence hashing context.
 ///
 /// All Covalence content hashes are derived under this context, ensuring
@@ -335,5 +365,87 @@ mod tests {
     fn cov_root_is_const() {
         // COV_ROOT is usable in const position.
         const _: CovRoot = COV_ROOT;
+    }
+
+    // Reference: printf '' | sha1sum
+    #[cfg(feature = "sha1")]
+    const SHA1_EMPTY: &str = "da39a3ee5e6b4b0d3255bfef95601890afd80709";
+
+    // Reference: echo -n "abc" | sha1sum
+    #[cfg(feature = "sha1")]
+    const SHA1_ABC: &str = "a9993e364706816aba3e25717850c26c9cd0d89d";
+
+    #[cfg(feature = "sha1")]
+    #[test]
+    fn sha1_empty_matches_fips() {
+        let digest = sha1(b"");
+        let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(hex, SHA1_EMPTY);
+    }
+
+    #[cfg(feature = "sha1")]
+    #[test]
+    fn sha1_abc_matches_fips() {
+        let digest = sha1(b"abc");
+        let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(hex, SHA1_ABC);
+    }
+
+    #[cfg(feature = "sha1")]
+    #[test]
+    fn sha1_ctx_matches_raw() {
+        let raw = sha1(b"hello");
+        let ctx = Sha1Ctx.tag(b"hello");
+        assert_eq!(&ctx.as_bytes()[..20], &raw[..]);
+        // Trailing 12 bytes are zero-padded.
+        assert_eq!(&ctx.as_bytes()[20..], &[0u8; 12]);
+    }
+}
+
+#[cfg(all(test, feature = "sha1"))]
+mod sha1_extra_tests {
+    use super::*;
+
+    fn hex(bytes: &[u8]) -> String {
+        let mut s = String::with_capacity(bytes.len() * 2);
+        for b in bytes {
+            s.push_str(&format!("{b:02x}"));
+        }
+        s
+    }
+
+    // FIPS 180-4 §A.2 — two-block vector (56 bytes, crosses the boundary).
+    #[test]
+    fn fips_two_block() {
+        let m = b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
+        assert_eq!(hex(&sha1(m)), "84983e441c3bd26ebaae4aa1f95129e5e54670f1");
+    }
+
+    // FIPS 180-4 §A.3 — long-message vector (1,000,000 'a's).
+    #[test]
+    fn fips_million_a() {
+        let m = vec![b'a'; 1_000_000];
+        assert_eq!(hex(&sha1(&m)), "34aa973cd4c4daa4f61eeb2bdbad27316534016f");
+    }
+
+    // Block-boundary lengths — common implementation bug sites for SHA-1 padding.
+    // SHA-1's 512-bit block + 64-bit length field means L mod 64 ∈ {55, 56, 63, 0}
+    // hit distinct padding paths. Just confirms the surface is stable across lengths.
+    #[test]
+    fn stable_across_block_boundaries() {
+        for &len in &[0usize, 1, 55, 56, 63, 64, 65, 119, 120, 127, 128, 129] {
+            let m = vec![0xa5u8; len];
+            assert_eq!(sha1(&m).len(), 20, "len={len}");
+            assert_eq!(Sha1Ctx.tag(&m).as_bytes()[..20], sha1(&m)[..]);
+        }
+    }
+
+    // Pin domain separation against the other hashes in this crate, so an
+    // accidental swap in downstream code shows up here.
+    #[test]
+    fn disjoint_from_sha256_and_blake3() {
+        let m = b"hello";
+        assert_ne!(&Sha1Ctx.tag(m).as_bytes()[..20], &Sha256.tag(m).as_bytes()[..20]);
+        assert_ne!(&Sha1Ctx.tag(m).as_bytes()[..20], &().tag(m).as_bytes()[..20]);
     }
 }

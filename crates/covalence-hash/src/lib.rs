@@ -4,6 +4,8 @@ mod util;
 
 pub use names::{SAT, UNSAT};
 pub use object::{Blake3Ctx, COV_ROOT, CovRoot, HashCtx, O256, Sha256};
+#[cfg(feature = "sha1")]
+pub use object::{Sha1Ctx, sha1};
 pub use util::{IdentityBuildHasher, IdentityHasher};
 
 pub use blake3;

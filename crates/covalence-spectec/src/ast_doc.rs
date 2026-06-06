@@ -246,13 +246,21 @@ fn to_spectec_ast_flat(
                 let elab = elab_rule_conclusion(rd, ctx).ok();
                 let (e, prs) = match elab {
                     Some(elab) => {
-                        // Type-check operands + premises before
-                        // lowering — operator-type fields get
-                        // refined here.
+                        // Type-check operands against the relation's
+                        // operand-tuple type so `Sub` coercions get
+                        // inserted at subtype boundaries.
+                        let expected: Vec<spectec_ast::SpecTecTyp> =
+                            extract_tup_element_types(&t);
                         let typed_operands: Vec<Expr> = elab
                             .operands
                             .into_iter()
-                            .map(|o| crate::typecheck::check_exp(env, o))
+                            .enumerate()
+                            .map(|(i, o)| match expected.get(i) {
+                                Some(expected_t) => {
+                                    crate::typecheck::check_exp_against(env, o, expected_t)
+                                }
+                                None => crate::typecheck::check_exp(env, o),
+                            })
                             .collect();
                         let typed_premises: Vec<ElabPremise> = elab
                             .premises
@@ -775,6 +783,23 @@ fn path_to_spectec(p: &ElabPath, ctx: &ElabContext) -> spectec_ast::SpecTecPath 
 }
 
 // ---------- type / parameter synthesis ----------
+
+/// Extract per-operand types from a relation's operand-tuple type.
+/// For `Tup { ets }` returns the bind types; for a single non-Tup
+/// returns one element (the whole type).
+fn extract_tup_element_types(t: &spectec_ast::SpecTecTyp) -> Vec<spectec_ast::SpecTecTyp> {
+    use spectec_ast::SpecTecTyp as T;
+    match t {
+        T::Tup { ets } => ets
+            .iter()
+            .map(|b| {
+                let spectec_ast::SpecTecTypBind::Bind { typ, .. } = b;
+                typ.clone()
+            })
+            .collect(),
+        other => vec![other.clone()],
+    }
+}
 
 /// Build a relation's operand-tuple type from its template's per-hole
 /// token slices. Single hole → bare type; multiple → `Tup` of binds.

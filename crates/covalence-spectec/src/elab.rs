@@ -734,12 +734,13 @@ pub enum Expr {
         e: Box<Expr>,
     },
     /// Subtype coercion: `Sub(t1, t2, e)` injects `e : t1` into `t2`.
-    /// SpecTec inserts these implicitly during type checking; we don't
-    /// yet generate them but the variant is here for converter parity.
+    /// Inserted by the type-checker at subtype boundaries; not
+    /// produced by elaboration directly. The `from_ty`/`to_ty` carry
+    /// the source and target `SpecTecTyp`s for the coercion.
     Sub {
         span: Span,
-        from_ty: TokenRun,
-        to_ty: TokenRun,
+        from_ty: spectec_ast::SpecTecTyp,
+        to_ty: spectec_ast::SpecTecTyp,
         e: Box<Expr>,
     },
     /// `eps` — the empty sequence literal.

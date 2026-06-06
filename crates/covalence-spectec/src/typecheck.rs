@@ -25,6 +25,8 @@
 
 use std::collections::BTreeMap;
 
+use spectec_ast as ast;
+
 use crate::ast_doc::Doc;
 use crate::elab::{BinOp, CmpOp, ElabContext, ElabPremise, Expr, OpType, UnOp};
 
@@ -38,19 +40,25 @@ pub struct TypeEnv {
     /// `var NAME : T` lookups, by base metavariable name (subscript
     /// and prime suffixes stripped during lookup, see
     /// [`elab::metavar_base`]).
-    pub vars: BTreeMap<String, spectec_ast::SpecTecTyp>,
+    pub vars: BTreeMap<String, ast::SpecTecTyp>,
     /// `relation NAME: ...` operand-tuple types, by relation name.
-    pub relations: BTreeMap<String, spectec_ast::SpecTecTyp>,
+    pub relations: BTreeMap<String, ast::SpecTecTyp>,
     /// `def $NAME(args) : T` return types, by def name.
     pub defs: BTreeMap<String, DefSig>,
     /// `grammar NAME : T` yield types, by grammar name.
-    pub grammars: BTreeMap<String, spectec_ast::SpecTecTyp>,
+    pub grammars: BTreeMap<String, ast::SpecTecTyp>,
+    /// Case constructor → containing syntax type, by constructor
+    /// head name. For `syntax instr = | BLOCK ... | NOP ...`, maps
+    /// `"BLOCK"`/`"NOP"` to `SpecTecTyp::Var { x: "instr", as1: [] }`.
+    /// Duplicates (same head in multiple syntax defs) are resolved
+    /// by first-seen wins.
+    pub ctors: BTreeMap<String, ast::SpecTecTyp>,
 }
 
 #[derive(Debug, Clone)]
 pub struct DefSig {
-    pub params: Vec<spectec_ast::SpecTecParam>,
-    pub ret: spectec_ast::SpecTecTyp,
+    pub params: Vec<ast::SpecTecParam>,
+    pub ret: ast::SpecTecTyp,
 }
 
 /// Build the [`TypeEnv`] for a fully-elaborated `Doc`.
@@ -81,7 +89,7 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
     // Defs.
     for d in &doc.defs {
         let ret = crate::ast_doc::typ_expr_to_spectec(&d.sig.ret_ty.tokens, ctx);
-        let params: Vec<spectec_ast::SpecTecParam> = d
+        let params: Vec<ast::SpecTecParam> = d
             .sig
             .arg_tys
             .iter()
@@ -96,13 +104,61 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
         env.grammars.insert(g.name.clone(), t);
     }
 
+    // Constructors: walk each merged syntax's variant alts and map
+    // their head name to the syntax's type (`Var { x: name, as1: [] }`).
+    for syn in &doc.syntax {
+        for prof in &syn.merged.profiles {
+            if let Some(crate::cst::SyntaxBody::Variant(_)) = &prof.body {
+                let alts = syn.merged.alts_for_profile(prof.profile.as_deref());
+                for alt in &alts {
+                    if let Some(crate::token::Spanned {
+                        token: crate::token::Token::Ident(head),
+                        ..
+                    }) = alt.body.tokens.first()
+                    {
+                        // Only register case-headed names; type-
+                        // inclusion alts (`| numtype`) aren't ctors.
+                        if is_case_head_str(head) {
+                            env.ctors.entry(head.clone()).or_insert_with(|| Typ::Var {
+                                x: syn.name.clone(),
+                                as1: Vec::new(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     env
+}
+
+/// Match the heuristic in `elab::is_case_head`. Duplicated here so
+/// `typecheck` doesn't depend on a private item.
+fn is_case_head_str(name: &str) -> bool {
+    if name.len() < 2 {
+        return false;
+    }
+    let first = name.bytes().next().unwrap();
+    if !(first.is_ascii_uppercase() || first == b'_') {
+        return false;
+    }
+    let mut saw_letter = false;
+    for b in name.bytes() {
+        if b.is_ascii_alphabetic() {
+            saw_letter = true;
+            if b.is_ascii_lowercase() {
+                return false;
+            }
+        }
+    }
+    saw_letter
 }
 
 /// Convenience alias for the type we use internally — directly the
 /// `spectec_ast` form so the converter doesn't need any further
 /// translation.
-pub type Typ = spectec_ast::SpecTecTyp;
+pub type Typ = ast::SpecTecTyp;
 
 /// Type used as a placeholder when we can't infer (e.g. for `Raw`
 /// fallbacks or sentinel values). Distinct from a literal `Bool`
@@ -120,7 +176,7 @@ pub fn unknown_typ() -> Typ {
 /// inserted, etc., though the current implementation only covers
 /// literal types and `Var` lookups; the rest is incremental.
 pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
-    use spectec_ast::SpecTecNumTyp;
+    use ast::SpecTecNumTyp;
     match e {
         Expr::Var { span, name } => {
             let t = lookup_var(env, &name);
@@ -142,7 +198,7 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
             Expr::Eps { span },
             Typ::Iter {
                 t1: Box::new(unknown_typ()),
-                it: vec![spectec_ast::SpecTecIter::List],
+                it: vec![ast::SpecTecIter::List],
             },
         ),
         Expr::Tup { span, items } => {
@@ -151,7 +207,7 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
             for item in items {
                 let (item, t) = infer_exp(env, item);
                 new_items.push(item);
-                binds.push(spectec_ast::SpecTecTypBind::Bind {
+                binds.push(ast::SpecTecTypBind::Bind {
                     id: "_".to_string(),
                     typ: t,
                 });
@@ -205,10 +261,10 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
         Expr::Iter { span, inner, kind, bindings } => {
             let (inner, t_inner) = infer_exp(env, *inner);
             let it = match &kind {
-                crate::elab::IterKind::Opt => spectec_ast::SpecTecIter::Opt,
-                crate::elab::IterKind::Star => spectec_ast::SpecTecIter::List,
-                crate::elab::IterKind::Plus => spectec_ast::SpecTecIter::List1,
-                crate::elab::IterKind::Length(_) => spectec_ast::SpecTecIter::List, // approx
+                crate::elab::IterKind::Opt => ast::SpecTecIter::Opt,
+                crate::elab::IterKind::Star => ast::SpecTecIter::List,
+                crate::elab::IterKind::Plus => ast::SpecTecIter::List1,
+                crate::elab::IterKind::Length(_) => ast::SpecTecIter::List, // approx
             };
             let t = Typ::Iter {
                 t1: Box::new(t_inner),
@@ -225,16 +281,15 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
             )
         }
         Expr::Case { span, head, args } => {
-            // Recurse on args, but we don't yet look up the
-            // constructor's signature so the result type is unknown.
             let new_args = args.into_iter().map(|a| infer_exp(env, a).0).collect();
+            let t = env.ctors.get(&head).cloned().unwrap_or_else(unknown_typ);
             (
                 Expr::Case {
                     span,
                     head,
                     args: new_args,
                 },
-                unknown_typ(),
+                t,
             )
         }
         // For the rest, pass through and report `unknown` for now.
@@ -312,10 +367,10 @@ fn widen(a: OpType, b: OpType) -> OpType {
 fn typ_to_optyp(t: &Typ) -> Option<OpType> {
     match t {
         Typ::Bool => Some(OpType::Bool),
-        Typ::Num(spectec_ast::SpecTecNumTyp::Nat) => Some(OpType::Nat),
-        Typ::Num(spectec_ast::SpecTecNumTyp::Int) => Some(OpType::Int),
-        Typ::Num(spectec_ast::SpecTecNumTyp::Rat) => Some(OpType::Rat),
-        Typ::Num(spectec_ast::SpecTecNumTyp::Real) => Some(OpType::Real),
+        Typ::Num(ast::SpecTecNumTyp::Nat) => Some(OpType::Nat),
+        Typ::Num(ast::SpecTecNumTyp::Int) => Some(OpType::Int),
+        Typ::Num(ast::SpecTecNumTyp::Rat) => Some(OpType::Rat),
+        Typ::Num(ast::SpecTecNumTyp::Real) => Some(OpType::Real),
         _ => None,
     }
 }
@@ -323,18 +378,126 @@ fn typ_to_optyp(t: &Typ) -> Option<OpType> {
 fn optyp_to_typ(o: &OpType) -> Typ {
     match o {
         OpType::Bool => Typ::Bool,
-        OpType::Nat => Typ::Num(spectec_ast::SpecTecNumTyp::Nat),
-        OpType::Int => Typ::Num(spectec_ast::SpecTecNumTyp::Int),
-        OpType::Rat => Typ::Num(spectec_ast::SpecTecNumTyp::Rat),
-        OpType::Real => Typ::Num(spectec_ast::SpecTecNumTyp::Real),
+        OpType::Nat => Typ::Num(ast::SpecTecNumTyp::Nat),
+        OpType::Int => Typ::Num(ast::SpecTecNumTyp::Int),
+        OpType::Rat => Typ::Num(ast::SpecTecNumTyp::Rat),
+        OpType::Real => Typ::Num(ast::SpecTecNumTyp::Real),
     }
 }
 
-/// Bidirectional check: infer `e`'s type, return the refined `Expr`.
-/// In a later slice this'll also insert `Sub` coercion if needed.
+/// Bidirectional check (no expected type): infer `e`'s type, return
+/// the refined `Expr`. Use [`check_exp_against`] when you know the
+/// position's expected type and want `Sub` coercion inserted on
+/// subtype mismatch.
 pub fn check_exp(env: &TypeEnv, e: Expr) -> Expr {
     let (e, _t) = infer_exp(env, e);
     e
+}
+
+/// Bidirectional check (with expected type): infer `e`'s type, then
+/// either return `e` unchanged (when its type equiv-`expected`) or
+/// wrap it in `Expr::Sub` (when `actual <: expected` but not
+/// equivalent). Mirrors OCaml's `elab_exp env e expected_t`.
+pub fn check_exp_against(env: &TypeEnv, e: Expr, expected: &Typ) -> Expr {
+    let (e, actual) = infer_exp(env, e);
+    let span = e.span();
+    if is_unknown(&actual) || equiv_typ(&actual, expected) {
+        return e;
+    }
+    if sub_typ(env, &actual, expected) {
+        Expr::Sub {
+            span,
+            from_ty: actual,
+            to_ty: expected.clone(),
+            e: Box::new(e),
+        }
+    } else {
+        // No subtype relation — return as-is (no coercion). A real
+        // typechecker would diagnose; we stay lenient to keep the
+        // pipeline producing output on the corpus.
+        e
+    }
+}
+
+/// `Typ::Bool` is the sentinel `unknown_typ` returns. Treat it as
+/// "no information" for subtype-coercion purposes — otherwise every
+/// unresolved `Var` would trigger a Bool-to-something coercion.
+fn is_unknown(t: &Typ) -> bool {
+    matches!(t, Typ::Bool)
+}
+
+/// Type equivalence. Mirrors OCaml's `equiv_typ`.
+///
+/// Currently structural equality. SpecTec has additional rules
+/// (e.g. expanding type aliases) — those would land here when we
+/// model type-alias unfolding.
+pub fn equiv_typ(t1: &Typ, t2: &Typ) -> bool {
+    t1 == t2
+}
+
+/// Subtype check. Mirrors OCaml's `sub_typ`.
+///
+/// Rules:
+/// - reflexivity: `T <: T`
+/// - numeric promotion: `Nat <: Int <: Rat <: Real`
+/// - singleton lifts: `T <: T?`, `T <: T*`, `T <: T+`
+/// - iteration lifts: `T+ <: T*` (a nonempty list is a list) and
+///   `T <: T?` etc. extended to wrapping
+/// - iteration covariance: `Iter T <: Iter T'` when `T <: T'` (same
+///   iter)
+///
+/// Variant subtyping (`syntax a/syn = | numtype | reftype` lifting
+/// `numtype <: a`) is left for the next slice once we thread the
+/// `MergedSyntax` info through.
+pub fn sub_typ(env: &TypeEnv, t1: &Typ, t2: &Typ) -> bool {
+    if equiv_typ(t1, t2) {
+        return true;
+    }
+    match (t1, t2) {
+        // Numeric promotion.
+        (Typ::Num(a), Typ::Num(b)) => num_promotes(a, b),
+        // T+ <: T* — a nonempty list is a list. Also T+ <: T?+ etc.
+        // (any wider iter shape).
+        (
+            Typ::Iter { t1: t1_inner, it: it1 },
+            Typ::Iter { t1: t2_inner, it: it2 },
+        ) if it1.len() == 1 && it2.len() == 1 => {
+            iter_widens(&it1[0], &it2[0]) && sub_typ(env, t1_inner, t2_inner)
+        }
+        // Singleton T lifts to T?, T*, T+ (when iter rank matches).
+        (_, Typ::Iter { t1: t2_inner, it }) if it.len() == 1 => {
+            matches!(
+                it[0],
+                ast::SpecTecIter::Opt | ast::SpecTecIter::List | ast::SpecTecIter::List1
+            ) && sub_typ(env, t1, t2_inner)
+        }
+        _ => false,
+    }
+}
+
+/// `iter_widens(from, to)`: when can a `from`-shaped iteration be
+/// promoted to a `to`-shaped one? Currently `List1 <: List` (T+ <:
+/// T*); other shapes only relate to themselves.
+fn iter_widens(from: &ast::SpecTecIter, to: &ast::SpecTecIter) -> bool {
+    use ast::SpecTecIter::*;
+    match (from, to) {
+        (a, b) if a == b => true,
+        (List1, List) => true, // T+ <: T*
+        _ => false,
+    }
+}
+
+fn num_promotes(from: &ast::SpecTecNumTyp, to: &ast::SpecTecNumTyp) -> bool {
+    use ast::SpecTecNumTyp::*;
+    let rank = |t: &ast::SpecTecNumTyp| -> u8 {
+        match t {
+            Nat => 0,
+            Int => 1,
+            Rat => 2,
+            Real => 3,
+        }
+    };
+    rank(from) <= rank(to)
 }
 
 /// Look up a metavariable's declared type. Strips trailing primes
@@ -414,7 +577,7 @@ mod tests {
         let env = build_env(&doc, &ctx);
         // R has 3 operands: context, t, t — should be a Tup type.
         let r = env.relations.get("R").unwrap();
-        assert!(matches!(r, spectec_ast::SpecTecTyp::Tup { ets } if ets.len() == 3));
+        assert!(matches!(r, ast::SpecTecTyp::Tup { ets } if ets.len() == 3));
     }
 
     #[test]
@@ -426,7 +589,7 @@ mod tests {
         let env = build_env(&doc, &ctx);
         let sig = env.defs.get("min").unwrap();
         assert_eq!(sig.params.len(), 2);
-        assert!(matches!(sig.ret, spectec_ast::SpecTecTyp::Num(_)));
+        assert!(matches!(sig.ret, ast::SpecTecTyp::Num(_)));
     }
 
     #[test]
@@ -460,7 +623,7 @@ mod tests {
                 name: "C".to_string(),
             },
         );
-        assert!(matches!(t, spectec_ast::SpecTecTyp::Var { x, .. } if x == "t"));
+        assert!(matches!(t, ast::SpecTecTyp::Var { x, .. } if x == "t"));
     }
 
     #[test]
@@ -481,7 +644,7 @@ mod tests {
                 },
             );
             assert!(
-                matches!(&t, spectec_ast::SpecTecTyp::Var { x, .. } if x == "t"),
+                matches!(&t, ast::SpecTecTyp::Var { x, .. } if x == "t"),
                 "var {name} should resolve to type `t`"
             );
         }
@@ -500,7 +663,7 @@ mod tests {
         );
         assert!(matches!(
             t,
-            spectec_ast::SpecTecTyp::Num(spectec_ast::SpecTecNumTyp::Nat)
+            ast::SpecTecTyp::Num(ast::SpecTecNumTyp::Nat)
         ));
     }
 
@@ -524,7 +687,7 @@ mod tests {
                 ],
             },
         );
-        let spectec_ast::SpecTecTyp::Tup { ets } = t else {
+        let ast::SpecTecTyp::Tup { ets } = t else {
             panic!("expected Tup");
         };
         assert_eq!(ets.len(), 2);
@@ -557,7 +720,7 @@ mod tests {
         assert!(matches!(ty, OpType::Int));
         assert!(matches!(
             t,
-            Typ::Num(spectec_ast::SpecTecNumTyp::Int)
+            Typ::Num(ast::SpecTecNumTyp::Int)
         ));
     }
 
@@ -635,6 +798,6 @@ mod tests {
             },
         );
         // Falls back to unknown_typ (currently SpecTecTyp::Bool).
-        assert!(matches!(t, spectec_ast::SpecTecTyp::Bool));
+        assert!(matches!(t, ast::SpecTecTyp::Bool));
     }
 }

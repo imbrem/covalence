@@ -18,7 +18,7 @@ use covalence_spectec::{
     parse::parse,
     source::SourceMap,
 };
-use spectec_ast::{SpecTecDef, SpecTecExp, SpecTecRule};
+use spectec_ast::{SpecTecDef, SpecTecExp, SpecTecOpTyp, SpecTecRule};
 
 fn assets_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -195,6 +195,19 @@ fn diff_against_wasm_spec_ast() {
     let our_total_prods = count_total_prods(&ours);
     let their_total_prods = count_total_prods(&reference);
     eprintln!("  Grammar prods: ours {our_total_prods}, theirs {their_total_prods}");
+
+    // Operator-type stats: how many Un/Bin/Cmp do we have, and how
+    // many have a non-default (`Nat`) operator-type field?
+    let (ours_ops, ours_refined) = count_op_types(&ours);
+    let (their_ops, their_refined) = count_op_types(&reference);
+    eprintln!(
+        "  Op types (Un/Bin/Cmp): ours {ours_refined} non-Nat of {ours_ops}; \
+         theirs {their_refined} non-Nat of {their_ops}"
+    );
+
+    let ours_sub = count_sub_nodes(&ours);
+    let their_sub = count_sub_nodes(&reference);
+    eprintln!("  Sub coercions: ours {ours_sub}, theirs {their_sub}");
 
     let arity_report = arity_match_report(&ours, &reference);
     eprintln!("  per-kind arity match (same body-count for same-name def):");
@@ -514,6 +527,198 @@ fn count_total_prods(defs: &[SpecTecDef]) -> usize {
         }
     }
     for d in defs { walk(d, &mut n); }
+    n
+}
+
+/// Walk every Un/Bin/Cmp anywhere inside the def list (recursing
+/// through Rec). Returns (total_count, count_with_non_default_optyp).
+/// Default = `Num(Nat)`. Anything else (Int, Rat, Real, Bool) is
+/// considered "refined."
+fn count_op_types(defs: &[SpecTecDef]) -> (usize, usize) {
+    let mut total = 0usize;
+    let mut refined = 0usize;
+    fn refined_op(t: &SpecTecOpTyp) -> bool {
+        !matches!(t, SpecTecOpTyp::Num(spectec_ast::SpecTecNumTyp::Nat))
+    }
+    fn walk_exp(e: &SpecTecExp, total: &mut usize, refined: &mut usize) {
+        use SpecTecExp as E;
+        match e {
+            E::Un { t, e2, .. } => {
+                *total += 1;
+                if refined_op(t) {
+                    *refined += 1;
+                }
+                walk_exp(e2, total, refined);
+            }
+            E::Bin { t, e1, e2, .. } | E::Cmp { t, e1, e2, .. } => {
+                *total += 1;
+                if refined_op(t) {
+                    *refined += 1;
+                }
+                walk_exp(e1, total, refined);
+                walk_exp(e2, total, refined);
+            }
+            E::Idx { e1, e2 } | E::Comp { e1, e2 } | E::Mem { e1, e2 }
+            | E::Cat { e1, e2 } => {
+                walk_exp(e1, total, refined);
+                walk_exp(e2, total, refined);
+            }
+            E::Slice { e1, e2, e3 } => {
+                walk_exp(e1, total, refined);
+                walk_exp(e2, total, refined);
+                walk_exp(e3, total, refined);
+            }
+            E::Upd { e1, e2, .. } | E::Ext { e1, e2, .. } => {
+                walk_exp(e1, total, refined);
+                walk_exp(e2, total, refined);
+            }
+            E::Str { efs } => {
+                for spectec_ast::SpecTecExpField::Field { e, .. } in efs {
+                    walk_exp(e, total, refined);
+                }
+            }
+            E::Dot { e1, .. } | E::Len { e1 } | E::Lift { e1 } | E::Unopt { e1 }
+            | E::Cvt { e1, .. } | E::Sub { e1, .. } | E::Proj { e1, .. }
+            | E::Uncase { e1, .. } | E::Iter { e1, .. } => {
+                walk_exp(e1, total, refined);
+            }
+            E::Tup { es } | E::List { es } => {
+                for e in es {
+                    walk_exp(e, total, refined);
+                }
+            }
+            E::Case { e1, .. } => walk_exp(e1, total, refined),
+            E::Opt { eo: Some(e) } => walk_exp(e, total, refined),
+            E::Opt { eo: None } | E::Bool { .. } | E::Num { .. } | E::Text { .. }
+            | E::Var { .. } | E::Call { .. } => {}
+        }
+    }
+    fn walk_prem(p: &spectec_ast::SpecTecPrem, total: &mut usize, refined: &mut usize) {
+        use spectec_ast::SpecTecPrem as P;
+        match p {
+            P::Rule { e, .. } | P::If { e } => walk_exp(e, total, refined),
+            P::Let { e1, e2 } => {
+                walk_exp(e1, total, refined);
+                walk_exp(e2, total, refined);
+            }
+            P::Else => {}
+            P::Iter { pr1, .. } => walk_prem(pr1, total, refined),
+        }
+    }
+    fn walk_def(d: &SpecTecDef, total: &mut usize, refined: &mut usize) {
+        match d {
+            SpecTecDef::Rel { rules, .. } => {
+                for SpecTecRule::Rule { e, prs, .. } in rules {
+                    walk_exp(e, total, refined);
+                    for p in prs {
+                        walk_prem(p, total, refined);
+                    }
+                }
+            }
+            SpecTecDef::Dec { clauses, .. } => {
+                for spectec_ast::SpecTecClause::Clause { e, prs, .. } in clauses {
+                    walk_exp(e, total, refined);
+                    for p in prs {
+                        walk_prem(p, total, refined);
+                    }
+                }
+            }
+            SpecTecDef::Rec { ds } => {
+                for d in ds {
+                    walk_def(d, total, refined);
+                }
+            }
+            _ => {}
+        }
+    }
+    for d in defs {
+        walk_def(d, &mut total, &mut refined);
+    }
+    (total, refined)
+}
+
+fn count_sub_nodes(defs: &[SpecTecDef]) -> usize {
+    let mut n = 0usize;
+    fn walk_exp(e: &SpecTecExp, n: &mut usize) {
+        use SpecTecExp as E;
+        match e {
+            E::Sub { e1, .. } => {
+                *n += 1;
+                walk_exp(e1, n);
+            }
+            E::Un { e2, .. } | E::Len { e1: e2 } | E::Lift { e1: e2 }
+            | E::Unopt { e1: e2 } | E::Cvt { e1: e2, .. } | E::Dot { e1: e2, .. }
+            | E::Proj { e1: e2, .. } | E::Uncase { e1: e2, .. }
+            | E::Iter { e1: e2, .. } | E::Case { e1: e2, .. } => walk_exp(e2, n),
+            E::Bin { e1, e2, .. } | E::Cmp { e1, e2, .. } | E::Idx { e1, e2, .. }
+            | E::Comp { e1, e2 } | E::Mem { e1, e2 } | E::Cat { e1, e2 } => {
+                walk_exp(e1, n);
+                walk_exp(e2, n);
+            }
+            E::Slice { e1, e2, e3 } => {
+                walk_exp(e1, n);
+                walk_exp(e2, n);
+                walk_exp(e3, n);
+            }
+            E::Upd { e1, e2, .. } | E::Ext { e1, e2, .. } => {
+                walk_exp(e1, n);
+                walk_exp(e2, n);
+            }
+            E::Str { efs } => {
+                for spectec_ast::SpecTecExpField::Field { e, .. } in efs {
+                    walk_exp(e, n);
+                }
+            }
+            E::Tup { es } | E::List { es } => {
+                for e in es {
+                    walk_exp(e, n);
+                }
+            }
+            E::Opt { eo: Some(e) } => walk_exp(e, n),
+            _ => {}
+        }
+    }
+    fn walk_prem(p: &spectec_ast::SpecTecPrem, n: &mut usize) {
+        use spectec_ast::SpecTecPrem as P;
+        match p {
+            P::Rule { e, .. } | P::If { e } => walk_exp(e, n),
+            P::Let { e1, e2 } => {
+                walk_exp(e1, n);
+                walk_exp(e2, n);
+            }
+            P::Else => {}
+            P::Iter { pr1, .. } => walk_prem(pr1, n),
+        }
+    }
+    fn walk_def(d: &SpecTecDef, n: &mut usize) {
+        match d {
+            SpecTecDef::Rel { rules, .. } => {
+                for SpecTecRule::Rule { e, prs, .. } in rules {
+                    walk_exp(e, n);
+                    for p in prs {
+                        walk_prem(p, n);
+                    }
+                }
+            }
+            SpecTecDef::Dec { clauses, .. } => {
+                for spectec_ast::SpecTecClause::Clause { e, prs, .. } in clauses {
+                    walk_exp(e, n);
+                    for p in prs {
+                        walk_prem(p, n);
+                    }
+                }
+            }
+            SpecTecDef::Rec { ds } => {
+                for d in ds {
+                    walk_def(d, n);
+                }
+            }
+            _ => {}
+        }
+    }
+    for d in defs {
+        walk_def(d, &mut n);
+    }
     n
 }
 

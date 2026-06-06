@@ -1291,7 +1291,7 @@ mod tests {
         assert!(d.premises.is_empty());
         // RHS just contains `0`.
         assert_eq!(d.rhs.tokens.len(), 1);
-        assert!(matches!(d.rhs.tokens[0].token, Token::Nat(0)));
+        assert!(matches!(&d.rhs.tokens[0].token, Token::Nat(n) if n.is_zero()));
     }
 
     #[test]

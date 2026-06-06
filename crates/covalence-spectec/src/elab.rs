@@ -557,11 +557,15 @@ pub enum Expr {
     Raw(TokenRun),
 }
 
-/// Number literal — mirrors `spectec_ast::SpecTecNum`.
+/// Number literal. Mirrors `spectec_ast::SpecTecNum` structurally, but
+/// uses arbitrary-precision `covalence_types::Nat` / `Int` so source
+/// literals beyond `u64`/`i64` survive elaboration. The converter in
+/// [`crate::ast_doc`] clamps to `u64`/`i64` when emitting to
+/// `spectec_ast::SpecTecNum` (which uses bounded ints).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NumLit {
-    Nat(u64),
-    Int(i64),
+    Nat(covalence_types::Nat),
+    Int(covalence_types::Int),
     Rat(String),
     Real(String),
 }
@@ -1278,7 +1282,7 @@ fn classify_simple_expression(
             },
             Token::Nat(n) => Expr::Num {
                 span,
-                value: NumLit::Nat(*n),
+                value: NumLit::Nat(n.clone()),
             },
             Token::Text(t) => Expr::Text {
                 span,
@@ -1388,7 +1392,7 @@ fn pratt_leaf(
             }));
         }
         Token::Ident(name) => Expr::Var { span, name: name.clone() },
-        Token::Nat(n) => Expr::Num { span, value: NumLit::Nat(*n) },
+        Token::Nat(n) => Expr::Num { span, value: NumLit::Nat(n.clone()) },
         Token::Text(t) => Expr::Text { span, value: t.clone() },
         Token::Eps => Expr::Eps { span },
         Token::LParen => {

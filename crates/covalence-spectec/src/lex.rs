@@ -165,7 +165,7 @@ impl<'a> Lexer<'a> {
             }
             let text = std::str::from_utf8(&self.src[hex_start..hex_end])
                 .expect("hex digits are ASCII");
-            let n = u64::from_str_radix(text, 16).map_err(|e| {
+            let n = covalence_types::Nat::from_str_radix(text, 16).map_err(|e| {
                 Diagnostic::error(
                     Span::new(self.file, start as u32, self.pos),
                     format!("invalid hexadecimal literal: {e}"),
@@ -184,7 +184,7 @@ impl<'a> Lexer<'a> {
         }
         let end = self.pos as usize;
         let text = std::str::from_utf8(&self.src[start..end]).expect("decimal digits are ASCII");
-        let n: u64 = text.parse().map_err(|e| {
+        let n: covalence_types::Nat = text.parse().map_err(|e| {
             Diagnostic::error(
                 Span::new(self.file, start as u32, self.pos),
                 format!("invalid decimal literal: {e}"),
@@ -382,14 +382,18 @@ mod tests {
     #[test]
     fn decimal_and_hex_numbers() {
         let toks = lex_str("0 12 255 0x00 0xFF 0xdeadbeef");
-        assert_eq!(toks, vec![
-            Token::Nat(0),
-            Token::Nat(12),
-            Token::Nat(255),
-            Token::Nat(0x00),
-            Token::Nat(0xFF),
-            Token::Nat(0xdead_beef),
-        ]);
+        let n = |x: u64| Token::Nat(covalence_types::Nat::from(x));
+        assert_eq!(toks, vec![n(0), n(12), n(255), n(0x00), n(0xFF), n(0xdead_beef)]);
+    }
+
+    #[test]
+    fn arbitrary_precision_nat() {
+        // 2^65 — exceeds u64::MAX, must parse without truncation.
+        let big = "36893488147419103232";
+        let toks = lex_str(big);
+        assert_eq!(toks.len(), 1);
+        let Token::Nat(n) = &toks[0] else { panic!("expected Nat") };
+        assert_eq!(n.to_string(), big);
     }
 
     #[test]
@@ -464,7 +468,7 @@ mod tests {
         assert_eq!(toks, vec![
             Token::Dollar,
             Token::LParen,
-            Token::Nat(1),
+            Token::Nat(covalence_types::Nat::from(1u64)),
             Token::Plus,
             Token::Ident("n".into()),
             Token::RParen,

@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use num_bigint::BigUint;
 use num_integer::Integer;
-use num_traits::{One, Pow, Zero};
+use num_traits::{Num, One, Pow, Zero};
 
 use crate::{Int, NatConvertError, ParseError};
 
@@ -26,6 +26,14 @@ impl Nat {
 
     pub fn one() -> Self {
         Self(BigUint::one())
+    }
+
+    /// Parse a non-negative integer from `text` in the given `radix`
+    /// (2..=36). Returns an error on empty input or invalid digits.
+    pub fn from_str_radix(text: &str, radix: u32) -> Result<Self, ParseError> {
+        BigUint::from_str_radix(text, radix)
+            .map(Self)
+            .map_err(ParseError::new)
     }
 }
 

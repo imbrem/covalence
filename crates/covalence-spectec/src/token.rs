@@ -25,9 +25,13 @@ pub enum Token {
     /// is a letter or underscore. Subscripts (e.g. `t_1`) and primes
     /// (e.g. `C'`, `C''`) are kept as part of the identifier text.
     Ident(String),
-    /// Natural-number literal. Decimal or hexadecimal in source; stored
-    /// pre-parsed.
-    Nat(u64),
+    /// Natural-number literal. Decimal or hexadecimal in source.
+    /// Stored as an arbitrary-precision [`covalence_types::Nat`] —
+    /// SpecTec source literals are not bounded by any machine type.
+    /// The `spectec_ast` dump format clamps to `u64` downstream; we
+    /// preserve precision through elaboration and clamp only at the
+    /// converter boundary in [`crate::ast_doc`].
+    Nat(covalence_types::Nat),
     /// Text literal: `"..."` with simple escape handling (`\n`, `\t`,
     /// `\\`, `\"`).
     Text(String),

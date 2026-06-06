@@ -4,6 +4,7 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
+covalence-types = { path = "../covalence-types" }
 wasm_spec_ast = "1"
 spectec_ast = "2"
 spectec_ast_decode = "1"

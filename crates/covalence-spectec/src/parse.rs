@@ -555,13 +555,39 @@ fn parse_syntax_body(file: FileId, input: &mut &[Spanned]) -> Result<SyntaxBody,
     }
 
     // Variant or alias? Take everything up to the next top-level keyword,
-    // then look for `Pipe` at depth 0.
+    // then look for `Pipe` at depth 0. A body that starts with a
+    // case-head ident (uppercase / underscore-prefixed) and has no
+    // top-level pipe is a single-case variant (e.g.
+    // `syntax callframe = FRAME_ n {frame}`).
     let body_run = take_until_next_top(input);
     if contains_top_level_pipe(&body_run.tokens) {
         Ok(SyntaxBody::Variant(split_alts(&body_run)?))
+    } else if body_starts_with_case_head(&body_run.tokens) {
+        Ok(SyntaxBody::Variant(vec![Alt {
+            span: body_run.span,
+            body: body_run,
+            hints: Vec::new(),
+        }]))
     } else {
         Ok(SyntaxBody::Alias(body_run))
     }
+}
+
+/// True when the first token is an `Ident` whose name looks like a
+/// case-head (uppercase / leading-underscore). Mirrors the heuristic
+/// in `crate::elab::is_case_head`.
+fn body_starts_with_case_head(toks: &[Spanned]) -> bool {
+    let Some(Spanned { token: Token::Ident(n), .. }) = toks.first() else {
+        return false;
+    };
+    if n.len() < 2 {
+        return false;
+    }
+    let first = n.as_bytes()[0];
+    if !(first.is_ascii_uppercase() || first == b'_') {
+        return false;
+    }
+    n.bytes().all(|b| !b.is_ascii_alphabetic() || b.is_ascii_uppercase())
 }
 
 /// Parse a record body `{ FIELD ty [hints*], FIELD ty [hints*], ... }`.

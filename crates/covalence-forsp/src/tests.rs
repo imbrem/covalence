@@ -524,3 +524,140 @@ fn hash_in_foreign_print() {
     f.run(&format!("{h} print")).unwrap();
     assert_eq!(f.foreign.output.trim(), &h.to_string());
 }
+
+// --- content-addressed Forsp values ---
+
+#[test]
+fn content_hash_nil_is_stable() {
+    let mut f1 = Forsp::new();
+    let mut f2 = Forsp::new();
+    assert_eq!(
+        f1.heap.content_hash(ValRef::NIL),
+        f2.heap.content_hash(ValRef::NIL),
+    );
+}
+
+#[test]
+fn content_hash_disjoint_by_kind() {
+    // Same logical "value" under different cell tags must not collide.
+    let mut f = Forsp::new();
+    let nil_h = f.heap.content_hash(ValRef::NIL);
+    let zero = f.heap.int(0);
+    let zero_h = f.heap.content_hash(zero);
+    let empty_atom = f.heap.atom("");
+    let empty_atom_h = f.heap.content_hash(empty_atom);
+    let empty_blob = f.heap.blob(vec![]);
+    let empty_blob_h = f.heap.content_hash(empty_blob);
+    assert_ne!(nil_h, zero_h);
+    assert_ne!(nil_h, empty_atom_h);
+    assert_ne!(nil_h, empty_blob_h);
+    assert_ne!(empty_atom_h, empty_blob_h);
+}
+
+#[test]
+fn content_hash_structural_equality() {
+    // Two cons lists built independently with content-equal cells hash the
+    // same — that's the whole point of content addressing.
+    let mut f = Forsp::new();
+    let a1 = f.heap.int(1);
+    let a2 = f.heap.int(2);
+    let l1 = {
+        let tail = f.heap.cons(a2, ValRef::NIL);
+        f.heap.cons(a1, tail)
+    };
+    let l2 = {
+        let b1 = f.heap.int(1);
+        let b2 = f.heap.int(2);
+        let tail = f.heap.cons(b2, ValRef::NIL);
+        f.heap.cons(b1, tail)
+    };
+    assert_ne!(l1, l2);
+    assert_eq!(f.heap.content_hash(l1), f.heap.content_hash(l2));
+}
+
+#[test]
+fn content_hash_distinguishes_atom_from_blob() {
+    let mut f = Forsp::new();
+    let a = f.heap.atom("hello");
+    let b = f.heap.blob(b"hello".to_vec());
+    assert_ne!(f.heap.content_hash(a), f.heap.content_hash(b));
+}
+
+#[test]
+fn value_at_round_trips_a_list() {
+    let mut f = Forsp::new();
+    let v = f.read_one("(a (b 42) c)").unwrap();
+    let h = f.content_hash(v);
+    assert_eq!(f.heap.value_at(h), Some(v));
+}
+
+#[test]
+fn bang_hex_resolves_to_registered_value() {
+    let mut f = Forsp::new();
+    let v = f.read_one("(1 2 3)").unwrap();
+    let h = f.content_hash(v);
+    let src = format!("!{h}");
+    let resolved = f.read_one(&src).unwrap();
+    assert_eq!(resolved, v);
+}
+
+#[test]
+fn bang_hex_unknown_errors() {
+    let mut f = Forsp::new();
+    // Some never-hashed hash → reader rejects.
+    let h = O256::blob(b"definitely not in this heap");
+    let err = f.read_one(&format!("!{h}")).unwrap_err();
+    assert!(matches!(err, FError::Parse(_)));
+}
+
+#[test]
+fn bang_non_hex_falls_through_to_atom() {
+    // `!foo` (rest is not 64 hex chars) should NOT trigger lookup; it stays
+    // a regular atom that the evaluator can fail on as "unbound".
+    let mut f = Forsp::new();
+    let v = f.read_one("!foo").unwrap();
+    assert_eq!(f.heap.tag(v), Tag::Atom);
+    assert_eq!(f.heap.as_atom(v), "!foo");
+}
+
+#[test]
+fn closure_prints_as_bang_hex() {
+    let mut f = Forsp::new();
+    f.run("($x ^x 1 +) $inc  ^inc").unwrap();
+    let top = f.try_peek().unwrap();
+    assert_eq!(f.heap.tag(top), Tag::Closure);
+    let shown = f.show(top);
+    assert!(shown.starts_with('!'), "got {shown:?}");
+    assert_eq!(shown.len(), 1 + 64);
+}
+
+#[test]
+fn closure_print_then_read_recovers_it() {
+    let mut f = Forsp::new();
+    // Build a closure on the stack.
+    f.run("($x ^x 1 +) $inc  ^inc").unwrap();
+    let original = f.pop();
+    let shown = f.show(original);
+    // Read the `!HEX` form back and check it's the same closure.
+    let recovered = f.read_one(&shown).unwrap();
+    assert_eq!(recovered, original);
+    // It is still applicable.
+    let ten = f.heap.int(10);
+    f.push(ten);
+    f.push(recovered);
+    f.run("force").unwrap();
+    assert_eq!(f.pop_int(), 11);
+}
+
+#[test]
+fn structurally_equal_closures_share_a_hash() {
+    // Push two closures with content-equal body and env onto the stack.
+    let mut f = Forsp::new();
+    f.run("($x ^x) ($x ^x)").unwrap();
+    let b = f.pop();
+    let a = f.pop();
+    assert_ne!(a, b);
+    assert_eq!(f.heap.tag(a), Tag::Closure);
+    assert_eq!(f.heap.tag(b), Tag::Closure);
+    assert_eq!(f.heap.content_hash(a), f.heap.content_hash(b));
+}

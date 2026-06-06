@@ -1077,43 +1077,82 @@ fn typ_expr_to_spectec_args(alt: &Alt, ctx: &ElabContext) -> spectec_ast::SpecTe
 
 // ---------- grammar production splitting ----------
 
-/// Split a grammar production body on top-level `|` (Pipe) and emit
-/// one `SpecTecProd::Prod` per alt. Sym/value lowering is still sketch;
-/// the goal here is to get the *number* of prods to line up with OCaml.
+/// Split a grammar production body on top-level `|` and emit
+/// `SpecTecProd::Prod`s. `prev | ... | next` triples are collapsed
+/// into a single `Range`-symbol prod to match OCaml's grouping of
+/// e.g. `0x00 | ... | 0xFF` into one bounded-range production.
 fn split_grammar_prods(
     body: &crate::cst::TokenRun,
     ctx: &ElabContext,
 ) -> Vec<spectec_ast::SpecTecProd> {
     let chunks = split_top_level_pipe(&body.tokens);
-    chunks
-        .into_iter()
-        .map(|chunk| {
-            // Within each alt, split on top-level `=> ` (Eq GreaterThan):
-            // before is the symbol, after is the attribute expression.
-            let (sym_toks, attr_toks) = split_grammar_arrow(chunk);
-            let attr = match attr_toks {
-                Some(at) if !at.is_empty() => {
-                    let span = at
-                        .iter()
-                        .map(|s| s.span)
-                        .reduce(crate::source::Span::join)
-                        .unwrap_or(body.span);
-                    let tr = crate::cst::TokenRun {
-                        span,
-                        tokens: at.to_vec(),
-                    };
-                    token_run_to_expr(&tr, ctx)
-                }
-                _ => raw_sentinel(),
+    let mut prods = Vec::new();
+    let mut i = 0;
+    while i < chunks.len() {
+        if is_dotdotdot_alt(chunks[i]) && i > 0 && i + 1 < chunks.len() {
+            // Replace the previously-emitted prod for `chunks[i-1]`
+            // with a single Range prod spanning `prev .. next`.
+            prods.pop();
+            prods.push(make_range_prod(chunks[i - 1], chunks[i + 1], ctx, body.span));
+            i += 2; // skip the `...` and the upper-bound chunk
+        } else {
+            prods.push(chunk_to_prod(chunks[i], ctx, body.span));
+            i += 1;
+        }
+    }
+    prods
+}
+
+fn is_dotdotdot_alt(chunk: &[crate::token::Spanned]) -> bool {
+    chunk.len() == 1 && matches!(chunk[0].token, crate::token::Token::DotDotDot)
+}
+
+fn chunk_to_prod(
+    chunk: &[crate::token::Spanned],
+    ctx: &ElabContext,
+    _fallback_span: crate::source::Span,
+) -> spectec_ast::SpecTecProd {
+    let (sym_toks, attr_toks) = split_grammar_arrow(chunk);
+    let attr = match attr_toks {
+        Some(at) if !at.is_empty() => {
+            let span = at
+                .iter()
+                .map(|s| s.span)
+                .reduce(crate::source::Span::join)
+                .expect("non-empty chunk has at least one token");
+            let tr = crate::cst::TokenRun {
+                span,
+                tokens: at.to_vec(),
             };
-            spectec_ast::SpecTecProd::Prod {
-                ps: Vec::new(),
-                g: grammar_sym_from_tokens(sym_toks, ctx),
-                e: attr,
-                prs: Vec::new(),
-            }
-        })
-        .collect()
+            token_run_to_expr(&tr, ctx)
+        }
+        _ => raw_sentinel(),
+    };
+    spectec_ast::SpecTecProd::Prod {
+        ps: Vec::new(),
+        g: grammar_sym_from_tokens(sym_toks, ctx),
+        e: attr,
+        prs: Vec::new(),
+    }
+}
+
+fn make_range_prod(
+    lower: &[crate::token::Spanned],
+    upper: &[crate::token::Spanned],
+    ctx: &ElabContext,
+    fallback_span: crate::source::Span,
+) -> spectec_ast::SpecTecProd {
+    let g_lower = grammar_sym_from_tokens(lower, ctx);
+    let g_upper = grammar_sym_from_tokens(upper, ctx);
+    spectec_ast::SpecTecProd::Prod {
+        ps: Vec::new(),
+        g: spectec_ast::SpecTecSym::Range {
+            g1: Box::new(g_lower),
+            g2: Box::new(g_upper),
+        },
+        e: raw_sentinel(),
+        prs: Vec::new(),
+    }
 }
 
 fn split_top_level_pipe(toks: &[crate::token::Spanned]) -> Vec<&[crate::token::Spanned]> {

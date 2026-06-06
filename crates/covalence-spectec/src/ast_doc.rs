@@ -722,34 +722,16 @@ pub fn expr_to_spectec(e: &Expr, ctx: &ElabContext) -> spectec_ast::SpecTecExp {
             e1: Box::new(expr_to_spectec(e, ctx)),
             i: *index,
         },
-<<<<<<< HEAD
         Expr::Case { head, args, op, .. } => {
-            // For named case constructors OCaml uses just `[head]` as
-            // the MixOp — the arg structure goes into `e1` as a `Tup`.
-            // For headless single-case variants synthesised by the
-            // type-checker (e.g. `state = store; frame`), the `op`
-            // field carries the actual MixOp parts (`["", ";", ""]`)
-            // so we don't collapse to `[head]`.
-            let op = match op {
-                Some(parts) => spectec_ast::MixOp::new(parts.clone()),
-                None => mixop_from_name(head),
-            };
-=======
-        Expr::Case { head, args, .. } => {
             // Special case: the synthetic `__arrow_mixfix` head names
             // both long (`T ->_(M) U`) and short (`T -> U`) forms of
             // the headless `instrtype` mixfix. Emit OCaml's `%->_%%`
             // mixop and inject an empty-list middle for the short
-            // form so both shapes converge on a 3-arg tup.
-            //
-            // OCaml additionally wraps the two resulttype slots in
-            // the headless `resulttype` case constructor (mixop
-            // `["", ""]` / `%`) — `eps` becomes `(case "%" (tup (list)))`
-            // and `t_1*` becomes `(case "%" (tup (iter t_1 ...)))`.
-            // Mirror that wrap here so the converter's output matches
-            // the OCaml dump for arrow-typed conclusions.
+            // form so both shapes converge on a 3-arg tup. OCaml
+            // additionally wraps the two resulttype slots in the
+            // headless `resulttype` case constructor (mixop `%`).
             if head == crate::elab::ARROW_MIXFIX_OP {
-                let op = spectec_ast::MixOp::new(vec![
+                let arrow_op = spectec_ast::MixOp::new(vec![
                     String::new(),
                     "->_".to_string(),
                     String::new(),
@@ -769,8 +751,6 @@ pub fn expr_to_spectec(e: &Expr, ctx: &ElabContext) -> spectec_ast::SpecTecExp {
                     args.iter().map(|a| expr_to_spectec(a, ctx)).collect();
                 let (left, middle, right) = match es.len() {
                     2 => {
-                        // Short form `T -> U`: synthesise an empty
-                        // localidx list for the middle slot.
                         let r = es.pop().unwrap();
                         let l = es.pop().unwrap();
                         (l, S::List { es: Vec::new() }, r)
@@ -781,13 +761,9 @@ pub fn expr_to_spectec(e: &Expr, ctx: &ElabContext) -> spectec_ast::SpecTecExp {
                         let l = es.pop().unwrap();
                         (l, m, r)
                     }
-                    // Shouldn't happen — Pratt only constructs 2-arg
-                    // or 3-arg trees for ARROW_MIXFIX_OP. Fall back to
-                    // a plain tup so any unexpected shape stays
-                    // visible rather than crashing.
                     _ => {
                         return S::Case {
-                            op,
+                            op: arrow_op,
                             e1: Box::new(S::Tup { es }),
                         };
                     }
@@ -796,15 +772,18 @@ pub fn expr_to_spectec(e: &Expr, ctx: &ElabContext) -> spectec_ast::SpecTecExp {
                     es: vec![wrap_resulttype(left), middle, wrap_resulttype(right)],
                 };
                 return S::Case {
-                    op,
+                    op: arrow_op,
                     e1: Box::new(inner),
                 };
             }
-            // For case constructors OCaml uses just `[head]` as the
-            // MixOp — the arg structure goes into `e1` as a `Tup`.
-            // (Relations' MixOps remain full mixfix templates.)
-            let op = mixop_from_name(head);
->>>>>>> 3f7407d (spectec: arrow mixfix with optional middle slot + operand iter bindings (task #33))
+            // For named case constructors OCaml uses just `[head]` as
+            // the MixOp. For headless single-case variants synthesised
+            // by the type-checker (e.g. `state = store; frame`), the
+            // `op` field carries the actual MixOp parts (`["", ";", ""]`).
+            let op = match op {
+                Some(parts) => spectec_ast::MixOp::new(parts.clone()),
+                None => mixop_from_name(head),
+            };
             let inner = S::Tup {
                 es: args.iter().map(|a| expr_to_spectec(a, ctx)).collect(),
             };

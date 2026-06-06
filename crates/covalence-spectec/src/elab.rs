@@ -1584,9 +1584,10 @@ fn attach_iter_bindings_to_expr(e: Expr, sources: &IterSources) -> Expr {
                 bindings,
             }
         }
-        Expr::Case { span, head, args } => Expr::Case {
+        Expr::Case { span, head, args, op } => Expr::Case {
             span,
             head,
+            op,
             args: args
                 .into_iter()
                 .map(|a| attach_iter_bindings_to_expr(a, sources))

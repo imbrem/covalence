@@ -162,6 +162,29 @@ impl GitStore {
             .map_err(|e| StoreError::Io(e.to_string()))
     }
 
+    /// Find a git OID whose data hashes to `target`.
+    ///
+    /// Multiple git OIDs can in principle share the same `blob_hash`
+    /// (e.g. a tree and a blob with byte-identical payloads); this returns the
+    /// lexicographically-smallest OID for determinism. Shallow entries
+    /// (`blob_hash IS NULL`) are skipped.
+    pub fn git_oid_for_blob_hash(
+        &self,
+        target: &O256,
+    ) -> Result<Option<gix_hash::ObjectId>, StoreError> {
+        let conn = self.conn.lock().unwrap();
+        let row: Option<Vec<u8>> = conn
+            .query_row(
+                "SELECT git_oid FROM git_objects
+                 WHERE blob_hash = ?1
+                 ORDER BY git_oid ASC LIMIT 1",
+                [target.as_bytes().as_slice()],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .ok();
+        Ok(row.map(|bytes| gix_hash::ObjectId::from_bytes_or_panic(&bytes)))
+    }
+
     /// Retrieve all persisted covalence tree hashes.
     ///
     /// These are O256 keyed hashes stored in the `cov_trees` table,

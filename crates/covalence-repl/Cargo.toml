@@ -8,6 +8,9 @@ default = []
 fetch = ["dep:ureq"]
 arrow = ["dep:covalence-arrow"]
 parquet = ["dep:covalence-parquet", "dep:covalence-object", "arrow"]
+# Adds git-* REPL commands that query and extend the GitStore SHA1 → O256
+# mapping produced by `cov cog clone`.
+cogit = ["dep:covalence-git"]
 
 [dependencies]
 covalence-forsp = { path = "../covalence-forsp" }
@@ -17,6 +20,7 @@ covalence-shell = { path = "../covalence-shell" }
 covalence-arrow = { path = "../covalence-arrow", optional = true }
 covalence-parquet = { path = "../covalence-parquet", optional = true }
 covalence-object = { path = "../covalence-object", optional = true, default-features = false }
+covalence-git = { path = "../covalence-git", optional = true, features = ["clone"] }
 
 # fetch feature: URL fetching for store-url command
 ureq = { version = "3", optional = true }

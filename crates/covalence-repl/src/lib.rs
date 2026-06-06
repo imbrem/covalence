@@ -12,6 +12,11 @@ struct ReplPrims {
     allow_fs: bool,
     allow_fetch: bool,
     output: String,
+    /// Optional GitStore for the `git-*` commands. `git-open` populates it;
+    /// every other `git-*` command errors with a clear "open a store first"
+    /// message until it is set.
+    #[cfg(feature = "cogit")]
+    git_store: Option<covalence_git::store::GitStore>,
 }
 
 impl ForeignPrims for ReplPrims {
@@ -31,6 +36,18 @@ impl ForeignPrims for ReplPrims {
             "arrow-stats" => self.cmd_arrow_stats(ctx),
             #[cfg(feature = "parquet")]
             "parquet-stats" => self.cmd_parquet_stats(ctx),
+            #[cfg(feature = "cogit")]
+            "git-open" => self.cmd_git_open(ctx),
+            #[cfg(feature = "cogit")]
+            "git-close" => self.cmd_git_close(ctx),
+            #[cfg(feature = "cogit")]
+            "git-info" => self.cmd_git_info(ctx),
+            #[cfg(feature = "cogit")]
+            "git-resolve" => self.cmd_git_resolve(ctx),
+            #[cfg(feature = "cogit")]
+            "git-reverse" => self.cmd_git_reverse(ctx),
+            #[cfg(feature = "cogit")]
+            "git-store-blob" => self.cmd_git_store_blob(ctx),
             _ => return Ok(false),
         };
         result.map(|()| true)
@@ -186,6 +203,24 @@ impl ReplPrims {
             "<hash> parquet-stats",
             "parse blob as Parquet (auto-detects hive-partitioned tree)",
         ));
+        #[cfg(feature = "cogit")]
+        {
+            commands.push(("\"path\" git-open", "open a GitStore (e.g. from cov cog clone)"));
+            commands.push(("git-close", "drop the open GitStore handle"));
+            commands.push(("git-info", "show counts for the open GitStore"));
+            commands.push((
+                "\"<oid-hex>\" git-resolve",
+                "look up the O256 a git OID maps to",
+            ));
+            commands.push((
+                "<O256> git-reverse",
+                "find a git OID whose blob hashes to this O256",
+            ));
+            commands.push((
+                "\"data\" git-store-blob",
+                "register data as a git blob; push git OID",
+            ));
+        }
         let width = commands.iter().map(|(cmd, _)| cmd.len()).max().unwrap_or(0);
         let help = commands
             .iter()
@@ -223,6 +258,113 @@ impl ReplPrims {
         Ok(())
     }
 
+    // --- cogit (GitStore SHA1 → O256 map) commands ---
+
+    /// Look up the current GitStore or error.
+    #[cfg(feature = "cogit")]
+    fn git_store(&self) -> Result<&covalence_git::store::GitStore, FError> {
+        self.git_store
+            .as_ref()
+            .ok_or_else(|| FError::Parse("git store not open; use `\"path\" git-open` first".into()))
+    }
+
+    /// `git-open`: path-blob → (open SQLite GitStore at the given path)
+    #[cfg(feature = "cogit")]
+    fn cmd_git_open(&mut self, ctx: &mut FCtx<'_>) -> Result<(), FError> {
+        let path_bytes = ctx.try_pop_blob()?;
+        let path = std::str::from_utf8(&path_bytes)
+            .map_err(|e| FError::Parse(format!("path is not valid UTF-8: {e}")))?;
+        let store = covalence_git::store::GitStore::open(
+            path,
+            covalence_hash::gix_hash::Kind::Sha1,
+        )
+        .map_err(|e| FError::Parse(format!("open git store: {e}")))?;
+        self.emit(&format!(
+            "opened git store: {path} ({} object(s))",
+            store.len()
+        ));
+        self.git_store = Some(store);
+        Ok(())
+    }
+
+    /// `git-close`: → (drop the open GitStore handle)
+    #[cfg(feature = "cogit")]
+    fn cmd_git_close(&mut self, _ctx: &mut FCtx<'_>) -> Result<(), FError> {
+        if self.git_store.take().is_some() {
+            self.emit("closed git store");
+        } else {
+            self.emit("no git store was open");
+        }
+        Ok(())
+    }
+
+    /// `git-info`: → (prints count and covalence-tree count)
+    #[cfg(feature = "cogit")]
+    fn cmd_git_info(&mut self, _ctx: &mut FCtx<'_>) -> Result<(), FError> {
+        let store = self.git_store()?;
+        let total = store.len();
+        let cov_trees = store.cov_tree_hashes().len();
+        self.emit(&format!("git objects:    {total}"));
+        self.emit(&format!("covalence trees: {cov_trees}"));
+        Ok(())
+    }
+
+    /// `git-resolve`: oid-hex-blob → O256
+    /// Look up the O256 a git OID maps to. Errors if the OID is unknown or
+    /// only registered as a shallow placeholder (no data).
+    #[cfg(feature = "cogit")]
+    fn cmd_git_resolve(&mut self, ctx: &mut FCtx<'_>) -> Result<(), FError> {
+        use covalence_git::store::GitBackend;
+        let hex_bytes = ctx.try_pop_blob()?;
+        let oid = parse_git_oid(&hex_bytes)?;
+        let store = self.git_store()?;
+        let obj = store.read_object(&oid).map_err(|e| {
+            FError::Parse(format!("git OID {oid} not resolvable: {e}"))
+        })?;
+        // The store keys blobs by `O256::blob(data)`, which is exactly the
+        // mapping cog clone established.
+        ctx.push_hash(covalence_hash::O256::blob(&obj.data));
+        Ok(())
+    }
+
+    /// `git-reverse`: O256 → oid-hex-blob
+    /// Find a git OID whose data hashes to the given O256. If multiple git
+    /// OIDs share the same blob hash (rare — typically only blob vs tree
+    /// with identical payload), returns the lexicographically-smallest OID.
+    #[cfg(feature = "cogit")]
+    fn cmd_git_reverse(&mut self, ctx: &mut FCtx<'_>) -> Result<(), FError> {
+        let target = ctx.try_pop_hash()?;
+        let store = self.git_store()?;
+        let oid = store.git_oid_for_blob_hash(&target).map_err(|e| {
+            FError::Parse(format!("reverse lookup: {e}"))
+        })?;
+        match oid {
+            Some(oid) => ctx.push_blob(oid.to_string().into_bytes()),
+            None => return Err(FError::Parse(format!("no git OID maps to {target}"))),
+        }
+        Ok(())
+    }
+
+    /// `git-store-blob`: data-blob → oid-hex-blob
+    /// Write `data` to the open GitStore as a git blob object. Registers both
+    /// the SHA-1 OID and the implicit O256 (`O256::blob(data)`) mapping, so
+    /// it becomes visible to `git-resolve` and `git-reverse`. Pushes the
+    /// hex-encoded git OID.
+    #[cfg(feature = "cogit")]
+    fn cmd_git_store_blob(&mut self, ctx: &mut FCtx<'_>) -> Result<(), FError> {
+        use covalence_git::store::{GitBackend, GitObjectKind};
+        let data = ctx.try_pop_blob()?;
+        let store = self.git_store()?;
+        let oid = store
+            .write_object(GitObjectKind::Blob, &data)
+            .map_err(|e| FError::Parse(format!("write blob: {e}")))?;
+        // Also push the corresponding O256 into the backend so the rest of
+        // the REPL (`read`, `arrow-stats`, …) sees the same bytes.
+        let _ = self.backend.store_blob(&data).map_err(Self::backend_err)?;
+        ctx.push_blob(oid.to_string().into_bytes());
+        Ok(())
+    }
+
     /// `parquet-stats`: hash → (prints Parquet stats; if the hash is a tree,
     /// scans it as a hive-partitioned dataset, otherwise parses as a file)
     #[cfg(feature = "parquet")]
@@ -241,6 +383,16 @@ impl ReplPrims {
     }
 }
 
+/// Parse a git OID from its UTF-8 hex representation (40 chars for SHA-1).
+#[cfg(feature = "cogit")]
+fn parse_git_oid(bytes: &[u8]) -> Result<covalence_hash::gix_hash::ObjectId, FError> {
+    let s = std::str::from_utf8(bytes)
+        .map_err(|e| FError::Parse(format!("git OID is not valid UTF-8: {e}")))?;
+    let s = s.trim();
+    covalence_hash::gix_hash::ObjectId::from_hex(s.as_bytes())
+        .map_err(|e| FError::Parse(format!("invalid git OID {s:?}: {e}")))
+}
+
 /// A REPL session backed by a Forsp interpreter.
 pub struct Session {
     forsp: Forsp<ReplPrims>,
@@ -254,6 +406,8 @@ impl Session {
             allow_fs,
             allow_fetch,
             output: String::new(),
+            #[cfg(feature = "cogit")]
+            git_store: None,
         };
         Session {
             forsp: Forsp::new_with(prims),

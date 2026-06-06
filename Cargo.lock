@@ -1098,6 +1098,7 @@ version = "0.0.0"
 dependencies = [
  "covalence-arrow",
  "covalence-forsp",
+ "covalence-git",
  "covalence-hash",
  "covalence-object",
  "covalence-parquet",

@@ -1,3 +1,4 @@
+#[cfg(not(target_family = "wasm"))]
 use crate::VERSION_LONG;
 
 #[derive(clap::Args)]
@@ -32,6 +33,7 @@ pub enum ColorMode {
 }
 
 /// Check if parentheses are balanced (accounting for strings).
+#[cfg(not(target_family = "wasm"))]
 pub fn parens_balanced(input: &str) -> bool {
     let mut depth: i32 = 0;
     let mut in_string = false;

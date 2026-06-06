@@ -177,16 +177,18 @@ fn run_clone(args: CloneArgs) -> std::io::Result<()> {
         }
     }
     if !result.cov_trees.is_empty() {
-        println!("Trees (O256):");
-        for (git_oid, cov_hash) in &result.cov_trees {
-            println!("  {git_oid} -> {cov_hash}");
-        }
+        println!("Registered {} covalence tree(s)", result.cov_trees.len());
     }
     if !result.shallow_boundaries.is_empty() {
         println!("Shallow boundaries: {}", result.shallow_boundaries.len());
     }
     if let Some(ref path) = args.store {
         println!("Store: {}", path.display());
+        println!(
+            "Query the SHA1 → O256 map with `cov repl --standalone --store {}` and `\"{}\" git-open`.",
+            path.display(),
+            path.display(),
+        );
     } else {
         println!("Store: in-memory (objects will be discarded)");
     }

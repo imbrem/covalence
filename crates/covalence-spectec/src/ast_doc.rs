@@ -218,7 +218,7 @@ fn to_spectec_ast_flat(
             .merged
             .profiles
             .iter()
-            .filter_map(|prof| inst_for_profile(syn, prof, ctx))
+            .filter_map(|prof| inst_for_profile(syn, prof, ctx, doc))
             .collect();
         out.push(spectec_ast::SpecTecDef::Typ {
             x: syn.name.clone(),
@@ -1092,17 +1092,39 @@ fn inst_for_profile(
     syn: &DocSyntax,
     prof: &MergedProfile,
     ctx: &ElabContext,
+    doc: &Doc,
 ) -> Option<spectec_ast::SpecTecInst> {
     let dt = match prof.body.as_ref()? {
-        SyntaxBody::Alias(tr) => spectec_ast::SpecTecDefTyp::Alias {
-            typ: typ_expr_to_spectec(&tr.tokens, ctx),
-        },
+        SyntaxBody::Alias(tr) => {
+            // Aliases stay as-is — OCaml has inconsistent behaviour
+            // about alias-to-variant inlining (`Inn = addrtype` inlines
+            // to its variant; `Pnn = packtype` stays as alias) that
+            // we can't reliably mirror without reading more of
+            // `elab.ml`. Default to faithful Alias.
+            spectec_ast::SpecTecDefTyp::Alias {
+                typ: typ_expr_to_spectec(&tr.tokens, ctx),
+            }
+        }
         SyntaxBody::Variant(_) => {
             // Use the merged alts for this profile (splices `...` from
-            // sibling profiles in).
+            // sibling profiles in). Type-inclusion alts get expanded
+            // to their target's variant cases (OCaml convention).
             let alts = syn.merged.alts_for_profile(prof.profile.as_deref());
+            let mut expanded: Vec<Alt> = Vec::new();
+            for a in &alts {
+                if let Some(target) = type_inclusion_target(a, &ctx.type_names) {
+                    let mut visited = std::collections::HashSet::new();
+                    visited.insert(syn.name.clone());
+                    match expand_variant_alts(&target, doc, ctx, &mut visited) {
+                        Some(sub) => expanded.extend(sub),
+                        None => expanded.push(a.clone()),
+                    }
+                } else {
+                    expanded.push(a.clone());
+                }
+            }
             spectec_ast::SpecTecDefTyp::Variant {
-                tcs: alts.iter().map(|a| alt_to_typcase(a, ctx)).collect(),
+                tcs: expanded.iter().map(|a| alt_to_typcase(a, ctx)).collect(),
             }
         }
         SyntaxBody::Record(fields) => spectec_ast::SpecTecDefTyp::Struct {
@@ -1114,6 +1136,84 @@ fn inst_for_profile(
         as_: Vec::new(),
         dt,
     })
+}
+
+/// If the alt is a single ident matching a declared syntax name (a
+/// type-inclusion alt like `| numtype`), return that target name.
+fn type_inclusion_target(alt: &Alt, type_names: &std::collections::HashSet<String>) -> Option<String> {
+    let toks = &alt.body.tokens;
+    if toks.len() != 1 {
+        return None;
+    }
+    let crate::token::Token::Ident(n) = &toks[0].token else {
+        return None;
+    };
+    if type_names.contains(n) {
+        Some(n.clone())
+    } else {
+        None
+    }
+}
+
+/// If `toks` is a single ident matching a declared syntax name,
+/// return it (used for inlining alias-to-variant chains).
+fn single_type_name(
+    toks: &[crate::token::Spanned],
+    type_names: &std::collections::HashSet<String>,
+) -> Option<String> {
+    if toks.len() != 1 {
+        return None;
+    }
+    let crate::token::Token::Ident(n) = &toks[0].token else {
+        return None;
+    };
+    if type_names.contains(n) {
+        Some(n.clone())
+    } else {
+        None
+    }
+}
+
+/// Recursively expand a syntax name to its variant alts. Returns
+/// `Some(alts)` if the name resolves (transitively through aliases)
+/// to a variant body, `None` otherwise. `visited` guards against
+/// alias cycles.
+fn expand_variant_alts(
+    name: &str,
+    doc: &Doc,
+    ctx: &ElabContext,
+    visited: &mut std::collections::HashSet<String>,
+) -> Option<Vec<Alt>> {
+    if !visited.insert(name.to_string()) {
+        return None;
+    }
+    let syn = doc.syntax.iter().find(|s| s.name == name)?;
+    for prof in &syn.merged.profiles {
+        match prof.body.as_ref() {
+            Some(SyntaxBody::Variant(_)) => {
+                let alts = syn.merged.alts_for_profile(prof.profile.as_deref());
+                let mut out = Vec::new();
+                for a in &alts {
+                    if let Some(target) = type_inclusion_target(a, &ctx.type_names) {
+                        match expand_variant_alts(&target, doc, ctx, visited) {
+                            Some(sub) => out.extend(sub),
+                            None => out.push(a.clone()),
+                        }
+                    } else {
+                        out.push(a.clone());
+                    }
+                }
+                return Some(out);
+            }
+            Some(SyntaxBody::Alias(tr)) => {
+                if let Some(target) = single_type_name(&tr.tokens, &ctx.type_names) {
+                    return expand_variant_alts(&target, doc, ctx, visited);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Convert a variant alternative to a `SpecTecTypCase`. The case's

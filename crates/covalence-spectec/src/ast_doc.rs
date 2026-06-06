@@ -733,7 +733,7 @@ fn path_to_spectec(p: &ElabPath, ctx: &ElabContext) -> spectec_ast::SpecTecPath 
 
 /// Build a relation's operand-tuple type from its template's per-hole
 /// token slices. Single hole → bare type; multiple → `Tup` of binds.
-fn relation_operand_type(
+pub fn relation_operand_type(
     hole_toks: &[Vec<crate::token::Spanned>],
     ctx: &ElabContext,
 ) -> spectec_ast::SpecTecTyp {
@@ -793,7 +793,7 @@ fn syntax_params_to_specs(
 /// - `def $NAME[(args)] [: T]` → `Param::Def { x, ps, t }`
 /// - `gram NAME[ : T]` → `Param::Gram { x, t }`
 /// - anything else → `Param::Exp { x: "_", t: lower chunk }`
-fn chunk_to_syntax_param(chunk: &[crate::token::Spanned]) -> Option<spectec_ast::SpecTecParam> {
+pub fn chunk_to_syntax_param(chunk: &[crate::token::Spanned]) -> Option<spectec_ast::SpecTecParam> {
     use crate::token::Token::*;
     if chunk.is_empty() {
         return None;
@@ -872,7 +872,7 @@ fn placeholder_typ_for_chunk(toks: &[crate::token::Spanned]) -> spectec_ast::Spe
 /// `typ_expr_to_spectec` variant that doesn't depend on `ElabContext`.
 /// Used by parameter parsing (where the context isn't readily
 /// threaded). Treats every ident as a type-name `Var`.
-fn typ_expr_to_spectec_no_ctx(toks: &[crate::token::Spanned]) -> spectec_ast::SpecTecTyp {
+pub fn typ_expr_to_spectec_no_ctx(toks: &[crate::token::Spanned]) -> spectec_ast::SpecTecTyp {
     use crate::token::Token::*;
     use spectec_ast::SpecTecTyp as T;
     if toks.is_empty() {
@@ -1078,7 +1078,7 @@ fn mixop_from_fragments(frags: &[crate::mixfix::Fragment]) -> spectec_ast::MixOp
 }
 
 /// Lower a raw token run as a type expression.
-fn typ_expr_to_spectec(
+pub fn typ_expr_to_spectec(
     toks: &[crate::token::Spanned],
     ctx: &ElabContext,
 ) -> spectec_ast::SpecTecTyp {

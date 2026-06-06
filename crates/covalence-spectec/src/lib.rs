@@ -43,3 +43,4 @@ pub mod mixfix;
 pub mod parse;
 pub mod source;
 pub mod token;
+pub mod typecheck;

@@ -13,6 +13,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tracing = "0.1"
+secrecy = "0.10"
 
 # discovery feature
 uuid = { version = "1", features = ["v4"], optional = true }
@@ -20,3 +21,6 @@ dirs = { version = "6", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", features = ["signal"], optional = true }
+
+[dev-dependencies]
+serial_test = "3"

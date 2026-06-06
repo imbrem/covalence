@@ -679,26 +679,36 @@ class Ollama(Llm):
     """Local Ollama via its OpenAI-compatible `/v1` endpoint."""
 
     def __init__(self, model: str, base_url: Optional[str] = None) -> None: ...
+    @staticmethod
+    def from_env(model: str) -> "Ollama": ...
 
 class OpenAI(Llm):
     """OpenAI (api.openai.com). `api_key` required."""
 
     def __init__(self, api_key: str, model: str) -> None: ...
+    @staticmethod
+    def from_env(model: str) -> "OpenAI": ...
 
 class Groq(Llm):
-    """Groq via OpenAI-compatible endpoint. `api_key` required."""
+    """Groq via OpenAI-compatible endpoint."""
 
     def __init__(self, api_key: str, model: str) -> None: ...
+    @staticmethod
+    def from_env(model: str) -> "Groq": ...
 
 class Cerebras(Llm):
-    """Cerebras via OpenAI-compatible endpoint. `api_key` required."""
+    """Cerebras via OpenAI-compatible endpoint."""
 
     def __init__(self, api_key: str, model: str) -> None: ...
+    @staticmethod
+    def from_env(model: str) -> "Cerebras": ...
 
 class DeepSeek(Llm):
-    """DeepSeek via OpenAI-compatible endpoint. `api_key` required."""
+    """DeepSeek via OpenAI-compatible endpoint."""
 
     def __init__(self, api_key: str, model: str) -> None: ...
+    @staticmethod
+    def from_env(model: str) -> "DeepSeek": ...
 
 class OpenAICompat(Llm):
     """Generic OpenAI-compatible endpoint at a custom `base_url`."""
@@ -706,6 +716,7 @@ class OpenAICompat(Llm):
     def __init__(self, base_url: str, model: str, api_key: Optional[str] = None) -> None: ...
 
 OPENAI_BASE_URL: str
+ANTHROPIC_BASE_URL: str
 GROQ_BASE_URL: str
 CEREBRAS_BASE_URL: str
 DEEPSEEK_BASE_URL: str

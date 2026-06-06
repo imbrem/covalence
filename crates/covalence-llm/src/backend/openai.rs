@@ -14,12 +14,8 @@ use serde_json::{Value, json};
 
 use crate::{ChatMessage, ChatRequest, ChatResponse, FinishReason, LlmError, Role, TokenUsage};
 
-/// Public base URLs for known providers (no trailing `/`).
-pub const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
-pub const GROQ_BASE_URL: &str = "https://api.groq.com/openai/v1";
-pub const CEREBRAS_BASE_URL: &str = "https://api.cerebras.ai/v1";
-pub const DEEPSEEK_BASE_URL: &str = "https://api.deepseek.com/v1";
-pub const OLLAMA_BASE_URL: &str = "http://localhost:11434/v1";
+// Default base URLs live in `covalence_proto::providers::default_url`. The
+// `Llm::openai` / `Llm::groq` / … sugar constructors read them from there.
 
 fn chat_url(base_url: &str) -> String {
     format!("{}/chat/completions", base_url.trim_end_matches('/'))

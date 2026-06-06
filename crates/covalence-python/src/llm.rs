@@ -3,7 +3,9 @@
 //! `Llm` is the user-facing base class; provider-specific subclasses
 //! (`Ollama`, `OpenAI`, `Groq`, `Cerebras`, `DeepSeek`) are thin
 //! constructor-only wrappers that build an `Llm` with the right backend +
-//! base URL + auth.
+//! base URL + auth. Each subclass also exposes a static `from_env(model)`
+//! that resolves credentials via covalence-proto's env-override chain
+//! (`COV_<VAR>` → `<VAR>` → `_CMD` fallback).
 //!
 //! The blocking `chat` / `complete` calls release the GIL so callers can
 //! wrap them with `asyncio.to_thread` until a native asyncio integration
@@ -12,11 +14,8 @@
 use pyo3::prelude::*;
 
 use covalence_llm::{
-    ChatMessage, ChatOptions, ChatRequest, ChatResponse, FinishReason, Llm, LlmError, Role,
-    TokenUsage,
-    backend::openai::{
-        CEREBRAS_BASE_URL, DEEPSEEK_BASE_URL, GROQ_BASE_URL, OLLAMA_BASE_URL, OPENAI_BASE_URL,
-    },
+    ChatMessage, ChatOptions, ChatRequest, ChatResponse, ConfigError, FinishReason, Llm,
+    LlmError, Provider, Role, TokenUsage,
 };
 
 fn role_to_str(role: Role) -> &'static str {
@@ -55,6 +54,13 @@ fn map_err(e: LlmError) -> PyErr {
         LlmError::Backend { status, message } => pyo3::exceptions::PyRuntimeError::new_err(
             format!("backend error ({status}): {message}"),
         ),
+    }
+}
+
+fn map_config_err(e: ConfigError) -> PyErr {
+    match e {
+        ConfigError::Secret(s) => pyo3::exceptions::PyEnvironmentError::new_err(s.to_string()),
+        ConfigError::Llm(l) => map_err(l),
     }
 }
 
@@ -255,8 +261,7 @@ impl PyLlm {
         PyChatOptions(self.inner.options().clone())
     }
 
-    /// Multi-message chat. `messages` may be a list of `ChatMessage` or
-    /// `(role, content)` tuples.
+    /// Multi-message chat.
     fn chat(&self, py: Python<'_>, messages: Vec<PyChatMessage>) -> PyResult<PyChatResponse> {
         let msgs: Vec<ChatMessage> = messages.into_iter().map(|m| m.0).collect();
         let resp = py.detach(|| self.inner.chat(msgs)).map_err(map_err)?;
@@ -276,6 +281,17 @@ impl PyLlm {
     }
 }
 
+fn build_from_env<T: pyo3::PyClass<BaseType = PyLlm>>(
+    py: Python<'_>,
+    provider: Provider,
+    model: String,
+    sub: T,
+) -> PyResult<Py<T>> {
+    let llm = Llm::from_env(provider, model).map_err(map_config_err)?;
+    let init = pyo3::PyClassInitializer::from(PyLlm { inner: llm }).add_subclass(sub);
+    Py::new(py, init)
+}
+
 /// Local Ollama via its OpenAI-compatible `/v1` endpoint.
 #[pyclass(name = "Ollama", extends = PyLlm)]
 pub struct PyOllama;
@@ -285,8 +301,18 @@ impl PyOllama {
     #[new]
     #[pyo3(signature = (model, base_url=None))]
     fn new(model: String, base_url: Option<String>) -> (Self, PyLlm) {
-        let llm = Llm::ollama_at(base_url.unwrap_or_else(|| OLLAMA_BASE_URL.to_string()), model);
+        let llm = match base_url {
+            Some(url) => Llm::ollama_at(url, model),
+            None => Llm::ollama(model),
+        };
         (Self, PyLlm { inner: llm })
+    }
+
+    /// Construct from the environment. Honours `COV_OLLAMA_BASE_URL` and
+    /// `OLLAMA_BASE_URL`; no API key needed.
+    #[staticmethod]
+    fn from_env(py: Python<'_>, model: String) -> PyResult<Py<PyOllama>> {
+        build_from_env(py, Provider::Ollama, model, PyOllama)
     }
 }
 
@@ -298,8 +324,14 @@ pub struct PyOpenAI;
 impl PyOpenAI {
     #[new]
     fn new(api_key: String, model: String) -> (Self, PyLlm) {
-        let llm = Llm::openai(api_key, model);
-        (Self, PyLlm { inner: llm })
+        (Self, PyLlm { inner: Llm::openai(api_key, model) })
+    }
+
+    /// Resolve `OPENAI_API_KEY` (with `COV_OPENAI_API_KEY` override + `_CMD`
+    /// fallback) and `OPENAI_BASE_URL` from the environment.
+    #[staticmethod]
+    fn from_env(py: Python<'_>, model: String) -> PyResult<Py<PyOpenAI>> {
+        build_from_env(py, Provider::OpenAI, model, PyOpenAI)
     }
 }
 
@@ -311,8 +343,14 @@ pub struct PyGroq;
 impl PyGroq {
     #[new]
     fn new(api_key: String, model: String) -> (Self, PyLlm) {
-        let llm = Llm::groq(api_key, model);
-        (Self, PyLlm { inner: llm })
+        (Self, PyLlm { inner: Llm::groq(api_key, model) })
+    }
+
+    /// Resolve `GROQ_API_KEY` (with `COV_GROQ_API_KEY` override) and
+    /// `GROQ_BASE_URL` from the environment.
+    #[staticmethod]
+    fn from_env(py: Python<'_>, model: String) -> PyResult<Py<PyGroq>> {
+        build_from_env(py, Provider::Groq, model, PyGroq)
     }
 }
 
@@ -324,8 +362,14 @@ pub struct PyCerebras;
 impl PyCerebras {
     #[new]
     fn new(api_key: String, model: String) -> (Self, PyLlm) {
-        let llm = Llm::cerebras(api_key, model);
-        (Self, PyLlm { inner: llm })
+        (Self, PyLlm { inner: Llm::cerebras(api_key, model) })
+    }
+
+    /// Resolve `CEREBRAS_API_KEY` (with `COV_CEREBRAS_API_KEY` override) and
+    /// `CEREBRAS_BASE_URL` from the environment.
+    #[staticmethod]
+    fn from_env(py: Python<'_>, model: String) -> PyResult<Py<PyCerebras>> {
+        build_from_env(py, Provider::Cerebras, model, PyCerebras)
     }
 }
 
@@ -337,8 +381,14 @@ pub struct PyDeepSeek;
 impl PyDeepSeek {
     #[new]
     fn new(api_key: String, model: String) -> (Self, PyLlm) {
-        let llm = Llm::deepseek(api_key, model);
-        (Self, PyLlm { inner: llm })
+        (Self, PyLlm { inner: Llm::deepseek(api_key, model) })
+    }
+
+    /// Resolve `DEEPSEEK_API_KEY` (with `COV_DEEPSEEK_API_KEY` override) and
+    /// `DEEPSEEK_BASE_URL` from the environment.
+    #[staticmethod]
+    fn from_env(py: Python<'_>, model: String) -> PyResult<Py<PyDeepSeek>> {
+        build_from_env(py, Provider::DeepSeek, model, PyDeepSeek)
     }
 }
 
@@ -351,8 +401,7 @@ impl PyOpenAICompat {
     #[new]
     #[pyo3(signature = (base_url, model, api_key=None))]
     fn new(base_url: String, model: String, api_key: Option<String>) -> (Self, PyLlm) {
-        let llm = Llm::openai_compat(base_url, api_key, model);
-        (Self, PyLlm { inner: llm })
+        (Self, PyLlm { inner: Llm::openai_compat(base_url, api_key, model) })
     }
 }
 
@@ -369,11 +418,12 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyCerebras>()?;
     m.add_class::<PyDeepSeek>()?;
     m.add_class::<PyOpenAICompat>()?;
-    // Expose the well-known base URLs as module attributes for convenience.
-    m.add("OPENAI_BASE_URL", OPENAI_BASE_URL)?;
-    m.add("GROQ_BASE_URL", GROQ_BASE_URL)?;
-    m.add("CEREBRAS_BASE_URL", CEREBRAS_BASE_URL)?;
-    m.add("DEEPSEEK_BASE_URL", DEEPSEEK_BASE_URL)?;
-    m.add("OLLAMA_BASE_URL", OLLAMA_BASE_URL)?;
+    // Expose default base URLs as module attributes.
+    m.add("OPENAI_BASE_URL", Provider::OpenAI.default_base_url())?;
+    m.add("ANTHROPIC_BASE_URL", Provider::Anthropic.default_base_url())?;
+    m.add("GROQ_BASE_URL", Provider::Groq.default_base_url())?;
+    m.add("CEREBRAS_BASE_URL", Provider::Cerebras.default_base_url())?;
+    m.add("DEEPSEEK_BASE_URL", Provider::DeepSeek.default_base_url())?;
+    m.add("OLLAMA_BASE_URL", Provider::Ollama.default_base_url())?;
     Ok(())
 }

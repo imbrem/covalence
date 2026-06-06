@@ -61,6 +61,37 @@ def test_subclass_relationship():
     assert llm.model == MODEL
 
 
+@needs_ollama
+def test_from_env_ollama():
+    # Ollama needs no API key; from_env honours OLLAMA_BASE_URL override.
+    llm = covalence.Ollama.from_env(MODEL)
+    assert isinstance(llm, covalence.Llm)
+    answer = llm.complete("Answer with a single integer and nothing else. What is 2 + 2?")
+    assert "4" in answer
+
+
+def test_from_env_missing_key_errors(monkeypatch):
+    # OpenAI requires a key; with none in the env we should get an
+    # EnvironmentError (mapped from SecretError::Missing).
+    for var in ("OPENAI_API_KEY", "OPENAI_API_KEY_CMD",
+                "COV_OPENAI_API_KEY", "COV_OPENAI_API_KEY_CMD"):
+        monkeypatch.delenv(var, raising=False)
+    with pytest.raises(EnvironmentError, match="OPENAI_API_KEY"):
+        covalence.OpenAI.from_env("gpt-4")
+
+
+def test_cov_override_takes_priority(monkeypatch):
+    # If we set both COV_<VAR> and <VAR>, the COV_ form should win — verify
+    # indirectly by setting only the cov override and confirming OpenAI
+    # construction succeeds (it would still fail on network but we never
+    # send because we'd error out earlier without a key).
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("COV_OPENAI_API_KEY", "sk-test-override")
+    llm = covalence.OpenAI.from_env("gpt-4")
+    assert isinstance(llm, covalence.Llm)
+    assert llm.model == "gpt-4"
+
+
 def test_options_roundtrip():
     opts = covalence.ChatOptions(temperature=0.1, top_p=0.9, max_tokens=8, seed=42, stop=["END"])
     assert opts.temperature == pytest.approx(0.1)

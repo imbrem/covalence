@@ -7,6 +7,11 @@
 //! `::cerebras`, `::deepseek`, `::openai_compat`) hide the base-URL + auth
 //! quirks of each endpoint.
 //!
+//! Each provider also has a `_from_env` variant that resolves the API key
+//! (and base URL) from the environment via [`covalence_proto::providers`] —
+//! see that module for the resolution chain (`COV_<VAR>` → `<VAR>` →
+//! `_CMD` fallback).
+//!
 //! Backends live in [`backend`]. Adding a new provider means implementing
 //! [`ChatBackend`] / [`AsyncChatBackend`] there; the [`Llm`] / [`AsyncLlm`]
 //! surface stays the same.
@@ -20,6 +25,9 @@ use serde::{Deserialize, Serialize};
 
 pub mod backend;
 
+pub use covalence_proto::providers::{Provider, default_url, env as env_var};
+pub use covalence_proto::secrets::{ExposeSecret, SecretError, SecretString};
+
 /// Errors a backend can return.
 #[derive(Debug, thiserror::Error)]
 pub enum LlmError {
@@ -29,6 +37,16 @@ pub enum LlmError {
     Decode(String),
     #[error("backend error ({status}): {message}")]
     Backend { status: u16, message: String },
+}
+
+/// Errors from `_from_env` constructors: either env resolution failed, or
+/// the resolved request itself failed.
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    #[error(transparent)]
+    Secret(#[from] SecretError),
+    #[error(transparent)]
+    Llm(#[from] LlmError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -125,12 +143,7 @@ pub trait AsyncChatBackend: Send + Sync {
     async fn chat(&self, req: &ChatRequest) -> Result<ChatResponse, LlmError>;
 }
 
-// ── High-level handle ────────────────────────────────────────────────────────
-
-#[cfg(feature = "openai")]
-use crate::backend::openai::{
-    CEREBRAS_BASE_URL, DEEPSEEK_BASE_URL, GROQ_BASE_URL, OLLAMA_BASE_URL, OPENAI_BASE_URL,
-};
+// ── High-level handle: blocking ──────────────────────────────────────────────
 
 /// Blocking high-level chat client.
 ///
@@ -189,7 +202,6 @@ impl Llm {
     }
 }
 
-// Provider sugar constructors (sync).
 #[cfg(all(feature = "sync", feature = "openai"))]
 impl Llm {
     /// Generic OpenAI-compatible endpoint.
@@ -203,34 +215,47 @@ impl Llm {
 
     /// OpenAI (api.openai.com). `api_key` is required.
     pub fn openai(api_key: impl Into<String>, model: impl Into<String>) -> Self {
-        Self::openai_compat(OPENAI_BASE_URL, Some(api_key.into()), model)
+        Self::openai_compat(Provider::OpenAI.default_base_url(), Some(api_key.into()), model)
     }
 
     /// Groq via OpenAI-compatible endpoint. `api_key` is required.
     pub fn groq(api_key: impl Into<String>, model: impl Into<String>) -> Self {
-        Self::openai_compat(GROQ_BASE_URL, Some(api_key.into()), model)
+        Self::openai_compat(Provider::Groq.default_base_url(), Some(api_key.into()), model)
     }
 
     /// Cerebras via OpenAI-compatible endpoint. `api_key` is required.
     pub fn cerebras(api_key: impl Into<String>, model: impl Into<String>) -> Self {
-        Self::openai_compat(CEREBRAS_BASE_URL, Some(api_key.into()), model)
+        Self::openai_compat(Provider::Cerebras.default_base_url(), Some(api_key.into()), model)
     }
 
     /// DeepSeek via OpenAI-compatible endpoint. `api_key` is required.
     pub fn deepseek(api_key: impl Into<String>, model: impl Into<String>) -> Self {
-        Self::openai_compat(DEEPSEEK_BASE_URL, Some(api_key.into()), model)
+        Self::openai_compat(Provider::DeepSeek.default_base_url(), Some(api_key.into()), model)
     }
 
     /// Local Ollama via its OpenAI-compatible `/v1` endpoint. No auth.
     pub fn ollama(model: impl Into<String>) -> Self {
-        Self::ollama_at(OLLAMA_BASE_URL, model)
+        Self::ollama_at(Provider::Ollama.default_base_url(), model)
     }
 
     /// Ollama at a non-default base URL.
     pub fn ollama_at(base_url: impl Into<String>, model: impl Into<String>) -> Self {
         Self::openai_compat(base_url, None, model)
     }
+
+    /// Construct using `provider`, resolving the API key and base URL from
+    /// the environment (see [`covalence_proto::providers`]). The base URL
+    /// override is honoured for every provider, including Ollama.
+    pub fn from_env(provider: Provider, model: impl Into<String>) -> Result<Self, ConfigError> {
+        let base_url = provider.resolve_base_url();
+        let api_key = provider
+            .resolve_api_key()?
+            .map(|s| s.expose_secret().to_string());
+        Ok(Self::openai_compat(base_url, api_key, model))
+    }
 }
+
+// ── High-level handle: async ─────────────────────────────────────────────────
 
 /// Async high-level chat client. Mirror of [`Llm`].
 #[cfg(feature = "async")]
@@ -291,21 +316,29 @@ impl AsyncLlm {
         Self::new(backend::openai::AsyncOpenAI::new(base_url, api_key), model)
     }
     pub fn openai(api_key: impl Into<String>, model: impl Into<String>) -> Self {
-        Self::openai_compat(OPENAI_BASE_URL, Some(api_key.into()), model)
+        Self::openai_compat(Provider::OpenAI.default_base_url(), Some(api_key.into()), model)
     }
     pub fn groq(api_key: impl Into<String>, model: impl Into<String>) -> Self {
-        Self::openai_compat(GROQ_BASE_URL, Some(api_key.into()), model)
+        Self::openai_compat(Provider::Groq.default_base_url(), Some(api_key.into()), model)
     }
     pub fn cerebras(api_key: impl Into<String>, model: impl Into<String>) -> Self {
-        Self::openai_compat(CEREBRAS_BASE_URL, Some(api_key.into()), model)
+        Self::openai_compat(Provider::Cerebras.default_base_url(), Some(api_key.into()), model)
     }
     pub fn deepseek(api_key: impl Into<String>, model: impl Into<String>) -> Self {
-        Self::openai_compat(DEEPSEEK_BASE_URL, Some(api_key.into()), model)
+        Self::openai_compat(Provider::DeepSeek.default_base_url(), Some(api_key.into()), model)
     }
     pub fn ollama(model: impl Into<String>) -> Self {
-        Self::ollama_at(OLLAMA_BASE_URL, model)
+        Self::ollama_at(Provider::Ollama.default_base_url(), model)
     }
     pub fn ollama_at(base_url: impl Into<String>, model: impl Into<String>) -> Self {
         Self::openai_compat(base_url, None, model)
+    }
+
+    pub fn from_env(provider: Provider, model: impl Into<String>) -> Result<Self, ConfigError> {
+        let base_url = provider.resolve_base_url();
+        let api_key = provider
+            .resolve_api_key()?
+            .map(|s| s.expose_secret().to_string());
+        Ok(Self::openai_compat(base_url, api_key, model))
     }
 }

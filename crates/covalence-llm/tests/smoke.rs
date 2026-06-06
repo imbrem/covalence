@@ -61,3 +61,22 @@ fn ollama_sync_chat_messages() {
     assert!(resp.message.content.contains('4'));
     assert_eq!(resp.message.role, covalence_llm::Role::Assistant);
 }
+
+/// `Llm::from_env(Provider::Ollama, …)` uses no API key and reads the base
+/// URL via the env-override chain, so it works against the local daemon.
+#[cfg(feature = "sync")]
+#[test]
+#[ignore = "requires local ollama daemon on :11434"]
+fn ollama_sync_from_env() {
+    use covalence_llm::{ChatOptions, Llm, Provider};
+    let mut opts = ChatOptions::default();
+    opts.temperature = Some(0.0);
+    opts.max_tokens = Some(16);
+    let llm = Llm::from_env(Provider::Ollama, model())
+        .expect("from_env failed")
+        .with_options(opts);
+    let answer = llm
+        .complete("Answer with a single integer and nothing else. What is 2 + 2?")
+        .expect("complete failed");
+    assert!(answer.contains('4'), "expected '4' in: {answer}");
+}

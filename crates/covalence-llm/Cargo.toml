@@ -19,6 +19,7 @@ async = ["dep:reqwest", "dep:tokio", "dep:async-trait"]
 openai = ["dep:serde_json"]
 
 [dependencies]
+covalence-proto = { path = "../covalence-proto", default-features = false }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 serde_json = { version = "1", optional = true }

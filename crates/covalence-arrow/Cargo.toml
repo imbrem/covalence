@@ -1,0 +1,8 @@
+[package]
+name = "covalence-arrow"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+arrow = { version = "58", default-features = false, features = ["ipc"] }
+thiserror = "2"

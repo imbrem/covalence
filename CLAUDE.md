@@ -80,6 +80,8 @@ Several `covalence-*` crates exist to wrap external dependencies. All usage of t
 - **covalence-types** — shared types used across the ecosystem. Provides `Decision` (three-valued sat/unknown/unsat), `Bits` (bit string of arbitrary length, packed-byte representation), and, behind the default `int` feature, `Nat`/`Int` arbitrary-precision integers (wrapping `num-bigint`, `num-traits`, `num-integer`), plus `Sign`, `NatConvertError`, `ParseError`. Subtraction on `Nat` saturates to zero; use `checked_sub` for the fallible path.
 - **covalence-sat** — SAT formulas, DIMACS, DRAT proofs, solver traits. Depends on `covalence-types`, `covalence-parse`. Optional `wasm` feature adds `covalence-wasm`.
 - **covalence-smt** — SMT-LIB2 terms, theories, Alethe proofs. Depends on `covalence-types`, `covalence-sat`, `covalence-sexp`.
+- **covalence-arrow** — wraps `arrow` (re-exported). Provides `parse_ipc()` auto-detecting Arrow IPC *file* (`ARROW1` magic) vs *stream* format, returning `ArrowInfo` (schema + row/batch counts).
+- **covalence-parquet** — wraps `parquet` (re-exported). Provides `parse_file()` for a single Parquet blob and `scan_hive()` for a hive-partitioned tree (`key=value/` directories with `.parquet` leaves). Hive scanning is decoupled from storage via the `HiveSource` trait.
 
 ## Core Crates
 

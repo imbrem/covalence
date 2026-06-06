@@ -127,3 +127,5 @@ Commands:
 - `(list)` — list all stored blob hashes
 - `(status)` — show backend connection info
 - `(help)` — show available commands
+- `(arrow-stats <hash>)` — parse blob as Arrow IPC, print schema + row/batch counts (requires `covalence-repl/arrow`)
+- `(parquet-stats <hash>)` — parse Parquet stats; dispatches on `is_tree(hash)` — a tree is scanned as a hive-partitioned dataset (`key=value/` dirs with `.parquet` leaves), a blob is parsed as a single file (requires `covalence-repl/parquet`)

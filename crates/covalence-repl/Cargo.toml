@@ -6,12 +6,24 @@ edition = "2024"
 [features]
 default = []
 fetch = ["dep:ureq"]
+arrow = ["dep:covalence-arrow"]
+parquet = ["dep:covalence-parquet", "dep:covalence-object", "arrow"]
 
 [dependencies]
 covalence-forsp = { path = "../covalence-forsp" }
 covalence-hash = { path = "../covalence-hash", default-features = false }
 covalence-wasm = { path = "../covalence-wasm", default-features = false }
 covalence-shell = { path = "../covalence-shell" }
+covalence-arrow = { path = "../covalence-arrow", optional = true }
+covalence-parquet = { path = "../covalence-parquet", optional = true }
+covalence-object = { path = "../covalence-object", optional = true, default-features = false }
 
 # fetch feature: URL fetching for store-url command
 ureq = { version = "3", optional = true }
+
+[dev-dependencies]
+covalence-arrow = { path = "../covalence-arrow" }
+covalence-parquet = { path = "../covalence-parquet" }
+covalence-object = { path = "../covalence-object", default-features = false }
+covalence-shell = { path = "../covalence-shell" }
+parquet = { version = "58", default-features = false, features = ["arrow"] }

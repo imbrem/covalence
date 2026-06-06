@@ -3,6 +3,9 @@ pub use covalence_shell::{BackendInfo, KernelError, SyncBackend};
 use covalence_forsp::{FCtx, FError, ForeignPrims, Forsp};
 use covalence_hash::O256;
 
+#[cfg(feature = "parquet")]
+mod parquet_tree;
+
 /// Foreign primitives for the REPL: storage, WASM, and I/O commands.
 struct ReplPrims {
     backend: Box<dyn SyncBackend>,
@@ -24,6 +27,10 @@ impl ForeignPrims for ReplPrims {
             "status" => self.cmd_status(ctx),
             "help" => self.cmd_help(ctx),
             "hash" => self.cmd_hash(ctx),
+            #[cfg(feature = "arrow")]
+            "arrow-stats" => self.cmd_arrow_stats(ctx),
+            #[cfg(feature = "parquet")]
+            "parquet-stats" => self.cmd_parquet_stats(ctx),
             _ => return Ok(false),
         };
         result.map(|()| true)
@@ -156,7 +163,8 @@ impl ReplPrims {
 
     /// `help`: → (prints available commands)
     fn cmd_help(&mut self, _ctx: &mut FCtx<'_>) -> Result<(), FError> {
-        const COMMANDS: &[(&str, &str)] = &[
+        #[allow(unused_mut)]
+        let mut commands: Vec<(&str, &str)> = vec![
             ("\"data\" store", "store blob, push hash"),
             ("\"url\" store-url", "fetch URL, store as blob"),
             ("\"path\" store-file", "store file as blob (CLI only)"),
@@ -171,8 +179,15 @@ impl ReplPrims {
             ("42 $x ^x", "variable binding and recall"),
             ("($x ^x 1 +) $inc", "define a closure"),
         ];
-        let width = COMMANDS.iter().map(|(cmd, _)| cmd.len()).max().unwrap_or(0);
-        let help = COMMANDS
+        #[cfg(feature = "arrow")]
+        commands.push(("<hash> arrow-stats", "parse blob as Arrow IPC, print stats"));
+        #[cfg(feature = "parquet")]
+        commands.push((
+            "<hash> parquet-stats",
+            "parse blob as Parquet (auto-detects hive-partitioned tree)",
+        ));
+        let width = commands.iter().map(|(cmd, _)| cmd.len()).max().unwrap_or(0);
+        let help = commands
             .iter()
             .map(|(cmd, desc)| format!("{cmd:<width$}  {desc}"))
             .collect::<Vec<_>>()
@@ -186,6 +201,42 @@ impl ReplPrims {
         let data = ctx.try_pop_blob()?;
         let hash = O256::blob(&data);
         ctx.push_hash(hash);
+        Ok(())
+    }
+
+    /// Fetch a blob by hash or fail with a parse error.
+    #[cfg(any(feature = "arrow", feature = "parquet"))]
+    fn fetch_blob(&self, hash: &O256) -> Result<Vec<u8>, FError> {
+        self.backend
+            .get_blob(hash)
+            .map_err(Self::backend_err)?
+            .ok_or_else(|| FError::Parse(format!("blob not found: {hash}")))
+    }
+
+    /// `arrow-stats`: hash → (prints Arrow IPC stats)
+    #[cfg(feature = "arrow")]
+    fn cmd_arrow_stats(&mut self, ctx: &mut FCtx<'_>) -> Result<(), FError> {
+        let hash = ctx.try_pop_hash()?;
+        let data = self.fetch_blob(&hash)?;
+        let info = covalence_arrow::parse_ipc(&data).map_err(|e| FError::Parse(e.to_string()))?;
+        self.emit(info.to_string().trim_end());
+        Ok(())
+    }
+
+    /// `parquet-stats`: hash → (prints Parquet stats; if the hash is a tree,
+    /// scans it as a hive-partitioned dataset, otherwise parses as a file)
+    #[cfg(feature = "parquet")]
+    fn cmd_parquet_stats(&mut self, ctx: &mut FCtx<'_>) -> Result<(), FError> {
+        let hash = ctx.try_pop_hash()?;
+        let is_tree = self.backend.is_tree(&hash).map_err(Self::backend_err)?;
+        let info = if is_tree {
+            let mut source = parquet_tree::BackendHiveSource::new(self.backend.as_ref(), hash);
+            covalence_parquet::scan_hive(&mut source).map_err(|e| FError::Parse(e.to_string()))?
+        } else {
+            let data = self.fetch_blob(&hash)?;
+            covalence_parquet::parse_file(&data).map_err(|e| FError::Parse(e.to_string()))?
+        };
+        self.emit(info.to_string().trim_end());
         Ok(())
     }
 }

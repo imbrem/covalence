@@ -8,12 +8,13 @@ name = "cov"
 path = "src/main.rs"
 
 [features]
-default = ["lsp", "cogit", "serve", "repl", "hol"]
+default = ["lsp", "cogit", "serve", "repl", "hol", "data"]
 lsp = ["dep:covalence-lsp"]
 cogit = ["dep:covalence-git"]
 serve = []
 repl = ["dep:rustyline"]
 hol = ["dep:covalence-hol", "dep:covalence-opentheory"]
+data = ["covalence-repl/arrow", "covalence-repl/parquet"]
 
 [dependencies]
 covalence-lsp = { path = "../covalence-lsp", optional = true }

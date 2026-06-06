@@ -1258,9 +1258,18 @@ fn inst_for_profile(
                 tcs: expanded.iter().map(|a| alt_to_typcase(a, ctx)).collect(),
             }
         }
-        SyntaxBody::Record(fields) => spectec_ast::SpecTecDefTyp::Struct {
-            tfs: fields.iter().map(|f| record_field_to_typfield(f, ctx)).collect(),
-        },
+        SyntaxBody::Record(_) => {
+            // Merge fields across profiles via the same `...`-splicing
+            // rule we use for variant alts. The shared `insts.dedup()`
+            // upstream then folds the two profiles into one Inst.
+            let fields = syn.merged.fields_for_profile(prof.profile.as_deref());
+            spectec_ast::SpecTecDefTyp::Struct {
+                tfs: fields
+                    .iter()
+                    .map(|f| record_field_to_typfield(f, ctx))
+                    .collect(),
+            }
+        }
     };
     Some(spectec_ast::SpecTecInst::Inst {
         ps: Vec::new(),

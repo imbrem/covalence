@@ -108,6 +108,52 @@ pub enum AltSlot {
 }
 
 impl MergedSyntax {
+    /// Compute the effective record fields for the named profile by
+    /// splicing other profiles' fields into the `...` placeholders.
+    /// Mirrors `alts_for_profile` for variant bodies.
+    pub fn fields_for_profile(&self, profile: Option<&str>) -> Vec<crate::cst::RecordField> {
+        use crate::cst::{RecordSlot, SyntaxBody};
+        let collect_real = |slots: &[RecordSlot]| -> Vec<crate::cst::RecordField> {
+            slots
+                .iter()
+                .filter_map(|s| match s {
+                    RecordSlot::Real(f) => Some(f.clone()),
+                    RecordSlot::Placeholder => None,
+                })
+                .collect()
+        };
+        fn body_slots(p: &MergedProfile) -> Option<&[crate::cst::RecordSlot]> {
+            match &p.body {
+                Some(SyntaxBody::Record(slots)) => Some(slots.as_slice()),
+                _ => None,
+            }
+        }
+        let mut other_fields: Vec<crate::cst::RecordField> = Vec::new();
+        for prof in &self.profiles {
+            if prof.profile.as_deref() == profile {
+                continue;
+            }
+            if let Some(slots) = body_slots(prof) {
+                other_fields.extend(collect_real(slots));
+            }
+        }
+        let target = self
+            .profiles
+            .iter()
+            .find(|p| p.profile.as_deref() == profile);
+        let Some(target) = target.and_then(|t| body_slots(t)) else {
+            return other_fields;
+        };
+        let mut out = Vec::new();
+        for slot in target {
+            match slot {
+                RecordSlot::Real(f) => out.push(f.clone()),
+                RecordSlot::Placeholder => out.extend(other_fields.iter().cloned()),
+            }
+        }
+        out
+    }
+
     /// Compute the effective variant alternatives for the named profile
     /// by splicing other profiles' alts into the `...` placeholders.
     ///

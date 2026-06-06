@@ -77,8 +77,11 @@ pub enum SyntaxBody {
     /// raw token run between `|` separators (or after `=` for the first).
     /// Phase 2 will further structure this.
     Variant(Vec<Alt>),
-    /// `{ FIELD_NAME field_type, ... }` — record type.
-    Record(Vec<RecordField>),
+    /// `{ FIELD_NAME field_type, ... }` — record type. Slots in
+    /// source order; `...` between commas produces `RecordSlot::Placeholder`
+    /// so profile merging (`X/syn` + `X/sem`) can splice the other
+    /// profile's fields at the placeholder position.
+    Record(Vec<RecordSlot>),
     /// A single non-variant body — alias or grammar-shaped. Stored as
     /// the raw run between `=` and the next top-level form.
     Alias(TokenRun),
@@ -100,6 +103,14 @@ pub struct RecordField {
     pub name: Ident,
     pub ty: TokenRun,
     pub hints: Vec<HintAtom>,
+}
+
+/// One slot in a record body — either a real field or a `...`
+/// placeholder for cross-profile splicing.
+#[derive(Clone, Debug)]
+pub enum RecordSlot {
+    Real(RecordField),
+    Placeholder,
 }
 
 /// `def` signature: `def $NAME(arg_tys) : ret_ty`.

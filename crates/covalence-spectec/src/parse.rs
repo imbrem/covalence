@@ -23,8 +23,8 @@
 //! built from `relation` and `syntax`-variant declarations.
 
 use crate::cst::{
-    Alt, DefClause, DefSig, GrammarDecl, HintAtom, Ident, RecordField, RelationDecl, RuleDecl,
-    SyntaxBody, SyntaxDecl, Top, TokenRun, VarDecl,
+    Alt, DefClause, DefSig, GrammarDecl, HintAtom, Ident, RecordField, RecordSlot, RelationDecl,
+    RuleDecl, SyntaxBody, SyntaxDecl, Top, TokenRun, VarDecl,
 };
 use crate::source::{Diagnostic, FileId, Span};
 use crate::token::{Spanned, Token};
@@ -532,7 +532,10 @@ fn body_span(b: &SyntaxBody) -> Span {
             .expect("variant has at least one alt"),
         SyntaxBody::Record(fields) => fields
             .iter()
-            .map(|f| f.span)
+            .filter_map(|f| match f {
+                RecordSlot::Real(rf) => Some(rf.span),
+                RecordSlot::Placeholder => None,
+            })
             .reduce(Span::join)
             .expect("record has at least one field"),
         SyntaxBody::Alias(tr) => tr.span,
@@ -613,7 +616,7 @@ fn body_starts_with_case_head(toks: &[Spanned]) -> bool {
 /// Phase 1: store each field's type as a raw `TokenRun`.
 fn parse_record_body(file: FileId, input: &mut &[Spanned]) -> Result<SyntaxBody, Diagnostic> {
     let lbrace_span = expect(input, file, &Token::LBrace)?;
-    let mut fields = Vec::new();
+    let mut fields: Vec<RecordSlot> = Vec::new();
 
     // Handle empty record `{}`.
     if eat(input, &Token::RBrace).is_some() {
@@ -621,9 +624,8 @@ fn parse_record_body(file: FileId, input: &mut &[Spanned]) -> Result<SyntaxBody,
     }
 
     loop {
-        // Skip a leading `...` in the field list (used for forward extension).
         if eat(input, &Token::DotDotDot).is_some() {
-            // No structured representation in Phase 1; ignore.
+            fields.push(RecordSlot::Placeholder);
         } else {
             let name = parse_ident_or_keyword(input, file)?;
             let ty = take_field_ty(input);
@@ -633,12 +635,12 @@ fn parse_record_body(file: FileId, input: &mut &[Spanned]) -> Result<SyntaxBody,
             for h in &hints {
                 span = span.join(h.span);
             }
-            fields.push(RecordField {
+            fields.push(RecordSlot::Real(RecordField {
                 span,
                 name,
                 ty,
                 hints,
-            });
+            }));
         }
 
         match peek(input) {
@@ -1257,8 +1259,10 @@ mod tests {
         let Top::Syntax(s) = &tops[0] else { panic!() };
         let Some(SyntaxBody::Record(fields)) = &s.body else { panic!() };
         assert_eq!(fields.len(), 2);
-        assert_eq!(fields[0].name.text, "X");
-        assert_eq!(fields[1].name.text, "Y");
+        let RecordSlot::Real(f0) = &fields[0] else { panic!() };
+        let RecordSlot::Real(f1) = &fields[1] else { panic!() };
+        assert_eq!(f0.name.text, "X");
+        assert_eq!(f1.name.text, "Y");
     }
 
     #[test]
@@ -1268,9 +1272,11 @@ mod tests {
         let Top::Syntax(s) = &tops[0] else { panic!() };
         assert_eq!(s.profile.as_ref().unwrap().text, "sem");
         let Some(SyntaxBody::Record(fields)) = &s.body else { panic!() };
-        // The `...` is skipped; only `RECS subtype*` becomes a structured field.
-        assert_eq!(fields.len(), 1);
-        assert_eq!(fields[0].name.text, "RECS");
+        // Two slots: the `...` Placeholder, then RECS.
+        assert_eq!(fields.len(), 2);
+        assert!(matches!(fields[0], RecordSlot::Placeholder));
+        let RecordSlot::Real(f1) = &fields[1] else { panic!() };
+        assert_eq!(f1.name.text, "RECS");
     }
 
     #[test]

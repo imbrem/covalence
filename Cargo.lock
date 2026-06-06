@@ -911,6 +911,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-smt-hol"
+version = "0.0.0"
+dependencies = [
+ "covalence-hol",
+ "covalence-sexp",
+ "covalence-smt",
+ "covalence-types",
+ "smol_str",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "covalence-sqlite"
 version = "0.0.0"
 dependencies = [

@@ -2,7 +2,7 @@ use clap::Subcommand;
 
 #[cfg(feature = "cogit")]
 pub mod cog;
-#[cfg(feature = "hol")]
+#[cfg(all(feature = "hol", not(target_family = "wasm")))]
 pub mod hol;
 #[cfg(feature = "lsp")]
 pub mod lsp;
@@ -18,7 +18,7 @@ pub enum Command {
     Cog(cog::CogArgs),
 
     /// HOL Light kernel
-    #[cfg(feature = "hol")]
+    #[cfg(all(feature = "hol", not(target_family = "wasm")))]
     Hol(hol::HolArgs),
 
     /// Start the LSP server

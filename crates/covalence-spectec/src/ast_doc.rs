@@ -1685,46 +1685,131 @@ fn referenced_names(d: &spectec_ast::SpecTecDef) -> std::collections::HashSet<St
             P::Iter { pr1, .. } => walk_prem(pr1, out),
         }
     }
+    fn walk_typ(t: &spectec_ast::SpecTecTyp, out: &mut std::collections::HashSet<String>) {
+        use spectec_ast::SpecTecTyp as T;
+        match t {
+            T::Var { x, as1 } => {
+                out.insert(x.clone());
+                for a in as1 {
+                    walk_arg(a, out);
+                }
+            }
+            T::Tup { ets } => {
+                for spectec_ast::SpecTecTypBind::Bind { typ, .. } in ets {
+                    walk_typ(typ, out);
+                }
+            }
+            T::Iter { t1, .. } => walk_typ(t1, out),
+            T::Bool | T::Num(_) | T::Text => {}
+        }
+    }
+    fn walk_arg(a: &spectec_ast::SpecTecArg, out: &mut std::collections::HashSet<String>) {
+        use spectec_ast::SpecTecArg as A;
+        match a {
+            A::Exp { e } => walk_exp(e, out),
+            A::Typ { t } => walk_typ(t, out),
+            A::Def { x } => {
+                out.insert(x.clone());
+            }
+            A::Gram { .. } => {}
+        }
+    }
+    fn walk_param(p: &spectec_ast::SpecTecParam, out: &mut std::collections::HashSet<String>) {
+        use spectec_ast::SpecTecParam as P;
+        match p {
+            P::Exp { t, .. } | P::Gram { t, .. } => walk_typ(t, out),
+            P::Def { ps, t, .. } => {
+                for pp in ps {
+                    walk_param(pp, out);
+                }
+                walk_typ(t, out);
+            }
+            P::Typ { .. } => {}
+        }
+    }
     match d {
-        spectec_ast::SpecTecDef::Typ { insts, .. } => {
-            for spectec_ast::SpecTecInst::Inst { dt, .. } in insts {
+        spectec_ast::SpecTecDef::Typ { ps, insts, .. } => {
+            for p in ps {
+                walk_param(p, &mut out);
+            }
+            for spectec_ast::SpecTecInst::Inst { ps, as_, dt } in insts {
+                for p in ps {
+                    walk_param(p, &mut out);
+                }
+                for a in as_ {
+                    walk_arg(a, &mut out);
+                }
                 use spectec_ast::SpecTecDefTyp as DT;
                 match dt {
-                    DT::Alias { typ: _ } => {}
+                    DT::Alias { typ } => walk_typ(typ, &mut out),
                     DT::Struct { tfs } => {
-                        for spectec_ast::SpecTecTypField::Field { at, .. } in tfs {
+                        for spectec_ast::SpecTecTypField::Field { at, t, .. } in tfs {
                             for f in at.fragments() {
                                 out.insert(f.clone());
                             }
+                            walk_typ(t, &mut out);
                         }
                     }
                     DT::Variant { tcs } => {
-                        for spectec_ast::SpecTecTypCase::Field { op, .. } in tcs {
+                        for spectec_ast::SpecTecTypCase::Field { op, t, .. } in tcs {
                             for f in op.fragments() {
                                 out.insert(f.clone());
                             }
+                            walk_typ(t, &mut out);
                         }
                     }
                 }
             }
         }
-        spectec_ast::SpecTecDef::Rel { rules, .. } => {
-            for spectec_ast::SpecTecRule::Rule { e, prs, .. } in rules {
+        spectec_ast::SpecTecDef::Rel { ps, t, rules, .. } => {
+            for p in ps {
+                walk_param(p, &mut out);
+            }
+            walk_typ(t, &mut out);
+            for spectec_ast::SpecTecRule::Rule { ps, e, prs, .. } in rules {
+                for p in ps {
+                    walk_param(p, &mut out);
+                }
                 walk_exp(e, &mut out);
                 for p in prs {
                     walk_prem(p, &mut out);
                 }
             }
         }
-        spectec_ast::SpecTecDef::Dec { clauses, .. } => {
-            for spectec_ast::SpecTecClause::Clause { e, prs, .. } in clauses {
+        spectec_ast::SpecTecDef::Dec { ps, t, clauses, .. } => {
+            for p in ps {
+                walk_param(p, &mut out);
+            }
+            walk_typ(t, &mut out);
+            for spectec_ast::SpecTecClause::Clause { ps, as_, e, prs } in clauses {
+                for p in ps {
+                    walk_param(p, &mut out);
+                }
+                for a in as_ {
+                    walk_arg(a, &mut out);
+                }
                 walk_exp(e, &mut out);
                 for p in prs {
                     walk_prem(p, &mut out);
                 }
             }
         }
-        spectec_ast::SpecTecDef::Gram { .. } | spectec_ast::SpecTecDef::Rec { .. } => {}
+        spectec_ast::SpecTecDef::Gram { ps, t, prods, .. } => {
+            for p in ps {
+                walk_param(p, &mut out);
+            }
+            walk_typ(t, &mut out);
+            for spectec_ast::SpecTecProd::Prod { ps, e, prs, .. } in prods {
+                for p in ps {
+                    walk_param(p, &mut out);
+                }
+                walk_exp(e, &mut out);
+                for p in prs {
+                    walk_prem(p, &mut out);
+                }
+            }
+        }
+        spectec_ast::SpecTecDef::Rec { .. } => {}
     }
     out
 }

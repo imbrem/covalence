@@ -3,25 +3,30 @@ use covalence_sexp::{SExp, SExpr, prettyprint};
 use super::{Cell, Heap, Prim, ValRef};
 
 /// Convert a heap value to an SExpr for display/serialisation.
-pub fn to_sexp(heap: &Heap, v: ValRef) -> SExpr {
-    match heap.get(v) {
+///
+/// Closures are content-addressed: a closure prints as `!<hash>` and its
+/// content hash is registered on the heap so the reader can recover it.
+pub fn to_sexp(heap: &mut Heap, v: ValRef) -> SExpr {
+    // Snapshot the cell tag/payload we need *before* any recursive call that
+    // could borrow `heap` mutably (closure hashing recurses).
+    match heap.get(v).clone() {
         Cell::Nil => SExp::List(vec![]),
-        Cell::Atom(s) => SExp::symbol(s.as_str()),
+        Cell::Atom(s) => SExp::symbol(s),
         Cell::Int(n) => SExp::symbol(n.to_string()),
         Cell::Hash(h) => SExp::symbol(h.to_string()),
-        Cell::Blob(b) => SExp::string("", b.clone()),
+        Cell::Blob(b) => SExp::string("", b),
         Cell::Cons { .. } => {
             let mut items = Vec::new();
             let mut cur = v;
             loop {
-                match heap.get(cur) {
+                let cell = heap.get(cur).clone();
+                match cell {
                     Cell::Nil => break,
                     Cell::Cons { car, cdr } => {
-                        items.push(to_sexp(heap, *car));
-                        cur = *cdr;
+                        items.push(to_sexp(heap, car));
+                        cur = cdr;
                     }
                     _ => {
-                        // improper list: (a b . c)
                         items.push(SExp::symbol("."));
                         items.push(to_sexp(heap, cur));
                         break;
@@ -30,15 +35,16 @@ pub fn to_sexp(heap: &Heap, v: ValRef) -> SExpr {
             }
             SExp::List(items)
         }
-        Cell::Closure { body, .. } => {
-            SExp::List(vec![SExp::symbol("#<closure>"), to_sexp(heap, *body)])
+        Cell::Closure { .. } => {
+            let h = heap.content_hash(v);
+            SExp::symbol(format!("!{h}"))
         }
-        Cell::Prim(p) => SExp::symbol(format!("#<prim:{}>", prim_name(*p))),
+        Cell::Prim(p) => SExp::symbol(format!("#<prim:{}>", prim_name(p))),
     }
 }
 
 /// Format a heap value as a string via covalence-sexp prettyprint.
-pub fn show(heap: &Heap, v: ValRef) -> String {
+pub fn show(heap: &mut Heap, v: ValRef) -> String {
     let sexp = to_sexp(heap, v);
     let mut buf = Vec::new();
     prettyprint(&[sexp], &mut buf).expect("write to Vec never fails");

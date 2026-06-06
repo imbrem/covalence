@@ -1,7 +1,9 @@
 mod eval;
+mod hash;
 mod print;
 mod read;
 
+use std::collections::HashMap;
 use std::fmt;
 
 use covalence_hash::O256;
@@ -70,9 +72,16 @@ impl FCtx<'_> {
         self.push(v);
     }
 
-    /// Format a heap value as a Forsp S-expression string.
-    pub fn show(&self, v: ValRef) -> String {
+    /// Format a heap value as a Forsp S-expression string. Closures register
+    /// their content hash on the heap as a side effect, so the result can be
+    /// read back via the `!HEX` syntax.
+    pub fn show(&mut self, v: ValRef) -> String {
         print::show(self.heap, v)
+    }
+
+    /// Compute the content hash of `v` (and register it for `!HEX` lookup).
+    pub fn content_hash(&mut self, v: ValRef) -> O256 {
+        self.heap.content_hash(v)
     }
 }
 
@@ -179,24 +188,45 @@ impl fmt::Display for Tag {
 
 /// Arena of Forsp values. Index 0 is always NIL.
 pub struct Heap {
-    cells: Vec<Cell>,
+    pub(crate) cells: Vec<Cell>,
+    /// Memoised content hash per cell, populated lazily by [`Heap::content_hash`].
+    pub(crate) hash_cache: Vec<Option<O256>>,
+    /// Reverse index: content hash → most recent ValRef hashed to it.
+    pub(crate) by_hash: HashMap<O256, ValRef>,
 }
 
 impl Heap {
     pub fn new() -> Self {
         Heap {
             cells: vec![Cell::Nil],
+            hash_cache: vec![None],
+            by_hash: HashMap::new(),
         }
     }
 
     pub fn alloc(&mut self, cell: Cell) -> ValRef {
         let idx = self.cells.len() as i32;
         self.cells.push(cell);
+        self.hash_cache.push(None);
         ValRef(idx)
     }
 
     pub fn get(&self, r: ValRef) -> &Cell {
         &self.cells[r.0 as usize]
+    }
+
+    /// Compute (and cache) the content hash of `v`. Recursively hashes
+    /// reachable subvalues. After this call, `v` (and every cell it
+    /// transitively contains) can be recovered via [`Heap::value_at`].
+    pub fn content_hash(&mut self, v: ValRef) -> O256 {
+        hash::hash_of(self, v)
+    }
+
+    /// Look up a value previously hashed in this heap. Returns `None` if no
+    /// cell with this hash has been registered (via [`Heap::content_hash`]
+    /// or by printing a closure).
+    pub fn value_at(&self, h: O256) -> Option<ValRef> {
+        self.by_hash.get(&h).copied()
     }
 
     pub fn tag(&self, r: ValRef) -> Tag {
@@ -403,13 +433,20 @@ impl<F: ForeignPrims> Forsp<F> {
     }
 
     /// Convert a heap value to an [`SExpr`] for external consumption.
-    pub fn to_sexp(&self, v: ValRef) -> SExpr {
-        print::to_sexp(&self.heap, v)
+    /// Closures are rendered as `!<hash>` and registered on the heap as a
+    /// side effect, so the resulting sexp can be read back through [`read`].
+    pub fn to_sexp(&mut self, v: ValRef) -> SExpr {
+        print::to_sexp(&mut self.heap, v)
     }
 
-    /// Format a heap value as a Forsp S-expression string.
-    pub fn show(&self, v: ValRef) -> String {
-        print::show(&self.heap, v)
+    /// Format a heap value as a Forsp S-expression string. See [`to_sexp`].
+    pub fn show(&mut self, v: ValRef) -> String {
+        print::show(&mut self.heap, v)
+    }
+
+    /// Compute the content hash of `v` (and register it for `!HEX` lookup).
+    pub fn content_hash(&mut self, v: ValRef) -> O256 {
+        self.heap.content_hash(v)
     }
 
     /// Execute a parsed instruction list (the result of [`read`](Self::read)).

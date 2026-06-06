@@ -422,57 +422,260 @@ pub fn alt_to_constructor(
 
 // ---------- minimal Expr AST + conclusion elaboration ----------
 
-/// Minimal expression AST. Phase 2c-ii covers what shows up in simple
-/// rule conclusions: variables, numbers, parenthesised tuples, and
-/// arbitrary "case-application" of an uppercase or `_PREFIXED` name to
-/// arguments. Operands that fall outside this subset are kept as
-/// `Raw(TokenRun)` so we can grow the structured cases incrementally
-/// without losing source coverage.
+/// Expression AST, sketched to mirror `spectec_ast::SpecTecExp` so the
+/// converter in [`crate::ast_doc`] can map every variant directly.
+///
+/// **Coverage caveat:** elaboration currently produces only a subset of
+/// these variants (`Var`, `Num`, `Text`, `Tup`, `Case`, `Eps`, `Iter`,
+/// `Raw`). The others — `Bin`, `Cmp`, `Idx`, `Dot`, `Call`, `Str`, etc.
+/// — exist so we can structurally represent the full SpecTec language
+/// when later elaboration passes (arithmetic-escape parsing,
+/// field-access recognition, etc.) start producing them. Until then,
+/// shapes that would map to them fall through to `Raw`.
 ///
 /// Spans are carried so downstream consumers can attach diagnostics.
 #[derive(Clone, Debug)]
 pub enum Expr {
     Var { span: Span, name: String },
-    Num { span: Span, value: u64 },
+    Bool { span: Span, value: bool },
+    Num { span: Span, value: NumLit },
     Text { span: Span, value: String },
-    /// Parenthesised sequence — `()` is the empty tuple, `(x)` is a
-    /// grouping (semantically equivalent to `x`), `(x, y)` is a 2-tuple.
-    /// We preserve the surface distinction by always producing a tuple
-    /// node, even when there's just one element; downstream passes can
-    /// flatten singleton tuples if they need to.
+    /// Unary operator: `not e`, `+e`, `-e`, `±e`, `∓e`.
+    Un { span: Span, op: UnOp, ty: OpType, e: Box<Expr> },
+    /// Binary arithmetic / logical: `e1 + e2`, `e1 ∧ e2`, etc.
+    Bin {
+        span: Span,
+        op: BinOp,
+        ty: OpType,
+        e1: Box<Expr>,
+        e2: Box<Expr>,
+    },
+    /// Comparison: `e1 = e2`, `e1 ≤ e2`, etc.
+    Cmp {
+        span: Span,
+        op: CmpOp,
+        ty: OpType,
+        e1: Box<Expr>,
+        e2: Box<Expr>,
+    },
+    /// Indexing: `e1[e2]`.
+    Idx { span: Span, e1: Box<Expr>, e2: Box<Expr> },
+    /// Slicing: `e1[e2 : e3]`.
+    Slice {
+        span: Span,
+        e1: Box<Expr>,
+        e2: Box<Expr>,
+        e3: Box<Expr>,
+    },
+    /// Functional update: `e1[path := e2]`.
+    Upd {
+        span: Span,
+        e1: Box<Expr>,
+        path: Box<Path>,
+        e2: Box<Expr>,
+    },
+    /// Functional extension: `e1[path =.. e2]`.
+    Ext {
+        span: Span,
+        e1: Box<Expr>,
+        path: Box<Path>,
+        e2: Box<Expr>,
+    },
+    /// Record literal: `{ FIELD = e, ... }`.
+    Str { span: Span, fields: Vec<ExprField> },
+    /// Field access: `e.FIELD`.
+    Dot { span: Span, e: Box<Expr>, field: String },
+    /// Sequence composition: `e1 ++ e2`.
+    Comp { span: Span, e1: Box<Expr>, e2: Box<Expr> },
+    /// Membership: `e1 <- e2`.
+    Mem { span: Span, e1: Box<Expr>, e2: Box<Expr> },
+    /// Length: `|e|`.
+    Len { span: Span, e: Box<Expr> },
+    /// Parenthesised sequence — `()` is the empty tuple, `(x)` collapses
+    /// to `x`, `(x, y)` is a 2-tuple.
     Tup { span: Span, items: Vec<Expr> },
-    /// `NAME` or `NAME e_1 e_2 ...` — constructor / case application.
+    /// Function call: `$name(arg, ...)`. Args are kept as raw token
+    /// runs until elaboration of the `$()` arithmetic-escape grammar
+    /// lands.
+    Call { span: Span, name: String, args: Vec<TokenRun> },
+    /// `<inner><iter-suffix>` — postfix iteration on an expression.
+    /// `bindings` is the inferred binder list (see `IterBinding`).
+    Iter {
+        span: Span,
+        inner: Box<Expr>,
+        kind: IterKind,
+        bindings: Vec<IterBinding>,
+    },
+    /// Tuple projection: `e.<i>` (positional).
+    Proj { span: Span, e: Box<Expr>, index: i64 },
+    /// Case constructor application: `NAME` or `NAME e_1 e_2 ...`.
     /// The "case-like" head is any identifier whose first character is
-    /// uppercase, or that begins with an underscore. This matches
-    /// SpecTec's convention (`I32`, `BLOCK`, `_IDX`, `_DEF`, ...).
+    /// uppercase, or that begins with an underscore (`NOP`, `BLOCK`,
+    /// `I32`, `_IDX`, ...).
     Case {
         span: Span,
         head: String,
         args: Vec<Expr>,
     },
+    /// Inverse case match: `e :> NAME` — extracts the operand of a
+    /// known case constructor.
+    Uncase { span: Span, e: Box<Expr>, head: String },
+    /// Optional literal: `?e` (Some), or `?` (None when `inner` is None).
+    Opt {
+        span: Span,
+        inner: Option<Box<Expr>>,
+    },
+    /// Inverse optional: extracts the value from a `Some` known to hold.
+    Unopt { span: Span, e: Box<Expr> },
+    /// List literal: `[e_1, e_2, ...]` or `eps` for the empty list.
+    List { span: Span, items: Vec<Expr> },
+    /// Singleton lift: `[e]`.
+    Lift { span: Span, e: Box<Expr> },
+    /// List concatenation: `e1 ++ e2`.
+    Cat { span: Span, e1: Box<Expr>, e2: Box<Expr> },
+    /// Numeric conversion: `Cvt(nt1, nt2, e)` reinterprets a number of
+    /// type `nt1` as one of type `nt2`.
+    Cvt {
+        span: Span,
+        from: NumTyp,
+        to: NumTyp,
+        e: Box<Expr>,
+    },
+    /// Subtype coercion: `Sub(t1, t2, e)` injects `e : t1` into `t2`.
+    /// SpecTec inserts these implicitly during type checking; we don't
+    /// yet generate them but the variant is here for converter parity.
+    Sub {
+        span: Span,
+        from_ty: TokenRun,
+        to_ty: TokenRun,
+        e: Box<Expr>,
+    },
     /// `eps` — the empty sequence literal.
     Eps { span: Span },
-    /// `<inner><iter-suffix>` — postfix iteration on an expression.
-    Iter {
-        span: Span,
-        inner: Box<Expr>,
-        kind: IterKind,
-    },
     /// Fallback: an unanalysed token run. Used when the expression
     /// shape isn't yet supported by the structured cases.
     Raw(TokenRun),
+}
+
+/// Number literal — mirrors `spectec_ast::SpecTecNum`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NumLit {
+    Nat(u64),
+    Int(i64),
+    Rat(String),
+    Real(String),
+}
+
+/// Operand-type tag for arithmetic / comparison operators — mirrors
+/// `spectec_ast::SpecTecOpTyp`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OpType {
+    Nat,
+    Int,
+    Rat,
+    Real,
+    Bool,
+}
+
+/// Unary operator — mirrors `spectec_ast::SpecTecUnOp`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UnOp {
+    Not,
+    Plus,
+    Minus,
+    PlusMinus,
+    MinusPlus,
+}
+
+/// Binary operator — mirrors `spectec_ast::SpecTecBinOp`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BinOp {
+    And,
+    Or,
+    Impl,
+    Equiv,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Pow,
+}
+
+/// Comparison operator — mirrors `spectec_ast::SpecTecCmpOp`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CmpOp {
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
+}
+
+/// Numeric type — mirrors `spectec_ast::SpecTecNumTyp`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NumTyp {
+    Nat,
+    Int,
+    Rat,
+    Real,
+}
+
+/// Update / extension path — mirrors `spectec_ast::SpecTecPath`. Kept
+/// as a sketch; full path elaboration comes with `Upd`/`Ext` lowering.
+#[derive(Clone, Debug)]
+pub enum Path {
+    /// `e` itself — root of a path.
+    Root,
+    /// `path[e]` — index step.
+    Idx { p: Box<Path>, e: Expr },
+    /// `path[e1 : e2]` — slice step.
+    Slice { p: Box<Path>, e1: Expr, e2: Expr },
+    /// `path.FIELD` — dot step.
+    Dot { p: Box<Path>, field: String },
+}
+
+/// One `FIELD = value` pair in a record literal.
+#[derive(Clone, Debug)]
+pub struct ExprField {
+    pub field: String,
+    pub value: Expr,
 }
 
 impl Expr {
     pub fn span(&self) -> Span {
         match self {
             Expr::Var { span, .. }
+            | Expr::Bool { span, .. }
             | Expr::Num { span, .. }
             | Expr::Text { span, .. }
+            | Expr::Un { span, .. }
+            | Expr::Bin { span, .. }
+            | Expr::Cmp { span, .. }
+            | Expr::Idx { span, .. }
+            | Expr::Slice { span, .. }
+            | Expr::Upd { span, .. }
+            | Expr::Ext { span, .. }
+            | Expr::Str { span, .. }
+            | Expr::Dot { span, .. }
+            | Expr::Comp { span, .. }
+            | Expr::Mem { span, .. }
+            | Expr::Len { span, .. }
             | Expr::Tup { span, .. }
+            | Expr::Call { span, .. }
+            | Expr::Iter { span, .. }
+            | Expr::Proj { span, .. }
             | Expr::Case { span, .. }
-            | Expr::Eps { span }
-            | Expr::Iter { span, .. } => *span,
+            | Expr::Uncase { span, .. }
+            | Expr::Opt { span, .. }
+            | Expr::Unopt { span, .. }
+            | Expr::List { span, .. }
+            | Expr::Lift { span, .. }
+            | Expr::Cat { span, .. }
+            | Expr::Cvt { span, .. }
+            | Expr::Sub { span, .. }
+            | Expr::Eps { span } => *span,
             Expr::Raw(tr) => tr.span,
         }
     }
@@ -1073,7 +1276,10 @@ fn classify_simple_expression(
                 span,
                 name: name.clone(),
             },
-            Token::Nat(n) => Expr::Num { span, value: *n },
+            Token::Nat(n) => Expr::Num {
+                span,
+                value: NumLit::Nat(*n),
+            },
             Token::Text(t) => Expr::Text {
                 span,
                 value: t.clone(),
@@ -1182,7 +1388,7 @@ fn pratt_leaf(
             }));
         }
         Token::Ident(name) => Expr::Var { span, name: name.clone() },
-        Token::Nat(n) => Expr::Num { span, value: *n },
+        Token::Nat(n) => Expr::Num { span, value: NumLit::Nat(*n) },
         Token::Text(t) => Expr::Text { span, value: t.clone() },
         Token::Eps => Expr::Eps { span },
         Token::LParen => {
@@ -1248,6 +1454,7 @@ fn tree_to_expr(tree: Tree<Expr>, table: &OpTable, span: Span) -> Expr {
                     span,
                     inner: Box::new(inner),
                     kind,
+                    bindings: Vec::new(),
                 };
             }
             Expr::Case {

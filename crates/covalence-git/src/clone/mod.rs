@@ -4,14 +4,18 @@
 //! fetched objects directly into a [`GitStore`](crate::store::GitStore).
 
 mod http;
+pub mod local;
 pub mod packfile;
 pub mod pktline;
 
 use std::io;
+use std::path::PathBuf;
 
 use covalence_hash::{O256, gix_hash};
 
 use crate::store::GitStore;
+
+pub use local::{LocalCloneOptions, clone_local_into};
 
 /// Options for cloning a git repository.
 pub struct CloneOptions {
@@ -50,19 +54,82 @@ pub struct CloneResult {
     pub cov_trees: Vec<(gix_hash::ObjectId, O256)>,
 }
 
-/// Clone a remote git repository into a [`GitStore`].
+/// Source location for a clone.
+pub enum CloneSource {
+    /// An HTTP/HTTPS git remote (smart-protocol v2).
+    Http(String),
+    /// A local git repository on disk.
+    Local(PathBuf),
+}
+
+/// Classify a clone URL.
 ///
-/// Uses the git smart HTTP protocol v2 to:
-/// 1. Discover server capabilities
-/// 2. List remote refs (optionally filtered by prefix)
-/// 3. Fetch objects (with optional depth/filter)
-/// 4. Parse the packfile and store objects
+/// `file://` URLs, paths starting with `/`, `./`, `../`, or `~/`, and `http(s)`
+/// URLs are recognised. Anything else falls back to HTTP — preserving the
+/// existing behaviour for bare hostnames or relative paths typed as URLs.
+pub fn classify_url(url: &str) -> CloneSource {
+    if let Some(rest) = url.strip_prefix("file://") {
+        // Tolerate `file:///path` (empty host) and `file://path` (host == path).
+        let path = rest.trim_start_matches('/');
+        let mut out = PathBuf::from("/");
+        out.push(path);
+        return CloneSource::Local(out);
+    }
+    if url.starts_with("http://") || url.starts_with("https://") {
+        return CloneSource::Http(url.to_string());
+    }
+    if url.starts_with('/')
+        || url.starts_with("./")
+        || url.starts_with("../")
+        || url.starts_with("~/")
+    {
+        let expanded = if let Some(rest) = url.strip_prefix("~/") {
+            match std::env::var_os("HOME") {
+                Some(home) => {
+                    let mut p = PathBuf::from(home);
+                    p.push(rest);
+                    p
+                }
+                None => PathBuf::from(url),
+            }
+        } else {
+            PathBuf::from(url)
+        };
+        return CloneSource::Local(expanded);
+    }
+    CloneSource::Http(url.to_string())
+}
+
+/// Clone a git repository into a [`GitStore`].
+///
+/// Dispatches by URL: HTTP(S) remotes use the smart-protocol v2 transport,
+/// local paths (and `file://` URLs) walk the source ODB directly via
+/// [`clone_local_into`].
 pub fn clone_into(
     opts: &CloneOptions,
     store: &GitStore,
     mut progress: impl FnMut(&str),
 ) -> io::Result<CloneResult> {
-    let url = http::GitUrl::parse(&opts.url);
+    match classify_url(&opts.url) {
+        CloneSource::Local(path) => clone_local_into(
+            &LocalCloneOptions {
+                path,
+                ref_prefixes: opts.ref_prefixes.clone(),
+            },
+            store,
+            progress,
+        ),
+        CloneSource::Http(http_url) => clone_http_into(&http_url, opts, store, &mut progress),
+    }
+}
+
+fn clone_http_into(
+    http_url: &str,
+    opts: &CloneOptions,
+    store: &GitStore,
+    progress: &mut dyn FnMut(&str),
+) -> io::Result<CloneResult> {
+    let url = http::GitUrl::parse(http_url);
     let agent =
         ureq::Agent::new_with_config(ureq::config::Config::builder().https_only(false).build());
 
@@ -151,4 +218,38 @@ pub fn clone_into(
         shallow_boundaries: fetch_resp.shallow_oids,
         cov_trees,
     })
+}
+
+#[cfg(test)]
+mod url_tests {
+    use super::*;
+
+    #[test]
+    fn classify_local_paths() {
+        assert!(matches!(classify_url("/abs/path"), CloneSource::Local(p) if p.to_str() == Some("/abs/path")));
+        assert!(matches!(classify_url("./rel"), CloneSource::Local(_)));
+        assert!(matches!(classify_url("../up"), CloneSource::Local(_)));
+        assert!(matches!(
+            classify_url("file:///abs/path"),
+            CloneSource::Local(p) if p.to_str() == Some("/abs/path")
+        ));
+        assert!(matches!(
+            classify_url("file://host/p"),
+            CloneSource::Local(p) if p.to_str() == Some("/host/p")
+        ));
+    }
+
+    #[test]
+    fn classify_http_urls() {
+        assert!(matches!(
+            classify_url("https://github.com/foo/bar"),
+            CloneSource::Http(s) if s == "https://github.com/foo/bar"
+        ));
+        assert!(matches!(
+            classify_url("http://localhost:8080"),
+            CloneSource::Http(_)
+        ));
+        // Bare hostname / scheme-less URL falls through to HTTP for back-compat.
+        assert!(matches!(classify_url("github.com/foo"), CloneSource::Http(_)));
+    }
 }

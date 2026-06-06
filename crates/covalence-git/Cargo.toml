@@ -8,7 +8,7 @@ object-store = ["dep:covalence-store", "dep:flate2"]
 odb = ["object-store", "dep:gix-odb", "dep:gix-object"]
 lfs = ["dep:covalence-store"]
 sqlite = ["object-store", "dep:covalence-sqlite"]
-clone = ["sqlite", "dep:ureq", "dep:covalence-object"]
+clone = ["sqlite", "odb", "dep:ureq", "dep:covalence-object"]
 
 [dependencies]
 covalence-hash = { path = "../covalence-hash" }

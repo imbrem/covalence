@@ -71,6 +71,20 @@ impl OdbBackend {
     fn cache(&self) -> gix_odb::Cache<gix_odb::store::Handle<Arc<gix_odb::Store>>> {
         self.store.to_cache_arc()
     }
+
+    /// Iterate every object ID known to the store: packed objects first, then
+    /// loose objects. The same OID may appear more than once if it exists in
+    /// multiple packs or both loose and packed; consumers should dedup as
+    /// needed.
+    pub fn iter_oids(
+        &self,
+    ) -> Result<impl Iterator<Item = Result<gix_hash::ObjectId, StoreError>>, StoreError> {
+        let iter = self
+            .store
+            .iter()
+            .map_err(|e| StoreError::Io(format!("odb iter: {e}")))?;
+        Ok(iter.map(|r| r.map_err(|e| StoreError::Io(format!("odb iter: {e}")))))
+    }
 }
 
 /// Convert our `GitObjectKind` to `gix_object::Kind`.

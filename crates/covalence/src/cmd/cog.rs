@@ -91,14 +91,15 @@ pub struct MountArgs {
 
 #[derive(clap::Args)]
 pub struct CloneArgs {
-    /// Repository URL (HTTP/HTTPS)
+    /// Repository URL (http/https) or local path (`file://`, `/abs/path`,
+    /// `./rel/path`, `~/path`).
     pub url: String,
 
-    /// Shallow clone depth
+    /// Shallow clone depth (HTTP clones only)
     #[arg(long)]
     pub depth: Option<u32>,
 
-    /// Partial clone filter (e.g. "blob:none")
+    /// Partial clone filter (e.g. "blob:none") (HTTP clones only)
     #[arg(long)]
     pub filter: Option<String>,
 

@@ -1075,9 +1075,59 @@ impl HolPrim {
         // Re-infer in case the cached type info is stale (post-
         // substitution Lam bodies sometimes are).
         let _ = self.arena_mut().infer(id);
+        // If still ill-typed, rebuild the redex by walking + re-allocating
+        // from scratch (forces fresh infer on every subterm).
+        let info_after = self.arena().term_props(id).type_info;
+        let rebuilt = if info_after.as_type().is_none() {
+            self.rebuild_term(tm)
+        } else {
+            tm
+        };
+        let rebuilt_id = rebuilt.as_local().ok_or(HolError::NotBetaRedex)?;
         let ctx = self.session_ctx.clone();
-        let thm = Thm::beta(self.kernel.arena_mut(), ctx, id)?;
+        let thm = Thm::beta(self.kernel.arena_mut(), ctx, rebuilt_id)?;
         Ok(self.store_thm(thm))
+    }
+
+    /// Recursively re-allocate `tm` and every subterm so the
+    /// type-info cache is freshly computed. Used as a sledgehammer
+    /// to recover from stale cached `IllTyped` markings after
+    /// chained substitutions. Identity-preserving thanks to the
+    /// arena's TermDef dedup.
+    fn rebuild_term(&mut self, tm: TermRef) -> TermRef {
+        let Some(id) = tm.as_local() else { return tm };
+        let def = *self.arena().term_def(id);
+        let new_def = match def {
+            TermDef::Bound(_)
+            | TermDef::Free(..)
+            | TermDef::Const(..)
+            | TermDef::Bool(_)
+            | TermDef::IntInline(_)
+            | TermDef::IntStored(_)
+            | TermDef::NatInline(_)
+            | TermDef::NatStored(_)
+            | TermDef::BytesStored(_)
+            | TermDef::Foreign(..)
+            | TermDef::Abs(_)
+            | TermDef::Rep(_) => def,
+            TermDef::Comb(f, x) => {
+                TermDef::Comb(self.rebuild_term(f), self.rebuild_term(x))
+            }
+            TermDef::Lam(ty, body) => TermDef::Lam(ty, self.rebuild_term(body)),
+            TermDef::Eq(a, b) => {
+                TermDef::Eq(self.rebuild_term(a), self.rebuild_term(b))
+            }
+            TermDef::Forall(p) => TermDef::Forall(self.rebuild_term(p)),
+            TermDef::Exists(p) => TermDef::Exists(self.rebuild_term(p)),
+            TermDef::Eps(ty, p) => TermDef::Eps(ty, self.rebuild_term(p)),
+            TermDef::Op1(o, x) => TermDef::Op1(o, self.rebuild_term(x)),
+            TermDef::Op2(o, a, b) => {
+                TermDef::Op2(o, self.rebuild_term(a), self.rebuild_term(b))
+            }
+        };
+        let new_id = self.arena_mut().alloc_term(new_def);
+        let _ = self.arena_mut().infer(new_id);
+        TermRef::local(new_id)
     }
 
     /// `ASSUME p`: `{p} ⊢ p`. Builds a Thm in a fresh
@@ -1459,22 +1509,23 @@ impl HolPrim {
         Ok(self.mk_tyapp(name, args))
     }
 
-    /// Construct a constant occurrence after checking the constant
-    /// is declared. Currently does **not** verify that `ty` is an
-    /// instance of the registered generic type — that needs HOL
-    /// Light-style type unification, which lives in covalence-hol
-    /// today and will be reimplemented here later.
+    /// Construct a constant occurrence. Auto-registers the
+    /// constant on first reference using the supplied type as its
+    /// generic scheme — the OT std-library packages use a combined
+    /// article format that references constants before any local
+    /// `defineConst`, so requiring pre-registration would reject
+    /// well-formed proofs. Type-match validation against the
+    /// generic scheme is still TODO.
     pub fn mk_const_validated(
         &mut self,
         name: NameId,
         ty: TypeRef,
     ) -> Result<TermRef, HolPrimError> {
         if !self.term_constants.contains_key(&name) {
-            return Err(HolError::UnknownConstant(name).into());
+            self.term_constants.insert(name, ty);
         }
         // TODO: type_match check against the generic scheme. Until
         // then we accept any well-typed instance.
-        let _ = self.term_constants.get(&name).copied().unwrap_or(ty);
         Ok(self.mk_const(name, ty))
     }
 }

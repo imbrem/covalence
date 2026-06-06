@@ -255,8 +255,31 @@ fn test_axiom_extensionality() {
 // The big one: unit-def with 7+ transitive dependencies
 // -------------------------------------------------------------------
 
+// Fails at article line 383: `betaConv: IllTypedInput`.
+//
+// OT's `cmd_beta_conv` general-path builds `(λx. body) x` via
+// `kernel.mk_comb(f, var)` (raw, no fold since `f` is a `Lam`) and
+// then calls `beta_conv` on it. The kernel's `Thm::beta` checks
+// `arena.is_well_typed(comb)` and rejects.
+//
+// Tried (none of these help):
+//   1. `arena.infer(id)` immediately before `Thm::beta` — fixes
+//      stale Unbound caches, but the term here is genuinely ill-
+//      typed structurally so re-inference produces the same
+//      ILL_TYPED.
+//   2. `rebuild_term(tm)` — walks every subterm, re-allocates and
+//      re-infers each. Also produces ILL_TYPED.
+//
+// So the redex's structure itself doesn't type-check: somewhere
+// in the cascade of `inst` / `inst_type` the article applies
+// before this point, a Lam ended up with body whose deepest
+// bound-var reference doesn't match the Lam's binder type.
+// Likely fix area: tighten `Arena::subst_tyvar_in_term` to walk
+// Lam bodies *under* the binder (push/pop ctx like `infer_term`
+// does) so that nested Lams' binder types stay consistent with
+// their bodies after type substitution.
 #[test]
-#[ignore = "betaConv IllTypedInput late in proof — deeper post-substitution type-cache issue"]
+#[ignore = "betaConv IllTypedInput at article line 383 — see comment"]
 fn test_unit_def_full_chain() {
     let (mut kernel, mut names) = setup_with_select();
     let resolver = FileResolver::new(assets_dir());
@@ -276,8 +299,11 @@ fn test_unit_def_full_chain() {
 // The biggest: unit-thm, depends on unit-def + many bool packages
 // -------------------------------------------------------------------
 
+// Same betaConv IllTypedInput as test_unit_def_full_chain. unit-thm
+// reaches the same code path through unit-def's transitive deps;
+// fixing one fixes both.
 #[test]
-#[ignore = "betaConv IllTypedInput late in proof — deeper post-substitution type-cache issue"]
+#[ignore = "betaConv IllTypedInput — same as test_unit_def_full_chain"]
 fn test_unit_thm_full_chain() {
     let (mut kernel, mut names) = setup_with_select();
     let resolver = FileResolver::new(assets_dir());
@@ -319,13 +345,34 @@ fn std_resolver() -> Option<FileResolver> {
 // -------------------------------------------------------------------
 // Umbrella: bool (bool-def + bool-int + axioms + bool-ext + bool-class)
 //
-// NOTE: These tests are #[ignore] because the std packages use a
-// combined article format that references constants not yet supported
-// by the checker. Run with `--ignored` once the checker is extended.
+// NOTE: These std-* tests use packages from `assets/opentheory/std/`
+// — the "combined article format" where every package's article is
+// the same merged thing rather than the per-definition articles in
+// `assets/opentheory/*-1.0/`. They reference constants in any order
+// (forward references are normal), which the per-package
+// dependency-resolver doesn't expect.
+//
+// `HolPrim::mk_const_validated` now auto-registers a constant on
+// first reference (using the supplied type as the generic scheme),
+// so the "unknown constant" failure is bypassed. After that, each
+// std-* test fails for a different downstream reason — see the
+// per-test comments.
 // -------------------------------------------------------------------
 
+// After the auto-register hack, this article runs to completion but
+// only exports 10 theorems; the assertion wants ≥ 11.
+//
+// Two possibilities (untriaged):
+//   1. Our interpreter silently drops one `thm` command — e.g. a
+//      conclusion that fails `aconv` after a fold mismatch we
+//      handle elsewhere but not here.
+//   2. The std `bool-def` article only declares 10 theorems and
+//      the "≥ 11" was based on a different snapshot of the package.
+//
+// Quick triage: print every theorem's concl shape while parsing
+// the article and compare against HOL Light's `bool-def` output.
 #[test]
-#[ignore]
+#[ignore = "10 < 11 theorems — either we silently drop one or the assertion is stale"]
 fn test_std_bool_def() {
     let Some(resolver) = std_resolver() else {
         return;
@@ -340,8 +387,19 @@ fn test_std_bool_def() {
     );
 }
 
+// Fails at article line 221: `trans: IllTypedInput`.
+//
+// Same family of issue as `test_unit_def_full_chain`: the kernel's
+// `Thm::trans` rejects because `arena.is_well_typed(ab.concl)` or
+// `is_well_typed(bc.concl)` returns false. The cumulative effect of
+// inst / inst_type along the std umbrella article leaves at least
+// one input Thm's concl with a structurally ill-typed term.
+//
+// Same suspected fix area as the unit-* tests: `subst_tyvar_in_term`
+// not consistently propagating type changes through nested Lam
+// binders. Until the substitution path is tightened, this fails.
 #[test]
-#[ignore]
+#[ignore = "trans IllTypedInput — same root cause as test_unit_def_full_chain"]
 fn test_std_bool_umbrella() {
     let Some(resolver) = std_resolver() else {
         return;
@@ -364,8 +422,11 @@ fn test_std_bool_umbrella() {
 // Umbrella: unit
 // -------------------------------------------------------------------
 
+// Same `trans: IllTypedInput` family. The std unit package's
+// combined article applies enough inst_type to trigger the same
+// substitution-propagation bug.
 #[test]
-#[ignore]
+#[ignore = "trans IllTypedInput — same as test_std_bool_umbrella"]
 fn test_std_unit() {
     let Some(resolver) = std_resolver() else {
         return;
@@ -388,8 +449,11 @@ fn test_std_unit() {
 // Umbrella: pair
 // -------------------------------------------------------------------
 
+// Same `trans: IllTypedInput` family as test_std_bool_umbrella.
+// Will pass once the substitution propagation bug behind the
+// unit-* / bool-umbrella failures is fixed.
 #[test]
-#[ignore]
+#[ignore = "trans IllTypedInput — same as test_std_bool_umbrella"]
 fn test_std_pair() {
     let Some(resolver) = std_resolver() else {
         return;
@@ -412,8 +476,9 @@ fn test_std_pair() {
 // Umbrella: natural
 // -------------------------------------------------------------------
 
+// Same `trans: IllTypedInput` family as test_std_bool_umbrella.
 #[test]
-#[ignore]
+#[ignore = "trans IllTypedInput — same as test_std_bool_umbrella"]
 fn test_std_natural() {
     let Some(resolver) = std_resolver() else {
         return;

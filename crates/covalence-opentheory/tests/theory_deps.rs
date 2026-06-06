@@ -53,7 +53,6 @@ fn test_bool_def_true_standalone() {
 }
 
 #[test]
-#[ignore = "thm: conclusion doesn't match — need fold for !/?/⇒ or quantifier handling"]
 fn test_bool_def_let_standalone() {
     let (mut kernel, mut names) = setup();
     let resolver = FileResolver::new(assets_dir());
@@ -82,7 +81,6 @@ fn test_bool_def_let_standalone() {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "thm: conclusion doesn't match — need fold for !/?/⇒ or quantifier handling"]
 fn test_bool_def_and_with_dep() {
     let (mut kernel, mut names) = setup();
     let resolver = FileResolver::new(assets_dir());
@@ -111,7 +109,6 @@ fn test_bool_def_and_with_dep() {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "thm: conclusion doesn't match — need fold for !/?/⇒ or quantifier handling"]
 fn test_bool_def_imp_chain() {
     let (mut kernel, mut names) = setup();
     let resolver = FileResolver::new(assets_dir());
@@ -141,7 +138,7 @@ fn test_bool_def_imp_chain() {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "thm: conclusion doesn't match — need fold for !/?/⇒ or quantifier handling"]
+#[ignore = "defineConst: term is not typed — likely sub-fold producing ill-typed Lam body"]
 fn test_bool_def_exists_diamond() {
     let (mut kernel, mut names) = setup();
     let resolver = FileResolver::new(assets_dir());
@@ -170,7 +167,7 @@ fn test_bool_def_exists_diamond() {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "thm: conclusion doesn't match — need fold for !/?/⇒ or quantifier handling"]
+#[ignore = "defineConst: term is not typed — likely sub-fold producing ill-typed Lam body"]
 fn test_all_bool_defs() {
     let (mut kernel, mut names) = setup_with_select();
     let resolver = FileResolver::new(assets_dir());
@@ -205,7 +202,6 @@ fn test_all_bool_defs() {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "thm: conclusion doesn't match — need fold for !/?/⇒ or quantifier handling"]
 fn test_axiom_choice() {
     let (mut kernel, mut names) = setup_with_select();
     let resolver = FileResolver::new(assets_dir());
@@ -262,7 +258,7 @@ fn test_axiom_extensionality() {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "thm: conclusion doesn't match — need fold for !/?/⇒ or quantifier handling"]
+#[ignore = "defineConst: term is not typed — likely sub-fold producing ill-typed Lam body"]
 fn test_unit_def_full_chain() {
     let (mut kernel, mut names) = setup_with_select();
     let resolver = FileResolver::new(assets_dir());
@@ -283,7 +279,7 @@ fn test_unit_def_full_chain() {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "thm: conclusion doesn't match — need fold for !/?/⇒ or quantifier handling"]
+#[ignore = "defineConst: term is not typed — likely sub-fold producing ill-typed Lam body"]
 fn test_unit_thm_full_chain() {
     let (mut kernel, mut names) = setup_with_select();
     let resolver = FileResolver::new(assets_dir());

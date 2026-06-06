@@ -48,6 +48,7 @@ use covalence_hol::types::{HolError, NameId};
 use covalence_kernel::arena::Arena;
 use covalence_kernel::id::{StrId, TyArgsId, TypeId};
 use covalence_kernel::kernel::Kernel as KKernel;
+use covalence_kernel::primop::{PrimOp1, PrimOp2};
 use covalence_kernel::prop::{Context, Prop, ProofError, Thm};
 use covalence_kernel::term::{TermDef, TermRef};
 use covalence_kernel::ty::{TypeKind, TypeRef};
@@ -430,12 +431,44 @@ impl HolPrim {
         }
     }
 
-    /// Structural type equality. Kernel `TypeRef`s are interned per
-    /// `Arena`, so the cheap `==` is sound for types built against
-    /// the same kernel — which is always the case inside one
-    /// `HolPrim`.
+    /// Structural type equality. The arena's `alloc_type` does
+    /// **not** dedup, so two `alloc_tvar("A")` calls produce
+    /// different `TypeRef`s with the same shape — we walk both
+    /// trees instead of trusting `==`.
     pub fn type_eq(&self, a: TypeRef, b: TypeRef) -> bool {
-        a == b
+        Self::type_eq_struct(self.arena(), a, b)
+    }
+
+    fn type_eq_struct(arena: &Arena, a: TypeRef, b: TypeRef) -> bool {
+        if a == b {
+            return true;
+        }
+        let ka = arena.type_ref_kind(a);
+        let kb = arena.type_ref_kind(b);
+        match (ka, kb) {
+            (Some(TypeKind::Builtin(x)), Some(TypeKind::Builtin(y))) => x == y,
+            (Some(TypeKind::TVar(x)), Some(TypeKind::TVar(y))) => x == y,
+            (Some(TypeKind::Fun(d1, c1)), Some(TypeKind::Fun(d2, c2))) => {
+                Self::type_eq_struct(arena, d1, d2) && Self::type_eq_struct(arena, c1, c2)
+            }
+            (Some(TypeKind::Tyapp(n1, args1)), Some(TypeKind::Tyapp(n2, args2))) => {
+                if n1 != n2 {
+                    return false;
+                }
+                let a1 = arena.tyargs(args1);
+                let a2 = arena.tyargs(args2);
+                if a1.len() != a2.len() {
+                    return false;
+                }
+                a1.iter()
+                    .zip(a2.iter())
+                    .all(|(x, y)| Self::type_eq_struct(arena, *x, *y))
+            }
+            (Some(TypeKind::Subset(p1, t1)), Some(TypeKind::Subset(p2, t2))) => {
+                Self::type_eq_struct(arena, p1, p2) && t1 == t2
+            }
+            _ => false,
+        }
     }
 
     /// All free type variables of `ty` (deduplicated, in first-seen
@@ -514,15 +547,25 @@ impl HolPrim {
 
     /// Application `f x`.
     ///
-    /// Performs one shell-level rewrite for HOL-Light parity: when
-    /// `f` is `Comb(Const "=", lhs)`, fold into `Eq(lhs, x)`.
-    /// OpenTheory articles build equalities as `((= a) b)` via
-    /// `constTerm "=" + appTerm + appTerm`, but our kernel stores
-    /// equality as a primitive `Eq(_, _)` shape — folding here keeps
-    /// both representations alpha-equivalent.
+    /// Performs shell-level rewrites for HOL Light parity: OpenTheory
+    /// articles build equality, quantifiers, and the propositional
+    /// connectives as `Comb(Comb(Const "...", _), _)` chains via
+    /// `constTerm + appTerm + appTerm`, while our kernel stores them
+    /// as dedicated `Eq` / `Forall` / `Exists` / `Op1` / `Op2`
+    /// variants. Folding here keeps both representations
+    /// structurally identical so `aconv` matches.
     pub fn mk_comb(&mut self, f: TermRef, x: TermRef) -> TermRef {
         if let Some(eq) = self.try_fold_eq(f, x) {
             return eq;
+        }
+        if let Some(q) = self.try_fold_quantifier(f, x) {
+            return q;
+        }
+        if let Some(o) = self.try_fold_unary_op(f, x) {
+            return o;
+        }
+        if let Some(o) = self.try_fold_binary_op(f, x) {
+            return o;
         }
         let id = self.arena_mut().alloc_term(TermDef::Comb(f, x));
         // Kernel's cached typing can't resolve Bound(_) without
@@ -549,6 +592,82 @@ impl HolPrim {
             return None;
         }
         Some(self.mk_eq(lhs, x))
+    }
+
+    /// Extract the base name of a (possibly qualified) HOL Light
+    /// constant — `"Data.Bool.!"` → `"!"`. OT articles use the
+    /// qualified form; the fold matches by base name only so it
+    /// works across all `Data.Bool.*` and `HOL Light` namespaces.
+    fn base_name(qualified: &str) -> &str {
+        qualified.rsplit('.').next().unwrap_or(qualified)
+    }
+
+    /// If `f` is `Const "...!"` or `Const "...?"` (HOL Light's
+    /// universal / existential binders) and `x` is a `Lam`,
+    /// allocate `Forall(x)` / `Exists(x)`.
+    fn try_fold_quantifier(&mut self, f: TermRef, x: TermRef) -> Option<TermRef> {
+        let f_id = f.as_local()?;
+        let s = match *self.arena().term_def(f_id) {
+            TermDef::Const(s, _) => s,
+            _ => return None,
+        };
+        let name = self.arena().string(s).clone();
+        let def = match Self::base_name(name.as_str()) {
+            "!" => TermDef::Forall(x),
+            "?" => TermDef::Exists(x),
+            _ => return None,
+        };
+        // The argument must be a Lam — otherwise leave as `Comb`.
+        let x_id = x.as_local()?;
+        if !matches!(*self.arena().term_def(x_id), TermDef::Lam(_, _)) {
+            return None;
+        }
+        let id = self.arena_mut().alloc_term(def);
+        let _ = self.arena_mut().infer(id);
+        Some(TermRef::local(id))
+    }
+
+    /// If `f` is `Const "...~"` (HOL Light's negation), allocate
+    /// `Op1(LogicalNot, x)`.
+    fn try_fold_unary_op(&mut self, f: TermRef, x: TermRef) -> Option<TermRef> {
+        let f_id = f.as_local()?;
+        let s = match *self.arena().term_def(f_id) {
+            TermDef::Const(s, _) => s,
+            _ => return None,
+        };
+        let name = self.arena().string(s).clone();
+        let op = match Self::base_name(name.as_str()) {
+            "~" => PrimOp1::LogicalNot,
+            _ => return None,
+        };
+        let id = self.arena_mut().alloc_term(TermDef::Op1(op, x));
+        let _ = self.arena_mut().infer(id);
+        Some(TermRef::local(id))
+    }
+
+    /// If `f` is `Comb(Const "...{/\,\/,==>}", a)`, fold to
+    /// `Op2(op, a, x)`.
+    fn try_fold_binary_op(&mut self, f: TermRef, x: TermRef) -> Option<TermRef> {
+        let f_id = f.as_local()?;
+        let (g, a) = match *self.arena().term_def(f_id) {
+            TermDef::Comb(g, a) => (g, a),
+            _ => return None,
+        };
+        let g_id = g.as_local()?;
+        let s = match *self.arena().term_def(g_id) {
+            TermDef::Const(s, _) => s,
+            _ => return None,
+        };
+        let name = self.arena().string(s).clone();
+        let op = match Self::base_name(name.as_str()) {
+            "/\\" => PrimOp2::LogicalAnd,
+            "\\/" => PrimOp2::LogicalOr,
+            "==>" => PrimOp2::LogicalImp,
+            _ => return None,
+        };
+        let id = self.arena_mut().alloc_term(TermDef::Op2(op, a, x));
+        let _ = self.arena_mut().infer(id);
+        Some(TermRef::local(id))
     }
 
     /// Lambda abstraction `λvar. body`. `var` must be a `Free`
@@ -671,14 +790,24 @@ impl HolPrim {
             (Eq(f1, x1), Eq(f2, x2)) => {
                 Self::ref_eq(arena, f1, f2) && Self::ref_eq(arena, x1, x2)
             }
-            (Lam(t1, b1), Lam(t2, b2)) => t1 == t2 && Self::ref_eq(arena, b1, b2),
+            (Lam(t1, b1), Lam(t2, b2)) => {
+                Self::type_eq_struct(arena, t1, t2) && Self::ref_eq(arena, b1, b2)
+            }
             (Forall(p1), Forall(p2)) => Self::ref_eq(arena, p1, p2),
             (Exists(p1), Exists(p2)) => Self::ref_eq(arena, p1, p2),
             (Op1(o1, p1), Op1(o2, p2)) => o1 == o2 && Self::ref_eq(arena, p1, p2),
             (Op2(o1, l1, r1), Op2(o2, l2, r2)) => {
                 o1 == o2 && Self::ref_eq(arena, l1, l2) && Self::ref_eq(arena, r1, r2)
             }
-            (Eps(t1, p1), Eps(t2, p2)) => t1 == t2 && Self::ref_eq(arena, p1, p2),
+            (Eps(t1, p1), Eps(t2, p2)) => {
+                Self::type_eq_struct(arena, t1, t2) && Self::ref_eq(arena, p1, p2)
+            }
+            (Free(s1, t1), Free(s2, t2)) => {
+                s1 == s2 && Self::type_eq_struct(arena, t1, t2)
+            }
+            (Const(s1, t1), Const(s2, t2)) => {
+                s1 == s2 && Self::type_eq_struct(arena, t1, t2)
+            }
             _ => da == db,
         }
     }

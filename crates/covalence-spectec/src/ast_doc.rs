@@ -350,24 +350,22 @@ fn token_run_to_expr(
 }
 
 fn mixop_for(name: &str, ctx: &ElabContext) -> spectec_ast::MixOp {
+    // Prefer the relation-template walker (handles `_` subscripts and
+    // backtick stripping the way OCaml does). Fall back to walking
+    // the OpTable fragments for constructor / synthetic ops not
+    // backed by a relation template.
+    if let Some(template) = ctx.rel_templates.get(name) {
+        let fragments = crate::elab::mixop_fragments_from_template(template, &ctx.type_names);
+        return spectec_ast::MixOp::new(fragments);
+    }
     let Some(op) = ctx.op_table.iter().find(|o| o.name == name) else {
         return spectec_ast::MixOp::new(Vec::new());
     };
-    // Build the `%`-delimited template string and split on `%`. This
-    // matches `spectec_ast::MixOp::Decode`'s representation exactly.
     let mut s = String::new();
     for f in &op.fragments {
         match f {
             crate::mixfix::Fragment::Hole(_) => s.push('%'),
-            crate::mixfix::Fragment::Lit(t) => {
-                use crate::token::Token::*;
-                let text = match t {
-                    Ident(n) => n.clone(),
-                    Nat(n) => n.to_string(),
-                    other => other.describe().trim_matches('`').to_string(),
-                };
-                s.push_str(&text);
-            }
+            crate::mixfix::Fragment::Lit(t) => s.push_str(&t.to_source_text()),
         }
     }
     let fragments: Vec<String> = s.split('%').map(str::to_owned).collect();

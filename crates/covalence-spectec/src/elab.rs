@@ -63,6 +63,11 @@ pub struct ElabContext {
     /// records the variant alternatives collected across all profiles
     /// (`/syn` and `/sem`) with `...` extension placeholders resolved.
     pub syntax_defs: BTreeMap<String, MergedSyntax>,
+    /// Per-relation template token runs, indexed by relation name.
+    /// Used by the converter to build OCaml-compatible MixOp strings
+    /// (which need access to the raw template tokens, not the
+    /// Pratt-flavoured `OpTable` fragments).
+    pub rel_templates: BTreeMap<String, TokenRun>,
 }
 
 /// A `syntax NAME` declaration with all its profile-suffixed variants
@@ -202,9 +207,11 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
     //   - Each `SyntaxBody::Variant` alternative whose head looks like a
     //     case constructor becomes one Op (high precedence, with the
     //     head as a leading Lit and remaining type expressions as Holes).
+    let mut rel_templates: BTreeMap<String, TokenRun> = BTreeMap::new();
     for top in tops {
         match top {
             Top::Relation(r) => {
+                rel_templates.insert(r.name.text.clone(), r.template.clone());
                 match template_to_fragments(&r.template, &type_names) {
                     Ok(frags) => {
                         op_table.add(r.name.text.clone(), frags);
@@ -231,6 +238,7 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
             type_names,
             var_names,
             syntax_defs,
+            rel_templates,
         })
     } else {
         Err(diags)
@@ -305,6 +313,78 @@ fn metavar_base(name: &str) -> &str {
         }
     }
     trimmed
+}
+
+/// Build the OCaml-compatible MixOp fragment list for a relation
+/// template. Walks the template tokens with two key rules the OCaml
+/// elaborator uses:
+///
+/// - **Backticks are invisible.** `` ` `` is a source-only escape that
+///   prevents a following token from being interpreted as a mixfix
+///   operator. The MixOp display strips it.
+///
+/// - **`_<lowercase>` is a subscript.** When the token list contains
+///   an `Ident` starting with `_` followed by a lowercase letter
+///   (e.g. `_context` after `~~`), the leading `_` glues to the
+///   preceding literal — yielding `~~_` as one literal — and the
+///   remaining `<rest>` is reclassified (becomes a hole if it's a
+///   declared type name, else a literal). `_<uppercase>` (`_IDX`,
+///   `_RESULT`, ...) stays as a single identifier per SpecTec's
+///   constructor-name convention.
+///
+/// Returns the `Vec<String>` form `spectec_ast::MixOp` uses
+/// (`%`-delimited template, split on `%`).
+pub fn mixop_fragments_from_template(
+    template: &TokenRun,
+    type_names: &HashSet<String>,
+) -> Vec<String> {
+    let mut s = String::new();
+    let toks = &template.tokens;
+    let mut i = 0;
+    while i < toks.len() {
+        let tok = &toks[i];
+        match &tok.token {
+            Token::Backtick => {
+                // Invisible in MixOp output.
+                i += 1;
+            }
+            Token::Ident(n)
+                if n.starts_with('_')
+                    && n.chars()
+                        .nth(1)
+                        .is_some_and(|c| c.is_ascii_lowercase()) =>
+            {
+                // `_<rest>`: the `_` is a subscript on the preceding
+                // literal; `rest` may be a hole or a literal in its
+                // own right.
+                s.push('_');
+                let rest = &n[1..];
+                i += 1;
+                if type_names.contains(rest) {
+                    s.push('%');
+                    i += skip_type_suffix(&toks[i..]);
+                } else {
+                    s.push_str(rest);
+                }
+            }
+            Token::Ident(n) if type_names.contains(n) => {
+                s.push('%');
+                i += 1;
+                i += skip_type_suffix(&toks[i..]);
+            }
+            Token::LParen => {
+                s.push('%');
+                let consumed = skip_balanced(&toks[i..]);
+                i += consumed;
+                i += skip_type_suffix(&toks[i..]);
+            }
+            _ => {
+                s.push_str(&tok.token.to_source_text());
+                i += 1;
+            }
+        }
+    }
+    s.split('%').map(str::to_owned).collect()
 }
 
 /// Like [`template_to_fragments`] but also returns the slice of source

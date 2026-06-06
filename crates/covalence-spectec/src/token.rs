@@ -174,6 +174,80 @@ impl Token {
         })
     }
 
+    /// The source-text representation of this token, suitable for
+    /// rendering inside a `MixOp` template string.
+    ///
+    /// Distinct from [`describe`](Self::describe), which returns a
+    /// quoted diagnostic label like `` `|-` ``. This function returns
+    /// the bare source characters: `|-`, `<=`, `~>`, `*`, etc.
+    ///
+    /// [`Token::Backtick`] returns an empty string because the OCaml
+    /// SpecTec elaborator strips backticks from MixOp display
+    /// (`` ` `` is a source-only escape that's invisible at AST
+    /// rendering time).
+    pub fn to_source_text(&self) -> String {
+        match self {
+            Token::Ident(s) => s.clone(),
+            Token::Nat(n) => n.to_string(),
+            Token::Text(s) => format!("\"{}\"", s),
+            Token::Syntax => "syntax".into(),
+            Token::Def => "def".into(),
+            Token::Relation => "relation".into(),
+            Token::Rule => "rule".into(),
+            Token::Var => "var".into(),
+            Token::Grammar => "grammar".into(),
+            Token::Hint => "hint".into(),
+            Token::If => "if".into(),
+            Token::Let => "let".into(),
+            Token::Else => "else".into(),
+            Token::Otherwise => "otherwise".into(),
+            Token::Eps => "eps".into(),
+            Token::LParen => "(".into(),
+            Token::RParen => ")".into(),
+            Token::LBracket => "[".into(),
+            Token::RBracket => "]".into(),
+            Token::LBrace => "{".into(),
+            Token::RBrace => "}".into(),
+            Token::Pipe => "|".into(),
+            Token::Comma => ",".into(),
+            Token::Dot => ".".into(),
+            Token::Colon => ":".into(),
+            Token::Semi => ";".into(),
+            Token::Eq => "=".into(),
+            Token::Star => "*".into(),
+            Token::Plus => "+".into(),
+            Token::Question => "?".into(),
+            Token::Caret => "^".into(),
+            Token::Dollar => "$".into(),
+            // Backticks are display-only escapes — invisible in MixOp.
+            Token::Backtick => String::new(),
+            Token::Minus => "-".into(),
+            Token::LessThan => "<".into(),
+            Token::GreaterThan => ">".into(),
+            Token::Percent => "%".into(),
+            Token::Slash => "/".into(),
+            Token::Backslash => "\\".into(),
+            Token::Hash => "#".into(),
+            Token::Tilde => "~".into(),
+            Token::Bang => "!".into(),
+            Token::DashDash => "--".into(),
+            Token::DotDotDot => "...".into(),
+            Token::Arrow => "->".into(),
+            Token::Turnstile => "|-".into(),
+            Token::Subtype => "<:".into(),
+            Token::Step => "~>".into(),
+            Token::StepStar => "~>*".into(),
+            Token::Approx => "~~".into(),
+            Token::NotEq => "=/=".into(),
+            Token::LessEq => "<=".into(),
+            Token::GreaterEq => ">=".into(),
+            Token::LogAnd => "/\\".into(),
+            Token::LogOr => "\\/".into(),
+            Token::PlusPlus => "++".into(),
+            Token::Assign => ":=".into(),
+        }
+    }
+
     /// Short human-readable name used in diagnostic messages.
     pub fn describe(&self) -> &'static str {
         match self {

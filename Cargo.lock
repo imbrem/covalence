@@ -643,6 +643,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-egglog"
+version = "0.0.0"
+dependencies = [
+ "covalence-kernel",
+ "covalence-shell",
+ "covalence-types",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "covalence-forsp"
 version = "0.0.0"
 dependencies = [

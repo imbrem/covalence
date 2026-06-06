@@ -1,0 +1,12 @@
+[package]
+name = "covalence-egglog"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+covalence-shell = { path = "../covalence-shell" }
+covalence-types = { path = "../covalence-types" }
+thiserror = "2"
+
+[dev-dependencies]
+covalence-kernel = { path = "../covalence-kernel" }

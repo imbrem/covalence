@@ -52,6 +52,7 @@ fn elab_all_rule_conclusions_in_wasm_3_0() {
     let mut err_by_kind: BTreeMap<String, usize> = BTreeMap::new();
     let mut shape_histogram: BTreeMap<usize, usize> = BTreeMap::new();
     let mut shape_by_first_expr: BTreeMap<String, usize> = BTreeMap::new();
+    let mut all_operand_kind: BTreeMap<String, usize> = BTreeMap::new();
     let mut total_premises = 0usize;
     let mut premise_kind: BTreeMap<&str, usize> = BTreeMap::new();
 
@@ -64,6 +65,10 @@ fn elab_all_rule_conclusions_in_wasm_3_0() {
                     *shape_histogram.entry(elab.operands.len()).or_insert(0) += 1;
                     let kind = expr_kind(elab.operands.first());
                     *shape_by_first_expr.entry(kind.to_string()).or_insert(0) += 1;
+                    for operand in &elab.operands {
+                        let k = expr_kind(Some(operand));
+                        *all_operand_kind.entry(k.to_string()).or_insert(0) += 1;
+                    }
                     for p in &elab.premises {
                         total_premises += 1;
                         *premise_kind.entry(premise_kind_name(p)).or_insert(0) += 1;
@@ -85,6 +90,11 @@ fn elab_all_rule_conclusions_in_wasm_3_0() {
     }
     eprintln!("first-operand kind:");
     for (k, c) in &shape_by_first_expr {
+        eprintln!("  {k}: {c}");
+    }
+    let total_operands: usize = all_operand_kind.values().sum();
+    eprintln!("all-operand kinds ({total_operands} total):");
+    for (k, c) in &all_operand_kind {
         eprintln!("  {k}: {c}");
     }
     eprintln!("premises total: {total_premises}");
@@ -126,6 +136,7 @@ fn expr_kind(e: Option<&Expr>) -> &'static str {
         Some(Expr::Tup { .. }) => "Tup",
         Some(Expr::Case { .. }) => "Case",
         Some(Expr::Eps { .. }) => "Eps",
+        Some(Expr::Iter { .. }) => "Iter",
         Some(Expr::Raw(_)) => "Raw",
     }
 }

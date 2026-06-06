@@ -37,6 +37,18 @@ pub const REL_HOLE_PREC: Precedence = 0;
 /// associates the way you'd expect), so we use a high precedence here.
 pub const CTOR_HOLE_PREC: Precedence = 100;
 
+/// Precedence of the left operand of postfix iteration operators
+/// (`*`, `?`, `+`). Higher than constructor arg precedence so that
+/// `instr*` binds tighter than the surrounding `BLOCK _ _` application.
+pub const ITER_LEFT_PREC: Precedence = 200;
+
+/// Synthetic op name used for the `_*` postfix Kleene-iter operator.
+const ITER_STAR_OP: &str = "__iter_star";
+/// Synthetic op name used for the `_?` postfix optional operator.
+const ITER_OPT_OP: &str = "__iter_opt";
+/// Synthetic op name used for the `_+` postfix nonempty-iter operator.
+const ITER_PLUS_OP: &str = "__iter_plus";
+
 /// Result of running [`build_table`].
 #[derive(Debug, Default)]
 pub struct ElabContext {
@@ -68,13 +80,36 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
         }
     }
 
-    // Pass 2: extract operators.
+    // Pass 2a: register the universal postfix iteration operators.
+    let mut op_table = OpTable::new();
+    op_table.add(
+        ITER_STAR_OP,
+        vec![
+            Fragment::Hole(ITER_LEFT_PREC),
+            Fragment::Lit(Token::Star),
+        ],
+    );
+    op_table.add(
+        ITER_OPT_OP,
+        vec![
+            Fragment::Hole(ITER_LEFT_PREC),
+            Fragment::Lit(Token::Question),
+        ],
+    );
+    op_table.add(
+        ITER_PLUS_OP,
+        vec![
+            Fragment::Hole(ITER_LEFT_PREC),
+            Fragment::Lit(Token::Plus),
+        ],
+    );
+
+    // Pass 2b: extract operators.
     //   - Each `Top::Relation` template becomes one Op (relation-level
     //     precedence, holes interspersed with literals).
     //   - Each `SyntaxBody::Variant` alternative whose head looks like a
     //     case constructor becomes one Op (high precedence, with the
     //     head as a leading Lit and remaining type expressions as Holes).
-    let mut op_table = OpTable::new();
     for top in tops {
         match top {
             Top::Relation(r) => {
@@ -257,6 +292,12 @@ pub enum Expr {
     },
     /// `eps` — the empty sequence literal.
     Eps { span: Span },
+    /// `<inner><iter-suffix>` — postfix iteration on an expression.
+    Iter {
+        span: Span,
+        inner: Box<Expr>,
+        kind: IterKind,
+    },
     /// Fallback: an unanalysed token run. Used when the expression
     /// shape isn't yet supported by the structured cases.
     Raw(TokenRun),
@@ -270,7 +311,8 @@ impl Expr {
             | Expr::Text { span, .. }
             | Expr::Tup { span, .. }
             | Expr::Case { span, .. }
-            | Expr::Eps { span } => *span,
+            | Expr::Eps { span }
+            | Expr::Iter { span, .. } => *span,
             Expr::Raw(tr) => tr.span,
         }
     }
@@ -870,11 +912,33 @@ fn tree_to_expr(tree: Tree<Expr>, table: &OpTable, span: Span) -> Expr {
         Tree::App(op_id, args) => {
             let op = table.get(op_id);
             let head = op.name.clone();
-            let args = args
+            let mut iter_args: Vec<Expr> = args
                 .into_iter()
                 .map(|t| tree_to_expr(t, table, span))
                 .collect();
-            Expr::Case { span, head, args }
+            // Recognise the synthetic postfix-iter ops we registered in
+            // build_table and convert them to `Expr::Iter` rather than
+            // `Expr::Case`.
+            let iter_kind = match head.as_str() {
+                ITER_STAR_OP => Some(IterKind::Star),
+                ITER_OPT_OP => Some(IterKind::Opt),
+                ITER_PLUS_OP => Some(IterKind::Plus),
+                _ => None,
+            };
+            if let Some(kind) = iter_kind {
+                debug_assert_eq!(iter_args.len(), 1, "postfix iter takes one arg");
+                let inner = iter_args.pop().expect("checked");
+                return Expr::Iter {
+                    span,
+                    inner: Box::new(inner),
+                    kind,
+                };
+            }
+            Expr::Case {
+                span,
+                head,
+                args: iter_args,
+            }
         }
     }
 }
@@ -1155,9 +1219,15 @@ mod tests {
     }
 
     #[test]
-    fn empty_input_gives_empty_table() {
+    fn empty_input_table_has_only_builtins() {
         let ctx = build_from_str("");
-        assert_eq!(ctx.op_table.iter().count(), 0);
+        // Three universal postfix iter ops (`*`, `?`, `+`) are always
+        // registered. No user-defined operators for empty input.
+        let names: Vec<_> = ctx.op_table.iter().map(|o| o.name.clone()).collect();
+        assert_eq!(names.len(), 3);
+        assert!(names.contains(&ITER_STAR_OP.to_string()));
+        assert!(names.contains(&ITER_OPT_OP.to_string()));
+        assert!(names.contains(&ITER_PLUS_OP.to_string()));
     }
 
     #[test]
@@ -1476,6 +1546,49 @@ mod tests {
         "#;
         let elab = elab_first_rule(src);
         assert!(matches!(&elab.premises[0], ElabPremise::Raw(_)));
+    }
+
+    #[test]
+    fn elab_iter_suffix_on_arg() {
+        // `BLOCK bt instr*` should structure as
+        // `Case(BLOCK, [Var(bt), Iter(Var(instr), Star)])`.
+        let src = r#"
+            syntax blocktype = nat
+            syntax instr = | BLOCK blocktype instr*
+            syntax context = nat
+            relation R: context |- instr : instr
+            rule R:
+              C |- BLOCK bt instr* : i
+        "#;
+        let elab = elab_first_rule(src);
+        assert_eq!(elab.operands.len(), 3);
+        let Expr::Case { head, args, .. } = &elab.operands[1] else {
+            panic!("expected Case, got {:?}", elab.operands[1]);
+        };
+        assert_eq!(head, "BLOCK");
+        assert_eq!(args.len(), 2);
+        assert!(matches!(&args[0], Expr::Var { name, .. } if name == "bt"));
+        let Expr::Iter { inner, kind, .. } = &args[1] else {
+            panic!("expected Iter for second arg, got {:?}", args[1]);
+        };
+        assert!(matches!(kind, IterKind::Star));
+        assert!(matches!(inner.as_ref(), Expr::Var { name, .. } if name == "instr"));
+    }
+
+    #[test]
+    fn elab_iter_suffix_question_and_plus() {
+        let src = r#"
+            syntax a = nat
+            syntax b = nat
+            syntax context = nat
+            relation R: context |- a : a
+            rule R:
+              C |- x? : y+
+        "#;
+        let elab = elab_first_rule(src);
+        assert_eq!(elab.operands.len(), 3);
+        assert!(matches!(&elab.operands[1], Expr::Iter { kind: IterKind::Opt, .. }));
+        assert!(matches!(&elab.operands[2], Expr::Iter { kind: IterKind::Plus, .. }));
     }
 
     #[test]

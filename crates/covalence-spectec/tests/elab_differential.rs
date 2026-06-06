@@ -287,7 +287,7 @@ fn diff_against_wasm_spec_ast() {
     // means new code broke something that used to work, which is
     // exactly what this test exists to catch.
     let floors: [(&str, usize); 4] =
-        [("Typ", 147), ("Rel", 18), ("Dec", 81), ("Gram", 33)];
+        [("Typ", 147), ("Rel", 19), ("Dec", 81), ("Gram", 33)];
     let actual = [
         ("Typ", deep.typ_eq),
         ("Rel", deep.rel_eq),

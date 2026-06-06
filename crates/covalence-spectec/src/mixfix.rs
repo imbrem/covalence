@@ -168,6 +168,24 @@ impl OpTable {
         })
     }
 
+    /// All left-extending ops whose first-lit-after-lead-hole matches
+    /// `tok` AND whose left binding power is `>= min_prec`. Sorted
+    /// longest-fragment-list first so [`parse_term`] can try the most
+    /// specific op (e.g. `T ->_(M) U`) before falling back to a
+    /// shorter declaration sharing the same lead literal (e.g. the
+    /// short form `T -> U`).
+    pub fn find_all_left_extending(&self, tok: &Token, min_prec: Precedence) -> Vec<&Op> {
+        let mut out: Vec<&Op> = self
+            .ops
+            .iter()
+            .filter(|op| {
+                op.first_lit_after_lead_hole() == Some(tok) && op.left_binding_power() >= min_prec
+            })
+            .collect();
+        out.sort_by(|a, b| b.fragments.len().cmp(&a.fragments.len()));
+        out
+    }
+
     /// Find a prefix/closed op whose leading literal matches `tok`.
     pub fn find_prefix(&self, tok: &Token) -> Option<&Op> {
         self.ops.iter().find(|op| op.leading_lit() == Some(tok))
@@ -234,6 +252,7 @@ pub fn parse_term<L, F>(
     leaf: &mut F,
 ) -> Result<Tree<L>, Diagnostic>
 where
+    L: Clone,
     F: FnMut(&mut &[Spanned], &OpTable) -> Result<Tree<L>, Diagnostic>,
 {
     // Step 1: prefix/closed op, or leaf.
@@ -271,15 +290,45 @@ where
 
     // Step 2: Pratt loop for left-extending ops.
     while let Some(next) = input.first() {
-        let Some(op) = table.find_left_extending(&next.token, min_prec) else {
+        let candidates = table.find_all_left_extending(&next.token, min_prec);
+        if candidates.is_empty() {
             break;
-        };
-        let op_id = op.id;
-        // Consume the matched literal (the first fragment AFTER the
-        // leading hole, i.e. fragments[1]).
-        *input = &input[1..];
-        let initial_args = vec![lhs];
-        lhs = consume_remaining(input, table, op_id, initial_args, 2, leaf)?;
+        }
+        // Try each candidate (longest fragments first) with save+restore
+        // semantics — mirrors the prefix-op backtracking above. Lets one
+        // lead literal serve multiple declarations (e.g. the long form
+        // `T ->_(M) U` and the short form `T -> U` of the instrtype
+        // mixfix, both registered under the same op name).
+        let saved = *input;
+        let mut chosen: Option<Tree<L>> = None;
+        let mut last_err: Option<Diagnostic> = None;
+        for op in &candidates {
+            *input = saved;
+            *input = &input[1..]; // consume the matched literal
+            let initial_args = vec![lhs.clone()];
+            match consume_remaining(input, table, op.id, initial_args, 2, leaf) {
+                Ok(tree) => {
+                    chosen = Some(tree);
+                    break;
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                }
+            }
+        }
+        match chosen {
+            Some(t) => lhs = t,
+            None => {
+                *input = saved;
+                // No candidate matched. If a single candidate previously
+                // would have errored hard, surface that error; otherwise
+                // stop extending (the caller can use the LHS as-is).
+                if candidates.len() == 1 {
+                    return Err(last_err.unwrap_or_else(|| eof("left-extending op failed")));
+                }
+                break;
+            }
+        }
     }
 
     Ok(lhs)
@@ -297,6 +346,7 @@ fn consume_remaining<L, F>(
     leaf: &mut F,
 ) -> Result<Tree<L>, Diagnostic>
 where
+    L: Clone,
     F: FnMut(&mut &[Spanned], &OpTable) -> Result<Tree<L>, Diagnostic>,
 {
     let op = table.get(op_id).clone();

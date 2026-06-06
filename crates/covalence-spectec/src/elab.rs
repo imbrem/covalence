@@ -49,6 +49,22 @@ const ITER_OPT_OP: &str = "__iter_opt";
 /// Synthetic op name used for the `_+` postfix nonempty-iter operator.
 const ITER_PLUS_OP: &str = "__iter_plus";
 
+/// Synthetic op name used for `T ->_(M) U` and its short form `T -> U`,
+/// the headless `instrtype = resulttype ->_(localidx*) resulttype`
+/// shape. The converter recognises this head and lowers it to mixop
+/// `["", "->_", "", ""]` (OCaml's `%->_%%`); the short form gets a
+/// synthetic empty-list arg injected in the middle slot at conversion
+/// time. See `docs/sketches/spectec-tasks/task-33-expr-arrow-mixfix.md`.
+pub(crate) const ARROW_MIXFIX_OP: &str = "__arrow_mixfix";
+
+/// Left binding power of the synthetic arrow mixfix's leading hole.
+/// Deliberately LOW (below [`CTOR_HOLE_PREC`]) so the arrow does NOT
+/// compete inside another constructor's argument slot — e.g. parsing
+/// `FUNC t_1* -> t_2*` keeps the `->` for the `FUNC` mixfix template
+/// (whose holes are `Hole(CTOR_HOLE_PREC)`) instead of stealing it
+/// into a recursive arrow_mixfix application.
+const ARROW_LEFT_PREC: Precedence = 10;
+
 /// Result of running [`build_table`].
 #[derive(Debug, Default)]
 pub struct ElabContext {
@@ -295,6 +311,18 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
                     for alt in alts {
                         if let Some((name, frags)) = alt_to_constructor(alt, &type_names) {
                             op_table.add(name, frags);
+                        } else if let Some((long_frags, short_frags)) =
+                            arrow_mixfix_alt_fragments(alt, &type_names)
+                        {
+                            // Headless `T ->_(M) U` mixfix: register the
+                            // long form AND a short form `T -> U` so
+                            // rules can write either. Both share the
+                            // same op name; the converter recognises it
+                            // and emits the OCaml `%->_%%` mixop, with
+                            // an empty-list middle injected in the
+                            // short-form case.
+                            op_table.add(ARROW_MIXFIX_OP, long_frags);
+                            op_table.add(ARROW_MIXFIX_OP, short_frags);
                         }
                     }
                 }
@@ -730,6 +758,53 @@ pub fn alt_to_constructor_with_holes(
         vec![Fragment::Lit(head_tok.token.clone())],
     );
     Some((head_name, frags, holes))
+}
+
+/// Detect the SpecTec `instrtype = resulttype ->_(M) resulttype`
+/// mixfix shape on a headless variant alt. Returns
+/// `Some((long_form, short_form))` if the alt's fragments match
+/// `[Hole, Lit(Arrow), Lit(Ident("_")), Hole, Hole]`, where the
+/// `Lit(_) Hole` pair is the source `_(...)` optional middle slot.
+///
+/// The two fragment lists share the leading hole, the `Arrow` literal,
+/// and the trailing hole. The long form additionally carries the
+/// `Lit(_) Hole` middle. They are registered under the same op name
+/// (`ARROW_MIXFIX_OP`) so the converter can recognise either Tree
+/// shape and emit the same OCaml mixop.
+///
+/// Returns `None` when the alt doesn't match the expected shape — the
+/// caller then falls through to its normal handling.
+fn arrow_mixfix_alt_fragments(
+    alt: &Alt,
+    type_names: &HashSet<String>,
+) -> Option<(Vec<Fragment>, Vec<Fragment>)> {
+    let (frags, _holes) = alt_to_headless_with_holes(alt, type_names)?;
+    // Match exactly `[Hole, Lit(Arrow), Lit(Ident("_")), Hole, Hole]`.
+    if frags.len() != 5 {
+        return None;
+    }
+    let is_underscore = matches!(
+        &frags[2],
+        Fragment::Lit(Token::Ident(n)) if n == "_"
+    );
+    let shape_ok = matches!(frags[0], Fragment::Hole(_))
+        && matches!(frags[1], Fragment::Lit(Token::Arrow))
+        && is_underscore
+        && matches!(frags[3], Fragment::Hole(_))
+        && matches!(frags[4], Fragment::Hole(_));
+    if !shape_ok {
+        return None;
+    }
+    // Override the LEADING hole's precedence so the arrow mixfix
+    // doesn't compete inside higher-precedence constructor holes (the
+    // `FUNC t_1* -> t_2*` case — see [`ARROW_LEFT_PREC`]). Trailing
+    // holes keep their constructor precedence so they bind as tightly
+    // as a normal case arg.
+    let leading_hole = Fragment::Hole(ARROW_LEFT_PREC);
+    let mut long_form = frags.clone();
+    long_form[0] = leading_hole.clone();
+    let short_form = vec![leading_hole, frags[1].clone(), frags[4].clone()];
+    Some((long_form, short_form))
 }
 
 /// Headless single-case variant: walk the entire body's tokens as a
@@ -1200,6 +1275,10 @@ pub fn elab_rule_conclusion(
     // `name*`-shaped sources, then walk each Iter premise body and
     // record bindings for variables that match.
     let sources = collect_iter_sources(&operands, &premises);
+    let operands = operands
+        .into_iter()
+        .map(|e| attach_iter_bindings_to_expr(e, &sources))
+        .collect();
     let premises = premises
         .into_iter()
         .map(|p| attach_iter_bindings(p, &sources))
@@ -1393,11 +1472,19 @@ fn elab_iter_premise(
     })
 }
 
-/// Collect the set of `name`s that appear with a `*`/`+`/`?` iter
-/// suffix somewhere in `operands` or `premises`. Each such name is a
-/// candidate source for iteration binders inside child `Iter` premises.
-fn collect_iter_sources(operands: &[Expr], premises: &[ElabPremise]) -> HashSet<String> {
-    let mut sources = HashSet::new();
+/// Map from bare iter-source name to its source-with-suffix form.
+/// `Iter { inner: Var{t_1}, kind: Star }` populates the entry
+/// `"t_1" -> "t_1*"`. Mirrors OCaml's `dom "x" (var "x*")` shape — the
+/// bare name is what the iter body references; the suffixed form is
+/// what populates the `e` side of each `SpecTecIterExp::Dom`.
+type IterSources = std::collections::BTreeMap<String, String>;
+
+/// Collect the bare→source map for every `name`-shaped iter source
+/// appearing in `operands` or `premises`. Each entry is a candidate
+/// for iteration binder inference inside any `Iter` body referencing
+/// the bare name.
+fn collect_iter_sources(operands: &[Expr], premises: &[ElabPremise]) -> IterSources {
+    let mut sources = IterSources::new();
     for op in operands {
         gather_iter_sources_in_expr(op, &mut sources);
     }
@@ -1407,11 +1494,27 @@ fn collect_iter_sources(operands: &[Expr], premises: &[ElabPremise]) -> HashSet<
     sources
 }
 
-fn gather_iter_sources_in_expr(e: &Expr, out: &mut HashSet<String>) {
+fn iter_suffix_char(kind: &IterKind) -> &'static str {
+    match kind {
+        IterKind::Opt => "?",
+        IterKind::Star => "*",
+        IterKind::Plus => "+",
+        // Fixed-length iters don't have a single-char suffix; keep
+        // them bare for now. (No wasm-3.0 rule uses one as a Dom
+        // source.)
+        IterKind::Length(_) => "",
+    }
+}
+
+fn gather_iter_sources_in_expr(e: &Expr, out: &mut IterSources) {
     match e {
-        Expr::Iter { inner, .. } => {
+        Expr::Iter { inner, kind, .. } => {
             if let Expr::Var { name, .. } = inner.as_ref() {
-                out.insert(name.clone());
+                let suffix = iter_suffix_char(kind);
+                if !suffix.is_empty() {
+                    let with_suffix = format!("{name}{suffix}");
+                    out.entry(name.clone()).or_insert(with_suffix);
+                }
             }
             gather_iter_sources_in_expr(inner, out);
         }
@@ -1429,7 +1532,7 @@ fn gather_iter_sources_in_expr(e: &Expr, out: &mut HashSet<String>) {
     }
 }
 
-fn gather_iter_sources_in_premise(p: &ElabPremise, out: &mut HashSet<String>) {
+fn gather_iter_sources_in_premise(p: &ElabPremise, out: &mut IterSources) {
     match p {
         ElabPremise::Rule { operands, .. } => {
             for op in operands {
@@ -1446,9 +1549,63 @@ fn gather_iter_sources_in_premise(p: &ElabPremise, out: &mut HashSet<String>) {
     }
 }
 
+/// Walk an expression; for every `Iter` it contains whose inner Var is
+/// in the source set, populate the `bindings` field. Mirrors the
+/// existing premise-only logic, applied to operand expressions so that
+/// constructor-arg iters (e.g. the `iter (var "t_1") list (dom "t_1"
+/// (var "t_1"))` inside an arrow_mixfix conclusion) get their `xes`
+/// populated by the converter. Source is kept as the bare base name to
+/// match the existing premise-binding convention.
+fn attach_iter_bindings_to_expr(e: Expr, sources: &IterSources) -> Expr {
+    match e {
+        Expr::Iter {
+            span,
+            inner,
+            kind,
+            bindings: _,
+        } => {
+            let mut vars: HashSet<String> = HashSet::new();
+            collect_vars_in_expr(&inner, &mut vars);
+            let mut bindings: Vec<IterBinding> = vars
+                .iter()
+                .filter_map(|v| {
+                    sources.get(v).map(|src| IterBinding {
+                        var: v.clone(),
+                        source: src.clone(),
+                    })
+                })
+                .collect();
+            bindings.sort_by(|a, b| a.var.cmp(&b.var));
+            let inner = Box::new(attach_iter_bindings_to_expr(*inner, sources));
+            Expr::Iter {
+                span,
+                inner,
+                kind,
+                bindings,
+            }
+        }
+        Expr::Case { span, head, args } => Expr::Case {
+            span,
+            head,
+            args: args
+                .into_iter()
+                .map(|a| attach_iter_bindings_to_expr(a, sources))
+                .collect(),
+        },
+        Expr::Tup { span, items } => Expr::Tup {
+            span,
+            items: items
+                .into_iter()
+                .map(|i| attach_iter_bindings_to_expr(i, sources))
+                .collect(),
+        },
+        other => other,
+    }
+}
+
 /// Walk a premise; for every `Iter` it contains, infer bindings by
 /// matching its inner Vars against the source set.
-fn attach_iter_bindings(p: ElabPremise, sources: &HashSet<String>) -> ElabPremise {
+fn attach_iter_bindings(p: ElabPremise, sources: &IterSources) -> ElabPremise {
     match p {
         ElabPremise::Iter { inner, kind, .. } => {
             let bindings = infer_bindings_for_inner(&inner, sources);
@@ -1465,16 +1622,16 @@ fn attach_iter_bindings(p: ElabPremise, sources: &HashSet<String>) -> ElabPremis
 
 fn infer_bindings_for_inner(
     inner: &ElabPremise,
-    sources: &HashSet<String>,
+    sources: &IterSources,
 ) -> Vec<IterBinding> {
     let mut vars: HashSet<String> = HashSet::new();
     collect_vars_in_premise(inner, &mut vars);
     let mut bindings: Vec<IterBinding> = Vec::new();
     for v in &vars {
-        if sources.contains(v) {
+        if let Some(src) = sources.get(v) {
             bindings.push(IterBinding {
                 var: v.clone(),
-                source: v.clone(),
+                source: src.clone(),
             });
         }
     }
@@ -3032,6 +3189,65 @@ mod tests {
     }
 
     #[test]
+    fn headless_arrow_mixfix_registers_two_op_forms() {
+        // `syntax instrtype = resulttype ->_(localidx*) resulttype` —
+        // the headless single-case variant with optional middle slot.
+        // Two ops should be registered under `ARROW_MIXFIX_OP`: the
+        // long form (5 fragments — `Hole Lit(Arrow) Lit("_") Hole Hole`)
+        // and the short form (3 fragments — `Hole Lit(Arrow) Hole`).
+        let src = r#"
+            syntax localidx = nat
+            syntax resulttype = nat
+            syntax instrtype = resulttype ->_(localidx*) resulttype
+        "#;
+        let ctx = build_from_str(src);
+        let ops: Vec<&crate::mixfix::Op> = ctx
+            .op_table
+            .iter()
+            .filter(|o| o.name == ARROW_MIXFIX_OP)
+            .collect();
+        assert_eq!(
+            ops.len(),
+            2,
+            "expected two arrow mixfix ops (long + short), got {}: {:?}",
+            ops.len(),
+            ops.iter().map(|o| fmt_op(o)).collect::<Vec<_>>(),
+        );
+        let lengths: Vec<usize> = ops.iter().map(|o| o.fragments.len()).collect();
+        assert!(lengths.contains(&5), "long form should have 5 fragments: {lengths:?}");
+        assert!(lengths.contains(&3), "short form should have 3 fragments: {lengths:?}");
+        // Both forms must agree on the leading-hole precedence so the
+        // Pratt parser treats them as alternatives of the same binding
+        // strength. They share `ARROW_LEFT_PREC` so the arrow doesn't
+        // compete inside higher-precedence constructor argument slots.
+        for op in &ops {
+            assert!(
+                matches!(op.fragments[0], Fragment::Hole(p) if p == ARROW_LEFT_PREC),
+                "leading hole prec should be ARROW_LEFT_PREC, got {:?}",
+                op.fragments[0],
+            );
+            assert!(matches!(op.fragments[1], Fragment::Lit(Token::Arrow)));
+        }
+    }
+
+    #[test]
+    fn non_arrow_headless_variants_do_not_register_arrow_op() {
+        // `syntax fieldtype = mut? storagetype` is a headless variant
+        // without an arrow, so no arrow mixfix op should be registered
+        // (regression check on the shape predicate).
+        let src = r#"
+            syntax mut = MUT
+            syntax storagetype = nat
+            syntax fieldtype = mut? storagetype
+        "#;
+        let ctx = build_from_str(src);
+        assert!(
+            !ctx.op_table.iter().any(|o| o.name == ARROW_MIXFIX_OP),
+            "non-arrow headless variant must not register an arrow mixfix op",
+        );
+    }
+
+    #[test]
     fn variant_constructors_with_args() {
         let src = r#"
             syntax heaptype = nat
@@ -3115,6 +3331,97 @@ mod tests {
             .find_map(|t| if let Top::Rule(r) = t { Some(r) } else { None })
             .expect("no rule in input");
         elab_rule_conclusion(rule, &ctx).expect("elab failed")
+    }
+
+    #[test]
+    fn elab_rule_with_short_arrow_in_operand() {
+        // `eps -> eps` is the short form of the instrtype mixfix —
+        // the Pratt parser should structure it as
+        // `Case { head: ARROW_MIXFIX_OP, args: [Eps, Eps] }`.
+        let src = r#"
+            syntax context = nat
+            syntax localidx = nat
+            syntax resulttype = nat
+            syntax instrtype = resulttype ->_(localidx*) resulttype
+            syntax instr = NOP
+            relation Instr_ok: context |- instr : instrtype
+            rule Instr_ok/nop:
+              C |- NOP : eps -> eps
+        "#;
+        let elab = elab_first_rule(src);
+        assert_eq!(elab.operands.len(), 3);
+        let arrow = &elab.operands[2];
+        match arrow {
+            Expr::Case { head, args, .. } => {
+                assert_eq!(head, ARROW_MIXFIX_OP);
+                assert_eq!(args.len(), 2, "short form should produce 2 args");
+                assert!(matches!(args[0], Expr::Eps { .. }));
+                assert!(matches!(args[1], Expr::Eps { .. }));
+            }
+            other => panic!("expected arrow Case, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn elab_rule_with_long_arrow_in_operand() {
+        // `eps ->_(x*) eps` is the long form — Pratt should match the
+        // 5-fragment op and produce 3 args.
+        let src = r#"
+            syntax context = nat
+            syntax localidx = nat
+            syntax resulttype = nat
+            syntax instrtype = resulttype ->_(localidx*) resulttype
+            syntax instr = NOP
+            relation Instr_ok: context |- instr : instrtype
+            rule Instr_ok/test:
+              C |- NOP : eps ->_(x*) eps
+        "#;
+        let elab = elab_first_rule(src);
+        assert_eq!(elab.operands.len(), 3);
+        let arrow = &elab.operands[2];
+        match arrow {
+            Expr::Case { head, args, .. } => {
+                assert_eq!(head, ARROW_MIXFIX_OP);
+                assert_eq!(args.len(), 3, "long form should produce 3 args");
+                assert!(matches!(args[0], Expr::Eps { .. }));
+                // Middle arg: `(x*)` — the parens collapse to a singleton
+                // tup, leaving the Iter directly.
+                assert!(matches!(args[1], Expr::Iter { .. }));
+                assert!(matches!(args[2], Expr::Eps { .. }));
+            }
+            other => panic!("expected arrow Case, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn elab_func_with_inner_arrow_keeps_func_template() {
+        // Regression guard for the Pratt-precedence fix: the arrow
+        // mixfix must NOT steal the `->` literal from inside the
+        // `FUNC resulttype -> resulttype` constructor template
+        // (`comptype = | ... | FUNC resulttype -> resulttype`). The
+        // top-level Case should be `FUNC` with two resulttype args, not
+        // a 1-arg FUNC wrapping an arrow_mixfix application.
+        let src = r#"
+            syntax context = nat
+            syntax localidx = nat
+            syntax valtype = nat
+            syntax resulttype = nat
+            syntax instrtype = resulttype ->_(localidx*) resulttype
+            syntax fieldtype = nat
+            syntax comptype = | STRUCT fieldtype | FUNC resulttype -> resulttype
+            relation Comptype_ok: context |- comptype : OK
+            rule Comptype_ok/func:
+              C |- FUNC eps -> eps : OK
+        "#;
+        let elab = elab_first_rule(src);
+        let func = &elab.operands[1];
+        match func {
+            Expr::Case { head, args, .. } => {
+                assert_eq!(head, "FUNC");
+                assert_eq!(args.len(), 2, "FUNC must keep its 2-arg shape");
+            }
+            other => panic!("expected FUNC Case, got {other:?}"),
+        }
     }
 
     #[test]
@@ -3567,9 +3874,11 @@ mod tests {
                 _ => None,
             })
             .expect("expected an Iter premise");
+        // Source = `t*` (bare + iter suffix from the `if t*` premise)
+        // — matches OCaml's `dom "t" (var "t*")` convention.
         assert!(
-            iter_prem.iter().any(|b| b.var == "t" && b.source == "t"),
-            "expected binding for `t`, got {iter_prem:?}"
+            iter_prem.iter().any(|b| b.var == "t" && b.source == "t*"),
+            "expected binding for `t` with source `t*`, got {iter_prem:?}"
         );
     }
 

@@ -256,7 +256,7 @@ fn test_axiom_extensionality() {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "appThm NotCongruent — likely needs depth>1 cong or pre-substitution UF unions"]
+#[ignore = "betaConv IllTypedInput — substituted Lam body has stale type info"]
 fn test_unit_def_full_chain() {
     let (mut kernel, mut names) = setup_with_select();
     let resolver = FileResolver::new(assets_dir());
@@ -277,7 +277,7 @@ fn test_unit_def_full_chain() {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "appThm NotCongruent — likely needs depth>1 cong or pre-substitution UF unions"]
+#[ignore = "betaConv IllTypedInput — substituted Lam body has stale type info"]
 fn test_unit_thm_full_chain() {
     let (mut kernel, mut names) = setup_with_select();
     let resolver = FileResolver::new(assets_dir());

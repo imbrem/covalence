@@ -481,6 +481,40 @@ impl Thm {
         })
     }
 
+    /// **HOL Light's `MK_COMB` rule.** From `Γ ⊢ f = g` and
+    /// `Γ ⊢ x = y` derive `Γ ⊢ f x = g y`.
+    ///
+    /// Direct primitive — no UF wiring required. The two inputs
+    /// must share the same context (`Arc::ptr_eq`); bridges use
+    /// [`Self::with_context`] to align them first.
+    pub fn mk_comb(arena: &mut Arena, fg: Thm, xy: Thm) -> Result<Self, ProofError> {
+        if !Arc::ptr_eq(&fg.prop.context, &xy.prop.context) {
+            return Err(ProofError::ContextMismatch);
+        }
+        if !arena.is_well_typed(fg.prop.concl) || !arena.is_well_typed(xy.prop.concl) {
+            return Err(ProofError::IllTypedInput);
+        }
+        let (f, g) = match *arena.term_def(fg.prop.concl) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => return Err(ProofError::ExpectedEquality),
+        };
+        let (x, y) = match *arena.term_def(xy.prop.concl) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => return Err(ProofError::ExpectedEquality),
+        };
+        let fx = arena.alloc_term(TermDef::Comb(f, x));
+        let _ = arena.infer(fx);
+        let gy = arena.alloc_term(TermDef::Comb(g, y));
+        let _ = arena.infer(gy);
+        if !arena.is_well_typed(fx) || !arena.is_well_typed(gy) {
+            return Err(ProofError::IllTypedInput);
+        }
+        let eq = arena.alloc_term(TermDef::Eq(TermRef::local(fx), TermRef::local(gy)));
+        Ok(Self {
+            prop: Prop::new(fg.prop.context, eq),
+        })
+    }
+
     /// **General congruence.** If `a` and `b` are structurally
     /// congruent walking children to depth `depth` (i.e.
     /// [`TermUf::eq_at_level`] returns true), derive

@@ -1130,13 +1130,15 @@ impl HolPrim {
     }
 
     /// `MK_COMB th1 th2`: from `⊢ f = g` and `⊢ x = y` derive
-    /// `⊢ f x = g y`.
+    /// `⊢ f x = g y`. Direct kernel primitive — no UF involvement
+    /// for the proof itself.
     ///
-    /// Implemented via `union` + `cong(depth=1)`: equality of the
-    /// two pairs is recorded in the session UF, then congruence
-    /// closure over the `Comb` shells produces the result. This
-    /// pollutes the session UF — fine for OpenTheory's linear-import
-    /// model; a dedicated `Thm::mk_comb` primitive would be cleaner.
+    /// The kernel builds raw `Comb(f, x)` / `Comb(g, y)` shells.
+    /// HolPrim's [`Self::mk_comb`] elsewhere may fold the same
+    /// shape to `Eq` / `Forall` / `Exists` / `Op*` per HOL Light
+    /// conventions. We UF-union the raw shells with the folded
+    /// forms so subsequent `eq_mp` (which checks UF level-0
+    /// equality) accepts either shape.
     pub fn mk_comb_rule(
         &mut self,
         th1: ThmHandle,
@@ -1144,7 +1146,7 @@ impl HolPrim {
     ) -> Result<ThmHandle, HolPrimError> {
         let thm1 = self.clone_thm(th1)?;
         let thm2 = self.clone_thm(th2)?;
-        let (thm1, thm2, _) = self.align_for_binary(thm1, thm2)?;
+        let (thm1, thm2, ctx) = self.align_for_binary(thm1, thm2)?;
         let (f, g) = match *self.arena().term_def(thm1.concl()) {
             TermDef::Eq(l, r) => (l, r),
             _ => return Err(HolError::NotAnEquation.into()),
@@ -1153,17 +1155,37 @@ impl HolPrim {
             TermDef::Eq(l, r) => (l, r),
             _ => return Err(HolError::NotAnEquation.into()),
         };
-        // Record both equalities in UF so cong can chase them.
-        self.kernel.union(f, g)?;
-        self.kernel.union(x, y)?;
-        // Build the Comb shells DIRECTLY (no fold) so cong-on-Comb
-        // sees the right TermDef shape. Folding to Eq / Forall etc.
-        // would break the cong-at-depth-1 child match.
-        let fx_id = self.arena_mut().alloc_term(TermDef::Comb(f, x));
-        let _ = self.arena_mut().infer(fx_id);
-        let gy_id = self.arena_mut().alloc_term(TermDef::Comb(g, y));
-        let _ = self.arena_mut().infer(gy_id);
-        let out = self.kernel.cong(TermRef::local(fx_id), TermRef::local(gy_id), 1)?;
+        let out_raw = Thm::mk_comb(self.kernel.arena_mut(), thm1, thm2)?;
+        let folded_fx = self.mk_comb(f, x);
+        let folded_gy = self.mk_comb(g, y);
+        let (raw_fx, raw_gy) = match *self.arena().term_def(out_raw.concl()) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => return Ok(self.store_thm(out_raw)),
+        };
+        // If neither side folded, the raw Thm is what we want.
+        if raw_fx == folded_fx && raw_gy == folded_gy {
+            return Ok(self.store_thm(out_raw));
+        }
+        // Otherwise tie raw ↔ folded in UF, then transport the Thm
+        // via cong + eq_mp:
+        //   - cong: ⊢ Eq(raw_fx, raw_gy) = Eq(folded_fx, folded_gy)
+        //   - eq_mp with out_raw: ⊢ Eq(folded_fx, folded_gy).
+        if raw_fx != folded_fx {
+            self.kernel.union(raw_fx, folded_fx)?;
+        }
+        if raw_gy != folded_gy {
+            self.kernel.union(raw_gy, folded_gy)?;
+        }
+        let raw_eq = TermRef::local(out_raw.concl());
+        let folded_eq = self.mk_eq(folded_fx, folded_gy);
+        // Use the kernel facade methods — they pull `&self.egraph.uf`
+        // and `&mut self.egraph.arena` from a single `&mut Kernel`
+        // borrow. The facade pushes/pops the session context, so we
+        // temporarily install `ctx`.
+        let saved = self.kernel.set_context(ctx);
+        let cong_thm = self.kernel.cong(raw_eq, folded_eq, 1)?;
+        let out = self.kernel.eq_mp(cong_thm, out_raw)?;
+        self.kernel.set_context(saved);
         Ok(self.store_thm(out))
     }
 

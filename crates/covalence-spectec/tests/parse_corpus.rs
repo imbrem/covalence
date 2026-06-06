@@ -40,6 +40,10 @@ struct FormCounts {
     syntax: usize,
     def_sig: usize,
     def_clause: usize,
+    var: usize,
+    relation: usize,
+    rule: usize,
+    grammar: usize,
     other: usize,
 }
 
@@ -50,17 +54,28 @@ impl FormCounts {
                 Top::Syntax(_) => self.syntax += 1,
                 Top::DefSig(_) => self.def_sig += 1,
                 Top::DefClause(_) => self.def_clause += 1,
+                Top::Var(_) => self.var += 1,
+                Top::Relation(_) => self.relation += 1,
+                Top::Rule(_) => self.rule += 1,
+                Top::Grammar(_) => self.grammar += 1,
                 Top::Other(_) => self.other += 1,
             }
         }
     }
 
     fn total(&self) -> usize {
-        self.syntax + self.def_sig + self.def_clause + self.other
+        self.syntax
+            + self.def_sig
+            + self.def_clause
+            + self.var
+            + self.relation
+            + self.rule
+            + self.grammar
+            + self.other
     }
 
     fn structured(&self) -> usize {
-        self.syntax + self.def_sig + self.def_clause
+        self.total() - self.other
     }
 }
 
@@ -105,6 +120,10 @@ fn parse_all_wasm_3_0_files() {
                 totals.syntax += counts.syntax;
                 totals.def_sig += counts.def_sig;
                 totals.def_clause += counts.def_clause;
+                totals.var += counts.var;
+                totals.relation += counts.relation;
+                totals.rule += counts.rule;
+                totals.grammar += counts.grammar;
                 totals.other += counts.other;
                 per_file.insert(
                     f.file_name().unwrap().to_string_lossy().into_owned(),
@@ -127,16 +146,28 @@ fn parse_all_wasm_3_0_files() {
         totals.other
     );
     eprintln!(
-        "  syntax: {}  def_sig: {}  def_clause: {}  other: {}",
-        totals.syntax, totals.def_sig, totals.def_clause, totals.other
+        "  syntax: {}  def_sig: {}  def_clause: {}  var: {}  relation: {}  rule: {}  grammar: {}  other: {}",
+        totals.syntax,
+        totals.def_sig,
+        totals.def_clause,
+        totals.var,
+        totals.relation,
+        totals.rule,
+        totals.grammar,
+        totals.other,
     );
-    eprintln!("per-file structured/total:");
+    assert_eq!(
+        totals.other, 0,
+        "Phase 2a goal: every top-level form is structurally recognised; \
+         leftover Top::Other count = {}",
+        totals.other
+    );
+    eprintln!("per-file form counts (syn/sig/cls/var/rel/rul/gram):");
     for (name, c) in &per_file {
         eprintln!(
-            "  {name:55}  structured {:>3}/{:>3}  (other {})",
-            c.structured(),
+            "  {name:55}  {:>3}/{:>3}/{:>3}/{:>2}/{:>2}/{:>3}/{:>3}  total {}",
+            c.syntax, c.def_sig, c.def_clause, c.var, c.relation, c.rule, c.grammar,
             c.total(),
-            c.other
         );
     }
 }

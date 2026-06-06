@@ -18,7 +18,8 @@
 //! them.
 
 use crate::cst::{
-    Alt, DefClause, DefSig, HintAtom, Ident, RecordField, SyntaxBody, SyntaxDecl, Top, TokenRun,
+    Alt, DefClause, DefSig, GrammarDecl, HintAtom, Ident, RecordField, RelationDecl, RuleDecl,
+    SyntaxBody, SyntaxDecl, Top, TokenRun, VarDecl,
 };
 use crate::source::{Diagnostic, FileId, Span};
 use crate::token::{Spanned, Token};
@@ -186,11 +187,12 @@ fn is_top_level_keyword(tok: &Token) -> bool {
     )
 }
 
-/// True if `tok` at index `i` of `tokens` is preceded by a slash (`/`).
-/// We use this to recognise paths like `Heaptype_sub/def` where `def`
-/// is part of the identifier path, not a fresh top-level keyword.
+/// True if the token at position `i` in `tokens` is preceded by `/` or
+/// `$`. We use this to recognise that the next token is part of an
+/// identifier path (`Heaptype_sub/def`) or a function call (`$var(...)`)
+/// rather than the start of a fresh top-level form.
 fn preceded_by_slash(tokens: &[Spanned], i: usize) -> bool {
-    i > 0 && matches!(tokens[i - 1].token, Token::Slash)
+    i > 0 && matches!(tokens[i - 1].token, Token::Slash | Token::Dollar)
 }
 
 // ---------- top-level dispatch ----------
@@ -200,9 +202,10 @@ fn parse_top(file: FileId, input: &mut &[Spanned]) -> Result<Top, Diagnostic> {
     match first.token {
         Token::Syntax => parse_syntax(file, input).map(Top::Syntax),
         Token::Def => parse_def(file, input),
-        Token::Relation | Token::Rule | Token::Var | Token::Grammar => {
-            Ok(Top::Other(take_until_next_top(input)))
-        }
+        Token::Var => parse_var(file, input).map(Top::Var),
+        Token::Relation => parse_relation(file, input).map(Top::Relation),
+        Token::Rule => parse_rule(file, input).map(Top::Rule),
+        Token::Grammar => parse_grammar(file, input).map(Top::Grammar),
         _ => Err(Diagnostic::error(
             first.span,
             format!(
@@ -210,6 +213,215 @@ fn parse_top(file: FileId, input: &mut &[Spanned]) -> Result<Top, Diagnostic> {
                 first.token.describe()
             ),
         )),
+    }
+}
+
+// ---------- var ----------
+
+/// `var NAME : type [hints*]`
+fn parse_var(file: FileId, input: &mut &[Spanned]) -> Result<VarDecl, Diagnostic> {
+    let kw_span = expect(input, file, &Token::Var)?;
+    let name = parse_ident_or_keyword(input, file)?;
+    expect(input, file, &Token::Colon)?;
+    let ty = take_until_top_level(input, |t| matches!(t, Token::Hint));
+    let hints = parse_hints(input)?;
+    let mut span = kw_span.join(name.span);
+    span = span.join(ty.span);
+    for h in &hints {
+        span = span.join(h.span);
+    }
+    Ok(VarDecl {
+        span,
+        name,
+        ty,
+        hints,
+    })
+}
+
+// ---------- relation ----------
+
+/// `relation NAME: <mixfix-template> [hints*]`
+fn parse_relation(file: FileId, input: &mut &[Spanned]) -> Result<RelationDecl, Diagnostic> {
+    let kw_span = expect(input, file, &Token::Relation)?;
+    let name = parse_ident_or_keyword(input, file)?;
+    expect(input, file, &Token::Colon)?;
+    let template = take_until_top_level(input, |t| matches!(t, Token::Hint));
+    let hints = parse_hints(input)?;
+    let mut span = kw_span.join(name.span);
+    span = span.join(template.span);
+    for h in &hints {
+        span = span.join(h.span);
+    }
+    Ok(RelationDecl {
+        span,
+        name,
+        template,
+        hints,
+    })
+}
+
+// ---------- rule ----------
+
+/// `rule NAME[/case]: <conclusion> [-- premise]* [hints*]`
+///
+/// Rule case names allow hyphens (`eq-any`, `i31-eq`) and may contain
+/// further slashes (`Foo/bar/baz`). We collect after `/` up to `:` as a
+/// joined text identifier.
+fn parse_rule(file: FileId, input: &mut &[Spanned]) -> Result<RuleDecl, Diagnostic> {
+    let kw_span = expect(input, file, &Token::Rule)?;
+    let name = parse_ident_or_keyword(input, file)?;
+    let case = if eat(input, &Token::Slash).is_some() {
+        Some(parse_case_path(input, file)?)
+    } else {
+        None
+    };
+    expect(input, file, &Token::Colon)?;
+    let (conclusion, premises) = take_def_clause_rhs_and_premises(input);
+    // Hints (rare on rules but allowed) come after premises. The
+    // `take_def_clause_rhs_and_premises` helper already stops premises at
+    // top-level boundaries, so any remaining `hint(...)` runs are ours.
+    let hints = parse_hints(input)?;
+
+    let mut span = kw_span.join(name.span);
+    if let Some(c) = &case {
+        span = span.join(c.span);
+    }
+    span = span.join(conclusion.span);
+    for p in &premises {
+        span = span.join(p.span);
+    }
+    for h in &hints {
+        span = span.join(h.span);
+    }
+    Ok(RuleDecl {
+        span,
+        name,
+        case,
+        conclusion,
+        premises,
+        hints,
+    })
+}
+
+/// After `/`, collect a case path: a sequence of name-like tokens joined
+/// by `-`, `/`, or `.` (so cases like `eq-any`, `ref.struct`, `i32.add`,
+/// `Foo/bar`, and `Heaptype_sub/def` all parse — keywords like `def`,
+/// `var`, `if` are accepted as path segments). Stops at any other token.
+fn parse_case_path<'a>(
+    input: &mut &'a [Spanned],
+    file: FileId,
+) -> Result<Ident, Diagnostic> {
+    let mut text = String::new();
+    let mut span: Option<Span> = None;
+    loop {
+        let (segment, sp) = match peek(input) {
+            Some(Spanned { token: Token::Ident(t), span: sp }) => (t.clone(), *sp),
+            Some(Spanned { token: Token::Nat(n), span: sp }) => (n.to_string(), *sp),
+            Some(Spanned { token: Token::Minus, span: sp }) => ("-".to_string(), *sp),
+            Some(Spanned { token: Token::Slash, span: sp }) => ("/".to_string(), *sp),
+            Some(Spanned { token: Token::Dot, span: sp }) => (".".to_string(), *sp),
+            // Allow reserved keywords as path segments (`Heaptype_sub/def`).
+            Some(Spanned { token: Token::Syntax, span: sp }) => ("syntax".into(), *sp),
+            Some(Spanned { token: Token::Def, span: sp }) => ("def".into(), *sp),
+            Some(Spanned { token: Token::Relation, span: sp }) => ("relation".into(), *sp),
+            Some(Spanned { token: Token::Rule, span: sp }) => ("rule".into(), *sp),
+            Some(Spanned { token: Token::Var, span: sp }) => ("var".into(), *sp),
+            Some(Spanned { token: Token::Grammar, span: sp }) => ("grammar".into(), *sp),
+            Some(Spanned { token: Token::Hint, span: sp }) => ("hint".into(), *sp),
+            Some(Spanned { token: Token::If, span: sp }) => ("if".into(), *sp),
+            Some(Spanned { token: Token::Let, span: sp }) => ("let".into(), *sp),
+            Some(Spanned { token: Token::Else, span: sp }) => ("else".into(), *sp),
+            Some(Spanned { token: Token::Otherwise, span: sp }) => ("otherwise".into(), *sp),
+            Some(Spanned { token: Token::Eps, span: sp }) => ("eps".into(), *sp),
+            _ => break,
+        };
+        text.push_str(&segment);
+        span = Some(span.map_or(sp, |s| s.join(sp)));
+        *input = &input[1..];
+    }
+    let span = span.ok_or_else(|| eof_diag(file, "expected case path after `/`"))?;
+    if text.is_empty() {
+        return Err(Diagnostic::error(span, "empty case path after `/`"));
+    }
+    Ok(Ident { span, text })
+}
+
+// ---------- grammar ----------
+
+/// `grammar NAME [(params)] [/case] [(params)] [: ret] [hints*] [= productions]`
+///
+/// The `/case` suffix and the parenthesised `(params)` group can appear
+/// in either order (`Tsymsplit/1`, `Treftype_(I)/base`). Both are
+/// optional. `: ret` is also optional (some grammars omit it, e.g.
+/// `grammar Tsource = ...`). The `= productions` body is optional too
+/// (forward declarations).
+fn parse_grammar(file: FileId, input: &mut &[Spanned]) -> Result<GrammarDecl, Diagnostic> {
+    let kw_span = expect(input, file, &Token::Grammar)?;
+    let name = parse_ident_or_keyword(input, file)?;
+
+    // Allow `(params)` before OR after `/case`. Accept both orderings.
+    let mut params = parse_optional_paren_params(input);
+    let case = if eat(input, &Token::Slash).is_some() {
+        Some(parse_case_path(input, file)?)
+    } else {
+        None
+    };
+    if params.is_empty() {
+        params = parse_optional_paren_params(input);
+    }
+
+    let ret = if eat(input, &Token::Colon).is_some() {
+        take_until_top_level(input, |t| matches!(t, Token::Hint | Token::Eq))
+    } else {
+        // No `:` — fabricate an empty TokenRun at the current position.
+        empty_run_here(input, name.span)
+    };
+    let hints = parse_hints(input)?;
+    let productions = if eat(input, &Token::Eq).is_some() {
+        Some(take_until_top_level(input, |_| false))
+    } else {
+        None
+    };
+
+    let mut span = kw_span.join(name.span);
+    if let Some(c) = &case {
+        span = span.join(c.span);
+    }
+    for p in &params {
+        span = span.join(p.span);
+    }
+    if !ret.tokens.is_empty() {
+        span = span.join(ret.span);
+    }
+    for h in &hints {
+        span = span.join(h.span);
+    }
+    if let Some(p) = &productions {
+        span = span.join(p.span);
+    }
+    Ok(GrammarDecl {
+        span,
+        name,
+        case,
+        params,
+        ret,
+        hints,
+        productions,
+    })
+}
+
+/// Synthesise an empty `TokenRun` for places where an optional section
+/// is absent (e.g. a missing return type). The span is a zero-length
+/// span at the start of the cursor position, falling back to `fallback`
+/// if at EOF.
+fn empty_run_here(input: &[Spanned], fallback: Span) -> TokenRun {
+    let span = input
+        .first()
+        .map(|s| Span::new(s.span.file, s.span.start, s.span.start))
+        .unwrap_or_else(|| Span::new(fallback.file, fallback.end, fallback.end));
+    TokenRun {
+        span,
+        tokens: Vec::new(),
     }
 }
 
@@ -1114,27 +1326,112 @@ mod tests {
     }
 
     #[test]
-    fn relation_folds_to_other() {
-        let src = r#"
-            relation Foo: nat |- nat
-            syntax x = nat
-        "#;
-        let tops = parse_str(src).unwrap();
-        assert_eq!(tops.len(), 2);
-        assert!(matches!(tops[0], Top::Other(_)));
-        assert!(matches!(tops[1], Top::Syntax(_)));
+    fn var_simple() {
+        let tops = parse_str("var n : nat").unwrap();
+        let Top::Var(v) = &tops[0] else { panic!() };
+        assert_eq!(v.name.text, "n");
+        assert!(!v.ty.tokens.is_empty());
+        assert!(v.hints.is_empty());
     }
 
     #[test]
-    fn rule_var_grammar_fold_to_other() {
+    fn var_with_hint() {
+        let tops = parse_str(r#"var lct : localtype  hint(show lt)"#).unwrap();
+        let Top::Var(v) = &tops[0] else { panic!() };
+        assert_eq!(v.name.text, "lct");
+        assert_eq!(v.hints.len(), 1);
+    }
+
+    #[test]
+    fn relation_with_template_and_hints() {
+        let src = r#"relation Numtype_sub: context |- numtype <: numtype  hint(name "S-num")"#;
+        let tops = parse_str(src).unwrap();
+        let Top::Relation(r) = &tops[0] else { panic!() };
+        assert_eq!(r.name.text, "Numtype_sub");
+        // Template tokens: context |- numtype <: numtype = 5 tokens
+        assert_eq!(r.template.tokens.len(), 5);
+        assert_eq!(r.hints.len(), 1);
+    }
+
+    #[test]
+    fn rule_simple_no_case() {
+        let tops = parse_str(r#"rule Numtype_sub: C |- numtype <: numtype"#).unwrap();
+        let Top::Rule(r) = &tops[0] else { panic!() };
+        assert_eq!(r.name.text, "Numtype_sub");
+        assert!(r.case.is_none());
+        assert!(r.premises.is_empty());
+    }
+
+    #[test]
+    fn rule_with_case_and_hyphen() {
+        let tops = parse_str(r#"rule Heaptype_sub/eq-any: C |- EQ <: ANY"#).unwrap();
+        let Top::Rule(r) = &tops[0] else { panic!() };
+        assert_eq!(r.name.text, "Heaptype_sub");
+        assert_eq!(r.case.as_ref().unwrap().text, "eq-any");
+    }
+
+    #[test]
+    fn rule_with_premises() {
+        let src = r#"rule Heaptype_sub/trans:
+            C |- heaptype_1 <: heaptype_2
+            -- Heaptype_ok: C |- heaptype' : OK
+            -- Heaptype_sub: C |- heaptype_1 <: heaptype'
+            -- Heaptype_sub: C |- heaptype' <: heaptype_2"#;
+        let tops = parse_str(src).unwrap();
+        let Top::Rule(r) = &tops[0] else { panic!() };
+        assert_eq!(r.case.as_ref().unwrap().text, "trans");
+        assert_eq!(r.premises.len(), 3);
+    }
+
+    #[test]
+    fn grammar_inline() {
+        let tops = parse_str(r#"grammar Bbyte : byte = 0x00 | ... | 0xFF"#).unwrap();
+        let Top::Grammar(g) = &tops[0] else { panic!() };
+        assert_eq!(g.name.text, "Bbyte");
+        assert!(g.case.is_none());
+        assert!(g.params.is_empty());
+        assert!(g.productions.is_some());
+    }
+
+    #[test]
+    fn grammar_with_params_and_case() {
+        let src = r#"grammar Tsymsplit/1 : () hint(show Tsym) hint(macro none) = Tvar(B_1) | ..."#;
+        let tops = parse_str(src).unwrap();
+        let Top::Grammar(g) = &tops[0] else { panic!() };
+        assert_eq!(g.name.text, "Tsymsplit");
+        assert_eq!(g.case.as_ref().unwrap().text, "1");
+        assert_eq!(g.hints.len(), 2);
+        assert!(g.productions.is_some());
+    }
+
+    #[test]
+    fn grammar_forward_decl_no_body() {
+        let src = r#"grammar Bu32 : u32"#;
+        let tops = parse_str(src).unwrap();
+        let Top::Grammar(g) = &tops[0] else { panic!() };
+        assert!(g.productions.is_none());
+    }
+
+    #[test]
+    fn mixed_top_forms() {
         let src = r#"
-            rule Foo/bar: x
+            syntax foo = nat
             var n : nat
+            relation R: nat |- nat
+            rule R: 0 |- 0
+            def $f(nat) : nat
+            def $f(0) = 0
             grammar G : nat = 0
         "#;
         let tops = parse_str(src).unwrap();
-        assert_eq!(tops.len(), 3);
-        assert!(tops.iter().all(|t| matches!(t, Top::Other(_))));
+        assert_eq!(tops.len(), 7);
+        assert!(matches!(tops[0], Top::Syntax(_)));
+        assert!(matches!(tops[1], Top::Var(_)));
+        assert!(matches!(tops[2], Top::Relation(_)));
+        assert!(matches!(tops[3], Top::Rule(_)));
+        assert!(matches!(tops[4], Top::DefSig(_)));
+        assert!(matches!(tops[5], Top::DefClause(_)));
+        assert!(matches!(tops[6], Top::Grammar(_)));
     }
 
     #[test]

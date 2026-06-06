@@ -3,6 +3,11 @@
 > Phase 1 lands a SpecTec lexer and a structural parser for `syntax` and
 > `def` forms. Everything else (`relation`, `rule`, `var`, `grammar`)
 > folds into `Top::Other` as raw token runs and is deferred to Phase 2.
+>
+> **Phase 2a update (post-Phase-1):** the remaining four forms are now
+> structurally recognised; `Top::Other` count on the wasm-3.0 corpus is
+> zero. Bodies (templates, rule premises, grammar productions) remain
+> opaque `TokenRun`s and are deferred to Phase 2b+ (mixfix elaboration).
 
 See `docs/sketches/spectec-verification-plan.md` for the overall verification
 strategy. This file records the per-corpus parse-pass outcome.

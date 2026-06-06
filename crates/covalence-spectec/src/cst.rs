@@ -22,9 +22,16 @@ pub enum Top {
     DefSig(DefSig),
     /// `def $NAME(pattern_args) = rhs [-- premise]*`
     DefClause(DefClause),
-    /// A top-level form that Phase 1 doesn't structurally parse. Stored
-    /// as the raw token run so the file still round-trips. Phase 1's
-    /// lexer-only tests can still verify this case.
+    /// `var NAME : type [hints*]`
+    Var(VarDecl),
+    /// `relation NAME: <mixfix-template> [hints*]`
+    Relation(RelationDecl),
+    /// `rule NAME[/case]: <conclusion> [-- premise]* [hints*]`
+    Rule(RuleDecl),
+    /// `grammar NAME[/case][(params)] : ret [hints*] = <productions>`
+    Grammar(GrammarDecl),
+    /// Top-level form not yet recognised by Phase 1/2a. Kept as a safety
+    /// hatch; the corpus test asserts this is empty.
     Other(TokenRun),
 }
 
@@ -34,6 +41,10 @@ impl Top {
             Top::Syntax(s) => s.span,
             Top::DefSig(d) => d.span,
             Top::DefClause(d) => d.span,
+            Top::Var(v) => v.span,
+            Top::Relation(r) => r.span,
+            Top::Rule(r) => r.span,
+            Top::Grammar(g) => g.span,
             Top::Other(t) => t.span,
         }
     }
@@ -108,6 +119,55 @@ pub struct DefClause {
     pub arg_pats: Vec<TokenRun>,
     pub rhs: TokenRun,
     pub premises: Vec<TokenRun>,
+}
+
+/// `var NAME : type [hints*]` — declares a metavariable family.
+#[derive(Clone, Debug)]
+pub struct VarDecl {
+    pub span: Span,
+    pub name: Ident,
+    pub ty: TokenRun,
+    pub hints: Vec<HintAtom>,
+}
+
+/// `relation NAME: <mixfix-template> [hints*]` — declares an inductive
+/// relation. The mixfix template (everything between `:` and the hints)
+/// is kept as a raw `TokenRun`; Phase 2b/c elaborates it.
+#[derive(Clone, Debug)]
+pub struct RelationDecl {
+    pub span: Span,
+    pub name: Ident,
+    pub template: TokenRun,
+    pub hints: Vec<HintAtom>,
+}
+
+/// `rule NAME[/case]: <conclusion> [-- premise]* [hints*]` — one
+/// inference rule of an inductive relation. Body kept opaque.
+#[derive(Clone, Debug)]
+pub struct RuleDecl {
+    pub span: Span,
+    pub name: Ident,
+    /// `Some("refl")` for `rule Heaptype_sub/refl`, etc. Cases may
+    /// themselves carry slashes (`rule Foo/bar/baz`); they're stored as
+    /// the joined slash-separated text.
+    pub case: Option<Ident>,
+    pub conclusion: TokenRun,
+    pub premises: Vec<TokenRun>,
+    pub hints: Vec<HintAtom>,
+}
+
+/// `grammar NAME[/case][(params)] : ret [hints*] = <productions>` —
+/// a binary or text format production rule.
+#[derive(Clone, Debug)]
+pub struct GrammarDecl {
+    pub span: Span,
+    pub name: Ident,
+    pub case: Option<Ident>,
+    pub params: Vec<TokenRun>,
+    pub ret: TokenRun,
+    pub hints: Vec<HintAtom>,
+    /// `None` for forward declarations (no `= ...`).
+    pub productions: Option<TokenRun>,
 }
 
 /// A `hint(...)` attached to a top-level form, alternative, or field. The

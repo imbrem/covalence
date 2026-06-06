@@ -101,7 +101,7 @@ pub fn run(args: ReplArgs) -> eyre::Result<()> {
     let mut session = covalence_repl::Session::new(backend, true, true);
 
     println!("covalence {VERSION_LONG}");
-    println!("Type (help) for available commands.\n");
+    println!("Type help for available commands.\n");
 
     let helper = highlight::SexpHelper { color };
     let mut rl = Editor::new()?;

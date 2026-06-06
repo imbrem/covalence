@@ -1,0 +1,5 @@
+# The covalence-ui suite is vitest-style (uses jsdom + the Svelte compiler).
+# Bun's runner can't compile .svelte files, so we delegate to vitest via
+# tests/ui.test.ts (same shell-out pattern as cargo / pytest wrappers).
+[test]
+pathIgnorePatterns = ["**/packages/covalence-ui/**"]

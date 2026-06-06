@@ -1,8 +1,10 @@
 <script lang="ts">
+	import { detectImageMime } from './detect.js';
+
 	interface Props {
 		hash: string;
 		data: Uint8Array;
-		mode: 'text' | 'hex';
+		mode: 'text' | 'hex' | 'image';
 	}
 
 	let { hash, data, mode }: Props = $props();
@@ -11,8 +13,22 @@
 
 	let textLines = $derived(textContent.split('\n'));
 
-	// Hex dump: offset | 16 hex bytes (8+8) | ASCII sidebar
 	let hexLines = $derived(buildHexDump(data));
+
+	let imageUrl = $derived.by(() => {
+		if (mode !== 'image') return '';
+		const mime = detectImageMime(data);
+		if (!mime) return '';
+		if (typeof URL === 'undefined' || typeof Blob === 'undefined') return '';
+		return URL.createObjectURL(new Blob([data], { type: mime }));
+	});
+
+	$effect(() => {
+		const url = imageUrl;
+		return () => {
+			if (url) URL.revokeObjectURL(url);
+		};
+	});
 
 	function buildHexDump(bytes: Uint8Array): string[] {
 		const lines: string[] = [];
@@ -44,7 +60,15 @@
 </script>
 
 <div class="blob-viewer">
-	{#if mode === 'text'}
+	{#if mode === 'image'}
+		{#if imageUrl}
+			<div class="image-view">
+				<img src={imageUrl} alt={`blob ${hash.slice(0, 12)}`} />
+			</div>
+		{:else}
+			<div class="image-fallback">not a recognised image format</div>
+		{/if}
+	{:else if mode === 'text'}
 		<pre class="text-view"><code>{#each textLines as line, i}<span class="line-num">{(i + 1).toString().padStart(4, ' ')}</span>  {line}
 {/each}</code></pre>
 	{:else}
@@ -74,5 +98,29 @@
 
 	.hex-view {
 		color: var(--muted, #888);
+	}
+
+	.image-view {
+		display: flex;
+		justify-content: center;
+		padding: 1rem 0;
+	}
+
+	.image-view img {
+		max-width: 100%;
+		height: auto;
+		background-image:
+			linear-gradient(45deg, #2a2a2a 25%, transparent 25%),
+			linear-gradient(-45deg, #2a2a2a 25%, transparent 25%),
+			linear-gradient(45deg, transparent 75%, #2a2a2a 75%),
+			linear-gradient(-45deg, transparent 75%, #2a2a2a 75%);
+		background-size: 16px 16px;
+		background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+	}
+
+	.image-fallback {
+		color: var(--muted, #888);
+		text-align: center;
+		padding: 2rem;
 	}
 </style>

@@ -310,6 +310,71 @@ impl Thm {
         })
     }
 
+    /// **Type-variable instantiation (`INST_TYPE`).** From `Γ ⊢ p`
+    /// substitute every occurrence of the type variable `name` with
+    /// `replacement` in `p` and in every assumption of `Γ`. Returns
+    /// the new Thm with the substituted context + conclusion.
+    ///
+    /// The kernel doesn't yet have a polymorphic `TypeSubst`
+    /// application path; this is the single-variable version that
+    /// callers iterate for parallel substitutions.
+    pub fn inst_type(
+        arena: &mut Arena,
+        thm: Thm,
+        name: StrId,
+        replacement: TypeRef,
+    ) -> Result<Self, ProofError> {
+        let concl_ref = arena.subst_tyvar_in_term(
+            TermRef::local(thm.prop.concl),
+            name,
+            replacement,
+        );
+        let new_concl = concl_ref.as_local().ok_or(ProofError::ForeignConclusion)?;
+        let old_ctx = thm.prop.context.clone();
+        let mut new_assumptions = Vec::with_capacity(old_ctx.len());
+        for i in 0..old_ctx.len() {
+            let assum = old_ctx.assumption(i).expect("len/index invariant");
+            let new_ref = arena.subst_tyvar_in_term(
+                TermRef::local(assum.concl),
+                name,
+                replacement,
+            );
+            let new_id = new_ref.as_local().ok_or(ProofError::ForeignConclusion)?;
+            new_assumptions.push(Arc::new(Prop::new(assum.context.clone(), new_id)));
+        }
+        let new_ctx = Context::flat(new_assumptions);
+        Ok(Self {
+            prop: Prop::new(new_ctx, new_concl),
+        })
+    }
+
+    /// **Replace the Thm's context with `target_ctx`.**
+    ///
+    /// Soundness check: every `Arc<Prop>` in the current context
+    /// must also appear (by `Arc::ptr_eq`) somewhere in
+    /// `target_ctx`'s chain. The conclusion is unchanged.
+    ///
+    /// This is the building block bridges use to align two Thms
+    /// onto a common context before applying `Arc::ptr_eq`-strict
+    /// rules like [`Self::trans`] / [`Self::eq_mp`]: compute the
+    /// union of Props from both inputs, build a single
+    /// `Context::flat` over it, then `with_context` each input
+    /// onto that shared `Arc`.
+    pub fn with_context(
+        self,
+        target_ctx: Arc<Context>,
+    ) -> Result<Self, ProofError> {
+        for i in 0..self.prop.context.len() {
+            let p = self.prop.context.assumption(i).expect("len/index invariant");
+            if !target_ctx.contains_prop(p) {
+                return Err(ProofError::AssumptionNotInContext);
+            }
+        }
+        Ok(Self {
+            prop: Prop::new(target_ctx, self.prop.concl),
+        })
+    }
+
     /// **Ex falso → negation.** From a Thm `ctx ⊢ False` and a
     /// well-typed proposition `p`, derive `ctx ⊢ ¬p`.
     pub fn not_from_false(

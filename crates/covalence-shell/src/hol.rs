@@ -155,6 +155,12 @@ pub struct HolPrim {
     /// reported hyp set matches HOL Light's "axioms-are-implicit"
     /// view.
     trusted_props: Vec<Arc<Prop>>,
+    /// Canonical-context cache keyed by sorted `Arc<Prop>` pointer
+    /// identities. Lets [`Self::align_for_binary`] return the same
+    /// `Arc<Context>` for the same set of assumption Props across
+    /// calls, which is what the kernel's `Arc::ptr_eq`-strict rules
+    /// require.
+    ctx_cache: HashMap<Vec<usize>, Arc<Context>>,
 }
 
 impl HolPrim {
@@ -211,6 +217,7 @@ impl HolPrim {
             axioms: Vec::new(),
             session_ctx: Context::empty(),
             trusted_props: Vec::new(),
+            ctx_cache: HashMap::new(),
         }
     }
 
@@ -309,6 +316,53 @@ impl HolPrim {
         self.get_thm(h).cloned()
     }
 
+    /// Collect every `Arc<Prop>` in `ctx`'s chain into `out`,
+    /// dedup'd by `Arc::ptr_eq`.
+    fn collect_props(ctx: &Arc<Context>, out: &mut Vec<Arc<Prop>>) {
+        for i in 0..ctx.len() {
+            let p = ctx.assumption(i).expect("len/index invariant").clone();
+            if !out.iter().any(|q| Arc::ptr_eq(q, &p)) {
+                out.push(p);
+            }
+        }
+    }
+
+    /// Align two Thms onto a common context (the union of their
+    /// assumption Props) and return the aligned pair plus the
+    /// canonical context for the result.
+    ///
+    /// Uses [`Self::ctx_cache`] keyed by sorted `Arc<Prop>` pointer
+    /// identities so repeated align calls with the same union
+    /// return the same `Arc<Context>` — required for the kernel's
+    /// `Arc::ptr_eq`-strict rules.
+    fn align_for_binary(
+        &mut self,
+        th1: Thm,
+        th2: Thm,
+    ) -> Result<(Thm, Thm, Arc<Context>), HolPrimError> {
+        let mut union: Vec<Arc<Prop>> = Vec::new();
+        Self::collect_props(th1.context(), &mut union);
+        Self::collect_props(th2.context(), &mut union);
+        let target = self.canonical_ctx(&union);
+        let th1 = th1.with_context(target.clone())?;
+        let th2 = th2.with_context(target.clone())?;
+        Ok((th1, th2, target))
+    }
+
+    /// Return the canonical `Arc<Context>` whose chain holds
+    /// exactly `props` (in arbitrary order). Cached so two calls
+    /// with the same `Arc<Prop>` set return the same `Arc<Context>`.
+    fn canonical_ctx(&mut self, props: &[Arc<Prop>]) -> Arc<Context> {
+        let mut key: Vec<usize> = props.iter().map(|p| Arc::as_ptr(p) as usize).collect();
+        key.sort_unstable();
+        if let Some(ctx) = self.ctx_cache.get(&key) {
+            return ctx.clone();
+        }
+        let ctx = Context::flat(props.to_vec());
+        self.ctx_cache.insert(key, ctx.clone());
+        ctx
+    }
+
     /// Weaken `thm` so its context becomes the current
     /// `session_ctx`. Walks the chain from `session_ctx` down to
     /// `thm.context()`, calling `Thm::add_assumption` for each
@@ -321,6 +375,7 @@ impl HolPrim {
     /// `Arc::ptr_eq` to `session_ctx`, or `None` if the input ctx
     /// isn't an ancestor of the session ctx (which would mean we'd
     /// need to *contract*, not weaken — currently unsupported).
+    #[allow(dead_code)]
     fn lift_to_session(&mut self, thm: Thm) -> Result<Thm, HolPrimError> {
         if Arc::ptr_eq(thm.context(), &self.session_ctx) {
             return Ok(thm);
@@ -1069,8 +1124,7 @@ impl HolPrim {
     ) -> Result<ThmHandle, HolPrimError> {
         let thm1 = self.clone_thm(th1)?;
         let thm2 = self.clone_thm(th2)?;
-        let thm1 = self.lift_to_session(thm1)?;
-        let thm2 = self.lift_to_session(thm2)?;
+        let (thm1, thm2, _) = self.align_for_binary(thm1, thm2)?;
         let out = self.kernel.trans(thm1, thm2)?;
         Ok(self.store_thm(out))
     }
@@ -1090,8 +1144,7 @@ impl HolPrim {
     ) -> Result<ThmHandle, HolPrimError> {
         let thm1 = self.clone_thm(th1)?;
         let thm2 = self.clone_thm(th2)?;
-        let thm1 = self.lift_to_session(thm1)?;
-        let thm2 = self.lift_to_session(thm2)?;
+        let (thm1, thm2, _) = self.align_for_binary(thm1, thm2)?;
         let (f, g) = match *self.arena().term_def(thm1.concl()) {
             TermDef::Eq(l, r) => (l, r),
             _ => return Err(HolError::NotAnEquation.into()),
@@ -1100,16 +1153,17 @@ impl HolPrim {
             TermDef::Eq(l, r) => (l, r),
             _ => return Err(HolError::NotAnEquation.into()),
         };
-        let ctx = thm1.context().clone();
         // Record both equalities in UF so cong can chase them.
         self.kernel.union(f, g)?;
         self.kernel.union(x, y)?;
-        let fx = self.mk_comb(f, x);
-        let gy = self.mk_comb(g, y);
-        // `Kernel::cong` builds the equality Thm against the supplied
-        // context after checking UF-congruence at the depth.
-        let _ = ctx;
-        let out = self.kernel.cong(fx, gy, 1)?;
+        // Build the Comb shells DIRECTLY (no fold) so cong-on-Comb
+        // sees the right TermDef shape. Folding to Eq / Forall etc.
+        // would break the cong-at-depth-1 child match.
+        let fx_id = self.arena_mut().alloc_term(TermDef::Comb(f, x));
+        let _ = self.arena_mut().infer(fx_id);
+        let gy_id = self.arena_mut().alloc_term(TermDef::Comb(g, y));
+        let _ = self.arena_mut().infer(gy_id);
+        let out = self.kernel.cong(TermRef::local(fx_id), TermRef::local(gy_id), 1)?;
         Ok(self.store_thm(out))
     }
 
@@ -1122,8 +1176,7 @@ impl HolPrim {
     ) -> Result<ThmHandle, HolPrimError> {
         let thm1 = self.clone_thm(th1)?;
         let thm2 = self.clone_thm(th2)?;
-        let thm1 = self.lift_to_session(thm1)?;
-        let thm2 = self.lift_to_session(thm2)?;
+        let (thm1, thm2, _) = self.align_for_binary(thm1, thm2)?;
         let out = self.kernel.eq_mp(thm1, thm2)?;
         Ok(self.store_thm(out))
     }
@@ -1164,13 +1217,20 @@ impl HolPrim {
         Ok(self.store_thm(current))
     }
 
-    /// `INST_TYPE pairs th`. Kernel doesn't have this primitive yet.
+    /// `INST_TYPE pairs th`: substitute type variables in the Thm.
+    /// `pairs` is `(new_type, old_tyvar_name)`. Applies pairs
+    /// sequentially via the kernel's [`Thm::inst_type`].
     pub fn inst_type_rule(
         &mut self,
-        _pairs: &[(TypeRef, NameId)],
-        _th: ThmHandle,
+        pairs: &[(TypeRef, NameId)],
+        th: ThmHandle,
     ) -> Result<ThmHandle, HolPrimError> {
-        Err(HolPrimError::NotImplemented("inst_type_rule"))
+        let mut current = self.clone_thm(th)?;
+        for &(new_ty, old_name) in pairs {
+            let s = self.str_of(old_name);
+            current = Thm::inst_type(self.kernel.arena_mut(), current, s, new_ty)?;
+        }
+        Ok(self.store_thm(current))
     }
 
     /// `new_axiom tm`: post a fresh axiom and return `⊢ tm`.

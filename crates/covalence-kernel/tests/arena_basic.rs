@@ -1303,10 +1303,10 @@ fn term_is_equal_to_itself() {
 fn union_makes_two_terms_equal() {
     let mut a = Arena::new();
     let mut uf = TermUf::new();
-    // Two separately-allocated NatInline(5) terms — different TermIds,
-    // same logical value. Initially not eq at level 0.
+    // Two distinct nat literals — different TermIds. Initially not
+    // eq at level 0; union makes them equal.
     let n1 = a.alloc_term(TermDef::nat_inline(5));
-    let n2 = a.alloc_term(TermDef::nat_inline(5));
+    let n2 = a.alloc_term(TermDef::nat_inline(6));
     assert!(!uf.eq_at_level_0(TermRef::local(n1), TermRef::local(n2)));
     uf.union(TermRef::local(n1), TermRef::local(n2)).unwrap();
     assert!(uf.eq_at_level_0(TermRef::local(n1), TermRef::local(n2)));
@@ -1345,11 +1345,14 @@ fn union_if_congruent_step_succeeds_on_matching_combs() {
     let bool_to_bool = a.alloc_fun_ty(bool_ty, bool_ty);
     let neg = alloc_const(&mut a, "not", bool_to_bool);
     let t = a.alloc_term(TermDef::Bool(true));
-    // Two structurally-identical Comb(neg, True) terms with separate TermIds.
+    let f = a.alloc_term(TermDef::Bool(false));
+    // Two Comb(neg, _) terms with different children. Initially not
+    // eq at level 0; after we union true ↔ false the cong step at
+    // depth 1 unifies the parents.
     let app1 = a.alloc_term(TermDef::Comb(TermRef::local(neg), TermRef::local(t)));
-    let app2 = a.alloc_term(TermDef::Comb(TermRef::local(neg), TermRef::local(t)));
+    let app2 = a.alloc_term(TermDef::Comb(TermRef::local(neg), TermRef::local(f)));
     assert!(!uf.eq_at_level_0(TermRef::local(app1), TermRef::local(app2)));
-    // Children (neg and t) are already eq at level 0 (literally same TermIds).
+    uf.union(TermRef::local(t), TermRef::local(f)).unwrap();
     let fired = uf
         .union_if_congruent(&a, TermRef::local(app1), TermRef::local(app2), 1)
         .unwrap();
@@ -1364,7 +1367,7 @@ fn union_if_congruent_step_propagates_via_children_union() {
     let mut uf = TermUf::new();
     // x and y are two distinct nat literals; we union them.
     let x = a.alloc_term(TermDef::nat_inline(7));
-    let y = a.alloc_term(TermDef::nat_inline(7));
+    let y = a.alloc_term(TermDef::nat_inline(8));
     uf.union(TermRef::local(x), TermRef::local(y)).unwrap();
     // Now Op1(NatSucc, x) and Op1(NatSucc, y) should match via cong.
     use covalence_kernel::PrimOp1;

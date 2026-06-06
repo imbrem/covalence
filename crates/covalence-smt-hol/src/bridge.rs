@@ -23,8 +23,9 @@ use crate::error::BridgeError;
 /// been wired through to the kernel by returning
 /// [`BridgeError::NotImplemented`].
 pub trait AletheBridge {
-    /// Backend representation of a proven theorem (handle/index — must be `Copy`).
-    type Thm: Copy + std::fmt::Debug;
+    /// Backend representation of a proven theorem. `Clone` (not `Copy`)
+    /// because the kernel's `Thm` is `Arc`-backed.
+    type Thm: Clone + std::fmt::Debug;
 
     // -----------------------------------------------------------------
     // SMT-LIB problem ingestion

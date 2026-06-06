@@ -4,11 +4,11 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
-covalence-hol = { path = "../covalence-hol" }
 covalence-sexp = { path = "../covalence-sexp" }
+covalence-shell = { path = "../covalence-shell" }
 covalence-smt = { path = "../covalence-smt" }
 covalence-types = { path = "../covalence-types" }
-smol_str = "0.3"
 thiserror = "2"
 
 [dev-dependencies]
+covalence-kernel = { path = "../covalence-kernel" }

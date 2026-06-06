@@ -1,6 +1,6 @@
-//! Error type for the Alethe → HOL bridge.
+//! Error type for the Alethe → Prover bridge.
 
-use covalence_hol::types::HolError;
+use covalence_shell::ProverError;
 use covalence_smt::AletheError;
 
 /// Errors raised by an [`AletheBridge`](crate::bridge::AletheBridge) or its driver.
@@ -41,7 +41,7 @@ pub enum BridgeError {
     #[error(transparent)]
     Alethe(#[from] AletheError),
 
-    /// An underlying HOL kernel error.
+    /// An underlying Prover (kernel) error.
     #[error(transparent)]
-    Hol(#[from] HolError),
+    Prover(#[from] ProverError),
 }

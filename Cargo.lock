@@ -914,11 +914,11 @@ dependencies = [
 name = "covalence-smt-hol"
 version = "0.0.0"
 dependencies = [
- "covalence-hol",
+ "covalence-kernel",
  "covalence-sexp",
+ "covalence-shell",
  "covalence-smt",
  "covalence-types",
- "smol_str",
  "thiserror 2.0.18",
 ]
 

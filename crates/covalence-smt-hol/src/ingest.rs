@@ -88,7 +88,7 @@ pub fn ingest_proof<B: AletheBridge>(
     Ok(())
 }
 
-fn resolve_ids<T: Copy>(
+fn resolve_ids<T: Clone>(
     steps: &HashMap<String, T>,
     ids: &[String],
 ) -> Result<Vec<T>, BridgeError> {
@@ -96,7 +96,7 @@ fn resolve_ids<T: Copy>(
         .map(|id| {
             steps
                 .get(id)
-                .copied()
+                .cloned()
                 .ok_or_else(|| BridgeError::UndefinedStep(id.clone()))
         })
         .collect()

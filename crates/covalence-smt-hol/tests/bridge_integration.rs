@@ -1,21 +1,21 @@
-//! Integration tests for the Alethe → HOL bridge.
+//! Integration tests for the Alethe → Prover bridge.
 //!
-//! These exercise the *stable boundary*: the trait + driver + `HolAletheBridge`
-//! impl. Most Alethe rules are not yet wired through to the kernel, so we
-//! verify two things:
+//! Exercises the *stable boundary*: trait + driver + `KernelAletheBridge`
+//! impl against `covalence_kernel::Kernel`. Most Alethe rules are not yet
+//! wired through, so we verify two things:
 //!
 //!   1. Problem ingestion + `(assume ...)` succeed end-to-end on the QF_UF
-//!      fixtures (sort/fun translation, `assume_rule` calls).
-//!   2. The first `(step ...)` surfaces a `NotImplemented` error tagged with
-//!      the Alethe rule name — i.e. the failure mode is loud, structured, and
-//!      tells the next implementer exactly which rule to wire up.
+//!      fixtures (sort/fun translation, kernel `assume`).
+//!   2. The first `(step ...)` surfaces a `NotImplemented` error tagged
+//!      with the Alethe rule name — loud, structured failure that tells
+//!      the next implementer exactly which rule to wire up.
 
 use std::path::PathBuf;
 
-use covalence_hol::{BOOL_TYCON_ID, EQ_CONST_ID, FUN_TYCON_ID, HolKernel};
+use covalence_kernel::Kernel;
 use covalence_smt::{parse_alethe, parse_smtlib2};
 use covalence_smt_hol::{
-    AletheBridge, BridgeError, HolAletheBridge, ingest_problem, ingest_proof,
+    AletheBridge, BridgeError, KernelAletheBridge, ingest_problem, ingest_proof,
 };
 use covalence_types::Decision;
 
@@ -33,10 +33,6 @@ fn load_problem_and_proof(name: &str) -> (covalence_smt::SmtProblem, covalence_s
     (problem, proof)
 }
 
-fn mk_kernel() -> HolKernel {
-    HolKernel::new(FUN_TYCON_ID, BOOL_TYCON_ID, EQ_CONST_ID)
-}
-
 // =====================================================================
 // trivial-unsat — assume + assume + resolution
 // =====================================================================
@@ -44,8 +40,8 @@ fn mk_kernel() -> HolKernel {
 #[test]
 fn trivial_unsat_problem_ingests() {
     let (problem, _) = load_problem_and_proof("trivial-unsat");
-    let mut kernel = mk_kernel();
-    let mut bridge = HolAletheBridge::new(&mut kernel).unwrap();
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelAletheBridge::new(&mut kernel);
 
     ingest_problem(&mut bridge, &problem).expect("problem should ingest cleanly");
 }
@@ -53,8 +49,8 @@ fn trivial_unsat_problem_ingests() {
 #[test]
 fn trivial_unsat_proof_punts_on_resolution() {
     let (problem, proof) = load_problem_and_proof("trivial-unsat");
-    let mut kernel = mk_kernel();
-    let mut bridge = HolAletheBridge::new(&mut kernel).unwrap();
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelAletheBridge::new(&mut kernel);
 
     ingest_problem(&mut bridge, &problem).unwrap();
     let err = ingest_proof(&mut bridge, &proof)
@@ -71,28 +67,23 @@ fn trivial_unsat_proof_punts_on_resolution() {
 }
 
 // =====================================================================
-// cvc5-qf-uf — exercises `! :named` annotations end-to-end
+// cvc5-qf-uf — exercises `! :named` annotations + `not` end-to-end
 // =====================================================================
 
 #[test]
 fn cvc5_qf_uf_problem_ingests() {
-    // QF_UF with `(not (p a))`, `(= a b)`, `(p b)` — exercises `not` and
-    // the curried application path. Should ingest cleanly.
     let (problem, _) = load_problem_and_proof("cvc5-qf-uf");
-    let mut kernel = mk_kernel();
-    let mut bridge = HolAletheBridge::new(&mut kernel).unwrap();
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelAletheBridge::new(&mut kernel);
 
     ingest_problem(&mut bridge, &problem).expect("QF_UF problem should ingest");
 }
 
 #[test]
 fn cvc5_qf_uf_assumes_succeed_steps_punt() {
-    // The cvc5-generated proof has `:named` annotations that the bridge must
-    // strip transparently. All assumes should succeed; the first step uses
-    // `equiv_pos2` which we haven't wired up.
     let (problem, proof) = load_problem_and_proof("cvc5-qf-uf");
-    let mut kernel = mk_kernel();
-    let mut bridge = HolAletheBridge::new(&mut kernel).unwrap();
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelAletheBridge::new(&mut kernel);
 
     ingest_problem(&mut bridge, &problem).unwrap();
     let err = ingest_proof(&mut bridge, &proof).expect_err("steps are not yet wired up");
@@ -114,30 +105,29 @@ fn cvc5_qf_uf_assumes_succeed_steps_punt() {
 
 #[test]
 fn fresh_bridge_decision_is_unknown() {
-    let mut kernel = mk_kernel();
-    let bridge = HolAletheBridge::new(&mut kernel).unwrap();
+    let mut kernel = Kernel::new();
+    let bridge = KernelAletheBridge::new(&mut kernel);
     assert_eq!(bridge.decision(), Decision::Unknown);
 }
 
 // =====================================================================
-// Sort + const declarations register correctly
+// Sort + const declarations register
 // =====================================================================
 
 #[test]
 fn declare_sort_and_fun_succeed() {
-    let mut kernel = mk_kernel();
-    let mut bridge = HolAletheBridge::new(&mut kernel).unwrap();
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelAletheBridge::new(&mut kernel);
 
-    // trivial-unsat has `(declare-const a Bool)`.
     let (problem, _) = load_problem_and_proof("trivial-unsat");
     ingest_problem(&mut bridge, &problem).unwrap();
 
-    let (a_id, _ty) = bridge.lookup_fun("a").expect("`a` should be declared");
-    assert_eq!(bridge.names().resolve(a_id).map(|s| s.as_str()), Some("a"));
+    // trivial-unsat: `(declare-const a Bool)`.
+    assert!(bridge.lookup_fun("a").is_some());
 
-    // cvc5-qf-uf declares a parameterless sort `U` and constants `a`, `b`, `p`.
-    let mut kernel2 = mk_kernel();
-    let mut bridge2 = HolAletheBridge::new(&mut kernel2).unwrap();
+    // cvc5-qf-uf declares sort `U` and constants `a`, `b`, `p`.
+    let mut kernel2 = Kernel::new();
+    let mut bridge2 = KernelAletheBridge::new(&mut kernel2);
     let (problem2, _) = load_problem_and_proof("cvc5-qf-uf");
     ingest_problem(&mut bridge2, &problem2).unwrap();
     assert!(bridge2.lookup_sort("U").is_some());
@@ -147,25 +137,22 @@ fn declare_sort_and_fun_succeed() {
 }
 
 // =====================================================================
-// Unknown rule → UnknownRule (not NotImplemented)
+// Direct step call — bridge punts with NotImplemented
 // =====================================================================
 
 #[test]
 fn assume_then_unknown_rule_step() {
     use covalence_sexp::{SExp, SExpr};
 
-    let mut kernel = mk_kernel();
-    let mut bridge = HolAletheBridge::new(&mut kernel).unwrap();
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelAletheBridge::new(&mut kernel);
 
-    // Set up a single boolean variable so the assume succeeds.
     bridge
         .declare_fun("p", &[], &SExp::symbol("Bool"))
         .unwrap();
     let p_term: SExpr = SExp::symbol("p");
     let thm = bridge.assume("h1", &p_term).unwrap();
 
-    // step with empty clause + an unknown rule → currently NotImplemented
-    // (the bridge punts on every rule for now).
     let err = bridge
         .step("t1", &[], "totally-made-up-rule", &[thm], &[], &[])
         .expect_err("every rule is currently NotImplemented");

@@ -18,7 +18,7 @@ use covalence_spectec::{
     parse::parse,
     source::SourceMap,
 };
-use spectec_ast::SpecTecDef;
+use spectec_ast::{SpecTecDef, SpecTecExp, SpecTecRule};
 
 fn assets_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -114,6 +114,28 @@ fn diff_against_wasm_spec_ast() {
         "  Rel MixOp matches: {rel_mixop_matches} / {rel_mixop_compared} compared (Rel names appearing on both sides)"
     );
 
+    // Rule body coverage: for relations that appear on both sides,
+    // walk paired rules in source order and count how many of OUR
+    // rule conclusions are real expressions (non-sentinel).
+    let our_rules = rules_by_relation(&ours);
+    let their_rules = rules_by_relation(&reference);
+    let mut our_real_concl = 0usize;
+    let mut total_rule_pairs = 0usize;
+    for (rel, our_list) in &our_rules {
+        if let Some(their_list) = their_rules.get(rel) {
+            let pairs = our_list.len().min(their_list.len());
+            total_rule_pairs += pairs;
+            for r in our_list.iter().take(pairs) {
+                if !is_raw_sentinel_exp(rule_concl(r)) {
+                    our_real_concl += 1;
+                }
+            }
+        }
+    }
+    eprintln!(
+        "  Rule conclusions: {our_real_concl} non-sentinel of {total_rule_pairs} paired rules"
+    );
+
     // Acceptance: the names align. (Bodies don't match yet — that's
     // the deferred lowering work surfaced by this test.) We require
     // each kind to have >= 80% name overlap with the OCaml output.
@@ -141,6 +163,40 @@ struct KindCoverage {
 
 type KindPairs = Vec<(String, String)>;
 type MixOpMap = BTreeMap<String, Vec<String>>;
+
+/// Build a `name -> rules` map for each `Rel` def. Recurses into `Rec`.
+fn rules_by_relation(defs: &[SpecTecDef]) -> BTreeMap<String, Vec<SpecTecRule>> {
+    let mut out: BTreeMap<String, Vec<SpecTecRule>> = BTreeMap::new();
+    fn walk(d: &SpecTecDef, out: &mut BTreeMap<String, Vec<SpecTecRule>>) {
+        match d {
+            SpecTecDef::Rel { x, rules, .. } => {
+                out.entry(x.clone()).or_default().extend(rules.iter().cloned());
+            }
+            SpecTecDef::Rec { ds } => {
+                for d in ds {
+                    walk(d, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    for d in defs {
+        walk(d, &mut out);
+    }
+    out
+}
+
+fn rule_concl(r: &SpecTecRule) -> &SpecTecExp {
+    let SpecTecRule::Rule { e, .. } = r;
+    e
+}
+
+/// Detect our `raw_sentinel()` value (`Bool { b: false }`) — anything
+/// the OCaml elaborator would never naturally produce as a top-level
+/// conclusion. Used to count *real* lowered conclusions in the diff.
+fn is_raw_sentinel_exp(e: &SpecTecExp) -> bool {
+    matches!(e, SpecTecExp::Bool { b: false })
+}
 
 /// Walk `defs` and produce `(kind, name)` pairs plus a map of
 /// `rel-name -> mixop fragments` for later comparison. Does NOT recurse

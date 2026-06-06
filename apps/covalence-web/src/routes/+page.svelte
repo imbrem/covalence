@@ -13,8 +13,9 @@
 		'module', 'component', 'import', 'export', 'func', 'param', 'result',
 		'type', 'instance', 'core', 'canon', 'lift', 'lower',
 		'memory', 'table', 'global', 'elem', 'data', 'start', 'local', 'alias',
-		// REPL commands
-		'store', 'help', 'parse-module', 'parse-component', 'decide',
+		// REPL (Forsp) commands
+		'store', 'read', 'read-wat', 'store-url', 'store-file',
+		'compile-wat', 'hash', 'print', 'status', 'help',
 	]);
 
 	function escHtml(s: string): string {
@@ -337,7 +338,7 @@
 					bind:this={inputEl}
 					onkeydown={onKeydown}
 					rows="1"
-					placeholder={wsConnected ? '(help)' : 'connecting...'}
+					placeholder={wsConnected ? 'help' : 'connecting...'}
 					disabled={!wsConnected}
 					autofocus
 				></textarea>

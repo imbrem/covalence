@@ -465,7 +465,7 @@ inner-layer assumption to audit. A new theory = zero TCB change. A
 new oracle (under the self-extending pattern, §3.7) = zero TCB
 change.
 
-### 3.6 Self-extending via proven oracles
+### 3.7 Self-extending via proven oracles
 
 The HOL-strength of the middle layer pays off concretely: it lets the
 system natively reason about the operational semantics of WASM (and
@@ -549,6 +549,69 @@ lets you say "the WASM program with hash `H` implements specification
 > arbitrarily many oracles riding on top via proof. Contrast with the
 > classical pattern where the trust set grows linearly with oracle
 > count.
+
+### 3.8 Format graph: shell traits as interfaces
+
+A specific instance of the shell pattern the user emphasized: **the
+HOL Light API is an *interface*, not an implementation choice**, and
+the same applies to every other proof-format API (Metamath, Lean,
+Isabelle, SMT-LIB).
+
+Each format gets a Rust trait (in Covalence:
+[`HolLightKernel`](../../../../../crates/covalence-hol/src/traits.rs)
+for HOL Light). Multiple backends implement the same trait:
+
+1. **Direct kernel backend.** Drive the framework's primitives
+   directly. (Today:
+   [`HolPrim`](../../../../../crates/covalence-shell/src/hol.rs) —
+   routes HOL Light operations to `covalence-kernel`.)
+2. **Self-contained reference backend.** A pure-Rust implementation
+   of the format's logic, independent of the framework. Useful for
+   differential testing. (Today:
+   [`HolKernel`](../../../../../crates/covalence-hol/src/light.rs).)
+3. **Driving the format *as a theory* in the kernel.** Implement the
+   format's API by treating it as a [layer-3 theory](#33-top-theories-morphisms-interpretations)
+   inside the framework's modified HOL. Each HOL Light operation
+   translates to an operation in that theory. (Planned — lands once
+   the framework has matured.)
+4. **Driving via a different foundation.** E.g., implementing
+   `HolLightKernel` by translating to ZFC operations. **Normally
+   you'd use a morphism instead** — prove things in HOL, transport
+   via a HOL→ZFC morphism — but the direct-implementation path is
+   architecturally available.
+5. **Null backend.** Terms and types work; all proof rules return
+   "unsupported." The LCF discipline at the API level: a no-op
+   implementation must compile. (Today:
+   [`NullKernel`](../../../../../crates/covalence-hol/src/null.rs).)
+6. **Recording backend.** Wraps another backend; logs the
+   rule-application trail to a sidecar for export. (Planned;
+   per [`facts-not-proofs.md` §"Optional proof recording"](./facts-not-proofs.md).)
+7. **Remote backend.** Implements the trait by RPC against another
+   kernel instance. (Planned; federation pathway.)
+
+**Implications for trait design.**
+
+- **Shell traits stay pure to their format.** `HolLightKernel`
+  contains exactly the classical HOL Light operations — no
+  observations, no disjunct trick, no content-addressing primitives.
+  These are how OpenTheory expects to talk to HOL.
+- **Modified-HOL features live on a different trait** (in
+  Covalence, the `Prover` trait in `covalence-shell`). A backend
+  with capability beyond classical HOL implements *both* traits; an
+  OpenTheory consumer only sees the classical surface.
+- **Morphisms between formats are theorems, not trait
+  implementations.** Translating Lean to HOL is normally a morphism
+  in the framework's morphism layer (a theorem), not a backend
+  implementing `HolLightKernel` via Lean primitives. Both are
+  possible; the morphism approach scales better because the
+  translation is proved once and reused.
+- **The format graph mirrors the theory graph.** Many formats; many
+  backends per format; many morphisms between formats. The framework
+  is the substrate that holds the graph together.
+
+This is what makes the proof-format ecosystem work: one substrate,
+many shell traits as interfaces, many backends per interface, many
+morphisms between formats.
 
 ---
 

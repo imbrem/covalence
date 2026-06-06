@@ -1363,6 +1363,15 @@ impl HolPrim {
         let thm1 = self.clone_thm(th1)?;
         let thm2 = self.clone_thm(th2)?;
         let (thm1, thm2, _) = self.align_for_binary(thm1, thm2)?;
+        // Pre-union the midpoints (Eq RHS of thm1 and Eq LHS of thm2)
+        // to bridge raw↔folded shape mismatches before the kernel's
+        // strict UF level-0 check.
+        if let (TermDef::Eq(_, b1), TermDef::Eq(b2, _)) = (
+            *self.arena().term_def(thm1.concl()),
+            *self.arena().term_def(thm2.concl()),
+        ) {
+            self.union_alpha_equivalent_shapes(b1, b2)?;
+        }
         let out = self.kernel.trans(thm1, thm2)?;
         Ok(self.store_thm(out))
     }

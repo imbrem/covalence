@@ -1,0 +1,23 @@
+[package]
+name = "covalence-kv"
+version = "0.0.0"
+edition = "2024"
+
+[features]
+default = ["aws"]
+aws = ["dep:object_store"]
+
+[dependencies]
+async-trait = "0.1"
+bytes = "1"
+futures-core = "0.3"
+object_store = { version = "0.13", default-features = false, features = ["aws"], optional = true }
+thiserror = "2"
+
+[dev-dependencies]
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["server", "tokio"] }
+s3s = "0.13"
+s3s-fs = "0.13"
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }

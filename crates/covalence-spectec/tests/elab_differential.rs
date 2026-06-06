@@ -212,6 +212,13 @@ fn diff_against_wasm_spec_ast() {
     // Deep structural equality: for every (kind, name) on both sides,
     // does our `SpecTecDef` equal OCaml's via `PartialEq`?
     let deep = deep_equal_report(&ours, &reference);
+    if std::env::var("SPECTEC_DIFF_SHOW").is_ok() {
+        let limit: usize = std::env::var("SPECTEC_DIFF_SHOW")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3);
+        show_first_mismatches(&ours, &reference, limit);
+    }
     eprintln!("  per-kind deep structural equality:");
     eprintln!(
         "    Typ:  {} / {} ({:.1}%)",
@@ -507,6 +514,25 @@ fn deep_equal_report(ours: &[SpecTecDef], theirs: &[SpecTecDef]) -> DeepEqReport
         }
     }
     r
+}
+
+fn show_first_mismatches(ours: &[SpecTecDef], theirs: &[SpecTecDef], n: usize) {
+    let our_map = build_def_map(ours);
+    let their_map = build_def_map(theirs);
+    for kind in ["Typ", "Rel", "Dec", "Gram"] {
+        let mut shown_for_kind = 0;
+        for ((k, name), od) in &our_map {
+            if k != kind { continue; }
+            if shown_for_kind >= n { break; }
+            let Some(td) = their_map.get(&(k.clone(), name.clone())) else { continue };
+            if od != td {
+                eprintln!("\n=== {kind} {name} differs ===");
+                eprintln!("OURS:   {od:#?}");
+                eprintln!("THEIRS: {td:#?}");
+                shown_for_kind += 1;
+            }
+        }
+    }
 }
 
 fn build_def_map(defs: &[SpecTecDef]) -> BTreeMap<(String, String), SpecTecDef> {

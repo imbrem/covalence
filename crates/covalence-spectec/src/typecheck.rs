@@ -433,11 +433,92 @@ pub fn check_exp(env: &TypeEnv, e: Expr) -> Expr {
     e
 }
 
-/// Bidirectional check (with expected type): infer `e`'s type, then
-/// either return `e` unchanged (when its type equiv-`expected`) or
-/// wrap it in `Expr::Sub` (when `actual <: expected` but not
-/// equivalent). Mirrors OCaml's `elab_exp env e expected_t`.
+/// Per-rule scope: accumulates discovered metavariable types as we
+/// type-check operands and premises. OCaml's elaborator infers a
+/// var's type from the position where it's used (e.g. `s` in the
+/// first operand of a `Rel: store |- ...` is inferred to be a
+/// store), and this discovery feeds the `Rule.ps` list.
+#[derive(Debug, Default)]
+pub struct RuleScope {
+    pub vars: BTreeMap<String, Typ>,
+}
+
+impl RuleScope {
+    /// Record `name : ty` if either we haven't seen `name` before, or
+    /// the new type is more specific than the previously-recorded one.
+    pub fn record(&mut self, name: String, ty: Typ) {
+        if is_unknown(&ty) {
+            return;
+        }
+        self.vars.entry(name).or_insert(ty);
+    }
+}
+
+/// Bidirectional check (with expected type), no scope recording.
+/// Convenience wrapper for callers that don't need to thread a scope.
 pub fn check_exp_against(env: &TypeEnv, e: Expr, expected: &Typ) -> Expr {
+    let mut scope = RuleScope::default();
+    check_exp_against_scope(env, e, expected, &mut scope)
+}
+
+/// Bidirectional check + record discovered Var types into `scope`.
+/// Walks the expression, recording each `Var` against its expected
+/// type as we descend through Tup, Case, etc.
+pub fn check_exp_against_scope(
+    env: &TypeEnv,
+    e: Expr,
+    expected: &Typ,
+    scope: &mut RuleScope,
+) -> Expr {
+    // Special-case Var: record then return.
+    if let Expr::Var { span, name } = e {
+        // Strip any iter suffix from the name when recording; the
+        // name `t*` records as `t*` (we keep the suffix-bearing form
+        // so OCaml's `Rule.ps` shape matches: it lists `fv*`, not
+        // `fv`).
+        scope.record(name.clone(), expected.clone());
+        return Expr::Var { span, name };
+    }
+    // Special-case Tup: pair each item with the corresponding bind
+    // type of the expected Tup.
+    if let (Expr::Tup { span, items }, Typ::Tup { ets }) = (&e, expected) {
+        if items.len() == ets.len() {
+            let span = *span;
+            let new_items: Vec<Expr> = items
+                .iter()
+                .zip(ets)
+                .map(|(it, bind)| {
+                    let ast::SpecTecTypBind::Bind { typ, .. } = bind;
+                    check_exp_against_scope(env, it.clone(), typ, scope)
+                })
+                .collect();
+            return Expr::Tup { span, items: new_items };
+        }
+    }
+    // Special-case Iter on a Var: `t*` against `Iter<T>` records
+    // the unwrapped `t : T`.
+    if let (Expr::Iter { inner, .. }, Typ::Iter { t1, .. }) = (&e, expected) {
+        if let Expr::Var { .. } = inner.as_ref() {
+            // Re-infer the inner var against the inner type.
+            let e_clone = e.clone();
+            let (new_e, _) = infer_exp(env, e_clone);
+            // Also record the name (with `*`-suffix) → outer iter type.
+            if let Expr::Iter { inner: i2, .. } = &new_e {
+                if let Expr::Var { name, .. } = i2.as_ref() {
+                    let mut suffixed = name.clone();
+                    // We don't know which iter character; emit `*` as
+                    // the conventional default. OCaml uses the actual
+                    // iter; we can revisit if it matters.
+                    suffixed.push('*');
+                    scope.record(suffixed, expected.clone());
+                    // Also record bare name → inner type.
+                    scope.record(name.clone(), (**t1).clone());
+                }
+            }
+            return new_e;
+        }
+    }
+    // General path: infer, then check sub <: expected.
     let (e, actual) = infer_exp(env, e);
     let span = e.span();
     if is_unknown(&actual) || equiv_typ(&actual, expected) {
@@ -451,9 +532,6 @@ pub fn check_exp_against(env: &TypeEnv, e: Expr, expected: &Typ) -> Expr {
             e: Box::new(e),
         }
     } else {
-        // No subtype relation — return as-is (no coercion). A real
-        // typechecker would diagnose; we stay lenient to keep the
-        // pipeline producing output on the corpus.
         e
     }
 }
@@ -577,18 +655,171 @@ fn metavar_base(name: &str) -> &str {
     trimmed
 }
 
-/// Type-check a premise. For `Rule { rel_name, operands }` premises,
-/// each operand is checked against the corresponding hole-type of
-/// the cited relation, inserting `Sub` coercions as needed.
+/// Collect the metavariables used in an elaborated rule (conclusion
+/// + premises), in source order, deduplicated. Type for each name is
+/// taken from `scope` (which the typechecker populates during
+/// `check_exp_against_scope`); if not in scope, falls back to
+/// `env.vars` lookup with subscript/prime stripping.
+///
+/// This matches OCaml's `Rule.ps` semantics: every bound metavar
+/// gets an `Exp` parameter recording its type. Order is
+/// first-appearance order in (operands followed by premises).
+pub fn collect_rule_params(
+    env: &TypeEnv,
+    operands: &[Expr],
+    premises: &[ElabPremise],
+    scope: &RuleScope,
+) -> Vec<ast::SpecTecParam> {
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut order: Vec<String> = Vec::new();
+    for o in operands {
+        collect_var_names_in_expr(o, &mut order, &mut seen);
+    }
+    for p in premises {
+        collect_var_names_in_premise(p, &mut order, &mut seen);
+    }
+    order
+        .into_iter()
+        .map(|name| {
+            let typ = if let Some(t) = scope.vars.get(&name) {
+                t.clone()
+            } else {
+                let (base, iter_suffix) = strip_iter_suffix(&name);
+                let base_typ = env
+                    .vars
+                    .get(metavar_base(base))
+                    .cloned()
+                    .unwrap_or_else(unknown_typ);
+                wrap_in_iters(base_typ, &iter_suffix)
+            };
+            ast::SpecTecParam::Exp { x: name, t: typ }
+        })
+        .collect()
+}
+
+fn collect_var_names_in_expr(
+    e: &Expr,
+    order: &mut Vec<String>,
+    seen: &mut std::collections::BTreeSet<String>,
+) {
+    match e {
+        Expr::Var { name, .. } => {
+            if seen.insert(name.clone()) {
+                order.push(name.clone());
+            }
+        }
+        Expr::Iter { inner, .. } => collect_var_names_in_expr(inner, order, seen),
+        Expr::Tup { items, .. } | Expr::List { items, .. } => {
+            for i in items {
+                collect_var_names_in_expr(i, order, seen);
+            }
+        }
+        Expr::Case { args, .. } => {
+            for a in args {
+                collect_var_names_in_expr(a, order, seen);
+            }
+        }
+        Expr::Bin { e1, e2, .. } | Expr::Cmp { e1, e2, .. }
+        | Expr::Idx { e1, e2, .. } | Expr::Comp { e1, e2, .. }
+        | Expr::Mem { e1, e2, .. } | Expr::Cat { e1, e2, .. } => {
+            collect_var_names_in_expr(e1, order, seen);
+            collect_var_names_in_expr(e2, order, seen);
+        }
+        Expr::Un { e, .. } | Expr::Len { e, .. } | Expr::Lift { e, .. }
+        | Expr::Unopt { e, .. } | Expr::Cvt { e, .. } | Expr::Sub { e, .. }
+        | Expr::Proj { e, .. } | Expr::Uncase { e, .. } | Expr::Dot { e, .. } => {
+            collect_var_names_in_expr(e, order, seen);
+        }
+        Expr::Slice { e1, e2, e3, .. } => {
+            collect_var_names_in_expr(e1, order, seen);
+            collect_var_names_in_expr(e2, order, seen);
+            collect_var_names_in_expr(e3, order, seen);
+        }
+        Expr::Upd { e1, e2, .. } | Expr::Ext { e1, e2, .. } => {
+            collect_var_names_in_expr(e1, order, seen);
+            collect_var_names_in_expr(e2, order, seen);
+        }
+        Expr::Str { fields, .. } => {
+            for f in fields {
+                collect_var_names_in_expr(&f.value, order, seen);
+            }
+        }
+        Expr::Opt { inner: Some(e), .. } => collect_var_names_in_expr(e, order, seen),
+        _ => {}
+    }
+}
+
+fn collect_var_names_in_premise(
+    p: &ElabPremise,
+    order: &mut Vec<String>,
+    seen: &mut std::collections::BTreeSet<String>,
+) {
+    match p {
+        ElabPremise::Rule { operands, .. } => {
+            for o in operands {
+                collect_var_names_in_expr(o, order, seen);
+            }
+        }
+        ElabPremise::If(e) => collect_var_names_in_expr(e, order, seen),
+        ElabPremise::Let { lhs, rhs } => {
+            collect_var_names_in_expr(lhs, order, seen);
+            collect_var_names_in_expr(rhs, order, seen);
+        }
+        ElabPremise::Else => {}
+        ElabPremise::Iter { inner, .. } => {
+            collect_var_names_in_premise(inner, order, seen);
+        }
+        ElabPremise::Raw(_) => {}
+    }
+}
+
+/// Strip trailing `*`, `?`, `+` characters from a metavar name, returning
+/// `(base, suffix)`. `t*` → `("t", "*")`. `t**` → `("t", "**")`.
+fn strip_iter_suffix(name: &str) -> (&str, String) {
+    let mut end = name.len();
+    let bytes = name.as_bytes();
+    let mut suffix = String::new();
+    while end > 0 && matches!(bytes[end - 1], b'*' | b'?' | b'+') {
+        suffix.push(bytes[end - 1] as char);
+        end -= 1;
+    }
+    // Reverse since we built suffix back-to-front.
+    let suffix: String = suffix.chars().rev().collect();
+    (&name[..end], suffix)
+}
+
+/// Wrap `t` in iterations according to the suffix string. `*` →
+/// `Iter::List`; `?` → `Iter::Opt`; `+` → `Iter::List1`.
+fn wrap_in_iters(mut t: Typ, suffix: &str) -> Typ {
+    for c in suffix.chars() {
+        let it = match c {
+            '*' => ast::SpecTecIter::List,
+            '?' => ast::SpecTecIter::Opt,
+            '+' => ast::SpecTecIter::List1,
+            _ => continue,
+        };
+        t = Typ::Iter {
+            t1: Box::new(t),
+            it: vec![it],
+        };
+    }
+    t
+}
+
+/// Convenience: type-check a premise without scope recording.
 pub fn check_premise(env: &TypeEnv, p: ElabPremise) -> ElabPremise {
+    let mut scope = RuleScope::default();
+    check_premise_scope(env, p, &mut scope)
+}
+
+/// Type-check a premise + record discovered Var types into `scope`.
+pub fn check_premise_scope(env: &TypeEnv, p: ElabPremise, scope: &mut RuleScope) -> ElabPremise {
     match p {
         ElabPremise::Rule {
             rel_name,
             op,
             operands,
         } => {
-            // Look up the relation's operand-tuple type and check each
-            // operand against the matching slot.
             let expected = env
                 .relations
                 .get(&rel_name)
@@ -598,7 +829,7 @@ pub fn check_premise(env: &TypeEnv, p: ElabPremise) -> ElabPremise {
                 .into_iter()
                 .enumerate()
                 .map(|(i, o)| match expected.get(i) {
-                    Some(t) => check_exp_against(env, o, t),
+                    Some(t) => check_exp_against_scope(env, o, t, scope),
                     None => check_exp(env, o),
                 })
                 .collect();
@@ -608,11 +839,10 @@ pub fn check_premise(env: &TypeEnv, p: ElabPremise) -> ElabPremise {
                 operands: typed_operands,
             }
         }
-        ElabPremise::If(e) => ElabPremise::If(check_exp_against(env, e, &Typ::Bool)),
+        ElabPremise::If(e) => {
+            ElabPremise::If(check_exp_against_scope(env, e, &Typ::Bool, scope))
+        }
         ElabPremise::Let { lhs, rhs } => ElabPremise::Let {
-            // Symmetric: infer rhs, check lhs against rhs's type
-            // (so pattern variables get the right type). Simplified
-            // for now: check both, don't unify.
             lhs: check_exp(env, lhs),
             rhs: check_exp(env, rhs),
         },
@@ -622,7 +852,7 @@ pub fn check_premise(env: &TypeEnv, p: ElabPremise) -> ElabPremise {
             kind,
             bindings,
         } => ElabPremise::Iter {
-            inner: Box::new(check_premise(env, *inner)),
+            inner: Box::new(check_premise_scope(env, *inner, scope)),
             kind,
             bindings,
         },

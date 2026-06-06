@@ -244,11 +244,9 @@ fn to_spectec_ast_flat(
             .iter()
             .map(|rd| {
                 let elab = elab_rule_conclusion(rd, ctx).ok();
-                let (e, prs) = match elab {
+                let (e, prs, rule_ps) = match elab {
                     Some(elab) => {
-                        // Type-check operands against the relation's
-                        // operand-tuple type so `Sub` coercions get
-                        // inserted at subtype boundaries.
+                        let mut scope = crate::typecheck::RuleScope::default();
                         let expected: Vec<spectec_ast::SpecTecTyp> =
                             extract_tup_element_types(&t);
                         let typed_operands: Vec<Expr> = elab
@@ -256,30 +254,35 @@ fn to_spectec_ast_flat(
                             .into_iter()
                             .enumerate()
                             .map(|(i, o)| match expected.get(i) {
-                                Some(expected_t) => {
-                                    crate::typecheck::check_exp_against(env, o, expected_t)
-                                }
+                                Some(expected_t) => crate::typecheck::check_exp_against_scope(
+                                    env, o, expected_t, &mut scope,
+                                ),
                                 None => crate::typecheck::check_exp(env, o),
                             })
                             .collect();
                         let typed_premises: Vec<ElabPremise> = elab
                             .premises
                             .into_iter()
-                            .map(|p| crate::typecheck::check_premise(env, p))
+                            .map(|p| crate::typecheck::check_premise_scope(env, p, &mut scope))
                             .collect();
-                        (
-                            tup_of_operands(&typed_operands, ctx),
-                            typed_premises
-                                .iter()
-                                .map(|p| premise_to_spectec(p, ctx))
-                                .collect(),
-                        )
+                        let rule_ps = crate::typecheck::collect_rule_params(
+                            env,
+                            &typed_operands,
+                            &typed_premises,
+                            &scope,
+                        );
+                        let e_out = tup_of_operands(&typed_operands, ctx);
+                        let prs_out = typed_premises
+                            .iter()
+                            .map(|p| premise_to_spectec(p, ctx))
+                            .collect();
+                        (e_out, prs_out, rule_ps)
                     }
-                    None => (raw_sentinel(), Vec::new()),
+                    None => (raw_sentinel(), Vec::new(), Vec::new()),
                 };
                 spectec_ast::SpecTecRule::Rule {
                     x: rd.case.as_ref().map(|c| c.text.clone()).unwrap_or_default(),
-                    ps: Vec::new(),
+                    ps: rule_ps,
                     op: mixop_for(&rel.name, ctx),
                     e,
                     prs,

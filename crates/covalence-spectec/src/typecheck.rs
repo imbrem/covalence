@@ -99,15 +99,109 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
     env
 }
 
-/// Type-check a single expression. Returns the refined expression
-/// (with `Un.t` / `Bin.t` / `Cmp.t` populated, `Sub` coercions
-/// inserted where needed, etc.).
+/// Convenience alias for the type we use internally — directly the
+/// `spectec_ast` form so the converter doesn't need any further
+/// translation.
+pub type Typ = spectec_ast::SpecTecTyp;
+
+/// Type used as a placeholder when we can't infer (e.g. for `Raw`
+/// fallbacks or sentinel values). Distinct from a literal `Bool`
+/// type — callers should treat this as "unknown" and not try to
+/// subtype against it.
+pub fn unknown_typ() -> Typ {
+    Typ::Bool
+}
+
+/// Type-check + infer the type of an expression. Returns the
+/// (possibly refined) expression and its inferred type.
 ///
-/// Current implementation: pass-through. Real refinement follows in
-/// subsequent commits.
+/// Mirrors OCaml's `infer_exp env e : Il.exp * Il.typ` pattern. The
+/// returned `Expr` may have refined operator types, `Sub` coercions
+/// inserted, etc., though the current implementation only covers
+/// literal types and `Var` lookups; the rest is incremental.
+pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
+    use spectec_ast::SpecTecNumTyp;
+    match e {
+        Expr::Var { span, name } => {
+            let t = lookup_var(env, &name);
+            (Expr::Var { span, name }, t)
+        }
+        Expr::Bool { span, value } => (Expr::Bool { span, value }, Typ::Bool),
+        Expr::Num { span, ref value } => {
+            let t = match value {
+                crate::elab::NumLit::Nat(_) => Typ::Num(SpecTecNumTyp::Nat),
+                crate::elab::NumLit::Int(_) => Typ::Num(SpecTecNumTyp::Int),
+                crate::elab::NumLit::Rat(_) => Typ::Num(SpecTecNumTyp::Rat),
+                crate::elab::NumLit::Real(_) => Typ::Num(SpecTecNumTyp::Real),
+            };
+            let value = value.clone();
+            (Expr::Num { span, value }, t)
+        }
+        Expr::Text { span, value } => (Expr::Text { span, value }, Typ::Text),
+        Expr::Eps { span } => (
+            Expr::Eps { span },
+            Typ::Iter {
+                t1: Box::new(unknown_typ()),
+                it: vec![spectec_ast::SpecTecIter::List],
+            },
+        ),
+        Expr::Tup { span, items } => {
+            let mut new_items = Vec::with_capacity(items.len());
+            let mut binds = Vec::with_capacity(items.len());
+            for item in items {
+                let (item, t) = infer_exp(env, item);
+                new_items.push(item);
+                binds.push(spectec_ast::SpecTecTypBind::Bind {
+                    id: "_".to_string(),
+                    typ: t,
+                });
+            }
+            let t = Typ::Tup { ets: binds };
+            (Expr::Tup { span, items: new_items }, t)
+        }
+        // For the rest, pass through and report `unknown` for now.
+        // Subsequent slices add real inference per variant.
+        other => (other, unknown_typ()),
+    }
+}
+
+/// Bidirectional check: infer `e`'s type, return the refined `Expr`.
+/// In a later slice this'll also insert `Sub` coercion if needed.
 pub fn check_exp(env: &TypeEnv, e: Expr) -> Expr {
-    let _ = env;
+    let (e, _t) = infer_exp(env, e);
     e
+}
+
+/// Look up a metavariable's declared type. Strips trailing primes
+/// and `_<subscript>` suffixes per SpecTec convention (so `C_1` and
+/// `C''` both resolve to the type declared by `var C : ...`).
+fn lookup_var(env: &TypeEnv, name: &str) -> Typ {
+    let base = metavar_base(name);
+    env.vars
+        .get(base)
+        .cloned()
+        .unwrap_or_else(unknown_typ)
+}
+
+/// Same algorithm as [`elab::metavar_base`], duplicated here so this
+/// module doesn't depend on a private item.
+fn metavar_base(name: &str) -> &str {
+    let mut end = name.len();
+    while end > 0 && name.as_bytes()[end - 1] == b'\'' {
+        end -= 1;
+    }
+    let trimmed = &name[..end];
+    if let Some(us) = trimmed.rfind('_') {
+        let suffix = &trimmed[us + 1..];
+        let is_subscript = !suffix.is_empty()
+            && suffix
+                .bytes()
+                .all(|b| b.is_ascii_digit() || b.is_ascii_lowercase());
+        if is_subscript {
+            return &trimmed[..us];
+        }
+    }
+    trimmed
 }
 
 /// Type-check a premise.
@@ -183,5 +277,106 @@ mod tests {
             (e, result),
             (Expr::Var { name: ref a, .. }, Expr::Var { name: ref b, .. }) if a == b
         ));
+    }
+
+    #[test]
+    fn infer_var_uses_var_env() {
+        let src = r#"
+            syntax t = nat
+            var C : t
+        "#;
+        let (doc, ctx) = build(src);
+        let env = build_env(&doc, &ctx);
+        let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
+        let (_, t) = infer_exp(
+            &env,
+            Expr::Var {
+                span,
+                name: "C".to_string(),
+            },
+        );
+        assert!(matches!(t, spectec_ast::SpecTecTyp::Var { x, .. } if x == "t"));
+    }
+
+    #[test]
+    fn infer_var_strips_subscript_and_prime() {
+        let src = r#"
+            syntax t = nat
+            var C : t
+        "#;
+        let (doc, ctx) = build(src);
+        let env = build_env(&doc, &ctx);
+        let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
+        for name in &["C_1", "C_n", "C'", "C''", "C_n'"] {
+            let (_, t) = infer_exp(
+                &env,
+                Expr::Var {
+                    span,
+                    name: name.to_string(),
+                },
+            );
+            assert!(
+                matches!(&t, spectec_ast::SpecTecTyp::Var { x, .. } if x == "t"),
+                "var {name} should resolve to type `t`"
+            );
+        }
+    }
+
+    #[test]
+    fn infer_num_picks_num_typ() {
+        let env = TypeEnv::default();
+        let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
+        let (_, t) = infer_exp(
+            &env,
+            Expr::Num {
+                span,
+                value: crate::elab::NumLit::Nat(covalence_types::Nat::from(7u64)),
+            },
+        );
+        assert!(matches!(
+            t,
+            spectec_ast::SpecTecTyp::Num(spectec_ast::SpecTecNumTyp::Nat)
+        ));
+    }
+
+    #[test]
+    fn infer_tup_composes_types() {
+        let src = r#"
+            syntax t = nat
+            var C : t
+            var x : nat
+        "#;
+        let (doc, ctx) = build(src);
+        let env = build_env(&doc, &ctx);
+        let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
+        let (_, t) = infer_exp(
+            &env,
+            Expr::Tup {
+                span,
+                items: vec![
+                    Expr::Var { span, name: "C".to_string() },
+                    Expr::Var { span, name: "x".to_string() },
+                ],
+            },
+        );
+        let spectec_ast::SpecTecTyp::Tup { ets } = t else {
+            panic!("expected Tup");
+        };
+        assert_eq!(ets.len(), 2);
+    }
+
+    #[test]
+    fn unknown_var_returns_placeholder() {
+        let env = TypeEnv::default();
+        let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
+        let (_, t) = infer_exp(
+            &env,
+            Expr::Var {
+                span,
+                name: "missing".to_string(),
+            },
+        );
+        // Falls back to unknown_typ (currently SpecTecTyp::Bool).
+        assert!(matches!(t, spectec_ast::SpecTecTyp::Bool));
     }
 }

@@ -9,6 +9,7 @@
 //! known holes (linear-scan dedup, auto-`infer` papering over stale
 //! caches, opaque `Subset` handling in `subst_tyvar_in_type`, etc.).
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use smol_str::SmolStr;
@@ -74,6 +75,16 @@ pub struct Arena {
     term_props: Vec<TermProps>,
     imports: Vec<Import>,
 
+    /// Hash-cons map for terms — `TermDef → TermId`. Keeps
+    /// [`alloc_term`] dedup O(1) instead of an O(n) linear scan.
+    term_dedup: HashMap<TermDef, TermId>,
+    /// Hash-cons map for types.
+    type_dedup: HashMap<TypeDef, TypeId>,
+    /// Hash-cons map for type-argument lists.
+    tyargs_dedup: HashMap<Vec<TypeRef>, TyArgsId>,
+    /// Hash-cons map for strings.
+    string_dedup: HashMap<SmolStr, StrId>,
+
     // Interning tables for variable-sized payloads.
     strings: Vec<SmolStr>,
     bytes: Vec<bytes::Bytes>,
@@ -111,6 +122,10 @@ impl Arena {
             terms: Vec::new(),
             term_props: Vec::new(),
             imports: Vec::new(),
+            term_dedup: HashMap::new(),
+            type_dedup: HashMap::new(),
+            tyargs_dedup: HashMap::new(),
+            string_dedup: HashMap::new(),
             strings: Vec::new(),
             bytes: Vec::new(),
             ints: Vec::new(),
@@ -393,8 +408,18 @@ impl Arena {
     /// …) lives in the [`crate::reduce`] module and is exposed via
     /// [`crate::Thm::reduce`]. Arena is rule-blind.
     pub fn rewrite(&mut self, t: TermId, new_def: TermDef) {
+        // Keep the hash-cons in sync: remove the stale old-def
+        // entry, register the new-def entry. If `new_def` was
+        // already cached at another TermId, the cached entry stays
+        // and we lose dedup uniqueness — but `rewrite` callers are
+        // expected to maintain that invariant themselves.
+        let old_def = self.terms[t.0 as usize];
+        if self.term_dedup.get(&old_def) == Some(&t) {
+            self.term_dedup.remove(&old_def);
+        }
         let (new_info, new_hf) = self.compute_term_props(&new_def);
         self.terms[t.0 as usize] = new_def;
+        self.term_dedup.entry(new_def).or_insert(t);
         let entry = &mut self.term_props[t.0 as usize];
         entry.type_info = new_info;
         entry.has_free = new_hf;
@@ -1213,15 +1238,16 @@ impl Arena {
         if let Some(b) = def.as_builtin() {
             return TypeRef::builtin(b);
         }
-        // Dedup: identical TypeDefs return the same TypeRef. Without
-        // this, two `alloc_tvar("A")` calls produce different
-        // TypeRefs, breaking `Thm::inst`'s `TypeRef::eq` type-match
-        // check on terms that should be α-equivalent.
-        if let Some(pos) = self.types.iter().position(|d| *d == def) {
-            return TypeRef::local(TypeId(pos as u32));
+        // Dedup via hash-cons: identical TypeDefs share a TypeRef.
+        // Crucial for HOL Light-style polymorphic-instance equality
+        // — two `alloc_tvar("A")` or two `alloc_tyapp("unit", [])`
+        // calls must agree.
+        if let Some(&id) = self.type_dedup.get(&def) {
+            return TypeRef::local(id);
         }
         let id = TypeId(self.types.len() as u32);
         self.types.push(def);
+        self.type_dedup.insert(def, id);
         TypeRef::local(id)
     }
 
@@ -1484,25 +1510,23 @@ impl Arena {
     /// a type for `def`, the term gets `TypeInfo::IllTyped`. The
     /// kernel only checks type soundness when constructing a `Thm`.
     pub fn alloc_term(&mut self, def: TermDef) -> TermId {
-        // Dedup: identical TermDefs share a TermId. Lets the UF and
-        // structural-equality bridges rely on `==` for α-equivalent
-        // terms even after independent allocations (e.g. fresh terms
-        // produced by inst / inst_type).
-        if let Some(pos) = self.terms.iter().position(|d| *d == def) {
-            let id = TermId(pos as u32);
+        // Dedup via hash-cons: identical `TermDef`s share a
+        // `TermId`. The UF and structural-equality bridges rely on
+        // `==` for α-equivalent terms even after independent
+        // allocations (e.g. fresh terms produced by `inst` /
+        // `inst_type`).
+        if let Some(&id) = self.term_dedup.get(&def) {
             // Force a re-inference on the existing entry — its
-            // cached type info may have been computed in a different
-            // structural context and could be stale.
+            // cached type info may have been computed in a stale
+            // child context.
             let _ = self.infer(id);
             return id;
         }
-        // Compute type info BEFORE pushing — `compute_term_props` may
-        // intern Fun types (mutating `self.types`), but never reads
-        // the term-table indices we're about to write.
         let (type_info, has_free) = self.compute_term_props(&def);
         let id = TermId(self.terms.len() as u32);
         self.terms.push(def);
         self.term_props.push(TermProps { type_info, has_free });
+        self.term_dedup.insert(def, id);
         // Force a top-level re-walk so the cache reflects the
         // structurally-correct type, ignoring stale child caches.
         let _ = self.infer(id);
@@ -1511,11 +1535,12 @@ impl Arena {
 
     /// Intern a `SmolStr`. Returns the existing id if already present.
     pub fn intern_string(&mut self, s: SmolStr) -> StrId {
-        if let Some(pos) = self.strings.iter().position(|x| x == &s) {
-            return StrId(pos as u32);
+        if let Some(&id) = self.string_dedup.get(&s) {
+            return id;
         }
         let id = StrId(self.strings.len() as u32);
-        self.strings.push(s);
+        self.strings.push(s.clone());
+        self.string_dedup.insert(s, id);
         id
     }
 
@@ -1552,11 +1577,12 @@ impl Arena {
     /// `TypeRef`, breaking polymorphic-instance equality across
     /// rules.
     pub fn intern_tyargs(&mut self, args: Vec<TypeRef>) -> TyArgsId {
-        if let Some(pos) = self.tyargs.iter().position(|a| *a == args) {
-            return TyArgsId(pos as u32);
+        if let Some(&id) = self.tyargs_dedup.get(&args) {
+            return id;
         }
         let id = TyArgsId(self.tyargs.len() as u32);
-        self.tyargs.push(args);
+        self.tyargs.push(args.clone());
+        self.tyargs_dedup.insert(args, id);
         id
     }
 

@@ -575,13 +575,12 @@ pub fn expr_to_spectec(e: &Expr, ctx: &ElabContext) -> spectec_ast::SpecTecExp {
             i: *index,
         },
         Expr::Case { head, args, .. } => {
-            let op = mixop_for(head, ctx);
-            let inner = if args.len() == 1 {
-                expr_to_spectec(&args[0], ctx)
-            } else {
-                S::Tup {
-                    es: args.iter().map(|a| expr_to_spectec(a, ctx)).collect(),
-                }
+            // For case constructors OCaml uses just `[head]` as the
+            // MixOp — the arg structure goes into `e1` as a `Tup`.
+            // (Relations' MixOps remain full mixfix templates.)
+            let op = mixop_from_name(head);
+            let inner = S::Tup {
+                es: args.iter().map(|a| expr_to_spectec(a, ctx)).collect(),
             };
             S::Case {
                 op,

@@ -524,11 +524,40 @@ pub fn check_exp_against_scope(
     if is_unknown(&actual) || equiv_typ(&actual, expected) {
         return e;
     }
-    if sub_typ(env, &actual, expected) {
+    coerce(env, e, span, actual, expected.clone())
+}
+
+/// Insert the right coercion node based on what subtype rule fires.
+/// Specific lifts (`T <: T?`, `T <: T*`, `T <: T+`) use `Opt`/`List`
+/// /`Lift` constructors. Variant + numeric subtyping use `Sub`.
+fn coerce(env: &TypeEnv, e: Expr, span: crate::source::Span, actual: Typ, expected: Typ) -> Expr {
+    if let Typ::Iter { t1: inner, it } = &expected
+        && it.len() == 1
+        && !matches!(actual, Typ::Iter { .. })
+        && sub_typ(env, &actual, inner)
+    {
+        // Singleton T → T? / T* / T+: wrap with Opt(Some) or
+        // Lift(e) per OCaml convention.
+        return match it[0] {
+            ast::SpecTecIter::Opt => Expr::Opt {
+                span,
+                inner: Some(Box::new(e)),
+            },
+            ast::SpecTecIter::List | ast::SpecTecIter::List1 => Expr::Lift {
+                span,
+                e: Box::new(e),
+            },
+            ast::SpecTecIter::ListN { .. } => Expr::Lift {
+                span,
+                e: Box::new(e),
+            },
+        };
+    }
+    if sub_typ(env, &actual, &expected) {
         Expr::Sub {
             span,
             from_ty: actual,
-            to_ty: expected.clone(),
+            to_ty: expected,
             e: Box::new(e),
         }
     } else {

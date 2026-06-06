@@ -5,14 +5,39 @@
 //! small bridge state (HOL `NameId` ↔ kernel `StrId`, declared type
 //! operators, declared term constants, theorem storage). Each method
 //! mirrors one operation from the `HolLightTypes` / `HolLightTerms` /
-//! `HolLightKernel` traits in `covalence-hol`, but at concrete types
-//! — the trait impl will be wired on top of these methods later.
+//! `HolLightKernel` traits in `covalence-hol`.
 //!
 //! Methods that map cleanly onto the current kernel are implemented;
 //! anything that needs a kernel feature that isn't yet exposed
 //! returns [`HolPrimError::NotImplemented`]. This lets us write the
 //! trait impl and OpenTheory integration tests today, and fill in
 //! gaps as the kernel grows.
+//!
+//! # Architecture
+//!
+//! `HolPrim` is the **OpenTheory-side peer** of `KernelAletheBridge`
+//! in `covalence-alethe`. Both sit *below* a clean frontend-facing
+//! trait surface:
+//!
+//! | Frontend         | Clean surface         | Bridge (this layer)   |
+//! |------------------|-----------------------|-----------------------|
+//! | OpenTheory       | `HolLightKernel`      | `HolPrim`             |
+//! | Alethe (SMT)     | `Prover`              | `KernelAletheBridge`  |
+//!
+//! Hacks (named ↔ locally-nameless conversion, `Eq` folding,
+//! structural `aconv`, synthetic name minting, memoisation) live in
+//! the bridge — never on the surface. When `covalence-kernel` is
+//! rewritten, only the bridges churn; both surfaces stay stable.
+//!
+//! Right now `HolPrim` reaches directly into `KKernel` /
+//! `Arena` because the [`Prover`] trait doesn't yet expose the
+//! inspection primitives `HolLightKernel` needs (`dest_*` on
+//! arbitrary `TermDef` shapes, `contains_free`, `subst_free`,
+//! `type_kind`, `infer`, …). Migrating those to `Prover` and routing
+//! `HolPrim` through the trait is a follow-up — non-blocking for
+//! getting OpenTheory running.
+//!
+//! [`Prover`]: crate::Prover
 
 use std::collections::HashMap;
 use std::sync::Arc;

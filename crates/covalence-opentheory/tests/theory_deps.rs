@@ -333,7 +333,6 @@ fn std_resolver() -> Option<FileResolver> {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "needs new_basic_definition"]
 #[ignore]
 fn test_std_bool_def() {
     let Some(resolver) = std_resolver() else {
@@ -350,7 +349,6 @@ fn test_std_bool_def() {
 }
 
 #[test]
-#[ignore = "needs new_basic_definition"]
 #[ignore]
 fn test_std_bool_umbrella() {
     let Some(resolver) = std_resolver() else {
@@ -375,7 +373,6 @@ fn test_std_bool_umbrella() {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "needs new_basic_definition"]
 #[ignore]
 fn test_std_unit() {
     let Some(resolver) = std_resolver() else {
@@ -400,7 +397,6 @@ fn test_std_unit() {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "needs new_basic_definition"]
 #[ignore]
 fn test_std_pair() {
     let Some(resolver) = std_resolver() else {
@@ -425,7 +421,6 @@ fn test_std_pair() {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "needs new_basic_definition"]
 #[ignore]
 fn test_std_natural() {
     let Some(resolver) = std_resolver() else {

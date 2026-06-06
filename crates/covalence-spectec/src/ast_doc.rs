@@ -769,6 +769,11 @@ pub fn premise_to_spectec(p: &ElabPremise, ctx: &ElabContext) -> spectec_ast::Sp
 /// the form `spectec_ast` uses for rule conclusions and relation
 /// premises.
 fn tup_of_operands(operands: &[Expr], ctx: &ElabContext) -> spectec_ast::SpecTecExp {
+    // Single-operand relations don't wrap in `Tup` in OCaml's output;
+    // they emit the operand expression directly.
+    if operands.len() == 1 {
+        return expr_to_spectec(&operands[0], ctx);
+    }
     spectec_ast::SpecTecExp::Tup {
         es: operands.iter().map(|o| expr_to_spectec(o, ctx)).collect(),
     }

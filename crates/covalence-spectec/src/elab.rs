@@ -1060,7 +1060,11 @@ pub fn elab_premise(
                 .map(|s| s.span)
                 .reduce(Span::join)
                 .unwrap_or(span);
-            let cond = classify_simple_expression(body, body_span, ctx)?;
+            // `if` premise bodies often contain top-level comparison /
+            // arithmetic operators. Route through `parse_arith` so
+            // those get structured before falling back to
+            // `classify_simple_expression`.
+            let cond = parse_arith(body, body_span, ctx)?;
             Ok(ElabPremise::If(cond))
         }
         Some(Token::Let) => {

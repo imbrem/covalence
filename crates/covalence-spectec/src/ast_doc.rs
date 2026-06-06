@@ -1236,7 +1236,20 @@ fn inst_for_profile(
                 typ: typ_expr_to_spectec(&tr.tokens, ctx),
             }
         }
-        SyntaxBody::Variant(_) => {
+        SyntaxBody::Variant(verbatim_alts) => {
+            // Pattern-literal shape (`syntax bit = 0 | 1`, `syntax byte =
+            // 0x00 | ... | 0xFF`, `syntax char = U+0000 | ... | U+D7FF |
+            // ...`): OCaml elaborates the whole disjunction to a single
+            // implicit-binder case with a predicate premise. We need the
+            // verbatim alts (with `...` markers) to recover the range
+            // structure that `alts_for_profile` drops.
+            if let Some(tc) = try_pattern_literal_variant(verbatim_alts) {
+                return Some(spectec_ast::SpecTecInst::Inst {
+                    ps: Vec::new(),
+                    as_: Vec::new(),
+                    dt: spectec_ast::SpecTecDefTyp::Variant { tcs: vec![tc] },
+                });
+            }
             // Use the merged alts for this profile (splices `...` from
             // sibling profiles in). Type-inclusion alts get expanded
             // to their target's variant cases (OCaml convention).
@@ -1354,6 +1367,159 @@ fn expand_variant_alts(
         }
     }
     None
+}
+
+/// Classification of a single alternative in a pattern-literal variant.
+/// Pattern-literal variants list either bare numeric literals, the
+/// `U+xxxx` codepoint form, or the `...` range-extension marker.
+#[derive(Debug, Clone, Copy)]
+enum PatternLit {
+    /// A literal natural number with its u64 value.
+    Lit(u64),
+    /// A `...` placeholder bridging the previous and next literals into
+    /// a closed range. In OCaml this is the `range` shape.
+    DotDotDot,
+}
+
+/// Recognise the tokens of one variant alternative as a pure-literal
+/// pattern. Returns `Some(...)` for:
+/// - `[DotDotDot]` — the range-extension marker
+/// - `[Nat(n)]` — a bare decimal/hex numeric literal
+/// - `[Ident("U"), Plus, <hex-digit tokens>...]` — a Unicode codepoint
+///   `U+xxxx`. The trailing tokens are reassembled into one hex string
+///   by concatenating each token's source text and parsed as base 16
+///   (so `U+10FFFF`, which lexes to `[Nat(10), Ident("FFFF")]` after
+///   `U+`, recovers `0x10FFFF` = 1114111).
+fn classify_pattern_lit_alt(alt: &Alt) -> Option<PatternLit> {
+    let toks = &alt.body.tokens;
+    use crate::token::Token::*;
+    if toks.len() == 1 {
+        return match &toks[0].token {
+            Nat(n) => Some(PatternLit::Lit(nat_to_u64(n))),
+            DotDotDot => Some(PatternLit::DotDotDot),
+            _ => None,
+        };
+    }
+    // U+xxxx form: starts with `Ident("U") Plus`, then a contiguous run
+    // of Nat / Ident tokens whose concatenated source text is hex.
+    if toks.len() >= 3
+        && matches!(&toks[0].token, Ident(s) if s == "U")
+        && matches!(&toks[1].token, Plus)
+    {
+        let mut hex = String::new();
+        for t in &toks[2..] {
+            match &t.token {
+                Nat(n) => hex.push_str(&n.to_string()),
+                Ident(s) if s.chars().all(|c| c.is_ascii_hexdigit()) => hex.push_str(s),
+                _ => return None,
+            }
+        }
+        let v = u64::from_str_radix(&hex, 16).ok()?;
+        return Some(PatternLit::Lit(v));
+    }
+    None
+}
+
+/// If every alt in `alts` is a pure pattern literal (numeric singleton
+/// or `...` range marker), synthesise the single implicit-binder
+/// `SpecTecTypCase` that OCaml emits for `syntax bit = 0 | 1`,
+/// `syntax byte = 0x00 | ... | 0xFF`, `syntax char = U+0000 | ... |
+/// U+D7FF | U+E000 | ... | U+10FFFF`, and friends.
+///
+/// Output shape: a `Field` case with `MixOp(["", ""])`, a `Tup` of one
+/// `Bind { id: "i", typ: Nat }`, and a single `If` premise whose body
+/// asserts membership in the literal/range set as a left-associated
+/// `Or` of `Eq` (singletons) and `And { Ge, Le }` (closed ranges).
+fn try_pattern_literal_variant(alts: &[Alt]) -> Option<spectec_ast::SpecTecTypCase> {
+    if alts.is_empty() {
+        return None;
+    }
+    let classified: Vec<PatternLit> = alts
+        .iter()
+        .map(classify_pattern_lit_alt)
+        .collect::<Option<_>>()?;
+    // Collapse `lit | ... | lit` triples into closed ranges; bare lits
+    // stay as singletons. A leading or trailing `...` (or two `...` in
+    // a row) is invalid for this pass — bail to the generic fallback.
+    #[derive(Debug)]
+    enum Segment {
+        Single(u64),
+        Range(u64, u64),
+    }
+    let mut segs: Vec<Segment> = Vec::new();
+    let mut i = 0;
+    while i < classified.len() {
+        match classified[i] {
+            PatternLit::DotDotDot => return None,
+            PatternLit::Lit(n) => {
+                if i + 2 < classified.len()
+                    && matches!(classified[i + 1], PatternLit::DotDotDot)
+                    && let PatternLit::Lit(m) = classified[i + 2]
+                {
+                    segs.push(Segment::Range(n, m));
+                    i += 3;
+                } else {
+                    segs.push(Segment::Single(n));
+                    i += 1;
+                }
+            }
+        }
+    }
+    if segs.is_empty() {
+        return None;
+    }
+    let binder = "i".to_string();
+    use spectec_ast::{
+        SpecTecBinOp, SpecTecBoolTyp, SpecTecCmpOp, SpecTecExp, SpecTecNum, SpecTecNumTyp,
+        SpecTecOpTyp,
+    };
+    let bool_t = SpecTecOpTyp::Bool(SpecTecBoolTyp::Bool);
+    let nat_t = SpecTecOpTyp::Num(SpecTecNumTyp::Nat);
+    let var_i = || SpecTecExp::Var { id: binder.clone() };
+    let lit = |n: u64| SpecTecExp::Num { n: SpecTecNum::Nat(n) };
+    let seg_exp = |s: &Segment| match *s {
+        Segment::Single(n) => SpecTecExp::Cmp {
+            op: SpecTecCmpOp::Eq,
+            t: bool_t.clone(),
+            e1: Box::new(var_i()),
+            e2: Box::new(lit(n)),
+        },
+        Segment::Range(a, b) => SpecTecExp::Bin {
+            op: SpecTecBinOp::And,
+            t: bool_t.clone(),
+            e1: Box::new(SpecTecExp::Cmp {
+                op: SpecTecCmpOp::Ge,
+                t: nat_t.clone(),
+                e1: Box::new(var_i()),
+                e2: Box::new(lit(a)),
+            }),
+            e2: Box::new(SpecTecExp::Cmp {
+                op: SpecTecCmpOp::Le,
+                t: nat_t.clone(),
+                e1: Box::new(var_i()),
+                e2: Box::new(lit(b)),
+            }),
+        },
+    };
+    let mut iter = segs.iter().map(seg_exp);
+    let first = iter.next().expect("segs is non-empty");
+    let cond = iter.fold(first, |acc, next| SpecTecExp::Bin {
+        op: SpecTecBinOp::Or,
+        t: bool_t.clone(),
+        e1: Box::new(acc),
+        e2: Box::new(next),
+    });
+    Some(spectec_ast::SpecTecTypCase::Field {
+        op: spectec_ast::MixOp::new(vec![String::new(), String::new()]),
+        t: spectec_ast::SpecTecTyp::Tup {
+            ets: vec![spectec_ast::SpecTecTypBind::Bind {
+                id: binder,
+                typ: spectec_ast::SpecTecTyp::Num(spectec_ast::SpecTecNumTyp::Nat),
+            }],
+        },
+        qs: Vec::new(),
+        prs: vec![spectec_ast::SpecTecPrem::If { e: cond }],
+    })
 }
 
 /// Convert a variant alternative to a `SpecTecTypCase`. The case's
@@ -2280,5 +2446,156 @@ mod tests {
         let mixop = mixop_for("R", &ctx);
         // Expect three fragments: "", "|-", "<:", "" — i.e. `%|-%<:%`.
         assert_eq!(mixop.fragments(), &["", "|-", "<:", ""]);
+    }
+
+    #[test]
+    fn pattern_literal_variant_bit() {
+        // `syntax bit = 0 | 1` should emit ONE TypCase with `MixOp(["",
+        // ""])`, a `Tup` of one `i: nat`, and an `If` of `Or(Eq i 0,
+        // Eq i 1)` — the OCaml implicit-binder shape.
+        let src = "syntax bit = 0 | 1";
+        let (tops, ctx) = build(src);
+        let doc = build_doc(&tops, &ctx);
+        let defs = to_spectec_ast(&doc, &ctx);
+        let spectec_ast::SpecTecDef::Typ { insts, .. } = &defs[0] else {
+            panic!("expected Typ def");
+        };
+        let spectec_ast::SpecTecInst::Inst { dt, .. } = &insts[0];
+        let spectec_ast::SpecTecDefTyp::Variant { tcs } = dt else {
+            panic!("expected Variant");
+        };
+        assert_eq!(tcs.len(), 1);
+        let spectec_ast::SpecTecTypCase::Field { op, t, prs, .. } = &tcs[0];
+        assert_eq!(op.fragments(), &["", ""]);
+        let spectec_ast::SpecTecTyp::Tup { ets } = t else {
+            panic!("expected Tup");
+        };
+        let spectec_ast::SpecTecTypBind::Bind { id, typ } = &ets[0];
+        assert_eq!(id, "i");
+        assert!(matches!(typ, spectec_ast::SpecTecTyp::Num(spectec_ast::SpecTecNumTyp::Nat)));
+        assert_eq!(prs.len(), 1);
+        let spectec_ast::SpecTecPrem::If { e } = &prs[0] else {
+            panic!("expected If premise");
+        };
+        // Body should be Or(Eq, Eq).
+        assert!(matches!(
+            e,
+            spectec_ast::SpecTecExp::Bin { op: spectec_ast::SpecTecBinOp::Or, .. }
+        ));
+    }
+
+    #[test]
+    fn pattern_literal_variant_byte_range() {
+        // `syntax byte = 0x00 | ... | 0xFF` collapses to one case with
+        // `And(Ge i 0, Le i 255)`.
+        let src = "syntax byte = 0x00 | ... | 0xFF";
+        let (tops, ctx) = build(src);
+        let doc = build_doc(&tops, &ctx);
+        let defs = to_spectec_ast(&doc, &ctx);
+        let spectec_ast::SpecTecDef::Typ { insts, .. } = &defs[0] else {
+            panic!("expected Typ def");
+        };
+        let spectec_ast::SpecTecInst::Inst { dt, .. } = &insts[0];
+        let spectec_ast::SpecTecDefTyp::Variant { tcs } = dt else {
+            panic!("expected Variant");
+        };
+        assert_eq!(tcs.len(), 1);
+        let spectec_ast::SpecTecTypCase::Field { prs, .. } = &tcs[0];
+        let spectec_ast::SpecTecPrem::If { e } = &prs[0] else {
+            panic!("expected If premise");
+        };
+        // Body should be And(Ge ..., Le ...) — a single closed range,
+        // no top-level Or.
+        let spectec_ast::SpecTecExp::Bin { op, e1, e2, .. } = e else {
+            panic!("expected Bin");
+        };
+        assert!(matches!(op, spectec_ast::SpecTecBinOp::And));
+        let spectec_ast::SpecTecExp::Cmp { op: ge, .. } = e1.as_ref() else {
+            panic!("expected Cmp Ge");
+        };
+        let spectec_ast::SpecTecExp::Cmp { op: le, e2: le_rhs, .. } = e2.as_ref() else {
+            panic!("expected Cmp Le");
+        };
+        assert!(matches!(ge, spectec_ast::SpecTecCmpOp::Ge));
+        assert!(matches!(le, spectec_ast::SpecTecCmpOp::Le));
+        assert!(matches!(
+            le_rhs.as_ref(),
+            spectec_ast::SpecTecExp::Num { n: spectec_ast::SpecTecNum::Nat(255) }
+        ));
+    }
+
+    #[test]
+    fn pattern_literal_variant_unicode_codepoints() {
+        // `syntax char = U+0000 | ... | U+D7FF | U+E000 | ... | U+10FFFF`
+        // produces two ranges combined by `Or`. The upper bound 0x10FFFF
+        // = 1114111 verifies the multi-token `U+` reassembly.
+        let src = r#"syntax char = U+0000 | ... | U+D7FF | U+E000 | ... | U+10FFFF"#;
+        let (tops, ctx) = build(src);
+        let doc = build_doc(&tops, &ctx);
+        let defs = to_spectec_ast(&doc, &ctx);
+        let spectec_ast::SpecTecDef::Typ { insts, .. } = &defs[0] else {
+            panic!("expected Typ def");
+        };
+        let spectec_ast::SpecTecInst::Inst { dt, .. } = &insts[0];
+        let spectec_ast::SpecTecDefTyp::Variant { tcs } = dt else {
+            panic!("expected Variant");
+        };
+        assert_eq!(tcs.len(), 1);
+        let spectec_ast::SpecTecTypCase::Field { prs, .. } = &tcs[0];
+        let spectec_ast::SpecTecPrem::If { e } = &prs[0] else {
+            panic!("expected If premise");
+        };
+        // Body: Or(And(...,Le 55295), And(Ge 57344, Le 1114111)).
+        let spectec_ast::SpecTecExp::Bin { op, e1, e2, .. } = e else {
+            panic!("expected Bin Or");
+        };
+        assert!(matches!(op, spectec_ast::SpecTecBinOp::Or));
+        let spectec_ast::SpecTecExp::Bin { e2: lo_le, .. } = e1.as_ref() else {
+            panic!("expected And on lower range");
+        };
+        let spectec_ast::SpecTecExp::Cmp { e2: lo_bound, .. } = lo_le.as_ref() else {
+            panic!("expected Le");
+        };
+        assert!(matches!(
+            lo_bound.as_ref(),
+            spectec_ast::SpecTecExp::Num { n: spectec_ast::SpecTecNum::Nat(55295) }
+        ));
+        let spectec_ast::SpecTecExp::Bin { e2: hi_le, .. } = e2.as_ref() else {
+            panic!("expected And on upper range");
+        };
+        let spectec_ast::SpecTecExp::Cmp { e2: hi_bound, .. } = hi_le.as_ref() else {
+            panic!("expected Le");
+        };
+        assert!(matches!(
+            hi_bound.as_ref(),
+            spectec_ast::SpecTecExp::Num { n: spectec_ast::SpecTecNum::Nat(1114111) }
+        ));
+    }
+
+    #[test]
+    fn pattern_literal_variant_single_singleton() {
+        // `syntax symdots = 0` — single literal, no `|`. The parser must
+        // route it through the variant path, then the elaborator emits
+        // one case with `Eq i 0`.
+        let src = "syntax symdots = 0";
+        let (tops, ctx) = build(src);
+        let doc = build_doc(&tops, &ctx);
+        let defs = to_spectec_ast(&doc, &ctx);
+        let spectec_ast::SpecTecDef::Typ { insts, .. } = &defs[0] else {
+            panic!("expected Typ def");
+        };
+        let spectec_ast::SpecTecInst::Inst { dt, .. } = &insts[0];
+        let spectec_ast::SpecTecDefTyp::Variant { tcs } = dt else {
+            panic!("expected Variant, got {:?}", dt);
+        };
+        assert_eq!(tcs.len(), 1);
+        let spectec_ast::SpecTecTypCase::Field { prs, .. } = &tcs[0];
+        let spectec_ast::SpecTecPrem::If { e } = &prs[0] else {
+            panic!("expected If");
+        };
+        assert!(matches!(
+            e,
+            spectec_ast::SpecTecExp::Cmp { op: spectec_ast::SpecTecCmpOp::Eq, .. }
+        ));
     }
 }

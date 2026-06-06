@@ -567,6 +567,7 @@ fn parse_syntax_body(file: FileId, input: &mut &[Spanned]) -> Result<SyntaxBody,
         Ok(SyntaxBody::Variant(split_alts(&body_run)?))
     } else if body_starts_with_case_head(&body_run.tokens)
         || body_looks_like_variant(&body_run.tokens)
+        || body_is_single_nat_literal(&body_run.tokens)
     {
         // Reuse split_alts so the trailing `hint(...)` clauses get
         // peeled off the body just like the multi-alt case.
@@ -576,8 +577,15 @@ fn parse_syntax_body(file: FileId, input: &mut &[Spanned]) -> Result<SyntaxBody,
     }
 }
 
+/// True when the entire body is a single bare numeric literal (e.g.
+/// `syntax symdots = 0`). OCaml elaborates this to a one-alt pattern-
+/// literal variant, so we route it through the variant path.
+fn body_is_single_nat_literal(toks: &[Spanned]) -> bool {
+    toks.len() == 1 && matches!(toks[0].token, Token::Nat(_))
+}
+
 /// True when the body looks like a (single-case) variant rather than
-/// a bare type expression. Two flavours qualify:
+/// a bare type expression. Three flavours qualify:
 ///
 /// 1. Top-level "literal marks" — `` ` ``, `;`, `->` — that don't
 ///    appear in pure type expressions.
@@ -588,6 +596,10 @@ fn parse_syntax_body(file: FileId, input: &mut &[Spanned]) -> Result<SyntaxBody,
 ///    iter postfixes. Anything with multiple top-level chunks
 ///    (`globaltype = mut? valtype`, `memtype = addrtype limits PAGE`)
 ///    is a headless single-case variant whose binds are those chunks.
+///
+/// 3. Single bare numeric literal (handled by
+///    [`body_is_single_nat_literal`], called separately at the
+///    `parse_syntax_body` call site).
 fn body_looks_like_variant(toks: &[Spanned]) -> bool {
     let mut depth: i32 = 0;
     let mut top_idents: usize = 0;

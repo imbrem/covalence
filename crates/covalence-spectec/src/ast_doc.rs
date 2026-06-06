@@ -1348,13 +1348,7 @@ fn mixop_from_typcase_fragments(frags: &[crate::mixfix::Fragment]) -> spectec_as
         match f {
             crate::mixfix::Fragment::Hole(_) => parts.push(String::new()),
             crate::mixfix::Fragment::Lit(t) => {
-                use crate::token::Token::*;
-                let text = match t {
-                    Ident(n) => n.clone(),
-                    Nat(n) => n.to_string(),
-                    other => other.describe().trim_matches('`').to_string(),
-                };
-                parts.last_mut().unwrap().push_str(&text);
+                parts.last_mut().unwrap().push_str(&t.to_source_text());
             }
         }
     }

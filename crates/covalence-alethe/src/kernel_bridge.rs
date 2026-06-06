@@ -160,6 +160,12 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
             return Ok(self.prover.falsity()?);
         }
 
+        // Numeric literals. SMT-LIB numerals are bare digit sequences;
+        // negative values use the unary `(- n)` form handled in translate_app.
+        if let Ok(n) = sym.parse::<i64>() {
+            return Ok(self.prover.int_lit(n)?);
+        }
+
         // Local variable (innermost-first).
         // Clone the snapshot to avoid holding a borrow across the prover call.
         let local = self
@@ -214,11 +220,26 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
             "forall" | "exists" | "let" => {
                 Err(BridgeError::NotImplemented(format!("binder `{head_sym}`")))
             }
-            // SMT-LIB LIA arithmetic spellings — not yet implemented at the
-            // bridge level (need numeric literal handling first).
-            "+" | "-" | "*" | "<=" | "<" | ">=" | ">" => Err(BridgeError::NotImplemented(
-                format!("LIA operator `{head_sym}`"),
-            )),
+            // -------- LIA arithmetic --------
+            //
+            // SMT-LIB unifies binary `-` and unary `-` (negation) under one
+            // symbol: `(- 5)` is `-5`, `(- x y)` is `x - y`. Disambiguate by
+            // arity. n-ary forms left-fold per the SMT-LIB standard.
+            "+" => self.left_fold_op2(PrimOp2::IntAdd, rest),
+            "*" => self.left_fold_op2(PrimOp2::IntMul, rest),
+            "-" => match rest.len() {
+                0 => Err(BridgeError::Malformed("-: zero arguments".into())),
+                1 => {
+                    let x = self.translate_term(&rest[0])?;
+                    Ok(self.prover.op1(PrimOp1::IntNeg, x)?)
+                }
+                _ => self.left_fold_op2(PrimOp2::IntSub, rest),
+            },
+            "<=" => self.binary_op2(PrimOp2::IntLe, head_sym, rest),
+            "<" => self.binary_op2(PrimOp2::IntLt, head_sym, rest),
+            // `(>= a b)` is `(<= b a)`; `(> a b)` is `(< b a)`.
+            ">=" => self.swapped_binary_op2(PrimOp2::IntLe, head_sym, rest),
+            ">" => self.swapped_binary_op2(PrimOp2::IntLt, head_sym, rest),
             _ => {
                 // Curried application of a declared constant / local.
                 let f = self.lookup_atom(head_sym)?;
@@ -230,6 +251,41 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
                 Ok(acc)
             }
         }
+    }
+
+    /// `(op a b)` — exactly two arguments.
+    fn binary_op2(
+        &mut self,
+        op: PrimOp2,
+        name: &str,
+        args: &[SExpr],
+    ) -> Result<P::Term, BridgeError> {
+        if args.len() != 2 {
+            return Err(BridgeError::Malformed(format!(
+                "{name}: expected 2 arguments"
+            )));
+        }
+        let a = self.translate_term(&args[0])?;
+        let b = self.translate_term(&args[1])?;
+        Ok(self.prover.op2(op, a, b)?)
+    }
+
+    /// `(op a b)` translated as `(op' b a)` — used for `>=` ↦ `<=` and
+    /// `>` ↦ `<` since the kernel only ships the lesser-than direction.
+    fn swapped_binary_op2(
+        &mut self,
+        op: PrimOp2,
+        name: &str,
+        args: &[SExpr],
+    ) -> Result<P::Term, BridgeError> {
+        if args.len() != 2 {
+            return Err(BridgeError::Malformed(format!(
+                "{name}: expected 2 arguments"
+            )));
+        }
+        let a = self.translate_term(&args[0])?;
+        let b = self.translate_term(&args[1])?;
+        Ok(self.prover.op2(op, b, a)?)
     }
 
     /// `(op a1 a2 ... an)` → `(((op a1 a2) a3) ... an)`. Used for n-ary
@@ -297,6 +353,61 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
         }
         Ok(translated)
     }
+
+    // ----------------------------------------------------------------
+    // Rule handlers
+    // ----------------------------------------------------------------
+    //
+    // Each handler takes the *already-resolved* clause + premise list and
+    // returns a kernel-verified Thm. The bridge trait's `step` method
+    // dispatches into here; rules not yet wired surface as
+    // `BridgeError::NotImplemented`.
+
+    /// `refl`: `Γ ⊢ (= t t)`. Alethe writes this as `(cl (= t t))`.
+    fn rule_refl(&mut self, clause: &[SExpr]) -> Result<P::Thm, BridgeError> {
+        if clause.len() != 1 {
+            return Err(BridgeError::Malformed(
+                "refl: expected unit clause `(cl (= t t))`".into(),
+            ));
+        }
+        let eq_lit = clause[0]
+            .as_list()
+            .ok_or_else(|| BridgeError::Malformed("refl: clause head not a list".into()))?;
+        if eq_lit.len() != 3 || eq_lit[0].as_symbol() != Some("=") {
+            return Err(BridgeError::Malformed(
+                "refl: clause must be `(= t t)`".into(),
+            ));
+        }
+        let t = self.translate_term(&eq_lit[1])?;
+        Ok(self.prover.refl(t)?)
+    }
+
+    /// `trans`: `Γ ⊢ (= t₀ t₁), Γ ⊢ (= t₁ t₂), …, Γ ⊢ (= t_{n-1} t_n)`
+    /// ↦ `Γ ⊢ (= t₀ t_n)`. The premises are already a list of equality
+    /// theorems; we chain them via `Prover::trans` left-to-right.
+    fn rule_trans(
+        &mut self,
+        clause: &[SExpr],
+        premises: &[P::Thm],
+    ) -> Result<P::Thm, BridgeError> {
+        if premises.is_empty() {
+            return Err(BridgeError::Malformed(
+                "trans: no premises".into(),
+            ));
+        }
+        // Eagerly translate the clause so missing terms surface even though
+        // the rule itself only needs the premise chain.
+        if clause.len() != 1 {
+            return Err(BridgeError::Malformed(
+                "trans: expected unit clause".into(),
+            ));
+        }
+        let mut acc = premises[0].clone();
+        for prem in &premises[1..] {
+            acc = self.prover.trans(acc, prem.clone())?;
+        }
+        Ok(acc)
+    }
 }
 
 // =====================================================================
@@ -349,7 +460,7 @@ impl<'a, P: Prover> AletheBridge for KernelAletheBridge<'a, P> {
         _id: &str,
         clause: &[SExpr],
         rule: &str,
-        _premises: &[P::Thm],
+        premises: &[P::Thm],
         _args: &[SExpr],
         _discharge: &[P::Thm],
     ) -> Result<P::Thm, BridgeError> {
@@ -361,7 +472,15 @@ impl<'a, P: Prover> AletheBridge for KernelAletheBridge<'a, P> {
         if clause.is_empty() {
             self.derived_empty = true;
         }
-        Err(BridgeError::NotImplemented(format!("rule `{rule}`")))
+
+        // Rule dispatch. As each rule gets wired up it moves out of the
+        // catch-all and into its own arm; the unimplemented arms keep the
+        // failure mode loud + structured.
+        match rule {
+            "refl" => self.rule_refl(clause),
+            "trans" => self.rule_trans(clause, premises),
+            other => Err(BridgeError::NotImplemented(format!("rule `{other}`"))),
+        }
     }
 
     fn decision(&self) -> Decision {

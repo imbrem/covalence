@@ -158,3 +158,90 @@ fn assume_then_unknown_rule_step() {
         .expect_err("every rule is currently NotImplemented");
     assert!(matches!(err, BridgeError::NotImplemented(_)));
 }
+
+// =====================================================================
+// cvc5-uflia-simple — LIA term ingestion + refl/trans rule handlers
+// =====================================================================
+
+#[test]
+fn cvc5_uflia_simple_problem_ingests() {
+    let (problem, _) = load_problem_and_proof("cvc5-uflia-simple");
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelAletheBridge::new(&mut kernel);
+
+    ingest_problem(&mut bridge, &problem).expect("QF_UFLIA problem should ingest");
+    assert!(bridge.lookup_fun("f").is_some());
+    assert!(bridge.lookup_fun("x").is_some());
+}
+
+#[test]
+fn refl_step_succeeds() {
+    use covalence_sexp::SExp;
+
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelAletheBridge::new(&mut kernel);
+    bridge.declare_fun("x", &[], &SExp::symbol("Int")).unwrap();
+
+    // `(step t1 (cl (= x x)) :rule refl)`
+    let clause = vec![SExp::List(vec![
+        SExp::symbol("="),
+        SExp::symbol("x"),
+        SExp::symbol("x"),
+    ])];
+    let thm = bridge
+        .step("t1", &clause, "refl", &[], &[], &[])
+        .expect("refl should succeed");
+    // Sanity: a Thm exists; we don't inspect its contents (kernel-internal).
+    let _ = thm;
+}
+
+#[test]
+fn trans_step_chains() {
+    use covalence_sexp::SExp;
+
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelAletheBridge::new(&mut kernel);
+    bridge.declare_fun("x", &[], &SExp::symbol("Int")).unwrap();
+
+    let eq_xx = SExp::List(vec![
+        SExp::symbol("="),
+        SExp::symbol("x"),
+        SExp::symbol("x"),
+    ]);
+
+    // One refl: `x = x`. Chain it with *itself* via trans — midpoint is
+    // structurally identical, so the kernel's UF-level-0 check is happy.
+    let xx = bridge
+        .step("t0", std::slice::from_ref(&eq_xx), "refl", &[], &[], &[])
+        .unwrap();
+    let _chained = bridge
+        .step(
+            "t1",
+            std::slice::from_ref(&eq_xx),
+            "trans",
+            &[xx.clone(), xx],
+            &[],
+            &[],
+        )
+        .expect("trans of refl with itself should chain");
+}
+
+#[test]
+fn cvc5_uflia_simple_proof_punts_on_equiv_pos2() {
+    let (problem, proof) = load_problem_and_proof("cvc5-uflia-simple");
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelAletheBridge::new(&mut kernel);
+
+    ingest_problem(&mut bridge, &problem).unwrap();
+    let err = ingest_proof(&mut bridge, &proof).expect_err("equiv_pos2 not yet wired");
+    match err {
+        BridgeError::NotImplemented(what) => {
+            // First step in the cvc5 UFLIA proof is t0 with equiv_pos2.
+            assert!(
+                what.contains("equiv_pos2"),
+                "expected equiv_pos2, got: {what}"
+            );
+        }
+        other => panic!("expected NotImplemented(equiv_pos2), got {other:?}"),
+    }
+}

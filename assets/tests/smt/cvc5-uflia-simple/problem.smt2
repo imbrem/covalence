@@ -1,0 +1,7 @@
+(set-logic QF_UFLIA)
+(declare-fun f (Int) Int)
+(declare-fun x () Int)
+(assert (= x 0))
+(assert (not (= (f x) (f 0))))
+(check-sat)
+(exit)

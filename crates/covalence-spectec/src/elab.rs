@@ -21,9 +21,9 @@
 
 use std::collections::HashSet;
 
-use crate::cst::{Top, TokenRun};
-use crate::mixfix::{Fragment, OpTable, Precedence};
-use crate::source::Diagnostic;
+use crate::cst::{RuleDecl, Top, TokenRun};
+use crate::mixfix::{Fragment, OpId, OpTable, Precedence};
+use crate::source::{Diagnostic, Span};
 use crate::token::{Spanned, Token};
 
 /// Default precedence for relation holes. SpecTec's surface language
@@ -156,6 +156,384 @@ fn skip_type_suffix(toks: &[Spanned]) -> usize {
         }
     }
     i
+}
+
+// ---------- minimal Expr AST + conclusion elaboration ----------
+
+/// Minimal expression AST. Phase 2c-ii covers what shows up in simple
+/// rule conclusions: variables, numbers, parenthesised tuples, and
+/// arbitrary "case-application" of an uppercase or `_PREFIXED` name to
+/// arguments. Operands that fall outside this subset are kept as
+/// `Raw(TokenRun)` so we can grow the structured cases incrementally
+/// without losing source coverage.
+///
+/// Spans are carried so downstream consumers can attach diagnostics.
+#[derive(Clone, Debug)]
+pub enum Expr {
+    Var { span: Span, name: String },
+    Num { span: Span, value: u64 },
+    Text { span: Span, value: String },
+    /// Parenthesised sequence — `()` is the empty tuple, `(x)` is a
+    /// grouping (semantically equivalent to `x`), `(x, y)` is a 2-tuple.
+    /// We preserve the surface distinction by always producing a tuple
+    /// node, even when there's just one element; downstream passes can
+    /// flatten singleton tuples if they need to.
+    Tup { span: Span, items: Vec<Expr> },
+    /// `NAME` or `NAME e_1 e_2 ...` — constructor / case application.
+    /// The "case-like" head is any identifier whose first character is
+    /// uppercase, or that begins with an underscore. This matches
+    /// SpecTec's convention (`I32`, `BLOCK`, `_IDX`, `_DEF`, ...).
+    Case {
+        span: Span,
+        head: String,
+        args: Vec<Expr>,
+    },
+    /// `eps` — the empty sequence literal.
+    Eps { span: Span },
+    /// Fallback: an unanalysed token run. Used when the expression
+    /// shape isn't yet supported by the structured cases.
+    Raw(TokenRun),
+}
+
+impl Expr {
+    pub fn span(&self) -> Span {
+        match self {
+            Expr::Var { span, .. }
+            | Expr::Num { span, .. }
+            | Expr::Text { span, .. }
+            | Expr::Tup { span, .. }
+            | Expr::Case { span, .. }
+            | Expr::Eps { span } => *span,
+            Expr::Raw(tr) => tr.span,
+        }
+    }
+}
+
+/// Result of elaborating one `rule`: the relation it belongs to, and
+/// the operand expressions extracted from its conclusion.
+#[derive(Clone, Debug)]
+pub struct ElabRuleConclusion {
+    pub rule_name: String,
+    pub case: Option<String>,
+    pub op: OpId,
+    pub operands: Vec<Expr>,
+}
+
+/// Elaborate one rule's conclusion against the operator table.
+///
+/// Looks up the rule's relation by name in `ctx.op_table`, walks the
+/// operator's `Fragment` template, matches literals against the
+/// conclusion's tokens, and parses the holes as expressions.
+pub fn elab_rule_conclusion(
+    rule: &RuleDecl,
+    ctx: &ElabContext,
+) -> Result<ElabRuleConclusion, Diagnostic> {
+    let op = ctx
+        .op_table
+        .iter()
+        .find(|o| o.name == rule.name.text)
+        .ok_or_else(|| {
+            Diagnostic::error(
+                rule.name.span,
+                format!(
+                    "rule references unknown relation `{}`",
+                    rule.name.text
+                ),
+            )
+        })?;
+    let op_id = op.id;
+    let fragments = op.fragments.clone();
+
+    let mut input: &[Spanned] = &rule.conclusion.tokens;
+    let mut operands = Vec::new();
+
+    for (i, frag) in fragments.iter().enumerate() {
+        match frag {
+            Fragment::Lit(expected) => {
+                expect_token_in_conclusion(&mut input, expected, &rule.name.text)?;
+            }
+            Fragment::Hole(_) => {
+                // Each hole runs up to the next literal in the template
+                // (if any) or to the end of input. We compute that
+                // stopping set lazily by scanning ahead.
+                let stop = next_lit_after(&fragments, i + 1);
+                let expr = parse_expression_until(&mut input, stop.as_ref())?;
+                operands.push(expr);
+            }
+        }
+    }
+
+    if !input.is_empty() {
+        return Err(Diagnostic::error(
+            input.first().unwrap().span,
+            format!(
+                "rule `{}` conclusion has {} leftover token(s) after matching template",
+                rule.name.text,
+                input.len()
+            ),
+        ));
+    }
+
+    Ok(ElabRuleConclusion {
+        rule_name: rule.name.text.clone(),
+        case: rule.case.as_ref().map(|c| c.text.clone()),
+        op: op_id,
+        operands,
+    })
+}
+
+/// Find the next `Lit` token in the fragment list starting at `from`.
+fn next_lit_after(frags: &[Fragment], from: usize) -> Option<Token> {
+    for f in &frags[from..] {
+        if let Fragment::Lit(t) = f {
+            return Some(t.clone());
+        }
+    }
+    None
+}
+
+fn expect_token_in_conclusion(
+    input: &mut &[Spanned],
+    expected: &Token,
+    rule_name: &str,
+) -> Result<(), Diagnostic> {
+    match input.first() {
+        Some(s) if &s.token == expected => {
+            *input = &input[1..];
+            Ok(())
+        }
+        Some(s) => Err(Diagnostic::error(
+            s.span,
+            format!(
+                "rule `{}` conclusion does not match relation template: expected {}, found {}",
+                rule_name,
+                expected.describe(),
+                s.token.describe()
+            ),
+        )),
+        None => Err(Diagnostic::error(
+            Span::new(crate::source::FileId::new(0), u32::MAX, u32::MAX),
+            format!(
+                "rule `{}` conclusion ends before template literal {}",
+                rule_name,
+                expected.describe()
+            ),
+        )),
+    }
+}
+
+/// Parse an expression from `input`, stopping when the next top-level
+/// token equals `stop_lit` (or, if `stop_lit` is None, when input is
+/// empty). The stop sentinel is NOT consumed.
+fn parse_expression_until(
+    input: &mut &[Spanned],
+    stop_lit: Option<&Token>,
+) -> Result<Expr, Diagnostic> {
+    // Collect tokens up to the stop sentinel at depth 0.
+    let mut depth: i32 = 0;
+    let mut taken: Vec<Spanned> = Vec::new();
+    while let Some(s) = input.first() {
+        if depth == 0
+            && stop_lit.map(|t| t == &s.token).unwrap_or(false)
+        {
+            break;
+        }
+        match &s.token {
+            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
+            _ => {}
+        }
+        taken.push(s.clone());
+        *input = &input[1..];
+    }
+    if taken.is_empty() {
+        return Err(Diagnostic::error(
+            input
+                .first()
+                .map(|s| s.span)
+                .unwrap_or_else(|| Span::new(crate::source::FileId::new(0), u32::MAX, u32::MAX)),
+            "empty expression in rule conclusion hole",
+        ));
+    }
+    let span = taken
+        .iter()
+        .map(|s| s.span)
+        .reduce(Span::join)
+        .expect("non-empty by check above");
+    classify_simple_expression(&taken, span)
+}
+
+/// Try to recognise a "simple" expression from a slice of tokens. Falls
+/// back to `Expr::Raw` if we can't structure it.
+fn classify_simple_expression(toks: &[Spanned], span: Span) -> Result<Expr, Diagnostic> {
+    // Singletons: Var, Num, Text, Eps, or a zero-arg Case for uppercase
+    // / underscore-prefixed names.
+    if toks.len() == 1 {
+        return Ok(match &toks[0].token {
+            Token::Ident(name) if is_case_head(name) => Expr::Case {
+                span,
+                head: name.clone(),
+                args: Vec::new(),
+            },
+            Token::Ident(name) => Expr::Var {
+                span,
+                name: name.clone(),
+            },
+            Token::Nat(n) => Expr::Num { span, value: *n },
+            Token::Text(t) => Expr::Text {
+                span,
+                value: t.clone(),
+            },
+            Token::Eps => Expr::Eps { span },
+            _ => Expr::Raw(TokenRun {
+                span,
+                tokens: toks.to_vec(),
+            }),
+        });
+    }
+
+    // Parenthesised: `( ... )` — split inner on top-level commas.
+    if matches!(toks.first().map(|s| &s.token), Some(Token::LParen))
+        && matches!(toks.last().map(|s| &s.token), Some(Token::RParen))
+    {
+        let inner = &toks[1..toks.len() - 1];
+        if depth_balanced(inner) {
+            return classify_tuple_inner(inner, span);
+        }
+    }
+
+    // Case application: `HEAD arg1 arg2 ...` where HEAD is uppercase or
+    // begins with `_`.
+    if let Some(Spanned { token: Token::Ident(head), .. }) = toks.first() {
+        if is_case_head(head) {
+            // Args are the rest of the token slice, split on... actually
+            // for now treat the rest as a single Raw run. Tighter
+            // splitting belongs to the next slice.
+            let head_name = head.clone();
+            if toks.len() == 1 {
+                return Ok(Expr::Case {
+                    span,
+                    head: head_name,
+                    args: Vec::new(),
+                });
+            }
+            let args_slice = &toks[1..];
+            let arg_span = args_slice
+                .iter()
+                .map(|s| s.span)
+                .reduce(Span::join)
+                .expect("non-empty");
+            let args = vec![Expr::Raw(TokenRun {
+                span: arg_span,
+                tokens: args_slice.to_vec(),
+            })];
+            return Ok(Expr::Case {
+                span,
+                head: head_name,
+                args,
+            });
+        }
+    }
+
+    Ok(Expr::Raw(TokenRun {
+        span,
+        tokens: toks.to_vec(),
+    }))
+}
+
+/// True if `name` looks like a SpecTec case constructor.
+///
+/// Heuristic: at least 2 characters AND every alphabetic character is
+/// uppercase. This catches `NOP`, `BLOCK`, `I32`, `UNREACHABLE`, `_IDX`,
+/// `_DEF`, and rejects single-letter metavariables (`C`, `X`, `N`),
+/// lowercase identifiers (`numtype`), and mixed-case names (`Foo`).
+///
+/// The proper distinction between metavariables and constructors comes
+/// from `var` and `syntax`-variant declarations; this heuristic stands
+/// in until the elaborator threads those through. See [[phase-p-parallel-types]]
+/// for the broader pattern of letting parallel structures coexist while
+/// the elaborator catches up.
+fn is_case_head(name: &str) -> bool {
+    if name.len() < 2 {
+        return false;
+    }
+    let mut bytes = name.bytes();
+    match bytes.next() {
+        Some(b) if b.is_ascii_uppercase() => {}
+        Some(b'_') => {}
+        _ => return false,
+    }
+    let mut saw_letter = false;
+    for b in name.bytes() {
+        if b.is_ascii_alphabetic() {
+            saw_letter = true;
+            if b.is_ascii_lowercase() {
+                return false;
+            }
+        }
+    }
+    saw_letter
+}
+
+fn depth_balanced(toks: &[Spanned]) -> bool {
+    let mut depth: i32 = 0;
+    for t in toks {
+        match &t.token {
+            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+            Token::RParen | Token::RBracket | Token::RBrace => {
+                depth -= 1;
+                if depth < 0 {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    depth == 0
+}
+
+fn classify_tuple_inner(inner: &[Spanned], span: Span) -> Result<Expr, Diagnostic> {
+    // Empty: `()`.
+    if inner.is_empty() {
+        return Ok(Expr::Tup {
+            span,
+            items: Vec::new(),
+        });
+    }
+    // Split on top-level commas.
+    let mut items: Vec<Expr> = Vec::new();
+    let mut depth: i32 = 0;
+    let mut chunk_start = 0;
+    for (i, t) in inner.iter().enumerate() {
+        match &t.token {
+            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
+            Token::Comma if depth == 0 => {
+                let chunk = &inner[chunk_start..i];
+                let cspan = chunk
+                    .iter()
+                    .map(|s| s.span)
+                    .reduce(Span::join)
+                    .expect("non-empty chunk");
+                items.push(classify_simple_expression(chunk, cspan)?);
+                chunk_start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    let chunk = &inner[chunk_start..];
+    let cspan = chunk
+        .iter()
+        .map(|s| s.span)
+        .reduce(Span::join)
+        .expect("non-empty chunk");
+    items.push(classify_simple_expression(chunk, cspan)?);
+
+    // Singleton: `(x)` — grouping. Return inner expression directly.
+    if items.len() == 1 {
+        return Ok(items.into_iter().next().unwrap());
+    }
+    Ok(Expr::Tup { span, items })
 }
 
 /// Given `toks[0]` IS an opening bracket, return the number of tokens
@@ -362,5 +740,175 @@ mod tests {
         for op in ctx.op_table.iter() {
             eprintln!("  {}", fmt_op(op));
         }
+    }
+
+    // ---------- conclusion elaboration ----------
+
+    fn elab_first_rule(src: &str) -> ElabRuleConclusion {
+        let mut map = SourceMap::new();
+        let id = map.add("<test>", src);
+        let tokens = lex(id, src).unwrap();
+        let tops = parse(id, tokens).unwrap();
+        let ctx = build_table(&tops).unwrap();
+        let rule = tops
+            .iter()
+            .find_map(|t| if let Top::Rule(r) = t { Some(r) } else { None })
+            .expect("no rule in input");
+        elab_rule_conclusion(rule, &ctx).expect("elab failed")
+    }
+
+    #[test]
+    fn elab_subtype_rule_three_vars() {
+        let src = r#"
+            syntax context = nat
+            syntax numtype = nat
+            relation Numtype_sub: context |- numtype <: numtype
+            rule Numtype_sub:
+              C |- numtype <: numtype
+        "#;
+        let elab = elab_first_rule(src);
+        assert_eq!(elab.rule_name, "Numtype_sub");
+        assert!(elab.case.is_none());
+        assert_eq!(elab.operands.len(), 3);
+        for op in &elab.operands {
+            match op {
+                Expr::Var { name, .. } => {
+                    assert!(matches!(name.as_str(), "C" | "numtype"));
+                }
+                other => panic!("expected Var, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn elab_rule_with_case_path() {
+        let src = r#"
+            syntax context = nat
+            syntax heaptype = nat
+            relation Heaptype_sub: context |- heaptype <: heaptype
+            rule Heaptype_sub/refl:
+              C |- heaptype <: heaptype
+        "#;
+        let elab = elab_first_rule(src);
+        assert_eq!(elab.case.as_deref(), Some("refl"));
+        assert_eq!(elab.operands.len(), 3);
+    }
+
+    #[test]
+    fn elab_constant_constructors() {
+        let src = r#"
+            syntax instr = nat
+            relation Step_pure: instr ~> instr
+            rule Step_pure/unreachable:
+              UNREACHABLE ~> TRAP
+        "#;
+        let elab = elab_first_rule(src);
+        assert_eq!(elab.operands.len(), 2);
+        let (lhs, rhs) = (&elab.operands[0], &elab.operands[1]);
+        assert!(
+            matches!(lhs, Expr::Case { head, args, .. } if head == "UNREACHABLE" && args.is_empty())
+        );
+        assert!(
+            matches!(rhs, Expr::Case { head, args, .. } if head == "TRAP" && args.is_empty())
+        );
+    }
+
+    #[test]
+    fn elab_eps_as_eps_node() {
+        let src = r#"
+            syntax instr = nat
+            relation Step_pure: instr ~> instr
+            rule Step_pure/nop:
+              NOP ~> eps
+        "#;
+        let elab = elab_first_rule(src);
+        assert_eq!(elab.operands.len(), 2);
+        assert!(matches!(&elab.operands[0], Expr::Case { head, .. } if head == "NOP"));
+        assert!(matches!(&elab.operands[1], Expr::Eps { .. }));
+    }
+
+    #[test]
+    fn elab_parenthesised_tuple() {
+        let src = r#"
+            syntax context = nat
+            syntax t = nat
+            relation R: context |- t : t
+            rule R:
+              (C) |- (a, b) : c
+        "#;
+        let elab = elab_first_rule(src);
+        assert_eq!(elab.operands.len(), 3);
+        // First operand is `(C)` — singleton parens collapse to Var(C).
+        assert!(matches!(&elab.operands[0], Expr::Var { name, .. } if name == "C"));
+        // Second is `(a, b)` — 2-tuple.
+        let Expr::Tup { items, .. } = &elab.operands[1] else {
+            panic!("expected Tup, got {:?}", elab.operands[1]);
+        };
+        assert_eq!(items.len(), 2);
+        // Third is `c` — Var.
+        assert!(matches!(&elab.operands[2], Expr::Var { name, .. } if name == "c"));
+    }
+
+    #[test]
+    fn elab_unknown_relation_errors() {
+        // Rule references a relation that doesn't exist.
+        let src = r#"
+            syntax t = nat
+            relation A: t |- t
+            rule UnknownRelation:
+              x |- y
+        "#;
+        let mut map = SourceMap::new();
+        let id = map.add("<test>", src);
+        let tokens = lex(id, src).unwrap();
+        let tops = parse(id, tokens).unwrap();
+        let ctx = build_table(&tops).unwrap();
+        let rule = tops
+            .iter()
+            .find_map(|t| if let Top::Rule(r) = t { Some(r) } else { None })
+            .unwrap();
+        assert!(elab_rule_conclusion(rule, &ctx).is_err());
+    }
+
+    #[test]
+    fn elab_template_mismatch_errors() {
+        // Rule conclusion missing the `<:` from the template.
+        let src = r#"
+            syntax t = nat
+            relation R: t |- t <: t
+            rule R:
+              a |- b c
+        "#;
+        let mut map = SourceMap::new();
+        let id = map.add("<test>", src);
+        let tokens = lex(id, src).unwrap();
+        let tops = parse(id, tokens).unwrap();
+        let ctx = build_table(&tops).unwrap();
+        let rule = tops
+            .iter()
+            .find_map(|t| if let Top::Rule(r) = t { Some(r) } else { None })
+            .unwrap();
+        assert!(elab_rule_conclusion(rule, &ctx).is_err());
+    }
+
+    #[test]
+    fn is_case_head_classification() {
+        assert!(is_case_head("I32"));
+        assert!(is_case_head("NOP"));
+        assert!(is_case_head("BLOCK"));
+        assert!(is_case_head("UNREACHABLE"));
+        assert!(is_case_head("_IDX"));
+        assert!(is_case_head("_DEF"));
+        assert!(!is_case_head("instr"));
+        assert!(!is_case_head("t_1"));
+        assert!(!is_case_head("_"));
+        assert!(!is_case_head(""));
+        // Single-letter uppercase metavariables are NOT case heads.
+        assert!(!is_case_head("C"));
+        assert!(!is_case_head("X"));
+        assert!(!is_case_head("N"));
+        // Mixed case is not a case head.
+        assert!(!is_case_head("Foo"));
+        assert!(!is_case_head("Numtype_sub"));
     }
 }

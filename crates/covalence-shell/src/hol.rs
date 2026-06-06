@@ -1476,6 +1476,14 @@ impl HolPrim {
             self.kernel.union(a, b)?;
             return Ok(());
         }
+        // LCF-style definitional unfolding: `~p` and `p ⇒ F` are
+        // definitionally equivalent in HOL Light (`~p := p ⇒ F`).
+        // Treat them as UF-equal here so deduct_antisym can drop
+        // an `assume(~p)` hyp when the proof's other Thm
+        // discharges via `p ⇒ F`.
+        if self.try_unfold_not_imp(a, b)? {
+            return Ok(());
+        }
         // Look for raw↔folded pairs.
         let a_id = match a.as_local() {
             Some(i) => i,
@@ -1604,6 +1612,35 @@ impl HolPrim {
             self.kernel.union(a, b)?;
         }
         Ok(())
+    }
+
+    /// Recognize HOL Light's `~p := p ⇒ F` definitional equivalence
+    /// in either direction. If `a` is `Op1(LogicalNot, p)` and `b`
+    /// is `Op2(LogicalImp, p, Const "F")` (or vice versa), UF-union
+    /// them and return `true`. Returns `false` otherwise.
+    fn try_unfold_not_imp(
+        &mut self,
+        a: TermRef,
+        b: TermRef,
+    ) -> Result<bool, HolPrimError> {
+        let (a_id, b_id) = match (a.as_local(), b.as_local()) {
+            (Some(a), Some(b)) => (a, b),
+            _ => return Ok(false),
+        };
+        let da = *self.arena().term_def(a_id);
+        let db = *self.arena().term_def(b_id);
+        let bridged = match (da, db) {
+            (TermDef::Op1(PrimOp1::LogicalNot, p1), TermDef::Op2(PrimOp2::LogicalImp, p2, f))
+            | (TermDef::Op2(PrimOp2::LogicalImp, p2, f), TermDef::Op1(PrimOp1::LogicalNot, p1)) => {
+                self.is_const_with_base(f, "F")
+                    && self.shapes_alpha_equivalent(p1, p2)
+            }
+            _ => false,
+        };
+        if bridged {
+            self.kernel.union(a, b)?;
+        }
+        Ok(bridged)
     }
 
     fn is_const_with_base(&self, t: TermRef, base: &str) -> bool {
@@ -2342,6 +2379,49 @@ mod tests {
         // straight Combs.
         assert_ne!(folded, raw);
         assert!(d.aconv(folded, raw));
+    }
+
+    #[test]
+    fn unfold_not_imp_unions_neg_f_with_f_imp_f() {
+        // LCF-style definitional unfolding: ~F and F ⇒ F should
+        // become UF-equal after `try_unfold_not_imp`. Regression
+        // test for the std-* "thm: unexpected hyp `Op1(LogicalNot,
+        // Const F)`" family.
+        let mut d = driver();
+        d.register_name(300, "Data.Bool.F");
+        let b = d.bool_type();
+        let f_const = d.mk_const(300, b);
+        // ~F via mk_comb fold (Op1(LogicalNot, F)).
+        let not_f = {
+            let not_const = {
+                d.register_name(301, "Data.Bool.~");
+                let not_ty = d.fun_type(b, b);
+                d.mk_const(301, not_ty)
+            };
+            d.mk_comb(not_const, f_const)
+        };
+        // F ⇒ F via mk_comb fold (Op2(LogicalImp, F, F)).
+        let f_imp_f = {
+            d.register_name(302, "Data.Bool.==>");
+            let bb = d.fun_type(b, b);
+            let bbb = d.fun_type(b, bb);
+            let imp_const = d.mk_const(302, bbb);
+            let inner = d.mk_comb(imp_const, f_const);
+            d.mk_comb(inner, f_const)
+        };
+        // Not initially UF-equal.
+        assert!(
+            !d.kernel().egraph().uf.eq_at_level_0(not_f, f_imp_f),
+            "should not be UF-equal before unfolding"
+        );
+        // Try the unfolding.
+        let fired = d.try_unfold_not_imp(not_f, f_imp_f).unwrap();
+        assert!(fired, "try_unfold_not_imp should fire on ~F vs F⇒F");
+        // Now they should be UF-equal.
+        assert!(
+            d.kernel().egraph().uf.eq_at_level_0(not_f, f_imp_f),
+            "should be UF-equal after unfolding"
+        );
     }
 
     #[test]

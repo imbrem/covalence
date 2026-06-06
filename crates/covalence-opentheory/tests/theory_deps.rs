@@ -386,7 +386,7 @@ fn test_std_bool_def() {
 // UF-canonical-based drop missing pairs that share a canonical but
 // haven't been ptr-equal'd to the exclude term.
 #[test]
-#[ignore = "unexpected ¬F hyp — definitional unfolding ~p ↦ p ⇒ F not bridged"]
+#[ignore = "unexpected ¬F hyp — discharge path doesn't pass through bridged deduct_antisym; needs deeper LCF unfolding investigation"]
 fn test_std_bool_umbrella() {
     let Some(resolver) = std_resolver() else {
         return;
@@ -413,7 +413,7 @@ fn test_std_bool_umbrella() {
 // test_std_bool_umbrella — both go through the bool sub-articles
 // transitively.
 #[test]
-#[ignore = "unexpected ¬F hyp — definitional unfolding ~p ↦ p ⇒ F not bridged"]
+#[ignore = "unexpected ¬F hyp — discharge path doesn't pass through bridged deduct_antisym; needs deeper LCF unfolding investigation"]
 fn test_std_unit() {
     let Some(resolver) = std_resolver() else {
         return;
@@ -439,7 +439,7 @@ fn test_std_unit() {
 // Same `thm: 10 unexpected hyps at line 666` issue as
 // test_std_bool_umbrella.
 #[test]
-#[ignore = "unexpected ¬F hyp — definitional unfolding ~p ↦ p ⇒ F not bridged"]
+#[ignore = "unexpected ¬F hyp — discharge path doesn't pass through bridged deduct_antisym; needs deeper LCF unfolding investigation"]
 fn test_std_pair() {
     let Some(resolver) = std_resolver() else {
         return;
@@ -465,7 +465,7 @@ fn test_std_pair() {
 // Same `thm: 10 unexpected hyps at line 666` issue as
 // test_std_bool_umbrella.
 #[test]
-#[ignore = "unexpected ¬F hyp — definitional unfolding ~p ↦ p ⇒ F not bridged"]
+#[ignore = "unexpected ¬F hyp — discharge path doesn't pass through bridged deduct_antisym; needs deeper LCF unfolding investigation"]
 fn test_std_natural() {
     let Some(resolver) = std_resolver() else {
         return;

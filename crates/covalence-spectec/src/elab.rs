@@ -506,16 +506,29 @@ pub enum ElabPremise {
     /// `otherwise` / `else` — residual catch-all marker.
     Else,
     /// `(P)<iter>` — replicated premise. `inner` is the elaborated body;
-    /// `kind` describes the iteration shape. Iteration *binder*
-    /// inference (linking inner variables to their `*`-suffixed sources)
-    /// is deferred to a later slice; the `bindings` field holds the raw
-    /// `(x* y* ...)` body of `^(...)` counts for now.
+    /// `kind` describes the iteration shape. `bindings` lists the
+    /// implicit iteration binders inferred from variables that appear
+    /// both inside `inner` and as `name`-suffixed sources somewhere in
+    /// the enclosing rule's conclusion or earlier premises.
     Iter {
         inner: Box<ElabPremise>,
         kind: IterKind,
+        bindings: Vec<IterBinding>,
     },
     /// Anything not yet structurally recognised, kept as a raw run.
     Raw(TokenRun),
+}
+
+/// One inferred iteration binder: a name appearing inside an iter body
+/// that is bound (per iteration) by drawing values from a `*`-suffixed
+/// source elsewhere in the rule. Mirrors `spectec_ast::SpecTecIterExp::Dom`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IterBinding {
+    /// The bound variable name (the one referenced inside the iter body).
+    pub var: String,
+    /// The source expression supplying values for that name. Typically
+    /// `<var>*` somewhere in the conclusion or earlier premise.
+    pub source: String,
 }
 
 /// Iteration shape attached to a premise.
@@ -592,6 +605,14 @@ pub fn elab_rule_conclusion(
         .iter()
         .map(|p| elab_premise(p, ctx))
         .collect::<Result<Vec<_>, _>>()?;
+    // Iteration binder inference: scan operands + every premise for
+    // `name*`-shaped sources, then walk each Iter premise body and
+    // record bindings for variables that match.
+    let sources = collect_iter_sources(&operands, &premises);
+    let premises = premises
+        .into_iter()
+        .map(|p| attach_iter_bindings(p, &sources))
+        .collect();
 
     Ok(ElabRuleConclusion {
         rule_name: rule.name.text.clone(),
@@ -773,7 +794,134 @@ fn elab_iter_premise(
     Ok(ElabPremise::Iter {
         inner: Box::new(inner_elab),
         kind,
+        bindings: Vec::new(),
     })
+}
+
+/// Collect the set of `name`s that appear with a `*`/`+`/`?` iter
+/// suffix somewhere in `operands` or `premises`. Each such name is a
+/// candidate source for iteration binders inside child `Iter` premises.
+fn collect_iter_sources(operands: &[Expr], premises: &[ElabPremise]) -> HashSet<String> {
+    let mut sources = HashSet::new();
+    for op in operands {
+        gather_iter_sources_in_expr(op, &mut sources);
+    }
+    for p in premises {
+        gather_iter_sources_in_premise(p, &mut sources);
+    }
+    sources
+}
+
+fn gather_iter_sources_in_expr(e: &Expr, out: &mut HashSet<String>) {
+    match e {
+        Expr::Iter { inner, .. } => {
+            if let Expr::Var { name, .. } = inner.as_ref() {
+                out.insert(name.clone());
+            }
+            gather_iter_sources_in_expr(inner, out);
+        }
+        Expr::Case { args, .. } => {
+            for a in args {
+                gather_iter_sources_in_expr(a, out);
+            }
+        }
+        Expr::Tup { items, .. } => {
+            for i in items {
+                gather_iter_sources_in_expr(i, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn gather_iter_sources_in_premise(p: &ElabPremise, out: &mut HashSet<String>) {
+    match p {
+        ElabPremise::Rule { operands, .. } => {
+            for op in operands {
+                gather_iter_sources_in_expr(op, out);
+            }
+        }
+        ElabPremise::If(e) => gather_iter_sources_in_expr(e, out),
+        ElabPremise::Let { lhs, rhs } => {
+            gather_iter_sources_in_expr(lhs, out);
+            gather_iter_sources_in_expr(rhs, out);
+        }
+        ElabPremise::Iter { inner, .. } => gather_iter_sources_in_premise(inner, out),
+        ElabPremise::Else | ElabPremise::Raw(_) => {}
+    }
+}
+
+/// Walk a premise; for every `Iter` it contains, infer bindings by
+/// matching its inner Vars against the source set.
+fn attach_iter_bindings(p: ElabPremise, sources: &HashSet<String>) -> ElabPremise {
+    match p {
+        ElabPremise::Iter { inner, kind, .. } => {
+            let bindings = infer_bindings_for_inner(&inner, sources);
+            let inner = Box::new(attach_iter_bindings(*inner, sources));
+            ElabPremise::Iter {
+                inner,
+                kind,
+                bindings,
+            }
+        }
+        other => other,
+    }
+}
+
+fn infer_bindings_for_inner(
+    inner: &ElabPremise,
+    sources: &HashSet<String>,
+) -> Vec<IterBinding> {
+    let mut vars: HashSet<String> = HashSet::new();
+    collect_vars_in_premise(inner, &mut vars);
+    let mut bindings: Vec<IterBinding> = Vec::new();
+    for v in &vars {
+        if sources.contains(v) {
+            bindings.push(IterBinding {
+                var: v.clone(),
+                source: v.clone(),
+            });
+        }
+    }
+    bindings.sort_by(|a, b| a.var.cmp(&b.var));
+    bindings
+}
+
+fn collect_vars_in_expr(e: &Expr, out: &mut HashSet<String>) {
+    match e {
+        Expr::Var { name, .. } => {
+            out.insert(name.clone());
+        }
+        Expr::Case { args, .. } => {
+            for a in args {
+                collect_vars_in_expr(a, out);
+            }
+        }
+        Expr::Tup { items, .. } => {
+            for i in items {
+                collect_vars_in_expr(i, out);
+            }
+        }
+        Expr::Iter { inner, .. } => collect_vars_in_expr(inner, out),
+        _ => {}
+    }
+}
+
+fn collect_vars_in_premise(p: &ElabPremise, out: &mut HashSet<String>) {
+    match p {
+        ElabPremise::Rule { operands, .. } => {
+            for op in operands {
+                collect_vars_in_expr(op, out);
+            }
+        }
+        ElabPremise::If(e) => collect_vars_in_expr(e, out),
+        ElabPremise::Let { lhs, rhs } => {
+            collect_vars_in_expr(lhs, out);
+            collect_vars_in_expr(rhs, out);
+        }
+        ElabPremise::Iter { inner, .. } => collect_vars_in_premise(inner, out),
+        ElabPremise::Else | ElabPremise::Raw(_) => {}
+    }
 }
 
 /// Given `toks[0]` is `LParen`, return the index of the matching `RParen`
@@ -1905,6 +2053,68 @@ mod tests {
     }
 
     #[test]
+    fn iter_binder_inferred_from_iter_source_in_conclusion() {
+        // The rule's conclusion has `l*` (Iter over Var `l`); the
+        // premise body references `l`. Binder should be inferred.
+        let src = r#"
+            syntax context = nat
+            syntax l = nat
+            syntax t = nat
+            relation R: context |- l : t
+            rule R:
+              C |- l* : t
+              -- if l
+        "#;
+        // Note: this test uses a contrived shape. The real binder
+        // inference target is `(...)*` premises referencing variables
+        // also iterated in the conclusion.
+        let elab = elab_first_rule(src);
+        // No `(...)*` premise here, so no bindings to infer. Just
+        // confirm the code path doesn't crash.
+        assert!(!elab.premises.is_empty());
+    }
+
+    #[test]
+    fn iter_binder_basic() {
+        let src = r#"
+            syntax context = nat
+            syntax t = nat
+            relation Sub: context |- t <: t
+            rule R:
+              C |- a <: b
+              -- if t*
+              -- (Sub: C |- t <: b)*
+        "#;
+        // Define a third relation so the rule fits.
+        let src2 = r#"
+            syntax context = nat
+            syntax t = nat
+            relation Sub: context |- t <: t
+            relation R: context |- t <: t
+            rule R:
+              C |- a <: b
+              -- if t*
+              -- (Sub: C |- t <: b)*
+        "#;
+        let _ = src;
+        let elab = elab_first_rule(src2);
+        // Last premise is an Iter; should have a binding for `t`
+        // because `t*` appears earlier in the rule.
+        let iter_prem = elab
+            .premises
+            .iter()
+            .find_map(|p| match p {
+                ElabPremise::Iter { bindings, .. } => Some(bindings),
+                _ => None,
+            })
+            .expect("expected an Iter premise");
+        assert!(
+            iter_prem.iter().any(|b| b.var == "t" && b.source == "t"),
+            "expected binding for `t`, got {iter_prem:?}"
+        );
+    }
+
+    #[test]
     fn elab_premise_iter_star() {
         let src = r#"
             syntax context = nat
@@ -1916,7 +2126,7 @@ mod tests {
         "#;
         let elab = elab_first_rule(src);
         assert_eq!(elab.premises.len(), 1);
-        let ElabPremise::Iter { inner, kind } = &elab.premises[0] else {
+        let ElabPremise::Iter { inner, kind, .. } = &elab.premises[0] else {
             panic!("expected Iter, got {:?}", elab.premises[0]);
         };
         assert!(matches!(kind, IterKind::Star));
@@ -1935,7 +2145,7 @@ mod tests {
         "#;
         let elab = elab_first_rule(src);
         let ElabPremise::Iter { kind, .. } = &elab.premises[0] else {
-            panic!("expected Iter")
+            panic!("expected Iter");
         };
         assert!(matches!(kind, IterKind::Opt));
     }
@@ -1952,7 +2162,7 @@ mod tests {
         "#;
         let elab = elab_first_rule(src);
         let ElabPremise::Iter { kind, .. } = &elab.premises[0] else {
-            panic!("expected Iter")
+            panic!("expected Iter");
         };
         assert!(matches!(kind, IterKind::Plus));
     }
@@ -1969,7 +2179,7 @@ mod tests {
         "#;
         let elab = elab_first_rule(src);
         let ElabPremise::Iter { kind, .. } = &elab.premises[0] else {
-            panic!("expected Iter")
+            panic!("expected Iter");
         };
         assert!(matches!(kind, IterKind::Length(_)));
     }

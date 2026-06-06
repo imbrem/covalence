@@ -1569,22 +1569,12 @@ impl HolPrim {
                 TermDef::Free(s, ty) => (s, ty),
                 _ => return Err(HolError::NotAVariable.into()),
             };
-            // Force re-infer on replacement in case its cache is stale.
             if let Some(new_id) = new_tm.as_local() {
                 let _ = self.arena_mut().infer(new_id);
             }
-            current = match Thm::inst(self.kernel.arena_mut(), current, name, ty, new_tm) {
-                Ok(t) => t,
-                Err(e) => {
-                    let new_dump = self.debug_dump(new_tm, 6);
-                    let var_dump = self.debug_dump(old_var, 3);
-                    let msg = format!(
-                        "inst_rule FAIL err={e:?}\n  new_tm={new_dump}\n  old_var={var_dump}"
-                    );
-                    std::fs::write("/tmp/inst_diag.txt", &msg).ok();
-                    return Err(HolPrimError::Proof(e));
-                }
-            };
+            let old_trusted_mask = self.trusted_mask(current.context());
+            current = Thm::inst(self.kernel.arena_mut(), current, name, ty, new_tm)?;
+            self.propagate_trusted(current.context(), &old_trusted_mask);
         }
         Ok(self.store_thm(current))
     }
@@ -1600,9 +1590,47 @@ impl HolPrim {
         let mut current = self.clone_thm(th)?;
         for &(new_ty, old_name) in pairs {
             let s = self.str_of(old_name);
+            let old_trusted_mask = self.trusted_mask(current.context());
             current = Thm::inst_type(self.kernel.arena_mut(), current, s, new_ty)?;
+            self.propagate_trusted(current.context(), &old_trusted_mask);
         }
         Ok(self.store_thm(current))
+    }
+
+    /// Build a parallel boolean mask: `mask[i] == true` iff
+    /// `ctx.assumption(i)` is currently a trusted Prop. Captured
+    /// before a substitution rule so we can propagate trust to
+    /// the rebuilt-Prop slots afterward.
+    fn trusted_mask(&self, ctx: &Arc<Context>) -> Vec<bool> {
+        let mut out = Vec::with_capacity(ctx.len());
+        for i in 0..ctx.len() {
+            let p = ctx.assumption(i).expect("len/index invariant");
+            out.push(self.trusted_props.iter().any(|t| Arc::ptr_eq(t, p)));
+        }
+        out
+    }
+
+    /// After `Thm::inst` / `Thm::inst_type` has rebuilt the context
+    /// with substituted assumption Props, register the new Arcs
+    /// at trusted positions so [`Self::hyps`] still filters them.
+    /// The new Props have the same index in `new_ctx` as the
+    /// originals in the pre-substitution `mask`.
+    fn propagate_trusted(&mut self, new_ctx: &Arc<Context>, mask: &[bool]) {
+        for (i, &was_trusted) in mask.iter().enumerate() {
+            if !was_trusted {
+                continue;
+            }
+            if let Some(new_assum) = new_ctx.assumption(i) {
+                // Skip if already tracked (Arc::ptr_eq).
+                if !self
+                    .trusted_props
+                    .iter()
+                    .any(|t| Arc::ptr_eq(t, new_assum))
+                {
+                    self.trusted_props.push(new_assum.clone());
+                }
+            }
+        }
     }
 
     /// `new_axiom tm`: post a fresh axiom and return `⊢ tm`.

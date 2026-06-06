@@ -24,6 +24,113 @@ fn alloc_const(a: &mut Arena, name: &str, ty: TypeRef) -> covalence_kernel::Term
 // ---------------------------------------------------------------------------
 
 #[test]
+fn intern_tyargs_dedupes_identical_vecs() {
+    // Two `intern_tyargs(vec![])` calls must return the same
+    // `TyArgsId`. Without this, `Tyapp(name, args)` allocations for
+    // structurally-identical nullary types end up with different
+    // `TypeRef`s, breaking polymorphic-instance equality.
+    let mut a = Arena::new();
+    let id1 = a.intern_tyargs(vec![]);
+    let id2 = a.intern_tyargs(vec![]);
+    assert_eq!(id1, id2);
+    let bool_ty = a.bool_ty();
+    let id3 = a.intern_tyargs(vec![bool_ty]);
+    let id4 = a.intern_tyargs(vec![bool_ty]);
+    assert_eq!(id3, id4);
+    assert_ne!(id1, id3);
+}
+
+#[test]
+fn alloc_tyapp_with_same_args_dedupes() {
+    // Two `alloc_tyapp(name, [])` calls — relying on intern_tyargs
+    // dedup — must return the same TypeRef. Diagnosed root cause of
+    // the unit-* test "polymorphic instance mismatch" was that this
+    // didn't hold before intern_tyargs was made dedup'ing.
+    let mut a = Arena::new();
+    let name = a.intern_string("unit".into());
+    let args1 = a.intern_tyargs(vec![]);
+    let args2 = a.intern_tyargs(vec![]);
+    let ty1 = a.alloc_tyapp(name, args1);
+    let ty2 = a.alloc_tyapp(name, args2);
+    assert_eq!(ty1, ty2);
+}
+
+#[test]
+fn alloc_fun_with_same_args_dedupes() {
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let nat_ty = a.nat_ty();
+    let f1 = a.alloc_fun_ty(bool_ty, nat_ty);
+    let f2 = a.alloc_fun_ty(bool_ty, nat_ty);
+    assert_eq!(f1, f2);
+    let f3 = a.alloc_fun_ty(nat_ty, bool_ty);
+    assert_ne!(f1, f3);
+}
+
+#[test]
+fn alloc_tvar_with_same_name_dedupes() {
+    let mut a = Arena::new();
+    let n = a.intern_string("A".into());
+    let v1 = a.alloc_tvar(n);
+    let v2 = a.alloc_tvar(n);
+    assert_eq!(v1, v2);
+}
+
+#[test]
+fn alloc_term_dedupes_identical_defs() {
+    let mut a = Arena::new();
+    let n = a.intern_string("x".into());
+    let bool_ty = a.bool_ty();
+    let t1 = a.alloc_term(TermDef::Free(n, bool_ty));
+    let t2 = a.alloc_term(TermDef::Free(n, bool_ty));
+    assert_eq!(t1, t2);
+    // Different name → different TermId.
+    let m = a.intern_string("y".into());
+    let t3 = a.alloc_term(TermDef::Free(m, bool_ty));
+    assert_ne!(t1, t3);
+    // Different ty → different TermId.
+    let nat_ty = a.nat_ty();
+    let t4 = a.alloc_term(TermDef::Free(n, nat_ty));
+    assert_ne!(t1, t4);
+}
+
+#[test]
+fn alloc_term_dedupes_comb_with_same_children() {
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let bool_to_bool = a.alloc_fun_ty(bool_ty, bool_ty);
+    let f_name = a.intern_string("f".into());
+    let f = TermRef::local(a.alloc_term(TermDef::Free(f_name, bool_to_bool)));
+    let x_name = a.intern_string("x".into());
+    let x = TermRef::local(a.alloc_term(TermDef::Free(x_name, bool_ty)));
+    let app1 = a.alloc_term(TermDef::Comb(f, x));
+    let app2 = a.alloc_term(TermDef::Comb(f, x));
+    assert_eq!(app1, app2);
+}
+
+#[test]
+fn alloc_term_auto_infers_so_is_well_typed_works() {
+    // After alloc_term, is_well_typed should give the correct
+    // answer without an explicit infer call. This is the
+    // "alloc_term auto-infers" invariant that several rules in
+    // prop.rs rely on.
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let b0 = a.alloc_term(TermDef::Bound(0));
+    let lam = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(b0)));
+    assert!(a.is_well_typed(lam));
+    // The Lam's type is `bool → bool`.
+    let info = a.term_props(lam).type_info;
+    match a.type_ref_kind(info.as_type().unwrap()) {
+        Some(TypeKind::Fun(d, c)) => {
+            assert_eq!(d, bool_ty);
+            assert_eq!(c, bool_ty);
+        }
+        other => panic!("expected bool → bool, got {other:?}"),
+    }
+}
+
+#[test]
 fn alloc_builtin_types_returns_builtin_typerefs() {
     let mut a = Arena::new();
     // (no UF needed)

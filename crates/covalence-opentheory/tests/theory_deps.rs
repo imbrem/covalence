@@ -273,7 +273,6 @@ fn test_axiom_extensionality() {
 // `Subset` types (currently treated opaquely — they may contain
 // tyvars that should be propagated).
 #[test]
-#[ignore = "thm: unexpected hyps — assume Props in unfolded β-redex form not discharged by deduct_antisym"]
 fn test_unit_def_full_chain() {
     let (mut kernel, mut names) = setup_with_select();
     let resolver = FileResolver::new(assets_dir());
@@ -296,7 +295,7 @@ fn test_unit_def_full_chain() {
 // Same `appThm IllTypedInput` as test_unit_def_full_chain — both
 // reach line 2418 via unit-def's transitive deps.
 #[test]
-#[ignore = "thm: unexpected hyps — assume Props in unfolded β-redex form not discharged by deduct_antisym"]
+#[ignore = "thm check fails — see commit comment for individual reasons"]
 fn test_unit_thm_full_chain() {
     let (mut kernel, mut names) = setup_with_select();
     let resolver = FileResolver::new(assets_dir());
@@ -388,7 +387,7 @@ fn test_std_bool_def() {
 // UF-canonical-based drop missing pairs that share a canonical but
 // haven't been ptr-equal'd to the exclude term.
 #[test]
-#[ignore = "thm: unexpected hyps — assume Props in unfolded β-redex form not discharged by deduct_antisym"]
+#[ignore = "thm check fails — see commit comment for individual reasons"]
 fn test_std_bool_umbrella() {
     let Some(resolver) = std_resolver() else {
         return;
@@ -415,7 +414,7 @@ fn test_std_bool_umbrella() {
 // test_std_bool_umbrella — both go through the bool sub-articles
 // transitively.
 #[test]
-#[ignore = "thm: unexpected hyps — assume Props in unfolded β-redex form not discharged by deduct_antisym"]
+#[ignore = "thm check fails — see commit comment for individual reasons"]
 fn test_std_unit() {
     let Some(resolver) = std_resolver() else {
         return;
@@ -441,7 +440,7 @@ fn test_std_unit() {
 // Same `thm: 10 unexpected hyps at line 666` issue as
 // test_std_bool_umbrella.
 #[test]
-#[ignore = "thm: unexpected hyps — assume Props in unfolded β-redex form not discharged by deduct_antisym"]
+#[ignore = "thm check fails — see commit comment for individual reasons"]
 fn test_std_pair() {
     let Some(resolver) = std_resolver() else {
         return;
@@ -467,7 +466,7 @@ fn test_std_pair() {
 // Same `thm: 10 unexpected hyps at line 666` issue as
 // test_std_bool_umbrella.
 #[test]
-#[ignore = "thm: unexpected hyps — assume Props in unfolded β-redex form not discharged by deduct_antisym"]
+#[ignore = "thm check fails — see commit comment for individual reasons"]
 fn test_std_natural() {
     let Some(resolver) = std_resolver() else {
         return;

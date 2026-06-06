@@ -25,7 +25,8 @@
 
 use crate::cst::{GrammarDecl, RelationDecl, RuleDecl, SyntaxBody, Top, VarDecl, Alt, RecordField};
 use crate::elab::{
-    alt_to_constructor, alt_to_constructor_with_holes, elab_rule_conclusion, BinOp, CmpOp,
+    alt_to_constructor, alt_to_constructor_with_holes, alt_to_headless_with_holes,
+    elab_rule_conclusion, BinOp, CmpOp,
     ElabContext, ElabPremise, Expr, IterBinding, IterKind, MergedProfile, MergedSyntax, NumLit,
     NumTyp, OpType, Path as ElabPath, UnOp,
 };
@@ -1329,9 +1330,12 @@ fn expand_variant_alts(
 /// operand-tuple type is a placeholder for now (full elaboration of
 /// arg-type expressions in alternatives is later work).
 fn alt_to_typcase(alt: &Alt, ctx: &ElabContext) -> spectec_ast::SpecTecTypCase {
-    let op = match alt_to_constructor(alt, &ctx.type_names) {
-        Some((_, frags)) => mixop_from_typcase_fragments(&frags),
-        None => mixop_from_alt_tokens(alt),
+    let op = if let Some((_, frags)) = alt_to_constructor(alt, &ctx.type_names) {
+        mixop_from_typcase_fragments(&frags)
+    } else if let Some((frags, _)) = alt_to_headless_with_holes(alt, &ctx.type_names) {
+        mixop_from_typcase_fragments(&frags)
+    } else {
+        mixop_from_alt_tokens(alt)
     };
     spectec_ast::SpecTecTypCase::Field {
         op,
@@ -1530,7 +1534,13 @@ pub(crate) fn lower_typ_for_test(
 /// Lower the type of a variant alternative's arguments. Returns the
 /// single arg type or a `Tup` of multiple arg types.
 fn typ_expr_to_spectec_args(alt: &Alt, ctx: &ElabContext) -> spectec_ast::SpecTecTyp {
-    let Some((_, _, hole_toks)) = alt_to_constructor_with_holes(alt, &ctx.type_names) else {
+    let hole_toks = if let Some((_, _, h)) =
+        alt_to_constructor_with_holes(alt, &ctx.type_names)
+    {
+        h
+    } else if let Some((_, h)) = alt_to_headless_with_holes(alt, &ctx.type_names) {
+        h
+    } else {
         return spectec_ast::SpecTecTyp::Tup { ets: Vec::new() };
     };
     let binds: Vec<spectec_ast::SpecTecTypBind> = hole_toks

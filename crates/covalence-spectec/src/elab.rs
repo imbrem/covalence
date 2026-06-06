@@ -583,8 +583,36 @@ pub fn alt_to_constructor_with_holes(
         Token::Ident(n) if is_case_head(n) => n.clone(),
         _ => return None,
     };
-    let rest = &toks[1..];
-    let mut frags = vec![Fragment::Lit(head_tok.token.clone())];
+    let (frags, holes) = walk_alt_tokens(
+        &toks[1..],
+        type_names,
+        vec![Fragment::Lit(head_tok.token.clone())],
+    );
+    Some((head_name, frags, holes))
+}
+
+/// Headless single-case variant: walk the entire body's tokens as a
+/// sequence of literals + holes (no case-head prefix). Used by
+/// single-case variants like `syntax fieldtype = mut? storagetype`
+/// and `syntax config = state; instr*`.
+pub fn alt_to_headless_with_holes(
+    alt: &Alt,
+    type_names: &HashSet<String>,
+) -> Option<(Vec<Fragment>, Vec<Vec<Spanned>>)> {
+    if alt.body.tokens.is_empty() {
+        return None;
+    }
+    Some(walk_alt_tokens(&alt.body.tokens, type_names, Vec::new()))
+}
+
+/// Common walker: emit a `Hole` for each declared type-name ident (with
+/// any iter suffix folded in) or balanced parenthesised group, and a
+/// `Lit` for everything else. Returns `(fragments, hole-token-slices)`.
+fn walk_alt_tokens(
+    rest: &[Spanned],
+    type_names: &HashSet<String>,
+    mut frags: Vec<Fragment>,
+) -> (Vec<Fragment>, Vec<Vec<Spanned>>) {
     let mut hole_toks: Vec<Vec<Spanned>> = Vec::new();
     let mut i = 0;
     while i < rest.len() {
@@ -609,7 +637,7 @@ pub fn alt_to_constructor_with_holes(
             }
         }
     }
-    Some((head_name, frags, hole_toks))
+    (frags, hole_toks)
 }
 
 // ---------- minimal Expr AST + conclusion elaboration ----------
@@ -2046,7 +2074,9 @@ fn arith_last_muldiv(toks: &[Spanned]) -> Option<(usize, BinOp)> {
             Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
             _ => {}
         }
-        if depth == 0 && i > 0 {
+        // Treat as multiplication only when there's a non-empty RHS;
+        // a trailing `*` is the iter postfix, not arithmetic.
+        if depth == 0 && i > 0 && i + 1 < toks.len() {
             match &t.token {
                 Token::Star => hit = Some((i, BinOp::Mul)),
                 Token::Slash => hit = Some((i, BinOp::Div)),

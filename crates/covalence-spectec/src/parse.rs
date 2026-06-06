@@ -578,12 +578,18 @@ fn parse_syntax_body(file: FileId, input: &mut &[Spanned]) -> Result<SyntaxBody,
 /// (display-only escapes preceding literals like `` `...``) and
 /// `Semicolon` operators (e.g. `state; instr*`) both qualify.
 fn body_looks_like_variant(toks: &[Spanned]) -> bool {
-    toks.iter().any(|t| {
-        matches!(
-            t.token,
-            Token::Backtick | Token::Semi | Token::Arrow
-        )
-    })
+    let mut depth: i32 = 0;
+    for t in toks {
+        match &t.token {
+            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
+            Token::Backtick | Token::Semi | Token::Arrow if depth == 0 => {
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 /// True when the first token is an `Ident` whose name looks like a

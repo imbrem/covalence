@@ -34,9 +34,16 @@
 //!     pattern — same trust point. A later Stage will replace it with
 //!     kernel-checked rewrites that confirm the rule body actually
 //!     entails the conclusion under the given substitution.
-//!   - [`Justification::MergeFn`](crate::proof::Justification::MergeFn)
-//!     falls through to the trait default, returning
-//!     [`BridgeError::NotImplemented`].
+//!   - Implements [`Justification::MergeFn`](crate::proof::Justification::MergeFn)
+//!     with the same trusted-shim shape as `rule` — the merge function's
+//!     conclusion is unioned into the UF and closed by `cong`. The
+//!     proposition is almost always reflexive in practice, so the
+//!     `refl` short-circuit usually fires.
+//!
+//! Every [`Justification`](crate::proof::Justification) variant now
+//! produces a `Self::Thm` rather than `NotImplemented`; future Stages
+//! tighten the trust model on `rule` / `merge_fn` rather than expand the
+//! dispatch surface.
 
 use std::collections::HashMap;
 
@@ -322,13 +329,25 @@ impl<'a, P: Prover> EgglogBridge for KernelEgglogBridge<'a, P> {
         // build the rule's LHS/RHS under σ, confirm the premise Thms
         // entail the LHS≡RHS shape, then derive the conclusion without
         // any new trust.
-        let lhs = self.materialise(prop.lhs, dag)?;
-        let rhs = self.materialise(prop.rhs, dag)?;
-        if lhs == rhs {
-            return Ok(self.prover.refl(lhs)?);
-        }
-        self.prover.union(lhs, rhs)?;
-        Ok(self.prover.cong(lhs, rhs, 0)?)
+        self.close_by_trusted_union(prop, dag)
+    }
+
+    fn merge_fn(
+        &mut self,
+        _function: &str,
+        prop: &Proposition,
+        _old_thm: Self::Thm,
+        _new_thm: Self::Thm,
+        dag: &TermDag,
+    ) -> Result<Self::Thm, BridgeError> {
+        // **Trust point.** Same shim shape as `rule` above. Egglog's
+        // MergeFn proves either `f(…, merge_fn(old, new)) = f(…, merge_fn(old, new))`
+        // (case 1) or `t = t` for a subexpression `t` of the merge body
+        // (case 2). Both shapes are reflexive in practice, so the
+        // `lhs == rhs` short-circuit usually fires. The non-reflexive
+        // fallback exists for safety; replace with a kernel-checked
+        // merge-rewrite handler once we're ready to drop the trust.
+        self.close_by_trusted_union(prop, dag)
     }
 
     fn congr(
@@ -369,5 +388,22 @@ impl<'a, P: Prover> KernelEgglogBridge<'a, P> {
         })?;
         self.prover.union(a, b)?;
         Ok(())
+    }
+
+    /// Materialise `prop`'s sides, refl if equal, otherwise `union` +
+    /// `cong(_, _, 0)`. Shared between the trusted [`EgglogBridge::rule`]
+    /// and [`EgglogBridge::merge_fn`] handlers.
+    fn close_by_trusted_union(
+        &mut self,
+        prop: &Proposition,
+        dag: &TermDag,
+    ) -> Result<P::Thm, BridgeError> {
+        let lhs = self.materialise(prop.lhs, dag)?;
+        let rhs = self.materialise(prop.rhs, dag)?;
+        if lhs == rhs {
+            return Ok(self.prover.refl(lhs)?);
+        }
+        self.prover.union(lhs, rhs)?;
+        Ok(self.prover.cong(lhs, rhs, 0)?)
     }
 }

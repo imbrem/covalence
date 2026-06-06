@@ -1,13 +1,12 @@
 //! Integration tests for `KernelEgglogBridge`.
 //!
 //! Exercises the *stable boundary*: trait + driver + `KernelEgglogBridge`
-//! impl against `covalence_kernel::Kernel`. Currently wired:
-//! [`Justification::Fiat`], [`Justification::Trans`], [`Justification::Sym`],
-//! [`Justification::Congr`] (full EUF axiom set), and
-//! [`Justification::Rule`] as a trusted shim (analogous to Alethe's
-//! `hole TRUST_THEORY_REWRITE`). The remaining justification (`MergeFn`)
-//! should surface [`BridgeError::NotImplemented`] tagged with the variant
-//! name so a future Stage knows exactly what to wire next.
+//! impl against `covalence_kernel::Kernel`. Every
+//! [`Justification`](covalence_egglog::proof::Justification) variant is
+//! now wired: `Fiat`, `Trans`, `Sym`, `Congr` (full EUF axiom set),
+//! `Rule` and `MergeFn` (trusted shims, analogous to Alethe's
+//! `hole TRUST_THEORY_REWRITE`). Future Stages tighten the trust model on
+//! `Rule` / `MergeFn` rather than expand the dispatch surface.
 
 use covalence_egglog::{
     BridgeError, EgglogBridge, KernelEgglogBridge, Proof, ProofStore, Proposition, Term, TermDag,
@@ -474,11 +473,14 @@ fn rule_then_trans_chains_with_fiat() {
 }
 
 // =====================================================================
-// MergeFn still surfaces NotImplemented
+// MergeFn — trusted shim, reflexive case (the common shape)
 // =====================================================================
 
 #[test]
-fn merge_fn_is_not_implemented_yet() {
+fn merge_fn_reflexive_discharges_via_refl() {
+    // The typical MergeFn proposition is reflexive — egglog asserts
+    // `f(…, merge_fn(old, new)) = f(…, merge_fn(old, new))`. The
+    // reflexive short-circuit fires.
     let mut kernel = Kernel::new();
     let mut bridge = KernelEgglogBridge::new(&mut kernel);
     bridge.declare_sort("U").unwrap();
@@ -499,7 +501,8 @@ fn merge_fn_is_not_implemented_yet() {
         justification: Justification::Fiat,
     });
     let merge = store.alloc(Proof {
-        proposition: Proposition::new(t_a, t_b),
+        // Reflexive prop — the common MergeFn shape.
+        proposition: Proposition::new(t_a, t_a),
         justification: Justification::MergeFn {
             function: "max".into(),
             old_proof: aa,
@@ -507,7 +510,6 @@ fn merge_fn_is_not_implemented_yet() {
         },
     });
 
-    let err = ingest_proof_store(&mut bridge, &store, &dag, merge)
-        .expect_err("merge_fn is not wired yet");
-    assert!(matches!(err, BridgeError::NotImplemented(s) if s == "merge_fn:max"));
+    let _thm = ingest_proof_store(&mut bridge, &store, &dag, merge)
+        .expect("reflexive MergeFn should discharge via refl");
 }

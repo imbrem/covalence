@@ -1,21 +1,26 @@
-//! SpecTec parser (Phase 1: structurally parses `syntax` and `def`).
+//! SpecTec parser.
 //!
 //! Style: hand-rolled combinator style. Each sub-parser is a pure
-//! function `fn(&mut &[Spanned]) -> Result<T, Diagnostic>` — input slice
-//! goes in, residual slice comes out via the `&mut`. No traits, no
-//! interior mutability, no `unsafe`. Designed to mirror the textbook
+//! function `fn(&mut &[Spanned]) -> Result<T, Diagnostic>` — input
+//! slice goes in, residual slice comes out via the `&mut`. No traits,
+//! no interior mutability, no `unsafe`. Designed to mirror the textbook
 //! parser-combinator shape `Tokens → Result<(T, Tokens), Err>`, which
 //! ports cleanly to a kernel-verifiable function later.
 //!
-//! What Phase 1 covers structurally:
+//! Top-level forms covered structurally:
 //!
 //! - `syntax NAME[/profile][(params)] [hint(...)]* [= variant|record|alias]`
-//! - `def $NAME(arg_tys) : ret_ty [hint(...)]*` (signature)
-//! - `def $NAME(pats) = rhs [-- premise]*` (clause)
+//! - `def $NAME[(arg_tys)] : ret_ty [hint(...)]*` (signature, args optional)
+//! - `def $NAME[(pats)] = rhs [-- premise]*` (clause)
+//! - `var NAME : type [hints*]`
+//! - `relation NAME: <mixfix-template> [hints*]`
+//! - `rule NAME[/case]: <conclusion> [-- premise]* [hints*]`
+//! - `grammar NAME[/case][(params)] : ret [hints*] [= productions]`
 //!
-//! Other top-level forms (`relation`, `rule`, `var`, `grammar`) are
-//! collected into [`Top::Other`] as raw token runs. Phase 2 structures
-//! them.
+//! Hint bodies are kept as opaque `TokenRun`s here; the elaborator in
+//! [`crate::elab`] further structures rule bodies, expression
+//! positions, and constructor applications using the mixfix `OpTable`
+//! built from `relation` and `syntax`-variant declarations.
 
 use crate::cst::{
     Alt, DefClause, DefSig, GrammarDecl, HintAtom, Ident, RecordField, RelationDecl, RuleDecl,

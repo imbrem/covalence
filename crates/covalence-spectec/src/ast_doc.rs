@@ -9,11 +9,19 @@
 //!
 //! [`to_spectec_ast`] converts a [`Doc`] into a `Vec<spectec_ast::SpecTecDef>`
 //! suitable for diffing against `wasm_spec_ast::get_wasm_spectec_ast()`.
-//! The current converter is partial: it emits skeleton `Typ`, `Rel`,
-//! `Dec`, `Gram` decls with names, MixOp templates, and rule/clause
-//! counts, but does not yet encode the full operand/premise content.
-//! Phase 2g exercises the converter end-to-end on the wasm-3.0 corpus
-//! and reports the coverage gap.
+//! The converter populates names, parameters, operand-tuple types,
+//! MixOp templates, rule conclusions, premises (`If`/`Let`/`Else`/
+//! `Iter`/`Rule`), clause arg patterns and RHSes, variant-case bodies,
+//! grammar productions (with `...` range collapsing), and Tarjan-SCC
+//! `Rec` grouping. Expression positions that haven't been structurally
+//! elaborated (e.g. `Raw` fallbacks for un-recognised mixfix forms)
+//! lower to a `Bool { b: false }` *sentinel* so the differential test
+//! can measure lowering coverage explicitly.
+//!
+//! Type-annotation fields (`Un.t`, `Bin.t`, `Cmp.t`) currently default
+//! to `OpType::Nat`, and `Sub` coercion nodes are not inserted —
+//! type-checking is a separate pass over the elaborated AST and is
+//! deliberately not in scope for this module.
 
 use crate::cst::{GrammarDecl, RelationDecl, RuleDecl, SyntaxBody, Top, VarDecl, Alt, RecordField};
 use crate::elab::{

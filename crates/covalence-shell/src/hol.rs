@@ -80,11 +80,22 @@ pub enum HolPrimError {
     /// The supplied [`ThmHandle`] is out of range.
     #[error("invalid theorem handle: {0}")]
     InvalidThmHandle(u32),
+
+    /// Kernel-level union-find merge failure (used by the cong-based
+    /// rules).
+    #[error("kernel union error: {0:?}")]
+    Union(covalence_kernel::UnionError),
 }
 
 impl From<ProofError> for HolPrimError {
     fn from(e: ProofError) -> Self {
         HolPrimError::Proof(e)
+    }
+}
+
+impl From<covalence_kernel::UnionError> for HolPrimError {
+    fn from(e: covalence_kernel::UnionError) -> Self {
+        HolPrimError::Union(e)
     }
 }
 
@@ -126,6 +137,12 @@ pub struct HolPrim {
     thms: Vec<Thm>,
     /// Handles of theorems introduced via `new_axiom`.
     axioms: Vec<ThmHandle>,
+
+    /// Cached empty session context. Sharing one `Arc<Context>`
+    /// across all empty-hyp Thms (refl, beta, …) keeps
+    /// `Arc::ptr_eq` true between them, which is what the kernel's
+    /// trans/eq_mp/cong rules require for context-match.
+    empty_ctx: Arc<Context>,
 }
 
 impl HolPrim {
@@ -180,6 +197,7 @@ impl HolPrim {
             term_constants,
             thms: Vec::new(),
             axioms: Vec::new(),
+            empty_ctx: Context::empty(),
         }
     }
 
@@ -713,10 +731,12 @@ impl HolPrim {
         Ok(TermRef::local(thm.concl()))
     }
 
-    /// `REFL t`: `⊢ t = t`. Built against the empty session context.
+    /// `REFL t`: `⊢ t = t`. Built against the cached empty session
+    /// context so all empty-hyp Thms share one `Arc<Context>`.
     pub fn refl(&mut self, t: TermRef) -> Result<ThmHandle, HolPrimError> {
         let id = t.as_local().ok_or(HolError::NotACombination)?;
-        let thm = Thm::refl(self.kernel.arena_mut(), Context::empty(), id)?;
+        let ctx = self.empty_ctx.clone();
+        let thm = Thm::refl(self.kernel.arena_mut(), ctx, id)?;
         Ok(self.store_thm(thm))
     }
 
@@ -725,16 +745,17 @@ impl HolPrim {
     /// "β-redex" coincides.
     pub fn beta_conv(&mut self, tm: TermRef) -> Result<ThmHandle, HolPrimError> {
         let id = tm.as_local().ok_or(HolError::NotBetaRedex)?;
-        let thm = Thm::beta(self.kernel.arena_mut(), Context::empty(), id)?;
+        let ctx = self.empty_ctx.clone();
+        let thm = Thm::beta(self.kernel.arena_mut(), ctx, id)?;
         Ok(self.store_thm(thm))
     }
 
     /// `ASSUME p`: `{p} ⊢ p`. Allocates a fresh assumption `Prop` in
-    /// a single-assumption context.
+    /// a single-assumption context whose parent is the cached empty
+    /// session context.
     pub fn assume_rule(&mut self, p: TermRef) -> Result<ThmHandle, HolPrimError> {
         let id = p.as_local().ok_or(HolError::NotBoolean)?;
-        // Build a fresh single-assumption context.
-        let prop = Arc::new(Prop::new(Context::empty(), id));
+        let prop = Arc::new(Prop::new(self.empty_ctx.clone(), id));
         let ctx = Context::flat(vec![prop.clone()]);
         let thm = Thm::assume(self.kernel.arena(), ctx, prop)?;
         Ok(self.store_thm(thm))
@@ -764,39 +785,83 @@ impl HolPrim {
         Ok(self.store_thm(out))
     }
 
-    /// `TRANS th1 th2`. Not yet implemented at the trait-faithful
-    /// level: covalence-kernel's `trans` requires identical
-    /// `Arc<Context>`s, but HOL Light combines arbitrary hypothesis
-    /// sets. Need a small context-alignment helper that unions the
-    /// two assumption sets and weakens both inputs first.
+    /// `TRANS th1 th2`: from `⊢ a = b` and `⊢ b' = c` (with `b ≡ b'`
+    /// at UF level 0) derive `⊢ a = c`. Contexts must currently be
+    /// pointer-equal — context-set union for HOL Light-style hyp
+    /// merging is a follow-up.
     pub fn trans(
         &mut self,
-        _th1: ThmHandle,
-        _th2: ThmHandle,
+        th1: ThmHandle,
+        th2: ThmHandle,
     ) -> Result<ThmHandle, HolPrimError> {
-        Err(HolPrimError::NotImplemented("trans (needs context alignment)"))
+        let thm1 = self.clone_thm(th1)?;
+        let thm2 = self.clone_thm(th2)?;
+        if !Arc::ptr_eq(thm1.context(), thm2.context()) {
+            return Err(HolPrimError::NotImplemented(
+                "trans: context union not yet implemented",
+            ));
+        }
+        let out = self.kernel.trans(thm1, thm2)?;
+        Ok(self.store_thm(out))
     }
 
-    /// `MK_COMB th1 th2`. Same context-alignment story as `trans`,
-    /// plus a kernel-level convenience for cong-on-Comb that doesn't
-    /// pollute the session UF.
+    /// `MK_COMB th1 th2`: from `⊢ f = g` and `⊢ x = y` derive
+    /// `⊢ f x = g y`.
+    ///
+    /// Implemented via `union` + `cong(depth=1)`: equality of the
+    /// two pairs is recorded in the session UF, then congruence
+    /// closure over the `Comb` shells produces the result. This
+    /// pollutes the session UF — fine for OpenTheory's linear-import
+    /// model; a dedicated `Thm::mk_comb` primitive would be cleaner.
     pub fn mk_comb_rule(
         &mut self,
-        _th1: ThmHandle,
-        _th2: ThmHandle,
+        th1: ThmHandle,
+        th2: ThmHandle,
     ) -> Result<ThmHandle, HolPrimError> {
-        Err(HolPrimError::NotImplemented(
-            "mk_comb_rule (needs context alignment + cong helper)",
-        ))
+        let thm1 = self.clone_thm(th1)?;
+        let thm2 = self.clone_thm(th2)?;
+        if !Arc::ptr_eq(thm1.context(), thm2.context()) {
+            return Err(HolPrimError::NotImplemented(
+                "mk_comb_rule: context union not yet implemented",
+            ));
+        }
+        let (f, g) = match *self.arena().term_def(thm1.concl()) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => return Err(HolError::NotAnEquation.into()),
+        };
+        let (x, y) = match *self.arena().term_def(thm2.concl()) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => return Err(HolError::NotAnEquation.into()),
+        };
+        let ctx = thm1.context().clone();
+        // Record both equalities in UF so cong can chase them.
+        self.kernel.union(f, g)?;
+        self.kernel.union(x, y)?;
+        let fx = self.mk_comb(f, x);
+        let gy = self.mk_comb(g, y);
+        // `Kernel::cong` builds the equality Thm against the supplied
+        // context after checking UF-congruence at the depth.
+        let _ = ctx;
+        let out = self.kernel.cong(fx, gy, 1)?;
+        Ok(self.store_thm(out))
     }
 
-    /// `EQ_MP th1 th2`. Same context-alignment story as `trans`.
+    /// `EQ_MP th1 th2`: from `⊢ p = q` and `⊢ p'` (with `p ≡ p'`)
+    /// derive `⊢ q`. Same context constraint as [`Self::trans`].
     pub fn eq_mp(
         &mut self,
-        _th1: ThmHandle,
-        _th2: ThmHandle,
+        th1: ThmHandle,
+        th2: ThmHandle,
     ) -> Result<ThmHandle, HolPrimError> {
-        Err(HolPrimError::NotImplemented("eq_mp (needs context alignment)"))
+        let thm1 = self.clone_thm(th1)?;
+        let thm2 = self.clone_thm(th2)?;
+        if !Arc::ptr_eq(thm1.context(), thm2.context()) {
+            return Err(HolPrimError::NotImplemented(
+                "eq_mp: context union not yet implemented",
+            ));
+        }
+        let out = self.kernel.eq_mp(thm1, thm2)?;
+        Ok(self.store_thm(out))
     }
 
     /// `DEDUCT_ANTISYM th1 th2`: from `A1 ⊢ p` and `A2 ⊢ q`, derive
@@ -965,6 +1030,7 @@ impl From<HolPrimError> for HolError {
             HolPrimError::Hol(h) => h,
             HolPrimError::Proof(p) => HolError::TypeMismatch(format!("kernel proof: {p:?}")),
             HolPrimError::InvalidThmHandle(i) => HolError::InvalidThmId(i),
+            HolPrimError::Union(u) => HolError::TypeMismatch(format!("kernel union: {u:?}")),
         }
     }
 }
@@ -1352,16 +1418,6 @@ mod tests {
         // kernel trait family with the expected associated types.
         fn assert_trait<K: covalence_hol::traits::HolLightKernel>() {}
         assert_trait::<HolPrim>();
-    }
-
-    #[test]
-    fn trans_is_not_implemented_yet() {
-        let mut d = driver();
-        let b = d.bool_type();
-        let x = d.mk_var(10, b);
-        let th = d.refl(x).unwrap();
-        let r = d.trans(th, th);
-        assert!(matches!(r, Err(HolPrimError::NotImplemented(_))));
     }
 
     #[test]

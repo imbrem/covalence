@@ -759,7 +759,6 @@ thm\n";
     }
 
     #[test]
-    #[ignore = "needs mk_comb_rule"]
     fn test_app_thm() {
         let (mut kernel, mut names) = setup();
         let article = "\

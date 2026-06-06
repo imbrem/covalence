@@ -26,7 +26,7 @@
 use std::collections::BTreeMap;
 
 use crate::ast_doc::Doc;
-use crate::elab::{ElabContext, ElabPremise, Expr};
+use crate::elab::{BinOp, CmpOp, ElabContext, ElabPremise, Expr, OpType, UnOp};
 
 /// Type-checking environment, modelled on OCaml's `elab.ml::env`.
 ///
@@ -159,9 +159,174 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
             let t = Typ::Tup { ets: binds };
             (Expr::Tup { span, items: new_items }, t)
         }
+        Expr::Un { span, op, ty: _, e } => {
+            let (e, t_in) = infer_exp(env, *e);
+            let (op_ty, t_out) = infer_unop(&op, &t_in);
+            (
+                Expr::Un {
+                    span,
+                    op,
+                    ty: op_ty,
+                    e: Box::new(e),
+                },
+                t_out,
+            )
+        }
+        Expr::Bin { span, op, ty: _, e1, e2 } => {
+            let (e1, t1) = infer_exp(env, *e1);
+            let (e2, t2) = infer_exp(env, *e2);
+            let (op_ty, t_out) = infer_binop(&op, &t1, &t2);
+            (
+                Expr::Bin {
+                    span,
+                    op,
+                    ty: op_ty,
+                    e1: Box::new(e1),
+                    e2: Box::new(e2),
+                },
+                t_out,
+            )
+        }
+        Expr::Cmp { span, op, ty: _, e1, e2 } => {
+            let (e1, t1) = infer_exp(env, *e1);
+            let (e2, t2) = infer_exp(env, *e2);
+            let op_ty = infer_cmpop(&op, &t1, &t2);
+            (
+                Expr::Cmp {
+                    span,
+                    op,
+                    ty: op_ty,
+                    e1: Box::new(e1),
+                    e2: Box::new(e2),
+                },
+                Typ::Bool,
+            )
+        }
+        Expr::Iter { span, inner, kind, bindings } => {
+            let (inner, t_inner) = infer_exp(env, *inner);
+            let it = match &kind {
+                crate::elab::IterKind::Opt => spectec_ast::SpecTecIter::Opt,
+                crate::elab::IterKind::Star => spectec_ast::SpecTecIter::List,
+                crate::elab::IterKind::Plus => spectec_ast::SpecTecIter::List1,
+                crate::elab::IterKind::Length(_) => spectec_ast::SpecTecIter::List, // approx
+            };
+            let t = Typ::Iter {
+                t1: Box::new(t_inner),
+                it: vec![it],
+            };
+            (
+                Expr::Iter {
+                    span,
+                    inner: Box::new(inner),
+                    kind,
+                    bindings,
+                },
+                t,
+            )
+        }
+        Expr::Case { span, head, args } => {
+            // Recurse on args, but we don't yet look up the
+            // constructor's signature so the result type is unknown.
+            let new_args = args.into_iter().map(|a| infer_exp(env, a).0).collect();
+            (
+                Expr::Case {
+                    span,
+                    head,
+                    args: new_args,
+                },
+                unknown_typ(),
+            )
+        }
         // For the rest, pass through and report `unknown` for now.
         // Subsequent slices add real inference per variant.
         other => (other, unknown_typ()),
+    }
+}
+
+/// Pick the result type for a unary operator given its operand
+/// type. Mirrors OCaml's `infer_unop env op t1`.
+fn infer_unop(op: &UnOp, t_in: &Typ) -> (OpType, Typ) {
+    match op {
+        UnOp::Not => (OpType::Bool, Typ::Bool),
+        UnOp::Plus | UnOp::Minus | UnOp::PlusMinus | UnOp::MinusPlus => {
+            let op_ty = typ_to_optyp(t_in).unwrap_or(OpType::Nat);
+            (op_ty.clone(), optyp_to_typ(&op_ty))
+        }
+    }
+}
+
+/// Pick the operator + result type for a binary operator. Numeric
+/// operators promote to the wider operand type
+/// (`nat < int < rat < real`); logical operators are always `Bool`.
+fn infer_binop(op: &BinOp, t1: &Typ, t2: &Typ) -> (OpType, Typ) {
+    match op {
+        BinOp::And | BinOp::Or | BinOp::Impl | BinOp::Equiv => {
+            (OpType::Bool, Typ::Bool)
+        }
+        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod | BinOp::Pow => {
+            let op_ty = join_numeric(t1, t2);
+            let result = optyp_to_typ(&op_ty);
+            (op_ty, result)
+        }
+    }
+}
+
+/// Pick the operator type for a comparison. Result is always `Bool`
+/// — that's handled by the caller.
+fn infer_cmpop(op: &CmpOp, t1: &Typ, t2: &Typ) -> OpType {
+    match op {
+        // Equality / inequality work for any type pair; we report
+        // `Bool` (since the result is Bool) but OCaml records the
+        // operand type. Compromise: pick the operand type for `Eq`
+        // / `Ne` if it's a recognised optype, else `Bool`.
+        CmpOp::Eq | CmpOp::Ne => typ_to_optyp(t1).or_else(|| typ_to_optyp(t2)).unwrap_or(OpType::Bool),
+        CmpOp::Lt | CmpOp::Gt | CmpOp::Le | CmpOp::Ge => join_numeric(t1, t2),
+    }
+}
+
+/// Promote two numeric types to the wider one. If either side is
+/// unknown / non-numeric, fall back to the other side or `Nat`.
+fn join_numeric(t1: &Typ, t2: &Typ) -> OpType {
+    let a = typ_to_optyp(t1);
+    let b = typ_to_optyp(t2);
+    match (a, b) {
+        (Some(a), Some(b)) => widen(a, b),
+        (Some(a), None) | (None, Some(a)) => a,
+        (None, None) => OpType::Nat,
+    }
+}
+
+fn widen(a: OpType, b: OpType) -> OpType {
+    let rank = |t: &OpType| -> u8 {
+        match t {
+            OpType::Bool => 0,
+            OpType::Nat => 1,
+            OpType::Int => 2,
+            OpType::Rat => 3,
+            OpType::Real => 4,
+        }
+    };
+    if rank(&a) >= rank(&b) { a } else { b }
+}
+
+fn typ_to_optyp(t: &Typ) -> Option<OpType> {
+    match t {
+        Typ::Bool => Some(OpType::Bool),
+        Typ::Num(spectec_ast::SpecTecNumTyp::Nat) => Some(OpType::Nat),
+        Typ::Num(spectec_ast::SpecTecNumTyp::Int) => Some(OpType::Int),
+        Typ::Num(spectec_ast::SpecTecNumTyp::Rat) => Some(OpType::Rat),
+        Typ::Num(spectec_ast::SpecTecNumTyp::Real) => Some(OpType::Real),
+        _ => None,
+    }
+}
+
+fn optyp_to_typ(o: &OpType) -> Typ {
+    match o {
+        OpType::Bool => Typ::Bool,
+        OpType::Nat => Typ::Num(spectec_ast::SpecTecNumTyp::Nat),
+        OpType::Int => Typ::Num(spectec_ast::SpecTecNumTyp::Int),
+        OpType::Rat => Typ::Num(spectec_ast::SpecTecNumTyp::Rat),
+        OpType::Real => Typ::Num(spectec_ast::SpecTecNumTyp::Real),
     }
 }
 
@@ -363,6 +528,99 @@ mod tests {
             panic!("expected Tup");
         };
         assert_eq!(ets.len(), 2);
+    }
+
+    #[test]
+    fn infer_bin_promotes_to_widest_numeric() {
+        let env = TypeEnv::default();
+        let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
+        let nat = Expr::Num {
+            span,
+            value: crate::elab::NumLit::Nat(covalence_types::Nat::from(2u64)),
+        };
+        let int_expr = Expr::Num {
+            span,
+            value: crate::elab::NumLit::Int(covalence_types::Int::from(-1i64)),
+        };
+        let (e, t) = infer_exp(
+            &env,
+            Expr::Bin {
+                span,
+                op: BinOp::Add,
+                ty: OpType::Nat,
+                e1: Box::new(nat),
+                e2: Box::new(int_expr),
+            },
+        );
+        // Both operands typecheck; widening picks Int.
+        let Expr::Bin { ty, .. } = e else { panic!() };
+        assert!(matches!(ty, OpType::Int));
+        assert!(matches!(
+            t,
+            Typ::Num(spectec_ast::SpecTecNumTyp::Int)
+        ));
+    }
+
+    #[test]
+    fn infer_cmp_returns_bool() {
+        let env = TypeEnv::default();
+        let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
+        let lhs = Expr::Num {
+            span,
+            value: crate::elab::NumLit::Nat(covalence_types::Nat::from(1u64)),
+        };
+        let rhs = Expr::Num {
+            span,
+            value: crate::elab::NumLit::Nat(covalence_types::Nat::from(2u64)),
+        };
+        let (_, t) = infer_exp(
+            &env,
+            Expr::Cmp {
+                span,
+                op: CmpOp::Le,
+                ty: OpType::Nat,
+                e1: Box::new(lhs),
+                e2: Box::new(rhs),
+            },
+        );
+        assert!(matches!(t, Typ::Bool));
+    }
+
+    #[test]
+    fn infer_un_not_returns_bool() {
+        let env = TypeEnv::default();
+        let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
+        let (e, t) = infer_exp(
+            &env,
+            Expr::Un {
+                span,
+                op: UnOp::Not,
+                ty: OpType::Nat, // wrong, should be refined to Bool
+                e: Box::new(Expr::Bool { span, value: true }),
+            },
+        );
+        let Expr::Un { ty, .. } = e else { panic!() };
+        assert!(matches!(ty, OpType::Bool));
+        assert!(matches!(t, Typ::Bool));
+    }
+
+    #[test]
+    fn infer_logical_bin_is_bool() {
+        let env = TypeEnv::default();
+        let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
+        let (e, t) = infer_exp(
+            &env,
+            Expr::Bin {
+                span,
+                op: BinOp::And,
+                ty: OpType::Nat, // wrong, should be refined
+                e1: Box::new(Expr::Bool { span, value: true }),
+                e2: Box::new(Expr::Bool { span, value: false }),
+            },
+        );
+        let Expr::Bin { ty, .. } = e else { panic!() };
+        assert!(matches!(ty, OpType::Bool));
+        assert!(matches!(t, Typ::Bool));
     }
 
     #[test]

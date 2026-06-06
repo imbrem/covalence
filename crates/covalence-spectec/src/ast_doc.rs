@@ -182,15 +182,23 @@ pub fn build_doc(tops: &[Top], ctx: &ElabContext) -> Doc {
 
 /// Produce a `Vec<SpecTecDef>` from a `Doc`, with mutually-recursive
 /// groups wrapped in `SpecTecDef::Rec`.
+///
+/// Type-checks every expression along the way so operator-type
+/// annotations and (eventually) `Sub` coercions are populated.
 pub fn to_spectec_ast(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTecDef> {
-    let flat = to_spectec_ast_flat(doc, ctx);
+    let env = crate::typecheck::build_env(doc, ctx);
+    let flat = to_spectec_ast_flat(doc, ctx, &env);
     group_recursive(flat)
 }
 
 /// Flat version of [`to_spectec_ast`] — emits one `SpecTecDef` per
 /// source decl with no `Rec` wrapping. Useful for testing and as the
 /// input to [`group_recursive`].
-fn to_spectec_ast_flat(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTecDef> {
+fn to_spectec_ast_flat(
+    doc: &Doc,
+    ctx: &ElabContext,
+    env: &crate::typecheck::TypeEnv,
+) -> Vec<spectec_ast::SpecTecDef> {
     let mut out = Vec::new();
 
     // Typ entries from merged syntax. One Inst per profile-tagged
@@ -236,11 +244,29 @@ fn to_spectec_ast_flat(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTec
             .iter()
             .map(|rd| {
                 let elab = elab_rule_conclusion(rd, ctx).ok();
-                let (e, prs) = match elab.as_ref() {
-                    Some(elab) => (
-                        tup_of_operands(&elab.operands, ctx),
-                        elab.premises.iter().map(|p| premise_to_spectec(p, ctx)).collect(),
-                    ),
+                let (e, prs) = match elab {
+                    Some(elab) => {
+                        // Type-check operands + premises before
+                        // lowering — operator-type fields get
+                        // refined here.
+                        let typed_operands: Vec<Expr> = elab
+                            .operands
+                            .into_iter()
+                            .map(|o| crate::typecheck::check_exp(env, o))
+                            .collect();
+                        let typed_premises: Vec<ElabPremise> = elab
+                            .premises
+                            .into_iter()
+                            .map(|p| crate::typecheck::check_premise(env, p))
+                            .collect();
+                        (
+                            tup_of_operands(&typed_operands, ctx),
+                            typed_premises
+                                .iter()
+                                .map(|p| premise_to_spectec(p, ctx))
+                                .collect(),
+                        )
+                    }
                     None => (raw_sentinel(), Vec::new()),
                 };
                 spectec_ast::SpecTecRule::Rule {
@@ -283,16 +309,17 @@ fn to_spectec_ast_flat(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTec
                     .arg_pats
                     .iter()
                     .map(|pat_tr| spectec_ast::SpecTecArg::Exp {
-                        e: token_run_to_expr(pat_tr, ctx),
+                        e: token_run_to_expr_typed(pat_tr, ctx, env),
                     })
                     .collect();
-                let e = token_run_to_expr(&c.rhs, ctx);
+                let e = token_run_to_expr_typed(&c.rhs, ctx, env);
                 let prs = c
                     .premises
                     .iter()
                     .map(|pr_tr| {
                         let elabp = crate::elab::elab_premise(pr_tr, ctx)
                             .unwrap_or_else(|_| ElabPremise::Raw(pr_tr.clone()));
+                        let elabp = crate::typecheck::check_premise(env, elabp);
                         premise_to_spectec(&elabp, ctx)
                     })
                     .collect();
@@ -345,6 +372,24 @@ fn token_run_to_expr(
     }
     match crate::elab::classify_token_run(tr, ctx) {
         Some(expr) => expr_to_spectec(&expr, ctx),
+        None => raw_sentinel(),
+    }
+}
+
+/// Type-checked variant: classify, then type-check before lowering.
+fn token_run_to_expr_typed(
+    tr: &crate::cst::TokenRun,
+    ctx: &ElabContext,
+    env: &crate::typecheck::TypeEnv,
+) -> spectec_ast::SpecTecExp {
+    if tr.tokens.is_empty() {
+        return raw_sentinel();
+    }
+    match crate::elab::classify_token_run(tr, ctx) {
+        Some(expr) => {
+            let expr = crate::typecheck::check_exp(env, expr);
+            expr_to_spectec(&expr, ctx)
+        }
         None => raw_sentinel(),
     }
 }

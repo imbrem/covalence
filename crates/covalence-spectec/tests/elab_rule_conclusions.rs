@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use covalence_spectec::{
     cst::Top,
-    elab::{build_table, elab_rule_conclusion, ElabPremise, ElabRuleConclusion, Expr},
+    elab::{build_table, elab_rule_conclusion, ElabPremise, Expr},
     lex::lex,
     parse::parse,
     source::SourceMap,
@@ -73,7 +73,6 @@ fn elab_all_rule_conclusions_in_wasm_3_0() {
                         total_premises += 1;
                         *premise_kind.entry(premise_kind_name(p)).or_insert(0) += 1;
                     }
-                    let _: &ElabRuleConclusion = &elab;
                 }
                 Err(d) => {
                     let key = error_prefix(&d.message);
@@ -143,10 +142,9 @@ fn expr_kind(e: Option<&Expr>) -> &'static str {
 
 fn error_prefix(msg: &str) -> String {
     // Group "rule X foo" type messages by stripping the rule name.
-    if let Some(rest) = msg.strip_prefix("rule `") {
-        if let Some(end) = rest.find("` ") {
+    if let Some(rest) = msg.strip_prefix("rule `")
+        && let Some(end) = rest.find("` ") {
             return format!("rule `…`{}", &rest[end + 1..]);
         }
-    }
     msg.chars().take(80).collect()
 }

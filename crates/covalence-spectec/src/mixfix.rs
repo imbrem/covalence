@@ -231,8 +231,7 @@ where
         };
 
     // Step 2: Pratt loop for left-extending ops.
-    loop {
-        let Some(next) = input.first() else { break };
+    while let Some(next) = input.first() {
         let Some(op) = table.find_left_extending(&next.token, min_prec) else {
             break;
         };

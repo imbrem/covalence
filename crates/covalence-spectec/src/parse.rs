@@ -38,7 +38,7 @@ pub fn parse(file: FileId, tokens: Vec<Spanned>) -> Result<Vec<Top>, Diagnostic>
 // ---------- core helpers ----------
 
 /// Look at the next token without consuming.
-fn peek<'a>(input: &'a [Spanned]) -> Option<&'a Spanned> {
+fn peek(input: &[Spanned]) -> Option<&Spanned> {
     input.first()
 }
 
@@ -48,7 +48,7 @@ fn eof_diag(file: FileId, msg: impl Into<String>) -> Diagnostic {
 }
 
 /// Consume the next token if it equals `expected`. Returns its span.
-fn eat<'a>(input: &mut &'a [Spanned], expected: &Token) -> Option<Span> {
+fn eat(input: &mut &[Spanned], expected: &Token) -> Option<Span> {
     match input.first() {
         Some(s) if &s.token == expected => {
             let span = s.span;
@@ -60,8 +60,8 @@ fn eat<'a>(input: &mut &'a [Spanned], expected: &Token) -> Option<Span> {
 }
 
 /// Consume the next token if it equals `expected`, otherwise diagnose.
-fn expect<'a>(
-    input: &mut &'a [Spanned],
+fn expect(
+    input: &mut &[Spanned],
     file: FileId,
     expected: &Token,
 ) -> Result<Span, Diagnostic> {
@@ -90,8 +90,8 @@ fn expect<'a>(
 /// chapter). A leading backtick also escapes a reserved word into a name
 /// (e.g. `` syntax `syntax = () ``). Accept any token whose textual
 /// representation works as an identifier.
-fn parse_ident_or_keyword<'a>(
-    input: &mut &'a [Spanned],
+fn parse_ident_or_keyword(
+    input: &mut &[Spanned],
     file: FileId,
 ) -> Result<Ident, Diagnostic> {
     // Backtick escape: `` ` `` followed by an identifier, a keyword, or
@@ -148,8 +148,8 @@ fn parse_ident_or_keyword<'a>(
 /// Consume a profile label after `syntax NAME/`. SpecTec profiles are
 /// usually identifiers (`syn`, `sem`) but can also be numbers
 /// (`symsplit/1`, `symsplit/2`).
-fn parse_profile_label<'a>(
-    input: &mut &'a [Spanned],
+fn parse_profile_label(
+    input: &mut &[Spanned],
     file: FileId,
 ) -> Result<Ident, Diagnostic> {
     match input.first() {
@@ -307,8 +307,8 @@ fn parse_rule(file: FileId, input: &mut &[Spanned]) -> Result<RuleDecl, Diagnost
 /// by `-`, `/`, or `.` (so cases like `eq-any`, `ref.struct`, `i32.add`,
 /// `Foo/bar`, and `Heaptype_sub/def` all parse — keywords like `def`,
 /// `var`, `if` are accepted as path segments). Stops at any other token.
-fn parse_case_path<'a>(
-    input: &mut &'a [Spanned],
+fn parse_case_path(
+    input: &mut &[Spanned],
     file: FileId,
 ) -> Result<Ident, Diagnostic> {
     let mut text = String::new();
@@ -834,8 +834,8 @@ fn parse_def(file: FileId, input: &mut &[Spanned]) -> Result<Top, Diagnostic> {
         Some(Spanned { token: Token::Hint, .. }) | None => {
             let hints = parse_hints(input)?;
             // Sanity: we should now be at EOF or a top-level keyword.
-            if let Some(s) = peek(input) {
-                if !is_top_level_keyword(&s.token) {
+            if let Some(s) = peek(input)
+                && !is_top_level_keyword(&s.token) {
                     return Err(Diagnostic::error(
                         s.span,
                         format!(
@@ -844,7 +844,6 @@ fn parse_def(file: FileId, input: &mut &[Spanned]) -> Result<Top, Diagnostic> {
                         ),
                     ));
                 }
-            }
             let mut span = kw_span.join(name.span);
             for a in &args {
                 span = span.join(a.span);

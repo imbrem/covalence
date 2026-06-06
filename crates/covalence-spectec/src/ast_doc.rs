@@ -84,17 +84,15 @@ pub fn build_doc(tops: &[Top], ctx: &ElabContext) -> Doc {
     // first occurrence determines the displayed span.
     let mut seen_syntax = std::collections::HashSet::new();
     for t in tops {
-        if let Top::Syntax(s) = t {
-            if seen_syntax.insert(s.name.text.clone()) {
-                if let Some(merged) = ctx.syntax_defs.get(&s.name.text) {
+        if let Top::Syntax(s) = t
+            && seen_syntax.insert(s.name.text.clone())
+                && let Some(merged) = ctx.syntax_defs.get(&s.name.text) {
                     doc.syntax.push(DocSyntax {
                         span: s.span,
                         name: s.name.text.clone(),
                         merged: merged.clone(),
                     });
                 }
-            }
-        }
     }
 
     // Vars, grammars, etc.
@@ -129,11 +127,10 @@ pub fn build_doc(tops: &[Top], ctx: &ElabContext) -> Doc {
         }
     }
     for t in tops {
-        if let Top::Rule(r) = t {
-            if let Some(&idx) = rel_idx.get(&r.name.text) {
+        if let Top::Rule(r) = t
+            && let Some(&idx) = rel_idx.get(&r.name.text) {
                 doc.relations[idx].rules.push(r.clone());
             }
-        }
     }
 
     // Defs: bucket clauses by name.
@@ -155,56 +152,20 @@ pub fn build_doc(tops: &[Top], ctx: &ElabContext) -> Doc {
         }
     }
     for t in tops {
-        if let Top::DefClause(c) = t {
-            if let Some(&idx) = def_idx.get(&c.name.text) {
+        if let Top::DefClause(c) = t
+            && let Some(&idx) = def_idx.get(&c.name.text) {
                 doc.defs[idx].clauses.push(c.clone());
             }
-        }
     }
 
     doc
 }
 
-/// MixOp template string in the spectec_ast format: `%`-delimited
-/// fragments joined into a single string (`%|-%<:%` for `_ |- _ <: _`).
-///
-/// This is what `spectec_ast::MixOp::Decode` consumes — splitting on
-/// `%` yields the per-segment string-fragments list.
-pub fn template_to_mixop_string(toks: &[crate::token::Spanned]) -> String {
-    // Walk the relation template, emitting `%` for type-name idents +
-    // their type suffixes, and the literal text for other tokens.
-    // This is a simpler companion to `elab::template_to_fragments` —
-    // here we don't need type-name awareness since we just join.
-    let mut out = String::new();
-    let mut last_was_hole = false;
-    for t in toks {
-        match &t.token {
-            crate::token::Token::Ident(_)
-            | crate::token::Token::Nat(_)
-            | crate::token::Token::Text(_) => {
-                // Conservative: assume it's a hole-naming ident (relation
-                // template); the real decision belongs in elab. For
-                // converter purposes we use the fragments produced by
-                // build_table; this function is convenience.
-                if !last_was_hole {
-                    out.push('%');
-                    last_was_hole = true;
-                }
-            }
-            other => {
-                out.push_str(other.describe().trim_matches('`'));
-                last_was_hole = false;
-            }
-        }
-    }
-    out
-}
-
-/// Produce a sketch `Vec<SpecTecDef>` from a `Doc`. The MixOp templates
-/// are filled in from `ctx.op_table` (where available), but the operand
-/// bodies, parameter lists, premise/clause contents, and SCC mutual
-/// recursion grouping are placeholders. Full content lowering is
-/// follow-up work; this skeleton lets the corpus diff start running.
+/// Produce a `Vec<SpecTecDef>` from a `Doc`. The MixOp templates are
+/// filled in from `ctx.op_table` (where available), but operand bodies,
+/// parameter lists, premise/clause contents, and SCC mutual-recursion
+/// grouping are placeholders. Full content lowering is follow-up work;
+/// this lets the corpus diff start running.
 pub fn to_spectec_ast(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTecDef> {
     let mut out = Vec::new();
 
@@ -215,7 +176,6 @@ pub fn to_spectec_ast(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTecD
             ps: Vec::new(),
             insts: Vec::new(),
         });
-        let _ = syn.merged.profiles.len(); // placeholder use
     }
 
     // Rel entries from relations.

@@ -139,10 +139,13 @@ struct KindCoverage {
     both: usize,
 }
 
+type KindPairs = Vec<(String, String)>;
+type MixOpMap = BTreeMap<String, Vec<String>>;
+
 /// Walk `defs` and produce `(kind, name)` pairs plus a map of
 /// `rel-name -> mixop fragments` for later comparison. Does NOT recurse
 /// into `Rec` groups (our converter doesn't emit them yet).
-fn summarise(defs: &[SpecTecDef]) -> (Vec<(String, String)>, BTreeMap<String, Vec<String>>) {
+fn summarise(defs: &[SpecTecDef]) -> (KindPairs, MixOpMap) {
     let mut pairs = Vec::new();
     let mut mixops = BTreeMap::new();
     for d in defs {
@@ -162,16 +165,10 @@ fn summarise(defs: &[SpecTecDef]) -> (Vec<(String, String)>, BTreeMap<String, Ve
 
 /// Like `summarise` but DOES recurse into `Rec` groups (OCaml dump uses
 /// them heavily; our skeleton doesn't yet emit them).
-fn summarise_with_rec(
-    defs: &[SpecTecDef],
-) -> (Vec<(String, String)>, BTreeMap<String, Vec<String>>) {
+fn summarise_with_rec(defs: &[SpecTecDef]) -> (KindPairs, MixOpMap) {
     let mut pairs = Vec::new();
     let mut mixops = BTreeMap::new();
-    fn walk(
-        d: &SpecTecDef,
-        pairs: &mut Vec<(String, String)>,
-        mixops: &mut BTreeMap<String, Vec<String>>,
-    ) {
+    fn walk(d: &SpecTecDef, pairs: &mut KindPairs, mixops: &mut MixOpMap) {
         match d {
             SpecTecDef::Typ { x, .. } => pairs.push(("Typ".into(), x.clone())),
             SpecTecDef::Rel { x, op, .. } => {

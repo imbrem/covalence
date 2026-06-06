@@ -1106,8 +1106,8 @@ fn classify_simple_expression(
     // didn't structure. Wrap as `Case` with a single `Raw` arg holding
     // the remainder. Better than a top-level `Raw` because downstream
     // consumers at least know the constructor name.
-    if let Some(Spanned { token: Token::Ident(head), .. }) = toks.first() {
-        if is_case_head(head) {
+    if let Some(Spanned { token: Token::Ident(head), .. }) = toks.first()
+        && is_case_head(head) {
             let head_name = head.clone();
             let args_slice = &toks[1..];
             let arg_span = args_slice
@@ -1125,7 +1125,6 @@ fn classify_simple_expression(
                 args,
             });
         }
-    }
 
     Ok(Expr::Raw(TokenRun {
         span,
@@ -2080,24 +2079,13 @@ mod tests {
             syntax context = nat
             syntax t = nat
             relation Sub: context |- t <: t
-            rule R:
-              C |- a <: b
-              -- if t*
-              -- (Sub: C |- t <: b)*
-        "#;
-        // Define a third relation so the rule fits.
-        let src2 = r#"
-            syntax context = nat
-            syntax t = nat
-            relation Sub: context |- t <: t
             relation R: context |- t <: t
             rule R:
               C |- a <: b
               -- if t*
               -- (Sub: C |- t <: b)*
         "#;
-        let _ = src;
-        let elab = elab_first_rule(src2);
+        let elab = elab_first_rule(src);
         // Last premise is an Iter; should have a binding for `t`
         // because `t*` appears earlier in the rule.
         let iter_prem = elab

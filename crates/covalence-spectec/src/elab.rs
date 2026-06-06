@@ -91,6 +91,9 @@ pub struct MergedProfile {
     /// `...` placeholders are kept as `AltSlot::Placeholder` so the
     /// final merge can splice other profiles' alternatives in.
     pub slots: Vec<AltSlot>,
+    /// The body this declaration carried, kept verbatim for downstream
+    /// `Typ.insts` lowering. `None` for forward declarations.
+    pub body: Option<SyntaxBody>,
 }
 
 #[derive(Debug, Clone)]
@@ -267,6 +270,7 @@ fn add_syntax_to_merge(
     entry.profiles.push(MergedProfile {
         profile: s.profile.as_ref().map(|p| p.text.clone()),
         slots,
+        body: s.body.clone(),
     });
 }
 

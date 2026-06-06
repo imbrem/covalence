@@ -136,6 +136,15 @@ fn diff_against_wasm_spec_ast() {
         "  Rule conclusions: {our_real_concl} non-sentinel of {total_rule_pairs} paired rules"
     );
 
+    // Typ inst coverage: how many of our Typ decls have at least one
+    // non-empty `insts` list (one per profile-tagged declaration)?
+    let our_typ_with_insts = ours
+        .iter()
+        .filter(|d| matches!(d, SpecTecDef::Typ { insts, .. } if !insts.is_empty()))
+        .count();
+    let total_typ = ours.iter().filter(|d| matches!(d, SpecTecDef::Typ { .. })).count();
+    eprintln!("  Typ insts non-empty: {our_typ_with_insts} / {total_typ} of our Typ entries");
+
     // Acceptance: the names align. (Bodies don't match yet — that's
     // the deferred lowering work surfaced by this test.) We require
     // each kind to have >= 80% name overlap with the OCaml output.

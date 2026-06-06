@@ -15,10 +15,11 @@
 //! Phase 2g exercises the converter end-to-end on the wasm-3.0 corpus
 //! and reports the coverage gap.
 
-use crate::cst::{GrammarDecl, RelationDecl, RuleDecl, Top, VarDecl};
+use crate::cst::{GrammarDecl, RelationDecl, RuleDecl, SyntaxBody, Top, VarDecl, Alt, RecordField};
 use crate::elab::{
-    elab_rule_conclusion, BinOp, CmpOp, ElabContext, ElabPremise, Expr, IterBinding,
-    IterKind, MergedSyntax, NumLit, NumTyp, OpType, Path as ElabPath, UnOp,
+    alt_to_constructor, elab_rule_conclusion, BinOp, CmpOp, ElabContext, ElabPremise, Expr,
+    IterBinding, IterKind, MergedProfile, MergedSyntax, NumLit, NumTyp, OpType,
+    Path as ElabPath, UnOp,
 };
 use crate::source::Span;
 
@@ -172,12 +173,20 @@ pub fn build_doc(tops: &[Top], ctx: &ElabContext) -> Doc {
 pub fn to_spectec_ast(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTecDef> {
     let mut out = Vec::new();
 
-    // Typ entries from merged syntax.
+    // Typ entries from merged syntax. One Inst per profile-tagged
+    // declaration; each Inst's DefTyp body is lowered from the
+    // syntax body (alias / variant / record).
     for syn in &doc.syntax {
+        let insts: Vec<spectec_ast::SpecTecInst> = syn
+            .merged
+            .profiles
+            .iter()
+            .filter_map(|prof| inst_for_profile(syn, prof, ctx))
+            .collect();
         out.push(spectec_ast::SpecTecDef::Typ {
             x: syn.name.clone(),
             ps: Vec::new(),
-            insts: Vec::new(),
+            insts,
         });
     }
 
@@ -628,6 +637,204 @@ fn path_to_spectec(p: &ElabPath, ctx: &ElabContext) -> spectec_ast::SpecTecPath 
             p1: Box::new(path_to_spectec(p, ctx)),
             at: mixop_from_name(field),
         },
+    }
+}
+
+// ---------- SyntaxBody → SpecTecInst ----------
+
+/// Build one `SpecTecInst` for a profile of a merged syntax decl.
+/// Returns `None` for forward declarations (no body).
+fn inst_for_profile(
+    syn: &DocSyntax,
+    prof: &MergedProfile,
+    ctx: &ElabContext,
+) -> Option<spectec_ast::SpecTecInst> {
+    let dt = match prof.body.as_ref()? {
+        SyntaxBody::Alias(tr) => spectec_ast::SpecTecDefTyp::Alias {
+            typ: typ_expr_to_spectec(&tr.tokens, ctx),
+        },
+        SyntaxBody::Variant(_) => {
+            // Use the merged alts for this profile (splices `...` from
+            // sibling profiles in).
+            let alts = syn.merged.alts_for_profile(prof.profile.as_deref());
+            spectec_ast::SpecTecDefTyp::Variant {
+                tcs: alts.iter().map(|a| alt_to_typcase(a, ctx)).collect(),
+            }
+        }
+        SyntaxBody::Record(fields) => spectec_ast::SpecTecDefTyp::Struct {
+            tfs: fields.iter().map(|f| record_field_to_typfield(f, ctx)).collect(),
+        },
+    };
+    Some(spectec_ast::SpecTecInst::Inst {
+        ps: Vec::new(),
+        as_: Vec::new(),
+        dt,
+    })
+}
+
+/// Convert a variant alternative to a `SpecTecTypCase`. The case's
+/// MixOp is constructed from the alt's tokens via the same logic that
+/// builds constructor ops in `elab::alt_to_constructor`; the case's
+/// operand-tuple type is a placeholder for now (full elaboration of
+/// arg-type expressions in alternatives is later work).
+fn alt_to_typcase(alt: &Alt, ctx: &ElabContext) -> spectec_ast::SpecTecTypCase {
+    let op = match alt_to_constructor(alt, &ctx.type_names) {
+        Some((_name, frags)) => mixop_from_fragments(&frags),
+        None => mixop_from_alt_tokens(alt),
+    };
+    spectec_ast::SpecTecTypCase::Field {
+        op,
+        t: typ_expr_to_spectec_args(alt, ctx),
+        qs: Vec::new(),
+        prs: Vec::new(),
+    }
+}
+
+fn record_field_to_typfield(
+    f: &RecordField,
+    ctx: &ElabContext,
+) -> spectec_ast::SpecTecTypField {
+    spectec_ast::SpecTecTypField::Field {
+        at: mixop_from_name(&f.name.text),
+        t: typ_expr_to_spectec(&f.ty.tokens, ctx),
+        qs: Vec::new(),
+        prs: Vec::new(),
+    }
+}
+
+/// Build a MixOp from the alt's raw tokens by joining text with `%`
+/// holes wherever a declared type name (or `(`) appears. Fallback used
+/// when `alt_to_constructor` returns `None` (non-case-head alts).
+fn mixop_from_alt_tokens(alt: &Alt) -> spectec_ast::MixOp {
+    let mut s = String::new();
+    for t in &alt.body.tokens {
+        match &t.token {
+            crate::token::Token::Ident(n) => {
+                if is_uppercase_like(n) {
+                    s.push_str(n);
+                } else {
+                    s.push('%');
+                }
+            }
+            crate::token::Token::LParen => s.push('%'),
+            other => s.push_str(other.describe().trim_matches('`')),
+        }
+    }
+    spectec_ast::MixOp::new(s.split('%').map(str::to_owned).collect())
+}
+
+fn is_uppercase_like(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .next()
+            .map(|b| b.is_ascii_uppercase() || b == b'_')
+            .unwrap_or(false)
+}
+
+fn mixop_from_fragments(frags: &[crate::mixfix::Fragment]) -> spectec_ast::MixOp {
+    let mut s = String::new();
+    for f in frags {
+        match f {
+            crate::mixfix::Fragment::Hole(_) => s.push('%'),
+            crate::mixfix::Fragment::Lit(t) => {
+                use crate::token::Token::*;
+                let text = match t {
+                    Ident(n) => n.clone(),
+                    Nat(n) => n.to_string(),
+                    other => other.describe().trim_matches('`').to_string(),
+                };
+                s.push_str(&text);
+            }
+        }
+    }
+    spectec_ast::MixOp::new(s.split('%').map(str::to_owned).collect())
+}
+
+/// Lower a raw token run as a type expression. This is a sketch — it
+/// recognises a few cases and falls back to `SpecTecTyp::Bool` for the
+/// rest.
+fn typ_expr_to_spectec(
+    toks: &[crate::token::Spanned],
+    ctx: &ElabContext,
+) -> spectec_ast::SpecTecTyp {
+    use crate::token::Token::*;
+    use spectec_ast::SpecTecTyp as T;
+    // Singleton type-name ident.
+    if toks.len() == 1 {
+        if let Ident(n) = &toks[0].token {
+            return match n.as_str() {
+                "nat" => T::Num(spectec_ast::SpecTecNumTyp::Nat),
+                "int" => T::Num(spectec_ast::SpecTecNumTyp::Int),
+                "rat" => T::Num(spectec_ast::SpecTecNumTyp::Rat),
+                "real" => T::Num(spectec_ast::SpecTecNumTyp::Real),
+                "bool" => T::Bool,
+                "text" => T::Text,
+                _ if ctx.type_names.contains(n) => T::Var {
+                    x: n.clone(),
+                    as1: Vec::new(),
+                },
+                _ => T::Bool,
+            };
+        }
+    }
+    // Trailing `*`/`?`/`+` iter suffix.
+    if toks.len() >= 2 {
+        let last = &toks.last().unwrap().token;
+        let it = match last {
+            Star => Some(spectec_ast::SpecTecIter::List),
+            Question => Some(spectec_ast::SpecTecIter::Opt),
+            Plus => Some(spectec_ast::SpecTecIter::List1),
+            _ => None,
+        };
+        if let Some(it) = it {
+            let inner_toks = &toks[..toks.len() - 1];
+            return T::Iter {
+                t1: Box::new(typ_expr_to_spectec(inner_toks, ctx)),
+                it: vec![it],
+            };
+        }
+    }
+    // Fallback.
+    T::Bool
+}
+
+/// Lower the type of a variant alternative's arguments. Returns the
+/// single arg type or a `Tup` of multiple arg types.
+fn typ_expr_to_spectec_args(alt: &Alt, ctx: &ElabContext) -> spectec_ast::SpecTecTyp {
+    // Skip the leading constructor head and gather the rest as one or
+    // more arg-type expressions. We split the rest on whitespace —
+    // approximated here as token-by-token, taking each type name + its
+    // suffix as one arg.
+    let toks = &alt.body.tokens;
+    if toks.len() <= 1 {
+        return spectec_ast::SpecTecTyp::Tup { ets: Vec::new() };
+    }
+    let rest = &toks[1..];
+    // Use the same fragment extractor as `alt_to_constructor` to split
+    // into argument positions.
+    let frags = match alt_to_constructor(alt, &ctx.type_names) {
+        Some((_, frags)) => frags,
+        None => return spectec_ast::SpecTecTyp::Bool,
+    };
+    let _ = rest;
+    let arg_tys: Vec<spectec_ast::SpecTecTypBind> = frags
+        .iter()
+        .filter_map(|f| match f {
+            crate::mixfix::Fragment::Hole(_) => Some(spectec_ast::SpecTecTypBind::Bind {
+                id: "_".to_string(),
+                typ: spectec_ast::SpecTecTyp::Bool,
+            }),
+            _ => None,
+        })
+        .collect();
+    if arg_tys.is_empty() {
+        spectec_ast::SpecTecTyp::Tup { ets: Vec::new() }
+    } else if arg_tys.len() == 1 {
+        let spectec_ast::SpecTecTypBind::Bind { typ, .. } = arg_tys.into_iter().next().unwrap();
+        typ
+    } else {
+        spectec_ast::SpecTecTyp::Tup { ets: arg_tys }
     }
 }
 

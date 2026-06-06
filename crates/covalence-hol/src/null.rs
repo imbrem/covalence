@@ -144,7 +144,7 @@ impl HolLightTerms for NullKernel {
         }
     }
 
-    fn dest_abs(&self, tm: TermId) -> Option<(TermId, TermId)> {
+    fn dest_abs(&mut self, tm: TermId) -> Option<(TermId, TermId)> {
         match self.arena.get_term(tm) {
             TermDef::Abs(v, b) => Some((v, b)),
             _ => None,
@@ -167,7 +167,7 @@ impl HolLightTerms for NullKernel {
         arena::aconv(&self.arena, a, b)
     }
 
-    fn frees(&self, tm: TermId) -> Vec<TermId> {
+    fn frees(&mut self, tm: TermId) -> Vec<TermId> {
         arena::frees(&self.arena, tm)
     }
 

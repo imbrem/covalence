@@ -196,14 +196,23 @@ impl HolPrim {
         s
     }
 
-    /// Kernel `StrId` → HOL `NameId`. Strings not previously seen
-    /// get a synthetic `NameId` assigned. Used by `dest_*` paths so
-    /// every kernel-side string round-trips to a HOL name.
-    fn name_of(&mut self, s: StrId) -> NameId {
-        if let Some(&n) = self.str_to_name.get(&s) {
+    /// Kernel `StrId` → HOL `NameId`. Pure read; returns `None` if
+    /// the string wasn't previously registered via [`Self::str_of`]
+    /// or [`Self::bind_name`]. All names produced by `mk_*` methods
+    /// are registered, so this is total for terms/types built
+    /// through `HolPrim`.
+    fn name_of(&self, s: StrId) -> Option<NameId> {
+        self.str_to_name.get(&s).copied()
+    }
+
+    /// Like [`Self::name_of`] but mints a synthetic `NameId` on
+    /// miss. Used by paths that legitimately need to bind a fresh
+    /// name (e.g. opening a binder in `dest_abs`).
+    #[allow(dead_code)]
+    fn bind_name(&mut self, s: StrId) -> NameId {
+        if let Some(n) = self.name_of(s) {
             return n;
         }
-        // Mint a new synthetic NameId.
         let mut n = self.next_synthetic_name;
         while self.name_to_str.contains_key(&n) {
             n = n.wrapping_add(1);
@@ -282,15 +291,17 @@ impl HolPrim {
     }
 
     /// If `ty` is a type variable, return its HOL `NameId`.
-    pub fn dest_tyvar(&mut self, ty: TypeRef) -> Option<NameId> {
+    /// Returns `None` if the variable was built outside of this
+    /// `HolPrim`'s registered names.
+    pub fn dest_tyvar(&self, ty: TypeRef) -> Option<NameId> {
         match self.arena().type_ref_kind(ty)? {
-            TypeKind::TVar(s) => Some(self.name_of(s)),
+            TypeKind::TVar(s) => self.name_of(s),
             _ => None,
         }
     }
 
     /// If `ty` is a type application, return `(constructor, args)`.
-    pub fn dest_tyapp(&mut self, ty: TypeRef) -> Option<(NameId, Vec<TypeRef>)> {
+    pub fn dest_tyapp(&self, ty: TypeRef) -> Option<(NameId, Vec<TypeRef>)> {
         match self.arena().type_ref_kind(ty)? {
             TypeKind::Builtin(covalence_kernel::ty::BuiltinTy::Bool) => {
                 Some((self.bool_id, Vec::new()))
@@ -298,7 +309,7 @@ impl HolPrim {
             TypeKind::Fun(a, b) => Some((self.fun_id, vec![a, b])),
             TypeKind::Tyapp(s, args_id) => {
                 let args = self.arena().tyargs(args_id).to_vec();
-                let name = self.name_of(s);
+                let name = self.name_of(s)?;
                 Some((name, args))
             }
             _ => None,
@@ -314,11 +325,13 @@ impl HolPrim {
     }
 
     /// All free type variables of `ty` (deduplicated, in first-seen
-    /// order).
-    pub fn tyvars(&mut self, ty: TypeRef) -> Vec<NameId> {
+    /// order). Names not registered in this `HolPrim` (e.g. introduced
+    /// by raw kernel allocation) are skipped silently — by contract
+    /// every type built via `HolPrim` has its variables registered.
+    pub fn tyvars(&self, ty: TypeRef) -> Vec<NameId> {
         let mut acc: Vec<StrId> = Vec::new();
         Self::tyvars_into(self.arena(), ty, &mut acc);
-        acc.into_iter().map(|s| self.name_of(s)).collect()
+        acc.into_iter().filter_map(|s| self.name_of(s)).collect()
     }
 
     fn tyvars_into(arena: &Arena, ty: TypeRef, acc: &mut Vec<StrId>) {
@@ -417,19 +430,19 @@ impl HolPrim {
     }
 
     /// If `tm` is a `Free` variable, return `(name, type)`.
-    pub fn dest_var(&mut self, tm: TermRef) -> Option<(NameId, TypeRef)> {
+    pub fn dest_var(&self, tm: TermRef) -> Option<(NameId, TypeRef)> {
         let id = tm.as_local()?;
         match *self.arena().term_def(id) {
-            TermDef::Free(s, ty) => Some((self.name_of(s), ty)),
+            TermDef::Free(s, ty) => Some((self.name_of(s)?, ty)),
             _ => None,
         }
     }
 
     /// If `tm` is a `Const` term, return `(name, type)`.
-    pub fn dest_const(&mut self, tm: TermRef) -> Option<(NameId, TypeRef)> {
+    pub fn dest_const(&self, tm: TermRef) -> Option<(NameId, TypeRef)> {
         let id = tm.as_local()?;
         match *self.arena().term_def(id) {
-            TermDef::Const(s, ty) => Some((self.name_of(s), ty)),
+            TermDef::Const(s, ty) => Some((self.name_of(s)?, ty)),
             _ => None,
         }
     }
@@ -452,22 +465,19 @@ impl HolPrim {
     /// HOL `NameId` per call so downstream code (e.g. OpenTheory
     /// `var` lookups) still gets a Var it can pattern-match. Alpha-
     /// equivalence isn't affected.
-    pub fn dest_abs(&mut self, tm: TermRef) -> Result<Option<(TermRef, TermRef)>, HolPrimError> {
-        let Some(id) = tm.as_local() else {
-            return Ok(None);
-        };
+    pub fn dest_abs(&mut self, tm: TermRef) -> Option<(TermRef, TermRef)> {
+        let id = tm.as_local()?;
         let (ty, body) = match *self.arena().term_def(id) {
             TermDef::Lam(ty, body) => (ty, body),
-            _ => return Ok(None),
+            _ => return None,
         };
         // Mint a fresh free variable of the right type to fill the
         // outermost binder.
         let synth = self.next_synthetic_name;
         self.next_synthetic_name = synth.wrapping_add(1);
         let var = self.mk_var(synth, ty);
-        let var_ref = TermRef::local(var.as_local().expect("just allocated"));
-        let opened = self.arena_mut().subst(body, 0, var_ref);
-        Ok(Some((var, opened)))
+        let opened = self.arena_mut().subst(body, 0, var);
+        Some((var, opened))
     }
 
     /// If `tm` is `Eq(lhs, rhs)`, return `(lhs, rhs)`.
@@ -835,6 +845,298 @@ const _: Option<TyArgsId> = None;
 #[allow(dead_code)]
 const _UNUSED_TID: Option<TypeId> = None;
 
+// =================================================================
+// HolLightKernel trait implementation
+// =================================================================
+//
+// Forwards each trait method to the matching `HolPrim` method.
+// HolPrim methods that return `Result<_, HolPrimError>` are funneled
+// into `HolError::Unsupported(_)` for the trait's `Result<_, HolError>`
+// surface. For the handful of *infallible* trait methods that hit a
+// not-yet-implemented `HolPrim` path (e.g. `type_inst`, `inst_term`),
+// we panic with the missing-op label so test failures point at the
+// gap instead of silently producing an ill-typed term.
+
+impl From<HolPrimError> for HolError {
+    fn from(e: HolPrimError) -> Self {
+        match e {
+            HolPrimError::NotImplemented(op) => HolError::Unsupported(op.into()),
+            HolPrimError::Hol(h) => h,
+            HolPrimError::Proof(p) => HolError::TypeMismatch(format!("kernel proof: {p:?}")),
+            HolPrimError::InvalidThmHandle(i) => HolError::InvalidThmId(i),
+        }
+    }
+}
+
+fn expect<T>(r: Result<T, HolPrimError>) -> T {
+    match r {
+        Ok(v) => v,
+        Err(HolPrimError::NotImplemented(op)) => panic!("HolPrim trait impl: {op} not implemented"),
+        Err(e) => panic!("HolPrim trait impl: unexpected error: {e}"),
+    }
+}
+
+impl covalence_hol::traits::HolLightTypes for HolPrim {
+    type Type = TypeRef;
+
+    fn fun_id(&self) -> NameId {
+        HolPrim::fun_id(self)
+    }
+
+    fn bool_id(&self) -> NameId {
+        HolPrim::bool_id(self)
+    }
+
+    fn mk_tyvar(&mut self, name: NameId) -> Self::Type {
+        HolPrim::mk_tyvar(self, name)
+    }
+
+    fn mk_tyapp(&mut self, name: NameId, args: Vec<Self::Type>) -> Self::Type {
+        HolPrim::mk_tyapp(self, name, args)
+    }
+
+    fn bool_type(&mut self) -> Self::Type {
+        HolPrim::bool_type(self)
+    }
+
+    fn fun_type(&mut self, a: Self::Type, b: Self::Type) -> Self::Type {
+        HolPrim::fun_type(self, a, b)
+    }
+
+    fn dest_tyvar(&self, ty: Self::Type) -> Option<NameId> {
+        HolPrim::dest_tyvar(self, ty)
+    }
+
+    fn dest_tyapp(&self, ty: Self::Type) -> Option<(NameId, Vec<Self::Type>)> {
+        HolPrim::dest_tyapp(self, ty)
+    }
+
+    fn type_eq(&self, a: Self::Type, b: Self::Type) -> bool {
+        HolPrim::type_eq(self, a, b)
+    }
+
+    fn tyvars(&self, ty: Self::Type) -> Vec<NameId> {
+        HolPrim::tyvars(self, ty)
+    }
+
+    fn type_inst(&mut self, ty: Self::Type, pairs: &[(Self::Type, NameId)]) -> Self::Type {
+        expect(HolPrim::type_inst(self, ty, pairs))
+    }
+}
+
+impl covalence_hol::traits::HolLightTerms for HolPrim {
+    type Term = TermRef;
+
+    fn eq_id(&self) -> NameId {
+        HolPrim::eq_id(self)
+    }
+
+    fn mk_var(&mut self, name: NameId, ty: Self::Type) -> Self::Term {
+        HolPrim::mk_var(self, name, ty)
+    }
+
+    fn mk_const(&mut self, name: NameId, ty: Self::Type) -> Self::Term {
+        HolPrim::mk_const(self, name, ty)
+    }
+
+    fn mk_comb(&mut self, f: Self::Term, x: Self::Term) -> Self::Term {
+        HolPrim::mk_comb(self, f, x)
+    }
+
+    fn mk_abs(&mut self, var: Self::Term, body: Self::Term) -> Self::Term {
+        // Trait signature has no Result — callers expect a well-
+        // formed Lam. Panic on non-Var input to make the error
+        // visible (HolKernel's impl silently produced a malformed
+        // Abs node; we'd rather surface it).
+        expect(HolPrim::mk_abs(self, var, body))
+    }
+
+    fn mk_eq(&mut self, lhs: Self::Term, rhs: Self::Term) -> Self::Term {
+        HolPrim::mk_eq(self, lhs, rhs)
+    }
+
+    fn dest_var(&self, tm: Self::Term) -> Option<(NameId, Self::Type)> {
+        HolPrim::dest_var(self, tm)
+    }
+
+    fn dest_const(&self, tm: Self::Term) -> Option<(NameId, Self::Type)> {
+        HolPrim::dest_const(self, tm)
+    }
+
+    fn dest_comb(&self, tm: Self::Term) -> Option<(Self::Term, Self::Term)> {
+        HolPrim::dest_comb(self, tm)
+    }
+
+    fn dest_abs(&mut self, tm: Self::Term) -> Option<(Self::Term, Self::Term)> {
+        HolPrim::dest_abs(self, tm)
+    }
+
+    fn dest_eq(&self, tm: Self::Term) -> Option<(Self::Term, Self::Term)> {
+        HolPrim::dest_eq(self, tm)
+    }
+
+    fn type_of(&mut self, tm: Self::Term) -> Self::Type {
+        expect(HolPrim::type_of(self, tm))
+    }
+
+    fn term_eq(&self, a: Self::Term, b: Self::Term) -> bool {
+        HolPrim::term_eq(self, a, b)
+    }
+
+    fn aconv(&self, a: Self::Term, b: Self::Term) -> bool {
+        HolPrim::aconv(self, a, b)
+    }
+
+    fn frees(&mut self, tm: Self::Term) -> Vec<Self::Term> {
+        HolPrim::frees(self, tm)
+    }
+
+    fn vfree_in(&self, var: Self::Term, tm: Self::Term) -> bool {
+        HolPrim::vfree_in(self, var, tm)
+    }
+
+    fn vsubst(
+        &mut self,
+        tm: Self::Term,
+        pairs: &[(Self::Term, Self::Term)],
+    ) -> Result<Self::Term, HolError> {
+        HolPrim::vsubst(self, tm, pairs).map_err(Into::into)
+    }
+
+    fn inst_term(&mut self, tm: Self::Term, pairs: &[(Self::Type, NameId)]) -> Self::Term {
+        expect(HolPrim::inst_term(self, tm, pairs))
+    }
+}
+
+impl covalence_hol::traits::HolLightKernel for HolPrim {
+    type Thm = ThmHandle;
+
+    fn hyps(&self, th: Self::Thm) -> Vec<Self::Term> {
+        HolPrim::hyps(self, th).unwrap_or_default()
+    }
+
+    fn concl(&self, th: Self::Thm) -> Self::Term {
+        HolPrim::concl(self, th).expect("invalid ThmHandle in concl")
+    }
+
+    fn refl(&mut self, tm: Self::Term) -> Result<Self::Thm, HolError> {
+        HolPrim::refl(self, tm).map_err(Into::into)
+    }
+
+    fn trans(&mut self, th1: Self::Thm, th2: Self::Thm) -> Result<Self::Thm, HolError> {
+        HolPrim::trans(self, th1, th2).map_err(Into::into)
+    }
+
+    fn mk_comb_rule(
+        &mut self,
+        th1: Self::Thm,
+        th2: Self::Thm,
+    ) -> Result<Self::Thm, HolError> {
+        HolPrim::mk_comb_rule(self, th1, th2).map_err(Into::into)
+    }
+
+    fn abs_rule(
+        &mut self,
+        var: Self::Term,
+        th: Self::Thm,
+    ) -> Result<Self::Thm, HolError> {
+        HolPrim::abs_rule(self, var, th).map_err(Into::into)
+    }
+
+    fn beta_conv(&mut self, tm: Self::Term) -> Result<Self::Thm, HolError> {
+        HolPrim::beta_conv(self, tm).map_err(Into::into)
+    }
+
+    fn assume_rule(&mut self, tm: Self::Term) -> Result<Self::Thm, HolError> {
+        HolPrim::assume_rule(self, tm).map_err(Into::into)
+    }
+
+    fn eq_mp(&mut self, th1: Self::Thm, th2: Self::Thm) -> Result<Self::Thm, HolError> {
+        HolPrim::eq_mp(self, th1, th2).map_err(Into::into)
+    }
+
+    fn deduct_antisym(
+        &mut self,
+        th1: Self::Thm,
+        th2: Self::Thm,
+    ) -> Result<Self::Thm, HolError> {
+        HolPrim::deduct_antisym(self, th1, th2).map_err(Into::into)
+    }
+
+    fn inst_rule(
+        &mut self,
+        pairs: &[(Self::Term, Self::Term)],
+        th: Self::Thm,
+    ) -> Result<Self::Thm, HolError> {
+        HolPrim::inst_rule(self, pairs, th).map_err(Into::into)
+    }
+
+    fn inst_type_rule(
+        &mut self,
+        pairs: &[(Self::Type, NameId)],
+        th: Self::Thm,
+    ) -> Result<Self::Thm, HolError> {
+        HolPrim::inst_type_rule(self, pairs, th).map_err(Into::into)
+    }
+
+    fn new_axiom(&mut self, tm: Self::Term) -> Result<Self::Thm, HolError> {
+        HolPrim::new_axiom(self, tm).map_err(Into::into)
+    }
+
+    fn new_basic_definition(&mut self, tm: Self::Term) -> Result<Self::Thm, HolError> {
+        HolPrim::new_basic_definition(self, tm).map_err(Into::into)
+    }
+
+    fn new_basic_type_definition(
+        &mut self,
+        tyname: NameId,
+        abs_name: NameId,
+        rep_name: NameId,
+        abs_var_name: NameId,
+        rep_var_name: NameId,
+        th: Self::Thm,
+    ) -> Result<(Self::Thm, Self::Thm), HolError> {
+        HolPrim::new_basic_type_definition(
+            self,
+            tyname,
+            abs_name,
+            rep_name,
+            abs_var_name,
+            rep_var_name,
+            th,
+        )
+        .map_err(Into::into)
+    }
+
+    fn new_type(&mut self, name: NameId, arity: usize) -> Result<(), HolError> {
+        HolPrim::new_type(self, name, arity).map_err(Into::into)
+    }
+
+    fn new_constant(&mut self, name: NameId, ty: Self::Type) -> Result<(), HolError> {
+        HolPrim::new_constant(self, name, ty).map_err(Into::into)
+    }
+
+    fn get_axioms(&self) -> Vec<Self::Thm> {
+        HolPrim::get_axioms(self)
+    }
+
+    fn mk_type_validated(
+        &mut self,
+        name: NameId,
+        args: Vec<Self::Type>,
+    ) -> Result<Self::Type, HolError> {
+        HolPrim::mk_type_validated(self, name, args).map_err(Into::into)
+    }
+
+    fn mk_const_validated(
+        &mut self,
+        name: NameId,
+        ty: Self::Type,
+    ) -> Result<Self::Term, HolError> {
+        HolPrim::mk_const_validated(self, name, ty).map_err(Into::into)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -941,6 +1243,14 @@ mod tests {
         assert!(d.vfree_in(x, xy));
         let z = d.mk_var(99, b);
         assert!(!d.vfree_in(z, xy));
+    }
+
+    #[test]
+    fn hol_prim_implements_trait_object_safe() {
+        // Compile-time check that HolPrim implements the HOL Light
+        // kernel trait family with the expected associated types.
+        fn assert_trait<K: covalence_hol::traits::HolLightKernel>() {}
+        assert_trait::<HolPrim>();
     }
 
     #[test]

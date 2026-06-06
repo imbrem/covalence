@@ -94,7 +94,11 @@ pub trait HolLightTerms: HolLightTypes {
     fn dest_comb(&self, tm: Self::Term) -> Option<(Self::Term, Self::Term)>;
 
     /// Destruct an abstraction, returning `(var, body)`.
-    fn dest_abs(&self, tm: Self::Term) -> Option<(Self::Term, Self::Term)>;
+    ///
+    /// Takes `&mut self` to allow locally-nameless backends to open
+    /// the binder by allocating a fresh variable. Named-binder
+    /// backends can ignore the mutability.
+    fn dest_abs(&mut self, tm: Self::Term) -> Option<(Self::Term, Self::Term)>;
 
     /// Destruct an equation `lhs = rhs`.
     fn dest_eq(&self, tm: Self::Term) -> Option<(Self::Term, Self::Term)>;
@@ -109,7 +113,10 @@ pub trait HolLightTerms: HolLightTypes {
     fn aconv(&self, a: Self::Term, b: Self::Term) -> bool;
 
     /// Collect free variables.
-    fn frees(&self, tm: Self::Term) -> Vec<Self::Term>;
+    ///
+    /// Takes `&mut self` so locally-nameless backends can re-allocate
+    /// `Var` terms for the returned set.
+    fn frees(&mut self, tm: Self::Term) -> Vec<Self::Term>;
 
     /// Check if a variable occurs free in a term.
     fn vfree_in(&self, var: Self::Term, tm: Self::Term) -> bool;

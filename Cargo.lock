@@ -647,6 +647,7 @@ name = "covalence-egglog"
 version = "0.0.0"
 dependencies = [
  "covalence-kernel",
+ "covalence-sexp",
  "covalence-shell",
  "covalence-types",
  "thiserror 2.0.18",

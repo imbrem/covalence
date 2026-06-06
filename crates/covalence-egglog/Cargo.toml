@@ -4,6 +4,7 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
+covalence-sexp = { path = "../covalence-sexp" }
 covalence-shell = { path = "../covalence-shell" }
 covalence-types = { path = "../covalence-types" }
 thiserror = "2"

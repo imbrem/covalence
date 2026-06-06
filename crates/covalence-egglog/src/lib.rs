@@ -22,16 +22,39 @@
 //! `from_egglog_proofstore` shim converts the external library's `ProofStore`
 //! into ours without the rest of the crate caring.
 
+pub mod ast;
 pub mod bridge;
 pub mod error;
 pub mod ingest;
 pub mod kernel_bridge;
+pub mod lower;
+pub mod parse;
 pub mod proof;
 
+pub use ast::{Command, Expr};
 pub use bridge::EgglogBridge;
 pub use error::BridgeError;
 pub use ingest::ingest_proof_store;
 pub use kernel_bridge::KernelEgglogBridge;
+pub use lower::{LoweredProgram, lower_program};
+pub use parse::parse_program;
 pub use proof::{
     Justification, Proof, ProofId, ProofStore, Proposition, Term, TermDag, TermId,
 };
+
+/// Parse an egglog source string, lower it against `bridge` (registering
+/// every sort / constructor / union as it goes), and ingest the
+/// `(prove …)` target into the kernel — returning the resulting
+/// [`Thm`](EgglogBridge::Thm).
+///
+/// One-shot helper that composes [`parse_program`], [`lower_program`], and
+/// [`ingest_proof_store`]. Inherits the lowering's restriction: the
+/// `(prove …)` target must syntactically match an earlier `(union …)`.
+pub fn ingest_source<B: EgglogBridge>(
+    bridge: &mut B,
+    input: &str,
+) -> Result<B::Thm, BridgeError> {
+    let commands = parse_program(input)?;
+    let LoweredProgram { dag, store, root } = lower_program(bridge, &commands)?;
+    ingest_proof_store(bridge, &store, &dag, root)
+}

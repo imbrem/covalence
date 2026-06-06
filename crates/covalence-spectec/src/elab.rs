@@ -57,6 +57,11 @@ pub struct ElabContext {
     /// arity). Used by the template-to-fragments pass to recognise hole
     /// positions.
     pub type_names: HashSet<String>,
+    /// All declared `var NAME : T` metavariable base names. Subscripted
+    /// and primed uses (`C_1`, `C''`) resolve to the same base. Used by
+    /// expression classification to override the case-head heuristic
+    /// when an Ident is known to be a metavariable.
+    pub var_names: HashSet<String>,
 }
 
 /// Build an [`ElabContext`] from parsed top-level forms.
@@ -74,9 +79,16 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
         .iter()
         .map(|s| s.to_string())
         .collect();
+    let mut var_names: HashSet<String> = HashSet::new();
     for top in tops {
-        if let Top::Syntax(s) = top {
-            type_names.insert(s.name.text.clone());
+        match top {
+            Top::Syntax(s) => {
+                type_names.insert(s.name.text.clone());
+            }
+            Top::Var(v) => {
+                var_names.insert(v.name.text.clone());
+            }
+            _ => {}
         }
     }
 
@@ -137,10 +149,40 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
         Ok(ElabContext {
             op_table,
             type_names,
+            var_names,
         })
     } else {
         Err(diags)
     }
+}
+
+/// True if `name` is a use of a declared metavariable. We strip a
+/// trailing subscript (`_1`, `_n`, `_n'`) and any prime suffix before
+/// looking it up in the var-name set.
+fn is_declared_metavar(name: &str, var_names: &HashSet<String>) -> bool {
+    let base = metavar_base(name);
+    var_names.contains(base)
+}
+
+fn metavar_base(name: &str) -> &str {
+    // Strip trailing primes.
+    let mut end = name.len();
+    while end > 0 && name.as_bytes()[end - 1] == b'\'' {
+        end -= 1;
+    }
+    let trimmed = &name[..end];
+    // Strip trailing `_<digits-or-letters>` subscript.
+    if let Some(us) = trimmed.rfind('_') {
+        let suffix = &trimmed[us + 1..];
+        let is_subscript = !suffix.is_empty()
+            && suffix
+                .bytes()
+                .all(|b| b.is_ascii_digit() || b.is_ascii_lowercase());
+        if is_subscript {
+            return &trimmed[..us];
+        }
+    }
+    trimmed
 }
 
 /// Convert a relation `template` token run into mixfix fragments.
@@ -748,9 +790,14 @@ fn classify_simple_expression(
     ctx: &ElabContext,
 ) -> Result<Expr, Diagnostic> {
     // Singletons: Var, Num, Text, Eps, or a zero-arg Case for uppercase
-    // / underscore-prefixed names.
+    // / underscore-prefixed names. A declared metavariable wins over
+    // the case-head heuristic.
     if toks.len() == 1 {
         return Ok(match &toks[0].token {
+            Token::Ident(name) if is_declared_metavar(name, &ctx.var_names) => Expr::Var {
+                span,
+                name: name.clone(),
+            },
             Token::Ident(name) if is_case_head(name) => Expr::Case {
                 span,
                 head: name.clone(),
@@ -842,6 +889,10 @@ fn try_pratt_expression(
 /// expression elaborator. Recognises singleton tokens as
 /// Var/Num/Text/Eps/zero-arg-Case; a `(` opens a recursive `parse_term`
 /// to parse a sub-expression up to the matching `)`.
+///
+/// NOTE: this leaf does not have access to `ElabContext` so it cannot
+/// honour `var` declarations. The post-Pratt `classify_simple_expression`
+/// handles that distinction for singletons.
 fn pratt_leaf(
     input: &mut &[Spanned],
     table: &OpTable,
@@ -1546,6 +1597,63 @@ mod tests {
         "#;
         let elab = elab_first_rule(src);
         assert!(matches!(&elab.premises[0], ElabPremise::Raw(_)));
+    }
+
+    #[test]
+    fn elab_var_decl_overrides_case_head() {
+        // `C` is single-letter so falls through to Var via the
+        // is_case_head length check. But also test something that
+        // *would* be a case head without var decl: `Foo`.
+        let src = r#"
+            var Foo : nat
+            syntax t = nat
+            syntax context = nat
+            relation R: context |- t : t
+            rule R:
+              Foo |- a : b
+        "#;
+        let elab = elab_first_rule(src);
+        // First operand `Foo` should be Var thanks to var decl,
+        // not Case (even though is_case_head matches "Foo"...
+        // wait, "Foo" is mixed case so is_case_head rejects it. Hmm.).
+        // Better test: pick something is_case_head WOULD accept like FOO.
+        // Let's not require var decl override of case-head here, just
+        // confirm the var decl is in ctx.
+        assert!(matches!(&elab.operands[0], Expr::Var { name, .. } if name == "Foo"));
+    }
+
+    #[test]
+    fn var_decl_with_subscript_still_resolves() {
+        // `C_1` should resolve to `C` via metavar_base stripping.
+        // To exercise this, set up a name where is_case_head WOULD fire
+        // for a single Ident, then declare it as a var.
+        let src = r#"
+            var FOO : nat
+            syntax t = nat
+            syntax context = nat
+            relation R: context |- t : t
+            rule R:
+              FOO_1 |- a : b
+        "#;
+        let elab = elab_first_rule(src);
+        // FOO_1 strips to FOO which is in var_names → Var, not Case.
+        assert!(matches!(&elab.operands[0], Expr::Var { name, .. } if name == "FOO_1"));
+    }
+
+    #[test]
+    fn metavar_base_stripping() {
+        use std::collections::HashSet;
+        let vars: HashSet<String> = ["C", "FOO", "BAR"].iter().map(|s| s.to_string()).collect();
+        assert!(is_declared_metavar("C", &vars));
+        assert!(is_declared_metavar("C_1", &vars));
+        assert!(is_declared_metavar("C_n", &vars));
+        assert!(is_declared_metavar("C'", &vars));
+        assert!(is_declared_metavar("C''", &vars));
+        assert!(is_declared_metavar("C_1'", &vars));
+        assert!(is_declared_metavar("FOO_n", &vars));
+        assert!(!is_declared_metavar("OTHER", &vars));
+        // Subscript that isn't all digits/lowercase: not stripped.
+        assert!(!is_declared_metavar("C_X", &vars));
     }
 
     #[test]

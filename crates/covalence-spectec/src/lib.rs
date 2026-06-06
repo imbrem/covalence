@@ -37,6 +37,7 @@ pub use wasm_spec_ast as wasm;
 
 pub mod cst;
 pub mod lex;
+pub mod mixfix;
 pub mod parse;
 pub mod source;
 pub mod token;

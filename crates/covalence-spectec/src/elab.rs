@@ -1323,6 +1323,26 @@ fn classify_simple_expression(
         }
     }
 
+    // `$ident ( ... )` — function call. Optional trailing tokens (like
+    // postfix ops) are NOT consumed here; we require the call to span
+    // the entire slice exactly.
+    if let Some(call) = try_classify_call(toks, span, ctx)? {
+        return Ok(call);
+    }
+
+    // `e [ ... ]` — indexing. Last token is `]`; matching `[` is at
+    // some balanced offset. The split puts the bracketed body on the
+    // right and the prefix on the left.
+    if let Some(idx) = try_classify_idx(toks, span, ctx)? {
+        return Ok(idx);
+    }
+
+    // `e . FIELD` — field access. Last two tokens are `Dot Ident` at
+    // paren-depth 0.
+    if let Some(dot) = try_classify_dot(toks, span, ctx)? {
+        return Ok(dot);
+    }
+
     // Pratt-parse against the OpTable. Succeeds only if the parse fully
     // consumes the slice; on failure or leftover input we fall back.
     if let Some(expr) = try_pratt_expression(toks, span, ctx) {
@@ -1485,6 +1505,160 @@ fn tree_to_expr(tree: Tree<Expr>, table: &OpTable, span: Span) -> Expr {
             }
         }
     }
+}
+
+// ---------- structural recognisers used by classify_simple_expression ----------
+
+/// Recognise `$name(arg, ...)` as `Expr::Call`. Requires the call to
+/// span the entire slice (i.e. `last == RParen`, `matching LParen at
+/// index 2`, with the call body strictly between them).
+fn try_classify_call(
+    toks: &[Spanned],
+    span: Span,
+    _ctx: &ElabContext,
+) -> Result<Option<Expr>, Diagnostic> {
+    if toks.len() < 4 {
+        return Ok(None);
+    }
+    let (Some(Spanned { token: Token::Dollar, .. }), Some(Spanned { token: Token::Ident(name), .. })) =
+        (toks.first(), toks.get(1))
+    else {
+        return Ok(None);
+    };
+    if !matches!(toks.get(2).map(|s| &s.token), Some(Token::LParen)) {
+        return Ok(None);
+    }
+    if !matches!(toks.last().map(|s| &s.token), Some(Token::RParen)) {
+        return Ok(None);
+    }
+    // The `(` at index 2 must match the `)` at index `toks.len()-1`.
+    let consumed = skip_balanced(&toks[2..]);
+    if consumed != toks.len() - 2 {
+        return Ok(None);
+    }
+    let inner = &toks[3..toks.len() - 1];
+    let args = split_top_comma(inner)
+        .into_iter()
+        .map(|slice| {
+            let arg_span = slice
+                .iter()
+                .map(|s| s.span)
+                .reduce(Span::join)
+                .unwrap_or(span);
+            TokenRun {
+                span: arg_span,
+                tokens: slice.to_vec(),
+            }
+        })
+        .collect();
+    Ok(Some(Expr::Call {
+        span,
+        name: name.clone(),
+        args,
+    }))
+}
+
+/// Recognise `e [ idx ]` as `Expr::Idx`. The matching `[` must be at
+/// the highest-priority balanced position from the right.
+fn try_classify_idx(
+    toks: &[Spanned],
+    span: Span,
+    ctx: &ElabContext,
+) -> Result<Option<Expr>, Diagnostic> {
+    if !matches!(toks.last().map(|s| &s.token), Some(Token::RBracket)) {
+        return Ok(None);
+    }
+    // Find the matching `[` for the trailing `]` by walking bracket
+    // depth from the right.
+    let mut depth: i32 = 0;
+    let mut open_idx: Option<usize> = None;
+    for (i, t) in toks.iter().enumerate().rev() {
+        match &t.token {
+            Token::RParen | Token::RBracket | Token::RBrace => depth += 1,
+            Token::LParen | Token::LBracket | Token::LBrace => {
+                depth -= 1;
+                if depth == 0 {
+                    if matches!(&t.token, Token::LBracket) {
+                        open_idx = Some(i);
+                    }
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let Some(open) = open_idx else { return Ok(None) };
+    if open == 0 {
+        return Ok(None);
+    }
+    let prefix = &toks[..open];
+    let inner = &toks[open + 1..toks.len() - 1];
+    if !depth_balanced(prefix) || !depth_balanced(inner) {
+        return Ok(None);
+    }
+    let prefix_span = prefix.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+    let inner_span = inner.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+    let e1 = classify_simple_expression(prefix, prefix_span, ctx)?;
+    let e2 = classify_simple_expression(inner, inner_span, ctx)?;
+    Ok(Some(Expr::Idx {
+        span,
+        e1: Box::new(e1),
+        e2: Box::new(e2),
+    }))
+}
+
+/// Recognise `e . FIELD` as `Expr::Dot`. The `Dot Ident` must be at
+/// paren-depth 0 at the end of the slice.
+fn try_classify_dot(
+    toks: &[Spanned],
+    span: Span,
+    ctx: &ElabContext,
+) -> Result<Option<Expr>, Diagnostic> {
+    if toks.len() < 3 {
+        return Ok(None);
+    }
+    let Some(Spanned { token: Token::Ident(field), .. }) = toks.last() else {
+        return Ok(None);
+    };
+    if !matches!(toks.get(toks.len() - 2).map(|s| &s.token), Some(Token::Dot)) {
+        return Ok(None);
+    }
+    let prefix = &toks[..toks.len() - 2];
+    if !depth_balanced(prefix) {
+        return Ok(None);
+    }
+    let prefix_span = prefix.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+    let e = classify_simple_expression(prefix, prefix_span, ctx)?;
+    Ok(Some(Expr::Dot {
+        span,
+        e: Box::new(e),
+        field: field.clone(),
+    }))
+}
+
+/// Split a token slice on top-level (depth 0) commas. Empty leading or
+/// trailing chunks are dropped.
+fn split_top_comma(toks: &[Spanned]) -> Vec<&[Spanned]> {
+    let mut out = Vec::new();
+    let mut depth: i32 = 0;
+    let mut start = 0usize;
+    for (i, t) in toks.iter().enumerate() {
+        match &t.token {
+            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
+            Token::Comma if depth == 0 => {
+                if start < i {
+                    out.push(&toks[start..i]);
+                }
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if start < toks.len() {
+        out.push(&toks[start..]);
+    }
+    out
 }
 
 /// True if `name` looks like a SpecTec case constructor.

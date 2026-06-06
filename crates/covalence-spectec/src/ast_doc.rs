@@ -433,7 +433,9 @@ pub fn expr_to_spectec(e: &Expr, ctx: &ElabContext) -> spectec_ast::SpecTecExp {
             x: name.clone(),
             as1: args
                 .iter()
-                .map(|_| spectec_ast::SpecTecArg::Exp { e: raw_sentinel() })
+                .map(|tr| spectec_ast::SpecTecArg::Exp {
+                    e: token_run_to_expr(tr, ctx),
+                })
                 .collect(),
         },
         Expr::Iter {

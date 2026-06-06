@@ -73,6 +73,11 @@ impl TermDag {
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
+
+    /// Iterate every allocated term in insertion order.
+    pub fn iter(&self) -> impl Iterator<Item = &Term> {
+        self.nodes.iter()
+    }
 }
 
 /// An equality `lhs = rhs` between two terms in some [`TermDag`].

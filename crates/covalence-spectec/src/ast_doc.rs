@@ -370,7 +370,7 @@ fn to_spectec_ast_flat(
         let t = typ_expr_to_spectec(&g.decl.ret.tokens, ctx);
         let ps = grammar_params_to_specs(&g.decl.params, ctx);
         let prods = match &g.decl.productions {
-            Some(body) => split_grammar_prods(body, ctx),
+            Some(body) => split_grammar_prods(body, ctx, Some(env), Some(&t)),
             None => Vec::new(),
         };
         out.push(spectec_ast::SpecTecDef::Gram {
@@ -1499,6 +1499,8 @@ fn typ_expr_to_spectec_args(alt: &Alt, ctx: &ElabContext) -> spectec_ast::SpecTe
 fn split_grammar_prods(
     body: &crate::cst::TokenRun,
     ctx: &ElabContext,
+    env: Option<&crate::typecheck::TypeEnv>,
+    yield_ty: Option<&spectec_ast::SpecTecTyp>,
 ) -> Vec<spectec_ast::SpecTecProd> {
     let chunks = split_top_level_pipe(&body.tokens);
     let mut prods = Vec::new();
@@ -1511,7 +1513,7 @@ fn split_grammar_prods(
             prods.push(make_range_prod(chunks[i - 1], chunks[i + 1], ctx, body.span));
             i += 2; // skip the `...` and the upper-bound chunk
         } else {
-            prods.push(chunk_to_prod(chunks[i], ctx, body.span));
+            prods.push(chunk_to_prod(chunks[i], ctx, body.span, env, yield_ty));
             i += 1;
         }
     }
@@ -1526,6 +1528,8 @@ fn chunk_to_prod(
     chunk: &[crate::token::Spanned],
     ctx: &ElabContext,
     _fallback_span: crate::source::Span,
+    env: Option<&crate::typecheck::TypeEnv>,
+    yield_ty: Option<&spectec_ast::SpecTecTyp>,
 ) -> spectec_ast::SpecTecProd {
     let (sym_toks, attr_toks) = split_grammar_arrow(chunk);
     let attr = match attr_toks {
@@ -1539,7 +1543,10 @@ fn chunk_to_prod(
                 span,
                 tokens: at.to_vec(),
             };
-            token_run_to_expr(&tr, ctx)
+            match (env, yield_ty) {
+                (Some(env), Some(t)) => token_run_to_expr_against(&tr, ctx, env, t),
+                _ => token_run_to_expr(&tr, ctx),
+            }
         }
         _ => raw_sentinel(),
     };

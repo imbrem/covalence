@@ -543,6 +543,17 @@ pub fn check_exp_against_scope(
             return Expr::Tup { span, items: new_items };
         }
     }
+    // Special-case Eps against an Opt-iter expected type: lower to
+    // `Opt(None)` rather than `eps` (which would lower to an empty
+    // list). Mirrors OCaml's "absent option is `eps` in source,
+    // `OptE None` in IL."
+    if let (Expr::Eps { span }, Typ::Iter { it, .. }) = (&e, expected)
+        && it.len() == 1
+        && matches!(it[0], ast::SpecTecIter::Opt)
+    {
+        let span = *span;
+        return Expr::Opt { span, inner: None };
+    }
     // Special-case Iter on a Var: `t*` against `Iter<T>` records
     // the unwrapped `t : T`.
     if let (Expr::Iter { inner, .. }, Typ::Iter { t1, .. }) = (&e, expected) {
@@ -1269,23 +1280,23 @@ mod tests {
     }
 
     #[test]
-    fn check_exp_against_inserts_sub() {
+    fn coerce_inserts_sub_for_non_case() {
+        // Coerce a non-Case Var-ref expression from numtype → valtype.
+        // Variant-subtype coercion DOES insert `Sub` for non-Case
+        // expressions (Cases are case-polymorphic, see `coerce`).
         let src = r#"
             syntax numtype = | I32 | I64
             syntax reftype = nat
             syntax valtype = | numtype | reftype
+            var n : numtype
         "#;
         let (doc, ctx) = build(src);
         let env = build_env(&doc, &ctx);
         let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
-        // Pass I32 (numtype) where valtype expected.
-        let e = Expr::Case {
-            span,
-            head: "I32".into(),
-            args: vec![],
-        };
+        let e = Expr::Var { span, name: "n".into() };
+        let actual = Typ::Var { x: "numtype".into(), as1: vec![] };
         let expected = Typ::Var { x: "valtype".into(), as1: vec![] };
-        let result = check_exp_against(&env, e, &expected);
+        let result = coerce(&env, e, span, actual, expected);
         let Expr::Sub { from_ty, to_ty, .. } = &result else {
             panic!("expected Sub, got {result:?}");
         };

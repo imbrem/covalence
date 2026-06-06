@@ -172,6 +172,23 @@ impl OpTable {
     pub fn find_prefix(&self, tok: &Token) -> Option<&Op> {
         self.ops.iter().find(|op| op.leading_lit() == Some(tok))
     }
+
+    /// All prefix/closed ops whose leading literal matches `tok`.
+    /// Used to enable backtracking when multiple ops share a head
+    /// (e.g. `FUNC` declared as both a 0-arg variant case and a
+    /// `FUNC arg -> arg` mixfix). `parse_term` tries longer
+    /// declarations first and falls back to shorter ones.
+    pub fn find_all_prefix(&self, tok: &Token) -> Vec<&Op> {
+        let mut out: Vec<&Op> = self
+            .ops
+            .iter()
+            .filter(|op| op.leading_lit() == Some(tok))
+            .collect();
+        // Longest fragment list first — prefer mixfix consumption,
+        // fall back to closed singleton on failure.
+        out.sort_by(|a, b| b.fragments.len().cmp(&a.fragments.len()));
+        out
+    }
 }
 
 /// Parse output. Generic over the leaf type produced by the user's leaf
@@ -221,14 +238,36 @@ where
 {
     // Step 1: prefix/closed op, or leaf.
     let head = input.first().ok_or_else(|| eof("expected term"))?.clone();
-    let mut lhs: Tree<L> =
-        if let Some(op) = table.find_prefix(&head.token) {
-            let op_id = op.id;
+    let candidates = table.find_all_prefix(&head.token);
+    let mut lhs: Tree<L> = if !candidates.is_empty() {
+        // Try each candidate (longest fragments first), keeping the
+        // first that fully parses. Save+restore `input` on failure.
+        let saved = *input;
+        let mut chosen: Option<Tree<L>> = None;
+        let mut last_err: Option<Diagnostic> = None;
+        for op in &candidates {
+            *input = saved;
             *input = &input[1..]; // consume the leading literal
-            consume_remaining(input, table, op_id, Vec::new(), 1, leaf)?
-        } else {
-            leaf(input, table)?
-        };
+            match consume_remaining(input, table, op.id, Vec::new(), 1, leaf) {
+                Ok(tree) => {
+                    chosen = Some(tree);
+                    break;
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                }
+            }
+        }
+        match chosen {
+            Some(t) => t,
+            None => {
+                *input = saved;
+                return Err(last_err.unwrap_or_else(|| eof("no matching prefix op")));
+            }
+        }
+    } else {
+        leaf(input, table)?
+    };
 
     // Step 2: Pratt loop for left-extending ops.
     while let Some(next) = input.first() {

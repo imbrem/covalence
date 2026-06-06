@@ -1265,6 +1265,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-spectec"
+version = "0.0.0"
+dependencies = [
+ "spectec_ast",
+ "spectec_ast_decode",
+ "spectec_ast_decode_derive",
+ "wasm_spec_ast",
+]
+
+[[package]]
 name = "covalence-sqlite"
 version = "0.0.0"
 dependencies = [
@@ -4976,6 +4986,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sexpr_parse"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53a7ecfcada22f5fa61f887fe00adacb87dfd6ee8e4e968cc8e5a9ce6694f9fa"
+dependencies = [
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "sha1"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5127,6 +5146,40 @@ checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "spectec_ast"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bf12de216fdefdef46a0163bf47d07394c4e8e275207684411ce3497c739377"
+dependencies = [
+ "sexpr_parse",
+ "spectec_ast_decode",
+ "spectec_ast_decode_derive",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "spectec_ast_decode"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c573160b3161c14d84aea4a1c5ff8d8f747024ff644e85ff68766c04218454d"
+dependencies = [
+ "sexpr_parse",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "spectec_ast_decode_derive"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c62b4cd8c10aa18712e0f471f6b6a0d9529cbe683a1ece1617b42826a2eae177"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+ "synstructure 0.13.2",
 ]
 
 [[package]]
@@ -6122,6 +6175,15 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+]
+
+[[package]]
+name = "wasm_spec_ast"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2fae2b39c4701d2093f4c9a658262610e6fc52b01d8e700e6c605655078fb40a"
+dependencies = [
+ "spectec_ast",
 ]
 
 [[package]]

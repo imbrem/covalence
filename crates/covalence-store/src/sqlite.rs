@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use covalence_hash::O256;
 use covalence_sqlite::Connection;
 
-use crate::ContentStore;
+use crate::{BlobInfo, ContentStore, StoreError};
 
 /// Content-addressed blob store backed by SQLite.
 ///
@@ -105,6 +105,70 @@ impl ContentStore<O256> for SqliteStore {
         })
         .ok()
     }
+
+    /// One round trip via `SELECT length(data) ... WHERE hash = ?` —
+    /// SQLite answers from the row header, without reading the BLOB body.
+    fn head(&self, key: &O256) -> Option<BlobInfo> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT length(data) FROM blobs WHERE hash = ?1",
+            [key.as_bytes().as_slice()],
+            |row| row.get::<_, i64>(0).map(|n| BlobInfo { size: n as u64 }),
+        )
+        .ok()
+    }
+
+    /// Native partial read via SQLite `substr(data, start_1indexed, length)`.
+    ///
+    /// `substr` returns just the requested bytes — SQLite doesn't load
+    /// the whole BLOB into memory for the slice. One query returns the
+    /// row's true `length(data)` alongside the slice so we can validate
+    /// the range without a second round trip.
+    fn get_slice(
+        &self,
+        key: &O256,
+        range: std::ops::Range<u64>,
+    ) -> Result<Vec<u8>, StoreError> {
+        let length_to_read = range.end.saturating_sub(range.start).min(i64::MAX as u64) as i64;
+        let conn = self.conn.lock().unwrap();
+        // substr is 1-indexed; passing 1 means the first byte. SQLite
+        // clamps an over-long length silently.
+        // `substr` can return NULL when the request slides off an
+        // empty blob — read as `Option<Vec<u8>>` and treat None as "".
+        let result = conn.query_row(
+            "SELECT length(data), substr(data, ?1, ?2) FROM blobs WHERE hash = ?3",
+            covalence_sqlite::params![
+                (range.start as i64) + 1,
+                length_to_read,
+                key.as_bytes().as_slice()
+            ],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<Vec<u8>>>(1)?)),
+        );
+
+        let (total_i64, bytes) = match result {
+            Ok(v) => v,
+            Err(covalence_sqlite::Error::QueryReturnedNoRows) => return Err(StoreError::NotFound),
+            Err(e) => return Err(StoreError::Io(e.to_string())),
+        };
+        let total = total_i64 as u64;
+
+        // Range validation. The query already ran (with possibly empty
+        // bytes); now decide whether the request was satisfiable.
+        if range.start >= range.end {
+            return Ok(Vec::new());
+        }
+        if total == 0 {
+            return if range.start == 0 {
+                Ok(Vec::new())
+            } else {
+                Err(StoreError::RangeNotSatisfiable { total })
+            };
+        }
+        if range.start >= total {
+            return Err(StoreError::RangeNotSatisfiable { total });
+        }
+        Ok(bytes.unwrap_or_default())
+    }
 }
 
 #[cfg(test)]
@@ -144,6 +208,69 @@ mod tests {
         assert_eq!(hashes.len(), 2);
         assert!(hashes.contains(&h1));
         assert!(hashes.contains(&h2));
+    }
+
+    #[test]
+    fn head_returns_size_without_full_read() {
+        let store = SqliteStore::memory().unwrap();
+        let hash = store.insert(b"hello world").unwrap();
+        assert_eq!(store.head(&hash), Some(BlobInfo { size: 11 }));
+        assert_eq!(store.head(&O256::blob(b"missing")), None);
+    }
+
+    #[test]
+    fn get_slice_native() {
+        let store = SqliteStore::memory().unwrap();
+        let hash = store.insert(b"0123456789").unwrap();
+        assert_eq!(store.get_slice(&hash, 0..4).unwrap(), b"0123");
+        assert_eq!(store.get_slice(&hash, 5..10).unwrap(), b"56789");
+        // Over-long end clamps silently.
+        assert_eq!(store.get_slice(&hash, 8..999).unwrap(), b"89");
+    }
+
+    #[test]
+    fn get_slice_missing_is_not_found() {
+        let store = SqliteStore::memory().unwrap();
+        let missing = O256::blob(b"absent");
+        assert!(matches!(
+            store.get_slice(&missing, 0..5),
+            Err(StoreError::NotFound)
+        ));
+    }
+
+    #[test]
+    fn get_slice_past_end_is_416() {
+        let store = SqliteStore::memory().unwrap();
+        let hash = store.insert(b"five!").unwrap();
+        match store.get_slice(&hash, 10..20) {
+            Err(StoreError::RangeNotSatisfiable { total }) => assert_eq!(total, 5),
+            other => panic!("expected RangeNotSatisfiable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn get_slice_empty_range_existence_check() {
+        let store = SqliteStore::memory().unwrap();
+        let hash = store.insert(b"data").unwrap();
+        // Empty range on an existing key returns Ok(empty).
+        assert_eq!(store.get_slice(&hash, 2..2).unwrap(), b"");
+        // Empty range on a missing key returns NotFound.
+        assert!(matches!(
+            store.get_slice(&O256::blob(b"missing"), 0..0),
+            Err(StoreError::NotFound)
+        ));
+    }
+
+    #[test]
+    fn get_slice_empty_blob() {
+        let store = SqliteStore::memory().unwrap();
+        let hash = store.insert(b"").unwrap();
+        assert_eq!(store.get_slice(&hash, 0..10).unwrap(), b"");
+        // Non-zero start on empty blob is unsatisfiable.
+        assert!(matches!(
+            store.get_slice(&hash, 5..10),
+            Err(StoreError::RangeNotSatisfiable { total: 0 })
+        ));
     }
 
     #[test]

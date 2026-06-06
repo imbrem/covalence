@@ -856,13 +856,19 @@ dependencies = [
 name = "covalence-client"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
+ "axum",
+ "bytes",
  "covalence-hash",
+ "covalence-serve",
  "covalence-shell",
+ "covalence-store",
  "http-body-util",
  "hyper",
  "hyper-util",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "ureq",
 ]
@@ -1123,6 +1129,7 @@ dependencies = [
  "covalence-repl",
  "covalence-shell",
  "covalence-store",
+ "http-body-util",
  "mime_guess",
  "open",
  "rust-embed",
@@ -1188,10 +1195,13 @@ dependencies = [
 name = "covalence-store"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
+ "bytes",
  "covalence-hash",
  "covalence-sqlite",
  "indexmap",
  "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]

@@ -4,12 +4,23 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
+async-trait = { version = "0.1", optional = true }
+bytes = { version = "1", optional = true }
 covalence-hash = { path = "../covalence-hash", default-features = false }
 covalence-sqlite = { path = "../covalence-sqlite", optional = true }
 indexmap = { version = "2", optional = true }
 thiserror = "2"
+tokio = { version = "1", features = ["rt"], optional = true }
 
 [features]
-default = ["memory"]
+default = ["memory", "async"]
 memory = ["dep:indexmap"]
 sqlite = ["dep:covalence-sqlite"]
+# Async content-addressed store trait + adapters. Trait surface is
+# runtime-agnostic; compiles to wasm32-wasip1-threads.
+async = ["dep:async-trait", "dep:bytes"]
+# Sync façade over the async trait via tokio runtime Handle. Native only.
+blocking = ["async", "dep:tokio"]
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }

@@ -1,14 +1,4 @@
 //! Read-only FUSE mount over a [`covalence_object::Dir`] tree.
-//!
-//! # Scaffold warning
-//!
-//! Read every line of [`crate`]'s top-level docs before extending this file.
-//! **No range requests.** Every `read` pulls the entire backing blob into
-//! memory and slices it. That is acceptable for the v1 use cases (mounting
-//! cog repos full of small text files, agent-readable JSON) and unacceptable
-//! for anything containing large media. The fix is the planned async-range
-//! store rewrite — do not try to patch range support onto this code, throw
-//! it away when the new trait lands.
 
 use std::ffi::{OsStr, OsString};
 use std::num::NonZeroU32;
@@ -20,7 +10,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use covalence_hash::O256;
 use covalence_object::{Dir, DirMode, DirRow, Table};
-use covalence_store::{BlobStore, ContentStore};
+use covalence_store::{BlobStore, ContentStore, StoreError};
 use fuse3::MountOptions;
 use fuse3::raw::prelude::*;
 use fuse3::raw::{Request, Session};
@@ -95,10 +85,9 @@ impl TreeFs {
         }
     }
 
-    /// Fetch a blob from the store via a blocking worker.
-    ///
-    /// **NO RANGE REQUESTS.** Returns the full blob; callers slice. This is
-    /// the call site to delete when the async-range store lands.
+    /// Fetch a whole blob from the store via a blocking worker. Used for
+    /// small payloads where ranging doesn't help — directory tables and
+    /// symlink targets.
     async fn fetch_blob(&self, hash: O256) -> Result<Vec<u8>, FuseError> {
         let store = self.store.clone();
         let blob = task::spawn_blocking(move || store.get(&hash))
@@ -107,28 +96,54 @@ impl TreeFs {
         blob.ok_or(FuseError::BlobMissing(hash))
     }
 
+    /// Fetch a byte range via the sync trait's [`ContentStore::get_slice`]
+    /// — backends with native partial reads (sqlite `substr`) only
+    /// transfer those bytes from storage. Past-EOF reads return empty per
+    /// POSIX `read(2)` semantics.
+    async fn fetch_range(
+        &self,
+        hash: O256,
+        start: u64,
+        end: u64,
+    ) -> Result<Bytes, FuseError> {
+        let store = self.store.clone();
+        let result = task::spawn_blocking(move || store.get_slice(&hash, start..end))
+            .await
+            .map_err(|e| FuseError::BadDirTable(format!("join: {e}")))?;
+        match result {
+            Ok(v) => Ok(Bytes::from(v)),
+            // POSIX: read past EOF returns 0 bytes, not an error.
+            Err(StoreError::RangeNotSatisfiable { .. }) => Ok(Bytes::new()),
+            Err(StoreError::NotFound) => Err(FuseError::BlobMissing(hash)),
+            Err(e) => Err(FuseError::BadDirTable(format!("store: {e}"))),
+        }
+    }
+
+    /// Cheap size lookup via [`ContentStore::head`] — sqlite answers from
+    /// the row header without reading the body.
+    async fn head_blob(&self, hash: O256) -> Result<u64, FuseError> {
+        let store = self.store.clone();
+        let info = task::spawn_blocking(move || store.head(&hash))
+            .await
+            .map_err(|e| FuseError::BadDirTable(format!("join: {e}")))?;
+        info.map(|i| i.size).ok_or(FuseError::BlobMissing(hash))
+    }
+
     /// Load and parse a directory table.
     async fn load_dir(&self, hash: O256) -> Result<Table<Dir>, FuseError> {
         let blob = self.fetch_blob(hash).await?;
         Table::parse(blob, Dir).map_err(|e| FuseError::Table(e.to_string()))
     }
 
-    /// Resolve the on-disk size of a file inode, fetching the blob if the
-    /// size hasn't been realized yet.
-    ///
-    /// **NO RANGE / NO HEAD.** The current `ContentStore` trait has no
-    /// size-only call, so the only way to learn a blob's length is to pull
-    /// the whole thing. We cache the result in the inode table so subsequent
-    /// `getattr`/`readdirplus` calls don't re-fetch. Delete this and the
-    /// underlying fetch when the async-range store lands.
+    /// Resolve the on-disk size of a file inode, asking the store via
+    /// `head` if we don't already have it cached.
     async fn realize_size(&self, ino: u64, hash: O256) -> Result<u64, FuseError> {
         if let Some(entry) = self.inodes.get(ino) {
             if let Some(size) = entry.size {
                 return Ok(size);
             }
         }
-        let blob = self.fetch_blob(hash).await?;
-        let size = blob.len() as u64;
+        let size = self.head_blob(hash).await?;
         self.inodes.set_size(ino, size);
         Ok(size)
     }
@@ -241,24 +256,12 @@ impl Filesystem for TreeFs {
         size: u32,
     ) -> FuseResult<ReplyData> {
         let entry = self.inodes.get(inode).ok_or(Errno::from(libc::ENOENT))?;
-
-        // !!! NO RANGE REQUESTS !!!
-        // We fetch the whole blob and slice. For a 4 GiB file this allocates
-        // 4 GiB and copies it. Do not "fix" this here — the planned async-
-        // range store rewrite obsoletes this call site.
-        let blob = self.fetch_blob(entry.hash).await?;
-
-        // Realize size while we have the bytes.
-        self.inodes.set_size(inode, blob.len() as u64);
-
-        let off = offset as usize;
-        let end = (off + size as usize).min(blob.len());
-        let slice = if off >= blob.len() {
-            Bytes::new()
-        } else {
-            Bytes::copy_from_slice(&blob[off..end])
-        };
-        Ok(ReplyData { data: slice })
+        // One ranged fetch sized to this syscall (capped by FUSE at
+        // ~16 MiB via `max_write`). `get_slice` clamps `end` to the
+        // blob's actual length; past-EOF lands in `fetch_range` as empty.
+        let end = offset.saturating_add(size as u64);
+        let data = self.fetch_range(entry.hash, offset, end).await?;
+        Ok(ReplyData { data })
     }
 
     async fn readdir(

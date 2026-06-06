@@ -163,6 +163,16 @@ async fn mount_tree_and_read() {
         let main = std::fs::read(mp.join("src/main.rs"))?;
         assert_eq!(main, b"fn main() { println!(\"hi\"); }\n");
 
+        // Ranged pread via seek+read_exact. `std::fs::read` issues
+        // `read(off=0, size=4096)` for our tiny fixture files so it
+        // never exercises offset > 0; seek + read_exact does.
+        use std::io::{Read, Seek, SeekFrom};
+        let mut f = std::fs::File::open(mp.join("hello.txt"))?;
+        f.seek(SeekFrom::Start(7))?;
+        let mut buf = [0u8; 11];
+        f.read_exact(&mut buf)?;
+        assert_eq!(&buf, b"covalence!\n");
+
         // lookup a name that does not exist
         let missing = std::fs::metadata(mp.join("does-not-exist"));
         assert!(missing.is_err(), "missing name should error");

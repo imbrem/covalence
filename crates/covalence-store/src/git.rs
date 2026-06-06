@@ -11,7 +11,10 @@ use std::fmt;
 
 use covalence_hash::O256;
 
-use crate::{AnyObject, ContentStore, Object, ObjectKind, ObjectStore, StoreError, TaggedStore};
+use crate::{
+    AnyObject, BlobInfo, ContentStore, Object, ObjectKind, ObjectStore, StoreError, TaggedStore,
+    clip_slice,
+};
 
 // ---------------------------------------------------------------------------
 // GitObjectType — string wrapper for forward compatibility
@@ -104,6 +107,22 @@ fn parse_git_header(raw: &[u8]) -> Option<(&str, &[u8])> {
     Some((kind, &raw[null_pos + 1..]))
 }
 
+/// Parse `(kind, header_len, body_len)` from a prefix that contains at
+/// least the header (`"{type} {len}\0"`). Lets ranged backends learn
+/// where the body starts without fetching it.
+fn parse_git_header_meta(raw: &[u8]) -> Option<(&str, u64, u64)> {
+    let null_pos = raw.iter().position(|&b| b == 0)?;
+    let header = std::str::from_utf8(&raw[..null_pos]).ok()?;
+    let space_pos = header.find(' ')?;
+    let kind = &header[..space_pos];
+    let body_len: u64 = header[space_pos + 1..].parse().ok()?;
+    Some((kind, (null_pos + 1) as u64, body_len))
+}
+
+/// Upper bound on the length of a git object header. `"blob "` (5) +
+/// max u64 decimal (20) + `\0` (1) = 26; round up to 32 for slack.
+const MAX_GIT_HEADER_LEN: u64 = 32;
+
 // ---------------------------------------------------------------------------
 // GitPrefixStore<S> — header-prefixed wrapper
 // ---------------------------------------------------------------------------
@@ -166,6 +185,48 @@ impl<K: Send + Sync, S: ContentStore<K>> ContentStore<K> for GitPrefixStore<S> {
 
     fn len(&self) -> Option<usize> {
         self.inner.len()
+    }
+
+    /// Probe the header from the inner store (`get_slice(0..32)`) and
+    /// parse the length. If the inner store has a native ranged read,
+    /// this avoids fetching the body entirely.
+    fn head(&self, key: &K) -> Option<BlobInfo> {
+        let probe = self.inner.get_slice(key, 0..MAX_GIT_HEADER_LEN).ok()?;
+        let (kind, _header_len, body_len) = parse_git_header_meta(&probe)?;
+        if kind != "blob" {
+            return None;
+        }
+        Some(BlobInfo { size: body_len })
+    }
+
+    /// Two ranged reads on the inner store: ~32-byte header probe, then
+    /// the body slice at its actual offset. For a `SqliteStore` inner,
+    /// this fetches only `header_len + range_size` bytes total instead
+    /// of the whole blob.
+    fn get_slice(
+        &self,
+        key: &K,
+        range: std::ops::Range<u64>,
+    ) -> Result<Vec<u8>, StoreError> {
+        let probe = match self.inner.get_slice(key, 0..MAX_GIT_HEADER_LEN) {
+            Ok(p) => p,
+            Err(StoreError::NotFound) => return Err(StoreError::NotFound),
+            Err(e) => return Err(e),
+        };
+        let Some((kind, header_len, body_len)) = parse_git_header_meta(&probe) else {
+            return Err(StoreError::Io("malformed git header".into()));
+        };
+        if kind != "blob" {
+            // Non-blob keys are invisible to ContentStore::get, so they
+            // look "missing" through this interface too.
+            return Err(StoreError::NotFound);
+        }
+        let Some(body_indices) = clip_slice(body_len, range)? else {
+            return Ok(Vec::new());
+        };
+        let inner_start = header_len + body_indices.start as u64;
+        let inner_end = header_len + body_indices.end as u64;
+        self.inner.get_slice(key, inner_start..inner_end)
     }
 }
 
@@ -471,6 +532,52 @@ mod tests {
 
             // Wrong tag → None
             assert_eq!(s.get_repr_with(&GitObjectType::blob(), &key), None);
+        }
+
+        #[test]
+        fn head_strips_header_returns_body_size() {
+            let s = store();
+            let key = s.insert(b"hello world").unwrap();
+            assert_eq!(s.head(&key), Some(crate::BlobInfo { size: 11 }));
+        }
+
+        #[test]
+        fn head_returns_none_for_tree() {
+            // Non-blob objects are invisible through the ContentStore interface.
+            let s = store();
+            let key = s.insert_tagged(GitObjectType::tree(), b"data").unwrap();
+            assert_eq!(s.head(&key), None);
+        }
+
+        #[test]
+        fn get_slice_strips_header() {
+            let s = store();
+            let key = s.insert(b"0123456789").unwrap();
+            assert_eq!(s.get_slice(&key, 0..4).unwrap(), b"0123");
+            assert_eq!(s.get_slice(&key, 5..10).unwrap(), b"56789");
+            // Over-long end clamps to body length, not raw length.
+            assert_eq!(s.get_slice(&key, 8..999).unwrap(), b"89");
+        }
+
+        #[test]
+        fn get_slice_missing_is_not_found() {
+            let s = store();
+            let missing = covalence_hash::O256::blob(b"absent");
+            assert!(matches!(
+                s.get_slice(&missing, 0..5),
+                Err(StoreError::NotFound)
+            ));
+        }
+
+        #[test]
+        fn get_slice_on_tree_is_not_found() {
+            // Same "non-blob looks missing" rule as `get`.
+            let s = store();
+            let key = s.insert_tagged(GitObjectType::tree(), b"tree").unwrap();
+            assert!(matches!(
+                s.get_slice(&key, 0..2),
+                Err(StoreError::NotFound)
+            ));
         }
 
         #[test]

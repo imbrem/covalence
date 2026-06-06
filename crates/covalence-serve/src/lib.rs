@@ -1,5 +1,6 @@
 mod api;
 pub mod eval;
+mod range_http;
 #[cfg(feature = "static")]
 mod static_files;
 

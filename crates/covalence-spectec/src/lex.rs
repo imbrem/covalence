@@ -250,6 +250,8 @@ impl<'a> Lexer<'a> {
         let (tok, n) = match (b, p1, p2) {
             (b'.', Some(b'.'), Some(b'.')) => (Token::DotDotDot, 3),
             (b'=', Some(b'/'), Some(b'=')) => (Token::NotEq, 3),
+            (b'=', Some(b'+'), Some(b'+')) => (Token::EqPlusPlus, 3),
+            (b'=', Some(b'.'), Some(b'.')) => (Token::EqDotDot, 3),
             (b'~', Some(b'>'), Some(b'*')) => (Token::StepStar, 3),
             (b'-', Some(b'-'), _) => (Token::DashDash, 2),
             (b'-', Some(b'>'), _) => (Token::Arrow, 2),
@@ -433,6 +435,15 @@ mod tests {
         // := vs : =
         assert_eq!(lex_str(":="), vec![Token::Assign]);
         assert_eq!(lex_str(": ="), vec![Token::Colon, Token::Eq]);
+        // =++ vs = ++ vs = + +
+        assert_eq!(lex_str("=++"), vec![Token::EqPlusPlus]);
+        assert_eq!(lex_str("= ++"), vec![Token::Eq, Token::PlusPlus]);
+        assert_eq!(lex_str("= + +"), vec![Token::Eq, Token::Plus, Token::Plus]);
+        // =.. vs = . . vs = ...
+        assert_eq!(lex_str("=.."), vec![Token::EqDotDot]);
+        assert_eq!(lex_str("= . ."), vec![Token::Eq, Token::Dot, Token::Dot]);
+        assert_eq!(lex_str("=..."), vec![Token::EqDotDot, Token::Dot]);
+        assert_eq!(lex_str("= ..."), vec![Token::Eq, Token::DotDotDot]);
         // ~~ vs ~> vs ~
         assert_eq!(lex_str("~~"), vec![Token::Approx]);
         assert_eq!(lex_str("~>"), vec![Token::Step]);

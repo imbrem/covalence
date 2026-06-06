@@ -1763,6 +1763,13 @@ fn classify_simple_expression(
         return Ok(call);
     }
 
+    // `e [ <path> <op> <rhs> ]` — functional update / extension. Must
+    // run before `try_classify_idx` so the path-shape body wins over
+    // plain indexing. See task #34 spec doc.
+    if let Some(upd) = try_classify_path_update(toks, span, ctx)? {
+        return Ok(upd);
+    }
+
     // `e [ ... ]` — indexing. Last token is `]`; matching `[` is at
     // some balanced offset. The split puts the bracketed body on the
     // right and the prefix on the left.
@@ -2283,6 +2290,245 @@ fn try_classify_call(
     }))
 }
 
+/// Recognise `e [ <path> <op> <rhs> ]` as a functional update or
+/// extension — `Expr::Upd` for `=` / `:=`, `Expr::Ext` for `=++` /
+/// `=..`. The bracketed body must:
+///
+/// - start with a `.` (root dot-step) or `[` (root index-step), and
+/// - contain one of the operators at top-level bracket depth.
+///
+/// Returns `Ok(None)` if the slice doesn't fit this shape — the caller
+/// then falls through to plain `Expr::Idx` recognition.
+///
+/// Task #34 — see `docs/sketches/spectec-tasks/task-34-expr-paths.md`.
+fn try_classify_path_update(
+    toks: &[Spanned],
+    span: Span,
+    ctx: &ElabContext,
+) -> Result<Option<Expr>, Diagnostic> {
+    if !matches!(toks.last().map(|s| &s.token), Some(Token::RBracket)) {
+        return Ok(None);
+    }
+    // Find the matching `[` for the trailing `]` (same logic as
+    // try_classify_idx — depth walk from the right).
+    let mut depth: i32 = 0;
+    let mut open_idx: Option<usize> = None;
+    for (i, t) in toks.iter().enumerate().rev() {
+        match &t.token {
+            Token::RParen | Token::RBracket | Token::RBrace => depth += 1,
+            Token::LParen | Token::LBracket | Token::LBrace => {
+                depth -= 1;
+                if depth == 0 {
+                    if matches!(&t.token, Token::LBracket) {
+                        open_idx = Some(i);
+                    }
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let Some(open) = open_idx else { return Ok(None) };
+    if open == 0 {
+        return Ok(None);
+    }
+    let prefix = &toks[..open];
+    let inner = &toks[open + 1..toks.len() - 1];
+    if !depth_balanced(prefix) || !depth_balanced(inner) {
+        return Ok(None);
+    }
+    // Body must begin with `.` or `[` to look like a path (anchored at
+    // the implicit root). A bare identifier or number means plain
+    // indexing, which `try_classify_idx` will handle.
+    let Some(first) = inner.first() else { return Ok(None) };
+    if !matches!(&first.token, Token::Dot | Token::LBracket) {
+        return Ok(None);
+    }
+    // Find a top-level update / extend operator inside the body.
+    let Some((op_idx, op_kind)) = find_path_update_op(inner) else {
+        return Ok(None);
+    };
+    let path_toks = &inner[..op_idx];
+    let rhs_toks = &inner[op_idx + 1..];
+    if path_toks.is_empty() || rhs_toks.is_empty() {
+        return Ok(None);
+    }
+    let path = parse_path(path_toks, ctx)?;
+    let rhs_span = rhs_toks
+        .iter()
+        .map(|s| s.span)
+        .reduce(Span::join)
+        .unwrap_or(span);
+    let rhs = classify_simple_expression(rhs_toks, rhs_span, ctx)?;
+    let prefix_span = prefix.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+    let e1 = classify_simple_expression(prefix, prefix_span, ctx)?;
+    Ok(Some(match op_kind {
+        PathUpdateOp::Upd => Expr::Upd {
+            span,
+            e1: Box::new(e1),
+            path: Box::new(path),
+            e2: Box::new(rhs),
+        },
+        PathUpdateOp::Ext => Expr::Ext {
+            span,
+            e1: Box::new(e1),
+            path: Box::new(path),
+            e2: Box::new(rhs),
+        },
+    }))
+}
+
+/// Whether a `<path> <op> <rhs>` body inside `[...]` denotes a
+/// functional update (`Upd`) or extension (`Ext`).
+#[derive(Clone, Copy, Debug)]
+enum PathUpdateOp {
+    Upd,
+    Ext,
+}
+
+/// Find the first top-level (depth 0) update/extend operator in the
+/// brackets-body slice. Returns `Some((index, kind))` or `None`.
+///
+/// Operators searched: `=` (Upd), `:=` (Upd), `=++` (Ext), `=..` (Ext).
+/// Comparisons (`<=`, `>=`, `=/=`) are distinct tokens so the bare `=`
+/// match here is unambiguous.
+fn find_path_update_op(toks: &[Spanned]) -> Option<(usize, PathUpdateOp)> {
+    let mut depth: i32 = 0;
+    for (i, t) in toks.iter().enumerate() {
+        match &t.token {
+            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
+            Token::Eq if depth == 0 => return Some((i, PathUpdateOp::Upd)),
+            Token::Assign if depth == 0 => return Some((i, PathUpdateOp::Upd)),
+            Token::EqPlusPlus if depth == 0 => return Some((i, PathUpdateOp::Ext)),
+            Token::EqDotDot if depth == 0 => return Some((i, PathUpdateOp::Ext)),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Parse a path body — a sequence of `.IDENT`, `[expr]`, and `[e1:e2]`
+/// steps anchored at the implicit `Path::Root`.
+///
+/// Each step is appended to the current path. Path subexpressions
+/// (inside `[ ]`) are elaborated by recursing into
+/// `classify_simple_expression`.
+fn parse_path(toks: &[Spanned], ctx: &ElabContext) -> Result<Path, Diagnostic> {
+    let mut path = Path::Root;
+    let mut i = 0;
+    while i < toks.len() {
+        match &toks[i].token {
+            Token::Dot => {
+                // `.IDENT` — Dot step.
+                let Some(next) = toks.get(i + 1) else {
+                    return Err(Diagnostic::error(
+                        toks[i].span,
+                        "expected identifier after `.` in path",
+                    ));
+                };
+                let Token::Ident(field) = &next.token else {
+                    return Err(Diagnostic::error(
+                        next.span,
+                        format!(
+                            "expected identifier after `.` in path, found {}",
+                            next.token.describe()
+                        ),
+                    ));
+                };
+                path = Path::Dot { p: Box::new(path), field: field.clone() };
+                i += 2;
+            }
+            Token::LBracket => {
+                // `[ ... ]` — find matching `]`, then check for top-level `:`.
+                let body_start = i + 1;
+                let mut bdepth: i32 = 1;
+                let mut close: Option<usize> = None;
+                let mut j = body_start;
+                while j < toks.len() {
+                    match &toks[j].token {
+                        Token::LParen | Token::LBracket | Token::LBrace => bdepth += 1,
+                        Token::RParen | Token::RBracket | Token::RBrace => {
+                            bdepth -= 1;
+                            if bdepth == 0 {
+                                close = Some(j);
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                    j += 1;
+                }
+                let Some(close) = close else {
+                    return Err(Diagnostic::error(
+                        toks[i].span,
+                        "unmatched `[` in path",
+                    ));
+                };
+                let body = &toks[body_start..close];
+                let body_span = body
+                    .iter()
+                    .map(|s| s.span)
+                    .reduce(Span::join)
+                    .unwrap_or(toks[i].span);
+                // Top-level `:` split → slice; otherwise → idx.
+                if let Some(colon_idx) = top_level_colon(body) {
+                    let lhs = &body[..colon_idx];
+                    let rhs = &body[colon_idx + 1..];
+                    if lhs.is_empty() || rhs.is_empty() {
+                        return Err(Diagnostic::error(
+                            body_span,
+                            "slice path step needs expressions on both sides of `:`",
+                        ));
+                    }
+                    let lspan = lhs.iter().map(|s| s.span).reduce(Span::join).unwrap_or(body_span);
+                    let rspan = rhs.iter().map(|s| s.span).reduce(Span::join).unwrap_or(body_span);
+                    let e1 = classify_simple_expression(lhs, lspan, ctx)?;
+                    let e2 = classify_simple_expression(rhs, rspan, ctx)?;
+                    path = Path::Slice { p: Box::new(path), e1, e2 };
+                } else {
+                    if body.is_empty() {
+                        return Err(Diagnostic::error(
+                            body_span,
+                            "empty `[]` not allowed in path",
+                        ));
+                    }
+                    let e = classify_simple_expression(body, body_span, ctx)?;
+                    path = Path::Idx { p: Box::new(path), e };
+                }
+                i = close + 1;
+            }
+            _ => {
+                return Err(Diagnostic::error(
+                    toks[i].span,
+                    format!(
+                        "unexpected token {} in path; expected `.` or `[`",
+                        toks[i].token.describe()
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(path)
+}
+
+/// Top-level `:` index in a bracket body — used to split a slice path
+/// step (`[e1 : e2]`) from an indexing step (`[e]`). Returns `None` if
+/// no top-level `:` exists (e.g. all colons are nested in inner
+/// brackets).
+fn top_level_colon(toks: &[Spanned]) -> Option<usize> {
+    let mut depth: i32 = 0;
+    for (i, t) in toks.iter().enumerate() {
+        match &t.token {
+            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
+            Token::Colon if depth == 0 => return Some(i),
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Recognise `e [ idx ]` as `Expr::Idx`. The matching `[` must be at
 /// the highest-priority balanced position from the right.
 fn try_classify_idx(
@@ -2324,6 +2570,24 @@ fn try_classify_idx(
     let prefix_span = prefix.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
     let inner_span = inner.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
     let e1 = classify_simple_expression(prefix, prefix_span, ctx)?;
+    // Slice form: `e [ lo : hi ]` — top-level `:` inside the brackets.
+    // Both halves must be non-empty; bare `[:]` falls back to Idx.
+    if let Some(colon) = top_level_colon(inner) {
+        let lhs = &inner[..colon];
+        let rhs = &inner[colon + 1..];
+        if !lhs.is_empty() && !rhs.is_empty() {
+            let lspan = lhs.iter().map(|s| s.span).reduce(Span::join).unwrap_or(inner_span);
+            let rspan = rhs.iter().map(|s| s.span).reduce(Span::join).unwrap_or(inner_span);
+            let e2 = classify_simple_expression(lhs, lspan, ctx)?;
+            let e3 = classify_simple_expression(rhs, rspan, ctx)?;
+            return Ok(Some(Expr::Slice {
+                span,
+                e1: Box::new(e1),
+                e2: Box::new(e2),
+                e3: Box::new(e3),
+            }));
+        }
+    }
     let e2 = classify_simple_expression(inner, inner_span, ctx)?;
     Ok(Some(Expr::Idx {
         span,
@@ -3383,6 +3647,167 @@ mod tests {
         for p in &elab.premises {
             assert!(matches!(p, ElabPremise::Rule { .. }));
         }
+    }
+
+    /// Classify a raw expression string against a context built from
+    /// `decls`. Helper for path-update / slice tests.
+    fn classify_expr_str(decls: &str, expr_src: &str) -> Expr {
+        let ctx = build_from_str(decls);
+        let mut map = SourceMap::new();
+        let id = map.add("<expr>", expr_src);
+        let tokens = lex(id, expr_src).expect("lex ok");
+        let span = tokens
+            .iter()
+            .map(|s| s.span)
+            .reduce(Span::join)
+            .expect("non-empty input");
+        let tr = crate::cst::TokenRun {
+            span,
+            tokens,
+        };
+        classify_token_run(&tr, &ctx).expect("classify ok")
+    }
+
+    /// Task #34 — `e[.FIELD = e']` lowers to `Upd { path: Dot{Root, FIELD} }`.
+    #[test]
+    fn elab_path_upd_single_dot() {
+        let e = classify_expr_str("syntax state = nat", "free[.LABELS = eps]");
+        let Expr::Upd { e1, path, e2, .. } = &e else {
+            panic!("expected Expr::Upd, got {e:?}");
+        };
+        assert!(matches!(e1.as_ref(), Expr::Var { name, .. } if name == "free"));
+        let Path::Dot { p, field } = path.as_ref() else {
+            panic!("expected Path::Dot, got {path:?}");
+        };
+        assert!(matches!(p.as_ref(), Path::Root));
+        assert_eq!(field, "LABELS");
+        assert!(matches!(e2.as_ref(), Expr::Eps { .. }));
+    }
+
+    /// Task #34 — `e[.FIELD =++ e']` lowers to `Ext { path: Dot{Root, FIELD} }`.
+    #[test]
+    fn elab_path_ext_with_eqplusplus() {
+        let e = classify_expr_str("syntax state = nat", "z[.ARRAYS =++ ai]");
+        let Expr::Ext { e1, path, e2, .. } = &e else {
+            panic!("expected Expr::Ext, got {e:?}");
+        };
+        assert!(matches!(e1.as_ref(), Expr::Var { name, .. } if name == "z"));
+        let Path::Dot { p, field } = path.as_ref() else {
+            panic!("expected Path::Dot, got {path:?}");
+        };
+        assert!(matches!(p.as_ref(), Path::Root));
+        assert_eq!(field, "ARRAYS");
+        assert!(matches!(e2.as_ref(), Expr::Var { name, .. } if name == "ai"));
+    }
+
+    /// Task #34 — `e[.A.B = e']` lowers to nested `Dot` path.
+    #[test]
+    fn elab_path_chained_dots() {
+        let e = classify_expr_str("syntax state = nat", "f[.MODULE.GLOBALS = a]");
+        let Expr::Upd { path, .. } = &e else {
+            panic!("expected Expr::Upd, got {e:?}");
+        };
+        // Path::Dot { p: Path::Dot { p: Root, field: "MODULE" }, field: "GLOBALS" }
+        let Path::Dot { p: outer_p, field: outer_field } = path.as_ref() else {
+            panic!("outer not Dot");
+        };
+        assert_eq!(outer_field, "GLOBALS");
+        let Path::Dot { p: inner_p, field: inner_field } = outer_p.as_ref() else {
+            panic!("inner not Dot");
+        };
+        assert_eq!(inner_field, "MODULE");
+        assert!(matches!(inner_p.as_ref(), Path::Root));
+    }
+
+    /// Task #34 — `e[.FIELD[i] = e']` lowers to `Idx` step on top of `Dot`.
+    #[test]
+    fn elab_path_dot_then_idx() {
+        let e = classify_expr_str("syntax state = nat", "z[.LOCALS[x] = v]");
+        let Expr::Upd { path, .. } = &e else {
+            panic!("expected Expr::Upd, got {e:?}");
+        };
+        let Path::Idx { p, e: ie } = path.as_ref() else {
+            panic!("expected Path::Idx, got {path:?}");
+        };
+        assert!(matches!(ie, Expr::Var { name, .. } if name == "x"));
+        let Path::Dot { p: pp, field } = p.as_ref() else {
+            panic!("expected inner Path::Dot");
+        };
+        assert!(matches!(pp.as_ref(), Path::Root));
+        assert_eq!(field, "LOCALS");
+    }
+
+    /// Task #34 — `e[[i] = e']` lowers to `Idx` step on `Root` (no
+    /// leading dot). Appears in 4.3-execution.instructions.spectec.
+    #[test]
+    fn elab_path_bracket_only() {
+        let e = classify_expr_str("syntax state = nat", "c[[j] = k]");
+        let Expr::Upd { path, .. } = &e else {
+            panic!("expected Expr::Upd, got {e:?}");
+        };
+        let Path::Idx { p, e: ie } = path.as_ref() else {
+            panic!("expected Path::Idx, got {path:?}");
+        };
+        assert!(matches!(p.as_ref(), Path::Root));
+        assert!(matches!(ie, Expr::Var { name, .. } if name == "j"));
+    }
+
+    /// Task #34 — `e[path := e']` also recognised as Upd (alternate
+    /// surface syntax, mirrors OCaml's permissive grammar).
+    #[test]
+    fn elab_path_upd_with_assign() {
+        let e = classify_expr_str("syntax state = nat", "z[.LOCALS := v]");
+        assert!(matches!(&e, Expr::Upd { .. }));
+    }
+
+    /// Task #34 — `e[.FIELD =.. e']` lowers to Ext, same as `=++`.
+    #[test]
+    fn elab_path_ext_with_eqdotdot() {
+        let e = classify_expr_str("syntax state = nat", "z[.ARRAYS =.. ai]");
+        assert!(matches!(&e, Expr::Ext { .. }));
+    }
+
+    /// Task #34 — plain `e[i]` (no `=` in body) must stay as `Expr::Idx`,
+    /// NOT misclassified as a path update.
+    #[test]
+    fn elab_plain_idx_unaffected() {
+        let e = classify_expr_str("syntax state = nat", "xs[i]");
+        let Expr::Idx { e1, e2, .. } = &e else {
+            panic!("expected Expr::Idx, got {e:?}");
+        };
+        assert!(matches!(e1.as_ref(), Expr::Var { name, .. } if name == "xs"));
+        assert!(matches!(e2.as_ref(), Expr::Var { name, .. } if name == "i"));
+    }
+
+    /// Task #34 — `e[i : j]` (slice form) lowers to `Expr::Slice`.
+    #[test]
+    fn elab_plain_slice() {
+        let e = classify_expr_str("syntax state = nat", "bs[i : j]");
+        let Expr::Slice { e1, e2, e3, .. } = &e else {
+            panic!("expected Expr::Slice, got {e:?}");
+        };
+        assert!(matches!(e1.as_ref(), Expr::Var { name, .. } if name == "bs"));
+        assert!(matches!(e2.as_ref(), Expr::Var { name, .. } if name == "i"));
+        assert!(matches!(e3.as_ref(), Expr::Var { name, .. } if name == "j"));
+    }
+
+    /// Task #34 — path step can itself be a slice: `e[.F[i:j] = e']`.
+    #[test]
+    fn elab_path_slice_step() {
+        let e = classify_expr_str("syntax state = nat", "z[.BYTES[i : j] = b]");
+        let Expr::Upd { path, .. } = &e else {
+            panic!("expected Expr::Upd, got {e:?}");
+        };
+        let Path::Slice { p, e1, e2 } = path.as_ref() else {
+            panic!("expected Path::Slice, got {path:?}");
+        };
+        let Path::Dot { p: pp, field } = p.as_ref() else {
+            panic!("expected inner Path::Dot");
+        };
+        assert!(matches!(pp.as_ref(), Path::Root));
+        assert_eq!(field, "BYTES");
+        assert!(matches!(e1, Expr::Var { name, .. } if name == "i"));
+        assert!(matches!(e2, Expr::Var { name, .. } if name == "j"));
     }
 
     #[test]

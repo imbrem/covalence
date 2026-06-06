@@ -149,8 +149,15 @@ pub enum Token {
     LogOr,
     /// `++` (list concatenation)
     PlusPlus,
-    /// `:=` (rare)
+    /// `:=` (rare; appears in `show` hints)
     Assign,
+    /// `=++` — path-extend operator: `e[path =++ e']` appends `e'`
+    /// (a list) to the existing list at `path` inside `e`.
+    EqPlusPlus,
+    /// `=..` — path-extend operator variant: `e[path =.. e']`. Does
+    /// not appear in wasm-3.0 corpus but recognised for completeness
+    /// against the upstream OCaml lexer.
+    EqDotDot,
 }
 
 impl Token {
@@ -245,6 +252,8 @@ impl Token {
             Token::LogOr => "\\/".into(),
             Token::PlusPlus => "++".into(),
             Token::Assign => ":=".into(),
+            Token::EqPlusPlus => "=++".into(),
+            Token::EqDotDot => "=..".into(),
         }
     }
 
@@ -308,6 +317,8 @@ impl Token {
             Token::LogOr => "`\\/`",
             Token::PlusPlus => "`++`",
             Token::Assign => "`:=`",
+            Token::EqPlusPlus => "`=++`",
+            Token::EqDotDot => "`=..`",
         }
     }
 }

@@ -1390,7 +1390,7 @@ fn mixop_from_alt_tokens(alt: &Alt) -> spectec_ast::MixOp {
                 }
             }
             crate::token::Token::LParen => s.push('%'),
-            other => s.push_str(other.describe().trim_matches('`')),
+            other => s.push_str(&other.to_source_text()),
         }
     }
     spectec_ast::MixOp::new(s.split('%').map(str::to_owned).collect())

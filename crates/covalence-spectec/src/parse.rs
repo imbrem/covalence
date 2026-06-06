@@ -562,13 +562,28 @@ fn parse_syntax_body(file: FileId, input: &mut &[Spanned]) -> Result<SyntaxBody,
     let body_run = take_until_next_top(input);
     if contains_top_level_pipe(&body_run.tokens) {
         Ok(SyntaxBody::Variant(split_alts(&body_run)?))
-    } else if body_starts_with_case_head(&body_run.tokens) {
+    } else if body_starts_with_case_head(&body_run.tokens)
+        || body_looks_like_variant(&body_run.tokens)
+    {
         // Reuse split_alts so the trailing `hint(...)` clauses get
         // peeled off the body just like the multi-alt case.
         Ok(SyntaxBody::Variant(split_alts(&body_run)?))
     } else {
         Ok(SyntaxBody::Alias(body_run))
     }
+}
+
+/// True when the body contains a "literal mark" — a token that
+/// distinguishes a variant case from a bare type expression. Backticks
+/// (display-only escapes preceding literals like `` `...``) and
+/// `Semicolon` operators (e.g. `state; instr*`) both qualify.
+fn body_looks_like_variant(toks: &[Spanned]) -> bool {
+    toks.iter().any(|t| {
+        matches!(
+            t.token,
+            Token::Backtick | Token::Semi | Token::Arrow
+        )
+    })
 }
 
 /// True when the first token is an `Ident` whose name looks like a

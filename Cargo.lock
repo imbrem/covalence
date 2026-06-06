@@ -898,9 +898,11 @@ name = "covalence-shell"
 version = "0.0.0"
 dependencies = [
  "covalence-hash",
+ "covalence-hol",
  "covalence-kernel",
  "covalence-object",
  "covalence-store",
+ "smol_str",
  "thiserror 2.0.18",
 ]
 

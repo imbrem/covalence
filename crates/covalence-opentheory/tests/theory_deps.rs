@@ -352,20 +352,10 @@ fn std_resolver() -> Option<FileResolver> {
 // per-test comments.
 // -------------------------------------------------------------------
 
-// After the auto-register hack, this article runs to completion but
-// only exports 10 theorems; the assertion wants ≥ 11.
-//
-// Two possibilities (untriaged):
-//   1. Our interpreter silently drops one `thm` command — e.g. a
-//      conclusion that fails `aconv` after a fold mismatch we
-//      handle elsewhere but not here.
-//   2. The std `bool-def` article only declares 10 theorems and
-//      the "≥ 11" was based on a different snapshot of the package.
-//
-// Quick triage: print every theorem's concl shape while parsing
-// the article and compare against HOL Light's `bool-def` output.
+// Verified by `grep -c '^thm$'`: the std `bool-def-1.11` article has
+// exactly 10 `thm` commands. Test passes after dropping the
+// off-by-one assertion threshold from "≥ 11" to "= 10".
 #[test]
-#[ignore = "10 < 11 theorems — either we silently drop one or the assertion is stale"]
 fn test_std_bool_def() {
     let Some(resolver) = std_resolver() else {
         return;
@@ -373,26 +363,32 @@ fn test_std_bool_def() {
     let (mut kernel, mut names) = setup_with_select();
     let mut cache = TheoryCache::default();
     let theory = check_theory(&mut kernel, &mut names, &resolver, "bool-def", &mut cache).unwrap();
-    assert!(
-        theory.theorems.len() >= 11,
-        "bool-def should export at least 11 theorems (one per definition), got {}",
+    // The std `bool-def-1.11` article contains exactly 10 `thm`
+    // commands (one per definition that introduces a theorem). The
+    // previous "≥ 11" was based on an earlier snapshot.
+    assert_eq!(
+        theory.theorems.len(),
+        10,
+        "bool-def should export 10 theorems (one per definition), got {}",
         theory.theorems.len()
     );
 }
 
-// Fails at article line 221: `trans: IllTypedInput`.
+// Fails at article line 666: `thm: unexpected hypothesis in theorem`.
 //
-// Same family of issue as `test_unit_def_full_chain`: the kernel's
-// `Thm::trans` rejects because `arena.is_well_typed(ab.concl)` or
-// `is_well_typed(bc.concl)` returns false. The cumulative effect of
-// inst / inst_type along the std umbrella article leaves at least
-// one input Thm's concl with a structurally ill-typed term.
-//
-// Same suspected fix area as the unit-* tests: `subst_tyvar_in_term`
-// not consistently propagating type changes through nested Lam
-// binders. Until the substitution path is tightened, this fails.
+// After the alloc_term auto-infer + abs_unchecked + raw↔folded UF
+// bridge fixes, the std umbrella articles run past the previous
+// `trans: IllTypedInput` and into a downstream `thm` check.
+// `cmd_thm` rejects because the exported Thm carries 10 hypotheses
+// while the article expects empty hyps. The 10 hyps aren't trusted
+// Props (neither `Arc::ptr_eq` nor structural-concl filters drop
+// them), so something earlier in the proof is accumulating
+// non-trusted assume Props the article expects to have been
+// discharged. Suspected: `Thm::deduct_antisym_rule`'s
+// UF-canonical-based drop missing pairs that share a canonical but
+// haven't been ptr-equal'd to the exclude term.
 #[test]
-#[ignore = "trans IllTypedInput — same root cause as test_unit_def_full_chain"]
+#[ignore = "thm: 10 unexpected hyps at line 666 — deduct_antisym likely not dropping accumulated assume Props"]
 fn test_std_bool_umbrella() {
     let Some(resolver) = std_resolver() else {
         return;
@@ -415,11 +411,11 @@ fn test_std_bool_umbrella() {
 // Umbrella: unit
 // -------------------------------------------------------------------
 
-// Same `trans: IllTypedInput` family. The std unit package's
-// combined article applies enough inst_type to trigger the same
-// substitution-propagation bug.
+// Same `thm: 10 unexpected hyps at line 666` issue as
+// test_std_bool_umbrella — both go through the bool sub-articles
+// transitively.
 #[test]
-#[ignore = "trans IllTypedInput — same as test_std_bool_umbrella"]
+#[ignore = "thm: 10 unexpected hyps at line 666 — same as test_std_bool_umbrella"]
 fn test_std_unit() {
     let Some(resolver) = std_resolver() else {
         return;
@@ -442,11 +438,10 @@ fn test_std_unit() {
 // Umbrella: pair
 // -------------------------------------------------------------------
 
-// Same `trans: IllTypedInput` family as test_std_bool_umbrella.
-// Will pass once the substitution propagation bug behind the
-// unit-* / bool-umbrella failures is fixed.
+// Same `thm: 10 unexpected hyps at line 666` issue as
+// test_std_bool_umbrella.
 #[test]
-#[ignore = "trans IllTypedInput — same as test_std_bool_umbrella"]
+#[ignore = "thm: 10 unexpected hyps at line 666 — same as test_std_bool_umbrella"]
 fn test_std_pair() {
     let Some(resolver) = std_resolver() else {
         return;
@@ -469,9 +464,10 @@ fn test_std_pair() {
 // Umbrella: natural
 // -------------------------------------------------------------------
 
-// Same `trans: IllTypedInput` family as test_std_bool_umbrella.
+// Same `thm: 10 unexpected hyps at line 666` issue as
+// test_std_bool_umbrella.
 #[test]
-#[ignore = "trans IllTypedInput — same as test_std_bool_umbrella"]
+#[ignore = "thm: 10 unexpected hyps at line 666 — same as test_std_bool_umbrella"]
 fn test_std_natural() {
     let Some(resolver) = std_resolver() else {
         return;

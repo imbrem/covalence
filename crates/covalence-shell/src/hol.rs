@@ -1041,7 +1041,16 @@ impl HolPrim {
         let mut out = Vec::new();
         for i in 0..ctx.len() {
             let assum = ctx.assumption(i).expect("len/index invariant");
+            // Filter by Arc::ptr_eq first (the canonical path).
             if self.trusted_props.iter().any(|p| Arc::ptr_eq(p, assum)) {
+                continue;
+            }
+            // Fallback: structural concl match. `inst_type` /
+            // `subst_tyvar_in_term` can produce a new `Arc<Prop>`
+            // with the same concl as a trusted one when type
+            // substitution rebuilds a Prop; we still treat those
+            // as trusted.
+            if self.trusted_props.iter().any(|p| p.concl == assum.concl) {
                 continue;
             }
             let r = TermRef::local(assum.concl);

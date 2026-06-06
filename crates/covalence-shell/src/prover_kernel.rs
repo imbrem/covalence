@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use covalence_kernel::{Kernel, Prop, Thm, TermRef, TypeRef};
 use covalence_kernel::primop::{PrimOp1, PrimOp2};
-use covalence_kernel::term::TermDef;
+use covalence_kernel::term::{TermDef, TermKind};
 
 use crate::prover::{Prover, ProverError};
 
@@ -109,6 +109,29 @@ impl Prover for Kernel {
 
     fn op2(&mut self, op: PrimOp2, a: TermRef, b: TermRef) -> Result<TermRef, ProverError> {
         Ok(Kernel::op2(self, op, a, b))
+    }
+
+    // ------------------------------------------------------------------
+    // Inspection
+    // ------------------------------------------------------------------
+
+    fn conclusion(&self, th: &Thm) -> Result<TermRef, ProverError> {
+        Ok(TermRef::local(th.prop().concl))
+    }
+
+    fn dest_eq(&self, t: TermRef) -> Option<(TermRef, TermRef)> {
+        match self.kind(t)? {
+            TermKind::Eq(a, b) => Some((a, b)),
+            _ => None,
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Trust-injection
+    // ------------------------------------------------------------------
+
+    fn union(&mut self, a: TermRef, b: TermRef) -> Result<(), ProverError> {
+        Ok(Kernel::union(self, a, b)?)
     }
 
     // ------------------------------------------------------------------

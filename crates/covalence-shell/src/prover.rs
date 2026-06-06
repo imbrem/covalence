@@ -181,12 +181,41 @@ pub trait Prover {
     }
 
     // -----------------------------------------------------------------
+    // Inspection
+    // -----------------------------------------------------------------
+
+    /// The conclusion of a Thm as a Term. Round-trips through the kernel's
+    /// own representation; frontends use it to extract equalities or to
+    /// re-check shapes for rules like `cong`.
+    fn conclusion(&self, th: &Self::Thm) -> Result<Self::Term, ProverError>;
+
+    /// Destructure `t` as an equality `(= a b)`, returning `Some((a, b))`
+    /// if so. Used by rules that consume premise equalities (`cong`,
+    /// `eq_mp`, …) and need access to the sides.
+    fn dest_eq(&self, t: Self::Term) -> Option<(Self::Term, Self::Term)>;
+
+    // -----------------------------------------------------------------
     // Context (assumption management)
     // -----------------------------------------------------------------
 
     /// Push `t` onto the current context as an assumption, returning the
     /// `Prop` handle that downstream rules (e.g. `assume`) reference.
     fn push_assumption(&mut self, t: Self::Term) -> Result<Self::Prop, ProverError>;
+
+    // -----------------------------------------------------------------
+    // Trust-injection (egraph union)
+    // -----------------------------------------------------------------
+
+    /// Record `a ≡ b` in the egraph's union-find **without proof**.
+    ///
+    /// This is the kernel's trust escape hatch: any subsequent `cong`-style
+    /// derivation that closes over this union depends on the equality being
+    /// semantically true. The framework redesign will replace this with an
+    /// observation under a named authority; until then, callers should
+    /// document at the call site *why* the equality is trusted (e.g.
+    /// "Alethe TRUST_THEORY_REWRITE step" or "downstream of an
+    /// already-verified Thm conclusion").
+    fn union(&mut self, a: Self::Term, b: Self::Term) -> Result<(), ProverError>;
 
     // -----------------------------------------------------------------
     // Proof rules

@@ -227,6 +227,91 @@ fn trans_step_chains() {
 }
 
 #[test]
+fn cong_step_closes_function_equality() {
+    use covalence_sexp::SExp;
+
+    // Setup: `f : Int -> Int`, `x : Int`. Premise `(= x 0)` → derive
+    // `(= (f x) (f 0))` via cong.
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelAletheBridge::new(&mut kernel);
+    bridge
+        .declare_fun(
+            "f",
+            &[SExp::symbol("Int")],
+            &SExp::symbol("Int"),
+        )
+        .unwrap();
+    bridge.declare_fun("x", &[], &SExp::symbol("Int")).unwrap();
+
+    let eq_x0 = SExp::List(vec![
+        SExp::symbol("="),
+        SExp::symbol("x"),
+        SExp::symbol("0"),
+    ]);
+    let prem = bridge.assume("a0", &eq_x0).unwrap();
+
+    let fx_eq_f0 = SExp::List(vec![
+        SExp::symbol("="),
+        SExp::List(vec![SExp::symbol("f"), SExp::symbol("x")]),
+        SExp::List(vec![SExp::symbol("f"), SExp::symbol("0")]),
+    ]);
+    let _ = bridge
+        .step(
+            "t1",
+            std::slice::from_ref(&fx_eq_f0),
+            "cong",
+            &[prem],
+            &[],
+            &[],
+        )
+        .expect("cong over `x = 0` should close `f x = f 0`");
+}
+
+#[test]
+fn hole_trust_theory_rewrite_succeeds() {
+    use covalence_sexp::{SExp, parse_smt};
+
+    // `(step ... (cl (= x y)) :rule hole :args ("TRUST_THEORY_REWRITE" …))`
+    // The args list models cvc5's emission: a quoted string tag plus
+    // some opaque metadata we ignore.
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelAletheBridge::new(&mut kernel);
+    bridge.declare_fun("x", &[], &SExp::symbol("Int")).unwrap();
+    bridge.declare_fun("y", &[], &SExp::symbol("Int")).unwrap();
+
+    let clause = vec![SExp::List(vec![
+        SExp::symbol("="),
+        SExp::symbol("x"),
+        SExp::symbol("y"),
+    ])];
+    let args = parse_smt(r#""TRUST_THEORY_REWRITE" foo 3 6"#)
+        .expect("SMT-LIB string literal parses");
+    let _ = bridge
+        .step("t0", &clause, "hole", &[], &args, &[])
+        .expect("hole TRUST_THEORY_REWRITE should accept the equality");
+}
+
+#[test]
+fn hole_unknown_tag_still_punts() {
+    use covalence_sexp::{SExp, parse_smt};
+
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelAletheBridge::new(&mut kernel);
+    bridge.declare_fun("x", &[], &SExp::symbol("Int")).unwrap();
+
+    let clause = vec![SExp::List(vec![
+        SExp::symbol("="),
+        SExp::symbol("x"),
+        SExp::symbol("x"),
+    ])];
+    let args = parse_smt(r#""SOME_OTHER_TRUST""#).unwrap();
+    let err = bridge
+        .step("t0", &clause, "hole", &[], &args, &[])
+        .expect_err("unknown hole variety should punt");
+    assert!(matches!(err, BridgeError::NotImplemented(_)));
+}
+
+#[test]
 fn cvc5_uflia_simple_proof_punts_on_equiv_pos2() {
     let (problem, proof) = load_problem_and_proof("cvc5-uflia-simple");
     let mut kernel = Kernel::new();

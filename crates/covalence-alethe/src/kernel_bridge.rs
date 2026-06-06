@@ -45,13 +45,24 @@ pub struct KernelAletheBridge<'a, P: Prover> {
     /// SMT sort symbol → kernel type. Arity > 0 lives behind the trait via
     /// `tyapp`; we store the *base* type so look-ups are O(1).
     sorts: HashMap<String, P::Type>,
-    /// SMT function/constant symbol → kernel type (the constant's signature).
-    funs: HashMap<String, P::Type>,
+    /// SMT function/constant symbol → (kernel type, cached const TermRef).
+    ///
+    /// The cached `P::Term` is what makes congruence work: the kernel doesn't
+    /// hash-cons `alloc_term`, so re-calling `const_term("x", Int)` would
+    /// produce a fresh `TermRef` each time. Caching the constant once at
+    /// `declare_fun` and reusing it everywhere ensures `x` is *the same
+    /// term* in every occurrence — required for UF-based congruence to fire.
+    funs: HashMap<String, (P::Type, P::Term)>,
     /// Local variables in scope (innermost last). Each entry is
-    /// `(smt-symbol, kernel type)`. Populated by quantifier translation
-    /// and (future) anchor scopes; the kernel handles its own name interning
-    /// at the `free_var` call site.
-    locals: Vec<(String, P::Type)>,
+    /// `(smt-symbol, kernel type, cached free-var TermRef)`. Populated by
+    /// quantifier translation and (future) anchor scopes.
+    locals: Vec<(String, P::Type, P::Term)>,
+    /// Cached integer literals: `n` → `int_lit(n)` term. Same hash-cons
+    /// rationale as `funs`.
+    int_lits: HashMap<i64, P::Term>,
+    /// Cached `true` / `false`.
+    cached_true: Option<P::Term>,
+    cached_false: Option<P::Term>,
     /// `:named` bindings — `@name` → already-translated kernel term.
     named: HashMap<String, P::Term>,
     /// Set once a step derives the empty clause `(cl)`.
@@ -66,6 +77,9 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
             sorts: HashMap::new(),
             funs: HashMap::new(),
             locals: Vec::new(),
+            int_lits: HashMap::new(),
+            cached_true: None,
+            cached_false: None,
             named: HashMap::new(),
             derived_empty: false,
         }
@@ -81,9 +95,9 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
         self.sorts.get(name).copied()
     }
 
-    /// Look up a declared function/constant by SMT-LIB symbol.
+    /// Look up a declared function/constant's *signature* by SMT-LIB symbol.
     pub fn lookup_fun(&self, name: &str) -> Option<P::Type> {
-        self.funs.get(name).copied()
+        self.funs.get(name).map(|(ty, _)| *ty)
     }
 
     // ----------------------------------------------------------------
@@ -152,35 +166,44 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
                 .ok_or_else(|| BridgeError::UnknownFun(sym.to_string()));
         }
 
-        // Boolean literals (SMT-LIB spelling).
+        // Boolean literals — cached so every `true` / `false` occurrence
+        // shares one TermRef.
         if sym == "true" {
-            return Ok(self.prover.truth()?);
+            if let Some(t) = self.cached_true {
+                return Ok(t);
+            }
+            let t = self.prover.truth()?;
+            self.cached_true = Some(t);
+            return Ok(t);
         }
         if sym == "false" {
-            return Ok(self.prover.falsity()?);
+            if let Some(t) = self.cached_false {
+                return Ok(t);
+            }
+            let t = self.prover.falsity()?;
+            self.cached_false = Some(t);
+            return Ok(t);
         }
 
-        // Numeric literals. SMT-LIB numerals are bare digit sequences;
-        // negative values use the unary `(- n)` form handled in translate_app.
+        // Numeric literals — cached.
         if let Ok(n) = sym.parse::<i64>() {
-            return Ok(self.prover.int_lit(n)?);
+            if let Some(t) = self.int_lits.get(&n).copied() {
+                return Ok(t);
+            }
+            let t = self.prover.int_lit(n)?;
+            self.int_lits.insert(n, t);
+            return Ok(t);
         }
 
-        // Local variable (innermost-first).
-        // Clone the snapshot to avoid holding a borrow across the prover call.
-        let local = self
-            .locals
-            .iter()
-            .rev()
-            .find(|(s, _)| s == sym)
-            .map(|(_, ty)| *ty);
-        if let Some(ty) = local {
-            return Ok(self.prover.free_var(sym, ty)?);
+        // Local variable (innermost-first); returns the cached free-var
+        // TermRef from the scope frame.
+        if let Some((_, _, term)) = self.locals.iter().rev().find(|(s, _, _)| s == sym) {
+            return Ok(*term);
         }
 
-        // Declared function / constant.
-        if let Some(ty) = self.funs.get(sym).copied() {
-            return Ok(self.prover.const_term(sym, ty)?);
+        // Declared function / constant — return the cached const TermRef.
+        if let Some((_, term)) = self.funs.get(sym).copied() {
+            return Ok(term);
         }
 
         Err(BridgeError::UnknownFun(sym.to_string()))
@@ -408,6 +431,107 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
         }
         Ok(acc)
     }
+
+    /// Alethe `cong`: congruence over function applications.
+    ///
+    /// `(step <id> (cl (= (op a_1 … a_n) (op b_1 … b_n))) :rule cong
+    ///    :premises ((= a_{i_1} b_{i_1}) …))`
+    ///
+    /// Each premise is `Γ ⊢ (= a b)`. We inject the equality into the
+    /// kernel's egraph union-find (untrusted from the kernel's POV but
+    /// soundness-justified by the premise Thm itself — it's already
+    /// verified), then ask the kernel to close `lhs = rhs` under congruence
+    /// to the necessary depth.
+    fn rule_cong(
+        &mut self,
+        clause: &[SExpr],
+        premises: &[P::Thm],
+    ) -> Result<P::Thm, BridgeError> {
+        if clause.len() != 1 {
+            return Err(BridgeError::Malformed(
+                "cong: expected unit clause".into(),
+            ));
+        }
+        let eq_lit = clause[0]
+            .as_list()
+            .ok_or_else(|| BridgeError::Malformed("cong: clause not a list".into()))?;
+        if eq_lit.len() != 3 || eq_lit[0].as_symbol() != Some("=") {
+            return Err(BridgeError::Malformed(
+                "cong: conclusion must be `(= lhs rhs)`".into(),
+            ));
+        }
+        // Process premises FIRST so the UF is populated before we materialise
+        // the conclusion's lhs/rhs. (eq_at_level resolves canonicals at call
+        // time, so order shouldn't matter — but doing this first keeps the
+        // intent obvious.)
+        for prem in premises {
+            let concl = self.prover.conclusion(prem)?;
+            let (a, b) = self.prover.dest_eq(concl).ok_or_else(|| {
+                BridgeError::Malformed("cong: premise is not an equality".into())
+            })?;
+            self.prover.union(a, b)?;
+        }
+
+        let lhs = self.translate_term(&eq_lit[1])?;
+        let rhs = self.translate_term(&eq_lit[2])?;
+
+        // Depth is the term tree depth at which we expect congruence to
+        // match. For Alethe `cong` the conclusion is always a single
+        // application layer over the premise-driven equalities; depth 32
+        // is generously larger than anything cvc5 emits in practice.
+        Ok(self.prover.cong(lhs, rhs, 32)?)
+    }
+
+    /// Alethe `hole`: a deliberately under-specified step. cvc5 uses it as
+    /// a placeholder when it doesn't have a fine-grained Alethe rule — the
+    /// `:args` carry a tag identifying what kind of trust is required.
+    ///
+    /// We currently accept exactly one variety: `TRUST_THEORY_REWRITE`,
+    /// which always produces an equality `(= a b)`. We discharge it via
+    /// the kernel's egraph: union `a` and `b` (the trust point), then
+    /// close `a = b` via congruence at depth 0. Any other `hole` flavour
+    /// punts with `NotImplemented` so the failure mode stays loud.
+    fn rule_hole(
+        &mut self,
+        clause: &[SExpr],
+        args: &[SExpr],
+    ) -> Result<P::Thm, BridgeError> {
+        // The tag arrives either as a string literal `"TRUST_THEORY_REWRITE"`
+        // or (defensively) as a bare symbol.
+        let tag = args
+            .first()
+            .and_then(|s| {
+                s.as_str()
+                    .and_then(|(_, bytes)| std::str::from_utf8(bytes).ok().map(str::to_string))
+                    .or_else(|| s.as_symbol().map(str::to_string))
+            })
+            .ok_or_else(|| BridgeError::Malformed("hole: missing :args tag".into()))?;
+
+        if tag != "TRUST_THEORY_REWRITE" {
+            return Err(BridgeError::NotImplemented(format!(
+                "hole variety `{tag}`"
+            )));
+        }
+
+        if clause.len() != 1 {
+            return Err(BridgeError::Malformed(
+                "hole TRUST_THEORY_REWRITE: expected unit clause".into(),
+            ));
+        }
+        let eq_lit = clause[0]
+            .as_list()
+            .ok_or_else(|| BridgeError::Malformed("hole: clause not a list".into()))?;
+        if eq_lit.len() != 3 || eq_lit[0].as_symbol() != Some("=") {
+            return Err(BridgeError::Malformed(
+                "hole TRUST_THEORY_REWRITE: clause must be `(= a b)`".into(),
+            ));
+        }
+        let lhs = self.translate_term(&eq_lit[1])?;
+        let rhs = self.translate_term(&eq_lit[2])?;
+        // Trust point. Recorded but unproved.
+        self.prover.union(lhs, rhs)?;
+        Ok(self.prover.cong(lhs, rhs, 0)?)
+    }
 }
 
 // =====================================================================
@@ -436,7 +560,10 @@ impl<'a, P: Prover> AletheBridge for KernelAletheBridge<'a, P> {
         sort: &SExpr,
     ) -> Result<(), BridgeError> {
         let ty = self.function_type(params, sort)?;
-        self.funs.insert(name.to_string(), ty);
+        // Pre-allocate the const term so every later `lookup_atom(name)`
+        // returns the same TermRef. See the `funs` field doc.
+        let term = self.prover.const_term(name, ty)?;
+        self.funs.insert(name.to_string(), (ty, term));
         Ok(())
     }
 
@@ -461,7 +588,7 @@ impl<'a, P: Prover> AletheBridge for KernelAletheBridge<'a, P> {
         clause: &[SExpr],
         rule: &str,
         premises: &[P::Thm],
-        _args: &[SExpr],
+        args: &[SExpr],
         _discharge: &[P::Thm],
     ) -> Result<P::Thm, BridgeError> {
         // Eagerly translate clause literals so syntactic errors surface
@@ -479,6 +606,8 @@ impl<'a, P: Prover> AletheBridge for KernelAletheBridge<'a, P> {
         match rule {
             "refl" => self.rule_refl(clause),
             "trans" => self.rule_trans(clause, premises),
+            "cong" => self.rule_cong(clause, premises),
+            "hole" => self.rule_hole(clause, args),
             other => Err(BridgeError::NotImplemented(format!("rule `{other}`"))),
         }
     }

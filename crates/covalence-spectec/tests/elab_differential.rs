@@ -113,6 +113,21 @@ fn diff_against_wasm_spec_ast() {
     eprintln!(
         "  Rel MixOp matches: {rel_mixop_matches} / {rel_mixop_compared} compared (Rel names appearing on both sides)"
     );
+    if rel_mixop_matches < rel_mixop_compared {
+        eprintln!("  MixOp mismatches (first 8):");
+        let mut shown = 0;
+        for (name, ours_mo) in &our_rel_mixops {
+            if shown >= 8 { break; }
+            if let Some(theirs_mo) = ref_rel_mixops.get(name) {
+                if ours_mo != theirs_mo {
+                    eprintln!(
+                        "    {name}: ours {ours_mo:?}\n      theirs {theirs_mo:?}"
+                    );
+                    shown += 1;
+                }
+            }
+        }
+    }
 
     // Rule body coverage: for relations that appear on both sides,
     // walk paired rules in source order and count how many of OUR

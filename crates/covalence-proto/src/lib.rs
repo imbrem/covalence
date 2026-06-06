@@ -1,4 +1,5 @@
 pub mod error;
+pub mod git;
 
 #[cfg(feature = "discovery")]
 pub mod discovery;

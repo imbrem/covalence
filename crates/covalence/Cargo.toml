@@ -19,6 +19,10 @@ data = ["covalence-repl/arrow", "covalence-repl/parquet"]
 [dependencies]
 covalence-lsp = { path = "../covalence-lsp", optional = true }
 covalence-git = { path = "../covalence-git", optional = true, features = ["clone"] }
+# Default features (server discovery, XDG paths) need `dirs` / `nix` and only
+# build off-WASM. The `git` module — which `cog clone` uses for repo
+# discovery — has no extra deps and is always available.
+covalence-proto = { path = "../covalence-proto", default-features = false }
 clap = { version = "4", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -32,7 +36,7 @@ covalence-hol = { path = "../covalence-hol", optional = true }
 covalence-opentheory = { path = "../covalence-opentheory", optional = true }
 covalence-wasm = { path = "../covalence-wasm", default-features = false }
 covalence-client = { path = "../covalence-client", features = ["sync"] }
-covalence-proto = { path = "../covalence-proto" }
+covalence-proto = { path = "../covalence-proto", features = ["discovery", "config"] }
 covalence-object = { path = "../covalence-object" }
 covalence-hash = { path = "../covalence-hash" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }

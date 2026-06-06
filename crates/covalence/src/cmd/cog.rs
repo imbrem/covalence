@@ -91,9 +91,10 @@ pub struct MountArgs {
 
 #[derive(clap::Args)]
 pub struct CloneArgs {
-    /// Repository URL (http/https) or local path (`file://`, `/abs/path`,
-    /// `./rel/path`, `~/path`).
-    pub url: String,
+    /// Repository URL (http/https), local path (`file://`, `/abs/path`,
+    /// `./rel/path`, `~/path`), or `.` / omitted to discover and clone the
+    /// repository enclosing the current working directory.
+    pub url: Option<String>,
 
     /// Shallow clone depth (HTTP clones only)
     #[arg(long)]
@@ -154,8 +155,10 @@ fn run_clone(args: CloneArgs) -> std::io::Result<()> {
         None => vec![],
     };
 
+    let url = resolve_clone_url(args.url.as_deref())?;
+
     let opts = CloneOptions {
-        url: args.url.clone(),
+        url: url.clone(),
         depth: args.depth,
         filter: args.filter.clone(),
         ref_prefixes,
@@ -165,10 +168,7 @@ fn run_clone(args: CloneArgs) -> std::io::Result<()> {
         eprintln!("{msg}");
     })?;
 
-    println!(
-        "Cloned {} object(s) from {}",
-        result.objects_stored, args.url
-    );
+    println!("Cloned {} object(s) from {}", result.objects_stored, url);
     for r in &result.refs {
         if let Some(ref target) = r.symref_target {
             println!("  {} -> {} {}", r.name, target, r.oid);
@@ -208,6 +208,31 @@ fn run_clone(args: CloneArgs) -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+/// Resolve the `cov cog clone [URL]` argument:
+/// - `None` or `"."` → discover the repository enclosing the current working
+///   directory via [`covalence_proto::git::discover_from_cwd`].
+/// - anything else → pass through unchanged.
+///
+/// Returns the string `clone_into` should classify (path or URL).
+fn resolve_clone_url(arg: Option<&str>) -> std::io::Result<String> {
+    let needs_discovery = matches!(arg, None | Some(".") | Some("./"));
+    if needs_discovery {
+        let repo = covalence_proto::git::discover_from_cwd().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no git repository found in the current directory or any ancestor",
+            )
+        })?;
+        eprintln!(
+            "Discovered {} repository at {}",
+            if repo.bare { "bare" } else { "worktree" },
+            repo.root.display(),
+        );
+        return Ok(repo.root.to_string_lossy().into_owned());
+    }
+    Ok(arg.unwrap().to_string())
 }
 
 #[cfg(not(target_family = "wasm"))]

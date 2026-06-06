@@ -1065,12 +1065,16 @@ fn group_recursive(defs: Vec<spectec_ast::SpecTecDef>) -> Vec<spectec_ast::SpecT
             idx_by_name.insert(name.to_string(), i);
         }
     }
+    let kinds: Vec<DefKind> = defs.iter().map(def_kind).collect();
     let mut deps: Vec<Vec<usize>> = Vec::with_capacity(n);
-    for d in &defs {
+    for (i, d) in defs.iter().enumerate() {
         let refs = referenced_names(d);
+        // Only consider edges within the same namespace (Typ→Typ,
+        // Rel→Rel, etc.). OCaml's elaborator groups Rec the same way.
         let mut targets: Vec<usize> = refs
             .into_iter()
             .filter_map(|r| idx_by_name.get(&r).copied())
+            .filter(|&j| kinds[j] == kinds[i])
             .collect();
         targets.sort_unstable();
         targets.dedup();
@@ -1112,6 +1116,25 @@ fn group_recursive(defs: Vec<spectec_ast::SpecTecDef>) -> Vec<spectec_ast::SpecT
         }
     }
     out
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+enum DefKind {
+    Typ,
+    Rel,
+    Dec,
+    Gram,
+    Rec,
+}
+
+fn def_kind(d: &spectec_ast::SpecTecDef) -> DefKind {
+    match d {
+        spectec_ast::SpecTecDef::Typ { .. } => DefKind::Typ,
+        spectec_ast::SpecTecDef::Rel { .. } => DefKind::Rel,
+        spectec_ast::SpecTecDef::Dec { .. } => DefKind::Dec,
+        spectec_ast::SpecTecDef::Gram { .. } => DefKind::Gram,
+        spectec_ast::SpecTecDef::Rec { .. } => DefKind::Rec,
+    }
 }
 
 fn def_name(d: &spectec_ast::SpecTecDef) -> Option<&str> {

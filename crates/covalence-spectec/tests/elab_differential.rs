@@ -145,6 +145,8 @@ fn diff_against_wasm_spec_ast() {
     let our_rec_count = count_rec_groups(&ours);
     let their_rec_count = count_rec_groups(&reference);
     eprintln!("  Rec groups: ours {our_rec_count}, theirs {their_rec_count}");
+    eprintln!("    ours histogram (size → count):   {:?}", rec_size_histogram(&ours));
+    eprintln!("    theirs histogram (size → count): {:?}", rec_size_histogram(&reference));
 
     // Dec clause coverage: how many of our Dec clauses have a
     // non-sentinel rhs?
@@ -272,6 +274,24 @@ fn count_rec_groups(defs: &[SpecTecDef]) -> usize {
         walk(d, &mut n);
     }
     n
+}
+
+/// Break down Rec groups by size — singletons (self-recursive defs)
+/// vs multi-member (mutually-recursive groups).
+fn rec_size_histogram(defs: &[SpecTecDef]) -> std::collections::BTreeMap<usize, usize> {
+    let mut hist: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
+    fn walk(d: &SpecTecDef, hist: &mut std::collections::BTreeMap<usize, usize>) {
+        if let SpecTecDef::Rec { ds } = d {
+            *hist.entry(ds.len()).or_insert(0) += 1;
+            for d in ds {
+                walk(d, hist);
+            }
+        }
+    }
+    for d in defs {
+        walk(d, &mut hist);
+    }
+    hist
 }
 
 fn is_placeholder_typ(t: &spectec_ast::SpecTecTyp) -> bool {

@@ -1,0 +1,104 @@
+package cov:wasm@0.1.0;
+
+/// MVP runtime interface — sync, single-component, no host-provided
+/// imports, no rich value type yet. Just enough to compile a
+/// self-contained component, instantiate it, and call one of its
+/// `(u32) -> u32` exports.
+///
+/// See `docs/design/proposals/wasm-runtime/` for the full plan,
+/// including the deferred `inspect`/`build` interfaces and the
+/// process/container layering.
+interface runtime {
+    /// A validated WASM component, owned by the host's runtime backend.
+    /// Drop the resource to release the underlying compiled artifact.
+    resource component;
+
+    /// A live instantiation of a component. One-shot for MVP — call
+    /// exports, then drop. Multi-instance / multi-call semantics are
+    /// fine but not specified here.
+    resource instance;
+
+    /// Compile component bytes (the binary `.wasm` component, not WAT).
+    /// Returns a `component` resource on success, or a backend-defined
+    /// error string on failure.
+    compile: func(bytes: list<u8>) -> result<component, string>;
+
+    /// Instantiate a component. The MVP restricts the guest to
+    /// components whose imports the host can stub as traps (i.e. no
+    /// imports the kernel must actively satisfy). Richer linking is
+    /// a follow-up phase.
+    instantiate: func(c: borrow<component>) -> result<instance, string>;
+
+    /// Call a `(u32) -> u32` export by name. The single-argument /
+    /// single-result form is deliberate for MVP — a richer `val` type
+    /// (mirroring `covalence_wasm::val::Val`) replaces this once the
+    /// bindgen wiring is proven out.
+    call-u32: func(inst: borrow<instance>, name: string, arg: u32) -> result<u32, string>;
+}
+
+/// MVP build interface — programmatic WASM construction from inside a
+/// guest. v0 exposes ONE recipe (`build-add-module`) so we can prove
+/// the metacircular loop (`build` → `runtime.compile` → `runtime.call`)
+/// works in both the native and JS hosts. Real `module-builder` /
+/// `func-body` resources mirroring `covalence_wasm::build::*` come
+/// later (see proposal).
+interface build {
+    /// WASM value type subset. Mirror of `covalence_wasm::build::ValType`.
+    /// f32/f64 deferred: WIT reserves those identifiers as type keywords.
+    enum val-type {
+        i32,
+        i64,
+    }
+
+    /// Function index in the module being built. Returned by `end-func`,
+    /// fed to `export-func` and `call`.
+    type func-idx = u32;
+
+    /// Stateful module being assembled. Hold across method calls while
+    /// you append functions and exports; `finish` snapshots and emits
+    /// the binary. One "open function" at a time — `start-func` opens
+    /// it, instruction methods append, `end-func` closes.
+    resource module-builder {
+        constructor();
+
+        /// Open a new function with the given signature. Instruction
+        /// methods called afterward append to it. Traps if another
+        /// function is already open.
+        start-func: func(params: list<val-type>, results: list<val-type>) -> func-idx;
+
+        // -- Instructions (subset). All trap if no function is open. --
+
+        local-get: func(idx: u32);
+        local-set: func(idx: u32);
+        i32-const: func(val: s32);
+        i32-add: func();
+        i32-sub: func();
+        i32-mul: func();
+        call: func(idx: func-idx);
+
+        /// Close the currently-open function. Traps if none is open.
+        end-func: func();
+
+        /// Export the function by name.
+        export-func: func(name: string, idx: func-idx);
+
+        /// Consume the builder and emit wasm binary bytes. One-shot:
+        /// subsequent calls on this resource trap.
+        finish: func() -> list<u8>;
+    }
+
+    /// Canned single-function recipe (kept for the earlier smoke
+    /// test): build `(func (export <name>) (param i32) (result i32)
+    /// local.get 0 i32.const <delta> i32.add)`.
+    build-add-module: func(export-name: string, delta: s32) -> result<list<u8>, string>;
+}
+
+/// A world that *imports* runtime + build — i.e. the world a guest
+/// WASM component would live in if it wanted to call into the host's
+/// runtime and authoring surface. Used here to drive
+/// `wasmtime::component::bindgen!` to generate the host `Host` traits
+/// we then implement.
+world cov-wasm-guest {
+    import runtime;
+    import build;
+}

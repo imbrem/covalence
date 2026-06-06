@@ -10,10 +10,10 @@ description: Covalence repo layout, dependency graph, and key architectural rule
   - `src/highlight.rs` — S-expression syntax highlighting for the REPL
   - `src/lib.rs` — Shared constants (`VERSION`, `TARGET`)
   - `build.rs` — Sets `COV_TARGET` env var from the Cargo build target triple
-- `crates/covalence-kernel/` — Execution core: trait definitions + in-process engine
-  - `src/traits.rs` — `SyncBackend`, `AsyncBackend`, `BackendInfo`, `KernelError`
-  - `src/kernel.rs` — `Kernel` struct (BlobStore + WasmEngine), `BlobStore` enum; implements both traits
-  - Features: `engine` (wasmtime + store), `sqlite` (SQLite-backed BlobStore)
+- `crates/covalence-kernel/` — **HOL kernel** (experimental, planned for rewrite — see crate-level docs in `src/lib.rs`)
+  - Files: `arena.rs`, `egraph.rs`, `eprop.rs`, `hash.rs`, `id.rs`, `kernel.rs`, `primop.rs`, `prop.rs`, `reduce.rs`, `subst.rs`, `term.rs`, `ty.rs`, `uf.rs`
+  - Deps are minimal (`bytes`, `smol_str`, `covalence-hash`, `covalence-types`); does NOT depend on `covalence-wasm` or `wasmtime` in this branch.
+  - The Sync/Async backend traits (`SyncBackend`, `AsyncBackend`, `BackendInfo`, `KernelError`) now live in `crates/covalence-shell/` (`pub use traits::{...}` in `src/lib.rs`). Update this section when the kernel is re-integrated with the shell.
 - `crates/covalence-client/` — Remote backend implementations
   - `src/sync_client.rs` — `SyncHttpBackend` (ureq for TCP, raw HTTP/1.1 for Unix domain sockets)
   - `src/async_client.rs` — `AsyncHttpBackend` (hyper for TCP + UDS)
@@ -24,11 +24,14 @@ description: Covalence repo layout, dependency graph, and key architectural rule
   - `SqliteStore` (feature `sqlite`, backed by `covalence-sqlite`)
 - `crates/covalence-sqlite/` — Low-level SQLite blob store (rusqlite)
 - `crates/covalence-sexp/` — S-expression parser/printer (`parse()`, `prettyprint()`, `offset_to_line_col()`)
-- `crates/covalence-wasm/` — WASM/WAT gateway
-  - `src/validate.rs` — `validate_wat()` (WAT→WASM), `wasm_to_wat()` (WASM→WAT) — always available
+- `crates/covalence-wasm/` — WASM/WAT gateway (see `wasm-guide` skill)
+  - `src/validate.rs` — `compile_wat()` (WAT→WASM), `wasm_to_wat()` (WASM→WAT) — always available
   - `src/parse.rs` — `parse_module()`, `parse_component()` — binary inspection via wasmparser
-  - `src/engine.rs` — `WasmEngine`, proposition checking — gated behind `runtime` feature
-  - `src/lib.rs` — `WasmError` enum, re-exports `wasmtime` under `runtime`
+  - `src/build.rs` — programmatic `ModuleBuilder` (~840 LoC)
+  - `src/component.rs` — `encode_core_as_component`
+  - `src/val.rs` — engine-agnostic `Val` / `ValType` (component-model values)
+  - `src/engine.rs` — one-line `pub use wasmtime;` gated behind `runtime` feature (no higher-level abstraction yet)
+  - `src/lib.rs` — `WasmError` enum
 - `crates/covalence-lsp/` — Language server library (used by `cov lsp`)
   - `src/lib.rs` — LSP handlers for sexp files (`.smt`, `.smt2`, `.alethe`, `.cov`) and WAT files (`.wat`)
 - `crates/covalence-git/` — Cogit VCS library (used by `cov cog`)
@@ -56,42 +59,34 @@ description: Covalence repo layout, dependency graph, and key architectural rule
 
 ## Dependency Graph
 
+**Status: partially stale — needs a fresh audit.** The high-level shape (covalence-wasm base vs runtime feature; client/repl staying lightweight; serve using Kernel + traits) is still directionally right, but specific claims about which crate owns which trait have moved (see kernel/shell note above). Verify against `Cargo.toml` files before relying on the details below.
+
 ```
 covalence-wasm (WASM gateway)
-  ├─ base: validate_wat(), wasm_to_wat(), parse_module(), parse_component()
-  └─ [runtime]: WasmEngine, PropResult, PropError (re-exports wasmtime)
+  ├─ base: compile_wat(), wasm_to_wat(), parse_module(), parse_component(), build::*, encode_core_as_component
+  └─ [runtime]: re-exports wasmtime (no abstraction layer yet — direct wasmtime usage in consumers)
 
-covalence-kernel (execution core + trait definitions)
-  ├─ [default]: SyncBackend, AsyncBackend, BackendInfo, KernelError (traits only, no heavy deps)
-  └─ [engine]: Kernel, BlobStore (SharedMemoryStore + WasmEngine)
-      └─ [sqlite]: BlobStore::Sqlite variant
+covalence-shell (backend traits — formerly in covalence-kernel)
+  └─ SyncBackend, AsyncBackend, BackendInfo, KernelError
 
-covalence-client (remote backend implementations)
+covalence-client (remote backend implementations) — depends on covalence-shell
   ├─ [sync]: SyncHttpBackend (ureq + raw UDS)
   └─ [async]: AsyncHttpBackend (hyper + UDS)
-      depends on covalence-kernel (default — traits only, no wasmtime)
 
 covalence-repl (Session + command evaluation)
-  ├─ Uses Box<dyn SyncBackend> from covalence-kernel
+  ├─ Uses Box<dyn SyncBackend> from covalence-shell
   ├─ Always depends on covalence-wasm (base) for WAT ops
   └─ [fetch]: ureq for store-url
 
 covalence-proto (discovery + config only)
   └─ No client code — just registration, discovery, and default paths
 
-covalence-serve (HTTP server)
-  ├─ Creates a Kernel (with BlobStore from ServeConfig), uses it for all handlers
-  └─ AppState holds Kernel (Clone is cheap — Arc internals)
-
-covalence (binary)
-  ├─ Standalone: Kernel → Box<dyn SyncBackend> for REPL
-  └─ Connected: SyncHttpBackend → Box<dyn SyncBackend> for REPL
+covalence-serve (HTTP server) — depends on covalence-shell::KernelError
 ```
 
-**Key rules:**
+**Key rules (still applicable):**
 - `SyncBackend` trait is dyn-compatible (for REPL's `Box<dyn SyncBackend>`)
 - `AsyncBackend` trait uses native `async fn` (NOT dyn-compatible — used with concrete types)
-- Only `covalence-kernel[engine]` and `covalence-serve` pull in wasmtime
 - `covalence-repl` and `covalence-client` stay lightweight (no wasmtime)
 
 ## CLI (`cov`)

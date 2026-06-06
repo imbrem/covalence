@@ -81,8 +81,11 @@ impl From<covalence_kernel::UnionError> for ProverError {
 pub trait Prover {
     /// Backend representation of types.
     type Type: Copy + Debug;
-    /// Backend representation of terms.
-    type Term: Copy + Debug;
+    /// Backend representation of terms. `Eq + Hash` is required so frontends
+    /// can dedupe compound-term construction (the kernel doesn't hash-cons
+    /// `alloc_term`, so re-translating the same SExpr yields a fresh
+    /// `TermRef` — caches at the frontend layer fix that).
+    type Term: Copy + Debug + Eq + std::hash::Hash;
     /// Backend representation of a (context, conclusion) pair before kernel
     /// validation — the "intent to prove" handle.
     type Prop: Clone + Debug;
@@ -282,4 +285,24 @@ pub trait Prover {
     /// Apply the kernel's host-side reduction (literal evaluation, primop
     /// simplification) to produce `Γ ⊢ t = t↓`.
     fn reduce(&mut self, t: Self::Term) -> Result<Self::Thm, ProverError>;
+
+    // -----------------------------------------------------------------
+    // Boolean reasoning primitives
+    // -----------------------------------------------------------------
+    //
+    // These are the two pieces missing from the existing rule set that block
+    // propositional reasoning over free Bool variables. With them, all
+    // propositional Alethe rules (equiv_pos2, resolution, false, …) become
+    // derivable; without them, even `⊢ ¬False` is unreachable.
+
+    /// `Γ ⊢ t` if `t` is a propositional tautology over its free Bool
+    /// variables. Implemented by the kernel via brute-force 2^n truth-table
+    /// check; supports `Bool` literals, `LogicalNot/And/Or/Imp/Xor/Nand/Nor`,
+    /// and `Eq` over Booleans.
+    ///
+    /// The intent is that prover frontends building propositional rules
+    /// (Alethe `equiv_pos2` / `resolution` / `false` / `or` / …) route through
+    /// this single primitive rather than each rule deriving its own
+    /// case-split.
+    fn tautology_intro(&mut self, t: Self::Term) -> Result<Self::Thm, ProverError>;
 }

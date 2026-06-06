@@ -209,6 +209,14 @@ impl Prover for Kernel {
     fn reduce(&mut self, t: TermRef) -> Result<Thm, ProverError> {
         Ok(Kernel::reduce(self, t)?)
     }
+
+    // ------------------------------------------------------------------
+    // Boolean reasoning
+    // ------------------------------------------------------------------
+
+    fn tautology_intro(&mut self, t: TermRef) -> Result<Thm, ProverError> {
+        Ok(Kernel::tautology_intro(self, t)?)
+    }
 }
 
 // Re-export `TermDef` so the trait is usable without pulling `covalence_kernel`

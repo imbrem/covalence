@@ -221,6 +221,61 @@ impl Thm {
         })
     }
 
+    /// **Tautology introduction.** `ctx ⊢ t` if `t` is a propositional
+    /// tautology — every truth assignment to its free Bool variables
+    /// evaluates `t` to `True` under the kernel's truth-table semantics for
+    /// the boolean primops (`LogicalNot`/`And`/`Or`/`Imp`/`Xor`/`Nand`/`Nor`)
+    /// + `Eq` over Booleans + `Bool(_)` literals.
+    ///
+    /// Implementation is a deliberately-naive 2^n truth-table check; the
+    /// kernel's only soundness assumption beyond the existing reduction
+    /// rules is that the boolean primops are correctly characterised by
+    /// their truth tables (which is already a kernel invariant — see
+    /// `prover-primops.md` §1).
+    ///
+    /// Fails with `IllTypedInput` if `t` is not a Bool, or if any subterm
+    /// outside the supported propositional fragment is encountered.
+    pub fn tautology_intro(
+        arena: &mut Arena,
+        ctx: Arc<Context>,
+        t: TermId,
+    ) -> Result<Self, ProofError> {
+        if !arena.is_well_typed(t) {
+            return Err(ProofError::IllTypedInput);
+        }
+        let bool_ty = TypeRef::builtin(crate::ty::BuiltinTy::Bool);
+        if arena.infer(t).as_type() != Some(bool_ty) {
+            return Err(ProofError::IllTypedInput);
+        }
+        let t_ref = TermRef::local(t);
+
+        // Collect Bool "atoms" — Bool subterms that aren't in the
+        // propositional fragment. These are what we truth-assign over.
+        // Includes free Bool vars (`Free(_, Bool)`) AND opaque Bool
+        // expressions like `Eq(int_term, int_term)`.
+        let mut atoms: Vec<TermRef> = Vec::new();
+        collect_bool_atoms(arena, t_ref, bool_ty, &mut atoms);
+
+        if atoms.len() > 24 {
+            // 2^24 ≈ 16M is the soft ceiling; cvc5 clauses don't come close.
+            return Err(ProofError::Unsupported);
+        }
+
+        // Exhaustive truth-table check.
+        let n = atoms.len();
+        for mask in 0..(1u32 << n) {
+            match evaluate_with_assignment(arena, t_ref, &atoms, mask) {
+                Some(true) => continue,
+                Some(false) => return Err(ProofError::NotATautology),
+                None => return Err(ProofError::IllTypedInput),
+            }
+        }
+
+        Ok(Self {
+            prop: Prop::new(ctx, t),
+        })
+    }
+
     /// **Assumption rule.** If `assumption` is a well-typed `Prop`
     /// in `ctx`, derive the `Thm` `ctx ⊢ assumption.concl`.
     pub fn assume(
@@ -746,6 +801,13 @@ pub enum ProofError {
     TypeMismatch,
     /// `subset_axioms`: the type argument isn't a Subset(α, P).
     ExpectedSubsetType,
+    /// `tautology_intro`: the given Boolean term is not a tautology — at
+    /// least one truth assignment to its free Bool variables evaluates the
+    /// term to `False`.
+    NotATautology,
+    /// `tautology_intro`: the input has more free Bool variables than the
+    /// truth-table check supports (current ceiling: 24).
+    Unsupported,
 }
 
 impl std::fmt::Display for ProofError {
@@ -774,8 +836,124 @@ impl std::fmt::Display for ProofError {
             }
             ProofError::TypeMismatch => write!(f, "replacement type doesn't match variable type"),
             ProofError::ExpectedSubsetType => write!(f, "expected a subset type"),
+            ProofError::NotATautology => write!(f, "not a propositional tautology"),
+            ProofError::Unsupported => write!(f, "unsupported operation"),
         }
     }
 }
 
 impl std::error::Error for ProofError {}
+
+// =====================================================================
+// Helpers for tautology_intro
+// =====================================================================
+
+/// Is `t` a propositional connective node? — i.e., a node whose value
+/// can be computed from the (Boolean) values of its direct children.
+fn is_prop_connective(arena: &mut Arena, t: TermRef, bool_ty: TypeRef) -> bool {
+    let Some(id) = t.as_local() else { return false };
+    let def = *arena.term_def(id);
+    match def {
+        TermDef::Bool(_) => true,
+        TermDef::Op1(PrimOp1::LogicalNot, _) => true,
+        TermDef::Op2(
+            PrimOp2::LogicalAnd
+            | PrimOp2::LogicalOr
+            | PrimOp2::LogicalImp
+            | PrimOp2::LogicalXor
+            | PrimOp2::LogicalNand
+            | PrimOp2::LogicalNor,
+            _,
+            _,
+        ) => true,
+        // Bool↔Bool equality is iff at the meta level — fold it into the
+        // propositional fragment when both sides are Bool-typed.
+        TermDef::Eq(a, _) => arena
+            .infer(a.as_local().unwrap_or(crate::id::TermId(0)))
+            .as_type()
+            == Some(bool_ty),
+        _ => false,
+    }
+}
+
+/// Walk `t` and collect Bool subterms that are NOT propositional
+/// connectives. These are the "atoms" of the propositional view: free
+/// Bool vars, but also expressions like `Eq(int_term, int_term)`,
+/// `Comb(p_const, x_const)` returning Bool, etc.
+///
+/// Dedupes by structural identity of `TermRef` (each distinct ref appears
+/// once even if it occurs multiple times in the term).
+fn collect_bool_atoms(
+    arena: &mut Arena,
+    t: TermRef,
+    bool_ty: TypeRef,
+    acc: &mut Vec<TermRef>,
+) {
+    let Some(id) = t.as_local() else { return };
+    // If t is Bool-typed and NOT a propositional connective, it's an atom.
+    if arena.infer(id).as_type() == Some(bool_ty) && !is_prop_connective(arena, t, bool_ty)
+    {
+        if !acc.iter().any(|a| *a == t) {
+            acc.push(t);
+        }
+        return;
+    }
+    // Otherwise (it IS a connective), descend into deps.
+    let def = *arena.term_def(id);
+    match def.deps() {
+        crate::term::Deps::None => {}
+        crate::term::Deps::One(c) => collect_bool_atoms(arena, c, bool_ty, acc),
+        crate::term::Deps::Two(a, b) => {
+            collect_bool_atoms(arena, a, bool_ty, acc);
+            collect_bool_atoms(arena, b, bool_ty, acc);
+        }
+    }
+}
+
+/// Evaluate `t` under the truth assignment `mask` for the atom list.
+/// Bit `i` of `mask` is the value of `atoms[i]`.
+///
+/// Returns `Some(value)` if every subterm is either a propositional
+/// connective or one of the listed atoms; `None` if some out-of-fragment
+/// node is encountered (signalling kernel-level malformedness).
+fn evaluate_with_assignment(
+    arena: &Arena,
+    t: TermRef,
+    atoms: &[TermRef],
+    mask: u32,
+) -> Option<bool> {
+    // Atom lookup — by structural ref identity.
+    if let Some(i) = atoms.iter().position(|a| *a == t) {
+        return Some((mask >> i) & 1 == 1);
+    }
+    let id = t.as_local()?;
+    let def = *arena.term_def(id);
+    match def {
+        TermDef::Bool(b) => Some(b),
+        TermDef::Op1(PrimOp1::LogicalNot, x) => {
+            Some(!evaluate_with_assignment(arena, x, atoms, mask)?)
+        }
+        TermDef::Op2(op, a, b) => {
+            let av = evaluate_with_assignment(arena, a, atoms, mask)?;
+            let bv = evaluate_with_assignment(arena, b, atoms, mask)?;
+            Some(match op {
+                PrimOp2::LogicalAnd => av && bv,
+                PrimOp2::LogicalOr => av || bv,
+                PrimOp2::LogicalImp => !av || bv,
+                PrimOp2::LogicalXor => av != bv,
+                PrimOp2::LogicalNand => !(av && bv),
+                PrimOp2::LogicalNor => !(av || bv),
+                _ => return None,
+            })
+        }
+        TermDef::Eq(a, b) => {
+            // Bool↔Bool iff. If either side is non-Bool we shouldn't be
+            // here (collect_bool_atoms would have flagged the whole Eq
+            // as an atom).
+            let av = evaluate_with_assignment(arena, a, atoms, mask)?;
+            let bv = evaluate_with_assignment(arena, b, atoms, mask)?;
+            Some(av == bv)
+        }
+        _ => None,
+    }
+}

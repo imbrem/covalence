@@ -167,6 +167,11 @@ impl Kernel {
         Thm::refl(&mut self.egraph.arena, self.ctx.clone(), Self::as_id(t)?)
     }
 
+    /// `ctx ⊢ t` for a propositional tautology `t`. See [`Thm::tautology_intro`].
+    pub fn tautology_intro(&mut self, t: TermRef) -> Result<Thm, ProofError> {
+        Thm::tautology_intro(&mut self.egraph.arena, self.ctx.clone(), Self::as_id(t)?)
+    }
+
     pub fn assume(&mut self, assumption: Arc<Prop>) -> Result<Thm, ProofError> {
         Thm::assume(&self.egraph.arena, self.ctx.clone(), assumption)
     }

@@ -47,23 +47,14 @@ fn trivial_unsat_problem_ingests() {
 }
 
 #[test]
-fn trivial_unsat_proof_punts_on_resolution() {
+fn trivial_unsat_proof_closes() {
     let (problem, proof) = load_problem_and_proof("trivial-unsat");
     let mut kernel = Kernel::new();
     let mut bridge = KernelAletheBridge::new(&mut kernel);
 
     ingest_problem(&mut bridge, &problem).unwrap();
-    let err = ingest_proof(&mut bridge, &proof)
-        .expect_err("resolution is not yet wired up");
-    match err {
-        BridgeError::NotImplemented(rule) => {
-            assert!(
-                rule.contains("resolution"),
-                "expected resolution rule in error, got: {rule}"
-            );
-        }
-        other => panic!("expected NotImplemented(resolution), got {other:?}"),
-    }
+    ingest_proof(&mut bridge, &proof).expect("trivial-unsat proof should close");
+    assert_eq!(bridge.decision(), Decision::Unsat);
 }
 
 // =====================================================================
@@ -80,23 +71,14 @@ fn cvc5_qf_uf_problem_ingests() {
 }
 
 #[test]
-fn cvc5_qf_uf_assumes_succeed_steps_punt() {
+fn cvc5_qf_uf_proof_closes() {
     let (problem, proof) = load_problem_and_proof("cvc5-qf-uf");
     let mut kernel = Kernel::new();
     let mut bridge = KernelAletheBridge::new(&mut kernel);
 
     ingest_problem(&mut bridge, &problem).unwrap();
-    let err = ingest_proof(&mut bridge, &proof).expect_err("steps are not yet wired up");
-    match err {
-        BridgeError::NotImplemented(what) => {
-            // First step is t0 with rule `equiv_pos2`.
-            assert!(
-                what.contains("equiv_pos2"),
-                "expected first step to punt on equiv_pos2, got: {what}"
-            );
-        }
-        other => panic!("expected NotImplemented from first step, got {other:?}"),
-    }
+    ingest_proof(&mut bridge, &proof).expect("cvc5-qf-uf proof should close");
+    assert_eq!(bridge.decision(), Decision::Unsat);
 }
 
 // =====================================================================
@@ -312,21 +294,12 @@ fn hole_unknown_tag_still_punts() {
 }
 
 #[test]
-fn cvc5_uflia_simple_proof_punts_on_equiv_pos2() {
+fn cvc5_uflia_simple_proof_closes() {
     let (problem, proof) = load_problem_and_proof("cvc5-uflia-simple");
     let mut kernel = Kernel::new();
     let mut bridge = KernelAletheBridge::new(&mut kernel);
 
     ingest_problem(&mut bridge, &problem).unwrap();
-    let err = ingest_proof(&mut bridge, &proof).expect_err("equiv_pos2 not yet wired");
-    match err {
-        BridgeError::NotImplemented(what) => {
-            // First step in the cvc5 UFLIA proof is t0 with equiv_pos2.
-            assert!(
-                what.contains("equiv_pos2"),
-                "expected equiv_pos2, got: {what}"
-            );
-        }
-        other => panic!("expected NotImplemented(equiv_pos2), got {other:?}"),
-    }
+    ingest_proof(&mut bridge, &proof).expect("UFLIA proof should close");
+    assert_eq!(bridge.decision(), Decision::Unsat);
 }

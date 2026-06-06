@@ -63,8 +63,21 @@ pub struct KernelAletheBridge<'a, P: Prover> {
     /// Cached `true` / `false`.
     cached_true: Option<P::Term>,
     cached_false: Option<P::Term>,
+    /// Compound-term memos. The kernel doesn't hash-cons compound terms,
+    /// so without these the same SExpr re-translates to a fresh `TermRef`
+    /// each call — breaking later term-equality lookups (e.g. assertion →
+    /// Prop matching).
+    eq_memo: HashMap<(P::Term, P::Term), P::Term>,
+    comb_memo: HashMap<(P::Term, P::Term), P::Term>,
+    op1_memo: HashMap<(PrimOp1, P::Term), P::Term>,
+    op2_memo: HashMap<(PrimOp2, P::Term, P::Term), P::Term>,
     /// `:named` bindings — `@name` → already-translated kernel term.
     named: HashMap<String, P::Term>,
+    /// `(assert <term>)` results, in order: `(translated_term, prop)`. The
+    /// proof's `(assume id <term>)` commands look up by translated term so
+    /// every assume returns a Thm in the *same* (problem-level) context —
+    /// avoiding `ContextMismatch` errors from `mp`/`trans` later.
+    assertion_props: Vec<(P::Term, P::Prop)>,
     /// Set once a step derives the empty clause `(cl)`.
     derived_empty: bool,
 }
@@ -80,9 +93,57 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
             int_lits: HashMap::new(),
             cached_true: None,
             cached_false: None,
+            eq_memo: HashMap::new(),
+            comb_memo: HashMap::new(),
+            op1_memo: HashMap::new(),
+            op2_memo: HashMap::new(),
             named: HashMap::new(),
+            assertion_props: Vec::new(),
             derived_empty: false,
         }
+    }
+
+    // ---- compound-term memoised constructors --------------------------
+
+    fn mk_eq(&mut self, a: P::Term, b: P::Term) -> Result<P::Term, BridgeError> {
+        if let Some(t) = self.eq_memo.get(&(a, b)).copied() {
+            return Ok(t);
+        }
+        let t = self.prover.eq(a, b)?;
+        self.eq_memo.insert((a, b), t);
+        Ok(t)
+    }
+
+    fn mk_comb(&mut self, f: P::Term, x: P::Term) -> Result<P::Term, BridgeError> {
+        if let Some(t) = self.comb_memo.get(&(f, x)).copied() {
+            return Ok(t);
+        }
+        let t = self.prover.comb(f, x)?;
+        self.comb_memo.insert((f, x), t);
+        Ok(t)
+    }
+
+    fn mk_op1(&mut self, op: PrimOp1, x: P::Term) -> Result<P::Term, BridgeError> {
+        if let Some(t) = self.op1_memo.get(&(op, x)).copied() {
+            return Ok(t);
+        }
+        let t = self.prover.op1(op, x)?;
+        self.op1_memo.insert((op, x), t);
+        Ok(t)
+    }
+
+    fn mk_op2(
+        &mut self,
+        op: PrimOp2,
+        a: P::Term,
+        b: P::Term,
+    ) -> Result<P::Term, BridgeError> {
+        if let Some(t) = self.op2_memo.get(&(op, a, b)).copied() {
+            return Ok(t);
+        }
+        let t = self.prover.op2(op, a, b)?;
+        self.op2_memo.insert((op, a, b), t);
+        Ok(t)
     }
 
     /// Borrow the underlying prover (e.g. for inspecting kernel state in tests).
@@ -225,7 +286,7 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
                 }
                 let lhs = self.translate_term(&rest[0])?;
                 let rhs = self.translate_term(&rest[1])?;
-                Ok(self.prover.eq(lhs, rhs)?)
+                Ok(self.mk_eq(lhs, rhs)?)
             }
             "!" => self.translate_annotated(rest),
             "not" => {
@@ -233,7 +294,7 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
                     return Err(BridgeError::Malformed("not: expected 1 argument".into()));
                 }
                 let p = self.translate_term(&rest[0])?;
-                Ok(self.prover.op1(PrimOp1::LogicalNot, p)?)
+                Ok(self.mk_op1(PrimOp1::LogicalNot, p)?)
             }
             "and" => self.left_fold_op2(PrimOp2::LogicalAnd, rest),
             "or" => self.left_fold_op2(PrimOp2::LogicalOr, rest),
@@ -254,7 +315,7 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
                 0 => Err(BridgeError::Malformed("-: zero arguments".into())),
                 1 => {
                     let x = self.translate_term(&rest[0])?;
-                    Ok(self.prover.op1(PrimOp1::IntNeg, x)?)
+                    Ok(self.mk_op1(PrimOp1::IntNeg, x)?)
                 }
                 _ => self.left_fold_op2(PrimOp2::IntSub, rest),
             },
@@ -269,7 +330,7 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
                 let mut acc = f;
                 for arg in rest {
                     let a = self.translate_term(arg)?;
-                    acc = self.prover.comb(acc, a)?;
+                    acc = self.mk_comb(acc, a)?;
                 }
                 Ok(acc)
             }
@@ -290,7 +351,7 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
         }
         let a = self.translate_term(&args[0])?;
         let b = self.translate_term(&args[1])?;
-        Ok(self.prover.op2(op, a, b)?)
+        Ok(self.mk_op2(op, a, b)?)
     }
 
     /// `(op a b)` translated as `(op' b a)` — used for `>=` ↦ `<=` and
@@ -308,7 +369,7 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
         }
         let a = self.translate_term(&args[0])?;
         let b = self.translate_term(&args[1])?;
-        Ok(self.prover.op2(op, b, a)?)
+        Ok(self.mk_op2(op, b, a)?)
     }
 
     /// `(op a1 a2 ... an)` → `(((op a1 a2) a3) ... an)`. Used for n-ary
@@ -321,10 +382,10 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
         }
         let first = self.translate_term(&args[0])?;
         let second = self.translate_term(&args[1])?;
-        let mut acc = self.prover.op2(op, first, second)?;
+        let mut acc = self.mk_op2(op, first, second)?;
         for arg in &args[2..] {
             let next = self.translate_term(arg)?;
-            acc = self.prover.op2(op, acc, next)?;
+            acc = self.mk_op2(op, acc, next)?;
         }
         Ok(acc)
     }
@@ -347,7 +408,7 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
         }
         let mut acc = *translated.last().expect("non-empty");
         for t in translated.iter().rev().skip(1) {
-            acc = self.prover.op2(op, *t, acc)?;
+            acc = self.mk_op2(op, *t, acc)?;
         }
         Ok(acc)
     }
@@ -386,23 +447,22 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
     // dispatches into here; rules not yet wired surface as
     // `BridgeError::NotImplemented`.
 
-    /// `refl`: `Γ ⊢ (= t t)`. Alethe writes this as `(cl (= t t))`.
+    /// `refl`: `Γ ⊢ (= t t)`. Alethe writes this as `(cl (= t t))`. The
+    /// clause literal may also be a `@named` reference to a previously
+    /// constructed equality — translate via `translate_term` so the named
+    /// cache path is exercised.
     fn rule_refl(&mut self, clause: &[SExpr]) -> Result<P::Thm, BridgeError> {
         if clause.len() != 1 {
             return Err(BridgeError::Malformed(
-                "refl: expected unit clause `(cl (= t t))`".into(),
+                "refl: expected unit clause".into(),
             ));
         }
-        let eq_lit = clause[0]
-            .as_list()
-            .ok_or_else(|| BridgeError::Malformed("refl: clause head not a list".into()))?;
-        if eq_lit.len() != 3 || eq_lit[0].as_symbol() != Some("=") {
-            return Err(BridgeError::Malformed(
-                "refl: clause must be `(= t t)`".into(),
-            ));
-        }
-        let t = self.translate_term(&eq_lit[1])?;
-        Ok(self.prover.refl(t)?)
+        let lit = self.translate_term(&clause[0])?;
+        let (lhs, _rhs) = self
+            .prover
+            .dest_eq(lit)
+            .ok_or_else(|| BridgeError::Malformed("refl: literal is not an equality".into()))?;
+        Ok(self.prover.refl(lhs)?)
     }
 
     /// `trans`: `Γ ⊢ (= t₀ t₁), Γ ⊢ (= t₁ t₂), …, Γ ⊢ (= t_{n-1} t_n)`
@@ -452,18 +512,9 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
                 "cong: expected unit clause".into(),
             ));
         }
-        let eq_lit = clause[0]
-            .as_list()
-            .ok_or_else(|| BridgeError::Malformed("cong: clause not a list".into()))?;
-        if eq_lit.len() != 3 || eq_lit[0].as_symbol() != Some("=") {
-            return Err(BridgeError::Malformed(
-                "cong: conclusion must be `(= lhs rhs)`".into(),
-            ));
-        }
+
         // Process premises FIRST so the UF is populated before we materialise
-        // the conclusion's lhs/rhs. (eq_at_level resolves canonicals at call
-        // time, so order shouldn't matter — but doing this first keeps the
-        // intent obvious.)
+        // the conclusion's lhs/rhs.
         for prem in premises {
             let concl = self.prover.conclusion(prem)?;
             let (a, b) = self.prover.dest_eq(concl).ok_or_else(|| {
@@ -472,8 +523,10 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
             self.prover.union(a, b)?;
         }
 
-        let lhs = self.translate_term(&eq_lit[1])?;
-        let rhs = self.translate_term(&eq_lit[2])?;
+        let lit = self.translate_term(&clause[0])?;
+        let (lhs, rhs) = self.prover.dest_eq(lit).ok_or_else(|| {
+            BridgeError::Malformed("cong: conclusion is not an equality".into())
+        })?;
 
         // Depth is the term tree depth at which we expect congruence to
         // match. For Alethe `cong` the conclusion is always a single
@@ -518,19 +571,113 @@ impl<'a, P: Prover> KernelAletheBridge<'a, P> {
                 "hole TRUST_THEORY_REWRITE: expected unit clause".into(),
             ));
         }
-        let eq_lit = clause[0]
-            .as_list()
-            .ok_or_else(|| BridgeError::Malformed("hole: clause not a list".into()))?;
-        if eq_lit.len() != 3 || eq_lit[0].as_symbol() != Some("=") {
-            return Err(BridgeError::Malformed(
-                "hole TRUST_THEORY_REWRITE: clause must be `(= a b)`".into(),
-            ));
-        }
-        let lhs = self.translate_term(&eq_lit[1])?;
-        let rhs = self.translate_term(&eq_lit[2])?;
+        // Route through translate_term so `(! (= a b) :named @x)` style
+        // clauses are handled (annotation strip + name binding).
+        let lit = self.translate_term(&clause[0])?;
+        let (lhs, rhs) = self.prover.dest_eq(lit).ok_or_else(|| {
+            BridgeError::Malformed("hole TRUST_THEORY_REWRITE: clause must be an equality".into())
+        })?;
         // Trust point. Recorded but unproved.
         self.prover.union(lhs, rhs)?;
         Ok(self.prover.cong(lhs, rhs, 0)?)
+    }
+
+    // -----------------------------------------------------------------
+    // Propositional-rule support
+    // -----------------------------------------------------------------
+
+    /// Translate a clause `(cl lit_1 lit_2 … lit_n)` into the equivalent
+    /// disjunction term:
+    ///
+    ///   - empty clause → `False`
+    ///   - single literal → the literal itself
+    ///   - multiple literals → left-folded `Or(Or(lit_1, lit_2), lit_3)…`
+    fn clause_to_disjunction(
+        &mut self,
+        clause: &[SExpr],
+    ) -> Result<P::Term, BridgeError> {
+        if clause.is_empty() {
+            // Empty clause is False.
+            // Cache via the bool-literal path so it shares a TermRef.
+            if let Some(f) = self.cached_false {
+                return Ok(f);
+            }
+            let f = self.prover.falsity()?;
+            self.cached_false = Some(f);
+            return Ok(f);
+        }
+        let first = self.translate_term(&clause[0])?;
+        let mut acc = first;
+        for lit in &clause[1..] {
+            let t = self.translate_term(lit)?;
+            acc = self.mk_op2(PrimOp2::LogicalOr, acc, t)?;
+        }
+        Ok(acc)
+    }
+
+    /// Any Alethe rule whose clause is a no-premise propositional
+    /// tautology (`equiv_pos2`, `false`, `tautology`, `not_and`, …).
+    /// Build the disjunction and discharge via `tautology_intro`.
+    fn rule_propositional_tautology(
+        &mut self,
+        clause: &[SExpr],
+    ) -> Result<P::Thm, BridgeError> {
+        let disj = self.clause_to_disjunction(clause)?;
+        Ok(self.prover.tautology_intro(disj)?)
+    }
+
+    /// Alethe `or`: from `Γ ⊢ (or l_1 … l_n)` derive `(cl l_1 … l_n)`.
+    /// Semantically the same term; we just return the premise as-is after
+    /// confirming arity.
+    fn rule_or(
+        &mut self,
+        _clause: &[SExpr],
+        premises: &[P::Thm],
+    ) -> Result<P::Thm, BridgeError> {
+        if premises.len() != 1 {
+            return Err(BridgeError::Malformed(
+                "or: expected exactly one premise".into(),
+            ));
+        }
+        Ok(premises[0].clone())
+    }
+
+    /// Alethe `resolution` (and its `th_resolution` cousin).
+    ///
+    /// Premises are clauses-as-disjunctions; the conclusion is the
+    /// propositional resolvent. Proof strategy:
+    ///
+    /// 1. Build the conclusion disjunction `R`.
+    /// 2. Build the *curried* implication
+    ///    `c_1 → c_2 → … → c_n → R` where `c_i` is `premises[i].conclusion`.
+    /// 3. Discharge it via `tautology_intro` — propositional resolution is
+    ///    a tautology under the truth-table semantics for `Or`/`Not`.
+    /// 4. Chain `Prover::mp` with each premise to peel off the antecedents.
+    fn rule_resolution(
+        &mut self,
+        clause: &[SExpr],
+        premises: &[P::Thm],
+    ) -> Result<P::Thm, BridgeError> {
+        let result_disj = self.clause_to_disjunction(clause)?;
+
+        // Gather premise conclusion terms (need them before borrowing the
+        // prover mutably for the implication assembly).
+        let mut premise_concls: Vec<P::Term> = Vec::with_capacity(premises.len());
+        for prem in premises {
+            premise_concls.push(self.prover.conclusion(prem)?);
+        }
+
+        // Build c_1 → c_2 → … → c_n → R from right to left.
+        let mut implication = result_disj;
+        for concl in premise_concls.iter().rev() {
+            implication = self.mk_op2(PrimOp2::LogicalImp, *concl, implication)?;
+        }
+
+        let mut acc = self.prover.tautology_intro(implication)?;
+        for prem in premises {
+            acc = self.prover.mp(acc, prem.clone())?;
+        }
+        Ok(acc)
     }
 }
 
@@ -568,16 +715,24 @@ impl<'a, P: Prover> AletheBridge for KernelAletheBridge<'a, P> {
     }
 
     fn assert(&mut self, term: &SExpr) -> Result<(), BridgeError> {
-        // Translate eagerly so any UnknownFun / NotImplemented surfaces
-        // before we silently move past a malformed assertion. We don't yet
-        // materialise the assertion as a hypothesis; the matching `(assume
-        // ...)` in the proof will do that.
-        let _ = self.translate_term(term)?;
+        // Push every assertion onto the prover's context up-front so all
+        // proof-level (assume id <term>) commands find their target Prop in
+        // a *shared* context. This makes downstream mp / trans / resolution
+        // calls context-compatible across all step Thms.
+        let t = self.translate_term(term)?;
+        let prop = self.prover.push_assumption(t)?;
+        self.assertion_props.push((t, prop));
         Ok(())
     }
 
     fn assume(&mut self, _id: &str, term: &SExpr) -> Result<P::Thm, BridgeError> {
         let t = self.translate_term(term)?;
+        // First try to match a pre-pushed assertion — keeps all step Thms
+        // in the same context.
+        if let Some((_, prop)) = self.assertion_props.iter().find(|(at, _)| *at == t) {
+            return Ok(self.prover.assume(prop.clone())?);
+        }
+        // Otherwise (e.g. an anchor-introduced local hypothesis), push fresh.
         let prop = self.prover.push_assumption(t)?;
         Ok(self.prover.assume(prop)?)
     }
@@ -608,6 +763,14 @@ impl<'a, P: Prover> AletheBridge for KernelAletheBridge<'a, P> {
             "trans" => self.rule_trans(clause, premises),
             "cong" => self.rule_cong(clause, premises),
             "hole" => self.rule_hole(clause, args),
+            // Propositional tautology rules — no premises (or premises already
+            // dischargeable propositionally). All route through tautology_intro.
+            "equiv_pos1" | "equiv_pos2" | "equiv_neg1" | "equiv_neg2" | "false"
+            | "tautology" | "not_or" | "not_and" | "or_neg" | "and_pos"
+            | "implies_pos" | "implies_neg1" | "implies_neg2" | "not_implies1"
+            | "not_implies2" => self.rule_propositional_tautology(clause),
+            "or" => self.rule_or(clause, premises),
+            "resolution" | "th_resolution" => self.rule_resolution(clause, premises),
             other => Err(BridgeError::NotImplemented(format!("rule `{other}`"))),
         }
     }

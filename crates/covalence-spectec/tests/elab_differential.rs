@@ -167,6 +167,10 @@ fn diff_against_wasm_spec_ast() {
     eprintln!("  Dec.ps non-empty: {dec_with_ps} / {dec_t_total}");
     eprintln!("  Typ.ps non-empty: {typ_with_ps} / {total_typ}");
 
+    let our_total_prods = count_total_prods(&ours);
+    let their_total_prods = count_total_prods(&reference);
+    eprintln!("  Grammar prods: ours {our_total_prods}, theirs {their_total_prods}");
+
     // Acceptance: the names align. (Bodies don't match yet — that's
     // the deferred lowering work surfaced by this test.) We require
     // each kind to have >= 80% name overlap with the OCaml output.
@@ -360,6 +364,19 @@ fn count_dec_with_ps(defs: &[SpecTecDef]) -> usize {
     fn walk(d: &SpecTecDef, n: &mut usize) {
         match d {
             SpecTecDef::Dec { ps, .. } if !ps.is_empty() => *n += 1,
+            SpecTecDef::Rec { ds } => for d in ds { walk(d, n); },
+            _ => {}
+        }
+    }
+    for d in defs { walk(d, &mut n); }
+    n
+}
+
+fn count_total_prods(defs: &[SpecTecDef]) -> usize {
+    let mut n = 0;
+    fn walk(d: &SpecTecDef, n: &mut usize) {
+        match d {
+            SpecTecDef::Gram { prods, .. } => *n += prods.len(),
             SpecTecDef::Rec { ds } => for d in ds { walk(d, n); },
             _ => {}
         }

@@ -315,12 +315,7 @@ fn to_spectec_ast_flat(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTec
         let t = typ_expr_to_spectec(&g.decl.ret.tokens, ctx);
         let ps = grammar_params_to_specs(&g.decl.params, ctx);
         let prods = match &g.decl.productions {
-            Some(_) => vec![spectec_ast::SpecTecProd::Prod {
-                ps: Vec::new(),
-                g: spectec_ast::SpecTecSym::Eps,
-                e: raw_sentinel(),
-                prs: Vec::new(),
-            }],
+            Some(body) => split_grammar_prods(body, ctx),
             None => Vec::new(),
         };
         out.push(spectec_ast::SpecTecDef::Gram {
@@ -1035,6 +1030,133 @@ fn typ_expr_to_spectec_args(alt: &Alt, ctx: &ElabContext) -> spectec_ast::SpecTe
     } else {
         spectec_ast::SpecTecTyp::Tup { ets: arg_tys }
     }
+}
+
+// ---------- grammar production splitting ----------
+
+/// Split a grammar production body on top-level `|` (Pipe) and emit
+/// one `SpecTecProd::Prod` per alt. Sym/value lowering is still sketch;
+/// the goal here is to get the *number* of prods to line up with OCaml.
+fn split_grammar_prods(
+    body: &crate::cst::TokenRun,
+    ctx: &ElabContext,
+) -> Vec<spectec_ast::SpecTecProd> {
+    let chunks = split_top_level_pipe(&body.tokens);
+    chunks
+        .into_iter()
+        .map(|chunk| {
+            // Within each alt, split on top-level `=> ` (Eq GreaterThan):
+            // before is the symbol, after is the attribute expression.
+            let (sym_toks, attr_toks) = split_grammar_arrow(chunk);
+            let attr = match attr_toks {
+                Some(at) if !at.is_empty() => {
+                    let span = at
+                        .iter()
+                        .map(|s| s.span)
+                        .reduce(crate::source::Span::join)
+                        .unwrap_or(body.span);
+                    let tr = crate::cst::TokenRun {
+                        span,
+                        tokens: at.to_vec(),
+                    };
+                    token_run_to_expr(&tr, ctx)
+                }
+                _ => raw_sentinel(),
+            };
+            spectec_ast::SpecTecProd::Prod {
+                ps: Vec::new(),
+                g: grammar_sym_from_tokens(sym_toks, ctx),
+                e: attr,
+                prs: Vec::new(),
+            }
+        })
+        .collect()
+}
+
+fn split_top_level_pipe(toks: &[crate::token::Spanned]) -> Vec<&[crate::token::Spanned]> {
+    let mut out = Vec::new();
+    let mut depth: i32 = 0;
+    let mut start = 0usize;
+    for (i, t) in toks.iter().enumerate() {
+        match &t.token {
+            crate::token::Token::LParen
+            | crate::token::Token::LBracket
+            | crate::token::Token::LBrace => depth += 1,
+            crate::token::Token::RParen
+            | crate::token::Token::RBracket
+            | crate::token::Token::RBrace => depth -= 1,
+            crate::token::Token::Pipe if depth == 0 => {
+                if start < i {
+                    out.push(&toks[start..i]);
+                }
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if start < toks.len() {
+        out.push(&toks[start..]);
+    }
+    out
+}
+
+/// Split a grammar production chunk on top-level `=> ` (i.e. `Eq`
+/// followed by `GreaterThan`). Returns `(sym_toks, Some(attr_toks))`
+/// if `=>` is present, else `(sym_toks, None)`.
+fn split_grammar_arrow(
+    toks: &[crate::token::Spanned],
+) -> (&[crate::token::Spanned], Option<&[crate::token::Spanned]>) {
+    let mut depth: i32 = 0;
+    let mut i = 0;
+    while i + 1 < toks.len() {
+        match &toks[i].token {
+            crate::token::Token::LParen
+            | crate::token::Token::LBracket
+            | crate::token::Token::LBrace => depth += 1,
+            crate::token::Token::RParen
+            | crate::token::Token::RBracket
+            | crate::token::Token::RBrace => depth -= 1,
+            crate::token::Token::Eq if depth == 0 => {
+                if matches!(toks[i + 1].token, crate::token::Token::GreaterThan) {
+                    return (&toks[..i], Some(&toks[i + 2..]));
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    (toks, None)
+}
+
+/// Build a `SpecTecSym` from a grammar-production symbol's tokens.
+/// Sketch only — recognises a few simple shapes and falls back to
+/// `Eps`.
+fn grammar_sym_from_tokens(
+    toks: &[crate::token::Spanned],
+    _ctx: &ElabContext,
+) -> spectec_ast::SpecTecSym {
+    use crate::token::Token::*;
+    use spectec_ast::SpecTecSym as S;
+    // Empty / `eps` literal.
+    if toks.is_empty() || matches!(toks.first().map(|s| &s.token), Some(Eps)) {
+        return S::Eps;
+    }
+    // A single ident: treat as `Var { x, as1: [] }`.
+    if toks.len() == 1 {
+        match &toks[0].token {
+            Ident(n) => return S::Var { x: n.clone(), as1: Vec::new() },
+            Nat(n) => {
+                let v = u64::try_from(n).unwrap_or(u64::MAX);
+                let v: i64 = i64::try_from(v).unwrap_or(i64::MAX);
+                return S::Num { n: v };
+            }
+            Text(s) => return S::Text { t: s.clone() },
+            _ => {}
+        }
+    }
+    // Fallback: empty symbol. Future work: recognise sequences, alts,
+    // ranges (`0x00 ... 0xFF`), iter suffixes, etc.
+    S::Eps
 }
 
 // ---------- SCC analysis + Rec grouping ----------

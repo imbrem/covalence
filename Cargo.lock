@@ -925,6 +925,7 @@ dependencies = [
  "gix-object",
  "gix-odb",
  "serde_json",
+ "tokio",
  "ureq",
 ]
 

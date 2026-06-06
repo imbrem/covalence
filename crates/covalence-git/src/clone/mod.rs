@@ -105,6 +105,10 @@ pub fn classify_url(url: &str) -> CloneSource {
 /// Dispatches by URL: HTTP(S) remotes use the smart-protocol v2 transport,
 /// local paths (and `file://` URLs) walk the source ODB directly via
 /// [`clone_local_into`].
+///
+/// This is the synchronous entry point. To call from a tokio context — e.g.
+/// from an axum handler in `covalence-serve` — enable the `clone-async`
+/// feature and use [`async_clone_into`] instead.
 pub fn clone_into(
     opts: &CloneOptions,
     store: &GitStore,
@@ -121,6 +125,39 @@ pub fn clone_into(
         ),
         CloneSource::Http(http_url) => clone_http_into(&http_url, opts, store, &mut progress),
     }
+}
+
+/// Tokio-friendly wrapper around [`clone_into`].
+///
+/// The clone itself is fundamentally blocking — ureq + rustls drive the HTTP
+/// transport, the packfile parser is CPU-bound, and `GitStore` writes hit
+/// SQLite synchronously. Running it on tokio's blocking thread pool via
+/// [`tokio::task::spawn_blocking`] keeps the runtime responsive without
+/// rewriting any of that to be async.
+///
+/// `progress` runs on the blocking thread. To stream updates back to async
+/// callers, push them into an mpsc channel:
+///
+/// ```ignore
+/// let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+/// let handle = tokio::spawn(async_clone_into(opts, store, move |m| {
+///     let _ = tx.send(m.to_string());
+/// }));
+/// while let Some(msg) = rx.recv().await { /* forward to client */ }
+/// let result = handle.await??;
+/// ```
+#[cfg(feature = "clone-async")]
+pub async fn async_clone_into<F>(
+    opts: CloneOptions,
+    store: GitStore,
+    mut progress: F,
+) -> io::Result<CloneResult>
+where
+    F: FnMut(&str) + Send + 'static,
+{
+    tokio::task::spawn_blocking(move || clone_into(&opts, &store, |m| progress(m)))
+        .await
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("clone join: {e}")))?
 }
 
 fn clone_http_into(
@@ -251,5 +288,106 @@ mod url_tests {
         ));
         // Bare hostname / scheme-less URL falls through to HTTP for back-compat.
         assert!(matches!(classify_url("github.com/foo"), CloneSource::Http(_)));
+    }
+}
+
+#[cfg(all(test, feature = "clone-async"))]
+mod async_tests {
+    use super::*;
+    use crate::store::{GitBackend, GitObjectKind, LooseBackend};
+    use covalence_hash::gix_hash;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
+
+    fn fresh_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "cov_async_clone_{name}_{}_{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn build_repo(gitdir: &std::path::Path) -> gix_hash::ObjectId {
+        let objects = gitdir.join("objects");
+        fs::create_dir_all(&objects).unwrap();
+        let loose = LooseBackend::new(&objects, gix_hash::Kind::Sha1);
+        let blob = loose.write_object(GitObjectKind::Blob, b"async hello").unwrap();
+        let mut tree = Vec::new();
+        tree.extend_from_slice(b"100644 hi\0");
+        tree.extend_from_slice(blob.as_bytes());
+        let tree_oid = loose.write_object(GitObjectKind::Tree, &tree).unwrap();
+        let commit = format!(
+            "tree {tree_oid}\nauthor A <a@b> 0 +0000\ncommitter A <a@b> 0 +0000\n\nok\n"
+        );
+        let commit_oid = loose
+            .write_object(GitObjectKind::Commit, commit.as_bytes())
+            .unwrap();
+        let refs = gitdir.join("refs").join("heads");
+        fs::create_dir_all(&refs).unwrap();
+        fs::write(refs.join("main"), format!("{commit_oid}\n")).unwrap();
+        fs::write(gitdir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        commit_oid
+    }
+
+    /// The async wrapper drives the clone on tokio's blocking pool and the
+    /// `Send + 'static` progress callback fires from there.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn async_clone_local_collects_progress_and_objects() {
+        let work = fresh_dir("local");
+        let src = work.join("src.git");
+        fs::create_dir_all(&src).unwrap();
+        let commit_oid = build_repo(&src);
+
+        let store = GitStore::memory(gix_hash::Kind::Sha1).unwrap();
+        let opts = CloneOptions {
+            url: src.to_string_lossy().into_owned(),
+            depth: None,
+            filter: None,
+            ref_prefixes: Vec::new(),
+        };
+
+        // Progress is captured via a Send + 'static closure (the same shape a
+        // server would use to feed an mpsc::UnboundedSender<String>).
+        let log: Arc<Mutex<Vec<String>>> = Arc::default();
+        let log_for_cb = log.clone();
+        let result = async_clone_into(opts, store.clone(), move |m| {
+            log_for_cb.lock().unwrap().push(m.to_string());
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(result.objects_stored, 3);
+        assert!(store.contains_object(&commit_oid));
+        let head = result.refs.iter().find(|r| r.name == "HEAD").unwrap();
+        assert_eq!(head.oid, commit_oid);
+
+        let log = log.lock().unwrap();
+        assert!(
+            log.iter().any(|m| m.contains("Iterating source objects")),
+            "progress callback should have received transport messages, got {log:?}"
+        );
+
+        let _ = fs::remove_dir_all(&work);
+    }
+
+    /// `spawn_blocking` surfaces panics in the work as Err — make sure we wrap
+    /// the JoinError into an io::Error rather than panicking the caller.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn async_clone_propagates_clone_errors() {
+        let dir = fresh_dir("notrepo");
+        let store = GitStore::memory(gix_hash::Kind::Sha1).unwrap();
+        let opts = CloneOptions {
+            url: dir.to_string_lossy().into_owned(),
+            depth: None,
+            filter: None,
+            ref_prefixes: Vec::new(),
+        };
+        let err = async_clone_into(opts, store, |_| {}).await.unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
+        let _ = fs::remove_dir_all(&dir);
     }
 }

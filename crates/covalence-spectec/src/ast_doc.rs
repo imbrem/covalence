@@ -36,6 +36,9 @@ pub struct Doc {
     pub defs: Vec<DocDef>,
     /// Each `grammar NAME ...` declaration.
     pub grammars: Vec<DocGrammar>,
+    /// First-seen `params` token runs per syntax name (parametric
+    /// syntax preserves its `(P, ...)` group across profiles).
+    pub syntax_orig_params: std::collections::HashMap<String, Vec<crate::cst::TokenRun>>,
 }
 
 #[derive(Debug, Clone)]
@@ -85,18 +88,22 @@ pub fn build_doc(tops: &[Top], ctx: &ElabContext) -> Doc {
     let mut doc = Doc::default();
 
     // Syntax: one entry per merged name. Walk in source order so the
-    // first occurrence determines the displayed span.
+    // first occurrence determines the displayed span. Also stash the
+    // first-seen params token run so `Typ.ps` can be synthesised.
     let mut seen_syntax = std::collections::HashSet::new();
     for t in tops {
         if let Top::Syntax(s) = t
             && seen_syntax.insert(s.name.text.clone())
-                && let Some(merged) = ctx.syntax_defs.get(&s.name.text) {
-                    doc.syntax.push(DocSyntax {
-                        span: s.span,
-                        name: s.name.text.clone(),
-                        merged: merged.clone(),
-                    });
-                }
+            && let Some(merged) = ctx.syntax_defs.get(&s.name.text)
+        {
+            doc.syntax.push(DocSyntax {
+                span: s.span,
+                name: s.name.text.clone(),
+                merged: merged.clone(),
+            });
+            doc.syntax_orig_params
+                .insert(s.name.text.clone(), s.params.clone());
+        }
     }
 
     // Vars, grammars, etc.
@@ -180,8 +187,17 @@ fn to_spectec_ast_flat(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTec
 
     // Typ entries from merged syntax. One Inst per profile-tagged
     // declaration; each Inst's DefTyp body is lowered from the
-    // syntax body (alias / variant / record).
+    // syntax body (alias / variant / record). `ps` comes from the
+    // syntax decl's parametric `(param)` list (e.g. `syntax fN(N)`).
     for syn in &doc.syntax {
+        // First Top::Syntax for this name supplies the params (all
+        // profiles share the same param list).
+        let params_tr = doc
+            .syntax_orig_params
+            .get(&syn.name)
+            .cloned()
+            .unwrap_or_default();
+        let ps = syntax_params_to_specs(&params_tr, ctx);
         let insts: Vec<spectec_ast::SpecTecInst> = syn
             .merged
             .profiles
@@ -190,7 +206,7 @@ fn to_spectec_ast_flat(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTec
             .collect();
         out.push(spectec_ast::SpecTecDef::Typ {
             x: syn.name.clone(),
-            ps: Vec::new(),
+            ps,
             insts,
         });
     }
@@ -198,9 +214,15 @@ fn to_spectec_ast_flat(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTec
     // Rel entries from relations. Each rule's conclusion + premises
     // is elaborated via `elab_rule_conclusion` and lowered to the
     // SpecTec rule shape (conclusion wrapped as a Tup, premises lowered
-    // through `premise_to_spectec`).
+    // through `premise_to_spectec`). Rel.t is the operand-tuple type
+    // synthesised from the template's hole-type slices.
     for rel in &doc.relations {
         let mixop = mixop_for(&rel.name, ctx);
+        let (_, hole_toks) = crate::elab::template_to_fragments_with_holes(
+            &rel.decl.template,
+            &ctx.type_names,
+        );
+        let t = relation_operand_type(&hole_toks, ctx);
         let rules = rel
             .rules
             .iter()
@@ -226,7 +248,7 @@ fn to_spectec_ast_flat(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTec
             x: rel.name.clone(),
             ps: Vec::new(),
             op: mixop,
-            t: placeholder_typ(),
+            t,
             rules,
         });
     }
@@ -235,8 +257,19 @@ fn to_spectec_ast_flat(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTec
     // as Exp-wrapped expressions; the RHS is lowered to a SpecTecExp;
     // premises go through `premise_to_spectec`. None of this involves
     // the OpTable mixfix path (def clauses pattern-match by structure,
-    // not by mixfix template).
+    // not by mixfix template). Dec.t is the return type; Dec.ps is the
+    // signature's argument-type list as Exp-shaped params.
     for d in &doc.defs {
+        let t = typ_expr_to_spectec(&d.sig.ret_ty.tokens, ctx);
+        let ps = d
+            .sig
+            .arg_tys
+            .iter()
+            .map(|arg_tr| spectec_ast::SpecTecParam::Exp {
+                x: "_".to_string(),
+                t: typ_expr_to_spectec(&arg_tr.tokens, ctx),
+            })
+            .collect();
         let clauses = d
             .clauses
             .iter()
@@ -253,9 +286,6 @@ fn to_spectec_ast_flat(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTec
                     .premises
                     .iter()
                     .map(|pr_tr| {
-                        // Each premise token run goes through
-                        // `crate::elab::elab_premise` for the same
-                        // shape recognition rules as rule premises.
                         let elabp = crate::elab::elab_premise(pr_tr, ctx)
                             .unwrap_or_else(|_| ElabPremise::Raw(pr_tr.clone()));
                         premise_to_spectec(&elabp, ctx)
@@ -271,18 +301,19 @@ fn to_spectec_ast_flat(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTec
             .collect();
         out.push(spectec_ast::SpecTecDef::Dec {
             x: d.name.clone(),
-            ps: Vec::new(),
-            t: placeholder_typ(),
+            ps,
+            t,
             clauses,
         });
     }
 
-    // Gram entries from grammars. We don't yet split productions on
-    // `|` and lower each one — that's the obvious next slice. For now
-    // we emit one production whose symbol is a `Var` carrying the raw
-    // body as a synthetic ident, just so `prods` is non-empty when
-    // there's a body.
+    // Gram entries from grammars. Productions still get a single
+    // placeholder Prod per body; the production-splitting slice will
+    // expand this. Gram.t is the yield type; Gram.ps is the param list
+    // from `(params)`.
     for g in &doc.grammars {
+        let t = typ_expr_to_spectec(&g.decl.ret.tokens, ctx);
+        let ps = grammar_params_to_specs(&g.decl.params, ctx);
         let prods = match &g.decl.productions {
             Some(_) => vec![spectec_ast::SpecTecProd::Prod {
                 ps: Vec::new(),
@@ -294,8 +325,8 @@ fn to_spectec_ast_flat(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTec
         };
         out.push(spectec_ast::SpecTecDef::Gram {
             x: g.name.clone(),
-            ps: Vec::new(),
-            t: placeholder_typ(),
+            ps,
+            t,
             prods,
         });
     }
@@ -699,6 +730,114 @@ fn path_to_spectec(p: &ElabPath, ctx: &ElabContext) -> spectec_ast::SpecTecPath 
         },
     }
 }
+
+// ---------- type / parameter synthesis ----------
+
+/// Build a relation's operand-tuple type from its template's per-hole
+/// token slices. Single hole → bare type; multiple → `Tup` of binds.
+fn relation_operand_type(
+    hole_toks: &[Vec<crate::token::Spanned>],
+    ctx: &ElabContext,
+) -> spectec_ast::SpecTecTyp {
+    let binds: Vec<spectec_ast::SpecTecTypBind> = hole_toks
+        .iter()
+        .map(|toks| spectec_ast::SpecTecTypBind::Bind {
+            id: "_".to_string(),
+            typ: typ_expr_to_spectec(toks, ctx),
+        })
+        .collect();
+    if binds.is_empty() {
+        return spectec_ast::SpecTecTyp::Tup { ets: Vec::new() };
+    }
+    if binds.len() == 1 {
+        let spectec_ast::SpecTecTypBind::Bind { typ, .. } = binds.into_iter().next().unwrap();
+        return typ;
+    }
+    spectec_ast::SpecTecTyp::Tup { ets: binds }
+}
+
+/// Lower a syntax decl's `(params)` token run into `SpecTecParam`
+/// entries. SpecTec params can be `syntax X`, `X : T`, `def $f(...)`,
+/// or `gram G`; we recognise the simple `syntax X` and bare-name
+/// cases here, treating others as `Param::Typ { x }`.
+fn syntax_params_to_specs(
+    params_runs: &[crate::cst::TokenRun],
+    _ctx: &ElabContext,
+) -> Vec<spectec_ast::SpecTecParam> {
+    // Each TokenRun is one balanced `(...)` group containing
+    // comma-separated params (e.g. `(N)` for `syntax fN(N)`).
+    let mut out = Vec::new();
+    for tr in params_runs {
+        // Strip the surrounding parens.
+        let toks = &tr.tokens;
+        let inner = if matches!(toks.first().map(|s| &s.token), Some(crate::token::Token::LParen))
+            && matches!(toks.last().map(|s| &s.token), Some(crate::token::Token::RParen))
+        {
+            &toks[1..toks.len() - 1]
+        } else {
+            &toks[..]
+        };
+        for chunk in split_top_level_commas(inner) {
+            if let Some(p) = chunk_to_syntax_param(chunk) {
+                out.push(p);
+            }
+        }
+    }
+    out
+}
+
+/// Lower a single comma-separated chunk of a `syntax NAME(...)` param
+/// list. Recognises bare `X` (Typ param) and `syntax X` (also Typ).
+fn chunk_to_syntax_param(chunk: &[crate::token::Spanned]) -> Option<spectec_ast::SpecTecParam> {
+    use crate::token::Token::*;
+    match chunk {
+        [Spanned { token: Ident(n), .. }] => Some(spectec_ast::SpecTecParam::Typ { x: n.clone() }),
+        [Spanned { token: Syntax, .. }, Spanned { token: Ident(n), .. }] => {
+            Some(spectec_ast::SpecTecParam::Typ { x: n.clone() })
+        }
+        _ => None,
+    }
+}
+
+/// Lower a grammar's `(params)` into params (currently treated as
+/// syntax-style — refine when needed).
+fn grammar_params_to_specs(
+    params_runs: &[crate::cst::TokenRun],
+    ctx: &ElabContext,
+) -> Vec<spectec_ast::SpecTecParam> {
+    syntax_params_to_specs(params_runs, ctx)
+}
+
+/// Split a token slice on top-level commas.
+fn split_top_level_commas(toks: &[crate::token::Spanned]) -> Vec<&[crate::token::Spanned]> {
+    let mut out = Vec::new();
+    let mut depth: i32 = 0;
+    let mut start = 0usize;
+    for (i, t) in toks.iter().enumerate() {
+        match &t.token {
+            crate::token::Token::LParen
+            | crate::token::Token::LBracket
+            | crate::token::Token::LBrace => depth += 1,
+            crate::token::Token::RParen
+            | crate::token::Token::RBracket
+            | crate::token::Token::RBrace => depth -= 1,
+            crate::token::Token::Comma if depth == 0 => {
+                if start < i {
+                    out.push(&toks[start..i]);
+                }
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if start < toks.len() {
+        out.push(&toks[start..]);
+    }
+    out
+}
+
+// Re-export Spanned for the chunk_to_syntax_param pattern matches.
+use crate::token::Spanned;
 
 // ---------- SyntaxBody → SpecTecInst ----------
 

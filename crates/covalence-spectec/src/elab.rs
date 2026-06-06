@@ -307,6 +307,44 @@ fn metavar_base(name: &str) -> &str {
     trimmed
 }
 
+/// Like [`template_to_fragments`] but also returns the slice of source
+/// tokens that fell within each `Hole`. Useful for downstream code
+/// that needs to recover the per-hole type expression (e.g. when
+/// synthesising `Rel.t` for the spectec_ast converter).
+pub fn template_to_fragments_with_holes(
+    template: &TokenRun,
+    type_names: &HashSet<String>,
+) -> (Vec<Fragment>, Vec<Vec<Spanned>>) {
+    let mut frags = Vec::new();
+    let mut hole_toks: Vec<Vec<Spanned>> = Vec::new();
+    let mut i = 0;
+    let toks = &template.tokens;
+    while i < toks.len() {
+        let t = &toks[i];
+        match &t.token {
+            Token::Ident(name) if type_names.contains(name) => {
+                frags.push(Fragment::Hole(REL_HOLE_PREC));
+                let start = i;
+                i += 1;
+                i += skip_type_suffix(&toks[i..]);
+                hole_toks.push(toks[start..i].to_vec());
+            }
+            Token::LParen => {
+                frags.push(Fragment::Hole(REL_HOLE_PREC));
+                let start = i;
+                i += skip_balanced(&toks[i..]);
+                i += skip_type_suffix(&toks[i..]);
+                hole_toks.push(toks[start..i].to_vec());
+            }
+            _ => {
+                frags.push(Fragment::Lit(t.token.clone()));
+                i += 1;
+            }
+        }
+    }
+    (frags, hole_toks)
+}
+
 /// Convert a relation `template` token run into mixfix fragments.
 ///
 /// The rule:

@@ -153,6 +153,18 @@ fn diff_against_wasm_spec_ast() {
         "  Dec clause RHS: {our_dec_real_rhs} non-sentinel of {our_dec_total_clauses} clauses"
     );
 
+    let (rel_t_real, rel_t_total) = count_rel_t_real(&ours);
+    let (dec_t_real, dec_t_total) = count_dec_t_real(&ours);
+    let (gram_t_real, gram_t_total) = count_gram_t_real(&ours);
+    eprintln!("  Rel.t non-placeholder: {rel_t_real} / {rel_t_total}");
+    eprintln!("  Dec.t non-placeholder: {dec_t_real} / {dec_t_total}");
+    eprintln!("  Gram.t non-placeholder: {gram_t_real} / {gram_t_total}");
+
+    let dec_with_ps = count_dec_with_ps(&ours);
+    let typ_with_ps = count_typ_with_ps(&ours);
+    eprintln!("  Dec.ps non-empty: {dec_with_ps} / {dec_t_total}");
+    eprintln!("  Typ.ps non-empty: {typ_with_ps} / {total_typ}");
+
     // Acceptance: the names align. (Bodies don't match yet — that's
     // the deferred lowering work surfaced by this test.) We require
     // each kind to have >= 80% name overlap with the OCaml output.
@@ -259,6 +271,93 @@ fn count_rec_groups(defs: &[SpecTecDef]) -> usize {
     for d in defs {
         walk(d, &mut n);
     }
+    n
+}
+
+fn is_placeholder_typ(t: &spectec_ast::SpecTecTyp) -> bool {
+    matches!(t, spectec_ast::SpecTecTyp::Bool)
+}
+
+fn count_rel_t_real(defs: &[SpecTecDef]) -> (usize, usize) {
+    let mut real = 0;
+    let mut total = 0;
+    fn walk(d: &SpecTecDef, real: &mut usize, total: &mut usize) {
+        match d {
+            SpecTecDef::Rel { t, .. } => {
+                *total += 1;
+                if !is_placeholder_typ(t) {
+                    *real += 1;
+                }
+            }
+            SpecTecDef::Rec { ds } => for d in ds { walk(d, real, total); },
+            _ => {}
+        }
+    }
+    for d in defs { walk(d, &mut real, &mut total); }
+    (real, total)
+}
+
+fn count_dec_t_real(defs: &[SpecTecDef]) -> (usize, usize) {
+    let mut real = 0;
+    let mut total = 0;
+    fn walk(d: &SpecTecDef, real: &mut usize, total: &mut usize) {
+        match d {
+            SpecTecDef::Dec { t, .. } => {
+                *total += 1;
+                if !is_placeholder_typ(t) {
+                    *real += 1;
+                }
+            }
+            SpecTecDef::Rec { ds } => for d in ds { walk(d, real, total); },
+            _ => {}
+        }
+    }
+    for d in defs { walk(d, &mut real, &mut total); }
+    (real, total)
+}
+
+fn count_gram_t_real(defs: &[SpecTecDef]) -> (usize, usize) {
+    let mut real = 0;
+    let mut total = 0;
+    fn walk(d: &SpecTecDef, real: &mut usize, total: &mut usize) {
+        match d {
+            SpecTecDef::Gram { t, .. } => {
+                *total += 1;
+                if !is_placeholder_typ(t) {
+                    *real += 1;
+                }
+            }
+            SpecTecDef::Rec { ds } => for d in ds { walk(d, real, total); },
+            _ => {}
+        }
+    }
+    for d in defs { walk(d, &mut real, &mut total); }
+    (real, total)
+}
+
+fn count_dec_with_ps(defs: &[SpecTecDef]) -> usize {
+    let mut n = 0;
+    fn walk(d: &SpecTecDef, n: &mut usize) {
+        match d {
+            SpecTecDef::Dec { ps, .. } if !ps.is_empty() => *n += 1,
+            SpecTecDef::Rec { ds } => for d in ds { walk(d, n); },
+            _ => {}
+        }
+    }
+    for d in defs { walk(d, &mut n); }
+    n
+}
+
+fn count_typ_with_ps(defs: &[SpecTecDef]) -> usize {
+    let mut n = 0;
+    fn walk(d: &SpecTecDef, n: &mut usize) {
+        match d {
+            SpecTecDef::Typ { ps, .. } if !ps.is_empty() => *n += 1,
+            SpecTecDef::Rec { ds } => for d in ds { walk(d, n); },
+            _ => {}
+        }
+    }
+    for d in defs { walk(d, &mut n); }
     n
 }
 

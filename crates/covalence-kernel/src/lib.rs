@@ -27,12 +27,6 @@
 //!   "axiom set" representation that lets the safe `Thm::abs` rule
 //!   succeed without the escape hatch.
 //!
-//! - **`TermDef` / `TypeDef` dedup is not yet content-hash stable
-//!   across runs.** [`Arena::alloc_term`] dedups by linear scan
-//!   over the current term table — fine for tests, will explode at
-//!   real scale. Content hashing (Phase H) will eventually replace
-//!   it.
-//!
 //! - **Auto-`infer` in `alloc_term` papers over stale-cache bugs.**
 //!   The cache on a `TermId` can drift after substitution or after
 //!   a child's cache changes for reasons outside this term's own
@@ -55,9 +49,21 @@
 //!   forms natively.
 //!
 //! - **`Thm::beta` and other rules used to leak `ILL_TYPED` caches
-//!   into their `Eq` results**. The current workaround is the
+//!   into their `Eq` results.** The current workaround is the
 //!   auto-`infer` in `alloc_term`; the eventual fix should be at
 //!   the rule level so we can drop the auto-`infer`.
+//!
+//! Recently fixed:
+//!
+//! - **Linear-scan dedup → HashMap hash-cons.** `alloc_term`,
+//!   `alloc_type`, `intern_tyargs`, and `intern_string` now use
+//!   `HashMap<Content, Id>` instead of `Vec::iter().position(..)`,
+//!   bringing dedup back to amortized O(1).
+//!
+//! - **`intern_tyargs` dedup.** A long-standing bug let every
+//!   `intern_tyargs(vec![])` allocate a fresh `TyArgsId`, which
+//!   inflated nullary `Tyapp`s to distinct `TypeRef`s and broke
+//!   polymorphic-instance equality across rules.
 //!
 //! Soundness-critical work (auditing, hardening, proof of
 //! soundness against an explicit logical semantics, hashing model,

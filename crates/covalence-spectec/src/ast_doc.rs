@@ -214,12 +214,16 @@ fn to_spectec_ast_flat(
             .cloned()
             .unwrap_or_default();
         let ps = syntax_params_to_specs(&params_tr, ctx);
-        let insts: Vec<spectec_ast::SpecTecInst> = syn
+        let mut insts: Vec<spectec_ast::SpecTecInst> = syn
             .merged
             .profiles
             .iter()
             .filter_map(|prof| inst_for_profile(syn, prof, ctx, doc))
             .collect();
+        // OCaml's elaborator merges profiles that produce identical
+        // bodies (the typical case for split `/syn` + `/sem` decls
+        // that splice into each other). Dedup consecutive equals.
+        insts.dedup();
         out.push(spectec_ast::SpecTecDef::Typ {
             x: syn.name.clone(),
             ps,
@@ -1321,7 +1325,10 @@ fn expand_variant_alts(
 /// arg-type expressions in alternatives is later work).
 fn alt_to_typcase(alt: &Alt, ctx: &ElabContext) -> spectec_ast::SpecTecTypCase {
     let op = match alt_to_constructor(alt, &ctx.type_names) {
-        Some((_name, frags)) => mixop_from_fragments(&frags),
+        // For variant case types, OCaml uses just `[head]` as the
+        // MixOp — operand placeholders aren't materialised in the
+        // op text (they're carried by the `t` bind list).
+        Some((name, _frags)) => spectec_ast::MixOp::new(vec![name]),
         None => mixop_from_alt_tokens(alt),
     };
     spectec_ast::SpecTecTypCase::Field {
@@ -1372,25 +1379,6 @@ fn is_uppercase_like(name: &str) -> bool {
             .next()
             .map(|b| b.is_ascii_uppercase() || b == b'_')
             .unwrap_or(false)
-}
-
-fn mixop_from_fragments(frags: &[crate::mixfix::Fragment]) -> spectec_ast::MixOp {
-    let mut s = String::new();
-    for f in frags {
-        match f {
-            crate::mixfix::Fragment::Hole(_) => s.push('%'),
-            crate::mixfix::Fragment::Lit(t) => {
-                use crate::token::Token::*;
-                let text = match t {
-                    Ident(n) => n.clone(),
-                    Nat(n) => n.to_string(),
-                    other => other.describe().trim_matches('`').to_string(),
-                };
-                s.push_str(&text);
-            }
-        }
-    }
-    spectec_ast::MixOp::new(s.split('%').map(str::to_owned).collect())
 }
 
 /// Lower a raw token run as a type expression.
@@ -1476,12 +1464,28 @@ pub fn typ_expr_to_spectec(
             };
         }
     }
-    // Parenthesised: `( ... )` covering the entire slice — recurse.
+    // Parenthesised: `( ... )` covering the entire slice. Empty
+    // inner `()` is the unit type `Tup{[]}`. Comma-split inner is a
+    // tuple type. Single inner element recurses.
     if matches!(toks.first().map(|s| &s.token), Some(LParen))
         && matches!(toks.last().map(|s| &s.token), Some(RParen))
         && crate::elab::skip_balanced(toks) == toks.len()
     {
         let inner = &toks[1..toks.len() - 1];
+        if inner.is_empty() {
+            return spectec_ast::SpecTecTyp::Tup { ets: Vec::new() };
+        }
+        let chunks = split_top_level_commas(inner);
+        if chunks.len() >= 2 {
+            let binds: Vec<spectec_ast::SpecTecTypBind> = chunks
+                .iter()
+                .map(|c| spectec_ast::SpecTecTypBind::Bind {
+                    id: "_".to_string(),
+                    typ: typ_expr_to_spectec(c, ctx),
+                })
+                .collect();
+            return spectec_ast::SpecTecTyp::Tup { ets: binds };
+        }
         return typ_expr_to_spectec(inner, ctx);
     }
     // Fallback.
@@ -1508,18 +1512,34 @@ fn typ_expr_to_spectec_args(alt: &Alt, ctx: &ElabContext) -> spectec_ast::SpecTe
     let binds: Vec<spectec_ast::SpecTecTypBind> = hole_toks
         .iter()
         .map(|toks| spectec_ast::SpecTecTypBind::Bind {
-            id: "_".to_string(),
+            id: hole_bind_id(toks),
             typ: typ_expr_to_spectec(toks, ctx),
         })
         .collect();
-    if binds.is_empty() {
-        spectec_ast::SpecTecTyp::Tup { ets: Vec::new() }
-    } else if binds.len() == 1 {
-        let spectec_ast::SpecTecTypBind::Bind { typ, .. } = binds.into_iter().next().unwrap();
-        typ
-    } else {
-        spectec_ast::SpecTecTyp::Tup { ets: binds }
+    spectec_ast::SpecTecTyp::Tup { ets: binds }
+}
+
+/// Render a hole's source tokens into a `Bind` id, mirroring OCaml's
+/// elaborator output (e.g. `valtype?`, `localidx*`, `n`). Uses each
+/// token's `describe()` for fidelity; falls back to "_" for unusual
+/// shapes.
+fn hole_bind_id(toks: &[crate::token::Spanned]) -> String {
+    if toks.is_empty() {
+        return "_".to_string();
     }
+    let mut s = String::new();
+    for t in toks {
+        use crate::token::Token::*;
+        match &t.token {
+            Ident(n) => s.push_str(n),
+            Nat(n) => s.push_str(&n.to_string()),
+            Star => s.push('*'),
+            Plus => s.push('+'),
+            Question => s.push('?'),
+            other => s.push_str(other.describe().trim_matches('`')),
+        }
+    }
+    s
 }
 
 // ---------- grammar production splitting ----------

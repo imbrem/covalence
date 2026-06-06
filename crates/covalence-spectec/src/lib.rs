@@ -36,6 +36,7 @@ pub use spectec_ast_decode_derive as decode_derive;
 pub use wasm_spec_ast as wasm;
 
 pub mod cst;
+pub mod elab;
 pub mod lex;
 pub mod mixfix;
 pub mod parse;

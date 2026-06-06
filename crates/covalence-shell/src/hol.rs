@@ -1072,6 +1072,9 @@ impl HolPrim {
     /// "β-redex" coincides.
     pub fn beta_conv(&mut self, tm: TermRef) -> Result<ThmHandle, HolPrimError> {
         let id = tm.as_local().ok_or(HolError::NotBetaRedex)?;
+        // Re-infer in case the cached type info is stale (post-
+        // substitution Lam bodies sometimes are).
+        let _ = self.arena_mut().infer(id);
         let ctx = self.session_ctx.clone();
         let thm = Thm::beta(self.kernel.arena_mut(), ctx, id)?;
         Ok(self.store_thm(thm))

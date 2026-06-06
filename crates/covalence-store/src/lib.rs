@@ -8,15 +8,21 @@ pub use object::{
 };
 
 // ---------------------------------------------------------------------------
-// KvStore — hierarchical key-value store trait
+// TreeStore — POSIX-style virtual filesystem trait
 // ---------------------------------------------------------------------------
 
-/// Hierarchical key-value store with interior mutability.
+/// Hierarchical store of byte values addressed by raw byte keys, with
+/// named child subtrees — structurally a POSIX-style virtual filesystem
+/// (or a collection of them, via [`ns`](Self::ns)).
 ///
-/// Designed to be object-safe for use behind `Arc<dyn KvStore>`.
+/// Designed to be object-safe for use behind `Arc<dyn TreeStore>`.
 /// Keys and values are raw byte slices — type tagging (if needed)
 /// is the caller's responsibility.
-pub trait KvStore: Send + Sync {
+///
+/// Distinct from [`covalence_kv::KvStore`]: that's a flat key/value
+/// blob store (S3-shaped). This is a tree of namespaces with read
+/// tracking, suited to kernel-internal scaffolding.
+pub trait TreeStore: Send + Sync {
     /// Insert or overwrite a value.
     fn set(&self, key: &[u8], value: &[u8]);
 
@@ -31,10 +37,10 @@ pub trait KvStore: Send + Sync {
 
     /// Navigate to a child namespace. Returns the same child on
     /// repeated calls with the same key (shared state).
-    fn ns(&self, key: &[u8]) -> Arc<dyn KvStore>;
+    fn ns(&self, key: &[u8]) -> Arc<dyn TreeStore>;
 
     /// Duplicate this handle (same underlying data).
-    fn dup(&self) -> Arc<dyn KvStore>;
+    fn dup(&self) -> Arc<dyn TreeStore>;
 }
 
 /// Errors from store operations.
@@ -252,9 +258,9 @@ mod memory;
 pub use memory::{MemoryStore, SharedMemoryStore};
 
 #[cfg(feature = "memory")]
-mod kv;
+mod tree;
 #[cfg(feature = "memory")]
-pub use kv::MemoryKvStore;
+pub use tree::MemoryTreeStore;
 
 #[cfg(feature = "sqlite")]
 mod sqlite;

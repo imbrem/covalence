@@ -7,7 +7,7 @@ mod container_builder;
 mod default;
 mod git;
 mod hash;
-mod kvstore;
+mod treestore;
 mod module;
 mod module_builder;
 mod object_store;
@@ -45,7 +45,7 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<table::PyRowSchema>()?;
     m.add_class::<table::PyTableBuilder>()?;
     m.add_class::<table::PyDirectoryBuilder>()?;
-    m.add_class::<kvstore::KvStore>()?;
+    m.add_class::<treestore::TreeStore>()?;
     m.add_class::<val::PyVal>()?;
     m.add_class::<val::PyValType>()?;
     m.add_class::<signing::Principal>()?;

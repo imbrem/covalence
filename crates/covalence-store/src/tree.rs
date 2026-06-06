@@ -1,18 +1,18 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-use crate::KvStore;
+use crate::TreeStore;
 
-/// Internal data for a [`MemoryKvStore`] node.
-struct KvStoreData {
+/// Internal data for a [`MemoryTreeStore`] node.
+struct TreeStoreData {
     values: HashMap<Vec<u8>, Vec<u8>>,
-    children: HashMap<Vec<u8>, Arc<MemoryKvStore>>,
+    children: HashMap<Vec<u8>, Arc<MemoryTreeStore>>,
     touched: HashSet<Vec<u8>>,
 }
 
-impl KvStoreData {
+impl TreeStoreData {
     fn new() -> Self {
-        KvStoreData {
+        TreeStoreData {
             values: HashMap::new(),
             children: HashMap::new(),
             touched: HashSet::new(),
@@ -20,31 +20,31 @@ impl KvStoreData {
     }
 }
 
-/// In-memory hierarchical key-value store.
+/// In-memory hierarchical tree store.
 ///
 /// Clone-friendly (shares the underlying data via `Arc<Mutex<…>>`).
-/// Implements [`KvStore`] with interior mutability.
+/// Implements [`TreeStore`] with interior mutability.
 #[derive(Clone)]
-pub struct MemoryKvStore {
-    data: Arc<Mutex<KvStoreData>>,
+pub struct MemoryTreeStore {
+    data: Arc<Mutex<TreeStoreData>>,
 }
 
-impl MemoryKvStore {
-    /// Create a new, empty in-memory KV store.
+impl MemoryTreeStore {
+    /// Create a new, empty in-memory tree store.
     pub fn new() -> Self {
-        MemoryKvStore {
-            data: Arc::new(Mutex::new(KvStoreData::new())),
+        MemoryTreeStore {
+            data: Arc::new(Mutex::new(TreeStoreData::new())),
         }
     }
 }
 
-impl Default for MemoryKvStore {
+impl Default for MemoryTreeStore {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl KvStore for MemoryKvStore {
+impl TreeStore for MemoryTreeStore {
     fn set(&self, key: &[u8], value: &[u8]) {
         self.data
             .lock()
@@ -65,17 +65,17 @@ impl KvStore for MemoryKvStore {
         self.data.lock().unwrap().touched.contains(key)
     }
 
-    fn ns(&self, key: &[u8]) -> Arc<dyn KvStore> {
+    fn ns(&self, key: &[u8]) -> Arc<dyn TreeStore> {
         let mut data = self.data.lock().unwrap();
         let child = data
             .children
             .entry(key.to_vec())
-            .or_insert_with(|| Arc::new(MemoryKvStore::new()))
+            .or_insert_with(|| Arc::new(MemoryTreeStore::new()))
             .clone();
         child
     }
 
-    fn dup(&self) -> Arc<dyn KvStore> {
+    fn dup(&self) -> Arc<dyn TreeStore> {
         Arc::new(self.clone())
     }
 }
@@ -86,20 +86,20 @@ mod tests {
 
     #[test]
     fn set_get() {
-        let store = MemoryKvStore::new();
+        let store = MemoryTreeStore::new();
         store.set(b"key", b"value");
         assert_eq!(store.get(b"key"), Some(b"value".to_vec()));
     }
 
     #[test]
     fn get_missing() {
-        let store = MemoryKvStore::new();
+        let store = MemoryTreeStore::new();
         assert_eq!(store.get(b"nope"), None);
     }
 
     #[test]
     fn overwrite() {
-        let store = MemoryKvStore::new();
+        let store = MemoryTreeStore::new();
         store.set(b"k", b"v1");
         store.set(b"k", b"v2");
         assert_eq!(store.get(b"k"), Some(b"v2".to_vec()));
@@ -107,7 +107,7 @@ mod tests {
 
     #[test]
     fn touch_touched() {
-        let store = MemoryKvStore::new();
+        let store = MemoryTreeStore::new();
         assert!(!store.touched(b"x"));
         store.touch(b"x");
         assert!(store.touched(b"x"));
@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     fn ns_isolation() {
-        let store = MemoryKvStore::new();
+        let store = MemoryTreeStore::new();
         store.set(b"k", b"root");
         let child = store.ns(b"child");
         child.set(b"k", b"nested");
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn ns_sharing() {
-        let store = MemoryKvStore::new();
+        let store = MemoryTreeStore::new();
         let c1 = store.ns(b"x");
         c1.set(b"a", b"1");
         let c2 = store.ns(b"x");
@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn dup_shares_data() {
-        let store = MemoryKvStore::new();
+        let store = MemoryTreeStore::new();
         store.set(b"k", b"v");
         let duped = store.dup();
         assert_eq!(duped.get(b"k"), Some(b"v".to_vec()));

@@ -1,8 +1,6 @@
 //! Synchronous variant of [`KvStore`](super::KvStore).
 //!
 //! For fast, trusted, in-process backends where async overhead isn't justified.
-//! Shape mirrors the existing `covalence_store::KvStore` so future unification
-//! is a straightforward move.
 
 use std::sync::Arc;
 

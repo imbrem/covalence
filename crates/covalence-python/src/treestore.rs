@@ -4,20 +4,20 @@ use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
-use covalence_store::KvStore as KvStoreTrait;
+use covalence_store::TreeStore as TreeStoreTrait;
 
 // ---------------------------------------------------------------------------
-// PyKvStore — bridges a Python object to KvStore trait
+// PyTreeStore — bridges a Python object to TreeStore trait
 // ---------------------------------------------------------------------------
 
-/// Wraps a Python object implementing the KV store protocol as a Rust `KvStore`.
-struct PyKvStore {
+/// Wraps a Python object implementing the tree-store protocol as a Rust `TreeStore`.
+struct PyTreeStore {
     obj: Py<PyAny>,
     has_touch: bool,
     has_touched: bool,
 }
 
-impl KvStoreTrait for PyKvStore {
+impl TreeStoreTrait for PyTreeStore {
     fn set(&self, key: &[u8], value: &[u8]) {
         Python::attach(|py| {
             let py_key = PyBytes::new(py, key);
@@ -59,21 +59,21 @@ impl KvStoreTrait for PyKvStore {
         false
     }
 
-    fn ns(&self, key: &[u8]) -> Arc<dyn KvStoreTrait> {
+    fn ns(&self, key: &[u8]) -> Arc<dyn TreeStoreTrait> {
         Python::attach(|py| {
             let py_key = PyBytes::new(py, key);
             let result = self.obj.call_method1(py, "ns", (py_key,)).unwrap();
             let bound = result.into_bound(py);
 
-            // If the result is already a KvStore pyclass, extract the inner Arc
-            if let Ok(kv) = bound.cast::<KvStore>() {
+            // If the result is already a TreeStore pyclass, extract the inner Arc
+            if let Ok(kv) = bound.cast::<TreeStore>() {
                 return kv.borrow().inner.clone();
             }
 
             // Otherwise, wrap the Python object
             let has_touch = bound.hasattr("touch").unwrap_or(false);
             let has_touched = bound.hasattr("touched").unwrap_or(false);
-            Arc::new(PyKvStore {
+            Arc::new(PyTreeStore {
                 obj: bound.unbind(),
                 has_touch,
                 has_touched,
@@ -81,18 +81,18 @@ impl KvStoreTrait for PyKvStore {
         })
     }
 
-    fn dup(&self) -> Arc<dyn KvStoreTrait> {
+    fn dup(&self) -> Arc<dyn TreeStoreTrait> {
         Python::attach(|py| {
             let result = self.obj.call_method0(py, "dup").unwrap();
             let bound = result.into_bound(py);
 
-            if let Ok(kv) = bound.cast::<KvStore>() {
+            if let Ok(kv) = bound.cast::<TreeStore>() {
                 return kv.borrow().inner.clone();
             }
 
             let has_touch = bound.hasattr("touch").unwrap_or(false);
             let has_touched = bound.hasattr("touched").unwrap_or(false);
-            Arc::new(PyKvStore {
+            Arc::new(PyTreeStore {
                 obj: bound.unbind(),
                 has_touch,
                 has_touched,
@@ -101,26 +101,26 @@ impl KvStoreTrait for PyKvStore {
     }
 }
 
-// Safety: PyKvStore holds a Py<PyAny> which is Send + Sync
-unsafe impl Send for PyKvStore {}
-unsafe impl Sync for PyKvStore {}
+// Safety: PyTreeStore holds a Py<PyAny> which is Send + Sync
+unsafe impl Send for PyTreeStore {}
+unsafe impl Sync for PyTreeStore {}
 
 // ---------------------------------------------------------------------------
-// KvStore pyclass
+// TreeStore pyclass
 // ---------------------------------------------------------------------------
 
-/// Hierarchical key-value store.
+/// Hierarchical tree store — a POSIX-style virtual filesystem.
 ///
-/// Construct from a Python KV store object, or use `KvStore.memory()` for
-/// a Rust-backed in-memory store.
+/// Construct from a Python object implementing the protocol, or use
+/// `TreeStore.memory()` for a Rust-backed in-memory tree.
 #[pyclass]
-pub struct KvStore {
-    inner: Arc<dyn KvStoreTrait>,
+pub struct TreeStore {
+    inner: Arc<dyn TreeStoreTrait>,
 }
 
 #[pymethods]
-impl KvStore {
-    /// Wrap a Python object implementing the KV store protocol.
+impl TreeStore {
+    /// Wrap a Python object implementing the tree-store protocol.
     ///
     /// Required methods: `set(key, value)`, `get(key)`, `ns(key)`, `dup()`.
     /// Optional methods: `touch(key)`, `touched(key)`.
@@ -129,13 +129,13 @@ impl KvStore {
         for method in &["set", "get", "ns", "dup"] {
             if !obj.hasattr(*method)? {
                 return Err(PyTypeError::new_err(format!(
-                    "KV store object must have a '{method}' method"
+                    "tree store object must have a '{method}' method"
                 )));
             }
         }
         let has_touch = obj.hasattr("touch")?;
         let has_touched = obj.hasattr("touched")?;
-        let py_store = PyKvStore {
+        let py_store = PyTreeStore {
             obj: obj.clone().unbind(),
             has_touch,
             has_touched,
@@ -145,11 +145,11 @@ impl KvStore {
         })
     }
 
-    /// Create an in-memory KV store backed by Rust.
+    /// Create an in-memory tree store backed by Rust.
     #[staticmethod]
     fn memory() -> Self {
         Self {
-            inner: Arc::new(covalence_store::MemoryKvStore::new()),
+            inner: Arc::new(covalence_store::MemoryTreeStore::new()),
         }
     }
 
@@ -188,6 +188,6 @@ impl KvStore {
     }
 
     fn __repr__(&self) -> String {
-        "KvStore(...)".to_string()
+        "TreeStore(...)".to_string()
     }
 }

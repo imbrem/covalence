@@ -722,15 +722,14 @@ pub fn expr_to_spectec(e: &Expr, ctx: &ElabContext) -> spectec_ast::SpecTecExp {
             e1: Box::new(expr_to_spectec(e, ctx)),
             i: *index,
         },
-<<<<<<< HEAD
         Expr::Case { head, args, op, .. } => {
             // Special case: the synthetic `__arrow_mixfix` head names
             // both long (`T ->_(M) U`) and short (`T -> U`) forms of
-            // the headless `instrtype` mixfix. Emit OCaml's `%->_%%`
-            // mixop and inject an empty-list middle for the short
-            // form so both shapes converge on a 3-arg tup. OCaml
-            // additionally wraps the two resulttype slots in the
-            // headless `resulttype` case constructor (mixop `%`).
+            // the headless `instrtype` mixfix (task #33). Emit
+            // OCaml's `%->_%%` mixop and inject an empty-list middle
+            // for the short form so both shapes converge on a 3-arg
+            // tup, and wrap the two resulttype slots in the headless
+            // `resulttype` case constructor (mixop `%`).
             if head == crate::elab::ARROW_MIXFIX_OP {
                 let arrow_op = spectec_ast::MixOp::new(vec![
                     String::new(),
@@ -777,32 +776,23 @@ pub fn expr_to_spectec(e: &Expr, ctx: &ElabContext) -> spectec_ast::SpecTecExp {
                     e1: Box::new(inner),
                 };
             }
-            // For named case constructors OCaml uses just `[head]` as
-            // the MixOp. For headless single-case variants synthesised
-            // by the type-checker (e.g. `state = store; frame`), the
-            // `op` field carries the actual MixOp parts (`["", ";", ""]`).
+            // Mixop resolution priority:
+            // (1) The `op` field on `Expr::Case` (synthesised by task
+            //     #35 for `;`-tupled headless variants — carries the
+            //     literal mixop parts directly).
+            // (2) `ctx.headless_variant_op[head]` for task #32's
+            //     headless-variant unfolding (head is a syntax NAME
+            //     like `"fieldtype"`).
+            // (3) `mixop_from_name(head)` for the standard
+            //     case-constructor `[head]` shape.
             let op = match op {
                 Some(parts) => spectec_ast::MixOp::new(parts.clone()),
-                None => mixop_from_name(head),
+                None => ctx
+                    .headless_variant_op
+                    .get(head)
+                    .cloned()
+                    .unwrap_or_else(|| mixop_from_name(head)),
             };
-=======
-        Expr::Case { head, args, .. } => {
-            // For case constructors OCaml uses just `[head]` as the
-            // MixOp — the arg structure goes into `e1` as a `Tup`.
-            // (Relations' MixOps remain full mixfix templates.)
-            //
-            // Task #32 introduces synthesised headless Cases whose
-            // `head` is a syntax NAME (e.g. `"fieldtype"`) rather
-            // than a case-constructor head. Those get the
-            // fragment-derived MixOp registered on `ElabContext`
-            // (`["", "", ""]` for `mut? storagetype`, `["", "",
-            // "PAGE"]` for `addrtype limits PAGE`, etc.).
-            let op = ctx
-                .headless_variant_op
-                .get(head)
-                .cloned()
-                .unwrap_or_else(|| mixop_from_name(head));
->>>>>>> 9f71813 (spectec: implicit-Tup juxtaposition split via headless variant unfold (task #32))
             let inner = S::Tup {
                 es: args.iter().map(|a| expr_to_spectec(a, ctx)).collect(),
             };
@@ -880,26 +870,21 @@ fn clause_ps(
         let expr = if let Some(t) = &sig_t
             && let Some(split) = try_split_headless_semi_expr(tr, ctx, env, t)
         {
+            // Task #35: `;`-tupled headless variant already produces
+            // a fully type-checked Expr.
             split
         } else {
             let Some(expr) = crate::elab::classify_token_run(tr, ctx) else {
                 continue;
             };
-            crate::typecheck::check_exp(env, expr)
-        };
-<<<<<<< HEAD
-=======
-        // Type-check against the sig param's type when available —
-        // this routes through Task #32's headless-variant unfolding so
-        // patterns like `(mut zt)` against a `fieldtype` param get
-        // their `mut?` and `zt` binders recorded.
-        let expr = match sig_ps.get(i) {
-            Some(spectec_ast::SpecTecParam::Exp { t, .. }) => {
-                crate::typecheck::check_exp_against(env, expr, t)
+            // Task #32: route through `check_exp_against` so the
+            // headless-variant unfold fires for patterns like
+            // `(mut zt)` against `fieldtype`.
+            match &sig_t {
+                Some(t) => crate::typecheck::check_exp_against(env, expr, t),
+                None => crate::typecheck::check_exp(env, expr),
             }
-            _ => crate::typecheck::check_exp(env, expr),
         };
->>>>>>> 9f71813 (spectec: implicit-Tup juxtaposition split via headless variant unfold (task #32))
         // Positional capture: bare-Var pat or Iter-of-Var pat. For
         // iter cases, record under the bare name (the iter-suffix
         // lookup in `clause_ps` re-wraps the type per pattern).

@@ -66,30 +66,15 @@ pub struct TypeEnv {
     /// `numtype → {valtype}` and `reftype → {valtype}` (plus any
     /// further outer types via transitivity).
     pub subtypes: BTreeMap<String, std::collections::BTreeSet<String>>,
-<<<<<<< HEAD
     /// Single-case headless variants whose template is exactly
-    /// `T1 ; T2` — i.e. MixOp `["", ";", ""]`. Maps the syntax name
-    /// to the two per-hole argument types. Used by
-    /// [`check_exp_against_scope`] to split an expression like
-    /// `e1 ; e2` against the variant's mixfix template and wrap as
-    /// a `Case` with MixOp `["", ";", ""]`.
-    ///
-    /// Scope limit (task #35): only the `;`-separator form is
-    /// registered. The general "headless single-case variant
-    /// unfolding" infrastructure (task #32's Step 2 — juxtaposition,
-    /// `mut? T`, `T1 -> T2`, etc.) lands separately.
+    /// `T1 ; T2` (task #35).
     pub headless_semi: BTreeMap<String, Vec<Typ>>,
-=======
-    /// Single-case headless variants → per-hole bind types. Driven by
-    /// the same name set that `ElabContext::headless_variant_op`
-    /// registers. Task #32's juxtaposition splitter consults this map
-    /// to unfold an expected `Var(name)` type into the underlying
-    /// tuple-of-binds shape, then re-checks the operand against it
-    /// chunk-by-chunk before wrapping the result in a synthesised
-    /// `Case` whose lowering picks up the matching MixOp from
-    /// `ElabContext`.
+    /// Single-case headless variants → per-hole bind types (task #32).
+    /// Used by [`check_exp_against_scope`] to unfold expected
+    /// `Var(name)` to the underlying tuple-of-binds and split the
+    /// operand chunk-by-chunk. The matching MixOp lives in
+    /// `ElabContext::headless_variant_op`.
     pub headless_variant_body: BTreeMap<String, Vec<Typ>>,
->>>>>>> 9f71813 (spectec: implicit-Tup juxtaposition split via headless variant unfold (task #32))
 }
 
 #[derive(Debug, Clone)]
@@ -261,25 +246,18 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
     }
     env.subtypes = closed;
 
-<<<<<<< HEAD
-    // Single-case headless `_ ; _` variants. Task #35 scope: only the
-    // `;`-separator form (`syntax config = state; instr*`,
-    // `syntax state = store; frame`). Heuristic: pick syntaxes that
-    // have exactly one Variant profile with exactly one alt whose
-    // headless-fragment walk produces `[Hole, Lit(;), Hole]`.
+    // Task #35: register `_ ; _` headless variants for
+    // `headless_semi` so the `;`-split branch can fire.
     for syn in &doc.syntax {
-        let semi = match single_semi_headless_alt(syn, ctx) {
-            Some(types) => types,
-            None => continue,
-        };
-        env.headless_semi.insert(syn.name.clone(), semi);
-=======
-    // Headless single-alt variant bodies: for each name registered
-    // by `ElabContext::headless_variant_op`, recover the per-hole
-    // bind types from the underlying alt and lower each hole's token
-    // slice through `typ_expr_to_spectec`. Used by the Task #32
-    // splitter to route an expected `Var(name)` through the
-    // underlying tuple shape.
+        if let Some(semi) = single_semi_headless_alt(syn, ctx) {
+            env.headless_semi.insert(syn.name.clone(), semi);
+        }
+    }
+
+    // Task #32: register per-hole types for every headless-variant
+    // already in `ctx.headless_variant_op`. The juxtaposition splitter
+    // uses this to unfold an expected `Var(name)` and re-check the
+    // operand chunk-by-chunk.
     for name in ctx.headless_variant_op.keys() {
         let Some(merged) = ctx.syntax_defs.get(name) else {
             continue;
@@ -298,7 +276,6 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
             .map(|hole_toks| crate::ast_doc::typ_expr_to_spectec(hole_toks, ctx))
             .collect();
         env.headless_variant_body.insert(name.clone(), binds);
->>>>>>> 9f71813 (spectec: implicit-Tup juxtaposition split via headless variant unfold (task #32))
     }
 
     env
@@ -908,6 +885,7 @@ pub fn check_exp_against_scope(
             return Expr::Case {
                 span,
                 head: name.clone(),
+                op: None,
                 args: items,
             };
         }

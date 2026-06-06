@@ -5,7 +5,7 @@
 //! end of line) and whitespace are consumed; the rest of the source is
 //! covered by the [`Token`] enum.
 //!
-//! Style: a single mutable [`Lexer`] cursor walks the input. Local
+//! Style: a single mutable `Lexer` cursor walks the input. Local
 //! mutation, no globals, no `unsafe`.
 
 use crate::source::{Diagnostic, FileId, Span};

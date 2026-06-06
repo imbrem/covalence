@@ -1,13 +1,16 @@
 //! SpecTec concrete syntax tree.
 //!
 //! The CST is the parser's output: structured enough to walk, faithful
-//! to source. No mixfix resolution, no semantic elaboration. Hint bodies
-//! and rule-body expressions that depend on mixfix tables are stored as
-//! opaque token spans (`TokenRun`) until Phase 2.
+//! to source. No mixfix resolution, no semantic elaboration. Hint
+//! bodies, rule body expressions, and any context-dependent
+//! interpretation are stored as opaque [`TokenRun`]s and resolved by
+//! [`crate::elab`] using the relation/syntax-derived `OpTable`.
 //!
-//! Phase 1 covers `Top::Syntax` and `Top::DefSig`/`Top::DefClause`.
-//! `Top::Other` is the placeholder for forms we tokenise but don't yet
-//! parse.
+//! All seven top-level forms have structural CST nodes:
+//! [`Top::Syntax`], [`Top::DefSig`], [`Top::DefClause`], [`Top::Var`],
+//! [`Top::Relation`], [`Top::Rule`], [`Top::Grammar`]. The
+//! [`Top::Other`] variant is kept as a safety hatch; the parse-corpus
+//! test asserts it stays empty on all WebAssembly 3.0 spec files.
 
 use crate::source::Span;
 use crate::token::Spanned;

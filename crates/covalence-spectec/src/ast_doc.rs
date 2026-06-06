@@ -226,38 +226,91 @@ pub fn to_spectec_ast(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTecD
         });
     }
 
-    // Dec entries from defs. Clause bodies aren't yet elaborated through
-    // the same mixfix machinery (`elab_rule_conclusion` only handles
-    // rules); for now we emit empty clauses but keep the count.
+    // Dec entries from defs. Each clause's arg patterns are lowered
+    // as Exp-wrapped expressions; the RHS is lowered to a SpecTecExp;
+    // premises go through `premise_to_spectec`. None of this involves
+    // the OpTable mixfix path (def clauses pattern-match by structure,
+    // not by mixfix template).
     for d in &doc.defs {
+        let clauses = d
+            .clauses
+            .iter()
+            .map(|c| {
+                let as_: Vec<spectec_ast::SpecTecArg> = c
+                    .arg_pats
+                    .iter()
+                    .map(|pat_tr| spectec_ast::SpecTecArg::Exp {
+                        e: token_run_to_expr(pat_tr, ctx),
+                    })
+                    .collect();
+                let e = token_run_to_expr(&c.rhs, ctx);
+                let prs = c
+                    .premises
+                    .iter()
+                    .map(|pr_tr| {
+                        // Each premise token run goes through
+                        // `crate::elab::elab_premise` for the same
+                        // shape recognition rules as rule premises.
+                        let elabp = crate::elab::elab_premise(pr_tr, ctx)
+                            .unwrap_or_else(|_| ElabPremise::Raw(pr_tr.clone()));
+                        premise_to_spectec(&elabp, ctx)
+                    })
+                    .collect();
+                spectec_ast::SpecTecClause::Clause {
+                    ps: Vec::new(),
+                    as_,
+                    e,
+                    prs,
+                }
+            })
+            .collect();
         out.push(spectec_ast::SpecTecDef::Dec {
             x: d.name.clone(),
             ps: Vec::new(),
             t: placeholder_typ(),
-            clauses: d
-                .clauses
-                .iter()
-                .map(|_| spectec_ast::SpecTecClause::Clause {
-                    ps: Vec::new(),
-                    as_: Vec::new(),
-                    e: raw_sentinel(),
-                    prs: Vec::new(),
-                })
-                .collect(),
+            clauses,
         });
     }
 
-    // Gram entries from grammars.
+    // Gram entries from grammars. We don't yet split productions on
+    // `|` and lower each one — that's the obvious next slice. For now
+    // we emit one production whose symbol is a `Var` carrying the raw
+    // body as a synthetic ident, just so `prods` is non-empty when
+    // there's a body.
     for g in &doc.grammars {
+        let prods = match &g.decl.productions {
+            Some(_) => vec![spectec_ast::SpecTecProd::Prod {
+                ps: Vec::new(),
+                g: spectec_ast::SpecTecSym::Eps,
+                e: raw_sentinel(),
+                prs: Vec::new(),
+            }],
+            None => Vec::new(),
+        };
         out.push(spectec_ast::SpecTecDef::Gram {
             x: g.name.clone(),
             ps: Vec::new(),
             t: placeholder_typ(),
-            prods: Vec::new(),
+            prods,
         });
     }
 
     out
+}
+
+/// Lower a raw token run through the same expression-classification
+/// pipeline elaboration uses, then through `expr_to_spectec`.
+fn token_run_to_expr(
+    tr: &crate::cst::TokenRun,
+    ctx: &ElabContext,
+) -> spectec_ast::SpecTecExp {
+    if tr.tokens.is_empty() {
+        return raw_sentinel();
+    }
+    match crate::elab::classify_token_run(tr, ctx) {
+        Some(expr) => expr_to_spectec(&expr, ctx),
+        None => raw_sentinel(),
+    }
 }
 
 fn mixop_for(name: &str, ctx: &ElabContext) -> spectec_ast::MixOp {

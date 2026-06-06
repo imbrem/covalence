@@ -1252,6 +1252,19 @@ fn parse_expression_until(
     classify_simple_expression(&taken, span, ctx)
 }
 
+/// Public wrapper: classify the tokens of a `TokenRun` as an `Expr`
+/// using the same machinery as conclusion-hole elaboration. Returns
+/// `None` for empty input. Used by the converter to lower raw token
+/// runs (def clause args + rhs, etc.) without going through a full
+/// rule-style elaboration.
+pub fn classify_token_run(tr: &TokenRun, ctx: &ElabContext) -> Option<Expr> {
+    if tr.tokens.is_empty() {
+        return None;
+    }
+    let span = tr.tokens.iter().map(|s| s.span).reduce(Span::join).unwrap();
+    classify_simple_expression(&tr.tokens, span, ctx).ok()
+}
+
 /// Try to recognise an expression from a slice of tokens. Order of
 /// attempts:
 ///

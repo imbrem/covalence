@@ -145,6 +145,13 @@ fn diff_against_wasm_spec_ast() {
     let total_typ = ours.iter().filter(|d| matches!(d, SpecTecDef::Typ { .. })).count();
     eprintln!("  Typ insts non-empty: {our_typ_with_insts} / {total_typ} of our Typ entries");
 
+    // Dec clause coverage: how many of our Dec clauses have a
+    // non-sentinel rhs?
+    let (our_dec_real_rhs, our_dec_total_clauses) = count_dec_clause_rhs(&ours);
+    eprintln!(
+        "  Dec clause RHS: {our_dec_real_rhs} non-sentinel of {our_dec_total_clauses} clauses"
+    );
+
     // Acceptance: the names align. (Bodies don't match yet — that's
     // the deferred lowering work surfaced by this test.) We require
     // each kind to have >= 80% name overlap with the OCaml output.
@@ -205,6 +212,23 @@ fn rule_concl(r: &SpecTecRule) -> &SpecTecExp {
 /// conclusion. Used to count *real* lowered conclusions in the diff.
 fn is_raw_sentinel_exp(e: &SpecTecExp) -> bool {
     matches!(e, SpecTecExp::Bool { b: false })
+}
+
+fn count_dec_clause_rhs(defs: &[SpecTecDef]) -> (usize, usize) {
+    let mut real = 0;
+    let mut total = 0;
+    for d in defs {
+        if let SpecTecDef::Dec { clauses, .. } = d {
+            for c in clauses {
+                let spectec_ast::SpecTecClause::Clause { e, .. } = c;
+                total += 1;
+                if !is_raw_sentinel_exp(e) {
+                    real += 1;
+                }
+            }
+        }
+    }
+    (real, total)
 }
 
 /// Walk `defs` and produce `(kind, name)` pairs plus a map of

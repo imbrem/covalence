@@ -28,7 +28,7 @@ use std::collections::BTreeMap;
 use spectec_ast as ast;
 
 use crate::ast_doc::Doc;
-use crate::elab::{BinOp, CmpOp, ElabContext, ElabPremise, Expr, OpType, UnOp};
+use crate::elab::{BinOp, CmpOp, ElabContext, ElabPremise, Expr, IterKind, OpType, UnOp};
 
 /// Type-checking environment, modelled on OCaml's `elab.ml::env`.
 ///
@@ -844,7 +844,24 @@ pub fn collect_var_names_in_expr(
                 order.push(name.clone());
             }
         }
-        Expr::Iter { inner, .. } => collect_var_names_in_expr(inner, order, seen),
+        Expr::Iter { inner, kind, .. } => {
+            // For a bare `Var` inner, record the suffixed binder
+            // (`ai*`, `t?`, `n+`) so the clause-ps lookup can wrap
+            // its type in the matching `Iter`. For more complex
+            // inners, recurse — the inner Vars are collected
+            // un-suffixed (multi-level iter chains aren't tracked
+            // here yet; that's a separate TODO).
+            if let Expr::Var { name, .. } = inner.as_ref()
+                && let Some(suffix) = iter_kind_suffix(kind)
+            {
+                let suffixed = format!("{name}{suffix}");
+                if seen.insert(suffixed.clone()) {
+                    order.push(suffixed);
+                }
+            } else {
+                collect_var_names_in_expr(inner, order, seen);
+            }
+        }
         Expr::Tup { items, .. } | Expr::List { items, .. } => {
             for i in items {
                 collect_var_names_in_expr(i, order, seen);
@@ -909,9 +926,20 @@ fn collect_var_names_in_premise(
     }
 }
 
+/// Suffix character for an [`IterKind`]: `*` for List/Length, `?` for
+/// Opt, `+` for Plus. Returns `None` for kinds that don't have a
+/// stable suffix in the source language (none, currently).
+fn iter_kind_suffix(kind: &IterKind) -> Option<char> {
+    match kind {
+        IterKind::Opt => Some('?'),
+        IterKind::Star | IterKind::Length(_) => Some('*'),
+        IterKind::Plus => Some('+'),
+    }
+}
+
 /// Strip trailing `*`, `?`, `+` characters from a metavar name, returning
 /// `(base, suffix)`. `t*` → `("t", "*")`. `t**` → `("t", "**")`.
-fn strip_iter_suffix(name: &str) -> (&str, String) {
+pub fn strip_iter_suffix(name: &str) -> (&str, String) {
     let mut end = name.len();
     let bytes = name.as_bytes();
     let mut suffix = String::new();
@@ -926,7 +954,7 @@ fn strip_iter_suffix(name: &str) -> (&str, String) {
 
 /// Wrap `t` in iterations according to the suffix string. `*` →
 /// `Iter::List`; `?` → `Iter::Opt`; `+` → `Iter::List1`.
-fn wrap_in_iters(mut t: Typ, suffix: &str) -> Typ {
+pub fn wrap_in_iters(mut t: Typ, suffix: &str) -> Typ {
     for c in suffix.chars() {
         let it = match c {
             '*' => ast::SpecTecIter::List,

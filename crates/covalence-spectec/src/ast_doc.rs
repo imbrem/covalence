@@ -657,10 +657,29 @@ fn clause_ps(
             continue;
         };
         let expr = crate::typecheck::check_exp(env, expr);
-        if let crate::elab::Expr::Var { name, .. } = &expr
+        // Positional capture: bare-Var pat or Iter-of-Var pat. For
+        // iter cases, record under the bare name (the iter-suffix
+        // lookup in `clause_ps` re-wraps the type per pattern).
+        let (pat_name, expects_iter) = match &expr {
+            crate::elab::Expr::Var { name, .. } => (Some(name.clone()), false),
+            crate::elab::Expr::Iter { inner, .. } => match inner.as_ref() {
+                crate::elab::Expr::Var { name, .. } => (Some(name.clone()), true),
+                _ => (None, false),
+            },
+            _ => (None, false),
+        };
+        if let Some(pat_name) = pat_name
             && let Some(spectec_ast::SpecTecParam::Exp { t, .. }) = sig_ps.get(i)
         {
-            positional.entry(name.clone()).or_insert_with(|| t.clone());
+            let t_base = if expects_iter {
+                match t {
+                    spectec_ast::SpecTecTyp::Iter { t1, .. } => (**t1).clone(),
+                    _ => t.clone(),
+                }
+            } else {
+                t.clone()
+            };
+            positional.entry(pat_name).or_insert(t_base);
         }
         crate::typecheck::collect_var_names_in_expr(&expr, &mut order, &mut seen);
     }
@@ -671,49 +690,58 @@ fn clause_ps(
         let expr = crate::typecheck::check_exp(env, expr);
         crate::typecheck::collect_var_names_in_expr(&expr, &mut order, &mut seen);
     }
+    // Iter-suffixed names (`ai*`, `t?`, `n+`) look up under their
+    // bare base, then re-wrap in the matching `Iter<_>`. Mirrors
+    // OCaml's `def $add_arrayinst(z, ai*)` → `Exp{"ai*", Iter<arrayinst, List>}`.
     order
         .into_iter()
         .map(|name| {
+            let (base, suffix) = crate::typecheck::strip_iter_suffix(&name);
+            let lookup_name = if suffix.is_empty() { name.as_str() } else { base };
+            let wrap = |t: spectec_ast::SpecTecTyp| {
+                if suffix.is_empty() {
+                    t
+                } else {
+                    crate::typecheck::wrap_in_iters(t, &suffix)
+                }
+            };
             // 1. Sig-name lookup (matches OCaml's `def $f(N)` →
-            //    Exp{x:N, t:Var(N)}).
+            //    Exp{x:N, t:Var(N)}). Sig names are bare.
             for p in sig_ps {
                 if let spectec_ast::SpecTecParam::Exp { x, t } = p
-                    && *x == name
+                    && *x == lookup_name
                 {
                     return spectec_ast::SpecTecParam::Exp {
                         x: name.clone(),
-                        t: t.clone(),
+                        t: wrap(t.clone()),
                     };
                 }
             }
             // 2. Metavar declaration (e.g. `var dt : deftype` →
             //    pat `dt` binds at type `deftype` regardless of how
             //    it's passed positionally to the def).
-            if let Some(t) = env.vars.get(crate::elab::metavar_base(&name)) {
+            if let Some(t) = env.vars.get(crate::elab::metavar_base(lookup_name)) {
                 return spectec_ast::SpecTecParam::Exp {
                     x: name.clone(),
-                    t: t.clone(),
+                    t: wrap(t.clone()),
                 };
             }
             // 3. Positional (arg_pat single-Var matched to sig).
-            //    Only when neither sig-name nor metavar lookup
-            //    succeeds — e.g. `def $f(s)` with no `var s` decl,
-            //    sig param is type `store`.
-            if let Some(t) = positional.get(&name)
+            if let Some(t) = positional.get(lookup_name)
                 && !matches!(t, spectec_ast::SpecTecTyp::Bool)
             {
                 return spectec_ast::SpecTecParam::Exp {
                     x: name.clone(),
-                    t: t.clone(),
+                    t: wrap(t.clone()),
                 };
             }
-            // 4. Fallback: Var(name).
+            // 4. Fallback: Var(base) wrapped.
             spectec_ast::SpecTecParam::Exp {
                 x: name.clone(),
-                t: spectec_ast::SpecTecTyp::Var {
-                    x: name,
+                t: wrap(spectec_ast::SpecTecTyp::Var {
+                    x: lookup_name.to_string(),
                     as1: Vec::new(),
-                },
+                }),
             }
         })
         .collect()

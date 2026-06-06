@@ -6,7 +6,7 @@ mod types;
 mod visitor;
 
 pub use builder::{DefaultBuilder, SExpBuilder, TreeBuilder};
-pub use dialect::{CovalenceDialect, Dialect, SmtLibDialect, WatDialect};
+pub use dialect::{CovalenceDialect, Dialect, EgglogDialect, SmtLibDialect, WatDialect};
 pub use parser::parse_with;
 pub use pretty::prettyprint;
 pub use types::{Atom, Bytes, ParseError, SExp, SExpr};
@@ -32,6 +32,14 @@ pub fn parse_smt(input: &str) -> Result<Vec<SExpr>, ParseError> {
 /// `;;` line comments, `(; ;)` block comments, `"..."` → Str(format="").
 pub fn parse_wat(input: &str) -> Result<Vec<SExpr>, ParseError> {
     parse_dialect(input, WatDialect)
+}
+
+/// Parse S-expressions using the egglog dialect.
+///
+/// `;` line comments, `"..."` → Str(format=""), no `|…|` quoted symbols.
+/// See [`EgglogDialect`] for details.
+pub fn parse_egglog(input: &str) -> Result<Vec<SExpr>, ParseError> {
+    parse_dialect(input, EgglogDialect)
 }
 
 fn parse_dialect<D: Dialect>(input: &str, dialect: D) -> Result<Vec<SExpr>, ParseError> {
@@ -291,6 +299,48 @@ mod tests {
                 SExp::Atom("HELLO".to_string()),
                 SExp::Atom("world".to_string()),
             ])
+        );
+    }
+
+    #[test]
+    fn parse_egglog_single_semicolon_comment() {
+        // egglog uses single `;` for comments (unlike CovalenceDialect's `;;`).
+        assert_eq!(
+            parse_egglog("; this is a comment\n(sort Math)").unwrap(),
+            vec![SExp::List(vec![
+                SExp::symbol("sort"),
+                SExp::symbol("Math"),
+            ])]
+        );
+    }
+
+    #[test]
+    fn parse_egglog_no_quoted_symbols() {
+        // egglog doesn't reserve `|…|` — pipes are ordinary atom chars,
+        // so `|foo|` parses as a single 5-char symbol rather than the
+        // CovalenceDialect / SmtLibDialect interpretation of "the symbol
+        // foo".
+        assert_eq!(parse_egglog("|foo|").unwrap(), vec![SExp::symbol("|foo|")]);
+    }
+
+    #[test]
+    fn parse_egglog_kebab_and_punct_idents() {
+        // egglog identifiers freely mix kebab-case and operator chars.
+        assert_eq!(
+            parse_egglog("(rewrite (+ a b) (+ b a))").unwrap(),
+            vec![SExp::List(vec![
+                SExp::symbol("rewrite"),
+                SExp::List(vec![
+                    SExp::symbol("+"),
+                    SExp::symbol("a"),
+                    SExp::symbol("b"),
+                ]),
+                SExp::List(vec![
+                    SExp::symbol("+"),
+                    SExp::symbol("b"),
+                    SExp::symbol("a"),
+                ]),
+            ])]
         );
     }
 

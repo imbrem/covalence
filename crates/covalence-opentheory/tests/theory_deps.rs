@@ -255,31 +255,25 @@ fn test_axiom_extensionality() {
 // The big one: unit-def with 7+ transitive dependencies
 // -------------------------------------------------------------------
 
-// Fails at article line 383: `betaConv: IllTypedInput`.
+// Fails at article line 2418: `appThm: IllTypedInput`.
 //
-// OT's `cmd_beta_conv` general-path builds `(λx. body) x` via
-// `kernel.mk_comb(f, var)` (raw, no fold since `f` is a `Lam`) and
-// then calls `beta_conv` on it. The kernel's `Thm::beta` checks
-// `arena.is_well_typed(comb)` and rejects.
+// Now that `Arena::alloc_term` auto-infers and the kernel's
+// `Thm::beta` / `Thm::abs_unchecked` get past the early stale-cache
+// rejections, the unit-* tests get to line 2418 — `appThm` rejects
+// because the input Thms' Eq sides have incompatible polymorphic
+// instantiations:
+//   - `thm1.concl = Eq(Const("one_REP", ty=22), Const("one_REP", ty=22))`
+//   - `thm2.concl = Eq(Comb(Const("one_ABS", ty=19),
+//                         Comb(Const("one_REP", ty=20), ?n23)), ?n23)`
+// ty=22 vs ty=20 — the article expected a prior inst_type call to
+// unify these, but either we missed it or our subst didn't reach
+// the right Const.
 //
-// Tried (none of these help):
-//   1. `arena.infer(id)` immediately before `Thm::beta` — fixes
-//      stale Unbound caches, but the term here is genuinely ill-
-//      typed structurally so re-inference produces the same
-//      ILL_TYPED.
-//   2. `rebuild_term(tm)` — walks every subterm, re-allocates and
-//      re-infers each. Also produces ILL_TYPED.
-//
-// So the redex's structure itself doesn't type-check: somewhere
-// in the cascade of `inst` / `inst_type` the article applies
-// before this point, a Lam ended up with body whose deepest
-// bound-var reference doesn't match the Lam's binder type.
-// Likely fix area: tighten `Arena::subst_tyvar_in_term` to walk
-// Lam bodies *under* the binder (push/pop ctx like `infer_term`
-// does) so that nested Lams' binder types stay consistent with
-// their bodies after type substitution.
+// Suspected fix area: `Arena::subst_tyvar_in_type` correctly handles
+// `Subset` types (currently treated opaquely — they may contain
+// tyvars that should be propagated).
 #[test]
-#[ignore = "betaConv IllTypedInput at article line 383 — see comment"]
+#[ignore = "appThm IllTypedInput at line 2418 — polymorphic instantiation mismatch"]
 fn test_unit_def_full_chain() {
     let (mut kernel, mut names) = setup_with_select();
     let resolver = FileResolver::new(assets_dir());
@@ -299,11 +293,10 @@ fn test_unit_def_full_chain() {
 // The biggest: unit-thm, depends on unit-def + many bool packages
 // -------------------------------------------------------------------
 
-// Same betaConv IllTypedInput as test_unit_def_full_chain. unit-thm
-// reaches the same code path through unit-def's transitive deps;
-// fixing one fixes both.
+// Same `appThm IllTypedInput` as test_unit_def_full_chain — both
+// reach line 2418 via unit-def's transitive deps.
 #[test]
-#[ignore = "betaConv IllTypedInput — same as test_unit_def_full_chain"]
+#[ignore = "appThm IllTypedInput at line 2418 — same as test_unit_def_full_chain"]
 fn test_unit_thm_full_chain() {
     let (mut kernel, mut names) = setup_with_select();
     let resolver = FileResolver::new(assets_dir());

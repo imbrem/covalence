@@ -513,16 +513,16 @@ fn beta_rejects_non_redex() {
 
 #[test]
 fn beta_rejects_ill_typed_redex() {
-    // Comb without a well-typed redex.
+    // Type-mismatched redex: applying a `bool → bool` abstraction
+    // to a `nat` literal. `alloc_term` auto-infers and marks the
+    // Comb as ILL_TYPED; `Thm::beta` rejects on the first check.
     let mut a = Arena::new();
-    // (no UF needed)
     let bool_ty = a.bool_ty();
     let b0 = a.alloc_term(TermDef::Bound(0));
     let abs = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(b0)));
-    // Don't run infer — abs's cached type_info stays IllTyped. The
-    // Comb on it is therefore also not well-typed at alloc.
-    let t = a.alloc_term(TermDef::Bool(true));
-    let comb = a.alloc_term(TermDef::Comb(TermRef::local(abs), TermRef::local(t)));
+    // 5 : nat — domain doesn't match the abstraction's bool binder.
+    let n = a.alloc_term(TermDef::nat_inline(5));
+    let comb = a.alloc_term(TermDef::Comb(TermRef::local(abs), TermRef::local(n)));
     let err = Thm::beta(&mut a, Context::empty(), comb).unwrap_err();
     assert_eq!(err, ProofError::IllTypedInput);
 }

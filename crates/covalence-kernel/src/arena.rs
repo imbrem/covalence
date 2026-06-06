@@ -1485,7 +1485,12 @@ impl Arena {
         // terms even after independent allocations (e.g. fresh terms
         // produced by inst / inst_type).
         if let Some(pos) = self.terms.iter().position(|d| *d == def) {
-            return TermId(pos as u32);
+            let id = TermId(pos as u32);
+            // Force a re-inference on the existing entry — its
+            // cached type info may have been computed in a different
+            // structural context and could be stale.
+            let _ = self.infer(id);
+            return id;
         }
         // Compute type info BEFORE pushing — `compute_term_props` may
         // intern Fun types (mutating `self.types`), but never reads
@@ -1494,6 +1499,9 @@ impl Arena {
         let id = TermId(self.terms.len() as u32);
         self.terms.push(def);
         self.term_props.push(TermProps { type_info, has_free });
+        // Force a top-level re-walk so the cache reflects the
+        // structurally-correct type, ignoring stale child caches.
+        let _ = self.infer(id);
         id
     }
 

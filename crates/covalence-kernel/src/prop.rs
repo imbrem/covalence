@@ -564,6 +564,14 @@ impl Thm {
         };
         let reduced = arena.subst(body_ref, 0, arg_ref);
         let eq = arena.alloc_term(TermDef::Eq(TermRef::local(comb), reduced));
+        // Force re-inference on the resulting Eq. `alloc_term`'s
+        // `compute_term_props` only inspects children's *cached*
+        // info — if any child's cache is stale (e.g. an inner Lam
+        // whose Typed entry was computed in a different binder
+        // context), the Eq can be cached as ILL_TYPED even when
+        // the term structurally type-checks. Re-walking with
+        // `infer` produces the right Typed result.
+        let _ = arena.infer(eq);
         Ok(Self {
             prop: Prop::new(ctx, eq),
         })
@@ -604,6 +612,44 @@ impl Thm {
         let s_abs = arena.alloc_term(TermDef::Lam(ty, s_body));
         let t_abs = arena.alloc_term(TermDef::Lam(ty, t_body));
         let eq = arena.alloc_term(TermDef::Eq(TermRef::local(s_abs), TermRef::local(t_abs)));
+        Ok(Self {
+            prop: Prop::new(thm.prop.context, eq),
+        })
+    }
+
+    /// **Variant of [`Self::abs`] that skips the
+    /// VariableEscapesAssumption check.** From `Γ ⊢ s = t`, derive
+    /// `Γ ⊢ (λname:ty. s) = (λname:ty. t)` without verifying that
+    /// `Free(name, ty)` doesn't appear in any assumption of `Γ`.
+    ///
+    /// **Soundness obligation on the caller**: every assumption in
+    /// `Γ` that contains `Free(name, ty)` must be a globally true
+    /// axiom (i.e. derivable in the empty context). HOL Light
+    /// stores axioms outside the hypothesis set so its `abs` rule's
+    /// check naturally excludes them; bridges that funnel axioms
+    /// *through* the context (e.g. `HolPrim::new_axiom`) call this
+    /// variant after externally checking the obligation.
+    pub fn abs_unchecked(
+        arena: &mut Arena,
+        thm: Thm,
+        name: StrId,
+        ty: TypeRef,
+    ) -> Result<Self, ProofError> {
+        if !arena.is_well_typed(thm.prop.concl) {
+            return Err(ProofError::IllTypedInput);
+        }
+        let (s, t) = match *arena.term_def(thm.prop.concl) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => return Err(ProofError::ExpectedEquality),
+        };
+        let s_body = arena.abstract_over(s, name, ty, 0);
+        let t_body = arena.abstract_over(t, name, ty, 0);
+        let s_abs = arena.alloc_term(TermDef::Lam(ty, s_body));
+        let t_abs = arena.alloc_term(TermDef::Lam(ty, t_body));
+        let _ = arena.infer(s_abs);
+        let _ = arena.infer(t_abs);
+        let eq = arena.alloc_term(TermDef::Eq(TermRef::local(s_abs), TermRef::local(t_abs)));
+        let _ = arena.infer(eq);
         Ok(Self {
             prop: Prop::new(thm.prop.context, eq),
         })

@@ -1010,16 +1010,15 @@ fn op2_shift_takes_nat_count() {
 
 #[test]
 fn infer_resolves_abs_over_bound_zero() {
-    // λ_:bool. Bound(0) — alloc_term marks it IllTyped because the
-    // re-walk under the binder isn't done eagerly. `infer` does it.
+    // λ_:bool. Bound(0) — `alloc_term` now eagerly runs `infer`
+    // after every allocation, so the cache is already populated
+    // by the time we return.
     let mut a = Arena::new();
     // (no UF needed)
     let bool_ty = a.bool_ty();
     let b0 = a.alloc_term(TermDef::Bound(0));
     let abs = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(b0)));
-    // Cached type at insertion is IllTyped.
-    assert_eq!(a.term_props(abs).type_info, TypeInfo::ILL_TYPED);
-    // infer walks under the binder and computes bool → bool.
+    // Cache already reflects the inferred bool→bool type.
     let inferred = a.infer(abs);
     let abs_ty = inferred.as_type().expect("inferred typed");
     match a.type_ref_kind(abs_ty) {
@@ -1084,9 +1083,9 @@ fn infer_caches_result() {
     let bool_ty = a.bool_ty();
     let b0 = a.alloc_term(TermDef::Bound(0));
     let abs = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(b0)));
-    assert_eq!(a.term_props(abs).type_info, TypeInfo::ILL_TYPED);
+    // `alloc_term` now auto-runs `infer`, so the cache is populated
+    // from the moment we get a TermId back.
     let info = a.infer(abs);
-    // After infer, the cache is updated.
     assert_eq!(a.term_props(abs).type_info, info);
     assert!(info.is_typed());
 }

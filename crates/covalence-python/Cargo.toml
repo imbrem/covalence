@@ -25,6 +25,7 @@ covalence-git = { path = "../covalence-git", features = ["object-store", "clone"
 covalence-sig = { path = "../covalence-sig" }
 covalence-object = { path = "../covalence-object" }
 covalence-wasm = { path = "../covalence-wasm" }
+covalence-wasm-store = { path = "../covalence-wasm-store" }
 covalence-repl = { path = "../covalence-repl" }
 covalence-sat = { path = "../covalence-sat" }
 covalence-serve = { path = "../covalence-serve", default-features = false }

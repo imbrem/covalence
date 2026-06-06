@@ -1,0 +1,99 @@
+package cov:kv@0.1.0;
+
+/// Abstract key-value store interface, exported by every kv
+/// component.
+///
+/// Mirror of `cov:store@0.1.0` for the general (non-content-addressed)
+/// case: keys are opaque strings (slash-separated by convention, but
+/// the interface doesn't enforce that) and values are arbitrary
+/// bytes. Used wherever a composer needs to make a routing decision
+/// from an external table — SQLite mapping hash → backing-store-id,
+/// HTTP-fetched JSON manifest naming the next layer, hash → S3 URL
+/// translation — independent of the cov:store content-addressed read
+/// path itself.
+///
+/// Resource-typed for the same reason `cov:store/api.store` is:
+/// composers consume multiple upstream kv handles, dispatch among
+/// them by handle, and produce their own composed kv as a fresh
+/// resource.
+///
+/// Mirrors the read side of `covalence_kv::KvStore`.
+interface api {
+    /// Stored bytes.
+    type value = list<u8>;
+
+    /// Opaque string key. Convention: slash-separated paths (e.g.
+    /// `"hash/abcd…"`, `"name/alpha"`), but the interface doesn't
+    /// enforce or interpret structure.
+    type key = string;
+
+    /// Cheap metadata about a stored value (mirrors HTTP `HEAD`).
+    record value-info {
+        size: u64,
+    }
+
+    /// An open kv store. Methods are pure reads; `none` collapses
+    /// "absent" / "no result" / IO failure. Richer error variants
+    /// can be layered on without breaking this surface.
+    resource kv {
+        /// Look up the full value for `key`. `none` ≡ absent.
+        get: func(key: key) -> option<value>;
+
+        /// Existence probe.
+        contains: func(key: key) -> bool;
+
+        /// Metadata probe — answer in one round trip on backends
+        /// that can. `none` ≡ absent.
+        head: func(key: key) -> option<value-info>;
+    }
+
+    /// Open the kv store this component represents. For a leaf, the
+    /// singleton kv; for a composer, the kv last built by
+    /// `compose.build`.
+    open: func() -> kv;
+}
+
+/// Mirror of `api` used to type *upstream* kv stores consumed by
+/// composers. Same shape, distinct resource identity — the
+/// canonical ABI requires that import-side and export-side
+/// resources be different types, so a shared `include` doesn't
+/// suffice. See [[cov-store-wit-shape]] for the same trick in
+/// `cov:store@0.1.0`.
+interface upstream {
+    type value = list<u8>;
+    type key = string;
+    record value-info { size: u64 }
+
+    resource kv {
+        get: func(key: key) -> option<value>;
+        contains: func(key: key) -> bool;
+        head: func(key: key) -> option<value-info>;
+    }
+}
+
+/// Compose a `kv` out of N backings. Composer worlds export this.
+/// `use upstream.{kv}` binds the parameter type to the upstream-
+/// side resource, distinct from the composer's own exported kv.
+interface compose {
+    use upstream.{kv};
+
+    /// Build a composed kv from N backing kvs. Takes ownership of
+    /// every backing handle and stashes the resulting composed kv
+    /// internally — retrieve it via `api.open`.
+    ///
+    /// Calling `build` more than once is implementation-defined.
+    build: func(backings: list<kv>);
+}
+
+/// A component that represents one kv directly.
+world leaf {
+    export api;
+}
+
+/// A component that builds a kv from N backings provided by the
+/// host. Same shape as `cov:store@0.1.0.composer`.
+world composer {
+    import upstream;
+    export api;
+    export compose;
+}

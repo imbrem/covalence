@@ -980,6 +980,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-json"
+version = "0.0.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "covalence-kernel"
 version = "0.0.0"
 dependencies = [
@@ -1125,6 +1132,7 @@ dependencies = [
  "covalence-sig",
  "covalence-store",
  "covalence-wasm",
+ "covalence-wasm-store",
  "flate2",
  "pyo3",
  "slotmap",
@@ -1248,8 +1256,10 @@ dependencies = [
  "async-trait",
  "bytes",
  "covalence-hash",
+ "covalence-json",
  "covalence-sqlite",
  "indexmap",
+ "serde",
  "thiserror 2.0.18",
  "tokio",
 ]
@@ -1295,6 +1305,20 @@ dependencies = [
  "covalence-wasm",
  "thiserror 2.0.18",
  "toml 0.8.23",
+]
+
+[[package]]
+name = "covalence-wasm-store"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "covalence-hash",
+ "covalence-json",
+ "covalence-store",
+ "covalence-wasm",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]

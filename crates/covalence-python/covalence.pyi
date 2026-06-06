@@ -590,6 +590,7 @@ def load_drat(path: str, binary: Optional[bool] = None) -> DratProof: ...
 # Compression
 def read_compressed(path: str) -> bytes: ...
 
+<<<<<<< HEAD
 # LLM bindings (only present when built with `--features llm`)
 class ChatMessage:
     """A single chat message (role + content)."""
@@ -721,6 +722,38 @@ GROQ_BASE_URL: str
 CEREBRAS_BASE_URL: str
 DEEPSEEK_BASE_URL: str
 OLLAMA_BASE_URL: str
+
+# wasm_store submodule
+class wasm_store:
+    """WASM-component-backed content stores.
+
+    Components are built via the `build_*` functions and wrapped as
+    `WasmStore` instances. Composers (`merge`, `s3_path`) take other
+    `WasmStore`s as backings.
+    """
+
+    class WasmStore:
+        @staticmethod
+        def from_bytes(bytes: bytes) -> "wasm_store.WasmStore": ...
+        @staticmethod
+        def from_kv(kv: "KvStore") -> "wasm_store.WasmStore": ...
+        @staticmethod
+        def compose(
+            bytes: bytes, backings: list["wasm_store.WasmStore"]
+        ) -> "wasm_store.WasmStore": ...
+        def get(self, key: bytes) -> bytes: ...
+        def try_get(self, key: bytes) -> Optional[bytes]: ...
+        def contains(self, key: bytes) -> bool: ...
+        def head(self, key: bytes) -> Optional[int]: ...
+
+    @staticmethod
+    def build_single_blob(key: bytes, blob: bytes) -> bytes: ...
+    @staticmethod
+    def build_merge_composer() -> bytes: ...
+    @staticmethod
+    def build_s3_path_composer(prefix: str) -> bytes: ...
+    @staticmethod
+    def hex_encode(data: bytes) -> str: ...
 
 # Module-level convenience functions (lazy default backend)
 def store(data: Union[bytes, str, Component]) -> O256: ...

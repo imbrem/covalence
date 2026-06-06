@@ -1,0 +1,91 @@
+package cov:store@0.1.0;
+
+/// Content-addressed store interface, exported by every store
+/// component.
+///
+/// The `store` is a *resource* — it has identity, and the host
+/// addresses an instance via a handle. Composer components consume
+/// multiple upstream `store` handles (one per backing) and produce
+/// one composed `store`; leaf components produce one `store`
+/// directly. Mirrors the read side of
+/// `covalence_store::AsyncContentStore`.
+interface api {
+    /// Stored bytes.
+    type blob = list<u8>;
+
+    /// Compact key — typically a 32-byte content hash.
+    type key = list<u8>;
+
+    /// Cheap metadata about a stored blob (mirrors HTTP `HEAD`).
+    record blob-info {
+        size: u64,
+    }
+
+    /// An open store. Methods are pure reads; `none` collapses
+    /// "absent" / "no result" / IO failure (richer error variants
+    /// can be layered on without breaking this surface).
+    resource store {
+        /// Look up the full blob for `key`. `none` ≡ absent.
+        get: func(key: key) -> option<blob>;
+
+        /// Existence probe.
+        contains: func(key: key) -> bool;
+
+        /// Metadata probe — answer in one round trip on backends
+        /// that can. `none` ≡ absent.
+        head: func(key: key) -> option<blob-info>;
+    }
+
+    /// Open the store this component represents. For a leaf, the
+    /// singleton store; for a composer, the store last built by
+    /// `compose.build`.
+    open: func() -> store;
+}
+
+/// Mirror of `api` used to type *upstream* stores consumed by
+/// composers. Same shape as `api`, but a distinct WIT interface so
+/// `use upstream.{store}` in [`compose`] is unambiguous in worlds
+/// that both `import upstream` and `export api`.
+///
+/// The canonical-ABI rules require distinct resource type
+/// identities for import-side and export-side `store`, so a
+/// shared-shape `include` doesn't suffice — they have to be two
+/// interfaces.
+interface upstream {
+    type blob = list<u8>;
+    type key = list<u8>;
+    record blob-info { size: u64 }
+
+    resource store {
+        get:      func(key: key) -> option<blob>;
+        contains: func(key: key) -> bool;
+        head:     func(key: key) -> option<blob-info>;
+    }
+}
+
+/// Compose a `store` out of N backings. Composer worlds export this.
+/// `use upstream.{store}` binds the parameter type to the upstream-
+/// side resource, distinct from the composer's own exported store.
+interface compose {
+    use upstream.{store};
+
+    /// Build a composed store from N backing stores. Takes
+    /// ownership of every backing handle and stashes the resulting
+    /// composed store internally — retrieve it via `api.open`.
+    ///
+    /// Calling `build` more than once is implementation-defined.
+    build: func(backings: list<store>);
+}
+
+/// A component that represents one store directly.
+world leaf {
+    export api;
+}
+
+/// A component that builds a store from N backings provided by the
+/// host.
+world composer {
+    import upstream;
+    export api;
+    export compose;
+}

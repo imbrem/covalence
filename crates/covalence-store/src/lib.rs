@@ -443,6 +443,11 @@ mod blocking;
 #[cfg(feature = "blocking")]
 pub use blocking::BlockingBlobStore;
 
+#[cfg(feature = "metadata")]
+pub mod metadata;
+#[cfg(feature = "metadata")]
+pub use metadata::{StoreManifest, StoreRef};
+
 #[cfg(test)]
 #[cfg(feature = "memory")]
 mod trait_tests {

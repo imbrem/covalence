@@ -1,0 +1,18 @@
+[package]
+name = "covalence-wasm-store"
+version = "0.0.0"
+edition = "2024"
+description = "WASM-component-backed content-addressed stores. Wraps a wasmtime instance exposing `cov:store/api` as an `AsyncContentStore`."
+
+[dependencies]
+async-trait = "0.1"
+bytes = "1"
+covalence-json = { path = "../covalence-json" }
+covalence-store = { path = "../covalence-store", default-features = false, features = ["async", "metadata"] }
+covalence-wasm = { path = "../covalence-wasm", features = ["runtime"] }
+thiserror = "2"
+
+[dev-dependencies]
+covalence-hash = { path = "../covalence-hash", default-features = false }
+covalence-store = { path = "../covalence-store", features = ["async", "memory", "metadata"] }
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }

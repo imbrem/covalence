@@ -24,19 +24,42 @@ use crate::WasmError;
 /// `wit_world`.
 ///
 /// `wit_world` is the textual WIT source defining the package and world.
-/// There must be exactly one world; this picks it automatically.
+/// There must be exactly one world; this picks it automatically. Use
+/// [`encode_core_as_component_for`] when the WIT defines multiple worlds.
 ///
 /// The returned bytes are a fully validated component binary.
 pub fn encode_core_as_component(
     core_wasm: &[u8],
     wit_world: &str,
 ) -> Result<Vec<u8>, WasmError> {
+    encode_with(core_wasm, wit_world, None)
+}
+
+/// Like [`encode_core_as_component`], but pick a specific world from a
+/// WIT package that defines several.
+///
+/// `world_name` matches the unqualified world identifier (e.g.
+/// `"leaf"`, `"composer"`). Returns [`WasmError::Wit`] if no world
+/// with that name exists.
+pub fn encode_core_as_component_for(
+    core_wasm: &[u8],
+    wit_world: &str,
+    world_name: &str,
+) -> Result<Vec<u8>, WasmError> {
+    encode_with(core_wasm, wit_world, Some(world_name))
+}
+
+fn encode_with(
+    core_wasm: &[u8],
+    wit_world: &str,
+    world_name: Option<&str>,
+) -> Result<Vec<u8>, WasmError> {
     let mut resolve = Resolve::default();
     let pkg = resolve
         .push_str(Path::new("inline.wit"), wit_world)
         .map_err(|e| WasmError::Wit(e.to_string()))?;
     let world = resolve
-        .select_world(&[pkg], None)
+        .select_world(&[pkg], world_name)
         .map_err(|e| WasmError::Wit(e.to_string()))?;
 
     let mut module_bytes = core_wasm.to_vec();
@@ -82,5 +105,40 @@ mod tests {
         let core = crate::compile_wat("(module)").unwrap();
         let err = encode_core_as_component(&core, "not valid wit").unwrap_err();
         assert!(matches!(err, WasmError::Wit(_)));
+    }
+
+    /// `cov:kv@0.1.0` should parse cleanly and expose two worlds
+    /// (`leaf` and `composer`), mirroring the cov:store shape.
+    #[test]
+    fn kv_wit_parses() {
+        let wit = include_str!("../wit/kv.wit");
+        let mut resolve = wit_parser::Resolve::default();
+        let pkg = resolve
+            .push_str(Path::new("kv.wit"), wit)
+            .expect("parse kv.wit");
+        // Each world must be selectable explicitly.
+        resolve
+            .select_world(&[pkg], Some("leaf"))
+            .expect("select leaf world");
+        resolve
+            .select_world(&[pkg], Some("composer"))
+            .expect("select composer world");
+    }
+
+    /// `cov:store@0.1.0` likewise: regression guard for the
+    /// resource-typed shape from Phase 1.
+    #[test]
+    fn store_wit_parses() {
+        let wit = include_str!("../wit/store.wit");
+        let mut resolve = wit_parser::Resolve::default();
+        let pkg = resolve
+            .push_str(Path::new("store.wit"), wit)
+            .expect("parse store.wit");
+        resolve
+            .select_world(&[pkg], Some("leaf"))
+            .expect("select leaf world");
+        resolve
+            .select_world(&[pkg], Some("composer"))
+            .expect("select composer world");
     }
 }

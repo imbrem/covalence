@@ -7,8 +7,10 @@ edition = "2024"
 async-trait = { version = "0.1", optional = true }
 bytes = { version = "1", optional = true }
 covalence-hash = { path = "../covalence-hash", default-features = false }
+covalence-json = { path = "../covalence-json", optional = true }
 covalence-sqlite = { path = "../covalence-sqlite", optional = true }
 indexmap = { version = "2", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
 thiserror = "2"
 tokio = { version = "1", features = ["rt"], optional = true }
 
@@ -21,6 +23,8 @@ sqlite = ["dep:covalence-sqlite"]
 async = ["dep:async-trait", "dep:bytes"]
 # Sync façade over the async trait via tokio runtime Handle. Native only.
 blocking = ["async", "dep:tokio"]
+# JSON-shaped store-self-description manifest (see `metadata` module).
+metadata = ["dep:covalence-json", "dep:serde"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }

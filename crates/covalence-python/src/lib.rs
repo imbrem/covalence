@@ -24,6 +24,7 @@ mod system_builder;
 mod table;
 mod tagged_store;
 mod val;
+mod wasm_store;
 mod worker;
 
 use pyo3::prelude::*;
@@ -123,6 +124,9 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(default::get, m)?)?;
     m.add_function(wrap_pyfunction!(default::has, m)?)?;
     m.add_function(wrap_pyfunction!(default::compile_wat, m)?)?;
+
+    // wasm_store submodule
+    wasm_store::register(m)?;
 
     Ok(())
 }

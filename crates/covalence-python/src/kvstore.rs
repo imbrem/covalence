@@ -51,7 +51,7 @@ fn map_err(e: KvError) -> PyErr {
 /// any backend transparently.
 #[pyclass(subclass)]
 pub struct KvStore {
-    inner: BlockingKv,
+    pub(crate) inner: BlockingKv,
 }
 
 #[pymethods]

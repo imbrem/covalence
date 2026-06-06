@@ -1266,7 +1266,10 @@ fn group_recursive(defs: Vec<spectec_ast::SpecTecDef>) -> Vec<spectec_ast::SpecT
         if scc.len() == 1 {
             let i = scc[0];
             let d = by_idx[i].take().expect("each def consumed once");
-            // Self-loop check.
+            // Self-loop check. (An earlier experiment also wrapped
+            // every `Rel` in `Rec` to match OCaml's pattern, but that
+            // over-wrapped — OCaml's convention is more nuanced than
+            // "always Rel". Sticking with the direct self-loop rule.)
             if deps[i].contains(&i) {
                 out.push(spectec_ast::SpecTecDef::Rec { ds: vec![d] });
             } else {

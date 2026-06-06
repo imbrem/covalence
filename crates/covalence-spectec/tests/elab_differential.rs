@@ -186,6 +186,29 @@ fn diff_against_wasm_spec_ast() {
     let their_total_prods = count_total_prods(&reference);
     eprintln!("  Grammar prods: ours {our_total_prods}, theirs {their_total_prods}");
 
+    let arity_report = arity_match_report(&ours, &reference);
+    eprintln!("  per-kind arity match (same body-count for same-name def):");
+    eprintln!(
+        "    Typ insts:   {} / {} ({:.1}%)",
+        arity_report.typ_match, arity_report.typ_total,
+        100.0 * arity_report.typ_match as f64 / arity_report.typ_total.max(1) as f64,
+    );
+    eprintln!(
+        "    Rel rules:   {} / {} ({:.1}%)",
+        arity_report.rel_match, arity_report.rel_total,
+        100.0 * arity_report.rel_match as f64 / arity_report.rel_total.max(1) as f64,
+    );
+    eprintln!(
+        "    Dec clauses: {} / {} ({:.1}%)",
+        arity_report.dec_match, arity_report.dec_total,
+        100.0 * arity_report.dec_match as f64 / arity_report.dec_total.max(1) as f64,
+    );
+    eprintln!(
+        "    Gram prods:  {} / {} ({:.1}%)",
+        arity_report.gram_match, arity_report.gram_total,
+        100.0 * arity_report.gram_match as f64 / arity_report.gram_total.max(1) as f64,
+    );
+
     // Acceptance: the names align. (Bodies don't match yet — that's
     // the deferred lowering work surfaced by this test.) We require
     // each kind to have >= 80% name overlap with the OCaml output.
@@ -385,6 +408,90 @@ fn count_dec_with_ps(defs: &[SpecTecDef]) -> usize {
     }
     for d in defs { walk(d, &mut n); }
     n
+}
+
+#[derive(Default)]
+struct ArityReport {
+    typ_match: usize,
+    typ_total: usize,
+    rel_match: usize,
+    rel_total: usize,
+    dec_match: usize,
+    dec_total: usize,
+    gram_match: usize,
+    gram_total: usize,
+}
+
+/// For each (kind, name) appearing on both sides, compare the
+/// immediate-child arity (Typ.insts.len, Rel.rules.len, Dec.clauses.len,
+/// Gram.prods.len). Useful coarse measure: "are we producing the right
+/// number of inner items per def?"
+fn arity_match_report(ours: &[SpecTecDef], theirs: &[SpecTecDef]) -> ArityReport {
+    let our_map = build_arity_map(ours);
+    let their_map = build_arity_map(theirs);
+    let mut r = ArityReport::default();
+    for ((kind, name), ours_n) in &our_map {
+        let Some(theirs_n) = their_map.get(&(kind.clone(), name.clone())) else {
+            continue;
+        };
+        match kind.as_str() {
+            "Typ" => {
+                r.typ_total += 1;
+                if ours_n == theirs_n {
+                    r.typ_match += 1;
+                }
+            }
+            "Rel" => {
+                r.rel_total += 1;
+                if ours_n == theirs_n {
+                    r.rel_match += 1;
+                }
+            }
+            "Dec" => {
+                r.dec_total += 1;
+                if ours_n == theirs_n {
+                    r.dec_match += 1;
+                }
+            }
+            "Gram" => {
+                r.gram_total += 1;
+                if ours_n == theirs_n {
+                    r.gram_match += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    r
+}
+
+fn build_arity_map(defs: &[SpecTecDef]) -> BTreeMap<(String, String), usize> {
+    let mut out = BTreeMap::new();
+    fn walk(d: &SpecTecDef, out: &mut BTreeMap<(String, String), usize>) {
+        match d {
+            SpecTecDef::Typ { x, insts, .. } => {
+                out.insert(("Typ".into(), x.clone()), insts.len());
+            }
+            SpecTecDef::Rel { x, rules, .. } => {
+                out.insert(("Rel".into(), x.clone()), rules.len());
+            }
+            SpecTecDef::Dec { x, clauses, .. } => {
+                out.insert(("Dec".into(), x.clone()), clauses.len());
+            }
+            SpecTecDef::Gram { x, prods, .. } => {
+                out.insert(("Gram".into(), x.clone()), prods.len());
+            }
+            SpecTecDef::Rec { ds } => {
+                for d in ds {
+                    walk(d, out);
+                }
+            }
+        }
+    }
+    for d in defs {
+        walk(d, &mut out);
+    }
+    out
 }
 
 fn count_total_prods(defs: &[SpecTecDef]) -> usize {

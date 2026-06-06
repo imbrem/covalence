@@ -432,6 +432,16 @@ pub fn alt_to_constructor(
     alt: &Alt,
     type_names: &HashSet<String>,
 ) -> Option<(String, Vec<Fragment>)> {
+    alt_to_constructor_with_holes(alt, type_names).map(|(name, frags, _)| (name, frags))
+}
+
+/// Like [`alt_to_constructor`] but also returns the source-token slice
+/// that fell into each `Hole`. Used by the converter to lower variant
+/// case argument types.
+pub fn alt_to_constructor_with_holes(
+    alt: &Alt,
+    type_names: &HashSet<String>,
+) -> Option<(String, Vec<Fragment>, Vec<Vec<Spanned>>)> {
     let toks = &alt.body.tokens;
     let head_tok = toks.first()?;
     let head_name = match &head_tok.token {
@@ -440,18 +450,23 @@ pub fn alt_to_constructor(
     };
     let rest = &toks[1..];
     let mut frags = vec![Fragment::Lit(head_tok.token.clone())];
+    let mut hole_toks: Vec<Vec<Spanned>> = Vec::new();
     let mut i = 0;
     while i < rest.len() {
         match &rest[i].token {
             Token::Ident(name) if type_names.contains(name) => {
                 frags.push(Fragment::Hole(CTOR_HOLE_PREC));
-                i += 1 + skip_type_suffix(&rest[i + 1..]);
+                let start = i;
+                i += 1;
+                i += skip_type_suffix(&rest[i..]);
+                hole_toks.push(rest[start..i].to_vec());
             }
             Token::LParen => {
                 frags.push(Fragment::Hole(CTOR_HOLE_PREC));
-                let consumed = skip_balanced(&rest[i..]);
-                i += consumed;
+                let start = i;
+                i += skip_balanced(&rest[i..]);
                 i += skip_type_suffix(&rest[i..]);
+                hole_toks.push(rest[start..i].to_vec());
             }
             _ => {
                 frags.push(Fragment::Lit(rest[i].token.clone()));
@@ -459,7 +474,7 @@ pub fn alt_to_constructor(
             }
         }
     }
-    Some((head_name, frags))
+    Some((head_name, frags, hole_toks))
 }
 
 // ---------- minimal Expr AST + conclusion elaboration ----------
@@ -2097,7 +2112,7 @@ fn classify_tuple_inner(
 /// Given `toks[0]` IS an opening bracket, return the number of tokens
 /// from `toks[0]` up to AND INCLUDING the matching close bracket. If
 /// brackets are unbalanced, returns the remaining length.
-fn skip_balanced(toks: &[Spanned]) -> usize {
+pub fn skip_balanced(toks: &[Spanned]) -> usize {
     let mut depth: i32 = 0;
     let mut i = 0;
     while i < toks.len() {

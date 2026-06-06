@@ -17,9 +17,9 @@
 
 use crate::cst::{GrammarDecl, RelationDecl, RuleDecl, SyntaxBody, Top, VarDecl, Alt, RecordField};
 use crate::elab::{
-    alt_to_constructor, elab_rule_conclusion, BinOp, CmpOp, ElabContext, ElabPremise, Expr,
-    IterBinding, IterKind, MergedProfile, MergedSyntax, NumLit, NumTyp, OpType,
-    Path as ElabPath, UnOp,
+    alt_to_constructor, alt_to_constructor_with_holes, elab_rule_conclusion, BinOp, CmpOp,
+    ElabContext, ElabPremise, Expr, IterBinding, IterKind, MergedProfile, MergedSyntax, NumLit,
+    NumTyp, OpType, Path as ElabPath, UnOp,
 };
 use crate::source::Span;
 
@@ -945,15 +945,16 @@ fn mixop_from_fragments(frags: &[crate::mixfix::Fragment]) -> spectec_ast::MixOp
     spectec_ast::MixOp::new(s.split('%').map(str::to_owned).collect())
 }
 
-/// Lower a raw token run as a type expression. This is a sketch — it
-/// recognises a few cases and falls back to `SpecTecTyp::Bool` for the
-/// rest.
+/// Lower a raw token run as a type expression.
 fn typ_expr_to_spectec(
     toks: &[crate::token::Spanned],
     ctx: &ElabContext,
 ) -> spectec_ast::SpecTecTyp {
     use crate::token::Token::*;
     use spectec_ast::SpecTecTyp as T;
+    if toks.is_empty() {
+        return T::Bool;
+    }
     // Singleton type-name ident.
     if toks.len() == 1 {
         if let Ident(n) = &toks[0].token {
@@ -989,46 +990,88 @@ fn typ_expr_to_spectec(
             };
         }
     }
+    // Parametric type use: `Ident ( args )` covering the entire slice.
+    if let Some(Spanned { token: Ident(n), .. }) = toks.first()
+        && toks.len() >= 3
+        && matches!(toks.get(1).map(|s| &s.token), Some(LParen))
+        && matches!(toks.last().map(|s| &s.token), Some(RParen))
+    {
+        let consumed = crate::elab::skip_balanced(&toks[1..]);
+        if consumed == toks.len() - 1 {
+            let inner = &toks[2..toks.len() - 1];
+            let arg_chunks = split_top_level_commas(inner);
+            let arg_specs: Vec<spectec_ast::SpecTecArg> = arg_chunks
+                .iter()
+                .map(|chunk| {
+                    let tr = crate::cst::TokenRun {
+                        span: chunk
+                            .iter()
+                            .map(|s| s.span)
+                            .reduce(crate::source::Span::join)
+                            .unwrap_or_else(|| crate::source::Span::new(
+                                crate::source::FileId::new(0),
+                                0,
+                                0,
+                            )),
+                        tokens: chunk.to_vec(),
+                    };
+                    spectec_ast::SpecTecArg::Exp {
+                        e: token_run_to_expr(&tr, ctx),
+                    }
+                })
+                .collect();
+            // Treat as `Var { x: n, as1: arg_specs }` whether or not n
+            // is in `type_names` — many parametric types are forward-
+            // declared.
+            return T::Var {
+                x: n.clone(),
+                as1: arg_specs,
+            };
+        }
+    }
+    // Parenthesised: `( ... )` covering the entire slice — recurse.
+    if matches!(toks.first().map(|s| &s.token), Some(LParen))
+        && matches!(toks.last().map(|s| &s.token), Some(RParen))
+        && crate::elab::skip_balanced(toks) == toks.len()
+    {
+        let inner = &toks[1..toks.len() - 1];
+        return typ_expr_to_spectec(inner, ctx);
+    }
     // Fallback.
     T::Bool
+}
+
+/// Helper for inferring a small lookup before constructing a type
+/// expression — used in tests, so kept `pub(crate)` even though
+/// internal code prefers `typ_expr_to_spectec` directly.
+#[allow(dead_code)]
+pub(crate) fn lower_typ_for_test(
+    toks: &[crate::token::Spanned],
+    ctx: &ElabContext,
+) -> spectec_ast::SpecTecTyp {
+    typ_expr_to_spectec(toks, ctx)
 }
 
 /// Lower the type of a variant alternative's arguments. Returns the
 /// single arg type or a `Tup` of multiple arg types.
 fn typ_expr_to_spectec_args(alt: &Alt, ctx: &ElabContext) -> spectec_ast::SpecTecTyp {
-    // Skip the leading constructor head and gather the rest as one or
-    // more arg-type expressions. We split the rest on whitespace —
-    // approximated here as token-by-token, taking each type name + its
-    // suffix as one arg.
-    let toks = &alt.body.tokens;
-    if toks.len() <= 1 {
+    let Some((_, _, hole_toks)) = alt_to_constructor_with_holes(alt, &ctx.type_names) else {
         return spectec_ast::SpecTecTyp::Tup { ets: Vec::new() };
-    }
-    let rest = &toks[1..];
-    // Use the same fragment extractor as `alt_to_constructor` to split
-    // into argument positions.
-    let frags = match alt_to_constructor(alt, &ctx.type_names) {
-        Some((_, frags)) => frags,
-        None => return spectec_ast::SpecTecTyp::Bool,
     };
-    let _ = rest;
-    let arg_tys: Vec<spectec_ast::SpecTecTypBind> = frags
+    let binds: Vec<spectec_ast::SpecTecTypBind> = hole_toks
         .iter()
-        .filter_map(|f| match f {
-            crate::mixfix::Fragment::Hole(_) => Some(spectec_ast::SpecTecTypBind::Bind {
-                id: "_".to_string(),
-                typ: spectec_ast::SpecTecTyp::Bool,
-            }),
-            _ => None,
+        .map(|toks| spectec_ast::SpecTecTypBind::Bind {
+            id: "_".to_string(),
+            typ: typ_expr_to_spectec(toks, ctx),
         })
         .collect();
-    if arg_tys.is_empty() {
+    if binds.is_empty() {
         spectec_ast::SpecTecTyp::Tup { ets: Vec::new() }
-    } else if arg_tys.len() == 1 {
-        let spectec_ast::SpecTecTypBind::Bind { typ, .. } = arg_tys.into_iter().next().unwrap();
+    } else if binds.len() == 1 {
+        let spectec_ast::SpecTecTypBind::Bind { typ, .. } = binds.into_iter().next().unwrap();
         typ
     } else {
-        spectec_ast::SpecTecTyp::Tup { ets: arg_tys }
+        spectec_ast::SpecTecTyp::Tup { ets: binds }
     }
 }
 

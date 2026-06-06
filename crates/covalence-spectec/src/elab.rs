@@ -1521,6 +1521,8 @@ fn classify_simple_expression(
     // the case-head heuristic.
     if toks.len() == 1 {
         return Ok(match &toks[0].token {
+            Token::Ident(name) if name == "true" => Expr::Bool { span, value: true },
+            Token::Ident(name) if name == "false" => Expr::Bool { span, value: false },
             Token::Ident(name) if is_declared_metavar(name, &ctx.var_names) => Expr::Var {
                 span,
                 name: name.clone(),
@@ -1557,6 +1559,18 @@ fn classify_simple_expression(
         let inner = &toks[1..toks.len() - 1];
         if depth_balanced(inner) {
             return classify_tuple_inner(inner, span, ctx);
+        }
+    }
+
+    // Record literal `{FIELD val, FIELD val, ...}`.
+    if matches!(toks.first().map(|s| &s.token), Some(Token::LBrace))
+        && matches!(toks.last().map(|s| &s.token), Some(Token::RBrace))
+    {
+        let inner = &toks[1..toks.len() - 1];
+        if depth_balanced(inner)
+            && let Some(rec) = try_classify_record(inner, span, ctx)?
+        {
+            return Ok(rec);
         }
     }
 
@@ -2291,6 +2305,72 @@ fn classify_tuple_inner(
         return Ok(items.into_iter().next().unwrap());
     }
     Ok(Expr::Tup { span, items })
+}
+
+/// Classify a record literal body: `FIELD val, FIELD val, ...`. Each
+/// field starts with an uppercase / case-head ident and is followed by
+/// a value expression. Returns `Some(Expr::Str{...})` on success;
+/// `None` if the body doesn't look record-shaped (no leading uppercase
+/// ident).
+fn try_classify_record(
+    inner: &[Spanned],
+    span: Span,
+    ctx: &ElabContext,
+) -> Result<Option<Expr>, Diagnostic> {
+    if inner.is_empty() {
+        return Ok(Some(Expr::Str {
+            span,
+            fields: Vec::new(),
+        }));
+    }
+    // Must lead with a case-head ident; otherwise this isn't a record.
+    let Some(Spanned { token: Token::Ident(first), .. }) = inner.first() else {
+        return Ok(None);
+    };
+    if !is_case_head(first) {
+        return Ok(None);
+    }
+    // Split on top-level commas. Each chunk: `FIELD val_tokens*`.
+    let mut chunks: Vec<&[Spanned]> = Vec::new();
+    let mut depth: i32 = 0;
+    let mut chunk_start = 0;
+    for (i, t) in inner.iter().enumerate() {
+        match &t.token {
+            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
+            Token::Comma if depth == 0 => {
+                chunks.push(&inner[chunk_start..i]);
+                chunk_start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    chunks.push(&inner[chunk_start..]);
+    let mut fields = Vec::with_capacity(chunks.len());
+    for chunk in chunks {
+        let Some(Spanned { token: Token::Ident(name), .. }) = chunk.first() else {
+            return Ok(None);
+        };
+        if !is_case_head(name) {
+            return Ok(None);
+        }
+        let val_toks = &chunk[1..];
+        let val_span = val_toks
+            .iter()
+            .map(|s| s.span)
+            .reduce(Span::join)
+            .unwrap_or(span);
+        let value = if val_toks.is_empty() {
+            Expr::Tup { span: val_span, items: Vec::new() }
+        } else {
+            classify_simple_expression(val_toks, val_span, ctx)?
+        };
+        fields.push(ExprField {
+            field: name.clone(),
+            value,
+        });
+    }
+    Ok(Some(Expr::Str { span, fields }))
 }
 
 /// Given `toks[0]` IS an opening bracket, return the number of tokens

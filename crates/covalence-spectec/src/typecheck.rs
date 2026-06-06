@@ -89,6 +89,18 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
         env.vars.insert(v.name.clone(), ty);
     }
 
+    // Syntax names also serve as metavar types (per SpecTec convention,
+    // `Fnn_1` and similar use the syntax decl's name as their type).
+    // Insert only when not already shadowed by an explicit `var` decl.
+    for syn in &doc.syntax {
+        env.vars
+            .entry(syn.name.clone())
+            .or_insert_with(|| Typ::Var {
+                x: syn.name.clone(),
+                as1: Vec::new(),
+            });
+    }
+
     // Relations.
     for rel in &doc.relations {
         let (_, hole_toks) = crate::elab::template_to_fragments_with_holes(

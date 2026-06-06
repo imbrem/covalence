@@ -643,23 +643,34 @@ fn clause_ps(
 ) -> Vec<spectec_ast::SpecTecParam> {
     let mut order: Vec<String> = Vec::new();
     let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    let mut visit = |tr: &crate::cst::TokenRun| {
+    // Positional name→type discovered from arg_pats vs sig_ps. A
+    // single-Var pat at position i takes its type from sig_ps[i].
+    let mut positional: std::collections::BTreeMap<String, spectec_ast::SpecTecTyp> =
+        std::collections::BTreeMap::new();
+    for (i, tr) in arg_pats.iter().enumerate() {
         let Some(expr) = crate::elab::classify_token_run(tr, ctx) else {
-            return;
+            continue;
+        };
+        let expr = crate::typecheck::check_exp(env, expr);
+        if let crate::elab::Expr::Var { name, .. } = &expr
+            && let Some(spectec_ast::SpecTecParam::Exp { t, .. }) = sig_ps.get(i)
+        {
+            positional.entry(name.clone()).or_insert_with(|| t.clone());
+        }
+        crate::typecheck::collect_var_names_in_expr(&expr, &mut order, &mut seen);
+    }
+    for tr in premises {
+        let Some(expr) = crate::elab::classify_token_run(tr, ctx) else {
+            continue;
         };
         let expr = crate::typecheck::check_exp(env, expr);
         crate::typecheck::collect_var_names_in_expr(&expr, &mut order, &mut seen);
-    };
-    for tr in arg_pats {
-        visit(tr);
-    }
-    for tr in premises {
-        visit(tr);
     }
     order
         .into_iter()
         .map(|name| {
-            // Look up in sig_ps for a matching Exp param first.
+            // 1. Sig-name lookup (matches OCaml's `def $f(N)` →
+            //    Exp{x:N, t:Var(N)}).
             for p in sig_ps {
                 if let spectec_ast::SpecTecParam::Exp { x, t } = p
                     && *x == name
@@ -670,14 +681,35 @@ fn clause_ps(
                     };
                 }
             }
-            // Fallback: type is the metavar's syntax type or Var(name).
-            let t = env.vars.get(crate::elab::metavar_base(&name))
-                .cloned()
-                .unwrap_or_else(|| spectec_ast::SpecTecTyp::Var {
+            // 2. Metavar declaration (e.g. `var dt : deftype` →
+            //    pat `dt` binds at type `deftype` regardless of how
+            //    it's passed positionally to the def).
+            if let Some(t) = env.vars.get(crate::elab::metavar_base(&name)) {
+                return spectec_ast::SpecTecParam::Exp {
                     x: name.clone(),
+                    t: t.clone(),
+                };
+            }
+            // 3. Positional (arg_pat single-Var matched to sig).
+            //    Only when neither sig-name nor metavar lookup
+            //    succeeds — e.g. `def $f(s)` with no `var s` decl,
+            //    sig param is type `store`.
+            if let Some(t) = positional.get(&name)
+                && !matches!(t, spectec_ast::SpecTecTyp::Bool)
+            {
+                return spectec_ast::SpecTecParam::Exp {
+                    x: name.clone(),
+                    t: t.clone(),
+                };
+            }
+            // 4. Fallback: Var(name).
+            spectec_ast::SpecTecParam::Exp {
+                x: name.clone(),
+                t: spectec_ast::SpecTecTyp::Var {
+                    x: name,
                     as1: Vec::new(),
-                });
-            spectec_ast::SpecTecParam::Exp { x: name, t }
+                },
+            }
         })
         .collect()
 }

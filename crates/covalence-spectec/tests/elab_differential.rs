@@ -59,7 +59,7 @@ fn diff_against_wasm_spec_ast() {
 
     // Coverage analysis. Build sets of (kind, name) pairs from each
     // side, plus map name → MixOp for relations.
-    let (our_kinds, our_rel_mixops) = summarise(&ours);
+    let (our_kinds, our_rel_mixops) = summarise_with_rec(&ours);
     let (ref_kinds, ref_rel_mixops) = summarise_with_rec(&reference);
 
     let kinds = ["Typ", "Rel", "Dec", "Gram"];
@@ -138,12 +138,13 @@ fn diff_against_wasm_spec_ast() {
 
     // Typ inst coverage: how many of our Typ decls have at least one
     // non-empty `insts` list (one per profile-tagged declaration)?
-    let our_typ_with_insts = ours
-        .iter()
-        .filter(|d| matches!(d, SpecTecDef::Typ { insts, .. } if !insts.is_empty()))
-        .count();
-    let total_typ = ours.iter().filter(|d| matches!(d, SpecTecDef::Typ { .. })).count();
+    let (our_typ_with_insts, total_typ) = count_typ_insts(&ours);
     eprintln!("  Typ insts non-empty: {our_typ_with_insts} / {total_typ} of our Typ entries");
+
+    // Rec grouping coverage.
+    let our_rec_count = count_rec_groups(&ours);
+    let their_rec_count = count_rec_groups(&reference);
+    eprintln!("  Rec groups: ours {our_rec_count}, theirs {their_rec_count}");
 
     // Dec clause coverage: how many of our Dec clauses have a
     // non-sentinel rhs?
@@ -180,6 +181,12 @@ struct KindCoverage {
 type KindPairs = Vec<(String, String)>;
 type MixOpMap = BTreeMap<String, Vec<String>>;
 
+// `summarise` (non-recursing version) was used before our converter
+// emitted `Rec` groups. Now both sides need to recurse, so we always
+// use `summarise_with_rec`. Kept as a doc comment for future
+// non-recursing diffs.
+
+
 /// Build a `name -> rules` map for each `Rel` def. Recurses into `Rec`.
 fn rules_by_relation(defs: &[SpecTecDef]) -> BTreeMap<String, Vec<SpecTecRule>> {
     let mut out: BTreeMap<String, Vec<SpecTecRule>> = BTreeMap::new();
@@ -214,46 +221,78 @@ fn is_raw_sentinel_exp(e: &SpecTecExp) -> bool {
     matches!(e, SpecTecExp::Bool { b: false })
 }
 
+fn count_typ_insts(defs: &[SpecTecDef]) -> (usize, usize) {
+    let mut with = 0;
+    let mut total = 0;
+    fn walk(d: &SpecTecDef, with: &mut usize, total: &mut usize) {
+        match d {
+            SpecTecDef::Typ { insts, .. } => {
+                *total += 1;
+                if !insts.is_empty() {
+                    *with += 1;
+                }
+            }
+            SpecTecDef::Rec { ds } => {
+                for d in ds {
+                    walk(d, with, total);
+                }
+            }
+            _ => {}
+        }
+    }
+    for d in defs {
+        walk(d, &mut with, &mut total);
+    }
+    (with, total)
+}
+
+fn count_rec_groups(defs: &[SpecTecDef]) -> usize {
+    let mut n = 0;
+    fn walk(d: &SpecTecDef, n: &mut usize) {
+        if let SpecTecDef::Rec { ds } = d {
+            *n += 1;
+            for d in ds {
+                walk(d, n);
+            }
+        }
+    }
+    for d in defs {
+        walk(d, &mut n);
+    }
+    n
+}
+
 fn count_dec_clause_rhs(defs: &[SpecTecDef]) -> (usize, usize) {
     let mut real = 0;
     let mut total = 0;
-    for d in defs {
-        if let SpecTecDef::Dec { clauses, .. } = d {
-            for c in clauses {
-                let spectec_ast::SpecTecClause::Clause { e, .. } = c;
-                total += 1;
-                if !is_raw_sentinel_exp(e) {
-                    real += 1;
+    fn walk(d: &SpecTecDef, real: &mut usize, total: &mut usize) {
+        match d {
+            SpecTecDef::Dec { clauses, .. } => {
+                for c in clauses {
+                    let spectec_ast::SpecTecClause::Clause { e, .. } = c;
+                    *total += 1;
+                    if !is_raw_sentinel_exp(e) {
+                        *real += 1;
+                    }
                 }
             }
+            SpecTecDef::Rec { ds } => {
+                for d in ds {
+                    walk(d, real, total);
+                }
+            }
+            _ => {}
         }
+    }
+    for d in defs {
+        walk(d, &mut real, &mut total);
     }
     (real, total)
 }
 
 /// Walk `defs` and produce `(kind, name)` pairs plus a map of
-/// `rel-name -> mixop fragments` for later comparison. Does NOT recurse
-/// into `Rec` groups (our converter doesn't emit them yet).
-fn summarise(defs: &[SpecTecDef]) -> (KindPairs, MixOpMap) {
-    let mut pairs = Vec::new();
-    let mut mixops = BTreeMap::new();
-    for d in defs {
-        match d {
-            SpecTecDef::Typ { x, .. } => pairs.push(("Typ".into(), x.clone())),
-            SpecTecDef::Rel { x, op, .. } => {
-                pairs.push(("Rel".into(), x.clone()));
-                mixops.insert(x.clone(), op.fragments().to_vec());
-            }
-            SpecTecDef::Dec { x, .. } => pairs.push(("Dec".into(), x.clone())),
-            SpecTecDef::Gram { x, .. } => pairs.push(("Gram".into(), x.clone())),
-            SpecTecDef::Rec { .. } => {}
-        }
-    }
-    (pairs, mixops)
-}
-
-/// Like `summarise` but DOES recurse into `Rec` groups (OCaml dump uses
-/// them heavily; our skeleton doesn't yet emit them).
+/// `rel-name -> mixop fragments` for later comparison. Recurses into
+/// `Rec` groups on both sides (our converter now emits them too).
 fn summarise_with_rec(defs: &[SpecTecDef]) -> (KindPairs, MixOpMap) {
     let mut pairs = Vec::new();
     let mut mixops = BTreeMap::new();

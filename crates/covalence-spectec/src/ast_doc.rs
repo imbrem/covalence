@@ -165,12 +165,17 @@ pub fn build_doc(tops: &[Top], ctx: &ElabContext) -> Doc {
     doc
 }
 
-/// Produce a `Vec<SpecTecDef>` from a `Doc`. The MixOp templates are
-/// filled in from `ctx.op_table` (where available), but operand bodies,
-/// parameter lists, premise/clause contents, and SCC mutual-recursion
-/// grouping are placeholders. Full content lowering is follow-up work;
-/// this lets the corpus diff start running.
+/// Produce a `Vec<SpecTecDef>` from a `Doc`, with mutually-recursive
+/// groups wrapped in `SpecTecDef::Rec`.
 pub fn to_spectec_ast(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTecDef> {
+    let flat = to_spectec_ast_flat(doc, ctx);
+    group_recursive(flat)
+}
+
+/// Flat version of [`to_spectec_ast`] — emits one `SpecTecDef` per
+/// source decl with no `Rec` wrapping. Useful for testing and as the
+/// input to [`group_recursive`].
+fn to_spectec_ast_flat(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTecDef> {
     let mut out = Vec::new();
 
     // Typ entries from merged syntax. One Inst per profile-tagged
@@ -888,6 +893,299 @@ fn typ_expr_to_spectec_args(alt: &Alt, ctx: &ElabContext) -> spectec_ast::SpecTe
         typ
     } else {
         spectec_ast::SpecTecTyp::Tup { ets: arg_tys }
+    }
+}
+
+// ---------- SCC analysis + Rec grouping ----------
+
+/// Wrap consecutive runs of mutually-recursive defs in `SpecTecDef::Rec`.
+///
+/// The algorithm:
+/// 1. Build a use-graph: each def is a node; an edge `A → B` exists
+///    when an ident matching `B`'s name appears anywhere inside `A`'s
+///    body (operands, premises, clauses, productions, MixOp templates).
+/// 2. Compute strongly-connected components via Tarjan's algorithm.
+/// 3. For each SCC, in source order: if it has more than one element,
+///    emit `Rec { ds }`. A singleton SCC emits flat unless it has a
+///    self-loop (the def references its own name), in which case it
+///    also becomes `Rec { ds: vec![def] }`.
+///
+/// This is a sketch — over-approximates uses by walking raw tokens, so
+/// some non-uses (e.g. ident appearing in a hint body) count as edges.
+/// That just produces larger Rec groups; the relative grouping is
+/// still meaningful.
+fn group_recursive(defs: Vec<spectec_ast::SpecTecDef>) -> Vec<spectec_ast::SpecTecDef> {
+    // Index defs by name and collect their referenced-name sets.
+    let n = defs.len();
+    let mut idx_by_name: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::with_capacity(n);
+    for (i, d) in defs.iter().enumerate() {
+        if let Some(name) = def_name(d) {
+            idx_by_name.insert(name.to_string(), i);
+        }
+    }
+    let mut deps: Vec<Vec<usize>> = Vec::with_capacity(n);
+    for d in &defs {
+        let refs = referenced_names(d);
+        let mut targets: Vec<usize> = refs
+            .into_iter()
+            .filter_map(|r| idx_by_name.get(&r).copied())
+            .collect();
+        targets.sort_unstable();
+        targets.dedup();
+        deps.push(targets);
+    }
+
+    let sccs = tarjan_scc(&deps);
+
+    // SCCs come out in reverse-topo order; we want source order.
+    // Sort each SCC's members by their original index, then sort SCCs
+    // by minimum member index.
+    let mut sccs: Vec<Vec<usize>> = sccs
+        .into_iter()
+        .map(|mut s| {
+            s.sort_unstable();
+            s
+        })
+        .collect();
+    sccs.sort_by_key(|s| *s.first().unwrap_or(&usize::MAX));
+
+    let mut by_idx: Vec<Option<spectec_ast::SpecTecDef>> = defs.into_iter().map(Some).collect();
+    let mut out = Vec::with_capacity(n);
+    for scc in sccs {
+        if scc.len() == 1 {
+            let i = scc[0];
+            let d = by_idx[i].take().expect("each def consumed once");
+            // Self-loop check.
+            if deps[i].contains(&i) {
+                out.push(spectec_ast::SpecTecDef::Rec { ds: vec![d] });
+            } else {
+                out.push(d);
+            }
+        } else {
+            let ds: Vec<_> = scc
+                .iter()
+                .map(|&i| by_idx[i].take().expect("each def consumed once"))
+                .collect();
+            out.push(spectec_ast::SpecTecDef::Rec { ds });
+        }
+    }
+    out
+}
+
+fn def_name(d: &spectec_ast::SpecTecDef) -> Option<&str> {
+    match d {
+        spectec_ast::SpecTecDef::Typ { x, .. }
+        | spectec_ast::SpecTecDef::Rel { x, .. }
+        | spectec_ast::SpecTecDef::Dec { x, .. }
+        | spectec_ast::SpecTecDef::Gram { x, .. } => Some(x.as_str()),
+        spectec_ast::SpecTecDef::Rec { .. } => None,
+    }
+}
+
+/// Approximation: collect every name-string that appears anywhere
+/// inside a def, used as a basis for the use-graph edges. The
+/// approximation includes `Var.id`, `Case.op` fragments, MixOp
+/// fragments on relations/rules, `Call.x`, type-name `Var.x`, etc.
+fn referenced_names(d: &spectec_ast::SpecTecDef) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    fn walk_exp(e: &spectec_ast::SpecTecExp, out: &mut std::collections::HashSet<String>) {
+        use spectec_ast::SpecTecExp as E;
+        match e {
+            E::Var { id } => {
+                out.insert(id.clone());
+            }
+            E::Bin { e1, e2, .. } | E::Cmp { e1, e2, .. } | E::Idx { e1, e2, .. }
+            | E::Comp { e1, e2, .. } | E::Mem { e1, e2, .. } | E::Cat { e1, e2, .. } => {
+                walk_exp(e1, out);
+                walk_exp(e2, out);
+            }
+            E::Un { e2, .. } | E::Len { e1: e2, .. } | E::Lift { e1: e2, .. }
+            | E::Unopt { e1: e2, .. } | E::Cvt { e1: e2, .. } | E::Sub { e1: e2, .. } => {
+                walk_exp(e2, out);
+            }
+            E::Slice { e1, e2, e3, .. } => {
+                walk_exp(e1, out);
+                walk_exp(e2, out);
+                walk_exp(e3, out);
+            }
+            E::Upd { e1, e2, .. } | E::Ext { e1, e2, .. } => {
+                walk_exp(e1, out);
+                walk_exp(e2, out);
+            }
+            E::Str { efs } => {
+                for spectec_ast::SpecTecExpField::Field { e, .. } in efs {
+                    walk_exp(e, out);
+                }
+            }
+            E::Dot { e1, at } => {
+                walk_exp(e1, out);
+                for f in at.fragments() {
+                    out.insert(f.clone());
+                }
+            }
+            E::Tup { es } | E::List { es } => {
+                for e in es {
+                    walk_exp(e, out);
+                }
+            }
+            E::Call { x, .. } => {
+                out.insert(x.clone());
+            }
+            E::Iter { e1, .. } => walk_exp(e1, out),
+            E::Proj { e1, .. } => walk_exp(e1, out),
+            E::Case { op, e1 } => {
+                for f in op.fragments() {
+                    out.insert(f.clone());
+                }
+                walk_exp(e1, out);
+            }
+            E::Uncase { e1, op } => {
+                walk_exp(e1, out);
+                for f in op.fragments() {
+                    out.insert(f.clone());
+                }
+            }
+            E::Opt { eo: Some(e) } => walk_exp(e, out),
+            E::Opt { eo: None } => {}
+            E::Bool { .. } | E::Num { .. } | E::Text { .. } => {}
+        }
+    }
+    fn walk_prem(p: &spectec_ast::SpecTecPrem, out: &mut std::collections::HashSet<String>) {
+        use spectec_ast::SpecTecPrem as P;
+        match p {
+            P::Rule { x, e, .. } => {
+                out.insert(x.clone());
+                walk_exp(e, out);
+            }
+            P::If { e } => walk_exp(e, out),
+            P::Let { e1, e2 } => {
+                walk_exp(e1, out);
+                walk_exp(e2, out);
+            }
+            P::Else => {}
+            P::Iter { pr1, .. } => walk_prem(pr1, out),
+        }
+    }
+    match d {
+        spectec_ast::SpecTecDef::Typ { insts, .. } => {
+            for spectec_ast::SpecTecInst::Inst { dt, .. } in insts {
+                use spectec_ast::SpecTecDefTyp as DT;
+                match dt {
+                    DT::Alias { typ: _ } => {}
+                    DT::Struct { tfs } => {
+                        for spectec_ast::SpecTecTypField::Field { at, .. } in tfs {
+                            for f in at.fragments() {
+                                out.insert(f.clone());
+                            }
+                        }
+                    }
+                    DT::Variant { tcs } => {
+                        for spectec_ast::SpecTecTypCase::Field { op, .. } in tcs {
+                            for f in op.fragments() {
+                                out.insert(f.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        spectec_ast::SpecTecDef::Rel { rules, .. } => {
+            for spectec_ast::SpecTecRule::Rule { e, prs, .. } in rules {
+                walk_exp(e, &mut out);
+                for p in prs {
+                    walk_prem(p, &mut out);
+                }
+            }
+        }
+        spectec_ast::SpecTecDef::Dec { clauses, .. } => {
+            for spectec_ast::SpecTecClause::Clause { e, prs, .. } in clauses {
+                walk_exp(e, &mut out);
+                for p in prs {
+                    walk_prem(p, &mut out);
+                }
+            }
+        }
+        spectec_ast::SpecTecDef::Gram { .. } | spectec_ast::SpecTecDef::Rec { .. } => {}
+    }
+    out
+}
+
+/// Tarjan's strongly-connected-components algorithm. Inputs: adjacency
+/// `deps[i]` = outgoing edges from node `i`. Returns one `Vec<usize>`
+/// per SCC (each holding the member indices), in reverse-topological
+/// order (sinks first).
+fn tarjan_scc(deps: &[Vec<usize>]) -> Vec<Vec<usize>> {
+    let n = deps.len();
+    let mut indices = vec![usize::MAX; n];
+    let mut lowlinks = vec![0usize; n];
+    let mut on_stack = vec![false; n];
+    let mut stack: Vec<usize> = Vec::new();
+    let mut index = 0usize;
+    let mut out: Vec<Vec<usize>> = Vec::new();
+    for v in 0..n {
+        if indices[v] == usize::MAX {
+            strong_connect(
+                v, deps, &mut indices, &mut lowlinks, &mut on_stack, &mut stack, &mut index,
+                &mut out,
+            );
+        }
+    }
+    out
+}
+
+fn strong_connect(
+    v: usize,
+    deps: &[Vec<usize>],
+    indices: &mut [usize],
+    lowlinks: &mut [usize],
+    on_stack: &mut [bool],
+    stack: &mut Vec<usize>,
+    index: &mut usize,
+    out: &mut Vec<Vec<usize>>,
+) {
+    // Iterative implementation to avoid blowing the call stack on
+    // long dependency chains.
+    let mut work: Vec<(usize, usize)> = vec![(v, 0)];
+    indices[v] = *index;
+    lowlinks[v] = *index;
+    *index += 1;
+    stack.push(v);
+    on_stack[v] = true;
+    while let Some(&(u, ref pos)) = work.last() {
+        let pos = *pos;
+        if pos < deps[u].len() {
+            let w = deps[u][pos];
+            work.last_mut().unwrap().1 += 1;
+            if indices[w] == usize::MAX {
+                indices[w] = *index;
+                lowlinks[w] = *index;
+                *index += 1;
+                stack.push(w);
+                on_stack[w] = true;
+                work.push((w, 0));
+            } else if on_stack[w] {
+                lowlinks[u] = lowlinks[u].min(indices[w]);
+            }
+        } else {
+            // Done with u.
+            if lowlinks[u] == indices[u] {
+                let mut scc = Vec::new();
+                loop {
+                    let w = stack.pop().expect("non-empty by construction");
+                    on_stack[w] = false;
+                    scc.push(w);
+                    if w == u {
+                        break;
+                    }
+                }
+                out.push(scc);
+            }
+            work.pop();
+            if let Some(&(parent, _)) = work.last() {
+                lowlinks[parent] = lowlinks[parent].min(lowlinks[u]);
+            }
+        }
     }
 }
 

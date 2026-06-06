@@ -800,6 +800,7 @@ dependencies = [
  "bzip2",
  "covalence-git",
  "covalence-hash",
+ "covalence-kv",
  "covalence-object",
  "covalence-repl",
  "covalence-sat",

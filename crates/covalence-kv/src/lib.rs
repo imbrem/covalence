@@ -25,6 +25,14 @@ pub use store::KvStore;
 
 pub mod sync;
 
+mod memory;
+pub use memory::MemoryKv;
+
+#[cfg(feature = "blocking")]
+mod blocking;
+#[cfg(feature = "blocking")]
+pub use blocking::BlockingKv;
+
 #[cfg(feature = "aws")]
 pub mod aws;
 

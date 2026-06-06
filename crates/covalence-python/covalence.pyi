@@ -438,6 +438,45 @@ class TreeStore:
     def dup(self) -> "TreeStore": ...
     def __repr__(self) -> str: ...
 
+class KvStore:
+    """Async key-value store driven as a blocking API.
+
+    Abstract base class — instantiate a subclass (`MemoryKvStore`,
+    `AwsKvStore`, `S3KvStore`).
+    """
+
+    def get(self, key: str) -> bytes: ...
+    def get_range(self, key: str, start: int, end: int) -> bytes: ...
+    def put(self, key: str, value: bytes) -> None: ...
+    def delete(self, key: str) -> None: ...
+    def head(self, key: str) -> dict: ...
+    def __repr__(self) -> str: ...
+
+class MemoryKvStore(KvStore):
+    """In-memory KV store, backed by Rust. Useful for tests."""
+
+    def __init__(self) -> None: ...
+
+class AwsKvStore(KvStore):
+    """AWS S3 using the default credential chain."""
+
+    def __init__(self, bucket: str, region: str) -> None: ...
+
+class S3KvStore(KvStore):
+    """S3-compatible endpoint (Wasabi, B2, R2, MinIO, ...). Path-style by default."""
+
+    def __init__(
+        self,
+        endpoint: str,
+        region: str,
+        bucket: str,
+        access_key_id: str,
+        secret_access_key: str,
+        *,
+        allow_http: bool = False,
+        virtual_hosted_style: bool = False,
+    ) -> None: ...
+
 class Principal:
     """An authenticated entity (wraps an Ed25519 public key)."""
 

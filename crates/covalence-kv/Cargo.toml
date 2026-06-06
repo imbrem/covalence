@@ -4,8 +4,9 @@ version = "0.0.0"
 edition = "2024"
 
 [features]
-default = ["aws"]
+default = ["aws", "blocking"]
 aws = ["dep:object_store"]
+blocking = ["dep:tokio"]
 
 [dependencies]
 async-trait = "0.1"
@@ -13,6 +14,7 @@ bytes = "1"
 futures-core = "0.3"
 object_store = { version = "0.13", default-features = false, features = ["aws"], optional = true }
 thiserror = "2"
+tokio = { version = "1", features = ["rt"], optional = true }
 
 [dev-dependencies]
 hyper = { version = "1", features = ["server", "http1"] }

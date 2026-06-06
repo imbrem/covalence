@@ -172,14 +172,25 @@ fn diff_against_wasm_spec_ast() {
     let (rel_t_real, rel_t_total) = count_rel_t_real(&ours);
     let (dec_t_real, dec_t_total) = count_dec_t_real(&ours);
     let (gram_t_real, gram_t_total) = count_gram_t_real(&ours);
-    eprintln!("  Rel.t non-placeholder: {rel_t_real} / {rel_t_total}");
-    eprintln!("  Dec.t non-placeholder: {dec_t_real} / {dec_t_total}");
-    eprintln!("  Gram.t non-placeholder: {gram_t_real} / {gram_t_total}");
+    let (their_rel_t, _) = count_rel_t_real(&reference);
+    let (their_dec_t, _) = count_dec_t_real(&reference);
+    let (their_gram_t, _) = count_gram_t_real(&reference);
+    eprintln!(
+        "  Rel.t non-placeholder: ours {rel_t_real} / {rel_t_total} (theirs {their_rel_t})"
+    );
+    eprintln!(
+        "  Dec.t non-placeholder: ours {dec_t_real} / {dec_t_total} (theirs {their_dec_t})"
+    );
+    eprintln!(
+        "  Gram.t non-placeholder: ours {gram_t_real} / {gram_t_total} (theirs {their_gram_t})"
+    );
 
     let dec_with_ps = count_dec_with_ps(&ours);
     let typ_with_ps = count_typ_with_ps(&ours);
-    eprintln!("  Dec.ps non-empty: {dec_with_ps} / {dec_t_total}");
-    eprintln!("  Typ.ps non-empty: {typ_with_ps} / {total_typ}");
+    let their_typ_with_ps = count_typ_with_ps(&reference);
+    let their_dec_with_ps = count_dec_with_ps(&reference);
+    eprintln!("  Dec.ps non-empty: ours {dec_with_ps}, theirs {their_dec_with_ps}");
+    eprintln!("  Typ.ps non-empty: ours {typ_with_ps}, theirs {their_typ_with_ps}");
 
     let our_total_prods = count_total_prods(&ours);
     let their_total_prods = count_total_prods(&reference);

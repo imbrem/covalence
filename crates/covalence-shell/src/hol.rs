@@ -138,11 +138,22 @@ pub struct HolPrim {
     /// Handles of theorems introduced via `new_axiom`.
     axioms: Vec<ThmHandle>,
 
-    /// Cached empty session context. Sharing one `Arc<Context>`
-    /// across all empty-hyp Thms (refl, beta, …) keeps
-    /// `Arc::ptr_eq` true between them, which is what the kernel's
-    /// trans/eq_mp/cong rules require for context-match.
-    empty_ctx: Arc<Context>,
+    /// The current session context. Starts empty; grows each time
+    /// `new_axiom` / `new_basic_definition` posts a trusted Prop.
+    /// All "fresh-from-the-empty-set" rules (refl, beta) build Thms
+    /// against this context so they share its `Arc` for `ptr_eq`.
+    ///
+    /// When a trusted Prop is added, this `Arc` is replaced with
+    /// the extended context. Thms produced before the extension
+    /// still hold the old `Arc`; [`Self::lift_to_session`] re-weakens
+    /// them onto the current session ctx via `Thm::add_assumption`.
+    session_ctx: Arc<Context>,
+    /// `Arc<Prop>`s that came from `new_axiom` or
+    /// `new_basic_definition`. They live in `session_ctx` as
+    /// assumptions but are filtered out of [`Self::hyps`] so the
+    /// reported hyp set matches HOL Light's "axioms-are-implicit"
+    /// view.
+    trusted_props: Vec<Arc<Prop>>,
 }
 
 impl HolPrim {
@@ -197,7 +208,8 @@ impl HolPrim {
             term_constants,
             thms: Vec::new(),
             axioms: Vec::new(),
-            empty_ctx: Context::empty(),
+            session_ctx: Context::empty(),
+            trusted_props: Vec::new(),
         }
     }
 
@@ -280,6 +292,65 @@ impl HolPrim {
 
     fn clone_thm(&self, h: ThmHandle) -> Result<Thm, HolPrimError> {
         self.get_thm(h).cloned()
+    }
+
+    /// Weaken `thm` so its context becomes the current
+    /// `session_ctx`. Walks the chain from `session_ctx` down to
+    /// `thm.context()`, calling `Thm::add_assumption` for each
+    /// `Prop` in between.
+    ///
+    /// Soundness: `add_assumption` only ever extends a Thm's hyp
+    /// set — it can't make a non-derivable Thm derivable.
+    ///
+    /// Returns the input unchanged if `thm.context()` is already
+    /// `Arc::ptr_eq` to `session_ctx`, or `None` if the input ctx
+    /// isn't an ancestor of the session ctx (which would mean we'd
+    /// need to *contract*, not weaken — currently unsupported).
+    fn lift_to_session(&mut self, thm: Thm) -> Result<Thm, HolPrimError> {
+        if Arc::ptr_eq(thm.context(), &self.session_ctx) {
+            return Ok(thm);
+        }
+        // Collect Props from session_ctx down until we find one
+        // ptr_eq to thm.context().
+        let mut to_add: Vec<Arc<Prop>> = Vec::new();
+        let mut cur = self.session_ctx.clone();
+        loop {
+            if Arc::ptr_eq(&cur, thm.context()) {
+                break;
+            }
+            // Walk down. Context is built via Context::extend(parent, single_prop).
+            let mut found = false;
+            // The locals come first in the assumption(i) traversal,
+            // but the structural representation is `locals + parent`.
+            // We need the immediate-most assumption (the one
+            // Context::extend added on top) — that's the only local
+            // when extended; if more were added via Context::flat we
+            // can't decompose. Approximation: collect all locals as
+            // a batch, then descend via parent().
+            for i in 0..cur.len().saturating_sub(cur.parent().map_or(0, |p| p.len())) {
+                let parent_len = cur.parent().map_or(0, |p| p.len());
+                if let Some(a) = cur.assumption(parent_len + i) {
+                    to_add.push(a.clone());
+                    found = true;
+                }
+            }
+            let Some(parent) = cur.parent() else {
+                if !found && !Arc::ptr_eq(&cur, thm.context()) {
+                    return Err(HolPrimError::NotImplemented(
+                        "lift_to_session: thm context not an ancestor of session ctx",
+                    ));
+                }
+                break;
+            };
+            cur = parent.clone();
+        }
+        // Re-weaken: add_assumption pushes one on top, so apply in
+        // reverse (we collected top-down).
+        let mut result = thm;
+        for prop in to_add.into_iter().rev() {
+            result = result.add_assumption(self.kernel.arena(), prop)?;
+        }
+        Ok(result)
     }
 
     /// Well-known accessor for the unit `=` constant.
@@ -711,12 +782,20 @@ impl HolPrim {
 
     /// Hypotheses of a theorem (the assumption Props' `concl`s, in
     /// context-chain order, deduplicated by `TermId` equality).
+    ///
+    /// Trusted Props (axioms / definitional equations posted via
+    /// [`Self::new_axiom`] / [`Self::new_basic_definition`]) are
+    /// filtered out — HOL Light treats axioms and definitions as
+    /// implicit, so theorems derived under them have empty hyps.
     pub fn hyps(&self, th: ThmHandle) -> Result<Vec<TermRef>, HolPrimError> {
         let thm = self.get_thm(th)?;
         let ctx = thm.context();
         let mut out = Vec::new();
         for i in 0..ctx.len() {
             let assum = ctx.assumption(i).expect("len/index invariant");
+            if self.trusted_props.iter().any(|p| Arc::ptr_eq(p, assum)) {
+                continue;
+            }
             let r = TermRef::local(assum.concl);
             if !out.contains(&r) {
                 out.push(r);
@@ -735,7 +814,7 @@ impl HolPrim {
     /// context so all empty-hyp Thms share one `Arc<Context>`.
     pub fn refl(&mut self, t: TermRef) -> Result<ThmHandle, HolPrimError> {
         let id = t.as_local().ok_or(HolError::NotACombination)?;
-        let ctx = self.empty_ctx.clone();
+        let ctx = self.session_ctx.clone();
         let thm = Thm::refl(self.kernel.arena_mut(), ctx, id)?;
         Ok(self.store_thm(thm))
     }
@@ -745,19 +824,20 @@ impl HolPrim {
     /// "β-redex" coincides.
     pub fn beta_conv(&mut self, tm: TermRef) -> Result<ThmHandle, HolPrimError> {
         let id = tm.as_local().ok_or(HolError::NotBetaRedex)?;
-        let ctx = self.empty_ctx.clone();
+        let ctx = self.session_ctx.clone();
         let thm = Thm::beta(self.kernel.arena_mut(), ctx, id)?;
         Ok(self.store_thm(thm))
     }
 
-    /// `ASSUME p`: `{p} ⊢ p`. Allocates a fresh assumption `Prop` in
-    /// a single-assumption context whose parent is the cached empty
-    /// session context.
+    /// `ASSUME p`: `{p} ⊢ p`. Builds a Thm in a fresh
+    /// `Context::extend(session_ctx, prop)` — the assumption is
+    /// local to the returned Thm and does **not** become part of
+    /// the session ctx (HOL Light semantics).
     pub fn assume_rule(&mut self, p: TermRef) -> Result<ThmHandle, HolPrimError> {
         let id = p.as_local().ok_or(HolError::NotBoolean)?;
-        let prop = Arc::new(Prop::new(self.empty_ctx.clone(), id));
-        let ctx = Context::flat(vec![prop.clone()]);
-        let thm = Thm::assume(self.kernel.arena(), ctx, prop)?;
+        let prop = Arc::new(Prop::new(self.session_ctx.clone(), id));
+        let local_ctx = Context::extend(self.session_ctx.clone(), prop.clone());
+        let thm = Thm::assume(self.kernel.arena(), local_ctx, prop)?;
         Ok(self.store_thm(thm))
     }
 
@@ -796,11 +876,8 @@ impl HolPrim {
     ) -> Result<ThmHandle, HolPrimError> {
         let thm1 = self.clone_thm(th1)?;
         let thm2 = self.clone_thm(th2)?;
-        if !Arc::ptr_eq(thm1.context(), thm2.context()) {
-            return Err(HolPrimError::NotImplemented(
-                "trans: context union not yet implemented",
-            ));
-        }
+        let thm1 = self.lift_to_session(thm1)?;
+        let thm2 = self.lift_to_session(thm2)?;
         let out = self.kernel.trans(thm1, thm2)?;
         Ok(self.store_thm(out))
     }
@@ -820,11 +897,8 @@ impl HolPrim {
     ) -> Result<ThmHandle, HolPrimError> {
         let thm1 = self.clone_thm(th1)?;
         let thm2 = self.clone_thm(th2)?;
-        if !Arc::ptr_eq(thm1.context(), thm2.context()) {
-            return Err(HolPrimError::NotImplemented(
-                "mk_comb_rule: context union not yet implemented",
-            ));
-        }
+        let thm1 = self.lift_to_session(thm1)?;
+        let thm2 = self.lift_to_session(thm2)?;
         let (f, g) = match *self.arena().term_def(thm1.concl()) {
             TermDef::Eq(l, r) => (l, r),
             _ => return Err(HolError::NotAnEquation.into()),
@@ -855,11 +929,8 @@ impl HolPrim {
     ) -> Result<ThmHandle, HolPrimError> {
         let thm1 = self.clone_thm(th1)?;
         let thm2 = self.clone_thm(th2)?;
-        if !Arc::ptr_eq(thm1.context(), thm2.context()) {
-            return Err(HolPrimError::NotImplemented(
-                "eq_mp: context union not yet implemented",
-            ));
-        }
+        let thm1 = self.lift_to_session(thm1)?;
+        let thm2 = self.lift_to_session(thm2)?;
         let out = self.kernel.eq_mp(thm1, thm2)?;
         Ok(self.store_thm(out))
     }
@@ -909,17 +980,70 @@ impl HolPrim {
         Err(HolPrimError::NotImplemented("inst_type_rule"))
     }
 
-    /// `new_axiom tm`: post a fresh axiom `⊢ tm`. Kernel doesn't
-    /// have a trusted-axiom primitive yet (planned as a small
-    /// addition).
-    pub fn new_axiom(&mut self, _tm: TermRef) -> Result<ThmHandle, HolPrimError> {
-        Err(HolPrimError::NotImplemented("new_axiom"))
+    /// `new_axiom tm`: post a fresh axiom and return `⊢ tm`.
+    ///
+    /// Implemented via the **session-context** path — the axiom
+    /// becomes a permanent assumption `Prop` in the session ctx.
+    /// HOL Light's `new_axiom` returns a Thm with empty hyps; with
+    /// our model the Thm carries the axiom set as hyps. This is
+    /// sound but diverges from HOL Light's surface; a trusted-axiom
+    /// kernel primitive would let us produce empty-hyp Thms once
+    /// added.
+    pub fn new_axiom(&mut self, tm: TermRef) -> Result<ThmHandle, HolPrimError> {
+        let id = tm.as_local().ok_or(HolError::NotBoolean)?;
+        let prop = Arc::new(Prop::new(self.session_ctx.clone(), id));
+        self.trusted_props.push(prop.clone());
+        let extended = Context::extend(self.session_ctx.clone(), prop.clone());
+        self.session_ctx = extended.clone();
+        let thm = Thm::assume(self.kernel.arena(), extended, prop)?;
+        let h = self.store_thm(thm);
+        self.axioms.push(h);
+        Ok(h)
     }
 
-    /// `new_basic_definition c = t`: kernel doesn't have this
-    /// primitive yet.
-    pub fn new_basic_definition(&mut self, _tm: TermRef) -> Result<ThmHandle, HolPrimError> {
-        Err(HolPrimError::NotImplemented("new_basic_definition"))
+    /// `new_basic_definition c = t`: register `c` as a constant
+    /// with type `type_of(t)` and return `⊢ Const(c) = t`.
+    ///
+    /// The supplied term must be `Eq(Free(c, ty), t)` where the
+    /// free variable's name is the constant being introduced. The
+    /// returned theorem is in the session ctx (carries the
+    /// definitional equation as a hyp) — same caveat as
+    /// [`Self::new_axiom`].
+    pub fn new_basic_definition(&mut self, tm: TermRef) -> Result<ThmHandle, HolPrimError> {
+        let tm_id = tm.as_local().ok_or_else(|| {
+            HolError::BadDefinition("definition term must be local".into())
+        })?;
+        let (lhs, rhs) = match *self.arena().term_def(tm_id) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => {
+                return Err(HolError::BadDefinition("not an equation".into()).into());
+            }
+        };
+        let lhs_id = lhs
+            .as_local()
+            .ok_or_else(|| HolError::BadDefinition("LHS not local".into()))?;
+        let (name_str, ty) = match *self.arena().term_def(lhs_id) {
+            TermDef::Free(s, ty) => (s, ty),
+            _ => return Err(HolError::BadDefinition("LHS must be a variable".into()).into()),
+        };
+        let name = self
+            .name_of(name_str)
+            .ok_or_else(|| HolError::BadDefinition("LHS variable name not registered".into()))?;
+        if self.term_constants.contains_key(&name) {
+            return Err(HolError::ConstantAlreadyDefined(format!("{name}")).into());
+        }
+        self.term_constants.insert(name, ty);
+        let const_term = self.mk_const(name, ty);
+        let def_eq = self.mk_eq(const_term, rhs);
+        let def_id = def_eq
+            .as_local()
+            .ok_or_else(|| HolError::BadDefinition("definition eq not local".into()))?;
+        let prop = Arc::new(Prop::new(self.session_ctx.clone(), def_id));
+        self.trusted_props.push(prop.clone());
+        let extended = Context::extend(self.session_ctx.clone(), prop.clone());
+        self.session_ctx = extended.clone();
+        let thm = Thm::assume(self.kernel.arena(), extended, prop)?;
+        Ok(self.store_thm(thm))
     }
 
     /// `new_basic_type_definition`: maps onto `Thm::subset_axioms`
@@ -1421,11 +1545,15 @@ mod tests {
     }
 
     #[test]
-    fn new_axiom_is_not_implemented_yet() {
+    fn new_axiom_is_recorded_with_empty_hyps() {
         let mut d = driver();
         let b = d.bool_type();
         let p = d.mk_var(10, b);
-        let r = d.new_axiom(p);
-        assert!(matches!(r, Err(HolPrimError::NotImplemented(_))));
+        let h = d.new_axiom(p).unwrap();
+        // Trusted Props are filtered out of hyps() — HOL Light shape.
+        let hyps = d.hyps(h).unwrap();
+        assert!(hyps.is_empty());
+        assert_eq!(d.get_axioms(), vec![h]);
+        assert_eq!(d.concl(h).unwrap(), p);
     }
 }

@@ -119,6 +119,48 @@ impl HashCtx for Sha256 {
     }
 }
 
+/// One-shot raw SHA-256 of `data`, returning the 32-byte digest.
+///
+/// Equivalent to `Sha256.tag(data).as_bytes()`, but exposes the raw
+/// fixed-width array used for differential testing of WASM SHA-256
+/// reference components.
+pub fn sha256(data: &[u8]) -> [u8; 32] {
+    use sha2::Digest;
+    sha2::Sha256::digest(data).into()
+}
+
+/// One-shot raw SHA-512 of `data`, returning the 64-byte digest.
+///
+/// SHA-512 has a 512-bit (64-byte) output, which does not fit in the
+/// 32-byte [`O256`], so this is exposed as a free function only — there
+/// is no `Sha512Ctx: HashCtx` impl.
+#[cfg(feature = "sha512")]
+pub fn sha512(data: &[u8]) -> [u8; 64] {
+    use sha2::Digest;
+    sha2::Sha512::digest(data).into()
+}
+
+/// One-shot BLAKE3 keyed hash of `data` with a 32-byte `key`,
+/// returning the 32-byte digest.
+///
+/// This is the raw-bytes mirror of `O256::tag` / `HashCtx::tag` on
+/// `O256`, exposed for differential testing where callers want
+/// `[u8; 32]` rather than [`O256`].
+pub fn blake3_keyed_hash(key: &[u8; 32], data: &[u8]) -> [u8; 32] {
+    *blake3::keyed_hash(key, data).as_bytes()
+}
+
+/// One-shot BLAKE3 key derivation: derive a 32-byte subkey from
+/// `key_material` under the application-specific UTF-8 context string
+/// `ctx`.
+///
+/// This is the raw-bytes mirror of [`Blake3Ctx::new(ctx).tag(key_material)`],
+/// exposed for differential testing where callers want `[u8; 32]` rather
+/// than [`O256`].
+pub fn blake3_derive_key(ctx: &str, key_material: &[u8]) -> [u8; 32] {
+    blake3::derive_key(ctx, key_material)
+}
+
 /// Raw SHA-1 hashing context (FIPS PUB 180-4 §6.1) — 20-byte output.
 ///
 /// This is the bare SHA-1 primitive, NOT git-flavoured blob-framed SHA-1
@@ -220,7 +262,7 @@ impl O256 {
     }
 
     /// Create an O256 from a raw 32-byte array.
-    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
 
@@ -365,6 +407,86 @@ mod tests {
     fn cov_root_is_const() {
         // COV_ROOT is usable in const position.
         const _: CovRoot = COV_ROOT;
+    }
+
+    #[test]
+    fn sha256_free_fn_matches_sha256sum() {
+        // Reference: echo -n "abc" | sha256sum
+        const SHA256_ABC: &str =
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        let digest = sha256(b"abc");
+        let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(hex, SHA256_ABC);
+    }
+
+    #[test]
+    fn sha256_free_fn_matches_ctx() {
+        // The free function and the Sha256 HashCtx tag must agree on the
+        // first 32 bytes.
+        let raw = sha256(b"hello");
+        assert_eq!(&raw[..], Sha256.tag(b"hello").as_bytes());
+    }
+
+    #[cfg(feature = "sha512")]
+    #[test]
+    fn sha512_empty_matches_sha512sum() {
+        // Reference: printf '' | sha512sum
+        const SHA512_EMPTY: &str = "\
+            cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce\
+            47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e";
+        let digest = sha512(b"");
+        let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(hex, SHA512_EMPTY);
+    }
+
+    #[cfg(feature = "sha512")]
+    #[test]
+    fn sha512_abc_matches_sha512sum() {
+        // Reference: echo -n "abc" | sha512sum
+        const SHA512_ABC: &str = "\
+            ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a\
+            2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f";
+        let digest = sha512(b"abc");
+        let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(hex, SHA512_ABC);
+    }
+
+    #[test]
+    fn blake3_keyed_hash_free_fn_matches_ctx() {
+        // Mirror of `keyed_hash_matches_b3sum_keyed` using the free fn.
+        let key = O256::blob("hello");
+        let raw = blake3_keyed_hash(key.as_bytes(), b"world");
+        assert_eq!(&raw, key.tag("world").as_bytes());
+        // And matches the published reference.
+        let hex: String = raw.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(hex, KEYED_HELLO_WORLD);
+    }
+
+    #[test]
+    fn blake3_derive_key_free_fn_matches_ctx() {
+        // Mirror of `derive_key_matches_b3sum_derive` using the free fn.
+        let raw = blake3_derive_key("covalence test", b"hello");
+        let hex: String = raw.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(hex, DERIVE_COV_HELLO);
+        // And matches the Blake3Ctx tag.
+        let ctx = Blake3Ctx::new("covalence test");
+        assert_eq!(&raw, ctx.tag("hello").as_bytes());
+    }
+
+    // BLAKE3 official test-vector context string. Pins the derive-key
+    // mode against the canonical BLAKE3 test vectors so downstream
+    // crates can rely on a matching context when consuming
+    // `BLAKE3-team/BLAKE3/test_vectors/test_vectors.json`.
+    #[test]
+    fn blake3_derive_key_matches_official_test_vectors() {
+        const TV_CTX: &str = "BLAKE3 2019-12-27 16:29:52 test vectors context";
+        // derive_0: empty key_material.
+        let derived = blake3_derive_key(TV_CTX, b"");
+        let hex: String = derived.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(
+            hex, "2cc39783c223154fea8dfb7c1b1660f2ac2dcbd1c1de8277b0b0dd39b7e50d7d",
+            "BLAKE3 official derive-key vector with empty input failed",
+        );
     }
 
     // Reference: printf '' | sha1sum

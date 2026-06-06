@@ -1,0 +1,18 @@
+# SHA-1 — shared algo-level metadata.
+#
+# v0 build.rs does not yet parse this file (per-variant overrides are a
+# future extension); it serves as documentation for the canonical spec
+# reference, and triggers rebuilds when changed.
+
+[[spec_doc]]
+title = "FIPS PUB 180-4"
+url = "https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf"
+
+[hash]
+output_bits = 160
+block_bits = 512
+state_bits = 160
+length_extendable = true
+keyed = false
+xof = false
+modes = ["hash"]

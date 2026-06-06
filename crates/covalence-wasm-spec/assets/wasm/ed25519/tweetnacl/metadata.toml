@@ -1,0 +1,21 @@
+# Ed25519 — TweetNaCl reference (RFC 8032) variant metadata.
+#
+# Variant-level entry. There is no algo-level metadata.toml for ed25519
+# yet because this is the first (and only) committed variant.
+
+[[spec_doc]]
+title = "RFC 8032 (Edwards-Curve Digital Signature Algorithm)"
+url = "https://datatracker.ietf.org/doc/html/rfc8032"
+
+[[spec_doc]]
+title = "TweetNaCl 20140427"
+url = "https://tweetnacl.cr.yp.to/"
+
+[sign]
+public_key_bytes = 32
+signature_bytes = 64
+deterministic_verify = true
+deterministic_sign = true
+# `message_hashing` (link to a sha512 Spec) is intentionally absent —
+# v0 ships TweetNaCl's bundled SHA-512; cross-linking via WIT
+# composition against the `sha512` spec is a follow-up story.

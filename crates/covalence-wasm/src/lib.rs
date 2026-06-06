@@ -5,6 +5,9 @@ pub use validate::{compile_wat, wasm_to_wat};
 pub mod parse;
 pub use parse::{ComponentInfo, ModuleInfo, parse_component, parse_module};
 
+pub mod component;
+pub use component::encode_core_as_component;
+
 pub mod val;
 pub use val::{ResourceType, Val, ValType};
 
@@ -19,6 +22,10 @@ pub enum WasmError {
     InvalidModule(String),
     #[error("invalid component: {0}")]
     InvalidComponent(String),
+    #[error("WIT error: {0}")]
+    Wit(String),
+    #[error("component encode error: {0}")]
+    Encode(String),
 }
 
 #[cfg(feature = "runtime")]

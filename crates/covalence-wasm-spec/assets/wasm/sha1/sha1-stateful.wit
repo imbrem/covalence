@@ -1,0 +1,32 @@
+package covalence:hash@0.1.0;
+
+/// SHA-1 — single-instance "object model" world.
+///
+/// One module instance owns exactly one hasher, backed by fixed global
+/// state. The embedder gets many concurrent hashers by instantiating
+/// many copies of the component — the instance IS the object. This
+/// trades the resource-handle plumbing of `sha1.wit` for maximally
+/// auditable WAT (no allocator beyond `cabi_realloc`, no handle table;
+/// just `init` → `update` → `finalize` over module globals).
+///
+/// All exports live in an `api` interface to mirror the resource world
+/// (`sha1.wit`) and keep host-binding code uniform.
+interface api {
+  init: func();
+  update: func(data: list<u8>);
+  finalize: func() -> list<u8>;
+
+  /// Convenience one-shot. Derived by `compose_one_shot` as
+  /// `init; update(data); finalize()`. Equivalent to instantiating a
+  /// fresh module and running the streaming sequence.
+  hash: func(data: list<u8>) -> list<u8>;
+
+  /// Apply the SHA-1 block compression function once. `state` is the
+  /// 20-byte running state (5 BE u32s), `block` is a single 64-byte
+  /// input block, return is the new 20-byte state.
+  compress: func(state: list<u8>, block: list<u8>) -> list<u8>;
+}
+
+world sha1-stateful {
+  export api;
+}

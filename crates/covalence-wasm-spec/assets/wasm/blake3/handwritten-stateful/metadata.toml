@@ -1,0 +1,14 @@
+# BLAKE3 — variant metadata (single-instance / stateful shape).
+
+[[spec_doc]]
+title = "BLAKE3: one function, fast everywhere"
+url = "https://github.com/BLAKE3-team/BLAKE3-specs/blob/master/blake3.pdf"
+
+[hash]
+output_bits = 256
+block_bits = 512
+state_bits = 256
+length_extendable = false
+keyed = true
+xof = true
+modes = ["Hash", "KeyedHash", "DeriveKey"]

@@ -1,0 +1,35 @@
+package covalence:hash@0.1.0;
+
+/// SHA-256 (FIPS PUB 180-4 §6.2) — resource-based world.
+///
+/// One module instance can host many concurrent hashers via the `hasher`
+/// resource. For the auditability-first / "one wasm instance per hasher"
+/// alternative, see `sha256-stateful.wit`.
+///
+/// The `compress` primitive lets a verifier independently re-run a single
+/// 64-byte block compression.
+///
+/// All exports live in an `api` interface block so the resource methods
+/// are host-callable (a bare world-level resource is read as imported).
+interface api {
+  /// Streaming hasher. `update` is mutable; `finalize` consumes the
+  /// resource and returns the 32-byte digest.
+  resource hasher {
+    constructor();
+    update: func(data: list<u8>);
+    finalize: func() -> list<u8>;
+  }
+
+  /// One-shot hash. Derived from `hasher` by `compose_one_shot`; the
+  /// hand-written WAT does not implement it.
+  hash: func(data: list<u8>) -> list<u8>;
+
+  /// Apply the SHA-256 block compression function once. `state` is the
+  /// 32-byte running state (8 BE u32s), `block` is a single 64-byte
+  /// input block, return is the new 32-byte state.
+  compress: func(state: list<u8>, block: list<u8>) -> list<u8>;
+}
+
+world sha256 {
+  export api;
+}

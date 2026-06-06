@@ -1,0 +1,48 @@
+package covalence:hash@0.1.0;
+
+/// BLAKE3 — resource-based world. See "BLAKE3: one function, fast
+/// everywhere" (2020) §2.
+///
+/// Three modes share a single compression function but use different
+/// internal IVs: plain hash, keyed hash (32-byte key), and key derivation
+/// (UTF-8 context string). The `hasher` resource is plain-mode streaming;
+/// the keyed and derive-key modes are exposed as one-shot exports in v0
+/// (streaming variants can be added later if a consumer needs them).
+///
+/// For the single-instance "object model" world, see
+/// `blake3-stateful.wit`.
+///
+/// XOF / arbitrary-length output and the parallel tree mode are NOT
+/// exposed in v0; add as separate exports when a consumer needs them.
+///
+/// Exports live in an `api` interface block so the resource methods are
+/// host-callable.
+interface api {
+  /// Plain-mode streaming hasher.
+  resource hasher {
+    constructor();
+    update: func(data: list<u8>);
+    finalize: func() -> list<u8>;
+  }
+
+  /// One-shot plain hash. Derived from `hasher` by `compose_one_shot`.
+  hash: func(data: list<u8>) -> list<u8>;
+
+  /// One-shot keyed hash. `key` is 32 bytes; output is 32 bytes.
+  keyed-hash: func(key: list<u8>, data: list<u8>) -> list<u8>;
+
+  /// One-shot key derivation. `context` is a UTF-8 string with a
+  /// hard-coded application identifier; `key-material` is the input
+  /// secret. Output is 32 bytes.
+  derive-key: func(context: string, key-material: list<u8>) -> list<u8>;
+
+  /// Apply the BLAKE3 block compression function once. `state` is the
+  /// 32-byte chaining value (8 LE u32s), `block` is a single 64-byte
+  /// input block, return is the new 32-byte chaining value. Callers
+  /// supply the correct flag bits for their mode.
+  compress: func(state: list<u8>, block: list<u8>) -> list<u8>;
+}
+
+world blake3 {
+  export api;
+}

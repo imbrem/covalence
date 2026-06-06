@@ -74,22 +74,79 @@ inner.
 
 ## Approach sketch
 
+### Step 1 — the simple branch (already attempted; insufficient on its own)
+
+In `check_exp_against_scope`, before the general path:
+
 ```rust
-// In check_exp_against_scope, before falling to general path
-if let (Expr::Raw(tr) | Expr::Tup { items: small_chunk_of_idents, .. }, Typ::Tup { ets }) = (&e, expected) {
-    if let Some(items) = try_split_juxtaposed_against(tr_or_chunk, ets.len(), env, ctx) {
-        // Recursively check each item against its bind type.
-        let items = items.into_iter().zip(ets).map(|(it, bind)| {
-            check_exp_against_scope(env, it, &bind.typ, scope)
-        }).collect();
-        return Expr::Tup { span: tr.span, items };
-    }
+if let (Expr::Raw(tr), Typ::Tup { ets }) = (&e, expected)
+    && let Some(chunks) = try_split_juxtaposed(&tr.tokens, ets.len())
+{
+    let items: Vec<Expr> = chunks
+        .into_iter()
+        .zip(ets)
+        .map(|(chunk, bind)| {
+            let inner = mini_classify_chunk(chunk, chunk_span);
+            check_exp_against_scope(env, inner, &bind.typ, scope)
+        })
+        .collect();
+    return Expr::Tup { span, items };
 }
 ```
 
-`try_split_juxtaposed_against` walks the token stream, finds N
-type-shaped chunks at depth 0, re-classifies each into an `Expr`.
-If N doesn't match expected, return None and fall through.
+`try_split_juxtaposed(toks, n)` walks at depth 0; each chunk is one
+ident (+ optional iter postfix), one literal, or one balanced paren
+group. `mini_classify_chunk` handles `Ident → Var`, `Ident*/?/+ →
+Iter{Var}`, `Nat → Num`, `Text`, `eps → Eps`, else `Raw`. (Doesn't
+need `ElabContext` for these simple shapes — full re-classification
+via `classify_simple_expression` would require threading `ctx`
+through the typecheck pass.)
+
+I implemented this branch (commit on the `WIP #32` stash entry in the
+covalence-spectec branch — recover with
+`git stash list | grep "WIP #32"` and `git stash apply`) but it
+does NOT move the differential count, because…
+
+### Step 2 — the critical second piece (NOT YET DONE)
+
+Most real sites have expected type `Var(name)`, not `Tup{...}`
+directly. Example: `ARRAY (mut zt)` — ARRAY's ctor_params[0] is
+`Var(fieldtype)`, not `Tup`. The Step-1 branch never fires.
+
+To make it useful: when expected is `Var(name)` and `name`
+resolves (via `env.ctors` reverse lookup or `doc.syntax`) to a
+**single-case headless variant** whose case body is a `Tup{binds}`,
+unfold and re-route:
+
+```rust
+// Pseudo-code addition before Step 1
+if let Typ::Var { x: name, .. } = expected
+    && let Some(headless_tup) = resolve_headless_tup_body(name, env)
+{
+    // Run the Step-1 splitter against headless_tup's binds.
+    let inner_tup = check_exp_against_scope_with_tup(env, e, &headless_tup, scope);
+    // Wrap as a Case of the headless variant's MixOp (e.g. `["","",""]`
+    // for fieldtype, mirroring the OCaml `(case "%%" (tup ...))` shape).
+    return Expr::Case {
+        span, head: name.clone(),  // or whatever surfaces as the headless head
+        args: vec![inner_tup],
+    };
+}
+```
+
+This needs:
+1. A `headless_variant_body: BTreeMap<String, (MixOp, Vec<TypBind>)>`
+   added to `TypeEnv`. Populate at `build_env` time by walking
+   each syntax's single-case headless variants
+   (`fieldtype = mut? storagetype`, `instrtype = ... -> ...`,
+   `globaltype = mut? valtype`, …).
+2. The unfold-and-wrap step above.
+3. The lowering of the synthesised `Case` head — OCaml emits these
+   as `Case { op: ["","",""], ... }` with no name field. Verify how
+   our `Expr::Case { head: String, args }` round-trips through
+   `expr_to_spectec` for headless cases.
+
+Without (1)+(2)+(3) the simple branch in Step 1 is dead code.
 
 ## Pointers to OCaml
 

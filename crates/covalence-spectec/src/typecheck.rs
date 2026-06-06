@@ -66,6 +66,7 @@ pub struct TypeEnv {
     /// `numtype → {valtype}` and `reftype → {valtype}` (plus any
     /// further outer types via transitivity).
     pub subtypes: BTreeMap<String, std::collections::BTreeSet<String>>,
+<<<<<<< HEAD
     /// Single-case headless variants whose template is exactly
     /// `T1 ; T2` — i.e. MixOp `["", ";", ""]`. Maps the syntax name
     /// to the two per-hole argument types. Used by
@@ -78,6 +79,17 @@ pub struct TypeEnv {
     /// unfolding" infrastructure (task #32's Step 2 — juxtaposition,
     /// `mut? T`, `T1 -> T2`, etc.) lands separately.
     pub headless_semi: BTreeMap<String, Vec<Typ>>,
+=======
+    /// Single-case headless variants → per-hole bind types. Driven by
+    /// the same name set that `ElabContext::headless_variant_op`
+    /// registers. Task #32's juxtaposition splitter consults this map
+    /// to unfold an expected `Var(name)` type into the underlying
+    /// tuple-of-binds shape, then re-checks the operand against it
+    /// chunk-by-chunk before wrapping the result in a synthesised
+    /// `Case` whose lowering picks up the matching MixOp from
+    /// `ElabContext`.
+    pub headless_variant_body: BTreeMap<String, Vec<Typ>>,
+>>>>>>> 9f71813 (spectec: implicit-Tup juxtaposition split via headless variant unfold (task #32))
 }
 
 #[derive(Debug, Clone)]
@@ -179,19 +191,37 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
                             x: syn.name.clone(),
                             as1: Vec::new(),
                         });
-                        if !env.ctor_params.contains_key(head) {
-                            if let Some((_, _, hole_toks)) =
+                        // Skip alts where the head ident is followed
+                        // by `.` (`ARRAY.NEW_FIXED typeidx u32`).
+                        // Those are compound mixfix names — the real
+                        // case head is `ARRAY.NEW_FIXED`, not
+                        // `ARRAY`. Registering them under `ARRAY`
+                        // would pollute `ctor_params`.
+                        let is_compound_head = toks
+                            .get(1)
+                            .is_some_and(|t| matches!(t.token, crate::token::Token::Dot));
+                        if !is_compound_head
+                            && let Some((_, _, hole_toks)) =
                                 crate::elab::alt_to_constructor_with_holes(
                                     alt,
                                     &ctx.type_names,
                                 )
-                            {
-                                let params: Vec<Typ> = hole_toks
-                                    .iter()
-                                    .map(|toks| {
-                                        crate::ast_doc::typ_expr_to_spectec(toks, ctx)
-                                    })
-                                    .collect();
+                        {
+                            let params: Vec<Typ> = hole_toks
+                                .iter()
+                                .map(|toks| {
+                                    crate::ast_doc::typ_expr_to_spectec(toks, ctx)
+                                })
+                                .collect();
+                            // Prefer the entry with more positional
+                            // args when the same head appears in
+                            // multiple syntax decls (`ARRAY` is 0-arg
+                            // in `absheaptype` and 1-arg in
+                            // `comptype`). This routes the headless
+                            // unfolding (Task #32) to the right
+                            // expected type at the use site.
+                            let prev_len = env.ctor_params.get(head).map(Vec::len);
+                            if prev_len.is_none_or(|p| p < params.len()) {
                                 env.ctor_params.insert(head.clone(), params);
                             }
                         }
@@ -231,6 +261,7 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
     }
     env.subtypes = closed;
 
+<<<<<<< HEAD
     // Single-case headless `_ ; _` variants. Task #35 scope: only the
     // `;`-separator form (`syntax config = state; instr*`,
     // `syntax state = store; frame`). Heuristic: pick syntaxes that
@@ -242,6 +273,32 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
             None => continue,
         };
         env.headless_semi.insert(syn.name.clone(), semi);
+=======
+    // Headless single-alt variant bodies: for each name registered
+    // by `ElabContext::headless_variant_op`, recover the per-hole
+    // bind types from the underlying alt and lower each hole's token
+    // slice through `typ_expr_to_spectec`. Used by the Task #32
+    // splitter to route an expected `Var(name)` through the
+    // underlying tuple shape.
+    for name in ctx.headless_variant_op.keys() {
+        let Some(merged) = ctx.syntax_defs.get(name) else {
+            continue;
+        };
+        let alts = merged.alts_for_profile(None);
+        if alts.len() != 1 {
+            continue;
+        }
+        let Some((_, holes)) =
+            crate::elab::alt_to_headless_with_holes(&alts[0], &ctx.type_names)
+        else {
+            continue;
+        };
+        let binds: Vec<Typ> = holes
+            .iter()
+            .map(|hole_toks| crate::ast_doc::typ_expr_to_spectec(hole_toks, ctx))
+            .collect();
+        env.headless_variant_body.insert(name.clone(), binds);
+>>>>>>> 9f71813 (spectec: implicit-Tup juxtaposition split via headless variant unfold (task #32))
     }
 
     env
@@ -635,6 +692,166 @@ pub fn check_exp_against(env: &TypeEnv, e: Expr, expected: &Typ) -> Expr {
     check_exp_against_scope(env, e, expected, &mut scope)
 }
 
+/// Split a token slice into exactly `n` juxtaposed atom chunks at
+/// depth 0. Returns `Some(chunks)` on a clean match or `None`
+/// otherwise. Used by Task #32 for implicit-Tup juxtaposition.
+///
+/// An atom chunk is one of:
+/// - a balanced `LParen ... RParen` group (with optional trailing
+///   `*` / `?` / `+` iter suffix)
+/// - a single non-paren token (with optional trailing iter suffix)
+fn try_split_juxtaposed<'a>(
+    toks: &'a [crate::token::Spanned],
+    n: usize,
+) -> Option<Vec<&'a [crate::token::Spanned]>> {
+    use crate::token::Token::*;
+    if n == 0 {
+        return if toks.is_empty() { Some(Vec::new()) } else { None };
+    }
+    let mut chunks: Vec<&[crate::token::Spanned]> = Vec::with_capacity(n);
+    let mut i = 0;
+    while i < toks.len() {
+        let start = i;
+        match &toks[i].token {
+            LParen => {
+                let mut depth: i32 = 0;
+                let mut end = i;
+                while end < toks.len() {
+                    match &toks[end].token {
+                        LParen => depth += 1,
+                        RParen => {
+                            depth -= 1;
+                            if depth == 0 {
+                                end += 1;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                    end += 1;
+                }
+                if depth != 0 {
+                    return None;
+                }
+                i = end;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+        if matches!(toks.get(i).map(|s| &s.token), Some(Star | Question | Plus)) {
+            i += 1;
+        }
+        chunks.push(&toks[start..i]);
+        if chunks.len() > n {
+            return None;
+        }
+    }
+    if chunks.len() == n { Some(chunks) } else { None }
+}
+
+/// Lower one juxtaposition chunk into an `Expr`. Mirrors the simple
+/// cases of `chunk_to_atom` from `ast_doc` (grammar side), but emits
+/// `Expr` rather than `SpecTecSym`. More complex shapes (binders,
+/// mixfix recognition inside chunks) fall through to `Raw` so the
+/// downstream typecheck can still attempt subtype coercion.
+fn mini_classify_chunk(
+    chunk: &[crate::token::Spanned],
+    span: crate::source::Span,
+) -> Expr {
+    use crate::token::Token::*;
+    if chunk.len() == 1 {
+        return match &chunk[0].token {
+            Ident(n) => Expr::Var { span, name: n.clone() },
+            Nat(n) => Expr::Num {
+                span,
+                value: crate::elab::NumLit::Nat(n.clone()),
+            },
+            Text(s) => Expr::Text { span, value: s.clone() },
+            Eps => Expr::Eps { span },
+            _ => Expr::Raw(crate::cst::TokenRun {
+                span,
+                tokens: chunk.to_vec(),
+            }),
+        };
+    }
+    if chunk.len() == 2
+        && let Ident(name) = &chunk[0].token
+    {
+        let (kind, suffix) = match &chunk[1].token {
+            Star => (Some(IterKind::Star), '*'),
+            Question => (Some(IterKind::Opt), '?'),
+            Plus => (Some(IterKind::Plus), '+'),
+            _ => (None, ' '),
+        };
+        if let Some(kind) = kind {
+            // Record the natural Dom binding (`mut?` → `Dom{x:"mut",
+            // e:Var("mut?")}`) so the lowering picks it up via
+            // `iter_kind_to_spectec`. Mirrors OCaml's xes shape.
+            let bindings = vec![crate::elab::IterBinding {
+                var: name.clone(),
+                source: format!("{name}{suffix}"),
+            }];
+            return Expr::Iter {
+                span,
+                inner: Box::new(Expr::Var { span, name: name.clone() }),
+                kind,
+                bindings,
+            };
+        }
+    }
+    Expr::Raw(crate::cst::TokenRun {
+        span,
+        tokens: chunk.to_vec(),
+    })
+}
+
+/// Span covering all tokens in `chunk`; falls back to `default` for
+/// the empty case (which shouldn't arise once `try_split_juxtaposed`
+/// has enforced forward progress).
+fn chunk_span_of(
+    chunk: &[crate::token::Spanned],
+    default: crate::source::Span,
+) -> crate::source::Span {
+    chunk
+        .iter()
+        .map(|s| s.span)
+        .reduce(crate::source::Span::join)
+        .unwrap_or(default)
+}
+
+/// If `toks` is exactly one balanced `LParen ... RParen` group
+/// spanning the whole slice, return the inner content; otherwise
+/// return `toks` unchanged. Used to peel the soft parens around a
+/// case-arg before juxtaposition splitting (`ARRAY (mut zt)` arrives
+/// here as `[(, mut, zt, )]`, but the splitter wants `[mut, zt]`).
+fn peel_outer_parens(toks: &[crate::token::Spanned]) -> &[crate::token::Spanned] {
+    use crate::token::Token::*;
+    if toks.len() < 2 {
+        return toks;
+    }
+    if !matches!(toks[0].token, LParen) || !matches!(toks[toks.len() - 1].token, RParen) {
+        return toks;
+    }
+    // Ensure the outer parens actually match each other (depth 0 at
+    // the boundary). A mismatch would mean the slice is `(...) ... (...)`.
+    let mut depth: i32 = 0;
+    for (i, t) in toks.iter().enumerate() {
+        match &t.token {
+            LParen => depth += 1,
+            RParen => depth -= 1,
+            _ => {}
+        }
+        if depth == 0 && i + 1 != toks.len() {
+            return toks;
+        }
+    }
+    if depth != 0 {
+        return toks;
+    }
+    &toks[1..toks.len() - 1]
+}
+
 /// Bidirectional check + record discovered Var types into `scope`.
 /// Walks the expression, recording each `Var` against its expected
 /// type as we descend through Tup, Case, etc.
@@ -652,6 +869,72 @@ pub fn check_exp_against_scope(
         // `fv`).
         scope.record(name.clone(), expected.clone());
         return Expr::Var { span, name };
+    }
+    // Task #32 Step 2 — Var-unfolding. When `expected` is a use of a
+    // single-case headless variant (e.g. `fieldtype = mut?
+    // storagetype`) and the operand is a `Raw` chunk whose
+    // juxtaposition matches the variant's hole count, route through
+    // the splitter and wrap the resulting Tup in a synthesised Case
+    // tagged with the variant name. The converter looks the name up
+    // in `ElabContext::headless_variant_op` to emit the right
+    // headless MixOp (`["", "", ""]` for `mut? storagetype`, etc.).
+    //
+    // Without this, Step 1 below would never fire on real call sites
+    // — most pass headless-variant typed args (`ARRAY (mut zt)`,
+    // `STRUCT (mut zt)*`), not bare `Tup` types.
+    //
+    // The operand commonly arrives as a single-element `Raw`
+    // containing a balanced `(...)` group (the case-head fallback
+    // wraps `ARRAY`'s `(mut zt)` arg verbatim). We peel any outer
+    // parens before attempting the split.
+    if let (Expr::Raw(tr), Typ::Var { x: name, .. }) = (&e, expected)
+        && let Some(binds) = env.headless_variant_body.get(name)
+    {
+        let toks = peel_outer_parens(&tr.tokens);
+        if let Some(chunks) = try_split_juxtaposed(toks, binds.len()) {
+            let span = tr.span;
+            let items: Vec<Expr> = chunks
+                .into_iter()
+                .zip(binds.iter())
+                .map(|(chunk, typ)| {
+                    let cs = chunk_span_of(chunk, span);
+                    let inner = mini_classify_chunk(chunk, cs);
+                    check_exp_against_scope(env, inner, typ, scope)
+                })
+                .collect();
+            // The converter wraps `Case.args` in `S::Tup { es: ... }`;
+            // pass `items` directly so the converted `e1` is the
+            // tuple of unfolded chunks, not a singleton wrap.
+            return Expr::Case {
+                span,
+                head: name.clone(),
+                args: items,
+            };
+        }
+    }
+    // Task #32 Step 1 — implicit-Tup juxtaposition splitter. When
+    // the expected type is a tuple of N binds and the operand is a
+    // `Raw` chunk that splits cleanly into N juxtaposed sub-chunks,
+    // re-interpret it as an N-tuple and check element-by-element.
+    // Step 2 above handles the common case where the expected type
+    // is the headless variant's *name* rather than its underlying
+    // tuple shape.
+    if let (Expr::Raw(tr), Typ::Tup { ets }) = (&e, expected) {
+        let toks = peel_outer_parens(&tr.tokens);
+        if let Some(chunks) = try_split_juxtaposed(toks, ets.len()) {
+            let span = tr.span;
+            let items: Vec<Expr> = chunks
+                .into_iter()
+                .zip(ets.iter())
+                .map(|(chunk, bind)| {
+                    let ast::SpecTecTypBind::Bind { typ, .. } = bind;
+                    let cs = chunk_span_of(chunk, span);
+                    let inner = mini_classify_chunk(chunk, cs);
+                    check_exp_against_scope(env, inner, typ, scope)
+                })
+                .collect();
+            return Expr::Tup { span, items };
+        }
     }
     // Special-case Tup: pair each item with the corresponding bind
     // type of the expected Tup.
@@ -682,19 +965,25 @@ pub fn check_exp_against_scope(
     }
     // Special-case Iter on a Var: `t*` against `Iter<T>` records
     // the unwrapped `t : T`.
-    if let (Expr::Iter { inner, .. }, Typ::Iter { t1, .. }) = (&e, expected) {
+    if let (Expr::Iter { inner, .. }, Typ::Iter { t1, it }) = (&e, expected) {
         if let Expr::Var { .. } = inner.as_ref() {
             // Re-infer the inner var against the inner type.
             let e_clone = e.clone();
             let (new_e, _) = infer_exp(env, e_clone);
-            // Also record the name (with `*`-suffix) → outer iter type.
+            // Record the name with the expected iter's suffix
+            // (`mut?`, `t*`, `n+`) → outer iter type.
             if let Expr::Iter { inner: i2, .. } = &new_e {
                 if let Expr::Var { name, .. } = i2.as_ref() {
                     let mut suffixed = name.clone();
-                    // We don't know which iter character; emit `*` as
-                    // the conventional default. OCaml uses the actual
-                    // iter; we can revisit if it matters.
-                    suffixed.push('*');
+                    let suffix_char = it
+                        .first()
+                        .map(|i| match i {
+                            ast::SpecTecIter::Opt => '?',
+                            ast::SpecTecIter::List1 => '+',
+                            _ => '*',
+                        })
+                        .unwrap_or('*');
+                    suffixed.push(suffix_char);
                     scope.record(suffixed, expected.clone());
                     // Also record bare name → inner type.
                     scope.record(name.clone(), (**t1).clone());

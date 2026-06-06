@@ -84,6 +84,7 @@ pub struct ElabContext {
     /// (which need access to the raw template tokens, not the
     /// Pratt-flavoured `OpTable` fragments).
     pub rel_templates: BTreeMap<String, TokenRun>,
+<<<<<<< HEAD
     /// Per-arg kind for every parametric type. Drives the `Typ` vs
     /// `Exp` choice when lowering `name(args)` at a type position
     /// (see `typ_expr_to_spectec`). Populated from built-ins (`list`,
@@ -101,6 +102,22 @@ pub enum ParamKind {
     Exp,
     Gram,
     Def,
+=======
+    /// Single-case headless variants, keyed by syntax name, with the
+    /// MixOp derived from the alt's fragments (literals concatenate
+    /// into separators; each hole introduces a new separator). The
+    /// hole count is `op.parts().len() - 1`.
+    ///
+    /// E.g. `fieldtype = mut? storagetype` → `MixOp(["", "", ""])`,
+    /// `memtype = addrtype limits PAGE` → `MixOp(["", "", "PAGE"])`.
+    ///
+    /// Task #32's juxtaposition splitter uses this map at typecheck
+    /// time (via `TypeEnv::headless_variant_body`) to unfold an
+    /// expected `Var(name)` type into the headless case's per-hole
+    /// bind types; `ast_doc::expr_to_spectec` uses this map at
+    /// lowering time to emit the headless `Case`'s MixOp.
+    pub headless_variant_op: BTreeMap<String, spectec_ast::MixOp>,
+>>>>>>> 9f71813 (spectec: implicit-Tup juxtaposition split via headless variant unfold (task #32))
 }
 
 /// A `syntax NAME` declaration with all its profile-suffixed variants
@@ -331,6 +348,7 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
         }
     }
 
+<<<<<<< HEAD
     // Pass 3: parametric-type kind registry. Built-ins first
     // (`list`, `option`), then user-declared `syntax NAME(p1, p2,
     // ...)`. Each slot's kind is decided by the param chunk's
@@ -352,6 +370,41 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
         }
     }
 
+=======
+    // Pass 3: headless-variant MixOp registry. A syntax decl qualifies
+    // when its merged-alt list (across all profiles) is exactly one
+    // alternative AND that alt's body starts with something other than
+    // a case-head ident (`fieldtype = mut? storagetype`, `memtype =
+    // addrtype limits PAGE`, etc.). The MixOp is derived from the
+    // alt's fragments via the same hole/literal rule that
+    // `ast_doc::mixop_from_typcase_fragments` applies to typcase
+    // alternatives. Used by Task #32 to wrap juxtaposition-split
+    // operands in synthesised headless Cases.
+    let mut headless_variant_op: BTreeMap<String, spectec_ast::MixOp> = BTreeMap::new();
+    for (name, merged) in &syntax_defs {
+        let alts = merged.alts_for_profile(None);
+        if alts.len() != 1 {
+            continue;
+        }
+        let alt = &alts[0];
+        // First token must NOT be an UPPERCASE case head — otherwise
+        // this is `STRUCT list(fieldtype)` etc., a normal case ctor.
+        if let Some(crate::token::Spanned { token: Token::Ident(head), .. }) =
+            alt.body.tokens.first()
+            && is_case_head(head)
+        {
+            continue;
+        }
+        let Some((frags, _holes)) = alt_to_headless_with_holes(alt, &type_names)
+        else {
+            continue;
+        };
+        if frags.iter().filter(|f| matches!(f, Fragment::Hole(_))).count() < 2 {
+            continue;
+        }
+        headless_variant_op.insert(name.clone(), headless_mixop_from_fragments(&frags));
+    }
+>>>>>>> 9f71813 (spectec: implicit-Tup juxtaposition split via headless variant unfold (task #32))
     if diags.is_empty() {
         Ok(ElabContext {
             op_table,
@@ -359,13 +412,18 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
             var_names,
             syntax_defs,
             rel_templates,
+<<<<<<< HEAD
             param_kinds,
+=======
+            headless_variant_op,
+>>>>>>> 9f71813 (spectec: implicit-Tup juxtaposition split via headless variant unfold (task #32))
         })
     } else {
         Err(diags)
     }
 }
 
+<<<<<<< HEAD
 /// Lower a `syntax NAME(...)`'s parameter token runs to a flat
 /// `Vec<ParamKind>` in source order. Each `TokenRun` is one
 /// balanced `(...)` group containing comma-separated params.
@@ -420,6 +478,25 @@ fn split_top_level_commas_local(toks: &[Spanned]) -> Vec<&[Spanned]> {
         out.push(&toks[start..]);
     }
     out
+=======
+/// Build a `MixOp` from headless-alt fragments, mirroring the rule in
+/// `ast_doc::mixop_from_typcase_fragments`. Each `Hole` introduces a
+/// new separator entry; each `Lit` appends its source text to the
+/// current separator. For headless alts the leading separator is
+/// always empty (no case head), and trailing-empty collapse does not
+/// apply.
+fn headless_mixop_from_fragments(frags: &[Fragment]) -> spectec_ast::MixOp {
+    let mut parts: Vec<String> = vec![String::new()];
+    for f in frags {
+        match f {
+            Fragment::Hole(_) => parts.push(String::new()),
+            Fragment::Lit(t) => {
+                parts.last_mut().unwrap().push_str(&t.to_source_text());
+            }
+        }
+    }
+    spectec_ast::MixOp::new(parts)
+>>>>>>> 9f71813 (spectec: implicit-Tup juxtaposition split via headless variant unfold (task #32))
 }
 
 /// Fold one `syntax` decl into the `MergedSyntax` map. Variant

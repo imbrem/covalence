@@ -1,0 +1,22 @@
+# SHA-256 — C reference (RFC 6234 §8.2) variant metadata.
+#
+# Variant-level entry. Both `[hash]` and `[[spec_doc]]` override the
+# algo-level shape because the C reference adds an additional spec
+# document (RFC 6234) on top of the canonical FIPS PUB 180-4.
+
+[[spec_doc]]
+title = "FIPS PUB 180-4"
+url = "https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf"
+
+[[spec_doc]]
+title = "RFC 6234 §8.2 — SHA-256 reference C implementation"
+url = "https://datatracker.ietf.org/doc/html/rfc6234#section-8.2"
+
+[hash]
+output_bits = 256
+block_bits = 512
+state_bits = 256
+length_extendable = true
+keyed = false
+xof = false
+modes = ["hash"]

@@ -1,0 +1,61 @@
+package covalence:hash@0.1.0;
+
+/// BLAKE3 — single-instance "object model" world.
+///
+/// One module instance owns exactly one plain-mode hasher, backed by
+/// fixed global state (the chunk buffer, the chaining-value stack, the
+/// chunk counter, etc.). The embedder gets many concurrent hashers by
+/// instantiating many copies of the component — the instance IS the
+/// hasher object. This trades the resource-handle plumbing of
+/// `blake3.wit` for maximally auditable WAT (no allocator beyond
+/// `cabi_realloc`, no handle table; just `init` → `update` → `finalize`
+/// over module globals).
+///
+/// `init` resets to the just-instantiated plain-hash state, so a single
+/// instance can be reused across hashes if the embedder prefers.
+///
+/// The keyed-hash and derive-key modes are exposed as one-shots (mirroring
+/// `blake3.wit`); streaming variants for those modes can be added later
+/// when a consumer needs them.
+///
+/// All exports live in an `api` interface to mirror the resource world
+/// and keep host-binding code uniform.
+interface api {
+  /// Reset to plain-mode initial state (IV chaining value, empty buffer,
+  /// chunk counter 0, no flags). Cheap to call repeatedly.
+  init: func();
+
+  /// Stream `data` into the plain-mode hasher. May be called any number
+  /// of times before `finalize`.
+  update: func(data: list<u8>);
+
+  /// Consume the streamed input and return the 32-byte digest. The
+  /// stateful instance is left in an undefined state — call `init`
+  /// before reusing.
+  finalize: func() -> list<u8>;
+
+  /// One-shot plain hash. Derived by `compose_one_shot` as
+  /// `init; update(data); finalize()`.
+  hash: func(data: list<u8>) -> list<u8>;
+
+  /// One-shot keyed hash. `key` is 32 bytes; output is 32 bytes. Resets
+  /// the stateful instance as a side effect.
+  keyed-hash: func(key: list<u8>, data: list<u8>) -> list<u8>;
+
+  /// One-shot key derivation. `context` is a UTF-8 string with a
+  /// hard-coded application identifier; `key-material` is the input
+  /// secret. Output is 32 bytes. Resets the stateful instance as a
+  /// side effect.
+  derive-key: func(context: string, key-material: list<u8>) -> list<u8>;
+
+  /// Apply the BLAKE3 block compression function once with
+  /// counter = 0, block_len = 64, flags = 0. `state` is the 32-byte
+  /// chaining value (8 LE u32s), `block` is a single 64-byte input
+  /// block, return is the new 32-byte chaining value (i.e.
+  /// truncate8(compress(state, block, 0, 64, 0))).
+  compress: func(state: list<u8>, block: list<u8>) -> list<u8>;
+}
+
+world blake3-stateful {
+  export api;
+}

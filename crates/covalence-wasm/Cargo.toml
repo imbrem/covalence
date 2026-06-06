@@ -12,5 +12,10 @@ wasm-encoder = "0.249"
 wat = "1.249"
 wasmprinter = "0.249"
 wasmparser = "0.249"
+# Component encoding: pinned to the wit-* family already in the workspace lockfile
+# (via wit-bindgen). Adding these as direct deps avoids pulling a second
+# wasm-encoder major.
+wit-component = "0.244"
+wit-parser = "0.244"
 # runtime-only deps
 wasmtime = { version = "44", features = ["component-model", "gc"], optional = true }

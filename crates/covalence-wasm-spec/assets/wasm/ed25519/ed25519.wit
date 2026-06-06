@@ -1,0 +1,16 @@
+package covalence:sign@0.1.0;
+
+/// Ed25519 signature verification (RFC 8032 §5.1.7).
+///
+/// `verify` returns true iff `signature` is a valid Ed25519 signature
+/// over `message` under `public-key`. Public key and signature are the
+/// canonical 32-byte and 64-byte encodings respectively. RFC 8032 says
+/// invalid encodings (non-canonical point, S out of range) MUST be
+/// rejected — this implementation should match that.
+interface api {
+  verify: func(public-key: list<u8>, message: list<u8>, signature: list<u8>) -> bool;
+}
+
+world ed25519 {
+  export api;
+}

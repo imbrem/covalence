@@ -1,0 +1,34 @@
+package covalence:hash@0.1.0;
+
+/// SHA-1 (FIPS PUB 180-4 §6.1) — resource-based world.
+///
+/// One module instance can host many concurrent hashers via the `hasher`
+/// resource. For the auditability-first / "one wasm instance per hasher"
+/// alternative, see `sha1-stateful.wit`.
+///
+/// The resource and its methods live inside an interface block so they
+/// are host-callable: a world-level bare `resource` declaration is read
+/// by wit-parser as an *imported* type (host provides the impl), which
+/// is the opposite of what we want.
+interface api {
+  /// Streaming hasher. `update` is mutable; `finalize` consumes the
+  /// resource and returns the 20-byte digest.
+  resource hasher {
+    constructor();
+    update: func(data: list<u8>);
+    finalize: func() -> list<u8>;
+  }
+
+  /// One-shot hash. Derived from `hasher` by `compose_one_shot`; the
+  /// hand-written WAT does not implement it.
+  hash: func(data: list<u8>) -> list<u8>;
+
+  /// Apply the SHA-1 block compression function once. `state` is the
+  /// 20-byte running state (5 BE u32s), `block` is a single 64-byte
+  /// input block, return is the new 20-byte state.
+  compress: func(state: list<u8>, block: list<u8>) -> list<u8>;
+}
+
+world sha1 {
+  export api;
+}

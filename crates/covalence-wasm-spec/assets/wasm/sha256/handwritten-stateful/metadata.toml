@@ -1,0 +1,14 @@
+# SHA-256 — stateful (single-instance) variant metadata.
+
+[[spec_doc]]
+title = "FIPS PUB 180-4"
+url = "https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf"
+
+[hash]
+output_bits = 256
+block_bits = 512
+state_bits = 256
+length_extendable = true
+keyed = false
+xof = false
+modes = ["hash"]

@@ -1,0 +1,21 @@
+# BLAKE3 — C reference (BLAKE3 1.8.5) variant metadata.
+#
+# Variant-level entry. The C reference adds an extra spec document
+# (the upstream C tree at 1.8.5) on top of the canonical BLAKE3 paper.
+
+[[spec_doc]]
+title = "BLAKE3: one function, fast everywhere"
+url = "https://github.com/BLAKE3-team/BLAKE3-specs/blob/master/blake3.pdf"
+
+[[spec_doc]]
+title = "BLAKE3 official C reference (tag 1.8.5)"
+url = "https://github.com/BLAKE3-team/BLAKE3/tree/1.8.5/c"
+
+[hash]
+output_bits = 256
+block_bits = 512
+state_bits = 256
+length_extendable = false
+keyed = true
+xof = true
+modes = ["Hash", "KeyedHash", "DeriveKey"]

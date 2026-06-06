@@ -1,8 +1,10 @@
 pub mod covalence;
+pub mod egglog;
 pub mod smtlib;
 pub mod wat;
 
 pub use covalence::CovalenceDialect;
+pub use egglog::EgglogDialect;
 pub use smtlib::SmtLibDialect;
 pub use wat::WatDialect;
 

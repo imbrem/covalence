@@ -1,3 +1,12 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
+
+# egglog 2.0.0 (the published release) hides its `proof` module from
+# downstream consumers — see https://docs.rs/egglog/2.0.0/. Upstream main
+# (post-2.0.0) exposes `pub mod proof` with Justification/Proof/ProofStore/
+# Proposition, which is what `covalence-egglog::external` depends on.
+# Pin to a known-good revision; drop the patch once 2.1+ ships the proof
+# module on crates.io.
+[patch.crates-io]
+egglog = { git = "https://github.com/egraphs-good/egglog", rev = "a2da717fd2f5eb8e8cd7c68163e5a160da05e637" }

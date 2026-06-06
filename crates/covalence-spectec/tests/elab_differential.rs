@@ -280,6 +280,28 @@ fn diff_against_wasm_spec_ast() {
             c.both,
         );
     }
+
+    // Per-kind deep-equality floors. Bump these upward whenever a
+    // task lands an improvement (the `docs/sketches/spectec-tasks`
+    // tree describes the work). Never lower them — a regression
+    // means new code broke something that used to work, which is
+    // exactly what this test exists to catch.
+    let floors: [(&str, usize); 4] =
+        [("Typ", 130), ("Rel", 18), ("Dec", 67), ("Gram", 33)];
+    let actual = [
+        ("Typ", deep.typ_eq),
+        ("Rel", deep.rel_eq),
+        ("Dec", deep.dec_eq),
+        ("Gram", deep.gram_eq),
+    ];
+    for ((kf, floor), (_, got)) in floors.iter().zip(actual.iter()) {
+        assert!(
+            got >= floor,
+            "{kf}: deep-equality count {got} regressed below floor {floor}; \
+             either a recent change broke prior progress or the floor needs to \
+             be lowered (do NOT lower without a deliberate decision)"
+        );
+    }
 }
 
 #[derive(Debug, Default)]

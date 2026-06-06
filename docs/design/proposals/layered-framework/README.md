@@ -34,15 +34,29 @@ of the relevant doc.
    set](./00-glossary.md#meta-trust-set). LF rules, terms, sequents,
    authorities, observations, stores. ~800 LoC target.
 
+5. **[`03-authority.md`](./03-authority.md)** — Authority + observation in
+   depth. The single trust primitive. Safe-axiom class. Meaning-axioms
+   in detail.
+6. **[`04-store.md`](./04-store.md)** — Stores as scoping for crypto
+   assumptions. The global-store framing of `ARCHITECTURE.md` §5.4
+   promoted to a framework-primitive.
+7. **[`05-trust.md`](./05-trust.md)** — Meta-trust vs trust-set
+   distinction; ElidePolicy; exporting facts; what "honest" means for
+   a kernel.
+
+## Notes
+
+Focused side-notes that clarify or refine specific points in the main
+docs, written as conversations surface them. Not a separate proposal;
+companion material.
+
+- **[`notes/facts-not-proofs.md`](./notes/facts-not-proofs.md)** — LCF
+  discipline restated: the bottom layer stores facts, not
+  justifications. Proof recording is optional. Applies to EProp/EThm:
+  the egraph is *storage*, not a decision procedure.
+
 ## Planned, not yet written
 
-5. **`03-authority.md`** — Authority + observation in depth. The single
-   trust primitive. Safe-axiom class. Meaning-axioms in detail.
-6. **`04-store.md`** — Stores as scoping for crypto assumptions. The
-   global-store framing of `ARCHITECTURE.md` §5.4 promoted to a
-   framework-primitive.
-7. **`05-trust.md`** — Meta-trust vs trust-set distinction; ElidePolicy;
-   exporting facts; what "honest" means for a kernel.
 8. **`06-hol.md`** — Classical HOL as an object theory over the
    Framework. Subset typedef with the disjunct trick, the existentials,
    ε-choice, the primop axiomatization. Builds on the existing
@@ -79,9 +93,10 @@ of the relevant doc.
 | `00-glossary.md`               | ✓       |          |        |
 | `01-conventions.md`            | ✓       |          |        |
 | `02-framework.md`              | ✓       |          |        |
-| `03-authority.md`              |         |          |        |
-| `04-store.md`                  |         |          |        |
-| `05-trust.md`                  |         |          |        |
+| `03-authority.md`              | ✓       |          |        |
+| `04-store.md`                  | ✓       |          |        |
+| `05-trust.md`                  | ✓       |          |        |
+| `notes/facts-not-proofs.md`    | ✓       |          |        |
 | `06-hol.md`                    |         |          |        |
 | `07-morphism.md`               |         |          |        |
 | `08-oracles.md`                |         |          |        |

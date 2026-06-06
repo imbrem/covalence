@@ -799,18 +799,19 @@ impl HolPrim {
         Err(HolPrimError::NotImplemented("eq_mp (needs context alignment)"))
     }
 
-    /// `DEDUCT_ANTISYM th1 th2`. `Thm::deduct_antisym_rule` handles
-    /// arbitrary contexts via UF-canonical assumption dedup, so this
-    /// should be a straight forward — but it still needs the UF
-    /// session-state plumbing. Stub for now.
+    /// `DEDUCT_ANTISYM th1 th2`: from `A1 ⊢ p` and `A2 ⊢ q`, derive
+    /// `(A1 \ {q}) ∪ (A2 \ {p}) ⊢ p = q`. The kernel rule already
+    /// handles arbitrary contexts via UF-canonical assumption
+    /// dedup; we just forward through the kernel facade.
     pub fn deduct_antisym(
         &mut self,
-        _th1: ThmHandle,
-        _th2: ThmHandle,
+        th1: ThmHandle,
+        th2: ThmHandle,
     ) -> Result<ThmHandle, HolPrimError> {
-        Err(HolPrimError::NotImplemented(
-            "deduct_antisym (needs UF wiring)",
-        ))
+        let thm_p = self.clone_thm(th1)?;
+        let thm_q = self.clone_thm(th2)?;
+        let out = self.kernel.deduct_antisym_rule(thm_p, thm_q)?;
+        Ok(self.store_thm(out))
     }
 
     /// `INST pairs th`: parallel term-variable instantiation.

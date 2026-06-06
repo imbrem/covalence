@@ -782,7 +782,6 @@ thm\n";
     }
 
     #[test]
-    #[ignore = "needs deduct_antisym"]
     fn test_deduct_antisym_article() {
         let (mut kernel, mut names) = setup();
         let article = "\

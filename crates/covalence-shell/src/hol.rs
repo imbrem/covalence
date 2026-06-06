@@ -942,9 +942,113 @@ impl HolPrim {
 
     /// α-equivalence. With locally-nameless body representation,
     /// α-equivalence coincides with structural equality of the
-    /// stored `TermDef`s.
+    /// stored `TermDef`s — *modulo HOL Light's fold pairs*. Raw
+    /// `Comb(Const "!", λ)` shapes and folded `Forall(λ)` shapes
+    /// are α-equivalent under HOL Light's semantics; we recognize
+    /// each pair explicitly so OT articles whose `thm` commands
+    /// build the conclusion in raw form (constTerm + appTerm) match
+    /// the folded form produced by kernel rules.
     pub fn aconv(&self, a: TermRef, b: TermRef) -> bool {
-        self.term_eq(a, b)
+        if self.term_eq(a, b) {
+            return true;
+        }
+        self.shapes_alpha_equivalent(a, b)
+    }
+
+    /// Recursive α-equivalence check that treats raw ↔ folded
+    /// shape pairs as equal: `Comb(Const "!", λ) ↔ Forall(λ)`,
+    /// `Comb(Const "?", λ) ↔ Exists(λ)`, `Comb(Const "~", x) ↔
+    /// Op1(LogicalNot, x)`, and binary connectives. Used by
+    /// [`Self::aconv`] (the OT `cmd_thm` check) and the eq_mp /
+    /// deduct_antisym shape bridges.
+    fn shapes_alpha_equivalent(&self, a: TermRef, b: TermRef) -> bool {
+        if a == b {
+            return true;
+        }
+        let (Some(a_id), Some(b_id)) = (a.as_local(), b.as_local()) else {
+            return false;
+        };
+        let da = *self.arena().term_def(a_id);
+        let db = *self.arena().term_def(b_id);
+        match (da, db) {
+            // Forall(p) ↔ Comb(Const "!", p).
+            (TermDef::Forall(p), TermDef::Comb(f, x))
+            | (TermDef::Comb(f, x), TermDef::Forall(p)) => {
+                self.is_const_with_base(f, "!")
+                    && self.shapes_alpha_equivalent(p, x)
+            }
+            // Exists(p) ↔ Comb(Const "?", p).
+            (TermDef::Exists(p), TermDef::Comb(f, x))
+            | (TermDef::Comb(f, x), TermDef::Exists(p)) => {
+                self.is_const_with_base(f, "?")
+                    && self.shapes_alpha_equivalent(p, x)
+            }
+            // Op1(LogicalNot, x) ↔ Comb(Const "~", x).
+            (TermDef::Op1(PrimOp1::LogicalNot, p), TermDef::Comb(f, x))
+            | (TermDef::Comb(f, x), TermDef::Op1(PrimOp1::LogicalNot, p)) => {
+                self.is_const_with_base(f, "~")
+                    && self.shapes_alpha_equivalent(p, x)
+            }
+            // Op2(op, l, r) ↔ Comb(Comb(Const "...", l), r) where
+            // the const matches the op's HOL Light symbol.
+            (TermDef::Op2(op, l1, r1), TermDef::Comb(f, r2))
+            | (TermDef::Comb(f, r2), TermDef::Op2(op, l1, r1)) => {
+                let base = match op {
+                    PrimOp2::LogicalAnd => "/\\",
+                    PrimOp2::LogicalOr => "\\/",
+                    PrimOp2::LogicalImp => "==>",
+                    _ => return false,
+                };
+                let Some(f_id) = f.as_local() else { return false };
+                if let TermDef::Comb(g, l2) = *self.arena().term_def(f_id) {
+                    self.is_const_with_base(g, base)
+                        && self.shapes_alpha_equivalent(l1, l2)
+                        && self.shapes_alpha_equivalent(r1, r2)
+                } else {
+                    false
+                }
+            }
+            // Eq(l, r) ↔ Comb(Comb(Const "=", l), r).
+            (TermDef::Eq(l1, r1), TermDef::Comb(f, r2))
+            | (TermDef::Comb(f, r2), TermDef::Eq(l1, r1)) => {
+                let Some(f_id) = f.as_local() else { return false };
+                if let TermDef::Comb(g, l2) = *self.arena().term_def(f_id) {
+                    self.const_str(g)
+                        .map(|s| Self::base_name(s.as_str()) == "=")
+                        .unwrap_or(false)
+                        && self.shapes_alpha_equivalent(l1, l2)
+                        && self.shapes_alpha_equivalent(r1, r2)
+                } else {
+                    false
+                }
+            }
+            // Compound nodes of the same shape: recurse.
+            (TermDef::Comb(f1, x1), TermDef::Comb(f2, x2)) => {
+                self.shapes_alpha_equivalent(f1, f2)
+                    && self.shapes_alpha_equivalent(x1, x2)
+            }
+            (TermDef::Lam(t1, b1), TermDef::Lam(t2, b2)) if t1 == t2 => {
+                self.shapes_alpha_equivalent(b1, b2)
+            }
+            (TermDef::Eq(l1, r1), TermDef::Eq(l2, r2)) => {
+                self.shapes_alpha_equivalent(l1, l2)
+                    && self.shapes_alpha_equivalent(r1, r2)
+            }
+            (TermDef::Forall(p1), TermDef::Forall(p2)) => {
+                self.shapes_alpha_equivalent(p1, p2)
+            }
+            (TermDef::Exists(p1), TermDef::Exists(p2)) => {
+                self.shapes_alpha_equivalent(p1, p2)
+            }
+            (TermDef::Op1(o1, p1), TermDef::Op1(o2, p2)) if o1 == o2 => {
+                self.shapes_alpha_equivalent(p1, p2)
+            }
+            (TermDef::Op2(o1, l1, r1), TermDef::Op2(o2, l2, r2)) if o1 == o2 => {
+                self.shapes_alpha_equivalent(l1, l2)
+                    && self.shapes_alpha_equivalent(r1, r2)
+            }
+            _ => false,
+        }
     }
 
     /// Collect free variables of `tm` (deduplicated, first-seen

@@ -616,6 +616,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-alethe"
+version = "0.0.0"
+dependencies = [
+ "covalence-kernel",
+ "covalence-sexp",
+ "covalence-shell",
+ "covalence-smt",
+ "covalence-types",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "covalence-client"
 version = "0.0.0"
 dependencies = [
@@ -906,18 +918,6 @@ version = "0.0.0"
 dependencies = [
  "covalence-sat",
  "covalence-sexp",
- "covalence-types",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "covalence-smt-hol"
-version = "0.0.0"
-dependencies = [
- "covalence-kernel",
- "covalence-sexp",
- "covalence-shell",
- "covalence-smt",
  "covalence-types",
  "thiserror 2.0.18",
 ]

@@ -14,7 +14,7 @@ use std::path::PathBuf;
 
 use covalence_kernel::Kernel;
 use covalence_smt::{parse_alethe, parse_smtlib2};
-use covalence_smt_hol::{
+use covalence_alethe::{
     AletheBridge, BridgeError, KernelAletheBridge, ingest_problem, ingest_proof,
 };
 use covalence_types::Decision;

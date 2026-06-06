@@ -209,14 +209,41 @@ impl Expr {
     }
 }
 
-/// Result of elaborating one `rule`: the relation it belongs to, and
-/// the operand expressions extracted from its conclusion.
+/// Result of elaborating one `rule`: the relation it belongs to, the
+/// operand expressions extracted from its conclusion, and the rule's
+/// premises (each elaborated to its kind).
 #[derive(Clone, Debug)]
 pub struct ElabRuleConclusion {
     pub rule_name: String,
     pub case: Option<String>,
     pub op: OpId,
     pub operands: Vec<Expr>,
+    pub premises: Vec<ElabPremise>,
+}
+
+/// An elaborated premise. SpecTec premise forms are:
+///
+/// - `RelationName: <args matching template>` — a relation reference
+/// - `if <expr>` — boolean guard
+/// - `let <lhs> = <rhs>` — pattern binding
+/// - `otherwise` / `else` — fallback marker
+/// - `(P)*` / `(P)?` etc. — iteration (deferred; falls into `Raw`)
+#[derive(Clone, Debug)]
+pub enum ElabPremise {
+    /// `RelName: <args>` — a relation premise.
+    Rule {
+        rel_name: String,
+        op: OpId,
+        operands: Vec<Expr>,
+    },
+    /// `if <expr>` — a boolean side condition.
+    If(Expr),
+    /// `let <lhs> = <rhs>` — a binding side condition.
+    Let { lhs: Expr, rhs: Expr },
+    /// `otherwise` / `else` — residual catch-all marker.
+    Else,
+    /// Anything not yet structurally recognised, kept as a raw run.
+    Raw(TokenRun),
 }
 
 /// Elaborate one rule's conclusion against the operator table.
@@ -274,12 +301,142 @@ pub fn elab_rule_conclusion(
         ));
     }
 
+    let premises = rule
+        .premises
+        .iter()
+        .map(|p| elab_premise(p, ctx))
+        .collect::<Result<Vec<_>, _>>()?;
+
     Ok(ElabRuleConclusion {
         rule_name: rule.name.text.clone(),
         case: rule.case.as_ref().map(|c| c.text.clone()),
         op: op_id,
         operands,
+        premises,
     })
+}
+
+/// Elaborate a single premise from its raw token run.
+///
+/// Detects the premise form from the leading token: `if`, `let`,
+/// `else`/`otherwise`, an iteration group `(...)`, or otherwise a
+/// `RelName: <args>` relation reference.
+pub fn elab_premise(
+    prem: &TokenRun,
+    ctx: &ElabContext,
+) -> Result<ElabPremise, Diagnostic> {
+    let toks = &prem.tokens;
+    match toks.first().map(|s| &s.token) {
+        Some(Token::If) => {
+            // `if <expr>` — entire remainder is the expression.
+            let span = prem.span;
+            if toks.len() == 1 {
+                return Err(Diagnostic::error(
+                    span,
+                    "`if` premise needs a condition expression",
+                ));
+            }
+            let body = &toks[1..];
+            let body_span = body
+                .iter()
+                .map(|s| s.span)
+                .reduce(Span::join)
+                .unwrap_or(span);
+            let cond = classify_simple_expression(body, body_span)?;
+            Ok(ElabPremise::If(cond))
+        }
+        Some(Token::Let) => {
+            // `let <lhs> = <rhs>` — find top-level `=` split.
+            let body = &toks[1..];
+            let eq_idx = top_level_index_of(body, |t| matches!(t, Token::Eq))
+                .ok_or_else(|| {
+                    Diagnostic::error(
+                        prem.span,
+                        "`let` premise has no top-level `=` splitting lhs from rhs",
+                    )
+                })?;
+            let lhs_slice = &body[..eq_idx];
+            let rhs_slice = &body[eq_idx + 1..];
+            if lhs_slice.is_empty() || rhs_slice.is_empty() {
+                return Err(Diagnostic::error(
+                    prem.span,
+                    "`let` premise has empty lhs or rhs",
+                ));
+            }
+            let lhs_span = lhs_slice.iter().map(|s| s.span).reduce(Span::join).unwrap();
+            let rhs_span = rhs_slice.iter().map(|s| s.span).reduce(Span::join).unwrap();
+            let lhs = classify_simple_expression(lhs_slice, lhs_span)?;
+            let rhs = classify_simple_expression(rhs_slice, rhs_span)?;
+            Ok(ElabPremise::Let { lhs, rhs })
+        }
+        Some(Token::Else) | Some(Token::Otherwise) => Ok(ElabPremise::Else),
+        Some(Token::LParen) => {
+            // Iteration group `(P)*` etc. — defer to a later slice.
+            Ok(ElabPremise::Raw(prem.clone()))
+        }
+        Some(Token::Ident(name)) => {
+            // `RelName: <args>` — relation premise.
+            let rel_name = name.clone();
+            let Some(op) = ctx.op_table.iter().find(|o| o.name == rel_name) else {
+                return Ok(ElabPremise::Raw(prem.clone()));
+            };
+            let op_id = op.id;
+            let fragments = op.fragments.clone();
+            // Expect a `:` right after the relation name.
+            if !matches!(toks.get(1).map(|s| &s.token), Some(Token::Colon)) {
+                return Ok(ElabPremise::Raw(prem.clone()));
+            }
+            let mut input: &[Spanned] = &toks[2..];
+            let mut operands = Vec::new();
+            for (i, frag) in fragments.iter().enumerate() {
+                match frag {
+                    Fragment::Lit(expected) => {
+                        // Use a soft error here: fall back to Raw if a
+                        // literal doesn't match (premise might have
+                        // optional extras we don't model yet).
+                        match input.first() {
+                            Some(s) if &s.token == expected => {
+                                input = &input[1..];
+                            }
+                            _ => return Ok(ElabPremise::Raw(prem.clone())),
+                        }
+                    }
+                    Fragment::Hole(_) => {
+                        let stop = next_lit_after(&fragments, i + 1);
+                        match parse_expression_until(&mut input, stop.as_ref()) {
+                            Ok(e) => operands.push(e),
+                            Err(_) => return Ok(ElabPremise::Raw(prem.clone())),
+                        }
+                    }
+                }
+            }
+            if !input.is_empty() {
+                return Ok(ElabPremise::Raw(prem.clone()));
+            }
+            Ok(ElabPremise::Rule {
+                rel_name,
+                op: op_id,
+                operands,
+            })
+        }
+        _ => Ok(ElabPremise::Raw(prem.clone())),
+    }
+}
+
+/// Index of the first token (at paren depth 0) for which `pred` is true.
+fn top_level_index_of(toks: &[Spanned], pred: impl Fn(&Token) -> bool) -> Option<usize> {
+    let mut depth: i32 = 0;
+    for (i, t) in toks.iter().enumerate() {
+        match &t.token {
+            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
+            _ => {}
+        }
+        if depth == 0 && pred(&t.token) {
+            return Some(i);
+        }
+    }
+    None
 }
 
 /// Find the next `Lit` token in the fragment list starting at `from`.
@@ -889,6 +1046,110 @@ mod tests {
             .find_map(|t| if let Top::Rule(r) = t { Some(r) } else { None })
             .unwrap();
         assert!(elab_rule_conclusion(rule, &ctx).is_err());
+    }
+
+    // ---------- premise elaboration ----------
+
+    #[test]
+    fn elab_premise_if_guard() {
+        let src = r#"
+            syntax context = nat
+            syntax t = nat
+            relation R: context |- t : t
+            rule R:
+              C |- a : b
+              -- if a
+        "#;
+        let elab = elab_first_rule(src);
+        assert_eq!(elab.premises.len(), 1);
+        assert!(matches!(&elab.premises[0], ElabPremise::If(Expr::Var { name, .. }) if name == "a"));
+    }
+
+    #[test]
+    fn elab_premise_let_binding() {
+        let src = r#"
+            syntax context = nat
+            syntax t = nat
+            relation R: context |- t : t
+            rule R:
+              C |- x : y
+              -- let p = q
+        "#;
+        let elab = elab_first_rule(src);
+        assert_eq!(elab.premises.len(), 1);
+        let ElabPremise::Let { lhs, rhs } = &elab.premises[0] else {
+            panic!("expected Let, got {:?}", elab.premises[0]);
+        };
+        assert!(matches!(lhs, Expr::Var { name, .. } if name == "p"));
+        assert!(matches!(rhs, Expr::Var { name, .. } if name == "q"));
+    }
+
+    #[test]
+    fn elab_premise_else_marker() {
+        let src = r#"
+            syntax context = nat
+            syntax t = nat
+            relation R: context |- t : t
+            rule R:
+              C |- x : y
+              -- otherwise
+        "#;
+        let elab = elab_first_rule(src);
+        assert!(matches!(&elab.premises[0], ElabPremise::Else));
+    }
+
+    #[test]
+    fn elab_premise_relation_reference() {
+        let src = r#"
+            syntax context = nat
+            syntax t = nat
+            relation OK: context |- t : t
+            relation Sub: context |- t <: t
+            rule Sub:
+              C |- x <: y
+              -- OK: C |- z : z
+        "#;
+        let elab = elab_first_rule(src);
+        assert_eq!(elab.premises.len(), 1);
+        let ElabPremise::Rule { rel_name, operands, .. } = &elab.premises[0] else {
+            panic!("expected Rule premise, got {:?}", elab.premises[0]);
+        };
+        assert_eq!(rel_name, "OK");
+        assert_eq!(operands.len(), 3);
+    }
+
+    #[test]
+    fn elab_premise_unknown_relation_falls_back_to_raw() {
+        let src = r#"
+            syntax context = nat
+            syntax t = nat
+            relation R: context |- t : t
+            rule R:
+              C |- x : y
+              -- Unknown_rel: C |- z : z
+        "#;
+        let elab = elab_first_rule(src);
+        assert!(matches!(&elab.premises[0], ElabPremise::Raw(_)));
+    }
+
+    #[test]
+    fn elab_multiple_premises() {
+        let src = r#"
+            syntax context = nat
+            syntax t = nat
+            relation Wf: context |- t : t
+            relation Sub: context |- t <: t
+            rule Sub:
+              C |- x <: z
+              -- Wf: C |- y : y
+              -- Sub: C |- x <: y
+              -- Sub: C |- y <: z
+        "#;
+        let elab = elab_first_rule(src);
+        assert_eq!(elab.premises.len(), 3);
+        for p in &elab.premises {
+            assert!(matches!(p, ElabPremise::Rule { .. }));
+        }
     }
 
     #[test]

@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use covalence_spectec::{
     cst::Top,
-    elab::{build_table, elab_rule_conclusion, ElabRuleConclusion, Expr},
+    elab::{build_table, elab_rule_conclusion, ElabPremise, ElabRuleConclusion, Expr},
     lex::lex,
     parse::parse,
     source::SourceMap,
@@ -52,6 +52,8 @@ fn elab_all_rule_conclusions_in_wasm_3_0() {
     let mut err_by_kind: BTreeMap<String, usize> = BTreeMap::new();
     let mut shape_histogram: BTreeMap<usize, usize> = BTreeMap::new();
     let mut shape_by_first_expr: BTreeMap<String, usize> = BTreeMap::new();
+    let mut total_premises = 0usize;
+    let mut premise_kind: BTreeMap<&str, usize> = BTreeMap::new();
 
     for top in &all_tops {
         if let Top::Rule(r) = top {
@@ -62,10 +64,13 @@ fn elab_all_rule_conclusions_in_wasm_3_0() {
                     *shape_histogram.entry(elab.operands.len()).or_insert(0) += 1;
                     let kind = expr_kind(elab.operands.first());
                     *shape_by_first_expr.entry(kind.to_string()).or_insert(0) += 1;
+                    for p in &elab.premises {
+                        total_premises += 1;
+                        *premise_kind.entry(premise_kind_name(p)).or_insert(0) += 1;
+                    }
                     let _: &ElabRuleConclusion = &elab;
                 }
                 Err(d) => {
-                    // Bucket errors by message prefix.
                     let key = error_prefix(&d.message);
                     *err_by_kind.entry(key).or_insert(0) += 1;
                 }
@@ -82,6 +87,10 @@ fn elab_all_rule_conclusions_in_wasm_3_0() {
     for (k, c) in &shape_by_first_expr {
         eprintln!("  {k}: {c}");
     }
+    eprintln!("premises total: {total_premises}");
+    for (k, c) in &premise_kind {
+        eprintln!("  {k}: {c}");
+    }
     if !err_by_kind.is_empty() {
         eprintln!("error buckets:");
         for (k, c) in &err_by_kind {
@@ -95,6 +104,16 @@ fn elab_all_rule_conclusions_in_wasm_3_0() {
         "Phase 2c-ii goal: at least half of rule conclusions elaborate; \
          got {ok}/{total_rules}"
     );
+}
+
+fn premise_kind_name(p: &ElabPremise) -> &'static str {
+    match p {
+        ElabPremise::Rule { .. } => "Rule",
+        ElabPremise::If(_) => "If",
+        ElabPremise::Let { .. } => "Let",
+        ElabPremise::Else => "Else",
+        ElabPremise::Raw(_) => "Raw",
+    }
 }
 
 fn expr_kind(e: Option<&Expr>) -> &'static str {

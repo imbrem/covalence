@@ -1,4 +1,6 @@
 mod backend;
+#[cfg(feature = "llm")]
+mod llm;
 mod component;
 mod component_builder;
 mod compression;
@@ -110,6 +112,10 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Compression
     m.add_function(wrap_pyfunction!(compression::read_compressed, m)?)?;
+
+    // LLM bindings (covalence-llm, feature-gated)
+    #[cfg(feature = "llm")]
+    llm::register(m)?;
 
     // Module-level convenience functions (lazy default backend)
     m.add_function(wrap_pyfunction!(default::store, m)?)?;

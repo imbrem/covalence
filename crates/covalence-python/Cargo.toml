@@ -7,8 +7,14 @@ edition = "2024"
 name = "covalence"
 crate-type = ["cdylib"]
 
+[features]
+default = []
+# Expose the covalence-llm chat API (Ollama backend) to Python.
+llm = ["dep:covalence-llm"]
+
 [dependencies]
 pyo3 = "0.28"
+covalence-llm = { path = "../covalence-llm", optional = true, default-features = false, features = ["sync", "openai"] }
 bytes = "1"
 covalence-hash = { path = "../covalence-hash" }
 covalence-sexp = { path = "../covalence-sexp" }

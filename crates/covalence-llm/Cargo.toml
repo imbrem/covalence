@@ -1,0 +1,35 @@
+[package]
+name = "covalence-llm"
+version = "0.0.0"
+edition = "2024"
+
+# High-level, backend-agnostic chat-completion API for covalence.
+#
+# Downstream covalence crates (and eventually WASM guests via WIT, see
+# ./wit/llm.wit) should talk to LLMs through `Llm` / `AsyncLlm` rather than
+# embedding API clients directly. v0 ships an OpenAI-compatible backend that
+# covers OpenAI, Groq, Cerebras, DeepSeek, and Ollama's /v1 compatibility
+# endpoint. Future backends (e.g. Anthropic Messages API) slot in as
+# additional `ChatBackend` / `AsyncChatBackend` impls.
+
+[features]
+default = ["sync", "async", "openai"]
+sync = ["dep:ureq"]
+async = ["dep:reqwest", "dep:tokio", "dep:async-trait"]
+openai = ["dep:serde_json"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+serde_json = { version = "1", optional = true }
+
+# `sync` feature
+ureq = { version = "3", optional = true, features = ["json"] }
+
+# `async` feature
+reqwest = { version = "0.12", optional = true, default-features = false, features = ["rustls-tls", "json"] }
+tokio = { version = "1", optional = true, default-features = false }
+async-trait = { version = "0.1", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

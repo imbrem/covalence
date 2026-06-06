@@ -1,0 +1,61 @@
+// MVP WIT for the eventual WASM-facing chat API.
+//
+// Status: SKETCH ONLY. No host bindings yet — see covalence-llm crate root.
+// Mirrors the Rust ChatBackend trait so guests can pick a backend by name and
+// issue chat completions without baking in HTTP details.
+
+package cov:llm;
+
+interface api {
+    enum role {
+        system,
+        user,
+        assistant,
+        tool,
+    }
+
+    record message {
+        role: role,
+        content: string,
+    }
+
+    record options {
+        temperature: option<f32>,
+        top-p: option<f32>,
+        max-tokens: option<u32>,
+        seed: option<u64>,
+        stop: list<string>,
+    }
+
+    record request {
+        model: string,
+        messages: list<message>,
+        options: options,
+    }
+
+    enum finish-reason {
+        stop,
+        length,
+        other,
+    }
+
+    record usage {
+        prompt-tokens: option<u32>,
+        completion-tokens: option<u32>,
+    }
+
+    record response {
+        message: message,
+        finish-reason: finish-reason,
+        usage: usage,
+    }
+
+    variant error {
+        transport(string),
+        decode(string),
+        backend(tuple<u16, string>),
+    }
+
+    /// Issue a chat completion against the host's default backend.
+    chat: func(req: request) -> result<response, error>;
+}

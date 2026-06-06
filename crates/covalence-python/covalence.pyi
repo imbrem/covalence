@@ -590,6 +590,127 @@ def load_drat(path: str, binary: Optional[bool] = None) -> DratProof: ...
 # Compression
 def read_compressed(path: str) -> bytes: ...
 
+# LLM bindings (only present when built with `--features llm`)
+class ChatMessage:
+    """A single chat message (role + content)."""
+
+    def __init__(self, role: str, content: str) -> None: ...
+    @staticmethod
+    def system(content: str) -> "ChatMessage": ...
+    @staticmethod
+    def user(content: str) -> "ChatMessage": ...
+    @staticmethod
+    def assistant(content: str) -> "ChatMessage": ...
+    @property
+    def role(self) -> str: ...
+    @property
+    def content(self) -> str: ...
+
+class ChatOptions:
+    """Per-request sampling knobs. Backends ignore fields they don't support."""
+
+    def __init__(
+        self,
+        temperature: Optional[float] = None,
+        top_p: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        seed: Optional[int] = None,
+        stop: Optional[list[str]] = None,
+    ) -> None: ...
+    @property
+    def temperature(self) -> Optional[float]: ...
+    @property
+    def top_p(self) -> Optional[float]: ...
+    @property
+    def max_tokens(self) -> Optional[int]: ...
+    @property
+    def seed(self) -> Optional[int]: ...
+    @property
+    def stop(self) -> list[str]: ...
+
+class ChatRequest:
+    def __init__(
+        self,
+        model: str,
+        messages: list[ChatMessage],
+        options: Optional[ChatOptions] = None,
+    ) -> None: ...
+    @property
+    def model(self) -> str: ...
+    @property
+    def messages(self) -> list[ChatMessage]: ...
+    @property
+    def options(self) -> ChatOptions: ...
+
+class TokenUsage:
+    @property
+    def prompt_tokens(self) -> Optional[int]: ...
+    @property
+    def completion_tokens(self) -> Optional[int]: ...
+
+class ChatResponse:
+    @property
+    def message(self) -> ChatMessage: ...
+    @property
+    def content(self) -> str: ...
+    @property
+    def role(self) -> str: ...
+    @property
+    def finish_reason(self) -> str: ...
+    @property
+    def usage(self) -> TokenUsage: ...
+
+class Llm:
+    """High-level chat client. Subclasses pick the provider.
+
+    The blocking `chat` / `complete` calls release the GIL, so callers can wrap
+    them in `asyncio.to_thread(...)` until a native asyncio binding lands.
+    """
+
+    @property
+    def model(self) -> str: ...
+    @property
+    def options(self) -> ChatOptions: ...
+    def chat(self, messages: list[ChatMessage]) -> ChatResponse: ...
+    def complete(self, prompt: str) -> str: ...
+    def chat_request(self, req: ChatRequest) -> ChatResponse: ...
+
+class Ollama(Llm):
+    """Local Ollama via its OpenAI-compatible `/v1` endpoint."""
+
+    def __init__(self, model: str, base_url: Optional[str] = None) -> None: ...
+
+class OpenAI(Llm):
+    """OpenAI (api.openai.com). `api_key` required."""
+
+    def __init__(self, api_key: str, model: str) -> None: ...
+
+class Groq(Llm):
+    """Groq via OpenAI-compatible endpoint. `api_key` required."""
+
+    def __init__(self, api_key: str, model: str) -> None: ...
+
+class Cerebras(Llm):
+    """Cerebras via OpenAI-compatible endpoint. `api_key` required."""
+
+    def __init__(self, api_key: str, model: str) -> None: ...
+
+class DeepSeek(Llm):
+    """DeepSeek via OpenAI-compatible endpoint. `api_key` required."""
+
+    def __init__(self, api_key: str, model: str) -> None: ...
+
+class OpenAICompat(Llm):
+    """Generic OpenAI-compatible endpoint at a custom `base_url`."""
+
+    def __init__(self, base_url: str, model: str, api_key: Optional[str] = None) -> None: ...
+
+OPENAI_BASE_URL: str
+GROQ_BASE_URL: str
+CEREBRAS_BASE_URL: str
+DEEPSEEK_BASE_URL: str
+OLLAMA_BASE_URL: str
+
 # Module-level convenience functions (lazy default backend)
 def store(data: Union[bytes, str, Component]) -> O256: ...
 def store_str(text: str) -> O256: ...

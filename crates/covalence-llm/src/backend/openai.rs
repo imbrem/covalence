@@ -125,10 +125,17 @@ impl OpenAI {
     /// `api_key` may be `None` for endpoints that don't require auth
     /// (e.g. local Ollama).
     pub fn new(base_url: impl Into<String>, api_key: Option<String>) -> Self {
+        // Disable ureq's default behaviour of converting 4xx/5xx into
+        // `Error::StatusCode`. We want the response back so we can read the
+        // body and return `LlmError::Backend { status, message }` instead of
+        // `LlmError::Transport`.
+        let config = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .build();
         Self {
             base_url: base_url.into(),
             api_key,
-            agent: ureq::Agent::new_with_defaults(),
+            agent: ureq::Agent::new_with_config(config),
         }
     }
 }

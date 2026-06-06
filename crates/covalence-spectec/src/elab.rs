@@ -1323,6 +1323,14 @@ fn classify_simple_expression(
         }
     }
 
+    // `$( ... )` — arithmetic-escape body, parsed with the standard
+    // precedence ladder. Must come before `try_classify_call` so the
+    // `$(` prefix isn't misread as the start of a call (which expects
+    // `$Ident(`).
+    if let Some(arith) = try_classify_arith_escape(toks, span, ctx)? {
+        return Ok(arith);
+    }
+
     // `$ident ( ... )` — function call. Optional trailing tokens (like
     // postfix ops) are NOT consumed here; we require the call to span
     // the entire slice exactly.
@@ -1505,6 +1513,294 @@ fn tree_to_expr(tree: Tree<Expr>, table: &OpTable, span: Span) -> Expr {
             }
         }
     }
+}
+
+// ---------- arithmetic escape `$( ... )` ----------
+
+/// Recognise `$ ( ... )` as an arithmetic / boolean expression. The
+/// matching `)` must be at the end of the slice (i.e. the entire input
+/// is the arith escape, not just a prefix).
+fn try_classify_arith_escape(
+    toks: &[Spanned],
+    _span: Span,
+    ctx: &ElabContext,
+) -> Result<Option<Expr>, Diagnostic> {
+    if toks.len() < 3 {
+        return Ok(None);
+    }
+    let (Some(Spanned { token: Token::Dollar, .. }), Some(Spanned { token: Token::LParen, .. })) =
+        (toks.first(), toks.get(1))
+    else {
+        return Ok(None);
+    };
+    if !matches!(toks.last().map(|s| &s.token), Some(Token::RParen)) {
+        return Ok(None);
+    }
+    if skip_balanced(&toks[1..]) != toks.len() - 1 {
+        return Ok(None);
+    }
+    let inner = &toks[2..toks.len() - 1];
+    if inner.is_empty() {
+        return Ok(None);
+    }
+    let inner_span = inner.iter().map(|s| s.span).reduce(Span::join).unwrap();
+    Ok(Some(parse_arith(inner, inner_span, ctx)?))
+}
+
+/// Top of the arithmetic precedence ladder. Lowest precedence (longest
+/// span before splitting) is `\/`; highest is unary; below that lies
+/// the atom (number, ident, parens, `$call(...)`, nested `$()`).
+fn parse_arith(
+    toks: &[Spanned],
+    span: Span,
+    ctx: &ElabContext,
+) -> Result<Expr, Diagnostic> {
+    // Level 1: `\/` (logical or, left-assoc)
+    if let Some(i) = arith_last_top(toks, |t| matches!(t, Token::LogOr)) {
+        return bin_split(toks, i, BinOp::Or, OpType::Bool, span, ctx);
+    }
+    // Level 2: `/\` (logical and, left-assoc)
+    if let Some(i) = arith_last_top(toks, |t| matches!(t, Token::LogAnd)) {
+        return bin_split(toks, i, BinOp::And, OpType::Bool, span, ctx);
+    }
+    // Level 3: comparisons (non-associative; we just take the leftmost
+    // hit and let the right side carry any chained comparisons —
+    // SpecTec source rarely chains them).
+    if let Some((i, op)) = arith_first_cmp(toks) {
+        return cmp_split(toks, i, op, span, ctx);
+    }
+    // Level 4: add/sub (left-assoc)
+    if let Some((i, op)) = arith_last_addsub(toks) {
+        return bin_split(toks, i, op, OpType::Nat, span, ctx);
+    }
+    // Level 5: mul/div/mod (left-assoc). SpecTec uses `*`, `/`, `mod`.
+    // `mod` lexes as an Ident, so we recognise it positionally.
+    if let Some((i, op)) = arith_last_muldiv(toks) {
+        return bin_split(toks, i, op, OpType::Nat, span, ctx);
+    }
+    // Level 6: pow `^` (right-assoc — split on the first occurrence).
+    if let Some(i) = arith_first_top(toks, |t| matches!(t, Token::Caret)) {
+        return bin_split(toks, i, BinOp::Pow, OpType::Nat, span, ctx);
+    }
+    // Level 7: unary `+` / `-` / `not`.
+    if let Some(s) = toks.first() {
+        match &s.token {
+            Token::Minus if toks.len() > 1 => {
+                let rest = &toks[1..];
+                let rest_span = rest.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+                let e = parse_arith(rest, rest_span, ctx)?;
+                return Ok(Expr::Un {
+                    span,
+                    op: UnOp::Minus,
+                    ty: OpType::Nat,
+                    e: Box::new(e),
+                });
+            }
+            Token::Plus if toks.len() > 1 => {
+                let rest = &toks[1..];
+                let rest_span = rest.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+                let e = parse_arith(rest, rest_span, ctx)?;
+                return Ok(Expr::Un {
+                    span,
+                    op: UnOp::Plus,
+                    ty: OpType::Nat,
+                    e: Box::new(e),
+                });
+            }
+            Token::Ident(n) if n == "not" && toks.len() > 1 => {
+                let rest = &toks[1..];
+                let rest_span = rest.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+                let e = parse_arith(rest, rest_span, ctx)?;
+                return Ok(Expr::Un {
+                    span,
+                    op: UnOp::Not,
+                    ty: OpType::Bool,
+                    e: Box::new(e),
+                });
+            }
+            _ => {}
+        }
+    }
+    // Atom.
+    parse_arith_atom(toks, span, ctx)
+}
+
+fn parse_arith_atom(
+    toks: &[Spanned],
+    span: Span,
+    ctx: &ElabContext,
+) -> Result<Expr, Diagnostic> {
+    // Parenthesised: `( ... )` covering the whole slice.
+    if matches!(toks.first().map(|s| &s.token), Some(Token::LParen))
+        && matches!(toks.last().map(|s| &s.token), Some(Token::RParen))
+        && skip_balanced(toks) == toks.len()
+    {
+        let inner = &toks[1..toks.len() - 1];
+        if inner.is_empty() {
+            return Ok(Expr::Tup {
+                span,
+                items: Vec::new(),
+            });
+        }
+        let inner_span = inner.iter().map(|s| s.span).reduce(Span::join).unwrap();
+        return parse_arith(inner, inner_span, ctx);
+    }
+    // Nested `$( ... )` — recurse.
+    if let Some(arith) = try_classify_arith_escape(toks, span, ctx)? {
+        return Ok(arith);
+    }
+    // `$name(args)` — call.
+    if let Some(call) = try_classify_call(toks, span, ctx)? {
+        return Ok(call);
+    }
+    // Defer to the general classifier for everything else (Var, Num,
+    // Case heads, Dot, Idx, etc.).
+    classify_simple_expression(toks, span, ctx)
+}
+
+fn bin_split(
+    toks: &[Spanned],
+    pivot: usize,
+    op: BinOp,
+    ty: OpType,
+    span: Span,
+    ctx: &ElabContext,
+) -> Result<Expr, Diagnostic> {
+    let lhs = &toks[..pivot];
+    let rhs = &toks[pivot + 1..];
+    let lhs_span = lhs.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+    let rhs_span = rhs.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+    Ok(Expr::Bin {
+        span,
+        op,
+        ty,
+        e1: Box::new(parse_arith(lhs, lhs_span, ctx)?),
+        e2: Box::new(parse_arith(rhs, rhs_span, ctx)?),
+    })
+}
+
+fn cmp_split(
+    toks: &[Spanned],
+    pivot: usize,
+    op: CmpOp,
+    span: Span,
+    ctx: &ElabContext,
+) -> Result<Expr, Diagnostic> {
+    let lhs = &toks[..pivot];
+    let rhs = &toks[pivot + 1..];
+    let lhs_span = lhs.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+    let rhs_span = rhs.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+    Ok(Expr::Cmp {
+        span,
+        op,
+        ty: OpType::Nat,
+        e1: Box::new(parse_arith(lhs, lhs_span, ctx)?),
+        e2: Box::new(parse_arith(rhs, rhs_span, ctx)?),
+    })
+}
+
+/// Last paren-depth-0 position where `pred` matches.
+fn arith_last_top(toks: &[Spanned], pred: impl Fn(&Token) -> bool) -> Option<usize> {
+    let mut depth: i32 = 0;
+    let mut hit: Option<usize> = None;
+    for (i, t) in toks.iter().enumerate() {
+        match &t.token {
+            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
+            _ => {}
+        }
+        if depth == 0 && pred(&t.token) {
+            hit = Some(i);
+        }
+    }
+    hit
+}
+
+/// First paren-depth-0 position where `pred` matches.
+fn arith_first_top(toks: &[Spanned], pred: impl Fn(&Token) -> bool) -> Option<usize> {
+    let mut depth: i32 = 0;
+    for (i, t) in toks.iter().enumerate() {
+        match &t.token {
+            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
+            _ => {}
+        }
+        if depth == 0 && pred(&t.token) {
+            return Some(i);
+        }
+    }
+    None
+}
+
+fn arith_first_cmp(toks: &[Spanned]) -> Option<(usize, CmpOp)> {
+    let mut depth: i32 = 0;
+    for (i, t) in toks.iter().enumerate() {
+        match &t.token {
+            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
+            _ => {}
+        }
+        if depth == 0 {
+            let op = match &t.token {
+                Token::Eq => CmpOp::Eq,
+                Token::NotEq => CmpOp::Ne,
+                Token::LessThan => CmpOp::Lt,
+                Token::LessEq => CmpOp::Le,
+                Token::GreaterThan => CmpOp::Gt,
+                Token::GreaterEq => CmpOp::Ge,
+                _ => continue,
+            };
+            // Reject the very first position: a leading `<` etc. would
+            // be a syntax error (no LHS), so we skip.
+            if i == 0 {
+                continue;
+            }
+            return Some((i, op));
+        }
+    }
+    None
+}
+
+fn arith_last_addsub(toks: &[Spanned]) -> Option<(usize, BinOp)> {
+    let mut depth: i32 = 0;
+    let mut hit: Option<(usize, BinOp)> = None;
+    for (i, t) in toks.iter().enumerate() {
+        match &t.token {
+            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
+            _ => {}
+        }
+        if depth == 0 && i > 0 {
+            // i > 0 so the operator can't be a unary at position 0.
+            match &t.token {
+                Token::Plus => hit = Some((i, BinOp::Add)),
+                Token::Minus => hit = Some((i, BinOp::Sub)),
+                _ => {}
+            }
+        }
+    }
+    hit
+}
+
+fn arith_last_muldiv(toks: &[Spanned]) -> Option<(usize, BinOp)> {
+    let mut depth: i32 = 0;
+    let mut hit: Option<(usize, BinOp)> = None;
+    for (i, t) in toks.iter().enumerate() {
+        match &t.token {
+            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
+            _ => {}
+        }
+        if depth == 0 && i > 0 {
+            match &t.token {
+                Token::Star => hit = Some((i, BinOp::Mul)),
+                Token::Slash => hit = Some((i, BinOp::Div)),
+                Token::Ident(n) if n == "mod" => hit = Some((i, BinOp::Mod)),
+                _ => {}
+            }
+        }
+    }
+    hit
 }
 
 // ---------- structural recognisers used by classify_simple_expression ----------

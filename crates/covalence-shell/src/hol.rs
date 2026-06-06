@@ -399,13 +399,42 @@ impl HolPrim {
     }
 
     /// Application `f x`.
+    ///
+    /// Performs one shell-level rewrite for HOL-Light parity: when
+    /// `f` is `Comb(Const "=", lhs)`, fold into `Eq(lhs, x)`.
+    /// OpenTheory articles build equalities as `((= a) b)` via
+    /// `constTerm "=" + appTerm + appTerm`, but our kernel stores
+    /// equality as a primitive `Eq(_, _)` shape — folding here keeps
+    /// both representations alpha-equivalent.
     pub fn mk_comb(&mut self, f: TermRef, x: TermRef) -> TermRef {
+        if let Some(eq) = self.try_fold_eq(f, x) {
+            return eq;
+        }
         let id = self.arena_mut().alloc_term(TermDef::Comb(f, x));
         // Kernel's cached typing can't resolve Bound(_) without
         // context, so re-infer to populate the cache. `is_well_typed`
         // (which the Thm rules consult) reads only the cache.
         let _ = self.arena_mut().infer(id);
         TermRef::local(id)
+    }
+
+    /// If `f` is `Comb(Const "=", lhs)`, allocate `Eq(lhs, x)` and
+    /// return it. Otherwise `None`.
+    fn try_fold_eq(&mut self, f: TermRef, x: TermRef) -> Option<TermRef> {
+        let f_id = f.as_local()?;
+        let (g, lhs) = match *self.arena().term_def(f_id) {
+            TermDef::Comb(g, lhs) => (g, lhs),
+            _ => return None,
+        };
+        let g_id = g.as_local()?;
+        let is_eq_const = match *self.arena().term_def(g_id) {
+            TermDef::Const(s, _) => self.name_of(s) == Some(self.eq_id),
+            _ => false,
+        };
+        if !is_eq_const {
+            return None;
+        }
+        Some(self.mk_eq(lhs, x))
     }
 
     /// Lambda abstraction `λvar. body`. `var` must be a `Free`
@@ -499,15 +528,61 @@ impl HolPrim {
             .ok_or_else(|| HolError::TypeMismatch("term is not typed".into()).into())
     }
 
-    /// Structural term equality.
+    /// Structural term equality. Compares the `TermDef` shape
+    /// recursively — `alloc_term` does not dedup, so identical
+    /// shapes can sit at different `TermRef`s in the arena.
     pub fn term_eq(&self, a: TermRef, b: TermRef) -> bool {
-        a == b
+        Self::ref_eq(self.arena(), a, b)
     }
 
-    /// α-equivalence. Locally-nameless terms are α-equivalent iff
-    /// structurally equal, so this collapses to [`Self::term_eq`].
+    fn term_eq_ids(
+        arena: &Arena,
+        a: covalence_kernel::id::TermId,
+        b: covalence_kernel::id::TermId,
+    ) -> bool {
+        if a == b {
+            return true;
+        }
+        let da = *arena.term_def(a);
+        let db = *arena.term_def(b);
+        Self::term_def_eq(arena, da, db)
+    }
+
+    fn term_def_eq(arena: &Arena, da: TermDef, db: TermDef) -> bool {
+        use TermDef::*;
+        match (da, db) {
+            (Comb(f1, x1), Comb(f2, x2)) => {
+                Self::ref_eq(arena, f1, f2) && Self::ref_eq(arena, x1, x2)
+            }
+            (Eq(f1, x1), Eq(f2, x2)) => {
+                Self::ref_eq(arena, f1, f2) && Self::ref_eq(arena, x1, x2)
+            }
+            (Lam(t1, b1), Lam(t2, b2)) => t1 == t2 && Self::ref_eq(arena, b1, b2),
+            (Forall(p1), Forall(p2)) => Self::ref_eq(arena, p1, p2),
+            (Exists(p1), Exists(p2)) => Self::ref_eq(arena, p1, p2),
+            (Op1(o1, p1), Op1(o2, p2)) => o1 == o2 && Self::ref_eq(arena, p1, p2),
+            (Op2(o1, l1, r1), Op2(o2, l2, r2)) => {
+                o1 == o2 && Self::ref_eq(arena, l1, l2) && Self::ref_eq(arena, r1, r2)
+            }
+            (Eps(t1, p1), Eps(t2, p2)) => t1 == t2 && Self::ref_eq(arena, p1, p2),
+            _ => da == db,
+        }
+    }
+
+    fn ref_eq(arena: &Arena, a: TermRef, b: TermRef) -> bool {
+        if a == b {
+            return true;
+        }
+        let Some(a_id) = a.as_local() else { return false };
+        let Some(b_id) = b.as_local() else { return false };
+        Self::term_eq_ids(arena, a_id, b_id)
+    }
+
+    /// α-equivalence. With locally-nameless body representation,
+    /// α-equivalence coincides with structural equality of the
+    /// stored `TermDef`s.
     pub fn aconv(&self, a: TermRef, b: TermRef) -> bool {
-        a == b
+        self.term_eq(a, b)
     }
 
     /// Collect free variables of `tm` (deduplicated, first-seen

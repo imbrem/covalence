@@ -1393,7 +1393,12 @@ fn mixop_from_typcase_fragments(frags: &[crate::mixfix::Fragment]) -> spectec_as
             }
         }
     }
-    if parts.len() > 1 && parts[1..].iter().all(String::is_empty) {
+    // Only collapse trailing empty separators when the head is
+    // non-empty (i.e. there's an actual case-head name to keep). For
+    // headless cases (`mut? valtype` → all-empty separators), OCaml
+    // preserves the full `["", "", ""]` shape because there's nothing
+    // distinguishing about a single empty.
+    if parts.len() > 1 && !parts[0].is_empty() && parts[1..].iter().all(String::is_empty) {
         parts.truncate(1);
     }
     spectec_ast::MixOp::new(parts)

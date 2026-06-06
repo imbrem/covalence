@@ -576,23 +576,33 @@ fn parse_syntax_body(file: FileId, input: &mut &[Spanned]) -> Result<SyntaxBody,
     }
 }
 
-/// True when the body contains a "literal mark" — a token that
-/// distinguishes a variant case from a bare type expression. Backticks
-/// (display-only escapes preceding literals like `` `...``) and
-/// `Semicolon` operators (e.g. `state; instr*`) both qualify.
+/// True when the body looks like a (single-case) variant rather than
+/// a bare type expression. Two flavours qualify:
+///
+/// 1. Top-level "literal marks" — `` ` ``, `;`, `->` — that don't
+///    appear in pure type expressions.
+///
+/// 2. Two or more juxtaposed sub-elements at depth 0. A bare type
+///    expression is one ident (`tagtype = typeuse`), one parametric
+///    `Ident(args)`, or one parenthesised type, optionally with
+///    iter postfixes. Anything with multiple top-level chunks
+///    (`globaltype = mut? valtype`, `memtype = addrtype limits PAGE`)
+///    is a headless single-case variant whose binds are those chunks.
 fn body_looks_like_variant(toks: &[Spanned]) -> bool {
     let mut depth: i32 = 0;
+    let mut top_idents: usize = 0;
     for t in toks {
         match &t.token {
             Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
             Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            Token::Backtick | Token::Semi | Token::Arrow if depth == 0 => {
-                return true;
+            Token::Backtick | Token::Semi | Token::Arrow if depth == 0 => return true,
+            Token::Ident(_) | Token::Nat(_) | Token::Text(_) if depth == 0 => {
+                top_idents += 1;
             }
             _ => {}
         }
     }
-    false
+    top_idents >= 2
 }
 
 /// True when the first token is an `Ident` whose name looks like a

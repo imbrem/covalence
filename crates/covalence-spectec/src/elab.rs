@@ -211,8 +211,16 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
     for top in tops {
         match top {
             Top::Relation(r) => {
-                rel_templates.insert(r.name.text.clone(), r.template.clone());
-                match template_to_fragments(&r.template, &type_names) {
+                // Normalise subscripts in the template so e.g.
+                // `~~_context` becomes `~~ _ context` — both the
+                // OpTable fragments and rule-body matching use the
+                // same shape.
+                let normalised_template = TokenRun {
+                    span: r.template.span,
+                    tokens: normalize_subscript_idents(&r.template.tokens),
+                };
+                rel_templates.insert(r.name.text.clone(), normalised_template.clone());
+                match template_to_fragments(&normalised_template, &type_names) {
                     Ok(frags) => {
                         op_table.add(r.name.text.clone(), frags);
                     }
@@ -313,6 +321,53 @@ fn metavar_base(name: &str) -> &str {
         }
     }
     trimmed
+}
+
+/// Pre-process a token list to split `_<subscript>` identifiers into
+/// a standalone `_` token followed by the suffix. Mirrors OCaml's
+/// SpecTec convention of treating the leading `_` as a subscript
+/// marker rather than part of the identifier.
+///
+/// Subscript shapes (`_` is split off):
+/// - `_<single char>` like `_C`, `_s`, `_1` — typically a metavariable
+///   reference under a subscript.
+/// - `_<all-lowercase-or-digits>` like `_context`, `_typeuse`, `_2x` —
+///   a lowercase qualifier or compound subscript.
+///
+/// Constructor names stay as single tokens (`_IDX`, `_RESULT`, `_DEF`
+/// — `_` followed by a multi-character all-uppercase suffix).
+pub fn normalize_subscript_idents(toks: &[Spanned]) -> Vec<Spanned> {
+    let mut out = Vec::with_capacity(toks.len());
+    for tok in toks {
+        match &tok.token {
+            Token::Ident(n) if is_subscript_ident(n) => {
+                out.push(Spanned {
+                    token: Token::Ident("_".to_string()),
+                    span: tok.span,
+                });
+                out.push(Spanned {
+                    token: Token::Ident(n[1..].to_string()),
+                    span: tok.span,
+                });
+            }
+            _ => out.push(tok.clone()),
+        }
+    }
+    out
+}
+
+fn is_subscript_ident(name: &str) -> bool {
+    if !name.starts_with('_') || name.len() < 2 {
+        return false;
+    }
+    let rest = &name[1..];
+    if rest.len() == 1 {
+        // `_C`, `_s`, `_1` — single-char subscript.
+        return true;
+    }
+    // Longer suffix: subscript iff entirely lowercase / digits.
+    rest.bytes()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
 }
 
 /// Build the OCaml-compatible MixOp fragment list for a relation
@@ -914,7 +969,11 @@ pub fn elab_rule_conclusion(
     let op_id = op.id;
     let fragments = op.fragments.clone();
 
-    let mut input: &[Spanned] = &rule.conclusion.tokens;
+    // Normalise subscripts in the rule body so `_C` (a context
+    // metavariable subscript) matches the relation template's
+    // `_<context>` literal+hole split.
+    let normalised_concl = normalize_subscript_idents(&rule.conclusion.tokens);
+    let mut input: &[Spanned] = &normalised_concl;
     let mut operands = Vec::new();
 
     for (i, frag) in fragments.iter().enumerate() {
@@ -923,11 +982,18 @@ pub fn elab_rule_conclusion(
                 expect_token_in_conclusion(&mut input, expected, &rule.name.text)?;
             }
             Fragment::Hole(_) => {
-                // Each hole runs up to the next literal in the template
-                // (if any) or to the end of input. We compute that
-                // stopping set lazily by scanning ahead.
-                let stop = next_lit_after(&fragments, i + 1);
-                let expr = parse_expression_until(&mut input, stop.as_ref(), ctx)?;
+                // If the next fragment is another Hole (consecutive
+                // holes, no Lit between), consume one atomic token
+                // for this hole so the next one has something left.
+                // Otherwise: hole runs up to the next Lit, or to EOF.
+                let next_is_hole =
+                    matches!(fragments.get(i + 1), Some(Fragment::Hole(_)));
+                let expr = if next_is_hole {
+                    parse_atomic_in_conclusion(&mut input, ctx, &rule.name.text)?
+                } else {
+                    let stop = next_lit_after(&fragments, i + 1);
+                    parse_expression_until(&mut input, stop.as_ref(), ctx)?
+                };
                 operands.push(expr);
             }
         }
@@ -1326,21 +1392,58 @@ fn expect_token_in_conclusion(
         Some(s) => Err(Diagnostic::error(
             s.span,
             format!(
-                "rule `{}` conclusion does not match relation template: expected {}, found {}",
+                "rule `{}` conclusion does not match relation template: expected `{}`, found `{}`",
                 rule_name,
-                expected.describe(),
-                s.token.describe()
+                expected.to_source_text(),
+                s.token.to_source_text(),
             ),
         )),
         None => Err(Diagnostic::error(
             Span::new(crate::source::FileId::new(0), u32::MAX, u32::MAX),
             format!(
-                "rule `{}` conclusion ends before template literal {}",
+                "rule `{}` conclusion ends before template literal `{}`",
                 rule_name,
-                expected.describe()
+                expected.to_source_text(),
             ),
         )),
     }
+}
+
+/// Consume one atomic expression: a single Ident/Nat/Text/Eps token
+/// or one balanced parenthesised / bracketed group. Used when two
+/// `Hole` fragments meet with no literal between, so we can't gauge
+/// where the first hole ends by scanning for a stop token.
+fn parse_atomic_in_conclusion(
+    input: &mut &[Spanned],
+    ctx: &ElabContext,
+    rule_name: &str,
+) -> Result<Expr, Diagnostic> {
+    let s = input.first().ok_or_else(|| {
+        Diagnostic::error(
+            Span::new(crate::source::FileId::new(0), u32::MAX, u32::MAX),
+            format!(
+                "rule `{}` conclusion runs out before all template holes are filled",
+                rule_name
+            ),
+        )
+    })?;
+    let take_n = match &s.token {
+        Token::LParen | Token::LBracket | Token::LBrace => skip_balanced(input),
+        _ => 1,
+    };
+    // Include any trailing iter suffix.
+    let after_atom = &input[take_n..];
+    let suffix = skip_type_suffix(after_atom);
+    let take_total = take_n + suffix;
+    let taken = &input[..take_total];
+    let span = taken
+        .iter()
+        .map(|s| s.span)
+        .reduce(Span::join)
+        .expect("non-empty by check above");
+    let expr = classify_simple_expression(taken, span, ctx)?;
+    *input = &input[take_total..];
+    Ok(expr)
 }
 
 /// Parse an expression from `input`, stopping when the next top-level

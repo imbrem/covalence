@@ -1060,6 +1060,13 @@ impl Arena {
         if let Some(b) = def.as_builtin() {
             return TypeRef::builtin(b);
         }
+        // Dedup: identical TypeDefs return the same TypeRef. Without
+        // this, two `alloc_tvar("A")` calls produce different
+        // TypeRefs, breaking `Thm::inst`'s `TypeRef::eq` type-match
+        // check on terms that should be α-equivalent.
+        if let Some(pos) = self.types.iter().position(|d| *d == def) {
+            return TypeRef::local(TypeId(pos as u32));
+        }
         let id = TypeId(self.types.len() as u32);
         self.types.push(def);
         TypeRef::local(id)

@@ -138,7 +138,6 @@ fn test_bool_def_imp_chain() {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "defineConst: term is not typed — likely sub-fold producing ill-typed Lam body"]
 fn test_bool_def_exists_diamond() {
     let (mut kernel, mut names) = setup();
     let resolver = FileResolver::new(assets_dir());
@@ -167,7 +166,6 @@ fn test_bool_def_exists_diamond() {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "defineConst: term is not typed — likely sub-fold producing ill-typed Lam body"]
 fn test_all_bool_defs() {
     let (mut kernel, mut names) = setup_with_select();
     let resolver = FileResolver::new(assets_dir());
@@ -258,7 +256,7 @@ fn test_axiom_extensionality() {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "defineConst: term is not typed — same upstream issue as bool-def-exists"]
+#[ignore = "needs full context union (assume + later compose drops out of session_ctx chain)"]
 fn test_unit_def_full_chain() {
     let (mut kernel, mut names) = setup_with_select();
     let resolver = FileResolver::new(assets_dir());
@@ -279,7 +277,7 @@ fn test_unit_def_full_chain() {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "defineConst: term is not typed — same upstream issue as bool-def-exists"]
+#[ignore = "needs full context union (assume + later compose drops out of session_ctx chain)"]
 fn test_unit_thm_full_chain() {
     let (mut kernel, mut names) = setup_with_select();
     let resolver = FileResolver::new(assets_dir());

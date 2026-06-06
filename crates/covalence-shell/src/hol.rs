@@ -238,6 +238,20 @@ impl HolPrim {
         self.kernel.arena_mut()
     }
 
+    /// Inform `HolPrim` that `name_id` corresponds to the human-
+    /// readable string `name`. Pre-registers the mapping so
+    /// `str_of(name_id)` returns the actual interned string instead
+    /// of a synthetic `"?n{id}"`. The OpenTheory machine calls this
+    /// on every `intern_name`.
+    pub fn register_name(&mut self, name_id: NameId, name: &str) {
+        if self.name_to_str.contains_key(&name_id) {
+            return;
+        }
+        let s = self.arena_mut().intern_string(SmolStr::new(name));
+        self.name_to_str.insert(name_id, s);
+        self.str_to_name.insert(s, name_id);
+    }
+
     /// HOL `NameId` → kernel `StrId`. Names not previously seen are
     /// minted into the kernel interner under a synthetic string so
     /// that the bridge stays total.
@@ -755,10 +769,60 @@ impl HolPrim {
     /// (ill-typed input).
     pub fn type_of(&mut self, tm: TermRef) -> Result<TypeRef, HolPrimError> {
         let id = tm.as_local().ok_or(HolError::NotACombination)?;
-        self.arena_mut()
-            .infer(id)
-            .as_type()
-            .ok_or_else(|| HolError::TypeMismatch("term is not typed".into()).into())
+        let info = self.arena_mut().infer(id);
+        info.as_type().ok_or_else(|| {
+            HolError::TypeMismatch(format!(
+                "term is not typed: {}",
+                self.debug_dump(tm, 4)
+            ))
+            .into()
+        })
+    }
+
+    /// Dump a term's structure to a string up to `depth` levels.
+    fn debug_dump(&self, tm: TermRef, depth: u32) -> String {
+        if depth == 0 {
+            return "…".to_string();
+        }
+        let Some(id) = tm.as_local() else {
+            return format!("{tm:?}");
+        };
+        let def = *self.arena().term_def(id);
+        let info = self.arena().term_props(id).type_info;
+        match def {
+            TermDef::Bound(i) => format!("Bound({i}):{info:?}"),
+            TermDef::Free(s, ty) => {
+                let n = self.arena().string(s).clone();
+                format!("Free({n:?},ty={ty:?}):{info:?}")
+            }
+            TermDef::Const(s, ty) => {
+                let n = self.arena().string(s).clone();
+                format!("Const({n:?},ty={ty:?}):{info:?}")
+            }
+            TermDef::Comb(f, x) => format!(
+                "Comb({}, {}):{info:?}",
+                self.debug_dump(f, depth - 1),
+                self.debug_dump(x, depth - 1)
+            ),
+            TermDef::Lam(ty, body) => format!(
+                "Lam({ty:?}, {}):{info:?}",
+                self.debug_dump(body, depth - 1)
+            ),
+            TermDef::Eq(a, b) => format!(
+                "Eq({}, {}):{info:?}",
+                self.debug_dump(a, depth - 1),
+                self.debug_dump(b, depth - 1)
+            ),
+            TermDef::Forall(p) => format!("Forall({}):{info:?}", self.debug_dump(p, depth - 1)),
+            TermDef::Exists(p) => format!("Exists({}):{info:?}", self.debug_dump(p, depth - 1)),
+            TermDef::Op1(o, x) => format!("Op1({o:?}, {}):{info:?}", self.debug_dump(x, depth - 1)),
+            TermDef::Op2(o, a, b) => format!(
+                "Op2({o:?}, {}, {}):{info:?}",
+                self.debug_dump(a, depth - 1),
+                self.debug_dump(b, depth - 1)
+            ),
+            other => format!("{other:?}:{info:?}"),
+        }
     }
 
     /// Structural term equality. Compares the `TermDef` shape
@@ -1379,6 +1443,10 @@ impl covalence_hol::traits::HolLightTypes for HolPrim {
 
     fn bool_id(&self) -> NameId {
         HolPrim::bool_id(self)
+    }
+
+    fn register_name(&mut self, name_id: NameId, name: &str) {
+        HolPrim::register_name(self, name_id, name)
     }
 
     fn mk_tyvar(&mut self, name: NameId) -> Self::Type {

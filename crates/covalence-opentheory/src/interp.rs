@@ -152,7 +152,12 @@ impl<'a, K: HolLightKernel> ArticleInterp<'a, K> {
 
     fn intern_name(&mut self, name: &OtName) -> NameId {
         let qualified = name.qualified();
-        self.names.intern(qualified)
+        let id = self.names.intern(qualified.clone());
+        // Tell the backend what string this NameId refers to. The
+        // backend uses this for symbol-keyed rewrites (e.g. folding
+        // `Comb(Const "Data.Bool.!", _)` to `Forall(_)` in HolPrim).
+        self.kernel.register_name(id, &qualified);
+        id
     }
 }
 

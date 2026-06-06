@@ -68,6 +68,23 @@ pub struct ElabContext {
     /// (which need access to the raw template tokens, not the
     /// Pratt-flavoured `OpTable` fragments).
     pub rel_templates: BTreeMap<String, TokenRun>,
+    /// Per-arg kind for every parametric type. Drives the `Typ` vs
+    /// `Exp` choice when lowering `name(args)` at a type position
+    /// (see `typ_expr_to_spectec`). Populated from built-ins (`list`,
+    /// `option`) plus the param decls of every `syntax NAME(...)`.
+    pub param_kinds: BTreeMap<String, Vec<ParamKind>>,
+}
+
+/// Kind of one positional parameter slot in a parametric type
+/// declaration. Mirrors the four `SpecTecParam` variants — `Typ`,
+/// `Exp`, `Gram`, `Def` — and tells the converter which lowering
+/// pipeline to route each call-site arg through.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ParamKind {
+    Typ,
+    Exp,
+    Gram,
+    Def,
 }
 
 /// A `syntax NAME` declaration with all its profile-suffixed variants
@@ -286,6 +303,27 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
         }
     }
 
+    // Pass 3: parametric-type kind registry. Built-ins first
+    // (`list`, `option`), then user-declared `syntax NAME(p1, p2,
+    // ...)`. Each slot's kind is decided by the param chunk's
+    // leading token (`syntax X` → Typ, `gram G` → Gram, `def $f`
+    // → Def, otherwise Exp). First decl wins on collisions,
+    // mirroring `syntax_orig_params` in the Doc builder.
+    let mut param_kinds: BTreeMap<String, Vec<ParamKind>> = BTreeMap::new();
+    param_kinds.insert("list".to_string(), vec![ParamKind::Typ]);
+    param_kinds.insert("option".to_string(), vec![ParamKind::Typ]);
+    for top in tops {
+        if let Top::Syntax(s) = top
+            && !s.params.is_empty()
+            && !param_kinds.contains_key(&s.name.text)
+        {
+            param_kinds.insert(
+                s.name.text.clone(),
+                syntax_param_runs_to_kinds(&s.params),
+            );
+        }
+    }
+
     if diags.is_empty() {
         Ok(ElabContext {
             op_table,
@@ -293,10 +331,67 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
             var_names,
             syntax_defs,
             rel_templates,
+            param_kinds,
         })
     } else {
         Err(diags)
     }
+}
+
+/// Lower a `syntax NAME(...)`'s parameter token runs to a flat
+/// `Vec<ParamKind>` in source order. Each `TokenRun` is one
+/// balanced `(...)` group containing comma-separated params.
+fn syntax_param_runs_to_kinds(runs: &[TokenRun]) -> Vec<ParamKind> {
+    let mut out = Vec::new();
+    for tr in runs {
+        let toks = &tr.tokens;
+        let inner = if matches!(toks.first().map(|s| &s.token), Some(Token::LParen))
+            && matches!(toks.last().map(|s| &s.token), Some(Token::RParen))
+        {
+            &toks[1..toks.len() - 1]
+        } else {
+            &toks[..]
+        };
+        for chunk in split_top_level_commas_local(inner) {
+            out.push(infer_param_kind(chunk));
+        }
+    }
+    out
+}
+
+/// Infer the kind of one comma-separated param chunk by its leading
+/// keyword. Matches the discriminations in `chunk_to_syntax_param`.
+fn infer_param_kind(chunk: &[Spanned]) -> ParamKind {
+    match chunk.first().map(|s| &s.token) {
+        Some(Token::Syntax) => ParamKind::Typ,
+        Some(Token::Grammar) => ParamKind::Gram,
+        Some(Token::Def) => ParamKind::Def,
+        _ => ParamKind::Exp,
+    }
+}
+
+/// Local copy of `ast_doc::split_top_level_commas` (we don't depend
+/// on `ast_doc` from `elab`). Splits on commas at paren/bracket/brace
+/// depth zero.
+fn split_top_level_commas_local(toks: &[Spanned]) -> Vec<&[Spanned]> {
+    let mut out = Vec::new();
+    let mut depth: i32 = 0;
+    let mut start = 0;
+    for (i, s) in toks.iter().enumerate() {
+        match &s.token {
+            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
+            Token::Comma if depth == 0 => {
+                out.push(&toks[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if start < toks.len() {
+        out.push(&toks[start..]);
+    }
+    out
 }
 
 /// Fold one `syntax` decl into the `MergedSyntax` map. Variant
@@ -3309,5 +3404,39 @@ mod tests {
         // Mixed case is not a case head.
         assert!(!is_case_head("Foo"));
         assert!(!is_case_head("Numtype_sub"));
+    }
+
+    #[test]
+    fn param_kinds_include_builtins() {
+        let ctx = build_from_str("");
+        assert_eq!(ctx.param_kinds.get("list"), Some(&vec![ParamKind::Typ]));
+        assert_eq!(ctx.param_kinds.get("option"), Some(&vec![ParamKind::Typ]));
+    }
+
+    #[test]
+    fn param_kinds_from_syntax_decl_exp_arg() {
+        // `fN(N)` — `N` is a bare ident, so it's an Exp param.
+        let src = "syntax fN(N) = | POS fN(N) | NEG fN(N)";
+        let ctx = build_from_str(src);
+        assert_eq!(ctx.param_kinds.get("fN"), Some(&vec![ParamKind::Exp]));
+    }
+
+    #[test]
+    fn param_kinds_from_syntax_decl_typ_arg() {
+        // `mylist(syntax X)` — `syntax X` is a Typ param.
+        let src = "syntax mylist(syntax X) = X";
+        let ctx = build_from_str(src);
+        assert_eq!(ctx.param_kinds.get("mylist"), Some(&vec![ParamKind::Typ]));
+    }
+
+    #[test]
+    fn param_kinds_mixed_decl() {
+        // Multiple params of differing kinds.
+        let src = "syntax thing(syntax T, N : nat) = T";
+        let ctx = build_from_str(src);
+        assert_eq!(
+            ctx.param_kinds.get("thing"),
+            Some(&vec![ParamKind::Typ, ParamKind::Exp]),
+        );
     }
 }

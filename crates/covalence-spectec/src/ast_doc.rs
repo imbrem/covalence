@@ -1704,23 +1704,39 @@ pub fn typ_expr_to_spectec(
         if consumed == toks.len() - 1 {
             let inner = &toks[2..toks.len() - 1];
             let arg_chunks = split_top_level_commas(inner);
+            // Each arg is routed by the callee's declared kind, not
+            // by syntactic position — the earlier "looks-like-a-type
+            // → emit Typ" heuristic regressed Dec entries because
+            // Exp-position calls share the same surface shape. See
+            // `docs/sketches/spectec-tasks/task-31-typ-arg-kind.md`.
+            let kinds = ctx.param_kinds.get(n);
             let arg_specs: Vec<spectec_ast::SpecTecArg> = arg_chunks
                 .iter()
-                .map(|chunk| {
-                    let tr = crate::cst::TokenRun {
-                        span: chunk
-                            .iter()
-                            .map(|s| s.span)
-                            .reduce(crate::source::Span::join)
-                            .unwrap_or_else(|| crate::source::Span::new(
-                                crate::source::FileId::new(0),
-                                0,
-                                0,
-                            )),
-                        tokens: chunk.to_vec(),
-                    };
-                    spectec_ast::SpecTecArg::Exp {
-                        e: token_run_to_expr(&tr, ctx),
+                .enumerate()
+                .map(|(i, chunk)| {
+                    match kinds.and_then(|ks| ks.get(i)) {
+                        Some(crate::elab::ParamKind::Typ) => {
+                            spectec_ast::SpecTecArg::Typ {
+                                t: typ_expr_to_spectec(chunk, ctx),
+                            }
+                        }
+                        _ => {
+                            let tr = crate::cst::TokenRun {
+                                span: chunk
+                                    .iter()
+                                    .map(|s| s.span)
+                                    .reduce(crate::source::Span::join)
+                                    .unwrap_or_else(|| crate::source::Span::new(
+                                        crate::source::FileId::new(0),
+                                        0,
+                                        0,
+                                    )),
+                                tokens: chunk.to_vec(),
+                            };
+                            spectec_ast::SpecTecArg::Exp {
+                                e: token_run_to_expr(&tr, ctx),
+                            }
+                        }
                     }
                 })
                 .collect();

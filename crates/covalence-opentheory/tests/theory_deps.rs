@@ -258,7 +258,7 @@ fn test_axiom_extensionality() {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "defineConst: term is not typed — likely sub-fold producing ill-typed Lam body"]
+#[ignore = "defineConst: term is not typed — same upstream issue as bool-def-exists"]
 fn test_unit_def_full_chain() {
     let (mut kernel, mut names) = setup_with_select();
     let resolver = FileResolver::new(assets_dir());
@@ -279,7 +279,7 @@ fn test_unit_def_full_chain() {
 // -------------------------------------------------------------------
 
 #[test]
-#[ignore = "defineConst: term is not typed — likely sub-fold producing ill-typed Lam body"]
+#[ignore = "defineConst: term is not typed — same upstream issue as bool-def-exists"]
 fn test_unit_thm_full_chain() {
     let (mut kernel, mut names) = setup_with_select();
     let resolver = FileResolver::new(assets_dir());

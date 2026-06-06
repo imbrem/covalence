@@ -1175,20 +1175,94 @@ impl HolPrim {
         Ok(self.store_thm(thm))
     }
 
-    /// `new_basic_type_definition`: maps onto `Thm::subset_axioms`
-    /// but the trait-faithful shape (HOL Light's two unconditional
-    /// theorems) needs the existence-theorem-driven specialisation.
-    /// Stub.
+    /// `new_basic_type_definition`: introduces a new abstract type
+    /// `tyname` and two functions `abs : rty → tyname` and
+    /// `rep : tyname → rty`. Returns:
+    ///
+    ///   - `⊢ abs(rep a) = a`
+    ///   - `⊢ P r ⇔ rep(abs r) = r`
+    ///
+    /// `th` is the existence theorem `⊢ P t`. `rty` is `type_of(t)`;
+    /// the new type's arity is the number of free type variables in
+    /// `rty`.
+    ///
+    /// Uses the **session-context trusted** path — same shape as
+    /// [`Self::new_axiom`]. The kernel's `Thm::subset_axioms` could
+    /// produce these theorems for real (via the disjunct trick),
+    /// but bridging from the kernel's `∀x. ... ⇔ P x ∨ ¬∃y. P y`
+    /// shape to HOL Light's `P r ⇔ rep(abs r) = r` shape needs more
+    /// machinery (tautology_intro to collapse the disjunct using
+    /// the existence proof). Deferred to a later commit.
     pub fn new_basic_type_definition(
         &mut self,
-        _tyname: NameId,
-        _abs_name: NameId,
-        _rep_name: NameId,
-        _abs_var_name: NameId,
-        _rep_var_name: NameId,
-        _th: ThmHandle,
+        tyname: NameId,
+        abs_name: NameId,
+        rep_name: NameId,
+        abs_var_name: NameId,
+        rep_var_name: NameId,
+        th: ThmHandle,
     ) -> Result<(ThmHandle, ThmHandle), HolPrimError> {
-        Err(HolPrimError::NotImplemented("new_basic_type_definition"))
+        let thm = self.clone_thm(th)?;
+        // Existence theorem: ⊢ P t. Extract P and t.
+        let concl_id = thm.concl();
+        let (pred, witness) = match *self.arena().term_def(concl_id) {
+            TermDef::Comb(p, t) => (p, t),
+            _ => {
+                return Err(
+                    HolError::BadTypeDefinition("conclusion is not Comb(P, t)".into()).into(),
+                );
+            }
+        };
+        let rty = self.type_of(witness)?;
+        let type_vars: Vec<NameId> = self.tyvars(rty);
+        let arity = type_vars.len();
+        if self.type_constants.contains_key(&tyname) {
+            return Err(HolError::TypeAlreadyDefined(format!("{tyname}")).into());
+        }
+        self.type_constants.insert(tyname, arity);
+        let tyvar_args: Vec<TypeRef> = type_vars.iter().map(|&n| self.mk_tyvar(n)).collect();
+        let abs_ty = self.mk_tyapp(tyname, tyvar_args);
+        let abs_fn_ty = self.fun_type(rty, abs_ty);
+        let rep_fn_ty = self.fun_type(abs_ty, rty);
+        if self.term_constants.contains_key(&abs_name) {
+            return Err(HolError::ConstantAlreadyDefined(format!("{abs_name}")).into());
+        }
+        self.term_constants.insert(abs_name, abs_fn_ty);
+        if self.term_constants.contains_key(&rep_name) {
+            return Err(HolError::ConstantAlreadyDefined(format!("{rep_name}")).into());
+        }
+        self.term_constants.insert(rep_name, rep_fn_ty);
+        let abs_const = self.mk_const(abs_name, abs_fn_ty);
+        let rep_const = self.mk_const(rep_name, rep_fn_ty);
+        let a_var = self.mk_var(abs_var_name, abs_ty);
+        let r_var = self.mk_var(rep_var_name, rty);
+        // Thm1: ⊢ abs(rep a) = a
+        let rep_a = self.mk_comb(rep_const, a_var);
+        let abs_rep_a = self.mk_comb(abs_const, rep_a);
+        let thm1_concl = self.mk_eq(abs_rep_a, a_var);
+        let thm1_id = thm1_concl
+            .as_local()
+            .ok_or_else(|| HolError::BadTypeDefinition("thm1 not local".into()))?;
+        let thm1_prop = Arc::new(Prop::new(self.session_ctx.clone(), thm1_id));
+        self.trusted_props.push(thm1_prop.clone());
+        let ext1 = Context::extend(self.session_ctx.clone(), thm1_prop.clone());
+        self.session_ctx = ext1.clone();
+        let thm1 = Thm::assume(self.kernel.arena(), ext1, thm1_prop)?;
+        // Thm2: ⊢ P r ⇔ rep(abs r) = r  (⇔ is Eq on bool)
+        let abs_r = self.mk_comb(abs_const, r_var);
+        let rep_abs_r = self.mk_comb(rep_const, abs_r);
+        let rep_abs_r_eq_r = self.mk_eq(rep_abs_r, r_var);
+        let p_r = self.mk_comb(pred, r_var);
+        let thm2_concl = self.mk_eq(p_r, rep_abs_r_eq_r);
+        let thm2_id = thm2_concl
+            .as_local()
+            .ok_or_else(|| HolError::BadTypeDefinition("thm2 not local".into()))?;
+        let thm2_prop = Arc::new(Prop::new(self.session_ctx.clone(), thm2_id));
+        self.trusted_props.push(thm2_prop.clone());
+        let ext2 = Context::extend(self.session_ctx.clone(), thm2_prop.clone());
+        self.session_ctx = ext2.clone();
+        let thm2 = Thm::assume(self.kernel.arena(), ext2, thm2_prop)?;
+        Ok((self.store_thm(thm1), self.store_thm(thm2)))
     }
 
     /// Register a new type constructor (shell-side bookkeeping).

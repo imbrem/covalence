@@ -26,3 +26,6 @@ covalence-shell = { path = "../covalence-shell" }
 covalence-repl = { path = "../covalence-repl" }
 covalence-proto = { path = "../covalence-proto", features = ["discovery"] }
 ureq = "3"
+
+[dev-dependencies]
+http-body-util = "0.1"

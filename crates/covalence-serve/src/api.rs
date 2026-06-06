@@ -2,8 +2,8 @@ use axum::Json;
 use axum::body::Bytes;
 use axum::extract::Path;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
 use covalence_hash::O256;
 use covalence_shell::Kernel;
 use covalence_object::{
@@ -12,6 +12,10 @@ use covalence_object::{
 };
 use covalence_store::{Blob, ContentStore, GitObjectType, ObjectStore, StoreError, Tree};
 use serde::{Deserialize, Serialize};
+
+use crate::range_http::{serve_blob_get, serve_blob_head};
+
+const BLOB_CONTENT_TYPE: &str = "application/octet-stream";
 
 // ---------------------------------------------------------------------------
 // Existing endpoints
@@ -147,38 +151,33 @@ pub struct BlobStatsResponse {
     pub count: Option<usize>,
 }
 
-/// GET /api/blobs/:hash — get blob → raw bytes (application/octet-stream)
+/// GET /api/blobs/:hash — get blob, honoring HTTP `Range:`.
+///
+/// Returns 200 + full body (no Range), 206 + sliced body (single range),
+/// 206 + `multipart/byteranges` (multi-range), 416 (unsatisfiable), or
+/// 400 (malformed Range header).
 pub async fn blob_get(
     axum::extract::State(state): axum::extract::State<crate::AppState>,
     Path(hash_hex): Path<String>,
-) -> impl IntoResponse {
+    headers: HeaderMap,
+) -> Response {
     let hash = match O256::from_hex(&hash_hex) {
         Some(h) => h,
-        None => return Err((StatusCode::BAD_REQUEST, "invalid hash")),
+        None => return (StatusCode::BAD_REQUEST, "invalid hash").into_response(),
     };
-    match state.kernel.store().get(&hash) {
-        Some(data) => Ok((
-            [(axum::http::header::CONTENT_TYPE, "application/octet-stream")],
-            data,
-        )),
-        None => Err((StatusCode::NOT_FOUND, "blob not found")),
-    }
+    serve_blob_get(state.kernel.store(), &hash, &headers, BLOB_CONTENT_TYPE)
 }
 
-/// HEAD /api/blobs/:hash — check if blob exists → 200 or 404
+/// HEAD /api/blobs/:hash — `Content-Length` + `Accept-Ranges: bytes` if present.
 pub async fn blob_head(
     axum::extract::State(state): axum::extract::State<crate::AppState>,
     Path(hash_hex): Path<String>,
-) -> StatusCode {
+) -> Response {
     let hash = match O256::from_hex(&hash_hex) {
         Some(h) => h,
-        None => return StatusCode::BAD_REQUEST,
+        None => return StatusCode::BAD_REQUEST.into_response(),
     };
-    if state.kernel.store().contains(&hash) {
-        StatusCode::OK
-    } else {
-        StatusCode::NOT_FOUND
-    }
+    serve_blob_head(state.kernel.store(), &hash, BLOB_CONTENT_TYPE)
 }
 
 // ---------------------------------------------------------------------------
@@ -307,19 +306,17 @@ pub async fn tagged_count(
     })
 }
 
-/// GET /api/tagged/:hash — get blob data → bytes or 404
+/// GET /api/tagged/:hash — get blob data, honoring HTTP `Range:`.
 pub async fn tagged_get(
     axum::extract::State(state): axum::extract::State<crate::AppState>,
     Path(hash_hex): Path<String>,
-) -> impl IntoResponse {
-    let hash = parse_hash_param(&hash_hex)?;
-    match ContentStore::get(&state.tagged_store, &hash) {
-        Some(data) => Ok((
-            [(axum::http::header::CONTENT_TYPE, "application/octet-stream")],
-            data,
-        )),
-        None => Err((StatusCode::NOT_FOUND, "not found".to_string())),
-    }
+    headers: HeaderMap,
+) -> Response {
+    let hash = match O256::from_hex(&hash_hex) {
+        Some(h) => h,
+        None => return (StatusCode::BAD_REQUEST, "invalid hash").into_response(),
+    };
+    serve_blob_get(&state.tagged_store, &hash, &headers, BLOB_CONTENT_TYPE)
 }
 
 /// PUT /api/tagged/:hash — put blob data
@@ -338,19 +335,16 @@ pub async fn tagged_put(
     }
 }
 
-/// HEAD /api/tagged/:hash — contains → 200/404
+/// HEAD /api/tagged/:hash — `Content-Length` + `Accept-Ranges: bytes` if present.
 pub async fn tagged_head(
     axum::extract::State(state): axum::extract::State<crate::AppState>,
     Path(hash_hex): Path<String>,
-) -> StatusCode {
-    let Ok(hash) = parse_hash_param(&hash_hex) else {
-        return StatusCode::BAD_REQUEST;
+) -> Response {
+    let hash = match O256::from_hex(&hash_hex) {
+        Some(h) => h,
+        None => return StatusCode::BAD_REQUEST.into_response(),
     };
-    if ContentStore::contains(&state.tagged_store, &hash) {
-        StatusCode::OK
-    } else {
-        StatusCode::NOT_FOUND
-    }
+    serve_blob_head(&state.tagged_store, &hash, BLOB_CONTENT_TYPE)
 }
 
 /// POST /api/tagged/kind/:kind — insert_tagged → 201 { "hash": "<hex>" }

@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 
 use covalence_hash::{IdentityBuildHasher, O256};
 
-use crate::{ContentStore, TaggedStore};
+use crate::{BlobInfo, ContentStore, TaggedStore, slice_range};
 
 // ---------------------------------------------------------------------------
 // MemoryStore — single-threaded, &mut self, no locking overhead
@@ -180,6 +180,28 @@ impl ContentStore<O256> for SharedMemoryStore {
     fn len(&self) -> Option<usize> {
         Some(self.0.read().unwrap().len())
     }
+
+    fn head(&self, key: &O256) -> Option<BlobInfo> {
+        self.0
+            .read()
+            .unwrap()
+            .get(key)
+            .map(|s| BlobInfo { size: s.len() as u64 })
+    }
+
+    fn get_slice(
+        &self,
+        key: &O256,
+        range: std::ops::Range<u64>,
+    ) -> Result<Vec<u8>, crate::StoreError> {
+        let store = self.0.read().unwrap();
+        let Some(data) = store.get(key) else {
+            return Err(crate::StoreError::NotFound);
+        };
+        // Slice while holding the borrow — final Vec is sized to the range,
+        // not the whole blob.
+        slice_range(data, range)
+    }
 }
 
 impl TaggedStore<O256> for SharedMemoryStore {
@@ -229,6 +251,21 @@ mod tests {
         let h2 = store.insert(b"data");
         assert_eq!(h1, h2);
         assert_eq!(store.len(), 1);
+    }
+
+    #[test]
+    fn shared_head_and_get_slice() {
+        let store = SharedMemoryStore::new();
+        let hash = store.insert(b"0123456789").unwrap();
+        assert_eq!(store.head(&hash), Some(BlobInfo { size: 10 }));
+        assert_eq!(store.get_slice(&hash, 2..5).unwrap(), b"234");
+        // Missing key.
+        let missing = covalence_hash::O256::blob(b"missing");
+        assert_eq!(store.head(&missing), None);
+        assert!(matches!(
+            store.get_slice(&missing, 0..1),
+            Err(crate::StoreError::NotFound)
+        ));
     }
 
     #[test]

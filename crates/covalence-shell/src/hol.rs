@@ -1041,21 +1041,27 @@ impl HolPrim {
         let mut out = Vec::new();
         for i in 0..ctx.len() {
             let assum = ctx.assumption(i).expect("len/index invariant");
+            let assum_ref = TermRef::local(assum.concl);
             // Filter by Arc::ptr_eq first (the canonical path).
             if self.trusted_props.iter().any(|p| Arc::ptr_eq(p, assum)) {
                 continue;
             }
-            // Fallback: structural concl match. `inst_type` /
-            // `subst_tyvar_in_term` can produce a new `Arc<Prop>`
-            // with the same concl as a trusted one when type
-            // substitution rebuilds a Prop; we still treat those
-            // as trusted.
+            // Fallback: TermId concl match.
             if self.trusted_props.iter().any(|p| p.concl == assum.concl) {
                 continue;
             }
-            let r = TermRef::local(assum.concl);
-            if !out.contains(&r) {
-                out.push(r);
+            // Stronger fallback: structural `term_eq` match. inst_type
+            // can rebuild a trusted Prop with a structurally different
+            // shape (e.g. raw vs folded form post-substitution).
+            if self
+                .trusted_props
+                .iter()
+                .any(|p| self.term_eq(TermRef::local(p.concl), assum_ref))
+            {
+                continue;
+            }
+            if !out.contains(&assum_ref) {
+                out.push(assum_ref);
             }
         }
         Ok(out)
@@ -1482,6 +1488,28 @@ impl HolPrim {
     ) -> Result<ThmHandle, HolPrimError> {
         let thm_p = self.clone_thm(th1)?;
         let thm_q = self.clone_thm(th2)?;
+        // Pre-union raw↔folded shape pairs for every assumption
+        // concl matched against the other Thm's concl. The kernel's
+        // deduct_antisym drops assumptions whose concl is
+        // UF-canonical-equal to the *exclude* term (the other Thm's
+        // concl). If an assume Prop has the raw `Comb(Const "!", λ)`
+        // shape and the exclude is the folded `Forall(λ)`, the UF
+        // check misses the match and the assumption is kept.
+        // Bridging the shapes here lets the kernel rule drop them.
+        let p_ref = TermRef::local(thm_p.concl());
+        let q_ref = TermRef::local(thm_q.concl());
+        let ctx_p = thm_p.context().clone();
+        for i in 0..ctx_p.len() {
+            let assum = ctx_p.assumption(i).expect("len/index invariant").clone();
+            let a_ref = TermRef::local(assum.concl);
+            self.union_alpha_equivalent_shapes(a_ref, q_ref)?;
+        }
+        let ctx_q = thm_q.context().clone();
+        for i in 0..ctx_q.len() {
+            let assum = ctx_q.assumption(i).expect("len/index invariant").clone();
+            let a_ref = TermRef::local(assum.concl);
+            self.union_alpha_equivalent_shapes(a_ref, p_ref)?;
+        }
         let out = self.kernel.deduct_antisym_rule(thm_p, thm_q)?;
         Ok(self.store_thm(out))
     }

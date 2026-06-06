@@ -261,14 +261,11 @@ fn to_spectec_ast_flat(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTec
     // signature's argument-type list as Exp-shaped params.
     for d in &doc.defs {
         let t = typ_expr_to_spectec(&d.sig.ret_ty.tokens, ctx);
-        let ps = d
+        let ps: Vec<spectec_ast::SpecTecParam> = d
             .sig
             .arg_tys
             .iter()
-            .map(|arg_tr| spectec_ast::SpecTecParam::Exp {
-                x: "_".to_string(),
-                t: typ_expr_to_spectec(&arg_tr.tokens, ctx),
-            })
+            .filter_map(|arg_tr| chunk_to_syntax_param(&arg_tr.tokens))
             .collect();
         let clauses = d
             .clauses
@@ -781,17 +778,146 @@ fn syntax_params_to_specs(
     out
 }
 
-/// Lower a single comma-separated chunk of a `syntax NAME(...)` param
-/// list. Recognises bare `X` (Typ param) and `syntax X` (also Typ).
+/// Lower a single comma-separated chunk of a param list (works for
+/// `syntax NAME(...)`, `def $NAME(...)`, and `grammar NAME(...)`).
+/// Recognised shapes:
+/// - bare `X` → `Param::Typ { x: "X" }`
+/// - `syntax X` → `Param::Typ { x: "X" }`
+/// - `X : T` → `Param::Exp { x: "X", t: lower T }`
+/// - `def $NAME[(args)] [: T]` → `Param::Def { x, ps, t }`
+/// - `gram NAME[ : T]` → `Param::Gram { x, t }`
+/// - anything else → `Param::Exp { x: "_", t: lower chunk }`
 fn chunk_to_syntax_param(chunk: &[crate::token::Spanned]) -> Option<spectec_ast::SpecTecParam> {
     use crate::token::Token::*;
-    match chunk {
-        [Spanned { token: Ident(n), .. }] => Some(spectec_ast::SpecTecParam::Typ { x: n.clone() }),
-        [Spanned { token: Syntax, .. }, Spanned { token: Ident(n), .. }] => {
-            Some(spectec_ast::SpecTecParam::Typ { x: n.clone() })
-        }
-        _ => None,
+    if chunk.is_empty() {
+        return None;
     }
+    // `syntax X`
+    if let [Spanned { token: Syntax, .. }, Spanned { token: Ident(n), .. }] = chunk {
+        return Some(spectec_ast::SpecTecParam::Typ { x: n.clone() });
+    }
+    // `gram NAME [: T]`
+    if let [Spanned { token: Grammar, .. }, Spanned { token: Ident(n), .. }, rest @ ..] = chunk {
+        let t = match rest {
+            [Spanned { token: Colon, .. }, ty @ ..] => placeholder_typ_for_chunk(ty),
+            [] => placeholder_typ(),
+            _ => placeholder_typ(),
+        };
+        return Some(spectec_ast::SpecTecParam::Gram { x: n.clone(), t });
+    }
+    // `def $NAME [(args)] [: T]`
+    if let [Spanned { token: Def, .. }, Spanned { token: Dollar, .. }, Spanned { token: Ident(n), .. }, rest @ ..] = chunk {
+        let mut cursor = rest;
+        let mut ps_specs: Vec<spectec_ast::SpecTecParam> = Vec::new();
+        // Optional `(args)`.
+        if let [Spanned { token: LParen, .. }, ..] = cursor
+            && let Some(close) = matching_rparen_idx(cursor)
+        {
+            let arg_toks = &cursor[1..close];
+            for c in split_top_level_commas(arg_toks) {
+                if let Some(p) = chunk_to_syntax_param(c) {
+                    ps_specs.push(p);
+                }
+            }
+            cursor = &cursor[close + 1..];
+        }
+        let t = match cursor {
+            [Spanned { token: Colon, .. }, ty @ ..] => placeholder_typ_for_chunk(ty),
+            [] => placeholder_typ(),
+            _ => placeholder_typ(),
+        };
+        return Some(spectec_ast::SpecTecParam::Def {
+            x: n.clone(),
+            ps: ps_specs,
+            t,
+        });
+    }
+    // `X : T` (name followed by colon and type).
+    if let [Spanned { token: Ident(n), .. }, Spanned { token: Colon, .. }, ty @ ..] = chunk {
+        return Some(spectec_ast::SpecTecParam::Exp {
+            x: n.clone(),
+            t: placeholder_typ_for_chunk(ty),
+        });
+    }
+    // Bare `X` (single ident).
+    if let [Spanned { token: Ident(n), .. }] = chunk {
+        return Some(spectec_ast::SpecTecParam::Typ { x: n.clone() });
+    }
+    // Anything else: treat as an unnamed Exp param whose type is the
+    // whole chunk.
+    Some(spectec_ast::SpecTecParam::Exp {
+        x: "_".to_string(),
+        t: placeholder_typ_for_chunk(chunk),
+    })
+}
+
+/// Hook for `chunk_to_syntax_param` to lower a type-position chunk.
+/// Returns `Bool` for empty input; otherwise calls `typ_expr_to_spectec`.
+fn placeholder_typ_for_chunk(toks: &[crate::token::Spanned]) -> spectec_ast::SpecTecTyp {
+    if toks.is_empty() {
+        return placeholder_typ();
+    }
+    // We don't have an `ElabContext` here (param parsing is static).
+    // Use the no-context variant: most type expressions in params are
+    // bare type-name idents which `typ_expr_to_spectec_no_ctx` handles.
+    typ_expr_to_spectec_no_ctx(toks)
+}
+
+/// `typ_expr_to_spectec` variant that doesn't depend on `ElabContext`.
+/// Used by parameter parsing (where the context isn't readily
+/// threaded). Treats every ident as a type-name `Var`.
+fn typ_expr_to_spectec_no_ctx(toks: &[crate::token::Spanned]) -> spectec_ast::SpecTecTyp {
+    use crate::token::Token::*;
+    use spectec_ast::SpecTecTyp as T;
+    if toks.is_empty() {
+        return T::Bool;
+    }
+    if let [Spanned { token: Ident(n), .. }] = toks {
+        return match n.as_str() {
+            "nat" => T::Num(spectec_ast::SpecTecNumTyp::Nat),
+            "int" => T::Num(spectec_ast::SpecTecNumTyp::Int),
+            "rat" => T::Num(spectec_ast::SpecTecNumTyp::Rat),
+            "real" => T::Num(spectec_ast::SpecTecNumTyp::Real),
+            "bool" => T::Bool,
+            "text" => T::Text,
+            _ => T::Var { x: n.clone(), as1: Vec::new() },
+        };
+    }
+    // Trailing iter suffix.
+    if toks.len() >= 2 {
+        let it = match toks.last().unwrap().token {
+            Star => Some(spectec_ast::SpecTecIter::List),
+            Question => Some(spectec_ast::SpecTecIter::Opt),
+            Plus => Some(spectec_ast::SpecTecIter::List1),
+            _ => None,
+        };
+        if let Some(it) = it {
+            return T::Iter {
+                t1: Box::new(typ_expr_to_spectec_no_ctx(&toks[..toks.len() - 1])),
+                it: vec![it],
+            };
+        }
+    }
+    T::Bool
+}
+
+/// Position of the `RParen` matching `toks[0] == LParen`, or `None`.
+fn matching_rparen_idx(toks: &[crate::token::Spanned]) -> Option<usize> {
+    use crate::token::Token::*;
+    let mut depth: i32 = 0;
+    for (i, t) in toks.iter().enumerate() {
+        match &t.token {
+            LParen | LBracket | LBrace => depth += 1,
+            RParen | RBracket | RBrace => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Lower a grammar's `(params)` into params (currently treated as
@@ -956,8 +1082,8 @@ fn typ_expr_to_spectec(
         return T::Bool;
     }
     // Singleton type-name ident.
-    if toks.len() == 1 {
-        if let Ident(n) = &toks[0].token {
+    if toks.len() == 1
+        && let Ident(n) = &toks[0].token {
             return match n.as_str() {
                 "nat" => T::Num(spectec_ast::SpecTecNumTyp::Nat),
                 "int" => T::Num(spectec_ast::SpecTecNumTyp::Int),
@@ -972,7 +1098,6 @@ fn typ_expr_to_spectec(
                 _ => T::Bool,
             };
         }
-    }
     // Trailing `*`/`?`/`+` iter suffix.
     if toks.len() >= 2 {
         let last = &toks.last().unwrap().token;
@@ -1140,7 +1265,7 @@ fn make_range_prod(
     lower: &[crate::token::Spanned],
     upper: &[crate::token::Spanned],
     ctx: &ElabContext,
-    fallback_span: crate::source::Span,
+    _fallback_span: crate::source::Span,
 ) -> spectec_ast::SpecTecProd {
     let g_lower = grammar_sym_from_tokens(lower, ctx);
     let g_upper = grammar_sym_from_tokens(upper, ctx);
@@ -1505,6 +1630,7 @@ fn tarjan_scc(deps: &[Vec<usize>]) -> Vec<Vec<usize>> {
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 fn strong_connect(
     v: usize,
     deps: &[Vec<usize>],

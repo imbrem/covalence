@@ -118,14 +118,13 @@ fn diff_against_wasm_spec_ast() {
         let mut shown = 0;
         for (name, ours_mo) in &our_rel_mixops {
             if shown >= 8 { break; }
-            if let Some(theirs_mo) = ref_rel_mixops.get(name) {
-                if ours_mo != theirs_mo {
+            if let Some(theirs_mo) = ref_rel_mixops.get(name)
+                && ours_mo != theirs_mo {
                     eprintln!(
                         "    {name}: ours {ours_mo:?}\n      theirs {theirs_mo:?}"
                     );
                     shown += 1;
                 }
-            }
         }
     }
 

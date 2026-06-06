@@ -1,5 +1,25 @@
 # Refactor plan — toward the ARCHITECTURE.md vision
 
+> **STATUS: TERMINATED — Phases A–H and Phase P are no longer the
+> forward direction.** The
+> [shared-backbone proposal](./design/proposals/shared-backbone/00-overview.md)
+> §1 retires both: further refactoring of the legacy
+> `covalence-kernel` is sunk cost because the kernel is being
+> rewritten against the
+> [layered-framework target](./design/proposals/layered-framework/02-framework.md).
+> Phase H (Arena::hash inside the kernel) is explicitly *deleted* by
+> the new framework — moves to a `TermHasherOracle` outside the TCB.
+> Phase P (EProp/EThm) stops at P3; the [facts-not-proofs
+> discipline](./design/proposals/layered-framework/notes/facts-not-proofs.md)
+> replaces it as the intended egraph integration (egraph as
+> userspace oracle, not in-kernel saturation).
+>
+> The remainder of this doc is **retained for historical context** —
+> it captures the cleanup trajectory that the legacy kernel *was*
+> following. New work should target shared-backbone Phase 1
+> (substrate hardening) and Phase 2 (parallel prover + VCS streams),
+> not the phases below.
+
 Working list of commits to move from the current kernel toward the
 design described in [`ARCHITECTURE.md`](../ARCHITECTURE.md) and codified
 in [`AGENTS.md`](../AGENTS.md). Ordered for **smallest possible audit

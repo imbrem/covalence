@@ -33,6 +33,17 @@ Hashing, signatures, executors, and the namespace machinery are all
 **outside the trust boundary** as oracles or untrusted layers. This is
 a *proposal*, not a decided architecture — alternatives are welcome.
 
+The **[shared-backbone proposal](./design/proposals/shared-backbone/)**
+is a sibling: it adopts the layered-framework kernel shape and adds
+*the path* — substrate-first with the prover and VCS developed in
+parallel over a content-addressed shared backbone, an
+oracle-everything stratification (Stores leave the framework;
+verifiable reads become oracle observations rather than TCB
+primitives), and `attest`/`decide` reframed as the first concrete
+oracle (not legacy). The kill list, the four phases, and the
+supersession of [`refactor-plan.md`](./refactor-plan.md) Phase A–H +
+Phase P are documented there. Read together with `layered-framework/`.
+
 ---
 
 ## 1. The substrate (shipping, considered correct shape)
@@ -245,15 +256,16 @@ as settled judgments.
 | If you want…                              | Read                                                                       |
 |-------------------------------------------|----------------------------------------------------------------------------|
 | The big picture / vision                  | [`ARCHITECTURE.md`](../ARCHITECTURE.md)                                    |
+| The **path** (substrate-first, two streams, kill list) | [`docs/design/proposals/shared-backbone/00-overview.md`](./design/proposals/shared-backbone/00-overview.md) |
 | The vocabulary the proposed redesign uses | [`docs/design/proposals/layered-framework/00-glossary.md`](./design/proposals/layered-framework/00-glossary.md)                    |
 | Conventions in the proposed redesign      | [`docs/design/proposals/layered-framework/01-conventions.md`](./design/proposals/layered-framework/01-conventions.md)              |
 | The proposed Framework layer              | [`docs/design/proposals/layered-framework/02-framework.md`](./design/proposals/layered-framework/02-framework.md)                  |
 | The proposal index                        | [`docs/design/proposals/layered-framework/README.md`](./design/proposals/layered-framework/README.md)                              |
 | The design directory index                | [`docs/design/README.md`](./design/README.md)                                                                                       |
-| Ongoing kernel cleanup                    | [`docs/refactor-plan.md`](./refactor-plan.md)                              |
+| Ongoing kernel cleanup (Phase A–H, P — *terminated*; see shared-backbone) | [`docs/refactor-plan.md`](./refactor-plan.md)                              |
 | Current kernel internals                  | [`docs/prover-architecture.md`](./prover-architecture.md)                  |
-| Current kernel build-out plan             | [`docs/prover-mvp-plan.md`](./prover-mvp-plan.md)                          |
-| The legacy MVP (WASM-prop) model          | [`MVP_DESIGN.md`](../MVP_DESIGN.md)                                        |
+| Current kernel build-out plan (*superseded by shared-backbone Phase 2*) | [`docs/prover-mvp-plan.md`](./prover-mvp-plan.md)                          |
+| The WASM-prop model (*seed of the WASM oracle*, not legacy) | [`MVP_DESIGN.md`](../MVP_DESIGN.md)                                        |
 
 ---
 

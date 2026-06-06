@@ -1,6 +1,12 @@
 # Covalence
 
 An experimental LCF-style theorem prover and VCS using WASM components.
+Metatheory is the default mode; the kernel extends itself by proof
+rather than by trust.
+
+**Read first:** [`docs/VISION.md`](./docs/VISION.md) (10-min overview)
+→ [`ARCHITECTURE.md`](./ARCHITECTURE.md) (full vision) →
+[`AGENTS.md`](./AGENTS.md) (operational invariants).
 
 ## Structure
 

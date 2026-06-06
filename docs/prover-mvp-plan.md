@@ -1,5 +1,22 @@
 # Prover MVP Plan
 
+> **STATUS: SUPERSEDED by the [shared-backbone
+> proposal](./design/proposals/shared-backbone/00-overview.md).** That
+> proposal's Phase 2 (parallel prover + VCS streams) replaces the
+> phased rewrite below. The crate moves (rewrite `covalence-kernel`,
+> add `covalence-shell`) are partially retained — but the target API
+> is now the
+> [layered-framework](./design/proposals/layered-framework/02-framework.md)
+> shape, not the HOL-direct kernel below, and `covalence-shell`'s
+> role is absorbed into per-oracle crates (likely
+> `covalence-oracle-wasm`). The `attest()`/`decide()` "out of scope"
+> claim in §"Out of Scope for MVP" is also superseded: per
+> shared-backbone §4, those become the *first concrete oracle*, not
+> deleted code.
+>
+> Retained as historical reference for the phase decomposition and
+> the acceptance tests, which are still useful as templates.
+
 Companion to [`prover-architecture.md`](./prover-architecture.md). This
 document is **tactical**: it lists the phases, deliverables, and acceptance
 tests to get from the current state of the tree to the first end-to-end

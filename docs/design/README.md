@@ -38,6 +38,7 @@ accepted, rejected, superseded) is recorded in the proposal's own
 | Proposal                                                                                              | Status   | Summary                                                                                                                                  |
 |-------------------------------------------------------------------------------------------------------|----------|------------------------------------------------------------------------------------------------------------------------------------------|
 | [`proposals/layered-framework/`](./proposals/layered-framework/)                                       | proposed | Carve the kernel into three layers (Framework / HOL / Morphism), with stores and authorities as the framework's only trust primitives. Hash functions, signatures, executors all become oracles outside the trust boundary. |
+| [`proposals/shared-backbone/`](./proposals/shared-backbone/)                                           | proposed | The *path* to the vision. Substrate-first with two parallel streams (prover + VCS) sharing a content-addressed backbone; oracle-everything stratification (Stores leave the framework; verifiable reads become oracle observations); `attest`/`decide` reframed as the first concrete oracle. Sibling to `layered-framework/`, not an alternative. |
 
 ---
 

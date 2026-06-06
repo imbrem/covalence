@@ -14,3 +14,4 @@ thiserror = "2"
 ureq = { version = "3", optional = true }
 
 [dev-dependencies]
+covalence-shell = { path = "../covalence-shell" }

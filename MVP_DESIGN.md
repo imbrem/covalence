@@ -1,5 +1,19 @@
 # MVP Design
 
+> **STATUS: NOT LEGACY — seed of the WASM oracle crate.** The
+> WASM-component-as-proposition model and the `attest()`/`decide()`
+> host bridge described here are *the first concrete instance of the
+> general oracle primitive* under the
+> [shared-backbone proposal](./docs/design/proposals/shared-backbone/00-overview.md)
+> §4. The kernel-side framing is superseded by the
+> [layered-framework](./docs/design/proposals/layered-framework/02-framework.md)
+> (attest becomes a `WASMExecutorAuthority.eval` observation; decide
+> becomes a userspace strategy that drives the oracle and discharges
+> via meaning-axiom). But the *code* — Wasmtime bridge, host-import
+> plumbing, component loading — is reused as the seed of
+> `covalence-oracle-wasm` in Phase 2 / P5. Read this for the
+> mechanism; read shared-backbone §4 for the new framing.
+
 This document tracks the MVP for `covalence` — an LCF-style theorem prover
 based on the Curry-Howard correspondence using WASM components.
 

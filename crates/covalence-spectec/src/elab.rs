@@ -22,7 +22,7 @@
 use std::collections::HashSet;
 
 use crate::cst::{Alt, RuleDecl, SyntaxBody, Top, TokenRun};
-use crate::mixfix::{Fragment, OpId, OpTable, Precedence};
+use crate::mixfix::{self, Fragment, OpId, OpTable, Precedence, Tree};
 use crate::source::{Diagnostic, Span};
 use crate::token::{Spanned, Token};
 
@@ -368,7 +368,7 @@ pub fn elab_rule_conclusion(
                 // (if any) or to the end of input. We compute that
                 // stopping set lazily by scanning ahead.
                 let stop = next_lit_after(&fragments, i + 1);
-                let expr = parse_expression_until(&mut input, stop.as_ref())?;
+                let expr = parse_expression_until(&mut input, stop.as_ref(), ctx)?;
                 operands.push(expr);
             }
         }
@@ -426,7 +426,7 @@ pub fn elab_premise(
                 .map(|s| s.span)
                 .reduce(Span::join)
                 .unwrap_or(span);
-            let cond = classify_simple_expression(body, body_span)?;
+            let cond = classify_simple_expression(body, body_span, ctx)?;
             Ok(ElabPremise::If(cond))
         }
         Some(Token::Let) => {
@@ -449,8 +449,8 @@ pub fn elab_premise(
             }
             let lhs_span = lhs_slice.iter().map(|s| s.span).reduce(Span::join).unwrap();
             let rhs_span = rhs_slice.iter().map(|s| s.span).reduce(Span::join).unwrap();
-            let lhs = classify_simple_expression(lhs_slice, lhs_span)?;
-            let rhs = classify_simple_expression(rhs_slice, rhs_span)?;
+            let lhs = classify_simple_expression(lhs_slice, lhs_span, ctx)?;
+            let rhs = classify_simple_expression(rhs_slice, rhs_span, ctx)?;
             Ok(ElabPremise::Let { lhs, rhs })
         }
         Some(Token::Else) | Some(Token::Otherwise) => Ok(ElabPremise::Else),
@@ -484,7 +484,7 @@ pub fn elab_premise(
                     }
                     Fragment::Hole(_) => {
                         let stop = next_lit_after(&fragments, i + 1);
-                        match parse_expression_until(&mut input, stop.as_ref()) {
+                        match parse_expression_until(&mut input, stop.as_ref(), ctx) {
                             Ok(e) => operands.push(e),
                             Err(_) => return Ok(ElabPremise::Raw(prem.clone())),
                         }
@@ -655,6 +655,7 @@ fn expect_token_in_conclusion(
 fn parse_expression_until(
     input: &mut &[Spanned],
     stop_lit: Option<&Token>,
+    ctx: &ElabContext,
 ) -> Result<Expr, Diagnostic> {
     // Collect tokens up to the stop sentinel at depth 0.
     let mut depth: i32 = 0;
@@ -687,12 +688,23 @@ fn parse_expression_until(
         .map(|s| s.span)
         .reduce(Span::join)
         .expect("non-empty by check above");
-    classify_simple_expression(&taken, span)
+    classify_simple_expression(&taken, span, ctx)
 }
 
-/// Try to recognise a "simple" expression from a slice of tokens. Falls
-/// back to `Expr::Raw` if we can't structure it.
-fn classify_simple_expression(toks: &[Spanned], span: Span) -> Result<Expr, Diagnostic> {
+/// Try to recognise an expression from a slice of tokens. Order of
+/// attempts:
+///
+/// 1. Singletons (Var / Num / Text / Eps / zero-arg Case).
+/// 2. Parenthesised groups (Tup with comma-split; singleton-collapsing).
+/// 3. **Pratt parse against the OpTable** — structures constructor
+///    applications (`BLOCK bt instr*` → `Case(BLOCK, [bt, instr])`)
+///    and other registered mixfix forms that fully consume the slice.
+/// 4. Fallback: `Expr::Raw`.
+fn classify_simple_expression(
+    toks: &[Spanned],
+    span: Span,
+    ctx: &ElabContext,
+) -> Result<Expr, Diagnostic> {
     // Singletons: Var, Num, Text, Eps, or a zero-arg Case for uppercase
     // / underscore-prefixed names.
     if toks.len() == 1 {
@@ -725,25 +737,23 @@ fn classify_simple_expression(toks: &[Spanned], span: Span) -> Result<Expr, Diag
     {
         let inner = &toks[1..toks.len() - 1];
         if depth_balanced(inner) {
-            return classify_tuple_inner(inner, span);
+            return classify_tuple_inner(inner, span, ctx);
         }
     }
 
-    // Case application: `HEAD arg1 arg2 ...` where HEAD is uppercase or
-    // begins with `_`.
+    // Pratt-parse against the OpTable. Succeeds only if the parse fully
+    // consumes the slice; on failure or leftover input we fall back.
+    if let Some(expr) = try_pratt_expression(toks, span, ctx) {
+        return Ok(expr);
+    }
+
+    // Coarse fallback: a case-headed multi-token slice that Pratt
+    // didn't structure. Wrap as `Case` with a single `Raw` arg holding
+    // the remainder. Better than a top-level `Raw` because downstream
+    // consumers at least know the constructor name.
     if let Some(Spanned { token: Token::Ident(head), .. }) = toks.first() {
         if is_case_head(head) {
-            // Args are the rest of the token slice, split on... actually
-            // for now treat the rest as a single Raw run. Tighter
-            // splitting belongs to the next slice.
             let head_name = head.clone();
-            if toks.len() == 1 {
-                return Ok(Expr::Case {
-                    span,
-                    head: head_name,
-                    args: Vec::new(),
-                });
-            }
             let args_slice = &toks[1..];
             let arg_span = args_slice
                 .iter()
@@ -766,6 +776,107 @@ fn classify_simple_expression(toks: &[Spanned], span: Span) -> Result<Expr, Diag
         span,
         tokens: toks.to_vec(),
     }))
+}
+
+/// Attempt to parse `toks` as a mixfix expression against `ctx.op_table`.
+/// Returns `Some(expr)` only if the parse fully consumes `toks`; if it
+/// fails or leaves residual input, returns `None` and the caller falls
+/// back to its own structuring.
+fn try_pratt_expression(
+    toks: &[Spanned],
+    span: Span,
+    ctx: &ElabContext,
+) -> Option<Expr> {
+    let mut input: &[Spanned] = toks;
+    let mut leaf = pratt_leaf;
+    let tree = mixfix::parse_term(&mut input, &ctx.op_table, 0, &mut leaf).ok()?;
+    if !input.is_empty() {
+        return None;
+    }
+    Some(tree_to_expr(tree, &ctx.op_table, span))
+}
+
+/// Leaf parser used by [`mixfix::parse_term`] inside the SpecTec
+/// expression elaborator. Recognises singleton tokens as
+/// Var/Num/Text/Eps/zero-arg-Case; a `(` opens a recursive `parse_term`
+/// to parse a sub-expression up to the matching `)`.
+fn pratt_leaf(
+    input: &mut &[Spanned],
+    table: &OpTable,
+) -> Result<Tree<Expr>, Diagnostic> {
+    let s = input.first().ok_or_else(|| {
+        Diagnostic::error(
+            Span::new(crate::source::FileId::new(0), u32::MAX, u32::MAX),
+            "expected atomic expression",
+        )
+    })?;
+    let span = s.span;
+    let leaf_expr = match &s.token {
+        Token::Ident(name) if is_case_head(name) => {
+            // A zero-arg constructor as a leaf — the table-matching loop
+            // in parse_term will fold any following args into the Case.
+            let name = name.clone();
+            *input = &input[1..];
+            return Ok(Tree::Leaf(Expr::Case {
+                span,
+                head: name,
+                args: Vec::new(),
+            }));
+        }
+        Token::Ident(name) => Expr::Var { span, name: name.clone() },
+        Token::Nat(n) => Expr::Num { span, value: *n },
+        Token::Text(t) => Expr::Text { span, value: t.clone() },
+        Token::Eps => Expr::Eps { span },
+        Token::LParen => {
+            // Recurse for a parenthesised sub-expression.
+            *input = &input[1..];
+            let mut leaf2 = pratt_leaf;
+            let inner = mixfix::parse_term(input, table, 0, &mut leaf2)?;
+            match input.first() {
+                Some(Spanned { token: Token::RParen, .. }) => {
+                    *input = &input[1..];
+                }
+                Some(s) => {
+                    return Err(Diagnostic::error(
+                        s.span,
+                        format!("expected `)`, found {}", s.token.describe()),
+                    ));
+                }
+                None => {
+                    return Err(Diagnostic::error(
+                        span,
+                        "unterminated parenthesised expression",
+                    ));
+                }
+            }
+            return Ok(inner);
+        }
+        other => {
+            return Err(Diagnostic::error(
+                span,
+                format!("expected atomic expression, found {}", other.describe()),
+            ));
+        }
+    };
+    *input = &input[1..];
+    Ok(Tree::Leaf(leaf_expr))
+}
+
+/// Convert a Pratt `Tree<Expr>` back to an `Expr`, looking up operator
+/// names from the table.
+fn tree_to_expr(tree: Tree<Expr>, table: &OpTable, span: Span) -> Expr {
+    match tree {
+        Tree::Leaf(e) => e,
+        Tree::App(op_id, args) => {
+            let op = table.get(op_id);
+            let head = op.name.clone();
+            let args = args
+                .into_iter()
+                .map(|t| tree_to_expr(t, table, span))
+                .collect();
+            Expr::Case { span, head, args }
+        }
+    }
 }
 
 /// True if `name` looks like a SpecTec case constructor.
@@ -819,7 +930,11 @@ fn depth_balanced(toks: &[Spanned]) -> bool {
     depth == 0
 }
 
-fn classify_tuple_inner(inner: &[Spanned], span: Span) -> Result<Expr, Diagnostic> {
+fn classify_tuple_inner(
+    inner: &[Spanned],
+    span: Span,
+    ctx: &ElabContext,
+) -> Result<Expr, Diagnostic> {
     // Empty: `()`.
     if inner.is_empty() {
         return Ok(Expr::Tup {
@@ -842,7 +957,7 @@ fn classify_tuple_inner(inner: &[Spanned], span: Span) -> Result<Expr, Diagnosti
                     .map(|s| s.span)
                     .reduce(Span::join)
                     .expect("non-empty chunk");
-                items.push(classify_simple_expression(chunk, cspan)?);
+                items.push(classify_simple_expression(chunk, cspan, ctx)?);
                 chunk_start = i + 1;
             }
             _ => {}
@@ -854,7 +969,7 @@ fn classify_tuple_inner(inner: &[Spanned], span: Span) -> Result<Expr, Diagnosti
         .map(|s| s.span)
         .reduce(Span::join)
         .expect("non-empty chunk");
-    items.push(classify_simple_expression(chunk, cspan)?);
+    items.push(classify_simple_expression(chunk, cspan, ctx)?);
 
     // Singleton: `(x)` — grouping. Return inner expression directly.
     if items.len() == 1 {
@@ -1361,6 +1476,37 @@ mod tests {
         "#;
         let elab = elab_first_rule(src);
         assert!(matches!(&elab.premises[0], ElabPremise::Raw(_)));
+    }
+
+    #[test]
+    fn elab_pratt_structures_multi_arg_constructor() {
+        // Two-arg constructor `REF null heaptype` where both args are
+        // simple idents. Pratt should fully consume and produce a
+        // structured Case with both args (not a Case with a single Raw
+        // arg, which is the fallback heuristic).
+        let src = r#"
+            syntax null = NULL
+            syntax heaptype = nat
+            syntax reftype = | REF null heaptype
+            syntax context = nat
+            relation R: context |- reftype : reftype
+            rule R:
+              C |- REF nul ht : REF nul ht
+        "#;
+        let elab = elab_first_rule(src);
+        assert_eq!(elab.operands.len(), 3);
+        let Expr::Case { head, args, .. } = &elab.operands[1] else {
+            panic!("expected Case for second operand, got {:?}", elab.operands[1]);
+        };
+        assert_eq!(head, "REF");
+        // Two structured args, not a single Raw fallback arg.
+        assert_eq!(args.len(), 2, "expected REF to have 2 structured args");
+        for arg in args {
+            assert!(
+                matches!(arg, Expr::Var { .. }),
+                "expected Var arg, got {arg:?}"
+            );
+        }
     }
 
     #[test]

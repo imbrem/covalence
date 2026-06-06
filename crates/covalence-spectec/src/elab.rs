@@ -221,13 +221,7 @@ pub struct ElabRuleConclusion {
     pub premises: Vec<ElabPremise>,
 }
 
-/// An elaborated premise. SpecTec premise forms are:
-///
-/// - `RelationName: <args matching template>` — a relation reference
-/// - `if <expr>` — boolean guard
-/// - `let <lhs> = <rhs>` — pattern binding
-/// - `otherwise` / `else` — fallback marker
-/// - `(P)*` / `(P)?` etc. — iteration (deferred; falls into `Raw`)
+/// An elaborated premise.
 #[derive(Clone, Debug)]
 pub enum ElabPremise {
     /// `RelName: <args>` — a relation premise.
@@ -242,8 +236,31 @@ pub enum ElabPremise {
     Let { lhs: Expr, rhs: Expr },
     /// `otherwise` / `else` — residual catch-all marker.
     Else,
+    /// `(P)<iter>` — replicated premise. `inner` is the elaborated body;
+    /// `kind` describes the iteration shape. Iteration *binder*
+    /// inference (linking inner variables to their `*`-suffixed sources)
+    /// is deferred to a later slice; the `bindings` field holds the raw
+    /// `(x* y* ...)` body of `^(...)` counts for now.
+    Iter {
+        inner: Box<ElabPremise>,
+        kind: IterKind,
+    },
     /// Anything not yet structurally recognised, kept as a raw run.
     Raw(TokenRun),
+}
+
+/// Iteration shape attached to a premise.
+#[derive(Clone, Debug)]
+pub enum IterKind {
+    /// `(P)?`
+    Opt,
+    /// `(P)*`
+    Star,
+    /// `(P)+`
+    Plus,
+    /// `(P)^<count-expr>` — fixed-length iteration with an explicit count.
+    /// The count expression is kept as a raw token run for now.
+    Length(TokenRun),
 }
 
 /// Elaborate one rule's conclusion against the operator table.
@@ -370,10 +387,7 @@ pub fn elab_premise(
             Ok(ElabPremise::Let { lhs, rhs })
         }
         Some(Token::Else) | Some(Token::Otherwise) => Ok(ElabPremise::Else),
-        Some(Token::LParen) => {
-            // Iteration group `(P)*` etc. — defer to a later slice.
-            Ok(ElabPremise::Raw(prem.clone()))
-        }
+        Some(Token::LParen) => elab_iter_premise(prem, ctx),
         Some(Token::Ident(name)) => {
             // `RelName: <args>` — relation premise.
             let rel_name = name.clone();
@@ -421,6 +435,95 @@ pub fn elab_premise(
         }
         _ => Ok(ElabPremise::Raw(prem.clone())),
     }
+}
+
+/// Recognise an iteration premise: `( <inner-premise> ) <iter-suffix>`.
+/// The matching `)` must be at paren depth 0 of the inner body and
+/// must leave at least one trailing token (the iter suffix).
+fn elab_iter_premise(
+    prem: &TokenRun,
+    ctx: &ElabContext,
+) -> Result<ElabPremise, Diagnostic> {
+    let toks = &prem.tokens;
+    // toks[0] is `(`. Find the matching `)` (depth 0 again).
+    let close_idx = matching_rparen(toks).ok_or_else(|| {
+        Diagnostic::error(prem.span, "iteration premise: no matching `)`")
+    })?;
+    let inner_toks = &toks[1..close_idx];
+    let trailing = &toks[close_idx + 1..];
+    if inner_toks.is_empty() {
+        return Ok(ElabPremise::Raw(prem.clone()));
+    }
+    if trailing.is_empty() {
+        // Just a parenthesised premise with no iter suffix — pass-through.
+        let inner_span = inner_toks
+            .iter()
+            .map(|s| s.span)
+            .reduce(Span::join)
+            .expect("non-empty");
+        let inner_prem = TokenRun {
+            span: inner_span,
+            tokens: inner_toks.to_vec(),
+        };
+        return elab_premise(&inner_prem, ctx);
+    }
+    // Recognise the iter suffix.
+    let kind = match &trailing[0].token {
+        Token::Question if trailing.len() == 1 => IterKind::Opt,
+        Token::Star if trailing.len() == 1 => IterKind::Star,
+        Token::Plus if trailing.len() == 1 => IterKind::Plus,
+        Token::Caret => {
+            // `^<count-expr>` — count is the rest of trailing.
+            let count_toks = &trailing[1..];
+            if count_toks.is_empty() {
+                return Ok(ElabPremise::Raw(prem.clone()));
+            }
+            let count_span = count_toks
+                .iter()
+                .map(|s| s.span)
+                .reduce(Span::join)
+                .expect("non-empty");
+            IterKind::Length(TokenRun {
+                span: count_span,
+                tokens: count_toks.to_vec(),
+            })
+        }
+        _ => return Ok(ElabPremise::Raw(prem.clone())),
+    };
+    // Recursively elaborate the inner premise.
+    let inner_span = inner_toks
+        .iter()
+        .map(|s| s.span)
+        .reduce(Span::join)
+        .expect("non-empty");
+    let inner_prem = TokenRun {
+        span: inner_span,
+        tokens: inner_toks.to_vec(),
+    };
+    let inner_elab = elab_premise(&inner_prem, ctx)?;
+    Ok(ElabPremise::Iter {
+        inner: Box::new(inner_elab),
+        kind,
+    })
+}
+
+/// Given `toks[0]` is `LParen`, return the index of the matching `RParen`
+/// at depth 0 (relative to that opening paren).
+fn matching_rparen(toks: &[Spanned]) -> Option<usize> {
+    let mut depth: i32 = 0;
+    for (i, t) in toks.iter().enumerate() {
+        match &t.token {
+            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+            Token::RParen | Token::RBracket | Token::RBrace => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Index of the first token (at paren depth 0) for which `pred` is true.
@@ -1130,6 +1233,76 @@ mod tests {
         "#;
         let elab = elab_first_rule(src);
         assert!(matches!(&elab.premises[0], ElabPremise::Raw(_)));
+    }
+
+    #[test]
+    fn elab_premise_iter_star() {
+        let src = r#"
+            syntax context = nat
+            syntax t = nat
+            relation Sub: context |- t <: t
+            rule Sub:
+              C |- x <: y
+              -- (Sub: C |- a <: b)*
+        "#;
+        let elab = elab_first_rule(src);
+        assert_eq!(elab.premises.len(), 1);
+        let ElabPremise::Iter { inner, kind } = &elab.premises[0] else {
+            panic!("expected Iter, got {:?}", elab.premises[0]);
+        };
+        assert!(matches!(kind, IterKind::Star));
+        assert!(matches!(inner.as_ref(), ElabPremise::Rule { rel_name, .. } if rel_name == "Sub"));
+    }
+
+    #[test]
+    fn elab_premise_iter_opt() {
+        let src = r#"
+            syntax context = nat
+            syntax t = nat
+            relation R: context |- t : t
+            rule R:
+              C |- x : y
+              -- (R: C |- a : b)?
+        "#;
+        let elab = elab_first_rule(src);
+        let ElabPremise::Iter { kind, .. } = &elab.premises[0] else {
+            panic!("expected Iter")
+        };
+        assert!(matches!(kind, IterKind::Opt));
+    }
+
+    #[test]
+    fn elab_premise_iter_plus() {
+        let src = r#"
+            syntax context = nat
+            syntax t = nat
+            relation R: context |- t : t
+            rule R:
+              C |- x : y
+              -- (R: C |- a : b)+
+        "#;
+        let elab = elab_first_rule(src);
+        let ElabPremise::Iter { kind, .. } = &elab.premises[0] else {
+            panic!("expected Iter")
+        };
+        assert!(matches!(kind, IterKind::Plus));
+    }
+
+    #[test]
+    fn elab_premise_iter_caret_length() {
+        let src = r#"
+            syntax context = nat
+            syntax t = nat
+            relation R: context |- t : t
+            rule R:
+              C |- x : y
+              -- (R: C |- a : b)^n
+        "#;
+        let elab = elab_first_rule(src);
+        let ElabPremise::Iter { kind, .. } = &elab.premises[0] else {
+            panic!("expected Iter")
+        };
+        assert!(matches!(kind, IterKind::Length(_)));
     }
 
     #[test]

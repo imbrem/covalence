@@ -112,6 +112,7 @@ fn premise_kind_name(p: &ElabPremise) -> &'static str {
         ElabPremise::If(_) => "If",
         ElabPremise::Let { .. } => "Let",
         ElabPremise::Else => "Else",
+        ElabPremise::Iter { .. } => "Iter",
         ElabPremise::Raw(_) => "Raw",
     }
 }

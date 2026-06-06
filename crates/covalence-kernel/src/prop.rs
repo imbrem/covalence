@@ -186,6 +186,14 @@ impl Prop {
 /// A kernel-verified `Prop`. Constructible only via the inference-
 /// rule methods below (or future rules); cannot be built by external
 /// code from a bare `Prop`.
+///
+/// ## ⚠️ Experimental kernel — not the final version
+///
+/// This whole kernel is staging code. Several inference rules
+/// have known soundness-affecting holes and the eventual rewrite
+/// will change their signatures. In particular [`Thm::abs_unchecked`]
+/// skips a soundness check. See the [crate-level docs](crate) for
+/// the full list of caveats.
 #[derive(Debug, Clone)]
 pub struct Thm {
     prop: Prop,
@@ -310,6 +318,71 @@ impl Thm {
         })
     }
 
+    /// **Type-variable instantiation (`INST_TYPE`).** From `Γ ⊢ p`
+    /// substitute every occurrence of the type variable `name` with
+    /// `replacement` in `p` and in every assumption of `Γ`. Returns
+    /// the new Thm with the substituted context + conclusion.
+    ///
+    /// The kernel doesn't yet have a polymorphic `TypeSubst`
+    /// application path; this is the single-variable version that
+    /// callers iterate for parallel substitutions.
+    pub fn inst_type(
+        arena: &mut Arena,
+        thm: Thm,
+        name: StrId,
+        replacement: TypeRef,
+    ) -> Result<Self, ProofError> {
+        let concl_ref = arena.subst_tyvar_in_term(
+            TermRef::local(thm.prop.concl),
+            name,
+            replacement,
+        );
+        let new_concl = concl_ref.as_local().ok_or(ProofError::ForeignConclusion)?;
+        let old_ctx = thm.prop.context.clone();
+        let mut new_assumptions = Vec::with_capacity(old_ctx.len());
+        for i in 0..old_ctx.len() {
+            let assum = old_ctx.assumption(i).expect("len/index invariant");
+            let new_ref = arena.subst_tyvar_in_term(
+                TermRef::local(assum.concl),
+                name,
+                replacement,
+            );
+            let new_id = new_ref.as_local().ok_or(ProofError::ForeignConclusion)?;
+            new_assumptions.push(Arc::new(Prop::new(assum.context.clone(), new_id)));
+        }
+        let new_ctx = Context::flat(new_assumptions);
+        Ok(Self {
+            prop: Prop::new(new_ctx, new_concl),
+        })
+    }
+
+    /// **Replace the Thm's context with `target_ctx`.**
+    ///
+    /// Soundness check: every `Arc<Prop>` in the current context
+    /// must also appear (by `Arc::ptr_eq`) somewhere in
+    /// `target_ctx`'s chain. The conclusion is unchanged.
+    ///
+    /// This is the building block bridges use to align two Thms
+    /// onto a common context before applying `Arc::ptr_eq`-strict
+    /// rules like [`Self::trans`] / [`Self::eq_mp`]: compute the
+    /// union of Props from both inputs, build a single
+    /// `Context::flat` over it, then `with_context` each input
+    /// onto that shared `Arc`.
+    pub fn with_context(
+        self,
+        target_ctx: Arc<Context>,
+    ) -> Result<Self, ProofError> {
+        for i in 0..self.prop.context.len() {
+            let p = self.prop.context.assumption(i).expect("len/index invariant");
+            if !target_ctx.contains_prop(p) {
+                return Err(ProofError::AssumptionNotInContext);
+            }
+        }
+        Ok(Self {
+            prop: Prop::new(target_ctx, self.prop.concl),
+        })
+    }
+
     /// **Ex falso → negation.** From a Thm `ctx ⊢ False` and a
     /// well-typed proposition `p`, derive `ctx ⊢ ¬p`.
     pub fn not_from_false(
@@ -416,6 +489,40 @@ impl Thm {
         })
     }
 
+    /// **HOL Light's `MK_COMB` rule.** From `Γ ⊢ f = g` and
+    /// `Γ ⊢ x = y` derive `Γ ⊢ f x = g y`.
+    ///
+    /// Direct primitive — no UF wiring required. The two inputs
+    /// must share the same context (`Arc::ptr_eq`); bridges use
+    /// [`Self::with_context`] to align them first.
+    pub fn mk_comb(arena: &mut Arena, fg: Thm, xy: Thm) -> Result<Self, ProofError> {
+        if !Arc::ptr_eq(&fg.prop.context, &xy.prop.context) {
+            return Err(ProofError::ContextMismatch);
+        }
+        if !arena.is_well_typed(fg.prop.concl) || !arena.is_well_typed(xy.prop.concl) {
+            return Err(ProofError::IllTypedInput);
+        }
+        let (f, g) = match *arena.term_def(fg.prop.concl) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => return Err(ProofError::ExpectedEquality),
+        };
+        let (x, y) = match *arena.term_def(xy.prop.concl) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => return Err(ProofError::ExpectedEquality),
+        };
+        let fx = arena.alloc_term(TermDef::Comb(f, x));
+        let _ = arena.infer(fx);
+        let gy = arena.alloc_term(TermDef::Comb(g, y));
+        let _ = arena.infer(gy);
+        if !arena.is_well_typed(fx) || !arena.is_well_typed(gy) {
+            return Err(ProofError::IllTypedInput);
+        }
+        let eq = arena.alloc_term(TermDef::Eq(TermRef::local(fx), TermRef::local(gy)));
+        Ok(Self {
+            prop: Prop::new(fg.prop.context, eq),
+        })
+    }
+
     /// **General congruence.** If `a` and `b` are structurally
     /// congruent walking children to depth `depth` (i.e.
     /// [`TermUf::eq_at_level`] returns true), derive
@@ -465,6 +572,14 @@ impl Thm {
         };
         let reduced = arena.subst(body_ref, 0, arg_ref);
         let eq = arena.alloc_term(TermDef::Eq(TermRef::local(comb), reduced));
+        // Force re-inference on the resulting Eq. `alloc_term`'s
+        // `compute_term_props` only inspects children's *cached*
+        // info — if any child's cache is stale (e.g. an inner Lam
+        // whose Typed entry was computed in a different binder
+        // context), the Eq can be cached as ILL_TYPED even when
+        // the term structurally type-checks. Re-walking with
+        // `infer` produces the right Typed result.
+        let _ = arena.infer(eq);
         Ok(Self {
             prop: Prop::new(ctx, eq),
         })
@@ -505,6 +620,44 @@ impl Thm {
         let s_abs = arena.alloc_term(TermDef::Lam(ty, s_body));
         let t_abs = arena.alloc_term(TermDef::Lam(ty, t_body));
         let eq = arena.alloc_term(TermDef::Eq(TermRef::local(s_abs), TermRef::local(t_abs)));
+        Ok(Self {
+            prop: Prop::new(thm.prop.context, eq),
+        })
+    }
+
+    /// **Variant of [`Self::abs`] that skips the
+    /// VariableEscapesAssumption check.** From `Γ ⊢ s = t`, derive
+    /// `Γ ⊢ (λname:ty. s) = (λname:ty. t)` without verifying that
+    /// `Free(name, ty)` doesn't appear in any assumption of `Γ`.
+    ///
+    /// **Soundness obligation on the caller**: every assumption in
+    /// `Γ` that contains `Free(name, ty)` must be a globally true
+    /// axiom (i.e. derivable in the empty context). HOL Light
+    /// stores axioms outside the hypothesis set so its `abs` rule's
+    /// check naturally excludes them; bridges that funnel axioms
+    /// *through* the context (e.g. `HolPrim::new_axiom`) call this
+    /// variant after externally checking the obligation.
+    pub fn abs_unchecked(
+        arena: &mut Arena,
+        thm: Thm,
+        name: StrId,
+        ty: TypeRef,
+    ) -> Result<Self, ProofError> {
+        if !arena.is_well_typed(thm.prop.concl) {
+            return Err(ProofError::IllTypedInput);
+        }
+        let (s, t) = match *arena.term_def(thm.prop.concl) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => return Err(ProofError::ExpectedEquality),
+        };
+        let s_body = arena.abstract_over(s, name, ty, 0);
+        let t_body = arena.abstract_over(t, name, ty, 0);
+        let s_abs = arena.alloc_term(TermDef::Lam(ty, s_body));
+        let t_abs = arena.alloc_term(TermDef::Lam(ty, t_body));
+        let _ = arena.infer(s_abs);
+        let _ = arena.infer(t_abs);
+        let eq = arena.alloc_term(TermDef::Eq(TermRef::local(s_abs), TermRef::local(t_abs)));
+        let _ = arena.infer(eq);
         Ok(Self {
             prop: Prop::new(thm.prop.context, eq),
         })

@@ -26,6 +26,13 @@ pub struct Kernel {
 }
 
 impl Kernel {
+    /// Create a fresh kernel.
+    ///
+    /// ⚠️ The covalence-kernel crate is **experimental staging
+    /// code**, not the final soundness-critical implementation. See
+    /// the crate-level docs for the known holes (trust escape
+    /// hatches, opaque Subset substitution, deduct-antisym shape
+    /// gaps, …). Don't deploy where soundness matters.
     pub fn new() -> Self {
         Self {
             egraph: Egraph::new(),

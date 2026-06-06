@@ -24,6 +24,113 @@ fn alloc_const(a: &mut Arena, name: &str, ty: TypeRef) -> covalence_kernel::Term
 // ---------------------------------------------------------------------------
 
 #[test]
+fn intern_tyargs_dedupes_identical_vecs() {
+    // Two `intern_tyargs(vec![])` calls must return the same
+    // `TyArgsId`. Without this, `Tyapp(name, args)` allocations for
+    // structurally-identical nullary types end up with different
+    // `TypeRef`s, breaking polymorphic-instance equality.
+    let mut a = Arena::new();
+    let id1 = a.intern_tyargs(vec![]);
+    let id2 = a.intern_tyargs(vec![]);
+    assert_eq!(id1, id2);
+    let bool_ty = a.bool_ty();
+    let id3 = a.intern_tyargs(vec![bool_ty]);
+    let id4 = a.intern_tyargs(vec![bool_ty]);
+    assert_eq!(id3, id4);
+    assert_ne!(id1, id3);
+}
+
+#[test]
+fn alloc_tyapp_with_same_args_dedupes() {
+    // Two `alloc_tyapp(name, [])` calls — relying on intern_tyargs
+    // dedup — must return the same TypeRef. Diagnosed root cause of
+    // the unit-* test "polymorphic instance mismatch" was that this
+    // didn't hold before intern_tyargs was made dedup'ing.
+    let mut a = Arena::new();
+    let name = a.intern_string("unit".into());
+    let args1 = a.intern_tyargs(vec![]);
+    let args2 = a.intern_tyargs(vec![]);
+    let ty1 = a.alloc_tyapp(name, args1);
+    let ty2 = a.alloc_tyapp(name, args2);
+    assert_eq!(ty1, ty2);
+}
+
+#[test]
+fn alloc_fun_with_same_args_dedupes() {
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let nat_ty = a.nat_ty();
+    let f1 = a.alloc_fun_ty(bool_ty, nat_ty);
+    let f2 = a.alloc_fun_ty(bool_ty, nat_ty);
+    assert_eq!(f1, f2);
+    let f3 = a.alloc_fun_ty(nat_ty, bool_ty);
+    assert_ne!(f1, f3);
+}
+
+#[test]
+fn alloc_tvar_with_same_name_dedupes() {
+    let mut a = Arena::new();
+    let n = a.intern_string("A".into());
+    let v1 = a.alloc_tvar(n);
+    let v2 = a.alloc_tvar(n);
+    assert_eq!(v1, v2);
+}
+
+#[test]
+fn alloc_term_dedupes_identical_defs() {
+    let mut a = Arena::new();
+    let n = a.intern_string("x".into());
+    let bool_ty = a.bool_ty();
+    let t1 = a.alloc_term(TermDef::Free(n, bool_ty));
+    let t2 = a.alloc_term(TermDef::Free(n, bool_ty));
+    assert_eq!(t1, t2);
+    // Different name → different TermId.
+    let m = a.intern_string("y".into());
+    let t3 = a.alloc_term(TermDef::Free(m, bool_ty));
+    assert_ne!(t1, t3);
+    // Different ty → different TermId.
+    let nat_ty = a.nat_ty();
+    let t4 = a.alloc_term(TermDef::Free(n, nat_ty));
+    assert_ne!(t1, t4);
+}
+
+#[test]
+fn alloc_term_dedupes_comb_with_same_children() {
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let bool_to_bool = a.alloc_fun_ty(bool_ty, bool_ty);
+    let f_name = a.intern_string("f".into());
+    let f = TermRef::local(a.alloc_term(TermDef::Free(f_name, bool_to_bool)));
+    let x_name = a.intern_string("x".into());
+    let x = TermRef::local(a.alloc_term(TermDef::Free(x_name, bool_ty)));
+    let app1 = a.alloc_term(TermDef::Comb(f, x));
+    let app2 = a.alloc_term(TermDef::Comb(f, x));
+    assert_eq!(app1, app2);
+}
+
+#[test]
+fn alloc_term_auto_infers_so_is_well_typed_works() {
+    // After alloc_term, is_well_typed should give the correct
+    // answer without an explicit infer call. This is the
+    // "alloc_term auto-infers" invariant that several rules in
+    // prop.rs rely on.
+    let mut a = Arena::new();
+    let bool_ty = a.bool_ty();
+    let b0 = a.alloc_term(TermDef::Bound(0));
+    let lam = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(b0)));
+    assert!(a.is_well_typed(lam));
+    // The Lam's type is `bool → bool`.
+    let info = a.term_props(lam).type_info;
+    match a.type_ref_kind(info.as_type().unwrap()) {
+        Some(TypeKind::Fun(d, c)) => {
+            assert_eq!(d, bool_ty);
+            assert_eq!(c, bool_ty);
+        }
+        other => panic!("expected bool → bool, got {other:?}"),
+    }
+}
+
+#[test]
 fn alloc_builtin_types_returns_builtin_typerefs() {
     let mut a = Arena::new();
     // (no UF needed)
@@ -1010,16 +1117,15 @@ fn op2_shift_takes_nat_count() {
 
 #[test]
 fn infer_resolves_abs_over_bound_zero() {
-    // λ_:bool. Bound(0) — alloc_term marks it IllTyped because the
-    // re-walk under the binder isn't done eagerly. `infer` does it.
+    // λ_:bool. Bound(0) — `alloc_term` now eagerly runs `infer`
+    // after every allocation, so the cache is already populated
+    // by the time we return.
     let mut a = Arena::new();
     // (no UF needed)
     let bool_ty = a.bool_ty();
     let b0 = a.alloc_term(TermDef::Bound(0));
     let abs = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(b0)));
-    // Cached type at insertion is IllTyped.
-    assert_eq!(a.term_props(abs).type_info, TypeInfo::ILL_TYPED);
-    // infer walks under the binder and computes bool → bool.
+    // Cache already reflects the inferred bool→bool type.
     let inferred = a.infer(abs);
     let abs_ty = inferred.as_type().expect("inferred typed");
     match a.type_ref_kind(abs_ty) {
@@ -1084,9 +1190,9 @@ fn infer_caches_result() {
     let bool_ty = a.bool_ty();
     let b0 = a.alloc_term(TermDef::Bound(0));
     let abs = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(b0)));
-    assert_eq!(a.term_props(abs).type_info, TypeInfo::ILL_TYPED);
+    // `alloc_term` now auto-runs `infer`, so the cache is populated
+    // from the moment we get a TermId back.
     let info = a.infer(abs);
-    // After infer, the cache is updated.
     assert_eq!(a.term_props(abs).type_info, info);
     assert!(info.is_typed());
 }
@@ -1303,10 +1409,10 @@ fn term_is_equal_to_itself() {
 fn union_makes_two_terms_equal() {
     let mut a = Arena::new();
     let mut uf = TermUf::new();
-    // Two separately-allocated NatInline(5) terms — different TermIds,
-    // same logical value. Initially not eq at level 0.
+    // Two distinct nat literals — different TermIds. Initially not
+    // eq at level 0; union makes them equal.
     let n1 = a.alloc_term(TermDef::nat_inline(5));
-    let n2 = a.alloc_term(TermDef::nat_inline(5));
+    let n2 = a.alloc_term(TermDef::nat_inline(6));
     assert!(!uf.eq_at_level_0(TermRef::local(n1), TermRef::local(n2)));
     uf.union(TermRef::local(n1), TermRef::local(n2)).unwrap();
     assert!(uf.eq_at_level_0(TermRef::local(n1), TermRef::local(n2)));
@@ -1345,11 +1451,14 @@ fn union_if_congruent_step_succeeds_on_matching_combs() {
     let bool_to_bool = a.alloc_fun_ty(bool_ty, bool_ty);
     let neg = alloc_const(&mut a, "not", bool_to_bool);
     let t = a.alloc_term(TermDef::Bool(true));
-    // Two structurally-identical Comb(neg, True) terms with separate TermIds.
+    let f = a.alloc_term(TermDef::Bool(false));
+    // Two Comb(neg, _) terms with different children. Initially not
+    // eq at level 0; after we union true ↔ false the cong step at
+    // depth 1 unifies the parents.
     let app1 = a.alloc_term(TermDef::Comb(TermRef::local(neg), TermRef::local(t)));
-    let app2 = a.alloc_term(TermDef::Comb(TermRef::local(neg), TermRef::local(t)));
+    let app2 = a.alloc_term(TermDef::Comb(TermRef::local(neg), TermRef::local(f)));
     assert!(!uf.eq_at_level_0(TermRef::local(app1), TermRef::local(app2)));
-    // Children (neg and t) are already eq at level 0 (literally same TermIds).
+    uf.union(TermRef::local(t), TermRef::local(f)).unwrap();
     let fired = uf
         .union_if_congruent(&a, TermRef::local(app1), TermRef::local(app2), 1)
         .unwrap();
@@ -1364,7 +1473,7 @@ fn union_if_congruent_step_propagates_via_children_union() {
     let mut uf = TermUf::new();
     // x and y are two distinct nat literals; we union them.
     let x = a.alloc_term(TermDef::nat_inline(7));
-    let y = a.alloc_term(TermDef::nat_inline(7));
+    let y = a.alloc_term(TermDef::nat_inline(8));
     uf.union(TermRef::local(x), TermRef::local(y)).unwrap();
     // Now Op1(NatSucc, x) and Op1(NatSucc, y) should match via cong.
     use covalence_kernel::PrimOp1;

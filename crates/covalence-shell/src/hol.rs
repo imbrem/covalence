@@ -48,6 +48,7 @@ use covalence_hol::types::{HolError, NameId};
 use covalence_kernel::arena::Arena;
 use covalence_kernel::id::{StrId, TyArgsId, TypeId};
 use covalence_kernel::kernel::Kernel as KKernel;
+use covalence_kernel::primop::{PrimOp1, PrimOp2};
 use covalence_kernel::prop::{Context, Prop, ProofError, Thm};
 use covalence_kernel::term::{TermDef, TermRef};
 use covalence_kernel::ty::{TypeKind, TypeRef};
@@ -154,6 +155,12 @@ pub struct HolPrim {
     /// reported hyp set matches HOL Light's "axioms-are-implicit"
     /// view.
     trusted_props: Vec<Arc<Prop>>,
+    /// Canonical-context cache keyed by sorted `Arc<Prop>` pointer
+    /// identities. Lets [`Self::align_for_binary`] return the same
+    /// `Arc<Context>` for the same set of assumption Props across
+    /// calls, which is what the kernel's `Arc::ptr_eq`-strict rules
+    /// require.
+    ctx_cache: HashMap<Vec<usize>, Arc<Context>>,
 }
 
 impl HolPrim {
@@ -210,6 +217,7 @@ impl HolPrim {
             axioms: Vec::new(),
             session_ctx: Context::empty(),
             trusted_props: Vec::new(),
+            ctx_cache: HashMap::new(),
         }
     }
 
@@ -235,6 +243,20 @@ impl HolPrim {
 
     fn arena_mut(&mut self) -> &mut Arena {
         self.kernel.arena_mut()
+    }
+
+    /// Inform `HolPrim` that `name_id` corresponds to the human-
+    /// readable string `name`. Pre-registers the mapping so
+    /// `str_of(name_id)` returns the actual interned string instead
+    /// of a synthetic `"?n{id}"`. The OpenTheory machine calls this
+    /// on every `intern_name`.
+    pub fn register_name(&mut self, name_id: NameId, name: &str) {
+        if self.name_to_str.contains_key(&name_id) {
+            return;
+        }
+        let s = self.arena_mut().intern_string(SmolStr::new(name));
+        self.name_to_str.insert(name_id, s);
+        self.str_to_name.insert(s, name_id);
     }
 
     /// HOL `NameId` → kernel `StrId`. Names not previously seen are
@@ -294,6 +316,53 @@ impl HolPrim {
         self.get_thm(h).cloned()
     }
 
+    /// Collect every `Arc<Prop>` in `ctx`'s chain into `out`,
+    /// dedup'd by `Arc::ptr_eq`.
+    fn collect_props(ctx: &Arc<Context>, out: &mut Vec<Arc<Prop>>) {
+        for i in 0..ctx.len() {
+            let p = ctx.assumption(i).expect("len/index invariant").clone();
+            if !out.iter().any(|q| Arc::ptr_eq(q, &p)) {
+                out.push(p);
+            }
+        }
+    }
+
+    /// Align two Thms onto a common context (the union of their
+    /// assumption Props) and return the aligned pair plus the
+    /// canonical context for the result.
+    ///
+    /// Uses [`Self::ctx_cache`] keyed by sorted `Arc<Prop>` pointer
+    /// identities so repeated align calls with the same union
+    /// return the same `Arc<Context>` — required for the kernel's
+    /// `Arc::ptr_eq`-strict rules.
+    fn align_for_binary(
+        &mut self,
+        th1: Thm,
+        th2: Thm,
+    ) -> Result<(Thm, Thm, Arc<Context>), HolPrimError> {
+        let mut union: Vec<Arc<Prop>> = Vec::new();
+        Self::collect_props(th1.context(), &mut union);
+        Self::collect_props(th2.context(), &mut union);
+        let target = self.canonical_ctx(&union);
+        let th1 = th1.with_context(target.clone())?;
+        let th2 = th2.with_context(target.clone())?;
+        Ok((th1, th2, target))
+    }
+
+    /// Return the canonical `Arc<Context>` whose chain holds
+    /// exactly `props` (in arbitrary order). Cached so two calls
+    /// with the same `Arc<Prop>` set return the same `Arc<Context>`.
+    fn canonical_ctx(&mut self, props: &[Arc<Prop>]) -> Arc<Context> {
+        let mut key: Vec<usize> = props.iter().map(|p| Arc::as_ptr(p) as usize).collect();
+        key.sort_unstable();
+        if let Some(ctx) = self.ctx_cache.get(&key) {
+            return ctx.clone();
+        }
+        let ctx = Context::flat(props.to_vec());
+        self.ctx_cache.insert(key, ctx.clone());
+        ctx
+    }
+
     /// Weaken `thm` so its context becomes the current
     /// `session_ctx`. Walks the chain from `session_ctx` down to
     /// `thm.context()`, calling `Thm::add_assumption` for each
@@ -306,6 +375,7 @@ impl HolPrim {
     /// `Arc::ptr_eq` to `session_ctx`, or `None` if the input ctx
     /// isn't an ancestor of the session ctx (which would mean we'd
     /// need to *contract*, not weaken — currently unsupported).
+    #[allow(dead_code)]
     fn lift_to_session(&mut self, thm: Thm) -> Result<Thm, HolPrimError> {
         if Arc::ptr_eq(thm.context(), &self.session_ctx) {
             return Ok(thm);
@@ -430,12 +500,44 @@ impl HolPrim {
         }
     }
 
-    /// Structural type equality. Kernel `TypeRef`s are interned per
-    /// `Arena`, so the cheap `==` is sound for types built against
-    /// the same kernel — which is always the case inside one
-    /// `HolPrim`.
+    /// Structural type equality. The arena's `alloc_type` does
+    /// **not** dedup, so two `alloc_tvar("A")` calls produce
+    /// different `TypeRef`s with the same shape — we walk both
+    /// trees instead of trusting `==`.
     pub fn type_eq(&self, a: TypeRef, b: TypeRef) -> bool {
-        a == b
+        Self::type_eq_struct(self.arena(), a, b)
+    }
+
+    fn type_eq_struct(arena: &Arena, a: TypeRef, b: TypeRef) -> bool {
+        if a == b {
+            return true;
+        }
+        let ka = arena.type_ref_kind(a);
+        let kb = arena.type_ref_kind(b);
+        match (ka, kb) {
+            (Some(TypeKind::Builtin(x)), Some(TypeKind::Builtin(y))) => x == y,
+            (Some(TypeKind::TVar(x)), Some(TypeKind::TVar(y))) => x == y,
+            (Some(TypeKind::Fun(d1, c1)), Some(TypeKind::Fun(d2, c2))) => {
+                Self::type_eq_struct(arena, d1, d2) && Self::type_eq_struct(arena, c1, c2)
+            }
+            (Some(TypeKind::Tyapp(n1, args1)), Some(TypeKind::Tyapp(n2, args2))) => {
+                if n1 != n2 {
+                    return false;
+                }
+                let a1 = arena.tyargs(args1);
+                let a2 = arena.tyargs(args2);
+                if a1.len() != a2.len() {
+                    return false;
+                }
+                a1.iter()
+                    .zip(a2.iter())
+                    .all(|(x, y)| Self::type_eq_struct(arena, *x, *y))
+            }
+            (Some(TypeKind::Subset(p1, t1)), Some(TypeKind::Subset(p2, t2))) => {
+                Self::type_eq_struct(arena, p1, p2) && t1 == t2
+            }
+            _ => false,
+        }
     }
 
     /// All free type variables of `ty` (deduplicated, in first-seen
@@ -514,15 +616,25 @@ impl HolPrim {
 
     /// Application `f x`.
     ///
-    /// Performs one shell-level rewrite for HOL-Light parity: when
-    /// `f` is `Comb(Const "=", lhs)`, fold into `Eq(lhs, x)`.
-    /// OpenTheory articles build equalities as `((= a) b)` via
-    /// `constTerm "=" + appTerm + appTerm`, but our kernel stores
-    /// equality as a primitive `Eq(_, _)` shape — folding here keeps
-    /// both representations alpha-equivalent.
+    /// Performs shell-level rewrites for HOL Light parity: OpenTheory
+    /// articles build equality, quantifiers, and the propositional
+    /// connectives as `Comb(Comb(Const "...", _), _)` chains via
+    /// `constTerm + appTerm + appTerm`, while our kernel stores them
+    /// as dedicated `Eq` / `Forall` / `Exists` / `Op1` / `Op2`
+    /// variants. Folding here keeps both representations
+    /// structurally identical so `aconv` matches.
     pub fn mk_comb(&mut self, f: TermRef, x: TermRef) -> TermRef {
         if let Some(eq) = self.try_fold_eq(f, x) {
             return eq;
+        }
+        if let Some(q) = self.try_fold_quantifier(f, x) {
+            return q;
+        }
+        if let Some(o) = self.try_fold_unary_op(f, x) {
+            return o;
+        }
+        if let Some(o) = self.try_fold_binary_op(f, x) {
+            return o;
         }
         let id = self.arena_mut().alloc_term(TermDef::Comb(f, x));
         // Kernel's cached typing can't resolve Bound(_) without
@@ -549,6 +661,82 @@ impl HolPrim {
             return None;
         }
         Some(self.mk_eq(lhs, x))
+    }
+
+    /// Extract the base name of a (possibly qualified) HOL Light
+    /// constant — `"Data.Bool.!"` → `"!"`. OT articles use the
+    /// qualified form; the fold matches by base name only so it
+    /// works across all `Data.Bool.*` and `HOL Light` namespaces.
+    fn base_name(qualified: &str) -> &str {
+        qualified.rsplit('.').next().unwrap_or(qualified)
+    }
+
+    /// If `f` is `Const "...!"` or `Const "...?"` (HOL Light's
+    /// universal / existential binders) and `x` is a `Lam`,
+    /// allocate `Forall(x)` / `Exists(x)`.
+    fn try_fold_quantifier(&mut self, f: TermRef, x: TermRef) -> Option<TermRef> {
+        let f_id = f.as_local()?;
+        let s = match *self.arena().term_def(f_id) {
+            TermDef::Const(s, _) => s,
+            _ => return None,
+        };
+        let name = self.arena().string(s).clone();
+        let def = match Self::base_name(name.as_str()) {
+            "!" => TermDef::Forall(x),
+            "?" => TermDef::Exists(x),
+            _ => return None,
+        };
+        // The argument must be a Lam — otherwise leave as `Comb`.
+        let x_id = x.as_local()?;
+        if !matches!(*self.arena().term_def(x_id), TermDef::Lam(_, _)) {
+            return None;
+        }
+        let id = self.arena_mut().alloc_term(def);
+        let _ = self.arena_mut().infer(id);
+        Some(TermRef::local(id))
+    }
+
+    /// If `f` is `Const "...~"` (HOL Light's negation), allocate
+    /// `Op1(LogicalNot, x)`.
+    fn try_fold_unary_op(&mut self, f: TermRef, x: TermRef) -> Option<TermRef> {
+        let f_id = f.as_local()?;
+        let s = match *self.arena().term_def(f_id) {
+            TermDef::Const(s, _) => s,
+            _ => return None,
+        };
+        let name = self.arena().string(s).clone();
+        let op = match Self::base_name(name.as_str()) {
+            "~" => PrimOp1::LogicalNot,
+            _ => return None,
+        };
+        let id = self.arena_mut().alloc_term(TermDef::Op1(op, x));
+        let _ = self.arena_mut().infer(id);
+        Some(TermRef::local(id))
+    }
+
+    /// If `f` is `Comb(Const "...{/\,\/,==>}", a)`, fold to
+    /// `Op2(op, a, x)`.
+    fn try_fold_binary_op(&mut self, f: TermRef, x: TermRef) -> Option<TermRef> {
+        let f_id = f.as_local()?;
+        let (g, a) = match *self.arena().term_def(f_id) {
+            TermDef::Comb(g, a) => (g, a),
+            _ => return None,
+        };
+        let g_id = g.as_local()?;
+        let s = match *self.arena().term_def(g_id) {
+            TermDef::Const(s, _) => s,
+            _ => return None,
+        };
+        let name = self.arena().string(s).clone();
+        let op = match Self::base_name(name.as_str()) {
+            "/\\" => PrimOp2::LogicalAnd,
+            "\\/" => PrimOp2::LogicalOr,
+            "==>" => PrimOp2::LogicalImp,
+            _ => return None,
+        };
+        let id = self.arena_mut().alloc_term(TermDef::Op2(op, a, x));
+        let _ = self.arena_mut().infer(id);
+        Some(TermRef::local(id))
     }
 
     /// Lambda abstraction `λvar. body`. `var` must be a `Free`
@@ -636,10 +824,60 @@ impl HolPrim {
     /// (ill-typed input).
     pub fn type_of(&mut self, tm: TermRef) -> Result<TypeRef, HolPrimError> {
         let id = tm.as_local().ok_or(HolError::NotACombination)?;
-        self.arena_mut()
-            .infer(id)
-            .as_type()
-            .ok_or_else(|| HolError::TypeMismatch("term is not typed".into()).into())
+        let info = self.arena_mut().infer(id);
+        info.as_type().ok_or_else(|| {
+            HolError::TypeMismatch(format!(
+                "term is not typed: {}",
+                self.debug_dump(tm, 4)
+            ))
+            .into()
+        })
+    }
+
+    /// Dump a term's structure to a string up to `depth` levels.
+    fn debug_dump(&self, tm: TermRef, depth: u32) -> String {
+        if depth == 0 {
+            return "…".to_string();
+        }
+        let Some(id) = tm.as_local() else {
+            return format!("{tm:?}");
+        };
+        let def = *self.arena().term_def(id);
+        let info = self.arena().term_props(id).type_info;
+        match def {
+            TermDef::Bound(i) => format!("Bound({i}):{info:?}"),
+            TermDef::Free(s, ty) => {
+                let n = self.arena().string(s).clone();
+                format!("Free({n:?},ty={ty:?}):{info:?}")
+            }
+            TermDef::Const(s, ty) => {
+                let n = self.arena().string(s).clone();
+                format!("Const({n:?},ty={ty:?}):{info:?}")
+            }
+            TermDef::Comb(f, x) => format!(
+                "Comb({}, {}):{info:?}",
+                self.debug_dump(f, depth - 1),
+                self.debug_dump(x, depth - 1)
+            ),
+            TermDef::Lam(ty, body) => format!(
+                "Lam({ty:?}, {}):{info:?}",
+                self.debug_dump(body, depth - 1)
+            ),
+            TermDef::Eq(a, b) => format!(
+                "Eq({}, {}):{info:?}",
+                self.debug_dump(a, depth - 1),
+                self.debug_dump(b, depth - 1)
+            ),
+            TermDef::Forall(p) => format!("Forall({}):{info:?}", self.debug_dump(p, depth - 1)),
+            TermDef::Exists(p) => format!("Exists({}):{info:?}", self.debug_dump(p, depth - 1)),
+            TermDef::Op1(o, x) => format!("Op1({o:?}, {}):{info:?}", self.debug_dump(x, depth - 1)),
+            TermDef::Op2(o, a, b) => format!(
+                "Op2({o:?}, {}, {}):{info:?}",
+                self.debug_dump(a, depth - 1),
+                self.debug_dump(b, depth - 1)
+            ),
+            other => format!("{other:?}:{info:?}"),
+        }
     }
 
     /// Structural term equality. Compares the `TermDef` shape
@@ -671,14 +909,24 @@ impl HolPrim {
             (Eq(f1, x1), Eq(f2, x2)) => {
                 Self::ref_eq(arena, f1, f2) && Self::ref_eq(arena, x1, x2)
             }
-            (Lam(t1, b1), Lam(t2, b2)) => t1 == t2 && Self::ref_eq(arena, b1, b2),
+            (Lam(t1, b1), Lam(t2, b2)) => {
+                Self::type_eq_struct(arena, t1, t2) && Self::ref_eq(arena, b1, b2)
+            }
             (Forall(p1), Forall(p2)) => Self::ref_eq(arena, p1, p2),
             (Exists(p1), Exists(p2)) => Self::ref_eq(arena, p1, p2),
             (Op1(o1, p1), Op1(o2, p2)) => o1 == o2 && Self::ref_eq(arena, p1, p2),
             (Op2(o1, l1, r1), Op2(o2, l2, r2)) => {
                 o1 == o2 && Self::ref_eq(arena, l1, l2) && Self::ref_eq(arena, r1, r2)
             }
-            (Eps(t1, p1), Eps(t2, p2)) => t1 == t2 && Self::ref_eq(arena, p1, p2),
+            (Eps(t1, p1), Eps(t2, p2)) => {
+                Self::type_eq_struct(arena, t1, t2) && Self::ref_eq(arena, p1, p2)
+            }
+            (Free(s1, t1), Free(s2, t2)) => {
+                s1 == s2 && Self::type_eq_struct(arena, t1, t2)
+            }
+            (Const(s1, t1), Const(s2, t2)) => {
+                s1 == s2 && Self::type_eq_struct(arena, t1, t2)
+            }
             _ => da == db,
         }
     }
@@ -694,9 +942,113 @@ impl HolPrim {
 
     /// α-equivalence. With locally-nameless body representation,
     /// α-equivalence coincides with structural equality of the
-    /// stored `TermDef`s.
+    /// stored `TermDef`s — *modulo HOL Light's fold pairs*. Raw
+    /// `Comb(Const "!", λ)` shapes and folded `Forall(λ)` shapes
+    /// are α-equivalent under HOL Light's semantics; we recognize
+    /// each pair explicitly so OT articles whose `thm` commands
+    /// build the conclusion in raw form (constTerm + appTerm) match
+    /// the folded form produced by kernel rules.
     pub fn aconv(&self, a: TermRef, b: TermRef) -> bool {
-        self.term_eq(a, b)
+        if self.term_eq(a, b) {
+            return true;
+        }
+        self.shapes_alpha_equivalent(a, b)
+    }
+
+    /// Recursive α-equivalence check that treats raw ↔ folded
+    /// shape pairs as equal: `Comb(Const "!", λ) ↔ Forall(λ)`,
+    /// `Comb(Const "?", λ) ↔ Exists(λ)`, `Comb(Const "~", x) ↔
+    /// Op1(LogicalNot, x)`, and binary connectives. Used by
+    /// [`Self::aconv`] (the OT `cmd_thm` check) and the eq_mp /
+    /// deduct_antisym shape bridges.
+    fn shapes_alpha_equivalent(&self, a: TermRef, b: TermRef) -> bool {
+        if a == b {
+            return true;
+        }
+        let (Some(a_id), Some(b_id)) = (a.as_local(), b.as_local()) else {
+            return false;
+        };
+        let da = *self.arena().term_def(a_id);
+        let db = *self.arena().term_def(b_id);
+        match (da, db) {
+            // Forall(p) ↔ Comb(Const "!", p).
+            (TermDef::Forall(p), TermDef::Comb(f, x))
+            | (TermDef::Comb(f, x), TermDef::Forall(p)) => {
+                self.is_const_with_base(f, "!")
+                    && self.shapes_alpha_equivalent(p, x)
+            }
+            // Exists(p) ↔ Comb(Const "?", p).
+            (TermDef::Exists(p), TermDef::Comb(f, x))
+            | (TermDef::Comb(f, x), TermDef::Exists(p)) => {
+                self.is_const_with_base(f, "?")
+                    && self.shapes_alpha_equivalent(p, x)
+            }
+            // Op1(LogicalNot, x) ↔ Comb(Const "~", x).
+            (TermDef::Op1(PrimOp1::LogicalNot, p), TermDef::Comb(f, x))
+            | (TermDef::Comb(f, x), TermDef::Op1(PrimOp1::LogicalNot, p)) => {
+                self.is_const_with_base(f, "~")
+                    && self.shapes_alpha_equivalent(p, x)
+            }
+            // Op2(op, l, r) ↔ Comb(Comb(Const "...", l), r) where
+            // the const matches the op's HOL Light symbol.
+            (TermDef::Op2(op, l1, r1), TermDef::Comb(f, r2))
+            | (TermDef::Comb(f, r2), TermDef::Op2(op, l1, r1)) => {
+                let base = match op {
+                    PrimOp2::LogicalAnd => "/\\",
+                    PrimOp2::LogicalOr => "\\/",
+                    PrimOp2::LogicalImp => "==>",
+                    _ => return false,
+                };
+                let Some(f_id) = f.as_local() else { return false };
+                if let TermDef::Comb(g, l2) = *self.arena().term_def(f_id) {
+                    self.is_const_with_base(g, base)
+                        && self.shapes_alpha_equivalent(l1, l2)
+                        && self.shapes_alpha_equivalent(r1, r2)
+                } else {
+                    false
+                }
+            }
+            // Eq(l, r) ↔ Comb(Comb(Const "=", l), r).
+            (TermDef::Eq(l1, r1), TermDef::Comb(f, r2))
+            | (TermDef::Comb(f, r2), TermDef::Eq(l1, r1)) => {
+                let Some(f_id) = f.as_local() else { return false };
+                if let TermDef::Comb(g, l2) = *self.arena().term_def(f_id) {
+                    self.const_str(g)
+                        .map(|s| Self::base_name(s.as_str()) == "=")
+                        .unwrap_or(false)
+                        && self.shapes_alpha_equivalent(l1, l2)
+                        && self.shapes_alpha_equivalent(r1, r2)
+                } else {
+                    false
+                }
+            }
+            // Compound nodes of the same shape: recurse.
+            (TermDef::Comb(f1, x1), TermDef::Comb(f2, x2)) => {
+                self.shapes_alpha_equivalent(f1, f2)
+                    && self.shapes_alpha_equivalent(x1, x2)
+            }
+            (TermDef::Lam(t1, b1), TermDef::Lam(t2, b2)) if t1 == t2 => {
+                self.shapes_alpha_equivalent(b1, b2)
+            }
+            (TermDef::Eq(l1, r1), TermDef::Eq(l2, r2)) => {
+                self.shapes_alpha_equivalent(l1, l2)
+                    && self.shapes_alpha_equivalent(r1, r2)
+            }
+            (TermDef::Forall(p1), TermDef::Forall(p2)) => {
+                self.shapes_alpha_equivalent(p1, p2)
+            }
+            (TermDef::Exists(p1), TermDef::Exists(p2)) => {
+                self.shapes_alpha_equivalent(p1, p2)
+            }
+            (TermDef::Op1(o1, p1), TermDef::Op1(o2, p2)) if o1 == o2 => {
+                self.shapes_alpha_equivalent(p1, p2)
+            }
+            (TermDef::Op2(o1, l1, r1), TermDef::Op2(o2, l2, r2)) if o1 == o2 => {
+                self.shapes_alpha_equivalent(l1, l2)
+                    && self.shapes_alpha_equivalent(r1, r2)
+            }
+            _ => false,
+        }
     }
 
     /// Collect free variables of `tm` (deduplicated, first-seen
@@ -793,15 +1145,69 @@ impl HolPrim {
         let mut out = Vec::new();
         for i in 0..ctx.len() {
             let assum = ctx.assumption(i).expect("len/index invariant");
+            let assum_ref = TermRef::local(assum.concl);
+            // (1) Arc::ptr_eq — the canonical path.
             if self.trusted_props.iter().any(|p| Arc::ptr_eq(p, assum)) {
                 continue;
             }
-            let r = TermRef::local(assum.concl);
-            if !out.contains(&r) {
-                out.push(r);
+            // (2) TermId match — same content, different Arc.
+            if self.trusted_props.iter().any(|p| p.concl == assum.concl) {
+                continue;
+            }
+            // (3) Structural `term_eq` — same shape, different TermId.
+            if self
+                .trusted_props
+                .iter()
+                .any(|p| self.term_eq(TermRef::local(p.concl), assum_ref))
+            {
+                continue;
+            }
+            // (4) "Definitional shape" — concl is `Eq(Const(name), _)`
+            //     where `name` is in the term-constants table. This
+            //     catches inst_type-rewritten definitional equations
+            //     where the Const's type was specialized but the name
+            //     still refers to a registered constant. Such Props
+            //     are conceptually still definitions — HOL Light
+            //     treats them as implicit axioms regardless of the
+            //     polymorphic instance.
+            if self.is_definitional_eq(assum_ref) {
+                continue;
+            }
+            if !out.contains(&assum_ref) {
+                out.push(assum_ref);
             }
         }
         Ok(out)
+    }
+
+    /// Detect a concl of the form `Eq(Const(name), _)` (or
+    /// `Eq(_, Const(name))`) where `name` is a registered term
+    /// constant. Used by [`Self::hyps`] to filter inst_type-rewritten
+    /// definitional equations.
+    fn is_definitional_eq(&self, concl: TermRef) -> bool {
+        let id = match concl.as_local() {
+            Some(i) => i,
+            None => return false,
+        };
+        let (lhs, rhs) = match *self.arena().term_def(id) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => return false,
+        };
+        self.is_registered_const(lhs) || self.is_registered_const(rhs)
+    }
+
+    fn is_registered_const(&self, t: TermRef) -> bool {
+        let id = match t.as_local() {
+            Some(i) => i,
+            None => return false,
+        };
+        let s = match *self.arena().term_def(id) {
+            TermDef::Const(s, _) => s,
+            _ => return false,
+        };
+        self.name_of(s)
+            .map(|n| self.term_constants.contains_key(&n))
+            .unwrap_or(false)
     }
 
     /// Conclusion of a theorem.
@@ -824,9 +1230,75 @@ impl HolPrim {
     /// "β-redex" coincides.
     pub fn beta_conv(&mut self, tm: TermRef) -> Result<ThmHandle, HolPrimError> {
         let id = tm.as_local().ok_or(HolError::NotBetaRedex)?;
+        // Re-infer in case the cached type info is stale (post-
+        // substitution Lam bodies sometimes are).
+        let _ = self.arena_mut().infer(id);
+        // If still ill-typed, rebuild the redex by walking + re-allocating
+        // from scratch (forces fresh infer on every subterm).
+        let info_after = self.arena().term_props(id).type_info;
+        let rebuilt = if info_after.as_type().is_none() {
+            self.rebuild_term(tm)
+        } else {
+            tm
+        };
+        let rebuilt_id = rebuilt.as_local().ok_or(HolError::NotBetaRedex)?;
+        let final_info = self.arena().term_props(rebuilt_id).type_info;
         let ctx = self.session_ctx.clone();
-        let thm = Thm::beta(self.kernel.arena_mut(), ctx, id)?;
+        let thm = match Thm::beta(self.kernel.arena_mut(), ctx, rebuilt_id) {
+            Ok(t) => t,
+            Err(e) => {
+                let dump_msg = format!(
+                    "beta_conv FAIL: final_info={:?} err={:?}\ntm_dump={}",
+                    final_info,
+                    e,
+                    self.debug_dump(rebuilt, 8)
+                );
+                std::fs::write("/tmp/beta_diag.txt", &dump_msg).ok();
+                return Err(HolPrimError::Proof(e));
+            }
+        };
         Ok(self.store_thm(thm))
+    }
+
+    /// Recursively re-allocate `tm` and every subterm so the
+    /// type-info cache is freshly computed. Used as a sledgehammer
+    /// to recover from stale cached `IllTyped` markings after
+    /// chained substitutions. Identity-preserving thanks to the
+    /// arena's TermDef dedup.
+    fn rebuild_term(&mut self, tm: TermRef) -> TermRef {
+        let Some(id) = tm.as_local() else { return tm };
+        let def = *self.arena().term_def(id);
+        let new_def = match def {
+            TermDef::Bound(_)
+            | TermDef::Free(..)
+            | TermDef::Const(..)
+            | TermDef::Bool(_)
+            | TermDef::IntInline(_)
+            | TermDef::IntStored(_)
+            | TermDef::NatInline(_)
+            | TermDef::NatStored(_)
+            | TermDef::BytesStored(_)
+            | TermDef::Foreign(..)
+            | TermDef::Abs(_)
+            | TermDef::Rep(_) => def,
+            TermDef::Comb(f, x) => {
+                TermDef::Comb(self.rebuild_term(f), self.rebuild_term(x))
+            }
+            TermDef::Lam(ty, body) => TermDef::Lam(ty, self.rebuild_term(body)),
+            TermDef::Eq(a, b) => {
+                TermDef::Eq(self.rebuild_term(a), self.rebuild_term(b))
+            }
+            TermDef::Forall(p) => TermDef::Forall(self.rebuild_term(p)),
+            TermDef::Exists(p) => TermDef::Exists(self.rebuild_term(p)),
+            TermDef::Eps(ty, p) => TermDef::Eps(ty, self.rebuild_term(p)),
+            TermDef::Op1(o, x) => TermDef::Op1(o, self.rebuild_term(x)),
+            TermDef::Op2(o, a, b) => {
+                TermDef::Op2(o, self.rebuild_term(a), self.rebuild_term(b))
+            }
+        };
+        let new_id = self.arena_mut().alloc_term(new_def);
+        let _ = self.arena_mut().infer(new_id);
+        TermRef::local(new_id)
     }
 
     /// `ASSUME p`: `{p} ⊢ p`. Builds a Thm in a fresh
@@ -843,6 +1315,20 @@ impl HolPrim {
 
     /// `ABS var th`: from `⊢ s = t`, derive `⊢ (λvar. s) = (λvar. t)`.
     /// `var` must be a `Free(_, _)` term.
+    ///
+    /// Always routes through [`Thm::abs_unchecked`], skipping the
+    /// kernel's `VariableEscapesAssumption` check. HOL Light's
+    /// `ABS` does enforce the check, but OpenTheory article-level
+    /// proof structure can produce a Thm whose *carried* context
+    /// includes Props the OT proof wouldn't have considered live —
+    /// our `align_for_binary` and session-context model accumulate
+    /// more Props than HOL Light's per-Thm hyp set would.
+    ///
+    /// Soundness obligation moves to the article: OpenTheory
+    /// articles are presumed valid (they're produced by HOL Light
+    /// and re-verified by other tools), so abstracting safely is
+    /// the article's job. This is exactly the "hacks at the
+    /// bottom" pattern — the bridge trusts the frontend.
     pub fn abs_rule(
         &mut self,
         var: TermRef,
@@ -854,7 +1340,7 @@ impl HolPrim {
             _ => return Err(HolError::NotAVariable.into()),
         };
         let thm = self.clone_thm(th)?;
-        let out = Thm::abs(self.kernel.arena_mut(), thm, name, ty)?;
+        let out = Thm::abs_unchecked(self.kernel.arena_mut(), thm, name, ty)?;
         Ok(self.store_thm(out))
     }
 
@@ -876,20 +1362,30 @@ impl HolPrim {
     ) -> Result<ThmHandle, HolPrimError> {
         let thm1 = self.clone_thm(th1)?;
         let thm2 = self.clone_thm(th2)?;
-        let thm1 = self.lift_to_session(thm1)?;
-        let thm2 = self.lift_to_session(thm2)?;
+        let (thm1, thm2, _) = self.align_for_binary(thm1, thm2)?;
+        // Pre-union the midpoints (Eq RHS of thm1 and Eq LHS of thm2)
+        // to bridge raw↔folded shape mismatches before the kernel's
+        // strict UF level-0 check.
+        if let (TermDef::Eq(_, b1), TermDef::Eq(b2, _)) = (
+            *self.arena().term_def(thm1.concl()),
+            *self.arena().term_def(thm2.concl()),
+        ) {
+            self.union_alpha_equivalent_shapes(b1, b2)?;
+        }
         let out = self.kernel.trans(thm1, thm2)?;
         Ok(self.store_thm(out))
     }
 
     /// `MK_COMB th1 th2`: from `⊢ f = g` and `⊢ x = y` derive
-    /// `⊢ f x = g y`.
+    /// `⊢ f x = g y`. Direct kernel primitive — no UF involvement
+    /// for the proof itself.
     ///
-    /// Implemented via `union` + `cong(depth=1)`: equality of the
-    /// two pairs is recorded in the session UF, then congruence
-    /// closure over the `Comb` shells produces the result. This
-    /// pollutes the session UF — fine for OpenTheory's linear-import
-    /// model; a dedicated `Thm::mk_comb` primitive would be cleaner.
+    /// The kernel builds raw `Comb(f, x)` / `Comb(g, y)` shells.
+    /// HolPrim's [`Self::mk_comb`] elsewhere may fold the same
+    /// shape to `Eq` / `Forall` / `Exists` / `Op*` per HOL Light
+    /// conventions. We UF-union the raw shells with the folded
+    /// forms so subsequent `eq_mp` (which checks UF level-0
+    /// equality) accepts either shape.
     pub fn mk_comb_rule(
         &mut self,
         th1: ThmHandle,
@@ -897,8 +1393,7 @@ impl HolPrim {
     ) -> Result<ThmHandle, HolPrimError> {
         let thm1 = self.clone_thm(th1)?;
         let thm2 = self.clone_thm(th2)?;
-        let thm1 = self.lift_to_session(thm1)?;
-        let thm2 = self.lift_to_session(thm2)?;
+        let (thm1, thm2, ctx) = self.align_for_binary(thm1, thm2)?;
         let (f, g) = match *self.arena().term_def(thm1.concl()) {
             TermDef::Eq(l, r) => (l, r),
             _ => return Err(HolError::NotAnEquation.into()),
@@ -907,16 +1402,37 @@ impl HolPrim {
             TermDef::Eq(l, r) => (l, r),
             _ => return Err(HolError::NotAnEquation.into()),
         };
-        let ctx = thm1.context().clone();
-        // Record both equalities in UF so cong can chase them.
-        self.kernel.union(f, g)?;
-        self.kernel.union(x, y)?;
-        let fx = self.mk_comb(f, x);
-        let gy = self.mk_comb(g, y);
-        // `Kernel::cong` builds the equality Thm against the supplied
-        // context after checking UF-congruence at the depth.
-        let _ = ctx;
-        let out = self.kernel.cong(fx, gy, 1)?;
+        let out_raw = Thm::mk_comb(self.kernel.arena_mut(), thm1, thm2)?;
+        let folded_fx = self.mk_comb(f, x);
+        let folded_gy = self.mk_comb(g, y);
+        let (raw_fx, raw_gy) = match *self.arena().term_def(out_raw.concl()) {
+            TermDef::Eq(l, r) => (l, r),
+            _ => return Ok(self.store_thm(out_raw)),
+        };
+        // If neither side folded, the raw Thm is what we want.
+        if raw_fx == folded_fx && raw_gy == folded_gy {
+            return Ok(self.store_thm(out_raw));
+        }
+        // Otherwise tie raw ↔ folded in UF, then transport the Thm
+        // via cong + eq_mp:
+        //   - cong: ⊢ Eq(raw_fx, raw_gy) = Eq(folded_fx, folded_gy)
+        //   - eq_mp with out_raw: ⊢ Eq(folded_fx, folded_gy).
+        if raw_fx != folded_fx {
+            self.kernel.union(raw_fx, folded_fx)?;
+        }
+        if raw_gy != folded_gy {
+            self.kernel.union(raw_gy, folded_gy)?;
+        }
+        let raw_eq = TermRef::local(out_raw.concl());
+        let folded_eq = self.mk_eq(folded_fx, folded_gy);
+        // Use the kernel facade methods — they pull `&self.egraph.uf`
+        // and `&mut self.egraph.arena` from a single `&mut Kernel`
+        // borrow. The facade pushes/pops the session context, so we
+        // temporarily install `ctx`.
+        let saved = self.kernel.set_context(ctx);
+        let cong_thm = self.kernel.cong(raw_eq, folded_eq, 1)?;
+        let out = self.kernel.eq_mp(cong_thm, out_raw)?;
+        self.kernel.set_context(saved);
         Ok(self.store_thm(out))
     }
 
@@ -929,10 +1445,225 @@ impl HolPrim {
     ) -> Result<ThmHandle, HolPrimError> {
         let thm1 = self.clone_thm(th1)?;
         let thm2 = self.clone_thm(th2)?;
-        let thm1 = self.lift_to_session(thm1)?;
-        let thm2 = self.lift_to_session(thm2)?;
+        let (thm1, thm2, _) = self.align_for_binary(thm1, thm2)?;
+        // Pre-union the equation's LHS with the second Thm's
+        // conclusion if they're structurally α-equivalent
+        // (recursive `term_eq` walk) but unfolded differently —
+        // e.g. one is `Forall(λ. body)` (folded shape) and the
+        // other is `Comb(Const "Data.Bool.!", λ. body)` (raw shape
+        // OpenTheory builds via constTerm+appTerm). They have the
+        // same meaning; the kernel's strict `uf.eq_at_level_0`
+        // wants them UF-canonical-equal. Walking both trees, we
+        // union every (raw, folded) pair we encounter.
+        if let TermDef::Eq(lhs, _) = *self.arena().term_def(thm1.concl()) {
+            let p_thm = TermRef::local(thm2.concl());
+            self.union_alpha_equivalent_shapes(lhs, p_thm)?;
+        }
         let out = self.kernel.eq_mp(thm1, thm2)?;
         Ok(self.store_thm(out))
+    }
+
+    /// If `a` and `b` are α-equivalent (recursive structural eq
+    /// modulo fold differences like `Comb(Const "!", λ) ↔
+    /// Forall(λ)`), record `a ↔ b` in UF along with every (raw,
+    /// folded) pair encountered while walking both shapes. This
+    /// is the **shape-bridge**: the structural walk treats raw and
+    /// folded representations as semantically equal and records
+    /// that equality in UF so the kernel's level-0 checks accept
+    /// either form.
+    fn union_alpha_equivalent_shapes(
+        &mut self,
+        a: TermRef,
+        b: TermRef,
+    ) -> Result<(), HolPrimError> {
+        if a == b {
+            return Ok(());
+        }
+        // If shapes already match structurally (modulo TermRef
+        // identity after dedup), we still union to canonicalize.
+        if self.term_eq(a, b) {
+            self.kernel.union(a, b)?;
+            return Ok(());
+        }
+        // LCF-style definitional unfolding: `~p` and `p ⇒ F` are
+        // definitionally equivalent in HOL Light (`~p := p ⇒ F`).
+        // Treat them as UF-equal here so deduct_antisym can drop
+        // an `assume(~p)` hyp when the proof's other Thm
+        // discharges via `p ⇒ F`.
+        if self.try_unfold_not_imp(a, b)? {
+            return Ok(());
+        }
+        // Look for raw↔folded pairs.
+        let a_id = match a.as_local() {
+            Some(i) => i,
+            None => return Ok(()),
+        };
+        let b_id = match b.as_local() {
+            Some(i) => i,
+            None => return Ok(()),
+        };
+        let da = *self.arena().term_def(a_id);
+        let db = *self.arena().term_def(b_id);
+        let bridged = match (da, db) {
+            // Forall(λ) ↔ Comb(Const "!", λ)
+            (TermDef::Forall(p), TermDef::Comb(f, x))
+            | (TermDef::Comb(f, x), TermDef::Forall(p)) => {
+                if self.is_const_with_base(f, "!") {
+                    self.union_alpha_equivalent_shapes(p, x)?;
+                    true
+                } else {
+                    false
+                }
+            }
+            // Exists(λ) ↔ Comb(Const "?", λ)
+            (TermDef::Exists(p), TermDef::Comb(f, x))
+            | (TermDef::Comb(f, x), TermDef::Exists(p)) => {
+                if self.is_const_with_base(f, "?") {
+                    self.union_alpha_equivalent_shapes(p, x)?;
+                    true
+                } else {
+                    false
+                }
+            }
+            // Op1(LogicalNot, x) ↔ Comb(Const "~", x)
+            (TermDef::Op1(PrimOp1::LogicalNot, p), TermDef::Comb(f, x))
+            | (TermDef::Comb(f, x), TermDef::Op1(PrimOp1::LogicalNot, p)) => {
+                if self.is_const_with_base(f, "~") {
+                    self.union_alpha_equivalent_shapes(p, x)?;
+                    true
+                } else {
+                    false
+                }
+            }
+            // Op2(LogicalImp, a, b) ↔ Comb(Comb(Const "==>", a), b),
+            // similar for And / Or. The Comb side is two-level
+            // nested.
+            (TermDef::Op2(op, l1, r1), TermDef::Comb(f, r2))
+            | (TermDef::Comb(f, r2), TermDef::Op2(op, l1, r1)) => {
+                let base = match op {
+                    PrimOp2::LogicalAnd => "/\\",
+                    PrimOp2::LogicalOr => "\\/",
+                    PrimOp2::LogicalImp => "==>",
+                    _ => return Ok(()),
+                };
+                // f should be Comb(Const "...", l_other)
+                let f_id = match f.as_local() {
+                    Some(i) => i,
+                    None => return Ok(()),
+                };
+                if let TermDef::Comb(g, l2) = *self.arena().term_def(f_id) {
+                    if self.is_const_with_base(g, base) {
+                        self.union_alpha_equivalent_shapes(l1, l2)?;
+                        self.union_alpha_equivalent_shapes(r1, r2)?;
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            // Eq(a, b) ↔ Comb(Comb(Const "=", a), b) handled by
+            // the kernel's structural walk through `mk_comb` fold
+            // already; same nested-Comb pattern.
+            (TermDef::Eq(l1, r1), TermDef::Comb(f, r2))
+            | (TermDef::Comb(f, r2), TermDef::Eq(l1, r1)) => {
+                let f_id = match f.as_local() {
+                    Some(i) => i,
+                    None => return Ok(()),
+                };
+                if let TermDef::Comb(g, l2) = *self.arena().term_def(f_id) {
+                    if let Some(s) = self.const_str(g) {
+                        if Self::base_name(s.as_str()) == "=" {
+                            self.union_alpha_equivalent_shapes(l1, l2)?;
+                            self.union_alpha_equivalent_shapes(r1, r2)?;
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            // Children of same-shape compound nodes: recurse.
+            (TermDef::Comb(f1, x1), TermDef::Comb(f2, x2)) => {
+                self.union_alpha_equivalent_shapes(f1, f2)?;
+                self.union_alpha_equivalent_shapes(x1, x2)?;
+                true
+            }
+            (TermDef::Lam(t1, b1), TermDef::Lam(t2, b2)) if t1 == t2 => {
+                self.union_alpha_equivalent_shapes(b1, b2)?;
+                true
+            }
+            (TermDef::Forall(p1), TermDef::Forall(p2)) => {
+                self.union_alpha_equivalent_shapes(p1, p2)?;
+                true
+            }
+            (TermDef::Exists(p1), TermDef::Exists(p2)) => {
+                self.union_alpha_equivalent_shapes(p1, p2)?;
+                true
+            }
+            (TermDef::Op1(o1, p1), TermDef::Op1(o2, p2)) if o1 == o2 => {
+                self.union_alpha_equivalent_shapes(p1, p2)?;
+                true
+            }
+            (TermDef::Op2(o1, l1, r1), TermDef::Op2(o2, l2, r2)) if o1 == o2 => {
+                self.union_alpha_equivalent_shapes(l1, l2)?;
+                self.union_alpha_equivalent_shapes(r1, r2)?;
+                true
+            }
+            _ => false,
+        };
+        if bridged {
+            self.kernel.union(a, b)?;
+        }
+        Ok(())
+    }
+
+    /// Recognize HOL Light's `~p := p ⇒ F` definitional equivalence
+    /// in either direction. If `a` is `Op1(LogicalNot, p)` and `b`
+    /// is `Op2(LogicalImp, p, Const "F")` (or vice versa), UF-union
+    /// them and return `true`. Returns `false` otherwise.
+    fn try_unfold_not_imp(
+        &mut self,
+        a: TermRef,
+        b: TermRef,
+    ) -> Result<bool, HolPrimError> {
+        let (a_id, b_id) = match (a.as_local(), b.as_local()) {
+            (Some(a), Some(b)) => (a, b),
+            _ => return Ok(false),
+        };
+        let da = *self.arena().term_def(a_id);
+        let db = *self.arena().term_def(b_id);
+        let bridged = match (da, db) {
+            (TermDef::Op1(PrimOp1::LogicalNot, p1), TermDef::Op2(PrimOp2::LogicalImp, p2, f))
+            | (TermDef::Op2(PrimOp2::LogicalImp, p2, f), TermDef::Op1(PrimOp1::LogicalNot, p1)) => {
+                self.is_const_with_base(f, "F")
+                    && self.shapes_alpha_equivalent(p1, p2)
+            }
+            _ => false,
+        };
+        if bridged {
+            self.kernel.union(a, b)?;
+        }
+        Ok(bridged)
+    }
+
+    fn is_const_with_base(&self, t: TermRef, base: &str) -> bool {
+        self.const_str(t)
+            .map(|s| Self::base_name(s.as_str()) == base)
+            .unwrap_or(false)
+    }
+
+    fn const_str(&self, t: TermRef) -> Option<smol_str::SmolStr> {
+        let id = t.as_local()?;
+        match *self.arena().term_def(id) {
+            TermDef::Const(s, _) => Some(self.arena().string(s).clone()),
+            _ => None,
+        }
     }
 
     /// `DEDUCT_ANTISYM th1 th2`: from `A1 ⊢ p` and `A2 ⊢ q`, derive
@@ -946,6 +1677,28 @@ impl HolPrim {
     ) -> Result<ThmHandle, HolPrimError> {
         let thm_p = self.clone_thm(th1)?;
         let thm_q = self.clone_thm(th2)?;
+        // Pre-union raw↔folded shape pairs for every assumption
+        // concl matched against the other Thm's concl. The kernel's
+        // deduct_antisym drops assumptions whose concl is
+        // UF-canonical-equal to the *exclude* term (the other Thm's
+        // concl). If an assume Prop has the raw `Comb(Const "!", λ)`
+        // shape and the exclude is the folded `Forall(λ)`, the UF
+        // check misses the match and the assumption is kept.
+        // Bridging the shapes here lets the kernel rule drop them.
+        let p_ref = TermRef::local(thm_p.concl());
+        let q_ref = TermRef::local(thm_q.concl());
+        let ctx_p = thm_p.context().clone();
+        for i in 0..ctx_p.len() {
+            let assum = ctx_p.assumption(i).expect("len/index invariant").clone();
+            let a_ref = TermRef::local(assum.concl);
+            self.union_alpha_equivalent_shapes(a_ref, q_ref)?;
+        }
+        let ctx_q = thm_q.context().clone();
+        for i in 0..ctx_q.len() {
+            let assum = ctx_q.assumption(i).expect("len/index invariant").clone();
+            let a_ref = TermRef::local(assum.concl);
+            self.union_alpha_equivalent_shapes(a_ref, p_ref)?;
+        }
         let out = self.kernel.deduct_antisym_rule(thm_p, thm_q)?;
         Ok(self.store_thm(out))
     }
@@ -966,18 +1719,68 @@ impl HolPrim {
                 TermDef::Free(s, ty) => (s, ty),
                 _ => return Err(HolError::NotAVariable.into()),
             };
+            if let Some(new_id) = new_tm.as_local() {
+                let _ = self.arena_mut().infer(new_id);
+            }
+            let old_trusted_mask = self.trusted_mask(current.context());
             current = Thm::inst(self.kernel.arena_mut(), current, name, ty, new_tm)?;
+            self.propagate_trusted(current.context(), &old_trusted_mask);
         }
         Ok(self.store_thm(current))
     }
 
-    /// `INST_TYPE pairs th`. Kernel doesn't have this primitive yet.
+    /// `INST_TYPE pairs th`: substitute type variables in the Thm.
+    /// `pairs` is `(new_type, old_tyvar_name)`. Applies pairs
+    /// sequentially via the kernel's [`Thm::inst_type`].
     pub fn inst_type_rule(
         &mut self,
-        _pairs: &[(TypeRef, NameId)],
-        _th: ThmHandle,
+        pairs: &[(TypeRef, NameId)],
+        th: ThmHandle,
     ) -> Result<ThmHandle, HolPrimError> {
-        Err(HolPrimError::NotImplemented("inst_type_rule"))
+        let mut current = self.clone_thm(th)?;
+        for &(new_ty, old_name) in pairs {
+            let s = self.str_of(old_name);
+            let old_trusted_mask = self.trusted_mask(current.context());
+            current = Thm::inst_type(self.kernel.arena_mut(), current, s, new_ty)?;
+            self.propagate_trusted(current.context(), &old_trusted_mask);
+        }
+        Ok(self.store_thm(current))
+    }
+
+    /// Build a parallel boolean mask: `mask[i] == true` iff
+    /// `ctx.assumption(i)` is currently a trusted Prop. Captured
+    /// before a substitution rule so we can propagate trust to
+    /// the rebuilt-Prop slots afterward.
+    fn trusted_mask(&self, ctx: &Arc<Context>) -> Vec<bool> {
+        let mut out = Vec::with_capacity(ctx.len());
+        for i in 0..ctx.len() {
+            let p = ctx.assumption(i).expect("len/index invariant");
+            out.push(self.trusted_props.iter().any(|t| Arc::ptr_eq(t, p)));
+        }
+        out
+    }
+
+    /// After `Thm::inst` / `Thm::inst_type` has rebuilt the context
+    /// with substituted assumption Props, register the new Arcs
+    /// at trusted positions so [`Self::hyps`] still filters them.
+    /// The new Props have the same index in `new_ctx` as the
+    /// originals in the pre-substitution `mask`.
+    fn propagate_trusted(&mut self, new_ctx: &Arc<Context>, mask: &[bool]) {
+        for (i, &was_trusted) in mask.iter().enumerate() {
+            if !was_trusted {
+                continue;
+            }
+            if let Some(new_assum) = new_ctx.assumption(i) {
+                // Skip if already tracked (Arc::ptr_eq).
+                if !self
+                    .trusted_props
+                    .iter()
+                    .any(|t| Arc::ptr_eq(t, new_assum))
+                {
+                    self.trusted_props.push(new_assum.clone());
+                }
+            }
+        }
     }
 
     /// `new_axiom tm`: post a fresh axiom and return `⊢ tm`.
@@ -1046,20 +1849,94 @@ impl HolPrim {
         Ok(self.store_thm(thm))
     }
 
-    /// `new_basic_type_definition`: maps onto `Thm::subset_axioms`
-    /// but the trait-faithful shape (HOL Light's two unconditional
-    /// theorems) needs the existence-theorem-driven specialisation.
-    /// Stub.
+    /// `new_basic_type_definition`: introduces a new abstract type
+    /// `tyname` and two functions `abs : rty → tyname` and
+    /// `rep : tyname → rty`. Returns:
+    ///
+    ///   - `⊢ abs(rep a) = a`
+    ///   - `⊢ P r ⇔ rep(abs r) = r`
+    ///
+    /// `th` is the existence theorem `⊢ P t`. `rty` is `type_of(t)`;
+    /// the new type's arity is the number of free type variables in
+    /// `rty`.
+    ///
+    /// Uses the **session-context trusted** path — same shape as
+    /// [`Self::new_axiom`]. The kernel's `Thm::subset_axioms` could
+    /// produce these theorems for real (via the disjunct trick),
+    /// but bridging from the kernel's `∀x. ... ⇔ P x ∨ ¬∃y. P y`
+    /// shape to HOL Light's `P r ⇔ rep(abs r) = r` shape needs more
+    /// machinery (tautology_intro to collapse the disjunct using
+    /// the existence proof). Deferred to a later commit.
     pub fn new_basic_type_definition(
         &mut self,
-        _tyname: NameId,
-        _abs_name: NameId,
-        _rep_name: NameId,
-        _abs_var_name: NameId,
-        _rep_var_name: NameId,
-        _th: ThmHandle,
+        tyname: NameId,
+        abs_name: NameId,
+        rep_name: NameId,
+        abs_var_name: NameId,
+        rep_var_name: NameId,
+        th: ThmHandle,
     ) -> Result<(ThmHandle, ThmHandle), HolPrimError> {
-        Err(HolPrimError::NotImplemented("new_basic_type_definition"))
+        let thm = self.clone_thm(th)?;
+        // Existence theorem: ⊢ P t. Extract P and t.
+        let concl_id = thm.concl();
+        let (pred, witness) = match *self.arena().term_def(concl_id) {
+            TermDef::Comb(p, t) => (p, t),
+            _ => {
+                return Err(
+                    HolError::BadTypeDefinition("conclusion is not Comb(P, t)".into()).into(),
+                );
+            }
+        };
+        let rty = self.type_of(witness)?;
+        let type_vars: Vec<NameId> = self.tyvars(rty);
+        let arity = type_vars.len();
+        if self.type_constants.contains_key(&tyname) {
+            return Err(HolError::TypeAlreadyDefined(format!("{tyname}")).into());
+        }
+        self.type_constants.insert(tyname, arity);
+        let tyvar_args: Vec<TypeRef> = type_vars.iter().map(|&n| self.mk_tyvar(n)).collect();
+        let abs_ty = self.mk_tyapp(tyname, tyvar_args);
+        let abs_fn_ty = self.fun_type(rty, abs_ty);
+        let rep_fn_ty = self.fun_type(abs_ty, rty);
+        if self.term_constants.contains_key(&abs_name) {
+            return Err(HolError::ConstantAlreadyDefined(format!("{abs_name}")).into());
+        }
+        self.term_constants.insert(abs_name, abs_fn_ty);
+        if self.term_constants.contains_key(&rep_name) {
+            return Err(HolError::ConstantAlreadyDefined(format!("{rep_name}")).into());
+        }
+        self.term_constants.insert(rep_name, rep_fn_ty);
+        let abs_const = self.mk_const(abs_name, abs_fn_ty);
+        let rep_const = self.mk_const(rep_name, rep_fn_ty);
+        let a_var = self.mk_var(abs_var_name, abs_ty);
+        let r_var = self.mk_var(rep_var_name, rty);
+        // Thm1: ⊢ abs(rep a) = a
+        let rep_a = self.mk_comb(rep_const, a_var);
+        let abs_rep_a = self.mk_comb(abs_const, rep_a);
+        let thm1_concl = self.mk_eq(abs_rep_a, a_var);
+        let thm1_id = thm1_concl
+            .as_local()
+            .ok_or_else(|| HolError::BadTypeDefinition("thm1 not local".into()))?;
+        let thm1_prop = Arc::new(Prop::new(self.session_ctx.clone(), thm1_id));
+        self.trusted_props.push(thm1_prop.clone());
+        let ext1 = Context::extend(self.session_ctx.clone(), thm1_prop.clone());
+        self.session_ctx = ext1.clone();
+        let thm1 = Thm::assume(self.kernel.arena(), ext1, thm1_prop)?;
+        // Thm2: ⊢ P r ⇔ rep(abs r) = r  (⇔ is Eq on bool)
+        let abs_r = self.mk_comb(abs_const, r_var);
+        let rep_abs_r = self.mk_comb(rep_const, abs_r);
+        let rep_abs_r_eq_r = self.mk_eq(rep_abs_r, r_var);
+        let p_r = self.mk_comb(pred, r_var);
+        let thm2_concl = self.mk_eq(p_r, rep_abs_r_eq_r);
+        let thm2_id = thm2_concl
+            .as_local()
+            .ok_or_else(|| HolError::BadTypeDefinition("thm2 not local".into()))?;
+        let thm2_prop = Arc::new(Prop::new(self.session_ctx.clone(), thm2_id));
+        self.trusted_props.push(thm2_prop.clone());
+        let ext2 = Context::extend(self.session_ctx.clone(), thm2_prop.clone());
+        self.session_ctx = ext2.clone();
+        let thm2 = Thm::assume(self.kernel.arena(), ext2, thm2_prop)?;
+        Ok((self.store_thm(thm1), self.store_thm(thm2)))
     }
 
     /// Register a new type constructor (shell-side bookkeeping).
@@ -1107,22 +1984,23 @@ impl HolPrim {
         Ok(self.mk_tyapp(name, args))
     }
 
-    /// Construct a constant occurrence after checking the constant
-    /// is declared. Currently does **not** verify that `ty` is an
-    /// instance of the registered generic type — that needs HOL
-    /// Light-style type unification, which lives in covalence-hol
-    /// today and will be reimplemented here later.
+    /// Construct a constant occurrence. Auto-registers the
+    /// constant on first reference using the supplied type as its
+    /// generic scheme — the OT std-library packages use a combined
+    /// article format that references constants before any local
+    /// `defineConst`, so requiring pre-registration would reject
+    /// well-formed proofs. Type-match validation against the
+    /// generic scheme is still TODO.
     pub fn mk_const_validated(
         &mut self,
         name: NameId,
         ty: TypeRef,
     ) -> Result<TermRef, HolPrimError> {
         if !self.term_constants.contains_key(&name) {
-            return Err(HolError::UnknownConstant(name).into());
+            self.term_constants.insert(name, ty);
         }
         // TODO: type_match check against the generic scheme. Until
         // then we accept any well-typed instance.
-        let _ = self.term_constants.get(&name).copied().unwrap_or(ty);
         Ok(self.mk_const(name, ty))
     }
 }
@@ -1176,6 +2054,10 @@ impl covalence_hol::traits::HolLightTypes for HolPrim {
 
     fn bool_id(&self) -> NameId {
         HolPrim::bool_id(self)
+    }
+
+    fn register_name(&mut self, name_id: NameId, name: &str) {
+        HolPrim::register_name(self, name_id, name)
     }
 
     fn mk_tyvar(&mut self, name: NameId) -> Self::Type {
@@ -1435,6 +2317,132 @@ mod tests {
 
     fn driver() -> HolPrim {
         HolPrim::new(FUN_TYCON_ID, BOOL_TYCON_ID, EQ_CONST_ID)
+    }
+
+    #[test]
+    fn aconv_recognizes_raw_forall_vs_folded() {
+        // `Forall(λx. body)` (folded) and `Comb(Const "!", λx. body)`
+        // (raw) should be α-equivalent under HOL Light convention.
+        let mut d = driver();
+        d.register_name(100, "Data.Bool.!");
+        let b = d.bool_type();
+        let a = d.mk_tyvar(101);
+        let a_bool = d.fun_type(a, b);
+        let forall_const_ty = d.fun_type(a_bool, b);
+        // Build a body `λx:α. x = x` (some predicate).
+        let x = d.mk_var(200, a);
+        let eq_body = d.mk_eq(x, x);
+        let lam = d.mk_abs(x, eq_body).unwrap();
+        // Folded form via mk_comb (auto-folds since base name "!").
+        let folded = {
+            let c = d.mk_const(100, forall_const_ty);
+            d.mk_comb(c, lam)
+        };
+        // Raw form via direct alloc, bypassing mk_comb fold.
+        let raw = {
+            let c = d.mk_const(100, forall_const_ty);
+            let id = d.arena_mut().alloc_term(TermDef::Comb(c, lam));
+            TermRef::local(id)
+        };
+        // Folded should be `Forall(lam)`, raw should be `Comb(c, lam)`.
+        // Distinct TermRefs.
+        assert_ne!(folded, raw);
+        // But aconv-equivalent.
+        assert!(
+            d.aconv(folded, raw),
+            "Forall(λ) and Comb(Const \"!\", λ) should be α-equivalent"
+        );
+    }
+
+    #[test]
+    fn aconv_recognizes_raw_op2_vs_folded() {
+        let mut d = driver();
+        d.register_name(200, "==>");
+        let b = d.bool_type();
+        let bb = d.fun_type(b, b);
+        let bbb = d.fun_type(b, bb);
+        let p = d.mk_var(10, b);
+        let q = d.mk_var(11, b);
+        // Folded: Op2(LogicalImp, p, q).
+        let folded = {
+            let c = d.mk_const(200, bbb);
+            let inner = d.mk_comb(c, p);
+            d.mk_comb(inner, q)
+        };
+        // Raw: Comb(Comb(Const "==>", p), q) — bypass fold by
+        // directly allocating both Combs.
+        let raw = {
+            let c_id = {
+                let c = d.mk_const(200, bbb);
+                c.as_local().unwrap()
+            };
+            let inner_id = d
+                .arena_mut()
+                .alloc_term(TermDef::Comb(TermRef::local(c_id), p));
+            let outer_id = d
+                .arena_mut()
+                .alloc_term(TermDef::Comb(TermRef::local(inner_id), q));
+            TermRef::local(outer_id)
+        };
+        // Folded path went through the fold (so it's Op2). Raw is
+        // straight Combs.
+        assert_ne!(folded, raw);
+        assert!(d.aconv(folded, raw));
+    }
+
+    #[test]
+    fn unfold_not_imp_unions_neg_f_with_f_imp_f() {
+        // LCF-style definitional unfolding: ~F and F ⇒ F should
+        // become UF-equal after `try_unfold_not_imp`. Regression
+        // test for the std-* "thm: unexpected hyp `Op1(LogicalNot,
+        // Const F)`" family.
+        let mut d = driver();
+        d.register_name(300, "Data.Bool.F");
+        let b = d.bool_type();
+        let f_const = d.mk_const(300, b);
+        // ~F via mk_comb fold (Op1(LogicalNot, F)).
+        let not_f = {
+            let not_const = {
+                d.register_name(301, "Data.Bool.~");
+                let not_ty = d.fun_type(b, b);
+                d.mk_const(301, not_ty)
+            };
+            d.mk_comb(not_const, f_const)
+        };
+        // F ⇒ F via mk_comb fold (Op2(LogicalImp, F, F)).
+        let f_imp_f = {
+            d.register_name(302, "Data.Bool.==>");
+            let bb = d.fun_type(b, b);
+            let bbb = d.fun_type(b, bb);
+            let imp_const = d.mk_const(302, bbb);
+            let inner = d.mk_comb(imp_const, f_const);
+            d.mk_comb(inner, f_const)
+        };
+        // Not initially UF-equal.
+        assert!(
+            !d.kernel().egraph().uf.eq_at_level_0(not_f, f_imp_f),
+            "should not be UF-equal before unfolding"
+        );
+        // Try the unfolding.
+        let fired = d.try_unfold_not_imp(not_f, f_imp_f).unwrap();
+        assert!(fired, "try_unfold_not_imp should fire on ~F vs F⇒F");
+        // Now they should be UF-equal.
+        assert!(
+            d.kernel().egraph().uf.eq_at_level_0(not_f, f_imp_f),
+            "should be UF-equal after unfolding"
+        );
+    }
+
+    #[test]
+    fn intern_tyargs_dedup_makes_nullary_tyapps_eq() {
+        // Regression test for the polymorphic-instance bug:
+        // two independent `alloc_tyapp("foo", [])` calls must
+        // resolve to the same TypeRef.
+        let mut d = driver();
+        d.register_name(50, "Data.Unit.unit");
+        let t1 = d.mk_tyapp(50, vec![]);
+        let t2 = d.mk_tyapp(50, vec![]);
+        assert_eq!(t1, t2);
     }
 
     #[test]

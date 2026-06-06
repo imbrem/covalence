@@ -4,7 +4,12 @@
 //! Identity is by pointer (see architecture §2.2). A freshly built
 //! arena is mutable; freezing it produces an `Arc<Arena>` that other
 //! arenas may import via foreign-arena references.
+//!
+//! ⚠️ Staging code — see [crate-level docs](crate) for the list of
+//! known holes (linear-scan dedup, auto-`infer` papering over stale
+//! caches, opaque `Subset` handling in `subst_tyvar_in_type`, etc.).
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use smol_str::SmolStr;
@@ -70,6 +75,16 @@ pub struct Arena {
     term_props: Vec<TermProps>,
     imports: Vec<Import>,
 
+    /// Hash-cons map for terms — `TermDef → TermId`. Keeps
+    /// [`alloc_term`] dedup O(1) instead of an O(n) linear scan.
+    term_dedup: HashMap<TermDef, TermId>,
+    /// Hash-cons map for types.
+    type_dedup: HashMap<TypeDef, TypeId>,
+    /// Hash-cons map for type-argument lists.
+    tyargs_dedup: HashMap<Vec<TypeRef>, TyArgsId>,
+    /// Hash-cons map for strings.
+    string_dedup: HashMap<SmolStr, StrId>,
+
     // Interning tables for variable-sized payloads.
     strings: Vec<SmolStr>,
     bytes: Vec<bytes::Bytes>,
@@ -107,6 +122,10 @@ impl Arena {
             terms: Vec::new(),
             term_props: Vec::new(),
             imports: Vec::new(),
+            term_dedup: HashMap::new(),
+            type_dedup: HashMap::new(),
+            tyargs_dedup: HashMap::new(),
+            string_dedup: HashMap::new(),
             strings: Vec::new(),
             bytes: Vec::new(),
             ints: Vec::new(),
@@ -389,8 +408,18 @@ impl Arena {
     /// …) lives in the [`crate::reduce`] module and is exposed via
     /// [`crate::Thm::reduce`]. Arena is rule-blind.
     pub fn rewrite(&mut self, t: TermId, new_def: TermDef) {
+        // Keep the hash-cons in sync: remove the stale old-def
+        // entry, register the new-def entry. If `new_def` was
+        // already cached at another TermId, the cached entry stays
+        // and we lose dedup uniqueness — but `rewrite` callers are
+        // expected to maintain that invariant themselves.
+        let old_def = self.terms[t.0 as usize];
+        if self.term_dedup.get(&old_def) == Some(&t) {
+            self.term_dedup.remove(&old_def);
+        }
         let (new_info, new_hf) = self.compute_term_props(&new_def);
         self.terms[t.0 as usize] = new_def;
+        self.term_dedup.entry(new_def).or_insert(t);
         let entry = &mut self.term_props[t.0 as usize];
         entry.type_info = new_info;
         entry.has_free = new_hf;
@@ -463,6 +492,155 @@ impl Arena {
         replacement: TermRef,
     ) -> TermRef {
         self.subst_free_inner(t, name, ty, replacement, 0)
+    }
+
+    /// Replace every occurrence of the type variable `name` in `ty`
+    /// with `replacement`. Walks `Fun` / `Tyapp` shapes; treats
+    /// `Subset` and `Foreign` as opaque (closed by construction).
+    pub fn subst_tyvar_in_type(
+        &mut self,
+        ty: TypeRef,
+        name: StrId,
+        replacement: TypeRef,
+    ) -> TypeRef {
+        let kind = match self.type_ref_kind(ty) {
+            Some(k) => k,
+            None => return ty,
+        };
+        match kind {
+            crate::ty::TypeKind::Builtin(_) => ty,
+            crate::ty::TypeKind::TVar(n) if n == name => replacement,
+            crate::ty::TypeKind::TVar(_) => ty,
+            crate::ty::TypeKind::Fun(d, c) => {
+                let d2 = self.subst_tyvar_in_type(d, name, replacement);
+                let c2 = self.subst_tyvar_in_type(c, name, replacement);
+                if d2 == d && c2 == c {
+                    ty
+                } else {
+                    self.alloc_fun_ty(d2, c2)
+                }
+            }
+            crate::ty::TypeKind::Tyapp(tn, args_id) => {
+                let args = self.tyargs(args_id).to_vec();
+                let new_args: Vec<TypeRef> = args
+                    .iter()
+                    .map(|&a| self.subst_tyvar_in_type(a, name, replacement))
+                    .collect();
+                if new_args == args {
+                    ty
+                } else {
+                    let new_args_id = self.intern_tyargs(new_args);
+                    self.alloc_tyapp(tn, new_args_id)
+                }
+            }
+            crate::ty::TypeKind::Subset(_, _) | crate::ty::TypeKind::Foreign(_, _) => ty,
+        }
+    }
+
+    /// Replace every `Free` / `Const` / `Lam` / `Eps` type annotation
+    /// in `tm` by [`Self::subst_tyvar_in_type`] of that type. Returns
+    /// a fresh `TermRef` if anything changed.
+    pub fn subst_tyvar_in_term(
+        &mut self,
+        tm: TermRef,
+        name: StrId,
+        replacement: TypeRef,
+    ) -> TermRef {
+        let id = match tm.as_local() {
+            Some(i) => i,
+            None => return tm,
+        };
+        let def = *self.term_def(id);
+        let new_def = match def {
+            TermDef::Bound(_)
+            | TermDef::Bool(_)
+            | TermDef::IntInline(_)
+            | TermDef::IntStored(_)
+            | TermDef::NatInline(_)
+            | TermDef::NatStored(_)
+            | TermDef::BytesStored(_)
+            | TermDef::Foreign(_, _)
+            | TermDef::Abs(_)
+            | TermDef::Rep(_) => return tm,
+            TermDef::Free(s, ty) => {
+                let ty2 = self.subst_tyvar_in_type(ty, name, replacement);
+                if ty2 == ty {
+                    return tm;
+                }
+                TermDef::Free(s, ty2)
+            }
+            TermDef::Const(s, ty) => {
+                let ty2 = self.subst_tyvar_in_type(ty, name, replacement);
+                if ty2 == ty {
+                    return tm;
+                }
+                TermDef::Const(s, ty2)
+            }
+            TermDef::Comb(f, x) => {
+                let f2 = self.subst_tyvar_in_term(f, name, replacement);
+                let x2 = self.subst_tyvar_in_term(x, name, replacement);
+                if f2 == f && x2 == x {
+                    return tm;
+                }
+                TermDef::Comb(f2, x2)
+            }
+            TermDef::Lam(ty, body) => {
+                let ty2 = self.subst_tyvar_in_type(ty, name, replacement);
+                let body2 = self.subst_tyvar_in_term(body, name, replacement);
+                if ty2 == ty && body2 == body {
+                    return tm;
+                }
+                TermDef::Lam(ty2, body2)
+            }
+            TermDef::Eq(a, b) => {
+                let a2 = self.subst_tyvar_in_term(a, name, replacement);
+                let b2 = self.subst_tyvar_in_term(b, name, replacement);
+                if a2 == a && b2 == b {
+                    return tm;
+                }
+                TermDef::Eq(a2, b2)
+            }
+            TermDef::Forall(p) => {
+                let p2 = self.subst_tyvar_in_term(p, name, replacement);
+                if p2 == p {
+                    return tm;
+                }
+                TermDef::Forall(p2)
+            }
+            TermDef::Exists(p) => {
+                let p2 = self.subst_tyvar_in_term(p, name, replacement);
+                if p2 == p {
+                    return tm;
+                }
+                TermDef::Exists(p2)
+            }
+            TermDef::Eps(ty, p) => {
+                let ty2 = self.subst_tyvar_in_type(ty, name, replacement);
+                let p2 = self.subst_tyvar_in_term(p, name, replacement);
+                if ty2 == ty && p2 == p {
+                    return tm;
+                }
+                TermDef::Eps(ty2, p2)
+            }
+            TermDef::Op1(o, x) => {
+                let x2 = self.subst_tyvar_in_term(x, name, replacement);
+                if x2 == x {
+                    return tm;
+                }
+                TermDef::Op1(o, x2)
+            }
+            TermDef::Op2(o, a, b) => {
+                let a2 = self.subst_tyvar_in_term(a, name, replacement);
+                let b2 = self.subst_tyvar_in_term(b, name, replacement);
+                if a2 == a && b2 == b {
+                    return tm;
+                }
+                TermDef::Op2(o, a2, b2)
+            }
+        };
+        let new_id = self.alloc_term(new_def);
+        let _ = self.infer(new_id);
+        TermRef::local(new_id)
     }
 
     /// Does `t` contain a `Free(name, ty)` occurrence anywhere in its
@@ -1060,8 +1238,16 @@ impl Arena {
         if let Some(b) = def.as_builtin() {
             return TypeRef::builtin(b);
         }
+        // Dedup via hash-cons: identical TypeDefs share a TypeRef.
+        // Crucial for HOL Light-style polymorphic-instance equality
+        // — two `alloc_tvar("A")` or two `alloc_tyapp("unit", [])`
+        // calls must agree.
+        if let Some(&id) = self.type_dedup.get(&def) {
+            return TypeRef::local(id);
+        }
         let id = TypeId(self.types.len() as u32);
         self.types.push(def);
+        self.type_dedup.insert(def, id);
         TypeRef::local(id)
     }
 
@@ -1324,23 +1510,37 @@ impl Arena {
     /// a type for `def`, the term gets `TypeInfo::IllTyped`. The
     /// kernel only checks type soundness when constructing a `Thm`.
     pub fn alloc_term(&mut self, def: TermDef) -> TermId {
-        // Compute type info BEFORE pushing — `compute_term_props` may
-        // intern Fun types (mutating `self.types`), but never reads
-        // the term-table indices we're about to write.
+        // Dedup via hash-cons: identical `TermDef`s share a
+        // `TermId`. The UF and structural-equality bridges rely on
+        // `==` for α-equivalent terms even after independent
+        // allocations (e.g. fresh terms produced by `inst` /
+        // `inst_type`).
+        if let Some(&id) = self.term_dedup.get(&def) {
+            // Force a re-inference on the existing entry — its
+            // cached type info may have been computed in a stale
+            // child context.
+            let _ = self.infer(id);
+            return id;
+        }
         let (type_info, has_free) = self.compute_term_props(&def);
         let id = TermId(self.terms.len() as u32);
         self.terms.push(def);
         self.term_props.push(TermProps { type_info, has_free });
+        self.term_dedup.insert(def, id);
+        // Force a top-level re-walk so the cache reflects the
+        // structurally-correct type, ignoring stale child caches.
+        let _ = self.infer(id);
         id
     }
 
     /// Intern a `SmolStr`. Returns the existing id if already present.
     pub fn intern_string(&mut self, s: SmolStr) -> StrId {
-        if let Some(pos) = self.strings.iter().position(|x| x == &s) {
-            return StrId(pos as u32);
+        if let Some(&id) = self.string_dedup.get(&s) {
+            return id;
         }
         let id = StrId(self.strings.len() as u32);
-        self.strings.push(s);
+        self.strings.push(s.clone());
+        self.string_dedup.insert(s, id);
         id
     }
 
@@ -1367,9 +1567,22 @@ impl Arena {
     }
 
     /// Intern a type-argument list.
+    ///
+    /// Dedups by structural equality of the argument vector so that
+    /// two `Tyapp` allocations with the same args resolve to the
+    /// same `TyArgsId` — and therefore to the same `TypeRef` after
+    /// `alloc_type`'s structural dedup. Without this, every
+    /// independent `intern_tyargs(vec![])` produced a fresh
+    /// `TyArgsId` and inflated every nullary `Tyapp` to a distinct
+    /// `TypeRef`, breaking polymorphic-instance equality across
+    /// rules.
     pub fn intern_tyargs(&mut self, args: Vec<TypeRef>) -> TyArgsId {
+        if let Some(&id) = self.tyargs_dedup.get(&args) {
+            return id;
+        }
         let id = TyArgsId(self.tyargs.len() as u32);
-        self.tyargs.push(args);
+        self.tyargs.push(args.clone());
+        self.tyargs_dedup.insert(args, id);
         id
     }
 

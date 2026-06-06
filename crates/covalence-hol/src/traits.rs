@@ -21,6 +21,16 @@ pub trait HolLightTypes {
     /// Name ID for the boolean type constructor.
     fn bool_id(&self) -> NameId;
 
+    /// Inform the backend that `name_id` maps to the string `name`.
+    ///
+    /// HOL Light names live in the OpenTheory `NameTable`'s flat
+    /// `u64` namespace, but kernel-backed implementations (e.g.
+    /// `HolPrim` on `covalence-kernel`) need the string to drive
+    /// shell-level rewrites such as the Forall/Exists/Imp fold on
+    /// `Comb(Const "!", _)`. Default impl is a no-op for backends
+    /// that key everything off `NameId`.
+    fn register_name(&mut self, _name_id: NameId, _name: &str) {}
+
     // -- Constructors (allocate → &mut self) --
 
     /// Construct a type variable.

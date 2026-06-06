@@ -1,8 +1,21 @@
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
-import type { Plugin } from 'vite';
+import { createLogger, defineConfig } from 'vite';
+import type { LogOptions, Plugin } from 'vite';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+// Filter the benign `node:async_hooks externalized for browser compatibility`
+// warning emitted by vite:resolve. The references come from svelte's and
+// SvelteKit's server-render code paths, which Vite's tree-shaker keeps in the
+// client graph but never actually invokes at runtime.
+const logger = createLogger();
+const originalWarn = logger.warn;
+logger.warn = (msg: string, options?: LogOptions) => {
+	if (msg.includes('node:async_hooks') && msg.includes('externalized for browser compatibility')) {
+		return;
+	}
+	originalWarn(msg, options);
+};
 
 // ---------------------------------------------------------------------------
 // XDG discovery — mirrors covalence-proto/src/discovery
@@ -120,6 +133,7 @@ function resolveApiTarget(): string {
 const apiTarget = resolveApiTarget();
 
 export default defineConfig({
+	customLogger: logger,
 	plugins: [sveltekit(), covDiscovery()],
 	server: {
 		proxy: {

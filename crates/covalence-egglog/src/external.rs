@@ -70,10 +70,12 @@ pub fn run_program(source: &str) -> Result<(TermDag, ProofStore, ProofId), Bridg
     todo!(
         "TODO: drive upstream `egglog::EGraph` — \
          construct, `parse_and_run_program(None, source)`, locate the \
-         `(prove …)` step's proof, then walk it via the (currently \
-         private) proof module. Upstream's `proof` module ships public \
-         in the next release; until then we pin the signature so the \
-         rest of the crate compiles against the eventual surface."
+         `(prove …)` step's `egglog::proof::ProofId`, then walk \
+         `egglog::proof::ProofStore` and rebuild a parallel \
+         (TermDag, ProofStore, ProofId) in our types. The kernel \
+         rewrite is expected to reshape our TermDag (primitive \
+         literals, container values), so the body lives in this \
+         single function rather than a stable public converter."
     )
 }
 
@@ -110,6 +112,18 @@ mod tests {
     #[test]
     fn surface_uses_only_local_types() {
         fn _accepts_local(_d: &TermDag, _s: &ProofStore, _r: ProofId) {}
+    }
+
+    /// Confirms the workspace `[patch.crates-io]` is in effect — upstream's
+    /// `proof` module is only publicised on git main (post-2.0.0). Naming
+    /// these types is a compile-time-only check; if the patch were
+    /// removed this test would stop compiling, not start failing.
+    #[test]
+    fn upstream_proof_module_is_reachable() {
+        fn _accepts_upstream_proof_store(_s: &egglog::proof::ProofStore) {}
+        fn _accepts_upstream_proof_id(_i: egglog::proof::ProofId) {}
+        fn _accepts_upstream_justification(_j: &egglog::proof::Justification) {}
+        fn _accepts_upstream_proposition(_p: &egglog::proof::Proposition) {}
     }
 
     /// Confirms the upstream entry point our public API currently calls

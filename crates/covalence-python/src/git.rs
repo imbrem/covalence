@@ -356,6 +356,261 @@ pub fn git_sha256() -> GitHasher {
     }
 }
 
+// ---------------------------------------------------------------------------
+// GitImport — sqlite-backed `cov cog clone` store, exposed for Python
+// ---------------------------------------------------------------------------
+
+use covalence_git::clone::{
+    CloneOptions, CloneResult, clone_into, classify_url, CloneSource,
+};
+use covalence_git::store::{GitBackend, GitObjectKind, GitStore as CoreGitStore};
+
+/// One discovered ref from a clone.
+#[pyclass(frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct GitRef {
+    #[pyo3(get)]
+    name: String,
+    #[pyo3(get)]
+    oid: String,
+    #[pyo3(get)]
+    symref_target: Option<String>,
+}
+
+#[pymethods]
+impl GitRef {
+    fn __repr__(&self) -> String {
+        match &self.symref_target {
+            Some(t) => format!("GitRef({} -> {} {})", self.name, t, self.oid),
+            None => format!("GitRef({} {})", self.name, self.oid),
+        }
+    }
+}
+
+/// Sqlite-backed git store: holds the SHA1 → O256 map produced by cloning a
+/// git repository. Wraps [`covalence_git::store::GitStore`].
+#[pyclass]
+pub struct GitImport {
+    inner: CoreGitStore,
+}
+
+#[pymethods]
+impl GitImport {
+    /// Open an existing sqlite GitStore at `path`. With no `path`, creates a
+    /// fresh in-memory store.
+    #[staticmethod]
+    #[pyo3(signature = (path=None, algo="sha1"))]
+    fn open(path: Option<&str>, algo: &str) -> PyResult<Self> {
+        let kind = parse_algo(algo)?;
+        let inner = match path {
+            Some(p) => CoreGitStore::open(p, kind)
+                .map_err(|e| PyRuntimeError::new_err(format!("open: {e}")))?,
+            None => CoreGitStore::memory(kind)
+                .map_err(|e| PyRuntimeError::new_err(format!("memory: {e}")))?,
+        };
+        Ok(Self { inner })
+    }
+
+    /// Clone a git repository — HTTP(S) URL or local path — into a sqlite
+    /// store at `store` (or an in-memory one if `store` is None). Returns a
+    /// `GitCloneResult` exposing the freshly-populated `GitImport` plus the
+    /// refs and counts the underlying clone surfaced.
+    #[staticmethod]
+    #[pyo3(signature = (url, store=None, branch=None, depth=None, filter=None, algo="sha1"))]
+    fn clone(
+        py: Python<'_>,
+        url: &str,
+        store: Option<&str>,
+        branch: Option<&str>,
+        depth: Option<u32>,
+        filter: Option<&str>,
+        algo: &str,
+    ) -> PyResult<GitCloneResult> {
+        let kind = parse_algo(algo)?;
+        let core = match store {
+            Some(p) => CoreGitStore::open(p, kind)
+                .map_err(|e| PyRuntimeError::new_err(format!("open: {e}")))?,
+            None => CoreGitStore::memory(kind)
+                .map_err(|e| PyRuntimeError::new_err(format!("memory: {e}")))?,
+        };
+        let ref_prefixes = match branch {
+            Some(b) => vec![format!("refs/heads/{b}"), "HEAD".to_string()],
+            None => Vec::new(),
+        };
+        let opts = CloneOptions {
+            url: url.to_string(),
+            depth,
+            filter: filter.map(|s| s.to_string()),
+            ref_prefixes,
+        };
+
+        // Release the GIL while we do network/disk I/O — clones routinely
+        // run for many seconds and would otherwise block any other Python
+        // thread.
+        let result: CloneResult = py
+            .detach(|| clone_into(&opts, &core, |_| {}))
+            .map_err(|e| PyRuntimeError::new_err(format!("clone: {e}")))?;
+
+        // Build the Python `GitImport` Py<> that the result owns.
+        let import = Py::new(py, GitImport { inner: core })?;
+
+        let refs: Vec<GitRef> = result
+            .refs
+            .into_iter()
+            .map(|r| GitRef {
+                name: r.name,
+                oid: r.oid.to_string(),
+                symref_target: r.symref_target,
+            })
+            .collect();
+        let cov_trees: Vec<(String, O256)> = result
+            .cov_trees
+            .into_iter()
+            .map(|(oid, h)| (oid.to_string(), O256(h)))
+            .collect();
+        Ok(GitCloneResult {
+            store: import,
+            objects_stored: result.objects_stored,
+            refs,
+            cov_trees,
+            url: url.to_string(),
+        })
+    }
+
+    /// Classify a URL into "http" or "local" — useful when callers want to
+    /// branch on the transport before calling `clone`.
+    #[staticmethod]
+    fn classify(url: &str) -> &'static str {
+        match classify_url(url) {
+            CloneSource::Http(_) => "http",
+            CloneSource::Local(_) => "local",
+        }
+    }
+
+    /// Count of registered git objects (full + shallow).
+    #[getter]
+    fn count(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Count of registered covalence trees (from `convert_trees`).
+    #[getter]
+    fn cov_tree_count(&self) -> usize {
+        self.inner.cov_tree_hashes().len()
+    }
+
+    /// Look up a SHA-1/256 OID (hex or [`GitObject`]); return the O256 the
+    /// git blob payload hashes to.
+    fn resolve(&self, oid: &Bound<'_, PyAny>) -> PyResult<O256> {
+        let parsed = parse_git_hash(oid)?;
+        let obj = self.inner.read_object(&parsed).map_err(|e| {
+            PyValueError::new_err(format!("not resolvable: {e}"))
+        })?;
+        Ok(O256(covalence_hash::O256::blob(&obj.data)))
+    }
+
+    /// Reverse lookup: given an O256, find the git OID whose blob hashes to
+    /// it (lexicographically smallest, deterministic). Returns `None` if no
+    /// such mapping is registered.
+    fn reverse(&self, target: O256) -> PyResult<Option<GitObject>> {
+        let found = self
+            .inner
+            .git_oid_for_blob_hash(&target.0)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(found.map(oid_to_git_object))
+    }
+
+    /// Write `data` as a git blob into the store; return the git OID. The
+    /// O256 → git-OID mapping is updated implicitly (the GitStore records
+    /// `O256::blob(data)` as `blob_hash`), so subsequent `resolve` /
+    /// `reverse` calls see the new entry.
+    fn store_blob(&self, data: &[u8]) -> PyResult<GitObject> {
+        self.inner
+            .write_object(GitObjectKind::Blob, data)
+            .map(oid_to_git_object)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Check whether a git OID is registered (including shallow entries).
+    fn contains(&self, oid: &Bound<'_, PyAny>) -> PyResult<bool> {
+        let parsed = parse_git_hash(oid)?;
+        Ok(self.inner.contains_oid(&parsed))
+    }
+
+    fn __contains__(&self, oid: &Bound<'_, PyAny>) -> PyResult<bool> {
+        self.contains(oid)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "GitImport(objects={}, cov_trees={})",
+            self.inner.len(),
+            self.inner.cov_tree_hashes().len(),
+        )
+    }
+}
+
+/// Result of [`GitImport::clone`].
+#[pyclass(frozen)]
+pub struct GitCloneResult {
+    #[pyo3(get)]
+    store: Py<GitImport>,
+    #[pyo3(get)]
+    objects_stored: usize,
+    refs: Vec<GitRef>,
+    cov_trees: Vec<(String, O256)>,
+    #[pyo3(get)]
+    url: String,
+}
+
+#[pymethods]
+impl GitCloneResult {
+    /// Refs discovered during the clone.
+    #[getter]
+    fn refs(&self) -> Vec<GitRef> {
+        self.refs.clone()
+    }
+
+    /// Number of covalence trees converted from git trees.
+    #[getter]
+    fn cov_trees_count(&self) -> usize {
+        self.cov_trees.len()
+    }
+
+    /// Iterate the git tree OID → covalence O256 mapping. Returns a list of
+    /// `(oid_hex, O256)` tuples, *only* materialised when explicitly asked —
+    /// avoids dumping thousands of entries by default.
+    fn cov_trees(&self) -> Vec<(String, O256)> {
+        self.cov_trees.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "GitCloneResult(url={:?}, objects_stored={}, refs={}, cov_trees={})",
+            self.url,
+            self.objects_stored,
+            self.refs.len(),
+            self.cov_trees.len(),
+        )
+    }
+}
+
+/// Module-level convenience: `covalence.git_clone(url, store=None, ...)` is
+/// equivalent to `covalence.GitImport.clone(url, store=None, ...)`.
+#[pyfunction]
+#[pyo3(signature = (url, store=None, branch=None, depth=None, filter=None, algo="sha1"))]
+pub fn git_clone(
+    py: Python<'_>,
+    url: &str,
+    store: Option<&str>,
+    branch: Option<&str>,
+    depth: Option<u32>,
+    filter: Option<&str>,
+    algo: &str,
+) -> PyResult<GitCloneResult> {
+    GitImport::clone(py, url, store, branch, depth, filter, algo)
+}
+
 /// Parse raw git tree bytes and convert to directory rows.
 ///
 /// - `data`: raw git tree body bytes

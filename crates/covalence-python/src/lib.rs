@@ -42,6 +42,9 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<tagged_store::PyTaggedStore>()?;
     m.add_class::<object_store::PyObjectStore>()?;
     m.add_class::<git::GitStore>()?;
+    m.add_class::<git::GitImport>()?;
+    m.add_class::<git::GitRef>()?;
+    m.add_class::<git::GitCloneResult>()?;
     m.add_class::<server::Server>()?;
     m.add_class::<table::PyRowSchema>()?;
     m.add_class::<table::PyTableBuilder>()?;
@@ -76,6 +79,7 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(git::git_sha1, m)?)?;
     m.add_function(wrap_pyfunction!(git::git_sha256, m)?)?;
     m.add_function(wrap_pyfunction!(git::git_tree_to_dir_rows, m)?)?;
+    m.add_function(wrap_pyfunction!(git::git_clone, m)?)?;
 
     // Backend constructors
     m.add_function(wrap_pyfunction!(backend::local, m)?)?;

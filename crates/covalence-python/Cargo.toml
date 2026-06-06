@@ -15,7 +15,7 @@ covalence-sexp = { path = "../covalence-sexp" }
 covalence-shell = { path = "../covalence-shell" }
 covalence-store = { path = "../covalence-store", features = ["memory", "sqlite"] }
 covalence-kv = { path = "../covalence-kv" }
-covalence-git = { path = "../covalence-git", features = ["object-store"] }
+covalence-git = { path = "../covalence-git", features = ["object-store", "clone"] }
 covalence-sig = { path = "../covalence-sig" }
 covalence-object = { path = "../covalence-object" }
 covalence-wasm = { path = "../covalence-wasm" }

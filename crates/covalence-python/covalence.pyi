@@ -1,6 +1,6 @@
 """Type stubs for the covalence native module (PyO3)."""
 
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, List, Optional, Tuple, Union
 
 class O256:
     """256-bit hash value. Also acts as a BLAKE3 keyed-hash key."""
@@ -90,6 +90,49 @@ class GitHasher:
     def hash_blob(self, data: bytes) -> GitObject: ...
     def hash_blob_file(self, path: str) -> GitObject: ...
     def hash_tree(self, data: bytes) -> GitObject: ...
+
+class GitRef:
+    """One ref discovered during a git clone."""
+
+    name: str
+    oid: str
+    symref_target: Optional[str]
+
+class GitImport:
+    """Sqlite-backed git object store with the SHA1 → O256 mapping that
+    `cov cog clone` builds. Use `GitImport.open(path)` to attach to an
+    existing store or `GitImport.clone(url, store=path)` to populate one."""
+
+    @staticmethod
+    def open(path: Optional[str] = None, algo: str = "sha1") -> "GitImport": ...
+    @staticmethod
+    def clone(
+        url: str,
+        store: Optional[str] = None,
+        branch: Optional[str] = None,
+        depth: Optional[int] = None,
+        filter: Optional[str] = None,
+        algo: str = "sha1",
+    ) -> "GitCloneResult": ...
+    @staticmethod
+    def classify(url: str) -> str: ...
+    count: int
+    cov_tree_count: int
+    def resolve(self, oid: Union[GitObject, str]) -> O256: ...
+    def reverse(self, target: O256) -> Optional[GitObject]: ...
+    def store_blob(self, data: bytes) -> GitObject: ...
+    def contains(self, oid: Union[GitObject, str]) -> bool: ...
+    def __contains__(self, oid: Union[GitObject, str]) -> bool: ...
+
+class GitCloneResult:
+    """Result of `GitImport.clone(...)`."""
+
+    store: GitImport
+    objects_stored: int
+    url: str
+    refs: List[GitRef]
+    cov_trees_count: int
+    def cov_trees(self) -> List[Tuple[str, O256]]: ...
 
 class StoreProtocol:
     """Protocol for Python-backed stores (informational, not enforced at type level)."""

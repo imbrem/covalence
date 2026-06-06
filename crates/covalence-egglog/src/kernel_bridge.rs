@@ -18,8 +18,13 @@
 //!     by either calling `Prover::refl` (when `lhs == rhs` as `TermRef`s)
 //!     or by pushing the equality as an assumption and calling
 //!     `Prover::assume`.
-//!   - Every other justification falls through to the trait default,
-//!     returning [`BridgeError::NotImplemented`] tagged with the variant.
+//!   - Implements [`Justification::Trans`](crate::proof::Justification::Trans)
+//!     and [`Justification::Sym`](crate::proof::Justification::Sym) by
+//!     calling through to the prover's own primitives — the kernel
+//!     validates the shape of the input theorems.
+//!   - Every remaining justification (`Rule`, `MergeFn`, `Congr`) falls
+//!     through to the trait default, returning
+//!     [`BridgeError::NotImplemented`] tagged with the variant.
 
 use std::collections::HashMap;
 
@@ -27,7 +32,9 @@ use covalence_shell::Prover;
 
 use crate::bridge::EgglogBridge;
 use crate::error::BridgeError;
-use crate::proof::{Proposition, Term, TermDag, TermId};
+use crate::proof::{
+    Justification, ProofId, ProofStore, Proposition, Term, TermDag, TermId, topological_order,
+};
 
 /// Bridge an egglog proof DAG into any `P: Prover`.
 ///
@@ -54,6 +61,18 @@ pub struct KernelEgglogBridge<'a, P: Prover> {
     arities: HashMap<String, usize>,
     /// Memo for materialised proof-DAG terms.
     term_cache: HashMap<TermId, P::Term>,
+    /// `(lhs, rhs) → eq Term` memo. The kernel doesn't hash-cons compound
+    /// terms, so without this memo two calls to `prover.eq(a, b)` would
+    /// return distinct `P::Term`s — breaking [`Self::fiat_props`]'s
+    /// `eq_term` key. See the matching `eq_memo` in `covalence-alethe`.
+    eq_memo: HashMap<(P::Term, P::Term), P::Term>,
+    /// `eq_term → Prop` cache for [`Justification::Fiat`] equalities. Filled
+    /// by [`KernelEgglogBridge::pre_walk`] before any other dispatch runs,
+    /// so every `assume` in the topo walk sees the *full* assumption set on
+    /// the context — required for `trans` / `sym` over Fiat-derived Thms
+    /// not to trip the kernel's `ContextMismatch` check. See
+    /// `docs/prop-egraph-design.md` for the underlying context model.
+    fiat_props: HashMap<P::Term, P::Prop>,
 }
 
 impl<'a, P: Prover> KernelEgglogBridge<'a, P> {
@@ -65,7 +84,20 @@ impl<'a, P: Prover> KernelEgglogBridge<'a, P> {
             constructors: HashMap::new(),
             arities: HashMap::new(),
             term_cache: HashMap::new(),
+            eq_memo: HashMap::new(),
+            fiat_props: HashMap::new(),
         }
+    }
+
+    /// Memoised `prover.eq(a, b)` — keeps a single canonical `P::Term` per
+    /// `(lhs, rhs)` pair so `fiat_props` lookups round-trip.
+    fn mk_eq(&mut self, a: P::Term, b: P::Term) -> Result<P::Term, BridgeError> {
+        if let Some(t) = self.eq_memo.get(&(a, b)).copied() {
+            return Ok(t);
+        }
+        let t = self.prover.eq(a, b)?;
+        self.eq_memo.insert((a, b), t);
+        Ok(t)
     }
 
     /// Borrow the underlying prover (e.g. for inspecting kernel state in
@@ -172,6 +204,40 @@ impl<'a, P: Prover> EgglogBridge for KernelEgglogBridge<'a, P> {
         Ok(())
     }
 
+    fn pre_walk(
+        &mut self,
+        store: &ProofStore,
+        dag: &TermDag,
+        root: ProofId,
+    ) -> Result<(), BridgeError> {
+        // Push every non-reflexive Fiat equality onto the kernel's context
+        // *before* any other dispatch runs, so all derived Thms share the
+        // same assumption chain. Reflexive Fiats (`t = t`) need no push —
+        // they're discharged via `refl` inside `fiat`.
+        for id in topological_order(store, root) {
+            let proof = store
+                .get(id)
+                .ok_or(BridgeError::UndefinedProof(id.0))?;
+            if !matches!(proof.justification, Justification::Fiat) {
+                continue;
+            }
+            let lhs = self.materialise(proof.proposition.lhs, dag)?;
+            let rhs = self.materialise(proof.proposition.rhs, dag)?;
+            if lhs == rhs {
+                continue;
+            }
+            let eq_term = self.mk_eq(lhs, rhs)?;
+            // Idempotent on the eq term: two Fiat nodes asserting the same
+            // equality reuse one Prop, one push.
+            if self.fiat_props.contains_key(&eq_term) {
+                continue;
+            }
+            let prop = self.prover.push_assumption(eq_term)?;
+            self.fiat_props.insert(eq_term, prop);
+        }
+        Ok(())
+    }
+
     fn fiat(
         &mut self,
         prop: &Proposition,
@@ -187,12 +253,41 @@ impl<'a, P: Prover> EgglogBridge for KernelEgglogBridge<'a, P> {
             return Ok(self.prover.refl(lhs)?);
         }
 
-        // Top-level union: push the equality as a context assumption, then
-        // `assume`. The resulting Thm has the equality both as a hypothesis
-        // and as its conclusion — the same shape an Alethe `(assume id φ)`
-        // step produces.
-        let eq_term = self.prover.eq(lhs, rhs)?;
-        let prop_handle = self.prover.push_assumption(eq_term)?;
+        // Top-level union: the equality is already on the context (pushed
+        // during `pre_walk`); just `assume` the cached Prop. This is what
+        // keeps every Fiat-derived Thm in the same context — the
+        // precondition for `trans` / `sym` to compose across them.
+        let eq_term = self.mk_eq(lhs, rhs)?;
+        let prop_handle = self
+            .fiat_props
+            .get(&eq_term)
+            .cloned()
+            .ok_or_else(|| {
+                BridgeError::Malformed(
+                    "Fiat equality missing from pre_walk cache — was \
+                     ingest_proof_store bypassed?"
+                        .into(),
+                )
+            })?;
         Ok(self.prover.assume(prop_handle)?)
+    }
+
+    fn trans(
+        &mut self,
+        _prop: &Proposition,
+        ab: Self::Thm,
+        bc: Self::Thm,
+        _dag: &TermDag,
+    ) -> Result<Self::Thm, BridgeError> {
+        Ok(self.prover.trans(ab, bc)?)
+    }
+
+    fn sym(
+        &mut self,
+        _prop: &Proposition,
+        ab: Self::Thm,
+        _dag: &TermDag,
+    ) -> Result<Self::Thm, BridgeError> {
+        Ok(self.prover.sym(ab)?)
     }
 }

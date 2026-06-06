@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use covalence_types::Decision;
 
 use crate::error::BridgeError;
-use crate::proof::{Proposition, TermDag, TermId};
+use crate::proof::{ProofId, ProofStore, Proposition, TermDag, TermId};
 
 /// High-level egglog ingestion API.
 ///
@@ -50,6 +50,29 @@ pub trait EgglogBridge {
         params: &[&str],
         result_sort: &str,
     ) -> Result<(), BridgeError>;
+
+    // -----------------------------------------------------------------
+    // Pre-walk setup
+    // -----------------------------------------------------------------
+
+    /// Called once by the driver before the topological walk starts.
+    ///
+    /// Backends that need state set up *before* any
+    /// [`Justification`](crate::proof::Justification) is dispatched (e.g.
+    /// pushing every [`Justification::Fiat`](crate::proof::Justification::Fiat)
+    /// equality onto a shared context so later `Trans` / `Sym` steps share
+    /// the same proof environment) override this method.
+    ///
+    /// The default is a no-op.
+    fn pre_walk(
+        &mut self,
+        store: &ProofStore,
+        dag: &TermDag,
+        root: ProofId,
+    ) -> Result<(), BridgeError> {
+        let _ = (store, dag, root);
+        Ok(())
+    }
 
     // -----------------------------------------------------------------
     // Justification handlers (one per `Justification` variant)

@@ -22,6 +22,8 @@ pub fn ingest_proof_store<B: EgglogBridge>(
     dag: &TermDag,
     root: ProofId,
 ) -> Result<B::Thm, BridgeError> {
+    bridge.pre_walk(store, dag, root)?;
+
     let mut thms: HashMap<ProofId, B::Thm> = HashMap::new();
 
     for id in topological_order(store, root) {

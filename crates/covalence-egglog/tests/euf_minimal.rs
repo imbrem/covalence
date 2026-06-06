@@ -1,8 +1,9 @@
-//! Stage 0 integration tests for `KernelEgglogBridge`.
+//! Integration tests for `KernelEgglogBridge`.
 //!
 //! Exercises the *stable boundary*: trait + driver + `KernelEgglogBridge`
-//! impl against `covalence_kernel::Kernel`. Only [`Justification::Fiat`] is
-//! wired through; everything else should surface
+//! impl against `covalence_kernel::Kernel`. Currently wired:
+//! [`Justification::Fiat`], [`Justification::Trans`], [`Justification::Sym`].
+//! The remaining justifications (`Rule`, `MergeFn`, `Congr`) should surface
 //! [`BridgeError::NotImplemented`] tagged with the variant name so a future
 //! Stage knows exactly what to wire next.
 
@@ -176,11 +177,12 @@ fn arity_mismatch_rejected() {
 }
 
 // =====================================================================
-// Unwired justifications surface NotImplemented tagged with the variant
+// Trans — chain two grounded equations
 // =====================================================================
 
 #[test]
-fn trans_is_not_implemented_yet() {
+fn trans_chains_two_fiat_equations() {
+    // `a = b` (Fiat), `b = c` (Fiat) ⊢ `a = c` (Trans).
     let mut kernel = Kernel::new();
     let mut bridge = KernelEgglogBridge::new(&mut kernel);
     bridge.declare_sort("U").unwrap();
@@ -207,13 +209,17 @@ fn trans_is_not_implemented_yet() {
         justification: Justification::Trans(ab, bc),
     });
 
-    let err = ingest_proof_store(&mut bridge, &store, &dag, ac)
-        .expect_err("trans is not wired in Stage 0");
-    assert!(matches!(err, BridgeError::NotImplemented(s) if s == "trans"));
+    let _thm = ingest_proof_store(&mut bridge, &store, &dag, ac)
+        .expect("trans should chain a=b and b=c");
 }
 
+// =====================================================================
+// Sym — flip a grounded equation
+// =====================================================================
+
 #[test]
-fn sym_is_not_implemented_yet() {
+fn sym_flips_fiat_equation() {
+    // `a = b` (Fiat) ⊢ `b = a` (Sym).
     let mut kernel = Kernel::new();
     let mut bridge = KernelEgglogBridge::new(&mut kernel);
     bridge.declare_sort("U").unwrap();
@@ -234,7 +240,118 @@ fn sym_is_not_implemented_yet() {
         justification: Justification::Sym(ab),
     });
 
-    let err = ingest_proof_store(&mut bridge, &store, &dag, ba)
-        .expect_err("sym is not wired in Stage 0");
-    assert!(matches!(err, BridgeError::NotImplemented(s) if s == "sym"));
+    let _thm = ingest_proof_store(&mut bridge, &store, &dag, ba)
+        .expect("sym should flip a=b to b=a");
+}
+
+// =====================================================================
+// Trans + Sym — combine both into a single proof
+// =====================================================================
+
+#[test]
+fn trans_with_symmetrised_premise() {
+    // From `a = b` and `c = b`, derive `a = c` via trans(a=b, sym(c=b)).
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelEgglogBridge::new(&mut kernel);
+    bridge.declare_sort("U").unwrap();
+    bridge.declare_constructor("a", &[], "U").unwrap();
+    bridge.declare_constructor("b", &[], "U").unwrap();
+    bridge.declare_constructor("c", &[], "U").unwrap();
+
+    let mut dag = TermDag::new();
+    let t_a = dag.alloc(Term::Const("a".into()));
+    let t_b = dag.alloc(Term::Const("b".into()));
+    let t_c = dag.alloc(Term::Const("c".into()));
+
+    let mut store = ProofStore::new();
+    let ab = store.alloc(Proof {
+        proposition: Proposition::new(t_a, t_b),
+        justification: Justification::Fiat,
+    });
+    let cb = store.alloc(Proof {
+        proposition: Proposition::new(t_c, t_b),
+        justification: Justification::Fiat,
+    });
+    let bc = store.alloc(Proof {
+        proposition: Proposition::new(t_b, t_c),
+        justification: Justification::Sym(cb),
+    });
+    let ac = store.alloc(Proof {
+        proposition: Proposition::new(t_a, t_c),
+        justification: Justification::Trans(ab, bc),
+    });
+
+    let _thm = ingest_proof_store(&mut bridge, &store, &dag, ac)
+        .expect("trans(a=b, sym(c=b)) should produce a=c");
+}
+
+// =====================================================================
+// Still-unwired justifications surface NotImplemented tagged with variant
+// =====================================================================
+
+#[test]
+fn congr_is_not_implemented_yet() {
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelEgglogBridge::new(&mut kernel);
+    bridge.declare_sort("U").unwrap();
+    bridge.declare_constructor("a", &[], "U").unwrap();
+    bridge.declare_constructor("b", &[], "U").unwrap();
+    bridge.declare_constructor("f", &["U"], "U").unwrap();
+
+    let mut dag = TermDag::new();
+    let t_a = dag.alloc(Term::Const("a".into()));
+    let t_b = dag.alloc(Term::Const("b".into()));
+    let t_fa = dag.alloc(Term::App("f".into(), vec![t_a]));
+    let t_fb = dag.alloc(Term::App("f".into(), vec![t_b]));
+
+    let mut store = ProofStore::new();
+    let ab = store.alloc(Proof {
+        proposition: Proposition::new(t_a, t_b),
+        justification: Justification::Fiat,
+    });
+    let fa_eq = store.alloc(Proof {
+        proposition: Proposition::new(t_fa, t_fa),
+        justification: Justification::Fiat,
+    });
+    let cong = store.alloc(Proof {
+        proposition: Proposition::new(t_fa, t_fb),
+        justification: Justification::Congr {
+            proof: fa_eq,
+            child_index: 0,
+            child_proof: ab,
+        },
+    });
+
+    let err = ingest_proof_store(&mut bridge, &store, &dag, cong)
+        .expect_err("congr is not wired yet");
+    assert!(matches!(err, BridgeError::NotImplemented(s) if s == "congr"));
+}
+
+#[test]
+fn rule_is_not_implemented_yet() {
+    use std::collections::HashMap;
+
+    let mut kernel = Kernel::new();
+    let mut bridge = KernelEgglogBridge::new(&mut kernel);
+    bridge.declare_sort("U").unwrap();
+    bridge.declare_constructor("a", &[], "U").unwrap();
+    bridge.declare_constructor("b", &[], "U").unwrap();
+
+    let mut dag = TermDag::new();
+    let t_a = dag.alloc(Term::Const("a".into()));
+    let t_b = dag.alloc(Term::Const("b".into()));
+
+    let mut store = ProofStore::new();
+    let rule_step = store.alloc(Proof {
+        proposition: Proposition::new(t_a, t_b),
+        justification: Justification::Rule {
+            name: "my-rule".into(),
+            premise_proofs: vec![],
+            substitution: HashMap::new(),
+        },
+    });
+
+    let err = ingest_proof_store(&mut bridge, &store, &dag, rule_step)
+        .expect_err("rule is not wired yet");
+    assert!(matches!(err, BridgeError::NotImplemented(s) if s == "rule:my-rule"));
 }

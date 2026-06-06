@@ -1211,6 +1211,7 @@ dependencies = [
  "covalence-kernel",
  "covalence-object",
  "covalence-store",
+ "covalence-types",
  "smol_str",
  "thiserror 2.0.18",
 ]

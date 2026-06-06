@@ -121,9 +121,11 @@
 		{:else if error}
 			<div class="status-msg error-msg">{error}</div>
 		{:else if info?.kind === 'tree' && viewer}
-			<svelte:component this={viewer.component} {hash} entries={treeEntries} />
+			{@const TreeViewer = viewer.component}
+			<TreeViewer {hash} entries={treeEntries} />
 		{:else if info?.kind === 'blob' && viewer}
-			<svelte:component this={viewer.component} {hash} data={blobData} {mode} />
+			{@const BlobViewer = viewer.component}
+			<BlobViewer {hash} data={blobData} {mode} />
 		{:else if viewer}
 			<div class="status-msg">Unsupported object kind: {info?.kind}</div>
 		{/if}

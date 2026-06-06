@@ -563,11 +563,9 @@ fn parse_syntax_body(file: FileId, input: &mut &[Spanned]) -> Result<SyntaxBody,
     if contains_top_level_pipe(&body_run.tokens) {
         Ok(SyntaxBody::Variant(split_alts(&body_run)?))
     } else if body_starts_with_case_head(&body_run.tokens) {
-        Ok(SyntaxBody::Variant(vec![Alt {
-            span: body_run.span,
-            body: body_run,
-            hints: Vec::new(),
-        }]))
+        // Reuse split_alts so the trailing `hint(...)` clauses get
+        // peeled off the body just like the multi-alt case.
+        Ok(SyntaxBody::Variant(split_alts(&body_run)?))
     } else {
         Ok(SyntaxBody::Alias(body_run))
     }

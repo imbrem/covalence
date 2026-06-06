@@ -1325,10 +1325,7 @@ fn expand_variant_alts(
 /// arg-type expressions in alternatives is later work).
 fn alt_to_typcase(alt: &Alt, ctx: &ElabContext) -> spectec_ast::SpecTecTypCase {
     let op = match alt_to_constructor(alt, &ctx.type_names) {
-        // For variant case types, OCaml uses just `[head]` as the
-        // MixOp — operand placeholders aren't materialised in the
-        // op text (they're carried by the `t` bind list).
-        Some((name, _frags)) => spectec_ast::MixOp::new(vec![name]),
+        Some((_, frags)) => mixop_from_typcase_fragments(&frags),
         None => mixop_from_alt_tokens(alt),
     };
     spectec_ast::SpecTecTypCase::Field {
@@ -1337,6 +1334,34 @@ fn alt_to_typcase(alt: &Alt, ctx: &ElabContext) -> spectec_ast::SpecTecTypCase {
         qs: Vec::new(),
         prs: Vec::new(),
     }
+}
+
+/// Build a TypCase MixOp from constructor fragments. Literals
+/// concatenate; each hole introduces a new separator. Mirrors
+/// OCaml's `elab.ml` convention: if every separator after the head
+/// is empty (i.e. all literals are concentrated in the head), the
+/// MixOp collapses to just `[head]`. Otherwise the full per-hole
+/// separator list is preserved (including any trailing empty).
+fn mixop_from_typcase_fragments(frags: &[crate::mixfix::Fragment]) -> spectec_ast::MixOp {
+    let mut parts: Vec<String> = vec![String::new()];
+    for f in frags {
+        match f {
+            crate::mixfix::Fragment::Hole(_) => parts.push(String::new()),
+            crate::mixfix::Fragment::Lit(t) => {
+                use crate::token::Token::*;
+                let text = match t {
+                    Ident(n) => n.clone(),
+                    Nat(n) => n.to_string(),
+                    other => other.describe().trim_matches('`').to_string(),
+                };
+                parts.last_mut().unwrap().push_str(&text);
+            }
+        }
+    }
+    if parts.len() > 1 && parts[1..].iter().all(String::is_empty) {
+        parts.truncate(1);
+    }
+    spectec_ast::MixOp::new(parts)
 }
 
 fn record_field_to_typfield(
@@ -1520,11 +1545,18 @@ fn typ_expr_to_spectec_args(alt: &Alt, ctx: &ElabContext) -> spectec_ast::SpecTe
 }
 
 /// Render a hole's source tokens into a `Bind` id, mirroring OCaml's
-/// elaborator output (e.g. `valtype?`, `localidx*`, `n`). Uses each
-/// token's `describe()` for fidelity; falls back to "_" for unusual
-/// shapes.
+/// elaborator output (e.g. `valtype?`, `localidx*`, `n`). Complex
+/// shapes (anything containing parens) collapse to `"_"` — matches
+/// OCaml's behaviour for `list(fieldtype)` and similar parametric
+/// type uses where the operand isn't a single metavar.
 fn hole_bind_id(toks: &[crate::token::Spanned]) -> String {
     if toks.is_empty() {
+        return "_".to_string();
+    }
+    if toks
+        .iter()
+        .any(|t| matches!(t.token, crate::token::Token::LParen))
+    {
         return "_".to_string();
     }
     let mut s = String::new();

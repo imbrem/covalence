@@ -577,10 +577,73 @@ fn metavar_base(name: &str) -> &str {
     trimmed
 }
 
-/// Type-check a premise.
+/// Type-check a premise. For `Rule { rel_name, operands }` premises,
+/// each operand is checked against the corresponding hole-type of
+/// the cited relation, inserting `Sub` coercions as needed.
 pub fn check_premise(env: &TypeEnv, p: ElabPremise) -> ElabPremise {
-    let _ = env;
-    p
+    match p {
+        ElabPremise::Rule {
+            rel_name,
+            op,
+            operands,
+        } => {
+            // Look up the relation's operand-tuple type and check each
+            // operand against the matching slot.
+            let expected = env
+                .relations
+                .get(&rel_name)
+                .map(extract_tup_types)
+                .unwrap_or_default();
+            let typed_operands: Vec<Expr> = operands
+                .into_iter()
+                .enumerate()
+                .map(|(i, o)| match expected.get(i) {
+                    Some(t) => check_exp_against(env, o, t),
+                    None => check_exp(env, o),
+                })
+                .collect();
+            ElabPremise::Rule {
+                rel_name,
+                op,
+                operands: typed_operands,
+            }
+        }
+        ElabPremise::If(e) => ElabPremise::If(check_exp_against(env, e, &Typ::Bool)),
+        ElabPremise::Let { lhs, rhs } => ElabPremise::Let {
+            // Symmetric: infer rhs, check lhs against rhs's type
+            // (so pattern variables get the right type). Simplified
+            // for now: check both, don't unify.
+            lhs: check_exp(env, lhs),
+            rhs: check_exp(env, rhs),
+        },
+        ElabPremise::Else => ElabPremise::Else,
+        ElabPremise::Iter {
+            inner,
+            kind,
+            bindings,
+        } => ElabPremise::Iter {
+            inner: Box::new(check_premise(env, *inner)),
+            kind,
+            bindings,
+        },
+        ElabPremise::Raw(tr) => ElabPremise::Raw(tr),
+    }
+}
+
+/// Extract per-operand types from a `Tup` typ (or a single bare type
+/// as a one-element vec). Same logic as `ast_doc::extract_tup_element_types`
+/// but lives here to avoid a cross-module call cycle.
+fn extract_tup_types(t: &Typ) -> Vec<Typ> {
+    match t {
+        Typ::Tup { ets } => ets
+            .iter()
+            .map(|b| {
+                let ast::SpecTecTypBind::Bind { typ, .. } = b;
+                typ.clone()
+            })
+            .collect(),
+        other => vec![other.clone()],
+    }
 }
 
 #[cfg(test)]

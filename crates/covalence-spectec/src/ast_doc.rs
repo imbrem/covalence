@@ -313,14 +313,23 @@ fn to_spectec_ast_flat(
             .clauses
             .iter()
             .map(|c| {
+                // Each arg pattern is checked against the
+                // corresponding def-parameter type.
                 let as_: Vec<spectec_ast::SpecTecArg> = c
                     .arg_pats
                     .iter()
-                    .map(|pat_tr| spectec_ast::SpecTecArg::Exp {
-                        e: token_run_to_expr_typed(pat_tr, ctx, env),
+                    .enumerate()
+                    .map(|(i, pat_tr)| {
+                        let expected = ps.get(i).map(param_to_typ);
+                        let e = match expected {
+                            Some(et) => token_run_to_expr_against(pat_tr, ctx, env, &et),
+                            None => token_run_to_expr_typed(pat_tr, ctx, env),
+                        };
+                        spectec_ast::SpecTecArg::Exp { e }
                     })
                     .collect();
-                let e = token_run_to_expr_typed(&c.rhs, ctx, env);
+                // RHS checked against the def's return type.
+                let e = token_run_to_expr_against(&c.rhs, ctx, env, &t);
                 let prs = c
                     .premises
                     .iter()
@@ -396,6 +405,26 @@ fn token_run_to_expr_typed(
     match crate::elab::classify_token_run(tr, ctx) {
         Some(expr) => {
             let expr = crate::typecheck::check_exp(env, expr);
+            expr_to_spectec(&expr, ctx)
+        }
+        None => raw_sentinel(),
+    }
+}
+
+/// As [`token_run_to_expr_typed`] but checks the expression against
+/// the given expected type — inserts `Sub` if needed.
+fn token_run_to_expr_against(
+    tr: &crate::cst::TokenRun,
+    ctx: &ElabContext,
+    env: &crate::typecheck::TypeEnv,
+    expected: &spectec_ast::SpecTecTyp,
+) -> spectec_ast::SpecTecExp {
+    if tr.tokens.is_empty() {
+        return raw_sentinel();
+    }
+    match crate::elab::classify_token_run(tr, ctx) {
+        Some(expr) => {
+            let expr = crate::typecheck::check_exp_against(env, expr, expected);
             expr_to_spectec(&expr, ctx)
         }
         None => raw_sentinel(),
@@ -511,15 +540,20 @@ pub fn expr_to_spectec(e: &Expr, ctx: &ElabContext) -> spectec_ast::SpecTecExp {
         Expr::Tup { items, .. } => S::Tup {
             es: items.iter().map(|i| expr_to_spectec(i, ctx)).collect(),
         },
-        Expr::Call { name, args, .. } => S::Call {
-            x: name.clone(),
-            as1: args
-                .iter()
-                .map(|tr| spectec_ast::SpecTecArg::Exp {
-                    e: token_run_to_expr(tr, ctx),
-                })
-                .collect(),
-        },
+        Expr::Call { name, args, .. } => {
+            // Look up the def's parameter types from the env (if any
+            // env is reachable — for now we don't thread one through
+            // expr_to_spectec, so fall back to untyped lowering).
+            S::Call {
+                x: name.clone(),
+                as1: args
+                    .iter()
+                    .map(|tr| spectec_ast::SpecTecArg::Exp {
+                        e: token_run_to_expr(tr, ctx),
+                    })
+                    .collect(),
+            }
+        }
         Expr::Iter {
             inner,
             kind,
@@ -783,6 +817,18 @@ fn path_to_spectec(p: &ElabPath, ctx: &ElabContext) -> spectec_ast::SpecTecPath 
 }
 
 // ---------- type / parameter synthesis ----------
+
+/// Best-effort: extract the type held by a parameter for use as an
+/// `expected` type when checking a corresponding pattern / argument.
+fn param_to_typ(p: &spectec_ast::SpecTecParam) -> spectec_ast::SpecTecTyp {
+    use spectec_ast::SpecTecParam as P;
+    match p {
+        P::Exp { t, .. } | P::Gram { t, .. } => t.clone(),
+        // For Typ/Def params we don't have a meaningful runtime type
+        // expectation — fall back to a placeholder.
+        P::Typ { .. } | P::Def { .. } => spectec_ast::SpecTecTyp::Bool,
+    }
+}
 
 /// Extract per-operand types from a relation's operand-tuple type.
 /// For `Tup { ets }` returns the bind types; for a single non-Tup

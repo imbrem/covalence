@@ -19,9 +19,9 @@
 //!
 //! Style: pure functions, no globals, no `unsafe`.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
-use crate::cst::{Alt, RuleDecl, SyntaxBody, Top, TokenRun};
+use crate::cst::{Alt, RuleDecl, SyntaxBody, SyntaxDecl, Top, TokenRun};
 use crate::mixfix::{self, Fragment, OpId, OpTable, Precedence, Tree};
 use crate::source::{Diagnostic, Span};
 use crate::token::{Spanned, Token};
@@ -57,11 +57,86 @@ pub struct ElabContext {
     /// arity). Used by the template-to-fragments pass to recognise hole
     /// positions.
     pub type_names: HashSet<String>,
-    /// All declared `var NAME : T` metavariable base names. Subscripted
-    /// and primed uses (`C_1`, `C''`) resolve to the same base. Used by
-    /// expression classification to override the case-head heuristic
-    /// when an Ident is known to be a metavariable.
+    /// All declared `var NAME : T` metavariable base names.
     pub var_names: HashSet<String>,
+    /// Merged `syntax` declarations keyed by base name. Each entry
+    /// records the variant alternatives collected across all profiles
+    /// (`/syn` and `/sem`) with `...` extension placeholders resolved.
+    pub syntax_defs: BTreeMap<String, MergedSyntax>,
+}
+
+/// A `syntax NAME` declaration with all its profile-suffixed variants
+/// merged. Phase 2e collapses
+///
+/// ```text
+/// syntax absheaptype/syn = | ANY | EQ | ... | NOFUNC
+/// syntax absheaptype/sem = | ... | BOT
+/// ```
+///
+/// into one `MergedSyntax { name: "absheaptype", profiles: [...] }`
+/// with the per-profile alt sequences spliced where each `...` appears.
+#[derive(Debug, Clone)]
+pub struct MergedSyntax {
+    pub name: String,
+    /// One entry per profile-tagged declaration (or `None` profile for
+    /// the unprofiled declarations). Insertion-ordered.
+    pub profiles: Vec<MergedProfile>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MergedProfile {
+    /// `None` for the bare `syntax NAME` form; `Some(t)` for `/t`.
+    pub profile: Option<String>,
+    /// The alternatives this declaration contributes, in source order.
+    /// `...` placeholders are kept as `AltSlot::Placeholder` so the
+    /// final merge can splice other profiles' alternatives in.
+    pub slots: Vec<AltSlot>,
+}
+
+#[derive(Debug, Clone)]
+pub enum AltSlot {
+    Real(Alt),
+    Placeholder,
+}
+
+impl MergedSyntax {
+    /// Compute the effective variant alternatives for the named profile
+    /// by splicing other profiles' alts into the `...` placeholders.
+    ///
+    /// SpecTec's rule (per the OCaml elaborator): when profile `P`'s
+    /// declaration contains `...`, the placeholder is replaced by the
+    /// concatenation of all *other* profiles' real alternatives.
+    pub fn alts_for_profile(&self, profile: Option<&str>) -> Vec<Alt> {
+        // Collect alts contributed by all OTHER profiles, in source order.
+        let mut other_alts: Vec<Alt> = Vec::new();
+        for prof in &self.profiles {
+            if prof.profile.as_deref() == profile {
+                continue;
+            }
+            for slot in &prof.slots {
+                if let AltSlot::Real(a) = slot {
+                    other_alts.push(a.clone());
+                }
+            }
+        }
+        // Walk the named profile's slots, splicing other_alts where
+        // placeholders appear.
+        let mut out = Vec::new();
+        let target = self
+            .profiles
+            .iter()
+            .find(|p| p.profile.as_deref() == profile);
+        let Some(target) = target else {
+            return other_alts;
+        };
+        for slot in &target.slots {
+            match slot {
+                AltSlot::Real(a) => out.push(a.clone()),
+                AltSlot::Placeholder => out.extend(other_alts.iter().cloned()),
+            }
+        }
+        out
+    }
 }
 
 /// Build an [`ElabContext`] from parsed top-level forms.
@@ -80,10 +155,12 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
         .map(|s| s.to_string())
         .collect();
     let mut var_names: HashSet<String> = HashSet::new();
+    let mut syntax_defs: BTreeMap<String, MergedSyntax> = BTreeMap::new();
     for top in tops {
         match top {
             Top::Syntax(s) => {
                 type_names.insert(s.name.text.clone());
+                add_syntax_to_merge(s, &mut syntax_defs);
             }
             Top::Var(v) => {
                 var_names.insert(v.name.text.clone());
@@ -150,10 +227,51 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
             op_table,
             type_names,
             var_names,
+            syntax_defs,
         })
     } else {
         Err(diags)
     }
+}
+
+/// Fold one `syntax` decl into the `MergedSyntax` map. Variant
+/// alternatives whose body is just `...` are recorded as `Placeholder`;
+/// real alternatives are recorded as `Real`.
+fn add_syntax_to_merge(
+    s: &SyntaxDecl,
+    out: &mut BTreeMap<String, MergedSyntax>,
+) {
+    let entry = out
+        .entry(s.name.text.clone())
+        .or_insert_with(|| MergedSyntax {
+            name: s.name.text.clone(),
+            profiles: Vec::new(),
+        });
+    let slots: Vec<AltSlot> = match &s.body {
+        Some(SyntaxBody::Variant(alts)) => alts
+            .iter()
+            .map(|a| {
+                if alt_is_placeholder(a) {
+                    AltSlot::Placeholder
+                } else {
+                    AltSlot::Real(a.clone())
+                }
+            })
+            .collect(),
+        // Records and aliases don't participate in `...` splicing
+        // (the elaborator could be extended later). We still register
+        // an empty profile so the syntax_defs map knows this name was
+        // declared with a body of some kind.
+        _ => Vec::new(),
+    };
+    entry.profiles.push(MergedProfile {
+        profile: s.profile.as_ref().map(|p| p.text.clone()),
+        slots,
+    });
+}
+
+fn alt_is_placeholder(a: &Alt) -> bool {
+    a.body.tokens.len() == 1 && matches!(a.body.tokens[0].token, Token::DotDotDot)
 }
 
 /// True if `name` is a use of a declared metavariable. We strip a
@@ -1598,6 +1716,62 @@ mod tests {
         let elab = elab_first_rule(src);
         assert!(matches!(&elab.premises[0], ElabPremise::Raw(_)));
     }
+
+    // ---------- profile merging ----------
+
+    #[test]
+    fn profile_merge_two_profiles() {
+        let src = r#"
+            syntax absheaptype/syn = | ANY | EQ | ... | NOFUNC
+            syntax absheaptype/sem = | ... | BOT
+        "#;
+        let mut map = SourceMap::new();
+        let id = map.add("<test>", src);
+        let tokens = lex(id, src).unwrap();
+        let tops = parse(id, tokens).unwrap();
+        let ctx = build_table(&tops).unwrap();
+
+        let merged = ctx.syntax_defs.get("absheaptype").unwrap();
+        assert_eq!(merged.profiles.len(), 2);
+
+        // /syn profile: ANY, EQ, then ... (spliced with /sem's BOT), then NOFUNC.
+        let syn_alts = merged.alts_for_profile(Some("syn"));
+        let syn_names: Vec<&str> = syn_alts
+            .iter()
+            .map(|a| match a.body.tokens.first().map(|s| &s.token) {
+                Some(Token::Ident(n)) => n.as_str(),
+                _ => "?",
+            })
+            .collect();
+        assert_eq!(syn_names, vec!["ANY", "EQ", "BOT", "NOFUNC"]);
+
+        // /sem profile: ... (spliced with /syn's [ANY, EQ, NOFUNC]), then BOT.
+        let sem_alts = merged.alts_for_profile(Some("sem"));
+        let sem_names: Vec<&str> = sem_alts
+            .iter()
+            .map(|a| match a.body.tokens.first().map(|s| &s.token) {
+                Some(Token::Ident(n)) => n.as_str(),
+                _ => "?",
+            })
+            .collect();
+        assert_eq!(sem_names, vec!["ANY", "EQ", "NOFUNC", "BOT"]);
+    }
+
+    #[test]
+    fn profile_merge_single_profile() {
+        let src = r#"syntax numtype = | I32 | I64 | F32 | F64"#;
+        let mut map = SourceMap::new();
+        let id = map.add("<test>", src);
+        let tokens = lex(id, src).unwrap();
+        let tops = parse(id, tokens).unwrap();
+        let ctx = build_table(&tops).unwrap();
+        let merged = ctx.syntax_defs.get("numtype").unwrap();
+        assert_eq!(merged.profiles.len(), 1);
+        let alts = merged.alts_for_profile(None);
+        assert_eq!(alts.len(), 4);
+    }
+
+    // ---------- var declarations ----------
 
     #[test]
     fn elab_var_decl_overrides_case_head() {

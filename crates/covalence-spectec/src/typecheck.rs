@@ -53,6 +53,13 @@ pub struct TypeEnv {
     /// Duplicates (same head in multiple syntax defs) are resolved
     /// by first-seen wins.
     pub ctors: BTreeMap<String, ast::SpecTecTyp>,
+    /// Variant subtype map (transitive). Each `T1 → {T2 names}`
+    /// captures every type T1 is a subtype of via being one of T2's
+    /// variant alternatives. E.g. for
+    /// `syntax valtype = | numtype | reftype`, the map records
+    /// `numtype → {valtype}` and `reftype → {valtype}` (plus any
+    /// further outer types via transitivity).
+    pub subtypes: BTreeMap<String, std::collections::BTreeSet<String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -104,31 +111,63 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
         env.grammars.insert(g.name.clone(), t);
     }
 
-    // Constructors: walk each merged syntax's variant alts and map
-    // their head name to the syntax's type (`Var { x: name, as1: [] }`).
+    // Constructors AND variant subtypes: walk each merged syntax's
+    // variant alts; case-headed alts register ctors, type-name alts
+    // (`| numtype`) register subtype edges.
+    let mut direct_sub: BTreeMap<String, std::collections::BTreeSet<String>> = BTreeMap::new();
     for syn in &doc.syntax {
         for prof in &syn.merged.profiles {
             if let Some(crate::cst::SyntaxBody::Variant(_)) = &prof.body {
                 let alts = syn.merged.alts_for_profile(prof.profile.as_deref());
                 for alt in &alts {
-                    if let Some(crate::token::Spanned {
+                    let toks = &alt.body.tokens;
+                    let Some(crate::token::Spanned {
                         token: crate::token::Token::Ident(head),
                         ..
-                    }) = alt.body.tokens.first()
-                    {
-                        // Only register case-headed names; type-
-                        // inclusion alts (`| numtype`) aren't ctors.
-                        if is_case_head_str(head) {
-                            env.ctors.entry(head.clone()).or_insert_with(|| Typ::Var {
-                                x: syn.name.clone(),
-                                as1: Vec::new(),
-                            });
-                        }
+                    }) = toks.first()
+                    else {
+                        continue;
+                    };
+                    if is_case_head_str(head) {
+                        env.ctors.entry(head.clone()).or_insert_with(|| Typ::Var {
+                            x: syn.name.clone(),
+                            as1: Vec::new(),
+                        });
+                    } else if toks.len() == 1 && ctx.type_names.contains(head) {
+                        // Type-inclusion alt: head is the only token
+                        // and it's a declared type → `head <: syn.name`.
+                        direct_sub
+                            .entry(head.clone())
+                            .or_default()
+                            .insert(syn.name.clone());
                     }
                 }
             }
         }
     }
+
+    // Transitive closure of `direct_sub`. Floyd-Warshall style.
+    let mut closed = direct_sub.clone();
+    loop {
+        let mut grew = false;
+        let snapshot = closed.clone();
+        for (a, bs) in &snapshot {
+            for b in bs {
+                if let Some(b_subs) = snapshot.get(b) {
+                    let entry = closed.entry(a.clone()).or_default();
+                    for c in b_subs {
+                        if entry.insert(c.clone()) {
+                            grew = true;
+                        }
+                    }
+                }
+            }
+        }
+        if !grew {
+            break;
+        }
+    }
+    env.subtypes = closed;
 
     env
 }
@@ -456,6 +495,12 @@ pub fn sub_typ(env: &TypeEnv, t1: &Typ, t2: &Typ) -> bool {
     match (t1, t2) {
         // Numeric promotion.
         (Typ::Num(a), Typ::Num(b)) => num_promotes(a, b),
+        // Variant subtype: `numtype <: valtype` etc., looked up in
+        // the precomputed transitive-closure subtype map.
+        (Typ::Var { x: a, .. }, Typ::Var { x: b, .. }) => env
+            .subtypes
+            .get(a)
+            .is_some_and(|s| s.contains(b)),
         // T+ <: T* — a nonempty list is a list. Also T+ <: T?+ etc.
         // (any wider iter shape).
         (
@@ -784,6 +829,80 @@ mod tests {
         let Expr::Bin { ty, .. } = e else { panic!() };
         assert!(matches!(ty, OpType::Bool));
         assert!(matches!(t, Typ::Bool));
+    }
+
+    #[test]
+    fn variant_subtype_recorded() {
+        let src = r#"
+            syntax numtype = | I32 | I64
+            syntax reftype = nat
+            syntax valtype = | numtype | reftype
+        "#;
+        let (doc, ctx) = build(src);
+        let env = build_env(&doc, &ctx);
+        let numtype = Typ::Var { x: "numtype".into(), as1: vec![] };
+        let valtype = Typ::Var { x: "valtype".into(), as1: vec![] };
+        assert!(sub_typ(&env, &numtype, &valtype));
+        assert!(sub_typ(&env, &Typ::Var { x: "reftype".into(), as1: vec![] }, &valtype));
+        // Reverse direction not a subtype.
+        assert!(!sub_typ(&env, &valtype, &numtype));
+    }
+
+    #[test]
+    fn variant_subtype_transitive() {
+        let src = r#"
+            syntax inner = | A
+            syntax middle = | inner | B
+            syntax outer = | middle | C
+        "#;
+        let (doc, ctx) = build(src);
+        let env = build_env(&doc, &ctx);
+        let inner = Typ::Var { x: "inner".into(), as1: vec![] };
+        let outer = Typ::Var { x: "outer".into(), as1: vec![] };
+        assert!(sub_typ(&env, &inner, &outer));
+    }
+
+    #[test]
+    fn t_plus_lifts_to_t_star() {
+        let env = TypeEnv::default();
+        let t = Typ::Num(ast::SpecTecNumTyp::Nat);
+        let plus = Typ::Iter {
+            t1: Box::new(t.clone()),
+            it: vec![ast::SpecTecIter::List1],
+        };
+        let star = Typ::Iter {
+            t1: Box::new(t),
+            it: vec![ast::SpecTecIter::List],
+        };
+        assert!(sub_typ(&env, &plus, &star));
+        // T* doesn't lift to T+ (a possibly-empty list isn't a
+        // nonempty list).
+        assert!(!sub_typ(&env, &star, &plus));
+    }
+
+    #[test]
+    fn check_exp_against_inserts_sub() {
+        let src = r#"
+            syntax numtype = | I32 | I64
+            syntax reftype = nat
+            syntax valtype = | numtype | reftype
+        "#;
+        let (doc, ctx) = build(src);
+        let env = build_env(&doc, &ctx);
+        let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
+        // Pass I32 (numtype) where valtype expected.
+        let e = Expr::Case {
+            span,
+            head: "I32".into(),
+            args: vec![],
+        };
+        let expected = Typ::Var { x: "valtype".into(), as1: vec![] };
+        let result = check_exp_against(&env, e, &expected);
+        let Expr::Sub { from_ty, to_ty, .. } = &result else {
+            panic!("expected Sub, got {result:?}");
+        };
+        assert!(matches!(from_ty, Typ::Var { x, .. } if x == "numtype"));
+        assert!(matches!(to_ty, Typ::Var { x, .. } if x == "valtype"));
     }
 
     #[test]

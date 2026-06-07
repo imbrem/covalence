@@ -115,6 +115,12 @@ static TRUEPROP_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::T
 /// process-wide. See [`HolLightCtx::eq_reflection_axiom`].
 static EQ_REFLECTION_AXIOM: LazyLock<Thm> = LazyLock::new(build_eq_reflection_axiom);
 
+/// `⋀P Q : bool. (Trueprop P ⟹ Trueprop Q) ⟹ (Trueprop Q ⟹ Trueprop P)
+///   ⟹ Trueprop (Eq[bool] P Q)` — the iff-introduction axiom
+/// (Isabelle's `iffI`). Built lazily once. See
+/// [`HolLightCtx::iff_intro_axiom`].
+static IFF_INTRO_AXIOM: LazyLock<Thm> = LazyLock::new(build_iff_intro_axiom);
+
 // ============================================================================
 // The HolLight observer family
 // ============================================================================
@@ -205,7 +211,7 @@ impl fmt::Display for HolLight {
 /// Constructing one is free — there are no fields. Methods delegate
 /// to the module-level `LazyLock` statics. Two `HolLightCtx` values
 /// are interchangeable.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct HolLightCtx;
 
 impl HolLightCtx {
@@ -450,6 +456,24 @@ impl HolLightCtx {
     pub fn eq_reflection_axiom(&self) -> Thm {
         (*EQ_REFLECTION_AXIOM).clone()
     }
+
+    /// The polymorphic-in-nothing `iff_intro` axiom (Isabelle's
+    /// `iffI`):
+    ///
+    /// ```text
+    /// ⋀P Q : bool.
+    ///   (Trueprop P ⟹ Trueprop Q) ⟹
+    ///   (Trueprop Q ⟹ Trueprop P) ⟹
+    ///   Trueprop (Eq[bool] P Q)
+    /// ```
+    ///
+    /// Drives `DEDUCT_ANTISYM_RULE`: from `A1 ⊢ Trueprop P` and
+    /// `A2 ⊢ Trueprop Q`, `imp_intro` each direction to produce
+    /// the two antecedents and then chain `all_elim` + `imp_elim`
+    /// through this axiom to land at `Trueprop (P = Q)`.
+    pub fn iff_intro_axiom(&self) -> Thm {
+        (*IFF_INTRO_AXIOM).clone()
+    }
 }
 
 /// Build `eq_reflection` — called once, lazily, by the
@@ -473,6 +497,36 @@ fn build_eq_reflection_axiom() -> Thm {
     let inner = Term::all("y", alpha.clone(), body);
     let outer = Term::all("x", alpha, inner);
     Thm::assume(outer).expect("eq_reflection_axiom: well-typed by construction")
+}
+
+/// Build `iff_intro` — called once, lazily, by the
+/// `IFF_INTRO_AXIOM` static initialiser.
+fn build_iff_intro_axiom() -> Thm {
+    let ctx = HolLightCtx;
+    let bool_ty = ctx.bool_type();
+    // Inside two ⋀-binders: P = Bound(1), Q = Bound(0) (both : bool).
+    let p = Term::bound(1);
+    let q = Term::bound(0);
+
+    let trueprop = ctx.trueprop();
+    let eq_at_bool = ctx.eq_at(bool_ty.clone());
+
+    // Trueprop P, Trueprop Q.
+    let tp_p = Term::app(trueprop.clone(), p.clone());
+    let tp_q = Term::app(trueprop.clone(), q.clone());
+    // HOL Eq[bool] P Q.
+    let hol_eq_p_q = Term::app(Term::app(eq_at_bool, p), q);
+    // Trueprop (Eq[bool] P Q).
+    let tp_eq = Term::app(trueprop, hol_eq_p_q);
+
+    // (Trueprop P ⟹ Trueprop Q) ⟹ (Trueprop Q ⟹ Trueprop P) ⟹ Trueprop (P = Q)
+    let body = Term::imp(
+        Term::imp(tp_p.clone(), tp_q.clone()),
+        Term::imp(Term::imp(tp_q, tp_p), tp_eq),
+    );
+    let inner = Term::all("q", bool_ty.clone(), body);
+    let outer = Term::all("p", bool_ty, inner);
+    Thm::assume(outer).expect("iff_intro_axiom: well-typed by construction")
 }
 
 /// Marker trait certifying that an observer is in the [`HolLight`]

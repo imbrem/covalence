@@ -267,7 +267,7 @@ impl Hasher {
             // which only requires equal values to hash equally.
             TermKind::Def(d) => {
                 let name_bytes = d.name().as_str().as_bytes();
-                let body_h = self.hash_term(d.body(), oh);
+                let body_h = self.hash_term(&d.body(), oh);
                 let mut buf = Vec::with_capacity(1 + 4 + name_bytes.len() + 32);
                 buf.push(T_DEF);
                 buf.extend_from_slice(&(name_bytes.len() as u32).to_le_bytes());

@@ -475,9 +475,8 @@ impl Thm {
     /// `⟦body⟧` — a conservative extension. No global signature is
     /// needed because the allocator gives us uniqueness per call.
     pub fn define(name: impl Into<BinderHint>, body: Term) -> Result<Thm> {
-        // Validate the body type-checks in isolation.
-        let _ = body.type_of()?;
-        let d = Def::new_internal(name.into(), body.clone());
+        let body_type = body.type_of()?;
+        let d = Def::new_internal(name.into(), body.clone(), body_type);
         let concl = Term::eq(Term::def(d), body);
         Self::build(BTreeSet::new(), concl)
     }

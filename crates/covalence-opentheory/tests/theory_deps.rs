@@ -4,22 +4,22 @@
 //! vendored from <https://opentheory.gilith.com/> under
 //! `assets/opentheory/gilith/`, validating the full dependency chain.
 
+use covalence_hol::PureHol;
 use covalence_hol::types::{BOOL_TYCON_ID, EQ_CONST_ID, FUN_TYCON_ID};
 use covalence_opentheory::{FileResolver, NameTable, TheoryCache, check_theory, register_select};
-use covalence_shell::HolPrim;
 
 fn assets_dir() -> std::path::PathBuf {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     manifest.join("../../assets/opentheory/gilith")
 }
 
-fn setup() -> (HolPrim, NameTable) {
+fn setup() -> (PureHol, NameTable) {
     let names = NameTable::new();
-    let kernel = HolPrim::new(FUN_TYCON_ID, BOOL_TYCON_ID, EQ_CONST_ID);
+    let kernel = PureHol::new(FUN_TYCON_ID, BOOL_TYCON_ID, EQ_CONST_ID);
     (kernel, names)
 }
 
-fn setup_with_select() -> (HolPrim, NameTable) {
+fn setup_with_select() -> (PureHol, NameTable) {
     let (mut kernel, mut names) = setup();
     register_select(&mut kernel, &mut names);
     (kernel, names)

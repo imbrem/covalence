@@ -24,6 +24,10 @@ pub struct CheckArgs {
     #[arg(long)]
     stats: bool,
 
+    /// Continue checking remaining files after the first failure.
+    #[arg(long)]
+    keep_going: bool,
+
     /// Article files to check (.art)
     files: Vec<PathBuf>,
 }
@@ -41,16 +45,16 @@ pub fn run(args: HolArgs) {
 }
 
 fn run_check(args: CheckArgs) -> eyre::Result<()> {
-    use covalence_hol::{BOOL_TYCON_ID, EQ_CONST_ID, FUN_TYCON_ID};
+    use covalence_hol::{BOOL_TYCON_ID, EQ_CONST_ID, FUN_TYCON_ID, PureHol};
     use covalence_opentheory::{ArticleInterp, NameTable};
-    use covalence_shell::HolPrim;
 
     if args.files.is_empty() {
         eyre::bail!("no article files specified");
     }
 
-    let mut kernel = HolPrim::new(FUN_TYCON_ID, BOOL_TYCON_ID, EQ_CONST_ID);
+    let mut kernel = PureHol::new(FUN_TYCON_ID, BOOL_TYCON_ID, EQ_CONST_ID);
     let mut names = NameTable::new();
+    let mut failures = 0;
 
     for path in &args.files {
         let input =
@@ -76,10 +80,16 @@ fn run_check(args: CheckArgs) -> eyre::Result<()> {
             }
             Err(e) => {
                 eprintln!("{}: error: {e}", path.display());
-                std::process::exit(1);
+                failures += 1;
+                if !args.keep_going {
+                    std::process::exit(1);
+                }
             }
         }
     }
 
+    if failures > 0 {
+        eyre::bail!("{failures} article(s) failed");
+    }
     Ok(())
 }

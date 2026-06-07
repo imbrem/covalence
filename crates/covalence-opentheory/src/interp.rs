@@ -713,12 +713,13 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use covalence_hol::HolLightTerms;
+    use covalence_hol::PureHol;
     use covalence_hol::types::{BOOL_TYCON_ID, EQ_CONST_ID, FUN_TYCON_ID};
-    use covalence_shell::HolPrim;
 
-    fn setup() -> (HolPrim, NameTable) {
+    fn setup() -> (PureHol, NameTable) {
         let names = NameTable::new();
-        let kernel = HolPrim::new(FUN_TYCON_ID, BOOL_TYCON_ID, EQ_CONST_ID);
+        let kernel = PureHol::new(FUN_TYCON_ID, BOOL_TYCON_ID, EQ_CONST_ID);
         (kernel, names)
     }
 
@@ -737,10 +738,10 @@ thm\n";
         let interp = ArticleInterp::new(&mut kernel, &mut names);
         let result = interp.interpret(article).unwrap();
         assert_eq!(result.theorems.len(), 1);
-        let th = &result.theorems[0];
-        let hyps = kernel.hyps(*th).unwrap();
+        let th = result.theorems[0].clone();
+        let hyps = kernel.hyps(th.clone());
         assert!(hyps.is_empty());
-        let concl = kernel.concl(*th).unwrap();
+        let concl = kernel.concl(th);
         assert!(kernel.dest_eq(concl).is_some());
     }
 
@@ -756,7 +757,7 @@ thm\n";
         let interp = ArticleInterp::new(&mut kernel, &mut names);
         let result = interp.interpret(article).unwrap();
         assert_eq!(result.theorems.len(), 1);
-        let hyps = kernel.hyps(result.theorems[0]).unwrap();
+        let hyps = kernel.hyps(result.theorems[0].clone());
         assert_eq!(hyps.len(), 1);
     }
 
@@ -790,7 +791,7 @@ thm\n";
         let interp = ArticleInterp::new(&mut kernel, &mut names);
         let result = interp.interpret(article).unwrap();
         assert_eq!(result.theorems.len(), 1);
-        let hyps = kernel.hyps(result.theorems[0]).unwrap();
+        let hyps = kernel.hyps(result.theorems[0].clone());
         assert!(hyps.is_empty());
     }
 
@@ -809,7 +810,7 @@ thm\n";
         let interp = ArticleInterp::new(&mut kernel, &mut names);
         let result = interp.interpret(article).unwrap();
         assert_eq!(result.theorems.len(), 1);
-        let hyps = kernel.hyps(result.theorems[0]).unwrap();
+        let hyps = kernel.hyps(result.theorems[0].clone());
         assert!(hyps.is_empty());
     }
 }

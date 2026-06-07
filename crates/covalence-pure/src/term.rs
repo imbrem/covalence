@@ -577,49 +577,118 @@ impl fmt::Display for Type {
 ///
 /// This is how we get freshness without a stateful kernel signature:
 /// the allocator gives us a unique pointer per call.
+/// A fresh defined constant, optionally instantiated at a specific
+/// type. Two `Def`s are equal iff they share the same `original`
+/// identity (same `Thm::define` call) AND are at the same instance
+/// type. This mirrors Isabelle/Pure's signature-based naming
+/// (`Const(name, instance_type)`) but uses Arc identity for the
+/// "which entry in the signature" lookup, so no global signature
+/// is needed.
+///
+/// `subst_tfree_in_term` on a `Term::def` updates `instance_type`
+/// without rebuilding `original` — preserving Arc identity across
+/// type-variable instantiation. This is what makes a HOL constant
+/// usable at multiple type instances while still comparing equal
+/// to other uses at the same instance.
 #[derive(Clone)]
 pub struct Def {
+    original: Arc<DefOriginal>,
+    instance_type: Type,
+}
+
+#[derive(Debug)]
+struct DefOriginal {
     name: BinderHint,
-    body: Arc<Term>,
+    body: Term,
+    /// Cached `body.type_of()` — the most-general (polymorphic)
+    /// type of this constant. `instance_type` always equals this
+    /// for un-substituted `Def`s, and a one-way `match_types`
+    /// against this recovers the substitution applied to the body
+    /// when `body()` is called.
+    body_type: Type,
 }
 
 impl Def {
     pub fn name(&self) -> &BinderHint {
-        &self.name
-    }
-    pub fn body(&self) -> &Term {
-        &self.body
+        &self.original.name
     }
 
-    /// Pointer identity of the body Arc — useful as a cache key.
+    /// The type at which this `Def` is currently used. For the
+    /// `Def` returned by `Thm::define` this equals the body's
+    /// type; `subst_tfree_in_term` updates this without recomputing
+    /// the body.
+    pub fn instance_type(&self) -> &Type {
+        &self.instance_type
+    }
+
+    /// The body of this `Def` with type variables instantiated to
+    /// match `instance_type`. For an un-substituted `Def` this is
+    /// just the original body; otherwise we recover the substitution
+    /// by one-way matching the original body type against
+    /// `instance_type`, then apply it to the body.
+    pub fn body(&self) -> Term {
+        if self.instance_type == self.original.body_type {
+            return self.original.body.clone();
+        }
+        let mut sub: std::collections::BTreeMap<SmolStr, Type> =
+            std::collections::BTreeMap::new();
+        crate::subst::match_types(&self.original.body_type, &self.instance_type, &mut sub)
+            .expect("Def: instance_type unreachable from body_type — kernel bug");
+        let mut result = self.original.body.clone();
+        for (tv, replacement) in sub {
+            result = crate::subst::subst_tfree_in_term(&result, tv.as_str(), &replacement);
+        }
+        result
+    }
+
+    /// Identity of the original definition (stable across
+    /// substitutions). Useful as a cache key.
     pub fn ptr_id(&self) -> usize {
-        Arc::as_ptr(&self.body) as usize
+        Arc::as_ptr(&self.original) as usize
     }
 
-    pub(crate) fn new_internal(name: BinderHint, body: Term) -> Self {
-        Def {
+    pub(crate) fn new_internal(name: BinderHint, body: Term, body_type: Type) -> Self {
+        let original = Arc::new(DefOriginal {
             name,
-            body: Arc::new(body),
+            body,
+            body_type: body_type.clone(),
+        });
+        Def {
+            original,
+            instance_type: body_type,
+        }
+    }
+
+    /// Build a `Def` reusing this one's `original` identity but at a
+    /// different instance type. Crate-private: used by
+    /// `subst_tfree_in_term`.
+    pub(crate) fn with_instance_type(&self, instance_type: Type) -> Self {
+        Def {
+            original: self.original.clone(),
+            instance_type,
         }
     }
 }
 
 impl PartialEq for Def {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.body, &other.body)
+        Arc::ptr_eq(&self.original, &other.original) && self.instance_type == other.instance_type
     }
 }
 impl Eq for Def {}
 
 impl Hash for Def {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        (Arc::as_ptr(&self.body) as usize).hash(state)
+        (Arc::as_ptr(&self.original) as usize).hash(state);
+        self.instance_type.hash(state);
     }
 }
 
 impl Ord for Def {
     fn cmp(&self, other: &Self) -> Ordering {
-        (Arc::as_ptr(&self.body) as usize).cmp(&(Arc::as_ptr(&other.body) as usize))
+        (Arc::as_ptr(&self.original) as usize)
+            .cmp(&(Arc::as_ptr(&other.original) as usize))
+            .then_with(|| self.instance_type.cmp(&other.instance_type))
     }
 }
 impl PartialOrd for Def {
@@ -630,13 +699,13 @@ impl PartialOrd for Def {
 
 impl fmt::Debug for Def {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Def({})", self.name)
+        write!(f, "Def({})", self.original.name)
     }
 }
 
 impl fmt::Display for Def {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.name)
+        write!(f, "{}", self.original.name)
     }
 }
 
@@ -976,10 +1045,14 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
         }
         TermKind::Blob(_) => Ok(Type::bytes()),
         TermKind::Obs(_, ty) => Ok(ty.clone()),
-        // A `Def` denotes its body, so it shares the body's type.
-        // Body validation happens once at `Thm::define` time; we
-        // recompute here so the env's Free-var tracking is consistent
-        // across the rest of the Thm.
-        TermKind::Def(d) => type_of_in(d.body(), env),
+        // A `Def` denotes its body at the current instance type.
+        // The body was validated once at `Thm::define` time, and
+        // `subst_tfree_in_term` updates `instance_type` consistently
+        // — so we can just read `instance_type` here without walking
+        // through to the body. The body's Free-var tracking only
+        // matters for the body itself; since this Term is just a
+        // Def reference, there are no Free leaves to track at this
+        // node.
+        TermKind::Def(d) => Ok(d.instance_type().clone()),
     }
 }

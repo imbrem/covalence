@@ -4,9 +4,11 @@
 // same conceptual surface (`compile` / `instantiate` / `callU32`)
 // using the browser/Node `WebAssembly.*` APIs.
 //
-// MVP scope: **core WASM modules only.** Component bytes throw with a
-// pointer at the deferred jco-based path (see
-// `docs/design/proposals/wasm-runtime/`, Phase 3).
+// Core WASM modules: native `WebAssembly.*`.
+// WASM components: `@bytecodealliance/jco` transpiles to self-contained
+// JS at runtime; we load it via a `data:` URL and call its
+// `instantiate(getCoreModule, imports)` entry. Both code paths converge
+// on a single `WasmInstance` shape with a uniform `callU32` interface.
 
 const WASM_MAGIC = Uint8Array.of(0x00, 0x61, 0x73, 0x6d); // "\0asm"
 
@@ -27,41 +29,75 @@ export class WasmRuntimeError extends Error {
   }
 }
 
-/** Opaque handle returned by `compile`. */
+/**
+ * Opaque handle returned by `compile`. Internally either a core module
+ * (run via `WebAssembly.instantiate`) or a jco-transpiled component
+ * (run via its generated `instantiate` function).
+ */
 export class WasmComponent {
-  constructor(public readonly module: WebAssembly.Module) {}
+  constructor(
+    readonly kind: "module" | "component",
+    /** Set when kind === "module". */
+    readonly module?: WebAssembly.Module,
+    /** Set when kind === "component". */
+    readonly componentInstantiate?: ComponentInstantiateFn,
+    /** Set when kind === "component". Compiled `<name>.core.wasm`. */
+    readonly componentCoreModules?: Record<string, WebAssembly.Module>,
+  ) {}
 }
 
-/** Opaque handle returned by `instantiate`. */
+/**
+ * Opaque handle returned by `instantiate`. Exposes the underlying
+ * exports namespace so callers can poke at memory / call arbitrary
+ * exports beyond `callU32`.
+ */
 export class WasmInstance {
-  constructor(public readonly instance: WebAssembly.Instance) {}
+  constructor(
+    /**
+     * For core-module instances, the native `WebAssembly.Instance`.
+     * For component instances, the bag of exports jco gave us — a
+     * plain object whose keys are export names. Both have functions
+     * callable as `(...args)` and (for core modules) a `memory` key.
+     */
+    public readonly instance: WebAssembly.Instance | ComponentExports,
+  ) {}
 }
+
+/** jco-generated component `instantiate` signature (sync mode). */
+type ComponentInstantiateFn = (
+  getCoreModule: (name: string) => WebAssembly.Module,
+  imports: Record<string, unknown>,
+  instantiateCore?: (
+    module: WebAssembly.Module,
+    importObject?: WebAssembly.Imports,
+  ) => WebAssembly.Instance,
+) => ComponentExports;
+
+type ComponentExports = Record<string, unknown>;
 
 /** JS-side mirror of the `cov:wasm/runtime` host trait. */
 export class Runtime {
   async compile(bytes: Uint8Array): Promise<WasmComponent> {
     if (isComponent(bytes)) {
-      throw new WasmRuntimeError(
-        "compile",
-        "WASM component bytes are not supported in v0 (jco transpile path is Phase 3 follow-up)",
-      );
+      return compileComponent(bytes);
     }
     try {
-      // The TS lib types for WebAssembly.compile require ArrayBuffer-backed
-      // buffer source; modern Uint8Array<ArrayBufferLike> doesn't satisfy
-      // the constraint directly. Cast through `BufferSource`.
+      // TS-lib types want ArrayBuffer-backed source; cast through BufferSource.
       const module = await WebAssembly.compile(bytes as BufferSource);
-      return new WasmComponent(module);
+      return new WasmComponent("module", module);
     } catch (e) {
       throw new WasmRuntimeError("compile", (e as Error).message);
     }
   }
 
   async instantiate(component: WasmComponent): Promise<WasmInstance> {
-    // MVP: stub all imports as throwing functions, mirroring the
-    // wasmtime backend's `define_unknown_imports_as_traps`.
+    if (component.kind === "component") {
+      return instantiateComponent(component);
+    }
+    // Core module — stub unknown imports as traps (mirrors wasmtime's
+    // `define_unknown_imports_as_traps`).
     const imports: WebAssembly.Imports = {};
-    for (const imp of WebAssembly.Module.imports(component.module)) {
+    for (const imp of WebAssembly.Module.imports(component.module!)) {
       const mod = (imports[imp.module] ??= {});
       mod[imp.name] = () => {
         throw new WasmRuntimeError(
@@ -71,7 +107,7 @@ export class Runtime {
       };
     }
     try {
-      const instance = await WebAssembly.instantiate(component.module, imports);
+      const instance = await WebAssembly.instantiate(component.module!, imports);
       return new WasmInstance(instance);
     } catch (e) {
       throw new WasmRuntimeError("instantiate", (e as Error).message);
@@ -79,18 +115,111 @@ export class Runtime {
   }
 
   callU32(instance: WasmInstance, name: string, arg: number): number {
-    const exp = instance.instance.exports[name];
+    // Both `WebAssembly.Instance.exports` and component export bags
+    // present functions under string keys — uniform lookup.
+    const exports = (instance.instance as { exports?: Record<string, unknown> })
+      .exports ?? (instance.instance as Record<string, unknown>);
+    const exp = exports[name];
     if (typeof exp !== "function") {
       throw new WasmRuntimeError("call", `export not found or not a function: ${name}`);
     }
     try {
-      // JS WebAssembly funcs accept/return number for i32; u32 is interpreted
-      // by the caller via `>>> 0`.
       const out = (exp as (a: number) => number)(arg);
       return out >>> 0;
     } catch (e) {
       throw new WasmRuntimeError("call", (e as Error).message);
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Component-mode compile/instantiate via jco.
+// ---------------------------------------------------------------------------
+
+async function compileComponent(bytes: Uint8Array): Promise<WasmComponent> {
+  let transpiled;
+  try {
+    // jco is heavy (~MB); dynamic import keeps it out of the
+    // core-modules-only hot path.
+    const { transpile } = await import("@bytecodealliance/jco");
+    transpiled = await transpile(bytes, {
+      name: "component",
+      instantiation: "sync",
+    });
+  } catch (e) {
+    throw new WasmRuntimeError(
+      "compile",
+      `jco transpile failed: ${(e as Error).message}`,
+    );
+  }
+
+  const jsBytes = transpiled.files["component.js"];
+  if (!jsBytes) {
+    throw new WasmRuntimeError("compile", "jco produced no component.js");
+  }
+
+  // Compile every `*.core.wasm` upfront so instantiation is synchronous.
+  const coreModules: Record<string, WebAssembly.Module> = {};
+  for (const [name, content] of Object.entries(transpiled.files)) {
+    if (name.endsWith(".core.wasm")) {
+      try {
+        coreModules[name] = await WebAssembly.compile(content as BufferSource);
+      } catch (e) {
+        throw new WasmRuntimeError(
+          "compile",
+          `failed to compile ${name}: ${(e as Error).message}`,
+        );
+      }
+    }
+  }
+
+  // Load the jco-generated module via a data: URL so we don't touch the
+  // filesystem (and don't fight Vite's static analysis).
+  let mod: { instantiate: ComponentInstantiateFn };
+  try {
+    const dataUrl =
+      "data:text/javascript;base64," +
+      Buffer.from(jsBytes).toString("base64");
+    mod = await import(/* @vite-ignore */ dataUrl);
+  } catch (e) {
+    throw new WasmRuntimeError(
+      "compile",
+      `loading transpiled component js failed: ${(e as Error).message}`,
+    );
+  }
+  if (typeof mod.instantiate !== "function") {
+    throw new WasmRuntimeError(
+      "compile",
+      "transpiled component js has no `instantiate` export",
+    );
+  }
+  return new WasmComponent("component", undefined, mod.instantiate, coreModules);
+}
+
+function instantiateComponent(component: WasmComponent): WasmInstance {
+  if (!component.componentInstantiate || !component.componentCoreModules) {
+    throw new WasmRuntimeError(
+      "instantiate",
+      "component handle missing transpiled artifacts",
+    );
+  }
+  const getCoreModule = (name: string): WebAssembly.Module => {
+    const m = component.componentCoreModules![name];
+    if (!m) {
+      throw new WasmRuntimeError(
+        "instantiate",
+        `jco asked for unknown core module: ${name}`,
+      );
+    }
+    return m;
+  };
+  try {
+    // No host imports yet — the deferred-import side of the WIT plan
+    // (and the kernel's eventual `cov:wasm/host` interface) come later.
+    const exports = component.componentInstantiate(getCoreModule, {});
+    return new WasmInstance(exports);
+  } catch (e) {
+    throw new WasmRuntimeError("instantiate", (e as Error).message);
   }
 }
 

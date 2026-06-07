@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1040" viewBox="0 0 1400 1040" role="img" aria-labelledby="title desc">
+  <title id="title">Target Covalence institution graph</title>
+  <desc id="desc">Diagram showing the proposed refactor target: a Pure-style LF meta-institution with HOL as trusted object logic and surrounding translation and oracle layers.</desc>
+  <defs>
+    <style>
+      .bg { fill: #fbfaf5; }
+      .title { font: 700 28px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #15233b; }
+      .subtitle { font: 400 16px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #3a4a63; }
+      .group { fill: #f2efe6; stroke: #d4cbb8; stroke-width: 2; }
+      .trusted { fill: #e6f2ff; stroke: #3d6fb6; stroke-width: 2.5; }
+      .morphism { fill: #efe7ff; stroke: #7c58b2; stroke-width: 2.5; }
+      .transport { fill: #fff1db; stroke: #c58a2c; stroke-width: 2; }
+      .oracle { fill: #eaf7ea; stroke: #4a8a53; stroke-width: 2; }
+      .surface { fill: #ffe9eb; stroke: #ba5663; stroke-width: 2; }
+      .source { fill: #fff0f4; stroke: #ba5663; stroke-width: 2; }
+      .label { font: 700 21px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #15233b; }
+      .small { font: 400 15px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #42536f; }
+      .note { font: 400 13px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #42536f; }
+      .edge { stroke: #42536f; stroke-width: 2.2; fill: none; }
+      .dash { stroke-dasharray: 9 7; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#42536f"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1400" height="1040"/>
+  <text class="title" x="48" y="54">Refactor Target: Pure/LF -&gt; HOL -&gt; Morphisms</text>
+  <text class="subtitle" x="48" y="82">Visible version of the proposed Paulson-style split: a small trusted logical center, with transports, oracles, and tooling around it.</text>
+
+  <rect class="group" x="380" y="130" rx="28" ry="28" width="640" height="510"/>
+  <text class="label" x="700" y="170" text-anchor="middle">Trusted logical center</text>
+  <text class="small" x="700" y="194" text-anchor="middle">TCB direction under the current refactor: LF/Pure + HOL</text>
+
+  <rect class="morphism" x="500" y="230" rx="18" ry="18" width="400" height="96"/>
+  <text class="label" x="700" y="266" text-anchor="middle">Morphism / translation layer</text>
+  <text class="small" x="700" y="290" text-anchor="middle">embeddings, equiconsistency, base-shift, commutative diagrams</text>
+  <text class="small" x="700" y="310" text-anchor="middle">institution morphisms and comorphisms live here</text>
+
+  <rect class="trusted" x="500" y="372" rx="18" ry="18" width="400" height="96"/>
+  <text class="label" x="700" y="408" text-anchor="middle">HOL object institution</text>
+  <text class="small" x="700" y="432" text-anchor="middle">default theorem language and theory layer</text>
+  <text class="small" x="700" y="452" text-anchor="middle">subset typedef, classical reasoning, derived libraries</text>
+
+  <rect class="trusted" x="500" y="514" rx="18" ry="18" width="400" height="96"/>
+  <text class="label" x="700" y="550" text-anchor="middle">Pure / LF meta-institution</text>
+  <text class="small" x="700" y="574" text-anchor="middle">small LCF kernel, judgments, rules, observation hook</text>
+  <text class="small" x="700" y="594" text-anchor="middle">the Paulson-style substrate beneath object logics</text>
+
+  <rect class="transport" x="70" y="180" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="185" y="214" text-anchor="middle">OpenTheory</text>
+  <text class="small" x="185" y="238" text-anchor="middle">HOL package transport</text>
+  <text class="small" x="185" y="258" text-anchor="middle">imports into HOL</text>
+
+  <rect class="transport" x="70" y="320" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="185" y="354" text-anchor="middle">Alethe / SMT</text>
+  <text class="small" x="185" y="378" text-anchor="middle">proof language plus</text>
+  <text class="small" x="185" y="398" text-anchor="middle">logic-indexed translations</text>
+
+  <rect class="transport" x="70" y="460" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="185" y="494" text-anchor="middle">egglog catalogue</text>
+  <text class="small" x="185" y="518" text-anchor="middle">small theory entries</text>
+  <text class="small" x="185" y="538" text-anchor="middle">bridged as explicit edges</text>
+
+  <rect class="transport" x="70" y="600" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="185" y="634" text-anchor="middle">Metamath</text>
+  <text class="small" x="185" y="658" text-anchor="middle">separate foundation and</text>
+  <text class="small" x="185" y="678" text-anchor="middle">future translation target</text>
+
+  <rect class="transport" x="70" y="740" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="185" y="774" text-anchor="middle">Lean</text>
+  <text class="small" x="185" y="798" text-anchor="middle">export/import ecosystem</text>
+  <text class="small" x="185" y="818" text-anchor="middle">and future translation target</text>
+
+  <rect class="oracle" x="1100" y="180" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="1215" y="214" text-anchor="middle">Store authorities</text>
+  <text class="small" x="1215" y="238" text-anchor="middle">blob/tree membership,</text>
+  <text class="small" x="1215" y="258" text-anchor="middle">merge witnesses, mounts</text>
+
+  <rect class="oracle" x="1100" y="320" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="1215" y="354" text-anchor="middle">WASM / executors</text>
+  <text class="small" x="1215" y="378" text-anchor="middle">observations plus</text>
+  <text class="small" x="1215" y="398" text-anchor="middle">meaning axioms</text>
+
+  <rect class="oracle" x="1100" y="460" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="1215" y="494" text-anchor="middle">Hashes / signatures</text>
+  <text class="small" x="1215" y="518" text-anchor="middle">outside the kernel,</text>
+  <text class="small" x="1215" y="538" text-anchor="middle">scoped by authorities</text>
+
+  <rect class="surface" x="1100" y="600" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="1215" y="634" text-anchor="middle">Shells and UI</text>
+  <text class="small" x="1215" y="658" text-anchor="middle">REPL, serve, LSP, web,</text>
+  <text class="small" x="1215" y="678" text-anchor="middle">editor integrations</text>
+
+  <rect class="source" x="500" y="650" rx="18" ry="18" width="400" height="96"/>
+  <text class="label" x="700" y="686" text-anchor="middle">SpecTec / WASM spec</text>
+  <text class="small" x="700" y="710" text-anchor="middle">foundational semantics source for future WASM theories</text>
+  <text class="small" x="700" y="730" text-anchor="middle">kept explicit rather than hidden inside executor tooling</text>
+
+  <rect class="surface" x="430" y="790" rx="18" ry="18" width="540" height="140"/>
+  <text class="label" x="700" y="828" text-anchor="middle">Interpretation discipline</text>
+  <text class="small" x="700" y="856" text-anchor="middle">Do not collapse proof formats, package transport, oracles, and backend APIs into "the logic".</text>
+  <text class="small" x="700" y="880" text-anchor="middle">Move between systems by explicit typed translations, not by ambient coercion.</text>
+  <text class="small" x="700" y="904" text-anchor="middle">This is the institution-theoretic restatement of the repo's no-global-lie and edge-direction rules.</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M 700 514 L 700 468"/>
+  <path class="edge" marker-end="url(#arrow)" d="M 700 372 L 700 326"/>
+  <text class="note" x="732" y="490">build object logic over LF</text>
+  <text class="note" x="732" y="348">reason about translations between theories</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M 300 226 C 390 226, 420 400, 500 400"/>
+  <path class="edge" marker-end="url(#arrow)" d="M 300 366 C 390 366, 420 278, 500 278"/>
+  <path class="edge" marker-end="url(#arrow)" d="M 300 506 C 390 506, 420 278, 500 278"/>
+  <path class="edge dash" marker-end="url(#arrow)" d="M 300 646 C 390 646, 430 278, 500 278"/>
+  <path class="edge dash" marker-end="url(#arrow)" d="M 300 786 C 400 786, 430 278, 500 278"/>
+  <text class="note" x="346" y="238">transport into HOL</text>
+  <text class="note" x="346" y="334">logic-indexed proof translation</text>
+  <text class="note" x="340" y="470">small institutional edges</text>
+  <text class="note" x="344" y="612">future cross-foundation edges</text>
+  <text class="note" x="344" y="752">future translation edges</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M 900 562 C 1010 562, 1030 366, 1100 366"/>
+  <path class="edge" marker-end="url(#arrow)" d="M 900 562 C 1020 562, 1030 226, 1100 226"/>
+  <path class="edge" marker-end="url(#arrow)" d="M 900 562 C 1030 562, 1040 506, 1100 506"/>
+  <path class="edge dash" marker-end="url(#arrow)" d="M 900 420 C 1020 420, 1040 646, 1100 646"/>
+  <text class="note" x="975" y="236">observations discharge through meaning axioms</text>
+  <text class="note" x="996" y="354">executor observations</text>
+  <text class="note" x="1012" y="490">crypto stays outside LF/HOL core</text>
+  <text class="note" x="980" y="688">shells stay consumers, not semantics</text>
+
+  <path class="edge dash" marker-end="url(#arrow)" d="M 700 650 L 700 610"/>
+  <path class="edge dash" marker-end="url(#arrow)" d="M 700 650 C 620 650, 620 468, 620 468"/>
+  <text class="note" x="740" y="638">feeds future WASM semantics theories</text>
+
+  <rect class="group" x="46" y="968" rx="14" ry="14" width="1308" height="42"/>
+  <text class="note" x="700" y="994" text-anchor="middle">Refactor reading: keep the trusted center small and logical; treat stores, executors, proof formats, package layers, and semantics sources as explicit neighbors with typed edges.</text>
+</svg>

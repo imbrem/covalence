@@ -33,6 +33,14 @@ Hashing, signatures, executors, and the namespace machinery are all
 **outside the trust boundary** as oracles or untrusted layers. This is
 a *proposal*, not a decided architecture — alternatives are welcome.
 
+Institution-theoretically, this is a shift toward a **Paulson-style
+split**: LF/Pure as the meta-institution, HOL as the default object
+institution, and everything else treated as theories, proof languages,
+or translations around that core. The intended TCB is therefore not
+"the current kernel plus helpers" but **LF + HOL**, with morphism
+machinery, package transport, stores, executors, hashing, and
+certificate tooling all outside that trusted center.
+
 The **[shared-backbone proposal](./design/proposals/shared-backbone/)**
 is a sibling: it adopts the layered-framework kernel shape and adds
 *the path* — substrate-first with the prover and VCS developed in
@@ -72,6 +80,10 @@ established and should continue through the redesign.
 
 ## 2. Three kernels coexist
 
+One useful way to read this section during the refactor: these are not
+just "three kernels," they are three different answers to
+"what institution or meta-institution is primary here?"
+
 ### 2.1 `covalence-kernel` (~4.9k LoC)
 
 The current focus of the Phase A–H refactor described in
@@ -108,6 +120,11 @@ A separate HOL-Light-shaped kernel with its own arena, term/type system,
 and LCF-style inference rules. **Explicitly "left untouched" per the
 original MVP plan.** Used as the proof target of `covalence-opentheory`.
 
+In the newer vocabulary from [`institution-map.md`](./institution-map.md),
+this is the clearest current **object-institution** implementation in
+the tree. It is also the main reference point for the proposed
+CovalenceHOL layer.
+
 | File         | LoC  |
 |--------------|------|
 | `light.rs`   |  958 |
@@ -121,6 +138,9 @@ original MVP plan.** Used as the proof target of `covalence-opentheory`.
 
 OpenTheory article reader → drives `covalence-hol`. Substantive logic,
 not just plumbing.
+
+Institutionally this is best read as a **theory/package transport**
+layer for HOL-family content, not as a separate logic.
 
 | File           | LoC  |
 |----------------|------|
@@ -190,16 +210,32 @@ layered stack is implementable, then migrate.
 ### The currently-favored direction (proposed, not committed)
 
 The [layered-framework proposal](./design/proposals/layered-framework/)
-sketches three layers:
+and the [stacked Pure + HOL MVP sketch](./design/proposals/stacked-pure-hol/README.md)
+now point in the same direction: shrink the trusted center to a
+**Pure/LF layer plus a HOL layer**, in deliberate homage to the
+Isabelle/Pure + object-logic split associated with Larry Paulson, while
+treating translations between logics as first-class structure rather
+than ambient coercions.
+
+In institution-theoretic terms:
+
+1. **LF / Pure** is the candidate **meta-institution**.
+2. **HOL** is the default **object institution** hosted over it.
+3. **Morphism / institution-translation machinery** sits above that
+   trusted pair and mediates movement among theories, logics, proof
+   formats, and future semantics artifacts.
+
+Concretely, the layered-framework sketch still describes three layers:
 
 1. **CovalenceFramework** — Pure-style logical framework (LF). Would
-   be the actual TCB /
+   be one half of the actual TCB /
    [meta-trust set](./design/proposals/layered-framework/00-glossary.md#meta-trust-set).
    ~700–800 LoC target. New crate. Described in
    [`docs/design/proposals/layered-framework/02-framework.md`](./design/proposals/layered-framework/02-framework.md).
 2. **CovalenceHOL** — classical HOL as an object theory over the
-   framework. Subset typedef with the disjunct trick, the existentials,
-   ε-choice, primops. Doc pending.
+   framework. This is the other half of the shrunken TCB. Subset
+   typedef with the disjunct trick, the existentials, ε-choice,
+   primops. Doc pending.
 3. **CovalenceMorphism** — embeddings, equiconsistency, base-shift,
    commutative-diagram API. Doc pending.
 
@@ -255,9 +291,11 @@ as settled judgments.
 
 | If you want…                              | Read                                                                       |
 |-------------------------------------------|----------------------------------------------------------------------------|
+| The current logic/proof/translation zoo in one vocabulary | [`docs/institution-map.md`](./institution-map.md)                          |
 | The big picture / vision                  | [`ARCHITECTURE.md`](../ARCHITECTURE.md)                                    |
 | The **path** (substrate-first, two streams, kill list) | [`docs/design/proposals/shared-backbone/00-overview.md`](./design/proposals/shared-backbone/00-overview.md) |
 | The vocabulary the proposed redesign uses | [`docs/design/proposals/layered-framework/00-glossary.md`](./design/proposals/layered-framework/00-glossary.md)                    |
+| The smallest Paulson-style Pure/HOL sketch | [`docs/design/proposals/stacked-pure-hol/README.md`](./design/proposals/stacked-pure-hol/README.md)                               |
 | Conventions in the proposed redesign      | [`docs/design/proposals/layered-framework/01-conventions.md`](./design/proposals/layered-framework/01-conventions.md)              |
 | The proposed Framework layer              | [`docs/design/proposals/layered-framework/02-framework.md`](./design/proposals/layered-framework/02-framework.md)                  |
 | The proposal index                        | [`docs/design/proposals/layered-framework/README.md`](./design/proposals/layered-framework/README.md)                              |

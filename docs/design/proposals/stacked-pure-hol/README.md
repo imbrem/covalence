@@ -15,6 +15,12 @@
 > Read this before any of `02-framework.md` /
 > `03-authority.md` / `04-store.md` — those add complexity that the MVP
 > does not need. They become reachable refinements *after* this lands.
+>
+> This is also the most explicit **Larry Paulson / Isabelle-Pure homage**
+> in the repo: a tiny LF/Pure substrate plus HOL as the default object
+> logic, with everything else layered on top. In the vocabulary of
+> [`../../../institution-map.md`](../../../institution-map.md), Pure is
+> the candidate meta-institution and HOL the default object institution.
 
 ---
 
@@ -47,9 +53,16 @@
               └─────────────────────────────────────────────┘
 ```
 
-**TCB = `covalence-pure` only.** A bug in HOL or in shell cannot produce
-a false `Thm`. A bug in the WASM oracle adapter cannot produce a false
-`Thm`. Soundness reduces to ~500 lines reviewed line-by-line.
+This sketch takes the strongest austerity position:
+**TCB = `covalence-pure` only.** A bug in HOL or in shell cannot
+produce a false `Thm`. A bug in the WASM oracle adapter cannot produce
+a false `Thm`. Soundness reduces to ~500 lines reviewed line-by-line.
+
+If the broader refactor settles on "the trusted core is LF + HOL,"
+then this document still matters as the **shape** of that split: Pure
+remains the meta-logic substrate, HOL remains the default object
+logic, and the rest of the system remains outside that center as
+oracle, stdlib, transport, or institution-translation machinery.
 
 ---
 
@@ -220,6 +233,12 @@ No `unsafe`, no IO, no Tokio, no WASM, no signature crate.
 ## 3. Layer 1 — `covalence-hol`
 
 Untrusted. Builds classical HOL Light–shape logic on top of Pure.
+
+Institution-theoretically this is the default **object institution**
+that lives over the Pure meta-institution. That is the key reason this
+split is attractive during the current refactor: it gives the repo one
+stable place to host multiple theories and, later, explicit morphisms
+between them.
 
 ### 3.1 What HOL adds
 

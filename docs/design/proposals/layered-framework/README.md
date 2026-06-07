@@ -14,6 +14,18 @@
 Working-draft design docs for the Covalence redesign. Source of truth for
 **what we're trying to build**; the implementation hasn't started yet.
 
+Read together with [`../../../institution-map.md`](../../../institution-map.md):
+these docs are easiest to understand if you treat
+**Framework / HOL / Morphism** as
+
+- a candidate **meta-institution**,
+- a default **object institution**,
+- and explicit **institution-translation machinery**
+
+respectively. That is also why this proposal sits naturally beside the
+[`stacked-pure-hol`](../stacked-pure-hol/README.md) sketch and the
+repo's broader Paulson/Isabelle-Pure homage.
+
 Where these docs *redefine* or *supersede* concepts from
 [`ARCHITECTURE.md`](../../../../ARCHITECTURE.md) or
 [`AGENTS.md`](../../../../AGENTS.md), the redefinition is called out at the top
@@ -59,11 +71,14 @@ companion material.
 
 8. **`06-hol.md`** — Classical HOL as an object theory over the
    Framework. Subset typedef with the disjunct trick, the existentials,
-   ε-choice, the primop axiomatization. Builds on the existing
+   ε-choice, the primop axiomatization. Institutionally, this is the
+   default object logic over the Framework's LF substrate. Builds on the existing
    [`prover-architecture.md`](../../../prover-architecture.md) but rebases it
    onto the framework.
 9. **`07-morphism.md`** — Embeddings between theories, equiconsistency,
-   base-shift, the commutative-diagram API.
+   base-shift, the commutative-diagram API. This is the place where the
+   repo's institution-theoretic vocabulary should become explicit rather
+   than merely implied.
 10. **`08-oracles.md`** — Oracle conventions, spec format, the BLAKE3
     trichotomy as a recommended *naming* convention (not framework
     primitive). WASM oracle as the canonical example.

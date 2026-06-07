@@ -38,7 +38,7 @@ mod my_oracle {
     /// `MyObs` opts in to the kernel's `obs_eq` rule by equating any
     /// two `MyObs` applications (the ε-model strategy).
     impl ObsEq for MyObs {
-        fn obs_eq(&self, _other: &Self, _: &[Term], _: &[Term]) -> bool {
+        fn obs_eq(&self, _other: &Self, _: &[Term], _: &[Term], _hint: Option<&dyn std::any::Any>) -> bool {
             true
         }
     }
@@ -285,7 +285,7 @@ fn obs_eq_at_leaf_succeeds_for_same_rust_type() {
     let o2 = my_oracle::MyObs::run([1; 4], Bytes::from_static(b"b"));
     let e1 = Term::obs(o1, Type::bytes());
     let e2 = Term::obs(o2, Type::bytes());
-    let thm = Thm::obs_eq::<my_oracle::MyObs>(e1.clone(), e2.clone()).unwrap();
+    let thm = Thm::obs_eq::<my_oracle::MyObs>(e1.clone(), e2.clone(), None).unwrap();
     assert!(thm.hyps().is_empty());
     match thm.concl().kind() {
         TermKind::Eq(a, b) => {
@@ -306,7 +306,7 @@ fn obs_eq_under_applications() {
     let f2 = Term::obs(o2, Type::fun(Type::bytes(), Type::bytes()));
     let e1 = Term::app(f1, Term::blob(Bytes::from_static(b"x")));
     let e2 = Term::app(f2, Term::blob(Bytes::from_static(b"y")));
-    let thm = Thm::obs_eq::<my_oracle::MyObs>(e1.clone(), e2.clone()).unwrap();
+    let thm = Thm::obs_eq::<my_oracle::MyObs>(e1.clone(), e2.clone(), None).unwrap();
     assert!(thm.hyps().is_empty());
     match thm.concl().kind() {
         TermKind::Eq(a, b) => {
@@ -336,7 +336,7 @@ fn obs_eq_with_different_arg_arities() {
     let e2 = Term::app(f2, Term::blob(Bytes::from_static(b"r")));
     assert_eq!(e1.type_of().unwrap(), bb);
     assert_eq!(e2.type_of().unwrap(), bb);
-    let thm = Thm::obs_eq::<my_oracle::MyObs>(e1, e2).unwrap();
+    let thm = Thm::obs_eq::<my_oracle::MyObs>(e1, e2, None).unwrap();
     assert!(thm.hyps().is_empty());
 }
 
@@ -346,7 +346,7 @@ fn obs_eq_rejects_mismatched_pure_types() {
     let o2 = my_oracle::MyObs::run([1; 4], Bytes::from_static(b"b"));
     let e1 = Term::obs(o1, Type::bytes());
     let e2 = Term::obs(o2, Type::tycon("bool", vec![]));
-    let result = Thm::obs_eq::<my_oracle::MyObs>(e1, e2);
+    let result = Thm::obs_eq::<my_oracle::MyObs>(e1, e2, None);
     assert!(matches!(
         result,
         Err(covalence_pure::Error::TypeMismatch { .. })
@@ -358,7 +358,7 @@ fn obs_eq_rejects_wrong_rust_type() {
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
     struct OtherObs(u32);
     impl ObsEq for OtherObs {
-        fn obs_eq(&self, _: &Self, _: &[Term], _: &[Term]) -> bool {
+        fn obs_eq(&self, _: &Self, _: &[Term], _: &[Term], _hint: Option<&dyn std::any::Any>) -> bool {
             true
         }
     }
@@ -366,7 +366,7 @@ fn obs_eq_rejects_wrong_rust_type() {
     let o = my_oracle::MyObs::run([0; 4], Bytes::from_static(b"a"));
     let e1 = Term::obs(o, Type::bytes());
     let e2 = Term::obs(OtherObs(7), Type::bytes());
-    let result = Thm::obs_eq::<my_oracle::MyObs>(e1, e2);
+    let result = Thm::obs_eq::<my_oracle::MyObs>(e1, e2, None);
     assert!(matches!(
         result,
         Err(covalence_pure::Error::ObsDowncastTypeMismatch)
@@ -377,7 +377,7 @@ fn obs_eq_rejects_wrong_rust_type() {
 fn obs_eq_rejects_non_obs_head() {
     let e1 = Term::free("x", Type::bytes());
     let e2 = Term::free("y", Type::bytes());
-    let result = Thm::obs_eq::<my_oracle::MyObs>(e1, e2);
+    let result = Thm::obs_eq::<my_oracle::MyObs>(e1, e2, None);
     assert!(matches!(result, Err(covalence_pure::Error::NotObsHead(_))));
 }
 
@@ -388,7 +388,7 @@ fn obs_eq_observer_can_refuse_equality() {
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
     struct PickyObs(u32);
     impl ObsEq for PickyObs {
-        fn obs_eq(&self, _other: &Self, my_args: &[Term], other_args: &[Term]) -> bool {
+        fn obs_eq(&self, _other: &Self, my_args: &[Term], other_args: &[Term], _hint: Option<&dyn std::any::Any>) -> bool {
             my_args == other_args
         }
     }
@@ -405,12 +405,12 @@ fn obs_eq_observer_can_refuse_equality() {
         Term::blob(Bytes::from_static(b"y")),
     );
     // Different args → refused.
-    let result = Thm::obs_eq::<PickyObs>(e1.clone(), e2);
+    let result = Thm::obs_eq::<PickyObs>(e1.clone(), e2, None);
     assert!(matches!(result, Err(covalence_pure::Error::ObsEqRefused)));
 
     // Same args → succeeds.
     let e3 = Term::app(Term::obs(o2, f_ty), Term::blob(Bytes::from_static(b"x")));
-    assert!(Thm::obs_eq::<PickyObs>(e1, e3).is_ok());
+    assert!(Thm::obs_eq::<PickyObs>(e1, e3, None).is_ok());
 }
 
 #[test]
@@ -425,7 +425,7 @@ fn obs_eq_demonstrates_untrusted_id_plumbing() {
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
     struct UntrustedIdObs;
     impl ObsEq for UntrustedIdObs {
-        fn obs_eq(&self, _: &Self, _: &[Term], _: &[Term]) -> bool {
+        fn obs_eq(&self, _: &Self, _: &[Term], _: &[Term], _hint: Option<&dyn std::any::Any>) -> bool {
             true
         }
     }
@@ -441,7 +441,7 @@ fn obs_eq_demonstrates_untrusted_id_plumbing() {
     let e1 = Term::app(id.clone(), a);
     let e2 = Term::app(id, b);
 
-    let thm = Thm::obs_eq::<UntrustedIdObs>(e1.clone(), e2.clone()).unwrap();
+    let thm = Thm::obs_eq::<UntrustedIdObs>(e1.clone(), e2.clone(), None).unwrap();
     assert!(thm.hyps().is_empty(), "obs_eq produces an empty-hyp Thm");
     assert_eq!(thm.concl(), &Term::eq(e1, e2));
 }

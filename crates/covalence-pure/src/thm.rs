@@ -508,7 +508,11 @@ impl Thm {
     /// not a soundness obligation. Different observer types `O`, `O'`
     /// get independent ε-families, so the rule never lets one
     /// observer's policy compromise another's.
-    pub fn obs_eq<O: ObsEq>(expr1: Term, expr2: Term) -> Result<Thm> {
+    pub fn obs_eq<O: ObsEq>(
+        expr1: Term,
+        expr2: Term,
+        hint: Option<&dyn std::any::Any>,
+    ) -> Result<Thm> {
         let (obs1, args1) = decompose_obs_app(&expr1)?;
         let (obs2, args2) = decompose_obs_app(&expr2)?;
         let o1 = obs1.downcast::<O>().ok_or(Error::ObsDowncastTypeMismatch)?;
@@ -521,7 +525,7 @@ impl Thm {
                 got: ty2,
             });
         }
-        if !o1.obs_eq(o2, &args1, &args2) {
+        if !o1.obs_eq(o2, &args1, &args2, hint) {
             return Err(Error::ObsEqRefused);
         }
         let concl = Term::eq(expr1, expr2);

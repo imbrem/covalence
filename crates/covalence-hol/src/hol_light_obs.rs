@@ -138,6 +138,7 @@ impl ObsEq for HolLight {
         other: &Self,
         my_args: &[Term],
         other_args: &[Term],
+        _hint: Option<&dyn std::any::Any>,
     ) -> bool {
         match (self, other) {
             // Eq a a ≡ True_bool  (HOL refl at bool, when arg structure matches)

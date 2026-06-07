@@ -66,7 +66,7 @@ fn obs_eq_at_eq_a_a_equates_to_true() {
     let a = Term::free("a", ctx.bool_type());
     let eq_a_a = ctx.mk_eq(a.clone(), a).unwrap();
     let truth = ctx.t();
-    let thm = Thm::obs_eq::<HolLight>(eq_a_a.clone(), truth.clone()).unwrap();
+    let thm = Thm::obs_eq::<HolLight>(eq_a_a.clone(), truth.clone(), None).unwrap();
     assert!(thm.hyps().is_empty());
     let TermKind::Eq(lhs, rhs) = thm.concl().kind() else {
         panic!("expected Eq");
@@ -83,7 +83,7 @@ fn obs_eq_at_eq_a_b_does_not_collapse_to_true() {
     let b = Term::free("b", ctx.bool_type());
     let eq_ab = ctx.mk_eq(a, b).unwrap();
     let truth = ctx.t();
-    assert!(Thm::obs_eq::<HolLight>(eq_ab, truth).is_err());
+    assert!(Thm::obs_eq::<HolLight>(eq_ab, truth, None).is_err());
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn obs_eq_sym_at_bool_eq() {
     let b = Term::free("b", ctx.bool_type());
     let eq_ab = ctx.mk_eq(a.clone(), b.clone()).unwrap();
     let eq_ba = ctx.mk_eq(b, a).unwrap();
-    let thm = Thm::obs_eq::<HolLight>(eq_ab, eq_ba).unwrap();
+    let thm = Thm::obs_eq::<HolLight>(eq_ab, eq_ba, None).unwrap();
     assert!(thm.hyps().is_empty());
 }
 

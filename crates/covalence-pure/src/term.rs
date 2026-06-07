@@ -106,7 +106,21 @@ pub trait ObsEq: Observer {
     ///
     /// `my_args` and `other_args` are in left-to-right application
     /// order (outermost binder applied first).
-    fn obs_eq(&self, other: &Self, my_args: &[Term], other_args: &[Term]) -> bool;
+    ///
+    /// `hint` is an opaque caller-supplied witness — typically `None`,
+    /// but observer theories that need external evidence (e.g., HOL
+    /// trans needs the middle term, observers backed by SAT/SMT need
+    /// a model) can downcast it to their expected type via
+    /// `<dyn Any>::downcast_ref::<T>()`. Sound under the same ε-model:
+    /// soundness doesn't depend on what the hint is or whether it's
+    /// provided.
+    fn obs_eq(
+        &self,
+        other: &Self,
+        my_args: &[Term],
+        other_args: &[Term],
+        hint: Option<&dyn Any>,
+    ) -> bool;
 }
 
 /// Type-erased observer leaf. Wraps any `O: Observer` inside an `Arc`,

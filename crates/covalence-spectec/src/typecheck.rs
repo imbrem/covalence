@@ -104,10 +104,7 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
     for syn in &doc.syntax {
         env.vars
             .entry(syn.name.clone())
-            .or_insert_with(|| Typ::Var {
-                x: syn.name.clone(),
-                as1: Vec::new(),
-            });
+            .or_insert_with(|| crate::ast_doc::typ_var(syn.name.clone()));
     }
 
     // Relations.
@@ -154,10 +151,9 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
                 } = &tr.tokens[0]
                 && is_case_head_str(head)
             {
-                env.ctors.entry(head.clone()).or_insert_with(|| Typ::Var {
-                    x: syn.name.clone(),
-                    as1: Vec::new(),
-                });
+                env.ctors
+                    .entry(head.clone())
+                    .or_insert_with(|| crate::ast_doc::typ_var(syn.name.clone()));
                 env.ctor_params.entry(head.clone()).or_insert_with(Vec::new);
             }
             if let Some(crate::cst::SyntaxBody::Variant(_)) = &prof.body {
@@ -172,10 +168,9 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
                         continue;
                     };
                     if is_case_head_str(head) {
-                        env.ctors.entry(head.clone()).or_insert_with(|| Typ::Var {
-                            x: syn.name.clone(),
-                            as1: Vec::new(),
-                        });
+                        env.ctors
+                            .entry(head.clone())
+                            .or_insert_with(|| crate::ast_doc::typ_var(syn.name.clone()));
                         // Skip alts where the head ident is followed
                         // by `.` (`ARRAY.NEW_FIXED typeidx u32`).
                         // Those are compound mixfix names — the real
@@ -1665,10 +1660,10 @@ mod tests {
         "#;
         let (doc, ctx) = build(src);
         let env = build_env(&doc, &ctx);
-        let numtype = Typ::Var { x: "numtype".into(), as1: vec![] };
-        let valtype = Typ::Var { x: "valtype".into(), as1: vec![] };
+        let numtype = crate::ast_doc::typ_var("numtype");
+        let valtype = crate::ast_doc::typ_var("valtype");
         assert!(sub_typ(&env, &numtype, &valtype));
-        assert!(sub_typ(&env, &Typ::Var { x: "reftype".into(), as1: vec![] }, &valtype));
+        assert!(sub_typ(&env, &crate::ast_doc::typ_var("reftype"), &valtype));
         // Reverse direction not a subtype.
         assert!(!sub_typ(&env, &valtype, &numtype));
     }
@@ -1682,8 +1677,8 @@ mod tests {
         "#;
         let (doc, ctx) = build(src);
         let env = build_env(&doc, &ctx);
-        let inner = Typ::Var { x: "inner".into(), as1: vec![] };
-        let outer = Typ::Var { x: "outer".into(), as1: vec![] };
+        let inner = crate::ast_doc::typ_var("inner");
+        let outer = crate::ast_doc::typ_var("outer");
         assert!(sub_typ(&env, &inner, &outer));
     }
 

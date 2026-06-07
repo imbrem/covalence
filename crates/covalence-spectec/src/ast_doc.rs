@@ -983,10 +983,7 @@ fn clause_ps(
             // 4. Fallback: Var(base) wrapped.
             spectec_ast::SpecTecParam::Exp {
                 x: name.clone(),
-                t: wrap(spectec_ast::SpecTecTyp::Var {
-                    x: lookup_name.to_string(),
-                    as1: Vec::new(),
-                }),
+                t: wrap(typ_var(lookup_name)),
             }
         })
         .collect()
@@ -1342,10 +1339,7 @@ pub fn chunk_to_syntax_param(chunk: &[crate::token::Spanned]) -> Option<spectec_
     if let [Spanned { token: Ident(n), .. }] = chunk {
         return Some(spectec_ast::SpecTecParam::Exp {
             x: n.clone(),
-            t: spectec_ast::SpecTecTyp::Var {
-                x: n.clone(),
-                as1: Vec::new(),
-            },
+            t: typ_var(n.clone()),
         });
     }
     // Anything else: treat as an unnamed Exp param whose type is the
@@ -2985,8 +2979,24 @@ fn strong_connect(
 /// constructors and field names where we don't have a full mixfix
 /// template — produces e.g. `["NOP"]` for `NOP` rather than the empty
 /// `[""]` that `mixop_for` would emit if the op isn't in the table.
-fn mixop_from_name(name: &str) -> spectec_ast::MixOp {
+pub(crate) fn mixop_from_name(name: &str) -> spectec_ast::MixOp {
     spectec_ast::MixOp::new(vec![name.to_string()])
+}
+
+/// `SpecTecTyp::Var { x: name, as1: [] }` — the unparameterised type
+/// reference. The single most common `Typ` value built by the
+/// converter; consolidated here so we don't repeat the literal at
+/// ~10 sites.
+pub(crate) fn typ_var(name: impl Into<String>) -> spectec_ast::SpecTecTyp {
+    spectec_ast::SpecTecTyp::Var {
+        x: name.into(),
+        as1: Vec::new(),
+    }
+}
+
+/// `SpecTecExp::Var { id: name }` — the bare variable reference.
+pub(crate) fn exp_var(name: impl Into<String>) -> spectec_ast::SpecTecExp {
+    spectec_ast::SpecTecExp::Var { id: name.into() }
 }
 
 #[cfg(test)]

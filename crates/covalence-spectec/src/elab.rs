@@ -2726,7 +2726,7 @@ fn try_classify_dot(
     if toks.len() < 3 {
         return Ok(None);
     }
-    let Some(Spanned { token: Token::Ident(field), .. }) = toks.last() else {
+    let Some(field) = toks.last().and_then(|s| s.as_ident()) else {
         return Ok(None);
     };
     if !matches!(toks.get(toks.len() - 2).map(|s| &s.token), Some(Token::Dot)) {
@@ -2741,7 +2741,7 @@ fn try_classify_dot(
     Ok(Some(Expr::Dot {
         span,
         e: Box::new(e),
-        field: field.clone(),
+        field: field.to_string(),
     }))
 }
 
@@ -2868,7 +2868,7 @@ fn try_classify_record(
         }));
     }
     // Must lead with a case-head ident; otherwise this isn't a record.
-    let Some(Spanned { token: Token::Ident(first), .. }) = inner.first() else {
+    let Some(first) = inner.first().and_then(|s| s.as_ident()) else {
         return Ok(None);
     };
     if !is_case_head(first) {
@@ -2886,7 +2886,7 @@ fn try_classify_record(
     chunks.push(&inner[chunk_start..]);
     let mut fields = Vec::with_capacity(chunks.len());
     for chunk in chunks {
-        let Some(Spanned { token: Token::Ident(name), .. }) = chunk.first() else {
+        let Some(name) = chunk.first().and_then(|s| s.as_ident()) else {
             return Ok(None);
         };
         if !is_case_head(name) {
@@ -2904,7 +2904,7 @@ fn try_classify_record(
             classify_simple_expression(val_toks, val_span, ctx)?
         };
         fields.push(ExprField {
-            field: name.clone(),
+            field: name.to_string(),
             value,
         });
     }

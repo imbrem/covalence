@@ -15,6 +15,7 @@ documents are normative.
 |---|---|
 | A quick map of the system and repo | [`c4.md`](./c4.md) |
 | The multi-logic / multi-format zoo in one vocabulary | [`institution-map.md`](./institution-map.md) |
+| The Pure/HOL stack in Hehner `aPToP` + institution language | [`design/proposals/stacked-pure-hol/hehner-institution/README.md`](./design/proposals/stacked-pure-hol/hehner-institution/README.md) |
 | The short conceptual overview | [`VISION.md`](./VISION.md) |
 | The canonical philosophy and invariants | [`../ARCHITECTURE.md`](../ARCHITECTURE.md) |
 | The operational rules for implementation work | [`../AGENTS.md`](../AGENTS.md) |
@@ -28,8 +29,9 @@ For most contributors, the shortest useful path is:
 1. [`../README.md`](../README.md) for build/run basics.
 2. [`c4.md`](./c4.md) for the current architecture map.
 3. [`institution-map.md`](./institution-map.md) for the current logic/translation landscape.
-4. [`where-we-are.md`](./where-we-are.md) for what is shipping vs in flight.
-5. [`VISION.md`](./VISION.md) and [`../ARCHITECTURE.md`](../ARCHITECTURE.md) for the target shape.
+4. [`design/proposals/stacked-pure-hol/hehner-institution/README.md`](./design/proposals/stacked-pure-hol/hehner-institution/README.md) if you want the proposed Pure/HOL core explained in Hehner/institution terms.
+5. [`where-we-are.md`](./where-we-are.md) for what is shipping vs in flight.
+6. [`VISION.md`](./VISION.md) and [`../ARCHITECTURE.md`](../ARCHITECTURE.md) for the target shape.
 
 If you are changing trusted-core or storage semantics, read
 [`../AGENTS.md`](../AGENTS.md) in full before touching code.

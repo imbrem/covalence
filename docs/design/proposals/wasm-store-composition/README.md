@@ -401,7 +401,62 @@ digest when any of its layers change.
   visited set keyed on `O256`. Trivial to add but worth saying
   explicitly.
 
-## 7. Cross-references
+## 7. Integration with `wasm-runtime`: store = container, not process
+
+A `cov:store/api` store is a **container** in the
+[`wasm-runtime`](../wasm-runtime/) sense, not a process. The
+distinction matters and recalibrates several decisions:
+
+- **External ABI**: `cov:store/api` (get / contains / head / open).
+- **Internal shape**: a supervised *tree of processes*, each its
+  own shared-fate component graph. Restart policies, resource
+  ceilings, and trap handling are container-level concerns the
+  store inherits.
+
+The store's container is the unit that abstracts over the
+*executor* — what is actually running each internal process. A
+single store graph can mix:
+
+- a WASM composer (`single_blob`, `merge`, `s3_path`),
+- a Docker-wrapped real S3 client (e.g. written in Go),
+- a Kubernetes-resident remote fetcher,
+- a host-side adapter (the `BlobSource` trait — see
+  `covalence-wasm-store::lib`),
+- … and treat them uniformly behind the store ABI.
+
+This is the load-bearing reason to lean on containers, not
+processes, for stores. Stores are long-lived services, not
+one-shot executions, so they need supervision; and the only way
+to abstract over heterogeneous executors (WASM, Docker, native
+binary, remote HTTP) is at the container layer.
+
+### Implications for this proposal
+
+1. **`covalence-wasm-store` is one executor implementation**,
+   alongside future `covalence-docker-store` /
+   `covalence-http-store` / etc. The `BlobSource` trait is the
+   executor-agnostic seam on the Rust side; `cov:store/api` is
+   the executor-agnostic seam on the WIT side. Both stay
+   unchanged when the second executor lands.
+2. **`StoreManifest`'s `wraps` / `depends_on` are
+   supervision-tree edges.** When container restart policies
+   materialise in `cov:wasm/*`, these become concrete policy
+   choices: `wraps` ≈ OTP `permanent` (rebuild on failure;
+   store is unsound without this child), `depends_on` ≈
+   `transient` (log and continue, optional fallback).
+3. **Identity is unchanged**:
+   `O256(container_bytes_including_manifest)`. Recursive — the
+   manifest names its child containers by hash; each child may
+   itself be a container.
+4. **Don't migrate `WasmStore::compose` onto `cov:wasm/runtime`
+   until the runtime's *container* layer is real.** Riding only
+   on the process layer would lose supervision and executor
+   heterogeneity, which is a regression for stores
+   specifically. The bare runtime swap (process-equivalent) is
+   only worth doing standalone if it gains us browser parity
+   meanwhile and the migration is mechanical.
+
+## 8. Cross-references
 
 - [`crates/covalence-wasm/wit/store.wit`](../../../../crates/covalence-wasm/wit/store.wit) — current WIT.
 - [`crates/covalence-wasm-store/`](../../../../crates/covalence-wasm-store/) — current implementation.

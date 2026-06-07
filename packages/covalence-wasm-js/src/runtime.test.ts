@@ -6,12 +6,15 @@ import { Runtime, WasmRuntimeError } from "./index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ANSWER_WASM = readFileSync(join(__dirname, "__fixtures__", "answer.wasm"));
+// Component-wrapped variant of the same `answer` function. Rebuild via
+//   cargo run -p covalence-wasm --example dump_answer_component \
+//     > packages/covalence-wasm-js/src/__fixtures__/answer_component.wasm
+const ANSWER_COMPONENT_WASM = readFileSync(
+  join(__dirname, "__fixtures__", "answer_component.wasm"),
+);
 // Rust-built wasm32-unknown-unknown artifact that exposes
 // covalence_wasm::build::ModuleBuilder via a C ABI. Rebuild with:
-//   cargo build --target wasm32-unknown-unknown --release \
-//                -p covalence-wasm-build-guest
-//   cp target/wasm32-unknown-unknown/release/covalence_wasm_build_guest.wasm \
-//      packages/covalence-wasm-js/src/__fixtures__/build_guest.wasm
+//   bun run build:wasm-build-guest
 const BUILD_GUEST_WASM = readFileSync(
   join(__dirname, "__fixtures__", "build_guest.wasm"),
 );
@@ -32,12 +35,22 @@ describe("Runtime (JS host backend)", () => {
     expect(() => rt.callU32(inst, "nope", 0)).toThrow(/nope/);
   });
 
-  it("rejects component bytes with a Phase 3 pointer", async () => {
+  it("compiles and runs a WASM component via jco", async () => {
     const rt = new Runtime();
-    // Build a minimal component preamble: \0asm + component version.
-    const fakeComponent = Uint8Array.of(0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00);
-    await expect(rt.compile(fakeComponent)).rejects.toThrow(WasmRuntimeError);
-    await expect(rt.compile(fakeComponent)).rejects.toThrow(/jco/);
+    const comp = await rt.compile(ANSWER_COMPONENT_WASM);
+    expect(comp.kind).toBe("component");
+    const inst = await rt.instantiate(comp);
+    expect(rt.callU32(inst, "answer", 41)).toBe(42);
+  });
+
+  it("malformed component bytes surface as a WasmRuntimeError", async () => {
+    const rt = new Runtime();
+    // Component magic + version, then garbage. jco's wasm-tools rejects.
+    const bad = Uint8Array.of(
+      0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00,
+      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    );
+    await expect(rt.compile(bad)).rejects.toThrow(WasmRuntimeError);
   });
 
   // Metacircular smoke test: load a Rust-built wasm32 artifact that

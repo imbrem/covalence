@@ -3,7 +3,7 @@
 **Status:** proposed (2026-06-06). Three slices landed:
 - **Phase 0 (wasmtime host):** `crates/covalence-wasm/{wit/cov-wasm.wit,src/runtime.rs}` — WIT + `wasmtime::component::bindgen!`-generated host trait, wasmtime impl. Both core modules (via `wasmtime::Module`) and components (via `wasmtime::component::Component`) supported through a `HostComponent`/`HostInstance` enum-dispatch.
 - **Phase 1 floor (build interface, Rust host):** `cov:wasm/build` interface with `build-add-module(name, delta)` canned recipe AND a `module-builder` resource exposing constructor, `start-func` / instructions (`local-get`, `local-set`, `i32-const/add/sub/mul`, `call`) / `end-func` / `export-func` / `finish`. Rust impl is a thin wrapper around `covalence_wasm::build::ModuleBuilder` (no parallel recording layer — holds the real builder directly).
-- **Phase 3 floor (JS host):** `packages/covalence-wasm-js/` — TS `Runtime` class mirroring `cov:wasm/runtime`, `WebAssembly.*`-backed. Core-module support only; component bytes throw with a pointer at the jco follow-up. **JS contributes only the executor — no build logic.** Run via `bun run test:wasm-js`.
+- **Phase 3 floor (JS host):** `packages/covalence-wasm-js/` — TS `Runtime` class mirroring `cov:wasm/runtime`, `WebAssembly.*`-backed for core modules AND `@bytecodealliance/jco`-backed for components. Components are transpiled at runtime (jco `instantiation: 'sync'`), loaded via a `data:` URL to dodge Vite's static analysis, and exposed under the same uniform `WasmInstance` / `callU32` API. **JS contributes only the executor — no build logic.** Run via `bun run test:wasm-js`.
 - **Metacircular demo:** `crates/covalence-wasm-build-guest/` compiles `covalence_wasm::build::ModuleBuilder` to wasm32-unknown-unknown via a small C-ABI wrapper (`build_plus(delta) -> length` + `output_ptr() -> i32`). Loaded into the JS Runtime, called, and its output is fed back through the same Runtime — all in one process, with the build logic living in shared Rust code. Rebuild: `bun run build:wasm-build-guest`.
 
 Metacircular smoke test passes in both backends:
@@ -151,8 +151,10 @@ Rough ordering, not a commitment:
 | 1     | `cov:wasm/inspect` + `cov:wasm/build`, sync | Programmatic WASM authoring; metacircular base |
 | 2     | Guest-component impl of `inspect`+`build` | "Build/inspect WASM from inside WASM" — first real use of the WIT being callable from guests |
 | 3     | Browser JS host backend (core modules + `jco` components keyed by O256) | Run WASM in the browser at all |
+| 3.5   | Component-model interpreter as a Rust→wasm guest (replaces per-component jco JS bundle with one shared interpreter + per-component metadata) | Retires the duplicated 80 KB jco runtime; same interpreter on native and browser |
 | 4     | Browser-friendly store backends (IndexedDB/OPFS) | Browser kernel can persist |
 | 5     | Process abstraction — content-addressed graph of components, linker that closes import graphs | Multi-component execution without per-consumer wiring |
+| 5.5   | **Linker as a wasm-resident program** (see §9) — takes a root component hash + a store handle, walks the dependency graph, produces an instantiated process. Linking policy is itself content-addressed and pluggable. | Kernel stops embedding linking knowledge; linking becomes an artifact others can swap out |
 | 6     | Container abstraction — restart policies, supervision trees | Production-grade execution of untrusted user components |
 | 7     | Static covalence-ui shipping a local kernel | The headline deliverable |
 | ∞     | Federation protocol between local kernels and `cov serve` peers | Local-first covalence |
@@ -164,7 +166,85 @@ Rough ordering, not a commitment:
 - **Replacing direct wasmtime usage in fuzz/perf-sensitive consumers.** The `pub use wasmtime;` re-export stays.
 - **Resources-as-imports in v0.** Resource handles only appear as outputs of `runtime` (the `component` and `instance` types).
 
-## 9. Open questions
+## 9. Long-term: the linker as a wasm-resident program
+
+The endpoint the whole `runtime` / `build` / process stack is reaching toward: **linking is a wasm program over the store, not host code.**
+
+### The shape
+
+A "linker script" is itself a content-addressed WASM artifact. Its world looks roughly like:
+
+```wit
+package cov:link@0.x;
+
+interface api {
+    use cov:store/api.{store, blob};
+    use cov:wasm/runtime.{component, instance};
+
+    /// A description of what to assemble: which root hash, which
+    /// concrete imports satisfy which expected interfaces, what
+    /// policy to apply when something is missing.
+    record link-request {
+        root: blob,                  // O256 of the root component
+        imports: list<binding>,      // (expected-import, satisfying-export)
+        policy: link-policy,
+    }
+    record binding { ... }
+    enum link-policy { eager, lazy, strict, ... }
+
+    /// Walk the request's dependency graph, fetch each component from
+    /// the store, resolve every WIT-typed import to a matching export,
+    /// then hand back something the runtime can instantiate.
+    link: func(s: borrow<store>, req: link-request) -> result<component, link-error>;
+}
+```
+
+The caller hands the linker (1) a `cov:store` handle so it can fetch components by hash, and (2) a description of what to assemble. The linker returns a single `cov:wasm/runtime.component` ready to instantiate — possibly itself a *composed* component produced via `wasm-compose`-style merging, or a thin wrapper that holds onto the resolved dependency graph and lets the runtime walk it.
+
+### Why the linker is wasm, not host code
+
+- **Pluggable policy.** Different linkers can implement different resolution rules: strict (every import must be satisfied or fail), lazy (resolve on first call), policy-driven (consult an authority for which version of an import to bind), capability-restricted (only let certain components see certain hashes). Each is its own content-addressed artifact you can swap out.
+- **Content-addressed reproducibility.** The linker artifact has an O256; "this process was linked by linker `0xABC…`" is a fact you can record alongside the result. Re-linking with the same inputs produces the same output — no host-side drift.
+- **Same on every backend.** The native kernel and the browser kernel both load the same linker WASM and run it. No "linker for native, separate linker for browser" code path. Aligns with [[feedback-js-is-executor-only]] and [[browser-kernel-vision]].
+- **Produces the "process" artifact** in the [[wasm-process-container]] vocabulary. The linker IS the thing that turns a hash + import bindings into a closed shared-fate graph. Containers (restart policies, supervision) operate on the linker's output, one level up.
+- **Naturally caches via the store.** A `(root, imports, policy)` triple has its own O256; the linked result can be cached under that key. Re-link is just a store hit.
+
+### How it composes with the rest of the stack
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Kernel + applications        (Rust, mostly as wasm)    │
+├─────────────────────────────────────────────────────────┤
+│  Linker (wasm artifact)       — assembles processes     │
+├─────────────────────────────────────────────────────────┤
+│  Component-model interpreter  — lift/lower over the     │
+│  (Rust → wasm)                  canonical ABI           │
+├─────────────────────────────────────────────────────────┤
+│  cov:wasm/runtime trait       — compile/instantiate/    │
+│  + cov:store                    call + fetch by hash    │
+├─────────────────────────────────────────────────────────┤
+│  Low-level executor           — WebAssembly.* (JS) or   │
+│                                 wasmtime (native)       │
+└─────────────────────────────────────────────────────────┘
+```
+
+The bottom layer is engine-specific (wasmtime / `WebAssembly.*`). Every layer above is portable Rust→wasm. The linker sits between the interpreter and the kernel: it produces ready-to-run processes that the kernel and applications then invoke.
+
+### Why not now
+
+The linker depends on the layers below being settled — at minimum, the runtime trait (Phase 0, done), the process abstraction (Phase 5, deferred), and the store WIT (`cov:store@0.1.0`, exists per [[cov-store-wit-shape]]). The component-model interpreter (Phase 3.5) is the most expensive prerequisite; until that lands, jco-as-runtime is the stopgap.
+
+But the architecture is clear enough now to *not paint into a corner.* Specifically:
+
+- Don't put linking knowledge in the kernel. The kernel takes a "ready process" handle from somewhere; the somewhere is the linker eventually, a hand-wired composition today.
+- Don't bake an import-resolution scheme into `cov:wasm/runtime`. Keep instantiate single-component for now; multi-component wiring is the linker's job, not the runtime trait's.
+- Don't ship the same "what's in the dep graph?" walker twice (once in the build pipeline, once at load time). Both should be the linker, eventually.
+
+See also [[wasm-linker-script]] for the short version of this vision, kept in conversation memory.
+
+---
+
+## 10. Open questions
 
 - **Resource lifetime under wit-bindgen.** Per [`wit-component-gotchas`], exported resources need careful glue. Whether `instance` should be `borrow<instance>` or `own` at every call site needs prototyping.
 - **What about `val` variants we don't yet need?** Start with what `covalence-wasm-spec` actually uses; extend lazily. Don't pre-enumerate every component-model type until something needs it.

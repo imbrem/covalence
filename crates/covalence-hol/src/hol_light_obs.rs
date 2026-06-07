@@ -1,68 +1,191 @@
-//! HOL Light observer family.
+//! HOL Light bootstrap on top of `covalence-pure`.
 //!
-//! `HolLight` is the single Rust observer type that backs every HOL
-//! Light primitive — `bool`, `=`, `T`, `F`, `⟹`, `¬`, `∧`, `∨`, `↔`,
-//! `∀`, `∃`, `ε`. Because they all share one Rust type, they share
-//! one parametric-ε family, and `Thm::obs_eq` can relate them. This
-//! is the unifying piece of the bootstrap: the kernel uses
-//! `TypeKind::TyConObs` on the type side and `TermKind::Obs` on the
-//! term side, and a single `HolLight` observer is the head of both.
+//! ## What this module is
 //!
-//! ## Cross-process identity
+//! A single Rust `enum` ([`HolLight`]) that carries every HOL Light
+//! primitive — `bool`, `=`, `T`, `F`, `⟹`, `¬`, `∧`, `∨`, `↔`, `∀`,
+//! `∃`, `ε`, plus `Trueprop` — as variants of one observer family.
+//! Because all variants share one Rust type, they share one
+//! parametric-ε family in Pure's soundness story, which lets
+//! [`Thm::obs_eq`], [`Thm::obs_true`], and [`Thm::obs_imp`] mint
+//! HOL theorems with the kernel's blessing.
 //!
-//! Pure compares observers by `Arc` pointer identity, not by user
-//! `Eq`. That means two independently-constructed `HolLight::Eq`
-//! values are *not* the same observation. To make the HOL Light
-//! API consistent — e.g., `mk_eq` should always produce the same
-//! `=` head — we maintain a single `Arc` for each [`HolLight`]
-//! variant inside a [`HolLightCtx`]. Cloning out of the context
-//! preserves the `Arc` so users get stable identities across all
-//! calls into the same `PureHol` kernel.
+//! All observers and the [`HolLightCtx`] handle are process-global
+//! lazy statics. Constructing a `HolLightCtx` is free; it just gives
+//! you method syntax over module-level functions.
 //!
-//! ## What ObsEq does for HolLight
+//! ## Mapping to Isabelle/HOL
 //!
-//! The ObsEq policy is **conservative** by default — see the impl
-//! for the precise rules. Only the kernel-derivable refl-style
-//! facts are returned `true`:
+//! `covalence-pure` plays the role of Isabelle/Pure: the meta-logic
+//! with `prop`, meta-`⋀`, meta-`⟹`, meta-`≡`, plus assume,
+//! `⟹`/`⋀`-intro/elim, refl/trans/sym/cong_app/cong_abs, β/η, and
+//! `eq_mp` (the meta-EQ_MP).
 //!
-//! - `Eq a a ≡ True_bool` (refl at the HOL level)
-//! - `Eq u v ≡ Eq v u` (sym)
+//! `covalence-hol` plays the role of Isabelle/HOL: HOL as a *theory*
+//! built on top of the meta-logic. Standard Isabelle/HOL ships with:
 //!
-//! The harder identities (e.g., `T ≡ Eq F F`, definitional unfoldings,
-//! axiom-conditioned facts) are *not* in the ObsEq impl. They're
-//! derived from user-asserted axioms or `Thm::define`.
+//! - `bool` as a separate type.
+//! - `Trueprop : bool ⇒ prop` as the explicit coercion.
+//! - HOL `=` as a constant at `'a ⇒ 'a ⇒ bool` returning bool.
+//! - One bridge axiom: `eq_reflection : (x = y) ⟹ (x ≡ y)` where
+//!   the LHS is HOL-eq at any type and the RHS is meta-eq. From this
+//!   axiom plus Pure's rules, Isabelle derives HOL Light's 10
+//!   primitive rules.
+//!
+//! Our setup parallels this exactly:
+//!
+//! - HOL `bool` ↔ `TyConObs(Bool_obs, "bool", [])`. A distinct type
+//!   from Pure prop (different `Arc` identity).
+//! - HOL `=` ↔ `Term::obs(Eq_obs, α → α → bool)`. Returns HOL bool,
+//!   never prop. All HOL primitives are `Term::obs` over global
+//!   observers in the `HolLight` family.
+//! - `Trueprop : bool → prop` ↔ `Term::obs(Trueprop_obs, bool → prop)`.
+//!   A HOL theorem `⊢_HOL p` (with p : bool) is internally the Pure
+//!   theorem `⊢_Pure Trueprop p`.
+//!
+//! ## Where we diverge from Isabelle/HOL
+//!
+//! Isabelle/HOL **uses** the `eq_reflection` axiom to bridge HOL `=`
+//! and Pure `≡`, then derives every HOL Light rule by composing Pure
+//! rules through that bridge. Each derivation traces a chain of Pure
+//! inferences and produces a real Pure theorem.
+//!
+//! Covalence-HOL **bypasses** the eq_reflection bridge entirely. The
+//! [`HolLight`] observer's [`ObsImp`] / [`ObsTrue`] policies directly
+//! recognise HOL-Light-derivable shapes (structural pattern checks)
+//! and mint matching Pure theorems via Pure's observer-rule
+//! primitives. Soundness comes from Pure's *parametric-ε model*:
+//! any prop-typed observation can be interpreted as ⊤ in the model,
+//! so any rule the policy asserts is consistent with that model.
+//! The whole `HolLight` family shares one ε-family, so the policy
+//! choices for HOL primitives don't interact with policies for
+//! unrelated observer types.
+//!
+//! Both approaches yield the same theorems. The covalence approach
+//! avoids one axiom in the trusted base and has cheaper bookkeeping
+//! (no eq_reflection-application chains), at the cost of less direct
+//! correspondence to the Isabelle/HOL derivation chain.
+//!
+//! ## Tarski-T encoding
+//!
+//! HOL judgements live in Pure as `⊢_Pure Trueprop p`. A HOL theorem
+//! `Γ ⊢_HOL p` (with `p : bool` and each `h ∈ Γ : bool`) is the Pure
+//! theorem
+//!
+//! ```text
+//! {Trueprop h | h ∈ Γ}  ⊢_Pure  Trueprop p
+//! ```
+//!
+//! Pure's hypothesis set carries the HOL hypotheses (lifted through
+//! Trueprop), and the Pure conclusion carries the HOL conclusion
+//! (also lifted). This is the standard "Tarski-T" encoding — same
+//! shape Isabelle/HOL uses.
+//!
+//! ## The 10 HOL Light rules
+//!
+//! Status w.r.t. this implementation:
+//!
+//! | HOL Light rule    | Status     | Mechanism                          |
+//! |-------------------|------------|------------------------------------|
+//! | REFL              | ✅ direct  | [`ObsTrue`] policy (no hyps)       |
+//! | TRANS             | ✅ direct  | [`ObsImp`] policy (2 hyps)         |
+//! | MK_COMB           | ✅ direct  | [`ObsImp`] policy (2 hyps)         |
+//! | BETA              | ✅ direct  | [`ObsTrue`] policy (no hyps)       |
+//! | ASSUME            | ✅ direct  | `Pure::Thm::assume` on `Trueprop p`|
+//! | EQ_MP             | ✅ direct  | [`ObsImp`] policy (2 hyps)         |
+//! | (HOL `sym`)       | ✅ direct  | [`ObsImp`] policy (1 hyp)          |
+//! | ABS               | ⚠ adapter | Needs Pure `cong_abs` (hyp-side-condition) |
+//! | INST              | ⚠ adapter | Needs uniform hyp+concl substitution |
+//! | INST_TYPE         | ⚠ adapter | Pure `inst_tfree` directly         |
+//! | DEDUCT_ANTISYM    | ⚠ adapter | Pure `imp_intro` on both sides     |
+//!
+//! "Direct" rules fit the lazy-theorem pattern: the implication
+//! `⊢ hyps ⟹ ... ⟹ concl` is sound under any meta-level instance
+//! because the rule has no hypothesis-side-condition and no need to
+//! transform source theorems' hypotheses.
+//!
+//! "Adapter" rules (ABS, INST, INST_TYPE, DEDUCT_ANTISYM) **cannot**
+//! safely fit the lazy-theorem pattern. They either:
+//!
+//! - require a side-condition on the source theorem's hypotheses
+//!   (ABS: binder var not free in hyps), or
+//! - need to transform the source theorem's hypotheses as well as
+//!   its conclusion (INST, INST_TYPE), or
+//! - need to manipulate hypothesis SETS (DEDUCT_ANTISYM).
+//!
+//! These constraints can't be encoded as a Pure lazy theorem. They
+//! belong in the (forthcoming) `PureHol` adapter that implements
+//! `HolLightKernel`, where each rule takes the actual source theorems
+//! and applies Pure's existing rules with the correct discipline.
+//!
+//! ## Why naive ABS via `obs_imp` is unsound
+//!
+//! A naive ABS implementation would mint the lazy theorem
+//!
+//! ```text
+//! ⊢_Pure Trueprop (Eq s t) ⟹ Trueprop (Eq (λx. close(s, x)) (λx. close(t, x)))
+//! ```
+//!
+//! This is FALSE in general. Take `s = x` (free), `t = c` (constant):
+//! the antecedent is `x = c`, the consequent is `(λx. x) = (λx. c)`,
+//! i.e., `id = const c`. A single `x = c` does not imply the function
+//! equation (which would require `c = c, c = c, …` for every input
+//! value). HOL Light prevents this by requiring `x` to not be free
+//! in the source theorem's hypotheses — but that check requires
+//! looking at the source theorem at rule-application time, which
+//! `obs_imp` policy can't do.
+//!
+//! ## Why naive INST via `obs_imp` is unsound
+//!
+//! A naive INST would mint
+//!
+//! ```text
+//! ⊢_Pure Trueprop p ⟹ Trueprop p[x := y]
+//! ```
+//!
+//! Take `p = "x = 5"`, `y = 10`: antecedent `x = 5` (true at x = 5),
+//! consequent `10 = 5` (false). HOL Light's INST avoids this by
+//! applying the substitution to *both* hypotheses and conclusion of
+//! the source theorem (so a hypothesis `x = 5` would become `10 = 5`,
+//! a contradictory hypothesis — the result has empty content). The
+//! lazy-theorem pattern only transforms the conclusion; it can't
+//! soundly do INST in the general case.
+//!
+//! The previous version of this module had unsound `check_abs_pattern`
+//! and `check_inst_pattern` in the [`ObsImp`] policy. They were
+//! removed in commit X (this audit). The adapter approach is the
+//! correct path forward for ABS, INST, INST_TYPE, DEDUCT_ANTISYM.
+//!
+//! ## Soundness summary
+//!
+//! [`Thm::obs_true`] and [`Thm::obs_imp`] are sound under Pure's
+//! parametric-ε model regardless of the policy's return value. So
+//! the kernel TCB is unaffected by anything the [`HolLight`] policy
+//! does — at worst a buggy policy refuses sound theorems or asserts
+//! propositions that are valid in the model (i.e., they have ⊤
+//! interpretation). It cannot produce a false `Thm`.
+//!
+//! What soundness does require: the **lazy theorem** itself must be
+//! a true implication chain under the standard model where HOL `=`
+//! is logical equality, `Trueprop p ↔ ⟦p⟧`, etc. That's the audit
+//! gate: every shape we add to the policy must be a valid HOL
+//! implication. Sym, trans, MK_COMB, EQ_MP at bool, refl, beta all
+//! pass that gate. ABS and INST do not, as analysed above.
 
 use std::any::Any;
 use std::fmt;
 use std::sync::LazyLock;
 
-use covalence_pure::{ObsEq, ObsImp, ObsTrue, Object, Observer, Term, TermKind, Type, subst};
+use covalence_pure::{ObsEq, ObsImp, ObsTrue, Object, Observer, Term, TermKind, Type};
 
 // ============================================================================
-// Typed hints for HOL Light rules that take parameters
-// ============================================================================
-
-/// Hint for HOL Light's INST rule: substitutes the named term
-/// variables in the source theorem. Each pair is `(var_name, replacement_term)`.
-#[derive(Debug)]
-pub struct InstHint {
-    pub subs: Vec<(String, Term)>,
-}
-
-/// Hint for HOL Light's INST_TYPE rule: substitutes the named type
-/// variables. Each pair is `(tvar_name, replacement_type)`.
-#[derive(Debug)]
-pub struct InstTypeHint {
-    pub subs: Vec<(String, Type)>,
-}
-
-// ============================================================================
-// Module-level lazy globals
+// Process-global lazy statics
 // ============================================================================
 //
-// One `Object` per HolLight variant, allocated lazily at first access and
-// reused process-wide. `HolLightCtx` is a zero-sized handle on these
-// globals — constructing one is free.
+// One `Object` per HolLight variant, allocated on first access and reused
+// for the whole process. [`HolLightCtx`] is a zero-sized handle over these
+// globals — constructing one is free, and every `HolLightCtx` produces the
+// same theory (the HOL Light theory).
 
 static BOOL_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Bool));
 static EQ_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Eq));
@@ -82,65 +205,59 @@ static TRUEPROP_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::T
 // The HolLight observer family
 // ============================================================================
 
-/// The HOL Light observer family. One Rust type per HOL primitive,
-/// distinguished by variant — all share the same ε-family so
-/// `obs_eq` can relate them.
-///
-/// **Identity discipline.** Two independently constructed
-/// `HolLight::Eq` values have *different* `Arc` identities (Pure
-/// compares observers by Arc pointer). The kernel's [`HolLightCtx`]
-/// owns one `Arc<HolLight>` per variant and hands clones out, so
-/// every use of HOL `=` (via `HolLightCtx::eq()`) shares the same
-/// identity.
+/// The HOL Light observer family. One Rust variant per HOL Light
+/// primitive — all sharing a single Rust type, hence a single ε-family
+/// in Pure's soundness model. See the module documentation for how
+/// this enables the bootstrap.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HolLight {
-    // -- Type constructors --
-    /// HOL's `bool` — the type of truth values. Distinct from Pure's
-    /// `prop` (which is the meta-kind).
+    // -- Type constructor --
+    /// HOL `bool` — type of truth values. Distinct from Pure `prop`.
     Bool,
 
     // -- Equality --
-    /// HOL's `=` at polymorphic type `'a → 'a → bool`. The instance
+    /// HOL `=` at polymorphic type `'a → 'a → bool`. The instance
     /// type is carried as the term's `Type` field.
     Eq,
 
     // -- Truth values --
-    /// HOL's `T : bool`.
+    /// HOL `T : bool`.
     True,
-    /// HOL's `F : bool`.
+    /// HOL `F : bool`.
     False,
 
-    // -- Connectives (all `bool → bool → bool` except `Not : bool → bool`) --
-    /// HOL's `==>` (implication).
+    // -- Connectives --
+    /// `⟹` (implication) at `bool → bool → bool`.
     Imp,
-    /// HOL's `~` (negation).
+    /// `¬` (negation) at `bool → bool`.
     Not,
-    /// HOL's `/\` (conjunction).
+    /// `∧` (conjunction) at `bool → bool → bool`.
     And,
-    /// HOL's `\/` (disjunction).
+    /// `∨` (disjunction) at `bool → bool → bool`.
     Or,
-    /// HOL's `<=>` (iff). At type `bool → bool → bool`, this is `Eq`
-    /// instantiated, but exposed as a separate name in HOL Light.
+    /// `⟺` (iff) at `bool → bool → bool`. Coincides with `Eq` at bool
+    /// in the standard model; exposed separately as a distinct
+    /// observer to match HOL Light's naming.
     Iff,
 
-    // -- Quantifiers (`('a → bool) → bool` for forall/exists,
-    //    `('a → bool) → 'a` for select) --
-    /// HOL's `!` (universal).
+    // -- Quantifiers --
+    /// `∀` at `('a → bool) → bool`.
     Forall,
-    /// HOL's `?` (existential).
+    /// `∃` at `('a → bool) → bool`.
     Exists,
-    /// HOL's `@` (Hilbert's ε / choice).
+    /// `ε` (Hilbert's choice) at `('a → bool) → 'a`.
     Select,
 
     /// `Trueprop : bool → prop` — explicit coercion from HOL bool to
-    /// Pure prop. A HOL theorem `⊢_HOL p` (p : bool) is internally
-    /// the Pure theorem `⊢_Pure Trueprop p`. Mirrors Isabelle/HOL's
-    /// `Trueprop`. This is what `Thm::obs_true::<HolLight>` produces.
+    /// Pure prop. A HOL theorem `⊢_HOL p` is the Pure theorem
+    /// `⊢_Pure Trueprop p`. Mirrors Isabelle/HOL's `Trueprop`.
     Trueprop,
 }
 
 impl HolLight {
-    /// Human-readable label for display purposes.
+    /// Human-readable label used in display output. Matches HOL Light's
+    /// printable surface forms (`=`, `==>`, `~`, `/\`, `\/`, `<=>`,
+    /// `!`, `?`, `@`, `T`, `F`, `bool`).
     pub fn label(&self) -> &'static str {
         match self {
             HolLight::Bool => "bool",
@@ -167,20 +284,24 @@ impl fmt::Display for HolLight {
 }
 
 // ============================================================================
-// ObsEq policy
+// ObsEq policy — meta-equations between HOL-typed terms
 // ============================================================================
 
-/// `obs_eq` policy for HolLight. **Soundness does not depend on this
-/// impl** — Pure's parametric-ε model makes any policy sound. The
-/// impl here returns `true` only for cases the kernel can derive
-/// directly:
+/// `obs_eq` policy for [`HolLight`].
 ///
-/// - `Eq a a ≡ True` (HOL refl at bool, structural a)
-/// - `Eq u v ≡ Eq v u` (HOL sym at bool)
+/// **Scope.** This policy produces *meta-equations* of the form
+/// `⊢_Pure (HOL-bool-term-1) ≡ (HOL-bool-term-2)`. These are Pure
+/// theorems with concl-type prop, useful when you want to rewrite
+/// HOL terms at the meta level (e.g., normalisation by congruence).
 ///
-/// Everything else returns `false` — including definitional facts
-/// like `T ≡ (λp:bool. p) = (λp:bool. p)`. Those need to come from
-/// `Thm::define` or user-asserted axioms.
+/// The patterns recognised here are conservative:
+///
+/// - `Eq a a ≡ True` (HOL refl, lifted to Pure meta-eq, structural `a`).
+/// - `Eq u v ≡ Eq v u` (HOL sym, lifted to Pure meta-eq).
+///
+/// Everything else returns `false`. Note that the more interesting
+/// HOL theorems live in [`Thm::obs_true`] and [`Thm::obs_imp`] under
+/// `Trueprop` — this policy is just for the meta-eq variant.
 impl ObsEq for HolLight {
     fn obs_eq(
         &self,
@@ -190,18 +311,14 @@ impl ObsEq for HolLight {
         _hint: Option<&dyn covalence_pure::Hint>,
     ) -> bool {
         match (self, other) {
-            // Eq a a ≡ True_bool  (HOL refl at bool, when arg structure matches)
-            (HolLight::Eq, HolLight::True)
-                if my_args.len() == 2 && other_args.is_empty() =>
-            {
+            // `Eq a a ≡ True`  (HOL refl lifted to meta-eq).
+            (HolLight::Eq, HolLight::True) if my_args.len() == 2 && other_args.is_empty() => {
                 my_args[0] == my_args[1]
             }
-            (HolLight::True, HolLight::Eq)
-                if my_args.is_empty() && other_args.len() == 2 =>
-            {
+            (HolLight::True, HolLight::Eq) if my_args.is_empty() && other_args.len() == 2 => {
                 other_args[0] == other_args[1]
             }
-            // Eq u v ≡ Eq v u  (HOL sym at bool)
+            // `Eq u v ≡ Eq v u`  (HOL sym lifted to meta-eq).
             (HolLight::Eq, HolLight::Eq) if my_args.len() == 2 && other_args.len() == 2 => {
                 my_args[0] == other_args[1] && my_args[1] == other_args[0]
             }
@@ -211,306 +328,113 @@ impl ObsEq for HolLight {
 }
 
 // ============================================================================
-// HolLightCtx — shared-identity context for HOL primitives
+// ObsTrue policy — HOL theorems with no hypotheses
 // ============================================================================
 
-/// Caches one [`Object`] per [`HolLight`] variant so that every use
-/// of e.g. HOL `=` through this context shares the same Arc identity.
+/// `obs_true` policy for [`HolLight`]. Mints `⊢_Pure Trueprop p` for
+/// the HOL theorems that need no source-theorem assumptions.
 ///
-/// Without this, two `mk_eq` calls would construct fresh `Object`
-/// values with distinct Arcs, and the resulting `Term`s would not
-/// compare equal even with the same arguments. `HolLightCtx::eq()`
-/// always returns a `Term::obs` over the cached observer.
-pub struct HolLightCtx {
-    bool_obs: Object,
-    eq_obs: Object,
-    true_obs: Object,
-    false_obs: Object,
-    imp_obs: Object,
-    not_obs: Object,
-    and_obs: Object,
-    or_obs: Object,
-    iff_obs: Object,
-    forall_obs: Object,
-    exists_obs: Object,
-    select_obs: Object,
-}
-
-impl HolLightCtx {
-    /// Allocate one fresh `Object` per variant. Each `HolLightCtx`
-    /// has *its own* set of HOL primitives — two contexts produce
-    /// distinct HOL theories (with their own equalities, booleans,
-    /// etc.). For a shared HOL theory across the whole process, use
-    /// a single context.
-    pub fn new() -> Self {
-        Self {
-            bool_obs: Object::new(HolLight::Bool),
-            eq_obs: Object::new(HolLight::Eq),
-            true_obs: Object::new(HolLight::True),
-            false_obs: Object::new(HolLight::False),
-            imp_obs: Object::new(HolLight::Imp),
-            not_obs: Object::new(HolLight::Not),
-            and_obs: Object::new(HolLight::And),
-            or_obs: Object::new(HolLight::Or),
-            iff_obs: Object::new(HolLight::Iff),
-            forall_obs: Object::new(HolLight::Forall),
-            exists_obs: Object::new(HolLight::Exists),
-            select_obs: Object::new(HolLight::Select),
-        }
-    }
-
-    // ---- HOL types ----
-
-    /// The HOL `bool` type — `TyConObs(bool_obs, "bool", [])`.
-    pub fn bool_type(&self) -> Type {
-        Type::tycon_obs_from_dyn(self.bool_obs.clone(), "bool", vec![])
-    }
-
-    /// The HOL function type `α → β` — same as Pure's, no HOL-specific
-    /// constructor needed.
-    pub fn fun_type(&self, a: Type, b: Type) -> Type {
-        Type::fun(a, b)
-    }
-
-    // ---- HOL constants (term-level Obs leaves at appropriate types) ----
-
-    fn obs_term(&self, observer: &Object, ty: Type) -> Term {
-        Term::obs_from_dyn(observer.clone(), ty)
-    }
-
-    /// HOL `=` instantiated at `α → α → bool`.
-    pub fn eq_at(&self, alpha: Type) -> Term {
-        let ty = Type::fun(
-            alpha.clone(),
-            Type::fun(alpha, self.bool_type()),
-        );
-        self.obs_term(&self.eq_obs, ty)
-    }
-
-    /// `t = u : bool`, given `t` and `u` of the same type α. Asserts
-    /// the equality at α via the cached `=` observer.
-    pub fn mk_eq(&self, lhs: Term, rhs: Term) -> Result<Term, covalence_pure::Error> {
-        let alpha = lhs.type_of()?;
-        let eq = self.eq_at(alpha);
-        Ok(Term::app(Term::app(eq, lhs), rhs))
-    }
-
-    /// HOL `T : bool`.
-    pub fn t(&self) -> Term {
-        self.obs_term(&self.true_obs, self.bool_type())
-    }
-
-    /// HOL `F : bool`.
-    pub fn f(&self) -> Term {
-        self.obs_term(&self.false_obs, self.bool_type())
-    }
-
-    /// HOL `==>` at `bool → bool → bool`.
-    pub fn imp_op(&self) -> Term {
-        let b = self.bool_type();
-        let ty = Type::fun(b.clone(), Type::fun(b.clone(), b));
-        self.obs_term(&self.imp_obs, ty)
-    }
-
-    /// HOL `p ==> q`.
-    pub fn mk_imp(&self, p: Term, q: Term) -> Term {
-        Term::app(Term::app(self.imp_op(), p), q)
-    }
-
-    /// HOL `~` at `bool → bool`.
-    pub fn not_op(&self) -> Term {
-        let b = self.bool_type();
-        let ty = Type::fun(b.clone(), b);
-        self.obs_term(&self.not_obs, ty)
-    }
-
-    /// HOL `~p`.
-    pub fn mk_not(&self, p: Term) -> Term {
-        Term::app(self.not_op(), p)
-    }
-
-    /// HOL `/\` at `bool → bool → bool`.
-    pub fn and_op(&self) -> Term {
-        let b = self.bool_type();
-        let ty = Type::fun(b.clone(), Type::fun(b.clone(), b));
-        self.obs_term(&self.and_obs, ty)
-    }
-
-    /// HOL `p /\ q`.
-    pub fn mk_and(&self, p: Term, q: Term) -> Term {
-        Term::app(Term::app(self.and_op(), p), q)
-    }
-
-    /// HOL `\/` at `bool → bool → bool`.
-    pub fn or_op(&self) -> Term {
-        let b = self.bool_type();
-        let ty = Type::fun(b.clone(), Type::fun(b.clone(), b));
-        self.obs_term(&self.or_obs, ty)
-    }
-
-    /// HOL `p \/ q`.
-    pub fn mk_or(&self, p: Term, q: Term) -> Term {
-        Term::app(Term::app(self.or_op(), p), q)
-    }
-
-    /// HOL `<=>` at `bool → bool → bool`.
-    pub fn iff_op(&self) -> Term {
-        let b = self.bool_type();
-        let ty = Type::fun(b.clone(), Type::fun(b.clone(), b));
-        self.obs_term(&self.iff_obs, ty)
-    }
-
-    /// HOL `p <=> q`.
-    pub fn mk_iff(&self, p: Term, q: Term) -> Term {
-        Term::app(Term::app(self.iff_op(), p), q)
-    }
-
-    /// HOL `∀` at `(α → bool) → bool`.
-    pub fn forall_at(&self, alpha: Type) -> Term {
-        let pred = Type::fun(alpha, self.bool_type());
-        let ty = Type::fun(pred, self.bool_type());
-        self.obs_term(&self.forall_obs, ty)
-    }
-
-    /// HOL `∀x:α. body` — encoded as `Forall (λx:α. body)`.
-    pub fn mk_forall(&self, hint: &str, alpha: Type, body: Term) -> Term {
-        let lambda = Term::abs(hint, alpha.clone(), body);
-        Term::app(self.forall_at(alpha), lambda)
-    }
-
-    /// HOL `∃` at `(α → bool) → bool`.
-    pub fn exists_at(&self, alpha: Type) -> Term {
-        let pred = Type::fun(alpha, self.bool_type());
-        let ty = Type::fun(pred, self.bool_type());
-        self.obs_term(&self.exists_obs, ty)
-    }
-
-    /// HOL `∃x:α. body` — encoded as `Exists (λx:α. body)`.
-    pub fn mk_exists(&self, hint: &str, alpha: Type, body: Term) -> Term {
-        let lambda = Term::abs(hint, alpha.clone(), body);
-        Term::app(self.exists_at(alpha), lambda)
-    }
-
-    /// HOL `ε` at `(α → bool) → α`.
-    pub fn select_at(&self, alpha: Type) -> Term {
-        let pred = Type::fun(alpha.clone(), self.bool_type());
-        let ty = Type::fun(pred, alpha);
-        self.obs_term(&self.select_obs, ty)
-    }
-
-    /// HOL `ε x:α. body` — `Select (λx:α. body)`.
-    pub fn mk_select(&self, hint: &str, alpha: Type, body: Term) -> Term {
-        let lambda = Term::abs(hint, alpha.clone(), body);
-        Term::app(self.select_at(alpha), lambda)
-    }
-
-    // ---- Trueprop coercion (process-global, via lazy static) ----
-
-    /// HOL `Trueprop` at type `bool → prop` — the explicit coercion
-    /// from HOL bool to Pure prop. A HOL theorem `⊢_HOL p` (p : bool)
-    /// is internally the Pure theorem `⊢_Pure Trueprop p` — and this
-    /// is exactly what [`Thm::obs_true::<HolLight>`] produces.
-    ///
-    /// The `Trueprop` observer is a process-global lazy static
-    /// (`TRUEPROP_OBS`); this method just returns a `Term::obs` over
-    /// it at the right Pure type.
-    pub fn trueprop(&self) -> Term {
-        Term::obs_from_dyn(
-            (*TRUEPROP_OBS).clone(),
-            Type::fun(self.bool_type(), Type::prop()),
-        )
-    }
-
-    /// `Trueprop p` — wrap a HOL bool term as a Pure prop. Returns an
-    /// error if `p` is not bool-typed.
-    pub fn mk_trueprop(&self, p: Term) -> Result<Term, covalence_pure::Error> {
-        let p_ty = p.type_of()?;
-        if p_ty != self.bool_type() {
-            return Err(covalence_pure::Error::TypeMismatch {
-                expected: self.bool_type(),
-                got: p_ty,
-            });
-        }
-        Ok(Term::app(self.trueprop(), p))
-    }
-
-    /// Pointer-id of the `Trueprop` observer (process-global).
-    pub fn trueprop_obs_ptr_id(&self) -> usize {
-        TRUEPROP_OBS.ptr_id()
-    }
-
-    // ---- Identity check helpers (Arc pointer comparison via ptr_id) ----
-
-    fn term_obs_ptr_id(t: &Term) -> Option<usize> {
-        match t.kind() {
-            TermKind::Obs(o, _) => Some(o.ptr_id()),
-            _ => None,
-        }
-    }
-
-    /// `true` iff `t` is the HOL `True` of *this* context (Arc identity).
-    pub fn is_true(&self, t: &Term) -> bool {
-        Self::term_obs_ptr_id(t) == Some(self.true_obs.ptr_id())
-    }
-
-    /// `true` iff `t` is the HOL `False` of *this* context.
-    pub fn is_false(&self, t: &Term) -> bool {
-        Self::term_obs_ptr_id(t) == Some(self.false_obs.ptr_id())
-    }
-
-    /// Pointer-id of the `Eq` observer — useful for downstream
-    /// inspection of `Eq` applications.
-    pub fn eq_obs_ptr_id(&self) -> usize {
-        self.eq_obs.ptr_id()
-    }
-}
-
-impl Default for HolLightCtx {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Marker trait certifying that an observer is in the [`HolLight`]
-/// family. Used as a generic bound so `Thm::obs_eq::<HolLight>` can
-/// be called explicitly when threading HOL-specific reasoning.
-pub trait IsHolLight: Observer {}
-impl IsHolLight for HolLight {}
-
-// ============================================================================
-// ObsTrue policy — direct HOL truth (zero hypotheses)
-// ============================================================================
-
-/// `ObsTrue` policy for HolLight: declares unconditionally-true
-/// HOL propositions. Two cases:
+/// **Recognised shapes:**
 ///
-/// - **HOL refl**: `Trueprop (Eq a a)` for any term a (structural).
-/// - **HOL beta**: `Trueprop (Eq ((λx. body) operand) (body[x:=operand]))`
-///   structural β-reduction.
+/// - **HOL refl**: `Trueprop (Eq a a)` for any term `a` (structural).
+/// - **HOL beta**: `Trueprop (Eq ((λx. body) operand) (open body operand))`
+///   where opening the lambda body with the operand gives the RHS.
+///
+/// Both are sound HOL theorems under the standard model with no
+/// hypothesis-side-conditions and no need to transform any source
+/// theorem's hypotheses.
 impl ObsTrue for HolLight {
     fn obs_true(&self, args: &[Term], _hint: Option<&dyn covalence_pure::Hint>) -> bool {
         if !matches!(self, HolLight::Trueprop) || args.len() != 1 {
             return false;
         }
-        let concl_body = &args[0];
-        if check_refl_pattern(concl_body) {
-            return true;
-        }
-        if check_beta_pattern(concl_body) {
-            return true;
-        }
-        false
+        let body = &args[0];
+        check_refl_pattern(body) || check_beta_pattern(body)
     }
 }
 
-/// HOL refl: `Trueprop (Eq a a)`.
+// ============================================================================
+// ObsImp policy — HOL Light lazy-theorem rules
+// ============================================================================
+
+/// `obs_imp` policy for [`HolLight`]. Mints lazy theorems
+///
+/// ```text
+/// ⊢_Pure hyps[0] ⟹ hyps[1] ⟹ … ⟹ hyps[n] ⟹ Trueprop p
+/// ```
+///
+/// Callers chain `imp_elim` with concrete source theorems to discharge
+/// the antecedents one by one.
+///
+/// **Recognised shapes** (in order of `hyps.len()`):
+///
+/// - 1 hyp:
+///   - **HOL sym**: hyp = `Trueprop (Eq a b)`, concl = `Eq b a`.
+///
+/// - 2 hyps:
+///   - **HOL trans**: hyps = `Trueprop (Eq a b)`, `Trueprop (Eq b c)`,
+///     concl = `Eq a c`.
+///   - **HOL MK_COMB**: hyps = `Trueprop (Eq f g)`, `Trueprop (Eq x y)`,
+///     concl = `Eq (App f x) (App g y)`.
+///   - **HOL EQ_MP** at bool: hyps = `Trueprop (Eq p q)`, `Trueprop p`,
+///     concl = `q`. (Bool-level only — for general-type EQ, use sym +
+///     trans + congruence chains.)
+///
+/// **Not recognised** (architectural — would be unsound here):
+///
+/// - HOL ABS — see module documentation. Lazy-theorem encoding fails
+///   the soundness check when the binder variable appears free in the
+///   source theorem's hypotheses.
+/// - HOL INST — same issue: substitution must apply uniformly to
+///   hyps and concl, but `obs_imp` only transforms the concl.
+/// - HOL INST_TYPE, DEDUCT_ANTISYM — handled at the kernel-adapter
+///   level.
+impl ObsImp for HolLight {
+    fn obs_imp(
+        &self,
+        args: &[Term],
+        hyps: &[Term],
+        _hint: Option<&dyn covalence_pure::Hint>,
+    ) -> bool {
+        if !matches!(self, HolLight::Trueprop) || args.len() != 1 {
+            return false;
+        }
+        let concl_body = &args[0];
+        match hyps.len() {
+            1 => check_sym_pattern(&hyps[0], concl_body),
+            2 => {
+                check_trans_pattern(&hyps[0], &hyps[1], concl_body)
+                    || check_mk_comb_pattern(&hyps[0], &hyps[1], concl_body)
+                    || check_eq_mp_pattern(&hyps[0], &hyps[1], concl_body)
+            }
+            _ => false,
+        }
+    }
+}
+
+// ============================================================================
+// Pattern checks for HOL Light rules
+// ============================================================================
+//
+// Each `check_*_pattern` helper recognises one HOL Light derivation shape.
+// They're all structural / decidable: given the inputs, the helper either
+// returns true (rule applies) or false (rule doesn't). None of them
+// allocate or mutate; they're pure functions of the input terms.
+
+/// **HOL refl** at the Trueprop level: `Trueprop (Eq a a)` for any term `a`.
+///
+/// Match: `Eq` observer at the head, two structurally-equal args.
 fn check_refl_pattern(concl_body: &Term) -> bool {
     decompose_hol_eq(concl_body)
         .map(|(a, b)| a == b)
         .unwrap_or(false)
 }
 
-/// HOL beta: `Eq ((λx. body) operand) (open body operand)`.
+/// **HOL beta** at the Trueprop level:
+/// `Trueprop (Eq ((λ. body) operand) (open body operand))`.
+///
+/// Match: outer `Eq` over a β-redex on the LHS and the β-reduced
+/// term on the RHS. Uses Pure's `subst::open` to compute the reduction.
 fn check_beta_pattern(concl_body: &Term) -> bool {
     let Some((lhs, rhs)) = decompose_hol_eq(concl_body) else {
         return false;
@@ -524,147 +448,27 @@ fn check_beta_pattern(concl_body: &Term) -> bool {
     covalence_pure::subst::open(body, operand) == rhs
 }
 
-// ============================================================================
-// ObsImp policy — lazy HOL Light derivation rules
-// ============================================================================
-
-/// `ObsImp` policy for HolLight. Mints lazy theorems of the form
-/// `⊢ hyp[0] ⟹ … ⟹ hyp[n] ⟹ Trueprop (concl)`.
+/// **HOL sym**: lazy theorem
+/// `⊢ Trueprop (Eq a b) ⟹ Trueprop (Eq b a)`.
 ///
-/// The shapes recognised are the standard HOL Light rules. Each is
-/// a structural pattern over `(concl_args, hyps)`; the policy
-/// returns true iff the pattern matches:
-///
-/// **HOL sym** (1 hyp): hyp=`Trueprop (Eq a b)`, concl=`Trueprop (Eq b a)`.
-/// **HOL trans** (2 hyps): hyps=`Trueprop (Eq a b)`, `Trueprop (Eq b c)`,
-///   concl=`Trueprop (Eq a c)`.
-/// **HOL MK_COMB** (2 hyps): hyps=`Trueprop (Eq f g)`, `Trueprop (Eq x y)`,
-///   concl=`Trueprop (Eq (App f x) (App g y))`.
-/// **HOL EQ_MP** at bool (2 hyps): hyps=`Trueprop (Eq p q)`, `Trueprop p`,
-///   concl=`Trueprop q`.
-///
-/// More rules (ABS, BETA, INST, INST_TYPE, DEDUCT_ANTISYM) can be
-/// added as additional pattern arms — each is local and only adds
-/// LoC, never risks unsoundness.
-impl ObsImp for HolLight {
-    fn obs_imp(
-        &self,
-        args: &[Term],
-        hyps: &[Term],
-        hint: Option<&dyn covalence_pure::Hint>,
-    ) -> bool {
-        // The only HolLight variant we mint lazy theorems for is
-        // `Trueprop p` — i.e., a prop-typed obs application.
-        if !matches!(self, HolLight::Trueprop) || args.len() != 1 {
-            return false;
-        }
-        let concl_body = &args[0];
-
-        match hyps.len() {
-            1 => {
-                check_sym_pattern(&hyps[0], concl_body)
-                    || check_abs_pattern(&hyps[0], concl_body)
-                    || check_inst_pattern(&hyps[0], concl_body, hint)
-                    || check_inst_type_pattern(&hyps[0], concl_body, hint)
-            }
-            2 => {
-                check_trans_pattern(&hyps[0], &hyps[1], concl_body)
-                    || check_mk_comb_pattern(&hyps[0], &hyps[1], concl_body)
-                    || check_eq_mp_pattern(&hyps[0], &hyps[1], concl_body)
-            }
-            _ => false,
-        }
-    }
-}
-
-/// HOL INST: hyp = `Trueprop p`, concl = `Trueprop p[subs]` for
-/// hint-supplied term-variable substitutions.
-fn check_inst_pattern(
-    hyp: &Term,
-    concl_body: &Term,
-    hint: Option<&dyn covalence_pure::Hint>,
-) -> bool {
-    let Some(h) = hint else {
-        return false;
-    };
-    let Some(inst_hint) = h.as_any().downcast_ref::<InstHint>() else {
-        return false;
-    };
-    let Some(h_body) = unwrap_trueprop(hyp) else {
-        return false;
-    };
-    // Apply each substitution in order.
-    let mut current = h_body;
-    for (var_name, replacement) in &inst_hint.subs {
-        current = subst::subst_free(&current, var_name, replacement);
-    }
-    &current == concl_body
-}
-
-/// HOL INST_TYPE: hyp = `Trueprop p`, concl = `Trueprop p[T-subs]`
-/// for hint-supplied type-variable substitutions.
-fn check_inst_type_pattern(
-    hyp: &Term,
-    concl_body: &Term,
-    hint: Option<&dyn covalence_pure::Hint>,
-) -> bool {
-    let Some(h) = hint else {
-        return false;
-    };
-    let Some(inst_hint) = h.as_any().downcast_ref::<InstTypeHint>() else {
-        return false;
-    };
-    let Some(h_body) = unwrap_trueprop(hyp) else {
-        return false;
-    };
-    let mut current = h_body;
-    for (tvar_name, replacement_ty) in &inst_hint.subs {
-        current = subst::subst_tfree_in_term(&current, tvar_name, replacement_ty);
-    }
-    &current == concl_body
-}
-
-/// HOL ABS: hyp = `Trueprop (Eq s t)`, concl = `Eq (λx. s') (λx. t')`
-/// where `open s' (Free x) = s` and `open t' (Free x) = t`. We use
-/// the lambda's hint as the free-var name (Hint is α-transparent in
-/// Pure, so the choice of binder name doesn't affect equality).
-fn check_abs_pattern(hyp: &Term, concl_body: &Term) -> bool {
-    let Some(h_body) = unwrap_trueprop(hyp) else {
-        return false;
-    };
-    let (Some((s, t)), Some((lhs, rhs))) =
-        (decompose_hol_eq(&h_body), decompose_hol_eq(concl_body))
-    else {
-        return false;
-    };
-    let (TermKind::Abs(h1, ty1, b1), TermKind::Abs(_h2, ty2, b2)) = (lhs.kind(), rhs.kind())
-    else {
-        return false;
-    };
-    if ty1 != ty2 {
-        return false;
-    }
-    let var = Term::free(h1.as_str(), ty1.clone());
-    covalence_pure::subst::open(b1, &var) == s
-        && covalence_pure::subst::open(b2, &var) == t
-}
-
-/// HOL sym: hyp = `Trueprop (Eq a b)`, concl = `Eq b a`.
+/// Match: hyp is `Trueprop (Eq a b)`, concl is `Eq b a` (swap of args).
 fn check_sym_pattern(hyp: &Term, concl_body: &Term) -> bool {
     let Some(hyp_body) = unwrap_trueprop(hyp) else {
         return false;
     };
-    let (Some((a, b)), Some((b2, a2))) = (
-        decompose_hol_eq(&hyp_body),
-        decompose_hol_eq(concl_body),
-    ) else {
+    let (Some((a, b)), Some((b2, a2))) =
+        (decompose_hol_eq(&hyp_body), decompose_hol_eq(concl_body))
+    else {
         return false;
     };
     a == a2 && b == b2
 }
 
-/// HOL trans: hyp1 = `Trueprop (Eq a b)`, hyp2 = `Trueprop (Eq b c)`,
-/// concl = `Eq a c`.
+/// **HOL trans**: lazy theorem
+/// `⊢ Trueprop (Eq a b) ⟹ Trueprop (Eq b c) ⟹ Trueprop (Eq a c)`.
+///
+/// Match: matching middle term across the two hyps; concl shows
+/// the outer-pair equation.
 fn check_trans_pattern(hyp1: &Term, hyp2: &Term, concl_body: &Term) -> bool {
     let (Some(h1), Some(h2)) = (unwrap_trueprop(hyp1), unwrap_trueprop(hyp2)) else {
         return false;
@@ -679,8 +483,11 @@ fn check_trans_pattern(hyp1: &Term, hyp2: &Term, concl_body: &Term) -> bool {
     b1 == b2 && a == wa && c == wc
 }
 
-/// HOL MK_COMB: hyp1 = `Trueprop (Eq f g)`, hyp2 = `Trueprop (Eq x y)`,
-/// concl = `Eq (App f x) (App g y)`.
+/// **HOL MK_COMB**: lazy theorem
+/// `⊢ Trueprop (Eq f g) ⟹ Trueprop (Eq x y) ⟹ Trueprop (Eq (f x) (g y))`.
+///
+/// Match: hyps give two equations f=g and x=y; concl applies both
+/// sides to give (f x) = (g y).
 fn check_mk_comb_pattern(hyp1: &Term, hyp2: &Term, concl_body: &Term) -> bool {
     let (Some(h1), Some(h2)) = (unwrap_trueprop(hyp1), unwrap_trueprop(hyp2)) else {
         return false;
@@ -692,15 +499,19 @@ fn check_mk_comb_pattern(hyp1: &Term, hyp2: &Term, concl_body: &Term) -> bool {
     ) else {
         return false;
     };
-    // lhs == App(f, x), rhs == App(g, y)
     let (TermKind::App(lf, lx), TermKind::App(rf, rx)) = (lhs.kind(), rhs.kind()) else {
         return false;
     };
     *lf == f && *lx == x && *rf == g && *rx == y
 }
 
-/// HOL EQ_MP at bool: hyp1 = `Trueprop (Eq p q)`, hyp2 = `Trueprop p`,
-/// concl = `q`.
+/// **HOL EQ_MP** at bool: lazy theorem
+/// `⊢ Trueprop (Eq p q) ⟹ Trueprop p ⟹ Trueprop q`.
+///
+/// Match: first hyp is `Eq p q`, second is `p`, concl is `q`.
+/// Specifically the bool-level EQ_MP (where `Eq` at bool×bool is
+/// iff). For general-type EQ_MP, use the same shape with the
+/// corresponding HOL `=` instances.
 fn check_eq_mp_pattern(hyp1: &Term, hyp2: &Term, concl_body: &Term) -> bool {
     let (Some(h1), Some(h2_body)) = (unwrap_trueprop(hyp1), unwrap_trueprop(hyp2)) else {
         return false;
@@ -711,8 +522,15 @@ fn check_eq_mp_pattern(hyp1: &Term, hyp2: &Term, concl_body: &Term) -> bool {
     p == h2_body && q == *concl_body
 }
 
+// ============================================================================
+// Decompose helpers (structural inspection of HOL primitives)
+// ============================================================================
+
 /// If `t` is `App(App(HolEq, a), b)` with the `HolLight::Eq` observer
-/// at the head, return `Some((a, b))`.
+/// at the head, return `(a, b)`. Otherwise `None`.
+///
+/// Used by every HOL rule pattern check. Verifies that the head obs
+/// is specifically `HolLight::Eq` (not some other family or variant).
 fn decompose_hol_eq(t: &Term) -> Option<(Term, Term)> {
     let TermKind::App(outer_fn, outer_arg) = t.kind() else {
         return None;
@@ -729,7 +547,10 @@ fn decompose_hol_eq(t: &Term) -> Option<(Term, Term)> {
 }
 
 /// If `t` is `App(Trueprop, body)` with the `HolLight::Trueprop`
-/// observer at the head, return `Some(body)`.
+/// observer at the head, return `body`. Otherwise `None`.
+///
+/// Used to recover the inner HOL bool term from a Pure prop-typed
+/// hypothesis.
 fn unwrap_trueprop(t: &Term) -> Option<Term> {
     let TermKind::App(f, body) = t.kind() else {
         return None;
@@ -741,3 +562,221 @@ fn unwrap_trueprop(t: &Term) -> Option<Term> {
         .filter(|o| matches!(o, HolLight::Trueprop))?;
     Some(body.clone())
 }
+
+// ============================================================================
+// HolLightCtx — zero-sized handle on the process-global HOL primitives
+// ============================================================================
+
+/// Zero-sized handle on the process-global HOL Light primitives.
+/// Constructing one is free — there are no fields. Methods delegate
+/// to the module-level `LazyLock` statics. Two `HolLightCtx` values
+/// are interchangeable.
+#[derive(Clone, Copy, Default)]
+pub struct HolLightCtx;
+
+impl HolLightCtx {
+    /// Construct a handle. Free; no allocation.
+    pub fn new() -> Self {
+        Self
+    }
+
+    // ---- HOL types ----
+
+    /// HOL `bool` — `TyConObs(bool_obs, "bool", [])` over the global
+    /// `BOOL_OBS`. Distinct from Pure `prop`.
+    pub fn bool_type(&self) -> Type {
+        Type::tycon_obs_from_dyn((*BOOL_OBS).clone(), "bool", vec![])
+    }
+
+    /// Pure function type α → β. HOL doesn't add a new function-type
+    /// constructor; we re-use Pure's `Fun`.
+    pub fn fun_type(&self, a: Type, b: Type) -> Type {
+        Type::fun(a, b)
+    }
+
+    // ---- HOL constants (term-level Obs leaves at appropriate types) ----
+
+    /// Construct a `Term::obs` at the given type over the given
+    /// global observer. Used by every constant accessor below.
+    fn obs_term(observer: &Object, ty: Type) -> Term {
+        Term::obs_from_dyn(observer.clone(), ty)
+    }
+
+    /// HOL `=` instantiated at `α → α → bool`.
+    pub fn eq_at(&self, alpha: Type) -> Term {
+        let ty = Type::fun(alpha.clone(), Type::fun(alpha, self.bool_type()));
+        Self::obs_term(&EQ_OBS, ty)
+    }
+
+    /// `t = u : bool`, given `t` and `u` of the same type α. Errors
+    /// if `t` is ill-typed (its `type_of` fails).
+    pub fn mk_eq(&self, lhs: Term, rhs: Term) -> Result<Term, covalence_pure::Error> {
+        let alpha = lhs.type_of()?;
+        let eq = self.eq_at(alpha);
+        Ok(Term::app(Term::app(eq, lhs), rhs))
+    }
+
+    /// HOL `T : bool`.
+    pub fn t(&self) -> Term {
+        Self::obs_term(&TRUE_OBS, self.bool_type())
+    }
+
+    /// HOL `F : bool`.
+    pub fn f(&self) -> Term {
+        Self::obs_term(&FALSE_OBS, self.bool_type())
+    }
+
+    /// HOL `==>` at `bool → bool → bool`.
+    pub fn imp_op(&self) -> Term {
+        let b = self.bool_type();
+        Self::obs_term(&IMP_OBS, Type::fun(b.clone(), Type::fun(b.clone(), b)))
+    }
+    /// HOL `p ==> q`.
+    pub fn mk_imp(&self, p: Term, q: Term) -> Term {
+        Term::app(Term::app(self.imp_op(), p), q)
+    }
+
+    /// HOL `~` at `bool → bool`.
+    pub fn not_op(&self) -> Term {
+        let b = self.bool_type();
+        Self::obs_term(&NOT_OBS, Type::fun(b.clone(), b))
+    }
+    /// HOL `~ p`.
+    pub fn mk_not(&self, p: Term) -> Term {
+        Term::app(self.not_op(), p)
+    }
+
+    /// HOL `/\` at `bool → bool → bool`.
+    pub fn and_op(&self) -> Term {
+        let b = self.bool_type();
+        Self::obs_term(&AND_OBS, Type::fun(b.clone(), Type::fun(b.clone(), b)))
+    }
+    /// HOL `p /\ q`.
+    pub fn mk_and(&self, p: Term, q: Term) -> Term {
+        Term::app(Term::app(self.and_op(), p), q)
+    }
+
+    /// HOL `\/` at `bool → bool → bool`.
+    pub fn or_op(&self) -> Term {
+        let b = self.bool_type();
+        Self::obs_term(&OR_OBS, Type::fun(b.clone(), Type::fun(b.clone(), b)))
+    }
+    /// HOL `p \/ q`.
+    pub fn mk_or(&self, p: Term, q: Term) -> Term {
+        Term::app(Term::app(self.or_op(), p), q)
+    }
+
+    /// HOL `<=>` at `bool → bool → bool`.
+    pub fn iff_op(&self) -> Term {
+        let b = self.bool_type();
+        Self::obs_term(&IFF_OBS, Type::fun(b.clone(), Type::fun(b.clone(), b)))
+    }
+    /// HOL `p <=> q`.
+    pub fn mk_iff(&self, p: Term, q: Term) -> Term {
+        Term::app(Term::app(self.iff_op(), p), q)
+    }
+
+    /// HOL `∀` at `(α → bool) → bool`.
+    pub fn forall_at(&self, alpha: Type) -> Term {
+        let pred = Type::fun(alpha, self.bool_type());
+        Self::obs_term(&FORALL_OBS, Type::fun(pred, self.bool_type()))
+    }
+    /// HOL `∀x:α. body` — `Forall (λx:α. body)`.
+    pub fn mk_forall(&self, hint: &str, alpha: Type, body: Term) -> Term {
+        let lambda = Term::abs(hint, alpha.clone(), body);
+        Term::app(self.forall_at(alpha), lambda)
+    }
+
+    /// HOL `∃` at `(α → bool) → bool`.
+    pub fn exists_at(&self, alpha: Type) -> Term {
+        let pred = Type::fun(alpha, self.bool_type());
+        Self::obs_term(&EXISTS_OBS, Type::fun(pred, self.bool_type()))
+    }
+    /// HOL `∃x:α. body` — `Exists (λx:α. body)`.
+    pub fn mk_exists(&self, hint: &str, alpha: Type, body: Term) -> Term {
+        let lambda = Term::abs(hint, alpha.clone(), body);
+        Term::app(self.exists_at(alpha), lambda)
+    }
+
+    /// HOL `ε` (Hilbert's choice) at `(α → bool) → α`.
+    pub fn select_at(&self, alpha: Type) -> Term {
+        let pred = Type::fun(alpha.clone(), self.bool_type());
+        Self::obs_term(&SELECT_OBS, Type::fun(pred, alpha))
+    }
+    /// HOL `ε x:α. body` — `Select (λx:α. body)`.
+    pub fn mk_select(&self, hint: &str, alpha: Type, body: Term) -> Term {
+        let lambda = Term::abs(hint, alpha.clone(), body);
+        Term::app(self.select_at(alpha), lambda)
+    }
+
+    // ---- Trueprop coercion ----
+
+    /// HOL `Trueprop` at type `bool → prop` — the explicit coercion
+    /// from HOL bool to Pure prop. A HOL theorem `⊢_HOL p` becomes
+    /// the Pure theorem `⊢_Pure Trueprop p`.
+    pub fn trueprop(&self) -> Term {
+        Self::obs_term(&TRUEPROP_OBS, Type::fun(self.bool_type(), Type::prop()))
+    }
+
+    /// `Trueprop p` — wrap a HOL bool term as a Pure prop. Errors if
+    /// `p` is not bool-typed.
+    pub fn mk_trueprop(&self, p: Term) -> Result<Term, covalence_pure::Error> {
+        let p_ty = p.type_of()?;
+        if p_ty != self.bool_type() {
+            return Err(covalence_pure::Error::TypeMismatch {
+                expected: self.bool_type(),
+                got: p_ty,
+            });
+        }
+        Ok(Term::app(self.trueprop(), p))
+    }
+
+    // ---- Identity check helpers ----
+
+    fn term_obs_ptr_id(t: &Term) -> Option<usize> {
+        match t.kind() {
+            TermKind::Obs(o, _) => Some(o.ptr_id()),
+            _ => None,
+        }
+    }
+
+    /// `true` iff `t` is the HOL `True` observer (Arc identity).
+    pub fn is_true(&self, t: &Term) -> bool {
+        Self::term_obs_ptr_id(t) == Some(TRUE_OBS.ptr_id())
+    }
+
+    /// `true` iff `t` is the HOL `False` observer.
+    pub fn is_false(&self, t: &Term) -> bool {
+        Self::term_obs_ptr_id(t) == Some(FALSE_OBS.ptr_id())
+    }
+
+    /// `true` iff `t` is the HOL `Trueprop` observer.
+    pub fn is_trueprop(&self, t: &Term) -> bool {
+        Self::term_obs_ptr_id(t) == Some(TRUEPROP_OBS.ptr_id())
+    }
+
+    /// Pointer-id of the `Eq` observer — useful for inspection or
+    /// cross-process equality checks.
+    pub fn eq_obs_ptr_id(&self) -> usize {
+        EQ_OBS.ptr_id()
+    }
+
+    /// Pointer-id of the `Trueprop` observer.
+    pub fn trueprop_obs_ptr_id(&self) -> usize {
+        TRUEPROP_OBS.ptr_id()
+    }
+}
+
+/// Marker trait certifying that an observer is in the [`HolLight`]
+/// family. Useful as a generic bound when threading HOL-specific
+/// reasoning through code that's parametric over observer types.
+pub trait IsHolLight: Observer {}
+impl IsHolLight for HolLight {}
+
+// Allow `_hint: Option<&dyn Any>` to be passed through — Pure's Hint
+// trait extends Any, so a generic `&dyn Any` could be wrapped, but
+// for now the policies just ignore the hint. The hint trait is
+// reserved for future adapter-layer rules that need source-theorem
+// witnesses (e.g., observer-backed solvers).
+#[allow(unused_imports)]
+use Any as _;

@@ -27,10 +27,16 @@ fn ctx_bool_is_distinct_from_pure_prop_and_pure_bool() {
 }
 
 #[test]
-fn two_independent_contexts_give_distinct_hol_bools() {
+fn all_contexts_share_one_hol_theory() {
+    // HolLightCtx is a zero-sized handle on process-global lazy statics.
+    // Two contexts produce the SAME HOL theory — same HOL bool, same Eq,
+    // same Trueprop. This is intentional: HOL Light is one theory per
+    // process.
     let a = HolLightCtx::new();
     let b = HolLightCtx::new();
-    assert_ne!(a.bool_type(), b.bool_type(), "fresh ctxs have fresh HOL theories");
+    assert_eq!(a.bool_type(), b.bool_type());
+    assert_eq!(a.t(), b.t());
+    assert_eq!(a.trueprop(), b.trueprop());
 }
 
 #[test]
@@ -161,11 +167,13 @@ fn ctx_is_true_and_is_false() {
 }
 
 #[test]
-fn is_true_distinguishes_across_contexts() {
+fn is_true_recognises_shared_global_t() {
+    // With process-global lazy statics, every context shares the same
+    // `T` observer Arc, so any context can identify any other's `T`.
     let ctx1 = HolLightCtx::new();
     let ctx2 = HolLightCtx::new();
-    // ctx1's T is not ctx2's T.
-    assert!(!ctx2.is_true(&ctx1.t()));
+    assert!(ctx2.is_true(&ctx1.t()));
+    assert!(ctx1.is_true(&ctx2.t()));
 }
 
 // ============================================================================
@@ -379,109 +387,187 @@ fn hol_beta_rejects_non_beta_redex() {
     assert!(result.is_err(), "non-β-redex must be refused (also not refl)");
 }
 
+// NOTE: ABS, INST, INST_TYPE, DEDUCT_ANTISYM cannot soundly fit the
+// `obs_imp` lazy-theorem pattern — see module docs for the analysis.
+// They live in the (forthcoming) PureHol kernel adapter where each
+// rule takes the actual source theorems and applies Pure's existing
+// primitives (`cong_abs`, `inst_tfree`, `imp_intro`, etc.) with the
+// correct discipline (hyp-side-conditions, uniform substitution).
+//
+// What we used to have for ABS/INST in this file was UNSOUND — see
+// the audit commit for details. The check_*_pattern helpers for
+// those rules were removed.
+
+// ============================================================================
+// Edge-case tests for the SOUND rules
+// ============================================================================
+
 #[test]
-fn hol_abs_as_lazy_theorem_via_obs_imp() {
-    // HOL ABS: ⊢ Trueprop (Eq s t) ⟹ Trueprop (Eq (λx. s) (λx. t)).
+fn hol_refl_at_higher_order_term() {
+    // ⊢ Trueprop (Eq (λx:bool. x) (λx:bool. x)).
     let ctx = HolLightCtx::new();
-    let x = Term::free("x", ctx.bool_type());
-    let f = Term::free("f", Type::fun(ctx.bool_type(), ctx.bool_type()));
+    let id_lambda = Term::abs("x", ctx.bool_type(), Term::bound(0));
+    let eq = ctx.mk_eq(id_lambda.clone(), id_lambda).unwrap();
+    let tp = ctx.mk_trueprop(eq).unwrap();
+    let thm = covalence_pure::Thm::obs_true::<HolLight>(tp.clone(), None).unwrap();
+    assert_eq!(thm.concl(), &tp);
+}
+
+#[test]
+fn hol_refl_at_nested_app() {
+    // ⊢ Trueprop (Eq (f (g x)) (f (g x))) — nested application.
+    let ctx = HolLightCtx::new();
     let g = Term::free("g", Type::fun(ctx.bool_type(), ctx.bool_type()));
-    let s = Term::app(f, x.clone());
-    let t = Term::app(g, x.clone());
-
-    let hyp = ctx.mk_trueprop(ctx.mk_eq(s.clone(), t.clone()).unwrap()).unwrap();
-
-    // λx:bool. f x  and  λx:bool. g x
-    let f2 = Term::free("f", Type::fun(ctx.bool_type(), ctx.bool_type()));
-    let g2 = Term::free("g", Type::fun(ctx.bool_type(), ctx.bool_type()));
-    let s_body = Term::app(f2, Term::bound(0));
-    let t_body = Term::app(g2, Term::bound(0));
-    let lam_s = Term::abs("x", ctx.bool_type(), s_body);
-    let lam_t = Term::abs("x", ctx.bool_type(), t_body);
-    let concl = ctx.mk_trueprop(ctx.mk_eq(lam_s, lam_t).unwrap()).unwrap();
-
-    let lazy =
-        covalence_pure::Thm::obs_imp::<HolLight>(concl.clone(), vec![hyp.clone()], None).unwrap();
-    let expected = covalence_pure::Term::imp(hyp, concl);
-    assert_eq!(lazy.concl(), &expected);
-}
-
-#[test]
-fn hol_abs_rejects_when_hyp_doesnt_match_lambda_bodies() {
-    // hyp: Trueprop (Eq a a)  (mismatched with concl's bodies).
-    // concl: Trueprop (Eq (λx:bool. f x) (λx:bool. g x)).
-    // policy should refuse because opening (f x) ≠ a structurally.
-    let ctx = HolLightCtx::new();
-    let a = Term::free("a", ctx.bool_type());
-    let hyp = ctx.mk_trueprop(ctx.mk_eq(a.clone(), a).unwrap()).unwrap();
-
-    let f = Term::free("f", Type::fun(ctx.bool_type(), ctx.bool_type()));
-    let g = Term::free("g", Type::fun(ctx.bool_type(), ctx.bool_type()));
-    let s_body = Term::app(f, Term::bound(0));
-    let t_body = Term::app(g, Term::bound(0));
-    let lam_s = Term::abs("x", ctx.bool_type(), s_body);
-    let lam_t = Term::abs("x", ctx.bool_type(), t_body);
-    let concl = ctx.mk_trueprop(ctx.mk_eq(lam_s, lam_t).unwrap()).unwrap();
-
-    let result = covalence_pure::Thm::obs_imp::<HolLight>(concl, vec![hyp], None);
-    assert!(result.is_err(), "ABS with mismatched bodies should be refused");
-}
-
-#[test]
-fn hol_inst_via_obs_imp_with_inst_hint() {
-    // HOL INST: ⊢ Trueprop (f x) ⟹ Trueprop (f y) given x:=y.
-    let ctx = HolLightCtx::new();
     let f = Term::free("f", Type::fun(ctx.bool_type(), ctx.bool_type()));
     let x = Term::free("x", ctx.bool_type());
-    let y = Term::free("y", ctx.bool_type());
-
-    let p = Term::app(f.clone(), x);
-    let p_inst = Term::app(f, y.clone());
-    let hyp = ctx.mk_trueprop(p).unwrap();
-    let concl = ctx.mk_trueprop(p_inst).unwrap();
-
-    let hint: std::sync::Arc<dyn covalence_pure::Hint> =
-        std::sync::Arc::new(covalence_hol::InstHint {
-            subs: vec![("x".to_string(), y)],
-        });
-    let lazy = covalence_pure::Thm::obs_imp::<HolLight>(
-        concl.clone(),
-        vec![hyp.clone()],
-        Some(hint),
-    )
-    .unwrap();
-    let expected = covalence_pure::Term::imp(hyp, concl);
-    assert_eq!(lazy.concl(), &expected);
+    let inner = Term::app(g, x);
+    let outer = Term::app(f, inner);
+    let eq = ctx.mk_eq(outer.clone(), outer).unwrap();
+    let tp = ctx.mk_trueprop(eq).unwrap();
+    let thm = covalence_pure::Thm::obs_true::<HolLight>(tp.clone(), None).unwrap();
+    assert_eq!(thm.concl(), &tp);
 }
 
-// NOTE: HOL INST_TYPE doesn't fit the lazy-theorem encoding when the
-// substituted term has free vars — Pure's Thm::build enforces
-// cross-term free-var-type consistency, which fails for `⊢ hyp ⟹ concl`
-// when hyp uses `x : 'a` and concl uses `x : bool`. INST_TYPE is
-// instead best exposed via Pure's existing `Thm::inst_tfree` at the
-// PureHol kernel-adapter level (planned follow-up). The InstTypeHint
-// policy hook is still there for cases where free-var-types don't
-// collide (e.g., blob-only or de-Bruijn-only terms).
-
 #[test]
-fn hol_inst_rejects_when_substitution_doesnt_match_concl() {
+fn hol_beta_with_bound_var_unused() {
+    // (λx:bool. y) z reduces to y (x doesn't appear in body).
     let ctx = HolLightCtx::new();
-    let f = Term::free("f", Type::fun(ctx.bool_type(), ctx.bool_type()));
-    let x = Term::free("x", ctx.bool_type());
     let y = Term::free("y", ctx.bool_type());
     let z = Term::free("z", ctx.bool_type());
+    let lam = Term::abs("x", ctx.bool_type(), y.clone()); // body doesn't use x
+    let app = Term::app(lam, z);
+    let eq = ctx.mk_eq(app, y).unwrap();
+    let tp = ctx.mk_trueprop(eq).unwrap();
+    let thm = covalence_pure::Thm::obs_true::<HolLight>(tp.clone(), None).unwrap();
+    assert_eq!(thm.concl(), &tp);
+}
 
-    let p = Term::app(f.clone(), x);
-    let bad_concl_body = Term::app(f, z); // p[x:=z], not p[x:=y]
-    let hyp = ctx.mk_trueprop(p).unwrap();
-    let bad_concl = ctx.mk_trueprop(bad_concl_body).unwrap();
-
-    // hint says x := y, but concl uses z.
-    let hint: std::sync::Arc<dyn covalence_pure::Hint> =
-        std::sync::Arc::new(covalence_hol::InstHint {
-            subs: vec![("x".to_string(), y)],
-        });
-    let result =
-        covalence_pure::Thm::obs_imp::<HolLight>(bad_concl, vec![hyp], Some(hint));
+#[test]
+fn hol_beta_rejects_when_rhs_is_wrong() {
+    // (λx. x) y β-reduces to y. Asserting the RHS is z (≠ y) must fail.
+    let ctx = HolLightCtx::new();
+    let y = Term::free("y", ctx.bool_type());
+    let z = Term::free("z", ctx.bool_type());
+    let id_lambda = Term::abs("x", ctx.bool_type(), Term::bound(0));
+    let app = Term::app(id_lambda, y);
+    let bad_eq = ctx.mk_eq(app, z).unwrap();
+    let bad_tp = ctx.mk_trueprop(bad_eq).unwrap();
+    let result = covalence_pure::Thm::obs_true::<HolLight>(bad_tp, None);
     assert!(result.is_err());
+}
+
+#[test]
+fn hol_trans_reflexive_case() {
+    // a = a, a = a → a = a (degenerate but should still work).
+    let ctx = HolLightCtx::new();
+    let a = Term::free("a", ctx.bool_type());
+    let h = ctx.mk_trueprop(ctx.mk_eq(a.clone(), a.clone()).unwrap()).unwrap();
+    let lazy = covalence_pure::Thm::obs_imp::<HolLight>(
+        h.clone(),
+        vec![h.clone(), h.clone()],
+        None,
+    )
+    .unwrap();
+    // Concl: h ⟹ h ⟹ h.
+    let expected = covalence_pure::Term::imp(
+        h.clone(),
+        covalence_pure::Term::imp(h.clone(), h),
+    );
+    assert_eq!(lazy.concl(), &expected);
+}
+
+#[test]
+fn hol_trans_rejects_wrong_endpoint() {
+    // Sources are about (a,b) and (b,c), but concl asks for (a,d).
+    let ctx = HolLightCtx::new();
+    let a = Term::free("a", ctx.bool_type());
+    let b = Term::free("b", ctx.bool_type());
+    let c = Term::free("c", ctx.bool_type());
+    let d = Term::free("d", ctx.bool_type());
+    let h_ab = ctx.mk_trueprop(ctx.mk_eq(a.clone(), b.clone()).unwrap()).unwrap();
+    let h_bc = ctx.mk_trueprop(ctx.mk_eq(b, c).unwrap()).unwrap();
+    let bad_concl = ctx.mk_trueprop(ctx.mk_eq(a, d).unwrap()).unwrap();
+    let result = covalence_pure::Thm::obs_imp::<HolLight>(bad_concl, vec![h_ab, h_bc], None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn hol_mk_comb_at_higher_order() {
+    // f = g, x = y → (f x) = (g y) for higher-order x.
+    let ctx = HolLightCtx::new();
+    let alpha_to_alpha = Type::fun(ctx.bool_type(), ctx.bool_type());
+    let f_ty = Type::fun(alpha_to_alpha.clone(), ctx.bool_type());
+    let f = Term::free("f", f_ty.clone());
+    let g = Term::free("g", f_ty);
+    let x = Term::free("x", alpha_to_alpha.clone());
+    let y = Term::free("y", alpha_to_alpha);
+
+    let h_fg = ctx.mk_trueprop(ctx.mk_eq(f.clone(), g.clone()).unwrap()).unwrap();
+    let h_xy = ctx.mk_trueprop(ctx.mk_eq(x.clone(), y.clone()).unwrap()).unwrap();
+    let concl = ctx
+        .mk_trueprop(ctx.mk_eq(Term::app(f, x), Term::app(g, y)).unwrap())
+        .unwrap();
+    let lazy = covalence_pure::Thm::obs_imp::<HolLight>(
+        concl.clone(),
+        vec![h_fg.clone(), h_xy.clone()],
+        None,
+    )
+    .unwrap();
+    let expected = covalence_pure::Term::imp(h_fg, covalence_pure::Term::imp(h_xy, concl));
+    assert_eq!(lazy.concl(), &expected);
+}
+
+#[test]
+fn hol_eq_mp_rejects_when_p_doesnt_match() {
+    // h1 = Trueprop (Eq p q), h2 = Trueprop r (≠ p). Should refuse.
+    let ctx = HolLightCtx::new();
+    let p = Term::free("p", ctx.bool_type());
+    let q = Term::free("q", ctx.bool_type());
+    let r = Term::free("r", ctx.bool_type());
+    let h_eq = ctx.mk_trueprop(ctx.mk_eq(p, q.clone()).unwrap()).unwrap();
+    let h_r = ctx.mk_trueprop(r).unwrap();
+    let concl = ctx.mk_trueprop(q).unwrap();
+    let result = covalence_pure::Thm::obs_imp::<HolLight>(concl, vec![h_eq, h_r], None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn hol_sym_at_blob_literals() {
+    // sym at a non-free-variable type — using blob literals as terms.
+    let ctx = HolLightCtx::new();
+    let a = Term::blob(bytes::Bytes::from_static(b"a"));
+    let b = Term::blob(bytes::Bytes::from_static(b"b"));
+    let h = ctx.mk_trueprop(ctx.mk_eq(a.clone(), b.clone()).unwrap()).unwrap();
+    let concl = ctx.mk_trueprop(ctx.mk_eq(b, a).unwrap()).unwrap();
+    let lazy = covalence_pure::Thm::obs_imp::<HolLight>(
+        concl.clone(),
+        vec![h.clone()],
+        None,
+    )
+    .unwrap();
+    let expected = covalence_pure::Term::imp(h, concl);
+    assert_eq!(lazy.concl(), &expected);
+}
+
+#[test]
+fn obs_imp_rejects_zero_hyps_consistently() {
+    // No matching arms for 0 hyps in the ObsImp policy. Even refl
+    // shape should be refused (refl is in ObsTrue, not ObsImp).
+    let ctx = HolLightCtx::new();
+    let a = Term::free("a", ctx.bool_type());
+    let tp = ctx.mk_trueprop(ctx.mk_eq(a.clone(), a).unwrap()).unwrap();
+    let result = covalence_pure::Thm::obs_imp::<HolLight>(tp, vec![], None);
+    assert!(result.is_err(), "obs_imp policy rejects 0 hyps");
+}
+
+#[test]
+fn ctx_is_trueprop_identifies_trueprop_observer() {
+    let ctx = HolLightCtx::new();
+    let p = Term::free("p", ctx.bool_type());
+    let tp_p = ctx.mk_trueprop(p).unwrap();
+    let TermKind::App(tp_head, _) = tp_p.kind() else {
+        panic!("expected App at top of mk_trueprop result");
+    };
+    assert!(ctx.is_trueprop(tp_head));
+    assert!(!ctx.is_trueprop(&ctx.t()));
 }

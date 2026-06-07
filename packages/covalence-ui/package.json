@@ -17,6 +17,9 @@
   "peerDependencies": {
     "svelte": "^5.0.0"
   },
+  "dependencies": {
+    "@xyflow/svelte": "^1.0.0"
+  },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^4.0.0",
     "@testing-library/svelte": "^5.2.0",

@@ -16,6 +16,7 @@ llm = ["dep:covalence-llm"]
 pyo3 = "0.28"
 covalence-llm = { path = "../covalence-llm", optional = true, default-features = false, features = ["sync", "openai"] }
 bytes = "1"
+covalence-graph = { path = "../covalence-graph" }
 covalence-hash = { path = "../covalence-hash" }
 covalence-pure = { path = "../covalence-pure" }
 covalence-pure-shell = { path = "../covalence-pure-shell" }

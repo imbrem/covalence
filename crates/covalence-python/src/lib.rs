@@ -8,6 +8,7 @@ mod container;
 mod container_builder;
 mod default;
 mod git;
+mod graph;
 mod hash;
 mod kvstore;
 mod treestore;
@@ -133,6 +134,9 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // wasm_store submodule
     wasm_store::register(m)?;
+
+    // covalence-graph: Graph + GraphBuilder
+    graph::register(m)?;
 
     Ok(())
 }

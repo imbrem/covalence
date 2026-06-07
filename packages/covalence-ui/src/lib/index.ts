@@ -1,3 +1,7 @@
 // covalence-ui — Shared Svelte 5 component library
 export { registerViewer, getViewer } from './viewers/index.js';
 export type { ViewerDescriptor } from './viewers/index.js';
+
+export { default as GraphView } from './graph/GraphView.svelte';
+export { decodeGraph, hexToBytes } from './graph/decode.js';
+export type { Graph, GraphNode, GraphPort, GraphEdge, NodeKind, PortKind } from './graph/types.js';

@@ -48,8 +48,17 @@ export function isLikelyText(data: Uint8Array): boolean {
 	return nonPrintable / check < 0.1;
 }
 
+const COV_GRAPH_MAGIC = [0x43, 0x4f, 0x56, 0x47]; // "COVG"
+
+/** True iff the blob starts with the `cov:graph@0.1.0` magic + a
+ *  recognised version byte (currently v1). */
+export function isCovGraph(data: Uint8Array): boolean {
+	return startsWith(data, COV_GRAPH_MAGIC) && data.length >= 5 && data[4] === 1;
+}
+
 /** Pick a default display mode given raw blob bytes. */
-export function detectBlobMode(data: Uint8Array): 'image' | 'text' | 'hex' {
+export function detectBlobMode(data: Uint8Array): 'graph' | 'image' | 'text' | 'hex' {
+	if (isCovGraph(data)) return 'graph';
 	if (detectImageMime(data)) return 'image';
 	if (isLikelyText(data)) return 'text';
 	return 'hex';

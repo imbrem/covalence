@@ -1,5 +1,12 @@
 # The covalence-ui suite is vitest-style (uses jsdom + the Svelte compiler).
 # Bun's runner can't compile .svelte files, so we delegate to vitest via
 # tests/ui.test.ts (same shell-out pattern as cargo / pytest wrappers).
+#
+# covalence-wasm-js is also vitest-style — its jco-transpiled component
+# loader uses long `data:text/javascript;base64,…` URLs that exceed Bun's
+# module-resolver path length. Delegate to vitest via tests/wasm-js.test.ts.
 [test]
-pathIgnorePatterns = ["**/packages/covalence-ui/**"]
+pathIgnorePatterns = [
+  "**/packages/covalence-ui/**",
+  "**/packages/covalence-wasm-js/**",
+]

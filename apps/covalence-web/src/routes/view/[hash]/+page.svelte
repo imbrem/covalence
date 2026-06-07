@@ -30,7 +30,7 @@
 	$effect(() => {
 		if (typeof window !== 'undefined') {
 			const frag = window.location.hash.slice(1);
-			if (frag === 'text' || frag === 'hex' || frag === 'tree') {
+			if (frag === 'text' || frag === 'hex' || frag === 'tree' || frag === 'graph' || frag === 'image') {
 				mode = frag;
 			}
 		}

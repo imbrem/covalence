@@ -1,13 +1,28 @@
 <script lang="ts">
-	import { detectImageMime } from './detect.js';
+	import { detectImageMime, isCovGraph } from './detect.js';
+	import GraphView from '../graph/GraphView.svelte';
+	import { decodeGraph } from '../graph/decode.js';
+	import type { Graph } from '../graph/types.js';
 
 	interface Props {
 		hash: string;
 		data: Uint8Array;
-		mode: 'text' | 'hex' | 'image';
+		mode: 'graph' | 'text' | 'hex' | 'image';
 	}
 
 	let { hash, data, mode }: Props = $props();
+
+	let graphResult = $derived.by((): { graph: Graph | null; error: string | null } => {
+		if (mode !== 'graph') return { graph: null, error: null };
+		if (!isCovGraph(data)) {
+			return { graph: null, error: 'blob does not start with the cov:graph "COVG" magic' };
+		}
+		try {
+			return { graph: decodeGraph(data), error: null };
+		} catch (e) {
+			return { graph: null, error: (e as Error).message };
+		}
+	});
 
 	let textContent = $derived(new TextDecoder('utf-8', { fatal: false }).decode(data));
 
@@ -60,7 +75,13 @@
 </script>
 
 <div class="blob-viewer">
-	{#if mode === 'image'}
+	{#if mode === 'graph'}
+		{#if graphResult.graph}
+			<GraphView graph={graphResult.graph} />
+		{:else}
+			<div class="graph-fallback">graph decode error: {graphResult.error}</div>
+		{/if}
+	{:else if mode === 'image'}
 		{#if imageUrl}
 			<div class="image-view">
 				<img src={imageUrl} alt={`blob ${hash.slice(0, 12)}`} />
@@ -118,7 +139,8 @@
 		background-position: 0 0, 0 8px, 8px -8px, -8px 0;
 	}
 
-	.image-fallback {
+	.image-fallback,
+	.graph-fallback {
 		color: var(--muted, #888);
 		text-align: center;
 		padding: 2rem;

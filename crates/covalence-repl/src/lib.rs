@@ -29,6 +29,7 @@ impl ForeignPrims for ReplPrims {
             "store-url" => self.cmd_store_url(ctx),
             "store-file" => self.cmd_store_file(ctx),
             "compile-wat" => self.cmd_compile_wat(ctx),
+            "hex" => self.cmd_hex(ctx),
             "status" => self.cmd_status(ctx),
             "help" => self.cmd_help(ctx),
             "hash" => self.cmd_hash(ctx),
@@ -164,6 +165,39 @@ impl ReplPrims {
         Ok(())
     }
 
+    /// `hex`: blob → blob (decode the ASCII hex string in the blob to
+    /// raw bytes). Whitespace and a leading `0x` are stripped.
+    /// Useful for poking canonical-byte fixtures (graphs, WASM) into
+    /// the store without writing them to disk:
+    ///   `"434f5647 ..." hex store` → hash
+    fn cmd_hex(&mut self, ctx: &mut FCtx<'_>) -> Result<(), FError> {
+        let raw = ctx.try_pop_blob()?;
+        let s = std::str::from_utf8(&raw)
+            .map_err(|e| FError::Parse(format!("hex input is not valid UTF-8: {e}")))?;
+        let mut clean = String::with_capacity(s.len());
+        for ch in s.chars() {
+            if !ch.is_whitespace() {
+                clean.push(ch);
+            }
+        }
+        let clean = clean.strip_prefix("0x").unwrap_or(&clean);
+        if clean.len() % 2 != 0 {
+            return Err(FError::Parse(format!(
+                "hex input has odd length: {}",
+                clean.len()
+            )));
+        }
+        let mut out = Vec::with_capacity(clean.len() / 2);
+        let bytes = clean.as_bytes();
+        for i in (0..bytes.len()).step_by(2) {
+            let hi = hex_nibble(bytes[i])?;
+            let lo = hex_nibble(bytes[i + 1])?;
+            out.push((hi << 4) | lo);
+        }
+        ctx.push_blob(out);
+        Ok(())
+    }
+
     /// `status`: → (prints backend info)
     fn cmd_status(&mut self, _ctx: &mut FCtx<'_>) -> Result<(), FError> {
         let info = self.backend.info();
@@ -189,6 +223,7 @@ impl ReplPrims {
             ("<hash> read-wat", "decompile WASM to WAT"),
             ("\"(module ...)\" compile-wat", "compile WAT to WASM, store"),
             ("\"data\" hash", "hash blob (BLAKE3) without storing"),
+            ("\"<hex>\" hex", "decode hex string to raw bytes blob"),
             ("<val> print", "print a value"),
             ("status", "show backend info"),
             ("help", "show this help"),
@@ -383,8 +418,18 @@ impl ReplPrims {
     }
 }
 
-/// Parse a git OID from its UTF-8 hex representation (40 chars for SHA-1).
-#[cfg(feature = "cogit")]
+fn hex_nibble(b: u8) -> Result<u8, FError> {
+    match b {
+        b'0'..=b'9' => Ok(b - b'0'),
+        b'a'..=b'f' => Ok(b - b'a' + 10),
+        b'A'..=b'F' => Ok(b - b'A' + 10),
+        _ => Err(FError::Parse(format!(
+            "bad hex character: {:?}",
+            b as char
+        ))),
+    }
+}
+
 fn parse_git_oid(bytes: &[u8]) -> Result<covalence_hash::gix_hash::ObjectId, FError> {
     let s = std::str::from_utf8(bytes)
         .map_err(|e| FError::Parse(format!("git OID is not valid UTF-8: {e}")))?;

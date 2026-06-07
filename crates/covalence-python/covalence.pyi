@@ -590,7 +590,6 @@ def load_drat(path: str, binary: Optional[bool] = None) -> DratProof: ...
 # Compression
 def read_compressed(path: str) -> bytes: ...
 
-<<<<<<< HEAD
 # LLM bindings (only present when built with `--features llm`)
 class ChatMessage:
     """A single chat message (role + content)."""

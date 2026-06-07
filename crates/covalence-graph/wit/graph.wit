@@ -1,0 +1,158 @@
+package cov:graph@0.1.0;
+
+/// Ordered, typed, payload-polymorphic graph.
+///
+/// The graph stores *topology* and *port types*; payloads are opaque
+/// bytes the consumer interprets (a component hash for a WASM linker,
+/// a generator id for a string diagram, …). Consumers fix the meaning
+/// of `type-id` and `payload`; the graph only checks equality.
+///
+/// **Order matters.** Nodes form an ordered sequence — first added,
+/// first initialized. The intended interpretation is a symmetric
+/// *premonoidal* category: parallel composition (side-by-side nodes)
+/// is still strictly ordered because each node may perform effects.
+/// Two graphs with the same nodes/edges but a different insertion
+/// order are NOT equal; `equal` and the snapshot APIs preserve order.
+///
+/// Edges are also ordered by insertion. This matches the "wire-up
+/// log" reading: a graph is a sequence of (add-node | wire) events,
+/// and equal graphs are equal sequences.
+interface api {
+    /// Opaque type identifier — graph only checks equality.
+    /// Conventional uses: hash of a WIT interface name (linker), object
+    /// id in a SMC presentation (string diagram), monad-effect id, …
+    type type-id = u64;
+
+    /// Stable, 0-based index into the node insertion order.
+    type node-id = u32;
+
+    /// Stable, 0-based index into a node's port list (in declaration
+    /// order). `(node-id, port-id)` uniquely identifies a port.
+    type port-id = u32;
+
+    enum port-kind { input, output }
+
+    record port {
+        name: string,
+        type-id: type-id,
+        kind: port-kind,
+    }
+
+    /// Built-in, fixed node classification.
+    ///
+    /// `pure`  : commutes freely with siblings — no implicit ordering.
+    /// `ordered` : effectful; consecutive ordered nodes are connected
+    ///   by an implicit "state wire" (rendered red in the diagrammatic
+    ///   view). The kind is a structural property, not a user
+    ///   attribute — the set is fixed by this WIT.
+    enum node-kind { pure, ordered }
+
+    /// Opaque per-node bytes; the graph never inspects them.
+    type payload = list<u8>;
+
+    record node {
+        kind: node-kind,
+        /// Optional free-form label. Only meaningful when the
+        /// `kind` admits labels (currently all kinds do). Consumers
+        /// not interested in labels can ignore.
+        label: option<string>,
+        ports: list<port>,
+        payload: payload,
+    }
+
+    /// Output port -> input port. Only output→input wires are valid.
+    record edge {
+        from-node: node-id, from-port: port-id,
+        to-node: node-id,   to-port: port-id,
+    }
+
+    /// Frozen view of a graph. Insertion order preserved in both
+    /// `nodes` and `edges`.
+    record snapshot {
+        nodes: list<node>,
+        edges: list<edge>,
+    }
+
+    variant wire-error {
+        unknown-node(node-id),
+        unknown-port(tuple<node-id, port-id>),
+        /// `from` must be an output port, `to` must be an input port.
+        kind-mismatch,
+        /// `from-port.type-id` differs from `to-port.type-id`.
+        type-mismatch(tuple<type-id, type-id>),
+        /// Input ports may be wired at most once (linear-in).
+        /// Output ports may fan out freely (re-wire is allowed).
+        already-wired(tuple<node-id, port-id>),
+    }
+
+    variant build-error {
+        /// An input port had no incoming edge.
+        unwired-input(tuple<node-id, port-id>),
+    }
+
+    /// Mutable graph being assembled.
+    resource builder {
+        constructor();
+
+        /// Append a node. Returns its id. The new id is always
+        /// `prior-node-count` — i.e. insertion order = id order.
+        add-node: func(kind: node-kind, label: option<string>, ports: list<port>, payload: payload) -> node-id;
+
+        /// Append an edge. Type compatibility and port kinds are
+        /// checked here, not at `finish`.
+        wire: func(e: edge) -> result<_, wire-error>;
+
+        /// Read-only snapshot without consuming. Useful for incremental
+        /// inspection during construction.
+        peek: func() -> snapshot;
+
+        /// Finalize and return the graph as a graph resource.
+        /// Checks that every input port has exactly one incoming edge.
+        finish: func() -> result<graph, build-error>;
+    }
+
+    /// Immutable, fully-built graph. All inspect / compare ops live
+    /// here so a guest can hand a graph to a separate consumer without
+    /// re-exposing the builder.
+    resource graph {
+        /// Reconstruct from a snapshot (e.g. for IPC or cache hits).
+        /// Same checks as `builder.finish`.
+        from-snapshot: static func(s: snapshot) -> result<graph, build-error>;
+
+        // ---- Inspect ----
+
+        snapshot: func() -> snapshot;
+        node-count: func() -> u32;
+        edge-count: func() -> u32;
+
+        /// Node by id, in insertion order.
+        get-node: func(n: node-id) -> option<node>;
+
+        /// Edges in insertion order whose `from-node == n`. If
+        /// `port` is `some`, restricts to that output port.
+        edges-from: func(n: node-id, port: option<port-id>) -> list<edge>;
+
+        /// Edges in insertion order whose `to-node == n`. If
+        /// `port` is `some`, restricts to that input port.
+        edges-into: func(n: node-id, port: option<port-id>) -> list<edge>;
+
+        /// Ids of nodes whose kind is `ordered`, in insertion order.
+        /// Consumers render the state wire by pairing consecutive ids.
+        ordered-nodes: func() -> list<node-id>;
+
+        // ---- Compare ----
+        //
+        // Canonical byte encoding and content hashing are HOST-side
+        // operations and deliberately NOT in this WIT — the encoding
+        // depends on per-kind metadata rules (labels, future fields)
+        // that a generic guest shouldn't have to understand. Hosts
+        // call `Graph::to_bytes` / `Graph::ordered_hash` in Rust.
+
+        /// Strict structural equality, preserving insertion order of
+        /// both nodes and edges. Two graphs that differ only in the
+        /// order they were assembled in are NOT equal.
+        equal: func(other: borrow<graph>) -> bool;
+    }
+}
+
+world graph-tool { export api; }

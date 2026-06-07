@@ -4,10 +4,10 @@ import { getViewer } from './index.js';
 const PNG_HEADER = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 describe('blob viewer registration', () => {
-	it('registers a viewer for the "blob" kind exposing text/hex/image modes', () => {
+	it('registers a viewer for the "blob" kind exposing graph/text/hex/image modes', () => {
 		const viewer = getViewer('blob');
 		expect(viewer).toBeDefined();
-		expect(viewer!.modes).toEqual(['text', 'hex', 'image']);
+		expect(viewer!.modes).toEqual(['graph', 'text', 'hex', 'image']);
 	});
 
 	it('auto-selects image mode for PNG bytes', () => {

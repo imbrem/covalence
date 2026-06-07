@@ -8,4 +8,5 @@ default = []
 
 [dependencies]
 covalence-pure = { path = "../covalence-pure" }
+smol_str = "0.3"
 thiserror = "2"

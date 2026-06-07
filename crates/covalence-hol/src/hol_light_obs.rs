@@ -205,7 +205,7 @@ impl fmt::Display for HolLight {
 /// Constructing one is free — there are no fields. Methods delegate
 /// to the module-level `LazyLock` statics. Two `HolLightCtx` values
 /// are interchangeable.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct HolLightCtx;
 
 impl HolLightCtx {

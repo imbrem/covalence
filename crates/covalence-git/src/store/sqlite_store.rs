@@ -26,6 +26,21 @@ pub struct GitStore {
 }
 
 impl GitStore {
+    fn all_data_by_tree_membership(&self, is_tree: bool) -> Result<Vec<Vec<u8>>, StoreError> {
+        let conn = self.conn.lock().unwrap();
+        let sql = if is_tree {
+            "SELECT data FROM blobs WHERE hash IN (SELECT hash FROM cov_trees)"
+        } else {
+            "SELECT data FROM blobs WHERE hash NOT IN (SELECT hash FROM cov_trees)"
+        };
+        let mut stmt = conn.prepare(sql).map_err(|e| StoreError::Io(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, Vec<u8>>(0))
+            .map_err(|e| StoreError::Io(e.to_string()))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| StoreError::Io(e.to_string()))
+    }
+
     /// Open a persistent store at the given path.
     pub fn open(
         path: impl AsRef<std::path::Path>,
@@ -138,28 +153,12 @@ impl GitStore {
 
     /// Returns data for all non-tree blob entries (plain content blobs).
     pub fn all_blob_data(&self) -> Result<Vec<Vec<u8>>, StoreError> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn
-            .prepare("SELECT data FROM blobs WHERE hash NOT IN (SELECT hash FROM cov_trees)")
-            .map_err(|e| StoreError::Io(e.to_string()))?;
-        let rows = stmt
-            .query_map([], |row| row.get::<_, Vec<u8>>(0))
-            .map_err(|e| StoreError::Io(e.to_string()))?;
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|e| StoreError::Io(e.to_string()))
+        self.all_data_by_tree_membership(false)
     }
 
     /// Returns data for all covalence tree entries.
     pub fn all_tree_data(&self) -> Result<Vec<Vec<u8>>, StoreError> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn
-            .prepare("SELECT data FROM blobs WHERE hash IN (SELECT hash FROM cov_trees)")
-            .map_err(|e| StoreError::Io(e.to_string()))?;
-        let rows = stmt
-            .query_map([], |row| row.get::<_, Vec<u8>>(0))
-            .map_err(|e| StoreError::Io(e.to_string()))?;
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|e| StoreError::Io(e.to_string()))
+        self.all_data_by_tree_membership(true)
     }
 
     /// Find a git OID whose data hashes to `target`.

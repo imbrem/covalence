@@ -263,7 +263,7 @@ fn dyn_obs_downcast_to_correct_type() {
 #[test]
 fn dyn_obs_downcast_to_wrong_type_returns_none() {
     #[derive(Debug)]
-    struct OtherObs(u32);
+    struct OtherObs;
 
     let obs = my_oracle::MyObs::run([0; 4], Bytes::from_static(b"x"));
     let d = DynObs::new(obs);

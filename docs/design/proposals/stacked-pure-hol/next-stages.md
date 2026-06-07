@@ -196,23 +196,41 @@ real source-level UX information.
 
 ---
 
-### E. **OPTIONAL** — WASM theorem-proving tests (task 17 from this round)
+### E. **DONE** — WASM theorem-proving tests
 
-Implement the host-side `cov:pure` traits in `covalence-wasm` (or a
-new `covalence-pure-wasm` crate). Write a guest module — possibly
-authored via `covalence-wasm-build-guest` — that uses the WIT to prove
-simple theorems and exposes the result via an exported function. Drive
-end-to-end from a Rust integration test.
+Two complementary test layers landed:
 
-**Scope options:**
+**Host-side direct tests** — `crates/covalence-wasm/tests/pure_integration.rs`.
+Sixteen tests calling the bindgen-generated `Host*` trait methods
+directly on `PureHost`. Exercises every rule (`refl`, `trans`, `sym`,
+`cong_app`, `beta_conv`, `assume`/`imp_intro`, `all_intro`/`all_elim`,
+`inst_tfree`) plus error-path mapping. Fast, no guest compilation.
 
-1. **Minimal:** guest proves `⊢ x ≡ x` (single `Thm.refl`); test
-   verifies the returned theorem.
-2. **Useful:** guest proves a short equational chain via
-   `trans`/`sym`/`cong-app`; test verifies the conclusion.
-3. **Ambitious:** if option A (`new_type_definition`) lands and we
-   write a `covalence-hol` bootstrap, guest proves a real HOL
-   theorem (e.g. `⊢ ∀p. p ⟹ p`).
+**Real guest .wasm tests** — `crates/covalence-pure-test-guest/`
+(wasm32 cdylib using `wit_bindgen::generate!`) + the host test
+`crates/covalence-wasm/tests/pure_guest_integration.rs`. The guest
+imports `cov:pure/api` and exposes one name-dispatched export
+`run-prover(name) -> result<string, string>`. The host test:
+
+1. Invokes `cargo build --target wasm32-unknown-unknown` for the
+   guest (cached in a `OnceLock` for the test process).
+2. Wraps the core module via `wit_component::ComponentEncoder`.
+3. Wires a `wasmtime::component::Linker` over a `PureHost` store
+   using `cov::pure::api::add_to_linker::<_, HasSelf<PureHost>>(...)`.
+4. Instantiates via `PureGuest::instantiate(...)`.
+5. Calls `bindings.call_run_prover(&mut store, name)` and verifies
+   the returned rendered theorem.
+
+Seven guest provers tested: `refl-blob`, `trans-refl-refl`,
+`imp-intro-p-implies-p`, `beta-identity`, `all-intro-elim`,
+`inst-tfree`, plus an error-path case for an unknown prover name.
+
+The scaffold is **fully reusable** for `cov:kernel/api`,
+`cov:hol-light/api`, etc.: clone the guest crate, change the WIT
+world the `generate!` macro points at, write new prover bodies, point
+the host test at the matching bindings. The `cargo build` +
+`wit_component::ComponentEncoder` + `add_to_linker` + `Guest::instantiate`
+pattern carries over unchanged.
 
 ---
 

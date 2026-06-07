@@ -1,0 +1,16 @@
+[package]
+name = "covalence-pure-test-guest"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Wasm32 guest fixture: imports `cov:pure/api` via wit-bindgen and exposes named prover entry points the host can dispatch. Loaded by `covalence-wasm` integration tests to verify the kernel API end-to-end through a real WASM component."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Pinned to the version already in the workspace lockfile (transitive
+# through wasmtime). wit-bindgen's guest macro expands extern "C"
+# references that link to wasm-only intrinsics — see the
+# `target_arch = "wasm32"` gate in src/lib.rs.
+wit-bindgen = "0.51"

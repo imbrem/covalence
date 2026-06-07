@@ -211,8 +211,20 @@ interface api {
 }
 
 /// World a *guest* lives in when it wants to call into the host's
-/// Pure kernel. Drives `wasmtime::component::bindgen!` to generate
-/// the host `Host` traits we then implement.
+/// Pure kernel. Drives `wasmtime::component::bindgen!` on the host
+/// side (generating `Host*` traits we implement) and `wit_bindgen`
+/// on the guest side (generating import calls).
+///
+/// The single export `run-prover` is a name-dispatched fixture hook:
+/// the host calls it with the name of a canned prover, and the guest
+/// runs that prover through the imported `api` and returns the
+/// rendered theorem (or an error). This shape lets one guest expose
+/// many proofs without bloating the WIT surface; bigger ABIs (multiple
+/// dedicated exports) come later if needed.
 world pure-guest {
     import api;
+
+    /// Dispatch by name. The guest implements a small registry of
+    /// canned provers; the host drives them in integration tests.
+    export run-prover: func(name: string) -> result<string, string>;
 }

@@ -64,17 +64,6 @@ remains the meta-logic substrate, HOL remains the default object
 logic, and the rest of the system remains outside that center as
 oracle, stdlib, transport, or institution-translation machinery.
 
-## Companion docs
-
-If you want the same Pure/HOL stack described in different vocabulary,
-see the companion notes in
-[`hehner-institution/`](./hehner-institution/README.md):
-
-- [crosswalk](./hehner-institution/00-crosswalk.md)
-- [Pure layer](./hehner-institution/01-pure-layer.md)
-- [HOL layer](./hehner-institution/02-hol-layer.md)
-- [next layers preview](./hehner-institution/03-next-layers.md)
-
 ---
 
 ## 2. Layer 0 — `covalence-pure`

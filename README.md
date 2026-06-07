@@ -13,6 +13,10 @@ Recommended path:
 [`ARCHITECTURE.md`](./ARCHITECTURE.md) (canonical philosophy) →
 [`AGENTS.md`](./AGENTS.md) (implementation invariants).
 
+For a current-code-oriented conceptual walkthrough of `covalence-pure`,
+`covalence-hol`, and their Hehner / institution-theory interpretation, see
+[`gentle-intro/README.md`](./gentle-intro/README.md).
+
 ## Repository Layout
 
 - `crates/` — Rust workspace with CLI/server/editor surfaces, kernel and prover
@@ -20,6 +24,7 @@ Recommended path:
 - `apps/covalence-web/` — SvelteKit browser UI
 - `packages/` — shared TypeScript packages
 - `extensions/covalence-vscode/` — VS Code extension
+- `gentle-intro/` — beginner-oriented conceptual notes grounded in the current code
 - `docs/` — current-state docs, proposal docs, and planning/history
 - `assets/`, `tests/`, `test-workbench/` — fixtures, samples, and test scaffolding
 

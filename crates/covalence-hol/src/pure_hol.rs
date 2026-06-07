@@ -283,6 +283,17 @@ impl HolLightTerms for PureHol {
     }
 
     fn mk_const(&mut self, name: NameId, ty: Type) -> Term {
+        // HOL `=` is represented as the `Eq` Obs leaf at the
+        // requested type. Articles call `constTerm "="` to build
+        // equation skeletons; those must compare structurally equal
+        // to the `Obs(EQ)` head our `refl` / `trans` / etc. produce.
+        // The expected type for `=` is `α → α → bool`; extract `α`
+        // from the requested type's first domain.
+        if name == self.eq_id {
+            if let TypeKind::Fun(alpha, _) = ty.kind() {
+                return self.ctx.eq_at(alpha.clone());
+            }
+        }
         // Constants introduced via `new_basic_definition` come back as
         // the stored `Term::def(d)` (preserving the `Def`'s Arc
         // identity so the defining equation `⊢ Def ≡ body` and any

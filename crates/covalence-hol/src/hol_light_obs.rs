@@ -121,6 +121,16 @@ static EQ_REFLECTION_AXIOM: LazyLock<Thm> = LazyLock::new(build_eq_reflection_ax
 /// [`HolLightCtx::iff_intro_axiom`].
 static IFF_INTRO_AXIOM: LazyLock<Thm> = LazyLock::new(build_iff_intro_axiom);
 
+/// `⋀P : 'a → bool. (⋀x:'a. Trueprop (P x)) ≡ Trueprop (Forall P)`
+/// — bridges Pure's meta-`⋀` and HOL's object-level `∀`. The
+/// counterpart of `eq_reflection` for universal quantification.
+static FORALL_REFLECTION_AXIOM: LazyLock<Thm> = LazyLock::new(build_forall_reflection_axiom);
+
+/// `⋀P Q : bool. (Trueprop P ⟹ Trueprop Q) ≡ Trueprop (P ⟹ Q)`
+/// — bridges Pure's meta-`⟹` and HOL's object-level `⟹`. The
+/// counterpart of `eq_reflection` for implication.
+static IMP_REFLECTION_AXIOM: LazyLock<Thm> = LazyLock::new(build_imp_reflection_axiom);
+
 // ============================================================================
 // The HolLight observer family
 // ============================================================================
@@ -474,6 +484,39 @@ impl HolLightCtx {
     pub fn iff_intro_axiom(&self) -> Thm {
         (*IFF_INTRO_AXIOM).clone()
     }
+
+    /// The polymorphic `forall_reflection` axiom — bridges Pure's
+    /// meta-universal `⋀` and HOL's object-level `∀`:
+    ///
+    /// ```text
+    /// ⋀P : 'a → bool. (⋀x:'a. Trueprop (P x)) ≡ Trueprop (Forall P)
+    /// ```
+    ///
+    /// Used to convert between meta-level proofs (via Pure
+    /// `all_intro`/`all_elim`) and object-level HOL `∀` reasoning.
+    /// Forward direction (meta → object): `all_elim P`, then
+    /// `eq_mp` with `⋀x. Trueprop (P x)` produces
+    /// `Trueprop (Forall P)`. Backward direction symmetric via
+    /// `sym`.
+    pub fn forall_reflection_axiom(&self) -> Thm {
+        (*FORALL_REFLECTION_AXIOM).clone()
+    }
+
+    /// The `imp_reflection` axiom — bridges Pure's meta-implication
+    /// `⟹` and HOL's object-level `⟹`:
+    ///
+    /// ```text
+    /// ⋀P Q : bool. (Trueprop P ⟹ Trueprop Q) ≡ Trueprop (P ⟹ Q)
+    /// ```
+    ///
+    /// Used to convert between meta-level discharge (via Pure
+    /// `imp_intro`/`imp_elim`) and object-level HOL implication
+    /// reasoning. Forward: `eq_mp` with a meta-implication on the
+    /// LHS gives a Trueprop-wrapped HOL implication. Backward
+    /// symmetric.
+    pub fn imp_reflection_axiom(&self) -> Thm {
+        (*IMP_REFLECTION_AXIOM).clone()
+    }
 }
 
 /// Build `eq_reflection` — called once, lazily, by the
@@ -527,6 +570,65 @@ fn build_iff_intro_axiom() -> Thm {
     let inner = Term::all("q", bool_ty.clone(), body);
     let outer = Term::all("p", bool_ty, inner);
     Thm::assume(outer).expect("iff_intro_axiom: well-typed by construction")
+}
+
+/// Build `forall_reflection` — called once, lazily.
+///
+/// Under outer ⋀P (where P : 'a → bool, Bound(0) at this level):
+/// - Left side: `⋀x:'a. Trueprop (P x)` — inner Pure ⋀, body uses
+///   Bound(0) for x, Bound(1) for P (one binder up from the inner ⋀).
+/// - Right side: `Trueprop (Forall P)` — Bound(0) is P here.
+fn build_forall_reflection_axiom() -> Thm {
+    let ctx = HolLightCtx;
+    let alpha = Type::tfree("a");
+    let bool_ty = ctx.bool_type();
+    let pred_ty = Type::fun(alpha.clone(), bool_ty);
+    let trueprop = ctx.trueprop();
+
+    // Inside inner ⋀x: P = Bound(1), x = Bound(0).
+    let inner_body = Term::app(
+        trueprop.clone(),
+        Term::app(Term::bound(1), Term::bound(0)),
+    );
+    let inner_all = Term::all("x", alpha.clone(), inner_body);
+
+    // Right: Trueprop (Forall P), with P = Bound(0).
+    let forall_at = ctx.forall_at(alpha);
+    let forall_p = Term::app(forall_at, Term::bound(0));
+    let tp_forall_p = Term::app(trueprop, forall_p);
+
+    // Pure meta-eq.
+    let body = Term::eq(inner_all, tp_forall_p);
+    let outer = Term::all("P", pred_ty, body);
+    Thm::assume(outer).expect("forall_reflection_axiom: well-typed by construction")
+}
+
+/// Build `imp_reflection` — called once, lazily.
+///
+/// Under outer ⋀p ⋀q (p = Bound(1), q = Bound(0)):
+/// - Left: `Trueprop p ⟹ Trueprop q` (Pure meta-imp).
+/// - Right: `Trueprop (p ⟹ q)` (HOL imp wrapped in Trueprop).
+fn build_imp_reflection_axiom() -> Thm {
+    let ctx = HolLightCtx;
+    let bool_ty = ctx.bool_type();
+    let trueprop = ctx.trueprop();
+    let imp_op = ctx.imp_op();
+
+    let p = Term::bound(1);
+    let q = Term::bound(0);
+
+    let tp_p = Term::app(trueprop.clone(), p.clone());
+    let tp_q = Term::app(trueprop.clone(), q.clone());
+    let left = Term::imp(tp_p, tp_q);
+
+    // HOL imp at bool: (imp p) q.
+    let hol_imp_p_q = Term::app(Term::app(imp_op, p), q);
+    let right = Term::app(trueprop, hol_imp_p_q);
+
+    let body = Term::eq(left, right);
+    let inner = Term::all("q", bool_ty.clone(), body);
+    let outer = Term::all("p", bool_ty, inner);
+    Thm::assume(outer).expect("imp_reflection_axiom: well-typed by construction")
 }
 
 /// Marker trait certifying that an observer is in the [`HolLight`]

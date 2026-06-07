@@ -36,3 +36,10 @@ pub use prover::{Prover, ProverError};
 /// in their signatures. Centralising them here lets frontends depend only on
 /// `covalence-shell`.
 pub use covalence_kernel::primop::{PrimOp1, PrimOp2};
+
+/// Pure / HOL re-exports that downstream stdlib clients and proof
+/// constructors need. Centralising them here lets clients depend
+/// only on `covalence-shell` for the standard library + the term
+/// constructors / theorem primitives it's built on.
+pub use covalence_hol::{HolLight, HolLightCtx, HolLightKernel, PureHol};
+pub use covalence_pure::{BinderHint, Term, Thm, Type, TypeDef, TypeKind};

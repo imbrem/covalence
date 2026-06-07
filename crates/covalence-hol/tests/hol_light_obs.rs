@@ -185,6 +185,34 @@ fn eq_reflection_axiom_is_well_typed() {
 }
 
 #[test]
+fn forall_reflection_axiom_is_well_typed() {
+    let ctx = HolLightCtx::new();
+    let ax = ctx.forall_reflection_axiom();
+    assert_eq!(ax.hyps().len(), 1);
+    assert_eq!(ax.hyps().iter().next().unwrap(), ax.concl());
+    assert!(ax.concl().type_of().unwrap().is_prop());
+}
+
+#[test]
+fn imp_reflection_axiom_is_well_typed() {
+    let ctx = HolLightCtx::new();
+    let ax = ctx.imp_reflection_axiom();
+    assert_eq!(ax.hyps().len(), 1);
+    assert_eq!(ax.hyps().iter().next().unwrap(), ax.concl());
+    assert!(ax.concl().type_of().unwrap().is_prop());
+}
+
+#[test]
+fn forall_reflection_specialises_via_inst_tfree() {
+    let ctx = HolLightCtx::new();
+    let at_bool = ctx
+        .forall_reflection_axiom()
+        .inst_tfree("a", ctx.bool_type())
+        .unwrap();
+    assert!(at_bool.concl().type_of().unwrap().is_prop());
+}
+
+#[test]
 fn eq_reflection_axiom_is_globally_cached() {
     let ctx = HolLightCtx::new();
     let a = ctx.eq_reflection_axiom();

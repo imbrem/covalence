@@ -18,4 +18,5 @@
 //! - The Pure-level predicate body.
 //! - Internal axiomatisation of operations.
 
+pub mod bool;
 pub mod nat;

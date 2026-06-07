@@ -9,14 +9,13 @@ runtime = ["dep:wasmtime", "dep:covalence-pure"]
 [dependencies]
 covalence-pure = { path = "../covalence-pure", optional = true }
 thiserror = "2"
-wasm-encoder = "0.249"
-wat = "1.249"
-wasmprinter = "0.249"
-wasmparser = "0.249"
-# Component encoding: pinned to the wit-* family already in the workspace lockfile
-# (via wit-bindgen). Adding these as direct deps avoids pulling a second
-# wasm-encoder major.
-wit-component = "0.244"
-wit-parser = "0.244"
+wasm-encoder = "0.251"
+wat = "1.251"
+wasmprinter = "0.251"
+wasmparser = "0.251"
+# Component encoding: kept in lockstep with the wasm-encoder/wat/wasmprinter/wasmparser
+# family — they share the same monorepo cadence.
+wit-component = "0.251"
+wit-parser = "0.251"
 # runtime-only deps
-wasmtime = { version = "44", features = ["component-model", "gc"], optional = true }
+wasmtime = { version = "45", features = ["component-model", "gc"], optional = true }

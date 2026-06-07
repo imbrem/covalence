@@ -35,6 +35,6 @@ covalence-serve = { path = "../covalence-serve", default-features = false }
 slotmap = "1"
 axum = "0.8"
 flate2 = "1"
-bzip2 = "0.5"
+bzip2 = "0.6"
 zstd = "0.13"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }

@@ -5,4 +5,4 @@ edition = "2024"
 
 [dependencies]
 thiserror = "2"
-winnow = "0.7"
+winnow = "1"

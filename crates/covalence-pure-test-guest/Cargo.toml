@@ -9,8 +9,7 @@ description = "Wasm32 guest fixture: imports `cov:pure/api` via wit-bindgen and 
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# Pinned to the version already in the workspace lockfile (transitive
-# through wasmtime). wit-bindgen's guest macro expands extern "C"
-# references that link to wasm-only intrinsics — see the
-# `target_arch = "wasm32"` gate in src/lib.rs.
-wit-bindgen = "0.51"
+# wit-bindgen's guest macro expands `extern "C"` references that link
+# to wasm-only intrinsics — see the `target_arch = "wasm32"` gate in
+# src/lib.rs.
+wit-bindgen = "0.57"

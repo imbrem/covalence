@@ -370,6 +370,12 @@ pub enum TypeKind {
     Prop,
     /// Type of `Blob(_)` term values. Built in.
     Bytes,
+    /// Type of `NatLit(_)` term values. Built in.
+    /// The natural numbers (non-negative integers, arbitrary precision).
+    Nat,
+    /// Type of `IntLit(_)` term values. Built in.
+    /// The integers (arbitrary precision, possibly negative).
+    Int,
     /// Function type τ ⇒ σ.
     Fun(Type, Type),
     /// User-declared type constructor applied to arguments.
@@ -394,6 +400,8 @@ pub enum TypeKind {
 // below are O(1) `Arc::clone` instead of a fresh allocation per call.
 static PROP: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Prop)));
 static BYTES: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Bytes)));
+static NAT: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Nat)));
+static INT: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Int)));
 static BOOL: LazyLock<Type> =
     LazyLock::new(|| Type(Arc::new(TypeKind::Tycon(SmolStr::new("bool"), Vec::new()))));
 
@@ -426,6 +434,22 @@ impl Type {
     /// instance; calls are O(1) `Arc` bumps.
     pub fn bytes() -> Self {
         BYTES.clone()
+    }
+
+    /// The native unbounded-naturals type — `nat`. Returns a
+    /// shared instance; calls are O(1) `Arc` bumps. Literal terms
+    /// of this type are constructed via [`Term::nat_lit`] and
+    /// reduced through [`crate::Thm::reduce_nat`].
+    pub fn nat() -> Self {
+        NAT.clone()
+    }
+
+    /// The native unbounded-integers type — `int`. Returns a
+    /// shared instance; calls are O(1) `Arc` bumps. Literal terms
+    /// of this type are constructed via [`Term::int_lit`] and
+    /// reduced through [`crate::Thm::reduce_int`].
+    pub fn int() -> Self {
+        INT.clone()
     }
 
     /// The HOL `bool` type (a 0-ary `tycon`). Pure does not bake bool
@@ -480,7 +504,7 @@ fn free_tvars_into(ty: &Type, out: &mut std::collections::BTreeSet<SmolStr>) {
         TypeKind::TFree(name) => {
             out.insert(name.clone());
         }
-        TypeKind::Prop | TypeKind::Bytes => {}
+        TypeKind::Prop | TypeKind::Bytes | TypeKind::Nat | TypeKind::Int => {}
         TypeKind::Fun(a, b) => {
             free_tvars_into(a, out);
             free_tvars_into(b, out);
@@ -530,6 +554,8 @@ impl fmt::Display for Type {
             TypeKind::TFree(n) => write!(f, "'{}", n),
             TypeKind::Prop => write!(f, "prop"),
             TypeKind::Bytes => write!(f, "bytes"),
+            TypeKind::Nat => write!(f, "nat"),
+            TypeKind::Int => write!(f, "int"),
             TypeKind::Fun(a, b) => write!(f, "({} ⇒ {})", a, b),
             TypeKind::Tycon(name, args) => {
                 if args.is_empty() {
@@ -713,6 +739,77 @@ impl fmt::Display for Def {
 // Term
 // ============================================================================
 
+/// Shared arithmetic operations on `nat` and `int`. Carried by
+/// [`Prim::NatArith`] and [`Prim::IntArith`] so the same operation
+/// set is exposed at both types without duplicating variant names.
+///
+/// Unary ops (`Succ`, `Pred`) build a `T → T` term; binary ops
+/// (`Add`, `Sub`, `Mul`, `Div`, `Mod`) build a `T → T → T` term.
+/// `Pred` saturates at zero for `nat`; `Div`/`Mod` are Euclidean
+/// and return zero when the divisor is zero.
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Arith {
+    Succ,
+    Pred,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+}
+
+impl Arith {
+    /// `true` for unary operations (`Succ`, `Pred`).
+    pub fn is_unary(&self) -> bool {
+        matches!(self, Arith::Succ | Arith::Pred)
+    }
+}
+
+/// Builtin Pure functions, applied via standard `App`. Each variant
+/// IS a closed function term of the type returned by [`Self::ty`];
+/// reductions on concrete-literal applications are decided by
+/// [`crate::Thm::reduce_prim`].
+///
+/// Treating primitives as regular function terms (rather than
+/// fixed-arity `TermKind` variants) means every Pure rule that
+/// operates on `App` — `subst_free`, `inst_tfree`, `type_of`,
+/// `aconv`, β-conv — sees them like any other function. Adding e.g.
+/// `BytesNth : bytes → nat → nat` is a single enum variant.
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Prim {
+    /// Arithmetic on `nat`.
+    NatArith(Arith),
+    /// Arithmetic on `int`.
+    IntArith(Arith),
+    /// `int → int` — integer negation. No `nat` counterpart.
+    IntNeg,
+    /// `bytes → bytes → bytes` — concatenation.
+    BytesCat,
+    /// `nat → bytes → bytes` — cons a `nat` (mod 256) onto the
+    /// front of a `bytes` term.
+    BytesConsNat,
+    /// `nat → int` — embed naturals into integers.
+    NatToInt,
+}
+
+impl Prim {
+    /// The type of this primitive as a closed function term.
+    pub fn ty(&self) -> Type {
+        match self {
+            Prim::NatArith(a) if a.is_unary() => Type::fun(Type::nat(), Type::nat()),
+            Prim::NatArith(_) => Type::fun(Type::nat(), Type::fun(Type::nat(), Type::nat())),
+            Prim::IntArith(a) if a.is_unary() => Type::fun(Type::int(), Type::int()),
+            Prim::IntArith(_) => Type::fun(Type::int(), Type::fun(Type::int(), Type::int())),
+            Prim::IntNeg => Type::fun(Type::int(), Type::int()),
+            Prim::BytesCat => Type::fun(Type::bytes(), Type::fun(Type::bytes(), Type::bytes())),
+            Prim::BytesConsNat => {
+                Type::fun(Type::nat(), Type::fun(Type::bytes(), Type::bytes()))
+            }
+            Prim::NatToInt => Type::fun(Type::nat(), Type::int()),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Term(Arc<TermKind>);
 
@@ -738,6 +835,15 @@ pub enum TermKind {
     Eq(Term, Term),
     /// Builtin: opaque byte literal of kernel type `bytes`.
     Blob(Bytes),
+    /// Builtin: natural-number literal. Kernel type `nat`. See
+    /// [`crate::Thm::reduce_prim`] for the single-step computation
+    /// rule that decides closed-form arithmetic by reflexivity.
+    NatLit(covalence_types::Nat),
+    /// Builtin: integer literal. Kernel type `int`.
+    IntLit(covalence_types::Int),
+    /// Builtin function — a closed function term applied to args via
+    /// standard `App`. See [`Prim`] for the catalogue.
+    Prim(Prim),
     /// Typed observation leaf: observer + Pure type. The kernel
     /// compares these by `Arc` pointer identity (via [`Object`]'s
     /// impls), never by the user's `Eq` on the underlying observer.
@@ -794,6 +900,24 @@ impl Term {
         Self::alloc(TermKind::Blob(bytes.into()))
     }
 
+    // ---- builtin value constructors ----
+    /// `nat` literal.
+    pub fn nat_lit(n: impl Into<covalence_types::Nat>) -> Self {
+        Self::alloc(TermKind::NatLit(n.into()))
+    }
+    /// `int` literal.
+    pub fn int_lit(n: impl Into<covalence_types::Int>) -> Self {
+        Self::alloc(TermKind::IntLit(n.into()))
+    }
+
+    /// A builtin function term, ready to be applied via standard
+    /// [`Term::app`]. No reduction is performed at construction —
+    /// to derive computed equations like `⊢ Prim(NatArith Add) lit_a lit_b ≡ lit_sum`
+    /// use [`crate::Thm::reduce_prim`].
+    pub fn prim(p: Prim) -> Self {
+        Self::alloc(TermKind::Prim(p))
+    }
+
     /// Wrap an observer as a typed leaf. The kernel treats the
     /// underlying value opaquely; only the user code constructing
     /// `o` controls what observations exist.
@@ -837,9 +961,13 @@ impl Term {
     pub fn has_no_obs(&self) -> bool {
         match self.kind() {
             TermKind::Obs(..) => false,
-            TermKind::Bound(_) | TermKind::Free(..) | TermKind::Const(..) | TermKind::Blob(_) => {
-                true
-            }
+            TermKind::Bound(_)
+            | TermKind::Free(..)
+            | TermKind::Const(..)
+            | TermKind::Blob(_)
+            | TermKind::NatLit(_)
+            | TermKind::IntLit(_)
+            | TermKind::Prim(_) => true,
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
                 a.has_no_obs() && b.has_no_obs()
             }
@@ -854,9 +982,13 @@ impl Term {
     pub fn all_obs_match<O: Observer>(&self) -> bool {
         match self.kind() {
             TermKind::Obs(observer, _) => observer.downcast::<O>().is_some(),
-            TermKind::Bound(_) | TermKind::Free(..) | TermKind::Const(..) | TermKind::Blob(_) => {
-                true
-            }
+            TermKind::Bound(_)
+            | TermKind::Free(..)
+            | TermKind::Const(..)
+            | TermKind::Blob(_)
+            | TermKind::NatLit(_)
+            | TermKind::IntLit(_)
+            | TermKind::Prim(_) => true,
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
                 a.all_obs_match::<O>() && b.all_obs_match::<O>()
             }
@@ -877,9 +1009,13 @@ impl Term {
                 f(o);
                 Ok(())
             }
-            TermKind::Bound(_) | TermKind::Free(..) | TermKind::Const(..) | TermKind::Blob(_) => {
-                Ok(())
-            }
+            TermKind::Bound(_)
+            | TermKind::Free(..)
+            | TermKind::Const(..)
+            | TermKind::Blob(_)
+            | TermKind::NatLit(_)
+            | TermKind::IntLit(_)
+            | TermKind::Prim(_) => Ok(()),
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
                 a.for_each_obs::<O, F>(f)?;
                 b.for_each_obs::<O, F>(f)
@@ -934,6 +1070,9 @@ impl fmt::Display for Term {
             TermKind::All(hint, ty, body) => write!(f, "(⋀{}:{}. {})", hint, ty, body),
             TermKind::Eq(a, b) => write!(f, "({} ≡ {})", a, b),
             TermKind::Blob(b) => write!(f, "blob[{}]", b.len()),
+            TermKind::NatLit(n) => write!(f, "{}n", n.as_inner()),
+            TermKind::IntLit(n) => write!(f, "{}i", n.as_inner()),
+            TermKind::Prim(p) => write!(f, "{:?}", p),
             TermKind::Obs(observer, ty) => write!(f, "obs[{:?}:{}]", observer, ty),
             TermKind::Def(d) => write!(f, "{}", d),
         }
@@ -1044,6 +1183,9 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
             Ok(Type::prop())
         }
         TermKind::Blob(_) => Ok(Type::bytes()),
+        TermKind::NatLit(_) => Ok(Type::nat()),
+        TermKind::IntLit(_) => Ok(Type::int()),
+        TermKind::Prim(p) => Ok(p.ty()),
         TermKind::Obs(_, ty) => Ok(ty.clone()),
         // A `Def` denotes its body at the current instance type.
         // The body was validated once at `Thm::define` time, and

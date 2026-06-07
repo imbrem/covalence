@@ -77,6 +77,8 @@ const TY_BYTES: u8 = 0x02;
 const TY_FUN: u8 = 0x03;
 const TY_TYCON: u8 = 0x04;
 const TY_TYCON_OBS: u8 = 0x05;
+const TY_NAT: u8 = 0x06;
+const TY_INT: u8 = 0x07;
 
 // ---- term tags ----
 const T_BOUND: u8 = 0x00;
@@ -90,6 +92,9 @@ const T_EQ: u8 = 0x07;
 const T_BLOB: u8 = 0x08;
 const T_OBS: u8 = 0x09;
 const T_DEF: u8 = 0x0a;
+const T_NAT_LIT: u8 = 0x0b;
+const T_INT_LIT: u8 = 0x0c;
+const T_PRIM: u8 = 0x0d;
 
 // ============================================================================
 // Stateless API
@@ -163,6 +168,8 @@ impl Hasher {
             }
             TypeKind::Prop => ctx.tag([TY_PROP]),
             TypeKind::Bytes => ctx.tag([TY_BYTES]),
+            TypeKind::Nat => ctx.tag([TY_NAT]),
+            TypeKind::Int => ctx.tag([TY_INT]),
             TypeKind::Fun(a, b) => {
                 let ah = self.hash_type(a, oh);
                 let bh = self.hash_type(b, oh);
@@ -273,6 +280,36 @@ impl Hasher {
                 buf.extend_from_slice(&(name_bytes.len() as u32).to_le_bytes());
                 buf.extend_from_slice(name_bytes);
                 buf.extend_from_slice(body_h.as_bytes());
+                ctx.tag(buf)
+            }
+            TermKind::NatLit(n) => {
+                let s = n.as_inner().to_string();
+                let bytes = s.as_bytes();
+                let mut buf = Vec::with_capacity(1 + 4 + bytes.len());
+                buf.push(T_NAT_LIT);
+                buf.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+                buf.extend_from_slice(bytes);
+                ctx.tag(buf)
+            }
+            TermKind::IntLit(n) => {
+                let s = n.as_inner().to_string();
+                let bytes = s.as_bytes();
+                let mut buf = Vec::with_capacity(1 + 4 + bytes.len());
+                buf.push(T_INT_LIT);
+                buf.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+                buf.extend_from_slice(bytes);
+                ctx.tag(buf)
+            }
+            TermKind::Prim(p) => {
+                // Each `Prim` variant has a small canonical name —
+                // hash by Debug output (cross-process stable for the
+                // enum tags we define).
+                let s = format!("{:?}", p);
+                let bytes = s.as_bytes();
+                let mut buf = Vec::with_capacity(1 + 4 + bytes.len());
+                buf.push(T_PRIM);
+                buf.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+                buf.extend_from_slice(bytes);
                 ctx.tag(buf)
             }
         }

@@ -33,6 +33,9 @@ fn close_at(t: &Term, name: &str, depth: u32) -> Term {
         | TermKind::Free(..)
         | TermKind::Const(..)
         | TermKind::Blob(_)
+        | TermKind::NatLit(_)
+        | TermKind::IntLit(_)
+        | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => Term::app(close_at(f, name, depth), close_at(x, name, depth)),
@@ -69,6 +72,9 @@ fn inst(t: &Term, u: &Term, depth: u32) -> Term {
         TermKind::Free(..)
         | TermKind::Const(..)
         | TermKind::Blob(_)
+        | TermKind::NatLit(_)
+        | TermKind::IntLit(_)
+        | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => Term::app(inst(f, u, depth), inst(x, u, depth)),
@@ -122,6 +128,9 @@ fn shift_inner(t: &Term, delta: i64, cutoff: u32) -> Term {
         TermKind::Free(..)
         | TermKind::Const(..)
         | TermKind::Blob(_)
+        | TermKind::NatLit(_)
+        | TermKind::IntLit(_)
+        | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => {
@@ -161,6 +170,9 @@ fn subst_free_at(t: &Term, name: &str, r: &Term, depth: u32) -> Term {
         | TermKind::Free(..)
         | TermKind::Const(..)
         | TermKind::Blob(_)
+        | TermKind::NatLit(_)
+        | TermKind::IntLit(_)
+        | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => Term::app(
@@ -196,7 +208,9 @@ fn subst_free_at(t: &Term, name: &str, r: &Term, depth: u32) -> Term {
 pub fn subst_tfree_in_type(ty: &Type, name: &str, r: &Type) -> Type {
     match ty.kind() {
         TypeKind::TFree(n) if n == name => r.clone(),
-        TypeKind::TFree(_) | TypeKind::Prop | TypeKind::Bytes => ty.clone(),
+        TypeKind::TFree(_) | TypeKind::Prop | TypeKind::Bytes | TypeKind::Nat | TypeKind::Int => {
+            ty.clone()
+        }
         TypeKind::Fun(a, b) => Type::fun(
             subst_tfree_in_type(a, name, r),
             subst_tfree_in_type(b, name, r),
@@ -235,6 +249,9 @@ pub fn subst_tfree_in_term(t: &Term, name: &str, r: &Type) -> Term {
         TermKind::Imp(a, b) => Term::imp(sub(a), sub(b)),
         TermKind::Eq(a, b) => Term::eq(sub(a), sub(b)),
         TermKind::Blob(b) => Term::blob(b.clone()),
+        TermKind::NatLit(n) => Term::nat_lit(n.clone()),
+        TermKind::IntLit(n) => Term::int_lit(n.clone()),
+        TermKind::Prim(p) => Term::prim(*p),
         TermKind::Obs(observer, ty) => Term::obs_from_dyn(observer.clone(), st(ty)),
         // `Def` carries an `original` Arc identity (the unique
         // `Thm::define` call) plus an `instance_type`. Substitution
@@ -264,6 +281,9 @@ fn is_closed_at(t: &Term, depth: u32) -> bool {
         TermKind::Free(..)
         | TermKind::Const(..)
         | TermKind::Blob(_)
+        | TermKind::NatLit(_)
+        | TermKind::IntLit(_)
+        | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => true,
         TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
@@ -289,6 +309,9 @@ pub fn find_free_type(t: &Term, name: &str) -> Option<Type> {
         | TermKind::Free(..)
         | TermKind::Const(..)
         | TermKind::Blob(_)
+        | TermKind::NatLit(_)
+        | TermKind::IntLit(_)
+        | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => None,
         TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
@@ -312,6 +335,9 @@ fn uses_bound_at(t: &Term, target: u32, depth: u32) -> bool {
         TermKind::Free(..)
         | TermKind::Const(..)
         | TermKind::Blob(_)
+        | TermKind::NatLit(_)
+        | TermKind::IntLit(_)
+        | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => false,
         TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
@@ -348,7 +374,11 @@ pub fn collect_term_tvars(t: &Term, out: &mut std::collections::BTreeSet<SmolStr
             collect_term_tvars(a, out);
             collect_term_tvars(b, out);
         }
-        TermKind::Bound(_) | TermKind::Blob(_) => {}
+        TermKind::Bound(_)
+        | TermKind::Blob(_)
+        | TermKind::NatLit(_)
+        | TermKind::IntLit(_)
+        | TermKind::Prim(_) => {}
         TermKind::Def(d) => collect_term_tvars(&d.body(), out),
     }
 }
@@ -379,7 +409,10 @@ pub fn match_types(
                 Ok(())
             }
         },
-        (TypeKind::Prop, TypeKind::Prop) | (TypeKind::Bytes, TypeKind::Bytes) => Ok(()),
+        (TypeKind::Prop, TypeKind::Prop)
+        | (TypeKind::Bytes, TypeKind::Bytes)
+        | (TypeKind::Nat, TypeKind::Nat)
+        | (TypeKind::Int, TypeKind::Int) => Ok(()),
         (TypeKind::Fun(pa, pb), TypeKind::Fun(ta, tb)) => {
             match_types(pa, ta, sub)?;
             match_types(pb, tb, sub)

@@ -133,6 +133,8 @@ pub fn type_to_sexp(ty: &Type, ser: &dyn ObsSerializer) -> Result<SExpr> {
         TypeKind::TFree(name) => list2("tfree", sym(name)),
         TypeKind::Prop => list1("prop"),
         TypeKind::Bytes => list1("bytes"),
+        TypeKind::Nat => list1("nat"),
+        TypeKind::Int => list1("int"),
         TypeKind::Fun(a, b) => list3("fun", type_to_sexp(a, ser)?, type_to_sexp(b, ser)?),
         TypeKind::Tycon(name, args) => {
             let mut children = Vec::with_capacity(2 + args.len());
@@ -174,6 +176,14 @@ pub fn type_from_sexp(s: &SExpr, parser: &dyn ObsParser) -> Result<Type> {
         "bytes" => {
             expect_arity(children, 1, "bytes")?;
             Ok(Type::bytes())
+        }
+        "nat" => {
+            expect_arity(children, 1, "nat")?;
+            Ok(Type::nat())
+        }
+        "int" => {
+            expect_arity(children, 1, "int")?;
+            Ok(Type::int())
         }
         "fun" => {
             expect_arity(children, 3, "fun")?;
@@ -244,6 +254,9 @@ pub fn term_to_sexp(t: &Term, ser: &dyn ObsSerializer) -> Result<SExpr> {
                 bytes: bytes.clone(),
             }),
         ),
+        TermKind::NatLit(n) => list2("nat-lit", sym(n.as_inner().to_string().as_str())),
+        TermKind::IntLit(n) => list2("int-lit", sym(n.as_inner().to_string().as_str())),
+        TermKind::Prim(p) => list2("prim", sym(format!("{:?}", p).as_str())),
         TermKind::Obs(observer, ty) => {
             let payload = ser.obs_to_sexp(observer)?;
             list3("obs", payload, type_to_sexp(ty, ser)?)

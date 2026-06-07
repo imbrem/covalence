@@ -8,6 +8,7 @@ edition = "2024"
 # in `covalence-pure-shell` and consume this crate from outside.
 
 [dependencies]
+covalence-types = { path = "../covalence-types" }
 smol_str = "0.3"
 bytes = "1"
 thiserror = "2"

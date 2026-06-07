@@ -36,55 +36,185 @@ interface runtime {
     call-u32: func(inst: borrow<instance>, name: string, arg: u32) -> result<u32, string>;
 }
 
-/// MVP build interface — programmatic WASM construction from inside a
-/// guest. v0 exposes ONE recipe (`build-add-module`) so we can prove
-/// the metacircular loop (`build` → `runtime.compile` → `runtime.call`)
-/// works in both the native and JS hosts. Real `module-builder` /
-/// `func-body` resources mirroring `covalence_wasm::build::*` come
-/// later (see proposal).
+/// Build interface — programmatic WASM construction from inside a
+/// guest. Mirrors `covalence_wasm::build::*` for the i32/i64 core
+/// instruction subset most metacircular guests need.
+///
+/// Floats are deferred: WIT reserves `f32` and `f64` as type keywords,
+/// so adding them later means introducing renamed enum cases
+/// (`float-32`/`float-64`) — leaving them out for now keeps the WIT
+/// names aligned with the Rust API.
 interface build {
     /// WASM value type subset. Mirror of `covalence_wasm::build::ValType`.
-    /// f32/f64 deferred: WIT reserves those identifiers as type keywords.
     enum val-type {
         i32,
         i64,
     }
 
-    /// Function index in the module being built. Returned by `end-func`,
-    /// fed to `export-func` and `call`.
+    /// Empty / value-result / type-result block signature.
+    /// Mirrors `wasm_encoder::BlockType` for the subset needed by core
+    /// modules without function-typed blocks.
+    variant block-type {
+        empty,
+        %result(val-type),
+    }
+
+    /// Function index in the module being built. Returned by `start-func`
+    /// (immediately, not on close), fed to `export-func`, `call`, and
+    /// `start`.
     type func-idx = u32;
+    /// Memory index. Returned by `memory` / `import-memory`, consumed by
+    /// load/store/grow/size/data-active/export-memory.
+    type mem-idx = u32;
+    /// Global index. Returned by `global-*`, consumed by `global-get/set`
+    /// and `export-global`.
+    type global-idx = u32;
 
     /// Stateful module being assembled. Hold across method calls while
-    /// you append functions and exports; `finish` snapshots and emits
-    /// the binary. One "open function" at a time — `start-func` opens
-    /// it, instruction methods append, `end-func` closes.
+    /// you append imports / functions / memories / globals / exports;
+    /// `finish` snapshots and emits the binary.
+    ///
+    /// One "open function" at a time — `start-func` opens it,
+    /// instruction methods append, `end-func` closes. Instruction methods
+    /// trap if no function is open. `finish` is one-shot: subsequent
+    /// method calls on this resource trap.
     resource module-builder {
         constructor();
+
+        // ----- Top-level declarations -----
+
+        /// Import a function. Returns its index in the function index
+        /// space (imports precede locally-defined functions).
+        import-func: func(
+            %module: string,
+            name: string,
+            params: list<val-type>,
+            results: list<val-type>,
+        ) -> func-idx;
+
+        /// Declare a memory with the given initial page count.
+        memory: func(initial-pages: u32) -> mem-idx;
+
+        /// Declare an immutable i32 global.
+        global-i32: func(init: s32) -> global-idx;
+        /// Declare a mutable i32 global.
+        global-i32-mut: func(init: s32) -> global-idx;
+        /// Declare an immutable i64 global.
+        global-i64: func(init: s64) -> global-idx;
+        /// Declare a mutable i64 global.
+        global-i64-mut: func(init: s64) -> global-idx;
+
+        /// Active data segment: initialize `mem` at `offset` with `bytes`.
+        data-active: func(mem: mem-idx, offset: u32, bytes: list<u8>);
 
         /// Open a new function with the given signature. Instruction
         /// methods called afterward append to it. Traps if another
         /// function is already open.
         start-func: func(params: list<val-type>, results: list<val-type>) -> func-idx;
 
-        // -- Instructions (subset). All trap if no function is open. --
+        /// Close the currently-open function. Traps if none is open.
+        end-func: func();
 
+        // ----- Exports -----
+
+        export-func: func(name: string, idx: func-idx);
+        export-memory: func(name: string, idx: mem-idx);
+        export-global: func(name: string, idx: global-idx);
+
+        /// Set the module's start function (called on instantiation).
+        start: func(idx: func-idx);
+
+        // ----- Instructions (open-function only) -----
+        //
+        // Naming follows `covalence_wasm::build::FuncBody` 1:1; see
+        // there for argument semantics. Each method traps if no
+        // function is open.
+
+        // Control flow.
+        unreachable: func();
+        nop: func();
+        block: func(ty: block-type);
+        loop: func(ty: block-type);
+        %if: func(ty: block-type);
+        %else: func();
+        end: func();
+        br: func(depth: u32);
+        br-if: func(depth: u32);
+        %return: func();
+        // NOTE: the wasm `drop` opcode is intentionally omitted from
+        // this WIT — `wasmtime::component::bindgen!` auto-generates a
+        // `drop` method on every resource trait (for resource
+        // destruction), so naming an instruction `drop` here collides.
+        // Guests that need it can hold a value in a local instead, or
+        // we can expose it under a renamed binding later.
+        call: func(idx: func-idx);
+
+        // Locals.
         local-get: func(idx: u32);
         local-set: func(idx: u32);
+        local-tee: func(idx: u32);
+
+        // Globals.
+        global-get: func(idx: global-idx);
+        global-set: func(idx: global-idx);
+
+        // i32 ops.
         i32-const: func(val: s32);
         i32-add: func();
         i32-sub: func();
         i32-mul: func();
-        call: func(idx: func-idx);
+        i32-and: func();
+        i32-or: func();
+        i32-xor: func();
+        i32-shl: func();
+        i32-shr-s: func();
+        i32-shr-u: func();
+        i32-eqz: func();
+        i32-eq: func();
+        i32-ne: func();
+        i32-lt-s: func();
+        i32-lt-u: func();
+        i32-gt-s: func();
+        i32-gt-u: func();
+        i32-le-s: func();
+        i32-le-u: func();
+        i32-ge-s: func();
+        i32-ge-u: func();
 
-        /// Close the currently-open function. Traps if none is open.
-        end-func: func();
+        // i64 ops.
+        i64-const: func(val: s64);
+        i64-add: func();
+        i64-sub: func();
+        i64-mul: func();
+        i64-eqz: func();
+        i64-eq: func();
+        i64-ne: func();
 
-        /// Export the function by name.
-        export-func: func(name: string, idx: func-idx);
+        // Conversions.
+        i32-wrap-i64: func();
+        i64-extend-i32-s: func();
+        i64-extend-i32-u: func();
+
+        // Memory ops. `offset` is the static offset; alignment is
+        // picked automatically by the host (full-width for `i32.load`
+        // / `i32.store`, byte-aligned for the `*8_u` / `*8` variants).
+        i32-load: func(mem: mem-idx, offset: u32);
+        i32-store: func(mem: mem-idx, offset: u32);
+        i32-load8-u: func(mem: mem-idx, offset: u32);
+        i32-store8: func(mem: mem-idx, offset: u32);
+        i64-load: func(mem: mem-idx, offset: u32);
+        i64-store: func(mem: mem-idx, offset: u32);
+        memory-grow: func(mem: mem-idx);
+        memory-size: func(mem: mem-idx);
 
         /// Consume the builder and emit wasm binary bytes. One-shot:
         /// subsequent calls on this resource trap.
         finish: func() -> list<u8>;
+
+        /// Like `finish`, but additionally validates the encoded bytes.
+        /// Returns the bytes on success or a validation error string on
+        /// failure.
+        finish-validated: func() -> result<list<u8>, string>;
     }
 
     /// Canned single-function recipe (kept for the earlier smoke

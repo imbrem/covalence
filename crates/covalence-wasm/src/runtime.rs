@@ -2,6 +2,13 @@
 //!
 //! See `wit/cov-wasm.wit` for the interface definitions and
 //! `docs/design/proposals/wasm-runtime/` for the broader plan.
+//!
+//! The build interface is intentionally a 1:1 mirror of
+//! `crate::build::{ModuleBuilder, FuncBody}` — every WIT method on
+//! `module-builder` delegates straight through to the builder. The
+//! `module_builder_methods!` macro below collapses the otherwise
+//! identical `lookup → call current FuncBody method → Ok(())` pattern
+//! across every instruction binding.
 
 use wasmtime::component::{Component, Linker as CompLinker, ResourceTable};
 use wasmtime::{Engine, Module, Store};
@@ -21,11 +28,7 @@ wasmtime::component::bindgen!({
     imports: { default: trappable },
 });
 
-/// First byte of the version word distinguishes core modules from
-/// components. Mirror of the same discriminator in the JS host.
-fn is_component(bytes: &[u8]) -> bool {
-    bytes.len() >= 8 && bytes[..4] == [0x00, 0x61, 0x73, 0x6d] && bytes[4] != 0x01
-}
+use crate::is_component;
 
 /// Backing type for the `cov:wasm/runtime/component` resource.
 /// Holds either a compiled component or a compiled core module; the
@@ -215,7 +218,16 @@ fn val_type_from_wit(v: cov::wasm::build::ValType) -> crate::build::ValType {
     }
 }
 
-fn cur<'a>(b: &'a mut HostModuleBuilder) -> wasmtime::Result<&'a mut crate::build::FuncBody> {
+fn block_type_from_wit(b: cov::wasm::build::BlockType) -> crate::build::BlockType {
+    use crate::build::BlockType as B;
+    use cov::wasm::build::BlockType as W;
+    match b {
+        W::Empty => B::Empty,
+        W::Result(v) => B::Result(val_type_from_wit(v)),
+    }
+}
+
+fn current<'a>(b: &'a mut HostModuleBuilder) -> wasmtime::Result<&'a mut crate::build::FuncBody> {
     b.current
         .as_mut()
         .ok_or_else(|| wasmtime::Error::msg("no function is open; call start-func first"))
@@ -229,6 +241,28 @@ fn builder_mut<'a>(
         .ok_or_else(|| wasmtime::Error::msg("module-builder already finished"))
 }
 
+/// Generate the bulk of `HostModuleBuilder` instruction methods.
+///
+/// Each entry expands to a single trait method that looks up the
+/// builder, dereferences the currently-open `FuncBody`, calls the
+/// matching `crate::build::FuncBody` method, and returns `Ok(())`.
+macro_rules! module_builder_methods {
+    (
+        $($iname:ident ( $($iarg:ident : $ity:ty),* $(,)? ) => $imethod:ident ( $($iarg2:expr),* $(,)? ) ;)*
+    ) => {
+        $(
+            fn $iname(
+                &mut self,
+                rep: wasmtime::component::Resource<HostModuleBuilder>,
+                $($iarg: $ity),*
+            ) -> wasmtime::Result<()> {
+                current(self.table.get_mut(&rep)?)?.$imethod($($iarg2),*);
+                Ok(())
+            }
+        )*
+    };
+}
+
 impl cov::wasm::build::HostModuleBuilder for RuntimeHost {
     fn new(&mut self) -> wasmtime::Result<wasmtime::component::Resource<HostModuleBuilder>> {
         self.table
@@ -237,6 +271,25 @@ impl cov::wasm::build::HostModuleBuilder for RuntimeHost {
                 current: None,
             })
             .map_err(wasmtime::Error::from)
+    }
+
+    // ----- Hand-written top-level methods (signature-translating or one-shot) -----
+
+    fn import_func(
+        &mut self,
+        rep: wasmtime::component::Resource<HostModuleBuilder>,
+        module: String,
+        name: String,
+        params: Vec<cov::wasm::build::ValType>,
+        results: Vec<cov::wasm::build::ValType>,
+    ) -> wasmtime::Result<u32> {
+        let params: Vec<_> = params.into_iter().map(val_type_from_wit).collect();
+        let results: Vec<_> = results.into_iter().map(val_type_from_wit).collect();
+        Ok(
+            builder_mut(self.table.get_mut(&rep)?)?
+                .import_func(&module, &name, &params, &results)
+                .0,
+        )
     }
 
     fn start_func(
@@ -255,66 +308,6 @@ impl cov::wasm::build::HostModuleBuilder for RuntimeHost {
         let idx = body.idx().0;
         b.current = Some(body);
         Ok(idx)
-    }
-
-    fn local_get(
-        &mut self,
-        rep: wasmtime::component::Resource<HostModuleBuilder>,
-        idx: u32,
-    ) -> wasmtime::Result<()> {
-        cur(self.table.get_mut(&rep)?)?.local_get(idx);
-        Ok(())
-    }
-
-    fn local_set(
-        &mut self,
-        rep: wasmtime::component::Resource<HostModuleBuilder>,
-        idx: u32,
-    ) -> wasmtime::Result<()> {
-        cur(self.table.get_mut(&rep)?)?.local_set(idx);
-        Ok(())
-    }
-
-    fn i32_const(
-        &mut self,
-        rep: wasmtime::component::Resource<HostModuleBuilder>,
-        val: i32,
-    ) -> wasmtime::Result<()> {
-        cur(self.table.get_mut(&rep)?)?.i32_const(val);
-        Ok(())
-    }
-
-    fn i32_add(
-        &mut self,
-        rep: wasmtime::component::Resource<HostModuleBuilder>,
-    ) -> wasmtime::Result<()> {
-        cur(self.table.get_mut(&rep)?)?.i32_add();
-        Ok(())
-    }
-
-    fn i32_sub(
-        &mut self,
-        rep: wasmtime::component::Resource<HostModuleBuilder>,
-    ) -> wasmtime::Result<()> {
-        cur(self.table.get_mut(&rep)?)?.i32_sub();
-        Ok(())
-    }
-
-    fn i32_mul(
-        &mut self,
-        rep: wasmtime::component::Resource<HostModuleBuilder>,
-    ) -> wasmtime::Result<()> {
-        cur(self.table.get_mut(&rep)?)?.i32_mul();
-        Ok(())
-    }
-
-    fn call(
-        &mut self,
-        rep: wasmtime::component::Resource<HostModuleBuilder>,
-        idx: u32,
-    ) -> wasmtime::Result<()> {
-        cur(self.table.get_mut(&rep)?)?.call(crate::build::FuncIdx(idx));
-        Ok(())
     }
 
     fn end_func(
@@ -341,6 +334,51 @@ impl cov::wasm::build::HostModuleBuilder for RuntimeHost {
         Ok(())
     }
 
+    fn export_memory(
+        &mut self,
+        rep: wasmtime::component::Resource<HostModuleBuilder>,
+        name: String,
+        idx: u32,
+    ) -> wasmtime::Result<()> {
+        builder_mut(self.table.get_mut(&rep)?)?.export_memory(&name, crate::build::MemIdx(idx));
+        Ok(())
+    }
+
+    fn export_global(
+        &mut self,
+        rep: wasmtime::component::Resource<HostModuleBuilder>,
+        name: String,
+        idx: u32,
+    ) -> wasmtime::Result<()> {
+        builder_mut(self.table.get_mut(&rep)?)?
+            .export_global(&name, crate::build::GlobalIdx(idx));
+        Ok(())
+    }
+
+    fn start(
+        &mut self,
+        rep: wasmtime::component::Resource<HostModuleBuilder>,
+        idx: u32,
+    ) -> wasmtime::Result<()> {
+        builder_mut(self.table.get_mut(&rep)?)?.start(crate::build::FuncIdx(idx));
+        Ok(())
+    }
+
+    fn data_active(
+        &mut self,
+        rep: wasmtime::component::Resource<HostModuleBuilder>,
+        mem: u32,
+        offset: u32,
+        bytes: Vec<u8>,
+    ) -> wasmtime::Result<()> {
+        builder_mut(self.table.get_mut(&rep)?)?.data_active(
+            crate::build::MemIdx(mem),
+            offset,
+            &bytes,
+        );
+        Ok(())
+    }
+
     fn finish(
         &mut self,
         rep: wasmtime::component::Resource<HostModuleBuilder>,
@@ -353,12 +391,143 @@ impl cov::wasm::build::HostModuleBuilder for RuntimeHost {
         Ok(builder.finish())
     }
 
+    fn finish_validated(
+        &mut self,
+        rep: wasmtime::component::Resource<HostModuleBuilder>,
+    ) -> Trappable<Vec<u8>> {
+        let b = self.table.get_mut(&rep).map_err(wasmtime::Error::from)?;
+        let builder = b
+            .builder
+            .take()
+            .ok_or_else(|| wasmtime::Error::msg("module-builder already finished"))?;
+        Ok(builder.finish_validated().map_err(|e| e.to_string()))
+    }
+
     fn drop(
         &mut self,
         rep: wasmtime::component::Resource<HostModuleBuilder>,
     ) -> wasmtime::Result<()> {
         self.table.delete(rep)?;
         Ok(())
+    }
+
+    // ----- Top-level builder calls (each returns a u32 index) -----
+
+    fn memory(
+        &mut self,
+        rep: wasmtime::component::Resource<HostModuleBuilder>,
+        initial_pages: u32,
+    ) -> wasmtime::Result<u32> {
+        Ok(builder_mut(self.table.get_mut(&rep)?)?.memory(initial_pages).0)
+    }
+
+    fn global_i32(
+        &mut self,
+        rep: wasmtime::component::Resource<HostModuleBuilder>,
+        init: i32,
+    ) -> wasmtime::Result<u32> {
+        Ok(builder_mut(self.table.get_mut(&rep)?)?.global_i32(init).0)
+    }
+
+    fn global_i32_mut(
+        &mut self,
+        rep: wasmtime::component::Resource<HostModuleBuilder>,
+        init: i32,
+    ) -> wasmtime::Result<u32> {
+        Ok(builder_mut(self.table.get_mut(&rep)?)?.global_i32_mut(init).0)
+    }
+
+    fn global_i64(
+        &mut self,
+        rep: wasmtime::component::Resource<HostModuleBuilder>,
+        init: i64,
+    ) -> wasmtime::Result<u32> {
+        Ok(builder_mut(self.table.get_mut(&rep)?)?.global_i64(init).0)
+    }
+
+    fn global_i64_mut(
+        &mut self,
+        rep: wasmtime::component::Resource<HostModuleBuilder>,
+        init: i64,
+    ) -> wasmtime::Result<u32> {
+        Ok(builder_mut(self.table.get_mut(&rep)?)?.global_i64_mut(init).0)
+    }
+
+    // ----- Instruction methods (open-function delegations) -----
+
+    module_builder_methods! {
+        // Control flow. WIT keywords (`loop`, `if`, `else`, `return`)
+        // come through bindgen as `loop_`, `if_`, `else_`, `return_` —
+        // matching `crate::build::FuncBody`'s underscored spellings.
+        unreachable() => unreachable();
+        nop() => nop();
+        block(ty: cov::wasm::build::BlockType) => block(block_type_from_wit(ty));
+        loop_(ty: cov::wasm::build::BlockType) => loop_(block_type_from_wit(ty));
+        if_(ty: cov::wasm::build::BlockType) => if_(block_type_from_wit(ty));
+        else_() => else_();
+        end() => end();
+        br(depth: u32) => br(depth);
+        br_if(depth: u32) => br_if(depth);
+        return_() => return_();
+        // (`drop` instruction intentionally omitted — collides
+        // with bindgen's auto-generated resource `drop` method.)
+        call(idx: u32) => call(crate::build::FuncIdx(idx));
+
+        // Locals.
+        local_get(idx: u32) => local_get(idx);
+        local_set(idx: u32) => local_set(idx);
+        local_tee(idx: u32) => local_tee(idx);
+
+        // Globals.
+        global_get(idx: u32) => global_get(crate::build::GlobalIdx(idx));
+        global_set(idx: u32) => global_set(crate::build::GlobalIdx(idx));
+
+        // i32 ops.
+        i32_const(val: i32) => i32_const(val);
+        i32_add() => i32_add();
+        i32_sub() => i32_sub();
+        i32_mul() => i32_mul();
+        i32_and() => i32_and();
+        i32_or() => i32_or();
+        i32_xor() => i32_xor();
+        i32_shl() => i32_shl();
+        i32_shr_s() => i32_shr_s();
+        i32_shr_u() => i32_shr_u();
+        i32_eqz() => i32_eqz();
+        i32_eq() => i32_eq();
+        i32_ne() => i32_ne();
+        i32_lt_s() => i32_lt_s();
+        i32_lt_u() => i32_lt_u();
+        i32_gt_s() => i32_gt_s();
+        i32_gt_u() => i32_gt_u();
+        i32_le_s() => i32_le_s();
+        i32_le_u() => i32_le_u();
+        i32_ge_s() => i32_ge_s();
+        i32_ge_u() => i32_ge_u();
+
+        // i64 ops.
+        i64_const(val: i64) => i64_const(val);
+        i64_add() => i64_add();
+        i64_sub() => i64_sub();
+        i64_mul() => i64_mul();
+        i64_eqz() => i64_eqz();
+        i64_eq() => i64_eq();
+        i64_ne() => i64_ne();
+
+        // Conversions.
+        i32_wrap_i64() => i32_wrap_i64();
+        i64_extend_i32_s() => i64_extend_i32_s();
+        i64_extend_i32_u() => i64_extend_i32_u();
+
+        // Memory ops (mem-idx + offset). The Rust API picks alignment.
+        i32_load(mem: u32, offset: u32) => i32_load(crate::build::MemIdx(mem), offset);
+        i32_store(mem: u32, offset: u32) => i32_store(crate::build::MemIdx(mem), offset);
+        i32_load8_u(mem: u32, offset: u32) => i32_load8_u(crate::build::MemIdx(mem), offset);
+        i32_store8(mem: u32, offset: u32) => i32_store8(crate::build::MemIdx(mem), offset);
+        i64_load(mem: u32, offset: u32) => i64_load(crate::build::MemIdx(mem), offset);
+        i64_store(mem: u32, offset: u32) => i64_store(crate::build::MemIdx(mem), offset);
+        memory_grow(mem: u32) => memory_grow(crate::build::MemIdx(mem));
+        memory_size(mem: u32) => memory_size(crate::build::MemIdx(mem));
     }
 }
 
@@ -431,6 +600,12 @@ mod tests {
         wasmtime::component::Resource::new_borrow(rep)
     }
 
+    fn new_builder_rep(host: &mut RuntimeHost) -> u32 {
+        <RuntimeHost as cov::wasm::build::HostModuleBuilder>::new(host)
+            .expect("new builder")
+            .rep()
+    }
+
     /// Build the same `plus5` module via the `module-builder` resource
     /// (vs. the canned `build-add-module` recipe). Exercises the WIT
     /// resource machinery — constructor, mutating methods, finish.
@@ -438,10 +613,7 @@ mod tests {
     fn module_builder_resource_plus5() {
         use cov::wasm::build::{HostModuleBuilder as _, ValType};
         let mut host = RuntimeHost::new().expect("host");
-
-        let b_rep = <RuntimeHost as cov::wasm::build::HostModuleBuilder>::new(&mut host)
-            .expect("new builder")
-            .rep();
+        let b_rep = new_builder_rep(&mut host);
 
         let f_idx = host
             .start_func(borrow(b_rep), vec![ValType::I32], vec![ValType::I32])
@@ -475,10 +647,7 @@ mod tests {
     fn module_builder_two_functions_with_call() {
         use cov::wasm::build::{HostModuleBuilder as _, ValType};
         let mut host = RuntimeHost::new().expect("host");
-
-        let b_rep = <RuntimeHost as cov::wasm::build::HostModuleBuilder>::new(&mut host)
-            .expect("new builder")
-            .rep();
+        let b_rep = new_builder_rep(&mut host);
 
         // triple(x) = x * 3
         let triple_idx = host
@@ -522,11 +691,67 @@ mod tests {
     fn module_builder_errors_with_no_open_func() {
         use cov::wasm::build::HostModuleBuilder as _;
         let mut host = RuntimeHost::new().expect("host");
-        let b_rep = <RuntimeHost as cov::wasm::build::HostModuleBuilder>::new(&mut host)
-            .expect("new builder")
-            .rep();
-        // No start-func yet — i32-const should trap.
+        let b_rep = new_builder_rep(&mut host);
         let err = host.i32_const(borrow(b_rep), 1).expect_err("should trap");
         assert!(err.to_string().contains("no function"), "msg: {err}");
+    }
+
+    /// Exercise the freshly-exposed memory + global + control-flow WIT
+    /// surface end-to-end: build a module via the WIT, run it through
+    /// the same host's runtime.
+    #[test]
+    fn module_builder_memory_and_globals() {
+        use cov::wasm::build::{
+            BlockType as BT, HostModuleBuilder as _, ValType,
+        };
+        let mut host = RuntimeHost::new().expect("host");
+        let b_rep = new_builder_rep(&mut host);
+
+        let mem = host.memory(borrow(b_rep), 1).unwrap();
+        let g = host.global_i32_mut(borrow(b_rep), 0).unwrap();
+
+        // store_and_load(x): mem[0] = x; return mem[0] + global
+        let idx = host
+            .start_func(borrow(b_rep), vec![ValType::I32], vec![ValType::I32])
+            .unwrap();
+        host.i32_const(borrow(b_rep), 0).unwrap();
+        host.local_get(borrow(b_rep), 0).unwrap();
+        host.i32_store(borrow(b_rep), mem, 0).unwrap();
+        host.i32_const(borrow(b_rep), 0).unwrap();
+        host.i32_load(borrow(b_rep), mem, 0).unwrap();
+        host.global_get(borrow(b_rep), g).unwrap();
+        host.i32_add(borrow(b_rep)).unwrap();
+        host.end_func(borrow(b_rep)).unwrap();
+
+        host.export_func(borrow(b_rep), "go".to_string(), idx).unwrap();
+        host.export_memory(borrow(b_rep), "mem".to_string(), mem).unwrap();
+
+        // Throw a block in for control-flow coverage even though the
+        // outer fn doesn't need it.
+        let noop_idx = host.start_func(borrow(b_rep), vec![], vec![]).unwrap();
+        host.block(borrow(b_rep), BT::Empty).unwrap();
+        host.end(borrow(b_rep)).unwrap();
+        host.end_func(borrow(b_rep)).unwrap();
+        host.export_func(borrow(b_rep), "noop".to_string(), noop_idx)
+            .unwrap();
+
+        let bytes = host
+            .finish_validated(borrow(b_rep))
+            .expect("outer")
+            .expect("validated");
+
+        let comp = unwrap_trappable(
+            cov::wasm::runtime::Host::compile(&mut host, bytes),
+            "compile",
+        );
+        let inst = unwrap_trappable(
+            cov::wasm::runtime::Host::instantiate(&mut host, comp),
+            "instantiate",
+        );
+        let out = unwrap_trappable(
+            cov::wasm::runtime::Host::call_u32(&mut host, inst, "go".to_string(), 42),
+            "call",
+        );
+        assert_eq!(out, 42); // global is 0, so load + global = 42 + 0
     }
 }

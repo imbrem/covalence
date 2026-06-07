@@ -2,6 +2,35 @@ pub mod build;
 mod validate;
 pub use validate::{compile_wat, wasm_to_wat};
 
+/// Length of the WASM preamble (magic word + version), shared between
+/// modules and components.
+pub const PREAMBLE_LEN: usize = 8;
+
+/// Returns `true` if `bytes` start with the `\0asm` magic word and are
+/// long enough to carry a full preamble. Says nothing about whether the
+/// remainder is well-formed.
+#[inline]
+pub fn looks_like_wasm(bytes: &[u8]) -> bool {
+    bytes.len() >= PREAMBLE_LEN && bytes[..4] == [0x00, 0x61, 0x73, 0x6d]
+}
+
+/// Returns `true` if `bytes` look like a WASM core module — i.e. the
+/// preamble version word starts with `0x01`. Distinguishing modules
+/// from components by the version byte is the same trick the JS host
+/// uses; cheaper than a full parse.
+#[inline]
+pub fn is_module(bytes: &[u8]) -> bool {
+    looks_like_wasm(bytes) && bytes[4] == 0x01
+}
+
+/// Returns `true` if `bytes` look like a WASM component — i.e. the
+/// preamble version word starts with `0x0d`. The complementary check
+/// to [`is_module`].
+#[inline]
+pub fn is_component(bytes: &[u8]) -> bool {
+    looks_like_wasm(bytes) && bytes[4] == 0x0d
+}
+
 pub mod parse;
 pub use parse::{ComponentInfo, ModuleInfo, parse_component, parse_module};
 

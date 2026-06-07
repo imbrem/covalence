@@ -7,11 +7,6 @@ use pyo3::types::PyBytes;
 use crate::component::Component;
 use crate::hash::O256;
 
-/// Returns true if bytes represent a WASM component (not a core module).
-fn is_component_bytes(bytes: &[u8]) -> bool {
-    bytes.len() >= 8 && bytes[0..4] == *b"\0asm" && bytes[4] == 0x0d
-}
-
 /// Validated WASM container: a component whose imports all conform to the
 /// kernel's expected format, ready for proving.
 #[pyclass(from_py_object)]
@@ -26,7 +21,7 @@ pub struct Container {
 impl Container {
     /// Parse as component + validate kernel imports.
     fn from_wasm_bytes(wasm: Vec<u8>) -> PyResult<Self> {
-        if !is_component_bytes(&wasm) {
+        if !covalence_wasm::is_component(&wasm) {
             return Err(PyValueError::new_err(
                 "expected a WASM component, got a core module or invalid bytes",
             ));

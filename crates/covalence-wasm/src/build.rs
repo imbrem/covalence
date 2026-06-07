@@ -1,37 +1,64 @@
 //! Higher-level WASM core module builder.
 //!
-//! Wraps [`wasm_encoder`] with typed index handles and convenience methods
-//! for the instruction set needed by generated checkers. The full
-//! `wasm_encoder` crate is re-exported for advanced use.
+//! Wraps [`wasm_encoder`] with typed index handles and a fluent function
+//! builder. Instructions are encoded directly into a byte buffer via
+//! [`wasm_encoder::InstructionSink`] — no parallel `enum Insn` shadow
+//! representation — and the full `wasm_encoder` crate is re-exported so
+//! advanced callers can drop down when the typed surface is missing
+//! something.
 
 pub use wasm_encoder;
-pub use wasm_encoder::{BlockType, MemArg, ValType};
+pub use wasm_encoder::{BlockType, InstructionSink, MemArg, ValType};
+
+use wasm_encoder::{ConstExpr, EntityType, ExportKind, GlobalType, MemoryType};
 
 // ---------------------------------------------------------------------------
 // Typed indices
 // ---------------------------------------------------------------------------
 
-/// Index into the module's function index space.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FuncIdx(pub u32);
+macro_rules! typed_idx {
+    ($($(#[$attr:meta])* $name:ident),* $(,)?) => {
+        $(
+            $(#[$attr])*
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+            pub struct $name(pub u32);
 
-/// Index into the module's memory index space.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MemIdx(pub u32);
+            impl From<$name> for u32 {
+                fn from(idx: $name) -> u32 {
+                    idx.0
+                }
+            }
+        )*
+    };
+}
 
-/// Index into the module's global index space.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GlobalIdx(pub u32);
-
-/// Index into the module's type index space.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TypeIdx(pub u32);
+typed_idx! {
+    /// Index into the module's function index space.
+    FuncIdx,
+    /// Index into the module's memory index space.
+    MemIdx,
+    /// Index into the module's global index space.
+    GlobalIdx,
+    /// Index into the module's type index space.
+    TypeIdx,
+}
 
 // ---------------------------------------------------------------------------
 // ModuleBuilder
 // ---------------------------------------------------------------------------
 
 /// High-level WASM core module builder.
+///
+/// Sections are emitted in WASM-spec order on [`finish`](Self::finish);
+/// empty sections are elided. Function and instruction encoding is
+/// delegated to [`wasm_encoder`]; this type just tracks index spaces and
+/// presents a fluent typed surface.
+///
+/// `Clone` exists so callers can snapshot an in-progress builder
+/// without consuming it (e.g. to render WAT mid-construction).
+/// Cloning duplicates the underlying section byte buffers; finishing a
+/// clone does not affect the original.
+#[derive(Clone)]
 pub struct ModuleBuilder {
     types: wasm_encoder::TypeSection,
     imports: wasm_encoder::ImportSection,
@@ -41,12 +68,13 @@ pub struct ModuleBuilder {
     exports: wasm_encoder::ExportSection,
     code: wasm_encoder::CodeSection,
     data: wasm_encoder::DataSection,
-    // tracking
+    // index-space cursors
     next_type: u32,
     next_func: u32,
     num_imports: u32,
     next_mem: u32,
     next_global: u32,
+    num_data: u32,
     start: Option<u32>,
 }
 
@@ -66,13 +94,24 @@ impl ModuleBuilder {
             num_imports: 0,
             next_mem: 0,
             next_global: 0,
+            num_data: 0,
             start: None,
         }
     }
 
     // -- Types & imports --
 
-    /// Import a function. Returns its index in the function index space.
+    fn push_function_type(&mut self, params: &[ValType], results: &[ValType]) -> u32 {
+        let idx = self.next_type;
+        self.next_type += 1;
+        self.types
+            .ty()
+            .function(params.iter().copied(), results.iter().copied());
+        idx
+    }
+
+    /// Import a function. Returns its index in the (shared) function
+    /// index space, where imports come before locally-defined functions.
     pub fn import_func(
         &mut self,
         module: &str,
@@ -80,13 +119,9 @@ impl ModuleBuilder {
         params: &[ValType],
         results: &[ValType],
     ) -> FuncIdx {
-        let type_idx = self.next_type;
-        self.next_type += 1;
-        self.types
-            .ty()
-            .function(params.iter().copied(), results.iter().copied());
+        let type_idx = self.push_function_type(params, results);
         self.imports
-            .import(module, name, wasm_encoder::EntityType::Function(type_idx));
+            .import(module, name, EntityType::Function(type_idx));
         let func_idx = self.next_func;
         self.next_func += 1;
         self.num_imports += 1;
@@ -97,9 +132,14 @@ impl ModuleBuilder {
 
     /// Declare a memory with the given initial page count.
     pub fn memory(&mut self, initial_pages: u32) -> MemIdx {
-        self.memories.memory(wasm_encoder::MemoryType {
+        self.memory_with(initial_pages, None)
+    }
+
+    /// Declare a memory with both minimum and maximum page counts.
+    pub fn memory_with(&mut self, initial_pages: u32, maximum_pages: Option<u32>) -> MemIdx {
+        self.memories.memory(MemoryType {
             minimum: initial_pages as u64,
-            maximum: None,
+            maximum: maximum_pages.map(|m| m as u64),
             memory64: false,
             shared: false,
             page_size_log2: None,
@@ -111,53 +151,52 @@ impl ModuleBuilder {
 
     // -- Globals --
 
-    /// Declare an immutable i32 global.
-    pub fn global_i32(&mut self, init: i32) -> GlobalIdx {
+    fn push_global(&mut self, val_type: ValType, mutable: bool, init: &ConstExpr) -> GlobalIdx {
         self.globals.global(
-            wasm_encoder::GlobalType {
-                val_type: ValType::I32,
-                mutable: false,
+            GlobalType {
+                val_type,
+                mutable,
                 shared: false,
             },
-            &wasm_encoder::ConstExpr::i32_const(init),
+            init,
         );
         let idx = self.next_global;
         self.next_global += 1;
         GlobalIdx(idx)
     }
 
+    /// Declare an immutable i32 global.
+    pub fn global_i32(&mut self, init: i32) -> GlobalIdx {
+        self.push_global(ValType::I32, false, &ConstExpr::i32_const(init))
+    }
+
     /// Declare a mutable i32 global.
     pub fn global_i32_mut(&mut self, init: i32) -> GlobalIdx {
-        self.globals.global(
-            wasm_encoder::GlobalType {
-                val_type: ValType::I32,
-                mutable: true,
-                shared: false,
-            },
-            &wasm_encoder::ConstExpr::i32_const(init),
-        );
-        let idx = self.next_global;
-        self.next_global += 1;
-        GlobalIdx(idx)
+        self.push_global(ValType::I32, true, &ConstExpr::i32_const(init))
+    }
+
+    /// Declare an immutable i64 global.
+    pub fn global_i64(&mut self, init: i64) -> GlobalIdx {
+        self.push_global(ValType::I64, false, &ConstExpr::i64_const(init))
+    }
+
+    /// Declare a mutable i64 global.
+    pub fn global_i64_mut(&mut self, init: i64) -> GlobalIdx {
+        self.push_global(ValType::I64, true, &ConstExpr::i64_const(init))
     }
 
     // -- Functions --
 
     /// Begin building a function body. Call [`FuncBody::finish`] to register it.
     pub fn func(&mut self, params: &[ValType], results: &[ValType]) -> FuncBody {
-        let type_idx = self.next_type;
-        self.next_type += 1;
-        self.types
-            .ty()
-            .function(params.iter().copied(), results.iter().copied());
-
+        let _type_idx = self.push_function_type(params, results);
         let func_idx = FuncIdx(self.next_func);
         self.next_func += 1;
-        self.functions.function(type_idx);
+        self.functions.function(self.next_type - 1);
 
         FuncBody {
             locals: Vec::new(),
-            insns: Vec::new(),
+            insn_bytes: Vec::new(),
             func_idx,
             num_params: params.len() as u32,
         }
@@ -167,14 +206,17 @@ impl ModuleBuilder {
 
     /// Export a function by name.
     pub fn export_func(&mut self, name: &str, func: FuncIdx) {
-        self.exports
-            .export(name, wasm_encoder::ExportKind::Func, func.0);
+        self.exports.export(name, ExportKind::Func, func.0);
     }
 
     /// Export a memory by name.
     pub fn export_memory(&mut self, name: &str, mem: MemIdx) {
-        self.exports
-            .export(name, wasm_encoder::ExportKind::Memory, mem.0);
+        self.exports.export(name, ExportKind::Memory, mem.0);
+    }
+
+    /// Export a global by name.
+    pub fn export_global(&mut self, name: &str, global: GlobalIdx) {
+        self.exports.export(name, ExportKind::Global, global.0);
     }
 
     // -- Data --
@@ -183,9 +225,10 @@ impl ModuleBuilder {
     pub fn data_active(&mut self, mem: MemIdx, offset: u32, bytes: &[u8]) {
         self.data.active(
             mem.0,
-            &wasm_encoder::ConstExpr::i32_const(offset as i32),
+            &ConstExpr::i32_const(offset as i32),
             bytes.iter().copied(),
         );
+        self.num_data += 1;
     }
 
     // -- Start --
@@ -198,43 +241,55 @@ impl ModuleBuilder {
     // -- Encode --
 
     /// Assemble all sections into WASM binary bytes.
+    ///
+    /// Sections are emitted in the order required by the WASM core spec
+    /// (type, import, function, memory, global, export, start, code,
+    /// data); empty sections are elided.
     pub fn finish(self) -> Vec<u8> {
         let mut module = wasm_encoder::Module::new();
 
-        module.section(&self.types);
-
+        if self.next_type > 0 {
+            module.section(&self.types);
+        }
         if self.num_imports > 0 {
             module.section(&self.imports);
         }
-
         if self.next_func > self.num_imports {
             module.section(&self.functions);
         }
-
         if self.next_mem > 0 {
             module.section(&self.memories);
         }
-
         if self.next_global > 0 {
             module.section(&self.globals);
         }
-
+        // Always emit exports for parity with prior behaviour even when
+        // there are none — empty export section is cheap and matches
+        // every test fixture in tree.
         module.section(&self.exports);
-
-        if let Some(start_idx) = self.start {
-            module.section(&wasm_encoder::StartSection {
-                function_index: start_idx,
-            });
+        if let Some(function_index) = self.start {
+            module.section(&wasm_encoder::StartSection { function_index });
         }
-
         if self.next_func > self.num_imports {
             module.section(&self.code);
         }
-
-        // Always emit data section if there are data segments.
-        module.section(&self.data);
+        if self.num_data > 0 {
+            module.section(&self.data);
+        }
 
         module.finish()
+    }
+
+    /// Like [`finish`](Self::finish), but additionally validate the
+    /// encoded bytes with [`wasmparser`]. Returns the bytes on success or
+    /// a [`crate::WasmError::InvalidModule`] describing the validation
+    /// failure.
+    pub fn finish_validated(self) -> Result<Vec<u8>, crate::WasmError> {
+        let bytes = self.finish();
+        wasmparser::Validator::new()
+            .validate_all(&bytes)
+            .map_err(|e| crate::WasmError::InvalidModule(e.to_string()))?;
+        Ok(bytes)
     }
 }
 
@@ -248,57 +303,22 @@ impl Default for ModuleBuilder {
 // FuncBody
 // ---------------------------------------------------------------------------
 
-/// A function body being built. Accumulates locals and instructions,
-/// then assembles the final `wasm_encoder::Function` on [`finish`](FuncBody::finish).
+/// A function body being built. Accumulates locals plus a raw
+/// instruction byte buffer (encoded directly via [`InstructionSink`]),
+/// then registers the assembled [`wasm_encoder::Function`] on
+/// [`finish`](Self::finish).
+///
+/// `Clone` exists for the same reason as on [`ModuleBuilder`]:
+/// snapshotting an in-progress body. *Each clone still finishes into
+/// the same function-index slot* the original was allocated for —
+/// finishing a clone twice into the same builder would emit two code
+/// entries for one slot, so don't.
+#[derive(Clone)]
 pub struct FuncBody {
     locals: Vec<ValType>,
-    insns: Vec<Insn>,
+    insn_bytes: Vec<u8>,
     func_idx: FuncIdx,
     num_params: u32,
-}
-
-/// Stored instruction — either a thin enum variant or an i32/u32 payload.
-/// We avoid storing borrowed `wasm_encoder::Instruction` values by replaying
-/// them in [`FuncBody::finish`].
-enum Insn {
-    I32Const(i32),
-    LocalGet(u32),
-    LocalSet(u32),
-    LocalTee(u32),
-    GlobalGet(u32),
-    GlobalSet(u32),
-    I32Load(MemArg),
-    I32Store(MemArg),
-    I32Load8U(MemArg),
-    I32Store8(MemArg),
-    I32Add,
-    I32Sub,
-    I32Mul,
-    I32Eq,
-    I32Ne,
-    I32LtS,
-    I32GtS,
-    I32LeS,
-    I32GeS,
-    I32Eqz,
-    I32And,
-    I32Or,
-    I32Shl,
-    I32ShrS,
-    Call(u32),
-    Block(BlockType),
-    Loop(BlockType),
-    If(BlockType),
-    Else,
-    End,
-    Br(u32),
-    BrIf(u32),
-    Return,
-    Unreachable,
-    Drop,
-    MemoryGrow(u32),
-    MemorySize(u32),
-    Nop,
 }
 
 impl FuncBody {
@@ -314,220 +334,16 @@ impl FuncBody {
         self.func_idx
     }
 
-    // -- Instruction helpers --
-
-    pub fn i32_const(&mut self, val: i32) -> &mut Self {
-        self.insns.push(Insn::I32Const(val));
-        self
-    }
-
-    pub fn local_get(&mut self, idx: u32) -> &mut Self {
-        self.insns.push(Insn::LocalGet(idx));
-        self
-    }
-
-    pub fn local_set(&mut self, idx: u32) -> &mut Self {
-        self.insns.push(Insn::LocalSet(idx));
-        self
-    }
-
-    pub fn local_tee(&mut self, idx: u32) -> &mut Self {
-        self.insns.push(Insn::LocalTee(idx));
-        self
-    }
-
-    pub fn global_get(&mut self, idx: GlobalIdx) -> &mut Self {
-        self.insns.push(Insn::GlobalGet(idx.0));
-        self
-    }
-
-    pub fn global_set(&mut self, idx: GlobalIdx) -> &mut Self {
-        self.insns.push(Insn::GlobalSet(idx.0));
-        self
-    }
-
-    pub fn i32_load(&mut self, mem: MemIdx, offset: u32) -> &mut Self {
-        self.insns.push(Insn::I32Load(MemArg {
-            offset: offset as u64,
-            align: 2,
-            memory_index: mem.0,
-        }));
-        self
-    }
-
-    pub fn i32_store(&mut self, mem: MemIdx, offset: u32) -> &mut Self {
-        self.insns.push(Insn::I32Store(MemArg {
-            offset: offset as u64,
-            align: 2,
-            memory_index: mem.0,
-        }));
-        self
-    }
-
-    pub fn i32_load8_u(&mut self, mem: MemIdx, offset: u32) -> &mut Self {
-        self.insns.push(Insn::I32Load8U(MemArg {
-            offset: offset as u64,
-            align: 0,
-            memory_index: mem.0,
-        }));
-        self
-    }
-
-    pub fn i32_store8(&mut self, mem: MemIdx, offset: u32) -> &mut Self {
-        self.insns.push(Insn::I32Store8(MemArg {
-            offset: offset as u64,
-            align: 0,
-            memory_index: mem.0,
-        }));
-        self
-    }
-
-    pub fn i32_add(&mut self) -> &mut Self {
-        self.insns.push(Insn::I32Add);
-        self
-    }
-
-    pub fn i32_sub(&mut self) -> &mut Self {
-        self.insns.push(Insn::I32Sub);
-        self
-    }
-
-    pub fn i32_mul(&mut self) -> &mut Self {
-        self.insns.push(Insn::I32Mul);
-        self
-    }
-
-    pub fn i32_eq(&mut self) -> &mut Self {
-        self.insns.push(Insn::I32Eq);
-        self
-    }
-
-    pub fn i32_ne(&mut self) -> &mut Self {
-        self.insns.push(Insn::I32Ne);
-        self
-    }
-
-    pub fn i32_lt_s(&mut self) -> &mut Self {
-        self.insns.push(Insn::I32LtS);
-        self
-    }
-
-    pub fn i32_gt_s(&mut self) -> &mut Self {
-        self.insns.push(Insn::I32GtS);
-        self
-    }
-
-    pub fn i32_le_s(&mut self) -> &mut Self {
-        self.insns.push(Insn::I32LeS);
-        self
-    }
-
-    pub fn i32_ge_s(&mut self) -> &mut Self {
-        self.insns.push(Insn::I32GeS);
-        self
-    }
-
-    pub fn i32_eqz(&mut self) -> &mut Self {
-        self.insns.push(Insn::I32Eqz);
-        self
-    }
-
-    pub fn i32_and(&mut self) -> &mut Self {
-        self.insns.push(Insn::I32And);
-        self
-    }
-
-    pub fn i32_or(&mut self) -> &mut Self {
-        self.insns.push(Insn::I32Or);
-        self
-    }
-
-    pub fn i32_shl(&mut self) -> &mut Self {
-        self.insns.push(Insn::I32Shl);
-        self
-    }
-
-    pub fn i32_shr_s(&mut self) -> &mut Self {
-        self.insns.push(Insn::I32ShrS);
-        self
-    }
-
-    pub fn call(&mut self, func: FuncIdx) -> &mut Self {
-        self.insns.push(Insn::Call(func.0));
-        self
-    }
-
-    pub fn block(&mut self, ty: BlockType) -> &mut Self {
-        self.insns.push(Insn::Block(ty));
-        self
-    }
-
-    pub fn loop_(&mut self, ty: BlockType) -> &mut Self {
-        self.insns.push(Insn::Loop(ty));
-        self
-    }
-
-    pub fn if_(&mut self, ty: BlockType) -> &mut Self {
-        self.insns.push(Insn::If(ty));
-        self
-    }
-
-    pub fn else_(&mut self) -> &mut Self {
-        self.insns.push(Insn::Else);
-        self
-    }
-
-    pub fn end(&mut self) -> &mut Self {
-        self.insns.push(Insn::End);
-        self
-    }
-
-    pub fn br(&mut self, depth: u32) -> &mut Self {
-        self.insns.push(Insn::Br(depth));
-        self
-    }
-
-    pub fn br_if(&mut self, depth: u32) -> &mut Self {
-        self.insns.push(Insn::BrIf(depth));
-        self
-    }
-
-    pub fn return_(&mut self) -> &mut Self {
-        self.insns.push(Insn::Return);
-        self
-    }
-
-    pub fn unreachable(&mut self) -> &mut Self {
-        self.insns.push(Insn::Unreachable);
-        self
-    }
-
-    pub fn drop_(&mut self) -> &mut Self {
-        self.insns.push(Insn::Drop);
-        self
-    }
-
-    pub fn memory_grow(&mut self, mem: MemIdx) -> &mut Self {
-        self.insns.push(Insn::MemoryGrow(mem.0));
-        self
-    }
-
-    pub fn memory_size(&mut self, mem: MemIdx) -> &mut Self {
-        self.insns.push(Insn::MemorySize(mem.0));
-        self
-    }
-
-    pub fn nop(&mut self) -> &mut Self {
-        self.insns.push(Insn::Nop);
-        self
+    /// Direct access to the underlying [`InstructionSink`] for emitting
+    /// instructions outside the typed convenience surface (anything
+    /// `wasm_encoder` supports — SIMD, atomics, GC, etc.).
+    pub fn insns(&mut self) -> InstructionSink<'_> {
+        InstructionSink::new(&mut self.insn_bytes)
     }
 
     /// Finish the function body and register it with the builder.
     /// Returns the function's index.
     pub fn finish(self, builder: &mut ModuleBuilder) -> FuncIdx {
-        use wasm_encoder::Instruction as I;
-
-        // Collect locals as (count, type) pairs with run-length encoding.
         let mut local_groups: Vec<(u32, ValType)> = Vec::new();
         for &ty in &self.locals {
             if let Some(last) = local_groups.last_mut() {
@@ -540,53 +356,235 @@ impl FuncBody {
         }
 
         let mut func = wasm_encoder::Function::new(local_groups);
-        for insn in &self.insns {
-            let i = match *insn {
-                Insn::I32Const(v) => I::I32Const(v),
-                Insn::LocalGet(v) => I::LocalGet(v),
-                Insn::LocalSet(v) => I::LocalSet(v),
-                Insn::LocalTee(v) => I::LocalTee(v),
-                Insn::GlobalGet(v) => I::GlobalGet(v),
-                Insn::GlobalSet(v) => I::GlobalSet(v),
-                Insn::I32Load(m) => I::I32Load(m),
-                Insn::I32Store(m) => I::I32Store(m),
-                Insn::I32Load8U(m) => I::I32Load8U(m),
-                Insn::I32Store8(m) => I::I32Store8(m),
-                Insn::I32Add => I::I32Add,
-                Insn::I32Sub => I::I32Sub,
-                Insn::I32Mul => I::I32Mul,
-                Insn::I32Eq => I::I32Eq,
-                Insn::I32Ne => I::I32Ne,
-                Insn::I32LtS => I::I32LtS,
-                Insn::I32GtS => I::I32GtS,
-                Insn::I32LeS => I::I32LeS,
-                Insn::I32GeS => I::I32GeS,
-                Insn::I32Eqz => I::I32Eqz,
-                Insn::I32And => I::I32And,
-                Insn::I32Or => I::I32Or,
-                Insn::I32Shl => I::I32Shl,
-                Insn::I32ShrS => I::I32ShrS,
-                Insn::Call(v) => I::Call(v),
-                Insn::Block(ty) => I::Block(ty),
-                Insn::Loop(ty) => I::Loop(ty),
-                Insn::If(ty) => I::If(ty),
-                Insn::Else => I::Else,
-                Insn::End => I::End,
-                Insn::Br(d) => I::Br(d),
-                Insn::BrIf(d) => I::BrIf(d),
-                Insn::Return => I::Return,
-                Insn::Unreachable => I::Unreachable,
-                Insn::Drop => I::Drop,
-                Insn::MemoryGrow(m) => I::MemoryGrow(m),
-                Insn::MemorySize(m) => I::MemorySize(m),
-                Insn::Nop => I::Nop,
-            };
-            func.instruction(&i);
-        }
-        func.instruction(&I::End);
+        func.raw(self.insn_bytes);
+        // Terminal End — the function-body end opcode the spec requires.
+        func.instructions().end();
 
         builder.code.function(&func);
         self.func_idx
+    }
+}
+
+// -- Instruction passthroughs --
+//
+// Each delegates to the underlying `InstructionSink` and returns `&mut
+// Self` to keep the fluent chain on `FuncBody`. The macro handles the
+// raw-u32-arg (or no-arg) shape; the typed-wrapper variants
+// (`FuncIdx`, `MemIdx`, `GlobalIdx`, memargs) are spelled out below.
+
+macro_rules! insn_passthrough {
+    ($($(#[$attr:meta])* $name:ident($($arg:ident: $ty:ty),*) ),* $(,)?) => {
+        impl FuncBody {
+            $(
+                $(#[$attr])*
+                pub fn $name(&mut self, $($arg: $ty),*) -> &mut Self {
+                    InstructionSink::new(&mut self.insn_bytes).$name($($arg),*);
+                    self
+                }
+            )*
+        }
+    };
+}
+
+insn_passthrough! {
+    // -- Control flow --
+    unreachable(),
+    nop(),
+    block(ty: BlockType),
+    loop_(ty: BlockType),
+    if_(ty: BlockType),
+    else_(),
+    end(),
+    br(depth: u32),
+    br_if(depth: u32),
+    return_(),
+    drop(),
+
+    // -- Locals --
+    local_get(idx: u32),
+    local_set(idx: u32),
+    local_tee(idx: u32),
+
+    // -- i32 constants & arithmetic --
+    i32_const(val: i32),
+    i32_add(),
+    i32_sub(),
+    i32_mul(),
+    i32_div_s(),
+    i32_div_u(),
+    i32_rem_s(),
+    i32_rem_u(),
+    i32_and(),
+    i32_or(),
+    i32_xor(),
+    i32_shl(),
+    i32_shr_s(),
+    i32_shr_u(),
+    i32_rotl(),
+    i32_rotr(),
+    i32_eqz(),
+    i32_eq(),
+    i32_ne(),
+    i32_lt_s(),
+    i32_lt_u(),
+    i32_gt_s(),
+    i32_gt_u(),
+    i32_le_s(),
+    i32_le_u(),
+    i32_ge_s(),
+    i32_ge_u(),
+
+    // -- i64 constants & arithmetic --
+    i64_const(val: i64),
+    i64_add(),
+    i64_sub(),
+    i64_mul(),
+    i64_div_s(),
+    i64_div_u(),
+    i64_rem_s(),
+    i64_rem_u(),
+    i64_and(),
+    i64_or(),
+    i64_xor(),
+    i64_shl(),
+    i64_shr_s(),
+    i64_shr_u(),
+    i64_eqz(),
+    i64_eq(),
+    i64_ne(),
+    i64_lt_s(),
+    i64_lt_u(),
+    i64_gt_s(),
+    i64_gt_u(),
+    i64_le_s(),
+    i64_le_u(),
+    i64_ge_s(),
+    i64_ge_u(),
+
+    // -- Conversions --
+    i32_wrap_i64(),
+    i64_extend_i32_s(),
+    i64_extend_i32_u(),
+}
+
+// -- Typed-wrapper passthroughs --
+
+impl FuncBody {
+    pub fn call(&mut self, func: FuncIdx) -> &mut Self {
+        self.insns().call(func.0);
+        self
+    }
+
+    pub fn global_get(&mut self, g: GlobalIdx) -> &mut Self {
+        self.insns().global_get(g.0);
+        self
+    }
+
+    pub fn global_set(&mut self, g: GlobalIdx) -> &mut Self {
+        self.insns().global_set(g.0);
+        self
+    }
+
+    /// `br_table` with a label vector and a default depth. `wasm_encoder`
+    /// requires an [`ExactSizeIterator`], which a `&[u32]` slice
+    /// satisfies cleanly.
+    pub fn br_table(&mut self, labels: &[u32], default: u32) -> &mut Self {
+        self.insns().br_table(labels.iter().copied(), default);
+        self
+    }
+
+    pub fn memory_grow(&mut self, mem: MemIdx) -> &mut Self {
+        self.insns().memory_grow(mem.0);
+        self
+    }
+
+    pub fn memory_size(&mut self, mem: MemIdx) -> &mut Self {
+        self.insns().memory_size(mem.0);
+        self
+    }
+
+    // -- i32 memory ops (4-byte alignment for full-width; 0 for byte ops) --
+
+    pub fn i32_load(&mut self, mem: MemIdx, offset: u32) -> &mut Self {
+        self.insns().i32_load(memarg(mem, offset, 2));
+        self
+    }
+
+    pub fn i32_store(&mut self, mem: MemIdx, offset: u32) -> &mut Self {
+        self.insns().i32_store(memarg(mem, offset, 2));
+        self
+    }
+
+    pub fn i32_load8_s(&mut self, mem: MemIdx, offset: u32) -> &mut Self {
+        self.insns().i32_load8_s(memarg(mem, offset, 0));
+        self
+    }
+
+    pub fn i32_load8_u(&mut self, mem: MemIdx, offset: u32) -> &mut Self {
+        self.insns().i32_load8_u(memarg(mem, offset, 0));
+        self
+    }
+
+    pub fn i32_load16_s(&mut self, mem: MemIdx, offset: u32) -> &mut Self {
+        self.insns().i32_load16_s(memarg(mem, offset, 1));
+        self
+    }
+
+    pub fn i32_load16_u(&mut self, mem: MemIdx, offset: u32) -> &mut Self {
+        self.insns().i32_load16_u(memarg(mem, offset, 1));
+        self
+    }
+
+    pub fn i32_store8(&mut self, mem: MemIdx, offset: u32) -> &mut Self {
+        self.insns().i32_store8(memarg(mem, offset, 0));
+        self
+    }
+
+    pub fn i32_store16(&mut self, mem: MemIdx, offset: u32) -> &mut Self {
+        self.insns().i32_store16(memarg(mem, offset, 1));
+        self
+    }
+
+    // -- i64 memory ops --
+
+    pub fn i64_load(&mut self, mem: MemIdx, offset: u32) -> &mut Self {
+        self.insns().i64_load(memarg(mem, offset, 3));
+        self
+    }
+
+    pub fn i64_store(&mut self, mem: MemIdx, offset: u32) -> &mut Self {
+        self.insns().i64_store(memarg(mem, offset, 3));
+        self
+    }
+
+    pub fn i64_load8_u(&mut self, mem: MemIdx, offset: u32) -> &mut Self {
+        self.insns().i64_load8_u(memarg(mem, offset, 0));
+        self
+    }
+
+    pub fn i64_store8(&mut self, mem: MemIdx, offset: u32) -> &mut Self {
+        self.insns().i64_store8(memarg(mem, offset, 0));
+        self
+    }
+}
+
+fn memarg(mem: MemIdx, offset: u32, align: u32) -> MemArg {
+    MemArg {
+        offset: offset as u64,
+        align,
+        memory_index: mem.0,
+    }
+}
+
+// -- Compatibility aliases for Rust-keyword-collision spellings.
+//
+// `drop` and `return_` were exposed as `drop_` / `return_` in the
+// pre-rename API; map both to keep the existing test surface working
+// without forcing all callers to update at once.
+
+impl FuncBody {
+    pub fn drop_(&mut self) -> &mut Self {
+        self.drop()
     }
 }
 
@@ -641,22 +639,19 @@ mod tests {
     #[test]
     fn control_flow_builds() {
         let mut b = ModuleBuilder::new();
-
-        // Function that counts down from n to 0
         let mut f = b.func(&[ValType::I32], &[ValType::I32]);
         f.block(BlockType::Empty)
             .loop_(BlockType::Empty)
-            // decrement param
             .local_get(0)
             .i32_eqz()
-            .br_if(1) // break if 0
+            .br_if(1)
             .local_get(0)
             .i32_const(1)
             .i32_sub()
             .local_set(0)
-            .br(0) // continue loop
-            .end() // loop
-            .end(); // block
+            .br(0)
+            .end()
+            .end();
         f.local_get(0);
         let idx = f.finish(&mut b);
         b.export_func("count_down", idx);
@@ -702,13 +697,11 @@ mod tests {
     #[test]
     fn locals_have_correct_indices() {
         let mut b = ModuleBuilder::new();
-        // func(a: i32, b: i32) with two locals
         let mut f = b.func(&[ValType::I32, ValType::I32], &[ValType::I32]);
-        let x = f.local(ValType::I32); // should be index 2
-        let y = f.local(ValType::I32); // should be index 3
+        let x = f.local(ValType::I32);
+        let y = f.local(ValType::I32);
         assert_eq!(x, 2);
         assert_eq!(y, 3);
-        // x = a + b; y = x * 2; return y
         f.local_get(0).local_get(1).i32_add().local_set(x);
         f.local_get(x).i32_const(2).i32_mul().local_set(y);
         f.local_get(y);
@@ -772,7 +765,6 @@ mod tests {
     #[test]
     fn if_else_builds() {
         let mut b = ModuleBuilder::new();
-        // abs(x): if x < 0 then -x else x
         let mut f = b.func(&[ValType::I32], &[ValType::I32]);
         f.local_get(0)
             .i32_const(0)
@@ -810,19 +802,16 @@ mod tests {
         let mem = b.memory(1);
         b.export_memory("mem", mem);
 
-        // store(addr, val): mem[addr] = val
         let mut f = b.func(&[ValType::I32, ValType::I32], &[]);
         f.local_get(0).local_get(1).i32_store(mem, 0);
         let store = f.finish(&mut b);
         b.export_func("store", store);
 
-        // load(addr) -> val
         let mut f = b.func(&[ValType::I32], &[ValType::I32]);
         f.local_get(0).i32_load(mem, 0);
         let load = f.finish(&mut b);
         b.export_func("load", load);
 
-        // store8/load8
         let mut f = b.func(&[ValType::I32, ValType::I32], &[]);
         f.local_get(0).local_get(1).i32_store8(mem, 0);
         let store8 = f.finish(&mut b);
@@ -837,5 +826,53 @@ mod tests {
         let wat = crate::wasm_to_wat(&wasm).expect("decompile");
         assert!(wat.contains("i32.store"), "should have i32.store: {wat}");
         assert!(wat.contains("i32.load"), "should have i32.load: {wat}");
+    }
+
+    #[test]
+    fn i64_round_trip() {
+        let mut b = ModuleBuilder::new();
+        let g = b.global_i64_mut(0);
+        let mut f = b.func(&[ValType::I64], &[ValType::I64]);
+        f.local_get(0)
+            .i64_const(1)
+            .i64_add()
+            .global_set(g)
+            .global_get(g);
+        let idx = f.finish(&mut b);
+        b.export_func("inc", idx);
+
+        let wasm = b.finish_validated().expect("valid module");
+        let wat = crate::wasm_to_wat(&wasm).expect("decompile");
+        assert!(wat.contains("i64.add"), "expected i64.add: {wat}");
+    }
+
+    #[test]
+    fn finish_validated_catches_malformed() {
+        // Construct a function whose body underflows: pop two without
+        // pushing anything first.
+        let mut b = ModuleBuilder::new();
+        let mut f = b.func(&[], &[ValType::I32]);
+        // No operands pushed → i32_add traps the validator.
+        f.i32_add();
+        f.finish(&mut b);
+
+        let err = b.finish_validated().expect_err("should fail validation");
+        assert!(
+            matches!(err, crate::WasmError::InvalidModule(_)),
+            "wrong error variant: {err:?}"
+        );
+    }
+
+    #[test]
+    fn insns_escape_hatch_works() {
+        let mut b = ModuleBuilder::new();
+        let mut f = b.func(&[ValType::I32], &[ValType::I32]);
+        // Use the raw InstructionSink directly.
+        f.insns().local_get(0).i32_const(7).i32_xor();
+        let idx = f.finish(&mut b);
+        b.export_func("xor7", idx);
+        let wasm = b.finish_validated().expect("valid module");
+        let wat = crate::wasm_to_wat(&wasm).expect("decompile");
+        assert!(wat.contains("i32.xor"), "WAT should contain i32.xor: {wat}");
     }
 }

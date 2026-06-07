@@ -87,6 +87,14 @@ pub enum Error {
          P : α → prop and x : α; got {0}"
     )]
     BadTypeDefWitness(String),
+
+    #[error(
+        "define: body has free type variable {tvar:?} that does not appear \
+         in the body's overall type {body_type} — this would yield a `Def` \
+         whose visible instance type cannot pin down the body's interior \
+         types under `inst_tfree`"
+    )]
+    DefPhantomTFree { tvar: SmolStr, body_type: Type },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

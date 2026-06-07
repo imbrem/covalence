@@ -370,10 +370,16 @@ impl HolLightTerms for PureHol {
     }
 
     fn mk_abs(&mut self, var: Term, body: Term) -> Term {
-        // `var` is `Free(name, ty)`; close `body` over `name`.
+        // `var` MUST be `Free(name, ty)` per HOL Light's invariant
+        // (binder slot is always a typed named variable). Pure
+        // requires the binder name + type up-front to close the
+        // body via `subst::close`. If the caller passes anything
+        // else, the resulting term is logically meaningless — panic
+        // (matching HOL Light's `mk_abs`, which errors). Silent
+        // pass-through here would hide an upstream bug.
         let (name, ty) = match var.kind() {
             TermKind::Free(n, t) => (n.clone(), t.clone()),
-            _ => return body, // ill-formed; HOL Light would panic. Caller checks.
+            _ => panic!("mk_abs: binder var must be a Free term, got {var:?}"),
         };
         let closed = subst::close(&body, name.as_str());
         Term::abs(BinderHint::new(name.as_str()), ty, closed)

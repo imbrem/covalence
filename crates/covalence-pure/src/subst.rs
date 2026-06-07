@@ -323,6 +323,36 @@ fn uses_bound_at(t: &Term, target: u32, depth: u32) -> bool {
     }
 }
 
+/// Collect every free type variable name appearing inside any
+/// type annotation in `t` — `Free`/`Const`/`Obs` `ty` fields,
+/// `Abs`/`All` binder types, and recursively into `Def` bodies.
+///
+/// Used by `Thm::define` to enforce the soundness invariant that
+/// every tvar appearing inside the body's interior also appears in
+/// the body's overall type (no "phantom" tvars that would escape
+/// substitution-tracking via `instance_type`).
+pub fn collect_term_tvars(t: &Term, out: &mut std::collections::BTreeSet<SmolStr>) {
+    match t.kind() {
+        TermKind::Free(_, ty) | TermKind::Const(_, ty) | TermKind::Obs(_, ty) => {
+            for n in ty.free_tvars() {
+                out.insert(n);
+            }
+        }
+        TermKind::Abs(_, ty, body) | TermKind::All(_, ty, body) => {
+            for n in ty.free_tvars() {
+                out.insert(n);
+            }
+            collect_term_tvars(body, out);
+        }
+        TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
+            collect_term_tvars(a, out);
+            collect_term_tvars(b, out);
+        }
+        TermKind::Bound(_) | TermKind::Blob(_) => {}
+        TermKind::Def(d) => collect_term_tvars(&d.body(), out),
+    }
+}
+
 // ============================================================================
 // One-way type matching
 // ============================================================================

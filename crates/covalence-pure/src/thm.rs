@@ -476,6 +476,26 @@ impl Thm {
     /// needed because the allocator gives us uniqueness per call.
     pub fn define(name: impl Into<BinderHint>, body: Term) -> Result<Thm> {
         let body_type = body.type_of()?;
+        // Soundness check (Isabelle/Pure parity): no "phantom"
+        // tvars — every free tvar appearing inside any type
+        // annotation in `body` must also appear in `body_type`.
+        // Without this, a phantom tvar inside `body` would be
+        // invisible to `instance_type`, so `subst_tfree_in_term`
+        // could leave a `Def` whose body still mentions the
+        // phantom tvar at the original type — inconsistent with
+        // the `Def ≡ body` equation it stands for.
+        let type_tvars: std::collections::BTreeSet<smol_str::SmolStr> =
+            body_type.free_tvars().into_iter().collect();
+        let mut body_tvars = std::collections::BTreeSet::new();
+        crate::subst::collect_term_tvars(&body, &mut body_tvars);
+        for tv in &body_tvars {
+            if !type_tvars.contains(tv) {
+                return Err(crate::error::Error::DefPhantomTFree {
+                    tvar: tv.clone(),
+                    body_type,
+                });
+            }
+        }
         let d = Def::new_internal(name.into(), body.clone(), body_type);
         let concl = Term::eq(Term::def(d), body);
         Self::build(BTreeSet::new(), concl)

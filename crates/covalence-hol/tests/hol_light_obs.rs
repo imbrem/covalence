@@ -352,3 +352,77 @@ fn hol_eq_mp_at_bool_as_lazy_theorem_via_obs_imp() {
     let expected = covalence_pure::Term::imp(h_pq, covalence_pure::Term::imp(h_p, concl));
     assert_eq!(lazy.concl(), &expected);
 }
+
+#[test]
+fn hol_beta_via_obs_true_with_no_hint() {
+    // HOL BETA: ⊢ (λx:bool. x) y = y.
+    // Encoded: ⊢ Trueprop (Eq ((λx:bool. Bound 0) y) y).
+    let ctx = HolLightCtx::new();
+    let y = Term::free("y", ctx.bool_type());
+    let body = Term::bound(0);
+    let lam = Term::abs("x", ctx.bool_type(), body);
+    let lhs = Term::app(lam, y.clone());
+    let beta_concl = ctx.mk_trueprop(ctx.mk_eq(lhs, y).unwrap()).unwrap();
+    let thm = covalence_pure::Thm::obs_true::<HolLight>(beta_concl.clone(), None).unwrap();
+    assert_eq!(thm.concl(), &beta_concl);
+}
+
+#[test]
+fn hol_beta_rejects_non_beta_redex() {
+    // Trueprop (Eq f y) where f is a free var (not an Abs).
+    let ctx = HolLightCtx::new();
+    let f = Term::free("f", Type::fun(ctx.bool_type(), ctx.bool_type()));
+    let y = Term::free("y", ctx.bool_type());
+    let app = Term::app(f, y.clone());
+    let bad = ctx.mk_trueprop(ctx.mk_eq(app, y).unwrap()).unwrap();
+    let result = covalence_pure::Thm::obs_true::<HolLight>(bad, None);
+    assert!(result.is_err(), "non-β-redex must be refused (also not refl)");
+}
+
+#[test]
+fn hol_abs_as_lazy_theorem_via_obs_imp() {
+    // HOL ABS: ⊢ Trueprop (Eq s t) ⟹ Trueprop (Eq (λx. s) (λx. t)).
+    let ctx = HolLightCtx::new();
+    let x = Term::free("x", ctx.bool_type());
+    let f = Term::free("f", Type::fun(ctx.bool_type(), ctx.bool_type()));
+    let g = Term::free("g", Type::fun(ctx.bool_type(), ctx.bool_type()));
+    let s = Term::app(f, x.clone());
+    let t = Term::app(g, x.clone());
+
+    let hyp = ctx.mk_trueprop(ctx.mk_eq(s.clone(), t.clone()).unwrap()).unwrap();
+
+    // λx:bool. f x  and  λx:bool. g x
+    let f2 = Term::free("f", Type::fun(ctx.bool_type(), ctx.bool_type()));
+    let g2 = Term::free("g", Type::fun(ctx.bool_type(), ctx.bool_type()));
+    let s_body = Term::app(f2, Term::bound(0));
+    let t_body = Term::app(g2, Term::bound(0));
+    let lam_s = Term::abs("x", ctx.bool_type(), s_body);
+    let lam_t = Term::abs("x", ctx.bool_type(), t_body);
+    let concl = ctx.mk_trueprop(ctx.mk_eq(lam_s, lam_t).unwrap()).unwrap();
+
+    let lazy =
+        covalence_pure::Thm::obs_imp::<HolLight>(concl.clone(), vec![hyp.clone()], None).unwrap();
+    let expected = covalence_pure::Term::imp(hyp, concl);
+    assert_eq!(lazy.concl(), &expected);
+}
+
+#[test]
+fn hol_abs_rejects_when_hyp_doesnt_match_lambda_bodies() {
+    // hyp: Trueprop (Eq a a)  (mismatched with concl's bodies).
+    // concl: Trueprop (Eq (λx:bool. f x) (λx:bool. g x)).
+    // policy should refuse because opening (f x) ≠ a structurally.
+    let ctx = HolLightCtx::new();
+    let a = Term::free("a", ctx.bool_type());
+    let hyp = ctx.mk_trueprop(ctx.mk_eq(a.clone(), a).unwrap()).unwrap();
+
+    let f = Term::free("f", Type::fun(ctx.bool_type(), ctx.bool_type()));
+    let g = Term::free("g", Type::fun(ctx.bool_type(), ctx.bool_type()));
+    let s_body = Term::app(f, Term::bound(0));
+    let t_body = Term::app(g, Term::bound(0));
+    let lam_s = Term::abs("x", ctx.bool_type(), s_body);
+    let lam_t = Term::abs("x", ctx.bool_type(), t_body);
+    let concl = ctx.mk_trueprop(ctx.mk_eq(lam_s, lam_t).unwrap()).unwrap();
+
+    let result = covalence_pure::Thm::obs_imp::<HolLight>(concl, vec![hyp], None);
+    assert!(result.is_err(), "ABS with mismatched bodies should be refused");
+}

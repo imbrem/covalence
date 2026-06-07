@@ -464,20 +464,46 @@ impl IsHolLight for HolLight {}
 // ============================================================================
 
 /// `ObsTrue` policy for HolLight: declares unconditionally-true
-/// HOL propositions. The only case this policy recognises is HOL
-/// refl: `Trueprop (Eq a a)` for any α. Multi-hypothesis rules
-/// (sym, trans, MK_COMB, etc.) live in the [`ObsImp`] policy below.
+/// HOL propositions. Two cases:
+///
+/// - **HOL refl**: `Trueprop (Eq a a)` for any term a (structural).
+/// - **HOL beta**: `Trueprop (Eq ((λx. body) operand) (body[x:=operand]))`
+///   structural β-reduction.
 impl ObsTrue for HolLight {
     fn obs_true(&self, args: &[Term], _hint: Option<&dyn covalence_pure::Hint>) -> bool {
         if !matches!(self, HolLight::Trueprop) || args.len() != 1 {
             return false;
         }
-        // HOL refl: `Trueprop (Eq a a)`.
-        if let Some((a, b)) = decompose_hol_eq(&args[0]) {
-            return a == b;
+        let concl_body = &args[0];
+        if check_refl_pattern(concl_body) {
+            return true;
+        }
+        if check_beta_pattern(concl_body) {
+            return true;
         }
         false
     }
+}
+
+/// HOL refl: `Trueprop (Eq a a)`.
+fn check_refl_pattern(concl_body: &Term) -> bool {
+    decompose_hol_eq(concl_body)
+        .map(|(a, b)| a == b)
+        .unwrap_or(false)
+}
+
+/// HOL beta: `Eq ((λx. body) operand) (open body operand)`.
+fn check_beta_pattern(concl_body: &Term) -> bool {
+    let Some((lhs, rhs)) = decompose_hol_eq(concl_body) else {
+        return false;
+    };
+    let TermKind::App(f, operand) = lhs.kind() else {
+        return false;
+    };
+    let TermKind::Abs(_h, _ty, body) = f.kind() else {
+        return false;
+    };
+    covalence_pure::subst::open(body, operand) == rhs
 }
 
 // ============================================================================
@@ -512,7 +538,8 @@ impl ObsImp for HolLight {
         let concl_body = &args[0];
 
         match hyps.len() {
-            1 => check_sym_pattern(&hyps[0], concl_body),
+            1 => check_sym_pattern(&hyps[0], concl_body)
+                || check_abs_pattern(&hyps[0], concl_body),
             2 => {
                 check_trans_pattern(&hyps[0], &hyps[1], concl_body)
                     || check_mk_comb_pattern(&hyps[0], &hyps[1], concl_body)
@@ -521,6 +548,31 @@ impl ObsImp for HolLight {
             _ => false,
         }
     }
+}
+
+/// HOL ABS: hyp = `Trueprop (Eq s t)`, concl = `Eq (λx. s') (λx. t')`
+/// where `open s' (Free x) = s` and `open t' (Free x) = t`. We use
+/// the lambda's hint as the free-var name (Hint is α-transparent in
+/// Pure, so the choice of binder name doesn't affect equality).
+fn check_abs_pattern(hyp: &Term, concl_body: &Term) -> bool {
+    let Some(h_body) = unwrap_trueprop(hyp) else {
+        return false;
+    };
+    let (Some((s, t)), Some((lhs, rhs))) =
+        (decompose_hol_eq(&h_body), decompose_hol_eq(concl_body))
+    else {
+        return false;
+    };
+    let (TermKind::Abs(h1, ty1, b1), TermKind::Abs(_h2, ty2, b2)) = (lhs.kind(), rhs.kind())
+    else {
+        return false;
+    };
+    if ty1 != ty2 {
+        return false;
+    }
+    let var = Term::free(h1.as_str(), ty1.clone());
+    covalence_pure::subst::open(b1, &var) == s
+        && covalence_pure::subst::open(b2, &var) == t
 }
 
 /// HOL sym: hyp = `Trueprop (Eq a b)`, concl = `Eq b a`.

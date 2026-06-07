@@ -19,6 +19,13 @@ pub struct Component {
 }
 
 impl Component {
+    /// Parse + validate component bytes produced internally (e.g. by
+    /// `ComponentBuilder.build`). Same as `from_bytes`, but visible to
+    /// sibling Rust modules without going through the Python API.
+    pub(crate) fn from_bytes_internal(wasm: Vec<u8>) -> PyResult<Self> {
+        Self::from_wasm_bytes(wasm)
+    }
+
     /// Parse and validate WASM bytes as a component.
     fn from_wasm_bytes(wasm: Vec<u8>) -> PyResult<Self> {
         if !covalence_wasm::is_component(&wasm) {

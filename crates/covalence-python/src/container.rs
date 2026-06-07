@@ -19,6 +19,12 @@ pub struct Container {
 }
 
 impl Container {
+    /// Parse + validate container bytes produced internally (e.g. by
+    /// `ContainerBuilder.build`).
+    pub(crate) fn from_bytes_internal(wasm: Vec<u8>) -> PyResult<Self> {
+        Self::from_wasm_bytes(wasm)
+    }
+
     /// Parse as component + validate kernel imports.
     fn from_wasm_bytes(wasm: Vec<u8>) -> PyResult<Self> {
         if !covalence_wasm::is_component(&wasm) {

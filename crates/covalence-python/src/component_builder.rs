@@ -85,10 +85,10 @@ impl ComponentBuilder {
     }
 
     fn build(&self) -> PyResult<Component> {
-        let wat = {
+        let bytes = {
             let sys = self.system.lock().unwrap();
-            sys.build_component_wat(self.id)
+            sys.build_component_bytes(self.id)
         };
-        Component::from_wat(&wat)
+        Component::from_bytes_internal(bytes)
     }
 }

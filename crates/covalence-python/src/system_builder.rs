@@ -22,6 +22,10 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use slotmap::SlotMap;
 
+use covalence_wasm::build::wasm_encoder::{
+    CanonicalOption, ComponentBuilder as WeComponentBuilder, ComponentExportKind,
+    ComponentTypeRef, ComponentValType, ExportKind, InstanceType, ModuleArg,
+};
 use covalence_wasm::build::{self as cwb, FuncIdx, ValType};
 
 use crate::component::Component;
@@ -242,15 +246,39 @@ impl SystemBuilder {
     }
 
     // -----------------------------------------------------------------------
-    // WAT generation: container (component wrapping module)
+    // Snapshot: container component bytes
     // -----------------------------------------------------------------------
 
-    pub fn generate_container_wat(&self, container_id: ContainerId) -> PyResult<String> {
+    /// Snapshot a container as a fully-assembled WASM component
+    /// binary. Wraps the inner core module bytes in the
+    /// component-model frame the kernel expects:
+    ///
+    /// 1. Optional `attest` component-level func import.
+    /// 2. Per-`InstanceImport` component-level instance import, with a
+    ///    fresh empty-func instance type listing each declared export.
+    /// 3. Alias each instance export up to a top-level component func.
+    /// 4. Embed the core module bytes via
+    ///    [`ComponentBuilder::core_module_raw`].
+    /// 5. Canon-lower each imported component func into a core func.
+    /// 6. Build one core-instance-of-exports per `with` namespace
+    ///    (`env` for `attest`, `inst{N}` per instance import).
+    /// 7. Core-instantiate the inner module with those `with` args.
+    /// 8. For each module export, alias the core export, canon-lift it
+    ///    back to a component func, and export it.
+    ///
+    /// **Type signature limitation.** Every imported / exported
+    /// component-level func is typed `() -> ()`. The current Python
+    /// builder API doesn't model component-level value types, so all
+    /// container-style exports are noop in practice — extending this
+    /// requires picking concrete `ComponentValType`s for each core
+    /// `i32`/`i64`/etc., which the WAT-text generator dodged by
+    /// relying on the WAT compiler's inference.
+    pub fn build_container_bytes(&self, container_id: ContainerId) -> PyResult<Vec<u8>> {
         let cd = &self.containers[container_id];
 
         if cd.link_hash.is_some() {
             return Err(PyValueError::new_err(
-                "link-mode ContainerBuilder cannot be built as WAT",
+                "link-mode ContainerBuilder cannot be built as a component",
             ));
         }
 
@@ -261,157 +289,183 @@ impl SystemBuilder {
 
         let module_id = match comp.module {
             Some(mid) => mid,
-            None => return Ok("(component)".to_string()),
+            None => return Ok(empty_component_bytes()),
         };
 
-        let module_wat = self.generate_module_wat(module_id);
+        let module_bytes = self.snapshot_module_bytes(module_id);
         let md = &self.modules[module_id];
 
-        let mut lines = vec!["(component".to_string()];
+        let mut cb = WeComponentBuilder::default();
 
-        // 1. Container imports
-        if cd.has_attest {
-            lines.push("  (import \"attest\" (func $attest))".to_string());
-        }
-        for (i, inst) in cd.instance_imports.iter().enumerate() {
-            if inst.exports.is_empty() {
-                lines.push(format!(
-                    "  (import \"{}\" (instance $inst{i}))",
-                    inst.import_name
-                ));
-            } else {
-                let export_decls: Vec<String> = inst
-                    .exports
-                    .iter()
-                    .map(|name| format!("(export \"{name}\" (func))"))
-                    .collect();
-                lines.push(format!(
-                    "  (import \"{}\" (instance $inst{i} {}))",
-                    inst.import_name,
-                    export_decls.join(" ")
-                ));
-            }
-        }
+        // 1. Empty `() -> ()` component func type — reused everywhere.
+        let empty_func_ty_idx = cb.func_type_empty();
 
-        // 2. Alias instance exports
-        for (i, inst) in cd.instance_imports.iter().enumerate() {
+        // 2. `attest` import.
+        let attest_func_idx = cd
+            .has_attest
+            .then(|| cb.import("attest", ComponentTypeRef::Func(empty_func_ty_idx)));
+
+        // 3. Per-instance imports + alias-up of each export. We track
+        //    the resulting top-level component func indices for the
+        //    canon-lower step below.
+        let mut instance_aliased: Vec<Vec<u32>> = Vec::with_capacity(cd.instance_imports.len());
+        for inst in &cd.instance_imports {
+            let inst_ty_idx = cb.instance_type_of_empty_funcs(&inst.exports);
+            let inst_idx = cb.import(
+                inst.import_name.as_str(),
+                ComponentTypeRef::Instance(inst_ty_idx),
+            );
+
+            let mut aliased = Vec::with_capacity(inst.exports.len());
             for name in &inst.exports {
-                lines.push(format!(
-                    "  (alias export $inst{i} \"{name}\" (func $inst{i}__{name}))"
-                ));
+                let func_idx =
+                    cb.alias_export(inst_idx, name.as_str(), ComponentExportKind::Func);
+                aliased.push(func_idx);
             }
+            instance_aliased.push(aliased);
         }
 
-        // 3. Core module
-        push_core_module(&mut lines, &module_wat);
+        // 4. Embed the inner core module.
+        let core_module_idx = cb.core_module_raw(None, &module_bytes);
 
-        // 4. Canon lower
-        if cd.has_attest {
-            lines.push("  (core func $attest_lowered (canon lower (func $attest)))".to_string());
-        }
-        for (i, inst) in cd.instance_imports.iter().enumerate() {
-            for name in &inst.exports {
-                lines.push(format!(
-                    "  (core func $inst{i}__{name}_lowered (canon lower (func $inst{i}__{name})))"
-                ));
-            }
-        }
-
-        // 5. Core instance
-        let mut with_clauses = Vec::new();
-
-        // "env" namespace
-        let mut env_exports = Vec::new();
-        if cd.has_attest {
-            env_exports.push("      (export \"attest\" (func $attest_lowered))".to_string());
-        }
-        if !env_exports.is_empty() {
-            with_clauses.push(format!(
-                "    (with \"env\" (instance\n{}\n    ))",
-                env_exports.join("\n")
-            ));
-        }
-
-        // Instance namespace imports
-        for (i, inst) in cd.instance_imports.iter().enumerate() {
-            if !inst.exports.is_empty() {
-                let ns = format!("inst{i}");
-                let inst_exports: Vec<String> = inst
-                    .exports
+        // 5. Canon-lower each component func into a core func.
+        let attest_lowered = attest_func_idx
+            .map(|f| cb.lower_func(None, f, std::iter::empty::<CanonicalOption>()));
+        let instance_lowered: Vec<Vec<u32>> = instance_aliased
+            .iter()
+            .map(|aliased| {
+                aliased
                     .iter()
-                    .map(|name| {
-                        format!("      (export \"{name}\" (func $inst{i}__{name}_lowered))")
-                    })
-                    .collect();
-                with_clauses.push(format!(
-                    "    (with \"{ns}\" (instance\n{}\n    ))",
-                    inst_exports.join("\n")
-                ));
+                    .map(|&f| cb.lower_func(None, f, std::iter::empty::<CanonicalOption>()))
+                    .collect()
+            })
+            .collect();
+
+        // 6. Build a core instance-of-exports per `with` namespace.
+        let mut with_args: Vec<(String, u32)> = Vec::new();
+
+        if let Some(att) = attest_lowered {
+            let env_inst = cb.core_instantiate_exports(
+                None,
+                [("attest", ExportKind::Func, att)],
+            );
+            with_args.push(("env".to_string(), env_inst));
+        }
+
+        for (i, lowered) in instance_lowered.iter().enumerate() {
+            if lowered.is_empty() {
+                continue;
             }
+            let exports: Vec<(&str, ExportKind, u32)> = cd.instance_imports[i]
+                .exports
+                .iter()
+                .zip(lowered.iter())
+                .map(|(name, &core_idx)| (name.as_str(), ExportKind::Func, core_idx))
+                .collect();
+            let inst = cb.core_instantiate_exports(None, exports);
+            with_args.push((format!("inst{i}"), inst));
         }
 
-        if with_clauses.is_empty() {
-            lines.push("  (core instance $i (instantiate $m))".to_string());
-        } else {
-            lines.push(format!(
-                "  (core instance $i (instantiate $m\n{}\n  ))",
-                with_clauses.join("\n")
-            ));
-        }
+        // 7. Instantiate the core module with the `with` args.
+        let main_core_inst = {
+            let module_args: Vec<(&str, ModuleArg)> = with_args
+                .iter()
+                .map(|(name, idx)| (name.as_str(), ModuleArg::Instance(*idx)))
+                .collect();
+            cb.core_instantiate(None, core_module_idx, module_args)
+        };
 
-        // 6. Component exports (lifted) — name only; the actual core
-        // func is whatever the module exported under that name (real
-        // or noop placeholder).
+        // 8. Lift each module export to the component layer.
         for entry in &md.exports {
             let name = match entry {
-                ExportEntry::NoOp(name) => name,
-                ExportEntry::Explicit(name, _) => name,
+                ExportEntry::NoOp(n) | ExportEntry::Explicit(n, _) => n.as_str(),
             };
-            lines.push(format!(
-                "  (func ${name}_lifted (canon lift (core func $i \"{name}\")))"
-            ));
-            lines.push(format!("  (export \"{name}\" (func ${name}_lifted))"));
+            let core_func_idx =
+                cb.core_alias_export(None, main_core_inst, name, ExportKind::Func);
+            let lifted = cb.lift_func(
+                None,
+                core_func_idx,
+                empty_func_ty_idx,
+                std::iter::empty::<CanonicalOption>(),
+            );
+            cb.export(name, ComponentExportKind::Func, lifted, None);
         }
 
-        lines.push(")".to_string());
-        Ok(lines.join("\n"))
+        Ok(cb.finish())
+    }
+
+    /// Decompile the assembled container component to WAT. Used by the
+    /// `ContainerBuilder.wat` property.
+    pub fn container_wat(&self, container_id: ContainerId) -> PyResult<String> {
+        let bytes = self.build_container_bytes(container_id)?;
+        covalence_wasm::wasm_to_wat(&bytes).map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     // -----------------------------------------------------------------------
-    // WAT generation: standalone component (wraps module in component)
+    // Snapshot: standalone component bytes
     // -----------------------------------------------------------------------
 
-    pub fn build_component_wat(&self, component_id: ComponentId) -> String {
+    /// Snapshot a standalone component as bytes: the inner core module
+    /// wrapped in a component with a single core instance, no
+    /// container-style imports/exports.
+    pub fn build_component_bytes(&self, component_id: ComponentId) -> Vec<u8> {
         let comp = &self.components[component_id];
         let module_id = match comp.module {
             Some(mid) => mid,
-            None => return "(component)".to_string(),
+            None => return empty_component_bytes(),
         };
 
-        let module_wat = self.generate_module_wat(module_id);
-        let mut lines = vec!["(component".to_string()];
-        push_core_module(&mut lines, &module_wat);
-        lines.push("  (core instance $i (instantiate $m))".to_string());
-        lines.push(")".to_string());
-        lines.join("\n")
+        let module_bytes = self.snapshot_module_bytes(module_id);
+        let mut cb = WeComponentBuilder::default();
+        let core_module_idx = cb.core_module_raw(None, &module_bytes);
+        let _ = cb.core_instantiate::<[(&str, ModuleArg); 0]>(None, core_module_idx, []);
+        cb.finish()
     }
 }
 
-/// Embed a `(module …)` WAT fragment as a `(core module $m …)` inside a
-/// component WAT. The decompiled inner module is multi-line; we rewrite
-/// only the first line and re-indent the rest.
-fn push_core_module(lines: &mut Vec<String>, module_wat: &str) {
-    let inner_lines: Vec<&str> = module_wat.lines().collect();
-    if inner_lines.len() <= 1 {
-        lines.push(format!("  (core module $m {module_wat})"));
-        return;
+/// Encode an empty `(component)`. `ComponentBuilder::default().finish()`
+/// produces the same shape; pulled into a helper because we hit it from
+/// two snapshot paths.
+fn empty_component_bytes() -> Vec<u8> {
+    WeComponentBuilder::default().finish()
+}
+
+/// Extension hooks that paper over a couple of `wasm_encoder`
+/// ergonomic gaps: the empty `() -> ()` func type and an instance type
+/// whose exports are all empty funcs are spelled out in many places
+/// otherwise.
+trait WeComponentBuilderExt {
+    fn func_type_empty(&mut self) -> u32;
+    fn instance_type_of_empty_funcs(&mut self, exports: &[String]) -> u32;
+}
+
+impl WeComponentBuilderExt for WeComponentBuilder {
+    fn func_type_empty(&mut self) -> u32 {
+        let (idx, enc) = self.ty(None);
+        enc.function()
+            .params(std::iter::empty::<(&str, ComponentValType)>())
+            .result(None);
+        idx
     }
-    let first = inner_lines[0].replace("(module", "(core module $m");
-    lines.push(format!("  {first}"));
-    for line in &inner_lines[1..] {
-        lines.push(format!("  {line}"));
+
+    fn instance_type_of_empty_funcs(&mut self, exports: &[String]) -> u32 {
+        let mut inst_ty = InstanceType::new();
+        if !exports.is_empty() {
+            // Each instance type has its own private type space; the
+            // empty-func type goes in at index 0.
+            inst_ty
+                .ty()
+                .function()
+                .params(std::iter::empty::<(&str, ComponentValType)>())
+                .result(None);
+            for name in exports {
+                inst_ty.export(name.as_str(), ComponentTypeRef::Func(0));
+            }
+        }
+        self.type_instance(None, &inst_ty)
     }
 }
+
 
 // ---------------------------------------------------------------------------
 // Hash extraction helpers

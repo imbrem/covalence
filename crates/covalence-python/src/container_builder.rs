@@ -92,15 +92,15 @@ impl ContainerBuilder {
     #[getter]
     fn wat(&self) -> PyResult<String> {
         let sys = self.system.lock().unwrap();
-        sys.generate_container_wat(self.id)
+        sys.container_wat(self.id)
     }
 
     fn build(&self) -> PyResult<Container> {
-        let wat = {
+        let bytes = {
             let sys = self.system.lock().unwrap();
-            sys.generate_container_wat(self.id)?
+            sys.build_container_bytes(self.id)?
         };
-        let container = Container::from_wat(&wat)?;
+        let container = Container::from_bytes_internal(bytes)?;
         {
             let mut sys = self.system.lock().unwrap();
             sys.containers[self.id].built_hash = Some(container.content_hash());

@@ -63,6 +63,21 @@ impl SyncHttpBackend {
                 .map_err(|e| KernelError::Store(format!("read body: {e}")))
         }
     }
+
+    fn post_json(&self, path: &str, body: &str) -> Result<Vec<u8>, KernelError> {
+        if let Some(ref socket) = self.socket_path {
+            unix_post_json(socket, path, body.as_bytes())
+        } else {
+            let url = format!("{}{}", self.base_url, path);
+            let resp = ureq::post(&url)
+                .header("content-type", "application/json")
+                .send(body.as_bytes())
+                .map_err(ureq_error)?;
+            resp.into_body()
+                .read_to_vec()
+                .map_err(|e| KernelError::Store(format!("read body: {e}")))
+        }
+    }
 }
 
 /// Perform a GET request over a Unix domain socket using raw HTTP/1.1.
@@ -90,6 +105,21 @@ fn unix_get(socket_path: &str, path: &str) -> Result<Vec<u8>, KernelError> {
 /// Perform a POST request over a Unix domain socket using raw HTTP/1.1.
 #[cfg(unix)]
 fn unix_post(socket_path: &str, path: &str, body: &[u8]) -> Result<Vec<u8>, KernelError> {
+    unix_post_with(socket_path, path, body, "application/octet-stream")
+}
+
+#[cfg(unix)]
+fn unix_post_json(socket_path: &str, path: &str, body: &[u8]) -> Result<Vec<u8>, KernelError> {
+    unix_post_with(socket_path, path, body, "application/json")
+}
+
+#[cfg(unix)]
+fn unix_post_with(
+    socket_path: &str,
+    path: &str,
+    body: &[u8],
+    content_type: &str,
+) -> Result<Vec<u8>, KernelError> {
     use std::io::{Read, Write};
     use std::os::unix::net::UnixStream;
 
@@ -97,7 +127,7 @@ fn unix_post(socket_path: &str, path: &str, body: &[u8]) -> Result<Vec<u8>, Kern
         .map_err(|e| KernelError::Store(format!("unix connect: {e}")))?;
 
     let request = format!(
-        "POST {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "POST {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     );
     stream
@@ -169,6 +199,13 @@ fn unix_get(_socket_path: &str, _path: &str) -> Result<Vec<u8>, KernelError> {
 
 #[cfg(not(unix))]
 fn unix_post(_socket_path: &str, _path: &str, _body: &[u8]) -> Result<Vec<u8>, KernelError> {
+    Err(KernelError::Store(
+        "Unix domain sockets not supported on this platform".to_string(),
+    ))
+}
+
+#[cfg(not(unix))]
+fn unix_post_json(_socket_path: &str, _path: &str, _body: &[u8]) -> Result<Vec<u8>, KernelError> {
     Err(KernelError::Store(
         "Unix domain sockets not supported on this platform".to_string(),
     ))
@@ -252,6 +289,46 @@ impl SyncBackend for SyncHttpBackend {
             serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
         Ok(json.count)
     }
+
+    fn register_tag(&self, tag: &str, content_hash: O256) -> Result<O256, KernelError> {
+        let body = format!(
+            "{{\"tag\":{:?},\"contentHash\":\"{}\"}}",
+            tag,
+            content_hash
+        );
+        let resp = self.post_json("/api/objects/tag", &body)?;
+        let json: HashResponse = serde_json::from_slice::<TagRegisterResponse>(&resp)
+            .map(|r| HashResponse { hash: r.keyed })
+            .map_err(|e| KernelError::Store(format!("parse: {e}")))?;
+        O256::from_hex(&json.hash)
+            .ok_or_else(|| KernelError::Store(format!("invalid keyed hash: {}", json.hash)))
+    }
+
+    fn lookup_tag(&self, keyed: &O256) -> Result<Option<(String, O256)>, KernelError> {
+        let path = format!("/api/objects/tag/{keyed}");
+        let resp = match self.get(&path) {
+            Ok(data) => data,
+            Err(KernelError::NotFound(_)) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let json: TagLookupResponse = serde_json::from_slice(&resp)
+            .map_err(|e| KernelError::Store(format!("parse: {e}")))?;
+        let content_hash = O256::from_hex(&json.content_hash)
+            .ok_or_else(|| KernelError::Store(format!("invalid content hash: {}", json.content_hash)))?;
+        Ok(Some((json.tag, content_hash)))
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct TagRegisterResponse {
+    keyed: String,
+}
+
+#[derive(serde::Deserialize)]
+struct TagLookupResponse {
+    tag: String,
+    #[serde(rename = "contentHash")]
+    content_hash: String,
 }
 
 fn ureq_error(e: ureq::Error) -> KernelError {

@@ -1229,9 +1229,11 @@ dependencies = [
 name = "covalence-repl"
 version = "0.0.0"
 dependencies = [
+ "bytes",
  "covalence-arrow",
  "covalence-forsp",
  "covalence-git",
+ "covalence-graph",
  "covalence-hash",
  "covalence-object",
  "covalence-parquet",

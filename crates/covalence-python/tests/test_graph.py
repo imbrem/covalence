@@ -5,17 +5,15 @@ import pytest
 import covalence
 
 
-def _src_snk(kind1="pure", kind2="pure"):
+def _src_snk():
     b = covalence.GraphBuilder()
     src = b.add_node(
         ports=[{"name": "o", "type_id": 1, "kind": "output"}],
         payload=b"src",
-        kind=kind1,
     )
     snk = b.add_node(
         ports=[{"name": "i", "type_id": 1, "kind": "input"}],
         payload=b"snk",
-        kind=kind2,
     )
     b.wire(src, 0, snk, 0)
     return b.finish()
@@ -26,35 +24,25 @@ def test_build_and_inspect():
     assert g.node_count == 2
     assert g.edge_count == 1
     n0 = g.get_node(0)
-    assert n0["kind"] == "pure"
     assert n0["payload"] == b"src"
     assert n0["ports"][0]["name"] == "o"
     assert n0["ports"][0]["kind"] == "output"
 
 
 def test_canonical_roundtrip():
-    g = _src_snk("ordered", "pure")
+    g = _src_snk()
     data = g.to_bytes()
     assert data[:4] == b"COVG"
     g2 = covalence.Graph.from_bytes(data)
     assert g.equal(g2)
     assert g == g2
-    assert g2.get_node(0)["kind"] == "ordered"
-    assert g2.get_node(1)["kind"] == "pure"
 
 
 def test_ordered_and_unordered_hashes_differ():
-    g = _src_snk("ordered", "ordered")
+    g = _src_snk()
     assert g.ordered_hash() != g.unordered_hash()
     assert len(g.ordered_hash()) == 32
     assert len(g.ordered_hash_hex()) == 64
-
-
-def test_ordered_nodes_listed_in_order():
-    g = _src_snk("ordered", "pure")
-    assert g.ordered_nodes() == [0]
-    g2 = _src_snk("pure", "ordered")
-    assert g2.ordered_nodes() == [1]
 
 
 def test_insertion_order_affects_equality():
@@ -110,11 +98,10 @@ def test_finish_rejects_unwired_inputs():
 
 
 def test_snapshot_shape():
-    g = _src_snk("ordered", "pure")
+    g = _src_snk()
     s = g.snapshot()
     assert s["version"] == 1
     assert len(s["nodes"]) == 2
-    assert s["nodes"][0]["kind"] == "ordered"
     assert s["edges"][0] == {
         "from_node": 0,
         "from_port": 0,
@@ -126,3 +113,41 @@ def test_snapshot_shape():
 def test_bad_magic_rejected():
     with pytest.raises(ValueError, match="bad magic"):
         covalence.Graph.from_bytes(b"NOPE\x01\x00")
+
+
+# ----- Overlays + StringDiagram + render -----
+
+
+def test_label_list_roundtrips():
+    ll = covalence.LabelList([None, "second", "third"])
+    assert len(ll) == 3
+    assert ll.get(0) is None
+    assert ll.get(1) == "second"
+    back = covalence.LabelList.from_bytes(ll.to_bytes())
+    assert back.get(2) == "third"
+
+
+def test_kind_flags_uniform_and_indices():
+    kf = covalence.KindFlags(["pure", "ordered", "ordered"])
+    assert kf.ordered_indices() == [1, 2]
+    uniform = covalence.KindFlags.uniform(5, "ordered")
+    assert uniform.ordered_indices() == [0, 1, 2, 3, 4]
+
+
+def test_string_diagram_compose_and_render():
+    g = _src_snk()
+    labels = covalence.LabelList(["src-node", "snk-node"])
+    kinds = covalence.KindFlags(["ordered", "pure"])
+    sd = covalence.StringDiagram.build(g, labels=labels, kinds=kinds)
+    assert sd.hash() != bytes(32)
+    svg = sd.render_svg(g, labels=labels, kinds=kinds)
+    assert svg.startswith("<svg")
+    assert "src-node" in svg
+    assert "snk-node" in svg
+
+
+def test_string_diagram_uniform_kind_uses_sentinel():
+    g = _src_snk()
+    sd = covalence.StringDiagram.build(g, uniform_kind="ordered")
+    assert sd.kinds_slot() == "all-ordered"
+    assert sd.labels_slot() == "absent"

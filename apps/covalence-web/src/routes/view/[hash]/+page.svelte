@@ -1,8 +1,27 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { client } from '$lib/api';
-	import { getViewer } from 'covalence-ui';
+	import { getViewer, hexOf } from 'covalence-ui';
+	import type { Hash } from 'covalence-ui';
 	import type { ObjectInfoResponse, TreeEntry } from 'covalence-client';
+
+	/**
+	 * BlobViewer resolver: fetch the bytes a keyed identity names.
+	 * Resolves the two-step `lookup_tag → get_blob` indirection that
+	 * every graph-family reference uses — the slot hash is a keyed
+	 * identity, not a direct content hash.
+	 */
+	async function resolver(h: Hash): Promise<Uint8Array | null> {
+		const hex = hexOf(h);
+		try {
+			const info = await client.objectInfo(hex);
+			if (!info?.contentHash) return null;
+			const data = await client.getObjectBlob(info.contentHash);
+			return data ?? null;
+		} catch {
+			return null;
+		}
+	}
 
 	let hash = $derived($page.params.hash);
 
@@ -15,6 +34,9 @@
 	let treeEntries: TreeEntry[] = $state([]);
 	let blobData: Uint8Array = $state(new Uint8Array());
 	let mode: string = $state('');
+	/** Tag string when the hash is a keyed identity. Drives BlobViewer's
+	 *  graph-mode dispatch. */
+	let tag: string | undefined = $state(undefined);
 
 	// Load object info + data whenever hash changes
 	let lastHash = '';
@@ -50,7 +72,11 @@
 			}
 			info = objInfo;
 
-			const viewer = getViewer(objInfo.kind);
+			// 'tagged' renders through the blob viewer with the tag
+			// driving dispatch; we fetch by the underlying content hash
+			// since the keyed hash isn't a content-store key.
+			const viewerKind: 'tree' | 'blob' = objInfo.kind === 'tree' ? 'tree' : 'blob';
+			const viewer = getViewer(viewerKind);
 			if (!viewer) {
 				error = `No viewer for kind "${objInfo.kind}"`;
 				loading = false;
@@ -60,10 +86,17 @@
 			if (objInfo.kind === 'tree') {
 				treeEntries = await client.treeLs(h);
 				if (!mode) mode = 'tree';
-			} else if (objInfo.kind === 'blob') {
-				const data = await client.getObjectBlob(h);
+			} else {
+				// blob or tagged — both render through BlobViewer.
+				const fetchHash =
+					objInfo.kind === 'tagged' && objInfo.contentHash ? objInfo.contentHash : h;
+				const data = await client.getObjectBlob(fetchHash);
 				blobData = data ?? new Uint8Array();
-				if (!mode && viewer.autoMode) {
+				tag = objInfo.tag;
+				if (tag) {
+					// Keyed-identity tag overrides any magic sniffing.
+					mode = 'graph';
+				} else if (!mode && viewer.autoMode) {
 					mode = viewer.autoMode(blobData);
 				} else if (!mode) {
 					mode = 'text';
@@ -75,7 +108,9 @@
 		loading = false;
 	}
 
-	let viewer = $derived(info ? getViewer(info.kind) : undefined);
+	let viewer = $derived(
+		info ? getViewer(info.kind === 'tagged' ? 'blob' : info.kind) : undefined,
+	);
 
 	function setMode(m: string) {
 		mode = m;
@@ -123,9 +158,9 @@
 		{:else if info?.kind === 'tree' && viewer}
 			{@const TreeViewer = viewer.component}
 			<TreeViewer {hash} entries={treeEntries} />
-		{:else if info?.kind === 'blob' && viewer}
+		{:else if (info?.kind === 'blob' || info?.kind === 'tagged') && viewer}
 			{@const BlobViewer = viewer.component}
-			<BlobViewer {hash} data={blobData} {mode} />
+			<BlobViewer {hash} data={blobData} {mode} {resolver} {tag} />
 		{:else if viewer}
 			<div class="status-msg">Unsupported object kind: {info?.kind}</div>
 		{/if}

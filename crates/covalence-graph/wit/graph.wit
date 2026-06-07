@@ -1,11 +1,11 @@
 package cov:graph@0.1.0;
 
-/// Ordered, typed, payload-polymorphic graph.
+/// Ordered, typed, payload-polymorphic graph — *pure topology*.
 ///
-/// The graph stores *topology* and *port types*; payloads are opaque
-/// bytes the consumer interprets (a component hash for a WASM linker,
-/// a generator id for a string diagram, …). Consumers fix the meaning
-/// of `type-id` and `payload`; the graph only checks equality.
+/// Labels and per-node "ordered/pure" classification are NOT here:
+/// they live in independently content-addressed overlay blobs and a
+/// `string-diagram` composite that references them. See the
+/// `string-diagram` interface in this package.
 ///
 /// **Order matters.** Nodes form an ordered sequence — first added,
 /// first initialized. The intended interpretation is a symmetric
@@ -38,24 +38,10 @@ interface api {
         kind: port-kind,
     }
 
-    /// Built-in, fixed node classification.
-    ///
-    /// `pure`  : commutes freely with siblings — no implicit ordering.
-    /// `ordered` : effectful; consecutive ordered nodes are connected
-    ///   by an implicit "state wire" (rendered red in the diagrammatic
-    ///   view). The kind is a structural property, not a user
-    ///   attribute — the set is fixed by this WIT.
-    enum node-kind { pure, ordered }
-
     /// Opaque per-node bytes; the graph never inspects them.
     type payload = list<u8>;
 
     record node {
-        kind: node-kind,
-        /// Optional free-form label. Only meaningful when the
-        /// `kind` admits labels (currently all kinds do). Consumers
-        /// not interested in labels can ignore.
-        label: option<string>,
         ports: list<port>,
         payload: payload,
     }
@@ -96,7 +82,7 @@ interface api {
 
         /// Append a node. Returns its id. The new id is always
         /// `prior-node-count` — i.e. insertion order = id order.
-        add-node: func(kind: node-kind, label: option<string>, ports: list<port>, payload: payload) -> node-id;
+        add-node: func(ports: list<port>, payload: payload) -> node-id;
 
         /// Append an edge. Type compatibility and port kinds are
         /// checked here, not at `finish`.
@@ -136,17 +122,11 @@ interface api {
         /// `port` is `some`, restricts to that input port.
         edges-into: func(n: node-id, port: option<port-id>) -> list<edge>;
 
-        /// Ids of nodes whose kind is `ordered`, in insertion order.
-        /// Consumers render the state wire by pairing consecutive ids.
-        ordered-nodes: func() -> list<node-id>;
-
         // ---- Compare ----
         //
         // Canonical byte encoding and content hashing are HOST-side
         // operations and deliberately NOT in this WIT — the encoding
-        // depends on per-kind metadata rules (labels, future fields)
-        // that a generic guest shouldn't have to understand. Hosts
-        // call `Graph::to_bytes` / `Graph::ordered_hash` in Rust.
+        // is internal to the host crate.
 
         /// Strict structural equality, preserving insertion order of
         /// both nodes and edges. Two graphs that differ only in the
@@ -155,4 +135,81 @@ interface api {
     }
 }
 
+/// String-diagram composite: a graph hash plus references to optional
+/// label and node-kind overlays.
+///
+/// Slots are 32-byte fields. The all-zero value means "absent" — the
+/// renderer falls back to defaults. A reserved `0xFF`-prefixed pattern
+/// encodes "uniform" sentinels (all-pure, all-ordered) so degenerate
+/// overlays don't have to allocate a blob.
+interface string-diagram {
+    use api.{node-id};
+
+    /// 32-byte BLAKE3 hash.
+    type hash = list<u8>;
+
+    /// One slot of a string-diagram: a hash, the all-zero "absent"
+    /// pattern, or the `0xFF`-prefixed uniform sentinel. Encoded
+    /// directly as a fixed 32-byte payload so canonical bytes are
+    /// constant-shape.
+    type slot = list<u8>;
+
+    /// Built-in per-node classification.
+    /// `pure`    : commutes freely with siblings.
+    /// `ordered` : effectful; consecutive ordered nodes carry a
+    ///   dashed-red "state thread" in the diagrammatic view.
+    enum node-kind { pure, ordered }
+
+    /// Canonical references only. Just enough to compute a stable
+    /// content hash and look up the pieces.
+    record diagram-refs {
+        /// Ordered-domain hash of the underlying graph.
+        graph: hash,
+        /// Reference to the label-list overlay (or absent / uniform).
+        labels: slot,
+        /// Reference to the kind-flags overlay (or absent / uniform).
+        kinds: slot,
+    }
+
+    /// Inline label-list: one entry per node. `none` means "no label
+    /// for this slot — renderers fall back to `#i`."
+    record label-list {
+        labels: list<option<string>>,
+    }
+
+    /// Inline kind-flags: one entry per node.
+    record kind-flags {
+        kinds: list<node-kind>,
+    }
+
+    /// Encode a label-list to its canonical bytes for content hashing.
+    label-list-to-bytes: func(ll: label-list) -> list<u8>;
+    /// Encode kind-flags to its canonical bytes for content hashing.
+    kind-flags-to-bytes: func(kf: kind-flags) -> list<u8>;
+    /// Encode a diagram-refs composite to its canonical bytes.
+    diagram-to-bytes: func(d: diagram-refs) -> list<u8>;
+
+    /// Render the composite to standalone SVG markup. The renderer
+    /// needs the inline overlays alongside the graph bytes; the WIT
+    /// caller is responsible for resolving overlay hashes against
+    /// whatever store it knows about.
+    record renderable {
+        graph-bytes: list<u8>,
+        labels: option<label-list>,
+        kinds: option<kind-flags>,
+    }
+
+    render-svg: func(r: renderable) -> result<string, string>;
+}
+
+/// World exporting just the graph topology resource. WASM components
+/// that build / inspect graphs without caring about the diagrammatic
+/// presentation use this.
 world graph-tool { export api; }
+
+/// World exporting both graph and string-diagram. WASM components
+/// that render or transform diagrams use this.
+world diagram-tool {
+    export api;
+    export string-diagram;
+}

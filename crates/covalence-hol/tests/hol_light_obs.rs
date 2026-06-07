@@ -204,17 +204,14 @@ fn hol_refl_via_obs_true_no_hint() {
 }
 
 #[test]
-fn hol_refl_via_obs_true_with_explicit_hint() {
-    // Same as above but with HolHint::Refl explicitly passed.
+fn hol_refl_at_blob_via_obs_true() {
+    // HOL refl at type bytes (using a blob literal as the witness).
     let ctx = HolLightCtx::new();
     let a = Term::blob(bytes::Bytes::from_static(b"hello"));
     let eq_a_a = ctx.mk_eq(a.clone(), a).unwrap();
     let tp_eq = ctx.mk_trueprop(eq_a_a).unwrap();
 
-    let hint = covalence_hol::HolHint::Refl;
-    let thm =
-        covalence_pure::Thm::obs_true::<HolLight>(tp_eq.clone(), Some(&hint as &dyn std::any::Any))
-            .unwrap();
+    let thm = covalence_pure::Thm::obs_true::<HolLight>(tp_eq.clone(), None).unwrap();
     assert!(thm.hyps().is_empty());
     assert_eq!(thm.concl(), &tp_eq);
 }
@@ -233,60 +230,62 @@ fn hol_refl_obs_true_rejects_non_refl_eq() {
 }
 
 #[test]
-fn hol_sym_via_obs_true_with_source_thm() {
-    // HOL sym: from ⊢ Trueprop (Eq a b) derive ⊢ Trueprop (Eq b a).
+fn hol_sym_as_lazy_theorem_via_obs_imp() {
+    // HOL sym as a lazy theorem:
+    //   ⊢ Trueprop (Eq a b) ⟹ Trueprop (Eq b a)
+    // The user can then imp_elim with a concrete ⊢ Trueprop (Eq a b)
+    // to get the specialised result.
     let ctx = HolLightCtx::new();
     let a = Term::free("a", ctx.bool_type());
     let b = Term::free("b", ctx.bool_type());
 
-    // Source theorem: assume ⊢ Trueprop (Eq a b).
-    let eq_a_b = ctx.mk_eq(a.clone(), b.clone()).unwrap();
-    let tp_eq_a_b = ctx.mk_trueprop(eq_a_b).unwrap();
-    let source = covalence_pure::Thm::assume(tp_eq_a_b).unwrap();
+    let hyp = ctx.mk_trueprop(ctx.mk_eq(a.clone(), b.clone()).unwrap()).unwrap();
+    let concl = ctx.mk_trueprop(ctx.mk_eq(b.clone(), a.clone()).unwrap()).unwrap();
 
-    // Want: ⊢ Trueprop (Eq b a).
-    let eq_b_a = ctx.mk_eq(b, a).unwrap();
-    let tp_eq_b_a = ctx.mk_trueprop(eq_b_a).unwrap();
+    let lazy = covalence_pure::Thm::obs_imp::<HolLight>(concl.clone(), vec![hyp.clone()], None)
+        .unwrap();
+    // Concl: hyp ⟹ concl.
+    let expected = covalence_pure::Term::imp(hyp.clone(), concl.clone());
+    assert_eq!(lazy.concl(), &expected);
+    // No hypotheses (sym is unconditional).
+    assert!(lazy.hyps().is_empty());
 
-    let hint = covalence_hol::HolHint::Sym {
-        source: source.clone(),
-    };
-    let thm = covalence_pure::Thm::obs_true::<HolLight>(
-        tp_eq_b_a.clone(),
-        Some(&hint as &dyn std::any::Any),
-    )
-    .unwrap();
-    assert_eq!(thm.concl(), &tp_eq_b_a);
+    // Use the lazy theorem: from ⊢ Trueprop (Eq a b) derive ⊢ Trueprop (Eq b a).
+    let source = covalence_pure::Thm::assume(hyp).unwrap();
+    let derived = lazy.imp_elim(source).unwrap();
+    assert_eq!(derived.concl(), &concl);
 }
 
 #[test]
-fn hol_trans_via_obs_true_with_two_source_thms() {
-    // HOL trans: ⊢ Eq a b + ⊢ Eq b c → ⊢ Eq a c (all in Trueprop).
+fn hol_trans_as_lazy_theorem_via_obs_imp() {
+    // ⊢ Trueprop (Eq a b) ⟹ Trueprop (Eq b c) ⟹ Trueprop (Eq a c).
     let ctx = HolLightCtx::new();
     let a = Term::free("a", ctx.bool_type());
     let b = Term::free("b", ctx.bool_type());
     let c = Term::free("c", ctx.bool_type());
 
-    let ab = covalence_pure::Thm::assume(
-        ctx.mk_trueprop(ctx.mk_eq(a.clone(), b.clone()).unwrap()).unwrap(),
-    )
-    .unwrap();
-    let bc = covalence_pure::Thm::assume(
-        ctx.mk_trueprop(ctx.mk_eq(b, c.clone()).unwrap()).unwrap(),
-    )
-    .unwrap();
+    let h_ab = ctx.mk_trueprop(ctx.mk_eq(a.clone(), b.clone()).unwrap()).unwrap();
+    let h_bc = ctx.mk_trueprop(ctx.mk_eq(b.clone(), c.clone()).unwrap()).unwrap();
+    let concl = ctx.mk_trueprop(ctx.mk_eq(a.clone(), c.clone()).unwrap()).unwrap();
 
-    // Want: ⊢ Trueprop (Eq a c).
-    let ac = ctx.mk_eq(a, c).unwrap();
-    let tp_ac = ctx.mk_trueprop(ac).unwrap();
-    let hint = covalence_hol::HolHint::Trans {
-        ab: ab.clone(),
-        bc: bc.clone(),
-    };
-    let thm =
-        covalence_pure::Thm::obs_true::<HolLight>(tp_ac.clone(), Some(&hint as &dyn std::any::Any))
-            .unwrap();
-    assert_eq!(thm.concl(), &tp_ac);
+    let lazy = covalence_pure::Thm::obs_imp::<HolLight>(
+        concl.clone(),
+        vec![h_ab.clone(), h_bc.clone()],
+        None,
+    )
+    .unwrap();
+    let expected = covalence_pure::Term::imp(
+        h_ab.clone(),
+        covalence_pure::Term::imp(h_bc.clone(), concl.clone()),
+    );
+    assert_eq!(lazy.concl(), &expected);
+
+    // Discharge both hyps via imp_elim chain.
+    let ab_thm = covalence_pure::Thm::assume(h_ab).unwrap();
+    let bc_thm = covalence_pure::Thm::assume(h_bc).unwrap();
+    let step1 = lazy.imp_elim(ab_thm).unwrap();
+    let final_ = step1.imp_elim(bc_thm).unwrap();
+    assert_eq!(final_.concl(), &concl);
 }
 
 #[test]
@@ -297,20 +296,59 @@ fn hol_trans_rejects_when_middle_term_mismatches() {
     let c = Term::free("c", ctx.bool_type());
     let d = Term::free("d", ctx.bool_type());
 
-    // ab is Eq a b; bc is Eq d c (middle terms don't match: b ≠ d).
-    let ab = covalence_pure::Thm::assume(
-        ctx.mk_trueprop(ctx.mk_eq(a.clone(), b).unwrap()).unwrap(),
-    )
-    .unwrap();
-    let bc = covalence_pure::Thm::assume(
-        ctx.mk_trueprop(ctx.mk_eq(d, c.clone()).unwrap()).unwrap(),
-    )
-    .unwrap();
-
-    let ac = ctx.mk_eq(a, c).unwrap();
-    let tp_ac = ctx.mk_trueprop(ac).unwrap();
-    let hint = covalence_hol::HolHint::Trans { ab, bc };
-    let result =
-        covalence_pure::Thm::obs_true::<HolLight>(tp_ac, Some(&hint as &dyn std::any::Any));
+    let h_ab = ctx.mk_trueprop(ctx.mk_eq(a.clone(), b).unwrap()).unwrap();
+    let h_dc = ctx.mk_trueprop(ctx.mk_eq(d, c.clone()).unwrap()).unwrap();
+    let concl = ctx.mk_trueprop(ctx.mk_eq(a, c).unwrap()).unwrap();
+    let result = covalence_pure::Thm::obs_imp::<HolLight>(concl, vec![h_ab, h_dc], None);
     assert!(result.is_err(), "trans with mismatched middle should be refused");
+}
+
+#[test]
+fn hol_mk_comb_as_lazy_theorem_via_obs_imp() {
+    // ⊢ Trueprop (Eq f g) ⟹ Trueprop (Eq x y) ⟹ Trueprop (Eq (f x) (g y)).
+    let ctx = HolLightCtx::new();
+    let alpha_to_bool = Type::fun(ctx.bool_type(), ctx.bool_type());
+    let f = Term::free("f", alpha_to_bool.clone());
+    let g = Term::free("g", alpha_to_bool);
+    let x = Term::free("x", ctx.bool_type());
+    let y = Term::free("y", ctx.bool_type());
+
+    let h_fg = ctx.mk_trueprop(ctx.mk_eq(f.clone(), g.clone()).unwrap()).unwrap();
+    let h_xy = ctx.mk_trueprop(ctx.mk_eq(x.clone(), y.clone()).unwrap()).unwrap();
+    let fx = Term::app(f.clone(), x.clone());
+    let gy = Term::app(g.clone(), y.clone());
+    let concl = ctx.mk_trueprop(ctx.mk_eq(fx, gy).unwrap()).unwrap();
+
+    let lazy = covalence_pure::Thm::obs_imp::<HolLight>(
+        concl.clone(),
+        vec![h_fg.clone(), h_xy.clone()],
+        None,
+    )
+    .unwrap();
+    let expected = covalence_pure::Term::imp(
+        h_fg,
+        covalence_pure::Term::imp(h_xy, concl),
+    );
+    assert_eq!(lazy.concl(), &expected);
+}
+
+#[test]
+fn hol_eq_mp_at_bool_as_lazy_theorem_via_obs_imp() {
+    // ⊢ Trueprop (Eq p q) ⟹ Trueprop p ⟹ Trueprop q.
+    let ctx = HolLightCtx::new();
+    let p = Term::free("p", ctx.bool_type());
+    let q = Term::free("q", ctx.bool_type());
+
+    let h_pq = ctx.mk_trueprop(ctx.mk_eq(p.clone(), q.clone()).unwrap()).unwrap();
+    let h_p = ctx.mk_trueprop(p).unwrap();
+    let concl = ctx.mk_trueprop(q).unwrap();
+
+    let lazy = covalence_pure::Thm::obs_imp::<HolLight>(
+        concl.clone(),
+        vec![h_pq.clone(), h_p.clone()],
+        None,
+    )
+    .unwrap();
+    let expected = covalence_pure::Term::imp(h_pq, covalence_pure::Term::imp(h_p, concl));
+    assert_eq!(lazy.concl(), &expected);
 }

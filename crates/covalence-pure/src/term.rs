@@ -116,6 +116,33 @@ pub trait ObsTrue: Observer {
     fn obs_true(&self, args: &[Term], hint: Option<&dyn Any>) -> bool;
 }
 
+/// Per-observer-Rust-type policy for the kernel's
+/// [`crate::Thm::obs_imp`] rule: a way to mint a **lazy theorem**
+/// `⊢ h₀ ⟹ h₁ ⟹ … ⟹ hₙ ⟹ (obs O) args`
+/// where each `hᵢ` is a Pure proposition and the consequent is a
+/// prop-typed obs application. The policy decides whether the
+/// implication chain is HOL-derivable (or whatever-derivable for
+/// other observer theories) given the supplied hyps.
+///
+/// **Soundness.** Strictly weaker than [`ObsTrue`]: if it's sound
+/// to assert `⊢ (obs O) args` unconditionally (which it is, under
+/// the parametric-ε model at result type prop), then it's *also*
+/// sound to assert any implication chain that ends in it — the
+/// chain is `⊤` whenever the consequent is `⊤`. Returning `true`
+/// from any policy is sound; returning `false` just refuses.
+///
+/// `hint` is the same opaque pass-through as on [`ObsEq`] / [`ObsTrue`].
+pub trait ObsImp: Observer {
+    /// Decide whether the lazy theorem
+    /// `⊢ hyps[0] ⟹ … ⟹ hyps[n] ⟹ (obs self) args` should be minted.
+    fn obs_imp(
+        &self,
+        args: &[Term],
+        hyps: &[Term],
+        hint: Option<&dyn Any>,
+    ) -> bool;
+}
+
 pub trait ObsEq: Observer {
     /// Per-`O` policy: decide whether `(obs self)(my_args…)` and
     /// `(obs other)(other_args…)` should be emitted as an equation

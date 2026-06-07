@@ -36,7 +36,7 @@ use std::any::Any;
 use std::fmt;
 use std::sync::LazyLock;
 
-use covalence_pure::{ObsEq, ObsTrue, Object, Observer, Term, TermKind, Thm, Type};
+use covalence_pure::{ObsEq, ObsImp, ObsTrue, Object, Observer, Term, TermKind, Type};
 
 // ============================================================================
 // Module-level lazy globals
@@ -460,97 +460,133 @@ pub trait IsHolLight: Observer {}
 impl IsHolLight for HolLight {}
 
 // ============================================================================
-// ObsTrue policy — HOL Light bootstrap via Thm::obs_true
+// ObsTrue policy — direct HOL truth (zero hypotheses)
 // ============================================================================
-//
-// The HolLight `ObsTrue` policy is how HOL theorems get minted directly,
-// without needing an `eq_reflection` axiom. The hint carries source
-// theorems / structural witnesses; the policy validates that the requested
-// `⊢ Trueprop p` is HOL-derivable from what's in the hint.
-//
-// Sound under Pure's parametric-ε model: a `false` here just refuses; a
-// `true` here is consistent with ε(HolLight) interpreting any Trueprop
-// application as truth.
 
-/// Witness hints that the HolLight `ObsTrue` policy understands.
-/// Callers pass `Some(&HolHint::variant)` to derive specific HOL rules.
-#[derive(Debug)]
-pub enum HolHint {
-    /// HOL refl at any type α — no witness needed beyond structural
-    /// argument matching. `Thm::obs_true::<HolLight>(Trueprop (Eq a a), None)`
-    /// (or with this hint) gives `⊢ Trueprop (Eq a a)`.
-    Refl,
-    /// HOL sym at any type α: `Trueprop (Eq a b)` derives
-    /// `Trueprop (Eq b a)` given a source theorem.
-    Sym { source: Thm },
-    /// HOL trans at any type α: given source theorems `⊢ Trueprop (Eq a b)`
-    /// and `⊢ Trueprop (Eq b c)`, derive `⊢ Trueprop (Eq a c)`.
-    Trans { ab: Thm, bc: Thm },
-}
-
-/// `ObsTrue` policy for HolLight. Returns `true` only when the policy
-/// recognises the expression as a HOL Light derivable fact (under
-/// HOL-equality semantics), optionally validated by the hint's
-/// source theorems.
+/// `ObsTrue` policy for HolLight: declares unconditionally-true
+/// HOL propositions. The only case this policy recognises is HOL
+/// refl: `Trueprop (Eq a a)` for any α. Multi-hypothesis rules
+/// (sym, trans, MK_COMB, etc.) live in the [`ObsImp`] policy below.
 impl ObsTrue for HolLight {
-    fn obs_true(&self, args: &[Term], hint: Option<&dyn Any>) -> bool {
-        // The only HolLight variant whose application has type prop is
-        // Trueprop. All HOL theorems thus mint via `Trueprop p`.
+    fn obs_true(&self, args: &[Term], _hint: Option<&dyn Any>) -> bool {
         if !matches!(self, HolLight::Trueprop) || args.len() != 1 {
             return false;
         }
-        let body = &args[0];
-        // Without a hint: handle structural refl — `Trueprop (Eq a a)`.
-        let hint_variant = hint.and_then(|h| h.downcast_ref::<HolHint>());
-        match hint_variant {
-            None | Some(HolHint::Refl) => {
-                // Structural HOL refl: body is `Eq a a` for some a.
-                if let Some((a, b)) = decompose_hol_eq(body) {
-                    return a == b;
-                }
-                false
+        // HOL refl: `Trueprop (Eq a a)`.
+        if let Some((a, b)) = decompose_hol_eq(&args[0]) {
+            return a == b;
+        }
+        false
+    }
+}
+
+// ============================================================================
+// ObsImp policy — lazy HOL Light derivation rules
+// ============================================================================
+
+/// `ObsImp` policy for HolLight. Mints lazy theorems of the form
+/// `⊢ hyp[0] ⟹ … ⟹ hyp[n] ⟹ Trueprop (concl)`.
+///
+/// The shapes recognised are the standard HOL Light rules. Each is
+/// a structural pattern over `(concl_args, hyps)`; the policy
+/// returns true iff the pattern matches:
+///
+/// **HOL sym** (1 hyp): hyp=`Trueprop (Eq a b)`, concl=`Trueprop (Eq b a)`.
+/// **HOL trans** (2 hyps): hyps=`Trueprop (Eq a b)`, `Trueprop (Eq b c)`,
+///   concl=`Trueprop (Eq a c)`.
+/// **HOL MK_COMB** (2 hyps): hyps=`Trueprop (Eq f g)`, `Trueprop (Eq x y)`,
+///   concl=`Trueprop (Eq (App f x) (App g y))`.
+/// **HOL EQ_MP** at bool (2 hyps): hyps=`Trueprop (Eq p q)`, `Trueprop p`,
+///   concl=`Trueprop q`.
+///
+/// More rules (ABS, BETA, INST, INST_TYPE, DEDUCT_ANTISYM) can be
+/// added as additional pattern arms — each is local and only adds
+/// LoC, never risks unsoundness.
+impl ObsImp for HolLight {
+    fn obs_imp(&self, args: &[Term], hyps: &[Term], _hint: Option<&dyn Any>) -> bool {
+        // The only HolLight variant we mint lazy theorems for is
+        // `Trueprop p` — i.e., a prop-typed obs application.
+        if !matches!(self, HolLight::Trueprop) || args.len() != 1 {
+            return false;
+        }
+        let concl_body = &args[0];
+
+        match hyps.len() {
+            1 => check_sym_pattern(&hyps[0], concl_body),
+            2 => {
+                check_trans_pattern(&hyps[0], &hyps[1], concl_body)
+                    || check_mk_comb_pattern(&hyps[0], &hyps[1], concl_body)
+                    || check_eq_mp_pattern(&hyps[0], &hyps[1], concl_body)
             }
-            Some(HolHint::Sym { source }) => {
-                // Want: body = Trueprop (Eq b a); source.concl = Trueprop (Eq a b).
-                let Some(source_body) = unwrap_trueprop(source.concl()) else {
-                    return false;
-                };
-                let (Some((sa, sb)), Some((wb, wa))) = (
-                    decompose_hol_eq(&source_body),
-                    decompose_hol_eq(body),
-                ) else {
-                    return false;
-                };
-                sa == wa && sb == wb
-            }
-            Some(HolHint::Trans { ab, bc }) => {
-                // Want: body = Eq a c; ab.concl = Trueprop (Eq a b);
-                // bc.concl = Trueprop (Eq b c).
-                let Some(ab_body) = unwrap_trueprop(ab.concl()) else {
-                    return false;
-                };
-                let Some(bc_body) = unwrap_trueprop(bc.concl()) else {
-                    return false;
-                };
-                let (
-                    Some((a, b1)),
-                    Some((b2, c)),
-                    Some((wa, wc)),
-                ) = (
-                    decompose_hol_eq(&ab_body),
-                    decompose_hol_eq(&bc_body),
-                    decompose_hol_eq(body),
-                ) else {
-                    return false;
-                };
-                b1 == b2 && a == wa && c == wc
-            }
+            _ => false,
         }
     }
 }
 
+/// HOL sym: hyp = `Trueprop (Eq a b)`, concl = `Eq b a`.
+fn check_sym_pattern(hyp: &Term, concl_body: &Term) -> bool {
+    let Some(hyp_body) = unwrap_trueprop(hyp) else {
+        return false;
+    };
+    let (Some((a, b)), Some((b2, a2))) = (
+        decompose_hol_eq(&hyp_body),
+        decompose_hol_eq(concl_body),
+    ) else {
+        return false;
+    };
+    a == a2 && b == b2
+}
+
+/// HOL trans: hyp1 = `Trueprop (Eq a b)`, hyp2 = `Trueprop (Eq b c)`,
+/// concl = `Eq a c`.
+fn check_trans_pattern(hyp1: &Term, hyp2: &Term, concl_body: &Term) -> bool {
+    let (Some(h1), Some(h2)) = (unwrap_trueprop(hyp1), unwrap_trueprop(hyp2)) else {
+        return false;
+    };
+    let (Some((a, b1)), Some((b2, c)), Some((wa, wc))) = (
+        decompose_hol_eq(&h1),
+        decompose_hol_eq(&h2),
+        decompose_hol_eq(concl_body),
+    ) else {
+        return false;
+    };
+    b1 == b2 && a == wa && c == wc
+}
+
+/// HOL MK_COMB: hyp1 = `Trueprop (Eq f g)`, hyp2 = `Trueprop (Eq x y)`,
+/// concl = `Eq (App f x) (App g y)`.
+fn check_mk_comb_pattern(hyp1: &Term, hyp2: &Term, concl_body: &Term) -> bool {
+    let (Some(h1), Some(h2)) = (unwrap_trueprop(hyp1), unwrap_trueprop(hyp2)) else {
+        return false;
+    };
+    let (Some((f, g)), Some((x, y)), Some((lhs, rhs))) = (
+        decompose_hol_eq(&h1),
+        decompose_hol_eq(&h2),
+        decompose_hol_eq(concl_body),
+    ) else {
+        return false;
+    };
+    // lhs == App(f, x), rhs == App(g, y)
+    let (TermKind::App(lf, lx), TermKind::App(rf, rx)) = (lhs.kind(), rhs.kind()) else {
+        return false;
+    };
+    *lf == f && *lx == x && *rf == g && *rx == y
+}
+
+/// HOL EQ_MP at bool: hyp1 = `Trueprop (Eq p q)`, hyp2 = `Trueprop p`,
+/// concl = `q`.
+fn check_eq_mp_pattern(hyp1: &Term, hyp2: &Term, concl_body: &Term) -> bool {
+    let (Some(h1), Some(h2_body)) = (unwrap_trueprop(hyp1), unwrap_trueprop(hyp2)) else {
+        return false;
+    };
+    let Some((p, q)) = decompose_hol_eq(&h1) else {
+        return false;
+    };
+    p == h2_body && q == *concl_body
+}
+
 /// If `t` is `App(App(HolEq, a), b)` with the `HolLight::Eq` observer
-/// at the head, return `Some((a, b))`. Used by the ObsTrue policy.
+/// at the head, return `Some((a, b))`.
 fn decompose_hol_eq(t: &Term) -> Option<(Term, Term)> {
     let TermKind::App(outer_fn, outer_arg) = t.kind() else {
         return None;
@@ -567,7 +603,7 @@ fn decompose_hol_eq(t: &Term) -> Option<(Term, Term)> {
 }
 
 /// If `t` is `App(Trueprop, body)` with the `HolLight::Trueprop`
-/// observer at the head, return `Some(body)`. Otherwise `None`.
+/// observer at the head, return `Some(body)`.
 fn unwrap_trueprop(t: &Term) -> Option<Term> {
     let TermKind::App(f, body) = t.kind() else {
         return None;

@@ -33,7 +33,7 @@ use crate::subst::{
     close, find_free_type, has_free_var, open, shift_by, subst_tfree_in_term, uses_bound_outer,
 };
 use crate::term::{
-    Def, Hint, ObsEq, ObsTrue, Object, Observer, Term, TermKind, Type, TypeEnv, TypeKind,
+    Def, Hint, ObsEq, ObsImp, ObsTrue, Object, Observer, Term, TermKind, Type, TypeEnv, TypeKind,
     type_of_in,
 };
 
@@ -537,6 +537,54 @@ impl Thm {
             return Err(Error::ObsEqRefused);
         }
         Self::build(BTreeSet::new(), expr)
+    }
+
+    /// `⊢ hyps[0] ⟹ hyps[1] ⟹ … ⟹ hyps[n] ⟹ expr` — a **lazy
+    /// theorem** declared by the observer policy. Used to encode
+    /// HOL-style derivation rules as reusable implications: callers
+    /// then chain `imp_elim` with concrete source theorems to get the
+    /// specialised result.
+    ///
+    /// Validates:
+    /// - `expr` decomposes as `(obs head)(arg1)(arg2)…`.
+    /// - the head observer downcasts to `O`.
+    /// - `expr` has final type `prop`.
+    /// - every hyp has type `prop`.
+    /// - `O::obs_imp(args, hyps, hint)` returns `true`.
+    ///
+    /// ## Soundness
+    ///
+    /// Strictly weaker than [`Thm::obs_true`]. Any chain of
+    /// implications ending in a prop-typed obs application is sound to
+    /// assert under the same parametric-ε model that makes `obs_true`
+    /// sound. Per-`O` ε-families means a policy bug in `MyObs` can't
+    /// touch implications about `HolLight`.
+    pub fn obs_imp<O: ObsImp>(
+        expr: Term,
+        hyps: Vec<Term>,
+        hint: Option<&dyn std::any::Any>,
+    ) -> Result<Thm> {
+        let (obs, args) = decompose_obs_app(&expr)?;
+        let o = obs.downcast::<O>().ok_or(Error::ObsDowncastTypeMismatch)?;
+        let ty = expr.type_of()?;
+        if !ty.is_prop() {
+            return Err(Error::NotProp(ty));
+        }
+        for h in &hyps {
+            let h_ty = h.type_of()?;
+            if !h_ty.is_prop() {
+                return Err(Error::NotProp(h_ty));
+            }
+        }
+        if !o.obs_imp(&args, &hyps, hint) {
+            return Err(Error::ObsEqRefused);
+        }
+        // Build hyp[0] ⟹ hyp[1] ⟹ ... ⟹ expr (right-associative).
+        let mut result = expr;
+        for h in hyps.into_iter().rev() {
+            result = Term::imp(h, result);
+        }
+        Self::build(BTreeSet::new(), result)
     }
 
     pub fn obs_eq<O: ObsEq>(

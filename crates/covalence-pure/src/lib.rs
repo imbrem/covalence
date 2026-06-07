@@ -59,5 +59,7 @@ pub mod term;
 pub mod thm;
 
 pub use error::{Error, Result};
-pub use term::{Def, Hint, ObsEq, ObsTrue, Object, Observer, Term, TermKind, Type, TypeKind};
+pub use term::{
+    Def, Hint, ObsEq, ObsImp, ObsTrue, Object, Observer, Term, TermKind, Type, TypeKind,
+};
 pub use thm::{Thm, TypeDef};

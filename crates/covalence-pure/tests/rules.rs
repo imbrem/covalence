@@ -127,3 +127,36 @@ fn type_of_catches_inconsistent_free_var() {
     );
     assert!(phi.type_of().is_err());
 }
+
+#[test]
+fn eq_mp_basic() {
+    use covalence_pure::{Term, Thm, Type};
+    // ⊢ x ≡ x ⊢ x → ⊢ x  (where x : prop)
+    let x = Term::free("x", Type::prop());
+    let eq_thm = Thm::refl(x.clone()).unwrap(); // ⊢ x ≡ x
+    let p_thm = Thm::assume(x.clone()).unwrap(); // {x} ⊢ x
+    let q_thm = eq_thm.eq_mp(p_thm).unwrap();
+    assert_eq!(q_thm.concl(), &x);
+}
+
+#[test]
+fn eq_mp_lhs_must_match() {
+    use covalence_pure::{Term, Thm, Type};
+    let x = Term::free("x", Type::prop());
+    let y = Term::free("y", Type::prop());
+    let eq_thm = Thm::refl(x.clone()).unwrap(); // ⊢ x ≡ x
+    let p_thm = Thm::assume(y).unwrap(); // {y} ⊢ y
+    assert!(eq_thm.eq_mp(p_thm).is_err());
+}
+
+#[test]
+fn eq_mp_requires_eq_concl() {
+    use covalence_pure::{Term, Thm, Type};
+    // refl on (Free x : prop) gives ⊢ x ≡ x. Then take assume(x ≡ x) — concl is
+    // (x ≡ x), which IS an Eq. We need a non-Eq concl. Use ⊢ p ⟹ p.
+    let p = Term::free("p", Type::prop());
+    let p_thm = Thm::assume(p.clone()).unwrap();
+    let imp_thm = p_thm.imp_intro(&p).unwrap(); // ⊢ p ⟹ p
+    let p_thm2 = Thm::assume(p).unwrap();
+    assert!(imp_thm.eq_mp(p_thm2).is_err());
+}

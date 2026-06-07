@@ -157,6 +157,30 @@ impl Thm {
         Self::build((*self.hyps).clone(), all)
     }
 
+    /// `Γ ∪ Γ' ⊢ q`, given `Γ ⊢ p ≡ q` and `Γ' ⊢ p`.
+    ///
+    /// Meta-equality MP. This is the Pure analogue of HOL Light's
+    /// `EQ_MP` — but at the meta level. Standard primitive in
+    /// Isabelle/Pure; soundness is the standard "if p and q are
+    /// equal in the meta-logic and p is a theorem, so is q."
+    ///
+    /// Together with `cong_app`/`cong_abs` it makes Pure's `Eq` a true
+    /// propositional equality.
+    pub fn eq_mp(self, p_thm: Thm) -> Result<Thm> {
+        let TermKind::Eq(p, q) = self.concl.kind() else {
+            return Err(Error::NotMetaEq(format!("{}", self.concl)));
+        };
+        if *p != p_thm.concl {
+            return Err(Error::ImpAntecedentMismatch {
+                expected: format!("{}", p),
+                got: format!("{}", p_thm.concl),
+            });
+        }
+        let concl = q.clone();
+        let hyps = union_hyps(&self.hyps, &p_thm.hyps);
+        Self::build(hyps, concl)
+    }
+
     /// `Γ ⊢ φ[t/0]`, given `Γ ⊢ ⋀x:τ. φ` and `t : τ`.
     pub fn all_elim(self, witness: Term) -> Result<Thm> {
         let TermKind::All(_, ty, body) = self.concl.kind() else {

@@ -38,7 +38,7 @@ mod my_oracle {
     /// `MyObs` opts in to the kernel's `obs_eq` rule by equating any
     /// two `MyObs` applications (the ε-model strategy).
     impl ObsEq for MyObs {
-        fn obs_eq(&self, _other: &Self, _: &[Term], _: &[Term], _hint: Option<&dyn std::any::Any>) -> bool {
+        fn obs_eq(&self, _other: &Self, _: &[Term], _: &[Term], _hint: Option<&dyn covalence_pure::Hint>) -> bool {
             true
         }
     }
@@ -358,7 +358,7 @@ fn obs_eq_rejects_wrong_rust_type() {
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
     struct OtherObs(u32);
     impl ObsEq for OtherObs {
-        fn obs_eq(&self, _: &Self, _: &[Term], _: &[Term], _hint: Option<&dyn std::any::Any>) -> bool {
+        fn obs_eq(&self, _: &Self, _: &[Term], _: &[Term], _hint: Option<&dyn covalence_pure::Hint>) -> bool {
             true
         }
     }
@@ -388,7 +388,7 @@ fn obs_eq_observer_can_refuse_equality() {
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
     struct PickyObs(u32);
     impl ObsEq for PickyObs {
-        fn obs_eq(&self, _other: &Self, my_args: &[Term], other_args: &[Term], _hint: Option<&dyn std::any::Any>) -> bool {
+        fn obs_eq(&self, _other: &Self, my_args: &[Term], other_args: &[Term], _hint: Option<&dyn covalence_pure::Hint>) -> bool {
             my_args == other_args
         }
     }
@@ -425,7 +425,7 @@ fn obs_eq_demonstrates_untrusted_id_plumbing() {
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
     struct UntrustedIdObs;
     impl ObsEq for UntrustedIdObs {
-        fn obs_eq(&self, _: &Self, _: &[Term], _: &[Term], _hint: Option<&dyn std::any::Any>) -> bool {
+        fn obs_eq(&self, _: &Self, _: &[Term], _: &[Term], _hint: Option<&dyn covalence_pure::Hint>) -> bool {
             true
         }
     }
@@ -457,7 +457,7 @@ fn obs_true_for_a_prop_typed_observation_succeeds_when_policy_allows() {
     #[derive(Debug)]
     struct TrueProp;
     impl ObsTrue for TrueProp {
-        fn obs_true(&self, _args: &[Term], _hint: Option<&dyn std::any::Any>) -> bool {
+        fn obs_true(&self, _args: &[Term], _hint: Option<&dyn covalence_pure::Hint>) -> bool {
             true
         }
     }
@@ -476,7 +476,7 @@ fn obs_true_rejects_non_prop_observations() {
     #[derive(Debug)]
     struct BytesOracle;
     impl ObsTrue for BytesOracle {
-        fn obs_true(&self, _: &[Term], _: Option<&dyn std::any::Any>) -> bool {
+        fn obs_true(&self, _: &[Term], _: Option<&dyn covalence_pure::Hint>) -> bool {
             true
         }
     }
@@ -489,8 +489,8 @@ fn obs_true_rejects_non_prop_observations() {
 
 #[test]
 fn obs_true_passes_hint_to_policy() {
-    use covalence_pure::{ObsTrue, Type};
-    use std::any::Any;
+    use covalence_pure::{Hint, ObsTrue, Type};
+    use std::sync::Arc;
     use std::sync::Mutex;
 
     static SEEN_HINT: Mutex<Option<u64>> = Mutex::new(None);
@@ -498,9 +498,9 @@ fn obs_true_passes_hint_to_policy() {
     #[derive(Debug)]
     struct WithWitness;
     impl ObsTrue for WithWitness {
-        fn obs_true(&self, _: &[Term], hint: Option<&dyn Any>) -> bool {
+        fn obs_true(&self, _: &[Term], hint: Option<&dyn Hint>) -> bool {
             if let Some(h) = hint
-                && let Some(w) = h.downcast_ref::<u64>()
+                && let Some(w) = h.as_any().downcast_ref::<u64>()
             {
                 *SEEN_HINT.lock().unwrap() = Some(*w);
                 return true;
@@ -510,8 +510,8 @@ fn obs_true_passes_hint_to_policy() {
     }
 
     let expr = Term::obs(WithWitness, Type::prop());
-    let witness: u64 = 42;
-    assert!(Thm::obs_true::<WithWitness>(expr.clone(), Some(&witness)).is_ok());
+    let witness: Arc<dyn Hint> = Arc::new(42u64);
+    assert!(Thm::obs_true::<WithWitness>(expr.clone(), Some(witness)).is_ok());
     assert_eq!(*SEEN_HINT.lock().unwrap(), Some(42));
 }
 
@@ -522,7 +522,7 @@ fn obs_true_rejects_non_obs_head() {
     #[derive(Debug)]
     struct Anything;
     impl ObsTrue for Anything {
-        fn obs_true(&self, _: &[Term], _: Option<&dyn std::any::Any>) -> bool {
+        fn obs_true(&self, _: &[Term], _: Option<&dyn covalence_pure::Hint>) -> bool {
             true
         }
     }

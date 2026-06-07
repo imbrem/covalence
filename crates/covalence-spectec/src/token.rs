@@ -85,7 +85,7 @@ pub enum Token {
     /// `grammar`
     Grammar,
     /// `hint`
-    Hint,
+    BinderHint,
     /// `if`
     If,
     /// `let`
@@ -281,7 +281,7 @@ impl Token {
             "rule" => Token::Rule,
             "var" => Token::Var,
             "grammar" => Token::Grammar,
-            "hint" => Token::Hint,
+            "hint" => Token::BinderHint,
             "if" => Token::If,
             "let" => Token::Let,
             "else" => Token::Else,
@@ -313,7 +313,7 @@ impl Token {
             Token::Rule => "rule".into(),
             Token::Var => "var".into(),
             Token::Grammar => "grammar".into(),
-            Token::Hint => "hint".into(),
+            Token::BinderHint => "hint".into(),
             Token::If => "if".into(),
             Token::Let => "let".into(),
             Token::Else => "else".into(),
@@ -379,7 +379,7 @@ impl Token {
             Token::Rule => "`rule`",
             Token::Var => "`var`",
             Token::Grammar => "`grammar`",
-            Token::Hint => "`hint`",
+            Token::BinderHint => "`hint`",
             Token::If => "`if`",
             Token::Let => "`let`",
             Token::Else => "`else`",

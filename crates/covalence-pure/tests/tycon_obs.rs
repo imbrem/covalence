@@ -30,7 +30,7 @@ fn cloning_a_tycon_obs_preserves_identity() {
 
 #[test]
 fn tycon_obs_hint_is_alpha_transparent() {
-    // Same observer Arc, different hints: still equal (Hint is α-transparent).
+    // Same observer Arc, different hints: still equal (BinderHint is α-transparent).
     let a = Type::tycon_obs(TypeDefMarker, "Foo", vec![]);
     let b_dyn = match a.kind() {
         TypeKind::TyConObs(d, _, _) => d.clone(),

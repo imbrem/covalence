@@ -8,9 +8,9 @@
 //!
 //! ## α-equivalence is structural equality
 //!
-//! Each `Abs` and `All` carries a [`Hint`] — a display label for the
-//! binder. The `Hint` type is *transparent* to `PartialEq`, `Hash`, and
-//! `Ord`: two `Hint`s always compare equal and hash the same. So
+//! Each `Abs` and `All` carries a [`BinderHint`] — a display label for the
+//! binder. The `BinderHint` type is *transparent* to `PartialEq`, `Hash`, and
+//! `Ord`: two `BinderHint`s always compare equal and hash the same. So
 //! structural equality on `TermKind` is α-equivalence; rules can use
 //! `==` freely without worrying about display labels.
 //!
@@ -68,6 +68,30 @@ use crate::error::{Error, Result};
 pub trait Observer: Any + Send + Sync + fmt::Debug {}
 impl<T: Any + Send + Sync + fmt::Debug> Observer for T {}
 
+/// Caller-supplied policy hint — an opaque, refcounted, type-erased
+/// witness passed to observer policies (`ObsEq`, `ObsTrue`, `ObsImp`).
+///
+/// Implementations get the same auto-impl as `Observer`: any
+/// `Any + Send + Sync + Debug` type qualifies. Policies recover the
+/// concrete type via `hint.as_any().downcast_ref::<T>()`.
+///
+/// Stored as `Arc<dyn BinderHint>` so the same hint instance can be passed
+/// across thread / kernel boundaries (notably for WASM-component
+/// resources — a hint can be allocated on the host, handed across the
+/// component-model ABI as an opaque resource handle, then passed in to
+/// the observer policy on the other side).
+pub trait Hint: Any + Send + Sync + fmt::Debug {
+    /// Downcast helper. The default impl returns `self` typed as
+    /// `&dyn Any`, enabling `hint.as_any().downcast_ref::<MyType>()`.
+    fn as_any(&self) -> &dyn Any;
+}
+
+impl<T: Any + Send + Sync + fmt::Debug> Hint for T {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 /// Per-observer-Rust-type policy for the kernel's
 /// [`crate::Thm::obs_eq`] rule.
 ///
@@ -113,7 +137,7 @@ impl<T: Any + Send + Sync + fmt::Debug> Observer for T {}
 /// Observer theories use it for external evidence (e.g., HOL trans
 /// needs the middle term and the two source theorems).
 pub trait ObsTrue: Observer {
-    fn obs_true(&self, args: &[Term], hint: Option<&dyn Any>) -> bool;
+    fn obs_true(&self, args: &[Term], hint: Option<&dyn Hint>) -> bool;
 }
 
 /// Per-observer-Rust-type policy for the kernel's
@@ -139,7 +163,7 @@ pub trait ObsImp: Observer {
         &self,
         args: &[Term],
         hyps: &[Term],
-        hint: Option<&dyn Any>,
+        hint: Option<&dyn Hint>,
     ) -> bool;
 }
 
@@ -164,7 +188,7 @@ pub trait ObsEq: Observer {
         other: &Self,
         my_args: &[Term],
         other_args: &[Term],
-        hint: Option<&dyn Any>,
+        hint: Option<&dyn Hint>,
     ) -> bool;
 }
 
@@ -272,18 +296,18 @@ impl fmt::Debug for Object {
 }
 
 // ============================================================================
-// Hint
+// BinderHint
 // ============================================================================
 
 /// A display label for an `Abs`/`All` binder. Transparent to equality
-/// and ordering — `Hint("x") == Hint("y")` is `true`. Only `Display`
+/// and ordering — `BinderHint("x") == BinderHint("y")` is `true`. Only `Display`
 /// and `Debug` distinguish them.
 #[derive(Clone, Default)]
-pub struct Hint(pub SmolStr);
+pub struct BinderHint(pub SmolStr);
 
-impl Hint {
+impl BinderHint {
     pub fn new(s: impl Into<SmolStr>) -> Self {
-        Hint(s.into())
+        BinderHint(s.into())
     }
     pub fn as_str(&self) -> &str {
         self.0.as_str()
@@ -293,39 +317,39 @@ impl Hint {
     }
 }
 
-impl<S: Into<SmolStr>> From<S> for Hint {
+impl<S: Into<SmolStr>> From<S> for BinderHint {
     fn from(s: S) -> Self {
-        Hint(s.into())
+        BinderHint(s.into())
     }
 }
 
-impl PartialEq for Hint {
+impl PartialEq for BinderHint {
     fn eq(&self, _: &Self) -> bool {
         true
     }
 }
-impl Eq for Hint {}
-impl Hash for Hint {
+impl Eq for BinderHint {}
+impl Hash for BinderHint {
     fn hash<H: Hasher>(&self, _: &mut H) {}
 }
-impl Ord for Hint {
+impl Ord for BinderHint {
     fn cmp(&self, _: &Self) -> Ordering {
         Ordering::Equal
     }
 }
-impl PartialOrd for Hint {
+impl PartialOrd for BinderHint {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl fmt::Debug for Hint {
+impl fmt::Debug for BinderHint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.0)
     }
 }
 
-impl fmt::Display for Hint {
+impl fmt::Display for BinderHint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
@@ -355,15 +379,15 @@ pub enum TypeKind {
     /// Type constructor whose identity is the wrapped observer's `Arc`
     /// pointer. **Process-local** — two `Type::tycon_obs` calls with
     /// independently constructed observers compare unequal even if they
-    /// share the same `Hint` and args. Mirrors `TermKind::Obs` on the
+    /// share the same `BinderHint` and args. Mirrors `TermKind::Obs` on the
     /// type side: the same Rust observer type is the unifying ε-family
     /// across term- and type-level uses (one theory → one identity).
     ///
-    /// The [`Hint`] is α-transparent (display only). Identity is the
+    /// The [`BinderHint`] is α-transparent (display only). Identity is the
     /// `Object` plus the args; the args participate in equality so
     /// that `list α` and `list β` are distinct even though they share
     /// the same constructor.
-    TyConObs(Object, Hint, Vec<Type>),
+    TyConObs(Object, BinderHint, Vec<Type>),
 }
 
 // Cached canonical instances of the common `Type`s, so the methods
@@ -426,14 +450,14 @@ impl Type {
     /// Distinct calls with independently-constructed observers produce
     /// distinct types — that's the freshness primitive
     /// [`crate::Thm::new_type_definition`] uses.
-    pub fn tycon_obs<O: Observer>(observer: O, hint: impl Into<Hint>, args: Vec<Type>) -> Self {
+    pub fn tycon_obs<O: Observer>(observer: O, hint: impl Into<BinderHint>, args: Vec<Type>) -> Self {
         Self::alloc(TypeKind::TyConObs(Object::new(observer), hint.into(), args))
     }
 
     /// Like [`Type::tycon_obs`] but reuses an existing [`Object`]
     /// handle (preserving its `Arc` identity). Used internally by
     /// kernel rules and by deserialisers that already have a `Object`.
-    pub fn tycon_obs_from_dyn(observer: Object, hint: impl Into<Hint>, args: Vec<Type>) -> Self {
+    pub fn tycon_obs_from_dyn(observer: Object, hint: impl Into<BinderHint>, args: Vec<Type>) -> Self {
         Self::alloc(TypeKind::TyConObs(observer, hint.into(), args))
     }
 
@@ -544,23 +568,23 @@ impl fmt::Display for Type {
 // Def — kernel-managed defined constant
 // ============================================================================
 
-/// A defined constant. Carries a display [`Hint`] (the name, for
+/// A defined constant. Carries a display [`BinderHint`] (the name, for
 /// pretty-printing) and the definition body behind an `Arc`. Each
 /// [`crate::Thm::define`] call allocates a *fresh* `Arc`, so two
 /// distinct definitions — even with the same name and the same body
 /// — produce distinct `Def`s. Identity is `Arc::ptr_eq`; the name is
-/// display-only (transparent to `Eq`/`Hash`/`Ord`, like [`Hint`]).
+/// display-only (transparent to `Eq`/`Hash`/`Ord`, like [`BinderHint`]).
 ///
 /// This is how we get freshness without a stateful kernel signature:
 /// the allocator gives us a unique pointer per call.
 #[derive(Clone)]
 pub struct Def {
-    name: Hint,
+    name: BinderHint,
     body: Arc<Term>,
 }
 
 impl Def {
-    pub fn name(&self) -> &Hint {
+    pub fn name(&self) -> &BinderHint {
         &self.name
     }
     pub fn body(&self) -> &Term {
@@ -572,7 +596,7 @@ impl Def {
         Arc::as_ptr(&self.body) as usize
     }
 
-    pub(crate) fn new_internal(name: Hint, body: Term) -> Self {
+    pub(crate) fn new_internal(name: BinderHint, body: Term) -> Self {
         Def {
             name,
             body: Arc::new(body),
@@ -636,11 +660,11 @@ pub enum TermKind {
     App(Term, Term),
     /// Abstraction `λ(hint:ty). body`. `body` uses Bound(0) for the
     /// binder; `hint` is a display label (α-transparent).
-    Abs(Hint, Type, Term),
+    Abs(BinderHint, Type, Term),
     /// Meta-implication `φ ⟹ ψ`.
     Imp(Term, Term),
     /// Meta-universal `⋀(hint:ty). body`. Same layout as `Abs`.
-    All(Hint, Type, Term),
+    All(BinderHint, Type, Term),
     /// Meta-equality `t ≡ u`.
     Eq(Term, Term),
     /// Builtin: opaque byte literal of kernel type `bytes`.
@@ -685,13 +709,13 @@ impl Term {
     pub fn app(fun: Term, arg: Term) -> Self {
         Self::alloc(TermKind::App(fun, arg))
     }
-    pub fn abs(hint: impl Into<Hint>, ty: Type, body: Term) -> Self {
+    pub fn abs(hint: impl Into<BinderHint>, ty: Type, body: Term) -> Self {
         Self::alloc(TermKind::Abs(hint.into(), ty, body))
     }
     pub fn imp(lhs: Term, rhs: Term) -> Self {
         Self::alloc(TermKind::Imp(lhs, rhs))
     }
-    pub fn all(hint: impl Into<Hint>, ty: Type, body: Term) -> Self {
+    pub fn all(hint: impl Into<BinderHint>, ty: Type, body: Term) -> Self {
         Self::alloc(TermKind::All(hint.into(), ty, body))
     }
     pub fn eq(lhs: Term, rhs: Term) -> Self {

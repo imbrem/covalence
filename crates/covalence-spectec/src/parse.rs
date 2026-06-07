@@ -17,7 +17,7 @@
 //! - `rule NAME[/case]: <conclusion> [-- premise]* [hints*]`
 //! - `grammar NAME[/case][(params)] : ret [hints*] [= productions]`
 //!
-//! Hint bodies are kept as opaque `TokenRun`s here; the elaborator in
+//! BinderHint bodies are kept as opaque `TokenRun`s here; the elaborator in
 //! [`crate::elab`] further structures rule bodies, expression
 //! positions, and constructor applications using the mixfix `OpTable`
 //! built from `relation` and `syntax`-variant declarations.
@@ -158,7 +158,7 @@ fn parse_ident_or_keyword(input: &mut &[Spanned], file: FileId) -> Result<Ident,
             span,
         }) => ("grammar".to_string(), *span),
         Some(Spanned {
-            token: Token::Hint,
+            token: Token::BinderHint,
             span,
         }) => ("hint".to_string(), *span),
         Some(Spanned {
@@ -275,7 +275,7 @@ fn parse_var(file: FileId, input: &mut &[Spanned]) -> Result<VarDecl, Diagnostic
     let kw_span = expect(input, file, &Token::Var)?;
     let name = parse_ident_or_keyword(input, file)?;
     expect(input, file, &Token::Colon)?;
-    let ty = take_until_top_level(input, |t| matches!(t, Token::Hint));
+    let ty = take_until_top_level(input, |t| matches!(t, Token::BinderHint));
     let hints = parse_hints(input)?;
     let mut span = kw_span.join(name.span);
     span = span.join(ty.span);
@@ -297,7 +297,7 @@ fn parse_relation(file: FileId, input: &mut &[Spanned]) -> Result<RelationDecl, 
     let kw_span = expect(input, file, &Token::Relation)?;
     let name = parse_ident_or_keyword(input, file)?;
     expect(input, file, &Token::Colon)?;
-    let template = take_until_top_level(input, |t| matches!(t, Token::Hint));
+    let template = take_until_top_level(input, |t| matches!(t, Token::BinderHint));
     let hints = parse_hints(input)?;
     let mut span = kw_span.join(name.span);
     span = span.join(template.span);
@@ -410,7 +410,7 @@ fn parse_case_path(input: &mut &[Spanned], file: FileId) -> Result<Ident, Diagno
                 span: sp,
             }) => ("grammar".into(), *sp),
             Some(Spanned {
-                token: Token::Hint,
+                token: Token::BinderHint,
                 span: sp,
             }) => ("hint".into(), *sp),
             Some(Spanned {
@@ -471,7 +471,7 @@ fn parse_grammar(file: FileId, input: &mut &[Spanned]) -> Result<GrammarDecl, Di
     }
 
     let ret = if eat(input, &Token::Colon).is_some() {
-        take_until_top_level(input, |t| matches!(t, Token::Hint | Token::Eq))
+        take_until_top_level(input, |t| matches!(t, Token::BinderHint | Token::Eq))
     } else {
         // No `:` — fabricate an empty TokenRun at the current position.
         empty_run_here(input, name.span)
@@ -807,7 +807,7 @@ fn take_field_ty(input: &mut &[Spanned]) -> TokenRun {
             Token::RParen | Token::RBracket => depth -= 1,
             Token::RBrace if depth == 0 => break,
             Token::Comma if depth == 0 => break,
-            Token::Hint if depth == 0 => break,
+            Token::BinderHint if depth == 0 => break,
             _ => {}
         }
         if depth < 0 {
@@ -915,7 +915,7 @@ fn push_alt(slice: &[Spanned], alts: &mut Vec<Alt>) -> Result<(), Diagnostic> {
 fn extract_trailing_hints(slice: &[Spanned]) -> Result<(&[Spanned], Vec<HintAtom>), Diagnostic> {
     // Walk from the end: a hint clause is `hint ( ... )` taking up
     // contiguous tokens including the keyword. We scan from the right
-    // looking for `Hint LParen ... RParen` runs.
+    // looking for `BinderHint LParen ... RParen` runs.
     //
     // Simpler approach: scan from the left, collect a prefix until we hit
     // a `hint` token at depth 0, then everything from there is a hint
@@ -924,7 +924,7 @@ fn extract_trailing_hints(slice: &[Spanned]) -> Result<(&[Spanned], Vec<HintAtom
     let mut depth: i32 = 0;
     let mut first_hint: Option<usize> = None;
     for (i, t) in slice.iter().enumerate() {
-        if depth == 0 && matches!(t.token, Token::Hint) {
+        if depth == 0 && matches!(t.token, Token::BinderHint) {
             first_hint = Some(i);
             break;
         }
@@ -1004,7 +1004,7 @@ fn parse_def(file: FileId, input: &mut &[Spanned]) -> Result<Top, Diagnostic> {
         // top-level form or end-of-input. Treated as a signature with no
         // return type (empty TokenRun).
         Some(Spanned {
-            token: Token::Hint, ..
+            token: Token::BinderHint, ..
         })
         | None => {
             let hints = parse_hints(input)?;
@@ -1150,7 +1150,7 @@ fn take_until_paren_balanced(input: &mut &[Spanned], stop: impl Fn(&Token) -> bo
 /// After `def $NAME(args) :`, take the return type. Stops at `hint` or at
 /// the next top-level keyword.
 fn take_def_ret_ty(input: &mut &[Spanned]) -> TokenRun {
-    take_until_top_level(input, |t| matches!(t, Token::Hint)).and_join_top_keyword_stop(input)
+    take_until_top_level(input, |t| matches!(t, Token::BinderHint)).and_join_top_keyword_stop(input)
 }
 
 /// After `def $NAME(args) =`, the RHS continues until either `--` (a
@@ -1229,7 +1229,7 @@ impl TokenRunExt for TokenRun {
 fn parse_hints(input: &mut &[Spanned]) -> Result<Vec<HintAtom>, Diagnostic> {
     let mut out = Vec::new();
     while let Some(Spanned {
-        token: Token::Hint, ..
+        token: Token::BinderHint, ..
     }) = peek(input)
     {
         out.push(parse_hint(input)?);
@@ -1240,7 +1240,7 @@ fn parse_hints(input: &mut &[Spanned]) -> Result<Vec<HintAtom>, Diagnostic> {
 fn parse_hint(input: &mut &[Spanned]) -> Result<HintAtom, Diagnostic> {
     let hint_span = match input.first() {
         Some(Spanned {
-            token: Token::Hint,
+            token: Token::BinderHint,
             span,
         }) => {
             let sp = *span;

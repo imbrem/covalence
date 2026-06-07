@@ -33,7 +33,7 @@ use crate::subst::{
     close, find_free_type, has_free_var, open, shift_by, subst_tfree_in_term, uses_bound_outer,
 };
 use crate::term::{
-    Def, Hint, ObsEq, ObsImp, ObsTrue, Object, Observer, Term, TermKind, Type, TypeEnv, TypeKind,
+    Def, BinderHint, ObsEq, ObsImp, ObsTrue, Object, Observer, Term, TermKind, Type, TypeEnv, TypeKind,
     type_of_in,
 };
 
@@ -351,9 +351,9 @@ impl Thm {
     /// degenerate case is logically vacuous but the rule still
     /// admits a model (τ singleton at the canonical witness).
     pub fn new_type_definition(
-        hint: impl Into<Hint>,
-        abs_hint: impl Into<Hint>,
-        rep_hint: impl Into<Hint>,
+        hint: impl Into<BinderHint>,
+        abs_hint: impl Into<BinderHint>,
+        rep_hint: impl Into<BinderHint>,
         witness: Thm,
     ) -> Result<TypeDef> {
         // 1. Decompose witness's concl as `P x` (an application).
@@ -413,7 +413,7 @@ impl Thm {
             Term::app(abs.clone(), Term::app(rep.clone(), bound0.clone())),
             bound0.clone(),
         );
-        let abs_rep_concl = Term::all(Hint::new("a"), tau.clone(), abs_rep_body);
+        let abs_rep_concl = Term::all(BinderHint::new("a"), tau.clone(), abs_rep_body);
 
         //    rep_abs_eq : (rep (abs r) ≡ r)   (with r=bound 0)
         //    p_at_bound : P r
@@ -424,13 +424,13 @@ impl Thm {
         );
         //    fwd: ⋀r:α. P r ⟹ rep (abs r) ≡ r
         let fwd_concl = Term::all(
-            Hint::new("r"),
+            BinderHint::new("r"),
             alpha.clone(),
             Term::imp(p_at_bound.clone(), rep_abs_eq.clone()),
         );
         //    back: ⋀r:α. rep (abs r) ≡ r ⟹ P r
         let back_concl = Term::all(
-            Hint::new("r"),
+            BinderHint::new("r"),
             alpha,
             Term::imp(rep_abs_eq, p_at_bound),
         );
@@ -464,7 +464,7 @@ impl Thm {
     /// same name" — the two `Def`s are simply different symbols that
     /// happen to share a display label.
     ///
-    /// The `name` is display-only (an α-transparent [`Hint`]). The
+    /// The `name` is display-only (an α-transparent [`BinderHint`]). The
     /// `body` must be a valid Pure term (typeable in isolation).
     ///
     /// ## Soundness
@@ -474,7 +474,7 @@ impl Thm {
     /// the prior theory, we extend by interpreting this `Def` as
     /// `⟦body⟧` — a conservative extension. No global signature is
     /// needed because the allocator gives us uniqueness per call.
-    pub fn define(name: impl Into<Hint>, body: Term) -> Result<Thm> {
+    pub fn define(name: impl Into<BinderHint>, body: Term) -> Result<Thm> {
         // Validate the body type-checks in isolation.
         let _ = body.type_of()?;
         let d = Def::new_internal(name.into(), body.clone());
@@ -526,14 +526,17 @@ impl Thm {
     /// can't affect equations or assertions involving `HolLight`.
     ///
     /// `hint` is the same opaque pass-through as on `obs_eq`.
-    pub fn obs_true<O: ObsTrue>(expr: Term, hint: Option<&dyn std::any::Any>) -> Result<Thm> {
+    pub fn obs_true<O: ObsTrue>(
+        expr: Term,
+        hint: Option<Arc<dyn crate::term::Hint>>,
+    ) -> Result<Thm> {
         let (obs, args) = decompose_obs_app(&expr)?;
         let o = obs.downcast::<O>().ok_or(Error::ObsDowncastTypeMismatch)?;
         let ty = expr.type_of()?;
         if !ty.is_prop() {
             return Err(Error::NotProp(ty));
         }
-        if !o.obs_true(&args, hint) {
+        if !o.obs_true(&args, hint.as_deref().map(|h| h)) {
             return Err(Error::ObsEqRefused);
         }
         Self::build(BTreeSet::new(), expr)
@@ -562,7 +565,7 @@ impl Thm {
     pub fn obs_imp<O: ObsImp>(
         expr: Term,
         hyps: Vec<Term>,
-        hint: Option<&dyn std::any::Any>,
+        hint: Option<Arc<dyn crate::term::Hint>>,
     ) -> Result<Thm> {
         let (obs, args) = decompose_obs_app(&expr)?;
         let o = obs.downcast::<O>().ok_or(Error::ObsDowncastTypeMismatch)?;
@@ -576,7 +579,7 @@ impl Thm {
                 return Err(Error::NotProp(h_ty));
             }
         }
-        if !o.obs_imp(&args, &hyps, hint) {
+        if !o.obs_imp(&args, &hyps, hint.as_deref()) {
             return Err(Error::ObsEqRefused);
         }
         // Build hyp[0] ⟹ hyp[1] ⟹ ... ⟹ expr (right-associative).
@@ -590,7 +593,7 @@ impl Thm {
     pub fn obs_eq<O: ObsEq>(
         expr1: Term,
         expr2: Term,
-        hint: Option<&dyn std::any::Any>,
+        hint: Option<Arc<dyn crate::term::Hint>>,
     ) -> Result<Thm> {
         let (obs1, args1) = decompose_obs_app(&expr1)?;
         let (obs2, args2) = decompose_obs_app(&expr2)?;
@@ -604,7 +607,7 @@ impl Thm {
                 got: ty2,
             });
         }
-        if !o1.obs_eq(o2, &args1, &args2, hint) {
+        if !o1.obs_eq(o2, &args1, &args2, hint.as_deref()) {
             return Err(Error::ObsEqRefused);
         }
         let concl = Term::eq(expr1, expr2);
@@ -714,11 +717,11 @@ impl TypeDefMarker {
 struct TypeDefAbsMarker {
     #[allow(dead_code)]
     typedef: Arc<TypeDefMarkerInner>,
-    hint: Hint,
+    hint: BinderHint,
 }
 
 impl TypeDefAbsMarker {
-    fn new(m: &TypeDefMarker, hint: Hint) -> Self {
+    fn new(m: &TypeDefMarker, hint: BinderHint) -> Self {
         TypeDefAbsMarker { typedef: Arc::clone(&m.0), hint }
     }
 }
@@ -737,11 +740,11 @@ impl fmt::Debug for TypeDefAbsMarker {
 struct TypeDefRepMarker {
     #[allow(dead_code)]
     typedef: Arc<TypeDefMarkerInner>,
-    hint: Hint,
+    hint: BinderHint,
 }
 
 impl TypeDefRepMarker {
-    fn new(m: &TypeDefMarker, hint: Hint) -> Self {
+    fn new(m: &TypeDefMarker, hint: BinderHint) -> Self {
         TypeDefRepMarker { typedef: Arc::clone(&m.0), hint }
     }
 }

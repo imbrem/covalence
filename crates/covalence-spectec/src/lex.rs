@@ -369,7 +369,7 @@ mod tests {
                 Token::Rule,
                 Token::Var,
                 Token::Grammar,
-                Token::Hint,
+                Token::BinderHint,
                 Token::If,
                 Token::Let,
                 Token::Else,
@@ -544,7 +544,7 @@ mod tests {
         assert_eq!(
             toks,
             vec![
-                Token::Hint,
+                Token::BinderHint,
                 Token::LParen,
                 Token::Ident("show".into()),
                 Token::Ident("f".into()),

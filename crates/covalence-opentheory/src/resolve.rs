@@ -47,7 +47,7 @@ pub trait TheoryResolver {
     /// from the package directory (e.g. `"bool-def-true.art"`, `"word.int"`).
     fn load_file(&self, package: &str, path: &str) -> Result<String, OtError>;
 
-    /// Hint that `unversioned` maps to `versioned` (e.g. `"bool-def"` → `"bool-def-1.11"`).
+    /// BinderHint that `unversioned` maps to `versioned` (e.g. `"bool-def"` → `"bool-def-1.11"`).
     ///
     /// Called when umbrella blocks reveal version info. Default no-op.
     fn register_version(&self, _unversioned: &str, _versioned: &str) {}

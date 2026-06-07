@@ -169,7 +169,7 @@ impl ObsEq for HolLight {
         other: &Self,
         my_args: &[Term],
         other_args: &[Term],
-        _hint: Option<&dyn std::any::Any>,
+        _hint: Option<&dyn covalence_pure::Hint>,
     ) -> bool {
         match (self, other) {
             // Eq a a ≡ True_bool  (HOL refl at bool, when arg structure matches)
@@ -468,7 +468,7 @@ impl IsHolLight for HolLight {}
 /// refl: `Trueprop (Eq a a)` for any α. Multi-hypothesis rules
 /// (sym, trans, MK_COMB, etc.) live in the [`ObsImp`] policy below.
 impl ObsTrue for HolLight {
-    fn obs_true(&self, args: &[Term], _hint: Option<&dyn Any>) -> bool {
+    fn obs_true(&self, args: &[Term], _hint: Option<&dyn covalence_pure::Hint>) -> bool {
         if !matches!(self, HolLight::Trueprop) || args.len() != 1 {
             return false;
         }
@@ -503,7 +503,7 @@ impl ObsTrue for HolLight {
 /// added as additional pattern arms — each is local and only adds
 /// LoC, never risks unsoundness.
 impl ObsImp for HolLight {
-    fn obs_imp(&self, args: &[Term], hyps: &[Term], _hint: Option<&dyn Any>) -> bool {
+    fn obs_imp(&self, args: &[Term], hyps: &[Term], _hint: Option<&dyn covalence_pure::Hint>) -> bool {
         // The only HolLight variant we mint lazy theorems for is
         // `Trueprop p` — i.e., a prop-typed obs application.
         if !matches!(self, HolLight::Trueprop) || args.len() != 1 {

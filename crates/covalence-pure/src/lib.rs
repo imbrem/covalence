@@ -19,7 +19,7 @@
 //!   `App` / `Imp` / `Eq` are checked structurally. The same
 //!   `TypeEnv` is shared across every term in a `Thm`, so Free /
 //!   Const consistency is enforced across hyps and concl.
-//! - **`Hint` is α-transparent.** The `Hint` newtype around a binder's
+//! - **`BinderHint` is α-transparent.** The `BinderHint` newtype around a binder's
 //!   display label has trivial `Eq`/`Hash`/`Ord`, so structural
 //!   equality on `TermKind` is α-equivalence. Rules use `==` freely.
 //!
@@ -60,6 +60,6 @@ pub mod thm;
 
 pub use error::{Error, Result};
 pub use term::{
-    Def, Hint, ObsEq, ObsImp, ObsTrue, Object, Observer, Term, TermKind, Type, TypeKind,
+    BinderHint, Def, Hint, ObsEq, ObsImp, ObsTrue, Object, Observer, Term, TermKind, Type, TypeKind,
 };
 pub use thm::{Thm, TypeDef};

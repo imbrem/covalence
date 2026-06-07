@@ -182,7 +182,7 @@ impl Hasher {
                 ctx.tag(buf)
             }
             // Hash by the observer's caller-supplied payload + arg
-            // hashes. `Hint` is α-transparent in the kernel (excluded
+            // hashes. `BinderHint` is α-transparent in the kernel (excluded
             // from `Hash`/`Eq`) so we exclude it here too — two
             // α-equivalent `TyConObs` types must hash equally.
             TypeKind::TyConObs(observer, _hint, args) => {

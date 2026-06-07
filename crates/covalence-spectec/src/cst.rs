@@ -1,7 +1,7 @@
 //! SpecTec concrete syntax tree.
 //!
 //! The CST is the parser's output: structured enough to walk, faithful
-//! to source. No mixfix resolution, no semantic elaboration. Hint
+//! to source. No mixfix resolution, no semantic elaboration. BinderHint
 //! bodies, rule body expressions, and any context-dependent
 //! interpretation are stored as opaque [`TokenRun`]s and resolved by
 //! [`crate::elab`] using the relation/syntax-derived `OpTable`.

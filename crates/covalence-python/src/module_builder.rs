@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 use crate::component_builder::ComponentBuilder;
 use crate::module::Module;
 use crate::system_builder::{
-    ExportEntry, FuncData, FuncId, ImportedFunc, InstanceImport, ModuleData, ModuleId,
+    ContainerId, ExportEntry, FuncData, FuncId, ImportedFunc, InstanceImport, ModuleData, ModuleId,
     SystemBuilder, extract_hash,
 };
 
@@ -87,78 +87,75 @@ impl FuncBuilder {
     }
 
     fn local_get(&self, i: usize) {
-        let mut sys = self.system.lock().unwrap();
-        sys.funcs[self.id].body.push(format!("(local.get {i})"));
+        self.push_instr(format!("(local.get {i})"));
     }
 
     fn local_set(&self, i: usize) {
-        let mut sys = self.system.lock().unwrap();
-        sys.funcs[self.id].body.push(format!("(local.set {i})"));
+        self.push_instr(format!("(local.set {i})"));
     }
 
     fn local_tee(&self, i: usize) {
-        let mut sys = self.system.lock().unwrap();
-        sys.funcs[self.id].body.push(format!("(local.tee {i})"));
+        self.push_instr(format!("(local.tee {i})"));
     }
 
     fn i32_const(&self, v: i32) {
-        let mut sys = self.system.lock().unwrap();
-        sys.funcs[self.id].body.push(format!("(i32.const {v})"));
+        self.push_instr(format!("(i32.const {v})"));
     }
 
     fn i64_const(&self, v: i64) {
-        let mut sys = self.system.lock().unwrap();
-        sys.funcs[self.id].body.push(format!("(i64.const {v})"));
+        self.push_instr(format!("(i64.const {v})"));
     }
 
     fn i32_add(&self) {
-        let mut sys = self.system.lock().unwrap();
-        sys.funcs[self.id].body.push("i32.add".to_string());
+        self.push_op("i32.add");
     }
 
     fn i32_sub(&self) {
-        let mut sys = self.system.lock().unwrap();
-        sys.funcs[self.id].body.push("i32.sub".to_string());
+        self.push_op("i32.sub");
     }
 
     fn i32_mul(&self) {
-        let mut sys = self.system.lock().unwrap();
-        sys.funcs[self.id].body.push("i32.mul".to_string());
+        self.push_op("i32.mul");
     }
 
     fn i32_eq(&self) {
-        let mut sys = self.system.lock().unwrap();
-        sys.funcs[self.id].body.push("i32.eq".to_string());
+        self.push_op("i32.eq");
     }
 
     fn i32_ne(&self) {
-        let mut sys = self.system.lock().unwrap();
-        sys.funcs[self.id].body.push("i32.ne".to_string());
+        self.push_op("i32.ne");
     }
 
     fn i32_eqz(&self) {
-        let mut sys = self.system.lock().unwrap();
-        sys.funcs[self.id].body.push("i32.eqz".to_string());
+        self.push_op("i32.eqz");
     }
 
     fn drop_(&self) {
-        let mut sys = self.system.lock().unwrap();
-        sys.funcs[self.id].body.push("drop".to_string());
+        self.push_op("drop");
     }
 
     fn return_(&self) {
-        let mut sys = self.system.lock().unwrap();
-        sys.funcs[self.id].body.push("return".to_string());
+        self.push_op("return");
     }
 
     fn unreachable_(&self) {
-        let mut sys = self.system.lock().unwrap();
-        sys.funcs[self.id].body.push("unreachable".to_string());
+        self.push_op("unreachable");
     }
 
     fn __repr__(&self) -> String {
         let sys = self.system.lock().unwrap();
         format!("FuncBuilder(f{})", sys.funcs[self.id].index)
+    }
+}
+
+impl FuncBuilder {
+    fn push_instr(&self, instr: String) {
+        let mut sys = self.system.lock().unwrap();
+        sys.funcs[self.id].body.push(instr);
+    }
+
+    fn push_op(&self, op: &str) {
+        self.push_instr(op.to_string());
     }
 }
 
@@ -177,14 +174,7 @@ impl ModuleBuilder {
     #[new]
     pub fn new() -> Self {
         let mut sys = SystemBuilder::new();
-        let module_id = sys.modules.insert(ModuleData {
-            component: None,
-            imports: Vec::new(),
-            funcs: Vec::new(),
-            exports: Vec::new(),
-            start_calls: Vec::new(),
-            explicit_start: None,
-        });
+        let module_id = sys.modules.insert(SystemBuilder::new_module_data(None));
         ModuleBuilder {
             system: Arc::new(Mutex::new(sys)),
             id: module_id,
@@ -270,14 +260,7 @@ impl ModuleBuilder {
     fn attest(&self) -> PyResult<()> {
         let mut sys = self.system.lock().unwrap();
 
-        let comp_id = sys.modules[self.id].component.ok_or_else(|| {
-            PyValueError::new_err(
-                "kernel methods require a container chain (use ContainerBuilder or ComponentBuilder)",
-            )
-        })?;
-        let container_id = sys.components[comp_id].container.ok_or_else(|| {
-            PyValueError::new_err("kernel methods require a container chain (use ContainerBuilder)")
-        })?;
+        let container_id = Self::require_container_id(&sys, self.id)?;
 
         sys.containers[container_id].has_attest = true;
 
@@ -287,12 +270,7 @@ impl ModuleBuilder {
             .iter()
             .any(|i| i.module == "env" && i.name == "attest");
         if !already {
-            md.imports.push(ImportedFunc {
-                module: "env".to_string(),
-                name: "attest".to_string(),
-                params: Vec::new(),
-                results: Vec::new(),
-            });
+            Self::push_noop_import(md, "env".to_string(), "attest".to_string());
         }
 
         let attest_idx = md
@@ -365,6 +343,26 @@ impl ModuleBuilder {
 }
 
 impl ModuleBuilder {
+    fn push_noop_import(md: &mut ModuleData, module: String, name: String) {
+        md.imports.push(ImportedFunc {
+            module,
+            name,
+            params: Vec::new(),
+            results: Vec::new(),
+        });
+    }
+
+    fn require_container_id(sys: &SystemBuilder, module_id: ModuleId) -> PyResult<ContainerId> {
+        let comp_id = sys.modules[module_id].component.ok_or_else(|| {
+            PyValueError::new_err(
+                "kernel methods require a container chain (use ContainerBuilder or ComponentBuilder)",
+            )
+        })?;
+        sys.components[comp_id].container.ok_or_else(|| {
+            PyValueError::new_err("kernel methods require a container chain (use ContainerBuilder)")
+        })
+    }
+
     fn add_dep_import(
         &self,
         kind: &str,
@@ -378,14 +376,7 @@ impl ModuleBuilder {
 
         let mut sys = self.system.lock().unwrap();
 
-        let comp_id = sys.modules[self.id].component.ok_or_else(|| {
-            PyValueError::new_err(
-                "kernel methods require a container chain (use ContainerBuilder or ComponentBuilder)",
-            )
-        })?;
-        let container_id = sys.components[comp_id].container.ok_or_else(|| {
-            PyValueError::new_err("kernel methods require a container chain (use ContainerBuilder)")
-        })?;
+        let container_id = Self::require_container_id(&sys, self.id)?;
 
         let cd = &mut sys.containers[container_id];
         let inst_index = cd.instance_imports.len();
@@ -396,12 +387,7 @@ impl ModuleBuilder {
 
         let md = &mut sys.modules[self.id];
         for name in &export_names {
-            md.imports.push(ImportedFunc {
-                module: format!("inst{inst_index}"),
-                name: name.clone(),
-                params: Vec::new(),
-                results: Vec::new(),
-            });
+            Self::push_noop_import(md, format!("inst{inst_index}"), name.clone());
         }
 
         Ok(InstanceRef {

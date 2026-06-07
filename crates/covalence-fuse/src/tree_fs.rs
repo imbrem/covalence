@@ -143,6 +143,14 @@ impl TreeFs {
         Ok(size)
     }
 
+    async fn size_for(&self, ino: u64, mode: DirMode, hash: O256) -> Result<u64, FuseError> {
+        if mode.is_dir() || mode == DirMode::SUBMODULE {
+            Ok(0)
+        } else {
+            self.realize_size(ino, hash).await
+        }
+    }
+
     fn file_attr(&self, ino: u64, mode: DirMode, size: u64) -> FileAttr {
         let (kind, perm) = mode_to_fuse(mode);
         FileAttr {
@@ -159,6 +167,28 @@ impl TreeFs {
             gid: self.cfg.gid,
             rdev: 0,
             blksize: 4096,
+        }
+    }
+
+    fn dot_entry(inode: u64, name: &'static str, offset: i64) -> DirectoryEntry {
+        DirectoryEntry {
+            inode,
+            kind: FileType::Directory,
+            name: OsString::from(name),
+            offset,
+        }
+    }
+
+    fn dot_entry_plus(inode: u64, name: &'static str, offset: i64, attr: FileAttr) -> DirectoryEntryPlus {
+        DirectoryEntryPlus {
+            inode,
+            generation: 0,
+            kind: FileType::Directory,
+            name: OsString::from(name),
+            offset,
+            attr,
+            entry_ttl: TTL,
+            attr_ttl: TTL,
         }
     }
 }
@@ -198,11 +228,7 @@ impl Filesystem for TreeFs {
         // Files need a real size so the kernel will issue `read(2)` calls;
         // directories don't, and SUBMODULE is shown as an empty dir. Anything
         // else (symlink target length, etc.) is realized on demand.
-        let size = if row.mode.is_dir() || row.mode == DirMode::SUBMODULE {
-            0
-        } else {
-            self.realize_size(ino, row.child).await?
-        };
+        let size = self.size_for(ino, row.mode, row.child).await?;
         let attr = self.file_attr(ino, row.mode, size);
 
         Ok(ReplyEntry {
@@ -220,11 +246,7 @@ impl Filesystem for TreeFs {
         _flags: u32,
     ) -> FuseResult<ReplyAttr> {
         let entry = self.inodes.get(inode).ok_or(Errno::from(libc::ENOENT))?;
-        let size = if entry.mode.is_dir() || entry.mode == DirMode::SUBMODULE {
-            0
-        } else {
-            self.realize_size(inode, entry.hash).await?
-        };
+        let size = self.size_for(inode, entry.mode, entry.hash).await?;
         Ok(ReplyAttr {
             ttl: TTL,
             attr: self.file_attr(inode, entry.mode, size),
@@ -270,18 +292,9 @@ impl Filesystem for TreeFs {
 
         let mut entries: Vec<FuseResult<DirectoryEntry>> = Vec::new();
         // FUSE wants `.` and `..` from us; the kernel doesn't synthesize them.
-        entries.push(Ok(DirectoryEntry {
-            inode: parent,
-            kind: FileType::Directory,
-            name: OsString::from("."),
-            offset: 1,
-        }));
-        entries.push(Ok(DirectoryEntry {
-            inode: parent, // we don't track parent ptrs; "." == ".." is harmless
-            kind: FileType::Directory,
-            name: OsString::from(".."),
-            offset: 2,
-        }));
+        entries.push(Ok(Self::dot_entry(parent, ".", 1)));
+        // We don't track parent pointers; "." == ".." is harmless here.
+        entries.push(Ok(Self::dot_entry(parent, "..", 2)));
 
         let n = table.num_entries();
         for i in 0..n {
@@ -328,37 +341,15 @@ impl Filesystem for TreeFs {
 
         let parent_attr = self.file_attr(parent, parent_entry.mode, 0);
         let mut entries: Vec<FuseResult<DirectoryEntryPlus>> = Vec::new();
-        entries.push(Ok(DirectoryEntryPlus {
-            inode: parent,
-            generation: 0,
-            kind: FileType::Directory,
-            name: OsString::from("."),
-            offset: 1,
-            attr: parent_attr,
-            entry_ttl: TTL,
-            attr_ttl: TTL,
-        }));
-        entries.push(Ok(DirectoryEntryPlus {
-            inode: parent,
-            generation: 0,
-            kind: FileType::Directory,
-            name: OsString::from(".."),
-            offset: 2,
-            attr: parent_attr,
-            entry_ttl: TTL,
-            attr_ttl: TTL,
-        }));
+        entries.push(Ok(Self::dot_entry_plus(parent, ".", 1, parent_attr)));
+        entries.push(Ok(Self::dot_entry_plus(parent, "..", 2, parent_attr)));
 
         let n = table.num_entries();
         for i in 0..n {
             let row = table.row(i).map_err(|e| FuseError::Table(e.to_string()))?;
             let ino = self.inodes.intern(row.child, row.mode);
             let (kind, _perm) = mode_to_fuse(row.mode);
-            let size = if row.mode.is_dir() || row.mode == DirMode::SUBMODULE {
-                0
-            } else {
-                self.realize_size(ino, row.child).await?
-            };
+            let size = self.size_for(ino, row.mode, row.child).await?;
             let attr = self.file_attr(ino, row.mode, size);
             entries.push(Ok(DirectoryEntryPlus {
                 inode: ino,
@@ -431,4 +422,26 @@ pub async fn mount_tree(
     tracing::info!("mounted tree {root:?} at {}", mountpoint.display());
     mount.await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mode_to_fuse;
+    use covalence_object::DirMode;
+    use fuse3::FileType;
+
+    #[test]
+    fn mode_to_fuse_maps_regular_and_exec() {
+        assert_eq!(mode_to_fuse(DirMode::REGULAR), (FileType::RegularFile, 0o644));
+        assert_eq!(
+            mode_to_fuse(DirMode::EXECUTABLE),
+            (FileType::RegularFile, 0o755)
+        );
+    }
+
+    #[test]
+    fn mode_to_fuse_maps_special_dirs() {
+        assert_eq!(mode_to_fuse(DirMode::DIR), (FileType::Directory, 0o755));
+        assert_eq!(mode_to_fuse(DirMode::SUBMODULE), (FileType::Directory, 0o555));
+    }
 }

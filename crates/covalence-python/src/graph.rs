@@ -13,6 +13,12 @@ use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
 
+fn take_builder(inner: &mut Option<BytesGraphBuilder>) -> PyResult<BytesGraphBuilder> {
+    inner
+        .take()
+        .ok_or_else(|| PyValueError::new_err("builder already consumed by finish()"))
+}
+
 fn parse_port_kind(s: &str) -> PyResult<PortKind> {
     match s {
         "input" | "in" => Ok(PortKind::Input),
@@ -277,10 +283,7 @@ impl PyGraphBuilder {
 
     /// Consume the builder and return an immutable Graph.
     fn finish(&mut self) -> PyResult<PyGraph> {
-        let b = self
-            .inner
-            .take()
-            .ok_or_else(|| PyValueError::new_err("builder already consumed by finish()"))?;
+        let b = take_builder(&mut self.inner)?;
         b.finish()
             .map(|inner| PyGraph { inner })
             .map_err(|e| PyValueError::new_err(e.to_string()))

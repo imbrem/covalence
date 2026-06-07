@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 use crate::component::Component;
 use crate::container_builder::ContainerBuilder;
 use crate::module_builder::ModuleBuilder;
-use crate::system_builder::{ComponentData, ComponentId, ModuleData, SystemBuilder};
+use crate::system_builder::{ComponentData, ComponentId, SystemBuilder};
 
 #[pyclass]
 pub struct ComponentBuilder {
@@ -64,14 +64,9 @@ impl ComponentBuilder {
             };
         }
 
-        let module_id = sys.modules.insert(ModuleData {
-            component: Some(self.id),
-            imports: Vec::new(),
-            funcs: Vec::new(),
-            exports: Vec::new(),
-            start_calls: Vec::new(),
-            explicit_start: None,
-        });
+        let module_id = sys
+            .modules
+            .insert(SystemBuilder::new_module_data(Some(self.id)));
         sys.components[self.id].module = Some(module_id);
 
         ModuleBuilder {

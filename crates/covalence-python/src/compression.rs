@@ -25,25 +25,16 @@ pub fn detect_compression(path: &str) -> Compression {
 
 /// Decompress data according to the given compression format.
 pub fn decompress(data: &[u8], compression: &Compression) -> std::io::Result<Vec<u8>> {
+    fn read_all<R: Read>(mut reader: R) -> std::io::Result<Vec<u8>> {
+        let mut out = Vec::new();
+        reader.read_to_end(&mut out)?;
+        Ok(out)
+    }
+
     match compression {
-        Compression::Gzip => {
-            let mut decoder = flate2::read::GzDecoder::new(data);
-            let mut out = Vec::new();
-            decoder.read_to_end(&mut out)?;
-            Ok(out)
-        }
-        Compression::Bzip2 => {
-            let mut decoder = bzip2::read::BzDecoder::new(data);
-            let mut out = Vec::new();
-            decoder.read_to_end(&mut out)?;
-            Ok(out)
-        }
-        Compression::Zstd => {
-            let mut decoder = zstd::Decoder::new(data)?;
-            let mut out = Vec::new();
-            decoder.read_to_end(&mut out)?;
-            Ok(out)
-        }
+        Compression::Gzip => read_all(flate2::read::GzDecoder::new(data)),
+        Compression::Bzip2 => read_all(bzip2::read::BzDecoder::new(data)),
+        Compression::Zstd => read_all(zstd::Decoder::new(data)?),
         Compression::None => Ok(data.to_vec()),
     }
 }

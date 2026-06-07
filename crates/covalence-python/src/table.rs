@@ -10,6 +10,12 @@ use covalence_object::{
 use crate::backend::parse_hash;
 use crate::hash::O256;
 
+fn take_builder<T>(inner: &mut Option<T>) -> PyResult<T> {
+    inner
+        .take()
+        .ok_or_else(|| PyValueError::new_err("builder already consumed by build()"))
+}
+
 // ---------------------------------------------------------------------------
 // RowSchema
 // ---------------------------------------------------------------------------
@@ -139,10 +145,7 @@ impl PyTableBuilder {
 
     /// Build the table blob (consumes the builder).
     fn build<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-        let builder = self
-            .inner
-            .take()
-            .ok_or_else(|| PyValueError::new_err("builder already consumed by build()"))?;
+        let builder = take_builder(&mut self.inner)?;
         let table = builder.build();
         Ok(PyBytes::new(py, table.as_bytes()))
     }
@@ -289,10 +292,7 @@ impl PyDirectoryBuilder {
 
     /// Build the directory table blob (consumes the builder).
     fn build<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-        let builder = self
-            .inner
-            .take()
-            .ok_or_else(|| PyValueError::new_err("builder already consumed by build()"))?;
+        let builder = take_builder(&mut self.inner)?;
         let table = builder.build();
         Ok(PyBytes::new(py, table.as_bytes()))
     }

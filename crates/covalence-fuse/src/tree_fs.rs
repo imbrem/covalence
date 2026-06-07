@@ -143,6 +143,14 @@ impl TreeFs {
         Ok(size)
     }
 
+    async fn size_for(&self, ino: u64, mode: DirMode, hash: O256) -> Result<u64, FuseError> {
+        if mode.is_dir() || mode == DirMode::SUBMODULE {
+            Ok(0)
+        } else {
+            self.realize_size(ino, hash).await
+        }
+    }
+
     fn file_attr(&self, ino: u64, mode: DirMode, size: u64) -> FileAttr {
         let (kind, perm) = mode_to_fuse(mode);
         FileAttr {
@@ -198,11 +206,7 @@ impl Filesystem for TreeFs {
         // Files need a real size so the kernel will issue `read(2)` calls;
         // directories don't, and SUBMODULE is shown as an empty dir. Anything
         // else (symlink target length, etc.) is realized on demand.
-        let size = if row.mode.is_dir() || row.mode == DirMode::SUBMODULE {
-            0
-        } else {
-            self.realize_size(ino, row.child).await?
-        };
+        let size = self.size_for(ino, row.mode, row.child).await?;
         let attr = self.file_attr(ino, row.mode, size);
 
         Ok(ReplyEntry {
@@ -220,11 +224,7 @@ impl Filesystem for TreeFs {
         _flags: u32,
     ) -> FuseResult<ReplyAttr> {
         let entry = self.inodes.get(inode).ok_or(Errno::from(libc::ENOENT))?;
-        let size = if entry.mode.is_dir() || entry.mode == DirMode::SUBMODULE {
-            0
-        } else {
-            self.realize_size(inode, entry.hash).await?
-        };
+        let size = self.size_for(inode, entry.mode, entry.hash).await?;
         Ok(ReplyAttr {
             ttl: TTL,
             attr: self.file_attr(inode, entry.mode, size),
@@ -354,11 +354,7 @@ impl Filesystem for TreeFs {
             let row = table.row(i).map_err(|e| FuseError::Table(e.to_string()))?;
             let ino = self.inodes.intern(row.child, row.mode);
             let (kind, _perm) = mode_to_fuse(row.mode);
-            let size = if row.mode.is_dir() || row.mode == DirMode::SUBMODULE {
-                0
-            } else {
-                self.realize_size(ino, row.child).await?
-            };
+            let size = self.size_for(ino, row.mode, row.child).await?;
             let attr = self.file_attr(ino, row.mode, size);
             entries.push(Ok(DirectoryEntryPlus {
                 inode: ino,

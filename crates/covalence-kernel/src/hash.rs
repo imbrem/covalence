@@ -11,7 +11,6 @@
 //! kernel doesn't canonicalise.
 
 use covalence_hash::{O256, blake3};
-use std::sync::Arc;
 
 use crate::arena::Arena;
 use crate::prop::Prop;
@@ -358,10 +357,3 @@ fn feed_term_def(h: &mut Hasher, d: &TermDef) {
         }
     }
 }
-
-// Suppress unused warnings on imports that are only used by selected
-// variant arms above (the match exhaustiveness check pulls them all in).
-#[allow(dead_code)]
-const _: () = {
-    let _ = std::marker::PhantomData::<Arc<()>>;
-};

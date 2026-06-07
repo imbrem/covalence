@@ -4,43 +4,24 @@ An experimental LCF-style theorem prover and VCS using WASM components.
 Metatheory is the default mode; the kernel extends itself by proof
 rather than by trust.
 
-**Read first:** [`docs/VISION.md`](./docs/VISION.md) (10-min overview)
-→ [`ARCHITECTURE.md`](./ARCHITECTURE.md) (full vision) →
-[`AGENTS.md`](./AGENTS.md) (operational invariants).
+**Read first:** [`docs/README.md`](./docs/README.md) for the docs map.
 
-## Structure
+Recommended path:
+[`docs/c4.md`](./docs/c4.md) (repo architecture map) →
+[`docs/where-we-are.md`](./docs/where-we-are.md) (current status) →
+[`docs/VISION.md`](./docs/VISION.md) (10-minute overview) →
+[`ARCHITECTURE.md`](./ARCHITECTURE.md) (canonical philosophy) →
+[`AGENTS.md`](./AGENTS.md) (implementation invariants).
 
-```
-crates/
-  covalence/           CLI binary (cov)
-  covalence-hash/      BLAKE3 + SHA-256 + git hashing (O256)
-  covalence-store/     Content-addressed blob store, tagged/object stores
-  covalence-object/    Object serialization (Dir, Table, git tree format)
-  covalence-kernel/    Execution kernel (store + WASM engine)
-  covalence-wasm/      WASM loading, linking, ModuleBuilder, Val/ValType
-  covalence-repl/      S-expression REPL
-  covalence-serve/     HTTP/WebSocket server (axum)
-  covalence-client/    Remote kernel client (sync + async)
-  covalence-lsp/       Language server
-  covalence-sexp/      S-expression parser (multi-dialect)
-  covalence-smt/       SMT-LIB2 terms, theories, Alethe proofs
-  covalence-sat/       SAT formulas, DIMACS, DRAT proofs
-  covalence-types/     Shared types (Decision, etc.)
-  covalence-parse/     Parser combinators (winnow), LEB128
-  covalence-git/       Git object stores (loose, odb, LFS)
-  covalence-sig/       EdDSA signatures (ed25519-dalek)
-  covalence-rand/      Random number generation
-  covalence-proto/     Service discovery
-  covalence-sqlite/    SQLite wrapper (rusqlite)
-  covalence-python/    Python bindings (PyO3)
-apps/
-  covalence-web/       SvelteKit web app
-packages/
-  covalence-client/    TypeScript client library
-  covalence-ui/        Svelte UI components
-extensions/
-  covalence-vscode/    VSCode extension (desktop + web)
-```
+## Repository Layout
+
+- `crates/` — Rust workspace with CLI/server/editor surfaces, kernel and prover
+  experiments, substrate crates, and wrapper crates
+- `apps/covalence-web/` — SvelteKit browser UI
+- `packages/` — shared TypeScript packages
+- `extensions/covalence-vscode/` — VS Code extension
+- `docs/` — current-state docs, proposal docs, and planning/history
+- `assets/`, `tests/`, `test-workbench/` — fixtures, samples, and test scaffolding
 
 ## Prerequisites
 

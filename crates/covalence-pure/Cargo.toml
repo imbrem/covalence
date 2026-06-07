@@ -1,0 +1,13 @@
+[package]
+name = "covalence-pure"
+version = "0.0.0"
+edition = "2024"
+
+# TCB. Keep dependencies minimal so the import graph is auditable in
+# one glance. Hashing, S-expression syntax, and FFI bridges all live
+# in `covalence-pure-shell` and consume this crate from outside.
+
+[dependencies]
+smol_str = "0.3"
+bytes = "1"
+thiserror = "2"

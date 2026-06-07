@@ -17,6 +17,8 @@ pyo3 = "0.28"
 covalence-llm = { path = "../covalence-llm", optional = true, default-features = false, features = ["sync", "openai"] }
 bytes = "1"
 covalence-hash = { path = "../covalence-hash" }
+covalence-pure = { path = "../covalence-pure" }
+covalence-pure-shell = { path = "../covalence-pure-shell" }
 covalence-sexp = { path = "../covalence-sexp" }
 covalence-shell = { path = "../covalence-shell" }
 covalence-store = { path = "../covalence-store", features = ["memory", "sqlite"] }

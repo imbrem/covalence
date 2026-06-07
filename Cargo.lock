@@ -1113,6 +1113,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-pure"
+version = "0.0.0"
+dependencies = [
+ "bytes",
+ "smol_str",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "covalence-pure-shell"
+version = "0.0.0"
+dependencies = [
+ "bytes",
+ "covalence-hash",
+ "covalence-pure",
+ "covalence-sexp",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "covalence-python"
 version = "0.0.0"
 dependencies = [
@@ -1124,6 +1144,8 @@ dependencies = [
  "covalence-kv",
  "covalence-llm",
  "covalence-object",
+ "covalence-pure",
+ "covalence-pure-shell",
  "covalence-repl",
  "covalence-sat",
  "covalence-serve",
@@ -1279,6 +1301,7 @@ dependencies = [
 name = "covalence-wasm"
 version = "0.0.0"
 dependencies = [
+ "covalence-pure",
  "thiserror 2.0.18",
  "wasm-encoder 0.249.0",
  "wasmparser 0.249.0",

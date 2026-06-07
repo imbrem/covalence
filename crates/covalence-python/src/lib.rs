@@ -14,6 +14,7 @@ mod treestore;
 mod module;
 mod module_builder;
 mod object_store;
+mod pure;
 mod sat;
 mod server;
 mod session;
@@ -62,6 +63,11 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<signing::Principal>()?;
     m.add_class::<signing::Signature>()?;
     m.add_class::<signing::Signer>()?;
+
+    // Pure kernel
+    m.add_class::<pure::PyType>()?;
+    m.add_class::<pure::PyTerm>()?;
+    m.add_class::<pure::PyThm>()?;
 
     // Builder types
     m.add_class::<container_builder::ContainerBuilder>()?;

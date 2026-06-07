@@ -1,0 +1,218 @@
+package cov:pure@0.1.0;
+
+/// MVP guest-facing interface to the Pure logical framework.
+///
+/// Mirrors the Rust API in `covalence-pure`: locally-nameless terms,
+/// types with intrinsic typing, theorems with an opaque hypothesis
+/// set, and the LCF rule API. Observations are deferred for v0 — a
+/// guest cannot construct or downcast an observer (it would need
+/// access to a Rust type). The host-side binding may *receive*
+/// theorems with `obs` leaves from elsewhere; this interface gives
+/// the guest the universal subset of the rule API to manipulate them
+/// without ever creating new observations.
+///
+/// ## Design notes
+///
+/// - `pure-type` instead of `type` because `type` is a WIT keyword.
+/// - `mk-const` / `mk-eq` follow `hol-light.wit`'s convention of
+///   prefixing constructors with `mk-` when the unprefixed name
+///   would collide with a reserved word or a method name.
+/// - `term-set` is an **opaque resource**, not a `list<term>`. The
+///   guest accesses members by index, contains check, or length —
+///   never by materialising the set. This lets the host swap the
+///   backing data structure (`BTreeSet`, persistent set, hash-trie,
+///   …) without breaking the WIT.
+/// - Errors are returned as `result<T, string>` for v0 simplicity. A
+///   richer `variant error { … }` typed mirror of `covalence_pure::Error`
+///   is a future extension.
+interface api {
+    // ========================================================================
+    // Types
+    // ========================================================================
+
+    /// A Pure type. Compared structurally via `equals`.
+    resource pure-type {
+        /// Type variable, e.g. `'a` in Isabelle notation.
+        tfree: static func(name: string) -> pure-type;
+
+        /// The kind of meta-propositions.
+        prop: static func() -> pure-type;
+
+        /// The type of `blob` term values.
+        bytes: static func() -> pure-type;
+
+        /// Function type `dom ⇒ cod`.
+        fun: static func(dom: borrow<pure-type>, cod: borrow<pure-type>) -> pure-type;
+
+        /// User-declared type constructor.
+        tycon: static func(name: string, args: list<borrow<pure-type>>) -> pure-type;
+
+        /// Structural equality.
+        equals: func(other: borrow<pure-type>) -> bool;
+
+        /// True iff this type is `prop`.
+        is-prop: func() -> bool;
+
+        /// Human-readable rendering, e.g. `'a`, `prop`, `(bytes ⇒ prop)`.
+        render: func() -> string;
+    }
+
+    // ========================================================================
+    // Terms
+    // ========================================================================
+
+    /// A Pure term. Compared by structural (α-equivalent) equality
+    /// via `equals`. Two `term`s with α-equivalent contents may have
+    /// distinct resource identity; equality semantics is what
+    /// matters for the rule API.
+    resource term {
+        /// de Bruijn–indexed bound variable. Index 0 refers to the
+        /// innermost enclosing binder.
+        bound: static func(idx: u32) -> term;
+
+        /// Free variable with declared type.
+        free: static func(name: string, ty: borrow<pure-type>) -> term;
+
+        /// Declared/defined constant with instance type.
+        mk-const: static func(name: string, ty: borrow<pure-type>) -> term;
+
+        /// Application `f x`.
+        app: static func(fun: borrow<term>, arg: borrow<term>) -> term;
+
+        /// Abstraction `λx:τ. body` (body uses `bound 0` for `x`).
+        /// `hint` is a display label, ignored by α-equivalence.
+        abs: static func(hint: string, ty: borrow<pure-type>, body: borrow<term>) -> term;
+
+        /// Meta-implication `φ ⟹ ψ`.
+        imp: static func(lhs: borrow<term>, rhs: borrow<term>) -> term;
+
+        /// Meta-universal `⋀x:τ. body` (body uses `bound 0` for `x`).
+        all: static func(hint: string, ty: borrow<pure-type>, body: borrow<term>) -> term;
+
+        /// Meta-equality `t ≡ u`.
+        mk-eq: static func(lhs: borrow<term>, rhs: borrow<term>) -> term;
+
+        /// Built-in byte literal of kernel type `bytes`.
+        blob: static func(bytes: list<u8>) -> term;
+
+        /// Compute the type. Errors if the term is open, ill-typed,
+        /// or uses a Free name at two different types.
+        type-of: func() -> result<pure-type, string>;
+
+        /// Structural equality (α-equivalence — binder hints are
+        /// ignored).
+        equals: func(other: borrow<term>) -> bool;
+
+        /// True iff no observation leaf appears anywhere.
+        has-no-obs: func() -> bool;
+
+        /// Human-readable rendering.
+        render: func() -> string;
+    }
+
+    // ========================================================================
+    // Hypothesis sets — opaque, accessed only via these methods
+    // ========================================================================
+
+    /// Immutable set of hypotheses. Constructed only by the kernel
+    /// (e.g. via `thm.hyps`); the guest cannot mint one directly.
+    ///
+    /// The representation is intentionally opaque: the WIT says
+    /// nothing about ordering beyond "stable for the lifetime of this
+    /// resource". The current host backs this with a `BTreeSet`, but
+    /// it may switch to a persistent set or a hash-trie later
+    /// without breaking the interface.
+    resource term-set {
+        /// Number of distinct hypotheses.
+        len: func() -> u32;
+
+        /// True iff the set is empty.
+        is-empty: func() -> bool;
+
+        /// True iff `t` is a member (α-equivalence matched).
+        contains: func(t: borrow<term>) -> bool;
+
+        /// Get the element at the given index. Returns `none` if
+        /// `idx >= len()`. Ordering is implementation-defined but
+        /// stable for the lifetime of this `term-set`.
+        at: func(idx: u32) -> option<term>;
+    }
+
+    // ========================================================================
+    // Theorems
+    // ========================================================================
+
+    /// A Pure theorem. Constructed only via the rule API; resource
+    /// identity proves the theorem was produced by a chain of legal
+    /// kernel rule applications.
+    resource thm {
+        // ---- LF rules ----
+
+        /// `{φ} ⊢ φ`, requiring `φ : prop`.
+        assume: static func(phi: borrow<term>) -> result<thm, string>;
+
+        /// `Γ \ {φ} ⊢ φ ⟹ ψ`, given `Γ ⊢ ψ`.
+        imp-intro: func(phi: borrow<term>) -> result<thm, string>;
+
+        /// `Γ ∪ Γ' ⊢ ψ`, given `Γ ⊢ φ⟹ψ` and `Γ' ⊢ φ`.
+        imp-elim: func(hyp: borrow<thm>) -> result<thm, string>;
+
+        /// `Γ ⊢ ⋀x:τ. φ`. The binder type `ty` must match the
+        /// declared type of `name` in the theorem.
+        all-intro: func(name: string, ty: borrow<pure-type>) -> result<thm, string>;
+
+        /// `Γ ⊢ φ[t/0]`.
+        all-elim: func(witness: borrow<term>) -> result<thm, string>;
+
+        // ---- Equality rules ----
+
+        /// `⊢ t ≡ t`.
+        refl: static func(t: borrow<term>) -> result<thm, string>;
+
+        /// `Γ ∪ Γ' ⊢ t ≡ v`, given `Γ ⊢ t≡u` and `Γ' ⊢ u≡v`.
+        trans: func(other: borrow<thm>) -> result<thm, string>;
+
+        /// `Γ ⊢ u ≡ t`, given `Γ ⊢ t≡u`.
+        sym: func() -> result<thm, string>;
+
+        /// `Γ ∪ Γ' ⊢ f(s) ≡ g(t)`.
+        cong-app: func(arg: borrow<thm>) -> result<thm, string>;
+
+        /// `Γ ⊢ (λy:τ. s) ≡ (λy:τ. t)`.
+        cong-abs: func(name: string, ty: borrow<pure-type>) -> result<thm, string>;
+
+        /// `⊢ (λx:τ. body) arg ≡ body[arg/0]`.
+        beta-conv: static func(app: borrow<term>) -> result<thm, string>;
+
+        /// `⊢ (λx:τ. f x) ≡ f`, when `bound 0` does not appear free
+        /// in `f`.
+        eta-conv: static func(abs: borrow<term>) -> result<thm, string>;
+
+        /// `Γ[α:=σ] ⊢ φ[α:=σ]`.
+        inst-tfree: func(name: string, replacement: borrow<pure-type>) -> result<thm, string>;
+
+        // ---- Accessors ----
+
+        /// Hypothesis set (opaque).
+        hyps: func() -> term-set;
+
+        /// Conclusion.
+        concl: func() -> term;
+
+        /// True iff no observation leaf appears anywhere in this
+        /// theorem (concl or any hypothesis). A `thm` for which this
+        /// returns `true` is universally true with no oracle
+        /// dependencies — equivalent to HOL Light's `thm`.
+        has-no-obs: func() -> bool;
+
+        /// Human-readable rendering, e.g. `φ₁, φ₂ ⊢ ψ` or `⊢ ψ`.
+        render: func() -> string;
+    }
+}
+
+/// World a *guest* lives in when it wants to call into the host's
+/// Pure kernel. Drives `wasmtime::component::bindgen!` to generate
+/// the host `Host` traits we then implement.
+world pure-guest {
+    import api;
+}

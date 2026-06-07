@@ -1,0 +1,26 @@
+[package]
+name = "covalence-pure-shell"
+version = "0.0.0"
+edition = "2024"
+
+# Untrusted shell over `covalence-pure`. Adds content hashing, the
+# canonical S-expression syntax, and (future) FFI bridges. None of this
+# is consumed by any `covalence-pure` inference rule, so a bug here
+# cannot produce a false `Thm` — at worst it confuses a downstream
+# cache or serialisation consumer.
+#
+# Trust graph:
+#   covalence-pure                 (TCB)
+#       │
+#       ▼
+#   covalence-pure-shell           (this crate; untrusted)
+#       │
+#       ▼
+#   covalence-shell, …             (application shells)
+
+[dependencies]
+covalence-pure = { path = "../covalence-pure" }
+covalence-hash = { path = "../covalence-hash", default-features = false }
+covalence-sexp = { path = "../covalence-sexp" }
+bytes = "1"
+thiserror = "2"

@@ -35,4 +35,7 @@ pub enum WasmError {
 pub mod engine;
 
 #[cfg(feature = "runtime")]
+pub mod pure;
+
+#[cfg(feature = "runtime")]
 pub mod runtime;

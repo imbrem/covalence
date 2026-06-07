@@ -41,6 +41,7 @@ pub mod elab;
 pub mod lex;
 pub mod mixfix;
 pub mod parse;
+pub mod regex;
 pub mod source;
 pub mod token;
 pub mod typecheck;

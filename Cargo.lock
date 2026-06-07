@@ -960,6 +960,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-grammar"
+version = "0.0.0"
+dependencies = [
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "covalence-hash"
 version = "0.0.0"
 dependencies = [
@@ -1268,10 +1275,12 @@ dependencies = [
 name = "covalence-spectec"
 version = "0.0.0"
 dependencies = [
+ "covalence-grammar",
  "covalence-types",
  "spectec_ast",
  "spectec_ast_decode",
  "spectec_ast_decode_derive",
+ "thiserror 2.0.18",
  "wasm_spec_ast",
 ]
 

@@ -1298,6 +1298,7 @@ dependencies = [
  "covalence-hol",
  "covalence-kernel",
  "covalence-object",
+ "covalence-pure",
  "covalence-store",
  "covalence-types",
  "smol_str",

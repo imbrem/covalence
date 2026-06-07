@@ -28,6 +28,8 @@ pub use kernel::Kernel;
 pub mod prover;
 mod prover_kernel;
 
+pub mod stdlib;
+
 pub use prover::{Prover, ProverError};
 
 /// Re-exports from `covalence-kernel` that downstream prover frontends need

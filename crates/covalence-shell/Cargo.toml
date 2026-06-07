@@ -9,6 +9,7 @@ covalence-store = { path = "../covalence-store" }
 covalence-object = { path = "../covalence-object" }
 covalence-kernel = { path = "../covalence-kernel" }
 covalence-hol = { path = "../covalence-hol" }
+covalence-pure = { path = "../covalence-pure" }
 covalence-types = { path = "../covalence-types" }
 smol_str = "0.3"
 thiserror = "2"

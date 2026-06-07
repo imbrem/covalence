@@ -173,6 +173,13 @@ impl PureHol {
         }
     }
 
+    /// `true` iff `t` matches the conclusion of any user-declared
+    /// axiom (via `new_axiom`). Used by `hyps` to filter
+    /// axiom-as-hyp residue introduced by Pure's `Thm::assume`.
+    fn is_user_axiom_concl(&self, t: &Term) -> bool {
+        self.axioms.iter().any(|ax| ax.concl() == t)
+    }
+
     /// Pull `(lhs, rhs)` out of a HOL theorem's `Trueprop (Eq lhs rhs)`
     /// conclusion.
     fn dest_eq_concl(&self, th: &Thm) -> Option<(Term, Term)> {
@@ -408,8 +415,15 @@ impl HolLightTerms for PureHol {
     fn dest_abs(&mut self, tm: Term) -> Option<(Term, Term)> {
         match tm.kind() {
             TermKind::Abs(hint, ty, body) => {
-                // Open with a Free at the binder's hint name.
-                let var = Term::free(hint.as_str(), ty.clone());
+                // HOL Light's `dest_abs` opens with a name that's
+                // FRESH in the body (avoiding capture). Pure's
+                // locally-nameless representation means the body's
+                // `Bound(0)` is the bound var and named `Free`s
+                // inside refer to outer-scope captures. If the
+                // hint collides with such a name, generate a
+                // suffix-bumped fresh name.
+                let name = fresh_in_term(hint.as_str(), body);
+                let var = Term::free(name.as_str(), ty.clone());
                 let opened = subst::open(body, &var);
                 Some((var, opened))
             }
@@ -472,6 +486,27 @@ impl HolLightTerms for PureHol {
     }
 }
 
+/// Generate a name based on `hint` that is NOT a free variable of
+/// `t`. If `hint` itself is unused, returns it unchanged; otherwise
+/// appends an integer suffix (`x`, `x0`, `x1`, …) until a fresh
+/// name is found. Matches HOL Light's `variant`/`mk_primed_var`
+/// semantics, used by `dest_abs` to avoid name capture when opening
+/// a binder under a body that happens to contain a free with the
+/// same name as the binder hint.
+fn fresh_in_term(hint: &str, t: &Term) -> SmolStr {
+    if !subst::has_free_var(t, hint) {
+        return SmolStr::new(hint);
+    }
+    let mut i: u32 = 0;
+    loop {
+        let candidate = format!("{hint}{i}");
+        if !subst::has_free_var(t, &candidate) {
+            return SmolStr::new(&candidate);
+        }
+        i += 1;
+    }
+}
+
 /// Walk `t` collecting every free type variable name appearing in
 /// any type annotation (Free / Const / Abs / All / Obs `ty` fields,
 /// plus Def body types).
@@ -527,8 +562,20 @@ impl HolLightKernel for PureHol {
     type Thm = Thm;
 
     fn hyps(&self, th: Thm) -> Vec<Term> {
+        // Filter out:
+        //   1. Non-Trueprop-wrapped hyps. These are kernel-introduced
+        //      axioms like `eq_reflection` (shape `⋀x y. … ≡ …`) and
+        //      `iff_intro` (shape `⋀P Q. … ⟹ … ⟹ Trueprop (…)`);
+        //      their outermost is `⋀` or `⟹`, not Trueprop. They're
+        //      part of the theory, not user assumptions.
+        //   2. Hyps matching a user-declared axiom's concl. HOL Light's
+        //      `new_axiom` gives `⊢ φ` with no hyps; Pure's TCB requires
+        //      `Thm::assume(Trueprop φ)` which adds the assumption as a
+        //      hyp. PureHol tracks the axiom in `self.axioms`; we report
+        //      it as not-a-hyp to match HOL Light's convention.
         th.hyps()
             .iter()
+            .filter(|h| !self.is_user_axiom_concl(h))
             .filter_map(|h| self.unwrap_trueprop(h))
             .collect()
     }
@@ -871,7 +918,12 @@ impl HolLightKernel for PureHol {
         // substituted form. Sequential substitution is correct here
         // because the cyclic guard above ensures the substituted
         // names never appear in any `t_i`.
-        for h in &hyps_to_discharge {
+        //
+        // Iterate in REVERSE: `imp_intro h_0, h_1, …, h_{n-1}`
+        // produces `⊢ h_{n-1} ⟹ … ⟹ h_0 ⟹ q` (last imp_intro =
+        // outermost antecedent). `imp_elim` consumes the outermost
+        // first, so we hand it the LAST hyp first.
+        for h in hyps_to_discharge.iter().rev() {
             let mut h_subst = h.clone();
             for (new_term, old_var) in pairs {
                 let TermKind::Free(name, _) = old_var.kind() else {
@@ -1530,6 +1582,74 @@ mod tests {
         let (l, r) = k.dest_eq_concl(&iff).unwrap();
         assert_eq!(l, p);
         assert_eq!(r, q);
+    }
+
+    #[test]
+    fn dest_abs_freshens_name_when_hint_collides_with_free_in_body() {
+        // Construct `λx:bool. p` where `p` is a free `x:bool` in the
+        // body (so the body's free `x` would shadow the binder if we
+        // opened with the literal hint name).
+        let mut k = mk_kernel();
+        let b = k.bool_type();
+        // Bound(0) refers to the lambda's binder; a Free("x", ...)
+        // in the body refers to OUTER scope.
+        let body = Term::free("x", b.clone()); // outer-scope `x`
+        let abs = Term::abs(BinderHint::new("x"), b.clone(), body);
+        let (var, opened) = k.dest_abs(abs).unwrap();
+        // The new var must NOT be the outer-scope `x` (no capture).
+        match var.kind() {
+            TermKind::Free(n, _) => {
+                assert_ne!(n.as_str(), "x", "dest_abs must rename to avoid capture");
+            }
+            _ => panic!("expected Free var from dest_abs"),
+        }
+        // The body's outer-scope `x` must remain unaffected.
+        assert_eq!(opened, Term::free("x", b));
+    }
+
+    #[test]
+    fn inst_rule_multi_hyp_substitution_preserves_order() {
+        // Build {tp(p), tp(q)} ⊢ tp(p) via a derivation chain so we
+        // exercise multi-hyp imp_intro/imp_elim ordering:
+        //   th = `⊢ p ⟹ q ⟹ p` (tautology) via two imp_intros
+        //   imp_elim with {tp(p)} ⊢ tp(p)
+        //   imp_elim with {tp(q)} ⊢ tp(q)
+        //   ⇒ {tp(p), tp(q)} ⊢ tp(p)
+        // Then INST [(a, p), (b, q)] should give {tp(a), tp(b)} ⊢ tp(a),
+        // EXERCISING the multi-hyp imp_intro→all_intro→all_elim→imp_elim
+        // chain in inst_rule. If imp_elim runs in the wrong order the
+        // antecedent mismatch surfaces as an ImpAntecedentMismatch.
+        let mut k = mk_kernel();
+        let b = k.bool_type();
+        k.register_name(10, "p");
+        k.register_name(11, "q");
+        k.register_name(20, "a");
+        k.register_name(21, "b");
+        let p = k.mk_var(10, b.clone());
+        let q = k.mk_var(11, b.clone());
+        let a = k.mk_var(20, b.clone());
+        let bb = k.mk_var(21, b);
+
+        let assume_p = k.assume_rule(p.clone()).unwrap(); // {tp(p)} ⊢ tp(p)
+        let assume_q = k.assume_rule(q.clone()).unwrap(); // {tp(q)} ⊢ tp(q)
+
+        // Build ⊢ p ⟹ q ⟹ p by two imp_intros on assume_p.
+        let tp_p = k.ctx.mk_trueprop(p.clone()).unwrap();
+        let tp_q = k.ctx.mk_trueprop(q.clone()).unwrap();
+        let step1 = assume_p.clone().imp_intro(&tp_q).unwrap(); // {tp(p)} ⊢ tp(q) ⟹ tp(p)
+        let chain = step1.imp_intro(&tp_p).unwrap(); // ⊢ tp(p) ⟹ tp(q) ⟹ tp(p)
+        // Modus ponens twice.
+        let step2 = chain.imp_elim(assume_p).unwrap(); // {tp(p)} ⊢ tp(q) ⟹ tp(p)
+        let two_hyp_thm = step2.imp_elim(assume_q).unwrap(); // {tp(p), tp(q)} ⊢ tp(p)
+
+        // INST [(a, p), (b, q)].
+        let inst = k.inst_rule(&[(a.clone(), p), (bb.clone(), q)], two_hyp_thm).unwrap();
+        let concl = k.concl(inst.clone());
+        let hyps = k.hyps(inst);
+        assert_eq!(concl, a);
+        assert_eq!(hyps.len(), 2);
+        assert!(hyps.contains(&a));
+        assert!(hyps.contains(&bb));
     }
 
     #[test]

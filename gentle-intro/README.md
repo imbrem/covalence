@@ -1,39 +1,29 @@
 # Gentle Intro
 
-This folder is a **current-code-oriented** introduction to the logical parts of
-the repo.
+This folder introduces the logical parts of the repo from the current code.
 
-It is intentionally not a proposal document. It describes the code that exists
-today, especially:
+It describes the code that exists now, especially:
 
 - [`crates/covalence-pure`](../crates/covalence-pure/)
 - [`crates/covalence-hol`](../crates/covalence-hol/)
 - [`crates/covalence-opentheory`](../crates/covalence-opentheory/)
 
-The goal is to give a reader two things at once:
+It does two jobs:
 
 1. a gentle explanation of what the current Pure and HOL code is doing
 2. a translation of that code into Hehner `aPToP` and institution-theory
    language
 
-## Important scope note
+These notes are about the **current tree**, not the target architecture in the
+proposal docs.
 
-These notes are about the **current tree**, not the fully-adopted target
-architecture.
+The current repository has:
 
-That distinction matters because the current repository has:
+- `covalence-pure`, a live Pure-style framework crate
+- `covalence-hol`, a live HOL-Light-shaped kernel crate
+- proposal docs for a cleaner future factoring
 
-- a live `covalence-pure` crate that already looks like a Pure-style framework
-- a separate live `covalence-hol` crate that is still its own HOL-Light-shaped
-  kernel
-- proposal documents that describe a future tighter Pure-over-HOL or HOL-over-
-  Pure factoring, but that factoring is not yet the current architecture
-
-So the right current-code summary is:
-
-- `covalence-pure` and `covalence-hol` are both real code today
-- they are **conceptually related**
-- they are **not yet the one settled stacked kernel architecture**
+Keep those levels separate. The code comes first.
 
 ## Reading order
 
@@ -42,7 +32,7 @@ So the right current-code summary is:
 
 ## One-screen summary
 
-Today the repo has at least three logic-facing pieces in play:
+The repo has three main logic-facing pieces:
 
 - `covalence-pure`: a small Isabelle/Pure-shaped framework with meta-level
   implication, universal quantification, equality, and observation hooks
@@ -50,17 +40,16 @@ Today the repo has at least three logic-facing pieces in play:
   10 primitive inference rules plus definitions
 - `covalence-opentheory`: a transport/import layer that drives `covalence-hol`
 
-The Hehner lens is useful here because it helps separate:
+The Hehner lens separates:
 
 - the **collection of assumptions/facts**
 - the **packaged artifact** that stores or transports them
 
-Institution theory is useful here because it helps separate:
+Institution theory separates:
 
 - the **logic/framework**
 - the **object logic**
 - the **proof/package format**
 - the **translation/import path**
 
-Those separations are already visible in the current code even though the final
-architecture is still in motion.
+Those separations are already visible in the code.

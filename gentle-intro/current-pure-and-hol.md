@@ -1,25 +1,24 @@
 # Current Pure and HOL
 
-This note is the shortest accurate description of the current Pure and HOL code
-without jumping ahead to the proposal docs.
+This note gives a direct account of the current Pure and HOL code.
 
 ## The short picture
 
-Today the tree contains two different logic cores that matter for this topic:
+The tree contains two logic cores that matter here:
 
 1. [`covalence-pure`](../crates/covalence-pure/src/lib.rs) is a small
    Pure-style logical framework.
 2. [`covalence-hol`](../crates/covalence-hol/src/lib.rs) is a separate
    HOL-Light-shaped kernel.
 
-They are related, but they are not yet "one finished stacked system".
+They are related. They are still separate systems.
 
-`covalence-opentheory` is also important because it is the current transport
-layer that feeds HOL-family material into `covalence-hol`.
+`covalence-opentheory` matters too. It is the transport layer that feeds
+HOL-family material into `covalence-hol`.
 
 ## What `covalence-pure` currently is
 
-The current `covalence-pure` crate says its role plainly in
+`covalence-pure` states its role plainly in
 [`crates/covalence-pure/src/lib.rs`](../crates/covalence-pure/src/lib.rs):
 
 - it is Isabelle/Pure-shaped
@@ -27,7 +26,7 @@ The current `covalence-pure` crate says its role plainly in
 - it owns term/type representation, substitution, and theorem rules
 - it deliberately does **not** own the HOL vocabulary
 
-At the current-code level, the most important parts are:
+The key files are:
 
 - [`term.rs`](../crates/covalence-pure/src/term.rs):
   locally nameless terms and types, with meta-level implication, universal
@@ -58,7 +57,7 @@ That matters for three reasons:
 
 ### What Pure currently has
 
-Pure currently exposes meta-level rules such as:
+Pure exposes meta-level rules such as:
 
 - `assume`
 - `imp_intro` / `imp_elim`
@@ -75,23 +74,22 @@ including:
 - pointer-identity comparison for observer objects
 - observer-specific policies like `ObsEq`, `ObsTrue`, and `ObsImp`
 
-What it does **not** currently include is just as important:
+It does **not** include:
 
 - no built-in HOL `bool` vocabulary inside the crate interface
 - no `define` rule in the current crate state
 - no local-authority `observe` rule in the current crate state
 - no content-addressing or store integration inside the kernel rules
 
-So the current Pure code is best read as a small framework kernel with some
-bootstrap observation machinery, not yet as the whole future trusted center
-described by the proposals.
+Pure is a small framework kernel with bootstrap observation machinery. It is
+not the whole final architecture described in the proposals.
 
 ## What `covalence-hol` currently is
 
-The current `covalence-hol` crate is not just "the HOL layer over Pure".
-It has its own separate arena-based kernel.
+`covalence-hol` is not just "the HOL layer over Pure". It has its own
+arena-based kernel.
 
-The current public surface in
+The public surface in
 [`crates/covalence-hol/src/lib.rs`](../crates/covalence-hol/src/lib.rs)
 exports:
 
@@ -119,14 +117,14 @@ make this shape explicit:
 - one for terms
 - one for theorem proving
 
-That means `covalence-hol` is already written as an object-kernel interface with
-multiple possible backends, not just one hardcoded implementation.
+So `covalence-hol` is already written as an object-kernel interface with
+multiple backends, not as one hardcoded implementation.
 
 ### The Pure-facing bootstrap side
 
-At the same time, `covalence-hol` also contains
+`covalence-hol` also contains
 [`hol_light_obs.rs`](../crates/covalence-hol/src/hol_light_obs.rs), which is
-important because it shows how HOL vocabulary can be represented in current
+important because it shows how HOL vocabulary is represented in current
 `covalence-pure` terms:
 
 - `HolLight` enumerates HOL primitives like `bool`, `=`, `T`, `F`, connectives,
@@ -136,8 +134,8 @@ important because it shows how HOL vocabulary can be represented in current
   propositions
 - observer policies encode a bootstrap account of some HOL reasoning over Pure
 
-This file is the clearest current code showing how the repo is trying to relate
-Pure-style framework reasoning to HOL-style object reasoning.
+This file gives the clearest current code bridge between Pure-style framework
+reasoning and HOL-style object reasoning.
 
 ## What `covalence-opentheory` currently is
 
@@ -151,7 +149,7 @@ Its current role is:
 - interpret that material against a HOL-style kernel interface
 - currently drive `covalence-hol`
 
-So for a new reader, the right present-tense picture is:
+For a new reader, the picture is:
 
 - `covalence-pure` is a framework-like logic kernel
 - `covalence-hol` is a separate HOL object-kernel
@@ -159,11 +157,10 @@ So for a new reader, the right present-tense picture is:
 
 ## The most important "do not blur this" point
 
-The current repo also contains proposal docs that describe a future cleaner
-stack. Those are useful, but they are not the same thing as the current code.
+The repo also contains proposal docs that describe a cleaner future stack. They
+are not the same thing as the current code.
 
-If you want to stay honest about the current tree, the right statement is:
+The direct statement is:
 
-> The repo already contains a Pure-style framework crate and a separate HOL
-> kernel crate, plus a HOL import layer, but the final architecture that unifies
-> or reorganizes them is still under active design.
+> The repo contains a Pure-style framework crate, a separate HOL kernel crate,
+> and a HOL import layer. The final unifying architecture is still under design.

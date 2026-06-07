@@ -36,7 +36,25 @@ use std::any::Any;
 use std::fmt;
 use std::sync::LazyLock;
 
-use covalence_pure::{ObsEq, ObsImp, ObsTrue, Object, Observer, Term, TermKind, Type};
+use covalence_pure::{ObsEq, ObsImp, ObsTrue, Object, Observer, Term, TermKind, Type, subst};
+
+// ============================================================================
+// Typed hints for HOL Light rules that take parameters
+// ============================================================================
+
+/// Hint for HOL Light's INST rule: substitutes the named term
+/// variables in the source theorem. Each pair is `(var_name, replacement_term)`.
+#[derive(Debug)]
+pub struct InstHint {
+    pub subs: Vec<(String, Term)>,
+}
+
+/// Hint for HOL Light's INST_TYPE rule: substitutes the named type
+/// variables. Each pair is `(tvar_name, replacement_type)`.
+#[derive(Debug)]
+pub struct InstTypeHint {
+    pub subs: Vec<(String, Type)>,
+}
 
 // ============================================================================
 // Module-level lazy globals
@@ -529,7 +547,12 @@ fn check_beta_pattern(concl_body: &Term) -> bool {
 /// added as additional pattern arms — each is local and only adds
 /// LoC, never risks unsoundness.
 impl ObsImp for HolLight {
-    fn obs_imp(&self, args: &[Term], hyps: &[Term], _hint: Option<&dyn covalence_pure::Hint>) -> bool {
+    fn obs_imp(
+        &self,
+        args: &[Term],
+        hyps: &[Term],
+        hint: Option<&dyn covalence_pure::Hint>,
+    ) -> bool {
         // The only HolLight variant we mint lazy theorems for is
         // `Trueprop p` — i.e., a prop-typed obs application.
         if !matches!(self, HolLight::Trueprop) || args.len() != 1 {
@@ -538,8 +561,12 @@ impl ObsImp for HolLight {
         let concl_body = &args[0];
 
         match hyps.len() {
-            1 => check_sym_pattern(&hyps[0], concl_body)
-                || check_abs_pattern(&hyps[0], concl_body),
+            1 => {
+                check_sym_pattern(&hyps[0], concl_body)
+                    || check_abs_pattern(&hyps[0], concl_body)
+                    || check_inst_pattern(&hyps[0], concl_body, hint)
+                    || check_inst_type_pattern(&hyps[0], concl_body, hint)
+            }
             2 => {
                 check_trans_pattern(&hyps[0], &hyps[1], concl_body)
                     || check_mk_comb_pattern(&hyps[0], &hyps[1], concl_body)
@@ -548,6 +575,53 @@ impl ObsImp for HolLight {
             _ => false,
         }
     }
+}
+
+/// HOL INST: hyp = `Trueprop p`, concl = `Trueprop p[subs]` for
+/// hint-supplied term-variable substitutions.
+fn check_inst_pattern(
+    hyp: &Term,
+    concl_body: &Term,
+    hint: Option<&dyn covalence_pure::Hint>,
+) -> bool {
+    let Some(h) = hint else {
+        return false;
+    };
+    let Some(inst_hint) = h.as_any().downcast_ref::<InstHint>() else {
+        return false;
+    };
+    let Some(h_body) = unwrap_trueprop(hyp) else {
+        return false;
+    };
+    // Apply each substitution in order.
+    let mut current = h_body;
+    for (var_name, replacement) in &inst_hint.subs {
+        current = subst::subst_free(&current, var_name, replacement);
+    }
+    &current == concl_body
+}
+
+/// HOL INST_TYPE: hyp = `Trueprop p`, concl = `Trueprop p[T-subs]`
+/// for hint-supplied type-variable substitutions.
+fn check_inst_type_pattern(
+    hyp: &Term,
+    concl_body: &Term,
+    hint: Option<&dyn covalence_pure::Hint>,
+) -> bool {
+    let Some(h) = hint else {
+        return false;
+    };
+    let Some(inst_hint) = h.as_any().downcast_ref::<InstTypeHint>() else {
+        return false;
+    };
+    let Some(h_body) = unwrap_trueprop(hyp) else {
+        return false;
+    };
+    let mut current = h_body;
+    for (tvar_name, replacement_ty) in &inst_hint.subs {
+        current = subst::subst_tfree_in_term(&current, tvar_name, replacement_ty);
+    }
+    &current == concl_body
 }
 
 /// HOL ABS: hyp = `Trueprop (Eq s t)`, concl = `Eq (λx. s') (λx. t')`

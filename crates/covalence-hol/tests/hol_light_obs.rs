@@ -426,3 +426,62 @@ fn hol_abs_rejects_when_hyp_doesnt_match_lambda_bodies() {
     let result = covalence_pure::Thm::obs_imp::<HolLight>(concl, vec![hyp], None);
     assert!(result.is_err(), "ABS with mismatched bodies should be refused");
 }
+
+#[test]
+fn hol_inst_via_obs_imp_with_inst_hint() {
+    // HOL INST: ⊢ Trueprop (f x) ⟹ Trueprop (f y) given x:=y.
+    let ctx = HolLightCtx::new();
+    let f = Term::free("f", Type::fun(ctx.bool_type(), ctx.bool_type()));
+    let x = Term::free("x", ctx.bool_type());
+    let y = Term::free("y", ctx.bool_type());
+
+    let p = Term::app(f.clone(), x);
+    let p_inst = Term::app(f, y.clone());
+    let hyp = ctx.mk_trueprop(p).unwrap();
+    let concl = ctx.mk_trueprop(p_inst).unwrap();
+
+    let hint: std::sync::Arc<dyn covalence_pure::Hint> =
+        std::sync::Arc::new(covalence_hol::InstHint {
+            subs: vec![("x".to_string(), y)],
+        });
+    let lazy = covalence_pure::Thm::obs_imp::<HolLight>(
+        concl.clone(),
+        vec![hyp.clone()],
+        Some(hint),
+    )
+    .unwrap();
+    let expected = covalence_pure::Term::imp(hyp, concl);
+    assert_eq!(lazy.concl(), &expected);
+}
+
+// NOTE: HOL INST_TYPE doesn't fit the lazy-theorem encoding when the
+// substituted term has free vars — Pure's Thm::build enforces
+// cross-term free-var-type consistency, which fails for `⊢ hyp ⟹ concl`
+// when hyp uses `x : 'a` and concl uses `x : bool`. INST_TYPE is
+// instead best exposed via Pure's existing `Thm::inst_tfree` at the
+// PureHol kernel-adapter level (planned follow-up). The InstTypeHint
+// policy hook is still there for cases where free-var-types don't
+// collide (e.g., blob-only or de-Bruijn-only terms).
+
+#[test]
+fn hol_inst_rejects_when_substitution_doesnt_match_concl() {
+    let ctx = HolLightCtx::new();
+    let f = Term::free("f", Type::fun(ctx.bool_type(), ctx.bool_type()));
+    let x = Term::free("x", ctx.bool_type());
+    let y = Term::free("y", ctx.bool_type());
+    let z = Term::free("z", ctx.bool_type());
+
+    let p = Term::app(f.clone(), x);
+    let bad_concl_body = Term::app(f, z); // p[x:=z], not p[x:=y]
+    let hyp = ctx.mk_trueprop(p).unwrap();
+    let bad_concl = ctx.mk_trueprop(bad_concl_body).unwrap();
+
+    // hint says x := y, but concl uses z.
+    let hint: std::sync::Arc<dyn covalence_pure::Hint> =
+        std::sync::Arc::new(covalence_hol::InstHint {
+            subs: vec![("x".to_string(), y)],
+        });
+    let result =
+        covalence_pure::Thm::obs_imp::<HolLight>(bad_concl, vec![hyp], Some(hint));
+    assert!(result.is_err());
+}

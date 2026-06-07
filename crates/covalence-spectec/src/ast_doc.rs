@@ -2084,6 +2084,71 @@ fn hole_bind_id(toks: &[crate::token::Spanned]) -> String {
     s
 }
 
+// ============================================================
+//  Grammar lowering — `.spectec` source → `SpecTecSym` algebra
+// ============================================================
+//
+// This section lifts grammar productions out of raw `Spanned`
+// token slices and into the `SpecTecSym` AST defined upstream in
+// `spectec_ast::grammars` (see also `print.ml#L149` in the OCaml
+// reference: https://github.com/WebAssembly/spec/blob/9479f1d/
+// spectec/src/backend-ast/print.ml#L149 ).
+//
+// The algebra is small and orthogonal — a kernel-side parser-
+// reasoning module can consume it directly:
+//
+//   Var{x, as1}    — reference to a named grammar (possibly with
+//                    parametric args). Resolved against
+//                    `env.grammars` for its yield type.
+//   Num{n} / Text  — byte literal / string literal.
+//   Eps            — empty match (zero-width).
+//   Seq{gs}        — concatenation: parse each in order.
+//   Alt{gs}        — alternation: try each, succeed on first.
+//   Range{g1, g2}  — bounded byte/character range.
+//   Iter{g1, it, xes} — repetition (`*`/`?`/`+`/`^n`). `xes` is the
+//                       binder-domain annotation (which outer
+//                       metavar gets bound to the list of matches).
+//   Attr{e, g1}    — binder: parse `g1`, bind the result to expr `e`
+//                    (almost always `Var{name}`) in the prod's
+//                    attribute scope.
+//
+// The grammar IR is what the WASM spec's binary format chapter
+// actually IS — `Binstr/block`'s `0x02 bt:Bblocktype (in:Binstr)*
+// 0x0B => BLOCK bt in*` reads as
+//
+//   Seq[Num 0x02, Attr{bt, Bblocktype}, Iter{Attr{in, Binstr}, *},
+//       Num 0x0B]
+//
+// with attribute expression `Case "BLOCK" (tup bt (iter in *))`.
+//
+// Pipeline (top-down):
+//
+//   `Doc.grammars[g].productions` (raw `TokenRun`)
+//      ↓  split_grammar_prods (split on top-level `|`)
+//   `Vec<&[Spanned]>` — one chunk per alt
+//      ↓  chunk_to_prod (one alt) — split on `=>` arrow
+//   `(sym_toks, Option<attr_toks>)`
+//      ↓  grammar_sym_from_tokens (the sym side)
+//   `SpecTecSym`
+//      ↓  prod_ps_from_sym (walk for binders)
+//   `Vec<SpecTecParam>` — per-prod metavar list
+//
+// The two grammar-specific token walkers (`split_top_level_pipe`
+// and `split_grammar_arrow`) use the shared `token::at_top_level`
+// iterator — they're three-line iterator chains.
+//
+// Out of scope here:
+//   - `Alt{gs}`: not produced from sources where each `|` separates
+//     a *prod*. It only arises inside grouping `(a | b)` which the
+//     wasm-3.0 corpus avoids; left as a TODO in `chunk_to_atom`.
+//   - `xes` annotations on `Iter`: the binder-domain field is
+//     emitted as `[]`; a follow-up will tie this to the same
+//     domain-inference machinery used by premise iters.
+//   - Pattern binders on `Attr`'s LHS (e.g.
+//     `attr (case "%" (tup (var n))) (var Bbyte)` from `BuN`): only
+//     `Var(name)` LHS is recognised; complex LHS falls through to
+//     `Eps`.
+
 // ---------- grammar production splitting ----------
 
 /// Split a grammar production body on top-level `|` and emit
@@ -2253,63 +2318,56 @@ fn walk_sym_for_binders(
     }
 }
 
-/// Bare-range prods (`0x00 | ... | 0xFF`) have no source-level binder
-/// — OCaml synthesises one named `<implicit-prod-result>` (the angle
-/// brackets are part of the literal name) so the prod's case-ctor
-/// (`%`) can name the matched value.
+/// Bare-range prods (`0x00 | ... | 0xFF`) have no source-level
+/// binder. OCaml synthesises one named `<implicit-prod-result>` (the
+/// angle brackets ARE part of the literal name; do not strip them)
+/// so the prod's case-ctor (`%`) can name the matched value:
+///
+/// ```text
+/// prod {
+///   ps: [Exp{<implicit-prod-result> : nat}],
+///   g:  Attr{Var<implicit-prod-result>, Range{0, 0xFF}},
+///   e:  Case{op:["",""],   e1: Tup[Var<implicit-prod-result>]},
+/// }
+/// ```
 fn make_range_prod(
     lower: &[crate::token::Spanned],
     upper: &[crate::token::Spanned],
     ctx: &ElabContext,
     _fallback_span: crate::source::Span,
 ) -> spectec_ast::SpecTecProd {
-    let g_lower = grammar_sym_from_tokens(lower, ctx);
-    let g_upper = grammar_sym_from_tokens(upper, ctx);
-    let bind_name = "<implicit-prod-result>".to_string();
+    const IMPLICIT: &str = "<implicit-prod-result>";
     let range = spectec_ast::SpecTecSym::Range {
-        g1: Box::new(g_lower),
-        g2: Box::new(g_upper),
+        g1: Box::new(grammar_sym_from_tokens(lower, ctx)),
+        g2: Box::new(grammar_sym_from_tokens(upper, ctx)),
     };
     spectec_ast::SpecTecProd::Prod {
         ps: vec![spectec_ast::SpecTecParam::Exp {
-            x: bind_name.clone(),
+            x: IMPLICIT.to_string(),
             t: spectec_ast::SpecTecTyp::Num(spectec_ast::SpecTecNumTyp::Nat),
         }],
-        g: spectec_ast::SpecTecSym::Attr {
-            e: spectec_ast::SpecTecExp::Var {
-                id: bind_name.clone(),
-            },
-            g1: Box::new(range),
-        },
+        g: attr_sym(exp_var(IMPLICIT), range),
         e: spectec_ast::SpecTecExp::Case {
             op: spectec_ast::MixOp::new(vec![String::new(), String::new()]),
             e1: Box::new(spectec_ast::SpecTecExp::Tup {
-                es: vec![spectec_ast::SpecTecExp::Var { id: bind_name }],
+                es: vec![exp_var(IMPLICIT)],
             }),
         },
         prs: Vec::new(),
     }
 }
 
+/// Split a grammar body on top-level `|`. Empty chunks are dropped.
 fn split_top_level_pipe(toks: &[crate::token::Spanned]) -> Vec<&[crate::token::Spanned]> {
+    use crate::token::{at_top_level, Token};
     let mut out = Vec::new();
-    let mut depth: i32 = 0;
     let mut start = 0usize;
-    for (i, t) in toks.iter().enumerate() {
-        match &t.token {
-            crate::token::Token::LParen
-            | crate::token::Token::LBracket
-            | crate::token::Token::LBrace => depth += 1,
-            crate::token::Token::RParen
-            | crate::token::Token::RBracket
-            | crate::token::Token::RBrace => depth -= 1,
-            crate::token::Token::Pipe if depth == 0 => {
-                if start < i {
-                    out.push(&toks[start..i]);
-                }
-                start = i + 1;
+    for (i, t) in at_top_level(toks) {
+        if matches!(t.token, Token::Pipe) {
+            if start < i {
+                out.push(&toks[start..i]);
             }
-            _ => {}
+            start = i + 1;
         }
     }
     if start < toks.len() {
@@ -2318,46 +2376,42 @@ fn split_top_level_pipe(toks: &[crate::token::Spanned]) -> Vec<&[crate::token::S
     out
 }
 
-/// Split a grammar production chunk on top-level `=> ` (i.e. `Eq`
-/// followed by `GreaterThan`). Returns `(sym_toks, Some(attr_toks))`
-/// if `=>` is present, else `(sym_toks, None)`.
+/// Split a grammar production chunk on top-level `=>` (lexed as
+/// `Eq GreaterThan`). Returns `(sym_toks, Some(attr_toks))` if
+/// `=>` is present, else `(sym_toks, None)`.
 fn split_grammar_arrow(
     toks: &[crate::token::Spanned],
 ) -> (&[crate::token::Spanned], Option<&[crate::token::Spanned]>) {
-    let mut depth: i32 = 0;
-    let mut i = 0;
-    while i + 1 < toks.len() {
-        match &toks[i].token {
-            crate::token::Token::LParen
-            | crate::token::Token::LBracket
-            | crate::token::Token::LBrace => depth += 1,
-            crate::token::Token::RParen
-            | crate::token::Token::RBracket
-            | crate::token::Token::RBrace => depth -= 1,
-            crate::token::Token::Eq if depth == 0 => {
-                if matches!(toks[i + 1].token, crate::token::Token::GreaterThan) {
-                    return (&toks[..i], Some(&toks[i + 2..]));
-                }
-            }
-            _ => {}
+    use crate::token::{at_top_level, Token};
+    for (i, t) in at_top_level(toks) {
+        if matches!(t.token, Token::Eq)
+            && matches!(toks.get(i + 1).map(|s| &s.token), Some(Token::GreaterThan))
+        {
+            return (&toks[..i], Some(&toks[i + 2..]));
         }
-        i += 1;
     }
     (toks, None)
 }
 
-/// Build a `SpecTecSym` from a grammar-production symbol's tokens.
+/// Lower the `sym` side of one grammar production to a `SpecTecSym`.
 ///
-/// Splits `toks` on atom boundaries (see [`split_juxtaposed`]). A
-/// single chunk lowers directly via [`chunk_to_atom`]; multiple chunks
-/// produce OCaml's per-element nested `Seq` shape:
+/// This is the entry point for the grammar algebra: it takes raw
+/// source tokens and produces the structured Sym tree the kernel
+/// (or any other consumer) can walk.
+///
+/// Algorithm:
+/// 1. Empty or `eps` → `Eps`.
+/// 2. Otherwise split `toks` on atom boundaries
+///    (see [`split_juxtaposed`]).
+/// 3. One chunk → lower directly via [`chunk_to_atom`].
+/// 4. Multiple chunks → OCaml's per-element nested `Seq` shape:
 ///
 /// ```text
 /// Seq { gs: [ Seq { gs: [atom_0] }, Seq { gs: [atom_1] }, ... ] }
 /// ```
 ///
-/// The double `Seq` wrap is load-bearing — OCaml's pretty-printer
-/// emits exactly that.
+/// The double `Seq` wrap is load-bearing for OCaml output parity —
+/// the pretty-printer (`print.ml#L149`) emits exactly that.
 fn grammar_sym_from_tokens(
     toks: &[crate::token::Spanned],
     ctx: &ElabContext,
@@ -2384,13 +2438,15 @@ fn grammar_sym_from_tokens(
 
 /// Walk `toks` left-to-right, grouping into atom-sized chunks.
 ///
-/// Each call to [`end_of_atom`] returns the past-the-end index of one
-/// atom starting at `i`. Empty atoms (zero-width matches) are skipped
-/// by forcing forward progress.
+/// An "atom" is one logical sub-grammar in source order — what would
+/// be one juxtaposed element between whitespace boundaries in the
+/// `.spectec` source. Atoms can span multiple tokens (e.g. `Btagidx*`
+/// is one ident + one iter postfix; `(in:Binstr)*` is a balanced
+/// paren group plus an iter postfix; `x:Btagidx` is an ident + `:` +
+/// nested atom).
 ///
-/// TODO(#24): `Ident Colon <rest>` binder atoms span multiple tokens.
-/// TODO(#25): `(...)` and `(...)<iter>` paren-grouped atoms span
-/// the whole balanced group plus any trailing iter suffix.
+/// [`end_of_atom`] is the per-atom recogniser; this just iterates it.
+/// `j.max(i + 1)` guarantees forward progress on zero-width matches.
 fn split_juxtaposed(toks: &[crate::token::Spanned]) -> Vec<&[crate::token::Spanned]> {
     let mut out = Vec::new();
     let mut i = 0;
@@ -2404,14 +2460,20 @@ fn split_juxtaposed(toks: &[crate::token::Spanned]) -> Vec<&[crate::token::Spann
 
 /// Past-the-end index of the atom starting at `toks[start]`.
 ///
-/// Recognised atom shapes:
-/// - any single non-paren token (task 23)
-/// - `LParen ... RParen [Star|Question|Plus]?` — paren-grouped
-///   sub-grammar with optional trailing iter suffix (task 25)
-/// - `Ident [Star|Question|Plus]` — bare ident iter (task 25)
-/// - `Ident [Star|Question|Plus]? Colon <atom>` — binder atom
-///   (task 24); iter suffix on the LHS is consumed but its symbolic
-///   lowering is left to a follow-up
+/// The four recognised atom shapes correspond directly to the
+/// `SpecTecSym` variants `chunk_to_atom` produces:
+///
+/// | Shape | Produces |
+/// | --- | --- |
+/// | any single non-paren token | `Eps` / `Var` / `Num` / `Text` |
+/// | `LParen ... RParen [iter]?` | recursed sym, optionally `Iter`-wrapped |
+/// | `Ident [iter]` | `Iter{Var(name)}` |
+/// | `Ident [iter]? Colon <atom>` | `Attr{Var(name), <atom>}` |
+///
+/// The iter-suffix on a binder LHS is consumed by the boundary
+/// finder (so the chunker doesn't fragment `t*:Btagidx`), but its
+/// symbolic lowering in `chunk_to_atom` is still TODO — that needs
+/// expression-side `Iter`-wrap support on `Attr.e`.
 fn end_of_atom(toks: &[crate::token::Spanned], start: usize) -> usize {
     use crate::token::Token::*;
     let lead = match toks.get(start).map(|s| &s.token) {
@@ -2447,21 +2509,8 @@ fn end_of_atom(toks: &[crate::token::Spanned], start: usize) -> usize {
 /// Index of the `RParen` that matches `toks[start]` (which must be
 /// `LParen`). Unmatched parens consume to the end of the slice.
 fn find_matching_rparen(toks: &[crate::token::Spanned], start: usize) -> usize {
-    use crate::token::Token::*;
-    let mut depth: i32 = 0;
-    for (i, t) in toks.iter().enumerate().skip(start) {
-        match &t.token {
-            LParen => depth += 1,
-            RParen => {
-                depth -= 1;
-                if depth == 0 {
-                    return i;
-                }
-            }
-            _ => {}
-        }
-    }
-    toks.len().saturating_sub(1)
+    let consumed = crate::elab::skip_balanced(&toks[start..]);
+    (start + consumed).saturating_sub(1)
 }
 
 /// Lower one juxtaposition chunk into a single `SpecTecSym` atom.
@@ -2501,16 +2550,10 @@ fn chunk_to_atom(
     // Paren-grouped sub-grammar with optional trailing iter suffix.
     if matches!(chunk[0].token, LParen) {
         let close = find_matching_rparen(chunk, 0);
-        let inner = &chunk[1..close];
-        let inner_sym = grammar_sym_from_tokens(inner, ctx);
-        let iter = iter_from_suffix(chunk.get(close + 1).map(|s| &s.token));
-        return match iter {
+        let inner_sym = grammar_sym_from_tokens(&chunk[1..close], ctx);
+        return match iter_from_suffix(chunk.get(close + 1).map(|s| &s.token)) {
             None => inner_sym,
-            Some(it) => S::Iter {
-                g1: Box::new(inner_sym),
-                it,
-                xes: Vec::new(),
-            },
+            Some(it) => iter_sym(inner_sym, it),
         };
     }
 
@@ -2519,11 +2562,7 @@ fn chunk_to_atom(
         && let Ident(name) = &chunk[0].token
         && let Some(it) = iter_from_suffix(chunk.get(1).map(|s| &s.token))
     {
-        return S::Iter {
-            g1: Box::new(S::Var { x: name.clone(), as1: Vec::new() }),
-            it,
-            xes: Vec::new(),
-        };
+        return iter_sym(grammar_var(name), it);
     }
 
     // Binder: `Ident Colon <rest>`. Iter-suffixed binder LHS
@@ -2533,22 +2572,14 @@ fn chunk_to_atom(
         && let Ident(name) = &chunk[0].token
         && matches!(chunk[1].token, Colon)
     {
-        let g1 = chunk_to_atom(&chunk[2..], ctx);
-        return S::Attr {
-            e: spectec_ast::SpecTecExp::Var { id: name.clone() },
-            g1: Box::new(g1),
-        };
+        return attr_sym(exp_var(name.clone()), chunk_to_atom(&chunk[2..], ctx));
     }
 
     if chunk.len() == 1 {
         match &chunk[0].token {
             Eps => return S::Eps,
-            Ident(n) => return S::Var { x: n.clone(), as1: Vec::new() },
-            Nat(n) => {
-                let v = u64::try_from(n).unwrap_or(u64::MAX);
-                let v: i64 = i64::try_from(v).unwrap_or(i64::MAX);
-                return S::Num { n: v };
-            }
+            Ident(n) => return grammar_var(n),
+            Nat(n) => return S::Num { n: nat_to_i64_clamped(n) },
             Text(t) => return S::Text { t: t.clone() },
             _ => {}
         }
@@ -2556,6 +2587,51 @@ fn chunk_to_atom(
     // Unrecognised multi-token chunk (iter-suffixed binder LHS, etc.).
     let _ = ctx;
     S::Eps
+}
+
+// -------- small `SpecTecSym` builders --------
+//
+// These shorten the common shapes — a grammar reference, an iter
+// wrap, an attr binder — so the lowering reads more like the
+// algebra it implements. They're intentionally trivial; a future
+// kernel-side extraction can keep these names and reuse the same
+// shape.
+
+/// `SpecTecSym::Var { x: name, as1: [] }` — bare grammar reference.
+fn grammar_var(name: impl Into<String>) -> spectec_ast::SpecTecSym {
+    spectec_ast::SpecTecSym::Var {
+        x: name.into(),
+        as1: Vec::new(),
+    }
+}
+
+/// `SpecTecSym::Iter { g1: inner, it, xes: [] }`. `xes` (the
+/// binder-domain annotation) is deferred — see the section
+/// preamble for the TODO.
+fn iter_sym(inner: spectec_ast::SpecTecSym, it: spectec_ast::SpecTecIter) -> spectec_ast::SpecTecSym {
+    spectec_ast::SpecTecSym::Iter {
+        g1: Box::new(inner),
+        it,
+        xes: Vec::new(),
+    }
+}
+
+/// `SpecTecSym::Attr { e, g1 }` — binder atom: parse `g1`, bind
+/// the result to expression `e` in the prod's attribute scope.
+fn attr_sym(e: spectec_ast::SpecTecExp, g1: spectec_ast::SpecTecSym) -> spectec_ast::SpecTecSym {
+    spectec_ast::SpecTecSym::Attr {
+        e,
+        g1: Box::new(g1),
+    }
+}
+
+/// Clamp a `Nat` (arbitrary precision) into an `i64` so it fits the
+/// `SpecTecSym::Num { n: i64 }` shape. Source-level grammar literals
+/// (`0x40`, `0x0B`, etc.) are well within range; clamping is a
+/// defensive guard for the rare bytes-> wide range case.
+fn nat_to_i64_clamped(n: &covalence_types::Nat) -> i64 {
+    let v = u64::try_from(n).unwrap_or(u64::MAX);
+    i64::try_from(v).unwrap_or(i64::MAX)
 }
 
 /// Map a trailing iter-suffix token to its `SpecTecIter`.

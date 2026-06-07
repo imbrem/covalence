@@ -10,9 +10,10 @@ description: Covalence repo layout, dependency graph, and key architectural rule
   - `src/highlight.rs` — S-expression syntax highlighting for the REPL
   - `src/lib.rs` — Shared constants (`VERSION`, `TARGET`)
   - `build.rs` — Sets `COV_TARGET` env var from the Cargo build target triple
-- `crates/covalence-kernel/` — **HOL kernel** (experimental, planned for rewrite — see crate-level docs in `src/lib.rs`)
-  - Files: `arena.rs`, `egraph.rs`, `eprop.rs`, `hash.rs`, `id.rs`, `kernel.rs`, `primop.rs`, `prop.rs`, `reduce.rs`, `subst.rs`, `term.rs`, `ty.rs`, `uf.rs`
-  - Deps are minimal (`bytes`, `smol_str`, `covalence-hash`, `covalence-types`); does NOT depend on `covalence-wasm` or `wasmtime` in this branch.
+- `crates/covalence-pure/` — **TCB**: Isabelle/Pure–shaped LF. `Term`/`Type`/`Thm`, 8 LF + 6 equality rules + `inst_tfree` + `define` + `obs_eq`. Locally-nameless, intrinsic typing, parametric-ε-sound observations. `DynObs` wraps any `Arc<dyn Any + Send + Sync>` compared by pointer identity. WIT package `cov:pure@0.1.0` exposes the API to wasm guests (host bindings in `covalence-wasm::pure`).
+- `crates/covalence-pure-shell/` — non-TCB shell: handler-driven sexp serialisation (`ObsSerializer`/`ObsParser`), content hashing (`ObsHasher`), pretty-printing. Caller-supplied trait impls for each observer type.
+- `crates/covalence-pure-test-guest/` — wasm32 cdylib using `wit_bindgen::generate!` against `cov:pure/api`; loaded by `crates/covalence-wasm/tests/pure_guest_integration.rs` for end-to-end WIT-driven proving. Template for future `cov:kernel`/`cov:hol-light` test guests.
+- `crates/covalence-kernel/` — **HOL kernel (LEGACY, planned for rewrite).** Current contents: `arena.rs`, `egraph.rs`, `eprop.rs`, `hash.rs`, `id.rs`, `kernel.rs`, `primop.rs`, `prop.rs`, `reduce.rs`, `subst.rs`, `term.rs`, `ty.rs`, `uf.rs`. Migration plan in `docs/design/proposals/stacked-pure-hol/next-stages.md`: keep the crate name but empty it out and rebuild as an orchestration shell over `covalence-pure` + forthcoming `covalence-hol` + `covalence-store` + WASM evaluator + tree-store. The new direction never trusts BLAKE3 collision-freedom globally; cryptographic facts are user-asserted axioms conditional on `inStore` predicates.
   - The Sync/Async backend traits (`SyncBackend`, `AsyncBackend`, `BackendInfo`, `KernelError`) now live in `crates/covalence-shell/` (`pub use traits::{...}` in `src/lib.rs`). Update this section when the kernel is re-integrated with the shell.
 - `crates/covalence-client/` — Remote backend implementations
   - `src/sync_client.rs` — `SyncHttpBackend` (ureq for TCP, raw HTTP/1.1 for Unix domain sockets)

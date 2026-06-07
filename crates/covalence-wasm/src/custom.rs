@@ -14,12 +14,7 @@
 use wasm_encoder::{Component, CustomSection, Module};
 use wasmparser::{Parser, Payload};
 
-use crate::WasmError;
-
-/// Byte length of the WASM module preamble (`\0asm` + version).
-const MODULE_HEADER_LEN: usize = 8;
-/// Byte length of the WASM component preamble (`\0asm` + version + layer).
-const COMPONENT_HEADER_LEN: usize = 8;
+use crate::{PREAMBLE_LEN, WasmError, is_component};
 
 /// Append a custom section to a WASM module or component binary.
 ///
@@ -35,36 +30,29 @@ pub fn append_custom_section(bytes: &[u8], name: &str, data: &[u8]) -> Vec<u8> {
         name: name.into(),
         data: data.into(),
     };
-    let framed = framed_custom_section(&section, looks_like_component(bytes));
+    let framed = framed_custom_section(&section, is_component(bytes));
     let mut out = Vec::with_capacity(bytes.len() + framed.len());
     out.extend_from_slice(bytes);
     out.extend_from_slice(&framed);
     out
 }
 
-fn looks_like_component(bytes: &[u8]) -> bool {
-    // Layer byte is at offset 6 of the preamble; 0x01 = component,
-    // 0x00 = module. Default to module for malformed input — the
-    // parser layer will catch the mismatch downstream.
-    bytes.get(6).copied().unwrap_or(0) == 0x01
-}
-
 /// Emit a fully framed custom section by piggy-backing on
 /// `wasm-encoder`'s module/component section wrapper, then stripping
 /// the synthetic preamble. This avoids hand-rolling the LEB128 size
-/// header.
+/// header. Both module and component preambles are [`PREAMBLE_LEN`]
+/// bytes.
 fn framed_custom_section(section: &CustomSection<'_>, component: bool) -> Vec<u8> {
-    if component {
+    let bytes = if component {
         let mut comp = Component::new();
         comp.section(section);
-        let bytes = comp.finish();
-        bytes[COMPONENT_HEADER_LEN..].to_vec()
+        comp.finish()
     } else {
         let mut module = Module::new();
         module.section(section);
-        let bytes = module.finish();
-        bytes[MODULE_HEADER_LEN..].to_vec()
-    }
+        module.finish()
+    };
+    bytes[PREAMBLE_LEN..].to_vec()
 }
 
 /// Find the first custom section whose name equals `name`, returning

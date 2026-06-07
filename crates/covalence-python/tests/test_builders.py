@@ -209,6 +209,46 @@ class TestContainerBuilder:
         assert "(component" in wat
         assert '"attest"' in wat
 
+    def test_container_bytes_round_trip(self):
+        """Build a container with attest + link + export, parse it back,
+        check imports/exports survive the byte-level encode → decode."""
+        dep_c = covalence.ContainerBuilder()
+        dep_m = dep_c.module()
+        dep_m.attest()
+        dep_m.export_func("init")
+        dep = dep_c.build()
+
+        c = covalence.ContainerBuilder()
+        m = c.module()
+        lib = m.link(dep.hash, exports=["init"])
+        m.call(lib, "init")
+        m.attest()
+        m.export_func("run")
+        container = c.build()
+
+        # Round-trip via raw bytes: re-parsing must agree on imports/exports.
+        roundtripped = covalence.Container.from_bytes(bytes(container))
+        assert roundtripped.exports == container.exports
+        assert roundtripped.imports == container.imports
+        assert "run" in container.exports
+        assert "attest" in container.imports
+        # link-<hex> import name should be preserved exactly.
+        assert any(imp.startswith("link-") for imp in container.imports)
+
+    def test_standalone_component_bytes_valid(self):
+        """ComponentBuilder.build() produces a parseable component."""
+        comp = covalence.ComponentBuilder()
+        m = comp.module()
+        f = m.func(params=["i32"], results=["i32"])
+        f.local_get(0)
+        f.i32_const(1)
+        f.i32_add()
+        m.export_func("inc", f)
+        c = comp.build()
+        # Re-parse via the public from_bytes path.
+        c2 = covalence.Component.from_bytes(bytes(c))
+        assert c2.hash == c.hash
+
     def test_hash_polymorphism_o256(self):
         """prove accepts O256."""
         k = covalence.local()

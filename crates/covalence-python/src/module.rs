@@ -6,12 +6,6 @@ use pyo3::types::PyBytes;
 
 use crate::hash::O256;
 
-/// Returns true if bytes represent a WASM core module (not a component).
-/// Modules have encoding byte 0x01 at offset 4; components have 0x0d.
-fn is_module_bytes(bytes: &[u8]) -> bool {
-    bytes.len() >= 8 && bytes[0..4] == *b"\0asm" && bytes[4] == 0x01
-}
-
 /// Validated WASM core module with cached metadata.
 #[pyclass(from_py_object)]
 #[derive(Clone)]
@@ -23,9 +17,15 @@ pub struct Module {
 }
 
 impl Module {
-    /// Parse and validate WASM bytes as a core module.
+    /// Parse and validate WASM bytes as a core module. Internal entry
+    /// point shared between `from_bytes` and the byte-stream path used
+    /// by `ModuleBuilder.build`.
+    pub(crate) fn from_bytes_internal(wasm: Vec<u8>) -> PyResult<Self> {
+        Self::from_wasm_bytes(wasm)
+    }
+
     fn from_wasm_bytes(wasm: Vec<u8>) -> PyResult<Self> {
-        if !is_module_bytes(&wasm) {
+        if !covalence_wasm::is_module(&wasm) {
             return Err(PyValueError::new_err(
                 "expected a WASM core module, got a component or invalid bytes",
             ));

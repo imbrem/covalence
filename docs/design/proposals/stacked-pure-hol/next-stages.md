@@ -271,38 +271,180 @@ plan:
 
 ---
 
-### H. **OPTIONAL** — Observation primitives beyond `obs_eq`
+### H. **REJECTED** — Observation primitives beyond `obs_eq`
 
-The current observation surface is **just** `Term::obs` (leaf
-construction) and `Thm::obs_eq` (equate two same-Rust-type
-applications). Other patterns could be added if needed:
+This entry previously proposed `Thm::obs_compute<O>(expr) -> Thm<⊢ expr ≡ rhs>`
+and `Thm::obs_assert<O>(args) -> Thm<⊢ (Obs O) args>` as possible
+extensions. **Both are rejected.** The pattern in section **I** below
+subsumes everything they would have done, using only the existing
+`obs_eq` rule plus careful grouping of related observations under one
+Rust type.
 
-- `Thm::obs_assert<O>(expr)` for bool-returning observations that
-  always emit `⊢ expr ≡ true`. Sound under the same parametric ε
-  model with `ε(bool) = ⊤`. Probably unnecessary — `Thm::assume` on
-  a user-written meaning axiom achieves the same effect with
-  explicit hypothesis tracking.
-- `Thm::obs_make<O: ObsMake>(expr)` for observers that produce a
-  user-chosen RHS. Discussed in this session; concluded to be
-  semantically equivalent to `Thm::assume(specific_fact)` while
-  pushing the soundness obligation into observer impls. Not
-  recommended; keep observations to `obs_eq` + user-assumed meaning
-  axioms.
+Keep the kernel observation surface minimal: `Term::obs` for leaf
+construction, `Thm::obs_eq<O: ObsEq>` for the only computational rule.
+Anything fancier is policy and lives in user crates.
+
+---
+
+### I. **RECOMMENDED — IMMEDIATE NEXT WORK** — Store observations via "System-with-modes"
+
+This is the design that replaces `covalence-kernel`'s old HOL with
+`covalence-pure` + `covalence-hol` + a content-addressing observation
+layer. Confirmed approach as of this round:
+
+#### The pattern
+
+Group conceptually-related observations into **ONE Rust observer
+type** (a "system"). All instances of that type share one ε-family,
+so `obs_eq` between any two of them is sound by the existing
+parametric-ε argument. Each named observation is a value-level
+*instance*, distinguished by internal data:
+
+```rust
+pub struct Blake3System { mode: Blake3Mode }
+pub enum Blake3Mode { Direct, Keyed, Context, UntrustedIdentity }
+
+// blake3                 := Term::obs(Blake3System { mode: Direct }, blob→blob)
+// keyedBlake3            := Term::obs(Blake3System { mode: Keyed },  blob→blob→blob)
+// contextBlake3          := Term::obs(Blake3System { mode: Context},blob→blob→blob)
+// untrustedBlakeIdentity := Term::obs(Blake3System { mode: UntrustedIdentity },
+//                                     blob→blob)
+```
+
+The `impl ObsEq for Blake3System` is where computational policy
+lives. Given `obs_eq(Direct LIT, UntrustedIdentity (blob H))`, the
+impl computes BLAKE3(LIT), checks equal to H, returns true. The
+kernel produces `⊢ blake3 LIT ≡ untrustedBlakeIdentity (blob H)` —
+structurally an equation between two observer applications, no
+materialised hash content yet.
+
+#### Computational extraction is opt-in
+
+To extract the literal hash bytes into a proof, user asserts ONE
+axiom per family:
+
+```
+⋀a:blob. untrustedBlakeIdentity a ≡ a
+```
+
+This axiom comes from `Thm::assume`, so it threads through
+hypotheses on any theorem that uses it. Combined with the obs_eq
+output via `trans`: `⊢ blake3 LIT ≡ blob H` with the
+`untrustedBlakeIdentity` axiom as a hypothesis. The audit story is
+"grep for `untrusted_identity_axiom` to find every place a proof
+depends on materialised hashes."
+
+#### The opaque-hash mode is a feature
+
+If `untrustedBlakeIdentity` is not in scope, hashes stay *opaque*.
+You can still:
+
+- Prove `blake3 b₁ = blake3 b₂ → b₁ = b₂` (under the `inStore` premise
+  pair).
+- Substitute, chain equalities, do all the structural reasoning about
+  hash identities.
+- ...without ever exposing the 32 concrete bytes anywhere in the
+  proof artifact.
+
+Useful for proofs about secrets you don't want leaking into the
+conclusion, smaller proof terms, and cleaner abstraction barriers
+when you don't care what the hash *is*, only that two computations
+agree on it. Package the `Untrusted*` mode + axiom factory in a
+separate submodule so opting in is explicit.
+
+#### `inStore` follows the same pattern
+
+```rust
+pub struct StoreSystem { mode: StoreMode }
+pub enum StoreMode { InStore, UntrustedTruth }
+
+// inStore         := Term::obs(StoreSystem { mode: InStore },        blob→bool)
+// untrustedTruth  := Term::obs(StoreSystem { mode: UntrustedTruth }, bool)
+```
+
+The store mints `obs_eq(inStore <lit>, untrustedTruth)` only when it
+has actually indexed the blob. User axiom `untrustedTruth ≡ T` (HOL
+true) chains to give `⊢ inStore <lit> ≡ T`; standard HOL bool
+reasoning lifts that to `⊢ inStore <lit>` wherever needed.
+
+#### Meaning axioms (all user-asserted via `Thm::assume`)
+
+```
+blake3-inj-on-store:
+  ⋀ b₁ b₂ : blob.
+    inStore b₁ ⟹ inStore b₂ ⟹ blake3 b₁ = blake3 b₂ ⟹ b₁ = b₂
+
+keyed-inj-on-store:
+  ⋀ k₁ k₂ b₁ b₂ : blob.
+    inStore b₁ ⟹ inStore b₂ ⟹ length k₁ = 32 ⟹ length k₂ = 32 ⟹
+    keyedBlake3 k₁ b₁ = keyedBlake3 k₂ b₂ ⟹ k₁ = k₂ ∧ b₁ = b₂
+
+mode-disjoint-blake3-keyed:
+  ⋀ b₁ k₂ b₂.
+    inStore b₁ ⟹ inStore b₂ ⟹ length k₂ = 32 ⟹
+    blake3 b₁ ≠ keyedBlake3 k₂ b₂
+```
+
+(Analogous keyed-context, blake3-context disjointness. Six axioms
+total for the three modes.)
+
+Restricted to `inStore` blobs because cryptographic collision-freedom
+is a model-level assumption we can't prove; we trust the store
+because it's actually checked. Restricted by length on key/context
+because BLAKE3's mode separation only holds when those constraints
+are met.
+
+#### Suggested crate layout
+
+- **`covalence-store-obs`** (new) — `Blake3System` and `StoreSystem`
+  Rust types, the meaning-axiom factories, the `BlobStore` integration
+  that mints `obs_eq` results when it has the blob indexed. Imports
+  `covalence-pure` and `covalence-store`. Does NOT import
+  `covalence-hol` — pure abstract-hash reasoning works without HOL.
+- **Untrusted-axiom factories** live in a separate submodule
+  (`covalence-store-obs::untrusted::*`) so opting in is explicit.
+
+#### Implications for `covalence-kernel`
+
+The existing `crates/covalence-kernel/` (with its arena/egraph/uf HOL
+implementation) is the displaced thing. Migration:
+
+1. Build `covalence-hol` (option G), `covalence-store-obs` (this
+   section), plus the orchestration crate alongside — call the
+   orchestration thing `covalence-kernel` from the start; it just
+   has no HOL in it yet.
+2. Move the orchestration responsibilities into `covalence-kernel`:
+   wires Pure + HOL + Store + WASM evaluator + tree-store (the FUSE
+   layer). Re-exports the user-facing types.
+3. Delete the old HOL kernel files (`arena.rs`, `egraph.rs`, `eprop.rs`,
+   `kernel.rs`, `prop.rs`, `reduce.rs`, `term.rs`, `ty.rs`, `uf.rs`)
+   from `covalence-kernel`. Keep only the orchestration shell.
+
+The HOL Light "frontend" the user mentioned isn't a separate crate
+— it's the naming/structure of `covalence-hol`'s public surface. The
+10 derived HOL Light rules (`REFL`, `TRANS`, `MK_COMB`, …) are
+`covalence-hol`'s primary API. The standard library
+(num/list/real/etc.) and tactics can live in a `covalence-hol-stdlib`
+or similar later crate — not on the critical path.
 
 ---
 
 ## How to pick up any of these
 
-Each item above is self-contained. A reasonable next-merge pick is:
+Each item above is self-contained. The current recommended path:
 
-- **For HOL bootstrap progress:** A (`new_type_definition`) + F
-  (`covalence-kernel`) + G (`covalence-hol`).
-- **For demo / integration:** E (WASM tests) using just what's already
-  in `covalence-pure`.
-- **For TyCon-as-observation experimentation:** B as a separate PR
-  that adds the `DynTycon` variant alongside `Tycon`. Doesn't disturb
-  existing code.
-- **For cleanups:** D (drop `Hint` from `Def`) as a small,
-  self-contained PR.
+- **PHASE 1 (immediate):** G (`covalence-hol` with HOL Light's 10
+  derived rules + 3 axioms). Self-contained; doesn't need any kernel
+  changes.
+- **PHASE 2 (immediate after G):** I (`covalence-store-obs` —
+  `Blake3System`, `StoreSystem`, meaning axioms, store integration).
+- **PHASE 3:** F as orchestration only — make the existing
+  `covalence-kernel` re-export Pure + HOL + Store + WASM-eval +
+  tree-store. Delete the old HOL kernel files.
+- **PARALLEL/LATER:** A (`new_type_definition`) when HOL stdlib needs
+  it. B (`DynTyCon`) only if subtype identity becomes a problem in
+  practice. D (drop `Hint` from `Def`) as a cleanup whenever.
 
-None of these are blocking. Order them however makes sense.
+None of these are blocking. **Option H is no longer on the menu** —
+the system-with-modes pattern in section I gets everything we wanted
+from a computational rule without changing the TCB.

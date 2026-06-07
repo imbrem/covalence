@@ -91,7 +91,9 @@ The following crates provide the main application functionality:
 
 - **covalence-store** — content-addressed blob store. Provides `ContentStore` trait, `BlobStore`, `TaggedStore`/`TaggedBlobStore`, `ObjectStore`/`KeyedObjectStore`, `GitPrefixStore`, `SharedMemoryStore`, `KvStore`, and `SqliteStore` (behind the `sqlite` feature, depends on `covalence-sqlite`).
 - **covalence-object** — object serialization. Provides `Dir`/`DirBuilder` (directory structures with mode, name, child), `Table`/`TableBuilder` (row-based tables with LEB128 encoding), and git tree format conversion.
-- **covalence-kernel** — execution kernel with WASM engine integration, store, and optional signature verification.
+- **covalence-pure** — Isabelle/Pure–shaped logical framework (the TCB; ~1200 LoC). Locally-nameless terms, intrinsic typing, 8 LF rules + 6 equality rules + `inst_tfree` + `define`. `Thm::obs_eq<O: ObsEq>` is the *only* computational rule, sound under a parametric ε-model regardless of user impls (so observation policies are not in the TCB). See `docs/design/proposals/stacked-pure-hol/`.
+- **covalence-pure-shell** — non-TCB shell around `covalence-pure`: handler-driven sexp serialisation, content hashing (BLAKE3-keyed), pretty-printing.
+- **covalence-kernel** — *planned for rewrite.* The current implementation (arena + egraph + UF HOL kernel) will be replaced by an orchestration shell wiring `covalence-pure` + `covalence-hol` (forthcoming) + `covalence-store` + WASM evaluator + tree-store. See `docs/design/proposals/stacked-pure-hol/next-stages.md` for the migration plan.
 - **covalence-repl** — S-expression REPL with kernel integration.
 - **covalence-serve** — HTTP/WebSocket server (axum 0.8) with REST API, REPL WebSocket, and optional static file embedding.
 - **covalence-client** — remote kernel client (sync via ureq, async via hyper).

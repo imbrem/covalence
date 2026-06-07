@@ -7,10 +7,12 @@
 //!   - The [`Prover`] trait — a high-level, kernel-agnostic theorem-prover
 //!     API that downstream frontends (Alethe, OpenTheory, …) target. The
 //!     impl lowers it to [`covalence_kernel::Kernel`].
-//!   - The [`HolPrim`] HOL Light driver — implements the HOL Light
-//!     `HolLightKernel` trait family on top of a kernel, bridging
-//!     named ↔ locally-nameless representation. Used by the OpenTheory
-//!     article interpreter.
+//!
+//! A future PureHol-backed `hol` module will host the untrusted
+//! shell-side adapter (sexp serialisation, content hashing,
+//! pretty-printing) over `covalence_hol::PureHol`. The legacy
+//! HolPrim adapter (wrapping the arena kernel) was removed once
+//! consumers moved to PureHol directly.
 //!
 //! When the kernel is rewritten, the [`Prover`] trait is the surface that
 //! stays stable; impls underneath migrate, with individual operations
@@ -27,9 +29,6 @@ pub mod prover;
 mod prover_kernel;
 
 pub use prover::{Prover, ProverError};
-
-pub mod hol;
-pub use hol::{HolPrim, HolPrimError, ThmHandle};
 
 /// Re-exports from `covalence-kernel` that downstream prover frontends need
 /// in their signatures. Centralising them here lets frontends depend only on

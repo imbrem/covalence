@@ -4,18 +4,18 @@
 //! inference; this module exists so callers (tests, the REPL, FFI
 //! bridges, Python bindings) can round-trip the kernel data model.
 //!
-//! ## Observers (DynObs) handling
+//! ## Observers (Object) handling
 //!
-//! Pure's `TermKind::Obs` leaves carry a [`DynObs`] — a type-erased
+//! Pure's `TermKind::Obs` leaves carry a [`Object`] — a type-erased
 //! observation handle. Pure-shell cannot know about every user
 //! observer type, so serialisation and parsing of the `obs` form
 //! delegate to a caller-supplied **handler**:
 //!
-//! - [`ObsSerializer`] takes a `&DynObs` and produces the s-expression
+//! - [`ObsSerializer`] takes a `&Object` and produces the s-expression
 //!   payload for the observer (typically by attempting `downcast` to
 //!   known types).
 //! - [`ObsParser`] takes the payload s-expression and produces a
-//!   `DynObs`.
+//!   `Object`.
 //!
 //! The default [`UnitObs`] handler covers the trivial `()` observer
 //! by round-tripping through nil (the empty list). User crates with
@@ -54,7 +54,7 @@
 //! Theorems serialise but do **not** parse back from S-expressions.
 
 use bytes::Bytes;
-use covalence_pure::{DynObs, Term, TermKind, Thm, Type, TypeKind};
+use covalence_pure::{Object, Term, TermKind, Thm, Type, TypeKind};
 use covalence_sexp::{Atom, SExp, SExpr};
 
 /// Errors produced by S-expression parsing of Pure terms / types.
@@ -68,8 +68,8 @@ type Result<T> = std::result::Result<T, SexpError>;
 // Observer handler traits
 // ============================================================================
 
-/// Serialise a [`DynObs`] payload to S-expression form. Implementations
-/// typically inspect the dynamic type via [`DynObs::downcast`] and
+/// Serialise a [`Object`] payload to S-expression form. Implementations
+/// typically inspect the dynamic type via [`Object::downcast`] and
 /// emit a chosen format; if no known type matches, they return an
 /// error.
 ///
@@ -77,14 +77,14 @@ type Result<T> = std::result::Result<T, SexpError>;
 /// returned `SExpr` becomes the payload child of the `(obs PAYLOAD
 /// TYPE)` form.
 pub trait ObsSerializer {
-    fn obs_to_sexp(&self, observer: &DynObs) -> Result<SExpr>;
+    fn obs_to_sexp(&self, observer: &Object) -> Result<SExpr>;
 }
 
-/// Parse a [`DynObs`] payload from an S-expression. The shell calls
+/// Parse a [`Object`] payload from an S-expression. The shell calls
 /// this for every `obs` leaf it parses; the s-expression is the
 /// payload child of the `(obs PAYLOAD TYPE)` form.
 pub trait ObsParser {
-    fn obs_from_sexp(&self, payload: &SExpr) -> Result<DynObs>;
+    fn obs_from_sexp(&self, payload: &SExpr) -> Result<Object>;
 }
 
 /// Trivial handler: round-trips the unit observer `()` through nil
@@ -97,7 +97,7 @@ pub trait ObsParser {
 pub struct UnitObs;
 
 impl ObsSerializer for UnitObs {
-    fn obs_to_sexp(&self, observer: &DynObs) -> Result<SExpr> {
+    fn obs_to_sexp(&self, observer: &Object) -> Result<SExpr> {
         if observer.downcast::<()>().is_some() {
             Ok(SExp::List(vec![]))
         } else {
@@ -110,9 +110,9 @@ impl ObsSerializer for UnitObs {
 }
 
 impl ObsParser for UnitObs {
-    fn obs_from_sexp(&self, payload: &SExpr) -> Result<DynObs> {
+    fn obs_from_sexp(&self, payload: &SExpr) -> Result<Object> {
         match payload {
-            SExp::List(children) if children.is_empty() => Ok(DynObs::new(())),
+            SExp::List(children) if children.is_empty() => Ok(Object::new(())),
             _ => Err(SexpError(
                 "UnitObs: expected nil () payload for () observer".into(),
             )),

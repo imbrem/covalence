@@ -34,7 +34,7 @@
 
 use std::fmt;
 
-use covalence_pure::{DynObs, ObsEq, Observer, Term, TermKind, Type};
+use covalence_pure::{Object, ObsEq, Observer, Term, TermKind, Type};
 
 // ============================================================================
 // The HolLight observer family
@@ -164,48 +164,48 @@ impl ObsEq for HolLight {
 // HolLightCtx — shared-identity context for HOL primitives
 // ============================================================================
 
-/// Caches one [`DynObs`] per [`HolLight`] variant so that every use
+/// Caches one [`Object`] per [`HolLight`] variant so that every use
 /// of e.g. HOL `=` through this context shares the same Arc identity.
 ///
-/// Without this, two `mk_eq` calls would construct fresh `DynObs`
+/// Without this, two `mk_eq` calls would construct fresh `Object`
 /// values with distinct Arcs, and the resulting `Term`s would not
 /// compare equal even with the same arguments. `HolLightCtx::eq()`
 /// always returns a `Term::obs` over the cached observer.
 pub struct HolLightCtx {
-    bool_obs: DynObs,
-    eq_obs: DynObs,
-    true_obs: DynObs,
-    false_obs: DynObs,
-    imp_obs: DynObs,
-    not_obs: DynObs,
-    and_obs: DynObs,
-    or_obs: DynObs,
-    iff_obs: DynObs,
-    forall_obs: DynObs,
-    exists_obs: DynObs,
-    select_obs: DynObs,
+    bool_obs: Object,
+    eq_obs: Object,
+    true_obs: Object,
+    false_obs: Object,
+    imp_obs: Object,
+    not_obs: Object,
+    and_obs: Object,
+    or_obs: Object,
+    iff_obs: Object,
+    forall_obs: Object,
+    exists_obs: Object,
+    select_obs: Object,
 }
 
 impl HolLightCtx {
-    /// Allocate one fresh `DynObs` per variant. Each `HolLightCtx`
+    /// Allocate one fresh `Object` per variant. Each `HolLightCtx`
     /// has *its own* set of HOL primitives — two contexts produce
     /// distinct HOL theories (with their own equalities, booleans,
     /// etc.). For a shared HOL theory across the whole process, use
     /// a single context.
     pub fn new() -> Self {
         Self {
-            bool_obs: DynObs::new(HolLight::Bool),
-            eq_obs: DynObs::new(HolLight::Eq),
-            true_obs: DynObs::new(HolLight::True),
-            false_obs: DynObs::new(HolLight::False),
-            imp_obs: DynObs::new(HolLight::Imp),
-            not_obs: DynObs::new(HolLight::Not),
-            and_obs: DynObs::new(HolLight::And),
-            or_obs: DynObs::new(HolLight::Or),
-            iff_obs: DynObs::new(HolLight::Iff),
-            forall_obs: DynObs::new(HolLight::Forall),
-            exists_obs: DynObs::new(HolLight::Exists),
-            select_obs: DynObs::new(HolLight::Select),
+            bool_obs: Object::new(HolLight::Bool),
+            eq_obs: Object::new(HolLight::Eq),
+            true_obs: Object::new(HolLight::True),
+            false_obs: Object::new(HolLight::False),
+            imp_obs: Object::new(HolLight::Imp),
+            not_obs: Object::new(HolLight::Not),
+            and_obs: Object::new(HolLight::And),
+            or_obs: Object::new(HolLight::Or),
+            iff_obs: Object::new(HolLight::Iff),
+            forall_obs: Object::new(HolLight::Forall),
+            exists_obs: Object::new(HolLight::Exists),
+            select_obs: Object::new(HolLight::Select),
         }
     }
 
@@ -224,7 +224,7 @@ impl HolLightCtx {
 
     // ---- HOL constants (term-level Obs leaves at appropriate types) ----
 
-    fn obs_term(&self, observer: &DynObs, ty: Type) -> Term {
+    fn obs_term(&self, observer: &Object, ty: Type) -> Term {
         Term::obs_from_dyn(observer.clone(), ty)
     }
 

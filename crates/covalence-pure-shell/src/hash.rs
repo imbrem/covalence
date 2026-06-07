@@ -25,17 +25,17 @@
 use std::collections::HashMap;
 
 use covalence_hash::{Blake3Ctx, HashCtx, O256};
-use covalence_pure::{DynObs, Term, TermKind, Type, TypeKind};
+use covalence_pure::{Object, Term, TermKind, Type, TypeKind};
 
 // ============================================================================
 // Observer payload trait
 // ============================================================================
 
-/// Provides deterministic content bytes for an [`DynObs`] leaf.
+/// Provides deterministic content bytes for an [`Object`] leaf.
 /// Implementations typically `downcast` to known concrete observer
 /// types and emit a stable byte representation.
 pub trait ObsHasher {
-    fn obs_payload(&self, observer: &DynObs) -> Vec<u8>;
+    fn obs_payload(&self, observer: &Object) -> Vec<u8>;
 }
 
 /// Trivial handler: contributes zero bytes for the `()` observer,
@@ -44,7 +44,7 @@ pub trait ObsHasher {
 pub struct UnitObsHasher;
 
 impl ObsHasher for UnitObsHasher {
-    fn obs_payload(&self, observer: &DynObs) -> Vec<u8> {
+    fn obs_payload(&self, observer: &Object) -> Vec<u8> {
         if observer.downcast::<()>().is_some() {
             Vec::new()
         } else {

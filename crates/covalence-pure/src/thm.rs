@@ -7,7 +7,7 @@
 //!
 //! ## Observations and universality
 //!
-//! Observation leaves carry kernel-allocated [`DynObs`] handles,
+//! Observation leaves carry kernel-allocated [`Object`] handles,
 //! compared by `Arc` pointer identity rather than by user-supplied
 //! `Eq` impls — so a misbehaving observer cannot corrupt the
 //! kernel's hyp `BTreeSet`. A theorem with no `Obs` leaves anywhere
@@ -33,7 +33,7 @@ use crate::subst::{
     close, find_free_type, has_free_var, open, shift_by, subst_tfree_in_term, uses_bound_outer,
 };
 use crate::term::{
-    Def, DynObs, Hint, ObsEq, Observer, Term, TermKind, Type, TypeEnv, TypeKind, type_of_in,
+    Def, Object, Hint, ObsEq, Observer, Term, TermKind, Type, TypeEnv, TypeKind, type_of_in,
 };
 
 #[derive(Clone)]
@@ -532,7 +532,7 @@ impl Thm {
 /// Walk down through `App`s collecting arguments left-to-right. If
 /// the final node is an `Obs` leaf, return its observer and the args
 /// list; otherwise return an error.
-fn decompose_obs_app(t: &Term) -> Result<(&DynObs, Vec<Term>)> {
+fn decompose_obs_app(t: &Term) -> Result<(&Object, Vec<Term>)> {
     let mut args_rev = Vec::new();
     let mut cur = t;
     loop {

@@ -99,7 +99,7 @@ fn trivial_observer_roundtrips_through_nil() {
     assert!(printed.contains("()"));
     let parsed = parse_one(&printed);
     let back = term_from_sexp(&parsed, &UnitObs).expect("parse failed");
-    // Note: `back` will be a *different* DynObs Arc, so `t != back` at
+    // Note: `back` will be a *different* Object Arc, so `t != back` at
     // the kernel pointer-identity level. But both are well-typed
     // observations of `()` at the chosen type.
     assert_eq!(back.type_of().unwrap(), Type::bytes());

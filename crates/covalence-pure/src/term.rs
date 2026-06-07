@@ -16,9 +16,9 @@
 //!
 //! ## Observations
 //!
-//! `TermKind::Obs { observer: DynObs, ty: Type }` is the only leaf
+//! `TermKind::Obs { observer: Object, ty: Type }` is the only leaf
 //! that carries oracle-supplied data. The kernel never sees the
-//! observer's concrete type: it holds a type-erased [`DynObs`] and
+//! observer's concrete type: it holds a type-erased [`Object`] and
 //! compares Obs leaves by **`Arc` pointer identity** — never by
 //! calling user-supplied `Eq`/`Hash`/`Ord` impls. This means a
 //! misbehaving observer cannot corrupt the kernel's `BTreeSet<Term>`
@@ -50,19 +50,19 @@ use smol_str::SmolStr;
 use crate::error::{Error, Result};
 
 // ============================================================================
-// Observer trait + DynObs
+// Observer trait + Object
 // ============================================================================
 
-/// Marker trait for types that may be wrapped in [`DynObs`].
+/// Marker trait for types that may be wrapped in [`Object`].
 ///
-/// The bounds are exactly what's needed for a [`DynObs`] to round-trip
+/// The bounds are exactly what's needed for a [`Object`] to round-trip
 /// safely across threads (`Send + Sync`), survive past stack frames
 /// (`'static` via [`Any`]), and be printed in error messages
 /// (`Debug`). Any qualifying type automatically becomes an `Observer`
 /// via the blanket impl below.
 ///
 /// Crucially, the kernel never calls user-supplied `Eq`/`Ord`/`Hash`
-/// methods on an `Observer` — `DynObs` uses `Arc` pointer identity for
+/// methods on an `Observer` — `Object` uses `Arc` pointer identity for
 /// all comparisons. So a misbehaving observer impl cannot break the
 /// kernel.
 pub trait Observer: Any + Send + Sync + fmt::Debug {}
@@ -111,15 +111,15 @@ pub trait ObsEq: Observer {
 
 /// Type-erased observer leaf. Wraps any `O: Observer` inside an `Arc`,
 /// and compares / hashes / orders by the `Arc`'s data-pointer
-/// identity. Use [`DynObs::new`] to wrap, [`DynObs::downcast`] to
+/// identity. Use [`Object::new`] to wrap, [`Object::downcast`] to
 /// recover a typed reference.
 ///
-/// Pointer-identity semantics: two distinct `DynObs::new(o)` calls
+/// Pointer-identity semantics: two distinct `Object::new(o)` calls
 /// produce distinct values *even if `o` is identical between calls*.
 /// To share an observation across multiple terms, construct it once
 /// via `Term::obs` and clone the resulting `Term` (the clone shares
 /// the `Arc` and so shares the observation identity).
-pub struct DynObs {
+pub struct Object {
     /// The underlying observer, type-erased through `Any`. We store
     /// `Arc<dyn Any + Send + Sync>` directly (rather than wrapping in
     /// a custom trait) so that `Arc::downcast` works directly and
@@ -129,17 +129,17 @@ pub struct DynObs {
     debug_fn: fn(&dyn Any, &mut fmt::Formatter<'_>) -> fmt::Result,
 }
 
-impl DynObs {
-    /// Wrap any [`Observer`] in a `DynObs`. Allocates a new `Arc`;
-    /// two calls with identical inputs produce distinct `DynObs`
+impl Object {
+    /// Wrap any [`Observer`] in a `Object`. Allocates a new `Arc`;
+    /// two calls with identical inputs produce distinct `Object`
     /// values.
     pub fn new<O: Observer>(o: O) -> Self {
-        DynObs {
+        Object {
             inner: Arc::new(o),
             debug_fn: |any, f| {
                 let o = any
                     .downcast_ref::<O>()
-                    .expect("DynObs debug_fn: type id matches at construction");
+                    .expect("Object debug_fn: type id matches at construction");
                 fmt::Debug::fmt(o, f)
             },
         }
@@ -164,9 +164,9 @@ impl DynObs {
     }
 }
 
-impl Clone for DynObs {
+impl Clone for Object {
     fn clone(&self) -> Self {
-        DynObs {
+        Object {
             inner: Arc::clone(&self.inner),
             debug_fn: self.debug_fn,
         }
@@ -174,39 +174,39 @@ impl Clone for DynObs {
 }
 
 /// **`Arc` pointer identity** — never the user's `Eq`.
-impl PartialEq for DynObs {
+impl PartialEq for Object {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
 }
-impl Eq for DynObs {}
+impl Eq for Object {}
 
 /// **`Arc` pointer ordering** — never the user's `Ord`. Two distinct
-/// `DynObs` instances may compare in any order, but the ordering is
+/// `Object` instances may compare in any order, but the ordering is
 /// stable for the lifetime of the `Arc`s.
-impl Ord for DynObs {
+impl Ord for Object {
     fn cmp(&self, other: &Self) -> Ordering {
         let a = Arc::as_ptr(&self.inner) as *const () as usize;
         let b = Arc::as_ptr(&other.inner) as *const () as usize;
         a.cmp(&b)
     }
 }
-impl PartialOrd for DynObs {
+impl PartialOrd for Object {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 /// **`Arc` pointer hash** — never the user's `Hash`.
-impl Hash for DynObs {
+impl Hash for Object {
     fn hash<H: Hasher>(&self, state: &mut H) {
         (Arc::as_ptr(&self.inner) as *const () as usize).hash(state);
     }
 }
 
-impl fmt::Debug for DynObs {
+impl fmt::Debug for Object {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "DynObs(")?;
+        write!(f, "Object(")?;
         (self.debug_fn)(&*self.inner, f)?;
         write!(f, ")")
     }
@@ -301,10 +301,10 @@ pub enum TypeKind {
     /// across term- and type-level uses (one theory → one identity).
     ///
     /// The [`Hint`] is α-transparent (display only). Identity is the
-    /// `DynObs` plus the args; the args participate in equality so
+    /// `Object` plus the args; the args participate in equality so
     /// that `list α` and `list β` are distinct even though they share
     /// the same constructor.
-    TyConObs(DynObs, Hint, Vec<Type>),
+    TyConObs(Object, Hint, Vec<Type>),
 }
 
 // Cached canonical instances of the common `Type`s, so the methods
@@ -368,13 +368,13 @@ impl Type {
     /// distinct types — that's the freshness primitive
     /// [`crate::Thm::new_type_definition`] uses.
     pub fn tycon_obs<O: Observer>(observer: O, hint: impl Into<Hint>, args: Vec<Type>) -> Self {
-        Self::alloc(TypeKind::TyConObs(DynObs::new(observer), hint.into(), args))
+        Self::alloc(TypeKind::TyConObs(Object::new(observer), hint.into(), args))
     }
 
-    /// Like [`Type::tycon_obs`] but reuses an existing [`DynObs`]
+    /// Like [`Type::tycon_obs`] but reuses an existing [`Object`]
     /// handle (preserving its `Arc` identity). Used internally by
-    /// kernel rules and by deserialisers that already have a `DynObs`.
-    pub fn tycon_obs_from_dyn(observer: DynObs, hint: impl Into<Hint>, args: Vec<Type>) -> Self {
+    /// kernel rules and by deserialisers that already have a `Object`.
+    pub fn tycon_obs_from_dyn(observer: Object, hint: impl Into<Hint>, args: Vec<Type>) -> Self {
         Self::alloc(TypeKind::TyConObs(observer, hint.into(), args))
     }
 
@@ -587,9 +587,9 @@ pub enum TermKind {
     /// Builtin: opaque byte literal of kernel type `bytes`.
     Blob(Bytes),
     /// Typed observation leaf: observer + Pure type. The kernel
-    /// compares these by `Arc` pointer identity (via [`DynObs`]'s
+    /// compares these by `Arc` pointer identity (via [`Object`]'s
     /// impls), never by the user's `Eq` on the underlying observer.
-    Obs(DynObs, Type),
+    Obs(Object, Type),
     /// A defined constant. Each [`crate::Thm::define`] call produces
     /// a fresh `Def` (a fresh `Arc<Term>` allocation); the
     /// unfolding equation `Def ≡ body` is emitted by the same rule
@@ -646,13 +646,13 @@ impl Term {
     /// underlying value opaquely; only the user code constructing
     /// `o` controls what observations exist.
     pub fn obs<O: Observer>(o: O, ty: Type) -> Self {
-        Self::alloc(TermKind::Obs(DynObs::new(o), ty))
+        Self::alloc(TermKind::Obs(Object::new(o), ty))
     }
 
-    /// Like [`Term::obs`] but reuses an existing [`DynObs`] handle
+    /// Like [`Term::obs`] but reuses an existing [`Object`] handle
     /// (preserving its `Arc` identity). Used by deserialisers and
-    /// other shells that have already constructed a `DynObs`.
-    pub fn obs_from_dyn(observer: DynObs, ty: Type) -> Self {
+    /// other shells that have already constructed a `Object`.
+    pub fn obs_from_dyn(observer: Object, ty: Type) -> Self {
         Self::alloc(TermKind::Obs(observer, ty))
     }
 

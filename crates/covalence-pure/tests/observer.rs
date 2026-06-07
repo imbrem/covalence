@@ -8,12 +8,12 @@
 //! lives.
 //!
 //! All observation comparisons inside the kernel are by `Arc` pointer
-//! identity (via [`DynObs`]) — never by the underlying observer's
+//! identity (via [`Object`]) — never by the underlying observer's
 //! `Eq` impl. So a misbehaving user impl cannot break the kernel's
 //! invariants.
 
 use bytes::Bytes;
-use covalence_pure::{DynObs, ObsEq, Term, TermKind, Thm, Type};
+use covalence_pure::{Object, ObsEq, Term, TermKind, Thm, Type};
 
 // ============================================================================
 // A made-up oracle's observation type, with a gated constructor.
@@ -157,12 +157,12 @@ fn distinct_obs_calls_produce_distinct_leaves() {
 #[test]
 fn dyn_obs_equality_uses_pointer_identity() {
     let obs = my_oracle::MyObs::run([0; 4], Bytes::from_static(b"x"));
-    let d1 = DynObs::new(obs.clone());
-    let d2 = DynObs::new(obs); // same input, different DynObs
-    assert_ne!(d1, d2, "distinct DynObs::new calls are distinct");
+    let d1 = Object::new(obs.clone());
+    let d2 = Object::new(obs); // same input, different Object
+    assert_ne!(d1, d2, "distinct Object::new calls are distinct");
 
     let d1b = d1.clone();
-    assert_eq!(d1, d1b, "DynObs::clone shares Arc");
+    assert_eq!(d1, d1b, "Object::clone shares Arc");
 }
 
 // ============================================================================
@@ -253,14 +253,14 @@ fn for_each_obs_errs_on_type_mismatch() {
 }
 
 // ============================================================================
-// DynObs typed downcast
+// Object typed downcast
 // ============================================================================
 
 #[test]
 fn dyn_obs_downcast_to_correct_type() {
     let obs = my_oracle::MyObs::run([7; 4], Bytes::from_static(b"hello"));
     let expected_output = obs.output().clone();
-    let d = DynObs::new(obs);
+    let d = Object::new(obs);
     let inner: &my_oracle::MyObs = d.downcast().expect("type matches");
     assert_eq!(inner.output(), &expected_output);
 }
@@ -271,7 +271,7 @@ fn dyn_obs_downcast_to_wrong_type_returns_none() {
     struct OtherObs;
 
     let obs = my_oracle::MyObs::run([0; 4], Bytes::from_static(b"x"));
-    let d = DynObs::new(obs);
+    let d = Object::new(obs);
     assert!(d.downcast::<OtherObs>().is_none());
 }
 

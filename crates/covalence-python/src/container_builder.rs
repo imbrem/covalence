@@ -7,7 +7,7 @@ use crate::component_builder::ComponentBuilder;
 use crate::container::Container;
 use crate::module_builder::ModuleBuilder;
 use crate::system_builder::{
-    ComponentData, ContainerData, ContainerId, SystemBuilder,
+    ComponentData, ComponentId, ContainerData, ContainerId, SystemBuilder,
     extract_hash_for_container,
 };
 
@@ -60,9 +60,7 @@ impl ContainerBuilder {
     #[getter]
     fn component(&self) -> PyResult<ComponentBuilder> {
         let sys = self.system.lock().unwrap();
-        let comp_id = sys.containers[self.id]
-            .component
-            .ok_or_else(|| PyValueError::new_err("link-mode ContainerBuilder has no component"))?;
+        let comp_id = Self::require_component_id(&sys, self.id)?;
         Ok(ComponentBuilder {
             system: Arc::clone(&self.system),
             id: comp_id,
@@ -71,9 +69,7 @@ impl ContainerBuilder {
 
     fn module(&self) -> PyResult<ModuleBuilder> {
         let mut sys = self.system.lock().unwrap();
-        let comp_id = sys.containers[self.id]
-            .component
-            .ok_or_else(|| PyValueError::new_err("link-mode ContainerBuilder has no component"))?;
+        let comp_id = Self::require_component_id(&sys, self.id)?;
 
         if let Some(module_id) = sys.components[comp_id].module {
             return Ok(ModuleBuilder {
@@ -110,5 +106,13 @@ impl ContainerBuilder {
             sys.containers[self.id].built_hash = Some(container.content_hash());
         }
         Ok(container)
+    }
+}
+
+impl ContainerBuilder {
+    fn require_component_id(sys: &SystemBuilder, id: ContainerId) -> PyResult<ComponentId> {
+        sys.containers[id]
+            .component
+            .ok_or_else(|| PyValueError::new_err("link-mode ContainerBuilder has no component"))
     }
 }

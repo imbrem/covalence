@@ -13,6 +13,12 @@ This note tracks low-risk cleanup opportunities found during a fast pass, with a
 - Reduced repetition in `crates/covalence-git/src/store/sqlite_store.rs` by extracting shared blob-data query logic used by `all_blob_data` and `all_tree_data`.
 - Reduced repeated module-initialization boilerplate in `crates/covalence-python/src/{system_builder,module_builder,component_builder,container_builder}.rs` via `SystemBuilder::new_module_data`.
 - Reduced repeated git-object existence checks in `crates/covalence-git/src/store/sqlite_store.rs` via `GitStore::has_git_object`.
+- Reduced repeated no-signature import construction in `crates/covalence-python/src/module_builder.rs` via `ModuleBuilder::push_noop_import`.
+- Reduced repeated link-mode component checks in `crates/covalence-python/src/container_builder.rs` via `ContainerBuilder::require_component_id`.
+- Reduced repeated builder-consume guards in `crates/covalence-python/src/table.rs` and `crates/covalence-python/src/graph.rs` via local `take_builder(...)` helpers.
+- Reduced repeated decompression buffer boilerplate in `crates/covalence-python/src/compression.rs` via shared `read_all(...)`.
+- Reduced WAT core-module emission duplication in `crates/covalence-python/src/system_builder.rs` via `SystemBuilder::push_core_module`.
+- Reduced repeated SQLite-to-StoreError mapping in `crates/covalence-git/src/store/sqlite_store.rs` via `GitStore::io_err`.
 
 ## Additional quick-win opportunities
 

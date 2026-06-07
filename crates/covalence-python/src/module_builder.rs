@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 use crate::component_builder::ComponentBuilder;
 use crate::module::Module;
 use crate::system_builder::{
-    ContainerId, ExportEntry, FuncData, FuncId, ImportedFunc, InstanceImport, ModuleId,
+    ContainerId, ExportEntry, FuncData, FuncId, ImportedFunc, InstanceImport, ModuleData, ModuleId,
     SystemBuilder, extract_hash,
 };
 
@@ -270,12 +270,7 @@ impl ModuleBuilder {
             .iter()
             .any(|i| i.module == "env" && i.name == "attest");
         if !already {
-            md.imports.push(ImportedFunc {
-                module: "env".to_string(),
-                name: "attest".to_string(),
-                params: Vec::new(),
-                results: Vec::new(),
-            });
+            Self::push_noop_import(md, "env".to_string(), "attest".to_string());
         }
 
         let attest_idx = md
@@ -348,6 +343,15 @@ impl ModuleBuilder {
 }
 
 impl ModuleBuilder {
+    fn push_noop_import(md: &mut ModuleData, module: String, name: String) {
+        md.imports.push(ImportedFunc {
+            module,
+            name,
+            params: Vec::new(),
+            results: Vec::new(),
+        });
+    }
+
     fn require_container_id(sys: &SystemBuilder, module_id: ModuleId) -> PyResult<ContainerId> {
         let comp_id = sys.modules[module_id].component.ok_or_else(|| {
             PyValueError::new_err(
@@ -383,12 +387,7 @@ impl ModuleBuilder {
 
         let md = &mut sys.modules[self.id];
         for name in &export_names {
-            md.imports.push(ImportedFunc {
-                module: format!("inst{inst_index}"),
-                name: name.clone(),
-                params: Vec::new(),
-                results: Vec::new(),
-            });
+            Self::push_noop_import(md, format!("inst{inst_index}"), name.clone());
         }
 
         Ok(InstanceRef {

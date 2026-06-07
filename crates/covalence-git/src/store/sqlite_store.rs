@@ -26,6 +26,10 @@ pub struct GitStore {
 }
 
 impl GitStore {
+    fn io_err<E: std::fmt::Display>(e: E) -> StoreError {
+        StoreError::Io(e.to_string())
+    }
+
     fn has_git_object(&self, id: &gix_hash::ObjectId, with_data: bool) -> bool {
         let conn = self.conn.lock().unwrap();
         let sql = if with_data {
@@ -43,12 +47,11 @@ impl GitStore {
         } else {
             "SELECT data FROM blobs WHERE hash NOT IN (SELECT hash FROM cov_trees)"
         };
-        let mut stmt = conn.prepare(sql).map_err(|e| StoreError::Io(e.to_string()))?;
+        let mut stmt = conn.prepare(sql).map_err(Self::io_err)?;
         let rows = stmt
             .query_map([], |row| row.get::<_, Vec<u8>>(0))
-            .map_err(|e| StoreError::Io(e.to_string()))?;
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|e| StoreError::Io(e.to_string()))
+            .map_err(Self::io_err)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Self::io_err)
     }
 
     /// Open a persistent store at the given path.
@@ -108,7 +111,7 @@ impl GitStore {
             "INSERT OR IGNORE INTO git_objects (git_oid, blob_hash, kind) VALUES (?1, NULL, ?2)",
             covalence_sqlite::params![id.as_bytes(), kind.map(|k| k.as_str())],
         )
-        .map_err(|e| StoreError::Io(e.to_string()))?;
+        .map_err(Self::io_err)?;
         Ok(())
     }
 
@@ -232,13 +235,13 @@ impl GitStore {
                      JOIN blobs b ON g.blob_hash = b.hash
                      WHERE g.kind = 'tree'",
                 )
-                .map_err(|e| StoreError::Io(e.to_string()))?;
+                .map_err(Self::io_err)?;
             stmt.query_map([], |row| {
                 let oid_bytes: Vec<u8> = row.get(0)?;
                 let data: Vec<u8> = row.get(1)?;
                 Ok((oid_bytes, data))
             })
-            .map_err(|e| StoreError::Io(e.to_string()))?
+            .map_err(Self::io_err)?
             .filter_map(|r| {
                 let (oid_bytes, data) = r.ok()?;
                 let oid = gix_hash::ObjectId::from_bytes_or_panic(&oid_bytes);
@@ -328,14 +331,14 @@ impl GitStore {
             "INSERT OR IGNORE INTO blobs (hash, data) VALUES (?1, ?2)",
             covalence_sqlite::params![tree_hash.as_bytes().as_slice(), table_bytes],
         )
-        .map_err(|e| StoreError::Io(e.to_string()))?;
+        .map_err(Self::io_err)?;
 
         // Persist the tree hash for cross-session discovery.
         conn.execute(
             "INSERT OR IGNORE INTO cov_trees (hash) VALUES (?1)",
             [tree_hash.as_bytes().as_slice()],
         )
-        .map_err(|e| StoreError::Io(e.to_string()))?;
+        .map_err(Self::io_err)?;
 
         drop(conn);
         cache.insert(oid, tree_hash);
@@ -401,7 +404,7 @@ impl GitBackend for GitStore {
             "INSERT OR IGNORE INTO blobs (hash, data) VALUES (?1, ?2)",
             covalence_sqlite::params![blob_hash.as_bytes().as_slice(), data],
         )
-        .map_err(|e| StoreError::Io(e.to_string()))?;
+        .map_err(Self::io_err)?;
 
         // Upsert git_objects — upgrades shallow entries to full.
         conn.execute(
@@ -412,7 +415,7 @@ impl GitBackend for GitStore {
                 kind.as_str()
             ],
         )
-        .map_err(|e| StoreError::Io(e.to_string()))?;
+        .map_err(Self::io_err)?;
 
         Ok(git_oid)
     }

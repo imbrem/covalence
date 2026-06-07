@@ -83,6 +83,19 @@ pub struct SystemBuilder {
 }
 
 impl SystemBuilder {
+    fn push_core_module(lines: &mut Vec<String>, module_wat: &str) {
+        let inner_lines: Vec<&str> = module_wat.lines().collect();
+        if inner_lines.len() <= 1 {
+            lines.push(format!("  (core module $m {module_wat})"));
+            return;
+        }
+        let first = inner_lines[0].replace("(module", "(core module $m");
+        lines.push(format!("  {first}"));
+        for line in &inner_lines[1..] {
+            lines.push(format!("  {line}"));
+        }
+    }
+
     pub fn new() -> Self {
         SystemBuilder {
             containers: SlotMap::with_key(),
@@ -109,8 +122,7 @@ impl SystemBuilder {
 
     pub fn generate_module_wat(&self, module_id: ModuleId) -> String {
         let md = &self.modules[module_id];
-        let mut lines = Vec::new();
-        lines.push("(module".to_string());
+        let mut lines = vec!["(module".to_string()];
 
         // Imports
         for (i, imp) in md.imports.iter().enumerate() {
@@ -213,8 +225,7 @@ impl SystemBuilder {
         let module_wat = self.generate_module_wat(module_id);
         let md = &self.modules[module_id];
 
-        let mut lines = Vec::new();
-        lines.push("(component".to_string());
+        let mut lines = vec!["(component".to_string()];
 
         // 1. Container imports
         if cd.has_attest {
@@ -250,16 +261,7 @@ impl SystemBuilder {
         }
 
         // 3. Core module
-        let inner_lines: Vec<&str> = module_wat.lines().collect();
-        if inner_lines.len() <= 1 {
-            lines.push(format!("  (core module $m {module_wat})"));
-        } else {
-            let first = inner_lines[0].replace("(module", "(core module $m");
-            lines.push(format!("  {first}"));
-            for line in &inner_lines[1..] {
-                lines.push(format!("  {line}"));
-            }
-        }
+        Self::push_core_module(&mut lines, &module_wat);
 
         // 4. Canon lower
         if cd.has_attest {
@@ -351,13 +353,8 @@ impl SystemBuilder {
         };
 
         let module_wat = self.generate_module_wat(module_id);
-        let inner_lines: Vec<&str> = module_wat.lines().collect();
         let mut lines = vec!["(component".to_string()];
-        let first = inner_lines[0].replace("(module", "(core module $m");
-        lines.push(format!("  {first}"));
-        for line in &inner_lines[1..] {
-            lines.push(format!("  {line}"));
-        }
+        Self::push_core_module(&mut lines, &module_wat);
         lines.push("  (core instance $i (instantiate $m))".to_string());
         lines.push(")".to_string());
         lines.join("\n")

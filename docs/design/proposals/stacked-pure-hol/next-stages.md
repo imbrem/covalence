@@ -82,74 +82,198 @@ allocator gives us freshness. No stateful signature needed.
 **Unblocks:** HOL Light's standard library (`num`, `list`, `prod`,
 real numbers, …) without resorting to user-asserted bijection axioms.
 
-**Variant — the disjunct trick:** instead of requiring a witness
-theorem, define `τ = {x | P x ∨ x = some_canonical_witness}`. Always
-inhabited. Lives at the HOL layer, not the kernel — but the kernel
-rule should still take a witness, and HOL builds on top.
+**Variant — the disjunct trick using ε (canonical formulation).** The
+kernel rule above still requires a witness theorem `⊢ ∃x. P x`. To
+avoid that obligation, the `covalence-hol` layer wraps it with the
+**disjunct trick** keyed on HOL's `ε`:
+
+> Instead of forming the subset type from `P` directly, form it from
+> the *modified predicate*
+>
+> `Q := λx. P x ∨ x = ε P`
+>
+> and apply `new_type_definition` to `Q`. The witness is `ε P`
+> itself: `Q (ε P)` reduces to `P (ε P) ∨ ε P = ε P`, and the right
+> disjunct holds by reflexivity, so `∃x. Q x` is unconditionally
+> provable.
+
+What the disjunct tells you is *exactly* what would be obstructed in
+classical HOL: either `P x` holds, or P is uninhabited and you can
+only land on the canonical witness `ε P`:
+
+- **If `∃y. P y`** (P inhabited): then `ε P` satisfies `P` (by ε's
+  defining property), so `x = ε P → P x`. Therefore `Q x ↔ P x`, and
+  τ is exactly the classical `P`-subtype.
+- **If `¬∃y. P y`** (P uninhabited): then `Q x ↔ x = ε P`, so τ is a
+  singleton containing only the canonical ε-witness. The type is
+  well-formed but only useful as a degenerate carrier — anything you
+  prove about τ either tells you `x = ε P` or implicitly requires
+  `∃y. P y` to instantiate quantifiers, which contradicts the empty
+  branch.
+
+This formulation is preferred over the older `P x ∨ ¬∃y. P y` (used
+in the sibling [modified-hol notes](../layered-framework/notes/modified-hol.md))
+because:
+
+- The canonical witness is tied to `P` rather than a global default,
+  so the type is more localised.
+- When P is uninhabited, τ is a singleton `{ε P}` rather than the
+  entire carrier α — a much better-behaved degenerate case.
+- The proof obligation `∃x. Q x` is discharged by reflexivity, no
+  case-split required.
+
+**Where it lives.** The disjunct-trick wrapper is a
+`covalence-hol`-layer construct, not a kernel one. The kernel rule
+`Thm::new_type_definition` still consumes a witness theorem; HOL's
+wrapper synthesizes the witness from `ε P` via reflexivity, applies
+the kernel rule to `Q`, and exposes the resulting `abs`/`rep` to
+users. The kernel doesn't need to know about `ε`.
 
 ---
 
-### B. **OPTIONAL** — TyCon-as-observation (radical TyCon redesign)
+### B. **RECOMMENDED — pre-G** — Unified `Observation` trait, `TyConObs` variant
 
-The user pointed out that `TypeKind::Tycon(SmolStr, Vec<Type>)` could
-be replaced — or *extended* — with something resembling the
-observation system. The natural shape:
+Refines the original "TyCon-as-observation" sketch to a unified
+design: **`Observer` and "theory" are the same trait**. One Rust type
+is one ε-family and can produce both term-level observations and
+type-level type constructors. Mirrors the term-side `Const(SmolStr)`
+vs `Obs(DynObs)` duality on the type side, instead of replacing it.
+
+#### `TypeKind` extension
+
+Add a single new variant; keep everything else:
 
 ```rust
-/// A type constructor carrying type-erased Rust data, compared by
-/// `Arc` pointer identity. Mirrors `DynObs`.
-pub struct DynTyCon {
-    name: Hint,
-    inner: Arc<dyn Any + Send + Sync>,
-    debug_fn: fn(&dyn Any, &mut fmt::Formatter<'_>) -> fmt::Result,
-}
-
 pub enum TypeKind {
     TFree(SmolStr),
     Prop,
     Bytes,
     Fun(Type, Type),
     /// Structural type constructor — compared by name + args.
+    /// Cross-process stable. Best for "named uninterpreted" cases
+    /// (HOL `bool`, `num`, `list`, …).
     Tycon(SmolStr, Vec<Type>),
     /// Identity-based type constructor — compared by Arc pointer.
-    DynTycon(DynTyCon, Vec<Type>),
+    /// Process-local. Best for fresh kernel-introduced subtypes
+    /// (`new_type_definition`, theory-local opaque types).
+    TyConObs(DynObs, Vec<Type>),
 }
 ```
 
-**Pros of this hybrid:**
-- Same `Arc`-identity freshness property as `Def`. Distinct `DynTyCon::new`
-  calls produce distinct type constructors even with identical names
-  — exactly the property `new_type_definition` (option A) needs for
-  freshness, without an explicit signature.
-- Per-Rust-type extensions: a `BoolTyCon` struct can carry
-  kernel-managed metadata; a `ListTyCon` can expose variance
-  information through its own Rust type. The trait-based policy lever
-  we get from `ObsEq` could have an analogue here for
-  `TyConEq` — letting each type constructor declare when two
-  applications should be equated.
-- Structural `Tycon(SmolStr, Vec<Type>)` is preserved for the simple
-  cases (display strings, cross-process stable names, the common
-  HOL type constants).
-- `new_type_definition` from option A could produce a `DynTycon` —
-  the two proposals compose.
+`DynObs` is **the same wrapper already used by `TermKind::Obs`** —
+identical Arc-identity discipline, identical downcast story, identical
+ε-family. A single `impl Observer for HOLTheory` value can appear
+both as a term head (`Term::obs(theory, ty)` → HOL constants) and as
+a type head (`Type::tycon_obs(theory, args)` → HOL type constants).
+The Rust type is the unifying identity.
 
-**Cons:**
-- Loses the structural simplicity of "all type constants are names."
-  Cross-process serialization of `DynTycon` becomes a process-local
-  concern (just like serializing a `DynObs`).
-- Users defining their own type families have to write a Rust type
-  per family.
-- Two type constructors with the same display name and the same
-  args — one structural, one identity-based — compare *unequal*. A
-  potential source of confusion.
+This is symmetric to the term side, not redundant with it:
 
-**Recommendation:** keep both. `Tycon` for "named uninterpreted" cases
-(matches current behaviour, good for cross-process). `DynTycon` for
-kernel-introduced subtype declarations (`new_type_definition` plus
-type-class-style extensions). Best of both worlds: same architectural
-pattern Pure already uses for `Def` (term constants) and `DynObs`
-(observations) is reused for type constants — three places in the
-kernel where Arc identity gives us freshness for free.
+| role               | named uninterpreted          | fresh identity-based             |
+|--------------------|-------------------------------|----------------------------------|
+| term constant      | `Const(SmolStr, Type)`        | `Obs(DynObs, Type)`              |
+| type constructor   | `Tycon(SmolStr, Vec<Type>)`   | `TyConObs(DynObs, Vec<Type>)`    |
+
+Each form is best at different things. Don't drop `Tycon` — it's
+cross-process-stable and what most code wants. Don't drop `Const` for
+the same reason.
+
+#### Default display: opt-in `ObsDisplay`
+
+The base `Observer` trait stays auto-impl'd (`Any + Send + Sync +
+Debug`). For pretty-printing in both term and type positions, opt in:
+
+```rust
+pub trait ObsDisplay: Observer {
+    fn display_term(
+        &self, args: &[Term], f: &mut fmt::Formatter<'_>
+    ) -> fmt::Result;
+    fn display_tycon(
+        &self, args: &[Type], f: &mut fmt::Formatter<'_>
+    ) -> fmt::Result;
+    // Default impl falls back to Debug formatting.
+}
+```
+
+A single trait covers both roles. The kernel-level renderer always
+produces *something* via the Debug fallback, even for observers that
+don't bother. `NamedFamily(SmolStr)` (see below) overrides to render
+the name.
+
+#### `Hint` rides along
+
+`TyConObs(DynObs, Hint, Vec<Type>)` — `Hint` is α-transparent (same
+trick as on `Def`/`Abs`/`All`), so it doesn't affect equality but
+gives the pretty-printer something to render before falling back to
+`ObsDisplay::display_tycon` or to Debug. Cheap convenience.
+
+#### Recovering the old SmolStr-keyed story
+
+If you want a TyCon family where multiple instances with the same
+name compare *equal* (rather than each call producing a fresh Arc),
+write a thin user-level registry that canonicalises a `NamedFamily`
+observer by name:
+
+```rust
+pub struct NamedFamily(SmolStr);
+// Registry hands out a single Arc<NamedFamily> per unique name.
+```
+
+But this is opt-in policy, not a kernel concern. Most code should use
+structural `Tycon(SmolStr, …)` for cross-process-stable named tycons
+and `TyConObs` for theory-introduced fresh tycons.
+
+#### Type-level equality: start with **none**
+
+Resist the temptation to add `Thm::tycon_eq<O>` analogous to
+`Thm::obs_eq<O>`. Types are compared structurally (`Tycon`) or by Arc
+identity (`TyConObs`) and that's it. Reasons:
+
+- Soundness story stays trivial — no per-theory ε-model to extend to
+  types.
+- The Isabelle/HOL precedent (no type-equality assertions; internal
+  equality is the term-level `=` constant) is well-tested.
+- Things that look like type equality (record extensibility,
+  type-class instances, refinement subtyping) are better modelled as
+  definitional unfolding + term-level lemmas.
+
+**If a real use case appears later**, add the kernel rule with the
+weak guarantee: "a theory can assert equalities (not disequalities)
+about its own types." Sound by the "interpret all types in family
+`O` as Unit" model — any equality of types is consistent with that
+collapse. Disequalities would require a richer model and are deferred
+indefinitely; the user explicitly flagged that disequalities feel
+like an inner-theory rather than outer-theory problem.
+
+#### Pros (now)
+
+- Same Arc-identity discipline as `Def` and `DynObs` — three places
+  in the kernel where Arc identity gives us freshness for free.
+- `new_type_definition` (option A) becomes mechanical: allocate a
+  fresh `Arc<dyn Observer>` for the new type constant, wrap in
+  `TyConObs`, return.
+- Per-Rust-type theory extensions (a `HOLTheory` struct can carry
+  its own metadata, debug info, etc.).
+- ε-family per Rust type covers both terms *and* types from the same
+  theory uniformly.
+
+#### Cons
+
+- `TyConObs` serialization is process-local (same as `Obs`). Cross-
+  process workflows lean on the structural `Tycon` form. The duality
+  makes this explicit and choosable.
+- Users defining their own type families need to write a Rust type
+  per family. This is fine — it's the same discipline as observers.
+- Two type constructors with the same display name and same args —
+  one structural, one identity-based — compare *unequal*. Matches
+  the term-side `Const`/`Obs` situation; same audit guidance applies.
+
+#### TCB cost
+
+~30 LoC: one variant on `TypeKind`, the corresponding cases in
+`type_of_in` (just propagate arity-check), the `Display`/`Hash`/`Eq`
+plumbing. The new `ObsDisplay` trait lives in `covalence-pure-shell`
+(non-TCB).
 
 ---
 
@@ -433,18 +557,25 @@ or similar later crate — not on the critical path.
 
 Each item above is self-contained. The current recommended path:
 
-- **PHASE 1 (immediate):** G (`covalence-hol` with HOL Light's 10
-  derived rules + 3 axioms). Self-contained; doesn't need any kernel
-  changes.
-- **PHASE 2 (immediate after G):** I (`covalence-store-obs` —
-  `Blake3System`, `StoreSystem`, meaning axioms, store integration).
-- **PHASE 3:** F as orchestration only — make the existing
+- **PHASE 1 (immediate):** B (`TyConObs` variant + unified `Observer`
+  trait + opt-in `ObsDisplay`) and A (`new_type_definition` kernel
+  rule + HOL disjunct-trick wrapper). Small TCB delta total
+  (~110 LoC). Unblocks proper HOL bool/num/list/etc.
+- **PHASE 2:** G (`covalence-hol` with HOL Light's 10 derived rules
+  + 3 axioms, building on B + A). `bool` becomes a `Tycon("bool", [])`
+  with its actual axiomatisation; HOL constants ride on a `HOLTheory`
+  observer for both their term and type contributions.
+- **PHASE 3:** I (`covalence-store-obs` — `Blake3System`,
+  `StoreSystem`, meaning axioms, store integration).
+- **PHASE 4:** F as orchestration only — make the existing
   `covalence-kernel` re-export Pure + HOL + Store + WASM-eval +
   tree-store. Delete the old HOL kernel files.
-- **PARALLEL/LATER:** A (`new_type_definition`) when HOL stdlib needs
-  it. B (`DynTyCon`) only if subtype identity becomes a problem in
-  practice. D (drop `Hint` from `Def`) as a cleanup whenever.
+- **PARALLEL/LATER:** D (drop `Hint` from `Def`) as a cleanup
+  whenever.
 
 None of these are blocking. **Option H is no longer on the menu** —
 the system-with-modes pattern in section I gets everything we wanted
-from a computational rule without changing the TCB.
+from a computational rule without changing the TCB. **Option B is no
+longer "experimental"** — it's the unifying piece that ties the
+observer story together across term and type positions, and the
+recommended first immediate step.

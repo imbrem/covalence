@@ -62,11 +62,26 @@ pub struct PureHol {
     type_arity: HashMap<NameId, usize>,
     /// Registered HOL constants → most-general HOL type.
     constants: HashMap<NameId, Type>,
-    /// Constants introduced via `new_basic_definition`, indexed by
-    /// `NameId`. Each value is the Pure `Term::def`-wrapped term
-    /// that `mk_const` should return for the constant — preserving
-    /// the unique `Def` Arc identity Pure's `define` allocates.
+    /// Constants introduced via `new_basic_definition` *or* via the
+    /// `abs/rep` slots of `new_basic_type_definition`, indexed by
+    /// `NameId`. Each value is the Pure `Term::def`/`Term::obs`
+    /// term that `mk_const` should return — preserving Arc identity
+    /// so the defining equations and user references land on the
+    /// same symbol.
     defined_constants: HashMap<NameId, Term>,
+    /// Per-instance cache for polymorphic defined constants. Pure's
+    /// `Def` equality is Arc-pointer based, and `subst_tfree_in_term`
+    /// on a `Def` allocates a fresh Arc on each call — so naive
+    /// repeated instantiation produces two `Def`-wrapped terms that
+    /// print identically but fail structural equality. Caching by
+    /// `(NameId, Type)` ensures the same `(forall, (bool→bool)→bool)`
+    /// lookup always returns the SAME Arc.
+    defined_constant_instances: HashMap<(NameId, Type), Term>,
+    /// Types introduced via `new_basic_type_definition`, indexed by
+    /// `NameId`. Currently monomorphic only (polymorphic typedefs
+    /// would need `inst_tfree`-driven instantiation against the
+    /// requested args; deferred).
+    defined_types: HashMap<NameId, Type>,
     /// Recorded axioms.
     axioms: Vec<Thm>,
     /// `NameId` → display string.
@@ -107,6 +122,8 @@ impl PureHol {
             type_arity,
             constants,
             defined_constants: HashMap::new(),
+            defined_constant_instances: HashMap::new(),
+            defined_types: HashMap::new(),
             axioms: Vec::new(),
             names,
             name_to_id,
@@ -204,12 +221,22 @@ impl HolLightTypes for PureHol {
             let mut it = args.into_iter();
             let a = it.next().unwrap();
             let b = it.next().unwrap();
-            Type::fun(a, b)
-        } else if name == self.bool_id && args.is_empty() {
-            self.ctx.bool_type()
-        } else {
-            Type::tycon(self.name_str(name), args)
+            return Type::fun(a, b);
         }
+        if name == self.bool_id && args.is_empty() {
+            return self.ctx.bool_type();
+        }
+        // Types introduced via `new_basic_type_definition` come back
+        // as the stored `TyConObs` (preserving the typedef marker's
+        // Arc identity). Currently monomorphic only.
+        if let Some(stored) = self.defined_types.get(&name) {
+            if args.is_empty() {
+                return stored.clone();
+            }
+            // Polymorphic case deferred: instantiating the stored τ
+            // requires inst_tfree by each tvar position in args.
+        }
+        Type::tycon(self.name_str(name), args)
     }
 
     fn bool_type(&mut self) -> Type {
@@ -236,6 +263,12 @@ impl HolLightTypes for PureHol {
         match ty.kind() {
             TypeKind::Fun(a, b) => Some((self.fun_id, vec![a.clone(), b.clone()])),
             TypeKind::Tycon(name, args) => self.id_for(name.as_str()).map(|id| (id, args.clone())),
+            // Typedef-introduced types arrive as `TyConObs` at a
+            // fresh TypeDef marker; the hint string is the original
+            // type's name, which we can map back via `id_for`.
+            TypeKind::TyConObs(_, hint, args) => {
+                self.id_for(hint.as_str()).map(|id| (id, args.clone()))
+            }
             _ => None,
         }
     }
@@ -294,14 +327,42 @@ impl HolLightTerms for PureHol {
                 return self.ctx.eq_at(alpha.clone());
             }
         }
-        // Constants introduced via `new_basic_definition` come back as
-        // the stored `Term::def(d)` (preserving the `Def`'s Arc
-        // identity so the defining equation `⊢ Def ≡ body` and any
-        // user reference to "the constant" land on the same symbol).
-        // Currently monomorphic only — polymorphic constants would
-        // need `inst_tfree` from the generic type to `ty`.
-        if let Some(def_term) = self.defined_constants.get(&name) {
-            return def_term.clone();
+        // Constants introduced via `new_basic_definition` come back
+        // as the stored `Term::def(d)` (preserving Arc identity for
+        // the defining equation). HOL Light constants are
+        // polymorphic — the definition's type carries free TFrees,
+        // and the article requests instances. Match the stored type
+        // against the requested type to find the tvar substitution,
+        // then apply `subst_tfree_in_term` to get the instance.
+        if let Some(def_term) = self.defined_constants.get(&name).cloned() {
+            // Compute the stored Def's natural type once.
+            let def_ty = def_term
+                .type_of()
+                .expect("defined-constant body is well-typed by construction");
+            if def_ty == ty {
+                return def_term;
+            }
+            // Cache hit: reuse the same Arc identity for repeat
+            // instantiations at this type (Pure Def equality is
+            // Arc-ptr based; fresh `subst_tfree_in_term` would
+            // break structural equality between mk_const calls).
+            if let Some(cached) = self.defined_constant_instances.get(&(name, ty.clone())) {
+                return cached.clone();
+            }
+            let mut sub: HashMap<SmolStr, Type> = HashMap::new();
+            if match_types(&def_ty, &ty, &mut sub).is_ok() {
+                let mut result = def_term;
+                for (tv, replacement) in sub {
+                    result = subst::subst_tfree_in_term(&result, tv.as_str(), &replacement);
+                }
+                self.defined_constant_instances
+                    .insert((name, ty), result.clone());
+                return result;
+            }
+            // Match failed (no consistent tvar binding takes `def_ty`
+            // to `ty`). Fall through to a plain `Const` so the
+            // downstream type check fires a clear error instead of
+            // returning a silently mis-typed Def.
         }
         Term::const_(self.name_str(name), ty)
     }
@@ -370,8 +431,9 @@ impl HolLightTerms for PureHol {
     }
 
     fn type_of(&mut self, tm: Term) -> Type {
-        tm.type_of()
-            .unwrap_or_else(|e| panic!("type_of: ill-typed HOL term: {e:?}"))
+        tm.type_of().unwrap_or_else(|e| {
+            panic!("type_of: ill-typed HOL term: {e:?}\n  term: {tm:?}")
+        })
     }
 
     fn term_eq(&self, a: Term, b: Term) -> bool {
@@ -416,6 +478,54 @@ impl HolLightTerms for PureHol {
             result = subst::subst_tfree_in_term(&result, &name, new_ty);
         }
         result
+    }
+}
+
+/// One-way type matching (pattern → target).
+///
+/// Treats `TFree` in `pattern` as a schematic variable. Returns
+/// `Ok(())` and fills `sub` with the substitution `{tv ↦ target_t}`
+/// such that applying `sub` to `pattern` yields `target`. Returns
+/// `Err(())` if no such consistent substitution exists. Used by
+/// `mk_const` to instantiate polymorphic defined constants at the
+/// type the article requests (HOL Light's implicit unification at
+/// `constTerm`).
+fn match_types(pattern: &Type, target: &Type, sub: &mut HashMap<SmolStr, Type>) -> Result<(), ()> {
+    match (pattern.kind(), target.kind()) {
+        (TypeKind::TFree(n), _) => {
+            if let Some(existing) = sub.get(n) {
+                if existing == target {
+                    Ok(())
+                } else {
+                    Err(())
+                }
+            } else {
+                sub.insert(n.clone(), target.clone());
+                Ok(())
+            }
+        }
+        (TypeKind::Prop, TypeKind::Prop) | (TypeKind::Bytes, TypeKind::Bytes) => Ok(()),
+        (TypeKind::Fun(pa, pb), TypeKind::Fun(ta, tb)) => {
+            match_types(pa, ta, sub)?;
+            match_types(pb, tb, sub)
+        }
+        (TypeKind::Tycon(pn, pa), TypeKind::Tycon(tn, ta))
+            if pn == tn && pa.len() == ta.len() =>
+        {
+            for (p, t) in pa.iter().zip(ta) {
+                match_types(p, t, sub)?;
+            }
+            Ok(())
+        }
+        (TypeKind::TyConObs(po, _, pa), TypeKind::TyConObs(to, _, ta))
+            if po.ptr_id() == to.ptr_id() && pa.len() == ta.len() =>
+        {
+            for (p, t) in pa.iter().zip(ta) {
+                match_types(p, t, sub)?;
+            }
+            Ok(())
+        }
+        _ => Err(()),
     }
 }
 
@@ -856,19 +966,22 @@ impl HolLightKernel for PureHol {
     /// NEW_BASIC_DEFINITION: `tm` is `Eq c body` where `c = Var(name, ty)`
     /// is a fresh variable. Register `c` as a defined constant whose
     /// future `mk_const` invocations return a Pure `Term::def(d)` for
-    /// a freshly allocated `Def`. Returns `⊢ Trueprop (Eq[ty] Def body)`.
+    /// a freshly allocated `Def`. Returns `⊢ Trueprop (Eq[ty] Def body)`
+    /// with EMPTY hyps (delivered by Pure's `Thm::define`).
     ///
-    /// Pure's `Thm::define` is the source-of-truth: it gives
-    /// `⊢ Def(name, body) ≡ body` with empty hyps, and the resulting
-    /// `Def`'s Arc identity is what we hand back to every subsequent
-    /// `mk_const(c)` call. We then translate the Pure meta-eq into
-    /// the HOL Trueprop form via backward `eq_reflection`.
+    /// **Known limitation:** Pure's `Def` equality is Arc-pointer
+    /// based, and `subst_tfree_in_term` (which `inst_type_rule` calls
+    /// transitively) reallocates `Def`s per pass. The per-instance
+    /// cache here makes repeated `mk_const(name, T)` lookups return
+    /// the same Arc, but any path that goes through Pure's
+    /// `inst_tfree` on a Thm containing a polymorphic Def will
+    /// produce a Def with a fresh Arc — breaking structural equality
+    /// against the cached instance. The cleanest fix is a kernel-
+    /// level "named constant" definition in covalence-pure; tracked
+    /// for a separate Pure change.
     ///
-    /// Currently monomorphic only: polymorphic constants would need
-    /// the closure-type machinery (free tvars in `body` ⊆ free tvars
-    /// in `ty`) plus `inst_tfree` on the stored `Term::def` when
-    /// `mk_const` is called at a more specific type. Rejects bodies
-    /// with free tvars not in `ty` for safety.
+    /// Soundness guard: every free type variable in the body must
+    /// also appear in `c`'s type.
     fn new_basic_definition(&mut self, tm: Term) -> Result<Thm, HolError> {
         let (c, body) = self
             .dest_hol_eq(&tm)
@@ -892,8 +1005,6 @@ impl HolLightKernel for PureHol {
             ));
         }
 
-        // Soundness guard: every free type variable in the body must
-        // also appear in c's type (HOL Light's classical check).
         let ty_tvars: HashSet<SmolStr> = ty.free_tvars().into_iter().collect();
         let mut body_tvars = HashSet::new();
         collect_term_tvars(&body, &mut body_tvars);
@@ -909,9 +1020,6 @@ impl HolLightKernel for PureHol {
         };
         let c_term = lhs.clone();
 
-        // Register the constant before we use its NameId in
-        // backward eq_reflection conversion (so mk_const lookups
-        // during conversion see it).
         self.defined_constants.insert(name_id, c_term.clone());
         self.constants.insert(name_id, ty.clone());
 
@@ -930,18 +1038,224 @@ impl HolLightKernel for PureHol {
             .map_err(pure_err)
     }
 
+    /// NEW_BASIC_TYPE_DEFINITION:
+    ///
+    /// OpenTheory's `defineTypeOp` passes a witness theorem
+    /// `⊢ Trueprop (P t)` directly (no existential — t is already
+    /// the chosen inhabitant), so this rule does NOT need Select.
+    /// We wrap `P` into a Pure predicate via β (so its codomain is
+    /// `prop` instead of HOL `bool`), call Pure's
+    /// `Thm::new_type_definition`, then translate the three Pure
+    /// outputs back to the two HOL Light theorems the OpenTheory
+    /// interpreter expects:
+    ///
+    /// - `thm1: ⊢ Trueprop (Eq[τ] (abs (rep a)) a)` with `a : τ` free
+    /// - `thm2: ⊢ Trueprop (Eq[bool] (P r) (Eq[α] (rep (abs r)) r))`
+    ///   with `r : α` free
+    ///
+    /// The OpenTheory article spec then wraps these into lambdas at
+    /// the interpreter layer (see the `opentheory-define-type-op`
+    /// memory note).
+    ///
+    /// Currently monomorphic only: typedefs whose carrier type has
+    /// free type variables would need polymorphic `mk_tyapp`
+    /// support (instantiate stored `τ` via `inst_tfree` per arg).
     fn new_basic_type_definition(
         &mut self,
-        _tyname: NameId,
-        _abs_name: NameId,
-        _rep_name: NameId,
-        _abs_var_name: NameId,
-        _rep_var_name: NameId,
-        _th: Thm,
+        tyname: NameId,
+        abs_name: NameId,
+        rep_name: NameId,
+        abs_var_name: NameId,
+        rep_var_name: NameId,
+        th: Thm,
     ) -> Result<(Thm, Thm), HolError> {
-        Err(HolError::Unsupported(
-            "new_basic_type_definition: defer until Select witness extraction is wired".into(),
-        ))
+        // 1. Decompose witness: ⊢ Trueprop (App P t).
+        let inner = self
+            .unwrap_trueprop(th.concl())
+            .ok_or_else(|| HolError::BadTypeDefinition("witness concl not Trueprop".into()))?;
+        let TermKind::App(p_hol, t) = inner.kind() else {
+            return Err(HolError::BadTypeDefinition(
+                "witness inner not App(P, t)".into(),
+            ));
+        };
+        let (p_hol, t) = (p_hol.clone(), t.clone());
+        let alpha = t.type_of().map_err(pure_err)?;
+
+        // Reject polymorphic carriers for now (would need polymorphic mk_tyapp).
+        if !alpha.free_tvars().is_empty() {
+            return Err(HolError::Unsupported(
+                "new_basic_type_definition: polymorphic typedefs not yet supported".into(),
+            ));
+        }
+
+        // 2. Freshness checks.
+        if self.type_arity.contains_key(&tyname) || self.defined_types.contains_key(&tyname) {
+            return Err(HolError::TypeAlreadyDefined(
+                self.name_str(tyname).into(),
+            ));
+        }
+        if self.constants.contains_key(&abs_name) {
+            return Err(HolError::ConstantAlreadyDefined(
+                self.name_str(abs_name).into(),
+            ));
+        }
+        if self.constants.contains_key(&rep_name) {
+            return Err(HolError::ConstantAlreadyDefined(
+                self.name_str(rep_name).into(),
+            ));
+        }
+
+        // 3. Build Pure predicate `P_pure = λx:α. Trueprop (P x)`.
+        let trueprop = self.ctx.trueprop();
+        let p_pure_body = Term::app(
+            trueprop.clone(),
+            Term::app(p_hol.clone(), Term::bound(0)),
+        );
+        let p_pure = Term::abs(BinderHint::new("x"), alpha.clone(), p_pure_body);
+        let p_pure_at_t = Term::app(p_pure.clone(), t.clone());
+
+        // 4. Bridge witness: ⊢ Trueprop (P t) → ⊢ App(P_pure, t)
+        //    via β-conv on `P_pure t ≡ Trueprop (P t)`.
+        let beta_at_t = Thm::beta_conv(p_pure_at_t.clone()).map_err(pure_err)?;
+        let pure_witness = beta_at_t.sym().map_err(pure_err)?.eq_mp(th).map_err(pure_err)?;
+
+        // 5. Pure new_type_definition.
+        let typedef = Thm::new_type_definition(
+            self.name_str(tyname),
+            self.name_str(abs_name),
+            self.name_str(rep_name),
+            pure_witness,
+        )
+        .map_err(pure_err)?;
+        let tau = typedef.tau.clone();
+        let abs_term = typedef.abs.clone();
+        let rep_term = typedef.rep.clone();
+
+        // 6. Register state. abs : α → τ, rep : τ → α.
+        self.defined_types.insert(tyname, tau.clone());
+        self.type_arity.insert(tyname, 0);
+        self.defined_constants.insert(abs_name, abs_term.clone());
+        self.defined_constants.insert(rep_name, rep_term.clone());
+        self.constants
+            .insert(abs_name, Type::fun(alpha.clone(), tau.clone()));
+        self.constants
+            .insert(rep_name, Type::fun(tau.clone(), alpha.clone()));
+
+        // 7. Translate Pure outputs to HOL form.
+        //    thm1: ⊢ Trueprop (Eq[τ] (abs (rep a)) a) with `a : τ` free.
+        let abs_var_str = self.name_str(abs_var_name).to_owned();
+        let a_free = Term::free(&abs_var_str, tau.clone());
+        let pure_abs_rep_at_a = typedef
+            .abs_rep
+            .all_elim(a_free.clone())
+            .map_err(pure_err)?;
+        let abs_rep_lhs = Term::app(
+            abs_term.clone(),
+            Term::app(rep_term.clone(), a_free.clone()),
+        );
+        let thm1 = self
+            .ctx
+            .eq_reflection_axiom()
+            .inst_tfree("a", tau.clone())
+            .map_err(pure_err)?
+            .all_elim(abs_rep_lhs)
+            .map_err(pure_err)?
+            .all_elim(a_free)
+            .map_err(pure_err)?
+            .sym()
+            .map_err(pure_err)?
+            .eq_mp(pure_abs_rep_at_a)
+            .map_err(pure_err)?;
+
+        // 8. thm2 via iff_intro applied to both directions.
+        //    Build the HOL terms we'll plug into iff_intro:
+        //      p_r        = HOL.eq[bool] left side: (P r) : bool
+        //      eq_repr    = HOL.eq[α] (rep(abs r)) r  : bool
+        //    Both are HOL bool-typed.
+        let rep_var_str = self.name_str(rep_var_name).to_owned();
+        let r_free = Term::free(&rep_var_str, alpha.clone());
+        let p_at_r = Term::app(p_hol.clone(), r_free.clone()); // P r : bool
+        let rep_abs_r = Term::app(
+            rep_term.clone(),
+            Term::app(abs_term.clone(), r_free.clone()),
+        );
+        let hol_eq_at_alpha = self.ctx.eq_at(alpha.clone());
+        let eq_rep_r = Term::app(
+            Term::app(hol_eq_at_alpha.clone(), rep_abs_r.clone()),
+            r_free.clone(),
+        );
+        let tp_p_at_r = Term::app(trueprop.clone(), p_at_r.clone());
+        let tp_eq_rep_r = Term::app(trueprop.clone(), eq_rep_r.clone());
+
+        // β-conv: ⊢ App(P_pure, r) ≡ Trueprop (P r).
+        let p_pure_at_r = Term::app(p_pure.clone(), r_free.clone());
+        let beta_at_r = Thm::beta_conv(p_pure_at_r.clone()).map_err(pure_err)?;
+        let beta_at_r_sym = beta_at_r.clone().sym().map_err(pure_err)?;
+
+        // Forward direction: ⊢ tp_p_at_r ⟹ tp_eq_rep_r.
+        let pure_fwd = typedef
+            .rep_abs_fwd
+            .all_elim(r_free.clone())
+            .map_err(pure_err)?;
+        let assume_tp_p = Thm::assume(tp_p_at_r.clone()).map_err(pure_err)?;
+        // {tp_p} ⊢ App(P_pure, r)
+        let p_pure_at_r_assumed = beta_at_r_sym.eq_mp(assume_tp_p).map_err(pure_err)?;
+        // {tp_p} ⊢ rep(abs r) ≡ r
+        let pure_eq_assumed = pure_fwd.imp_elim(p_pure_at_r_assumed).map_err(pure_err)?;
+        // {tp_p} ⊢ Trueprop (Eq[α] (rep(abs r)) r)
+        let hol_eq_assumed = self
+            .ctx
+            .eq_reflection_axiom()
+            .inst_tfree("a", alpha.clone())
+            .map_err(pure_err)?
+            .all_elim(rep_abs_r.clone())
+            .map_err(pure_err)?
+            .all_elim(r_free.clone())
+            .map_err(pure_err)?
+            .sym()
+            .map_err(pure_err)?
+            .eq_mp(pure_eq_assumed)
+            .map_err(pure_err)?;
+        let fwd_imp = hol_eq_assumed.imp_intro(&tp_p_at_r).map_err(pure_err)?;
+
+        // Backward direction: ⊢ tp_eq_rep_r ⟹ tp_p_at_r.
+        let pure_back = typedef
+            .rep_abs_back
+            .all_elim(r_free.clone())
+            .map_err(pure_err)?;
+        let assume_tp_eq = Thm::assume(tp_eq_rep_r.clone()).map_err(pure_err)?;
+        // {tp_eq_rep_r} ⊢ rep(abs r) ≡ r
+        let pure_eq_assumed_b = self
+            .ctx
+            .eq_reflection_axiom()
+            .inst_tfree("a", alpha.clone())
+            .map_err(pure_err)?
+            .all_elim(rep_abs_r)
+            .map_err(pure_err)?
+            .all_elim(r_free.clone())
+            .map_err(pure_err)?
+            .eq_mp(assume_tp_eq)
+            .map_err(pure_err)?;
+        // {tp_eq_rep_r} ⊢ App(P_pure, r)
+        let p_pure_assumed = pure_back.imp_elim(pure_eq_assumed_b).map_err(pure_err)?;
+        // {tp_eq_rep_r} ⊢ Trueprop (P r)
+        let tp_p_assumed = beta_at_r.eq_mp(p_pure_assumed).map_err(pure_err)?;
+        let back_imp = tp_p_assumed.imp_intro(&tp_eq_rep_r).map_err(pure_err)?;
+
+        // 9. iff_intro: ⊢ Trueprop (Eq[bool] (P r) (Eq[α] (rep(abs r)) r))
+        let thm2 = self
+            .ctx
+            .iff_intro_axiom()
+            .all_elim(p_at_r)
+            .map_err(pure_err)?
+            .all_elim(eq_rep_r)
+            .map_err(pure_err)?
+            .imp_elim(fwd_imp)
+            .map_err(pure_err)?
+            .imp_elim(back_imp)
+            .map_err(pure_err)?;
+
+        Ok((thm1, thm2))
     }
 
     fn new_type(&mut self, name: NameId, arity: usize) -> Result<(), HolError> {
@@ -1135,6 +1449,71 @@ mod tests {
         let (l, r) = k.dest_eq_concl(&h2).unwrap();
         assert_eq!(l, y);
         assert_eq!(r, y);
+    }
+
+    #[test]
+    fn new_basic_type_definition_unit_type() {
+        // The HOL Light "unit" type: defined by the predicate
+        // `λx:bool. x = T`, witness `T`. Resulting typedef gives us
+        // a new singleton type `unit` with `one_abs : bool → unit`
+        // and `one_rep : unit → bool`.
+        let mut k = mk_kernel();
+        let bool_ty = k.bool_type();
+
+        // Register names for the typedef.
+        k.register_name(60, "unit");
+        k.register_name(61, "one_abs");
+        k.register_name(62, "one_rep");
+        k.register_name(63, "a"); // abs var
+        k.register_name(64, "r"); // rep var
+        k.register_name(70, "x"); // P's bound
+
+        // Build P = λx:bool. (x = T).
+        // We need a closed lambda where the body uses Bound(0).
+        // mk_abs takes a Free var, so build using the named-var path.
+        let x = k.mk_var(70, bool_ty.clone());
+        let t_const = k.ctx.t(); // HOL T : bool
+        let eq_x_t = k.mk_eq(x.clone(), t_const.clone());
+        let p_lambda = k.mk_abs(x, eq_x_t); // λx:bool. x = T  : bool → bool
+
+        // Witness: T. So P T : bool unfolds to T = T (after β); but we
+        // only need a Trueprop-wrapped witness. We construct it by
+        // first reflecting on T (⊢ Trueprop (T = T)) and then noting
+        // that P T β-reduces to T = T — i.e., we need the witness
+        // theorem in the form ⊢ Trueprop (P T), not the unfolded form.
+        //
+        // We get this by: refl gives ⊢ Trueprop (T = T). Then we'd
+        // need to rewrap as ⊢ Trueprop (P T) via β-back. Easier path:
+        // just `assume` ⊢ Trueprop (P T) directly for the test (the
+        // typedef machinery doesn't require the witness to be
+        // assumption-free; it propagates hyps).
+        let p_at_t = k.mk_comb(p_lambda.clone(), t_const.clone()); // (λx. x=T) T : bool
+        let witness = k.assume_rule(p_at_t).unwrap(); // {tp(P T)} ⊢ tp(P T)
+
+        // Run the typedef.
+        let (thm1, thm2) = k
+            .new_basic_type_definition(60, 61, 62, 63, 64, witness)
+            .unwrap();
+
+        // Verify thm1 = ⊢ Trueprop (Eq[unit] (abs (rep a)) a) for some a:unit.
+        let (l1, r1) = k.dest_eq_concl(&thm1).unwrap();
+        // r1 should be `a` of type unit (the typedef).
+        // l1 should be abs(rep a).
+        let unit_ty = k.mk_tyapp(60, vec![]);
+        assert_eq!(r1.type_of().unwrap(), unit_ty);
+        assert!(matches!(l1.kind(), TermKind::App(_, _)));
+
+        // Verify thm2 = ⊢ Trueprop (Eq[bool] (P r) (Eq[α] (rep(abs r)) r)).
+        let (lhs2, _rhs2) = k.dest_eq_concl(&thm2).unwrap();
+        // lhs2 = (P r), so applying P_lambda to r.
+        assert!(matches!(lhs2.kind(), TermKind::App(_, _)));
+
+        // After typedef: mk_type(60) gives unit; mk_const(61, bool→unit)
+        // gives the same `abs` term referenced in thm1.
+        let abs_ty = k.fun_type(bool_ty.clone(), unit_ty.clone());
+        let _abs_term = k.mk_const(61, abs_ty);
+        let rep_ty = k.fun_type(unit_ty, bool_ty);
+        let _rep_term = k.mk_const(62, rep_ty);
     }
 
     #[test]

@@ -76,6 +76,7 @@ const TY_PROP: u8 = 0x01;
 const TY_BYTES: u8 = 0x02;
 const TY_FUN: u8 = 0x03;
 const TY_TYCON: u8 = 0x04;
+const TY_TYCON_OBS: u8 = 0x05;
 
 // ---- term tags ----
 const T_BOUND: u8 = 0x00;
@@ -101,9 +102,12 @@ pub fn hash_term(t: &Term, oh: &dyn ObsHasher) -> O256 {
     Hasher::new().hash_term(t, oh)
 }
 
-/// Compute the content hash of `ty`. See [`hash_term`].
-pub fn hash_type(ty: &Type) -> O256 {
-    Hasher::new().hash_type(ty)
+/// Compute the content hash of `ty`. The observer hasher is consulted
+/// when the type contains a `TyConObs` constructor; pass any handler
+/// (commonly [`UnitObsHasher`]) when working with types known to be
+/// free of observer constructors.
+pub fn hash_type(ty: &Type, oh: &dyn ObsHasher) -> O256 {
+    Hasher::new().hash_type(ty, oh)
 }
 
 // ============================================================================
@@ -136,17 +140,17 @@ impl Hasher {
         h
     }
 
-    pub fn hash_type(&mut self, ty: &Type) -> O256 {
+    pub fn hash_type(&mut self, ty: &Type, oh: &dyn ObsHasher) -> O256 {
         let key = ty.ptr_id();
         if let Some(h) = self.type_cache.get(&key) {
             return *h;
         }
-        let h = self.compute_type(ty);
+        let h = self.compute_type(ty, oh);
         self.type_cache.insert(key, h);
         h
     }
 
-    fn compute_type(&mut self, ty: &Type) -> O256 {
+    fn compute_type(&mut self, ty: &Type, oh: &dyn ObsHasher) -> O256 {
         let ctx = type_ctx();
         match ty.kind() {
             TypeKind::TFree(name) => {
@@ -160,8 +164,8 @@ impl Hasher {
             TypeKind::Prop => ctx.tag([TY_PROP]),
             TypeKind::Bytes => ctx.tag([TY_BYTES]),
             TypeKind::Fun(a, b) => {
-                let ah = self.hash_type(a);
-                let bh = self.hash_type(b);
+                let ah = self.hash_type(a, oh);
+                let bh = self.hash_type(b, oh);
                 binary(ctx, TY_FUN, ah, bh)
             }
             TypeKind::Tycon(name, args) => {
@@ -172,7 +176,24 @@ impl Hasher {
                 buf.extend_from_slice(name_bytes);
                 buf.extend_from_slice(&(args.len() as u32).to_le_bytes());
                 for arg in args {
-                    let h = self.hash_type(arg);
+                    let h = self.hash_type(arg, oh);
+                    buf.extend_from_slice(h.as_bytes());
+                }
+                ctx.tag(buf)
+            }
+            // Hash by the observer's caller-supplied payload + arg
+            // hashes. `Hint` is α-transparent in the kernel (excluded
+            // from `Hash`/`Eq`) so we exclude it here too — two
+            // α-equivalent `TyConObs` types must hash equally.
+            TypeKind::TyConObs(observer, _hint, args) => {
+                let payload = oh.obs_payload(observer);
+                let mut buf = Vec::with_capacity(1 + 4 + payload.len() + 4 + 32 * args.len());
+                buf.push(TY_TYCON_OBS);
+                buf.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+                buf.extend_from_slice(&payload);
+                buf.extend_from_slice(&(args.len() as u32).to_le_bytes());
+                for arg in args {
+                    let h = self.hash_type(arg, oh);
                     buf.extend_from_slice(h.as_bytes());
                 }
                 ctx.tag(buf)
@@ -190,11 +211,11 @@ impl Hasher {
                 ctx.tag(buf)
             }
             TermKind::Free(name, ty) => {
-                let th = self.hash_type(ty);
+                let th = self.hash_type(ty, oh);
                 named_with_ty(ctx, T_FREE, name.as_bytes(), th)
             }
             TermKind::Const(name, ty) => {
-                let th = self.hash_type(ty);
+                let th = self.hash_type(ty, oh);
                 named_with_ty(ctx, T_CONST, name.as_bytes(), th)
             }
             TermKind::App(f, x) => {
@@ -203,7 +224,7 @@ impl Hasher {
                 binary(ctx, T_APP, fh, xh)
             }
             TermKind::Abs(_, ty, body) => {
-                let th = self.hash_type(ty);
+                let th = self.hash_type(ty, oh);
                 let bh = self.hash_term(body, oh);
                 binary(ctx, T_ABS, th, bh)
             }
@@ -213,7 +234,7 @@ impl Hasher {
                 binary(ctx, T_IMP, ah, bh)
             }
             TermKind::All(_, ty, body) => {
-                let th = self.hash_type(ty);
+                let th = self.hash_type(ty, oh);
                 let bh = self.hash_term(body, oh);
                 binary(ctx, T_ALL, th, bh)
             }
@@ -231,7 +252,7 @@ impl Hasher {
             }
             TermKind::Obs(observer, ty) => {
                 let payload = oh.obs_payload(observer);
-                let th = self.hash_type(ty);
+                let th = self.hash_type(ty, oh);
                 let mut buf = Vec::with_capacity(1 + 4 + payload.len() + 32);
                 buf.push(T_OBS);
                 buf.extend_from_slice(&(payload.len() as u32).to_le_bytes());

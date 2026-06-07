@@ -20,10 +20,10 @@ fn parse_one(s: &str) -> SExpr {
 }
 
 fn ty_roundtrip(ty: &Type) {
-    let s = type_to_sexp(ty);
+    let s = type_to_sexp(ty, &UnitObs).expect("serialise failed");
     let printed = text(&s);
     let parsed = parse_one(&printed);
-    let back = type_from_sexp(&parsed).expect("type parse failed");
+    let back = type_from_sexp(&parsed, &UnitObs).expect("type parse failed");
     assert_eq!(ty, &back, "type round-trip mismatch via text: {}", printed);
 }
 
@@ -84,8 +84,8 @@ fn types_dont_collide_in_sexp() {
     let a = Type::prop();
     let b = Type::tycon("prop", vec![]);
     assert_ne!(a, b);
-    let sa = type_to_sexp(&a);
-    let sb = type_to_sexp(&b);
+    let sa = type_to_sexp(&a, &UnitObs).expect("a");
+    let sb = type_to_sexp(&b, &UnitObs).expect("b");
     assert_ne!(text(&sa), text(&sb));
 }
 

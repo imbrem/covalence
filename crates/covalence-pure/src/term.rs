@@ -155,6 +155,13 @@ impl DynObs {
     pub fn type_id(&self) -> TypeId {
         (*self.inner).type_id()
     }
+
+    /// Stable pointer identity of the underlying `Arc`. Useful as a
+    /// disambiguator in display output and as a cache key for
+    /// outside-the-TCB walkers.
+    pub fn ptr_id(&self) -> usize {
+        Arc::as_ptr(&self.inner) as *const () as usize
+    }
 }
 
 impl Clone for DynObs {
@@ -283,7 +290,21 @@ pub enum TypeKind {
     /// Function type τ ⇒ σ.
     Fun(Type, Type),
     /// User-declared type constructor applied to arguments.
+    /// **Structural identity** by name + args — cross-process stable.
+    /// Best for "named uninterpreted" cases (HOL `bool`, `num`, `list`, …).
     Tycon(SmolStr, Vec<Type>),
+    /// Type constructor whose identity is the wrapped observer's `Arc`
+    /// pointer. **Process-local** — two `Type::tycon_obs` calls with
+    /// independently constructed observers compare unequal even if they
+    /// share the same `Hint` and args. Mirrors `TermKind::Obs` on the
+    /// type side: the same Rust observer type is the unifying ε-family
+    /// across term- and type-level uses (one theory → one identity).
+    ///
+    /// The [`Hint`] is α-transparent (display only). Identity is the
+    /// `DynObs` plus the args; the args participate in equality so
+    /// that `list α` and `list β` are distinct even though they share
+    /// the same constructor.
+    TyConObs(DynObs, Hint, Vec<Type>),
 }
 
 // Cached canonical instances of the common `Type`s, so the methods
@@ -340,8 +361,52 @@ impl Type {
         Self::alloc(TypeKind::Tycon(name.into(), args))
     }
 
+    /// Construct a fresh-identity type constructor wrapping an
+    /// observer. The Arc-pointer identity of `observer` is the
+    /// distinguishing identity; `hint` is display-only (α-transparent).
+    /// Distinct calls with independently-constructed observers produce
+    /// distinct types — that's the freshness primitive
+    /// [`crate::Thm::new_type_definition`] uses.
+    pub fn tycon_obs<O: Observer>(observer: O, hint: impl Into<Hint>, args: Vec<Type>) -> Self {
+        Self::alloc(TypeKind::TyConObs(DynObs::new(observer), hint.into(), args))
+    }
+
+    /// Like [`Type::tycon_obs`] but reuses an existing [`DynObs`]
+    /// handle (preserving its `Arc` identity). Used internally by
+    /// kernel rules and by deserialisers that already have a `DynObs`.
+    pub fn tycon_obs_from_dyn(observer: DynObs, hint: impl Into<Hint>, args: Vec<Type>) -> Self {
+        Self::alloc(TypeKind::TyConObs(observer, hint.into(), args))
+    }
+
     pub fn is_prop(&self) -> bool {
         matches!(self.kind(), TypeKind::Prop)
+    }
+
+    /// Free type variables of `self`, in sorted order with duplicates
+    /// removed. Used by [`crate::Thm::new_type_definition`] to decide
+    /// the arity of a freshly-introduced type constructor.
+    pub fn free_tvars(&self) -> Vec<SmolStr> {
+        let mut out = std::collections::BTreeSet::new();
+        free_tvars_into(self, &mut out);
+        out.into_iter().collect()
+    }
+}
+
+fn free_tvars_into(ty: &Type, out: &mut std::collections::BTreeSet<SmolStr>) {
+    match ty.kind() {
+        TypeKind::TFree(name) => {
+            out.insert(name.clone());
+        }
+        TypeKind::Prop | TypeKind::Bytes => {}
+        TypeKind::Fun(a, b) => {
+            free_tvars_into(a, out);
+            free_tvars_into(b, out);
+        }
+        TypeKind::Tycon(_, args) | TypeKind::TyConObs(_, _, args) => {
+            for a in args {
+                free_tvars_into(a, out);
+            }
+        }
     }
 }
 
@@ -391,6 +456,24 @@ impl fmt::Display for Type {
                     for a in args {
                         write!(f, " {}", a)?;
                     }
+                    write!(f, ")")
+                }
+            }
+            TypeKind::TyConObs(observer, hint, args) => {
+                // `<hint#ptr>` for the constructor head, then args.
+                // `hint` is the user-visible label; the pointer suffix
+                // disambiguates fresh allocations sharing a name.
+                let ptr = observer.ptr_id();
+                let label = if hint.is_empty() {
+                    format!("tycon#{ptr:x}")
+                } else {
+                    format!("{hint}#{ptr:x}")
+                };
+                if args.is_empty() {
+                    write!(f, "{label}")
+                } else {
+                    write!(f, "({label}")?;
+                    for a in args { write!(f, " {a}")?; }
                     write!(f, ")")
                 }
             }

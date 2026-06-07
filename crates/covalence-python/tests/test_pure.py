@@ -122,3 +122,49 @@ def test_inst_tfree():
         Term.free("x", Type.bytes()),
     )
     assert instantiated.concl() == expected
+
+
+def test_tycon_obs_distinct_calls():
+    a = Type.tycon_obs("T", [])
+    b = Type.tycon_obs("T", [])
+    assert a != b
+
+
+def test_tycon_obs_clone_preserves_identity():
+    a = Type.tycon_obs("Foo", [])
+    b = a
+    assert a == b
+
+
+def test_new_type_definition_returns_bundle():
+    # Witness: assume P x where P : bytes → prop, x : bytes.
+    alpha = Type.bytes()
+    p = Term.free("P", Type.fun(alpha, Type.prop()))
+    x = Term.free("witness", alpha)
+    p_x = Term.app(p, x)
+    witness = Thm.assume(p_x)
+
+    td = Thm.new_type_definition("τ", "abs", "rep", witness)
+
+    # tau is a fresh tycon-obs.
+    assert td.tau != Type.bytes()
+    # Empty tvars (alpha was ground).
+    assert td.tvars == []
+    # Three bijection theorems.
+    assert len(td.abs_rep.hyps()) == 1  # P x propagated
+    assert len(td.rep_abs_fwd.hyps()) == 1
+    assert len(td.rep_abs_back.hyps()) == 1
+    # abs and rep are distinct terms.
+    assert td.abs_ != td.rep
+
+
+def test_new_type_definition_polymorphic():
+    # Witness over 'a → prop.
+    alpha = Type.tfree("a")
+    p = Term.free("P", Type.fun(alpha, Type.prop()))
+    x = Term.free("witness", alpha)
+    p_x = Term.app(p, x)
+    witness = Thm.assume(p_x)
+
+    td = Thm.new_type_definition("List", "abs", "rep", witness)
+    assert td.tvars == ["a"]

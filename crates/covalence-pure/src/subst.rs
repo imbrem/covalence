@@ -203,6 +203,15 @@ pub fn subst_tfree_in_type(ty: &Type, name: &str, r: &Type) -> Type {
                 .map(|a| subst_tfree_in_type(a, name, r))
                 .collect(),
         ),
+        // The observer Arc identity is preserved; only the type-arg
+        // substitution propagates. `list 'a` after 'a := bytes becomes
+        // `list bytes` with the same constructor identity — exactly
+        // what we want for polymorphic typedefs.
+        TypeKind::TyConObs(observer, hint, args) => Type::tycon_obs_from_dyn(
+            observer.clone(),
+            hint.clone(),
+            args.iter().map(|a| subst_tfree_in_type(a, name, r)).collect(),
+        ),
     }
 }
 

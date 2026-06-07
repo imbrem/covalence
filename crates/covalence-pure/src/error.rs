@@ -81,6 +81,12 @@ pub enum Error {
         first: Type,
         second: Type,
     },
+
+    #[error(
+        "new_type_definition: witness conclusion must have shape `P x` with \
+         P : α → prop and x : α; got {0}"
+    )]
+    BadTypeDefWitness(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

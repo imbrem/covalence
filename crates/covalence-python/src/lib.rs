@@ -69,6 +69,7 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<pure::PyType>()?;
     m.add_class::<pure::PyTerm>()?;
     m.add_class::<pure::PyThm>()?;
+    m.add_class::<pure::PyTypeDef>()?;
 
     // Builder types
     m.add_class::<container_builder::ContainerBuilder>()?;

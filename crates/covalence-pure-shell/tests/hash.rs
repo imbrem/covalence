@@ -21,7 +21,7 @@ fn structurally_distinct_terms_hash_differently() {
 fn type_hashes_are_stable() {
     let a = Type::fun(Type::bytes(), Type::prop());
     let b = Type::fun(Type::bytes(), Type::prop());
-    assert_eq!(hash_type(&a), hash_type(&b));
+    assert_eq!(hash_type(&a, &UnitObsHasher), hash_type(&b, &UnitObsHasher));
 }
 
 #[test]

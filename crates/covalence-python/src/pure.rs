@@ -66,6 +66,20 @@ impl PyType {
         ))
     }
 
+    /// Fresh-identity type constructor. Two calls — even with identical
+    /// `hint` and `args` — produce **distinct** types (the freshness
+    /// primitive `new_type_definition` uses internally). For Python
+    /// callers, the only "observer" supported is `()` (unit); richer
+    /// observers require Rust-side implementations.
+    #[staticmethod]
+    fn tycon_obs(hint: &str, args: Vec<PyType>) -> Self {
+        PyType(cp::Type::tycon_obs(
+            (),
+            hint,
+            args.into_iter().map(|a| a.0).collect(),
+        ))
+    }
+
     fn is_prop(&self) -> bool {
         self.0.is_prop()
     }
@@ -288,6 +302,22 @@ impl PyThm {
             .map_err(err)
     }
 
+    /// Introduce a fresh subtype τ ≤ α witnessed by the predicate `P`
+    /// from the conclusion of `witness`. Returns a `TypeDef` bundle
+    /// containing τ, the abs/rep constants, and three bijection
+    /// theorems.
+    #[staticmethod]
+    fn new_type_definition(
+        hint: &str,
+        abs_hint: &str,
+        rep_hint: &str,
+        witness: &PyThm,
+    ) -> PyResult<PyTypeDef> {
+        cp::Thm::new_type_definition(hint, abs_hint, rep_hint, witness.0.clone())
+            .map(PyTypeDef)
+            .map_err(err)
+    }
+
     // ---- Accessors ----
 
     /// Hypotheses (a tuple of terms, in BTreeSet order).
@@ -310,5 +340,64 @@ impl PyThm {
     }
     fn __str__(&self) -> String {
         format!("{}", self.0)
+    }
+}
+
+// ============================================================================
+// TypeDef
+// ============================================================================
+
+#[pyclass(frozen, name = "TypeDef", from_py_object)]
+#[derive(Clone)]
+pub struct PyTypeDef(pub cp::TypeDef);
+
+#[pymethods]
+impl PyTypeDef {
+    /// The freshly-introduced type τ.
+    #[getter]
+    fn tau(&self) -> PyType {
+        PyType(self.0.tau.clone())
+    }
+
+    /// `abs : α → τ` — the fresh injection constant.
+    #[getter]
+    #[pyo3(name = "abs_")]
+    fn abs_(&self) -> PyTerm {
+        PyTerm(self.0.abs.clone())
+    }
+
+    /// `rep : τ → α` — the fresh projection constant.
+    #[getter]
+    fn rep(&self) -> PyTerm {
+        PyTerm(self.0.rep.clone())
+    }
+
+    /// `⊢ ⋀a:τ. abs (rep a) ≡ a`.
+    #[getter]
+    fn abs_rep(&self) -> PyThm {
+        PyThm(self.0.abs_rep.clone())
+    }
+
+    /// `⊢ ⋀r:α. P r ⟹ rep (abs r) ≡ r`.
+    #[getter]
+    fn rep_abs_fwd(&self) -> PyThm {
+        PyThm(self.0.rep_abs_fwd.clone())
+    }
+
+    /// `⊢ ⋀r:α. rep (abs r) ≡ r ⟹ P r`.
+    #[getter]
+    fn rep_abs_back(&self) -> PyThm {
+        PyThm(self.0.rep_abs_back.clone())
+    }
+
+    /// Sorted list of type-variable names α is parametric in. τ's
+    /// arity equals `len(tvars)`.
+    #[getter]
+    fn tvars(&self) -> Vec<String> {
+        self.0.tvars.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("TypeDef(tau={}, tvars={:?})", self.0.tau, self.tvars())
     }
 }

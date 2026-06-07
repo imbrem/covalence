@@ -26,6 +26,16 @@ pub struct GitStore {
 }
 
 impl GitStore {
+    fn has_git_object(&self, id: &gix_hash::ObjectId, with_data: bool) -> bool {
+        let conn = self.conn.lock().unwrap();
+        let sql = if with_data {
+            "SELECT 1 FROM git_objects WHERE git_oid = ?1 AND blob_hash IS NOT NULL"
+        } else {
+            "SELECT 1 FROM git_objects WHERE git_oid = ?1"
+        };
+        conn.query_row(sql, [id.as_bytes()], |_| Ok(())).is_ok()
+    }
+
     fn all_data_by_tree_membership(&self, is_tree: bool) -> Result<Vec<Vec<u8>>, StoreError> {
         let conn = self.conn.lock().unwrap();
         let sql = if is_tree {
@@ -104,24 +114,12 @@ impl GitStore {
 
     /// Check whether a git OID is registered at all (including shallow entries).
     pub fn contains_oid(&self, id: &gix_hash::ObjectId) -> bool {
-        let conn = self.conn.lock().unwrap();
-        conn.query_row(
-            "SELECT 1 FROM git_objects WHERE git_oid = ?1",
-            [id.as_bytes()],
-            |_| Ok(()),
-        )
-        .is_ok()
+        self.has_git_object(id, false)
     }
 
     /// Check whether a git OID has associated data (not shallow).
     pub fn has_data(&self, id: &gix_hash::ObjectId) -> bool {
-        let conn = self.conn.lock().unwrap();
-        conn.query_row(
-            "SELECT 1 FROM git_objects WHERE git_oid = ?1 AND blob_hash IS NOT NULL",
-            [id.as_bytes()],
-            |_| Ok(()),
-        )
-        .is_ok()
+        self.has_git_object(id, true)
     }
 
     /// Get the object kind for a registered OID.

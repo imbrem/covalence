@@ -92,6 +92,17 @@ impl SystemBuilder {
         }
     }
 
+    pub fn new_module_data(component: Option<ComponentId>) -> ModuleData {
+        ModuleData {
+            component,
+            imports: Vec::new(),
+            funcs: Vec::new(),
+            exports: Vec::new(),
+            start_calls: Vec::new(),
+            explicit_start: None,
+        }
+    }
+
     // -----------------------------------------------------------------------
     // WAT generation: core module
     // -----------------------------------------------------------------------

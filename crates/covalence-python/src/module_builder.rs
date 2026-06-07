@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 use crate::component_builder::ComponentBuilder;
 use crate::module::Module;
 use crate::system_builder::{
-    ContainerId, ExportEntry, FuncData, FuncId, ImportedFunc, InstanceImport, ModuleData, ModuleId,
+    ContainerId, ExportEntry, FuncData, FuncId, ImportedFunc, InstanceImport, ModuleId,
     SystemBuilder, extract_hash,
 };
 
@@ -174,14 +174,7 @@ impl ModuleBuilder {
     #[new]
     pub fn new() -> Self {
         let mut sys = SystemBuilder::new();
-        let module_id = sys.modules.insert(ModuleData {
-            component: None,
-            imports: Vec::new(),
-            funcs: Vec::new(),
-            exports: Vec::new(),
-            start_calls: Vec::new(),
-            explicit_start: None,
-        });
+        let module_id = sys.modules.insert(SystemBuilder::new_module_data(None));
         ModuleBuilder {
             system: Arc::new(Mutex::new(sys)),
             id: module_id,

@@ -7,7 +7,7 @@ use crate::component_builder::ComponentBuilder;
 use crate::container::Container;
 use crate::module_builder::ModuleBuilder;
 use crate::system_builder::{
-    ComponentData, ContainerData, ContainerId, ModuleData, SystemBuilder,
+    ComponentData, ContainerData, ContainerId, SystemBuilder,
     extract_hash_for_container,
 };
 
@@ -82,14 +82,9 @@ impl ContainerBuilder {
             });
         }
 
-        let module_id = sys.modules.insert(ModuleData {
-            component: Some(comp_id),
-            imports: Vec::new(),
-            funcs: Vec::new(),
-            exports: Vec::new(),
-            start_calls: Vec::new(),
-            explicit_start: None,
-        });
+        let module_id = sys
+            .modules
+            .insert(SystemBuilder::new_module_data(Some(comp_id)));
         sys.components[comp_id].module = Some(module_id);
 
         Ok(ModuleBuilder {

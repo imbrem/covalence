@@ -98,6 +98,24 @@ impl<T: Any + Send + Sync + fmt::Debug> Observer for T {}
 /// `WasmObs::obs_eq` cannot affect equations involving `SatObs`.
 /// The kernel's downcast check ensures `obs_eq` is only invoked when
 /// both heads are of the requested type `O`.
+/// Per-observer-Rust-type policy for the kernel's
+/// [`crate::Thm::obs_true`] rule: a way to mint `⊢ (obs O) args…` for
+/// a prop-typed observation directly, gated by the observer's policy.
+///
+/// **Implementations are NOT part of the TCB.** Soundness is
+/// guaranteed by Pure's parametric-ε model: for any observer whose
+/// final Pure type is `prop`, the standard ε-interpretation maps it
+/// to `⊤` (truth). Returning `true` from `obs_true` is sound — the
+/// model already satisfies the proposition. Returning `false` is
+/// sound — the kernel simply doesn't derive it.
+///
+/// `hint` is the same opaque caller-supplied witness as [`ObsEq`]'s.
+/// Observer theories use it for external evidence (e.g., HOL trans
+/// needs the middle term and the two source theorems).
+pub trait ObsTrue: Observer {
+    fn obs_true(&self, args: &[Term], hint: Option<&dyn Any>) -> bool;
+}
+
 pub trait ObsEq: Observer {
     /// Per-`O` policy: decide whether `(obs self)(my_args…)` and
     /// `(obs other)(other_args…)` should be emitted as an equation

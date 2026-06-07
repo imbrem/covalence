@@ -445,3 +445,90 @@ fn obs_eq_demonstrates_untrusted_id_plumbing() {
     assert!(thm.hyps().is_empty(), "obs_eq produces an empty-hyp Thm");
     assert_eq!(thm.concl(), &Term::eq(e1, e2));
 }
+
+// ============================================================================
+// Thm::obs_true — kernel rule for direct observation truth
+// ============================================================================
+
+#[test]
+fn obs_true_for_a_prop_typed_observation_succeeds_when_policy_allows() {
+    use covalence_pure::{ObsTrue, Type};
+
+    #[derive(Debug)]
+    struct TrueProp;
+    impl ObsTrue for TrueProp {
+        fn obs_true(&self, _args: &[Term], _hint: Option<&dyn std::any::Any>) -> bool {
+            true
+        }
+    }
+
+    // expr: just `Term::obs(TrueProp, prop)`. Policy returns true → ⊢ expr.
+    let expr = Term::obs(TrueProp, Type::prop());
+    let thm = Thm::obs_true::<TrueProp>(expr.clone(), None).unwrap();
+    assert!(thm.hyps().is_empty());
+    assert_eq!(thm.concl(), &expr);
+}
+
+#[test]
+fn obs_true_rejects_non_prop_observations() {
+    use covalence_pure::ObsTrue;
+
+    #[derive(Debug)]
+    struct BytesOracle;
+    impl ObsTrue for BytesOracle {
+        fn obs_true(&self, _: &[Term], _: Option<&dyn std::any::Any>) -> bool {
+            true
+        }
+    }
+
+    // expr at type bytes — not prop, must be rejected.
+    let expr = Term::obs(BytesOracle, Type::bytes());
+    let result = Thm::obs_true::<BytesOracle>(expr, None);
+    assert!(matches!(result, Err(covalence_pure::Error::NotProp(_))));
+}
+
+#[test]
+fn obs_true_passes_hint_to_policy() {
+    use covalence_pure::{ObsTrue, Type};
+    use std::any::Any;
+    use std::sync::Mutex;
+
+    static SEEN_HINT: Mutex<Option<u64>> = Mutex::new(None);
+
+    #[derive(Debug)]
+    struct WithWitness;
+    impl ObsTrue for WithWitness {
+        fn obs_true(&self, _: &[Term], hint: Option<&dyn Any>) -> bool {
+            if let Some(h) = hint
+                && let Some(w) = h.downcast_ref::<u64>()
+            {
+                *SEEN_HINT.lock().unwrap() = Some(*w);
+                return true;
+            }
+            false
+        }
+    }
+
+    let expr = Term::obs(WithWitness, Type::prop());
+    let witness: u64 = 42;
+    assert!(Thm::obs_true::<WithWitness>(expr.clone(), Some(&witness)).is_ok());
+    assert_eq!(*SEEN_HINT.lock().unwrap(), Some(42));
+}
+
+#[test]
+fn obs_true_rejects_non_obs_head() {
+    use covalence_pure::ObsTrue;
+
+    #[derive(Debug)]
+    struct Anything;
+    impl ObsTrue for Anything {
+        fn obs_true(&self, _: &[Term], _: Option<&dyn std::any::Any>) -> bool {
+            true
+        }
+    }
+
+    // expr is just a Free var — no obs at head.
+    let expr = Term::free("p", covalence_pure::Type::prop());
+    let result = Thm::obs_true::<Anything>(expr, None);
+    assert!(matches!(result, Err(covalence_pure::Error::NotObsHead(_))));
+}

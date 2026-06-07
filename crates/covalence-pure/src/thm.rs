@@ -33,7 +33,8 @@ use crate::subst::{
     close, find_free_type, has_free_var, open, shift_by, subst_tfree_in_term, uses_bound_outer,
 };
 use crate::term::{
-    Def, Object, Hint, ObsEq, Observer, Term, TermKind, Type, TypeEnv, TypeKind, type_of_in,
+    Def, Hint, ObsEq, ObsTrue, Object, Observer, Term, TermKind, Type, TypeEnv, TypeKind,
+    type_of_in,
 };
 
 #[derive(Clone)]
@@ -508,6 +509,36 @@ impl Thm {
     /// not a soundness obligation. Different observer types `O`, `O'`
     /// get independent ε-families, so the rule never lets one
     /// observer's policy compromise another's.
+    /// `⊢ expr`, where:
+    /// - `expr` decomposes as `(obs head)(arg1)(arg2)…` with an `Obs`
+    ///   leaf at the head and zero or more applications.
+    /// - the head observer downcasts to Rust type `O`.
+    /// - `expr` has final Pure type `prop`.
+    /// - `O::obs_true(args, hint)` returns `true`.
+    ///
+    /// ## Soundness
+    ///
+    /// The rule is **unconditionally sound** regardless of what
+    /// `O::obs_true` returns. The standard ε-interpretation of any
+    /// observation whose result type is `prop` maps it to `⊤`, so
+    /// every `(obs O) args` of type `prop` is already true in the
+    /// model. Per-`O` ε-families means a policy choice in `WasmObs`
+    /// can't affect equations or assertions involving `HolLight`.
+    ///
+    /// `hint` is the same opaque pass-through as on `obs_eq`.
+    pub fn obs_true<O: ObsTrue>(expr: Term, hint: Option<&dyn std::any::Any>) -> Result<Thm> {
+        let (obs, args) = decompose_obs_app(&expr)?;
+        let o = obs.downcast::<O>().ok_or(Error::ObsDowncastTypeMismatch)?;
+        let ty = expr.type_of()?;
+        if !ty.is_prop() {
+            return Err(Error::NotProp(ty));
+        }
+        if !o.obs_true(&args, hint) {
+            return Err(Error::ObsEqRefused);
+        }
+        Self::build(BTreeSet::new(), expr)
+    }
+
     pub fn obs_eq<O: ObsEq>(
         expr1: Term,
         expr2: Term,

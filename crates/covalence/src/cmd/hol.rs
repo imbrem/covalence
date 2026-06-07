@@ -41,14 +41,15 @@ pub fn run(args: HolArgs) {
 }
 
 fn run_check(args: CheckArgs) -> eyre::Result<()> {
-    use covalence_hol::{BOOL_TYCON_ID, EQ_CONST_ID, FUN_TYCON_ID, HolKernel};
+    use covalence_hol::{BOOL_TYCON_ID, EQ_CONST_ID, FUN_TYCON_ID};
     use covalence_opentheory::{ArticleInterp, NameTable};
+    use covalence_shell::HolPrim;
 
     if args.files.is_empty() {
         eyre::bail!("no article files specified");
     }
 
-    let mut kernel = HolKernel::new(FUN_TYCON_ID, BOOL_TYCON_ID, EQ_CONST_ID);
+    let mut kernel = HolPrim::new(FUN_TYCON_ID, BOOL_TYCON_ID, EQ_CONST_ID);
     let mut names = NameTable::new();
 
     for path in &args.files {

@@ -651,12 +651,50 @@ impl HolLightKernel for PureHol {
         trueprop_pq.eq_mp(th2).map_err(pure_err)
     }
 
-    /// DEDUCT_ANTISYM_RULE — needs the `iff_intro` axiom in
-    /// `HolLightCtx`. Tracked as the next addition.
-    fn deduct_antisym(&mut self, _th1: Thm, _th2: Thm) -> Result<Thm, HolError> {
-        Err(HolError::Unsupported(
-            "deduct_antisym: needs HolLightCtx iff_intro axiom".into(),
-        ))
+    /// DEDUCT_ANTISYM_RULE:
+    ///
+    /// ```text
+    /// A1 ⊢ Trueprop p   A2 ⊢ Trueprop q
+    /// ─────────────────────────────────
+    /// (A1 - {Trueprop q}) ∪ (A2 - {Trueprop p}) ⊢ Trueprop (Eq[bool] p q)
+    /// ```
+    ///
+    /// Discharge each conclusion as a hypothesis (`imp_intro`) and
+    /// feed both directions into `HolLightCtx::iff_intro_axiom`.
+    fn deduct_antisym(&mut self, th1: Thm, th2: Thm) -> Result<Thm, HolError> {
+        let p = self
+            .unwrap_trueprop(th1.concl())
+            .ok_or(HolError::NotBoolean)?;
+        let q = self
+            .unwrap_trueprop(th2.concl())
+            .ok_or(HolError::NotBoolean)?;
+
+        // Build Trueprop p, Trueprop q for use as imp_intro antecedents
+        // (these will appear in the iff_intro axiom's instantiated form).
+        let tp_p = self.ctx.mk_trueprop(p.clone()).map_err(pure_err)?;
+        let tp_q = self.ctx.mk_trueprop(q.clone()).map_err(pure_err)?;
+
+        // th1_disc:  (A1 - {tp_q}) ⊢ tp_q ⟹ tp_p
+        let th1_disc = th1.imp_intro(&tp_q).map_err(pure_err)?;
+        // th2_disc:  (A2 - {tp_p}) ⊢ tp_p ⟹ tp_q
+        let th2_disc = th2.imp_intro(&tp_p).map_err(pure_err)?;
+
+        // iff_intro instantiated:
+        //   ⊢ (tp_p ⟹ tp_q) ⟹ (tp_q ⟹ tp_p) ⟹ Trueprop (Eq[bool] p q)
+        let axiom = self
+            .ctx
+            .iff_intro_axiom()
+            .all_elim(p)
+            .map_err(pure_err)?
+            .all_elim(q)
+            .map_err(pure_err)?;
+        // Discharge antecedents in order: th2_disc has type (tp_p ⟹ tp_q),
+        // th1_disc has type (tp_q ⟹ tp_p).
+        axiom
+            .imp_elim(th2_disc)
+            .map_err(pure_err)?
+            .imp_elim(th1_disc)
+            .map_err(pure_err)
     }
 
     /// INST: parallel term-variable instantiation.
@@ -967,6 +1005,36 @@ mod tests {
         let (l, r) = k.dest_eq_concl(&h2).unwrap();
         assert_eq!(l, y);
         assert_eq!(r, y);
+    }
+
+    #[test]
+    fn deduct_antisym_derives_iff_from_mutual_implication() {
+        // Set up: assume both p and q (as separate theorems whose hyp
+        // sets contain the OTHER side after deduct's discharge).
+        //   th1 = {p, q} ⊢ p
+        //   th2 = {p, q} ⊢ q
+        // deduct_antisym: ⊢ p ⟺ q with hyps {} after both q (from th1)
+        // and p (from th2) are discharged.
+        let mut k = mk_kernel();
+        let b = k.bool_type();
+        k.register_name(10, "p");
+        k.register_name(11, "q");
+        let p = k.mk_var(10, b.clone());
+        let q = k.mk_var(11, b);
+
+        // th1 = {p, q} ⊢ p, th2 = {p, q} ⊢ q via assume + add_hyp.
+        // Simpler: just use two separate assumes and combine their hyps
+        // by chaining through imp_intro/imp_elim. For the basic
+        // round-trip, we test assume(p) and assume(q) — discharge gives
+        // exact iff form.
+        let th_p = k.assume_rule(p.clone()).unwrap();
+        let th_q = k.assume_rule(q.clone()).unwrap();
+        let iff = k.deduct_antisym(th_p, th_q).unwrap();
+
+        // Conclusion is Trueprop (Eq[bool] p q).
+        let (l, r) = k.dest_eq_concl(&iff).unwrap();
+        assert_eq!(l, p);
+        assert_eq!(r, q);
     }
 
     #[test]

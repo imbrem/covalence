@@ -1,7 +1,8 @@
 //! Integration tests for theory dependency resolution.
 //!
-//! These tests process real OpenTheory standard library packages from the
-//! `assets/opentheory/` directory, validating the full dependency chain.
+//! These tests process real OpenTheory standard library packages
+//! vendored from <https://opentheory.gilith.com/> under
+//! `assets/opentheory/gilith/`, validating the full dependency chain.
 
 use covalence_hol::types::{BOOL_TYCON_ID, EQ_CONST_ID, FUN_TYCON_ID};
 use covalence_opentheory::{FileResolver, NameTable, TheoryCache, check_theory, register_select};
@@ -9,7 +10,7 @@ use covalence_shell::HolPrim;
 
 fn assets_dir() -> std::path::PathBuf {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    manifest.join("../../assets/opentheory")
+    manifest.join("../../assets/opentheory/gilith")
 }
 
 fn setup() -> (HolPrim, NameTable) {
@@ -313,7 +314,7 @@ fn test_unit_thm_full_chain() {
 }
 
 // ===================================================================
-// Standard library tests (from assets/opentheory/std/)
+// Standard library tests (from assets/opentheory/gilith/std/)
 //
 // These test against the real OpenTheory standard library packages.
 // They skip (not fail) if the std directory is not populated.
@@ -321,7 +322,7 @@ fn test_unit_thm_full_chain() {
 
 fn std_dir() -> std::path::PathBuf {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    manifest.join("../../assets/opentheory/std")
+    manifest.join("../../assets/opentheory/gilith/std")
 }
 
 fn std_resolver() -> Option<FileResolver> {
@@ -336,10 +337,10 @@ fn std_resolver() -> Option<FileResolver> {
 // -------------------------------------------------------------------
 // Umbrella: bool (bool-def + bool-int + axioms + bool-ext + bool-class)
 //
-// NOTE: These std-* tests use packages from `assets/opentheory/std/`
+// NOTE: These std-* tests use packages from `assets/opentheory/gilith/std/`
 // — the "combined article format" where every package's article is
 // the same merged thing rather than the per-definition articles in
-// `assets/opentheory/*-1.0/`. They reference constants in any order
+// `assets/opentheory/gilith/*-1.0/`. They reference constants in any order
 // (forward references are normal), which the per-package
 // dependency-resolver doesn't expect.
 //

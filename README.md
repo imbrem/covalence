@@ -57,3 +57,18 @@ cargo test             # run Rust tests
 cov repl               # interactive S-expression REPL
 cov serve --open       # start server, open browser
 ```
+
+## License
+
+Covalence is offered to the public domain to the maximum extent legally
+possible. You may use it under either:
+
+- the [BSD Zero Clause License](./LICENSE) (`0BSD`), or
+- the [CC0 1.0 Universal](./LICENSE-CC0) public-domain dedication (`CC0-1.0`).
+
+SPDX expression: `0BSD OR CC0-1.0`.
+
+Contributions are accepted under the same dual offering — see
+[`CONTRIBUTING.md`](./CONTRIBUTING.md). Vendored third-party code keeps
+its upstream license and is documented locally (e.g.
+[`assets/spectec/README.md`](./assets/spectec/README.md)).

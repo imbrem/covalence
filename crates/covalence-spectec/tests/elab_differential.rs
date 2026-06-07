@@ -347,9 +347,11 @@ fn rule_concl(r: &SpecTecRule) -> &SpecTecExp {
     e
 }
 
-/// Detect our `raw_sentinel()` value (`Bool { b: false }`) — anything
-/// the OCaml elaborator would never naturally produce as a top-level
-/// conclusion. Used to count *real* lowered conclusions in the diff.
+/// Detect the lowering of an `Expr::Unelaborated` site —
+/// `raw_sentinel()` returns `Bool { b: false }`, which OCaml's
+/// elaborator never emits as a top-level expression. Used to count
+/// *real* lowered conclusions in the diff so coverage is honest
+/// about elaboration gaps rather than counting them as values.
 fn is_raw_sentinel_exp(e: &SpecTecExp) -> bool {
     matches!(e, SpecTecExp::Bool { b: false })
 }

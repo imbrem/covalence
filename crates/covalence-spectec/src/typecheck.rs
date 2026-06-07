@@ -741,10 +741,10 @@ fn mini_classify_chunk(
             },
             Text(s) => Expr::Text { span, value: s.clone() },
             Eps => Expr::Eps { span },
-            _ => Expr::Raw(crate::cst::TokenRun {
-                span,
-                tokens: chunk.to_vec(),
-            }),
+            _ => Expr::Unelaborated {
+                tokens: crate::cst::TokenRun { span, tokens: chunk.to_vec() },
+                reason: crate::elab::ElabGap::Unrecognised,
+            },
         };
     }
     if chunk.len() == 2
@@ -772,10 +772,10 @@ fn mini_classify_chunk(
             };
         }
     }
-    Expr::Raw(crate::cst::TokenRun {
-        span,
-        tokens: chunk.to_vec(),
-    })
+    Expr::Unelaborated {
+        tokens: crate::cst::TokenRun { span, tokens: chunk.to_vec() },
+        reason: crate::elab::ElabGap::Unrecognised,
+    }
 }
 
 /// Span covering all tokens in `chunk`; falls back to `default` for
@@ -859,7 +859,7 @@ pub fn check_exp_against_scope(
     // containing a balanced `(...)` group (the case-head fallback
     // wraps `ARRAY`'s `(mut zt)` arg verbatim). We peel any outer
     // parens before attempting the split.
-    if let (Expr::Raw(tr), Typ::Var { x: name, .. }) = (&e, expected)
+    if let (Expr::Unelaborated { tokens: tr, .. }, Typ::Var { x: name, .. }) = (&e, expected)
         && let Some(binds) = env.headless_variant_body.get(name)
     {
         let toks = peel_outer_parens(&tr.tokens);
@@ -892,7 +892,7 @@ pub fn check_exp_against_scope(
     // Step 2 above handles the common case where the expected type
     // is the headless variant's *name* rather than its underlying
     // tuple shape.
-    if let (Expr::Raw(tr), Typ::Tup { ets }) = (&e, expected) {
+    if let (Expr::Unelaborated { tokens: tr, .. }, Typ::Tup { ets }) = (&e, expected) {
         let toks = peel_outer_parens(&tr.tokens);
         if let Some(chunks) = try_split_juxtaposed(toks, ets.len()) {
             let span = tr.span;
@@ -1285,7 +1285,7 @@ fn collect_var_names_in_premise(
         ElabPremise::Iter { inner, .. } => {
             collect_var_names_in_premise(inner, order, seen);
         }
-        ElabPremise::Raw(_) => {}
+        ElabPremise::Unelaborated { .. } => {}
     }
 }
 
@@ -1383,7 +1383,7 @@ pub fn check_premise_scope(env: &TypeEnv, p: ElabPremise, scope: &mut RuleScope)
             kind,
             bindings,
         },
-        ElabPremise::Raw(tr) => ElabPremise::Raw(tr),
+        u @ ElabPremise::Unelaborated { .. } => u,
     }
 }
 

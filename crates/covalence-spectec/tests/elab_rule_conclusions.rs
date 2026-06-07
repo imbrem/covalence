@@ -122,7 +122,7 @@ fn premise_kind_name(p: &ElabPremise) -> &'static str {
         ElabPremise::Let { .. } => "Let",
         ElabPremise::Else => "Else",
         ElabPremise::Iter { .. } => "Iter",
-        ElabPremise::Raw(_) => "Raw",
+        ElabPremise::Unelaborated { .. } => "Unelaborated",
     }
 }
 
@@ -159,7 +159,7 @@ fn expr_kind(e: Option<&Expr>) -> &'static str {
         Some(Expr::Cvt { .. }) => "Cvt",
         Some(Expr::Sub { .. }) => "Sub",
         Some(Expr::Eps { .. }) => "Eps",
-        Some(Expr::Raw(_)) => "Raw",
+        Some(Expr::Unelaborated { .. }) => "Unelaborated",
     }
 }
 

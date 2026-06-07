@@ -1027,9 +1027,49 @@ pub enum Expr {
     },
     /// `eps` — the empty sequence literal.
     Eps { span: Span },
-    /// Fallback: an unanalysed token run. Used when the expression
-    /// shape isn't yet supported by the structured cases.
-    Raw(TokenRun),
+    /// Tokens we couldn't structurally lower to a more specific
+    /// variant. Carries the raw run plus an [`ElabGap`] tag
+    /// describing why — distinct from a real `Bool { b: false }`
+    /// literal (which is what the OLD `Raw` variant lowered to,
+    /// confusingly). Downstream code treats this as "missing
+    /// elaboration", not as a value.
+    ///
+    /// This replaces the previous `Raw(TokenRun)` "sentinel-bool"
+    /// pattern. The taxonomy of gaps lives in [`ElabGap`] and is
+    /// meant to grow as new deferred cases appear.
+    Unelaborated {
+        tokens: TokenRun,
+        reason: ElabGap,
+    },
+}
+
+/// Why an expression slice couldn't be lowered to a structured
+/// `Expr` variant. Each value here corresponds to a known-deferred
+/// case in the elaborator. Adding a new lowering rule means
+/// converting an `ElabGap` site into proper handling.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ElabGap {
+    /// Generic "no recogniser matched" fallback in
+    /// `classify_simple_expression`. Anything ending here is a
+    /// missing lowering rule — the slice fell through every
+    /// `try_classify_*`, Pratt, and coarse-fallback path.
+    Unrecognised,
+    /// `try_classify_call` recognised `$name`-style call shape but
+    /// arg-parsing produced no usable expression; the arg slice is
+    /// preserved verbatim. (Sub-case of "we got partial info but
+    /// not enough to construct a `Call`.")
+    CallArgUnrecognised,
+    /// The leading token IS a known case head, but the remainder
+    /// didn't structure cleanly — `Case` with a single
+    /// `Unelaborated` arg, used by the coarse-fallback path in
+    /// `classify_simple_expression`.
+    CoarseCaseFallback,
+    /// Arithmetic-escape (`$( ... )`) body that contained no
+    /// recognisable arith operator and bottomed out as raw tokens.
+    ArithAtomUnrecognised,
+    /// A premise body didn't match `if`/`let`/`else`/`Iter`/
+    /// relation-reference. Used by `ElabPremise::Unelaborated`.
+    PremiseUnrecognised,
 }
 
 /// Number literal. Mirrors `spectec_ast::SpecTecNum` structurally, but
@@ -1155,7 +1195,7 @@ impl Expr {
             | Expr::Cvt { span, .. }
             | Expr::Sub { span, .. }
             | Expr::Eps { span } => *span,
-            Expr::Raw(tr) => tr.span,
+            Expr::Unelaborated { tokens, .. } => tokens.span,
         }
     }
 }
@@ -1197,8 +1237,14 @@ pub enum ElabPremise {
         kind: IterKind,
         bindings: Vec<IterBinding>,
     },
-    /// Anything not yet structurally recognised, kept as a raw run.
-    Raw(TokenRun),
+    /// Premise body that didn't match any recognised premise shape.
+    /// Carries the raw run plus an [`ElabGap`] tag — replaces the
+    /// previous opaque `Raw(TokenRun)`. See `Expr::Unelaborated`
+    /// for the analogous expression-side variant.
+    Unelaborated {
+        tokens: TokenRun,
+        reason: ElabGap,
+    },
 }
 
 /// One inferred iteration binder: a name appearing inside an iter body
@@ -1383,13 +1429,13 @@ pub fn elab_premise(
             // `RelName: <args>` — relation premise.
             let rel_name = name.clone();
             let Some(op) = ctx.op_table.iter().find(|o| o.name == rel_name) else {
-                return Ok(ElabPremise::Raw(prem.clone()));
+                return Ok(ElabPremise::Unelaborated { tokens: prem.clone(), reason: ElabGap::PremiseUnrecognised });
             };
             let op_id = op.id;
             let fragments = op.fragments.clone();
             // Expect a `:` right after the relation name.
             if !matches!(toks.get(1).map(|s| &s.token), Some(Token::Colon)) {
-                return Ok(ElabPremise::Raw(prem.clone()));
+                return Ok(ElabPremise::Unelaborated { tokens: prem.clone(), reason: ElabGap::PremiseUnrecognised });
             }
             let mut input: &[Spanned] = &toks[2..];
             let mut operands = Vec::new();
@@ -1403,20 +1449,20 @@ pub fn elab_premise(
                             Some(s) if &s.token == expected => {
                                 input = &input[1..];
                             }
-                            _ => return Ok(ElabPremise::Raw(prem.clone())),
+                            _ => return Ok(ElabPremise::Unelaborated { tokens: prem.clone(), reason: ElabGap::PremiseUnrecognised }),
                         }
                     }
                     Fragment::Hole(_) => {
                         let stop = next_lit_after(&fragments, i + 1);
                         match parse_expression_until(&mut input, stop.as_ref(), ctx) {
                             Ok(e) => operands.push(e),
-                            Err(_) => return Ok(ElabPremise::Raw(prem.clone())),
+                            Err(_) => return Ok(ElabPremise::Unelaborated { tokens: prem.clone(), reason: ElabGap::PremiseUnrecognised }),
                         }
                     }
                 }
             }
             if !input.is_empty() {
-                return Ok(ElabPremise::Raw(prem.clone()));
+                return Ok(ElabPremise::Unelaborated { tokens: prem.clone(), reason: ElabGap::PremiseUnrecognised });
             }
             Ok(ElabPremise::Rule {
                 rel_name,
@@ -1424,7 +1470,7 @@ pub fn elab_premise(
                 operands,
             })
         }
-        _ => Ok(ElabPremise::Raw(prem.clone())),
+        _ => Ok(ElabPremise::Unelaborated { tokens: prem.clone(), reason: ElabGap::PremiseUnrecognised }),
     }
 }
 
@@ -1443,7 +1489,10 @@ fn elab_iter_premise(
     let inner_toks = &toks[1..close_idx];
     let trailing = &toks[close_idx + 1..];
     if inner_toks.is_empty() {
-        return Ok(ElabPremise::Raw(prem.clone()));
+        return Ok(ElabPremise::Unelaborated {
+            tokens: prem.clone(),
+            reason: ElabGap::PremiseUnrecognised,
+        });
     }
     if trailing.is_empty() {
         // Just a parenthesised premise with no iter suffix — pass-through.
@@ -1467,7 +1516,7 @@ fn elab_iter_premise(
             // `^<count-expr>` — count is the rest of trailing.
             let count_toks = &trailing[1..];
             if count_toks.is_empty() {
-                return Ok(ElabPremise::Raw(prem.clone()));
+                return Ok(ElabPremise::Unelaborated { tokens: prem.clone(), reason: ElabGap::PremiseUnrecognised });
             }
             let count_span = count_toks
                 .iter()
@@ -1479,7 +1528,7 @@ fn elab_iter_premise(
                 tokens: count_toks.to_vec(),
             })
         }
-        _ => return Ok(ElabPremise::Raw(prem.clone())),
+        _ => return Ok(ElabPremise::Unelaborated { tokens: prem.clone(), reason: ElabGap::PremiseUnrecognised }),
     };
     // Recursively elaborate the inner premise.
     let inner_span = inner_toks
@@ -1572,7 +1621,7 @@ fn gather_iter_sources_in_premise(p: &ElabPremise, out: &mut IterSources) {
             gather_iter_sources_in_expr(rhs, out);
         }
         ElabPremise::Iter { inner, .. } => gather_iter_sources_in_premise(inner, out),
-        ElabPremise::Else | ElabPremise::Raw(_) => {}
+        ElabPremise::Else | ElabPremise::Unelaborated { .. } => {}
     }
 }
 
@@ -1700,7 +1749,7 @@ fn collect_vars_in_premise(p: &ElabPremise, out: &mut HashSet<String>) {
             collect_vars_in_expr(rhs, out);
         }
         ElabPremise::Iter { inner, .. } => collect_vars_in_premise(inner, out),
-        ElabPremise::Else | ElabPremise::Raw(_) => {}
+        ElabPremise::Else | ElabPremise::Unelaborated { .. } => {}
     }
 }
 
@@ -1893,10 +1942,10 @@ fn classify_simple_expression(
                 value: t.clone(),
             },
             Token::Eps => Expr::Eps { span },
-            _ => Expr::Raw(TokenRun {
-                span,
-                tokens: toks.to_vec(),
-            }),
+            _ => Expr::Unelaborated {
+                tokens: TokenRun { span, tokens: toks.to_vec() },
+                reason: ElabGap::Unrecognised,
+            },
         });
     }
 
@@ -1976,10 +2025,10 @@ fn classify_simple_expression(
                 .map(|s| s.span)
                 .reduce(Span::join)
                 .expect("non-empty");
-            let args = vec![Expr::Raw(TokenRun {
-                span: arg_span,
-                tokens: args_slice.to_vec(),
-            })];
+            let args = vec![Expr::Unelaborated {
+                tokens: TokenRun { span: arg_span, tokens: args_slice.to_vec() },
+                reason: ElabGap::CoarseCaseFallback,
+            }];
             return Ok(Expr::Case {
                 span,
                 head: head_name,
@@ -1988,10 +2037,10 @@ fn classify_simple_expression(
             });
         }
 
-    Ok(Expr::Raw(TokenRun {
-        span,
-        tokens: toks.to_vec(),
-    }))
+    Ok(Expr::Unelaborated {
+        tokens: TokenRun { span, tokens: toks.to_vec() },
+        reason: ElabGap::Unrecognised,
+    })
 }
 
 /// Attempt to parse `toks` as a mixfix expression against `ctx.op_table`.
@@ -2413,10 +2462,10 @@ fn try_classify_call(
                 .reduce(Span::join)
                 .unwrap_or(span);
             classify_simple_expression(slice, arg_span, ctx).unwrap_or_else(|_| {
-                Expr::Raw(TokenRun {
-                    span: arg_span,
-                    tokens: slice.to_vec(),
-                })
+                Expr::Unelaborated {
+                    tokens: TokenRun { span: arg_span, tokens: slice.to_vec() },
+                    reason: ElabGap::CallArgUnrecognised,
+                }
             })
         })
         .collect();
@@ -3556,7 +3605,7 @@ mod tests {
               -- Unknown_rel: C |- z : z
         "#;
         let elab = elab_first_rule(src);
-        assert!(matches!(&elab.premises[0], ElabPremise::Raw(_)));
+        assert!(matches!(&elab.premises[0], ElabPremise::Unelaborated { .. }));
     }
 
     // ---------- profile merging ----------

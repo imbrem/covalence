@@ -342,8 +342,12 @@ fn to_spectec_ast_flat(
                     .premises
                     .iter()
                     .map(|pr_tr| {
-                        let elabp = crate::elab::elab_premise(pr_tr, ctx)
-                            .unwrap_or_else(|_| ElabPremise::Raw(pr_tr.clone()));
+                        let elabp = crate::elab::elab_premise(pr_tr, ctx).unwrap_or_else(|_| {
+                            ElabPremise::Unelaborated {
+                                tokens: pr_tr.clone(),
+                                reason: crate::elab::ElabGap::PremiseUnrecognised,
+                            }
+                        });
                         let elabp = crate::typecheck::check_premise(env, elabp);
                         premise_to_spectec(&elabp, ctx)
                     })
@@ -501,8 +505,12 @@ pub(crate) fn try_split_headless_semi_expr(
             if let Some(inner) = try_split_headless_semi_expr(&part_tr, ctx, env, et) {
                 return inner;
             }
-            let classified = crate::elab::classify_token_run(&part_tr, ctx)
-                .unwrap_or_else(|| crate::elab::Expr::Raw(part_tr));
+            let classified = crate::elab::classify_token_run(&part_tr, ctx).unwrap_or_else(|| {
+                crate::elab::Expr::Unelaborated {
+                    tokens: part_tr,
+                    reason: crate::elab::ElabGap::Unrecognised,
+                }
+            });
             crate::typecheck::check_exp_against(env, classified, et)
         })
         .collect();
@@ -834,9 +842,13 @@ pub fn expr_to_spectec(e: &Expr, ctx: &ElabContext) -> spectec_ast::SpecTecExp {
         // `eps` lowers to the empty list (SpecTec's notion of "empty
         // sequence").
         Expr::Eps { .. } => S::List { es: Vec::new() },
-        // Sentinel for un-structured expressions; visible in the
-        // differential test so we can track lowering coverage.
-        Expr::Raw(_) => raw_sentinel(),
+        // Unelaborated tokens — we couldn't structure this slice and
+        // it's tracked as an explicit `ElabGap`. For the
+        // differential test we still lower to `raw_sentinel()` (the
+        // OCaml dump never produces `Bool{false}` so we can detect
+        // these positions structurally); see `is_raw_sentinel_exp`
+        // in `tests/elab_differential.rs`.
+        Expr::Unelaborated { .. } => raw_sentinel(),
     }
 }
 
@@ -1032,7 +1044,7 @@ pub fn premise_to_spectec(p: &ElabPremise, ctx: &ElabContext) -> spectec_ast::Sp
                 xes,
             }
         }
-        ElabPremise::Raw(_) => P::If { e: raw_sentinel() },
+        ElabPremise::Unelaborated { .. } => P::If { e: raw_sentinel() },
     }
 }
 

@@ -43,28 +43,43 @@
 //!   A HOL theorem `⊢_HOL p` (with p : bool) is internally the Pure
 //!   theorem `⊢_Pure Trueprop p`.
 //!
-//! ## Where we diverge from Isabelle/HOL
+//! ## Two derivation paths
 //!
-//! Isabelle/HOL **uses** the `eq_reflection` axiom to bridge HOL `=`
-//! and Pure `≡`, then derives every HOL Light rule by composing Pure
-//! rules through that bridge. Each derivation traces a chain of Pure
-//! inferences and produces a real Pure theorem.
+//! We support both Isabelle/HOL's approach and a more direct
+//! ε-model-based approach:
 //!
-//! Covalence-HOL **bypasses** the eq_reflection bridge entirely. The
-//! [`HolLight`] observer's [`ObsImp`] / [`ObsTrue`] policies directly
-//! recognise HOL-Light-derivable shapes (structural pattern checks)
-//! and mint matching Pure theorems via Pure's observer-rule
-//! primitives. Soundness comes from Pure's *parametric-ε model*:
-//! any prop-typed observation can be interpreted as ⊤ in the model,
-//! so any rule the policy asserts is consistent with that model.
-//! The whole `HolLight` family shares one ε-family, so the policy
-//! choices for HOL primitives don't interact with policies for
-//! unrelated observer types.
+//! 1. **Isabelle/HOL style (axiomatic)**: We ship [`HolLightCtx::eq_reflection_axiom`]
+//!    as a `Thm::assume`'d theorem with the same shape Isabelle/HOL
+//!    uses. From this axiom plus Pure's primitives, you can derive
+//!    every HOL Light rule the proper way — same derivation chain as
+//!    Isabelle. The axiom appears as a hypothesis in every theorem
+//!    that uses it, exactly like ETA / SELECT / INFINITY axioms in
+//!    HOL Light. This is the path the (forthcoming) `PureHol` kernel
+//!    adapter uses for ABS / INST / DEDUCT_ANTISYM etc., where the
+//!    rule's hypothesis-side-conditions are enforced by Pure's
+//!    matching primitives (`cong_abs` already checks "binder var not
+//!    free in hyps").
 //!
-//! Both approaches yield the same theorems. The covalence approach
-//! avoids one axiom in the trusted base and has cheaper bookkeeping
-//! (no eq_reflection-application chains), at the cost of less direct
-//! correspondence to the Isabelle/HOL derivation chain.
+//! 2. **ε-model direct (axiomless)**: The [`HolLight`] observer's
+//!    [`ObsTrue`] and [`ObsImp`] policies directly recognise the
+//!    *unconditionally-sound* HOL Light derivation shapes — refl,
+//!    beta, sym, trans, MK_COMB, EQ_MP-at-bool — and mint matching
+//!    Pure theorems via [`Thm::obs_true`] / [`Thm::obs_imp`].
+//!    Soundness comes from Pure's parametric-ε model: any prop-typed
+//!    observation can be interpreted as ⊤, so the policy's assertions
+//!    are consistent with the model. No axiom hypothesis to carry; no
+//!    derivation chain to materialise.
+//!
+//! Both paths give the same conclusions. The axiomatic path is
+//! Isabelle-faithful and handles ALL HOL Light rules (including the
+//! tricky ones with hyp-side-conditions). The ε-model path is
+//! lighter-weight for the simple rules but **cannot soundly handle**
+//! ABS, INST, INST_TYPE, DEDUCT_ANTISYM (analysed below).
+//!
+//! In practice the (forthcoming) `PureHol` kernel adapter routes
+//! HOL Light's 10 primitive rules through whichever path is sound
+//! for each rule: ε-model for the "free" rules, axiomatic for the
+//! conditioned rules.
 //!
 //! ## Tarski-T encoding
 //!
@@ -176,7 +191,7 @@ use std::any::Any;
 use std::fmt;
 use std::sync::LazyLock;
 
-use covalence_pure::{ObsEq, ObsImp, ObsTrue, Object, Observer, Term, TermKind, Type};
+use covalence_pure::{ObsEq, ObsImp, ObsTrue, Object, Observer, Term, TermKind, Thm, Type};
 
 // ============================================================================
 // Process-global lazy statics
@@ -200,6 +215,11 @@ static FORALL_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::For
 static EXISTS_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Exists));
 static SELECT_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Select));
 static TRUEPROP_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Trueprop));
+
+/// `⋀x y : 'a. Trueprop (Eq x y) ≡ (x ≡ y)` — the polymorphic
+/// `eq_reflection` axiom. Built lazily once via `Thm::assume`, reused
+/// process-wide. See [`HolLightCtx::eq_reflection_axiom`].
+static EQ_REFLECTION_AXIOM: LazyLock<Thm> = LazyLock::new(build_eq_reflection_axiom);
 
 // ============================================================================
 // The HolLight observer family
@@ -765,6 +785,92 @@ impl HolLightCtx {
     pub fn trueprop_obs_ptr_id(&self) -> usize {
         TRUEPROP_OBS.ptr_id()
     }
+
+    // ========================================================================
+    // The eq_reflection axiom (Isabelle/HOL bridge)
+    // ========================================================================
+
+    /// The polymorphic `eq_reflection` axiom — the bridge between HOL
+    /// bool-equality (`Eq`) and Pure meta-equality (`≡`):
+    ///
+    /// ```text
+    /// ⋀x y : 'a. Trueprop (Eq x y) ≡ (x ≡ y)
+    /// ```
+    ///
+    /// This is the same axiom Isabelle/HOL ships under the same name.
+    /// From it plus Pure's existing primitives (`refl`, `trans`, `sym`,
+    /// `cong_app`, `cong_abs`, `beta_conv`, `eq_mp`, `assume`,
+    /// `imp_intro`, `imp_elim`, `all_intro`, `all_elim`, `inst_tfree`)
+    /// you can derive every HOL Light rule — including the ones
+    /// `obs_imp` cannot handle soundly (ABS, INST, INST_TYPE, etc.)
+    /// because the derivation chains use Pure rules that have the
+    /// correct hypothesis-side-conditions baked in.
+    ///
+    /// ## Use pattern
+    ///
+    /// This is a [`Thm::assume`] axiom — it has itself as a single
+    /// hypothesis, and every theorem derived from it carries that
+    /// hypothesis. Like ETA / SELECT / INFINITY in HOL Light, the
+    /// axiom-as-hypothesis is the audit trail: anywhere `eq_reflection`
+    /// shows up in a `Thm::hyps()`, the conclusion's HOL-side validity
+    /// depends on this bridge.
+    ///
+    /// To instantiate at a specific type α, use `Thm::inst_tfree`:
+    ///
+    /// ```ignore
+    /// let axiom = ctx.eq_reflection_axiom();
+    /// let axiom_at_bool = axiom.inst_tfree("a", ctx.bool_type())?;
+    /// ```
+    ///
+    /// To use both directions of the equivalence:
+    ///
+    /// ```text
+    /// // Forward: from ⊢ Trueprop (Eq a b) derive ⊢ a ≡ b.
+    /// axiom_at_bool                                 // ⊢ ⋀x y. Trueprop (Eq x y) ≡ (x ≡ y)
+    ///     .all_elim(a)?                             // ⊢ ⋀y. Trueprop (Eq a y) ≡ (a ≡ y)
+    ///     .all_elim(b)?                             // ⊢ Trueprop (Eq a b) ≡ (a ≡ b)
+    ///     .eq_mp(source_thm)?                       // ⊢ a ≡ b   (given source: ⊢ Trueprop (Eq a b))
+    ///
+    /// // Backward: from ⊢ a ≡ b derive ⊢ Trueprop (Eq a b).
+    /// axiom_at_bool.all_elim(a)?.all_elim(b)?       // ⊢ Trueprop (Eq a b) ≡ (a ≡ b)
+    ///     .sym()?                                   // ⊢ (a ≡ b) ≡ Trueprop (Eq a b)
+    ///     .eq_mp(meta_eq_thm)?                      // ⊢ Trueprop (Eq a b)
+    /// ```
+    ///
+    /// ## Soundness
+    ///
+    /// `eq_reflection` is sound in the standard model where HOL `=`
+    /// at any type α is interpreted as semantic equality and Pure `≡`
+    /// is interpreted as syntactic meta-equality (which coincide for
+    /// terminating, well-typed terms in classical models). It's
+    /// neither provable from Pure alone nor reducible to other axioms
+    /// — exactly the role Isabelle/HOL gives it.
+    pub fn eq_reflection_axiom(&self) -> Thm {
+        (*EQ_REFLECTION_AXIOM).clone()
+    }
+}
+
+/// Build `eq_reflection` — called once, lazily, by the
+/// `EQ_REFLECTION_AXIOM` static initialiser.
+fn build_eq_reflection_axiom() -> Thm {
+    let ctx = HolLightCtx;
+    let alpha = Type::tfree("a");
+    // Inside two ⋀-binders: x = Bound(1), y = Bound(0) (both : 'a).
+    let x = Term::bound(1);
+    let y = Term::bound(0);
+    // HOL: x = y  (at 'a, returns bool)
+    let eq_at_alpha = ctx.eq_at(alpha.clone());
+    let hol_eq_x_y = Term::app(Term::app(eq_at_alpha, x.clone()), y.clone());
+    // Trueprop (x = y)  (returns prop)
+    let trueprop_hol_eq = Term::app(ctx.trueprop(), hol_eq_x_y);
+    // Pure: x ≡ y  (at 'a, returns prop)
+    let pure_eq_x_y = Term::eq(x, y);
+    // Trueprop (Eq x y) ≡ (x ≡ y)  (meta-eq between two props, returns prop)
+    let body = Term::eq(trueprop_hol_eq, pure_eq_x_y);
+    // Wrap in two ⋀-binders.
+    let inner = Term::all("y", alpha.clone(), body);
+    let outer = Term::all("x", alpha, inner);
+    Thm::assume(outer).expect("eq_reflection_axiom: well-typed by construction")
 }
 
 /// Marker trait certifying that an observer is in the [`HolLight`]

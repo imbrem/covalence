@@ -571,3 +571,144 @@ fn ctx_is_trueprop_identifies_trueprop_observer() {
     assert!(ctx.is_trueprop(tp_head));
     assert!(!ctx.is_trueprop(&ctx.t()));
 }
+
+// ============================================================================
+// Isabelle/HOL-style derivations via the eq_reflection axiom
+// ============================================================================
+
+#[test]
+fn eq_reflection_axiom_well_typed() {
+    let ctx = HolLightCtx::new();
+    let ax = ctx.eq_reflection_axiom();
+    // assume(φ) gives {φ} ⊢ φ — one hyp identical to the concl.
+    assert_eq!(ax.hyps().len(), 1);
+    assert_eq!(ax.hyps().iter().next().unwrap(), ax.concl());
+    // Concl is well-typed at prop.
+    assert!(ax.concl().type_of().unwrap().is_prop());
+}
+
+#[test]
+fn eq_reflection_specialises_via_inst_tfree() {
+    let ctx = HolLightCtx::new();
+    let ax = ctx.eq_reflection_axiom();
+    // Specialise 'a := bool — the most common case for HOL Light.
+    let at_bool = ax.inst_tfree("a", ctx.bool_type()).unwrap();
+    // The instantiated axiom is still a Pure prop.
+    assert!(at_bool.concl().type_of().unwrap().is_prop());
+}
+
+#[test]
+fn isabelle_style_derive_pure_meta_eq_from_hol_eq() {
+    // From a HOL theorem ⊢ Trueprop (Eq a b) derive ⊢ a ≡ b
+    // (the meta-equality), the way Isabelle/HOL does it: instantiate
+    // eq_reflection at the relevant terms, then eq_mp.
+    let ctx = HolLightCtx::new();
+    let a = Term::free("a", ctx.bool_type());
+    let b = Term::free("b", ctx.bool_type());
+    let hol_eq_ab = ctx.mk_trueprop(ctx.mk_eq(a.clone(), b.clone()).unwrap()).unwrap();
+    let source = covalence_pure::Thm::assume(hol_eq_ab).unwrap();
+
+    // axiom at α := bool, then specialised at a, b.
+    let axiom = ctx
+        .eq_reflection_axiom()
+        .inst_tfree("a", ctx.bool_type())
+        .unwrap()
+        .all_elim(a.clone())
+        .unwrap()
+        .all_elim(b.clone())
+        .unwrap();
+    // axiom : ⊢ Trueprop (Eq a b) ≡ (a ≡ b)
+    // Use eq_mp with source: ⊢ a ≡ b.
+    let meta_eq = axiom.eq_mp(source).unwrap();
+    assert_eq!(meta_eq.concl(), &covalence_pure::Term::eq(a, b));
+}
+
+#[test]
+fn isabelle_style_derive_hol_eq_from_pure_meta_eq() {
+    // From ⊢ a ≡ b (Pure meta-eq, e.g., refl on a if b = a) derive
+    // ⊢ Trueprop (Eq a b) (HOL eq). Reverse direction of the bridge.
+    let ctx = HolLightCtx::new();
+    let a = Term::free("a", ctx.bool_type());
+    // Pure refl gives ⊢ a ≡ a.
+    let meta_refl = covalence_pure::Thm::refl(a.clone()).unwrap();
+
+    let axiom = ctx
+        .eq_reflection_axiom()
+        .inst_tfree("a", ctx.bool_type())
+        .unwrap()
+        .all_elim(a.clone())
+        .unwrap()
+        .all_elim(a.clone())
+        .unwrap();
+    // axiom: ⊢ Trueprop (Eq a a) ≡ (a ≡ a)
+    // sym: ⊢ (a ≡ a) ≡ Trueprop (Eq a a)
+    let sym = axiom.sym().unwrap();
+    // eq_mp with refl: ⊢ Trueprop (Eq a a)
+    let hol_thm = sym.eq_mp(meta_refl).unwrap();
+
+    let expected = ctx.mk_trueprop(ctx.mk_eq(a.clone(), a).unwrap()).unwrap();
+    assert_eq!(hol_thm.concl(), &expected);
+    // The eq_reflection axiom (instantiated at bool) shows up as a hyp —
+    // exactly like ETA/SELECT/INFINITY in HOL Light.
+    assert_eq!(hol_thm.hyps().len(), 1);
+}
+
+#[test]
+fn isabelle_style_hol_trans_via_eq_reflection() {
+    // Derive HOL TRANS the Isabelle/HOL way:
+    //   ⊢ Trueprop (a = b), ⊢ Trueprop (b = c) → ⊢ Trueprop (a = c)
+    // via eq_reflection bridge + Pure trans.
+    let ctx = HolLightCtx::new();
+    let a = Term::free("a", ctx.bool_type());
+    let b = Term::free("b", ctx.bool_type());
+    let c = Term::free("c", ctx.bool_type());
+
+    let h_ab =
+        covalence_pure::Thm::assume(ctx.mk_trueprop(ctx.mk_eq(a.clone(), b.clone()).unwrap()).unwrap())
+            .unwrap();
+    let h_bc =
+        covalence_pure::Thm::assume(ctx.mk_trueprop(ctx.mk_eq(b.clone(), c.clone()).unwrap()).unwrap())
+            .unwrap();
+
+    let axiom = ctx
+        .eq_reflection_axiom()
+        .inst_tfree("a", ctx.bool_type())
+        .unwrap();
+
+    // Convert h_ab to ⊢ a ≡ b.
+    let pure_ab = axiom
+        .clone()
+        .all_elim(a.clone())
+        .unwrap()
+        .all_elim(b.clone())
+        .unwrap()
+        .eq_mp(h_ab)
+        .unwrap();
+    // Convert h_bc to ⊢ b ≡ c.
+    let pure_bc = axiom
+        .clone()
+        .all_elim(b.clone())
+        .unwrap()
+        .all_elim(c.clone())
+        .unwrap()
+        .eq_mp(h_bc)
+        .unwrap();
+    // Pure trans: ⊢ a ≡ c.
+    let pure_ac = pure_ab.trans(pure_bc).unwrap();
+    // Convert back to HOL: instantiate axiom at a, c; sym; eq_mp.
+    let hol_ac = axiom
+        .all_elim(a.clone())
+        .unwrap()
+        .all_elim(c.clone())
+        .unwrap()
+        .sym()
+        .unwrap()
+        .eq_mp(pure_ac)
+        .unwrap();
+    // Concl: ⊢ Trueprop (a = c).
+    let expected = ctx.mk_trueprop(ctx.mk_eq(a, c).unwrap()).unwrap();
+    assert_eq!(hol_ac.concl(), &expected);
+    // The eq_reflection axiom appears as a hypothesis (along with the
+    // two HOL source hypotheses).
+    assert_eq!(hol_ac.hyps().len(), 3);
+}

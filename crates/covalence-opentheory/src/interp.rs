@@ -242,7 +242,7 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
             }
         }
         let thm = self.kernel.new_axiom(concl)?;
-        self.assumptions.push(thm);
+        self.assumptions.push(thm.clone());
         self.stack.push(OtObject::Thm(thm));
         Ok(())
     }
@@ -251,17 +251,23 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
     fn cmd_beta_conv(&mut self) -> Result<(), OtError> {
         let tm = self.pop_term()?;
         // Destruct: tm = Comb(Abs(var, body), arg)
-        let (f, arg) = self.kernel.dest_comb(tm).ok_or(HolError::NotBetaRedex)?;
-        let (var, _body) = self.kernel.dest_abs(f).ok_or(HolError::NotBetaRedex)?;
+        let (f, arg) = self
+            .kernel
+            .dest_comb(tm.clone())
+            .ok_or(HolError::NotBetaRedex)?;
+        let (var, _body) = self
+            .kernel
+            .dest_abs(f.clone())
+            .ok_or(HolError::NotBetaRedex)?;
 
-        if self.kernel.term_eq(var, arg) {
+        if self.kernel.term_eq(var.clone(), arg.clone()) {
             // Simple case: (\x. body) x = body
             let result = self.kernel.beta_conv(tm)?;
             self.stack.push(OtObject::Thm(result));
         } else {
             // General case: (\x. body) t
             // Build exact beta redex (\x. body) x, then INST x -> t.
-            let exact_redex = self.kernel.mk_comb(f, var);
+            let exact_redex = self.kernel.mk_comb(f, var.clone());
             let beta_thm = self.kernel.beta_conv(exact_redex)?;
             let pairs = vec![(arg, var)];
             let result = self.kernel.inst_rule(&pairs, beta_thm)?;
@@ -319,7 +325,7 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
         let tm = self.pop_term()?;
         let name = self.pop_name()?;
         let name_id = self.intern_name(&name);
-        let var_ty = self.kernel.type_of(tm);
+        let var_ty = self.kernel.type_of(tm.clone());
         let var_tm = self.kernel.mk_var(name_id, var_ty);
         let eq = self.kernel.mk_eq(var_tm, tm);
         let thm = self.kernel.new_basic_definition(eq)?;
@@ -476,7 +482,7 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
                         }
                     };
                     let new_ty = match &pair[1] {
-                        OtObject::Type(t) => *t,
+                        OtObject::Type(t) => t.clone(),
                         _ => {
                             return Err(OtError::TypeError {
                                 expected: "Type".into(),
@@ -510,7 +516,7 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
             match pair_obj {
                 OtObject::List(pair) if pair.len() == 2 => {
                     let old_var = match &pair[0] {
-                        OtObject::Var(n, ty) => self.kernel.mk_var(*n, *ty),
+                        OtObject::Var(n, ty) => self.kernel.mk_var(*n, ty.clone()),
                         _ => {
                             return Err(OtError::TypeError {
                                 expected: "Var".into(),
@@ -519,8 +525,8 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
                         }
                     };
                     let new_term = match &pair[1] {
-                        OtObject::Term(t) => *t,
-                        OtObject::Var(n, ty) => self.kernel.mk_var(*n, *ty),
+                        OtObject::Term(t) => t.clone(),
+                        OtObject::Var(n, ty) => self.kernel.mk_var(*n, ty.clone()),
                         _ => {
                             return Err(OtError::TypeError {
                                 expected: "Term".into(),
@@ -561,7 +567,7 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
         let th = self.pop_thm()?;
 
         // Verify: th.concl is alpha-equivalent to concl.
-        let th_concl = self.kernel.concl(th);
+        let th_concl = self.kernel.concl(th.clone());
         if !self.kernel.aconv(th_concl, concl) {
             return Err(OtError::ParseError("thm: conclusion doesn't match".into()));
         }
@@ -580,9 +586,12 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
             }
         }
 
-        let th_hyps = self.kernel.hyps(th);
+        let th_hyps = self.kernel.hyps(th.clone());
         for hyp in &th_hyps {
-            if !expected_hyps.iter().any(|&e| self.kernel.aconv(*hyp, e)) {
+            if !expected_hyps
+                .iter()
+                .any(|e| self.kernel.aconv(hyp.clone(), e.clone()))
+            {
                 return Err(OtError::ParseError(
                     "thm: unexpected hypothesis in theorem".into(),
                 ));
@@ -666,7 +675,7 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
     fn cmd_prove_hyp(&mut self) -> Result<(), OtError> {
         let th2 = self.pop_thm()?;
         let th1 = self.pop_thm()?;
-        let iff_thm = self.kernel.deduct_antisym(th1, th2)?;
+        let iff_thm = self.kernel.deduct_antisym(th1.clone(), th2)?;
         let result = self.kernel.eq_mp(iff_thm, th1)?;
         self.stack.push(OtObject::Thm(result));
         Ok(())
@@ -675,19 +684,19 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
     // sym: Thm (Γ ⊦ t = u) -> Thm (Γ ⊦ u = t)
     fn cmd_sym(&mut self) -> Result<(), OtError> {
         let th = self.pop_thm()?;
-        let concl = self.kernel.concl(th);
+        let concl = self.kernel.concl(th.clone());
         let (lhs, _rhs) = self.kernel.dest_eq(concl).ok_or(HolError::NotAnEquation)?;
 
-        let lhs_ty = self.kernel.type_of(lhs);
+        let lhs_ty = self.kernel.type_of(lhs.clone());
         let bool_ty = self.kernel.bool_type();
-        let fun_lhs_bool = self.kernel.fun_type(lhs_ty, bool_ty);
+        let fun_lhs_bool = self.kernel.fun_type(lhs_ty.clone(), bool_ty);
         let eq_full_ty = self.kernel.fun_type(lhs_ty, fun_lhs_bool);
         let eq_const = self.kernel.mk_const(self.kernel.eq_id(), eq_full_ty);
 
         let refl_eq = self.kernel.refl(eq_const)?;
         let th1 = self.kernel.mk_comb_rule(refl_eq, th)?;
         let refl_t = self.kernel.refl(lhs)?;
-        let th2 = self.kernel.mk_comb_rule(th1, refl_t)?;
+        let th2 = self.kernel.mk_comb_rule(th1, refl_t.clone())?;
         let result = self.kernel.eq_mp(th2, refl_t)?;
         self.stack.push(OtObject::Thm(result));
         Ok(())

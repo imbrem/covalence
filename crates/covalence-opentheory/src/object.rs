@@ -28,11 +28,11 @@ impl<K: HolLightKernel> Clone for OtObject<K> {
             OtObject::Name(n) => OtObject::Name(n.clone()),
             OtObject::List(l) => OtObject::List(l.clone()),
             OtObject::TypeOp(n) => OtObject::TypeOp(*n),
-            OtObject::Type(t) => OtObject::Type(*t),
+            OtObject::Type(t) => OtObject::Type(t.clone()),
             OtObject::Const(n) => OtObject::Const(*n),
-            OtObject::Var(n, ty) => OtObject::Var(*n, *ty),
-            OtObject::Term(t) => OtObject::Term(*t),
-            OtObject::Thm(t) => OtObject::Thm(*t),
+            OtObject::Var(n, ty) => OtObject::Var(*n, ty.clone()),
+            OtObject::Term(t) => OtObject::Term(t.clone()),
+            OtObject::Thm(t) => OtObject::Thm(t.clone()),
         }
     }
 }

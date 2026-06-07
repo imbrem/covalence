@@ -1022,10 +1022,7 @@ dependencies = [
 name = "covalence-hol"
 version = "0.0.0"
 dependencies = [
- "bytes",
- "covalence-hash",
  "covalence-pure",
- "smol_str",
  "thiserror 2.0.18",
 ]
 

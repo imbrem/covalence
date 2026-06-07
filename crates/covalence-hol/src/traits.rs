@@ -11,7 +11,7 @@ use crate::types::*;
 /// Type-level operations for a HOL Light-style system.
 pub trait HolLightTypes {
     /// The representation of types (a `Copy` index handle).
-    type Type: Copy + std::fmt::Debug;
+    type Type: Clone + std::fmt::Debug;
 
     // -- Well-known identifiers --
 
@@ -68,7 +68,7 @@ pub trait HolLightTypes {
 /// Requires `HolLightTypes` for the type layer.
 pub trait HolLightTerms: HolLightTypes {
     /// The representation of terms (a `Copy` index handle).
-    type Term: Copy + std::fmt::Debug;
+    type Term: Clone + std::fmt::Debug;
 
     // -- Well-known identifiers --
 
@@ -150,7 +150,7 @@ pub trait HolLightTerms: HolLightTypes {
 /// can fail uniformly. All methods take `&mut self` since they may allocate.
 pub trait HolLightKernel: HolLightTerms {
     /// The representation of theorems (a `Copy` index handle).
-    type Thm: Copy + std::fmt::Debug;
+    type Thm: Clone + std::fmt::Debug;
 
     // -- Theorem inspection --
 

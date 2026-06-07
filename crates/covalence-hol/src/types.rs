@@ -1,63 +1,14 @@
-//! Core HOL Light types: types, terms, and theorems.
+//! Shared HOL-Light name interning and error types.
 //!
-//! Uses arena-allocated index handles (`TypeId`, `TermId`, `ThmId`) instead of
-//! `Arc`-wrapped recursive enums. The kernel owns `Vec` arenas; indices are just
-//! lightweight `u32` handles that the kernel validates on dereference.
+//! Concrete type/term/theorem representations live with each kernel
+//! implementation (e.g. `HolPrim` in `covalence-shell`). This module
+//! only carries the bits every backend agrees on: the `NameId`
+//! namespace used by the OpenTheory `NameTable`, the well-known
+//! constants reserved at the start of that table, and the unified
+//! `HolError` returned by kernel methods.
 
 /// Interned name — a 64-bit index into a name table.
 pub type NameId = u64;
-
-// ---------------------------------------------------------------------------
-// Index handles
-// ---------------------------------------------------------------------------
-
-/// Handle to a type in a `HolArena`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TypeId(pub u32);
-
-/// Handle to a term in a `HolArena`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TermId(pub u32);
-
-/// Handle to a theorem in a `HolArena`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ThmId(pub u32);
-
-// ---------------------------------------------------------------------------
-// Arena definitions (the actual data stored per slot)
-// ---------------------------------------------------------------------------
-
-/// A type stored in the arena.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum HolTypeDef {
-    /// Type variable: `'a`, `'b`, ...
-    Tyvar(NameId),
-    /// Type constructor applied to arguments: `bool`, `fun(A,B)`, `list(A)`, ...
-    Tyapp(NameId, Vec<TypeId>),
-}
-
-/// A term stored in the arena.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TermDef {
-    /// Variable: `Var(name, type)`.
-    Var(NameId, TypeId),
-    /// Constant with instantiated type: `Const(name, type)`.
-    Const(NameId, TypeId),
-    /// Application: `Comb(f, x)` represents `f x`.
-    Comb(TermId, TermId),
-    /// Lambda abstraction: `Abs(var, body)`.
-    /// The binder must be a `Var` node (same as HOL Light).
-    Abs(TermId, TermId),
-}
-
-/// A theorem stored in the arena.
-#[derive(Debug, Clone)]
-pub struct ThmDef {
-    /// Hypotheses.
-    pub(crate) hyps: Vec<TermId>,
-    /// Conclusion.
-    pub(crate) concl: TermId,
-}
 
 // ---------------------------------------------------------------------------
 // Well-known constants
@@ -120,10 +71,6 @@ pub enum HolError {
     BadTypeDefinition(String),
     #[error("unsupported operation: {0}")]
     Unsupported(String),
-    #[error("invalid type index: {0}")]
-    InvalidTypeId(u32),
-    #[error("invalid term index: {0}")]
-    InvalidTermId(u32),
-    #[error("invalid theorem index: {0}")]
+    #[error("invalid theorem handle: {0}")]
     InvalidThmId(u32),
 }

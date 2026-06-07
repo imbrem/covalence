@@ -7,10 +7,5 @@ edition = "2024"
 default = []
 
 [dependencies]
-covalence-hash = { path = "../covalence-hash", default-features = false }
 covalence-pure = { path = "../covalence-pure" }
-smol_str = "0.3"
 thiserror = "2"
-
-[dev-dependencies]
-bytes = "1"

@@ -292,10 +292,10 @@ fn filter_assumptions<K: HolLightKernel>(
     assumptions
         .into_iter()
         .filter(|ax| {
-            let ax_concl = kernel.concl(*ax);
+            let ax_concl = kernel.concl(ax.clone());
             !imported
                 .iter()
-                .any(|imp| kernel.aconv(kernel.concl(*imp), ax_concl))
+                .any(|imp| kernel.aconv(kernel.concl(imp.clone()), ax_concl.clone()))
         })
         .collect()
 }
@@ -446,7 +446,7 @@ pub fn register_select<K: HolLightKernel>(kernel: &mut K, names: &mut NameTable)
     // select : (A -> bool) -> A
     let a = kernel.mk_tyvar(names.intern_str("A"));
     let bool_ty = kernel.bool_type();
-    let pred_ty = kernel.fun_type(a, bool_ty); // A -> bool
+    let pred_ty = kernel.fun_type(a.clone(), bool_ty); // A -> bool
     let select_ty = kernel.fun_type(pred_ty, a); // (A -> bool) -> A
     let _ = kernel.new_constant(select_id, select_ty);
 }

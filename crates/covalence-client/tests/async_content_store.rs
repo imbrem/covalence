@@ -13,17 +13,14 @@ use bytes::Bytes;
 use covalence_client::AsyncHttpBackend;
 use covalence_serve::{AppState, build_router, new_tagged_store};
 use covalence_shell::Kernel;
-use covalence_store::{
-    AsyncContentStore, BlobInfo, ByteRange, ResolvedRange, StoreError,
-};
+use covalence_store::{AsyncContentStore, BlobInfo, ByteRange, ResolvedRange, StoreError};
 
 async fn spawn_server() -> (AsyncHttpBackend, tempfile::TempDir) {
     let tempdir = tempfile::tempdir().expect("tempdir");
     let socket_path = tempdir.path().join("serve.sock");
 
     let tagged_store = new_tagged_store();
-    let object_store =
-        covalence_store::GitTaggedObjectStore::new(tagged_store.clone());
+    let object_store = covalence_store::GitTaggedObjectStore::new(tagged_store.clone());
     let state = AppState {
         version: "test",
         target: "test",
@@ -73,8 +70,14 @@ async fn missing_key_is_not_found() {
     let (backend, _td) = spawn_server().await;
     let missing = covalence_hash::O256::blob(b"nope");
 
-    assert!(matches!(backend.head(&missing).await, Err(StoreError::NotFound)));
-    assert!(matches!(backend.get(&missing).await, Err(StoreError::NotFound)));
+    assert!(matches!(
+        backend.head(&missing).await,
+        Err(StoreError::NotFound)
+    ));
+    assert!(matches!(
+        backend.get(&missing).await,
+        Err(StoreError::NotFound)
+    ));
     assert!(!backend.contains(&missing).await.expect("contains"));
 }
 
@@ -91,7 +94,10 @@ async fn get_slice_native_range() {
     assert_eq!(bytes, b"234"[..]);
 
     // End past blob silently clamps (POSIX read semantics)
-    let bytes = backend.get_slice(&hash, 8..999).await.expect("get_slice clamp");
+    let bytes = backend
+        .get_slice(&hash, 8..999)
+        .await
+        .expect("get_slice clamp");
     assert_eq!(bytes, b"89"[..]);
 }
 
@@ -154,5 +160,8 @@ async fn put_verifies_hash() {
 
     // Wrong key — server-computed hash mismatch.
     let wrong = covalence_hash::O256::blob(b"different");
-    assert!(matches!(backend.put(wrong, data).await, Err(StoreError::Io(_))));
+    assert!(matches!(
+        backend.put(wrong, data).await,
+        Err(StoreError::Io(_))
+    ));
 }

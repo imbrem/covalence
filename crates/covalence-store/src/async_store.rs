@@ -95,7 +95,9 @@ pub trait AsyncContentStore<K: Send + Sync>: Send + Sync {
     ) -> Result<(Bytes, ResolvedRange), StoreError> {
         let info = self.head(key).await?;
         let resolved = range.resolve(info.size)?;
-        let bytes = self.get_slice(key, resolved.start..resolved.end + 1).await?;
+        let bytes = self
+            .get_slice(key, resolved.start..resolved.end + 1)
+            .await?;
         Ok((bytes, resolved))
     }
 
@@ -293,10 +295,7 @@ mod tests {
             let s = store();
             let missing = O256::blob(b"nope");
             assert!(matches!(s.get(&missing).await, Err(StoreError::NotFound)));
-            assert!(matches!(
-                s.head(&missing).await,
-                Err(StoreError::NotFound)
-            ));
+            assert!(matches!(s.head(&missing).await, Err(StoreError::NotFound)));
             assert!(!s.contains(&missing).await.unwrap());
         }
 
@@ -346,10 +345,7 @@ mod tests {
         async fn get_range_unsatisfiable() {
             let s = store();
             let hash = s.insert(Bytes::from_static(b"hello")).await.unwrap();
-            match s
-                .get_range(&hash, ByteRange::From { start: 100 })
-                .await
-            {
+            match s.get_range(&hash, ByteRange::From { start: 100 }).await {
                 Err(StoreError::RangeNotSatisfiable { total }) => assert_eq!(total, 5),
                 other => panic!("expected RangeNotSatisfiable, got {other:?}"),
             }

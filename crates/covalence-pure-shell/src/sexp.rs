@@ -215,11 +215,7 @@ pub fn term_to_sexp(t: &Term, ser: &dyn ObsSerializer) -> Result<SExpr> {
             let payload = ser.obs_to_sexp(observer)?;
             list3("obs", payload, type_to_sexp(ty))
         }
-        TermKind::Def(d) => list3(
-            "def",
-            sym(d.name().as_str()),
-            term_to_sexp(d.body(), ser)?,
-        ),
+        TermKind::Def(d) => list3("def", sym(d.name().as_str()), term_to_sexp(d.body(), ser)?),
     })
 }
 
@@ -322,7 +318,9 @@ pub fn term_from_sexp(s: &SExpr, parser: &dyn ObsParser) -> Result<Term> {
             // Extract the LHS (the Term::def leaf).
             match thm.concl().kind() {
                 TermKind::Eq(lhs, _) => Ok(lhs.clone()),
-                _ => Err(SexpError("kernel produced unexpected define Thm shape".into())),
+                _ => Err(SexpError(
+                    "kernel produced unexpected define Thm shape".into(),
+                )),
             }
         }
         other => Err(SexpError(format!("unknown term head: {}", other))),

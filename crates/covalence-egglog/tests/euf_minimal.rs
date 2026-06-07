@@ -10,8 +10,7 @@
 
 use covalence_egglog::{
     BridgeError, EgglogBridge, KernelEgglogBridge, Proof, ProofStore, Proposition, Term, TermDag,
-    ingest_proof_store,
-    proof::Justification,
+    ingest_proof_store, proof::Justification,
 };
 use covalence_kernel::Kernel;
 use covalence_types::Decision;
@@ -87,8 +86,8 @@ fn fiat_top_level_union_closes() {
         justification: Justification::Fiat,
     });
 
-    let _thm = ingest_proof_store(&mut bridge, &store, &dag, p0)
-        .expect("Fiat ingestion should succeed");
+    let _thm =
+        ingest_proof_store(&mut bridge, &store, &dag, p0).expect("Fiat ingestion should succeed");
 }
 
 // =====================================================================
@@ -174,7 +173,9 @@ fn arity_mismatch_rejected() {
 
     let err = ingest_proof_store(&mut bridge, &store, &dag, p0)
         .expect_err("arity mismatch should surface");
-    assert!(matches!(err, BridgeError::ArityMismatch { ref name, expected: 1, actual: 2 } if name == "f"));
+    assert!(
+        matches!(err, BridgeError::ArityMismatch { ref name, expected: 1, actual: 2 } if name == "f")
+    );
 }
 
 // =====================================================================
@@ -210,8 +211,8 @@ fn trans_chains_two_fiat_equations() {
         justification: Justification::Trans(ab, bc),
     });
 
-    let _thm = ingest_proof_store(&mut bridge, &store, &dag, ac)
-        .expect("trans should chain a=b and b=c");
+    let _thm =
+        ingest_proof_store(&mut bridge, &store, &dag, ac).expect("trans should chain a=b and b=c");
 }
 
 // =====================================================================
@@ -241,8 +242,8 @@ fn sym_flips_fiat_equation() {
         justification: Justification::Sym(ab),
     });
 
-    let _thm = ingest_proof_store(&mut bridge, &store, &dag, ba)
-        .expect("sym should flip a=b to b=a");
+    let _thm =
+        ingest_proof_store(&mut bridge, &store, &dag, ba).expect("sym should flip a=b to b=a");
 }
 
 // =====================================================================

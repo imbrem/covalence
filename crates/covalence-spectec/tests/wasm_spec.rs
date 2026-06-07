@@ -5,7 +5,10 @@ use covalence_spectec::{ast, wasm};
 #[test]
 fn wasm_spec_loads() {
     let defs: Vec<ast::SpecTecDef> = wasm::get_wasm_spectec_ast();
-    assert!(!defs.is_empty(), "WASM SpecTec AST must contain definitions");
+    assert!(
+        !defs.is_empty(),
+        "WASM SpecTec AST must contain definitions"
+    );
 }
 
 #[test]

@@ -68,7 +68,9 @@ pub struct PureHost {
 
 impl PureHost {
     pub fn new() -> Self {
-        Self { table: ResourceTable::new() }
+        Self {
+            table: ResourceTable::new(),
+        }
     }
 
     pub fn table(&self) -> &ResourceTable {
@@ -80,7 +82,9 @@ impl PureHost {
     }
 
     fn push_type(&mut self, t: cp::Type) -> wasmtime::Result<Resource<HostPureType>> {
-        self.table.push(HostPureType(t)).map_err(wasmtime::Error::from)
+        self.table
+            .push(HostPureType(t))
+            .map_err(wasmtime::Error::from)
     }
 
     fn push_term(&mut self, t: cp::Term) -> wasmtime::Result<Resource<HostTerm>> {
@@ -95,7 +99,9 @@ impl PureHost {
         &mut self,
         t: Arc<BTreeSet<cp::Term>>,
     ) -> wasmtime::Result<Resource<HostTermSet>> {
-        self.table.push(HostTermSet(t)).map_err(wasmtime::Error::from)
+        self.table
+            .push(HostTermSet(t))
+            .map_err(wasmtime::Error::from)
     }
 }
 

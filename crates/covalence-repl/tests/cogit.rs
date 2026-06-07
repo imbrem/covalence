@@ -87,7 +87,10 @@ fn git_close_drops_handle() {
     assert!(closed.contains("closed git store"), "got: {closed}");
     // After close, subsequent commands error again.
     let out = s.eval("git-info");
-    assert!(out.to_lowercase().contains("git store not open"), "got: {out}");
+    assert!(
+        out.to_lowercase().contains("git store not open"),
+        "got: {out}"
+    );
 }
 
 #[test]

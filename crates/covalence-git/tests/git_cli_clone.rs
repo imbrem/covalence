@@ -84,7 +84,12 @@ fn rev_parse(cwd: &Path, rev: &str) -> gix_hash::ObjectId {
 /// final-tree OID.
 fn build_worktree_repo(
     work: &Path,
-) -> (PathBuf, gix_hash::ObjectId, gix_hash::ObjectId, gix_hash::ObjectId) {
+) -> (
+    PathBuf,
+    gix_hash::ObjectId,
+    gix_hash::ObjectId,
+    gix_hash::ObjectId,
+) {
     let repo = work.join("repo");
     std::fs::create_dir_all(&repo).unwrap();
 
@@ -190,7 +195,10 @@ fn clone_with_branch_and_tag() {
     .unwrap();
 
     let names: Vec<&str> = result.refs.iter().map(|r| r.name.as_str()).collect();
-    assert!(names.contains(&"refs/heads/main"), "main missing in {names:?}");
+    assert!(
+        names.contains(&"refs/heads/main"),
+        "main missing in {names:?}"
+    );
     assert!(
         names.contains(&"refs/heads/feature"),
         "feature missing in {names:?}",

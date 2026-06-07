@@ -30,9 +30,7 @@ use std::collections::{HashMap, HashSet};
 use crate::bridge::EgglogBridge;
 use crate::error::BridgeError;
 use crate::ingest::ingest_proof_store;
-use crate::proof::{
-    Justification, Proof, ProofId, ProofStore, Proposition, Term, TermDag, TermId,
-};
+use crate::proof::{Justification, Proof, ProofId, ProofStore, Proposition, Term, TermDag, TermId};
 
 /// Synthesised sort name used by [`ingest_via_oracle`]'s auto-declaration
 /// pass. Every upstream constructor we encounter in the proof's term arena
@@ -275,7 +273,6 @@ fn convert_justification(
     })
 }
 
-
 /// Pre-flight check: does the program in `path` belong to the fragment
 /// upstream egglog can produce a proof DAG for? Wraps
 /// [`egglog::file_supports_proofs`].
@@ -343,8 +340,14 @@ mod tests {
             (prove (= (A) (B)))
         "#;
         let (dag, store, _root) = run_program(src).expect("run_program should succeed");
-        assert!(!dag.is_empty(), "term dag should hold the materialised terms");
-        assert!(!store.is_empty(), "proof store should hold at least one node");
+        assert!(
+            !dag.is_empty(),
+            "term dag should hold the materialised terms"
+        );
+        assert!(
+            !store.is_empty(),
+            "proof store should hold at least one node"
+        );
     }
 
     /// Source without `(prove …)` produces no proof output, surfaced as a

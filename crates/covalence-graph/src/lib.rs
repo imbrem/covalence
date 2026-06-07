@@ -241,13 +241,20 @@ impl<P> Graph<P> {
             let to = nodes
                 .get(e.to_node.0 as usize)
                 .ok_or(FromPartsError::Wire(i, WireError::UnknownNode(e.to_node)))?;
-            let fp = from.ports.get(e.from_port.0 as usize).ok_or(
-                FromPartsError::Wire(i, WireError::UnknownPort(e.from_node, e.from_port)),
-            )?;
-            let tp = to.ports.get(e.to_port.0 as usize).ok_or(FromPartsError::Wire(
-                i,
-                WireError::UnknownPort(e.to_node, e.to_port),
-            ))?;
+            let fp = from
+                .ports
+                .get(e.from_port.0 as usize)
+                .ok_or(FromPartsError::Wire(
+                    i,
+                    WireError::UnknownPort(e.from_node, e.from_port),
+                ))?;
+            let tp = to
+                .ports
+                .get(e.to_port.0 as usize)
+                .ok_or(FromPartsError::Wire(
+                    i,
+                    WireError::UnknownPort(e.to_node, e.to_port),
+                ))?;
             if fp.kind != PortKind::Output || tp.kind != PortKind::Input {
                 return Err(FromPartsError::Wire(i, WireError::KindMismatch));
             }
@@ -296,21 +303,13 @@ impl<P> Graph<P> {
         self.nodes.get(id.0 as usize)
     }
 
-    pub fn edges_from(
-        &self,
-        n: NodeId,
-        port: Option<PortId>,
-    ) -> impl Iterator<Item = &Edge> + '_ {
+    pub fn edges_from(&self, n: NodeId, port: Option<PortId>) -> impl Iterator<Item = &Edge> + '_ {
         self.edges
             .iter()
             .filter(move |e| e.from_node == n && port.map_or(true, |p| e.from_port == p))
     }
 
-    pub fn edges_into(
-        &self,
-        n: NodeId,
-        port: Option<PortId>,
-    ) -> impl Iterator<Item = &Edge> + '_ {
+    pub fn edges_into(&self, n: NodeId, port: Option<PortId>) -> impl Iterator<Item = &Edge> + '_ {
         self.edges
             .iter()
             .filter(move |e| e.to_node == n && port.map_or(true, |p| e.to_port == p))
@@ -454,7 +453,11 @@ impl Graph<Bytes> {
                 let name_bytes = d.take(name_len)?.to_vec();
                 let name = String::from_utf8(name_bytes)
                     .map_err(|_| DecodeError::BadUtf8 { what: "port name" })?;
-                ports.push(Port { name, type_id, kind });
+                ports.push(Port {
+                    name,
+                    type_id,
+                    kind,
+                });
             }
             let payload_len = d.read_u32()? as usize;
             let payload = Bytes::copy_from_slice(d.take(payload_len)?);
@@ -839,8 +842,18 @@ mod tests {
 
     fn bytes_pair(o1: bool, o2: bool) -> BytesGraph {
         let mut b = BytesGraphBuilder::new();
-        let src = b.add_node(kind(o1), None, vec![out("o", 1)], Bytes::from_static(b"src"));
-        let snk = b.add_node(kind(o2), None, vec![inp("i", 1)], Bytes::from_static(b"snk"));
+        let src = b.add_node(
+            kind(o1),
+            None,
+            vec![out("o", 1)],
+            Bytes::from_static(b"src"),
+        );
+        let snk = b.add_node(
+            kind(o2),
+            None,
+            vec![inp("i", 1)],
+            Bytes::from_static(b"snk"),
+        );
         b.wire(Edge {
             from_node: src,
             from_port: PortId(0),

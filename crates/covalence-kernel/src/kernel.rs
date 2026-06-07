@@ -13,7 +13,7 @@ use crate::arena::Arena;
 use crate::egraph::Egraph;
 use crate::id::StrId;
 use crate::primop::{PrimOp1, PrimOp2};
-use crate::prop::{Context, Prop, ProofError, Thm};
+use crate::prop::{Context, ProofError, Prop, Thm};
 use crate::term::{TermDef, TermKind, TermRef};
 use crate::ty::{TypeDef, TypeRef};
 use crate::uf::TermUf;
@@ -85,10 +85,18 @@ impl Kernel {
 
     // ---- type constructors -------------------------------------------------
 
-    pub fn bool_ty(&self) -> TypeRef { self.egraph.arena.bool_ty() }
-    pub fn nat_ty(&self) -> TypeRef { self.egraph.arena.nat_ty() }
-    pub fn int_ty(&self) -> TypeRef { self.egraph.arena.int_ty() }
-    pub fn bytes_ty(&self) -> TypeRef { self.egraph.arena.bytes_ty() }
+    pub fn bool_ty(&self) -> TypeRef {
+        self.egraph.arena.bool_ty()
+    }
+    pub fn nat_ty(&self) -> TypeRef {
+        self.egraph.arena.nat_ty()
+    }
+    pub fn int_ty(&self) -> TypeRef {
+        self.egraph.arena.int_ty()
+    }
+    pub fn bytes_ty(&self) -> TypeRef {
+        self.egraph.arena.bytes_ty()
+    }
 
     pub fn fun_ty(&mut self, dom: TypeRef, cod: TypeRef) -> TypeRef {
         self.egraph.arena.alloc_type(TypeDef::Fun(dom, cod))
@@ -104,11 +112,19 @@ impl Kernel {
         self.egraph.arena.intern_string(s.into())
     }
 
-    pub fn true_(&mut self) -> TermRef { self.alloc(TermDef::Bool(true)) }
-    pub fn false_(&mut self) -> TermRef { self.alloc(TermDef::Bool(false)) }
+    pub fn true_(&mut self) -> TermRef {
+        self.alloc(TermDef::Bool(true))
+    }
+    pub fn false_(&mut self) -> TermRef {
+        self.alloc(TermDef::Bool(false))
+    }
 
-    pub fn nat(&mut self, n: u64) -> TermRef { self.alloc(TermDef::nat_inline(n)) }
-    pub fn int(&mut self, n: i64) -> TermRef { self.alloc(TermDef::int_inline(n)) }
+    pub fn nat(&mut self, n: u64) -> TermRef {
+        self.alloc(TermDef::nat_inline(n))
+    }
+    pub fn int(&mut self, n: i64) -> TermRef {
+        self.alloc(TermDef::int_inline(n))
+    }
 
     pub fn free(&mut self, name: &str, ty: TypeRef) -> TermRef {
         let n = self.intern(name);
@@ -120,7 +136,9 @@ impl Kernel {
         self.alloc(TermDef::Const(n, ty))
     }
 
-    pub fn eq(&mut self, a: TermRef, b: TermRef) -> TermRef { self.alloc(TermDef::Eq(a, b)) }
+    pub fn eq(&mut self, a: TermRef, b: TermRef) -> TermRef {
+        self.alloc(TermDef::Eq(a, b))
+    }
 
     /// Build `a ≠ b` as `Not(Eq(a, b))`. `Ne` is no longer a kernel
     /// primitive — the builder constructs the derived form.
@@ -129,8 +147,12 @@ impl Kernel {
         self.alloc(TermDef::Op1(PrimOp1::LogicalNot, eq))
     }
 
-    pub fn comb(&mut self, f: TermRef, x: TermRef) -> TermRef { self.alloc(TermDef::Comb(f, x)) }
-    pub fn op1(&mut self, op: PrimOp1, x: TermRef) -> TermRef { self.alloc(TermDef::Op1(op, x)) }
+    pub fn comb(&mut self, f: TermRef, x: TermRef) -> TermRef {
+        self.alloc(TermDef::Comb(f, x))
+    }
+    pub fn op1(&mut self, op: PrimOp1, x: TermRef) -> TermRef {
+        self.alloc(TermDef::Op1(op, x))
+    }
     pub fn op2(&mut self, op: PrimOp2, a: TermRef, b: TermRef) -> TermRef {
         self.alloc(TermDef::Op2(op, a, b))
     }
@@ -208,7 +230,14 @@ impl Kernel {
     }
 
     pub fn cong(&mut self, a: TermRef, b: TermRef, depth: u32) -> Result<Thm, ProofError> {
-        Thm::cong(&mut self.egraph.arena, &self.egraph.uf, self.ctx.clone(), a, b, depth)
+        Thm::cong(
+            &mut self.egraph.arena,
+            &self.egraph.uf,
+            self.ctx.clone(),
+            a,
+            b,
+            depth,
+        )
     }
 
     pub fn beta(&mut self, comb: TermRef) -> Result<Thm, ProofError> {

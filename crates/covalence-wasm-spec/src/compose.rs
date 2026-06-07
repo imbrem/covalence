@@ -61,10 +61,7 @@ pub fn compose_one_shot(streaming_wat: &str) -> Result<String, ComposeError> {
 }
 
 /// Like [`compose_one_shot`] but with an explicit shape hint.
-pub fn compose_one_shot_with(
-    streaming_wat: &str,
-    shape: Shape,
-) -> Result<String, ComposeError> {
+pub fn compose_one_shot_with(streaming_wat: &str, shape: Shape) -> Result<String, ComposeError> {
     require_compress(streaming_wat)?;
     match shape {
         Shape::Resource => require_resource_exports(streaming_wat)?,
@@ -72,9 +69,7 @@ pub fn compose_one_shot_with(
     }
 
     let trimmed = streaming_wat.trim_end();
-    let close_idx = trimmed
-        .rfind(')')
-        .ok_or(ComposeError::NoModuleClose)?;
+    let close_idx = trimmed.rfind(')').ok_or(ComposeError::NoModuleClose)?;
     let head = &trimmed[..close_idx];
     let tail = &trimmed[close_idx..];
     let wrapper = match shape {

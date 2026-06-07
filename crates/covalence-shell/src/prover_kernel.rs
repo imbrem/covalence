@@ -9,9 +9,9 @@
 
 use std::sync::Arc;
 
-use covalence_kernel::{Kernel, Prop, Thm, TermRef, TypeRef};
 use covalence_kernel::primop::{PrimOp1, PrimOp2};
 use covalence_kernel::term::{TermDef, TermKind};
+use covalence_kernel::{Kernel, Prop, TermRef, Thm, TypeRef};
 
 use crate::prover::{Prover, ProverError};
 
@@ -94,12 +94,7 @@ impl Prover for Kernel {
         Ok(Kernel::eq(self, a, b))
     }
 
-    fn lam(
-        &mut self,
-        name: &str,
-        ty: TypeRef,
-        body: TermRef,
-    ) -> Result<TermRef, ProverError> {
+    fn lam(&mut self, name: &str, ty: TypeRef, body: TermRef) -> Result<TermRef, ProverError> {
         Ok(Kernel::lam(self, name, ty, body))
     }
 
@@ -183,12 +178,7 @@ impl Prover for Kernel {
         Ok(Kernel::beta(self, t)?)
     }
 
-    fn abs(
-        &mut self,
-        th: Thm,
-        name: &str,
-        ty: TypeRef,
-    ) -> Result<Thm, ProverError> {
+    fn abs(&mut self, th: Thm, name: &str, ty: TypeRef) -> Result<Thm, ProverError> {
         Ok(Kernel::abs(self, th, name, ty)?)
     }
 

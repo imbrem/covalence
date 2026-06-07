@@ -72,20 +72,14 @@ impl RuntimeHost {
 }
 
 impl cov::wasm::runtime::HostComponent for RuntimeHost {
-    fn drop(
-        &mut self,
-        rep: wasmtime::component::Resource<HostComponent>,
-    ) -> wasmtime::Result<()> {
+    fn drop(&mut self, rep: wasmtime::component::Resource<HostComponent>) -> wasmtime::Result<()> {
         self.table.delete(rep)?;
         Ok(())
     }
 }
 
 impl cov::wasm::runtime::HostInstance for RuntimeHost {
-    fn drop(
-        &mut self,
-        rep: wasmtime::component::Resource<HostInstance>,
-    ) -> wasmtime::Result<()> {
+    fn drop(&mut self, rep: wasmtime::component::Resource<HostInstance>) -> wasmtime::Result<()> {
         self.table.delete(rep)?;
         Ok(())
     }
@@ -213,8 +207,8 @@ pub struct HostModuleBuilder {
 }
 
 fn val_type_from_wit(v: cov::wasm::build::ValType) -> crate::build::ValType {
-    use cov::wasm::build::ValType as W;
     use crate::build::ValType as B;
+    use cov::wasm::build::ValType as W;
     match v {
         W::I32 => B::I32,
         W::I64 => B::I64,
@@ -518,12 +512,7 @@ mod tests {
             "instantiate",
         );
         let out = unwrap_trappable(
-            cov::wasm::runtime::Host::call_u32(
-                &mut host,
-                inst,
-                "triple_plus_one".to_string(),
-                10,
-            ),
+            cov::wasm::runtime::Host::call_u32(&mut host, inst, "triple_plus_one".to_string(), 10),
             "call",
         );
         assert_eq!(out, 31); // triple(10) + 1 = 30 + 1
@@ -538,9 +527,6 @@ mod tests {
             .rep();
         // No start-func yet — i32-const should trap.
         let err = host.i32_const(borrow(b_rep), 1).expect_err("should trap");
-        assert!(
-            err.to_string().contains("no function"),
-            "msg: {err}"
-        );
+        assert!(err.to_string().contains("no function"), "msg: {err}");
     }
 }

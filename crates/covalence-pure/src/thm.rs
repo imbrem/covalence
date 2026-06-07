@@ -32,9 +32,7 @@ use crate::error::{Error, Result};
 use crate::subst::{
     close, find_free_type, has_free_var, open, shift_by, subst_tfree_in_term, uses_bound_outer,
 };
-use crate::term::{
-    type_of_in, Def, DynObs, Hint, ObsEq, Observer, Term, TermKind, Type, TypeEnv,
-};
+use crate::term::{Def, DynObs, Hint, ObsEq, Observer, Term, TermKind, Type, TypeEnv, type_of_in};
 
 #[derive(Clone)]
 pub struct Thm {
@@ -61,12 +59,21 @@ impl Thm {
                 return Err(Error::NotProp(hty));
             }
         }
-        Ok(Thm { hyps: Arc::new(hyps), concl })
+        Ok(Thm {
+            hyps: Arc::new(hyps),
+            concl,
+        })
     }
 
-    pub fn hyps(&self) -> &BTreeSet<Term> { &self.hyps }
-    pub fn concl(&self) -> &Term { &self.concl }
-    pub fn into_parts(self) -> (Arc<BTreeSet<Term>>, Term) { (self.hyps, self.concl) }
+    pub fn hyps(&self) -> &BTreeSet<Term> {
+        &self.hyps
+    }
+    pub fn concl(&self) -> &Term {
+        &self.concl
+    }
+    pub fn into_parts(self) -> (Arc<BTreeSet<Term>>, Term) {
+        (self.hyps, self.concl)
+    }
 
     /// Returns `true` iff no `Obs` leaf appears anywhere in the
     /// theorem (conclusion or any hypothesis). Such a theorem is
@@ -155,7 +162,10 @@ impl Thm {
         };
         let wit_ty = witness.type_of()?;
         if wit_ty != *ty {
-            return Err(Error::TypeMismatch { expected: ty.clone(), got: wit_ty });
+            return Err(Error::TypeMismatch {
+                expected: ty.clone(),
+                got: wit_ty,
+            });
         }
         let concl = open(body, &witness);
         Self::build((*self.hyps).clone(), concl)
@@ -348,7 +358,10 @@ impl Thm {
         let ty1 = expr1.type_of()?;
         let ty2 = expr2.type_of()?;
         if ty1 != ty2 {
-            return Err(Error::TypeMismatch { expected: ty1, got: ty2 });
+            return Err(Error::TypeMismatch {
+                expected: ty1,
+                got: ty2,
+            });
         }
         if !o1.obs_eq(o2, &args1, &args2) {
             return Err(Error::ObsEqRefused);
@@ -380,7 +393,9 @@ fn decompose_obs_app(t: &Term) -> Result<(&DynObs, Vec<Term>)> {
 }
 
 impl fmt::Debug for Thm {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { fmt::Display::fmt(self, f) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
 }
 
 impl fmt::Display for Thm {
@@ -389,7 +404,9 @@ impl fmt::Display for Thm {
             return write!(f, "⊢ {}", self.concl);
         }
         for (i, h) in self.hyps.iter().enumerate() {
-            if i > 0 { write!(f, ", ")?; }
+            if i > 0 {
+                write!(f, ", ")?;
+            }
             write!(f, "{}", h)?;
         }
         write!(f, " ⊢ {}", self.concl)

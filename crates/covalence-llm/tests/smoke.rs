@@ -20,7 +20,8 @@ fn ollama_sync_complete() {
     opts.temperature = Some(0.0);
     opts.max_tokens = Some(16);
     let llm = Llm::ollama(model()).with_options(opts);
-    let answer = llm.complete("Answer with a single integer and nothing else. What is 2 + 2?")
+    let answer = llm
+        .complete("Answer with a single integer and nothing else. What is 2 + 2?")
         .expect("complete failed");
     println!("sync complete: {answer:?}");
     assert!(answer.contains('4'), "expected '4' in: {answer}");
@@ -35,7 +36,8 @@ async fn ollama_async_complete() {
     opts.temperature = Some(0.0);
     opts.max_tokens = Some(16);
     let llm = AsyncLlm::ollama(model()).with_options(opts);
-    let answer = llm.complete("Answer with a single integer and nothing else. What is 2 + 2?")
+    let answer = llm
+        .complete("Answer with a single integer and nothing else. What is 2 + 2?")
         .await
         .expect("complete failed");
     println!("async complete: {answer:?}");
@@ -70,8 +72,8 @@ fn ollama_sync_chat_messages() {
 #[test]
 #[ignore = "requires local ollama daemon on :11434"]
 fn ollama_sync_4xx_is_backend_error() {
-    use covalence_llm::{ChatBackend, ChatMessage, ChatRequest, LlmError};
     use covalence_llm::backend::openai::OpenAI;
+    use covalence_llm::{ChatBackend, ChatMessage, ChatRequest, LlmError};
 
     let backend = OpenAI::new("http://localhost:11434/v1", None);
     let req = ChatRequest::new(

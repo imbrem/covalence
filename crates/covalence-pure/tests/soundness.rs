@@ -10,12 +10,24 @@ use covalence_pure::{Error, Term, TermKind, Thm, Type, TypeKind};
 
 // ---------- builders ----------
 
-fn bytes_ty() -> Type { Type::bytes() }
-fn bool_ty() -> Type { Type::tycon("bool", vec![]) }
-fn fun_bb_p() -> Type { Type::fun(bytes_ty(), Type::prop()) }
-fn x() -> Term { Term::free("x", bytes_ty()) }
-fn y() -> Term { Term::free("y", bytes_ty()) }
-fn p() -> Term { Term::eq(x(), x()) }   // any prop-typed term
+fn bytes_ty() -> Type {
+    Type::bytes()
+}
+fn bool_ty() -> Type {
+    Type::tycon("bool", vec![])
+}
+fn fun_bb_p() -> Type {
+    Type::fun(bytes_ty(), Type::prop())
+}
+fn x() -> Term {
+    Term::free("x", bytes_ty())
+}
+fn y() -> Term {
+    Term::free("y", bytes_ty())
+}
+fn p() -> Term {
+    Term::eq(x(), x())
+} // any prop-typed term
 
 // ===========================================================================
 // type_of: closedness and consistency
@@ -58,10 +70,7 @@ fn type_of_accepts_well_scoped_nested_binders() {
 #[test]
 fn type_of_rejects_inconsistent_free_within_one_term() {
     // (eq (free x bytes) (free x bool)) — types disagree
-    let t = Term::eq(
-        Term::free("x", bytes_ty()),
-        Term::free("x", bool_ty()),
-    );
+    let t = Term::eq(Term::free("x", bytes_ty()), Term::free("x", bool_ty()));
     assert!(matches!(t.type_of(), Err(Error::FreeVarReuse { .. })));
 }
 
@@ -70,8 +79,14 @@ fn type_of_allows_polymorphic_const_at_different_instance_types() {
     // `=` is polymorphic at `'a → 'a → bool` in HOL; uses at different
     // instance types coexist in the same theorem. Pure must allow this.
     // Wrap two such uses inside an Imp to force them into one term.
-    let eq_bytes = Term::const_("=", Type::fun(bytes_ty(), Type::fun(bytes_ty(), Type::prop())));
-    let eq_bool = Term::const_("=", Type::fun(bool_ty(), Type::fun(bool_ty(), Type::prop())));
+    let eq_bytes = Term::const_(
+        "=",
+        Type::fun(bytes_ty(), Type::fun(bytes_ty(), Type::prop())),
+    );
+    let eq_bool = Term::const_(
+        "=",
+        Type::fun(bool_ty(), Type::fun(bool_ty(), Type::prop())),
+    );
     let phi = Term::app(Term::app(eq_bytes, x()), x());
     let psi = Term::app(
         Term::app(eq_bool, Term::free("p", bool_ty())),
@@ -119,7 +134,7 @@ fn type_of_rejects_imp_with_non_prop_rhs() {
 #[test]
 fn type_of_rejects_all_with_non_prop_body() {
     // All(_, bytes, x_inner) where x_inner : bytes (not prop)
-    let body = Term::bound(0);  // : bytes inside binder
+    let body = Term::bound(0); // : bytes inside binder
     let t = Term::all("x", bytes_ty(), body);
     assert!(matches!(t.type_of(), Err(Error::NotProp(_))));
 }
@@ -139,14 +154,8 @@ fn thm_rejects_free_used_at_different_types_across_hyps_and_concl() {
     // hyp: (eq (free x bytes) (free x bytes)) — well-typed
     // concl: (eq (free x bool) (free x bool)) — well-typed
     // Together: cross-term inconsistency.
-    let hyp = Term::eq(
-        Term::free("x", bytes_ty()),
-        Term::free("x", bytes_ty()),
-    );
-    let concl = Term::eq(
-        Term::free("x", bool_ty()),
-        Term::free("x", bool_ty()),
-    );
+    let hyp = Term::eq(Term::free("x", bytes_ty()), Term::free("x", bytes_ty()));
+    let concl = Term::eq(Term::free("x", bool_ty()), Term::free("x", bool_ty()));
     let assumed = Thm::assume(hyp.clone()).unwrap();
     // Try to imp_intro `concl` over the assumption. The result would
     // smuggle in inconsistent `x` typings; build() must reject.
@@ -159,14 +168,20 @@ fn thm_allows_polymorphic_const_across_hyps_and_concl() {
     // `=` reused at two different instance types is fine.
     let hyp = Term::app(
         Term::app(
-            Term::const_("=", Type::fun(bytes_ty(), Type::fun(bytes_ty(), Type::prop()))),
+            Term::const_(
+                "=",
+                Type::fun(bytes_ty(), Type::fun(bytes_ty(), Type::prop())),
+            ),
             x(),
         ),
         x(),
     );
     let concl = Term::app(
         Term::app(
-            Term::const_("=", Type::fun(bool_ty(), Type::fun(bool_ty(), Type::prop()))),
+            Term::const_(
+                "=",
+                Type::fun(bool_ty(), Type::fun(bool_ty(), Type::prop())),
+            ),
             Term::free("p", bool_ty()),
         ),
         Term::free("p", bool_ty()),
@@ -335,8 +350,8 @@ fn trans_combines_eqs() {
 
 #[test]
 fn trans_rejects_middle_mismatch() {
-    let a = Thm::refl(x()).unwrap();     // x ≡ x
-    let b = Thm::refl(y()).unwrap();     // y ≡ y
+    let a = Thm::refl(x()).unwrap(); // x ≡ x
+    let b = Thm::refl(y()).unwrap(); // y ≡ y
     let result = a.trans(b);
     assert!(matches!(result, Err(Error::TransMiddleMismatch { .. })));
 }
@@ -344,7 +359,7 @@ fn trans_rejects_middle_mismatch() {
 #[test]
 fn trans_rejects_non_eq() {
     let a = Thm::refl(x()).unwrap();
-    let b = Thm::assume(p()).unwrap();   // concl is Eq, but pretend
+    let b = Thm::assume(p()).unwrap(); // concl is Eq, but pretend
     // Both are Eq actually; pick a non-Eq for `a` instead.
     let bad = Thm::assume(Term::imp(p(), p())).unwrap();
     let result = bad.trans(a);
@@ -372,10 +387,7 @@ fn cong_app_combines_two_eqs() {
     let f_eq = Thm::refl(f.clone()).unwrap();
     let x_eq = Thm::refl(x()).unwrap();
     let combined = f_eq.cong_app(x_eq).unwrap();
-    let expected = Term::eq(
-        Term::app(f.clone(), x()),
-        Term::app(f, x()),
-    );
+    let expected = Term::eq(Term::app(f.clone(), x()), Term::app(f, x()));
     assert_eq!(combined.concl(), &expected);
 }
 
@@ -430,7 +442,10 @@ fn cong_abs_rejects_binder_type_not_matching_var() {
 #[test]
 fn cong_abs_rejects_non_eq() {
     let bad = Thm::assume(Term::imp(p(), p())).unwrap();
-    assert!(matches!(bad.cong_abs("x", bytes_ty()), Err(Error::NotMetaEq(_))));
+    assert!(matches!(
+        bad.cong_abs("x", bytes_ty()),
+        Err(Error::NotMetaEq(_))
+    ));
 }
 
 // ===========================================================================
@@ -485,7 +500,10 @@ fn beta_conv_rejects_arg_type_mismatch() {
     let id_bytes = Term::abs("x", bytes_ty(), Term::bound(0));
     let bad_arg = Term::free("z", bool_ty());
     let app = Term::app(id_bytes, bad_arg);
-    assert!(matches!(Thm::beta_conv(app), Err(Error::TypeMismatch { .. })));
+    assert!(matches!(
+        Thm::beta_conv(app),
+        Err(Error::TypeMismatch { .. })
+    ));
 }
 
 #[test]
@@ -555,10 +573,7 @@ fn inst_tfree_substitutes_in_concl() {
     let xa = Term::free("x", tv.clone());
     let refl = Thm::refl(xa).unwrap();
     let inst = refl.inst_tfree("a", bytes_ty()).unwrap();
-    let expected = Term::eq(
-        Term::free("x", bytes_ty()),
-        Term::free("x", bytes_ty()),
-    );
+    let expected = Term::eq(Term::free("x", bytes_ty()), Term::free("x", bytes_ty()));
     assert_eq!(inst.concl(), &expected);
     let _ = tv;
 }
@@ -588,14 +603,8 @@ fn inst_tfree_caught_by_build_when_result_is_inconsistent() {
     // are individually well-typed, but cross-term consistency would
     // fail.
     let tv = Type::tfree("a");
-    let phi = Term::eq(
-        Term::free("x", tv.clone()),
-        Term::free("x", tv),
-    );
-    let psi = Term::eq(
-        Term::free("x", bool_ty()),
-        Term::free("x", bool_ty()),
-    );
+    let phi = Term::eq(Term::free("x", tv.clone()), Term::free("x", tv));
+    let psi = Term::eq(Term::free("x", bool_ty()), Term::free("x", bool_ty()));
     let assumed = Thm::assume(phi).unwrap();
     let result = assumed.imp_intro(&psi);
     // Build() detects FreeVarReuse because 'a-typed x and bool-typed x
@@ -657,11 +666,7 @@ fn beta_reduces_inside_inner_binder_correctly() {
     let arg = Term::blob(Bytes::from_static(b"blob-x"));
     let app = Term::app(outer, arg.clone());
     let thm = Thm::beta_conv(app).unwrap();
-    let expected_rhs = Term::abs(
-        "y",
-        bytes_ty(),
-        Term::eq(arg.clone(), Term::bound(0)),
-    );
+    let expected_rhs = Term::abs("y", bytes_ty(), Term::eq(arg.clone(), Term::bound(0)));
     match thm.concl().kind() {
         TermKind::Eq(_, rhs) => assert_eq!(rhs, &expected_rhs),
         _ => panic!(),
@@ -692,11 +697,7 @@ fn open_shifts_replacement_bound_vars_under_inner_binder() {
     use covalence_pure::subst::open;
     // body = λy:bytes. (eq (bound 1) (bound 0))
     //   — Bound(1) is the (λ-stripped) variable, Bound(0) is `y`.
-    let body = Term::abs(
-        "y",
-        bytes_ty(),
-        Term::eq(Term::bound(1), Term::bound(0)),
-    );
+    let body = Term::abs("y", bytes_ty(), Term::eq(Term::bound(1), Term::bound(0)));
     // u = (bound 0)  — references some enclosing binder ABOVE the
     //   λ-stripped position. After opening, inside the surviving
     //   λy, the original u's Bound(0) must shift up by 1 to remain
@@ -706,10 +707,6 @@ fn open_shifts_replacement_bound_vars_under_inner_binder() {
     // Expected: λy:bytes. (eq (bound 1) (bound 0))
     //   The lhs Bound(1) was replaced by u shifted by 1 → Bound(1).
     //   The rhs Bound(0) (= y) is untouched.
-    let expected = Term::abs(
-        "y",
-        bytes_ty(),
-        Term::eq(Term::bound(1), Term::bound(0)),
-    );
+    let expected = Term::abs("y", bytes_ty(), Term::eq(Term::bound(1), Term::bound(0)));
     assert_eq!(opened, expected);
 }

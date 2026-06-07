@@ -25,7 +25,7 @@ fn main() {
     match cli.command {
         None => println!("covalence {VERSION_LONG}"),
 
-        #[cfg(feature = "cogit")]
+        #[cfg(all(feature = "cogit", not(target_family = "wasm")))]
         Some(cmd::Command::Cog(args)) => cmd::cog::run(args),
 
         #[cfg(all(feature = "hol", not(target_family = "wasm")))]

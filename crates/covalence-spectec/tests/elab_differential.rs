@@ -128,14 +128,15 @@ fn diff_against_wasm_spec_ast() {
         eprintln!("  MixOp mismatches (first 8):");
         let mut shown = 0;
         for (name, ours_mo) in &our_rel_mixops {
-            if shown >= 8 { break; }
+            if shown >= 8 {
+                break;
+            }
             if let Some(theirs_mo) = ref_rel_mixops.get(name)
-                && ours_mo != theirs_mo {
-                    eprintln!(
-                        "    {name}: ours {ours_mo:?}\n      theirs {theirs_mo:?}"
-                    );
-                    shown += 1;
-                }
+                && ours_mo != theirs_mo
+            {
+                eprintln!("    {name}: ours {ours_mo:?}\n      theirs {theirs_mo:?}");
+                shown += 1;
+            }
         }
     }
 
@@ -170,8 +171,14 @@ fn diff_against_wasm_spec_ast() {
     let our_rec_count = count_rec_groups(&ours);
     let their_rec_count = count_rec_groups(&reference);
     eprintln!("  Rec groups: ours {our_rec_count}, theirs {their_rec_count}");
-    eprintln!("    ours histogram (size → count):   {:?}", rec_size_histogram(&ours));
-    eprintln!("    theirs histogram (size → count): {:?}", rec_size_histogram(&reference));
+    eprintln!(
+        "    ours histogram (size → count):   {:?}",
+        rec_size_histogram(&ours)
+    );
+    eprintln!(
+        "    theirs histogram (size → count): {:?}",
+        rec_size_histogram(&reference)
+    );
 
     // Dec clause coverage: how many of our Dec clauses have a
     // non-sentinel rhs?
@@ -186,12 +193,8 @@ fn diff_against_wasm_spec_ast() {
     let (their_rel_t, _) = count_rel_t_real(&reference);
     let (their_dec_t, _) = count_dec_t_real(&reference);
     let (their_gram_t, _) = count_gram_t_real(&reference);
-    eprintln!(
-        "  Rel.t non-placeholder: ours {rel_t_real} / {rel_t_total} (theirs {their_rel_t})"
-    );
-    eprintln!(
-        "  Dec.t non-placeholder: ours {dec_t_real} / {dec_t_total} (theirs {their_dec_t})"
-    );
+    eprintln!("  Rel.t non-placeholder: ours {rel_t_real} / {rel_t_total} (theirs {their_rel_t})");
+    eprintln!("  Dec.t non-placeholder: ours {dec_t_real} / {dec_t_total} (theirs {their_dec_t})");
     eprintln!(
         "  Gram.t non-placeholder: ours {gram_t_real} / {gram_t_total} (theirs {their_gram_t})"
     );
@@ -233,22 +236,26 @@ fn diff_against_wasm_spec_ast() {
     eprintln!("  per-kind deep structural equality:");
     eprintln!(
         "    Typ:  {} / {} ({:.1}%)",
-        deep.typ_eq, deep.typ_total,
+        deep.typ_eq,
+        deep.typ_total,
         100.0 * deep.typ_eq as f64 / deep.typ_total.max(1) as f64,
     );
     eprintln!(
         "    Rel:  {} / {} ({:.1}%)",
-        deep.rel_eq, deep.rel_total,
+        deep.rel_eq,
+        deep.rel_total,
         100.0 * deep.rel_eq as f64 / deep.rel_total.max(1) as f64,
     );
     eprintln!(
         "    Dec:  {} / {} ({:.1}%)",
-        deep.dec_eq, deep.dec_total,
+        deep.dec_eq,
+        deep.dec_total,
         100.0 * deep.dec_eq as f64 / deep.dec_total.max(1) as f64,
     );
     eprintln!(
         "    Gram: {} / {} ({:.1}%)",
-        deep.gram_eq, deep.gram_total,
+        deep.gram_eq,
+        deep.gram_total,
         100.0 * deep.gram_eq as f64 / deep.gram_total.max(1) as f64,
     );
 
@@ -256,22 +263,26 @@ fn diff_against_wasm_spec_ast() {
     eprintln!("  per-kind arity match (same body-count for same-name def):");
     eprintln!(
         "    Typ insts:   {} / {} ({:.1}%)",
-        arity_report.typ_match, arity_report.typ_total,
+        arity_report.typ_match,
+        arity_report.typ_total,
         100.0 * arity_report.typ_match as f64 / arity_report.typ_total.max(1) as f64,
     );
     eprintln!(
         "    Rel rules:   {} / {} ({:.1}%)",
-        arity_report.rel_match, arity_report.rel_total,
+        arity_report.rel_match,
+        arity_report.rel_total,
         100.0 * arity_report.rel_match as f64 / arity_report.rel_total.max(1) as f64,
     );
     eprintln!(
         "    Dec clauses: {} / {} ({:.1}%)",
-        arity_report.dec_match, arity_report.dec_total,
+        arity_report.dec_match,
+        arity_report.dec_total,
         100.0 * arity_report.dec_match as f64 / arity_report.dec_total.max(1) as f64,
     );
     eprintln!(
         "    Gram prods:  {} / {} ({:.1}%)",
-        arity_report.gram_match, arity_report.gram_total,
+        arity_report.gram_match,
+        arity_report.gram_total,
         100.0 * arity_report.gram_match as f64 / arity_report.gram_total.max(1) as f64,
     );
 
@@ -297,8 +308,7 @@ fn diff_against_wasm_spec_ast() {
     // tree describes the work). Never lower them — a regression
     // means new code broke something that used to work, which is
     // exactly what this test exists to catch.
-    let floors: [(&str, usize); 4] =
-        [("Typ", 147), ("Rel", 19), ("Dec", 81), ("Gram", 33)];
+    let floors: [(&str, usize); 4] = [("Typ", 147), ("Rel", 19), ("Dec", 81), ("Gram", 33)];
     let actual = [
         ("Typ", deep.typ_eq),
         ("Rel", deep.rel_eq),
@@ -330,14 +340,15 @@ type MixOpMap = BTreeMap<String, Vec<String>>;
 // use `summarise_with_rec`. Kept as a doc comment for future
 // non-recursing diffs.
 
-
 /// Build a `name -> rules` map for each `Rel` def. Recurses into `Rec`.
 fn rules_by_relation(defs: &[SpecTecDef]) -> BTreeMap<String, Vec<SpecTecRule>> {
     let mut out: BTreeMap<String, Vec<SpecTecRule>> = BTreeMap::new();
     fn walk(d: &SpecTecDef, out: &mut BTreeMap<String, Vec<SpecTecRule>>) {
         match d {
             SpecTecDef::Rel { x, rules, .. } => {
-                out.entry(x.clone()).or_default().extend(rules.iter().cloned());
+                out.entry(x.clone())
+                    .or_default()
+                    .extend(rules.iter().cloned());
             }
             SpecTecDef::Rec { ds } => {
                 for d in ds {
@@ -441,11 +452,17 @@ fn count_rel_t_real(defs: &[SpecTecDef]) -> (usize, usize) {
                     *real += 1;
                 }
             }
-            SpecTecDef::Rec { ds } => for d in ds { walk(d, real, total); },
+            SpecTecDef::Rec { ds } => {
+                for d in ds {
+                    walk(d, real, total);
+                }
+            }
             _ => {}
         }
     }
-    for d in defs { walk(d, &mut real, &mut total); }
+    for d in defs {
+        walk(d, &mut real, &mut total);
+    }
     (real, total)
 }
 
@@ -460,11 +477,17 @@ fn count_dec_t_real(defs: &[SpecTecDef]) -> (usize, usize) {
                     *real += 1;
                 }
             }
-            SpecTecDef::Rec { ds } => for d in ds { walk(d, real, total); },
+            SpecTecDef::Rec { ds } => {
+                for d in ds {
+                    walk(d, real, total);
+                }
+            }
             _ => {}
         }
     }
-    for d in defs { walk(d, &mut real, &mut total); }
+    for d in defs {
+        walk(d, &mut real, &mut total);
+    }
     (real, total)
 }
 
@@ -479,11 +502,17 @@ fn count_gram_t_real(defs: &[SpecTecDef]) -> (usize, usize) {
                     *real += 1;
                 }
             }
-            SpecTecDef::Rec { ds } => for d in ds { walk(d, real, total); },
+            SpecTecDef::Rec { ds } => {
+                for d in ds {
+                    walk(d, real, total);
+                }
+            }
             _ => {}
         }
     }
-    for d in defs { walk(d, &mut real, &mut total); }
+    for d in defs {
+        walk(d, &mut real, &mut total);
+    }
     (real, total)
 }
 
@@ -492,11 +521,17 @@ fn count_dec_with_ps(defs: &[SpecTecDef]) -> usize {
     fn walk(d: &SpecTecDef, n: &mut usize) {
         match d {
             SpecTecDef::Dec { ps, .. } if !ps.is_empty() => *n += 1,
-            SpecTecDef::Rec { ds } => for d in ds { walk(d, n); },
+            SpecTecDef::Rec { ds } => {
+                for d in ds {
+                    walk(d, n);
+                }
+            }
             _ => {}
         }
     }
-    for d in defs { walk(d, &mut n); }
+    for d in defs {
+        walk(d, &mut n);
+    }
     n
 }
 
@@ -557,9 +592,15 @@ fn show_first_mismatches(ours: &[SpecTecDef], theirs: &[SpecTecDef], n: usize) {
     for kind in ["Typ", "Rel", "Dec", "Gram"] {
         let mut shown_for_kind = 0;
         for ((k, name), od) in &our_map {
-            if k != kind { continue; }
-            if shown_for_kind >= n { break; }
-            let Some(td) = their_map.get(&(k.clone(), name.clone())) else { continue };
+            if k != kind {
+                continue;
+            }
+            if shown_for_kind >= n {
+                break;
+            }
+            let Some(td) = their_map.get(&(k.clone(), name.clone())) else {
+                continue;
+            };
             if od != td {
                 eprintln!("\n=== {kind} {name} differs ===");
                 eprintln!("OURS:   {od:#?}");
@@ -688,11 +729,17 @@ fn count_total_prods(defs: &[SpecTecDef]) -> usize {
     fn walk(d: &SpecTecDef, n: &mut usize) {
         match d {
             SpecTecDef::Gram { prods, .. } => *n += prods.len(),
-            SpecTecDef::Rec { ds } => for d in ds { walk(d, n); },
+            SpecTecDef::Rec { ds } => {
+                for d in ds {
+                    walk(d, n);
+                }
+            }
             _ => {}
         }
     }
-    for d in defs { walk(d, &mut n); }
+    for d in defs {
+        walk(d, &mut n);
+    }
     n
 }
 
@@ -724,8 +771,7 @@ fn count_op_types(defs: &[SpecTecDef]) -> (usize, usize) {
                 walk_exp(e1, total, refined);
                 walk_exp(e2, total, refined);
             }
-            E::Idx { e1, e2 } | E::Comp { e1, e2 } | E::Mem { e1, e2 }
-            | E::Cat { e1, e2 } => {
+            E::Idx { e1, e2 } | E::Comp { e1, e2 } | E::Mem { e1, e2 } | E::Cat { e1, e2 } => {
                 walk_exp(e1, total, refined);
                 walk_exp(e2, total, refined);
             }
@@ -743,9 +789,15 @@ fn count_op_types(defs: &[SpecTecDef]) -> (usize, usize) {
                     walk_exp(e, total, refined);
                 }
             }
-            E::Dot { e1, .. } | E::Len { e1 } | E::Lift { e1 } | E::Unopt { e1 }
-            | E::Cvt { e1, .. } | E::Sub { e1, .. } | E::Proj { e1, .. }
-            | E::Uncase { e1, .. } | E::Iter { e1, .. } => {
+            E::Dot { e1, .. }
+            | E::Len { e1 }
+            | E::Lift { e1 }
+            | E::Unopt { e1 }
+            | E::Cvt { e1, .. }
+            | E::Sub { e1, .. }
+            | E::Proj { e1, .. }
+            | E::Uncase { e1, .. }
+            | E::Iter { e1, .. } => {
                 walk_exp(e1, total, refined);
             }
             E::Tup { es } | E::List { es } => {
@@ -755,8 +807,12 @@ fn count_op_types(defs: &[SpecTecDef]) -> (usize, usize) {
             }
             E::Case { e1, .. } => walk_exp(e1, total, refined),
             E::Opt { eo: Some(e) } => walk_exp(e, total, refined),
-            E::Opt { eo: None } | E::Bool { .. } | E::Num { .. } | E::Text { .. }
-            | E::Var { .. } | E::Call { .. } => {}
+            E::Opt { eo: None }
+            | E::Bool { .. }
+            | E::Num { .. }
+            | E::Text { .. }
+            | E::Var { .. }
+            | E::Call { .. } => {}
         }
     }
     fn walk_prem(p: &spectec_ast::SpecTecPrem, total: &mut usize, refined: &mut usize) {
@@ -812,12 +868,22 @@ fn count_sub_nodes(defs: &[SpecTecDef]) -> usize {
                 *n += 1;
                 walk_exp(e1, n);
             }
-            E::Un { e2, .. } | E::Len { e1: e2 } | E::Lift { e1: e2 }
-            | E::Unopt { e1: e2 } | E::Cvt { e1: e2, .. } | E::Dot { e1: e2, .. }
-            | E::Proj { e1: e2, .. } | E::Uncase { e1: e2, .. }
-            | E::Iter { e1: e2, .. } | E::Case { e1: e2, .. } => walk_exp(e2, n),
-            E::Bin { e1, e2, .. } | E::Cmp { e1, e2, .. } | E::Idx { e1, e2, .. }
-            | E::Comp { e1, e2 } | E::Mem { e1, e2 } | E::Cat { e1, e2 } => {
+            E::Un { e2, .. }
+            | E::Len { e1: e2 }
+            | E::Lift { e1: e2 }
+            | E::Unopt { e1: e2 }
+            | E::Cvt { e1: e2, .. }
+            | E::Dot { e1: e2, .. }
+            | E::Proj { e1: e2, .. }
+            | E::Uncase { e1: e2, .. }
+            | E::Iter { e1: e2, .. }
+            | E::Case { e1: e2, .. } => walk_exp(e2, n),
+            E::Bin { e1, e2, .. }
+            | E::Cmp { e1, e2, .. }
+            | E::Idx { e1, e2, .. }
+            | E::Comp { e1, e2 }
+            | E::Mem { e1, e2 }
+            | E::Cat { e1, e2 } => {
                 walk_exp(e1, n);
                 walk_exp(e2, n);
             }
@@ -893,11 +959,17 @@ fn count_typ_with_ps(defs: &[SpecTecDef]) -> usize {
     fn walk(d: &SpecTecDef, n: &mut usize) {
         match d {
             SpecTecDef::Typ { ps, .. } if !ps.is_empty() => *n += 1,
-            SpecTecDef::Rec { ds } => for d in ds { walk(d, n); },
+            SpecTecDef::Rec { ds } => {
+                for d in ds {
+                    walk(d, n);
+                }
+            }
             _ => {}
         }
     }
-    for d in defs { walk(d, &mut n); }
+    for d in defs {
+        walk(d, &mut n);
+    }
     n
 }
 

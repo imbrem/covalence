@@ -89,9 +89,8 @@ async fn mount_tree_and_read() {
 
     // Spawn the mount on a background task; it blocks until the session ends.
     let mount_path_for_task = mountpoint_path.clone();
-    let mount_task = tokio::spawn(async move {
-        mount_tree(store, root, &mount_path_for_task, cfg).await
-    });
+    let mount_task =
+        tokio::spawn(async move { mount_tree(store, root, &mount_path_for_task, cfg).await });
 
     // Wait for the mount to become live. fuse3's `mount_with_unprivileged`
     // returns as soon as the fusermount3 child reports success, but the
@@ -99,7 +98,9 @@ async fn mount_tree_and_read() {
     // syscalls on this process. Poll by stat-ing the mountpoint and checking
     // whether the *device id* changed — that flips the moment the kernel
     // splices the mount in.
-    let outer_dev = std::fs::metadata(&mountpoint_path).expect("stat outer").dev();
+    let outer_dev = std::fs::metadata(&mountpoint_path)
+        .expect("stat outer")
+        .dev();
     let mut ready = false;
     for _ in 0..100 {
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -136,7 +137,12 @@ async fn mount_tree_and_read() {
             }
         }
         let md = std::fs::metadata(&mp)?;
-        eprintln!("mp metadata: dev={} ino={} mode={:o}", md.dev(), md.ino(), md.mode());
+        eprintln!(
+            "mp metadata: dev={} ino={} mode={:o}",
+            md.dev(),
+            md.ino(),
+            md.mode()
+        );
 
         // readdir at root
         let mut entries: Vec<String> = std::fs::read_dir(&mp)?

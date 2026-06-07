@@ -71,7 +71,9 @@ fn prove_imp_intro_p_implies_p() -> Result<String, String> {
     let prop = PureType::prop();
     let p = Term::free("p", &prop);
     let assumed = Thm::assume(&p).map_err(|e| format!("assume: {e}"))?;
-    let derived = assumed.imp_intro(&p).map_err(|e| format!("imp-intro: {e}"))?;
+    let derived = assumed
+        .imp_intro(&p)
+        .map_err(|e| format!("imp-intro: {e}"))?;
     Ok(derived.render())
 }
 
@@ -106,7 +108,9 @@ fn prove_inst_tfree() -> Result<String, String> {
     let a = PureType::tfree("a");
     let x = Term::free("x", &a);
     let r = Thm::refl(&x).map_err(|e| format!("refl: {e}"))?;
-    let universal = r.all_intro("x", &a).map_err(|e| format!("all-intro: {e}"))?;
+    let universal = r
+        .all_intro("x", &a)
+        .map_err(|e| format!("all-intro: {e}"))?;
     let bytes_ty = PureType::bytes();
     let inst = universal
         .inst_tfree("a", &bytes_ty)

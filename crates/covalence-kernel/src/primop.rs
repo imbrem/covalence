@@ -63,14 +63,36 @@ pub enum PrimOp2 {
     LogicalImp,
 
     // -- naturals (§3) --
-    NatAdd, NatSub, NatMul, NatDiv, NatMod, NatPow,
-    NatAnd, NatOr, NatXor, NatShl, NatShr,
-    NatEq, NatLt, NatLe,
+    NatAdd,
+    NatSub,
+    NatMul,
+    NatDiv,
+    NatMod,
+    NatPow,
+    NatAnd,
+    NatOr,
+    NatXor,
+    NatShl,
+    NatShr,
+    NatEq,
+    NatLt,
+    NatLe,
 
     // -- integers (§4) --
-    IntAdd, IntSub, IntMul, IntDiv, IntMod, IntPow,
-    IntAnd, IntOr, IntXor, IntShl, IntShr,
-    IntEq, IntLt, IntLe,
+    IntAdd,
+    IntSub,
+    IntMul,
+    IntDiv,
+    IntMod,
+    IntPow,
+    IntAnd,
+    IntOr,
+    IntXor,
+    IntShl,
+    IntShr,
+    IntEq,
+    IntLt,
+    IntLe,
 
     // -- bytes (§7) --
     BytesConcat,
@@ -108,12 +130,13 @@ impl PrimOp2 {
                 (b(Bool), b(Bool), b(Bool))
             }
 
-            NatAdd | NatSub | NatMul | NatDiv | NatMod | NatPow
-            | NatAnd | NatOr | NatXor | NatShl | NatShr => (b(Nat), b(Nat), b(Nat)),
+            NatAdd | NatSub | NatMul | NatDiv | NatMod | NatPow | NatAnd | NatOr | NatXor
+            | NatShl | NatShr => (b(Nat), b(Nat), b(Nat)),
             NatEq | NatLt | NatLe => (b(Nat), b(Nat), b(Bool)),
 
-            IntAdd | IntSub | IntMul | IntDiv | IntMod
-            | IntAnd | IntOr | IntXor => (b(Int), b(Int), b(Int)),
+            IntAdd | IntSub | IntMul | IntDiv | IntMod | IntAnd | IntOr | IntXor => {
+                (b(Int), b(Int), b(Int))
+            }
             IntPow | IntShl | IntShr => (b(Int), b(Nat), b(Int)),
             IntEq | IntLt | IntLe => (b(Int), b(Int), b(Bool)),
 
@@ -152,9 +175,18 @@ mod tests {
 
     #[test]
     fn sample_signatures() {
-        assert_eq!(PrimOp1::LogicalNot.sig(), (b(BuiltinTy::Bool), b(BuiltinTy::Bool)));
-        assert_eq!(PrimOp1::NatSucc.sig(), (b(BuiltinTy::Nat), b(BuiltinTy::Nat)));
-        assert_eq!(PrimOp1::IntNeg.sig(), (b(BuiltinTy::Int), b(BuiltinTy::Int)));
+        assert_eq!(
+            PrimOp1::LogicalNot.sig(),
+            (b(BuiltinTy::Bool), b(BuiltinTy::Bool))
+        );
+        assert_eq!(
+            PrimOp1::NatSucc.sig(),
+            (b(BuiltinTy::Nat), b(BuiltinTy::Nat))
+        );
+        assert_eq!(
+            PrimOp1::IntNeg.sig(),
+            (b(BuiltinTy::Int), b(BuiltinTy::Int))
+        );
         assert_eq!(
             PrimOp2::NatAdd.sig(),
             (b(BuiltinTy::Nat), b(BuiltinTy::Nat), b(BuiltinTy::Nat))

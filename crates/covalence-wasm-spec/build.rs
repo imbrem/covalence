@@ -482,11 +482,7 @@ fn write_registry(out_dir: &Path, variants: &[Variant]) {
         writeln!(f, "];").unwrap();
 
         let linked_const = format!("LINKED_{var_const}");
-        writeln!(
-            f,
-            "static {linked_const}: &[&Spec<'static>] = &[];"
-        )
-        .unwrap();
+        writeln!(f, "static {linked_const}: &[&Spec<'static>] = &[];").unwrap();
 
         writeln!(f, "pub static {var_const}: Spec<'static> = Spec {{").unwrap();
         writeln!(f, "    name: \"{}\",", v.algo).unwrap();
@@ -510,8 +506,18 @@ fn write_registry(out_dir: &Path, variants: &[Variant]) {
             const_name(&v.algo, &v.variant, "DESCRIPTION")
         )
         .unwrap();
-        writeln!(f, "    wit: bytes::{},", const_name(&v.algo, &v.variant, "WIT")).unwrap();
-        writeln!(f, "    wat: bytes::{},", const_name(&v.algo, &v.variant, "WAT")).unwrap();
+        writeln!(
+            f,
+            "    wit: bytes::{},",
+            const_name(&v.algo, &v.variant, "WIT")
+        )
+        .unwrap();
+        writeln!(
+            f,
+            "    wat: bytes::{},",
+            const_name(&v.algo, &v.variant, "WAT")
+        )
+        .unwrap();
         writeln!(
             f,
             "    wasm: bytes::{},",
@@ -561,7 +567,9 @@ struct ParsedKat {
 
 fn parse_vectors(path: Option<&Path>) -> Vec<ParsedKat> {
     let Some(path) = path else { return Vec::new() };
-    let Ok(text) = fs::read_to_string(path) else { return Vec::new() };
+    let Ok(text) = fs::read_to_string(path) else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
     let bytes = text.as_bytes();
     let mut i = 0;

@@ -14,8 +14,7 @@ use covalence_wasm_store::{WasmStore, s3_path, single_blob};
 /// the given bytes. The `path_key` is the UTF-8 path the composer
 /// will look up (e.g. `"blobs/abcd…"`).
 fn build_path_keyed_leaf(path_key: &str, blob: &[u8]) -> WasmStore {
-    let bytes = single_blob::build_component(path_key.as_bytes(), blob, None)
-        .expect("build leaf");
+    let bytes = single_blob::build_component(path_key.as_bytes(), blob, None).expect("build leaf");
     WasmStore::from_component_bytes(&bytes).expect("instantiate leaf")
 }
 
@@ -31,8 +30,7 @@ async fn s3_path_get_routes_through_prefix_plus_hex() {
     let backing = build_path_keyed_leaf(&path, blob);
 
     let composer_bytes = s3_path::build_component(prefix).expect("build composer");
-    let composed = WasmStore::compose(&composer_bytes, vec![backing])
-        .expect("compose");
+    let composed = WasmStore::compose(&composer_bytes, vec![backing]).expect("compose");
 
     let got = composed.get(&key).await.expect("get");
     assert_eq!(got, Bytes::copy_from_slice(blob));
@@ -46,8 +44,7 @@ async fn s3_path_miss_returns_not_found() {
     let backing = build_path_keyed_leaf(&known_path, b"present");
 
     let composer_bytes = s3_path::build_component(prefix).expect("build composer");
-    let composed = WasmStore::compose(&composer_bytes, vec![backing])
-        .expect("compose");
+    let composed = WasmStore::compose(&composer_bytes, vec![backing]).expect("compose");
 
     let missing_key = vec![0xbe, 0xef];
     let err = composed.get(&missing_key).await.unwrap_err();
@@ -63,8 +60,7 @@ async fn s3_path_contains_and_head_route_through_prefix() {
     let backing = build_path_keyed_leaf(&path, blob);
 
     let composer_bytes = s3_path::build_component(prefix).expect("build composer");
-    let composed = WasmStore::compose(&composer_bytes, vec![backing])
-        .expect("compose");
+    let composed = WasmStore::compose(&composer_bytes, vec![backing]).expect("compose");
 
     assert!(composed.contains(&key).await.unwrap());
     assert!(!composed.contains(&vec![0; 4]).await.unwrap());
@@ -91,8 +87,7 @@ async fn s3_path_with_two_backings_picks_first_match() {
     let secondary = build_path_keyed_leaf(&path, b"secondary copy");
 
     let composer_bytes = s3_path::build_component(prefix).expect("build composer");
-    let composed = WasmStore::compose(&composer_bytes, vec![primary, secondary])
-        .expect("compose");
+    let composed = WasmStore::compose(&composer_bytes, vec![primary, secondary]).expect("compose");
 
     // First match wins — primary's bytes come back.
     assert_eq!(
@@ -110,8 +105,7 @@ async fn s3_path_different_prefix_different_path() {
     let backing = build_path_keyed_leaf(&wrong_path, b"wrong-prefix data");
 
     let composer_bytes = s3_path::build_component("blobs/").expect("build composer");
-    let composed = WasmStore::compose(&composer_bytes, vec![backing])
-        .expect("compose");
+    let composed = WasmStore::compose(&composer_bytes, vec![backing]).expect("compose");
 
     let err = composed.get(&key).await.unwrap_err();
     assert!(matches!(err, StoreError::NotFound));

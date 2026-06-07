@@ -38,7 +38,9 @@ mod my_oracle {
     /// `MyObs` opts in to the kernel's `obs_eq` rule by equating any
     /// two `MyObs` applications (the ε-model strategy).
     impl ObsEq for MyObs {
-        fn obs_eq(&self, _other: &Self, _: &[Term], _: &[Term]) -> bool { true }
+        fn obs_eq(&self, _other: &Self, _: &[Term], _: &[Term]) -> bool {
+            true
+        }
     }
 
     impl MyObs {
@@ -55,7 +57,9 @@ mod my_oracle {
             }
         }
 
-        pub fn output(&self) -> &Bytes { &self.output }
+        pub fn output(&self) -> &Bytes {
+            &self.output
+        }
     }
 
     /// The user crate's trusted conversion. The "positive-only"
@@ -140,7 +144,7 @@ fn distinct_obs_calls_produce_distinct_leaves() {
     // pointer-identity invariant that makes the kernel safe even if
     // MyObs has a buggy Eq impl.
     let obs1 = my_oracle::MyObs::run([0; 4], Bytes::from_static(b"x"));
-    let obs2 = obs1.clone();  // structurally equal as MyObs
+    let obs2 = obs1.clone(); // structurally equal as MyObs
     let leaf1 = Term::obs(obs1, Type::bytes());
     let leaf2 = Term::obs(obs2, Type::bytes());
     assert_ne!(leaf1, leaf2, "distinct Term::obs calls are distinct");
@@ -154,7 +158,7 @@ fn distinct_obs_calls_produce_distinct_leaves() {
 fn dyn_obs_equality_uses_pointer_identity() {
     let obs = my_oracle::MyObs::run([0; 4], Bytes::from_static(b"x"));
     let d1 = DynObs::new(obs.clone());
-    let d2 = DynObs::new(obs);  // same input, different DynObs
+    let d2 = DynObs::new(obs); // same input, different DynObs
     assert_ne!(d1, d2, "distinct DynObs::new calls are distinct");
 
     let d1b = d1.clone();
@@ -226,7 +230,8 @@ fn for_each_obs_collects_all_leaves() {
     let thm = Thm::assume(t).unwrap();
 
     let mut count = 0;
-    thm.for_each_obs::<my_oracle::MyObs, _>(&mut |_| count += 1).unwrap();
+    thm.for_each_obs::<my_oracle::MyObs, _>(&mut |_| count += 1)
+        .unwrap();
     // 2 in concl (lhs and rhs of Eq) + 2 in hyp (same phi).
     assert_eq!(count, 4);
 }
@@ -353,7 +358,9 @@ fn obs_eq_rejects_wrong_rust_type() {
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
     struct OtherObs(u32);
     impl ObsEq for OtherObs {
-        fn obs_eq(&self, _: &Self, _: &[Term], _: &[Term]) -> bool { true }
+        fn obs_eq(&self, _: &Self, _: &[Term], _: &[Term]) -> bool {
+            true
+        }
     }
 
     let o = my_oracle::MyObs::run([0; 4], Bytes::from_static(b"a"));
@@ -399,16 +406,10 @@ fn obs_eq_observer_can_refuse_equality() {
     );
     // Different args → refused.
     let result = Thm::obs_eq::<PickyObs>(e1.clone(), e2);
-    assert!(matches!(
-        result,
-        Err(covalence_pure::Error::ObsEqRefused)
-    ));
+    assert!(matches!(result, Err(covalence_pure::Error::ObsEqRefused)));
 
     // Same args → succeeds.
-    let e3 = Term::app(
-        Term::obs(o2, f_ty),
-        Term::blob(Bytes::from_static(b"x")),
-    );
+    let e3 = Term::app(Term::obs(o2, f_ty), Term::blob(Bytes::from_static(b"x")));
     assert!(Thm::obs_eq::<PickyObs>(e1, e3).is_ok());
 }
 
@@ -424,7 +425,9 @@ fn obs_eq_demonstrates_untrusted_id_plumbing() {
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
     struct UntrustedIdObs;
     impl ObsEq for UntrustedIdObs {
-        fn obs_eq(&self, _: &Self, _: &[Term], _: &[Term]) -> bool { true }
+        fn obs_eq(&self, _: &Self, _: &[Term], _: &[Term]) -> bool {
+            true
+        }
     }
 
     // (untrusted_id : 'a → 'a)

@@ -166,8 +166,7 @@ impl Hasher {
             }
             TypeKind::Tycon(name, args) => {
                 let name_bytes = name.as_bytes();
-                let mut buf =
-                    Vec::with_capacity(1 + 4 + name_bytes.len() + 4 + 32 * args.len());
+                let mut buf = Vec::with_capacity(1 + 4 + name_bytes.len() + 4 + 32 * args.len());
                 buf.push(TY_TYCON);
                 buf.extend_from_slice(&(name_bytes.len() as u32).to_le_bytes());
                 buf.extend_from_slice(name_bytes);
@@ -260,7 +259,9 @@ impl Hasher {
 }
 
 impl Default for Hasher {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ============================================================================

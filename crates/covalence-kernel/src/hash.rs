@@ -44,7 +44,9 @@ pub(crate) struct Hasher {
 
 impl Hasher {
     fn new() -> Self {
-        Self { inner: blake3::Hasher::new() }
+        Self {
+            inner: blake3::Hasher::new(),
+        }
     }
 
     fn u8(&mut self, v: u8) {

@@ -18,7 +18,6 @@ data = ["covalence-repl/arrow", "covalence-repl/parquet"]
 
 [dependencies]
 covalence-lsp = { path = "../covalence-lsp", optional = true }
-covalence-git = { path = "../covalence-git", optional = true, features = ["clone"] }
 # Default features (server discovery, XDG paths) need `dirs` / `nix` and only
 # build off-WASM. The `git` module — which `cog clone` uses for repo
 # discovery — has no extra deps and is always available.
@@ -32,6 +31,9 @@ covalence-serve = { path = "../covalence-serve" }
 covalence-repl = { path = "../covalence-repl", features = ["fetch", "cogit"] }
 covalence-shell = { path = "../covalence-shell" }
 covalence-store = { path = "../covalence-store", features = ["sqlite"] }
+# covalence-git is gated off WASM: its `clone` feature transitively pulls
+# in libsqlite3-sys, whose sqlite3.c build needs a real WASI sysroot.
+covalence-git = { path = "../covalence-git", optional = true, features = ["clone"] }
 covalence-hol = { path = "../covalence-hol", optional = true }
 covalence-opentheory = { path = "../covalence-opentheory", optional = true }
 covalence-wasm = { path = "../covalence-wasm", default-features = false }

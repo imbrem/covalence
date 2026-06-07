@@ -360,9 +360,7 @@ pub fn git_sha256() -> GitHasher {
 // GitImport — sqlite-backed `cov cog clone` store, exposed for Python
 // ---------------------------------------------------------------------------
 
-use covalence_git::clone::{
-    CloneOptions, CloneResult, clone_into, classify_url, CloneSource,
-};
+use covalence_git::clone::{CloneOptions, CloneResult, CloneSource, classify_url, clone_into};
 use covalence_git::store::{GitBackend, GitObjectKind, GitStore as CoreGitStore};
 
 /// One discovered ref from a clone.
@@ -503,9 +501,10 @@ impl GitImport {
     /// git blob payload hashes to.
     fn resolve(&self, oid: &Bound<'_, PyAny>) -> PyResult<O256> {
         let parsed = parse_git_hash(oid)?;
-        let obj = self.inner.read_object(&parsed).map_err(|e| {
-            PyValueError::new_err(format!("not resolvable: {e}"))
-        })?;
+        let obj = self
+            .inner
+            .read_object(&parsed)
+            .map_err(|e| PyValueError::new_err(format!("not resolvable: {e}")))?;
         Ok(O256(covalence_hash::O256::blob(&obj.data)))
     }
 

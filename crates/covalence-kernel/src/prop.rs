@@ -149,7 +149,11 @@ impl Prop {
     /// The new precondition chain is left empty; use
     /// [`with_precondition`](Self::with_precondition) to push one on.
     pub fn new(context: Arc<Context>, concl: TermId) -> Self {
-        Self { context, concl, precondition: None }
+        Self {
+            context,
+            concl,
+            precondition: None,
+        }
     }
 
     /// Set this Prop's immediate precondition. Older Props in the
@@ -332,21 +336,14 @@ impl Thm {
         name: StrId,
         replacement: TypeRef,
     ) -> Result<Self, ProofError> {
-        let concl_ref = arena.subst_tyvar_in_term(
-            TermRef::local(thm.prop.concl),
-            name,
-            replacement,
-        );
+        let concl_ref =
+            arena.subst_tyvar_in_term(TermRef::local(thm.prop.concl), name, replacement);
         let new_concl = concl_ref.as_local().ok_or(ProofError::ForeignConclusion)?;
         let old_ctx = thm.prop.context.clone();
         let mut new_assumptions = Vec::with_capacity(old_ctx.len());
         for i in 0..old_ctx.len() {
             let assum = old_ctx.assumption(i).expect("len/index invariant");
-            let new_ref = arena.subst_tyvar_in_term(
-                TermRef::local(assum.concl),
-                name,
-                replacement,
-            );
+            let new_ref = arena.subst_tyvar_in_term(TermRef::local(assum.concl), name, replacement);
             let new_id = new_ref.as_local().ok_or(ProofError::ForeignConclusion)?;
             new_assumptions.push(Arc::new(Prop::new(assum.context.clone(), new_id)));
         }
@@ -368,12 +365,13 @@ impl Thm {
     /// union of Props from both inputs, build a single
     /// `Context::flat` over it, then `with_context` each input
     /// onto that shared `Arc`.
-    pub fn with_context(
-        self,
-        target_ctx: Arc<Context>,
-    ) -> Result<Self, ProofError> {
+    pub fn with_context(self, target_ctx: Arc<Context>) -> Result<Self, ProofError> {
         for i in 0..self.prop.context.len() {
-            let p = self.prop.context.assumption(i).expect("len/index invariant");
+            let p = self
+                .prop
+                .context
+                .assumption(i)
+                .expect("len/index invariant");
             if !target_ctx.contains_prop(p) {
                 return Err(ProofError::AssumptionNotInContext);
             }
@@ -553,11 +551,7 @@ impl Thm {
     /// **β-reduction.** Given a well-typed redex
     /// `comb = Comb(Abs(α, body), arg)`, derive
     /// `ctx ⊢ comb = body[Bound(0) := arg]`.
-    pub fn beta(
-        arena: &mut Arena,
-        ctx: Arc<Context>,
-        comb: TermId,
-    ) -> Result<Self, ProofError> {
+    pub fn beta(arena: &mut Arena, ctx: Arc<Context>, comb: TermId) -> Result<Self, ProofError> {
         if !arena.is_well_typed(comb) {
             return Err(ProofError::IllTypedInput);
         }
@@ -595,12 +589,7 @@ impl Thm {
     /// would capture the assumption's variable, breaking
     /// substitutivity. Returns
     /// [`ProofError::VariableEscapesAssumption`] if violated.
-    pub fn abs(
-        arena: &mut Arena,
-        thm: Thm,
-        name: StrId,
-        ty: TypeRef,
-    ) -> Result<Self, ProofError> {
+    pub fn abs(arena: &mut Arena, thm: Thm, name: StrId, ty: TypeRef) -> Result<Self, ProofError> {
         if !arena.is_well_typed(thm.prop.concl) {
             return Err(ProofError::IllTypedInput);
         }
@@ -681,11 +670,16 @@ impl Thm {
         if !arena.is_well_typed(thm.prop.concl) {
             return Err(ProofError::IllTypedInput);
         }
-        let rep_id = replacement.as_local().ok_or(ProofError::ForeignConclusion)?;
+        let rep_id = replacement
+            .as_local()
+            .ok_or(ProofError::ForeignConclusion)?;
         if !arena.is_well_typed(rep_id) {
             return Err(ProofError::IllTypedInput);
         }
-        let rep_ty = arena.infer(rep_id).as_type().ok_or(ProofError::IllTypedInput)?;
+        let rep_ty = arena
+            .infer(rep_id)
+            .as_type()
+            .ok_or(ProofError::IllTypedInput)?;
         if rep_ty != ty {
             return Err(ProofError::TypeMismatch);
         }
@@ -694,13 +688,11 @@ impl Thm {
         let mut new_assumptions = Vec::with_capacity(old_ctx.len());
         for i in 0..old_ctx.len() {
             let assum = old_ctx.assumption(i).expect("len/index invariant");
-            let new_concl_ref = arena.subst_free(
-                TermRef::local(assum.concl),
-                name,
-                ty,
-                replacement,
-            );
-            let new_concl = new_concl_ref.as_local().ok_or(ProofError::ForeignConclusion)?;
+            let new_concl_ref =
+                arena.subst_free(TermRef::local(assum.concl), name, ty, replacement);
+            let new_concl = new_concl_ref
+                .as_local()
+                .ok_or(ProofError::ForeignConclusion)?;
             new_assumptions.push(std::sync::Arc::new(Prop::new(
                 assum.context.clone(),
                 new_concl,
@@ -709,7 +701,9 @@ impl Thm {
         let new_ctx = Context::flat(new_assumptions);
         // Substitute in the conclusion.
         let new_concl_ref = arena.subst_free(TermRef::local(thm.prop.concl), name, ty, replacement);
-        let new_concl = new_concl_ref.as_local().ok_or(ProofError::ForeignConclusion)?;
+        let new_concl = new_concl_ref
+            .as_local()
+            .ok_or(ProofError::ForeignConclusion)?;
         Ok(Self {
             prop: Prop::new(new_ctx, new_concl),
         })
@@ -732,8 +726,14 @@ impl Thm {
         if !arena.is_well_typed(thm_p.prop.concl) || !arena.is_well_typed(thm_q.prop.concl) {
             return Err(ProofError::IllTypedInput);
         }
-        let p_ty = arena.infer(thm_p.prop.concl).as_type().ok_or(ProofError::IllTypedInput)?;
-        let q_ty = arena.infer(thm_q.prop.concl).as_type().ok_or(ProofError::IllTypedInput)?;
+        let p_ty = arena
+            .infer(thm_p.prop.concl)
+            .as_type()
+            .ok_or(ProofError::IllTypedInput)?;
+        let q_ty = arena
+            .infer(thm_q.prop.concl)
+            .as_type()
+            .ok_or(ProofError::IllTypedInput)?;
         if p_ty != q_ty {
             return Err(ProofError::TypeMismatch);
         }
@@ -743,10 +743,10 @@ impl Thm {
         let mut assumptions: Vec<Arc<Prop>> = Vec::new();
         let mut seen: Vec<TermRef> = Vec::new();
         let push = |uf: &TermUf,
-                        assum: Arc<Prop>,
-                        exclude: TermRef,
-                        assumptions: &mut Vec<Arc<Prop>>,
-                        seen: &mut Vec<TermRef>| {
+                    assum: Arc<Prop>,
+                    exclude: TermRef,
+                    assumptions: &mut Vec<Arc<Prop>>,
+                    seen: &mut Vec<TermRef>| {
             let concl_ref = TermRef::local(assum.concl);
             if uf.eq_at_level_0(concl_ref, exclude) {
                 return;
@@ -812,10 +812,8 @@ impl Thm {
 
         // --- Axiom 1: ∀ a:σ. abs(rep a) = a ----------------------------
         let bound0_t1 = arena.alloc_term(TermDef::Bound(0));
-        let rep_b0 =
-            arena.alloc_term(TermDef::Comb(rep_ref, TermRef::local(bound0_t1)));
-        let abs_rep_b0 =
-            arena.alloc_term(TermDef::Comb(abs_ref, TermRef::local(rep_b0)));
+        let rep_b0 = arena.alloc_term(TermDef::Comb(rep_ref, TermRef::local(bound0_t1)));
+        let abs_rep_b0 = arena.alloc_term(TermDef::Comb(abs_ref, TermRef::local(rep_b0)));
         let eq1 = arena.alloc_term(TermDef::Eq(
             TermRef::local(abs_rep_b0),
             TermRef::local(bound0_t1),
@@ -826,10 +824,8 @@ impl Thm {
         // --- Axiom 2: ∀ x:α. (rep(abs x) = x) ⇔ (P x ∨ ¬∃y:α. P y) -----
         // Build under one binder (the outer ∀x), so Bound(0) refers to x.
         let bound0_t2 = arena.alloc_term(TermDef::Bound(0));
-        let abs_x =
-            arena.alloc_term(TermDef::Comb(abs_ref, TermRef::local(bound0_t2)));
-        let rep_abs_x =
-            arena.alloc_term(TermDef::Comb(rep_ref, TermRef::local(abs_x)));
+        let abs_x = arena.alloc_term(TermDef::Comb(abs_ref, TermRef::local(bound0_t2)));
+        let rep_abs_x = arena.alloc_term(TermDef::Comb(rep_ref, TermRef::local(abs_x)));
         let lhs = arena.alloc_term(TermDef::Eq(
             TermRef::local(rep_abs_x),
             TermRef::local(bound0_t2),
@@ -842,11 +838,9 @@ impl Thm {
         // Bound(0); P was closed pre-allocation so it carries no
         // surviving De-Bruijn indices.
         let bound0_inner = arena.alloc_term(TermDef::Bound(0));
-        let p_y =
-            arena.alloc_term(TermDef::Comb(p_ref, TermRef::local(bound0_inner)));
+        let p_y = arena.alloc_term(TermDef::Comb(p_ref, TermRef::local(bound0_inner)));
         let lam_p_y = arena.alloc_term(TermDef::Lam(alpha, TermRef::local(p_y)));
-        let exists_p =
-            arena.alloc_term(TermDef::Exists(TermRef::local(lam_p_y)));
+        let exists_p = arena.alloc_term(TermDef::Exists(TermRef::local(lam_p_y)));
         let not_exists_p =
             arena.alloc_term(TermDef::Op1(PrimOp1::LogicalNot, TermRef::local(exists_p)));
 
@@ -857,10 +851,7 @@ impl Thm {
         ));
 
         // Iff is Eq on bool.
-        let iff = arena.alloc_term(TermDef::Eq(
-            TermRef::local(lhs),
-            TermRef::local(rhs),
-        ));
+        let iff = arena.alloc_term(TermDef::Eq(TermRef::local(lhs), TermRef::local(rhs)));
         let lam2 = arena.alloc_term(TermDef::Lam(alpha, TermRef::local(iff)));
         let axiom2 = arena.alloc_term(TermDef::Forall(TermRef::local(lam2)));
 
@@ -890,11 +881,7 @@ impl Thm {
     /// Returns [`ProofError::NotReducible`] if no rule fires.
     /// Requires `t` to be well-typed — like every non-congruence
     /// rule.
-    pub fn reduce(
-        arena: &mut Arena,
-        ctx: Arc<Context>,
-        t: TermId,
-    ) -> Result<Self, ProofError> {
+    pub fn reduce(arena: &mut Arena, ctx: Arc<Context>, t: TermId) -> Result<Self, ProofError> {
         if !arena.is_well_typed(t) {
             return Err(ProofError::IllTypedInput);
         }
@@ -977,7 +964,10 @@ impl std::fmt::Display for ProofError {
             ProofError::MidpointMismatch => write!(f, "equalities do not chain"),
             ProofError::LhsMismatch => write!(f, "equality LHS does not match Thm conclusion"),
             ProofError::ForeignConclusion => {
-                write!(f, "equality RHS is a foreign ref; cannot record as Thm conclusion")
+                write!(
+                    f,
+                    "equality RHS is a foreign ref; cannot record as Thm conclusion"
+                )
             }
             ProofError::ExpectedImplication => write!(f, "expected an Imp conclusion"),
             ProofError::ExpectedBetaRedex => write!(f, "expected a Comb(Abs(_, _), _) redex"),
@@ -1021,10 +1011,12 @@ fn is_prop_connective(arena: &mut Arena, t: TermRef, bool_ty: TypeRef) -> bool {
         ) => true,
         // Bool↔Bool equality is iff at the meta level — fold it into the
         // propositional fragment when both sides are Bool-typed.
-        TermDef::Eq(a, _) => arena
-            .infer(a.as_local().unwrap_or(crate::id::TermId(0)))
-            .as_type()
-            == Some(bool_ty),
+        TermDef::Eq(a, _) => {
+            arena
+                .infer(a.as_local().unwrap_or(crate::id::TermId(0)))
+                .as_type()
+                == Some(bool_ty)
+        }
         _ => false,
     }
 }
@@ -1036,16 +1028,10 @@ fn is_prop_connective(arena: &mut Arena, t: TermRef, bool_ty: TypeRef) -> bool {
 ///
 /// Dedupes by structural identity of `TermRef` (each distinct ref appears
 /// once even if it occurs multiple times in the term).
-fn collect_bool_atoms(
-    arena: &mut Arena,
-    t: TermRef,
-    bool_ty: TypeRef,
-    acc: &mut Vec<TermRef>,
-) {
+fn collect_bool_atoms(arena: &mut Arena, t: TermRef, bool_ty: TypeRef, acc: &mut Vec<TermRef>) {
     let Some(id) = t.as_local() else { return };
     // If t is Bool-typed and NOT a propositional connective, it's an atom.
-    if arena.infer(id).as_type() == Some(bool_ty) && !is_prop_connective(arena, t, bool_ty)
-    {
+    if arena.infer(id).as_type() == Some(bool_ty) && !is_prop_connective(arena, t, bool_ty) {
         if !acc.iter().any(|a| *a == t) {
             acc.push(t);
         }

@@ -54,7 +54,8 @@ fn against_reference() {
             let mut h = Harness::new(spec);
             let got = h.hash(data);
             assert_eq!(
-                got, want,
+                got,
+                want,
                 "{}/{} input={name} mismatch (got len={} want len={})",
                 spec.name,
                 spec.variant,

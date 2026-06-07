@@ -50,7 +50,10 @@ pub fn clone_local_into(
     if !objects_dir.is_dir() {
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
-            format!("not a git repository: {} has no objects/", layout.commondir.display()),
+            format!(
+                "not a git repository: {} has no objects/",
+                layout.commondir.display()
+            ),
         ));
     }
 
@@ -65,7 +68,9 @@ pub fn clone_local_into(
             continue;
         }
         let obj = src.read_object(&oid).map_err(store_err_to_io)?;
-        let written = store.write_object(obj.kind, &obj.data).map_err(store_err_to_io)?;
+        let written = store
+            .write_object(obj.kind, &obj.data)
+            .map_err(store_err_to_io)?;
         if written != oid {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -128,9 +133,8 @@ impl RepoLayout {
 
 /// Resolve a user-supplied path to a gitdir.
 fn resolve_gitdir(input: &Path) -> io::Result<PathBuf> {
-    let meta = fs::metadata(input).map_err(|e| {
-        io::Error::new(e.kind(), format!("{}: {e}", input.display()))
-    })?;
+    let meta = fs::metadata(input)
+        .map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", input.display())))?;
 
     if meta.is_file() {
         // Worktree gitlink: `gitdir: <path>`
@@ -294,10 +298,7 @@ fn walk_loose_refs(
 
 /// Parse a `packed-refs` file. Only inserts refs not already present
 /// (loose refs win).
-fn parse_packed_refs(
-    contents: &str,
-    out: &mut std::collections::HashMap<String, RemoteRef>,
-) {
+fn parse_packed_refs(contents: &str, out: &mut std::collections::HashMap<String, RemoteRef>) {
     for line in contents.lines() {
         let line = line.trim_end();
         if line.is_empty() || line.starts_with('#') || line.starts_with('^') {
@@ -357,9 +358,7 @@ mod tests {
         let mut tree_data = Vec::new();
         tree_data.extend_from_slice(b"100644 hello\0");
         tree_data.extend_from_slice(blob_oid.as_bytes());
-        let tree_oid = loose
-            .write_object(GitObjectKind::Tree, &tree_data)
-            .unwrap();
+        let tree_oid = loose.write_object(GitObjectKind::Tree, &tree_data).unwrap();
 
         let commit_data = format!(
             "tree {tree_oid}\nauthor A <a@b> 0 +0000\ncommitter A <a@b> 0 +0000\n\nfirst commit\n"
@@ -455,7 +454,10 @@ mod tests {
 
         // No filter → both refs visible (plus HEAD).
         let result = clone_local_into(
-            &LocalCloneOptions { path: src.clone(), ref_prefixes: Vec::new() },
+            &LocalCloneOptions {
+                path: src.clone(),
+                ref_prefixes: Vec::new(),
+            },
             &dest,
             |_| {},
         )
@@ -495,7 +497,10 @@ mod tests {
 
         let dest = GitStore::memory(gix_hash::Kind::Sha1).unwrap();
         let result = clone_local_into(
-            &LocalCloneOptions { path: src.clone(), ref_prefixes: Vec::new() },
+            &LocalCloneOptions {
+                path: src.clone(),
+                ref_prefixes: Vec::new(),
+            },
             &dest,
             |_| {},
         )
@@ -512,7 +517,10 @@ mod tests {
         let dir = fresh_dir("nope");
         let dest = GitStore::memory(gix_hash::Kind::Sha1).unwrap();
         let err = clone_local_into(
-            &LocalCloneOptions { path: dir.clone(), ref_prefixes: Vec::new() },
+            &LocalCloneOptions {
+                path: dir.clone(),
+                ref_prefixes: Vec::new(),
+            },
             &dest,
             |_| {},
         )

@@ -100,12 +100,7 @@ impl TreeFs {
     /// — backends with native partial reads (sqlite `substr`) only
     /// transfer those bytes from storage. Past-EOF reads return empty per
     /// POSIX `read(2)` semantics.
-    async fn fetch_range(
-        &self,
-        hash: O256,
-        start: u64,
-        end: u64,
-    ) -> Result<Bytes, FuseError> {
+    async fn fetch_range(&self, hash: O256, start: u64, end: u64) -> Result<Bytes, FuseError> {
         let store = self.store.clone();
         let result = task::spawn_blocking(move || store.get_slice(&hash, start..end))
             .await
@@ -186,12 +181,7 @@ impl Filesystem for TreeFs {
 
     async fn destroy(&self, _req: Request) {}
 
-    async fn lookup(
-        &self,
-        _req: Request,
-        parent: u64,
-        name: &OsStr,
-    ) -> FuseResult<ReplyEntry> {
+    async fn lookup(&self, _req: Request, parent: u64, name: &OsStr) -> FuseResult<ReplyEntry> {
         let parent_entry = self.inodes.get(parent).ok_or(Errno::from(libc::ENOENT))?;
         if !parent_entry.mode.is_dir() {
             return Err(FuseError::NotADir(parent_entry.hash).into());
@@ -295,9 +285,7 @@ impl Filesystem for TreeFs {
 
         let n = table.num_entries();
         for i in 0..n {
-            let row = table
-                .row(i)
-                .map_err(|e| FuseError::Table(e.to_string()))?;
+            let row = table.row(i).map_err(|e| FuseError::Table(e.to_string()))?;
             let ino = self.inodes.intern(row.child, row.mode);
             let (kind, _perm) = mode_to_fuse(row.mode);
             entries.push(Ok(DirectoryEntry {
@@ -363,9 +351,7 @@ impl Filesystem for TreeFs {
 
         let n = table.num_entries();
         for i in 0..n {
-            let row = table
-                .row(i)
-                .map_err(|e| FuseError::Table(e.to_string()))?;
+            let row = table.row(i).map_err(|e| FuseError::Table(e.to_string()))?;
             let ino = self.inodes.intern(row.child, row.mode);
             let (kind, _perm) = mode_to_fuse(row.mode);
             let size = if row.mode.is_dir() || row.mode == DirMode::SUBMODULE {
@@ -440,9 +426,7 @@ pub async fn mount_tree(
     let fs = TreeFs::new(store, root, cfg);
 
     let session = Session::new(opts);
-    let mount = session
-        .mount_with_unprivileged(fs, mountpoint)
-        .await?;
+    let mount = session.mount_with_unprivileged(fs, mountpoint).await?;
 
     tracing::info!("mounted tree {root:?} at {}", mountpoint.display());
     mount.await?;

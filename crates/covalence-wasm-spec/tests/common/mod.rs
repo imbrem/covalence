@@ -25,8 +25,7 @@ const SIGN_API: &str = "covalence:sign/api@0.1.0";
 /// (see `BLAKE3-team/BLAKE3/test_vectors/test_vectors.json`). Used by
 /// the harness when a `derive-key` KAT does not embed a `context`
 /// field.
-pub const BLAKE3_TEST_VECTOR_CONTEXT: &str =
-    "BLAKE3 2019-12-27 16:29:52 test vectors context";
+pub const BLAKE3_TEST_VECTOR_CONTEXT: &str = "BLAKE3 2019-12-27 16:29:52 test vectors context";
 
 pub fn engine() -> Engine {
     let mut config = covalence_wasm::engine::wasmtime::Config::new();
@@ -125,10 +124,7 @@ impl Harness {
     /// Used by BLAKE3. `context` is a UTF-8 string.
     pub fn derive_key(&mut self, context: &str, key_material: &[u8]) -> Vec<u8> {
         let func = self.api_func("derive-key");
-        let args = [
-            Val::String(context.to_string()),
-            val_list_u8(key_material),
-        ];
+        let args = [Val::String(context.to_string()), val_list_u8(key_material)];
         let mut results = [Val::Bool(false)];
         func.call(&mut self.store, &args, &mut results)
             .expect("derive-key call");
@@ -157,8 +153,7 @@ impl Harness {
     /// Panics for resource specs (which have no `init` export).
     pub fn stateful_stream(&mut self, chunks: &[&[u8]]) -> Vec<u8> {
         let init = self.api_func("init");
-        init.call(&mut self.store, &[], &mut [])
-            .expect("init call");
+        init.call(&mut self.store, &[], &mut []).expect("init call");
 
         let update = self.api_func("update");
         for c in chunks {
@@ -280,8 +275,8 @@ pub fn reference_hash(
             // If the KAT did not embed a context, use the BLAKE3
             // canonical test-vector context string.
             let ctx_bytes = key.unwrap_or(BLAKE3_TEST_VECTOR_CONTEXT.as_bytes());
-            let ctx_str = std::str::from_utf8(ctx_bytes)
-                .expect("derive-key context must be valid UTF-8");
+            let ctx_str =
+                std::str::from_utf8(ctx_bytes).expect("derive-key context must be valid UTF-8");
             Some(covalence_hash::blake3_derive_key(ctx_str, data).to_vec())
         }
         // Compress has no clean single-block reference (see doc above).

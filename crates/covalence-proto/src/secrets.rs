@@ -34,7 +34,11 @@ pub enum SecretError {
     #[error("{var}_CMD failed to spawn: {message}")]
     SpawnFailed { var: String, message: String },
     #[error("{var}_CMD exited with status {status}: {stderr}")]
-    CommandFailed { var: String, status: i32, stderr: String },
+    CommandFailed {
+        var: String,
+        status: i32,
+        stderr: String,
+    },
     #[error("{var}_CMD produced empty output")]
     EmptyOutput { var: String },
 }
@@ -46,7 +50,9 @@ pub enum SecretError {
 pub fn from_env(var: &str) -> Result<SecretString, SecretError> {
     match from_env_optional(var)? {
         Some(s) => Ok(s),
-        None => Err(SecretError::Missing { var: var.to_string() }),
+        None => Err(SecretError::Missing {
+            var: var.to_string(),
+        }),
     }
 }
 
@@ -89,7 +95,9 @@ fn resolve_pair(var: &str) -> Result<Option<SecretString>, SecretError> {
         Ok(value) if !value.is_empty() => return Ok(Some(SecretString::from(value))),
         Ok(_) => {}
         Err(std::env::VarError::NotUnicode(_)) => {
-            return Err(SecretError::NotUtf8 { var: var.to_string() });
+            return Err(SecretError::NotUtf8 {
+                var: var.to_string(),
+            });
         }
         Err(std::env::VarError::NotPresent) => {}
     }
@@ -125,11 +133,14 @@ fn from_env_cmd(var: &str) -> Result<Option<SecretString>, SecretError> {
         });
     }
 
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(|_| SecretError::NotUtf8 { var: cmd_var.clone() })?;
+    let stdout = String::from_utf8(output.stdout).map_err(|_| SecretError::NotUtf8 {
+        var: cmd_var.clone(),
+    })?;
     let trimmed = stdout.trim_end_matches(['\n', '\r']).to_string();
     if trimmed.is_empty() {
-        return Err(SecretError::EmptyOutput { var: var.to_string() });
+        return Err(SecretError::EmptyOutput {
+            var: var.to_string(),
+        });
     }
     Ok(Some(SecretString::from(trimmed)))
 }

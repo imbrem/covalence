@@ -134,9 +134,9 @@ fn parse_prove(tail: &[SExpr]) -> Result<Command, BridgeError> {
             "(prove (= lhs rhs)): expected one argument".into(),
         ));
     };
-    let items = eq.as_list().ok_or_else(|| {
-        BridgeError::Malformed("(prove …): body must be an equality form".into())
-    })?;
+    let items = eq
+        .as_list()
+        .ok_or_else(|| BridgeError::Malformed("(prove …): body must be an equality form".into()))?;
     match items {
         [head, lhs, rhs] if head.as_symbol() == Some("=") => {
             Ok(Command::Prove(parse_expr(lhs)?, parse_expr(rhs)?))

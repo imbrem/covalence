@@ -252,7 +252,6 @@ impl SyncBackend for SyncHttpBackend {
             serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
         Ok(json.count)
     }
-
 }
 
 fn ureq_error(e: ureq::Error) -> KernelError {

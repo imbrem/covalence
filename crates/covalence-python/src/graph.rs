@@ -264,13 +264,7 @@ impl PyGraphBuilder {
     /// Wire output port (`from_node`, `from_port`) → input port
     /// (`to_node`, `to_port`). Raises on kind / type / linearity
     /// violations.
-    fn wire(
-        &mut self,
-        from_node: u32,
-        from_port: u32,
-        to_node: u32,
-        to_port: u32,
-    ) -> PyResult<()> {
+    fn wire(&mut self, from_node: u32, from_port: u32, to_node: u32, to_port: u32) -> PyResult<()> {
         self.get()?
             .wire(Edge {
                 from_node: NodeId(from_node),

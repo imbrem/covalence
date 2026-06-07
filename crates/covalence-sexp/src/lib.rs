@@ -307,10 +307,9 @@ mod tests {
         // egglog uses single `;` for comments (unlike CovalenceDialect's `;;`).
         assert_eq!(
             parse_egglog("; this is a comment\n(sort Math)").unwrap(),
-            vec![SExp::List(vec![
-                SExp::symbol("sort"),
-                SExp::symbol("Math"),
-            ])]
+            vec![SExp::List(
+                vec![SExp::symbol("sort"), SExp::symbol("Math"),]
+            )]
         );
     }
 

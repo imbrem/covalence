@@ -22,8 +22,7 @@ use covalence_wasm_store::{WasmStore, merge, single_blob};
 
 fn build_leaf(blob: &[u8]) -> (O256, WasmStore) {
     let hash = O256::blob(blob);
-    let bytes = single_blob::build_component(hash.as_bytes(), blob, None)
-        .expect("build leaf");
+    let bytes = single_blob::build_component(hash.as_bytes(), blob, None).expect("build leaf");
     let store = WasmStore::from_component_bytes(&bytes).expect("instantiate leaf");
     (hash, store)
 }
@@ -34,8 +33,7 @@ async fn merge_composer_aggregates_contains() {
     let (beta_hash, beta) = build_leaf(b"beta blob");
 
     let composer_bytes = merge::build_component().expect("build merge composer");
-    let composed = WasmStore::compose(&composer_bytes, vec![alpha, beta])
-        .expect("compose");
+    let composed = WasmStore::compose(&composer_bytes, vec![alpha, beta]).expect("compose");
 
     // Either leaf's hash hits.
     assert!(
@@ -60,8 +58,7 @@ async fn merge_composer_aggregates_contains() {
 async fn merge_composer_with_zero_backings_is_empty() {
     // Degenerate case: no backings ⇒ every contains returns false.
     let composer_bytes = merge::build_component().expect("build merge composer");
-    let composed =
-        WasmStore::compose(&composer_bytes, Vec::<WasmStore>::new()).expect("compose");
+    let composed = WasmStore::compose(&composer_bytes, Vec::<WasmStore>::new()).expect("compose");
 
     assert!(!composed.contains(&vec![0x00; 32]).await.unwrap());
 }
@@ -74,8 +71,7 @@ async fn merge_composer_forwards_get_first_hit_wins() {
     let (beta_hash, beta) = build_leaf(beta_bytes);
 
     let composer_bytes = merge::build_component().expect("build merge composer");
-    let composed = WasmStore::compose(&composer_bytes, vec![alpha, beta])
-        .expect("compose");
+    let composed = WasmStore::compose(&composer_bytes, vec![alpha, beta]).expect("compose");
 
     // Each backing's blob comes back through the composer.
     let from_alpha = composed
@@ -103,8 +99,7 @@ async fn merge_composer_forwards_head() {
     let (beta_hash, beta) = build_leaf(beta_bytes);
 
     let composer_bytes = merge::build_component().expect("build merge composer");
-    let composed = WasmStore::compose(&composer_bytes, vec![alpha, beta])
-        .expect("compose");
+    let composed = WasmStore::compose(&composer_bytes, vec![alpha, beta]).expect("compose");
 
     let alpha_info = composed
         .head(&alpha_hash.as_bytes().to_vec())
@@ -144,8 +139,7 @@ async fn merge_composer_with_three_backings_routes_correctly() {
     let (three_hash, three) = build_leaf(three_bytes);
 
     let composer_bytes = merge::build_component().expect("build merge composer");
-    let composed = WasmStore::compose(&composer_bytes, vec![one, two, three])
-        .expect("compose");
+    let composed = WasmStore::compose(&composer_bytes, vec![one, two, three]).expect("compose");
 
     assert_eq!(
         composed.get(&one_hash.as_bytes().to_vec()).await.unwrap(),

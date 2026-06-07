@@ -83,7 +83,6 @@ pub enum TermKind {
     Foreign(ImportId, TermId),
 }
 
-
 /// Opaque reference to a term in the current arena.
 ///
 /// Every reference is a [`TermId`] — foreign-arena references appear
@@ -206,9 +205,10 @@ impl TermDef {
     pub fn deps(&self) -> Deps {
         use TermDef::*;
         match *self {
-            Bound(_) | Free(..) | Const(..) | Bool(_)
-            | IntInline(_) | IntStored(_) | NatInline(_) | NatStored(_)
-            | BytesStored(_) | Abs(_) | Rep(_) | Foreign(..) => Deps::None,
+            Bound(_) | Free(..) | Const(..) | Bool(_) | IntInline(_) | IntStored(_)
+            | NatInline(_) | NatStored(_) | BytesStored(_) | Abs(_) | Rep(_) | Foreign(..) => {
+                Deps::None
+            }
             Forall(p) | Exists(p) | Op1(_, p) => Deps::One(p),
             Eps(_, p) | Lam(_, p) => Deps::One(p),
             Comb(a, b) | Eq(a, b) | Op2(_, a, b) => Deps::Two(a, b),

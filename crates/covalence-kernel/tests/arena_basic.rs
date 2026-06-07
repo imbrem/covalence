@@ -4,8 +4,8 @@
 
 use std::sync::Arc;
 
-use covalence_kernel::{Arena, PrimOp2, TermDef, TermRef, TermUf, TypeInfo, TypeKind, TypeRef};
 use covalence_kernel::ty::{BuiltinTy, TypeRefKind};
+use covalence_kernel::{Arena, PrimOp2, TermDef, TermRef, TermUf, TypeInfo, TypeKind, TypeRef};
 
 /// Helper: intern a name and build a Free term in one go.
 fn alloc_free(a: &mut Arena, name: &str, ty: TypeRef) -> covalence_kernel::TermId {
@@ -331,7 +331,11 @@ fn foreign_ref_resolves_back_to_source() {
 
     let mut a = Arena::new();
     // (no UF needed)
-    let imp_d = a.add_import(d_frozen.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
+    let imp_d = a.add_import(
+        d_frozen.clone(),
+        covalence_kernel::TermSubstId::EMPTY,
+        covalence_kernel::TypeSubstId::EMPTY,
+    );
     let foreign_ref = a.foreign_term_ref(imp_d, c_d);
     let a_arc = a.freeze();
     let canon = Arena::canonical_term(&a_arc, foreign_ref);
@@ -344,7 +348,11 @@ fn foreign_term_ref_dedupes() {
     let d = Arena::new().freeze();
     let mut a = Arena::new();
     // (no UF needed)
-    let imp = a.add_import(d.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
+    let imp = a.add_import(
+        d.clone(),
+        covalence_kernel::TermSubstId::EMPTY,
+        covalence_kernel::TypeSubstId::EMPTY,
+    );
     let r1 = a.foreign_term_ref(imp, covalence_kernel::TermId(0));
     let r2 = a.foreign_term_ref(imp, covalence_kernel::TermId(0));
     assert_eq!(r1, r2);
@@ -675,7 +683,9 @@ fn declare_type_operator_accepts_unary_polymorphic() {
     let alpha_ty = a.alloc_tvar(alpha_name);
     let bool_true = a.alloc_term(TermDef::Bool(true));
     let p = a.alloc_term(TermDef::Lam(alpha_ty, TermRef::local(bool_true)));
-    let r = a.declare_type_operator(alpha_ty, p, vec![alpha_name]).unwrap();
+    let r = a
+        .declare_type_operator(alpha_ty, p, vec![alpha_name])
+        .unwrap();
     assert!(r.is_local());
 }
 
@@ -734,8 +744,14 @@ fn declare_type_operator_accepts_any_permutation() {
     let fun_ty = a.alloc_fun_ty(alpha_ty, beta_ty);
     let bool_true = a.alloc_term(TermDef::Bool(true));
     let p = a.alloc_term(TermDef::Lam(fun_ty, TermRef::local(bool_true)));
-    assert!(a.declare_type_operator(fun_ty, p, vec![alpha, beta]).is_ok());
-    assert!(a.declare_type_operator(fun_ty, p, vec![beta, alpha]).is_ok());
+    assert!(
+        a.declare_type_operator(fun_ty, p, vec![alpha, beta])
+            .is_ok()
+    );
+    assert!(
+        a.declare_type_operator(fun_ty, p, vec![beta, alpha])
+            .is_ok()
+    );
 }
 
 #[test]
@@ -743,8 +759,16 @@ fn add_import_dedupes() {
     let d = Arena::new().freeze();
     let mut a = Arena::new();
     // (no UF needed)
-    let i1 = a.add_import(d.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
-    let i2 = a.add_import(d.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
+    let i1 = a.add_import(
+        d.clone(),
+        covalence_kernel::TermSubstId::EMPTY,
+        covalence_kernel::TypeSubstId::EMPTY,
+    );
+    let i2 = a.add_import(
+        d.clone(),
+        covalence_kernel::TermSubstId::EMPTY,
+        covalence_kernel::TypeSubstId::EMPTY,
+    );
     assert_eq!(i1, i2);
     assert_eq!(a.imports().len(), 1);
     assert!(Arc::ptr_eq(&a.imports()[0].arena, &d));
@@ -758,11 +782,19 @@ fn diamond_import_regains_canonical_identity() {
     let d_frozen = d.freeze();
 
     let mut b = Arena::new();
-    let imp_d_in_b = b.add_import(d_frozen.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
+    let imp_d_in_b = b.add_import(
+        d_frozen.clone(),
+        covalence_kernel::TermSubstId::EMPTY,
+        covalence_kernel::TypeSubstId::EMPTY,
+    );
     let x_in_b = b.foreign_term_ref(imp_d_in_b, x_d);
 
     let mut c = Arena::new();
-    let imp_d_in_c = c.add_import(d_frozen.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
+    let imp_d_in_c = c.add_import(
+        d_frozen.clone(),
+        covalence_kernel::TermSubstId::EMPTY,
+        covalence_kernel::TypeSubstId::EMPTY,
+    );
     let x_in_c = c.foreign_term_ref(imp_d_in_c, x_d);
 
     let b_frozen = b.freeze();
@@ -770,8 +802,16 @@ fn diamond_import_regains_canonical_identity() {
 
     let mut a = Arena::new();
     // (no UF needed)
-    let _imp_b = a.add_import(b_frozen.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
-    let _imp_c = a.add_import(c_frozen.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
+    let _imp_b = a.add_import(
+        b_frozen.clone(),
+        covalence_kernel::TermSubstId::EMPTY,
+        covalence_kernel::TypeSubstId::EMPTY,
+    );
+    let _imp_c = a.add_import(
+        c_frozen.clone(),
+        covalence_kernel::TermSubstId::EMPTY,
+        covalence_kernel::TypeSubstId::EMPTY,
+    );
     let a_arc = a.freeze();
 
     let canon_via_b = Arena::canonical_term(&b_frozen, x_in_b);
@@ -799,8 +839,16 @@ fn distinct_arenas_with_same_content_are_not_canonically_equal() {
     assert!(!Arc::ptr_eq(&a1_frozen, &a2_frozen));
 
     let mut a3 = Arena::new();
-    let imp_a1 = a3.add_import(a1_frozen.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
-    let imp_a2 = a3.add_import(a2_frozen.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
+    let imp_a1 = a3.add_import(
+        a1_frozen.clone(),
+        covalence_kernel::TermSubstId::EMPTY,
+        covalence_kernel::TypeSubstId::EMPTY,
+    );
+    let imp_a2 = a3.add_import(
+        a2_frozen.clone(),
+        covalence_kernel::TermSubstId::EMPTY,
+        covalence_kernel::TypeSubstId::EMPTY,
+    );
     assert_ne!(imp_a1, imp_a2);
     let r1 = a3.foreign_term_ref(imp_a1, covalence_kernel::TermId(0));
     let r2 = a3.foreign_term_ref(imp_a2, covalence_kernel::TermId(0));
@@ -1524,7 +1572,11 @@ fn canonical_local_stops_at_foreign() {
     let d_frozen = d.freeze();
     let mut a = Arena::new();
     let uf = TermUf::new();
-    let imp = a.add_import(d_frozen.clone(), covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
+    let imp = a.add_import(
+        d_frozen.clone(),
+        covalence_kernel::TermSubstId::EMPTY,
+        covalence_kernel::TypeSubstId::EMPTY,
+    );
     let foreign_ref = a.foreign_term_ref(imp, c);
     // canonical_local returns the foreign ref unchanged.
     let canon = uf.canonical_local(foreign_ref);
@@ -1540,7 +1592,11 @@ fn union_with_foreign_lhs_updates_local_canonical() {
     let d_frozen = d.freeze();
     let mut a = Arena::new();
     let mut uf = TermUf::new();
-    let imp = a.add_import(d_frozen, covalence_kernel::TermSubstId::EMPTY, covalence_kernel::TypeSubstId::EMPTY);
+    let imp = a.add_import(
+        d_frozen,
+        covalence_kernel::TermSubstId::EMPTY,
+        covalence_kernel::TypeSubstId::EMPTY,
+    );
     let f_ref = a.foreign_term_ref(imp, foreign_const);
     let l = a.alloc_term(TermDef::Bool(true));
     uf.union(TermRef::local(l), f_ref).unwrap();
@@ -1559,8 +1615,13 @@ fn reduce_logical_not_on_true() {
     // (no UF needed)
     let t = a.alloc_term(TermDef::Bool(true));
     let not_t = a.alloc_term(TermDef::Op1(PrimOp1::LogicalNot, TermRef::local(t)));
-    let reduced = a.reduce_primop(TermRef::local(not_t)).unwrap_or(TermRef::local(not_t));
-    assert_eq!(a.term_def(reduced.as_local().unwrap()), &TermDef::Bool(false));
+    let reduced = a
+        .reduce_primop(TermRef::local(not_t))
+        .unwrap_or(TermRef::local(not_t));
+    assert_eq!(
+        a.term_def(reduced.as_local().unwrap()),
+        &TermDef::Bool(false)
+    );
 }
 
 #[test]
@@ -1569,14 +1630,32 @@ fn reduce_logical_and_truth_table() {
     // (no UF needed)
     let t = a.alloc_term(TermDef::Bool(true));
     let f = a.alloc_term(TermDef::Bool(false));
-    let tt = a.alloc_term(TermDef::Op2(PrimOp2::LogicalAnd, TermRef::local(t), TermRef::local(t)));
-    let r = a.reduce_primop(TermRef::local(tt)).unwrap_or(TermRef::local(tt));
+    let tt = a.alloc_term(TermDef::Op2(
+        PrimOp2::LogicalAnd,
+        TermRef::local(t),
+        TermRef::local(t),
+    ));
+    let r = a
+        .reduce_primop(TermRef::local(tt))
+        .unwrap_or(TermRef::local(tt));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(true));
-    let tf = a.alloc_term(TermDef::Op2(PrimOp2::LogicalAnd, TermRef::local(t), TermRef::local(f)));
-    let r = a.reduce_primop(TermRef::local(tf)).unwrap_or(TermRef::local(tf));
+    let tf = a.alloc_term(TermDef::Op2(
+        PrimOp2::LogicalAnd,
+        TermRef::local(t),
+        TermRef::local(f),
+    ));
+    let r = a
+        .reduce_primop(TermRef::local(tf))
+        .unwrap_or(TermRef::local(tf));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(false));
-    let ft = a.alloc_term(TermDef::Op2(PrimOp2::LogicalAnd, TermRef::local(f), TermRef::local(t)));
-    let r = a.reduce_primop(TermRef::local(ft)).unwrap_or(TermRef::local(ft));
+    let ft = a.alloc_term(TermDef::Op2(
+        PrimOp2::LogicalAnd,
+        TermRef::local(f),
+        TermRef::local(t),
+    ));
+    let r = a
+        .reduce_primop(TermRef::local(ft))
+        .unwrap_or(TermRef::local(ft));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(false));
 }
 
@@ -1587,7 +1666,9 @@ fn reduce_nat_succ() {
     // (no UF needed)
     let five = a.alloc_term(TermDef::nat_inline(5));
     let succ_five = a.alloc_term(TermDef::Op1(PrimOp1::NatSucc, TermRef::local(five)));
-    let r = a.reduce_primop(TermRef::local(succ_five)).unwrap_or(TermRef::local(succ_five));
+    let r = a
+        .reduce_primop(TermRef::local(succ_five))
+        .unwrap_or(TermRef::local(succ_five));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::nat_inline(6));
 }
 
@@ -1602,7 +1683,9 @@ fn reduce_nat_add() {
         TermRef::local(five),
         TermRef::local(three),
     ));
-    let r = a.reduce_primop(TermRef::local(sum)).unwrap_or(TermRef::local(sum));
+    let r = a
+        .reduce_primop(TermRef::local(sum))
+        .unwrap_or(TermRef::local(sum));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::nat_inline(8));
 }
 
@@ -1617,7 +1700,9 @@ fn reduce_nat_overflow_promotes_to_stored() {
         TermRef::local(big),
         TermRef::local(one),
     ));
-    let r = a.reduce_primop(TermRef::local(sum)).unwrap_or(TermRef::local(sum));
+    let r = a
+        .reduce_primop(TermRef::local(sum))
+        .unwrap_or(TermRef::local(sum));
     let def = a.term_def(r.as_local().unwrap());
     match def {
         TermDef::NatStored(id) => {
@@ -1640,7 +1725,9 @@ fn reduce_nat_div_by_zero_pinned_to_zero() {
         TermRef::local(x),
         TermRef::local(zero),
     ));
-    let r = a.reduce_primop(TermRef::local(q)).unwrap_or(TermRef::local(q));
+    let r = a
+        .reduce_primop(TermRef::local(q))
+        .unwrap_or(TermRef::local(q));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::nat_inline(0));
 }
 
@@ -1656,7 +1743,9 @@ fn reduce_nat_comparisons() {
         TermRef::local(two),
         TermRef::local(three),
     ));
-    let r = a.reduce_primop(TermRef::local(lt)).unwrap_or(TermRef::local(lt));
+    let r = a
+        .reduce_primop(TermRef::local(lt))
+        .unwrap_or(TermRef::local(lt));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(true));
     // 3 ≤ 2 = False
     let le = a.alloc_term(TermDef::Op2(
@@ -1664,7 +1753,9 @@ fn reduce_nat_comparisons() {
         TermRef::local(three),
         TermRef::local(two),
     ));
-    let r = a.reduce_primop(TermRef::local(le)).unwrap_or(TermRef::local(le));
+    let r = a
+        .reduce_primop(TermRef::local(le))
+        .unwrap_or(TermRef::local(le));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(false));
 }
 
@@ -1679,7 +1770,9 @@ fn reduce_int_arithmetic() {
         TermRef::local(five),
         TermRef::local(neg_three),
     ));
-    let r = a.reduce_primop(TermRef::local(sum)).unwrap_or(TermRef::local(sum));
+    let r = a
+        .reduce_primop(TermRef::local(sum))
+        .unwrap_or(TermRef::local(sum));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::int_inline(2));
 }
 
@@ -1690,7 +1783,9 @@ fn reduce_nat_popcount() {
     // (no UF needed)
     let v = a.alloc_term(TermDef::nat_inline(0xF0F0));
     let pop = a.alloc_term(TermDef::Op1(PrimOp1::NatPopcount, TermRef::local(v)));
-    let r = a.reduce_primop(TermRef::local(pop)).unwrap_or(TermRef::local(pop));
+    let r = a
+        .reduce_primop(TermRef::local(pop))
+        .unwrap_or(TermRef::local(pop));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::nat_inline(8));
 }
 
@@ -1701,7 +1796,9 @@ fn reduce_noop_on_unreducible() {
     // (no UF needed)
     let nat = a.nat_ty();
     let x = alloc_free(&mut a, "x", nat);
-    let r = a.reduce_primop(TermRef::local(x)).unwrap_or(TermRef::local(x));
+    let r = a
+        .reduce_primop(TermRef::local(x))
+        .unwrap_or(TermRef::local(x));
     assert_eq!(r, TermRef::local(x));
 }
 
@@ -1757,13 +1854,17 @@ fn rewrite_propagates_to_parents() {
         TermRef::local(t),
     ));
     // Originally: Not(True). reduce → False.
-    let r = a.reduce_primop(TermRef::local(parent)).unwrap_or(TermRef::local(parent));
+    let r = a
+        .reduce_primop(TermRef::local(parent))
+        .unwrap_or(TermRef::local(parent));
     assert_eq!(a.term_def(r.as_local().unwrap()), &TermDef::Bool(false));
     // Now rewrite t to False (unchecked).
     a.rewrite(t, TermDef::Bool(false));
     // Parent's Op1 still points at the same TermId; structural lookup
     // of t now returns False. Reducing parent again gives True.
-    let r2 = a.reduce_primop(TermRef::local(parent)).unwrap_or(TermRef::local(parent));
+    let r2 = a
+        .reduce_primop(TermRef::local(parent))
+        .unwrap_or(TermRef::local(parent));
     assert_eq!(a.term_def(r2.as_local().unwrap()), &TermDef::Bool(true));
 }
 
@@ -1885,7 +1986,12 @@ fn subst_free_shifts_replacement_under_inner_abs() {
     // Build λ_:bool. x — Abs wrapping the Free.
     let body = a.alloc_term(TermDef::Lam(bool_ty, TermRef::local(x)));
     let open_b0 = a.alloc_term(TermDef::Bound(0));
-    let r = a.subst_free(TermRef::local(body), xname, bool_ty, TermRef::local(open_b0));
+    let r = a.subst_free(
+        TermRef::local(body),
+        xname,
+        bool_ty,
+        TermRef::local(open_b0),
+    );
     let r_def = *a.term_def(r.as_local().unwrap());
     let inner = match r_def {
         TermDef::Lam(_, b) => b,
@@ -1910,7 +2016,10 @@ fn typeref_decodes_to_kind() {
     let mut a = Arena::new();
     // (no UF needed)
     let bool_ty = a.bool_ty();
-    assert!(matches!(bool_ty.decode(), TypeRefKind::Builtin(BuiltinTy::Bool)));
+    assert!(matches!(
+        bool_ty.decode(),
+        TypeRefKind::Builtin(BuiltinTy::Bool)
+    ));
     let name = a.intern_string("'a".into());
     let tvar = a.alloc_tvar(name);
     match tvar.decode() {

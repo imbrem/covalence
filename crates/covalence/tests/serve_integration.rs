@@ -7,8 +7,8 @@ use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 
 use covalence_client::SyncHttpBackend;
-use covalence_shell::SyncBackend;
 use covalence_repl::Session;
+use covalence_shell::SyncBackend;
 use tempfile::TempDir;
 
 /// RAII wrapper around a `cov serve --socket-only` child process.
@@ -146,13 +146,7 @@ fn repl_help_lists_commands() {
     let server = start_server();
     let mut session = server.session();
     let output = session.eval("help");
-    for cmd in [
-        "store",
-        "read",
-        "compile-wat",
-        "status",
-        "help",
-    ] {
+    for cmd in ["store", "read", "compile-wat", "status", "help"] {
         assert!(
             output.contains(cmd),
             "help should mention '{cmd}': {output}"

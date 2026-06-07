@@ -44,9 +44,18 @@ fn distinct_define_calls_yield_distinct_defs() {
     let body = Term::abs("x", Type::bytes(), Term::bound(0));
     let thm1 = Thm::define("id", body.clone()).unwrap();
     let thm2 = Thm::define("id", body).unwrap();
-    let lhs1 = match thm1.concl().kind() { TermKind::Eq(l, _) => l, _ => panic!() };
-    let lhs2 = match thm2.concl().kind() { TermKind::Eq(l, _) => l, _ => panic!() };
-    assert_ne!(lhs1, lhs2, "distinct define calls yield distinct Def identities");
+    let lhs1 = match thm1.concl().kind() {
+        TermKind::Eq(l, _) => l,
+        _ => panic!(),
+    };
+    let lhs2 = match thm2.concl().kind() {
+        TermKind::Eq(l, _) => l,
+        _ => panic!(),
+    };
+    assert_ne!(
+        lhs1, lhs2,
+        "distinct define calls yield distinct Def identities"
+    );
 }
 
 #[test]

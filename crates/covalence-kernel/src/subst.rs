@@ -27,7 +27,9 @@ pub struct TermSubst {
 impl TermSubst {
     /// Construct an empty substitution.
     pub fn empty() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     /// Look up `name` in the substitution. Returns `None` if unmapped.
@@ -48,7 +50,9 @@ pub struct TypeSubst {
 impl TypeSubst {
     /// Construct an empty substitution.
     pub fn empty() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     /// Look up `name` in the substitution. Returns `None` if unmapped.

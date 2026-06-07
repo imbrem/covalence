@@ -306,8 +306,8 @@ fn build_c_variant(
     }
     let core_path = var_dir.join(format!("{variant}.core.wasm"));
     invoke_clang(c_sources, &core_path)?;
-    let core = fs::read(&core_path)
-        .map_err(|e| BuildError::Read(core_path.display().to_string(), e))?;
+    let core =
+        fs::read(&core_path).map_err(|e| BuildError::Read(core_path.display().to_string(), e))?;
     // Discard the intermediate .core.wasm — we only commit the final
     // component .wasm. (Keep this side-effect last so that if encode
     // fails, the user can inspect .core.wasm to debug.)

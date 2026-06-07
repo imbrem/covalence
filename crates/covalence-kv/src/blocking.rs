@@ -33,8 +33,7 @@ impl BlockingKv {
     pub fn get(&self, key: &str) -> Result<Bytes> {
         let inner = self.inner.clone();
         let key = key.to_string();
-        self.handle
-            .block_on(async move { inner.get(&key).await })
+        self.handle.block_on(async move { inner.get(&key).await })
     }
 
     pub fn get_range(&self, key: &str, range: Range<u64>) -> Result<Bytes> {
@@ -61,8 +60,7 @@ impl BlockingKv {
     pub fn head(&self, key: &str) -> Result<Meta> {
         let inner = self.inner.clone();
         let key = key.to_string();
-        self.handle
-            .block_on(async move { inner.head(&key).await })
+        self.handle.block_on(async move { inner.head(&key).await })
     }
 }
 

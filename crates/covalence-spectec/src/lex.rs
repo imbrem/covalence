@@ -67,7 +67,11 @@ impl<'a> Lexer<'a> {
     }
 
     fn span_here(&self) -> Span {
-        Span::new(self.file, self.pos, self.pos.saturating_add(1).min(self.src.len() as u32))
+        Span::new(
+            self.file,
+            self.pos,
+            self.pos.saturating_add(1).min(self.src.len() as u32),
+        )
     }
 
     /// Skip whitespace, line comments (`;;...`), and line continuations
@@ -163,8 +167,8 @@ impl<'a> Lexer<'a> {
                     "hexadecimal literal needs at least one digit",
                 ));
             }
-            let text = std::str::from_utf8(&self.src[hex_start..hex_end])
-                .expect("hex digits are ASCII");
+            let text =
+                std::str::from_utf8(&self.src[hex_start..hex_end]).expect("hex digits are ASCII");
             let n = covalence_types::Nat::from_str_radix(text, 16).map_err(|e| {
                 Diagnostic::error(
                     Span::new(self.file, start as u32, self.pos),
@@ -336,7 +340,11 @@ mod tests {
     fn lex_str(s: &str) -> Vec<Token> {
         let mut map = SourceMap::new();
         let id = map.add("<test>", s);
-        lex(id, s).expect("lex ok").into_iter().map(|t| t.token).collect()
+        lex(id, s)
+            .expect("lex ok")
+            .into_iter()
+            .map(|t| t.token)
+            .collect()
     }
 
     #[test]
@@ -347,45 +355,55 @@ mod tests {
 
     #[test]
     fn keywords_vs_idents() {
-        let toks = lex_str("syntax foo def $bar relation rule var grammar hint if let else otherwise eps");
-        assert_eq!(toks, vec![
-            Token::Syntax,
-            Token::Ident("foo".into()),
-            Token::Def,
-            Token::Dollar,
-            Token::Ident("bar".into()),
-            Token::Relation,
-            Token::Rule,
-            Token::Var,
-            Token::Grammar,
-            Token::Hint,
-            Token::If,
-            Token::Let,
-            Token::Else,
-            Token::Otherwise,
-            Token::Eps,
-        ]);
+        let toks =
+            lex_str("syntax foo def $bar relation rule var grammar hint if let else otherwise eps");
+        assert_eq!(
+            toks,
+            vec![
+                Token::Syntax,
+                Token::Ident("foo".into()),
+                Token::Def,
+                Token::Dollar,
+                Token::Ident("bar".into()),
+                Token::Relation,
+                Token::Rule,
+                Token::Var,
+                Token::Grammar,
+                Token::Hint,
+                Token::If,
+                Token::Let,
+                Token::Else,
+                Token::Otherwise,
+                Token::Eps,
+            ]
+        );
     }
 
     #[test]
     fn idents_with_subscripts_and_primes() {
         let toks = lex_str("t_1 C' C'' fNmag _IDX _RESULT _RECS");
-        assert_eq!(toks, vec![
-            Token::Ident("t_1".into()),
-            Token::Ident("C'".into()),
-            Token::Ident("C''".into()),
-            Token::Ident("fNmag".into()),
-            Token::Ident("_IDX".into()),
-            Token::Ident("_RESULT".into()),
-            Token::Ident("_RECS".into()),
-        ]);
+        assert_eq!(
+            toks,
+            vec![
+                Token::Ident("t_1".into()),
+                Token::Ident("C'".into()),
+                Token::Ident("C''".into()),
+                Token::Ident("fNmag".into()),
+                Token::Ident("_IDX".into()),
+                Token::Ident("_RESULT".into()),
+                Token::Ident("_RECS".into()),
+            ]
+        );
     }
 
     #[test]
     fn decimal_and_hex_numbers() {
         let toks = lex_str("0 12 255 0x00 0xFF 0xdeadbeef");
         let n = |x: u64| Token::Nat(covalence_types::Nat::from(x));
-        assert_eq!(toks, vec![n(0), n(12), n(255), n(0x00), n(0xFF), n(0xdead_beef)]);
+        assert_eq!(
+            toks,
+            vec![n(0), n(12), n(255), n(0x00), n(0xFF), n(0xdead_beef)]
+        );
     }
 
     #[test]
@@ -394,19 +412,24 @@ mod tests {
         let big = "36893488147419103232";
         let toks = lex_str(big);
         assert_eq!(toks.len(), 1);
-        let Token::Nat(n) = &toks[0] else { panic!("expected Nat") };
+        let Token::Nat(n) = &toks[0] else {
+            panic!("expected Nat")
+        };
         assert_eq!(n.to_string(), big);
     }
 
     #[test]
     fn text_literals() {
         let toks = lex_str(r#""hello" "with \" quote" "with \\ backslash" "tab\there""#);
-        assert_eq!(toks, vec![
-            Token::Text("hello".into()),
-            Token::Text("with \" quote".into()),
-            Token::Text("with \\ backslash".into()),
-            Token::Text("tab\there".into()),
-        ]);
+        assert_eq!(
+            toks,
+            vec![
+                Token::Text("hello".into()),
+                Token::Text("with \" quote".into()),
+                Token::Text("with \\ backslash".into()),
+                Token::Text("tab\there".into()),
+            ]
+        );
     }
 
     #[test]
@@ -426,7 +449,10 @@ mod tests {
         assert_eq!(lex_str("|-"), vec![Token::Turnstile]);
         assert_eq!(lex_str("|"), vec![Token::Pipe]);
         // <: <= <
-        assert_eq!(lex_str("<: <= <"), vec![Token::Subtype, Token::LessEq, Token::LessThan]);
+        assert_eq!(
+            lex_str("<: <= <"),
+            vec![Token::Subtype, Token::LessEq, Token::LessThan]
+        );
         // ++ +
         assert_eq!(lex_str("++"), vec![Token::PlusPlus]);
         assert_eq!(lex_str("+ +"), vec![Token::Plus, Token::Plus]);
@@ -453,65 +479,80 @@ mod tests {
     fn semi_vs_comment_disambiguation() {
         // `;` alone is a token; `;;` starts a comment.
         let toks = lex_str("z ; instr");
-        assert_eq!(toks, vec![
-            Token::Ident("z".into()),
-            Token::Semi,
-            Token::Ident("instr".into()),
-        ]);
+        assert_eq!(
+            toks,
+            vec![
+                Token::Ident("z".into()),
+                Token::Semi,
+                Token::Ident("instr".into()),
+            ]
+        );
         // `;;` to end of line is a comment.
         let toks = lex_str("z ;; comment\ninstr");
-        assert_eq!(toks, vec![
-            Token::Ident("z".into()),
-            Token::Ident("instr".into()),
-        ]);
+        assert_eq!(
+            toks,
+            vec![Token::Ident("z".into()), Token::Ident("instr".into()),]
+        );
     }
 
     #[test]
     fn line_continuation() {
         let toks = lex_str("a \\\nb");
-        assert_eq!(toks, vec![Token::Ident("a".into()), Token::Ident("b".into())]);
+        assert_eq!(
+            toks,
+            vec![Token::Ident("a".into()), Token::Ident("b".into())]
+        );
     }
 
     #[test]
     fn arithmetic_escape_components() {
         // $( and ) lex separately; no special escape token.
         let toks = lex_str("$(1 + n)");
-        assert_eq!(toks, vec![
-            Token::Dollar,
-            Token::LParen,
-            Token::Nat(covalence_types::Nat::from(1u64)),
-            Token::Plus,
-            Token::Ident("n".into()),
-            Token::RParen,
-        ]);
+        assert_eq!(
+            toks,
+            vec![
+                Token::Dollar,
+                Token::LParen,
+                Token::Nat(covalence_types::Nat::from(1u64)),
+                Token::Plus,
+                Token::Ident("n".into()),
+                Token::RParen,
+            ]
+        );
     }
 
     #[test]
     fn dollar_call_components() {
         // $min(x) lexes as Dollar, Ident, LParen, Ident, RParen.
         let toks = lex_str("$min(x)");
-        assert_eq!(toks, vec![
-            Token::Dollar,
-            Token::Ident("min".into()),
-            Token::LParen,
-            Token::Ident("x".into()),
-            Token::RParen,
-        ]);
+        assert_eq!(
+            toks,
+            vec![
+                Token::Dollar,
+                Token::Ident("min".into()),
+                Token::LParen,
+                Token::Ident("x".into()),
+                Token::RParen,
+            ]
+        );
     }
 
     #[test]
     fn hint_macro_uses_hash() {
         // hint(show f#%) — `#` is a token; `%` is a token.
         let toks = lex_str("hint(show f#%)");
-        assert_eq!(toks, vec![
-            Token::Hint,
-            Token::LParen,
-            Token::Ident("show".into()),
-            Token::Ident("f".into()),
-            Token::Hash,
-            Token::Percent,
-            Token::RParen,
-        ]);
+        assert_eq!(
+            toks,
+            vec![
+                Token::Hint,
+                Token::LParen,
+                Token::Ident("show".into()),
+                Token::Ident("f".into()),
+                Token::Hash,
+                Token::Percent,
+                Token::RParen,
+            ]
+        );
     }
 
     #[test]

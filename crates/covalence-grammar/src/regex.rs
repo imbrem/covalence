@@ -107,12 +107,18 @@ pub struct ClassRange<A> {
 impl<A> Class<A> {
     /// Positive class containing exactly the given inclusive ranges.
     pub fn new(ranges: Vec<ClassRange<A>>) -> Self {
-        Self { negated: false, ranges }
+        Self {
+            negated: false,
+            ranges,
+        }
     }
 
     /// Negated class: matches any letter *not* in any of the ranges.
     pub fn negated(ranges: Vec<ClassRange<A>>) -> Self {
-        Self { negated: true, ranges }
+        Self {
+            negated: true,
+            ranges,
+        }
     }
 
     /// Positive class from a list of single letters.
@@ -122,7 +128,10 @@ impl<A> Class<A> {
     {
         let ranges = letters
             .into_iter()
-            .map(|c| ClassRange { lo: c.clone(), hi: c })
+            .map(|c| ClassRange {
+                lo: c.clone(),
+                hi: c,
+            })
             .collect();
         Self::new(ranges)
     }
@@ -138,7 +147,10 @@ impl<A> ClassRange<A> {
     where
         A: Clone,
     {
-        Self { lo: letter.clone(), hi: letter }
+        Self {
+            lo: letter.clone(),
+            hi: letter,
+        }
     }
 }
 
@@ -268,7 +280,11 @@ impl<A> Regex<A> {
             (Regex::Eps, _, _) => Regex::Eps,
             (Regex::Empty, 0, _) => Regex::Eps,
             (Regex::Empty, _, _) => Regex::Empty,
-            _ => Regex::Rep { inner: Box::new(self), min, max },
+            _ => Regex::Rep {
+                inner: Box::new(self),
+                min,
+                max,
+            },
         }
     }
 }
@@ -354,8 +370,9 @@ pub trait RegexLetter: Copy + Eq {
 impl RegexLetter for char {
     fn fmt_lit(self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            '\\' | '.' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '^'
-            | '$' => write!(f, "\\{}", self),
+            '\\' | '.' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '^' | '$' => {
+                write!(f, "\\{}", self)
+            }
             '\n' => f.write_str("\\n"),
             '\t' => f.write_str("\\t"),
             '\r' => f.write_str("\\r"),
@@ -401,8 +418,8 @@ impl RegexLetter for char {
 impl RegexLetter for u8 {
     fn fmt_lit(self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            b'\\' | b'.' | b'*' | b'+' | b'?' | b'(' | b')' | b'[' | b']' | b'{' | b'}'
-            | b'|' | b'^' | b'$' => write!(f, "\\{}", self as char),
+            b'\\' | b'.' | b'*' | b'+' | b'?' | b'(' | b')' | b'[' | b']' | b'{' | b'}' | b'|'
+            | b'^' | b'$' => write!(f, "\\{}", self as char),
             b'\n' => f.write_str("\\n"),
             b'\t' => f.write_str("\\t"),
             b'\r' => f.write_str("\\r"),
@@ -435,11 +452,7 @@ impl RegexLetter for u8 {
         0xFF
     }
     fn from_source_char(c: char) -> Option<Self> {
-        if c.is_ascii() {
-            Some(c as u8)
-        } else {
-            None
-        }
+        if c.is_ascii() { Some(c as u8) } else { None }
     }
     fn from_byte_escape(b: u8) -> Option<Self> {
         Some(b)
@@ -526,8 +539,12 @@ fn write_suffix<A: RegexLetter>(
 ) -> fmt::Result {
     let needs_parens = matches!(
         inner,
-        Regex::Alt(_) | Regex::Concat(_) | Regex::Star(_) | Regex::Plus(_)
-            | Regex::Opt(_) | Regex::Rep { .. }
+        Regex::Alt(_)
+            | Regex::Concat(_)
+            | Regex::Star(_)
+            | Regex::Plus(_)
+            | Regex::Opt(_)
+            | Regex::Rep { .. }
     );
     if needs_parens {
         // Once we've added our own `(?:...)`, recurse at the lowest
@@ -782,9 +799,7 @@ impl<'a, A: RegexLetter> Parser<'a, A> {
 
     fn parse_atom(&mut self) -> Result<Regex<A>, ParseError> {
         let at = self.pos;
-        let (c, _) = self
-            .peek_char()
-            .ok_or(ParseError::UnexpectedEof { at })?;
+        let (c, _) = self.peek_char().ok_or(ParseError::UnexpectedEof { at })?;
         match c {
             '(' => {
                 self.bump_char();
@@ -889,7 +904,11 @@ impl<'a, A: RegexLetter> Parser<'a, A> {
                 (lo, lo_cp)
             };
             if lo_cp > hi_cp {
-                return Err(ParseError::BadRange { lo: lo_cp, hi: hi_cp, at });
+                return Err(ParseError::BadRange {
+                    lo: lo_cp,
+                    hi: hi_cp,
+                    at,
+                });
             }
             ranges.push(ClassRange { lo, hi });
             first = false;
@@ -901,7 +920,8 @@ impl<'a, A: RegexLetter> Parser<'a, A> {
     }
 
     fn parse_escape(&mut self, start: usize) -> Result<A, ParseError> {
-        self.parse_escape_with_codepoint(start).map(|(letter, _)| letter)
+        self.parse_escape_with_codepoint(start)
+            .map(|(letter, _)| letter)
     }
 
     /// Parse an escape sequence and return the resulting letter *plus*
@@ -914,8 +934,8 @@ impl<'a, A: RegexLetter> Parser<'a, A> {
             .bump_char()
             .ok_or(ParseError::UnexpectedEof { at: start })?;
         match c {
-            '\\' | '.' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '^'
-            | '$' | '-' | '/' => Ok((Self::meta_letter(c), u32::from(c))),
+            '\\' | '.' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '^' | '$'
+            | '-' | '/' => Ok((Self::meta_letter(c), u32::from(c))),
             'n' => Ok((Self::meta_letter('\n'), 0x0A)),
             't' => Ok((Self::meta_letter('\t'), 0x09)),
             'r' => Ok((Self::meta_letter('\r'), 0x0D)),
@@ -973,13 +993,12 @@ impl<'a, A: RegexLetter> Parser<'a, A> {
                                     detail: "too many digits in `\\u{...}`".into(),
                                 });
                             }
-                            value = value
-                                .checked_shl(4)
-                                .map(|v| v | d)
-                                .ok_or(ParseError::BadEscape {
+                            value = value.checked_shl(4).map(|v| v | d).ok_or(
+                                ParseError::BadEscape {
                                     at: start,
                                     detail: "overflow in `\\u{...}`".into(),
-                                })?;
+                                },
+                            )?;
                         }
                     }
                 }
@@ -989,10 +1008,12 @@ impl<'a, A: RegexLetter> Parser<'a, A> {
                         detail: "empty `\\u{}`".into(),
                     });
                 }
-                let scalar = char::from_u32(value)
-                    .ok_or(ParseError::BadCodepoint { value, at: start })?;
-                let letter = A::from_unicode_escape(scalar)
-                    .ok_or(ParseError::OutOfAlphabet { c: scalar, at: start })?;
+                let scalar =
+                    char::from_u32(value).ok_or(ParseError::BadCodepoint { value, at: start })?;
+                let letter = A::from_unicode_escape(scalar).ok_or(ParseError::OutOfAlphabet {
+                    c: scalar,
+                    at: start,
+                })?;
                 Ok((letter, value))
             }
             other => Err(ParseError::BadEscape {
@@ -1036,17 +1057,16 @@ mod tests {
 
     fn cls(ranges: &[(char, char)]) -> Regex<char> {
         Regex::Class(Class::new(
-            ranges.iter().map(|&(a, b)| ClassRange { lo: a, hi: b }).collect(),
+            ranges
+                .iter()
+                .map(|&(a, b)| ClassRange { lo: a, hi: b })
+                .collect(),
         ))
     }
 
     #[test]
     fn concat_flattens_and_drops_eps() {
-        let r = Regex::concat([
-            Regex::concat([lit('a'), Regex::Eps]),
-            lit('b'),
-            Regex::Eps,
-        ]);
+        let r = Regex::concat([Regex::concat([lit('a'), Regex::Eps]), lit('b'), Regex::Eps]);
         assert_eq!(r, Regex::Concat(vec![lit('a'), lit('b')]));
     }
 
@@ -1087,10 +1107,7 @@ mod tests {
     #[test]
     fn parse_concat() {
         let r = parse_regex("abc").unwrap();
-        assert_eq!(
-            r,
-            Regex::Concat(vec![lit('a'), lit('b'), lit('c')]),
-        );
+        assert_eq!(r, Regex::Concat(vec![lit('a'), lit('b'), lit('c')]),);
     }
 
     #[test]
@@ -1106,15 +1123,27 @@ mod tests {
         assert_eq!(parse_regex("a?").unwrap(), Regex::Opt(Box::new(lit('a'))));
         assert_eq!(
             parse_regex("a{3}").unwrap(),
-            Regex::Rep { inner: Box::new(lit('a')), min: 3, max: Some(3) },
+            Regex::Rep {
+                inner: Box::new(lit('a')),
+                min: 3,
+                max: Some(3)
+            },
         );
         assert_eq!(
             parse_regex("a{2,}").unwrap(),
-            Regex::Rep { inner: Box::new(lit('a')), min: 2, max: None },
+            Regex::Rep {
+                inner: Box::new(lit('a')),
+                min: 2,
+                max: None
+            },
         );
         assert_eq!(
             parse_regex("a{2,5}").unwrap(),
-            Regex::Rep { inner: Box::new(lit('a')), min: 2, max: Some(5) },
+            Regex::Rep {
+                inner: Box::new(lit('a')),
+                min: 2,
+                max: Some(5)
+            },
         );
     }
 
@@ -1151,7 +1180,13 @@ mod tests {
         let r = parse_regex(".").unwrap();
         let Regex::Class(c) = r else { panic!() };
         assert!(!c.negated);
-        assert_eq!(c.ranges, vec![ClassRange { lo: '\0', hi: '\u{10FFFF}' }]);
+        assert_eq!(
+            c.ranges,
+            vec![ClassRange {
+                lo: '\0',
+                hi: '\u{10FFFF}'
+            }]
+        );
     }
 
     #[test]
@@ -1290,8 +1325,14 @@ mod tests {
         assert_eq!(parse_regex_u8("a*").unwrap(), lit_u8(b'a').star());
         assert_eq!(parse_regex_u8("a+").unwrap(), lit_u8(b'a').plus());
         assert_eq!(parse_regex_u8("a?").unwrap(), lit_u8(b'a').opt());
-        assert_eq!(parse_regex_u8("a{3}").unwrap(), lit_u8(b'a').rep(3, Some(3)));
-        assert_eq!(parse_regex_u8("a{2,5}").unwrap(), lit_u8(b'a').rep(2, Some(5)));
+        assert_eq!(
+            parse_regex_u8("a{3}").unwrap(),
+            lit_u8(b'a').rep(3, Some(3))
+        );
+        assert_eq!(
+            parse_regex_u8("a{2,5}").unwrap(),
+            lit_u8(b'a').rep(2, Some(5))
+        );
         assert_eq!(parse_regex_u8("a{2,}").unwrap(), lit_u8(b'a').rep(2, None));
     }
 
@@ -1324,9 +1365,17 @@ mod tests {
         );
 
         let r = parse_regex_u8("[^\\n]").unwrap();
-        let Regex::Class(c) = r else { panic!("expected class") };
+        let Regex::Class(c) = r else {
+            panic!("expected class")
+        };
         assert!(c.negated);
-        assert_eq!(c.ranges, vec![ClassRange { lo: b'\n', hi: b'\n' }]);
+        assert_eq!(
+            c.ranges,
+            vec![ClassRange {
+                lo: b'\n',
+                hi: b'\n'
+            }]
+        );
     }
 
     #[test]

@@ -108,9 +108,7 @@ impl KvStore {
     fn head<'py>(&self, py: Python<'py>, key: &str) -> PyResult<Bound<'py, PyAny>> {
         let kv = self.inner.clone();
         let key_owned = key.to_string();
-        let meta = py
-            .detach(move || kv.head(&key_owned))
-            .map_err(map_err)?;
+        let meta = py.detach(move || kv.head(&key_owned)).map_err(map_err)?;
         let d = pyo3::types::PyDict::new(py);
         d.set_item("size", meta.size)?;
         d.set_item("etag", meta.etag)?;

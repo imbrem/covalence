@@ -412,8 +412,7 @@ mod tests {
     #[test]
     fn sha256_free_fn_matches_sha256sum() {
         // Reference: echo -n "abc" | sha256sum
-        const SHA256_ABC: &str =
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        const SHA256_ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
         let digest = sha256(b"abc");
         let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(hex, SHA256_ABC);
@@ -567,7 +566,13 @@ mod sha1_extra_tests {
     #[test]
     fn disjoint_from_sha256_and_blake3() {
         let m = b"hello";
-        assert_ne!(&Sha1Ctx.tag(m).as_bytes()[..20], &Sha256.tag(m).as_bytes()[..20]);
-        assert_ne!(&Sha1Ctx.tag(m).as_bytes()[..20], &().tag(m).as_bytes()[..20]);
+        assert_ne!(
+            &Sha1Ctx.tag(m).as_bytes()[..20],
+            &Sha256.tag(m).as_bytes()[..20]
+        );
+        assert_ne!(
+            &Sha1Ctx.tag(m).as_bytes()[..20],
+            &().tag(m).as_bytes()[..20]
+        );
     }
 }

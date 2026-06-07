@@ -23,8 +23,7 @@
 use covalence_wasm::pure::{
     PureHost,
     cov::pure::api::{
-        HostPureType as TypeApi, HostTerm as TermApi, HostTermSet as TermSetApi,
-        HostThm as ThmApi,
+        HostPureType as TypeApi, HostTerm as TermApi, HostTermSet as TermSetApi, HostThm as ThmApi,
     },
 };
 use wasmtime::component::Resource;
@@ -73,8 +72,7 @@ fn term_type_of_blob_is_bytes() {
     let t = TermApi::blob(&mut h, vec![1, 2, 3]).expect("blob");
     let ty = unwrap_trappable(TermApi::type_of(&mut h, borrow(t.rep())), "type-of");
     let bytes = TypeApi::bytes(&mut h).expect("bytes");
-    let eq = TypeApi::equals(&mut h, borrow(ty.rep()), borrow(bytes.rep()))
-        .expect("equals");
+    let eq = TypeApi::equals(&mut h, borrow(ty.rep()), borrow(bytes.rep())).expect("equals");
     assert!(eq, "blob should have type bytes");
 }
 
@@ -117,7 +115,10 @@ fn prove_refl_blob() {
     // Conclusion should be `t ≡ t`.
     let concl = ThmApi::concl(&mut h, borrow(th.rep())).expect("concl");
     let render = TermApi::render(&mut h, borrow(concl.rep())).expect("render");
-    assert!(render.contains("≡") || render.contains("="), "got: {render}");
+    assert!(
+        render.contains("≡") || render.contains("="),
+        "got: {render}"
+    );
 
     // No hypotheses.
     let hyps = ThmApi::hyps(&mut h, borrow(th.rep())).expect("hyps");
@@ -152,14 +153,19 @@ fn trans_two_refls() {
 
     let r1 = unwrap_trappable(ThmApi::refl(&mut h, borrow(a.rep())), "refl1");
     let r2 = unwrap_trappable(ThmApi::refl(&mut h, borrow(a.rep())), "refl2");
-    let chained =
-        unwrap_trappable(ThmApi::trans(&mut h, borrow(r1.rep()), borrow(r2.rep())), "trans");
+    let chained = unwrap_trappable(
+        ThmApi::trans(&mut h, borrow(r1.rep()), borrow(r2.rep())),
+        "trans",
+    );
 
     // Conclusion: `a ≡ a`.
     let concl = ThmApi::concl(&mut h, borrow(chained.rep())).expect("concl");
     let lhs = TermApi::render(&mut h, borrow(a.rep())).expect("a");
     let render = TermApi::render(&mut h, borrow(concl.rep())).expect("concl");
-    assert!(render.contains(&lhs), "concl {render:?} should mention {lhs:?}");
+    assert!(
+        render.contains(&lhs),
+        "concl {render:?} should mention {lhs:?}"
+    );
 }
 
 /// Prove `⊢ a ≡ a` then derive `⊢ a ≡ a` by sym.
@@ -182,13 +188,11 @@ fn cong_app_two_refls() {
     let mut h = PureHost::new();
     let bytes_ty = TypeApi::bytes(&mut h).expect("bytes");
     let bytes_ty2 = TypeApi::bytes(&mut h).expect("bytes2");
-    let arrow = TypeApi::fun(&mut h, borrow(bytes_ty.rep()), borrow(bytes_ty2.rep()))
-        .expect("arrow");
+    let arrow =
+        TypeApi::fun(&mut h, borrow(bytes_ty.rep()), borrow(bytes_ty2.rep())).expect("arrow");
 
-    let f =
-        TermApi::free(&mut h, "f".to_string(), borrow(arrow.rep())).expect("free f");
-    let a =
-        TermApi::free(&mut h, "a".to_string(), borrow(bytes_ty.rep())).expect("free a");
+    let f = TermApi::free(&mut h, "f".to_string(), borrow(arrow.rep())).expect("free f");
+    let a = TermApi::free(&mut h, "a".to_string(), borrow(bytes_ty.rep())).expect("free a");
     let fa = TermApi::app(&mut h, borrow(f.rep()), borrow(a.rep())).expect("f a");
 
     let refl_f = unwrap_trappable(ThmApi::refl(&mut h, borrow(f.rep())), "refl f");
@@ -238,12 +242,8 @@ fn beta_conv_identity() {
     // Cross-check the conclusion is `((λx:bytes. bound 0) "hi") ≡ "hi"`.
     let concl = ThmApi::concl(&mut h, borrow(th.rep())).expect("concl");
     let expected_lhs = TermApi::app(&mut h, borrow(id.rep()), borrow(hi.rep())).expect("lhs");
-    let expected = TermApi::mk_eq(
-        &mut h,
-        borrow(expected_lhs.rep()),
-        borrow(hi.rep()),
-    )
-    .expect("expected concl");
+    let expected = TermApi::mk_eq(&mut h, borrow(expected_lhs.rep()), borrow(hi.rep()))
+        .expect("expected concl");
     assert!(
         TermApi::equals(&mut h, borrow(concl.rep()), borrow(expected.rep())).expect("eq"),
         "beta-conv concl mismatch: {s}"
@@ -259,14 +259,12 @@ fn beta_conv_identity() {
 fn assume_records_hypothesis() {
     let mut h = PureHost::new();
     let prop = TypeApi::prop(&mut h).expect("prop");
-    let p =
-        TermApi::free(&mut h, "p".to_string(), borrow(prop.rep())).expect("free p");
+    let p = TermApi::free(&mut h, "p".to_string(), borrow(prop.rep())).expect("free p");
     let th = unwrap_trappable(ThmApi::assume(&mut h, borrow(p.rep())), "assume");
 
     let hyps = ThmApi::hyps(&mut h, borrow(th.rep())).expect("hyps");
     assert_eq!(TermSetApi::len(&mut h, borrow(hyps.rep())).expect("len"), 1);
-    assert!(TermSetApi::contains(&mut h, borrow(hyps.rep()), borrow(p.rep()))
-        .expect("contains"));
+    assert!(TermSetApi::contains(&mut h, borrow(hyps.rep()), borrow(p.rep())).expect("contains"));
 
     // The single hyp at index 0 is α-equal to p.
     let h0 = TermSetApi::at(&mut h, borrow(hyps.rep()), 0)
@@ -276,7 +274,11 @@ fn assume_records_hypothesis() {
     assert!(eq);
 
     // Out-of-range returns none.
-    assert!(TermSetApi::at(&mut h, borrow(hyps.rep()), 5).expect("at-oob").is_none());
+    assert!(
+        TermSetApi::at(&mut h, borrow(hyps.rep()), 5)
+            .expect("at-oob")
+            .is_none()
+    );
 }
 
 /// Prove `⊢ p ⟹ p` via assume + imp-intro.
@@ -284,8 +286,7 @@ fn assume_records_hypothesis() {
 fn imp_intro_discharges_hypothesis() {
     let mut h = PureHost::new();
     let prop = TypeApi::prop(&mut h).expect("prop");
-    let p =
-        TermApi::free(&mut h, "p".to_string(), borrow(prop.rep())).expect("free p");
+    let p = TermApi::free(&mut h, "p".to_string(), borrow(prop.rep())).expect("free p");
 
     let assumed = unwrap_trappable(ThmApi::assume(&mut h, borrow(p.rep())), "assume");
     let derived = unwrap_trappable(
@@ -313,12 +314,20 @@ fn all_intro_over_refl() {
 
     let r = unwrap_trappable(ThmApi::refl(&mut h, borrow(x.rep())), "refl x");
     let universal = unwrap_trappable(
-        ThmApi::all_intro(&mut h, borrow(r.rep()), "x".to_string(), borrow(bytes_ty.rep())),
+        ThmApi::all_intro(
+            &mut h,
+            borrow(r.rep()),
+            "x".to_string(),
+            borrow(bytes_ty.rep()),
+        ),
         "all-intro",
     );
 
     let s = ThmApi::render(&mut h, borrow(universal.rep())).expect("render");
-    assert!(s.contains("⋀") || s.contains("forall") || s.contains("/\\"), "got: {s}");
+    assert!(
+        s.contains("⋀") || s.contains("forall") || s.contains("/\\"),
+        "got: {s}"
+    );
 
     // Specialize back: `⊢ "hi" ≡ "hi"`.
     let hi = TermApi::blob(&mut h, b"hi".to_vec()).expect("blob");
@@ -360,8 +369,7 @@ fn imp_intro_on_non_prop_errors() {
     let hi = TermApi::blob(&mut h, b"hi".to_vec()).expect("blob");
     let refl = unwrap_trappable(ThmApi::refl(&mut h, borrow(hi.rep())), "refl");
     // φ = `"hi"` is type `bytes`, not `prop` → imp-intro should err.
-    let outer =
-        ThmApi::imp_intro(&mut h, borrow(refl.rep()), borrow(hi.rep())).expect("outer");
+    let outer = ThmApi::imp_intro(&mut h, borrow(refl.rep()), borrow(hi.rep())).expect("outer");
     let err = outer.expect_err("imp-intro on non-prop must fail");
     assert!(!err.is_empty());
 }
@@ -378,7 +386,12 @@ fn inst_tfree_specializes_type_var() {
     let x = TermApi::free(&mut h, "x".to_string(), borrow(a_ty.rep())).expect("free x");
     let refl = unwrap_trappable(ThmApi::refl(&mut h, borrow(x.rep())), "refl");
     let universal = unwrap_trappable(
-        ThmApi::all_intro(&mut h, borrow(refl.rep()), "x".to_string(), borrow(a_ty.rep())),
+        ThmApi::all_intro(
+            &mut h,
+            borrow(refl.rep()),
+            "x".to_string(),
+            borrow(a_ty.rep()),
+        ),
         "all-intro",
     );
 

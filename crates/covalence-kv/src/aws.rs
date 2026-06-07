@@ -181,10 +181,9 @@ impl<S: ObjectStore> KvStore for S3Kv<S> {
             .head(&path)
             .await
             .map_err(|e| map_os_err(key, e))?;
-        let modified = std::time::UNIX_EPOCH
-            .checked_add(std::time::Duration::from_secs(
-                m.last_modified.timestamp().max(0) as u64,
-            ));
+        let modified = std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_secs(
+            m.last_modified.timestamp().max(0) as u64,
+        ));
         Ok(Meta {
             size: m.size as u64,
             modified,

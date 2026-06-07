@@ -12,11 +12,11 @@
 
 use std::path::PathBuf;
 
-use covalence_kernel::Kernel;
-use covalence_smt::{parse_alethe, parse_smtlib2};
 use covalence_alethe::{
     AletheBridge, BridgeError, KernelAletheBridge, ingest_problem, ingest_proof,
 };
+use covalence_kernel::Kernel;
+use covalence_smt::{parse_alethe, parse_smtlib2};
 use covalence_types::Decision;
 
 fn asset_path(problem: &str) -> PathBuf {
@@ -129,9 +129,7 @@ fn assume_then_unknown_rule_step() {
     let mut kernel = Kernel::new();
     let mut bridge = KernelAletheBridge::new(&mut kernel);
 
-    bridge
-        .declare_fun("p", &[], &SExp::symbol("Bool"))
-        .unwrap();
+    bridge.declare_fun("p", &[], &SExp::symbol("Bool")).unwrap();
     let p_term: SExpr = SExp::symbol("p");
     let thm = bridge.assume("h1", &p_term).unwrap();
 
@@ -217,11 +215,7 @@ fn cong_step_closes_function_equality() {
     let mut kernel = Kernel::new();
     let mut bridge = KernelAletheBridge::new(&mut kernel);
     bridge
-        .declare_fun(
-            "f",
-            &[SExp::symbol("Int")],
-            &SExp::symbol("Int"),
-        )
+        .declare_fun("f", &[SExp::symbol("Int")], &SExp::symbol("Int"))
         .unwrap();
     bridge.declare_fun("x", &[], &SExp::symbol("Int")).unwrap();
 
@@ -266,8 +260,8 @@ fn hole_trust_theory_rewrite_succeeds() {
         SExp::symbol("x"),
         SExp::symbol("y"),
     ])];
-    let args = parse_smt(r#""TRUST_THEORY_REWRITE" foo 3 6"#)
-        .expect("SMT-LIB string literal parses");
+    let args =
+        parse_smt(r#""TRUST_THEORY_REWRITE" foo 3 6"#).expect("SMT-LIB string literal parses");
     let _ = bridge
         .step("t0", &clause, "hole", &[], &args, &[])
         .expect("hole TRUST_THEORY_REWRITE should accept the equality");

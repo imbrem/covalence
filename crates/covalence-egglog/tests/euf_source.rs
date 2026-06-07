@@ -169,8 +169,8 @@ fn prove_without_matching_union_rejected() {
     "#;
     let mut kernel = Kernel::new();
     let mut bridge = KernelEgglogBridge::new(&mut kernel);
-    let err = ingest_source(&mut bridge, src)
-        .expect_err("derivation from source is not yet supported");
+    let err =
+        ingest_source(&mut bridge, src).expect_err("derivation from source is not yet supported");
     assert!(matches!(err, BridgeError::Malformed(_)));
 }
 
@@ -185,4 +185,3 @@ fn program_without_prove_rejected() {
     let err = ingest_source(&mut bridge, src).expect_err("no (prove …) is a hard error");
     assert!(matches!(err, BridgeError::Malformed(_)));
 }
-

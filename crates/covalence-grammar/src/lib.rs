@@ -19,6 +19,4 @@
 
 pub mod regex;
 
-pub use regex::{
-    Class, ClassRange, ParseError, Regex, RegexLetter, parse_regex, parse_regex_u8,
-};
+pub use regex::{Class, ClassRange, ParseError, Regex, RegexLetter, parse_regex, parse_regex_u8};

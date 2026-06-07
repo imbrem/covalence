@@ -40,9 +40,7 @@ pub use ingest::ingest_proof_store;
 pub use kernel_bridge::KernelEgglogBridge;
 pub use lower::{LoweredProgram, lower_program};
 pub use parse::parse_program;
-pub use proof::{
-    Justification, Proof, ProofId, ProofStore, Proposition, Term, TermDag, TermId,
-};
+pub use proof::{Justification, Proof, ProofId, ProofStore, Proposition, Term, TermDag, TermId};
 
 /// Parse an egglog source string, lower it against `bridge` (registering
 /// every sort / constructor / union as it goes), and ingest the
@@ -52,10 +50,7 @@ pub use proof::{
 /// One-shot helper that composes [`parse_program`], [`lower_program`], and
 /// [`ingest_proof_store`]. Inherits the lowering's restriction: the
 /// `(prove …)` target must syntactically match an earlier `(union …)`.
-pub fn ingest_source<B: EgglogBridge>(
-    bridge: &mut B,
-    input: &str,
-) -> Result<B::Thm, BridgeError> {
+pub fn ingest_source<B: EgglogBridge>(bridge: &mut B, input: &str) -> Result<B::Thm, BridgeError> {
     let commands = parse_program(input)?;
     let LoweredProgram { dag, store, root } = lower_program(bridge, &commands)?;
     ingest_proof_store(bridge, &store, &dag, root)

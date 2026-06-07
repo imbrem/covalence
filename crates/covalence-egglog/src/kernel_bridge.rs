@@ -52,8 +52,7 @@ use covalence_shell::Prover;
 use crate::bridge::EgglogBridge;
 use crate::error::BridgeError;
 use crate::proof::{
-    Justification, ProofId, ProofStore, Proposition, Term, TermDag, TermId,
-    topological_order,
+    Justification, ProofId, ProofStore, Proposition, Term, TermDag, TermId, topological_order,
 };
 
 /// Bridge an egglog proof DAG into any `P: Prover`.
@@ -218,8 +217,7 @@ impl<'a, P: Prover> EgglogBridge for KernelEgglogBridge<'a, P> {
         }
 
         let const_term = self.prover.const_term(name, ty)?;
-        self.constructors
-            .insert(name.to_string(), (ty, const_term));
+        self.constructors.insert(name.to_string(), (ty, const_term));
         self.arities.insert(name.to_string(), params.len());
         Ok(())
     }
@@ -235,9 +233,7 @@ impl<'a, P: Prover> EgglogBridge for KernelEgglogBridge<'a, P> {
         // same assumption chain. Reflexive Fiats (`t = t`) need no push —
         // they're discharged via `refl` inside `fiat`.
         for id in topological_order(store, root) {
-            let proof = store
-                .get(id)
-                .ok_or(BridgeError::UndefinedProof(id.0))?;
+            let proof = store.get(id).ok_or(BridgeError::UndefinedProof(id.0))?;
             if !matches!(proof.justification, Justification::Fiat) {
                 continue;
             }
@@ -258,11 +254,7 @@ impl<'a, P: Prover> EgglogBridge for KernelEgglogBridge<'a, P> {
         Ok(())
     }
 
-    fn fiat(
-        &mut self,
-        prop: &Proposition,
-        dag: &TermDag,
-    ) -> Result<Self::Thm, BridgeError> {
+    fn fiat(&mut self, prop: &Proposition, dag: &TermDag) -> Result<Self::Thm, BridgeError> {
         let lhs = self.materialise(prop.lhs, dag)?;
         let rhs = self.materialise(prop.rhs, dag)?;
 
@@ -278,17 +270,13 @@ impl<'a, P: Prover> EgglogBridge for KernelEgglogBridge<'a, P> {
         // keeps every Fiat-derived Thm in the same context — the
         // precondition for `trans` / `sym` to compose across them.
         let eq_term = self.mk_eq(lhs, rhs)?;
-        let prop_handle = self
-            .fiat_props
-            .get(&eq_term)
-            .cloned()
-            .ok_or_else(|| {
-                BridgeError::Malformed(
-                    "Fiat equality missing from pre_walk cache — was \
+        let prop_handle = self.fiat_props.get(&eq_term).cloned().ok_or_else(|| {
+            BridgeError::Malformed(
+                "Fiat equality missing from pre_walk cache — was \
                      ingest_proof_store bypassed?"
-                        .into(),
-                )
-            })?;
+                    .into(),
+            )
+        })?;
         Ok(self.prover.assume(prop_handle)?)
     }
 
@@ -383,9 +371,10 @@ impl<'a, P: Prover> KernelEgglogBridge<'a, P> {
     /// premise equalities visible to `Prover::cong`.
     fn inject_equality(&mut self, th: &P::Thm) -> Result<(), BridgeError> {
         let concl = self.prover.conclusion(th)?;
-        let (a, b) = self.prover.dest_eq(concl).ok_or_else(|| {
-            BridgeError::Malformed("congr premise is not an equality".into())
-        })?;
+        let (a, b) = self
+            .prover
+            .dest_eq(concl)
+            .ok_or_else(|| BridgeError::Malformed("congr premise is not an equality".into()))?;
         self.prover.union(a, b)?;
         Ok(())
     }

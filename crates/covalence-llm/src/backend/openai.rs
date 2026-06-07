@@ -197,7 +197,11 @@ impl AsyncOpenAI {
         api_key: Option<String>,
         client: reqwest::Client,
     ) -> Self {
-        Self { base_url: base_url.into(), api_key, client }
+        Self {
+            base_url: base_url.into(),
+            api_key,
+            client,
+        }
     }
 }
 
@@ -220,12 +224,20 @@ impl crate::AsyncChatBackend for AsyncOpenAI {
 
         let status = resp.status();
         if !status.is_success() {
-            let message = resp.text().await.unwrap_or_else(|_| "<unreadable body>".into());
-            return Err(LlmError::Backend { status: status.as_u16(), message });
+            let message = resp
+                .text()
+                .await
+                .unwrap_or_else(|_| "<unreadable body>".into());
+            return Err(LlmError::Backend {
+                status: status.as_u16(),
+                message,
+            });
         }
 
-        let parsed: OpenAIChatResponse =
-            resp.json().await.map_err(|e| LlmError::Decode(e.to_string()))?;
+        let parsed: OpenAIChatResponse = resp
+            .json()
+            .await
+            .map_err(|e| LlmError::Decode(e.to_string()))?;
 
         map_response(parsed)
     }

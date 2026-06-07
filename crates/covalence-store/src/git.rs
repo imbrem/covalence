@@ -203,11 +203,7 @@ impl<K: Send + Sync, S: ContentStore<K>> ContentStore<K> for GitPrefixStore<S> {
     /// the body slice at its actual offset. For a `SqliteStore` inner,
     /// this fetches only `header_len + range_size` bytes total instead
     /// of the whole blob.
-    fn get_slice(
-        &self,
-        key: &K,
-        range: std::ops::Range<u64>,
-    ) -> Result<Vec<u8>, StoreError> {
+    fn get_slice(&self, key: &K, range: std::ops::Range<u64>) -> Result<Vec<u8>, StoreError> {
         let probe = match self.inner.get_slice(key, 0..MAX_GIT_HEADER_LEN) {
             Ok(p) => p,
             Err(StoreError::NotFound) => return Err(StoreError::NotFound),
@@ -574,10 +570,7 @@ mod tests {
             // Same "non-blob looks missing" rule as `get`.
             let s = store();
             let key = s.insert_tagged(GitObjectType::tree(), b"tree").unwrap();
-            assert!(matches!(
-                s.get_slice(&key, 0..2),
-                Err(StoreError::NotFound)
-            ));
+            assert!(matches!(s.get_slice(&key, 0..2), Err(StoreError::NotFound)));
         }
 
         #[test]

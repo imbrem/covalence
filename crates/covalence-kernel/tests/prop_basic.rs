@@ -449,9 +449,7 @@ fn cong_rejects_non_congruent_terms() {
     let t = a.alloc_term(TermDef::Bool(true));
     let f = a.alloc_term(TermDef::Bool(false));
     let ctx = Context::empty();
-    let err = Thm::cong(
-        &mut a, &uf, ctx, TermRef::local(t), TermRef::local(f), 5)
-        .unwrap_err();
+    let err = Thm::cong(&mut a, &uf, ctx, TermRef::local(t), TermRef::local(f), 5).unwrap_err();
     assert_eq!(err, ProofError::NotCongruent);
 }
 
@@ -471,9 +469,15 @@ fn cong_accepts_ill_typed_inputs() {
     let bad = a.alloc_term(TermDef::Comb(TermRef::local(g), TermRef::local(n)));
     assert!(!a.is_well_typed(bad));
     let ctx = Context::empty();
-    let thm =
-        Thm::cong(
-        &mut a, &uf, ctx, TermRef::local(bad), TermRef::local(bad), 0).unwrap();
+    let thm = Thm::cong(
+        &mut a,
+        &uf,
+        ctx,
+        TermRef::local(bad),
+        TermRef::local(bad),
+        0,
+    )
+    .unwrap();
     assert!(matches!(a.term_def(thm.concl()), TermDef::Eq(_, _)));
 }
 
@@ -712,8 +716,7 @@ fn inst_rejects_type_mismatched_replacement() {
     let x = a.alloc_term(TermDef::Free(xname, bool_ty));
     let n = a.alloc_term(TermDef::nat_inline(7));
     let refl_x = Thm::refl(&mut a, Context::empty(), x).unwrap();
-    let err =
-        Thm::inst(&mut a, refl_x, xname, bool_ty, TermRef::local(n)).unwrap_err();
+    let err = Thm::inst(&mut a, refl_x, xname, bool_ty, TermRef::local(n)).unwrap_err();
     assert_eq!(err, ProofError::TypeMismatch);
 }
 

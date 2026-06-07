@@ -54,17 +54,15 @@ fn guest_component_bytes() -> &'static [u8] {
                 "wasm32-unknown-unknown",
                 "--release",
                 "--target-dir",
-                guest_target
-                    .to_str()
-                    .expect("guest target dir is utf-8"),
+                guest_target.to_str().expect("guest target dir is utf-8"),
             ])
             .current_dir(workspace_root)
             .status()
             .expect("invoke cargo for guest build");
         assert!(status.success(), "guest cargo build failed");
 
-        let core_wasm_path = guest_target
-            .join("wasm32-unknown-unknown/release/covalence_pure_test_guest.wasm");
+        let core_wasm_path =
+            guest_target.join("wasm32-unknown-unknown/release/covalence_pure_test_guest.wasm");
         let core_bytes = std::fs::read(&core_wasm_path)
             .unwrap_or_else(|e| panic!("read {}: {e}", core_wasm_path.display()));
 
@@ -102,8 +100,8 @@ fn run_guest_prover(prover_name: &str) -> Result<String, String> {
     )
     .expect("add cov:pure/api to linker");
 
-    let bindings = PureGuest::instantiate(&mut store, &component, &linker)
-        .expect("instantiate guest");
+    let bindings =
+        PureGuest::instantiate(&mut store, &component, &linker).expect("instantiate guest");
 
     bindings
         .call_run_prover(&mut store, prover_name)
@@ -136,7 +134,10 @@ fn guest_imp_intro_p_implies_p() {
     // Expected: `⊢ (p ⟹ p)`.
     assert!(s.starts_with("⊢"), "got: {s}");
     assert!(s.contains("p"), "got: {s}");
-    assert!(s.contains("⟹") || s.contains("==>") || s.contains("->"), "got: {s}");
+    assert!(
+        s.contains("⟹") || s.contains("==>") || s.contains("->"),
+        "got: {s}"
+    );
 }
 
 #[test]

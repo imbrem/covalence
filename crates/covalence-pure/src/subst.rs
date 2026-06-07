@@ -91,7 +91,9 @@ fn inst(t: &Term, u: &Term, depth: u32) -> Term {
 /// soundness depends on the caller's check, and silently producing a
 /// `Bound(u32::MAX)` would let the bug propagate.
 pub fn shift_by(t: &Term, delta: i64, cutoff: u32) -> Term {
-    if delta == 0 { return t.clone(); }
+    if delta == 0 {
+        return t.clone();
+    }
     shift_inner(t, delta, cutoff)
 }
 
@@ -99,7 +101,9 @@ fn shift_inner(t: &Term, delta: i64, cutoff: u32) -> Term {
     match t.kind() {
         TermKind::Bound(i) => {
             let i = *i;
-            if i < cutoff { return Term::bound(i); }
+            if i < cutoff {
+                return Term::bound(i);
+            }
             let new = (i as i64)
                 .checked_add(delta)
                 .expect("shift_by: i64 overflow in Bound index");
@@ -119,12 +123,16 @@ fn shift_inner(t: &Term, delta: i64, cutoff: u32) -> Term {
         TermKind::App(f, x) => {
             Term::app(shift_inner(f, delta, cutoff), shift_inner(x, delta, cutoff))
         }
-        TermKind::Abs(hint, ty, body) => {
-            Term::abs(hint.clone(), ty.clone(), shift_inner(body, delta, cutoff + 1))
-        }
-        TermKind::All(hint, ty, body) => {
-            Term::all(hint.clone(), ty.clone(), shift_inner(body, delta, cutoff + 1))
-        }
+        TermKind::Abs(hint, ty, body) => Term::abs(
+            hint.clone(),
+            ty.clone(),
+            shift_inner(body, delta, cutoff + 1),
+        ),
+        TermKind::All(hint, ty, body) => Term::all(
+            hint.clone(),
+            ty.clone(),
+            shift_inner(body, delta, cutoff + 1),
+        ),
         TermKind::Imp(a, b) => {
             Term::imp(shift_inner(a, delta, cutoff), shift_inner(b, delta, cutoff))
         }
@@ -151,21 +159,28 @@ fn subst_free_at(t: &Term, name: &str, r: &Term, depth: u32) -> Term {
         | TermKind::Blob(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
-        TermKind::App(f, x) => {
-            Term::app(subst_free_at(f, name, r, depth), subst_free_at(x, name, r, depth))
-        }
-        TermKind::Abs(hint, ty, body) => {
-            Term::abs(hint.clone(), ty.clone(), subst_free_at(body, name, r, depth + 1))
-        }
-        TermKind::All(hint, ty, body) => {
-            Term::all(hint.clone(), ty.clone(), subst_free_at(body, name, r, depth + 1))
-        }
-        TermKind::Imp(a, b) => {
-            Term::imp(subst_free_at(a, name, r, depth), subst_free_at(b, name, r, depth))
-        }
-        TermKind::Eq(a, b) => {
-            Term::eq(subst_free_at(a, name, r, depth), subst_free_at(b, name, r, depth))
-        }
+        TermKind::App(f, x) => Term::app(
+            subst_free_at(f, name, r, depth),
+            subst_free_at(x, name, r, depth),
+        ),
+        TermKind::Abs(hint, ty, body) => Term::abs(
+            hint.clone(),
+            ty.clone(),
+            subst_free_at(body, name, r, depth + 1),
+        ),
+        TermKind::All(hint, ty, body) => Term::all(
+            hint.clone(),
+            ty.clone(),
+            subst_free_at(body, name, r, depth + 1),
+        ),
+        TermKind::Imp(a, b) => Term::imp(
+            subst_free_at(a, name, r, depth),
+            subst_free_at(b, name, r, depth),
+        ),
+        TermKind::Eq(a, b) => Term::eq(
+            subst_free_at(a, name, r, depth),
+            subst_free_at(b, name, r, depth),
+        ),
     }
 }
 
@@ -178,12 +193,15 @@ pub fn subst_tfree_in_type(ty: &Type, name: &str, r: &Type) -> Type {
     match ty.kind() {
         TypeKind::TFree(n) if n == name => r.clone(),
         TypeKind::TFree(_) | TypeKind::Prop | TypeKind::Bytes => ty.clone(),
-        TypeKind::Fun(a, b) => {
-            Type::fun(subst_tfree_in_type(a, name, r), subst_tfree_in_type(b, name, r))
-        }
+        TypeKind::Fun(a, b) => Type::fun(
+            subst_tfree_in_type(a, name, r),
+            subst_tfree_in_type(b, name, r),
+        ),
         TypeKind::Tycon(n, args) => Type::tycon(
             n.clone(),
-            args.iter().map(|a| subst_tfree_in_type(a, name, r)).collect(),
+            args.iter()
+                .map(|a| subst_tfree_in_type(a, name, r))
+                .collect(),
         ),
     }
 }

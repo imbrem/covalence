@@ -301,9 +301,8 @@ fn run_mount(args: MountArgs) -> std::io::Result<()> {
     use covalence_fuse::{TreeFsConfig, mount_tree};
     use covalence_hash::O256;
 
-    let root: O256 = parse_o256(&args.hash).map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("hash: {e}"))
-    })?;
+    let root: O256 = parse_o256(&args.hash)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("hash: {e}")))?;
 
     let store = resolve_mount_store(args.store.as_deref())?;
 
@@ -436,4 +435,3 @@ impl covalence_store::ContentStore<covalence_hash::O256> for BackendContentStore
         self.0.has_blob(key).unwrap_or(false)
     }
 }
-

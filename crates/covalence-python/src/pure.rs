@@ -60,14 +60,25 @@ impl PyType {
     /// User-declared type constructor.
     #[staticmethod]
     fn tycon(name: &str, args: Vec<PyType>) -> Self {
-        PyType(cp::Type::tycon(name, args.into_iter().map(|a| a.0).collect()))
+        PyType(cp::Type::tycon(
+            name,
+            args.into_iter().map(|a| a.0).collect(),
+        ))
     }
 
-    fn is_prop(&self) -> bool { self.0.is_prop() }
+    fn is_prop(&self) -> bool {
+        self.0.is_prop()
+    }
 
-    fn __repr__(&self) -> String { format!("Type({})", self.0) }
-    fn __str__(&self) -> String { format!("{}", self.0) }
-    fn __eq__(&self, other: &Self) -> bool { self.0 == other.0 }
+    fn __repr__(&self) -> String {
+        format!("Type({})", self.0)
+    }
+    fn __str__(&self) -> String {
+        format!("{}", self.0)
+    }
+    fn __eq__(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
     fn __hash__(&self) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
@@ -148,11 +159,19 @@ impl PyTerm {
     }
 
     /// True iff no Obs leaf appears anywhere in this term.
-    fn has_no_obs(&self) -> bool { self.0.has_no_obs() }
+    fn has_no_obs(&self) -> bool {
+        self.0.has_no_obs()
+    }
 
-    fn __repr__(&self) -> String { format!("Term({})", self.0) }
-    fn __str__(&self) -> String { format!("{}", self.0) }
-    fn __eq__(&self, other: &Self) -> bool { self.0 == other.0 }
+    fn __repr__(&self) -> String {
+        format!("Term({})", self.0)
+    }
+    fn __str__(&self) -> String {
+        format!("{}", self.0)
+    }
+    fn __eq__(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
     fn __hash__(&self) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
@@ -187,7 +206,11 @@ impl PyThm {
 
     /// `Γ ∪ Γ' ⊢ ψ`.
     fn imp_elim(&self, hyp: &PyThm) -> PyResult<Self> {
-        self.0.clone().imp_elim(hyp.0.clone()).map(PyThm).map_err(err)
+        self.0
+            .clone()
+            .imp_elim(hyp.0.clone())
+            .map(PyThm)
+            .map_err(err)
     }
 
     /// `Γ ⊢ ⋀x:τ. φ`.
@@ -210,7 +233,11 @@ impl PyThm {
 
     /// `Γ ∪ Γ' ⊢ t ≡ v`.
     fn trans(&self, other: &PyThm) -> PyResult<Self> {
-        self.0.clone().trans(other.0.clone()).map(PyThm).map_err(err)
+        self.0
+            .clone()
+            .trans(other.0.clone())
+            .map(PyThm)
+            .map_err(err)
     }
 
     /// `Γ ⊢ u ≡ t`.
@@ -220,7 +247,11 @@ impl PyThm {
 
     /// `Γ ∪ Γ' ⊢ f(s) ≡ g(t)`.
     fn cong_app(&self, arg: &PyThm) -> PyResult<Self> {
-        self.0.clone().cong_app(arg.0.clone()).map(PyThm).map_err(err)
+        self.0
+            .clone()
+            .cong_app(arg.0.clone())
+            .map(PyThm)
+            .map_err(err)
     }
 
     /// `Γ ⊢ (λy:τ. s) ≡ (λy:τ. t)`.
@@ -250,7 +281,11 @@ impl PyThm {
 
     /// `Γ[α:=σ] ⊢ φ[α:=σ]`.
     fn inst_tfree(&self, name: &str, replacement: PyType) -> PyResult<Self> {
-        self.0.clone().inst_tfree(name, replacement.0).map(PyThm).map_err(err)
+        self.0
+            .clone()
+            .inst_tfree(name, replacement.0)
+            .map(PyThm)
+            .map_err(err)
     }
 
     // ---- Accessors ----
@@ -266,9 +301,14 @@ impl PyThm {
     }
 
     /// True iff no Obs leaf appears in concl or any hyp.
-    fn has_no_obs(&self) -> bool { self.0.has_no_obs() }
+    fn has_no_obs(&self) -> bool {
+        self.0.has_no_obs()
+    }
 
-    fn __repr__(&self) -> String { format!("Thm({})", self.0) }
-    fn __str__(&self) -> String { format!("{}", self.0) }
+    fn __repr__(&self) -> String {
+        format!("Thm({})", self.0)
+    }
+    fn __str__(&self) -> String {
+        format!("{}", self.0)
+    }
 }
-

@@ -38,12 +38,10 @@
 
 use std::collections::HashMap;
 
-use covalence_kernel::{
-    Arena, Kernel, PrimOp1, PrimOp2, ProofError, Thm,
-};
 use covalence_kernel::id::TermId;
 use covalence_kernel::term::{TermDef, TermRef};
 use covalence_kernel::ty::TypeRef;
+use covalence_kernel::{Arena, Kernel, PrimOp1, PrimOp2, ProofError, Thm};
 use covalence_sexp::{SExpr, parse};
 
 #[derive(Debug)]
@@ -158,9 +156,10 @@ impl Driver {
     /// returns the rendered term.
     fn run(&mut self, src: &str) -> Result<String, DriverError> {
         let forms = parse(src).map_err(DriverError::Parse)?;
-        let form = forms.into_iter().next().ok_or_else(|| {
-            DriverError::Eval("empty input".into())
-        })?;
+        let form = forms
+            .into_iter()
+            .next()
+            .ok_or_else(|| DriverError::Eval("empty input".into()))?;
         let value = self.eval(&form)?;
         self.sweep();
         match value {
@@ -175,12 +174,13 @@ impl Driver {
         if let Some(sym) = e.as_symbol() {
             return Ok(Value::Term(self.parse_natlit(sym)?));
         }
-        let list = e.as_list().ok_or_else(|| {
-            DriverError::Eval(format!("expected list or symbol, got {e:?}"))
-        })?;
-        let head = list.first().and_then(|h| h.as_symbol()).ok_or_else(|| {
-            DriverError::Eval(format!("expected head symbol in {list:?}"))
-        })?;
+        let list = e
+            .as_list()
+            .ok_or_else(|| DriverError::Eval(format!("expected list or symbol, got {e:?}")))?;
+        let head = list
+            .first()
+            .and_then(|h| h.as_symbol())
+            .ok_or_else(|| DriverError::Eval(format!("expected head symbol in {list:?}")))?;
         let args = &list[1..];
         match head {
             // ---- term forms ------------------------------------------------
@@ -227,9 +227,9 @@ impl Driver {
     // ---- term parsers ------------------------------------------------------
 
     fn parse_natlit(&mut self, sym: &str) -> Result<TermRef, DriverError> {
-        let n: u64 = sym.parse().map_err(|_| {
-            DriverError::Eval(format!("not a Nat literal: `{sym}`"))
-        })?;
+        let n: u64 = sym
+            .parse()
+            .map_err(|_| DriverError::Eval(format!("not a Nat literal: `{sym}`")))?;
         Ok(self.intern_term(TermDef::nat_inline(n)))
     }
 
@@ -240,18 +240,18 @@ impl Driver {
 
     fn eval_int_lit(&mut self, args: &[SExpr]) -> Result<TermRef, DriverError> {
         let [n] = self.exact(args, 1)?;
-        let sym = n.as_symbol().ok_or_else(|| {
-            DriverError::Eval(format!("(int …) needs a symbol arg, got {n:?}"))
-        })?;
+        let sym = n
+            .as_symbol()
+            .ok_or_else(|| DriverError::Eval(format!("(int …) needs a symbol arg, got {n:?}")))?;
         let v = self.parse_int(sym)?;
         Ok(self.intern_term(TermDef::int_inline(v)))
     }
 
     fn eval_free(&mut self, args: &[SExpr]) -> Result<TermRef, DriverError> {
         let [name, ty] = self.exact(args, 2)?;
-        let name = name.as_symbol().ok_or_else(|| {
-            DriverError::Eval("free: name must be symbol".into())
-        })?;
+        let name = name
+            .as_symbol()
+            .ok_or_else(|| DriverError::Eval("free: name must be symbol".into()))?;
         let ty = self.parse_ty(ty)?;
         let n = self.kernel.arena_mut().intern_string(name.into());
         Ok(self.intern_term(TermDef::Free(n, ty)))
@@ -276,9 +276,9 @@ impl Driver {
     }
 
     fn parse_ty(&self, ty: &SExpr) -> Result<TypeRef, DriverError> {
-        let sym = ty.as_symbol().ok_or_else(|| {
-            DriverError::Eval(format!("type must be symbol, got {ty:?}"))
-        })?;
+        let sym = ty
+            .as_symbol()
+            .ok_or_else(|| DriverError::Eval(format!("type must be symbol, got {ty:?}")))?;
         match sym {
             "nat" => Ok(self.kernel.nat_ty()),
             "int" => Ok(self.kernel.int_ty()),
@@ -412,9 +412,8 @@ impl Driver {
         args: &'a [SExpr],
         _n: usize,
     ) -> Result<&'a [SExpr; N], DriverError> {
-        <&[SExpr; N]>::try_from(args).map_err(|_| {
-            DriverError::Eval(format!("expected {N} args, got {}", args.len()))
-        })
+        <&[SExpr; N]>::try_from(args)
+            .map_err(|_| DriverError::Eval(format!("expected {N} args, got {}", args.len())))
     }
 
     // ---- rendering ---------------------------------------------------------
@@ -436,16 +435,18 @@ impl Driver {
             TermKind::Bool(true) => "true".to_string(),
             TermKind::Bool(false) => "false".to_string(),
             TermKind::Comb(f, x) => {
-                format!("(comb {} {})", self.render_termref(f), self.render_termref(x))
+                format!(
+                    "(comb {} {})",
+                    self.render_termref(f),
+                    self.render_termref(x)
+                )
             }
             TermKind::Eq(a, b) => {
                 format!("(eq {} {})", self.render_termref(a), self.render_termref(b))
             }
-            TermKind::Lam(ty, body) => format!(
-                "(lam {} {})",
-                self.render_ty(ty),
-                self.render_termref(body)
-            ),
+            TermKind::Lam(ty, body) => {
+                format!("(lam {} {})", self.render_ty(ty), self.render_termref(body))
+            }
             TermKind::Op1(op, x) => format!("({} {})", op1_sym(op), self.render_termref(x)),
             TermKind::Op2(op, a, b) => format!(
                 "({} {} {})",
@@ -505,7 +506,6 @@ fn op2_sym(op: PrimOp2) -> &'static str {
     }
 }
 
-
 // ===========================================================================
 // Tests
 // ===========================================================================
@@ -543,12 +543,18 @@ fn nat_div_by_zero_reduces_to_zero() {
 
 #[test]
 fn int_add_reduces() {
-    check("(reduce (int+ (int 5) (int -3)))", "(eq (int+ (int 5) (int -3)) (int 2))");
+    check(
+        "(reduce (int+ (int 5) (int -3)))",
+        "(eq (int+ (int 5) (int -3)) (int 2))",
+    );
 }
 
 #[test]
 fn int_neg_reduces() {
-    check("(reduce (int.neg (int 7)))", "(eq (int.neg (int 7)) (int -7))");
+    check(
+        "(reduce (int.neg (int 7)))",
+        "(eq (int.neg (int 7)) (int -7))",
+    );
 }
 
 // --- congruence chains ---
@@ -627,8 +633,5 @@ fn abs_lifts_refl_over_free_variable() {
 
 #[test]
 fn inst_specializes_refl() {
-    check(
-        "(inst (refl (free x nat)) x nat 9)",
-        "(eq 9 9)",
-    );
+    check("(inst (refl (free x nat)) x nat 9)", "(eq 9 9)");
 }

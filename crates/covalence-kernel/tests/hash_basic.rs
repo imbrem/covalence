@@ -2,9 +2,7 @@
 
 use std::sync::Arc;
 
-use covalence_kernel::{
-    Arena, Context, EProp, EThm, Prop, TermDef, TermRef,
-};
+use covalence_kernel::{Arena, Context, EProp, EThm, Prop, TermDef, TermRef};
 
 #[test]
 fn empty_arenas_hash_identically() {

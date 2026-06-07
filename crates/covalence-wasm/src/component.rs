@@ -28,10 +28,7 @@ use crate::WasmError;
 /// [`encode_core_as_component_for`] when the WIT defines multiple worlds.
 ///
 /// The returned bytes are a fully validated component binary.
-pub fn encode_core_as_component(
-    core_wasm: &[u8],
-    wit_world: &str,
-) -> Result<Vec<u8>, WasmError> {
+pub fn encode_core_as_component(core_wasm: &[u8], wit_world: &str) -> Result<Vec<u8>, WasmError> {
     encode_with(core_wasm, wit_world, None)
 }
 

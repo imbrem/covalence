@@ -26,11 +26,7 @@ fn type_hashes_are_stable() {
 
 #[test]
 fn cached_hasher_matches_stateless() {
-    let t = Term::all(
-        "x",
-        Type::bytes(),
-        Term::eq(Term::bound(0), Term::bound(0)),
-    );
+    let t = Term::all("x", Type::bytes(), Term::eq(Term::bound(0), Term::bound(0)));
     let stateless = hash_term(&t, &UnitObsHasher);
     let mut h = Hasher::new();
     assert_eq!(h.hash_term(&t, &UnitObsHasher), stateless);

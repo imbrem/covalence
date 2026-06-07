@@ -80,11 +80,7 @@ pub trait EgglogBridge {
 
     /// [`Justification::Fiat`](crate::proof::Justification::Fiat) — a
     /// top-level fact or a primitive reflexive equality.
-    fn fiat(
-        &mut self,
-        prop: &Proposition,
-        dag: &TermDag,
-    ) -> Result<Self::Thm, BridgeError>;
+    fn fiat(&mut self, prop: &Proposition, dag: &TermDag) -> Result<Self::Thm, BridgeError>;
 
     /// [`Justification::Rule`](crate::proof::Justification::Rule) — a
     /// user-declared rule fired under `substitution` with the given premise

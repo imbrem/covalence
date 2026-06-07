@@ -135,11 +135,7 @@ impl OpTable {
         Self::default()
     }
 
-    pub fn add(
-        &mut self,
-        name: impl Into<String>,
-        fragments: Vec<Fragment>,
-    ) -> OpId {
+    pub fn add(&mut self, name: impl Into<String>, fragments: Vec<Fragment>) -> OpId {
         let id = OpId(u32::try_from(self.ops.len()).expect("op table size in u32"));
         self.ops.push(Op {
             id,
@@ -417,17 +413,20 @@ mod tests {
 
     /// Leaf parser: take the next token if it's `Ident` or `Nat`, wrap
     /// as `Tree::Leaf(text)`. Errors otherwise.
-    fn leaf_atom(
-        input: &mut &[Spanned],
-        _table: &OpTable,
-    ) -> Result<Tree<String>, Diagnostic> {
+    fn leaf_atom(input: &mut &[Spanned], _table: &OpTable) -> Result<Tree<String>, Diagnostic> {
         match input.first() {
-            Some(Spanned { token: Token::Ident(t), .. }) => {
+            Some(Spanned {
+                token: Token::Ident(t),
+                ..
+            }) => {
                 let s = t.clone();
                 *input = &input[1..];
                 Ok(Tree::Leaf(s))
             }
-            Some(Spanned { token: Token::Nat(n), .. }) => {
+            Some(Spanned {
+                token: Token::Nat(n),
+                ..
+            }) => {
                 let s = n.to_string();
                 *input = &input[1..];
                 Ok(Tree::Leaf(s))
@@ -440,10 +439,7 @@ mod tests {
         }
     }
 
-    fn parse_all(
-        tokens: Vec<Spanned>,
-        table: &OpTable,
-    ) -> Result<Tree<String>, Diagnostic> {
+    fn parse_all(tokens: Vec<Spanned>, table: &OpTable) -> Result<Tree<String>, Diagnostic> {
         let mut input: &[Spanned] = &tokens;
         let tree = parse_term(&mut input, table, 0, &mut leaf_atom)?;
         if !input.is_empty() {
@@ -478,13 +474,13 @@ mod tests {
         // `not X`
         table.add(
             "not",
-            vec![Fragment::Lit(Token::Ident("not".into())), Fragment::Hole(50)],
+            vec![
+                Fragment::Lit(Token::Ident("not".into())),
+                Fragment::Hole(50),
+            ],
         );
         let tree = parse_all(
-            vec![
-                t(Token::Ident("not".into())),
-                t(Token::Ident("x".into())),
-            ],
+            vec![t(Token::Ident("not".into())), t(Token::Ident("x".into()))],
             &table,
         )
         .unwrap();
@@ -585,11 +581,7 @@ mod tests {
             "kleene",
             vec![Fragment::Hole(70), Fragment::Lit(Token::Star)],
         );
-        let tree = parse_all(
-            vec![t(Token::Ident("x".into())), t(Token::Star)],
-            &table,
-        )
-        .unwrap();
+        let tree = parse_all(vec![t(Token::Ident("x".into())), t(Token::Star)], &table).unwrap();
         assert_eq!(fmt(&tree, &table), "kleene(x)");
     }
 
@@ -738,10 +730,7 @@ mod tests {
     #[test]
     fn op_introspection() {
         let mut table = OpTable::new();
-        let id = table.add(
-            "post",
-            vec![Fragment::Hole(70), Fragment::Lit(Token::Star)],
-        );
+        let id = table.add("post", vec![Fragment::Hole(70), Fragment::Lit(Token::Star)]);
         let op = table.get(id);
         assert!(op.is_postfix());
         assert!(op.is_left_extending());
@@ -755,10 +744,7 @@ mod tests {
     fn leftover_input_after_parse() {
         // `parse_term` itself doesn't require EOF; the wrapper does.
         let table = OpTable::new();
-        let tokens = vec![
-            t(Token::Ident("x".into())),
-            t(Token::Ident("y".into())),
-        ];
+        let tokens = vec![t(Token::Ident("x".into())), t(Token::Ident("y".into()))];
         let result = parse_all(tokens, &table);
         assert!(result.is_err(), "expected leftover-input error");
     }

@@ -257,7 +257,10 @@ mod tests {
             ByteRange::Closed { start: 0, end: 99 }.to_http_header(),
             "bytes=0-99"
         );
-        assert_eq!(ByteRange::From { start: 100 }.to_http_header(), "bytes=100-");
+        assert_eq!(
+            ByteRange::From { start: 100 }.to_http_header(),
+            "bytes=100-"
+        );
         assert_eq!(
             ByteRange::Suffix { length: 500 }.to_http_header(),
             "bytes=-500"
@@ -305,7 +308,10 @@ mod tests {
             ByteRange::parse_http_header_multi("bytes=0-50, 100-150, 200-"),
             Some(vec![
                 ByteRange::Closed { start: 0, end: 50 },
-                ByteRange::Closed { start: 100, end: 150 },
+                ByteRange::Closed {
+                    start: 100,
+                    end: 150
+                },
                 ByteRange::From { start: 200 },
             ])
         );
@@ -349,7 +355,9 @@ mod tests {
 
     #[test]
     fn resolve_closed_within() {
-        let r = ByteRange::Closed { start: 10, end: 19 }.resolve(100).unwrap();
+        let r = ByteRange::Closed { start: 10, end: 19 }
+            .resolve(100)
+            .unwrap();
         assert_eq!(
             r,
             ResolvedRange {

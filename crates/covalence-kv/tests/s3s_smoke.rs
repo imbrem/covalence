@@ -48,16 +48,10 @@ async fn start_server() -> (std::net::SocketAddr, TempDir) {
 }
 
 fn build_client(addr: std::net::SocketAddr) -> aws::S3Kv {
-    let store = aws::Config::custom(
-        format!("http://{addr}"),
-        REGION,
-        BUCKET,
-        KEY_ID,
-        SECRET,
-    )
-    .with_allow_http(true)
-    .build()
-    .expect("build AmazonS3");
+    let store = aws::Config::custom(format!("http://{addr}"), REGION, BUCKET, KEY_ID, SECRET)
+        .with_allow_http(true)
+        .build()
+        .expect("build AmazonS3");
     aws::S3Kv::new(store)
 }
 
@@ -108,10 +102,7 @@ async fn invalid_key_is_recoverable_error() {
     let kv = build_client(addr);
 
     // object_store::Path rejects DEL (0x7F) and other control characters.
-    let err = kv
-        .get("bad\x7Fkey")
-        .await
-        .expect_err("expected InvalidKey");
+    let err = kv.get("bad\x7Fkey").await.expect_err("expected InvalidKey");
     assert!(
         matches!(err, Error::InvalidKey { .. }),
         "expected InvalidKey, got {err:?}"

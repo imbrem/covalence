@@ -14,8 +14,8 @@
 use pyo3::prelude::*;
 
 use covalence_llm::{
-    ChatMessage, ChatOptions, ChatRequest, ChatResponse, ConfigError, FinishReason, Llm,
-    LlmError, Provider, Role, TokenUsage,
+    ChatMessage, ChatOptions, ChatRequest, ChatResponse, ConfigError, FinishReason, Llm, LlmError,
+    Provider, Role, TokenUsage,
 };
 
 fn role_to_str(role: Role) -> &'static str {
@@ -74,7 +74,10 @@ pub struct PyChatMessage(ChatMessage);
 impl PyChatMessage {
     #[new]
     fn new(role: &str, content: String) -> PyResult<Self> {
-        Ok(Self(ChatMessage { role: parse_role(role)?, content }))
+        Ok(Self(ChatMessage {
+            role: parse_role(role)?,
+            content,
+        }))
     }
 
     #[staticmethod]
@@ -100,7 +103,11 @@ impl PyChatMessage {
     }
 
     fn __repr__(&self) -> String {
-        format!("ChatMessage(role={:?}, content={:?})", role_to_str(self.0.role), self.0.content)
+        format!(
+            "ChatMessage(role={:?}, content={:?})",
+            role_to_str(self.0.role),
+            self.0.content
+        )
     }
 }
 
@@ -160,11 +167,7 @@ pub struct PyChatRequest(ChatRequest);
 impl PyChatRequest {
     #[new]
     #[pyo3(signature = (model, messages, options=None))]
-    fn new(
-        model: String,
-        messages: Vec<PyChatMessage>,
-        options: Option<PyChatOptions>,
-    ) -> Self {
+    fn new(model: String, messages: Vec<PyChatMessage>, options: Option<PyChatOptions>) -> Self {
         Self(ChatRequest {
             model,
             messages: messages.into_iter().map(|m| m.0).collect(),
@@ -276,7 +279,9 @@ impl PyLlm {
 
     /// Issue a fully-specified request (bypasses default model + options).
     fn chat_request(&self, py: Python<'_>, req: &PyChatRequest) -> PyResult<PyChatResponse> {
-        let resp = py.detach(|| self.inner.chat_request(&req.0)).map_err(map_err)?;
+        let resp = py
+            .detach(|| self.inner.chat_request(&req.0))
+            .map_err(map_err)?;
         Ok(PyChatResponse(resp))
     }
 }
@@ -324,7 +329,12 @@ pub struct PyOpenAI;
 impl PyOpenAI {
     #[new]
     fn new(api_key: String, model: String) -> (Self, PyLlm) {
-        (Self, PyLlm { inner: Llm::openai(api_key, model) })
+        (
+            Self,
+            PyLlm {
+                inner: Llm::openai(api_key, model),
+            },
+        )
     }
 
     /// Resolve `OPENAI_API_KEY` (with `COV_OPENAI_API_KEY` override + `_CMD`
@@ -343,7 +353,12 @@ pub struct PyGroq;
 impl PyGroq {
     #[new]
     fn new(api_key: String, model: String) -> (Self, PyLlm) {
-        (Self, PyLlm { inner: Llm::groq(api_key, model) })
+        (
+            Self,
+            PyLlm {
+                inner: Llm::groq(api_key, model),
+            },
+        )
     }
 
     /// Resolve `GROQ_API_KEY` (with `COV_GROQ_API_KEY` override) and
@@ -362,7 +377,12 @@ pub struct PyCerebras;
 impl PyCerebras {
     #[new]
     fn new(api_key: String, model: String) -> (Self, PyLlm) {
-        (Self, PyLlm { inner: Llm::cerebras(api_key, model) })
+        (
+            Self,
+            PyLlm {
+                inner: Llm::cerebras(api_key, model),
+            },
+        )
     }
 
     /// Resolve `CEREBRAS_API_KEY` (with `COV_CEREBRAS_API_KEY` override) and
@@ -381,7 +401,12 @@ pub struct PyDeepSeek;
 impl PyDeepSeek {
     #[new]
     fn new(api_key: String, model: String) -> (Self, PyLlm) {
-        (Self, PyLlm { inner: Llm::deepseek(api_key, model) })
+        (
+            Self,
+            PyLlm {
+                inner: Llm::deepseek(api_key, model),
+            },
+        )
     }
 
     /// Resolve `DEEPSEEK_API_KEY` (with `COV_DEEPSEEK_API_KEY` override) and
@@ -401,7 +426,12 @@ impl PyOpenAICompat {
     #[new]
     #[pyo3(signature = (base_url, model, api_key=None))]
     fn new(base_url: String, model: String, api_key: Option<String>) -> (Self, PyLlm) {
-        (Self, PyLlm { inner: Llm::openai_compat(base_url, api_key, model) })
+        (
+            Self,
+            PyLlm {
+                inner: Llm::openai_compat(base_url, api_key, model),
+            },
+        )
     }
 }
 

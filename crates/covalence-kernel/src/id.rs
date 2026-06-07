@@ -109,4 +109,3 @@ impl TypeSubstId {
     /// [`crate::Arena`] is initialised with this slot pre-allocated.
     pub const EMPTY: Self = Self(0);
 }
-

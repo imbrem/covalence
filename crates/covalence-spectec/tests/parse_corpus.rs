@@ -80,8 +80,8 @@ impl FormCounts {
 }
 
 fn parse_file(path: &Path) -> Result<FormCounts, String> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let mut map = SourceMap::new();
     let id = map.add(path, &text);
     let tokens = lex(id, &text).map_err(|d| {
@@ -166,7 +166,13 @@ fn parse_all_wasm_3_0_files() {
     for (name, c) in &per_file {
         eprintln!(
             "  {name:55}  {:>3}/{:>3}/{:>3}/{:>2}/{:>2}/{:>3}/{:>3}  total {}",
-            c.syntax, c.def_sig, c.def_clause, c.var, c.relation, c.rule, c.grammar,
+            c.syntax,
+            c.def_sig,
+            c.def_clause,
+            c.var,
+            c.relation,
+            c.rule,
+            c.grammar,
             c.total(),
         );
     }
@@ -194,7 +200,10 @@ fn parse_middlend_test_file() {
 #[test]
 fn small_wasm_files_mostly_structured() {
     let aux_num = parse_file(&assets_dir().join("wasm-3.0/0.2-aux.num.spectec")).unwrap();
-    assert_eq!(aux_num.other, 0, "0.2-aux.num.spectec should be 100% structured");
+    assert_eq!(
+        aux_num.other, 0,
+        "0.2-aux.num.spectec should be 100% structured"
+    );
     assert!(aux_num.structured() > 5);
 
     let values = parse_file(&assets_dir().join("wasm-3.0/1.1-syntax.values.spectec")).unwrap();

@@ -49,7 +49,7 @@ use covalence_kernel::arena::Arena;
 use covalence_kernel::id::{StrId, TyArgsId, TypeId};
 use covalence_kernel::kernel::Kernel as KKernel;
 use covalence_kernel::primop::{PrimOp1, PrimOp2};
-use covalence_kernel::prop::{Context, Prop, ProofError, Thm};
+use covalence_kernel::prop::{Context, ProofError, Prop, Thm};
 use covalence_kernel::term::{TermDef, TermRef};
 use covalence_kernel::ty::{TypeKind, TypeRef};
 
@@ -397,7 +397,10 @@ impl HolPrim {
             // when extended; if more were added via Context::flat we
             // can't decompose. Approximation: collect all locals as
             // a batch, then descend via parent().
-            for i in 0..cur.len().saturating_sub(cur.parent().map_or(0, |p| p.len())) {
+            for i in 0..cur
+                .len()
+                .saturating_sub(cur.parent().map_or(0, |p| p.len()))
+            {
                 let parent_len = cur.parent().map_or(0, |p| p.len());
                 if let Some(a) = cur.assumption(parent_len + i) {
                     to_add.push(a.clone());
@@ -826,11 +829,7 @@ impl HolPrim {
         let id = tm.as_local().ok_or(HolError::NotACombination)?;
         let info = self.arena_mut().infer(id);
         info.as_type().ok_or_else(|| {
-            HolError::TypeMismatch(format!(
-                "term is not typed: {}",
-                self.debug_dump(tm, 4)
-            ))
-            .into()
+            HolError::TypeMismatch(format!("term is not typed: {}", self.debug_dump(tm, 4))).into()
         })
     }
 
@@ -859,10 +858,9 @@ impl HolPrim {
                 self.debug_dump(f, depth - 1),
                 self.debug_dump(x, depth - 1)
             ),
-            TermDef::Lam(ty, body) => format!(
-                "Lam({ty:?}, {}):{info:?}",
-                self.debug_dump(body, depth - 1)
-            ),
+            TermDef::Lam(ty, body) => {
+                format!("Lam({ty:?}, {}):{info:?}", self.debug_dump(body, depth - 1))
+            }
             TermDef::Eq(a, b) => format!(
                 "Eq({}, {}):{info:?}",
                 self.debug_dump(a, depth - 1),
@@ -906,9 +904,7 @@ impl HolPrim {
             (Comb(f1, x1), Comb(f2, x2)) => {
                 Self::ref_eq(arena, f1, f2) && Self::ref_eq(arena, x1, x2)
             }
-            (Eq(f1, x1), Eq(f2, x2)) => {
-                Self::ref_eq(arena, f1, f2) && Self::ref_eq(arena, x1, x2)
-            }
+            (Eq(f1, x1), Eq(f2, x2)) => Self::ref_eq(arena, f1, f2) && Self::ref_eq(arena, x1, x2),
             (Lam(t1, b1), Lam(t2, b2)) => {
                 Self::type_eq_struct(arena, t1, t2) && Self::ref_eq(arena, b1, b2)
             }
@@ -921,12 +917,8 @@ impl HolPrim {
             (Eps(t1, p1), Eps(t2, p2)) => {
                 Self::type_eq_struct(arena, t1, t2) && Self::ref_eq(arena, p1, p2)
             }
-            (Free(s1, t1), Free(s2, t2)) => {
-                s1 == s2 && Self::type_eq_struct(arena, t1, t2)
-            }
-            (Const(s1, t1), Const(s2, t2)) => {
-                s1 == s2 && Self::type_eq_struct(arena, t1, t2)
-            }
+            (Free(s1, t1), Free(s2, t2)) => s1 == s2 && Self::type_eq_struct(arena, t1, t2),
+            (Const(s1, t1), Const(s2, t2)) => s1 == s2 && Self::type_eq_struct(arena, t1, t2),
             _ => da == db,
         }
     }
@@ -935,8 +927,12 @@ impl HolPrim {
         if a == b {
             return true;
         }
-        let Some(a_id) = a.as_local() else { return false };
-        let Some(b_id) = b.as_local() else { return false };
+        let Some(a_id) = a.as_local() else {
+            return false;
+        };
+        let Some(b_id) = b.as_local() else {
+            return false;
+        };
         Self::term_eq_ids(arena, a_id, b_id)
     }
 
@@ -974,20 +970,17 @@ impl HolPrim {
             // Forall(p) ↔ Comb(Const "!", p).
             (TermDef::Forall(p), TermDef::Comb(f, x))
             | (TermDef::Comb(f, x), TermDef::Forall(p)) => {
-                self.is_const_with_base(f, "!")
-                    && self.shapes_alpha_equivalent(p, x)
+                self.is_const_with_base(f, "!") && self.shapes_alpha_equivalent(p, x)
             }
             // Exists(p) ↔ Comb(Const "?", p).
             (TermDef::Exists(p), TermDef::Comb(f, x))
             | (TermDef::Comb(f, x), TermDef::Exists(p)) => {
-                self.is_const_with_base(f, "?")
-                    && self.shapes_alpha_equivalent(p, x)
+                self.is_const_with_base(f, "?") && self.shapes_alpha_equivalent(p, x)
             }
             // Op1(LogicalNot, x) ↔ Comb(Const "~", x).
             (TermDef::Op1(PrimOp1::LogicalNot, p), TermDef::Comb(f, x))
             | (TermDef::Comb(f, x), TermDef::Op1(PrimOp1::LogicalNot, p)) => {
-                self.is_const_with_base(f, "~")
-                    && self.shapes_alpha_equivalent(p, x)
+                self.is_const_with_base(f, "~") && self.shapes_alpha_equivalent(p, x)
             }
             // Op2(op, l, r) ↔ Comb(Comb(Const "...", l), r) where
             // the const matches the op's HOL Light symbol.
@@ -999,7 +992,9 @@ impl HolPrim {
                     PrimOp2::LogicalImp => "==>",
                     _ => return false,
                 };
-                let Some(f_id) = f.as_local() else { return false };
+                let Some(f_id) = f.as_local() else {
+                    return false;
+                };
                 if let TermDef::Comb(g, l2) = *self.arena().term_def(f_id) {
                     self.is_const_with_base(g, base)
                         && self.shapes_alpha_equivalent(l1, l2)
@@ -1011,7 +1006,9 @@ impl HolPrim {
             // Eq(l, r) ↔ Comb(Comb(Const "=", l), r).
             (TermDef::Eq(l1, r1), TermDef::Comb(f, r2))
             | (TermDef::Comb(f, r2), TermDef::Eq(l1, r1)) => {
-                let Some(f_id) = f.as_local() else { return false };
+                let Some(f_id) = f.as_local() else {
+                    return false;
+                };
                 if let TermDef::Comb(g, l2) = *self.arena().term_def(f_id) {
                     self.const_str(g)
                         .map(|s| Self::base_name(s.as_str()) == "=")
@@ -1024,28 +1021,21 @@ impl HolPrim {
             }
             // Compound nodes of the same shape: recurse.
             (TermDef::Comb(f1, x1), TermDef::Comb(f2, x2)) => {
-                self.shapes_alpha_equivalent(f1, f2)
-                    && self.shapes_alpha_equivalent(x1, x2)
+                self.shapes_alpha_equivalent(f1, f2) && self.shapes_alpha_equivalent(x1, x2)
             }
             (TermDef::Lam(t1, b1), TermDef::Lam(t2, b2)) if t1 == t2 => {
                 self.shapes_alpha_equivalent(b1, b2)
             }
             (TermDef::Eq(l1, r1), TermDef::Eq(l2, r2)) => {
-                self.shapes_alpha_equivalent(l1, l2)
-                    && self.shapes_alpha_equivalent(r1, r2)
+                self.shapes_alpha_equivalent(l1, l2) && self.shapes_alpha_equivalent(r1, r2)
             }
-            (TermDef::Forall(p1), TermDef::Forall(p2)) => {
-                self.shapes_alpha_equivalent(p1, p2)
-            }
-            (TermDef::Exists(p1), TermDef::Exists(p2)) => {
-                self.shapes_alpha_equivalent(p1, p2)
-            }
+            (TermDef::Forall(p1), TermDef::Forall(p2)) => self.shapes_alpha_equivalent(p1, p2),
+            (TermDef::Exists(p1), TermDef::Exists(p2)) => self.shapes_alpha_equivalent(p1, p2),
             (TermDef::Op1(o1, p1), TermDef::Op1(o2, p2)) if o1 == o2 => {
                 self.shapes_alpha_equivalent(p1, p2)
             }
             (TermDef::Op2(o1, l1, r1), TermDef::Op2(o2, l2, r2)) if o1 == o2 => {
-                self.shapes_alpha_equivalent(l1, l2)
-                    && self.shapes_alpha_equivalent(r1, r2)
+                self.shapes_alpha_equivalent(l1, l2) && self.shapes_alpha_equivalent(r1, r2)
             }
             _ => false,
         }
@@ -1281,20 +1271,14 @@ impl HolPrim {
             | TermDef::Foreign(..)
             | TermDef::Abs(_)
             | TermDef::Rep(_) => def,
-            TermDef::Comb(f, x) => {
-                TermDef::Comb(self.rebuild_term(f), self.rebuild_term(x))
-            }
+            TermDef::Comb(f, x) => TermDef::Comb(self.rebuild_term(f), self.rebuild_term(x)),
             TermDef::Lam(ty, body) => TermDef::Lam(ty, self.rebuild_term(body)),
-            TermDef::Eq(a, b) => {
-                TermDef::Eq(self.rebuild_term(a), self.rebuild_term(b))
-            }
+            TermDef::Eq(a, b) => TermDef::Eq(self.rebuild_term(a), self.rebuild_term(b)),
             TermDef::Forall(p) => TermDef::Forall(self.rebuild_term(p)),
             TermDef::Exists(p) => TermDef::Exists(self.rebuild_term(p)),
             TermDef::Eps(ty, p) => TermDef::Eps(ty, self.rebuild_term(p)),
             TermDef::Op1(o, x) => TermDef::Op1(o, self.rebuild_term(x)),
-            TermDef::Op2(o, a, b) => {
-                TermDef::Op2(o, self.rebuild_term(a), self.rebuild_term(b))
-            }
+            TermDef::Op2(o, a, b) => TermDef::Op2(o, self.rebuild_term(a), self.rebuild_term(b)),
         };
         let new_id = self.arena_mut().alloc_term(new_def);
         let _ = self.arena_mut().infer(new_id);
@@ -1329,11 +1313,7 @@ impl HolPrim {
     /// and re-verified by other tools), so abstracting safely is
     /// the article's job. This is exactly the "hacks at the
     /// bottom" pattern — the bridge trusts the frontend.
-    pub fn abs_rule(
-        &mut self,
-        var: TermRef,
-        th: ThmHandle,
-    ) -> Result<ThmHandle, HolPrimError> {
+    pub fn abs_rule(&mut self, var: TermRef, th: ThmHandle) -> Result<ThmHandle, HolPrimError> {
         let var_id = var.as_local().ok_or(HolError::NotAVariable)?;
         let (name, ty) = match *self.arena().term_def(var_id) {
             TermDef::Free(s, ty) => (s, ty),
@@ -1355,11 +1335,7 @@ impl HolPrim {
     /// at UF level 0) derive `⊢ a = c`. Contexts must currently be
     /// pointer-equal — context-set union for HOL Light-style hyp
     /// merging is a follow-up.
-    pub fn trans(
-        &mut self,
-        th1: ThmHandle,
-        th2: ThmHandle,
-    ) -> Result<ThmHandle, HolPrimError> {
+    pub fn trans(&mut self, th1: ThmHandle, th2: ThmHandle) -> Result<ThmHandle, HolPrimError> {
         let thm1 = self.clone_thm(th1)?;
         let thm2 = self.clone_thm(th2)?;
         let (thm1, thm2, _) = self.align_for_binary(thm1, thm2)?;
@@ -1438,11 +1414,7 @@ impl HolPrim {
 
     /// `EQ_MP th1 th2`: from `⊢ p = q` and `⊢ p'` (with `p ≡ p'`)
     /// derive `⊢ q`. Same context constraint as [`Self::trans`].
-    pub fn eq_mp(
-        &mut self,
-        th1: ThmHandle,
-        th2: ThmHandle,
-    ) -> Result<ThmHandle, HolPrimError> {
+    pub fn eq_mp(&mut self, th1: ThmHandle, th2: ThmHandle) -> Result<ThmHandle, HolPrimError> {
         let thm1 = self.clone_thm(th1)?;
         let thm2 = self.clone_thm(th2)?;
         let (thm1, thm2, _) = self.align_for_binary(thm1, thm2)?;
@@ -1627,11 +1599,7 @@ impl HolPrim {
     /// in either direction. If `a` is `Op1(LogicalNot, p)` and `b`
     /// is `Op2(LogicalImp, p, Const "F")` (or vice versa), UF-union
     /// them and return `true`. Returns `false` otherwise.
-    fn try_unfold_not_imp(
-        &mut self,
-        a: TermRef,
-        b: TermRef,
-    ) -> Result<bool, HolPrimError> {
+    fn try_unfold_not_imp(&mut self, a: TermRef, b: TermRef) -> Result<bool, HolPrimError> {
         let (a_id, b_id) = match (a.as_local(), b.as_local()) {
             (Some(a), Some(b)) => (a, b),
             _ => return Ok(false),
@@ -1641,8 +1609,7 @@ impl HolPrim {
         let bridged = match (da, db) {
             (TermDef::Op1(PrimOp1::LogicalNot, p1), TermDef::Op2(PrimOp2::LogicalImp, p2, f))
             | (TermDef::Op2(PrimOp2::LogicalImp, p2, f), TermDef::Op1(PrimOp1::LogicalNot, p1)) => {
-                self.is_const_with_base(f, "F")
-                    && self.shapes_alpha_equivalent(p1, p2)
+                self.is_const_with_base(f, "F") && self.shapes_alpha_equivalent(p1, p2)
             }
             _ => false,
         };
@@ -1772,11 +1739,7 @@ impl HolPrim {
             }
             if let Some(new_assum) = new_ctx.assumption(i) {
                 // Skip if already tracked (Arc::ptr_eq).
-                if !self
-                    .trusted_props
-                    .iter()
-                    .any(|t| Arc::ptr_eq(t, new_assum))
-                {
+                if !self.trusted_props.iter().any(|t| Arc::ptr_eq(t, new_assum)) {
                     self.trusted_props.push(new_assum.clone());
                 }
             }
@@ -1813,9 +1776,9 @@ impl HolPrim {
     /// definitional equation as a hyp) — same caveat as
     /// [`Self::new_axiom`].
     pub fn new_basic_definition(&mut self, tm: TermRef) -> Result<ThmHandle, HolPrimError> {
-        let tm_id = tm.as_local().ok_or_else(|| {
-            HolError::BadDefinition("definition term must be local".into())
-        })?;
+        let tm_id = tm
+            .as_local()
+            .ok_or_else(|| HolError::BadDefinition("definition term must be local".into()))?;
         let (lhs, rhs) = match *self.arena().term_def(tm_id) {
             TermDef::Eq(l, r) => (l, r),
             _ => {
@@ -2200,19 +2163,11 @@ impl covalence_hol::traits::HolLightKernel for HolPrim {
         HolPrim::trans(self, th1, th2).map_err(Into::into)
     }
 
-    fn mk_comb_rule(
-        &mut self,
-        th1: Self::Thm,
-        th2: Self::Thm,
-    ) -> Result<Self::Thm, HolError> {
+    fn mk_comb_rule(&mut self, th1: Self::Thm, th2: Self::Thm) -> Result<Self::Thm, HolError> {
         HolPrim::mk_comb_rule(self, th1, th2).map_err(Into::into)
     }
 
-    fn abs_rule(
-        &mut self,
-        var: Self::Term,
-        th: Self::Thm,
-    ) -> Result<Self::Thm, HolError> {
+    fn abs_rule(&mut self, var: Self::Term, th: Self::Thm) -> Result<Self::Thm, HolError> {
         HolPrim::abs_rule(self, var, th).map_err(Into::into)
     }
 
@@ -2228,11 +2183,7 @@ impl covalence_hol::traits::HolLightKernel for HolPrim {
         HolPrim::eq_mp(self, th1, th2).map_err(Into::into)
     }
 
-    fn deduct_antisym(
-        &mut self,
-        th1: Self::Thm,
-        th2: Self::Thm,
-    ) -> Result<Self::Thm, HolError> {
+    fn deduct_antisym(&mut self, th1: Self::Thm, th2: Self::Thm) -> Result<Self::Thm, HolError> {
         HolPrim::deduct_antisym(self, th1, th2).map_err(Into::into)
     }
 
@@ -2301,11 +2252,7 @@ impl covalence_hol::traits::HolLightKernel for HolPrim {
         HolPrim::mk_type_validated(self, name, args).map_err(Into::into)
     }
 
-    fn mk_const_validated(
-        &mut self,
-        name: NameId,
-        ty: Self::Type,
-    ) -> Result<Self::Term, HolError> {
+    fn mk_const_validated(&mut self, name: NameId, ty: Self::Type) -> Result<Self::Term, HolError> {
         HolPrim::mk_const_validated(self, name, ty).map_err(Into::into)
     }
 }

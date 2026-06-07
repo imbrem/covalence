@@ -263,7 +263,9 @@ mod url_tests {
 
     #[test]
     fn classify_local_paths() {
-        assert!(matches!(classify_url("/abs/path"), CloneSource::Local(p) if p.to_str() == Some("/abs/path")));
+        assert!(
+            matches!(classify_url("/abs/path"), CloneSource::Local(p) if p.to_str() == Some("/abs/path"))
+        );
         assert!(matches!(classify_url("./rel"), CloneSource::Local(_)));
         assert!(matches!(classify_url("../up"), CloneSource::Local(_)));
         assert!(matches!(
@@ -287,7 +289,10 @@ mod url_tests {
             CloneSource::Http(_)
         ));
         // Bare hostname / scheme-less URL falls through to HTTP for back-compat.
-        assert!(matches!(classify_url("github.com/foo"), CloneSource::Http(_)));
+        assert!(matches!(
+            classify_url("github.com/foo"),
+            CloneSource::Http(_)
+        ));
     }
 }
 
@@ -315,14 +320,15 @@ mod async_tests {
         let objects = gitdir.join("objects");
         fs::create_dir_all(&objects).unwrap();
         let loose = LooseBackend::new(&objects, gix_hash::Kind::Sha1);
-        let blob = loose.write_object(GitObjectKind::Blob, b"async hello").unwrap();
+        let blob = loose
+            .write_object(GitObjectKind::Blob, b"async hello")
+            .unwrap();
         let mut tree = Vec::new();
         tree.extend_from_slice(b"100644 hi\0");
         tree.extend_from_slice(blob.as_bytes());
         let tree_oid = loose.write_object(GitObjectKind::Tree, &tree).unwrap();
-        let commit = format!(
-            "tree {tree_oid}\nauthor A <a@b> 0 +0000\ncommitter A <a@b> 0 +0000\n\nok\n"
-        );
+        let commit =
+            format!("tree {tree_oid}\nauthor A <a@b> 0 +0000\ncommitter A <a@b> 0 +0000\n\nok\n");
         let commit_oid = loose
             .write_object(GitObjectKind::Commit, commit.as_bytes())
             .unwrap();

@@ -30,9 +30,7 @@ use pyo3::types::{PyBytes, PyList};
 
 use covalence_kv::{BlockingKv, Error as KvError};
 use covalence_store::{BlobInfo, StoreError};
-use covalence_wasm_store::{
-    BlobSource, WasmStore as InnerStore, merge, s3_path, single_blob,
-};
+use covalence_wasm_store::{BlobSource, WasmStore as InnerStore, merge, s3_path, single_blob};
 
 use crate::kvstore::KvStore as PyKvStore;
 
@@ -160,11 +158,7 @@ impl PyWasmStore {
     /// Fetch the value for `key`, or `None` if absent. No exception
     /// for a miss — useful when absence is part of normal control
     /// flow.
-    fn try_get<'py>(
-        &self,
-        py: Python<'py>,
-        key: &[u8],
-    ) -> PyResult<Option<Bound<'py, PyBytes>>> {
+    fn try_get<'py>(&self, py: Python<'py>, key: &[u8]) -> PyResult<Option<Bound<'py, PyBytes>>> {
         match self.inner.blob_get(key) {
             Ok(Some(v)) => Ok(Some(PyBytes::new(py, &v))),
             Ok(None) => Ok(None),
@@ -233,7 +227,6 @@ impl BlobSource for KvBacked {
     }
 }
 
-
 fn map_store_error(e: StoreError, key: &[u8]) -> PyErr {
     match e {
         StoreError::NotFound => PyKeyError::new_err(hex_or_repr(key)),
@@ -247,7 +240,11 @@ fn hex_or_repr(key: &[u8]) -> String {
     if key.len() <= 64 {
         s3_path::hex_encode(key)
     } else {
-        format!("{}…({} bytes total)", s3_path::hex_encode(&key[..32]), key.len())
+        format!(
+            "{}…({} bytes total)",
+            s3_path::hex_encode(&key[..32]),
+            key.len()
+        )
     }
 }
 

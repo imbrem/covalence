@@ -240,7 +240,10 @@ impl ReplPrims {
         ));
         #[cfg(feature = "cogit")]
         {
-            commands.push(("\"path\" git-open", "open a GitStore (e.g. from cov cog clone)"));
+            commands.push((
+                "\"path\" git-open",
+                "open a GitStore (e.g. from cov cog clone)",
+            ));
             commands.push(("git-close", "drop the open GitStore handle"));
             commands.push(("git-info", "show counts for the open GitStore"));
             commands.push((
@@ -298,9 +301,9 @@ impl ReplPrims {
     /// Look up the current GitStore or error.
     #[cfg(feature = "cogit")]
     fn git_store(&self) -> Result<&covalence_git::store::GitStore, FError> {
-        self.git_store
-            .as_ref()
-            .ok_or_else(|| FError::Parse("git store not open; use `\"path\" git-open` first".into()))
+        self.git_store.as_ref().ok_or_else(|| {
+            FError::Parse("git store not open; use `\"path\" git-open` first".into())
+        })
     }
 
     /// `git-open`: path-blob → (open SQLite GitStore at the given path)
@@ -309,11 +312,9 @@ impl ReplPrims {
         let path_bytes = ctx.try_pop_blob()?;
         let path = std::str::from_utf8(&path_bytes)
             .map_err(|e| FError::Parse(format!("path is not valid UTF-8: {e}")))?;
-        let store = covalence_git::store::GitStore::open(
-            path,
-            covalence_hash::gix_hash::Kind::Sha1,
-        )
-        .map_err(|e| FError::Parse(format!("open git store: {e}")))?;
+        let store =
+            covalence_git::store::GitStore::open(path, covalence_hash::gix_hash::Kind::Sha1)
+                .map_err(|e| FError::Parse(format!("open git store: {e}")))?;
         self.emit(&format!(
             "opened git store: {path} ({} object(s))",
             store.len()
@@ -353,9 +354,9 @@ impl ReplPrims {
         let hex_bytes = ctx.try_pop_blob()?;
         let oid = parse_git_oid(&hex_bytes)?;
         let store = self.git_store()?;
-        let obj = store.read_object(&oid).map_err(|e| {
-            FError::Parse(format!("git OID {oid} not resolvable: {e}"))
-        })?;
+        let obj = store
+            .read_object(&oid)
+            .map_err(|e| FError::Parse(format!("git OID {oid} not resolvable: {e}")))?;
         // The store keys blobs by `O256::blob(data)`, which is exactly the
         // mapping cog clone established.
         ctx.push_hash(covalence_hash::O256::blob(&obj.data));
@@ -370,9 +371,9 @@ impl ReplPrims {
     fn cmd_git_reverse(&mut self, ctx: &mut FCtx<'_>) -> Result<(), FError> {
         let target = ctx.try_pop_hash()?;
         let store = self.git_store()?;
-        let oid = store.git_oid_for_blob_hash(&target).map_err(|e| {
-            FError::Parse(format!("reverse lookup: {e}"))
-        })?;
+        let oid = store
+            .git_oid_for_blob_hash(&target)
+            .map_err(|e| FError::Parse(format!("reverse lookup: {e}")))?;
         match oid {
             Some(oid) => ctx.push_blob(oid.to_string().into_bytes()),
             None => return Err(FError::Parse(format!("no git OID maps to {target}"))),
@@ -423,10 +424,7 @@ fn hex_nibble(b: u8) -> Result<u8, FError> {
         b'0'..=b'9' => Ok(b - b'0'),
         b'a'..=b'f' => Ok(b - b'a' + 10),
         b'A'..=b'F' => Ok(b - b'A' + 10),
-        _ => Err(FError::Parse(format!(
-            "bad hex character: {:?}",
-            b as char
-        ))),
+        _ => Err(FError::Parse(format!("bad hex character: {:?}", b as char))),
     }
 }
 

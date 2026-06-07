@@ -28,8 +28,7 @@ use covalence_hash::{Blake3Ctx, HashCtx, O256};
 use super::{Cell, Heap, Prim, ValRef};
 
 /// Domain context for Forsp cell hashes.
-static FORSP_CTX: LazyLock<Blake3Ctx> =
-    LazyLock::new(|| Blake3Ctx::new("covalence forsp cell v0"));
+static FORSP_CTX: LazyLock<Blake3Ctx> = LazyLock::new(|| Blake3Ctx::new("covalence forsp cell v0"));
 
 // --- tag bytes ---
 

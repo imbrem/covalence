@@ -175,7 +175,12 @@ mod tests {
     }
 
     async fn collect_body(resp: Response) -> Vec<u8> {
-        resp.into_body().collect().await.unwrap().to_bytes().to_vec()
+        resp.into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec()
     }
 
     fn setup() -> (SharedMemoryStore, O256) {
@@ -247,7 +252,12 @@ mod tests {
     async fn missing_key_returns_404() {
         let store = SharedMemoryStore::new();
         let missing = O256::blob(b"absent");
-        let resp = serve_blob_get(&store, &missing, &HeaderMap::new(), "application/octet-stream");
+        let resp = serve_blob_get(
+            &store,
+            &missing,
+            &HeaderMap::new(),
+            "application/octet-stream",
+        );
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 

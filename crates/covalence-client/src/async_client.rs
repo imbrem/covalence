@@ -3,9 +3,7 @@ use std::ops::Range;
 use async_trait::async_trait;
 use covalence_hash::O256;
 use covalence_shell::{AsyncBackend, BackendInfo, KernelError};
-use covalence_store::{
-    AsyncContentStore, BlobInfo, ByteRange, ResolvedRange, StoreError,
-};
+use covalence_store::{AsyncContentStore, BlobInfo, ByteRange, ResolvedRange, StoreError};
 use http_body_util::{BodyExt, Full};
 use hyper::HeaderMap;
 use hyper::body::Bytes;
@@ -300,7 +298,8 @@ impl AsyncHttpBackend {
                 .await
         } else {
             let url = format!("{}{}", self.base_url, path);
-            self.tcp_request_full(&url, method, range_header, body).await
+            self.tcp_request_full(&url, method, range_header, body)
+                .await
         }
     }
 
@@ -428,7 +427,12 @@ impl AsyncContentStore<O256> for AsyncHttpBackend {
         };
         let path = format!("/api/blobs/{key}");
         let (status, hdrs, body) = self
-            .request_full("GET", &path, Some(&byte_range.to_http_header()), Bytes::new())
+            .request_full(
+                "GET",
+                &path,
+                Some(&byte_range.to_http_header()),
+                Bytes::new(),
+            )
             .await?;
         match status {
             // 206 is the normal partial response; 200 means the server
@@ -451,9 +455,7 @@ impl AsyncContentStore<O256> for AsyncHttpBackend {
 
     async fn head(&self, key: &O256) -> Result<BlobInfo, StoreError> {
         let path = format!("/api/blobs/{key}");
-        let (status, hdrs, _body) = self
-            .request_full("HEAD", &path, None, Bytes::new())
-            .await?;
+        let (status, hdrs, _body) = self.request_full("HEAD", &path, None, Bytes::new()).await?;
         match status {
             200 => {
                 let size = hdrs
@@ -469,17 +471,15 @@ impl AsyncContentStore<O256> for AsyncHttpBackend {
     }
 
     async fn insert(&self, data: Bytes) -> Result<O256, StoreError> {
-        let (status, _hdrs, body) = self
-            .request_full("POST", "/api/blobs", None, data)
-            .await?;
+        let (status, _hdrs, body) = self.request_full("POST", "/api/blobs", None, data).await?;
         if !(200..300).contains(&status) {
             return Err(StoreError::Io(format!(
                 "HTTP {status}: {}",
                 String::from_utf8_lossy(&body)
             )));
         }
-        let json: HashResponse = serde_json::from_slice(&body)
-            .map_err(|e| StoreError::Io(format!("parse: {e}")))?;
+        let json: HashResponse =
+            serde_json::from_slice(&body).map_err(|e| StoreError::Io(format!("parse: {e}")))?;
         O256::from_hex(&json.hash)
             .ok_or_else(|| StoreError::Io(format!("invalid hash: {}", json.hash)))
     }
@@ -514,9 +514,7 @@ impl AsyncContentStore<O256> for AsyncHttpBackend {
                     .get(hyper::header::CONTENT_RANGE)
                     .and_then(|v| v.to_str().ok())
                     .and_then(parse_content_range)
-                    .ok_or_else(|| {
-                        StoreError::Io("missing or malformed Content-Range".into())
-                    })?;
+                    .ok_or_else(|| StoreError::Io("missing or malformed Content-Range".into()))?;
                 Ok((Bytes::from(body), resolved))
             }
             200 => {
@@ -592,5 +590,4 @@ impl AsyncBackend for AsyncHttpBackend {
             serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
         Ok(json.count)
     }
-
 }

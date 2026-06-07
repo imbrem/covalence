@@ -180,12 +180,8 @@ pub trait Prover {
     // to know the `PrimOp1`/`PrimOp2` enum.
 
     fn op1(&mut self, op: PrimOp1, x: Self::Term) -> Result<Self::Term, ProverError>;
-    fn op2(
-        &mut self,
-        op: PrimOp2,
-        a: Self::Term,
-        b: Self::Term,
-    ) -> Result<Self::Term, ProverError>;
+    fn op2(&mut self, op: PrimOp2, a: Self::Term, b: Self::Term)
+    -> Result<Self::Term, ProverError>;
 
     /// `¬p`.
     fn not_(&mut self, p: Self::Term) -> Result<Self::Term, ProverError> {
@@ -301,23 +297,13 @@ pub trait Prover {
     /// Congruence: `Γ ⊢ a = b` where `a` and `b` are structurally congruent
     /// up to `depth` via the egraph's union-find. The depth parameter caps
     /// the recursion (`0` = exact match at level-0).
-    fn cong(
-        &mut self,
-        a: Self::Term,
-        b: Self::Term,
-        depth: u32,
-    ) -> Result<Self::Thm, ProverError>;
+    fn cong(&mut self, a: Self::Term, b: Self::Term, depth: u32) -> Result<Self::Thm, ProverError>;
 
     /// β-reduction: `Γ ⊢ ((λx. body) arg) = body[arg/x]`.
     fn beta(&mut self, comb: Self::Term) -> Result<Self::Thm, ProverError>;
 
     /// `Γ ⊢ s = t` ↦ `Γ ⊢ (λname:ty. s) = (λname:ty. t)`.
-    fn abs(
-        &mut self,
-        th: Self::Thm,
-        name: &str,
-        ty: Self::Type,
-    ) -> Result<Self::Thm, ProverError>;
+    fn abs(&mut self, th: Self::Thm, name: &str, ty: Self::Type) -> Result<Self::Thm, ProverError>;
 
     /// Variable instantiation: substitute `replacement` for free occurrences
     /// of `Free(name, ty)` in the theorem.
@@ -376,11 +362,7 @@ pub trait Prover {
     /// Default: `NotImplemented`. The redesigned kernel is expected to ship
     /// this as a single rule (or to compose it from `add_assumption` +
     /// `mp` + a new `imp_intro`).
-    fn discharge(
-        &mut self,
-        _thm: Self::Thm,
-        _p: Self::Prop,
-    ) -> Result<Self::Thm, ProverError> {
+    fn discharge(&mut self, _thm: Self::Thm, _p: Self::Prop) -> Result<Self::Thm, ProverError> {
         Err(ProverError::NotImplemented("discharge".into()))
     }
 

@@ -153,4 +153,3 @@ pub fn extract_bytes(obj: &Bound<'_, PyAny>) -> PyResult<Vec<u8>> {
         "expected bytes, str, Component, Module, or Container",
     ))
 }
-

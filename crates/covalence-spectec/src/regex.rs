@@ -73,9 +73,7 @@ pub enum BridgeError {
 
     /// A `Text` literal used as a single-character endpoint (e.g. inside
     /// a `Range`) that does not contain exactly one character.
-    #[error(
-        "text literal {value:?} cannot be used as a single character (length {len})"
-    )]
+    #[error("text literal {value:?} cannot be used as a single character (length {len})")]
     NonScalarText { value: String, len: usize },
 
     /// A `Regex::Class` is negated; SpecTec has no direct negated-class
@@ -228,7 +226,9 @@ pub fn regex_to_sym(r: &Regex<char>) -> Result<SpecTecSym, BridgeError> {
 }
 
 fn char_to_num(c: char) -> SpecTecSym {
-    SpecTecSym::Num { n: i64::from(c as u32) }
+    SpecTecSym::Num {
+        n: i64::from(c as u32),
+    }
 }
 
 fn class_to_sym(c: &Class<char>) -> Result<SpecTecSym, BridgeError> {
@@ -256,15 +256,9 @@ fn class_to_sym(c: &Class<char>) -> Result<SpecTecSym, BridgeError> {
     }
 }
 
-fn rep_to_sym(
-    inner: &Regex<char>,
-    min: u32,
-    max: Option<u32>,
-) -> Result<SpecTecSym, BridgeError> {
+fn rep_to_sym(inner: &Regex<char>, min: u32, max: Option<u32>) -> Result<SpecTecSym, BridgeError> {
     let inner_sym = regex_to_sym(inner)?;
-    let copies = |n: u32| -> Vec<SpecTecSym> {
-        (0..n).map(|_| inner_sym.clone()).collect()
-    };
+    let copies = |n: u32| -> Vec<SpecTecSym> { (0..n).map(|_| inner_sym.clone()).collect() };
     let opts = |n: u32| -> Vec<SpecTecSym> {
         (0..n)
             .map(|_| SpecTecSym::Iter {
@@ -332,7 +326,9 @@ mod tests {
     }
 
     fn num(c: char) -> SpecTecSym {
-        SpecTecSym::Num { n: i64::from(c as u32) }
+        SpecTecSym::Num {
+            n: i64::from(c as u32),
+        }
     }
 
     // ---- sym_to_regex ----
@@ -389,14 +385,20 @@ mod tests {
             it: SpecTecIter::List,
             xes: Vec::new(),
         };
-        assert_eq!(sym_to_regex(&star).unwrap(), Regex::Star(Box::new(lit('a'))));
+        assert_eq!(
+            sym_to_regex(&star).unwrap(),
+            Regex::Star(Box::new(lit('a')))
+        );
 
         let plus = SpecTecSym::Iter {
             g1: Box::new(base()),
             it: SpecTecIter::List1,
             xes: Vec::new(),
         };
-        assert_eq!(sym_to_regex(&plus).unwrap(), Regex::Plus(Box::new(lit('a'))));
+        assert_eq!(
+            sym_to_regex(&plus).unwrap(),
+            Regex::Plus(Box::new(lit('a')))
+        );
 
         let opt = SpecTecSym::Iter {
             g1: Box::new(base()),
@@ -408,7 +410,10 @@ mod tests {
 
     #[test]
     fn sym_rejects_var_attr_listn() {
-        let sym = SpecTecSym::Var { x: "instr".into(), as1: vec![] };
+        let sym = SpecTecSym::Var {
+            x: "instr".into(),
+            as1: vec![],
+        };
         assert!(matches!(
             sym_to_regex(&sym),
             Err(BridgeError::GrammarRef { .. }),
@@ -422,7 +427,10 @@ mod tests {
 
         let sym = SpecTecSym::Iter {
             g1: Box::new(num('a')),
-            it: SpecTecIter::ListN { e: vec![], xo: vec![] },
+            it: SpecTecIter::ListN {
+                e: vec![],
+                xo: vec![],
+            },
             xes: Vec::new(),
         };
         assert!(matches!(sym_to_regex(&sym), Err(BridgeError::ListN)));
@@ -550,15 +558,7 @@ mod tests {
 
     #[test]
     fn round_trip_supported_subset() {
-        for src in [
-            "abc",
-            "a|b|c",
-            "a*",
-            "a+",
-            "a?",
-            "(?:ab)*",
-            "[a-z]",
-        ] {
+        for src in ["abc", "a|b|c", "a*", "a+", "a?", "(?:ab)*", "[a-z]"] {
             let r1 = parse_regex(src).unwrap();
             let sym = regex_to_sym(&r1).unwrap();
             let r2 = sym_to_regex(&sym).unwrap();

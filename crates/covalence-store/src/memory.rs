@@ -182,11 +182,9 @@ impl ContentStore<O256> for SharedMemoryStore {
     }
 
     fn head(&self, key: &O256) -> Option<BlobInfo> {
-        self.0
-            .read()
-            .unwrap()
-            .get(key)
-            .map(|s| BlobInfo { size: s.len() as u64 })
+        self.0.read().unwrap().get(key).map(|s| BlobInfo {
+            size: s.len() as u64,
+        })
     }
 
     fn get_slice(

@@ -1,6 +1,6 @@
 use clap::Subcommand;
 
-#[cfg(feature = "cogit")]
+#[cfg(all(feature = "cogit", not(target_family = "wasm")))]
 pub mod cog;
 #[cfg(all(feature = "hol", not(target_family = "wasm")))]
 pub mod hol;
@@ -14,7 +14,7 @@ pub mod serve;
 #[derive(Subcommand)]
 pub enum Command {
     /// Cogit VCS
-    #[cfg(feature = "cogit")]
+    #[cfg(all(feature = "cogit", not(target_family = "wasm")))]
     Cog(cog::CogArgs),
 
     /// HOL Light kernel

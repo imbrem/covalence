@@ -25,9 +25,7 @@ use bytes::Bytes;
 use covalence_store::{AsyncContentStore, BlobInfo, StoreError, StoreManifest};
 use covalence_wasm::engine::wasmtime::{
     Engine, Store,
-    component::{
-        Component, ComponentExportIndex, Func, Linker, Resource, ResourceType, Val,
-    },
+    component::{Component, ComponentExportIndex, Func, Linker, Resource, ResourceType, Val},
 };
 
 pub mod manifest;
@@ -192,8 +190,7 @@ impl WasmStore {
 
         let open_func = lookup(&mut store, &instance, &api_idx, "open")?;
         let get_func = lookup(&mut store, &instance, &api_idx, "[method]store.get")?;
-        let contains_func =
-            lookup(&mut store, &instance, &api_idx, "[method]store.contains")?;
+        let contains_func = lookup(&mut store, &instance, &api_idx, "[method]store.contains")?;
         let head_func = lookup(&mut store, &instance, &api_idx, "[method]store.head")?;
 
         // Open the store. For a leaf, returns the singleton; for a
@@ -337,10 +334,7 @@ impl WasmStore {
     ///
     /// Backings can themselves be composers; the resulting WasmStore
     /// is just another `AsyncContentStore<Vec<u8>>`.
-    pub fn compose<I>(
-        composer_bytes: &[u8],
-        backings: I,
-    ) -> Result<Self, WasmStoreError>
+    pub fn compose<I>(composer_bytes: &[u8], backings: I) -> Result<Self, WasmStoreError>
     where
         I: IntoIterator,
         I::Item: Into<Arc<dyn BlobSource>>,
@@ -359,8 +353,7 @@ impl WasmStore {
         I: IntoIterator,
         I::Item: Into<Arc<dyn BlobSource>>,
     {
-        let backings: Vec<Arc<dyn BlobSource>> =
-            backings.into_iter().map(Into::into).collect();
+        let backings: Vec<Arc<dyn BlobSource>> = backings.into_iter().map(Into::into).collect();
         let component = Component::from_binary(engine, composer_bytes)
             .map_err(|e| WasmStoreError::Component(e.to_string()))?;
         let mut linker = Linker::<HostState>::new(engine);
@@ -373,94 +366,86 @@ impl WasmStore {
                 .instance(UPSTREAM_API)
                 .map_err(|e| WasmStoreError::Instantiate(e.to_string()))?;
             upstream
-                .resource("store", ResourceType::host::<BackingHandle>(), |_, _| {
-                    Ok(())
-                })
+                .resource(
+                    "store",
+                    ResourceType::host::<BackingHandle>(),
+                    |_, _| Ok(()),
+                )
                 .map_err(|e| WasmStoreError::Instantiate(e.to_string()))?;
 
             // contains(self, key) -> bool. Forwards to backing[rep].
             upstream
-                .func_new(
-                    "[method]store.contains",
-                    |mut cx, _ty, params, results| {
-                        let rep = backing_rep(params.first(), &mut cx)?;
-                        let key = list_to_vec(&params[1]).ok_or_else(|| {
-                            wasmtime_err("contains: expected list<u8> key")
-                        })?;
-                        let backing = cx
-                            .data()
-                            .backings
-                            .get(rep as usize)
-                            .ok_or_else(|| wasmtime_err("contains: rep out of range"))?
-                            .clone();
-                        // Release the borrow before calling back into wasm.
-                        drop(cx);
-                        let r = backing
-                            .blob_contains(&key)
-                            .map_err(|e| wasmtime_err(&format!("upstream contains: {e}")))?;
-                        results[0] = Val::Bool(r);
-                        Ok(())
-                    },
-                )
+                .func_new("[method]store.contains", |mut cx, _ty, params, results| {
+                    let rep = backing_rep(params.first(), &mut cx)?;
+                    let key = list_to_vec(&params[1])
+                        .ok_or_else(|| wasmtime_err("contains: expected list<u8> key"))?;
+                    let backing = cx
+                        .data()
+                        .backings
+                        .get(rep as usize)
+                        .ok_or_else(|| wasmtime_err("contains: rep out of range"))?
+                        .clone();
+                    // Release the borrow before calling back into wasm.
+                    drop(cx);
+                    let r = backing
+                        .blob_contains(&key)
+                        .map_err(|e| wasmtime_err(&format!("upstream contains: {e}")))?;
+                    results[0] = Val::Bool(r);
+                    Ok(())
+                })
                 .map_err(|e| WasmStoreError::Instantiate(e.to_string()))?;
 
             // get(self, key) -> option<list<u8>>. Forwards to backing[rep].
             upstream
-                .func_new(
-                    "[method]store.get",
-                    |mut cx, _ty, params, results| {
-                        let rep = backing_rep(params.first(), &mut cx)?;
-                        let key = list_to_vec(&params[1])
-                            .ok_or_else(|| wasmtime_err("get: expected list<u8> key"))?;
-                        let backing = cx
-                            .data()
-                            .backings
-                            .get(rep as usize)
-                            .ok_or_else(|| wasmtime_err("get: rep out of range"))?
-                            .clone();
-                        drop(cx);
-                        let r = backing
-                            .blob_get(&key)
-                            .map_err(|e| wasmtime_err(&format!("upstream get: {e}")))?;
-                        results[0] = match r {
-                            Some(bytes) => Val::Option(Some(Box::new(Val::List(
-                                bytes.into_iter().map(Val::U8).collect(),
-                            )))),
-                            None => Val::Option(None),
-                        };
-                        Ok(())
-                    },
-                )
+                .func_new("[method]store.get", |mut cx, _ty, params, results| {
+                    let rep = backing_rep(params.first(), &mut cx)?;
+                    let key = list_to_vec(&params[1])
+                        .ok_or_else(|| wasmtime_err("get: expected list<u8> key"))?;
+                    let backing = cx
+                        .data()
+                        .backings
+                        .get(rep as usize)
+                        .ok_or_else(|| wasmtime_err("get: rep out of range"))?
+                        .clone();
+                    drop(cx);
+                    let r = backing
+                        .blob_get(&key)
+                        .map_err(|e| wasmtime_err(&format!("upstream get: {e}")))?;
+                    results[0] = match r {
+                        Some(bytes) => Val::Option(Some(Box::new(Val::List(
+                            bytes.into_iter().map(Val::U8).collect(),
+                        )))),
+                        None => Val::Option(None),
+                    };
+                    Ok(())
+                })
                 .map_err(|e| WasmStoreError::Instantiate(e.to_string()))?;
 
             // head(self, key) -> option<blob-info>. Forwards to backing[rep].
             upstream
-                .func_new(
-                    "[method]store.head",
-                    |mut cx, _ty, params, results| {
-                        let rep = backing_rep(params.first(), &mut cx)?;
-                        let key = list_to_vec(&params[1])
-                            .ok_or_else(|| wasmtime_err("head: expected list<u8> key"))?;
-                        let backing = cx
-                            .data()
-                            .backings
-                            .get(rep as usize)
-                            .ok_or_else(|| wasmtime_err("head: rep out of range"))?
-                            .clone();
-                        drop(cx);
-                        let r = backing
-                            .blob_head(&key)
-                            .map_err(|e| wasmtime_err(&format!("upstream head: {e}")))?;
-                        results[0] = match r {
-                            Some(info) => Val::Option(Some(Box::new(Val::Record(vec![(
-                                "size".to_string(),
-                                Val::U64(info.size),
-                            )])))),
-                            None => Val::Option(None),
-                        };
-                        Ok(())
-                    },
-                )
+                .func_new("[method]store.head", |mut cx, _ty, params, results| {
+                    let rep = backing_rep(params.first(), &mut cx)?;
+                    let key = list_to_vec(&params[1])
+                        .ok_or_else(|| wasmtime_err("head: expected list<u8> key"))?;
+                    let backing = cx
+                        .data()
+                        .backings
+                        .get(rep as usize)
+                        .ok_or_else(|| wasmtime_err("head: rep out of range"))?
+                        .clone();
+                    drop(cx);
+                    let r = backing
+                        .blob_head(&key)
+                        .map_err(|e| wasmtime_err(&format!("upstream head: {e}")))?;
+                    results[0] = match r {
+                        Some(info) => Val::Option(Some(Box::new(Val::Record(vec![(
+                            "size".to_string(),
+                            Val::U64(info.size),
+                        )])))),
+                        None => Val::Option(None),
+                    };
+                    Ok(())
+                })
                 .map_err(|e| WasmStoreError::Instantiate(e.to_string()))?;
         }
 
@@ -503,8 +488,7 @@ impl WasmStore {
         // Now extract the composed `store` handle and the method funcs.
         let open_func = lookup(&mut store, &instance, &api_idx, "open")?;
         let get_func = lookup(&mut store, &instance, &api_idx, "[method]store.get")?;
-        let contains_func =
-            lookup(&mut store, &instance, &api_idx, "[method]store.contains")?;
+        let contains_func = lookup(&mut store, &instance, &api_idx, "[method]store.contains")?;
         let head_func = lookup(&mut store, &instance, &api_idx, "[method]store.head")?;
 
         let mut handle_out = [Val::Bool(false)];

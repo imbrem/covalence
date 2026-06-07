@@ -102,13 +102,11 @@ pub fn parse_file(bytes: &[u8]) -> Result<ParquetInfo, ParquetError> {
         .collect();
 
     let num_row_groups = metadata.num_row_groups();
-    let (total_compressed_size, total_uncompressed_size) = (0..num_row_groups).fold(
-        (0i64, 0i64),
-        |(c, u), i| {
+    let (total_compressed_size, total_uncompressed_size) =
+        (0..num_row_groups).fold((0i64, 0i64), |(c, u), i| {
             let rg = metadata.row_group(i);
             (c + rg.compressed_size(), u + rg.total_byte_size())
-        },
-    );
+        });
 
     Ok(ParquetInfo {
         num_files: 1,
@@ -221,12 +219,15 @@ mod tests {
 
     fn sample_parquet(rows: &[i32]) -> Vec<u8> {
         let schema = Arc::new(Schema::new(vec![Field::new("v", DataType::Int32, false)]));
-        let batch =
-            RecordBatch::try_new(schema.clone(), vec![Arc::new(Int32Array::from(rows.to_vec()))])
-                .unwrap();
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(Int32Array::from(rows.to_vec()))],
+        )
+        .unwrap();
         let mut buf = Vec::new();
         {
-            let mut w = ArrowWriter::try_new(&mut buf, schema, Some(WriterProperties::new())).unwrap();
+            let mut w =
+                ArrowWriter::try_new(&mut buf, schema, Some(WriterProperties::new())).unwrap();
             w.write(&batch).unwrap();
             w.close().unwrap();
         }

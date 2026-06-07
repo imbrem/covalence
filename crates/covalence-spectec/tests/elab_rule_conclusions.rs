@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use covalence_spectec::{
     cst::Top,
-    elab::{build_table, elab_rule_conclusion, ElabPremise, Expr},
+    elab::{ElabPremise, Expr, build_table, elab_rule_conclusion},
     lex::lex,
     parse::parse,
     source::SourceMap,
@@ -166,8 +166,9 @@ fn expr_kind(e: Option<&Expr>) -> &'static str {
 fn error_prefix(msg: &str) -> String {
     // Group "rule X foo" type messages by stripping the rule name.
     if let Some(rest) = msg.strip_prefix("rule `")
-        && let Some(end) = rest.find("` ") {
-            return format!("rule `…`{}", &rest[end + 1..]);
-        }
+        && let Some(end) = rest.find("` ")
+    {
+        return format!("rule `…`{}", &rest[end + 1..]);
+    }
     msg.chars().take(80).collect()
 }

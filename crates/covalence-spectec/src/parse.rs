@@ -24,7 +24,7 @@
 
 use crate::cst::{
     Alt, DefClause, DefSig, GrammarDecl, HintAtom, Ident, RecordField, RecordSlot, RelationDecl,
-    RuleDecl, SyntaxBody, SyntaxDecl, Top, TokenRun, VarDecl,
+    RuleDecl, SyntaxBody, SyntaxDecl, TokenRun, Top, VarDecl,
 };
 use crate::source::{Diagnostic, FileId, Span};
 use crate::token::{Spanned, Token};
@@ -65,11 +65,7 @@ fn eat(input: &mut &[Spanned], expected: &Token) -> Option<Span> {
 }
 
 /// Consume the next token if it equals `expected`, otherwise diagnose.
-fn expect(
-    input: &mut &[Spanned],
-    file: FileId,
-    expected: &Token,
-) -> Result<Span, Diagnostic> {
+fn expect(input: &mut &[Spanned], file: FileId, expected: &Token) -> Result<Span, Diagnostic> {
     match input.first() {
         Some(s) if &s.token == expected => {
             let span = s.span;
@@ -95,20 +91,28 @@ fn expect(
 /// chapter). A leading backtick also escapes a reserved word into a name
 /// (e.g. `` syntax `syntax = () ``). Accept any token whose textual
 /// representation works as an identifier.
-fn parse_ident_or_keyword(
-    input: &mut &[Spanned],
-    file: FileId,
-) -> Result<Ident, Diagnostic> {
+fn parse_ident_or_keyword(input: &mut &[Spanned], file: FileId) -> Result<Ident, Diagnostic> {
     // Backtick escape: `` ` `` followed by an identifier, a keyword, or
     // certain punctuation tokens like `...` (`` `... `` is a real
     // identifier in `X.1-notation.syntax.spectec` line 18).
-    if let Some(Spanned { token: Token::Backtick, span: bt_span }) = input.first() {
+    if let Some(Spanned {
+        token: Token::Backtick,
+        span: bt_span,
+    }) = input.first()
+    {
         let bt_span = *bt_span;
         // First check special-case escapes that aren't idents/keywords.
-        if let Some(Spanned { token: Token::DotDotDot, span: tail }) = input.get(1) {
+        if let Some(Spanned {
+            token: Token::DotDotDot,
+            span: tail,
+        }) = input.get(1)
+        {
             let span = bt_span.join(*tail);
             *input = &input[2..];
-            return Ok(Ident { span, text: "`...".to_string() });
+            return Ok(Ident {
+                span,
+                text: "`...".to_string(),
+            });
         }
         let saved = *input;
         *input = &input[1..];
@@ -125,19 +129,58 @@ fn parse_ident_or_keyword(
         }
     }
     let (text, span) = match input.first() {
-        Some(Spanned { token: Token::Ident(t), span }) => (t.clone(), *span),
-        Some(Spanned { token: Token::Syntax, span }) => ("syntax".to_string(), *span),
-        Some(Spanned { token: Token::Def, span }) => ("def".to_string(), *span),
-        Some(Spanned { token: Token::Relation, span }) => ("relation".to_string(), *span),
-        Some(Spanned { token: Token::Rule, span }) => ("rule".to_string(), *span),
-        Some(Spanned { token: Token::Var, span }) => ("var".to_string(), *span),
-        Some(Spanned { token: Token::Grammar, span }) => ("grammar".to_string(), *span),
-        Some(Spanned { token: Token::Hint, span }) => ("hint".to_string(), *span),
-        Some(Spanned { token: Token::If, span }) => ("if".to_string(), *span),
-        Some(Spanned { token: Token::Let, span }) => ("let".to_string(), *span),
-        Some(Spanned { token: Token::Else, span }) => ("else".to_string(), *span),
-        Some(Spanned { token: Token::Otherwise, span }) => ("otherwise".to_string(), *span),
-        Some(Spanned { token: Token::Eps, span }) => ("eps".to_string(), *span),
+        Some(Spanned {
+            token: Token::Ident(t),
+            span,
+        }) => (t.clone(), *span),
+        Some(Spanned {
+            token: Token::Syntax,
+            span,
+        }) => ("syntax".to_string(), *span),
+        Some(Spanned {
+            token: Token::Def,
+            span,
+        }) => ("def".to_string(), *span),
+        Some(Spanned {
+            token: Token::Relation,
+            span,
+        }) => ("relation".to_string(), *span),
+        Some(Spanned {
+            token: Token::Rule,
+            span,
+        }) => ("rule".to_string(), *span),
+        Some(Spanned {
+            token: Token::Var,
+            span,
+        }) => ("var".to_string(), *span),
+        Some(Spanned {
+            token: Token::Grammar,
+            span,
+        }) => ("grammar".to_string(), *span),
+        Some(Spanned {
+            token: Token::Hint,
+            span,
+        }) => ("hint".to_string(), *span),
+        Some(Spanned {
+            token: Token::If,
+            span,
+        }) => ("if".to_string(), *span),
+        Some(Spanned {
+            token: Token::Let,
+            span,
+        }) => ("let".to_string(), *span),
+        Some(Spanned {
+            token: Token::Else,
+            span,
+        }) => ("else".to_string(), *span),
+        Some(Spanned {
+            token: Token::Otherwise,
+            span,
+        }) => ("otherwise".to_string(), *span),
+        Some(Spanned {
+            token: Token::Eps,
+            span,
+        }) => ("eps".to_string(), *span),
         Some(s) => {
             return Err(Diagnostic::error(
                 s.span,
@@ -153,18 +196,27 @@ fn parse_ident_or_keyword(
 /// Consume a profile label after `syntax NAME/`. SpecTec profiles are
 /// usually identifiers (`syn`, `sem`) but can also be numbers
 /// (`symsplit/1`, `symsplit/2`).
-fn parse_profile_label(
-    input: &mut &[Spanned],
-    file: FileId,
-) -> Result<Ident, Diagnostic> {
+fn parse_profile_label(input: &mut &[Spanned], file: FileId) -> Result<Ident, Diagnostic> {
     match input.first() {
-        Some(Spanned { token: Token::Ident(t), span }) => {
-            let id = Ident { span: *span, text: t.clone() };
+        Some(Spanned {
+            token: Token::Ident(t),
+            span,
+        }) => {
+            let id = Ident {
+                span: *span,
+                text: t.clone(),
+            };
             *input = &input[1..];
             Ok(id)
         }
-        Some(Spanned { token: Token::Nat(n), span }) => {
-            let id = Ident { span: *span, text: n.to_string() };
+        Some(Spanned {
+            token: Token::Nat(n),
+            span,
+        }) => {
+            let id = Ident {
+                span: *span,
+                text: n.to_string(),
+            };
             *input = &input[1..];
             Ok(id)
         }
@@ -183,12 +235,7 @@ fn parse_profile_label(
 fn is_top_level_keyword(tok: &Token) -> bool {
     matches!(
         tok,
-        Token::Syntax
-            | Token::Def
-            | Token::Relation
-            | Token::Rule
-            | Token::Var
-            | Token::Grammar
+        Token::Syntax | Token::Def | Token::Relation | Token::Rule | Token::Var | Token::Grammar
     )
 }
 
@@ -312,32 +359,80 @@ fn parse_rule(file: FileId, input: &mut &[Spanned]) -> Result<RuleDecl, Diagnost
 /// by `-`, `/`, or `.` (so cases like `eq-any`, `ref.struct`, `i32.add`,
 /// `Foo/bar`, and `Heaptype_sub/def` all parse — keywords like `def`,
 /// `var`, `if` are accepted as path segments). Stops at any other token.
-fn parse_case_path(
-    input: &mut &[Spanned],
-    file: FileId,
-) -> Result<Ident, Diagnostic> {
+fn parse_case_path(input: &mut &[Spanned], file: FileId) -> Result<Ident, Diagnostic> {
     let mut text = String::new();
     let mut span: Option<Span> = None;
     loop {
         let (segment, sp) = match peek(input) {
-            Some(Spanned { token: Token::Ident(t), span: sp }) => (t.clone(), *sp),
-            Some(Spanned { token: Token::Nat(n), span: sp }) => (n.to_string(), *sp),
-            Some(Spanned { token: Token::Minus, span: sp }) => ("-".to_string(), *sp),
-            Some(Spanned { token: Token::Slash, span: sp }) => ("/".to_string(), *sp),
-            Some(Spanned { token: Token::Dot, span: sp }) => (".".to_string(), *sp),
+            Some(Spanned {
+                token: Token::Ident(t),
+                span: sp,
+            }) => (t.clone(), *sp),
+            Some(Spanned {
+                token: Token::Nat(n),
+                span: sp,
+            }) => (n.to_string(), *sp),
+            Some(Spanned {
+                token: Token::Minus,
+                span: sp,
+            }) => ("-".to_string(), *sp),
+            Some(Spanned {
+                token: Token::Slash,
+                span: sp,
+            }) => ("/".to_string(), *sp),
+            Some(Spanned {
+                token: Token::Dot,
+                span: sp,
+            }) => (".".to_string(), *sp),
             // Allow reserved keywords as path segments (`Heaptype_sub/def`).
-            Some(Spanned { token: Token::Syntax, span: sp }) => ("syntax".into(), *sp),
-            Some(Spanned { token: Token::Def, span: sp }) => ("def".into(), *sp),
-            Some(Spanned { token: Token::Relation, span: sp }) => ("relation".into(), *sp),
-            Some(Spanned { token: Token::Rule, span: sp }) => ("rule".into(), *sp),
-            Some(Spanned { token: Token::Var, span: sp }) => ("var".into(), *sp),
-            Some(Spanned { token: Token::Grammar, span: sp }) => ("grammar".into(), *sp),
-            Some(Spanned { token: Token::Hint, span: sp }) => ("hint".into(), *sp),
-            Some(Spanned { token: Token::If, span: sp }) => ("if".into(), *sp),
-            Some(Spanned { token: Token::Let, span: sp }) => ("let".into(), *sp),
-            Some(Spanned { token: Token::Else, span: sp }) => ("else".into(), *sp),
-            Some(Spanned { token: Token::Otherwise, span: sp }) => ("otherwise".into(), *sp),
-            Some(Spanned { token: Token::Eps, span: sp }) => ("eps".into(), *sp),
+            Some(Spanned {
+                token: Token::Syntax,
+                span: sp,
+            }) => ("syntax".into(), *sp),
+            Some(Spanned {
+                token: Token::Def,
+                span: sp,
+            }) => ("def".into(), *sp),
+            Some(Spanned {
+                token: Token::Relation,
+                span: sp,
+            }) => ("relation".into(), *sp),
+            Some(Spanned {
+                token: Token::Rule,
+                span: sp,
+            }) => ("rule".into(), *sp),
+            Some(Spanned {
+                token: Token::Var,
+                span: sp,
+            }) => ("var".into(), *sp),
+            Some(Spanned {
+                token: Token::Grammar,
+                span: sp,
+            }) => ("grammar".into(), *sp),
+            Some(Spanned {
+                token: Token::Hint,
+                span: sp,
+            }) => ("hint".into(), *sp),
+            Some(Spanned {
+                token: Token::If,
+                span: sp,
+            }) => ("if".into(), *sp),
+            Some(Spanned {
+                token: Token::Let,
+                span: sp,
+            }) => ("let".into(), *sp),
+            Some(Spanned {
+                token: Token::Else,
+                span: sp,
+            }) => ("else".into(), *sp),
+            Some(Spanned {
+                token: Token::Otherwise,
+                span: sp,
+            }) => ("otherwise".into(), *sp),
+            Some(Spanned {
+                token: Token::Eps,
+                span: sp,
+            }) => ("eps".into(), *sp),
             _ => break,
         };
         text.push_str(&segment);
@@ -549,7 +644,11 @@ fn body_span(b: &SyntaxBody) -> Span {
 /// it's a variant; if the leading body contains an unparenthesised
 /// top-level `Pipe` later, we treat it as variant too.
 fn parse_syntax_body(file: FileId, input: &mut &[Spanned]) -> Result<SyntaxBody, Diagnostic> {
-    if let Some(Spanned { token: Token::LBrace, .. }) = peek(input) {
+    if let Some(Spanned {
+        token: Token::LBrace,
+        ..
+    }) = peek(input)
+    {
         return parse_record_body(file, input);
     }
 
@@ -616,7 +715,11 @@ fn body_looks_like_variant(toks: &[Spanned]) -> bool {
 /// case-head (uppercase / leading-underscore). Mirrors the heuristic
 /// in `crate::elab::is_case_head`.
 fn body_starts_with_case_head(toks: &[Spanned]) -> bool {
-    let Some(Spanned { token: Token::Ident(n), .. }) = toks.first() else {
+    let Some(Spanned {
+        token: Token::Ident(n),
+        ..
+    }) = toks.first()
+    else {
         return false;
     };
     if n.len() < 2 {
@@ -626,7 +729,8 @@ fn body_starts_with_case_head(toks: &[Spanned]) -> bool {
     if !(first.is_ascii_uppercase() || first == b'_') {
         return false;
     }
-    n.bytes().all(|b| !b.is_ascii_alphabetic() || b.is_ascii_uppercase())
+    n.bytes()
+        .all(|b| !b.is_ascii_alphabetic() || b.is_ascii_uppercase())
 }
 
 /// Parse a record body `{ FIELD ty [hints*], FIELD ty [hints*], ... }`.
@@ -661,11 +765,17 @@ fn parse_record_body(file: FileId, input: &mut &[Spanned]) -> Result<SyntaxBody,
         }
 
         match peek(input) {
-            Some(Spanned { token: Token::Comma, .. }) => {
+            Some(Spanned {
+                token: Token::Comma,
+                ..
+            }) => {
                 *input = &input[1..];
                 continue;
             }
-            Some(Spanned { token: Token::RBrace, .. }) => {
+            Some(Spanned {
+                token: Token::RBrace,
+                ..
+            }) => {
                 *input = &input[1..];
                 let _ = lbrace_span; // captured for completeness
                 return Ok(SyntaxBody::Record(fields));
@@ -802,9 +912,7 @@ fn push_alt(slice: &[Spanned], alts: &mut Vec<Alt>) -> Result<(), Diagnostic> {
 
 /// Given the tokens for one alternative, peel any trailing `hint(...)`
 /// clauses off the end and return `(body_slice, hints)`.
-fn extract_trailing_hints(
-    slice: &[Spanned],
-) -> Result<(&[Spanned], Vec<HintAtom>), Diagnostic> {
+fn extract_trailing_hints(slice: &[Spanned]) -> Result<(&[Spanned], Vec<HintAtom>), Diagnostic> {
     // Walk from the end: a hint clause is `hint ( ... )` taking up
     // contiguous tokens including the keyword. We scan from the right
     // looking for `Hint LParen ... RParen` runs.
@@ -848,7 +956,10 @@ fn parse_def(file: FileId, input: &mut &[Spanned]) -> Result<Top, Diagnostic> {
     };
 
     match peek(input) {
-        Some(Spanned { token: Token::Colon, .. }) => {
+        Some(Spanned {
+            token: Token::Colon,
+            ..
+        }) => {
             *input = &input[1..];
             let ret_ty = take_def_ret_ty(input);
             let hints = parse_hints(input)?;
@@ -868,7 +979,9 @@ fn parse_def(file: FileId, input: &mut &[Spanned]) -> Result<Top, Diagnostic> {
                 hints,
             }))
         }
-        Some(Spanned { token: Token::Eq, .. }) => {
+        Some(Spanned {
+            token: Token::Eq, ..
+        }) => {
             *input = &input[1..];
             let (rhs, premises) = take_def_clause_rhs_and_premises(input);
             let mut span = kw_span.join(name.span);
@@ -890,19 +1003,23 @@ fn parse_def(file: FileId, input: &mut &[Spanned]) -> Result<Top, Diagnostic> {
         // Forward declaration: `def $NAME [hint(...)]*` followed by another
         // top-level form or end-of-input. Treated as a signature with no
         // return type (empty TokenRun).
-        Some(Spanned { token: Token::Hint, .. }) | None => {
+        Some(Spanned {
+            token: Token::Hint, ..
+        })
+        | None => {
             let hints = parse_hints(input)?;
             // Sanity: we should now be at EOF or a top-level keyword.
             if let Some(s) = peek(input)
-                && !is_top_level_keyword(&s.token) {
-                    return Err(Diagnostic::error(
-                        s.span,
-                        format!(
-                            "expected `:`, `=`, `hint(...)`, or next top-level form after `def $NAME`, found {}",
-                            s.token.describe()
-                        ),
-                    ));
-                }
+                && !is_top_level_keyword(&s.token)
+            {
+                return Err(Diagnostic::error(
+                    s.span,
+                    format!(
+                        "expected `:`, `=`, `hint(...)`, or next top-level form after `def $NAME`, found {}",
+                        s.token.describe()
+                    ),
+                ));
+            }
             let mut span = kw_span.join(name.span);
             for a in &args {
                 span = span.join(a.span);
@@ -968,15 +1085,19 @@ fn parse_paren_comma_list(
         return Ok(out);
     }
     loop {
-        let tr = take_until_paren_balanced(input, |t| {
-            matches!(t, Token::Comma | Token::RParen)
-        });
+        let tr = take_until_paren_balanced(input, |t| matches!(t, Token::Comma | Token::RParen));
         out.push(tr);
         match peek(input) {
-            Some(Spanned { token: Token::Comma, .. }) => {
+            Some(Spanned {
+                token: Token::Comma,
+                ..
+            }) => {
                 *input = &input[1..];
             }
-            Some(Spanned { token: Token::RParen, .. }) => {
+            Some(Spanned {
+                token: Token::RParen,
+                ..
+            }) => {
                 *input = &input[1..];
                 return Ok(out);
             }
@@ -997,10 +1118,7 @@ fn parse_paren_comma_list(
 /// Like [`take_until_top_level`] but does NOT stop at top-level keywords;
 /// only the `stop` predicate (at depth 0) terminates. Used for collecting
 /// argument-list entries, which can contain `syntax X` and similar.
-fn take_until_paren_balanced(
-    input: &mut &[Spanned],
-    stop: impl Fn(&Token) -> bool,
-) -> TokenRun {
+fn take_until_paren_balanced(input: &mut &[Spanned], stop: impl Fn(&Token) -> bool) -> TokenRun {
     let mut depth: i32 = 0;
     let mut span: Option<Span> = None;
     let mut tokens = Vec::new();
@@ -1032,8 +1150,7 @@ fn take_until_paren_balanced(
 /// After `def $NAME(args) :`, take the return type. Stops at `hint` or at
 /// the next top-level keyword.
 fn take_def_ret_ty(input: &mut &[Spanned]) -> TokenRun {
-    take_until_top_level(input, |t| matches!(t, Token::Hint))
-        .and_join_top_keyword_stop(input)
+    take_until_top_level(input, |t| matches!(t, Token::Hint)).and_join_top_keyword_stop(input)
 }
 
 /// After `def $NAME(args) =`, the RHS continues until either `--` (a
@@ -1043,7 +1160,11 @@ fn take_def_clause_rhs_and_premises(input: &mut &[Spanned]) -> (TokenRun, Vec<To
     let rhs = take_until_top_level(input, |t| matches!(t, Token::DashDash))
         .and_join_top_keyword_stop(input);
     let mut premises = Vec::new();
-    while let Some(Spanned { token: Token::DashDash, .. }) = peek(input) {
+    while let Some(Spanned {
+        token: Token::DashDash,
+        ..
+    }) = peek(input)
+    {
         *input = &input[1..];
         let prem = take_until_top_level(input, |t| matches!(t, Token::DashDash))
             .and_join_top_keyword_stop(input);
@@ -1055,10 +1176,7 @@ fn take_def_clause_rhs_and_premises(input: &mut &[Spanned]) -> (TokenRun, Vec<To
 /// Collect tokens until `stop(token)` returns true at paren-depth 0, or
 /// until we hit a top-level keyword that would start a new form (also at
 /// depth 0, and not preceded by `/`).
-fn take_until_top_level(
-    input: &mut &[Spanned],
-    stop: impl Fn(&Token) -> bool,
-) -> TokenRun {
+fn take_until_top_level(input: &mut &[Spanned], stop: impl Fn(&Token) -> bool) -> TokenRun {
     let mut depth: i32 = 0;
     let mut span: Option<Span> = None;
     let mut tokens = Vec::new();
@@ -1110,7 +1228,10 @@ impl TokenRunExt for TokenRun {
 
 fn parse_hints(input: &mut &[Spanned]) -> Result<Vec<HintAtom>, Diagnostic> {
     let mut out = Vec::new();
-    while let Some(Spanned { token: Token::Hint, .. }) = peek(input) {
+    while let Some(Spanned {
+        token: Token::Hint, ..
+    }) = peek(input)
+    {
         out.push(parse_hint(input)?);
     }
     Ok(out)
@@ -1118,7 +1239,10 @@ fn parse_hints(input: &mut &[Spanned]) -> Result<Vec<HintAtom>, Diagnostic> {
 
 fn parse_hint(input: &mut &[Spanned]) -> Result<HintAtom, Diagnostic> {
     let hint_span = match input.first() {
-        Some(Spanned { token: Token::Hint, span }) => {
+        Some(Spanned {
+            token: Token::Hint,
+            span,
+        }) => {
             let sp = *span;
             *input = &input[1..];
             sp
@@ -1239,13 +1363,21 @@ mod tests {
     #[test]
     fn syntax_variant_with_and_without_leading_pipe() {
         let with_pipe = parse_str("syntax addrtype = | I32 | I64").unwrap();
-        let Top::Syntax(s) = &with_pipe[0] else { panic!() };
-        let Some(SyntaxBody::Variant(alts)) = &s.body else { panic!() };
+        let Top::Syntax(s) = &with_pipe[0] else {
+            panic!()
+        };
+        let Some(SyntaxBody::Variant(alts)) = &s.body else {
+            panic!()
+        };
         assert_eq!(alts.len(), 2);
 
         let without_pipe = parse_str("syntax numtype = I32 | I64 | F32 | F64").unwrap();
-        let Top::Syntax(s) = &without_pipe[0] else { panic!() };
-        let Some(SyntaxBody::Variant(alts)) = &s.body else { panic!() };
+        let Top::Syntax(s) = &without_pipe[0] else {
+            panic!()
+        };
+        let Some(SyntaxBody::Variant(alts)) = &s.body else {
+            panic!()
+        };
         assert_eq!(alts.len(), 4);
     }
 
@@ -1254,10 +1386,16 @@ mod tests {
         let src = r#"syntax point = { X nat, Y nat }"#;
         let tops = parse_str(src).unwrap();
         let Top::Syntax(s) = &tops[0] else { panic!() };
-        let Some(SyntaxBody::Record(fields)) = &s.body else { panic!() };
+        let Some(SyntaxBody::Record(fields)) = &s.body else {
+            panic!()
+        };
         assert_eq!(fields.len(), 2);
-        let RecordSlot::Real(f0) = &fields[0] else { panic!() };
-        let RecordSlot::Real(f1) = &fields[1] else { panic!() };
+        let RecordSlot::Real(f0) = &fields[0] else {
+            panic!()
+        };
+        let RecordSlot::Real(f1) = &fields[1] else {
+            panic!()
+        };
         assert_eq!(f0.name.text, "X");
         assert_eq!(f1.name.text, "Y");
     }
@@ -1268,11 +1406,15 @@ mod tests {
         let tops = parse_str(src).unwrap();
         let Top::Syntax(s) = &tops[0] else { panic!() };
         assert_eq!(s.profile.as_ref().unwrap().text, "sem");
-        let Some(SyntaxBody::Record(fields)) = &s.body else { panic!() };
+        let Some(SyntaxBody::Record(fields)) = &s.body else {
+            panic!()
+        };
         // Two slots: the `...` Placeholder, then RECS.
         assert_eq!(fields.len(), 2);
         assert!(matches!(fields[0], RecordSlot::Placeholder));
-        let RecordSlot::Real(f1) = &fields[1] else { panic!() };
+        let RecordSlot::Real(f1) = &fields[1] else {
+            panic!()
+        };
         assert_eq!(f1.name.text, "RECS");
     }
 
@@ -1283,7 +1425,9 @@ mod tests {
         let Top::Syntax(s) = &tops[0] else { panic!() };
         assert_eq!(s.name.text, "fN");
         assert_eq!(s.params.len(), 1);
-        let Some(SyntaxBody::Variant(alts)) = &s.body else { panic!() };
+        let Some(SyntaxBody::Variant(alts)) = &s.body else {
+            panic!()
+        };
         assert_eq!(alts.len(), 2);
     }
 
@@ -1293,7 +1437,9 @@ mod tests {
         let tops = parse_str(src).unwrap();
         let Top::Syntax(s) = &tops[0] else { panic!() };
         assert_eq!(s.hints.len(), 1);
-        let Some(SyntaxBody::Variant(alts)) = &s.body else { panic!() };
+        let Some(SyntaxBody::Variant(alts)) = &s.body else {
+            panic!()
+        };
         assert_eq!(alts.len(), 2);
     }
 
@@ -1304,7 +1450,9 @@ mod tests {
             | NEG fNmag(N) hint(show $(-%))"#;
         let tops = parse_str(src).unwrap();
         let Top::Syntax(s) = &tops[0] else { panic!() };
-        let Some(SyntaxBody::Variant(alts)) = &s.body else { panic!() };
+        let Some(SyntaxBody::Variant(alts)) = &s.body else {
+            panic!()
+        };
         assert_eq!(alts.len(), 2);
         assert_eq!(alts[0].hints.len(), 1);
         assert_eq!(alts[1].hints.len(), 1);
@@ -1338,7 +1486,9 @@ mod tests {
     #[test]
     fn def_clause_no_premise() {
         let tops = parse_str("def $sum(eps) = 0").unwrap();
-        let Top::DefClause(d) = &tops[0] else { panic!() };
+        let Top::DefClause(d) = &tops[0] else {
+            panic!()
+        };
         assert_eq!(d.name.text, "sum");
         assert_eq!(d.arg_pats.len(), 1);
         assert!(d.premises.is_empty());
@@ -1351,7 +1501,9 @@ mod tests {
     fn def_clause_with_premises() {
         let src = r#"def $min(i, j) = i  -- if $(i <= j)"#;
         let tops = parse_str(src).unwrap();
-        let Top::DefClause(d) = &tops[0] else { panic!() };
+        let Top::DefClause(d) = &tops[0] else {
+            panic!()
+        };
         assert_eq!(d.premises.len(), 1);
     }
 
@@ -1359,7 +1511,9 @@ mod tests {
     fn def_clause_with_otherwise() {
         let src = r#"def $min(i, j) = j  -- otherwise"#;
         let tops = parse_str(src).unwrap();
-        let Top::DefClause(d) = &tops[0] else { panic!() };
+        let Top::DefClause(d) = &tops[0] else {
+            panic!()
+        };
         assert_eq!(d.premises.len(), 1);
     }
 
@@ -1492,7 +1646,9 @@ mod tests {
         let src = r#"syntax absheaptype/sem = | ... | BOT"#;
         let tops = parse_str(src).unwrap();
         let Top::Syntax(s) = &tops[0] else { panic!() };
-        let Some(SyntaxBody::Variant(alts)) = &s.body else { panic!() };
+        let Some(SyntaxBody::Variant(alts)) = &s.body else {
+            panic!()
+        };
         // Two alts: `...` and `BOT`.
         assert_eq!(alts.len(), 2);
     }

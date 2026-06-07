@@ -109,10 +109,8 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
 
     // Relations.
     for rel in &doc.relations {
-        let (_, hole_toks) = crate::elab::template_to_fragments_with_holes(
-            &rel.decl.template,
-            &ctx.type_names,
-        );
+        let (_, hole_toks) =
+            crate::elab::template_to_fragments_with_holes(&rel.decl.template, &ctx.type_names);
         let t = crate::ast_doc::relation_operand_type(&hole_toks, ctx);
         env.relations.insert(rel.name.clone(), t);
     }
@@ -182,16 +180,11 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
                             .is_some_and(|t| matches!(t.token, crate::token::Token::Dot));
                         if !is_compound_head
                             && let Some((_, _, hole_toks)) =
-                                crate::elab::alt_to_constructor_with_holes(
-                                    alt,
-                                    &ctx.type_names,
-                                )
+                                crate::elab::alt_to_constructor_with_holes(alt, &ctx.type_names)
                         {
                             let params: Vec<Typ> = hole_toks
                                 .iter()
-                                .map(|toks| {
-                                    crate::ast_doc::typ_expr_to_spectec(toks, ctx)
-                                })
+                                .map(|toks| crate::ast_doc::typ_expr_to_spectec(toks, ctx))
                                 .collect();
                             // Prefer the entry with more positional
                             // args when the same head appears in
@@ -261,8 +254,7 @@ pub fn build_env(doc: &Doc, ctx: &ElabContext) -> TypeEnv {
         if alts.len() != 1 {
             continue;
         }
-        let Some((_, holes)) =
-            crate::elab::alt_to_headless_with_holes(&alts[0], &ctx.type_names)
+        let Some((_, holes)) = crate::elab::alt_to_headless_with_holes(&alts[0], &ctx.type_names)
         else {
             continue;
         };
@@ -518,7 +510,13 @@ pub fn infer_exp(env: &TypeEnv, diags: &mut Diagnostics, e: Expr) -> (Expr, Typ)
                 });
             }
             let t = Typ::Tup { ets: binds };
-            (Expr::Tup { span, items: new_items }, t)
+            (
+                Expr::Tup {
+                    span,
+                    items: new_items,
+                },
+                t,
+            )
         }
         Expr::Un { span, op, ty: _, e } => {
             let (e, t_in) = infer_exp(env, diags, *e);
@@ -533,7 +531,13 @@ pub fn infer_exp(env: &TypeEnv, diags: &mut Diagnostics, e: Expr) -> (Expr, Typ)
                 t_out,
             )
         }
-        Expr::Bin { span, op, ty: _, e1, e2 } => {
+        Expr::Bin {
+            span,
+            op,
+            ty: _,
+            e1,
+            e2,
+        } => {
             let (e1, t1) = infer_exp(env, diags, *e1);
             let (e2, t2) = infer_exp(env, diags, *e2);
             let (op_ty, t_out) = infer_binop(&op, &t1, &t2);
@@ -548,7 +552,13 @@ pub fn infer_exp(env: &TypeEnv, diags: &mut Diagnostics, e: Expr) -> (Expr, Typ)
                 t_out,
             )
         }
-        Expr::Cmp { span, op, ty: _, e1, e2 } => {
+        Expr::Cmp {
+            span,
+            op,
+            ty: _,
+            e1,
+            e2,
+        } => {
             // Bidirectional inference: pick the more-specific side as
             // the expected type for the other. This routes `Eps`
             // against `T?` through the `Opt(None)` coercion, etc.
@@ -573,7 +583,12 @@ pub fn infer_exp(env: &TypeEnv, diags: &mut Diagnostics, e: Expr) -> (Expr, Typ)
                 Typ::Bool,
             )
         }
-        Expr::Iter { span, inner, kind, bindings } => {
+        Expr::Iter {
+            span,
+            inner,
+            kind,
+            bindings,
+        } => {
             let (inner, t_inner) = infer_exp(env, diags, *inner);
             let it = match &kind {
                 crate::elab::IterKind::Opt => ast::SpecTecIter::Opt,
@@ -616,7 +631,9 @@ pub fn infer_exp(env: &TypeEnv, diags: &mut Diagnostics, e: Expr) -> (Expr, Typ)
                     })
                     .collect()
             } else {
-                args.into_iter().map(|a| infer_exp(env, diags, a).0).collect()
+                args.into_iter()
+                    .map(|a| infer_exp(env, diags, a).0)
+                    .collect()
             };
             let t = sig.map(|s| s.ret).unwrap_or_else(unknown_typ);
             (
@@ -628,7 +645,12 @@ pub fn infer_exp(env: &TypeEnv, diags: &mut Diagnostics, e: Expr) -> (Expr, Typ)
                 t,
             )
         }
-        Expr::Case { span, head, args, op } => {
+        Expr::Case {
+            span,
+            head,
+            args,
+            op,
+        } => {
             let params = env.ctor_params.get(&head);
             let known_ctor = env.ctors.contains_key(&head);
             if !known_ctor {
@@ -645,7 +667,9 @@ pub fn infer_exp(env: &TypeEnv, diags: &mut Diagnostics, e: Expr) -> (Expr, Typ)
                     .map(|(a, expected)| check_exp_against(env, diags, a, expected))
                     .collect()
             } else {
-                args.into_iter().map(|a| infer_exp(env, diags, a).0).collect()
+                args.into_iter()
+                    .map(|a| infer_exp(env, diags, a).0)
+                    .collect()
             };
             let t = env.ctors.get(&head).cloned().unwrap_or_else(unknown_typ);
             (
@@ -732,9 +756,7 @@ fn infer_unop(op: &UnOp, t_in: &Typ) -> (OpType, Typ) {
 /// (`nat < int < rat < real`); logical operators are always `Bool`.
 fn infer_binop(op: &BinOp, t1: &Typ, t2: &Typ) -> (OpType, Typ) {
     match op {
-        BinOp::And | BinOp::Or | BinOp::Impl | BinOp::Equiv => {
-            (OpType::Bool, Typ::Bool)
-        }
+        BinOp::And | BinOp::Or | BinOp::Impl | BinOp::Equiv => (OpType::Bool, Typ::Bool),
         BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod | BinOp::Pow => {
             let op_ty = join_numeric(t1, t2);
             let result = optyp_to_typ(&op_ty);
@@ -751,7 +773,9 @@ fn infer_cmpop(op: &CmpOp, t1: &Typ, t2: &Typ) -> OpType {
         // `Bool` (since the result is Bool) but OCaml records the
         // operand type. Compromise: pick the operand type for `Eq`
         // / `Ne` if it's a recognised optype, else `Bool`.
-        CmpOp::Eq | CmpOp::Ne => typ_to_optyp(t1).or_else(|| typ_to_optyp(t2)).unwrap_or(OpType::Bool),
+        CmpOp::Eq | CmpOp::Ne => typ_to_optyp(t1)
+            .or_else(|| typ_to_optyp(t2))
+            .unwrap_or(OpType::Bool),
         CmpOp::Lt | CmpOp::Gt | CmpOp::Le | CmpOp::Ge => join_numeric(t1, t2),
     }
 }
@@ -834,12 +858,7 @@ impl RuleScope {
 
 /// Bidirectional check (with expected type), no scope recording.
 /// Convenience wrapper for callers that don't need to thread a scope.
-pub fn check_exp_against(
-    env: &TypeEnv,
-    diags: &mut Diagnostics,
-    e: Expr,
-    expected: &Typ,
-) -> Expr {
+pub fn check_exp_against(env: &TypeEnv, diags: &mut Diagnostics, e: Expr, expected: &Typ) -> Expr {
     let mut scope = RuleScope::default();
     check_exp_against_scope(env, diags, e, expected, &mut scope)
 }
@@ -858,7 +877,11 @@ fn try_split_juxtaposed<'a>(
 ) -> Option<Vec<&'a [crate::token::Spanned]>> {
     use crate::token::Token::*;
     if n == 0 {
-        return if toks.is_empty() { Some(Vec::new()) } else { None };
+        return if toks.is_empty() {
+            Some(Vec::new())
+        } else {
+            None
+        };
     }
     let mut chunks: Vec<&[crate::token::Spanned]> = Vec::with_capacity(n);
     let mut i = 0;
@@ -899,7 +922,11 @@ fn try_split_juxtaposed<'a>(
             return None;
         }
     }
-    if chunks.len() == n { Some(chunks) } else { None }
+    if chunks.len() == n {
+        Some(chunks)
+    } else {
+        None
+    }
 }
 
 /// Lower one juxtaposition chunk into an `Expr`. Mirrors the simple
@@ -907,22 +934,28 @@ fn try_split_juxtaposed<'a>(
 /// `Expr` rather than `SpecTecSym`. More complex shapes (binders,
 /// mixfix recognition inside chunks) fall through to `Raw` so the
 /// downstream typecheck can still attempt subtype coercion.
-fn mini_classify_chunk(
-    chunk: &[crate::token::Spanned],
-    span: crate::source::Span,
-) -> Expr {
+fn mini_classify_chunk(chunk: &[crate::token::Spanned], span: crate::source::Span) -> Expr {
     use crate::token::Token::*;
     if chunk.len() == 1 {
         return match &chunk[0].token {
-            Ident(n) => Expr::Var { span, name: n.clone() },
+            Ident(n) => Expr::Var {
+                span,
+                name: n.clone(),
+            },
             Nat(n) => Expr::Num {
                 span,
                 value: crate::elab::NumLit::Nat(n.clone()),
             },
-            Text(s) => Expr::Text { span, value: s.clone() },
+            Text(s) => Expr::Text {
+                span,
+                value: s.clone(),
+            },
             Eps => Expr::Eps { span },
             _ => Expr::Unelaborated {
-                tokens: crate::cst::TokenRun { span, tokens: chunk.to_vec() },
+                tokens: crate::cst::TokenRun {
+                    span,
+                    tokens: chunk.to_vec(),
+                },
                 reason: crate::elab::ElabGap::Unrecognised,
             },
         };
@@ -946,14 +979,20 @@ fn mini_classify_chunk(
             }];
             return Expr::Iter {
                 span,
-                inner: Box::new(Expr::Var { span, name: name.clone() }),
+                inner: Box::new(Expr::Var {
+                    span,
+                    name: name.clone(),
+                }),
                 kind,
                 bindings,
             };
         }
     }
     Expr::Unelaborated {
-        tokens: crate::cst::TokenRun { span, tokens: chunk.to_vec() },
+        tokens: crate::cst::TokenRun {
+            span,
+            tokens: chunk.to_vec(),
+        },
         reason: crate::elab::ElabGap::Unrecognised,
     }
 }
@@ -1103,7 +1142,10 @@ pub fn check_exp_against_scope(
                     check_exp_against_scope(env, diags, it.clone(), typ, scope)
                 })
                 .collect();
-            return Expr::Tup { span, items: new_items };
+            return Expr::Tup {
+                span,
+                items: new_items,
+            };
         }
     }
     // Special-case Eps against an Opt-iter expected type: lower to
@@ -1250,15 +1292,20 @@ pub fn sub_typ(env: &TypeEnv, t1: &Typ, t2: &Typ) -> bool {
         (Typ::Num(a), Typ::Num(b)) => num_promotes(a, b),
         // Variant subtype: `numtype <: valtype` etc., looked up in
         // the precomputed transitive-closure subtype map.
-        (Typ::Var { x: a, .. }, Typ::Var { x: b, .. }) => env
-            .subtypes
-            .get(a)
-            .is_some_and(|s| s.contains(b)),
+        (Typ::Var { x: a, .. }, Typ::Var { x: b, .. }) => {
+            env.subtypes.get(a).is_some_and(|s| s.contains(b))
+        }
         // T+ <: T* — a nonempty list is a list. Also T+ <: T?+ etc.
         // (any wider iter shape).
         (
-            Typ::Iter { t1: t1_inner, it: it1 },
-            Typ::Iter { t1: t2_inner, it: it2 },
+            Typ::Iter {
+                t1: t1_inner,
+                it: it1,
+            },
+            Typ::Iter {
+                t1: t2_inner,
+                it: it2,
+            },
         ) if it1.len() == 1 && it2.len() == 1 => {
             iter_widens(&it1[0], &it2[0]) && sub_typ(env, t1_inner, t2_inner)
         }
@@ -1303,10 +1350,7 @@ fn num_promotes(from: &ast::SpecTecNumTyp, to: &ast::SpecTecNumTyp) -> bool {
 /// `C''` both resolve to the type declared by `var C : ...`).
 fn lookup_var(env: &TypeEnv, name: &str) -> Typ {
     let base = metavar_base(name);
-    env.vars
-        .get(base)
-        .cloned()
-        .unwrap_or_else(unknown_typ)
+    env.vars.get(base).cloned().unwrap_or_else(unknown_typ)
 }
 
 /// Same algorithm as [`elab::metavar_base`], duplicated here so this
@@ -1416,15 +1460,24 @@ pub fn collect_var_names_in_expr(
                 collect_var_names_in_expr(a, order, seen);
             }
         }
-        Expr::Bin { e1, e2, .. } | Expr::Cmp { e1, e2, .. }
-        | Expr::Idx { e1, e2, .. } | Expr::Comp { e1, e2, .. }
-        | Expr::Mem { e1, e2, .. } | Expr::Cat { e1, e2, .. } => {
+        Expr::Bin { e1, e2, .. }
+        | Expr::Cmp { e1, e2, .. }
+        | Expr::Idx { e1, e2, .. }
+        | Expr::Comp { e1, e2, .. }
+        | Expr::Mem { e1, e2, .. }
+        | Expr::Cat { e1, e2, .. } => {
             collect_var_names_in_expr(e1, order, seen);
             collect_var_names_in_expr(e2, order, seen);
         }
-        Expr::Un { e, .. } | Expr::Len { e, .. } | Expr::Lift { e, .. }
-        | Expr::Unopt { e, .. } | Expr::Cvt { e, .. } | Expr::Sub { e, .. }
-        | Expr::Proj { e, .. } | Expr::Uncase { e, .. } | Expr::Dot { e, .. } => {
+        Expr::Un { e, .. }
+        | Expr::Len { e, .. }
+        | Expr::Lift { e, .. }
+        | Expr::Unopt { e, .. }
+        | Expr::Cvt { e, .. }
+        | Expr::Sub { e, .. }
+        | Expr::Proj { e, .. }
+        | Expr::Uncase { e, .. }
+        | Expr::Dot { e, .. } => {
             collect_var_names_in_expr(e, order, seen);
         }
         Expr::Slice { e1, e2, e3, .. } => {
@@ -1719,10 +1772,7 @@ mod tests {
                 value: crate::elab::NumLit::Nat(covalence_types::Nat::from(7u64)),
             },
         );
-        assert!(matches!(
-            t,
-            ast::SpecTecTyp::Num(ast::SpecTecNumTyp::Nat)
-        ));
+        assert!(matches!(t, ast::SpecTecTyp::Num(ast::SpecTecNumTyp::Nat)));
     }
 
     #[test]
@@ -1742,8 +1792,14 @@ mod tests {
             Expr::Tup {
                 span,
                 items: vec![
-                    Expr::Var { span, name: "C".to_string() },
-                    Expr::Var { span, name: "x".to_string() },
+                    Expr::Var {
+                        span,
+                        name: "C".to_string(),
+                    },
+                    Expr::Var {
+                        span,
+                        name: "x".to_string(),
+                    },
                 ],
             },
         );
@@ -1780,10 +1836,7 @@ mod tests {
         // Both operands typecheck; widening picks Int.
         let Expr::Bin { ty, .. } = e else { panic!() };
         assert!(matches!(ty, Some(OpType::Int)));
-        assert!(matches!(
-            t,
-            Typ::Num(ast::SpecTecNumTyp::Int)
-        ));
+        assert!(matches!(t, Typ::Num(ast::SpecTecNumTyp::Int)));
     }
 
     #[test]
@@ -1917,9 +1970,18 @@ mod tests {
         let (doc, ctx) = build(src);
         let env = build_env(&doc, &ctx);
         let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
-        let e = Expr::Var { span, name: "n".into() };
-        let actual = Typ::Var { x: "numtype".into(), as1: vec![] };
-        let expected = Typ::Var { x: "valtype".into(), as1: vec![] };
+        let e = Expr::Var {
+            span,
+            name: "n".into(),
+        };
+        let actual = Typ::Var {
+            x: "numtype".into(),
+            as1: vec![],
+        };
+        let expected = Typ::Var {
+            x: "valtype".into(),
+            as1: vec![],
+        };
         let result = coerce(&env, e, span, actual, expected);
         let Expr::Sub { from_ty, to_ty, .. } = &result else {
             panic!("expected Sub, got {result:?}");
@@ -1945,7 +2007,10 @@ mod tests {
         assert!(matches!(t, ast::SpecTecTyp::Bool));
         // Unknown var should also surface a diagnostic.
         assert!(
-            diags.errors.iter().any(|e| matches!(e, TypeError::UnknownVariable { name, .. } if name == "missing")),
+            diags
+                .errors
+                .iter()
+                .any(|e| matches!(e, TypeError::UnknownVariable { name, .. } if name == "missing")),
             "expected UnknownVariable diagnostic"
         );
     }
@@ -1985,31 +2050,28 @@ mod tests {
         let (doc, ctx) = build(src);
         let env = build_env(&doc, &ctx);
 
-        let toks = crate::lex::lex(
-            crate::source::FileId::new(0),
-            "(s; f)",
-        )
-        .unwrap();
+        let toks = crate::lex::lex(crate::source::FileId::new(0), "(s; f)").unwrap();
         let tr = crate::cst::TokenRun {
             span: crate::source::Span::new(crate::source::FileId::new(0), 0, 6),
             tokens: toks,
         };
         let _ = (&doc, &ctx); // build was needed for env; explicitly drop now.
-        let expected = Typ::Var { x: "state".into(), as1: vec![] };
+        let expected = Typ::Var {
+            x: "state".into(),
+            as1: vec![],
+        };
         let mut diags = Diagnostics::new();
-        let split = crate::ast_doc::try_split_headless_semi_expr(
-            &tr,
-            &ctx,
-            &env,
-            &mut diags,
-            &expected,
-        )
-        .expect("split should fire against state");
+        let split =
+            crate::ast_doc::try_split_headless_semi_expr(&tr, &ctx, &env, &mut diags, &expected)
+                .expect("split should fire against state");
         let Expr::Case { head, args, op, .. } = split else {
             panic!("expected Case");
         };
         assert_eq!(head, "state");
-        assert_eq!(op.as_deref().map(|p| p.to_vec()), Some(vec!["".to_string(), ";".to_string(), "".to_string()]));
+        assert_eq!(
+            op.as_deref().map(|p| p.to_vec()),
+            Some(vec!["".to_string(), ";".to_string(), "".to_string()])
+        );
         assert_eq!(args.len(), 2);
         assert!(matches!(&args[0], Expr::Var { name, .. } if name == "s"));
         assert!(matches!(&args[1], Expr::Var { name, .. } if name == "f"));

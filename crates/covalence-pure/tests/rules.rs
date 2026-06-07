@@ -47,10 +47,7 @@ fn assume_and_imp_intro_round_trip() {
 #[test]
 fn imp_elim_combines_hyps() {
     let phi = Term::eq(x_free(), x_free());
-    let psi = Term::eq(
-        Term::free("y", bytes_ty()),
-        Term::free("y", bytes_ty()),
-    );
+    let psi = Term::eq(Term::free("y", bytes_ty()), Term::free("y", bytes_ty()));
     // (φ ⟹ ψ) under hypothesis (φ ⟹ ψ)
     let impl_thm = Thm::assume(Term::imp(phi.clone(), psi.clone())).unwrap();
     // φ under hypothesis φ
@@ -130,4 +127,3 @@ fn type_of_catches_inconsistent_free_var() {
     );
     assert!(phi.type_of().is_err());
 }
-

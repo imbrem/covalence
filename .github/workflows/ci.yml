@@ -26,6 +26,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # covalence-wasm's pure_guest_integration tests shell out to
+          # `cargo build -p covalence-pure-test-guest --target wasm32-unknown-unknown`,
+          # so the target must be installed for the test job too.
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all
 

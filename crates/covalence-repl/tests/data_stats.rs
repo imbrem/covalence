@@ -17,9 +17,11 @@ use parquet::file::properties::WriterProperties;
 
 fn arrow_ipc_blob(rows: &[i32]) -> Vec<u8> {
     let schema = Arc::new(Schema::new(vec![Field::new("v", DataType::Int32, false)]));
-    let batch =
-        RecordBatch::try_new(schema.clone(), vec![Arc::new(Int32Array::from(rows.to_vec()))])
-            .unwrap();
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![Arc::new(Int32Array::from(rows.to_vec()))],
+    )
+    .unwrap();
     let mut buf = Vec::new();
     {
         let mut w = FileWriter::try_new(&mut buf, &schema).unwrap();
@@ -31,9 +33,11 @@ fn arrow_ipc_blob(rows: &[i32]) -> Vec<u8> {
 
 fn parquet_blob(rows: &[i32]) -> Vec<u8> {
     let schema = Arc::new(Schema::new(vec![Field::new("v", DataType::Int32, false)]));
-    let batch =
-        RecordBatch::try_new(schema.clone(), vec![Arc::new(Int32Array::from(rows.to_vec()))])
-            .unwrap();
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![Arc::new(Int32Array::from(rows.to_vec()))],
+    )
+    .unwrap();
     let mut buf = Vec::new();
     {
         let mut w = ArrowWriter::try_new(&mut buf, schema, Some(WriterProperties::new())).unwrap();

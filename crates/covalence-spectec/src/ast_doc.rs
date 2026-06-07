@@ -23,12 +23,11 @@
 //! type-checking is a separate pass over the elaborated AST and is
 //! deliberately not in scope for this module.
 
-use crate::cst::{GrammarDecl, RelationDecl, RuleDecl, SyntaxBody, Top, VarDecl, Alt, RecordField};
+use crate::cst::{Alt, GrammarDecl, RecordField, RelationDecl, RuleDecl, SyntaxBody, Top, VarDecl};
 use crate::elab::{
-    alt_to_constructor, alt_to_constructor_with_holes, alt_to_headless_with_holes,
-    elab_rule_conclusion, BinOp, CmpOp,
-    ElabContext, ElabPremise, Expr, IterBinding, IterKind, MergedProfile, MergedSyntax, NumLit,
-    NumTyp, OpType, Path as ElabPath, UnOp,
+    BinOp, CmpOp, ElabContext, ElabPremise, Expr, IterBinding, IterKind, MergedProfile,
+    MergedSyntax, NumLit, NumTyp, OpType, Path as ElabPath, UnOp, alt_to_constructor,
+    alt_to_constructor_with_holes, alt_to_headless_with_holes, elab_rule_conclusion,
 };
 use crate::source::Span;
 
@@ -148,9 +147,10 @@ pub fn build_doc(tops: &[Top], ctx: &ElabContext) -> Doc {
     }
     for t in tops {
         if let Top::Rule(r) = t
-            && let Some(&idx) = rel_idx.get(&r.name.text) {
-                doc.relations[idx].rules.push(r.clone());
-            }
+            && let Some(&idx) = rel_idx.get(&r.name.text)
+        {
+            doc.relations[idx].rules.push(r.clone());
+        }
     }
 
     // Defs: bucket clauses by name.
@@ -173,9 +173,10 @@ pub fn build_doc(tops: &[Top], ctx: &ElabContext) -> Doc {
     }
     for t in tops {
         if let Top::DefClause(c) = t
-            && let Some(&idx) = def_idx.get(&c.name.text) {
-                doc.defs[idx].clauses.push(c.clone());
-            }
+            && let Some(&idx) = def_idx.get(&c.name.text)
+        {
+            doc.defs[idx].clauses.push(c.clone());
+        }
     }
 
     doc
@@ -251,10 +252,8 @@ fn to_spectec_ast_flat(
     // synthesised from the template's hole-type slices.
     for rel in &doc.relations {
         let mixop = mixop_for(&rel.name, ctx);
-        let (_, hole_toks) = crate::elab::template_to_fragments_with_holes(
-            &rel.decl.template,
-            &ctx.type_names,
-        );
+        let (_, hole_toks) =
+            crate::elab::template_to_fragments_with_holes(&rel.decl.template, &ctx.type_names);
         let t = relation_operand_type(&hole_toks, ctx);
         let rules = rel
             .rules
@@ -264,8 +263,7 @@ fn to_spectec_ast_flat(
                 let (e, prs, rule_ps) = match elab {
                     Some(elab) => {
                         let mut scope = crate::typecheck::RuleScope::default();
-                        let expected: Vec<spectec_ast::SpecTecTyp> =
-                            extract_tup_element_types(&t);
+                        let expected: Vec<spectec_ast::SpecTecTyp> = extract_tup_element_types(&t);
                         let typed_operands: Vec<Expr> = elab
                             .operands
                             .into_iter()
@@ -280,7 +278,9 @@ fn to_spectec_ast_flat(
                         let typed_premises: Vec<ElabPremise> = elab
                             .premises
                             .into_iter()
-                            .map(|p| crate::typecheck::check_premise_scope(env, diags, p, &mut scope))
+                            .map(|p| {
+                                crate::typecheck::check_premise_scope(env, diags, p, &mut scope)
+                            })
                             .collect();
                         let rule_ps = crate::typecheck::collect_rule_params(
                             env,
@@ -407,10 +407,7 @@ fn to_spectec_ast_flat(
 
 /// Lower a raw token run through the same expression-classification
 /// pipeline elaboration uses, then through `expr_to_spectec`.
-fn token_run_to_expr(
-    tr: &crate::cst::TokenRun,
-    ctx: &ElabContext,
-) -> spectec_ast::SpecTecExp {
+fn token_run_to_expr(tr: &crate::cst::TokenRun, ctx: &ElabContext) -> spectec_ast::SpecTecExp {
     if tr.tokens.is_empty() {
         return raw_sentinel();
     }
@@ -545,8 +542,14 @@ fn strip_outer_parens(toks: &[crate::token::Spanned]) -> &[crate::token::Spanned
     if toks.len() < 2 {
         return toks;
     }
-    let first = matches!(toks.first().map(|s| &s.token), Some(crate::token::Token::LParen));
-    let last = matches!(toks.last().map(|s| &s.token), Some(crate::token::Token::RParen));
+    let first = matches!(
+        toks.first().map(|s| &s.token),
+        Some(crate::token::Token::LParen)
+    );
+    let last = matches!(
+        toks.last().map(|s| &s.token),
+        Some(crate::token::Token::RParen)
+    );
     if !first || !last {
         return toks;
     }
@@ -764,10 +767,7 @@ pub fn expr_to_spectec(e: &Expr, ctx: &ElabContext) -> spectec_ast::SpecTecExp {
                     String::new(),
                     String::new(),
                 ]);
-                let resulttype_op = spectec_ast::MixOp::new(vec![
-                    String::new(),
-                    String::new(),
-                ]);
+                let resulttype_op = spectec_ast::MixOp::new(vec![String::new(), String::new()]);
                 let wrap_resulttype = |inner: spectec_ast::SpecTecExp| -> spectec_ast::SpecTecExp {
                     S::Case {
                         op: resulttype_op.clone(),
@@ -853,7 +853,9 @@ pub fn expr_to_spectec(e: &Expr, ctx: &ElabContext) -> spectec_ast::SpecTecExp {
             nt2: num_typ_to_spectec(to),
             e1: Box::new(expr_to_spectec(e, ctx)),
         },
-        Expr::Sub { e, from_ty, to_ty, .. } => S::Sub {
+        Expr::Sub {
+            e, from_ty, to_ty, ..
+        } => S::Sub {
             t1: from_ty.clone(),
             t2: to_ty.clone(),
             e1: Box::new(expr_to_spectec(e, ctx)),
@@ -948,7 +950,12 @@ fn clause_ps(
         // inner Var against its arg-type so the per-clause `ps`
         // names get the right type (`s : store`, `f : frame`),
         // matching OCaml's `Clause.ps` shape.
-        if let crate::elab::Expr::Case { head, args, op: Some(_), .. } = &expr
+        if let crate::elab::Expr::Case {
+            head,
+            args,
+            op: Some(_),
+            ..
+        } = &expr
             && let Some(arg_types) = env.headless_semi.get(head)
             && args.len() == arg_types.len()
         {
@@ -974,7 +981,11 @@ fn clause_ps(
         .into_iter()
         .map(|name| {
             let (base, suffix) = crate::typecheck::strip_iter_suffix(&name);
-            let lookup_name = if suffix.is_empty() { name.as_str() } else { base };
+            let lookup_name = if suffix.is_empty() {
+                name.as_str()
+            } else {
+                base
+            };
             let wrap = |t: spectec_ast::SpecTecTyp| {
                 if suffix.is_empty() {
                     t
@@ -1294,9 +1305,13 @@ fn syntax_params_to_specs(
     for tr in params_runs {
         // Strip the surrounding parens.
         let toks = &tr.tokens;
-        let inner = if matches!(toks.first().map(|s| &s.token), Some(crate::token::Token::LParen))
-            && matches!(toks.last().map(|s| &s.token), Some(crate::token::Token::RParen))
-        {
+        let inner = if matches!(
+            toks.first().map(|s| &s.token),
+            Some(crate::token::Token::LParen)
+        ) && matches!(
+            toks.last().map(|s| &s.token),
+            Some(crate::token::Token::RParen)
+        ) {
             &toks[1..toks.len() - 1]
         } else {
             &toks[..]
@@ -1325,11 +1340,24 @@ pub fn chunk_to_syntax_param(chunk: &[crate::token::Spanned]) -> Option<spectec_
         return None;
     }
     // `syntax X`
-    if let [Spanned { token: Syntax, .. }, Spanned { token: Ident(n), .. }] = chunk {
+    if let [
+        Spanned { token: Syntax, .. },
+        Spanned {
+            token: Ident(n), ..
+        },
+    ] = chunk
+    {
         return Some(spectec_ast::SpecTecParam::Typ { x: n.clone() });
     }
     // `gram NAME [: T]`
-    if let [Spanned { token: Grammar, .. }, Spanned { token: Ident(n), .. }, rest @ ..] = chunk {
+    if let [
+        Spanned { token: Grammar, .. },
+        Spanned {
+            token: Ident(n), ..
+        },
+        rest @ ..,
+    ] = chunk
+    {
         let t = match rest {
             [Spanned { token: Colon, .. }, ty @ ..] => placeholder_typ_for_chunk(ty),
             [] => placeholder_typ(),
@@ -1338,7 +1366,15 @@ pub fn chunk_to_syntax_param(chunk: &[crate::token::Spanned]) -> Option<spectec_
         return Some(spectec_ast::SpecTecParam::Gram { x: n.clone(), t });
     }
     // `def $NAME [(args)] [: T]`
-    if let [Spanned { token: Def, .. }, Spanned { token: Dollar, .. }, Spanned { token: Ident(n), .. }, rest @ ..] = chunk {
+    if let [
+        Spanned { token: Def, .. },
+        Spanned { token: Dollar, .. },
+        Spanned {
+            token: Ident(n), ..
+        },
+        rest @ ..,
+    ] = chunk
+    {
         let mut cursor = rest;
         let mut ps_specs: Vec<spectec_ast::SpecTecParam> = Vec::new();
         // Optional `(args)`.
@@ -1365,7 +1401,14 @@ pub fn chunk_to_syntax_param(chunk: &[crate::token::Spanned]) -> Option<spectec_
         });
     }
     // `X : T` (name followed by colon and type).
-    if let [Spanned { token: Ident(n), .. }, Spanned { token: Colon, .. }, ty @ ..] = chunk {
+    if let [
+        Spanned {
+            token: Ident(n), ..
+        },
+        Spanned { token: Colon, .. },
+        ty @ ..,
+    ] = chunk
+    {
         return Some(spectec_ast::SpecTecParam::Exp {
             x: n.clone(),
             t: placeholder_typ_for_chunk(ty),
@@ -1376,7 +1419,12 @@ pub fn chunk_to_syntax_param(chunk: &[crate::token::Spanned]) -> Option<spectec_
     // — `X` is then resolved to `nat` etc. via its syntax decl).
     // Explicit type params come from `syntax X` syntactic form,
     // handled above.
-    if let [Spanned { token: Ident(n), .. }] = chunk {
+    if let [
+        Spanned {
+            token: Ident(n), ..
+        },
+    ] = chunk
+    {
         return Some(spectec_ast::SpecTecParam::Exp {
             x: n.clone(),
             t: typ_var(n.clone()),
@@ -1411,7 +1459,12 @@ pub fn typ_expr_to_spectec_no_ctx(toks: &[crate::token::Spanned]) -> spectec_ast
     if toks.is_empty() {
         return T::Bool;
     }
-    if let [Spanned { token: Ident(n), .. }] = toks {
+    if let [
+        Spanned {
+            token: Ident(n), ..
+        },
+    ] = toks
+    {
         return match n.as_str() {
             "nat" => T::Num(spectec_ast::SpecTecNumTyp::Nat),
             "int" => T::Num(spectec_ast::SpecTecNumTyp::Int),
@@ -1419,7 +1472,10 @@ pub fn typ_expr_to_spectec_no_ctx(toks: &[crate::token::Spanned]) -> spectec_ast
             "real" => T::Num(spectec_ast::SpecTecNumTyp::Real),
             "bool" => T::Bool,
             "text" => T::Text,
-            _ => T::Var { x: n.clone(), as1: Vec::new() },
+            _ => T::Var {
+                x: n.clone(),
+                as1: Vec::new(),
+            },
         };
     }
     // Trailing iter suffix.
@@ -1584,7 +1640,10 @@ fn inst_for_profile(
 
 /// If the alt is a single ident matching a declared syntax name (a
 /// type-inclusion alt like `| numtype`), return that target name.
-fn type_inclusion_target(alt: &Alt, type_names: &std::collections::HashSet<String>) -> Option<String> {
+fn type_inclusion_target(
+    alt: &Alt,
+    type_names: &std::collections::HashSet<String>,
+) -> Option<String> {
     let toks = &alt.body.tokens;
     if toks.len() != 1 {
         return None;
@@ -1798,7 +1857,9 @@ fn try_pattern_literal_variant(alts: &[Alt]) -> Option<spectec_ast::SpecTecTypCa
     let bool_t = SpecTecOpTyp::Bool(SpecTecBoolTyp::Bool);
     let nat_t = SpecTecOpTyp::Num(SpecTecNumTyp::Nat);
     let var_i = || SpecTecExp::Var { id: binder.clone() };
-    let lit = |n: u64| SpecTecExp::Num { n: SpecTecNum::Nat(n) };
+    let lit = |n: u64| SpecTecExp::Num {
+        n: SpecTecNum::Nat(n),
+    };
     let seg_exp = |s: &Segment| match *s {
         Segment::Single(n) => SpecTecExp::Cmp {
             op: SpecTecCmpOp::Eq,
@@ -1892,10 +1953,7 @@ fn mixop_from_typcase_fragments(frags: &[crate::mixfix::Fragment]) -> spectec_as
     spectec_ast::MixOp::new(parts)
 }
 
-fn record_field_to_typfield(
-    f: &RecordField,
-    ctx: &ElabContext,
-) -> spectec_ast::SpecTecTypField {
+fn record_field_to_typfield(f: &RecordField, ctx: &ElabContext) -> spectec_ast::SpecTecTypField {
     spectec_ast::SpecTecTypField::Field {
         at: mixop_from_name(&f.name.text),
         t: typ_expr_to_spectec(&f.ty.tokens, ctx),
@@ -1946,21 +2004,22 @@ pub fn typ_expr_to_spectec(
     }
     // Singleton type-name ident.
     if toks.len() == 1
-        && let Ident(n) = &toks[0].token {
-            return match n.as_str() {
-                "nat" => T::Num(spectec_ast::SpecTecNumTyp::Nat),
-                "int" => T::Num(spectec_ast::SpecTecNumTyp::Int),
-                "rat" => T::Num(spectec_ast::SpecTecNumTyp::Rat),
-                "real" => T::Num(spectec_ast::SpecTecNumTyp::Real),
-                "bool" => T::Bool,
-                "text" => T::Text,
-                _ if ctx.type_names.contains(n) => T::Var {
-                    x: n.clone(),
-                    as1: Vec::new(),
-                },
-                _ => T::Bool,
-            };
-        }
+        && let Ident(n) = &toks[0].token
+    {
+        return match n.as_str() {
+            "nat" => T::Num(spectec_ast::SpecTecNumTyp::Nat),
+            "int" => T::Num(spectec_ast::SpecTecNumTyp::Int),
+            "rat" => T::Num(spectec_ast::SpecTecNumTyp::Rat),
+            "real" => T::Num(spectec_ast::SpecTecNumTyp::Real),
+            "bool" => T::Bool,
+            "text" => T::Text,
+            _ if ctx.type_names.contains(n) => T::Var {
+                x: n.clone(),
+                as1: Vec::new(),
+            },
+            _ => T::Bool,
+        };
+    }
     // Trailing `*`/`?`/`+` iter suffix.
     if toks.len() >= 2 {
         let last = &toks.last().unwrap().token;
@@ -1979,7 +2038,9 @@ pub fn typ_expr_to_spectec(
         }
     }
     // Parametric type use: `Ident ( args )` covering the entire slice.
-    if let Some(Spanned { token: Ident(n), .. }) = toks.first()
+    if let Some(Spanned {
+        token: Ident(n), ..
+    }) = toks.first()
         && toks.len() >= 3
         && matches!(toks.get(1).map(|s| &s.token), Some(LParen))
         && matches!(toks.last().map(|s| &s.token), Some(RParen))
@@ -1997,29 +2058,23 @@ pub fn typ_expr_to_spectec(
             let arg_specs: Vec<spectec_ast::SpecTecArg> = arg_chunks
                 .iter()
                 .enumerate()
-                .map(|(i, chunk)| {
-                    match kinds.and_then(|ks| ks.get(i)) {
-                        Some(crate::elab::ParamKind::Typ) => {
-                            spectec_ast::SpecTecArg::Typ {
-                                t: typ_expr_to_spectec(chunk, ctx),
-                            }
-                        }
-                        _ => {
-                            let tr = crate::cst::TokenRun {
-                                span: chunk
-                                    .iter()
-                                    .map(|s| s.span)
-                                    .reduce(crate::source::Span::join)
-                                    .unwrap_or_else(|| crate::source::Span::new(
-                                        crate::source::FileId::new(0),
-                                        0,
-                                        0,
-                                    )),
-                                tokens: chunk.to_vec(),
-                            };
-                            spectec_ast::SpecTecArg::Exp {
-                                e: token_run_to_expr(&tr, ctx),
-                            }
+                .map(|(i, chunk)| match kinds.and_then(|ks| ks.get(i)) {
+                    Some(crate::elab::ParamKind::Typ) => spectec_ast::SpecTecArg::Typ {
+                        t: typ_expr_to_spectec(chunk, ctx),
+                    },
+                    _ => {
+                        let tr = crate::cst::TokenRun {
+                            span: chunk
+                                .iter()
+                                .map(|s| s.span)
+                                .reduce(crate::source::Span::join)
+                                .unwrap_or_else(|| {
+                                    crate::source::Span::new(crate::source::FileId::new(0), 0, 0)
+                                }),
+                            tokens: chunk.to_vec(),
+                        };
+                        spectec_ast::SpecTecArg::Exp {
+                            e: token_run_to_expr(&tr, ctx),
                         }
                     }
                 })
@@ -2075,9 +2130,7 @@ pub(crate) fn lower_typ_for_test(
 /// Lower the type of a variant alternative's arguments. Returns the
 /// single arg type or a `Tup` of multiple arg types.
 fn typ_expr_to_spectec_args(alt: &Alt, ctx: &ElabContext) -> spectec_ast::SpecTecTyp {
-    let hole_toks = if let Some((_, _, h)) =
-        alt_to_constructor_with_holes(alt, &ctx.type_names)
-    {
+    let hole_toks = if let Some((_, _, h)) = alt_to_constructor_with_holes(alt, &ctx.type_names) {
         h
     } else if let Some((_, h)) = alt_to_headless_with_holes(alt, &ctx.type_names) {
         h
@@ -2210,10 +2263,17 @@ fn split_grammar_prods(
             // Replace the previously-emitted prod for `chunks[i-1]`
             // with a single Range prod spanning `prev .. next`.
             prods.pop();
-            prods.push(make_range_prod(chunks[i - 1], chunks[i + 1], ctx, body.span));
+            prods.push(make_range_prod(
+                chunks[i - 1],
+                chunks[i + 1],
+                ctx,
+                body.span,
+            ));
             i += 2; // skip the `...` and the upper-bound chunk
         } else {
-            prods.push(chunk_to_prod(chunks[i], ctx, body.span, env, diags, yield_ty));
+            prods.push(chunk_to_prod(
+                chunks[i], ctx, body.span, env, diags, yield_ty,
+            ));
             i += 1;
         }
     }
@@ -2401,7 +2461,7 @@ fn make_range_prod(
 
 /// Split a grammar body on top-level `|`. Empty chunks are dropped.
 fn split_top_level_pipe(toks: &[crate::token::Spanned]) -> Vec<&[crate::token::Spanned]> {
-    use crate::token::{at_top_level, Token};
+    use crate::token::{Token, at_top_level};
     let mut out = Vec::new();
     let mut start = 0usize;
     for (i, t) in at_top_level(toks) {
@@ -2424,7 +2484,7 @@ fn split_top_level_pipe(toks: &[crate::token::Spanned]) -> Vec<&[crate::token::S
 fn split_grammar_arrow(
     toks: &[crate::token::Spanned],
 ) -> (&[crate::token::Spanned], Option<&[crate::token::Spanned]>) {
-    use crate::token::{at_top_level, Token};
+    use crate::token::{Token, at_top_level};
     for (i, t) in at_top_level(toks) {
         if matches!(t.token, Token::Eq)
             && matches!(toks.get(i + 1).map(|s| &s.token), Some(Token::GreaterThan))
@@ -2473,7 +2533,9 @@ fn grammar_sym_from_tokens(
     let gs = chunks
         .into_iter()
         .filter(|c| !c.is_empty())
-        .map(|c| S::Seq { gs: vec![chunk_to_atom(c, ctx)] })
+        .map(|c| S::Seq {
+            gs: vec![chunk_to_atom(c, ctx)],
+        })
         .collect();
     S::Seq { gs }
 }
@@ -2529,17 +2591,13 @@ fn end_of_atom(toks: &[crate::token::Spanned], start: usize) -> usize {
     // Trailing iter suffix attaches to whatever the leader is, as long
     // as it can sensibly iterate — a paren group or a bare ident.
     let lead_takes_iter = matches!(lead, LParen | Ident(_));
-    if lead_takes_iter
-        && matches!(toks.get(j).map(|s| &s.token), Some(Star | Question | Plus))
-    {
+    if lead_takes_iter && matches!(toks.get(j).map(|s| &s.token), Some(Star | Question | Plus)) {
         j += 1;
     }
     // Binder: `Ident [iter]? Colon <atom>`. Only triggers when the
     // leading token is an Ident; the iter suffix has already been
     // consumed above when present.
-    if matches!(lead, Ident(_))
-        && matches!(toks.get(j).map(|s| &s.token), Some(Colon))
-    {
+    if matches!(lead, Ident(_)) && matches!(toks.get(j).map(|s| &s.token), Some(Colon)) {
         j += 1;
         if j < toks.len() {
             j = end_of_atom(toks, j);
@@ -2579,10 +2637,7 @@ fn find_matching_rparen(toks: &[crate::token::Spanned], start: usize) -> usize {
 /// TODO: dom annotations (`xes`) on `Iter` — currently `[]`, which
 /// matches the structural sym shape but leaves binder-domain info
 /// missing.
-fn chunk_to_atom(
-    chunk: &[crate::token::Spanned],
-    ctx: &ElabContext,
-) -> spectec_ast::SpecTecSym {
+fn chunk_to_atom(chunk: &[crate::token::Spanned], ctx: &ElabContext) -> spectec_ast::SpecTecSym {
     use crate::token::Token::*;
     use spectec_ast::SpecTecSym as S;
     if chunk.is_empty() {
@@ -2621,7 +2676,11 @@ fn chunk_to_atom(
         match &chunk[0].token {
             Eps => return S::Eps,
             Ident(n) => return grammar_var(n),
-            Nat(n) => return S::Num { n: nat_to_i64_clamped(n) },
+            Nat(n) => {
+                return S::Num {
+                    n: nat_to_i64_clamped(n),
+                };
+            }
             Text(t) => return S::Text { t: t.clone() },
             _ => {}
         }
@@ -2650,7 +2709,10 @@ fn grammar_var(name: impl Into<String>) -> spectec_ast::SpecTecSym {
 /// `SpecTecSym::Iter { g1: inner, it, xes: [] }`. `xes` (the
 /// binder-domain annotation) is deferred — see the section
 /// preamble for the TODO.
-fn iter_sym(inner: spectec_ast::SpecTecSym, it: spectec_ast::SpecTecIter) -> spectec_ast::SpecTecSym {
+fn iter_sym(
+    inner: spectec_ast::SpecTecSym,
+    it: spectec_ast::SpecTecIter,
+) -> spectec_ast::SpecTecSym {
     spectec_ast::SpecTecSym::Iter {
         g1: Box::new(inner),
         it,
@@ -2813,13 +2875,21 @@ fn referenced_names(d: &spectec_ast::SpecTecDef) -> std::collections::HashSet<St
             E::Var { id } => {
                 out.insert(id.clone());
             }
-            E::Bin { e1, e2, .. } | E::Cmp { e1, e2, .. } | E::Idx { e1, e2, .. }
-            | E::Comp { e1, e2, .. } | E::Mem { e1, e2, .. } | E::Cat { e1, e2, .. } => {
+            E::Bin { e1, e2, .. }
+            | E::Cmp { e1, e2, .. }
+            | E::Idx { e1, e2, .. }
+            | E::Comp { e1, e2, .. }
+            | E::Mem { e1, e2, .. }
+            | E::Cat { e1, e2, .. } => {
                 walk_exp(e1, out);
                 walk_exp(e2, out);
             }
-            E::Un { e2, .. } | E::Len { e1: e2, .. } | E::Lift { e1: e2, .. }
-            | E::Unopt { e1: e2, .. } | E::Cvt { e1: e2, .. } | E::Sub { e1: e2, .. } => {
+            E::Un { e2, .. }
+            | E::Len { e1: e2, .. }
+            | E::Lift { e1: e2, .. }
+            | E::Unopt { e1: e2, .. }
+            | E::Cvt { e1: e2, .. }
+            | E::Sub { e1: e2, .. } => {
                 walk_exp(e2, out);
             }
             E::Slice { e1, e2, e3, .. } => {
@@ -3029,7 +3099,13 @@ fn tarjan_scc(deps: &[Vec<usize>]) -> Vec<Vec<usize>> {
     for v in 0..n {
         if indices[v] == usize::MAX {
             strong_connect(
-                v, deps, &mut indices, &mut lowlinks, &mut on_stack, &mut stack, &mut index,
+                v,
+                deps,
+                &mut indices,
+                &mut lowlinks,
+                &mut on_stack,
+                &mut stack,
+                &mut index,
                 &mut out,
             );
         }
@@ -3217,7 +3293,10 @@ mod tests {
         };
         let spectec_ast::SpecTecTypBind::Bind { id, typ } = &ets[0];
         assert_eq!(id, "i");
-        assert!(matches!(typ, spectec_ast::SpecTecTyp::Num(spectec_ast::SpecTecNumTyp::Nat)));
+        assert!(matches!(
+            typ,
+            spectec_ast::SpecTecTyp::Num(spectec_ast::SpecTecNumTyp::Nat)
+        ));
         assert_eq!(prs.len(), 1);
         let spectec_ast::SpecTecPrem::If { e } = &prs[0] else {
             panic!("expected If premise");
@@ -3225,7 +3304,10 @@ mod tests {
         // Body should be Or(Eq, Eq).
         assert!(matches!(
             e,
-            spectec_ast::SpecTecExp::Bin { op: spectec_ast::SpecTecBinOp::Or, .. }
+            spectec_ast::SpecTecExp::Bin {
+                op: spectec_ast::SpecTecBinOp::Or,
+                ..
+            }
         ));
     }
 
@@ -3258,14 +3340,19 @@ mod tests {
         let spectec_ast::SpecTecExp::Cmp { op: ge, .. } = e1.as_ref() else {
             panic!("expected Cmp Ge");
         };
-        let spectec_ast::SpecTecExp::Cmp { op: le, e2: le_rhs, .. } = e2.as_ref() else {
+        let spectec_ast::SpecTecExp::Cmp {
+            op: le, e2: le_rhs, ..
+        } = e2.as_ref()
+        else {
             panic!("expected Cmp Le");
         };
         assert!(matches!(ge, spectec_ast::SpecTecCmpOp::Ge));
         assert!(matches!(le, spectec_ast::SpecTecCmpOp::Le));
         assert!(matches!(
             le_rhs.as_ref(),
-            spectec_ast::SpecTecExp::Num { n: spectec_ast::SpecTecNum::Nat(255) }
+            spectec_ast::SpecTecExp::Num {
+                n: spectec_ast::SpecTecNum::Nat(255)
+            }
         ));
     }
 
@@ -3303,7 +3390,9 @@ mod tests {
         };
         assert!(matches!(
             lo_bound.as_ref(),
-            spectec_ast::SpecTecExp::Num { n: spectec_ast::SpecTecNum::Nat(55295) }
+            spectec_ast::SpecTecExp::Num {
+                n: spectec_ast::SpecTecNum::Nat(55295)
+            }
         ));
         let spectec_ast::SpecTecExp::Bin { e2: hi_le, .. } = e2.as_ref() else {
             panic!("expected And on upper range");
@@ -3313,7 +3402,9 @@ mod tests {
         };
         assert!(matches!(
             hi_bound.as_ref(),
-            spectec_ast::SpecTecExp::Num { n: spectec_ast::SpecTecNum::Nat(1114111) }
+            spectec_ast::SpecTecExp::Num {
+                n: spectec_ast::SpecTecNum::Nat(1114111)
+            }
         ));
     }
 
@@ -3340,7 +3431,10 @@ mod tests {
         };
         assert!(matches!(
             e,
-            spectec_ast::SpecTecExp::Cmp { op: spectec_ast::SpecTecCmpOp::Eq, .. }
+            spectec_ast::SpecTecExp::Cmp {
+                op: spectec_ast::SpecTecCmpOp::Eq,
+                ..
+            }
         ));
     }
 }

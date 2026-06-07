@@ -100,10 +100,7 @@ async fn embedded_manifest_round_trips_through_wasm_store() {
 
     // 3. The execution path still works — manifest section does not
     //    perturb the wasm body.
-    let got = store
-        .get(&hash.as_bytes().to_vec())
-        .await
-        .expect("get");
+    let got = store.get(&hash.as_bytes().to_vec()).await.expect("get");
     assert_eq!(got, Bytes::copy_from_slice(blob));
 }
 
@@ -147,8 +144,5 @@ async fn key_wrong_length_does_not_match() {
 
     let short = vec![0u8; 16];
     assert!(!store.contains(&short).await.unwrap());
-    assert!(matches!(
-        store.get(&short).await,
-        Err(StoreError::NotFound)
-    ));
+    assert!(matches!(store.get(&short).await, Err(StoreError::NotFound)));
 }

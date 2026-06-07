@@ -9,9 +9,7 @@ use std::collections::HashMap;
 
 use crate::bridge::EgglogBridge;
 use crate::error::BridgeError;
-use crate::proof::{
-    Justification, Proof, ProofId, ProofStore, TermDag, topological_order,
-};
+use crate::proof::{Justification, Proof, ProofId, ProofStore, TermDag, topological_order};
 
 /// Drive a bridge through the proof DAG rooted at `root`.
 ///
@@ -27,9 +25,7 @@ pub fn ingest_proof_store<B: EgglogBridge>(
     let mut thms: HashMap<ProofId, B::Thm> = HashMap::new();
 
     for id in topological_order(store, root) {
-        let proof = store
-            .get(id)
-            .ok_or(BridgeError::UndefinedProof(id.0))?;
+        let proof = store.get(id).ok_or(BridgeError::UndefinedProof(id.0))?;
         let thm = dispatch(bridge, proof, &thms, dag)?;
         thms.insert(id, thm);
     }

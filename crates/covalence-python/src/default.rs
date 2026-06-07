@@ -76,4 +76,3 @@ pub fn compile_wat(py: Python<'_>, wat: &str) -> PyResult<O256> {
     kernel_call(py, tx, move |k| SyncBackend::store_blob(k, &wasm).map(O256))?
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))
 }
-

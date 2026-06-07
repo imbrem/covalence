@@ -32,19 +32,15 @@ fn list_spectec_files(dir: &Path) -> Vec<PathBuf> {
 }
 
 fn lex_file(path: &Path) -> Result<usize, String> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let mut map = SourceMap::new();
     let id = map.add(path, &text);
     match lex(id, &text) {
         Ok(tokens) => Ok(tokens.len()),
         Err(diag) => {
             let (line, col) = map.line_col(diag.primary.file, diag.primary.start);
-            Err(format!(
-                "{}:{line}:{col}: {}",
-                path.display(),
-                diag.message
-            ))
+            Err(format!("{}:{line}:{col}: {}", path.display(), diag.message))
         }
     }
 }

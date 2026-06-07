@@ -77,13 +77,22 @@ pub struct ChatMessage {
 
 impl ChatMessage {
     pub fn system(content: impl Into<String>) -> Self {
-        Self { role: Role::System, content: content.into() }
+        Self {
+            role: Role::System,
+            content: content.into(),
+        }
     }
     pub fn user(content: impl Into<String>) -> Self {
-        Self { role: Role::User, content: content.into() }
+        Self {
+            role: Role::User,
+            content: content.into(),
+        }
     }
     pub fn assistant(content: impl Into<String>) -> Self {
-        Self { role: Role::Assistant, content: content.into() }
+        Self {
+            role: Role::Assistant,
+            content: content.into(),
+        }
     }
 }
 
@@ -106,7 +115,11 @@ pub struct ChatRequest {
 
 impl ChatRequest {
     pub fn new(model: impl Into<String>, messages: Vec<ChatMessage>) -> Self {
-        Self { model: model.into(), messages, options: ChatOptions::default() }
+        Self {
+            model: model.into(),
+            messages,
+            options: ChatOptions::default(),
+        }
     }
 }
 
@@ -215,22 +228,38 @@ impl Llm {
 
     /// OpenAI (api.openai.com). `api_key` is required.
     pub fn openai(api_key: impl Into<String>, model: impl Into<String>) -> Self {
-        Self::openai_compat(Provider::OpenAI.default_base_url(), Some(api_key.into()), model)
+        Self::openai_compat(
+            Provider::OpenAI.default_base_url(),
+            Some(api_key.into()),
+            model,
+        )
     }
 
     /// Groq via OpenAI-compatible endpoint. `api_key` is required.
     pub fn groq(api_key: impl Into<String>, model: impl Into<String>) -> Self {
-        Self::openai_compat(Provider::Groq.default_base_url(), Some(api_key.into()), model)
+        Self::openai_compat(
+            Provider::Groq.default_base_url(),
+            Some(api_key.into()),
+            model,
+        )
     }
 
     /// Cerebras via OpenAI-compatible endpoint. `api_key` is required.
     pub fn cerebras(api_key: impl Into<String>, model: impl Into<String>) -> Self {
-        Self::openai_compat(Provider::Cerebras.default_base_url(), Some(api_key.into()), model)
+        Self::openai_compat(
+            Provider::Cerebras.default_base_url(),
+            Some(api_key.into()),
+            model,
+        )
     }
 
     /// DeepSeek via OpenAI-compatible endpoint. `api_key` is required.
     pub fn deepseek(api_key: impl Into<String>, model: impl Into<String>) -> Self {
-        Self::openai_compat(Provider::DeepSeek.default_base_url(), Some(api_key.into()), model)
+        Self::openai_compat(
+            Provider::DeepSeek.default_base_url(),
+            Some(api_key.into()),
+            model,
+        )
     }
 
     /// Local Ollama via its OpenAI-compatible `/v1` endpoint. No auth.
@@ -316,16 +345,32 @@ impl AsyncLlm {
         Self::new(backend::openai::AsyncOpenAI::new(base_url, api_key), model)
     }
     pub fn openai(api_key: impl Into<String>, model: impl Into<String>) -> Self {
-        Self::openai_compat(Provider::OpenAI.default_base_url(), Some(api_key.into()), model)
+        Self::openai_compat(
+            Provider::OpenAI.default_base_url(),
+            Some(api_key.into()),
+            model,
+        )
     }
     pub fn groq(api_key: impl Into<String>, model: impl Into<String>) -> Self {
-        Self::openai_compat(Provider::Groq.default_base_url(), Some(api_key.into()), model)
+        Self::openai_compat(
+            Provider::Groq.default_base_url(),
+            Some(api_key.into()),
+            model,
+        )
     }
     pub fn cerebras(api_key: impl Into<String>, model: impl Into<String>) -> Self {
-        Self::openai_compat(Provider::Cerebras.default_base_url(), Some(api_key.into()), model)
+        Self::openai_compat(
+            Provider::Cerebras.default_base_url(),
+            Some(api_key.into()),
+            model,
+        )
     }
     pub fn deepseek(api_key: impl Into<String>, model: impl Into<String>) -> Self {
-        Self::openai_compat(Provider::DeepSeek.default_base_url(), Some(api_key.into()), model)
+        Self::openai_compat(
+            Provider::DeepSeek.default_base_url(),
+            Some(api_key.into()),
+            model,
+        )
     }
     pub fn ollama(model: impl Into<String>) -> Self {
         Self::ollama_at(Provider::Ollama.default_base_url(), model)

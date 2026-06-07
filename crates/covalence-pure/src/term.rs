@@ -106,12 +106,7 @@ pub trait ObsEq: Observer {
     ///
     /// `my_args` and `other_args` are in left-to-right application
     /// order (outermost binder applied first).
-    fn obs_eq(
-        &self,
-        other: &Self,
-        my_args: &[Term],
-        other_args: &[Term],
-    ) -> bool;
+    fn obs_eq(&self, other: &Self, my_args: &[Term], other_args: &[Term]) -> bool;
 }
 
 /// Type-erased observer leaf. Wraps any `O: Observer` inside an `Arc`,
@@ -142,7 +137,8 @@ impl DynObs {
         DynObs {
             inner: Arc::new(o),
             debug_fn: |any, f| {
-                let o = any.downcast_ref::<O>()
+                let o = any
+                    .downcast_ref::<O>()
                     .expect("DynObs debug_fn: type id matches at construction");
                 fmt::Debug::fmt(o, f)
             },
@@ -189,7 +185,9 @@ impl Ord for DynObs {
     }
 }
 impl PartialOrd for DynObs {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 /// **`Arc` pointer hash** — never the user's `Hash`.
@@ -218,20 +216,42 @@ impl fmt::Debug for DynObs {
 pub struct Hint(pub SmolStr);
 
 impl Hint {
-    pub fn new(s: impl Into<SmolStr>) -> Self { Hint(s.into()) }
-    pub fn as_str(&self) -> &str { self.0.as_str() }
-    pub fn is_empty(&self) -> bool { self.0.is_empty() }
+    pub fn new(s: impl Into<SmolStr>) -> Self {
+        Hint(s.into())
+    }
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 impl<S: Into<SmolStr>> From<S> for Hint {
-    fn from(s: S) -> Self { Hint(s.into()) }
+    fn from(s: S) -> Self {
+        Hint(s.into())
+    }
 }
 
-impl PartialEq for Hint { fn eq(&self, _: &Self) -> bool { true } }
+impl PartialEq for Hint {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
 impl Eq for Hint {}
-impl Hash for Hint { fn hash<H: Hasher>(&self, _: &mut H) {} }
-impl Ord for Hint { fn cmp(&self, _: &Self) -> Ordering { Ordering::Equal } }
-impl PartialOrd for Hint { fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) } }
+impl Hash for Hint {
+    fn hash<H: Hasher>(&self, _: &mut H) {}
+}
+impl Ord for Hint {
+    fn cmp(&self, _: &Self) -> Ordering {
+        Ordering::Equal
+    }
+}
+impl PartialOrd for Hint {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 impl fmt::Debug for Hint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -274,37 +294,55 @@ static BOOL: LazyLock<Type> =
     LazyLock::new(|| Type(Arc::new(TypeKind::Tycon(SmolStr::new("bool"), Vec::new()))));
 
 impl Type {
-    pub fn kind(&self) -> &TypeKind { &self.0 }
+    pub fn kind(&self) -> &TypeKind {
+        &self.0
+    }
 
     /// Pointer identity of the underlying `Arc`. Useful as a cache key
     /// for outside-the-TCB walkers (hashers, pretty-printers).
-    pub fn ptr_id(&self) -> usize { Arc::as_ptr(&self.0) as usize }
+    pub fn ptr_id(&self) -> usize {
+        Arc::as_ptr(&self.0) as usize
+    }
 
-    fn alloc(kind: TypeKind) -> Self { Type(Arc::new(kind)) }
+    fn alloc(kind: TypeKind) -> Self {
+        Type(Arc::new(kind))
+    }
 
-    pub fn tfree(name: impl Into<SmolStr>) -> Self { Self::alloc(TypeKind::TFree(name.into())) }
+    pub fn tfree(name: impl Into<SmolStr>) -> Self {
+        Self::alloc(TypeKind::TFree(name.into()))
+    }
 
     /// The kind of meta-propositions — `prop`. Returns a shared
     /// instance; calls are O(1) `Arc` bumps.
-    pub fn prop() -> Self { PROP.clone() }
+    pub fn prop() -> Self {
+        PROP.clone()
+    }
 
     /// The native byte-string type — `bytes`. Returns a shared
     /// instance; calls are O(1) `Arc` bumps.
-    pub fn bytes() -> Self { BYTES.clone() }
+    pub fn bytes() -> Self {
+        BYTES.clone()
+    }
 
     /// The HOL `bool` type (a 0-ary `tycon`). Pure does not bake bool
     /// in semantically — it's just a named constructor — but this
     /// canonical instance is cached because user code references it
     /// often. Returns a shared instance; calls are O(1) `Arc` bumps.
-    pub fn bool() -> Self { BOOL.clone() }
+    pub fn bool() -> Self {
+        BOOL.clone()
+    }
 
-    pub fn fun(dom: Type, cod: Type) -> Self { Self::alloc(TypeKind::Fun(dom, cod)) }
+    pub fn fun(dom: Type, cod: Type) -> Self {
+        Self::alloc(TypeKind::Fun(dom, cod))
+    }
 
     pub fn tycon(name: impl Into<SmolStr>, args: Vec<Type>) -> Self {
         Self::alloc(TypeKind::Tycon(name.into(), args))
     }
 
-    pub fn is_prop(&self) -> bool { matches!(self.kind(), TypeKind::Prop) }
+    pub fn is_prop(&self) -> bool {
+        matches!(self.kind(), TypeKind::Prop)
+    }
 }
 
 impl PartialEq for Type {
@@ -314,20 +352,28 @@ impl PartialEq for Type {
 }
 impl Eq for Type {}
 impl Hash for Type {
-    fn hash<H: Hasher>(&self, state: &mut H) { self.0.hash(state); }
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
 }
 impl PartialOrd for Type {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 impl Ord for Type {
     fn cmp(&self, other: &Self) -> Ordering {
-        if Arc::ptr_eq(&self.0, &other.0) { return Ordering::Equal; }
+        if Arc::ptr_eq(&self.0, &other.0) {
+            return Ordering::Equal;
+        }
         self.0.cmp(&other.0)
     }
 }
 
 impl fmt::Debug for Type {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { fmt::Display::fmt(self, f) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
 }
 
 impl fmt::Display for Type {
@@ -342,7 +388,9 @@ impl fmt::Display for Type {
                     write!(f, "{}", name)
                 } else {
                     write!(f, "({}", name)?;
-                    for a in args { write!(f, " {}", a)?; }
+                    for a in args {
+                        write!(f, " {}", a)?;
+                    }
                     write!(f, ")")
                 }
             }
@@ -370,19 +418,30 @@ pub struct Def {
 }
 
 impl Def {
-    pub fn name(&self) -> &Hint { &self.name }
-    pub fn body(&self) -> &Term { &self.body }
+    pub fn name(&self) -> &Hint {
+        &self.name
+    }
+    pub fn body(&self) -> &Term {
+        &self.body
+    }
 
     /// Pointer identity of the body Arc — useful as a cache key.
-    pub fn ptr_id(&self) -> usize { Arc::as_ptr(&self.body) as usize }
+    pub fn ptr_id(&self) -> usize {
+        Arc::as_ptr(&self.body) as usize
+    }
 
     pub(crate) fn new_internal(name: Hint, body: Term) -> Self {
-        Def { name, body: Arc::new(body) }
+        Def {
+            name,
+            body: Arc::new(body),
+        }
     }
 }
 
 impl PartialEq for Def {
-    fn eq(&self, other: &Self) -> bool { Arc::ptr_eq(&self.body, &other.body) }
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.body, &other.body)
+    }
 }
 impl Eq for Def {}
 
@@ -398,7 +457,9 @@ impl Ord for Def {
     }
 }
 impl PartialOrd for Def {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl fmt::Debug for Def {
@@ -455,34 +516,48 @@ pub enum TermKind {
 }
 
 impl Term {
-    pub fn kind(&self) -> &TermKind { &self.0 }
+    pub fn kind(&self) -> &TermKind {
+        &self.0
+    }
 
     /// Pointer identity of the underlying `Arc`. Useful as a cache key
     /// for outside-the-TCB walkers (hashers, pretty-printers).
-    pub fn ptr_id(&self) -> usize { Arc::as_ptr(&self.0) as usize }
+    pub fn ptr_id(&self) -> usize {
+        Arc::as_ptr(&self.0) as usize
+    }
 
     fn alloc(kind: TermKind) -> Self {
         Term(Arc::new(kind))
     }
 
     // ---- smart constructors ----
-    pub fn bound(idx: u32) -> Self { Self::alloc(TermKind::Bound(idx)) }
+    pub fn bound(idx: u32) -> Self {
+        Self::alloc(TermKind::Bound(idx))
+    }
     pub fn free(name: impl Into<SmolStr>, ty: Type) -> Self {
         Self::alloc(TermKind::Free(name.into(), ty))
     }
     pub fn const_(name: impl Into<SmolStr>, ty: Type) -> Self {
         Self::alloc(TermKind::Const(name.into(), ty))
     }
-    pub fn app(fun: Term, arg: Term) -> Self { Self::alloc(TermKind::App(fun, arg)) }
+    pub fn app(fun: Term, arg: Term) -> Self {
+        Self::alloc(TermKind::App(fun, arg))
+    }
     pub fn abs(hint: impl Into<Hint>, ty: Type, body: Term) -> Self {
         Self::alloc(TermKind::Abs(hint.into(), ty, body))
     }
-    pub fn imp(lhs: Term, rhs: Term) -> Self { Self::alloc(TermKind::Imp(lhs, rhs)) }
+    pub fn imp(lhs: Term, rhs: Term) -> Self {
+        Self::alloc(TermKind::Imp(lhs, rhs))
+    }
     pub fn all(hint: impl Into<Hint>, ty: Type, body: Term) -> Self {
         Self::alloc(TermKind::All(hint.into(), ty, body))
     }
-    pub fn eq(lhs: Term, rhs: Term) -> Self { Self::alloc(TermKind::Eq(lhs, rhs)) }
-    pub fn blob(bytes: impl Into<Bytes>) -> Self { Self::alloc(TermKind::Blob(bytes.into())) }
+    pub fn eq(lhs: Term, rhs: Term) -> Self {
+        Self::alloc(TermKind::Eq(lhs, rhs))
+    }
+    pub fn blob(bytes: impl Into<Bytes>) -> Self {
+        Self::alloc(TermKind::Blob(bytes.into()))
+    }
 
     /// Wrap an observer as a typed leaf. The kernel treats the
     /// underlying value opaquely; only the user code constructing
@@ -502,7 +577,9 @@ impl Term {
     /// `Def` via `clone` preserves kernel identity; constructing two
     /// distinct `Def`s with the same name produces two distinct
     /// `Term`s here.
-    pub fn def(d: Def) -> Self { Self::alloc(TermKind::Def(d)) }
+    pub fn def(d: Def) -> Self {
+        Self::alloc(TermKind::Def(d))
+    }
 
     /// Compute the type of `self` in an empty env. Walks the whole
     /// term, checking that every Free / Const occurrence uses a
@@ -525,10 +602,9 @@ impl Term {
     pub fn has_no_obs(&self) -> bool {
         match self.kind() {
             TermKind::Obs(..) => false,
-            TermKind::Bound(_)
-            | TermKind::Free(..)
-            | TermKind::Const(..)
-            | TermKind::Blob(_) => true,
+            TermKind::Bound(_) | TermKind::Free(..) | TermKind::Const(..) | TermKind::Blob(_) => {
+                true
+            }
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
                 a.has_no_obs() && b.has_no_obs()
             }
@@ -543,10 +619,9 @@ impl Term {
     pub fn all_obs_match<O: Observer>(&self) -> bool {
         match self.kind() {
             TermKind::Obs(observer, _) => observer.downcast::<O>().is_some(),
-            TermKind::Bound(_)
-            | TermKind::Free(..)
-            | TermKind::Const(..)
-            | TermKind::Blob(_) => true,
+            TermKind::Bound(_) | TermKind::Free(..) | TermKind::Const(..) | TermKind::Blob(_) => {
+                true
+            }
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
                 a.all_obs_match::<O>() && b.all_obs_match::<O>()
             }
@@ -561,14 +636,15 @@ impl Term {
     pub fn for_each_obs<O: Observer, F: FnMut(&O)>(&self, f: &mut F) -> Result<()> {
         match self.kind() {
             TermKind::Obs(observer, _) => {
-                let o = observer.downcast::<O>().ok_or(Error::ObsDowncastTypeMismatch)?;
+                let o = observer
+                    .downcast::<O>()
+                    .ok_or(Error::ObsDowncastTypeMismatch)?;
                 f(o);
                 Ok(())
             }
-            TermKind::Bound(_)
-            | TermKind::Free(..)
-            | TermKind::Const(..)
-            | TermKind::Blob(_) => Ok(()),
+            TermKind::Bound(_) | TermKind::Free(..) | TermKind::Const(..) | TermKind::Blob(_) => {
+                Ok(())
+            }
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
                 a.for_each_obs::<O, F>(f)?;
                 b.for_each_obs::<O, F>(f)
@@ -586,20 +662,28 @@ impl PartialEq for Term {
 }
 impl Eq for Term {}
 impl Hash for Term {
-    fn hash<H: Hasher>(&self, state: &mut H) { self.0.hash(state); }
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
 }
 impl PartialOrd for Term {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 impl Ord for Term {
     fn cmp(&self, other: &Self) -> Ordering {
-        if Arc::ptr_eq(&self.0, &other.0) { return Ordering::Equal; }
+        if Arc::ptr_eq(&self.0, &other.0) {
+            return Ordering::Equal;
+        }
         self.0.cmp(&other.0)
     }
 }
 
 impl fmt::Debug for Term {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { fmt::Display::fmt(self, f) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
 }
 
 impl fmt::Display for Term {
@@ -646,7 +730,9 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
     match t.kind() {
         TermKind::Bound(i) => {
             let i = *i as usize;
-            if i >= env.ctx.len() { return Err(Error::NotClosed); }
+            if i >= env.ctx.len() {
+                return Err(Error::NotClosed);
+            }
             Ok(env.ctx[env.ctx.len() - 1 - i].clone())
         }
         TermKind::Free(name, ty) => {
@@ -677,7 +763,10 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
                 return Err(Error::NotFunction(fun_ty));
             };
             if *dom != arg_ty {
-                return Err(Error::TypeMismatch { expected: dom.clone(), got: arg_ty });
+                return Err(Error::TypeMismatch {
+                    expected: dom.clone(),
+                    got: arg_ty,
+                });
             }
             Ok(cod.clone())
         }
@@ -692,20 +781,31 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
             let body_ty = type_of_in(body, env);
             env.ctx.pop();
             let body_ty = body_ty?;
-            if !body_ty.is_prop() { return Err(Error::NotProp(body_ty)); }
+            if !body_ty.is_prop() {
+                return Err(Error::NotProp(body_ty));
+            }
             Ok(Type::prop())
         }
         TermKind::Imp(a, b) => {
             let ta = type_of_in(a, env)?;
-            if !ta.is_prop() { return Err(Error::NotProp(ta)); }
+            if !ta.is_prop() {
+                return Err(Error::NotProp(ta));
+            }
             let tb = type_of_in(b, env)?;
-            if !tb.is_prop() { return Err(Error::NotProp(tb)); }
+            if !tb.is_prop() {
+                return Err(Error::NotProp(tb));
+            }
             Ok(Type::prop())
         }
         TermKind::Eq(a, b) => {
             let ta = type_of_in(a, env)?;
             let tb = type_of_in(b, env)?;
-            if ta != tb { return Err(Error::TypeMismatch { expected: ta, got: tb }); }
+            if ta != tb {
+                return Err(Error::TypeMismatch {
+                    expected: ta,
+                    got: tb,
+                });
+            }
             Ok(Type::prop())
         }
         TermKind::Blob(_) => Ok(Type::bytes()),

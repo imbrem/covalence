@@ -122,13 +122,7 @@ impl TermUf {
     /// - `d = 0`: same canonical.
     /// - `d = n > 0`: same `TermDef` shape (variant + non-dep payload)
     ///   with each pair of `TermRef` deps `eq_at_level(_, _, d - 1)`.
-    pub fn eq_at_level(
-        &self,
-        arena: &Arena,
-        a: TermRef,
-        b: TermRef,
-        depth: u32,
-    ) -> bool {
+    pub fn eq_at_level(&self, arena: &Arena, a: TermRef, b: TermRef, depth: u32) -> bool {
         let a_canon = self.canonical_local(a);
         let b_canon = self.canonical_local(b);
         if a_canon == b_canon {
@@ -151,8 +145,7 @@ impl TermUf {
             (Deps::None, Deps::None) => true,
             (Deps::One(x), Deps::One(y)) => self.eq_at_level(arena, x, y, cdepth),
             (Deps::Two(x1, x2), Deps::Two(y1, y2)) => {
-                self.eq_at_level(arena, x1, y1, cdepth)
-                    && self.eq_at_level(arena, x2, y2, cdepth)
+                self.eq_at_level(arena, x1, y1, cdepth) && self.eq_at_level(arena, x2, y2, cdepth)
             }
             _ => unreachable!("shape-equal defs must have matching dep arity"),
         }

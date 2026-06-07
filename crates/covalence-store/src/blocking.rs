@@ -54,15 +54,10 @@ impl<K: Send + Sync + 'static> BlockingBlobStore<K> {
     {
         let inner = Arc::clone(&self.inner);
         let key = key.clone();
-        self.handle
-            .block_on(async move { inner.get(&key).await })
+        self.handle.block_on(async move { inner.get(&key).await })
     }
 
-    pub fn get_range(
-        &self,
-        key: &K,
-        range: ByteRange,
-    ) -> Result<(Bytes, ResolvedRange), StoreError>
+    pub fn get_range(&self, key: &K, range: ByteRange) -> Result<(Bytes, ResolvedRange), StoreError>
     where
         K: Clone,
     {
@@ -90,8 +85,7 @@ impl<K: Send + Sync + 'static> BlockingBlobStore<K> {
     {
         let inner = Arc::clone(&self.inner);
         let key = key.clone();
-        self.handle
-            .block_on(async move { inner.head(&key).await })
+        self.handle.block_on(async move { inner.head(&key).await })
     }
 
     pub fn put(&self, key: K, data: Bytes) -> Result<(), StoreError> {
@@ -158,9 +152,7 @@ mod tests {
         assert_eq!(s.head(&hash).unwrap(), BlobInfo { size: 5 });
         assert!(s.contains(&hash).unwrap());
         assert_eq!(s.get_slice(&hash, 1..4).unwrap(), b"ell"[..]);
-        let (bytes, resolved) = s
-            .get_range(&hash, ByteRange::Suffix { length: 2 })
-            .unwrap();
+        let (bytes, resolved) = s.get_range(&hash, ByteRange::Suffix { length: 2 }).unwrap();
         assert_eq!(bytes, b"lo"[..]);
         assert_eq!(resolved.to_content_range(), "bytes 3-4/5");
     }

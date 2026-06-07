@@ -1,6 +1,4 @@
 mod backend;
-#[cfg(feature = "llm")]
-mod llm;
 mod component;
 mod component_builder;
 mod compression;
@@ -11,7 +9,8 @@ mod git;
 mod graph;
 mod hash;
 mod kvstore;
-mod treestore;
+#[cfg(feature = "llm")]
+mod llm;
 mod module;
 mod module_builder;
 mod object_store;
@@ -25,6 +24,7 @@ mod store;
 mod system_builder;
 mod table;
 mod tagged_store;
+mod treestore;
 mod val;
 mod wasm_store;
 mod worker;

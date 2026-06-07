@@ -11,8 +11,7 @@
 use std::path::PathBuf;
 
 use covalence_spectec::{
-    elab::build_table, lex::lex, mixfix::Fragment, parse::parse, source::SourceMap,
-    token::Token,
+    elab::build_table, lex::lex, mixfix::Fragment, parse::parse, source::SourceMap, token::Token,
 };
 
 fn lit_repr(tok: &Token) -> String {
@@ -61,7 +60,10 @@ fn build_table_for_wasm_3_0_corpus() {
     assert!(op_count > 0, "no operators extracted from full corpus");
 
     let type_count = ctx.type_names.len();
-    assert!(type_count > 50, "expected dozens of type names, got {type_count}");
+    assert!(
+        type_count > 50,
+        "expected dozens of type names, got {type_count}"
+    );
 
     // Profile the table.
     let mut hole_only = 0usize;
@@ -100,10 +102,14 @@ fn build_table_for_wasm_3_0_corpus() {
     // Show a sample of extracted operators (first 30 by declaration order).
     eprintln!("First 30 operators:");
     for op in ctx.op_table.iter().take(30) {
-        let frags: Vec<String> = op.fragments.iter().map(|f| match f {
-            Fragment::Hole(_) => "%".into(),
-            Fragment::Lit(t) => lit_repr(t),
-        }).collect();
+        let frags: Vec<String> = op
+            .fragments
+            .iter()
+            .map(|f| match f {
+                Fragment::Hole(_) => "%".into(),
+                Fragment::Lit(t) => lit_repr(t),
+            })
+            .collect();
         eprintln!("  {:30}  {}", op.name, frags.join(" "));
     }
 }

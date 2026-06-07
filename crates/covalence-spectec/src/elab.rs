@@ -21,7 +21,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use crate::cst::{Alt, RuleDecl, SyntaxBody, SyntaxDecl, Top, TokenRun};
+use crate::cst::{Alt, RuleDecl, SyntaxBody, SyntaxDecl, TokenRun, Top};
 use crate::mixfix::{self, Fragment, OpId, OpTable, Precedence, Tree};
 use crate::source::{Diagnostic, Span};
 use crate::token::{Spanned, Token};
@@ -260,10 +260,7 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
     let mut op_table = OpTable::new();
     op_table.add(
         ITER_STAR_OP,
-        vec![
-            Fragment::Hole(ITER_LEFT_PREC),
-            Fragment::Lit(Token::Star),
-        ],
+        vec![Fragment::Hole(ITER_LEFT_PREC), Fragment::Lit(Token::Star)],
     );
     op_table.add(
         ITER_OPT_OP,
@@ -274,10 +271,7 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
     );
     op_table.add(
         ITER_PLUS_OP,
-        vec![
-            Fragment::Hole(ITER_LEFT_PREC),
-            Fragment::Lit(Token::Plus),
-        ],
+        vec![Fragment::Hole(ITER_LEFT_PREC), Fragment::Lit(Token::Plus)],
     );
 
     // Pass 2b: extract operators.
@@ -340,10 +334,7 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
             && !s.params.is_empty()
             && !param_kinds.contains_key(&s.name.text)
         {
-            param_kinds.insert(
-                s.name.text.clone(),
-                syntax_param_runs_to_kinds(&s.params),
-            );
+            param_kinds.insert(s.name.text.clone(), syntax_param_runs_to_kinds(&s.params));
         }
     }
 
@@ -359,17 +350,23 @@ pub fn build_table(tops: &[Top]) -> Result<ElabContext, Vec<Diagnostic>> {
             continue;
         }
         let alt = &alts[0];
-        if let Some(crate::token::Spanned { token: Token::Ident(head), .. }) =
-            alt.body.tokens.first()
+        if let Some(crate::token::Spanned {
+            token: Token::Ident(head),
+            ..
+        }) = alt.body.tokens.first()
             && is_case_head(head)
         {
             continue;
         }
-        let Some((frags, _holes)) = alt_to_headless_with_holes(alt, &type_names)
-        else {
+        let Some((frags, _holes)) = alt_to_headless_with_holes(alt, &type_names) else {
             continue;
         };
-        if frags.iter().filter(|f| matches!(f, Fragment::Hole(_))).count() < 2 {
+        if frags
+            .iter()
+            .filter(|f| matches!(f, Fragment::Hole(_)))
+            .count()
+            < 2
+        {
             continue;
         }
         headless_variant_op.insert(name.clone(), headless_mixop_from_fragments(&frags));
@@ -452,10 +449,7 @@ fn headless_mixop_from_fragments(frags: &[Fragment]) -> spectec_ast::MixOp {
 /// Fold one `syntax` decl into the `MergedSyntax` map. Variant
 /// alternatives whose body is just `...` are recorded as `Placeholder`;
 /// real alternatives are recorded as `Real`.
-fn add_syntax_to_merge(
-    s: &SyntaxDecl,
-    out: &mut BTreeMap<String, MergedSyntax>,
-) {
+fn add_syntax_to_merge(s: &SyntaxDecl, out: &mut BTreeMap<String, MergedSyntax>) {
     let entry = out
         .entry(s.name.text.clone())
         .or_insert_with(|| MergedSyntax {
@@ -601,9 +595,7 @@ pub fn mixop_fragments_from_template(
             }
             Token::Ident(n)
                 if n.starts_with('_')
-                    && n.chars()
-                        .nth(1)
-                        .is_some_and(|c| c.is_ascii_lowercase()) =>
+                    && n.chars().nth(1).is_some_and(|c| c.is_ascii_lowercase()) =>
             {
                 // `_<rest>`: the `_` is a subscript on the preceding
                 // literal; `rest` may be a hole or a literal in its
@@ -899,10 +891,22 @@ fn walk_alt_tokens(
 /// Spans are carried so downstream consumers can attach diagnostics.
 #[derive(Clone, Debug)]
 pub enum Expr {
-    Var { span: Span, name: String },
-    Bool { span: Span, value: bool },
-    Num { span: Span, value: NumLit },
-    Text { span: Span, value: String },
+    Var {
+        span: Span,
+        name: String,
+    },
+    Bool {
+        span: Span,
+        value: bool,
+    },
+    Num {
+        span: Span,
+        value: NumLit,
+    },
+    Text {
+        span: Span,
+        value: String,
+    },
     /// Unary operator: `not e`, `+e`, `-e`, `±e`, `∓e`.
     ///
     /// `ty` is `None` before `crate::typecheck` runs (elab can't
@@ -936,7 +940,11 @@ pub enum Expr {
         e2: Box<Expr>,
     },
     /// Indexing: `e1[e2]`.
-    Idx { span: Span, e1: Box<Expr>, e2: Box<Expr> },
+    Idx {
+        span: Span,
+        e1: Box<Expr>,
+        e2: Box<Expr>,
+    },
     /// Slicing: `e1[e2 : e3]`.
     Slice {
         span: Span,
@@ -959,23 +967,48 @@ pub enum Expr {
         e2: Box<Expr>,
     },
     /// Record literal: `{ FIELD = e, ... }`.
-    Str { span: Span, fields: Vec<ExprField> },
+    Str {
+        span: Span,
+        fields: Vec<ExprField>,
+    },
     /// Field access: `e.FIELD`.
-    Dot { span: Span, e: Box<Expr>, field: String },
+    Dot {
+        span: Span,
+        e: Box<Expr>,
+        field: String,
+    },
     /// Sequence composition: `e1 ++ e2`.
-    Comp { span: Span, e1: Box<Expr>, e2: Box<Expr> },
+    Comp {
+        span: Span,
+        e1: Box<Expr>,
+        e2: Box<Expr>,
+    },
     /// Membership: `e1 <- e2`.
-    Mem { span: Span, e1: Box<Expr>, e2: Box<Expr> },
+    Mem {
+        span: Span,
+        e1: Box<Expr>,
+        e2: Box<Expr>,
+    },
     /// Length: `|e|`.
-    Len { span: Span, e: Box<Expr> },
+    Len {
+        span: Span,
+        e: Box<Expr>,
+    },
     /// Parenthesised sequence — `()` is the empty tuple, `(x)` collapses
     /// to `x`, `(x, y)` is a 2-tuple.
-    Tup { span: Span, items: Vec<Expr> },
+    Tup {
+        span: Span,
+        items: Vec<Expr>,
+    },
     /// Function call: `$name(arg, ...)`. Args are elaborated to
     /// `Expr`s at construction time so the typechecker can coerce
     /// each against the callee's parameter type (analogous to how
     /// `Case` args are typed against `ctor_params`).
-    Call { span: Span, name: String, args: Vec<Expr> },
+    Call {
+        span: Span,
+        name: String,
+        args: Vec<Expr>,
+    },
     /// `<inner><iter-suffix>` — postfix iteration on an expression.
     /// `bindings` is the inferred binder list (see `IterBinding`).
     Iter {
@@ -985,7 +1018,11 @@ pub enum Expr {
         bindings: Vec<IterBinding>,
     },
     /// Tuple projection: `e.<i>` (positional).
-    Proj { span: Span, e: Box<Expr>, index: i64 },
+    Proj {
+        span: Span,
+        e: Box<Expr>,
+        index: i64,
+    },
     /// Case constructor application: `NAME` or `NAME e_1 e_2 ...`.
     /// The "case-like" head is any identifier whose first character is
     /// uppercase, or that begins with an underscore (`NOP`, `BLOCK`,
@@ -1007,20 +1044,37 @@ pub enum Expr {
     },
     /// Inverse case match: `e :> NAME` — extracts the operand of a
     /// known case constructor.
-    Uncase { span: Span, e: Box<Expr>, head: String },
+    Uncase {
+        span: Span,
+        e: Box<Expr>,
+        head: String,
+    },
     /// Optional literal: `?e` (Some), or `?` (None when `inner` is None).
     Opt {
         span: Span,
         inner: Option<Box<Expr>>,
     },
     /// Inverse optional: extracts the value from a `Some` known to hold.
-    Unopt { span: Span, e: Box<Expr> },
+    Unopt {
+        span: Span,
+        e: Box<Expr>,
+    },
     /// List literal: `[e_1, e_2, ...]` or `eps` for the empty list.
-    List { span: Span, items: Vec<Expr> },
+    List {
+        span: Span,
+        items: Vec<Expr>,
+    },
     /// Singleton lift: `[e]`.
-    Lift { span: Span, e: Box<Expr> },
+    Lift {
+        span: Span,
+        e: Box<Expr>,
+    },
     /// List concatenation: `e1 ++ e2`.
-    Cat { span: Span, e1: Box<Expr>, e2: Box<Expr> },
+    Cat {
+        span: Span,
+        e1: Box<Expr>,
+        e2: Box<Expr>,
+    },
     /// Numeric conversion: `Cvt(nt1, nt2, e)` reinterprets a number of
     /// type `nt1` as one of type `nt2`.
     Cvt {
@@ -1040,7 +1094,9 @@ pub enum Expr {
         e: Box<Expr>,
     },
     /// `eps` — the empty sequence literal.
-    Eps { span: Span },
+    Eps {
+        span: Span,
+    },
     /// Tokens we couldn't structurally lower to a more specific
     /// variant. Carries the raw run plus an [`ElabGap`] tag
     /// describing why — distinct from a real `Bool { b: false }`
@@ -1255,10 +1311,7 @@ pub enum ElabPremise {
     /// Carries the raw run plus an [`ElabGap`] tag — replaces the
     /// previous opaque `Raw(TokenRun)`. See `Expr::Unelaborated`
     /// for the analogous expression-side variant.
-    Unelaborated {
-        tokens: TokenRun,
-        reason: ElabGap,
-    },
+    Unelaborated { tokens: TokenRun, reason: ElabGap },
 }
 
 /// One inferred iteration binder: a name appearing inside an iter body
@@ -1303,10 +1356,7 @@ pub fn elab_rule_conclusion(
         .ok_or_else(|| {
             Diagnostic::error(
                 rule.name.span,
-                format!(
-                    "rule references unknown relation `{}`",
-                    rule.name.text
-                ),
+                format!("rule references unknown relation `{}`", rule.name.text),
             )
         })?;
     let op_id = op.id;
@@ -1329,8 +1379,7 @@ pub fn elab_rule_conclusion(
                 // holes, no Lit between), consume one atomic token
                 // for this hole so the next one has something left.
                 // Otherwise: hole runs up to the next Lit, or to EOF.
-                let next_is_hole =
-                    matches!(fragments.get(i + 1), Some(Fragment::Hole(_)));
+                let next_is_hole = matches!(fragments.get(i + 1), Some(Fragment::Hole(_)));
                 let expr = if next_is_hole {
                     parse_atomic_in_conclusion(&mut input, ctx, &rule.name.text)?
                 } else {
@@ -1385,10 +1434,7 @@ pub fn elab_rule_conclusion(
 /// Detects the premise form from the leading token: `if`, `let`,
 /// `else`/`otherwise`, an iteration group `(...)`, or otherwise a
 /// `RelName: <args>` relation reference.
-pub fn elab_premise(
-    prem: &TokenRun,
-    ctx: &ElabContext,
-) -> Result<ElabPremise, Diagnostic> {
+pub fn elab_premise(prem: &TokenRun, ctx: &ElabContext) -> Result<ElabPremise, Diagnostic> {
     let toks = &prem.tokens;
     match toks.first().map(|s| &s.token) {
         Some(Token::If) => {
@@ -1416,13 +1462,12 @@ pub fn elab_premise(
         Some(Token::Let) => {
             // `let <lhs> = <rhs>` — find top-level `=` split.
             let body = &toks[1..];
-            let eq_idx = top_level_index_of(body, |t| matches!(t, Token::Eq))
-                .ok_or_else(|| {
-                    Diagnostic::error(
-                        prem.span,
-                        "`let` premise has no top-level `=` splitting lhs from rhs",
-                    )
-                })?;
+            let eq_idx = top_level_index_of(body, |t| matches!(t, Token::Eq)).ok_or_else(|| {
+                Diagnostic::error(
+                    prem.span,
+                    "`let` premise has no top-level `=` splitting lhs from rhs",
+                )
+            })?;
             let lhs_slice = &body[..eq_idx];
             let rhs_slice = &body[eq_idx + 1..];
             if lhs_slice.is_empty() || rhs_slice.is_empty() {
@@ -1443,13 +1488,19 @@ pub fn elab_premise(
             // `RelName: <args>` — relation premise.
             let rel_name = name.clone();
             let Some(op) = ctx.op_table.iter().find(|o| o.name == rel_name) else {
-                return Ok(ElabPremise::Unelaborated { tokens: prem.clone(), reason: ElabGap::PremiseUnrecognised });
+                return Ok(ElabPremise::Unelaborated {
+                    tokens: prem.clone(),
+                    reason: ElabGap::PremiseUnrecognised,
+                });
             };
             let op_id = op.id;
             let fragments = op.fragments.clone();
             // Expect a `:` right after the relation name.
             if !matches!(toks.get(1).map(|s| &s.token), Some(Token::Colon)) {
-                return Ok(ElabPremise::Unelaborated { tokens: prem.clone(), reason: ElabGap::PremiseUnrecognised });
+                return Ok(ElabPremise::Unelaborated {
+                    tokens: prem.clone(),
+                    reason: ElabGap::PremiseUnrecognised,
+                });
             }
             let mut input: &[Spanned] = &toks[2..];
             let mut operands = Vec::new();
@@ -1463,20 +1514,33 @@ pub fn elab_premise(
                             Some(s) if &s.token == expected => {
                                 input = &input[1..];
                             }
-                            _ => return Ok(ElabPremise::Unelaborated { tokens: prem.clone(), reason: ElabGap::PremiseUnrecognised }),
+                            _ => {
+                                return Ok(ElabPremise::Unelaborated {
+                                    tokens: prem.clone(),
+                                    reason: ElabGap::PremiseUnrecognised,
+                                });
+                            }
                         }
                     }
                     Fragment::Hole(_) => {
                         let stop = next_lit_after(&fragments, i + 1);
                         match parse_expression_until(&mut input, stop.as_ref(), ctx) {
                             Ok(e) => operands.push(e),
-                            Err(_) => return Ok(ElabPremise::Unelaborated { tokens: prem.clone(), reason: ElabGap::PremiseUnrecognised }),
+                            Err(_) => {
+                                return Ok(ElabPremise::Unelaborated {
+                                    tokens: prem.clone(),
+                                    reason: ElabGap::PremiseUnrecognised,
+                                });
+                            }
                         }
                     }
                 }
             }
             if !input.is_empty() {
-                return Ok(ElabPremise::Unelaborated { tokens: prem.clone(), reason: ElabGap::PremiseUnrecognised });
+                return Ok(ElabPremise::Unelaborated {
+                    tokens: prem.clone(),
+                    reason: ElabGap::PremiseUnrecognised,
+                });
             }
             Ok(ElabPremise::Rule {
                 rel_name,
@@ -1484,22 +1548,21 @@ pub fn elab_premise(
                 operands,
             })
         }
-        _ => Ok(ElabPremise::Unelaborated { tokens: prem.clone(), reason: ElabGap::PremiseUnrecognised }),
+        _ => Ok(ElabPremise::Unelaborated {
+            tokens: prem.clone(),
+            reason: ElabGap::PremiseUnrecognised,
+        }),
     }
 }
 
 /// Recognise an iteration premise: `( <inner-premise> ) <iter-suffix>`.
 /// The matching `)` must be at paren depth 0 of the inner body and
 /// must leave at least one trailing token (the iter suffix).
-fn elab_iter_premise(
-    prem: &TokenRun,
-    ctx: &ElabContext,
-) -> Result<ElabPremise, Diagnostic> {
+fn elab_iter_premise(prem: &TokenRun, ctx: &ElabContext) -> Result<ElabPremise, Diagnostic> {
     let toks = &prem.tokens;
     // toks[0] is `(`. Find the matching `)` (depth 0 again).
-    let close_idx = matching_rparen(toks).ok_or_else(|| {
-        Diagnostic::error(prem.span, "iteration premise: no matching `)`")
-    })?;
+    let close_idx = matching_rparen(toks)
+        .ok_or_else(|| Diagnostic::error(prem.span, "iteration premise: no matching `)`"))?;
     let inner_toks = &toks[1..close_idx];
     let trailing = &toks[close_idx + 1..];
     if inner_toks.is_empty() {
@@ -1530,7 +1593,10 @@ fn elab_iter_premise(
             // `^<count-expr>` — count is the rest of trailing.
             let count_toks = &trailing[1..];
             if count_toks.is_empty() {
-                return Ok(ElabPremise::Unelaborated { tokens: prem.clone(), reason: ElabGap::PremiseUnrecognised });
+                return Ok(ElabPremise::Unelaborated {
+                    tokens: prem.clone(),
+                    reason: ElabGap::PremiseUnrecognised,
+                });
             }
             let count_span = count_toks
                 .iter()
@@ -1542,7 +1608,12 @@ fn elab_iter_premise(
                 tokens: count_toks.to_vec(),
             })
         }
-        _ => return Ok(ElabPremise::Unelaborated { tokens: prem.clone(), reason: ElabGap::PremiseUnrecognised }),
+        _ => {
+            return Ok(ElabPremise::Unelaborated {
+                tokens: prem.clone(),
+                reason: ElabGap::PremiseUnrecognised,
+            });
+        }
     };
     // Recursively elaborate the inner premise.
     let inner_span = inner_toks
@@ -1674,7 +1745,12 @@ fn attach_iter_bindings_to_expr(e: Expr, sources: &IterSources) -> Expr {
                 bindings,
             }
         }
-        Expr::Case { span, head, args, op } => Expr::Case {
+        Expr::Case {
+            span,
+            head,
+            args,
+            op,
+        } => Expr::Case {
             span,
             head,
             op,
@@ -1711,10 +1787,7 @@ fn attach_iter_bindings(p: ElabPremise, sources: &IterSources) -> ElabPremise {
     }
 }
 
-fn infer_bindings_for_inner(
-    inner: &ElabPremise,
-    sources: &IterSources,
-) -> Vec<IterBinding> {
+fn infer_bindings_for_inner(inner: &ElabPremise, sources: &IterSources) -> Vec<IterBinding> {
     let mut vars: HashSet<String> = HashSet::new();
     collect_vars_in_premise(inner, &mut vars);
     let mut bindings: Vec<IterBinding> = Vec::new();
@@ -1845,7 +1918,11 @@ fn parse_atomic_in_conclusion(
             ),
         )
     })?;
-    let take_n = if s.is_open_bracket() { skip_balanced(input) } else { 1 };
+    let take_n = if s.is_open_bracket() {
+        skip_balanced(input)
+    } else {
+        1
+    };
     // Include any trailing iter suffix.
     let after_atom = &input[take_n..];
     let suffix = skip_type_suffix(after_atom);
@@ -1873,9 +1950,7 @@ fn parse_expression_until(
     let mut depth: i32 = 0;
     let mut taken: Vec<Spanned> = Vec::new();
     while let Some(s) = input.first() {
-        if depth == 0
-            && stop_lit.map(|t| t == &s.token).unwrap_or(false)
-        {
+        if depth == 0 && stop_lit.map(|t| t == &s.token).unwrap_or(false) {
             break;
         }
         depth += s.bracket_delta();
@@ -1957,7 +2032,10 @@ fn classify_simple_expression(
             },
             Token::Eps => Expr::Eps { span },
             _ => Expr::Unelaborated {
-                tokens: TokenRun { span, tokens: toks.to_vec() },
+                tokens: TokenRun {
+                    span,
+                    tokens: toks.to_vec(),
+                },
                 reason: ElabGap::Unrecognised,
             },
         });
@@ -2030,29 +2108,39 @@ fn classify_simple_expression(
     // didn't structure. Wrap as `Case` with a single `Raw` arg holding
     // the remainder. Better than a top-level `Raw` because downstream
     // consumers at least know the constructor name.
-    if let Some(Spanned { token: Token::Ident(head), .. }) = toks.first()
-        && is_case_head(head) {
-            let head_name = head.clone();
-            let args_slice = &toks[1..];
-            let arg_span = args_slice
-                .iter()
-                .map(|s| s.span)
-                .reduce(Span::join)
-                .expect("non-empty");
-            let args = vec![Expr::Unelaborated {
-                tokens: TokenRun { span: arg_span, tokens: args_slice.to_vec() },
-                reason: ElabGap::CoarseCaseFallback,
-            }];
-            return Ok(Expr::Case {
-                span,
-                head: head_name,
-                args,
-                op: None,
-            });
-        }
+    if let Some(Spanned {
+        token: Token::Ident(head),
+        ..
+    }) = toks.first()
+        && is_case_head(head)
+    {
+        let head_name = head.clone();
+        let args_slice = &toks[1..];
+        let arg_span = args_slice
+            .iter()
+            .map(|s| s.span)
+            .reduce(Span::join)
+            .expect("non-empty");
+        let args = vec![Expr::Unelaborated {
+            tokens: TokenRun {
+                span: arg_span,
+                tokens: args_slice.to_vec(),
+            },
+            reason: ElabGap::CoarseCaseFallback,
+        }];
+        return Ok(Expr::Case {
+            span,
+            head: head_name,
+            args,
+            op: None,
+        });
+    }
 
     Ok(Expr::Unelaborated {
-        tokens: TokenRun { span, tokens: toks.to_vec() },
+        tokens: TokenRun {
+            span,
+            tokens: toks.to_vec(),
+        },
         reason: ElabGap::Unrecognised,
     })
 }
@@ -2061,11 +2149,7 @@ fn classify_simple_expression(
 /// Returns `Some(expr)` only if the parse fully consumes `toks`; if it
 /// fails or leaves residual input, returns `None` and the caller falls
 /// back to its own structuring.
-fn try_pratt_expression(
-    toks: &[Spanned],
-    span: Span,
-    ctx: &ElabContext,
-) -> Option<Expr> {
+fn try_pratt_expression(toks: &[Spanned], span: Span, ctx: &ElabContext) -> Option<Expr> {
     let mut input: &[Spanned] = toks;
     let mut leaf = pratt_leaf;
     let tree = mixfix::parse_term(&mut input, &ctx.op_table, 0, &mut leaf).ok()?;
@@ -2083,10 +2167,7 @@ fn try_pratt_expression(
 /// NOTE: this leaf does not have access to `ElabContext` so it cannot
 /// honour `var` declarations. The post-Pratt `classify_simple_expression`
 /// handles that distinction for singletons.
-fn pratt_leaf(
-    input: &mut &[Spanned],
-    table: &OpTable,
-) -> Result<Tree<Expr>, Diagnostic> {
+fn pratt_leaf(input: &mut &[Spanned], table: &OpTable) -> Result<Tree<Expr>, Diagnostic> {
     let s = input.first().ok_or_else(|| {
         Diagnostic::error(
             Span::new(crate::source::FileId::new(0), u32::MAX, u32::MAX),
@@ -2107,9 +2188,18 @@ fn pratt_leaf(
                 op: None,
             }));
         }
-        Token::Ident(name) => Expr::Var { span, name: name.clone() },
-        Token::Nat(n) => Expr::Num { span, value: NumLit::Nat(n.clone()) },
-        Token::Text(t) => Expr::Text { span, value: t.clone() },
+        Token::Ident(name) => Expr::Var {
+            span,
+            name: name.clone(),
+        },
+        Token::Nat(n) => Expr::Num {
+            span,
+            value: NumLit::Nat(n.clone()),
+        },
+        Token::Text(t) => Expr::Text {
+            span,
+            value: t.clone(),
+        },
         Token::Eps => Expr::Eps { span },
         Token::LParen => {
             // Recurse for a parenthesised sub-expression.
@@ -2117,7 +2207,10 @@ fn pratt_leaf(
             let mut leaf2 = pratt_leaf;
             let inner = mixfix::parse_term(input, table, 0, &mut leaf2)?;
             match input.first() {
-                Some(Spanned { token: Token::RParen, .. }) => {
+                Some(Spanned {
+                    token: Token::RParen,
+                    ..
+                }) => {
                     *input = &input[1..];
                 }
                 Some(s) => {
@@ -2200,8 +2293,16 @@ fn try_classify_arith_escape(
     if toks.len() < 3 {
         return Ok(None);
     }
-    let (Some(Spanned { token: Token::Dollar, .. }), Some(Spanned { token: Token::LParen, .. })) =
-        (toks.first(), toks.get(1))
+    let (
+        Some(Spanned {
+            token: Token::Dollar,
+            ..
+        }),
+        Some(Spanned {
+            token: Token::LParen,
+            ..
+        }),
+    ) = (toks.first(), toks.get(1))
     else {
         return Ok(None);
     };
@@ -2222,11 +2323,7 @@ fn try_classify_arith_escape(
 /// Top of the arithmetic precedence ladder. Lowest precedence (longest
 /// span before splitting) is `\/`; highest is unary; below that lies
 /// the atom (number, ident, parens, `$call(...)`, nested `$()`).
-fn parse_arith(
-    toks: &[Spanned],
-    span: Span,
-    ctx: &ElabContext,
-) -> Result<Expr, Diagnostic> {
+fn parse_arith(toks: &[Spanned], span: Span, ctx: &ElabContext) -> Result<Expr, Diagnostic> {
     // Level 1: `\/` (logical or, left-assoc)
     if let Some(i) = arith_last_top(toks, |t| matches!(t, Token::LogOr)) {
         return bin_split(toks, i, BinOp::Or, span, ctx);
@@ -2259,7 +2356,11 @@ fn parse_arith(
         match &s.token {
             Token::Minus if toks.len() > 1 => {
                 let rest = &toks[1..];
-                let rest_span = rest.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+                let rest_span = rest
+                    .iter()
+                    .map(|s| s.span)
+                    .reduce(Span::join)
+                    .unwrap_or(span);
                 let e = parse_arith(rest, rest_span, ctx)?;
                 return Ok(Expr::Un {
                     span,
@@ -2270,7 +2371,11 @@ fn parse_arith(
             }
             Token::Plus if toks.len() > 1 => {
                 let rest = &toks[1..];
-                let rest_span = rest.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+                let rest_span = rest
+                    .iter()
+                    .map(|s| s.span)
+                    .reduce(Span::join)
+                    .unwrap_or(span);
                 let e = parse_arith(rest, rest_span, ctx)?;
                 return Ok(Expr::Un {
                     span,
@@ -2281,7 +2386,11 @@ fn parse_arith(
             }
             Token::Ident(n) if n == "not" && toks.len() > 1 => {
                 let rest = &toks[1..];
-                let rest_span = rest.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+                let rest_span = rest
+                    .iter()
+                    .map(|s| s.span)
+                    .reduce(Span::join)
+                    .unwrap_or(span);
                 let e = parse_arith(rest, rest_span, ctx)?;
                 return Ok(Expr::Un {
                     span,
@@ -2297,11 +2406,7 @@ fn parse_arith(
     parse_arith_atom(toks, span, ctx)
 }
 
-fn parse_arith_atom(
-    toks: &[Spanned],
-    span: Span,
-    ctx: &ElabContext,
-) -> Result<Expr, Diagnostic> {
+fn parse_arith_atom(toks: &[Spanned], span: Span, ctx: &ElabContext) -> Result<Expr, Diagnostic> {
     // Parenthesised: `( ... )` covering the whole slice.
     if matches!(toks.first().map(|s| &s.token), Some(Token::LParen))
         && matches!(toks.last().map(|s| &s.token), Some(Token::RParen))
@@ -2339,8 +2444,16 @@ fn bin_split(
 ) -> Result<Expr, Diagnostic> {
     let lhs = &toks[..pivot];
     let rhs = &toks[pivot + 1..];
-    let lhs_span = lhs.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
-    let rhs_span = rhs.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+    let lhs_span = lhs
+        .iter()
+        .map(|s| s.span)
+        .reduce(Span::join)
+        .unwrap_or(span);
+    let rhs_span = rhs
+        .iter()
+        .map(|s| s.span)
+        .reduce(Span::join)
+        .unwrap_or(span);
     Ok(Expr::Bin {
         span,
         op,
@@ -2359,8 +2472,16 @@ fn cmp_split(
 ) -> Result<Expr, Diagnostic> {
     let lhs = &toks[..pivot];
     let rhs = &toks[pivot + 1..];
-    let lhs_span = lhs.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
-    let rhs_span = rhs.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+    let lhs_span = lhs
+        .iter()
+        .map(|s| s.span)
+        .reduce(Span::join)
+        .unwrap_or(span);
+    let rhs_span = rhs
+        .iter()
+        .map(|s| s.span)
+        .reduce(Span::join)
+        .unwrap_or(span);
     Ok(Expr::Cmp {
         span,
         op,
@@ -2449,8 +2570,16 @@ fn try_classify_call(
     if toks.len() < 4 {
         return Ok(None);
     }
-    let (Some(Spanned { token: Token::Dollar, .. }), Some(Spanned { token: Token::Ident(name), .. })) =
-        (toks.first(), toks.get(1))
+    let (
+        Some(Spanned {
+            token: Token::Dollar,
+            ..
+        }),
+        Some(Spanned {
+            token: Token::Ident(name),
+            ..
+        }),
+    ) = (toks.first(), toks.get(1))
     else {
         return Ok(None);
     };
@@ -2476,7 +2605,10 @@ fn try_classify_call(
                 .unwrap_or(span);
             classify_simple_expression(slice, arg_span, ctx).unwrap_or_else(|_| {
                 Expr::Unelaborated {
-                    tokens: TokenRun { span: arg_span, tokens: slice.to_vec() },
+                    tokens: TokenRun {
+                        span: arg_span,
+                        tokens: slice.to_vec(),
+                    },
                     reason: ElabGap::CallArgUnrecognised,
                 }
             })
@@ -2527,7 +2659,9 @@ fn try_classify_path_update(
             _ => {}
         }
     }
-    let Some(open) = open_idx else { return Ok(None) };
+    let Some(open) = open_idx else {
+        return Ok(None);
+    };
     if open == 0 {
         return Ok(None);
     }
@@ -2539,7 +2673,9 @@ fn try_classify_path_update(
     // Body must begin with `.` or `[` to look like a path (anchored at
     // the implicit root). A bare identifier or number means plain
     // indexing, which `try_classify_idx` will handle.
-    let Some(first) = inner.first() else { return Ok(None) };
+    let Some(first) = inner.first() else {
+        return Ok(None);
+    };
     if !matches!(&first.token, Token::Dot | Token::LBracket) {
         return Ok(None);
     }
@@ -2559,7 +2695,11 @@ fn try_classify_path_update(
         .reduce(Span::join)
         .unwrap_or(span);
     let rhs = classify_simple_expression(rhs_toks, rhs_span, ctx)?;
-    let prefix_span = prefix.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+    let prefix_span = prefix
+        .iter()
+        .map(|s| s.span)
+        .reduce(Span::join)
+        .unwrap_or(span);
     let e1 = classify_simple_expression(prefix, prefix_span, ctx)?;
     Ok(Some(match op_kind {
         PathUpdateOp::Upd => Expr::Upd {
@@ -2627,7 +2767,10 @@ fn parse_path(toks: &[Spanned], ctx: &ElabContext) -> Result<Path, Diagnostic> {
                         ),
                     ));
                 };
-                path = Path::Dot { p: Box::new(path), field: field.clone() };
+                path = Path::Dot {
+                    p: Box::new(path),
+                    field: field.clone(),
+                };
                 i += 2;
             }
             Token::LBracket => {
@@ -2651,10 +2794,7 @@ fn parse_path(toks: &[Spanned], ctx: &ElabContext) -> Result<Path, Diagnostic> {
                     j += 1;
                 }
                 let Some(close) = close else {
-                    return Err(Diagnostic::error(
-                        toks[i].span,
-                        "unmatched `[` in path",
-                    ));
+                    return Err(Diagnostic::error(toks[i].span, "unmatched `[` in path"));
                 };
                 let body = &toks[body_start..close];
                 let body_span = body
@@ -2672,11 +2812,23 @@ fn parse_path(toks: &[Spanned], ctx: &ElabContext) -> Result<Path, Diagnostic> {
                             "slice path step needs expressions on both sides of `:`",
                         ));
                     }
-                    let lspan = lhs.iter().map(|s| s.span).reduce(Span::join).unwrap_or(body_span);
-                    let rspan = rhs.iter().map(|s| s.span).reduce(Span::join).unwrap_or(body_span);
+                    let lspan = lhs
+                        .iter()
+                        .map(|s| s.span)
+                        .reduce(Span::join)
+                        .unwrap_or(body_span);
+                    let rspan = rhs
+                        .iter()
+                        .map(|s| s.span)
+                        .reduce(Span::join)
+                        .unwrap_or(body_span);
                     let e1 = classify_simple_expression(lhs, lspan, ctx)?;
                     let e2 = classify_simple_expression(rhs, rspan, ctx)?;
-                    path = Path::Slice { p: Box::new(path), e1, e2 };
+                    path = Path::Slice {
+                        p: Box::new(path),
+                        e1,
+                        e2,
+                    };
                 } else {
                     if body.is_empty() {
                         return Err(Diagnostic::error(
@@ -2685,7 +2837,10 @@ fn parse_path(toks: &[Spanned], ctx: &ElabContext) -> Result<Path, Diagnostic> {
                         ));
                     }
                     let e = classify_simple_expression(body, body_span, ctx)?;
-                    path = Path::Idx { p: Box::new(path), e };
+                    path = Path::Idx {
+                        p: Box::new(path),
+                        e,
+                    };
                 }
                 i = close + 1;
             }
@@ -2740,7 +2895,9 @@ fn try_classify_idx(
             _ => {}
         }
     }
-    let Some(open) = open_idx else { return Ok(None) };
+    let Some(open) = open_idx else {
+        return Ok(None);
+    };
     if open == 0 {
         return Ok(None);
     }
@@ -2749,8 +2906,16 @@ fn try_classify_idx(
     if !depth_balanced(prefix) || !depth_balanced(inner) {
         return Ok(None);
     }
-    let prefix_span = prefix.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
-    let inner_span = inner.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+    let prefix_span = prefix
+        .iter()
+        .map(|s| s.span)
+        .reduce(Span::join)
+        .unwrap_or(span);
+    let inner_span = inner
+        .iter()
+        .map(|s| s.span)
+        .reduce(Span::join)
+        .unwrap_or(span);
     let e1 = classify_simple_expression(prefix, prefix_span, ctx)?;
     // Slice form: `e [ lo : hi ]` — top-level `:` inside the brackets.
     // Both halves must be non-empty; bare `[:]` falls back to Idx.
@@ -2758,8 +2923,16 @@ fn try_classify_idx(
         let lhs = &inner[..colon];
         let rhs = &inner[colon + 1..];
         if !lhs.is_empty() && !rhs.is_empty() {
-            let lspan = lhs.iter().map(|s| s.span).reduce(Span::join).unwrap_or(inner_span);
-            let rspan = rhs.iter().map(|s| s.span).reduce(Span::join).unwrap_or(inner_span);
+            let lspan = lhs
+                .iter()
+                .map(|s| s.span)
+                .reduce(Span::join)
+                .unwrap_or(inner_span);
+            let rspan = rhs
+                .iter()
+                .map(|s| s.span)
+                .reduce(Span::join)
+                .unwrap_or(inner_span);
             let e2 = classify_simple_expression(lhs, lspan, ctx)?;
             let e3 = classify_simple_expression(rhs, rspan, ctx)?;
             return Ok(Some(Expr::Slice {
@@ -2798,7 +2971,11 @@ fn try_classify_dot(
     if !depth_balanced(prefix) {
         return Ok(None);
     }
-    let prefix_span = prefix.iter().map(|s| s.span).reduce(Span::join).unwrap_or(span);
+    let prefix_span = prefix
+        .iter()
+        .map(|s| s.span)
+        .reduce(Span::join)
+        .unwrap_or(span);
     let e = classify_simple_expression(prefix, prefix_span, ctx)?;
     Ok(Some(Expr::Dot {
         span,
@@ -2961,7 +3138,10 @@ fn try_classify_record(
             .reduce(Span::join)
             .unwrap_or(span);
         let value = if val_toks.is_empty() {
-            Expr::Tup { span: val_span, items: Vec::new() }
+            Expr::Tup {
+                span: val_span,
+                items: Vec::new(),
+            }
         } else {
             classify_simple_expression(val_toks, val_span, ctx)?
         };
@@ -3045,7 +3225,11 @@ mod tests {
             relation Numtype_sub: context |- numtype <: numtype
         "#;
         let ctx = build_from_str(src);
-        let op = ctx.op_table.iter().find(|o| o.name == "Numtype_sub").unwrap();
+        let op = ctx
+            .op_table
+            .iter()
+            .find(|o| o.name == "Numtype_sub")
+            .unwrap();
         // % |- % <: %
         assert_eq!(op.fragments.len(), 5);
         assert!(matches!(op.fragments[0], Fragment::Hole(_)));
@@ -3089,7 +3273,10 @@ mod tests {
         // 3 holes, 2 lits
         assert_eq!(op.fragments.len(), 5);
         assert_eq!(
-            op.fragments.iter().filter(|f| matches!(f, Fragment::Hole(_))).count(),
+            op.fragments
+                .iter()
+                .filter(|f| matches!(f, Fragment::Hole(_)))
+                .count(),
             3
         );
     }
@@ -3103,12 +3290,18 @@ mod tests {
             relation Defaultable: |- valtype DEFAULTABLE
         "#;
         let ctx = build_from_str(src);
-        let op = ctx.op_table.iter().find(|o| o.name == "Defaultable").unwrap();
+        let op = ctx
+            .op_table
+            .iter()
+            .find(|o| o.name == "Defaultable")
+            .unwrap();
         // Lit Hole Lit
         assert_eq!(op.fragments.len(), 3);
         assert!(matches!(op.fragments[0], Fragment::Lit(Token::Turnstile)));
         assert!(matches!(op.fragments[1], Fragment::Hole(_)));
-        assert!(matches!(op.fragments[2], Fragment::Lit(Token::Ident(ref s)) if s == "DEFAULTABLE"));
+        assert!(
+            matches!(op.fragments[2], Fragment::Lit(Token::Ident(ref s)) if s == "DEFAULTABLE")
+        );
     }
 
     #[test]
@@ -3193,8 +3386,14 @@ mod tests {
             ops.iter().map(|o| fmt_op(o)).collect::<Vec<_>>(),
         );
         let lengths: Vec<usize> = ops.iter().map(|o| o.fragments.len()).collect();
-        assert!(lengths.contains(&5), "long form should have 5 fragments: {lengths:?}");
-        assert!(lengths.contains(&3), "short form should have 3 fragments: {lengths:?}");
+        assert!(
+            lengths.contains(&5),
+            "long form should have 5 fragments: {lengths:?}"
+        );
+        assert!(
+            lengths.contains(&3),
+            "short form should have 3 fragments: {lengths:?}"
+        );
         // Both forms must agree on the leading-hole precedence so the
         // Pratt parser treats them as alternatives of the same binding
         // strength. They share `ARROW_LEFT_PREC` so the arrow doesn't
@@ -3454,9 +3653,7 @@ mod tests {
         assert!(
             matches!(lhs, Expr::Case { head, args, .. } if head == "UNREACHABLE" && args.is_empty())
         );
-        assert!(
-            matches!(rhs, Expr::Case { head, args, .. } if head == "TRAP" && args.is_empty())
-        );
+        assert!(matches!(rhs, Expr::Case { head, args, .. } if head == "TRAP" && args.is_empty()));
     }
 
     #[test]
@@ -3551,7 +3748,9 @@ mod tests {
         "#;
         let elab = elab_first_rule(src);
         assert_eq!(elab.premises.len(), 1);
-        assert!(matches!(&elab.premises[0], ElabPremise::If(Expr::Var { name, .. }) if name == "a"));
+        assert!(
+            matches!(&elab.premises[0], ElabPremise::If(Expr::Var { name, .. }) if name == "a")
+        );
     }
 
     #[test]
@@ -3600,7 +3799,10 @@ mod tests {
         "#;
         let elab = elab_first_rule(src);
         assert_eq!(elab.premises.len(), 1);
-        let ElabPremise::Rule { rel_name, operands, .. } = &elab.premises[0] else {
+        let ElabPremise::Rule {
+            rel_name, operands, ..
+        } = &elab.premises[0]
+        else {
             panic!("expected Rule premise, got {:?}", elab.premises[0]);
         };
         assert_eq!(rel_name, "OK");
@@ -3618,7 +3820,10 @@ mod tests {
               -- Unknown_rel: C |- z : z
         "#;
         let elab = elab_first_rule(src);
-        assert!(matches!(&elab.premises[0], ElabPremise::Unelaborated { .. }));
+        assert!(matches!(
+            &elab.premises[0],
+            ElabPremise::Unelaborated { .. }
+        ));
     }
 
     // ---------- profile merging ----------
@@ -3773,8 +3978,20 @@ mod tests {
         "#;
         let elab = elab_first_rule(src);
         assert_eq!(elab.operands.len(), 3);
-        assert!(matches!(&elab.operands[1], Expr::Iter { kind: IterKind::Opt, .. }));
-        assert!(matches!(&elab.operands[2], Expr::Iter { kind: IterKind::Plus, .. }));
+        assert!(matches!(
+            &elab.operands[1],
+            Expr::Iter {
+                kind: IterKind::Opt,
+                ..
+            }
+        ));
+        assert!(matches!(
+            &elab.operands[2],
+            Expr::Iter {
+                kind: IterKind::Plus,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -3795,7 +4012,10 @@ mod tests {
         let elab = elab_first_rule(src);
         assert_eq!(elab.operands.len(), 3);
         let Expr::Case { head, args, .. } = &elab.operands[1] else {
-            panic!("expected Case for second operand, got {:?}", elab.operands[1]);
+            panic!(
+                "expected Case for second operand, got {:?}",
+                elab.operands[1]
+            );
         };
         assert_eq!(head, "REF");
         // Two structured args, not a single Raw fallback arg.
@@ -3963,10 +4183,7 @@ mod tests {
             .map(|s| s.span)
             .reduce(Span::join)
             .expect("non-empty input");
-        let tr = crate::cst::TokenRun {
-            span,
-            tokens,
-        };
+        let tr = crate::cst::TokenRun { span, tokens };
         classify_token_run(&tr, &ctx).expect("classify ok")
     }
 
@@ -4010,11 +4227,19 @@ mod tests {
             panic!("expected Expr::Upd, got {e:?}");
         };
         // Path::Dot { p: Path::Dot { p: Root, field: "MODULE" }, field: "GLOBALS" }
-        let Path::Dot { p: outer_p, field: outer_field } = path.as_ref() else {
+        let Path::Dot {
+            p: outer_p,
+            field: outer_field,
+        } = path.as_ref()
+        else {
             panic!("outer not Dot");
         };
         assert_eq!(outer_field, "GLOBALS");
-        let Path::Dot { p: inner_p, field: inner_field } = outer_p.as_ref() else {
+        let Path::Dot {
+            p: inner_p,
+            field: inner_field,
+        } = outer_p.as_ref()
+        else {
             panic!("inner not Dot");
         };
         assert_eq!(inner_field, "MODULE");

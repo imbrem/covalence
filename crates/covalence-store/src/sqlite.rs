@@ -124,11 +124,7 @@ impl ContentStore<O256> for SqliteStore {
     /// the whole BLOB into memory for the slice. One query returns the
     /// row's true `length(data)` alongside the slice so we can validate
     /// the range without a second round trip.
-    fn get_slice(
-        &self,
-        key: &O256,
-        range: std::ops::Range<u64>,
-    ) -> Result<Vec<u8>, StoreError> {
+    fn get_slice(&self, key: &O256, range: std::ops::Range<u64>) -> Result<Vec<u8>, StoreError> {
         let length_to_read = range.end.saturating_sub(range.start).min(i64::MAX as u64) as i64;
         let conn = self.conn.lock().unwrap();
         // substr is 1-indexed; passing 1 means the first byte. SQLite

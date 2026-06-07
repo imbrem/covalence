@@ -15,8 +15,8 @@ use std::sync::Arc;
 use smol_str::SmolStr;
 
 use crate::id::{
-    BytesId, ImportId, IntId, NatId, StrId, TermId, TermSubstId,
-    TyArgsId, TyVarId, TypeId, TypeSubstId, VarId,
+    BytesId, ImportId, IntId, NatId, StrId, TermId, TermSubstId, TyArgsId, TyVarId, TypeId,
+    TypeSubstId, VarId,
 };
 use crate::subst::{TermSubst, TypeSubst};
 use crate::term::{Deps, TermDef, TermKind, TermRef};
@@ -202,10 +202,18 @@ impl Arena {
 
     // -- primitive-type accessors ---------------------------------------
 
-    pub fn bool_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::Bool) }
-    pub fn bytes_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::Bytes) }
-    pub fn int_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::Int) }
-    pub fn nat_ty(&self) -> TypeRef { TypeRef::builtin(BuiltinTy::Nat) }
+    pub fn bool_ty(&self) -> TypeRef {
+        TypeRef::builtin(BuiltinTy::Bool)
+    }
+    pub fn bytes_ty(&self) -> TypeRef {
+        TypeRef::builtin(BuiltinTy::Bytes)
+    }
+    pub fn int_ty(&self) -> TypeRef {
+        TypeRef::builtin(BuiltinTy::Int)
+    }
+    pub fn nat_ty(&self) -> TypeRef {
+        TypeRef::builtin(BuiltinTy::Nat)
+    }
 
     /// `TypeRef` for the primitive corresponding to a [`BuiltinTy`].
     pub fn builtin_ty(&self, ty: BuiltinTy) -> TypeRef {
@@ -467,13 +475,7 @@ impl Arena {
     ///
     /// Fast path: terms with no free vars (`has_free = false`) are
     /// returned unchanged without a walk.
-    pub fn abstract_over(
-        &mut self,
-        t: TermRef,
-        name: StrId,
-        ty: TypeRef,
-        depth: u32,
-    ) -> TermRef {
+    pub fn abstract_over(&mut self, t: TermRef, name: StrId, ty: TypeRef, depth: u32) -> TermRef {
         self.abstract_inner(t, name, ty, depth)
     }
 
@@ -706,7 +708,10 @@ impl Arena {
     ) -> TermDef {
         use TermDef::*;
         match def {
-            Lam(ty_a, body) => Lam(ty_a, self.subst_free_inner(body, name, ty, replacement, bd + 1)),
+            Lam(ty_a, body) => Lam(
+                ty_a,
+                self.subst_free_inner(body, name, ty, replacement, bd + 1),
+            ),
             Forall(p) => Forall(self.subst_free_inner(p, name, ty, replacement, bd)),
             Exists(p) => Exists(self.subst_free_inner(p, name, ty, replacement, bd)),
             Op1(o, p) => Op1(o, self.subst_free_inner(p, name, ty, replacement, bd)),
@@ -728,13 +733,7 @@ impl Arena {
         }
     }
 
-    fn abstract_inner(
-        &mut self,
-        t: TermRef,
-        name: StrId,
-        ty: TypeRef,
-        depth: u32,
-    ) -> TermRef {
+    fn abstract_inner(&mut self, t: TermRef, name: StrId, ty: TypeRef, depth: u32) -> TermRef {
         let Some(id) = t.as_local() else { return t };
         if !self.term_props(id).has_free {
             return t;
@@ -753,13 +752,7 @@ impl Arena {
         TermRef::local(self.alloc_term(new_def))
     }
 
-    fn abstract_children(
-        &mut self,
-        def: TermDef,
-        name: StrId,
-        ty: TypeRef,
-        depth: u32,
-    ) -> TermDef {
+    fn abstract_children(&mut self, def: TermDef, name: StrId, ty: TypeRef, depth: u32) -> TermDef {
         use TermDef::*;
         match def {
             Lam(ty_a, body) => Lam(ty_a, self.abstract_inner(body, name, ty, depth + 1)),
@@ -841,10 +834,13 @@ impl Arena {
             TermDef::Free(_, _)
             | TermDef::Const(_, _)
             | TermDef::Bool(_)
-            | TermDef::IntInline(_) | TermDef::IntStored(_)
-            | TermDef::NatInline(_) | TermDef::NatStored(_)
+            | TermDef::IntInline(_)
+            | TermDef::IntStored(_)
+            | TermDef::NatInline(_)
+            | TermDef::NatStored(_)
             | TermDef::BytesStored(_)
-            | TermDef::Abs(_) | TermDef::Rep(_)
+            | TermDef::Abs(_)
+            | TermDef::Rep(_)
             | TermDef::Foreign(_, _) => def,
         }
     }
@@ -909,10 +905,13 @@ impl Arena {
             TermDef::Free(_, _)
             | TermDef::Const(_, _)
             | TermDef::Bool(_)
-            | TermDef::IntInline(_) | TermDef::IntStored(_)
-            | TermDef::NatInline(_) | TermDef::NatStored(_)
+            | TermDef::IntInline(_)
+            | TermDef::IntStored(_)
+            | TermDef::NatInline(_)
+            | TermDef::NatStored(_)
             | TermDef::BytesStored(_)
-            | TermDef::Abs(_) | TermDef::Rep(_)
+            | TermDef::Abs(_)
+            | TermDef::Rep(_)
             | TermDef::Foreign(_, _) => def,
         }
     }
@@ -1045,12 +1044,7 @@ impl Arena {
         }
     }
 
-    fn infer_eps(
-        &mut self,
-        elem_ty: TypeRef,
-        p: TermRef,
-        ctx: &mut Vec<TypeRef>,
-    ) -> TypeInfo {
+    fn infer_eps(&mut self, elem_ty: TypeRef, p: TermRef, ctx: &mut Vec<TypeRef>) -> TypeInfo {
         let p_info = self.infer_ref(p, ctx);
         let p_ty = match p_info.decode() {
             TypeInfoKind::Typed(t) => t,
@@ -1203,16 +1197,36 @@ impl Arena {
     }
 
     // ---- crate-internal table accessors for content hashing (Phase H) ----
-    pub(crate) fn all_types(&self) -> &[TypeDef] { &self.types }
-    pub(crate) fn all_terms(&self) -> &[TermDef] { &self.terms }
-    pub(crate) fn all_term_props(&self) -> &[TermProps] { &self.term_props }
-    pub(crate) fn all_strings(&self) -> &[SmolStr] { &self.strings }
-    pub(crate) fn all_bytes(&self) -> &[bytes::Bytes] { &self.bytes }
-    pub(crate) fn all_ints(&self) -> &[covalence_types::Int] { &self.ints }
-    pub(crate) fn all_nats(&self) -> &[covalence_types::Nat] { &self.nats }
-    pub(crate) fn all_tyargs(&self) -> &[Vec<TypeRef>] { &self.tyargs }
-    pub(crate) fn all_term_substs(&self) -> &[TermSubst] { &self.term_substs }
-    pub(crate) fn all_type_substs(&self) -> &[TypeSubst] { &self.type_substs }
+    pub(crate) fn all_types(&self) -> &[TypeDef] {
+        &self.types
+    }
+    pub(crate) fn all_terms(&self) -> &[TermDef] {
+        &self.terms
+    }
+    pub(crate) fn all_term_props(&self) -> &[TermProps] {
+        &self.term_props
+    }
+    pub(crate) fn all_strings(&self) -> &[SmolStr] {
+        &self.strings
+    }
+    pub(crate) fn all_bytes(&self) -> &[bytes::Bytes] {
+        &self.bytes
+    }
+    pub(crate) fn all_ints(&self) -> &[covalence_types::Int] {
+        &self.ints
+    }
+    pub(crate) fn all_nats(&self) -> &[covalence_types::Nat] {
+        &self.nats
+    }
+    pub(crate) fn all_tyargs(&self) -> &[Vec<TypeRef>] {
+        &self.tyargs
+    }
+    pub(crate) fn all_term_substs(&self) -> &[TermSubst] {
+        &self.term_substs
+    }
+    pub(crate) fn all_type_substs(&self) -> &[TypeSubst] {
+        &self.type_substs
+    }
 
     /// Compute the BLAKE3 content hash of this arena. See
     /// [`crate::hash::arena`] for details.
@@ -1279,11 +1293,7 @@ impl Arena {
     /// = a` and `rep(abs x) = x ⇔ P x ∨ ¬∃y. P y` — are derivable from
     /// [`Thm::subset_axioms`](crate::Thm::subset_axioms) once
     /// implemented.
-    pub fn alloc_subset_ty(
-        &mut self,
-        alpha: TypeRef,
-        p: TermId,
-    ) -> Result<TypeRef, SubsetError> {
+    pub fn alloc_subset_ty(&mut self, alpha: TypeRef, p: TermId) -> Result<TypeRef, SubsetError> {
         if (p.0 as usize) >= self.terms.len() {
             return Err(SubsetError::PredicateOutOfRange);
         }
@@ -1525,7 +1535,10 @@ impl Arena {
         let (type_info, has_free) = self.compute_term_props(&def);
         let id = TermId(self.terms.len() as u32);
         self.terms.push(def);
-        self.term_props.push(TermProps { type_info, has_free });
+        self.term_props.push(TermProps {
+            type_info,
+            has_free,
+        });
         self.term_dedup.insert(def, id);
         // Force a top-level re-walk so the cache reflects the
         // structurally-correct type, ignoring stale child caches.
@@ -1745,9 +1758,7 @@ impl Arena {
                 let lb = self.materialize_term_ref(source, b, term_subst, type_subst);
                 TermRef::local(self.alloc_term(TermDef::Op2(op, la, lb)))
             }
-            TermDef::NatInline(_) | TermDef::IntInline(_) => {
-                TermRef::local(self.alloc_term(def))
-            }
+            TermDef::NatInline(_) | TermDef::IntInline(_) => TermRef::local(self.alloc_term(def)),
             TermDef::NatStored(nid) => {
                 let n = source.nat(nid).clone();
                 let local_nid = self.intern_nat(n);
@@ -1778,10 +1789,8 @@ impl Arena {
                 // for now we honor the inner edge's substitutions
                 // verbatim.)
                 let inner_imp = source.imports[inner_import.0 as usize].clone();
-                let inner_term_subst =
-                    source.term_substs[inner_imp.term_subst.0 as usize].clone();
-                let inner_type_subst =
-                    source.type_substs[inner_imp.type_subst.0 as usize].clone();
+                let inner_term_subst = source.term_substs[inner_imp.term_subst.0 as usize].clone();
+                let inner_type_subst = source.type_substs[inner_imp.type_subst.0 as usize].clone();
                 self.materialize_term(
                     &inner_imp.arena,
                     inner_source_id,
@@ -1854,8 +1863,7 @@ impl Arena {
             }
             TypeDef::Foreign(inner_import, inner_source_id) => {
                 let inner_imp = source.imports[inner_import.0 as usize].clone();
-                let inner_type_subst =
-                    source.type_substs[inner_imp.type_subst.0 as usize].clone();
+                let inner_type_subst = source.type_substs[inner_imp.type_subst.0 as usize].clone();
                 self.materialize_type(&inner_imp.arena, inner_source_id, &inner_type_subst)
             }
         }
@@ -2115,7 +2123,6 @@ fn propagate2_until_typed(a: TypeInfo, b: TypeInfo) -> TypeInfo {
 }
 
 impl Arena {
-
     // -- canonical walks -------------------------------------------------
 
     /// Resolve a term reference structurally — walk through any

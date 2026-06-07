@@ -19,9 +19,7 @@ use std::collections::HashMap;
 use crate::ast::{Command, Expr};
 use crate::bridge::EgglogBridge;
 use crate::error::BridgeError;
-use crate::proof::{
-    Justification, Proof, ProofId, ProofStore, Proposition, Term, TermDag, TermId,
-};
+use crate::proof::{Justification, Proof, ProofId, ProofStore, Proposition, Term, TermDag, TermId};
 
 /// Result of lowering a program: a [`TermDag`] holding every materialised
 /// term, a [`ProofStore`] of `Fiat`-justified ground equalities, and the
@@ -65,8 +63,7 @@ pub fn lower_program<B: EgglogBridge>(
             Command::Datatype { name, ctors } => {
                 bridge.declare_sort(name)?;
                 for (ctor_name, ctor_params) in ctors {
-                    let param_refs: Vec<&str> =
-                        ctor_params.iter().map(String::as_str).collect();
+                    let param_refs: Vec<&str> = ctor_params.iter().map(String::as_str).collect();
                     bridge.declare_constructor(ctor_name, &param_refs, name)?;
                 }
             }
@@ -87,15 +84,16 @@ pub fn lower_program<B: EgglogBridge>(
             Command::Prove(lhs, rhs) => {
                 let _ = build_term(&mut dag, lhs);
                 let _ = build_term(&mut dag, rhs);
-                let pid = union_index.get(&(lhs.clone(), rhs.clone())).copied().ok_or_else(
-                    || {
+                let pid = union_index
+                    .get(&(lhs.clone(), rhs.clone()))
+                    .copied()
+                    .ok_or_else(|| {
                         BridgeError::Malformed(format!(
                             "(prove …) target {lhs:?} = {rhs:?} has no matching \
                              (union …) — derivation from source is out of scope \
                              for the lowering, only ground Fiats are supported"
                         ))
-                    },
-                )?;
+                    })?;
                 if prove_root.replace(pid).is_some() {
                     return Err(BridgeError::Malformed(
                         "multiple (prove …) commands — only one root supported".into(),
@@ -105,9 +103,8 @@ pub fn lower_program<B: EgglogBridge>(
         }
     }
 
-    let root = prove_root.ok_or_else(|| {
-        BridgeError::Malformed("program has no (prove …) command".into())
-    })?;
+    let root = prove_root
+        .ok_or_else(|| BridgeError::Malformed("program has no (prove …) command".into()))?;
     Ok(LoweredProgram { dag, store, root })
 }
 
@@ -115,8 +112,7 @@ fn build_term(dag: &mut TermDag, expr: &Expr) -> TermId {
     match expr {
         Expr::Sym(s) => dag.alloc(Term::Const(s.clone())),
         Expr::App(head, args) => {
-            let arg_ids: Vec<TermId> =
-                args.iter().map(|a| build_term(dag, a)).collect();
+            let arg_ids: Vec<TermId> = args.iter().map(|a| build_term(dag, a)).collect();
             dag.alloc(Term::App(head.clone(), arg_ids))
         }
     }

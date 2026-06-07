@@ -904,20 +904,34 @@ pub enum Expr {
     Num { span: Span, value: NumLit },
     Text { span: Span, value: String },
     /// Unary operator: `not e`, `+e`, `-e`, `±e`, `∓e`.
-    Un { span: Span, op: UnOp, ty: OpType, e: Box<Expr> },
-    /// Binary arithmetic / logical: `e1 + e2`, `e1 ∧ e2`, etc.
+    ///
+    /// `ty` is `None` before `crate::typecheck` runs (elab can't
+    /// infer it from source alone) and `Some(op_ty)` after.
+    /// The `expr_to_spectec` lowering treats `None` as
+    /// "operator-type not yet known" and falls back to OCaml's
+    /// `OpType::Nat` default — the distinction is honest at the data
+    /// level even though the lowered shape is the same.
+    Un {
+        span: Span,
+        op: UnOp,
+        ty: Option<OpType>,
+        e: Box<Expr>,
+    },
+    /// Binary arithmetic / logical: `e1 + e2`, `e1 ∧ e2`, etc. `ty`
+    /// is `None` pre-typecheck; see [`Expr::Un`].
     Bin {
         span: Span,
         op: BinOp,
-        ty: OpType,
+        ty: Option<OpType>,
         e1: Box<Expr>,
         e2: Box<Expr>,
     },
-    /// Comparison: `e1 = e2`, `e1 ≤ e2`, etc.
+    /// Comparison: `e1 = e2`, `e1 ≤ e2`, etc. `ty` is `None`
+    /// pre-typecheck; see [`Expr::Un`].
     Cmp {
         span: Span,
         op: CmpOp,
-        ty: OpType,
+        ty: Option<OpType>,
         e1: Box<Expr>,
         e2: Box<Expr>,
     },
@@ -2215,11 +2229,11 @@ fn parse_arith(
 ) -> Result<Expr, Diagnostic> {
     // Level 1: `\/` (logical or, left-assoc)
     if let Some(i) = arith_last_top(toks, |t| matches!(t, Token::LogOr)) {
-        return bin_split(toks, i, BinOp::Or, OpType::Bool, span, ctx);
+        return bin_split(toks, i, BinOp::Or, span, ctx);
     }
     // Level 2: `/\` (logical and, left-assoc)
     if let Some(i) = arith_last_top(toks, |t| matches!(t, Token::LogAnd)) {
-        return bin_split(toks, i, BinOp::And, OpType::Bool, span, ctx);
+        return bin_split(toks, i, BinOp::And, span, ctx);
     }
     // Level 3: comparisons (non-associative; we just take the leftmost
     // hit and let the right side carry any chained comparisons —
@@ -2229,16 +2243,16 @@ fn parse_arith(
     }
     // Level 4: add/sub (left-assoc)
     if let Some((i, op)) = arith_last_addsub(toks) {
-        return bin_split(toks, i, op, OpType::Nat, span, ctx);
+        return bin_split(toks, i, op, span, ctx);
     }
     // Level 5: mul/div/mod (left-assoc). SpecTec uses `*`, `/`, `mod`.
     // `mod` lexes as an Ident, so we recognise it positionally.
     if let Some((i, op)) = arith_last_muldiv(toks) {
-        return bin_split(toks, i, op, OpType::Nat, span, ctx);
+        return bin_split(toks, i, op, span, ctx);
     }
     // Level 6: pow `^` (right-assoc — split on the first occurrence).
     if let Some(i) = arith_first_top(toks, |t| matches!(t, Token::Caret)) {
-        return bin_split(toks, i, BinOp::Pow, OpType::Nat, span, ctx);
+        return bin_split(toks, i, BinOp::Pow, span, ctx);
     }
     // Level 7: unary `+` / `-` / `not`.
     if let Some(s) = toks.first() {
@@ -2250,7 +2264,7 @@ fn parse_arith(
                 return Ok(Expr::Un {
                     span,
                     op: UnOp::Minus,
-                    ty: OpType::Nat,
+                    ty: None,
                     e: Box::new(e),
                 });
             }
@@ -2261,7 +2275,7 @@ fn parse_arith(
                 return Ok(Expr::Un {
                     span,
                     op: UnOp::Plus,
-                    ty: OpType::Nat,
+                    ty: None,
                     e: Box::new(e),
                 });
             }
@@ -2272,7 +2286,7 @@ fn parse_arith(
                 return Ok(Expr::Un {
                     span,
                     op: UnOp::Not,
-                    ty: OpType::Bool,
+                    ty: None,
                     e: Box::new(e),
                 });
             }
@@ -2320,7 +2334,6 @@ fn bin_split(
     toks: &[Spanned],
     pivot: usize,
     op: BinOp,
-    ty: OpType,
     span: Span,
     ctx: &ElabContext,
 ) -> Result<Expr, Diagnostic> {
@@ -2331,7 +2344,7 @@ fn bin_split(
     Ok(Expr::Bin {
         span,
         op,
-        ty,
+        ty: None,
         e1: Box::new(parse_arith(lhs, lhs_span, ctx)?),
         e2: Box::new(parse_arith(rhs, rhs_span, ctx)?),
     })
@@ -2351,7 +2364,7 @@ fn cmp_split(
     Ok(Expr::Cmp {
         span,
         op,
-        ty: OpType::Nat,
+        ty: None,
         e1: Box::new(parse_arith(lhs, lhs_span, ctx)?),
         e2: Box::new(parse_arith(rhs, rhs_span, ctx)?),
     })

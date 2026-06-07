@@ -641,20 +641,24 @@ pub fn expr_to_spectec(e: &Expr, ctx: &ElabContext) -> spectec_ast::SpecTecExp {
             n: num_lit_to_spectec(value),
         },
         Expr::Text { value, .. } => S::Text { t: value.clone() },
+        // `ty` is `Some(_)` after typecheck, `None` if elab didn't
+        // populate it. Lowering defaults to OpType::Nat for `None`
+        // — matches the OCaml dump's behaviour on un-typechecked
+        // inputs and preserves the differential test's structure.
         Expr::Un { op, ty, e, .. } => S::Un {
             op: un_op_to_spectec(op),
-            t: op_type_to_spectec(ty),
+            t: op_type_to_spectec_or_default(ty.as_ref()),
             e2: Box::new(expr_to_spectec(e, ctx)),
         },
         Expr::Bin { op, ty, e1, e2, .. } => S::Bin {
             op: bin_op_to_spectec(op),
-            t: op_type_to_spectec(ty),
+            t: op_type_to_spectec_or_default(ty.as_ref()),
             e1: Box::new(expr_to_spectec(e1, ctx)),
             e2: Box::new(expr_to_spectec(e2, ctx)),
         },
         Expr::Cmp { op, ty, e1, e2, .. } => S::Cmp {
             op: cmp_op_to_spectec(op),
-            t: op_type_to_spectec(ty),
+            t: op_type_to_spectec_or_default(ty.as_ref()),
             e1: Box::new(expr_to_spectec(e1, ctx)),
             e2: Box::new(expr_to_spectec(e2, ctx)),
         },
@@ -1127,6 +1131,14 @@ fn op_type_to_spectec(t: &OpType) -> spectec_ast::SpecTecOpTyp {
         OpType::Real => O::Num(spectec_ast::SpecTecNumTyp::Real),
         OpType::Bool => O::Bool(spectec_ast::SpecTecBoolTyp::Bool),
     }
+}
+
+/// Lower an `Un`/`Bin`/`Cmp` `ty: Option<OpType>` to the SpecTec
+/// `SpecTecOpTyp`. `None` falls back to `OpType::Nat` — same shape
+/// the old `OpType::Nat` default produced, but now the call-site
+/// makes the "we didn't typecheck this" intent explicit.
+fn op_type_to_spectec_or_default(t: Option<&OpType>) -> spectec_ast::SpecTecOpTyp {
+    op_type_to_spectec(t.unwrap_or(&OpType::Nat))
 }
 
 fn num_typ_to_spectec(t: &NumTyp) -> spectec_ast::SpecTecNumTyp {

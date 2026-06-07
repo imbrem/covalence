@@ -416,7 +416,7 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
                 Expr::Un {
                     span,
                     op,
-                    ty: op_ty,
+                    ty: Some(op_ty),
                     e: Box::new(e),
                 },
                 t_out,
@@ -430,7 +430,7 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
                 Expr::Bin {
                     span,
                     op,
-                    ty: op_ty,
+                    ty: Some(op_ty),
                     e1: Box::new(e1),
                     e2: Box::new(e2),
                 },
@@ -455,7 +455,7 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
                 Expr::Cmp {
                     span,
                     op,
-                    ty: op_ty,
+                    ty: Some(op_ty),
                     e1: Box::new(e1),
                     e2: Box::new(e2),
                 },
@@ -1575,14 +1575,14 @@ mod tests {
             Expr::Bin {
                 span,
                 op: BinOp::Add,
-                ty: OpType::Nat,
+                ty: None,
                 e1: Box::new(nat),
                 e2: Box::new(int_expr),
             },
         );
         // Both operands typecheck; widening picks Int.
         let Expr::Bin { ty, .. } = e else { panic!() };
-        assert!(matches!(ty, OpType::Int));
+        assert!(matches!(ty, Some(OpType::Int)));
         assert!(matches!(
             t,
             Typ::Num(ast::SpecTecNumTyp::Int)
@@ -1606,7 +1606,7 @@ mod tests {
             Expr::Cmp {
                 span,
                 op: CmpOp::Le,
-                ty: OpType::Nat,
+                ty: None,
                 e1: Box::new(lhs),
                 e2: Box::new(rhs),
             },
@@ -1623,12 +1623,12 @@ mod tests {
             Expr::Un {
                 span,
                 op: UnOp::Not,
-                ty: OpType::Nat, // wrong, should be refined to Bool
+                ty: None,
                 e: Box::new(Expr::Bool { span, value: true }),
             },
         );
         let Expr::Un { ty, .. } = e else { panic!() };
-        assert!(matches!(ty, OpType::Bool));
+        assert!(matches!(ty, Some(OpType::Bool)));
         assert!(matches!(t, Typ::Bool));
     }
 
@@ -1641,13 +1641,13 @@ mod tests {
             Expr::Bin {
                 span,
                 op: BinOp::And,
-                ty: OpType::Nat, // wrong, should be refined
+                ty: None,
                 e1: Box::new(Expr::Bool { span, value: true }),
                 e2: Box::new(Expr::Bool { span, value: false }),
             },
         );
         let Expr::Bin { ty, .. } = e else { panic!() };
-        assert!(matches!(ty, OpType::Bool));
+        assert!(matches!(ty, Some(OpType::Bool)));
         assert!(matches!(t, Typ::Bool));
     }
 

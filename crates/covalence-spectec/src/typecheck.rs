@@ -362,6 +362,111 @@ pub fn unknown_typ() -> Typ {
     Typ::Bool
 }
 
+/// What went wrong during typechecking at a specific source position.
+/// Pushed into [`Diagnostics`] at silent-failure points so the caller
+/// can surface them in error reports.
+///
+/// Mirrors OCaml's `Error` discriminants in `spectec/src/frontend/error.ml`
+/// but only the cases reachable from our current inference logic.
+#[derive(Clone, Debug)]
+pub enum TypeError {
+    /// `Expr::Var { name }` resolved against `env.vars` but the name
+    /// wasn't found. Includes the metavar-base lookup result so a
+    /// reader can see what we tried.
+    UnknownVariable {
+        name: String,
+        span: crate::source::Span,
+    },
+    /// `Expr::Call { name }` referenced a `def` not in `env.defs`.
+    UnknownCall {
+        name: String,
+        span: crate::source::Span,
+    },
+    /// `Expr::Case { head }` referenced a case constructor not in
+    /// `env.ctors` (i.e. no `syntax` decl introduces this name).
+    UnknownCtor {
+        head: String,
+        span: crate::source::Span,
+    },
+    /// `Expr::Unelaborated { .. }` reached typecheck — elab couldn't
+    /// structure the slice. Carries the [`crate::elab::ElabGap`]
+    /// reason so we can report which sub-class of unhandled form.
+    UnelaboratedSlice {
+        reason: crate::elab::ElabGap,
+        span: crate::source::Span,
+    },
+    /// The typechecker has no inference rule for this expression
+    /// variant. Currently fires for variants Walt the typecheck
+    /// pass doesn't yet refine; will shrink as coverage grows.
+    UnsupportedExprShape {
+        kind: &'static str,
+        span: crate::source::Span,
+    },
+}
+
+impl TypeError {
+    /// Source span where this error was raised. For correlating with
+    /// `Diagnostic` rendering.
+    pub fn span(&self) -> crate::source::Span {
+        match self {
+            TypeError::UnknownVariable { span, .. }
+            | TypeError::UnknownCall { span, .. }
+            | TypeError::UnknownCtor { span, .. }
+            | TypeError::UnelaboratedSlice { span, .. }
+            | TypeError::UnsupportedExprShape { span, .. } => *span,
+        }
+    }
+
+    /// Short kind label for grouping in reports (e.g. "UnknownVariable").
+    pub fn kind(&self) -> &'static str {
+        match self {
+            TypeError::UnknownVariable { .. } => "UnknownVariable",
+            TypeError::UnknownCall { .. } => "UnknownCall",
+            TypeError::UnknownCtor { .. } => "UnknownCtor",
+            TypeError::UnelaboratedSlice { .. } => "UnelaboratedSlice",
+            TypeError::UnsupportedExprShape { .. } => "UnsupportedExprShape",
+        }
+    }
+}
+
+/// Accumulator for `TypeError`s discovered during a typecheck pass.
+///
+/// The typecheck functions don't FAIL on errors — they record the
+/// problem and produce best-effort output (still using `unknown_typ()`
+/// as the placeholder Typ value for now). The caller chooses what to
+/// do with `errors` afterwards.
+///
+/// Using a dedicated wrapper (rather than passing `&mut Vec<TypeError>`
+/// directly) keeps the typecheck signatures readable and leaves room
+/// for richer accumulators later (e.g. cap on count, per-kind
+/// histograms, source-context attachment).
+#[derive(Default, Debug, Clone)]
+pub struct Diagnostics {
+    pub errors: Vec<TypeError>,
+}
+
+impl Diagnostics {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn push(&mut self, e: TypeError) {
+        self.errors.push(e);
+    }
+
+    pub fn extend(&mut self, other: Diagnostics) {
+        self.errors.extend(other.errors);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.errors.len()
+    }
+}
+
 /// Type-check + infer the type of an expression. Returns the
 /// (possibly refined) expression and its inferred type.
 ///
@@ -369,11 +474,17 @@ pub fn unknown_typ() -> Typ {
 /// returned `Expr` may have refined operator types, `Sub` coercions
 /// inserted, etc., though the current implementation only covers
 /// literal types and `Var` lookups; the rest is incremental.
-pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
+pub fn infer_exp(env: &TypeEnv, diags: &mut Diagnostics, e: Expr) -> (Expr, Typ) {
     use ast::SpecTecNumTyp;
     match e {
         Expr::Var { span, name } => {
             let t = lookup_var(env, &name);
+            if is_unknown(&t) {
+                diags.push(TypeError::UnknownVariable {
+                    name: name.clone(),
+                    span,
+                });
+            }
             (Expr::Var { span, name }, t)
         }
         Expr::Bool { span, value } => (Expr::Bool { span, value }, Typ::Bool),
@@ -399,7 +510,7 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
             let mut new_items = Vec::with_capacity(items.len());
             let mut binds = Vec::with_capacity(items.len());
             for item in items {
-                let (item, t) = infer_exp(env, item);
+                let (item, t) = infer_exp(env, diags, item);
                 new_items.push(item);
                 binds.push(ast::SpecTecTypBind::Bind {
                     id: "_".to_string(),
@@ -410,7 +521,7 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
             (Expr::Tup { span, items: new_items }, t)
         }
         Expr::Un { span, op, ty: _, e } => {
-            let (e, t_in) = infer_exp(env, *e);
+            let (e, t_in) = infer_exp(env, diags, *e);
             let (op_ty, t_out) = infer_unop(&op, &t_in);
             (
                 Expr::Un {
@@ -423,8 +534,8 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
             )
         }
         Expr::Bin { span, op, ty: _, e1, e2 } => {
-            let (e1, t1) = infer_exp(env, *e1);
-            let (e2, t2) = infer_exp(env, *e2);
+            let (e1, t1) = infer_exp(env, diags, *e1);
+            let (e2, t2) = infer_exp(env, diags, *e2);
             let (op_ty, t_out) = infer_binop(&op, &t1, &t2);
             (
                 Expr::Bin {
@@ -441,14 +552,14 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
             // Bidirectional inference: pick the more-specific side as
             // the expected type for the other. This routes `Eps`
             // against `T?` through the `Opt(None)` coercion, etc.
-            let (e1, t1) = infer_exp(env, *e1);
+            let (e1, t1) = infer_exp(env, diags, *e1);
             let (e2, t2) = if !is_unknown(&t1) {
                 let mut scope = RuleScope::default();
-                let new_e2 = check_exp_against_scope(env, *e2, &t1, &mut scope);
-                let (_, t2) = infer_exp(env, new_e2.clone());
+                let new_e2 = check_exp_against_scope(env, diags, *e2, &t1, &mut scope);
+                let (_, t2) = infer_exp(env, diags, new_e2.clone());
                 (new_e2, t2)
             } else {
-                infer_exp(env, *e2)
+                infer_exp(env, diags, *e2)
             };
             let op_ty = infer_cmpop(&op, &t1, &t2);
             (
@@ -463,7 +574,7 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
             )
         }
         Expr::Iter { span, inner, kind, bindings } => {
-            let (inner, t_inner) = infer_exp(env, *inner);
+            let (inner, t_inner) = infer_exp(env, diags, *inner);
             let it = match &kind {
                 crate::elab::IterKind::Opt => ast::SpecTecIter::Opt,
                 crate::elab::IterKind::Star => ast::SpecTecIter::List,
@@ -488,18 +599,24 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
             // Coerce each arg against the def's declared param type,
             // mirroring the `ctor_params` handling for `Case`.
             let sig = env.defs.get(&name).cloned();
+            if sig.is_none() {
+                diags.push(TypeError::UnknownCall {
+                    name: name.clone(),
+                    span,
+                });
+            }
             let new_args: Vec<Expr> = if let Some(sig) = &sig {
                 args.into_iter()
                     .enumerate()
                     .map(|(i, a)| match sig.params.get(i) {
                         Some(ast::SpecTecParam::Exp { t, .. }) => {
-                            check_exp_against(env, a, t)
+                            check_exp_against(env, diags, a, t)
                         }
-                        _ => infer_exp(env, a).0,
+                        _ => infer_exp(env, diags, a).0,
                     })
                     .collect()
             } else {
-                args.into_iter().map(|a| infer_exp(env, a).0).collect()
+                args.into_iter().map(|a| infer_exp(env, diags, a).0).collect()
             };
             let t = sig.map(|s| s.ret).unwrap_or_else(unknown_typ);
             (
@@ -513,15 +630,22 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
         }
         Expr::Case { span, head, args, op } => {
             let params = env.ctor_params.get(&head);
+            let known_ctor = env.ctors.contains_key(&head);
+            if !known_ctor {
+                diags.push(TypeError::UnknownCtor {
+                    head: head.clone(),
+                    span,
+                });
+            }
             let new_args: Vec<Expr> = if let Some(params) = params
                 && params.len() == args.len()
             {
                 args.into_iter()
                     .zip(params.iter())
-                    .map(|(a, expected)| check_exp_against(env, a, expected))
+                    .map(|(a, expected)| check_exp_against(env, diags, a, expected))
                     .collect()
             } else {
-                args.into_iter().map(|a| infer_exp(env, a).0).collect()
+                args.into_iter().map(|a| infer_exp(env, diags, a).0).collect()
             };
             let t = env.ctors.get(&head).cloned().unwrap_or_else(unknown_typ);
             (
@@ -534,9 +658,60 @@ pub fn infer_exp(env: &TypeEnv, e: Expr) -> (Expr, Typ) {
                 t,
             )
         }
-        // For the rest, pass through and report `unknown` for now.
-        // Subsequent slices add real inference per variant.
-        other => (other, unknown_typ()),
+        Expr::Unelaborated { tokens, reason } => {
+            diags.push(TypeError::UnelaboratedSlice {
+                reason: reason.clone(),
+                span: tokens.span,
+            });
+            (Expr::Unelaborated { tokens, reason }, unknown_typ())
+        }
+        // For the remaining variants, the typechecker has no inference
+        // rule yet. Record the gap so the caller can report it and
+        // fall through with an unknown type so lowering still works.
+        other => {
+            diags.push(TypeError::UnsupportedExprShape {
+                kind: expr_kind_label(&other),
+                span: other.span(),
+            });
+            (other, unknown_typ())
+        }
+    }
+}
+
+/// Short label for an `Expr` variant — used by [`TypeError::UnsupportedExprShape`].
+fn expr_kind_label(e: &Expr) -> &'static str {
+    match e {
+        Expr::Var { .. } => "Var",
+        Expr::Bool { .. } => "Bool",
+        Expr::Num { .. } => "Num",
+        Expr::Text { .. } => "Text",
+        Expr::Un { .. } => "Un",
+        Expr::Bin { .. } => "Bin",
+        Expr::Cmp { .. } => "Cmp",
+        Expr::Idx { .. } => "Idx",
+        Expr::Slice { .. } => "Slice",
+        Expr::Upd { .. } => "Upd",
+        Expr::Ext { .. } => "Ext",
+        Expr::Str { .. } => "Str",
+        Expr::Dot { .. } => "Dot",
+        Expr::Comp { .. } => "Comp",
+        Expr::Mem { .. } => "Mem",
+        Expr::Len { .. } => "Len",
+        Expr::Tup { .. } => "Tup",
+        Expr::Call { .. } => "Call",
+        Expr::Iter { .. } => "Iter",
+        Expr::Proj { .. } => "Proj",
+        Expr::Case { .. } => "Case",
+        Expr::Uncase { .. } => "Uncase",
+        Expr::Opt { .. } => "Opt",
+        Expr::Unopt { .. } => "Unopt",
+        Expr::List { .. } => "List",
+        Expr::Lift { .. } => "Lift",
+        Expr::Cat { .. } => "Cat",
+        Expr::Cvt { .. } => "Cvt",
+        Expr::Sub { .. } => "Sub",
+        Expr::Eps { .. } => "Eps",
+        Expr::Unelaborated { .. } => "Unelaborated",
     }
 }
 
@@ -631,8 +806,8 @@ fn optyp_to_typ(o: &OpType) -> Typ {
 /// the refined `Expr`. Use [`check_exp_against`] when you know the
 /// position's expected type and want `Sub` coercion inserted on
 /// subtype mismatch.
-pub fn check_exp(env: &TypeEnv, e: Expr) -> Expr {
-    let (e, _t) = infer_exp(env, e);
+pub fn check_exp(env: &TypeEnv, diags: &mut Diagnostics, e: Expr) -> Expr {
+    let (e, _t) = infer_exp(env, diags, e);
     e
 }
 
@@ -659,9 +834,14 @@ impl RuleScope {
 
 /// Bidirectional check (with expected type), no scope recording.
 /// Convenience wrapper for callers that don't need to thread a scope.
-pub fn check_exp_against(env: &TypeEnv, e: Expr, expected: &Typ) -> Expr {
+pub fn check_exp_against(
+    env: &TypeEnv,
+    diags: &mut Diagnostics,
+    e: Expr,
+    expected: &Typ,
+) -> Expr {
     let mut scope = RuleScope::default();
-    check_exp_against_scope(env, e, expected, &mut scope)
+    check_exp_against_scope(env, diags, e, expected, &mut scope)
 }
 
 /// Split a token slice into exactly `n` juxtaposed atom chunks at
@@ -829,6 +1009,7 @@ fn peel_outer_parens(toks: &[crate::token::Spanned]) -> &[crate::token::Spanned]
 /// type as we descend through Tup, Case, etc.
 pub fn check_exp_against_scope(
     env: &TypeEnv,
+    diags: &mut Diagnostics,
     e: Expr,
     expected: &Typ,
     scope: &mut RuleScope,
@@ -871,7 +1052,7 @@ pub fn check_exp_against_scope(
                 .map(|(chunk, typ)| {
                     let cs = chunk_span_of(chunk, span);
                     let inner = mini_classify_chunk(chunk, cs);
-                    check_exp_against_scope(env, inner, typ, scope)
+                    check_exp_against_scope(env, diags, inner, typ, scope)
                 })
                 .collect();
             // The converter wraps `Case.args` in `S::Tup { es: ... }`;
@@ -903,7 +1084,7 @@ pub fn check_exp_against_scope(
                     let ast::SpecTecTypBind::Bind { typ, .. } = bind;
                     let cs = chunk_span_of(chunk, span);
                     let inner = mini_classify_chunk(chunk, cs);
-                    check_exp_against_scope(env, inner, typ, scope)
+                    check_exp_against_scope(env, diags, inner, typ, scope)
                 })
                 .collect();
             return Expr::Tup { span, items };
@@ -919,7 +1100,7 @@ pub fn check_exp_against_scope(
                 .zip(ets)
                 .map(|(it, bind)| {
                     let ast::SpecTecTypBind::Bind { typ, .. } = bind;
-                    check_exp_against_scope(env, it.clone(), typ, scope)
+                    check_exp_against_scope(env, diags, it.clone(), typ, scope)
                 })
                 .collect();
             return Expr::Tup { span, items: new_items };
@@ -942,7 +1123,7 @@ pub fn check_exp_against_scope(
         if let Expr::Var { .. } = inner.as_ref() {
             // Re-infer the inner var against the inner type.
             let e_clone = e.clone();
-            let (new_e, _) = infer_exp(env, e_clone);
+            let (new_e, _) = infer_exp(env, diags, e_clone);
             // Record the name with the expected iter's suffix
             // (`mut?`, `t*`, `n+`) → outer iter type.
             if let Expr::Iter { inner: i2, .. } = &new_e {
@@ -966,7 +1147,7 @@ pub fn check_exp_against_scope(
         }
     }
     // General path: infer, then check sub <: expected.
-    let (e, actual) = infer_exp(env, e);
+    let (e, actual) = infer_exp(env, diags, e);
     let span = e.span();
     if is_unknown(&actual) || equiv_typ(&actual, expected) {
         return e;
@@ -1334,13 +1515,18 @@ pub fn wrap_in_iters(mut t: Typ, suffix: &str) -> Typ {
 }
 
 /// Convenience: type-check a premise without scope recording.
-pub fn check_premise(env: &TypeEnv, p: ElabPremise) -> ElabPremise {
+pub fn check_premise(env: &TypeEnv, diags: &mut Diagnostics, p: ElabPremise) -> ElabPremise {
     let mut scope = RuleScope::default();
-    check_premise_scope(env, p, &mut scope)
+    check_premise_scope(env, diags, p, &mut scope)
 }
 
 /// Type-check a premise + record discovered Var types into `scope`.
-pub fn check_premise_scope(env: &TypeEnv, p: ElabPremise, scope: &mut RuleScope) -> ElabPremise {
+pub fn check_premise_scope(
+    env: &TypeEnv,
+    diags: &mut Diagnostics,
+    p: ElabPremise,
+    scope: &mut RuleScope,
+) -> ElabPremise {
     match p {
         ElabPremise::Rule {
             rel_name,
@@ -1356,8 +1542,8 @@ pub fn check_premise_scope(env: &TypeEnv, p: ElabPremise, scope: &mut RuleScope)
                 .into_iter()
                 .enumerate()
                 .map(|(i, o)| match expected.get(i) {
-                    Some(t) => check_exp_against_scope(env, o, t, scope),
-                    None => check_exp(env, o),
+                    Some(t) => check_exp_against_scope(env, diags, o, t, scope),
+                    None => check_exp(env, diags, o),
                 })
                 .collect();
             ElabPremise::Rule {
@@ -1367,11 +1553,11 @@ pub fn check_premise_scope(env: &TypeEnv, p: ElabPremise, scope: &mut RuleScope)
             }
         }
         ElabPremise::If(e) => {
-            ElabPremise::If(check_exp_against_scope(env, e, &Typ::Bool, scope))
+            ElabPremise::If(check_exp_against_scope(env, diags, e, &Typ::Bool, scope))
         }
         ElabPremise::Let { lhs, rhs } => ElabPremise::Let {
-            lhs: check_exp(env, lhs),
-            rhs: check_exp(env, rhs),
+            lhs: check_exp(env, diags, lhs),
+            rhs: check_exp(env, diags, rhs),
         },
         ElabPremise::Else => ElabPremise::Else,
         ElabPremise::Iter {
@@ -1379,7 +1565,7 @@ pub fn check_premise_scope(env: &TypeEnv, p: ElabPremise, scope: &mut RuleScope)
             kind,
             bindings,
         } => ElabPremise::Iter {
-            inner: Box::new(check_premise_scope(env, *inner, scope)),
+            inner: Box::new(check_premise_scope(env, diags, *inner, scope)),
             kind,
             bindings,
         },
@@ -1465,7 +1651,8 @@ mod tests {
             span,
             name: "x".to_string(),
         };
-        let result = check_exp(&env, e.clone());
+        let mut diags = Diagnostics::new();
+        let result = check_exp(&env, &mut diags, e.clone());
         assert!(matches!(
             (e, result),
             (Expr::Var { name: ref a, .. }, Expr::Var { name: ref b, .. }) if a == b
@@ -1481,8 +1668,10 @@ mod tests {
         let (doc, ctx) = build(src);
         let env = build_env(&doc, &ctx);
         let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
+        let mut diags = Diagnostics::new();
         let (_, t) = infer_exp(
             &env,
+            &mut diags,
             Expr::Var {
                 span,
                 name: "C".to_string(),
@@ -1500,9 +1689,11 @@ mod tests {
         let (doc, ctx) = build(src);
         let env = build_env(&doc, &ctx);
         let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
+        let mut diags = Diagnostics::new();
         for name in &["C_1", "C_n", "C'", "C''", "C_n'"] {
             let (_, t) = infer_exp(
                 &env,
+                &mut diags,
                 Expr::Var {
                     span,
                     name: name.to_string(),
@@ -1519,8 +1710,10 @@ mod tests {
     fn infer_num_picks_num_typ() {
         let env = TypeEnv::default();
         let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
+        let mut diags = Diagnostics::new();
         let (_, t) = infer_exp(
             &env,
+            &mut diags,
             Expr::Num {
                 span,
                 value: crate::elab::NumLit::Nat(covalence_types::Nat::from(7u64)),
@@ -1542,8 +1735,10 @@ mod tests {
         let (doc, ctx) = build(src);
         let env = build_env(&doc, &ctx);
         let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
+        let mut diags = Diagnostics::new();
         let (_, t) = infer_exp(
             &env,
+            &mut diags,
             Expr::Tup {
                 span,
                 items: vec![
@@ -1570,8 +1765,10 @@ mod tests {
             span,
             value: crate::elab::NumLit::Int(covalence_types::Int::from(-1i64)),
         };
+        let mut diags = Diagnostics::new();
         let (e, t) = infer_exp(
             &env,
+            &mut diags,
             Expr::Bin {
                 span,
                 op: BinOp::Add,
@@ -1601,8 +1798,10 @@ mod tests {
             span,
             value: crate::elab::NumLit::Nat(covalence_types::Nat::from(2u64)),
         };
+        let mut diags = Diagnostics::new();
         let (_, t) = infer_exp(
             &env,
+            &mut diags,
             Expr::Cmp {
                 span,
                 op: CmpOp::Le,
@@ -1618,8 +1817,10 @@ mod tests {
     fn infer_un_not_returns_bool() {
         let env = TypeEnv::default();
         let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
+        let mut diags = Diagnostics::new();
         let (e, t) = infer_exp(
             &env,
+            &mut diags,
             Expr::Un {
                 span,
                 op: UnOp::Not,
@@ -1636,8 +1837,10 @@ mod tests {
     fn infer_logical_bin_is_bool() {
         let env = TypeEnv::default();
         let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
+        let mut diags = Diagnostics::new();
         let (e, t) = infer_exp(
             &env,
+            &mut diags,
             Expr::Bin {
                 span,
                 op: BinOp::And,
@@ -1729,8 +1932,10 @@ mod tests {
     fn unknown_var_returns_placeholder() {
         let env = TypeEnv::default();
         let span = crate::source::Span::new(crate::source::FileId::new(0), 0, 0);
+        let mut diags = Diagnostics::new();
         let (_, t) = infer_exp(
             &env,
+            &mut diags,
             Expr::Var {
                 span,
                 name: "missing".to_string(),
@@ -1738,6 +1943,11 @@ mod tests {
         );
         // Falls back to unknown_typ (currently SpecTecTyp::Bool).
         assert!(matches!(t, ast::SpecTecTyp::Bool));
+        // Unknown var should also surface a diagnostic.
+        assert!(
+            diags.errors.iter().any(|e| matches!(e, TypeError::UnknownVariable { name, .. } if name == "missing")),
+            "expected UnknownVariable diagnostic"
+        );
     }
 
     #[test]
@@ -1786,10 +1996,12 @@ mod tests {
         };
         let _ = (&doc, &ctx); // build was needed for env; explicitly drop now.
         let expected = Typ::Var { x: "state".into(), as1: vec![] };
+        let mut diags = Diagnostics::new();
         let split = crate::ast_doc::try_split_headless_semi_expr(
             &tr,
             &ctx,
             &env,
+            &mut diags,
             &expected,
         )
         .expect("split should fire against state");

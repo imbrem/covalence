@@ -12,11 +12,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use covalence_spectec::{
-    ast_doc::{build_doc, to_spectec_ast},
+    ast_doc::{build_doc, to_spectec_ast_with_diags},
     elab::build_table,
     lex::lex,
     parse::parse,
     source::SourceMap,
+    typecheck::TypeError,
 };
 use spectec_ast::{SpecTecDef, SpecTecExp, SpecTecOpTyp, SpecTecRule};
 
@@ -52,7 +53,7 @@ fn diff_against_wasm_spec_ast() {
     }
     let ctx = build_table(&all_tops).expect("build_table failed");
     let doc = build_doc(&all_tops, &ctx);
-    let ours = to_spectec_ast(&doc, &ctx);
+    let (ours, diags) = to_spectec_ast_with_diags(&doc, &ctx);
 
     // Reference: the OCaml dump.
     let reference = covalence_spectec::wasm::get_wasm_spectec_ast();
@@ -99,6 +100,16 @@ fn diff_against_wasm_spec_ast() {
 
     eprintln!("=== Phase 2g differential coverage report ===");
     eprintln!("(numbers are: ours / theirs / both — both is the intersection size)");
+    eprintln!("  typecheck diagnostics emitted: {}", diags.errors.len());
+    if !diags.errors.is_empty() {
+        let mut by_kind: BTreeMap<&str, usize> = BTreeMap::new();
+        for e in &diags.errors {
+            *by_kind.entry(type_error_kind(e)).or_insert(0) += 1;
+        }
+        for (k, n) in &by_kind {
+            eprintln!("    {k}: {n}");
+        }
+    }
     for (k, c) in &report {
         let pct = if c.theirs == 0 {
             0.0
@@ -944,4 +955,14 @@ fn summarise_with_rec(defs: &[SpecTecDef]) -> (KindPairs, MixOpMap) {
         walk(d, &mut pairs, &mut mixops);
     }
     (pairs, mixops)
+}
+
+fn type_error_kind(e: &TypeError) -> &'static str {
+    match e {
+        TypeError::UnknownVariable { .. } => "UnknownVariable",
+        TypeError::UnknownCall { .. } => "UnknownCall",
+        TypeError::UnknownCtor { .. } => "UnknownCtor",
+        TypeError::UnelaboratedSlice { .. } => "UnelaboratedSlice",
+        TypeError::UnsupportedExprShape { .. } => "UnsupportedExprShape",
+    }
 }

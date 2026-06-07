@@ -182,14 +182,25 @@ pub fn build_doc(tops: &[Top], ctx: &ElabContext) -> Doc {
 }
 
 /// Produce a `Vec<SpecTecDef>` from a `Doc`, with mutually-recursive
-/// groups wrapped in `SpecTecDef::Rec`.
-///
-/// Type-checks every expression along the way so operator-type
-/// annotations and (eventually) `Sub` coercions are populated.
+/// groups wrapped in `SpecTecDef::Rec`. Discards typecheck
+/// diagnostics — use [`to_spectec_ast_with_diags`] if you want them.
 pub fn to_spectec_ast(doc: &Doc, ctx: &ElabContext) -> Vec<spectec_ast::SpecTecDef> {
+    to_spectec_ast_with_diags(doc, ctx).0
+}
+
+/// Same as [`to_spectec_ast`] but returns the accumulated typecheck
+/// diagnostics alongside the lowered defs. Diagnostics are
+/// best-effort — typecheck doesn't fail, it records errors and keeps
+/// producing output so the differential pipeline can still inspect
+/// structural shape.
+pub fn to_spectec_ast_with_diags(
+    doc: &Doc,
+    ctx: &ElabContext,
+) -> (Vec<spectec_ast::SpecTecDef>, crate::typecheck::Diagnostics) {
     let env = crate::typecheck::build_env(doc, ctx);
-    let flat = to_spectec_ast_flat(doc, ctx, &env);
-    group_recursive(flat)
+    let mut diags = crate::typecheck::Diagnostics::new();
+    let flat = to_spectec_ast_flat(doc, ctx, &env, &mut diags);
+    (group_recursive(flat), diags)
 }
 
 /// Flat version of [`to_spectec_ast`] — emits one `SpecTecDef` per
@@ -199,6 +210,7 @@ fn to_spectec_ast_flat(
     doc: &Doc,
     ctx: &ElabContext,
     env: &crate::typecheck::TypeEnv,
+    diags: &mut crate::typecheck::Diagnostics,
 ) -> Vec<spectec_ast::SpecTecDef> {
     let mut out = Vec::new();
 
@@ -260,15 +272,15 @@ fn to_spectec_ast_flat(
                             .enumerate()
                             .map(|(i, o)| match expected.get(i) {
                                 Some(expected_t) => crate::typecheck::check_exp_against_scope(
-                                    env, o, expected_t, &mut scope,
+                                    env, diags, o, expected_t, &mut scope,
                                 ),
-                                None => crate::typecheck::check_exp(env, o),
+                                None => crate::typecheck::check_exp(env, diags, o),
                             })
                             .collect();
                         let typed_premises: Vec<ElabPremise> = elab
                             .premises
                             .into_iter()
-                            .map(|p| crate::typecheck::check_premise_scope(env, p, &mut scope))
+                            .map(|p| crate::typecheck::check_premise_scope(env, diags, p, &mut scope))
                             .collect();
                         let rule_ps = crate::typecheck::collect_rule_params(
                             env,
@@ -330,14 +342,14 @@ fn to_spectec_ast_flat(
                     .map(|(i, pat_tr)| {
                         let expected = ps.get(i).map(param_to_typ);
                         let e = match expected {
-                            Some(et) => token_run_to_expr_against(pat_tr, ctx, env, &et),
-                            None => token_run_to_expr_typed(pat_tr, ctx, env),
+                            Some(et) => token_run_to_expr_against(pat_tr, ctx, env, diags, &et),
+                            None => token_run_to_expr_typed(pat_tr, ctx, env, diags),
                         };
                         spectec_ast::SpecTecArg::Exp { e }
                     })
                     .collect();
                 // RHS checked against the def's return type.
-                let e = token_run_to_expr_against(&c.rhs, ctx, env, &t);
+                let e = token_run_to_expr_against(&c.rhs, ctx, env, diags, &t);
                 let prs = c
                     .premises
                     .iter()
@@ -348,12 +360,12 @@ fn to_spectec_ast_flat(
                                 reason: crate::elab::ElabGap::PremiseUnrecognised,
                             }
                         });
-                        let elabp = crate::typecheck::check_premise(env, elabp);
+                        let elabp = crate::typecheck::check_premise(env, diags, elabp);
                         premise_to_spectec(&elabp, ctx)
                     })
                     .collect();
                 spectec_ast::SpecTecClause::Clause {
-                    ps: clause_ps(&c.arg_pats, &c.premises, &ps, env, ctx),
+                    ps: clause_ps(&c.arg_pats, &c.premises, &ps, env, diags, ctx),
                     as_,
                     e,
                     prs,
@@ -379,7 +391,7 @@ fn to_spectec_ast_flat(
         let t = typ_expr_to_spectec(&g.decl.ret.tokens, ctx);
         let ps = grammar_params_to_specs(&g.decl.params, ctx);
         let prods = match &g.decl.productions {
-            Some(body) => split_grammar_prods(body, ctx, Some(env), Some(&t)),
+            Some(body) => split_grammar_prods(body, ctx, Some(env), diags, Some(&t)),
             None => Vec::new(),
         };
         out.push(spectec_ast::SpecTecDef::Gram {
@@ -413,13 +425,14 @@ fn token_run_to_expr_typed(
     tr: &crate::cst::TokenRun,
     ctx: &ElabContext,
     env: &crate::typecheck::TypeEnv,
+    diags: &mut crate::typecheck::Diagnostics,
 ) -> spectec_ast::SpecTecExp {
     if tr.tokens.is_empty() {
         return raw_sentinel();
     }
     match crate::elab::classify_token_run(tr, ctx) {
         Some(expr) => {
-            let expr = crate::typecheck::check_exp(env, expr);
+            let expr = crate::typecheck::check_exp(env, diags, expr);
             expr_to_spectec(&expr, ctx)
         }
         None => raw_sentinel(),
@@ -432,6 +445,7 @@ fn token_run_to_expr_against(
     tr: &crate::cst::TokenRun,
     ctx: &ElabContext,
     env: &crate::typecheck::TypeEnv,
+    diags: &mut crate::typecheck::Diagnostics,
     expected: &spectec_ast::SpecTecTyp,
 ) -> spectec_ast::SpecTecExp {
     if tr.tokens.is_empty() {
@@ -442,12 +456,12 @@ fn token_run_to_expr_against(
     // single-case headless `_ ; _` variant (e.g. `state = store;
     // frame`, `config = state; instr*`). The match drives the
     // mixfix template that no other classifier reaches.
-    if let Some(case) = try_split_headless_semi_expr(tr, ctx, env, expected) {
+    if let Some(case) = try_split_headless_semi_expr(tr, ctx, env, diags, expected) {
         return expr_to_spectec(&case, ctx);
     }
     match crate::elab::classify_token_run(tr, ctx) {
         Some(expr) => {
-            let expr = crate::typecheck::check_exp_against(env, expr, expected);
+            let expr = crate::typecheck::check_exp_against(env, diags, expr, expected);
             expr_to_spectec(&expr, ctx)
         }
         None => raw_sentinel(),
@@ -468,6 +482,7 @@ pub(crate) fn try_split_headless_semi_expr(
     tr: &crate::cst::TokenRun,
     ctx: &ElabContext,
     env: &crate::typecheck::TypeEnv,
+    diags: &mut crate::typecheck::Diagnostics,
     expected: &spectec_ast::SpecTecTyp,
 ) -> Option<crate::elab::Expr> {
     let name = match expected {
@@ -502,7 +517,7 @@ pub(crate) fn try_split_headless_semi_expr(
             // against another headless-semi type (e.g. nested
             // `config = state; instr*` whose first hole is `state`,
             // another headless-semi variant).
-            if let Some(inner) = try_split_headless_semi_expr(&part_tr, ctx, env, et) {
+            if let Some(inner) = try_split_headless_semi_expr(&part_tr, ctx, env, diags, et) {
                 return inner;
             }
             let classified = crate::elab::classify_token_run(&part_tr, ctx).unwrap_or_else(|| {
@@ -511,7 +526,7 @@ pub(crate) fn try_split_headless_semi_expr(
                     reason: crate::elab::ElabGap::Unrecognised,
                 }
             });
-            crate::typecheck::check_exp_against(env, classified, et)
+            crate::typecheck::check_exp_against(env, diags, classified, et)
         })
         .collect();
     Some(crate::elab::Expr::Case {
@@ -866,6 +881,7 @@ fn clause_ps(
     premises: &[crate::cst::TokenRun],
     sig_ps: &[spectec_ast::SpecTecParam],
     env: &crate::typecheck::TypeEnv,
+    diags: &mut crate::typecheck::Diagnostics,
     ctx: &crate::elab::ElabContext,
 ) -> Vec<spectec_ast::SpecTecParam> {
     let mut order: Vec<String> = Vec::new();
@@ -884,7 +900,7 @@ fn clause_ps(
             _ => None,
         });
         let expr = if let Some(t) = &sig_t
-            && let Some(split) = try_split_headless_semi_expr(tr, ctx, env, t)
+            && let Some(split) = try_split_headless_semi_expr(tr, ctx, env, diags, t)
         {
             // Task #35: `;`-tupled headless variant already produces
             // a fully type-checked Expr.
@@ -897,8 +913,8 @@ fn clause_ps(
             // headless-variant unfold fires for patterns like
             // `(mut zt)` against `fieldtype`.
             match &sig_t {
-                Some(t) => crate::typecheck::check_exp_against(env, expr, t),
-                None => crate::typecheck::check_exp(env, expr),
+                Some(t) => crate::typecheck::check_exp_against(env, diags, expr, t),
+                None => crate::typecheck::check_exp(env, diags, expr),
             }
         };
         // Positional capture: bare-Var pat or Iter-of-Var pat. For
@@ -948,7 +964,7 @@ fn clause_ps(
         let Some(expr) = crate::elab::classify_token_run(tr, ctx) else {
             continue;
         };
-        let expr = crate::typecheck::check_exp(env, expr);
+        let expr = crate::typecheck::check_exp(env, diags, expr);
         crate::typecheck::collect_var_names_in_expr(&expr, &mut order, &mut seen);
     }
     // Iter-suffixed names (`ai*`, `t?`, `n+`) look up under their
@@ -2183,6 +2199,7 @@ fn split_grammar_prods(
     body: &crate::cst::TokenRun,
     ctx: &ElabContext,
     env: Option<&crate::typecheck::TypeEnv>,
+    diags: &mut crate::typecheck::Diagnostics,
     yield_ty: Option<&spectec_ast::SpecTecTyp>,
 ) -> Vec<spectec_ast::SpecTecProd> {
     let chunks = split_top_level_pipe(&body.tokens);
@@ -2196,7 +2213,7 @@ fn split_grammar_prods(
             prods.push(make_range_prod(chunks[i - 1], chunks[i + 1], ctx, body.span));
             i += 2; // skip the `...` and the upper-bound chunk
         } else {
-            prods.push(chunk_to_prod(chunks[i], ctx, body.span, env, yield_ty));
+            prods.push(chunk_to_prod(chunks[i], ctx, body.span, env, diags, yield_ty));
             i += 1;
         }
     }
@@ -2212,6 +2229,7 @@ fn chunk_to_prod(
     ctx: &ElabContext,
     _fallback_span: crate::source::Span,
     env: Option<&crate::typecheck::TypeEnv>,
+    diags: &mut crate::typecheck::Diagnostics,
     yield_ty: Option<&spectec_ast::SpecTecTyp>,
 ) -> spectec_ast::SpecTecProd {
     let (sym_toks, attr_toks) = split_grammar_arrow(chunk);
@@ -2232,7 +2250,7 @@ fn chunk_to_prod(
                 tokens: at.to_vec(),
             };
             match (env, yield_ty) {
-                (Some(env), Some(t)) => token_run_to_expr_against(&tr, ctx, env, t),
+                (Some(env), Some(t)) => token_run_to_expr_against(&tr, ctx, env, diags, t),
                 _ => token_run_to_expr(&tr, ctx),
             }
         }

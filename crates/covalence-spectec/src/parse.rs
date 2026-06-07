@@ -452,11 +452,7 @@ fn take_until_next_top(input: &mut &[Spanned]) -> TokenRun {
         {
             break;
         }
-        match &s.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            _ => {}
-        }
+        depth += s.bracket_delta();
         out.push(s.clone());
         span = Some(match span {
             None => s.span,
@@ -604,15 +600,14 @@ fn body_looks_like_variant(toks: &[Spanned]) -> bool {
     let mut depth: i32 = 0;
     let mut top_idents: usize = 0;
     for t in toks {
-        match &t.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            Token::Backtick | Token::Semi | Token::Arrow if depth == 0 => return true,
-            Token::Ident(_) | Token::Nat(_) | Token::Text(_) if depth == 0 => {
-                top_idents += 1;
+        if depth == 0 {
+            match &t.token {
+                Token::Backtick | Token::Semi | Token::Arrow => return true,
+                Token::Ident(_) | Token::Nat(_) | Token::Text(_) => top_idents += 1,
+                _ => {}
             }
-            _ => {}
         }
+        depth += t.bracket_delta();
     }
     top_idents >= 2
 }
@@ -734,12 +729,10 @@ fn take_field_ty(input: &mut &[Spanned]) -> TokenRun {
 fn contains_top_level_pipe(tokens: &[Spanned]) -> bool {
     let mut depth: i32 = 0;
     for t in tokens {
-        match &t.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            Token::Pipe if depth == 0 => return true,
-            _ => {}
+        if depth == 0 && matches!(t.token, Token::Pipe) {
+            return true;
         }
+        depth += t.bracket_delta();
     }
     false
 }
@@ -762,15 +755,11 @@ fn split_alts(run: &TokenRun) -> Result<Vec<Alt>, Diagnostic> {
 
     while cur < run.tokens.len() {
         let t = &run.tokens[cur];
-        match &t.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            Token::Pipe if depth == 0 => {
-                push_alt(&run.tokens[chunk_start..cur], &mut alts)?;
-                chunk_start = cur + 1;
-            }
-            _ => {}
+        if depth == 0 && matches!(t.token, Token::Pipe) {
+            push_alt(&run.tokens[chunk_start..cur], &mut alts)?;
+            chunk_start = cur + 1;
         }
+        depth += t.bracket_delta();
         cur += 1;
     }
     push_alt(&run.tokens[chunk_start..], &mut alts)?;
@@ -827,15 +816,11 @@ fn extract_trailing_hints(
     let mut depth: i32 = 0;
     let mut first_hint: Option<usize> = None;
     for (i, t) in slice.iter().enumerate() {
-        match &t.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            Token::Hint if depth == 0 => {
-                first_hint = Some(i);
-                break;
-            }
-            _ => {}
+        if depth == 0 && matches!(t.token, Token::Hint) {
+            first_hint = Some(i);
+            break;
         }
+        depth += t.bracket_delta();
     }
     let body = &slice[..first_hint.unwrap_or(slice.len())];
     let mut hint_input: &[Spanned] = &slice[first_hint.unwrap_or(slice.len())..];
@@ -1024,11 +1009,7 @@ fn take_until_paren_balanced(
         if depth == 0 && stop(&s.token) {
             break;
         }
-        match &s.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            _ => {}
-        }
+        depth += s.bracket_delta();
         tokens.push(s.clone());
         span = Some(match span {
             None => s.span,
@@ -1091,11 +1072,7 @@ fn take_until_top_level(
                 break;
             }
         }
-        match &s.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            _ => {}
-        }
+        depth += s.bracket_delta();
         tokens.push(s.clone());
         span = Some(match span {
             None => s.span,
@@ -1167,12 +1144,10 @@ fn take_balanced_to_rparen(input: &mut &[Spanned]) -> TokenRun {
     let mut tokens = Vec::new();
     let mut cursor: &[Spanned] = input;
     while let Some(s) = cursor.first() {
-        match &s.token {
-            Token::RParen if depth == 0 => break,
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            _ => {}
+        if depth == 0 && matches!(s.token, Token::RParen) {
+            break;
         }
+        depth += s.bracket_delta();
         tokens.push(s.clone());
         span = Some(match span {
             None => s.span,

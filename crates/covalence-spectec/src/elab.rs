@@ -423,15 +423,11 @@ fn split_top_level_commas_local(toks: &[Spanned]) -> Vec<&[Spanned]> {
     let mut depth: i32 = 0;
     let mut start = 0;
     for (i, s) in toks.iter().enumerate() {
-        match &s.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            Token::Comma if depth == 0 => {
-                out.push(&toks[start..i]);
-                start = i + 1;
-            }
-            _ => {}
+        if depth == 0 && matches!(s.token, Token::Comma) {
+            out.push(&toks[start..i]);
+            start = i + 1;
         }
+        depth += s.bracket_delta();
     }
     if start < toks.len() {
         out.push(&toks[start..]);
@@ -1713,15 +1709,9 @@ fn collect_vars_in_premise(p: &ElabPremise, out: &mut HashSet<String>) {
 fn matching_rparen(toks: &[Spanned]) -> Option<usize> {
     let mut depth: i32 = 0;
     for (i, t) in toks.iter().enumerate() {
-        match &t.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(i);
-                }
-            }
-            _ => {}
+        depth += t.bracket_delta();
+        if t.is_close_bracket() && depth == 0 {
+            return Some(i);
         }
     }
     None
@@ -1729,18 +1719,9 @@ fn matching_rparen(toks: &[Spanned]) -> Option<usize> {
 
 /// Index of the first token (at paren depth 0) for which `pred` is true.
 fn top_level_index_of(toks: &[Spanned], pred: impl Fn(&Token) -> bool) -> Option<usize> {
-    let mut depth: i32 = 0;
-    for (i, t) in toks.iter().enumerate() {
-        match &t.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            _ => {}
-        }
-        if depth == 0 && pred(&t.token) {
-            return Some(i);
-        }
-    }
-    None
+    crate::token::at_top_level(toks)
+        .find(|(_, t)| pred(&t.token))
+        .map(|(i, _)| i)
 }
 
 /// Find the next `Lit` token in the fragment list starting at `from`.
@@ -1801,10 +1782,7 @@ fn parse_atomic_in_conclusion(
             ),
         )
     })?;
-    let take_n = match &s.token {
-        Token::LParen | Token::LBracket | Token::LBrace => skip_balanced(input),
-        _ => 1,
-    };
+    let take_n = if s.is_open_bracket() { skip_balanced(input) } else { 1 };
     // Include any trailing iter suffix.
     let after_atom = &input[take_n..];
     let suffix = skip_type_suffix(after_atom);
@@ -1837,11 +1815,7 @@ fn parse_expression_until(
         {
             break;
         }
-        match &s.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            _ => {}
-        }
+        depth += s.bracket_delta();
         taken.push(s.clone());
         *input = &input[1..];
     }
@@ -2336,108 +2310,68 @@ fn cmp_split(
 
 /// Last paren-depth-0 position where `pred` matches.
 fn arith_last_top(toks: &[Spanned], pred: impl Fn(&Token) -> bool) -> Option<usize> {
-    let mut depth: i32 = 0;
-    let mut hit: Option<usize> = None;
-    for (i, t) in toks.iter().enumerate() {
-        match &t.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            _ => {}
-        }
-        if depth == 0 && pred(&t.token) {
-            hit = Some(i);
-        }
-    }
-    hit
+    crate::token::at_top_level(toks)
+        .filter(|(_, t)| pred(&t.token))
+        .last()
+        .map(|(i, _)| i)
 }
 
 /// First paren-depth-0 position where `pred` matches.
 fn arith_first_top(toks: &[Spanned], pred: impl Fn(&Token) -> bool) -> Option<usize> {
-    let mut depth: i32 = 0;
-    for (i, t) in toks.iter().enumerate() {
-        match &t.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            _ => {}
-        }
-        if depth == 0 && pred(&t.token) {
-            return Some(i);
-        }
-    }
-    None
+    crate::token::at_top_level(toks)
+        .find(|(_, t)| pred(&t.token))
+        .map(|(i, _)| i)
 }
 
 fn arith_first_cmp(toks: &[Spanned]) -> Option<(usize, CmpOp)> {
-    let mut depth: i32 = 0;
-    for (i, t) in toks.iter().enumerate() {
-        match &t.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            _ => {}
-        }
-        if depth == 0 {
-            let op = match &t.token {
-                Token::Eq => CmpOp::Eq,
-                Token::NotEq => CmpOp::Ne,
-                Token::LessThan => CmpOp::Lt,
-                Token::LessEq => CmpOp::Le,
-                Token::GreaterThan => CmpOp::Gt,
-                Token::GreaterEq => CmpOp::Ge,
-                _ => continue,
-            };
-            // Reject the very first position: a leading `<` etc. would
-            // be a syntax error (no LHS), so we skip.
-            if i == 0 {
-                continue;
-            }
-            return Some((i, op));
-        }
-    }
-    None
+    crate::token::at_top_level(toks).find_map(|(i, t)| {
+        let op = match &t.token {
+            Token::Eq => CmpOp::Eq,
+            Token::NotEq => CmpOp::Ne,
+            Token::LessThan => CmpOp::Lt,
+            Token::LessEq => CmpOp::Le,
+            Token::GreaterThan => CmpOp::Gt,
+            Token::GreaterEq => CmpOp::Ge,
+            _ => return None,
+        };
+        // Reject the very first position: a leading `<` etc. would
+        // be a syntax error (no LHS).
+        (i > 0).then_some((i, op))
+    })
 }
 
 fn arith_last_addsub(toks: &[Spanned]) -> Option<(usize, BinOp)> {
-    let mut depth: i32 = 0;
-    let mut hit: Option<(usize, BinOp)> = None;
-    for (i, t) in toks.iter().enumerate() {
-        match &t.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            _ => {}
-        }
-        if depth == 0 && i > 0 {
+    crate::token::at_top_level(toks)
+        .filter_map(|(i, t)| {
             // i > 0 so the operator can't be a unary at position 0.
-            match &t.token {
-                Token::Plus => hit = Some((i, BinOp::Add)),
-                Token::Minus => hit = Some((i, BinOp::Sub)),
-                _ => {}
-            }
-        }
-    }
-    hit
+            let op = match &t.token {
+                Token::Plus if i > 0 => BinOp::Add,
+                Token::Minus if i > 0 => BinOp::Sub,
+                _ => return None,
+            };
+            Some((i, op))
+        })
+        .last()
 }
 
 fn arith_last_muldiv(toks: &[Spanned]) -> Option<(usize, BinOp)> {
-    let mut depth: i32 = 0;
-    let mut hit: Option<(usize, BinOp)> = None;
-    for (i, t) in toks.iter().enumerate() {
-        match &t.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            _ => {}
-        }
-        // Treat as multiplication only when there's a non-empty RHS;
-        // a trailing `*` is the iter postfix, not arithmetic.
-        if depth == 0 && i > 0 && i + 1 < toks.len() {
-            match &t.token {
-                Token::Star => hit = Some((i, BinOp::Mul)),
-                Token::Slash => hit = Some((i, BinOp::Div)),
-                Token::Ident(n) if n == "mod" => hit = Some((i, BinOp::Mod)),
-                _ => {}
+    let len = toks.len();
+    crate::token::at_top_level(toks)
+        .filter_map(|(i, t)| {
+            // Trailing `*` is the iter postfix, not multiplication:
+            // require a non-empty RHS. Leading `*` is also rejected.
+            if i == 0 || i + 1 >= len {
+                return None;
             }
-        }
-    }
-    hit
+            let op = match &t.token {
+                Token::Star => BinOp::Mul,
+                Token::Slash => BinOp::Div,
+                Token::Ident(n) if n == "mod" => BinOp::Mod,
+                _ => return None,
+            };
+            Some((i, op))
+        })
+        .last()
 }
 
 // ---------- structural recognisers used by classify_simple_expression ----------
@@ -2596,19 +2530,11 @@ enum PathUpdateOp {
 /// Comparisons (`<=`, `>=`, `=/=`) are distinct tokens so the bare `=`
 /// match here is unambiguous.
 fn find_path_update_op(toks: &[Spanned]) -> Option<(usize, PathUpdateOp)> {
-    let mut depth: i32 = 0;
-    for (i, t) in toks.iter().enumerate() {
-        match &t.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            Token::Eq if depth == 0 => return Some((i, PathUpdateOp::Upd)),
-            Token::Assign if depth == 0 => return Some((i, PathUpdateOp::Upd)),
-            Token::EqPlusPlus if depth == 0 => return Some((i, PathUpdateOp::Ext)),
-            Token::EqDotDot if depth == 0 => return Some((i, PathUpdateOp::Ext)),
-            _ => {}
-        }
-    }
-    None
+    crate::token::at_top_level(toks).find_map(|(i, t)| match &t.token {
+        Token::Eq | Token::Assign => Some((i, PathUpdateOp::Upd)),
+        Token::EqPlusPlus | Token::EqDotDot => Some((i, PathUpdateOp::Ext)),
+        _ => None,
+    })
 }
 
 /// Parse a path body — a sequence of `.IDENT`, `[expr]`, and `[e1:e2]`
@@ -2720,16 +2646,7 @@ fn parse_path(toks: &[Spanned], ctx: &ElabContext) -> Result<Path, Diagnostic> {
 /// no top-level `:` exists (e.g. all colons are nested in inner
 /// brackets).
 fn top_level_colon(toks: &[Spanned]) -> Option<usize> {
-    let mut depth: i32 = 0;
-    for (i, t) in toks.iter().enumerate() {
-        match &t.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            Token::Colon if depth == 0 => return Some(i),
-            _ => {}
-        }
-    }
-    None
+    top_level_index_of(toks, |t| matches!(t, Token::Colon))
 }
 
 /// Recognise `e [ idx ]` as `Expr::Idx`. The matching `[` must be at
@@ -2832,19 +2749,13 @@ fn try_classify_dot(
 /// trailing chunks are dropped.
 fn split_top_comma(toks: &[Spanned]) -> Vec<&[Spanned]> {
     let mut out = Vec::new();
-    let mut depth: i32 = 0;
     let mut start = 0usize;
-    for (i, t) in toks.iter().enumerate() {
-        match &t.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            Token::Comma if depth == 0 => {
-                if start < i {
-                    out.push(&toks[start..i]);
-                }
-                start = i + 1;
+    for (i, t) in crate::token::at_top_level(toks) {
+        if matches!(t.token, Token::Comma) {
+            if start < i {
+                out.push(&toks[start..i]);
             }
-            _ => {}
+            start = i + 1;
         }
     }
     if start < toks.len() {
@@ -2890,15 +2801,9 @@ fn is_case_head(name: &str) -> bool {
 fn depth_balanced(toks: &[Spanned]) -> bool {
     let mut depth: i32 = 0;
     for t in toks {
-        match &t.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => {
-                depth -= 1;
-                if depth < 0 {
-                    return false;
-                }
-            }
-            _ => {}
+        depth += t.bracket_delta();
+        if depth < 0 {
+            return false;
         }
     }
     depth == 0
@@ -2918,23 +2823,17 @@ fn classify_tuple_inner(
     }
     // Split on top-level commas.
     let mut items: Vec<Expr> = Vec::new();
-    let mut depth: i32 = 0;
     let mut chunk_start = 0;
-    for (i, t) in inner.iter().enumerate() {
-        match &t.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            Token::Comma if depth == 0 => {
-                let chunk = &inner[chunk_start..i];
-                let cspan = chunk
-                    .iter()
-                    .map(|s| s.span)
-                    .reduce(Span::join)
-                    .expect("non-empty chunk");
-                items.push(classify_simple_expression(chunk, cspan, ctx)?);
-                chunk_start = i + 1;
-            }
-            _ => {}
+    for (i, t) in crate::token::at_top_level(inner) {
+        if matches!(t.token, Token::Comma) {
+            let chunk = &inner[chunk_start..i];
+            let cspan = chunk
+                .iter()
+                .map(|s| s.span)
+                .reduce(Span::join)
+                .expect("non-empty chunk");
+            items.push(classify_simple_expression(chunk, cspan, ctx)?);
+            chunk_start = i + 1;
         }
     }
     let chunk = &inner[chunk_start..];
@@ -2977,17 +2876,11 @@ fn try_classify_record(
     }
     // Split on top-level commas. Each chunk: `FIELD val_tokens*`.
     let mut chunks: Vec<&[Spanned]> = Vec::new();
-    let mut depth: i32 = 0;
     let mut chunk_start = 0;
-    for (i, t) in inner.iter().enumerate() {
-        match &t.token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => depth -= 1,
-            Token::Comma if depth == 0 => {
-                chunks.push(&inner[chunk_start..i]);
-                chunk_start = i + 1;
-            }
-            _ => {}
+    for (i, t) in crate::token::at_top_level(inner) {
+        if matches!(t.token, Token::Comma) {
+            chunks.push(&inner[chunk_start..i]);
+            chunk_start = i + 1;
         }
     }
     chunks.push(&inner[chunk_start..]);
@@ -3023,19 +2916,11 @@ fn try_classify_record(
 /// brackets are unbalanced, returns the remaining length.
 pub fn skip_balanced(toks: &[Spanned]) -> usize {
     let mut depth: i32 = 0;
-    let mut i = 0;
-    while i < toks.len() {
-        match &toks[i].token {
-            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
-            Token::RParen | Token::RBracket | Token::RBrace => {
-                depth -= 1;
-                if depth == 0 {
-                    return i + 1;
-                }
-            }
-            _ => {}
+    for (i, t) in toks.iter().enumerate() {
+        depth += t.bracket_delta();
+        if t.is_close_bracket() && depth == 0 {
+            return i + 1;
         }
-        i += 1;
     }
     toks.len()
 }

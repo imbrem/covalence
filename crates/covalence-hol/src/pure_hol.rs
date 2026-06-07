@@ -62,6 +62,11 @@ pub struct PureHol {
     type_arity: HashMap<NameId, usize>,
     /// Registered HOL constants → most-general HOL type.
     constants: HashMap<NameId, Type>,
+    /// Constants introduced via `new_basic_definition`, indexed by
+    /// `NameId`. Each value is the Pure `Term::def`-wrapped term
+    /// that `mk_const` should return for the constant — preserving
+    /// the unique `Def` Arc identity Pure's `define` allocates.
+    defined_constants: HashMap<NameId, Term>,
     /// Recorded axioms.
     axioms: Vec<Thm>,
     /// `NameId` → display string.
@@ -101,6 +106,7 @@ impl PureHol {
             ctx,
             type_arity,
             constants,
+            defined_constants: HashMap::new(),
             axioms: Vec::new(),
             names,
             name_to_id,
@@ -277,6 +283,15 @@ impl HolLightTerms for PureHol {
     }
 
     fn mk_const(&mut self, name: NameId, ty: Type) -> Term {
+        // Constants introduced via `new_basic_definition` come back as
+        // the stored `Term::def(d)` (preserving the `Def`'s Arc
+        // identity so the defining equation `⊢ Def ≡ body` and any
+        // user reference to "the constant" land on the same symbol).
+        // Currently monomorphic only — polymorphic constants would
+        // need `inst_tfree` from the generic type to `ty`.
+        if let Some(def_term) = self.defined_constants.get(&name) {
+            return def_term.clone();
+        }
         Term::const_(self.name_str(name), ty)
     }
 
@@ -308,6 +323,14 @@ impl HolLightTerms for PureHol {
     fn dest_const(&self, tm: Term) -> Option<(NameId, Type)> {
         match tm.kind() {
             TermKind::Const(n, ty) => self.id_for(n.as_str()).map(|id| (id, ty.clone())),
+            // Defined constants: walk back from the Def's name hint
+            // to its NameId. We registered at most one Def per name,
+            // so this is unambiguous.
+            TermKind::Def(d) => {
+                let id = self.id_for(d.name().as_str())?;
+                let ty = self.constants.get(&id).cloned()?;
+                Some((id, ty))
+            }
             _ => None,
         }
     }
@@ -382,6 +405,31 @@ impl HolLightTerms for PureHol {
             result = subst::subst_tfree_in_term(&result, &name, new_ty);
         }
         result
+    }
+}
+
+/// Walk `t` collecting every free type variable name appearing in
+/// any type annotation (Free / Const / Abs / All / Obs `ty` fields,
+/// plus Def body types).
+fn collect_term_tvars(t: &Term, out: &mut HashSet<SmolStr>) {
+    match t.kind() {
+        TermKind::Free(_, ty) | TermKind::Const(_, ty) | TermKind::Obs(_, ty) => {
+            for n in ty.free_tvars() {
+                out.insert(n);
+            }
+        }
+        TermKind::Abs(_, ty, body) | TermKind::All(_, ty, body) => {
+            for n in ty.free_tvars() {
+                out.insert(n);
+            }
+            collect_term_tvars(body, out);
+        }
+        TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
+            collect_term_tvars(a, out);
+            collect_term_tvars(b, out);
+        }
+        TermKind::Bound(_) | TermKind::Blob(_) => {}
+        TermKind::Def(d) => collect_term_tvars(d.body(), out),
     }
 }
 
@@ -794,10 +842,81 @@ impl HolLightKernel for PureHol {
         Ok(thm)
     }
 
-    fn new_basic_definition(&mut self, _tm: Term) -> Result<Thm, HolError> {
-        Err(HolError::Unsupported(
-            "new_basic_definition: defer until Pure Def is threaded through mk_const".into(),
-        ))
+    /// NEW_BASIC_DEFINITION: `tm` is `Eq c body` where `c = Var(name, ty)`
+    /// is a fresh variable. Register `c` as a defined constant whose
+    /// future `mk_const` invocations return a Pure `Term::def(d)` for
+    /// a freshly allocated `Def`. Returns `⊢ Trueprop (Eq[ty] Def body)`.
+    ///
+    /// Pure's `Thm::define` is the source-of-truth: it gives
+    /// `⊢ Def(name, body) ≡ body` with empty hyps, and the resulting
+    /// `Def`'s Arc identity is what we hand back to every subsequent
+    /// `mk_const(c)` call. We then translate the Pure meta-eq into
+    /// the HOL Trueprop form via backward `eq_reflection`.
+    ///
+    /// Currently monomorphic only: polymorphic constants would need
+    /// the closure-type machinery (free tvars in `body` ⊆ free tvars
+    /// in `ty`) plus `inst_tfree` on the stored `Term::def` when
+    /// `mk_const` is called at a more specific type. Rejects bodies
+    /// with free tvars not in `ty` for safety.
+    fn new_basic_definition(&mut self, tm: Term) -> Result<Thm, HolError> {
+        let (c, body) = self
+            .dest_hol_eq(&tm)
+            .ok_or_else(|| HolError::BadDefinition("not an equation".into()))?;
+        let (name_id, ty) = match c.kind() {
+            TermKind::Free(n, t) => {
+                let id = self.id_for(n.as_str()).ok_or_else(|| {
+                    HolError::BadDefinition(format!("variable name not registered: {n}"))
+                })?;
+                (id, t.clone())
+            }
+            _ => {
+                return Err(HolError::BadDefinition(
+                    "LHS of definition must be a variable".into(),
+                ));
+            }
+        };
+        if self.constants.contains_key(&name_id) {
+            return Err(HolError::ConstantAlreadyDefined(
+                self.name_str(name_id).into(),
+            ));
+        }
+
+        // Soundness guard: every free type variable in the body must
+        // also appear in c's type (HOL Light's classical check).
+        let ty_tvars: HashSet<SmolStr> = ty.free_tvars().into_iter().collect();
+        let mut body_tvars = HashSet::new();
+        collect_term_tvars(&body, &mut body_tvars);
+        if !body_tvars.is_subset(&ty_tvars) {
+            return Err(HolError::FreeTypeVarsInDefinition);
+        }
+
+        // Pure define: `⊢ Term::def(d) ≡ body` (empty hyps; d fresh).
+        let pure_def_thm =
+            Thm::define(self.name_str(name_id), body.clone()).map_err(pure_err)?;
+        let TermKind::Eq(lhs, _) = pure_def_thm.concl().kind() else {
+            unreachable!("Thm::define returns Eq");
+        };
+        let c_term = lhs.clone();
+
+        // Register the constant before we use its NameId in
+        // backward eq_reflection conversion (so mk_const lookups
+        // during conversion see it).
+        self.defined_constants.insert(name_id, c_term.clone());
+        self.constants.insert(name_id, ty.clone());
+
+        // Backward eq_reflection: Pure ≡ → HOL Trueprop Eq.
+        self.ctx
+            .eq_reflection_axiom()
+            .inst_tfree("a", ty)
+            .map_err(pure_err)?
+            .all_elim(c_term)
+            .map_err(pure_err)?
+            .all_elim(body)
+            .map_err(pure_err)?
+            .sym()
+            .map_err(pure_err)?
+            .eq_mp(pure_def_thm)
+            .map_err(pure_err)
     }
 
     fn new_basic_type_definition(
@@ -1005,6 +1124,49 @@ mod tests {
         let (l, r) = k.dest_eq_concl(&h2).unwrap();
         assert_eq!(l, y);
         assert_eq!(r, y);
+    }
+
+    #[test]
+    fn new_basic_definition_introduces_constant() {
+        // Define `t_const = T` (i.e., a constant t_const : bool defined
+        // to equal HOL T). After definition, `mk_const(t_const, bool)`
+        // returns the same Pure Def term as the LHS of the theorem.
+        let mut k = mk_kernel();
+        let b = k.bool_type();
+        k.register_name(50, "t_const");
+
+        // Build "Eq[bool] t_const T" where t_const is a Var (HOL form
+        // for new_basic_definition input).
+        let c_var = k.mk_var(50, b.clone());
+        let t_const_body = k.ctx.t(); // HOL T : bool
+        let def_eq = k.mk_eq(c_var.clone(), t_const_body.clone());
+
+        let thm = k.new_basic_definition(def_eq).unwrap();
+        // The theorem's RHS should be HOL T.
+        let (lhs, rhs) = k.dest_eq_concl(&thm).unwrap();
+        assert_eq!(rhs, t_const_body);
+
+        // mk_const(50, bool) returns the same Def-wrapped term as the
+        // LHS of the defining equation.
+        let c_term = k.mk_const(50, b);
+        assert_eq!(c_term, lhs);
+
+        // dest_const round-trips the NameId.
+        let (id, _) = k.dest_const(c_term).unwrap();
+        assert_eq!(id, 50);
+    }
+
+    #[test]
+    fn new_basic_definition_rejects_redefinition() {
+        let mut k = mk_kernel();
+        let b = k.bool_type();
+        k.register_name(50, "c");
+        let c_var = k.mk_var(50, b);
+        let t = k.ctx.t();
+        let def_eq = k.mk_eq(c_var.clone(), t.clone());
+        k.new_basic_definition(def_eq.clone()).unwrap();
+        let err = k.new_basic_definition(def_eq).unwrap_err();
+        assert!(matches!(err, HolError::ConstantAlreadyDefined(_)));
     }
 
     #[test]

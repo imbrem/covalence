@@ -18,6 +18,15 @@ a theory inside the prover). But until that endgame, they should ship
 as *two parallel streams over the shared substrate*, not as one giant
 serialized plan.
 
+The newer vocabulary from [`../../../institution-map.md`](../../../institution-map.md)
+helps here: the prover side is moving toward a **Pure/LF meta-institution
+plus HOL object institution** as the shrunken trusted core, while the VCS,
+store, executor, and package/tooling layers are better understood as
+theories, authorities, proof languages, or translations around that
+core rather than as part of the logic itself. In that sense this path
+proposal is about how to stage an **institution graph** without asking
+the trusted center to absorb every adjacent concern.
+
 This proposal lays out that path.
 
 ---
@@ -69,6 +78,12 @@ trait-and-backend grab-bag into **one oracle-shaped API**
 backends underneath. The trait surfaces are what the framework's
 `observe()` calls bottom out into; the backends stay where they are.
 
+Institutionally, this matters because it keeps the substrate as a
+source of **scoped observations and transport structure**, not as part
+of the LF/HOL trusted semantics. The store becomes an authority the
+logic can talk about, not a hidden meta-assumption baked into the
+proof kernel.
+
 **No new crate is strictly required** for V1 — the work fits inside
 `covalence-store` + `covalence-object`. A `covalence-tree` extraction
 becomes worth it only when the API has stabilized enough to live
@@ -92,6 +107,14 @@ checking, blob backends, tree backends, FUSE projection — is an
 *oracle*. The framework's only trust primitives are observations and
 meaning-axioms; soundness lives in the user's discipline about which
 meaning-axioms to discharge.
+
+If the current direction settles on the tighter Paulson-style split,
+read this as: **LF + HOL are the trusted logical core**, and
+everything else is outside that core as oracle, transport, theory
+library, or translation machinery. This proposal is compatible with
+that narrower statement of the TCB because its main concern is pushing
+stores/executors/crypto out of the kernel, not insisting that the HOL
+layer itself be untrusted forever.
 
 This is *stronger* than [`02-framework.md`
 §5](../layered-framework/02-framework.md) (which makes Stores a

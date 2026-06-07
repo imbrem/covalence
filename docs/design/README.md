@@ -11,6 +11,9 @@ For the big-picture vision the proposals are working toward, see
 [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) (v2) and
 [`../../AGENTS.md`](../../AGENTS.md).
 
+For a current-state classification of the repo's multiple logic families,
+proof formats, and bridges, see [`../institution-map.md`](../institution-map.md).
+
 ---
 
 ## How this directory is organized
@@ -38,6 +41,7 @@ accepted, rejected, superseded) is recorded in the proposal's own
 | Proposal                                                                                              | Status   | Summary                                                                                                                                  |
 |-------------------------------------------------------------------------------------------------------|----------|------------------------------------------------------------------------------------------------------------------------------------------|
 | [`proposals/layered-framework/`](./proposals/layered-framework/)                                       | proposed | Carve the kernel into three layers (Framework / HOL / Morphism), with stores and authorities as the framework's only trust primitives. Hash functions, signatures, executors all become oracles outside the trust boundary. |
+| [`proposals/stacked-pure-hol/`](./proposals/stacked-pure-hol/)                                         | proposed | Minimal **Pure/LF + HOL** kernel sketch in the Isabelle/Pure tradition: a tiny logical framework at the bottom, HOL as the default object logic above it, and shell/oracle machinery outside the TCB. This is the clearest "Larry Paulson homage" document in the tree and now aligns with the institution-theoretic framing in [`../institution-map.md`](../institution-map.md). |
 | [`proposals/shared-backbone/`](./proposals/shared-backbone/)                                           | proposed | The *path* to the vision. Substrate-first with two parallel streams (prover + VCS) sharing a content-addressed backbone; oracle-everything stratification (Stores leave the framework; verifiable reads become oracle observations); `attest`/`decide` reframed as the first concrete oracle. Sibling to `layered-framework/`, not an alternative. |
 | [`proposals/egglog-integration/`](./proposals/egglog-integration/)                                     | proposed | Curate a **patchwork of small (theory, decision question) entries** where egglog is the right engine — EUF, pure equational theories, arrays, lists, AC word problems, Datalog reachability, lattice analyses — each shipping into the kernel as its own family of `EThm`s. Two engineering layers under the catalogue (oracle replay vs. native runner) and a long-term meta-provability mode. |
 | [`proposals/wasm-runtime/`](./proposals/wasm-runtime/)                                                 | proposed | Abstract `covalence-wasm`'s engine surface behind a sync-first `cov:wasm/*@0.1.0` WIT API (runtime / inspect / build) so the same code can target wasmtime, a browser JS host, or guest components; layer **process** (shared-fate graph of components) and **container** (tree of processes with restart policies) on top; end goal is a browser-resident covalence kernel powering a fully static `covalence-ui`, with federation as a longer-term follow-up. |
@@ -67,6 +71,14 @@ directions. Adoption requires:
 Until those steps are done, a proposal in this directory is just a
 record of a planning conversation — useful for cross-referencing, but
 not load-bearing for the codebase.
+
+One extra distinction now matters during the refactor: some proposals
+primarily define a **trusted logical core** (`layered-framework`,
+`stacked-pure-hol`), while others define **translation, tooling, or
+deployment structure around that core** (`shared-backbone`,
+`egglog-integration`, `wasm-runtime`, `wasm-store-composition`). That
+split roughly matches the institution-theoretic distinction between
+institutions and the external artifacts/translations that relate them.
 
 ---
 

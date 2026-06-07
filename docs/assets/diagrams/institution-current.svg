@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="920" viewBox="0 0 1400 920" role="img" aria-labelledby="title desc">
+  <title id="title">Current Covalence institution graph</title>
+  <desc id="desc">Diagram showing the current Covalence logic, proof-language, transport, and API landscape.</desc>
+  <defs>
+    <style>
+      .bg { fill: #fbfaf5; }
+      .title { font: 700 28px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #15233b; }
+      .subtitle { font: 400 16px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #3a4a63; }
+      .label { font: 700 18px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #15233b; }
+      .small { font: 400 14px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #43536f; }
+      .note { font: 400 13px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #43536f; }
+      .core { fill: #e7f0ff; stroke: #3d6fb6; stroke-width: 2; }
+      .logic { fill: #eef7ea; stroke: #4a8a53; stroke-width: 2; }
+      .format { fill: #fff1db; stroke: #c58a2c; stroke-width: 2; }
+      .api { fill: #f5eaff; stroke: #8b58b5; stroke-width: 2; }
+      .source { fill: #ffe9eb; stroke: #ba5663; stroke-width: 2; }
+      .legend { fill: #ffffff; stroke: #d8d2c6; stroke-width: 1.5; }
+      .edge { stroke: #42536f; stroke-width: 2.2; fill: none; }
+      .dash { stroke-dasharray: 9 7; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#42536f"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1400" height="920"/>
+  <text class="title" x="48" y="54">Current Covalence Institution Graph</text>
+  <text class="subtitle" x="48" y="82">What the repo currently contains: candidate logics, proof languages, transports, and backend surfaces.</text>
+
+  <rect class="core" x="60" y="130" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="175" y="164" text-anchor="middle">Pure-style LF</text>
+  <text class="small" x="175" y="188" text-anchor="middle">`covalence-pure`</text>
+  <text class="small" x="175" y="208" text-anchor="middle">candidate meta-institution</text>
+
+  <rect class="logic" x="360" y="130" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="475" y="164" text-anchor="middle">HOL family</text>
+  <text class="small" x="475" y="188" text-anchor="middle">`covalence-hol`</text>
+  <text class="small" x="475" y="208" text-anchor="middle">clearest current object logic</text>
+
+  <rect class="core" x="660" y="130" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="775" y="164" text-anchor="middle">Experimental kernel</text>
+  <text class="small" x="775" y="188" text-anchor="middle">`covalence-kernel`</text>
+  <text class="small" x="775" y="208" text-anchor="middle">staging prover target</text>
+
+  <rect class="logic" x="960" y="130" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="1075" y="164" text-anchor="middle">SMT-LIB families</text>
+  <text class="small" x="1075" y="188" text-anchor="middle">`covalence-smt`</text>
+  <text class="small" x="1075" y="208" text-anchor="middle">indexed by `(set-logic ...)`</text>
+
+  <rect class="logic" x="960" y="300" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="1075" y="334" text-anchor="middle">SAT / CNF</text>
+  <text class="small" x="1075" y="358" text-anchor="middle">`covalence-sat`</text>
+  <text class="small" x="1075" y="378" text-anchor="middle">formula family + checkers</text>
+
+  <rect class="format" x="360" y="300" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="475" y="334" text-anchor="middle">OpenTheory</text>
+  <text class="small" x="475" y="358" text-anchor="middle">`covalence-opentheory`</text>
+  <text class="small" x="475" y="378" text-anchor="middle">HOL package / article transport</text>
+
+  <rect class="format" x="660" y="300" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="775" y="334" text-anchor="middle">Alethe</text>
+  <text class="small" x="775" y="358" text-anchor="middle">`covalence-alethe`</text>
+  <text class="small" x="775" y="378" text-anchor="middle">SMT proof language</text>
+
+  <rect class="api" x="960" y="520" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="1075" y="554" text-anchor="middle">Prover API</text>
+  <text class="small" x="1075" y="578" text-anchor="middle">`covalence-shell::Prover`</text>
+  <text class="small" x="1075" y="598" text-anchor="middle">backend interface, not a logic</text>
+
+  <rect class="logic" x="660" y="520" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="775" y="554" text-anchor="middle">egglog entries</text>
+  <text class="small" x="775" y="578" text-anchor="middle">`covalence-egglog`</text>
+  <text class="small" x="775" y="598" text-anchor="middle">small equational institutions</text>
+
+  <rect class="source" x="360" y="520" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="475" y="554" text-anchor="middle">Lean export</text>
+  <text class="small" x="475" y="578" text-anchor="middle">`covalence-lean`</text>
+  <text class="small" x="475" y="598" text-anchor="middle">syntax/data source today</text>
+
+  <rect class="format" x="660" y="700" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="775" y="734" text-anchor="middle">DRAT / LRAT</text>
+  <text class="small" x="775" y="758" text-anchor="middle">certificate languages</text>
+  <text class="small" x="775" y="778" text-anchor="middle">for SAT solving</text>
+
+  <rect class="source" x="360" y="700" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="475" y="734" text-anchor="middle">SpecTec / WASM spec</text>
+  <text class="small" x="475" y="758" text-anchor="middle">`covalence-spectec`</text>
+  <text class="small" x="475" y="778" text-anchor="middle">future semantics source</text>
+
+  <rect class="logic" x="60" y="520" rx="18" ry="18" width="230" height="92"/>
+  <text class="label" x="175" y="554" text-anchor="middle">Metamath</text>
+  <text class="small" x="175" y="578" text-anchor="middle">`covalence-metamath`</text>
+  <text class="small" x="175" y="598" text-anchor="middle">separate foundation world</text>
+
+  <path class="edge dash" marker-end="url(#arrow)" d="M 290 176 C 320 176, 330 176, 360 176"/>
+  <text class="note" x="325" y="160" text-anchor="middle">proposed host layer</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M 475 300 L 475 222"/>
+  <text class="note" x="533" y="262">interprets into</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M 890 346 L 960 176"/>
+  <text class="note" x="900" y="246">proof language for</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M 890 356 L 960 550"/>
+  <text class="note" x="918" y="456">bridge ingest</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M 890 566 L 960 566"/>
+  <text class="note" x="925" y="548">bridge ingest</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M 1190 566 C 1250 566, 1250 176, 890 176"/>
+  <text class="note" x="1262" y="330">currently lowers to</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M 890 746 L 960 346"/>
+  <text class="note" x="948" y="676">checks certificates for</text>
+
+  <path class="edge dash" marker-end="url(#arrow)" d="M 475 520 L 475 222"/>
+  <text class="note" x="552" y="460">future translation</text>
+
+  <path class="edge dash" marker-end="url(#arrow)" d="M 475 700 C 475 640, 175 640, 175 222"/>
+  <text class="note" x="294" y="644">future semantics source</text>
+
+  <path class="edge dash" marker-end="url(#arrow)" d="M 475 700 L 475 222"/>
+
+  <rect class="legend" x="60" y="826" rx="14" ry="14" width="730" height="54"/>
+  <rect class="core" x="82" y="843" rx="8" ry="8" width="22" height="22"/>
+  <text class="note" x="114" y="859">candidate framework / kernel</text>
+  <rect class="logic" x="300" y="843" rx="8" ry="8" width="22" height="22"/>
+  <text class="note" x="332" y="859">logic or logic family</text>
+  <rect class="format" x="474" y="843" rx="8" ry="8" width="22" height="22"/>
+  <text class="note" x="506" y="859">proof or package format</text>
+  <rect class="api" x="658" y="843" rx="8" ry="8" width="22" height="22"/>
+  <text class="note" x="690" y="859">API surface</text>
+  <rect class="source" x="782" y="843" rx="8" ry="8" width="22" height="22"/>
+  <text class="note" x="814" y="859">syntax / semantics source</text>
+</svg>

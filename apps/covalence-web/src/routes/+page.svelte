@@ -22,6 +22,44 @@
 		return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 	}
 
+	// --- Inline preview block detection ---
+	// Server emits SVG previews wrapped in sentinel markers that the REPL
+	// passes through verbatim. The web REPL renders the SVG inline.
+	const PREVIEW_BEGIN = 'cov-preview-svg';
+	const PREVIEW_END = '/cov-preview-svg';
+
+	type OutputSegment = { kind: 'text'; value: string } | { kind: 'svg'; value: string };
+
+	function splitPreviewSegments(text: string): OutputSegment[] {
+		const segments: OutputSegment[] = [];
+		let i = 0;
+		while (i < text.length) {
+			const start = text.indexOf(PREVIEW_BEGIN, i);
+			if (start === -1) {
+				if (i < text.length) segments.push({ kind: 'text', value: text.slice(i) });
+				break;
+			}
+			if (start > i) segments.push({ kind: 'text', value: text.slice(i, start) });
+			const afterBegin = start + PREVIEW_BEGIN.length;
+			const end = text.indexOf(PREVIEW_END, afterBegin);
+			if (end === -1) {
+				// Unterminated — show the rest as text.
+				segments.push({ kind: 'text', value: text.slice(start) });
+				break;
+			}
+			// Strip surrounding newlines added by the emitter.
+			const svg = text.slice(afterBegin, end).replace(/^\n/, '').replace(/\n$/, '');
+			segments.push({ kind: 'svg', value: svg });
+			i = end + PREVIEW_END.length;
+			if (text[i] === '\n') i++;
+		}
+		return segments;
+	}
+
+	function trimTrailingNewline(s: string): string {
+		return s.endsWith('\n') ? s.slice(0, -1) : s;
+	}
+
 	/** Heuristic: is this output structured code (S-expression or hashes) vs. prose (help, status)? */
 	function isCodeOutput(text: string): boolean {
 		const trimmed = text.trim();
@@ -324,7 +362,16 @@
 				{:else if line.kind === 'error'}
 					<div class="line error">{line.text}</div>
 				{:else}
-					<div class="line output">{@html isCodeOutput(line.text) ? highlight(line.text) : escHtml(line.text)}</div>
+					{#each splitPreviewSegments(line.text) as seg}
+						{#if seg.kind === 'svg'}
+							<div class="line preview-svg">{@html seg.value}</div>
+						{:else}
+							{@const trimmed = trimTrailingNewline(seg.value)}
+							{#if trimmed.length > 0}
+								<div class="line output">{@html isCodeOutput(trimmed) ? highlight(trimmed) : escHtml(trimmed)}</div>
+							{/if}
+						{/if}
+					{/each}
 				{/if}
 			{/each}
 		</div>
@@ -396,6 +443,33 @@
 		flex: 1;
 		overflow-y: auto;
 		padding-bottom: 0.5rem;
+		/* Firefox */
+		scrollbar-width: thin;
+		scrollbar-color: var(--muted) transparent;
+		scrollbar-gutter: stable;
+	}
+	/* WebKit / Chromium: thin, subtle, themed scrollbar that only shows
+	   a thumb (no track chrome) and matches the REPL's monospace feel. */
+	.repl-output::-webkit-scrollbar {
+		width: 8px;
+		height: 8px;
+	}
+	.repl-output::-webkit-scrollbar-track {
+		background: transparent;
+	}
+	.repl-output::-webkit-scrollbar-thumb {
+		background: color-mix(in srgb, var(--muted) 45%, transparent);
+		border-radius: 4px;
+		border: 2px solid transparent;
+		background-clip: padding-box;
+		min-height: 32px;
+	}
+	.repl-output:hover::-webkit-scrollbar-thumb {
+		background: color-mix(in srgb, var(--muted) 70%, transparent);
+		background-clip: padding-box;
+	}
+	.repl-output::-webkit-scrollbar-corner {
+		background: transparent;
 	}
 
 	.line {
@@ -414,6 +488,23 @@
 
 	.line.error {
 		color: #f87171;
+	}
+
+	.line.preview-svg {
+		background: #ffffff;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 0.5rem;
+		margin: 0.25rem 0;
+		max-width: 100%;
+		overflow-x: auto;
+		white-space: normal;
+	}
+
+	.line.preview-svg :global(svg) {
+		max-width: 100%;
+		height: auto;
+		display: block;
 	}
 
 	.prompt {

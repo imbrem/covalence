@@ -38,12 +38,20 @@ export interface DecideResponse {
 }
 
 /** Object kinds returned by the object store. */
-export type ObjectKind = 'blob' | 'tree' | 'commit' | 'tag';
+export type ObjectKind = 'blob' | 'tree' | 'commit' | 'tag' | 'tagged';
 
-/** GET /api/objects/info/:hash */
+/** GET /api/objects/info/:hash
+ *
+ * When the requested hash is a *keyed identity* registered in the
+ * kernel's tag registry, `kind` is `'tagged'` and `tag` /
+ * `contentHash` carry the BLAKE3 derivation context and the
+ * underlying content blob's hash, respectively.
+ */
 export interface ObjectInfoResponse {
   kind: ObjectKind;
   size: number;
+  tag?: string;
+  contentHash?: Hash;
 }
 
 /** Entry in a tree listing. */

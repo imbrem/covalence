@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectImageMime, isLikelyText, detectBlobMode, isCovGraph } from './detect.js';
-
-const COVG_V1_PREFIX = new Uint8Array([0x43, 0x4f, 0x56, 0x47, 0x01]);
+import { detectImageMime, isLikelyText, detectBlobMode } from './detect.js';
 
 const PNG_HEADER = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const JPEG_HEADER = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
@@ -89,28 +87,5 @@ describe('detectBlobMode', () => {
 	it('picks hex for non-image binary data', () => {
 		const data = new Uint8Array([0xde, 0xad, 0xbe, 0xef, 0x00, 0x01, 0x02]);
 		expect(detectBlobMode(data)).toBe('hex');
-	});
-
-	it('picks graph when blob starts with COVG v1 magic', () => {
-		const data = new Uint8Array([...COVG_V1_PREFIX, 0]);
-		expect(detectBlobMode(data)).toBe('graph');
-	});
-});
-
-describe('isCovGraph', () => {
-	it('accepts COVG v1', () => {
-		expect(isCovGraph(COVG_V1_PREFIX)).toBe(true);
-	});
-
-	it('rejects truncated magic', () => {
-		expect(isCovGraph(new Uint8Array([0x43, 0x4f, 0x56]))).toBe(false);
-	});
-
-	it('rejects wrong magic', () => {
-		expect(isCovGraph(new Uint8Array([0x43, 0x4f, 0x56, 0x48, 0x01]))).toBe(false);
-	});
-
-	it('rejects unsupported version', () => {
-		expect(isCovGraph(new Uint8Array([0x43, 0x4f, 0x56, 0x47, 0x02]))).toBe(false);
 	});
 });

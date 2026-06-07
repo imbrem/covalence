@@ -1,33 +1,153 @@
 <script lang="ts">
-	import { detectImageMime, isCovGraph } from './detect.js';
+	import { detectImageMime } from './detect.js';
 	import GraphView from '../graph/GraphView.svelte';
-	import { decodeGraph } from '../graph/decode.js';
-	import type { Graph } from '../graph/types.js';
+	import GraphDagView from '../graph/GraphDagView.svelte';
+	import {
+		decodeGraph,
+		decodeStringDiagram,
+		decodeLabelList,
+		decodeKindFlags,
+		resolveDiagram,
+		hexOf,
+	} from '../graph/decode.js';
+	import type { Graph, ResolvedDiagram, Hash } from '../graph/types.js';
+
+	/**
+	 * Resolve a keyed identity to its content bytes. The string-diagram
+	 * branch uses this to walk slot references — the resolver typically
+	 * does a two-step `lookup_tag → get_blob` against the kernel.
+	 */
+	export type BlobResolver = (hash: Hash) => Promise<Uint8Array | null>;
+
+	// Tag strings — keep in sync with `*_HASH_CTX` constants in
+	// crates/covalence-graph. These are BLAKE3 derivation contexts that
+	// double as tag registry keys.
+	const TAG_GRAPH_ORDERED = 'cov:graph@0.1.0 ordered';
+	const TAG_STRING_DIAGRAM = 'cov:graph@0.1.0 string-diagram';
+	const TAG_LABEL_LIST = 'cov:graph@0.1.0 label-list';
+	const TAG_KIND_FLAGS = 'cov:graph@0.1.0 kind-flags';
 
 	interface Props {
 		hash: string;
 		data: Uint8Array;
 		mode: 'graph' | 'text' | 'hex' | 'image';
+		/** Resolver used by string-diagram rendering to fetch the
+		 *  underlying graph and overlay bytes from referenced hashes. */
+		resolver?: BlobResolver;
+		/** Tag of a keyed identity; required for graph-mode rendering.
+		 *  Without a tag, graph mode reports the blob as un-renderable. */
+		tag?: string;
 	}
 
-	let { hash, data, mode }: Props = $props();
+	let { hash, data, mode, resolver, tag }: Props = $props();
 
-	let graphResult = $derived.by((): { graph: Graph | null; error: string | null } => {
-		if (mode !== 'graph') return { graph: null, error: null };
-		if (!isCovGraph(data)) {
-			return { graph: null, error: 'blob does not start with the cov:graph "COVG" magic' };
+	type GraphState =
+		| { kind: 'idle' }
+		| { kind: 'loading' }
+		| { kind: 'dag'; graph: Graph }
+		| { kind: 'diagram'; diagram: ResolvedDiagram }
+		| { kind: 'overlay'; what: string; count: number }
+		| { kind: 'err'; message: string };
+
+	let graphState = $state<GraphState>({ kind: 'idle' });
+	/** Generation counter: invalidates older promises when inputs change. */
+	let renderGen = 0;
+
+	$effect(() => {
+		if (mode !== 'graph') {
+			graphState = { kind: 'idle' };
+			return;
 		}
-		try {
-			return { graph: decodeGraph(data), error: null };
-		} catch (e) {
-			return { graph: null, error: (e as Error).message };
+		if (data.length === 0) {
+			// Real bytes haven't arrived yet — wait for the next effect tick.
+			graphState = { kind: 'loading' };
+			return;
 		}
+		if (!tag) {
+			graphState = {
+				kind: 'err',
+				message: 'blob is not registered with a tag (graph view requires tag dispatch)',
+			};
+			return;
+		}
+		const myGen = ++renderGen;
+		graphState = { kind: 'loading' };
+		void renderByTag(tag, data, resolver).then((s) => {
+			if (myGen === renderGen) graphState = s;
+		});
 	});
 
-	let textContent = $derived(new TextDecoder('utf-8', { fatal: false }).decode(data));
+	async function renderByTag(
+		tag: string,
+		bytes: Uint8Array,
+		fetcher: BlobResolver | undefined,
+	): Promise<GraphState> {
+		try {
+			switch (tag) {
+				case TAG_GRAPH_ORDERED:
+					return { kind: 'dag', graph: decodeGraph(bytes) };
+				case TAG_STRING_DIAGRAM:
+					return await renderStringDiagram(bytes, fetcher);
+				case TAG_LABEL_LIST: {
+					const ll = decodeLabelList(bytes);
+					return { kind: 'overlay', what: 'label-list', count: ll.labels.length };
+				}
+				case TAG_KIND_FLAGS: {
+					const kf = decodeKindFlags(bytes);
+					return { kind: 'overlay', what: 'kind-flags', count: kf.kinds.length };
+				}
+				default:
+					return { kind: 'err', message: `no renderer for tag '${tag}'` };
+			}
+		} catch (e) {
+			return { kind: 'err', message: (e as Error).message };
+		}
+	}
 
-	let textLines = $derived(textContent.split('\n'));
+	async function renderStringDiagram(
+		bytes: Uint8Array,
+		fetcher: BlobResolver | undefined,
+	): Promise<GraphState> {
+		if (!fetcher) {
+			return {
+				kind: 'err',
+				message: 'string-diagram references external blobs but no resolver is configured',
+			};
+		}
+		const sd = decodeStringDiagram(bytes);
 
+		// Memoise the fetcher so repeated slot lookups don't refetch.
+		const cache = new Map<string, Uint8Array>();
+		async function fetchOnce(h: Hash): Promise<Uint8Array | null> {
+			const key = hexOf(h);
+			const cached = cache.get(key);
+			if (cached) return cached;
+			const fetched = await fetcher(h);
+			if (fetched) cache.set(key, fetched);
+			return fetched;
+		}
+
+		const graphBytes = await fetchOnce(sd.graph);
+		if (!graphBytes) {
+			return { kind: 'err', message: `graph blob ${hexOf(sd.graph)} not found` };
+		}
+		const graph = decodeGraph(graphBytes);
+
+		// Eagerly fetch any overlay slots that are real hash references.
+		const overlayMap = new Map<string, Uint8Array>();
+		for (const slot of [sd.labels, sd.kinds]) {
+			if (slot.kind === 'hash') {
+				const bytes = await fetchOnce(slot.hash);
+				if (bytes) overlayMap.set(hexOf(slot.hash), bytes);
+			}
+		}
+		const diagram = resolveDiagram(sd, graph, (h) => overlayMap.get(hexOf(h)) ?? null);
+		return { kind: 'diagram', diagram };
+	}
+
+	// --- Text / hex / image modes (unchanged from before) ---
+
+	let textLines = $derived(new TextDecoder('utf-8', { fatal: false }).decode(data).split('\n'));
 	let hexLines = $derived(buildHexDump(data));
 
 	let imageUrl = $derived.by(() => {
@@ -50,25 +170,16 @@
 		for (let off = 0; off < bytes.length; off += 16) {
 			const slice = bytes.subarray(off, Math.min(off + 16, bytes.length));
 			const offset = off.toString(16).padStart(8, '0');
-
-			const hexParts: string[] = [];
+			const hex: string[] = [];
 			for (let i = 0; i < 16; i++) {
-				if (i < slice.length) {
-					hexParts.push(slice[i].toString(16).padStart(2, '0'));
-				} else {
-					hexParts.push('  ');
-				}
+				hex.push(i < slice.length ? slice[i].toString(16).padStart(2, '0') : '  ');
 			}
-			const hexLeft = hexParts.slice(0, 8).join(' ');
-			const hexRight = hexParts.slice(8).join(' ');
-
 			let ascii = '';
 			for (let i = 0; i < slice.length; i++) {
 				const b = slice[i];
-				ascii += (b >= 0x20 && b <= 0x7e) ? String.fromCharCode(b) : '.';
+				ascii += b >= 0x20 && b <= 0x7e ? String.fromCharCode(b) : '.';
 			}
-
-			lines.push(`${offset}  ${hexLeft}  ${hexRight}  |${ascii}|`);
+			lines.push(`${offset}  ${hex.slice(0, 8).join(' ')}  ${hex.slice(8).join(' ')}  |${ascii}|`);
 		}
 		return lines;
 	}
@@ -76,10 +187,20 @@
 
 <div class="blob-viewer">
 	{#if mode === 'graph'}
-		{#if graphResult.graph}
-			<GraphView graph={graphResult.graph} />
+		{#if graphState.kind === 'dag'}
+			<GraphDagView graph={graphState.graph} />
+		{:else if graphState.kind === 'diagram'}
+			<GraphView diagram={graphState.diagram} />
+		{:else if graphState.kind === 'overlay'}
+			<div class="graph-fallback">
+				{graphState.what} overlay ({graphState.count} entries) — view alongside a string-diagram to render.
+			</div>
+		{:else if graphState.kind === 'err'}
+			<div class="graph-fallback">graph view: {graphState.message}</div>
+		{:else if graphState.kind === 'loading'}
+			<div class="graph-fallback">resolving overlays…</div>
 		{:else}
-			<div class="graph-fallback">graph decode error: {graphResult.error}</div>
+			<div class="graph-fallback">waiting for blob…</div>
 		{/if}
 	{:else if mode === 'image'}
 		{#if imageUrl}

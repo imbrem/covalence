@@ -6,15 +6,15 @@ Experimental VCS and theorem prover. Monorepo with Rust crates, a VSCode browser
 
 ```sh
 bun install                # install JS dependencies
-bun run build              # full build: native (debug) + WASM + esbuild
-bun run build:native       # native debug only (cargo build)
+bun run build              # full build: web (SvelteKit) + native (debug) + WASM + esbuild
+bun run build:native       # native debug only (cargo build) — embeds last-built web bundle
 bun run build:wasm         # WASM + esbuild only
 bun run build:web          # build SvelteKit web app (adapter-static)
 bun run build:serve        # build web app + native binary
 bun run dev:web            # SvelteKit dev server (proxies /api to localhost:3100)
 bun run dev:serve          # reminder + dev:web (run cov serve --api in another terminal)
-bun run release            # full release build: native (release) + WASM + esbuild
-bun run release:native     # native release only (cargo build --release)
+bun run release            # full release build: web + native (release) + WASM + esbuild
+bun run release:native     # native release only (cargo build --release) — embeds last-built web bundle
 bun run code:browser       # build WASM + launch web VSCode (always WASM)
 bun run code:desktop       # full build + launch desktop VSCode (native if available, else WASM)
 cargo check                # check Rust crates
@@ -83,7 +83,7 @@ Several `covalence-*` crates exist to wrap external dependencies. All usage of t
 - **covalence-arrow** — wraps `arrow` (re-exported). Provides `parse_ipc()` auto-detecting Arrow IPC *file* (`ARROW1` magic) vs *stream* format, returning `ArrowInfo` (schema + row/batch counts).
 - **covalence-parquet** — wraps `parquet` (re-exported). Provides `parse_file()` for a single Parquet blob and `scan_hive()` for a hive-partitioned tree (`key=value/` directories with `.parquet` leaves). Hive scanning is decoupled from storage via the `HiveSource` trait.
 - **covalence-spectec** — wraps the `cyruscook/spectec_parse` crates (`spectec_ast`, `spectec_ast_decode`, `spectec_ast_decode_derive`, `wasm_spec_ast`) for consuming [SpecTec] — the DSL the WebAssembly specification is written in. Re-exports as `covalence_spectec::{ast, decode, decode_derive, wasm}`. The `wasm` module exposes the WebAssembly 3.0 spec pre-dumped as a SpecTec AST via `wasm::get_wasm_spectec_ast() -> Vec<ast::SpecTecDef>`. Used as an **untrusted driver** to lower WebAssembly semantics into HOL; a native Rust `.watsup` parser is a possible later addition. [SpecTec]: https://github.com/Wasm-DSL/spectec
-- **covalence-graph** — ordered, typed, payload-polymorphic graph data structure (`Graph<P>` / `GraphBuilder<P>`, `BytesGraph` alias for the WIT-bridged form). `cov:graph@0.1.0` WIT in `wit/graph.wit`. Intended as a symmetric *premonoidal* category: node insertion order is the initialization order, and equality is strict structural (insertion-order-preserving). Inputs are linear (each wired at most once); outputs fan out freely. Substrate for the WASM linker (payload = component hash) and future string-diagram / dataflow consumers.
+- **covalence-graph** — ordered, typed, payload-polymorphic graph data structure (`Graph<P>` / `GraphBuilder<P>`, `BytesGraph` alias for the WIT-bridged form), plus `LabelList` / `KindFlags` overlay blobs and a `StringDiagram` composite that references them. `cov:graph@0.1.0` WIT in `wit/graph.wit` splits into a topology-only `api` interface and a `string-diagram` interface for the overlay world. Intended as a symmetric *premonoidal* category: node insertion order is the initialization order, and equality is strict structural (insertion-order-preserving). Inputs are linear (each wired at most once); outputs fan out freely. Per-node labels and `pure`/`ordered` classification are NOT part of the graph itself — they live in overlay blobs so the same topology can be presented differently by different consumers. A pure-Rust `render_svg` produces standalone SVG markup from a resolved diagram.
 
 ## Core Crates
 

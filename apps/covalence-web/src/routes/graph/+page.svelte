@@ -1,37 +1,78 @@
 <script lang="ts">
-	import { GraphView, decodeGraph, hexToBytes, type Graph } from 'covalence-ui';
+	import {
+		GraphView,
+		decodeGraph,
+		decodeStringDiagram,
+		decodeLabelList,
+		decodeKindFlags,
+		resolveDiagram,
+		diagramFromGraphOnly,
+		hexToBytes,
+		hexOf,
+		magicOf,
+		type ResolvedDiagram,
+	} from 'covalence-ui';
 
-	let input = $state('');
+	let topologyHex = $state('');
+	let labelsHex = $state('');
+	let kindsHex = $state('');
+	let diagramHex = $state('');
 
-	let parseResult = $derived.by((): { graph: Graph | null; error: string | null } => {
-		const trimmed = input.trim();
-		if (trimmed === '') return { graph: null, error: null };
-		try {
-			return { graph: decodeGraph(hexToBytes(trimmed)), error: null };
-		} catch (e) {
-			return { graph: null, error: (e as Error).message };
-		}
+	type ParseResult = { diagram: ResolvedDiagram | null; info: string | null; error: string | null };
+
+	let parseResult = $derived.by((): ParseResult => {
+		// Priority order: composite > topology + overlays.
+		const dh = diagramHex.trim();
+		if (dh !== '') return parseComposite(dh);
+		const th = topologyHex.trim();
+		if (th !== '') return parseTopology(th);
+		return { diagram: null, info: null, error: null };
 	});
-	let graph = $derived(parseResult.graph);
-	let error = $derived(parseResult.error);
 
-	function loadExample() {
-		// Quick demo built by hand to match what
-		// `crates/covalence-graph/tests` produces. Easier to regenerate from
-		// Python: covalence.Graph then .to_bytes().hex().
-		input = EXAMPLE_HEX;
+	function parseComposite(hex: string): ParseResult {
+		try {
+			const sd = decodeStringDiagram(hexToBytes(hex));
+			// No store wired up in this static demo; require all overlays inline.
+			return {
+				diagram: null,
+				info: `string-diagram (graph=${hexOf(sd.graph).slice(0, 16)}…) — paste topology + overlays separately to render`,
+				error: null,
+			};
+		} catch (e) {
+			return { diagram: null, info: null, error: (e as Error).message };
+		}
 	}
 
-	// Smoke example regenerated via covalence-python:
-	//   #0 init      (ordered) out
-	//   #1 split     (pure)    1 input  + 2 outputs (fan-out)
-	//   #2 transform (ordered) 1 input  + 1 output
-	//   #3 verify    (pure)    2 inputs + 1 output  (fan-in)
-	//   #4 commit    (ordered) 1 input
-	const EXAMPLE_HEX =
-		'434f5647010501010101016f000104696e6974000300010169010101610101016200010573706c69' +
-		'740102000101690102016f0001097472616e73666f726d000300010161000201620103016f000106' +
-		'766572696679010100030169000106636f6d6d6974050000010001010200010203000201030103020400';
+	function parseTopology(hex: string): ParseResult {
+		try {
+			const bytes = hexToBytes(hex);
+			const magic = magicOf(bytes);
+			if (magic !== 'graph') {
+				return { diagram: null, info: null, error: `expected COVG topology, got ${magic ?? 'unknown'}` };
+			}
+			const graph = decodeGraph(bytes);
+			const labels = labelsHex.trim() ? decodeLabelList(hexToBytes(labelsHex)) : null;
+			const kinds = kindsHex.trim()
+				? decodeKindFlags(hexToBytes(kindsHex))
+				: { kinds: new Array(graph.nodes.length).fill('pure') as ('pure' | 'ordered')[] };
+			if (labels && labels.labels.length !== graph.nodes.length) {
+				return { diagram: null, info: null, error: 'labels length ≠ node count' };
+			}
+			if (kinds.kinds.length !== graph.nodes.length) {
+				return { diagram: null, info: null, error: 'kind-flags length ≠ node count' };
+			}
+			const diagram: ResolvedDiagram = labels || kindsHex.trim()
+				? { graph, labels, kinds }
+				: diagramFromGraphOnly(graph);
+			return { diagram, info: null, error: null };
+		} catch (e) {
+			return { diagram: null, info: null, error: (e as Error).message };
+		}
+	}
+
+	let diagram = $derived(parseResult.diagram);
+	let info = $derived(parseResult.info);
+	let error = $derived(parseResult.error);
 </script>
 
 <svelte:head><title>covalence — graph</title></svelte:head>
@@ -40,40 +81,51 @@
 	<header>
 		<h1>cov:graph viewer</h1>
 		<p>
-			Paste the canonical bytes (hex) of a <code>cov:graph@0.1.0</code> object — magic
-			<code>COVG</code>, version 1. Nodes flow top-to-bottom; consecutive
-			<span class="ordered">ordered</span>
-			nodes share a red state wire.
+			Paste canonical hex bytes for a <code>COVG</code> topology blob and (optionally) <code>LBLS</code>
+			labels and <code>KFLG</code> kind-flags overlays. Or paste a full <code>SDGM</code>
+			string-diagram composite to inspect its references.
 		</p>
 	</header>
 
 	<section class="controls">
-		<textarea
-			bind:value={input}
-			placeholder="paste canonical-bytes hex here (or use the example)"
-			rows="6"
-			spellcheck="false"
-		></textarea>
+		<label class="field">
+			<span>topology (COVG)</span>
+			<textarea bind:value={topologyHex} rows="4" spellcheck="false" placeholder="hex bytes"></textarea>
+		</label>
+		<label class="field">
+			<span>labels (LBLS, optional)</span>
+			<textarea bind:value={labelsHex} rows="2" spellcheck="false" placeholder="hex bytes"></textarea>
+		</label>
+		<label class="field">
+			<span>kind-flags (KFLG, optional)</span>
+			<textarea bind:value={kindsHex} rows="2" spellcheck="false" placeholder="hex bytes"></textarea>
+		</label>
+		<label class="field">
+			<span>or — full string-diagram composite (SDGM)</span>
+			<textarea bind:value={diagramHex} rows="2" spellcheck="false" placeholder="hex bytes"></textarea>
+		</label>
 		<div class="row">
-			<button onclick={loadExample}>Load example</button>
-			<button onclick={() => { input = ''; }}>Clear</button>
+			<button onclick={() => { topologyHex = labelsHex = kindsHex = diagramHex = ''; }}>Clear</button>
 		</div>
 	</section>
 
 	{#if error}
 		<p class="err">decode error: {error}</p>
 	{/if}
+	{#if info}
+		<p class="info-line">{info}</p>
+	{/if}
 
-	{#if graph}
+	{#if diagram}
 		<section class="info">
 			<dl>
-				<dt>nodes</dt><dd>{graph.nodes.length}</dd>
-				<dt>edges</dt><dd>{graph.edges.length}</dd>
-				<dt>version</dt><dd>{graph.version}</dd>
+				<dt>nodes</dt><dd>{diagram.graph.nodes.length}</dd>
+				<dt>edges</dt><dd>{diagram.graph.edges.length}</dd>
+				<dt>labels</dt><dd>{diagram.labels ? 'present' : 'none'}</dd>
 			</dl>
 		</section>
 		<section class="view">
-			<GraphView {graph} />
+			<GraphView {diagram} />
 		</section>
 	{/if}
 </main>
@@ -102,9 +154,16 @@
 		padding: 1px 4px;
 		border-radius: 3px;
 	}
-	.ordered {
-		color: #d04040;
+	.field {
+		display: block;
+		margin-bottom: 8px;
+	}
+	.field span {
+		display: block;
+		font-size: 12px;
 		font-weight: 600;
+		color: #5b6a85;
+		margin-bottom: 2px;
 	}
 	textarea {
 		width: 100%;
@@ -133,6 +192,11 @@
 	}
 	.err {
 		color: #b00020;
+		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+		font-size: 12px;
+	}
+	.info-line {
+		color: #5b6a85;
 		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 		font-size: 12px;
 	}

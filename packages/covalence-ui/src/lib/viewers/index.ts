@@ -19,4 +19,4 @@ registerViewer({
 
 export { registerViewer, getViewer } from './registry.js';
 export type { ViewerDescriptor } from './registry.js';
-export { detectImageMime, isLikelyText, detectBlobMode, isCovGraph } from './detect.js';
+export { detectImageMime, isLikelyText, detectBlobMode } from './detect.js';

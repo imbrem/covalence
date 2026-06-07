@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use covalence_hash::O256;
@@ -15,6 +15,10 @@ pub struct Kernel<S = BlobStore<O256>> {
     store: S,
     /// Hashes stored as trees (domain-separated from blobs).
     tree_hashes: Arc<RwLock<HashSet<O256>>>,
+    /// Tag registry: keyed identity → (tag, content_hash). Populated by
+    /// [`SyncBackend::register_tag`] and queried by
+    /// [`SyncBackend::lookup_tag`].
+    tag_registry: Arc<RwLock<HashMap<O256, (String, O256)>>>,
 }
 
 impl<S: Clone> Clone for Kernel<S> {
@@ -22,6 +26,7 @@ impl<S: Clone> Clone for Kernel<S> {
         Self {
             store: self.store.clone(),
             tree_hashes: Arc::clone(&self.tree_hashes),
+            tag_registry: Arc::clone(&self.tag_registry),
         }
     }
 }
@@ -37,6 +42,7 @@ impl Kernel {
         Self {
             store,
             tree_hashes: Arc::new(RwLock::new(HashSet::new())),
+            tag_registry: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -53,6 +59,7 @@ impl<S> Kernel<S> {
         Self {
             store,
             tree_hashes: Arc::new(RwLock::new(HashSet::new())),
+            tag_registry: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -114,6 +121,20 @@ where
     fn is_tree(&self, hash: &O256) -> Result<bool, KernelError> {
         Ok(self.tree_hashes.read().unwrap().contains(hash))
     }
+
+    fn register_tag(&self, tag: &str, content_hash: O256) -> Result<O256, KernelError> {
+        let keyed = O256::context(tag, content_hash.as_bytes());
+        self.tag_registry
+            .write()
+            .unwrap()
+            .entry(keyed)
+            .or_insert_with(|| (tag.to_string(), content_hash));
+        Ok(keyed)
+    }
+
+    fn lookup_tag(&self, keyed: &O256) -> Result<Option<(String, O256)>, KernelError> {
+        Ok(self.tag_registry.read().unwrap().get(keyed).cloned())
+    }
 }
 
 impl<S> AsyncBackend for Kernel<S>
@@ -146,5 +167,13 @@ where
 
     async fn is_tree(&self, hash: &O256) -> Result<bool, KernelError> {
         SyncBackend::is_tree(self, hash)
+    }
+
+    async fn register_tag(&self, tag: &str, content_hash: O256) -> Result<O256, KernelError> {
+        SyncBackend::register_tag(self, tag, content_hash)
+    }
+
+    async fn lookup_tag(&self, keyed: &O256) -> Result<Option<(String, O256)>, KernelError> {
+        SyncBackend::lookup_tag(self, keyed)
     }
 }

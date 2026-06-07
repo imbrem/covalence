@@ -3,5 +3,29 @@ export { registerViewer, getViewer } from './viewers/index.js';
 export type { ViewerDescriptor } from './viewers/index.js';
 
 export { default as GraphView } from './graph/GraphView.svelte';
-export { decodeGraph, hexToBytes } from './graph/decode.js';
-export type { Graph, GraphNode, GraphPort, GraphEdge, NodeKind, PortKind } from './graph/types.js';
+export {
+	decodeGraph,
+	decodeStringDiagram,
+	decodeLabelList,
+	decodeKindFlags,
+	resolveDiagram,
+	diagramFromGraphOnly,
+	mapResolver,
+	magicOf,
+	hexToBytes,
+	hexOf,
+} from './graph/decode.js';
+export type {
+	Graph,
+	GraphNode,
+	GraphPort,
+	GraphEdge,
+	NodeKind,
+	PortKind,
+	Hash,
+	LabelList,
+	KindFlags,
+	SlotRef,
+	StringDiagram,
+	ResolvedDiagram,
+} from './graph/types.js';

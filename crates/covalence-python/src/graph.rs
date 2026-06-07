@@ -1,13 +1,17 @@
 //! Python bindings for `covalence-graph`.
 //!
-//! Exposes `covalence.Graph` and `covalence.GraphBuilder` over the
-//! `BytesGraph` (payload = `bytes`) flavor. Port names are `str`,
-//! type ids are `int`, payloads are `bytes`.
+//! Exposes:
+//! - `covalence.Graph` / `covalence.GraphBuilder` — bare topology.
+//! - `covalence.LabelList`, `covalence.KindFlags`, `covalence.StringDiagram`
+//!   — overlay blobs and the composite.
+//! - `covalence.render_svg(string_diagram_refs, graph, labels?, kinds?)`
+//!   — produce SVG markup.
 
 use bytes::Bytes;
 use covalence_graph::{
-    BytesGraph, BytesGraphBuilder, CANONICAL_VERSION, Edge, NodeId, NodeKind, Port, PortId,
-    PortKind, TypeId,
+    BytesGraph, BytesGraphBuilder, CANONICAL_VERSION, Edge, KindFlags, LabelList, LayoutOpts,
+    NodeId, NodeKind, OverlayMap, Port, PortId, PortKind, ResolvedDiagram, SlotRef, StringDiagram,
+    StringDiagramBuilder, TypeId, UniformTag, render_svg,
 };
 use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::prelude::*;
@@ -37,24 +41,13 @@ fn port_kind_str(k: PortKind) -> &'static str {
 }
 
 fn parse_node_kind(s: &str) -> PyResult<NodeKind> {
-    match s {
-        "pure" => Ok(NodeKind::Pure),
-        "ordered" => Ok(NodeKind::Ordered),
-        _ => Err(PyValueError::new_err(format!(
+    NodeKind::parse(s).ok_or_else(|| {
+        PyValueError::new_err(format!(
             "node kind must be 'pure' or 'ordered', got {s:?}"
-        ))),
-    }
+        ))
+    })
 }
 
-fn node_kind_str(k: NodeKind) -> &'static str {
-    match k {
-        NodeKind::Pure => "pure",
-        NodeKind::Ordered => "ordered",
-    }
-}
-
-/// Parse a port from a Python dict: {"name": str, "type_id": int,
-/// "kind": "input" | "output"}.
 fn parse_port(d: &Bound<'_, PyDict>) -> PyResult<Port> {
     let name: String = d
         .get_item("name")?
@@ -96,7 +89,7 @@ pub struct PyGraph {
 
 #[pymethods]
 impl PyGraph {
-    /// Decode the canonical byte encoding (`COVG` v1).
+    /// Decode the canonical byte encoding.
     #[staticmethod]
     fn from_bytes(data: &[u8]) -> PyResult<Self> {
         BytesGraph::from_bytes(data)
@@ -117,7 +110,6 @@ impl PyGraph {
         PyBytes::new(py, self.inner.unordered_hash().as_bytes())
     }
 
-    /// Hex of `ordered_hash`. Convenient for paste-into-URL workflows.
     fn ordered_hash_hex(&self) -> String {
         hex_lower(self.inner.ordered_hash().as_bytes())
     }
@@ -143,26 +135,12 @@ impl PyGraph {
         out.set_item("version", CANONICAL_VERSION)?;
         let nodes = PyList::empty(py);
         for n in self.inner.nodes() {
-            let nd = PyDict::new(py);
-            nd.set_item("kind", node_kind_str(n.kind))?;
-            nd.set_item("label", n.label.clone())?;
-            let ports = PyList::empty(py);
-            for p in &n.ports {
-                ports.append(port_to_dict(py, p)?)?;
-            }
-            nd.set_item("ports", ports)?;
-            nd.set_item("payload", PyBytes::new(py, n.payload.as_ref()))?;
-            nodes.append(nd)?;
+            nodes.append(node_to_dict(py, n)?)?;
         }
         out.set_item("nodes", nodes)?;
         let edges = PyList::empty(py);
         for e in self.inner.edges() {
-            let ed = PyDict::new(py);
-            ed.set_item("from_node", e.from_node.0)?;
-            ed.set_item("from_port", e.from_port.0)?;
-            ed.set_item("to_node", e.to_node.0)?;
-            ed.set_item("to_port", e.to_port.0)?;
-            edges.append(ed)?;
+            edges.append(edge_to_dict(py, e)?)?;
         }
         out.set_item("edges", edges)?;
         Ok(out)
@@ -173,24 +151,9 @@ impl PyGraph {
             .inner
             .get_node(NodeId(id))
             .ok_or_else(|| PyIndexError::new_err(format!("no node with id {id}")))?;
-        let nd = PyDict::new(py);
-        nd.set_item("kind", node_kind_str(n.kind))?;
-        nd.set_item("label", n.label.clone())?;
-        let ports = PyList::empty(py);
-        for p in &n.ports {
-            ports.append(port_to_dict(py, p)?)?;
-        }
-        nd.set_item("ports", ports)?;
-        nd.set_item("payload", PyBytes::new(py, n.payload.as_ref()))?;
-        Ok(nd)
+        node_to_dict(py, n)
     }
 
-    /// Ids of `ordered`-kind nodes in insertion order.
-    fn ordered_nodes(&self) -> Vec<u32> {
-        self.inner.ordered_nodes().map(|n| n.0).collect()
-    }
-
-    /// Equality preserving insertion order of both nodes and edges.
     fn equal(&self, other: &PyGraph) -> bool {
         self.inner.equal(&other.inner)
     }
@@ -209,12 +172,33 @@ impl PyGraph {
     }
 }
 
+fn node_to_dict<'py>(
+    py: Python<'py>,
+    n: &covalence_graph::Node<Bytes>,
+) -> PyResult<Bound<'py, PyDict>> {
+    let nd = PyDict::new(py);
+    let ports = PyList::empty(py);
+    for p in &n.ports {
+        ports.append(port_to_dict(py, p)?)?;
+    }
+    nd.set_item("ports", ports)?;
+    nd.set_item("payload", PyBytes::new(py, n.payload.as_ref()))?;
+    Ok(nd)
+}
+
+fn edge_to_dict<'py>(py: Python<'py>, e: &Edge) -> PyResult<Bound<'py, PyDict>> {
+    let ed = PyDict::new(py);
+    ed.set_item("from_node", e.from_node.0)?;
+    ed.set_item("from_port", e.from_port.0)?;
+    ed.set_item("to_node", e.to_node.0)?;
+    ed.set_item("to_port", e.to_port.0)?;
+    Ok(ed)
+}
+
 // ---------------------------------------------------------------------------
 // GraphBuilder
 // ---------------------------------------------------------------------------
 
-/// Mutable graph under construction. One open builder produces one
-/// `Graph` via `finish()`.
 #[pyclass(name = "GraphBuilder", unsendable)]
 pub struct PyGraphBuilder {
     inner: Option<BytesGraphBuilder>,
@@ -238,38 +222,17 @@ impl PyGraphBuilder {
     }
 
     /// Append a node and return its id.
-    ///
-    /// Args:
-    ///   ports: list of `{"name": str, "type_id": int,
-    ///                    "kind": "input"|"output"}` dicts
-    ///   payload: opaque bytes
-    ///   kind: "pure" (default) or "ordered"
-    ///   label: optional free-form label
-    #[pyo3(signature = (ports, payload, kind = "pure", label = None))]
-    fn add_node(
-        &mut self,
-        ports: Vec<Bound<'_, PyDict>>,
-        payload: &[u8],
-        kind: &str,
-        label: Option<String>,
-    ) -> PyResult<u32> {
-        let node_kind = parse_node_kind(kind)?;
+    fn add_node(&mut self, ports: Vec<Bound<'_, PyDict>>, payload: &[u8]) -> PyResult<u32> {
         let mut parsed_ports = Vec::with_capacity(ports.len());
         for p in &ports {
             parsed_ports.push(parse_port(p)?);
         }
-        let id = self.get()?.add_node(
-            node_kind,
-            label,
-            parsed_ports,
-            Bytes::copy_from_slice(payload),
-        );
+        let id = self
+            .get()?
+            .add_node(parsed_ports, Bytes::copy_from_slice(payload));
         Ok(id.0)
     }
 
-    /// Wire output port (`from_node`, `from_port`) → input port
-    /// (`to_node`, `to_port`). Raises on kind / type / linearity
-    /// violations.
     fn wire(&mut self, from_node: u32, from_port: u32, to_node: u32, to_port: u32) -> PyResult<()> {
         self.get()?
             .wire(Edge {
@@ -281,7 +244,6 @@ impl PyGraphBuilder {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
-    /// Consume the builder and return an immutable Graph.
     fn finish(&mut self) -> PyResult<PyGraph> {
         let b = take_builder(&mut self.inner)?;
         b.finish()
@@ -301,6 +263,218 @@ impl PyGraphBuilder {
     }
 }
 
+// ---------------------------------------------------------------------------
+// LabelList / KindFlags
+// ---------------------------------------------------------------------------
+
+#[pyclass(name = "LabelList", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyLabelList {
+    inner: LabelList,
+}
+
+#[pymethods]
+impl PyLabelList {
+    #[new]
+    fn new(labels: Vec<Option<String>>) -> Self {
+        Self {
+            inner: LabelList::new(labels),
+        }
+    }
+
+    #[staticmethod]
+    fn from_bytes(data: &[u8]) -> PyResult<Self> {
+        LabelList::from_bytes(data)
+            .map(|inner| Self { inner })
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn to_bytes<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        PyBytes::new(py, &self.inner.to_bytes())
+    }
+
+    fn hash<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        PyBytes::new(py, self.inner.hash().as_bytes())
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.len()
+    }
+
+    fn get(&self, i: usize) -> Option<String> {
+        self.inner.get(i).map(|s| s.to_string())
+    }
+
+    fn __repr__(&self) -> String {
+        format!("LabelList(len={})", self.inner.len())
+    }
+}
+
+#[pyclass(name = "KindFlags", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyKindFlags {
+    inner: KindFlags,
+}
+
+#[pymethods]
+impl PyKindFlags {
+    #[new]
+    fn new(kinds: Vec<String>) -> PyResult<Self> {
+        let parsed: Result<Vec<NodeKind>, _> = kinds.iter().map(|s| parse_node_kind(s)).collect();
+        Ok(Self {
+            inner: KindFlags::new(parsed?),
+        })
+    }
+
+    #[staticmethod]
+    fn uniform(n: u32, kind: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: KindFlags::uniform(n, parse_node_kind(kind)?),
+        })
+    }
+
+    #[staticmethod]
+    fn from_bytes(data: &[u8]) -> PyResult<Self> {
+        KindFlags::from_bytes(data)
+            .map(|inner| Self { inner })
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn to_bytes<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        PyBytes::new(py, &self.inner.to_bytes())
+    }
+
+    fn hash<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        PyBytes::new(py, self.inner.hash().as_bytes())
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.len()
+    }
+
+    fn get(&self, i: usize) -> Option<&'static str> {
+        self.inner.get(i).map(|k| k.as_str())
+    }
+
+    fn ordered_indices(&self) -> Vec<u32> {
+        self.inner.ordered_node_indices().collect()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("KindFlags(len={})", self.inner.len())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// StringDiagram
+// ---------------------------------------------------------------------------
+
+#[pyclass(name = "StringDiagram", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyStringDiagram {
+    inner: StringDiagram,
+}
+
+#[pymethods]
+impl PyStringDiagram {
+    /// Build from a graph plus optional overlays. Inline overlay bytes
+    /// can be retrieved via `labels_bytes` / `kinds_bytes` to store
+    /// alongside the composite.
+    #[staticmethod]
+    #[pyo3(signature = (graph, labels = None, kinds = None, uniform_kind = None))]
+    fn build(
+        graph: &PyGraph,
+        labels: Option<&PyLabelList>,
+        kinds: Option<&PyKindFlags>,
+        uniform_kind: Option<&str>,
+    ) -> PyResult<Self> {
+        let mut b = StringDiagramBuilder::new(&graph.inner);
+        if let Some(ll) = labels {
+            b = b.with_labels(ll.inner.clone());
+        }
+        if let Some(kf) = kinds {
+            b = b.with_kinds(kf.inner.clone());
+        }
+        if let Some(uk) = uniform_kind {
+            b = b.with_uniform_kind(parse_node_kind(uk)?);
+        }
+        Ok(Self { inner: b.build() })
+    }
+
+    #[staticmethod]
+    fn from_bytes(data: &[u8]) -> PyResult<Self> {
+        StringDiagram::from_bytes(data)
+            .map(|inner| Self { inner })
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn to_bytes<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        PyBytes::new(py, &self.inner.to_bytes())
+    }
+
+    fn hash<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        PyBytes::new(py, self.inner.hash().as_bytes())
+    }
+
+    fn graph_hash<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        PyBytes::new(py, self.inner.graph.as_bytes())
+    }
+
+    fn labels_slot(&self) -> String {
+        slot_repr(self.inner.labels)
+    }
+
+    fn kinds_slot(&self) -> String {
+        slot_repr(self.inner.kinds)
+    }
+
+    /// Render to standalone SVG markup. Inline overlays go through the
+    /// same builder logic, so a caller that doesn't have the overlays
+    /// stored anywhere can still render.
+    #[pyo3(signature = (graph, labels = None, kinds = None))]
+    fn render_svg(
+        &self,
+        graph: &PyGraph,
+        labels: Option<&PyLabelList>,
+        kinds: Option<&PyKindFlags>,
+    ) -> PyResult<String> {
+        let mut store = OverlayMap::default();
+        if let Some(ll) = labels {
+            store
+                .blobs
+                .insert(ll.inner.hash(), ll.inner.to_bytes());
+        }
+        if let Some(kf) = kinds {
+            store
+                .blobs
+                .insert(kf.inner.hash(), kf.inner.to_bytes());
+        }
+        let resolved: ResolvedDiagram<Bytes> = self
+            .inner
+            .resolve(&graph.inner, &store)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(render_svg(&resolved, &LayoutOpts::default()))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "StringDiagram(graph={}, labels={}, kinds={})",
+            hex_lower(self.inner.graph.as_bytes()),
+            self.labels_slot(),
+            self.kinds_slot(),
+        )
+    }
+}
+
+fn slot_repr(s: SlotRef) -> String {
+    match s {
+        SlotRef::Absent => "absent".into(),
+        SlotRef::Uniform(UniformTag::AllPure) => "all-pure".into(),
+        SlotRef::Uniform(UniformTag::AllOrdered) => "all-ordered".into(),
+        SlotRef::Hash(h) => hex_lower(h.as_bytes()),
+    }
+}
+
 fn hex_lower(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len() * 2);
     for b in bytes {
@@ -313,5 +487,8 @@ fn hex_lower(bytes: &[u8]) -> String {
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyGraph>()?;
     m.add_class::<PyGraphBuilder>()?;
+    m.add_class::<PyLabelList>()?;
+    m.add_class::<PyKindFlags>()?;
+    m.add_class::<PyStringDiagram>()?;
     Ok(())
 }

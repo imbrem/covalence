@@ -3,6 +3,7 @@ pub use covalence_shell::{BackendInfo, KernelError, SyncBackend};
 use covalence_forsp::{FCtx, FError, ForeignPrims, Forsp};
 use covalence_hash::O256;
 
+mod graph;
 #[cfg(feature = "parquet")]
 mod parquet_tree;
 
@@ -12,6 +13,11 @@ struct ReplPrims {
     allow_fs: bool,
     allow_fetch: bool,
     output: String,
+    /// Builder handles and other graph-side state.
+    graph: graph::GraphState,
+    /// When true, hash-producing graph commands also emit a preview
+    /// block. Toggled by `preview-on` / `preview-off`.
+    preview_enabled: bool,
     /// Optional GitStore for the `git-*` commands. `git-open` populates it;
     /// every other `git-*` command errors with a clear "open a store first"
     /// message until it is set.
@@ -33,6 +39,50 @@ impl ForeignPrims for ReplPrims {
             "status" => self.cmd_status(ctx),
             "help" => self.cmd_help(ctx),
             "hash" => self.cmd_hash(ctx),
+            "graph-builder" => graph::cmd_graph_builder(&mut self.graph, ctx),
+            "b-port" => graph::cmd_b_port(&mut self.graph, ctx),
+            "b-node" => graph::cmd_b_node(&mut self.graph, ctx),
+            "b-wire" => graph::cmd_b_wire(&mut self.graph, ctx),
+            "b-finish" => graph::cmd_b_finish(
+                &mut self.graph,
+                &*self.backend,
+                ctx,
+                graph::PreviewSink {
+                    enabled: self.preview_enabled,
+                    output: &mut self.output,
+                },
+            ),
+            "labels" => graph::cmd_labels(&*self.backend, ctx),
+            "kinds" => graph::cmd_kinds(&*self.backend, ctx),
+            "absent-slot" => graph::cmd_absent_slot(ctx),
+            "all-pure" => graph::cmd_all_pure(ctx),
+            "all-ordered" => graph::cmd_all_ordered(ctx),
+            "string-diagram" => graph::cmd_string_diagram(
+                &*self.backend,
+                ctx,
+                graph::PreviewSink {
+                    enabled: self.preview_enabled,
+                    output: &mut self.output,
+                },
+            ),
+            "show" => graph::cmd_show(
+                &*self.backend,
+                ctx,
+                graph::PreviewSink {
+                    enabled: true,
+                    output: &mut self.output,
+                },
+            ),
+            "preview-on" => {
+                self.preview_enabled = true;
+                Ok(())
+            }
+            "preview-off" => {
+                self.preview_enabled = false;
+                Ok(())
+            }
+            "svg" => graph::cmd_svg(&*self.backend, ctx),
+            "preview" => self.cmd_preview(ctx),
             #[cfg(feature = "arrow")]
             "arrow-stats" => self.cmd_arrow_stats(ctx),
             #[cfg(feature = "parquet")]
@@ -227,6 +277,40 @@ impl ReplPrims {
             ("<val> print", "print a value"),
             ("status", "show backend info"),
             ("help", "show this help"),
+            ("graph-builder", "open a topology builder, → handle"),
+            ("$h \"n\" ty \"in\" b-port", "buffer one port for the next b-node"),
+            ("$h \"payload\" b-node", "commit buffered ports + payload, → node-id"),
+            (
+                "$h f-n f-p t-n t-p b-wire",
+                "wire an edge (output → input) on the builder",
+            ),
+            (
+                "$h b-finish",
+                "finalise and store the topology, → graph-hash",
+            ),
+            ("\"a\" \"b\" 2 labels", "build LBLS overlay, → labels-hash"),
+            ("\"pure\" \"ordered\" 2 kinds", "build KFLG overlay, → kinds-hash"),
+            (
+                "absent-slot / all-pure / all-ordered",
+                "push a sentinel slot value",
+            ),
+            (
+                "$g $l $k string-diagram",
+                "compose graph + labels + kinds, → diagram-hash",
+            ),
+            (
+                "<hash> svg",
+                "render diagram or topology to SVG, → svg blob",
+            ),
+            (
+                "<hash> show",
+                "render and emit an inline preview (keeps hash on stack)",
+            ),
+            (
+                "preview-on / preview-off",
+                "auto-emit a preview after b-finish / string-diagram",
+            ),
+            ("<hash> preview", "inspect a blob: graph summary / image info"),
             ("3 4 +", "arithmetic: + - *"),
             ("42 $x ^x", "variable binding and recall"),
             ("($x ^x 1 +) $inc", "define a closure"),
@@ -274,6 +358,17 @@ impl ReplPrims {
         let data = ctx.try_pop_blob()?;
         let hash = O256::blob(&data);
         ctx.push_hash(hash);
+        Ok(())
+    }
+
+    /// `preview`: hash → (prints a human-friendly summary of what
+    /// rendering of this blob would look like — SVG length for a
+    /// graph/string-diagram, image dimensions for a recognised image
+    /// format, byte count + magic otherwise).
+    fn cmd_preview(&mut self, ctx: &mut FCtx<'_>) -> Result<(), FError> {
+        let hash = ctx.try_pop_hash()?;
+        let preview = describe_hash_for_preview(&*self.backend, &hash);
+        self.emit(&preview);
         Ok(())
     }
 
@@ -419,6 +514,137 @@ impl ReplPrims {
     }
 }
 
+/// Human-readable one-line summary of the blob `hash` names, for the
+/// `preview` command. Dispatch is by **tag** — for tagged graph
+/// objects, we decode them according to the registered context; for
+/// raw blobs we sniff known image formats; otherwise we report byte
+/// count plus leading magic.
+fn describe_hash_for_preview(backend: &dyn SyncBackend, hash: &O256) -> String {
+    if let Ok(Some((tag, content_hash))) = backend.lookup_tag(hash) {
+        return match backend.get_blob(&content_hash) {
+            Ok(Some(bytes)) => describe_graph_object(&tag, &bytes),
+            _ => format!("preview: content blob {content_hash} not found"),
+        };
+    }
+    match backend.get_blob(hash) {
+        Ok(Some(bytes)) => describe_raw(&bytes),
+        _ => format!("preview: blob {hash} not found"),
+    }
+}
+
+/// Decode `bytes` as the graph object named by `tag` and return a
+/// short summary. Errors out — into a one-line decode-error message —
+/// rather than panicking, since previews must never trip the REPL.
+fn describe_graph_object(tag: &str, bytes: &[u8]) -> String {
+    use covalence_graph::{
+        BytesGraph, KIND_FLAGS_HASH_CTX, KindFlags, LABEL_LIST_HASH_CTX, LabelList,
+        ORDERED_HASH_CTX, STRING_DIAGRAM_HASH_CTX, StringDiagram,
+    };
+    match tag {
+        ORDERED_HASH_CTX => match BytesGraph::from_bytes(bytes) {
+            Ok(g) => format!("graph topology: {} nodes, {} edges", g.node_count(), g.edge_count()),
+            Err(e) => format!("graph topology: decode error ({e})"),
+        },
+        STRING_DIAGRAM_HASH_CTX => match StringDiagram::from_bytes(bytes) {
+            Ok(sd) => format!(
+                "string-diagram:\n  graph={}\n  labels={}\n  kinds={}",
+                short_hash(sd.graph.as_bytes()),
+                slot_summary(sd.labels),
+                slot_summary(sd.kinds),
+            ),
+            Err(e) => format!("string-diagram: decode error ({e})"),
+        },
+        LABEL_LIST_HASH_CTX => match LabelList::from_bytes(bytes) {
+            Ok(ll) => format!("label-list overlay: {} entries", ll.len()),
+            Err(e) => format!("label-list: decode error ({e})"),
+        },
+        KIND_FLAGS_HASH_CTX => match KindFlags::from_bytes(bytes) {
+            Ok(kf) => {
+                let uniform = kf
+                    .is_uniform_as()
+                    .map(|k| format!(" (uniform {})", k.as_str()))
+                    .unwrap_or_default();
+                format!("kind-flags overlay: {} entries{uniform}", kf.len())
+            }
+            Err(e) => format!("kind-flags: decode error ({e})"),
+        },
+        other => format!(
+            "blob ({} bytes, tag {other}, unknown to renderer)",
+            bytes.len()
+        ),
+    }
+}
+
+/// Summary for untagged raw blobs: image dimensions when we recognise
+/// the format, otherwise byte count + leading magic.
+fn describe_raw(data: &[u8]) -> String {
+    if let Some((mime, dim)) = sniff_image(data) {
+        return match dim {
+            Some((w, h)) => format!("{mime}: {w}×{h}, {} bytes", data.len()),
+            None => format!("{mime}: {} bytes", data.len()),
+        };
+    }
+    format!(
+        "binary blob: {} bytes, first 4 = {:02x?}",
+        data.len(),
+        &data[..data.len().min(4)],
+    )
+}
+
+fn slot_summary(s: covalence_graph::SlotRef) -> String {
+    use covalence_graph::{SlotRef, UniformTag};
+    match s {
+        SlotRef::Absent => "absent".into(),
+        SlotRef::Uniform(UniformTag::AllPure) => "all-pure".into(),
+        SlotRef::Uniform(UniformTag::AllOrdered) => "all-ordered".into(),
+        SlotRef::Hash(h) => short_hash(h.as_bytes()),
+    }
+}
+
+fn short_hash(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(16);
+    use std::fmt::Write as _;
+    for b in &bytes[..bytes.len().min(8)] {
+        let _ = write!(s, "{b:02x}");
+    }
+    s.push('…');
+    s
+}
+
+/// Magic-byte detection for common image formats. Returns `(mime,
+/// Some((width, height)))` when dimensions can be cheaply extracted —
+/// currently only PNG — else `(mime, None)`.
+fn sniff_image(data: &[u8]) -> Option<(&'static str, Option<(u32, u32)>)> {
+    if data.starts_with(&[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) {
+        // PNG IHDR: at offset 16, 4-byte width + 4-byte height (big-endian).
+        let dim = if data.len() >= 24 {
+            let w = u32::from_be_bytes(data[16..20].try_into().unwrap());
+            let h = u32::from_be_bytes(data[20..24].try_into().unwrap());
+            Some((w, h))
+        } else {
+            None
+        };
+        return Some(("image/png", dim));
+    }
+    if data.starts_with(&[0xff, 0xd8, 0xff]) {
+        return Some(("image/jpeg", None));
+    }
+    if data.starts_with(b"GIF87a") || data.starts_with(b"GIF89a") {
+        let dim = if data.len() >= 10 {
+            let w = u16::from_le_bytes([data[6], data[7]]) as u32;
+            let h = u16::from_le_bytes([data[8], data[9]]) as u32;
+            Some((w, h))
+        } else {
+            None
+        };
+        return Some(("image/gif", dim));
+    }
+    if data.starts_with(b"RIFF") && data.len() >= 12 && &data[8..12] == b"WEBP" {
+        return Some(("image/webp", None));
+    }
+    None
+}
+
 fn hex_nibble(b: u8) -> Result<u8, FError> {
     match b {
         b'0'..=b'9' => Ok(b - b'0'),
@@ -449,6 +675,8 @@ impl Session {
             allow_fs,
             allow_fetch,
             output: String::new(),
+            graph: graph::GraphState::new(),
+            preview_enabled: false,
             #[cfg(feature = "cogit")]
             git_store: None,
         };

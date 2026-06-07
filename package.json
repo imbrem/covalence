@@ -6,14 +6,14 @@
     "covalence-client": "workspace:*"
   },
   "scripts": {
-    "build": "bun run build:native && bun run build:wasm",
+    "build": "bun run build:web && bun run build:native && bun run build:wasm",
     "build:native": "cargo build -p covalence",
     "build:wasm": "bun run --filter covalence-vscode build",
     "build:web": "bun run --filter covalence-web build",
     "build:serve": "bun run build:web && cargo build -p covalence",
     "dev:web": "bun run --filter covalence-web dev",
     "dev:serve": "echo 'Run cov serve --api in another terminal, then:' && bun run dev:web",
-    "release": "bun run release:native && bun run release:wasm",
+    "release": "bun run build:web && bun run release:native && bun run release:wasm",
     "release:native": "cargo build -p covalence --release",
     "release:wasm": "bun run build:wasm",
     "dev": "echo 'Use: bun run code:browser or bun run code:desktop' && exit 1",

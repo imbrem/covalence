@@ -588,24 +588,54 @@ pub async fn object_insert_any(
 pub struct ObjectInfoResponse {
     pub kind: String,
     pub size: usize,
+    /// When the requested hash is a *keyed identity* (registered in the
+    /// kernel's tag registry), the tag string and the underlying content
+    /// hash. `None` for plain blobs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "contentHash")]
+    pub content_hash: Option<String>,
 }
 
-/// GET /api/objects/info/{hash} — object metadata → { "kind": "...", "size": N }
+/// GET /api/objects/info/{hash} — object metadata → { "kind": "...", "size": N, … }
 ///
-/// Checks the Git-tagged object store first, then falls back to the kernel's
-/// content-addressed blob store (where REPL `(store ...)` puts data).
+/// Resolution order:
+///  1. **Tag registry** — when the hash is a keyed identity, returns
+///     `kind: "tagged"` plus the tag string and the underlying content
+///     hash. Size = size of the content blob.
+///  2. Typed object store (trees, tagged blobs).
+///  3. Kernel blob store fallback.
 pub async fn object_info(
     axum::extract::State(state): axum::extract::State<crate::AppState>,
     Path(hash_hex): Path<String>,
 ) -> impl IntoResponse {
+    use covalence_shell::SyncBackend;
     let hash = parse_hash_param(&hash_hex)?;
 
-    // 1. Check the typed object store (trees, tagged blobs, etc.)
+    // 1. Tag registry — keyed identities override magic-byte sniffing.
+    if let Ok(Some((tag, content_hash))) = state.kernel.lookup_tag(&hash) {
+        let size = state
+            .kernel
+            .store()
+            .get(&content_hash)
+            .map(|b| b.len())
+            .unwrap_or(0);
+        return Ok(Json(ObjectInfoResponse {
+            kind: "tagged".into(),
+            size,
+            tag: Some(tag),
+            content_hash: Some(content_hash.to_string()),
+        }));
+    }
+
+    // 2. Check the typed object store (trees, tagged blobs, etc.)
     match state.object_store.get_any(&hash) {
         Ok(Some(obj)) => {
             return Ok(Json(ObjectInfoResponse {
                 kind: format!("{:?}", obj.kind).to_lowercase(),
                 size: obj.data.len(),
+                tag: None,
+                content_hash: None,
             }));
         }
         Err(e) => {
@@ -614,15 +644,80 @@ pub async fn object_info(
         Ok(None) => {}
     }
 
-    // 2. Fall back to the kernel blob store
+    // 3. Fall back to the kernel blob store
     if let Some(data) = state.kernel.store().get(&hash) {
         return Ok(Json(ObjectInfoResponse {
             kind: "blob".to_string(),
             size: data.len(),
+            tag: None,
+            content_hash: None,
         }));
     }
 
     Err((StatusCode::NOT_FOUND, "not found".to_string()))
+}
+
+// ---------------------------------------------------------------------------
+// Tag registry endpoints
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct RegisterTagRequest {
+    pub tag: String,
+    /// Hex-encoded 32-byte content hash.
+    #[serde(rename = "contentHash")]
+    pub content_hash: String,
+}
+
+#[derive(Serialize)]
+pub struct RegisterTagResponse {
+    /// Hex-encoded 32-byte keyed identity.
+    pub keyed: String,
+}
+
+#[derive(Serialize)]
+pub struct LookupTagResponse {
+    pub tag: String,
+    /// Hex-encoded 32-byte content hash.
+    #[serde(rename = "contentHash")]
+    pub content_hash: String,
+}
+
+/// POST /api/objects/tag — body `{ tag, contentHash }` → `{ keyed }`.
+pub async fn register_tag(
+    axum::extract::State(state): axum::extract::State<crate::AppState>,
+    Json(req): Json<RegisterTagRequest>,
+) -> Result<(StatusCode, Json<RegisterTagResponse>), (StatusCode, String)> {
+    use covalence_shell::SyncBackend;
+    let content_hash = O256::from_hex(&req.content_hash)
+        .ok_or((StatusCode::BAD_REQUEST, "bad content hash".to_string()))?;
+    let keyed = state
+        .kernel
+        .register_tag(&req.tag, content_hash)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok((
+        StatusCode::CREATED,
+        Json(RegisterTagResponse {
+            keyed: keyed.to_string(),
+        }),
+    ))
+}
+
+/// GET /api/objects/tag/{hash} → `{ tag, contentHash }` or 404.
+pub async fn lookup_tag(
+    axum::extract::State(state): axum::extract::State<crate::AppState>,
+    Path(hash_hex): Path<String>,
+) -> impl IntoResponse {
+    use covalence_shell::SyncBackend;
+    let hash = parse_hash_param(&hash_hex)?;
+    match state.kernel.lookup_tag(&hash) {
+        Ok(Some((tag, content_hash))) => Ok(Json(LookupTagResponse {
+            tag,
+            content_hash: content_hash.to_string(),
+        })),
+        Ok(None) => Err((StatusCode::NOT_FOUND, "not found".to_string())),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -1,21 +1,14 @@
 /**
- * Layout for the string-diagram view.
+ * Layout for the string-diagram view (TS mirror of the Rust renderer).
  *
- * Convention: **top-to-bottom**, like a page of text. NodeId N is
- * placed in lane N reading downward. Inputs always sit on the top
- * edge of each box; outputs always on the bottom. Wires flow
- * top→bottom, from an output port to an input port.
- *
- * Ordered nodes carry an implicit **state thread**: a dashed red
- * "state in" port on the top edge (leftmost slot) and "state out"
- * on the bottom edge. Consecutive ordered nodes (in insertion
- * order) are linked by a dashed red wire between their state ports.
- * The first ordered node gets a short stub coming in from above,
- * and the last one a stub going out below — the dashed red wire
- * is the only visual indicator of statefulness.
+ * Top-to-bottom: node `i` sits in row `i`. Inputs on the top edge,
+ * outputs on the bottom. The leftmost slot on each edge is reserved
+ * for the dashed-red "state thread" port on `ordered` nodes; the
+ * thread connects consecutive ordered nodes with stubs above the
+ * first and below the last.
  */
 
-import type { Graph, GraphNode } from './types.js';
+import type { ResolvedDiagram } from './types.js';
 
 export interface LayoutOpts {
 	boxW: number;
@@ -39,6 +32,15 @@ export const DEFAULT_LAYOUT: LayoutOpts = {
 	stateSlotPad: 22,
 };
 
+export interface PortAnchor {
+	nodeId: number;
+	portIdx: number;
+	x: number;
+	y: number;
+	name: string;
+	typeId: bigint;
+}
+
 export interface NodeBox {
 	id: number;
 	x: number;
@@ -53,53 +55,40 @@ export interface NodeBox {
 	label: string;
 }
 
-export interface PortAnchor {
-	nodeId: number;
-	portIdx: number;
-	x: number;
-	y: number;
-	name: string;
-	typeId: bigint;
-}
-
 export interface StateSegment {
 	kind: 'segment' | 'head' | 'tail';
 	from: { x: number; y: number };
 	to: { x: number; y: number };
 }
 
-export interface LaidOutGraph {
+export interface LaidOutDiagram {
 	boxes: NodeBox[];
 	width: number;
 	height: number;
 	stateSegments: StateSegment[];
 }
 
-function labelFor(node: GraphNode, id: number): string {
-	if (node.label && node.label.length > 0) return node.label;
-	const p = node.payload;
-	if (p.length > 0 && p.length <= 24) {
-		try {
-			const s = new TextDecoder('utf-8', { fatal: true }).decode(p);
-			if (/^[\x20-\x7e]+$/.test(s)) return s;
-		} catch {
-			// fall through
-		}
+function labelFor(diagram: ResolvedDiagram, id: number): string {
+	const ll = diagram.labels;
+	if (ll) {
+		const l = ll.labels[id];
+		if (l && l.length > 0) return l;
 	}
+	// No label and no payload fallback — the graph layer doesn't carry
+	// human-meaningful payload semantics. Renderer doesn't sniff payloads.
 	return `#${id}`;
 }
 
-export function layoutGraph(graph: Graph, opts: LayoutOpts = DEFAULT_LAYOUT): LaidOutGraph {
+export function layoutDiagram(diagram: ResolvedDiagram, opts: LayoutOpts = DEFAULT_LAYOUT): LaidOutDiagram {
+	const { graph, kinds } = diagram;
 	const boxes: NodeBox[] = [];
-
 	for (let i = 0; i < graph.nodes.length; i++) {
 		const node = graph.nodes[i];
 		const inputs = node.ports.filter((p) => p.kind === 'input');
 		const outputs = node.ports.filter((p) => p.kind === 'output');
-		const isOrdered = node.kind === 'ordered';
+		const kind = kinds.kinds[i] ?? 'pure';
+		const isOrdered = kind === 'ordered';
 
-		// Reserve the leftmost slot on each edge for the state port,
-		// when this node is ordered.
 		const dataPortCount = Math.max(inputs.length, outputs.length, 1);
 		const dataAreaMin = dataPortCount * opts.dataPortMinSep + 32;
 		const baseW = isOrdered ? dataAreaMin + opts.stateSlotPad : dataAreaMin;
@@ -108,7 +97,6 @@ export function layoutGraph(graph: Graph, opts: LayoutOpts = DEFAULT_LAYOUT): La
 
 		const x = opts.marginX;
 		const y = opts.marginY + i * opts.rowH;
-
 		const dataLeftEdge = isOrdered ? x + opts.stateSlotPad : x;
 		const dataAreaW = w - (isOrdered ? opts.stateSlotPad : 0);
 
@@ -122,8 +110,8 @@ export function layoutGraph(graph: Graph, opts: LayoutOpts = DEFAULT_LAYOUT): La
 			outputs: [],
 			stateIn: isOrdered ? { x: x + opts.stateSlotPad / 2, y } : null,
 			stateOut: isOrdered ? { x: x + opts.stateSlotPad / 2, y: y + h } : null,
-			kind: node.kind,
-			label: labelFor(node, i),
+			kind,
+			label: labelFor(diagram, i),
 		};
 
 		let inI = 0;
@@ -154,15 +142,12 @@ export function layoutGraph(graph: Graph, opts: LayoutOpts = DEFAULT_LAYOUT): La
 				outI++;
 			}
 		}
-
 		boxes.push(box);
 	}
 
-	// State wire: stub above first ordered, beziers between consecutive,
-	// stub below last ordered.
 	const orderedIds: number[] = [];
-	for (let i = 0; i < graph.nodes.length; i++) {
-		if (graph.nodes[i].kind === 'ordered') orderedIds.push(i);
+	for (let i = 0; i < kinds.kinds.length; i++) {
+		if (kinds.kinds[i] === 'ordered') orderedIds.push(i);
 	}
 	const stateSegments: StateSegment[] = [];
 	if (orderedIds.length > 0) {

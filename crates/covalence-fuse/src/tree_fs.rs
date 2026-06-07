@@ -169,6 +169,28 @@ impl TreeFs {
             blksize: 4096,
         }
     }
+
+    fn dot_entry(inode: u64, name: &'static str, offset: i64) -> DirectoryEntry {
+        DirectoryEntry {
+            inode,
+            kind: FileType::Directory,
+            name: OsString::from(name),
+            offset,
+        }
+    }
+
+    fn dot_entry_plus(inode: u64, name: &'static str, offset: i64, attr: FileAttr) -> DirectoryEntryPlus {
+        DirectoryEntryPlus {
+            inode,
+            generation: 0,
+            kind: FileType::Directory,
+            name: OsString::from(name),
+            offset,
+            attr,
+            entry_ttl: TTL,
+            attr_ttl: TTL,
+        }
+    }
 }
 
 impl Filesystem for TreeFs {
@@ -270,18 +292,9 @@ impl Filesystem for TreeFs {
 
         let mut entries: Vec<FuseResult<DirectoryEntry>> = Vec::new();
         // FUSE wants `.` and `..` from us; the kernel doesn't synthesize them.
-        entries.push(Ok(DirectoryEntry {
-            inode: parent,
-            kind: FileType::Directory,
-            name: OsString::from("."),
-            offset: 1,
-        }));
-        entries.push(Ok(DirectoryEntry {
-            inode: parent, // we don't track parent ptrs; "." == ".." is harmless
-            kind: FileType::Directory,
-            name: OsString::from(".."),
-            offset: 2,
-        }));
+        entries.push(Ok(Self::dot_entry(parent, ".", 1)));
+        // We don't track parent pointers; "." == ".." is harmless here.
+        entries.push(Ok(Self::dot_entry(parent, "..", 2)));
 
         let n = table.num_entries();
         for i in 0..n {
@@ -328,26 +341,8 @@ impl Filesystem for TreeFs {
 
         let parent_attr = self.file_attr(parent, parent_entry.mode, 0);
         let mut entries: Vec<FuseResult<DirectoryEntryPlus>> = Vec::new();
-        entries.push(Ok(DirectoryEntryPlus {
-            inode: parent,
-            generation: 0,
-            kind: FileType::Directory,
-            name: OsString::from("."),
-            offset: 1,
-            attr: parent_attr,
-            entry_ttl: TTL,
-            attr_ttl: TTL,
-        }));
-        entries.push(Ok(DirectoryEntryPlus {
-            inode: parent,
-            generation: 0,
-            kind: FileType::Directory,
-            name: OsString::from(".."),
-            offset: 2,
-            attr: parent_attr,
-            entry_ttl: TTL,
-            attr_ttl: TTL,
-        }));
+        entries.push(Ok(Self::dot_entry_plus(parent, ".", 1, parent_attr)));
+        entries.push(Ok(Self::dot_entry_plus(parent, "..", 2, parent_attr)));
 
         let n = table.num_entries();
         for i in 0..n {
@@ -427,4 +422,26 @@ pub async fn mount_tree(
     tracing::info!("mounted tree {root:?} at {}", mountpoint.display());
     mount.await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mode_to_fuse;
+    use covalence_object::DirMode;
+    use fuse3::FileType;
+
+    #[test]
+    fn mode_to_fuse_maps_regular_and_exec() {
+        assert_eq!(mode_to_fuse(DirMode::REGULAR), (FileType::RegularFile, 0o644));
+        assert_eq!(
+            mode_to_fuse(DirMode::EXECUTABLE),
+            (FileType::RegularFile, 0o755)
+        );
+    }
+
+    #[test]
+    fn mode_to_fuse_maps_special_dirs() {
+        assert_eq!(mode_to_fuse(DirMode::DIR), (FileType::Directory, 0o755));
+        assert_eq!(mode_to_fuse(DirMode::SUBMODULE), (FileType::Directory, 0o555));
+    }
 }

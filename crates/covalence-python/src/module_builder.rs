@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 use crate::component_builder::ComponentBuilder;
 use crate::module::Module;
 use crate::system_builder::{
-    ExportEntry, FuncData, FuncId, ImportedFunc, InstanceImport, ModuleData, ModuleId,
+    ContainerId, ExportEntry, FuncData, FuncId, ImportedFunc, InstanceImport, ModuleData, ModuleId,
     SystemBuilder, extract_hash,
 };
 
@@ -267,14 +267,7 @@ impl ModuleBuilder {
     fn attest(&self) -> PyResult<()> {
         let mut sys = self.system.lock().unwrap();
 
-        let comp_id = sys.modules[self.id].component.ok_or_else(|| {
-            PyValueError::new_err(
-                "kernel methods require a container chain (use ContainerBuilder or ComponentBuilder)",
-            )
-        })?;
-        let container_id = sys.components[comp_id].container.ok_or_else(|| {
-            PyValueError::new_err("kernel methods require a container chain (use ContainerBuilder)")
-        })?;
+        let container_id = Self::require_container_id(&sys, self.id)?;
 
         sys.containers[container_id].has_attest = true;
 
@@ -362,6 +355,17 @@ impl ModuleBuilder {
 }
 
 impl ModuleBuilder {
+    fn require_container_id(sys: &SystemBuilder, module_id: ModuleId) -> PyResult<ContainerId> {
+        let comp_id = sys.modules[module_id].component.ok_or_else(|| {
+            PyValueError::new_err(
+                "kernel methods require a container chain (use ContainerBuilder or ComponentBuilder)",
+            )
+        })?;
+        sys.components[comp_id].container.ok_or_else(|| {
+            PyValueError::new_err("kernel methods require a container chain (use ContainerBuilder)")
+        })
+    }
+
     fn add_dep_import(
         &self,
         kind: &str,
@@ -375,14 +379,7 @@ impl ModuleBuilder {
 
         let mut sys = self.system.lock().unwrap();
 
-        let comp_id = sys.modules[self.id].component.ok_or_else(|| {
-            PyValueError::new_err(
-                "kernel methods require a container chain (use ContainerBuilder or ComponentBuilder)",
-            )
-        })?;
-        let container_id = sys.components[comp_id].container.ok_or_else(|| {
-            PyValueError::new_err("kernel methods require a container chain (use ContainerBuilder)")
-        })?;
+        let container_id = Self::require_container_id(&sys, self.id)?;
 
         let cd = &mut sys.containers[container_id];
         let inst_index = cd.instance_imports.len();

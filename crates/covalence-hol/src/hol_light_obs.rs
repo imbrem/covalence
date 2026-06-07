@@ -32,9 +32,33 @@
 //! axiom-conditioned facts) are *not* in the ObsEq impl. They're
 //! derived from user-asserted axioms or `Thm::define`.
 
+use std::any::Any;
 use std::fmt;
+use std::sync::LazyLock;
 
-use covalence_pure::{Object, ObsEq, Observer, Term, TermKind, Type};
+use covalence_pure::{ObsEq, ObsTrue, Object, Observer, Term, TermKind, Thm, Type};
+
+// ============================================================================
+// Module-level lazy globals
+// ============================================================================
+//
+// One `Object` per HolLight variant, allocated lazily at first access and
+// reused process-wide. `HolLightCtx` is a zero-sized handle on these
+// globals — constructing one is free.
+
+static BOOL_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Bool));
+static EQ_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Eq));
+static TRUE_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::True));
+static FALSE_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::False));
+static IMP_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Imp));
+static NOT_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Not));
+static AND_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::And));
+static OR_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Or));
+static IFF_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Iff));
+static FORALL_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Forall));
+static EXISTS_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Exists));
+static SELECT_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Select));
+static TRUEPROP_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Trueprop));
 
 // ============================================================================
 // The HolLight observer family
@@ -89,6 +113,12 @@ pub enum HolLight {
     Exists,
     /// HOL's `@` (Hilbert's ε / choice).
     Select,
+
+    /// `Trueprop : bool → prop` — explicit coercion from HOL bool to
+    /// Pure prop. A HOL theorem `⊢_HOL p` (p : bool) is internally
+    /// the Pure theorem `⊢_Pure Trueprop p`. Mirrors Isabelle/HOL's
+    /// `Trueprop`. This is what `Thm::obs_true::<HolLight>` produces.
+    Trueprop,
 }
 
 impl HolLight {
@@ -107,6 +137,7 @@ impl HolLight {
             HolLight::Forall => "!",
             HolLight::Exists => "?",
             HolLight::Select => "@",
+            HolLight::Trueprop => "Trueprop",
         }
     }
 }
@@ -355,6 +386,41 @@ impl HolLightCtx {
         Term::app(self.select_at(alpha), lambda)
     }
 
+    // ---- Trueprop coercion (process-global, via lazy static) ----
+
+    /// HOL `Trueprop` at type `bool → prop` — the explicit coercion
+    /// from HOL bool to Pure prop. A HOL theorem `⊢_HOL p` (p : bool)
+    /// is internally the Pure theorem `⊢_Pure Trueprop p` — and this
+    /// is exactly what [`Thm::obs_true::<HolLight>`] produces.
+    ///
+    /// The `Trueprop` observer is a process-global lazy static
+    /// (`TRUEPROP_OBS`); this method just returns a `Term::obs` over
+    /// it at the right Pure type.
+    pub fn trueprop(&self) -> Term {
+        Term::obs_from_dyn(
+            (*TRUEPROP_OBS).clone(),
+            Type::fun(self.bool_type(), Type::prop()),
+        )
+    }
+
+    /// `Trueprop p` — wrap a HOL bool term as a Pure prop. Returns an
+    /// error if `p` is not bool-typed.
+    pub fn mk_trueprop(&self, p: Term) -> Result<Term, covalence_pure::Error> {
+        let p_ty = p.type_of()?;
+        if p_ty != self.bool_type() {
+            return Err(covalence_pure::Error::TypeMismatch {
+                expected: self.bool_type(),
+                got: p_ty,
+            });
+        }
+        Ok(Term::app(self.trueprop(), p))
+    }
+
+    /// Pointer-id of the `Trueprop` observer (process-global).
+    pub fn trueprop_obs_ptr_id(&self) -> usize {
+        TRUEPROP_OBS.ptr_id()
+    }
+
     // ---- Identity check helpers (Arc pointer comparison via ptr_id) ----
 
     fn term_obs_ptr_id(t: &Term) -> Option<usize> {
@@ -392,3 +458,124 @@ impl Default for HolLightCtx {
 /// be called explicitly when threading HOL-specific reasoning.
 pub trait IsHolLight: Observer {}
 impl IsHolLight for HolLight {}
+
+// ============================================================================
+// ObsTrue policy — HOL Light bootstrap via Thm::obs_true
+// ============================================================================
+//
+// The HolLight `ObsTrue` policy is how HOL theorems get minted directly,
+// without needing an `eq_reflection` axiom. The hint carries source
+// theorems / structural witnesses; the policy validates that the requested
+// `⊢ Trueprop p` is HOL-derivable from what's in the hint.
+//
+// Sound under Pure's parametric-ε model: a `false` here just refuses; a
+// `true` here is consistent with ε(HolLight) interpreting any Trueprop
+// application as truth.
+
+/// Witness hints that the HolLight `ObsTrue` policy understands.
+/// Callers pass `Some(&HolHint::variant)` to derive specific HOL rules.
+#[derive(Debug)]
+pub enum HolHint {
+    /// HOL refl at any type α — no witness needed beyond structural
+    /// argument matching. `Thm::obs_true::<HolLight>(Trueprop (Eq a a), None)`
+    /// (or with this hint) gives `⊢ Trueprop (Eq a a)`.
+    Refl,
+    /// HOL sym at any type α: `Trueprop (Eq a b)` derives
+    /// `Trueprop (Eq b a)` given a source theorem.
+    Sym { source: Thm },
+    /// HOL trans at any type α: given source theorems `⊢ Trueprop (Eq a b)`
+    /// and `⊢ Trueprop (Eq b c)`, derive `⊢ Trueprop (Eq a c)`.
+    Trans { ab: Thm, bc: Thm },
+}
+
+/// `ObsTrue` policy for HolLight. Returns `true` only when the policy
+/// recognises the expression as a HOL Light derivable fact (under
+/// HOL-equality semantics), optionally validated by the hint's
+/// source theorems.
+impl ObsTrue for HolLight {
+    fn obs_true(&self, args: &[Term], hint: Option<&dyn Any>) -> bool {
+        // The only HolLight variant whose application has type prop is
+        // Trueprop. All HOL theorems thus mint via `Trueprop p`.
+        if !matches!(self, HolLight::Trueprop) || args.len() != 1 {
+            return false;
+        }
+        let body = &args[0];
+        // Without a hint: handle structural refl — `Trueprop (Eq a a)`.
+        let hint_variant = hint.and_then(|h| h.downcast_ref::<HolHint>());
+        match hint_variant {
+            None | Some(HolHint::Refl) => {
+                // Structural HOL refl: body is `Eq a a` for some a.
+                if let Some((a, b)) = decompose_hol_eq(body) {
+                    return a == b;
+                }
+                false
+            }
+            Some(HolHint::Sym { source }) => {
+                // Want: body = Trueprop (Eq b a); source.concl = Trueprop (Eq a b).
+                let Some(source_body) = unwrap_trueprop(source.concl()) else {
+                    return false;
+                };
+                let (Some((sa, sb)), Some((wb, wa))) = (
+                    decompose_hol_eq(&source_body),
+                    decompose_hol_eq(body),
+                ) else {
+                    return false;
+                };
+                sa == wa && sb == wb
+            }
+            Some(HolHint::Trans { ab, bc }) => {
+                // Want: body = Eq a c; ab.concl = Trueprop (Eq a b);
+                // bc.concl = Trueprop (Eq b c).
+                let Some(ab_body) = unwrap_trueprop(ab.concl()) else {
+                    return false;
+                };
+                let Some(bc_body) = unwrap_trueprop(bc.concl()) else {
+                    return false;
+                };
+                let (
+                    Some((a, b1)),
+                    Some((b2, c)),
+                    Some((wa, wc)),
+                ) = (
+                    decompose_hol_eq(&ab_body),
+                    decompose_hol_eq(&bc_body),
+                    decompose_hol_eq(body),
+                ) else {
+                    return false;
+                };
+                b1 == b2 && a == wa && c == wc
+            }
+        }
+    }
+}
+
+/// If `t` is `App(App(HolEq, a), b)` with the `HolLight::Eq` observer
+/// at the head, return `Some((a, b))`. Used by the ObsTrue policy.
+fn decompose_hol_eq(t: &Term) -> Option<(Term, Term)> {
+    let TermKind::App(outer_fn, outer_arg) = t.kind() else {
+        return None;
+    };
+    let TermKind::App(inner_fn, inner_arg) = outer_fn.kind() else {
+        return None;
+    };
+    let TermKind::Obs(obs, _) = inner_fn.kind() else {
+        return None;
+    };
+    obs.downcast::<HolLight>()
+        .filter(|o| matches!(o, HolLight::Eq))?;
+    Some((inner_arg.clone(), outer_arg.clone()))
+}
+
+/// If `t` is `App(Trueprop, body)` with the `HolLight::Trueprop`
+/// observer at the head, return `Some(body)`. Otherwise `None`.
+fn unwrap_trueprop(t: &Term) -> Option<Term> {
+    let TermKind::App(f, body) = t.kind() else {
+        return None;
+    };
+    let TermKind::Obs(obs, _) = f.kind() else {
+        return None;
+    };
+    obs.downcast::<HolLight>()
+        .filter(|o| matches!(o, HolLight::Trueprop))?;
+    Some(body.clone())
+}

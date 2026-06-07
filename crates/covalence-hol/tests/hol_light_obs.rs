@@ -167,3 +167,150 @@ fn is_true_distinguishes_across_contexts() {
     // ctx1's T is not ctx2's T.
     assert!(!ctx2.is_true(&ctx1.t()));
 }
+
+// ============================================================================
+// HOL Light bootstrap via Thm::obs_true + HolHint policy
+// ============================================================================
+
+#[test]
+fn trueprop_at_bool_to_prop() {
+    let ctx = HolLightCtx::new();
+    let tp = ctx.trueprop();
+    let ty = tp.type_of().unwrap();
+    assert_eq!(ty, Type::fun(ctx.bool_type(), Type::prop()));
+}
+
+#[test]
+fn mk_trueprop_wraps_a_bool_term_as_prop() {
+    let ctx = HolLightCtx::new();
+    let p = Term::free("p", ctx.bool_type());
+    let tp_p = ctx.mk_trueprop(p).unwrap();
+    assert!(tp_p.type_of().unwrap().is_prop());
+}
+
+#[test]
+fn hol_refl_via_obs_true_no_hint() {
+    // HOL: ⊢ a = a (at any type) — encoded as ⊢ Trueprop (Eq a a).
+    // Mintable via Thm::obs_true with no hint (policy recognises
+    // structural refl).
+    let ctx = HolLightCtx::new();
+    let a = Term::free("a", ctx.bool_type());
+    let eq_a_a = ctx.mk_eq(a.clone(), a).unwrap();
+    let tp_eq = ctx.mk_trueprop(eq_a_a.clone()).unwrap();
+
+    let thm = covalence_pure::Thm::obs_true::<HolLight>(tp_eq.clone(), None).unwrap();
+    assert!(thm.hyps().is_empty(), "HOL refl needs no hypotheses");
+    assert_eq!(thm.concl(), &tp_eq);
+}
+
+#[test]
+fn hol_refl_via_obs_true_with_explicit_hint() {
+    // Same as above but with HolHint::Refl explicitly passed.
+    let ctx = HolLightCtx::new();
+    let a = Term::blob(bytes::Bytes::from_static(b"hello"));
+    let eq_a_a = ctx.mk_eq(a.clone(), a).unwrap();
+    let tp_eq = ctx.mk_trueprop(eq_a_a).unwrap();
+
+    let hint = covalence_hol::HolHint::Refl;
+    let thm =
+        covalence_pure::Thm::obs_true::<HolLight>(tp_eq.clone(), Some(&hint as &dyn std::any::Any))
+            .unwrap();
+    assert!(thm.hyps().is_empty());
+    assert_eq!(thm.concl(), &tp_eq);
+}
+
+#[test]
+fn hol_refl_obs_true_rejects_non_refl_eq() {
+    // Without a hint, the policy only fires on `Eq a a` structurally.
+    // `Eq a b` with a ≠ b is refused.
+    let ctx = HolLightCtx::new();
+    let a = Term::free("a", ctx.bool_type());
+    let b = Term::free("b", ctx.bool_type());
+    let eq_a_b = ctx.mk_eq(a, b).unwrap();
+    let tp_eq = ctx.mk_trueprop(eq_a_b).unwrap();
+    let result = covalence_pure::Thm::obs_true::<HolLight>(tp_eq, None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn hol_sym_via_obs_true_with_source_thm() {
+    // HOL sym: from ⊢ Trueprop (Eq a b) derive ⊢ Trueprop (Eq b a).
+    let ctx = HolLightCtx::new();
+    let a = Term::free("a", ctx.bool_type());
+    let b = Term::free("b", ctx.bool_type());
+
+    // Source theorem: assume ⊢ Trueprop (Eq a b).
+    let eq_a_b = ctx.mk_eq(a.clone(), b.clone()).unwrap();
+    let tp_eq_a_b = ctx.mk_trueprop(eq_a_b).unwrap();
+    let source = covalence_pure::Thm::assume(tp_eq_a_b).unwrap();
+
+    // Want: ⊢ Trueprop (Eq b a).
+    let eq_b_a = ctx.mk_eq(b, a).unwrap();
+    let tp_eq_b_a = ctx.mk_trueprop(eq_b_a).unwrap();
+
+    let hint = covalence_hol::HolHint::Sym {
+        source: source.clone(),
+    };
+    let thm = covalence_pure::Thm::obs_true::<HolLight>(
+        tp_eq_b_a.clone(),
+        Some(&hint as &dyn std::any::Any),
+    )
+    .unwrap();
+    assert_eq!(thm.concl(), &tp_eq_b_a);
+}
+
+#[test]
+fn hol_trans_via_obs_true_with_two_source_thms() {
+    // HOL trans: ⊢ Eq a b + ⊢ Eq b c → ⊢ Eq a c (all in Trueprop).
+    let ctx = HolLightCtx::new();
+    let a = Term::free("a", ctx.bool_type());
+    let b = Term::free("b", ctx.bool_type());
+    let c = Term::free("c", ctx.bool_type());
+
+    let ab = covalence_pure::Thm::assume(
+        ctx.mk_trueprop(ctx.mk_eq(a.clone(), b.clone()).unwrap()).unwrap(),
+    )
+    .unwrap();
+    let bc = covalence_pure::Thm::assume(
+        ctx.mk_trueprop(ctx.mk_eq(b, c.clone()).unwrap()).unwrap(),
+    )
+    .unwrap();
+
+    // Want: ⊢ Trueprop (Eq a c).
+    let ac = ctx.mk_eq(a, c).unwrap();
+    let tp_ac = ctx.mk_trueprop(ac).unwrap();
+    let hint = covalence_hol::HolHint::Trans {
+        ab: ab.clone(),
+        bc: bc.clone(),
+    };
+    let thm =
+        covalence_pure::Thm::obs_true::<HolLight>(tp_ac.clone(), Some(&hint as &dyn std::any::Any))
+            .unwrap();
+    assert_eq!(thm.concl(), &tp_ac);
+}
+
+#[test]
+fn hol_trans_rejects_when_middle_term_mismatches() {
+    let ctx = HolLightCtx::new();
+    let a = Term::free("a", ctx.bool_type());
+    let b = Term::free("b", ctx.bool_type());
+    let c = Term::free("c", ctx.bool_type());
+    let d = Term::free("d", ctx.bool_type());
+
+    // ab is Eq a b; bc is Eq d c (middle terms don't match: b ≠ d).
+    let ab = covalence_pure::Thm::assume(
+        ctx.mk_trueprop(ctx.mk_eq(a.clone(), b).unwrap()).unwrap(),
+    )
+    .unwrap();
+    let bc = covalence_pure::Thm::assume(
+        ctx.mk_trueprop(ctx.mk_eq(d, c.clone()).unwrap()).unwrap(),
+    )
+    .unwrap();
+
+    let ac = ctx.mk_eq(a, c).unwrap();
+    let tp_ac = ctx.mk_trueprop(ac).unwrap();
+    let hint = covalence_hol::HolHint::Trans { ab, bc };
+    let result =
+        covalence_pure::Thm::obs_true::<HolLight>(tp_ac, Some(&hint as &dyn std::any::Any));
+    assert!(result.is_err(), "trans with mismatched middle should be refused");
+}

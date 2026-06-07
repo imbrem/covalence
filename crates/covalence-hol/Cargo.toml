@@ -13,3 +13,4 @@ smol_str = "0.3"
 thiserror = "2"
 
 [dev-dependencies]
+bytes = "1"

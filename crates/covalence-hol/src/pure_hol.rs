@@ -862,16 +862,14 @@ impl HolLightKernel for PureHol {
     /// hyps; Pure's `all_intro` forbids that. Standard Isabelle/HOL
     /// pattern: discharge every hyp mentioning any `x_i` first
     /// (`imp_intro` chain), quantify (`all_intro` per var),
-    /// instantiate (`all_elim` per witness, reversed), then
-    /// re-introduce each discharged hyp at its substituted form
-    /// (`imp_elim` of `assume(h[σ])`).
-    ///
-    /// Substitution is conservative: rejects "cyclic" pair sets
-    /// (where some `t_i` mentions another `x_j`) since reapplying
-    /// sequential substitution to the regenerated hyps would lose
-    /// parallel-substitution semantics. HOL Light's INST does not
-    /// permit such pairs in practice; OpenTheory does not generate
-    /// them.
+    /// instantiate (`all_elim` per witness in reverse pair order so
+    /// the chain becomes the parallel-substituted form), then
+    /// re-introduce each discharged hyp via `imp_elim` of an
+    /// `assume(antecedent)` where `antecedent` is read directly off
+    /// the chain — avoiding any need to recompute parallel
+    /// substitution by hand and side-stepping the cyclic-pairs
+    /// pitfall (`t_i` mentioning `x_j`, which Pure's `all_intro/elim`
+    /// handles parallel-correctly by construction).
     fn inst_rule(&mut self, pairs: &[(Term, Term)], th: Thm) -> Result<Thm, HolError> {
         let mut info: Vec<(SmolStr, Type)> = Vec::with_capacity(pairs.len());
         for (_new, old) in pairs {
@@ -881,18 +879,9 @@ impl HolLightKernel for PureHol {
             info.push((n.clone(), ty.clone()));
         }
 
-        // Reject cyclic pair sets where some `t_i` mentions any `x_j`.
-        for (new_term, _) in pairs {
-            for (n, _) in &info {
-                if subst::has_free_var(new_term, n.as_str()) {
-                    return Err(HolError::Unsupported(
-                        "inst_rule: cyclic substitution (t_i mentions x_j) not supported".into(),
-                    ));
-                }
-            }
-        }
-
-        // Hyps mentioning any substituted var must be discharged.
+        // Hyps mentioning any substituted var must be discharged
+        // before `all_intro` can quantify (Pure forbids the var
+        // appearing in hyps under the quantifier).
         let mentions_any = |t: &Term| info.iter().any(|(n, _)| subst::has_free_var(t, n.as_str()));
         let hyps_to_discharge: Vec<Term> = th
             .hyps()
@@ -905,33 +894,34 @@ impl HolLightKernel for PureHol {
         for h in &hyps_to_discharge {
             result = result.imp_intro(h).map_err(pure_err)?;
         }
-        // Quantify each var in order. Outermost = first pair after
-        // the final reversed elim, so we elim in reverse to land
-        // each new_term on the matching var.
+        // Quantify each var in order — last `all_intro` becomes the
+        // outermost binder. Then `all_elim` consumes outermost
+        // first, so we walk pairs in reverse to land each new_term
+        // on the right binder.
         for (n, ty) in &info {
             result = result.all_intro(n.as_str(), ty.clone()).map_err(pure_err)?;
         }
         for (new_term, _) in pairs.iter().rev() {
             result = result.all_elim(new_term.clone()).map_err(pure_err)?;
         }
-        // Re-introduce each previously discharged hyp at its
-        // substituted form. Sequential substitution is correct here
-        // because the cyclic guard above ensures the substituted
-        // names never appear in any `t_i`.
-        //
-        // Iterate in REVERSE: `imp_intro h_0, h_1, …, h_{n-1}`
-        // produces `⊢ h_{n-1} ⟹ … ⟹ h_0 ⟹ q` (last imp_intro =
-        // outermost antecedent). `imp_elim` consumes the outermost
-        // first, so we hand it the LAST hyp first.
-        for h in hyps_to_discharge.iter().rev() {
-            let mut h_subst = h.clone();
-            for (new_term, old_var) in pairs {
-                let TermKind::Free(name, _) = old_var.kind() else {
-                    unreachable!("checked above");
-                };
-                h_subst = subst::subst_free(&h_subst, name.as_str(), new_term);
-            }
-            let assumed = Thm::assume(h_subst).map_err(pure_err)?;
+
+        // Re-introduce each previously discharged hyp by peeling
+        // antecedents off the result chain. Pure's
+        // `all_intro`/`all_elim` already produced
+        // `⊢ h_{n-1}[σ] ⟹ … ⟹ h_0[σ] ⟹ q[σ]` with σ as parallel
+        // substitution. We read each outermost antecedent off
+        // `result.concl()`, `assume` it, and `imp_elim` — no manual
+        // substitution required.
+        for _ in 0..hyps_to_discharge.len() {
+            let antecedent = match result.concl().kind() {
+                TermKind::Imp(ant, _) => ant.clone(),
+                _ => {
+                    return Err(HolError::Unsupported(
+                        "inst_rule: expected Imp antecedent in result chain".into(),
+                    ));
+                }
+            };
+            let assumed = Thm::assume(antecedent).map_err(pure_err)?;
             result = result.imp_elim(assumed).map_err(pure_err)?;
         }
         Ok(result)
@@ -1605,6 +1595,42 @@ mod tests {
         }
         // The body's outer-scope `x` must remain unaffected.
         assert_eq!(opened, Term::free("x", b));
+    }
+
+    #[test]
+    fn inst_rule_parallel_substitution_handles_cross_references() {
+        // Pairs `[(y, x), (x, y)]` SWAP x and y. HOL Light treats
+        // this as parallel substitution: original x's → y, original
+        // y's → x. (NOT chained: if it were chained x→y then y→x,
+        // the result would have only y's.) Pure's all_intro/elim
+        // chain does the parallel substitution natively; this test
+        // pins that property at the PureHol surface.
+        let mut k = mk_kernel();
+        let b = k.bool_type();
+        k.register_name(10, "x");
+        k.register_name(11, "y");
+        let x = k.mk_var(10, b.clone());
+        let y = k.mk_var(11, b.clone());
+
+        // Build {tp(x = y)} ⊢ tp(x = y).
+        let eq_xy = k.mk_eq(x.clone(), y.clone());
+        let h = k.assume_rule(eq_xy).unwrap();
+
+        // Swap: pairs = [(y, x), (x, y)].
+        let h_swapped = k
+            .inst_rule(&[(y.clone(), x.clone()), (x.clone(), y.clone())], h)
+            .unwrap();
+
+        // Concl should be tp(y = x) (swapped).
+        let (l, r) = k.dest_eq_concl(&h_swapped).unwrap();
+        assert_eq!(l, y);
+        assert_eq!(r, x);
+        // Hyps should include tp(y = x) (the substituted form of
+        // tp(x = y) under the swap).
+        let hyps = k.hyps(h_swapped);
+        let expected_hyp = k.mk_eq(y, x);
+        assert_eq!(hyps.len(), 1);
+        assert_eq!(hyps[0], expected_hyp);
     }
 
     #[test]

@@ -9,7 +9,11 @@
 
 use std::cmp::Ordering;
 
-use crate::term::{Def, Term, TermKind, Type, TypeKind};
+use std::collections::BTreeMap;
+
+use smol_str::SmolStr;
+
+use crate::term::{Term, TermKind, Type, TypeKind};
 
 // ============================================================================
 // Substitution
@@ -232,12 +236,15 @@ pub fn subst_tfree_in_term(t: &Term, name: &str, r: &Type) -> Term {
         TermKind::Eq(a, b) => Term::eq(sub(a), sub(b)),
         TermKind::Blob(b) => Term::blob(b.clone()),
         TermKind::Obs(observer, ty) => Term::obs_from_dyn(observer.clone(), st(ty)),
-        // Recurse into the body: the substituted version is a *new*
-        // `Def` (fresh `Arc` after rebuilding body), so two distinct
-        // type-variable substitutions yield two distinct `Def`s.
-        // Sound: each acts as a fresh constant equated to its own
-        // substituted body.
-        TermKind::Def(d) => Term::def(Def::new_internal(d.name().clone(), sub(d.body()))),
+        // `Def` carries an `original` Arc identity (the unique
+        // `Thm::define` call) plus an `instance_type`. Substitution
+        // updates `instance_type` without rebuilding `original`, so
+        // the result compares equal to any other `Def` reaching this
+        // same instance — the property HOL Light's `INST_TYPE` and
+        // polymorphic-constant equality depend on.
+        TermKind::Def(d) => {
+            Term::def(d.with_instance_type(subst_tfree_in_type(d.instance_type(), name, r)))
+        }
     }
 }
 
@@ -313,5 +320,56 @@ fn uses_bound_at(t: &Term, target: u32, depth: u32) -> bool {
         TermKind::Abs(_, _, body) | TermKind::All(_, _, body) => {
             uses_bound_at(body, target, depth + 1)
         }
+    }
+}
+
+// ============================================================================
+// One-way type matching
+// ============================================================================
+
+/// One-way structural match: treats `TFree(n)` in `pattern` as a
+/// schematic variable, and finds a substitution `sub` such that
+/// applying `sub` to `pattern` yields `target` (structurally).
+/// Returns `Err(())` if no consistent substitution exists.
+///
+/// Used by `Def::body` to recover the type substitution from
+/// `body_type` → `instance_type` when reconstructing the body for
+/// utility walks (`has_no_obs`, etc.).
+pub fn match_types(
+    pattern: &Type,
+    target: &Type,
+    sub: &mut BTreeMap<SmolStr, Type>,
+) -> Result<(), ()> {
+    match (pattern.kind(), target.kind()) {
+        (TypeKind::TFree(n), _) => match sub.get(n) {
+            Some(existing) if existing == target => Ok(()),
+            Some(_) => Err(()),
+            None => {
+                sub.insert(n.clone(), target.clone());
+                Ok(())
+            }
+        },
+        (TypeKind::Prop, TypeKind::Prop) | (TypeKind::Bytes, TypeKind::Bytes) => Ok(()),
+        (TypeKind::Fun(pa, pb), TypeKind::Fun(ta, tb)) => {
+            match_types(pa, ta, sub)?;
+            match_types(pb, tb, sub)
+        }
+        (TypeKind::Tycon(pn, pa), TypeKind::Tycon(tn, ta))
+            if pn == tn && pa.len() == ta.len() =>
+        {
+            for (p, t) in pa.iter().zip(ta) {
+                match_types(p, t, sub)?;
+            }
+            Ok(())
+        }
+        (TypeKind::TyConObs(po, _, pa), TypeKind::TyConObs(to, _, ta))
+            if po.ptr_id() == to.ptr_id() && pa.len() == ta.len() =>
+        {
+            for (p, t) in pa.iter().zip(ta) {
+                match_types(p, t, sub)?;
+            }
+            Ok(())
+        }
+        _ => Err(()),
     }
 }

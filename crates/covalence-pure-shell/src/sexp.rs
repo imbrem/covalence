@@ -248,7 +248,7 @@ pub fn term_to_sexp(t: &Term, ser: &dyn ObsSerializer) -> Result<SExpr> {
             let payload = ser.obs_to_sexp(observer)?;
             list3("obs", payload, type_to_sexp(ty, ser)?)
         }
-        TermKind::Def(d) => list3("def", sym(d.name().as_str()), term_to_sexp(d.body(), ser)?),
+        TermKind::Def(d) => list3("def", sym(d.name().as_str()), term_to_sexp(&d.body(), ser)?),
     })
 }
 

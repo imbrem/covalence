@@ -41,7 +41,7 @@
 //! - `new_basic_type_definition` — needs Pure's `new_type_definition`
 //!   plus Select for the witness extraction.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use covalence_pure::{BinderHint, Term, TermKind, Thm, Type, TypeKind, subst};
 use smol_str::SmolStr;
@@ -68,15 +68,13 @@ pub struct PureHol {
     /// term that `mk_const` should return — preserving Arc identity
     /// so the defining equations and user references land on the
     /// same symbol.
+    ///
+    /// Polymorphic instances need no separate cache: Pure's `Def`
+    /// carries `(original_Arc, instance_type)` and
+    /// `subst_tfree_in_term` updates `instance_type` without
+    /// rebuilding `original`, so any two paths landing at the same
+    /// `(NameId, Type)` instance compare structurally equal.
     defined_constants: HashMap<NameId, Term>,
-    /// Per-instance cache for polymorphic defined constants. Pure's
-    /// `Def` equality is Arc-pointer based, and `subst_tfree_in_term`
-    /// on a `Def` allocates a fresh Arc on each call — so naive
-    /// repeated instantiation produces two `Def`-wrapped terms that
-    /// print identically but fail structural equality. Caching by
-    /// `(NameId, Type)` ensures the same `(forall, (bool→bool)→bool)`
-    /// lookup always returns the SAME Arc.
-    defined_constant_instances: HashMap<(NameId, Type), Term>,
     /// Types introduced via `new_basic_type_definition`, indexed by
     /// `NameId`. Currently monomorphic only (polymorphic typedefs
     /// would need `inst_tfree`-driven instantiation against the
@@ -122,7 +120,6 @@ impl PureHol {
             type_arity,
             constants,
             defined_constants: HashMap::new(),
-            defined_constant_instances: HashMap::new(),
             defined_types: HashMap::new(),
             axioms: Vec::new(),
             names,
@@ -335,32 +332,26 @@ impl HolLightTerms for PureHol {
         // against the requested type to find the tvar substitution,
         // then apply `subst_tfree_in_term` to get the instance.
         if let Some(def_term) = self.defined_constants.get(&name).cloned() {
-            // Compute the stored Def's natural type once.
             let def_ty = def_term
                 .type_of()
                 .expect("defined-constant body is well-typed by construction");
             if def_ty == ty {
                 return def_term;
             }
-            // Cache hit: reuse the same Arc identity for repeat
-            // instantiations at this type (Pure Def equality is
-            // Arc-ptr based; fresh `subst_tfree_in_term` would
-            // break structural equality between mk_const calls).
-            if let Some(cached) = self.defined_constant_instances.get(&(name, ty.clone())) {
-                return cached.clone();
-            }
-            let mut sub: HashMap<SmolStr, Type> = HashMap::new();
-            if match_types(&def_ty, &ty, &mut sub).is_ok() {
+            // Pure's `Def` representation `(original_Arc,
+            // instance_type)` makes `subst_tfree_in_term`
+            // identity-preserving: the result compares equal to any
+            // other mk_const at this same instance type, so no
+            // explicit cache is needed here.
+            let mut sub: BTreeMap<SmolStr, Type> = BTreeMap::new();
+            if subst::match_types(&def_ty, &ty, &mut sub).is_ok() {
                 let mut result = def_term;
                 for (tv, replacement) in sub {
                     result = subst::subst_tfree_in_term(&result, tv.as_str(), &replacement);
                 }
-                self.defined_constant_instances
-                    .insert((name, ty), result.clone());
                 return result;
             }
-            // Match failed (no consistent tvar binding takes `def_ty`
-            // to `ty`). Fall through to a plain `Const` so the
+            // Match failed: fall through to a plain `Const` so the
             // downstream type check fires a clear error instead of
             // returning a silently mis-typed Def.
         }
@@ -481,54 +472,6 @@ impl HolLightTerms for PureHol {
     }
 }
 
-/// One-way type matching (pattern → target).
-///
-/// Treats `TFree` in `pattern` as a schematic variable. Returns
-/// `Ok(())` and fills `sub` with the substitution `{tv ↦ target_t}`
-/// such that applying `sub` to `pattern` yields `target`. Returns
-/// `Err(())` if no such consistent substitution exists. Used by
-/// `mk_const` to instantiate polymorphic defined constants at the
-/// type the article requests (HOL Light's implicit unification at
-/// `constTerm`).
-fn match_types(pattern: &Type, target: &Type, sub: &mut HashMap<SmolStr, Type>) -> Result<(), ()> {
-    match (pattern.kind(), target.kind()) {
-        (TypeKind::TFree(n), _) => {
-            if let Some(existing) = sub.get(n) {
-                if existing == target {
-                    Ok(())
-                } else {
-                    Err(())
-                }
-            } else {
-                sub.insert(n.clone(), target.clone());
-                Ok(())
-            }
-        }
-        (TypeKind::Prop, TypeKind::Prop) | (TypeKind::Bytes, TypeKind::Bytes) => Ok(()),
-        (TypeKind::Fun(pa, pb), TypeKind::Fun(ta, tb)) => {
-            match_types(pa, ta, sub)?;
-            match_types(pb, tb, sub)
-        }
-        (TypeKind::Tycon(pn, pa), TypeKind::Tycon(tn, ta))
-            if pn == tn && pa.len() == ta.len() =>
-        {
-            for (p, t) in pa.iter().zip(ta) {
-                match_types(p, t, sub)?;
-            }
-            Ok(())
-        }
-        (TypeKind::TyConObs(po, _, pa), TypeKind::TyConObs(to, _, ta))
-            if po.ptr_id() == to.ptr_id() && pa.len() == ta.len() =>
-        {
-            for (p, t) in pa.iter().zip(ta) {
-                match_types(p, t, sub)?;
-            }
-            Ok(())
-        }
-        _ => Err(()),
-    }
-}
-
 /// Walk `t` collecting every free type variable name appearing in
 /// any type annotation (Free / Const / Abs / All / Obs `ty` fields,
 /// plus Def body types).
@@ -550,7 +493,7 @@ fn collect_term_tvars(t: &Term, out: &mut HashSet<SmolStr>) {
             collect_term_tvars(b, out);
         }
         TermKind::Bound(_) | TermKind::Blob(_) => {}
-        TermKind::Def(d) => collect_term_tvars(d.body(), out),
+        TermKind::Def(d) => collect_term_tvars(&d.body(), out),
     }
 }
 

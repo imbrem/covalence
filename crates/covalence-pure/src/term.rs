@@ -788,6 +788,15 @@ pub enum Prim {
     /// `nat → bytes → bytes` — cons a `nat` (mod 256) onto the
     /// front of a `bytes` term.
     BytesConsNat,
+    /// `bytes → nat` — length of a bytes value.
+    BytesLen,
+    /// `bytes → nat → nat` — byte at index, or `0` if out of
+    /// bounds (total function; standard convention for indexing
+    /// out-of-bounds returning a default).
+    BytesAt,
+    /// `bytes → nat → nat → bytes` — slice from a start index
+    /// with a length. Saturating: clipped at the bytes' end.
+    BytesSlice,
     /// `nat → int` — embed naturals into integers.
     NatToInt,
 }
@@ -805,6 +814,12 @@ impl Prim {
             Prim::BytesConsNat => {
                 Type::fun(Type::nat(), Type::fun(Type::bytes(), Type::bytes()))
             }
+            Prim::BytesLen => Type::fun(Type::bytes(), Type::nat()),
+            Prim::BytesAt => Type::fun(Type::bytes(), Type::fun(Type::nat(), Type::nat())),
+            Prim::BytesSlice => Type::fun(
+                Type::bytes(),
+                Type::fun(Type::nat(), Type::fun(Type::nat(), Type::bytes())),
+            ),
             Prim::NatToInt => Type::fun(Type::nat(), Type::int()),
         }
     }

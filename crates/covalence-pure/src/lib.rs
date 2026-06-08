@@ -53,6 +53,7 @@
 //! - Anything HOL-shaped (`bool`, `=`, `∧`, `∀`, …) — lives in
 //!   `covalence-hol`.
 
+mod builtins;
 pub mod error;
 pub mod subst;
 pub mod term;
@@ -60,6 +61,7 @@ pub mod thm;
 
 pub use error::{Error, Result};
 pub use term::{
-    BinderHint, Def, Hint, ObsEq, ObsImp, ObsTrue, Object, Observer, Term, TermKind, Type, TypeKind,
+    Arith, BinderHint, Def, Hint, ObsEq, ObsImp, ObsTrue, Object, Observer, Prim, Term, TermKind,
+    Type, TypeKind,
 };
 pub use thm::{Thm, TypeDef};

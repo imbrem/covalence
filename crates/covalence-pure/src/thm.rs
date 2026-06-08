@@ -28,6 +28,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::Arc;
 
+use crate::builtins;
 use crate::error::{Error, Result};
 use crate::subst::{
     close, find_free_type, has_free_var, open, shift_by, subst_tfree_in_term, uses_bound_outer,
@@ -499,6 +500,35 @@ impl Thm {
         let d = Def::new_internal(name.into(), body.clone(), body_type);
         let concl = Term::eq(Term::def(d), body);
         Self::build(BTreeSet::new(), concl)
+    }
+
+    /// Single-step computation rule on builtin primitives applied to
+    /// concrete literal arguments. Returns `⊢ t ≡ result` where
+    /// `result` is the canonical value of evaluating the operation;
+    /// returns an `Err(NotReducible)` for terms that aren't a
+    /// primitive-application with all-literal arguments (the rule is
+    /// deliberately conservative — it doesn't reduce subterms or
+    /// follow β/δ chains).
+    ///
+    /// **Catalogue**:
+    ///
+    /// - `App(Prim(NatArith Succ), NatLit a)` → `NatLit(a + 1)`
+    /// - `App(Prim(NatArith Pred), NatLit a)` → `NatLit(a − 1)` saturating at 0
+    /// - `App(App(Prim(NatArith Add), NatLit a), NatLit b)` → `NatLit(a + b)`
+    /// - similarly for `Mul`, `Sub` (saturating), `Div` (`a/0 = 0`), `Mod` (`a%0 = 0`)
+    /// - `App(Prim(IntArith Succ/Pred), IntLit a)` → `IntLit(a ± 1)`
+    /// - `App(Prim(IntNeg), IntLit a)` → `IntLit(−a)`
+    /// - `App(App(Prim(IntArith *), IntLit a), IntLit b)` for each binop
+    /// - `App(App(Prim(BytesCat), Blob a), Blob b)` → `Blob(a ++ b)`
+    /// - `App(App(Prim(BytesConsNat), NatLit n), Blob b)` → `Blob([n%256, ...b])`
+    /// - `App(Prim(BytesLen), Blob b)` → `NatLit(b.len())`
+    /// - `App(App(Prim(BytesAt), Blob b), NatLit i)` → `NatLit(b[i] or 0)`
+    /// - `App(App(App(Prim(BytesSlice), Blob b), NatLit start), NatLit len)`
+    ///   → `Blob(b[start..min(start+len, b.len())])`
+    /// - `App(Prim(NatToInt), NatLit n)` → `IntLit(n)`
+    pub fn reduce_prim(t: Term) -> Result<Thm> {
+        let reduced = builtins::reduce_prim_term(&t).ok_or(Error::NotReducible)?;
+        Self::build(BTreeSet::new(), Term::eq(t, reduced))
     }
 
     /// `Γ[α:=σ] ⊢ φ[α:=σ]`.

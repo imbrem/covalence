@@ -95,6 +95,9 @@ pub enum Error {
          types under `inst_tfree`"
     )]
     DefPhantomTFree { tvar: SmolStr, body_type: Type },
+
+    #[error("reduce_prim: term is not a primitive applied to literal arguments")]
+    NotReducible,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

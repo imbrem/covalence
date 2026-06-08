@@ -175,6 +175,132 @@ pub fn axiom_cons_inj() -> Thm {
     AX.clone()
 }
 
+// ============================================================================
+// Combinators (map / filter / foldr)
+// ============================================================================
+
+/// `map : ('a → 'b) → list 'a → list 'b`.
+pub fn map_at(alpha: Type, beta: Type) -> Term {
+    let la = ty(alpha.clone());
+    let lb = ty(beta.clone());
+    let f_ty = Type::fun(alpha, beta);
+    Term::const_("list_map", Type::fun(f_ty, Type::fun(la, lb)))
+}
+
+/// `filter : ('a → bool) → list 'a → list 'a`.
+pub fn filter_at(alpha: Type) -> Term {
+    let la = ty(alpha.clone());
+    let pred_ty = Type::fun(alpha, ctx().bool_type());
+    Term::const_("list_filter", Type::fun(pred_ty, Type::fun(la.clone(), la)))
+}
+
+/// `foldr : ('a → 'b → 'b) → 'b → list 'a → 'b`.
+pub fn foldr_at(alpha: Type, beta: Type) -> Term {
+    let la = ty(alpha.clone());
+    let f_ty = Type::fun(alpha, Type::fun(beta.clone(), beta.clone()));
+    Term::const_(
+        "list_foldr",
+        Type::fun(f_ty, Type::fun(beta.clone(), Type::fun(la, beta))),
+    )
+}
+
+/// `⊢ ∀f. map f nil = nil`.
+pub fn axiom_map_nil() -> Thm {
+    static AX: LazyLock<Thm> = LazyLock::new(|| {
+        let ctx = ctx();
+        let alpha = Type::tfree("a");
+        let beta = Type::tfree("b");
+        let f_ty = Type::fun(alpha.clone(), beta.clone());
+        let f = Term::free("f", f_ty.clone());
+        let lhs = Term::app(
+            Term::app(map_at(alpha.clone(), beta.clone()), f),
+            nil_at(alpha),
+        );
+        let eq = ctx.mk_eq(lhs, nil_at(beta)).expect("axiom_map_nil: mk_eq");
+        let body = ctx.mk_forall("f", f_ty, eq);
+        assume_hol(body)
+    });
+    AX.clone()
+}
+
+/// `⊢ ∀f x xs. map f (cons x xs) = cons (f x) (map f xs)`.
+pub fn axiom_map_cons() -> Thm {
+    static AX: LazyLock<Thm> = LazyLock::new(|| {
+        let ctx = ctx();
+        let alpha = Type::tfree("a");
+        let beta = Type::tfree("b");
+        let f_ty = Type::fun(alpha.clone(), beta.clone());
+        let f = Term::free("f", f_ty.clone());
+        let x = Term::free("x", alpha.clone());
+        let xs = Term::free("xs", ty(alpha.clone()));
+        let map_at_ab = map_at(alpha.clone(), beta.clone());
+        let consed = Term::app(Term::app(cons_at(alpha.clone()), x.clone()), xs.clone());
+        let lhs = Term::app(Term::app(map_at_ab.clone(), f.clone()), consed);
+        let mapped_xs = Term::app(Term::app(map_at_ab, f.clone()), xs);
+        let head = Term::app(f, x);
+        let rhs = Term::app(Term::app(cons_at(beta), head), mapped_xs);
+        let eq = ctx.mk_eq(lhs, rhs).expect("axiom_map_cons: mk_eq");
+        let i1 = ctx.mk_forall("xs", ty(alpha.clone()), eq);
+        let i2 = ctx.mk_forall("x", alpha, i1);
+        let outer = ctx.mk_forall("f", f_ty, i2);
+        assume_hol(outer)
+    });
+    AX.clone()
+}
+
+/// `⊢ ∀f z. foldr f z nil = z`.
+pub fn axiom_foldr_nil() -> Thm {
+    static AX: LazyLock<Thm> = LazyLock::new(|| {
+        let ctx = ctx();
+        let alpha = Type::tfree("a");
+        let beta = Type::tfree("b");
+        let f_ty = Type::fun(alpha.clone(), Type::fun(beta.clone(), beta.clone()));
+        let f = Term::free("f", f_ty.clone());
+        let z = Term::free("z", beta.clone());
+        let lhs = Term::app(
+            Term::app(
+                Term::app(foldr_at(alpha.clone(), beta.clone()), f),
+                z.clone(),
+            ),
+            nil_at(alpha),
+        );
+        let eq = ctx.mk_eq(lhs, z).expect("axiom_foldr_nil: mk_eq");
+        let inner = ctx.mk_forall("z", beta, eq);
+        let outer = ctx.mk_forall("f", f_ty, inner);
+        assume_hol(outer)
+    });
+    AX.clone()
+}
+
+/// `⊢ ∀f z x xs. foldr f z (cons x xs) = f x (foldr f z xs)`.
+pub fn axiom_foldr_cons() -> Thm {
+    static AX: LazyLock<Thm> = LazyLock::new(|| {
+        let ctx = ctx();
+        let alpha = Type::tfree("a");
+        let beta = Type::tfree("b");
+        let f_ty = Type::fun(alpha.clone(), Type::fun(beta.clone(), beta.clone()));
+        let f = Term::free("f", f_ty.clone());
+        let z = Term::free("z", beta.clone());
+        let x = Term::free("x", alpha.clone());
+        let xs = Term::free("xs", ty(alpha.clone()));
+        let foldr_ = foldr_at(alpha.clone(), beta.clone());
+        let consed = Term::app(Term::app(cons_at(alpha.clone()), x.clone()), xs.clone());
+        let lhs = Term::app(
+            Term::app(Term::app(foldr_.clone(), f.clone()), z.clone()),
+            consed,
+        );
+        let inner_fold = Term::app(Term::app(Term::app(foldr_, f.clone()), z.clone()), xs);
+        let rhs = Term::app(Term::app(f, x), inner_fold);
+        let eq = ctx.mk_eq(lhs, rhs).expect("axiom_foldr_cons: mk_eq");
+        let i1 = ctx.mk_forall("xs", ty(alpha.clone()), eq);
+        let i2 = ctx.mk_forall("x", alpha, i1);
+        let i3 = ctx.mk_forall("z", beta, i2);
+        let outer = ctx.mk_forall("f", f_ty, i3);
+        assume_hol(outer)
+    });
+    AX.clone()
+}
+
 /// `⊢ ∀P. P nil ∧ (∀x xs. P xs ⟹ P (cons x xs)) ⟹ ∀xs. P xs`.
 pub fn axiom_list_induction() -> Thm {
     static AX: LazyLock<Thm> = LazyLock::new(|| {
@@ -249,6 +375,18 @@ mod tests {
             axiom_nil_ne_cons(),
             axiom_cons_inj(),
             axiom_list_induction(),
+        ] {
+            assert!(ax.concl().type_of().unwrap().is_prop());
+        }
+    }
+
+    #[test]
+    fn combinator_axioms_well_formed() {
+        for ax in [
+            axiom_map_nil(),
+            axiom_map_cons(),
+            axiom_foldr_nil(),
+            axiom_foldr_cons(),
         ] {
             assert!(ax.concl().type_of().unwrap().is_prop());
         }

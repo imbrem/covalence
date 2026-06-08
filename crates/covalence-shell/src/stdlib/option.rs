@@ -115,6 +115,117 @@ pub fn axiom_from_some_some() -> Thm {
     AX.clone()
 }
 
+// ============================================================================
+// Monadic operations
+// ============================================================================
+
+/// `map : ('a → 'b) → option 'a → option 'b`.
+pub fn map_at(alpha: Type, beta: Type) -> Term {
+    let f_ty = Type::fun(alpha.clone(), beta.clone());
+    Term::const_(
+        "option_map",
+        Type::fun(f_ty, Type::fun(ty(alpha), ty(beta))),
+    )
+}
+
+/// `bind : option 'a → ('a → option 'b) → option 'b` — monadic bind.
+pub fn bind_at(alpha: Type, beta: Type) -> Term {
+    let k_ty = Type::fun(alpha.clone(), ty(beta.clone()));
+    Term::const_(
+        "option_bind",
+        Type::fun(ty(alpha), Type::fun(k_ty, ty(beta))),
+    )
+}
+
+/// `⊢ ∀f. map f none = none`.
+pub fn axiom_map_none() -> Thm {
+    static AX: LazyLock<Thm> = LazyLock::new(|| {
+        let ctx = ctx();
+        let alpha = Type::tfree("a");
+        let beta = Type::tfree("b");
+        let f_ty = Type::fun(alpha.clone(), beta.clone());
+        let f = Term::free("f", f_ty.clone());
+        let lhs = Term::app(
+            Term::app(map_at(alpha.clone(), beta.clone()), f),
+            none_at(alpha),
+        );
+        let eq = ctx
+            .mk_eq(lhs, none_at(beta))
+            .expect("axiom_map_none: mk_eq");
+        let body = ctx.mk_forall("f", f_ty, eq);
+        assume_hol(body)
+    });
+    AX.clone()
+}
+
+/// `⊢ ∀f x. map f (some x) = some (f x)`.
+pub fn axiom_map_some() -> Thm {
+    static AX: LazyLock<Thm> = LazyLock::new(|| {
+        let ctx = ctx();
+        let alpha = Type::tfree("a");
+        let beta = Type::tfree("b");
+        let f_ty = Type::fun(alpha.clone(), beta.clone());
+        let f = Term::free("f", f_ty.clone());
+        let x = Term::free("x", alpha.clone());
+        let lhs = Term::app(
+            Term::app(map_at(alpha.clone(), beta.clone()), f.clone()),
+            Term::app(some_at(alpha.clone()), x.clone()),
+        );
+        let rhs = Term::app(some_at(beta), Term::app(f, x));
+        let eq = ctx.mk_eq(lhs, rhs).expect("axiom_map_some: mk_eq");
+        let inner = ctx.mk_forall("x", alpha, eq);
+        let outer = ctx.mk_forall("f", f_ty, inner);
+        assume_hol(outer)
+    });
+    AX.clone()
+}
+
+/// `⊢ ∀k. bind none k = none`.
+pub fn axiom_bind_none() -> Thm {
+    static AX: LazyLock<Thm> = LazyLock::new(|| {
+        let ctx = ctx();
+        let alpha = Type::tfree("a");
+        let beta = Type::tfree("b");
+        let k_ty = Type::fun(alpha.clone(), ty(beta.clone()));
+        let k = Term::free("k", k_ty.clone());
+        let lhs = Term::app(
+            Term::app(bind_at(alpha.clone(), beta.clone()), none_at(alpha)),
+            k,
+        );
+        let eq = ctx
+            .mk_eq(lhs, none_at(beta))
+            .expect("axiom_bind_none: mk_eq");
+        let body = ctx.mk_forall("k", k_ty, eq);
+        assume_hol(body)
+    });
+    AX.clone()
+}
+
+/// `⊢ ∀x k. bind (some x) k = k x`.
+pub fn axiom_bind_some() -> Thm {
+    static AX: LazyLock<Thm> = LazyLock::new(|| {
+        let ctx = ctx();
+        let alpha = Type::tfree("a");
+        let beta = Type::tfree("b");
+        let k_ty = Type::fun(alpha.clone(), ty(beta.clone()));
+        let k = Term::free("k", k_ty.clone());
+        let x = Term::free("x", alpha.clone());
+        let lhs = Term::app(
+            Term::app(
+                bind_at(alpha.clone(), beta),
+                Term::app(some_at(alpha.clone()), x.clone()),
+            ),
+            k.clone(),
+        );
+        let rhs = Term::app(k, x);
+        let eq = ctx.mk_eq(lhs, rhs).expect("axiom_bind_some: mk_eq");
+        let inner = ctx.mk_forall("k", k_ty, eq);
+        let outer = ctx.mk_forall("x", alpha, inner);
+        assume_hol(outer)
+    });
+    AX.clone()
+}
+
 /// `⊢ ∀P. P none ∧ (∀x. P (some x)) ⟹ ∀o. P o` — case analysis.
 pub fn axiom_option_cases() -> Thm {
     static AX: LazyLock<Thm> = LazyLock::new(|| {
@@ -162,6 +273,18 @@ mod tests {
             axiom_none_ne_some(),
             axiom_from_some_some(),
             axiom_option_cases(),
+        ] {
+            assert!(ax.concl().type_of().unwrap().is_prop());
+        }
+    }
+
+    #[test]
+    fn monadic_axioms_well_formed() {
+        for ax in [
+            axiom_map_none(),
+            axiom_map_some(),
+            axiom_bind_none(),
+            axiom_bind_some(),
         ] {
             assert!(ax.concl().type_of().unwrap().is_prop());
         }

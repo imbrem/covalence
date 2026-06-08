@@ -11,5 +11,6 @@ covalence-kernel = { path = "../covalence-kernel" }
 covalence-hol = { path = "../covalence-hol" }
 covalence-pure = { path = "../covalence-pure" }
 covalence-types = { path = "../covalence-types" }
+bytes = "1"
 smol_str = "0.3"
 thiserror = "2"

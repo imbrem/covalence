@@ -1296,6 +1296,7 @@ dependencies = [
 name = "covalence-shell"
 version = "0.0.0"
 dependencies = [
+ "bytes",
  "covalence-hash",
  "covalence-hol",
  "covalence-kernel",

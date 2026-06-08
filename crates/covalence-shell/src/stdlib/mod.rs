@@ -19,6 +19,8 @@
 //! - Internal axiomatisation of operations.
 
 pub mod bool;
+pub mod byte;
+pub mod bytes;
 pub mod either;
 pub mod fun;
 pub mod int;

@@ -27,3 +27,5 @@ pub mod int;
 pub mod list;
 pub mod nat;
 pub mod option;
+pub mod rat;
+pub mod real;

@@ -19,4 +19,5 @@
 //! - Internal axiomatisation of operations.
 
 pub mod bool;
+pub mod int;
 pub mod nat;

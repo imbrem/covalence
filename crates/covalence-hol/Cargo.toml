@@ -8,5 +8,6 @@ default = []
 
 [dependencies]
 covalence-pure = { path = "../covalence-pure" }
+covalence-types = { path = "../covalence-types" }
 smol_str = "0.3"
 thiserror = "2"

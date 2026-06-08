@@ -1,4 +1,6 @@
 pub mod hol_light_obs;
+pub mod int_axioms;
+pub mod nat_axioms;
 pub mod pure_hol;
 pub mod traits;
 pub mod types;

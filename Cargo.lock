@@ -1023,6 +1023,7 @@ name = "covalence-hol"
 version = "0.0.0"
 dependencies = [
  "covalence-pure",
+ "covalence-types",
  "smol_str",
  "thiserror 2.0.18",
 ]

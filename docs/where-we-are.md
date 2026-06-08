@@ -1,339 +1,246 @@
-# Where We Are (planning-stage)
+# Where We Are
 
-Honest snapshot of the Covalence tree as of the `planning-stage` branch.
-Captures what's shipping, what's in flight, what's stale, and what's planned
-but not yet started. Read this before the design docs in
-[`docs/design/`](./design/).
+This is the current implementation snapshot for the repository as it exists in
+the tree now. It is intentionally code-first: it describes what is present,
+what is wired together, and where the repo still has parallel tracks or obvious
+transition seams.
 
-> **Note on status.** Everything in [`docs/design/proposals/`](./design/proposals/)
-> is **proposed**, not committed. Those docs describe a possible
-> direction (the layered-framework proposal), not a decided
-> architecture. The list of in-flight code and superseded docs below
-> *is* current; the "new direction" referenced is one proposal we're
-> currently exploring, not a settled plan.
+It does not try to settle the long-term architecture. For that, read
+[`../ARCHITECTURE.md`](../ARCHITECTURE.md) and
+[`design/README.md`](./design/README.md).
 
 ## TL;DR
 
-We've successfully built the **substrate** (content-addressed store,
-BLAKE3 wrappers, WASM engine, signature scheme, parsers, S-expressions).
-We have **three parallel kernels** in various stages of development, none
-of which match the target architecture. Application crates (REPL, server,
-client, LSP, VSCode extension, web app) work against the *oldest* kernel
-design. We are mid-replanning — these docs are the planning artifact.
+The repo is no longer just a kernel experiment plus a few shells around it.
+Today it is a broad monorepo with:
 
-The currently-favored direction is the **layered-framework proposal**
-([`docs/design/proposals/layered-framework/`](./design/proposals/layered-framework/)):
-a tiny
-[Framework](./design/proposals/layered-framework/02-framework.md)
-(Pure-style LF) at the bottom, a
-[HOL layer](./design/proposals/layered-framework/) as an object theory
-over it, and a
-[Morphism layer](./design/proposals/layered-framework/) above that.
-Hashing, signatures, executors, and the namespace machinery are all
-**outside the trust boundary** as oracles or untrusted layers. This is
-a *proposal*, not a decided architecture — alternatives are welcome.
+- a working CLI, HTTP server, REPL, LSP, browser UI, VS Code extension,
+  Python bindings, and TypeScript clients,
+- a content-addressed storage stack (`covalence-store`, `covalence-object`,
+  `covalence-git`, `covalence-kv`, `covalence-fuse`, `covalence-wasm-store`),
+- multiple coexisting logic / prover lines (`covalence-kernel`,
+  `covalence-pure`, `covalence-hol`),
+- bridge and certificate crates for OpenTheory, Alethe/SMT, SAT, egglog,
+  Metamath, Lean export data, and SpecTec/WASM assets,
+- a thin `covalence-shell::Kernel` used by the REPL and server as a store-first
+  backend, plus a separate `Prover` trait used by theorem-oriented frontends.
 
-Institution-theoretically, this is a shift toward a **Paulson-style
-split**: LF/Pure as the meta-institution, HOL as the default object
-institution, and everything else treated as theories, proof languages,
-or translations around that core. The intended TCB is therefore not
-"the current kernel plus helpers" but **LF + HOL**, with morphism
-machinery, package transport, stores, executors, hashing, and
-certificate tooling all outside that trusted center.
+The important current fact is coexistence: the repo already contains more than
+one “core”, and different surfaces target different layers of that stack.
 
-The **[shared-backbone proposal](./design/proposals/shared-backbone/)**
-is a sibling: it adopts the layered-framework kernel shape and adds
-*the path* — substrate-first with the prover and VCS developed in
-parallel over a content-addressed shared backbone, an
-oracle-everything stratification (Stores leave the framework;
-verifiable reads become oracle observations rather than TCB
-primitives), and `attest`/`decide` reframed as the first concrete
-oracle (not legacy). The kill list, the four phases, and the
-supersession of [`refactor-plan.md`](./refactor-plan.md) Phase A–H +
-Phase P are documented there. Read together with `layered-framework/`.
+One easy point of confusion: `covalence-pure` was not purged. The thing that
+was removed was the legacy `HolPrim` adapter path in `covalence-shell`. The
+Pure crates are still present and active.
 
----
+## User-Facing Surfaces
 
-## 1. The substrate (shipping, considered correct shape)
+### CLI
 
-These wrapper crates have stable APIs and are used throughout. The
-[wrapper-crate discipline](../CLAUDE.md#wrapper-crates) is well-
-established and should continue through the redesign.
+The `cov` binary in [`../crates/covalence`](../crates/covalence) currently
+exposes:
 
-| Crate                 | Wraps                                  | Status |
-|-----------------------|----------------------------------------|--------|
-| `covalence-store`     | content-addressed blob storage         | shipping |
-| `covalence-hash`      | BLAKE3 (default+keyed+derive), SHA-256, Git hashes | shipping |
-| `covalence-wasm`      | `wat`/`wasmparser`/`wasmprinter`/`wasm-encoder`, optional `wasmtime` | shipping |
-| `covalence-sqlite`    | `rusqlite` + recommended pragmas       | shipping |
-| `covalence-git`       | git-compatible objects + LFS           | shipping |
-| `covalence-rand`      | `rand` + RNG abstractions              | shipping |
-| `covalence-sig`       | Ed25519 (via `ed25519-dalek`)          | shipping |
-| `covalence-parse`     | `winnow` + LEB128                      | shipping |
-| `covalence-sexp`      | S-expression parser with dialects      | shipping |
-| `covalence-types`     | `Decision`, `Bits`, `Nat`/`Int`        | shipping |
-| `covalence-sat`       | SAT formulas, DIMACS, DRAT             | shipping |
-| `covalence-smt`       | SMT-LIB2, theories, Alethe             | shipping |
-| `covalence-object`    | `Dir`/`Table` serialization            | shipping |
+- `cov repl`
+- `cov serve`
+- `cov cog`
+- `cov hol check`
+- `cov lsp`
 
----
+Feature-gating still exists, but the default native build enables the main
+surfaces. `cov serve` and `cov repl` are native-only; the binary prints a clear
+error on WASM targets.
 
-## 2. Three kernels coexist
+### HTTP Server
 
-One useful way to read this section during the refactor: these are not
-just "three kernels," they are three different answers to
-"what institution or meta-institution is primary here?"
+[`../crates/covalence-serve`](../crates/covalence-serve) is an axum server with:
 
-### 2.1 `covalence-kernel` (~4.9k LoC)
+- `/api/info` and `/api/health`
+- `/api/repl` WebSocket REPL
+- blob endpoints under `/api/blobs`
+- tagged-object endpoints under `/api/tagged`
+- git/object-store endpoints under `/api/objects`
+- `/api/eval` for stateless S-expression evaluation
 
-The current focus of the Phase A–H refactor described in
-[`docs/refactor-plan.md`](./refactor-plan.md). Arena + UF + Prop + Thm +
-Context + concept system. Recently shipped:
+The server listens on TCP and a Unix domain socket, and registers itself with
+[`../crates/covalence-proto`](../crates/covalence-proto)'s discovery layer.
 
-- **Phase F1** — `VarId`/`TyVarId` newtypes
-- **Phase H** — `Arena::hash()` content addressing *(problematic — see
-  [§5 Open issues](#5-open-issues-with-the-current-code))*
-- **Phase G3** — `declare_type_operator` with tyvar order validation
-- **Phase P** (partial) — parallel `EProp`/`EThm` egraph types alongside
-  legacy `Prop`/`Thm`
+### Browser UI
 
-| File          | LoC  |
-|---------------|------|
-| `arena.rs`    | 1933 |
-| `prop.rs`     |  781 |
-| `ty.rs`       |  388 |
-| `hash.rs`     |  365 |
-| `term.rs`     |  247 |
-| `kernel.rs`   |  235 |
-| `uf.rs`       |  176 |
-| `primop.rs`   |  167 |
-| `reduce.rs`   |  167 |
-| `eprop.rs`    |  140 |
-| `id.rs`       |  112 |
-| `subst.rs`    |   60 |
-| `egraph.rs`   |   44 |
-| `lib.rs`      |   37 |
+[`../apps/covalence-web`](../apps/covalence-web) is a SvelteKit SPA that
+currently includes:
 
-### 2.2 `covalence-hol` (~2.1k LoC)
+- a REPL page backed by the WebSocket API,
+- an object viewer for blobs and trees,
+- a `cov:graph` viewer page.
 
-A separate HOL-Light-shaped kernel with its own arena, term/type system,
-and LCF-style inference rules. **Explicitly "left untouched" per the
-original MVP plan.** Used as the proof target of `covalence-opentheory`.
+It consumes the TypeScript packages in `packages/` rather than talking to the
+Rust server directly.
 
-In the newer vocabulary from [`institution-map.md`](./institution-map.md),
-this is the clearest current **object-institution** implementation in
-the tree. It is also the main reference point for the proposed
-CovalenceHOL layer.
+### VS Code Extension
 
-| File         | LoC  |
-|--------------|------|
-| `light.rs`   |  958 |
-| `arena.rs`   |  630 |
-| `null.rs`    |  349 |
-| `traits.rs`  |  231 |
-| `types.rs`   |  129 |
-| `lib.rs`     |   14 |
+[`../extensions/covalence-vscode`](../extensions/covalence-vscode) provides:
 
-### 2.3 `covalence-opentheory` (~2k LoC)
+- language support for `.smt`, `.smt2`, `.alethe`, `.cov`, and `.wat`,
+- native-binary LSP when a `cov` path is configured,
+- browser/WASM fallback via `@vscode/wasm-wasi` and
+  `@vscode/wasm-wasi-lsp`.
 
-OpenTheory article reader → drives `covalence-hol`. Substantive logic,
-not just plumbing.
+### Python And TypeScript Libraries
 
-Institutionally this is best read as a **theory/package transport**
-layer for HOL-family content, not as a separate logic.
+- [`../crates/covalence-python`](../crates/covalence-python) exposes Python
+  bindings for storage, graphs, signing, server/client helpers, WASM, and the
+  Pure kernel family.
+- [`../packages/covalence-client`](../packages/covalence-client) is a TS client
+  for `cov serve`.
+- [`../packages/covalence-ui`](../packages/covalence-ui) contains reusable
+  Svelte viewers and the `cov:graph` UI.
+- [`../packages/covalence-wasm-js`](../packages/covalence-wasm-js) is a JS host
+  runtime for the `cov:wasm/runtime@0.1.0` direction, using native
+  `WebAssembly.*` for modules and `jco` for components.
 
-| File           | LoC  |
-|----------------|------|
-| `interp.rs`    |  802 |
-| `resolve.rs`   |  549 |
-| `theory.rs`    |  313 |
-| `fetch.rs`     |  179 |
-| `name.rs`      |  101 |
-| `reader.rs`    |   70 |
-| `machine.rs`   |   70 |
-| `object.rs`    |   69 |
+## The Current Runtime Split
 
----
+Three layers matter operationally today.
 
-## 3. Application shells (work against the *oldest* design)
+### 1. Store And Object Substrate
 
-These all bind to `covalence-kernel`'s legacy `decide` / `attest()` model
-(WASM-component-as-proposition; see superseded
-[`MVP_DESIGN.md`](../MVP_DESIGN.md)):
+These crates are concrete and broadly reusable now:
 
-| Crate / app                     | Purpose                                  |
-|---------------------------------|------------------------------------------|
-| `covalence-repl`                | S-expression REPL via `Session`          |
-| `covalence-serve`               | REST + WebSocket server (axum 0.8)       |
-| `covalence-client`              | sync/async HTTP client for remote kernel |
-| `covalence-lsp`                 | LSP for `.smt`/`.smt2`/`.alethe`/`.cov`/`.wat` |
-| `covalence` (CLI binary `cov`)  | clap + color-eyre                        |
-| `covalence-python`              | PyO3 bindings                            |
-| `extensions/covalence-vscode`   | VS Code extension                        |
-| `apps/covalence-web`            | SvelteKit web app                        |
+| Area | Crates | What they do now |
+|---|---|---|
+| Hashing and identities | `covalence-hash`, `covalence-types`, `covalence-rand`, `covalence-sig` | Content hashes, shared numeric/bit types, RNG, signatures |
+| Parsing and syntax | `covalence-parse`, `covalence-sexp`, `covalence-json`, `covalence-grammar`, `covalence-forsp` | Parsers, S-expression dialects, Forsp evaluation |
+| Blob / object storage | `covalence-store`, `covalence-sqlite`, `covalence-object`, `covalence-kv`, `covalence-git`, `covalence-fuse`, `covalence-wasm-store` | Content stores, git-compatible objects, directories/tables, KV backends, Linux FUSE mounting, WASM-packaged store helpers |
+| WASM and format support | `covalence-wasm`, `covalence-wasm-spec`, `covalence-wasm-build-guest`, `covalence-graph`, `covalence-arrow`, `covalence-parquet`, `covalence-spectec` | WAT/WASM compile/parse/build, reference WASM components, graph bytes, Arrow/Parquet inspection, SpecTec ingestion |
 
-They work, but they reason against the *propositional WASM* model, not
-the HOL kernel. Any layered redesign needs to swap their bindings — the
-plan is to keep them stable against the legacy kernel until the new
-layered stack is implementable, then migrate.
+This is the most concrete and consistently implemented part of the repo.
 
----
+### 2. Shell / Service Layer
 
-## 4. Vision, supersession, and the new design
+[`../crates/covalence-shell`](../crates/covalence-shell) is now the main seam
+between storage-oriented surfaces and theorem-oriented surfaces.
 
-### Canonical vision
+It contains:
 
-- [`ARCHITECTURE.md`](../ARCHITECTURE.md) (v2) at the repo root — the
-  big picture: planes, mirrors, oracles, mount-as-implication, format
-  plane, base-shift functor.
-- [`AGENTS.md`](../AGENTS.md) — operational summary of `ARCHITECTURE.md`.
+- `SyncBackend` / `AsyncBackend`
+- a store-first in-memory `Kernel`
+- the `Prover` trait used by theorem/proof importers
 
-### Superseded (kept for history)
+That split is important:
 
-- [`MVP_DESIGN.md`](../MVP_DESIGN.md) — WASM-component-as-proposition
-  model. Predates the HOL vision.
-- [`DESIGN.md`](../DESIGN.md) — first sketch of the HOL kernel. Refined
-  into [`docs/prover-architecture.md`](./prover-architecture.md),
-  itself refined into the design docs in [`docs/design/`](./design/).
+- the `Kernel` in `covalence-shell` is currently a thin backend around a blob
+  store plus tree tracking,
+- the theorem-prover abstraction lives beside it, not inside it.
+- an older shell-side `HolPrim` adapter was removed, which is separate from
+  the continued existence of `covalence-pure` and `covalence-hol`.
 
-### In flight
+### 3. Logic / Prover Lines
 
-- [`docs/refactor-plan.md`](./refactor-plan.md) (Phases A–H) — kernel
-  cleanup. Continuing to land; strategic value uncertain given the
-  layered redesign.
-- [`docs/prover-architecture.md`](./prover-architecture.md) — current
-  kernel architecture; predates the framework concept and the
-  store-as-primitive insight.
-- [`docs/prover-mvp-plan.md`](./prover-mvp-plan.md) — earlier
-  "wipe-and-restart" plan; the Phase 0 reset never happened.
+The repo currently contains several parallel logic-related implementations:
 
-### The currently-favored direction (proposed, not committed)
+| Crate | Current role |
+|---|---|
+| `covalence-kernel` | Arena/egraph/UF theorem kernel and the main backend for the current `Prover` implementations |
+| `covalence-pure` | Small Pure-style logical framework with its own tests and shell crate |
+| `covalence-pure-shell` | Hashing / S-expression shell around `covalence-pure` |
+| `covalence-hol` | HOL Light-style kernel used directly by OpenTheory checking/import |
 
-The [layered-framework proposal](./design/proposals/layered-framework/)
-and the [stacked Pure + HOL MVP sketch](./design/proposals/stacked-pure-hol/README.md)
-now point in the same direction: shrink the trusted center to a
-**Pure/LF layer plus a HOL layer**, in deliberate homage to the
-Isabelle/Pure + object-logic split associated with Larry Paulson, while
-treating translations between logics as first-class structure rather
-than ambient coercions.
+This is not just “old versus new”. These lines are all live in code and have
+real consumers today.
 
-In institution-theoretic terms:
+If you were expecting `covalence-pure` to be gone, the likely source of that
+impression is the `covalence-shell` cleanup that removed the old `HolPrim`
+adapter once OpenTheory consumers moved to `PureHol` directly.
 
-1. **LF / Pure** is the candidate **meta-institution**.
-2. **HOL** is the default **object institution** hosted over it.
-3. **Morphism / institution-translation machinery** sits above that
-   trusted pair and mediates movement among theories, logics, proof
-   formats, and future semantics artifacts.
+## Proof, Import, And Solver Crates
 
-Concretely, the layered-framework sketch still describes three layers:
+These crates form the current “logic zoo” around the kernels:
 
-1. **CovalenceFramework** — Pure-style logical framework (LF). Would
-   be one half of the actual TCB /
-   [meta-trust set](./design/proposals/layered-framework/00-glossary.md#meta-trust-set).
-   ~700–800 LoC target. New crate. Described in
-   [`docs/design/proposals/layered-framework/02-framework.md`](./design/proposals/layered-framework/02-framework.md).
-2. **CovalenceHOL** — classical HOL as an object theory over the
-   framework. This is the other half of the shrunken TCB. Subset
-   typedef with the disjunct trick, the existentials, ε-choice,
-   primops. Doc pending.
-3. **CovalenceMorphism** — embeddings, equiconsistency, base-shift,
-   commutative-diagram API. Doc pending.
+| Family | Crates | Current role |
+|---|---|---|
+| HOL / package transport | `covalence-opentheory` | Read and interpret OpenTheory articles against `covalence-hol` |
+| SMT and proof ingest | `covalence-smt`, `covalence-alethe` | SMT-LIB terms/problems plus Alethe bridge/checking |
+| SAT and certificates | `covalence-sat` | DIMACS, DRAT, LRAT, solver traits, proof parsing |
+| Equality saturation | `covalence-egglog` | egglog AST/parse/lowering/bridge/proof ingestion |
+| Other proof ecosystems | `covalence-metamath`, `covalence-lean` | Metamath verification and Lean export ingestion |
+| Misc. theorem-adjacent | `covalence-llm` | OpenAI-backed WIT-facing LLM backend experiments |
 
-Around the framework, every hash function, every signature scheme,
-every executor would be an **oracle** outside the trust boundary.
+The stable story here is not “one proof pipeline”; it is “many bridges into
+shared backend traits and kernel-adjacent representations”.
 
-This is one **proposal**. It hasn't been formally adopted; alternative
-directions and revisions are welcome. The proposal lives at
-[`docs/design/proposals/layered-framework/`](./design/proposals/layered-framework/)
-with its own index.
+## What The Main Surfaces Actually Target
 
----
+Today the user-facing surfaces split into two broad camps.
 
-## 5. Open issues with the current code
+### Store-first surfaces
 
-These are concerns the **layered-framework proposal** flags about the
-current code. Whether they're actually "violations" depends on whether
-the proposal is adopted; listing them here as concerns to weigh, not
-as settled judgments.
+These primarily use the `covalence-shell::Kernel` backend and the object/store
+stack:
 
-1. **`covalence-kernel`'s Phase H bakes BLAKE3 into the kernel**
-   (`Arena::hash()`, `ContentHash` traits). The layered-framework
-   proposal argues this should be a hasher oracle outside the trust
-   boundary. See
-   [`design/proposals/layered-framework/02-framework.md` §6](./design/proposals/layered-framework/02-framework.md).
+- `cov repl`
+- `cov serve`
+- `packages/covalence-client`
+- `apps/covalence-web`
+- parts of `covalence-python`
+- `cov cog`
 
-2. **Phase P (Prop-as-egraph) layers equality saturation inside the
-   kernel.** The proposal argues egraphs belong in *userspace* as an
-   oracle that asserts equalities (which the framework then discharges
-   via cong+trans+sym), not as a framework primitive.
+### Theorem/proof-first surfaces
 
-3. **No store primitive.** The proposal argues crypto assumptions in
-   the current kernel have no honest scoping — they implicitly assume
-   "no collisions anywhere," which is mathematically false. See
-   [`design/proposals/layered-framework/04-store.md`](./design/proposals/layered-framework/04-store.md).
+These primarily care about prover traits or specific logic kernels:
 
-4. **No layered factoring.** Framework concerns (the LF rules), HOL
-   concerns (the existentials, subset typedef), and morphism concerns
-   (substitutions, imports) all live in one crate, hard to audit
-   independently.
+- `cov hol check`
+- `covalence-opentheory`
+- `covalence-alethe`
+- `covalence-egglog`
+- `covalence-metamath`
+- `covalence-lean`
+- parts of `covalence-python`
 
-5. **Three parallel kernels.** `covalence-kernel`, `covalence-hol`,
-   and the parts of `covalence-opentheory` that drive `covalence-hol`.
-   Need a single trusted core that they all factor through.
+That split is the clearest way to understand why several kernel lines coexist.
 
-6. **Application shells bind to a superseded kernel API.** REPL,
-   server, client, LSP all reason against `decide`/`attest()`. They
-   work, but they're not exercising the HOL kernel that's being built.
+## Build And Test Reality
 
----
+The checked-in commands currently line up like this:
 
-## 6. Where to look first
+### Root Bun scripts
 
-| If you want…                              | Read                                                                       |
-|-------------------------------------------|----------------------------------------------------------------------------|
-| The current logic/proof/translation zoo in one vocabulary | [`docs/institution-map.md`](./institution-map.md)                          |
-| The big picture / vision                  | [`ARCHITECTURE.md`](../ARCHITECTURE.md)                                    |
-| The **path** (substrate-first, two streams, kill list) | [`docs/design/proposals/shared-backbone/00-overview.md`](./design/proposals/shared-backbone/00-overview.md) |
-| The vocabulary the proposed redesign uses | [`docs/design/proposals/layered-framework/00-glossary.md`](./design/proposals/layered-framework/00-glossary.md)                    |
-| The smallest Paulson-style Pure/HOL sketch | [`docs/design/proposals/stacked-pure-hol/README.md`](./design/proposals/stacked-pure-hol/README.md)                               |
-| Conventions in the proposed redesign      | [`docs/design/proposals/layered-framework/01-conventions.md`](./design/proposals/layered-framework/01-conventions.md)              |
-| The proposed Framework layer              | [`docs/design/proposals/layered-framework/02-framework.md`](./design/proposals/layered-framework/02-framework.md)                  |
-| The proposal index                        | [`docs/design/proposals/layered-framework/README.md`](./design/proposals/layered-framework/README.md)                              |
-| The design directory index                | [`docs/design/README.md`](./design/README.md)                                                                                       |
-| Ongoing kernel cleanup (Phase A–H, P — *terminated*; see shared-backbone) | [`docs/refactor-plan.md`](./refactor-plan.md)                              |
-| Current kernel internals                  | [`docs/prover-architecture.md`](./prover-architecture.md)                  |
-| Current kernel build-out plan (*superseded by shared-backbone Phase 2*) | [`docs/prover-mvp-plan.md`](./prover-mvp-plan.md)                          |
-| The WASM-prop model (*seed of the WASM oracle*, not legacy) | [`MVP_DESIGN.md`](../MVP_DESIGN.md)                                        |
+- `bun run build` — native Rust binary plus VS Code WASM build
+- `bun run build:web` — web app only
+- `bun run build:serve` — web app plus native `cov` for embedded static serve
+- `bun run code:browser` / `bun run code:desktop` — extension workflows
+- `bun run build:python` — Python bindings via `maturin`
 
----
+### Testing
 
-## 7. What we're explicitly NOT doing yet
+- `cargo test`
+- `bun run test:ui`
+- `bun run test:wasm-js`
+- `bun run test:python`
 
-- **Wiping `covalence-kernel`** (the original "Phase 0 reset" from
-  `prover-mvp-plan.md`). The new layered crates will land alongside the
-  existing kernel; APIs migrate over once the layers are stable.
-- **Touching `covalence-hol` or `covalence-opentheory`.** Their
-  HOL-Light shape is the closest reference for the eventual
-  CovalenceHOL layer; we'll mine them for the port but not modify yet.
-- **Producing the first end-to-end demo.** Per the planning
-  discussion, the target is the **Git-repo theorem** (clone, re-hash
-  to BLAKE3, prove things about a commit under a scoped no-collision
-  assumption), but it builds on the framework crate which doesn't
-  exist yet.
+There is currently no single top-level JS “run everything” script.
 
----
+## What Is Stable Vs Transitional
 
-## 8. Recent changes worth noting
+### Relatively stable
 
-From `git log` on `planning-stage` (most recent first):
+- the store/object/hash substrate
+- the server, REPL, and TypeScript client surface
+- the VS Code and web application scaffolding
+- the existence of multiple logic/import families
 
-- `6206676` — `Cargo.lock: covalence-kernel picks up covalence-hash dep`
-- `f3bccac` — `docs: update refactor-plan with Phase P/H actual landing`
-- `6056e99` — `kernel: VarId / TyVarId newtypes + per-arena allocators (Phase F1)`
-- `08e6d94` — `kernel: content hashing for Arena, Prop, EProp (Phase H)`
-- `c2218bd` — `kernel: declare_type_operator validates tyvar ordering (Phase G3)`
+### Clearly transitional
 
-Phase H (content hashing) is the most recent substantive landing and
-also the most architecturally questionable. The decision to move it
-*out* of the trust boundary is captured in
-[`docs/design/02-framework.md` §6](./design/02-framework.md).
+- which prover/kernel line becomes the long-term center
+- how `covalence-kernel`, `covalence-pure`, and `covalence-hol` eventually
+  relate
+- how much of the current `Prover` surface stays identical through that change
+- which proposal set from `docs/design/` becomes adopted architecture
+
+## How To Read The Rest Of The Docs
+
+- Use [`c4.md`](./c4.md) for the current component map.
+- Use [`institution-map.md`](./institution-map.md) if your work crosses logic
+  families or importers.
+- Use [`design/README.md`](./design/README.md) for future-direction proposals.
+- Use [`../ARCHITECTURE.md`](../ARCHITECTURE.md) and
+  [`../AGENTS.md`](../AGENTS.md) as the target constraints, not as a literal
+  description of every current crate boundary.

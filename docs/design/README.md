@@ -1,99 +1,49 @@
-# Design (planning-stage)
+# Design Proposals
 
-This directory holds **design discussions and proposals** for Covalence.
-Nothing here is a committed architecture; everything is a draft awaiting
-review, revision, and eventual implementation (or rejection).
+This directory holds design work that is intentionally separate from the
+current implementation snapshot.
 
-For an honest snapshot of what is *actually built* (and what's stale or
-superseded), see [`../where-we-are.md`](../where-we-are.md).
+Nothing here should be read as “this is how the repo works today” unless some
+other current-state document explicitly says that a proposal has been adopted.
 
-For the big-picture vision the proposals are working toward, see
-[`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) (v2) and
-[`../../AGENTS.md`](../../AGENTS.md).
+For the code as it exists now, read [`../where-we-are.md`](../where-we-are.md).
+For the architectural north star, read [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md)
+and [`../../AGENTS.md`](../../AGENTS.md).
 
-For a current-state classification of the repo's multiple logic families,
-proof formats, and bridges, see [`../institution-map.md`](../institution-map.md).
+## What Lives Here
 
----
+- proposal sets for possible future architecture,
+- design sketches around specific subsystems,
+- planning and migration notes that are useful context but not current-state
+  truth.
 
-## How this directory is organized
+## Active Proposal Sets
 
-```
-docs/design/
-  README.md             — this file (design directory index)
-  proposals/            — concrete proposals, each in its own subdir
-    <proposal-name>/
-      README.md         — proposal's own index
-      <doc>.md          — the proposal's design docs
-```
+| Proposal | Status | Summary |
+|---|---|---|
+| [`proposals/layered-framework/`](./proposals/layered-framework/) | proposed | Three-layer kernel direction: Framework / HOL / Morphism, with more machinery pushed out of the TCB. |
+| [`proposals/stacked-pure-hol/`](./proposals/stacked-pure-hol/) | proposed | Minimal Pure/LF + HOL stack in the Isabelle/Pure tradition. |
+| [`proposals/shared-backbone/`](./proposals/shared-backbone/) | proposed | Migration path centered on a shared content-addressed substrate for prover and VCS work. |
+| [`proposals/egglog-integration/`](./proposals/egglog-integration/) | proposed | Catalogue-style egglog integration for selected theories and decision questions. |
+| [`proposals/wasm-runtime/`](./proposals/wasm-runtime/) | proposed | WIT-shaped runtime abstraction for `covalence-wasm` across native and browser hosts. |
+| [`proposals/wasm-store-composition/`](./proposals/wasm-store-composition/) | sketch | WASM components as composable content-addressed stores. |
 
-A "proposal" here is a coherent set of design choices that hang
-together. Two different proposals in this directory may make
-*incompatible* claims — that's expected; they're alternatives or
-revisions. The status of each proposal (proposed, under-review,
-accepted, rejected, superseded) is recorded in the proposal's own
-`README.md`.
+## How To Use This Directory
 
----
+- Treat proposal docs as candidate designs, not as implementation references.
+- When a proposal is adopted, the current-state docs and root architecture docs
+  should be updated to say so explicitly.
+- If a proposal is abandoned or superseded, keep it for history but label it
+  clearly.
 
-## Active proposals
+## What Does Not Belong Here
 
-| Proposal                                                                                              | Status   | Summary                                                                                                                                  |
-|-------------------------------------------------------------------------------------------------------|----------|------------------------------------------------------------------------------------------------------------------------------------------|
-| [`proposals/layered-framework/`](./proposals/layered-framework/)                                       | proposed | Carve the kernel into three layers (Framework / HOL / Morphism), with stores and authorities as the framework's only trust primitives. Hash functions, signatures, executors all become oracles outside the trust boundary. |
-| [`proposals/stacked-pure-hol/`](./proposals/stacked-pure-hol/)                                         | proposed | Minimal **Pure/LF + HOL** kernel sketch in the Isabelle/Pure tradition: a tiny logical framework at the bottom, HOL as the default object logic above it, and shell/oracle machinery outside the TCB. This is the clearest "Larry Paulson homage" document in the tree and now aligns with the institution-theoretic framing in [`../institution-map.md`](../institution-map.md). |
-| [`proposals/shared-backbone/`](./proposals/shared-backbone/)                                           | proposed | The *path* to the vision. Substrate-first with two parallel streams (prover + VCS) sharing a content-addressed backbone; oracle-everything stratification (Stores leave the framework; verifiable reads become oracle observations); `attest`/`decide` reframed as the first concrete oracle. Sibling to `layered-framework/`, not an alternative. |
-| [`proposals/egglog-integration/`](./proposals/egglog-integration/)                                     | proposed | Curate a **patchwork of small (theory, decision question) entries** where egglog is the right engine — EUF, pure equational theories, arrays, lists, AC word problems, Datalog reachability, lattice analyses — each shipping into the kernel as its own family of `EThm`s. Two engineering layers under the catalogue (oracle replay vs. native runner) and a long-term meta-provability mode. |
-| [`proposals/wasm-runtime/`](./proposals/wasm-runtime/)                                                 | proposed | Abstract `covalence-wasm`'s engine surface behind a sync-first `cov:wasm/*@0.1.0` WIT API (runtime / inspect / build) so the same code can target wasmtime, a browser JS host, or guest components; layer **process** (shared-fate graph of components) and **container** (tree of processes with restart policies) on top; end goal is a browser-resident covalence kernel powering a fully static `covalence-ui`, with federation as a longer-term follow-up. |
-| [`proposals/wasm-store-composition/`](./proposals/wasm-store-composition/)                             | sketch   | Stores as content-addressed WASM components carrying their own JSON manifest in a custom section. Tree-shaped composition via a resource-typed `cov:store/api` and a `build(list<store>) -> store` factory. Roadmap: resource WIT → hash-keyed `StoreRef` → `StoreRegistry` that walks the graph. Naturally rides on top of `wasm-runtime`'s `cov:wasm/*@0.1.0` abstraction (composer-side host calls become `cov:wasm/runtime` API calls, browser/native parity for free). |
+- Literal descriptions of the current runtime surfaces
+- Verified build/test instructions
+- File-by-file workspace maps
 
----
+Those belong in:
 
-## Accepted / rejected proposals
-
-(none yet)
-
----
-
-## How proposals become decisions
-
-The intent is that a proposal here is *one of several possible* design
-directions. Adoption requires:
-
-1. A round of discussion and revision in the proposal's docs.
-2. Explicit acknowledgment that this is the direction we're taking
-   (e.g., a note in [`../where-we-are.md`](../where-we-are.md) marking
-   the proposal as "accepted" and updating the `ARCHITECTURE.md` /
-   `AGENTS.md` to reflect the new direction).
-3. A migration / implementation plan with phased steps that don't
-   require committing to the whole proposal up front.
-
-Until those steps are done, a proposal in this directory is just a
-record of a planning conversation — useful for cross-referencing, but
-not load-bearing for the codebase.
-
-One extra distinction now matters during the refactor: some proposals
-primarily define a **trusted logical core** (`layered-framework`,
-`stacked-pure-hol`), while others define **translation, tooling, or
-deployment structure around that core** (`shared-backbone`,
-`egglog-integration`, `wasm-runtime`, `wasm-store-composition`). That
-split roughly matches the institution-theoretic distinction between
-institutions and the external artifacts/translations that relate them.
-
----
-
-## What's NOT here
-
-- **Implementation plans** for the *current* kernel. Those live in
-  [`../refactor-plan.md`](../refactor-plan.md) and
-  [`../prover-mvp-plan.md`](../prover-mvp-plan.md).
-- **Current kernel internals.** Documented in
-  [`../prover-architecture.md`](../prover-architecture.md) and
-  [`../prover-primops.md`](../prover-primops.md).
-- **The S-expression syntax.** Documented in
-  [`../prover-sexpr.md`](../prover-sexpr.md).
-- **The Prop-egraph (Phase P) design.** Documented in
-  [`../prop-egraph-design.md`](../prop-egraph-design.md).
-
-These are descriptions of what exists or what's in-flight, not
-proposals for new directions.
+- [`../where-we-are.md`](../where-we-are.md)
+- [`../c4.md`](../c4.md)
+- [`../../README.md`](../../README.md)

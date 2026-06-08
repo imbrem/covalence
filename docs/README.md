@@ -1,67 +1,76 @@
 # Documentation Map
 
-This repository has three different kinds of documentation:
+This directory now has three clearly different jobs:
 
-- **Canonical vision**: what Covalence is trying to become.
-- **Current-state docs**: what is actually in the tree today.
-- **Proposal docs**: candidate directions that are still under debate.
+- describe the code that exists today,
+- describe the target architecture and invariants,
+- keep proposals and historical material without pretending they are current.
 
-This page is the index for all three so contributors do not have to infer which
-documents are normative.
+Use this page to avoid mixing those layers up.
 
-## Start here
+## Start Here
 
 | If you need... | Read |
 |---|---|
-| A quick map of the system and repo | [`c4.md`](./c4.md) |
-| The multi-logic / multi-format zoo in one vocabulary | [`institution-map.md`](./institution-map.md) |
-| The short conceptual overview | [`VISION.md`](./VISION.md) |
-| The canonical philosophy and invariants | [`../ARCHITECTURE.md`](../ARCHITECTURE.md) |
-| The operational rules for implementation work | [`../AGENTS.md`](../AGENTS.md) |
-| The honest implementation snapshot | [`where-we-are.md`](./where-we-are.md) |
-| The proposal tree and proposal statuses | [`design/README.md`](./design/README.md) |
+| Build and run basics | [`../README.md`](../README.md) |
+| The current implementation snapshot | [`where-we-are.md`](./where-we-are.md) |
+| The current runtime / repo structure | [`c4.md`](./c4.md) |
+| The logic / proof-format / translation landscape | [`institution-map.md`](./institution-map.md) |
+| The target philosophy and invariants | [`../ARCHITECTURE.md`](../ARCHITECTURE.md) |
+| Trusted-core implementation rules | [`../AGENTS.md`](../AGENTS.md) |
+| Design proposals and historical planning docs | [`design/README.md`](./design/README.md) |
 
-## Reading order
+## Reading Order
 
-For most contributors, the shortest useful path is:
+For most contributors:
 
-1. [`../README.md`](../README.md) for build/run basics.
-2. [`c4.md`](./c4.md) for the current architecture map.
-3. [`institution-map.md`](./institution-map.md) for the current logic/translation landscape.
-4. [`where-we-are.md`](./where-we-are.md) for what is shipping vs in flight.
-5. [`VISION.md`](./VISION.md) and [`../ARCHITECTURE.md`](../ARCHITECTURE.md) for the target shape.
+1. [`../README.md`](../README.md)
+2. [`where-we-are.md`](./where-we-are.md)
+3. [`c4.md`](./c4.md)
+4. [`institution-map.md`](./institution-map.md) if your work touches proofs,
+   importers, or logic translation
+5. [`../ARCHITECTURE.md`](../ARCHITECTURE.md) and [`../AGENTS.md`](../AGENTS.md)
+   if your work touches the trusted core or long-term architecture
 
-If you are changing trusted-core or storage semantics, read
-[`../AGENTS.md`](../AGENTS.md) in full before touching code.
+## Status Labels
 
-## Canonical vs provisional
+Use these labels consistently when updating docs:
 
-Use this distinction consistently:
+- `Current implementation`: intended to match the checked-in code
+- `Target architecture`: the direction the repo is trying to move toward
+- `Proposal`: a candidate design, not an adopted fact
+- `Historical`: useful context, but not a statement about the current tree
 
-- **Canonical / normative**:
-  [`../ARCHITECTURE.md`](../ARCHITECTURE.md),
-  [`../AGENTS.md`](../AGENTS.md)
-- **Current-state / descriptive**:
-  [`c4.md`](./c4.md),
-  [`institution-map.md`](./institution-map.md),
-  [`where-we-are.md`](./where-we-are.md),
-  [`prover-architecture.md`](./prover-architecture.md)
-- **Proposal / not yet committed**:
-  [`design/README.md`](./design/README.md) and everything under
-  [`design/proposals/`](./design/proposals/)
-- **Historical / partially superseded**:
-  [`refactor-plan.md`](./refactor-plan.md),
-  [`prover-mvp-plan.md`](./prover-mvp-plan.md),
-  [`../MVP_DESIGN.md`](../MVP_DESIGN.md),
-  [`../DESIGN.md`](../DESIGN.md)
+## Current Implementation Docs
 
-## What `c4.md` is for
+- [`where-we-are.md`](./where-we-are.md) — code-first snapshot of the workspace
+- [`c4.md`](./c4.md) — surfaces, runtime containers, and component groupings
+- [`institution-map.md`](./institution-map.md) — logic/integration map
+- [`prover-architecture.md`](./prover-architecture.md) — legacy
+  `covalence-kernel` implementation notes
+- [`prover-primops.md`](./prover-primops.md) and
+  [`prover-sexpr.md`](./prover-sexpr.md) — legacy kernel internals and syntax
 
-[`c4.md`](./c4.md) is the consolidation layer this tree was missing:
+## Target Architecture Docs
 
-- It gives a **Level 1 system context** for who uses Covalence.
-- It gives a **Level 2 container view** for the runnable surfaces.
-- It gives a **Level 3 component view** for how the repo is grouped today.
+- [`../ARCHITECTURE.md`](../ARCHITECTURE.md)
+- [`../AGENTS.md`](../AGENTS.md)
+- [`VISION.md`](./VISION.md)
 
-It is intentionally about the **current repo and runtime surfaces**, not a claim
-that every proposal in `docs/design/` has been adopted.
+These explain where the project is trying to go. They are not a literal map of
+today's runtime surfaces.
+
+## Proposals And History
+
+- [`design/README.md`](./design/README.md) — proposal index
+- [`refactor-plan.md`](./refactor-plan.md) — historical kernel refactor plan
+- [`prover-mvp-plan.md`](./prover-mvp-plan.md) — historical restart sketch
+- [`../MVP_DESIGN.md`](../MVP_DESIGN.md), [`../DESIGN.md`](../DESIGN.md) —
+  older design snapshots
+
+## One Important Rule
+
+If a document claims to describe the current codebase, verify it against files
+under `crates/`, `apps/`, `packages/`, and `extensions/`. If it claims to
+describe the architecture we want, link it to `ARCHITECTURE.md` or the relevant
+proposal and label it accordingly.

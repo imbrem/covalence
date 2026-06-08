@@ -1,43 +1,112 @@
 # Covalence
 
-An experimental LCF-style theorem prover and VCS using WASM components.
-Metatheory is the default mode; the kernel extends itself by proof
-rather than by trust.
+Covalence is an experimental monorepo for content-addressed storage, proof and
+logic tooling, WASM execution, and multiple user surfaces over that substrate.
+The repository currently contains:
 
-**Read first:** [`docs/README.md`](./docs/README.md) for the docs map.
+- a Rust CLI and local server,
+- a browser UI and a VS Code extension,
+- Python and TypeScript client libraries,
+- several coexisting prover / logic lines (`covalence-kernel`,
+  `covalence-pure`, `covalence-hol`),
+- import and certificate tooling for OpenTheory, SMT/Alethe, SAT, egglog,
+  Metamath, Lean exports, and SpecTec/WASM assets.
 
-Recommended path:
-[`docs/c4.md`](./docs/c4.md) (repo architecture map) →
-[`docs/where-we-are.md`](./docs/where-we-are.md) (current status) →
-[`docs/VISION.md`](./docs/VISION.md) (10-minute overview) →
-[`ARCHITECTURE.md`](./ARCHITECTURE.md) (canonical philosophy) →
-[`AGENTS.md`](./AGENTS.md) (implementation invariants).
+`covalence-pure` has not been removed. What was removed is an older shell-side
+adapter path (`HolPrim`) in `covalence-shell`; the Pure and HOL crates remain
+in the tree.
 
-## Repository Layout
+If you want the implementation map rather than the long-term philosophy, start
+with [`docs/where-we-are.md`](./docs/where-we-are.md) and
+[`docs/c4.md`](./docs/c4.md).
 
-- `crates/` — Rust workspace with CLI/server/editor surfaces, kernel and prover
-  experiments, substrate crates, and wrapper crates
+## Docs
+
+- [`docs/README.md`](./docs/README.md) — documentation index
+- [`docs/where-we-are.md`](./docs/where-we-are.md) — current codebase snapshot
+- [`docs/c4.md`](./docs/c4.md) — runtime and repo architecture map
+- [`docs/institution-map.md`](./docs/institution-map.md) — logic / proof-format /
+  translation landscape
+- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — target architecture and invariants
+- [`AGENTS.md`](./AGENTS.md) — implementation constraints for trusted-core work
+
+## Repo Shape
+
+- `crates/` — Rust workspace members
 - `apps/covalence-web/` — SvelteKit browser UI
-- `packages/` — shared TypeScript packages
-- `extensions/covalence-vscode/` — VS Code extension
-- `docs/` — current-state docs, proposal docs, and planning/history
-- `assets/`, `tests/`, `test-workbench/` — fixtures, samples, and test scaffolding
+- `packages/` — TypeScript packages (`covalence-client`, `covalence-ui`,
+  `covalence-wasm-js`)
+- `extensions/covalence-vscode/` — VS Code extension for `.cov`, SMT-LIB,
+  Alethe, and WAT
+- `docs/` — current-state docs, design proposals, and historical notes
+- `assets/`, `tests/`, `test-workbench/` — fixtures and integration scaffolding
 
 ## Prerequisites
 
-- [Rust stable ≥1.94.1](https://rustup.rs/) with `wasm32-wasip1-threads` and `wasm32-unknown-unknown` targets
+- Rust stable with `wasm32-wasip1-threads` and `wasm32-unknown-unknown`
 - [Bun](https://bun.sh/)
-- wasm-pack, wasm-bindgen-cli, binaryen (wasm-opt)
+- `wasm-pack`, `wasm-bindgen-cli`, `binaryen`
+- Python + `maturin` if you are building `crates/covalence-python`
 
-## Quick Start
+## Build And Run
 
 ```sh
-bun install            # install JS dependencies
-bun run build          # full build: native (debug) + WASM + esbuild
-cargo test             # run Rust tests
-cov repl               # interactive S-expression REPL
-cov serve --open       # start server, open browser
+bun install
+bun run build:serve
+cargo test
+cov repl
+cov serve --open
 ```
+
+Useful variants:
+
+```sh
+bun run build             # native cov + VS Code WASM extension assets
+bun run build:web          # build the Svelte app only
+bun run build:serve        # build web assets + native cov binary
+bun run code:browser       # launch the VS Code web extension flow
+bun run code:desktop       # launch the desktop VS Code extension flow
+bun run build:python       # build/install the Python bindings with maturin
+```
+
+## Main Commands
+
+The `cov` binary currently exposes these top-level commands:
+
+- `cov repl` — local or remote content-store REPL
+- `cov serve` — HTTP API + WebSocket REPL + optional static web UI
+- `cov cog` — git/object-store tooling (`hash-blob`, `clone`, Linux `mount`)
+- `cov hol check` — check OpenTheory article files against `covalence-hol`
+- `cov lsp` — start the language server used by the editor tooling
+
+## Frontend Development
+
+For local web work:
+
+```sh
+cov serve --api
+bun run dev:web
+```
+
+The Vite dev server serves the Svelte app and proxies `/api` to the local
+backend. The built web app currently includes:
+
+- a REPL page backed by the WebSocket API,
+- an object viewer for blobs and trees,
+- a `cov:graph` viewer page.
+
+## Testing
+
+There is no single top-level JS test command yet. Use the commands that match
+the surface you changed:
+
+- `cargo test`
+- `bun run test:ui`
+- `bun run test:wasm-js`
+- `bun run test:python`
+
+Contributions are accepted under the same dual offering. Vendored third-party
+code keeps its upstream license and is documented locally where relevant.
 
 ## License
 
@@ -48,8 +117,3 @@ possible. You may use it under either:
 - the [CC0 1.0 Universal](./LICENSE-CC0) public-domain dedication (`CC0-1.0`).
 
 SPDX expression: `0BSD OR CC0-1.0`.
-
-Contributions are accepted under the same dual offering — see
-[`CONTRIBUTING.md`](./CONTRIBUTING.md). Vendored third-party code keeps
-its upstream license and is documented locally (e.g.
-[`assets/spectec/README.md`](./assets/spectec/README.md)).

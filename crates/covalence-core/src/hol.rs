@@ -10,6 +10,8 @@
 //! building. The `pub(crate)` exports below are consumed only by
 //! `thm.rs`'s axiom methods.
 
+use std::sync::LazyLock;
+
 use covalence_types::Nat;
 
 use crate::term::{Arith, HolOp, Prim, Term, Type};
@@ -94,12 +96,15 @@ fn succ(n: Term) -> Term {
 }
 
 // ============================================================================
-// Public-to-crate axiom-conclusion constructors
+// Cached axiom-conclusion terms
 // ============================================================================
+//
+// Each axiom term is built once and then shared as a cheap `Arc`
+// clone. The kernel rules in `thm.rs` just `Thm::build` over a
+// cloned `Term` — `Thm::build`'s validation cost is a single
+// `type_of_in` walk, which is fine to pay on every axiom call.
 
-/// Build the conclusion of [`crate::Thm::nat_induction`]:
-/// `Trueprop (∀P:nat→bool. P 0 ∧ (∀n. P n ⟹ P (succ n)) ⟹ ∀n. P n)`.
-pub(crate) fn nat_induction_term() -> Term {
+static NAT_INDUCTION_TERM: LazyLock<Term> = LazyLock::new(|| {
     let nat = Type::nat();
     let pred_ty = Type::fun(nat.clone(), bool_ty());
     let p = Term::free("P", pred_ty.clone());
@@ -121,11 +126,9 @@ pub(crate) fn nat_induction_term() -> Term {
     let imp = hol_imp(antecedent, consequent);
     let body = hol_forall("P", pred_ty, imp);
     trueprop(body)
-}
+});
 
-/// Build the conclusion of [`crate::Thm::eq_reflection`]:
-/// `⋀x y:'a. Trueprop (x = y) ≡ (x ≡ y)`.
-pub(crate) fn eq_reflection_term() -> Term {
+static EQ_REFLECTION_TERM: LazyLock<Term> = LazyLock::new(|| {
     let alpha = Type::tfree("a");
     let x = Term::free("x", alpha.clone());
     let y = Term::free("y", alpha.clone());
@@ -136,11 +139,9 @@ pub(crate) fn eq_reflection_term() -> Term {
 
     let inner = Term::all("y", alpha.clone(), body);
     Term::all("x", alpha, inner)
-}
+});
 
-/// Build the conclusion of [`crate::Thm::forall_reflection`]:
-/// `⋀P:'a→bool. (⋀x:'a. Trueprop (P x)) ≡ Trueprop (∀x:'a. P x)`.
-pub(crate) fn forall_reflection_term() -> Term {
+static FORALL_REFLECTION_TERM: LazyLock<Term> = LazyLock::new(|| {
     let alpha = Type::tfree("a");
     let pred_ty = Type::fun(alpha.clone(), bool_ty());
     let p = Term::free("P", pred_ty.clone());
@@ -155,11 +156,9 @@ pub(crate) fn forall_reflection_term() -> Term {
 
     let body = Term::eq(left, right);
     Term::all("P", pred_ty, body)
-}
+});
 
-/// Build the conclusion of [`crate::Thm::imp_reflection`]:
-/// `⋀P Q:bool. (Trueprop P ⟹ Trueprop Q) ≡ Trueprop (P ⟹ Q)`.
-pub(crate) fn imp_reflection_term() -> Term {
+static IMP_REFLECTION_TERM: LazyLock<Term> = LazyLock::new(|| {
     let p = Term::free("p", bool_ty());
     let q = Term::free("q", bool_ty());
 
@@ -169,4 +168,28 @@ pub(crate) fn imp_reflection_term() -> Term {
     let body = Term::eq(left, right);
     let inner = Term::all("q", bool_ty(), body);
     Term::all("p", bool_ty(), inner)
+});
+
+/// Conclusion of [`crate::Thm::nat_induction`]:
+/// `Trueprop (∀P:nat→bool. P 0 ∧ (∀n. P n ⟹ P (succ n)) ⟹ ∀n. P n)`.
+pub(crate) fn nat_induction_term() -> Term {
+    NAT_INDUCTION_TERM.clone()
+}
+
+/// Conclusion of [`crate::Thm::eq_reflection`]:
+/// `⋀x y:'a. Trueprop (x = y) ≡ (x ≡ y)`.
+pub(crate) fn eq_reflection_term() -> Term {
+    EQ_REFLECTION_TERM.clone()
+}
+
+/// Conclusion of [`crate::Thm::forall_reflection`]:
+/// `⋀P:'a→bool. (⋀x:'a. Trueprop (P x)) ≡ Trueprop (∀x:'a. P x)`.
+pub(crate) fn forall_reflection_term() -> Term {
+    FORALL_REFLECTION_TERM.clone()
+}
+
+/// Conclusion of [`crate::Thm::imp_reflection`]:
+/// `⋀P Q:bool. (Trueprop P ⟹ Trueprop Q) ≡ Trueprop (P ⟹ Q)`.
+pub(crate) fn imp_reflection_term() -> Term {
+    IMP_REFLECTION_TERM.clone()
 }

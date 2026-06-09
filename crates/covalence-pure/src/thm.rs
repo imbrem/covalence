@@ -24,7 +24,6 @@
 //! `define`, `observe`, and the user-supplied `O → Thm` conversion
 //! are not in this MVP step.
 
-use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::Arc;
 
@@ -37,10 +36,11 @@ use crate::term::{
     Def, BinderHint, ObsEq, ObsImp, ObsTrue, Object, Observer, Term, TermKind, Type, TypeEnv, TypeKind,
     type_of_in,
 };
+use crate::ctx::Ctx;
 
 #[derive(Clone)]
 pub struct Thm {
-    hyps: Arc<BTreeSet<Term>>,
+    hyps: Ctx,
     concl: Term,
 }
 
@@ -51,7 +51,7 @@ impl Thm {
     /// declared type across the whole theorem.
     ///
     /// Every rule API in this module bottoms out here.
-    fn build(hyps: BTreeSet<Term>, concl: Term) -> Result<Thm> {
+    fn build(hyps: Ctx, concl: Term) -> Result<Thm> {
         let mut env = TypeEnv::default();
         let ty = type_of_in(&concl, &mut env)?;
         if !ty.is_prop() {
@@ -63,19 +63,16 @@ impl Thm {
                 return Err(Error::NotProp(hty));
             }
         }
-        Ok(Thm {
-            hyps: Arc::new(hyps),
-            concl,
-        })
+        Ok(Thm { hyps, concl })
     }
 
-    pub fn hyps(&self) -> &BTreeSet<Term> {
+    pub fn hyps(&self) -> &Ctx {
         &self.hyps
     }
     pub fn concl(&self) -> &Term {
         &self.concl
     }
-    pub fn into_parts(self) -> (Arc<BTreeSet<Term>>, Term) {
+    pub fn into_parts(self) -> (Ctx, Term) {
         (self.hyps, self.concl)
     }
 
@@ -109,15 +106,25 @@ impl Thm {
 
     /// `{φ} ⊢ φ`, requiring `φ : prop`.
     pub fn assume(phi: Term) -> Result<Thm> {
-        let mut hyps = BTreeSet::new();
-        hyps.insert(phi.clone());
+        let hyps = Ctx::singleton(phi.clone());
         Self::build(hyps, phi)
+    }
+
+    /// Structural weakening: `Δ ⊢ φ`, given `Γ ⊢ φ` and `Γ ⊆ Δ`.
+    ///
+    /// Rejects with [`Error::NotASuperset`] if any hypothesis of
+    /// `self` is missing from `target`. The conclusion is unchanged;
+    /// every term in `target` is re-validated at kind `prop`.
+    pub fn weaken(self, target: Ctx) -> Result<Thm> {
+        if !self.hyps.is_subset(&target) {
+            return Err(Error::NotASuperset);
+        }
+        Self::build(target, self.concl)
     }
 
     /// `Γ \ {φ} ⊢ φ ⟹ ψ`, given `Γ ⊢ ψ`.
     pub fn imp_intro(self, phi: &Term) -> Result<Thm> {
-        let mut hyps = (*self.hyps).clone();
-        hyps.remove(phi);
+        let hyps = self.hyps.remove(phi);
         let concl = Term::imp(phi.clone(), self.concl);
         Self::build(hyps, concl)
     }
@@ -134,7 +141,7 @@ impl Thm {
             });
         }
         let psi = psi.clone();
-        let hyps = union_hyps(&self.hyps, &hyp.hyps);
+        let hyps = self.hyps.union(&hyp.hyps);
         Self::build(hyps, psi)
     }
 
@@ -156,7 +163,7 @@ impl Thm {
         }
         let body = close(&self.concl, name);
         let all = Term::all(name, ty, body);
-        Self::build((*self.hyps).clone(), all)
+        Self::build(self.hyps, all)
     }
 
     /// `Γ ∪ Γ' ⊢ q`, given `Γ ⊢ p ≡ q` and `Γ' ⊢ p`.
@@ -179,7 +186,7 @@ impl Thm {
             });
         }
         let concl = q.clone();
-        let hyps = union_hyps(&self.hyps, &p_thm.hyps);
+        let hyps = self.hyps.union(&p_thm.hyps);
         Self::build(hyps, concl)
     }
 
@@ -196,7 +203,7 @@ impl Thm {
             });
         }
         let concl = open(body, &witness);
-        Self::build((*self.hyps).clone(), concl)
+        Self::build(self.hyps, concl)
     }
 
     // ---- Equality rules ----
@@ -205,7 +212,7 @@ impl Thm {
     pub fn refl(t: Term) -> Result<Thm> {
         let _ = t.type_of()?;
         let concl = Term::eq(t.clone(), t);
-        Self::build(BTreeSet::new(), concl)
+        Self::build(Ctx::new(), concl)
     }
 
     /// `Γ ∪ Γ' ⊢ t ≡ v`, given `Γ ⊢ t≡u` and `Γ' ⊢ u≡v`.
@@ -223,7 +230,7 @@ impl Thm {
             });
         }
         let concl = Term::eq(t.clone(), v.clone());
-        let hyps = union_hyps(&self.hyps, &other.hyps);
+        let hyps = self.hyps.union(&other.hyps);
         Self::build(hyps, concl)
     }
 
@@ -233,7 +240,7 @@ impl Thm {
             return Err(Error::NotMetaEq(format!("{}", self.concl)));
         };
         let concl = Term::eq(u.clone(), t.clone());
-        Self::build((*self.hyps).clone(), concl)
+        Self::build(self.hyps, concl)
     }
 
     /// `Γ ∪ Γ' ⊢ f(s) ≡ g(t)`, given `Γ ⊢ f≡g` and `Γ' ⊢ s≡t`. The new
@@ -249,7 +256,7 @@ impl Thm {
         let rhs = Term::app(g.clone(), t.clone());
         // `build()` re-validates types end-to-end.
         let concl = Term::eq(lhs, rhs);
-        let hyps = union_hyps(&self.hyps, &arg.hyps);
+        let hyps = self.hyps.union(&arg.hyps);
         Self::build(hyps, concl)
     }
 
@@ -279,7 +286,7 @@ impl Thm {
         let s_abs = Term::abs(name, ty.clone(), close(s, name));
         let t_abs = Term::abs(name, ty, close(t, name));
         let concl = Term::eq(s_abs, t_abs);
-        Self::build((*self.hyps).clone(), concl)
+        Self::build(self.hyps, concl)
     }
 
     /// `⊢ (λx:τ. body) arg ≡ body[arg/0]`.
@@ -299,7 +306,7 @@ impl Thm {
         }
         let rhs = open(body, arg);
         let concl = Term::eq(app.clone(), rhs);
-        Self::build(BTreeSet::new(), concl)
+        Self::build(Ctx::new(), concl)
     }
 
     /// `⊢ (λx:τ. f x) ≡ f`, when `Bound(0)` does not appear free in `f`.
@@ -320,7 +327,7 @@ impl Thm {
         let _ = ty;
         let f_outer = shift_by(f, -1, 0);
         let concl = Term::eq(abs.clone(), f_outer);
-        Self::build(BTreeSet::new(), concl)
+        Self::build(Ctx::new(), concl)
     }
 
     /// Introduce a fresh subtype τ ≤ α witnessed by a predicate `P`.
@@ -438,8 +445,9 @@ impl Thm {
 
         // 8. Propagate witness's hyps to each emitted theorem — every
         //    fact about the new typedef depends on the witness's
-        //    inhabitedness justification.
-        let hyps: BTreeSet<Term> = (*witness.hyps).clone();
+        //    inhabitedness justification. `TermSet` clones share the
+        //    underlying set via `Arc`.
+        let hyps = witness.hyps.clone();
         let abs_rep = Self::build(hyps.clone(), abs_rep_concl)?;
         let rep_abs_fwd = Self::build(hyps.clone(), fwd_concl)?;
         let rep_abs_back = Self::build(hyps, back_concl)?;
@@ -499,7 +507,7 @@ impl Thm {
         }
         let d = Def::new_internal(name.into(), body.clone(), body_type);
         let concl = Term::eq(Term::def(d), body);
-        Self::build(BTreeSet::new(), concl)
+        Self::build(Ctx::new(), concl)
     }
 
     /// Single-step computation rule on builtin primitives applied to
@@ -528,16 +536,13 @@ impl Thm {
     /// - `App(Prim(NatToInt), NatLit n)` → `IntLit(n)`
     pub fn reduce_prim(t: Term) -> Result<Thm> {
         let reduced = builtins::reduce_prim_term(&t).ok_or(Error::NotReducible)?;
-        Self::build(BTreeSet::new(), Term::eq(t, reduced))
+        Self::build(Ctx::new(), Term::eq(t, reduced))
     }
 
     /// `Γ[α:=σ] ⊢ φ[α:=σ]`.
     pub fn inst_tfree(self, name: &str, replacement: Type) -> Result<Thm> {
         let concl = subst_tfree_in_term(&self.concl, name, &replacement);
-        let mut hyps = BTreeSet::new();
-        for h in self.hyps.iter() {
-            hyps.insert(subst_tfree_in_term(h, name, &replacement));
-        }
+        let hyps = self.hyps.map(|h| subst_tfree_in_term(h, name, &replacement));
         Self::build(hyps, concl)
     }
 
@@ -588,7 +593,7 @@ impl Thm {
         if !o.obs_true(&args, hint.as_deref().map(|h| h)) {
             return Err(Error::ObsEqRefused);
         }
-        Self::build(BTreeSet::new(), expr)
+        Self::build(Ctx::new(), expr)
     }
 
     /// `⊢ hyps[0] ⟹ hyps[1] ⟹ … ⟹ hyps[n] ⟹ expr` — a **lazy
@@ -636,7 +641,7 @@ impl Thm {
         for h in hyps.into_iter().rev() {
             result = Term::imp(h, result);
         }
-        Self::build(BTreeSet::new(), result)
+        Self::build(Ctx::new(), result)
     }
 
     pub fn obs_eq<O: ObsEq>(
@@ -660,7 +665,7 @@ impl Thm {
             return Err(Error::ObsEqRefused);
         }
         let concl = Term::eq(expr1, expr2);
-        Self::build(BTreeSet::new(), concl)
+        Self::build(Ctx::new(), concl)
     }
 }
 
@@ -704,15 +709,6 @@ impl fmt::Display for Thm {
         }
         write!(f, " ⊢ {}", self.concl)
     }
-}
-
-fn union_hyps(a: &Arc<BTreeSet<Term>>, b: &Arc<BTreeSet<Term>>) -> BTreeSet<Term> {
-    if Arc::ptr_eq(a, b) {
-        return (**a).clone();
-    }
-    let mut out = (**a).clone();
-    out.extend(b.iter().cloned());
-    out
 }
 
 // ============================================================================

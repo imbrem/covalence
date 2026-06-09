@@ -4,46 +4,22 @@
 //!
 //! - Generates the wasmtime bindings via `bindgen!`.
 //! - Implements the resource `Host*` traits on [`PureHost`], wiring
-//!   the WIT surface to `covalence_pure`'s `Type`/`Term`/`Thm`.
-//! - Backs hypothesis sets with `Arc<BTreeSet<Term>>` (opaque to the
-//!   guest — see [`HostTermSet`]).
+//!   the WIT surface to the kernel's `Type` / `Term` / `Thm` /
+//!   `Ctx` directly — no host-side newtype wrappers.
 //!
 //! Resources are stored in a `ResourceTable`, so identity is by table
 //! key, not by Rust pointer. The kernel's α-equivalence rules treat
 //! distinct `term` handles for α-equivalent contents as equal — that
 //! semantics is preserved end-to-end.
 
-use std::collections::BTreeSet;
-use std::sync::Arc;
-
 use wasmtime::component::{Resource, ResourceTable};
 
-use covalence_pure as cp;
-
-/// Backing type for `cov:pure/api.pure-type`.
-pub struct HostPureType(pub cp::Type);
-
-/// Backing type for `cov:pure/api.term`.
-pub struct HostTerm(pub cp::Term);
-
-/// Backing type for `cov:pure/api.term-set`.
-///
-/// Currently `Arc<BTreeSet<Term>>` — the WIT surface deliberately hides
-/// this. Guests interact only via `len`/`is-empty`/`contains`/`at`,
-/// so swapping in a persistent set or hash-trie later is invisible.
-pub struct HostTermSet(pub Arc<BTreeSet<cp::Term>>);
-
-impl HostTermSet {
-    /// Indexed access in BTreeSet order. Guests must not depend on any
-    /// particular total order — only on stability for this resource's
-    /// lifetime.
-    pub fn at(&self, idx: u32) -> Option<cp::Term> {
-        self.0.iter().nth(idx as usize).cloned()
-    }
-}
-
-/// Backing type for `cov:pure/api.thm`.
-pub struct HostThm(pub cp::Thm);
+// Re-exported `pub use` because the `bindgen!` macro below generates
+// internal `pub use Type as __with_nameN;` re-exports for every entry
+// in its `with:` mapping; a plain `use` would leave those re-exports
+// pointing at a private import.
+pub use covalence_pure::{Term, Ctx, Thm, Type};
+use covalence_pure::Error;
 
 // Resource keys in `with:` use dot (not slash) between interface and
 // resource. `imports: { default: trappable }` makes WIT methods that
@@ -52,10 +28,10 @@ wasmtime::component::bindgen!({
     path: "wit/pure.wit",
     world: "pure-guest",
     with: {
-        "cov:pure/api.pure-type": HostPureType,
-        "cov:pure/api.term": HostTerm,
-        "cov:pure/api.term-set": HostTermSet,
-        "cov:pure/api.thm": HostThm,
+        "cov:pure/api.pure-type": Type,
+        "cov:pure/api.term": Term,
+        "cov:pure/api.ctx": Ctx,
+        "cov:pure/api.thm": Thm,
     },
     imports: { default: trappable },
 });
@@ -81,27 +57,20 @@ impl PureHost {
         &mut self.table
     }
 
-    fn push_type(&mut self, t: cp::Type) -> wasmtime::Result<Resource<HostPureType>> {
-        self.table
-            .push(HostPureType(t))
-            .map_err(wasmtime::Error::from)
+    fn push_type(&mut self, t: Type) -> wasmtime::Result<Resource<Type>> {
+        self.table.push(t).map_err(wasmtime::Error::from)
     }
 
-    fn push_term(&mut self, t: cp::Term) -> wasmtime::Result<Resource<HostTerm>> {
-        self.table.push(HostTerm(t)).map_err(wasmtime::Error::from)
+    fn push_term(&mut self, t: Term) -> wasmtime::Result<Resource<Term>> {
+        self.table.push(t).map_err(wasmtime::Error::from)
     }
 
-    fn push_thm(&mut self, t: cp::Thm) -> wasmtime::Result<Resource<HostThm>> {
-        self.table.push(HostThm(t)).map_err(wasmtime::Error::from)
+    fn push_thm(&mut self, t: Thm) -> wasmtime::Result<Resource<Thm>> {
+        self.table.push(t).map_err(wasmtime::Error::from)
     }
 
-    fn push_term_set(
-        &mut self,
-        t: Arc<BTreeSet<cp::Term>>,
-    ) -> wasmtime::Result<Resource<HostTermSet>> {
-        self.table
-            .push(HostTermSet(t))
-            .map_err(wasmtime::Error::from)
+    fn push_term_set(&mut self, t: Ctx) -> wasmtime::Result<Resource<Ctx>> {
+        self.table.push(t).map_err(wasmtime::Error::from)
     }
 }
 
@@ -115,7 +84,7 @@ impl Default for PureHost {
 // Outer = trap signal, inner = WIT-level `result<T, string>`.
 type Trappable<T> = wasmtime::Result<Result<T, String>>;
 
-fn err_str(e: cp::Error) -> String {
+fn err_str(e: Error) -> String {
     format!("{}", e)
 }
 
@@ -130,59 +99,59 @@ impl cov::pure::api::Host for PureHost {}
 // ============================================================================
 
 impl cov::pure::api::HostPureType for PureHost {
-    fn tfree(&mut self, name: String) -> wasmtime::Result<Resource<HostPureType>> {
-        self.push_type(cp::Type::tfree(&name))
+    fn tfree(&mut self, name: String) -> wasmtime::Result<Resource<Type>> {
+        self.push_type(Type::tfree(&name))
     }
 
-    fn prop(&mut self) -> wasmtime::Result<Resource<HostPureType>> {
-        self.push_type(cp::Type::prop())
+    fn prop(&mut self) -> wasmtime::Result<Resource<Type>> {
+        self.push_type(Type::prop())
     }
 
-    fn bytes(&mut self) -> wasmtime::Result<Resource<HostPureType>> {
-        self.push_type(cp::Type::bytes())
+    fn bytes(&mut self) -> wasmtime::Result<Resource<Type>> {
+        self.push_type(Type::bytes())
     }
 
     fn fun(
         &mut self,
-        dom: Resource<HostPureType>,
-        cod: Resource<HostPureType>,
-    ) -> wasmtime::Result<Resource<HostPureType>> {
-        let d = self.table.get(&dom)?.0.clone();
-        let c = self.table.get(&cod)?.0.clone();
-        self.push_type(cp::Type::fun(d, c))
+        dom: Resource<Type>,
+        cod: Resource<Type>,
+    ) -> wasmtime::Result<Resource<Type>> {
+        let d = self.table.get(&dom)?.clone();
+        let c = self.table.get(&cod)?.clone();
+        self.push_type(Type::fun(d, c))
     }
 
     fn tycon(
         &mut self,
         name: String,
-        args: Vec<Resource<HostPureType>>,
-    ) -> wasmtime::Result<Resource<HostPureType>> {
+        args: Vec<Resource<Type>>,
+    ) -> wasmtime::Result<Resource<Type>> {
         let mut v = Vec::with_capacity(args.len());
         for r in &args {
-            v.push(self.table.get(r)?.0.clone());
+            v.push(self.table.get(r)?.clone());
         }
-        self.push_type(cp::Type::tycon(&name, v))
+        self.push_type(Type::tycon(&name, v))
     }
 
     fn equals(
         &mut self,
-        this: Resource<HostPureType>,
-        other: Resource<HostPureType>,
+        this: Resource<Type>,
+        other: Resource<Type>,
     ) -> wasmtime::Result<bool> {
         let a = self.table.get(&this)?;
         let b = self.table.get(&other)?;
-        Ok(a.0 == b.0)
+        Ok(a == b)
     }
 
-    fn is_prop(&mut self, this: Resource<HostPureType>) -> wasmtime::Result<bool> {
-        Ok(self.table.get(&this)?.0.is_prop())
+    fn is_prop(&mut self, this: Resource<Type>) -> wasmtime::Result<bool> {
+        Ok(self.table.get(&this)?.is_prop())
     }
 
-    fn render(&mut self, this: Resource<HostPureType>) -> wasmtime::Result<String> {
-        Ok(format!("{}", self.table.get(&this)?.0))
+    fn render(&mut self, this: Resource<Type>) -> wasmtime::Result<String> {
+        Ok(format!("{}", self.table.get(&this)?))
     }
 
-    fn drop(&mut self, rep: Resource<HostPureType>) -> wasmtime::Result<()> {
+    fn drop(&mut self, rep: Resource<Type>) -> wasmtime::Result<()> {
         self.table.delete(rep)?;
         Ok(())
     }
@@ -193,87 +162,87 @@ impl cov::pure::api::HostPureType for PureHost {
 // ============================================================================
 
 impl cov::pure::api::HostTerm for PureHost {
-    fn bound(&mut self, idx: u32) -> wasmtime::Result<Resource<HostTerm>> {
-        self.push_term(cp::Term::bound(idx))
+    fn bound(&mut self, idx: u32) -> wasmtime::Result<Resource<Term>> {
+        self.push_term(Term::bound(idx))
     }
 
     fn free(
         &mut self,
         name: String,
-        ty: Resource<HostPureType>,
-    ) -> wasmtime::Result<Resource<HostTerm>> {
-        let ty = self.table.get(&ty)?.0.clone();
-        self.push_term(cp::Term::free(&name, ty))
+        ty: Resource<Type>,
+    ) -> wasmtime::Result<Resource<Term>> {
+        let ty = self.table.get(&ty)?.clone();
+        self.push_term(Term::free(&name, ty))
     }
 
     fn mk_const(
         &mut self,
         name: String,
-        ty: Resource<HostPureType>,
-    ) -> wasmtime::Result<Resource<HostTerm>> {
-        let ty = self.table.get(&ty)?.0.clone();
-        self.push_term(cp::Term::const_(&name, ty))
+        ty: Resource<Type>,
+    ) -> wasmtime::Result<Resource<Term>> {
+        let ty = self.table.get(&ty)?.clone();
+        self.push_term(Term::const_(&name, ty))
     }
 
     fn app(
         &mut self,
-        fun: Resource<HostTerm>,
-        arg: Resource<HostTerm>,
-    ) -> wasmtime::Result<Resource<HostTerm>> {
-        let f = self.table.get(&fun)?.0.clone();
-        let a = self.table.get(&arg)?.0.clone();
-        self.push_term(cp::Term::app(f, a))
+        fun: Resource<Term>,
+        arg: Resource<Term>,
+    ) -> wasmtime::Result<Resource<Term>> {
+        let f = self.table.get(&fun)?.clone();
+        let a = self.table.get(&arg)?.clone();
+        self.push_term(Term::app(f, a))
     }
 
     fn abs(
         &mut self,
         hint: String,
-        ty: Resource<HostPureType>,
-        body: Resource<HostTerm>,
-    ) -> wasmtime::Result<Resource<HostTerm>> {
-        let ty = self.table.get(&ty)?.0.clone();
-        let body = self.table.get(&body)?.0.clone();
-        self.push_term(cp::Term::abs(&hint, ty, body))
+        ty: Resource<Type>,
+        body: Resource<Term>,
+    ) -> wasmtime::Result<Resource<Term>> {
+        let ty = self.table.get(&ty)?.clone();
+        let body = self.table.get(&body)?.clone();
+        self.push_term(Term::abs(&hint, ty, body))
     }
 
     fn imp(
         &mut self,
-        lhs: Resource<HostTerm>,
-        rhs: Resource<HostTerm>,
-    ) -> wasmtime::Result<Resource<HostTerm>> {
-        let l = self.table.get(&lhs)?.0.clone();
-        let r = self.table.get(&rhs)?.0.clone();
-        self.push_term(cp::Term::imp(l, r))
+        lhs: Resource<Term>,
+        rhs: Resource<Term>,
+    ) -> wasmtime::Result<Resource<Term>> {
+        let l = self.table.get(&lhs)?.clone();
+        let r = self.table.get(&rhs)?.clone();
+        self.push_term(Term::imp(l, r))
     }
 
     fn all(
         &mut self,
         hint: String,
-        ty: Resource<HostPureType>,
-        body: Resource<HostTerm>,
-    ) -> wasmtime::Result<Resource<HostTerm>> {
-        let ty = self.table.get(&ty)?.0.clone();
-        let body = self.table.get(&body)?.0.clone();
-        self.push_term(cp::Term::all(&hint, ty, body))
+        ty: Resource<Type>,
+        body: Resource<Term>,
+    ) -> wasmtime::Result<Resource<Term>> {
+        let ty = self.table.get(&ty)?.clone();
+        let body = self.table.get(&body)?.clone();
+        self.push_term(Term::all(&hint, ty, body))
     }
 
     fn mk_eq(
         &mut self,
-        lhs: Resource<HostTerm>,
-        rhs: Resource<HostTerm>,
-    ) -> wasmtime::Result<Resource<HostTerm>> {
-        let l = self.table.get(&lhs)?.0.clone();
-        let r = self.table.get(&rhs)?.0.clone();
-        self.push_term(cp::Term::eq(l, r))
+        lhs: Resource<Term>,
+        rhs: Resource<Term>,
+    ) -> wasmtime::Result<Resource<Term>> {
+        let l = self.table.get(&lhs)?.clone();
+        let r = self.table.get(&rhs)?.clone();
+        self.push_term(Term::eq(l, r))
     }
 
-    fn blob(&mut self, bytes: Vec<u8>) -> wasmtime::Result<Resource<HostTerm>> {
+    fn blob(&mut self, bytes: Vec<u8>) -> wasmtime::Result<Resource<Term>> {
         // `Vec<u8>` -> `bytes::Bytes` is the zero-copy `From` impl in `bytes`.
-        self.push_term(cp::Term::blob(bytes))
+        self.push_term(Term::blob(bytes))
     }
 
-    fn type_of(&mut self, this: Resource<HostTerm>) -> Trappable<Resource<HostPureType>> {
-        let t = self.table.get(&this)?.0.clone();
+    fn type_of(&mut self, this: Resource<Term>) -> Trappable<Resource<Type>> {
+        let t = self.table.get(&this)?.clone();
         match t.type_of() {
             Ok(ty) => Ok(Ok(self.push_type(ty)?)),
             Err(e) => Ok(Err(err_str(e))),
@@ -282,63 +251,63 @@ impl cov::pure::api::HostTerm for PureHost {
 
     fn equals(
         &mut self,
-        this: Resource<HostTerm>,
-        other: Resource<HostTerm>,
+        this: Resource<Term>,
+        other: Resource<Term>,
     ) -> wasmtime::Result<bool> {
         let a = self.table.get(&this)?;
         let b = self.table.get(&other)?;
-        Ok(a.0 == b.0)
+        Ok(a == b)
     }
 
-    fn has_no_obs(&mut self, this: Resource<HostTerm>) -> wasmtime::Result<bool> {
-        Ok(self.table.get(&this)?.0.has_no_obs())
+    fn has_no_obs(&mut self, this: Resource<Term>) -> wasmtime::Result<bool> {
+        Ok(self.table.get(&this)?.has_no_obs())
     }
 
-    fn render(&mut self, this: Resource<HostTerm>) -> wasmtime::Result<String> {
-        Ok(format!("{}", self.table.get(&this)?.0))
+    fn render(&mut self, this: Resource<Term>) -> wasmtime::Result<String> {
+        Ok(format!("{}", self.table.get(&this)?))
     }
 
-    fn drop(&mut self, rep: Resource<HostTerm>) -> wasmtime::Result<()> {
+    fn drop(&mut self, rep: Resource<Term>) -> wasmtime::Result<()> {
         self.table.delete(rep)?;
         Ok(())
     }
 }
 
 // ============================================================================
-// term-set
+// ctx
 // ============================================================================
 
-impl cov::pure::api::HostTermSet for PureHost {
-    fn len(&mut self, this: Resource<HostTermSet>) -> wasmtime::Result<u32> {
-        Ok(self.table.get(&this)?.0.len() as u32)
+impl cov::pure::api::HostCtx for PureHost {
+    fn len(&mut self, this: Resource<Ctx>) -> wasmtime::Result<u32> {
+        Ok(self.table.get(&this)?.len() as u32)
     }
 
-    fn is_empty(&mut self, this: Resource<HostTermSet>) -> wasmtime::Result<bool> {
-        Ok(self.table.get(&this)?.0.is_empty())
+    fn is_empty(&mut self, this: Resource<Ctx>) -> wasmtime::Result<bool> {
+        Ok(self.table.get(&this)?.is_empty())
     }
 
     fn contains(
         &mut self,
-        this: Resource<HostTermSet>,
-        t: Resource<HostTerm>,
+        this: Resource<Ctx>,
+        t: Resource<Term>,
     ) -> wasmtime::Result<bool> {
-        let needle = self.table.get(&t)?.0.clone();
-        Ok(self.table.get(&this)?.0.contains(&needle))
+        let needle = self.table.get(&t)?.clone();
+        Ok(self.table.get(&this)?.contains(&needle))
     }
 
     fn at(
         &mut self,
-        this: Resource<HostTermSet>,
+        this: Resource<Ctx>,
         idx: u32,
-    ) -> wasmtime::Result<Option<Resource<HostTerm>>> {
-        let got = self.table.get(&this)?.at(idx);
+    ) -> wasmtime::Result<Option<Resource<Term>>> {
+        let got = self.table.get(&this)?.at(idx as usize).cloned();
         match got {
             Some(t) => Ok(Some(self.push_term(t)?)),
             None => Ok(None),
         }
     }
 
-    fn drop(&mut self, rep: Resource<HostTermSet>) -> wasmtime::Result<()> {
+    fn drop(&mut self, rep: Resource<Ctx>) -> wasmtime::Result<()> {
         self.table.delete(rep)?;
         Ok(())
     }
@@ -351,9 +320,9 @@ impl cov::pure::api::HostTermSet for PureHost {
 impl cov::pure::api::HostThm for PureHost {
     // ---- LF rules ----
 
-    fn assume(&mut self, phi: Resource<HostTerm>) -> Trappable<Resource<HostThm>> {
-        let phi = self.table.get(&phi)?.0.clone();
-        match cp::Thm::assume(phi) {
+    fn assume(&mut self, phi: Resource<Term>) -> Trappable<Resource<Thm>> {
+        let phi = self.table.get(&phi)?.clone();
+        match Thm::assume(phi) {
             Ok(t) => Ok(Ok(self.push_thm(t)?)),
             Err(e) => Ok(Err(err_str(e))),
         }
@@ -361,11 +330,11 @@ impl cov::pure::api::HostThm for PureHost {
 
     fn imp_intro(
         &mut self,
-        this: Resource<HostThm>,
-        phi: Resource<HostTerm>,
-    ) -> Trappable<Resource<HostThm>> {
-        let thm = self.table.get(&this)?.0.clone();
-        let phi = self.table.get(&phi)?.0.clone();
+        this: Resource<Thm>,
+        phi: Resource<Term>,
+    ) -> Trappable<Resource<Thm>> {
+        let thm = self.table.get(&this)?.clone();
+        let phi = self.table.get(&phi)?.clone();
         match thm.imp_intro(&phi) {
             Ok(t) => Ok(Ok(self.push_thm(t)?)),
             Err(e) => Ok(Err(err_str(e))),
@@ -374,11 +343,11 @@ impl cov::pure::api::HostThm for PureHost {
 
     fn imp_elim(
         &mut self,
-        this: Resource<HostThm>,
-        hyp: Resource<HostThm>,
-    ) -> Trappable<Resource<HostThm>> {
-        let thm = self.table.get(&this)?.0.clone();
-        let hyp = self.table.get(&hyp)?.0.clone();
+        this: Resource<Thm>,
+        hyp: Resource<Thm>,
+    ) -> Trappable<Resource<Thm>> {
+        let thm = self.table.get(&this)?.clone();
+        let hyp = self.table.get(&hyp)?.clone();
         match thm.imp_elim(hyp) {
             Ok(t) => Ok(Ok(self.push_thm(t)?)),
             Err(e) => Ok(Err(err_str(e))),
@@ -387,12 +356,12 @@ impl cov::pure::api::HostThm for PureHost {
 
     fn all_intro(
         &mut self,
-        this: Resource<HostThm>,
+        this: Resource<Thm>,
         name: String,
-        ty: Resource<HostPureType>,
-    ) -> Trappable<Resource<HostThm>> {
-        let thm = self.table.get(&this)?.0.clone();
-        let ty = self.table.get(&ty)?.0.clone();
+        ty: Resource<Type>,
+    ) -> Trappable<Resource<Thm>> {
+        let thm = self.table.get(&this)?.clone();
+        let ty = self.table.get(&ty)?.clone();
         match thm.all_intro(&name, ty) {
             Ok(t) => Ok(Ok(self.push_thm(t)?)),
             Err(e) => Ok(Err(err_str(e))),
@@ -401,11 +370,11 @@ impl cov::pure::api::HostThm for PureHost {
 
     fn all_elim(
         &mut self,
-        this: Resource<HostThm>,
-        witness: Resource<HostTerm>,
-    ) -> Trappable<Resource<HostThm>> {
-        let thm = self.table.get(&this)?.0.clone();
-        let witness = self.table.get(&witness)?.0.clone();
+        this: Resource<Thm>,
+        witness: Resource<Term>,
+    ) -> Trappable<Resource<Thm>> {
+        let thm = self.table.get(&this)?.clone();
+        let witness = self.table.get(&witness)?.clone();
         match thm.all_elim(witness) {
             Ok(t) => Ok(Ok(self.push_thm(t)?)),
             Err(e) => Ok(Err(err_str(e))),
@@ -414,9 +383,9 @@ impl cov::pure::api::HostThm for PureHost {
 
     // ---- Equality rules ----
 
-    fn refl(&mut self, t: Resource<HostTerm>) -> Trappable<Resource<HostThm>> {
-        let t = self.table.get(&t)?.0.clone();
-        match cp::Thm::refl(t) {
+    fn refl(&mut self, t: Resource<Term>) -> Trappable<Resource<Thm>> {
+        let t = self.table.get(&t)?.clone();
+        match Thm::refl(t) {
             Ok(th) => Ok(Ok(self.push_thm(th)?)),
             Err(e) => Ok(Err(err_str(e))),
         }
@@ -424,19 +393,19 @@ impl cov::pure::api::HostThm for PureHost {
 
     fn trans(
         &mut self,
-        this: Resource<HostThm>,
-        other: Resource<HostThm>,
-    ) -> Trappable<Resource<HostThm>> {
-        let a = self.table.get(&this)?.0.clone();
-        let b = self.table.get(&other)?.0.clone();
+        this: Resource<Thm>,
+        other: Resource<Thm>,
+    ) -> Trappable<Resource<Thm>> {
+        let a = self.table.get(&this)?.clone();
+        let b = self.table.get(&other)?.clone();
         match a.trans(b) {
             Ok(t) => Ok(Ok(self.push_thm(t)?)),
             Err(e) => Ok(Err(err_str(e))),
         }
     }
 
-    fn sym(&mut self, this: Resource<HostThm>) -> Trappable<Resource<HostThm>> {
-        let a = self.table.get(&this)?.0.clone();
+    fn sym(&mut self, this: Resource<Thm>) -> Trappable<Resource<Thm>> {
+        let a = self.table.get(&this)?.clone();
         match a.sym() {
             Ok(t) => Ok(Ok(self.push_thm(t)?)),
             Err(e) => Ok(Err(err_str(e))),
@@ -445,11 +414,11 @@ impl cov::pure::api::HostThm for PureHost {
 
     fn cong_app(
         &mut self,
-        this: Resource<HostThm>,
-        arg: Resource<HostThm>,
-    ) -> Trappable<Resource<HostThm>> {
-        let a = self.table.get(&this)?.0.clone();
-        let b = self.table.get(&arg)?.0.clone();
+        this: Resource<Thm>,
+        arg: Resource<Thm>,
+    ) -> Trappable<Resource<Thm>> {
+        let a = self.table.get(&this)?.clone();
+        let b = self.table.get(&arg)?.clone();
         match a.cong_app(b) {
             Ok(t) => Ok(Ok(self.push_thm(t)?)),
             Err(e) => Ok(Err(err_str(e))),
@@ -458,29 +427,29 @@ impl cov::pure::api::HostThm for PureHost {
 
     fn cong_abs(
         &mut self,
-        this: Resource<HostThm>,
+        this: Resource<Thm>,
         name: String,
-        ty: Resource<HostPureType>,
-    ) -> Trappable<Resource<HostThm>> {
-        let a = self.table.get(&this)?.0.clone();
-        let ty = self.table.get(&ty)?.0.clone();
+        ty: Resource<Type>,
+    ) -> Trappable<Resource<Thm>> {
+        let a = self.table.get(&this)?.clone();
+        let ty = self.table.get(&ty)?.clone();
         match a.cong_abs(&name, ty) {
             Ok(t) => Ok(Ok(self.push_thm(t)?)),
             Err(e) => Ok(Err(err_str(e))),
         }
     }
 
-    fn beta_conv(&mut self, app: Resource<HostTerm>) -> Trappable<Resource<HostThm>> {
-        let a = self.table.get(&app)?.0.clone();
-        match cp::Thm::beta_conv(a) {
+    fn beta_conv(&mut self, app: Resource<Term>) -> Trappable<Resource<Thm>> {
+        let a = self.table.get(&app)?.clone();
+        match Thm::beta_conv(a) {
             Ok(t) => Ok(Ok(self.push_thm(t)?)),
             Err(e) => Ok(Err(err_str(e))),
         }
     }
 
-    fn eta_conv(&mut self, abs: Resource<HostTerm>) -> Trappable<Resource<HostThm>> {
-        let a = self.table.get(&abs)?.0.clone();
-        match cp::Thm::eta_conv(a) {
+    fn eta_conv(&mut self, abs: Resource<Term>) -> Trappable<Resource<Thm>> {
+        let a = self.table.get(&abs)?.clone();
+        match Thm::eta_conv(a) {
             Ok(t) => Ok(Ok(self.push_thm(t)?)),
             Err(e) => Ok(Err(err_str(e))),
         }
@@ -488,12 +457,12 @@ impl cov::pure::api::HostThm for PureHost {
 
     fn inst_tfree(
         &mut self,
-        this: Resource<HostThm>,
+        this: Resource<Thm>,
         name: String,
-        replacement: Resource<HostPureType>,
-    ) -> Trappable<Resource<HostThm>> {
-        let a = self.table.get(&this)?.0.clone();
-        let r = self.table.get(&replacement)?.0.clone();
+        replacement: Resource<Type>,
+    ) -> Trappable<Resource<Thm>> {
+        let a = self.table.get(&this)?.clone();
+        let r = self.table.get(&replacement)?.clone();
         match a.inst_tfree(&name, r) {
             Ok(t) => Ok(Ok(self.push_thm(t)?)),
             Err(e) => Ok(Err(err_str(e))),
@@ -502,29 +471,25 @@ impl cov::pure::api::HostThm for PureHost {
 
     // ---- Accessors ----
 
-    fn hyps(&mut self, this: Resource<HostThm>) -> wasmtime::Result<Resource<HostTermSet>> {
-        // Cheap: `Thm` already stores hyps as `Arc<BTreeSet<Term>>`.
-        let hyps = self.table.get(&this)?.0.hyps().clone();
-        // `hyps()` returns &BTreeSet<Term> — wrap into Arc. We could
-        // expose Arc-shared hyps if performance matters; clone is fine
-        // for MVP.
-        self.push_term_set(Arc::new(hyps))
+    fn hyps(&mut self, this: Resource<Thm>) -> wasmtime::Result<Resource<Ctx>> {
+        let hyps = self.table.get(&this)?.hyps().clone();
+        self.push_term_set(hyps)
     }
 
-    fn concl(&mut self, this: Resource<HostThm>) -> wasmtime::Result<Resource<HostTerm>> {
-        let c = self.table.get(&this)?.0.concl().clone();
+    fn concl(&mut self, this: Resource<Thm>) -> wasmtime::Result<Resource<Term>> {
+        let c = self.table.get(&this)?.concl().clone();
         self.push_term(c)
     }
 
-    fn has_no_obs(&mut self, this: Resource<HostThm>) -> wasmtime::Result<bool> {
-        Ok(self.table.get(&this)?.0.has_no_obs())
+    fn has_no_obs(&mut self, this: Resource<Thm>) -> wasmtime::Result<bool> {
+        Ok(self.table.get(&this)?.has_no_obs())
     }
 
-    fn render(&mut self, this: Resource<HostThm>) -> wasmtime::Result<String> {
-        Ok(format!("{}", self.table.get(&this)?.0))
+    fn render(&mut self, this: Resource<Thm>) -> wasmtime::Result<String> {
+        Ok(format!("{}", self.table.get(&this)?))
     }
 
-    fn drop(&mut self, rep: Resource<HostThm>) -> wasmtime::Result<()> {
+    fn drop(&mut self, rep: Resource<Thm>) -> wasmtime::Result<()> {
         self.table.delete(rep)?;
         Ok(())
     }

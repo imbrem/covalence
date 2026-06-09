@@ -17,7 +17,7 @@ package cov:pure@0.1.0;
 /// - `mk-const` / `mk-eq` follow `hol-light.wit`'s convention of
 ///   prefixing constructors with `mk-` when the unprefixed name
 ///   would collide with a reserved word or a method name.
-/// - `term-set` is an **opaque resource**, not a `list<term>`. The
+/// - `ctx` is an **opaque resource**, not a `list<term>`. The
 ///   guest accesses members by index, contains check, or length —
 ///   never by materialising the set. This lets the host swap the
 ///   backing data structure (`BTreeSet`, persistent set, hash-trie,
@@ -122,7 +122,7 @@ interface api {
     /// resource". The current host backs this with a `BTreeSet`, but
     /// it may switch to a persistent set or a hash-trie later
     /// without breaking the interface.
-    resource term-set {
+    resource ctx {
         /// Number of distinct hypotheses.
         len: func() -> u32;
 
@@ -134,7 +134,7 @@ interface api {
 
         /// Get the element at the given index. Returns `none` if
         /// `idx >= len()`. Ordering is implementation-defined but
-        /// stable for the lifetime of this `term-set`.
+        /// stable for the lifetime of this `ctx`.
         at: func(idx: u32) -> option<term>;
     }
 
@@ -194,7 +194,7 @@ interface api {
         // ---- Accessors ----
 
         /// Hypothesis set (opaque).
-        hyps: func() -> term-set;
+        hyps: func() -> ctx;
 
         /// Conclusion.
         concl: func() -> term;

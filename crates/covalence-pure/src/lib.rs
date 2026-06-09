@@ -57,6 +57,7 @@ mod builtins;
 pub mod error;
 pub mod subst;
 pub mod term;
+pub mod ctx;
 pub mod thm;
 
 pub use error::{Error, Result};
@@ -64,4 +65,5 @@ pub use term::{
     Arith, BinderHint, Def, Hint, ObsEq, ObsImp, ObsTrue, Object, Observer, Prim, Term, TermKind,
     Type, TypeKind,
 };
+pub use ctx::Ctx;
 pub use thm::{Thm, TypeDef};

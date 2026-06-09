@@ -1,10 +1,25 @@
 //! Foundational HOL axioms about Pure's primitive `int` type.
 //!
-//! Mirrors `nat_axioms` for integers: induction (in both
-//! directions), distinctness, injectivity, and the standard
-//! arithmetic laws (commutative ring axioms).
+//! Unlike `nat` (which has a single-direction recursor `natrec` so
+//! every arithmetic op is `op ≡ natrec base step n`), `int` does not
+//! admit a single primitive-recursion combinator that uniformly
+//! defines all of `+`, `-`, `*`, and unary `-`. The natural
+//! definitional layout for `int` instead leans on the universal
+//! property of `Z` as the free commutative ring on one generator:
+//! the eight ring axioms (additive identity / commutativity /
+//! associativity / inverse + multiplicative commutativity /
+//! associativity / distributivity) collectively *characterise* the
+//! operations up to isomorphism.
 //!
-//! See [`crate::nat_axioms`] for the design rationale.
+//! Today this module postulates those ring axioms directly. A
+//! future refactor will replace them with a finer definitional
+//! layer (likely: `int_of_nat` + `int_neg` as the canonical
+//! generators, with operations defined by case analysis on
+//! `sign(x)` and `nat_of_int(|x|)`); the ring laws then become
+//! derived theorems. The `LazyLock<Thm>` surface here stays stable
+//! across that swap.
+//!
+//! See [`crate::nat_axioms`] for the cleanly-definitional sibling.
 
 use std::sync::LazyLock;
 
@@ -44,7 +59,9 @@ fn assume_hol(body: Term) -> Thm {
 }
 
 // ============================================================================
-// Ring axioms (additive + multiplicative)
+// Ring characterisation — currently postulated as the definitional
+// layer (see module-level docs); to be replaced with derivations
+// from a `int_of_nat` + `int_neg` case-analysis decomposition.
 // ============================================================================
 
 /// `⊢ ∀n:int. n + 0 = n`.

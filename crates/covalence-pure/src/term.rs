@@ -45,6 +45,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Arc, LazyLock};
 
 use bytes::Bytes;
+use covalence_types::{Int, Nat};
 use smol_str::SmolStr;
 
 use crate::error::{Error, Result};
@@ -853,9 +854,9 @@ pub enum TermKind {
     /// Builtin: natural-number literal. Kernel type `nat`. See
     /// [`crate::Thm::reduce_prim`] for the single-step computation
     /// rule that decides closed-form arithmetic by reflexivity.
-    NatLit(covalence_types::Nat),
+    NatLit(Nat),
     /// Builtin: integer literal. Kernel type `int`.
-    IntLit(covalence_types::Int),
+    IntLit(Int),
     /// Builtin function — a closed function term applied to args via
     /// standard `App`. See [`Prim`] for the catalogue.
     Prim(Prim),
@@ -917,11 +918,11 @@ impl Term {
 
     // ---- builtin value constructors ----
     /// `nat` literal.
-    pub fn nat_lit(n: impl Into<covalence_types::Nat>) -> Self {
+    pub fn nat_lit(n: impl Into<Nat>) -> Self {
         Self::alloc(TermKind::NatLit(n.into()))
     }
     /// `int` literal.
-    pub fn int_lit(n: impl Into<covalence_types::Int>) -> Self {
+    pub fn int_lit(n: impl Into<Int>) -> Self {
         Self::alloc(TermKind::IntLit(n.into()))
     }
 

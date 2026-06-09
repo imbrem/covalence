@@ -54,6 +54,16 @@ fn hol_imp(p: Term, q: Term) -> Term {
     Term::app(Term::app(hol_imp_op(), p), q)
 }
 
+/// HOL `~` at `bool → bool`.
+fn hol_not_op() -> Term {
+    Term::hol_op(HolOp::Not, Type::fun(bool_ty(), bool_ty()))
+}
+
+/// HOL `~p : bool`.
+fn hol_not(p: Term) -> Term {
+    Term::app(hol_not_op(), p)
+}
+
 /// HOL `/\` at `bool → bool → bool`.
 fn hol_and_op() -> Term {
     let b = bool_ty();
@@ -320,6 +330,17 @@ static NAT_SUB_DEF_TERM: LazyLock<Term> = LazyLock::new(|| {
     pure_all("m", Type::nat(), pure_all("n", Type::nat(), trueprop(eq)))
 });
 
+// ---- HOL connective definitions ----
+
+static NOT_DEF_TERM: LazyLock<Term> = LazyLock::new(|| {
+    // ⋀p:bool. Trueprop (¬p = (p ⟹ F))
+    let p = Term::free("p", bool_ty());
+    let lhs = hol_not(p.clone());
+    let rhs = hol_imp(p, Term::bool_lit(false));
+    let eq = hol_eq(lhs, rhs);
+    pure_all("p", bool_ty(), trueprop(eq))
+});
+
 // ---- Integer induction ----
 
 static INT_INDUCTION_TERM: LazyLock<Term> = LazyLock::new(|| {
@@ -376,6 +397,10 @@ pub(crate) fn nat_sub_def_term() -> Term {
 
 pub(crate) fn int_induction_term() -> Term {
     INT_INDUCTION_TERM.clone()
+}
+
+pub(crate) fn not_def_term() -> Term {
+    NOT_DEF_TERM.clone()
 }
 
 /// Conclusion of [`crate::Thm::eq_reflection`]:

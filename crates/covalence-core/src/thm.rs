@@ -787,6 +787,17 @@ impl Thm {
             .expect("int_induction: well-typed by construction")
     }
 
+    // ---- HOL connective definitions ----
+
+    /// `⊢ ⋀p:bool. Trueprop (¬p = (p ⟹ F))` — the HOL Light
+    /// definition of negation, as a kernel axiom. Used to convert
+    /// between `¬p` and `p ⟹ F` (the same proposition under two
+    /// syntactic shapes in our kernel, since `HolOp::Not` is
+    /// primitive rather than derived from `⟹` and `F`).
+    pub fn not_def() -> Thm {
+        Self::build(Ctx::new(), hol::not_def_term())
+            .expect("not_def: well-typed by construction")
+    }
 }
 
 /// Walk down through `App`s collecting arguments left-to-right. If

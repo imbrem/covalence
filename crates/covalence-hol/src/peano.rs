@@ -17,7 +17,10 @@
 //! [`Thm::forall_reflection`] specialised at a lambda predicate, which
 //! callers can do downstream when needed.
 
+use std::sync::LazyLock;
+
 use covalence_core::{Arith, Prim, Term, Thm, Type};
+use covalence_types::Nat;
 
 use crate::HolLightCtx;
 use crate::bridge::{hol_eq_from_pure_eq, lift_imp_to_hol, pure_eq_from_hol_eq};
@@ -52,6 +55,105 @@ fn trueprop(p: Term, ctx: &HolLightCtx) -> Term {
 
 fn hol_eq(lhs: Term, rhs: Term, ctx: &HolLightCtx) -> Term {
     ctx.mk_eq(lhs, rhs).expect("hol_eq: same-typed args")
+}
+
+fn nat_lit(n: u32) -> Term {
+    Term::nat_lit(Nat::from_inner(n.into()))
+}
+
+/// Given `Γ ⊢ Trueprop (¬p)`, return `Γ ⊢ Trueprop (p ⟹ F)`.
+/// (Forward direction of `not_def`.)
+#[allow(dead_code)]
+fn unfold_not(thm: Thm, p: Term, ctx: &HolLightCtx) -> Thm {
+    // not_def: ⋀p. Trueprop (¬p = (p ⟹ F))
+    let not_def_at = Thm::not_def()
+        .all_elim(p.clone())
+        .expect("unfold_not: all_elim p");
+    // : ⊢ Trueprop (¬p = (p ⟹ F))
+    // Convert to Pure meta-eq: ¬p ≡ (p ⟹ F)
+    let lhs = Term::app(ctx.not_op(), p.clone());
+    let rhs = Term::app(Term::app(ctx.imp_op(), p), Term::bool_lit(false));
+    let pure_eq = pure_eq_from_hol_eq(not_def_at, ctx.bool_type(), lhs.clone(), rhs.clone());
+    // Wrap with Trueprop via cong_app:
+    //   ⊢ Trueprop ≡ Trueprop, ⊢ ¬p ≡ (p ⟹ F)
+    //   → ⊢ Trueprop (¬p) ≡ Trueprop (p ⟹ F)
+    let trueprop_eq = Thm::refl(ctx.trueprop())
+        .expect("unfold_not: refl trueprop")
+        .cong_app(pure_eq)
+        .expect("unfold_not: cong_app");
+    trueprop_eq.eq_mp(thm).expect("unfold_not: eq_mp")
+}
+
+/// Given `Γ ⊢ Trueprop (p ⟹ F)`, return `Γ ⊢ Trueprop (¬p)`.
+/// (Reverse direction of `not_def`.)
+fn fold_not(thm: Thm, p: Term, ctx: &HolLightCtx) -> Thm {
+    let not_def_at = Thm::not_def()
+        .all_elim(p.clone())
+        .expect("fold_not: all_elim p");
+    let lhs = Term::app(ctx.not_op(), p.clone());
+    let rhs = Term::app(Term::app(ctx.imp_op(), p), Term::bool_lit(false));
+    let pure_eq = pure_eq_from_hol_eq(not_def_at, ctx.bool_type(), lhs.clone(), rhs.clone());
+    let trueprop_eq = Thm::refl(ctx.trueprop())
+        .expect("fold_not: refl trueprop")
+        .cong_app(pure_eq)
+        .expect("fold_not: cong_app");
+    trueprop_eq
+        .sym()
+        .expect("fold_not: sym")
+        .eq_mp(thm)
+        .expect("fold_not: eq_mp")
+}
+
+// ============================================================================
+// nat_zero_ne_one — base case for nat_zero_ne_succ
+// ============================================================================
+
+/// `⊢ Trueprop (¬(0 = 1))` — the canonical base-case distinctness
+/// fact, proved by `Thm::reduce_prim` deciding `HolEq 0 1 = F` on
+/// the closed literals. Cached process-wide; downstream proofs
+/// like `prove_nat_zero_ne_succ` use it as the induction base.
+pub fn nat_zero_ne_one() -> Thm {
+    static AX: LazyLock<Thm> = LazyLock::new(build_nat_zero_ne_one);
+    AX.clone()
+}
+
+fn build_nat_zero_ne_one() -> Thm {
+    let ctx = HolLightCtx::new();
+    let bool_ty = ctx.bool_type();
+    let zero_eq_one = hol_eq(nat_lit(0), nat_lit(1), &ctx);
+
+    // 1. reduce_prim(HolEq 0 1) → ⊢ HolEq 0 1 ≡ F
+    let eq_to_false = Thm::reduce_prim(zero_eq_one.clone())
+        .expect("nat_zero_ne_one: reduce_prim");
+
+    // 2. cong_app(refl Trueprop, eq_to_false) → ⊢ Trueprop (0=1) ≡ Trueprop F
+    let trueprop_eq = Thm::refl(ctx.trueprop())
+        .expect("nat_zero_ne_one: refl trueprop")
+        .cong_app(eq_to_false)
+        .expect("nat_zero_ne_one: cong_app");
+
+    // 3. assume Trueprop (0=1)
+    let antecedent = ctx
+        .mk_trueprop(zero_eq_one.clone())
+        .expect("nat_zero_ne_one: mk_trueprop");
+    let assumed = Thm::assume(antecedent.clone()).expect("nat_zero_ne_one: assume");
+
+    // 4. eq_mp → Γ ⊢ Trueprop F
+    let derive_false = trueprop_eq
+        .eq_mp(assumed)
+        .expect("nat_zero_ne_one: eq_mp");
+
+    // 5. imp_intro → ⊢ Trueprop (0=1) ⟹ Trueprop F
+    let pure_imp = derive_false
+        .imp_intro(&antecedent)
+        .expect("nat_zero_ne_one: imp_intro");
+
+    // 6. Lift to HOL imp: ⊢ Trueprop ((0=1) ⟹ F)
+    let hol_imp_thm = lift_imp_to_hol(pure_imp, zero_eq_one.clone(), Term::bool_lit(false));
+
+    // 7. Fold the (... ⟹ F) form back into ¬: ⊢ Trueprop (¬(0=1))
+    let _ = bool_ty;
+    fold_not(hol_imp_thm, zero_eq_one, &ctx)
 }
 
 // ============================================================================
@@ -177,5 +279,20 @@ mod tests {
             panic!("not ⋀m, got {outer:?}");
         };
         assert_eq!(ty1, &Type::nat());
+    }
+
+    #[test]
+    fn nat_zero_ne_one_has_empty_hyps() {
+        let thm = nat_zero_ne_one();
+        assert!(thm.hyps().is_empty(), "got {} hyps", thm.hyps().len());
+        assert!(thm.concl().type_of().unwrap().is_prop());
+    }
+
+    #[test]
+    fn nat_zero_ne_one_is_cached() {
+        // Two calls should produce structurally identical Thms.
+        let a = nat_zero_ne_one();
+        let b = nat_zero_ne_one();
+        assert_eq!(a.concl(), b.concl());
     }
 }

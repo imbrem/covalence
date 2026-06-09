@@ -1296,15 +1296,17 @@ impl HolLightKernel for PureHol {
     }
 
     fn mk_const_validated(&mut self, name: NameId, ty: Type) -> Result<Term, HolError> {
-        let _generic = self
-            .constants
-            .get(&name)
-            .ok_or(HolError::UnknownConstant(name))?
-            .clone();
-        // For now we accept any instance type (HOL Light unifies against
-        // the generic type; we leave that for the validated-constructor
-        // pass). The basic kernel sound rules don't require this check —
-        // it's a user-experience guardrail.
+        // Auto-register on first reference (using the supplied type as
+        // the generic scheme). OpenTheory's std-* articles emit
+        // forward references — `constTerm` appears before the
+        // matching `defineConst` — so a strict pre-declaration check
+        // rejects valid articles. This guardrail is purely
+        // informational: the basic kernel sound rules don't depend on
+        // it, since `Term::Const` is unprivileged at the Pure level
+        // and any axioms about `name` must still come from a `Thm`.
+        if !self.constants.contains_key(&name) {
+            self.constants.insert(name, ty.clone());
+        }
         Ok(self.mk_const(name, ty))
     }
 }

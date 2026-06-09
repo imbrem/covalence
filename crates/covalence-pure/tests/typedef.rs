@@ -191,7 +191,7 @@ fn typedef_propagates_witness_hyps() {
     assert_eq!(witness.hyps().len(), 1);
 
     let td = Thm::new_type_definition("τ", "abs", "rep", witness.clone()).unwrap();
-    let expected: &std::collections::BTreeSet<Term> = witness.hyps();
+    let expected = witness.hyps();
     assert_eq!(td.abs_rep.hyps(), expected);
     assert_eq!(td.rep_abs_fwd.hyps(), expected);
     assert_eq!(td.rep_abs_back.hyps(), expected);

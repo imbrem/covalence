@@ -50,7 +50,7 @@ cluttering the kernel.
 full rule API.
 
 `covalence-wasm/wit/pure.wit`: `cov:pure@0.1.0` WIT package defining
-the guest-facing kernel API, with `term-set` as an *opaque* resource
+the guest-facing kernel API, with `ctx` as an *opaque* resource
 so the host's hyp-set representation can change without breaking
 guests.
 

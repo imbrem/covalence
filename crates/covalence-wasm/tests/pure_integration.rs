@@ -23,7 +23,7 @@
 use covalence_wasm::pure::{
     PureHost,
     cov::pure::api::{
-        HostPureType as TypeApi, HostTerm as TermApi, HostTermSet as TermSetApi, HostThm as ThmApi,
+        HostCtx as CtxApi, HostPureType as TypeApi, HostTerm as TermApi, HostThm as ThmApi,
     },
 };
 use wasmtime::component::Resource;
@@ -122,8 +122,8 @@ fn prove_refl_blob() {
 
     // No hypotheses.
     let hyps = ThmApi::hyps(&mut h, borrow(th.rep())).expect("hyps");
-    assert!(TermSetApi::is_empty(&mut h, borrow(hyps.rep())).expect("is-empty"));
-    assert_eq!(TermSetApi::len(&mut h, borrow(hyps.rep())).expect("len"), 0);
+    assert!(CtxApi::is_empty(&mut h, borrow(hyps.rep())).expect("is-empty"));
+    assert_eq!(CtxApi::len(&mut h, borrow(hyps.rep())).expect("len"), 0);
 
     // The theorem has no observations.
     assert!(ThmApi::has_no_obs(&mut h, borrow(th.rep())).expect("has-no-obs"));
@@ -251,7 +251,7 @@ fn beta_conv_identity() {
 
     // No hypotheses.
     let hyps = ThmApi::hyps(&mut h, borrow(th.rep())).expect("hyps");
-    assert!(TermSetApi::is_empty(&mut h, borrow(hyps.rep())).expect("is-empty"));
+    assert!(CtxApi::is_empty(&mut h, borrow(hyps.rep())).expect("is-empty"));
 }
 
 /// `{φ} ⊢ φ` via assume; hyp set has exactly that φ.
@@ -263,11 +263,11 @@ fn assume_records_hypothesis() {
     let th = unwrap_trappable(ThmApi::assume(&mut h, borrow(p.rep())), "assume");
 
     let hyps = ThmApi::hyps(&mut h, borrow(th.rep())).expect("hyps");
-    assert_eq!(TermSetApi::len(&mut h, borrow(hyps.rep())).expect("len"), 1);
-    assert!(TermSetApi::contains(&mut h, borrow(hyps.rep()), borrow(p.rep())).expect("contains"));
+    assert_eq!(CtxApi::len(&mut h, borrow(hyps.rep())).expect("len"), 1);
+    assert!(CtxApi::contains(&mut h, borrow(hyps.rep()), borrow(p.rep())).expect("contains"));
 
     // The single hyp at index 0 is α-equal to p.
-    let h0 = TermSetApi::at(&mut h, borrow(hyps.rep()), 0)
+    let h0 = CtxApi::at(&mut h, borrow(hyps.rep()), 0)
         .expect("at")
         .expect("some");
     let eq = TermApi::equals(&mut h, borrow(h0.rep()), borrow(p.rep())).expect("eq");
@@ -275,7 +275,7 @@ fn assume_records_hypothesis() {
 
     // Out-of-range returns none.
     assert!(
-        TermSetApi::at(&mut h, borrow(hyps.rep()), 5)
+        CtxApi::at(&mut h, borrow(hyps.rep()), 5)
             .expect("at-oob")
             .is_none()
     );
@@ -296,7 +296,7 @@ fn imp_intro_discharges_hypothesis() {
 
     // Empty hyps.
     let hyps = ThmApi::hyps(&mut h, borrow(derived.rep())).expect("hyps");
-    assert!(TermSetApi::is_empty(&mut h, borrow(hyps.rep())).expect("is-empty"));
+    assert!(CtxApi::is_empty(&mut h, borrow(hyps.rep())).expect("is-empty"));
 
     // Concl: p ⟹ p — compare to the manual term.
     let p_imp_p = TermApi::imp(&mut h, borrow(p.rep()), borrow(p.rep())).expect("p⟹p");

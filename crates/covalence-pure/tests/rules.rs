@@ -160,3 +160,50 @@ fn eq_mp_requires_eq_concl() {
     let p_thm2 = Thm::assume(p).unwrap();
     assert!(imp_thm.eq_mp(p_thm2).is_err());
 }
+
+// ---- weakening ----
+
+#[test]
+fn weaken_extends_hyps() {
+    use covalence_pure::{Ctx, Term, Thm, Type};
+    let p = Term::free("p", Type::prop());
+    let q = Term::free("q", Type::prop());
+    // {p} ⊢ p
+    let thm = Thm::assume(p.clone()).unwrap();
+    // target: {p, q}
+    let target = Ctx::singleton(p.clone()).insert(q.clone());
+    let weakened = thm.weaken(target.clone()).unwrap();
+    assert_eq!(weakened.concl(), &p);
+    assert_eq!(weakened.hyps(), &target);
+}
+
+#[test]
+fn weaken_same_ctx_is_identity_on_hyps() {
+    use covalence_pure::{Term, Thm, Type};
+    let p = Term::free("p", Type::prop());
+    let thm = Thm::assume(p.clone()).unwrap();
+    let same = thm.hyps().clone();
+    let weakened = thm.weaken(same.clone()).unwrap();
+    assert_eq!(weakened.hyps(), &same);
+}
+
+#[test]
+fn weaken_rejects_dropped_hyp() {
+    use covalence_pure::{Ctx, Term, Thm, Type};
+    let p = Term::free("p", Type::prop());
+    let q = Term::free("q", Type::prop());
+    let thm = Thm::assume(p).unwrap();           // {p} ⊢ p
+    let target = Ctx::singleton(q);              // {q} — does not contain p
+    assert!(thm.weaken(target).is_err());
+}
+
+#[test]
+fn weaken_from_empty_to_anything() {
+    use covalence_pure::{Ctx, Term, Thm, Type};
+    let x = Term::free("x", Type::prop());
+    let p = Term::free("p", Type::prop());
+    let thm = Thm::refl(x).unwrap();             // ⊢ x ≡ x
+    let target = Ctx::singleton(p);
+    let weakened = thm.weaken(target.clone()).unwrap();
+    assert_eq!(weakened.hyps(), &target);
+}

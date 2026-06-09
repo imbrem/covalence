@@ -98,6 +98,9 @@ pub enum Error {
 
     #[error("reduce_prim: term is not a primitive applied to literal arguments")]
     NotReducible,
+
+    #[error("weaken: target context is not a superset of the theorem's hypotheses")]
+    NotASuperset,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

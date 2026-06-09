@@ -1,12 +1,19 @@
 //! Rational numbers `rat`.
 //!
-//! Declared as an opaque HOL type with the field axioms postulated.
-//! A future version will swap to a typedef carve-out of `int × int+`
-//! reduced (equivalence classes `(p, q) ∼ (p', q')` iff `p*q' = p'*q`)
-//! without breaking the consumer API below.
+//! Declared as an opaque HOL type with the field axioms postulated
+//! as `rat`'s *definitional* characterisation — the eight
+//! commutative-field laws plus `mul_inv` collectively pin down the
+//! operations up to isomorphism (the universal property of the
+//! prime field of characteristic zero). A future refactor will
+//! swap to a typedef carve-out of `int × int+` modulo
+//! `(p, q) ∼ (p', q') ⟺ p·q' = p'·q`, at which point the field
+//! laws become derived theorems; the consumer-facing
+//! `axiom_*`/`LazyLock<Thm>` surface stays stable.
 //!
-//! For now: postulated ordered-field axioms over a primitive `rat`
-//! type, plus `int_to_rat` embedding.
+//! The `int_to_rat` axioms (`axiom_int_to_rat_zero`,
+//! `axiom_int_to_rat_add`) characterise the embedding morphism;
+//! they will likewise become derivable once the quotient is
+//! committed to.
 
 use std::sync::LazyLock;
 

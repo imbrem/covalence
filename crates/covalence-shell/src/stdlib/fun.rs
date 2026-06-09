@@ -3,12 +3,16 @@
 //! Both are polymorphic: `id : 'a → 'a` and
 //! `compose : ('b → 'c) → ('a → 'b) → ('a → 'c)`.
 //!
-//! Both are declared as HOL constants with postulated defining
-//! equations. Closed-form facts (`id (lit 5) = lit 5`) and
-//! composition laws (`id ∘ f = f`, `compose_assoc`) are exposed
-//! as `LazyLock<Thm>` axioms, instantiated polymorphically via
-//! [`inst_tfree`] when downstream callers need them at a specific
-//! type.
+//! Layered like the other stdlib modules:
+//! 1. **Definitional axioms** — [`axiom_id_def`] (`id x = x`) and
+//!    [`axiom_compose_def`] (`compose f g x = f (g x)`) fix the
+//!    meaning of each constant by a single equation.
+//! 2. **Derived theorems** — [`axiom_id_compose_l`],
+//!    [`axiom_id_compose_r`], [`axiom_compose_assoc`] are
+//!    point-free identities at the *function* level. They are
+//!    currently postulated; the proofs reduce to the def axioms
+//!    plus function extensionality (the latter coming from the
+//!    HOL Light axiom layer in `covalence-hol`).
 
 use std::sync::LazyLock;
 
@@ -130,7 +134,11 @@ pub fn axiom_compose_def() -> Thm {
     AX.clone()
 }
 
-/// `⊢ ∀f:'a→'b. compose id f = f` — left identity (id ∘ f = f at function level).
+/// `⊢ ∀f:'a→'b. compose id f = f` — left identity (id ∘ f = f at
+/// function level).
+///
+/// TODO: prove from [`axiom_id_def`] + [`axiom_compose_def`] +
+/// function extensionality; currently postulated.
 pub fn axiom_id_compose_l() -> Thm {
     static AX: LazyLock<Thm> = LazyLock::new(|| {
         let ctx = ctx();
@@ -149,6 +157,9 @@ pub fn axiom_id_compose_l() -> Thm {
 }
 
 /// `⊢ ∀f:'a→'b. compose f id = f` — right identity.
+///
+/// TODO: prove from [`axiom_id_def`] + [`axiom_compose_def`] +
+/// function extensionality; currently postulated.
 pub fn axiom_id_compose_r() -> Thm {
     static AX: LazyLock<Thm> = LazyLock::new(|| {
         let ctx = ctx();
@@ -167,6 +178,9 @@ pub fn axiom_id_compose_r() -> Thm {
 }
 
 /// `⊢ ∀f g h. (f ∘ g) ∘ h = f ∘ (g ∘ h)` — associativity.
+///
+/// TODO: prove from [`axiom_compose_def`] + function extensionality;
+/// currently postulated.
 pub fn axiom_compose_assoc() -> Thm {
     static AX: LazyLock<Thm> = LazyLock::new(|| {
         let ctx = ctx();

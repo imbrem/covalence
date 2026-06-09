@@ -14,10 +14,17 @@ use std::sync::LazyLock;
 
 use covalence_types::Nat;
 
+use crate::subst::close;
 use crate::term::{Arith, HolOp, Prim, Term, Type};
 
 // ============================================================================
 // Term builders for HOL constructs
+//
+// Each binder helper closes the named free variable into a
+// de Bruijn `BoundVar` before wrapping with the binder. The Pure
+// kernel's `all_elim` / `beta_conv` rules walk the bound-var
+// structure, so failing to close here would make every axiom term
+// look "binder-free" at the kernel level.
 // ============================================================================
 
 /// HOL `T` and `F` are kernel literals; this helper gives us the
@@ -64,10 +71,25 @@ fn forall_at(alpha: Type) -> Term {
     Term::hol_op(HolOp::Forall, Type::fun(pred, bool_ty()))
 }
 
-/// HOL `∀x:α. body` — `Forall (λx:α. body)`.
+/// HOL `∀x:α. body[x]` — `Forall (λx:α. body[Bound 0])`. The free
+/// variable `Free(hint, α)` in `body` is closed into `Bound(0)`.
 fn hol_forall(hint: &str, alpha: Type, body: Term) -> Term {
-    let lambda = Term::abs(hint, alpha.clone(), body);
+    let closed = close(&body, hint);
+    let lambda = Term::abs(hint, alpha.clone(), closed);
     Term::app(forall_at(alpha), lambda)
+}
+
+/// Pure meta-universal `⋀x:α. body[x]` — closes `Free(hint, α)`
+/// into `Bound(0)` before wrapping with `Term::all`.
+fn pure_all(hint: &str, alpha: Type, body: Term) -> Term {
+    Term::all(hint, alpha, close(&body, hint))
+}
+
+/// Pure abstraction `λx:α. body[x]` — closes `Free(hint, α)` into
+/// `Bound(0)` before wrapping with `Term::abs`. Used for predicate
+/// lambdas inside `HolOp(Forall, _)` applications.
+fn pure_abs(hint: &str, alpha: Type, body: Term) -> Term {
+    Term::abs(hint, alpha, close(&body, hint))
 }
 
 /// HOL `=` at `α → α → bool`.
@@ -102,6 +124,51 @@ fn succ(n: Term) -> Term {
 /// `pred : nat → nat`.
 fn pred(n: Term) -> Term {
     Term::app(Term::prim(Prim::NatArith(Arith::Pred)), n)
+}
+
+fn pred_fn() -> Term {
+    Term::prim(Prim::NatArith(Arith::Pred))
+}
+
+fn nat_add_fn() -> Term {
+    Term::prim(Prim::NatArith(Arith::Add))
+}
+
+fn nat_add(a: Term, b: Term) -> Term {
+    Term::app(Term::app(nat_add_fn(), a), b)
+}
+
+fn nat_mul_fn() -> Term {
+    Term::prim(Prim::NatArith(Arith::Mul))
+}
+
+fn nat_mul(a: Term, b: Term) -> Term {
+    Term::app(Term::app(nat_mul_fn(), a), b)
+}
+
+fn nat_sub_fn() -> Term {
+    Term::prim(Prim::NatArith(Arith::Sub))
+}
+
+fn nat_sub(a: Term, b: Term) -> Term {
+    Term::app(Term::app(nat_sub_fn(), a), b)
+}
+
+/// `natrec : β → (β → β) → nat → β` at carrier β. A HOL-level
+/// constant (defined in `covalence-hol` via Hilbert's `select`).
+/// Referenced by the Pure-prim definitional axioms below.
+fn natrec_at(beta: Type) -> Term {
+    let step_ty = Type::fun(beta.clone(), beta.clone());
+    let ty = Type::fun(
+        beta.clone(),
+        Type::fun(step_ty, Type::fun(Type::nat(), beta)),
+    );
+    Term::const_("natrec", ty)
+}
+
+fn natrec(base: Term, step: Term, n: Term) -> Term {
+    let beta = base.type_of().expect("natrec: base typed");
+    Term::app(Term::app(Term::app(natrec_at(beta), base), step), n)
 }
 
 /// `int_of_nat : nat → int` — the canonical embedding `n ↦ +n`.
@@ -164,8 +231,8 @@ static EQ_REFLECTION_TERM: LazyLock<Term> = LazyLock::new(|| {
     let rhs = Term::eq(x, y);
     let body = Term::eq(lhs, rhs);
 
-    let inner = Term::all("y", alpha.clone(), body);
-    Term::all("x", alpha, inner)
+    let inner = pure_all("y", alpha.clone(), body);
+    pure_all("x", alpha, inner)
 });
 
 static FORALL_REFLECTION_TERM: LazyLock<Term> = LazyLock::new(|| {
@@ -175,14 +242,14 @@ static FORALL_REFLECTION_TERM: LazyLock<Term> = LazyLock::new(|| {
 
     let x_inner = Term::free("x", alpha.clone());
     let p_x_inner = Term::app(p.clone(), x_inner);
-    let left = Term::all("x", alpha.clone(), trueprop(p_x_inner));
+    let left = pure_all("x", alpha.clone(), trueprop(p_x_inner));
 
     let x_outer = Term::free("x", alpha.clone());
     let p_x_outer = Term::app(p.clone(), x_outer);
     let right = trueprop(hol_forall("x", alpha, p_x_outer));
 
     let body = Term::eq(left, right);
-    Term::all("P", pred_ty, body)
+    pure_all("P", pred_ty, body)
 });
 
 static IMP_REFLECTION_TERM: LazyLock<Term> = LazyLock::new(|| {
@@ -193,8 +260,8 @@ static IMP_REFLECTION_TERM: LazyLock<Term> = LazyLock::new(|| {
     let right = trueprop(hol_imp(p, q));
 
     let body = Term::eq(left, right);
-    let inner = Term::all("q", bool_ty(), body);
-    Term::all("p", bool_ty(), inner)
+    let inner = pure_all("q", bool_ty(), body);
+    pure_all("p", bool_ty(), inner)
 });
 
 // ---- Definitional axioms: pred ----
@@ -208,7 +275,49 @@ static PRED_SUCC_TERM: LazyLock<Term> = LazyLock::new(|| {
     // ⋀n:nat. Trueprop (pred (succ n) = n)
     let n = Term::free("n", Type::nat());
     let eq = hol_eq(pred(succ(n.clone())), n);
-    Term::all("n", Type::nat(), trueprop(eq))
+    pure_all("n", Type::nat(), trueprop(eq))
+});
+
+// ---- Definitional axioms tying Pure prims to natrec ----
+//
+// Each equation defines a Pure `Prim::NatArith(_)` operator in
+// terms of HOL `natrec`. Sound because the closed-form behaviour
+// of these prims (`Thm::reduce_prim`) and the natrec-fold
+// behaviour agree at every literal n: both unfold to the same
+// value.
+
+static NAT_ADD_DEF_TERM: LazyLock<Term> = LazyLock::new(|| {
+    // ⋀m n. Trueprop (m + n = natrec m succ n)
+    let m = Term::free("m", Type::nat());
+    let n = Term::free("n", Type::nat());
+    let lhs = nat_add(m.clone(), n.clone());
+    let rhs = natrec(m.clone(), succ_fn(), n.clone());
+    let eq = hol_eq(lhs, rhs);
+    pure_all("m", Type::nat(), pure_all("n", Type::nat(), trueprop(eq)))
+});
+
+static NAT_MUL_DEF_TERM: LazyLock<Term> = LazyLock::new(|| {
+    // ⋀m n. Trueprop (m * n = natrec 0 (λx. x + m) n)
+    let m = Term::free("m", Type::nat());
+    let n = Term::free("n", Type::nat());
+    let lhs = nat_mul(m.clone(), n.clone());
+    // step = λx:nat. x + m
+    let x = Term::free("x", Type::nat());
+    let step_body = nat_add(x, m.clone());
+    let step = pure_abs("x", Type::nat(), step_body);
+    let rhs = natrec(zero(), step, n.clone());
+    let eq = hol_eq(lhs, rhs);
+    pure_all("m", Type::nat(), pure_all("n", Type::nat(), trueprop(eq)))
+});
+
+static NAT_SUB_DEF_TERM: LazyLock<Term> = LazyLock::new(|| {
+    // ⋀m n. Trueprop (m - n = natrec m pred n)
+    let m = Term::free("m", Type::nat());
+    let n = Term::free("n", Type::nat());
+    let lhs = nat_sub(m.clone(), n.clone());
+    let rhs = natrec(m.clone(), pred_fn(), n.clone());
+    let eq = hol_eq(lhs, rhs);
+    pure_all("m", Type::nat(), pure_all("n", Type::nat(), trueprop(eq)))
 });
 
 // ---- Integer induction ----
@@ -236,7 +345,7 @@ static INT_INDUCTION_TERM: LazyLock<Term> = LazyLock::new(|| {
     let consequent = hol_forall("z", Type::int(), p_z);
 
     let body = hol_imp(antecedent, consequent);
-    Term::all("P", pred_ty, trueprop(body))
+    pure_all("P", pred_ty, trueprop(body))
 });
 
 /// Conclusion of [`crate::Thm::nat_induction`]:
@@ -251,6 +360,18 @@ pub(crate) fn pred_zero_term() -> Term {
 
 pub(crate) fn pred_succ_term() -> Term {
     PRED_SUCC_TERM.clone()
+}
+
+pub(crate) fn nat_add_def_term() -> Term {
+    NAT_ADD_DEF_TERM.clone()
+}
+
+pub(crate) fn nat_mul_def_term() -> Term {
+    NAT_MUL_DEF_TERM.clone()
+}
+
+pub(crate) fn nat_sub_def_term() -> Term {
+    NAT_SUB_DEF_TERM.clone()
 }
 
 pub(crate) fn int_induction_term() -> Term {

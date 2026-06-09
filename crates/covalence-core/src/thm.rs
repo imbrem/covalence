@@ -747,6 +747,29 @@ impl Thm {
             .expect("nat_pred_succ: well-typed by construction")
     }
 
+    /// `⊢ ⋀m n:nat. Trueprop (m + n = natrec m succ n)` — addition
+    /// as `n`-fold successor. Ties the Pure `Prim::NatArith(Add)`
+    /// to the HOL-level `natrec` (which is itself defined in
+    /// `covalence-hol` via Hilbert's `select`).
+    pub fn nat_add_def() -> Thm {
+        Self::build(Ctx::new(), hol::nat_add_def_term())
+            .expect("nat_add_def: well-typed by construction")
+    }
+
+    /// `⊢ ⋀m n:nat. Trueprop (m * n = natrec 0 (λx. x + m) n)` —
+    /// multiplication as `n`-fold add-of-`m`.
+    pub fn nat_mul_def() -> Thm {
+        Self::build(Ctx::new(), hol::nat_mul_def_term())
+            .expect("nat_mul_def: well-typed by construction")
+    }
+
+    /// `⊢ ⋀m n:nat. Trueprop (m - n = natrec m pred n)` —
+    /// saturating subtraction as `n`-fold predecessor.
+    pub fn nat_sub_def() -> Thm {
+        Self::build(Ctx::new(), hol::nat_sub_def_term())
+            .expect("nat_sub_def: well-typed by construction")
+    }
+
     // ---- integer induction ----
 
     /// `⊢ ⋀P:int→bool. Trueprop ((∀n:nat. P (int_of_nat n))

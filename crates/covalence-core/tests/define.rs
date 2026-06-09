@@ -7,7 +7,7 @@
 //! into `⊢ body1 ≡ body2`.
 
 use bytes::Bytes;
-use covalence_pure::{Term, TermKind, Thm, Type};
+use covalence_core::{Term, TermKind, Thm, Type};
 
 #[test]
 fn define_emits_unfolding_equation() {

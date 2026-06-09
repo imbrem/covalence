@@ -1,0 +1,15 @@
+[package]
+name = "covalence-core"
+version = "0.0.0"
+edition = "2024"
+
+# TCB. Pure LF + HOL primitives + reduction rules folded together.
+# Keep dependencies minimal so the import graph is auditable in one
+# glance. Hashing, S-expression syntax, FFI bridges, and the
+# (untrusted) HOL builder shell live downstream in `covalence-hol`.
+
+[dependencies]
+covalence-types = { path = "../covalence-types" }
+smol_str = "0.3"
+bytes = "1"
+thiserror = "2"

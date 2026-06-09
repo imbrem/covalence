@@ -7,7 +7,7 @@ edition = "2024"
 default = []
 
 [dependencies]
-covalence-pure = { path = "../covalence-pure" }
+covalence-core = { path = "../covalence-core" }
 covalence-types = { path = "../covalence-types" }
 smol_str = "0.3"
 thiserror = "2"

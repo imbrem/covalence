@@ -4,7 +4,7 @@
 //! closed-form computation; the open-form HOL ring axioms come from
 //! `covalence_hol::int_axioms` and are re-exported here.
 
-use covalence_pure::{Arith, Prim, Term, Type};
+use covalence_core::{Arith, Prim, Term, Type};
 
 pub use covalence_types::Int;
 
@@ -99,7 +99,7 @@ pub fn rem(a: Term, b: Term) -> Term {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_pure::Thm;
+    use covalence_core::Thm;
 
     #[test]
     fn ty_is_pure_int() {
@@ -114,7 +114,7 @@ mod tests {
         )));
         let thm = Thm::reduce_prim(n).unwrap();
         let rhs = match thm.concl().kind() {
-            covalence_pure::TermKind::Eq(_, r) => r.clone(),
+            covalence_core::TermKind::Eq(_, r) => r.clone(),
             _ => panic!(),
         };
         assert_eq!(

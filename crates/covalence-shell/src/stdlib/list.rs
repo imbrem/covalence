@@ -17,7 +17,7 @@
 use std::sync::LazyLock;
 
 use covalence_hol::HolLightCtx;
-use covalence_pure::{Term, Thm, Type};
+use covalence_core::{Term, Thm, Type};
 
 fn ctx() -> HolLightCtx {
     HolLightCtx::new()
@@ -116,7 +116,7 @@ pub fn list_rec_apply(base: Term, step: Term, xs: Term) -> Term {
     let beta = base.type_of().expect("list_rec_apply: base typed");
     let xs_ty = xs.type_of().expect("list_rec_apply: xs typed");
     let alpha = match xs_ty.kind() {
-        covalence_pure::TypeKind::Tycon(_, args) if args.len() == 1 => args[0].clone(),
+        covalence_core::TypeKind::Tycon(_, args) if args.len() == 1 => args[0].clone(),
         _ => panic!("list_rec_apply: xs must have type `list α`"),
     };
     let rec = list_rec_at(alpha, beta);

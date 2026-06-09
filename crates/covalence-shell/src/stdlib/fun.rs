@@ -17,7 +17,7 @@
 use std::sync::LazyLock;
 
 use covalence_hol::HolLightCtx;
-use covalence_pure::{Term, Thm, Type};
+use covalence_core::{Term, Thm, Type};
 
 fn ctx() -> HolLightCtx {
     HolLightCtx::new()
@@ -95,11 +95,11 @@ pub fn compose_apply(f: Term, g: Term, x: Term) -> Term {
     let f_ty = f.type_of().expect("compose_apply: f typed");
     let g_ty = g.type_of().expect("compose_apply: g typed");
     let (beta, gamma) = match f_ty.kind() {
-        covalence_pure::TypeKind::Fun(b, c) => (b.clone(), c.clone()),
+        covalence_core::TypeKind::Fun(b, c) => (b.clone(), c.clone()),
         _ => panic!("compose_apply: f must be a function"),
     };
     let alpha = match g_ty.kind() {
-        covalence_pure::TypeKind::Fun(a, _) => a.clone(),
+        covalence_core::TypeKind::Fun(a, _) => a.clone(),
         _ => panic!("compose_apply: g must be a function"),
     };
     let comp = compose_at(alpha, beta, gamma);

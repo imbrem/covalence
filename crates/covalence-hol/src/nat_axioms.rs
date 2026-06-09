@@ -23,7 +23,7 @@
 
 use std::sync::LazyLock;
 
-use covalence_pure::{Arith, Prim, Term, Thm, Type};
+use covalence_core::{Arith, Prim, Term, Thm, Type};
 
 use crate::HolLightCtx;
 

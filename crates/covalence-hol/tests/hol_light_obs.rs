@@ -10,7 +10,7 @@
 //!   and end-to-end use in HOL Light rule derivations.
 
 use covalence_hol::{HolLight, HolLightCtx};
-use covalence_pure::{Term, Thm, Type, TypeKind};
+use covalence_core::{Term, Thm, Type, TypeKind};
 
 // ============================================================================
 // Observer family basics
@@ -137,7 +137,7 @@ fn is_true_is_false_is_trueprop() {
     assert!(!ctx.is_false(&ctx.t()));
     let p = Term::free("p", ctx.bool_type());
     let tp_p = ctx.mk_trueprop(p).unwrap();
-    let covalence_pure::TermKind::App(tp_head, _) = tp_p.kind() else {
+    let covalence_core::TermKind::App(tp_head, _) = tp_p.kind() else {
         panic!("expected App");
     };
     assert!(ctx.is_trueprop(tp_head));

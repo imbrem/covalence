@@ -42,4 +42,4 @@ pub use covalence_kernel::primop::{PrimOp1, PrimOp2};
 /// only on `covalence-shell` for the standard library + the term
 /// constructors / theorem primitives it's built on.
 pub use covalence_hol::{HolLight, HolLightCtx, HolLightKernel, PureHol};
-pub use covalence_pure::{BinderHint, Term, Thm, Type, TypeDef, TypeKind};
+pub use covalence_core::{BinderHint, Term, Thm, Type, TypeDef, TypeKind};

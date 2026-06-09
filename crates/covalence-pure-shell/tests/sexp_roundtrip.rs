@@ -1,7 +1,7 @@
 //! Round-trip tests for the canonical S-expression syntax.
 
 use bytes::Bytes;
-use covalence_pure::{Term, Thm, Type};
+use covalence_core::{Term, Thm, Type};
 use covalence_pure_shell::sexp::{
     UnitObs, term_from_sexp, term_to_sexp, thm_to_sexp, type_from_sexp, type_to_sexp,
 };

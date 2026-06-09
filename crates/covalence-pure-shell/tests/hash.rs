@@ -1,6 +1,6 @@
 //! Smoke tests for the content-hash sidecar.
 
-use covalence_pure::{Term, Type};
+use covalence_core::{Term, Type};
 use covalence_pure_shell::hash::{Hasher, UnitObsHasher, hash_term, hash_type};
 
 #[test]

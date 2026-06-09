@@ -11,7 +11,7 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use covalence_pure as cp;
+use covalence_core as cp;
 
 fn err(e: cp::Error) -> PyErr {
     PyValueError::new_err(format!("{}", e))

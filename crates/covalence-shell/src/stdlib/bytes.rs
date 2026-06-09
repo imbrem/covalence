@@ -10,7 +10,7 @@
 use std::sync::LazyLock;
 
 use covalence_hol::HolLightCtx;
-use covalence_pure::{Prim, Term, Thm, Type};
+use covalence_core::{Prim, Term, Thm, Type};
 
 use crate::stdlib::nat;
 
@@ -210,7 +210,7 @@ pub fn axiom_bytes_induction() -> Thm {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_pure::{TermKind, Thm};
+    use covalence_core::{TermKind, Thm};
 
     fn rhs_of_reduction(t: Term) -> Term {
         let thm = Thm::reduce_prim(t).unwrap();

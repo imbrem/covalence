@@ -4,10 +4,10 @@ version = "0.0.0"
 edition = "2024"
 
 [features]
-runtime = ["dep:wasmtime", "dep:covalence-pure"]
+runtime = ["dep:wasmtime", "dep:covalence-core"]
 
 [dependencies]
-covalence-pure = { path = "../covalence-pure", optional = true }
+covalence-core = { path = "../covalence-core", optional = true }
 thiserror = "2"
 wasm-encoder = "0.251"
 wat = "1.251"

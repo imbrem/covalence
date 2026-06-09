@@ -1,6 +1,6 @@
 //! Smoke-test the LF and equality rules end-to-end.
 
-use covalence_pure::{Term, Thm, Type};
+use covalence_core::{Term, Thm, Type};
 
 fn bytes_ty() -> Type {
     Type::bytes()
@@ -16,7 +16,7 @@ fn refl_yields_eq() {
     let thm = Thm::refl(x.clone()).unwrap();
     assert!(thm.hyps().is_empty());
     match thm.concl().kind() {
-        covalence_pure::TermKind::Eq(a, b) => {
+        covalence_core::TermKind::Eq(a, b) => {
             assert_eq!(a, &x);
             assert_eq!(b, &x);
         }
@@ -36,7 +36,7 @@ fn assume_and_imp_intro_round_trip() {
     let intro = assumed.imp_intro(&phi).unwrap();
     assert!(intro.hyps().is_empty());
     match intro.concl().kind() {
-        covalence_pure::TermKind::Imp(a, b) => {
+        covalence_core::TermKind::Imp(a, b) => {
             assert_eq!(a, &phi);
             assert_eq!(b, &phi);
         }
@@ -67,7 +67,7 @@ fn beta_conversion() {
 
     let beta = Thm::beta_conv(app.clone()).unwrap();
     match beta.concl().kind() {
-        covalence_pure::TermKind::Eq(lhs, rhs) => {
+        covalence_core::TermKind::Eq(lhs, rhs) => {
             assert_eq!(lhs, &app);
             assert_eq!(rhs, &arg);
         }
@@ -83,7 +83,7 @@ fn eta_conversion() {
     let abs = Term::abs("x", bytes_ty(), body);
     let eta = Thm::eta_conv(abs.clone()).unwrap();
     match eta.concl().kind() {
-        covalence_pure::TermKind::Eq(lhs, rhs) => {
+        covalence_core::TermKind::Eq(lhs, rhs) => {
             assert_eq!(lhs, &abs);
             assert_eq!(rhs, &f);
         }
@@ -130,7 +130,7 @@ fn type_of_catches_inconsistent_free_var() {
 
 #[test]
 fn eq_mp_basic() {
-    use covalence_pure::{Term, Thm, Type};
+    use covalence_core::{Term, Thm, Type};
     // ⊢ x ≡ x ⊢ x → ⊢ x  (where x : prop)
     let x = Term::free("x", Type::prop());
     let eq_thm = Thm::refl(x.clone()).unwrap(); // ⊢ x ≡ x
@@ -141,7 +141,7 @@ fn eq_mp_basic() {
 
 #[test]
 fn eq_mp_lhs_must_match() {
-    use covalence_pure::{Term, Thm, Type};
+    use covalence_core::{Term, Thm, Type};
     let x = Term::free("x", Type::prop());
     let y = Term::free("y", Type::prop());
     let eq_thm = Thm::refl(x.clone()).unwrap(); // ⊢ x ≡ x
@@ -151,7 +151,7 @@ fn eq_mp_lhs_must_match() {
 
 #[test]
 fn eq_mp_requires_eq_concl() {
-    use covalence_pure::{Term, Thm, Type};
+    use covalence_core::{Term, Thm, Type};
     // refl on (Free x : prop) gives ⊢ x ≡ x. Then take assume(x ≡ x) — concl is
     // (x ≡ x), which IS an Eq. We need a non-Eq concl. Use ⊢ p ⟹ p.
     let p = Term::free("p", Type::prop());
@@ -165,7 +165,7 @@ fn eq_mp_requires_eq_concl() {
 
 #[test]
 fn weaken_extends_hyps() {
-    use covalence_pure::{Ctx, Term, Thm, Type};
+    use covalence_core::{Ctx, Term, Thm, Type};
     let p = Term::free("p", Type::prop());
     let q = Term::free("q", Type::prop());
     // {p} ⊢ p
@@ -179,7 +179,7 @@ fn weaken_extends_hyps() {
 
 #[test]
 fn weaken_same_ctx_is_identity_on_hyps() {
-    use covalence_pure::{Term, Thm, Type};
+    use covalence_core::{Term, Thm, Type};
     let p = Term::free("p", Type::prop());
     let thm = Thm::assume(p.clone()).unwrap();
     let same = thm.hyps().clone();
@@ -189,7 +189,7 @@ fn weaken_same_ctx_is_identity_on_hyps() {
 
 #[test]
 fn weaken_rejects_dropped_hyp() {
-    use covalence_pure::{Ctx, Term, Thm, Type};
+    use covalence_core::{Ctx, Term, Thm, Type};
     let p = Term::free("p", Type::prop());
     let q = Term::free("q", Type::prop());
     let thm = Thm::assume(p).unwrap();           // {p} ⊢ p
@@ -199,7 +199,7 @@ fn weaken_rejects_dropped_hyp() {
 
 #[test]
 fn weaken_from_empty_to_anything() {
-    use covalence_pure::{Ctx, Term, Thm, Type};
+    use covalence_core::{Ctx, Term, Thm, Type};
     let x = Term::free("x", Type::prop());
     let p = Term::free("p", Type::prop());
     let thm = Thm::refl(x).unwrap();             // ⊢ x ≡ x

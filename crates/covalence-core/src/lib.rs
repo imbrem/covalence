@@ -1,12 +1,18 @@
-//! Covalence Pure: an Isabelle/Pure–shaped logical framework.
+//! Covalence Core: the trusted kernel.
+//!
+//! An Isabelle/Pure–shaped logical framework (meta-implication
+//! `⟹`, meta-universal `⋀`, meta-equality `≡`) plus folded-in HOL
+//! primitives: the `bool` / `int` / `nat` / `bytes` types with
+//! computational reduction rules, and HOL's connectives /
+//! quantifiers / Hilbert choice as first-class term variants. The
+//! bona-fide axioms of HOL (extensionality, choice, induction over
+//! the primitive datatypes) are core kernel rules — not
+//! observer-system postulates.
 //!
 //! See `docs/design/proposals/stacked-pure-hol/README.md` for the
-//! design intent. This crate is the **trusted bottom layer** of the
-//! stacked kernel design: a tiny LF with meta-implication,
-//! meta-universal, and meta-equality plus a single native data
-//! primitive (byte strings via `Blob`). Everything else — `bool`,
-//! `int`, `nat`, HOL connectives, content hashing, S-expression
-//! syntax, FFI bridges — lives in upper-layer crates.
+//! historical design intent. Content hashing, S-expression syntax,
+//! FFI bridges, and the untrusted HOL builder shell live downstream
+//! in `covalence-hol`.
 //!
 //! ## Conventions (Isabelle/Pure parity)
 //!
@@ -26,32 +32,26 @@
 //! ## Trust graph
 //!
 //! ```text
-//!   covalence-pure                       (TCB; this crate)
+//!   covalence-core                       (TCB; this crate)
 //!       │
 //!       ▼
-//!   covalence-pure-shell                 (hashing, sexp syntax)
-//!       │
+//!   covalence-hol                        (untrusted shell: HOL
+//!       │                                 builders, hashing, sexp,
+//!       │                                 stdlib lazy statics, WASM)
 //!       ▼
 //!   covalence-shell, application code    (REPL, server, …)
 //! ```
 //!
 //! ## Scope of this crate
 //!
-//! - Term and type representation (`term.rs`).
+//! - Term and type representation (`term.rs`), including HOL
+//!   primitives.
 //! - Capture-avoiding substitution, β/η, type-variable substitution
 //!   (`subst.rs`).
-//! - The eight LF rules + the six equality rules + `inst_tfree`
-//!   (`thm.rs`).
-//!
-//! ## Not in this crate (yet)
-//!
-//! - Local authorities and the `observe` rule.
-//! - The `define` rule for introducing constants by definitional
-//!   equality.
-//! - Standard library loader (BLAKE3-keyed blobs).
-//! - WASM-oracle adapter.
-//! - Anything HOL-shaped (`bool`, `=`, `∧`, `∀`, …) — lives in
-//!   `covalence-hol`.
+//! - Closed-form reduction (`builtins.rs`) — decides `Prim` and
+//!   `Bool` operations on literal arguments by reflexivity.
+//! - LF rules, equality rules, HOL rules, `inst_tfree`, the bona-
+//!   fide HOL axioms (`thm.rs`).
 
 mod builtins;
 pub mod error;

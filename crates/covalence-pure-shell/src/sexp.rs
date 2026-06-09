@@ -54,7 +54,7 @@
 //! Theorems serialise but do **not** parse back from S-expressions.
 
 use bytes::Bytes;
-use covalence_pure::{Object, Term, TermKind, Thm, Type, TypeKind};
+use covalence_core::{Object, Term, TermKind, Thm, Type, TypeKind};
 use covalence_sexp::{Atom, SExp, SExpr};
 
 /// Errors produced by S-expression parsing of Pure terms / types.
@@ -358,7 +358,7 @@ pub fn term_from_sexp(s: &SExpr, parser: &dyn ObsParser) -> Result<Term> {
             // Term shape directly. We use `Term::def` via a fresh
             // `Def` constructed through a kernel rule call to keep
             // the construction visible.
-            let thm = covalence_pure::Thm::define(name, body)
+            let thm = covalence_core::Thm::define(name, body)
                 .map_err(|e| SexpError(format!("invalid def: {}", e)))?;
             // The Thm has conclusion `Def(name, body) ≡ body`.
             // Extract the LHS (the Term::def leaf).

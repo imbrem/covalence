@@ -6,7 +6,7 @@
 //! Const consistency is also covered.
 
 use bytes::Bytes;
-use covalence_pure::{Error, Term, TermKind, Thm, Type, TypeKind};
+use covalence_core::{Error, Term, TermKind, Thm, Type, TypeKind};
 
 // ---------- builders ----------
 
@@ -679,7 +679,7 @@ fn open_substitutes_bound_zero_and_replaces_outer_uses() {
     // Exercises `subst::open` directly: instantiate Bound(0) in a
     // body that mentions Bound(1) (an outer reference) with a term
     // whose own Bound vars must be shifted up by the depth.
-    use covalence_pure::subst::open;
+    use covalence_core::subst::open;
     // body = (eq (bound 0) (bound 1))  — Bound(1) refers to one binder
     //   outside the imaginary λ we're stripping.
     let body = Term::eq(Term::bound(0), Term::bound(1));
@@ -694,7 +694,7 @@ fn open_substitutes_bound_zero_and_replaces_outer_uses() {
 
 #[test]
 fn open_shifts_replacement_bound_vars_under_inner_binder() {
-    use covalence_pure::subst::open;
+    use covalence_core::subst::open;
     // body = λy:bytes. (eq (bound 1) (bound 0))
     //   — Bound(1) is the (λ-stripped) variable, Bound(0) is `y`.
     let body = Term::abs("y", bytes_ty(), Term::eq(Term::bound(1), Term::bound(0)));

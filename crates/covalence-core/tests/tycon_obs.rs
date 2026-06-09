@@ -6,7 +6,7 @@
 //! and the same args. `subst_tfree` propagates through `TyConObs`'s
 //! args without affecting its identity.
 
-use covalence_pure::{Thm, Type, TypeKind};
+use covalence_core::{Thm, Type, TypeKind};
 
 #[derive(Debug)]
 struct TypeDefMarker;
@@ -60,13 +60,13 @@ fn tycon_obs_inst_tfree_propagates_through_args() {
         TypeKind::TyConObs(d, _, _) => d.clone(),
         _ => panic!(),
     };
-    let x = covalence_pure::Term::free("x", list_a.clone());
+    let x = covalence_core::Term::free("x", list_a.clone());
     let thm = Thm::refl(x).unwrap();
     let inst = thm.inst_tfree("a", Type::bytes()).unwrap();
 
     // The concl now has list bytes (same Arc, different args).
     let list_bytes = Type::tycon_obs_from_dyn(dyn_obs, "list", vec![Type::bytes()]);
-    let expected_x = covalence_pure::Term::free("x", list_bytes);
+    let expected_x = covalence_core::Term::free("x", list_bytes);
     let expected = Thm::refl(expected_x).unwrap();
     assert_eq!(inst.concl(), expected.concl());
 }
@@ -100,10 +100,10 @@ fn tycon_obs_can_be_used_as_a_term_type() {
     // Type::tycon_obs is a legitimate type and can label Free / Const /
     // Obs leaves. Refl over an x of such type type-checks.
     let tau = Type::tycon_obs(TypeDefMarker, "τ", vec![]);
-    let x = covalence_pure::Term::free("x", tau);
+    let x = covalence_core::Term::free("x", tau);
     let thm = Thm::refl(x.clone()).unwrap();
     match thm.concl().kind() {
-        covalence_pure::TermKind::Eq(a, b) => {
+        covalence_core::TermKind::Eq(a, b) => {
             assert_eq!(a, &x);
             assert_eq!(b, &x);
         }

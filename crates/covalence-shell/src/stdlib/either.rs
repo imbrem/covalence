@@ -13,7 +13,7 @@
 use std::sync::LazyLock;
 
 use covalence_hol::HolLightCtx;
-use covalence_pure::{Term, Thm, Type};
+use covalence_core::{Term, Thm, Type};
 
 fn ctx() -> HolLightCtx {
     HolLightCtx::new()
@@ -76,11 +76,11 @@ pub fn either_rec_apply(f: Term, g: Term, e: Term) -> Term {
     let f_ty = f.type_of().expect("either_rec_apply: f typed");
     let g_ty = g.type_of().expect("either_rec_apply: g typed");
     let (alpha, gamma) = match f_ty.kind() {
-        covalence_pure::TypeKind::Fun(a, c) => (a.clone(), c.clone()),
+        covalence_core::TypeKind::Fun(a, c) => (a.clone(), c.clone()),
         _ => panic!("either_rec_apply: f must be α → γ"),
     };
     let beta = match g_ty.kind() {
-        covalence_pure::TypeKind::Fun(b, _) => b.clone(),
+        covalence_core::TypeKind::Fun(b, _) => b.clone(),
         _ => panic!("either_rec_apply: g must be β → γ"),
     };
     let rec = either_rec_at(alpha, beta, gamma);

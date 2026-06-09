@@ -25,7 +25,7 @@
 use std::collections::HashMap;
 
 use covalence_hash::{Blake3Ctx, HashCtx, O256};
-use covalence_pure::{Object, Term, TermKind, Type, TypeKind};
+use covalence_core::{Object, Term, TermKind, Type, TypeKind};
 
 // ============================================================================
 // Observer payload trait

@@ -43,7 +43,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use covalence_pure::{BinderHint, Term, TermKind, Thm, Type, TypeKind, subst};
+use covalence_core::{BinderHint, Term, TermKind, Thm, Type, TypeKind, subst};
 use smol_str::SmolStr;
 
 use crate::hol_light_obs::HolLightCtx;
@@ -192,7 +192,7 @@ impl PureHol {
 // Error mapping
 // ============================================================================
 
-fn pure_err(e: covalence_pure::Error) -> HolError {
+fn pure_err(e: covalence_core::Error) -> HolError {
     HolError::TypeMismatch(format!("pure: {e:?}"))
 }
 
@@ -1383,7 +1383,7 @@ mod tests {
         // l = (λx. x) x, r = x. Compare r:
         assert_eq!(r, x);
         // l should reduce to x; structurally l is App(Abs(...), x).
-        assert!(matches!(l.kind(), covalence_pure::TermKind::App(_, _)));
+        assert!(matches!(l.kind(), covalence_core::TermKind::App(_, _)));
     }
 
     #[test]

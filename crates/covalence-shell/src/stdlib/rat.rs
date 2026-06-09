@@ -18,7 +18,7 @@
 use std::sync::LazyLock;
 
 use covalence_hol::HolLightCtx;
-use covalence_pure::{Term, Thm, Type};
+use covalence_core::{Term, Thm, Type};
 
 use crate::stdlib::int;
 

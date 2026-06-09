@@ -934,6 +934,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-core"
+version = "0.0.0"
+dependencies = [
+ "bytes",
+ "covalence-types",
+ "smol_str",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "covalence-core-test-guest"
+version = "0.0.0"
+dependencies = [
+ "wit-bindgen 0.57.1",
+]
+
+[[package]]
 name = "covalence-egglog"
 version = "0.0.0"
 dependencies = [
@@ -1022,7 +1039,7 @@ dependencies = [
 name = "covalence-hol"
 version = "0.0.0"
 dependencies = [
- "covalence-pure",
+ "covalence-core",
  "covalence-types",
  "smol_str",
  "thiserror 2.0.18",
@@ -1162,31 +1179,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "covalence-pure"
-version = "0.0.0"
-dependencies = [
- "bytes",
- "covalence-types",
- "smol_str",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "covalence-pure-shell"
 version = "0.0.0"
 dependencies = [
  "bytes",
+ "covalence-core",
  "covalence-hash",
- "covalence-pure",
  "covalence-sexp",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "covalence-pure-test-guest"
-version = "0.0.0"
-dependencies = [
- "wit-bindgen 0.57.1",
 ]
 
 [[package]]
@@ -1196,13 +1196,13 @@ dependencies = [
  "axum",
  "bytes",
  "bzip2",
+ "covalence-core",
  "covalence-git",
  "covalence-graph",
  "covalence-hash",
  "covalence-kv",
  "covalence-llm",
  "covalence-object",
- "covalence-pure",
  "covalence-pure-shell",
  "covalence-repl",
  "covalence-sat",
@@ -1297,11 +1297,11 @@ name = "covalence-shell"
 version = "0.0.0"
 dependencies = [
  "bytes",
+ "covalence-core",
  "covalence-hash",
  "covalence-hol",
  "covalence-kernel",
  "covalence-object",
- "covalence-pure",
  "covalence-store",
  "covalence-types",
  "smol_str",
@@ -1376,7 +1376,7 @@ dependencies = [
 name = "covalence-wasm"
 version = "0.0.0"
 dependencies = [
- "covalence-pure",
+ "covalence-core",
  "thiserror 2.0.18",
  "wasm-encoder 0.251.0",
  "wasmparser 0.251.0",

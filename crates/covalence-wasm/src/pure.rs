@@ -18,8 +18,8 @@ use wasmtime::component::{Resource, ResourceTable};
 // internal `pub use Type as __with_nameN;` re-exports for every entry
 // in its `with:` mapping; a plain `use` would leave those re-exports
 // pointing at a private import.
-pub use covalence_pure::{Term, Ctx, Thm, Type};
-use covalence_pure::Error;
+pub use covalence_core::{Term, Ctx, Thm, Type};
+use covalence_core::Error;
 
 // Resource keys in `with:` use dot (not slash) between interface and
 // resource. `imports: { default: trappable }` makes WIT methods that

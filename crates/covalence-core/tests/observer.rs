@@ -13,7 +13,7 @@
 //! invariants.
 
 use bytes::Bytes;
-use covalence_pure::{Object, ObsEq, Term, TermKind, Thm, Type};
+use covalence_core::{Object, ObsEq, Term, TermKind, Thm, Type};
 
 // ============================================================================
 // A made-up oracle's observation type, with a gated constructor.
@@ -38,7 +38,7 @@ mod my_oracle {
     /// `MyObs` opts in to the kernel's `obs_eq` rule by equating any
     /// two `MyObs` applications (the ε-model strategy).
     impl ObsEq for MyObs {
-        fn obs_eq(&self, _other: &Self, _: &[Term], _: &[Term], _hint: Option<&dyn covalence_pure::Hint>) -> bool {
+        fn obs_eq(&self, _other: &Self, _: &[Term], _: &[Term], _hint: Option<&dyn covalence_core::Hint>) -> bool {
             true
         }
     }
@@ -113,7 +113,7 @@ fn user_crate_can_mint_thm_from_observation() {
 
 #[test]
 fn observations_survive_substitution_of_type_variables() {
-    use covalence_pure::subst::subst_tfree_in_term;
+    use covalence_core::subst::subst_tfree_in_term;
     let obs = my_oracle::MyObs::run([0; 4], Bytes::from_static(b"x"));
     let leaf = Term::obs(obs, Type::tfree("a"));
     let subst = subst_tfree_in_term(&leaf, "a", &Type::bytes());
@@ -248,7 +248,7 @@ fn for_each_obs_errs_on_type_mismatch() {
     let result = thm.for_each_obs::<OtherObs, _>(&mut |_| {});
     assert!(matches!(
         result,
-        Err(covalence_pure::Error::ObsDowncastTypeMismatch)
+        Err(covalence_core::Error::ObsDowncastTypeMismatch)
     ));
 }
 
@@ -349,7 +349,7 @@ fn obs_eq_rejects_mismatched_pure_types() {
     let result = Thm::obs_eq::<my_oracle::MyObs>(e1, e2, None);
     assert!(matches!(
         result,
-        Err(covalence_pure::Error::TypeMismatch { .. })
+        Err(covalence_core::Error::TypeMismatch { .. })
     ));
 }
 
@@ -358,7 +358,7 @@ fn obs_eq_rejects_wrong_rust_type() {
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
     struct OtherObs(u32);
     impl ObsEq for OtherObs {
-        fn obs_eq(&self, _: &Self, _: &[Term], _: &[Term], _hint: Option<&dyn covalence_pure::Hint>) -> bool {
+        fn obs_eq(&self, _: &Self, _: &[Term], _: &[Term], _hint: Option<&dyn covalence_core::Hint>) -> bool {
             true
         }
     }
@@ -369,7 +369,7 @@ fn obs_eq_rejects_wrong_rust_type() {
     let result = Thm::obs_eq::<my_oracle::MyObs>(e1, e2, None);
     assert!(matches!(
         result,
-        Err(covalence_pure::Error::ObsDowncastTypeMismatch)
+        Err(covalence_core::Error::ObsDowncastTypeMismatch)
     ));
 }
 
@@ -378,7 +378,7 @@ fn obs_eq_rejects_non_obs_head() {
     let e1 = Term::free("x", Type::bytes());
     let e2 = Term::free("y", Type::bytes());
     let result = Thm::obs_eq::<my_oracle::MyObs>(e1, e2, None);
-    assert!(matches!(result, Err(covalence_pure::Error::NotObsHead(_))));
+    assert!(matches!(result, Err(covalence_core::Error::NotObsHead(_))));
 }
 
 #[test]
@@ -388,7 +388,7 @@ fn obs_eq_observer_can_refuse_equality() {
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
     struct PickyObs(u32);
     impl ObsEq for PickyObs {
-        fn obs_eq(&self, _other: &Self, my_args: &[Term], other_args: &[Term], _hint: Option<&dyn covalence_pure::Hint>) -> bool {
+        fn obs_eq(&self, _other: &Self, my_args: &[Term], other_args: &[Term], _hint: Option<&dyn covalence_core::Hint>) -> bool {
             my_args == other_args
         }
     }
@@ -406,7 +406,7 @@ fn obs_eq_observer_can_refuse_equality() {
     );
     // Different args → refused.
     let result = Thm::obs_eq::<PickyObs>(e1.clone(), e2, None);
-    assert!(matches!(result, Err(covalence_pure::Error::ObsEqRefused)));
+    assert!(matches!(result, Err(covalence_core::Error::ObsEqRefused)));
 
     // Same args → succeeds.
     let e3 = Term::app(Term::obs(o2, f_ty), Term::blob(Bytes::from_static(b"x")));
@@ -425,7 +425,7 @@ fn obs_eq_demonstrates_untrusted_id_plumbing() {
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
     struct UntrustedIdObs;
     impl ObsEq for UntrustedIdObs {
-        fn obs_eq(&self, _: &Self, _: &[Term], _: &[Term], _hint: Option<&dyn covalence_pure::Hint>) -> bool {
+        fn obs_eq(&self, _: &Self, _: &[Term], _: &[Term], _hint: Option<&dyn covalence_core::Hint>) -> bool {
             true
         }
     }
@@ -452,12 +452,12 @@ fn obs_eq_demonstrates_untrusted_id_plumbing() {
 
 #[test]
 fn obs_true_for_a_prop_typed_observation_succeeds_when_policy_allows() {
-    use covalence_pure::{ObsTrue, Type};
+    use covalence_core::{ObsTrue, Type};
 
     #[derive(Debug)]
     struct TrueProp;
     impl ObsTrue for TrueProp {
-        fn obs_true(&self, _args: &[Term], _hint: Option<&dyn covalence_pure::Hint>) -> bool {
+        fn obs_true(&self, _args: &[Term], _hint: Option<&dyn covalence_core::Hint>) -> bool {
             true
         }
     }
@@ -471,12 +471,12 @@ fn obs_true_for_a_prop_typed_observation_succeeds_when_policy_allows() {
 
 #[test]
 fn obs_true_rejects_non_prop_observations() {
-    use covalence_pure::ObsTrue;
+    use covalence_core::ObsTrue;
 
     #[derive(Debug)]
     struct BytesOracle;
     impl ObsTrue for BytesOracle {
-        fn obs_true(&self, _: &[Term], _: Option<&dyn covalence_pure::Hint>) -> bool {
+        fn obs_true(&self, _: &[Term], _: Option<&dyn covalence_core::Hint>) -> bool {
             true
         }
     }
@@ -484,12 +484,12 @@ fn obs_true_rejects_non_prop_observations() {
     // expr at type bytes — not prop, must be rejected.
     let expr = Term::obs(BytesOracle, Type::bytes());
     let result = Thm::obs_true::<BytesOracle>(expr, None);
-    assert!(matches!(result, Err(covalence_pure::Error::NotProp(_))));
+    assert!(matches!(result, Err(covalence_core::Error::NotProp(_))));
 }
 
 #[test]
 fn obs_true_passes_hint_to_policy() {
-    use covalence_pure::{Hint, ObsTrue, Type};
+    use covalence_core::{Hint, ObsTrue, Type};
     use std::sync::Arc;
     use std::sync::Mutex;
 
@@ -517,18 +517,18 @@ fn obs_true_passes_hint_to_policy() {
 
 #[test]
 fn obs_true_rejects_non_obs_head() {
-    use covalence_pure::ObsTrue;
+    use covalence_core::ObsTrue;
 
     #[derive(Debug)]
     struct Anything;
     impl ObsTrue for Anything {
-        fn obs_true(&self, _: &[Term], _: Option<&dyn covalence_pure::Hint>) -> bool {
+        fn obs_true(&self, _: &[Term], _: Option<&dyn covalence_core::Hint>) -> bool {
             true
         }
     }
 
     // expr is just a Free var — no obs at head.
-    let expr = Term::free("p", covalence_pure::Type::prop());
+    let expr = Term::free("p", covalence_core::Type::prop());
     let result = Thm::obs_true::<Anything>(expr, None);
-    assert!(matches!(result, Err(covalence_pure::Error::NotObsHead(_))));
+    assert!(matches!(result, Err(covalence_core::Error::NotObsHead(_))));
 }

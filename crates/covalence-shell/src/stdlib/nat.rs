@@ -22,7 +22,7 @@
 //! Consumers should reach for `stdlib::nat::*` and never touch
 //! `covalence-pure` or `covalence-hol` directly.
 
-use covalence_pure::{Arith, Prim, Term, Type};
+use covalence_core::{Arith, Prim, Term, Type};
 
 // Re-export underlying lit type for ergonomics.
 pub use covalence_types::Nat;
@@ -168,7 +168,7 @@ pub fn to_int(n: Term) -> Term {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_pure::Thm;
+    use covalence_core::Thm;
 
     #[test]
     fn ty_is_pure_nat() {
@@ -180,7 +180,7 @@ mod tests {
         let s_zero = succ(zero());
         let thm = Thm::reduce_prim(s_zero).unwrap();
         let rhs = match thm.concl().kind() {
-            covalence_pure::TermKind::Eq(_, r) => r.clone(),
+            covalence_core::TermKind::Eq(_, r) => r.clone(),
             _ => panic!("not eq"),
         };
         assert_eq!(rhs, one());
@@ -191,7 +191,7 @@ mod tests {
         let sum = add(lit(7u32), lit(35u32));
         let thm = Thm::reduce_prim(sum).unwrap();
         let rhs = match thm.concl().kind() {
-            covalence_pure::TermKind::Eq(_, r) => r.clone(),
+            covalence_core::TermKind::Eq(_, r) => r.clone(),
             _ => panic!("not eq"),
         };
         assert_eq!(rhs, lit(42u32));

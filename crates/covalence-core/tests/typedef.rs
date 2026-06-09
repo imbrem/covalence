@@ -6,7 +6,7 @@
 //! from `Arc` identity — distinct calls with the same hint and same
 //! witness produce distinct types/constants.
 
-use covalence_pure::{Term, TermKind, Thm, Type, TypeKind};
+use covalence_core::{Term, TermKind, Thm, Type, TypeKind};
 
 /// Build a witness theorem `⊢ P x` for `P : α → prop` and `x : α`,
 /// where x is `Free("witness", α)` and P is `λ_. ⊢ true` modeled as

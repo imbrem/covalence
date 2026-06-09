@@ -19,7 +19,7 @@ edition = "2024"
 #   covalence-shell, …             (application shells)
 
 [dependencies]
-covalence-pure = { path = "../covalence-pure" }
+covalence-core = { path = "../covalence-core" }
 covalence-hash = { path = "../covalence-hash", default-features = false }
 covalence-sexp = { path = "../covalence-sexp" }
 bytes = "1"

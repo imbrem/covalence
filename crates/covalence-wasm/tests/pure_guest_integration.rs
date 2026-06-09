@@ -2,7 +2,7 @@
 //!
 //! Flow per test:
 //!
-//! 1. Build the `covalence-pure-test-guest` crate for `wasm32-unknown-unknown`
+//! 1. Build the `covalence-core-test-guest` crate for `wasm32-unknown-unknown`
 //!    once per test process (cached in a [`OnceLock`]).
 //! 2. Wrap the core module into a component via `wit_component`.
 //! 3. Spin up a wasmtime engine + linker; register the `cov:pure/api`
@@ -29,7 +29,7 @@ use covalence_wasm::pure::{PureGuest, PureHost};
 // Build & encode the guest once per test process
 // ============================================================================
 
-/// Build `covalence-pure-test-guest` for wasm32 and encode the result
+/// Build `covalence-core-test-guest` for wasm32 and encode the result
 /// as a WASM component. Cached so multiple tests share one build.
 fn guest_component_bytes() -> &'static [u8] {
     static CACHE: OnceLock<Vec<u8>> = OnceLock::new();
@@ -49,7 +49,7 @@ fn guest_component_bytes() -> &'static [u8] {
             .args([
                 "build",
                 "-p",
-                "covalence-pure-test-guest",
+                "covalence-core-test-guest",
                 "--target",
                 "wasm32-unknown-unknown",
                 "--release",
@@ -62,7 +62,7 @@ fn guest_component_bytes() -> &'static [u8] {
         assert!(status.success(), "guest cargo build failed");
 
         let core_wasm_path =
-            guest_target.join("wasm32-unknown-unknown/release/covalence_pure_test_guest.wasm");
+            guest_target.join("wasm32-unknown-unknown/release/covalence_core_test_guest.wasm");
         let core_bytes = std::fs::read(&core_wasm_path)
             .unwrap_or_else(|e| panic!("read {}: {e}", core_wasm_path.display()));
 

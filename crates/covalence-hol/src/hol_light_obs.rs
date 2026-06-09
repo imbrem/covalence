@@ -76,8 +76,8 @@
 //!
 //! An earlier version of this module attempted to avoid the
 //! eq_reflection axiom by recognising HOL-Light-derivable shapes
-//! directly in the [`covalence_pure::ObsTrue`] and
-//! [`covalence_pure::ObsImp`] policies. The pattern looked appealing
+//! directly in the [`covalence_core::ObsTrue`] and
+//! [`covalence_core::ObsImp`] policies. The pattern looked appealing
 //! — fewer hypotheses, no axiom to thread through — but the analysis
 //! showed that ABS and INST cannot soundly fit. The pattern was
 //! removed. See the project's `audit` commit for the analysis.
@@ -85,7 +85,7 @@
 use std::fmt;
 use std::sync::LazyLock;
 
-use covalence_pure::{Object, Observer, Term, TermKind, Thm, Type};
+use covalence_core::{Object, Observer, Term, TermKind, Thm, Type};
 
 // ============================================================================
 // Process-global lazy statics
@@ -260,7 +260,7 @@ impl HolLightCtx {
 
     /// `t = u : bool`, given `t` and `u` of the same type α. Errors
     /// if `t` is ill-typed.
-    pub fn mk_eq(&self, lhs: Term, rhs: Term) -> Result<Term, covalence_pure::Error> {
+    pub fn mk_eq(&self, lhs: Term, rhs: Term) -> Result<Term, covalence_core::Error> {
         let alpha = lhs.type_of()?;
         let eq = self.eq_at(alpha);
         Ok(Term::app(Term::app(eq, lhs), rhs))
@@ -370,10 +370,10 @@ impl HolLightCtx {
 
     /// `Trueprop p` — wrap a HOL bool term as a Pure prop. Errors if
     /// `p` is not bool-typed.
-    pub fn mk_trueprop(&self, p: Term) -> Result<Term, covalence_pure::Error> {
+    pub fn mk_trueprop(&self, p: Term) -> Result<Term, covalence_core::Error> {
         let p_ty = p.type_of()?;
         if p_ty != self.bool_type() {
-            return Err(covalence_pure::Error::TypeMismatch {
+            return Err(covalence_core::Error::TypeMismatch {
                 expected: self.bool_type(),
                 got: p_ty,
             });

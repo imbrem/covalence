@@ -2,10 +2,10 @@
 //! Pure primitives + HOL axioms + closed-form reduction across
 //! all major modules.
 
-use covalence_pure::{TermKind, Thm};
+use covalence_core::{TermKind, Thm};
 use covalence_shell::stdlib::{bytes, byte, either, fun, int, list, nat, option, rat, real};
 
-fn rhs(t: covalence_pure::Term) -> covalence_pure::Term {
+fn rhs(t: covalence_core::Term) -> covalence_core::Term {
     let thm = Thm::reduce_prim(t).unwrap();
     match thm.concl().kind() {
         TermKind::Eq(_, r) => r.clone(),
@@ -112,12 +112,12 @@ fn fun_composition_types_check() {
     let nat_ty = nat::ty();
     let comp = fun::compose_at(nat_ty.clone(), nat_ty.clone(), nat_ty.clone());
     let succ = nat::succ_fn();
-    let succ_succ = covalence_pure::Term::app(
-        covalence_pure::Term::app(comp, succ.clone()),
+    let succ_succ = covalence_core::Term::app(
+        covalence_core::Term::app(comp, succ.clone()),
         succ,
     );
     assert_eq!(
         succ_succ.type_of().unwrap(),
-        covalence_pure::Type::fun(nat_ty.clone(), nat_ty)
+        covalence_core::Type::fun(nat_ty.clone(), nat_ty)
     );
 }

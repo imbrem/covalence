@@ -33,8 +33,9 @@ fn close_at(t: &Term, name: &str, depth: u32) -> Term {
         | TermKind::Free(..)
         | TermKind::Const(..)
         | TermKind::Blob(_)
-        | TermKind::NatLit(_)
-        | TermKind::IntLit(_)
+        | TermKind::Nat(_)
+        | TermKind::Int(_)
+        | TermKind::Bool(_)
         | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
@@ -72,8 +73,9 @@ fn inst(t: &Term, u: &Term, depth: u32) -> Term {
         TermKind::Free(..)
         | TermKind::Const(..)
         | TermKind::Blob(_)
-        | TermKind::NatLit(_)
-        | TermKind::IntLit(_)
+        | TermKind::Nat(_)
+        | TermKind::Int(_)
+        | TermKind::Bool(_)
         | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
@@ -128,8 +130,9 @@ fn shift_inner(t: &Term, delta: i64, cutoff: u32) -> Term {
         TermKind::Free(..)
         | TermKind::Const(..)
         | TermKind::Blob(_)
-        | TermKind::NatLit(_)
-        | TermKind::IntLit(_)
+        | TermKind::Nat(_)
+        | TermKind::Int(_)
+        | TermKind::Bool(_)
         | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
@@ -170,8 +173,9 @@ fn subst_free_at(t: &Term, name: &str, r: &Term, depth: u32) -> Term {
         | TermKind::Free(..)
         | TermKind::Const(..)
         | TermKind::Blob(_)
-        | TermKind::NatLit(_)
-        | TermKind::IntLit(_)
+        | TermKind::Nat(_)
+        | TermKind::Int(_)
+        | TermKind::Bool(_)
         | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
@@ -249,8 +253,9 @@ pub fn subst_tfree_in_term(t: &Term, name: &str, r: &Type) -> Term {
         TermKind::Imp(a, b) => Term::imp(sub(a), sub(b)),
         TermKind::Eq(a, b) => Term::eq(sub(a), sub(b)),
         TermKind::Blob(b) => Term::blob(b.clone()),
-        TermKind::NatLit(n) => Term::nat_lit(n.clone()),
-        TermKind::IntLit(n) => Term::int_lit(n.clone()),
+        TermKind::Nat(n) => Term::nat_lit(n.clone()),
+        TermKind::Int(n) => Term::int_lit(n.clone()),
+        TermKind::Bool(b) => Term::bool_lit(*b),
         TermKind::Prim(p) => Term::prim(*p),
         TermKind::Obs(observer, ty) => Term::obs_from_dyn(observer.clone(), st(ty)),
         // `Def` carries an `original` Arc identity (the unique
@@ -281,8 +286,9 @@ fn is_closed_at(t: &Term, depth: u32) -> bool {
         TermKind::Free(..)
         | TermKind::Const(..)
         | TermKind::Blob(_)
-        | TermKind::NatLit(_)
-        | TermKind::IntLit(_)
+        | TermKind::Nat(_)
+        | TermKind::Int(_)
+        | TermKind::Bool(_)
         | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => true,
@@ -309,8 +315,9 @@ pub fn find_free_type(t: &Term, name: &str) -> Option<Type> {
         | TermKind::Free(..)
         | TermKind::Const(..)
         | TermKind::Blob(_)
-        | TermKind::NatLit(_)
-        | TermKind::IntLit(_)
+        | TermKind::Nat(_)
+        | TermKind::Int(_)
+        | TermKind::Bool(_)
         | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => None,
@@ -335,8 +342,9 @@ fn uses_bound_at(t: &Term, target: u32, depth: u32) -> bool {
         TermKind::Free(..)
         | TermKind::Const(..)
         | TermKind::Blob(_)
-        | TermKind::NatLit(_)
-        | TermKind::IntLit(_)
+        | TermKind::Nat(_)
+        | TermKind::Int(_)
+        | TermKind::Bool(_)
         | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => false,
@@ -376,8 +384,9 @@ pub fn collect_term_tvars(t: &Term, out: &mut std::collections::BTreeSet<SmolStr
         }
         TermKind::Bound(_)
         | TermKind::Blob(_)
-        | TermKind::NatLit(_)
-        | TermKind::IntLit(_)
+        | TermKind::Nat(_)
+        | TermKind::Int(_)
+        | TermKind::Bool(_)
         | TermKind::Prim(_) => {}
         TermKind::Def(d) => collect_term_tvars(&d.body(), out),
     }

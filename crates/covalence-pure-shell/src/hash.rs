@@ -95,6 +95,7 @@ const T_DEF: u8 = 0x0a;
 const T_NAT_LIT: u8 = 0x0b;
 const T_INT_LIT: u8 = 0x0c;
 const T_PRIM: u8 = 0x0d;
+const T_BOOL: u8 = 0x0e;
 
 // ============================================================================
 // Stateless API
@@ -282,7 +283,7 @@ impl Hasher {
                 buf.extend_from_slice(body_h.as_bytes());
                 ctx.tag(buf)
             }
-            TermKind::NatLit(n) => {
+            TermKind::Nat(n) => {
                 let s = n.as_inner().to_string();
                 let bytes = s.as_bytes();
                 let mut buf = Vec::with_capacity(1 + 4 + bytes.len());
@@ -291,7 +292,7 @@ impl Hasher {
                 buf.extend_from_slice(bytes);
                 ctx.tag(buf)
             }
-            TermKind::IntLit(n) => {
+            TermKind::Int(n) => {
                 let s = n.as_inner().to_string();
                 let bytes = s.as_bytes();
                 let mut buf = Vec::with_capacity(1 + 4 + bytes.len());
@@ -312,6 +313,7 @@ impl Hasher {
                 buf.extend_from_slice(bytes);
                 ctx.tag(buf)
             }
+            TermKind::Bool(b) => ctx.tag([T_BOOL, u8::from(*b)]),
         }
     }
 }

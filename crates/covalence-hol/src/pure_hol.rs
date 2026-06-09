@@ -535,8 +535,9 @@ fn collect_term_tvars(t: &Term, out: &mut HashSet<SmolStr>) {
         }
         TermKind::Bound(_)
         | TermKind::Blob(_)
-        | TermKind::NatLit(_)
-        | TermKind::IntLit(_)
+        | TermKind::Nat(_)
+        | TermKind::Int(_)
+        | TermKind::Bool(_)
         | TermKind::Prim(_) => {}
         TermKind::Def(d) => collect_term_tvars(&d.body(), out),
     }
@@ -554,8 +555,9 @@ fn collect_frees(t: &Term, seen: &mut HashSet<(SmolStr, Type)>, out: &mut Vec<Te
         TermKind::Bound(_)
         | TermKind::Const(..)
         | TermKind::Blob(_)
-        | TermKind::NatLit(_)
-        | TermKind::IntLit(_)
+        | TermKind::Nat(_)
+        | TermKind::Int(_)
+        | TermKind::Bool(_)
         | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => {}

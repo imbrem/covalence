@@ -117,14 +117,14 @@ fn unwind_app(t: &Term) -> (Term, Vec<Term>) {
 
 fn as_nat_lit(t: &Term) -> Option<&Nat> {
     match t.kind() {
-        TermKind::NatLit(n) => Some(n),
+        TermKind::Nat(n) => Some(n),
         _ => None,
     }
 }
 
 fn as_int_lit(t: &Term) -> Option<&Int> {
     match t.kind() {
-        TermKind::IntLit(n) => Some(n),
+        TermKind::Int(n) => Some(n),
         _ => None,
     }
 }

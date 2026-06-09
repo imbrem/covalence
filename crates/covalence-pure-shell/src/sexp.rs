@@ -254,8 +254,9 @@ pub fn term_to_sexp(t: &Term, ser: &dyn ObsSerializer) -> Result<SExpr> {
                 bytes: bytes.clone(),
             }),
         ),
-        TermKind::NatLit(n) => list2("nat-lit", sym(n.as_inner().to_string().as_str())),
-        TermKind::IntLit(n) => list2("int-lit", sym(n.as_inner().to_string().as_str())),
+        TermKind::Nat(n) => list2("nat-lit", sym(n.as_inner().to_string().as_str())),
+        TermKind::Int(n) => list2("int-lit", sym(n.as_inner().to_string().as_str())),
+        TermKind::Bool(b) => list2("bool-lit", sym(if *b { "T" } else { "F" })),
         TermKind::Prim(p) => list2("prim", sym(format!("{:?}", p).as_str())),
         TermKind::Obs(observer, ty) => {
             let payload = ser.obs_to_sexp(observer)?;

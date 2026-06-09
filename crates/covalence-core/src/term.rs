@@ -371,11 +371,11 @@ pub enum TypeKind {
     Prop,
     /// Type of `Blob(_)` term values. Built in.
     Bytes,
-    /// Type of `NatLit(_)` term values. Built in.
-    /// The natural numbers (non-negative integers, arbitrary precision).
+    /// Type of `TermKind::Nat(_)` term values. Built in. The natural
+    /// numbers (non-negative integers, arbitrary precision).
     Nat,
-    /// Type of `IntLit(_)` term values. Built in.
-    /// The integers (arbitrary precision, possibly negative).
+    /// Type of `TermKind::Int(_)` term values. Built in. The integers
+    /// (arbitrary precision, possibly negative).
     Int,
     /// Function type τ ⇒ σ.
     Fun(Type, Type),
@@ -854,9 +854,13 @@ pub enum TermKind {
     /// Builtin: natural-number literal. Kernel type `nat`. See
     /// [`crate::Thm::reduce_prim`] for the single-step computation
     /// rule that decides closed-form arithmetic by reflexivity.
-    NatLit(Nat),
+    Nat(Nat),
     /// Builtin: integer literal. Kernel type `int`.
-    IntLit(Int),
+    Int(Int),
+    /// Builtin: HOL `bool` literal (`T` / `F`). Kernel type
+    /// `Tycon("bool", [])`. Folded into the kernel so HOL truth
+    /// values aren't a separate observer system.
+    Bool(bool),
     /// Builtin function — a closed function term applied to args via
     /// standard `App`. See [`Prim`] for the catalogue.
     Prim(Prim),
@@ -919,11 +923,17 @@ impl Term {
     // ---- builtin value constructors ----
     /// `nat` literal.
     pub fn nat_lit(n: impl Into<Nat>) -> Self {
-        Self::alloc(TermKind::NatLit(n.into()))
+        Self::alloc(TermKind::Nat(n.into()))
     }
     /// `int` literal.
     pub fn int_lit(n: impl Into<Int>) -> Self {
-        Self::alloc(TermKind::IntLit(n.into()))
+        Self::alloc(TermKind::Int(n.into()))
+    }
+
+    /// HOL `bool` literal — `Bool(true)` is `T`, `Bool(false)` is
+    /// `F`. Kernel type `bool`.
+    pub fn bool_lit(b: bool) -> Self {
+        Self::alloc(TermKind::Bool(b))
     }
 
     /// A builtin function term, ready to be applied via standard
@@ -981,8 +991,9 @@ impl Term {
             | TermKind::Free(..)
             | TermKind::Const(..)
             | TermKind::Blob(_)
-            | TermKind::NatLit(_)
-            | TermKind::IntLit(_)
+            | TermKind::Nat(_)
+            | TermKind::Int(_)
+            | TermKind::Bool(_)
             | TermKind::Prim(_) => true,
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
                 a.has_no_obs() && b.has_no_obs()
@@ -1002,8 +1013,9 @@ impl Term {
             | TermKind::Free(..)
             | TermKind::Const(..)
             | TermKind::Blob(_)
-            | TermKind::NatLit(_)
-            | TermKind::IntLit(_)
+            | TermKind::Nat(_)
+            | TermKind::Int(_)
+            | TermKind::Bool(_)
             | TermKind::Prim(_) => true,
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
                 a.all_obs_match::<O>() && b.all_obs_match::<O>()
@@ -1029,8 +1041,9 @@ impl Term {
             | TermKind::Free(..)
             | TermKind::Const(..)
             | TermKind::Blob(_)
-            | TermKind::NatLit(_)
-            | TermKind::IntLit(_)
+            | TermKind::Nat(_)
+            | TermKind::Int(_)
+            | TermKind::Bool(_)
             | TermKind::Prim(_) => Ok(()),
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
                 a.for_each_obs::<O, F>(f)?;
@@ -1086,8 +1099,9 @@ impl fmt::Display for Term {
             TermKind::All(hint, ty, body) => write!(f, "(⋀{}:{}. {})", hint, ty, body),
             TermKind::Eq(a, b) => write!(f, "({} ≡ {})", a, b),
             TermKind::Blob(b) => write!(f, "blob[{}]", b.len()),
-            TermKind::NatLit(n) => write!(f, "{}n", n.as_inner()),
-            TermKind::IntLit(n) => write!(f, "{}i", n.as_inner()),
+            TermKind::Nat(n) => write!(f, "{}n", n.as_inner()),
+            TermKind::Int(n) => write!(f, "{}i", n.as_inner()),
+            TermKind::Bool(b) => write!(f, "{}", if *b { "T" } else { "F" }),
             TermKind::Prim(p) => write!(f, "{:?}", p),
             TermKind::Obs(observer, ty) => write!(f, "obs[{:?}:{}]", observer, ty),
             TermKind::Def(d) => write!(f, "{}", d),
@@ -1199,8 +1213,9 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
             Ok(Type::prop())
         }
         TermKind::Blob(_) => Ok(Type::bytes()),
-        TermKind::NatLit(_) => Ok(Type::nat()),
-        TermKind::IntLit(_) => Ok(Type::int()),
+        TermKind::Nat(_) => Ok(Type::nat()),
+        TermKind::Int(_) => Ok(Type::int()),
+        TermKind::Bool(_) => Ok(Type::bool()),
         TermKind::Prim(p) => Ok(p.ty()),
         TermKind::Obs(_, ty) => Ok(ty.clone()),
         // A `Def` denotes its body at the current instance type.

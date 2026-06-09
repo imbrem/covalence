@@ -70,19 +70,12 @@ fn assume_hol(body: Term) -> Thm {
 // Peano axioms — intrinsic to the type
 // ============================================================================
 
-/// `⊢ ∀n:nat. ¬ (0 = succ n)` — zero is not a successor.
+/// `⊢ ⋀n:nat. Trueprop (¬(0 = succ n))` — zero is not a successor.
+/// Bona-fide **proof** by induction on `n`: base case via reduction
+/// + `nat_zero_ne_one`; step case via `pred` congruence. Empty hyps.
+/// See [`crate::peano::prove_nat_zero_ne_succ`].
 pub fn nat_zero_ne_succ() -> Thm {
-    static AX: LazyLock<Thm> = LazyLock::new(|| {
-        let ctx = ctx();
-        let n = Term::free("n", nat_ty());
-        let eq = ctx
-            .mk_eq(zero(), succ(n))
-            .expect("nat_zero_ne_succ: mk_eq");
-        let not_eq = ctx.mk_not(eq);
-        let body = ctx.mk_forall("n", nat_ty(), not_eq);
-        assume_hol(body)
-    });
-    AX.clone()
+    crate::peano::prove_nat_zero_ne_succ()
 }
 
 /// `⊢ ⋀m n:nat. Trueprop ((succ m = succ n) ⟹ (m = n))` —
@@ -476,7 +469,7 @@ mod tests {
 
     #[test]
     fn peano_axioms_well_formed() {
-        check(nat_zero_ne_succ());
+        check_kernel(nat_zero_ne_succ());
         check_kernel(nat_succ_inj());
         check_kernel(nat_induction());
     }

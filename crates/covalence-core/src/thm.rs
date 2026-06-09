@@ -702,6 +702,20 @@ impl Thm {
             .expect("nat_induction: well-typed by construction")
     }
 
+    /// `⊢ ⋀P:nat→bool. Trueprop (P 0) ⟹
+    ///       (⋀n:nat. Trueprop (P n) ⟹ Trueprop (P (succ n))) ⟹
+    ///       ⋀n:nat. Trueprop (P n)` —
+    /// Pure-meta form of nat induction. Logically equivalent to
+    /// [`Thm::nat_induction`] (which is the HOL-quantified form);
+    /// in principle derivable from it via the reflection bridges +
+    /// [`Thm::and_intro`] + and-elim, but exposed directly here so
+    /// downstream proofs can use Pure `all_elim` / `imp_elim`
+    /// without round-tripping through `forall_reflection`.
+    pub fn nat_induction_pure() -> Thm {
+        Self::build(Ctx::new(), hol::nat_induction_pure_term())
+            .expect("nat_induction_pure: well-typed by construction")
+    }
+
     /// `⊢ ⋀x y:'a. Trueprop (x = y) ≡ (x ≡ y)` — the HOL `=` ↔
     /// Pure `≡` bridge (Isabelle/HOL's `eq_reflection`) as a kernel
     /// axiom.
@@ -797,6 +811,15 @@ impl Thm {
     pub fn not_def() -> Thm {
         Self::build(Ctx::new(), hol::not_def_term())
             .expect("not_def: well-typed by construction")
+    }
+
+    /// `⊢ ⋀p q:bool. Trueprop p ⟹ Trueprop q ⟹ Trueprop (p ∧ q)` —
+    /// conjunction introduction, as a kernel axiom. Standard HOL Light
+    /// primitive rule. With `HolOp::And` as a kernel atom we can't
+    /// derive this from a `∧` definition; postulate directly.
+    pub fn and_intro() -> Thm {
+        Self::build(Ctx::new(), hol::and_intro_term())
+            .expect("and_intro: well-typed by construction")
     }
 }
 

@@ -232,6 +232,32 @@ static NAT_INDUCTION_TERM: LazyLock<Term> = LazyLock::new(|| {
     trueprop(body)
 });
 
+static NAT_INDUCTION_PURE_TERM: LazyLock<Term> = LazyLock::new(|| {
+    // ⋀P:nat→bool.
+    //   Trueprop (P 0) ⟹
+    //   (⋀n:nat. Trueprop (P n) ⟹ Trueprop (P (succ n))) ⟹
+    //   (⋀n:nat. Trueprop (P n))
+    let nat = Type::nat();
+    let pred_ty = Type::fun(nat.clone(), bool_ty());
+    let p = Term::free("P", pred_ty.clone());
+
+    let base = trueprop(Term::app(p.clone(), zero()));
+
+    let n_step = Term::free("n", nat.clone());
+    let step_inner = Term::imp(
+        trueprop(Term::app(p.clone(), n_step.clone())),
+        trueprop(Term::app(p.clone(), succ(n_step))),
+    );
+    let step = pure_all("n", nat.clone(), step_inner);
+
+    let n_concl = Term::free("n", nat.clone());
+    let concl_inner = trueprop(Term::app(p.clone(), n_concl));
+    let concl = pure_all("n", nat.clone(), concl_inner);
+
+    let chain = Term::imp(base, Term::imp(step, concl));
+    pure_all("P", pred_ty, chain)
+});
+
 static EQ_REFLECTION_TERM: LazyLock<Term> = LazyLock::new(|| {
     let alpha = Type::tfree("a");
     let x = Term::free("x", alpha.clone());
@@ -341,6 +367,17 @@ static NOT_DEF_TERM: LazyLock<Term> = LazyLock::new(|| {
     pure_all("p", bool_ty(), trueprop(eq))
 });
 
+static AND_INTRO_TERM: LazyLock<Term> = LazyLock::new(|| {
+    // ⋀p q:bool. Trueprop p ⟹ Trueprop q ⟹ Trueprop (p ∧ q)
+    let p = Term::free("p", bool_ty());
+    let q = Term::free("q", bool_ty());
+    let chain = Term::imp(
+        trueprop(p.clone()),
+        Term::imp(trueprop(q.clone()), trueprop(hol_and(p, q))),
+    );
+    pure_all("p", bool_ty(), pure_all("q", bool_ty(), chain))
+});
+
 // ---- Integer induction ----
 
 static INT_INDUCTION_TERM: LazyLock<Term> = LazyLock::new(|| {
@@ -375,6 +412,10 @@ pub(crate) fn nat_induction_term() -> Term {
     NAT_INDUCTION_TERM.clone()
 }
 
+pub(crate) fn nat_induction_pure_term() -> Term {
+    NAT_INDUCTION_PURE_TERM.clone()
+}
+
 pub(crate) fn pred_zero_term() -> Term {
     PRED_ZERO_TERM.clone()
 }
@@ -401,6 +442,10 @@ pub(crate) fn int_induction_term() -> Term {
 
 pub(crate) fn not_def_term() -> Term {
     NOT_DEF_TERM.clone()
+}
+
+pub(crate) fn and_intro_term() -> Term {
+    AND_INTRO_TERM.clone()
 }
 
 /// Conclusion of [`crate::Thm::eq_reflection`]:

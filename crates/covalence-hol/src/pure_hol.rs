@@ -138,12 +138,9 @@ impl PureHol {
         self.name_to_id.get(name).copied()
     }
 
-    /// `true` iff `t` is the HOL `Eq` observer leaf.
+    /// `true` iff `t` is the HOL `Eq` operator leaf.
     fn is_eq_obs(&self, t: &Term) -> bool {
-        match t.kind() {
-            TermKind::Obs(o, _) => o.ptr_id() == self.ctx.eq_obs_ptr_id(),
-            _ => false,
-        }
+        matches!(t.kind(), TermKind::HolOp(covalence_core::HolOp::Eq, _))
     }
 
     /// Decompose `App (App (Eq, lhs), rhs)` → `(lhs, rhs)`.
@@ -518,7 +515,10 @@ fn fresh_in_term(hint: &str, t: &Term) -> SmolStr {
 /// plus Def body types).
 fn collect_term_tvars(t: &Term, out: &mut HashSet<SmolStr>) {
     match t.kind() {
-        TermKind::Free(_, ty) | TermKind::Const(_, ty) | TermKind::Obs(_, ty) => {
+        TermKind::Free(_, ty)
+        | TermKind::Const(_, ty)
+        | TermKind::Obs(_, ty)
+        | TermKind::HolOp(_, ty) => {
             for n in ty.free_tvars() {
                 out.insert(n);
             }
@@ -559,6 +559,7 @@ fn collect_frees(t: &Term, seen: &mut HashSet<(SmolStr, Type)>, out: &mut Vec<Te
         | TermKind::Int(_)
         | TermKind::Bool(_)
         | TermKind::Prim(_)
+        | TermKind::HolOp(_, _)
         | TermKind::Obs(..)
         | TermKind::Def(_) => {}
         TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {

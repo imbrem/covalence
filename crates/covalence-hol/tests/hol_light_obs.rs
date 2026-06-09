@@ -1,31 +1,35 @@
 //! Tests for `covalence-hol`'s HOL Light bootstrap.
 //!
-//! All HOL Light derivations go through the `eq_reflection` axiom +
-//! Pure's primitives — the same way Isabelle/HOL does it. This file
-//! exercises:
+//! With HOL folded into core, the HOL primitives (`bool`, `=`,
+//! connectives, quantifiers, `Trueprop`) are first-class kernel
+//! atoms — not observer objects. The bridge axioms
+//! (`eq_reflection`, `iff_intro`, `forall_reflection`,
+//! `imp_reflection`) still live here as `Thm::assume`-postulated
+//! lazy theorems. This file exercises:
 //!
-//! - The HOL observer family and its display labels.
-//! - `HolLightCtx` constructors (mk_eq, mk_trueprop, mk_imp, etc.).
-//! - The `eq_reflection` axiom: well-typedness, specialisation,
-//!   and end-to-end use in HOL Light rule derivations.
+//! - `HolLightCtx` constructors (`mk_eq`, `mk_trueprop`, `mk_imp`,
+//!   etc.) building `HolOp` terms.
+//! - Bridge axioms: well-typedness, specialisation, end-to-end use.
 
-use covalence_hol::{HolLight, HolLightCtx};
-use covalence_core::{Term, Thm, Type, TypeKind};
+use covalence_core::{HolOp, Term, Thm, Type, TypeKind};
+use covalence_hol::HolLightCtx;
 
 // ============================================================================
-// Observer family basics
+// HolOp labels (now part of covalence-core)
 // ============================================================================
 
 #[test]
-fn hol_light_variants_have_labels() {
-    assert_eq!(HolLight::Eq.label(), "=");
-    assert_eq!(HolLight::True.label(), "T");
-    assert_eq!(HolLight::False.label(), "F");
-    assert_eq!(HolLight::Bool.label(), "bool");
-    assert_eq!(HolLight::Trueprop.label(), "Trueprop");
-    assert_eq!(HolLight::Forall.label(), "!");
-    assert_eq!(HolLight::Exists.label(), "?");
-    assert_eq!(HolLight::Select.label(), "@");
+fn hol_op_variants_have_labels() {
+    assert_eq!(HolOp::Eq.label(), "=");
+    assert_eq!(HolOp::Trueprop.label(), "Trueprop");
+    assert_eq!(HolOp::Forall.label(), "!");
+    assert_eq!(HolOp::Exists.label(), "?");
+    assert_eq!(HolOp::Select.label(), "@");
+    assert_eq!(HolOp::Imp.label(), "==>");
+    assert_eq!(HolOp::Not.label(), "~");
+    assert_eq!(HolOp::And.label(), "/\\");
+    assert_eq!(HolOp::Or.label(), "\\/");
+    assert_eq!(HolOp::Iff.label(), "<=>");
 }
 
 // ============================================================================
@@ -33,27 +37,23 @@ fn hol_light_variants_have_labels() {
 // ============================================================================
 
 #[test]
-fn ctx_bool_is_a_tycon_obs() {
+fn ctx_bool_is_the_canonical_bool_type() {
     let ctx = HolLightCtx::new();
     let b = ctx.bool_type();
+    assert_eq!(b, Type::bool());
     match b.kind() {
-        TypeKind::TyConObs(_, hint, args) => {
+        TypeKind::Tycon(hint, args) => {
             assert_eq!(hint.as_str(), "bool");
             assert!(args.is_empty());
         }
-        _ => panic!("expected TyConObs, got {:?}", b),
+        _ => panic!("expected Tycon(\"bool\", []), got {:?}", b),
     }
 }
 
 #[test]
-fn ctx_bool_is_distinct_from_pure_prop_and_pure_bool() {
+fn ctx_bool_is_distinct_from_pure_prop() {
     let ctx = HolLightCtx::new();
     let hol_bool = ctx.bool_type();
-    assert_ne!(
-        hol_bool,
-        Type::bool(),
-        "HOL bool must not collide with Pure's structural bool"
-    );
     assert_ne!(hol_bool, Type::prop(), "HOL bool must not be Pure prop");
 }
 

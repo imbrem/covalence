@@ -802,6 +802,71 @@ pub enum Prim {
     NatToInt,
 }
 
+/// HOL Light's primitive operators, folded into the kernel.
+///
+/// Every variant denotes a *single* HOL constant. The
+/// [`TermKind::HolOp`] variant pairs it with the instance type at the
+/// point of use:
+///
+/// - Non-polymorphic ops (`Imp`, `Not`, `And`, `Or`, `Iff`,
+///   `Trueprop`) take a fixed type (e.g., `bool → bool → bool`).
+/// - Polymorphic ops (`Eq`, `Forall`, `Exists`, `Select`) carry the
+///   instance type at α (e.g., `Eq` at α has full type
+///   `α → α → bool`).
+///
+/// Soundness for the type field is enforced by `type_of_in`, which
+/// matches the stored type against the operator's expected shape.
+/// True / False are *not* HOL ops — they are kernel literals
+/// [`TermKind::Bool`].
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum HolOp {
+    /// HOL `=` at type `α → α → bool` for the α stored alongside.
+    Eq,
+    /// HOL `==>` at type `bool → bool → bool`.
+    Imp,
+    /// HOL `~` at type `bool → bool`.
+    Not,
+    /// HOL `/\` at type `bool → bool → bool`.
+    And,
+    /// HOL `\/` at type `bool → bool → bool`.
+    Or,
+    /// HOL `<=>` at type `bool → bool → bool`.
+    Iff,
+    /// HOL `∀` at type `(α → bool) → bool`.
+    Forall,
+    /// HOL `∃` at type `(α → bool) → bool`.
+    Exists,
+    /// HOL `ε` (Hilbert's choice) at type `(α → bool) → α`.
+    Select,
+    /// `Trueprop : bool → prop` — explicit coercion from HOL `bool` to
+    /// the kernel's meta-prop, mirroring Isabelle/HOL's `Trueprop`.
+    Trueprop,
+}
+
+impl HolOp {
+    /// Printable label, matching HOL Light's surface syntax.
+    pub fn label(&self) -> &'static str {
+        match self {
+            HolOp::Eq => "=",
+            HolOp::Imp => "==>",
+            HolOp::Not => "~",
+            HolOp::And => "/\\",
+            HolOp::Or => "\\/",
+            HolOp::Iff => "<=>",
+            HolOp::Forall => "!",
+            HolOp::Exists => "?",
+            HolOp::Select => "@",
+            HolOp::Trueprop => "Trueprop",
+        }
+    }
+}
+
+impl fmt::Display for HolOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
 impl Prim {
     /// The type of this primitive as a closed function term.
     pub fn ty(&self) -> Type {
@@ -864,6 +929,10 @@ pub enum TermKind {
     /// Builtin function — a closed function term applied to args via
     /// standard `App`. See [`Prim`] for the catalogue.
     Prim(Prim),
+    /// Folded-in HOL primitive operator at its instance type. See
+    /// [`HolOp`] for the catalogue. Applications are formed by the
+    /// usual `App` chain.
+    HolOp(HolOp, Type),
     /// Typed observation leaf: observer + Pure type. The kernel
     /// compares these by `Arc` pointer identity (via [`Object`]'s
     /// impls), never by the user's `Eq` on the underlying observer.
@@ -936,6 +1005,12 @@ impl Term {
         Self::alloc(TermKind::Bool(b))
     }
 
+    /// HOL operator constant at the supplied instance type. Used by
+    /// `covalence-hol`'s `HolLightCtx::mk_*` builders.
+    pub fn hol_op(op: HolOp, ty: Type) -> Self {
+        Self::alloc(TermKind::HolOp(op, ty))
+    }
+
     /// A builtin function term, ready to be applied via standard
     /// [`Term::app`]. No reduction is performed at construction —
     /// to derive computed equations like `⊢ Prim(NatArith Add) lit_a lit_b ≡ lit_sum`
@@ -994,7 +1069,8 @@ impl Term {
             | TermKind::Nat(_)
             | TermKind::Int(_)
             | TermKind::Bool(_)
-            | TermKind::Prim(_) => true,
+            | TermKind::Prim(_)
+            | TermKind::HolOp(_, _) => true,
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
                 a.has_no_obs() && b.has_no_obs()
             }
@@ -1016,7 +1092,8 @@ impl Term {
             | TermKind::Nat(_)
             | TermKind::Int(_)
             | TermKind::Bool(_)
-            | TermKind::Prim(_) => true,
+            | TermKind::Prim(_)
+            | TermKind::HolOp(_, _) => true,
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
                 a.all_obs_match::<O>() && b.all_obs_match::<O>()
             }
@@ -1044,7 +1121,8 @@ impl Term {
             | TermKind::Nat(_)
             | TermKind::Int(_)
             | TermKind::Bool(_)
-            | TermKind::Prim(_) => Ok(()),
+            | TermKind::Prim(_)
+            | TermKind::HolOp(_, _) => Ok(()),
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
                 a.for_each_obs::<O, F>(f)?;
                 b.for_each_obs::<O, F>(f)
@@ -1103,6 +1181,7 @@ impl fmt::Display for Term {
             TermKind::Int(n) => write!(f, "{}i", n.as_inner()),
             TermKind::Bool(b) => write!(f, "{}", if *b { "T" } else { "F" }),
             TermKind::Prim(p) => write!(f, "{:?}", p),
+            TermKind::HolOp(op, ty) => write!(f, "{op}:{ty}"),
             TermKind::Obs(observer, ty) => write!(f, "obs[{:?}:{}]", observer, ty),
             TermKind::Def(d) => write!(f, "{}", d),
         }
@@ -1217,6 +1296,7 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
         TermKind::Int(_) => Ok(Type::int()),
         TermKind::Bool(_) => Ok(Type::bool()),
         TermKind::Prim(p) => Ok(p.ty()),
+        TermKind::HolOp(_, ty) => Ok(ty.clone()),
         TermKind::Obs(_, ty) => Ok(ty.clone()),
         // A `Def` denotes its body at the current instance type.
         // The body was validated once at `Thm::define` time, and

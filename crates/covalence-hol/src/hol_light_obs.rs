@@ -82,33 +82,19 @@
 //! showed that ABS and INST cannot soundly fit. The pattern was
 //! removed. See the project's `audit` commit for the analysis.
 
-use std::fmt;
 use std::sync::LazyLock;
 
-use covalence_core::{Object, Observer, Term, TermKind, Thm, Type};
+use covalence_core::{HolOp, Term, TermKind, Thm, Type};
 
 // ============================================================================
-// Process-global lazy statics
+// HOL bridge axioms (still postulated)
 // ============================================================================
 //
-// One `Object` per HolLight variant, allocated on first access and reused
-// for the whole process. [`HolLightCtx`] is a zero-sized handle on these
-// globals — every `HolLightCtx` produces the same theory (the HOL Light
-// theory, of which there is exactly one).
-
-static BOOL_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Bool));
-static EQ_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Eq));
-static TRUE_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::True));
-static FALSE_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::False));
-static IMP_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Imp));
-static NOT_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Not));
-static AND_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::And));
-static OR_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Or));
-static IFF_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Iff));
-static FORALL_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Forall));
-static EXISTS_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Exists));
-static SELECT_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Select));
-static TRUEPROP_OBS: LazyLock<Object> = LazyLock::new(|| Object::new(HolLight::Trueprop));
+// `Bool`, `Eq`, `True`, `False`, `Imp`, `Not`, `And`, `Or`, `Iff`,
+// `Forall`, `Exists`, `Select`, `Trueprop` are no longer observer
+// objects — they are first-class kernel atoms (`Type::bool()`,
+// `Term::Bool(_)`, `Term::HolOp(_, _)`). The HOL bridge axioms
+// below stay postulated as lazy theorems for now.
 
 /// `⋀x y : 'a. Trueprop (Eq x y) ≡ (x ≡ y)` — the polymorphic
 /// `eq_reflection` axiom. Built lazily once via `Thm::assume`, reused
@@ -132,88 +118,6 @@ static FORALL_REFLECTION_AXIOM: LazyLock<Thm> = LazyLock::new(build_forall_refle
 static IMP_REFLECTION_AXIOM: LazyLock<Thm> = LazyLock::new(build_imp_reflection_axiom);
 
 // ============================================================================
-// The HolLight observer family
-// ============================================================================
-
-/// The HOL Light observer family. One Rust variant per HOL primitive.
-/// Every variant lives behind a process-global `Object` (see the
-/// `*_OBS` lazy statics above), so every use of e.g. HOL `=` through
-/// [`HolLightCtx`] shares one Arc identity.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum HolLight {
-    // -- Type constructor --
-    /// HOL `bool` — type of truth values. Distinct from Pure `prop`.
-    Bool,
-
-    // -- Equality --
-    /// HOL `=` at polymorphic type `'a → 'a → bool`. The instance
-    /// type is carried as the term's `Type` field.
-    Eq,
-
-    // -- Truth values --
-    /// HOL `T : bool`.
-    True,
-    /// HOL `F : bool`.
-    False,
-
-    // -- Connectives --
-    /// `⟹` (implication) at `bool → bool → bool`.
-    Imp,
-    /// `¬` (negation) at `bool → bool`.
-    Not,
-    /// `∧` (conjunction) at `bool → bool → bool`.
-    And,
-    /// `∨` (disjunction) at `bool → bool → bool`.
-    Or,
-    /// `⟺` (iff) at `bool → bool → bool`. Coincides with `Eq` at bool
-    /// in the standard model; exposed separately as a distinct
-    /// observer to match HOL Light's naming.
-    Iff,
-
-    // -- Quantifiers --
-    /// `∀` at `('a → bool) → bool`.
-    Forall,
-    /// `∃` at `('a → bool) → bool`.
-    Exists,
-    /// `ε` (Hilbert's choice) at `('a → bool) → 'a`.
-    Select,
-
-    /// `Trueprop : bool → prop` — explicit coercion from HOL bool to
-    /// Pure prop. A HOL theorem `⊢_HOL p` is the Pure theorem
-    /// `⊢_Pure Trueprop p`. Mirrors Isabelle/HOL's `Trueprop`.
-    Trueprop,
-}
-
-impl HolLight {
-    /// Human-readable label used in display output. Matches HOL Light's
-    /// printable surface forms (`=`, `==>`, `~`, `/\`, `\/`, `<=>`,
-    /// `!`, `?`, `@`, `T`, `F`, `bool`).
-    pub fn label(&self) -> &'static str {
-        match self {
-            HolLight::Bool => "bool",
-            HolLight::Eq => "=",
-            HolLight::True => "T",
-            HolLight::False => "F",
-            HolLight::Imp => "==>",
-            HolLight::Not => "~",
-            HolLight::And => "/\\",
-            HolLight::Or => "\\/",
-            HolLight::Iff => "<=>",
-            HolLight::Forall => "!",
-            HolLight::Exists => "?",
-            HolLight::Select => "@",
-            HolLight::Trueprop => "Trueprop",
-        }
-    }
-}
-
-impl fmt::Display for HolLight {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.label())
-    }
-}
-
-// ============================================================================
 // HolLightCtx — zero-sized handle on the process-global HOL primitives
 // ============================================================================
 
@@ -232,10 +136,11 @@ impl HolLightCtx {
 
     // ---- HOL types ----
 
-    /// HOL `bool` — `TyConObs(bool_obs, "bool", [])` over the global
-    /// `BOOL_OBS`. Distinct from Pure `prop`.
+    /// HOL `bool` — the cached canonical `Type::bool()` instance.
+    /// HOL is folded into the kernel, so `bool` is a regular kernel
+    /// type, not a `TyConObs` over an observer identity.
     pub fn bool_type(&self) -> Type {
-        Type::tycon_obs_from_dyn((*BOOL_OBS).clone(), "bool", vec![])
+        Type::bool()
     }
 
     /// Pure function type α → β. HOL doesn't add a new function-type
@@ -244,18 +149,12 @@ impl HolLightCtx {
         Type::fun(a, b)
     }
 
-    // ---- HOL constants ----
-
-    /// Construct a `Term::obs` at the given type over the given
-    /// global observer. Used by every constant accessor below.
-    fn obs_term(observer: &Object, ty: Type) -> Term {
-        Term::obs_from_dyn(observer.clone(), ty)
-    }
+    // ---- HOL constants — now folded into core via TermKind::HolOp ----
 
     /// HOL `=` instantiated at `α → α → bool`.
     pub fn eq_at(&self, alpha: Type) -> Term {
         let ty = Type::fun(alpha.clone(), Type::fun(alpha, self.bool_type()));
-        Self::obs_term(&EQ_OBS, ty)
+        Term::hol_op(HolOp::Eq, ty)
     }
 
     /// `t = u : bool`, given `t` and `u` of the same type α. Errors
@@ -266,20 +165,24 @@ impl HolLightCtx {
         Ok(Term::app(Term::app(eq, lhs), rhs))
     }
 
-    /// HOL `T : bool`.
+    /// HOL `T : bool` — a kernel literal.
     pub fn t(&self) -> Term {
-        Self::obs_term(&TRUE_OBS, self.bool_type())
+        Term::bool_lit(true)
     }
 
-    /// HOL `F : bool`.
+    /// HOL `F : bool` — a kernel literal.
     pub fn f(&self) -> Term {
-        Self::obs_term(&FALSE_OBS, self.bool_type())
+        Term::bool_lit(false)
+    }
+
+    fn bool_binop_ty(&self) -> Type {
+        let b = self.bool_type();
+        Type::fun(b.clone(), Type::fun(b.clone(), b))
     }
 
     /// HOL `==>` at `bool → bool → bool`.
     pub fn imp_op(&self) -> Term {
-        let b = self.bool_type();
-        Self::obs_term(&IMP_OBS, Type::fun(b.clone(), Type::fun(b.clone(), b)))
+        Term::hol_op(HolOp::Imp, self.bool_binop_ty())
     }
     /// HOL `p ==> q`.
     pub fn mk_imp(&self, p: Term, q: Term) -> Term {
@@ -289,7 +192,7 @@ impl HolLightCtx {
     /// HOL `~` at `bool → bool`.
     pub fn not_op(&self) -> Term {
         let b = self.bool_type();
-        Self::obs_term(&NOT_OBS, Type::fun(b.clone(), b))
+        Term::hol_op(HolOp::Not, Type::fun(b.clone(), b))
     }
     /// HOL `~ p`.
     pub fn mk_not(&self, p: Term) -> Term {
@@ -298,8 +201,7 @@ impl HolLightCtx {
 
     /// HOL `/\` at `bool → bool → bool`.
     pub fn and_op(&self) -> Term {
-        let b = self.bool_type();
-        Self::obs_term(&AND_OBS, Type::fun(b.clone(), Type::fun(b.clone(), b)))
+        Term::hol_op(HolOp::And, self.bool_binop_ty())
     }
     /// HOL `p /\ q`.
     pub fn mk_and(&self, p: Term, q: Term) -> Term {
@@ -308,8 +210,7 @@ impl HolLightCtx {
 
     /// HOL `\/` at `bool → bool → bool`.
     pub fn or_op(&self) -> Term {
-        let b = self.bool_type();
-        Self::obs_term(&OR_OBS, Type::fun(b.clone(), Type::fun(b.clone(), b)))
+        Term::hol_op(HolOp::Or, self.bool_binop_ty())
     }
     /// HOL `p \/ q`.
     pub fn mk_or(&self, p: Term, q: Term) -> Term {
@@ -318,8 +219,7 @@ impl HolLightCtx {
 
     /// HOL `<=>` at `bool → bool → bool`.
     pub fn iff_op(&self) -> Term {
-        let b = self.bool_type();
-        Self::obs_term(&IFF_OBS, Type::fun(b.clone(), Type::fun(b.clone(), b)))
+        Term::hol_op(HolOp::Iff, self.bool_binop_ty())
     }
     /// HOL `p <=> q`.
     pub fn mk_iff(&self, p: Term, q: Term) -> Term {
@@ -329,7 +229,7 @@ impl HolLightCtx {
     /// HOL `∀` at `(α → bool) → bool`.
     pub fn forall_at(&self, alpha: Type) -> Term {
         let pred = Type::fun(alpha, self.bool_type());
-        Self::obs_term(&FORALL_OBS, Type::fun(pred, self.bool_type()))
+        Term::hol_op(HolOp::Forall, Type::fun(pred, self.bool_type()))
     }
     /// HOL `∀x:α. body` — `Forall (λx:α. body)`.
     pub fn mk_forall(&self, hint: &str, alpha: Type, body: Term) -> Term {
@@ -340,7 +240,7 @@ impl HolLightCtx {
     /// HOL `∃` at `(α → bool) → bool`.
     pub fn exists_at(&self, alpha: Type) -> Term {
         let pred = Type::fun(alpha, self.bool_type());
-        Self::obs_term(&EXISTS_OBS, Type::fun(pred, self.bool_type()))
+        Term::hol_op(HolOp::Exists, Type::fun(pred, self.bool_type()))
     }
     /// HOL `∃x:α. body` — `Exists (λx:α. body)`.
     pub fn mk_exists(&self, hint: &str, alpha: Type, body: Term) -> Term {
@@ -351,7 +251,7 @@ impl HolLightCtx {
     /// HOL `ε` (Hilbert's choice) at `(α → bool) → α`.
     pub fn select_at(&self, alpha: Type) -> Term {
         let pred = Type::fun(alpha.clone(), self.bool_type());
-        Self::obs_term(&SELECT_OBS, Type::fun(pred, alpha))
+        Term::hol_op(HolOp::Select, Type::fun(pred, alpha))
     }
     /// HOL `ε x:α. body` — `Select (λx:α. body)`.
     pub fn mk_select(&self, hint: &str, alpha: Type, body: Term) -> Term {
@@ -365,7 +265,7 @@ impl HolLightCtx {
     /// from HOL bool to Pure prop. A HOL theorem `⊢_HOL p` becomes
     /// the Pure theorem `⊢_Pure Trueprop p`.
     pub fn trueprop(&self) -> Term {
-        Self::obs_term(&TRUEPROP_OBS, Type::fun(self.bool_type(), Type::prop()))
+        Term::hol_op(HolOp::Trueprop, Type::fun(self.bool_type(), Type::prop()))
     }
 
     /// `Trueprop p` — wrap a HOL bool term as a Pure prop. Errors if
@@ -383,37 +283,20 @@ impl HolLightCtx {
 
     // ---- Identity check helpers ----
 
-    fn term_obs_ptr_id(t: &Term) -> Option<usize> {
-        match t.kind() {
-            TermKind::Obs(o, _) => Some(o.ptr_id()),
-            _ => None,
-        }
-    }
-
-    /// `true` iff `t` is the HOL `True` observer (Arc identity).
+    /// `true` iff `t` is the HOL `T` literal.
     pub fn is_true(&self, t: &Term) -> bool {
-        Self::term_obs_ptr_id(t) == Some(TRUE_OBS.ptr_id())
+        matches!(t.kind(), TermKind::Bool(true))
     }
 
-    /// `true` iff `t` is the HOL `False` observer.
+    /// `true` iff `t` is the HOL `F` literal.
     pub fn is_false(&self, t: &Term) -> bool {
-        Self::term_obs_ptr_id(t) == Some(FALSE_OBS.ptr_id())
+        matches!(t.kind(), TermKind::Bool(false))
     }
 
-    /// `true` iff `t` is the HOL `Trueprop` observer.
+    /// `true` iff `t` is the HOL `Trueprop` constant (the bare
+    /// `bool → prop` operator leaf).
     pub fn is_trueprop(&self, t: &Term) -> bool {
-        Self::term_obs_ptr_id(t) == Some(TRUEPROP_OBS.ptr_id())
-    }
-
-    /// Pointer-id of the `Eq` observer — useful for inspection or
-    /// cross-process equality checks.
-    pub fn eq_obs_ptr_id(&self) -> usize {
-        EQ_OBS.ptr_id()
-    }
-
-    /// Pointer-id of the `Trueprop` observer.
-    pub fn trueprop_obs_ptr_id(&self) -> usize {
-        TRUEPROP_OBS.ptr_id()
+        matches!(t.kind(), TermKind::HolOp(HolOp::Trueprop, _))
     }
 
     // ========================================================================
@@ -631,8 +514,6 @@ fn build_imp_reflection_axiom() -> Thm {
     Thm::assume(outer).expect("imp_reflection_axiom: well-typed by construction")
 }
 
-/// Marker trait certifying that an observer is in the [`HolLight`]
-/// family. Useful as a generic bound when threading HOL-specific
-/// reasoning through code that's parametric over observer types.
-pub trait IsHolLight: Observer {}
-impl IsHolLight for HolLight {}
+// `HolLight` enum + `IsHolLight` marker trait removed:
+// HOL primitives are now first-class kernel atoms (`Type::bool()`,
+// `Term::Bool(_)`, `Term::HolOp(_, _)`), not an observer family.

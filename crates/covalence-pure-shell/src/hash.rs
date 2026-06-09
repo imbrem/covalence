@@ -96,6 +96,7 @@ const T_NAT_LIT: u8 = 0x0b;
 const T_INT_LIT: u8 = 0x0c;
 const T_PRIM: u8 = 0x0d;
 const T_BOOL: u8 = 0x0e;
+const T_HOL_OP: u8 = 0x0f;
 
 // ============================================================================
 // Stateless API
@@ -314,6 +315,16 @@ impl Hasher {
                 ctx.tag(buf)
             }
             TermKind::Bool(b) => ctx.tag([T_BOOL, u8::from(*b)]),
+            TermKind::HolOp(op, ty) => {
+                let ty_h = self.hash_type(ty, oh);
+                let label = op.label().as_bytes();
+                let mut buf = Vec::with_capacity(1 + 1 + label.len() + 32);
+                buf.push(T_HOL_OP);
+                buf.push(label.len() as u8);
+                buf.extend_from_slice(label);
+                buf.extend_from_slice(ty_h.as_bytes());
+                ctx.tag(buf)
+            }
         }
     }
 }

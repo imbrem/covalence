@@ -258,6 +258,7 @@ pub fn term_to_sexp(t: &Term, ser: &dyn ObsSerializer) -> Result<SExpr> {
         TermKind::Int(n) => list2("int-lit", sym(n.as_inner().to_string().as_str())),
         TermKind::Bool(b) => list2("bool-lit", sym(if *b { "T" } else { "F" })),
         TermKind::Prim(p) => list2("prim", sym(format!("{:?}", p).as_str())),
+        TermKind::HolOp(op, ty) => list3("hol-op", sym(op.label()), type_to_sexp(ty, ser)?),
         TermKind::Obs(observer, ty) => {
             let payload = ser.obs_to_sexp(observer)?;
             list3("obs", payload, type_to_sexp(ty, ser)?)

@@ -22,6 +22,7 @@ pub mod int_axioms;
 pub mod nat_axioms;
 pub mod pure_hol;
 pub mod sexp;
+pub mod stdlib;
 pub mod traits;
 pub mod types;
 

@@ -10,7 +10,7 @@
 //!
 //! The connectives themselves (`mk_and`, `mk_or`, `mk_imp`,
 //! `mk_not`, `mk_forall`, `mk_exists`) live on
-//! `covalence_hol::HolLightCtx`; the rules here pin down their
+//! `crate::HolLightCtx`; the rules here pin down their
 //! behaviour at the HOL bool level.
 //!
 //! ## Coverage
@@ -44,7 +44,7 @@
 
 use std::sync::LazyLock;
 
-use covalence_hol::HolLightCtx;
+use crate::HolLightCtx;
 use covalence_core::{Term, Thm, Type};
 
 // ============================================================================

@@ -55,10 +55,6 @@ fn pred_fn() -> Term {
     Term::prim(Prim::NatArith(Arith::Pred))
 }
 
-fn pred(t: Term) -> Term {
-    Term::app(pred_fn(), t)
-}
-
 fn add(a: Term, b: Term) -> Term {
     Term::app(Term::app(Term::prim(Prim::NatArith(Arith::Add)), a), b)
 }
@@ -244,30 +240,16 @@ pub fn nat_mul_def() -> Thm {
     AX.clone()
 }
 
-/// `⊢ pred 0 = 0` — predecessor saturates at zero.
+/// `⊢ pred 0 = 0` — predecessor saturates at zero. Bona-fide
+/// kernel axiom ([`Thm::nat_pred_zero`]); empty hyps.
 pub fn nat_pred_zero() -> Thm {
-    static AX: LazyLock<Thm> = LazyLock::new(|| {
-        let ctx = ctx();
-        let eq = ctx
-            .mk_eq(pred(zero()), zero())
-            .expect("nat_pred_zero: mk_eq");
-        assume_hol(eq)
-    });
-    AX.clone()
+    Thm::nat_pred_zero()
 }
 
 /// `⊢ ∀n:nat. pred (succ n) = n` — predecessor inverts successor.
+/// Bona-fide kernel axiom ([`Thm::nat_pred_succ`]); empty hyps.
 pub fn nat_pred_succ() -> Thm {
-    static AX: LazyLock<Thm> = LazyLock::new(|| {
-        let ctx = ctx();
-        let n = Term::free("n", nat_ty());
-        let eq = ctx
-            .mk_eq(pred(succ(n.clone())), n)
-            .expect("nat_pred_succ: mk_eq");
-        let body = ctx.mk_forall("n", nat_ty(), eq);
-        assume_hol(body)
-    });
-    AX.clone()
+    Thm::nat_pred_succ()
 }
 
 /// `⊢ ∀m n:nat. m - n = natrec m pred n` — saturating subtraction
@@ -575,8 +557,8 @@ mod tests {
     fn definitional_axioms_well_formed() {
         check(nat_add_def());
         check(nat_mul_def());
-        check(nat_pred_zero());
-        check(nat_pred_succ());
+        check_kernel(nat_pred_zero());
+        check_kernel(nat_pred_succ());
         check(nat_sub_def());
     }
 

@@ -535,6 +535,12 @@ impl Thm {
     /// - `App(App(App(Prim(BytesSlice), Blob b), NatLit start), NatLit len)`
     ///   → `Blob(b[start..min(start+len, b.len())])`
     /// - `App(Prim(NatToInt), NatLit n)` → `IntLit(n)`
+    /// - `App(App(HolOp(Eq, _), lit_a), lit_b)` where `lit_a` and
+    ///   `lit_b` are kernel literals of the same kind (`Bool`,
+    ///   `Nat`, `Int`, or `Blob`) → `Bool(a == b)`. This is the
+    ///   kernel's commitment to literal distinctness — sound
+    ///   because each literal kind has a fixed denotation in any
+    ///   model.
     pub fn reduce_prim(t: Term) -> Result<Thm> {
         let reduced = builtins::reduce_prim_term(&t).ok_or(Error::NotReducible)?;
         Self::build(Ctx::new(), Term::eq(t, reduced))
@@ -717,6 +723,47 @@ impl Thm {
         Self::build(Ctx::new(), hol::imp_reflection_term())
             .expect("imp_reflection: well-typed by construction")
     }
+
+    // ---- nat-prim definitional axioms ----
+    //
+    // Pure exposes `Prim::NatArith(Pred)` as a primitive function;
+    // these two equations fix its meaning at the open-form level.
+    // Closed forms (`pred lit_5 = lit_4`) are already decided by
+    // `Thm::reduce_prim`. `succ` is foundational; `add`/`mul`/`sub`
+    // get their meaning from `natrec` (which itself is defined in
+    // `covalence-hol` via Hilbert's choice — no kernel axiom
+    // needed).
+
+    /// `⊢ Trueprop (pred 0 = 0)` — saturating-at-zero predecessor.
+    pub fn nat_pred_zero() -> Thm {
+        Self::build(Ctx::new(), hol::pred_zero_term())
+            .expect("nat_pred_zero: well-typed by construction")
+    }
+
+    /// `⊢ ⋀n:nat. Trueprop (pred (succ n) = n)` — predecessor on
+    /// successors.
+    pub fn nat_pred_succ() -> Thm {
+        Self::build(Ctx::new(), hol::pred_succ_term())
+            .expect("nat_pred_succ: well-typed by construction")
+    }
+
+    // ---- integer induction ----
+
+    /// `⊢ ⋀P:int→bool. Trueprop ((∀n:nat. P (int_of_nat n))
+    ///                       ∧ (∀n:nat. P (-(int_of_nat n)))
+    ///                       ⟹ ∀z:int. P z)` —
+    /// integer induction via the canonical `int_of_nat` embedding
+    /// + negation, as a kernel axiom.
+    ///
+    /// Sound because every integer is either `int_of_nat n` for some
+    /// `n` (non-negative case) or `-(int_of_nat n)` for some `n`
+    /// (non-positive case), and `int_of_nat 0 = -(int_of_nat 0) = 0`
+    /// covers the overlap.
+    pub fn int_induction() -> Thm {
+        Self::build(Ctx::new(), hol::int_induction_term())
+            .expect("int_induction: well-typed by construction")
+    }
+
 }
 
 /// Walk down through `App`s collecting arguments left-to-right. If

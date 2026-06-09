@@ -16,7 +16,7 @@
 
 use std::sync::LazyLock;
 
-use covalence_hol::HolLightCtx;
+use crate::HolLightCtx;
 use covalence_core::{Term, Thm, Type};
 
 fn ctx() -> HolLightCtx {

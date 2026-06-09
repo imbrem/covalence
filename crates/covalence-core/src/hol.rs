@@ -16,6 +16,10 @@ use covalence_types::Nat;
 
 use crate::term::{Arith, HolOp, Prim, Term, Type};
 
+// ============================================================================
+// Term builders for HOL constructs
+// ============================================================================
+
 /// HOL `T` and `F` are kernel literals; this helper gives us the
 /// canonical bool type.
 fn bool_ty() -> Type {
@@ -95,6 +99,29 @@ fn succ(n: Term) -> Term {
     Term::app(succ_fn(), n)
 }
 
+/// `pred : nat → nat`.
+fn pred(n: Term) -> Term {
+    Term::app(Term::prim(Prim::NatArith(Arith::Pred)), n)
+}
+
+/// `int_of_nat : nat → int` — the canonical embedding `n ↦ +n`.
+fn int_of_nat_fn() -> Term {
+    Term::prim(Prim::NatToInt)
+}
+
+fn int_of_nat(n: Term) -> Term {
+    Term::app(int_of_nat_fn(), n)
+}
+
+/// `(-_) : int → int` — integer negation.
+fn int_neg_fn() -> Term {
+    Term::prim(Prim::IntNeg)
+}
+
+fn int_neg(z: Term) -> Term {
+    Term::app(int_neg_fn(), z)
+}
+
 // ============================================================================
 // Cached axiom-conclusion terms
 // ============================================================================
@@ -170,10 +197,64 @@ static IMP_REFLECTION_TERM: LazyLock<Term> = LazyLock::new(|| {
     Term::all("p", bool_ty(), inner)
 });
 
+// ---- Definitional axioms: pred ----
+
+static PRED_ZERO_TERM: LazyLock<Term> = LazyLock::new(|| {
+    // Trueprop (pred 0 = 0)
+    trueprop(hol_eq(pred(zero()), zero()))
+});
+
+static PRED_SUCC_TERM: LazyLock<Term> = LazyLock::new(|| {
+    // ⋀n:nat. Trueprop (pred (succ n) = n)
+    let n = Term::free("n", Type::nat());
+    let eq = hol_eq(pred(succ(n.clone())), n);
+    Term::all("n", Type::nat(), trueprop(eq))
+});
+
+// ---- Integer induction ----
+
+static INT_INDUCTION_TERM: LazyLock<Term> = LazyLock::new(|| {
+    // ⋀P:int→bool.
+    //   Trueprop ((∀n:nat. P (int_of_nat n))
+    //          ∧ (∀n:nat. P (-(int_of_nat n)))
+    //          ⟹ ∀z:int. P z)
+    let pred_ty = Type::fun(Type::int(), bool_ty());
+    let p = Term::free("P", pred_ty.clone());
+
+    let n_pos = Term::free("n", Type::nat());
+    let p_pos = Term::app(p.clone(), int_of_nat(n_pos));
+    let positive = hol_forall("n", Type::nat(), p_pos);
+
+    let n_neg = Term::free("n", Type::nat());
+    let p_neg = Term::app(p.clone(), int_neg(int_of_nat(n_neg)));
+    let negative = hol_forall("n", Type::nat(), p_neg);
+
+    let antecedent = hol_and(positive, negative);
+
+    let z = Term::free("z", Type::int());
+    let p_z = Term::app(p.clone(), z);
+    let consequent = hol_forall("z", Type::int(), p_z);
+
+    let body = hol_imp(antecedent, consequent);
+    Term::all("P", pred_ty, trueprop(body))
+});
+
 /// Conclusion of [`crate::Thm::nat_induction`]:
 /// `Trueprop (∀P:nat→bool. P 0 ∧ (∀n. P n ⟹ P (succ n)) ⟹ ∀n. P n)`.
 pub(crate) fn nat_induction_term() -> Term {
     NAT_INDUCTION_TERM.clone()
+}
+
+pub(crate) fn pred_zero_term() -> Term {
+    PRED_ZERO_TERM.clone()
+}
+
+pub(crate) fn pred_succ_term() -> Term {
+    PRED_SUCC_TERM.clone()
+}
+
+pub(crate) fn int_induction_term() -> Term {
+    INT_INDUCTION_TERM.clone()
 }
 
 /// Conclusion of [`crate::Thm::eq_reflection`]:

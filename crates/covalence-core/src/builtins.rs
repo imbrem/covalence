@@ -15,13 +15,26 @@
 
 use covalence_types::{Int, Nat, Sign};
 
-use crate::term::{Arith, Prim, Term, TermKind};
+use crate::term::{Arith, HolOp, Prim, Term, TermKind};
 
 /// One-step reduction. Returns the reduced term when `t` is an
-/// exactly-shaped `Prim` application with all-literal arguments,
+/// exactly-shaped `Prim` application with all-literal arguments
+/// (or a HOL `=` over two closed literals at a supported type),
 /// `None` otherwise.
 pub(crate) fn reduce_prim_term(t: &Term) -> Option<Term> {
     let (head, args) = unwind_app(t);
+
+    // HOL `=` decided on closed literals: `Bool`, `Nat`, `Int`, or
+    // `Blob`. The kernel commits to literal distinctness — two
+    // literals of the same kind are equal iff they are structurally
+    // equal.
+    if let TermKind::HolOp(HolOp::Eq, _) = head.kind() {
+        if args.len() == 2 {
+            return literal_eq(&args[0], &args[1]).map(Term::bool_lit);
+        }
+        return None;
+    }
+
     let prim = match head.kind() {
         TermKind::Prim(p) => *p,
         _ => return None,
@@ -132,6 +145,20 @@ fn as_int_lit(t: &Term) -> Option<&Int> {
 fn as_blob(t: &Term) -> Option<&[u8]> {
     match t.kind() {
         TermKind::Blob(b) => Some(b),
+        _ => None,
+    }
+}
+
+/// Decide structural equality of two kernel literals (`Bool`, `Nat`,
+/// `Int`, `Blob`). Returns `None` if either argument is not a
+/// recognised literal at one of those types — the rule is undefined
+/// (and `reduce_prim` errors) for non-literal arguments.
+fn literal_eq(a: &Term, b: &Term) -> Option<bool> {
+    match (a.kind(), b.kind()) {
+        (TermKind::Bool(x), TermKind::Bool(y)) => Some(x == y),
+        (TermKind::Nat(x), TermKind::Nat(y)) => Some(x == y),
+        (TermKind::Int(x), TermKind::Int(y)) => Some(x == y),
+        (TermKind::Blob(x), TermKind::Blob(y)) => Some(x == y),
         _ => None,
     }
 }
@@ -366,6 +393,61 @@ mod tests {
     fn nat_to_int_round_trips_positive() {
         assert_reduces(Term::app(Term::prim(Prim::NatToInt), nat(42)), int(42));
         assert_reduces(Term::app(Term::prim(Prim::NatToInt), nat(0)), int(0));
+    }
+
+
+    fn hol_eq_at(alpha: Type) -> Term {
+        Term::hol_op(
+            HolOp::Eq,
+            Type::fun(alpha.clone(), Type::fun(alpha, Type::bool())),
+        )
+    }
+
+    fn hol_eq(lhs: Term, rhs: Term) -> Term {
+        let alpha = lhs.type_of().unwrap();
+        Term::app(Term::app(hol_eq_at(alpha), lhs), rhs)
+    }
+
+    #[test]
+    fn hol_eq_decides_bool_literals() {
+        assert_reduces(
+            hol_eq(Term::bool_lit(true), Term::bool_lit(true)),
+            Term::bool_lit(true),
+        );
+        assert_reduces(
+            hol_eq(Term::bool_lit(true), Term::bool_lit(false)),
+            Term::bool_lit(false),
+        );
+    }
+
+    #[test]
+    fn hol_eq_decides_nat_literals() {
+        assert_reduces(hol_eq(nat(5), nat(5)), Term::bool_lit(true));
+        assert_reduces(hol_eq(nat(0), nat(5)), Term::bool_lit(false));
+    }
+
+    #[test]
+    fn hol_eq_decides_int_literals() {
+        assert_reduces(hol_eq(int(-3), int(-3)), Term::bool_lit(true));
+        assert_reduces(hol_eq(int(-3), int(3)), Term::bool_lit(false));
+    }
+
+    #[test]
+    fn hol_eq_decides_blob_literals() {
+        assert_reduces(
+            hol_eq(Term::blob(vec![1u8, 2]), Term::blob(vec![1u8, 2])),
+            Term::bool_lit(true),
+        );
+        assert_reduces(
+            hol_eq(Term::blob(vec![1u8, 2]), Term::blob(vec![3u8])),
+            Term::bool_lit(false),
+        );
+    }
+
+    #[test]
+    fn hol_eq_refuses_open_forms() {
+        let n = Term::free("n", Type::nat());
+        assert!(Thm::reduce_prim(hol_eq(nat(5), n)).is_err());
     }
 
     #[test]

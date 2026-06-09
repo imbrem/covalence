@@ -2,13 +2,13 @@
 //!
 //! Same architecture as `stdlib::nat`: Pure provides the type and
 //! closed-form computation; the open-form HOL ring axioms come from
-//! `covalence_hol::int_axioms` and are re-exported here.
+//! `crate::int_axioms` and are re-exported here.
 
 use covalence_core::{Arith, Prim, Term, Type};
 
 pub use covalence_types::Int;
 
-pub use covalence_hol::int_axioms::{
+pub use crate::int_axioms::{
     int_add_assoc as axiom_add_assoc, int_add_comm as axiom_add_comm,
     int_add_neg_r as axiom_add_neg_r, int_add_zero_r as axiom_add_zero_r,
     int_mul_add_distrib_l as axiom_mul_add_distrib_l, int_mul_assoc as axiom_mul_assoc,

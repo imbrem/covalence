@@ -28,7 +28,10 @@ pub use kernel::Kernel;
 pub mod prover;
 mod prover_kernel;
 
-pub mod stdlib;
+/// Re-export the HOL standard library at its historical location
+/// in `covalence_shell::stdlib`. The implementation lives in
+/// `covalence_hol::stdlib` since the kernel-design refactor.
+pub use covalence_hol::stdlib;
 
 pub use prover::{Prover, ProverError};
 

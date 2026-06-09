@@ -59,6 +59,17 @@ fn assume_hol(body: Term) -> Thm {
 }
 
 // ============================================================================
+// Bidirectional induction (bona-fide kernel axiom)
+// ============================================================================
+
+/// `⊢ ∀P:int→bool. (∀n:nat. P (int_of_nat n)) ∧ (∀n:nat. P (-(int_of_nat n)))
+///                ⟹ ∀z:int. P z` — bidirectional integer induction.
+/// Bona-fide kernel axiom ([`Thm::int_induction`]); empty hyps.
+pub fn int_induction() -> Thm {
+    Thm::int_induction()
+}
+
+// ============================================================================
 // Ring characterisation — currently postulated as the definitional
 // layer (see module-level docs); to be replaced with derivations
 // from a `int_of_nat` + `int_neg` case-analysis decomposition.

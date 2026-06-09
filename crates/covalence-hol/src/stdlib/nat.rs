@@ -3,7 +3,7 @@
 //! All Nat is now Pure's primitive `Type::nat()` (an arbitrary-
 //! precision unsigned integer with computational equality on
 //! literals via `Thm::reduce_prim`). The HOL theorems about open
-//! forms come from `covalence_hol::nat_axioms`:
+//! forms come from `crate::nat_axioms`:
 //!
 //! - **Peano axioms** ([`axiom_zero_ne_succ`], [`axiom_succ_inj`],
 //!   [`axiom_induction`]) — intrinsic to the type.
@@ -28,19 +28,19 @@ use covalence_core::{Arith, Prim, Term, Type};
 pub use covalence_types::Nat;
 
 // Re-export the natrec combinator + its definitional axioms.
-pub use covalence_hol::nat_axioms::{
+pub use crate::nat_axioms::{
     natrec_apply, natrec_at, natrec_def_succ as axiom_natrec_succ,
     natrec_def_zero as axiom_natrec_zero,
 };
 
 // Peano axioms — intrinsic to the type.
-pub use covalence_hol::nat_axioms::{
+pub use crate::nat_axioms::{
     nat_induction as axiom_induction, nat_succ_inj as axiom_succ_inj,
     nat_zero_ne_succ as axiom_zero_ne_succ,
 };
 
 // Definitional axioms — each fixes a Pure prim via natrec / succ / pred.
-pub use covalence_hol::nat_axioms::{
+pub use crate::nat_axioms::{
     nat_add_def as axiom_add_def, nat_mul_def as axiom_mul_def,
     nat_pred_succ as axiom_pred_succ, nat_pred_zero as axiom_pred_zero,
     nat_sub_def as axiom_sub_def,
@@ -48,7 +48,7 @@ pub use covalence_hol::nat_axioms::{
 
 // Derived theorems — TODO-postulated, to be proved from the
 // definitional layer.
-pub use covalence_hol::nat_axioms::{
+pub use crate::nat_axioms::{
     nat_add_assoc as axiom_add_assoc, nat_add_comm as axiom_add_comm,
     nat_add_succ_r as axiom_add_succ_r, nat_add_zero_l as axiom_add_zero_l,
     nat_add_zero_r as axiom_add_zero_r, nat_mul_add_distrib_l as axiom_mul_add_distrib_l,

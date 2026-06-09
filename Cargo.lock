@@ -1039,7 +1039,10 @@ dependencies = [
 name = "covalence-hol"
 version = "0.0.0"
 dependencies = [
+ "bytes",
  "covalence-core",
+ "covalence-hash",
+ "covalence-sexp",
  "covalence-types",
  "smol_str",
  "thiserror 2.0.18",
@@ -1179,17 +1182,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "covalence-pure-shell"
-version = "0.0.0"
-dependencies = [
- "bytes",
- "covalence-core",
- "covalence-hash",
- "covalence-sexp",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "covalence-python"
 version = "0.0.0"
 dependencies = [
@@ -1203,7 +1195,6 @@ dependencies = [
  "covalence-kv",
  "covalence-llm",
  "covalence-object",
- "covalence-pure-shell",
  "covalence-repl",
  "covalence-sat",
  "covalence-serve",

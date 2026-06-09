@@ -1,7 +1,7 @@
 //! Smoke tests for the content-hash sidecar.
 
 use covalence_core::{Term, Type};
-use covalence_pure_shell::hash::{Hasher, UnitObsHasher, hash_term, hash_type};
+use covalence_hol::hash::{Hasher, UnitObsHasher, hash_term, hash_type};
 
 #[test]
 fn alpha_equivalent_terms_hash_identically() {

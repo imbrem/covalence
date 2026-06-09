@@ -9,5 +9,8 @@ default = []
 [dependencies]
 covalence-core = { path = "../covalence-core" }
 covalence-types = { path = "../covalence-types" }
+covalence-hash = { path = "../covalence-hash", default-features = false }
+covalence-sexp = { path = "../covalence-sexp" }
+bytes = "1"
 smol_str = "0.3"
 thiserror = "2"

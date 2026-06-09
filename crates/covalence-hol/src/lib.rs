@@ -1,7 +1,27 @@
+//! covalence-hol — untrusted shell over `covalence-core`.
+//!
+//! This crate now wears two hats:
+//!
+//! 1. **HOL Light builder API** (`HolLightCtx`, `PureHol`, the
+//!    `HolLightKernel`/`HolLightTerms`/`HolLightTypes` traits,
+//!    `nat_axioms`, `int_axioms`) — convenience constructors over
+//!    `covalence-core`'s folded-in HOL primitives, plus the
+//!    bridge axioms and stdlib lazy statics.
+//!
+//! 2. **Term/type serialisation** (`hash`, `sexp`) — content
+//!    hashing and the canonical S-expression syntax used by every
+//!    shell crate. Formerly lived in the now-deleted
+//!    `covalence-pure-shell`.
+//!
+//! Nothing in this crate is consumed by `covalence-core`'s
+//! inference rules; a bug here cannot produce a false `Thm`.
+
+pub mod hash;
 pub mod hol_light_obs;
 pub mod int_axioms;
 pub mod nat_axioms;
 pub mod pure_hol;
+pub mod sexp;
 pub mod traits;
 pub mod types;
 

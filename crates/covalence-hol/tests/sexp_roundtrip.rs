@@ -2,7 +2,7 @@
 
 use bytes::Bytes;
 use covalence_core::{Term, Thm, Type};
-use covalence_pure_shell::sexp::{
+use covalence_hol::sexp::{
     UnitObs, term_from_sexp, term_to_sexp, thm_to_sexp, type_from_sexp, type_to_sexp,
 };
 use covalence_sexp::{SExpr, parse, prettyprint};

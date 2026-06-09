@@ -1,15 +1,18 @@
-# Pure: Optional Next Stages
+# Core: Optional Next Stages
 
-> **STATUS: OPTIONAL PROPOSALS, NOT COMMITTED.**
+> **STATUS: MOSTLY LANDED.**
 >
-> Companion to [`README.md`](./README.md). Records design ideas for
-> follow-up work after the current `covalence-pure` / `covalence-pure-shell`
-> merge. Every entry below is marked **OPTIONAL** — none of these
-> block any pending work, and any of them can be pursued, deferred,
-> reordered, or rejected independently.
+> Companion to [`README.md`](./README.md). Originally recorded design
+> ideas deferred from the initial `covalence-pure` / `covalence-pure-shell`
+> merge. As of the `kernel-design` branch, several of these have landed:
+> Option A (`new_type_definition`), Option B (`TyConObs` + unified
+> `Observer`), and a substantially different version of Option G
+> (HOL folded into the kernel rather than layered above). Items below
+> are tagged **DONE**, **PENDING**, or **OPTIONAL** to reflect
+> current status.
 
 This document captures the design conversations from the
-`covalence-pure` MVP work that we deliberately *did not* land in the
+core MVP work that we deliberately *did not* land in the
 initial merge candidate, so they're available to refer back to without
 cluttering the kernel.
 
@@ -17,7 +20,7 @@ cluttering the kernel.
 
 ## Status of the merge candidate
 
-`covalence-pure` after this round includes:
+`covalence-core` (formerly `covalence-pure`) after this round includes:
 
 - Locally-nameless terms (`Term`) and types (`Type`) with α-transparent
   `Hint` for binder labels.
@@ -39,12 +42,17 @@ cluttering the kernel.
   is just discharge predicates: `has_no_obs`, `all_obs_match::<O>`,
   `for_each_obs::<O>`).
 
-`covalence-pure-shell` includes:
+`covalence-hol` (absorbed `covalence-pure-shell`) includes:
 
 - Handler-driven `term_to_sexp` / `term_from_sexp` (caller supplies
   `ObsSerializer` / `ObsParser` trait impls).
 - Handler-driven content hashing (`hash_term` with `ObsHasher`).
 - `UnitObs` / `UnitObsHasher` defaults for the trivial `()` observer.
+- `HolLightCtx` / `PureHol` / the 10 derived HOL Light rules over
+  the core's bona-fide reflection axioms.
+- `nat_axioms` / `int_axioms` — postulated stdlib axioms via
+  `Thm::assume` (kept with self-hyp audit trail; bona-fide kernel
+  axioms only for the four reflection / induction primitives).
 
 `covalence-python`: pyo3 wrappers for `Type`, `Term`, `Thm` with the
 full rule API.
@@ -52,7 +60,7 @@ full rule API.
 `covalence-wasm/wit/pure.wit`: `cov:pure@0.1.0` WIT package defining
 the guest-facing kernel API, with `ctx` as an *opaque* resource
 so the host's hyp-set representation can change without breaking
-guests.
+guests. (Name may rename to `cov:core` in a future round.)
 
 **Tests:** ~118 across `observer`, `soundness`, `rules`, `hash`,
 `sexp_roundtrip`, `define`, and `test_pure` (Python).
@@ -61,26 +69,29 @@ guests.
 
 ## Optional next stages
 
-### A. **OPTIONAL** — `Thm::new_type_definition` (HOL Light parity)
+### A. **DONE** — `Thm::new_type_definition` (HOL Light parity)
 
-Mirror HOL Light's `new_basic_type_definition`. Given a witness
-theorem `⊢ P x : bool`, introduce a fresh type constant `τ` and two
-fresh constants `abs : α → τ`, `rep : τ → α`, returning the two
-bijection theorems:
+Landed in `covalence-core::thm`. Given a witness theorem
+`Γ ⊢ P x`, introduces a fresh type constant `τ` and two fresh
+constants `abs : α → τ`, `rep : τ → α`, returning a `TypeDef`
+bundle with three theorems (split Pure-style rather than HOL Light's
+two, because Pure has no `↔`):
 
 ```
-⊢ ∀a:τ. abs (rep a) = a
-⊢ ∀r:α. P r ↔ rep (abs r) = r
+⊢ ⋀a:τ. abs (rep a) ≡ a
+⊢ ⋀r:α. P r ⟹ rep (abs r) ≡ r
+⊢ ⋀r:α. rep (abs r) ≡ r ⟹ P r
 ```
 
-**Implementation approach:** use the same Arc-identity trick as `Def`.
-Each call allocates a fresh `Arc` for the new type constant; the
-allocator gives us freshness. No stateful signature needed.
+All three carry the witness's hyps. Identity via the `TyConObs`
+Arc-pointer mechanism (kernel-private `TypeDefMarker` ZSTs). The
+rule handles polymorphic carriers — `tvars` are extracted from α's
+free TFrees and stored in `TypeDef.tvars` for downstream
+`inst_tfree` use.
 
-**TCB cost:** ~80–100 LoC.
-
-**Unblocks:** HOL Light's standard library (`num`, `list`, `prod`,
-real numbers, …) without resorting to user-asserted bijection axioms.
+**Note:** the disjunct-trick wrapper (avoiding the inhabitedness
+obligation entirely) is still pending in `covalence-hol`; the kernel
+rule is ready for it.
 
 **Variant — the disjunct trick using ε (canonical formulation).** The
 kernel rule above still requires a witness theorem `⊢ ∃x. P x`. To
@@ -131,13 +142,15 @@ users. The kernel doesn't need to know about `ε`.
 
 ---
 
-### B. **RECOMMENDED — pre-G** — Unified `Observation` trait, `TyConObs` variant
+### B. **DONE** — Unified `Observation` trait, `TyConObs` variant
 
-Refines the original "TyCon-as-observation" sketch to a unified
-design: **`Observer` and "theory" are the same trait**. One Rust type
-is one ε-family and can produce both term-level observations and
-type-level type constructors. Mirrors the term-side `Const(SmolStr)`
-vs `Obs(DynObs)` duality on the type side, instead of replacing it.
+Landed. `TypeKind::TyConObs(Object, BinderHint, Vec<Type>)` lives
+alongside the structural `Tycon(SmolStr, Vec<Type>)`; both forms
+coexist, picked by use-case. The `Observer` trait is auto-impl'd
+for any `Any + Send + Sync + Debug`, so the same Rust type can
+appear both as a term-level `Obs` head and a type-level `TyConObs`
+head when the surrounding theory wants that. The historical context
+below describes the design rationale.
 
 #### `TypeKind` extension
 
@@ -272,8 +285,7 @@ like an inner-theory rather than outer-theory problem.
 
 ~30 LoC: one variant on `TypeKind`, the corresponding cases in
 `type_of_in` (just propagate arity-check), the `Display`/`Hash`/`Eq`
-plumbing. The new `ObsDisplay` trait lives in `covalence-pure-shell`
-(non-TCB).
+plumbing. The `ObsDisplay` trait lives in `covalence-hol` (non-TCB).
 
 ---
 
@@ -330,7 +342,7 @@ directly on `PureHost`. Exercises every rule (`refl`, `trans`, `sym`,
 `cong_app`, `beta_conv`, `assume`/`imp_intro`, `all_intro`/`all_elim`,
 `inst_tfree`) plus error-path mapping. Fast, no guest compilation.
 
-**Real guest .wasm tests** — `crates/covalence-pure-test-guest/`
+**Real guest .wasm tests** — `crates/covalence-core-test-guest/`
 (wasm32 cdylib using `wit_bindgen::generate!`) + the host test
 `crates/covalence-wasm/tests/pure_guest_integration.rs`. The guest
 imports `cov:pure/api` and exposes one name-dispatched export
@@ -358,40 +370,39 @@ pattern carries over unchanged.
 
 ---
 
-### F. **OPTIONAL** — `covalence-kernel` crate
+### F. **DEFERRED** — `covalence-kernel` orchestration crate
 
-Sits between `covalence-pure` and any HOL-style layer. Per the
-stacked-pure-hol-mvp plan, this is where signature management and
-local-authority observations would live:
-
-- `Signature` (from option C above, if we go that way)
-- `Authority` + `observe` (local-only trust hook, planned in
-  `02-framework.md`)
-- `new_type_definition` (option A) — could live here or in Pure
-  itself; this crate is where the signature interactions land
-
-Optional dependency on `covalence-pure-shell` for sexp/hash.
+The existing `crates/covalence-kernel/` (arena + egraph + UF HOL)
+is still in the workspace as the legacy implementation. The plan
+remains to delete its old HOL implementation and reshape it as
+a thin orchestration crate wiring `covalence-core` + `covalence-hol`
++ `covalence-store` + WASM evaluator + tree-store. No active work
+yet; tracked here so it doesn't get lost.
 
 ---
 
-### G. **OPTIONAL** — `covalence-hol` crate
+### G. **PARTIALLY DONE** — `covalence-hol` crate
 
-Classical HOL Light on top of `covalence-kernel`. From the stacked
-plan:
+Classical HOL Light builder. Status:
 
-- Define `bool` properly (currently a convenience `Type::bool()` in
-  Pure with no kernel-enforced arity).
-- Define HOL connectives (`∧`, `∨`, `¬`, `⟹`, `↔`, `∀`, `∃`, `ε`) via
-  `Thm::define`.
-- Derive the 10 HOL Light rules (`REFL`, `TRANS`, `MK_COMB`, `ABS`,
-  `BETA`, `ASSUME`, `EQ_MP`, `DEDUCT_ANTISYM_RULE`, `INST`, `INST_TYPE`)
-  from Pure's existing rule set.
-- Add the three HOL axioms (`ETA_AX`, `SELECT_AX`, `INFINITY_AX`) via
-  `Thm::assume` at the HOL crate's boundary — they appear in the hyps
-  of any HOL theorem that depends on them.
-- Subset types via the disjunct trick (lives here, not in the kernel).
-- Bootstrap from a content-addressed standard library blob set, per
-  the original `stacked-pure-hol-mvp` plan.
+- **DONE.** `Type::bool()` and the HOL connectives (`=`, `==>`, `~`,
+  `/\`, `\/`, `<=>`, `!`, `?`, `@`, `Trueprop`) are kernel-native via
+  `TermKind::Bool` and `TermKind::HolOp` — *not* `Thm::define`'d.
+- **DONE.** The 10 HOL Light rules derived in `pure_hol.rs` from the
+  core's bona-fide reflection axioms (`eq_reflection`,
+  `forall_reflection`, `imp_reflection`) plus the regular LF rules.
+- **PENDING.** The three HOL axioms (`ETA_AX`, `SELECT_AX`,
+  `INFINITY_AX`) via `Thm::assume` at the HOL crate's boundary — most
+  HOL Light proofs need these.
+- **PENDING.** Subset types via the disjunct trick (kernel rule
+  `new_type_definition` is ready; the disjunct-trick wrapper isn't).
+- **PENDING.** `define_type` derived rule — the construction that
+  takes a recursive type spec like `nat = Zero | Suc nat` and
+  returns the type + constructors + injectivity + induction +
+  recursor. **This is the gate to the internal-logic ladder
+  (PA, commutative semiring, HS, internal HOL).**
+- **PENDING.** Stdlib bootstrap from a content-addressed blob set
+  per the original plan.
 
 ---
 
@@ -413,7 +424,7 @@ Anything fancier is policy and lives in user crates.
 ### I. **RECOMMENDED — IMMEDIATE NEXT WORK** — Store observations via "System-with-modes"
 
 This is the design that replaces `covalence-kernel`'s old HOL with
-`covalence-pure` + `covalence-hol` + a content-addressing observation
+`covalence-core` + `covalence-hol` + a content-addressing observation
 layer. Confirmed approach as of this round:
 
 #### The pattern
@@ -523,8 +534,8 @@ are met.
 - **`covalence-store-obs`** (new) — `Blake3System` and `StoreSystem`
   Rust types, the meaning-axiom factories, the `BlobStore` integration
   that mints `obs_eq` results when it has the blob indexed. Imports
-  `covalence-pure` and `covalence-store`. Does NOT import
-  `covalence-hol` — pure abstract-hash reasoning works without HOL.
+  `covalence-core` and `covalence-store`. May import `covalence-hol`
+  for the canonical hashing / sexp helpers (now consolidated there).
 - **Untrusted-axiom factories** live in a separate submodule
   (`covalence-store-obs::untrusted::*`) so opting in is explicit.
 
@@ -555,27 +566,33 @@ or similar later crate — not on the critical path.
 
 ## How to pick up any of these
 
-Each item above is self-contained. The current recommended path:
+Each item above is self-contained. Current state (as of the
+`kernel-design` branch):
 
-- **PHASE 1 (immediate):** B (`TyConObs` variant + unified `Observer`
-  trait + opt-in `ObsDisplay`) and A (`new_type_definition` kernel
-  rule + HOL disjunct-trick wrapper). Small TCB delta total
-  (~110 LoC). Unblocks proper HOL bool/num/list/etc.
-- **PHASE 2:** G (`covalence-hol` with HOL Light's 10 derived rules
-  + 3 axioms, building on B + A). `bool` becomes a `Tycon("bool", [])`
-  with its actual axiomatisation; HOL constants ride on a `HOLTheory`
-  observer for both their term and type contributions.
-- **PHASE 3:** I (`covalence-store-obs` — `Blake3System`,
-  `StoreSystem`, meaning axioms, store integration).
-- **PHASE 4:** F as orchestration only — make the existing
-  `covalence-kernel` re-export Pure + HOL + Store + WASM-eval +
-  tree-store. Delete the old HOL kernel files.
-- **PARALLEL/LATER:** D (drop `Hint` from `Def`) as a cleanup
-  whenever.
+- **DONE:** A (`new_type_definition`), B (`TyConObs` + unified
+  `Observer`), E (WASM theorem-proving tests). The kernel-fold of
+  HOL went farther than original Option G envisioned — HOL primitives
+  are kernel-native via `TermKind::Bool`/`HolOp` and the four bona-fide
+  axioms now live in `Thm::*`.
 
-None of these are blocking. **Option H is no longer on the menu** —
-the system-with-modes pattern in section I gets everything we wanted
-from a computational rule without changing the TCB. **Option B is no
-longer "experimental"** — it's the unifying piece that ties the
-observer story together across term and type positions, and the
-recommended first immediate step.
+- **PARTIALLY DONE:** G — the 10 HOL Light rules + builder API are in
+  `covalence-hol`; the three HOL axioms (`ETA_AX`, `SELECT_AX`,
+  `INFINITY_AX`), the disjunct-trick wrapper, and the stdlib bootstrap
+  are still pending.
+
+- **HIGHEST-VALUE PENDING:** `define_type` derived rule in
+  `covalence-hol` (the inductive-type construction). Gates the
+  internal-logic ladder (PA → commutative semiring → HS → internal
+  HOL). Polymorphic typedef plumbing in `pure_hol.rs` is the
+  prerequisite.
+
+- **PENDING but not blocking:** I (`covalence-store-obs`), F
+  (orchestration), the HOL axiom postulates, stdlib loader.
+
+- **PARALLEL/LATER:** D (drop `Hint` from `Def`) — cleanup whenever.
+
+**Option H stays off the menu** — the system-with-modes pattern in
+section I gets everything we wanted from a computational rule
+without changing the TCB. **The next concrete move** is the
+`define_type` work in `covalence-hol`, plus the small wrapper-level
+fixes (polymorphic-typedef rejection, disjunct trick) that unblock it.

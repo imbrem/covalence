@@ -74,8 +74,8 @@ These are actual logics, or explicit attempts to host logics.
 
 | System | Current repo locus | Institutional role |
 |---|---|---|
-| Pure-style LF | [`crates/covalence-pure`](../crates/covalence-pure/src/lib.rs) | Candidate **meta-institution** / logical framework. Provides judgments and rules intended to host upper-layer object logics. |
-| HOL Light-style HOL | [`crates/covalence-hol`](../crates/covalence-hol/src/lib.rs) | Object logic institution with a concrete proof kernel. |
+| Pure-style LF + HOL | [`crates/covalence-core`](../crates/covalence-core/src/lib.rs) | The TCB: Pure-shaped meta-institution with HOL folded in as the kernel-level object institution. HOL primitives (`Bool`, `HolOp`) and the bona-fide axioms (`nat_induction`, three reflection axioms) are kernel rules; other object logics get reasoned about *inside* HOL via `Thm::assume`-postulated theories. |
+| HOL Light builder + shell | [`crates/covalence-hol`](../crates/covalence-hol/src/lib.rs) | Untrusted shell over `covalence-core`. Hosts the HOL Light builder API (`HolLightCtx`, `PureHol`, the 10 derived rules), the `nat_axioms` / `int_axioms` stdlib postulates, plus canonical hashing and S-exp serialisation. |
 | Experimental arena HOL kernel | [`crates/covalence-kernel`](../crates/covalence-kernel/src/lib.rs) | Another object-logic implementation, but explicitly a staging kernel rather than a settled semantic target. |
 | SMT-LIB logic families | [`crates/covalence-smt`](../crates/covalence-smt/src/lib.rs) | Better viewed as a **family of institutions indexed by `(set-logic ...)`** such as `QF_UF`, `QF_LIA`, etc. |
 | Propositional CNF/SAT | [`crates/covalence-sat`](../crates/covalence-sat/src/lib.rs) | Small institution family for propositional satisfiability problems and certificates. |

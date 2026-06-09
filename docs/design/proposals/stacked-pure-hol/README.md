@@ -1,30 +1,47 @@
 # Stacked Pure + HOL MVP
 
-> **STATUS: PROPOSED — focused MVP sketch.**
+> **STATUS: PARTIALLY LANDED — HOL has been folded into the kernel.**
+>
+> This document originally described a strict two-layer split: a tiny
+> Pure-only TCB (`covalence-pure`) with HOL as an untrusted layer
+> above. The `kernel-design` branch absorbed the Pure crate into
+> `covalence-core` and **folded HOL's primitives and bona-fide axioms
+> into the TCB**. Sections rewritten below reflect that. The sibling
+> [`next-stages.md`](./next-stages.md) records the optional items
+> and tracks which have landed.
+>
+> The TCB is now slightly wider but more honest: `nat_induction` is a
+> real kernel rule with empty hyps, not a `Thm::assume` postulate
+> with a self-hyp audit trail. HOL is the base logic; any other
+> logic gets reasoned about *inside* HOL. The observer machinery
+> (`obs_eq`, `obs_true`, `obs_imp`) remains the pluggable hook for
+> non-HOL observer systems (Store, Blake3, future ones).
 >
 > Sibling to the [layered-framework
 > proposal](../layered-framework/README.md). That proposal describes a
 > ~700–800 LoC kernel with Store as a framework primitive and a wide
 > conceptual surface (authorities, observations, ElidePolicy, federation,
 > meta-trust vs trust set). This proposal is the *minimal* MVP version of
-> the same shape — single document, ~500 LoC kernel, ML-style data, no
-> arena, no content addressing, no Store-as-primitive. The intent is to
-> ship the smallest defensible bottom layer we can integrate with the rest
-> of the system *first*, then grow upward.
+> the same shape — single document, ML-style data, no arena, no content
+> addressing, no Store-as-primitive. The intent was to ship the smallest
+> defensible bottom layer we could integrate with the rest of the system
+> *first*, then grow upward. That goal is now substantially met.
 >
 > Read this before any of `02-framework.md` /
 > `03-authority.md` / `04-store.md` — those add complexity that the MVP
 > does not need. They become reachable refinements *after* this lands.
 >
-> This is also the most explicit **Larry Paulson / Isabelle-Pure homage**
-> in the repo: a tiny LF/Pure substrate plus HOL as the default object
-> logic, with everything else layered on top. In the vocabulary of
-> [`../../../institution-map.md`](../../../institution-map.md), Pure is
-> the candidate meta-institution and HOL the default object institution.
+> This is the most explicit **Larry Paulson / Isabelle-Pure homage**
+> in the repo: a tiny Pure substrate plus HOL as the kernel-level
+> object logic, with everything else layered on top. In the vocabulary
+> of [`../../../institution-map.md`](../../../institution-map.md), the
+> Pure-shaped meta-logic is the candidate meta-institution and HOL is
+> the default object institution — but they now live in the same
+> trusted crate.
 
 ---
 
-## 1. The three layers at a glance
+## 1. The two layers as landed
 
 ```
               ┌─────────────────────────────────────────────┐
@@ -35,41 +52,76 @@
               └────────────────┬────────────────────────────┘
                                │ depends on
               ┌────────────────▼────────────────────────────┐
-   Layer 1   │  covalence-hol (untrusted)                  │
-              │  - bool, =, ∧, ∨, ¬, →, ↔, ∀, ∃, ε         │
-              │  - 10 HOL Light rules as derived Pure rules │
+   Shell     │  covalence-hol (untrusted)                  │
+              │  - HOL Light builder API (HolLightCtx,      │
+              │    PureHol, the kernel traits)              │
+              │  - nat_axioms / int_axioms (Thm::assume     │
+              │    postulates with audit-trail hyps)        │
+              │  - Content hashing (BLAKE3-keyed)           │
+              │  - Canonical S-expression syntax            │
               │  - Subset types via disjunct trick          │
-              │  - Stdlib loader keyed by BLAKE3            │
               │  - WASM-oracle adapter (observation axioms) │
               └────────────────┬────────────────────────────┘
                                │ depends on
               ┌────────────────▼────────────────────────────┐
-   Layer 0   │  covalence-pure (TCB, ~500 LoC, no unsafe)  │
+   TCB       │  covalence-core (no unsafe)                 │
               │  - Term/Type: Arc<Node>, ML-style           │
               │  - 8 LF rules + equality (refl/cong/β/η)    │
-              │  - define                                   │
-              │  - Local Authority + observe (process-local)│
-              │  - Blob as a kernel-primitive type/term     │
+              │  - define + new_type_definition             │
+              │  - HOL primitives folded in:                │
+              │      TermKind::Bool(bool)                   │
+              │      TermKind::HolOp(HolOp, Type)           │
+              │        — Eq, Imp, Not, And, Or, Iff,        │
+              │          Forall, Exists, Select, Trueprop   │
+              │  - Bona-fide HOL axioms (empty hyps):       │
+              │      Thm::nat_induction                     │
+              │      Thm::eq_reflection                     │
+              │      Thm::forall_reflection                 │
+              │      Thm::imp_reflection                    │
+              │  - Observer hooks (obs_eq/obs_true/obs_imp) │
+              │    for non-HOL observer systems             │
+              │  - Bytes / Nat / Int as kernel-primitive    │
+              │    types/terms                              │
               └─────────────────────────────────────────────┘
 ```
 
-This sketch takes the strongest austerity position:
-**TCB = `covalence-pure` only.** A bug in HOL or in shell cannot
-produce a false `Thm`. A bug in the WASM oracle adapter cannot produce
-a false `Thm`. Soundness reduces to ~500 lines reviewed line-by-line.
+**TCB = `covalence-core`.** A bug in `covalence-hol` (the HOL Light
+builder, the postulated `nat_axioms` / `int_axioms`, the disjunct
+trick) cannot produce a false `Thm`. A bug in the WASM oracle adapter
+cannot produce a false `Thm`. Soundness reduces to `covalence-core`'s
+rule and axiom set, reviewed module-by-module.
 
-If the broader refactor settles on "the trusted core is LF + HOL,"
-then this document still matters as the **shape** of that split: Pure
-remains the meta-logic substrate, HOL remains the default object
-logic, and the rest of the system remains outside that center as
-oracle, stdlib, transport, or institution-translation machinery.
+### Why HOL ended up in the TCB
+
+The original sketch treated HOL as a strict layer above Pure. The
+fold trades a little extra reviewed code for two real wins:
+
+- **`nat_induction` is a real axiom.** If induction were a
+  `Thm::assume` postulate, every downstream theorem that used
+  induction would carry the induction axiom as a hypothesis
+  forever. That made the audit trail honest but the proof terms
+  noisy — and the noise compounded as more induction principles
+  (over `int`, `bool`, future `define_type` outputs) accumulated.
+- **HOL is the substrate for internal logics.** When you internalize
+  PA, ZF, Tarski reals, or HOL-inside-HOL, the meta-theorems live
+  in `bool` and `nat` from this kernel. Putting HOL in the kernel
+  means internal logics inherit the kernel's `bool` reasoning
+  machinery for free.
+
+The observer machinery (`obs_eq`, `obs_true`, `obs_imp`) is *not*
+gone — it remains as the kernel's pluggable computational hook
+for **other** observer systems (Store membership, BLAKE3 identity,
+WASM oracle outputs, …). HOL is no longer one of those; it's the
+substrate they all live over.
 
 ---
 
-## 2. Layer 0 — `covalence-pure`
+## 2. The TCB — `covalence-core`
 
-Isabelle/Pure–shaped logical framework. Tiny enough that a reviewer
-can hold all of it in their head.
+Isabelle/Pure–shaped logical framework with HOL folded in. Small
+enough that a reviewer can hold the rule set in their head; the
+HOL-specific additions are concentrated in one module
+(`hol.rs`) and four axiom rules.
 
 ### 2.1 Data: ML-style `Arc<Node>`
 
@@ -81,33 +133,50 @@ No arena, no `TermId`, no hashing. A term is a plain Rust value; two
 use std::sync::Arc;
 use smol_str::SmolStr;
 use bytes::Bytes;
+use covalence_types::{Nat, Int};
 
 #[derive(Clone, Hash, PartialEq, Eq)]
-pub struct Term(Arc<TermNode>);
+pub struct Term(Arc<TermKind>);
 
 #[derive(Hash, PartialEq, Eq)]
-enum TermNode {
+enum TermKind {
+    // Pure meta-level
     Bound(u32),                            // de Bruijn
-    Free  { name: SmolStr, ty: Type },     // named free var
-    Const { name: SmolStr, ty: Type },     // declared / defined constant
+    Free(SmolStr, Type),                   // named free var
+    Const(SmolStr, Type),                  // declared / defined constant
     App(Term, Term),
-    Abs(Type, Term),                       // λx:τ. body
+    Abs(BinderHint, Type, Term),           // λx:τ. body
     Imp(Term, Term),                       // meta-implication φ ⟹ ψ
-    All(Type, Term),                       // meta-universal ⋀x:τ. body
-    Eq (Term, Term),                       // meta-equality t ≡ u
-    Blob(Bytes),                           // ⟵ BUILTIN: first-class bytes
+    All(BinderHint, Type, Term),           // meta-universal ⋀x:τ. body
+    Eq(Term, Term),                        // meta-equality t ≡ u
+    Def(Def),                              // Arc-identity defined constant
+
+    // Kernel-primitive value types
+    Blob(Bytes),                           // BUILTIN: first-class bytes
+    Nat(Nat), Int(Int),                    // arbitrary-precision literals
+    Prim(Prim),                            // builtin function (NatArith, …)
+    Bool(bool),                            // HOL true / false
+
+    // HOL primitives, folded in
+    HolOp(HolOp, Type),                    // Eq, Imp, Not, And, Or, Iff,
+                                           // Forall, Exists, Select, Trueprop
+
+    // Observation leaf (for non-HOL observer systems)
+    Obs(Object, Type),
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
-pub struct Type(Arc<TypeNode>);
+pub struct Type(Arc<TypeKind>);
 
 #[derive(Hash, PartialEq, Eq)]
-enum TypeNode {
-    Prop,                                              // kind of metaprops
-    Tycon { name: SmolStr, args: Vec<Type> },          // user type ctors
-    Arrow(Type, Type),
-    TVar(SmolStr),
-    Blob,                                              // ⟵ BUILTIN: type of Blob(_)
+enum TypeKind {
+    TFree(SmolStr),                                  // type variable
+    Prop,                                            // kind of metaprops
+    Bytes, Nat, Int,                                 // primitive value types
+    Fun(Type, Type),
+    Tycon(SmolStr, Vec<Type>),                       // structural tycon
+    TyConObs(Object, BinderHint, Vec<Type>),         // identity-based tycon
+                                                     // (typedef minted)
 }
 ```
 
@@ -116,15 +185,21 @@ the logic without us copying it. `Blob(Bytes)` lets the kernel reference
 a byte sequence by Arc-share; structural equality is byte equality,
 which is cheap when the Arcs share. The kernel *does not* hash blobs —
 that's an upper-layer concern (`covalence-hash` outside the TCB). The
-kernel just gives us a way to talk about arbitrary bytes inside Pure
-terms.
+kernel just gives us a way to talk about arbitrary bytes inside terms.
+
+**Why `Nat`/`Int`/`Bool` are kernel primitives.** Same argument: big
+data (arbitrary-precision arithmetic, large boolean computations)
+needs first-class representation. `Thm::reduce_prim` decides closed-form
+arithmetic on `NatArith`/`IntArith`/`BytesCat`/… by reflexivity, so the
+kernel knows that `Prim::NatArith(Add) (Nat 2) (Nat 3) ≡ Nat 5` without
+the user having to derive successor unfoldings.
 
 ### 2.2 Theorems
 
 ```rust
 #[derive(Clone)]
 pub struct Thm {
-    hyps:  Arc<im::OrdSet<Term>>,   // each of kind Prop
+    hyps:  Ctx,      // structurally-shared BTreeSet<Term>, each of kind prop
     concl: Term,
 }
 ```
@@ -134,8 +209,9 @@ a kernel rule. Soundness is constructional in the LCF sense.
 
 ### 2.3 The rule set
 
-Eight LF rules + the six equality rules + β + η + `inst_tyvar` +
-`define` + `observe`.
+Eight LF rules + six equality rules + β + η + `inst_tfree` +
+`define` + `new_type_definition` + observation hooks + the four
+bona-fide HOL axioms.
 
 ```
 [φ] ⊢ φ                                                    (assume)
@@ -148,56 +224,87 @@ Eight LF rules + the six equality rules + β + η + `inst_tyvar` +
 ─────────────────────  (all-i)    ──────────────────────────  (all-e)
 Γ ⊢ ⋀x:τ. φ(x)                          Γ ⊢ φ(t)
 
+Γ ⊆ Δ                             Γ ⊢ p ≡ q     Γ' ⊢ p
+──────────  (weaken)              ─────────────────────  (eq_mp)
+Γ ⊢ φ                                  Γ ∪ Γ' ⊢ q
+given Γ ⊢ φ
+
 ⊢ t ≡ t  (refl)    Γ⊢t≡u, Γ'⊢u≡v ⇒ Γ∪Γ'⊢t≡v  (trans)    sym
 (cong-app, cong-abs)        ⊢ (λx.M) N ≡ M[N/x]  (β)     ⊢ λx.f x ≡ f  (η, x∉FV(f))
 
 c fresh, d closed, d:τ
-──────────────────────────  (define)        and  inst_tyvar(σ, Thm)
-⊢ c ≡ d, c declared at τ
+──────────────────────  (define)        and  inst_tfree(α, σ, Thm)
+⊢ c ≡ d
+
+Γ ⊢ P x                                ⊢ Prim p applied to literals reduces
+─────────────────  (new_type_def)      ─────────────────────────────────  (reduce_prim)
+⊢ abs∘rep = id_τ                              ⊢ lhs ≡ rhs
+⊢ P r ⟹ rep(abs r) ≡ r
+⊢ rep(abs r) ≡ r ⟹ P r
+
+Bona-fide HOL axioms (each ⊢ … with empty hyps):
+   ⊢ Trueprop (∀P:nat→bool. P 0 ∧ (∀n. P n ⟹ P (succ n)) ⟹ ∀n. P n)   (nat_induction)
+   ⊢ ⋀x y:'a. Trueprop (x = y) ≡ (x ≡ y)                                (eq_reflection)
+   ⊢ ⋀P:'a→bool. (⋀x. Trueprop (P x)) ≡ Trueprop (∀x. P x)              (forall_reflection)
+   ⊢ ⋀P Q:bool. (Trueprop P ⟹ Trueprop Q) ≡ Trueprop (P ⟹ Q)            (imp_reflection)
+
+Observer hooks (sound under parametric ε-model, policy in user code):
+   obs_eq<O: ObsEq>     — equate two obs-headed applications
+   obs_true<O: ObsTrue> — assert a prop-typed obs application
+   obs_imp<O: ObsImp>   — emit a lazy implication chain
 ```
 
-Plus one trust hook (next section).
+Plus the observer mechanism (next section) for non-HOL systems.
 
-### 2.4 Local observation
+### 2.4 Observer systems (non-HOL)
 
-The single trust hook. **Strictly local** — no hashes, no signatures,
-no content addressing.
+The pluggable computational hook. HOL no longer lives here — it's
+in the kernel above. What remains is the **per-Rust-type observer
+policy**, sound under a parametric ε-model regardless of what any
+particular policy returns.
 
 ```rust
-#[derive(Clone)]
-pub struct Authority {
-    id: u64,                                  // process-local nonce
-    owned_relations: Arc<BTreeSet<SmolStr>>,
+pub trait Observer: Any + Send + Sync + Debug {}
+impl<T: Any + Send + Sync + Debug> Observer for T {}
+
+pub trait ObsEq: Observer {
+    fn obs_eq(&self, other: &Self, my_args: &[Term],
+              other_args: &[Term], hint: Option<&dyn Hint>) -> bool;
 }
 
-impl Kernel {
-    pub fn fresh_authority(&mut self, rels: BTreeSet<SmolStr>) -> Authority;
+pub trait ObsTrue: Observer {
+    fn obs_true(&self, args: &[Term], hint: Option<&dyn Hint>) -> bool;
+}
 
-    /// Atomic fact: produces `⊢ O.R(args...)` (empty hyps) provided
-    /// R ∈ O.owned_relations and every arg is closed and well-typed.
-    pub fn observe(
-        &self,
-        auth: &Authority,
-        rel: &str,
-        args: &[Term],
-    ) -> Result<Thm>;
+pub trait ObsImp: Observer {
+    fn obs_imp(&self, args: &[Term], hyps: &[Term],
+               hint: Option<&dyn Hint>) -> bool;
+}
+
+impl Thm {
+    pub fn obs_eq<O: ObsEq>(e1: Term, e2: Term, hint: …) -> Result<Thm>;
+    pub fn obs_true<O: ObsTrue>(expr: Term, hint: …) -> Result<Thm>;
+    pub fn obs_imp<O: ObsImp>(expr: Term, hyps: Vec<Term>, hint: …) -> Result<Thm>;
 }
 ```
 
-The Authority's `id` is a fresh `u64` from a session-scoped counter (or
-RNG) — **not** a public key, **not** a BLAKE3 hash. This is the whole
-point of "local observations only": cross-process identity, signing,
-hashing, and federation are *above* the kernel. The kernel sees an
-in-memory `Authority` and emits a theorem citing it. Whether that
-theorem can be exchanged with another process is somebody else's
-problem.
+The kernel compares `Obs` leaves by `Arc` pointer identity (via
+`Object`) — never by the user's `Eq`. A misbehaving observer impl
+cannot corrupt the kernel's `Ctx` invariants or compromise soundness.
 
-Soundness: the relation `R` is uninterpreted from the kernel's
-perspective, so adding the observation is conservative over every
-interpretation that maps `R` to "always true" (or to ∅, vacuously). The
-user gives `R` meaning via a **meaning-axiom**, which is just a `Thm`
-they assume and then discharge with `imp_elim` — the assumption stays
-visible in `hyps` until they explicitly drop it.
+**Soundness story.** Different Rust observer types `O`, `O'` get
+independent ε-families in the model: any `(obs O)(args…)` whose
+final Pure type is τ interprets to `ε_O(τ)`, and `obs_eq`/`obs_true`
+return either-answer-sound. So a policy choice — or a bug — in
+`Blake3System` cannot affect equations involving `StoreSystem`. The
+kernel's downcast check ensures the policy is only invoked when the
+heads downcast to the requested type.
+
+**Intended consumers.** Store membership (`StoreSystem`), BLAKE3
+identity (`Blake3System`), WASM oracle outputs, future SAT/SMT
+bridges. *Not* HOL — HOL's primitives are kernel-native now, so
+HOL theorems are produced via `Thm::nat_induction`, the reflection
+axioms, and the regular LF rules.
 
 ### 2.5 What's deliberately absent
 
@@ -208,56 +315,80 @@ visible in `hyps` until they explicitly drop it.
 - No egraph, no union-find, no Phase P EProp/EThm.
 - No `Decision::Sat/Unsat`.
 - No `serde` on `Thm`. No serialization at all.
-- No standard library. The kernel doesn't know `bool` exists.
+- No standard library beyond the bootstrap primitives. `define_type`
+  for non-`nat` recursive types lives in `covalence-hol`.
 
 These all live above the line and are added as untrusted upper layers.
 
-### 2.6 Estimated size
+### 2.6 Module shape
 
-| Module        | Purpose                                                | LoC  |
-|---------------|--------------------------------------------------------|------|
-| `term.rs`     | `Term`, `Type`, smart constructors, FV, well-formedness |  150 |
-| `subst.rs`    | β/η, capture-avoiding substitution, `inst_tyvar`        |  120 |
-| `thm.rs`      | `Thm`, the 14 inference rules + `define`                |  160 |
-| `auth.rs`     | `Authority`, `observe`                                  |   50 |
-| `kernel.rs`   | top-level `Kernel` struct, fresh-name supply            |   40 |
-| `error.rs`    | `thiserror` errors                                       |   30 |
-| **Total**     |                                                         | **~550** |
+| Module        | Purpose                                                       |
+|---------------|---------------------------------------------------------------|
+| `term.rs`     | `Term`/`Type`, `TermKind` (incl. `Bool`/`HolOp`), smart ctors |
+| `subst.rs`    | β/η, capture-avoiding substitution, `inst_tfree`              |
+| `ctx.rs`      | `Ctx`: structurally-shared hypothesis context                 |
+| `builtins.rs` | Closed-form reduction for `Prim`/`Bool` literal applications  |
+| `hol.rs`      | Cached HOL axiom-conclusion terms (consumed by `thm.rs`)      |
+| `thm.rs`     | `Thm`, LF + equality + `define` + `new_type_definition`        |
+|              | + observer hooks + the four bona-fide HOL axioms              |
+| `error.rs`    | `thiserror` errors                                            |
 
-Direct deps: `covalence-rand` (Authority nonce + `inst_tyvar` fresh
-names), `smol_str`, `bytes`, `im` (persistent OrdSet for hypotheses).
+Direct deps: `covalence-types` (`Nat`/`Int`), `smol_str`, `bytes`,
+no `im` (the `Ctx` abstraction wraps `Option<Arc<BTreeSet<Term>>>`).
 No `unsafe`, no IO, no Tokio, no WASM, no signature crate.
 
 ---
 
-## 3. Layer 1 — `covalence-hol`
+## 3. The shell — `covalence-hol`
 
-Untrusted. Builds classical HOL Light–shape logic on top of Pure.
+Untrusted. Two roles after the fold: a **HOL Light builder API**
+over `covalence-core`'s folded-in primitives, plus the
+**term/type serialisation** layer (content hashing + canonical
+S-expression syntax) absorbed from the deleted `covalence-pure-shell`.
 
-Institution-theoretically this is the default **object institution**
-that lives over the Pure meta-institution. That is the key reason this
-split is attractive during the current refactor: it gives the repo one
-stable place to host multiple theories and, later, explicit morphisms
-between them.
+A bug anywhere in this crate cannot produce a false `Thm` — the worst
+it can do is build an unintended-but-well-formed term, or fail to
+construct the theorem you wanted.
 
-### 3.1 What HOL adds
+### 3.1 What this crate adds
 
-1. **`bool` type** — a Pure `Tycon { name: "bool", args: [] }`.
-2. **HOL connectives** — `=` (object-level equality at `bool`), `∧`,
-   `∨`, `¬`, `→`, `↔`, `∀`, `∃`, `ε` — every one introduced as a `define`d
-   constant in Pure. The Pure framework never sees them; they're plain
-   `Const`s with `Thm`-witnessed unfolding equations.
-3. **Subset types** — via the disjunct trick (see
-   [`ARCHITECTURE.md`](../../../../ARCHITECTURE.md) §2.4); unconditional
-   so no inhabitation side-condition reaches the kernel.
-4. **The 10 HOL Light rules** — `REFL`, `TRANS`, `MK_COMB`, `ABS`,
-   `BETA`, `ASSUME`, `EQ_MP`, `DEDUCT_ANTISYM_RULE`, `INST`, `INST_TYPE`.
-   None of them are Pure primitives; each is a sequence of Pure rule
-   calls in `rules.rs`.
+1. **`HolLightCtx` / `PureHol`** — builder structs that produce HOL
+   terms via the kernel's `HolOp`/`Bool` primitives. The `HolLightTerms`
+   and `HolLightTypes` traits give the canonical constructor surface
+   (`mk_eq_at`, `mk_forall_at`, `mk_imp`, etc.) so downstream code
+   doesn't deal in raw `HolOp(_, _)` values.
 
-A bug in the disjunct trick or in any HOL Light rule cannot produce a
-false Pure `Thm` — the worst it can do is fail to construct the HOL
-theorem you wanted.
+2. **Postulated stdlib axioms** (`nat_axioms`, `int_axioms`) —
+   theorems introduced via `Thm::assume`, with self-hyp audit trail.
+   These are *not* bona-fide kernel axioms; they're convenience
+   postulates that downstream code can grep for. Definitional axioms
+   (`op ≡ recursor base step args`) are preferred over derived facts
+   like commutativity / associativity, which are proved on top.
+
+3. **The 10 HOL Light rules**, derived — `REFL`, `TRANS`, `MK_COMB`,
+   `ABS`, `BETA`, `ASSUME`, `EQ_MP`, `DEDUCT_ANTISYM_RULE`, `INST`,
+   `INST_TYPE`. None of them are kernel primitives; each is a
+   sequence of core rule calls in `pure_hol.rs`. Most reduce to
+   one-line calls through the four bona-fide reflection axioms.
+
+4. **Subset types** — via the disjunct trick (see
+   [`ARCHITECTURE.md`](../../../../ARCHITECTURE.md) §2.4); wraps
+   `Thm::new_type_definition` with a `Q := λx. P x ∨ x = ε P`
+   synthesis so the inhabitedness witness is reflexive and the
+   user doesn't supply one. **Status:** planned; the kernel rule
+   is in place but the wrapper isn't yet built (see
+   [`next-stages.md`](./next-stages.md) §A).
+
+5. **`define_type` / inductive types** — the construction that takes
+   a recursive type spec (`PTerm = Zero | Suc PTerm | …`) and
+   returns the type, constructors, injectivity theorems, induction
+   principle, and recursor. **Not yet built**; this is the gate to
+   the internal-logic work (PA, semiring, HS, internal HOL).
+
+6. **Content hashing (`hash.rs`) and canonical S-expression syntax
+   (`sexp.rs`)** — formerly in `covalence-pure-shell`. The kernel
+   does not hash terms; this layer provides BLAKE3-keyed hashing
+   and the dialect-aware sexp serialisation used by every shell crate.
 
 ### 3.2 The standard library is BLAKE3-keyed blobs
 
@@ -291,7 +422,7 @@ pub enum StdEntry {
 impl HolStd {
     pub fn load(
         &self,
-        kernel: &mut covalence_pure::Kernel,
+        ctx: &mut covalence_hol::HolLightCtx,
         source: &dyn BlobSource,
         key: StdRef,
     ) -> Result<&StdEntry>;
@@ -316,68 +447,63 @@ binary.
 
 ### 3.3 WASM observation oracles
 
-WASM oracles live at the HOL layer. They're how we extend the prover
+WASM oracles live above the kernel. They're how we extend the prover
 with computational evidence (decide procedures, hash functions,
 signature checks, anything we can package as a WASM component) without
-growing the TCB.
+growing the TCB. They're built on the kernel's observer hooks
+(`obs_true`/`obs_imp`/`obs_eq`) plus user-asserted meaning-axioms.
+
+Concretely: each oracle family is a `Rust` type implementing
+`ObsTrue` / `ObsImp`; instances of that type appear as `Term::obs`
+leaves. The policy method runs the WASM component and decides
+whether to mint the theorem.
 
 ```rust
 pub struct WasmOracle {
-    auth: covalence_pure::Authority,       // fresh local Authority
     component_hash: blake3::Hash,           // identifies the component
     runner: Arc<dyn WasmRunner>,            // backed by covalence-wasm
 }
 
-impl HolKernel {
-    /// Register a WASM component as an observation oracle. Creates a
-    /// fresh local Authority that owns one relation `eval`.
-    pub fn register_wasm_oracle(
-        &mut self,
-        component_hash: blake3::Hash,
-        runner: Arc<dyn WasmRunner>,
-    ) -> Result<WasmOracleId>;
-
-    /// Install a meaning-axiom of the shape
-    ///     ⊢ ⋀x out. O.eval(component_hash, x, out) ⟹ φ(x, out)
-    /// The axiom is itself a `Thm` whose only hypothesis is the axiom
-    /// statement — i.e. it is *assumed*, not proved. Every theorem that
-    /// later applies the axiom continues to carry it in its hypotheses
-    /// until explicitly discharged.
-    pub fn install_meaning_axiom(&mut self, id: WasmOracleId, axiom: Thm) -> Result<()>;
-
-    /// Run the WASM component on input; emit the kernel observation.
-    pub fn observe_wasm(&self, id: WasmOracleId, input: Term) -> Result<Thm>;
+impl ObsTrue for WasmOracle {
+    fn obs_true(&self, args: &[Term], _hint: Option<&dyn Hint>) -> bool {
+        // Run the WASM component; return whether the prop-typed
+        // observation `(obs self)(args…)` should be minted.
+        …
+    }
 }
 ```
 
-**Key property: oracle trust is fully visible in `Thm::hyps`.** There is
-no kernel-level "this oracle is trusted" switch. Whatever the user
-assumes about the oracle (via the meaning-axiom) is recorded as a
-hypothesis on every theorem that uses the oracle's output, exactly like
-any other assumption. To export a theorem stripped of these hypotheses,
-the user must either (a) prove the meaning-axiom from below — usually
-impossible by construction, since it's a claim about a computational
-artifact — or (b) discharge it via `imp_intro`, making the dependence
-explicit in the theorem's *statement*.
+**Meaning-axioms are user-asserted via `Thm::assume`.** Whatever the
+user assumes about the oracle (e.g. `⊢ ⋀x. eval(component_hash, x) ⟹
+φ(x)`) is recorded as a hypothesis on every theorem that depends on
+the oracle's output, exactly like any other assumption. To export a
+theorem stripped of these hypotheses, the user must either (a) prove
+the meaning-axiom from below — usually impossible by construction,
+since it's a claim about a computational artifact — or (b) discharge
+it via `imp_intro`, making the dependence explicit in the theorem's
+*statement*.
 
 This is HOL Light's `mk_thm` discipline, applied to an entire family of
 oracles uniformly.
 
-### 3.4 Estimated size
+### 3.4 Shape and dependencies
 
-| Module           | Purpose                                              |  LoC |
-|------------------|------------------------------------------------------|------|
-| `connectives.rs` | HOL connectives via Pure `define`                    |  120 |
-| `rules.rs`       | 10 HOL Light rules derived from Pure                 |  250 |
-| `subset.rs`      | Subset types via the disjunct trick                  |  150 |
-| `std.rs`         | Stdlib loader (BlobSource → entries)                 |  200 |
-| `wasm.rs`        | WASM oracle adapter (no engine deps; trait-bound)    |  150 |
-| **Total**        |                                                      | **~870** |
+| Module            | Purpose                                              |
+|-------------------|------------------------------------------------------|
+| `hol_light_obs.rs`| `HolLightCtx`: HOL Light builder context             |
+| `pure_hol.rs`     | `PureHol`: the 10 HOL Light rules over core's API    |
+| `nat_axioms.rs`   | Postulated nat stdlib axioms (Thm::assume w/ hyps)   |
+| `int_axioms.rs`   | Postulated int stdlib axioms (Thm::assume w/ hyps)   |
+| `traits.rs`       | `HolLightKernel` / `HolLightTerms` / `HolLightTypes` |
+| `types.rs`        | `HolError`, `NameId`, canonical const IDs            |
+| `hash.rs`         | BLAKE3-keyed content hashing (term/type/Thm)         |
+| `sexp.rs`         | Canonical S-expression serialisation                 |
 
-Direct deps: `covalence-pure`, `covalence-sexp` (script format),
-`covalence-hash` (BLAKE3 type only — used as an opaque key, not for
-hashing inside the kernel), and `covalence-wasm` *behind a feature flag*
-for the runner trait impl.
+Direct deps: `covalence-core`, `covalence-sexp` (sexp dialect),
+`covalence-hash` (BLAKE3 — used as a key + for term hashing, not
+for kernel rules). No `covalence-wasm` dep at this layer — the WASM
+oracle adapter lives in whichever crate registers WASM components
+(currently `covalence-shell`).
 
 ---
 
@@ -394,8 +520,7 @@ The shell shrinks to two responsibilities:
 
 ```rust
 pub struct Shell {
-    pub kernel: covalence_pure::Kernel,
-    pub hol: OnceCell<covalence_hol::HolKernel>,
+    pub hol: covalence_hol::HolLightCtx,   // wraps a core::Thm builder
     pub std_store: OnceCell<Arc<dyn BlobSource>>,
     pub anchors: OnceCell<StdlibAnchors>,
 }
@@ -453,13 +578,25 @@ Frontends compile; some commands say "not yet."
 
 ## 5. Why this works (and why it's worth replacing the current kernel)
 
-**Soundness.** ~500 lines of well-trodden Pure-style LF. The literature
-on this (Isabelle/Pure, HOL Light, λΠ-calculus) is enormous; the rules
-have been audited for decades. Our additions over textbook Pure are
-exactly three: `define` (standard conservative-extension rule),
-`observe` (a single conservative trust hook with the safe-axiom shape),
-and the `Blob`/`Blob` term form (no inference power; just a way to put
-bytes in a term).
+**Soundness.** The Pure-shaped backbone is well-trodden LF. The
+literature on this (Isabelle/Pure, HOL Light, λΠ-calculus) is enormous;
+the rules have been audited for decades. Our additions over textbook
+Pure are:
+
+- `define` — standard conservative-extension rule.
+- `new_type_definition` — standard HOL Light-style subtype rule,
+  fresh identity via `Arc::ptr_eq`.
+- The observer hooks (`obs_eq`/`obs_true`/`obs_imp`) — pluggable
+  conservative trust hooks, sound under the parametric ε-model for
+  every Rust observer type independently.
+- `Blob`/`Nat`/`Int`/`Bool` term forms + the `Prim` builtins — no
+  inference power; just kernel-primitive value types with a
+  closed-form `reduce_prim` decision rule.
+- The four bona-fide HOL axioms (`nat_induction`, `eq_reflection`,
+  `forall_reflection`, `imp_reflection`) — each a single `Thm` with
+  empty hyps. The kernel commits to its `nat` type denoting the
+  standard naturals and to HOL `=`/`∀`/`⟹` denoting the corresponding
+  meta-level constructs; soundness reduces to that semantic commitment.
 
 **Locality.** No content addressing in the TCB means no SHAttered-style
 crypto assumption is ever asserted by the kernel itself. The kernel says
@@ -495,35 +632,51 @@ audit, testing, or research — they can. The shell is convenience.
 
 ## 6. Build order
 
-Each step is a self-contained PR with its own test.
+Each step is a self-contained PR with its own test. **Steps 1-6
+have landed** as of the `kernel-design` branch; steps 7+ are the
+remaining work toward the internal-logic story.
 
-1. **`covalence-pure` core.** `Term`, `Type`, substitution, β/η, `Thm`,
-   the 8 LF rules + 6 equality rules + `inst_tyvar`. *No* observation,
-   *no* define. Test: `⊢ (λx.x) y ≡ y`; `⊢ ⋀x. x ≡ x`.
-2. **`covalence-pure` `define` + `observe`.** `Authority`, `observe`,
-   `define`. Test: declare an authority, observe a fact, install a
-   meaning-axiom as a hypothesis, discharge via `imp_elim`; verify the
-   meaning-axiom remains in `hyps` until `imp_intro`'d.
-3. **`covalence-hol` skeleton.** `bool`, `=`, `∧`, `→`, `∀`, `∃`,
-   `ε`. Test: `⊢ ∀x. x = x`.
-4. **HOL Light rules.** All 10 derived in `rules.rs`. Test: replay
-   a small known HOL Light proof end-to-end.
-5. **Subset types via disjunct trick.** Test: form a subset type
-   unconditionally; verify HOL Light's `define_type` behaviour.
-6. **Stdlib loader.** `BlobSource`, manifest blob format, lazy
-   materialisation, `HolStd::load`. Test: bundle a tiny stdlib (~10
-   entries), bootstrap from it, look up `bool` and `=`.
-7. **`covalence-shell` bootstrap.** OnceCell anchors, `bootstrap()`,
-   `Prover` adapter with `NotImplemented` stubs. Test: REPL, serve,
-   LSP all compile and start; basic `assume` + `imp_intro` works
-   through the adapter; everything else returns NotImplemented.
-8. **WASM oracle adapter.** `register_wasm_oracle`,
-   `install_meaning_axiom`, `observe_wasm`. Test: a hardcoded WASM
-   component that returns "yes" on input X; observe; verify the
-   meaning-axiom is in `hyps`; discharge; verify the result.
+1. **`covalence-core` rules.** ✅ `Term`, `Type` (incl. `Bool`,
+   `HolOp`, `TyConObs`), substitution, β/η, `Thm`, the 8 LF rules
+   + 6 equality rules + `inst_tfree` + observer hooks. Tests:
+   `⊢ (λx.x) y ≡ y`; `⊢ ⋀x. x ≡ x`.
+2. **`Thm::define` + `Thm::new_type_definition`.** ✅ Fresh `Arc`-
+   identity definitions; fresh subtype τ ≤ α with bijection theorems
+   under a witness `⊢ P x`. Tests cover polymorphic typedef.
+3. **Bona-fide HOL axioms folded in.** ✅ `Thm::nat_induction`,
+   `eq_reflection`, `forall_reflection`, `imp_reflection` — each
+   with empty hyps, conclusion-term cached via `LazyLock<Term>`.
+4. **`covalence-hol` builder API.** ✅ `HolLightCtx`, `PureHol`, the
+   `HolLightKernel`/`HolLightTerms`/`HolLightTypes` traits, the 10
+   HOL Light rules derived from the core's reflection axioms +
+   regular LF rules.
+5. **`nat_axioms` / `int_axioms` postulates.** ✅ Definitional axioms
+   via natrec/recursor; derived commutativity / associativity etc.
+   proved on top rather than postulated.
+6. **Hash + sexp absorption.** ✅ `covalence-pure-shell` deleted;
+   its `hash` and `sexp` modules merged into `covalence-hol`.
+7. **Polymorphic typedef wrapper in `covalence-hol`.** Lift the
+   `pure_hol.rs:new_basic_type_definition` rejection of polymorphic
+   carriers — the kernel rule handles it; only the wrapper needs
+   `mk_tyapp` plumbing. **Pending.**
+8. **`define_type` derived rule.** Take a recursive type spec like
+   `nat = Zero | Suc nat`; return the type via `new_type_definition`
+   over a `bytes`-encoded carrier, constructor terms, injectivity
+   theorems, an induction principle, and a recursor. **Pending —
+   gate to the internal-logic work.**
+9. **Disjunct-trick subtype wrapper.** Wrap `new_type_definition`
+   with `Q := λx. P x ∨ x = ε P` so the inhabitedness witness is
+   reflexive and the user doesn't supply one. **Pending.**
+10. **Stdlib loader.** `BlobSource`, manifest blob format, lazy
+    materialisation, `HolStd::load`. Test: bundle a tiny stdlib,
+    bootstrap from it, look up `bool` and `=`. **Pending.**
+11. **WASM oracle adapter via `ObsTrue` / `ObsImp`.** WASM-component
+    runners as observer-Rust-types; meaning-axioms via `Thm::assume`.
+    **Pending.**
 
-Total estimated MVP work: ~3 weeks of focused implementation, with the
-existing repo's scaffolding (BLAKE3, WASM, SExpr) all already available.
+Steps 7-9 unlock the internal-logic ladder (PA, commutative semiring +
+bicartesian categories, high school axioms + BCCCs, internal HOL).
+Steps 10-11 round out the runtime story.
 
 ---
 

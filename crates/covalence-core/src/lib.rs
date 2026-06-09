@@ -55,6 +55,7 @@
 
 mod builtins;
 pub mod error;
+mod hol;
 pub mod subst;
 pub mod term;
 pub mod ctx;

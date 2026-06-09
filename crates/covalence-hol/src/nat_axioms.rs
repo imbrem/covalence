@@ -116,34 +116,11 @@ pub fn nat_succ_inj() -> Thm {
 }
 
 /// `⊢ ∀P:nat→bool. P 0 ∧ (∀n. P n ⟹ P (succ n)) ⟹ ∀n. P n` —
-/// mathematical induction on naturals.
+/// mathematical induction on naturals. Now a **bona-fide kernel
+/// axiom** ([`Thm::nat_induction`]) with empty hypotheses, no longer
+/// a `Thm::assume`-postulated form.
 pub fn nat_induction() -> Thm {
-    static AX: LazyLock<Thm> = LazyLock::new(|| {
-        let ctx = ctx();
-        let nat_ty = nat_ty();
-        let bool_ty = ctx.bool_type();
-        let pred_ty = Type::fun(nat_ty.clone(), bool_ty);
-        let p = Term::free("P", pred_ty.clone());
-
-        let p_zero = Term::app(p.clone(), zero());
-
-        let n = Term::free("n", nat_ty.clone());
-        let p_n = Term::app(p.clone(), n.clone());
-        let p_succ_n = Term::app(p.clone(), succ(n));
-        let step_body = ctx.mk_imp(p_n, p_succ_n);
-        let step = ctx.mk_forall("n", nat_ty.clone(), step_body);
-
-        let antecedent = ctx.mk_and(p_zero, step);
-
-        let n2 = Term::free("n", nat_ty.clone());
-        let p_n2 = Term::app(p.clone(), n2);
-        let consequent = ctx.mk_forall("n", nat_ty.clone(), p_n2);
-
-        let imp = ctx.mk_imp(antecedent, consequent);
-        let body = ctx.mk_forall("P", pred_ty, imp);
-        assume_hol(body)
-    });
-    AX.clone()
+    Thm::nat_induction()
 }
 
 // ============================================================================
@@ -555,17 +532,26 @@ pub fn nat_succ_def() -> Thm {
 mod tests {
     use super::*;
 
+    /// Assume-style axiom: hyp = concl (one hypothesis, the axiom
+    /// itself). The self-hyp pattern serves as the audit trail.
     fn check(ax: Thm) {
         assert!(ax.concl().type_of().unwrap().is_prop());
         assert_eq!(ax.hyps().len(), 1);
         assert_eq!(ax.hyps().iter().next().unwrap(), ax.concl());
     }
 
+    /// Bona-fide kernel axiom: empty hyps (kernel is the trust
+    /// anchor).
+    fn check_kernel(ax: Thm) {
+        assert!(ax.concl().type_of().unwrap().is_prop());
+        assert!(ax.hyps().is_empty(), "kernel axiom must have no hyps");
+    }
+
     #[test]
     fn peano_axioms_well_formed() {
         check(nat_zero_ne_succ());
         check(nat_succ_inj());
-        check(nat_induction());
+        check_kernel(nat_induction());
     }
 
     #[test]

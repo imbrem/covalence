@@ -135,6 +135,7 @@ pub fn type_to_sexp(ty: &Type, ser: &dyn ObsSerializer) -> Result<SExpr> {
         TypeKind::Bytes => list1("bytes"),
         TypeKind::Nat => list1("nat"),
         TypeKind::Int => list1("int"),
+        TypeKind::Unit => list1("unit"),
         TypeKind::Fun(a, b) => list3("fun", type_to_sexp(a, ser)?, type_to_sexp(b, ser)?),
         TypeKind::Tycon(name, args) => {
             let mut children = Vec::with_capacity(2 + args.len());

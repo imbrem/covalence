@@ -54,6 +54,7 @@
 //!   fide HOL axioms (`thm.rs`).
 
 mod builtins;
+pub mod defs;
 pub mod error;
 mod hol;
 pub mod subst;

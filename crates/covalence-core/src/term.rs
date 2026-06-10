@@ -377,6 +377,12 @@ pub enum TypeKind {
     /// Type of `TermKind::Int(_)` term values. Built in. The integers
     /// (arbitrary precision, possibly negative).
     Int,
+    /// Singleton type — exactly one inhabitant (kernel "trivial"
+    /// representative `ε(λ_. T)`). Built in alongside the other
+    /// primitive types so the derived `defs::*` catalogue can spec
+    /// `prod` (the empty product) and `option α` (= `coprod α unit`)
+    /// without bottoming out into a typedef.
+    Unit,
     /// Function type τ ⇒ σ.
     Fun(Type, Type),
     /// User-declared type constructor applied to arguments.
@@ -403,6 +409,7 @@ static PROP: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Prop)));
 static BYTES: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Bytes)));
 static NAT: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Nat)));
 static INT: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Int)));
+static UNIT: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Unit)));
 static BOOL: LazyLock<Type> =
     LazyLock::new(|| Type(Arc::new(TypeKind::Tycon(SmolStr::new("bool"), Vec::new()))));
 
@@ -451,6 +458,11 @@ impl Type {
     /// reduced through [`crate::Thm::reduce_int`].
     pub fn int() -> Self {
         INT.clone()
+    }
+
+    /// The singleton type — `unit`. Has exactly one inhabitant.
+    pub fn unit() -> Self {
+        UNIT.clone()
     }
 
     /// The HOL `bool` type (a 0-ary `tycon`). Pure does not bake bool
@@ -505,7 +517,11 @@ fn free_tvars_into(ty: &Type, out: &mut std::collections::BTreeSet<SmolStr>) {
         TypeKind::TFree(name) => {
             out.insert(name.clone());
         }
-        TypeKind::Prop | TypeKind::Bytes | TypeKind::Nat | TypeKind::Int => {}
+        TypeKind::Prop
+        | TypeKind::Bytes
+        | TypeKind::Nat
+        | TypeKind::Int
+        | TypeKind::Unit => {}
         TypeKind::Fun(a, b) => {
             free_tvars_into(a, out);
             free_tvars_into(b, out);
@@ -557,6 +573,7 @@ impl fmt::Display for Type {
             TypeKind::Bytes => write!(f, "bytes"),
             TypeKind::Nat => write!(f, "nat"),
             TypeKind::Int => write!(f, "int"),
+            TypeKind::Unit => write!(f, "unit"),
             TypeKind::Fun(a, b) => write!(f, "({} ⇒ {})", a, b),
             TypeKind::Tycon(name, args) => {
                 if args.is_empty() {

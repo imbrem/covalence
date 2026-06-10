@@ -216,9 +216,12 @@ fn subst_free_at(t: &Term, name: &str, r: &Term, depth: u32) -> Term {
 pub fn subst_tfree_in_type(ty: &Type, name: &str, r: &Type) -> Type {
     match ty.kind() {
         TypeKind::TFree(n) if n == name => r.clone(),
-        TypeKind::TFree(_) | TypeKind::Prop | TypeKind::Bytes | TypeKind::Nat | TypeKind::Int => {
-            ty.clone()
-        }
+        TypeKind::TFree(_)
+        | TypeKind::Prop
+        | TypeKind::Bytes
+        | TypeKind::Nat
+        | TypeKind::Int
+        | TypeKind::Unit => ty.clone(),
         TypeKind::Fun(a, b) => Type::fun(
             subst_tfree_in_type(a, name, r),
             subst_tfree_in_type(b, name, r),

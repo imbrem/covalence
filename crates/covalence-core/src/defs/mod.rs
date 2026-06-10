@@ -37,12 +37,13 @@ mod symbol;
 
 pub use canonical::Canonical;
 pub use catalogue::{
-    bit, bit_spec, coprod, coprod_spec, int_add, int_add_spec, int_le, int_le_spec, int_lt,
-    int_lt_spec, int_mul, int_mul_spec, int_sub, int_sub_spec, nat_add, nat_add_spec, nat_le,
-    nat_le_spec, nat_lt, nat_lt_spec, nat_mul, nat_mul_spec, nat_sub, nat_sub_spec, option,
-    option_spec, prod, prod_spec, rel, rel_spec, set, set_spec, stream, stream_spec, u128, u128_spec,
-    u16, u16_spec, u2, u2_spec, u256, u256_spec, u32, u32_spec, u4, u4_spec, u512, u512_spec, u64,
-    u64_spec, u8, u8_spec,
+    bit_spec, bit_ty, blob_spec, blob_ty, coprod, coprod_spec, f32_spec, f32_ty, f64_spec, f64_ty,
+    int_add, int_add_spec, int_le, int_le_spec, int_lt, int_lt_spec, int_mul, int_mul_spec,
+    int_sub, int_sub_spec, list, list_spec, nat_add, nat_add_spec, nat_le, nat_le_spec, nat_lt,
+    nat_lt_spec, nat_mul, nat_mul_spec, nat_sub, nat_sub_spec, option, option_spec, prod, prod_spec,
+    rel, rel_spec, result, result_spec, set, set_spec, signed1, signed1_spec, signed2, signed2_spec,
+    stream, stream_spec, u128_spec, u128_ty, u16_spec, u16_ty, u2_spec, u2_ty, u256_spec, u256_ty,
+    u32_spec, u32_ty, u4_spec, u4_ty, u512_spec, u512_ty, u64_spec, u64_ty, u8_spec, u8_ty,
 };
 pub use spec::{TermSpec, TermSpecHandle, TypeSpec, TypeSpecHandle};
 pub use symbol::{Opacity, Symbol};
@@ -185,7 +186,7 @@ mod tests {
 
     #[test]
     fn bit_is_zero_ary_spec() {
-        let b = bit();
+        let b = bit_ty();
         match b.kind() {
             TypeKind::Spec(spec, args) => {
                 assert_eq!(spec.symbol(), Canonical::Bit);
@@ -201,19 +202,19 @@ mod tests {
         // u2's carrier should be `bit → bit → bool`.
         let u2_spec = u2_spec();
         let carrier = u2_spec.as_spec().ty.as_ref().expect("u2 has carrier");
-        let expected = Type::fun(bit(), Type::fun(bit(), Type::bool()));
+        let expected = Type::fun(bit_ty(), Type::fun(bit_ty(), Type::bool()));
         assert_eq!(carrier, &expected);
 
         // u4's carrier is u2 → u2 → bool.
         let u4_spec = u4_spec();
         let carrier = u4_spec.as_spec().ty.as_ref().expect("u4 has carrier");
-        let expected = Type::fun(u2(), Type::fun(u2(), Type::bool()));
+        let expected = Type::fun(u2_ty(), Type::fun(u2_ty(), Type::bool()));
         assert_eq!(carrier, &expected);
 
         // u64's carrier is u32 → u32 → bool.
         let u64_spec = u64_spec();
         let carrier = u64_spec.as_spec().ty.as_ref().expect("u64 has carrier");
-        let expected = Type::fun(u32(), Type::fun(u32(), Type::bool()));
+        let expected = Type::fun(u32_ty(), Type::fun(u32_ty(), Type::bool()));
         assert_eq!(carrier, &expected);
     }
 

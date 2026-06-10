@@ -8,27 +8,18 @@
 
 use std::sync::LazyLock;
 
-use crate::term::{Term, Type};
+use crate::term::Term;
 
 use super::canonical::Canonical;
+use super::sigs;
 use super::spec::TermSpec;
 
 fn int_bin_op(symbol: Canonical) -> TermSpec {
-    let int = Type::int();
-    TermSpec::new(
-        symbol,
-        Some(Type::fun(int.clone(), Type::fun(int.clone(), int))),
-        None,
-    )
+    TermSpec::new(symbol, Some(sigs::int_int_to_int()), None)
 }
 
 fn int_cmp_op(symbol: Canonical) -> TermSpec {
-    let int = Type::int();
-    TermSpec::new(
-        symbol,
-        Some(Type::fun(int.clone(), Type::fun(int, Type::bool()))),
-        None,
-    )
+    TermSpec::new(symbol, Some(sigs::int_int_to_bool()), None)
 }
 
 /// `intAdd : int → int → int`.
@@ -106,7 +97,7 @@ pub fn int_neg_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
         TermSpec::new(
             Canonical::IntNeg,
-            Some(Type::fun(Type::int(), Type::int())),
+            Some(sigs::int_to_int()),
             None,
         )
     });
@@ -122,7 +113,7 @@ pub fn int_abs_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
         TermSpec::new(
             Canonical::IntAbs,
-            Some(Type::fun(Type::int(), Type::nat())),
+            Some(sigs::int_to_nat()),
             None,
         )
     });
@@ -138,7 +129,7 @@ pub fn int_sgn_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
         TermSpec::new(
             Canonical::IntSgn,
-            Some(Type::fun(Type::int(), Type::int())),
+            Some(sigs::int_to_int()),
             None,
         )
     });

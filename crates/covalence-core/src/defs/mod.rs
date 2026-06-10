@@ -38,7 +38,9 @@ mod prod;
 mod rat;
 mod real;
 mod rel;
+mod result;
 mod set;
+mod sigs;
 mod spec;
 mod stream;
 mod symbol;
@@ -79,6 +81,7 @@ pub use real::{real_spec, real_ty};
 pub use rel::{
     part, part_spec, per, per_spec, pord, pord_spec, preord, preord_spec, rel, rel_spec,
 };
+pub use result::{err, err_spec, ok, ok_spec};
 pub use set::{
     list_to_set, list_to_set_spec, set, set_card, set_card_spec, set_diff, set_diff_spec,
     set_intersect, set_intersect_spec, set_spec, set_subset, set_subset_spec, set_union,
@@ -326,6 +329,20 @@ mod tests {
     fn nil_at_nat_has_expected_type() {
         let n = nil(Type::nat());
         assert_eq!(n.type_of().unwrap(), list(Type::nat()));
+    }
+
+    #[test]
+    fn ok_at_nat_int_has_expected_type() {
+        let o = ok(Type::nat(), Type::int());
+        let expected = Type::fun(Type::nat(), result(Type::nat(), Type::int()));
+        assert_eq!(o.type_of().unwrap(), expected);
+    }
+
+    #[test]
+    fn err_at_nat_int_has_expected_type() {
+        let e = err(Type::nat(), Type::int());
+        let expected = Type::fun(Type::int(), result(Type::nat(), Type::int()));
+        assert_eq!(e.type_of().unwrap(), expected);
     }
 
     #[test]

@@ -2,27 +2,18 @@
 
 use std::sync::LazyLock;
 
-use crate::term::{Term, Type};
+use crate::term::Term;
 
 use super::canonical::Canonical;
+use super::sigs;
 use super::spec::TermSpec;
 
 fn nat_bin_op(symbol: Canonical) -> TermSpec {
-    let nat = Type::nat();
-    TermSpec::new(
-        symbol,
-        Some(Type::fun(nat.clone(), Type::fun(nat.clone(), nat))),
-        None,
-    )
+    TermSpec::new(symbol, Some(sigs::nat_nat_to_nat()), None)
 }
 
 fn nat_cmp_op(symbol: Canonical) -> TermSpec {
-    let nat = Type::nat();
-    TermSpec::new(
-        symbol,
-        Some(Type::fun(nat.clone(), Type::fun(nat, Type::bool()))),
-        None,
-    )
+    TermSpec::new(symbol, Some(sigs::nat_nat_to_bool()), None)
 }
 
 /// `natAdd : nat → nat → nat`.
@@ -160,7 +151,7 @@ pub fn nat_to_bytes_le_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
         TermSpec::new(
             Canonical::NatToBytesLe,
-            Some(Type::fun(Type::nat(), Type::bytes())),
+            Some(sigs::nat_to_bytes()),
             None,
         )
     });
@@ -177,7 +168,7 @@ pub fn nat_to_bytes_be_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
         TermSpec::new(
             Canonical::NatToBytesBe,
-            Some(Type::fun(Type::nat(), Type::bytes())),
+            Some(sigs::nat_to_bytes()),
             None,
         )
     });
@@ -194,7 +185,7 @@ pub fn nat_from_bytes_le_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
         TermSpec::new(
             Canonical::NatFromBytesLe,
-            Some(Type::fun(Type::bytes(), Type::nat())),
+            Some(sigs::bytes_to_nat()),
             None,
         )
     });
@@ -211,7 +202,7 @@ pub fn nat_from_bytes_be_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
         TermSpec::new(
             Canonical::NatFromBytesBe,
-            Some(Type::fun(Type::bytes(), Type::nat())),
+            Some(sigs::bytes_to_nat()),
             None,
         )
     });
@@ -226,11 +217,7 @@ pub fn nat_from_bytes_be() -> Term {
 /// `natToInt : nat → int`.
 pub fn nat_to_int_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
-        TermSpec::new(
-            Canonical::NatToInt,
-            Some(Type::fun(Type::nat(), Type::int())),
-            None,
-        )
+        TermSpec::new(Canonical::NatToInt, Some(sigs::nat_to_int()), None)
     });
     LAZY.clone()
 }

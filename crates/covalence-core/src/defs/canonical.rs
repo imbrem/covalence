@@ -104,6 +104,12 @@ pub enum Canonical {
     /// `some : 'a → option 'a`.
     Some,
 
+    // ---- Term-level: result constructors ----
+    /// `ok : 'a → result 'a 'b` — successful result.
+    Ok,
+    /// `err : 'b → result 'a 'b` — error result.
+    Err,
+
     // ---- Term-level: list operations ----
     /// `nil : list 'a`.
     Nil,
@@ -253,6 +259,8 @@ impl Canonical {
             Canonical::F64 => "f64",
             Canonical::None => "none",
             Canonical::Some => "some",
+            Canonical::Ok => "ok",
+            Canonical::Err => "err",
             Canonical::Nil => "nil",
             Canonical::Cons => "cons",
             Canonical::Head => "head",

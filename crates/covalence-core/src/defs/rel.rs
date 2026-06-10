@@ -6,38 +6,23 @@ use crate::hol;
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
-use super::spec::{TypeSpec, TypeSpecHandle};
 use super::helpers::any;
-
-// ============================================================================
-// rel 'a 'b := 'a → 'b → bool
-// ============================================================================
-
-static REL_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
-    let alpha = Type::tfree("a");
-    let beta = Type::tfree("b");
-    let carrier = Type::fun(alpha, Type::fun(beta, Type::bool()));
-    TypeSpecHandle::new(TypeSpec {
-        symbol: Canonical::Rel,
-        ty: Some(carrier.clone()),
-        tm: Some(any(&carrier)),
-    })
-});
+use super::spec::TypeSpec;
 
 /// `rel 'a 'b := 'a → 'b → bool`.
-pub fn rel_spec() -> TypeSpecHandle {
-    REL_LAZY.clone()
+pub fn rel_spec() -> TypeSpec {
+    static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
+        let alpha = Type::tfree("a");
+        let beta = Type::tfree("b");
+        let carrier = Type::fun(alpha, Type::fun(beta, Type::bool()));
+        TypeSpec::new(Canonical::Rel, Some(carrier.clone()), Some(any(&carrier)))
+    });
+    LAZY.clone()
 }
-/// `rel α β`.
 pub fn rel(alpha: Type, beta: Type) -> Type {
     Type::spec(rel_spec(), vec![alpha, beta])
 }
 
-// ============================================================================
-// Relation properties
-// ============================================================================
-
-/// `λR:α→α→bool. ∀x y z. R x y ⟹ R y z ⟹ R x z`.
 fn transitive_pred(alpha: Type) -> Term {
     let r_ty = Type::fun(alpha.clone(), Type::fun(alpha.clone(), Type::bool()));
     let r = Term::free("R", r_ty.clone());
@@ -54,7 +39,6 @@ fn transitive_pred(alpha: Type) -> Term {
     hol::pub_abs("R", r_ty, all_xyz)
 }
 
-/// `λR:α→α→bool. ∀x. R x x`.
 fn reflexive_pred(alpha: Type) -> Term {
     let r_ty = Type::fun(alpha.clone(), Type::fun(alpha.clone(), Type::bool()));
     let r = Term::free("R", r_ty.clone());
@@ -64,7 +48,6 @@ fn reflexive_pred(alpha: Type) -> Term {
     hol::pub_abs("R", r_ty, body)
 }
 
-/// `λR:α→α→bool. ∀x y. R x y ⟹ R y x`.
 fn symmetric_pred(alpha: Type) -> Term {
     let r_ty = Type::fun(alpha.clone(), Type::fun(alpha.clone(), Type::bool()));
     let r = Term::free("R", r_ty.clone());
@@ -78,7 +61,6 @@ fn symmetric_pred(alpha: Type) -> Term {
     hol::pub_abs("R", r_ty, all_xy)
 }
 
-/// `λR:α→α→bool. ∀x y. R x y ⟹ R y x ⟹ x = y`.
 fn antisymmetric_pred(alpha: Type) -> Term {
     let r_ty = Type::fun(alpha.clone(), Type::fun(alpha.clone(), Type::bool()));
     let r = Term::free("R", r_ty.clone());
@@ -93,8 +75,6 @@ fn antisymmetric_pred(alpha: Type) -> Term {
     hol::pub_abs("R", r_ty, all_xy)
 }
 
-/// Combine property predicates over `α → α → bool` into a single
-/// `λR. ∧ properties`.
 fn combine_props(alpha: Type, props: &[fn(Type) -> Term]) -> Term {
     let r_ty = Type::fun(alpha.clone(), Type::fun(alpha.clone(), Type::bool()));
     let r = Term::free("R", r_ty.clone());
@@ -109,59 +89,57 @@ fn combine_props(alpha: Type, props: &[fn(Type) -> Term]) -> Term {
     hol::pub_abs("R", r_ty, result)
 }
 
-fn rel_property_spec(symbol: Canonical, props: &[fn(Type) -> Term]) -> TypeSpecHandle {
+fn rel_property_spec(symbol: Canonical, props: &[fn(Type) -> Term]) -> TypeSpec {
     let alpha = Type::tfree("a");
     let carrier = Type::fun(alpha.clone(), Type::fun(alpha.clone(), Type::bool()));
-    TypeSpecHandle::new(TypeSpec {
-        symbol,
-        ty: Some(carrier),
-        tm: Some(combine_props(alpha, props)),
-    })
+    TypeSpec::new(symbol, Some(carrier), Some(combine_props(alpha, props)))
 }
 
-static PREORD_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
-    rel_property_spec(Canonical::Preord, &[transitive_pred, reflexive_pred])
-});
-static POR_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
-    rel_property_spec(
-        Canonical::Pord,
-        &[transitive_pred, reflexive_pred, antisymmetric_pred],
-    )
-});
-static PER_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
-    rel_property_spec(Canonical::Per, &[transitive_pred, symmetric_pred])
-});
-static PART_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
-    rel_property_spec(
-        Canonical::Part,
-        &[transitive_pred, symmetric_pred, reflexive_pred],
-    )
-});
-
 /// `preord 'a := rel 'a 'a where (transitive ∧ reflexive)`.
-pub fn preord_spec() -> TypeSpecHandle {
-    PREORD_LAZY.clone()
+pub fn preord_spec() -> TypeSpec {
+    static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
+        rel_property_spec(Canonical::Preord, &[transitive_pred, reflexive_pred])
+    });
+    LAZY.clone()
 }
 pub fn preord(alpha: Type) -> Type {
     Type::spec(preord_spec(), vec![alpha])
 }
+
 /// `pord 'a := rel 'a 'a where (transitive ∧ reflexive ∧ antisymmetric)`.
-pub fn pord_spec() -> TypeSpecHandle {
-    POR_LAZY.clone()
+pub fn pord_spec() -> TypeSpec {
+    static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
+        rel_property_spec(
+            Canonical::Pord,
+            &[transitive_pred, reflexive_pred, antisymmetric_pred],
+        )
+    });
+    LAZY.clone()
 }
 pub fn pord(alpha: Type) -> Type {
     Type::spec(pord_spec(), vec![alpha])
 }
+
 /// `per 'a := rel 'a 'a where (transitive ∧ symmetric)`.
-pub fn per_spec() -> TypeSpecHandle {
-    PER_LAZY.clone()
+pub fn per_spec() -> TypeSpec {
+    static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
+        rel_property_spec(Canonical::Per, &[transitive_pred, symmetric_pred])
+    });
+    LAZY.clone()
 }
 pub fn per(alpha: Type) -> Type {
     Type::spec(per_spec(), vec![alpha])
 }
+
 /// `part 'a := rel 'a 'a where (transitive ∧ symmetric ∧ reflexive)`.
-pub fn part_spec() -> TypeSpecHandle {
-    PART_LAZY.clone()
+pub fn part_spec() -> TypeSpec {
+    static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
+        rel_property_spec(
+            Canonical::Part,
+            &[transitive_pred, symmetric_pred, reflexive_pred],
+        )
+    });
+    LAZY.clone()
 }
 pub fn part(alpha: Type) -> Type {
     Type::spec(part_spec(), vec![alpha])

@@ -5,10 +5,10 @@
 //! the derived-types catalogue grows (see `docs/type-hierarchy.md`).
 //!
 //! These symbols are **transparent**: structural equality on a
-//! `TypeSpec<Canonical>` looks only at `ty` and `tm`. Two
-//! definitions sharing a `Canonical` symbol but disagreeing on `ty`
-//! or `tm` are structurally distinct — this is fine, the symbol is
-//! purely display.
+//! `TypeSpec` looks only at `ty` and `tm`. Two definitions sharing a
+//! `Canonical` symbol but disagreeing on `ty` or `tm` are
+//! structurally distinct — this is fine, the symbol is purely
+//! display.
 
 use super::symbol::{Opacity, Symbol};
 use std::fmt;
@@ -289,5 +289,10 @@ impl Symbol for Canonical {
     /// display label only; structural equality on a spec depends on
     /// `ty` and `tm`. Two `Canonical` symbols with identical
     /// definitions are structurally interchangeable.
-    const OPACITY: Opacity = Opacity::Transparent;
+    fn opacity(&self) -> Opacity {
+        Opacity::Transparent
+    }
+    fn label(&self) -> &str {
+        Canonical::label(self)
+    }
 }

@@ -5,22 +5,17 @@ use std::sync::LazyLock;
 use crate::term::Type;
 
 use super::canonical::Canonical;
-use super::spec::{TypeSpec, TypeSpecHandle};
 use super::helpers::any;
-
-static STREAM_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
-    let alpha = Type::tfree("a");
-    let carrier = Type::fun(Type::nat(), alpha);
-    TypeSpecHandle::new(TypeSpec {
-        symbol: Canonical::Stream,
-        ty: Some(carrier.clone()),
-        tm: Some(any(&carrier)),
-    })
-});
+use super::spec::TypeSpec;
 
 /// `stream 'a := nat → 'a`.
-pub fn stream_spec() -> TypeSpecHandle {
-    STREAM_LAZY.clone()
+pub fn stream_spec() -> TypeSpec {
+    static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
+        let alpha = Type::tfree("a");
+        let carrier = Type::fun(Type::nat(), alpha);
+        TypeSpec::new(Canonical::Stream, Some(carrier.clone()), Some(any(&carrier)))
+    });
+    LAZY.clone()
 }
 /// `stream α`.
 pub fn stream(alpha: Type) -> Type {

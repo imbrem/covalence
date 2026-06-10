@@ -1,66 +1,59 @@
 //! `Symbol` trait + `Opacity`.
 //!
 //! A symbol is the *name* attached to a `TypeSpec` or `TermSpec`.
-//! Every symbol has a fixed [`Opacity`] — a Rust-level constant —
-//! that decides whether structural equality on specs is allowed
-//! to ignore the symbol:
+//! Every symbol type has a fixed [`Opacity`] that decides whether
+//! structural equality on the wrapping spec considers the symbol:
 //!
 //! - **Transparent**: structural equality on a spec considers only
-//!   `ty` and `tm`; two specs with different transparent symbols
-//!   but identical definitions compare equal. Use for the kernel's
-//!   own derived catalogue ([`Canonical`]) where the symbol is
-//!   purely display-side.
+//!   `ty` and `tm`; two specs with different transparent symbols but
+//!   identical definitions compare equal. Use for the kernel's own
+//!   derived catalogue ([`Canonical`]) where the symbol is purely
+//!   display-side.
 //! - **Opaque**: structural equality includes the symbol. Two specs
 //!   with the same `ty` / `tm` but different opaque symbols compare
 //!   *unequal*. Use for user-named definitions where the name is
 //!   meaning-bearing.
 //!
-//! Opaque symbols compared structurally also fall back to **pointer
-//! equality** if the underlying `Symbol::eq` is unsupported or
-//! suspect — see the impls. The kernel never calls user-supplied
-//! `Eq` / `Hash` / `Ord` impls on a symbol where that would affect
-//! soundness; those impls are only used by display + `BTreeSet`
-//! internals.
+//! `Symbol` is **object-safe** — `TypeSpec`/`TermSpec` store an
+//! `Arc<dyn Symbol>`, so a single spec type can carry either a
+//! kernel [`Canonical`] symbol or a user-supplied opaque name.
 //!
 //! [`Canonical`]: super::canonical::Canonical
 
 use std::fmt;
-use std::hash::Hash;
 
 /// Whether a symbol's name participates in structural equality on
 /// the wrapping `TypeSpec` / `TermSpec`.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Opacity {
-    /// Structural equality ignores the symbol — two specs with
-    /// equal definitions compare equal regardless of their symbol.
+    /// Structural equality ignores the symbol.
     Transparent,
-    /// Structural equality includes the symbol — distinct opaque
-    /// symbols make their specs structurally distinct even when
-    /// `ty` / `tm` agree.
+    /// Structural equality includes the symbol (compared by label
+    /// and `Arc` identity).
     Opaque,
 }
 
-/// Marker trait for types that can name a `TypeSpec` / `TermSpec`.
+/// Object-safe trait for things that can name a spec.
 ///
-/// Implementors must:
-/// - Be cheap to clone (typically `Arc`-backed or atomic primitive).
-/// - Implement `Hash + Eq + Ord` consistently (Rust hash/eq contract).
-/// - Pick an [`Opacity`] that's a *constant for the type*, not
-///   per-instance — this is enforced by the trait surface
-///   (`OPACITY` is an associated const).
-///
-/// Two builtin impls ship in this module: [`SmolStr`] (opaque, for
-/// user-defined names) and [`Canonical`] (transparent, for the
-/// kernel's derived catalogue).
-pub trait Symbol: Hash + Eq + Ord + Clone + fmt::Debug + Send + Sync + 'static {
-    /// The opacity of all symbols of this type. Must be a constant.
-    const OPACITY: Opacity;
+/// Implementors supply (a) the opacity of the *type* — same value
+/// for every instance — and (b) a display/serialisation label. The
+/// kernel never relies on user-supplied `Hash`/`Eq`/`Ord` for
+/// soundness; for structural equality on specs we hash on the label
+/// (opaque) or skip the symbol entirely (transparent).
+pub trait Symbol: fmt::Debug + Send + Sync + 'static {
+    /// The opacity of this symbol type. Implementors should return
+    /// the same value for every instance.
+    fn opacity(&self) -> Opacity;
+    /// Human-readable label, used by `Display`, S-exp serialisation,
+    /// and content hashing.
+    fn label(&self) -> &str;
 }
 
-// ---- Builtin impls ----
-
 impl Symbol for smol_str::SmolStr {
-    /// User-supplied names are opaque: two distinct names with the
-    /// same definition are *not* equal as specs.
-    const OPACITY: Opacity = Opacity::Opaque;
+    fn opacity(&self) -> Opacity {
+        Opacity::Opaque
+    }
+    fn label(&self) -> &str {
+        self.as_str()
+    }
 }

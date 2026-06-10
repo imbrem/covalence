@@ -401,7 +401,7 @@ pub enum TypeKind {
     /// that `list α` and `list β` are distinct even though they share
     /// the same constructor.
     TyConObs(Object, BinderHint, Vec<Type>),
-    /// Application of a derived-type [`crate::defs::TypeSpecHandle`]
+    /// Application of a derived-type [`crate::defs::TypeSpec`]
     /// factory to type arguments. The spec is process-shared
     /// (`LazyLock`-backed) and `args` is the positional
     /// substitution for the spec's type variables (in
@@ -411,7 +411,7 @@ pub enum TypeKind {
     /// type catalogue (`set α`, `rel α β`, `option α`, …) into the
     /// kernel's type system without committing each one to its own
     /// `TypeKind` variant.
-    Spec(crate::defs::TypeSpecHandle, Vec<Type>),
+    Spec(crate::defs::TypeSpec, Vec<Type>),
 }
 
 // Cached canonical instances of the common `Type`s, so the methods
@@ -492,13 +492,13 @@ impl Type {
         Self::alloc(TypeKind::Tycon(name.into(), args))
     }
 
-    /// Apply a derived-type [`crate::defs::TypeSpecHandle`] to type
+    /// Apply a derived-type [`crate::defs::TypeSpec`] to type
     /// arguments. The spec's type variables (in `ty.free_tvars()`
     /// order) are substituted positionally by `args`. The handle is
     /// process-shared (`LazyLock`-backed in `crate::defs`), so two
     /// `Type::spec(defs::set_spec(), …)` calls land at the same
     /// kind of leaf and pointer-equal at the spec component.
-    pub fn spec(spec: crate::defs::TypeSpecHandle, args: Vec<Type>) -> Self {
+    pub fn spec(spec: crate::defs::TypeSpec, args: Vec<Type>) -> Self {
         Self::alloc(TypeKind::Spec(spec, args))
     }
 
@@ -609,9 +609,9 @@ impl fmt::Display for Type {
             }
             TypeKind::Spec(spec, args) => {
                 if args.is_empty() {
-                    write!(f, "{}", spec.symbol())
+                    write!(f, "{}", spec.symbol().label())
                 } else {
-                    write!(f, "({}", spec.symbol())?;
+                    write!(f, "({}", spec.symbol().label())?;
                     for a in args {
                         write!(f, " {}", a)?;
                     }
@@ -982,7 +982,7 @@ pub enum TermKind {
     /// [`HolOp`] for the catalogue. Applications are formed by the
     /// usual `App` chain.
     HolOp(HolOp, Type),
-    /// Application of a derived-term [`crate::defs::TermSpecHandle`]
+    /// Application of a derived-term [`crate::defs::TermSpec`]
     /// factory to type arguments. The spec is process-shared
     /// (`LazyLock`-backed) and `args` is the positional substitution
     /// for the spec's type variables.
@@ -991,7 +991,7 @@ pub enum TermKind {
     /// (`natAdd`, `listMap`, …) as catalogue entries instead of
     /// dedicated kernel variants. `Thm::reduce_prim` recognises a
     /// `Spec(h, args)` leaf by `h.ptr_eq(&catalogue_handle)`.
-    Spec(crate::defs::TermSpecHandle, Vec<Type>),
+    Spec(crate::defs::TermSpec, Vec<Type>),
     /// Typed observation leaf: observer + Pure type. The kernel
     /// compares these by `Arc` pointer identity (via [`Object`]'s
     /// impls), never by the user's `Eq` on the underlying observer.
@@ -1070,11 +1070,11 @@ impl Term {
         Self::alloc(TermKind::HolOp(op, ty))
     }
 
-    /// Apply a derived-term [`crate::defs::TermSpecHandle`] to type
+    /// Apply a derived-term [`crate::defs::TermSpec`] to type
     /// arguments. The spec is process-shared (`LazyLock`-backed in
     /// `crate::defs`); two calls with handles from the same lazy
     /// static pointer-equal at the spec component.
-    pub fn term_spec(spec: crate::defs::TermSpecHandle, args: Vec<Type>) -> Self {
+    pub fn term_spec(spec: crate::defs::TermSpec, args: Vec<Type>) -> Self {
         Self::alloc(TermKind::Spec(spec, args))
     }
 
@@ -1254,9 +1254,9 @@ impl fmt::Display for Term {
             TermKind::HolOp(op, ty) => write!(f, "{op}:{ty}"),
             TermKind::Spec(spec, args) => {
                 if args.is_empty() {
-                    write!(f, "{}", spec.symbol())
+                    write!(f, "{}", spec.symbol().label())
                 } else {
-                    write!(f, "({}", spec.symbol())?;
+                    write!(f, "({}", spec.symbol().label())?;
                     for a in args {
                         write!(f, " {}", a)?;
                     }
@@ -1381,10 +1381,9 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
         // factory's carrier) with positional type-arg substitution
         // applied. The spec is held by handle; deref is cheap.
         TermKind::Spec(spec, args) => {
-            let spec = spec.as_spec();
             let mut result = spec
-                .ty
-                .clone()
+                .ty()
+                .cloned()
                 .ok_or_else(|| Error::NotProp(Type::prop()))?;
             // free_tvars on the carrier gives the spec's tvar names
             // in canonical alphabetical order. Substitute positionally.

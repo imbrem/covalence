@@ -1,9 +1,10 @@
-//! `TypeSpec<S>` and `TermSpec<S>` — symbol-tagged definitions of
-//! the kernel's derived types and term constants.
+//! `TypeSpec` and `TermSpec` — symbol-tagged definitions of the
+//! kernel's derived types and term constants.
 //!
-//! Both structures pair a [`Symbol`] (the name) with an optional
-//! `Type` and an optional `Term`. The *meaning* of the four
-//! representable shapes is:
+//! Both are opaque process-shared handles (a single `Arc` internally)
+//! pairing an `Arc<dyn Symbol>` with an optional `Type` and an
+//! optional `Term`. The *meaning* of the four representable shapes
+//! is:
 //!
 //! | Shape                         | English notation                  |
 //! |-------------------------------|-----------------------------------|
@@ -12,100 +13,92 @@
 //! | `ty = Some, tm = Some(rel)`   | `def name args := { car } close rel` |
 //! | `ty = None,  tm = Some(t)`    | `let name args := t`              |
 //!
-//! See `docs/type-hierarchy.md` for the full intended catalogue and
-//! the semantic rationale for the `{ car } close rel` /
-//! `car quot rel` shapes.
-//!
-//! These structs are **data only** — they don't yet appear inside
-//! `TypeKind` or `TermKind`. That integration is a follow-up step;
-//! for now the kernel keeps its existing primitive-type variants
-//! and the `defs::*` catalogue lives parallel to them as a
-//! semi-trusted vocabulary.
+//! See `docs/type-hierarchy.md` for the full intended catalogue.
 
+use std::hash::Hash;
 use std::sync::Arc;
 
 use crate::term::{Term, Type};
 
-use super::canonical::Canonical;
-use super::symbol::Symbol;
+use super::symbol::{Opacity, Symbol};
 
-/// A symbol-tagged type definition.
-///
-/// `TypeSpec<S>` describes a type former parameterised by `args`:
-///
-/// ```text
-/// def name args := ty                    // tm = Some(λ_. T)
-/// def name args := ty where pred         // tm = Some(pred)
-/// def name args := { car } close pred    // tm = Some(pred), pred a rel
-/// ```
-///
-/// Set membership for the type is `{x : ty | tm x ∨ x = ε tm}` —
-/// well-defined for any `(ty, tm)` since the `ε` branch supplies a
-/// garbage canonical inhabitant when `tm` is unsatisfiable.
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TypeSpec<S: Symbol> {
-    /// The name of this type former. Pick from [`super::Canonical`]
-    /// for kernel-shipped types or supply your own [`Symbol`]
-    /// implementer.
-    pub symbol: S,
-    /// The carrier type (`car` in `{ car } close rel`, or the right-
-    /// hand side in `def … := ty`). `None` for fully-erased specs.
-    pub ty: Option<Type>,
-    /// The predicate / relation defining the spec. `None` for
-    /// fully-erased specs.
-    pub tm: Option<Term>,
+// ============================================================================
+// Inner representation (private)
+// ============================================================================
+
+struct TypeSpecInner {
+    symbol: Arc<dyn Symbol>,
+    ty: Option<Type>,
+    tm: Option<Term>,
 }
 
-/// A symbol-tagged term definition.
-///
-/// `TermSpec<S>` describes a term former: an expression of type
-/// `ty` whose value can be (computationally) replaced by `ε tm` —
-/// the canonical witness chosen by Hilbert's epsilon at type
-/// `ty`. `tm` is a predicate on `ty` selecting the chosen value;
-/// `ty` is the type of the resulting term.
-///
-/// ```text
-/// def name args := { tm : ty -> bool }   // ε tm at type ty
-/// let name args := body                  // explicit, non-opaque
-/// ```
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TermSpec<S: Symbol> {
-    /// The name of this term former.
-    pub symbol: S,
-    /// The type of the resulting term. `None` for fully-erased
-    /// specs.
-    pub ty: Option<Type>,
-    /// The selector predicate. `None` for fully-erased specs.
-    pub tm: Option<Term>,
+impl std::fmt::Debug for TypeSpecInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TypeSpec")
+            .field("symbol", &self.symbol.label())
+            .field("ty", &self.ty)
+            .field("tm", &self.tm)
+            .finish()
+    }
+}
+
+struct TermSpecInner {
+    symbol: Arc<dyn Symbol>,
+    ty: Option<Type>,
+    tm: Option<Term>,
+}
+
+impl std::fmt::Debug for TermSpecInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TermSpec")
+            .field("symbol", &self.symbol.label())
+            .field("ty", &self.ty)
+            .field("tm", &self.tm)
+            .finish()
+    }
 }
 
 // ============================================================================
-// Process-shared handles
+// TypeSpec
 // ============================================================================
 
-/// A process-shared handle on a [`TypeSpec<Canonical>`].
+/// An opaque, process-shared handle to a type-spec definition.
 ///
-/// The `Arc` is encapsulated so users don't carry a refcount type
-/// in their signatures. Cheap to clone; identity-comparable via
-/// [`Self::ptr_eq`].
+/// Use [`Self::new`] to construct; the inner representation
+/// (symbol/ty/tm) is private. Access via [`Self::symbol`],
+/// [`Self::ty`], [`Self::tm`]. Cheap to clone (one `Arc` bump);
+/// identity-comparable via [`Self::ptr_eq`].
 #[derive(Debug, Clone)]
-pub struct TypeSpecHandle(Arc<TypeSpec<Canonical>>);
+pub struct TypeSpec(Arc<TypeSpecInner>);
 
-impl TypeSpecHandle {
-    /// Wrap a freshly-built spec. Called once per catalogue entry
-    /// from inside a `LazyLock`.
-    pub(crate) fn new(spec: TypeSpec<Canonical>) -> Self {
-        TypeSpecHandle(Arc::new(spec))
+impl TypeSpec {
+    /// Build a new type-spec with the given symbol, carrier, and
+    /// predicate/body. The symbol can be any `Symbol` impl — typically
+    /// [`super::Canonical`] for kernel-shipped definitions or
+    /// `SmolStr` for user-supplied names.
+    pub fn new<S: Symbol>(symbol: S, ty: Option<Type>, tm: Option<Term>) -> Self {
+        Self(Arc::new(TypeSpecInner {
+            symbol: Arc::new(symbol),
+            ty,
+            tm,
+        }))
     }
 
-    /// Access the underlying spec.
-    pub fn as_spec(&self) -> &TypeSpec<Canonical> {
-        &self.0
+    /// The spec's symbol, as a `&dyn Symbol`. Call `.label()` for
+    /// display / serialisation, or `.opacity()` to inspect the
+    /// equality contract.
+    pub fn symbol(&self) -> &dyn Symbol {
+        &*self.0.symbol
     }
 
-    /// Convenience accessor — the spec's display symbol.
-    pub fn symbol(&self) -> Canonical {
-        self.0.symbol
+    /// The carrier type, if present.
+    pub fn ty(&self) -> Option<&Type> {
+        self.0.ty.as_ref()
+    }
+
+    /// The predicate / body term, if present.
+    pub fn tm(&self) -> Option<&Term> {
+        self.0.tm.as_ref()
     }
 
     /// `true` iff `self` and `other` share the same underlying
@@ -118,65 +111,88 @@ impl TypeSpecHandle {
     /// Stable integer identity for the underlying allocation. Used
     /// as a cache key outside the TCB (display, serialisation).
     pub fn ptr_id(&self) -> usize {
-        Arc::as_ptr(&self.0) as usize
+        Arc::as_ptr(&self.0) as *const () as usize
     }
-
 }
 
-impl PartialEq for TypeSpecHandle {
+impl PartialEq for TypeSpec {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0) || *self.0 == *other.0
+        if Arc::ptr_eq(&self.0, &other.0) {
+            return true;
+        }
+        let a = &*self.0;
+        let b = &*other.0;
+        if a.ty != b.ty || a.tm != b.tm {
+            return false;
+        }
+        symbol_eq(&*a.symbol, &*b.symbol)
     }
 }
 
-impl Eq for TypeSpecHandle {}
+impl Eq for TypeSpec {}
 
-impl PartialOrd for TypeSpecHandle {
+impl PartialOrd for TypeSpec {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for TypeSpecHandle {
+impl Ord for TypeSpec {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         if Arc::ptr_eq(&self.0, &other.0) {
             return std::cmp::Ordering::Equal;
         }
-        self.0.cmp(&other.0)
+        let a = &*self.0;
+        let b = &*other.0;
+        symbol_cmp(&*a.symbol, &*b.symbol)
+            .then_with(|| a.ty.cmp(&b.ty))
+            .then_with(|| a.tm.cmp(&b.tm))
     }
 }
 
-impl std::hash::Hash for TypeSpecHandle {
+impl std::hash::Hash for TypeSpec {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
+        symbol_hash(&*self.0.symbol, state);
+        self.0.ty.hash(state);
+        self.0.tm.hash(state);
     }
 }
 
-/// A process-shared handle on a [`TermSpec<Canonical>`].
+// ============================================================================
+// TermSpec
+// ============================================================================
+
+/// An opaque, process-shared handle to a term-spec definition.
 ///
-/// Same shape and semantics as [`TypeSpecHandle`], but for the
-/// term-level catalogue (`natAdd`, `listMap`, …). The `Arc` is
-/// encapsulated; users go through the [`Self::ptr_eq`] / `ptr_id`
-/// surface for identity checks and `as_spec()` for the underlying
-/// definition.
-///
-/// Reduction (`Thm::reduce_prim` and successors) recognises a
-/// `TermKind::Spec(h, args)` leaf by `h.ptr_eq(&catalogue_handle)`
-/// — i.e., pointer identity on the underlying `Arc`.
+/// Same shape as [`TypeSpec`], but for the term-level catalogue
+/// (`natAdd`, `listMap`, …). Reduction (`Thm::reduce_prim` and
+/// successors) recognises a `TermKind::Spec(h, args)` leaf by
+/// `h.ptr_eq(&catalogue_handle)` — pointer identity on the
+/// underlying `Arc`.
 #[derive(Debug, Clone)]
-pub struct TermSpecHandle(Arc<TermSpec<Canonical>>);
+pub struct TermSpec(Arc<TermSpecInner>);
 
-impl TermSpecHandle {
-    pub(crate) fn new(spec: TermSpec<Canonical>) -> Self {
-        TermSpecHandle(Arc::new(spec))
+impl TermSpec {
+    /// Build a new term-spec with the given symbol, type, and
+    /// selector predicate.
+    pub fn new<S: Symbol>(symbol: S, ty: Option<Type>, tm: Option<Term>) -> Self {
+        Self(Arc::new(TermSpecInner {
+            symbol: Arc::new(symbol),
+            ty,
+            tm,
+        }))
     }
 
-    pub fn as_spec(&self) -> &TermSpec<Canonical> {
-        &self.0
+    pub fn symbol(&self) -> &dyn Symbol {
+        &*self.0.symbol
     }
 
-    pub fn symbol(&self) -> Canonical {
-        self.0.symbol
+    pub fn ty(&self) -> Option<&Type> {
+        self.0.ty.as_ref()
+    }
+
+    pub fn tm(&self) -> Option<&Term> {
+        self.0.tm.as_ref()
     }
 
     pub fn ptr_eq(&self, other: &Self) -> bool {
@@ -184,35 +200,91 @@ impl TermSpecHandle {
     }
 
     pub fn ptr_id(&self) -> usize {
-        Arc::as_ptr(&self.0) as usize
+        Arc::as_ptr(&self.0) as *const () as usize
     }
 }
 
-impl PartialEq for TermSpecHandle {
+impl PartialEq for TermSpec {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0) || *self.0 == *other.0
+        if Arc::ptr_eq(&self.0, &other.0) {
+            return true;
+        }
+        let a = &*self.0;
+        let b = &*other.0;
+        if a.ty != b.ty || a.tm != b.tm {
+            return false;
+        }
+        symbol_eq(&*a.symbol, &*b.symbol)
     }
 }
 
-impl Eq for TermSpecHandle {}
+impl Eq for TermSpec {}
 
-impl PartialOrd for TermSpecHandle {
+impl PartialOrd for TermSpec {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for TermSpecHandle {
+impl Ord for TermSpec {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         if Arc::ptr_eq(&self.0, &other.0) {
             return std::cmp::Ordering::Equal;
         }
-        self.0.cmp(&other.0)
+        let a = &*self.0;
+        let b = &*other.0;
+        symbol_cmp(&*a.symbol, &*b.symbol)
+            .then_with(|| a.ty.cmp(&b.ty))
+            .then_with(|| a.tm.cmp(&b.tm))
     }
 }
 
-impl std::hash::Hash for TermSpecHandle {
+impl std::hash::Hash for TermSpec {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
+        symbol_hash(&*self.0.symbol, state);
+        self.0.ty.hash(state);
+        self.0.tm.hash(state);
+    }
+}
+
+// ============================================================================
+// Symbol comparison / hash helpers
+// ============================================================================
+
+/// Structural equality of two `dyn Symbol`s, respecting opacity.
+fn symbol_eq(a: &dyn Symbol, b: &dyn Symbol) -> bool {
+    match (a.opacity(), b.opacity()) {
+        (Opacity::Transparent, Opacity::Transparent) => true,
+        (Opacity::Opaque, Opacity::Opaque) => a.label() == b.label(),
+        // Mixed opacity: never equal — a transparent and an opaque
+        // symbol carry different equality contracts.
+        _ => false,
+    }
+}
+
+fn symbol_cmp(a: &dyn Symbol, b: &dyn Symbol) -> std::cmp::Ordering {
+    // Order: transparent < opaque (so the catalogue sorts predictably
+    // ahead of user-named entries). Within a class, by label.
+    fn rank(o: Opacity) -> u8 {
+        match o {
+            Opacity::Transparent => 0,
+            Opacity::Opaque => 1,
+        }
+    }
+    rank(a.opacity())
+        .cmp(&rank(b.opacity()))
+        .then_with(|| a.label().cmp(b.label()))
+}
+
+fn symbol_hash<H: std::hash::Hasher>(s: &dyn Symbol, state: &mut H) {
+    // Hash the opacity tag so transparent and opaque hash into
+    // disjoint buckets; for opaque names, fold in the label.
+    let tag: u8 = match s.opacity() {
+        Opacity::Transparent => 0,
+        Opacity::Opaque => 1,
+    };
+    state.write_u8(tag);
+    if matches!(s.opacity(), Opacity::Opaque) {
+        s.label().hash(state);
     }
 }

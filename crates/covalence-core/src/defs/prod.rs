@@ -6,11 +6,9 @@ use crate::hol;
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
-use super::spec::{TypeSpec, TypeSpecHandle};
 use super::coprod::bit_ty;
+use super::spec::TypeSpec;
 
-/// Build the prod predicate at concrete carriers α, β:
-/// `λR. ∃a b. R = λx y. (x = a ∧ y = b)`.
 pub(super) fn prod_predicate_at(alpha: Type, beta: Type) -> Term {
     let rel_ty = Type::fun(alpha.clone(), Type::fun(beta.clone(), Type::bool()));
     let r = Term::free("R", rel_ty.clone());
@@ -37,55 +35,43 @@ fn prod_predicate() -> Term {
     prod_predicate_at(Type::tfree("a"), Type::tfree("b"))
 }
 
-static PROD_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
-    let alpha = Type::tfree("a");
-    let beta = Type::tfree("b");
-    let carrier = Type::fun(alpha, Type::fun(beta, Type::bool()));
-    TypeSpecHandle::new(TypeSpec {
-        symbol: Canonical::Prod,
-        ty: Some(carrier),
-        tm: Some(prod_predicate()),
-    })
-});
-
 /// `prod 'a 'b := rel 'a 'b where (∃a b. R = λx y. x = a ∧ y = b)`.
-pub fn prod_spec() -> TypeSpecHandle {
-    PROD_LAZY.clone()
+pub fn prod_spec() -> TypeSpec {
+    static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
+        let alpha = Type::tfree("a");
+        let beta = Type::tfree("b");
+        let carrier = Type::fun(alpha, Type::fun(beta, Type::bool()));
+        TypeSpec::new(Canonical::Prod, Some(carrier), Some(prod_predicate()))
+    });
+    LAZY.clone()
 }
 pub fn prod(alpha: Type, beta: Type) -> Type {
     Type::spec(prod_spec(), vec![alpha, beta])
 }
 
-// ============================================================================
-// signed1 / signed2
-// ============================================================================
-
-fn build_signed_spec(symbol: Canonical) -> TypeSpecHandle {
+fn build_signed_spec(symbol: Canonical) -> TypeSpec {
     let alpha = Type::tfree("a");
     let bit_t = bit_ty();
     let carrier = Type::fun(bit_t.clone(), Type::fun(alpha.clone(), Type::bool()));
-    TypeSpecHandle::new(TypeSpec {
+    TypeSpec::new(
         symbol,
-        ty: Some(carrier),
-        tm: Some(prod_predicate_at(bit_t, alpha)),
-    })
+        Some(carrier),
+        Some(prod_predicate_at(bit_t, alpha)),
+    )
 }
 
-static SIGNED1_LAZY: LazyLock<TypeSpecHandle> =
-    LazyLock::new(|| build_signed_spec(Canonical::Signed1));
-static SIGNED2_LAZY: LazyLock<TypeSpecHandle> =
-    LazyLock::new(|| build_signed_spec(Canonical::Signed2));
-
-/// `signed1 'a := prod bit 'a` — value + sign bit.
-pub fn signed1_spec() -> TypeSpecHandle {
-    SIGNED1_LAZY.clone()
+/// `signed1 'a := prod bit 'a`.
+pub fn signed1_spec() -> TypeSpec {
+    static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| build_signed_spec(Canonical::Signed1));
+    LAZY.clone()
 }
 pub fn signed1(alpha: Type) -> Type {
     Type::spec(signed1_spec(), vec![alpha])
 }
 /// `signed2 'a := prod bit 'a` — two's-complement-style.
-pub fn signed2_spec() -> TypeSpecHandle {
-    SIGNED2_LAZY.clone()
+pub fn signed2_spec() -> TypeSpec {
+    static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| build_signed_spec(Canonical::Signed2));
+    LAZY.clone()
 }
 pub fn signed2(alpha: Type) -> Type {
     Type::spec(signed2_spec(), vec![alpha])

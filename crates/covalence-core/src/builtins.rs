@@ -182,7 +182,7 @@ fn literal_eq(a: &Term, b: &Term) -> Option<bool> {
 /// side computation for. Anything not in this table falls through to
 /// `None`; the user can still build proofs about the term abstractly
 /// (via the postulated definitional axioms in `covalence-hol`).
-fn reduce_spec(handle: &defs::TermSpecHandle, args: &[Term]) -> Option<Term> {
+fn reduce_spec(handle: &defs::TermSpec, args: &[Term]) -> Option<Term> {
     // Nat arithmetic
     if handle.ptr_eq(&defs::nat_add_spec()) {
         return reduce_nat_binop(args, |a, b| a + b);

@@ -81,7 +81,7 @@ pub use set::{
     set_intersect, set_intersect_spec, set_spec, set_subset, set_subset_spec, set_union,
     set_union_spec,
 };
-pub use spec::{TermSpec, TermSpecHandle, TypeSpec, TypeSpecHandle};
+pub use spec::{TermSpec, TypeSpec};
 pub use stream::{stream, stream_spec};
 pub use symbol::{Opacity, Symbol};
 
@@ -95,7 +95,7 @@ mod tests {
         let s_nat = set(Type::nat());
         match s_nat.kind() {
             TypeKind::Spec(spec, args) => {
-                assert_eq!(spec.symbol(), Canonical::Set);
+                assert_eq!(spec.symbol().label(), "set");
                 assert_eq!(args.len(), 1);
                 assert_eq!(&args[0], &Type::nat());
             }
@@ -113,7 +113,7 @@ mod tests {
         let r = rel(Type::nat(), Type::int());
         match r.kind() {
             TypeKind::Spec(spec, args) => {
-                assert_eq!(spec.symbol(), Canonical::Rel);
+                assert_eq!(spec.symbol().label(), "rel");
                 assert_eq!(args.len(), 2);
                 assert_eq!(&args[0], &Type::nat());
                 assert_eq!(&args[1], &Type::int());
@@ -166,7 +166,7 @@ mod tests {
         let c = coprod(Type::nat(), Type::int());
         match c.kind() {
             TypeKind::Spec(spec, args) => {
-                assert_eq!(spec.symbol(), Canonical::Coprod);
+                assert_eq!(spec.symbol().label(), "coprod");
                 assert_eq!(args.len(), 2);
                 assert_eq!(&args[0], &Type::nat());
                 assert_eq!(&args[1], &Type::int());
@@ -178,7 +178,7 @@ mod tests {
     #[test]
     fn coprod_predicate_well_typed() {
         let spec = coprod_spec();
-        let tm = spec.as_spec().tm.as_ref().expect("coprod has predicate");
+        let tm = spec.tm().expect("coprod has predicate");
         let ty = tm
             .type_of()
             .unwrap_or_else(|e| panic!("coprod predicate type-of: {e:?}"));
@@ -192,7 +192,7 @@ mod tests {
     #[test]
     fn prod_predicate_well_typed() {
         let spec = prod_spec();
-        let tm = spec.as_spec().tm.as_ref().expect("prod has predicate");
+        let tm = spec.tm().expect("prod has predicate");
         let ty = tm.type_of().expect("prod predicate type-of");
         let alpha = Type::tfree("a");
         let beta = Type::tfree("b");
@@ -206,7 +206,7 @@ mod tests {
         let o = option(Type::nat());
         match o.kind() {
             TypeKind::Spec(spec, args) => {
-                assert_eq!(spec.symbol(), Canonical::Option);
+                assert_eq!(spec.symbol().label(), "option");
                 assert_eq!(args.len(), 1);
                 assert_eq!(&args[0], &Type::nat());
             }
@@ -219,7 +219,7 @@ mod tests {
         let b = bit_ty();
         match b.kind() {
             TypeKind::Spec(spec, args) => {
-                assert_eq!(spec.symbol(), Canonical::Bit);
+                assert_eq!(spec.symbol().label(), "bit");
                 assert!(args.is_empty(), "bit takes no type args");
             }
             _ => panic!("expected TypeKind::Spec, got {b:?}"),
@@ -229,17 +229,17 @@ mod tests {
     #[test]
     fn fixed_width_chain_doubles() {
         let u2_spec = u2_spec();
-        let carrier = u2_spec.as_spec().ty.as_ref().expect("u2 has carrier");
+        let carrier = u2_spec.ty().expect("u2 has carrier");
         let expected = Type::fun(bit_ty(), Type::fun(bit_ty(), Type::bool()));
         assert_eq!(carrier, &expected);
 
         let u4_spec = u4_spec();
-        let carrier = u4_spec.as_spec().ty.as_ref().expect("u4 has carrier");
+        let carrier = u4_spec.ty().expect("u4 has carrier");
         let expected = Type::fun(u2_ty(), Type::fun(u2_ty(), Type::bool()));
         assert_eq!(carrier, &expected);
 
         let u64_spec = u64_spec();
-        let carrier = u64_spec.as_spec().ty.as_ref().expect("u64 has carrier");
+        let carrier = u64_spec.ty().expect("u64 has carrier");
         let expected = Type::fun(u32_ty(), Type::fun(u32_ty(), Type::bool()));
         assert_eq!(carrier, &expected);
     }
@@ -258,26 +258,28 @@ mod tests {
             u256_spec(),
             u512_spec(),
         ] {
-            let tm = spec.as_spec().tm.as_ref().expect("has tm");
-            let ty = tm.type_of().unwrap_or_else(|e| {
-                panic!("{:?} predicate type-of: {:?}", spec.symbol(), e)
-            });
-            let carrier = spec.as_spec().ty.as_ref().expect("has ty").clone();
+            let label = spec.symbol().label().to_string();
+            let tm = spec.tm().expect("has tm");
+            let ty = tm
+                .type_of()
+                .unwrap_or_else(|e| panic!("{label} predicate type-of: {e:?}"));
+            let carrier = spec.ty().expect("has ty").clone();
             let expected = Type::fun(carrier, Type::bool());
-            assert_eq!(ty, expected, "{:?}", spec.symbol());
+            assert_eq!(ty, expected, "{label}");
         }
     }
 
     #[test]
     fn all_relation_property_specs_well_typed() {
         for spec in [preord_spec(), pord_spec(), per_spec(), part_spec()] {
-            let tm = spec.as_spec().tm.as_ref().expect("has tm");
-            let ty = tm.type_of().unwrap_or_else(|e| {
-                panic!("{:?} predicate type-of: {:?}", spec.symbol(), e)
-            });
-            let carrier = spec.as_spec().ty.as_ref().expect("has ty").clone();
+            let label = spec.symbol().label().to_string();
+            let tm = spec.tm().expect("has tm");
+            let ty = tm
+                .type_of()
+                .unwrap_or_else(|e| panic!("{label} predicate type-of: {e:?}"));
+            let carrier = spec.ty().expect("has ty").clone();
             let expected = Type::fun(carrier, Type::bool());
-            assert_eq!(ty, expected, "{:?}", spec.symbol());
+            assert_eq!(ty, expected, "{label}");
         }
     }
 
@@ -286,7 +288,7 @@ mod tests {
         let p = preord(Type::nat());
         match p.kind() {
             TypeKind::Spec(spec, args) => {
-                assert_eq!(spec.symbol(), Canonical::Preord);
+                assert_eq!(spec.symbol().label(), "preord");
                 assert_eq!(args.len(), 1);
                 assert_eq!(&args[0], &Type::nat());
             }
@@ -343,7 +345,7 @@ mod tests {
         let car = Type::int();
         let pred = int_le();
         let handle = close_spec(Canonical::Real, car, pred);
-        let tm = handle.as_spec().tm.as_ref().expect("close: has tm");
+        let tm = handle.tm().expect("close: has tm");
         let ty = tm.type_of().expect("close predicate type-of");
         let expected = Type::fun(Type::fun(Type::int(), Type::bool()), Type::bool());
         assert_eq!(ty, expected);
@@ -360,7 +362,7 @@ mod tests {
         let s = stream(Type::nat());
         match s.kind() {
             TypeKind::Spec(spec, args) => {
-                assert_eq!(spec.symbol(), Canonical::Stream);
+                assert_eq!(spec.symbol().label(), "stream");
                 assert_eq!(args.len(), 1);
                 assert_eq!(&args[0], &Type::nat());
             }
@@ -370,9 +372,8 @@ mod tests {
 
     #[test]
     fn blob_carrier_is_list_u8() {
-        // After flattening, blob's carrier should be exactly
-        // `list u8` (using the catalogue's list spec, not a raw
-        // stream-of-option).
+        // After flattening, blob's carrier should be exactly `list u8`
+        // (using the catalogue's list spec, not a raw stream-of-option).
         let b = blob_ty();
         assert_eq!(b, list(u8_ty()));
     }
@@ -388,33 +389,50 @@ mod tests {
 
     #[test]
     fn canonical_is_transparent() {
-        assert_eq!(<Canonical as Symbol>::OPACITY, Opacity::Transparent);
+        assert_eq!(
+            <Canonical as Symbol>::opacity(&Canonical::Set),
+            Opacity::Transparent
+        );
     }
 
     #[test]
     fn smolstr_is_opaque() {
-        assert_eq!(<smol_str::SmolStr as Symbol>::OPACITY, Opacity::Opaque);
+        let s: smol_str::SmolStr = "foo".into();
+        assert_eq!(<smol_str::SmolStr as Symbol>::opacity(&s), Opacity::Opaque);
     }
 
     #[test]
     fn typespec_construction_round_trips() {
-        let spec = TypeSpec {
-            symbol: Canonical::Set,
-            ty: Some(Type::fun(Type::tfree("a"), Type::bool())),
-            tm: None,
-        };
-        assert_eq!(spec.symbol, Canonical::Set);
-        assert!(spec.ty.is_some());
-        assert!(spec.tm.is_none());
+        let spec = TypeSpec::new(
+            Canonical::Set,
+            Some(Type::fun(Type::tfree("a"), Type::bool())),
+            None,
+        );
+        assert_eq!(spec.symbol().label(), "set");
+        assert!(spec.ty().is_some());
+        assert!(spec.tm().is_none());
     }
 
     #[test]
     fn termspec_construction_round_trips() {
-        let spec = TermSpec {
-            symbol: Canonical::List,
-            ty: Some(Type::tfree("a")),
-            tm: None,
-        };
-        assert_eq!(spec.symbol, Canonical::List);
+        let spec = TermSpec::new(Canonical::List, Some(Type::tfree("a")), None);
+        assert_eq!(spec.symbol().label(), "list");
+    }
+
+    #[test]
+    fn user_supplied_smolstr_symbol_is_opaque() {
+        // A user-supplied SmolStr symbol carries opaque equality:
+        // two specs with the same SmolStr and same definition compare
+        // equal, two with different SmolStrs (even same definition)
+        // do not.
+        let a: smol_str::SmolStr = "myType".into();
+        let b: smol_str::SmolStr = "myType".into();
+        let c: smol_str::SmolStr = "otherType".into();
+        let ty = Some(Type::tfree("a"));
+        let s1 = TypeSpec::new(a, ty.clone(), None);
+        let s2 = TypeSpec::new(b, ty.clone(), None);
+        let s3 = TypeSpec::new(c, ty, None);
+        assert_eq!(s1, s2);
+        assert_ne!(s1, s3);
     }
 }

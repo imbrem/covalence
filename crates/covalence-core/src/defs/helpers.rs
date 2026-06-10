@@ -1,18 +1,10 @@
 //! Shared helpers for the catalogue submodules.
-//!
-//! - The `any` selector predicate `λ_:τ. T` used by every plain
-//!   `def name args := ty` entry.
-//! - `close_predicate` / `close_spec` / `quot_spec` factories for
-//!   the doc's `{ car } close pred` and `car quot pred` shapes.
-//! - The TermSpec helpers for the per-concept submodules.
-
-use std::sync::Arc;
 
 use crate::hol;
 use crate::term::{Term, Type};
 
-use super::canonical::Canonical;
-use super::spec::{TermSpec, TermSpecHandle, TypeSpec, TypeSpecHandle};
+use super::spec::TypeSpec;
+use super::symbol::Symbol;
 
 /// The "any" predicate `λ_:τ. T` for the carrier type τ. Used by
 /// every `def name args := ty` (no `where pred`) catalogue entry.
@@ -44,18 +36,14 @@ pub(super) fn close_predicate(car: Type, pred: Term) -> Term {
 }
 
 /// `{ car } close pred` factory. Carrier is `car → bool`.
-pub fn close_spec(symbol: Canonical, car: Type, pred: Term) -> TypeSpecHandle {
+pub fn close_spec<S: Symbol>(symbol: S, car: Type, pred: Term) -> TypeSpec {
     let carrier = Type::fun(car.clone(), Type::bool());
     let tm = close_predicate(car, pred);
-    TypeSpecHandle::new(TypeSpec {
-        symbol,
-        ty: Some(carrier),
-        tm: Some(tm),
-    })
+    TypeSpec::new(symbol, Some(carrier), Some(tm))
 }
 
 /// `car quot pred` factory — equivalent to `{ car } close (sym pred)`.
-pub fn quot_spec(symbol: Canonical, car: Type, pred: Term) -> TypeSpecHandle {
+pub fn quot_spec<S: Symbol>(symbol: S, car: Type, pred: Term) -> TypeSpec {
     let x = Term::free("x", car.clone());
     let y = Term::free("y", car.clone());
     let pred_xy = Term::app(Term::app(pred.clone(), x.clone()), y.clone());
@@ -65,16 +53,3 @@ pub fn quot_spec(symbol: Canonical, car: Type, pred: Term) -> TypeSpecHandle {
     let sym_pred = hol::pub_abs("x", car.clone(), lam_y);
     close_spec(symbol, car, sym_pred)
 }
-
-/// A handy helper for term-spec entries that are zero-arg (monomorphic
-/// or fully type-baked) with a known signature and no body.
-pub(super) fn term_const(symbol: Canonical, ty: Type) -> TermSpecHandle {
-    TermSpecHandle::new(TermSpec {
-        symbol,
-        ty: Some(ty),
-        tm: None,
-    })
-}
-
-// Avoid an unused-import warning when no consumer of `Arc` lands here.
-const _: fn() -> Arc<()> = || Arc::new(());

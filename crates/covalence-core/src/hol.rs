@@ -50,7 +50,7 @@ fn hol_imp_op() -> Term {
 }
 
 /// HOL `p ⟹ q : bool`.
-fn hol_imp(p: Term, q: Term) -> Term {
+pub(crate) fn hol_imp(p: Term, q: Term) -> Term {
     Term::app(Term::app(hol_imp_op(), p), q)
 }
 
@@ -71,7 +71,7 @@ fn hol_and_op() -> Term {
 }
 
 /// HOL `p ∧ q : bool`.
-fn hol_and(p: Term, q: Term) -> Term {
+pub(crate) fn hol_and(p: Term, q: Term) -> Term {
     Term::app(Term::app(hol_and_op(), p), q)
 }
 

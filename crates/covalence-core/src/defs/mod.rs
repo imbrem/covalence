@@ -40,10 +40,11 @@ pub use catalogue::{
     bit_spec, bit_ty, blob_spec, blob_ty, coprod, coprod_spec, f32_spec, f32_ty, f64_spec, f64_ty,
     int_add, int_add_spec, int_le, int_le_spec, int_lt, int_lt_spec, int_mul, int_mul_spec,
     int_sub, int_sub_spec, list, list_spec, nat_add, nat_add_spec, nat_le, nat_le_spec, nat_lt,
-    nat_lt_spec, nat_mul, nat_mul_spec, nat_sub, nat_sub_spec, option, option_spec, prod, prod_spec,
-    rel, rel_spec, result, result_spec, set, set_spec, signed1, signed1_spec, signed2, signed2_spec,
-    stream, stream_spec, u128_spec, u128_ty, u16_spec, u16_ty, u2_spec, u2_ty, u256_spec, u256_ty,
-    u32_spec, u32_ty, u4_spec, u4_ty, u512_spec, u512_ty, u64_spec, u64_ty, u8_spec, u8_ty,
+    nat_lt_spec, nat_mul, nat_mul_spec, nat_sub, nat_sub_spec, option, option_spec, part, part_spec,
+    per, per_spec, pord, pord_spec, preord, preord_spec, prod, prod_spec, rel, rel_spec, result,
+    result_spec, set, set_spec, signed1, signed1_spec, signed2, signed2_spec, stream, stream_spec,
+    u128_spec, u128_ty, u16_spec, u16_ty, u2_spec, u2_ty, u256_spec, u256_ty, u32_spec, u32_ty,
+    u4_spec, u4_ty, u512_spec, u512_ty, u64_spec, u64_ty, u8_spec, u8_ty,
 };
 pub use spec::{TermSpec, TermSpecHandle, TypeSpec, TypeSpecHandle};
 pub use symbol::{Opacity, Symbol};
@@ -240,6 +241,32 @@ mod tests {
             let carrier = spec.as_spec().ty.as_ref().expect("has ty").clone();
             let expected = Type::fun(carrier, Type::bool());
             assert_eq!(ty, expected, "{:?}", spec.symbol());
+        }
+    }
+
+    #[test]
+    fn all_relation_property_specs_well_typed() {
+        for spec in [preord_spec(), pord_spec(), per_spec(), part_spec()] {
+            let tm = spec.as_spec().tm.as_ref().expect("has tm");
+            let ty = tm.type_of().unwrap_or_else(|e| {
+                panic!("{:?} predicate type-of: {:?}", spec.symbol(), e)
+            });
+            let carrier = spec.as_spec().ty.as_ref().expect("has ty").clone();
+            let expected = Type::fun(carrier, Type::bool());
+            assert_eq!(ty, expected, "{:?}", spec.symbol());
+        }
+    }
+
+    #[test]
+    fn preord_at_nat_round_trip() {
+        let p = preord(Type::nat());
+        match p.kind() {
+            TypeKind::Spec(spec, args) => {
+                assert_eq!(spec.symbol(), Canonical::Preord);
+                assert_eq!(args.len(), 1);
+                assert_eq!(&args[0], &Type::nat());
+            }
+            _ => panic!("expected TypeKind::Spec, got {p:?}"),
         }
     }
 

@@ -205,7 +205,7 @@ fn prod_predicate() -> Term {
         let y_free = Term::free("y", beta.clone());
         let eq_x_a = hol::hol_eq(x_free, a_free);
         let eq_y_b = hol::hol_eq(y_free, b_free);
-        let conj = hol_and(eq_x_a, eq_y_b);
+        let conj = crate::hol::hol_and(eq_x_a, eq_y_b);
         let lam_y = hol::pub_abs("y", beta.clone(), conj);
         let lam_xy = hol::pub_abs("x", alpha.clone(), lam_y);
         let r_eq = hol::hol_eq(r.clone(), lam_xy);
@@ -216,17 +216,6 @@ fn prod_predicate() -> Term {
     hol::pub_abs("R", rel_ty, body)
 }
 
-/// HOL `∧`: a small adapter so we can build inside this module
-/// without re-exporting hol_and. Replicated locally rather than
-/// extending `hol.rs`'s public surface further than necessary.
-fn hol_and(p: Term, q: Term) -> Term {
-    let b = Type::bool();
-    let op = Term::hol_op(
-        crate::term::HolOp::And,
-        Type::fun(b.clone(), Type::fun(b.clone(), b)),
-    );
-    Term::app(Term::app(op, p), q)
-}
 
 static PROD_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
     let alpha = Type::tfree("a");
@@ -484,7 +473,7 @@ fn prod_predicate_at(alpha: Type, beta: Type) -> Term {
         let y_free = Term::free("y", beta.clone());
         let eq_x_a = hol::hol_eq(x_free, a_free);
         let eq_y_b = hol::hol_eq(y_free, b_free);
-        let conj = hol_and(eq_x_a, eq_y_b);
+        let conj = crate::hol::hol_and(eq_x_a, eq_y_b);
         let lam_y = hol::pub_abs("y", beta.clone(), conj);
         let lam_xy = hol::pub_abs("x", alpha.clone(), lam_y);
         let r_eq = hol::hol_eq(r.clone(), lam_xy);
@@ -580,6 +569,175 @@ pub fn f64_spec() -> TypeSpecHandle {
 /// `f64` as a 0-ary `Type`.
 pub fn f64_ty() -> Type {
     Type::spec(f64_spec(), vec![])
+}
+
+// ============================================================================
+// Relation properties: preord / pord / per / part
+//
+// These are 1-ary specs whose carrier is `rel 'a 'a = 'a → 'a → bool`
+// and whose predicate selects the relations satisfying a particular
+// algebraic property:
+//
+// - preord 'a: transitive + reflexive
+// - pord   'a: transitive + reflexive + antisymmetric
+// - per    'a: transitive + symmetric
+// - part   'a: transitive + symmetric + reflexive (partial equivalence
+//   relation, total over its domain)
+//
+// Each is built from the per-property building-block predicates
+// `transitive_pred(α)`, `reflexive_pred(α)`, `symmetric_pred(α)`,
+// `antisymmetric_pred(α)` — each a `λR. ∀…. …` term that selects R
+// satisfying the property.
+// ============================================================================
+
+/// `λR:α→α→bool. ∀x y z. R x y ⟹ R y z ⟹ R x z`
+fn transitive_pred(alpha: Type) -> Term {
+    use crate::hol;
+    let r_ty = Type::fun(alpha.clone(), Type::fun(alpha.clone(), Type::bool()));
+    let r = Term::free("R", r_ty.clone());
+    let x = Term::free("x", alpha.clone());
+    let y = Term::free("y", alpha.clone());
+    let z = Term::free("z", alpha.clone());
+    let r_xy = Term::app(Term::app(r.clone(), x.clone()), y.clone());
+    let r_yz = Term::app(Term::app(r.clone(), y.clone()), z.clone());
+    let r_xz = Term::app(Term::app(r.clone(), x.clone()), z.clone());
+    let body = hol::hol_imp(r_xy, hol::hol_imp(r_yz, r_xz));
+    let all_z = hol::hol_forall("z", alpha.clone(), body);
+    let all_yz = hol::hol_forall("y", alpha.clone(), all_z);
+    let all_xyz = hol::hol_forall("x", alpha.clone(), all_yz);
+    hol::pub_abs("R", r_ty, all_xyz)
+}
+
+/// `λR:α→α→bool. ∀x. R x x`
+fn reflexive_pred(alpha: Type) -> Term {
+    use crate::hol;
+    let r_ty = Type::fun(alpha.clone(), Type::fun(alpha.clone(), Type::bool()));
+    let r = Term::free("R", r_ty.clone());
+    let x = Term::free("x", alpha.clone());
+    let r_xx = Term::app(Term::app(r.clone(), x.clone()), x);
+    let body = hol::hol_forall("x", alpha.clone(), r_xx);
+    hol::pub_abs("R", r_ty, body)
+}
+
+/// `λR:α→α→bool. ∀x y. R x y ⟹ R y x`
+fn symmetric_pred(alpha: Type) -> Term {
+    use crate::hol;
+    let r_ty = Type::fun(alpha.clone(), Type::fun(alpha.clone(), Type::bool()));
+    let r = Term::free("R", r_ty.clone());
+    let x = Term::free("x", alpha.clone());
+    let y = Term::free("y", alpha.clone());
+    let r_xy = Term::app(Term::app(r.clone(), x.clone()), y.clone());
+    let r_yx = Term::app(Term::app(r.clone(), y.clone()), x.clone());
+    let body = hol::hol_imp(r_xy, r_yx);
+    let all_y = hol::hol_forall("y", alpha.clone(), body);
+    let all_xy = hol::hol_forall("x", alpha.clone(), all_y);
+    hol::pub_abs("R", r_ty, all_xy)
+}
+
+/// `λR:α→α→bool. ∀x y. R x y ⟹ R y x ⟹ x = y`
+fn antisymmetric_pred(alpha: Type) -> Term {
+    use crate::hol;
+    let r_ty = Type::fun(alpha.clone(), Type::fun(alpha.clone(), Type::bool()));
+    let r = Term::free("R", r_ty.clone());
+    let x = Term::free("x", alpha.clone());
+    let y = Term::free("y", alpha.clone());
+    let r_xy = Term::app(Term::app(r.clone(), x.clone()), y.clone());
+    let r_yx = Term::app(Term::app(r.clone(), y.clone()), x.clone());
+    let x_eq_y = hol::hol_eq(x.clone(), y.clone());
+    let body = hol::hol_imp(r_xy, hol::hol_imp(r_yx, x_eq_y));
+    let all_y = hol::hol_forall("y", alpha.clone(), body);
+    let all_xy = hol::hol_forall("x", alpha.clone(), all_y);
+    hol::pub_abs("R", r_ty, all_xy)
+}
+
+/// Combine a sequence of property predicates over the same carrier
+/// `α → α → bool` into a single λR. ∧ properties. Uses `App` to
+/// apply each property to R, then folds with `∧`.
+fn combine_props(alpha: Type, props: &[fn(Type) -> Term]) -> Term {
+    use crate::hol;
+    let r_ty = Type::fun(alpha.clone(), Type::fun(alpha.clone(), Type::bool()));
+    let r = Term::free("R", r_ty.clone());
+    // Apply each property predicate to R, getting a list of bool terms.
+    let mut applications: Vec<Term> = props
+        .iter()
+        .map(|p| Term::app(p(alpha.clone()), r.clone()))
+        .collect();
+    // Conjoin left-to-right.
+    let mut result = applications.remove(0);
+    for next in applications {
+        result = hol::hol_and(result, next);
+    }
+    hol::pub_abs("R", r_ty, result)
+}
+
+/// Builder for a 1-ary relation-property spec: carrier `α → α → bool`,
+/// predicate is the combined-property predicate.
+fn rel_property_spec(symbol: Canonical, props: &[fn(Type) -> Term]) -> TypeSpecHandle {
+    let alpha = Type::tfree("a");
+    let carrier = Type::fun(alpha.clone(), Type::fun(alpha.clone(), Type::bool()));
+    TypeSpecHandle::new(TypeSpec {
+        symbol,
+        ty: Some(carrier),
+        tm: Some(combine_props(alpha, props)),
+    })
+}
+
+static PREORD_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
+    rel_property_spec(Canonical::Preord, &[transitive_pred, reflexive_pred])
+});
+
+/// `preord 'a := rel 'a 'a where (transitive ∧ reflexive)`.
+pub fn preord_spec() -> TypeSpecHandle {
+    PREORD_LAZY.clone()
+}
+/// `preord α`.
+pub fn preord(alpha: Type) -> Type {
+    Type::spec(preord_spec(), vec![alpha])
+}
+
+static POR_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
+    rel_property_spec(
+        Canonical::Pord,
+        &[transitive_pred, reflexive_pred, antisymmetric_pred],
+    )
+});
+
+/// `pord 'a := rel 'a 'a where (transitive ∧ reflexive ∧ antisymmetric)`.
+pub fn pord_spec() -> TypeSpecHandle {
+    POR_LAZY.clone()
+}
+/// `pord α`.
+pub fn pord(alpha: Type) -> Type {
+    Type::spec(pord_spec(), vec![alpha])
+}
+
+static PER_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
+    rel_property_spec(Canonical::Per, &[transitive_pred, symmetric_pred])
+});
+
+/// `per 'a := rel 'a 'a where (transitive ∧ symmetric)`.
+pub fn per_spec() -> TypeSpecHandle {
+    PER_LAZY.clone()
+}
+/// `per α` — partial equivalence relation.
+pub fn per(alpha: Type) -> Type {
+    Type::spec(per_spec(), vec![alpha])
+}
+
+static PART_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
+    rel_property_spec(
+        Canonical::Part,
+        &[transitive_pred, symmetric_pred, reflexive_pred],
+    )
+});
+
+/// `part 'a := rel 'a 'a where (transitive ∧ symmetric ∧ reflexive)`.
+pub fn part_spec() -> TypeSpecHandle {
+    PART_LAZY.clone()
+}
+/// `part α` — total equivalence relation.
+pub fn part(alpha: Type) -> Type {
+    Type::spec(part_spec(), vec![alpha])
 }
 
 // ============================================================================

@@ -10,53 +10,79 @@
 //! (the `Thm`-constructing rules live in `crate::thm`, which is
 //! the only piece of the kernel users have to fully trust). But
 //! these definitions *do* connect to computation — e.g.
-//! `natAdd : nat → nat → nat` will be a `TermSpec` that the
-//! reduction mechanism recognises by pointer identity — so an
-//! incorrect definition here would let the kernel reduce a closed
-//! arithmetic expression to the wrong value. We treat it as
-//! audit-required even though it's "below" `thm`.
+//! `natAdd : nat → nat → nat` is a `TermSpec` that the reduction
+//! mechanism recognises by pointer identity — so an incorrect
+//! definition here would let the kernel reduce a closed arithmetic
+//! expression to the wrong value. We treat it as audit-required
+//! even though it's "below" `thm`.
 //!
-//! ## Current scope (in-flight)
+//! ## Module layout
 //!
-//! This first cut just lays the scaffolding:
-//!
-//! - [`Symbol`] / [`Opacity`] — symbol trait + opacity tagging.
-//! - [`Canonical`] — the non-exhaustive symbol enum for kernel
-//!   derived types.
-//! - [`TypeSpec`] / [`TermSpec`] — the data structures themselves.
-//!
-//! Wiring the catalogue into `TypeKind` / `TermKind`, populating
-//! the lazy statics for each `Canonical` variant, and teaching
-//! `Thm::reduce_prim` to dispatch on `TermSpec` pointer identity
-//! all land in follow-up commits.
+//! Each concept gets its own file at the root of `defs/`. Submodules
+//! import each other freely — `option` depends on `coprod` for the
+//! eventual unfolding of `option α := coprod α unit`, `list` depends
+//! on `option` for its constructor, `blob` depends on `list`/widths,
+//! and so on. The `helpers` module hosts the `close_spec`/`quot_spec`
+//! factories and a few small utilities shared by every spec entry.
 
+mod blob;
 mod canonical;
-mod catalogue;
+mod coprod;
+mod floats;
+mod helpers;
+mod int;
+mod list;
+mod nat;
+mod option;
+mod prod;
+mod rat;
+mod real;
+mod rel;
+mod set;
 mod spec;
+mod stream;
 mod symbol;
 
+pub use blob::{blob_spec, blob_ty};
 pub use canonical::Canonical;
-pub use catalogue::{
-    bit_spec, bit_ty, blob_spec, blob_ty, close_spec, cons, cons_spec, coprod, coprod_spec, f32_spec,
-    f32_ty, f64_spec, f64_ty, field_of_fractions, field_of_fractions_spec, head, head_spec,
+pub use coprod::{
+    bit_spec, bit_ty, coprod, coprod_spec, result, result_spec, u128_spec, u128_ty, u16_spec,
+    u16_ty, u2_spec, u2_ty, u256_spec, u256_ty, u32_spec, u32_ty, u4_spec, u4_ty, u512_spec,
+    u512_ty, u64_spec, u64_ty, u8_spec, u8_ty,
+};
+pub use floats::{f32_spec, f32_ty, f64_spec, f64_ty};
+pub use helpers::{close_spec, quot_spec};
+pub use int::{
     int_abs, int_abs_spec, int_add, int_add_spec, int_div, int_div_spec, int_le, int_le_spec,
     int_lt, int_lt_spec, int_mod, int_mod_spec, int_mul, int_mul_spec, int_neg, int_neg_spec,
-    int_sgn, int_sgn_spec, int_sub, int_sub_spec, list, list_cat, list_cat_spec, list_filter,
-    list_filter_spec, list_flatten, list_flatten_spec, list_foldl, list_foldl_spec, list_foldr,
-    list_foldr_spec, list_index, list_index_spec, list_length, list_length_spec, list_map,
-    list_map_spec, list_repeat, list_repeat_spec, list_skip, list_skip_spec, list_spec, list_take,
-    list_take_spec, list_to_set, list_to_set_spec, nat_add, nat_add_spec, nat_div, nat_div_spec,
-    nat_le, nat_le_spec, nat_lt, nat_lt_spec, nat_mod, nat_mod_spec, nat_mul, nat_mul_spec,
-    nat_pow, nat_pow_spec, nat_sub, nat_sub_spec, nat_to_int, nat_to_int_spec, nil, nil_spec,
-    none, none_spec, option, option_spec, part, part_spec, per, per_spec, pord, pord_spec, preord,
-    preord_spec, prod, prod_spec, quot_spec, rat_spec, rat_ty, real_spec, real_ty, rel, rel_spec,
-    result, result_spec, set, set_card, set_card_spec, set_diff, set_diff_spec, set_intersect,
-    set_intersect_spec, set_spec, set_subset, set_subset_spec, set_union, set_union_spec, signed1,
-    signed1_spec, signed2, signed2_spec, some, some_spec, stream, stream_spec, tail, tail_spec,
-    u128_spec, u128_ty, u16_spec, u16_ty, u2_spec, u2_ty, u256_spec, u256_ty, u32_spec, u32_ty,
-    u4_spec, u4_ty, u512_spec, u512_ty, u64_spec, u64_ty, u8_spec, u8_ty,
+    int_sgn, int_sgn_spec, int_sub, int_sub_spec,
+};
+pub use list::{
+    cons, cons_spec, head, head_spec, list, list_cat, list_cat_spec, list_filter, list_filter_spec,
+    list_flatten, list_flatten_spec, list_foldl, list_foldl_spec, list_foldr, list_foldr_spec,
+    list_index, list_index_spec, list_length, list_length_spec, list_map, list_map_spec,
+    list_repeat, list_repeat_spec, list_skip, list_skip_spec, list_spec, list_take, list_take_spec,
+    nil, nil_spec, tail, tail_spec,
+};
+pub use nat::{
+    nat_add, nat_add_spec, nat_div, nat_div_spec, nat_le, nat_le_spec, nat_lt, nat_lt_spec, nat_mod,
+    nat_mod_spec, nat_mul, nat_mul_spec, nat_pow, nat_pow_spec, nat_sub, nat_sub_spec, nat_to_int,
+    nat_to_int_spec,
+};
+pub use option::{none, none_spec, option, option_spec, some, some_spec};
+pub use prod::{prod, prod_spec, signed1, signed1_spec, signed2, signed2_spec};
+pub use rat::{field_of_fractions, field_of_fractions_spec, rat_spec, rat_ty};
+pub use real::{real_spec, real_ty};
+pub use rel::{
+    part, part_spec, per, per_spec, pord, pord_spec, preord, preord_spec, rel, rel_spec,
+};
+pub use set::{
+    list_to_set, list_to_set_spec, set, set_card, set_card_spec, set_diff, set_diff_spec,
+    set_intersect, set_intersect_spec, set_spec, set_subset, set_subset_spec, set_union,
+    set_union_spec,
 };
 pub use spec::{TermSpec, TermSpecHandle, TypeSpec, TypeSpecHandle};
+pub use stream::{stream, stream_spec};
 pub use symbol::{Opacity, Symbol};
 
 #[cfg(test)]
@@ -67,7 +93,6 @@ mod tests {
     #[test]
     fn set_alpha_round_trip() {
         let s_nat = set(Type::nat());
-        // Carrier should be `'a -> bool` after substitution.
         match s_nat.kind() {
             TypeKind::Spec(spec, args) => {
                 assert_eq!(spec.symbol(), Canonical::Set);
@@ -80,7 +105,6 @@ mod tests {
 
     #[test]
     fn set_lazy_static_is_shared() {
-        // Two `set_spec()` calls give pointer-equal handles.
         assert!(set_spec().ptr_eq(&set_spec()));
     }
 
@@ -129,13 +153,11 @@ mod tests {
 
     #[test]
     fn nat_add_spec_is_shared_singleton() {
-        // Repeated calls return pointer-equal handles via LazyLock.
         assert!(nat_add_spec().ptr_eq(&nat_add_spec()));
     }
 
     #[test]
     fn nat_add_term_display() {
-        // Zero-arg spec displays as just the label.
         assert_eq!(format!("{}", nat_add()), "natAdd");
     }
 
@@ -155,14 +177,11 @@ mod tests {
 
     #[test]
     fn coprod_predicate_well_typed() {
-        // The cached coprod predicate term should be a closed
-        // function `(rel α β) → bool` over the spec's type variables.
         let spec = coprod_spec();
         let tm = spec.as_spec().tm.as_ref().expect("coprod has predicate");
         let ty = tm
             .type_of()
             .unwrap_or_else(|e| panic!("coprod predicate type-of: {e:?}"));
-        // Carrier: α → β → bool; predicate type: (carrier) → bool.
         let alpha = Type::tfree("a");
         let beta = Type::tfree("b");
         let carrier = Type::fun(alpha, Type::fun(beta, Type::bool()));
@@ -209,20 +228,16 @@ mod tests {
 
     #[test]
     fn fixed_width_chain_doubles() {
-        // Check the carrier widths follow the coprod-doubling pattern.
-        // u2's carrier should be `bit → bit → bool`.
         let u2_spec = u2_spec();
         let carrier = u2_spec.as_spec().ty.as_ref().expect("u2 has carrier");
         let expected = Type::fun(bit_ty(), Type::fun(bit_ty(), Type::bool()));
         assert_eq!(carrier, &expected);
 
-        // u4's carrier is u2 → u2 → bool.
         let u4_spec = u4_spec();
         let carrier = u4_spec.as_spec().ty.as_ref().expect("u4 has carrier");
         let expected = Type::fun(u2_ty(), Type::fun(u2_ty(), Type::bool()));
         assert_eq!(carrier, &expected);
 
-        // u64's carrier is u32 → u32 → bool.
         let u64_spec = u64_spec();
         let carrier = u64_spec.as_spec().ty.as_ref().expect("u64 has carrier");
         let expected = Type::fun(u32_ty(), Type::fun(u32_ty(), Type::bool()));
@@ -247,7 +262,6 @@ mod tests {
             let ty = tm.type_of().unwrap_or_else(|e| {
                 panic!("{:?} predicate type-of: {:?}", spec.symbol(), e)
             });
-            // Predicate has type `carrier → bool`.
             let carrier = spec.as_spec().ty.as_ref().expect("has ty").clone();
             let expected = Type::fun(carrier, Type::bool());
             assert_eq!(ty, expected, "{:?}", spec.symbol());
@@ -326,8 +340,6 @@ mod tests {
 
     #[test]
     fn close_spec_factory_well_typed() {
-        // Build close at car = int with pred = intLe. The factory
-        // produces a TypeSpec whose tm has type `(int → bool) → bool`.
         let car = Type::int();
         let pred = int_le();
         let handle = close_spec(Canonical::Real, car, pred);
@@ -357,8 +369,16 @@ mod tests {
     }
 
     #[test]
+    fn blob_carrier_is_list_u8() {
+        // After flattening, blob's carrier should be exactly
+        // `list u8` (using the catalogue's list spec, not a raw
+        // stream-of-option).
+        let b = blob_ty();
+        assert_eq!(b, list(u8_ty()));
+    }
+
+    #[test]
     fn canonical_labels_match_doc_text() {
-        // Spot-check a few — the full set is exercised by Display.
         assert_eq!(Canonical::Set.label(), "set");
         assert_eq!(Canonical::Coprod.label(), "coprod");
         assert_eq!(Canonical::Option.label(), "option");

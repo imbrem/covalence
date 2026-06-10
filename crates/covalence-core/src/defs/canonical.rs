@@ -133,6 +133,25 @@ pub enum Canonical {
     NatLt,
     /// `natToInt : nat → int`.
     NatToInt,
+    /// `natShl : nat → nat → nat` — left shift by `n` (i.e. `* 2^n`).
+    NatShl,
+    /// `natShr : nat → nat → nat` — right shift by `n` (i.e. `/ 2^n`,
+    /// truncating toward zero).
+    NatShr,
+    /// `natBitAnd : nat → nat → nat` — bitwise AND.
+    NatBitAnd,
+    /// `natBitOr : nat → nat → nat` — bitwise OR.
+    NatBitOr,
+    /// `natBitXor : nat → nat → nat` — bitwise XOR.
+    NatBitXor,
+    /// `natToBytesLe : nat → blob` — minimal little-endian byte encoding.
+    NatToBytesLe,
+    /// `natToBytesBe : nat → blob` — minimal big-endian byte encoding.
+    NatToBytesBe,
+    /// `natFromBytesLe : blob → nat` — decode little-endian.
+    NatFromBytesLe,
+    /// `natFromBytesBe : blob → nat` — decode big-endian.
+    NatFromBytesBe,
 
     // ---- Term-level: int arithmetic ----
     /// `intAdd : int → int → int`.
@@ -247,6 +266,15 @@ impl Canonical {
             Canonical::NatLe => "natLe",
             Canonical::NatLt => "natLt",
             Canonical::NatToInt => "natToInt",
+            Canonical::NatShl => "natShl",
+            Canonical::NatShr => "natShr",
+            Canonical::NatBitAnd => "natBitAnd",
+            Canonical::NatBitOr => "natBitOr",
+            Canonical::NatBitXor => "natBitXor",
+            Canonical::NatToBytesLe => "natToBytesLe",
+            Canonical::NatToBytesBe => "natToBytesBe",
+            Canonical::NatFromBytesLe => "natFromBytesLe",
+            Canonical::NatFromBytesBe => "natFromBytesBe",
             Canonical::IntAdd => "intAdd",
             Canonical::IntMul => "intMul",
             Canonical::IntSub => "intSub",

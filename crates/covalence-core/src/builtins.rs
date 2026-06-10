@@ -211,6 +211,22 @@ fn reduce_spec(handle: &defs::TermSpec, args: &[Term]) -> Option<Term> {
             }
         });
     }
+    if handle.ptr_eq(&defs::nat_pow_spec()) {
+        if args.len() != 2 {
+            return None;
+        }
+        let base = as_nat_lit(&args[0])?;
+        let exp = as_nat_lit(&args[1])?;
+        // BigUint::pow takes a u32 exponent. Refuse oversize exponents
+        // rather than truncate — `reduce_prim` falls back to abstract
+        // reasoning in that case.
+        let exp_digits = exp.as_inner().to_u32_digits();
+        if exp_digits.len() > 1 {
+            return None;
+        }
+        let exp_u32 = exp_digits.first().copied().unwrap_or(0);
+        return Some(Term::nat_lit(base.pow(exp_u32)));
+    }
     if handle.ptr_eq(&defs::nat_le_spec()) {
         return reduce_nat_cmp(args, |a, b| a <= b);
     }
@@ -228,6 +244,55 @@ fn reduce_spec(handle: &defs::TermSpec, args: &[Term]) -> Option<Term> {
             Sign::Positive
         };
         return Some(Term::int_lit(Int::from_sign_nat(sign, n.clone())));
+    }
+    if handle.ptr_eq(&defs::nat_shl_spec()) {
+        return reduce_nat_shift(args, true);
+    }
+    if handle.ptr_eq(&defs::nat_shr_spec()) {
+        return reduce_nat_shift(args, false);
+    }
+    if handle.ptr_eq(&defs::nat_bit_and_spec()) {
+        return reduce_nat_binop(args, |a, b| {
+            Nat::from_inner(a.as_inner() & b.as_inner())
+        });
+    }
+    if handle.ptr_eq(&defs::nat_bit_or_spec()) {
+        return reduce_nat_binop(args, |a, b| {
+            Nat::from_inner(a.as_inner() | b.as_inner())
+        });
+    }
+    if handle.ptr_eq(&defs::nat_bit_xor_spec()) {
+        return reduce_nat_binop(args, |a, b| {
+            Nat::from_inner(a.as_inner() ^ b.as_inner())
+        });
+    }
+    if handle.ptr_eq(&defs::nat_to_bytes_le_spec()) {
+        if args.len() != 1 {
+            return None;
+        }
+        let n = as_nat_lit(&args[0])?;
+        return Some(Term::blob(n.to_bytes_le()));
+    }
+    if handle.ptr_eq(&defs::nat_to_bytes_be_spec()) {
+        if args.len() != 1 {
+            return None;
+        }
+        let n = as_nat_lit(&args[0])?;
+        return Some(Term::blob(n.to_bytes_be()));
+    }
+    if handle.ptr_eq(&defs::nat_from_bytes_le_spec()) {
+        if args.len() != 1 {
+            return None;
+        }
+        let bs = as_blob(&args[0])?;
+        return Some(Term::nat_lit(Nat::from_bytes_le(bs)));
+    }
+    if handle.ptr_eq(&defs::nat_from_bytes_be_spec()) {
+        if args.len() != 1 {
+            return None;
+        }
+        let bs = as_blob(&args[0])?;
+        return Some(Term::nat_lit(Nat::from_bytes_be(bs)));
     }
     // Int arithmetic
     if handle.ptr_eq(&defs::int_add_spec()) {
@@ -317,6 +382,28 @@ fn reduce_int_binop(args: &[Term], op: impl Fn(&Int, &Int) -> Int) -> Option<Ter
     let a = as_int_lit(&args[0])?;
     let b = as_int_lit(&args[1])?;
     Some(Term::int_lit(op(a, b)))
+}
+
+fn reduce_nat_shift(args: &[Term], is_left: bool) -> Option<Term> {
+    if args.len() != 2 {
+        return None;
+    }
+    let a = as_nat_lit(&args[0])?;
+    let shift = as_nat_lit(&args[1])?;
+    // Shifts above `usize::MAX` bits are refused; the kernel falls
+    // back to abstract reasoning rather than truncating an unbounded
+    // exponent.
+    let shift_digits = shift.as_inner().to_u64_digits();
+    if shift_digits.len() > 1 {
+        return None;
+    }
+    let shift_u64 = shift_digits.first().copied().unwrap_or(0);
+    let shift_usize = usize::try_from(shift_u64).ok()?;
+    Some(Term::nat_lit(Nat::from_inner(if is_left {
+        a.as_inner() << shift_usize
+    } else {
+        a.as_inner() >> shift_usize
+    })))
 }
 
 fn reduce_int_cmp(args: &[Term], op: impl Fn(&Int, &Int) -> bool) -> Option<Term> {
@@ -669,6 +756,18 @@ mod tests {
     }
 
     #[test]
+    fn term_spec_nat_pow() {
+        assert_reduces(
+            Term::app(Term::app(defs::nat_pow(), nat(2)), nat(10)),
+            nat(1024),
+        );
+        assert_reduces(
+            Term::app(Term::app(defs::nat_pow(), nat(7)), nat(0)),
+            nat(1),
+        );
+    }
+
+    #[test]
     fn term_spec_nat_to_int() {
         let t = Term::app(defs::nat_to_int(), nat(42));
         assert_reduces(t, int(42));
@@ -690,6 +789,56 @@ mod tests {
         assert_reduces(
             Term::app(Term::app(defs::int_div(), int(-17)), int(5)),
             int(-3),
+        );
+    }
+
+    #[test]
+    fn term_spec_nat_bitwise() {
+        // shl: 1 << 4 = 16
+        assert_reduces(
+            Term::app(Term::app(defs::nat_shl(), nat(1)), nat(4)),
+            nat(16),
+        );
+        // shr: 16 >> 2 = 4
+        assert_reduces(
+            Term::app(Term::app(defs::nat_shr(), nat(16)), nat(2)),
+            nat(4),
+        );
+        // and / or / xor
+        assert_reduces(
+            Term::app(Term::app(defs::nat_bit_and(), nat(0b1100)), nat(0b1010)),
+            nat(0b1000),
+        );
+        assert_reduces(
+            Term::app(Term::app(defs::nat_bit_or(), nat(0b1100)), nat(0b1010)),
+            nat(0b1110),
+        );
+        assert_reduces(
+            Term::app(Term::app(defs::nat_bit_xor(), nat(0b1100)), nat(0b1010)),
+            nat(0b0110),
+        );
+    }
+
+    #[test]
+    fn term_spec_nat_bytes_round_trip() {
+        // LE: 256 = [0, 1]
+        assert_reduces(
+            Term::app(defs::nat_to_bytes_le(), nat(256)),
+            Term::blob(vec![0, 1]),
+        );
+        // BE: 256 = [1, 0]
+        assert_reduces(
+            Term::app(defs::nat_to_bytes_be(), nat(256)),
+            Term::blob(vec![1, 0]),
+        );
+        // Round trip
+        assert_reduces(
+            Term::app(defs::nat_from_bytes_le(), Term::blob(vec![0, 1])),
+            nat(256),
+        );
+        assert_reduces(
+            Term::app(defs::nat_from_bytes_be(), Term::blob(vec![1, 0])),
+            nat(256),
         );
     }
 

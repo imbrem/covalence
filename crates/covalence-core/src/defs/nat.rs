@@ -105,6 +105,124 @@ pub fn nat_lt() -> Term {
     LAZY.clone()
 }
 
+/// `natShl : nat → nat → nat` — left shift.
+pub fn nat_shl_spec() -> TermSpec {
+    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| nat_bin_op(Canonical::NatShl));
+    LAZY.clone()
+}
+pub fn nat_shl() -> Term {
+    static LAZY: LazyLock<Term> = LazyLock::new(|| Term::term_spec(nat_shl_spec(), vec![]));
+    LAZY.clone()
+}
+
+/// `natShr : nat → nat → nat` — right shift.
+pub fn nat_shr_spec() -> TermSpec {
+    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| nat_bin_op(Canonical::NatShr));
+    LAZY.clone()
+}
+pub fn nat_shr() -> Term {
+    static LAZY: LazyLock<Term> = LazyLock::new(|| Term::term_spec(nat_shr_spec(), vec![]));
+    LAZY.clone()
+}
+
+/// `natBitAnd : nat → nat → nat`.
+pub fn nat_bit_and_spec() -> TermSpec {
+    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| nat_bin_op(Canonical::NatBitAnd));
+    LAZY.clone()
+}
+pub fn nat_bit_and() -> Term {
+    static LAZY: LazyLock<Term> = LazyLock::new(|| Term::term_spec(nat_bit_and_spec(), vec![]));
+    LAZY.clone()
+}
+
+/// `natBitOr : nat → nat → nat`.
+pub fn nat_bit_or_spec() -> TermSpec {
+    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| nat_bin_op(Canonical::NatBitOr));
+    LAZY.clone()
+}
+pub fn nat_bit_or() -> Term {
+    static LAZY: LazyLock<Term> = LazyLock::new(|| Term::term_spec(nat_bit_or_spec(), vec![]));
+    LAZY.clone()
+}
+
+/// `natBitXor : nat → nat → nat`.
+pub fn nat_bit_xor_spec() -> TermSpec {
+    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| nat_bin_op(Canonical::NatBitXor));
+    LAZY.clone()
+}
+pub fn nat_bit_xor() -> Term {
+    static LAZY: LazyLock<Term> = LazyLock::new(|| Term::term_spec(nat_bit_xor_spec(), vec![]));
+    LAZY.clone()
+}
+
+/// `natToBytesLe : nat → blob`.
+pub fn nat_to_bytes_le_spec() -> TermSpec {
+    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
+        TermSpec::new(
+            Canonical::NatToBytesLe,
+            Some(Type::fun(Type::nat(), Type::bytes())),
+            None,
+        )
+    });
+    LAZY.clone()
+}
+pub fn nat_to_bytes_le() -> Term {
+    static LAZY: LazyLock<Term> =
+        LazyLock::new(|| Term::term_spec(nat_to_bytes_le_spec(), vec![]));
+    LAZY.clone()
+}
+
+/// `natToBytesBe : nat → blob`.
+pub fn nat_to_bytes_be_spec() -> TermSpec {
+    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
+        TermSpec::new(
+            Canonical::NatToBytesBe,
+            Some(Type::fun(Type::nat(), Type::bytes())),
+            None,
+        )
+    });
+    LAZY.clone()
+}
+pub fn nat_to_bytes_be() -> Term {
+    static LAZY: LazyLock<Term> =
+        LazyLock::new(|| Term::term_spec(nat_to_bytes_be_spec(), vec![]));
+    LAZY.clone()
+}
+
+/// `natFromBytesLe : blob → nat`.
+pub fn nat_from_bytes_le_spec() -> TermSpec {
+    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
+        TermSpec::new(
+            Canonical::NatFromBytesLe,
+            Some(Type::fun(Type::bytes(), Type::nat())),
+            None,
+        )
+    });
+    LAZY.clone()
+}
+pub fn nat_from_bytes_le() -> Term {
+    static LAZY: LazyLock<Term> =
+        LazyLock::new(|| Term::term_spec(nat_from_bytes_le_spec(), vec![]));
+    LAZY.clone()
+}
+
+/// `natFromBytesBe : blob → nat`.
+pub fn nat_from_bytes_be_spec() -> TermSpec {
+    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
+        TermSpec::new(
+            Canonical::NatFromBytesBe,
+            Some(Type::fun(Type::bytes(), Type::nat())),
+            None,
+        )
+    });
+    LAZY.clone()
+}
+pub fn nat_from_bytes_be() -> Term {
+    static LAZY: LazyLock<Term> =
+        LazyLock::new(|| Term::term_spec(nat_from_bytes_be_spec(), vec![]));
+    LAZY.clone()
+}
+
 /// `natToInt : nat → int`.
 pub fn nat_to_int_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {

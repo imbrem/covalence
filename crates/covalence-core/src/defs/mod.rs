@@ -65,9 +65,12 @@ pub use list::{
     nil, nil_spec, tail, tail_spec,
 };
 pub use nat::{
-    nat_add, nat_add_spec, nat_div, nat_div_spec, nat_le, nat_le_spec, nat_lt, nat_lt_spec, nat_mod,
-    nat_mod_spec, nat_mul, nat_mul_spec, nat_pow, nat_pow_spec, nat_sub, nat_sub_spec, nat_to_int,
-    nat_to_int_spec,
+    nat_add, nat_add_spec, nat_bit_and, nat_bit_and_spec, nat_bit_or, nat_bit_or_spec, nat_bit_xor,
+    nat_bit_xor_spec, nat_div, nat_div_spec, nat_from_bytes_be, nat_from_bytes_be_spec,
+    nat_from_bytes_le, nat_from_bytes_le_spec, nat_le, nat_le_spec, nat_lt, nat_lt_spec, nat_mod,
+    nat_mod_spec, nat_mul, nat_mul_spec, nat_pow, nat_pow_spec, nat_shl, nat_shl_spec, nat_shr,
+    nat_shr_spec, nat_sub, nat_sub_spec, nat_to_bytes_be, nat_to_bytes_be_spec, nat_to_bytes_le,
+    nat_to_bytes_le_spec, nat_to_int, nat_to_int_spec,
 };
 pub use option::{none, none_spec, option, option_spec, some, some_spec};
 pub use prod::{prod, prod_spec, signed1, signed1_spec, signed2, signed2_spec};

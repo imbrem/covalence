@@ -37,14 +37,17 @@ mod symbol;
 
 pub use canonical::Canonical;
 pub use catalogue::{
-    bit_spec, bit_ty, blob_spec, blob_ty, coprod, coprod_spec, f32_spec, f32_ty, f64_spec, f64_ty,
+    bit_spec, bit_ty, blob_spec, blob_ty, close_spec, cons, cons_spec, coprod, coprod_spec, f32_spec,
+    f32_ty, f64_spec, f64_ty, field_of_fractions, field_of_fractions_spec, head, head_spec,
     int_add, int_add_spec, int_le, int_le_spec, int_lt, int_lt_spec, int_mul, int_mul_spec,
     int_sub, int_sub_spec, list, list_spec, nat_add, nat_add_spec, nat_le, nat_le_spec, nat_lt,
-    nat_lt_spec, nat_mul, nat_mul_spec, nat_sub, nat_sub_spec, option, option_spec, part, part_spec,
-    per, per_spec, pord, pord_spec, preord, preord_spec, prod, prod_spec, rel, rel_spec, result,
-    result_spec, set, set_spec, signed1, signed1_spec, signed2, signed2_spec, stream, stream_spec,
-    u128_spec, u128_ty, u16_spec, u16_ty, u2_spec, u2_ty, u256_spec, u256_ty, u32_spec, u32_ty,
-    u4_spec, u4_ty, u512_spec, u512_ty, u64_spec, u64_ty, u8_spec, u8_ty,
+    nat_lt_spec, nat_mul, nat_mul_spec, nat_sub, nat_sub_spec, nil, nil_spec, none, none_spec,
+    option, option_spec, part, part_spec, per, per_spec, pord, pord_spec, preord, preord_spec,
+    prod, prod_spec, quot_spec, rat_spec, rat_ty, real_spec, real_ty, rel, rel_spec, result,
+    result_spec, set, set_spec, signed1, signed1_spec, signed2, signed2_spec, some, some_spec,
+    stream, stream_spec, tail, tail_spec, u128_spec, u128_ty, u16_spec, u16_ty, u2_spec, u2_ty,
+    u256_spec, u256_ty, u32_spec, u32_ty, u4_spec, u4_ty, u512_spec, u512_ty, u64_spec, u64_ty,
+    u8_spec, u8_ty,
 };
 pub use spec::{TermSpec, TermSpecHandle, TypeSpec, TypeSpecHandle};
 pub use symbol::{Opacity, Symbol};
@@ -268,6 +271,63 @@ mod tests {
             }
             _ => panic!("expected TypeKind::Spec, got {p:?}"),
         }
+    }
+
+    #[test]
+    fn some_at_nat_has_expected_type() {
+        let s = some(Type::nat());
+        let expected = Type::fun(Type::nat(), option(Type::nat()));
+        assert_eq!(s.type_of().unwrap(), expected);
+    }
+
+    #[test]
+    fn none_at_nat_has_expected_type() {
+        let n = none(Type::nat());
+        assert_eq!(n.type_of().unwrap(), option(Type::nat()));
+    }
+
+    #[test]
+    fn cons_at_nat_has_expected_type() {
+        let c = cons(Type::nat());
+        let expected = Type::fun(
+            Type::nat(),
+            Type::fun(list(Type::nat()), list(Type::nat())),
+        );
+        assert_eq!(c.type_of().unwrap(), expected);
+    }
+
+    #[test]
+    fn nil_at_nat_has_expected_type() {
+        let n = nil(Type::nat());
+        assert_eq!(n.type_of().unwrap(), list(Type::nat()));
+    }
+
+    #[test]
+    fn head_at_nat_has_expected_type() {
+        let h = head(Type::nat());
+        let expected = Type::fun(list(Type::nat()), option(Type::nat()));
+        assert_eq!(h.type_of().unwrap(), expected);
+    }
+
+    #[test]
+    fn rat_real_are_zero_ary_types() {
+        let r = rat_ty();
+        assert!(matches!(r.kind(), TypeKind::Spec(_, args) if args.is_empty()));
+        let re = real_ty();
+        assert!(matches!(re.kind(), TypeKind::Spec(_, args) if args.is_empty()));
+    }
+
+    #[test]
+    fn close_spec_factory_well_typed() {
+        // Build close at car = int with pred = intLe. The factory
+        // produces a TypeSpec whose tm has type `(int → bool) → bool`.
+        let car = Type::int();
+        let pred = int_le();
+        let handle = close_spec(Canonical::Real, car, pred);
+        let tm = handle.as_spec().tm.as_ref().expect("close: has tm");
+        let ty = tm.type_of().expect("close predicate type-of");
+        let expected = Type::fun(Type::fun(Type::int(), Type::bool()), Type::bool());
+        assert_eq!(ty, expected);
     }
 
     #[test]

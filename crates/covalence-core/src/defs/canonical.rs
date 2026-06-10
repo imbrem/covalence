@@ -98,6 +98,22 @@ pub enum Canonical {
     /// `f64 := u64` (bitwise).
     F64,
 
+    // ---- Term-level: option constructors ----
+    /// `none : option 'a`.
+    None,
+    /// `some : 'a → option 'a`.
+    Some,
+
+    // ---- Term-level: list operations ----
+    /// `nil : list 'a`.
+    Nil,
+    /// `cons : 'a → list 'a → list 'a`.
+    Cons,
+    /// `head : list 'a → option 'a`.
+    Head,
+    /// `tail : list 'a → list 'a`.
+    Tail,
+
     // ---- Term-level: nat arithmetic ----
     /// `natAdd : nat → nat → nat`.
     NatAdd,
@@ -160,6 +176,12 @@ impl Canonical {
             Canonical::Real => "real",
             Canonical::F32 => "f32",
             Canonical::F64 => "f64",
+            Canonical::None => "none",
+            Canonical::Some => "some",
+            Canonical::Nil => "nil",
+            Canonical::Cons => "cons",
+            Canonical::Head => "head",
+            Canonical::Tail => "tail",
             Canonical::NatAdd => "natAdd",
             Canonical::NatMul => "natMul",
             Canonical::NatSub => "natSub",

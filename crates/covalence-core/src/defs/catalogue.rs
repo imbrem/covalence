@@ -741,6 +741,161 @@ pub fn part(alpha: Type) -> Type {
 }
 
 // ============================================================================
+// close / quot factories
+//
+// From docs/type-hierarchy.md:
+//   def name args := { car } close pred:
+//     ty = car → bool
+//     tm = λS. (∀x y. pred x y ⟹ S x ⟹ S y) ∧ (∃x. S x)
+//   def name args := car quot pred:
+//     ≡ { car } close (λx y. pred x y ∨ pred y x)
+//
+// Both factories take a concrete car (Type) and pred (Term of type
+// car → car → bool) — they don't try to be polymorphic; the caller
+// is expected to bake in the relevant type so the resulting spec is
+// fully self-contained. (Generic versions can land later if we want
+// catalogue entries parametric in their pred.)
+// ============================================================================
+
+/// Build `λS:car→bool. (∀x y. pred x y ⟹ S x ⟹ S y) ∧ (∃x. S x)`.
+fn close_predicate(car: Type, pred: Term) -> Term {
+    use crate::hol;
+    let carrier = Type::fun(car.clone(), Type::bool());
+    let s = Term::free("S", carrier.clone());
+
+    let x = Term::free("x", car.clone());
+    let y = Term::free("y", car.clone());
+    let s_x = Term::app(s.clone(), x.clone());
+    let s_y = Term::app(s.clone(), y.clone());
+    let pred_xy = Term::app(Term::app(pred.clone(), x.clone()), y.clone());
+    let closed_imp = hol::hol_imp(pred_xy, hol::hol_imp(s_x, s_y));
+    let inner = hol::hol_forall("y", car.clone(), closed_imp);
+    let closed_part = hol::hol_forall("x", car.clone(), inner);
+
+    let x2 = Term::free("x", car.clone());
+    let s_x2 = Term::app(s.clone(), x2);
+    let nonempty_part = hol::hol_exists("x", car.clone(), s_x2);
+
+    let body = hol::hol_and(closed_part, nonempty_part);
+    hol::pub_abs("S", carrier, body)
+}
+
+/// `{ car } close pred` factory. The resulting TypeSpec has carrier
+/// `car → bool` and selects subsets of `car` that are pred-closed
+/// and non-empty.
+pub fn close_spec(symbol: Canonical, car: Type, pred: Term) -> TypeSpecHandle {
+    let carrier = Type::fun(car.clone(), Type::bool());
+    let tm = close_predicate(car, pred);
+    TypeSpecHandle::new(TypeSpec {
+        symbol,
+        ty: Some(carrier),
+        tm: Some(tm),
+    })
+}
+
+/// `car quot pred` factory — equivalent to `{ car } close (sym pred)`.
+pub fn quot_spec(symbol: Canonical, car: Type, pred: Term) -> TypeSpecHandle {
+    use crate::hol;
+    let x = Term::free("x", car.clone());
+    let y = Term::free("y", car.clone());
+    let pred_xy = Term::app(Term::app(pred.clone(), x.clone()), y.clone());
+    let pred_yx = Term::app(Term::app(pred.clone(), y.clone()), x.clone());
+    let disj = hol::hol_or(pred_xy, pred_yx);
+    let lam_y = hol::pub_abs("y", car.clone(), disj);
+    let sym_pred = hol::pub_abs("x", car.clone(), lam_y);
+    close_spec(symbol, car, sym_pred)
+}
+
+// ============================================================================
+// rat / real — placeholder
+//
+// Eventually:
+//   rat := fieldOfFractions int
+//   real := { rat } close ratLe
+//
+// fieldOfFractions itself is a `quot_spec` over prod 'a 'a with the
+// standard cross-multiplication equivalence. For now we ship rat /
+// real with the `any` predicate so the catalogue is name-complete;
+// proper definitions land once `intMul` / `ratLe` are term-specs
+// and the term builders for the predicates are wired in.
+// ============================================================================
+
+static RAT_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
+    // TODO: rat := fieldOfFractions int (quot_spec over prod int int
+    // with the (p, q) ~ (p', q') iff p*q' = p'*q predicate).
+    let carrier = Type::int();
+    let carrier_for_pred = carrier.clone();
+    TypeSpecHandle::new(TypeSpec {
+        symbol: Canonical::Rat,
+        ty: Some(carrier),
+        tm: Some(any(&carrier_for_pred)),
+    })
+});
+
+/// `rat` — currently a placeholder (carrier := int with `any`
+/// predicate). Once the term-spec catalogue grows enough to express
+/// `(p, q) ∼ (p', q') iff p*q' = p'*q`, this will be a real
+/// `quot_spec` over `prod int int`.
+pub fn rat_spec() -> TypeSpecHandle {
+    RAT_LAZY.clone()
+}
+/// `rat` as a 0-ary `Type`.
+pub fn rat_ty() -> Type {
+    Type::spec(rat_spec(), vec![])
+}
+
+static REAL_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
+    // TODO: real := { rat } close ratLe — full Dedekind cut.
+    // Currently uses `any` over the rat carrier (which is itself
+    // a placeholder).
+    let rat = rat_ty();
+    let carrier = Type::fun(rat, Type::bool());
+    let carrier_for_pred = carrier.clone();
+    TypeSpecHandle::new(TypeSpec {
+        symbol: Canonical::Real,
+        ty: Some(carrier),
+        tm: Some(any(&carrier_for_pred)),
+    })
+});
+
+/// `real` — currently a placeholder. Will become `{ rat } close ratLe`
+/// once `ratLe` is a usable term-spec.
+pub fn real_spec() -> TypeSpecHandle {
+    REAL_LAZY.clone()
+}
+/// `real` as a 0-ary `Type`.
+pub fn real_ty() -> Type {
+    Type::spec(real_spec(), vec![])
+}
+
+// ============================================================================
+// fieldOfFractions 'a — placeholder
+// ============================================================================
+
+static FIELD_OF_FRACTIONS_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
+    // TODO: build the quot_spec at prod 'a 'a with the equivalence
+    // (p, q) ∼ (p', q') ⟺ p*q' = p'*q.
+    let alpha = Type::tfree("a");
+    let carrier = prod(alpha.clone(), alpha);
+    let carrier_for_pred = carrier.clone();
+    TypeSpecHandle::new(TypeSpec {
+        symbol: Canonical::FieldOfFractions,
+        ty: Some(carrier),
+        tm: Some(any(&carrier_for_pred)),
+    })
+});
+
+/// `fieldOfFractions 'a` — placeholder; eventually a `quot_spec` over
+/// `prod 'a 'a` with the cross-multiplication equivalence.
+pub fn field_of_fractions_spec() -> TypeSpecHandle {
+    FIELD_OF_FRACTIONS_LAZY.clone()
+}
+/// `fieldOfFractions α`.
+pub fn field_of_fractions(alpha: Type) -> Type {
+    Type::spec(field_of_fractions_spec(), vec![alpha])
+}
+
+// ============================================================================
 // Term catalogue: nat arithmetic
 // ============================================================================
 //
@@ -881,4 +1036,123 @@ pub fn int_le() -> Term {
 /// `intLt` as a [`Term`].
 pub fn int_lt() -> Term {
     Term::term_spec(int_lt_spec(), vec![])
+}
+
+// ============================================================================
+// Term catalogue: option constructors
+// ============================================================================
+
+static NONE_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    TermSpecHandle::new(TermSpec {
+        symbol: Canonical::None,
+        ty: Some(option(alpha)),
+        tm: None,
+    })
+});
+
+static SOME_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    TermSpecHandle::new(TermSpec {
+        symbol: Canonical::Some,
+        ty: Some(Type::fun(alpha.clone(), option(alpha))),
+        tm: None,
+    })
+});
+
+/// `none : option 'a`.
+pub fn none_spec() -> TermSpecHandle {
+    NONE_LAZY.clone()
+}
+/// `none α` as a [`Term`] at concrete carrier α.
+pub fn none(alpha: Type) -> Term {
+    Term::term_spec(none_spec(), vec![alpha])
+}
+
+/// `some : 'a → option 'a`.
+pub fn some_spec() -> TermSpecHandle {
+    SOME_LAZY.clone()
+}
+/// `some α` as a [`Term`] at concrete carrier α.
+pub fn some(alpha: Type) -> Term {
+    Term::term_spec(some_spec(), vec![alpha])
+}
+
+// ============================================================================
+// Term catalogue: list constructors and destructors
+// ============================================================================
+
+static NIL_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    TermSpecHandle::new(TermSpec {
+        symbol: Canonical::Nil,
+        ty: Some(list(alpha)),
+        tm: None,
+    })
+});
+
+static CONS_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    let list_a = list(alpha.clone());
+    TermSpecHandle::new(TermSpec {
+        symbol: Canonical::Cons,
+        ty: Some(Type::fun(alpha, Type::fun(list_a.clone(), list_a))),
+        tm: None,
+    })
+});
+
+static HEAD_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    let list_a = list(alpha.clone());
+    TermSpecHandle::new(TermSpec {
+        symbol: Canonical::Head,
+        ty: Some(Type::fun(list_a, option(alpha))),
+        tm: None,
+    })
+});
+
+static TAIL_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    let list_a = list(alpha);
+    TermSpecHandle::new(TermSpec {
+        symbol: Canonical::Tail,
+        ty: Some(Type::fun(list_a.clone(), list_a)),
+        tm: None,
+    })
+});
+
+/// `nil : list 'a`.
+pub fn nil_spec() -> TermSpecHandle {
+    NIL_LAZY.clone()
+}
+/// `nil α` — empty list at carrier α.
+pub fn nil(alpha: Type) -> Term {
+    Term::term_spec(nil_spec(), vec![alpha])
+}
+
+/// `cons : 'a → list 'a → list 'a`.
+pub fn cons_spec() -> TermSpecHandle {
+    CONS_LAZY.clone()
+}
+/// `cons α` — list cons at carrier α (partially applicable).
+pub fn cons(alpha: Type) -> Term {
+    Term::term_spec(cons_spec(), vec![alpha])
+}
+
+/// `head : list 'a → option 'a` — total (returns `none` on empty).
+pub fn head_spec() -> TermSpecHandle {
+    HEAD_LAZY.clone()
+}
+/// `head α`.
+pub fn head(alpha: Type) -> Term {
+    Term::term_spec(head_spec(), vec![alpha])
+}
+
+/// `tail : list 'a → list 'a` — total (returns `nil` on empty).
+pub fn tail_spec() -> TermSpecHandle {
+    TAIL_LAZY.clone()
+}
+/// `tail α`.
+pub fn tail(alpha: Type) -> Term {
+    Term::term_spec(tail_spec(), vec![alpha])
 }

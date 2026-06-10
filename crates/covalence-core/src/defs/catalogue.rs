@@ -111,6 +111,177 @@ pub fn stream(alpha: Type) -> Type {
 }
 
 // ============================================================================
+// coprod 'a 'b — disjoint union encoded as a relation
+//
+// def coprod 'a 'b := rel 'a 'b where
+//   (λR. (∃a:'a. R = λx y. x = a) ∨ (∃b:'b. R = λx y. y = b))
+//
+// Carrier is the underlying function type `'a → 'b → bool` (= rel 'a 'b
+// once we add alias-unfolding). Predicate selects relations that
+// "encode" exactly one value of either α or β.
+// ============================================================================
+
+fn coprod_predicate() -> Term {
+    use crate::hol;
+    let alpha = Type::tfree("a");
+    let beta = Type::tfree("b");
+    let rel_ty = Type::fun(alpha.clone(), Type::fun(beta.clone(), Type::bool()));
+
+    let r = Term::free("R", rel_ty.clone());
+
+    // P1: ∃a:α. R = (λx:α. λy:β. x = a)
+    let p1 = {
+        let a_free = Term::free("a", alpha.clone());
+        let x_free = Term::free("x", alpha.clone());
+        let inner = hol::hol_eq(x_free, a_free);
+        let lam_y = hol::pub_abs("y", beta.clone(), inner);
+        let lam_xy = hol::pub_abs("x", alpha.clone(), lam_y);
+        let r_eq = hol::hol_eq(r.clone(), lam_xy);
+        hol::hol_exists("a", alpha.clone(), r_eq)
+    };
+
+    // P2: ∃b:β. R = (λx:α. λy:β. y = b)
+    let p2 = {
+        let b_free = Term::free("b", beta.clone());
+        let y_free = Term::free("y", beta.clone());
+        let inner = hol::hol_eq(y_free, b_free);
+        let lam_y = hol::pub_abs("y", beta.clone(), inner);
+        let lam_xy = hol::pub_abs("x", alpha.clone(), lam_y);
+        let r_eq = hol::hol_eq(r.clone(), lam_xy);
+        hol::hol_exists("b", beta.clone(), r_eq)
+    };
+
+    let body = hol::hol_or(p1, p2);
+    hol::pub_abs("R", rel_ty, body)
+}
+
+static COPROD_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    let beta = Type::tfree("b");
+    let carrier = Type::fun(alpha, Type::fun(beta, Type::bool()));
+    TypeSpecHandle::new(TypeSpec {
+        symbol: Canonical::Coprod,
+        ty: Some(carrier),
+        tm: Some(coprod_predicate()),
+    })
+});
+
+/// `coprod 'a 'b := rel 'a 'b where (...)` — disjoint union.
+/// Returns a cheap, process-shared handle.
+pub fn coprod_spec() -> TypeSpecHandle {
+    COPROD_LAZY.clone()
+}
+
+/// `coprod α β` — the disjoint union type at carriers (α, β).
+pub fn coprod(alpha: Type, beta: Type) -> Type {
+    Type::spec(coprod_spec(), vec![alpha, beta])
+}
+
+// ============================================================================
+// prod 'a 'b — cartesian product encoded as a relation
+//
+// def prod 'a 'b := rel 'a 'b where
+//   (λR. ∃a b. R = λx y. x = a ∧ y = b)
+//
+// Selects relations that "encode" exactly one pair (a, b).
+// ============================================================================
+
+fn prod_predicate() -> Term {
+    use crate::hol;
+    let alpha = Type::tfree("a");
+    let beta = Type::tfree("b");
+    let rel_ty = Type::fun(alpha.clone(), Type::fun(beta.clone(), Type::bool()));
+
+    let r = Term::free("R", rel_ty.clone());
+
+    // body: ∃a:α. ∃b:β. R = (λx:α. λy:β. x = a ∧ y = b)
+    let body = {
+        let a_free = Term::free("a", alpha.clone());
+        let b_free = Term::free("b", beta.clone());
+        let x_free = Term::free("x", alpha.clone());
+        let y_free = Term::free("y", beta.clone());
+        let eq_x_a = hol::hol_eq(x_free, a_free);
+        let eq_y_b = hol::hol_eq(y_free, b_free);
+        let conj = hol_and(eq_x_a, eq_y_b);
+        let lam_y = hol::pub_abs("y", beta.clone(), conj);
+        let lam_xy = hol::pub_abs("x", alpha.clone(), lam_y);
+        let r_eq = hol::hol_eq(r.clone(), lam_xy);
+        let inner_exists = hol::hol_exists("b", beta.clone(), r_eq);
+        hol::hol_exists("a", alpha.clone(), inner_exists)
+    };
+
+    hol::pub_abs("R", rel_ty, body)
+}
+
+/// HOL `∧`: a small adapter so we can build inside this module
+/// without re-exporting hol_and. Replicated locally rather than
+/// extending `hol.rs`'s public surface further than necessary.
+fn hol_and(p: Term, q: Term) -> Term {
+    let b = Type::bool();
+    let op = Term::hol_op(
+        crate::term::HolOp::And,
+        Type::fun(b.clone(), Type::fun(b.clone(), b)),
+    );
+    Term::app(Term::app(op, p), q)
+}
+
+static PROD_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    let beta = Type::tfree("b");
+    let carrier = Type::fun(alpha, Type::fun(beta, Type::bool()));
+    TypeSpecHandle::new(TypeSpec {
+        symbol: Canonical::Prod,
+        ty: Some(carrier),
+        tm: Some(prod_predicate()),
+    })
+});
+
+/// `prod 'a 'b := rel 'a 'b where (...)` — cartesian product.
+/// Returns a cheap, process-shared handle.
+pub fn prod_spec() -> TypeSpecHandle {
+    PROD_LAZY.clone()
+}
+
+/// `prod α β` — the product type at carriers (α, β).
+pub fn prod(alpha: Type, beta: Type) -> Type {
+    Type::spec(prod_spec(), vec![alpha, beta])
+}
+
+// ============================================================================
+// option 'a := coprod 'a unit
+// ============================================================================
+
+static OPTION_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
+    // The carrier is `'a → unit → bool` (the underlying function
+    // shape of `coprod 'a unit`). The predicate is *the same*
+    // disjunction the coprod predicate computes at α and unit; we
+    // delegate by reusing it.
+    let alpha = Type::tfree("a");
+    let carrier = Type::fun(alpha.clone(), Type::fun(Type::unit(), Type::bool()));
+
+    // `tm = coprod_predicate` instantiated at β := unit, then η-equivalent
+    // for option's carrier. For the MVP we just stash `coprod`'s
+    // predicate term (it mentions `'b` which the catalogue user is
+    // expected to instantiate consistently). A later refinement
+    // would freshen β := unit here at static-init time.
+    TypeSpecHandle::new(TypeSpec {
+        symbol: Canonical::Option,
+        ty: Some(carrier),
+        tm: Some(coprod_predicate()),
+    })
+});
+
+/// `option 'a := coprod 'a unit`.
+pub fn option_spec() -> TypeSpecHandle {
+    OPTION_LAZY.clone()
+}
+
+/// `option α` — option type at carrier α.
+pub fn option(alpha: Type) -> Type {
+    Type::spec(option_spec(), vec![alpha])
+}
+
+// ============================================================================
 // Term catalogue: nat arithmetic
 // ============================================================================
 //

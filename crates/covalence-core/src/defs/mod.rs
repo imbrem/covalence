@@ -37,9 +37,10 @@ mod symbol;
 
 pub use canonical::Canonical;
 pub use catalogue::{
-    int_add, int_add_spec, int_le, int_le_spec, int_lt, int_lt_spec, int_mul, int_mul_spec,
-    int_sub, int_sub_spec, nat_add, nat_add_spec, nat_le, nat_le_spec, nat_lt, nat_lt_spec,
-    nat_mul, nat_mul_spec, nat_sub, nat_sub_spec, rel, rel_spec, set, set_spec, stream, stream_spec,
+    coprod, coprod_spec, int_add, int_add_spec, int_le, int_le_spec, int_lt, int_lt_spec, int_mul,
+    int_mul_spec, int_sub, int_sub_spec, nat_add, nat_add_spec, nat_le, nat_le_spec, nat_lt,
+    nat_lt_spec, nat_mul, nat_mul_spec, nat_sub, nat_sub_spec, option, option_spec, prod, prod_spec,
+    rel, rel_spec, set, set_spec, stream, stream_spec,
 };
 pub use spec::{TermSpec, TermSpecHandle, TypeSpec, TypeSpecHandle};
 pub use symbol::{Opacity, Symbol};
@@ -122,6 +123,68 @@ mod tests {
     fn nat_add_term_display() {
         // Zero-arg spec displays as just the label.
         assert_eq!(format!("{}", nat_add()), "natAdd");
+    }
+
+    #[test]
+    fn coprod_type_builds() {
+        let c = coprod(Type::nat(), Type::int());
+        match c.kind() {
+            TypeKind::Spec(spec, args) => {
+                assert_eq!(spec.symbol(), Canonical::Coprod);
+                assert_eq!(args.len(), 2);
+                assert_eq!(&args[0], &Type::nat());
+                assert_eq!(&args[1], &Type::int());
+            }
+            _ => panic!("expected TypeKind::Spec, got {c:?}"),
+        }
+    }
+
+    #[test]
+    fn coprod_predicate_well_typed() {
+        // The cached coprod predicate term should be a closed
+        // function `(rel α β) → bool` over the spec's type variables.
+        let spec = coprod_spec();
+        let tm = spec.as_spec().tm.as_ref().expect("coprod has predicate");
+        let ty = tm
+            .type_of()
+            .unwrap_or_else(|e| panic!("coprod predicate type-of: {e:?}"));
+        // Carrier: α → β → bool; predicate type: (carrier) → bool.
+        let alpha = Type::tfree("a");
+        let beta = Type::tfree("b");
+        let carrier = Type::fun(alpha, Type::fun(beta, Type::bool()));
+        let expected = Type::fun(carrier, Type::bool());
+        assert_eq!(ty, expected);
+    }
+
+    #[test]
+    fn prod_predicate_well_typed() {
+        let spec = prod_spec();
+        let tm = spec.as_spec().tm.as_ref().expect("prod has predicate");
+        let ty = tm.type_of().expect("prod predicate type-of");
+        let alpha = Type::tfree("a");
+        let beta = Type::tfree("b");
+        let carrier = Type::fun(alpha, Type::fun(beta, Type::bool()));
+        let expected = Type::fun(carrier, Type::bool());
+        assert_eq!(ty, expected);
+    }
+
+    #[test]
+    fn option_type_builds() {
+        let o = option(Type::nat());
+        match o.kind() {
+            TypeKind::Spec(spec, args) => {
+                assert_eq!(spec.symbol(), Canonical::Option);
+                assert_eq!(args.len(), 1);
+                assert_eq!(&args[0], &Type::nat());
+            }
+            _ => panic!("expected TypeKind::Spec, got {o:?}"),
+        }
+    }
+
+    #[test]
+    fn coprod_display_with_args() {
+        let c = coprod(Type::nat(), Type::int());
+        assert_eq!(format!("{c}"), "(coprod nat int)");
     }
 
     #[test]

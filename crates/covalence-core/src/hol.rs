@@ -75,6 +75,17 @@ fn hol_and(p: Term, q: Term) -> Term {
     Term::app(Term::app(hol_and_op(), p), q)
 }
 
+/// HOL `\/` at `bool → bool → bool`.
+fn hol_or_op() -> Term {
+    let b = bool_ty();
+    Term::hol_op(HolOp::Or, Type::fun(b.clone(), Type::fun(b.clone(), b)))
+}
+
+/// HOL `p ∨ q : bool`.
+pub(crate) fn hol_or(p: Term, q: Term) -> Term {
+    Term::app(Term::app(hol_or_op(), p), q)
+}
+
 /// HOL `∀` at `(α → bool) → bool`.
 fn forall_at(alpha: Type) -> Term {
     let pred = Type::fun(alpha, bool_ty());
@@ -83,10 +94,23 @@ fn forall_at(alpha: Type) -> Term {
 
 /// HOL `∀x:α. body[x]` — `Forall (λx:α. body[Bound 0])`. The free
 /// variable `Free(hint, α)` in `body` is closed into `Bound(0)`.
-fn hol_forall(hint: &str, alpha: Type, body: Term) -> Term {
+pub(crate) fn hol_forall(hint: &str, alpha: Type, body: Term) -> Term {
     let closed = close(&body, hint);
     let lambda = Term::abs(hint, alpha.clone(), closed);
     Term::app(forall_at(alpha), lambda)
+}
+
+/// HOL `∃` at `(α → bool) → bool`.
+fn exists_at(alpha: Type) -> Term {
+    let pred = Type::fun(alpha, bool_ty());
+    Term::hol_op(HolOp::Exists, Type::fun(pred, bool_ty()))
+}
+
+/// HOL `∃x:α. body[x]` — `Exists (λx:α. body[Bound 0])`.
+pub(crate) fn hol_exists(hint: &str, alpha: Type, body: Term) -> Term {
+    let closed = close(&body, hint);
+    let lambda = Term::abs(hint, alpha.clone(), closed);
+    Term::app(exists_at(alpha), lambda)
 }
 
 /// Pure meta-universal `⋀x:α. body[x]` — closes `Free(hint, α)`
@@ -111,9 +135,16 @@ fn eq_at(alpha: Type) -> Term {
 }
 
 /// HOL `lhs = rhs : bool`, types inferred from `lhs`.
-fn hol_eq(lhs: Term, rhs: Term) -> Term {
+pub(crate) fn hol_eq(lhs: Term, rhs: Term) -> Term {
     let alpha = lhs.type_of().expect("hol::hol_eq: lhs typed");
     Term::app(Term::app(eq_at(alpha), lhs), rhs)
+}
+
+/// `λx:α. body[x]` — kernel abstraction that closes the named free
+/// var into `Bound(0)` first. Exposed to `defs/` for building
+/// predicate lambdas inside `TypeSpec.tm`.
+pub(crate) fn pub_abs(hint: &str, alpha: Type, body: Term) -> Term {
+    Term::abs(hint, alpha, close(&body, hint))
 }
 
 /// `0 : nat`.

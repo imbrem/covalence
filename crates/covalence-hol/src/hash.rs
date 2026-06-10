@@ -80,6 +80,7 @@ const TY_TYCON_OBS: u8 = 0x05;
 const TY_NAT: u8 = 0x06;
 const TY_INT: u8 = 0x07;
 const TY_UNIT: u8 = 0x08;
+const TY_SPEC: u8 = 0x09;
 
 // ---- term tags ----
 const T_BOUND: u8 = 0x00;
@@ -202,6 +203,24 @@ impl Hasher {
                 buf.push(TY_TYCON_OBS);
                 buf.extend_from_slice(&(payload.len() as u32).to_le_bytes());
                 buf.extend_from_slice(&payload);
+                buf.extend_from_slice(&(args.len() as u32).to_le_bytes());
+                for arg in args {
+                    let h = self.hash_type(arg, oh);
+                    buf.extend_from_slice(h.as_bytes());
+                }
+                ctx.tag(buf)
+            }
+            TypeKind::Spec(spec, args) => {
+                // Hash by the spec's canonical-symbol label + arg
+                // hashes. The spec's `ty`/`tm` factories aren't
+                // hashed inline — two equally-labelled canonical
+                // specs are kernel-shipped singletons (LazyLock),
+                // so structural identity is the right model.
+                let label = spec.symbol().label().as_bytes();
+                let mut buf = Vec::with_capacity(1 + 4 + label.len() + 4 + 32 * args.len());
+                buf.push(TY_SPEC);
+                buf.extend_from_slice(&(label.len() as u32).to_le_bytes());
+                buf.extend_from_slice(label);
                 buf.extend_from_slice(&(args.len() as u32).to_le_bytes());
                 for arg in args {
                     let h = self.hash_type(arg, oh);

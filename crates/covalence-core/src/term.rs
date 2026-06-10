@@ -401,6 +401,17 @@ pub enum TypeKind {
     /// that `list α` and `list β` are distinct even though they share
     /// the same constructor.
     TyConObs(Object, BinderHint, Vec<Type>),
+    /// Application of a derived-type [`crate::defs::TypeSpecHandle`]
+    /// factory to type arguments. The spec is process-shared
+    /// (`LazyLock`-backed) and `args` is the positional
+    /// substitution for the spec's type variables (in
+    /// `spec.ty.free_tvars()` order — canonical alphabetical).
+    ///
+    /// Used by `crate::defs::*` to embed the semi-trusted derived-
+    /// type catalogue (`set α`, `rel α β`, `option α`, …) into the
+    /// kernel's type system without committing each one to its own
+    /// `TypeKind` variant.
+    Spec(crate::defs::TypeSpecHandle, Vec<Type>),
 }
 
 // Cached canonical instances of the common `Type`s, so the methods
@@ -481,6 +492,16 @@ impl Type {
         Self::alloc(TypeKind::Tycon(name.into(), args))
     }
 
+    /// Apply a derived-type [`crate::defs::TypeSpecHandle`] to type
+    /// arguments. The spec's type variables (in `ty.free_tvars()`
+    /// order) are substituted positionally by `args`. The handle is
+    /// process-shared (`LazyLock`-backed in `crate::defs`), so two
+    /// `Type::spec(defs::set_spec(), …)` calls land at the same
+    /// kind of leaf and pointer-equal at the spec component.
+    pub fn spec(spec: crate::defs::TypeSpecHandle, args: Vec<Type>) -> Self {
+        Self::alloc(TypeKind::Spec(spec, args))
+    }
+
     /// Construct a fresh-identity type constructor wrapping an
     /// observer. The Arc-pointer identity of `observer` is the
     /// distinguishing identity; `hint` is display-only (α-transparent).
@@ -526,7 +547,7 @@ fn free_tvars_into(ty: &Type, out: &mut std::collections::BTreeSet<SmolStr>) {
             free_tvars_into(a, out);
             free_tvars_into(b, out);
         }
-        TypeKind::Tycon(_, args) | TypeKind::TyConObs(_, _, args) => {
+        TypeKind::Tycon(_, args) | TypeKind::TyConObs(_, _, args) | TypeKind::Spec(_, args) => {
             for a in args {
                 free_tvars_into(a, out);
             }
@@ -580,6 +601,17 @@ impl fmt::Display for Type {
                     write!(f, "{}", name)
                 } else {
                     write!(f, "({}", name)?;
+                    for a in args {
+                        write!(f, " {}", a)?;
+                    }
+                    write!(f, ")")
+                }
+            }
+            TypeKind::Spec(spec, args) => {
+                if args.is_empty() {
+                    write!(f, "{}", spec.symbol())
+                } else {
+                    write!(f, "({}", spec.symbol())?;
                     for a in args {
                         write!(f, " {}", a)?;
                     }

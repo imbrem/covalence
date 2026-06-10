@@ -22,8 +22,11 @@
 //! and the `defs::*` catalogue lives parallel to them as a
 //! semi-trusted vocabulary.
 
+use std::sync::Arc;
+
 use crate::term::{Term, Type};
 
+use super::canonical::Canonical;
 use super::symbol::Symbol;
 
 /// A symbol-tagged type definition.
@@ -74,4 +77,77 @@ pub struct TermSpec<S: Symbol> {
     pub ty: Option<Type>,
     /// The selector predicate. `None` for fully-erased specs.
     pub tm: Option<Term>,
+}
+
+// ============================================================================
+// Process-shared handles
+// ============================================================================
+
+/// A process-shared handle on a [`TypeSpec<Canonical>`].
+///
+/// The `Arc` is encapsulated so users don't carry a refcount type
+/// in their signatures. Cheap to clone; identity-comparable via
+/// [`Self::ptr_eq`].
+#[derive(Debug, Clone)]
+pub struct TypeSpecHandle(Arc<TypeSpec<Canonical>>);
+
+impl TypeSpecHandle {
+    /// Wrap a freshly-built spec. Called once per catalogue entry
+    /// from inside a `LazyLock`.
+    pub(crate) fn new(spec: TypeSpec<Canonical>) -> Self {
+        TypeSpecHandle(Arc::new(spec))
+    }
+
+    /// Access the underlying spec.
+    pub fn as_spec(&self) -> &TypeSpec<Canonical> {
+        &self.0
+    }
+
+    /// Convenience accessor — the spec's display symbol.
+    pub fn symbol(&self) -> Canonical {
+        self.0.symbol
+    }
+
+    /// `true` iff `self` and `other` share the same underlying
+    /// allocation. Two handles from the same catalogue lazy static
+    /// always pointer-equal.
+    pub fn ptr_eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+
+    /// Stable integer identity for the underlying allocation. Used
+    /// as a cache key outside the TCB (display, serialisation).
+    pub fn ptr_id(&self) -> usize {
+        Arc::as_ptr(&self.0) as usize
+    }
+
+}
+
+impl PartialEq for TypeSpecHandle {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0) || *self.0 == *other.0
+    }
+}
+
+impl Eq for TypeSpecHandle {}
+
+impl PartialOrd for TypeSpecHandle {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TypeSpecHandle {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if Arc::ptr_eq(&self.0, &other.0) {
+            return std::cmp::Ordering::Equal;
+        }
+        self.0.cmp(&other.0)
+    }
+}
+
+impl std::hash::Hash for TypeSpecHandle {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
 }

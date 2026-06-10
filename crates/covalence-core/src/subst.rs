@@ -232,6 +232,18 @@ pub fn subst_tfree_in_type(ty: &Type, name: &str, r: &Type) -> Type {
                 .map(|a| subst_tfree_in_type(a, name, r))
                 .collect(),
         ),
+        // For a `Spec` leaf the args participate in type-var
+        // substitution; the spec itself (`Arc`-shared) is untouched.
+        // The spec's internal `ty`/`tm` continue to refer to the
+        // *spec's* free tvars (in canonical alphabetical order);
+        // substituting at this site replaces the args, not the
+        // spec's binders.
+        TypeKind::Spec(spec, args) => Type::spec(
+            spec.clone(),
+            args.iter()
+                .map(|a| subst_tfree_in_type(a, name, r))
+                .collect(),
+        ),
         // The observer Arc identity is preserved; only the type-arg
         // substitution propagates. `list 'a` after 'a := bytes becomes
         // `list bytes` with the same constructor identity — exactly

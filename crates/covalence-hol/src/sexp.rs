@@ -157,6 +157,15 @@ pub fn type_to_sexp(ty: &Type, ser: &dyn ObsSerializer) -> Result<SExpr> {
             }
             SExp::List(children)
         }
+        TypeKind::Spec(spec, args) => {
+            let mut children = Vec::with_capacity(2 + args.len());
+            children.push(sym("spec"));
+            children.push(sym(spec.symbol().label()));
+            for arg in args {
+                children.push(type_to_sexp(arg, ser)?);
+            }
+            SExp::List(children)
+        }
     })
 }
 

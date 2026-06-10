@@ -31,17 +31,59 @@
 //! all land in follow-up commits.
 
 mod canonical;
+mod catalogue;
 mod spec;
 mod symbol;
 
 pub use canonical::Canonical;
-pub use spec::{TermSpec, TypeSpec};
+pub use catalogue::{rel, rel_spec, set, set_spec};
+pub use spec::{TermSpec, TypeSpec, TypeSpecHandle};
 pub use symbol::{Opacity, Symbol};
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Type;
+    use crate::{Type, TypeKind};
+
+    #[test]
+    fn set_alpha_round_trip() {
+        let s_nat = set(Type::nat());
+        // Carrier should be `'a -> bool` after substitution.
+        match s_nat.kind() {
+            TypeKind::Spec(spec, args) => {
+                assert_eq!(spec.symbol(), Canonical::Set);
+                assert_eq!(args.len(), 1);
+                assert_eq!(&args[0], &Type::nat());
+            }
+            _ => panic!("expected TypeKind::Spec, got {s_nat:?}"),
+        }
+    }
+
+    #[test]
+    fn set_lazy_static_is_shared() {
+        // Two `set_spec()` calls give pointer-equal handles.
+        assert!(set_spec().ptr_eq(&set_spec()));
+    }
+
+    #[test]
+    fn rel_two_args() {
+        let r = rel(Type::nat(), Type::int());
+        match r.kind() {
+            TypeKind::Spec(spec, args) => {
+                assert_eq!(spec.symbol(), Canonical::Rel);
+                assert_eq!(args.len(), 2);
+                assert_eq!(&args[0], &Type::nat());
+                assert_eq!(&args[1], &Type::int());
+            }
+            _ => panic!("expected TypeKind::Spec, got {r:?}"),
+        }
+    }
+
+    #[test]
+    fn set_display_with_args() {
+        let s = set(Type::nat());
+        assert_eq!(format!("{s}"), "(set nat)");
+    }
 
     #[test]
     fn canonical_labels_match_doc_text() {

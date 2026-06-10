@@ -945,14 +945,47 @@ fn int_cmp_op(symbol: Canonical) -> TermSpecHandle {
 static NAT_ADD_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| nat_bin_op(Canonical::NatAdd));
 static NAT_MUL_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| nat_bin_op(Canonical::NatMul));
 static NAT_SUB_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| nat_bin_op(Canonical::NatSub));
+static NAT_DIV_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| nat_bin_op(Canonical::NatDiv));
+static NAT_MOD_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| nat_bin_op(Canonical::NatMod));
+static NAT_POW_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| nat_bin_op(Canonical::NatPow));
 static NAT_LE_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| nat_cmp_op(Canonical::NatLe));
 static NAT_LT_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| nat_cmp_op(Canonical::NatLt));
+static NAT_TO_INT_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    TermSpecHandle::new(TermSpec {
+        symbol: Canonical::NatToInt,
+        ty: Some(Type::fun(Type::nat(), Type::int())),
+        tm: None,
+    })
+});
 
 static INT_ADD_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| int_bin_op(Canonical::IntAdd));
 static INT_MUL_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| int_bin_op(Canonical::IntMul));
 static INT_SUB_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| int_bin_op(Canonical::IntSub));
+static INT_DIV_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| int_bin_op(Canonical::IntDiv));
+static INT_MOD_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| int_bin_op(Canonical::IntMod));
 static INT_LE_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| int_cmp_op(Canonical::IntLe));
 static INT_LT_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| int_cmp_op(Canonical::IntLt));
+static INT_NEG_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    TermSpecHandle::new(TermSpec {
+        symbol: Canonical::IntNeg,
+        ty: Some(Type::fun(Type::int(), Type::int())),
+        tm: None,
+    })
+});
+static INT_ABS_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    TermSpecHandle::new(TermSpec {
+        symbol: Canonical::IntAbs,
+        ty: Some(Type::fun(Type::int(), Type::nat())),
+        tm: None,
+    })
+});
+static INT_SGN_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    TermSpecHandle::new(TermSpec {
+        symbol: Canonical::IntSgn,
+        ty: Some(Type::fun(Type::int(), Type::int())),
+        tm: None,
+    })
+});
 
 /// `natAdd : nat → nat → nat`.
 pub fn nat_add_spec() -> TermSpecHandle {
@@ -1036,6 +1069,332 @@ pub fn int_le() -> Term {
 /// `intLt` as a [`Term`].
 pub fn int_lt() -> Term {
     Term::term_spec(int_lt_spec(), vec![])
+}
+
+// Additional nat/int term ops
+/// `natDiv : nat → nat → nat` (Euclidean).
+pub fn nat_div_spec() -> TermSpecHandle {
+    NAT_DIV_LAZY.clone()
+}
+/// `natDiv` as a [`Term`].
+pub fn nat_div() -> Term {
+    Term::term_spec(nat_div_spec(), vec![])
+}
+/// `natMod : nat → nat → nat` (Euclidean).
+pub fn nat_mod_spec() -> TermSpecHandle {
+    NAT_MOD_LAZY.clone()
+}
+/// `natMod` as a [`Term`].
+pub fn nat_mod() -> Term {
+    Term::term_spec(nat_mod_spec(), vec![])
+}
+/// `natPow : nat → nat → nat`.
+pub fn nat_pow_spec() -> TermSpecHandle {
+    NAT_POW_LAZY.clone()
+}
+/// `natPow` as a [`Term`].
+pub fn nat_pow() -> Term {
+    Term::term_spec(nat_pow_spec(), vec![])
+}
+/// `natToInt : nat → int`.
+pub fn nat_to_int_spec() -> TermSpecHandle {
+    NAT_TO_INT_LAZY.clone()
+}
+/// `natToInt` as a [`Term`].
+pub fn nat_to_int() -> Term {
+    Term::term_spec(nat_to_int_spec(), vec![])
+}
+/// `intDiv : int → int → int`.
+pub fn int_div_spec() -> TermSpecHandle {
+    INT_DIV_LAZY.clone()
+}
+/// `intDiv` as a [`Term`].
+pub fn int_div() -> Term {
+    Term::term_spec(int_div_spec(), vec![])
+}
+/// `intMod : int → int → int`.
+pub fn int_mod_spec() -> TermSpecHandle {
+    INT_MOD_LAZY.clone()
+}
+/// `intMod` as a [`Term`].
+pub fn int_mod() -> Term {
+    Term::term_spec(int_mod_spec(), vec![])
+}
+/// `intNeg : int → int`.
+pub fn int_neg_spec() -> TermSpecHandle {
+    INT_NEG_LAZY.clone()
+}
+/// `intNeg` as a [`Term`].
+pub fn int_neg() -> Term {
+    Term::term_spec(int_neg_spec(), vec![])
+}
+/// `intAbs : int → nat`.
+pub fn int_abs_spec() -> TermSpecHandle {
+    INT_ABS_LAZY.clone()
+}
+/// `intAbs` as a [`Term`].
+pub fn int_abs() -> Term {
+    Term::term_spec(int_abs_spec(), vec![])
+}
+/// `intSgn : int → int`.
+pub fn int_sgn_spec() -> TermSpecHandle {
+    INT_SGN_LAZY.clone()
+}
+/// `intSgn` as a [`Term`].
+pub fn int_sgn() -> Term {
+    Term::term_spec(int_sgn_spec(), vec![])
+}
+
+// ============================================================================
+// Term catalogue: list operations (signatures only; bodies via reduction
+// wiring later)
+// ============================================================================
+
+fn poly_list_op(symbol: Canonical, ty: Type) -> TermSpecHandle {
+    TermSpecHandle::new(TermSpec {
+        symbol,
+        ty: Some(ty),
+        tm: None,
+    })
+}
+
+static LIST_LENGTH_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    poly_list_op(Canonical::ListLength, Type::fun(list(alpha), Type::nat()))
+});
+static LIST_CAT_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    let la = list(alpha);
+    poly_list_op(Canonical::ListCat, Type::fun(la.clone(), Type::fun(la.clone(), la)))
+});
+static LIST_MAP_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    let beta = Type::tfree("b");
+    let f_ty = Type::fun(alpha.clone(), beta.clone());
+    poly_list_op(
+        Canonical::ListMap,
+        Type::fun(f_ty, Type::fun(list(alpha), list(beta))),
+    )
+});
+static LIST_FILTER_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    let p_ty = Type::fun(alpha.clone(), Type::bool());
+    let la = list(alpha);
+    poly_list_op(Canonical::ListFilter, Type::fun(p_ty, Type::fun(la.clone(), la)))
+});
+static LIST_FOLDR_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    let beta = Type::tfree("b");
+    // foldr : ('a → 'b → 'b) → 'b → list 'a → 'b
+    let f_ty = Type::fun(alpha.clone(), Type::fun(beta.clone(), beta.clone()));
+    poly_list_op(
+        Canonical::ListFoldr,
+        Type::fun(f_ty, Type::fun(beta.clone(), Type::fun(list(alpha), beta))),
+    )
+});
+static LIST_FOLDL_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    let beta = Type::tfree("b");
+    // foldl : ('b → 'a → 'b) → 'b → list 'a → 'b
+    let f_ty = Type::fun(beta.clone(), Type::fun(alpha.clone(), beta.clone()));
+    poly_list_op(
+        Canonical::ListFoldl,
+        Type::fun(f_ty, Type::fun(beta.clone(), Type::fun(list(alpha), beta))),
+    )
+});
+static LIST_TAKE_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    let la = list(alpha);
+    poly_list_op(
+        Canonical::ListTake,
+        Type::fun(Type::nat(), Type::fun(la.clone(), la)),
+    )
+});
+static LIST_SKIP_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    let la = list(alpha);
+    poly_list_op(
+        Canonical::ListSkip,
+        Type::fun(Type::nat(), Type::fun(la.clone(), la)),
+    )
+});
+static LIST_INDEX_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    poly_list_op(
+        Canonical::ListIndex,
+        Type::fun(Type::nat(), Type::fun(list(alpha.clone()), option(alpha))),
+    )
+});
+static LIST_REPEAT_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    poly_list_op(
+        Canonical::ListRepeat,
+        Type::fun(Type::nat(), Type::fun(alpha.clone(), list(alpha))),
+    )
+});
+static LIST_FLATTEN_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    // flatten : list (list 'a) → list 'a
+    poly_list_op(
+        Canonical::ListFlatten,
+        Type::fun(list(list(alpha.clone())), list(alpha)),
+    )
+});
+
+/// `listLength : list 'a → nat`.
+pub fn list_length_spec() -> TermSpecHandle {
+    LIST_LENGTH_LAZY.clone()
+}
+pub fn list_length(alpha: Type) -> Term {
+    Term::term_spec(list_length_spec(), vec![alpha])
+}
+/// `listCat : list 'a → list 'a → list 'a`.
+pub fn list_cat_spec() -> TermSpecHandle {
+    LIST_CAT_LAZY.clone()
+}
+pub fn list_cat(alpha: Type) -> Term {
+    Term::term_spec(list_cat_spec(), vec![alpha])
+}
+/// `listMap : ('a → 'b) → list 'a → list 'b`.
+pub fn list_map_spec() -> TermSpecHandle {
+    LIST_MAP_LAZY.clone()
+}
+pub fn list_map(alpha: Type, beta: Type) -> Term {
+    Term::term_spec(list_map_spec(), vec![alpha, beta])
+}
+/// `listFilter : ('a → bool) → list 'a → list 'a`.
+pub fn list_filter_spec() -> TermSpecHandle {
+    LIST_FILTER_LAZY.clone()
+}
+pub fn list_filter(alpha: Type) -> Term {
+    Term::term_spec(list_filter_spec(), vec![alpha])
+}
+/// `listFoldr : ('a → 'b → 'b) → 'b → list 'a → 'b`.
+pub fn list_foldr_spec() -> TermSpecHandle {
+    LIST_FOLDR_LAZY.clone()
+}
+pub fn list_foldr(alpha: Type, beta: Type) -> Term {
+    Term::term_spec(list_foldr_spec(), vec![alpha, beta])
+}
+/// `listFoldl : ('b → 'a → 'b) → 'b → list 'a → 'b`.
+pub fn list_foldl_spec() -> TermSpecHandle {
+    LIST_FOLDL_LAZY.clone()
+}
+pub fn list_foldl(alpha: Type, beta: Type) -> Term {
+    Term::term_spec(list_foldl_spec(), vec![alpha, beta])
+}
+/// `listTake : nat → list 'a → list 'a`.
+pub fn list_take_spec() -> TermSpecHandle {
+    LIST_TAKE_LAZY.clone()
+}
+pub fn list_take(alpha: Type) -> Term {
+    Term::term_spec(list_take_spec(), vec![alpha])
+}
+/// `listSkip : nat → list 'a → list 'a`.
+pub fn list_skip_spec() -> TermSpecHandle {
+    LIST_SKIP_LAZY.clone()
+}
+pub fn list_skip(alpha: Type) -> Term {
+    Term::term_spec(list_skip_spec(), vec![alpha])
+}
+/// `listIndex : nat → list 'a → option 'a`.
+pub fn list_index_spec() -> TermSpecHandle {
+    LIST_INDEX_LAZY.clone()
+}
+pub fn list_index(alpha: Type) -> Term {
+    Term::term_spec(list_index_spec(), vec![alpha])
+}
+/// `listRepeat : nat → 'a → list 'a`.
+pub fn list_repeat_spec() -> TermSpecHandle {
+    LIST_REPEAT_LAZY.clone()
+}
+pub fn list_repeat(alpha: Type) -> Term {
+    Term::term_spec(list_repeat_spec(), vec![alpha])
+}
+/// `listFlatten : list (list 'a) → list 'a`. Combined with
+/// `list_repeat`, repeats a *list* n times: `flatten (repeat n lst)`.
+pub fn list_flatten_spec() -> TermSpecHandle {
+    LIST_FLATTEN_LAZY.clone()
+}
+pub fn list_flatten(alpha: Type) -> Term {
+    Term::term_spec(list_flatten_spec(), vec![alpha])
+}
+
+// ============================================================================
+// Term catalogue: set operations
+// ============================================================================
+
+static SET_UNION_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    let sa = set(alpha);
+    poly_list_op(Canonical::SetUnion, Type::fun(sa.clone(), Type::fun(sa.clone(), sa)))
+});
+static SET_INTERSECT_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    let sa = set(alpha);
+    poly_list_op(Canonical::SetIntersect, Type::fun(sa.clone(), Type::fun(sa.clone(), sa)))
+});
+static SET_DIFF_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    let sa = set(alpha);
+    poly_list_op(Canonical::SetDiff, Type::fun(sa.clone(), Type::fun(sa.clone(), sa)))
+});
+static SET_SUBSET_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    let sa = set(alpha);
+    poly_list_op(Canonical::SetSubset, Type::fun(sa.clone(), Type::fun(sa, Type::bool())))
+});
+static SET_CARD_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    let sa = set(alpha);
+    poly_list_op(Canonical::SetCard, Type::fun(sa, Type::nat()))
+});
+static LIST_TO_SET_LAZY: LazyLock<TermSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    poly_list_op(Canonical::ListToSet, Type::fun(list(alpha.clone()), set(alpha)))
+});
+
+/// `setUnion : set 'a → set 'a → set 'a`.
+pub fn set_union_spec() -> TermSpecHandle {
+    SET_UNION_LAZY.clone()
+}
+pub fn set_union(alpha: Type) -> Term {
+    Term::term_spec(set_union_spec(), vec![alpha])
+}
+/// `setIntersect : set 'a → set 'a → set 'a`.
+pub fn set_intersect_spec() -> TermSpecHandle {
+    SET_INTERSECT_LAZY.clone()
+}
+pub fn set_intersect(alpha: Type) -> Term {
+    Term::term_spec(set_intersect_spec(), vec![alpha])
+}
+/// `setDiff : set 'a → set 'a → set 'a`.
+pub fn set_diff_spec() -> TermSpecHandle {
+    SET_DIFF_LAZY.clone()
+}
+pub fn set_diff(alpha: Type) -> Term {
+    Term::term_spec(set_diff_spec(), vec![alpha])
+}
+/// `setSubset : set 'a → set 'a → bool`.
+pub fn set_subset_spec() -> TermSpecHandle {
+    SET_SUBSET_LAZY.clone()
+}
+pub fn set_subset(alpha: Type) -> Term {
+    Term::term_spec(set_subset_spec(), vec![alpha])
+}
+/// `setCard : set 'a → nat`.
+pub fn set_card_spec() -> TermSpecHandle {
+    SET_CARD_LAZY.clone()
+}
+pub fn set_card(alpha: Type) -> Term {
+    Term::term_spec(set_card_spec(), vec![alpha])
+}
+/// `listToSet : list 'a → set 'a`.
+pub fn list_to_set_spec() -> TermSpecHandle {
+    LIST_TO_SET_LAZY.clone()
+}
+pub fn list_to_set(alpha: Type) -> Term {
+    Term::term_spec(list_to_set_spec(), vec![alpha])
 }
 
 // ============================================================================

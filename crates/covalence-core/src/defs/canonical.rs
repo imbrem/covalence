@@ -121,10 +121,18 @@ pub enum Canonical {
     NatMul,
     /// `natSub : nat → nat → nat` (saturating at zero).
     NatSub,
+    /// `natDiv : nat → nat → nat` (Euclidean, n/0 = 0).
+    NatDiv,
+    /// `natMod : nat → nat → nat` (Euclidean, n%0 = 0).
+    NatMod,
+    /// `natPow : nat → nat → nat`.
+    NatPow,
     /// `natLe : nat → nat → bool`.
     NatLe,
     /// `natLt : nat → nat → bool`.
     NatLt,
+    /// `natToInt : nat → int`.
+    NatToInt,
 
     // ---- Term-level: int arithmetic ----
     /// `intAdd : int → int → int`.
@@ -133,10 +141,58 @@ pub enum Canonical {
     IntMul,
     /// `intSub : int → int → int`.
     IntSub,
+    /// `intDiv : int → int → int` (Euclidean, n/0 = 0).
+    IntDiv,
+    /// `intMod : int → int → int` (Euclidean, n%0 = 0).
+    IntMod,
+    /// `intNeg : int → int` (unary minus).
+    IntNeg,
+    /// `intAbs : int → nat`.
+    IntAbs,
+    /// `intSgn : int → int` (−1, 0, or 1).
+    IntSgn,
     /// `intLe : int → int → bool`.
     IntLe,
     /// `intLt : int → int → bool`.
     IntLt,
+
+    // ---- Term-level: list operations ----
+    /// `listLength : list 'a → nat`.
+    ListLength,
+    /// `listCat : list 'a → list 'a → list 'a`.
+    ListCat,
+    /// `listMap : ('a → 'b) → list 'a → list 'b`.
+    ListMap,
+    /// `listFilter : ('a → bool) → list 'a → list 'a`.
+    ListFilter,
+    /// `listFoldr : ('a → 'b → 'b) → 'b → list 'a → 'b`.
+    ListFoldr,
+    /// `listFoldl : ('b → 'a → 'b) → 'b → list 'a → 'b`.
+    ListFoldl,
+    /// `listTake : nat → list 'a → list 'a`.
+    ListTake,
+    /// `listSkip : nat → list 'a → list 'a`.
+    ListSkip,
+    /// `listIndex : nat → list 'a → option 'a`.
+    ListIndex,
+    /// `listRepeat : nat → 'a → list 'a`.
+    ListRepeat,
+    /// `listFlatten : list (list 'a) → list 'a`.
+    ListFlatten,
+
+    // ---- Term-level: set operations ----
+    /// `setUnion : set 'a → set 'a → set 'a`.
+    SetUnion,
+    /// `setIntersect : set 'a → set 'a → set 'a`.
+    SetIntersect,
+    /// `setDiff : set 'a → set 'a → set 'a`.
+    SetDiff,
+    /// `setSubset : set 'a → set 'a → bool`.
+    SetSubset,
+    /// `setCard : set 'a → nat`.
+    SetCard,
+    /// `listToSet : list 'a → set 'a`.
+    ListToSet,
 }
 
 impl Canonical {
@@ -185,13 +241,39 @@ impl Canonical {
             Canonical::NatAdd => "natAdd",
             Canonical::NatMul => "natMul",
             Canonical::NatSub => "natSub",
+            Canonical::NatDiv => "natDiv",
+            Canonical::NatMod => "natMod",
+            Canonical::NatPow => "natPow",
             Canonical::NatLe => "natLe",
             Canonical::NatLt => "natLt",
+            Canonical::NatToInt => "natToInt",
             Canonical::IntAdd => "intAdd",
             Canonical::IntMul => "intMul",
             Canonical::IntSub => "intSub",
+            Canonical::IntDiv => "intDiv",
+            Canonical::IntMod => "intMod",
+            Canonical::IntNeg => "intNeg",
+            Canonical::IntAbs => "intAbs",
+            Canonical::IntSgn => "intSgn",
             Canonical::IntLe => "intLe",
             Canonical::IntLt => "intLt",
+            Canonical::ListLength => "listLength",
+            Canonical::ListCat => "listCat",
+            Canonical::ListMap => "listMap",
+            Canonical::ListFilter => "listFilter",
+            Canonical::ListFoldr => "listFoldr",
+            Canonical::ListFoldl => "listFoldl",
+            Canonical::ListTake => "listTake",
+            Canonical::ListSkip => "listSkip",
+            Canonical::ListIndex => "listIndex",
+            Canonical::ListRepeat => "listRepeat",
+            Canonical::ListFlatten => "listFlatten",
+            Canonical::SetUnion => "setUnion",
+            Canonical::SetIntersect => "setIntersect",
+            Canonical::SetDiff => "setDiff",
+            Canonical::SetSubset => "setSubset",
+            Canonical::SetCard => "setCard",
+            Canonical::ListToSet => "listToSet",
         }
     }
 }

@@ -15,6 +15,7 @@
 
 use covalence_types::{Int, Nat, Sign};
 
+use crate::defs;
 use crate::term::{Arith, HolOp, Prim, Term, TermKind};
 
 /// One-step reduction. Returns the reduced term when `t` is an
@@ -33,6 +34,18 @@ pub(crate) fn reduce_prim_term(t: &Term) -> Option<Term> {
             return literal_eq(&args[0], &args[1]).map(Term::bool_lit);
         }
         return None;
+    }
+
+    // Term-spec catalogue dispatch: closed-form reduction of the
+    // arithmetic/comparison term-specs (defs::nat_add, defs::int_le,
+    // etc.) by pointer identity on the spec handle. The
+    // canonical-handle lazy statics live in `crate::defs`; both code
+    // paths reach the same `Arc` so `ptr_eq` is unambiguous.
+    if let TermKind::Spec(handle, type_args) = head.kind() {
+        if !type_args.is_empty() {
+            return None;
+        }
+        return reduce_spec(handle, &args);
     }
 
     let prim = match head.kind() {
@@ -161,6 +174,84 @@ fn literal_eq(a: &Term, b: &Term) -> Option<bool> {
         (TermKind::Blob(x), TermKind::Blob(y)) => Some(x == y),
         _ => None,
     }
+}
+
+/// Dispatch closed-form reduction for a term-spec leaf applied to
+/// `args`. The handle is compared by `ptr_eq` against the canonical
+/// catalogue lazy statics — entries the kernel commits to a Rust-
+/// side computation for. Anything not in this table falls through to
+/// `None`; the user can still build proofs about the term abstractly
+/// (via the postulated definitional axioms in `covalence-hol`).
+fn reduce_spec(handle: &defs::TermSpecHandle, args: &[Term]) -> Option<Term> {
+    // Nat arithmetic
+    if handle.ptr_eq(&defs::nat_add_spec()) {
+        return reduce_nat_binop(args, |a, b| a + b);
+    }
+    if handle.ptr_eq(&defs::nat_mul_spec()) {
+        return reduce_nat_binop(args, |a, b| a * b);
+    }
+    if handle.ptr_eq(&defs::nat_sub_spec()) {
+        return reduce_nat_binop(args, |a, b| a.checked_sub(b).unwrap_or_else(Nat::zero));
+    }
+    if handle.ptr_eq(&defs::nat_le_spec()) {
+        return reduce_nat_cmp(args, |a, b| a <= b);
+    }
+    if handle.ptr_eq(&defs::nat_lt_spec()) {
+        return reduce_nat_cmp(args, |a, b| a < b);
+    }
+    // Int arithmetic
+    if handle.ptr_eq(&defs::int_add_spec()) {
+        return reduce_int_binop(args, |a, b| a + b);
+    }
+    if handle.ptr_eq(&defs::int_mul_spec()) {
+        return reduce_int_binop(args, |a, b| a * b);
+    }
+    if handle.ptr_eq(&defs::int_sub_spec()) {
+        return reduce_int_binop(args, |a, b| a - b);
+    }
+    if handle.ptr_eq(&defs::int_le_spec()) {
+        return reduce_int_cmp(args, |a, b| a <= b);
+    }
+    if handle.ptr_eq(&defs::int_lt_spec()) {
+        return reduce_int_cmp(args, |a, b| a < b);
+    }
+    None
+}
+
+fn reduce_nat_binop(args: &[Term], op: impl Fn(&Nat, &Nat) -> Nat) -> Option<Term> {
+    if args.len() != 2 {
+        return None;
+    }
+    let a = as_nat_lit(&args[0])?;
+    let b = as_nat_lit(&args[1])?;
+    Some(Term::nat_lit(op(a, b)))
+}
+
+fn reduce_nat_cmp(args: &[Term], op: impl Fn(&Nat, &Nat) -> bool) -> Option<Term> {
+    if args.len() != 2 {
+        return None;
+    }
+    let a = as_nat_lit(&args[0])?;
+    let b = as_nat_lit(&args[1])?;
+    Some(Term::bool_lit(op(a, b)))
+}
+
+fn reduce_int_binop(args: &[Term], op: impl Fn(&Int, &Int) -> Int) -> Option<Term> {
+    if args.len() != 2 {
+        return None;
+    }
+    let a = as_int_lit(&args[0])?;
+    let b = as_int_lit(&args[1])?;
+    Some(Term::int_lit(op(a, b)))
+}
+
+fn reduce_int_cmp(args: &[Term], op: impl Fn(&Int, &Int) -> bool) -> Option<Term> {
+    if args.len() != 2 {
+        return None;
+    }
+    let a = as_int_lit(&args[0])?;
+    let b = as_int_lit(&args[1])?;
+    Some(Term::bool_lit(op(a, b)))
 }
 
 // ============================================================================
@@ -448,6 +539,42 @@ mod tests {
     fn hol_eq_refuses_open_forms() {
         let n = Term::free("n", Type::nat());
         assert!(Thm::reduce_prim(hol_eq(nat(5), n)).is_err());
+    }
+
+    #[test]
+    fn term_spec_nat_add_reduces() {
+        // defs::nat_add() applied to literals: same shape as
+        // Prim::NatArith(Add) but dispatched by handle ptr_eq.
+        let t = Term::app(Term::app(defs::nat_add(), nat(3)), nat(4));
+        assert_reduces(t, nat(7));
+    }
+
+    #[test]
+    fn term_spec_nat_sub_saturates() {
+        let t = Term::app(Term::app(defs::nat_sub(), nat(2)), nat(5));
+        assert_reduces(t, nat(0));
+    }
+
+    #[test]
+    fn term_spec_nat_le_returns_bool() {
+        let t = Term::app(Term::app(defs::nat_le(), nat(3)), nat(5));
+        assert_reduces(t, Term::bool_lit(true));
+        let t = Term::app(Term::app(defs::nat_le(), nat(7)), nat(5));
+        assert_reduces(t, Term::bool_lit(false));
+    }
+
+    #[test]
+    fn term_spec_int_arith() {
+        let t = Term::app(Term::app(defs::int_add(), int(-3)), int(8));
+        assert_reduces(t, int(5));
+        let t = Term::app(Term::app(defs::int_sub(), int(3)), int(8));
+        assert_reduces(t, int(-5));
+    }
+
+    #[test]
+    fn term_spec_int_lt() {
+        let t = Term::app(Term::app(defs::int_lt(), int(-3)), int(2));
+        assert_reduces(t, Term::bool_lit(true));
     }
 
     #[test]

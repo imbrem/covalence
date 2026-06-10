@@ -36,7 +36,11 @@ mod spec;
 mod symbol;
 
 pub use canonical::Canonical;
-pub use catalogue::{rel, rel_spec, set, set_spec, stream, stream_spec};
+pub use catalogue::{
+    int_add, int_add_spec, int_le, int_le_spec, int_lt, int_lt_spec, int_mul, int_mul_spec,
+    int_sub, int_sub_spec, nat_add, nat_add_spec, nat_le, nat_le_spec, nat_lt, nat_lt_spec,
+    nat_mul, nat_mul_spec, nat_sub, nat_sub_spec, rel, rel_spec, set, set_spec, stream, stream_spec,
+};
 pub use spec::{TermSpec, TermSpecHandle, TypeSpec, TypeSpecHandle};
 pub use symbol::{Opacity, Symbol};
 
@@ -83,6 +87,41 @@ mod tests {
     fn set_display_with_args() {
         let s = set(Type::nat());
         assert_eq!(format!("{s}"), "(set nat)");
+    }
+
+    #[test]
+    fn nat_add_term_has_expected_type() {
+        let t = nat_add();
+        let nat = Type::nat();
+        let expected = Type::fun(nat.clone(), Type::fun(nat.clone(), nat));
+        assert_eq!(t.type_of().unwrap(), expected);
+    }
+
+    #[test]
+    fn nat_le_term_has_expected_type() {
+        let t = nat_le();
+        let expected = Type::fun(Type::nat(), Type::fun(Type::nat(), Type::bool()));
+        assert_eq!(t.type_of().unwrap(), expected);
+    }
+
+    #[test]
+    fn int_add_term_has_expected_type() {
+        let t = int_add();
+        let int = Type::int();
+        let expected = Type::fun(int.clone(), Type::fun(int.clone(), int));
+        assert_eq!(t.type_of().unwrap(), expected);
+    }
+
+    #[test]
+    fn nat_add_spec_is_shared_singleton() {
+        // Repeated calls return pointer-equal handles via LazyLock.
+        assert!(nat_add_spec().ptr_eq(&nat_add_spec()));
+    }
+
+    #[test]
+    fn nat_add_term_display() {
+        // Zero-arg spec displays as just the label.
+        assert_eq!(format!("{}", nat_add()), "natAdd");
     }
 
     #[test]

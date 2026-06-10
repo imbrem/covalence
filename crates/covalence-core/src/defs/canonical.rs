@@ -79,6 +79,30 @@ pub enum Canonical {
     F32,
     /// `f64 := u64` (bitwise).
     F64,
+
+    // ---- Term-level: nat arithmetic ----
+    /// `natAdd : nat → nat → nat`.
+    NatAdd,
+    /// `natMul : nat → nat → nat`.
+    NatMul,
+    /// `natSub : nat → nat → nat` (saturating at zero).
+    NatSub,
+    /// `natLe : nat → nat → bool`.
+    NatLe,
+    /// `natLt : nat → nat → bool`.
+    NatLt,
+
+    // ---- Term-level: int arithmetic ----
+    /// `intAdd : int → int → int`.
+    IntAdd,
+    /// `intMul : int → int → int`.
+    IntMul,
+    /// `intSub : int → int → int`.
+    IntSub,
+    /// `intLe : int → int → bool`.
+    IntLe,
+    /// `intLt : int → int → bool`.
+    IntLt,
 }
 
 impl Canonical {
@@ -109,6 +133,16 @@ impl Canonical {
             Canonical::Real => "real",
             Canonical::F32 => "f32",
             Canonical::F64 => "f64",
+            Canonical::NatAdd => "natAdd",
+            Canonical::NatMul => "natMul",
+            Canonical::NatSub => "natSub",
+            Canonical::NatLe => "natLe",
+            Canonical::NatLt => "natLt",
+            Canonical::IntAdd => "intAdd",
+            Canonical::IntMul => "intMul",
+            Canonical::IntSub => "intSub",
+            Canonical::IntLe => "intLe",
+            Canonical::IntLt => "intLt",
         }
     }
 }

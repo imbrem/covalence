@@ -148,12 +148,12 @@ pub(crate) fn pub_abs(hint: &str, alpha: Type, body: Term) -> Term {
 }
 
 /// `0 : nat`.
-fn zero() -> Term {
+pub(crate) fn zero() -> Term {
     Term::nat_lit(Nat::zero())
 }
 
 /// `succ : nat → nat`.
-fn succ_fn() -> Term {
+pub(crate) fn succ_fn() -> Term {
     Term::prim(Prim::NatArith(Arith::Succ))
 }
 

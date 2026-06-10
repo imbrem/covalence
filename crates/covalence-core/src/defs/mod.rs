@@ -135,6 +135,18 @@ mod tests {
     }
 
     #[test]
+    fn nat_add_spec_carries_selector_predicate() {
+        // natAdd's tm field should be the well-typed predicate
+        // λf:nat→nat→nat. (∀m. f 0 m = m) ∧ (∀n m. f (S n) m = S (f n m)).
+        let spec = nat_add_spec();
+        let tm = spec.tm().expect("nat_add carries a selector predicate");
+        let ty = tm.type_of().expect("predicate type-checks");
+        let f_ty = Type::fun(Type::nat(), Type::fun(Type::nat(), Type::nat()));
+        let expected = Type::fun(f_ty, Type::bool());
+        assert_eq!(ty, expected);
+    }
+
+    #[test]
     fn nat_add_term_has_expected_type() {
         let t = nat_add();
         let nat = Type::nat();

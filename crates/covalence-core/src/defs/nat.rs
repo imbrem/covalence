@@ -1,8 +1,25 @@
 //! Term-level nat arithmetic / comparison / coercion.
+//!
+//! Each binary spec aims to carry a *selector predicate* in its `tm`
+//! field — a `(nat → nat → nat) → bool` characterising the operation
+//! by the standard recursion equations. Hilbert ε on the predicate
+//! picks out the unique solution. See `nat_add_spec` for the
+//! prototype shape:
+//!
+//! ```text
+//! natAdd ≔ ε(λf:nat→nat→nat.
+//!   (∀m. f 0 m = m) ∧ (∀n m. f (succ n) m = succ (f n m)))
+//! ```
+//!
+//! `natAdd` and `natMul` carry their selector predicates. The rest
+//! of the ops still default to `tm = None`; landing the remaining
+//! predicates (sub via saturating-pred, the comparison ops, etc.)
+//! follows the same recipe and is a follow-up.
 
 use std::sync::LazyLock;
 
-use crate::term::Term;
+use crate::hol;
+use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
 use super::sigs;
@@ -16,9 +33,47 @@ fn nat_cmp_op(symbol: Canonical) -> TermSpec {
     TermSpec::new(symbol, Some(sigs::nat_nat_to_bool()), None)
 }
 
-/// `natAdd : nat → nat → nat`.
+/// `f 0 m = m`, `∀m. f 0 m = m`, etc — built around a candidate
+/// binary `f`. Returns the predicate
+/// `λf. (∀m. f 0 m = m) ∧ (∀n m. f (succ n) m = step (f n m))`.
+fn nat_recursion_predicate(step: impl Fn(Term) -> Term) -> Term {
+    let f_ty = sigs::nat_nat_to_nat();
+    let f = Term::free("f", f_ty.clone());
+
+    let m = Term::free("m", Type::nat());
+    let zero = hol::zero();
+    let f_zero_m = Term::app(Term::app(f.clone(), zero), m.clone());
+    let base_body = hol::hol_eq(f_zero_m, m.clone());
+    let base = hol::hol_forall("m", Type::nat(), base_body);
+
+    let n = Term::free("n", Type::nat());
+    let m2 = Term::free("m", Type::nat());
+    let succ_n = Term::app(hol::succ_fn(), n.clone());
+    let f_succ_n_m = Term::app(Term::app(f.clone(), succ_n), m2.clone());
+    let f_n_m = Term::app(Term::app(f.clone(), n.clone()), m2.clone());
+    let step_body = hol::hol_eq(f_succ_n_m, step(f_n_m));
+    let step_m = hol::hol_forall("m", Type::nat(), step_body);
+    let step_n = hol::hol_forall("n", Type::nat(), step_m);
+
+    let body = hol::hol_and(base, step_n);
+    hol::pub_abs("f", f_ty, body)
+}
+
+/// `λf. (∀m. f 0 m = m) ∧ (∀n m. f (succ n) m = succ (f n m))`.
+fn nat_add_predicate() -> Term {
+    nat_recursion_predicate(|rec| Term::app(hol::succ_fn(), rec))
+}
+
+/// `natAdd : nat → nat → nat`. Selector predicate witnesses the
+/// standard primitive-recursion equations for addition.
 pub fn nat_add_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| nat_bin_op(Canonical::NatAdd));
+    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
+        TermSpec::new(
+            Canonical::NatAdd,
+            Some(sigs::nat_nat_to_nat()),
+            Some(nat_add_predicate()),
+        )
+    });
     LAZY.clone()
 }
 pub fn nat_add() -> Term {
@@ -26,9 +81,43 @@ pub fn nat_add() -> Term {
     LAZY.clone()
 }
 
-/// `natMul : nat → nat → nat`.
+/// `λf. (∀m. f 0 m = 0) ∧ (∀n m. f (succ n) m = natAdd m (f n m))`.
+fn nat_mul_predicate() -> Term {
+    let f_ty = sigs::nat_nat_to_nat();
+    let f = Term::free("f", f_ty.clone());
+
+    let m = Term::free("m", Type::nat());
+    let zero = hol::zero();
+    let f_zero_m = Term::app(Term::app(f.clone(), zero.clone()), m.clone());
+    let base_body = hol::hol_eq(f_zero_m, zero);
+    let base = hol::hol_forall("m", Type::nat(), base_body);
+
+    let n = Term::free("n", Type::nat());
+    let m2 = Term::free("m", Type::nat());
+    let succ_n = Term::app(hol::succ_fn(), n.clone());
+    let f_succ_n_m = Term::app(Term::app(f.clone(), succ_n), m2.clone());
+    let f_n_m = Term::app(Term::app(f.clone(), n), m2.clone());
+    // step: add m (f n m). Use nat_add() applied curried.
+    let add = nat_add();
+    let step_rhs = Term::app(Term::app(add, m2.clone()), f_n_m);
+    let step_body = hol::hol_eq(f_succ_n_m, step_rhs);
+    let step_m = hol::hol_forall("m", Type::nat(), step_body);
+    let step_n = hol::hol_forall("n", Type::nat(), step_m);
+
+    let body = hol::hol_and(base, step_n);
+    hol::pub_abs("f", f_ty, body)
+}
+
+/// `natMul : nat → nat → nat`. Selector predicate witnesses the
+/// usual primitive-recursion equations for multiplication.
 pub fn nat_mul_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| nat_bin_op(Canonical::NatMul));
+    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
+        TermSpec::new(
+            Canonical::NatMul,
+            Some(sigs::nat_nat_to_nat()),
+            Some(nat_mul_predicate()),
+        )
+    });
     LAZY.clone()
 }
 pub fn nat_mul() -> Term {

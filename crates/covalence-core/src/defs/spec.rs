@@ -151,3 +151,68 @@ impl std::hash::Hash for TypeSpecHandle {
         self.0.hash(state);
     }
 }
+
+/// A process-shared handle on a [`TermSpec<Canonical>`].
+///
+/// Same shape and semantics as [`TypeSpecHandle`], but for the
+/// term-level catalogue (`natAdd`, `listMap`, …). The `Arc` is
+/// encapsulated; users go through the [`Self::ptr_eq`] / `ptr_id`
+/// surface for identity checks and `as_spec()` for the underlying
+/// definition.
+///
+/// Reduction (`Thm::reduce_prim` and successors) recognises a
+/// `TermKind::Spec(h, args)` leaf by `h.ptr_eq(&catalogue_handle)`
+/// — i.e., pointer identity on the underlying `Arc`.
+#[derive(Debug, Clone)]
+pub struct TermSpecHandle(Arc<TermSpec<Canonical>>);
+
+impl TermSpecHandle {
+    pub(crate) fn new(spec: TermSpec<Canonical>) -> Self {
+        TermSpecHandle(Arc::new(spec))
+    }
+
+    pub fn as_spec(&self) -> &TermSpec<Canonical> {
+        &self.0
+    }
+
+    pub fn symbol(&self) -> Canonical {
+        self.0.symbol
+    }
+
+    pub fn ptr_eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+
+    pub fn ptr_id(&self) -> usize {
+        Arc::as_ptr(&self.0) as usize
+    }
+}
+
+impl PartialEq for TermSpecHandle {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0) || *self.0 == *other.0
+    }
+}
+
+impl Eq for TermSpecHandle {}
+
+impl PartialOrd for TermSpecHandle {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TermSpecHandle {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if Arc::ptr_eq(&self.0, &other.0) {
+            return std::cmp::Ordering::Equal;
+        }
+        self.0.cmp(&other.0)
+    }
+}
+
+impl std::hash::Hash for TermSpecHandle {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}

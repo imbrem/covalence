@@ -37,6 +37,7 @@ fn close_at(t: &Term, name: &str, depth: u32) -> Term {
         | TermKind::Int(_)
         | TermKind::Bool(_)
         | TermKind::HolOp(_, _)
+        | TermKind::Spec(_, _)
         | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
@@ -78,6 +79,7 @@ fn inst(t: &Term, u: &Term, depth: u32) -> Term {
         | TermKind::Int(_)
         | TermKind::Bool(_)
         | TermKind::HolOp(_, _)
+        | TermKind::Spec(_, _)
         | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
@@ -136,6 +138,7 @@ fn shift_inner(t: &Term, delta: i64, cutoff: u32) -> Term {
         | TermKind::Int(_)
         | TermKind::Bool(_)
         | TermKind::HolOp(_, _)
+        | TermKind::Spec(_, _)
         | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
@@ -180,6 +183,7 @@ fn subst_free_at(t: &Term, name: &str, r: &Term, depth: u32) -> Term {
         | TermKind::Int(_)
         | TermKind::Bool(_)
         | TermKind::HolOp(_, _)
+        | TermKind::Spec(_, _)
         | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
@@ -277,6 +281,11 @@ pub fn subst_tfree_in_term(t: &Term, name: &str, r: &Type) -> Term {
         TermKind::Bool(b) => Term::bool_lit(*b),
         TermKind::Prim(p) => Term::prim(*p),
         TermKind::HolOp(op, ty) => Term::hol_op(*op, st(ty)),
+        // For a `Spec` leaf the type args participate in type-var
+        // substitution; the spec handle (`Arc`-shared) is untouched.
+        TermKind::Spec(spec, args) => {
+            Term::term_spec(spec.clone(), args.iter().map(&st).collect())
+        }
         TermKind::Obs(observer, ty) => Term::obs_from_dyn(observer.clone(), st(ty)),
         // `Def` carries an `original` Arc identity (the unique
         // `Thm::define` call) plus an `instance_type`. Substitution
@@ -310,6 +319,7 @@ fn is_closed_at(t: &Term, depth: u32) -> bool {
         | TermKind::Int(_)
         | TermKind::Bool(_)
         | TermKind::HolOp(_, _)
+        | TermKind::Spec(_, _)
         | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => true,
@@ -340,6 +350,7 @@ pub fn find_free_type(t: &Term, name: &str) -> Option<Type> {
         | TermKind::Int(_)
         | TermKind::Bool(_)
         | TermKind::HolOp(_, _)
+        | TermKind::Spec(_, _)
         | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => None,
@@ -368,6 +379,7 @@ fn uses_bound_at(t: &Term, target: u32, depth: u32) -> bool {
         | TermKind::Int(_)
         | TermKind::Bool(_)
         | TermKind::HolOp(_, _)
+        | TermKind::Spec(_, _)
         | TermKind::Prim(_)
         | TermKind::Obs(..)
         | TermKind::Def(_) => false,
@@ -411,6 +423,7 @@ pub fn collect_term_tvars(t: &Term, out: &mut std::collections::BTreeSet<SmolStr
         | TermKind::Int(_)
         | TermKind::Bool(_)
         | TermKind::HolOp(_, _)
+        | TermKind::Spec(_, _)
         | TermKind::Prim(_) => {}
         TermKind::Def(d) => collect_term_tvars(&d.body(), out),
     }

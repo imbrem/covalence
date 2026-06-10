@@ -36,8 +36,8 @@ mod spec;
 mod symbol;
 
 pub use canonical::Canonical;
-pub use catalogue::{rel, rel_spec, set, set_spec};
-pub use spec::{TermSpec, TypeSpec, TypeSpecHandle};
+pub use catalogue::{rel, rel_spec, set, set_spec, stream, stream_spec};
+pub use spec::{TermSpec, TermSpecHandle, TypeSpec, TypeSpecHandle};
 pub use symbol::{Opacity, Symbol};
 
 #[cfg(test)]
@@ -83,6 +83,19 @@ mod tests {
     fn set_display_with_args() {
         let s = set(Type::nat());
         assert_eq!(format!("{s}"), "(set nat)");
+    }
+
+    #[test]
+    fn stream_alpha_round_trip() {
+        let s = stream(Type::nat());
+        match s.kind() {
+            TypeKind::Spec(spec, args) => {
+                assert_eq!(spec.symbol(), Canonical::Stream);
+                assert_eq!(args.len(), 1);
+                assert_eq!(&args[0], &Type::nat());
+            }
+            _ => panic!("expected TypeKind::Spec, got {s:?}"),
+        }
     }
 
     #[test]

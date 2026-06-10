@@ -982,6 +982,16 @@ pub enum TermKind {
     /// [`HolOp`] for the catalogue. Applications are formed by the
     /// usual `App` chain.
     HolOp(HolOp, Type),
+    /// Application of a derived-term [`crate::defs::TermSpecHandle`]
+    /// factory to type arguments. The spec is process-shared
+    /// (`LazyLock`-backed) and `args` is the positional substitution
+    /// for the spec's type variables.
+    ///
+    /// Used by `crate::defs::*` to embed semi-trusted term constants
+    /// (`natAdd`, `listMap`, …) as catalogue entries instead of
+    /// dedicated kernel variants. `Thm::reduce_prim` recognises a
+    /// `Spec(h, args)` leaf by `h.ptr_eq(&catalogue_handle)`.
+    Spec(crate::defs::TermSpecHandle, Vec<Type>),
     /// Typed observation leaf: observer + Pure type. The kernel
     /// compares these by `Arc` pointer identity (via [`Object`]'s
     /// impls), never by the user's `Eq` on the underlying observer.
@@ -1060,6 +1070,14 @@ impl Term {
         Self::alloc(TermKind::HolOp(op, ty))
     }
 
+    /// Apply a derived-term [`crate::defs::TermSpecHandle`] to type
+    /// arguments. The spec is process-shared (`LazyLock`-backed in
+    /// `crate::defs`); two calls with handles from the same lazy
+    /// static pointer-equal at the spec component.
+    pub fn term_spec(spec: crate::defs::TermSpecHandle, args: Vec<Type>) -> Self {
+        Self::alloc(TermKind::Spec(spec, args))
+    }
+
     /// A builtin function term, ready to be applied via standard
     /// [`Term::app`]. No reduction is performed at construction —
     /// to derive computed equations like `⊢ Prim(NatArith Add) lit_a lit_b ≡ lit_sum`
@@ -1119,6 +1137,7 @@ impl Term {
             | TermKind::Int(_)
             | TermKind::Bool(_)
             | TermKind::Prim(_)
+            | TermKind::Spec(_, _)
             | TermKind::HolOp(_, _) => true,
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
                 a.has_no_obs() && b.has_no_obs()
@@ -1142,6 +1161,7 @@ impl Term {
             | TermKind::Int(_)
             | TermKind::Bool(_)
             | TermKind::Prim(_)
+            | TermKind::Spec(_, _)
             | TermKind::HolOp(_, _) => true,
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
                 a.all_obs_match::<O>() && b.all_obs_match::<O>()
@@ -1171,6 +1191,7 @@ impl Term {
             | TermKind::Int(_)
             | TermKind::Bool(_)
             | TermKind::Prim(_)
+            | TermKind::Spec(_, _)
             | TermKind::HolOp(_, _) => Ok(()),
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
                 a.for_each_obs::<O, F>(f)?;
@@ -1231,6 +1252,17 @@ impl fmt::Display for Term {
             TermKind::Bool(b) => write!(f, "{}", if *b { "T" } else { "F" }),
             TermKind::Prim(p) => write!(f, "{:?}", p),
             TermKind::HolOp(op, ty) => write!(f, "{op}:{ty}"),
+            TermKind::Spec(spec, args) => {
+                if args.is_empty() {
+                    write!(f, "{}", spec.symbol())
+                } else {
+                    write!(f, "({}", spec.symbol())?;
+                    for a in args {
+                        write!(f, " {}", a)?;
+                    }
+                    write!(f, ")")
+                }
+            }
             TermKind::Obs(observer, ty) => write!(f, "obs[{:?}:{}]", observer, ty),
             TermKind::Def(d) => write!(f, "{}", d),
         }
@@ -1345,6 +1377,23 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
         TermKind::Int(_) => Ok(Type::int()),
         TermKind::Bool(_) => Ok(Type::bool()),
         TermKind::Prim(p) => Ok(p.ty()),
+        // A `Spec` leaf's type is the spec's own `ty` field (the
+        // factory's carrier) with positional type-arg substitution
+        // applied. The spec is held by handle; deref is cheap.
+        TermKind::Spec(spec, args) => {
+            let spec = spec.as_spec();
+            let mut result = spec
+                .ty
+                .clone()
+                .ok_or_else(|| Error::NotProp(Type::prop()))?;
+            // free_tvars on the carrier gives the spec's tvar names
+            // in canonical alphabetical order. Substitute positionally.
+            let tvars = result.free_tvars();
+            for (tvar_name, arg) in tvars.iter().zip(args.iter()) {
+                result = crate::subst::subst_tfree_in_type(&result, tvar_name, arg);
+            }
+            Ok(result)
+        }
         TermKind::HolOp(_, ty) => Ok(ty.clone()),
         TermKind::Obs(_, ty) => Ok(ty.clone()),
         // A `Def` denotes its body at the current instance type.

@@ -84,3 +84,28 @@ pub fn rel_spec() -> TypeSpecHandle {
 pub fn rel(alpha: Type, beta: Type) -> Type {
     Type::spec(rel_spec(), vec![alpha, beta])
 }
+
+// ============================================================================
+// stream 'a := nat → 'a
+// ============================================================================
+
+static STREAM_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
+    let alpha = Type::tfree("a");
+    let carrier = Type::fun(Type::nat(), alpha);
+    TypeSpecHandle::new(TypeSpec {
+        symbol: Canonical::Stream,
+        ty: Some(carrier.clone()),
+        tm: Some(any(&carrier)),
+    })
+});
+
+/// `stream 'a := nat → 'a` — infinite sequences indexed by nat.
+/// Returns a cheap, process-shared handle.
+pub fn stream_spec() -> TypeSpecHandle {
+    STREAM_LAZY.clone()
+}
+
+/// `stream α` — the stream type at carrier α.
+pub fn stream(alpha: Type) -> Type {
+    Type::spec(stream_spec(), vec![alpha])
+}

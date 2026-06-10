@@ -269,6 +269,15 @@ pub fn term_to_sexp(t: &Term, ser: &dyn ObsSerializer) -> Result<SExpr> {
         TermKind::Bool(b) => list2("bool-lit", sym(if *b { "T" } else { "F" })),
         TermKind::Prim(p) => list2("prim", sym(format!("{:?}", p).as_str())),
         TermKind::HolOp(op, ty) => list3("hol-op", sym(op.label()), type_to_sexp(ty, ser)?),
+        TermKind::Spec(spec, args) => {
+            let mut children = Vec::with_capacity(2 + args.len());
+            children.push(sym("term-spec"));
+            children.push(sym(spec.symbol().label()));
+            for arg in args {
+                children.push(type_to_sexp(arg, ser)?);
+            }
+            SExp::List(children)
+        }
         TermKind::Obs(observer, ty) => {
             let payload = ser.obs_to_sexp(observer)?;
             list3("obs", payload, type_to_sexp(ty, ser)?)

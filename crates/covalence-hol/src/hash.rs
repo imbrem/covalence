@@ -99,6 +99,7 @@ const T_INT_LIT: u8 = 0x0c;
 const T_PRIM: u8 = 0x0d;
 const T_BOOL: u8 = 0x0e;
 const T_HOL_OP: u8 = 0x0f;
+const T_SPEC: u8 = 0x10;
 
 // ============================================================================
 // Stateless API
@@ -344,6 +345,19 @@ impl Hasher {
                 buf.push(label.len() as u8);
                 buf.extend_from_slice(label);
                 buf.extend_from_slice(ty_h.as_bytes());
+                ctx.tag(buf)
+            }
+            TermKind::Spec(spec, args) => {
+                let label = spec.symbol().label().as_bytes();
+                let mut buf = Vec::with_capacity(1 + 1 + label.len() + 4 + 32 * args.len());
+                buf.push(T_SPEC);
+                buf.push(label.len() as u8);
+                buf.extend_from_slice(label);
+                buf.extend_from_slice(&(args.len() as u32).to_le_bytes());
+                for arg in args {
+                    let h = self.hash_type(arg, oh);
+                    buf.extend_from_slice(h.as_bytes());
+                }
                 ctx.tag(buf)
             }
         }

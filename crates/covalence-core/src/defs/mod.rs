@@ -37,10 +37,12 @@ mod symbol;
 
 pub use canonical::Canonical;
 pub use catalogue::{
-    coprod, coprod_spec, int_add, int_add_spec, int_le, int_le_spec, int_lt, int_lt_spec, int_mul,
-    int_mul_spec, int_sub, int_sub_spec, nat_add, nat_add_spec, nat_le, nat_le_spec, nat_lt,
-    nat_lt_spec, nat_mul, nat_mul_spec, nat_sub, nat_sub_spec, option, option_spec, prod, prod_spec,
-    rel, rel_spec, set, set_spec, stream, stream_spec,
+    bit, bit_spec, coprod, coprod_spec, int_add, int_add_spec, int_le, int_le_spec, int_lt,
+    int_lt_spec, int_mul, int_mul_spec, int_sub, int_sub_spec, nat_add, nat_add_spec, nat_le,
+    nat_le_spec, nat_lt, nat_lt_spec, nat_mul, nat_mul_spec, nat_sub, nat_sub_spec, option,
+    option_spec, prod, prod_spec, rel, rel_spec, set, set_spec, stream, stream_spec, u128, u128_spec,
+    u16, u16_spec, u2, u2_spec, u256, u256_spec, u32, u32_spec, u4, u4_spec, u512, u512_spec, u64,
+    u64_spec, u8, u8_spec,
 };
 pub use spec::{TermSpec, TermSpecHandle, TypeSpec, TypeSpecHandle};
 pub use symbol::{Opacity, Symbol};
@@ -178,6 +180,65 @@ mod tests {
                 assert_eq!(&args[0], &Type::nat());
             }
             _ => panic!("expected TypeKind::Spec, got {o:?}"),
+        }
+    }
+
+    #[test]
+    fn bit_is_zero_ary_spec() {
+        let b = bit();
+        match b.kind() {
+            TypeKind::Spec(spec, args) => {
+                assert_eq!(spec.symbol(), Canonical::Bit);
+                assert!(args.is_empty(), "bit takes no type args");
+            }
+            _ => panic!("expected TypeKind::Spec, got {b:?}"),
+        }
+    }
+
+    #[test]
+    fn fixed_width_chain_doubles() {
+        // Check the carrier widths follow the coprod-doubling pattern.
+        // u2's carrier should be `bit → bit → bool`.
+        let u2_spec = u2_spec();
+        let carrier = u2_spec.as_spec().ty.as_ref().expect("u2 has carrier");
+        let expected = Type::fun(bit(), Type::fun(bit(), Type::bool()));
+        assert_eq!(carrier, &expected);
+
+        // u4's carrier is u2 → u2 → bool.
+        let u4_spec = u4_spec();
+        let carrier = u4_spec.as_spec().ty.as_ref().expect("u4 has carrier");
+        let expected = Type::fun(u2(), Type::fun(u2(), Type::bool()));
+        assert_eq!(carrier, &expected);
+
+        // u64's carrier is u32 → u32 → bool.
+        let u64_spec = u64_spec();
+        let carrier = u64_spec.as_spec().ty.as_ref().expect("u64 has carrier");
+        let expected = Type::fun(u32(), Type::fun(u32(), Type::bool()));
+        assert_eq!(carrier, &expected);
+    }
+
+    #[test]
+    fn all_fixed_widths_have_well_typed_predicates() {
+        for spec in [
+            bit_spec(),
+            u2_spec(),
+            u4_spec(),
+            u8_spec(),
+            u16_spec(),
+            u32_spec(),
+            u64_spec(),
+            u128_spec(),
+            u256_spec(),
+            u512_spec(),
+        ] {
+            let tm = spec.as_spec().tm.as_ref().expect("has tm");
+            let ty = tm.type_of().unwrap_or_else(|e| {
+                panic!("{:?} predicate type-of: {:?}", spec.symbol(), e)
+            });
+            // Predicate has type `carrier → bool`.
+            let carrier = spec.as_spec().ty.as_ref().expect("has ty").clone();
+            let expected = Type::fun(carrier, Type::bool());
+            assert_eq!(ty, expected, "{:?}", spec.symbol());
         }
     }
 

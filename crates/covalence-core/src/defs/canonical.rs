@@ -43,6 +43,24 @@ pub enum Canonical {
     // ---- Fixed-width unsigned integers ----
     /// `u1 := coprod unit unit` (bit).
     Bit,
+    /// `u2 := coprod bit bit` (crumb).
+    U2,
+    /// `u4 := coprod u2 u2` (nybble).
+    U4,
+    /// `u8 := coprod u4 u4` (byte).
+    U8,
+    /// `u16 := coprod u8 u8`.
+    U16,
+    /// `u32 := coprod u16 u16` (word).
+    U32,
+    /// `u64 := coprod u32 u32` (dword).
+    U64,
+    /// `u128 := coprod u64 u64` (qword).
+    U128,
+    /// `u256 := coprod u128 u128` (yword).
+    U256,
+    /// `u512 := coprod u256 u256` (zword).
+    U512,
     /// `bits := list bool`.
     Bits,
     /// `fin n := coprod (fin (n-1)) unit` (fixed-size finite type).
@@ -119,6 +137,15 @@ impl Canonical {
             Canonical::Coprod => "coprod",
             Canonical::Prod => "prod",
             Canonical::Bit => "bit",
+            Canonical::U2 => "u2",
+            Canonical::U4 => "u4",
+            Canonical::U8 => "u8",
+            Canonical::U16 => "u16",
+            Canonical::U32 => "u32",
+            Canonical::U64 => "u64",
+            Canonical::U128 => "u128",
+            Canonical::U256 => "u256",
+            Canonical::U512 => "u512",
             Canonical::Bits => "bits",
             Canonical::Fin => "fin",
             Canonical::Option => "option",

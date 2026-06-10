@@ -121,15 +121,14 @@ pub fn stream(alpha: Type) -> Type {
 // "encode" exactly one value of either α or β.
 // ============================================================================
 
-fn coprod_predicate() -> Term {
+/// Build the coprod predicate at concrete carriers `α` and `β`:
+/// `λR:α→β→bool. (∃a:α. R = λx y. x = a) ∨ (∃b:β. R = λx y. y = b)`.
+fn coprod_predicate_at(alpha: Type, beta: Type) -> Term {
     use crate::hol;
-    let alpha = Type::tfree("a");
-    let beta = Type::tfree("b");
     let rel_ty = Type::fun(alpha.clone(), Type::fun(beta.clone(), Type::bool()));
 
     let r = Term::free("R", rel_ty.clone());
 
-    // P1: ∃a:α. R = (λx:α. λy:β. x = a)
     let p1 = {
         let a_free = Term::free("a", alpha.clone());
         let x_free = Term::free("x", alpha.clone());
@@ -139,8 +138,6 @@ fn coprod_predicate() -> Term {
         let r_eq = hol::hol_eq(r.clone(), lam_xy);
         hol::hol_exists("a", alpha.clone(), r_eq)
     };
-
-    // P2: ∃b:β. R = (λx:α. λy:β. y = b)
     let p2 = {
         let b_free = Term::free("b", beta.clone());
         let y_free = Term::free("y", beta.clone());
@@ -153,6 +150,12 @@ fn coprod_predicate() -> Term {
 
     let body = hol::hol_or(p1, p2);
     hol::pub_abs("R", rel_ty, body)
+}
+
+/// The polymorphic coprod predicate at `('a, 'b)` — what
+/// `coprod_spec`'s `tm` field holds.
+fn coprod_predicate() -> Term {
+    coprod_predicate_at(Type::tfree("a"), Type::tfree("b"))
 }
 
 static COPROD_LAZY: LazyLock<TypeSpecHandle> = LazyLock::new(|| {
@@ -280,6 +283,73 @@ pub fn option_spec() -> TypeSpecHandle {
 pub fn option(alpha: Type) -> Type {
     Type::spec(option_spec(), vec![alpha])
 }
+
+// ============================================================================
+// Fixed-width unsigned integers — coprod chain doubling at each step
+//
+// u1 (bit) := coprod unit unit
+// u2       := coprod bit bit
+// u4       := coprod u2  u2
+// u8       := coprod u4  u4
+// u16      := coprod u8  u8
+// u32      := coprod u16 u16
+// u64      := coprod u32 u32
+// u128     := coprod u64 u64
+// u256     := coprod u128 u128
+// u512     := coprod u256 u256
+//
+// Each is a 0-ary `TypeSpec`. The carrier is the underlying function
+// type `prev → prev → bool` (the unfolded coprod-rel shape).
+// ============================================================================
+
+/// Build a fixed-width unsigned TypeSpec whose carrier is the
+/// `coprod prev prev` underlying shape, with predicate
+/// `coprod_predicate_at(prev, prev)`.
+fn fixed_width_spec(symbol: Canonical, prev: Type) -> TypeSpecHandle {
+    let carrier = Type::fun(prev.clone(), Type::fun(prev.clone(), Type::bool()));
+    TypeSpecHandle::new(TypeSpec {
+        symbol,
+        ty: Some(carrier),
+        tm: Some(coprod_predicate_at(prev.clone(), prev)),
+    })
+}
+
+static BIT_LAZY: LazyLock<TypeSpecHandle> =
+    LazyLock::new(|| fixed_width_spec(Canonical::Bit, Type::unit()));
+
+/// `u1 (bit) := coprod unit unit`.
+pub fn bit_spec() -> TypeSpecHandle {
+    BIT_LAZY.clone()
+}
+/// `bit` as a 0-ary `Type`.
+pub fn bit() -> Type {
+    Type::spec(bit_spec(), vec![])
+}
+
+// The remaining widths chain via the previous width.
+macro_rules! width {
+    ($lazy:ident, $spec_fn:ident, $type_fn:ident, $canon:expr, $prev_fn:ident) => {
+        static $lazy: LazyLock<TypeSpecHandle> =
+            LazyLock::new(|| fixed_width_spec($canon, $prev_fn()));
+
+        pub fn $spec_fn() -> TypeSpecHandle {
+            $lazy.clone()
+        }
+        pub fn $type_fn() -> Type {
+            Type::spec($spec_fn(), vec![])
+        }
+    };
+}
+
+width!(U2_LAZY, u2_spec, u2, Canonical::U2, bit);
+width!(U4_LAZY, u4_spec, u4, Canonical::U4, u2);
+width!(U8_LAZY, u8_spec, u8, Canonical::U8, u4);
+width!(U16_LAZY, u16_spec, u16, Canonical::U16, u8);
+width!(U32_LAZY, u32_spec, u32, Canonical::U32, u16);
+width!(U64_LAZY, u64_spec, u64, Canonical::U64, u32);
+width!(U128_LAZY, u128_spec, u128, Canonical::U128, u64);
+width!(U256_LAZY, u256_spec, u256, Canonical::U256, u128);
+width!(U512_LAZY, u512_spec, u512, Canonical::U512, u256);
 
 // ============================================================================
 // Term catalogue: nat arithmetic

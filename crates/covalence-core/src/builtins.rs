@@ -193,11 +193,41 @@ fn reduce_spec(handle: &defs::TermSpec, args: &[Term]) -> Option<Term> {
     if handle.ptr_eq(&defs::nat_sub_spec()) {
         return reduce_nat_binop(args, |a, b| a.checked_sub(b).unwrap_or_else(Nat::zero));
     }
+    if handle.ptr_eq(&defs::nat_div_spec()) {
+        return reduce_nat_binop(args, |a, b| {
+            if b.is_zero() {
+                Nat::zero()
+            } else {
+                a / b
+            }
+        });
+    }
+    if handle.ptr_eq(&defs::nat_mod_spec()) {
+        return reduce_nat_binop(args, |a, b| {
+            if b.is_zero() {
+                Nat::zero()
+            } else {
+                a % b
+            }
+        });
+    }
     if handle.ptr_eq(&defs::nat_le_spec()) {
         return reduce_nat_cmp(args, |a, b| a <= b);
     }
     if handle.ptr_eq(&defs::nat_lt_spec()) {
         return reduce_nat_cmp(args, |a, b| a < b);
+    }
+    if handle.ptr_eq(&defs::nat_to_int_spec()) {
+        if args.len() != 1 {
+            return None;
+        }
+        let n = as_nat_lit(&args[0])?;
+        let sign = if n.is_zero() {
+            Sign::Zero
+        } else {
+            Sign::Positive
+        };
+        return Some(Term::int_lit(Int::from_sign_nat(sign, n.clone())));
     }
     // Int arithmetic
     if handle.ptr_eq(&defs::int_add_spec()) {
@@ -209,11 +239,55 @@ fn reduce_spec(handle: &defs::TermSpec, args: &[Term]) -> Option<Term> {
     if handle.ptr_eq(&defs::int_sub_spec()) {
         return reduce_int_binop(args, |a, b| a - b);
     }
+    if handle.ptr_eq(&defs::int_div_spec()) {
+        return reduce_int_binop(args, |a, b| {
+            if b.is_zero() {
+                Int::zero()
+            } else {
+                a / b
+            }
+        });
+    }
+    if handle.ptr_eq(&defs::int_mod_spec()) {
+        return reduce_int_binop(args, |a, b| {
+            if b.is_zero() {
+                Int::zero()
+            } else {
+                a % b
+            }
+        });
+    }
     if handle.ptr_eq(&defs::int_le_spec()) {
         return reduce_int_cmp(args, |a, b| a <= b);
     }
     if handle.ptr_eq(&defs::int_lt_spec()) {
         return reduce_int_cmp(args, |a, b| a < b);
+    }
+    if handle.ptr_eq(&defs::int_neg_spec()) {
+        if args.len() != 1 {
+            return None;
+        }
+        let n = as_int_lit(&args[0])?;
+        return Some(Term::int_lit(-n));
+    }
+    if handle.ptr_eq(&defs::int_abs_spec()) {
+        if args.len() != 1 {
+            return None;
+        }
+        let n = as_int_lit(&args[0])?;
+        return Some(Term::nat_lit(n.abs()));
+    }
+    if handle.ptr_eq(&defs::int_sgn_spec()) {
+        if args.len() != 1 {
+            return None;
+        }
+        let n = as_int_lit(&args[0])?;
+        let sgn = match n.sign() {
+            Sign::Negative => Int::from_sign_nat(Sign::Negative, Nat::one()),
+            Sign::Zero => Int::zero(),
+            Sign::Positive => Int::from_sign_nat(Sign::Positive, Nat::one()),
+        };
+        return Some(Term::int_lit(sgn));
     }
     None
 }
@@ -575,6 +649,59 @@ mod tests {
     fn term_spec_int_lt() {
         let t = Term::app(Term::app(defs::int_lt(), int(-3)), int(2));
         assert_reduces(t, Term::bool_lit(true));
+    }
+
+    #[test]
+    fn term_spec_nat_div_mod() {
+        assert_reduces(
+            Term::app(Term::app(defs::nat_div(), nat(17)), nat(5)),
+            nat(3),
+        );
+        assert_reduces(
+            Term::app(Term::app(defs::nat_mod(), nat(17)), nat(5)),
+            nat(2),
+        );
+        // Division by zero saturates at zero (kernel convention).
+        assert_reduces(
+            Term::app(Term::app(defs::nat_div(), nat(17)), nat(0)),
+            nat(0),
+        );
+    }
+
+    #[test]
+    fn term_spec_nat_to_int() {
+        let t = Term::app(defs::nat_to_int(), nat(42));
+        assert_reduces(t, int(42));
+        let t = Term::app(defs::nat_to_int(), nat(0));
+        assert_reduces(t, int(0));
+    }
+
+    #[test]
+    fn term_spec_int_div_mod() {
+        assert_reduces(
+            Term::app(Term::app(defs::int_div(), int(17)), int(5)),
+            int(3),
+        );
+        assert_reduces(
+            Term::app(Term::app(defs::int_mod(), int(17)), int(5)),
+            int(2),
+        );
+        // BigInt division truncates toward zero.
+        assert_reduces(
+            Term::app(Term::app(defs::int_div(), int(-17)), int(5)),
+            int(-3),
+        );
+    }
+
+    #[test]
+    fn term_spec_int_neg_abs_sgn() {
+        assert_reduces(Term::app(defs::int_neg(), int(7)), int(-7));
+        assert_reduces(Term::app(defs::int_neg(), int(-7)), int(7));
+        assert_reduces(Term::app(defs::int_abs(), int(-12)), nat(12));
+        assert_reduces(Term::app(defs::int_abs(), int(12)), nat(12));
+        assert_reduces(Term::app(defs::int_sgn(), int(-9)), int(-1));
+        assert_reduces(Term::app(defs::int_sgn(), int(0)), int(0));
+        assert_reduces(Term::app(defs::int_sgn(), int(9)), int(1));
     }
 
     #[test]

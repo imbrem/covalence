@@ -164,10 +164,11 @@ fn succ(n: Term) -> Term {
 
 /// `pred : nat → nat`.
 fn pred(n: Term) -> Term {
-    Term::app(Term::prim(Prim::NatArith(Arith::Pred)), n)
+    Term::app(pred_fn(), n)
 }
 
-fn pred_fn() -> Term {
+/// `pred : nat → nat` (the curried primitive).
+pub(crate) fn pred_fn() -> Term {
     Term::prim(Prim::NatArith(Arith::Pred))
 }
 

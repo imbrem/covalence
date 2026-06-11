@@ -429,6 +429,114 @@ fn nat_add_comm_step(p_lambda: &Term, m: &Term) -> Result<Thm> {
     imp.all_intro("n", Type::nat())
 }
 
+/// `⊢ ⋀n m p:nat. Trueprop (nat_add (nat_add n m) p = nat_add n (nat_add m p))`
+/// — associativity of `+`. Proved by induction on `n`, holding `m`
+/// and `p` free, then post-quantifying `m` and `p`.
+pub fn nat_add_assoc() -> Result<Thm> {
+    let m = Term::free("m", Type::nat());
+    let p = Term::free("p", Type::nat());
+
+    let n = Term::free("n", Type::nat());
+    let nm = Term::app(Term::app(defs::nat_add(), n.clone()), m.clone());
+    let lhs = Term::app(Term::app(defs::nat_add(), nm), p.clone());
+    let mp = Term::app(Term::app(defs::nat_add(), m.clone()), p.clone());
+    let rhs = Term::app(Term::app(defs::nat_add(), n), mp);
+    let p_body = hol::hol_eq(lhs, rhs);
+    let p_lambda = hol::pub_abs("n", Type::nat(), p_body);
+
+    let induction_at_p = Thm::nat_induction_pure().all_elim(p_lambda.clone())?;
+
+    let base_pure = nat_add_assoc_base_at(&m, &p)?;
+    let base_hol = trueprop_of_pure_eq(base_pure)?;
+    let p_at_zero = Term::app(p_lambda.clone(), hol::zero());
+    let base = un_beta_trueprop(base_hol, p_at_zero)?;
+
+    let step = nat_add_assoc_step(&p_lambda, &m, &p)?;
+
+    let after_base = induction_at_p.imp_elim(base)?;
+    let universal_n = after_base.imp_elim(step)?;
+
+    universal_n
+        .all_intro("p", Type::nat())?
+        .all_intro("m", Type::nat())
+}
+
+/// Base case for `nat_add_assoc`:
+/// `nat_add (nat_add 0 m) p ≡ nat_add 0 (nat_add m p)`.
+///
+/// Both sides equal `nat_add m p` via `zero_left`.
+fn nat_add_assoc_base_at(m: &Term, p: &Term) -> Result<Thm> {
+    // lhs: nat_add (nat_add 0 m) p
+    //   inner zero_left: nat_add 0 m ≡ m.
+    let inner = nat_add_zero_left(m.clone())?;
+    let nat_add_refl = Thm::refl(defs::nat_add())?;
+    let head = nat_add_refl.cong_app(inner)?;
+    // head: nat_add (nat_add 0 m) ≡ nat_add m
+    let p_refl = Thm::refl(p.clone())?;
+    let lhs_eq = head.cong_app(p_refl)?;
+    // lhs_eq: nat_add (nat_add 0 m) p ≡ nat_add m p.
+
+    // rhs: nat_add 0 (nat_add m p) ≡ nat_add m p via zero_left.
+    let mp = Term::app(Term::app(defs::nat_add(), m.clone()), p.clone());
+    let rhs_eq = nat_add_zero_left(mp)?;
+    // rhs_eq: nat_add 0 (nat_add m p) ≡ nat_add m p.
+
+    lhs_eq.trans(rhs_eq.sym()?)
+}
+
+/// Inductive step for `nat_add_assoc`.
+fn nat_add_assoc_step(p_lambda: &Term, m: &Term, p: &Term) -> Result<Thm> {
+    let n = Term::free("n", Type::nat());
+    let succ_n = Term::app(hol::succ_fn(), n.clone());
+
+    let p_n = Term::app(p_lambda.clone(), n.clone());
+    let trueprop_p_n = trueprop(p_n.clone());
+    let ih_un_beta = Thm::assume(trueprop_p_n.clone())?;
+    let ih_hol = beta_trueprop(ih_un_beta, p_n)?;
+    let ih_pure = pure_eq_of_hol_eq(ih_hol)?;
+    // ih_pure: nat_add (nat_add n m) p ≡ nat_add n (nat_add m p).
+
+    // ---- Build the goal: nat_add (nat_add (S n) m) p ≡ nat_add (S n) (nat_add m p).
+
+    // lhs: nat_add (nat_add (S n) m) p
+    //   inner succ_left at (n, m): nat_add (S n) m ≡ succ (nat_add n m).
+    let inner = nat_add_succ_left_at(n.clone(), m.clone())?;
+    //   lift through `nat_add _ p`.
+    let nat_add_refl = Thm::refl(defs::nat_add())?;
+    let head = nat_add_refl.cong_app(inner)?;
+    let p_refl = Thm::refl(p.clone())?;
+    let lhs_step1 = head.cong_app(p_refl)?;
+    // lhs_step1: nat_add (nat_add (S n) m) p ≡ nat_add (succ (nat_add n m)) p.
+
+    //   succ_left at (nat_add n m, p): nat_add (succ X) p ≡ succ (nat_add X p)
+    let nm = Term::app(Term::app(defs::nat_add(), n.clone()), m.clone());
+    let lhs_step2 = nat_add_succ_left_at(nm, p.clone())?;
+    let lhs_chain = lhs_step1.trans(lhs_step2)?;
+    // lhs_chain: nat_add (nat_add (S n) m) p ≡ succ (nat_add (nat_add n m) p).
+
+    //   apply IH lifted through `succ _`.
+    let succ_refl = Thm::refl(hol::succ_fn())?;
+    let succ_ih = succ_refl.cong_app(ih_pure)?;
+    let lhs_total = lhs_chain.trans(succ_ih)?;
+    // lhs_total: nat_add (nat_add (S n) m) p ≡ succ (nat_add n (nat_add m p)).
+
+    // rhs: nat_add (S n) (nat_add m p) ≡ succ (nat_add n (nat_add m p)) via succ_left.
+    let mp = Term::app(Term::app(defs::nat_add(), m.clone()), p.clone());
+    let rhs_chain = nat_add_succ_left_at(n.clone(), mp)?;
+    // rhs_chain: nat_add (S n) (nat_add m p) ≡ succ (nat_add n (nat_add m p)).
+
+    let pure_eq = lhs_total.trans(rhs_chain.sym()?)?;
+    // pure_eq: nat_add (nat_add (S n) m) p ≡ nat_add (S n) (nat_add m p).
+
+    // Bridge.
+    let hol_form = trueprop_of_pure_eq(pure_eq)?;
+    let p_at_succ_n = Term::app(p_lambda.clone(), succ_n);
+    let un_beta = un_beta_trueprop(hol_form, p_at_succ_n)?;
+
+    let imp = un_beta.imp_intro(&trueprop_p_n)?;
+    imp.all_intro("n", Type::nat())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -481,6 +589,15 @@ mod tests {
         match thm.concl().kind() {
             TermKind::All(_, ty, _) => assert_eq!(ty, &Type::nat()),
             other => panic!("expected ⋀m:nat ..., got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn assoc_builds() {
+        let thm = nat_add_assoc().expect("⋀m p n. (n + m) + p = n + (m + p)");
+        match thm.concl().kind() {
+            TermKind::All(_, ty, _) => assert_eq!(ty, &Type::nat()),
+            other => panic!("expected ⋀:nat ..., got {other:?}"),
         }
     }
 }

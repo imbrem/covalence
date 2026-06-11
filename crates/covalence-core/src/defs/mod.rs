@@ -70,12 +70,13 @@ pub use list::{
     nil, nil_spec, tail, tail_spec,
 };
 pub use nat::{
-    nat_add, nat_add_spec, nat_bit_and, nat_bit_and_spec, nat_bit_or, nat_bit_or_spec, nat_bit_xor,
-    nat_bit_xor_spec, nat_div, nat_div_spec, nat_from_bytes_be, nat_from_bytes_be_spec,
-    nat_from_bytes_le, nat_from_bytes_le_spec, nat_le, nat_le_spec, nat_lt, nat_lt_spec, nat_mod,
-    nat_mod_spec, nat_mul, nat_mul_spec, nat_pow, nat_pow_spec, nat_rec, nat_rec_spec, nat_shl,
-    nat_shl_spec, nat_shr, nat_shr_spec, nat_sub, nat_sub_spec, nat_to_bytes_be,
-    nat_to_bytes_be_spec, nat_to_bytes_le, nat_to_bytes_le_spec, nat_to_int, nat_to_int_spec,
+    iter, iter_spec, nat_add, nat_add_spec, nat_bit_and, nat_bit_and_spec, nat_bit_or,
+    nat_bit_or_spec, nat_bit_xor, nat_bit_xor_spec, nat_div, nat_div_spec, nat_from_bytes_be,
+    nat_from_bytes_be_spec, nat_from_bytes_le, nat_from_bytes_le_spec, nat_le, nat_le_spec, nat_lt,
+    nat_lt_spec, nat_mod, nat_mod_spec, nat_mul, nat_mul_spec, nat_pow, nat_pow_spec, nat_rec,
+    nat_rec_spec, nat_shl, nat_shl_spec, nat_shr, nat_shr_spec, nat_sub, nat_sub_spec,
+    nat_to_bytes_be, nat_to_bytes_be_spec, nat_to_bytes_le, nat_to_bytes_le_spec, nat_to_int,
+    nat_to_int_spec,
 };
 pub use option::{none, none_spec, option, option_spec, some, some_spec};
 pub use prod::{prod, prod_spec, signed1, signed1_spec, signed2, signed2_spec};
@@ -149,6 +150,34 @@ mod tests {
         assert_eq!(ty, expected);
         // And the spec's recorded ty matches.
         assert_eq!(spec.ty(), Some(&expected));
+    }
+
+    #[test]
+    fn iter_spec_body_well_typed() {
+        // iter : nat → (α → α) → α → α
+        let spec = iter_spec();
+        let tm = spec.tm().expect("iter has body");
+        let ty = tm.type_of().expect("iter body type-checks");
+        let alpha = Type::tfree("a");
+        let f_ty = Type::fun(alpha.clone(), alpha.clone());
+        let expected = Type::fun(
+            Type::nat(),
+            Type::fun(f_ty, Type::fun(alpha.clone(), alpha)),
+        );
+        assert_eq!(ty, expected);
+    }
+
+    #[test]
+    fn iter_at_nat_round_trip() {
+        let t = iter(Type::nat());
+        let expected = Type::fun(
+            Type::nat(),
+            Type::fun(
+                Type::fun(Type::nat(), Type::nat()),
+                Type::fun(Type::nat(), Type::nat()),
+            ),
+        );
+        assert_eq!(t.type_of().unwrap(), expected);
     }
 
     #[test]

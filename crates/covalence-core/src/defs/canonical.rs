@@ -125,6 +125,9 @@ pub enum Canonical {
     /// Selector predicate: the standard `r z f 0 = z` and
     /// `r z f (S n) = f n (r z f n)` equations.
     NatRec,
+    /// `iter : nat → ('a → 'a) → 'a → 'a` — apply `f` to `a` `n`
+    /// times. Defined as `λn f a. natRec a (λ_. f) n`.
+    Iter,
     /// `natAdd : nat → nat → nat`.
     NatAdd,
     /// `natMul : nat → nat → nat`.
@@ -270,6 +273,7 @@ impl Canonical {
             Canonical::Head => "head",
             Canonical::Tail => "tail",
             Canonical::NatRec => "natRec",
+            Canonical::Iter => "iter",
             Canonical::NatAdd => "natAdd",
             Canonical::NatMul => "natMul",
             Canonical::NatSub => "natSub",

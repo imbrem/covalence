@@ -61,6 +61,35 @@ macro_rules! let_term {
     };
 }
 
+/// `term_decl!(/// doc...\nspec_fn, accessor, Canonical::Sym, ty_expr);`
+///
+/// Declare a term-spec with only a type (no body, no predicate).
+/// Use for ops whose body / characterisation is still TODO; the
+/// kernel can dispatch reductions on the spec handle without it.
+macro_rules! term_decl {
+    (
+        $(#[$accessor_meta:meta])*
+        $spec_fn:ident, $accessor:ident, $sym:expr, $ty:expr $(,)?
+    ) => {
+        pub fn $spec_fn() -> $crate::defs::TermSpec {
+            static LAZY: std::sync::LazyLock<$crate::defs::TermSpec> =
+                std::sync::LazyLock::new(|| {
+                    $crate::defs::TermSpec::new($sym, Some($ty), None)
+                });
+            LAZY.clone()
+        }
+
+        $(#[$accessor_meta])*
+        pub fn $accessor() -> $crate::term::Term {
+            static LAZY: std::sync::LazyLock<$crate::term::Term> =
+                std::sync::LazyLock::new(|| {
+                    $crate::term::Term::term_spec($spec_fn(), vec![])
+                });
+            LAZY.clone()
+        }
+    };
+}
+
 /// `def_term!(/// doc...\nspec_fn, accessor, Canonical::Sym, ty_expr, pred_expr);`
 ///
 /// Defines a `pub fn spec_fn() -> TermSpec` whose `tm` holds the
@@ -86,6 +115,42 @@ macro_rules! def_term {
                     $crate::term::Term::term_spec($spec_fn(), vec![])
                 });
             LAZY.clone()
+        }
+    };
+}
+
+/// `poly_let_term!(/// doc...\nspec_fn, accessor(alpha), Canonical::Sym, body_expr);`
+///
+/// One-type-parameter polymorphic let-style term. The body is
+/// expressed with `Type::tfree("a")` for the bound `α`; `ty` is
+/// computed from the body once and frozen in the spec.
+macro_rules! poly_let_term {
+    (
+        $(#[$accessor_meta:meta])*
+        $spec_fn:ident, $accessor:ident($alpha:ident), $sym:expr, $body:expr $(,)?
+    ) => {
+        pub fn $spec_fn() -> $crate::defs::TermSpec {
+            static LAZY: std::sync::LazyLock<$crate::defs::TermSpec> =
+                std::sync::LazyLock::new(|| {
+                    let body: $crate::term::Term = $body;
+                    let ty = body.type_of().unwrap_or_else(|e| {
+                        panic!(
+                            concat!(
+                                "poly_let_term! ",
+                                stringify!($spec_fn),
+                                ": body must type-check: {:?}"
+                            ),
+                            e
+                        )
+                    });
+                    $crate::defs::TermSpec::new($sym, Some(ty), Some(body))
+                });
+            LAZY.clone()
+        }
+
+        $(#[$accessor_meta])*
+        pub fn $accessor($alpha: $crate::term::Type) -> $crate::term::Term {
+            $crate::term::Term::term_spec($spec_fn(), vec![$alpha])
         }
     };
 }

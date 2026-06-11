@@ -17,14 +17,11 @@
 //! the byte/bit ops, `natToInt`) are awaiting their definitions in
 //! follow-up commits.
 
-use std::sync::LazyLock;
-
 use crate::hol;
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
 use super::sigs;
-use super::spec::TermSpec;
 
 // ============================================================================
 // Type signatures used here
@@ -91,96 +88,118 @@ poly_def_term! {
 }
 
 // ============================================================================
-// natAdd — let natAdd := λn m. natRec m (λ_ acc. succ acc) n
+// iter — n-fold function iteration.
+//
+// iter n f a ≔ natRec a (λ_:nat. f) n
+//
+// Equations (provable from the definition + natRec equations):
+//   iter 0     f a = a
+//   iter (S n) f a = f (iter n f a)
+//
+// Useful corollary (provable by induction on n):
+//   iter (S n) f a = iter n f (f a)
+//
+// Every binary nat op below (add/mul/sub/pow/shl/shr) factors through
+// iter: each step ignores `n`, so iter is the more idiomatic choice
+// than the full natRec.
 // ============================================================================
 
-fn nat_add_body() -> Term {
+fn iter_body() -> Term {
+    let alpha = Type::tfree("a");
+    let alpha_to_alpha = Type::fun(alpha.clone(), alpha.clone());
+
+    let n = Term::free("n", Type::nat());
+    let f = Term::free("f", alpha_to_alpha.clone());
+    let a = Term::free("a", alpha.clone());
+
+    // step: λ_:nat. f
+    let step = hol::pub_abs("_", Type::nat(), f.clone());
+
+    let rec_at_alpha = nat_rec(alpha.clone());
+    let app1 = Term::app(rec_at_alpha, a.clone());
+    let app2 = Term::app(app1, step);
+    let body = Term::app(app2, n.clone());
+
+    let lam_a = hol::pub_abs("a", alpha.clone(), body);
+    let lam_f = hol::pub_abs("f", alpha_to_alpha, lam_a);
+    hol::pub_abs("n", Type::nat(), lam_f)
+}
+
+poly_let_term! {
+    /// `iter : nat → ('a → 'a) → 'a → 'a`. Defined as
+    /// `λn f a. natRec a (λ_. f) n`. Equations: `iter 0 f a = a`,
+    /// `iter (S n) f a = f (iter n f a)`. Corollary:
+    /// `iter (S n) f a = iter n f (f a)`.
+    iter_spec, iter(alpha), Canonical::Iter, iter_body()
+}
+
+/// Build a body of the shape `λn m. iter[nat] $n_arg $step_fn $a_arg`
+/// where `n_arg` / `a_arg` pick between `n` and `m`, and `step_fn` is
+/// the unary function being iterated. Used to keep the
+/// `natAdd`/`natMul`/`natSub`/etc. definitions one-liners.
+fn iter_binary(
+    iter_count: Either,
+    step_fn: Term,
+    seed: Term,
+) -> Term {
     let n = Term::free("n", Type::nat());
     let m = Term::free("m", Type::nat());
 
-    // step: λ_:nat. λacc:nat. succ acc
-    let acc = Term::free("acc", Type::nat());
-    let succ_acc = Term::app(hol::succ_fn(), acc);
-    let step_inner = hol::pub_abs("acc", Type::nat(), succ_acc);
-    let step = hol::pub_abs("_", Type::nat(), step_inner);
+    let count = match iter_count {
+        Either::N => n.clone(),
+        Either::M => m.clone(),
+    };
 
-    // natRec[nat] m step n
-    let rec_at_nat = nat_rec(Type::nat());
-    let app1 = Term::app(rec_at_nat, m.clone());
-    let app2 = Term::app(app1, step);
-    let body = Term::app(app2, n.clone());
+    let app1 = Term::app(iter(Type::nat()), count);
+    let app2 = Term::app(app1, step_fn);
+    let body = Term::app(app2, seed);
 
     let lam_m = hol::pub_abs("m", Type::nat(), body);
     hol::pub_abs("n", Type::nat(), lam_m)
 }
 
+/// Which of the two outer parameters threads through as the iter
+/// count (n) vs the seed (a).
+#[derive(Clone, Copy)]
+enum Either {
+    N,
+    M,
+}
+
+fn nat_add_body() -> Term {
+    // natAdd n m ≔ iter n succ m
+    iter_binary(Either::N, hol::succ_fn(), Term::free("m", Type::nat()))
+}
+
 let_term! {
-    /// `natAdd : nat → nat → nat`. Defined as
-    /// `λn m. natRec m (λ_ acc. succ acc) n` — recurses on the
-    /// first argument, threading the second through unchanged.
+    /// `natAdd : nat → nat → nat` ≡ `λn m. iter n succ m`.
+    /// Equations: `natAdd 0 m = m`, `natAdd (S n) m = S (natAdd n m)`.
     nat_add_spec, nat_add, Canonical::NatAdd, nat_add_body()
 }
 
-// ============================================================================
-// natMul — let natMul := λn m. natRec 0 (λ_ acc. natAdd m acc) n
-// ============================================================================
-
 fn nat_mul_body() -> Term {
-    let n = Term::free("n", Type::nat());
+    // natMul n m ≔ iter n (λx. natAdd m x) 0
+    let x = Term::free("x", Type::nat());
     let m = Term::free("m", Type::nat());
-
-    // step: λ_:nat. λacc:nat. natAdd m acc
-    let acc = Term::free("acc", Type::nat());
-    let add_m_acc = Term::app(Term::app(nat_add(), m.clone()), acc);
-    let step_inner = hol::pub_abs("acc", Type::nat(), add_m_acc);
-    let step = hol::pub_abs("_", Type::nat(), step_inner);
-
-    // natRec[nat] 0 step n
-    let rec_at_nat = nat_rec(Type::nat());
-    let app1 = Term::app(rec_at_nat, hol::zero());
-    let app2 = Term::app(app1, step);
-    let body = Term::app(app2, n.clone());
-
-    let lam_m = hol::pub_abs("m", Type::nat(), body);
-    hol::pub_abs("n", Type::nat(), lam_m)
+    let add_m_x = Term::app(Term::app(nat_add(), m), x);
+    let step = hol::pub_abs("x", Type::nat(), add_m_x);
+    iter_binary(Either::N, step, hol::zero())
 }
 
 let_term! {
-    /// `natMul : nat → nat → nat`. Defined as
-    /// `λn m. natRec 0 (λ_ acc. natAdd m acc) n`.
+    /// `natMul : nat → nat → nat` ≡ `λn m. iter n (λx. natAdd m x) 0`.
+    /// Equations: `natMul 0 m = 0`, `natMul (S n) m = natAdd m (natMul n m)`.
     nat_mul_spec, nat_mul, Canonical::NatMul, nat_mul_body()
 }
 
-// ============================================================================
-// natSub — let natSub := λn m. natRec n (λ_ acc. pred acc) m
-//
-// Recurses on the *second* argument so that saturating-pred kicks in
-// the right number of times.
-// ============================================================================
-
 fn nat_sub_body() -> Term {
-    let n = Term::free("n", Type::nat());
-    let m = Term::free("m", Type::nat());
-
-    // step: λ_:nat. λacc:nat. pred acc
-    let acc = Term::free("acc", Type::nat());
-    let pred_acc = Term::app(hol::pred_fn(), acc);
-    let step_inner = hol::pub_abs("acc", Type::nat(), pred_acc);
-    let step = hol::pub_abs("_", Type::nat(), step_inner);
-
-    // natRec[nat] n step m
-    let rec_at_nat = nat_rec(Type::nat());
-    let app1 = Term::app(rec_at_nat, n.clone());
-    let app2 = Term::app(app1, step);
-    let body = Term::app(app2, m.clone());
-
-    let lam_m = hol::pub_abs("m", Type::nat(), body);
-    hol::pub_abs("n", Type::nat(), lam_m)
+    // natSub n m ≔ iter m pred n
+    iter_binary(Either::M, hol::pred_fn(), Term::free("n", Type::nat()))
 }
 
 let_term! {
-    /// `natSub : nat → nat → nat` (saturating). Defined as
-    /// `λn m. natRec n (λ_ acc. pred acc) m`.
+    /// `natSub : nat → nat → nat` (saturating) ≡ `λn m. iter m pred n`.
+    /// Equations: `natSub n 0 = n`, `natSub n (S m) = pred (natSub n m)`.
     nat_sub_spec, nat_sub, Canonical::NatSub, nat_sub_body()
 }
 
@@ -254,160 +273,115 @@ def_term! {
 }
 
 // ============================================================================
+// natPow / natShl / natShr — all factor through iter on the second arg.
+// ============================================================================
+
+fn one() -> Term {
+    Term::app(hol::succ_fn(), hol::zero())
+}
+
+fn two() -> Term {
+    Term::app(hol::succ_fn(), one())
+}
+
+fn nat_pow_body() -> Term {
+    // natPow n m ≔ iter m (λx. natMul n x) 1
+    let x = Term::free("x", Type::nat());
+    let n = Term::free("n", Type::nat());
+    let mul_n_x = Term::app(Term::app(nat_mul(), n), x);
+    let step = hol::pub_abs("x", Type::nat(), mul_n_x);
+    iter_binary(Either::M, step, one())
+}
+
+let_term! {
+    /// `natPow : nat → nat → nat` ≡ `λn m. iter m (λx. natMul n x) 1`.
+    /// Equations: `natPow n 0 = 1`, `natPow n (S m) = natMul n (natPow n m)`.
+    nat_pow_spec, nat_pow, Canonical::NatPow, nat_pow_body()
+}
+
+fn nat_shl_body() -> Term {
+    // natShl n m ≔ iter m (λx. natMul 2 x) n
+    let x = Term::free("x", Type::nat());
+    let mul_2_x = Term::app(Term::app(nat_mul(), two()), x);
+    let step = hol::pub_abs("x", Type::nat(), mul_2_x);
+    iter_binary(Either::M, step, Term::free("n", Type::nat()))
+}
+
+let_term! {
+    /// `natShl : nat → nat → nat` ≡ `λn m. iter m (λx. natMul 2 x) n`.
+    nat_shl_spec, nat_shl, Canonical::NatShl, nat_shl_body()
+}
+
+fn nat_shr_body() -> Term {
+    // natShr n m ≔ iter m (λx. natDiv x 2) n
+    let x = Term::free("x", Type::nat());
+    let div_x_2 = Term::app(Term::app(nat_div(), x), two());
+    let step = hol::pub_abs("x", Type::nat(), div_x_2);
+    iter_binary(Either::M, step, Term::free("n", Type::nat()))
+}
+
+let_term! {
+    /// `natShr : nat → nat → nat` ≡ `λn m. iter m (λx. natDiv x 2) n`.
+    /// (Well-typed even though `natDiv` is still a declaration; the
+    /// kernel will use it once natDiv has a body.)
+    nat_shr_spec, nat_shr, Canonical::NatShr, nat_shr_body()
+}
+
+// ============================================================================
 // Ops still without a definitional body (TODO: land via natRec / Euclidean
 // recursion / Hilbert ε on uniqueness):
 //
-//   natDiv, natMod, natPow, natShl, natShr, natBitAnd, natBitOr, natBitXor,
+//   natDiv, natMod (Euclidean — predicate-style ε needed),
+//   natBitAnd, natBitOr, natBitXor (bit-level recursion),
 //   natToBytesLe/Be, natFromBytesLe/Be, natToInt
-//
-// For now these expose only their type and rely on the
-// `builtins::reduce_spec` Rust-side reduction for closed inputs.
 // ============================================================================
 
-fn nat_bin_op_spec(symbol: Canonical) -> TermSpec {
-    TermSpec::new(symbol, Some(sigs::nat_nat_to_nat()), None)
+term_decl! {
+    /// `natDiv : nat → nat → nat`.
+    nat_div_spec, nat_div, Canonical::NatDiv, sigs::nat_nat_to_nat()
 }
 
-/// `natDiv : nat → nat → nat`.
-pub fn nat_div_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| nat_bin_op_spec(Canonical::NatDiv));
-    LAZY.clone()
-}
-pub fn nat_div() -> Term {
-    static LAZY: LazyLock<Term> = LazyLock::new(|| Term::term_spec(nat_div_spec(), vec![]));
-    LAZY.clone()
+term_decl! {
+    /// `natMod : nat → nat → nat`.
+    nat_mod_spec, nat_mod, Canonical::NatMod, sigs::nat_nat_to_nat()
 }
 
-/// `natMod : nat → nat → nat`.
-pub fn nat_mod_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| nat_bin_op_spec(Canonical::NatMod));
-    LAZY.clone()
-}
-pub fn nat_mod() -> Term {
-    static LAZY: LazyLock<Term> = LazyLock::new(|| Term::term_spec(nat_mod_spec(), vec![]));
-    LAZY.clone()
+term_decl! {
+    /// `natBitAnd : nat → nat → nat`.
+    nat_bit_and_spec, nat_bit_and, Canonical::NatBitAnd, sigs::nat_nat_to_nat()
 }
 
-/// `natPow : nat → nat → nat`.
-pub fn nat_pow_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| nat_bin_op_spec(Canonical::NatPow));
-    LAZY.clone()
-}
-pub fn nat_pow() -> Term {
-    static LAZY: LazyLock<Term> = LazyLock::new(|| Term::term_spec(nat_pow_spec(), vec![]));
-    LAZY.clone()
+term_decl! {
+    /// `natBitOr : nat → nat → nat`.
+    nat_bit_or_spec, nat_bit_or, Canonical::NatBitOr, sigs::nat_nat_to_nat()
 }
 
-/// `natShl : nat → nat → nat`.
-pub fn nat_shl_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| nat_bin_op_spec(Canonical::NatShl));
-    LAZY.clone()
-}
-pub fn nat_shl() -> Term {
-    static LAZY: LazyLock<Term> = LazyLock::new(|| Term::term_spec(nat_shl_spec(), vec![]));
-    LAZY.clone()
+term_decl! {
+    /// `natBitXor : nat → nat → nat`.
+    nat_bit_xor_spec, nat_bit_xor, Canonical::NatBitXor, sigs::nat_nat_to_nat()
 }
 
-/// `natShr : nat → nat → nat`.
-pub fn nat_shr_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| nat_bin_op_spec(Canonical::NatShr));
-    LAZY.clone()
-}
-pub fn nat_shr() -> Term {
-    static LAZY: LazyLock<Term> = LazyLock::new(|| Term::term_spec(nat_shr_spec(), vec![]));
-    LAZY.clone()
+term_decl! {
+    /// `natToBytesLe : nat → blob`.
+    nat_to_bytes_le_spec, nat_to_bytes_le, Canonical::NatToBytesLe, sigs::nat_to_bytes()
 }
 
-/// `natBitAnd : nat → nat → nat`.
-pub fn nat_bit_and_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| nat_bin_op_spec(Canonical::NatBitAnd));
-    LAZY.clone()
-}
-pub fn nat_bit_and() -> Term {
-    static LAZY: LazyLock<Term> = LazyLock::new(|| Term::term_spec(nat_bit_and_spec(), vec![]));
-    LAZY.clone()
+term_decl! {
+    /// `natToBytesBe : nat → blob`.
+    nat_to_bytes_be_spec, nat_to_bytes_be, Canonical::NatToBytesBe, sigs::nat_to_bytes()
 }
 
-/// `natBitOr : nat → nat → nat`.
-pub fn nat_bit_or_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| nat_bin_op_spec(Canonical::NatBitOr));
-    LAZY.clone()
-}
-pub fn nat_bit_or() -> Term {
-    static LAZY: LazyLock<Term> = LazyLock::new(|| Term::term_spec(nat_bit_or_spec(), vec![]));
-    LAZY.clone()
+term_decl! {
+    /// `natFromBytesLe : blob → nat`.
+    nat_from_bytes_le_spec, nat_from_bytes_le, Canonical::NatFromBytesLe, sigs::bytes_to_nat()
 }
 
-/// `natBitXor : nat → nat → nat`.
-pub fn nat_bit_xor_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| nat_bin_op_spec(Canonical::NatBitXor));
-    LAZY.clone()
-}
-pub fn nat_bit_xor() -> Term {
-    static LAZY: LazyLock<Term> = LazyLock::new(|| Term::term_spec(nat_bit_xor_spec(), vec![]));
-    LAZY.clone()
+term_decl! {
+    /// `natFromBytesBe : blob → nat`.
+    nat_from_bytes_be_spec, nat_from_bytes_be, Canonical::NatFromBytesBe, sigs::bytes_to_nat()
 }
 
-/// `natToBytesLe : nat → blob`.
-pub fn nat_to_bytes_le_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
-        TermSpec::new(Canonical::NatToBytesLe, Some(sigs::nat_to_bytes()), None)
-    });
-    LAZY.clone()
-}
-pub fn nat_to_bytes_le() -> Term {
-    static LAZY: LazyLock<Term> =
-        LazyLock::new(|| Term::term_spec(nat_to_bytes_le_spec(), vec![]));
-    LAZY.clone()
-}
-
-/// `natToBytesBe : nat → blob`.
-pub fn nat_to_bytes_be_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
-        TermSpec::new(Canonical::NatToBytesBe, Some(sigs::nat_to_bytes()), None)
-    });
-    LAZY.clone()
-}
-pub fn nat_to_bytes_be() -> Term {
-    static LAZY: LazyLock<Term> =
-        LazyLock::new(|| Term::term_spec(nat_to_bytes_be_spec(), vec![]));
-    LAZY.clone()
-}
-
-/// `natFromBytesLe : blob → nat`.
-pub fn nat_from_bytes_le_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
-        TermSpec::new(Canonical::NatFromBytesLe, Some(sigs::bytes_to_nat()), None)
-    });
-    LAZY.clone()
-}
-pub fn nat_from_bytes_le() -> Term {
-    static LAZY: LazyLock<Term> =
-        LazyLock::new(|| Term::term_spec(nat_from_bytes_le_spec(), vec![]));
-    LAZY.clone()
-}
-
-/// `natFromBytesBe : blob → nat`.
-pub fn nat_from_bytes_be_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
-        TermSpec::new(Canonical::NatFromBytesBe, Some(sigs::bytes_to_nat()), None)
-    });
-    LAZY.clone()
-}
-pub fn nat_from_bytes_be() -> Term {
-    static LAZY: LazyLock<Term> =
-        LazyLock::new(|| Term::term_spec(nat_from_bytes_be_spec(), vec![]));
-    LAZY.clone()
-}
-
-/// `natToInt : nat → int`.
-pub fn nat_to_int_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
-        TermSpec::new(Canonical::NatToInt, Some(sigs::nat_to_int()), None)
-    });
-    LAZY.clone()
-}
-pub fn nat_to_int() -> Term {
-    static LAZY: LazyLock<Term> = LazyLock::new(|| Term::term_spec(nat_to_int_spec(), vec![]));
-    LAZY.clone()
+term_decl! {
+    /// `natToInt : nat → int`.
+    nat_to_int_spec, nat_to_int, Canonical::NatToInt, sigs::nat_to_int()
 }

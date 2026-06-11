@@ -101,6 +101,27 @@ pub enum Error {
 
     #[error("weaken: target context is not a superset of the theorem's hypotheses")]
     NotASuperset,
+
+    #[error(
+        "unfold_term_spec: term is not a TermKind::Spec applied to type args"
+    )]
+    NotASpec,
+
+    #[error(
+        "unfold_term_spec: spec carries no body (declaration-only), so it \
+         cannot be unfolded"
+    )]
+    SpecHasNoBody,
+
+    #[error(
+        "unfold_term_spec: spec is def-style (its `tm` is a `ty → bool` \
+         predicate, not the body itself); use a Hilbert-ε unfolding rule \
+         instead"
+    )]
+    SpecIsDefStyle,
+
+    #[error("concl_eq_parts: conclusion is not a Pure-meta equation")]
+    NotAnEquation,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -7,12 +7,12 @@
 //!   verbatim; `ty` is computed from `body.type_of()`. The accessor
 //!   returns the cached `Term`.
 //!
-//! - **`def_term!`** — a monomorphic term defined by a selector
+//! - **`spec_term!`** — a monomorphic term defined by a selector
 //!   predicate (`def name := ε pred`). The spec's `tm` holds the
 //!   predicate, `ty` holds the typed result. The accessor returns
 //!   the cached `Term`.
 //!
-//! - **`poly_def_term!`** — same as `def_term!` but the term is
+//! - **`poly_spec_term!`** — same as `spec_term!` but the term is
 //!   polymorphic in one type variable. The accessor takes the
 //!   instance type and substitutes positionally.
 //!
@@ -90,12 +90,12 @@ macro_rules! term_decl {
     };
 }
 
-/// `def_term!(/// doc...\nspec_fn, accessor, Canonical::Sym, ty_expr, pred_expr);`
+/// `spec_term!(/// doc...\nspec_fn, accessor, Canonical::Sym, ty_expr, pred_expr);`
 ///
 /// Defines a `pub fn spec_fn() -> TermSpec` whose `tm` holds the
 /// Hilbert-ε selector predicate, and a doc-attached
 /// `pub fn accessor() -> Term`.
-macro_rules! def_term {
+macro_rules! spec_term {
     (
         $(#[$accessor_meta:meta])*
         $spec_fn:ident, $accessor:ident, $sym:expr, $ty:expr, $pred:expr $(,)?
@@ -155,12 +155,12 @@ macro_rules! poly_let_term {
     };
 }
 
-/// `poly_def_term!(/// doc...\nspec_fn, accessor(alpha), Canonical::Sym, ty_expr, pred_expr);`
+/// `poly_spec_term!(/// doc...\nspec_fn, accessor(alpha), Canonical::Sym, ty_expr, pred_expr);`
 ///
 /// One-type-parameter polymorphic def-style term. The spec is
 /// cached; the accessor builds a fresh `Term::term_spec` per call
 /// with the supplied type argument.
-macro_rules! poly_def_term {
+macro_rules! poly_spec_term {
     (
         $(#[$accessor_meta:meta])*
         $spec_fn:ident, $accessor:ident($alpha:ident), $sym:expr, $ty:expr, $pred:expr $(,)?

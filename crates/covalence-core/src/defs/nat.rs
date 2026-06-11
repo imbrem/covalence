@@ -80,7 +80,7 @@ fn nat_rec_predicate() -> Term {
     hol::pub_abs("r", r_ty, body_zf)
 }
 
-poly_def_term! {
+poly_spec_term! {
     /// `natRec : 'a → (nat → 'a → 'a) → nat → 'a`. The standard
     /// primitive recursor; every nat-typed operation derives from
     /// applying `natRec` at the appropriate `α`.
@@ -256,7 +256,7 @@ fn nat_cmp_predicate(zero_zero: bool, zero_succ: bool, succ_zero: bool) -> Term 
     hol::pub_abs("cmp", cmp_ty, body)
 }
 
-def_term! {
+spec_term! {
     /// `natLe : nat → nat → bool`. Selector predicate:
     /// `le 0 0 = T`, `∀m. le 0 (S m) = T`, `∀n. le (S n) 0 = F`,
     /// `∀n m. le (S n) (S m) = le n m`.
@@ -264,7 +264,7 @@ def_term! {
     sigs::nat_nat_to_bool(), nat_cmp_predicate(true, true, false)
 }
 
-def_term! {
+spec_term! {
     /// `natLt : nat → nat → bool`. Selector predicate:
     /// `lt 0 0 = F`, `∀m. lt 0 (S m) = T`, `∀n. lt (S n) 0 = F`,
     /// `∀n m. lt (S n) (S m) = lt n m`.

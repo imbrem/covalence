@@ -77,6 +77,27 @@ impl Thm {
         (self.hyps, self.concl)
     }
 
+    /// If the conclusion has shape `Pure-Eq(lhs, rhs)` (i.e.,
+    /// `TermKind::Eq`), return `(lhs, rhs)`. Many proof tactics
+    /// chain on the rhs after `trans` / `cong_app`; this avoids
+    /// re-matching the kind by hand at every step.
+    pub fn concl_eq_parts(&self) -> Result<(&Term, &Term)> {
+        match self.concl.kind() {
+            TermKind::Eq(l, r) => Ok((l, r)),
+            _ => Err(Error::NotAnEquation),
+        }
+    }
+
+    /// The right-hand side of a Pure-meta equality conclusion.
+    pub fn concl_rhs(&self) -> Result<&Term> {
+        Ok(self.concl_eq_parts()?.1)
+    }
+
+    /// The left-hand side of a Pure-meta equality conclusion.
+    pub fn concl_lhs(&self) -> Result<&Term> {
+        Ok(self.concl_eq_parts()?.0)
+    }
+
     /// Returns `true` iff no `Obs` leaf appears anywhere in the
     /// theorem (conclusion or any hypothesis). Such a theorem is
     /// universally true with no oracle dependencies — equivalent to
@@ -541,6 +562,47 @@ impl Thm {
     ///   kernel's commitment to literal distinctness — sound
     ///   because each literal kind has a fixed denotation in any
     ///   model.
+    /// `⊢ term_spec(spec, args) ≡ subst(spec.tm, tvars, args)` for a
+    /// **let-style** TermSpec (i.e., one whose `tm` is the body
+    /// itself, with `type_of(tm) == spec.ty`). Returns
+    /// `Err(SpecIsDefStyle)` when `tm` is a `ty → bool` selector
+    /// predicate (ε-style), and `Err(SpecHasNoBody)` for
+    /// declaration-only specs.
+    ///
+    /// Sound because a let-style spec's denotation is literally its
+    /// body at the supplied type-args; the kernel commits to that
+    /// equation when it builds the spec.
+    pub fn unfold_term_spec(t: Term) -> Result<Thm> {
+        let (spec, args) = match t.kind() {
+            TermKind::Spec(spec, args) => (spec.clone(), args.clone()),
+            _ => return Err(Error::NotASpec),
+        };
+        let declared_ty = spec
+            .ty()
+            .ok_or(Error::SpecHasNoBody)?
+            .clone();
+        let body = spec.tm().ok_or(Error::SpecHasNoBody)?.clone();
+
+        // let-style ↔ body has the spec's declared type.
+        // def-style ↔ body has type (declared_ty → bool).
+        let body_ty = body.type_of()?;
+        if body_ty != declared_ty {
+            return Err(Error::SpecIsDefStyle);
+        }
+
+        // Substitute the spec's type variables positionally for the
+        // supplied type arguments. `free_tvars` produces a sorted,
+        // deduplicated list — the same order `type_of_in` uses when
+        // typing a `TermKind::Spec` leaf.
+        let tvars = declared_ty.free_tvars();
+        let mut unfolded = body;
+        for (tvar, arg) in tvars.iter().zip(args.iter()) {
+            unfolded = subst_tfree_in_term(&unfolded, tvar, arg);
+        }
+
+        Self::build(Ctx::new(), Term::eq(t, unfolded))
+    }
+
     pub fn reduce_prim(t: Term) -> Result<Thm> {
         let reduced = builtins::reduce_prim_term(&t).ok_or(Error::NotReducible)?;
         Self::build(Ctx::new(), Term::eq(t, reduced))
@@ -759,6 +821,24 @@ impl Thm {
     pub fn nat_pred_succ() -> Thm {
         Self::build(Ctx::new(), hol::pred_succ_term())
             .expect("nat_pred_succ: well-typed by construction")
+    }
+
+    /// `⊢ ⋀z:α. ⋀f:nat→α→α. Trueprop (natRec[α] z f 0 = z)` — the
+    /// primitive-recursor "zero" equation. Sound because
+    /// [`crate::defs::nat_rec_spec`]'s selector predicate (with
+    /// Hilbert ε) forces exactly this behaviour.
+    pub fn nat_rec_zero() -> Thm {
+        Self::build(Ctx::new(), hol::nat_rec_zero_term())
+            .expect("nat_rec_zero: well-typed by construction")
+    }
+
+    /// `⊢ ⋀z:α. ⋀f:nat→α→α. ⋀n:nat.
+    ///     Trueprop (natRec[α] z f (succ n) = f n (natRec[α] z f n))`
+    /// — the primitive-recursor "successor" equation, the other half
+    /// of [`Self::nat_rec_zero`]'s defining pair.
+    pub fn nat_rec_succ() -> Thm {
+        Self::build(Ctx::new(), hol::nat_rec_succ_term())
+            .expect("nat_rec_succ: well-typed by construction")
     }
 
     /// `⊢ ⋀m n:nat. Trueprop (m + n = natrec m succ n)` — addition

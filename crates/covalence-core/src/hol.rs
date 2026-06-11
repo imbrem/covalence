@@ -346,6 +346,62 @@ static PRED_SUCC_TERM: LazyLock<Term> = LazyLock::new(|| {
     pure_all("n", Type::nat(), trueprop(eq))
 });
 
+// ---- Definitional axioms: defs::nat_rec ----
+//
+// natRec is a polymorphic TermSpec whose `tm` field carries the
+// uniqueness selector predicate (Hilbert ε form). These two axioms
+// expose its primitive-recursion equations directly so downstream
+// proofs (in `proofs.rs` and beyond) can use them without rebuilding
+// the choice argument.
+
+static NAT_REC_ZERO_TERM: LazyLock<Term> = LazyLock::new(|| {
+    // ⋀z:'a. ⋀f:nat→'a→'a. Trueprop (natRec[α] z f 0 = z)
+    let alpha = Type::tfree("a");
+    let f_ty = Type::fun(Type::nat(), Type::fun(alpha.clone(), alpha.clone()));
+    let z = Term::free("z", alpha.clone());
+    let f = Term::free("f", f_ty.clone());
+
+    let nat_rec_at_alpha = crate::defs::nat_rec(alpha.clone());
+    let lhs = Term::app(
+        Term::app(Term::app(nat_rec_at_alpha, z.clone()), f.clone()),
+        zero(),
+    );
+    let eq = hol_eq(lhs, z);
+    pure_all("z", alpha, pure_all("f", f_ty, trueprop(eq)))
+});
+
+static NAT_REC_SUCC_TERM: LazyLock<Term> = LazyLock::new(|| {
+    // ⋀z:'a. ⋀f:nat→'a→'a. ⋀n:nat.
+    //   Trueprop (natRec[α] z f (succ n) = f n (natRec[α] z f n))
+    let alpha = Type::tfree("a");
+    let f_ty = Type::fun(Type::nat(), Type::fun(alpha.clone(), alpha.clone()));
+    let z = Term::free("z", alpha.clone());
+    let f = Term::free("f", f_ty.clone());
+    let n = Term::free("n", Type::nat());
+
+    let nat_rec_at_alpha = crate::defs::nat_rec(alpha.clone());
+    let nat_rec_zf = Term::app(Term::app(nat_rec_at_alpha, z.clone()), f.clone());
+
+    let lhs = Term::app(nat_rec_zf.clone(), succ(n.clone()));
+    let rec_n = Term::app(nat_rec_zf, n.clone());
+    let rhs = Term::app(Term::app(f.clone(), n.clone()), rec_n);
+
+    let eq = hol_eq(lhs, rhs);
+    pure_all(
+        "z",
+        alpha,
+        pure_all("f", f_ty, pure_all("n", Type::nat(), trueprop(eq))),
+    )
+});
+
+pub(crate) fn nat_rec_zero_term() -> Term {
+    NAT_REC_ZERO_TERM.clone()
+}
+
+pub(crate) fn nat_rec_succ_term() -> Term {
+    NAT_REC_SUCC_TERM.clone()
+}
+
 // ---- Definitional axioms tying Pure prims to natrec ----
 //
 // Each equation defines a Pure `Prim::NatArith(_)` operator in

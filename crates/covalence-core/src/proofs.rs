@@ -40,6 +40,54 @@ pub fn apply_eq(eq: Thm, arg: Term) -> Result<Thm> {
     eq.cong_app(arg_refl)
 }
 
+/// The `Trueprop : bool → prop` constant term.
+pub fn trueprop_op() -> Term {
+    use crate::term::HolOp;
+    Term::hol_op(HolOp::Trueprop, Type::fun(Type::bool(), Type::prop()))
+}
+
+/// Wrap a bool term in `Trueprop`.
+pub fn trueprop(p: Term) -> Term {
+    Term::app(trueprop_op(), p)
+}
+
+/// `⊢ Trueprop ((λx:τ. body) arg) ≡ Trueprop body[arg/x]`. Used to
+/// bridge between the natural pre-β form (`P 0` where `P` is a
+/// lambda, induction-shaped) and the post-β user-facing form.
+pub fn beta_under_trueprop(lambda_app: Term) -> Result<Thm> {
+    let beta = Thm::beta_conv(lambda_app)?;
+    Thm::refl(trueprop_op())?.cong_app(beta)
+}
+
+/// Given `⊢ Trueprop body[arg/x]`, return `⊢ Trueprop ((λx. body) arg)`.
+/// Inverse of [`beta_trueprop`].
+pub fn un_beta_trueprop(reduced_thm: Thm, lambda_app: Term) -> Result<Thm> {
+    let bridge = beta_under_trueprop(lambda_app)?;
+    bridge.sym()?.eq_mp(reduced_thm)
+}
+
+/// Given `⊢ Trueprop ((λx. body) arg)`, return `⊢ Trueprop body[arg/x]`.
+/// Inverse of [`un_beta_trueprop`].
+pub fn beta_trueprop(un_reduced_thm: Thm, lambda_app: Term) -> Result<Thm> {
+    let bridge = beta_under_trueprop(lambda_app)?;
+    bridge.eq_mp(un_reduced_thm)
+}
+
+/// Inverse of [`pure_eq_of_hol_eq`]: convert `⊢ a ≡ b` to
+/// `⊢ Trueprop (a = b)` via the `eq_reflection` axiom (used
+/// backwards).
+pub fn trueprop_of_pure_eq(pure_thm: Thm) -> Result<Thm> {
+    let (lhs, rhs) = pure_thm.concl_eq_parts()?;
+    let ty = lhs.type_of()?;
+    let lhs = lhs.clone();
+    let rhs = rhs.clone();
+    let bridge = Thm::eq_reflection()
+        .inst_tfree("a", ty)?
+        .all_elim(lhs)?
+        .all_elim(rhs)?;
+    bridge.sym()?.eq_mp(pure_thm)
+}
+
 /// β-reduce the term `app`, returning `⊢ app ≡ app'`. Wraps
 /// [`Thm::beta_conv`] for symmetry with the other helpers.
 pub fn beta_at(app: Term) -> Result<Thm> {

@@ -121,6 +121,10 @@ pub enum Canonical {
     Tail,
 
     // ---- Term-level: nat arithmetic ----
+    /// `natRec : 'a → (nat → 'a → 'a) → nat → 'a` — primitive recursor.
+    /// Selector predicate: the standard `r z f 0 = z` and
+    /// `r z f (S n) = f n (r z f n)` equations.
+    NatRec,
     /// `natAdd : nat → nat → nat`.
     NatAdd,
     /// `natMul : nat → nat → nat`.
@@ -265,6 +269,7 @@ impl Canonical {
             Canonical::Cons => "cons",
             Canonical::Head => "head",
             Canonical::Tail => "tail",
+            Canonical::NatRec => "natRec",
             Canonical::NatAdd => "natAdd",
             Canonical::NatMul => "natMul",
             Canonical::NatSub => "natSub",

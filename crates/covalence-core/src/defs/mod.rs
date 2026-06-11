@@ -25,6 +25,9 @@
 //! and so on. The `helpers` module hosts the `close_spec`/`quot_spec`
 //! factories and a few small utilities shared by every spec entry.
 
+#[macro_use]
+mod macros;
+
 mod blob;
 mod canonical;
 mod coprod;
@@ -70,9 +73,9 @@ pub use nat::{
     nat_add, nat_add_spec, nat_bit_and, nat_bit_and_spec, nat_bit_or, nat_bit_or_spec, nat_bit_xor,
     nat_bit_xor_spec, nat_div, nat_div_spec, nat_from_bytes_be, nat_from_bytes_be_spec,
     nat_from_bytes_le, nat_from_bytes_le_spec, nat_le, nat_le_spec, nat_lt, nat_lt_spec, nat_mod,
-    nat_mod_spec, nat_mul, nat_mul_spec, nat_pow, nat_pow_spec, nat_shl, nat_shl_spec, nat_shr,
-    nat_shr_spec, nat_sub, nat_sub_spec, nat_to_bytes_be, nat_to_bytes_be_spec, nat_to_bytes_le,
-    nat_to_bytes_le_spec, nat_to_int, nat_to_int_spec,
+    nat_mod_spec, nat_mul, nat_mul_spec, nat_pow, nat_pow_spec, nat_rec, nat_rec_spec, nat_shl,
+    nat_shl_spec, nat_shr, nat_shr_spec, nat_sub, nat_sub_spec, nat_to_bytes_be,
+    nat_to_bytes_be_spec, nat_to_bytes_le, nat_to_bytes_le_spec, nat_to_int, nat_to_int_spec,
 };
 pub use option::{none, none_spec, option, option_spec, some, some_spec};
 pub use prod::{prod, prod_spec, signed1, signed1_spec, signed2, signed2_spec};
@@ -135,14 +138,32 @@ mod tests {
     }
 
     #[test]
-    fn nat_add_spec_carries_selector_predicate() {
-        // natAdd's tm field should be the well-typed predicate
-        // λf:nat→nat→nat. (∀m. f 0 m = m) ∧ (∀n m. f (S n) m = S (f n m)).
+    fn nat_add_spec_carries_definitional_body() {
+        // natAdd is now a `let` definition: tm is the lambda body
+        // λn m. natRec[nat] m (λ_ acc. succ acc) n, of type
+        // nat → nat → nat (matching the spec's `ty`).
         let spec = nat_add_spec();
-        let tm = spec.tm().expect("nat_add carries a selector predicate");
+        let tm = spec.tm().expect("nat_add carries its body");
+        let ty = tm.type_of().expect("body type-checks");
+        let expected = Type::fun(Type::nat(), Type::fun(Type::nat(), Type::nat()));
+        assert_eq!(ty, expected);
+        // And the spec's recorded ty matches.
+        assert_eq!(spec.ty(), Some(&expected));
+    }
+
+    #[test]
+    fn nat_rec_spec_predicate_well_typed() {
+        // natRec's predicate is `λr. ...` over `α → (nat → α → α) → nat → α`.
+        let spec = nat_rec_spec();
+        let tm = spec.tm().expect("nat_rec carries a predicate");
         let ty = tm.type_of().expect("predicate type-checks");
-        let f_ty = Type::fun(Type::nat(), Type::fun(Type::nat(), Type::nat()));
-        let expected = Type::fun(f_ty, Type::bool());
+        let alpha = Type::tfree("a");
+        let f_ty = Type::fun(Type::nat(), Type::fun(alpha.clone(), alpha.clone()));
+        let r_ty = Type::fun(
+            alpha.clone(),
+            Type::fun(f_ty, Type::fun(Type::nat(), alpha)),
+        );
+        let expected = Type::fun(r_ty, Type::bool());
         assert_eq!(ty, expected);
     }
 

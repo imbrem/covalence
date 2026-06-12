@@ -511,6 +511,364 @@ fn nat_mul_comm_step(p_lambda: &Term, m: &Term) -> Result<Thm> {
     imp.all_intro("n", Type::nat())
 }
 
+/// `⊢ ⋀a b c:nat. Trueprop (nat_mul a (nat_add b c) = nat_add (nat_mul a b) (nat_mul a c))`
+/// — left-distributivity. Proved by induction on `a` with `(b, c)`
+/// held free, then post-quantified.
+pub fn nat_mul_distrib_right() -> Result<Thm> {
+    let b = Term::free("b", Type::nat());
+    let c = Term::free("c", Type::nat());
+
+    let a = Term::free("a", Type::nat());
+    let bc = Term::app(Term::app(defs::nat_add(), b.clone()), c.clone());
+    let lhs = Term::app(Term::app(defs::nat_mul(), a.clone()), bc);
+    let ab = Term::app(Term::app(defs::nat_mul(), a.clone()), b.clone());
+    let ac = Term::app(Term::app(defs::nat_mul(), a), c.clone());
+    let rhs = Term::app(Term::app(defs::nat_add(), ab), ac);
+    let p_body = hol::hol_eq(lhs, rhs);
+    let p_lambda = hol::pub_abs("a", Type::nat(), p_body);
+
+    let induction_at_p = Thm::nat_induction_pure().all_elim(p_lambda.clone())?;
+
+    // Base: 0 * (b + c) = 0 * b + 0 * c.
+    //   lhs: 0 * (b+c) ≡ 0       [zero_left]
+    //   rhs: 0*b + 0*c ≡ 0 + 0 ≡ 0
+    let bc_term = Term::app(Term::app(defs::nat_add(), b.clone()), c.clone());
+    let lhs_eq = nat_mul_zero_left(bc_term)?;
+    let nb_eq = nat_mul_zero_left(b.clone())?;
+    let nc_eq = nat_mul_zero_left(c.clone())?;
+    let nat_add_refl = Thm::refl(defs::nat_add())?;
+    let rhs_inner = nat_add_refl.cong_app(nb_eq)?;
+    let rhs_step = rhs_inner.cong_app(nc_eq)?;
+    // rhs_step: 0*b + 0*c ≡ 0 + 0.
+    let zero_plus_zero = nat_add_zero_left(hol::zero())?;
+    let rhs_chain = rhs_step.trans(zero_plus_zero)?;
+    // rhs_chain: 0*b + 0*c ≡ 0.
+    let base_pure = lhs_eq.trans(rhs_chain.sym()?)?;
+    let base_hol = trueprop_of_pure_eq(base_pure)?;
+    let p_at_zero = Term::app(p_lambda.clone(), hol::zero());
+    let base = un_beta_trueprop(base_hol, p_at_zero)?;
+
+    let step = nat_mul_distrib_right_step(&p_lambda, &b, &c)?;
+
+    let after_base = induction_at_p.imp_elim(base)?;
+    let universal_a = after_base.imp_elim(step)?;
+
+    universal_a
+        .all_intro("c", Type::nat())?
+        .all_intro("b", Type::nat())
+}
+
+fn nat_mul_distrib_right_step(p_lambda: &Term, b: &Term, c: &Term) -> Result<Thm> {
+    use super::nat_add::nat_add_assoc;
+
+    let a = Term::free("a", Type::nat());
+    let succ_a = Term::app(hol::succ_fn(), a.clone());
+
+    let p_a = Term::app(p_lambda.clone(), a.clone());
+    let trueprop_p_a = trueprop(p_a.clone());
+    let ih_un_beta = Thm::assume(trueprop_p_a.clone())?;
+    let ih_hol = beta_trueprop(ih_un_beta, p_a)?;
+    let ih_pure = pure_eq_of_hol_eq(ih_hol)?;
+    // ih_pure: a * (b + c) = a*b + a*c.
+
+    // Goal: (S a) * (b + c) ≡ (S a)*b + (S a)*c.
+    // lhs: (S a) * (b + c)
+    //   ≡ (b + c) + a * (b + c)        [mul_succ_left at (a, b+c)]
+    //   ≡ (b + c) + (a*b + a*c)        [IH cong]
+    let bc = Term::app(Term::app(defs::nat_add(), b.clone()), c.clone());
+    let lhs_step1 = nat_mul_succ_left_at(a.clone(), bc.clone())?;
+    let nat_add_bc_head = Term::app(defs::nat_add(), bc.clone());
+    let head_refl = Thm::refl(nat_add_bc_head)?;
+    let lhs_step2 = head_refl.cong_app(ih_pure)?;
+    let lhs_chain = lhs_step1.trans(lhs_step2)?;
+    // lhs_chain: (S a) * (b + c) ≡ (b + c) + (a*b + a*c).
+
+    // rhs: (S a)*b + (S a)*c
+    //   ≡ (b + a*b) + (c + a*c)        [mul_succ_left twice + cong]
+    let sb_eq = nat_mul_succ_left_at(a.clone(), b.clone())?;
+    let sc_eq = nat_mul_succ_left_at(a.clone(), c.clone())?;
+    let nat_add_refl = Thm::refl(defs::nat_add())?;
+    let rhs_inner = nat_add_refl.cong_app(sb_eq)?;
+    let rhs_step1 = rhs_inner.cong_app(sc_eq)?;
+    // rhs_step1: (S a)*b + (S a)*c ≡ (b + a*b) + (c + a*c).
+
+    // Final: lhs and rhs both equal (b + c) + (a*b + a*c) vs (b + a*b) + (c + a*c).
+    // The shuffle: (b + c) + (a*b + a*c) ≡ (b + a*b) + (c + a*c).
+    //   Use assoc + comm: both equal b + c + a*b + a*c without parens,
+    //   permuted so that b, a*b together and c, a*c together.
+    let ab = Term::app(Term::app(defs::nat_mul(), a.clone()), b.clone());
+    let ac = Term::app(Term::app(defs::nat_mul(), a.clone()), c.clone());
+    let inner = nat_mul_distrib_right_shuffle(b, c, &ab, &ac)?;
+    // inner: (b + c) + (a*b + a*c) ≡ (b + a*b) + (c + a*c).
+    let _ = nat_add_assoc;
+
+    let pure_eq = lhs_chain.trans(inner)?.trans(rhs_step1.sym()?)?;
+    // pure_eq: (S a) * (b + c) ≡ (S a)*b + (S a)*c.
+
+    let hol_form = trueprop_of_pure_eq(pure_eq)?;
+    let p_at_succ_a = Term::app(p_lambda.clone(), succ_a);
+    let un_beta = un_beta_trueprop(hol_form, p_at_succ_a)?;
+
+    let imp = un_beta.imp_intro(&trueprop_p_a)?;
+    imp.all_intro("a", Type::nat())
+}
+
+/// Shuffle: `(b + c) + (x + y) ≡ (b + x) + (c + y)`. Pure addition
+/// equation; uses assoc and comm in nat_add.
+fn nat_mul_distrib_right_shuffle(
+    b: &Term,
+    c: &Term,
+    x: &Term,
+    y: &Term,
+) -> Result<Thm> {
+    use super::nat_add::{nat_add_assoc, nat_add_comm};
+
+    // Strategy:
+    // (b + c) + (x + y) = b + (c + (x + y))   [assoc]
+    //                   = b + ((c + x) + y)   [assoc inner.sym]
+    //                   = b + ((x + c) + y)   [comm inner]
+    //                   = b + (x + (c + y))   [assoc inner]
+    //                   = (b + x) + (c + y)   [assoc.sym]
+
+    // Step 1: (b + c) + (x + y) ≡ b + (c + (x + y))
+    //   assoc: ⋀m_a p_a n_a. (n_a + m_a) + p_a = n_a + (m_a + p_a).
+    //   Want: (b + c) + (x + y) = b + (c + (x + y))
+    //   So n_a := b, m_a := c, p_a := (x+y).
+    let xy = Term::app(Term::app(defs::nat_add(), x.clone()), y.clone());
+    let assoc1 = instantiate_universal(
+        nat_add_assoc()?,
+        vec![c.clone(), xy.clone(), b.clone()],
+    )?;
+    let assoc1_pure = pure_eq_of_hol_eq(assoc1)?;
+    // assoc1_pure: (b + c) + (x + y) ≡ b + (c + (x + y)).
+
+    // Step 2: c + (x + y) ≡ (c + x) + y    [assoc.sym: with our notation
+    //   assoc gives (n+m)+p = n+(m+p), sym gives n+(m+p) = (n+m)+p,
+    //   so for c + (x + y), set n_a := c, m_a := x, p_a := y.
+    let assoc2 = instantiate_universal(
+        nat_add_assoc()?,
+        vec![x.clone(), y.clone(), c.clone()],
+    )?;
+    let assoc2_pure = pure_eq_of_hol_eq(assoc2)?;
+    // assoc2_pure: (c + x) + y ≡ c + (x + y).
+    let assoc2_sym = assoc2_pure.sym()?;
+    // assoc2_sym: c + (x + y) ≡ (c + x) + y.
+
+    // Lift assoc2_sym through (b + _).
+    let nat_add_b = Term::app(defs::nat_add(), b.clone());
+    let head_refl = Thm::refl(nat_add_b.clone())?;
+    let step2 = head_refl.cong_app(assoc2_sym)?;
+    // step2: b + (c + (x + y)) ≡ b + ((c + x) + y).
+    let chain1 = assoc1_pure.trans(step2)?;
+
+    // Step 3: c + x ≡ x + c   [comm at (c, x): set m_c := c, n_c := x gives x + c = c + x; sym]
+    let comm_cx = instantiate_universal(nat_add_comm()?, vec![c.clone(), x.clone()])?;
+    let comm_cx_pure = pure_eq_of_hol_eq(comm_cx)?;
+    // comm_cx_pure: x + c ≡ c + x. Sym to get c + x ≡ x + c.
+    let comm_cx_eq = comm_cx_pure.sym()?;
+    // comm_cx_eq: c + x ≡ x + c.
+
+    // Lift comm_cx_eq through ((_) + y).
+    let nat_add_refl = Thm::refl(defs::nat_add())?;
+    let inner_step = nat_add_refl.cong_app(comm_cx_eq)?;
+    let y_refl = Thm::refl(y.clone())?;
+    let comm_lifted = inner_step.cong_app(y_refl)?;
+    // comm_lifted: (c + x) + y ≡ (x + c) + y.
+
+    // Lift through (b + _).
+    let head_refl2 = Thm::refl(nat_add_b.clone())?;
+    let step3 = head_refl2.cong_app(comm_lifted)?;
+    // step3: b + ((c + x) + y) ≡ b + ((x + c) + y).
+    let chain2 = chain1.trans(step3)?;
+
+    // Step 4: (x + c) + y ≡ x + (c + y)   [assoc at (x, y, c): n_a := x, m_a := c, p_a := y, gives (x+c)+y = x+(c+y)].
+    let assoc4 = instantiate_universal(
+        nat_add_assoc()?,
+        vec![c.clone(), y.clone(), x.clone()],
+    )?;
+    let assoc4_pure = pure_eq_of_hol_eq(assoc4)?;
+    // assoc4_pure: (x + c) + y ≡ x + (c + y).
+    // Lift through (b + _).
+    let head_refl3 = Thm::refl(nat_add_b)?;
+    let step4 = head_refl3.cong_app(assoc4_pure)?;
+    let chain3 = chain2.trans(step4)?;
+    // chain3: (b + c) + (x + y) ≡ b + (x + (c + y)).
+
+    // Step 5: b + (x + (c + y)) ≡ (b + x) + (c + y)   [assoc.sym at (b, x, c+y)]
+    let cy = Term::app(Term::app(defs::nat_add(), c.clone()), y.clone());
+    let assoc5 = instantiate_universal(
+        nat_add_assoc()?,
+        vec![x.clone(), cy, b.clone()],
+    )?;
+    let assoc5_pure = pure_eq_of_hol_eq(assoc5)?;
+    // assoc5_pure: (b + x) + (c + y) ≡ b + (x + (c + y)). Sym.
+    let assoc5_sym = assoc5_pure.sym()?;
+
+    chain3.trans(assoc5_sym)
+}
+
+/// `⊢ ⋀b c a:nat. Trueprop (nat_mul (nat_mul a b) c = nat_mul a (nat_mul b c))`
+/// — associativity of `*`. Proved by induction on `a` with `(b, c)`
+/// held free, then post-quantified.
+pub fn nat_mul_assoc() -> Result<Thm> {
+    let b = Term::free("b", Type::nat());
+    let c = Term::free("c", Type::nat());
+
+    let a = Term::free("a", Type::nat());
+    let ab = Term::app(Term::app(defs::nat_mul(), a.clone()), b.clone());
+    let lhs = Term::app(Term::app(defs::nat_mul(), ab), c.clone());
+    let bc = Term::app(Term::app(defs::nat_mul(), b.clone()), c.clone());
+    let rhs = Term::app(Term::app(defs::nat_mul(), a), bc);
+    let p_body = hol::hol_eq(lhs, rhs);
+    let p_lambda = hol::pub_abs("a", Type::nat(), p_body);
+
+    let induction_at_p = Thm::nat_induction_pure().all_elim(p_lambda.clone())?;
+
+    // Base a=0: (0*b)*c = 0*(b*c).
+    //   lhs: (0*b)*c = 0*c = 0 (zero_left twice)
+    //   rhs: 0*(b*c) = 0 (zero_left)
+    let zero_b_c = Term::app(Term::app(defs::nat_mul(), hol::zero()), b.clone());
+    let nat_mul_refl = Thm::refl(defs::nat_mul())?;
+    let inner = nat_mul_zero_left(b.clone())?;
+    let head = nat_mul_refl.cong_app(inner)?;
+    let c_refl = Thm::refl(c.clone())?;
+    let lhs_step1 = head.cong_app(c_refl)?;
+    // lhs_step1: (0*b)*c ≡ 0*c.
+    let lhs_step2 = nat_mul_zero_left(c.clone())?;
+    let lhs_chain = lhs_step1.trans(lhs_step2)?;
+    // lhs_chain: (0*b)*c ≡ 0.
+    let _ = zero_b_c;
+
+    let bc_term = Term::app(Term::app(defs::nat_mul(), b.clone()), c.clone());
+    let rhs_eq = nat_mul_zero_left(bc_term)?;
+    let base_pure = lhs_chain.trans(rhs_eq.sym()?)?;
+    let base_hol = trueprop_of_pure_eq(base_pure)?;
+    let p_at_zero = Term::app(p_lambda.clone(), hol::zero());
+    let base = un_beta_trueprop(base_hol, p_at_zero)?;
+
+    let step = nat_mul_assoc_step(&p_lambda, &b, &c)?;
+
+    let after_base = induction_at_p.imp_elim(base)?;
+    let universal_a = after_base.imp_elim(step)?;
+
+    universal_a
+        .all_intro("c", Type::nat())?
+        .all_intro("b", Type::nat())
+}
+
+fn nat_mul_assoc_step(p_lambda: &Term, b: &Term, c: &Term) -> Result<Thm> {
+    let a = Term::free("a", Type::nat());
+    let succ_a = Term::app(hol::succ_fn(), a.clone());
+
+    let p_a = Term::app(p_lambda.clone(), a.clone());
+    let trueprop_p_a = trueprop(p_a.clone());
+    let ih_un_beta = Thm::assume(trueprop_p_a.clone())?;
+    let ih_hol = beta_trueprop(ih_un_beta, p_a)?;
+    let ih_pure = pure_eq_of_hol_eq(ih_hol)?;
+    // ih_pure: (a*b)*c = a*(b*c).
+
+    // Goal: ((S a)*b)*c ≡ (S a)*(b*c).
+    //
+    // lhs: ((S a)*b)*c
+    //   ≡ (b + a*b)*c              [mul_succ_left at (a, b), cong]
+    //   ≡ b*c + (a*b)*c            [distrib_right at (c, b, a*b)]
+    //   wait — distrib_right is a * (b+c) = a*b + a*c. We need
+    //   (x+y)*c form: that's distrib_LEFT. Use comm to swap.
+    //
+    // Actually use comm: (b + a*b)*c = c * (b + a*b) = c*b + c*(a*b) = b*c + (a*b)*c [comm].
+    //   ≡ b*c + a*(b*c)            [IH cong]
+    //
+    // rhs: (S a)*(b*c) ≡ (b*c) + a*(b*c)  [mul_succ_left at (a, b*c)]
+    //
+    // Both equal (b*c) + a*(b*c). ✓
+
+    let ab = Term::app(Term::app(defs::nat_mul(), a.clone()), b.clone());
+    let bc = Term::app(Term::app(defs::nat_mul(), b.clone()), c.clone());
+    let abc_mid = Term::app(Term::app(defs::nat_mul(), ab.clone()), c.clone());
+    let _ = abc_mid;
+
+    // lhs path
+    let succ_left_ab = nat_mul_succ_left_at(a.clone(), b.clone())?;
+    // succ_left_ab: (S a)*b ≡ b + a*b.
+    let nat_mul_refl = Thm::refl(defs::nat_mul())?;
+    let head = nat_mul_refl.cong_app(succ_left_ab)?;
+    let c_refl = Thm::refl(c.clone())?;
+    let lhs_step1 = head.cong_app(c_refl)?;
+    // lhs_step1: ((S a)*b)*c ≡ (b + a*b)*c.
+
+    // (b + a*b)*c ≡ b*c + (a*b)*c via distrib_right + comm.
+    //   distrib_right: ⋀a' b' c'. a' * (b' + c') = a'*b' + a'*c'.
+    //   We want (b + a*b)*c ≡ b*c + (a*b)*c. Use comm to swap:
+    //     (b + a*b) * c = c * (b + a*b) [comm]
+    //                   = c*b + c*(a*b) [distrib at (c, b, a*b)]
+    //                   = b*c + (a*b)*c [comm twice]
+    //
+    // That's a lot. Let me use a separate distrib_LEFT lemma. We have
+    // commutativity, so:
+    //   nat_mul_distrib_left: (a + b) * c = a*c + b*c can be derived from
+    //   comm + distrib_right but for now I'll inline it.
+
+    let lhs_step2 = nat_mul_distrib_left_inline(b, &ab, c)?;
+    // lhs_step2: (b + a*b) * c ≡ b*c + (a*b)*c.
+    let lhs_chain_to_distrib = lhs_step1.trans(lhs_step2)?;
+    // lhs_chain_to_distrib: ((S a)*b)*c ≡ b*c + (a*b)*c.
+
+    let nat_add_refl = Thm::refl(defs::nat_add())?;
+    let nat_add_bc = nat_add_refl.cong_app(Thm::refl(bc.clone())?)?;
+    let ih_lifted = nat_add_bc.cong_app(ih_pure)?;
+    // ih_lifted: b*c + (a*b)*c ≡ b*c + a*(b*c).
+    let lhs_chain = lhs_chain_to_distrib.trans(ih_lifted)?;
+    // lhs_chain: ((S a)*b)*c ≡ b*c + a*(b*c).
+
+    // rhs: (S a)*(b*c) ≡ b*c + a*(b*c) [succ_left at (a, b*c)].
+    let rhs_chain = nat_mul_succ_left_at(a.clone(), bc)?;
+
+    let pure_eq = lhs_chain.trans(rhs_chain.sym()?)?;
+    // pure_eq: ((S a)*b)*c ≡ (S a)*(b*c).
+
+    let hol_form = trueprop_of_pure_eq(pure_eq)?;
+    let p_at_succ_a = Term::app(p_lambda.clone(), succ_a);
+    let un_beta = un_beta_trueprop(hol_form, p_at_succ_a)?;
+
+    let imp = un_beta.imp_intro(&trueprop_p_a)?;
+    imp.all_intro("a", Type::nat())
+}
+
+/// `⊢ (x + y) * c ≡ x*c + y*c` — right-distributivity, derived
+/// inline from comm + distrib_right.
+fn nat_mul_distrib_left_inline(x: &Term, y: &Term, c: &Term) -> Result<Thm> {
+    // nat_mul_comm statement: ⋀m n. n * m = m * n  (outer m, inner n).
+    // Instantiate at (m, n) := (c, xy) → gives Trueprop (xy * c = c * xy);
+    // after pure_eq: xy * c ≡ c * xy.
+
+    let xy = Term::app(Term::app(defs::nat_add(), x.clone()), y.clone());
+    let comm_xyc = instantiate_universal(nat_mul_comm()?, vec![c.clone(), xy.clone()])?;
+    let comm_xyc_pure = pure_eq_of_hol_eq(comm_xyc)?;
+    // comm_xyc_pure: (x+y) * c ≡ c * (x+y).
+
+    // distrib_right at (c, x, y): c * (x+y) = c*x + c*y. distrib_right's
+    // outer ⋀ is over b, then c, then a (see its proof).
+    let distrib = instantiate_universal(
+        nat_mul_distrib_right()?,
+        vec![x.clone(), y.clone(), c.clone()],
+    )?;
+    let distrib_pure = pure_eq_of_hol_eq(distrib)?;
+    let chain1 = comm_xyc_pure.trans(distrib_pure)?;
+
+    // comm at (m, n) := (x, c) → Trueprop (c * x = x * c); after pure_eq:
+    //   c*x ≡ x*c.
+    let comm_cx = instantiate_universal(nat_mul_comm()?, vec![x.clone(), c.clone()])?;
+    let comm_cx_pure = pure_eq_of_hol_eq(comm_cx)?;
+    let comm_cy = instantiate_universal(nat_mul_comm()?, vec![y.clone(), c.clone()])?;
+    let comm_cy_pure = pure_eq_of_hol_eq(comm_cy)?;
+
+    let nat_add_refl = Thm::refl(defs::nat_add())?;
+    let inner_step = nat_add_refl.cong_app(comm_cx_pure)?;
+    let step = inner_step.cong_app(comm_cy_pure)?;
+
+    chain1.trans(step)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -561,5 +919,15 @@ mod tests {
     #[test]
     fn comm_builds() {
         let _ = nat_mul_comm().expect("⋀n m. n * m = m * n");
+    }
+
+    #[test]
+    fn distrib_right_builds() {
+        let _ = nat_mul_distrib_right().expect("⋀a b c. a * (b + c) = a*b + a*c");
+    }
+
+    #[test]
+    fn assoc_builds() {
+        let _ = nat_mul_assoc().expect("⋀b c a. (a*b)*c = a*(b*c)");
     }
 }

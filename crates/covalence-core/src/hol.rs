@@ -15,7 +15,7 @@ use std::sync::LazyLock;
 use covalence_types::Nat;
 
 use crate::subst::close;
-use crate::term::{Arith, HolOp, Prim, Term, Type};
+use crate::term::{HolOp, Term, Type};
 
 // ============================================================================
 // Term builders for HOL constructs
@@ -180,7 +180,7 @@ pub(crate) fn int_succ_fn() -> Term {
 }
 
 fn nat_add_fn() -> Term {
-    Term::prim(Prim::NatArith(Arith::Add))
+    crate::defs::nat_add()
 }
 
 fn nat_add(a: Term, b: Term) -> Term {
@@ -188,7 +188,7 @@ fn nat_add(a: Term, b: Term) -> Term {
 }
 
 fn nat_mul_fn() -> Term {
-    Term::prim(Prim::NatArith(Arith::Mul))
+    crate::defs::nat_mul()
 }
 
 fn nat_mul(a: Term, b: Term) -> Term {
@@ -196,7 +196,7 @@ fn nat_mul(a: Term, b: Term) -> Term {
 }
 
 fn nat_sub_fn() -> Term {
-    Term::prim(Prim::NatArith(Arith::Sub))
+    crate::defs::nat_sub()
 }
 
 fn nat_sub(a: Term, b: Term) -> Term {
@@ -220,18 +220,20 @@ fn natrec(base: Term, step: Term, n: Term) -> Term {
     Term::app(Term::app(Term::app(natrec_at(beta), base), step), n)
 }
 
-/// `int_of_nat : nat → int` — the canonical embedding `n ↦ +n`.
+/// `int_of_nat : nat → int` — the canonical embedding `n ↦ +n`,
+/// via the `defs::nat_to_int` TermSpec.
 fn int_of_nat_fn() -> Term {
-    Term::prim(Prim::NatToInt)
+    crate::defs::nat_to_int()
 }
 
 fn int_of_nat(n: Term) -> Term {
     Term::app(int_of_nat_fn(), n)
 }
 
-/// `(-_) : int → int` — integer negation.
+/// `(-_) : int → int` — integer negation, via the `defs::int_neg`
+/// TermSpec.
 fn int_neg_fn() -> Term {
-    Term::prim(Prim::IntNeg)
+    crate::defs::int_neg()
 }
 
 fn int_neg(z: Term) -> Term {

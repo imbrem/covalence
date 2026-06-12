@@ -635,7 +635,10 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
             }
             Ok(result)
         }
-        TermKind::HolOp(_, ty) => Ok(ty.clone()),
+        TermKind::HolOp(op, ty) => {
+            validate_hol_op_shape(*op, ty)?;
+            Ok(ty.clone())
+        }
         TermKind::Obs(_, ty) => Ok(ty.clone()),
         // A `Def` denotes its body at the current instance type.
         // The body was validated once at `Thm::define` time, and
@@ -646,5 +649,136 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
         // Def reference, there are no Free leaves to track at this
         // node.
         TermKind::Def(d) => Ok(d.instance_type().clone()),
+    }
+}
+
+/// Validate that a `HolOp` leaf's stored instance type matches the
+/// canonical shape for that operator. This closes a soundness-
+/// hygiene hole: without this check, a user could construct e.g.
+/// `Term::hol_op(HolOp::Eq, fun(nat, fun(int, bool)))` claiming an
+/// "equality" that takes mixed argument types. Such a term still
+/// can't extract `⊢ ⊥` from the kernel (`reduce_prim`'s
+/// `literal_eq` returns `None` for mismatched-kind operands, and
+/// none of the inference rules accept the ill-shaped term as a
+/// productive premise), but it allows visibly nonsensical terms
+/// into well-typed positions. We reject at type-check time so the
+/// kernel's commitment to HOL Light's denotational semantics is
+/// crisp.
+fn validate_hol_op_shape(op: HolOp, ty: &Type) -> Result<()> {
+    use crate::term::HolOp::*;
+    // `α → α → bool` shape — α captured by the inner-domain.
+    let check_eq_shape = || -> Result<()> {
+        let TypeKind::Fun(dom1, rest) = ty.kind() else {
+            return Err(Error::HolOpShape {
+                op,
+                got: ty.clone(),
+                expected: "α → α → bool",
+            });
+        };
+        let TypeKind::Fun(dom2, cod) = rest.kind() else {
+            return Err(Error::HolOpShape {
+                op,
+                got: ty.clone(),
+                expected: "α → α → bool",
+            });
+        };
+        if dom1 != dom2 || !cod.is_bool() {
+            return Err(Error::HolOpShape {
+                op,
+                got: ty.clone(),
+                expected: "α → α → bool",
+            });
+        }
+        Ok(())
+    };
+    // `bool → bool → bool` shape (Imp, And, Or, Iff).
+    let check_bool_binop = || -> Result<()> {
+        let TypeKind::Fun(dom1, rest) = ty.kind() else {
+            return Err(Error::HolOpShape {
+                op,
+                got: ty.clone(),
+                expected: "bool → bool → bool",
+            });
+        };
+        let TypeKind::Fun(dom2, cod) = rest.kind() else {
+            return Err(Error::HolOpShape {
+                op,
+                got: ty.clone(),
+                expected: "bool → bool → bool",
+            });
+        };
+        if !dom1.is_bool() || !dom2.is_bool() || !cod.is_bool() {
+            return Err(Error::HolOpShape {
+                op,
+                got: ty.clone(),
+                expected: "bool → bool → bool",
+            });
+        }
+        Ok(())
+    };
+    // `bool → bool` shape (Not).
+    let check_bool_unop = || -> Result<()> {
+        let TypeKind::Fun(dom, cod) = ty.kind() else {
+            return Err(Error::HolOpShape {
+                op,
+                got: ty.clone(),
+                expected: "bool → bool",
+            });
+        };
+        if !dom.is_bool() || !cod.is_bool() {
+            return Err(Error::HolOpShape {
+                op,
+                got: ty.clone(),
+                expected: "bool → bool",
+            });
+        }
+        Ok(())
+    };
+    // `(α → bool) → bool` (Forall, Exists) or `(α → bool) → α` (Select).
+    let check_quantifier = |result_is_alpha: bool, expected_str: &'static str| -> Result<()> {
+        let TypeKind::Fun(pred_ty, cod) = ty.kind() else {
+            return Err(Error::HolOpShape {
+                op,
+                got: ty.clone(),
+                expected: expected_str,
+            });
+        };
+        let TypeKind::Fun(alpha, pred_cod) = pred_ty.kind() else {
+            return Err(Error::HolOpShape {
+                op,
+                got: ty.clone(),
+                expected: expected_str,
+            });
+        };
+        if !pred_cod.is_bool() {
+            return Err(Error::HolOpShape {
+                op,
+                got: ty.clone(),
+                expected: expected_str,
+            });
+        }
+        if result_is_alpha {
+            if cod != alpha {
+                return Err(Error::HolOpShape {
+                    op,
+                    got: ty.clone(),
+                    expected: expected_str,
+                });
+            }
+        } else if !cod.is_bool() {
+            return Err(Error::HolOpShape {
+                op,
+                got: ty.clone(),
+                expected: expected_str,
+            });
+        }
+        Ok(())
+    };
+    match op {
+        Eq => check_eq_shape(),
+        Imp | And | Or | Iff => check_bool_binop(),
+        Not => check_bool_unop(),
+        Forall | Exists => check_quantifier(false, "(α → bool) → bool"),
+        Select => check_quantifier(true, "(α → bool) → α"),
     }
 }

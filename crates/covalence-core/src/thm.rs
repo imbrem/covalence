@@ -1845,4 +1845,146 @@ mod hol_light_tests {
         assert_eq!(l, &y);
         assert_eq!(r, &y);
     }
+
+    // =================================================================
+    // HolOp shape validation — type_of_in rejects ill-shaped HolOp
+    // leaves so the kernel never type-checks visibly nonsensical
+    // operator instances.
+    // =================================================================
+
+    #[test]
+    fn type_of_rejects_eq_with_mixed_arg_types() {
+        // HolOp(Eq, nat → int → bool) — claims an Eq taking mixed
+        // arg types. Application onto literal arguments would
+        // type-check at bool *without the shape validation*, but
+        // the shape check rejects the operator leaf itself.
+        let weird = Term::hol_op(
+            crate::term::HolOp::Eq,
+            Type::fun(Type::nat(), Type::fun(Type::int(), Type::bool())),
+        );
+        let err = weird.type_of().unwrap_err();
+        assert!(matches!(err, Error::HolOpShape { .. }));
+    }
+
+    #[test]
+    fn type_of_rejects_imp_with_non_bool_domain() {
+        // HolOp(Imp, nat → bool → bool) — implication claims to take a
+        // nat antecedent.
+        let weird = Term::hol_op(
+            crate::term::HolOp::Imp,
+            Type::fun(Type::nat(), Type::fun(Type::bool(), Type::bool())),
+        );
+        let err = weird.type_of().unwrap_err();
+        assert!(matches!(err, Error::HolOpShape { .. }));
+    }
+
+    #[test]
+    fn type_of_rejects_forall_with_non_predicate_arg() {
+        // HolOp(Forall, nat → bool) — forall claims to take a nat
+        // arg, not a predicate.
+        let weird = Term::hol_op(
+            crate::term::HolOp::Forall,
+            Type::fun(Type::nat(), Type::bool()),
+        );
+        let err = weird.type_of().unwrap_err();
+        assert!(matches!(err, Error::HolOpShape { .. }));
+    }
+
+    #[test]
+    fn type_of_rejects_forall_with_wrong_codomain() {
+        // HolOp(Forall, (nat → bool) → nat) — forall returning nat
+        // instead of bool.
+        let pred = Type::fun(Type::nat(), Type::bool());
+        let weird = Term::hol_op(
+            crate::term::HolOp::Forall,
+            Type::fun(pred, Type::nat()),
+        );
+        let err = weird.type_of().unwrap_err();
+        assert!(matches!(err, Error::HolOpShape { .. }));
+    }
+
+    #[test]
+    fn type_of_rejects_select_with_wrong_codomain() {
+        // HolOp(Select, (nat → bool) → bool) — select must return α
+        // (= nat here), not bool.
+        let pred = Type::fun(Type::nat(), Type::bool());
+        let weird = Term::hol_op(
+            crate::term::HolOp::Select,
+            Type::fun(pred, Type::bool()),
+        );
+        let err = weird.type_of().unwrap_err();
+        assert!(matches!(err, Error::HolOpShape { .. }));
+    }
+
+    #[test]
+    fn type_of_rejects_not_with_wrong_shape() {
+        // HolOp(Not, nat → nat) — claims Not is nat → nat.
+        let weird = Term::hol_op(
+            crate::term::HolOp::Not,
+            Type::fun(Type::nat(), Type::nat()),
+        );
+        let err = weird.type_of().unwrap_err();
+        assert!(matches!(err, Error::HolOpShape { .. }));
+    }
+
+    #[test]
+    fn type_of_accepts_canonical_hol_ops() {
+        // Spot-check that the canonical shapes still type-check.
+        let alpha = Type::tfree("a");
+        let pred = Type::fun(alpha.clone(), Type::bool());
+
+        // Eq : α → α → bool
+        let eq = Term::hol_op(
+            crate::term::HolOp::Eq,
+            Type::fun(alpha.clone(), Type::fun(alpha.clone(), Type::bool())),
+        );
+        assert!(eq.type_of().is_ok());
+
+        // Imp : bool → bool → bool
+        let imp = Term::hol_op(
+            crate::term::HolOp::Imp,
+            Type::fun(Type::bool(), Type::fun(Type::bool(), Type::bool())),
+        );
+        assert!(imp.type_of().is_ok());
+
+        // Forall : (α → bool) → bool
+        let forall = Term::hol_op(
+            crate::term::HolOp::Forall,
+            Type::fun(pred.clone(), Type::bool()),
+        );
+        assert!(forall.type_of().is_ok());
+
+        // Select : (α → bool) → α
+        let select = Term::hol_op(
+            crate::term::HolOp::Select,
+            Type::fun(pred, alpha),
+        );
+        assert!(select.type_of().is_ok());
+
+        // Not : bool → bool
+        let not = Term::hol_op(
+            crate::term::HolOp::Not,
+            Type::fun(Type::bool(), Type::bool()),
+        );
+        assert!(not.type_of().is_ok());
+    }
+
+    #[test]
+    fn ill_shaped_hol_op_cannot_enter_thm() {
+        // The shape validation runs from `type_of_in`, which is what
+        // `Thm::build` calls — so ill-shaped HolOp terms can never
+        // appear in a Thm conclusion or hypothesis.
+        let weird_eq = Term::hol_op(
+            crate::term::HolOp::Eq,
+            Type::fun(Type::nat(), Type::fun(Type::int(), Type::bool())),
+        );
+        let weird_eq_at_lits = Term::app(
+            Term::app(weird_eq, Term::nat_lit(5u32)),
+            Term::int_lit(5),
+        );
+        // Even though structurally the term has bool result, build
+        // fails because the underlying HolOp is ill-shaped.
+        let err = Thm::assume(weird_eq_at_lits).unwrap_err();
+        assert!(matches!(err, Error::HolOpShape { .. }));
+    }
 }

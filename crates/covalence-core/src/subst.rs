@@ -218,9 +218,7 @@ pub fn subst_tfree_in_type(ty: &Type, name: &str, r: &Type) -> Type {
         TypeKind::TFree(n) if n == name => r.clone(),
         TypeKind::TFree(_)
         | TypeKind::Prop
-        | TypeKind::Bytes
         | TypeKind::Nat
-        | TypeKind::Int
         | TypeKind::Unit
         | TypeKind::Bool => ty.clone(),
         TypeKind::Fun(a, b) => Type::fun(
@@ -448,9 +446,7 @@ pub fn match_types(
             }
         },
         (TypeKind::Prop, TypeKind::Prop)
-        | (TypeKind::Bytes, TypeKind::Bytes)
-        | (TypeKind::Nat, TypeKind::Nat)
-        | (TypeKind::Int, TypeKind::Int) => Ok(()),
+        | (TypeKind::Nat, TypeKind::Nat) => Ok(()),
         (TypeKind::Fun(pa, pb), TypeKind::Fun(ta, tb)) => {
             match_types(pa, ta, sub)?;
             match_types(pb, tb, sub)

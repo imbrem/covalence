@@ -73,12 +73,15 @@ fn type_ctx() -> &'static Blake3Ctx {
 // ---- type tags ----
 const TY_TFREE: u8 = 0x00;
 const TY_PROP: u8 = 0x01;
-const TY_BYTES: u8 = 0x02;
+// 0x02 was TY_BYTES (kernel-primitive); `bytes` is now a derived
+// TypeSpec hashed via TY_SPEC. Tag reserved to keep tag values
+// stable for any persisted hashes.
 const TY_FUN: u8 = 0x03;
 const TY_TYCON: u8 = 0x04;
 const TY_TYCON_OBS: u8 = 0x05;
 const TY_NAT: u8 = 0x06;
-const TY_INT: u8 = 0x07;
+// 0x07 was TY_INT (kernel-primitive); `int` is now a derived
+// TypeSpec hashed via TY_SPEC.
 const TY_UNIT: u8 = 0x08;
 const TY_SPEC: u8 = 0x09;
 const TY_BOOL: u8 = 0x0a;
@@ -172,9 +175,7 @@ impl Hasher {
                 ctx.tag(buf)
             }
             TypeKind::Prop => ctx.tag([TY_PROP]),
-            TypeKind::Bytes => ctx.tag([TY_BYTES]),
             TypeKind::Nat => ctx.tag([TY_NAT]),
-            TypeKind::Int => ctx.tag([TY_INT]),
             TypeKind::Unit => ctx.tag([TY_UNIT]),
             TypeKind::Bool => ctx.tag([TY_BOOL]),
             TypeKind::Fun(a, b) => {

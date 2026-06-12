@@ -41,13 +41,10 @@ fn ctx_bool_is_the_canonical_bool_type() {
     let ctx = HolLightCtx::new();
     let b = ctx.bool_type();
     assert_eq!(b, Type::bool());
-    match b.kind() {
-        TypeKind::Tycon(hint, args) => {
-            assert_eq!(hint.as_str(), "bool");
-            assert!(args.is_empty());
-        }
-        _ => panic!("expected Tycon(\"bool\", []), got {:?}", b),
-    }
+    // After the Pure→HOL collapse, `bool` is a first-class
+    // `TypeKind::Bool` variant (no longer the named-Tycon hack).
+    assert!(matches!(b.kind(), TypeKind::Bool));
+    assert!(b.is_bool());
 }
 
 #[test]

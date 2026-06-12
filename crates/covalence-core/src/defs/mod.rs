@@ -49,8 +49,8 @@ mod stream;
 mod symbol;
 
 pub use blob::{
-    blob_spec, blob_ty, bytes_at, bytes_at_spec, bytes_cat, bytes_cat_spec, bytes_cons_nat,
-    bytes_cons_nat_spec, bytes_len, bytes_len_spec, bytes_slice, bytes_slice_spec,
+    bytes_at, bytes_at_spec, bytes_cat, bytes_cat_spec, bytes_cons_nat, bytes_cons_nat_spec,
+    bytes_len, bytes_len_spec, bytes_slice, bytes_slice_spec, bytes_spec,
 };
 pub use canonical::Canonical;
 pub use coprod::{
@@ -64,7 +64,7 @@ pub use int::{
     int_abs, int_abs_spec, int_add, int_add_spec, int_div, int_div_spec, int_le, int_le_spec,
     int_lt, int_lt_spec, int_mod, int_mod_spec, int_mul, int_mul_spec, int_neg, int_neg_spec,
     int_pred, int_pred_spec, int_sgn, int_sgn_spec, int_sub, int_sub_spec, int_succ,
-    int_succ_spec, int_zero,
+    int_succ_spec, int_ty_spec, int_zero,
 };
 pub use list::{
     cons, cons_spec, head, head_spec, list, list_cat, list_cat_spec, list_filter, list_filter_spec,
@@ -457,11 +457,12 @@ mod tests {
     }
 
     #[test]
-    fn blob_carrier_is_list_u8() {
-        // After flattening, blob's carrier should be exactly `list u8`
-        // (using the catalogue's list spec, not a raw stream-of-option).
-        let b = blob_ty();
-        assert_eq!(b, list(u8_ty()));
+    fn bytes_carrier_is_list_u8() {
+        // `bytes := list u8`. We pull the carrier out of the spec
+        // and assert it matches the canonical `list u8` build (using
+        // the catalogue's list spec, not a raw stream-of-option).
+        let spec = bytes_spec();
+        assert_eq!(spec.ty().cloned(), Some(list(u8_ty())));
     }
 
     #[test]

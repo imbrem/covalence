@@ -258,7 +258,7 @@ mod tests {
             axiom_len_cons_nat(),
             axiom_bytes_induction(),
         ] {
-            assert!(ax.concl().type_of().unwrap().is_prop());
+            assert!(ax.concl().type_of().unwrap().is_formula());
         }
     }
 }

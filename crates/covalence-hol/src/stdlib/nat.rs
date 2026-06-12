@@ -196,7 +196,7 @@ mod tests {
         let a = axiom_add_def();
         let b = axiom_add_def();
         assert_eq!(a.concl(), b.concl());
-        assert!(a.concl().type_of().unwrap().is_prop());
+        assert!(a.concl().type_of().unwrap().is_formula());
     }
 
     #[test]

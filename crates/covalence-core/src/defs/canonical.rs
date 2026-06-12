@@ -77,8 +77,10 @@ pub enum Canonical {
     Result,
 
     // ---- Bytes / blobs ----
-    /// `blob := list u8`.
-    Blob,
+    /// `bytes := list u8` — the type of byte literals (`TermKind::Blob`).
+    /// Was the kernel-primitive `TypeKind::Bytes` before the migration
+    /// to spec-derived numerical/byte types.
+    Bytes,
     /// `bytesCat : bytes → bytes → bytes` — concatenation.
     BytesCat,
     /// `bytesConsNat : nat → bytes → bytes` — cons a nat (mod 256).
@@ -95,6 +97,10 @@ pub enum Canonical {
     Signed1,
     /// `signed2 'a := prod bit 'a` (a or −(a+1)) — two's-complement-ish.
     Signed2,
+    /// `int := signed2 nat` — the type of integer literals
+    /// (`TermKind::Int`). Was the kernel-primitive `TypeKind::Int`
+    /// before the migration to spec-derived numerical types.
+    Int,
 
     // ---- Rationals / reals / floats ----
     /// `fieldOfFractions[mul, zero] 'a := prod 'a 'a quot (standard)`.
@@ -276,7 +282,7 @@ impl Canonical {
             Canonical::Stream => "stream",
             Canonical::List => "list",
             Canonical::Result => "result",
-            Canonical::Blob => "blob",
+            Canonical::Bytes => "bytes",
             Canonical::BytesCat => "bytesCat",
             Canonical::BytesConsNat => "bytesConsNat",
             Canonical::BytesLen => "bytesLen",
@@ -284,6 +290,7 @@ impl Canonical {
             Canonical::BytesSlice => "bytesSlice",
             Canonical::Signed1 => "signed1",
             Canonical::Signed2 => "signed2",
+            Canonical::Int => "int",
             Canonical::FieldOfFractions => "fieldOfFractions",
             Canonical::Rat => "rat",
             Canonical::Real => "real",

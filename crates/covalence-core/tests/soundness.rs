@@ -192,10 +192,13 @@ fn thm_allows_polymorphic_const_across_hyps_and_concl() {
 }
 
 #[test]
-fn assume_rejects_non_prop_phi() {
-    // φ = (free x bytes) — not a prop
+fn assume_rejects_non_formula_phi() {
+    // φ = (free x bytes) — not a prop nor a bool. `Thm::build`
+    // (which `Thm::assume` bottoms out in) now accepts either prop
+    // OR bool during the Pure→HOL migration, so the error variant
+    // is NotFormula rather than the older NotProp.
     let result = Thm::assume(x());
-    assert!(matches!(result, Err(Error::NotProp(_))));
+    assert!(matches!(result, Err(Error::NotFormula(_))));
 }
 
 #[test]

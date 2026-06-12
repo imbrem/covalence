@@ -1,4 +1,4 @@
-//! `blob := list u8`, plus the bytes-operations TermSpec constants
+//! `bytes := list u8`, plus the bytes-operations TermSpec constants
 //! `bytesCat`, `bytesConsNat`, `bytesLen`, `bytesAt`, `bytesSlice`.
 
 use std::sync::LazyLock;
@@ -11,17 +11,14 @@ use super::helpers::any;
 use super::list::list;
 use super::spec::TypeSpec;
 
-/// `blob := list u8`.
-pub fn blob_spec() -> TypeSpec {
+/// `bytes := list u8` — the type of `TermKind::Blob` literals.
+/// Derived TypeSpec (Canonical::Bytes); was the kernel-primitive
+/// `TypeKind::Bytes` before the spec migration.
+pub fn bytes_spec() -> TypeSpec {
     static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
         let carrier = list(u8_ty());
-        TypeSpec::new(Canonical::Blob, Some(carrier.clone()), Some(any(&carrier)))
+        TypeSpec::new(Canonical::Bytes, Some(carrier.clone()), Some(any(&carrier)))
     });
-    LAZY.clone()
-}
-/// `blob` as a 0-ary Type.
-pub fn blob_ty() -> Type {
-    static LAZY: LazyLock<Type> = LazyLock::new(|| list(u8_ty()));
     LAZY.clone()
 }
 

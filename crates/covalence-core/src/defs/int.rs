@@ -1,18 +1,30 @@
-//! Term-level int arithmetic / comparison / coercion.
-//!
-//! NOTE: In the long run `int` itself should be a derived **type**
-//! (a `TypeSpec` built from `nat` via `signed1`/`signed2` or
-//! `fieldOfFractions`), not a primitive `Type::int()`. For now the
-//! term specs continue to use `Type::int()` as a placeholder until
-//! the type-level derivation lands.
+//! `int := signed2 nat` type spec, plus term-level int arithmetic /
+//! comparison / coercion.
 
 use std::sync::LazyLock;
 
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
+use super::helpers::any;
+use super::prod::signed2;
 use super::sigs;
-use super::spec::TermSpec;
+use super::spec::{TermSpec, TypeSpec};
+
+// ============================================================================
+// `int` as a derived TypeSpec
+// ============================================================================
+
+/// `int := signed2 nat` — the type of integer literals
+/// (`TermKind::Int`). Derived TypeSpec (Canonical::Int); was the
+/// kernel-primitive `TypeKind::Int` before the spec migration.
+pub fn int_ty_spec() -> TypeSpec {
+    static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
+        let carrier = signed2(Type::nat());
+        TypeSpec::new(Canonical::Int, Some(carrier.clone()), Some(any(&carrier)))
+    });
+    LAZY.clone()
+}
 
 fn int_bin_op(symbol: Canonical) -> TermSpec {
     TermSpec::new(symbol, Some(sigs::int_int_to_int()), None)
@@ -43,11 +55,6 @@ term_decl! {
 pub fn int_zero() -> Term {
     static LAZY: LazyLock<Term> = LazyLock::new(|| Term::int_lit(covalence_types::Int::zero()));
     LAZY.clone()
-}
-
-#[allow(dead_code)]
-fn _suppress_unused() {
-    let _ = Type::int();
 }
 
 /// `intAdd : int → int → int`.

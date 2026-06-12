@@ -258,7 +258,7 @@ mod tests {
     use super::*;
 
     fn check(ax: Thm) {
-        assert!(ax.concl().type_of().unwrap().is_prop());
+        assert!(ax.concl().type_of().unwrap().is_formula());
     }
 
     #[test]

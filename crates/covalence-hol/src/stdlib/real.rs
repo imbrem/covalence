@@ -372,27 +372,27 @@ mod tests {
             axiom_mul_distrib_l(),
             axiom_mul_inv(),
         ] {
-            assert!(ax.concl().type_of().unwrap().is_prop());
+            assert!(ax.concl().type_of().unwrap().is_formula());
         }
     }
 
     #[test]
     fn order_axioms_well_formed() {
         for ax in [axiom_lt_trans(), axiom_lt_asym(), axiom_trichotomy()] {
-            assert!(ax.concl().type_of().unwrap().is_prop());
+            assert!(ax.concl().type_of().unwrap().is_formula());
         }
     }
 
     #[test]
     fn completeness_axiom_well_formed() {
         let ax = axiom_completeness();
-        assert!(ax.concl().type_of().unwrap().is_prop());
+        assert!(ax.concl().type_of().unwrap().is_formula());
     }
 
     #[test]
     fn embedding_axioms_well_formed() {
         for ax in [axiom_rat_to_real_zero(), axiom_rat_to_real_add()] {
-            assert!(ax.concl().type_of().unwrap().is_prop());
+            assert!(ax.concl().type_of().unwrap().is_formula());
         }
     }
 }

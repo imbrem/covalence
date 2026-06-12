@@ -132,9 +132,7 @@ pub fn type_to_sexp(ty: &Type, ser: &dyn ObsSerializer) -> Result<SExpr> {
     Ok(match ty.kind() {
         TypeKind::TFree(name) => list2("tfree", sym(name)),
         TypeKind::Prop => list1("prop"),
-        TypeKind::Bytes => list1("bytes"),
         TypeKind::Nat => list1("nat"),
-        TypeKind::Int => list1("int"),
         TypeKind::Unit => list1("unit"),
         TypeKind::Bool => list1("bool"),
         TypeKind::Fun(a, b) => list3("fun", type_to_sexp(a, ser)?, type_to_sexp(b, ser)?),
@@ -184,18 +182,19 @@ pub fn type_from_sexp(s: &SExpr, parser: &dyn ObsParser) -> Result<Type> {
             expect_arity(children, 1, "prop")?;
             Ok(Type::prop())
         }
-        "bytes" => {
-            expect_arity(children, 1, "bytes")?;
-            Ok(Type::bytes())
-        }
         "nat" => {
             expect_arity(children, 1, "nat")?;
             Ok(Type::nat())
         }
-        "int" => {
-            expect_arity(children, 1, "int")?;
-            Ok(Type::int())
+        "unit" => {
+            expect_arity(children, 1, "unit")?;
+            Ok(Type::unit())
         }
+        "bool" => {
+            expect_arity(children, 1, "bool")?;
+            Ok(Type::bool())
+        }
+        "spec" => parse_type_spec(children, parser),
         "fun" => {
             expect_arity(children, 3, "fun")?;
             Ok(Type::fun(
@@ -230,6 +229,37 @@ pub fn type_from_sexp(s: &SExpr, parser: &dyn ObsParser) -> Result<Type> {
         }
         other => Err(SexpError(format!("unknown type head: {}", other))),
     }
+}
+
+/// Parse a `(spec LABEL TYPE*)` form by looking up `LABEL` in the
+/// canonical TypeSpec catalogue. This is the round-trip inverse of
+/// the `TypeKind::Spec` printer at line 159 above.
+fn parse_type_spec(children: &[SExpr], parser: &dyn ObsParser) -> Result<Type> {
+    use covalence_core::defs;
+
+    if children.len() < 2 {
+        return Err(SexpError("spec: missing canonical label".into()));
+    }
+    let label = expect_symbol(&children[1], "spec label")?;
+    let args = children[2..]
+        .iter()
+        .map(|c| type_from_sexp(c, parser))
+        .collect::<Result<Vec<_>>>()?;
+    let spec = match label {
+        // Wrapping types added during the Pure→HOL collapse migration.
+        // Each branch returns the canonical TypeSpec handle that
+        // `(spec LABEL …)` printed.
+        "int" => defs::int_ty_spec(),
+        "bytes" => defs::bytes_spec(),
+        // Other canonical TypeSpecs land here as the type-hierarchy
+        // catalogue gets wired up. Anything not recognised is an error.
+        other => {
+            return Err(SexpError(format!(
+                "spec: unknown canonical type label {other:?}"
+            )));
+        }
+    };
+    Ok(Type::spec(spec, args))
 }
 
 // ============================================================================

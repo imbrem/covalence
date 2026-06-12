@@ -95,14 +95,10 @@ pub enum TypeKind {
     TFree(SmolStr),
     /// Kind of meta-propositions. Built in.
     Prop,
-    /// Type of `Blob(_)` term values. Built in.
-    Bytes,
     /// Type of `TermKind::Nat(_)` term values. Built in. The natural
-    /// numbers (non-negative integers, arbitrary precision).
+    /// numbers (non-negative integers, arbitrary precision). The
+    /// kernel's foundational data type (see `docs/type-hierarchy.md`).
     Nat,
-    /// Type of `TermKind::Int(_)` term values. Built in. The integers
-    /// (arbitrary precision, possibly negative).
-    Int,
     /// Singleton type — exactly one inhabitant (kernel "trivial"
     /// representative `ε(λ_. T)`). Built in alongside the other
     /// primitive types so the derived `defs::*` catalogue can spec
@@ -149,10 +145,13 @@ pub enum TypeKind {
 
 // Cached canonical instances of the common `Type`s, so the methods
 // below are O(1) `Arc::clone` instead of a fresh allocation per call.
+//
+// `int` and `bytes` are NOT cached here directly — they are derived
+// TypeSpecs (`crate::defs::int_ty_spec`, `crate::defs::bytes_spec`)
+// wrapped in `Type::spec(…)`. The wrap itself is cached at the
+// `Type::int()` / `Type::bytes()` call sites below.
 static PROP: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Prop)));
-static BYTES: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Bytes)));
 static NAT: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Nat)));
-static INT: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Int)));
 static UNIT: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Unit)));
 static BOOL: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Bool)));
 
@@ -181,10 +180,15 @@ impl Type {
         PROP.clone()
     }
 
-    /// The native byte-string type — `bytes`. Returns a shared
-    /// instance; calls are O(1) `Arc` bumps.
+    /// The byte-string type — `bytes := list u8`. Returns a shared
+    /// instance; calls are O(1) `Arc` bumps. A derived TypeSpec
+    /// (`crate::defs::bytes_spec`) wrapping a 0-ary
+    /// `TypeKind::Spec(bytes_spec, [])` leaf. Literal terms of this
+    /// type are constructed via [`crate::Term::blob`].
     pub fn bytes() -> Self {
-        BYTES.clone()
+        static LAZY: LazyLock<Type> =
+            LazyLock::new(|| Type::spec(crate::defs::bytes_spec(), Vec::new()));
+        LAZY.clone()
     }
 
     /// The native unbounded-naturals type — `nat`. Returns a
@@ -194,11 +198,15 @@ impl Type {
         NAT.clone()
     }
 
-    /// The native unbounded-integers type — `int`. Returns a
-    /// shared instance; calls are O(1) `Arc` bumps. Literal terms
-    /// of this type are constructed via [`crate::Term::int_lit`].
+    /// The integer type — `int := signed2 nat`. Returns a shared
+    /// instance; calls are O(1) `Arc` bumps. A derived TypeSpec
+    /// (`crate::defs::int_ty_spec`) wrapping a 0-ary
+    /// `TypeKind::Spec(int_ty_spec, [])` leaf. Literal terms of this
+    /// type are constructed via [`crate::Term::int_lit`].
     pub fn int() -> Self {
-        INT.clone()
+        static LAZY: LazyLock<Type> =
+            LazyLock::new(|| Type::spec(crate::defs::int_ty_spec(), Vec::new()));
+        LAZY.clone()
     }
 
     /// The singleton type — `unit`. Has exactly one inhabitant.
@@ -284,9 +292,7 @@ pub(crate) fn free_tvars_into(ty: &Type, out: &mut std::collections::BTreeSet<Sm
             out.insert(name.clone());
         }
         TypeKind::Prop
-        | TypeKind::Bytes
         | TypeKind::Nat
-        | TypeKind::Int
         | TypeKind::Unit
         | TypeKind::Bool => {}
         TypeKind::Fun(a, b) => {
@@ -337,9 +343,7 @@ impl fmt::Display for Type {
         match self.kind() {
             TypeKind::TFree(n) => write!(f, "'{}", n),
             TypeKind::Prop => write!(f, "prop"),
-            TypeKind::Bytes => write!(f, "bytes"),
             TypeKind::Nat => write!(f, "nat"),
-            TypeKind::Int => write!(f, "int"),
             TypeKind::Unit => write!(f, "unit"),
             TypeKind::Bool => write!(f, "bool"),
             TypeKind::Fun(a, b) => write!(f, "({} ⇒ {})", a, b),

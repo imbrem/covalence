@@ -136,7 +136,7 @@ mod tests {
             axiom_neg_involutive(),
             axiom_nat_to_int_add(),
         ] {
-            assert!(ax.concl().type_of().unwrap().is_prop());
+            assert!(ax.concl().type_of().unwrap().is_formula());
         }
     }
 }

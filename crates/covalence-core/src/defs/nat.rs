@@ -410,7 +410,19 @@ term_decl! {
     nat_from_bytes_be_spec, nat_from_bytes_be, Canonical::NatFromBytesBe, sigs::bytes_to_nat()
 }
 
-term_decl! {
-    /// `natToInt : nat → int`.
-    nat_to_int_spec, nat_to_int, Canonical::NatToInt, sigs::nat_to_int()
+fn nat_to_int_body() -> Term {
+    // λn:nat. iter[int] n int_succ 0_int
+    let n = Term::free("n", Type::nat());
+    let int_succ = super::int::int_succ();
+    let zero_int = super::int::int_zero();
+    let iter_at_int = iter(Type::int());
+    let body = Term::app(Term::app(Term::app(iter_at_int, n.clone()), int_succ), zero_int);
+    hol::pub_abs("n", Type::nat(), body)
+}
+
+let_term! {
+    /// `natToInt : nat → int` ≔ `λn. iter[int] n intSucc 0`.
+    /// Closed-form reduction continues to work via
+    /// `builtins::reduce_spec` (ptr_eq dispatch on the spec).
+    nat_to_int_spec, nat_to_int, Canonical::NatToInt, nat_to_int_body()
 }

@@ -841,6 +841,23 @@ impl Thm {
             .expect("nat_rec_succ: well-typed by construction")
     }
 
+    /// `⊢ ⋀z:int. Trueprop (int_add z 0 = z)` — the right-identity
+    /// for integer addition (using the [`crate::defs::int_add`] and
+    /// [`crate::defs::int_zero`] constants).
+    pub fn int_add_zero_right() -> Thm {
+        Self::build(Ctx::new(), hol::int_add_zero_right_term())
+            .expect("int_add_zero_right: well-typed by construction")
+    }
+
+    /// `⊢ ⋀a b:int. Trueprop (int_add a (intSucc b) = intSucc (int_add a b))`
+    /// — the recursion equation tying `int_add` to `intSucc`.
+    /// Together with [`Self::int_add_zero_right`] this uniquely
+    /// determines `int_add` on the non-negative range.
+    pub fn int_add_succ_right() -> Thm {
+        Self::build(Ctx::new(), hol::int_add_succ_right_term())
+            .expect("int_add_succ_right: well-typed by construction")
+    }
+
     /// `⊢ ⋀n:nat. Trueprop (nat_le n n)` — reflexivity of `nat_le`.
     /// Justified by the selector predicate of [`crate::defs::nat_le`]:
     /// `cmp 0 0 = T` and `cmp (S n) (S m) = cmp n m`.

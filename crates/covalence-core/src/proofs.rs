@@ -33,6 +33,7 @@ pub mod nat_mod;
 pub mod nat_mul;
 pub mod nat_pow;
 pub mod nat_sub;
+pub mod nat_to_int;
 
 // ---------------------------------------------------------------------------
 // Generic helpers

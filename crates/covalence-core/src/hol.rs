@@ -422,6 +422,45 @@ pub(crate) fn nat_le_refl_term() -> Term {
     NAT_LE_REFL_TERM.clone()
 }
 
+// ---- Definitional axioms: defs::int_add (minimal pair) ----
+//
+// These two axioms uniquely characterise int_add on the
+// non-negative range, which is what nat_to_int produces. They're
+// stated in terms of the user-facing TermSpec defs::int_add and
+// defs::int_succ — no Prim::IntArith references.
+
+static INT_ADD_ZERO_RIGHT_TERM: LazyLock<Term> = LazyLock::new(|| {
+    // ⋀z:int. Trueprop (int_add z 0 = z)
+    let z = Term::free("z", Type::int());
+    let zero_int = crate::defs::int_zero();
+    let int_add = crate::defs::int_add();
+    let lhs = Term::app(Term::app(int_add, z.clone()), zero_int);
+    let eq = hol_eq(lhs, z);
+    pure_all("z", Type::int(), trueprop(eq))
+});
+
+static INT_ADD_SUCC_RIGHT_TERM: LazyLock<Term> = LazyLock::new(|| {
+    // ⋀a b:int. Trueprop (int_add a (intSucc b) = intSucc (int_add a b))
+    let a = Term::free("a", Type::int());
+    let b = Term::free("b", Type::int());
+    let int_succ = crate::defs::int_succ();
+    let int_add = crate::defs::int_add();
+    let succ_b = Term::app(int_succ.clone(), b.clone());
+    let lhs = Term::app(Term::app(int_add.clone(), a.clone()), succ_b);
+    let a_plus_b = Term::app(Term::app(int_add, a.clone()), b.clone());
+    let rhs = Term::app(int_succ, a_plus_b);
+    let eq = hol_eq(lhs, rhs);
+    pure_all("a", Type::int(), pure_all("b", Type::int(), trueprop(eq)))
+});
+
+pub(crate) fn int_add_zero_right_term() -> Term {
+    INT_ADD_ZERO_RIGHT_TERM.clone()
+}
+
+pub(crate) fn int_add_succ_right_term() -> Term {
+    INT_ADD_SUCC_RIGHT_TERM.clone()
+}
+
 // ---- Definitional axioms: defs::nat_div ----
 //
 // nat_div is declared (no body). The three axioms below pin its

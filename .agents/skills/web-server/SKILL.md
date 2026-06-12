@@ -1,6 +1,7 @@
 ---
-user-invocable: false
+name: web-server
 description: Web server architecture and SvelteKit frontend details
+disable-model-invocation: true
 ---
 
 ## Web server (`cov serve`)

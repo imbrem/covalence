@@ -1,6 +1,7 @@
 ---
-user-invocable: false
+name: vscode-extension
 description: VSCode extension architecture and LSP server details
+disable-model-invocation: true
 ---
 
 ## LSP (`cov lsp`)
@@ -17,11 +18,13 @@ Also provides `textDocument/formatting` for sexp files. WAT formatting is not ye
 The extension supports two LSP transport modes, selected automatically by `src/server.ts`:
 
 **Native mode** (Linux desktop, when `cov` is available):
+
 ```
 VSCode ← LanguageClient ← stdio ← cov lsp (native binary)
 ```
 
 **WASM mode** (browser, or native not available):
+
 ```
 VSCode ← LanguageClient ← @vscode/wasm-wasi-lsp ← WASI Process (cov.wasm) ← lsp-server
 ```

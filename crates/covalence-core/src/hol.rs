@@ -152,9 +152,10 @@ pub(crate) fn zero() -> Term {
     Term::nat_lit(Nat::zero())
 }
 
-/// `succ : nat → nat`.
+/// `succ : nat → nat` — the user-facing `defs::nat_succ` TermSpec
+/// constant. Closed forms reduce via `builtins::reduce_spec`.
 pub(crate) fn succ_fn() -> Term {
-    Term::prim(Prim::NatArith(Arith::Succ))
+    crate::defs::nat_succ()
 }
 
 /// `succ n : nat`.
@@ -162,14 +163,20 @@ fn succ(n: Term) -> Term {
     Term::app(succ_fn(), n)
 }
 
-/// `pred : nat → nat`.
+/// `pred n : nat`.
 fn pred(n: Term) -> Term {
     Term::app(pred_fn(), n)
 }
 
-/// `pred : nat → nat` (the curried primitive).
+/// `pred : nat → nat` — saturating predecessor, the `defs::nat_pred`
+/// TermSpec.
 pub(crate) fn pred_fn() -> Term {
-    Term::prim(Prim::NatArith(Arith::Pred))
+    crate::defs::nat_pred()
+}
+
+/// `intSucc : int → int` — the `defs::int_succ` TermSpec.
+pub(crate) fn int_succ_fn() -> Term {
+    crate::defs::int_succ()
 }
 
 fn nat_add_fn() -> Term {

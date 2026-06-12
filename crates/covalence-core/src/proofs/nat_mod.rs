@@ -16,7 +16,8 @@ use crate::thm::Thm;
 use super::nat_mul::nat_mul_one_left;
 use super::nat_sub::nat_sub_self;
 use super::{
-    apply_eq, beta_at, instantiate_universal, pure_eq_of_hol_eq, trueprop, trueprop_of_pure_eq,
+    apply_eq, beta_at, instantiate_universal, pure_eq_of_hol_eq, trueprop,
+    trueprop_of_pure_eq,
 };
 
 fn trans_then_beta(eq: Thm, beta_lhs: Term) -> Result<Thm> {

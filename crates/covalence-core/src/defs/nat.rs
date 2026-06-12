@@ -24,6 +24,22 @@ use super::canonical::Canonical;
 use super::sigs;
 
 // ============================================================================
+// natSucc / natPred — TermSpec constants. No body; `builtins::reduce_spec`
+// matches on them to evaluate closed-form applications.
+// ============================================================================
+
+term_decl! {
+    /// `natSucc : nat → nat` — the constructor. Reduces on literals via
+    /// `builtins::reduce_spec`.
+    nat_succ_spec, nat_succ, Canonical::NatSucc, sigs::nat_to_nat()
+}
+
+term_decl! {
+    /// `natPred : nat → nat` — saturating predecessor (`pred 0 = 0`).
+    nat_pred_spec, nat_pred, Canonical::NatPred, sigs::nat_to_nat()
+}
+
+// ============================================================================
 // Type signatures used here
 // ============================================================================
 

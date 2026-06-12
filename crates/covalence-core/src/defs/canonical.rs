@@ -121,6 +121,11 @@ pub enum Canonical {
     Tail,
 
     // ---- Term-level: nat arithmetic ----
+    /// `natSucc : nat → nat` — the constructor `λn. n + 1`. Closed
+    /// forms reduce via `builtins::reduce_spec`.
+    NatSucc,
+    /// `natPred : nat → nat` — saturating predecessor (`0 - 1 = 0`).
+    NatPred,
     /// `natRec : 'a → (nat → 'a → 'a) → nat → 'a` — primitive recursor.
     /// Selector predicate: the standard `r z f 0 = z` and
     /// `r z f (S n) = f n (r z f n)` equations.
@@ -167,6 +172,11 @@ pub enum Canonical {
     NatFromBytesBe,
 
     // ---- Term-level: int arithmetic ----
+    /// `intSucc : int → int` — `λz. z + 1`. Closed forms reduce via
+    /// `builtins::reduce_spec`.
+    IntSucc,
+    /// `intPred : int → int` — `λz. z − 1`.
+    IntPred,
     /// `intAdd : int → int → int`.
     IntAdd,
     /// `intMul : int → int → int`.
@@ -272,6 +282,8 @@ impl Canonical {
             Canonical::Cons => "cons",
             Canonical::Head => "head",
             Canonical::Tail => "tail",
+            Canonical::NatSucc => "natSucc",
+            Canonical::NatPred => "natPred",
             Canonical::NatRec => "natRec",
             Canonical::Iter => "iter",
             Canonical::NatAdd => "natAdd",
@@ -292,6 +304,8 @@ impl Canonical {
             Canonical::NatToBytesBe => "natToBytesBe",
             Canonical::NatFromBytesLe => "natFromBytesLe",
             Canonical::NatFromBytesBe => "natFromBytesBe",
+            Canonical::IntSucc => "intSucc",
+            Canonical::IntPred => "intPred",
             Canonical::IntAdd => "intAdd",
             Canonical::IntMul => "intMul",
             Canonical::IntSub => "intSub",

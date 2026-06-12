@@ -60,7 +60,8 @@ pub use helpers::{close_spec, quot_spec};
 pub use int::{
     int_abs, int_abs_spec, int_add, int_add_spec, int_div, int_div_spec, int_le, int_le_spec,
     int_lt, int_lt_spec, int_mod, int_mod_spec, int_mul, int_mul_spec, int_neg, int_neg_spec,
-    int_sgn, int_sgn_spec, int_sub, int_sub_spec,
+    int_pred, int_pred_spec, int_sgn, int_sgn_spec, int_sub, int_sub_spec, int_succ,
+    int_succ_spec, int_zero,
 };
 pub use list::{
     cons, cons_spec, head, head_spec, list, list_cat, list_cat_spec, list_filter, list_filter_spec,
@@ -73,10 +74,10 @@ pub use nat::{
     iter, iter_spec, nat_add, nat_add_spec, nat_bit_and, nat_bit_and_spec, nat_bit_or,
     nat_bit_or_spec, nat_bit_xor, nat_bit_xor_spec, nat_div, nat_div_spec, nat_from_bytes_be,
     nat_from_bytes_be_spec, nat_from_bytes_le, nat_from_bytes_le_spec, nat_le, nat_le_spec, nat_lt,
-    nat_lt_spec, nat_mod, nat_mod_spec, nat_mul, nat_mul_spec, nat_pow, nat_pow_spec, nat_rec,
-    nat_rec_spec, nat_shl, nat_shl_spec, nat_shr, nat_shr_spec, nat_sub, nat_sub_spec,
-    nat_to_bytes_be, nat_to_bytes_be_spec, nat_to_bytes_le, nat_to_bytes_le_spec, nat_to_int,
-    nat_to_int_spec,
+    nat_lt_spec, nat_mod, nat_mod_spec, nat_mul, nat_mul_spec, nat_pow, nat_pow_spec,
+    nat_pred, nat_pred_spec, nat_rec, nat_rec_spec, nat_shl, nat_shl_spec, nat_shr, nat_shr_spec,
+    nat_sub, nat_sub_spec, nat_succ, nat_succ_spec, nat_to_bytes_be, nat_to_bytes_be_spec,
+    nat_to_bytes_le, nat_to_bytes_le_spec, nat_to_int, nat_to_int_spec,
 };
 pub use option::{none, none_spec, option, option_spec, some, some_spec};
 pub use prod::{prod, prod_spec, signed1, signed1_spec, signed2, signed2_spec};

@@ -8,7 +8,7 @@
 
 use std::sync::LazyLock;
 
-use crate::term::Term;
+use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
 use super::sigs;
@@ -20,6 +20,34 @@ fn int_bin_op(symbol: Canonical) -> TermSpec {
 
 fn int_cmp_op(symbol: Canonical) -> TermSpec {
     TermSpec::new(symbol, Some(sigs::int_int_to_bool()), None)
+}
+
+// ============================================================================
+// intSucc / intPred — TermSpec constants over int. `builtins::reduce_spec`
+// matches on them for closed-form reduction.
+// ============================================================================
+
+term_decl! {
+    /// `intSucc : int → int` — `λz. z + 1`. Reduces on literals via
+    /// `builtins::reduce_spec`.
+    int_succ_spec, int_succ, Canonical::IntSucc, sigs::int_to_int()
+}
+
+term_decl! {
+    /// `intPred : int → int` — `λz. z − 1`.
+    int_pred_spec, int_pred, Canonical::IntPred, sigs::int_to_int()
+}
+
+/// `0 : int` — the canonical integer-zero literal. Reused by
+/// `nat_to_int`'s definitional body and downstream proofs.
+pub fn int_zero() -> Term {
+    static LAZY: LazyLock<Term> = LazyLock::new(|| Term::int_lit(covalence_types::Int::zero()));
+    LAZY.clone()
+}
+
+#[allow(dead_code)]
+fn _suppress_unused() {
+    let _ = Type::int();
 }
 
 /// `intAdd : int → int → int`.

@@ -55,13 +55,13 @@ impl Thm {
     fn build(hyps: Ctx, concl: Term) -> Result<Thm> {
         let mut env = TypeEnv::default();
         let ty = type_of_in(&concl, &mut env)?;
-        if !ty.is_prop() {
-            return Err(Error::NotProp(ty));
+        if !ty.is_formula() {
+            return Err(Error::NotFormula(ty));
         }
         for h in &hyps {
             let hty = type_of_in(h, &mut env)?;
-            if !hty.is_prop() {
-                return Err(Error::NotProp(hty));
+            if !hty.is_formula() {
+                return Err(Error::NotFormula(hty));
             }
         }
         Ok(Thm { hyps, concl })

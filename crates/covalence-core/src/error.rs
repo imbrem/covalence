@@ -14,6 +14,15 @@ pub enum Error {
     #[error("expected term of kind prop, got type {0}")]
     NotProp(Type),
 
+    #[error("expected term of kind bool, got type {0}")]
+    NotBool(Type),
+
+    #[error("expected term of kind prop or bool, got type {0}")]
+    NotFormula(Type),
+
+    #[error("expected HOL equation (lhs = rhs : bool), got {0}")]
+    NotHolEq(String),
+
     #[error("type mismatch: expected {expected}, got {got}")]
     TypeMismatch { expected: Type, got: Type },
 

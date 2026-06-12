@@ -81,6 +81,7 @@ const TY_NAT: u8 = 0x06;
 const TY_INT: u8 = 0x07;
 const TY_UNIT: u8 = 0x08;
 const TY_SPEC: u8 = 0x09;
+const TY_BOOL: u8 = 0x0a;
 
 // ---- term tags ----
 const T_BOUND: u8 = 0x00;
@@ -175,6 +176,7 @@ impl Hasher {
             TypeKind::Nat => ctx.tag([TY_NAT]),
             TypeKind::Int => ctx.tag([TY_INT]),
             TypeKind::Unit => ctx.tag([TY_UNIT]),
+            TypeKind::Bool => ctx.tag([TY_BOOL]),
             TypeKind::Fun(a, b) => {
                 let ah = self.hash_type(a, oh);
                 let bh = self.hash_type(b, oh);

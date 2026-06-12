@@ -221,7 +221,8 @@ pub fn subst_tfree_in_type(ty: &Type, name: &str, r: &Type) -> Type {
         | TypeKind::Bytes
         | TypeKind::Nat
         | TypeKind::Int
-        | TypeKind::Unit => ty.clone(),
+        | TypeKind::Unit
+        | TypeKind::Bool => ty.clone(),
         TypeKind::Fun(a, b) => Type::fun(
             subst_tfree_in_type(a, name, r),
             subst_tfree_in_type(b, name, r),

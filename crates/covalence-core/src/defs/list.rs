@@ -1,20 +1,30 @@
-//! `list 'a` type + constructors + list operations.
+//! `list 'a := stream (option 'a) where finite` + constructors +
+//! list operations.
+//!
+//! The selector predicate is `finite` from
+//! [`crate::defs::stream::finite`]:
+//! `λs:stream(option α). ∃N. ∀n. nat_le N n ⟹ s n = none`.
+//! So `list α` is exactly the subset of `stream (option α)` that's
+//! eventually `none` — i.e. has finite "real" content.
 
 use std::sync::LazyLock;
 
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
-use super::helpers::any;
 use super::option::option;
 use super::spec::{TermSpec, TypeSpec};
+use super::stream::{finite, stream};
 
-/// `list 'a := stream (option 'a) where (eventually-none)`.
+/// `list 'a := stream (option 'a) where finite`. The carrier is
+/// the spec'd `stream (option α)`; the selector predicate is
+/// `finite α`, which restricts to streams that are eventually
+/// `none`.
 pub fn list_spec() -> TypeSpec {
     static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
-        let carrier = Type::fun(Type::nat(), option(alpha));
-        TypeSpec::new(Canonical::List, Some(carrier.clone()), Some(any(&carrier)))
+        let carrier = stream(option(alpha.clone()));
+        TypeSpec::new(Canonical::List, Some(carrier), Some(finite(alpha)))
     });
     LAZY.clone()
 }

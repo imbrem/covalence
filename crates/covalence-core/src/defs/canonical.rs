@@ -69,9 +69,10 @@ pub enum Canonical {
     // ---- Container types ----
     /// `option 'a := coprod 'a unit`.
     Option,
-    /// `stream 'a := nat → 'a`.
+    /// `stream 'a := nat → 'a` (opaque TypeSpec wrapper; bridge to
+    /// the carrier via `stream_at` / `stream_make`).
     Stream,
-    /// `list 'a := stream (option 'a) where (eventually-none)`.
+    /// `list 'a := stream (option 'a) where finite 'a`.
     List,
     /// `result 'a 'b := coprod 'a 'b`.
     Result,
@@ -251,6 +252,34 @@ pub enum Canonical {
     SetCard,
     /// `listToSet : list 'a → set 'a`.
     ListToSet,
+
+    // ---- Term-level: stream operations ----
+    /// `streamAt : stream 'a → nat → 'a` — the bridge from opaque
+    /// `stream α` back to its carrier function (apply at index).
+    /// Declaration-only.
+    StreamAt,
+    /// `streamMake : (nat → 'a) → stream 'a` — the bridge from a
+    /// `nat → α` function to the opaque `stream α`. Inverse of
+    /// `streamAt` under η. Declaration-only.
+    StreamMake,
+    /// `streamHead : stream 'a → 'a` — `λs. stream_at s 0`.
+    StreamHead,
+    /// `streamTail : stream 'a → stream 'a` — `λs n. s (succ n)`.
+    StreamTail,
+    /// `streamCons : 'a → stream 'a → stream 'a` — prepend an element.
+    StreamCons,
+    /// `streamConst : 'a → stream 'a` — `λx n. x` (the constant stream).
+    StreamConst,
+    /// `streamIterate : 'a → ('a → 'a) → stream 'a` —
+    /// `λx f n. iter n f x`.
+    StreamIterate,
+    /// `streamNth : nat → stream 'a → 'a` — `λn s. s n`.
+    StreamNth,
+    /// `finite : stream (option 'a) → bool` — the predicate
+    /// characterizing finite-list-shaped streams: `∃N. ∀n. nat_le N n
+    /// ⟹ s n = none`. Used as the selector predicate for
+    /// `list 'a := stream (option 'a) where finite`.
+    Finite,
 }
 
 impl Canonical {
@@ -279,7 +308,6 @@ impl Canonical {
             Canonical::Bits => "bits",
             Canonical::Fin => "fin",
             Canonical::Option => "option",
-            Canonical::Stream => "stream",
             Canonical::List => "list",
             Canonical::Result => "result",
             Canonical::Bytes => "bytes",
@@ -355,6 +383,16 @@ impl Canonical {
             Canonical::SetSubset => "setSubset",
             Canonical::SetCard => "setCard",
             Canonical::ListToSet => "listToSet",
+            Canonical::Stream => "stream",
+            Canonical::StreamAt => "streamAt",
+            Canonical::StreamMake => "streamMake",
+            Canonical::StreamHead => "streamHead",
+            Canonical::StreamTail => "streamTail",
+            Canonical::StreamCons => "streamCons",
+            Canonical::StreamConst => "streamConst",
+            Canonical::StreamIterate => "streamIterate",
+            Canonical::StreamNth => "streamNth",
+            Canonical::Finite => "finite",
         }
     }
 }

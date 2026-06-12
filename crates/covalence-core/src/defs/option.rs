@@ -1,22 +1,33 @@
 //! `option 'a := coprod 'a unit` + `some` / `none` constructors.
+//!
+//! Option is a thin transparent alias for `coprod α unit` — its
+//! carrier IS the spec'd coprod, and the selector predicate is
+//! trivially true. So `option α` and `coprod α unit` are extensionally
+//! the same type (same inhabitants); structurally they're distinct
+//! TypeKind::Spec leaves because the Canonical label differs (one
+//! prints as "option α", the other as "(coprod α unit)").
 
 use std::sync::LazyLock;
 
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
-use super::coprod::coprod_predicate_at;
+use super::coprod::coprod;
+use super::helpers::any;
 use super::spec::{TermSpec, TypeSpec};
 
-/// `option 'a := coprod 'a unit`.
+/// `option 'a := coprod 'a unit`. Implemented as a trivially-true
+/// predicate over the spec'd carrier `coprod 'a unit` — the
+/// selector accepts every value in coprod, so `option α` has
+/// exactly the same inhabitants as `coprod α unit`.
 pub fn option_spec() -> TypeSpec {
     static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
-        let carrier = Type::fun(alpha.clone(), Type::fun(Type::unit(), Type::bool()));
+        let carrier = coprod(alpha, Type::unit());
         TypeSpec::new(
             Canonical::Option,
-            Some(carrier),
-            Some(coprod_predicate_at(alpha, Type::unit())),
+            Some(carrier.clone()),
+            Some(any(&carrier)),
         )
     });
     LAZY.clone()

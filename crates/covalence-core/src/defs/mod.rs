@@ -96,7 +96,11 @@ pub use set::{
     set_union_spec,
 };
 pub use spec::{TermSpec, TypeSpec};
-pub use stream::{stream, stream_spec};
+pub use stream::{
+    finite, finite_spec, stream, stream_at, stream_at_spec, stream_const, stream_const_spec,
+    stream_head, stream_head_spec, stream_iterate, stream_iterate_spec, stream_make,
+    stream_make_spec, stream_nth, stream_nth_spec, stream_spec, stream_tail, stream_tail_spec,
+};
 pub use symbol::{Opacity, Symbol};
 
 #[cfg(test)]
@@ -444,7 +448,11 @@ mod tests {
     }
 
     #[test]
-    fn stream_alpha_round_trip() {
+    fn stream_is_opaque_typespec() {
+        // `stream α` is a TypeKind::Spec wrapper over the carrier
+        // `nat → α`. Opaque to the type-checker — you can't apply
+        // `s : stream α` directly. Use `stream_at` / `stream_make`
+        // to bridge between the spec leaf and the carrier function.
         let s = stream(Type::nat());
         match s.kind() {
             TypeKind::Spec(spec, args) => {
@@ -454,6 +462,51 @@ mod tests {
             }
             _ => panic!("expected TypeKind::Spec, got {s:?}"),
         }
+        // Carrier is `nat → α`.
+        let spec = stream::stream_spec();
+        assert_eq!(
+            spec.ty().cloned(),
+            Some(Type::fun(Type::nat(), Type::tfree("a"))),
+        );
+    }
+
+    #[test]
+    fn stream_at_returns_carrier_application() {
+        // stream_at : stream α → nat → α
+        let alpha = Type::tfree("a");
+        let f = stream::stream_at(alpha.clone());
+        assert_eq!(
+            f.type_of().unwrap(),
+            Type::fun(
+                stream(alpha.clone()),
+                Type::fun(Type::nat(), alpha),
+            ),
+        );
+    }
+
+    #[test]
+    fn stream_make_returns_stream_from_function() {
+        // stream_make : (nat → α) → stream α
+        let alpha = Type::tfree("a");
+        let f = stream::stream_make(alpha.clone());
+        assert_eq!(
+            f.type_of().unwrap(),
+            Type::fun(
+                Type::fun(Type::nat(), alpha.clone()),
+                stream(alpha),
+            ),
+        );
+    }
+
+    #[test]
+    fn finite_is_typed_at_stream_option_to_bool() {
+        // finite α : stream (option α) → bool
+        let alpha = Type::tfree("a");
+        let f = stream::finite(alpha.clone());
+        assert_eq!(
+            f.type_of().unwrap(),
+            Type::fun(stream(option(alpha)), Type::bool()),
+        );
     }
 
     #[test]

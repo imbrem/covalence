@@ -1,6 +1,7 @@
 ---
-user-invocable: false
+name: architecture
 description: Covalence repo layout, dependency graph, and key architectural rules
+disable-model-invocation: true
 ---
 
 ## Repo Layout
@@ -86,6 +87,7 @@ covalence-serve (HTTP server) — depends on covalence-shell::KernelError
 ```
 
 **Key rules (still applicable):**
+
 - `SyncBackend` trait is dyn-compatible (for REPL's `Box<dyn SyncBackend>`)
 - `AsyncBackend` trait uses native `async fn` (NOT dyn-compatible — used with concrete types)
 - `covalence-repl` and `covalence-client` stay lightweight (no wasmtime)
@@ -95,6 +97,7 @@ covalence-serve (HTTP server) — depends on covalence-shell::KernelError
 Uses clap derive for arg parsing, `color-eyre` for error reporting (native only), and `tracing` + `tracing-subscriber` for logging (default level: `info`, override with `RUST_LOG`).
 
 Features (all default, all compile on WASM except native-only deps are target-gated):
+
 - `lsp` — `cov lsp` subcommand
 - `cogit` — `cov cog` subcommand
 - `serve` — `cov serve` subcommand (prints error on WASM; axum/tokio deps are `cfg(not(wasm))`)
@@ -103,6 +106,7 @@ Features (all default, all compile on WASM except native-only deps are target-ga
 ## REPL (`cov repl`)
 
 Interactive S-expression evaluator with a content-addressed blob store. Backend is selected at startup:
+
 - `--connect URL` → `SyncHttpBackend` (remote)
 - `--standalone` → `Kernel` (in-process)
 - Default → auto-discovery (find running server) → fallback to `Kernel`
@@ -110,6 +114,7 @@ Interactive S-expression evaluator with a content-addressed blob store. Backend 
 Storage: `--store` enables SQLite persistence, `--memory` (default) uses in-memory.
 
 Commands:
+
 - `(store "data")` — hash and store inline text as a blob
 - `(store-url "url")` — fetch URL content and store as blob
 - `(store-file "path")` — read file and store as blob

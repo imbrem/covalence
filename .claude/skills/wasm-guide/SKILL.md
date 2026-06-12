@@ -1,6 +1,7 @@
 ---
-user-invocable: false
+name: wasm-guide
 description: WASM engine features, proposition deciding, and WASM memory configuration
+disable-model-invocation: true
 ---
 
 ## `covalence-wasm` features
@@ -17,6 +18,7 @@ The `Val`/`ValType` types in `src/val.rs` are engine-agnostic and are the intend
 **Status: not currently implemented in any Rust crate.** Earlier kernel iterations included a `decide` function that asked "does this proposition WASM component call `attest()`", but no such Rust API exists in this branch — `grep -rn "fn decide" crates/` returns nothing. The current `covalence-kernel` is a HOL kernel (see `crates/covalence-kernel/src/{arena,prop,thm,...}.rs`).
 
 References that remain:
+
 - `crates/covalence-python/covalence.pyi` declares a `decide` Python API (planned/external).
 - `crates/covalence-types/src/decision.rs` has the `Decision` three-valued type used by SAT/SMT crates.
 - The REPL highlight list still names a `decide` command, but the corresponding handler is gone.

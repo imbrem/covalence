@@ -82,9 +82,7 @@
 //! showed that ABS and INST cannot soundly fit. The pattern was
 //! removed. See the project's `audit` commit for the analysis.
 
-use std::sync::LazyLock;
-
-use covalence_core::{HolOp, Term, TermKind, Thm, Type};
+use covalence_core::{HolOp, Term, TermKind, Type};
 
 // ============================================================================
 // HOL bridge axioms (still postulated)

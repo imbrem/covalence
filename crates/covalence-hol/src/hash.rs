@@ -71,30 +71,29 @@ fn type_ctx() -> &'static Blake3Ctx {
 }
 
 // ---- type tags ----
+//
+// Tag values are reserved across the Pure→HOL collapse so any
+// persisted hashes from older revisions still resolve unambiguously.
+// 0x01 = TY_PROP (removed), 0x02 = TY_BYTES (now via TY_SPEC),
+// 0x07 = TY_INT (now via TY_SPEC). Do not reuse those values.
 const TY_TFREE: u8 = 0x00;
-const TY_PROP: u8 = 0x01;
-// 0x02 was TY_BYTES (kernel-primitive); `bytes` is now a derived
-// TypeSpec hashed via TY_SPEC. Tag reserved to keep tag values
-// stable for any persisted hashes.
 const TY_FUN: u8 = 0x03;
 const TY_TYCON: u8 = 0x04;
 const TY_TYCON_OBS: u8 = 0x05;
 const TY_NAT: u8 = 0x06;
-// 0x07 was TY_INT (kernel-primitive); `int` is now a derived
-// TypeSpec hashed via TY_SPEC.
 const TY_UNIT: u8 = 0x08;
 const TY_SPEC: u8 = 0x09;
 const TY_BOOL: u8 = 0x0a;
 
 // ---- term tags ----
+//
+// 0x05 = T_IMP (removed Pure ⟹), 0x06 = T_ALL (removed Pure ⋀),
+// 0x07 = T_EQ (removed Pure ≡). Do not reuse.
 const T_BOUND: u8 = 0x00;
 const T_FREE: u8 = 0x01;
 const T_CONST: u8 = 0x02;
 const T_APP: u8 = 0x03;
 const T_ABS: u8 = 0x04;
-const T_IMP: u8 = 0x05;
-const T_ALL: u8 = 0x06;
-const T_EQ: u8 = 0x07;
 const T_BLOB: u8 = 0x08;
 const T_OBS: u8 = 0x09;
 const T_DEF: u8 = 0x0a;

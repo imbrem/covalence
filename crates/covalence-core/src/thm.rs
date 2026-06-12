@@ -1626,4 +1626,370 @@ mod hol_light_tests {
         assert_eq!(l, &a);
         assert_eq!(r, &c);
     }
+
+    // =================================================================
+    // Derived HOL-Light rules: sym, cong_app/abs, imp_intro/elim,
+    // all_intro/elim, eta_conv.
+    //
+    // Each rule gets positive + negative coverage. Composition tests
+    // verify rule interaction (e.g. DISCH then MP recovers the original
+    // theorem; GEN then SPEC at the same witness round-trips).
+    // =================================================================
+
+    // ---- sym ----
+
+    #[test]
+    fn sym_swaps_eq_sides() {
+        let a = Term::free("a", Type::nat());
+        let b = Term::free("b", Type::nat());
+        let ab = Thm::assume(hol::hol_eq(a.clone(), b.clone())).unwrap();
+        let ba = ab.sym().expect("sym");
+        let (l, r) = parse_hol_eq(ba.concl()).unwrap();
+        assert_eq!(l, &b);
+        assert_eq!(r, &a);
+    }
+
+    #[test]
+    fn sym_rejects_non_eq() {
+        let p = Term::free("p", Type::bool());
+        let p_thm = Thm::assume(p).unwrap();
+        let err = p_thm.sym().unwrap_err();
+        assert!(matches!(err, Error::NotHolEq(_)));
+    }
+
+    #[test]
+    fn sym_preserves_hyps() {
+        let a = Term::free("a", Type::nat());
+        let b = Term::free("b", Type::nat());
+        let extra = Term::free("extra", Type::bool());
+        let ab = hol::hol_eq(a.clone(), b.clone());
+        let bigger: Ctx = [ab.clone(), extra.clone()].into_iter().collect();
+        let thm = Thm::assume(ab).unwrap().weaken(bigger).unwrap();
+        let sym = thm.sym().unwrap();
+        // hyps unchanged by sym.
+        assert!(sym.hyps().contains(&extra));
+    }
+
+    #[test]
+    fn sym_then_sym_is_identity() {
+        let a = Term::free("a", Type::nat());
+        let b = Term::free("b", Type::nat());
+        let original = Thm::assume(hol::hol_eq(a.clone(), b.clone())).unwrap();
+        let twice = original.clone().sym().unwrap().sym().unwrap();
+        assert_eq!(twice.concl(), original.concl());
+    }
+
+    // ---- cong_app / cong_abs aliases ----
+
+    #[test]
+    fn cong_app_matches_mk_comb() {
+        let succ = crate::defs::nat_succ();
+        let zero = Term::nat_lit(0u32);
+        let s_eq = Thm::refl(succ.clone()).unwrap();
+        let z_eq = Thm::refl(zero.clone()).unwrap();
+        let via_mk_comb = s_eq.clone().mk_comb(z_eq.clone()).unwrap();
+        let via_cong_app = s_eq.cong_app(z_eq).unwrap();
+        assert_eq!(via_mk_comb.concl(), via_cong_app.concl());
+    }
+
+    #[test]
+    fn cong_abs_matches_abs() {
+        let x = Term::free("x", Type::nat());
+        let r1 = Thm::refl(x.clone()).unwrap();
+        let r2 = Thm::refl(x).unwrap();
+        let via_abs = r1.abs("x", Type::nat()).unwrap();
+        let via_cong = r2.cong_abs("x", Type::nat()).unwrap();
+        assert_eq!(via_abs.concl(), via_cong.concl());
+    }
+
+    // ---- imp_intro (DISCH) / imp_elim (MP) ----
+
+    #[test]
+    fn imp_intro_discharges_hyp() {
+        // {p} ⊢ p   --imp_intro p->   ⊢ p ⟹ p
+        let p = Term::free("p", Type::bool());
+        let p_thm = Thm::assume(p.clone()).unwrap();
+        let imp = p_thm.imp_intro(&p).expect("imp_intro");
+        assert!(imp.hyps().is_empty(), "p discharged from hyps");
+        let (lhs, rhs) = parse_hol_imp(imp.concl()).unwrap();
+        assert_eq!(lhs, &p);
+        assert_eq!(rhs, &p);
+    }
+
+    #[test]
+    fn imp_intro_leaves_other_hyps() {
+        let p = Term::free("p", Type::bool());
+        let q = Term::free("q", Type::bool());
+        // Build {p, q} ⊢ q via assume+weaken.
+        let pq: Ctx = [p.clone(), q.clone()].into_iter().collect();
+        let q_thm = Thm::assume(q.clone()).unwrap().weaken(pq).unwrap();
+        let imp = q_thm.imp_intro(&p).unwrap();
+        // p removed, q still in hyps.
+        assert!(!imp.hyps().contains(&p));
+        assert!(imp.hyps().contains(&q));
+    }
+
+    #[test]
+    fn imp_intro_with_absent_phi_is_weakening() {
+        // ⊢ p  with no occurrence of `q` as a hyp → ⊢ q ⟹ p
+        let p = Term::free("p", Type::bool());
+        let q = Term::free("q", Type::bool());
+        let p_thm = Thm::assume(p.clone()).unwrap();
+        let imp = p_thm.imp_intro(&q).expect("imp_intro");
+        // p still hyp because q ≠ p.
+        assert!(imp.hyps().contains(&p));
+        let (lhs, rhs) = parse_hol_imp(imp.concl()).unwrap();
+        assert_eq!(lhs, &q);
+        assert_eq!(rhs, &p);
+    }
+
+    #[test]
+    fn imp_intro_rejects_non_bool_phi() {
+        let p = Term::free("p", Type::bool());
+        let p_thm = Thm::assume(p).unwrap();
+        let bad = Term::free("n", Type::nat());
+        let err = p_thm.imp_intro(&bad).unwrap_err();
+        assert!(matches!(err, Error::NotBool(_)));
+    }
+
+    #[test]
+    fn imp_elim_modus_ponens() {
+        // ⊢ p ⟹ q  and  ⊢ p   ⇒   ⊢ q
+        let p = Term::free("p", Type::bool());
+        let q = Term::free("q", Type::bool());
+        let imp = Thm::assume(hol::hol_imp(p.clone(), q.clone())).unwrap();
+        let p_thm = Thm::assume(p.clone()).unwrap();
+        let result = imp.imp_elim(p_thm).expect("imp_elim");
+        assert_eq!(result.concl(), &q);
+    }
+
+    #[test]
+    fn imp_elim_unions_hyps() {
+        let p = Term::free("p", Type::bool());
+        let q = Term::free("q", Type::bool());
+        let extra = Term::free("extra", Type::bool());
+        let imp_body = hol::hol_imp(p.clone(), q.clone());
+        let bigger: Ctx = [imp_body.clone(), extra.clone()].into_iter().collect();
+        let imp = Thm::assume(imp_body).unwrap().weaken(bigger).unwrap();
+        let p_thm = Thm::assume(p).unwrap();
+        let q_thm = imp.imp_elim(p_thm).unwrap();
+        assert!(q_thm.hyps().contains(&extra));
+    }
+
+    #[test]
+    fn imp_elim_rejects_non_imp() {
+        let p = Term::free("p", Type::bool());
+        let p_thm = Thm::assume(p.clone()).unwrap();
+        let q_thm = Thm::assume(Term::free("q", Type::bool())).unwrap();
+        let err = p_thm.imp_elim(q_thm).unwrap_err();
+        assert!(matches!(err, Error::NotHolImp(_)));
+    }
+
+    #[test]
+    fn imp_elim_rejects_antecedent_mismatch() {
+        let p = Term::free("p", Type::bool());
+        let q = Term::free("q", Type::bool());
+        let r = Term::free("r", Type::bool());
+        let imp = Thm::assume(hol::hol_imp(p, q)).unwrap();
+        let r_thm = Thm::assume(r).unwrap();
+        let err = imp.imp_elim(r_thm).unwrap_err();
+        assert!(matches!(err, Error::ImpAntecedentMismatch { .. }));
+    }
+
+    #[test]
+    fn disch_mp_round_trips() {
+        // From {p} ⊢ p, DISCH then MP back with ⊢ p should recover ⊢ p.
+        let p = Term::free("p", Type::bool());
+        let assumed = Thm::assume(p.clone()).unwrap();
+        let imp = assumed.imp_intro(&p).unwrap();   // ⊢ p ⟹ p
+        let p_thm = Thm::assume(p.clone()).unwrap();
+        let recovered = imp.imp_elim(p_thm).unwrap(); // ⊢ p
+        assert_eq!(recovered.concl(), &p);
+    }
+
+    // ---- all_intro (GEN) / all_elim (SPEC) ----
+
+    #[test]
+    fn all_intro_generalises_free_var() {
+        // ⊢ p[x]   --all_intro x:nat-->   ⊢ ∀x:nat. p[x]
+        // Construct ⊢ x = x : bool by refl, then generalise.
+        let x = Term::free("x", Type::nat());
+        let refl = Thm::refl(x).unwrap();   // ⊢ x = x : bool
+        let univ = refl.all_intro("x", Type::nat()).expect("all_intro");
+        let (ty, _body) = parse_hol_forall(univ.concl()).unwrap();
+        assert_eq!(ty, &Type::nat());
+    }
+
+    #[test]
+    fn all_intro_rejects_var_free_in_hyps() {
+        // {x = x} ⊢ x = x — generalising over x must fail.
+        let x = Term::free("x", Type::nat());
+        let eq = hol::hol_eq(x.clone(), x.clone());
+        let thm = Thm::assume(eq).unwrap();
+        let err = thm.all_intro("x", Type::nat()).unwrap_err();
+        assert!(matches!(err, Error::FreeVarInHyps { .. }));
+    }
+
+    #[test]
+    fn all_intro_rejects_binder_type_mismatch() {
+        // x : nat in concl, but generalise at bool — caught at the
+        // declared-type check.
+        let x = Term::free("x", Type::nat());
+        let refl = Thm::refl(x).unwrap();
+        let err = refl.all_intro("x", Type::bool()).unwrap_err();
+        assert!(matches!(err, Error::BinderTypeMismatch { .. }));
+    }
+
+    #[test]
+    fn all_intro_with_vacuous_var_succeeds() {
+        // If the named var doesn't appear free, generalisation is
+        // vacuous but still well-formed.
+        let p = Term::free("p", Type::bool());
+        let refl = Thm::refl(p).unwrap();
+        let univ = refl.all_intro("x", Type::nat()).expect("vacuous gen");
+        let (ty, _) = parse_hol_forall(univ.concl()).unwrap();
+        assert_eq!(ty, &Type::nat());
+    }
+
+    #[test]
+    fn all_elim_instantiates_witness() {
+        // ⊢ ∀x:nat. x = x   ⇒[x := 5]⇒   ⊢ 5 = 5
+        let x = Term::free("x", Type::nat());
+        let refl = Thm::refl(x).unwrap();
+        let univ = refl.all_intro("x", Type::nat()).unwrap();
+        let five = Term::nat_lit(5u32);
+        let inst = univ.all_elim(five.clone()).expect("all_elim");
+        let (l, r) = parse_hol_eq(inst.concl()).unwrap();
+        assert_eq!(l, &five);
+        assert_eq!(r, &five);
+    }
+
+    #[test]
+    fn all_elim_rejects_non_forall() {
+        let p = Term::free("p", Type::bool());
+        let p_thm = Thm::assume(p).unwrap();
+        let err = p_thm.all_elim(Term::nat_lit(0u32)).unwrap_err();
+        assert!(matches!(err, Error::NotHolForall(_)));
+    }
+
+    #[test]
+    fn all_elim_rejects_witness_type_mismatch() {
+        let x = Term::free("x", Type::nat());
+        let univ = Thm::refl(x).unwrap().all_intro("x", Type::nat()).unwrap();
+        let bad = Term::bool_lit(true); // bool, not nat
+        let err = univ.all_elim(bad).unwrap_err();
+        assert!(matches!(err, Error::TypeMismatch { .. }));
+    }
+
+    #[test]
+    fn gen_spec_round_trips_at_concrete_witness() {
+        // From ⊢ p (where p has free `x`), GEN then SPEC at `x` itself
+        // recovers ⊢ p (the witness is the var being substituted in).
+        let x = Term::free("x", Type::nat());
+        let refl = Thm::refl(x.clone()).unwrap();
+        let univ = refl.clone().all_intro("x", Type::nat()).unwrap();
+        let recovered = univ.all_elim(x).unwrap();
+        assert_eq!(recovered.concl(), refl.concl());
+    }
+
+    // ---- eta_conv ----
+
+    #[test]
+    fn eta_conv_simple() {
+        // λx:nat. succ x  --eta-->  succ
+        let succ = crate::defs::nat_succ();
+        let lambda = Term::abs("x", Type::nat(),
+            Term::app(crate::subst::shift_by(&succ, 1, 0), Term::bound(0)));
+        let thm = Thm::eta_conv(lambda.clone()).expect("eta");
+        let (l, r) = parse_hol_eq(thm.concl()).unwrap();
+        assert_eq!(l, &lambda);
+        assert_eq!(r, &succ);
+    }
+
+    #[test]
+    fn eta_conv_rejects_non_abs() {
+        let p = Term::free("p", Type::bool());
+        let err = Thm::eta_conv(p).unwrap_err();
+        assert!(matches!(err, Error::NotAbs(_)));
+    }
+
+    #[test]
+    fn eta_conv_rejects_body_not_app() {
+        // λx:nat. x is `Abs(_, nat, Bound(0))` — not an app shape.
+        let lambda = Term::abs("x", Type::nat(), Term::bound(0));
+        let err = Thm::eta_conv(lambda).unwrap_err();
+        assert!(matches!(err, Error::EtaShape));
+    }
+
+    #[test]
+    fn eta_conv_rejects_arg_not_bound_zero() {
+        // λx:nat. succ (succ x) — arg is `succ x`, not `Bound(0)`.
+        let succ = crate::defs::nat_succ();
+        let inner = Term::app(crate::subst::shift_by(&succ, 1, 0), Term::bound(0));
+        let outer = Term::app(crate::subst::shift_by(&succ, 1, 0), inner);
+        let lambda = Term::abs("x", Type::nat(), outer);
+        let err = Thm::eta_conv(lambda).unwrap_err();
+        assert!(matches!(err, Error::EtaShape));
+    }
+
+    #[test]
+    fn eta_conv_rejects_bound_zero_free_in_f() {
+        // λx:nat. (λy. x) x — `f` (= λy. x) uses Bound(0) outside its own binder,
+        // which is `Bound(0)` referring to the outer x. EtaShape.
+        let inner = Term::abs("y", Type::nat(), Term::bound(1)); // refers to outer x
+        let lambda = Term::abs("x", Type::nat(), Term::app(inner, Term::bound(0)));
+        let err = Thm::eta_conv(lambda).unwrap_err();
+        assert!(matches!(err, Error::EtaShape));
+    }
+
+    // ---- Compositions ----
+
+    #[test]
+    fn mp_after_disch_chain_with_two_hyps() {
+        // From {p, q} ⊢ q, DISCH both then MP both back.
+        let p = Term::free("p", Type::bool());
+        let q = Term::free("q", Type::bool());
+        let pq: Ctx = [p.clone(), q.clone()].into_iter().collect();
+        let q_thm = Thm::assume(q.clone()).unwrap().weaken(pq).unwrap();
+        // ⊢ q ⟹ q   (after discharging q)
+        let imp_q = q_thm.imp_intro(&q).unwrap();
+        // ⊢ p ⟹ q ⟹ q   (after discharging p — only `q` remains)
+        let imp_p = imp_q.imp_intro(&p).unwrap();
+        assert!(imp_p.hyps().is_empty());
+
+        // Apply MP with ⊢ p, then with ⊢ q.
+        let p_thm = Thm::assume(p).unwrap();
+        let q_thm = Thm::assume(q.clone()).unwrap();
+        let step1 = imp_p.imp_elim(p_thm).unwrap();
+        let final_ = step1.imp_elim(q_thm).unwrap();
+        assert_eq!(final_.concl(), &q);
+    }
+
+    #[test]
+    fn sym_then_trans_chains_three() {
+        // From ⊢ a = b  and  ⊢ a = c, derive ⊢ b = c via sym+trans.
+        let a = Term::free("a", Type::nat());
+        let b = Term::free("b", Type::nat());
+        let c = Term::free("c", Type::nat());
+        let ab = Thm::assume(hol::hol_eq(a.clone(), b.clone())).unwrap();
+        let ac = Thm::assume(hol::hol_eq(a, c.clone())).unwrap();
+        let ba = ab.sym().unwrap();
+        let bc = ba.trans(ac).unwrap();
+        let (l, r) = parse_hol_eq(bc.concl()).unwrap();
+        assert_eq!(l, &b);
+        assert_eq!(r, &c);
+    }
+
+    #[test]
+    fn gen_spec_at_different_witness_substitutes() {
+        // GEN over x, SPEC at `y` substitutes correctly.
+        let x = Term::free("x", Type::nat());
+        let refl = Thm::refl(x).unwrap();
+        let univ = refl.all_intro("x", Type::nat()).unwrap();
+        let y = Term::free("y", Type::nat());
+        let inst = univ.all_elim(y.clone()).unwrap();
+        let (l, r) = parse_hol_eq(inst.concl()).unwrap();
+        assert_eq!(l, &y);
+        assert_eq!(r, &y);
+    }
 }

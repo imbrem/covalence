@@ -22,7 +22,10 @@ use crate::hol;
 use crate::term::{Term, Type};
 use crate::thm::Thm;
 
-use super::{apply_eq, beta_at, nat_rec_succ_at, nat_rec_zero_at};
+use super::{
+    apply_eq, beta_at, beta_trueprop, instantiate_universal, nat_rec_succ_at, nat_rec_zero_at,
+    pure_eq_of_hol_eq, trueprop, trueprop_of_pure_eq, un_beta_trueprop,
+};
 
 /// Internal helper: walk `Thm`'s right-hand side via `beta_at` and
 /// chain into the left equation.
@@ -198,6 +201,125 @@ fn extract_outer_f(rhs: &Term) -> Result<Term> {
     }
 }
 
+/// `⊢ ⋀n:nat. ⋀f:'a→'a. ⋀a:'a. Trueprop (iter['a] (S n) f a = iter['a] n f (f a))`
+/// — the "consume one iteration from the inside" corollary.
+///
+/// Polymorphic in `'a` (proved at `Type::tfree("a")`). Use
+/// [`iter_succ_corollary_at`] to specialise at a concrete type +
+/// witnesses.
+///
+/// Proof: induction on `n`, gluing two applications of
+/// [`iter_succ_eq_at`] at the inductive step.
+pub fn iter_succ_corollary() -> Result<Thm> {
+    let alpha = Type::tfree("a");
+    let alpha_to_alpha = Type::fun(alpha.clone(), alpha.clone());
+
+    let f = Term::free("f", alpha_to_alpha.clone());
+    let a = Term::free("a", alpha.clone());
+
+    let n = Term::free("n", Type::nat());
+    let succ_n = Term::app(hol::succ_fn(), n.clone());
+
+    let lhs = Term::app(
+        Term::app(
+            Term::app(defs::iter(alpha.clone()), succ_n.clone()),
+            f.clone(),
+        ),
+        a.clone(),
+    );
+    let f_a = Term::app(f.clone(), a.clone());
+    let rhs = Term::app(
+        Term::app(Term::app(defs::iter(alpha.clone()), n.clone()), f.clone()),
+        f_a,
+    );
+    let p_body = hol::hol_eq(lhs, rhs);
+    let p_lambda = hol::pub_abs("n", Type::nat(), p_body);
+
+    let induction_at_p = Thm::nat_induction_pure().all_elim(p_lambda.clone())?;
+
+    // ---- Base case n=0: iter 1 f a ≡ iter 0 f (f a) ----
+    //   lhs: iter (S 0) f a ≡ f (iter 0 f a) ≡ f a
+    //   rhs: iter 0 f (f a) ≡ f a
+    let lhs_eq = iter_succ_eq_at(alpha.clone(), hol::zero(), f.clone(), a.clone())?;
+    let inner = iter_zero_eq_at(alpha.clone(), f.clone(), a.clone())?;
+    let f_refl = Thm::refl(f.clone())?;
+    let lifted_inner = f_refl.cong_app(inner)?;
+    let lhs_chain = lhs_eq.trans(lifted_inner)?; // iter 1 f a ≡ f a.
+
+    let f_a_term = Term::app(f.clone(), a.clone());
+    let rhs_eq = iter_zero_eq_at(alpha.clone(), f.clone(), f_a_term)?;
+    // rhs_eq: iter 0 f (f a) ≡ f a.
+
+    let base_pure = lhs_chain.trans(rhs_eq.sym()?)?;
+    let base_hol = trueprop_of_pure_eq(base_pure)?;
+    let p_at_zero = Term::app(p_lambda.clone(), hol::zero());
+    let base = un_beta_trueprop(base_hol, p_at_zero)?;
+
+    // ---- Step ----
+    let step = iter_succ_corollary_step(&p_lambda, &alpha, &f, &a)?;
+
+    let after_base = induction_at_p.imp_elim(base)?;
+    let universal_n = after_base.imp_elim(step)?;
+
+    universal_n
+        .all_intro("a", alpha.clone())?
+        .all_intro("f", alpha_to_alpha)
+}
+
+fn iter_succ_corollary_step(
+    p_lambda: &Term,
+    alpha: &Type,
+    f: &Term,
+    a: &Term,
+) -> Result<Thm> {
+    let n = Term::free("n", Type::nat());
+    let succ_n = Term::app(hol::succ_fn(), n.clone());
+
+    let p_n = Term::app(p_lambda.clone(), n.clone());
+    let trueprop_p_n = trueprop(p_n.clone());
+    let ih_un_beta = Thm::assume(trueprop_p_n.clone())?;
+    let ih_hol = beta_trueprop(ih_un_beta, p_n)?;
+    let ih_pure = pure_eq_of_hol_eq(ih_hol)?;
+    // ih_pure: iter (S n) f a ≡ iter n f (f a).
+
+    // Goal: iter (S (S n)) f a ≡ iter (S n) f (f a).
+    //
+    // lhs: iter (S (S n)) f a
+    //   ≡ f (iter (S n) f a)            [iter_succ]
+    //   ≡ f (iter n f (f a))            [IH cong]
+    let lhs_eq = iter_succ_eq_at(alpha.clone(), succ_n.clone(), f.clone(), a.clone())?;
+    let f_refl = Thm::refl(f.clone())?;
+    let lhs_step2 = f_refl.cong_app(ih_pure)?;
+    let lhs_chain = lhs_eq.trans(lhs_step2)?;
+
+    // rhs: iter (S n) f (f a) ≡ f (iter n f (f a)) [iter_succ]
+    let f_a = Term::app(f.clone(), a.clone());
+    let rhs_eq = iter_succ_eq_at(alpha.clone(), n.clone(), f.clone(), f_a)?;
+
+    let pure_eq = lhs_chain.trans(rhs_eq.sym()?)?;
+
+    let hol_form = trueprop_of_pure_eq(pure_eq)?;
+    let p_at_succ_n = Term::app(p_lambda.clone(), succ_n);
+    let un_beta = un_beta_trueprop(hol_form, p_at_succ_n)?;
+
+    let imp = un_beta.imp_intro(&trueprop_p_n)?;
+    imp.all_intro("n", Type::nat())
+}
+
+/// `⊢ iter[α] (S n) f a ≡ iter[α] n f (f a)` specialised at
+/// concrete `α`, `n`, `f`, `a`.
+pub fn iter_succ_corollary_at(
+    alpha: Type,
+    n: Term,
+    f: Term,
+    a: Term,
+) -> Result<Thm> {
+    let universal = iter_succ_corollary()?;
+    let at_alpha = universal.inst_tfree("a", alpha)?;
+    let inst = instantiate_universal(at_alpha, vec![f, a, n])?;
+    pure_eq_of_hol_eq(inst)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,6 +358,21 @@ mod tests {
             TermKind::Eq(_, r) => assert_eq!(r, &m),
             other => panic!("expected Eq, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn iter_succ_corollary_builds() {
+        let _ = iter_succ_corollary().expect("⋀f a n. iter (S n) f a = iter n f (f a)");
+    }
+
+    #[test]
+    fn iter_succ_corollary_at_nat_with_succ() {
+        let alpha = Type::nat();
+        let n_val = nat_lit(2);
+        let succ = crate::hol::succ_fn();
+        let a = Term::free("a", alpha.clone());
+        let _ = iter_succ_corollary_at(alpha, n_val, succ, a)
+            .expect("iter_succ_corollary_at builds");
     }
 
     #[test]

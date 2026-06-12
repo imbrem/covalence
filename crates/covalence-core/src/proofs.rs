@@ -29,6 +29,7 @@ use crate::thm::Thm;
 pub mod iter;
 pub mod nat_add;
 pub mod nat_mul;
+pub mod nat_sub;
 
 // ---------------------------------------------------------------------------
 // Generic helpers
@@ -88,21 +89,28 @@ pub fn extract_trueprop_arg(t: &Term) -> Result<Term> {
     }
 }
 
-/// Instantiate a `⋀x1. ⋀x2. … ⋀xk. Trueprop ((λy. body) inner)`
-/// theorem at the supplied witnesses (outer-to-inner), then β-reduce
-/// the resulting `(λy. body) witness` inside `Trueprop`. The
-/// returned `Thm` has the user-facing β-reduced shape.
-///
-/// Useful for invoking lemmas like
-/// `nat_add_comm : ⋀m n. Trueprop ((λn'. nat_add n' m = nat_add m n') n)`
-/// at concrete `(m, n)` without manually re-deriving the inner λ.
+/// Instantiate a `⋀x1. ⋀x2. … ⋀xk. Trueprop X` theorem at the
+/// supplied witnesses (outer-to-inner). When `X` after all the
+/// `all_elim`s is `(λy. body) witness` (the shape induction proofs
+/// produce), β-reduce inside `Trueprop`; when it's already in
+/// natural form (kernel axioms like `nat_pred_succ` built without
+/// a predicate-λ), leave it as-is.
 pub fn instantiate_universal(thm: Thm, witnesses: Vec<Term>) -> Result<Thm> {
+    use crate::term::TermKind;
     let mut current = thm;
     for w in witnesses {
         current = current.all_elim(w)?;
     }
-    let inner_app = extract_trueprop_arg(current.concl())?;
-    beta_trueprop(current, inner_app)
+    let inner = extract_trueprop_arg(current.concl())?;
+    let needs_beta = matches!(
+        inner.kind(),
+        TermKind::App(head, _) if matches!(head.kind(), TermKind::Abs(..))
+    );
+    if needs_beta {
+        beta_trueprop(current, inner)
+    } else {
+        Ok(current)
+    }
 }
 
 /// Inverse of [`pure_eq_of_hol_eq`]: convert `⊢ a ≡ b` to

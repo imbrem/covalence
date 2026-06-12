@@ -341,9 +341,22 @@ term_decl! {
     nat_div_spec, nat_div, Canonical::NatDiv, sigs::nat_nat_to_nat()
 }
 
-term_decl! {
-    /// `natMod : nat → nat → nat`.
-    nat_mod_spec, nat_mod, Canonical::NatMod, sigs::nat_nat_to_nat()
+fn nat_mod_body() -> Term {
+    // natMod n m ≔ n - (n / m) * m
+    let n = Term::free("n", Type::nat());
+    let m = Term::free("m", Type::nat());
+    let div_nm = Term::app(Term::app(nat_div(), n.clone()), m.clone());
+    let mul = Term::app(Term::app(nat_mul(), div_nm), m.clone());
+    let sub = Term::app(Term::app(nat_sub(), n.clone()), mul);
+    let lam_m = hol::pub_abs("m", Type::nat(), sub);
+    hol::pub_abs("n", Type::nat(), lam_m)
+}
+
+let_term! {
+    /// `natMod : nat → nat → nat`, defined as
+    /// `λn m. nat_sub n (nat_mul (nat_div n m) m)`. Standard
+    /// Euclidean remainder by composition.
+    nat_mod_spec, nat_mod, Canonical::NatMod, nat_mod_body()
 }
 
 term_decl! {

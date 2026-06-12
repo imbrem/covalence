@@ -29,6 +29,7 @@ use crate::thm::Thm;
 pub mod iter;
 pub mod nat_add;
 pub mod nat_div;
+pub mod nat_mod;
 pub mod nat_mul;
 pub mod nat_sub;
 

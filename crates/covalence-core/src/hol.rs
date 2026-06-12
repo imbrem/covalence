@@ -112,8 +112,15 @@ fn eq_at(alpha: Type) -> Term {
 }
 
 /// HOL `lhs = rhs : bool`, types inferred from `lhs`.
+///
+/// **Panics** if `lhs` is not well-typed (an open term, an ill-typed
+/// application, etc.). Callers in inference-rule paths must
+/// pre-validate `lhs.type_of()?` before invoking — see e.g.
+/// [`crate::Thm::hol_mk_comb`]. Callers in trusted spec-build paths
+/// (`defs/*.rs`'s LazyLock initialisers) construct `lhs` from
+/// fully-typed atoms, so the panic is unreachable there.
 pub(crate) fn hol_eq(lhs: Term, rhs: Term) -> Term {
-    let alpha = lhs.type_of().expect("hol::hol_eq: lhs typed");
+    let alpha = lhs.type_of().expect("hol::hol_eq: lhs must be well-typed");
     Term::app(Term::app(eq_at(alpha), lhs), rhs)
 }
 

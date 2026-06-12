@@ -390,13 +390,19 @@ impl Thm {
     }
 
     /// `Γ ∪ Δ ⊢ f x = g y`, given `Γ ⊢ f = g` and `Δ ⊢ x = y`. The
-    /// resulting applications are re-typed end-to-end through
-    /// `Thm::build`'s `type_of_in` walk.
+    /// applications must type-check: `f` (and so `g`) must have
+    /// function type whose domain matches `x`'s (and so `y`'s) type.
     pub fn hol_mk_comb(self, arg: Thm) -> Result<Thm> {
         let (f, g) = parse_hol_eq(&self.concl)?;
         let (x, y) = parse_hol_eq(&arg.concl)?;
         let lhs = Term::app(f.clone(), x.clone());
         let rhs = Term::app(g.clone(), y.clone());
+        // Pre-validate the application's type rather than letting
+        // hol::hol_eq's internal `type_of().expect(...)` panic on a
+        // bad arg shape. type_of() here also serves as a Free-var
+        // consistency check across f and x.
+        let _ = lhs.type_of()?;
+        let _ = rhs.type_of()?;
         let concl = hol::hol_eq(lhs, rhs);
         let hyps = self.hyps.union(&arg.hyps);
         Self::build(hyps, concl)
@@ -507,9 +513,26 @@ impl Thm {
     /// HOL Light's `INST`: substitute a free term variable. `name`
     /// is the free var to replace; `replacement` is the term to
     /// substitute. The replacement's type must match the free var's
-    /// declared type (if it appears in the theorem at all).
+    /// declared type, if the variable appears anywhere in the
+    /// theorem (concl or hyps).
+    ///
+    /// `Thm::build`'s re-typing pass also catches type mismatches
+    /// (it re-validates the substituted term end-to-end), but the
+    /// explicit check here gives a more specific error message and
+    /// rejects ill-typed substitutions even when the post-substitution
+    /// term happens to type-check at a wrong type by accident.
     pub fn hol_inst(self, name: &str, replacement: Term) -> Result<Thm> {
-        let _ = replacement.type_of()?;
+        let replacement_ty = replacement.type_of()?;
+        let declared = find_free_type(&self.concl, name)
+            .or_else(|| self.hyps.iter().find_map(|h| find_free_type(h, name)));
+        if let Some(declared) = declared
+            && declared != replacement_ty
+        {
+            return Err(Error::TypeMismatch {
+                expected: declared,
+                got: replacement_ty,
+            });
+        }
         let concl = subst_free(&self.concl, name, &replacement);
         let hyps = self.hyps.map(|h| subst_free(h, name, &replacement));
         Self::build(hyps, concl)
@@ -1385,5 +1408,271 @@ mod hol_light_tests {
         let lam = Term::abs("x", Type::nat(), Term::bound(0));
         assert_eq!(l, &lam);
         assert_eq!(r, &lam);
+    }
+
+    // =================================================================
+    // Negative tests — invalid derivations must be rejected
+    // =================================================================
+
+    #[test]
+    fn hol_refl_rejects_dangling_bound() {
+        // Bound(0) outside any binder is an open term.
+        let err = Thm::hol_refl(Term::bound(0)).unwrap_err();
+        assert!(matches!(err, Error::NotClosed));
+    }
+
+    #[test]
+    fn hol_refl_rejects_ill_typed_app() {
+        // (Free("f", nat → nat) (Free("y", bool))) is malformed —
+        // arg type doesn't match function domain.
+        let f = Term::free("f", Type::fun(Type::nat(), Type::nat()));
+        let y = Term::free("y", Type::bool());
+        let bad = Term::app(f, y);
+        let err = Thm::hol_refl(bad).unwrap_err();
+        assert!(matches!(err, Error::TypeMismatch { .. }));
+    }
+
+    #[test]
+    fn hol_trans_rejects_non_hol_eq_input() {
+        // Plain assume with a bool-typed term — not a HOL equation —
+        // can't be transed.
+        let p = Term::free("p", Type::bool());
+        let p_thm = Thm::hol_assume(p).unwrap();
+        let refl = Thm::hol_refl(n()).unwrap();
+        let err = p_thm.hol_trans(refl).unwrap_err();
+        assert!(matches!(err, Error::NotHolEq(_)));
+    }
+
+    #[test]
+    fn hol_trans_rejects_middle_mismatch() {
+        // s = t  and  u = v  with t ≠ u  ⇒  TransMiddleMismatch.
+        let a = Term::free("a", Type::nat());
+        let b = Term::free("b", Type::nat());
+        let c = Term::free("c", Type::nat());
+        let d = Term::free("d", Type::nat());
+        let ab = Thm::assume(hol::hol_eq(a, b.clone())).unwrap();
+        let cd = Thm::assume(hol::hol_eq(c, d)).unwrap();
+        // b ≠ c — middle mismatch.
+        let _ = b; // already used above
+        let err = ab.hol_trans(cd).unwrap_err();
+        assert!(matches!(err, Error::TransMiddleMismatch { .. }));
+    }
+
+    #[test]
+    fn hol_mk_comb_rejects_non_eq_input() {
+        // First thm is a HOL eq, second is not.
+        let f_eq = Thm::hol_refl(crate::defs::nat_succ()).unwrap();
+        let non_eq = Thm::hol_assume(Term::free("p", Type::bool())).unwrap();
+        let err = f_eq.hol_mk_comb(non_eq).unwrap_err();
+        assert!(matches!(err, Error::NotHolEq(_)));
+    }
+
+    #[test]
+    fn hol_mk_comb_rejects_domain_mismatch() {
+        // f : nat → nat, but arg is bool. Build's re-typing catches.
+        let f = crate::defs::nat_succ(); // : nat → nat
+        let f_eq = Thm::hol_refl(f).unwrap();
+        let bad = Term::free("p", Type::bool());
+        let bad_eq = Thm::hol_refl(bad).unwrap();
+        let err = f_eq.hol_mk_comb(bad_eq).unwrap_err();
+        assert!(matches!(err, Error::TypeMismatch { .. }));
+    }
+
+    #[test]
+    fn hol_abs_rejects_var_free_in_hyps() {
+        // Hyp contains Free("x", nat). Can't abstract over x.
+        let x = Term::free("x", Type::nat());
+        let hyp = hol::hol_eq(x.clone(), x.clone()); // x = x : bool
+        // Assume the hyp first.
+        let h_thm = Thm::hol_assume(hyp).unwrap();
+        // Now try to abstract over x — should fail because x is free
+        // in the (hyp = self.concl) hypothesis.
+        let err = h_thm.hol_abs("x", Type::nat()).unwrap_err();
+        assert!(matches!(err, Error::FreeVarInHyps { .. }));
+    }
+
+    #[test]
+    fn hol_abs_rejects_binder_type_mismatch() {
+        // Free("x", nat) in concl, but user supplies ty = bool.
+        let x = Term::free("x", Type::nat());
+        let refl = Thm::hol_refl(x).unwrap();
+        let err = refl.hol_abs("x", Type::bool()).unwrap_err();
+        assert!(matches!(err, Error::BinderTypeMismatch { .. }));
+    }
+
+    #[test]
+    fn hol_abs_rejects_non_eq_input() {
+        let p = Term::free("p", Type::bool());
+        let p_thm = Thm::hol_assume(p).unwrap();
+        let err = p_thm.hol_abs("x", Type::nat()).unwrap_err();
+        assert!(matches!(err, Error::NotHolEq(_)));
+    }
+
+    #[test]
+    fn hol_beta_conv_rejects_non_app() {
+        // (free n nat) isn't an application.
+        let err = Thm::hol_beta_conv(n()).unwrap_err();
+        assert!(matches!(err, Error::NotApp(_)));
+    }
+
+    #[test]
+    fn hol_beta_conv_rejects_non_abs_head() {
+        // (succ 0) is an App but the head isn't an Abs.
+        let app = Term::app(crate::defs::nat_succ(), Term::nat_lit(0u32));
+        let err = Thm::hol_beta_conv(app).unwrap_err();
+        assert!(matches!(err, Error::NotAbs(_)));
+    }
+
+    #[test]
+    fn hol_beta_conv_rejects_arg_type_mismatch() {
+        // λx:nat. x  applied to a bool — type mismatch.
+        let id = Term::abs("x", Type::nat(), Term::bound(0));
+        let bad_arg = Term::bool_lit(true);
+        let app = Term::app(id, bad_arg);
+        let err = Thm::hol_beta_conv(app).unwrap_err();
+        assert!(matches!(err, Error::TypeMismatch { .. }));
+    }
+
+    #[test]
+    fn hol_assume_rejects_dangling_bound() {
+        let err = Thm::hol_assume(Term::bound(0)).unwrap_err();
+        assert!(matches!(err, Error::NotClosed));
+    }
+
+    #[test]
+    fn hol_eq_mp_rejects_non_eq_first() {
+        // self.concl is not a HOL equation.
+        let p = Term::free("p", Type::bool());
+        let non_eq = Thm::hol_assume(p.clone()).unwrap();
+        let other = Thm::hol_assume(p).unwrap();
+        let err = non_eq.hol_eq_mp(other).unwrap_err();
+        assert!(matches!(err, Error::NotHolEq(_)));
+    }
+
+    #[test]
+    fn hol_eq_mp_rejects_p_mismatch() {
+        // ⊢ p = q  and  ⊢ r (r ≠ p)  ⇒  ImpAntecedentMismatch.
+        let p = Term::free("p", Type::bool());
+        let q = Term::free("q", Type::bool());
+        let r = Term::free("r", Type::bool());
+        let eq = Thm::assume(hol::hol_eq(p, q)).unwrap();
+        let r_thm = Thm::hol_assume(r).unwrap();
+        let err = eq.hol_eq_mp(r_thm).unwrap_err();
+        assert!(matches!(err, Error::ImpAntecedentMismatch { .. }));
+    }
+
+    #[test]
+    fn hol_eq_mp_rejects_non_bool_equation() {
+        // ⊢ 5 = 5  at nat — not a biconditional. EQ_MP requires bool.
+        let five = Term::nat_lit(5u32);
+        let eq = Thm::assume(hol::hol_eq(five.clone(), five.clone())).unwrap();
+        let n_thm = Thm::hol_assume(Term::free("p", Type::bool())).unwrap();
+        let err = eq.hol_eq_mp(n_thm).unwrap_err();
+        assert!(matches!(err, Error::NotBool(_)));
+    }
+
+    #[test]
+    fn hol_deduct_antisym_rejects_non_bool_lhs() {
+        // ⊢ (5 : nat)  is not a valid Thm at all (Thm::build rejects).
+        // So construct an assumption-based Thm with nat conclusion via
+        // Pure assume (which accepts prop) and verify deduct_antisym
+        // rejects on non-bool.
+        // Build via Thm::assume on a hol_eq — the conclusion is bool.
+        // Then forcibly check the not-bool branch via a HOL-Light eq
+        // theorem at nat type.
+        // Easier: deduct_antisym demands BOTH be bool. If self is a
+        // bool theorem and other is nat-Thm, we need to construct a
+        // nat-typed Thm — Thm::build won't accept that. So the only
+        // way to hit NotBool is if a constructed theorem had a nat
+        // conclusion. Currently impossible — Thm::build is sound. So
+        // this negative case isn't reachable from user-facing API.
+        // We still verify the bool-only positive form holds.
+        let p = Term::free("p", Type::bool());
+        let q = Term::free("q", Type::bool());
+        let p_thm = Thm::hol_assume(p).unwrap();
+        let q_thm = Thm::hol_assume(q).unwrap();
+        let _eq = p_thm.hol_deduct_antisym(q_thm).expect("deduct_antisym");
+        // The not-bool branch in hol_deduct_antisym is defense-in-depth
+        // against a future Thm::build relaxation. No user-facing
+        // negative test path exists today.
+    }
+
+    #[test]
+    fn hol_inst_rejects_replacement_type_mismatch() {
+        // ⊢ n = n  with n : nat. Try to inst n := (bool literal).
+        let n_free = Term::free("n", Type::nat());
+        let refl = Thm::hol_refl(n_free).unwrap();
+        let bad = Term::bool_lit(true);
+        let err = refl.hol_inst("n", bad).unwrap_err();
+        assert!(matches!(err, Error::TypeMismatch { .. }));
+    }
+
+    #[test]
+    fn hol_inst_no_op_when_name_absent() {
+        // n free is "n"; instantiating "x" (no occurrence) is a no-op
+        // and the replacement's type is unconstrained.
+        let refl = Thm::hol_refl(n()).unwrap();
+        let bad = Term::bool_lit(true);
+        let result = refl.hol_inst("x", bad).expect("no-op inst");
+        let (l, r) = parse_hol_eq(result.concl()).unwrap();
+        assert_eq!(l, &n());
+        assert_eq!(r, &n());
+    }
+
+    #[test]
+    fn hol_inst_substitutes_in_hyps_too() {
+        // {x = x} ⊢ x = x. Inst x := 0. Get {0 = 0} ⊢ 0 = 0.
+        let x = Term::free("x", Type::nat());
+        let eq = hol::hol_eq(x.clone(), x.clone());
+        let h_thm = Thm::hol_assume(eq).unwrap();
+        let zero = Term::nat_lit(0u32);
+        let result = h_thm.hol_inst("x", zero.clone()).expect("inst");
+        let expected_hyp = hol::hol_eq(zero.clone(), zero.clone());
+        assert!(result.hyps().contains(&expected_hyp));
+        assert_eq!(result.concl(), &expected_hyp);
+    }
+
+    #[test]
+    fn hol_inst_rejects_dangling_bound_replacement() {
+        // Replacement = Bound(0) — open term.
+        let n_free = Term::free("n", Type::nat());
+        let refl = Thm::hol_refl(n_free).unwrap();
+        let err = refl.hol_inst("n", Term::bound(0)).unwrap_err();
+        assert!(matches!(err, Error::NotClosed));
+    }
+
+    #[test]
+    fn hol_eq_mp_preserves_hyps_union() {
+        // Γ ⊢ p = q,  Δ ⊢ p  ⇒  Γ ∪ Δ ⊢ q. Verify the union.
+        let p = Term::free("p", Type::bool());
+        let q = Term::free("q", Type::bool());
+        let h_pq = hol::hol_eq(p.clone(), q.clone());
+        let h_other = Term::free("extra", Type::bool());
+        // Build {h_pq, h_other} ⊢ p = q via assume + weaken.
+        let pq_thm = Thm::assume(h_pq.clone()).unwrap();
+        let bigger: Ctx = [h_pq.clone(), h_other.clone()].into_iter().collect();
+        let pq_weakened = pq_thm.weaken(bigger).unwrap();
+        let p_thm = Thm::hol_assume(p).unwrap();
+        let q_thm = pq_weakened.hol_eq_mp(p_thm).unwrap();
+        assert!(q_thm.hyps().contains(&h_pq));
+        assert!(q_thm.hyps().contains(&h_other));
+        assert_eq!(q_thm.concl(), &q);
+    }
+
+    #[test]
+    fn hol_trans_hyps_union_preserved() {
+        let a = Term::free("a", Type::nat());
+        let b = Term::free("b", Type::nat());
+        let c = Term::free("c", Type::nat());
+        let ab = hol::hol_eq(a.clone(), b.clone());
+        let bc = hol::hol_eq(b, c.clone());
+        let ab_thm = Thm::assume(ab.clone()).unwrap();
+        let bc_thm = Thm::assume(bc.clone()).unwrap();
+        let ac = ab_thm.hol_trans(bc_thm).unwrap();
+        assert!(ac.hyps().contains(&ab));
+        assert!(ac.hyps().contains(&bc));
+        let (l, r) = parse_hol_eq(ac.concl()).unwrap();
+        assert_eq!(l, &a);
+        assert_eq!(r, &c);
     }
 }

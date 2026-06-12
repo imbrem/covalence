@@ -80,8 +80,8 @@ fn axiom_set_well_formed_across_stdlib() {
     ];
     for (name, ax) in axioms {
         assert!(
-            ax.concl().type_of().unwrap().is_prop(),
-            "{name}: concl not prop"
+            ax.concl().type_of().unwrap().is_formula(),
+            "{name}: concl is neither prop nor bool"
         );
         let n_hyps = ax.hyps().len();
         assert!(

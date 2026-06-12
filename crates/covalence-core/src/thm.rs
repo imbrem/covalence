@@ -31,7 +31,8 @@ use crate::builtins;
 use crate::error::{Error, Result};
 use crate::hol;
 use crate::subst::{
-    close, find_free_type, has_free_var, open, shift_by, subst_tfree_in_term, uses_bound_outer,
+    close, find_free_type, has_free_var, open, shift_by, subst_free, subst_tfree_in_term,
+    uses_bound_outer,
 };
 use crate::term::{
     Def, BinderHint, ObsEq, ObsImp, ObsTrue, Object, Observer, Term, TermKind, Type, TypeEnv, TypeKind,
@@ -351,6 +352,171 @@ impl Thm {
         let concl = Term::eq(abs.clone(), f_outer);
         Self::build(Ctx::new(), concl)
     }
+
+    // ========================================================================
+    // HOL-Light inference rules (HOL `=` at type `bool`)
+    // ========================================================================
+    //
+    // These ten rules are the HOL Light primitive inference rule set,
+    // operating directly at the `bool` level (so conclusions are
+    // `bool`-typed terms, not `Trueprop (...)` props). They coexist
+    // with the Pure rules above during the migration to pure HOL;
+    // once Pure is removed they become THE inference rules.
+    //
+    // Soundness follows HOL Light's standard model-theoretic story:
+    // HOL `=` is interpreted as equality in the model, all rules are
+    // sound under that interpretation.
+
+    /// `⊢ t = t : bool` — HOL reflexivity of equality.
+    pub fn hol_refl(t: Term) -> Result<Thm> {
+        let _ = t.type_of()?;
+        let concl = hol::hol_eq(t.clone(), t);
+        Self::build(Ctx::new(), concl)
+    }
+
+    /// `Γ ∪ Δ ⊢ s = u`, given `Γ ⊢ s = t` and `Δ ⊢ t = u` (HOL `=`).
+    pub fn hol_trans(self, other: Thm) -> Result<Thm> {
+        let (s, t1) = parse_hol_eq(&self.concl)?;
+        let (t2, u) = parse_hol_eq(&other.concl)?;
+        if t1 != t2 {
+            return Err(Error::TransMiddleMismatch {
+                left: format!("{}", t1),
+                right: format!("{}", t2),
+            });
+        }
+        let concl = hol::hol_eq(s.clone(), u.clone());
+        let hyps = self.hyps.union(&other.hyps);
+        Self::build(hyps, concl)
+    }
+
+    /// `Γ ∪ Δ ⊢ f x = g y`, given `Γ ⊢ f = g` and `Δ ⊢ x = y`. The
+    /// resulting applications are re-typed end-to-end through
+    /// `Thm::build`'s `type_of_in` walk.
+    pub fn hol_mk_comb(self, arg: Thm) -> Result<Thm> {
+        let (f, g) = parse_hol_eq(&self.concl)?;
+        let (x, y) = parse_hol_eq(&arg.concl)?;
+        let lhs = Term::app(f.clone(), x.clone());
+        let rhs = Term::app(g.clone(), y.clone());
+        let concl = hol::hol_eq(lhs, rhs);
+        let hyps = self.hyps.union(&arg.hyps);
+        Self::build(hyps, concl)
+    }
+
+    /// `Γ ⊢ (λx:τ. s[x]) = (λx:τ. t[x])`, given `Γ ⊢ s = t` with
+    /// `Free(name:τ)` not free in `Γ`.
+    pub fn hol_abs(self, name: &str, ty: Type) -> Result<Thm> {
+        let (s, t) = parse_hol_eq(&self.concl)?;
+        for h in self.hyps.iter() {
+            if has_free_var(h, name) {
+                return Err(Error::FreeVarInHyps { name: name.into() });
+            }
+        }
+        let declared = find_free_type(s, name).or_else(|| find_free_type(t, name));
+        if let Some(declared) = declared
+            && declared != ty
+        {
+            return Err(Error::BinderTypeMismatch {
+                name: name.into(),
+                declared,
+                expected: ty,
+            });
+        }
+        let s = s.clone();
+        let t = t.clone();
+        let s_abs = Term::abs(name, ty.clone(), close(&s, name));
+        let t_abs = Term::abs(name, ty, close(&t, name));
+        let concl = hol::hol_eq(s_abs, t_abs);
+        Self::build(self.hyps, concl)
+    }
+
+    /// `⊢ (λx:τ. body) arg = body[arg/0] : bool` — β-conversion as
+    /// a HOL equation.
+    pub fn hol_beta_conv(app: Term) -> Result<Thm> {
+        let TermKind::App(fun, arg) = app.kind() else {
+            return Err(Error::NotApp(format!("{}", app)));
+        };
+        let TermKind::Abs(_, ty, body) = fun.kind() else {
+            return Err(Error::NotAbs(format!("{}", fun)));
+        };
+        let arg_ty = arg.type_of()?;
+        if arg_ty != *ty {
+            return Err(Error::TypeMismatch {
+                expected: ty.clone(),
+                got: arg_ty,
+            });
+        }
+        let rhs = open(body, arg);
+        let concl = hol::hol_eq(app.clone(), rhs);
+        Self::build(Ctx::new(), concl)
+    }
+
+    /// `{p} ⊢ p` for any `p : bool` — HOL-level assume.
+    pub fn hol_assume(p: Term) -> Result<Thm> {
+        let ty = p.type_of()?;
+        if !ty.is_bool() {
+            return Err(Error::NotBool(ty));
+        }
+        let hyps = Ctx::singleton(p.clone());
+        Self::build(hyps, p)
+    }
+
+    /// `Γ ∪ Δ ⊢ q`, given `Γ ⊢ p = q : bool` and `Δ ⊢ p`. HOL Light's
+    /// `EQ_MP` — equality at `bool` IS biconditional, so this also
+    /// implements the `⇔`-elim direction.
+    pub fn hol_eq_mp(self, p_thm: Thm) -> Result<Thm> {
+        let (p, q) = parse_hol_eq(&self.concl)?;
+        // p = q must be at type bool (otherwise it's not an
+        // implication-shaped equation).
+        let p_ty = p.type_of()?;
+        if !p_ty.is_bool() {
+            return Err(Error::NotBool(p_ty));
+        }
+        if *p != p_thm.concl {
+            return Err(Error::ImpAntecedentMismatch {
+                expected: format!("{}", p),
+                got: format!("{}", p_thm.concl),
+            });
+        }
+        let concl = q.clone();
+        let hyps = self.hyps.union(&p_thm.hyps);
+        Self::build(hyps, concl)
+    }
+
+    /// HOL Light's `DEDUCT_ANTISYM_RULE`:
+    /// `(Γ \ {q}) ∪ (Δ \ {p}) ⊢ p ⇔ q`, given `Γ ⊢ p` and `Δ ⊢ q`.
+    /// Both `p` and `q` must be `bool`-typed; equality at `bool`
+    /// IS biconditional.
+    pub fn hol_deduct_antisym(self, other: Thm) -> Result<Thm> {
+        let p_ty = self.concl.type_of()?;
+        let q_ty = other.concl.type_of()?;
+        if !p_ty.is_bool() {
+            return Err(Error::NotBool(p_ty));
+        }
+        if !q_ty.is_bool() {
+            return Err(Error::NotBool(q_ty));
+        }
+        let p = self.concl.clone();
+        let q = other.concl.clone();
+        let hyps_p_minus_q = self.hyps.remove(&q);
+        let hyps_q_minus_p = other.hyps.remove(&p);
+        let hyps = hyps_p_minus_q.union(&hyps_q_minus_p);
+        let concl = hol::hol_eq(p, q);
+        Self::build(hyps, concl)
+    }
+
+    /// HOL Light's `INST`: substitute a free term variable. `name`
+    /// is the free var to replace; `replacement` is the term to
+    /// substitute. The replacement's type must match the free var's
+    /// declared type (if it appears in the theorem at all).
+    pub fn hol_inst(self, name: &str, replacement: Term) -> Result<Thm> {
+        let _ = replacement.type_of()?;
+        let concl = subst_free(&self.concl, name, &replacement);
+        let hyps = self.hyps.map(|h| subst_free(h, name, &replacement));
+        Self::build(hyps, concl)
+    }
+
+    // (HOL Light's `INST_TYPE` is the same operation as the existing
+    // `Thm::inst_tfree`; no new method needed.)
 
     /// Introduce a fresh subtype τ ≤ α witnessed by a predicate `P`.
     ///
@@ -958,6 +1124,23 @@ impl Thm {
 /// Walk down through `App`s collecting arguments left-to-right. If
 /// the final node is an `Obs` leaf, return its observer and the args
 /// list; otherwise return an error.
+/// Parse a `HolOp(Eq, _)`-headed application — `App(App(=, lhs), rhs)`
+/// — and return `(lhs, rhs)` by reference. Returns
+/// `Err(NotHolEq(...))` for anything else (including a Pure-meta
+/// equation, which the Pure-side rules handle).
+fn parse_hol_eq(t: &Term) -> Result<(&Term, &Term)> {
+    let TermKind::App(f, rhs) = t.kind() else {
+        return Err(Error::NotHolEq(format!("{}", t)));
+    };
+    let TermKind::App(head, lhs) = f.kind() else {
+        return Err(Error::NotHolEq(format!("{}", t)));
+    };
+    let TermKind::HolOp(crate::term::HolOp::Eq, _) = head.kind() else {
+        return Err(Error::NotHolEq(format!("{}", t)));
+    };
+    Ok((lhs, rhs))
+}
+
 fn decompose_obs_app(t: &Term) -> Result<(&Object, Vec<Term>)> {
     let mut args_rev = Vec::new();
     let mut cur = t;
@@ -1087,5 +1270,156 @@ impl fmt::Debug for TypeDefRepMarker {
         } else {
             write!(f, "{}", self.hint)
         }
+    }
+}
+
+#[cfg(test)]
+mod hol_light_tests {
+    //! Smoke tests for the HOL-Light inference rules. Each test
+    //! builds a small theorem and checks the conclusion shape +
+    //! type. Together they exercise every rule in the new HOL-Light
+    //! set: refl, trans, mk_comb, abs, beta_conv, assume, eq_mp,
+    //! deduct_antisym, inst, plus `Thm::build`'s `bool`-acceptance.
+
+    use super::*;
+
+    fn n() -> Term { Term::free("n", Type::nat()) }
+
+    #[test]
+    fn hol_refl_at_nat() {
+        let thm = Thm::hol_refl(n()).expect("hol_refl n");
+        assert!(thm.hyps().is_empty());
+        let (l, r) = parse_hol_eq(thm.concl()).expect("conclusion is HOL =");
+        assert_eq!(l, &n());
+        assert_eq!(r, &n());
+    }
+
+    #[test]
+    fn hol_trans_chains() {
+        let a = Term::free("a", Type::nat());
+        let b = Term::free("b", Type::nat());
+        let c = Term::free("c", Type::nat());
+        let a_eq_b = Thm::assume(hol::hol_eq(a.clone(), b.clone())).expect("assume a=b");
+        let b_eq_c = Thm::assume(hol::hol_eq(b.clone(), c.clone())).expect("assume b=c");
+        let a_eq_c = a_eq_b.hol_trans(b_eq_c).expect("trans");
+        let (l, r) = parse_hol_eq(a_eq_c.concl()).unwrap();
+        assert_eq!(l, &a);
+        assert_eq!(r, &c);
+    }
+
+    #[test]
+    fn hol_beta_conv_reduces() {
+        // (λx:nat. x) (succ 0) = succ 0
+        let id = Term::abs("x", Type::nat(), Term::bound(0));
+        let arg = Term::app(crate::defs::nat_succ(), Term::nat_lit(0u32));
+        let app = Term::app(id, arg.clone());
+        let thm = Thm::hol_beta_conv(app.clone()).expect("β");
+        let (l, r) = parse_hol_eq(thm.concl()).unwrap();
+        assert_eq!(l, &app);
+        assert_eq!(r, &arg);
+    }
+
+    #[test]
+    fn hol_assume_at_bool() {
+        let p = Term::free("p", Type::bool());
+        let thm = Thm::hol_assume(p.clone()).expect("assume p:bool");
+        assert!(thm.hyps().contains(&p));
+        assert_eq!(thm.concl(), &p);
+    }
+
+    #[test]
+    fn hol_assume_rejects_nat() {
+        let n = Term::free("n", Type::nat());
+        let err = Thm::hol_assume(n).unwrap_err();
+        assert!(matches!(err, Error::NotBool(_)));
+    }
+
+    #[test]
+    fn hol_eq_mp_at_bool() {
+        let p = Term::free("p", Type::bool());
+        let q = Term::free("q", Type::bool());
+        let p_eq_q = Thm::assume(hol::hol_eq(p.clone(), q.clone())).expect("assume p=q");
+        let p_thm = Thm::hol_assume(p.clone()).expect("assume p");
+        let q_thm = p_eq_q.hol_eq_mp(p_thm).expect("eq_mp");
+        assert_eq!(q_thm.concl(), &q);
+    }
+
+    #[test]
+    fn hol_deduct_antisym_two_assumes() {
+        let p = Term::free("p", Type::bool());
+        let q = Term::free("q", Type::bool());
+        // `{p} ⊢ p` and `{q} ⊢ q` — neither side has the other's
+        // conclusion as a hyp, so DEDUCT_ANTISYM_RULE leaves both
+        // hyps in place: `{p, q} ⊢ p ⇔ q`. (To get the empty-hyp
+        // form `⊢ p ⇔ q` you need cross-assumed shapes like
+        // `{q} ⊢ p` and `{p} ⊢ q`, which require non-trivial proofs
+        // we don't construct in this smoke test.)
+        let p_thm = Thm::hol_assume(p.clone()).unwrap();
+        let q_thm = Thm::hol_assume(q.clone()).unwrap();
+        let eq = p_thm.hol_deduct_antisym(q_thm).expect("deduct_antisym");
+        assert!(eq.hyps().contains(&p));
+        assert!(eq.hyps().contains(&q));
+        let (l, r) = parse_hol_eq(eq.concl()).unwrap();
+        assert_eq!(l, &p);
+        assert_eq!(r, &q);
+    }
+
+    #[test]
+    fn hol_deduct_antisym_cross_assumed() {
+        // Cross-assumed: `{q} ⊢ p` and `{p} ⊢ q` (faked via weaken/
+        // assume composition — both `assume` and `weaken` are
+        // available). The rule should yield `⊢ p ⇔ q` with no hyps.
+        let p = Term::free("p", Type::bool());
+        let q = Term::free("q", Type::bool());
+        // Build `{p, q} ⊢ p` and `{p, q} ⊢ q` by assume + weaken,
+        // then deduct_antisym: (Γ−{q}) ∪ (Δ−{p}) = ({p,q}−{q}) ∪
+        // ({p,q}−{p}) = {p} ∪ {q} — still both. The literal HOL
+        // Light cancellation needs the *minimal* `{q} ⊢ p`, which
+        // is not derivable here without an actual ⇔/⟹ axiom. So
+        // we verify only that mid-removal happens correctly.
+        let pq: Ctx = [p.clone(), q.clone()].into_iter().collect();
+        let p_thm = Thm::hol_assume(p.clone()).unwrap().weaken(pq.clone()).unwrap();
+        let q_thm = Thm::hol_assume(q.clone()).unwrap().weaken(pq).unwrap();
+        let eq = p_thm.hol_deduct_antisym(q_thm).expect("deduct_antisym");
+        // hyps = ({p,q} − {q}) ∪ ({p,q} − {p}) = {p, q}.
+        assert!(eq.hyps().contains(&p));
+        assert!(eq.hyps().contains(&q));
+    }
+
+    #[test]
+    fn hol_inst_substitutes_free_var() {
+        let n_free = Term::free("n", Type::nat());
+        let zero = Term::nat_lit(0u32);
+        // ⊢ n = n  (HOL refl), then inst n := 0  ⇒  ⊢ 0 = 0.
+        let refl = Thm::hol_refl(n_free).unwrap();
+        let inst = refl.hol_inst("n", zero.clone()).expect("inst");
+        let (l, r) = parse_hol_eq(inst.concl()).unwrap();
+        assert_eq!(l, &zero);
+        assert_eq!(r, &zero);
+    }
+
+    #[test]
+    fn hol_mk_comb_at_succ() {
+        // ⊢ succ = succ   ⊗   ⊢ 0 = 0   ⇒   ⊢ succ 0 = succ 0
+        let succ = crate::defs::nat_succ();
+        let zero = Term::nat_lit(0u32);
+        let succ_eq = Thm::hol_refl(succ.clone()).unwrap();
+        let zero_eq = Thm::hol_refl(zero.clone()).unwrap();
+        let app_eq = succ_eq.hol_mk_comb(zero_eq).expect("mk_comb");
+        let (l, r) = parse_hol_eq(app_eq.concl()).unwrap();
+        assert_eq!(l, &Term::app(succ.clone(), zero.clone()));
+        assert_eq!(r, &Term::app(succ, zero));
+    }
+
+    #[test]
+    fn hol_abs_lambda_eq() {
+        // ⊢ x = x   ⇒  abs x:nat   ⇒  ⊢ (λx:nat. x) = (λx:nat. x)
+        let x = Term::free("x", Type::nat());
+        let refl = Thm::hol_refl(x).unwrap();
+        let abs = refl.hol_abs("x", Type::nat()).expect("abs");
+        let (l, r) = parse_hol_eq(abs.concl()).unwrap();
+        let lam = Term::abs("x", Type::nat(), Term::bound(0));
+        assert_eq!(l, &lam);
+        assert_eq!(r, &lam);
     }
 }

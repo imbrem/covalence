@@ -96,7 +96,7 @@ pub fn rem(a: Term, b: Term) -> Term {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_core::Thm;
+    use covalence_core::{TermKind, Thm};
 
     #[test]
     fn ty_is_pure_int() {
@@ -110,9 +110,10 @@ mod tests {
             covalence_types::Nat::from_inner(7u32.into()),
         )));
         let thm = Thm::reduce_prim(n).unwrap();
-        let rhs = match thm.concl().kind() {
-            covalence_core::TermKind::Eq(_, r) => r.clone(),
-            _ => panic!(),
+        let rhs = {
+            let TermKind::App(eq_lhs_app, rhs) = thm.concl().kind() else { panic!() };
+            let TermKind::App(_, _) = eq_lhs_app.kind() else { panic!() };
+            rhs.clone()
         };
         assert_eq!(
             rhs,
@@ -136,7 +137,7 @@ mod tests {
             axiom_neg_involutive(),
             axiom_nat_to_int_add(),
         ] {
-            assert!(ax.concl().type_of().unwrap().is_formula());
+            assert!(ax.concl().type_of().unwrap().is_bool());
         }
     }
 }

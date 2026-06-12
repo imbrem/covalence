@@ -467,14 +467,14 @@ mod tests {
             axiom_option_rec_none(),
             axiom_option_rec_some(),
         ] {
-            assert!(ax.concl().type_of().unwrap().is_formula());
+            assert!(ax.concl().type_of().unwrap().is_bool());
         }
     }
 
     #[test]
     fn definitional_op_axioms_well_formed() {
         for ax in [axiom_map_def(), axiom_bind_def(), axiom_is_some_def()] {
-            assert!(ax.concl().type_of().unwrap().is_formula());
+            assert!(ax.concl().type_of().unwrap().is_bool());
         }
     }
 
@@ -486,7 +486,7 @@ mod tests {
             axiom_bind_none(),
             axiom_bind_some(),
         ] {
-            assert!(ax.concl().type_of().unwrap().is_formula());
+            assert!(ax.concl().type_of().unwrap().is_bool());
         }
     }
 }

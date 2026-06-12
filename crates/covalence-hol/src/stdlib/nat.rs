@@ -159,7 +159,7 @@ pub fn to_int(n: Term) -> Term {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_core::Thm;
+    use covalence_core::{TermKind, Thm};
 
     #[test]
     fn ty_is_pure_nat() {
@@ -170,9 +170,10 @@ mod tests {
     fn zero_succ_reduces_to_one() {
         let s_zero = succ(zero());
         let thm = Thm::reduce_prim(s_zero).unwrap();
-        let rhs = match thm.concl().kind() {
-            covalence_core::TermKind::Eq(_, r) => r.clone(),
-            _ => panic!("not eq"),
+        let rhs = {
+            let TermKind::App(eq_lhs_app, rhs) = thm.concl().kind() else { panic!() };
+            let TermKind::App(_, _) = eq_lhs_app.kind() else { panic!() };
+            rhs.clone()
         };
         assert_eq!(rhs, one());
     }
@@ -181,9 +182,10 @@ mod tests {
     fn add_reduces_on_literals() {
         let sum = add(lit(7u32), lit(35u32));
         let thm = Thm::reduce_prim(sum).unwrap();
-        let rhs = match thm.concl().kind() {
-            covalence_core::TermKind::Eq(_, r) => r.clone(),
-            _ => panic!("not eq"),
+        let rhs = {
+            let TermKind::App(eq_lhs_app, rhs) = thm.concl().kind() else { panic!() };
+            let TermKind::App(_, _) = eq_lhs_app.kind() else { panic!() };
+            rhs.clone()
         };
         assert_eq!(rhs, lit(42u32));
     }
@@ -196,7 +198,7 @@ mod tests {
         let a = axiom_add_def();
         let b = axiom_add_def();
         assert_eq!(a.concl(), b.concl());
-        assert!(a.concl().type_of().unwrap().is_formula());
+        assert!(a.concl().type_of().unwrap().is_bool());
     }
 
     #[test]

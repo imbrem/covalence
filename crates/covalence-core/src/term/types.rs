@@ -93,8 +93,6 @@ pub struct Type(Arc<TypeKind>);
 pub enum TypeKind {
     /// Type variable, e.g. `'a` in Isabelle notation.
     TFree(SmolStr),
-    /// Kind of meta-propositions. Built in.
-    Prop,
     /// Type of `TermKind::Nat(_)` term values. Built in. The natural
     /// numbers (non-negative integers, arbitrary precision). The
     /// kernel's foundational data type (see `docs/type-hierarchy.md`).
@@ -150,7 +148,6 @@ pub enum TypeKind {
 // TypeSpecs (`crate::defs::int_ty_spec`, `crate::defs::bytes_spec`)
 // wrapped in `Type::spec(…)`. The wrap itself is cached at the
 // `Type::int()` / `Type::bytes()` call sites below.
-static PROP: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Prop)));
 static NAT: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Nat)));
 static UNIT: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Unit)));
 static BOOL: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Bool)));
@@ -172,12 +169,6 @@ impl Type {
 
     pub fn tfree(name: impl Into<SmolStr>) -> Self {
         Self::alloc(TypeKind::TFree(name.into()))
-    }
-
-    /// The kind of meta-propositions — `prop`. Returns a shared
-    /// instance; calls are O(1) `Arc` bumps.
-    pub fn prop() -> Self {
-        PROP.clone()
     }
 
     /// The byte-string type — `bytes := list u8`. Returns a shared
@@ -257,23 +248,12 @@ impl Type {
         Self::alloc(TypeKind::TyConObs(observer, hint.into(), args))
     }
 
-    pub fn is_prop(&self) -> bool {
-        matches!(self.kind(), TypeKind::Prop)
-    }
-
     /// True when this is `Type::bool()` — the HOL formula type. The
-    /// HOL-Light kernel rules ([`crate::Thm::hol_refl`] et al.) accept
+    /// HOL-Light kernel rules ([`crate::Thm::refl`] et al.) accept
     /// `bool`-typed terms as theorems; we recognise them here
     /// structurally via the `TypeKind::Bool` variant.
     pub fn is_bool(&self) -> bool {
         matches!(self.kind(), TypeKind::Bool)
-    }
-
-    /// True when this is either `prop` (the Pure formula type) or
-    /// `bool` (the HOL formula type). [`crate::Thm::build`] accepts
-    /// either during the Pure→HOL collapse migration.
-    pub fn is_formula(&self) -> bool {
-        self.is_prop() || self.is_bool()
     }
 
     /// Free type variables of `self`, in sorted order with duplicates
@@ -291,10 +271,7 @@ pub(crate) fn free_tvars_into(ty: &Type, out: &mut std::collections::BTreeSet<Sm
         TypeKind::TFree(name) => {
             out.insert(name.clone());
         }
-        TypeKind::Prop
-        | TypeKind::Nat
-        | TypeKind::Unit
-        | TypeKind::Bool => {}
+        TypeKind::Nat | TypeKind::Unit | TypeKind::Bool => {}
         TypeKind::Fun(a, b) => {
             free_tvars_into(a, out);
             free_tvars_into(b, out);
@@ -342,7 +319,6 @@ impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind() {
             TypeKind::TFree(n) => write!(f, "'{}", n),
-            TypeKind::Prop => write!(f, "prop"),
             TypeKind::Nat => write!(f, "nat"),
             TypeKind::Unit => write!(f, "unit"),
             TypeKind::Bool => write!(f, "bool"),

@@ -274,7 +274,7 @@ mod tests {
             axiom_int_to_rat_zero(),
             axiom_int_to_rat_add(),
         ] {
-            assert!(ax.concl().type_of().unwrap().is_formula());
+            assert!(ax.concl().type_of().unwrap().is_bool());
         }
     }
 }

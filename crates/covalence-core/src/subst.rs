@@ -44,11 +44,6 @@ fn close_at(t: &Term, name: &str, depth: u32) -> Term {
         TermKind::Abs(hint, ty, body) => {
             Term::abs(hint.clone(), ty.clone(), close_at(body, name, depth + 1))
         }
-        TermKind::All(hint, ty, body) => {
-            Term::all(hint.clone(), ty.clone(), close_at(body, name, depth + 1))
-        }
-        TermKind::Imp(a, b) => Term::imp(close_at(a, name, depth), close_at(b, name, depth)),
-        TermKind::Eq(a, b) => Term::eq(close_at(a, name, depth), close_at(b, name, depth)),
     }
 }
 
@@ -85,11 +80,6 @@ fn inst(t: &Term, u: &Term, depth: u32) -> Term {
         TermKind::Abs(hint, ty, body) => {
             Term::abs(hint.clone(), ty.clone(), inst(body, u, depth + 1))
         }
-        TermKind::All(hint, ty, body) => {
-            Term::all(hint.clone(), ty.clone(), inst(body, u, depth + 1))
-        }
-        TermKind::Imp(a, b) => Term::imp(inst(a, u, depth), inst(b, u, depth)),
-        TermKind::Eq(a, b) => Term::eq(inst(a, u, depth), inst(b, u, depth)),
     }
 }
 
@@ -147,17 +137,6 @@ fn shift_inner(t: &Term, delta: i64, cutoff: u32) -> Term {
             ty.clone(),
             shift_inner(body, delta, cutoff + 1),
         ),
-        TermKind::All(hint, ty, body) => Term::all(
-            hint.clone(),
-            ty.clone(),
-            shift_inner(body, delta, cutoff + 1),
-        ),
-        TermKind::Imp(a, b) => {
-            Term::imp(shift_inner(a, delta, cutoff), shift_inner(b, delta, cutoff))
-        }
-        TermKind::Eq(a, b) => {
-            Term::eq(shift_inner(a, delta, cutoff), shift_inner(b, delta, cutoff))
-        }
     }
 }
 
@@ -192,19 +171,6 @@ fn subst_free_at(t: &Term, name: &str, r: &Term, depth: u32) -> Term {
             ty.clone(),
             subst_free_at(body, name, r, depth + 1),
         ),
-        TermKind::All(hint, ty, body) => Term::all(
-            hint.clone(),
-            ty.clone(),
-            subst_free_at(body, name, r, depth + 1),
-        ),
-        TermKind::Imp(a, b) => Term::imp(
-            subst_free_at(a, name, r, depth),
-            subst_free_at(b, name, r, depth),
-        ),
-        TermKind::Eq(a, b) => Term::eq(
-            subst_free_at(a, name, r, depth),
-            subst_free_at(b, name, r, depth),
-        ),
     }
 }
 
@@ -216,11 +182,7 @@ fn subst_free_at(t: &Term, name: &str, r: &Term, depth: u32) -> Term {
 pub fn subst_tfree_in_type(ty: &Type, name: &str, r: &Type) -> Type {
     match ty.kind() {
         TypeKind::TFree(n) if n == name => r.clone(),
-        TypeKind::TFree(_)
-        | TypeKind::Prop
-        | TypeKind::Nat
-        | TypeKind::Unit
-        | TypeKind::Bool => ty.clone(),
+        TypeKind::TFree(_) | TypeKind::Nat | TypeKind::Unit | TypeKind::Bool => ty.clone(),
         TypeKind::Fun(a, b) => Type::fun(
             subst_tfree_in_type(a, name, r),
             subst_tfree_in_type(b, name, r),
@@ -267,9 +229,6 @@ pub fn subst_tfree_in_term(t: &Term, name: &str, r: &Type) -> Term {
         TermKind::Const(n, ty) => Term::const_(n.clone(), st(ty)),
         TermKind::App(f, x) => Term::app(sub(f), sub(x)),
         TermKind::Abs(hint, ty, body) => Term::abs(hint.clone(), st(ty), sub(body)),
-        TermKind::All(hint, ty, body) => Term::all(hint.clone(), st(ty), sub(body)),
-        TermKind::Imp(a, b) => Term::imp(sub(a), sub(b)),
-        TermKind::Eq(a, b) => Term::eq(sub(a), sub(b)),
         TermKind::Blob(b) => Term::blob(b.clone()),
         TermKind::Nat(n) => Term::nat_lit(n.clone()),
         TermKind::Int(n) => Term::int_lit(n.clone()),
@@ -316,10 +275,10 @@ fn is_closed_at(t: &Term, depth: u32) -> bool {
         | TermKind::Spec(_, _)
         | TermKind::Obs(..)
         | TermKind::Def(_) => true,
-        TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
+        TermKind::App(a, b) => {
             is_closed_at(a, depth) && is_closed_at(b, depth)
         }
-        TermKind::Abs(_, _, body) | TermKind::All(_, _, body) => is_closed_at(body, depth + 1),
+        TermKind::Abs(_, _, body) => is_closed_at(body, depth + 1),
     }
 }
 
@@ -346,10 +305,10 @@ pub fn find_free_type(t: &Term, name: &str) -> Option<Type> {
         | TermKind::Spec(_, _)
         | TermKind::Obs(..)
         | TermKind::Def(_) => None,
-        TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
+        TermKind::App(a, b) => {
             find_free_type(a, name).or_else(|| find_free_type(b, name))
         }
-        TermKind::Abs(_, _, body) | TermKind::All(_, _, body) => find_free_type(body, name),
+        TermKind::Abs(_, _, body) => find_free_type(body, name),
     }
 }
 
@@ -374,10 +333,10 @@ fn uses_bound_at(t: &Term, target: u32, depth: u32) -> bool {
         | TermKind::Spec(_, _)
         | TermKind::Obs(..)
         | TermKind::Def(_) => false,
-        TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
+        TermKind::App(a, b) => {
             uses_bound_at(a, target, depth) || uses_bound_at(b, target, depth)
         }
-        TermKind::Abs(_, _, body) | TermKind::All(_, _, body) => {
+        TermKind::Abs(_, _, body) => {
             uses_bound_at(body, target, depth + 1)
         }
     }
@@ -398,13 +357,13 @@ pub fn collect_term_tvars(t: &Term, out: &mut std::collections::BTreeSet<SmolStr
                 out.insert(n);
             }
         }
-        TermKind::Abs(_, ty, body) | TermKind::All(_, ty, body) => {
+        TermKind::Abs(_, ty, body) => {
             for n in ty.free_tvars() {
                 out.insert(n);
             }
             collect_term_tvars(body, out);
         }
-        TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
+        TermKind::App(a, b) => {
             collect_term_tvars(a, out);
             collect_term_tvars(b, out);
         }
@@ -445,8 +404,7 @@ pub fn match_types(
                 Ok(())
             }
         },
-        (TypeKind::Prop, TypeKind::Prop)
-        | (TypeKind::Nat, TypeKind::Nat) => Ok(()),
+        (TypeKind::Nat, TypeKind::Nat) => Ok(()),
         (TypeKind::Fun(pa, pb), TypeKind::Fun(ta, tb)) => {
             match_types(pa, ta, sub)?;
             match_types(pb, tb, sub)

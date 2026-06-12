@@ -213,9 +213,10 @@ mod tests {
 
     fn rhs_of_reduction(t: Term) -> Term {
         let thm = Thm::reduce_prim(t).unwrap();
-        match thm.concl().kind() {
-            TermKind::Eq(_, r) => r.clone(),
-            _ => panic!(),
+        {
+            let TermKind::App(eq_lhs_app, rhs) = thm.concl().kind() else { panic!() };
+            let TermKind::App(_, _) = eq_lhs_app.kind() else { panic!() };
+            rhs.clone()
         }
     }
 
@@ -257,7 +258,7 @@ mod tests {
             axiom_len_cons_nat(),
             axiom_bytes_induction(),
         ] {
-            assert!(ax.concl().type_of().unwrap().is_formula());
+            assert!(ax.concl().type_of().unwrap().is_bool());
         }
     }
 }

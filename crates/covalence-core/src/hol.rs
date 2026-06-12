@@ -77,7 +77,7 @@ pub(crate) fn hol_or(p: Term, q: Term) -> Term {
 }
 
 /// HOL `∀` at `(α → bool) → bool`.
-fn forall_at(alpha: Type) -> Term {
+pub(crate) fn forall_at(alpha: Type) -> Term {
     let pred = Type::fun(alpha, bool_ty());
     Term::hol_op(HolOp::Forall, Type::fun(pred, bool_ty()))
 }

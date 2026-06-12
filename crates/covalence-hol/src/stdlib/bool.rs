@@ -323,7 +323,7 @@ mod tests {
         assert_eq!(ax.hyps().len(), 1, "axiom must have its own concl as hyp");
         assert_eq!(ax.hyps().iter().next().unwrap(), ax.concl());
         assert!(
-            ax.concl().type_of().unwrap().is_formula(),
+            ax.concl().type_of().unwrap().is_bool(),
             "axiom concl must be prop-typed"
         );
     }
@@ -362,14 +362,14 @@ mod tests {
     fn spec_at_bool_is_well_formed() {
         let ctx = HolLightCtx::new();
         let ax = axiom_spec_at(ctx.bool_type());
-        assert!(ax.concl().type_of().unwrap().is_formula());
+        assert!(ax.concl().type_of().unwrap().is_bool());
     }
 
     #[test]
     fn exists_intro_at_bool_is_well_formed() {
         let ctx = HolLightCtx::new();
         let ax = axiom_exists_intro_at(ctx.bool_type());
-        assert!(ax.concl().type_of().unwrap().is_formula());
+        assert!(ax.concl().type_of().unwrap().is_bool());
     }
 
     #[test]

@@ -627,7 +627,7 @@ mod tests {
     #[test]
     fn distinctness_axioms_well_formed() {
         for ax in [axiom_nil_ne_cons(), axiom_cons_inj(), axiom_list_induction()] {
-            assert!(ax.concl().type_of().unwrap().is_formula());
+            assert!(ax.concl().type_of().unwrap().is_bool());
         }
     }
 
@@ -641,7 +641,7 @@ mod tests {
             axiom_map_def(),
             axiom_foldr_def(),
         ] {
-            assert!(ax.concl().type_of().unwrap().is_formula());
+            assert!(ax.concl().type_of().unwrap().is_bool());
         }
     }
 
@@ -655,7 +655,7 @@ mod tests {
             axiom_foldr_nil(),
             axiom_foldr_cons(),
         ] {
-            assert!(ax.concl().type_of().unwrap().is_formula());
+            assert!(ax.concl().type_of().unwrap().is_bool());
         }
     }
 }

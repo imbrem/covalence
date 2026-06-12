@@ -468,12 +468,21 @@ mod tests {
         let thm = Thm::reduce_prim(t.clone()).unwrap_or_else(|e| {
             panic!("reduce failed for {t:?}: {e:?}")
         });
-        let (lhs, rhs) = match thm.concl().kind() {
-            TermKind::Eq(a, b) => (a.clone(), b.clone()),
-            _ => panic!("concl is not Eq: {:?}", thm.concl()),
+        // Conclusion shape: App(App(HolOp::Eq, lhs), rhs) — a HOL
+        // equation at bool. Walk it structurally.
+        let TermKind::App(eq_lhs_app, rhs) = thm.concl().kind() else {
+            panic!("concl is not an App: {:?}", thm.concl());
         };
-        assert_eq!(lhs, t, "LHS mismatch");
-        assert_eq!(rhs, want, "RHS mismatch");
+        let TermKind::App(eq_op, lhs) = eq_lhs_app.kind() else {
+            panic!("concl LHS is not an App: {:?}", thm.concl());
+        };
+        assert!(
+            matches!(eq_op.kind(), TermKind::HolOp(crate::term::HolOp::Eq, _)),
+            "concl head is not HOL =: {:?}",
+            thm.concl()
+        );
+        assert_eq!(lhs, &t, "LHS mismatch");
+        assert_eq!(rhs, &want, "RHS mismatch");
     }
 
     #[test]

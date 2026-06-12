@@ -441,7 +441,7 @@ mod tests {
     /// Assume-style axiom: hyp = concl (one hypothesis, the axiom
     /// itself). The self-hyp pattern serves as the audit trail.
     fn check(ax: Thm) {
-        assert!(ax.concl().type_of().unwrap().is_formula());
+        assert!(ax.concl().type_of().unwrap().is_bool());
         assert_eq!(ax.hyps().len(), 1);
         assert_eq!(ax.hyps().iter().next().unwrap(), ax.concl());
     }
@@ -451,7 +451,7 @@ mod tests {
     /// are `bool`-typed rather than `prop`-typed.
     fn check_kernel(ax: Thm) {
         let ty = ax.concl().type_of().unwrap();
-        assert!(ty.is_formula(), "axiom conclusion {ty} is neither bool nor prop");
+        assert!(ty.is_bool(), "axiom conclusion {ty} is neither bool nor prop");
         assert!(ax.hyps().is_empty(), "kernel axiom must have no hyps");
     }
 

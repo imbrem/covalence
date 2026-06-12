@@ -33,12 +33,6 @@ impl PyType {
         PyType(cp::Type::tfree(name))
     }
 
-    /// The kind of meta-propositions, `prop`.
-    #[staticmethod]
-    fn prop() -> Self {
-        PyType(cp::Type::prop())
-    }
-
     /// The type of blob literals.
     #[staticmethod]
     fn bytes() -> Self {
@@ -80,8 +74,8 @@ impl PyType {
         ))
     }
 
-    fn is_prop(&self) -> bool {
-        self.0.is_prop()
+    fn is_bool(&self) -> bool {
+        self.0.is_bool()
     }
 
     fn __repr__(&self) -> String {
@@ -141,24 +135,6 @@ impl PyTerm {
     #[staticmethod]
     fn abs(hint: &str, ty: PyType, body: PyTerm) -> Self {
         PyTerm(cp::Term::abs(hint, ty.0, body.0))
-    }
-
-    /// Meta-implication `φ ⟹ ψ`.
-    #[staticmethod]
-    fn imp(lhs: PyTerm, rhs: PyTerm) -> Self {
-        PyTerm(cp::Term::imp(lhs.0, rhs.0))
-    }
-
-    /// Meta-universal `⋀x:τ. body`.
-    #[staticmethod]
-    fn all(hint: &str, ty: PyType, body: PyTerm) -> Self {
-        PyTerm(cp::Term::all(hint, ty.0, body.0))
-    }
-
-    /// Meta-equality `t ≡ u`.
-    #[staticmethod]
-    fn eq(lhs: PyTerm, rhs: PyTerm) -> Self {
-        PyTerm(cp::Term::eq(lhs.0, rhs.0))
     }
 
     /// Built-in byte literal.

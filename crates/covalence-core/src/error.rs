@@ -11,14 +11,8 @@ use crate::term::Type;
 /// observation data through error types.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("expected term of kind prop, got type {0}")]
-    NotProp(Type),
-
     #[error("expected term of kind bool, got type {0}")]
     NotBool(Type),
-
-    #[error("expected term of kind prop or bool, got type {0}")]
-    NotFormula(Type),
 
     #[error("expected HOL equation (lhs = rhs : bool), got {0}")]
     NotHolEq(String),
@@ -34,15 +28,6 @@ pub enum Error {
 
     #[error("expected function type, got {0}")]
     NotFunction(Type),
-
-    #[error("expected meta-implication (φ ⟹ ψ), got {0}")]
-    NotMetaImp(String),
-
-    #[error("expected meta-universal (⋀x:τ. body), got {0}")]
-    NotMetaAll(String),
-
-    #[error("expected meta-equality (t ≡ u), got {0}")]
-    NotMetaEq(String),
 
     #[error("expected abstraction (λx:τ. body), got {0}")]
     NotAbs(String),

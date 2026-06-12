@@ -577,7 +577,7 @@ mod tests {
     #[test]
     fn nat_succ_inj_concl_is_prop() {
         let thm = prove_nat_succ_inj();
-        assert!(thm.concl().type_of().unwrap().is_formula());
+        assert!(thm.concl().type_of().unwrap().is_bool());
     }
 
     #[test]
@@ -596,7 +596,7 @@ mod tests {
     fn nat_zero_ne_one_has_empty_hyps() {
         let thm = nat_zero_ne_one();
         assert!(thm.hyps().is_empty(), "got {} hyps", thm.hyps().len());
-        assert!(thm.concl().type_of().unwrap().is_formula());
+        assert!(thm.concl().type_of().unwrap().is_bool());
     }
 
     #[test]
@@ -611,7 +611,7 @@ mod tests {
     fn nat_zero_ne_succ_has_empty_hyps() {
         let thm = prove_nat_zero_ne_succ();
         assert!(thm.hyps().is_empty(), "got {} hyps", thm.hyps().len());
-        assert!(thm.concl().type_of().unwrap().is_formula());
+        assert!(thm.concl().type_of().unwrap().is_bool());
     }
 
     #[test]

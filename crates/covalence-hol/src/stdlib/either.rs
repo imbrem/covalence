@@ -263,7 +263,7 @@ mod tests {
             axiom_left_ne_right(),
             axiom_either_cases(),
         ] {
-            assert!(ax.concl().type_of().unwrap().is_formula());
+            assert!(ax.concl().type_of().unwrap().is_bool());
         }
     }
 
@@ -282,7 +282,7 @@ mod tests {
     #[test]
     fn rec_axioms_well_formed() {
         for ax in [axiom_either_rec_left(), axiom_either_rec_right()] {
-            assert!(ax.concl().type_of().unwrap().is_formula());
+            assert!(ax.concl().type_of().unwrap().is_bool());
         }
     }
 }

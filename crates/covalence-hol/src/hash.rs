@@ -174,7 +174,6 @@ impl Hasher {
                 buf.extend_from_slice(bytes);
                 ctx.tag(buf)
             }
-            TypeKind::Prop => ctx.tag([TY_PROP]),
             TypeKind::Nat => ctx.tag([TY_NAT]),
             TypeKind::Unit => ctx.tag([TY_UNIT]),
             TypeKind::Bool => ctx.tag([TY_BOOL]),
@@ -260,21 +259,6 @@ impl Hasher {
                 let th = self.hash_type(ty, oh);
                 let bh = self.hash_term(body, oh);
                 binary(ctx, T_ABS, th, bh)
-            }
-            TermKind::Imp(a, b) => {
-                let ah = self.hash_term(a, oh);
-                let bh = self.hash_term(b, oh);
-                binary(ctx, T_IMP, ah, bh)
-            }
-            TermKind::All(_, ty, body) => {
-                let th = self.hash_type(ty, oh);
-                let bh = self.hash_term(body, oh);
-                binary(ctx, T_ALL, th, bh)
-            }
-            TermKind::Eq(a, b) => {
-                let ah = self.hash_term(a, oh);
-                let bh = self.hash_term(b, oh);
-                binary(ctx, T_EQ, ah, bh)
             }
             TermKind::Blob(bytes) => {
                 let mut buf = Vec::with_capacity(1 + 4 + bytes.len());

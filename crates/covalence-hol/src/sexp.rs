@@ -131,7 +131,6 @@ impl ObsParser for UnitObs {
 pub fn type_to_sexp(ty: &Type, ser: &dyn ObsSerializer) -> Result<SExpr> {
     Ok(match ty.kind() {
         TypeKind::TFree(name) => list2("tfree", sym(name)),
-        TypeKind::Prop => list1("prop"),
         TypeKind::Nat => list1("nat"),
         TypeKind::Unit => list1("unit"),
         TypeKind::Bool => list1("bool"),
@@ -177,10 +176,6 @@ pub fn type_from_sexp(s: &SExpr, parser: &dyn ObsParser) -> Result<Type> {
         "tfree" => {
             expect_arity(children, 2, "tfree")?;
             Ok(Type::tfree(expect_symbol(&children[1], "tfree name")?))
-        }
-        "prop" => {
-            expect_arity(children, 1, "prop")?;
-            Ok(Type::prop())
         }
         "nat" => {
             expect_arity(children, 1, "nat")?;
@@ -280,14 +275,6 @@ pub fn term_to_sexp(t: &Term, ser: &dyn ObsSerializer) -> Result<SExpr> {
             type_to_sexp(ty, ser)?,
             term_to_sexp(body, ser)?,
         ),
-        TermKind::Imp(a, b) => list3("imp", term_to_sexp(a, ser)?, term_to_sexp(b, ser)?),
-        TermKind::All(hint, ty, body) => list4(
-            "all",
-            sym(hint.as_str()),
-            type_to_sexp(ty, ser)?,
-            term_to_sexp(body, ser)?,
-        ),
-        TermKind::Eq(a, b) => list3("eq", term_to_sexp(a, ser)?, term_to_sexp(b, ser)?),
         TermKind::Blob(bytes) => list2(
             "blob",
             SExp::Atom(Atom::Str {
@@ -356,27 +343,6 @@ pub fn term_from_sexp(s: &SExpr, parser: &dyn ObsParser) -> Result<Term> {
             let body = term_from_sexp(&children[3], parser)?;
             Ok(Term::abs(hint, ty, body))
         }
-        "imp" => {
-            expect_arity(children, 3, "imp")?;
-            Ok(Term::imp(
-                term_from_sexp(&children[1], parser)?,
-                term_from_sexp(&children[2], parser)?,
-            ))
-        }
-        "all" => {
-            expect_arity(children, 4, "all")?;
-            let hint = expect_symbol(&children[1], "all hint")?;
-            let ty = type_from_sexp(&children[2], parser)?;
-            let body = term_from_sexp(&children[3], parser)?;
-            Ok(Term::all(hint, ty, body))
-        }
-        "eq" => {
-            expect_arity(children, 3, "eq")?;
-            Ok(Term::eq(
-                term_from_sexp(&children[1], parser)?,
-                term_from_sexp(&children[2], parser)?,
-            ))
-        }
         "blob" => {
             expect_arity(children, 2, "blob")?;
             let (format, bytes) = expect_str(&children[1], "blob bytes")?;
@@ -411,14 +377,16 @@ pub fn term_from_sexp(s: &SExpr, parser: &dyn ObsParser) -> Result<Term> {
             // the construction visible.
             let thm = covalence_core::Thm::define(name, body)
                 .map_err(|e| SexpError(format!("invalid def: {}", e)))?;
-            // The Thm has conclusion `Def(name, body) ≡ body`.
-            // Extract the LHS (the Term::def leaf).
-            match thm.concl().kind() {
-                TermKind::Eq(lhs, _) => Ok(lhs.clone()),
-                _ => Err(SexpError(
-                    "kernel produced unexpected define Thm shape".into(),
-                )),
-            }
+            // The Thm has conclusion `Def(name, body) = body` (HOL
+            // equation). Walk the two `App`s to extract the LHS (the
+            // `Term::def` leaf).
+            let TermKind::App(eq_lhs_app, _) = thm.concl().kind() else {
+                return Err(SexpError("kernel produced unexpected define Thm shape".into()));
+            };
+            let TermKind::App(_, lhs) = eq_lhs_app.kind() else {
+                return Err(SexpError("kernel produced unexpected define Thm shape".into()));
+            };
+            Ok(lhs.clone())
         }
         other => Err(SexpError(format!("unknown term head: {}", other))),
     }

@@ -53,13 +53,13 @@ impl Thm {
     fn build(hyps: Ctx, concl: Term) -> Result<Thm> {
         let mut env = TypeEnv::default();
         let ty = type_of_in(&concl, &mut env)?;
-        if !ty.is_formula() {
-            return Err(Error::NotFormula(ty));
+        if !ty.is_bool() {
+            return Err(Error::NotBool(ty));
         }
         for h in &hyps {
             let hty = type_of_in(h, &mut env)?;
-            if !hty.is_formula() {
-                return Err(Error::NotFormula(hty));
+            if !hty.is_bool() {
+                return Err(Error::NotBool(hty));
             }
         }
         Ok(Thm { hyps, concl })
@@ -494,7 +494,7 @@ impl Thm {
         // 2. Read α from x's type.
         let alpha = x.type_of()?;
 
-        // 3. Validate P : α → prop.
+        // 3. Validate P : α → bool.
         let p_ty = p.type_of()?;
         let TypeKind::Fun(p_dom, p_cod) = p_ty.kind() else {
             return Err(Error::NotFunction(p_ty));
@@ -505,8 +505,8 @@ impl Thm {
                 got: p_dom.clone(),
             });
         }
-        if !p_cod.is_prop() {
-            return Err(Error::NotProp(p_cod.clone()));
+        if !p_cod.is_bool() {
+            return Err(Error::NotBool(p_cod.clone()));
         }
 
         // 4. Compute the type-variable arity from α's free TFrees.
@@ -533,34 +533,36 @@ impl Thm {
         let abs = Term::obs(abs_marker, abs_ty);
         let rep = Term::obs(rep_marker, rep_ty);
 
-        // 7. Build the three bijection theorems.
+        // 7. Build the three bijection theorems at HOL `=` / `⟹` /
+        //    `∀` — all conclusions are `bool`-typed.
         //
-        //    abs_rep: ⋀a:τ. abs (rep a) ≡ a
-        let bound0 = Term::bound(0);
-        let abs_rep_body = Term::eq(
-            Term::app(abs.clone(), Term::app(rep.clone(), bound0.clone())),
-            bound0.clone(),
+        //    abs_rep: ⊢ ∀a:τ. abs (rep a) = a
+        let a_free = Term::free("a", tau.clone());
+        let abs_rep_body = hol::hol_eq(
+            Term::app(abs.clone(), Term::app(rep.clone(), a_free.clone())),
+            a_free,
         );
-        let abs_rep_concl = Term::all(BinderHint::new("a"), tau.clone(), abs_rep_body);
+        let abs_rep_concl = hol::hol_forall("a", tau.clone(), abs_rep_body);
 
-        //    rep_abs_eq : (rep (abs r) ≡ r)   (with r=bound 0)
-        //    p_at_bound : P r
-        let p_at_bound = Term::app(p, bound0.clone());
-        let rep_abs_eq = Term::eq(
-            Term::app(rep.clone(), Term::app(abs.clone(), bound0)),
-            Term::bound(0),
+        //    rep_abs_eq : `rep (abs r) = r`
+        //    p_at_r     : `P r`
+        let r_free = Term::free("r", alpha.clone());
+        let p_at_r = Term::app(p, r_free.clone());
+        let rep_abs_eq = hol::hol_eq(
+            Term::app(rep.clone(), Term::app(abs.clone(), r_free.clone())),
+            r_free,
         );
-        //    fwd: ⋀r:α. P r ⟹ rep (abs r) ≡ r
-        let fwd_concl = Term::all(
-            BinderHint::new("r"),
+        //    fwd: ⊢ ∀r:α. P r ⟹ rep (abs r) = r
+        let fwd_concl = hol::hol_forall(
+            "r",
             alpha.clone(),
-            Term::imp(p_at_bound.clone(), rep_abs_eq.clone()),
+            hol::hol_imp(p_at_r.clone(), rep_abs_eq.clone()),
         );
-        //    back: ⋀r:α. rep (abs r) ≡ r ⟹ P r
-        let back_concl = Term::all(
-            BinderHint::new("r"),
+        //    back: ⊢ ∀r:α. rep (abs r) = r ⟹ P r
+        let back_concl = hol::hol_forall(
+            "r",
             alpha,
-            Term::imp(rep_abs_eq, p_at_bound),
+            hol::hol_imp(rep_abs_eq, p_at_r),
         );
 
         // 8. Propagate witness's hyps to each emitted theorem — every
@@ -626,7 +628,7 @@ impl Thm {
             }
         }
         let d = Def::new_internal(name.into(), body.clone(), body_type);
-        let concl = Term::eq(Term::def(d), body);
+        let concl = hol::hol_eq(Term::def(d), body);
         Self::build(Ctx::new(), concl)
     }
 
@@ -695,12 +697,12 @@ impl Thm {
             unfolded = subst_tfree_in_term(&unfolded, tvar, arg);
         }
 
-        Self::build(Ctx::new(), Term::eq(t, unfolded))
+        Self::build(Ctx::new(), hol::hol_eq(t, unfolded))
     }
 
     pub fn reduce_prim(t: Term) -> Result<Thm> {
         let reduced = builtins::reduce_prim_term(&t).ok_or(Error::NotReducible)?;
-        Self::build(Ctx::new(), Term::eq(t, reduced))
+        Self::build(Ctx::new(), hol::hol_eq(t, reduced))
     }
 
     /// `Γ[α:=σ] ⊢ φ[α:=σ]`.
@@ -753,8 +755,8 @@ impl Thm {
         let (obs, args) = decompose_obs_app(&expr)?;
         let o = obs.downcast::<O>().ok_or(Error::ObsDowncastTypeMismatch)?;
         let ty = expr.type_of()?;
-        if !ty.is_prop() {
-            return Err(Error::NotProp(ty));
+        if !ty.is_bool() {
+            return Err(Error::NotBool(ty));
         }
         if !o.obs_true(&args, hint.as_deref().map(|h| h)) {
             return Err(Error::ObsEqRefused);
@@ -790,22 +792,24 @@ impl Thm {
         let (obs, args) = decompose_obs_app(&expr)?;
         let o = obs.downcast::<O>().ok_or(Error::ObsDowncastTypeMismatch)?;
         let ty = expr.type_of()?;
-        if !ty.is_prop() {
-            return Err(Error::NotProp(ty));
+        if !ty.is_bool() {
+            return Err(Error::NotBool(ty));
         }
         for h in &hyps {
             let h_ty = h.type_of()?;
-            if !h_ty.is_prop() {
-                return Err(Error::NotProp(h_ty));
+            if !h_ty.is_bool() {
+                return Err(Error::NotBool(h_ty));
             }
         }
         if !o.obs_imp(&args, &hyps, hint.as_deref()) {
             return Err(Error::ObsEqRefused);
         }
-        // Build hyp[0] ⟹ hyp[1] ⟹ ... ⟹ expr (right-associative).
+        // Build hyp[0] ⟹ hyp[1] ⟹ ... ⟹ expr (right-associative)
+        // using HOL `⟹` (HolOp::Imp). All hyps and the consequent
+        // are bool-typed (checked above).
         let mut result = expr;
         for h in hyps.into_iter().rev() {
-            result = Term::imp(h, result);
+            result = hol::hol_imp(h, result);
         }
         Self::build(Ctx::new(), result)
     }
@@ -830,7 +834,7 @@ impl Thm {
         if !o1.obs_eq(o2, &args1, &args2, hint.as_deref()) {
             return Err(Error::ObsEqRefused);
         }
-        let concl = Term::eq(expr1, expr2);
+        let concl = hol::hol_eq(expr1, expr2);
         Self::build(Ctx::new(), concl)
     }
 

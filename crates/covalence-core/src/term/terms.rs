@@ -194,8 +194,8 @@ impl fmt::Display for Def {
 /// [`TermKind::HolOp`] variant pairs it with the instance type at the
 /// point of use:
 ///
-/// - Non-polymorphic ops (`Imp`, `Not`, `And`, `Or`, `Iff`,
-///   `Trueprop`) take a fixed type (e.g., `bool → bool → bool`).
+/// - Non-polymorphic ops (`Imp`, `Not`, `And`, `Or`, `Iff`) take a
+///   fixed type (e.g., `bool → bool → bool`).
 /// - Polymorphic ops (`Eq`, `Forall`, `Exists`, `Select`) carry the
 ///   instance type at α (e.g., `Eq` at α has full type
 ///   `α → α → bool`).
@@ -224,9 +224,6 @@ pub enum HolOp {
     Exists,
     /// HOL `ε` (Hilbert's choice) at type `(α → bool) → α`.
     Select,
-    /// `Trueprop : bool → prop` — explicit coercion from HOL `bool` to
-    /// the kernel's meta-prop, mirroring Isabelle/HOL's `Trueprop`.
-    Trueprop,
 }
 
 impl HolOp {
@@ -242,7 +239,6 @@ impl HolOp {
             HolOp::Forall => "!",
             HolOp::Exists => "?",
             HolOp::Select => "@",
-            HolOp::Trueprop => "Trueprop",
         }
     }
 }
@@ -274,12 +270,6 @@ pub enum TermKind {
     /// Abstraction `λ(hint:ty). body`. `body` uses Bound(0) for the
     /// binder; `hint` is a display label (α-transparent).
     Abs(BinderHint, Type, Term),
-    /// Meta-implication `φ ⟹ ψ`.
-    Imp(Term, Term),
-    /// Meta-universal `⋀(hint:ty). body`. Same layout as `Abs`.
-    All(BinderHint, Type, Term),
-    /// Meta-equality `t ≡ u`.
-    Eq(Term, Term),
     /// Builtin: opaque byte literal of kernel type `bytes`.
     Blob(Bytes),
     /// Builtin: natural-number literal. Kernel type `nat`. See
@@ -348,15 +338,6 @@ impl Term {
     }
     pub fn abs(hint: impl Into<BinderHint>, ty: Type, body: Term) -> Self {
         Self::alloc(TermKind::Abs(hint.into(), ty, body))
-    }
-    pub fn imp(lhs: Term, rhs: Term) -> Self {
-        Self::alloc(TermKind::Imp(lhs, rhs))
-    }
-    pub fn all(hint: impl Into<BinderHint>, ty: Type, body: Term) -> Self {
-        Self::alloc(TermKind::All(hint.into(), ty, body))
-    }
-    pub fn eq(lhs: Term, rhs: Term) -> Self {
-        Self::alloc(TermKind::Eq(lhs, rhs))
     }
     pub fn blob(bytes: impl Into<Bytes>) -> Self {
         Self::alloc(TermKind::Blob(bytes.into()))
@@ -444,10 +425,8 @@ impl Term {
             | TermKind::Bool(_)
             | TermKind::Spec(_, _)
             | TermKind::HolOp(_, _) => true,
-            TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
-                a.has_no_obs() && b.has_no_obs()
-            }
-            TermKind::Abs(_, _, body) | TermKind::All(_, _, body) => body.has_no_obs(),
+            TermKind::App(a, b) => a.has_no_obs() && b.has_no_obs(),
+            TermKind::Abs(_, _, body) => body.has_no_obs(),
             TermKind::Def(d) => d.body().has_no_obs(),
         }
     }
@@ -467,10 +446,8 @@ impl Term {
             | TermKind::Bool(_)
             | TermKind::Spec(_, _)
             | TermKind::HolOp(_, _) => true,
-            TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
-                a.all_obs_match::<O>() && b.all_obs_match::<O>()
-            }
-            TermKind::Abs(_, _, body) | TermKind::All(_, _, body) => body.all_obs_match::<O>(),
+            TermKind::App(a, b) => a.all_obs_match::<O>() && b.all_obs_match::<O>(),
+            TermKind::Abs(_, _, body) => body.all_obs_match::<O>(),
             TermKind::Def(d) => d.body().all_obs_match::<O>(),
         }
     }
@@ -496,11 +473,11 @@ impl Term {
             | TermKind::Bool(_)
             | TermKind::Spec(_, _)
             | TermKind::HolOp(_, _) => Ok(()),
-            TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
+            TermKind::App(a, b) => {
                 a.for_each_obs::<O, F>(f)?;
                 b.for_each_obs::<O, F>(f)
             }
-            TermKind::Abs(_, _, body) | TermKind::All(_, _, body) => body.for_each_obs::<O, F>(f),
+            TermKind::Abs(_, _, body) => body.for_each_obs::<O, F>(f),
             TermKind::Def(d) => d.body().for_each_obs::<O, F>(f),
         }
     }
@@ -545,10 +522,6 @@ impl fmt::Display for Term {
             TermKind::App(g, x) => write!(f, "({} {})", g, x),
             TermKind::Abs(hint, ty, body) if hint.is_empty() => write!(f, "(λ:{}. {})", ty, body),
             TermKind::Abs(hint, ty, body) => write!(f, "(λ{}:{}. {})", hint, ty, body),
-            TermKind::Imp(a, b) => write!(f, "({} ⟹ {})", a, b),
-            TermKind::All(hint, ty, body) if hint.is_empty() => write!(f, "(⋀:{}. {})", ty, body),
-            TermKind::All(hint, ty, body) => write!(f, "(⋀{}:{}. {})", hint, ty, body),
-            TermKind::Eq(a, b) => write!(f, "({} ≡ {})", a, b),
             TermKind::Blob(b) => write!(f, "blob[{}]", b.len()),
             TermKind::Nat(n) => write!(f, "{}n", n.as_inner()),
             TermKind::Int(n) => write!(f, "{}i", n.as_inner()),
@@ -642,38 +615,6 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
             env.ctx.pop();
             Ok(Type::fun(ty.clone(), body_ty?))
         }
-        TermKind::All(_, ty, body) => {
-            env.ctx.push(ty.clone());
-            let body_ty = type_of_in(body, env);
-            env.ctx.pop();
-            let body_ty = body_ty?;
-            if !body_ty.is_prop() {
-                return Err(Error::NotProp(body_ty));
-            }
-            Ok(Type::prop())
-        }
-        TermKind::Imp(a, b) => {
-            let ta = type_of_in(a, env)?;
-            if !ta.is_prop() {
-                return Err(Error::NotProp(ta));
-            }
-            let tb = type_of_in(b, env)?;
-            if !tb.is_prop() {
-                return Err(Error::NotProp(tb));
-            }
-            Ok(Type::prop())
-        }
-        TermKind::Eq(a, b) => {
-            let ta = type_of_in(a, env)?;
-            let tb = type_of_in(b, env)?;
-            if ta != tb {
-                return Err(Error::TypeMismatch {
-                    expected: ta,
-                    got: tb,
-                });
-            }
-            Ok(Type::prop())
-        }
         TermKind::Blob(_) => Ok(Type::bytes()),
         TermKind::Nat(_) => Ok(Type::nat()),
         TermKind::Int(_) => Ok(Type::int()),
@@ -685,7 +626,7 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
             let mut result = spec
                 .ty()
                 .cloned()
-                .ok_or_else(|| Error::NotProp(Type::prop()))?;
+                .ok_or_else(|| Error::NotBool(Type::bool()))?;
             // free_tvars on the carrier gives the spec's tvar names
             // in canonical alphabetical order. Substitute positionally.
             let tvars = result.free_tvars();

@@ -4,7 +4,7 @@
 //! closed-form computation; the open-form HOL ring axioms come from
 //! `crate::int_axioms` and are re-exported here.
 
-use covalence_core::{Arith, Prim, Term, Type};
+use covalence_core::{defs, Term, Type};
 
 pub use covalence_types::Int;
 
@@ -34,66 +34,63 @@ pub fn one() -> Term {
     lit(Int::one())
 }
 
-/// `succ : int → int`.
+/// `succ : int → int` — TermSpec constant.
 pub fn succ_fn() -> Term {
-    Term::prim(Prim::IntArith(Arith::Succ))
+    defs::int_succ()
 }
 pub fn succ(n: Term) -> Term {
     Term::app(succ_fn(), n)
 }
 
-/// `pred : int → int`.
+/// `pred : int → int` — TermSpec constant.
 pub fn pred_fn() -> Term {
-    Term::prim(Prim::IntArith(Arith::Pred))
+    defs::int_pred()
 }
 pub fn pred(n: Term) -> Term {
     Term::app(pred_fn(), n)
 }
 
-/// `neg : int → int`.
+/// `neg : int → int` — TermSpec constant.
 pub fn neg_fn() -> Term {
-    Term::prim(Prim::IntNeg)
+    defs::int_neg()
 }
 pub fn neg(n: Term) -> Term {
     Term::app(neg_fn(), n)
 }
 
-fn binary_fn(op: Arith) -> Term {
-    Term::prim(Prim::IntArith(op))
-}
-fn binary(op: Arith, a: Term, b: Term) -> Term {
-    Term::app(Term::app(binary_fn(op), a), b)
+fn binary(f: Term, a: Term, b: Term) -> Term {
+    Term::app(Term::app(f, a), b)
 }
 
 pub fn add_fn() -> Term {
-    binary_fn(Arith::Add)
+    defs::int_add()
 }
 pub fn add(a: Term, b: Term) -> Term {
-    binary(Arith::Add, a, b)
+    binary(add_fn(), a, b)
 }
 pub fn mul_fn() -> Term {
-    binary_fn(Arith::Mul)
+    defs::int_mul()
 }
 pub fn mul(a: Term, b: Term) -> Term {
-    binary(Arith::Mul, a, b)
+    binary(mul_fn(), a, b)
 }
 pub fn sub_fn() -> Term {
-    binary_fn(Arith::Sub)
+    defs::int_sub()
 }
 pub fn sub(a: Term, b: Term) -> Term {
-    binary(Arith::Sub, a, b)
+    binary(sub_fn(), a, b)
 }
 pub fn div_fn() -> Term {
-    binary_fn(Arith::Div)
+    defs::int_div()
 }
 pub fn div(a: Term, b: Term) -> Term {
-    binary(Arith::Div, a, b)
+    binary(div_fn(), a, b)
 }
 pub fn mod_fn() -> Term {
-    binary_fn(Arith::Mod)
+    defs::int_mod()
 }
 pub fn rem(a: Term, b: Term) -> Term {
-    binary(Arith::Mod, a, b)
+    binary(mod_fn(), a, b)
 }
 
 #[cfg(test)]

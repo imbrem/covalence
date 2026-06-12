@@ -23,7 +23,7 @@
 
 use std::sync::LazyLock;
 
-use covalence_core::{Arith, Prim, Term, Thm, Type};
+use covalence_core::{defs, Term, Thm, Type};
 
 use crate::HolLightCtx;
 
@@ -44,27 +44,19 @@ fn zero() -> Term {
 }
 
 fn succ_fn() -> Term {
-    Term::prim(Prim::NatArith(Arith::Succ))
+    defs::nat_succ()
 }
 
 fn succ(t: Term) -> Term {
     Term::app(succ_fn(), t)
 }
 
-fn pred_fn() -> Term {
-    Term::prim(Prim::NatArith(Arith::Pred))
-}
-
 fn add(a: Term, b: Term) -> Term {
-    Term::app(Term::app(Term::prim(Prim::NatArith(Arith::Add)), a), b)
+    Term::app(Term::app(defs::nat_add(), a), b)
 }
 
 fn mul(a: Term, b: Term) -> Term {
-    Term::app(Term::app(Term::prim(Prim::NatArith(Arith::Mul)), a), b)
-}
-
-fn sub(a: Term, b: Term) -> Term {
-    Term::app(Term::app(Term::prim(Prim::NatArith(Arith::Sub)), a), b)
+    Term::app(Term::app(defs::nat_mul(), a), b)
 }
 
 fn assume_hol(body: Term) -> Thm {
@@ -78,37 +70,20 @@ fn assume_hol(body: Term) -> Thm {
 // Peano axioms — intrinsic to the type
 // ============================================================================
 
-/// `⊢ ∀n:nat. ¬ (0 = succ n)` — zero is not a successor.
+/// `⊢ ⋀n:nat. Trueprop (¬(0 = succ n))` — zero is not a successor.
+/// Bona-fide **proof** by induction on `n`: base case via reduction
+/// + `nat_zero_ne_one`; step case via `pred` congruence. Empty hyps.
+/// See [`crate::peano::prove_nat_zero_ne_succ`].
 pub fn nat_zero_ne_succ() -> Thm {
-    static AX: LazyLock<Thm> = LazyLock::new(|| {
-        let ctx = ctx();
-        let n = Term::free("n", nat_ty());
-        let eq = ctx
-            .mk_eq(zero(), succ(n))
-            .expect("nat_zero_ne_succ: mk_eq");
-        let not_eq = ctx.mk_not(eq);
-        let body = ctx.mk_forall("n", nat_ty(), not_eq);
-        assume_hol(body)
-    });
-    AX.clone()
+    crate::peano::prove_nat_zero_ne_succ()
 }
 
-/// `⊢ ∀m n:nat. succ m = succ n ⟹ m = n` — successor is injective.
+/// `⊢ ⋀m n:nat. Trueprop ((succ m = succ n) ⟹ (m = n))` —
+/// successor is injective. Bona-fide **proof** from
+/// [`Thm::nat_pred_succ`] + `cong_app` + the eq/imp reflection
+/// bridges; empty hypotheses. See [`crate::peano::prove_nat_succ_inj`].
 pub fn nat_succ_inj() -> Thm {
-    static AX: LazyLock<Thm> = LazyLock::new(|| {
-        let ctx = ctx();
-        let m = Term::free("m", nat_ty());
-        let n = Term::free("n", nat_ty());
-        let lhs = ctx
-            .mk_eq(succ(m.clone()), succ(n.clone()))
-            .expect("nat_succ_inj: mk_eq lhs");
-        let rhs = ctx.mk_eq(m, n).expect("nat_succ_inj: mk_eq rhs");
-        let imp = ctx.mk_imp(lhs, rhs);
-        let inner = ctx.mk_forall("n", nat_ty(), imp);
-        let body = ctx.mk_forall("m", nat_ty(), inner);
-        assume_hol(body)
-    });
-    AX.clone()
+    crate::peano::prove_nat_succ_inj()
 }
 
 /// `⊢ ∀P:nat→bool. P 0 ∧ (∀n. P n ⟹ P (succ n)) ⟹ ∀n. P n` —
@@ -200,44 +175,18 @@ pub fn natrec_def_succ() -> Thm {
 // `natrec` (or to `succ`/`pred`).
 // ============================================================================
 
-/// `⊢ ∀m n:nat. m + n = natrec m succ n` — addition is `n`-fold
-/// successor starting from `m`.
+/// `⊢ ⋀m n:nat. Trueprop (m + n = natrec m succ n)` — addition is
+/// `n`-fold successor starting from `m`. Bona-fide kernel axiom
+/// ([`Thm::nat_add_def`]); empty hyps.
 pub fn nat_add_def() -> Thm {
-    static AX: LazyLock<Thm> = LazyLock::new(|| {
-        let ctx = ctx();
-        let m = Term::free("m", nat_ty());
-        let n = Term::free("n", nat_ty());
-        let rhs = natrec_apply(m.clone(), succ_fn(), n.clone());
-        let eq = ctx
-            .mk_eq(add(m, n), rhs)
-            .expect("nat_add_def: mk_eq");
-        let inner = ctx.mk_forall("n", nat_ty(), eq);
-        let body = ctx.mk_forall("m", nat_ty(), inner);
-        assume_hol(body)
-    });
-    AX.clone()
+    Thm::nat_add_def()
 }
 
-/// `⊢ ∀m n:nat. m * n = natrec 0 (λx. x + m) n` — multiplication is
-/// `n`-fold add-of-`m` starting from `0`.
+/// `⊢ ⋀m n:nat. Trueprop (m * n = natrec 0 (λx. x + m) n)` —
+/// multiplication is `n`-fold add-of-`m` starting from `0`.
+/// Bona-fide kernel axiom ([`Thm::nat_mul_def`]); empty hyps.
 pub fn nat_mul_def() -> Thm {
-    static AX: LazyLock<Thm> = LazyLock::new(|| {
-        let ctx = ctx();
-        let m = Term::free("m", nat_ty());
-        let n = Term::free("n", nat_ty());
-        // step = λx:nat. x + m
-        let x = Term::free("x", nat_ty());
-        let step_body = add(x, m.clone());
-        let step = Term::abs("x", nat_ty(), step_body);
-        let rhs = natrec_apply(zero(), step, n.clone());
-        let eq = ctx
-            .mk_eq(mul(m, n), rhs)
-            .expect("nat_mul_def: mk_eq");
-        let inner = ctx.mk_forall("n", nat_ty(), eq);
-        let body = ctx.mk_forall("m", nat_ty(), inner);
-        assume_hol(body)
-    });
-    AX.clone()
+    Thm::nat_mul_def()
 }
 
 /// `⊢ pred 0 = 0` — predecessor saturates at zero. Bona-fide
@@ -252,22 +201,11 @@ pub fn nat_pred_succ() -> Thm {
     Thm::nat_pred_succ()
 }
 
-/// `⊢ ∀m n:nat. m - n = natrec m pred n` — saturating subtraction
-/// is `n`-fold predecessor starting from `m`.
+/// `⊢ ⋀m n:nat. Trueprop (m - n = natrec m pred n)` — saturating
+/// subtraction is `n`-fold predecessor starting from `m`. Bona-fide
+/// kernel axiom ([`Thm::nat_sub_def`]); empty hyps.
 pub fn nat_sub_def() -> Thm {
-    static AX: LazyLock<Thm> = LazyLock::new(|| {
-        let ctx = ctx();
-        let m = Term::free("m", nat_ty());
-        let n = Term::free("n", nat_ty());
-        let rhs = natrec_apply(m.clone(), pred_fn(), n.clone());
-        let eq = ctx
-            .mk_eq(sub(m, n), rhs)
-            .expect("nat_sub_def: mk_eq");
-        let inner = ctx.mk_forall("n", nat_ty(), eq);
-        let body = ctx.mk_forall("m", nat_ty(), inner);
-        assume_hol(body)
-    });
-    AX.clone()
+    Thm::nat_sub_def()
 }
 
 // ============================================================================
@@ -531,8 +469,8 @@ mod tests {
 
     #[test]
     fn peano_axioms_well_formed() {
-        check(nat_zero_ne_succ());
-        check(nat_succ_inj());
+        check_kernel(nat_zero_ne_succ());
+        check_kernel(nat_succ_inj());
         check_kernel(nat_induction());
     }
 
@@ -555,11 +493,11 @@ mod tests {
 
     #[test]
     fn definitional_axioms_well_formed() {
-        check(nat_add_def());
-        check(nat_mul_def());
+        check_kernel(nat_add_def());
+        check_kernel(nat_mul_def());
         check_kernel(nat_pred_zero());
         check_kernel(nat_pred_succ());
-        check(nat_sub_def());
+        check_kernel(nat_sub_def());
     }
 
     #[test]

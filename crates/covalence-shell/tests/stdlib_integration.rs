@@ -63,8 +63,9 @@ fn nat_to_int_round_trips() {
 
 #[test]
 fn axiom_set_well_formed_across_stdlib() {
-    // A spot-check from each module — every axiom is at least
-    // Prop-typed and self-hyp'd.
+    // Spot-check each stdlib module: every axiom term is at
+    // least Prop-typed and either kernel-axiom shape (empty
+    // hyps) or assume-style (one self-hyp).
     let axioms = vec![
         ("nat induction", nat::axiom_induction()),
         ("int add_neg_r", int::axiom_add_neg_r()),
@@ -82,7 +83,11 @@ fn axiom_set_well_formed_across_stdlib() {
             ax.concl().type_of().unwrap().is_prop(),
             "{name}: concl not prop"
         );
-        assert_eq!(ax.hyps().len(), 1, "{name}: self-hyp pattern broken");
+        let n_hyps = ax.hyps().len();
+        assert!(
+            n_hyps <= 1,
+            "{name}: expected kernel-axiom (0 hyps) or assume-style (1 hyp), got {n_hyps}"
+        );
     }
 }
 

@@ -23,7 +23,7 @@
 
 use std::sync::LazyLock;
 
-use covalence_core::{Arith, Prim, Term, Thm, Type};
+use covalence_core::{defs, Term, Thm, Type};
 
 use crate::HolLightCtx;
 
@@ -40,15 +40,15 @@ fn zero() -> Term {
 }
 
 fn neg(t: Term) -> Term {
-    Term::app(Term::prim(Prim::IntNeg), t)
+    Term::app(defs::int_neg(), t)
 }
 
 fn add(a: Term, b: Term) -> Term {
-    Term::app(Term::app(Term::prim(Prim::IntArith(Arith::Add)), a), b)
+    Term::app(Term::app(defs::int_add(), a), b)
 }
 
 fn mul(a: Term, b: Term) -> Term {
-    Term::app(Term::app(Term::prim(Prim::IntArith(Arith::Mul)), a), b)
+    Term::app(Term::app(defs::int_mul(), a), b)
 }
 
 fn assume_hol(body: Term) -> Thm {
@@ -222,10 +222,10 @@ pub fn nat_to_int_add() -> Thm {
         let n = Term::free("n", nat_ty.clone());
         let m = Term::free("m", nat_ty.clone());
         let nat_add = Term::app(
-            Term::app(Term::prim(Prim::NatArith(Arith::Add)), m.clone()),
+            Term::app(defs::nat_add(), m.clone()),
             n.clone(),
         );
-        let to_int = |t: Term| Term::app(Term::prim(Prim::NatToInt), t);
+        let to_int = |t: Term| Term::app(defs::nat_to_int(), t);
         // ⊢ ∀m n. natToInt (m + n) = natToInt m + natToInt n
         let lhs = to_int(nat_add);
         let rhs = add(to_int(m), to_int(n));

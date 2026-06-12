@@ -135,6 +135,7 @@ pub fn type_to_sexp(ty: &Type, ser: &dyn ObsSerializer) -> Result<SExpr> {
         TypeKind::Bytes => list1("bytes"),
         TypeKind::Nat => list1("nat"),
         TypeKind::Int => list1("int"),
+        TypeKind::Unit => list1("unit"),
         TypeKind::Fun(a, b) => list3("fun", type_to_sexp(a, ser)?, type_to_sexp(b, ser)?),
         TypeKind::Tycon(name, args) => {
             let mut children = Vec::with_capacity(2 + args.len());
@@ -151,6 +152,15 @@ pub fn type_to_sexp(ty: &Type, ser: &dyn ObsSerializer) -> Result<SExpr> {
             children.push(sym("tycon-obs"));
             children.push(payload);
             children.push(sym(hint.as_str()));
+            for arg in args {
+                children.push(type_to_sexp(arg, ser)?);
+            }
+            SExp::List(children)
+        }
+        TypeKind::Spec(spec, args) => {
+            let mut children = Vec::with_capacity(2 + args.len());
+            children.push(sym("spec"));
+            children.push(sym(spec.symbol().label()));
             for arg in args {
                 children.push(type_to_sexp(arg, ser)?);
             }
@@ -257,8 +267,16 @@ pub fn term_to_sexp(t: &Term, ser: &dyn ObsSerializer) -> Result<SExpr> {
         TermKind::Nat(n) => list2("nat-lit", sym(n.as_inner().to_string().as_str())),
         TermKind::Int(n) => list2("int-lit", sym(n.as_inner().to_string().as_str())),
         TermKind::Bool(b) => list2("bool-lit", sym(if *b { "T" } else { "F" })),
-        TermKind::Prim(p) => list2("prim", sym(format!("{:?}", p).as_str())),
         TermKind::HolOp(op, ty) => list3("hol-op", sym(op.label()), type_to_sexp(ty, ser)?),
+        TermKind::Spec(spec, args) => {
+            let mut children = Vec::with_capacity(2 + args.len());
+            children.push(sym("term-spec"));
+            children.push(sym(spec.symbol().label()));
+            for arg in args {
+                children.push(type_to_sexp(arg, ser)?);
+            }
+            SExp::List(children)
+        }
         TermKind::Obs(observer, ty) => {
             let payload = ser.obs_to_sexp(observer)?;
             list3("obs", payload, type_to_sexp(ty, ser)?)

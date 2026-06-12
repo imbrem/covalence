@@ -79,6 +79,8 @@ const TY_TYCON: u8 = 0x04;
 const TY_TYCON_OBS: u8 = 0x05;
 const TY_NAT: u8 = 0x06;
 const TY_INT: u8 = 0x07;
+const TY_UNIT: u8 = 0x08;
+const TY_SPEC: u8 = 0x09;
 
 // ---- term tags ----
 const T_BOUND: u8 = 0x00;
@@ -94,9 +96,9 @@ const T_OBS: u8 = 0x09;
 const T_DEF: u8 = 0x0a;
 const T_NAT_LIT: u8 = 0x0b;
 const T_INT_LIT: u8 = 0x0c;
-const T_PRIM: u8 = 0x0d;
 const T_BOOL: u8 = 0x0e;
 const T_HOL_OP: u8 = 0x0f;
+const T_SPEC: u8 = 0x10;
 
 // ============================================================================
 // Stateless API
@@ -172,6 +174,7 @@ impl Hasher {
             TypeKind::Bytes => ctx.tag([TY_BYTES]),
             TypeKind::Nat => ctx.tag([TY_NAT]),
             TypeKind::Int => ctx.tag([TY_INT]),
+            TypeKind::Unit => ctx.tag([TY_UNIT]),
             TypeKind::Fun(a, b) => {
                 let ah = self.hash_type(a, oh);
                 let bh = self.hash_type(b, oh);
@@ -200,6 +203,24 @@ impl Hasher {
                 buf.push(TY_TYCON_OBS);
                 buf.extend_from_slice(&(payload.len() as u32).to_le_bytes());
                 buf.extend_from_slice(&payload);
+                buf.extend_from_slice(&(args.len() as u32).to_le_bytes());
+                for arg in args {
+                    let h = self.hash_type(arg, oh);
+                    buf.extend_from_slice(h.as_bytes());
+                }
+                ctx.tag(buf)
+            }
+            TypeKind::Spec(spec, args) => {
+                // Hash by the spec's canonical-symbol label + arg
+                // hashes. The spec's `ty`/`tm` factories aren't
+                // hashed inline — two equally-labelled canonical
+                // specs are kernel-shipped singletons (LazyLock),
+                // so structural identity is the right model.
+                let label = spec.symbol().label().as_bytes();
+                let mut buf = Vec::with_capacity(1 + 4 + label.len() + 4 + 32 * args.len());
+                buf.push(TY_SPEC);
+                buf.extend_from_slice(&(label.len() as u32).to_le_bytes());
+                buf.extend_from_slice(label);
                 buf.extend_from_slice(&(args.len() as u32).to_le_bytes());
                 for arg in args {
                     let h = self.hash_type(arg, oh);
@@ -302,18 +323,6 @@ impl Hasher {
                 buf.extend_from_slice(bytes);
                 ctx.tag(buf)
             }
-            TermKind::Prim(p) => {
-                // Each `Prim` variant has a small canonical name —
-                // hash by Debug output (cross-process stable for the
-                // enum tags we define).
-                let s = format!("{:?}", p);
-                let bytes = s.as_bytes();
-                let mut buf = Vec::with_capacity(1 + 4 + bytes.len());
-                buf.push(T_PRIM);
-                buf.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
-                buf.extend_from_slice(bytes);
-                ctx.tag(buf)
-            }
             TermKind::Bool(b) => ctx.tag([T_BOOL, u8::from(*b)]),
             TermKind::HolOp(op, ty) => {
                 let ty_h = self.hash_type(ty, oh);
@@ -323,6 +332,19 @@ impl Hasher {
                 buf.push(label.len() as u8);
                 buf.extend_from_slice(label);
                 buf.extend_from_slice(ty_h.as_bytes());
+                ctx.tag(buf)
+            }
+            TermKind::Spec(spec, args) => {
+                let label = spec.symbol().label().as_bytes();
+                let mut buf = Vec::with_capacity(1 + 1 + label.len() + 4 + 32 * args.len());
+                buf.push(T_SPEC);
+                buf.push(label.len() as u8);
+                buf.extend_from_slice(label);
+                buf.extend_from_slice(&(args.len() as u32).to_le_bytes());
+                for arg in args {
+                    let h = self.hash_type(arg, oh);
+                    buf.extend_from_slice(h.as_bytes());
+                }
                 ctx.tag(buf)
             }
         }

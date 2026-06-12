@@ -77,6 +77,27 @@ impl Thm {
         (self.hyps, self.concl)
     }
 
+    /// If the conclusion has shape `Pure-Eq(lhs, rhs)` (i.e.,
+    /// `TermKind::Eq`), return `(lhs, rhs)`. Many proof tactics
+    /// chain on the rhs after `trans` / `cong_app`; this avoids
+    /// re-matching the kind by hand at every step.
+    pub fn concl_eq_parts(&self) -> Result<(&Term, &Term)> {
+        match self.concl.kind() {
+            TermKind::Eq(l, r) => Ok((l, r)),
+            _ => Err(Error::NotAnEquation),
+        }
+    }
+
+    /// The right-hand side of a Pure-meta equality conclusion.
+    pub fn concl_rhs(&self) -> Result<&Term> {
+        Ok(self.concl_eq_parts()?.1)
+    }
+
+    /// The left-hand side of a Pure-meta equality conclusion.
+    pub fn concl_lhs(&self) -> Result<&Term> {
+        Ok(self.concl_eq_parts()?.0)
+    }
+
     /// Returns `true` iff no `Obs` leaf appears anywhere in the
     /// theorem (conclusion or any hypothesis). Such a theorem is
     /// universally true with no oracle dependencies — equivalent to
@@ -541,6 +562,47 @@ impl Thm {
     ///   kernel's commitment to literal distinctness — sound
     ///   because each literal kind has a fixed denotation in any
     ///   model.
+    /// `⊢ term_spec(spec, args) ≡ subst(spec.tm, tvars, args)` for a
+    /// **let-style** TermSpec (i.e., one whose `tm` is the body
+    /// itself, with `type_of(tm) == spec.ty`). Returns
+    /// `Err(SpecIsDefStyle)` when `tm` is a `ty → bool` selector
+    /// predicate (ε-style), and `Err(SpecHasNoBody)` for
+    /// declaration-only specs.
+    ///
+    /// Sound because a let-style spec's denotation is literally its
+    /// body at the supplied type-args; the kernel commits to that
+    /// equation when it builds the spec.
+    pub fn unfold_term_spec(t: Term) -> Result<Thm> {
+        let (spec, args) = match t.kind() {
+            TermKind::Spec(spec, args) => (spec.clone(), args.clone()),
+            _ => return Err(Error::NotASpec),
+        };
+        let declared_ty = spec
+            .ty()
+            .ok_or(Error::SpecHasNoBody)?
+            .clone();
+        let body = spec.tm().ok_or(Error::SpecHasNoBody)?.clone();
+
+        // let-style ↔ body has the spec's declared type.
+        // def-style ↔ body has type (declared_ty → bool).
+        let body_ty = body.type_of()?;
+        if body_ty != declared_ty {
+            return Err(Error::SpecIsDefStyle);
+        }
+
+        // Substitute the spec's type variables positionally for the
+        // supplied type arguments. `free_tvars` produces a sorted,
+        // deduplicated list — the same order `type_of_in` uses when
+        // typing a `TermKind::Spec` leaf.
+        let tvars = declared_ty.free_tvars();
+        let mut unfolded = body;
+        for (tvar, arg) in tvars.iter().zip(args.iter()) {
+            unfolded = subst_tfree_in_term(&unfolded, tvar, arg);
+        }
+
+        Self::build(Ctx::new(), Term::eq(t, unfolded))
+    }
+
     pub fn reduce_prim(t: Term) -> Result<Thm> {
         let reduced = builtins::reduce_prim_term(&t).ok_or(Error::NotReducible)?;
         Self::build(Ctx::new(), Term::eq(t, reduced))
@@ -702,6 +764,20 @@ impl Thm {
             .expect("nat_induction: well-typed by construction")
     }
 
+    /// `⊢ ⋀P:nat→bool. Trueprop (P 0) ⟹
+    ///       (⋀n:nat. Trueprop (P n) ⟹ Trueprop (P (succ n))) ⟹
+    ///       ⋀n:nat. Trueprop (P n)` —
+    /// Pure-meta form of nat induction. Logically equivalent to
+    /// [`Thm::nat_induction`] (which is the HOL-quantified form);
+    /// in principle derivable from it via the reflection bridges +
+    /// [`Thm::and_intro`] + and-elim, but exposed directly here so
+    /// downstream proofs can use Pure `all_elim` / `imp_elim`
+    /// without round-tripping through `forall_reflection`.
+    pub fn nat_induction_pure() -> Thm {
+        Self::build(Ctx::new(), hol::nat_induction_pure_term())
+            .expect("nat_induction_pure: well-typed by construction")
+    }
+
     /// `⊢ ⋀x y:'a. Trueprop (x = y) ≡ (x ≡ y)` — the HOL `=` ↔
     /// Pure `≡` bridge (Isabelle/HOL's `eq_reflection`) as a kernel
     /// axiom.
@@ -747,6 +823,99 @@ impl Thm {
             .expect("nat_pred_succ: well-typed by construction")
     }
 
+    /// `⊢ ⋀z:α. ⋀f:nat→α→α. Trueprop (natRec[α] z f 0 = z)` — the
+    /// primitive-recursor "zero" equation. Sound because
+    /// [`crate::defs::nat_rec_spec`]'s selector predicate (with
+    /// Hilbert ε) forces exactly this behaviour.
+    pub fn nat_rec_zero() -> Thm {
+        Self::build(Ctx::new(), hol::nat_rec_zero_term())
+            .expect("nat_rec_zero: well-typed by construction")
+    }
+
+    /// `⊢ ⋀z:α. ⋀f:nat→α→α. ⋀n:nat.
+    ///     Trueprop (natRec[α] z f (succ n) = f n (natRec[α] z f n))`
+    /// — the primitive-recursor "successor" equation, the other half
+    /// of [`Self::nat_rec_zero`]'s defining pair.
+    pub fn nat_rec_succ() -> Thm {
+        Self::build(Ctx::new(), hol::nat_rec_succ_term())
+            .expect("nat_rec_succ: well-typed by construction")
+    }
+
+    /// `⊢ ⋀z:int. Trueprop (int_add z 0 = z)` — the right-identity
+    /// for integer addition (using the [`crate::defs::int_add`] and
+    /// [`crate::defs::int_zero`] constants).
+    pub fn int_add_zero_right() -> Thm {
+        Self::build(Ctx::new(), hol::int_add_zero_right_term())
+            .expect("int_add_zero_right: well-typed by construction")
+    }
+
+    /// `⊢ ⋀a b:int. Trueprop (int_add a (intSucc b) = intSucc (int_add a b))`
+    /// — the recursion equation tying `int_add` to `intSucc`.
+    /// Together with [`Self::int_add_zero_right`] this uniquely
+    /// determines `int_add` on the non-negative range.
+    pub fn int_add_succ_right() -> Thm {
+        Self::build(Ctx::new(), hol::int_add_succ_right_term())
+            .expect("int_add_succ_right: well-typed by construction")
+    }
+
+    /// `⊢ ⋀n:nat. Trueprop (nat_le n n)` — reflexivity of `nat_le`.
+    /// Justified by the selector predicate of [`crate::defs::nat_le`]:
+    /// `cmp 0 0 = T` and `cmp (S n) (S m) = cmp n m`.
+    pub fn nat_le_refl() -> Thm {
+        Self::build(Ctx::new(), hol::nat_le_refl_term())
+            .expect("nat_le_refl: well-typed by construction")
+    }
+
+    /// `⊢ ⋀n:nat. Trueprop (nat_div n 0 = 0)` — division by zero
+    /// is zero by convention. Standard Euclidean axiom; sound because
+    /// the kernel commits to this convention everywhere `nat_div`
+    /// appears (see also `builtins::reduce_spec`).
+    pub fn nat_div_zero_right() -> Thm {
+        Self::build(Ctx::new(), hol::nat_div_zero_right_term())
+            .expect("nat_div_zero_right: well-typed by construction")
+    }
+
+    /// `⊢ ⋀n m:nat. Trueprop (nat_lt n m)
+    ///       ⟹ Trueprop (nat_div n m = 0)` — small numerator
+    /// gives quotient zero. Combined with [`Self::nat_div_recursion`]
+    /// and [`Self::nat_div_zero_right`] uniquely determines `nat_div`.
+    pub fn nat_div_less() -> Thm {
+        Self::build(Ctx::new(), hol::nat_div_less_term())
+            .expect("nat_div_less: well-typed by construction")
+    }
+
+    /// `⊢ ⋀n m:nat. Trueprop (nat_lt 0 m)
+    ///        ⟹ Trueprop (nat_le m n)
+    ///        ⟹ Trueprop (nat_div n m = succ (nat_div (nat_sub n m) m))`
+    /// — the Euclidean recursion step.
+    pub fn nat_div_recursion() -> Thm {
+        Self::build(Ctx::new(), hol::nat_div_recursion_term())
+            .expect("nat_div_recursion: well-typed by construction")
+    }
+
+    /// `⊢ ⋀m n:nat. Trueprop (m + n = natrec m succ n)` — addition
+    /// as `n`-fold successor. Ties the Pure `Prim::NatArith(Add)`
+    /// to the HOL-level `natrec` (which is itself defined in
+    /// `covalence-hol` via Hilbert's `select`).
+    pub fn nat_add_def() -> Thm {
+        Self::build(Ctx::new(), hol::nat_add_def_term())
+            .expect("nat_add_def: well-typed by construction")
+    }
+
+    /// `⊢ ⋀m n:nat. Trueprop (m * n = natrec 0 (λx. x + m) n)` —
+    /// multiplication as `n`-fold add-of-`m`.
+    pub fn nat_mul_def() -> Thm {
+        Self::build(Ctx::new(), hol::nat_mul_def_term())
+            .expect("nat_mul_def: well-typed by construction")
+    }
+
+    /// `⊢ ⋀m n:nat. Trueprop (m - n = natrec m pred n)` —
+    /// saturating subtraction as `n`-fold predecessor.
+    pub fn nat_sub_def() -> Thm {
+        Self::build(Ctx::new(), hol::nat_sub_def_term())
+            .expect("nat_sub_def: well-typed by construction")
+    }
+
     // ---- integer induction ----
 
     /// `⊢ ⋀P:int→bool. Trueprop ((∀n:nat. P (int_of_nat n))
@@ -764,6 +933,26 @@ impl Thm {
             .expect("int_induction: well-typed by construction")
     }
 
+    // ---- HOL connective definitions ----
+
+    /// `⊢ ⋀p:bool. Trueprop (¬p = (p ⟹ F))` — the HOL Light
+    /// definition of negation, as a kernel axiom. Used to convert
+    /// between `¬p` and `p ⟹ F` (the same proposition under two
+    /// syntactic shapes in our kernel, since `HolOp::Not` is
+    /// primitive rather than derived from `⟹` and `F`).
+    pub fn not_def() -> Thm {
+        Self::build(Ctx::new(), hol::not_def_term())
+            .expect("not_def: well-typed by construction")
+    }
+
+    /// `⊢ ⋀p q:bool. Trueprop p ⟹ Trueprop q ⟹ Trueprop (p ∧ q)` —
+    /// conjunction introduction, as a kernel axiom. Standard HOL Light
+    /// primitive rule. With `HolOp::And` as a kernel atom we can't
+    /// derive this from a `∧` definition; postulate directly.
+    pub fn and_intro() -> Thm {
+        Self::build(Ctx::new(), hol::and_intro_term())
+            .expect("and_intro: well-typed by construction")
+    }
 }
 
 /// Walk down through `App`s collecting arguments left-to-right. If

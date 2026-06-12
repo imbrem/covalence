@@ -377,6 +377,12 @@ pub enum TypeKind {
     /// Type of `TermKind::Int(_)` term values. Built in. The integers
     /// (arbitrary precision, possibly negative).
     Int,
+    /// Singleton type — exactly one inhabitant (kernel "trivial"
+    /// representative `ε(λ_. T)`). Built in alongside the other
+    /// primitive types so the derived `defs::*` catalogue can spec
+    /// `prod` (the empty product) and `option α` (= `coprod α unit`)
+    /// without bottoming out into a typedef.
+    Unit,
     /// Function type τ ⇒ σ.
     Fun(Type, Type),
     /// User-declared type constructor applied to arguments.
@@ -395,6 +401,17 @@ pub enum TypeKind {
     /// that `list α` and `list β` are distinct even though they share
     /// the same constructor.
     TyConObs(Object, BinderHint, Vec<Type>),
+    /// Application of a derived-type [`crate::defs::TypeSpec`]
+    /// factory to type arguments. The spec is process-shared
+    /// (`LazyLock`-backed) and `args` is the positional
+    /// substitution for the spec's type variables (in
+    /// `spec.ty.free_tvars()` order — canonical alphabetical).
+    ///
+    /// Used by `crate::defs::*` to embed the semi-trusted derived-
+    /// type catalogue (`set α`, `rel α β`, `option α`, …) into the
+    /// kernel's type system without committing each one to its own
+    /// `TypeKind` variant.
+    Spec(crate::defs::TypeSpec, Vec<Type>),
 }
 
 // Cached canonical instances of the common `Type`s, so the methods
@@ -403,6 +420,7 @@ static PROP: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Prop)));
 static BYTES: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Bytes)));
 static NAT: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Nat)));
 static INT: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Int)));
+static UNIT: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Unit)));
 static BOOL: LazyLock<Type> =
     LazyLock::new(|| Type(Arc::new(TypeKind::Tycon(SmolStr::new("bool"), Vec::new()))));
 
@@ -453,6 +471,11 @@ impl Type {
         INT.clone()
     }
 
+    /// The singleton type — `unit`. Has exactly one inhabitant.
+    pub fn unit() -> Self {
+        UNIT.clone()
+    }
+
     /// The HOL `bool` type (a 0-ary `tycon`). Pure does not bake bool
     /// in semantically — it's just a named constructor — but this
     /// canonical instance is cached because user code references it
@@ -467,6 +490,16 @@ impl Type {
 
     pub fn tycon(name: impl Into<SmolStr>, args: Vec<Type>) -> Self {
         Self::alloc(TypeKind::Tycon(name.into(), args))
+    }
+
+    /// Apply a derived-type [`crate::defs::TypeSpec`] to type
+    /// arguments. The spec's type variables (in `ty.free_tvars()`
+    /// order) are substituted positionally by `args`. The handle is
+    /// process-shared (`LazyLock`-backed in `crate::defs`), so two
+    /// `Type::spec(defs::set_spec(), …)` calls land at the same
+    /// kind of leaf and pointer-equal at the spec component.
+    pub fn spec(spec: crate::defs::TypeSpec, args: Vec<Type>) -> Self {
+        Self::alloc(TypeKind::Spec(spec, args))
     }
 
     /// Construct a fresh-identity type constructor wrapping an
@@ -505,12 +538,16 @@ fn free_tvars_into(ty: &Type, out: &mut std::collections::BTreeSet<SmolStr>) {
         TypeKind::TFree(name) => {
             out.insert(name.clone());
         }
-        TypeKind::Prop | TypeKind::Bytes | TypeKind::Nat | TypeKind::Int => {}
+        TypeKind::Prop
+        | TypeKind::Bytes
+        | TypeKind::Nat
+        | TypeKind::Int
+        | TypeKind::Unit => {}
         TypeKind::Fun(a, b) => {
             free_tvars_into(a, out);
             free_tvars_into(b, out);
         }
-        TypeKind::Tycon(_, args) | TypeKind::TyConObs(_, _, args) => {
+        TypeKind::Tycon(_, args) | TypeKind::TyConObs(_, _, args) | TypeKind::Spec(_, args) => {
             for a in args {
                 free_tvars_into(a, out);
             }
@@ -557,12 +594,24 @@ impl fmt::Display for Type {
             TypeKind::Bytes => write!(f, "bytes"),
             TypeKind::Nat => write!(f, "nat"),
             TypeKind::Int => write!(f, "int"),
+            TypeKind::Unit => write!(f, "unit"),
             TypeKind::Fun(a, b) => write!(f, "({} ⇒ {})", a, b),
             TypeKind::Tycon(name, args) => {
                 if args.is_empty() {
                     write!(f, "{}", name)
                 } else {
                     write!(f, "({}", name)?;
+                    for a in args {
+                        write!(f, " {}", a)?;
+                    }
+                    write!(f, ")")
+                }
+            }
+            TypeKind::Spec(spec, args) => {
+                if args.is_empty() {
+                    write!(f, "{}", spec.symbol().label())
+                } else {
+                    write!(f, "({}", spec.symbol().label())?;
                     for a in args {
                         write!(f, " {}", a)?;
                     }
@@ -740,67 +789,10 @@ impl fmt::Display for Def {
 // Term
 // ============================================================================
 
-/// Shared arithmetic operations on `nat` and `int`. Carried by
-/// [`Prim::NatArith`] and [`Prim::IntArith`] so the same operation
-/// set is exposed at both types without duplicating variant names.
-///
-/// Unary ops (`Succ`, `Pred`) build a `T → T` term; binary ops
-/// (`Add`, `Sub`, `Mul`, `Div`, `Mod`) build a `T → T → T` term.
-/// `Pred` saturates at zero for `nat`; `Div`/`Mod` are Euclidean
-/// and return zero when the divisor is zero.
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Arith {
-    Succ,
-    Pred,
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
-}
-
-impl Arith {
-    /// `true` for unary operations (`Succ`, `Pred`).
-    pub fn is_unary(&self) -> bool {
-        matches!(self, Arith::Succ | Arith::Pred)
-    }
-}
-
-/// Builtin Pure functions, applied via standard `App`. Each variant
-/// IS a closed function term of the type returned by [`Self::ty`];
-/// reductions on concrete-literal applications are decided by
-/// [`crate::Thm::reduce_prim`].
-///
-/// Treating primitives as regular function terms (rather than
-/// fixed-arity `TermKind` variants) means every Pure rule that
-/// operates on `App` — `subst_free`, `inst_tfree`, `type_of`,
-/// `aconv`, β-conv — sees them like any other function. Adding e.g.
-/// `BytesNth : bytes → nat → nat` is a single enum variant.
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Prim {
-    /// Arithmetic on `nat`.
-    NatArith(Arith),
-    /// Arithmetic on `int`.
-    IntArith(Arith),
-    /// `int → int` — integer negation. No `nat` counterpart.
-    IntNeg,
-    /// `bytes → bytes → bytes` — concatenation.
-    BytesCat,
-    /// `nat → bytes → bytes` — cons a `nat` (mod 256) onto the
-    /// front of a `bytes` term.
-    BytesConsNat,
-    /// `bytes → nat` — length of a bytes value.
-    BytesLen,
-    /// `bytes → nat → nat` — byte at index, or `0` if out of
-    /// bounds (total function; standard convention for indexing
-    /// out-of-bounds returning a default).
-    BytesAt,
-    /// `bytes → nat → nat → bytes` — slice from a start index
-    /// with a length. Saturating: clipped at the bytes' end.
-    BytesSlice,
-    /// `nat → int` — embed naturals into integers.
-    NatToInt,
-}
+// Arith and Prim enums removed — arithmetic and bytes operations
+// now live entirely as TermSpec constants under `crate::defs`, and
+// `builtins::reduce_spec` matches on them by `ptr_eq` for
+// closed-form reduction.
 
 /// HOL Light's primitive operators, folded into the kernel.
 ///
@@ -867,29 +859,6 @@ impl fmt::Display for HolOp {
     }
 }
 
-impl Prim {
-    /// The type of this primitive as a closed function term.
-    pub fn ty(&self) -> Type {
-        match self {
-            Prim::NatArith(a) if a.is_unary() => Type::fun(Type::nat(), Type::nat()),
-            Prim::NatArith(_) => Type::fun(Type::nat(), Type::fun(Type::nat(), Type::nat())),
-            Prim::IntArith(a) if a.is_unary() => Type::fun(Type::int(), Type::int()),
-            Prim::IntArith(_) => Type::fun(Type::int(), Type::fun(Type::int(), Type::int())),
-            Prim::IntNeg => Type::fun(Type::int(), Type::int()),
-            Prim::BytesCat => Type::fun(Type::bytes(), Type::fun(Type::bytes(), Type::bytes())),
-            Prim::BytesConsNat => {
-                Type::fun(Type::nat(), Type::fun(Type::bytes(), Type::bytes()))
-            }
-            Prim::BytesLen => Type::fun(Type::bytes(), Type::nat()),
-            Prim::BytesAt => Type::fun(Type::bytes(), Type::fun(Type::nat(), Type::nat())),
-            Prim::BytesSlice => Type::fun(
-                Type::bytes(),
-                Type::fun(Type::nat(), Type::fun(Type::nat(), Type::bytes())),
-            ),
-            Prim::NatToInt => Type::fun(Type::nat(), Type::int()),
-        }
-    }
-}
 
 #[derive(Clone)]
 pub struct Term(Arc<TermKind>);
@@ -926,13 +895,20 @@ pub enum TermKind {
     /// `Tycon("bool", [])`. Folded into the kernel so HOL truth
     /// values aren't a separate observer system.
     Bool(bool),
-    /// Builtin function — a closed function term applied to args via
-    /// standard `App`. See [`Prim`] for the catalogue.
-    Prim(Prim),
     /// Folded-in HOL primitive operator at its instance type. See
     /// [`HolOp`] for the catalogue. Applications are formed by the
     /// usual `App` chain.
     HolOp(HolOp, Type),
+    /// Application of a derived-term [`crate::defs::TermSpec`]
+    /// factory to type arguments. The spec is process-shared
+    /// (`LazyLock`-backed) and `args` is the positional substitution
+    /// for the spec's type variables.
+    ///
+    /// Used by `crate::defs::*` to embed semi-trusted term constants
+    /// (`natAdd`, `listMap`, …) as catalogue entries instead of
+    /// dedicated kernel variants. `Thm::reduce_prim` recognises a
+    /// `Spec(h, args)` leaf by `h.ptr_eq(&catalogue_handle)`.
+    Spec(crate::defs::TermSpec, Vec<Type>),
     /// Typed observation leaf: observer + Pure type. The kernel
     /// compares these by `Arc` pointer identity (via [`Object`]'s
     /// impls), never by the user's `Eq` on the underlying observer.
@@ -1011,12 +987,12 @@ impl Term {
         Self::alloc(TermKind::HolOp(op, ty))
     }
 
-    /// A builtin function term, ready to be applied via standard
-    /// [`Term::app`]. No reduction is performed at construction —
-    /// to derive computed equations like `⊢ Prim(NatArith Add) lit_a lit_b ≡ lit_sum`
-    /// use [`crate::Thm::reduce_prim`].
-    pub fn prim(p: Prim) -> Self {
-        Self::alloc(TermKind::Prim(p))
+    /// Apply a derived-term [`crate::defs::TermSpec`] to type
+    /// arguments. The spec is process-shared (`LazyLock`-backed in
+    /// `crate::defs`); two calls with handles from the same lazy
+    /// static pointer-equal at the spec component.
+    pub fn term_spec(spec: crate::defs::TermSpec, args: Vec<Type>) -> Self {
+        Self::alloc(TermKind::Spec(spec, args))
     }
 
     /// Wrap an observer as a typed leaf. The kernel treats the
@@ -1069,7 +1045,7 @@ impl Term {
             | TermKind::Nat(_)
             | TermKind::Int(_)
             | TermKind::Bool(_)
-            | TermKind::Prim(_)
+            | TermKind::Spec(_, _)
             | TermKind::HolOp(_, _) => true,
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
                 a.has_no_obs() && b.has_no_obs()
@@ -1092,7 +1068,7 @@ impl Term {
             | TermKind::Nat(_)
             | TermKind::Int(_)
             | TermKind::Bool(_)
-            | TermKind::Prim(_)
+            | TermKind::Spec(_, _)
             | TermKind::HolOp(_, _) => true,
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
                 a.all_obs_match::<O>() && b.all_obs_match::<O>()
@@ -1121,7 +1097,7 @@ impl Term {
             | TermKind::Nat(_)
             | TermKind::Int(_)
             | TermKind::Bool(_)
-            | TermKind::Prim(_)
+            | TermKind::Spec(_, _)
             | TermKind::HolOp(_, _) => Ok(()),
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
                 a.for_each_obs::<O, F>(f)?;
@@ -1180,8 +1156,18 @@ impl fmt::Display for Term {
             TermKind::Nat(n) => write!(f, "{}n", n.as_inner()),
             TermKind::Int(n) => write!(f, "{}i", n.as_inner()),
             TermKind::Bool(b) => write!(f, "{}", if *b { "T" } else { "F" }),
-            TermKind::Prim(p) => write!(f, "{:?}", p),
             TermKind::HolOp(op, ty) => write!(f, "{op}:{ty}"),
+            TermKind::Spec(spec, args) => {
+                if args.is_empty() {
+                    write!(f, "{}", spec.symbol().label())
+                } else {
+                    write!(f, "({}", spec.symbol().label())?;
+                    for a in args {
+                        write!(f, " {}", a)?;
+                    }
+                    write!(f, ")")
+                }
+            }
             TermKind::Obs(observer, ty) => write!(f, "obs[{:?}:{}]", observer, ty),
             TermKind::Def(d) => write!(f, "{}", d),
         }
@@ -1295,7 +1281,22 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
         TermKind::Nat(_) => Ok(Type::nat()),
         TermKind::Int(_) => Ok(Type::int()),
         TermKind::Bool(_) => Ok(Type::bool()),
-        TermKind::Prim(p) => Ok(p.ty()),
+        // A `Spec` leaf's type is the spec's own `ty` field (the
+        // factory's carrier) with positional type-arg substitution
+        // applied. The spec is held by handle; deref is cheap.
+        TermKind::Spec(spec, args) => {
+            let mut result = spec
+                .ty()
+                .cloned()
+                .ok_or_else(|| Error::NotProp(Type::prop()))?;
+            // free_tvars on the carrier gives the spec's tvar names
+            // in canonical alphabetical order. Substitute positionally.
+            let tvars = result.free_tvars();
+            for (tvar_name, arg) in tvars.iter().zip(args.iter()) {
+                result = crate::subst::subst_tfree_in_type(&result, tvar_name, arg);
+            }
+            Ok(result)
+        }
         TermKind::HolOp(_, ty) => Ok(ty.clone()),
         TermKind::Obs(_, ty) => Ok(ty.clone()),
         // A `Def` denotes its body at the current instance type.

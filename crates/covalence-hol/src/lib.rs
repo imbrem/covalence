@@ -16,10 +16,12 @@
 //! Nothing in this crate is consumed by `covalence-core`'s
 //! inference rules; a bug here cannot produce a false `Thm`.
 
+pub mod bridge;
 pub mod hash;
 pub mod hol_light_obs;
 pub mod int_axioms;
 pub mod nat_axioms;
+pub mod peano;
 pub mod pure_hol;
 pub mod sexp;
 pub mod stdlib;

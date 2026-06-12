@@ -54,8 +54,10 @@
 //!   fide HOL axioms (`thm.rs`).
 
 mod builtins;
+pub mod defs;
 pub mod error;
 mod hol;
+pub mod proofs;
 pub mod subst;
 pub mod term;
 pub mod ctx;
@@ -63,7 +65,7 @@ pub mod thm;
 
 pub use error::{Error, Result};
 pub use term::{
-    Arith, BinderHint, Def, Hint, HolOp, ObsEq, ObsImp, ObsTrue, Object, Observer, Prim, Term,
+    BinderHint, Def, Hint, HolOp, ObsEq, ObsImp, ObsTrue, Object, Observer, Term,
     TermKind, Type, TypeKind,
 };
 pub use ctx::Ctx;

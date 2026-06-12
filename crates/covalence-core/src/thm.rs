@@ -841,6 +841,41 @@ impl Thm {
             .expect("nat_rec_succ: well-typed by construction")
     }
 
+    /// `⊢ ⋀n:nat. Trueprop (nat_le n n)` — reflexivity of `nat_le`.
+    /// Justified by the selector predicate of [`crate::defs::nat_le`]:
+    /// `cmp 0 0 = T` and `cmp (S n) (S m) = cmp n m`.
+    pub fn nat_le_refl() -> Thm {
+        Self::build(Ctx::new(), hol::nat_le_refl_term())
+            .expect("nat_le_refl: well-typed by construction")
+    }
+
+    /// `⊢ ⋀n:nat. Trueprop (nat_div n 0 = 0)` — division by zero
+    /// is zero by convention. Standard Euclidean axiom; sound because
+    /// the kernel commits to this convention everywhere `nat_div`
+    /// appears (see also `builtins::reduce_spec`).
+    pub fn nat_div_zero_right() -> Thm {
+        Self::build(Ctx::new(), hol::nat_div_zero_right_term())
+            .expect("nat_div_zero_right: well-typed by construction")
+    }
+
+    /// `⊢ ⋀n m:nat. Trueprop (nat_lt n m)
+    ///       ⟹ Trueprop (nat_div n m = 0)` — small numerator
+    /// gives quotient zero. Combined with [`Self::nat_div_recursion`]
+    /// and [`Self::nat_div_zero_right`] uniquely determines `nat_div`.
+    pub fn nat_div_less() -> Thm {
+        Self::build(Ctx::new(), hol::nat_div_less_term())
+            .expect("nat_div_less: well-typed by construction")
+    }
+
+    /// `⊢ ⋀n m:nat. Trueprop (nat_lt 0 m)
+    ///        ⟹ Trueprop (nat_le m n)
+    ///        ⟹ Trueprop (nat_div n m = succ (nat_div (nat_sub n m) m))`
+    /// — the Euclidean recursion step.
+    pub fn nat_div_recursion() -> Thm {
+        Self::build(Ctx::new(), hol::nat_div_recursion_term())
+            .expect("nat_div_recursion: well-typed by construction")
+    }
+
     /// `⊢ ⋀m n:nat. Trueprop (m + n = natrec m succ n)` — addition
     /// as `n`-fold successor. Ties the Pure `Prim::NatArith(Add)`
     /// to the HOL-level `natrec` (which is itself defined in

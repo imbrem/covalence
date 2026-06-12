@@ -402,6 +402,77 @@ pub(crate) fn nat_rec_succ_term() -> Term {
     NAT_REC_SUCC_TERM.clone()
 }
 
+// ---- Definitional axioms: defs::nat_le ----
+
+static NAT_LE_REFL_TERM: LazyLock<Term> = LazyLock::new(|| {
+    // ⋀n:nat. Trueprop (nat_le n n)
+    let n = Term::free("n", Type::nat());
+    let body = Term::app(Term::app(crate::defs::nat_le(), n.clone()), n);
+    pure_all("n", Type::nat(), trueprop(body))
+});
+
+pub(crate) fn nat_le_refl_term() -> Term {
+    NAT_LE_REFL_TERM.clone()
+}
+
+// ---- Definitional axioms: defs::nat_div ----
+//
+// nat_div is declared (no body). The three axioms below pin its
+// Euclidean recursion. Sound because the standard mathematical
+// division uniquely satisfies them.
+
+static NAT_DIV_ZERO_RIGHT_TERM: LazyLock<Term> = LazyLock::new(|| {
+    // ⋀n:nat. Trueprop (nat_div n 0 = 0)
+    let n = Term::free("n", Type::nat());
+    let lhs = Term::app(Term::app(crate::defs::nat_div(), n), zero());
+    let eq = hol_eq(lhs, zero());
+    pure_all("n", Type::nat(), trueprop(eq))
+});
+
+static NAT_DIV_LESS_TERM: LazyLock<Term> = LazyLock::new(|| {
+    // ⋀n m:nat. Trueprop (nat_lt n m) ⟹ Trueprop (nat_div n m = 0)
+    let n = Term::free("n", Type::nat());
+    let m = Term::free("m", Type::nat());
+    let n_lt_m = Term::app(Term::app(crate::defs::nat_lt(), n.clone()), m.clone());
+    let lhs = Term::app(Term::app(crate::defs::nat_div(), n), m);
+    let eq = hol_eq(lhs, zero());
+    let body = Term::imp(trueprop(n_lt_m), trueprop(eq));
+    pure_all("n", Type::nat(), pure_all("m", Type::nat(), body))
+});
+
+static NAT_DIV_RECURSION_TERM: LazyLock<Term> = LazyLock::new(|| {
+    // ⋀n m:nat.
+    //   Trueprop (nat_lt 0 m)
+    //   ⟹ Trueprop (nat_le m n)
+    //   ⟹ Trueprop (nat_div n m = succ (nat_div (nat_sub n m) m))
+    let n = Term::free("n", Type::nat());
+    let m = Term::free("m", Type::nat());
+
+    let zero_lt_m = Term::app(Term::app(crate::defs::nat_lt(), zero()), m.clone());
+    let m_le_n = Term::app(Term::app(crate::defs::nat_le(), m.clone()), n.clone());
+
+    let nat_div_nm = Term::app(Term::app(crate::defs::nat_div(), n.clone()), m.clone());
+    let n_minus_m = Term::app(Term::app(crate::defs::nat_sub(), n.clone()), m.clone());
+    let recursive = Term::app(Term::app(crate::defs::nat_div(), n_minus_m), m.clone());
+    let rhs = Term::app(succ_fn(), recursive);
+    let conclusion = trueprop(hol_eq(nat_div_nm, rhs));
+
+    let body = Term::imp(trueprop(zero_lt_m), Term::imp(trueprop(m_le_n), conclusion));
+    pure_all("n", Type::nat(), pure_all("m", Type::nat(), body))
+});
+
+pub(crate) fn nat_div_zero_right_term() -> Term {
+    NAT_DIV_ZERO_RIGHT_TERM.clone()
+}
+
+pub(crate) fn nat_div_less_term() -> Term {
+    NAT_DIV_LESS_TERM.clone()
+}
+
+pub(crate) fn nat_div_recursion_term() -> Term {
+    NAT_DIV_RECURSION_TERM.clone()
+}
+
 // ---- Definitional axioms tying Pure prims to natrec ----
 //
 // Each equation defines a Pure `Prim::NatArith(_)` operator in

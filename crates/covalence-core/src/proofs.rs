@@ -28,6 +28,7 @@ use crate::thm::Thm;
 
 pub mod iter;
 pub mod nat_add;
+pub mod nat_mul;
 
 // ---------------------------------------------------------------------------
 // Generic helpers
@@ -71,6 +72,37 @@ pub fn un_beta_trueprop(reduced_thm: Thm, lambda_app: Term) -> Result<Thm> {
 pub fn beta_trueprop(un_reduced_thm: Thm, lambda_app: Term) -> Result<Thm> {
     let bridge = beta_under_trueprop(lambda_app)?;
     bridge.eq_mp(un_reduced_thm)
+}
+
+/// Extract the bool argument of a `Trueprop X` term.
+pub fn extract_trueprop_arg(t: &Term) -> Result<Term> {
+    use crate::term::HolOp;
+    use crate::term::TermKind;
+    match t.kind() {
+        TermKind::App(head, arg)
+            if matches!(head.kind(), TermKind::HolOp(HolOp::Trueprop, _)) =>
+        {
+            Ok((*arg).clone())
+        }
+        _ => Err(crate::error::Error::NotASpec),
+    }
+}
+
+/// Instantiate a `⋀x1. ⋀x2. … ⋀xk. Trueprop ((λy. body) inner)`
+/// theorem at the supplied witnesses (outer-to-inner), then β-reduce
+/// the resulting `(λy. body) witness` inside `Trueprop`. The
+/// returned `Thm` has the user-facing β-reduced shape.
+///
+/// Useful for invoking lemmas like
+/// `nat_add_comm : ⋀m n. Trueprop ((λn'. nat_add n' m = nat_add m n') n)`
+/// at concrete `(m, n)` without manually re-deriving the inner λ.
+pub fn instantiate_universal(thm: Thm, witnesses: Vec<Term>) -> Result<Thm> {
+    let mut current = thm;
+    for w in witnesses {
+        current = current.all_elim(w)?;
+    }
+    let inner_app = extract_trueprop_arg(current.concl())?;
+    beta_trueprop(current, inner_app)
 }
 
 /// Inverse of [`pure_eq_of_hol_eq`]: convert `⊢ a ≡ b` to

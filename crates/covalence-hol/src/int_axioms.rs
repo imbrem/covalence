@@ -61,9 +61,34 @@ fn assume_hol(body: Term) -> Thm {
 
 /// `⊢ ∀P:int→bool. (∀n:nat. P (int_of_nat n)) ∧ (∀n:nat. P (-(int_of_nat n)))
 ///                ⟹ ∀z:int. P z` — bidirectional integer induction.
-/// Bona-fide kernel axiom ([`Thm::int_induction`]); empty hyps.
+///
+/// Derivable from `Thm::nat_induction` once `int` becomes a
+/// genuinely derived TypeSpec with a constructive case-split
+/// (positive / negative on the `int := signed2 nat` carrier).
+/// Until that derivation lands, postulated via `Thm::assume`.
 pub fn int_induction() -> Thm {
-    Thm::int_induction()
+    let pred_ty = Type::fun(int_ty(), Type::bool());
+    let p = Term::free("P", pred_ty.clone());
+    let nat = Type::nat();
+    let int_of_nat = defs::nat_to_int();
+
+    let n_pos = Term::free("n", nat.clone());
+    let p_pos = Term::app(p.clone(), Term::app(int_of_nat.clone(), n_pos));
+    let positive = ctx().mk_forall("n", nat.clone(), p_pos);
+
+    let n_neg = Term::free("n", nat.clone());
+    let p_neg = Term::app(p.clone(), neg(Term::app(int_of_nat, n_neg)));
+    let negative = ctx().mk_forall("n", nat, p_neg);
+
+    let antecedent = ctx().mk_and(positive, negative);
+
+    let z = Term::free("z", int_ty());
+    let p_z = Term::app(p.clone(), z);
+    let consequent = ctx().mk_forall("z", int_ty(), p_z);
+
+    let body = ctx().mk_imp(antecedent, consequent);
+    let outer = ctx().mk_forall("P", pred_ty, body);
+    assume_hol(outer)
 }
 
 // ============================================================================

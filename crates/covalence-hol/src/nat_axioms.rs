@@ -161,37 +161,80 @@ pub fn natrec_def_succ() -> Thm {
 // `natrec` (or to `succ`/`pred`).
 // ============================================================================
 
-/// `⊢ ⋀m n:nat. Trueprop (m + n = natrec m succ n)` — addition is
-/// `n`-fold successor starting from `m`. Bona-fide kernel axiom
-/// ([`Thm::nat_add_def`]); empty hyps.
+// The following five facts (`nat_add_def`, `nat_mul_def`,
+// `nat_pred_zero`, `nat_pred_succ`, `nat_sub_def`) were previously
+// kernel axioms exposed on `Thm::*`. They are now derivable from
+// `Thm::nat_induction` + `Thm::define` (introducing `+`/`*`/`pred`/
+// `-` from `natrec` is a `define` call; their defining equations are
+// then automatic, and the recursion-step equations follow by
+// induction). Until the WASM-proof rewrite lands those derivations,
+// we postulate them downstream via the standard `Thm::assume(body)`
+// pattern. Each Thm carries a self-hyp marking it as unproved.
+
+/// `⊢ ∀m n:nat. m + n = natrec m succ n` — addition as `n`-fold
+/// successor starting from `m`. Postulated via `Thm::assume`; the
+/// resulting Thm has the body itself as a single hypothesis.
 pub fn nat_add_def() -> Thm {
-    Thm::nat_add_def()
+    let m = Term::free("m", nat_ty());
+    let n = Term::free("n", nat_ty());
+    let lhs = add(m.clone(), n.clone());
+    let rhs = natrec_apply(m.clone(), succ_fn(), n.clone());
+    let eq = ctx().mk_eq(lhs, rhs).expect("nat_add_def: mk_eq");
+    let inner = ctx().mk_forall("n", nat_ty(), eq);
+    let body = ctx().mk_forall("m", nat_ty(), inner);
+    assume_hol(body)
 }
 
-/// `⊢ ⋀m n:nat. Trueprop (m * n = natrec 0 (λx. x + m) n)` —
-/// multiplication is `n`-fold add-of-`m` starting from `0`.
-/// Bona-fide kernel axiom ([`Thm::nat_mul_def`]); empty hyps.
+/// `⊢ ∀m n:nat. m * n = natrec 0 (λx. x + m) n` — multiplication as
+/// `n`-fold add-of-`m`. Postulated via `Thm::assume`.
 pub fn nat_mul_def() -> Thm {
-    Thm::nat_mul_def()
+    let m = Term::free("m", nat_ty());
+    let n = Term::free("n", nat_ty());
+    let lhs = mul(m.clone(), n.clone());
+    // step = λx:nat. x + m
+    let x = Term::free("x", nat_ty());
+    let step_body = add(x, m.clone());
+    // Use the kernel `close`+`abs` path directly: defs/* uses this
+    // same pattern. `HolLightCtx` doesn't expose `mk_abs` because
+    // `Term::abs` is already the user-facing entry point.
+    let step_closed = covalence_core::subst::close(&step_body, "x");
+    let step = Term::abs("x", nat_ty(), step_closed);
+    let rhs = natrec_apply(zero(), step, n.clone());
+    let eq = ctx().mk_eq(lhs, rhs).expect("nat_mul_def: mk_eq");
+    let inner = ctx().mk_forall("n", nat_ty(), eq);
+    let body = ctx().mk_forall("m", nat_ty(), inner);
+    assume_hol(body)
 }
 
-/// `⊢ pred 0 = 0` — predecessor saturates at zero. Bona-fide
-/// kernel axiom ([`Thm::nat_pred_zero`]); empty hyps.
+/// `⊢ pred 0 = 0` — predecessor saturates at zero. Postulated via
+/// `Thm::assume`.
 pub fn nat_pred_zero() -> Thm {
-    Thm::nat_pred_zero()
+    let lhs = Term::app(defs::nat_pred(), zero());
+    let body = ctx().mk_eq(lhs, zero()).expect("nat_pred_zero: mk_eq");
+    assume_hol(body)
 }
 
 /// `⊢ ∀n:nat. pred (succ n) = n` — predecessor inverts successor.
-/// Bona-fide kernel axiom ([`Thm::nat_pred_succ`]); empty hyps.
+/// Postulated via `Thm::assume`.
 pub fn nat_pred_succ() -> Thm {
-    Thm::nat_pred_succ()
+    let n = Term::free("n", nat_ty());
+    let lhs = Term::app(defs::nat_pred(), succ(n.clone()));
+    let eq = ctx().mk_eq(lhs, n).expect("nat_pred_succ: mk_eq");
+    let body = ctx().mk_forall("n", nat_ty(), eq);
+    assume_hol(body)
 }
 
-/// `⊢ ⋀m n:nat. Trueprop (m - n = natrec m pred n)` — saturating
-/// subtraction is `n`-fold predecessor starting from `m`. Bona-fide
-/// kernel axiom ([`Thm::nat_sub_def`]); empty hyps.
+/// `⊢ ∀m n:nat. m - n = natrec m pred n` — saturating subtraction as
+/// `n`-fold predecessor. Postulated via `Thm::assume`.
 pub fn nat_sub_def() -> Thm {
-    Thm::nat_sub_def()
+    let m = Term::free("m", nat_ty());
+    let n = Term::free("n", nat_ty());
+    let lhs = Term::app(Term::app(defs::nat_sub(), m.clone()), n.clone());
+    let rhs = natrec_apply(m.clone(), defs::nat_pred(), n.clone());
+    let eq = ctx().mk_eq(lhs, rhs).expect("nat_sub_def: mk_eq");
+    let inner = ctx().mk_forall("n", nat_ty(), eq);
+    let body = ctx().mk_forall("m", nat_ty(), inner);
+    assume_hol(body)
 }
 
 // ============================================================================
@@ -482,11 +525,15 @@ mod tests {
 
     #[test]
     fn definitional_axioms_well_formed() {
-        check_kernel(nat_add_def());
-        check_kernel(nat_mul_def());
-        check_kernel(nat_pred_zero());
-        check_kernel(nat_pred_succ());
-        check_kernel(nat_sub_def());
+        // Each fact has one self-hyp (`Thm::assume(body)` shape) —
+        // they're postulated downstream until the WASM-proof rewrite
+        // derives them from `nat_induction` + `define`. `check`
+        // accepts a single hyp; `check_kernel` requires zero.
+        check(nat_add_def());
+        check(nat_mul_def());
+        check(nat_pred_zero());
+        check(nat_pred_succ());
+        check(nat_sub_def());
     }
 
     #[test]

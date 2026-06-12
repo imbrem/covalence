@@ -4,129 +4,220 @@ description: Covalence repo layout, dependency graph, and key architectural rule
 disable-model-invocation: true
 ---
 
+> The canonical kernel design lives in
+> [`docs/kernel-design.md`](../../../docs/kernel-design.md). Read it
+> before touching `covalence-core` or `covalence-hol`.
+
 ## Repo Layout
 
-- `crates/covalence/` — Main binary crate (`cov` CLI)
-  - `src/main.rs` — Entry point with clap derive; dispatches to `cov lsp`, `cov cog`, `cov serve`, `cov repl`
-  - `src/highlight.rs` — S-expression syntax highlighting for the REPL
-  - `src/lib.rs` — Shared constants (`VERSION`, `TARGET`)
-  - `build.rs` — Sets `COV_TARGET` env var from the Cargo build target triple
-- `crates/covalence-pure/` — **TCB**: Isabelle/Pure–shaped LF. `Term`/`Type`/`Thm`, 8 LF + 6 equality rules + `inst_tfree` + `define` + `obs_eq`. Locally-nameless, intrinsic typing, parametric-ε-sound observations. `DynObs` wraps any `Arc<dyn Any + Send + Sync>` compared by pointer identity. WIT package `cov:pure@0.1.0` exposes the API to wasm guests (host bindings in `covalence-wasm::pure`).
-- `crates/covalence-pure-shell/` — non-TCB shell: handler-driven sexp serialisation (`ObsSerializer`/`ObsParser`), content hashing (`ObsHasher`), pretty-printing. Caller-supplied trait impls for each observer type.
-- `crates/covalence-pure-test-guest/` — wasm32 cdylib using `wit_bindgen::generate!` against `cov:pure/api`; loaded by `crates/covalence-wasm/tests/pure_guest_integration.rs` for end-to-end WIT-driven proving. Template for future `cov:kernel`/`cov:hol-light` test guests.
-- `crates/covalence-kernel/` — **HOL kernel (LEGACY, planned for rewrite).** Current contents: `arena.rs`, `egraph.rs`, `eprop.rs`, `hash.rs`, `id.rs`, `kernel.rs`, `primop.rs`, `prop.rs`, `reduce.rs`, `subst.rs`, `term.rs`, `ty.rs`, `uf.rs`. Migration plan in `docs/design/proposals/stacked-pure-hol/next-stages.md`: keep the crate name but empty it out and rebuild as an orchestration shell over `covalence-pure` + forthcoming `covalence-hol` + `covalence-store` + WASM evaluator + tree-store. The new direction never trusts BLAKE3 collision-freedom globally; cryptographic facts are user-asserted axioms conditional on `inStore` predicates.
-  - The Sync/Async backend traits (`SyncBackend`, `AsyncBackend`, `BackendInfo`, `KernelError`) now live in `crates/covalence-shell/` (`pub use traits::{...}` in `src/lib.rs`). Update this section when the kernel is re-integrated with the shell.
-- `crates/covalence-client/` — Remote backend implementations
-  - `src/sync_client.rs` — `SyncHttpBackend` (ureq for TCP, raw HTTP/1.1 for Unix domain sockets)
-  - `src/async_client.rs` — `AsyncHttpBackend` (hyper for TCP + UDS)
-  - Features: `sync` (ureq), `async` (hyper)
-- `crates/covalence-hash/` — Cryptographic hash types (`O256`, `IdentityHasher`), git hashing (feature-gated on `git`)
-- `crates/covalence-store/` — Generic store traits (`StoreGet`, `StoreGetRef`, `StorePut`, `StorePutMut`) and implementations
-  - `MemoryStore`/`SharedMemoryStore` (feature `memory`, default)
-  - `SqliteStore` (feature `sqlite`, backed by `covalence-sqlite`)
-- `crates/covalence-sqlite/` — Low-level SQLite blob store (rusqlite)
-- `crates/covalence-sexp/` — S-expression parser/printer (`parse()`, `prettyprint()`, `offset_to_line_col()`)
-- `crates/covalence-wasm/` — WASM/WAT gateway (see `wasm-guide` skill)
-  - `src/validate.rs` — `compile_wat()` (WAT→WASM), `wasm_to_wat()` (WASM→WAT) — always available
-  - `src/parse.rs` — `parse_module()`, `parse_component()` — binary inspection via wasmparser
-  - `src/build.rs` — programmatic `ModuleBuilder` (~840 LoC)
-  - `src/component.rs` — `encode_core_as_component`
-  - `src/val.rs` — engine-agnostic `Val` / `ValType` (component-model values)
-  - `src/engine.rs` — one-line `pub use wasmtime;` gated behind `runtime` feature (no higher-level abstraction yet)
-  - `src/lib.rs` — `WasmError` enum
-- `crates/covalence-lsp/` — Language server library (used by `cov lsp`)
-  - `src/lib.rs` — LSP handlers for sexp files (`.smt`, `.smt2`, `.alethe`, `.cov`) and WAT files (`.wat`)
-- `crates/covalence-git/` — Cogit VCS library (used by `cov cog`)
-- `crates/covalence-serve/` — Web server library (used by `cov serve`)
-  - `src/lib.rs` — `ServeConfig`, `ServeError`, `AppState` (holds `Kernel`), `run_serve()`
-  - `src/api.rs` — REST API handlers (blobs, WAT, eval, decide, etc.)
-  - `src/eval.rs` — `server_session()` — creates a REPL Session backed by a Kernel
-  - `src/static_files.rs` — rust-embed static file serving with SPA fallback (feature `static`)
-  - `build.rs` — Warns if `apps/covalence-web/build/` is missing (only when `static` feature enabled)
-- `crates/covalence-proto/` — Service discovery + configuration
-  - `src/discovery.rs` — Server registration/discovery via XDG runtime dir
-  - `src/config.rs` — Default paths (XDG data dir)
-  - `src/error.rs` — `DiscoveryError`
-- `apps/covalence-web/` — SvelteKit web app (adapter-static, SPA mode)
-  - `src/lib/api.ts` — API client; base URL configurable via `VITE_COV_API_BASE` env var
-  - `src/routes/+page.svelte` — Landing page with API health monitor (polls `/api/health` every `HEALTH_POLL_MS`)
-  - `build/` — Static output embedded into the Rust binary (gitignored)
-- `packages/covalence-ui/` — Shared Svelte 5 component library (scaffold, for future use)
-- `extensions/covalence-vscode/` — VSCode extension (desktop + web)
-  - `src/extension.ts` — Extension activation, LSP startup, restart command
-  - `src/server.ts` — LSP server creation: detects native `cov` binary, falls back to WASM
-  - `scripts/build.ts` — Build script (cargo rustc → esbuild → copy wasm)
-  - `syntaxes/` — TextMate grammars for SMT (`smt.tmLanguage.json`) and WAT (`wat.tmLanguage.json`)
-  - `dist/` — Final bundles (gitignored)
+### Kernel + HOL surface
 
-## Dependency Graph
+- `crates/covalence-core/` — **TCB** (~3 KLoC). HOL Light kernel
+  in safe Rust.
+  - `src/term/{observers,types,terms}.rs` — Term/Type/HolOp/Object
+    representation, including `validate_hol_op_shape` for canonical
+    HolOp instance types.
+  - `src/thm.rs` — single opaque `Thm` type. HOL Light's 10
+    primitives (refl, trans, mk_comb, abs, beta_conv, assume, eq_mp,
+    deduct_antisym, inst, inst_tfree), 8 derived rules (sym,
+    cong_app/abs, imp_intro/elim, all_intro/elim, eta_conv), `weaken`,
+    `define`, `new_type_definition`, `reduce_prim`,
+    `unfold_term_spec`, the observer rules (`obs_eq`/`obs_true`/`obs_imp`),
+    and the single kernel axiom `nat_induction`.
+  - `src/builtins.rs` — `reduce_prim_term` (literal arithmetic) +
+    `reduce_spec` (catalogue dispatch by `TermSpec::ptr_eq`).
+  - `src/hol.rs` — HOL connective constructors (`hol_eq`, `hol_imp`,
+    `hol_forall`, …) + `nat_induction_term`. No bridge axioms (Pure
+    layer deleted).
+  - `src/subst.rs` — capture-avoiding `close` / `open` /
+    `shift_by` / `subst_free` / `subst_tfree_in_term`.
+  - `src/ctx.rs` — hypothesis `Ctx` (BTreeSet wrapped in
+    `Option<Arc<…>>`, structurally shared).
+  - `src/defs/` — TypeSpec / TermSpec catalogue (semi-trusted): `nat`,
+    `int`, `blob`, `set`, `coprod` (`bit`/`u2`/…/`u512`), `prod`
+    (`signed1`/`signed2`), `list`, `option`, `result`, `rel`,
+    `stream`, `rat`, `real`, `floats`. `int := signed2 nat` and
+    `bytes := list u8` are derived TypeSpecs — `Type::int()` and
+    `Type::bytes()` return spec'd types; literals stay as
+    `TermKind::{Int,Blob,Nat,Bool}` built-ins.
+- `crates/covalence-hol/` — **OUTSIDE the TCB.** HOL builder API +
+  serialization.
+  - `src/hol_light_obs.rs` — `HolLightCtx` zero-sized handle:
+    `mk_eq`/`mk_imp`/`mk_forall`/`mk_and`/… term constructors.
+  - `src/nat_axioms.rs`, `src/int_axioms.rs` — postulated downstream
+    "axioms" via `Thm::assume(body)` (each carries the body as a
+    self-hyp). Slated to be replaced by derivations from
+    `Thm::nat_induction` + `define`.
+  - `src/stdlib/*` — typed-arithmetic stdlib (nat/int/bool/fun/list/
+    option/either/bytes/byte/rat/real) over the `covalence-core`
+    primitives.
+  - `src/hash.rs` — content hashing (BLAKE3-keyed, `T_PROP`/`T_IMP`/
+    `T_ALL`/`T_EQ` tag values **reserved** to keep persisted hashes
+    stable, NOT reused).
+  - `src/sexp.rs` — canonical S-expression syntax.
+  - `src/traits.rs`, `src/types.rs` — `HolLightKernel` /
+    `HolLightTerms` / `HolLightTypes` traits, `BOOL_TYCON_ID` /
+    `EQ_CONST_ID` / `FUN_TYCON_ID` opaque NameIds for OpenTheory.
+  - **Gated** (slated for WASM-proof rewrite): `pure_hol.rs`,
+    `peano.rs`, `bridge.rs`. They previously implemented Rust-side
+    HOL Light proofs over the now-deleted Pure-meta bridge axioms;
+    will be rewritten in the WASM proof format.
 
-**Status: partially stale — needs a fresh audit.** The high-level shape (covalence-wasm base vs runtime feature; client/repl staying lightweight; serve using Kernel + traits) is still directionally right, but specific claims about which crate owns which trait have moved (see kernel/shell note above). Verify against `Cargo.toml` files before relying on the details below.
+### Shells, server, REPL, frontends
+
+- `crates/covalence-shell/` — `SyncBackend` / `AsyncBackend` traits +
+  in-memory `Kernel` adapter + `Prover` trait. `prover_kernel.rs`
+  wraps the **legacy** `covalence-kernel` arena kernel (different from
+  `covalence-core`'s Thm — separate codebase, deliberately).
+- `crates/covalence-kernel/` — **LEGACY** arena+egraph+UF HOL kernel.
+  Slated for rewrite as an orchestration shell over `covalence-core`
+  + `covalence-hol` + `covalence-store` + WASM evaluator + tree-store;
+  see `docs/design/proposals/stacked-pure-hol/next-stages.md`.
+- `crates/covalence-repl/` — S-expression REPL backed by
+  `Box<dyn SyncBackend>` and `covalence-wasm`.
+- `crates/covalence-serve/` — axum 0.8 HTTP/WebSocket server.
+- `crates/covalence-client/` — sync (ureq) + async (hyper) remote
+  backend impls.
+- `crates/covalence-proto/` — XDG-runtime-dir service discovery.
+- `crates/covalence-lsp/` — LSP server library (used by `cov lsp`).
+- `crates/covalence-python/` — PyO3 0.28 Python bindings for
+  `covalence-core` Term/Type/Thm.
+- `crates/covalence-opentheory/` — OpenTheory article interpreter;
+  Rust-proof tests gated until `pure_hol` is reinstated on the
+  new rule set.
+- `crates/covalence/` — `cov` CLI (clap derive). `cov hol check` is
+  gated pending the `covalence-hol::pure_hol` rewrite.
+
+### Storage + primitives
+
+- `crates/covalence-store/` — content-addressed blob store traits
+  + impls (memory + sqlite).
+- `crates/covalence-sqlite/` — low-level SQLite wrapper (rusqlite).
+- `crates/covalence-hash/` — `O256`, `IdentityHasher`, optional git
+  hashing.
+- `crates/covalence-git/` — git-compatible object storage + LFS.
+
+### WASM, parsing, arrow/parquet, signatures, …
+
+- `crates/covalence-wasm/` — WAT↔WASM, programmatic ModuleBuilder,
+  component encoder, runtime (wasmtime) re-export behind `runtime`
+  feature.
+- `crates/covalence-wasm-store/` — host-side wasmtime store
+  adapters.
+- `crates/covalence-spectec/` — WebAssembly SpecTec AST.
+- `crates/covalence-sexp/` — S-expression parser with dialect
+  configuration (Covalence/SMT-LIB/WAT).
+- `crates/covalence-parse/` — winnow parser combinators + LEB128.
+- `crates/covalence-graph/` — ordered typed payload-polymorphic
+  graphs + WIT-bridged forms.
+- `crates/covalence-arrow/`, `covalence-parquet/` — Arrow IPC and
+  Parquet wrappers.
+- `crates/covalence-sat/`, `covalence-smt/` — SAT/SMT terms + Alethe
+  proofs.
+- `crates/covalence-types/` — `Decision`, `Bits`, `Nat`/`Int` shared
+  types (wraps `num-bigint`/`num-traits`/`num-integer` behind the
+  default `int` feature).
+- `crates/covalence-rand/` — `rand` wrapper.
+- `crates/covalence-sig/` — ed25519 signatures (pinned `rand_core 0.6`).
+- `crates/covalence-llm/` — central LLM/chat API (see
+  [LLM-native vision](../../../docs/design/proposals/) for direction).
+- `crates/covalence-json/` — serde_json wrapper.
+
+### Frontends
+
+- `apps/covalence-web/` — SvelteKit web app (adapter-static, SPA
+  mode). Builds to `build/`, embedded by `covalence-serve`'s
+  `static` feature.
+- `packages/covalence-ui/` — shared Svelte 5 component scaffold.
+- `extensions/covalence-vscode/` — VSCode extension (desktop +
+  web). LSP server detection: native `cov` binary preferred, WASM
+  fallback.
+
+## Trust graph
 
 ```
-covalence-wasm (WASM gateway)
-  ├─ base: compile_wat(), wasm_to_wat(), parse_module(), parse_component(), build::*, encode_core_as_component
-  └─ [runtime]: re-exports wasmtime (no abstraction layer yet — direct wasmtime usage in consumers)
-
-covalence-shell (backend traits — formerly in covalence-kernel)
-  └─ SyncBackend, AsyncBackend, BackendInfo, KernelError
-
-covalence-client (remote backend implementations) — depends on covalence-shell
-  ├─ [sync]: SyncHttpBackend (ureq + raw UDS)
-  └─ [async]: AsyncHttpBackend (hyper + UDS)
-
-covalence-repl (Session + command evaluation)
-  ├─ Uses Box<dyn SyncBackend> from covalence-shell
-  ├─ Always depends on covalence-wasm (base) for WAT ops
-  └─ [fetch]: ureq for store-url
-
-covalence-proto (discovery + config only)
-  └─ No client code — just registration, discovery, and default paths
-
-covalence-serve (HTTP server) — depends on covalence-shell::KernelError
+                  covalence-core           ← TCB (~3 KLoC, safe Rust)
+                       │
+                       ▼
+                  covalence-hol            ← untrusted: HOL builders,
+                       │                     hash, sexp, stdlib,
+                       │                     downstream postulates
+        ┌──────────────┼──────────────┐
+        ▼              ▼              ▼
+  covalence-shell  covalence-      covalence-
+  (prover trait,   opentheory      python
+   Kernel adapter) (article        (PyO3
+                   interp)         bindings)
+        │
+        ▼
+  covalence-repl, covalence-serve, … (application code)
 ```
 
-**Key rules (still applicable):**
+A bug in `covalence-hol` cannot produce a false `Thm`. A bug in
+`covalence-shell` or `covalence-opentheory` cannot produce a false
+`Thm`. Soundness reduces to `covalence-core`'s rule and axiom set,
+reviewed module-by-module per [`docs/kernel-design.md`](../../../docs/kernel-design.md).
 
-- `SyncBackend` trait is dyn-compatible (for REPL's `Box<dyn SyncBackend>`)
-- `AsyncBackend` trait uses native `async fn` (NOT dyn-compatible — used with concrete types)
-- `covalence-repl` and `covalence-client` stay lightweight (no wasmtime)
+## Key invariants
+
+- **Single non-computational axiom: `Thm::nat_induction`.** Every
+  other arithmetic / logical fact is derivable from it + the rule
+  set + `define`.
+- **No `TermKind::Imp/All/Eq`** (Pure meta-variants deleted); no
+  `HolOp::Trueprop`; no `TypeKind::Prop`; no `Type::prop()` /
+  `is_prop` / `is_formula`. Every formula is `bool`.
+- **HolOp instance types are validated** (`type_of_in` rejects
+  weird shapes like `Eq : nat → int → bool`).
+- **`Thm::assume(body)` is the postulate primitive**: produces
+  `{body} ⊢ body` with body as a self-hyp. Downstream consumers use
+  this to "axiom-ize" facts that aren't yet derived from
+  `nat_induction`; the audit chain is visible in any final theorem.
+- **`int := signed2 nat` and `bytes := list u8`** are derived
+  TypeSpecs. Literals (`TermKind::Int`, `TermKind::Blob`) stay as
+  kernel built-ins — efficient binary representation is the point.
+- **TermSpec dispatch is ptr_eq on catalogue handles.** Users can
+  construct their own TermSpecs but they won't `ptr_eq` with the
+  catalogue, so they don't trigger `reduce_spec` — their reasoning
+  goes through `unfold_term_spec` (sound let-binding) instead.
+- **The observer system is sound under the parametric ε-model.**
+  Each Rust observer type `O` gets its own ε-family, so a bug or
+  policy choice in one observer's `obs_eq`/`obs_true`/`obs_imp`
+  cannot affect theorems involving another observer type.
 
 ## CLI (`cov`)
 
-Uses clap derive for arg parsing, `color-eyre` for error reporting (native only), and `tracing` + `tracing-subscriber` for logging (default level: `info`, override with `RUST_LOG`).
+clap 4 derive + color-eyre. Subcommands (all default-on, target-gated
+for native-only deps on wasm):
 
-Features (all default, all compile on WASM except native-only deps are target-gated):
-
-- `lsp` — `cov lsp` subcommand
-- `cogit` — `cov cog` subcommand
-- `serve` — `cov serve` subcommand (prints error on WASM; axum/tokio deps are `cfg(not(wasm))`)
-- `repl` — `cov repl` subcommand (interactive S-expression REPL with syntax highlighting)
+- `lsp` — `cov lsp` (LSP server)
+- `cogit` — `cov cog` (git-compatible VCS ops)
+- `serve` — `cov serve` (axum 0.8 HTTP/WebSocket server)
+- `repl` — `cov repl` (S-expression REPL with syntax highlighting)
+- `hol check` — gated pending the WASM-proof rewrite of
+  `covalence-hol::pure_hol`.
 
 ## REPL (`cov repl`)
 
-Interactive S-expression evaluator with a content-addressed blob store. Backend is selected at startup:
+Backend selection at startup:
 
 - `--connect URL` → `SyncHttpBackend` (remote)
-- `--standalone` → `Kernel` (in-process)
-- Default → auto-discovery (find running server) → fallback to `Kernel`
+- `--standalone` → in-process `Kernel`
+- Default → auto-discovery (find running server) → fallback to
+  `Kernel`.
 
-Storage: `--store` enables SQLite persistence, `--memory` (default) uses in-memory.
+Storage: `--store` enables SQLite persistence, `--memory` (default)
+in-memory.
 
-Commands:
+S-expression commands (selected):
 
-- `(store "data")` — hash and store inline text as a blob
-- `(store-url "url")` — fetch URL content and store as blob
-- `(store-file "path")` — read file and store as blob
-- `(read <hash>)` — print blob as UTF-8 text
-- `(read-wat <hash>)` — decompile blob as WASM→WAT
-- `(module ...)` — compile WAT module, store as blob
-- `(component ...)` — compile WAT component, store as blob
-- `(parse-module <hash>)` — inspect WASM module imports/exports
-- `(parse-component <hash>)` — inspect WASM component imports/exports
-- `(decide <hash>)` — decide if a proposition (WASM component) calls attest() on startup
-- `(list)` — list all stored blob hashes
-- `(status)` — show backend connection info
-- `(help)` — show available commands
-- `(arrow-stats <hash>)` — parse blob as Arrow IPC, print schema + row/batch counts (requires `covalence-repl/arrow`)
-- `(parquet-stats <hash>)` — parse Parquet stats; dispatches on `is_tree(hash)` — a tree is scanned as a hive-partitioned dataset (`key=value/` dirs with `.parquet` leaves), a blob is parsed as a single file (requires `covalence-repl/parquet`)
+- `(store "text")`, `(store-url "url")`, `(store-file "path")` —
+  hash + store as blob.
+- `(read <hash>)`, `(read-wat <hash>)` — print blob.
+- `(module ...)`, `(component ...)` — compile WAT, store.
+- `(parse-module <hash>)`, `(parse-component <hash>)` — inspect
+  imports/exports.
+- `(decide <hash>)` — decide if a proposition (WASM component)
+  calls `attest()` on startup.
+- `(arrow-stats <hash>)`, `(parquet-stats <hash>)` — Arrow IPC /
+  Parquet stats (gated by `covalence-repl/arrow` and
+  `covalence-repl/parquet` features).

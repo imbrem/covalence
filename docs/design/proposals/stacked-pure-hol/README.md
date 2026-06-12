@@ -1,21 +1,36 @@
 # Stacked Pure + HOL MVP
 
-> **STATUS: PARTIALLY LANDED — HOL has been folded into the kernel.**
+> **STATUS: HISTORICAL — Pure layer fully collapsed into pure HOL.**
+> Canonical reference is [`docs/kernel-design.md`](../../../kernel-design.md).
 >
 > This document originally described a strict two-layer split: a tiny
 > Pure-only TCB (`covalence-pure`) with HOL as an untrusted layer
-> above. The `kernel-design` branch absorbed the Pure crate into
-> `covalence-core` and **folded HOL's primitives and bona-fide axioms
-> into the TCB**. Sections rewritten below reflect that. The sibling
-> [`next-stages.md`](./next-stages.md) records the optional items
-> and tracks which have landed.
+> above. The `kernel-design` branch first absorbed the Pure crate
+> into `covalence-core`, then collapsed the Pure meta-layer entirely:
 >
-> The TCB is now slightly wider but more honest: `nat_induction` is a
-> real kernel rule with empty hyps, not a `Thm::assume` postulate
-> with a self-hyp audit trail. HOL is the base logic; any other
-> logic gets reasoned about *inside* HOL. The observer machinery
-> (`obs_eq`, `obs_true`, `obs_imp`) remains the pluggable hook for
-> non-HOL observer systems (Store, Blake3, future ones).
+> - `TermKind::Imp / All / Eq` (Pure meta-connectives) — **deleted**.
+> - `HolOp::Trueprop` — **deleted**.
+> - `TypeKind::Prop`, `Type::prop()`, `Type::is_prop` — **deleted**.
+> - The Pure-HOL bridge axioms (`eq_reflection`, `forall_reflection`,
+>   `imp_reflection`) — **deleted**.
+> - Every kernel axiom EXCEPT `nat_induction` — **deleted** (those
+>   facts are derivable from `nat_induction` + the rule set +
+>   `define`; until the WASM-proof rewrite, downstream consumers
+>   postulate them via `Thm::assume(body)` with a self-hyp audit
+>   trail).
+>
+> The current state is **pure HOL Light**: the 10 HOL Light primitive
+> inference rules + 8 well-known derived rules added as kernel
+> primitives ("easily auditable" derivations recorded in each
+> docstring) + `weaken` + `define` + `new_type_definition` + the
+> accelerated reduction rules (`reduce_prim`, `unfold_term_spec`)
+> + the observer rules + `nat_induction`. The TCB sits around
+> 3 KLoC of safe Rust.
+>
+> Sections below describe an intermediate revision (HOL folded but
+> Pure-meta still present). For the *current* design read
+> [`docs/kernel-design.md`](../../../kernel-design.md); for the
+> evolution history, keep reading.
 >
 > Sibling to the [layered-framework
 > proposal](../layered-framework/README.md). That proposal describes a

@@ -1,15 +1,16 @@
 # Core: Optional Next Stages
 
-> **STATUS: MOSTLY LANDED.**
+> **STATUS: HISTORICAL.** Canonical reference is
+> [`docs/kernel-design.md`](../../../kernel-design.md).
 >
-> Companion to [`README.md`](./README.md). Originally recorded design
-> ideas deferred from the initial `covalence-pure` / `covalence-pure-shell`
-> merge. As of the `kernel-design` branch, several of these have landed:
+> Companion to [`README.md`](./README.md). Records design ideas
+> deferred from the initial `covalence-pure` / `covalence-pure-shell`
+> merge. As of the `kernel-design` branch, most have landed:
 > Option A (`new_type_definition`), Option B (`TyConObs` + unified
-> `Observer`), and a substantially different version of Option G
-> (HOL folded into the kernel rather than layered above). Items below
-> are tagged **DONE**, **PENDING**, or **OPTIONAL** to reflect
-> current status.
+> `Observer`), Option G (HOL collapsed into the kernel; Pure meta-
+> layer subsequently deleted entirely), single-axiom kernel reduction
+> (only `nat_induction` remains), `int := signed2 nat` and
+> `bytes := list u8` as derived TypeSpecs.
 
 This document captures the design conversations from the
 core MVP work that we deliberately *did not* land in the

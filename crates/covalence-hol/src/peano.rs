@@ -20,7 +20,7 @@
 use std::sync::LazyLock;
 
 use covalence_core::subst::close;
-use covalence_core::{Arith, Prim, Term, Thm, Type};
+use covalence_core::{defs, Term, Thm, Type};
 use covalence_types::Nat;
 
 use crate::HolLightCtx;
@@ -35,7 +35,7 @@ fn nat_ty() -> Type {
 }
 
 fn succ_fn() -> Term {
-    Term::prim(Prim::NatArith(Arith::Succ))
+    defs::nat_succ()
 }
 
 fn succ(t: Term) -> Term {
@@ -43,7 +43,7 @@ fn succ(t: Term) -> Term {
 }
 
 fn pred_fn() -> Term {
-    Term::prim(Prim::NatArith(Arith::Pred))
+    defs::nat_pred()
 }
 
 fn pred(t: Term) -> Term {

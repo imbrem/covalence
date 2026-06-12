@@ -23,7 +23,7 @@
 
 use std::sync::LazyLock;
 
-use covalence_core::{Arith, Prim, Term, Thm, Type};
+use covalence_core::{defs, Term, Thm, Type};
 
 use crate::HolLightCtx;
 
@@ -44,7 +44,7 @@ fn zero() -> Term {
 }
 
 fn succ_fn() -> Term {
-    Term::prim(Prim::NatArith(Arith::Succ))
+    defs::nat_succ()
 }
 
 fn succ(t: Term) -> Term {
@@ -52,11 +52,11 @@ fn succ(t: Term) -> Term {
 }
 
 fn add(a: Term, b: Term) -> Term {
-    Term::app(Term::app(Term::prim(Prim::NatArith(Arith::Add)), a), b)
+    Term::app(Term::app(defs::nat_add(), a), b)
 }
 
 fn mul(a: Term, b: Term) -> Term {
-    Term::app(Term::app(Term::prim(Prim::NatArith(Arith::Mul)), a), b)
+    Term::app(Term::app(defs::nat_mul(), a), b)
 }
 
 fn assume_hol(body: Term) -> Thm {

@@ -10,7 +10,7 @@
 use std::sync::LazyLock;
 
 use crate::HolLightCtx;
-use covalence_core::{Prim, Term, Thm, Type};
+use covalence_core::{defs, Term, Thm, Type};
 
 use crate::stdlib::nat;
 
@@ -46,35 +46,35 @@ pub fn empty() -> Term {
 // ============================================================================
 
 pub fn cat_fn() -> Term {
-    Term::prim(Prim::BytesCat)
+    defs::bytes_cat()
 }
 pub fn cat(a: Term, b: Term) -> Term {
     Term::app(Term::app(cat_fn(), a), b)
 }
 
 pub fn cons_nat_fn() -> Term {
-    Term::prim(Prim::BytesConsNat)
+    defs::bytes_cons_nat()
 }
 pub fn cons_nat(n: Term, bs: Term) -> Term {
     Term::app(Term::app(cons_nat_fn(), n), bs)
 }
 
 pub fn len_fn() -> Term {
-    Term::prim(Prim::BytesLen)
+    defs::bytes_len()
 }
 pub fn len(bs: Term) -> Term {
     Term::app(len_fn(), bs)
 }
 
 pub fn at_fn() -> Term {
-    Term::prim(Prim::BytesAt)
+    defs::bytes_at()
 }
 pub fn at(bs: Term, i: Term) -> Term {
     Term::app(Term::app(at_fn(), bs), i)
 }
 
 pub fn slice_fn() -> Term {
-    Term::prim(Prim::BytesSlice)
+    defs::bytes_slice()
 }
 pub fn slice(bs: Term, start: Term, n: Term) -> Term {
     Term::app(Term::app(Term::app(slice_fn(), bs), start), n)

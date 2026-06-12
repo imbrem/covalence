@@ -79,6 +79,16 @@ pub enum Canonical {
     // ---- Bytes / blobs ----
     /// `blob := list u8`.
     Blob,
+    /// `bytesCat : bytes → bytes → bytes` — concatenation.
+    BytesCat,
+    /// `bytesConsNat : nat → bytes → bytes` — cons a nat (mod 256).
+    BytesConsNat,
+    /// `bytesLen : bytes → nat` — length.
+    BytesLen,
+    /// `bytesAt : bytes → nat → nat` — byte at index (0 if OOB).
+    BytesAt,
+    /// `bytesSlice : bytes → nat → nat → bytes` — saturating slice.
+    BytesSlice,
 
     // ---- Signed integers and beyond ----
     /// `signed1 'a := prod bit 'a` (a or −a).
@@ -267,6 +277,11 @@ impl Canonical {
             Canonical::List => "list",
             Canonical::Result => "result",
             Canonical::Blob => "blob",
+            Canonical::BytesCat => "bytesCat",
+            Canonical::BytesConsNat => "bytesConsNat",
+            Canonical::BytesLen => "bytesLen",
+            Canonical::BytesAt => "bytesAt",
+            Canonical::BytesSlice => "bytesSlice",
             Canonical::Signed1 => "signed1",
             Canonical::Signed2 => "signed2",
             Canonical::FieldOfFractions => "fieldOfFractions",

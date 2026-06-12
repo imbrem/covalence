@@ -65,7 +65,7 @@ pub mod thm;
 
 pub use error::{Error, Result};
 pub use term::{
-    Arith, BinderHint, Def, Hint, HolOp, ObsEq, ObsImp, ObsTrue, Object, Observer, Prim, Term,
+    BinderHint, Def, Hint, HolOp, ObsEq, ObsImp, ObsTrue, Object, Observer, Term,
     TermKind, Type, TypeKind,
 };
 pub use ctx::Ctx;

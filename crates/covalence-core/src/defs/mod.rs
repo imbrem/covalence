@@ -48,7 +48,10 @@ mod spec;
 mod stream;
 mod symbol;
 
-pub use blob::{blob_spec, blob_ty};
+pub use blob::{
+    blob_spec, blob_ty, bytes_at, bytes_at_spec, bytes_cat, bytes_cat_spec, bytes_cons_nat,
+    bytes_cons_nat_spec, bytes_len, bytes_len_spec, bytes_slice, bytes_slice_spec,
+};
 pub use canonical::Canonical;
 pub use coprod::{
     bit_spec, bit_ty, coprod, coprod_spec, result, result_spec, u128_spec, u128_ty, u16_spec,

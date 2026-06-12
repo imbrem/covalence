@@ -789,67 +789,10 @@ impl fmt::Display for Def {
 // Term
 // ============================================================================
 
-/// Shared arithmetic operations on `nat` and `int`. Carried by
-/// [`Prim::NatArith`] and [`Prim::IntArith`] so the same operation
-/// set is exposed at both types without duplicating variant names.
-///
-/// Unary ops (`Succ`, `Pred`) build a `T → T` term; binary ops
-/// (`Add`, `Sub`, `Mul`, `Div`, `Mod`) build a `T → T → T` term.
-/// `Pred` saturates at zero for `nat`; `Div`/`Mod` are Euclidean
-/// and return zero when the divisor is zero.
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Arith {
-    Succ,
-    Pred,
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
-}
-
-impl Arith {
-    /// `true` for unary operations (`Succ`, `Pred`).
-    pub fn is_unary(&self) -> bool {
-        matches!(self, Arith::Succ | Arith::Pred)
-    }
-}
-
-/// Builtin Pure functions, applied via standard `App`. Each variant
-/// IS a closed function term of the type returned by [`Self::ty`];
-/// reductions on concrete-literal applications are decided by
-/// [`crate::Thm::reduce_prim`].
-///
-/// Treating primitives as regular function terms (rather than
-/// fixed-arity `TermKind` variants) means every Pure rule that
-/// operates on `App` — `subst_free`, `inst_tfree`, `type_of`,
-/// `aconv`, β-conv — sees them like any other function. Adding e.g.
-/// `BytesNth : bytes → nat → nat` is a single enum variant.
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Prim {
-    /// Arithmetic on `nat`.
-    NatArith(Arith),
-    /// Arithmetic on `int`.
-    IntArith(Arith),
-    /// `int → int` — integer negation. No `nat` counterpart.
-    IntNeg,
-    /// `bytes → bytes → bytes` — concatenation.
-    BytesCat,
-    /// `nat → bytes → bytes` — cons a `nat` (mod 256) onto the
-    /// front of a `bytes` term.
-    BytesConsNat,
-    /// `bytes → nat` — length of a bytes value.
-    BytesLen,
-    /// `bytes → nat → nat` — byte at index, or `0` if out of
-    /// bounds (total function; standard convention for indexing
-    /// out-of-bounds returning a default).
-    BytesAt,
-    /// `bytes → nat → nat → bytes` — slice from a start index
-    /// with a length. Saturating: clipped at the bytes' end.
-    BytesSlice,
-    /// `nat → int` — embed naturals into integers.
-    NatToInt,
-}
+// Arith and Prim enums removed — arithmetic and bytes operations
+// now live entirely as TermSpec constants under `crate::defs`, and
+// `builtins::reduce_spec` matches on them by `ptr_eq` for
+// closed-form reduction.
 
 /// HOL Light's primitive operators, folded into the kernel.
 ///
@@ -916,29 +859,6 @@ impl fmt::Display for HolOp {
     }
 }
 
-impl Prim {
-    /// The type of this primitive as a closed function term.
-    pub fn ty(&self) -> Type {
-        match self {
-            Prim::NatArith(a) if a.is_unary() => Type::fun(Type::nat(), Type::nat()),
-            Prim::NatArith(_) => Type::fun(Type::nat(), Type::fun(Type::nat(), Type::nat())),
-            Prim::IntArith(a) if a.is_unary() => Type::fun(Type::int(), Type::int()),
-            Prim::IntArith(_) => Type::fun(Type::int(), Type::fun(Type::int(), Type::int())),
-            Prim::IntNeg => Type::fun(Type::int(), Type::int()),
-            Prim::BytesCat => Type::fun(Type::bytes(), Type::fun(Type::bytes(), Type::bytes())),
-            Prim::BytesConsNat => {
-                Type::fun(Type::nat(), Type::fun(Type::bytes(), Type::bytes()))
-            }
-            Prim::BytesLen => Type::fun(Type::bytes(), Type::nat()),
-            Prim::BytesAt => Type::fun(Type::bytes(), Type::fun(Type::nat(), Type::nat())),
-            Prim::BytesSlice => Type::fun(
-                Type::bytes(),
-                Type::fun(Type::nat(), Type::fun(Type::nat(), Type::bytes())),
-            ),
-            Prim::NatToInt => Type::fun(Type::nat(), Type::int()),
-        }
-    }
-}
 
 #[derive(Clone)]
 pub struct Term(Arc<TermKind>);
@@ -975,9 +895,6 @@ pub enum TermKind {
     /// `Tycon("bool", [])`. Folded into the kernel so HOL truth
     /// values aren't a separate observer system.
     Bool(bool),
-    /// Builtin function — a closed function term applied to args via
-    /// standard `App`. See [`Prim`] for the catalogue.
-    Prim(Prim),
     /// Folded-in HOL primitive operator at its instance type. See
     /// [`HolOp`] for the catalogue. Applications are formed by the
     /// usual `App` chain.
@@ -1078,14 +995,6 @@ impl Term {
         Self::alloc(TermKind::Spec(spec, args))
     }
 
-    /// A builtin function term, ready to be applied via standard
-    /// [`Term::app`]. No reduction is performed at construction —
-    /// to derive computed equations like `⊢ Prim(NatArith Add) lit_a lit_b ≡ lit_sum`
-    /// use [`crate::Thm::reduce_prim`].
-    pub fn prim(p: Prim) -> Self {
-        Self::alloc(TermKind::Prim(p))
-    }
-
     /// Wrap an observer as a typed leaf. The kernel treats the
     /// underlying value opaquely; only the user code constructing
     /// `o` controls what observations exist.
@@ -1136,7 +1045,6 @@ impl Term {
             | TermKind::Nat(_)
             | TermKind::Int(_)
             | TermKind::Bool(_)
-            | TermKind::Prim(_)
             | TermKind::Spec(_, _)
             | TermKind::HolOp(_, _) => true,
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
@@ -1160,7 +1068,6 @@ impl Term {
             | TermKind::Nat(_)
             | TermKind::Int(_)
             | TermKind::Bool(_)
-            | TermKind::Prim(_)
             | TermKind::Spec(_, _)
             | TermKind::HolOp(_, _) => true,
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
@@ -1190,7 +1097,6 @@ impl Term {
             | TermKind::Nat(_)
             | TermKind::Int(_)
             | TermKind::Bool(_)
-            | TermKind::Prim(_)
             | TermKind::Spec(_, _)
             | TermKind::HolOp(_, _) => Ok(()),
             TermKind::App(a, b) | TermKind::Imp(a, b) | TermKind::Eq(a, b) => {
@@ -1250,7 +1156,6 @@ impl fmt::Display for Term {
             TermKind::Nat(n) => write!(f, "{}n", n.as_inner()),
             TermKind::Int(n) => write!(f, "{}i", n.as_inner()),
             TermKind::Bool(b) => write!(f, "{}", if *b { "T" } else { "F" }),
-            TermKind::Prim(p) => write!(f, "{:?}", p),
             TermKind::HolOp(op, ty) => write!(f, "{op}:{ty}"),
             TermKind::Spec(spec, args) => {
                 if args.is_empty() {
@@ -1376,7 +1281,6 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
         TermKind::Nat(_) => Ok(Type::nat()),
         TermKind::Int(_) => Ok(Type::int()),
         TermKind::Bool(_) => Ok(Type::bool()),
-        TermKind::Prim(p) => Ok(p.ty()),
         // A `Spec` leaf's type is the spec's own `ty` field (the
         // factory's carrier) with positional type-arg substitution
         // applied. The spec is held by handle; deref is cheap.

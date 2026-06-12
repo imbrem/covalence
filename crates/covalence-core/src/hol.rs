@@ -174,11 +174,6 @@ pub(crate) fn pred_fn() -> Term {
     crate::defs::nat_pred()
 }
 
-/// `intSucc : int → int` — the `defs::int_succ` TermSpec.
-pub(crate) fn int_succ_fn() -> Term {
-    crate::defs::int_succ()
-}
-
 fn nat_add_fn() -> Term {
     crate::defs::nat_add()
 }

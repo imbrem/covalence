@@ -22,7 +22,7 @@
 //! Consumers should reach for `stdlib::nat::*` and never touch
 //! `covalence-pure` or `covalence-hol` directly.
 
-use covalence_core::{Arith, Prim, Term, Type};
+use covalence_core::{defs, Term, Type};
 
 // Re-export underlying lit type for ergonomics.
 pub use covalence_types::Nat;
@@ -81,81 +81,73 @@ pub fn one() -> Term {
     lit(Nat::one())
 }
 
-/// `succ` as a closed function term (`nat → nat`).
+/// `succ : nat → nat` — TermSpec constant.
 pub fn succ_fn() -> Term {
-    Term::prim(Prim::NatArith(Arith::Succ))
+    defs::nat_succ()
 }
-
-/// `succ n`, applied.
 pub fn succ(n: Term) -> Term {
     Term::app(succ_fn(), n)
 }
 
-/// `pred` as a function (`nat → nat`, saturating at zero).
+/// `pred : nat → nat` — saturating, TermSpec constant.
 pub fn pred_fn() -> Term {
-    Term::prim(Prim::NatArith(Arith::Pred))
+    defs::nat_pred()
 }
-
-/// `pred n`, applied.
 pub fn pred(n: Term) -> Term {
     Term::app(pred_fn(), n)
 }
 
 // ============================================================================
-// Binary arithmetic
+// Binary arithmetic (TermSpec constants)
 // ============================================================================
 
-fn binary_fn(op: Arith) -> Term {
-    Term::prim(Prim::NatArith(op))
-}
-
-fn binary(op: Arith, a: Term, b: Term) -> Term {
-    Term::app(Term::app(binary_fn(op), a), b)
+fn binary(f: Term, a: Term, b: Term) -> Term {
+    Term::app(Term::app(f, a), b)
 }
 
 /// `nat → nat → nat` — addition.
 pub fn add_fn() -> Term {
-    binary_fn(Arith::Add)
+    defs::nat_add()
 }
 pub fn add(a: Term, b: Term) -> Term {
-    binary(Arith::Add, a, b)
+    binary(add_fn(), a, b)
 }
 
 /// `nat → nat → nat` — multiplication.
 pub fn mul_fn() -> Term {
-    binary_fn(Arith::Mul)
+    defs::nat_mul()
 }
 pub fn mul(a: Term, b: Term) -> Term {
-    binary(Arith::Mul, a, b)
+    binary(mul_fn(), a, b)
 }
 
 /// `nat → nat → nat` — saturating subtraction.
 pub fn sub_fn() -> Term {
-    binary_fn(Arith::Sub)
+    defs::nat_sub()
 }
 pub fn sub(a: Term, b: Term) -> Term {
-    binary(Arith::Sub, a, b)
+    binary(sub_fn(), a, b)
 }
 
 /// `nat → nat → nat` — Euclidean division (`a / 0 = 0`).
 pub fn div_fn() -> Term {
-    binary_fn(Arith::Div)
+    defs::nat_div()
 }
 pub fn div(a: Term, b: Term) -> Term {
-    binary(Arith::Div, a, b)
+    binary(div_fn(), a, b)
 }
 
 /// `nat → nat → nat` — Euclidean remainder (`a mod 0 = 0`).
 pub fn mod_fn() -> Term {
-    binary_fn(Arith::Mod)
+    defs::nat_mod()
 }
 pub fn rem(a: Term, b: Term) -> Term {
-    binary(Arith::Mod, a, b)
+    binary(mod_fn(), a, b)
 }
 
 /// `nat → int` — embed naturals into integers.
 pub fn to_int_fn() -> Term {
-    Term::prim(Prim::NatToInt)
+    defs::nat_to_int()
 }
 pub fn to_int(n: Term) -> Term {
     Term::app(to_int_fn(), n)

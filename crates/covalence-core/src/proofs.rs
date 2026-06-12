@@ -31,6 +31,7 @@ pub mod nat_add;
 pub mod nat_div;
 pub mod nat_mod;
 pub mod nat_mul;
+pub mod nat_pow;
 pub mod nat_sub;
 
 // ---------------------------------------------------------------------------

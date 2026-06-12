@@ -56,11 +56,7 @@ use covalence_core::{Term, Thm, Type};
 /// the standard audit-trail; downstream `PureHol::hyps()` filters
 /// it from the user-facing report.
 fn assume_hol_axiom(body: Term) -> Thm {
-    let ctx = HolLightCtx::new();
-    let wrapped = ctx
-        .mk_trueprop(body)
-        .expect("stdlib::bool: axiom body must be HOL bool-typed");
-    Thm::assume(wrapped).expect("stdlib::bool: assume on a Trueprop-wrapped term cannot fail")
+    Thm::assume(body).expect("stdlib::bool: axiom body must be HOL bool-typed")
 }
 
 // ============================================================================

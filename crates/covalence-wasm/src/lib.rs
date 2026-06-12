@@ -63,8 +63,14 @@ pub enum WasmError {
 #[cfg(feature = "runtime")]
 pub mod engine;
 
-#[cfg(feature = "runtime")]
-pub mod pure;
+// `pure` exposed Thm Pure-meta rules (imp_intro / imp_elim / all_intro /
+// all_elim / sym / cong_app / cong_abs / eta_conv) through the WIT
+// component-model API. Those rules are deleted in the Pure→HOL
+// collapse migration; the module needs to be re-derived against the
+// HOL-Light rule set (refl/trans/mk_comb/abs/beta_conv/assume/eq_mp/
+// deduct_antisym/inst). Gated for now.
+// #[cfg(feature = "runtime")]
+// pub mod pure;
 
 #[cfg(feature = "runtime")]
 pub mod runtime;

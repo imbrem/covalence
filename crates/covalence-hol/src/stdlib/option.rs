@@ -24,8 +24,7 @@ fn ctx() -> HolLightCtx {
 }
 
 fn assume_hol(body: Term) -> Thm {
-    let wrapped = ctx().mk_trueprop(body).expect("stdlib::option: mk_trueprop");
-    Thm::assume(wrapped).expect("stdlib::option: assume")
+    Thm::assume(body).expect("stdlib::option: assume")
 }
 
 /// `option α` — the polymorphic option type.

@@ -16,23 +16,21 @@
 //! Nothing in this crate is consumed by `covalence-core`'s
 //! inference rules; a bug here cannot produce a false `Thm`.
 
-// `bridge` and `peano` host Rust-encoded HOL proofs that depended on
-// the now-removed Pure-meta layer (`Trueprop`, `⋀`, Pure `≡`). They
-// are slated for rewrite in the upcoming WASM-based proof format;
-// gated out for now so the kernel rebuild can land cleanly.
+// `bridge`, `peano`, `pure_hol` host Rust-encoded proofs that
+// depended on the now-removed Pure→HOL bridge axioms. They're
+// slated for rewrite in the upcoming WASM-based proof format.
 // pub mod bridge;
 pub mod hash;
 pub mod hol_light_obs;
 pub mod int_axioms;
 pub mod nat_axioms;
 // pub mod peano;
-pub mod pure_hol;
+// pub mod pure_hol;
 pub mod sexp;
 pub mod stdlib;
 pub mod traits;
 pub mod types;
 
 pub use hol_light_obs::HolLightCtx;
-pub use pure_hol::PureHol;
 pub use traits::{HolLightKernel, HolLightTerms, HolLightTypes};
 pub use types::{BOOL_TYCON_ID, EQ_CONST_ID, FUN_TYCON_ID, HolError, NameId};

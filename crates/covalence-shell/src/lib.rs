@@ -28,10 +28,11 @@ pub use kernel::Kernel;
 pub mod prover;
 mod prover_kernel;
 
-/// Re-export the HOL standard library at its historical location
-/// in `covalence_shell::stdlib`. The implementation lives in
-/// `covalence_hol::stdlib` since the kernel-design refactor.
-pub use covalence_hol::stdlib;
+// `stdlib` and `PureHol` were re-exports of `covalence_hol`'s
+// proof-heavy modules, which are gated out during the Pure→HOL
+// collapse migration. Re-introduce once the WASM-proof rewrite
+// lands a stdlib over HOL-Light rules.
+// pub use covalence_hol::stdlib;
 
 pub use prover::{Prover, ProverError};
 
@@ -40,9 +41,8 @@ pub use prover::{Prover, ProverError};
 /// `covalence-shell`.
 pub use covalence_kernel::primop::{PrimOp1, PrimOp2};
 
-/// Pure / HOL re-exports that downstream stdlib clients and proof
-/// constructors need. Centralising them here lets clients depend
-/// only on `covalence-shell` for the standard library + the term
-/// constructors / theorem primitives it's built on.
-pub use covalence_hol::{HolLightCtx, HolLightKernel, PureHol};
+/// HOL term-builder re-exports that downstream consumers need.
+/// `PureHol` (the HolLightKernel impl) is gated until the WASM-proof
+/// rewrite reinstates it on HOL-Light rules.
+pub use covalence_hol::{HolLightCtx, HolLightKernel};
 pub use covalence_core::{BinderHint, Term, Thm, Type, TypeDef, TypeKind};

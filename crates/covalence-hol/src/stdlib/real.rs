@@ -22,8 +22,7 @@ fn ctx() -> HolLightCtx {
 }
 
 fn assume_hol(body: Term) -> Thm {
-    let wrapped = ctx().mk_trueprop(body).expect("stdlib::real: mk_trueprop");
-    Thm::assume(wrapped).expect("stdlib::real: assume")
+    Thm::assume(body).expect("stdlib::real: assume")
 }
 
 pub fn ty() -> Type {

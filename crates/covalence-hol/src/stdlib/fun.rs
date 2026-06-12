@@ -24,10 +24,7 @@ fn ctx() -> HolLightCtx {
 }
 
 fn assume_hol(body: Term) -> Thm {
-    let wrapped = ctx()
-        .mk_trueprop(body)
-        .expect("stdlib::fun: axiom body must be HOL bool-typed");
-    Thm::assume(wrapped).expect("stdlib::fun: assume on closed Trueprop cannot fail")
+        Thm::assume(body).expect("stdlib::fun: assume on closed Trueprop cannot fail")
 }
 
 // ============================================================================

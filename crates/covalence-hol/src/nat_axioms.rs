@@ -60,10 +60,7 @@ fn mul(a: Term, b: Term) -> Term {
 }
 
 fn assume_hol(body: Term) -> Thm {
-    let wrapped = ctx()
-        .mk_trueprop(body)
-        .expect("nat_axioms: axiom body must be HOL bool-typed");
-    Thm::assume(wrapped).expect("nat_axioms: Thm::assume on a closed Trueprop cannot fail")
+        Thm::assume(body).expect("nat_axioms: Thm::assume on a closed Trueprop cannot fail")
 }
 
 // ============================================================================

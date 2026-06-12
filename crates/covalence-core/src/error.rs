@@ -23,6 +23,12 @@ pub enum Error {
     #[error("expected HOL equation (lhs = rhs : bool), got {0}")]
     NotHolEq(String),
 
+    #[error("expected HOL implication (p ⟹ q : bool), got {0}")]
+    NotHolImp(String),
+
+    #[error("expected HOL universal (∀x:τ. body : bool), got {0}")]
+    NotHolForall(String),
+
     #[error("type mismatch: expected {expected}, got {got}")]
     TypeMismatch { expected: Type, got: Type },
 

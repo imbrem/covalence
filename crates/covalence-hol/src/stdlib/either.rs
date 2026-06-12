@@ -20,8 +20,7 @@ fn ctx() -> HolLightCtx {
 }
 
 fn assume_hol(body: Term) -> Thm {
-    let wrapped = ctx().mk_trueprop(body).expect("stdlib::either: mk_trueprop");
-    Thm::assume(wrapped).expect("stdlib::either: assume")
+    Thm::assume(body).expect("stdlib::either: assume")
 }
 
 /// `either α β`.

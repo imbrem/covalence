@@ -33,11 +33,10 @@ pub use crate::nat_axioms::{
     natrec_def_zero as axiom_natrec_zero,
 };
 
-// Peano axioms — intrinsic to the type.
-pub use crate::nat_axioms::{
-    nat_induction as axiom_induction, nat_succ_inj as axiom_succ_inj,
-    nat_zero_ne_succ as axiom_zero_ne_succ,
-};
+// Peano axioms — intrinsic to the type. `nat_succ_inj` and
+// `nat_zero_ne_succ` were Rust-encoded proofs in the now-gated
+// `peano` module; they'll be re-derived in the WASM proof format.
+pub use crate::nat_axioms::nat_induction as axiom_induction;
 
 // Definitional axioms — each fixes a Pure prim via natrec / succ / pred.
 pub use crate::nat_axioms::{

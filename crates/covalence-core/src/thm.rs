@@ -930,42 +930,6 @@ impl Thm {
             .expect("nat_induction: well-typed by construction")
     }
 
-    /// `⊢ ⋀P:nat→bool. Trueprop (P 0) ⟹
-    ///       (⋀n:nat. Trueprop (P n) ⟹ Trueprop (P (succ n))) ⟹
-    ///       ⋀n:nat. Trueprop (P n)` —
-    /// Pure-meta form of nat induction. Logically equivalent to
-    /// [`Thm::nat_induction`] (which is the HOL-quantified form);
-    /// in principle derivable from it via the reflection bridges +
-    /// [`Thm::and_intro`] + and-elim, but exposed directly here so
-    /// downstream proofs can use Pure `all_elim` / `imp_elim`
-    /// without round-tripping through `forall_reflection`.
-    pub fn nat_induction_pure() -> Thm {
-        Self::build(Ctx::new(), hol::nat_induction_pure_term())
-            .expect("nat_induction_pure: well-typed by construction")
-    }
-
-    /// `⊢ ⋀x y:'a. Trueprop (x = y) ≡ (x ≡ y)` — the HOL `=` ↔
-    /// Pure `≡` bridge (Isabelle/HOL's `eq_reflection`) as a kernel
-    /// axiom.
-    pub fn eq_reflection() -> Thm {
-        Self::build(Ctx::new(), hol::eq_reflection_term())
-            .expect("eq_reflection: well-typed by construction")
-    }
-
-    /// `⊢ ⋀P:'a→bool. (⋀x:'a. Trueprop (P x)) ≡ Trueprop (∀x. P x)`
-    /// — the HOL `∀` ↔ Pure `⋀` bridge as a kernel axiom.
-    pub fn forall_reflection() -> Thm {
-        Self::build(Ctx::new(), hol::forall_reflection_term())
-            .expect("forall_reflection: well-typed by construction")
-    }
-
-    /// `⊢ ⋀P Q:bool. (Trueprop P ⟹ Trueprop Q) ≡ Trueprop (P ⟹ Q)`
-    /// — the HOL `⟹` ↔ Pure `⟹` bridge as a kernel axiom.
-    pub fn imp_reflection() -> Thm {
-        Self::build(Ctx::new(), hol::imp_reflection_term())
-            .expect("imp_reflection: well-typed by construction")
-    }
-
     // ---- nat-prim definitional axioms ----
     //
     // Pure exposes `Prim::NatArith(Pred)` as a primitive function;

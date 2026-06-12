@@ -33,16 +33,6 @@ fn bool_ty() -> Type {
     Type::bool()
 }
 
-/// `Trueprop` constant at `bool → prop`.
-fn trueprop_op() -> Term {
-    Term::hol_op(HolOp::Trueprop, Type::fun(bool_ty(), Type::prop()))
-}
-
-/// `Trueprop p` — wrap a bool term as a Pure prop.
-fn trueprop(p: Term) -> Term {
-    Term::app(trueprop_op(), p)
-}
-
 /// HOL `==>` at `bool → bool → bool`.
 fn hol_imp_op() -> Term {
     let b = bool_ty();
@@ -111,19 +101,6 @@ pub(crate) fn hol_exists(hint: &str, alpha: Type, body: Term) -> Term {
     let closed = close(&body, hint);
     let lambda = Term::abs(hint, alpha.clone(), closed);
     Term::app(exists_at(alpha), lambda)
-}
-
-/// Pure meta-universal `⋀x:α. body[x]` — closes `Free(hint, α)`
-/// into `Bound(0)` before wrapping with `Term::all`.
-fn pure_all(hint: &str, alpha: Type, body: Term) -> Term {
-    Term::all(hint, alpha, close(&body, hint))
-}
-
-/// Pure abstraction `λx:α. body[x]` — closes `Free(hint, α)` into
-/// `Bound(0)` before wrapping with `Term::abs`. Used for predicate
-/// lambdas inside `HolOp(Forall, _)` applications.
-fn pure_abs(hint: &str, alpha: Type, body: Term) -> Term {
-    Term::abs(hint, alpha, close(&body, hint))
 }
 
 /// HOL `=` at `α → α → bool`.
@@ -245,6 +222,7 @@ fn int_neg(z: Term) -> Term {
 // `type_of_in` walk, which is fine to pay on every axiom call.
 
 static NAT_INDUCTION_TERM: LazyLock<Term> = LazyLock::new(|| {
+    // ⊢ ∀P:nat→bool. P 0 ∧ (∀n:nat. P n ⟹ P (succ n)) ⟹ ∀n:nat. P n
     let nat = Type::nat();
     let pred_ty = Type::fun(nat.clone(), bool_ty());
     let p = Term::free("P", pred_ty.clone());
@@ -264,90 +242,21 @@ static NAT_INDUCTION_TERM: LazyLock<Term> = LazyLock::new(|| {
     let consequent = hol_forall("n", nat.clone(), p_n2);
 
     let imp = hol_imp(antecedent, consequent);
-    let body = hol_forall("P", pred_ty, imp);
-    trueprop(body)
-});
-
-static NAT_INDUCTION_PURE_TERM: LazyLock<Term> = LazyLock::new(|| {
-    // ⋀P:nat→bool.
-    //   Trueprop (P 0) ⟹
-    //   (⋀n:nat. Trueprop (P n) ⟹ Trueprop (P (succ n))) ⟹
-    //   (⋀n:nat. Trueprop (P n))
-    let nat = Type::nat();
-    let pred_ty = Type::fun(nat.clone(), bool_ty());
-    let p = Term::free("P", pred_ty.clone());
-
-    let base = trueprop(Term::app(p.clone(), zero()));
-
-    let n_step = Term::free("n", nat.clone());
-    let step_inner = Term::imp(
-        trueprop(Term::app(p.clone(), n_step.clone())),
-        trueprop(Term::app(p.clone(), succ(n_step))),
-    );
-    let step = pure_all("n", nat.clone(), step_inner);
-
-    let n_concl = Term::free("n", nat.clone());
-    let concl_inner = trueprop(Term::app(p.clone(), n_concl));
-    let concl = pure_all("n", nat.clone(), concl_inner);
-
-    let chain = Term::imp(base, Term::imp(step, concl));
-    pure_all("P", pred_ty, chain)
-});
-
-static EQ_REFLECTION_TERM: LazyLock<Term> = LazyLock::new(|| {
-    let alpha = Type::tfree("a");
-    let x = Term::free("x", alpha.clone());
-    let y = Term::free("y", alpha.clone());
-
-    let lhs = trueprop(hol_eq(x.clone(), y.clone()));
-    let rhs = Term::eq(x, y);
-    let body = Term::eq(lhs, rhs);
-
-    let inner = pure_all("y", alpha.clone(), body);
-    pure_all("x", alpha, inner)
-});
-
-static FORALL_REFLECTION_TERM: LazyLock<Term> = LazyLock::new(|| {
-    let alpha = Type::tfree("a");
-    let pred_ty = Type::fun(alpha.clone(), bool_ty());
-    let p = Term::free("P", pred_ty.clone());
-
-    let x_inner = Term::free("x", alpha.clone());
-    let p_x_inner = Term::app(p.clone(), x_inner);
-    let left = pure_all("x", alpha.clone(), trueprop(p_x_inner));
-
-    let x_outer = Term::free("x", alpha.clone());
-    let p_x_outer = Term::app(p.clone(), x_outer);
-    let right = trueprop(hol_forall("x", alpha, p_x_outer));
-
-    let body = Term::eq(left, right);
-    pure_all("P", pred_ty, body)
-});
-
-static IMP_REFLECTION_TERM: LazyLock<Term> = LazyLock::new(|| {
-    let p = Term::free("p", bool_ty());
-    let q = Term::free("q", bool_ty());
-
-    let left = Term::imp(trueprop(p.clone()), trueprop(q.clone()));
-    let right = trueprop(hol_imp(p, q));
-
-    let body = Term::eq(left, right);
-    let inner = pure_all("q", bool_ty(), body);
-    pure_all("p", bool_ty(), inner)
+    hol_forall("P", pred_ty, imp)
 });
 
 // ---- Definitional axioms: pred ----
 
 static PRED_ZERO_TERM: LazyLock<Term> = LazyLock::new(|| {
-    // Trueprop (pred 0 = 0)
-    trueprop(hol_eq(pred(zero()), zero()))
+    // ⊢ pred 0 = 0
+    hol_eq(pred(zero()), zero())
 });
 
 static PRED_SUCC_TERM: LazyLock<Term> = LazyLock::new(|| {
-    // ⋀n:nat. Trueprop (pred (succ n) = n)
+    // ⊢ ∀n:nat. pred (succ n) = n
     let n = Term::free("n", Type::nat());
     let eq = hol_eq(pred(succ(n.clone())), n);
-    pure_all("n", Type::nat(), trueprop(eq))
+    hol_forall("n", Type::nat(), eq)
 });
 
 // ---- Definitional axioms: defs::nat_rec ----
@@ -359,7 +268,7 @@ static PRED_SUCC_TERM: LazyLock<Term> = LazyLock::new(|| {
 // the choice argument.
 
 static NAT_REC_ZERO_TERM: LazyLock<Term> = LazyLock::new(|| {
-    // ⋀z:'a. ⋀f:nat→'a→'a. Trueprop (natRec[α] z f 0 = z)
+    // ⊢ ∀z:'a. ∀f:nat→'a→'a. natRec[α] z f 0 = z
     let alpha = Type::tfree("a");
     let f_ty = Type::fun(Type::nat(), Type::fun(alpha.clone(), alpha.clone()));
     let z = Term::free("z", alpha.clone());
@@ -371,12 +280,12 @@ static NAT_REC_ZERO_TERM: LazyLock<Term> = LazyLock::new(|| {
         zero(),
     );
     let eq = hol_eq(lhs, z);
-    pure_all("z", alpha, pure_all("f", f_ty, trueprop(eq)))
+    hol_forall("z", alpha, hol_forall("f", f_ty, eq))
 });
 
 static NAT_REC_SUCC_TERM: LazyLock<Term> = LazyLock::new(|| {
-    // ⋀z:'a. ⋀f:nat→'a→'a. ⋀n:nat.
-    //   Trueprop (natRec[α] z f (succ n) = f n (natRec[α] z f n))
+    // ⊢ ∀z:'a. ∀f:nat→'a→'a. ∀n:nat.
+    //     natRec[α] z f (succ n) = f n (natRec[α] z f n)
     let alpha = Type::tfree("a");
     let f_ty = Type::fun(Type::nat(), Type::fun(alpha.clone(), alpha.clone()));
     let z = Term::free("z", alpha.clone());
@@ -391,10 +300,10 @@ static NAT_REC_SUCC_TERM: LazyLock<Term> = LazyLock::new(|| {
     let rhs = Term::app(Term::app(f.clone(), n.clone()), rec_n);
 
     let eq = hol_eq(lhs, rhs);
-    pure_all(
+    hol_forall(
         "z",
         alpha,
-        pure_all("f", f_ty, pure_all("n", Type::nat(), trueprop(eq))),
+        hol_forall("f", f_ty, hol_forall("n", Type::nat(), eq)),
     )
 });
 
@@ -409,10 +318,10 @@ pub(crate) fn nat_rec_succ_term() -> Term {
 // ---- Definitional axioms: defs::nat_le ----
 
 static NAT_LE_REFL_TERM: LazyLock<Term> = LazyLock::new(|| {
-    // ⋀n:nat. Trueprop (nat_le n n)
+    // ⊢ ∀n:nat. nat_le n n
     let n = Term::free("n", Type::nat());
     let body = Term::app(Term::app(crate::defs::nat_le(), n.clone()), n);
-    pure_all("n", Type::nat(), trueprop(body))
+    hol_forall("n", Type::nat(), body)
 });
 
 pub(crate) fn nat_le_refl_term() -> Term {
@@ -427,17 +336,17 @@ pub(crate) fn nat_le_refl_term() -> Term {
 // defs::int_succ — no Prim::IntArith references.
 
 static INT_ADD_ZERO_RIGHT_TERM: LazyLock<Term> = LazyLock::new(|| {
-    // ⋀z:int. Trueprop (int_add z 0 = z)
+    // ⊢ ∀z:int. int_add z 0 = z
     let z = Term::free("z", Type::int());
     let zero_int = crate::defs::int_zero();
     let int_add = crate::defs::int_add();
     let lhs = Term::app(Term::app(int_add, z.clone()), zero_int);
     let eq = hol_eq(lhs, z);
-    pure_all("z", Type::int(), trueprop(eq))
+    hol_forall("z", Type::int(), eq)
 });
 
 static INT_ADD_SUCC_RIGHT_TERM: LazyLock<Term> = LazyLock::new(|| {
-    // ⋀a b:int. Trueprop (int_add a (intSucc b) = intSucc (int_add a b))
+    // ⊢ ∀a b:int. int_add a (intSucc b) = intSucc (int_add a b)
     let a = Term::free("a", Type::int());
     let b = Term::free("b", Type::int());
     let int_succ = crate::defs::int_succ();
@@ -447,7 +356,7 @@ static INT_ADD_SUCC_RIGHT_TERM: LazyLock<Term> = LazyLock::new(|| {
     let a_plus_b = Term::app(Term::app(int_add, a.clone()), b.clone());
     let rhs = Term::app(int_succ, a_plus_b);
     let eq = hol_eq(lhs, rhs);
-    pure_all("a", Type::int(), pure_all("b", Type::int(), trueprop(eq)))
+    hol_forall("a", Type::int(), hol_forall("b", Type::int(), eq))
 });
 
 pub(crate) fn int_add_zero_right_term() -> Term {
@@ -465,29 +374,28 @@ pub(crate) fn int_add_succ_right_term() -> Term {
 // division uniquely satisfies them.
 
 static NAT_DIV_ZERO_RIGHT_TERM: LazyLock<Term> = LazyLock::new(|| {
-    // ⋀n:nat. Trueprop (nat_div n 0 = 0)
+    // ⊢ ∀n:nat. nat_div n 0 = 0
     let n = Term::free("n", Type::nat());
     let lhs = Term::app(Term::app(crate::defs::nat_div(), n), zero());
     let eq = hol_eq(lhs, zero());
-    pure_all("n", Type::nat(), trueprop(eq))
+    hol_forall("n", Type::nat(), eq)
 });
 
 static NAT_DIV_LESS_TERM: LazyLock<Term> = LazyLock::new(|| {
-    // ⋀n m:nat. Trueprop (nat_lt n m) ⟹ Trueprop (nat_div n m = 0)
+    // ⊢ ∀n m:nat. nat_lt n m ⟹ nat_div n m = 0
     let n = Term::free("n", Type::nat());
     let m = Term::free("m", Type::nat());
     let n_lt_m = Term::app(Term::app(crate::defs::nat_lt(), n.clone()), m.clone());
     let lhs = Term::app(Term::app(crate::defs::nat_div(), n), m);
     let eq = hol_eq(lhs, zero());
-    let body = Term::imp(trueprop(n_lt_m), trueprop(eq));
-    pure_all("n", Type::nat(), pure_all("m", Type::nat(), body))
+    let body = hol_imp(n_lt_m, eq);
+    hol_forall("n", Type::nat(), hol_forall("m", Type::nat(), body))
 });
 
 static NAT_DIV_RECURSION_TERM: LazyLock<Term> = LazyLock::new(|| {
-    // ⋀n m:nat.
-    //   Trueprop (nat_lt 0 m)
-    //   ⟹ Trueprop (nat_le m n)
-    //   ⟹ Trueprop (nat_div n m = succ (nat_div (nat_sub n m) m))
+    // ⊢ ∀n m:nat.
+    //     nat_lt 0 m ⟹ nat_le m n
+    //     ⟹ nat_div n m = succ (nat_div (nat_sub n m) m)
     let n = Term::free("n", Type::nat());
     let m = Term::free("m", Type::nat());
 
@@ -498,10 +406,10 @@ static NAT_DIV_RECURSION_TERM: LazyLock<Term> = LazyLock::new(|| {
     let n_minus_m = Term::app(Term::app(crate::defs::nat_sub(), n.clone()), m.clone());
     let recursive = Term::app(Term::app(crate::defs::nat_div(), n_minus_m), m.clone());
     let rhs = Term::app(succ_fn(), recursive);
-    let conclusion = trueprop(hol_eq(nat_div_nm, rhs));
+    let conclusion = hol_eq(nat_div_nm, rhs);
 
-    let body = Term::imp(trueprop(zero_lt_m), Term::imp(trueprop(m_le_n), conclusion));
-    pure_all("n", Type::nat(), pure_all("m", Type::nat(), body))
+    let body = hol_imp(zero_lt_m, hol_imp(m_le_n, conclusion));
+    hol_forall("n", Type::nat(), hol_forall("m", Type::nat(), body))
 });
 
 pub(crate) fn nat_div_zero_right_term() -> Term {
@@ -525,68 +433,65 @@ pub(crate) fn nat_div_recursion_term() -> Term {
 // value.
 
 static NAT_ADD_DEF_TERM: LazyLock<Term> = LazyLock::new(|| {
-    // ⋀m n. Trueprop (m + n = natrec m succ n)
+    // ⊢ ∀m n. m + n = natrec m succ n
     let m = Term::free("m", Type::nat());
     let n = Term::free("n", Type::nat());
     let lhs = nat_add(m.clone(), n.clone());
     let rhs = natrec(m.clone(), succ_fn(), n.clone());
     let eq = hol_eq(lhs, rhs);
-    pure_all("m", Type::nat(), pure_all("n", Type::nat(), trueprop(eq)))
+    hol_forall("m", Type::nat(), hol_forall("n", Type::nat(), eq))
 });
 
 static NAT_MUL_DEF_TERM: LazyLock<Term> = LazyLock::new(|| {
-    // ⋀m n. Trueprop (m * n = natrec 0 (λx. x + m) n)
+    // ⊢ ∀m n. m * n = natrec 0 (λx. x + m) n
     let m = Term::free("m", Type::nat());
     let n = Term::free("n", Type::nat());
     let lhs = nat_mul(m.clone(), n.clone());
     // step = λx:nat. x + m
     let x = Term::free("x", Type::nat());
     let step_body = nat_add(x, m.clone());
-    let step = pure_abs("x", Type::nat(), step_body);
+    let step = pub_abs("x", Type::nat(), step_body);
     let rhs = natrec(zero(), step, n.clone());
     let eq = hol_eq(lhs, rhs);
-    pure_all("m", Type::nat(), pure_all("n", Type::nat(), trueprop(eq)))
+    hol_forall("m", Type::nat(), hol_forall("n", Type::nat(), eq))
 });
 
 static NAT_SUB_DEF_TERM: LazyLock<Term> = LazyLock::new(|| {
-    // ⋀m n. Trueprop (m - n = natrec m pred n)
+    // ⊢ ∀m n. m - n = natrec m pred n
     let m = Term::free("m", Type::nat());
     let n = Term::free("n", Type::nat());
     let lhs = nat_sub(m.clone(), n.clone());
     let rhs = natrec(m.clone(), pred_fn(), n.clone());
     let eq = hol_eq(lhs, rhs);
-    pure_all("m", Type::nat(), pure_all("n", Type::nat(), trueprop(eq)))
+    hol_forall("m", Type::nat(), hol_forall("n", Type::nat(), eq))
 });
 
 // ---- HOL connective definitions ----
 
 static NOT_DEF_TERM: LazyLock<Term> = LazyLock::new(|| {
-    // ⋀p:bool. Trueprop (¬p = (p ⟹ F))
+    // ⊢ ∀p:bool. ¬p = (p ⟹ F)
     let p = Term::free("p", bool_ty());
     let lhs = hol_not(p.clone());
     let rhs = hol_imp(p, Term::bool_lit(false));
     let eq = hol_eq(lhs, rhs);
-    pure_all("p", bool_ty(), trueprop(eq))
+    hol_forall("p", bool_ty(), eq)
 });
 
 static AND_INTRO_TERM: LazyLock<Term> = LazyLock::new(|| {
-    // ⋀p q:bool. Trueprop p ⟹ Trueprop q ⟹ Trueprop (p ∧ q)
+    // ⊢ ∀p q:bool. p ⟹ q ⟹ p ∧ q
     let p = Term::free("p", bool_ty());
     let q = Term::free("q", bool_ty());
-    let chain = Term::imp(
-        trueprop(p.clone()),
-        Term::imp(trueprop(q.clone()), trueprop(hol_and(p, q))),
-    );
-    pure_all("p", bool_ty(), pure_all("q", bool_ty(), chain))
+    let chain = hol_imp(p.clone(), hol_imp(q.clone(), hol_and(p, q)));
+    hol_forall("p", bool_ty(), hol_forall("q", bool_ty(), chain))
 });
 
 // ---- Integer induction ----
 
 static INT_INDUCTION_TERM: LazyLock<Term> = LazyLock::new(|| {
-    // ⋀P:int→bool.
-    //   Trueprop ((∀n:nat. P (int_of_nat n))
-    //          ∧ (∀n:nat. P (-(int_of_nat n)))
-    //          ⟹ ∀z:int. P z)
+    // ⊢ ∀P:int→bool.
+    //     (∀n:nat. P (int_of_nat n))
+    //   ∧ (∀n:nat. P (-(int_of_nat n)))
+    //   ⟹ ∀z:int. P z
     let pred_ty = Type::fun(Type::int(), bool_ty());
     let p = Term::free("P", pred_ty.clone());
 
@@ -605,17 +510,13 @@ static INT_INDUCTION_TERM: LazyLock<Term> = LazyLock::new(|| {
     let consequent = hol_forall("z", Type::int(), p_z);
 
     let body = hol_imp(antecedent, consequent);
-    pure_all("P", pred_ty, trueprop(body))
+    hol_forall("P", pred_ty, body)
 });
 
 /// Conclusion of [`crate::Thm::nat_induction`]:
-/// `Trueprop (∀P:nat→bool. P 0 ∧ (∀n. P n ⟹ P (succ n)) ⟹ ∀n. P n)`.
+/// `⊢ ∀P:nat→bool. P 0 ∧ (∀n. P n ⟹ P (succ n)) ⟹ ∀n. P n`.
 pub(crate) fn nat_induction_term() -> Term {
     NAT_INDUCTION_TERM.clone()
-}
-
-pub(crate) fn nat_induction_pure_term() -> Term {
-    NAT_INDUCTION_PURE_TERM.clone()
 }
 
 pub(crate) fn pred_zero_term() -> Term {
@@ -648,22 +549,4 @@ pub(crate) fn not_def_term() -> Term {
 
 pub(crate) fn and_intro_term() -> Term {
     AND_INTRO_TERM.clone()
-}
-
-/// Conclusion of [`crate::Thm::eq_reflection`]:
-/// `⋀x y:'a. Trueprop (x = y) ≡ (x ≡ y)`.
-pub(crate) fn eq_reflection_term() -> Term {
-    EQ_REFLECTION_TERM.clone()
-}
-
-/// Conclusion of [`crate::Thm::forall_reflection`]:
-/// `⋀P:'a→bool. (⋀x:'a. Trueprop (P x)) ≡ Trueprop (∀x:'a. P x)`.
-pub(crate) fn forall_reflection_term() -> Term {
-    FORALL_REFLECTION_TERM.clone()
-}
-
-/// Conclusion of [`crate::Thm::imp_reflection`]:
-/// `⋀P Q:bool. (Trueprop P ⟹ Trueprop Q) ≡ Trueprop (P ⟹ Q)`.
-pub(crate) fn imp_reflection_term() -> Term {
-    IMP_REFLECTION_TERM.clone()
 }

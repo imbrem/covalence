@@ -70,21 +70,10 @@ fn assume_hol(body: Term) -> Thm {
 // Peano axioms — intrinsic to the type
 // ============================================================================
 
-/// `⊢ ⋀n:nat. Trueprop (¬(0 = succ n))` — zero is not a successor.
-/// Bona-fide **proof** by induction on `n`: base case via reduction
-/// + `nat_zero_ne_one`; step case via `pred` congruence. Empty hyps.
-/// See [`crate::peano::prove_nat_zero_ne_succ`].
-pub fn nat_zero_ne_succ() -> Thm {
-    crate::peano::prove_nat_zero_ne_succ()
-}
-
-/// `⊢ ⋀m n:nat. Trueprop ((succ m = succ n) ⟹ (m = n))` —
-/// successor is injective. Bona-fide **proof** from
-/// [`Thm::nat_pred_succ`] + `cong_app` + the eq/imp reflection
-/// bridges; empty hypotheses. See [`crate::peano::prove_nat_succ_inj`].
-pub fn nat_succ_inj() -> Thm {
-    crate::peano::prove_nat_succ_inj()
-}
+// `nat_zero_ne_succ` and `nat_succ_inj` previously dispatched to
+// Rust-encoded proofs in `crate::peano` that relied on the removed
+// Pure-meta layer. Both are now gated out alongside `peano` itself;
+// see the WASM-proof rewrite plan in [[hol-as-meta-logic]].
 
 /// `⊢ ∀P:nat→bool. P 0 ∧ (∀n. P n ⟹ P (succ n)) ⟹ ∀n. P n` —
 /// mathematical induction on naturals. Now a **bona-fide kernel
@@ -469,8 +458,9 @@ mod tests {
 
     #[test]
     fn peano_axioms_well_formed() {
-        check_kernel(nat_zero_ne_succ());
-        check_kernel(nat_succ_inj());
+        // nat_zero_ne_succ and nat_succ_inj are gated out alongside
+        // the `peano` module (Rust-encoded proofs slated for WASM
+        // rewrite). Only the kernel-axiom `nat_induction` is checked.
         check_kernel(nat_induction());
     }
 

@@ -127,6 +127,24 @@ pub enum Canonical {
     /// `err : 'b → result 'a 'b` — error result.
     Err,
 
+    // ---- Term-level: bool / option fundamentals ----
+    /// `cond : bool → 'a → 'a → 'a` — the Boolean conditional
+    /// (`if b then x else y`). Declaration-only; reduction rules
+    /// `cond T x y = x` and `cond F x y = y` are postulated /
+    /// proved downstream.
+    Cond,
+    /// `isSome : option 'a → bool`. True for `some _`, false for
+    /// `none`. Declaration-only.
+    IsSome,
+    /// `fromSome : option 'a → 'a`. Extract the wrapped value if
+    /// `some _`; unspecified (Hilbert-ε at the model level) for
+    /// `none`. Declaration-only.
+    FromSome,
+    /// `optionCase : 'b → ('a → 'b) → option 'a → 'b` — the
+    /// option eliminator. `optionCase default f none = default`
+    /// and `optionCase default f (some x) = f x`. Declaration-only.
+    OptionCase,
+
     // ---- Term-level: list operations ----
     /// `nil : list 'a`.
     Nil,
@@ -328,6 +346,10 @@ impl Canonical {
             Canonical::Some => "some",
             Canonical::Ok => "ok",
             Canonical::Err => "err",
+            Canonical::Cond => "cond",
+            Canonical::IsSome => "isSome",
+            Canonical::FromSome => "fromSome",
+            Canonical::OptionCase => "optionCase",
             Canonical::Nil => "nil",
             Canonical::Cons => "cons",
             Canonical::Head => "head",

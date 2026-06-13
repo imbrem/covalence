@@ -30,6 +30,7 @@ mod macros;
 
 mod blob;
 mod canonical;
+mod cond;
 mod coprod;
 mod floats;
 mod helpers;
@@ -82,7 +83,11 @@ pub use nat::{
     nat_sub, nat_sub_spec, nat_succ, nat_succ_spec, nat_to_bytes_be, nat_to_bytes_be_spec,
     nat_to_bytes_le, nat_to_bytes_le_spec, nat_to_int, nat_to_int_spec,
 };
-pub use option::{none, none_spec, option, option_spec, some, some_spec};
+pub use cond::{cond, cond_spec};
+pub use option::{
+    from_some, from_some_spec, is_some, is_some_spec, none, none_spec, option, option_case,
+    option_case_spec, option_spec, some, some_spec,
+};
 pub use prod::{prod, prod_spec, signed1, signed1_spec, signed2, signed2_spec};
 pub use rat::{field_of_fractions, field_of_fractions_spec, rat_spec, rat_ty};
 pub use real::{real_spec, real_ty};
@@ -506,6 +511,71 @@ mod tests {
         assert_eq!(
             f.type_of().unwrap(),
             Type::fun(stream(option(alpha)), Type::bool()),
+        );
+    }
+
+    #[test]
+    fn option_is_opaque_typespec_over_coprod() {
+        // `option α` is a TypeKind::Spec leaf (opaque), with
+        // carrier `coprod α unit` and trivially-true predicate.
+        let alpha = Type::tfree("a");
+        let opt = option(alpha.clone());
+        match opt.kind() {
+            TypeKind::Spec(spec, args) => {
+                assert_eq!(spec.symbol().label(), "option");
+                assert_eq!(args.len(), 1);
+                assert_eq!(&args[0], &alpha);
+            }
+            _ => panic!("expected TypeKind::Spec, got {opt:?}"),
+        }
+        let spec = option_spec();
+        assert_eq!(spec.ty().cloned(), Some(coprod(alpha, Type::unit())));
+    }
+
+    #[test]
+    fn cond_is_polymorphic_conditional() {
+        // cond α : bool → α → α → α
+        let alpha = Type::tfree("a");
+        let c = cond(alpha.clone());
+        assert_eq!(
+            c.type_of().unwrap(),
+            Type::fun(
+                Type::bool(),
+                Type::fun(alpha.clone(), Type::fun(alpha.clone(), alpha)),
+            ),
+        );
+    }
+
+    #[test]
+    fn option_case_is_double_polymorphic_eliminator() {
+        // optionCase α β : β → (α → β) → option α → β
+        let alpha = Type::tfree("a");
+        let beta = Type::tfree("b");
+        let elim = option_case(alpha.clone(), beta.clone());
+        assert_eq!(
+            elim.type_of().unwrap(),
+            Type::fun(
+                beta.clone(),
+                Type::fun(
+                    Type::fun(alpha.clone(), beta.clone()),
+                    Type::fun(option(alpha), beta),
+                ),
+            ),
+        );
+    }
+
+    #[test]
+    fn is_some_and_from_some_typed_correctly() {
+        let alpha = Type::tfree("a");
+        let is_s = is_some(alpha.clone());
+        let from_s = from_some(alpha.clone());
+        assert_eq!(
+            is_s.type_of().unwrap(),
+            Type::fun(option(alpha.clone()), Type::bool()),
+        );
+        assert_eq!(
+            from_s.type_of().unwrap(),
+            Type::fun(option(alpha.clone()), alpha),
         );
     }
 

@@ -208,9 +208,12 @@ impl HolLightCtx {
         let pred = Type::fun(alpha, self.bool_type());
         Term::hol_op(HolOp::Forall, Type::fun(pred, self.bool_type()))
     }
-    /// HOL `∀x:α. body` — `Forall (λx:α. body)`.
+    /// HOL `∀x:α. body` — `Forall (λx:α. body)`. Auto-closes free
+    /// occurrences of `hint` in `body` to `Bound(0)` so that
+    /// `Thm::all_elim` correctly substitutes a witness for them.
     pub fn mk_forall(&self, hint: &str, alpha: Type, body: Term) -> Term {
-        let lambda = Term::abs(hint, alpha.clone(), body);
+        let closed = covalence_core::subst::close(&body, hint);
+        let lambda = Term::abs(hint, alpha.clone(), closed);
         Term::app(self.forall_at(alpha), lambda)
     }
 
@@ -219,9 +222,11 @@ impl HolLightCtx {
         let pred = Type::fun(alpha, self.bool_type());
         Term::hol_op(HolOp::Exists, Type::fun(pred, self.bool_type()))
     }
-    /// HOL `∃x:α. body` — `Exists (λx:α. body)`.
+    /// HOL `∃x:α. body` — `Exists (λx:α. body)`. Auto-closes free
+    /// occurrences of `hint` in `body` so the binder actually binds.
     pub fn mk_exists(&self, hint: &str, alpha: Type, body: Term) -> Term {
-        let lambda = Term::abs(hint, alpha.clone(), body);
+        let closed = covalence_core::subst::close(&body, hint);
+        let lambda = Term::abs(hint, alpha.clone(), closed);
         Term::app(self.exists_at(alpha), lambda)
     }
 
@@ -230,9 +235,11 @@ impl HolLightCtx {
         let pred = Type::fun(alpha.clone(), self.bool_type());
         Term::hol_op(HolOp::Select, Type::fun(pred, alpha))
     }
-    /// HOL `ε x:α. body` — `Select (λx:α. body)`.
+    /// HOL `ε x:α. body` — `Select (λx:α. body)`. Auto-closes free
+    /// occurrences of `hint` in `body` so the binder actually binds.
     pub fn mk_select(&self, hint: &str, alpha: Type, body: Term) -> Term {
-        let lambda = Term::abs(hint, alpha.clone(), body);
+        let closed = covalence_core::subst::close(&body, hint);
+        let lambda = Term::abs(hint, alpha.clone(), closed);
         Term::app(self.select_at(alpha), lambda)
     }
 

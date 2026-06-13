@@ -89,7 +89,9 @@ pub use option::{
     option_case_spec, option_spec, some, some_spec,
 };
 pub use prod::{prod, prod_spec, signed1, signed1_spec, signed2, signed2_spec};
-pub use rat::{field_of_fractions, field_of_fractions_spec, rat_spec, rat_ty};
+pub use rat::{
+    field_of_fractions, field_of_fractions_spec, rat_le, rat_le_spec, rat_spec, rat_ty,
+};
 pub use real::{real_spec, real_ty};
 pub use rel::{
     part, part_spec, per, per_spec, pord, pord_spec, preord, preord_spec, rel, rel_spec,
@@ -433,6 +435,38 @@ mod tests {
         assert!(matches!(r.kind(), TypeKind::Spec(_, args) if args.is_empty()));
         let re = real_ty();
         assert!(matches!(re.kind(), TypeKind::Spec(_, args) if args.is_empty()));
+    }
+
+    #[test]
+    fn rat_le_has_expected_type() {
+        // ratLe : rat → rat → bool
+        let f = rat_le();
+        let expected = Type::fun(rat_ty(), Type::fun(rat_ty(), Type::bool()));
+        assert_eq!(f.type_of().unwrap(), expected);
+    }
+
+    #[test]
+    fn real_carrier_is_rat_to_bool() {
+        // `real := { rat } close ratLe` ⟹ carrier is `rat → bool`.
+        let spec = real_spec();
+        assert_eq!(
+            spec.ty().cloned(),
+            Some(Type::fun(rat_ty(), Type::bool())),
+        );
+    }
+
+    #[test]
+    fn real_selector_well_typed() {
+        // Selector predicate is `(rat → bool) → bool` — a predicate
+        // on subsets of `rat`.
+        let spec = real_spec();
+        let tm = spec.tm().expect("real has a selector predicate");
+        let ty = tm.type_of().expect("real selector type-checks");
+        let expected = Type::fun(
+            Type::fun(rat_ty(), Type::bool()),
+            Type::bool(),
+        );
+        assert_eq!(ty, expected);
     }
 
     #[test]

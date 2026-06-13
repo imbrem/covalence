@@ -108,11 +108,19 @@ pub enum Canonical {
     FieldOfFractions,
     /// `rat := fieldOfFractions int`.
     Rat,
-    /// `real := { rat } close ratLe` — Dedekind cuts.
+    /// `ratLe : rat → rat → bool` — the order relation on rationals.
+    /// Declaration-only at the kernel level; postulated/derived
+    /// downstream once `rat` has a concrete construction.
+    RatLe,
+    /// `real := { rat } close ratLe` — Dedekind cuts. The carrier is
+    /// `rat → bool` (subsets of `rat`); the selector predicate says
+    /// "closed under `ratLe` and non-empty" (an upper cut).
     Real,
-    /// `f32 := u32` (bitwise).
+    /// `f32 := u32` (bitwise). Will be re-axiomatised through `real`
+    /// once floating-point operations land.
     F32,
-    /// `f64 := u64` (bitwise).
+    /// `f64 := u64` (bitwise). Will be re-axiomatised through `real`
+    /// once floating-point operations land.
     F64,
 
     // ---- Term-level: option constructors ----
@@ -339,6 +347,7 @@ impl Canonical {
             Canonical::Int => "int",
             Canonical::FieldOfFractions => "fieldOfFractions",
             Canonical::Rat => "rat",
+            Canonical::RatLe => "ratLe",
             Canonical::Real => "real",
             Canonical::F32 => "f32",
             Canonical::F64 => "f64",

@@ -67,17 +67,60 @@ fn assume_hol(body: Term) -> Thm {
 // Peano axioms — intrinsic to the type
 // ============================================================================
 
-// `nat_zero_ne_succ` and `nat_succ_inj` previously dispatched to
-// Rust-encoded proofs in `crate::peano` that relied on the removed
-// Pure-meta layer. Both are now gated out alongside `peano` itself;
-// see the WASM-proof rewrite plan in [[hol-as-meta-logic]].
-
 /// `⊢ ∀P:nat→bool. P 0 ∧ (∀n. P n ⟹ P (succ n)) ⟹ ∀n. P n` —
 /// mathematical induction on naturals. Now a **bona-fide kernel
 /// axiom** ([`Thm::nat_induction`]) with empty hypotheses, no longer
 /// a `Thm::assume`-postulated form.
 pub fn nat_induction() -> Thm {
     Thm::nat_induction()
+}
+
+/// `⊢ ∀n:nat. ¬(0 = succ n)` — zero is never a successor.
+///
+/// Postulated via `Thm::assume`; the old Rust-encoded proof in
+/// `crate::peano` relied on the now-removed Pure→HOL bridge layer
+/// (see `docs/design/proposals/stacked-pure-hol/next-stages.md`).
+/// A future derivation goes through `Thm::nat_induction` with the
+/// predicate `P n = ¬(0 = succ n)`; the base case `¬(0 = 1)` is
+/// already decidable via `Thm::reduce_prim` on the closed literals.
+pub fn nat_zero_ne_succ() -> Thm {
+    static AX: LazyLock<Thm> = LazyLock::new(|| {
+        let ctx = ctx();
+        let n = Term::free("n", nat_ty());
+        let eq = ctx
+            .mk_eq(zero(), succ(n))
+            .expect("nat_zero_ne_succ: mk_eq");
+        let neg = ctx.mk_not(eq);
+        let body = ctx.mk_forall("n", nat_ty(), neg);
+        assume_hol(body)
+    });
+    AX.clone()
+}
+
+/// `⊢ ∀m n:nat. succ m = succ n ⟹ m = n` — successor is injective.
+///
+/// Postulated via `Thm::assume`. The derivation in the old
+/// `crate::peano` module applied `pred` to both sides via `cong_app`
+/// and used `pred (succ k) = k` ([`nat_pred_succ`]) twice; that
+/// derivation will be restored once the postulate-free `nat_pred_*`
+/// proofs land.
+pub fn nat_succ_inj() -> Thm {
+    static AX: LazyLock<Thm> = LazyLock::new(|| {
+        let ctx = ctx();
+        let m = Term::free("m", nat_ty());
+        let n = Term::free("n", nat_ty());
+        let succ_eq = ctx
+            .mk_eq(succ(m.clone()), succ(n.clone()))
+            .expect("nat_succ_inj: mk_eq succ");
+        let mn_eq = ctx
+            .mk_eq(m.clone(), n.clone())
+            .expect("nat_succ_inj: mk_eq mn");
+        let imp = ctx.mk_imp(succ_eq, mn_eq);
+        let inner = ctx.mk_forall("n", nat_ty(), imp);
+        let body = ctx.mk_forall("m", nat_ty(), inner);
+        assume_hol(body)
+    });
+    AX.clone()
 }
 
 // ============================================================================
@@ -500,10 +543,13 @@ mod tests {
 
     #[test]
     fn peano_axioms_well_formed() {
-        // nat_zero_ne_succ and nat_succ_inj are gated out alongside
-        // the `peano` module (Rust-encoded proofs slated for WASM
-        // rewrite). Only the kernel-axiom `nat_induction` is checked.
+        // `nat_induction` is a bona-fide kernel axiom (zero hyps).
         check_kernel(nat_induction());
+        // `nat_zero_ne_succ` / `nat_succ_inj` are postulated via
+        // `Thm::assume` until the Pure→HOL bridge derivations are
+        // re-landed; each carries one self-hyp.
+        check(nat_zero_ne_succ());
+        check(nat_succ_inj());
     }
 
     #[test]

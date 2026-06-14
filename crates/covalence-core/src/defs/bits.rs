@@ -1,59 +1,88 @@
-//! Fixed-width unsigned integers: `u1 (bit)` … `u512`.
+//! Bit strings and fixed-width unsigned integers.
 //!
 //! ⚠️ **TODO-level definitions** (broadly-correct shapes, not
 //! finalized — see the `defs` module docs).
 //!
-//! `bit (u1) := coprod unit unit` has two values. Each wider type is
-//! the **product** of two copies of the previous one:
+//! `bits := list bool` is the type of variable-length bit strings (a
+//! list of booleans). Every fixed-width type is then a **subtype** of
+//! `bits` carved out by a length predicate:
 //!
 //! ```text
-//! u2  := prod bit bit    (2² = 4 values)
-//! u4  := prod u2  u2     (4² = 16)
-//! u8  := prod u4  u4     (16² = 256)
-//! …    u512 := prod u256 u256
+//! bit (u1) := { v : bits | length v = 1 }
+//! u2       := { v : bits | length v = 2 }
+//! u4       := { v : bits | length v = 4 }
+//! u8       := { v : bits | length v = 8 }
+//! …    u512 := { v : bits | length v = 512 }
 //! ```
 //!
-//! so `u{2n}` has `2^{2n}` values. (These were *coproducts* before,
-//! which was wrong: `coprod u4 u4` has only `16 + 16 = 32` values —
-//! that's a `u5`, not a `u8`. Products multiply; coproducts add.)
+//! so `uN` is exactly the bit strings of length `N` (`2^N` values).
+//! This replaces the old product chain (`u{2n} := prod u{n} u{n}`),
+//! which duplicated the bit-string structure at every width; here the
+//! structure lives once in `list`, and each width is just a length
+//! restriction.
 
 use std::sync::LazyLock;
 
-use crate::term::Type;
+use crate::hol;
+use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
-use super::coprod::coprod;
-use super::prod::prod;
+use super::list::{list, list_length};
 use super::spec::TypeSpec;
 
-/// `u1 (bit) := coprod unit unit` — the two-element type. (A *sum*:
-/// `1 + 1 = 2`.) A fresh symbol whose carrier is `coprod unit unit`;
-/// the structure lives in `coprod`, not duplicated here.
-pub fn bit_spec() -> TypeSpec {
+/// `bits := list bool` — variable-length bit strings. A newtype over
+/// `list bool`; the list structure lives in `list`, not duplicated
+/// here. Cross between `bits` and `list bool` via the `abs`/`rep`
+/// bridge ([`Term::spec_abs`] / [`Term::spec_rep`]).
+pub fn bits_spec() -> TypeSpec {
     static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
-        let carrier = coprod(Type::unit(), Type::unit());
-        TypeSpec::newtype(Canonical::Bit, carrier)
+        let carrier = list(Type::bool());
+        TypeSpec::newtype(Canonical::Bits, carrier)
     });
     LAZY.clone()
 }
-pub fn bit_ty() -> Type {
-    static LAZY: LazyLock<Type> = LazyLock::new(|| Type::spec(bit_spec(), vec![]));
+pub fn bits_ty() -> Type {
+    static LAZY: LazyLock<Type> = LazyLock::new(|| Type::spec(bits_spec(), vec![]));
     LAZY.clone()
 }
 
-/// `u{2n} := prod u{n} u{n}` — a fresh symbol whose carrier is the
-/// *product* `prod prev prev` (`|prev|²` values). Reuses `prod`'s
-/// structure rather than re-stating it.
-fn fixed_width_spec(symbol: Canonical, prev: Type) -> TypeSpec {
-    let carrier = prod(prev.clone(), prev);
-    TypeSpec::newtype(symbol, carrier)
+/// Body of `bits.len`: `λv:bits. list.length (rep v)` — the
+/// bit-string length, computed on the underlying `list bool`.
+fn bits_len_body() -> Term {
+    let v = Term::free("v", bits_ty());
+    let rep_v = Term::app(Term::spec_rep(bits_spec(), Vec::new()), v);
+    let len = Term::app(list_length(Type::bool()), rep_v);
+    hol::pub_abs("v", bits_ty(), len)
+}
+
+let_term! {
+    /// `bits.len : bits → nat` ≡ `λv. list.length (rep v)` — the number
+    /// of bits in a bit string, via the underlying `list bool`.
+    bits_len_spec, bits_len, Canonical::BitsLen, bits_len_body()
+}
+
+/// `λv:bits. bits.len v = width` — the selector predicate carving the
+/// width-`width` bitvectors out of `bits`.
+fn width_predicate(width: u64) -> Term {
+    let v = Term::free("v", bits_ty());
+    let len = Term::app(bits_len(), v);
+    let eq = hol::hol_eq(len, Term::nat_lit(width));
+    hol::pub_abs("v", bits_ty(), eq)
+}
+
+/// `uN := { v : bits | length v = width }` — a fresh symbol for the
+/// fixed-width bitvectors, a subtype of `bits` restricted to length
+/// `width`. Reuses `bits`' (and hence `list`'s) structure rather than
+/// re-stating it.
+fn fixed_width_spec(symbol: Canonical, width: u64) -> TypeSpec {
+    TypeSpec::subtype(symbol, bits_ty(), width_predicate(width))
 }
 
 macro_rules! width {
-    ($spec_fn:ident, $type_fn:ident, $canon:expr, $prev_fn:ident) => {
+    ($spec_fn:ident, $type_fn:ident, $canon:expr, $width:expr) => {
         pub fn $spec_fn() -> TypeSpec {
             static LAZY: LazyLock<TypeSpec> =
-                LazyLock::new(|| fixed_width_spec($canon, $prev_fn()));
+                LazyLock::new(|| fixed_width_spec($canon, $width));
             LAZY.clone()
         }
         pub fn $type_fn() -> Type {
@@ -63,12 +92,13 @@ macro_rules! width {
     };
 }
 
-width!(u2_spec, u2_ty, Canonical::U2, bit_ty);
-width!(u4_spec, u4_ty, Canonical::U4, u2_ty);
-width!(u8_spec, u8_ty, Canonical::U8, u4_ty);
-width!(u16_spec, u16_ty, Canonical::U16, u8_ty);
-width!(u32_spec, u32_ty, Canonical::U32, u16_ty);
-width!(u64_spec, u64_ty, Canonical::U64, u32_ty);
-width!(u128_spec, u128_ty, Canonical::U128, u64_ty);
-width!(u256_spec, u256_ty, Canonical::U256, u128_ty);
-width!(u512_spec, u512_ty, Canonical::U512, u256_ty);
+width!(bit_spec, bit_ty, Canonical::Bit, 1);
+width!(u2_spec, u2_ty, Canonical::U2, 2);
+width!(u4_spec, u4_ty, Canonical::U4, 4);
+width!(u8_spec, u8_ty, Canonical::U8, 8);
+width!(u16_spec, u16_ty, Canonical::U16, 16);
+width!(u32_spec, u32_ty, Canonical::U32, 32);
+width!(u64_spec, u64_ty, Canonical::U64, 64);
+width!(u128_spec, u128_ty, Canonical::U128, 128);
+width!(u256_spec, u256_ty, Canonical::U256, 256);
+width!(u512_spec, u512_ty, Canonical::U512, 512);

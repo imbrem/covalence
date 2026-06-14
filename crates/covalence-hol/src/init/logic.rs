@@ -17,6 +17,17 @@
 //! and `expect` on failure, since a failure is a build-time bug. See
 //! [`crate::proofs::bool`] for the *derivations* witnessing the
 //! connective primitives' soundness.
+//!
+//! On top of that sit the **classical** procedures, all powered by
+//! [`Thm::lem`]:
+//!
+//! - clause reasoning — [`resolve`] / [`resolve_on`] (binary
+//!   resolution), [`clause_intro`] / [`clause_intro_neg`]
+//!   (sequent → clause), and [`dne`] (double-negation elimination);
+//! - propositional simplification — [`simp`] (a normalising `⊢ t = t'`
+//!   conversion over the connective identities, the analogue of
+//!   [`eq::beta_nf`](crate::init::eq::beta_nf)), with [`tauto`] and
+//!   [`decide`] deciding trivial (anti)tautologies on top of it.
 
 pub use covalence_core::defs::{
     and, and_spec, exists, exists_spec, forall, forall_spec, iff, iff_spec, imp, imp_spec, not,
@@ -348,6 +359,340 @@ fn disch_one(thm: Thm, h: &Term) -> Result<Thm> {
     Thm::lem(h.clone())?.or_elim(branch_h, branch_nh)
 }
 
+/// Push *negated* hypotheses into a clause as positive literals.
+///
+/// The polarity-flipped companion to [`clause_intro`]: given
+/// `thm : Γ ∪ {¬a₀, …, ¬aₖ₋₁} ⊢ c` and the list of *atoms*
+/// `[a₀, …, aₖ₋₁]`, returns `Γ ⊢ a₀ ∨ a₁ ∨ … ∨ aₖ₋₁ ∨ c`. Where
+/// [`clause_intro`] trades a hypothesis `h` for the literal `¬h`, this
+/// trades a hypothesis `¬a` for the literal `a` — handy when the sequent
+/// was derived under negated assumptions (e.g. case analysis) and the
+/// clause should state them positively.
+pub fn clause_intro_neg(thm: Thm, atoms: &[Term]) -> Result<Thm> {
+    let mut acc = thm;
+    for a in atoms.iter().rev() {
+        acc = disch_neg(acc, a)?;
+    }
+    Ok(acc)
+}
+
+/// One negated-clausification step: `Δ ∪ {¬a} ⊢ tail` → `Δ ⊢ a ∨ tail`.
+fn disch_neg(thm: Thm, a: &Term) -> Result<Thm> {
+    let tail = thm.concl().clone();
+    let na = a.clone().not()?;
+    // a ⟹ (a ∨ tail): assume a, inject on the left, discharge.
+    let branch_a = Thm::assume(a.clone())?.or_intro_l(tail.clone())?.imp_intro(a)?;
+    // ¬a ⟹ (a ∨ tail): inject `tail` on the right, discharge ¬a.
+    let branch_na = thm.or_intro_r(a.clone())?.imp_intro(&na)?;
+    Thm::lem(a.clone())?.or_elim(branch_a, branch_na)
+}
+
+// ============================================================================
+// Double-negation elimination
+// ============================================================================
+
+/// `Δ ⊢ ¬¬p` → `Δ ⊢ p` — double-negation elimination.
+///
+/// The classical step the kernel's intuitionistic `not_intro`/`not_elim`
+/// can't reach on their own. Case-split on [`Thm::lem`] of `p`: the `p`
+/// branch is immediate, the `¬p` branch contradicts the premise and uses
+/// ex falso.
+pub fn dne(thm: Thm) -> Result<Thm> {
+    let nnp = thm.concl().clone();
+    let np = parse_not(&nnp)
+        .ok_or_else(|| Error::ConnectiveRule(format!("dne: `{nnp}` is not a negation")))?;
+    let p = parse_not(&np)
+        .ok_or_else(|| Error::ConnectiveRule(format!("dne: `{nnp}` is not a double negation")))?;
+    let branch_p = Thm::assume(p.clone())?.imp_intro(&p)?; // ⊢ p ⟹ p
+    // ¬p ⟹ p : ¬¬p with ¬p is absurd, ex falso to p.
+    let contra = thm.not_elim(Thm::assume(np.clone())?)?; // Δ, {¬p} ⊢ F
+    let branch_np = contra.false_elim(p.clone())?.imp_intro(&np)?;
+    Thm::lem(p.clone())?.or_elim(branch_p, branch_np)
+}
+
+// ============================================================================
+// Logical simplification — a propositional rewriting conversion
+// ============================================================================
+//
+// `simp` is to the connectives what `eq::beta_nf` is to β: a normalising
+// conversion returning `⊢ t = t'`. It descends the term (congruence on
+// every `App`), then fires a local simplification at each node and keeps
+// going to a fixpoint. Every local step is a closed equivalence proved on
+// the spot with `deduct_antisym`, so the result is a genuine kernel
+// theorem — no rewrite is trusted.
+//
+// Covered identities (and their mirrors): `p∧p=p`, `p∨p=p`, `p∧T=p`,
+// `T∧p=p`, `p∨F=p`, `F∨p=p`, `p∧F=F`, `F∧p=F`, `p∨T=T`, `T∨p=T`,
+// `p∧¬p=F`, `p∨¬p=T`, `¬T=F`, `¬F=T`, `¬¬p=p`, and the implication forms
+// `F⟹p=T`, `p⟹T=T`, `T⟹p=p`, `p⟹F=¬p`, `p⟹p=T`.
+
+/// `⊢ t = t'`, the propositional **simplification** of `t`: every
+/// connective identity above is applied, repeatedly and under congruence,
+/// until none fires. Leaves non-`bool` and non-connective structure
+/// untouched (and never descends under a binder). The result equation has
+/// the same hypotheses as the input (none, for a closed `t`).
+pub fn simp(t: &Term) -> Result<Thm> {
+    simp_conv(t)
+}
+
+/// `⊢ p`, if `p` is a **trivial tautology** — i.e. [`simp`] reduces it to
+/// `T`. Errors otherwise (the theorem is left unproven). The propositional
+/// analogue of [`TermExt::prove_true`](crate::init::ext::TermExt::prove_true),
+/// which decides by βι-evaluation rather than connective simplification.
+pub fn tauto(p: &Term) -> Result<Thm> {
+    let eq = simp(p)?; // ⊢ p = p'
+    let rhs = eq.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    if matches!(rhs.as_bool(), Some(true)) {
+        eq.eqt_elim() // ⊢ p
+    } else {
+        Err(Error::ConnectiveRule(format!(
+            "tauto: `{p}` simplifies to `{rhs}`, not `T`"
+        )))
+    }
+}
+
+/// Prove `p` *or* `¬p`, whichever is a trivial tautology (see [`tauto`]).
+///
+/// Returns `⊢ p` when `p` simplifies to `T`, else `⊢ ¬p` when `¬p` does,
+/// else an error — a one-sided decision procedure for the fragment [`simp`]
+/// normalises. Inspect the returned theorem's conclusion to learn which
+/// way it went.
+pub fn decide(p: &Term) -> Result<Thm> {
+    if let Ok(thm) = tauto(p) {
+        return Ok(thm);
+    }
+    let np = p.clone().not()?;
+    tauto(&np).map_err(|_| {
+        Error::ConnectiveRule(format!("decide: neither `{p}` nor its negation is a trivial tautology"))
+    })
+}
+
+/// The normalising conversion behind [`simp`]: congruence-descend, then
+/// fire a local rule and recurse to a fixpoint.
+fn simp_conv(t: &Term) -> Result<Thm> {
+    let cong = if let Some((f, x)) = t.as_app() {
+        let f_eq = simp_conv(f)?;
+        let x_eq = simp_conv(x)?;
+        f_eq.cong_app(x_eq)? // ⊢ t = f' x'
+    } else {
+        Thm::refl(t.clone())?
+    };
+    let t1 = cong.concl().as_eq().expect("cong yields an equation").1.clone();
+    if let Some(step) = simp_at(&t1)? {
+        let t2 = step.concl().as_eq().expect("simp step yields an equation").1.clone();
+        let rest = simp_conv(&t2)?;
+        return cong.trans(step)?.trans(rest);
+    }
+    Ok(cong)
+}
+
+/// Fire a single local simplification at `node`, returning `⊢ node = rhs`
+/// if any identity applies.
+fn simp_at(node: &Term) -> Result<Option<Thm>> {
+    if let Some(x) = parse_not(node) {
+        return not_simp(&x);
+    }
+    if let Some((spec, a, b)) = parse_binop(node) {
+        if spec.ptr_eq(&and_spec()) {
+            return and_simp(&a, &b);
+        }
+        if spec.ptr_eq(&or_spec()) {
+            return or_simp(&a, &b);
+        }
+        if spec.ptr_eq(&imp_spec()) {
+            return imp_simp(&a, &b);
+        }
+    }
+    Ok(None)
+}
+
+// -- the `T`/`F` literals --
+fn tt() -> Term {
+    Term::bool_lit(true)
+}
+fn ff() -> Term {
+    Term::bool_lit(false)
+}
+fn is_t(t: &Term) -> bool {
+    matches!(t.as_bool(), Some(true))
+}
+fn is_f(t: &Term) -> bool {
+    matches!(t.as_bool(), Some(false))
+}
+/// `true` iff `x` and `y` are complementary literals (`x = ¬y` or `y = ¬x`).
+fn complementary(x: &Term, y: &Term) -> bool {
+    parse_not(x).as_ref() == Some(y) || parse_not(y).as_ref() == Some(x)
+}
+
+/// `¬·` simplifications: `¬T=F`, `¬F=T`, `¬¬p=p`.
+fn not_simp(x: &Term) -> Result<Option<Thm>> {
+    if is_t(x) {
+        // ⊢ ¬T = F
+        let nt = tt().not()?;
+        let fwd = Thm::assume(ff())?.false_elim(nt.clone())?; // {F} ⊢ ¬T
+        let bwd = Thm::assume(nt)?.not_elim(truth())?; // {¬T} ⊢ F
+        return Ok(Some(fwd.deduct_antisym(bwd)?));
+    }
+    if is_f(x) {
+        // ⊢ ¬F = T
+        let nf = Thm::assume(ff())?.imp_intro(&ff())?.not_intro()?; // ⊢ ¬F
+        return Ok(Some(nf.deduct_antisym(truth())?));
+    }
+    if let Some(y) = parse_not(x) {
+        // ⊢ ¬¬y = y
+        let ny = y.clone().not()?;
+        let f = Thm::assume(ny.clone())?.not_elim(Thm::assume(y.clone())?)?; // {¬y,y} ⊢ F
+        let fwd = f.imp_intro(&ny)?.not_intro()?; // {y} ⊢ ¬¬y
+        let nny = ny.not()?;
+        let bwd = dne(Thm::assume(nny)?)?; // {¬¬y} ⊢ y
+        return Ok(Some(fwd.deduct_antisym(bwd)?));
+    }
+    Ok(None)
+}
+
+/// `∧` simplifications.
+fn and_simp(a: &Term, b: &Term) -> Result<Option<Thm>> {
+    let ab = a.clone().and(b.clone())?;
+    if is_t(a) {
+        // (T ∧ b) = b
+        let fwd = truth().and_intro(Thm::assume(b.clone())?)?; // {b} ⊢ T∧b
+        let bwd = Thm::assume(ab.clone())?.and_elim_r()?; // {T∧b} ⊢ b
+        return Ok(Some(fwd.deduct_antisym(bwd)?));
+    }
+    if is_t(b) {
+        // (a ∧ T) = a
+        let fwd = Thm::assume(a.clone())?.and_intro(truth())?; // {a} ⊢ a∧T
+        let bwd = Thm::assume(ab.clone())?.and_elim_l()?; // {a∧T} ⊢ a
+        return Ok(Some(fwd.deduct_antisym(bwd)?));
+    }
+    if is_f(a) || is_f(b) {
+        // (a ∧ b) = F
+        let fwd = Thm::assume(ff())?
+            .false_elim(a.clone())?
+            .and_intro(Thm::assume(ff())?.false_elim(b.clone())?)?; // {F} ⊢ a∧b
+        let assumed = Thm::assume(ab.clone())?;
+        let bwd = if is_f(a) {
+            assumed.and_elim_l()?
+        } else {
+            assumed.and_elim_r()?
+        }; // {a∧b} ⊢ F
+        return Ok(Some(fwd.deduct_antisym(bwd)?));
+    }
+    if complementary(a, b) {
+        // (a ∧ b) = F
+        let assumed = Thm::assume(ab.clone())?;
+        let la = assumed.clone().and_elim_l()?;
+        let lb = assumed.and_elim_r()?;
+        let bwd = if parse_not(a).as_ref() == Some(b) {
+            la.not_elim(lb)?
+        } else {
+            lb.not_elim(la)?
+        }; // {a∧b} ⊢ F
+        let fwd = Thm::assume(ff())?
+            .false_elim(a.clone())?
+            .and_intro(Thm::assume(ff())?.false_elim(b.clone())?)?;
+        return Ok(Some(fwd.deduct_antisym(bwd)?));
+    }
+    if a == b {
+        // (a ∧ a) = a
+        let fwd = Thm::assume(a.clone())?.and_intro(Thm::assume(b.clone())?)?; // {a} ⊢ a∧a
+        let bwd = Thm::assume(ab.clone())?.and_elim_l()?; // {a∧a} ⊢ a
+        return Ok(Some(fwd.deduct_antisym(bwd)?));
+    }
+    Ok(None)
+}
+
+/// `∨` simplifications.
+fn or_simp(a: &Term, b: &Term) -> Result<Option<Thm>> {
+    let ab = a.clone().or(b.clone())?;
+    if is_t(a) || is_t(b) {
+        // (a ∨ b) = T
+        let fwd = if is_t(a) {
+            truth().or_intro_l(b.clone())?
+        } else {
+            truth().or_intro_r(a.clone())?
+        }; // ⊢ a∨b
+        return Ok(Some(fwd.deduct_antisym(truth())?));
+    }
+    if complementary(a, b) {
+        // (a ∨ b) = T
+        let fwd = if parse_not(b).as_ref() == Some(a) {
+            Thm::lem(a.clone())? // a ∨ ¬a
+        } else {
+            or_sym(Thm::lem(b.clone())?)? // ¬b ∨ b
+        };
+        return Ok(Some(fwd.deduct_antisym(truth())?));
+    }
+    if is_f(a) {
+        // (F ∨ b) = b
+        let fwd = Thm::assume(b.clone())?.or_intro_r(ff())?; // {b} ⊢ F∨b
+        let id_b = Thm::assume(b.clone())?.imp_intro(b)?; // ⊢ b ⟹ b
+        let f_imp = Thm::assume(ff())?.false_elim(b.clone())?.imp_intro(&ff())?; // ⊢ F ⟹ b
+        let bwd = Thm::assume(ab.clone())?.or_elim(f_imp, id_b)?; // {F∨b} ⊢ b
+        return Ok(Some(fwd.deduct_antisym(bwd)?));
+    }
+    if is_f(b) {
+        // (a ∨ F) = a
+        let fwd = Thm::assume(a.clone())?.or_intro_l(ff())?; // {a} ⊢ a∨F
+        let id_a = Thm::assume(a.clone())?.imp_intro(a)?; // ⊢ a ⟹ a
+        let f_imp = Thm::assume(ff())?.false_elim(a.clone())?.imp_intro(&ff())?; // ⊢ F ⟹ a
+        let bwd = Thm::assume(ab.clone())?.or_elim(id_a, f_imp)?; // {a∨F} ⊢ a
+        return Ok(Some(fwd.deduct_antisym(bwd)?));
+    }
+    if a == b {
+        // (a ∨ a) = a
+        let fwd = Thm::assume(a.clone())?.or_intro_l(b.clone())?; // {a} ⊢ a∨a
+        let id_a = Thm::assume(a.clone())?.imp_intro(a)?; // ⊢ a ⟹ a
+        let bwd = Thm::assume(ab.clone())?.or_elim(id_a.clone(), id_a)?; // {a∨a} ⊢ a
+        return Ok(Some(fwd.deduct_antisym(bwd)?));
+    }
+    Ok(None)
+}
+
+/// `⟹` simplifications.
+fn imp_simp(a: &Term, b: &Term) -> Result<Option<Thm>> {
+    let ab = a.clone().imp(b.clone())?;
+    if is_f(a) {
+        // (F ⟹ b) = T
+        let fwd = Thm::assume(ff())?.false_elim(b.clone())?.imp_intro(&ff())?; // ⊢ F⟹b
+        return Ok(Some(fwd.deduct_antisym(truth())?));
+    }
+    if is_t(b) {
+        // (a ⟹ T) = T
+        let fwd = truth().imp_intro(a)?; // ⊢ a⟹T
+        return Ok(Some(fwd.deduct_antisym(truth())?));
+    }
+    if is_t(a) {
+        // (T ⟹ b) = b
+        let fwd = Thm::assume(b.clone())?.imp_intro(&tt())?; // {b} ⊢ T⟹b
+        let bwd = Thm::assume(ab.clone())?.imp_elim(truth())?; // {T⟹b} ⊢ b
+        return Ok(Some(fwd.deduct_antisym(bwd)?));
+    }
+    if is_f(b) {
+        // (a ⟹ F) = ¬a
+        let na = a.clone().not()?;
+        let contra = Thm::assume(na.clone())?.not_elim(Thm::assume(a.clone())?)?; // {¬a,a} ⊢ F
+        let fwd = contra.imp_intro(a)?; // {¬a} ⊢ a⟹F
+        let bwd = Thm::assume(ab.clone())?.not_intro()?; // {a⟹F} ⊢ ¬a
+        return Ok(Some(fwd.deduct_antisym(bwd)?));
+    }
+    if a == b {
+        // (a ⟹ a) = T
+        let fwd = Thm::assume(a.clone())?.imp_intro(a)?; // ⊢ a⟹a
+        return Ok(Some(fwd.deduct_antisym(truth())?));
+    }
+    Ok(None)
+}
+
+/// Parse a binary-connective application `App(App(op, a), b)` →
+/// `(op_spec, a, b)`. Callers filter on the spec by `ptr_eq`.
+fn parse_binop(t: &Term) -> Option<(covalence_core::defs::TermSpec, Term, Term)> {
+    let (f, b) = t.as_app()?;
+    let (head, a) = f.as_app()?;
+    let (spec, _) = head.as_spec()?;
+    Some((spec.clone(), a.clone(), b.clone()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -458,6 +803,100 @@ mod tests {
             .or(p.not().unwrap().or(q).unwrap())
             .unwrap();
         assert_eq!(cl.concl(), &expected);
+    }
+
+    /// `⊢ t = rhs` ⟹ return `rhs`.
+    fn rhs_of(thm: &Thm) -> Term {
+        thm.concl().as_eq().expect("equation").1.clone()
+    }
+
+    #[test]
+    fn dne_eliminates_double_negation() {
+        // {¬¬a} ⊢ a.
+        let a = Term::free("a", b());
+        let nna = a.clone().not().unwrap().not().unwrap();
+        let out = dne(Thm::assume(nna.clone()).unwrap()).unwrap();
+        assert_eq!(out.concl(), &a);
+        assert!(out.hyps().iter().any(|h| h == &nna));
+    }
+
+    #[test]
+    fn clause_intro_neg_makes_positive_literals() {
+        // {¬a} ⊢ ¬a  ⟶  ⊢ a ∨ ¬a   (the literal stays positive).
+        let a = Term::free("a", b());
+        let na = a.clone().not().unwrap();
+        let cl = clause_intro_neg(Thm::assume(na.clone()).unwrap(), &[a.clone()]).unwrap();
+        assert!(cl.hyps().is_empty());
+        assert_eq!(cl.concl(), &a.clone().or(na).unwrap());
+    }
+
+    #[test]
+    fn simp_core_identities() {
+        let a = Term::free("a", b());
+        let cases: Vec<(Term, Term)> = vec![
+            (a.clone().and(a.clone()).unwrap(), a.clone()), // p∧p = p
+            (a.clone().or(a.clone()).unwrap(), a.clone()),  // p∨p = p
+            (a.clone().and(tt()).unwrap(), a.clone()),      // p∧T = p
+            (tt().and(a.clone()).unwrap(), a.clone()),      // T∧p = p
+            (a.clone().or(ff()).unwrap(), a.clone()),       // p∨F = p
+            (a.clone().and(ff()).unwrap(), ff()),           // p∧F = F
+            (a.clone().or(tt()).unwrap(), tt()),            // p∨T = T
+            (a.clone().or(a.clone().not().unwrap()).unwrap(), tt()), // p∨¬p = T
+            (a.clone().and(a.clone().not().unwrap()).unwrap(), ff()), // p∧¬p = F
+            (tt().not().unwrap(), ff()),                    // ¬T = F
+            (a.clone().not().unwrap().not().unwrap(), a.clone()), // ¬¬p = p
+            (ff().imp(a.clone()).unwrap(), tt()),           // F⟹p = T
+            (a.clone().imp(ff()).unwrap(), a.clone().not().unwrap()), // p⟹F = ¬p
+        ];
+        for (input, want) in cases {
+            let eq = simp(&input).unwrap();
+            assert_eq!(eq.concl().as_eq().unwrap().0, &input, "lhs preserved");
+            assert_eq!(rhs_of(&eq), want, "simp {input}");
+            assert!(eq.hyps().is_empty(), "simp of a closed term is axiom-free");
+        }
+    }
+
+    #[test]
+    fn simp_recurses_under_congruence() {
+        // (a ∧ T) ∨ (b ∧ b)  simplifies to  a ∨ b.
+        let a = Term::free("a", b());
+        let bb = Term::free("b", b());
+        let input = a
+            .clone()
+            .and(tt())
+            .unwrap()
+            .or(bb.clone().and(bb.clone()).unwrap())
+            .unwrap();
+        let eq = simp(&input).unwrap();
+        assert_eq!(rhs_of(&eq), a.or(bb).unwrap());
+    }
+
+    #[test]
+    fn tauto_proves_trivial_tautologies() {
+        let a = Term::free("a", b());
+        // a ∨ ¬a
+        let lem = a.clone().or(a.clone().not().unwrap()).unwrap();
+        let thm = tauto(&lem).unwrap();
+        assert_eq!(thm.concl(), &lem);
+        assert!(thm.hyps().is_empty());
+        // a ⟹ a
+        assert!(tauto(&a.clone().imp(a.clone()).unwrap()).is_ok());
+        // a bare atom is not a tautology
+        assert!(tauto(&a).is_err());
+    }
+
+    #[test]
+    fn decide_handles_both_polarities() {
+        let a = Term::free("a", b());
+        // a ∨ ¬a is a tautology → ⊢ (a ∨ ¬a).
+        let lem = a.clone().or(a.clone().not().unwrap()).unwrap();
+        assert_eq!(decide(&lem).unwrap().concl(), &lem);
+        // a ∧ ¬a is contradictory → ⊢ ¬(a ∧ ¬a).
+        let contra = a.clone().and(a.clone().not().unwrap()).unwrap();
+        let out = decide(&contra).unwrap();
+        assert_eq!(out.concl(), &contra.not().unwrap());
+        // A contingent atom is decided neither way.
+        assert!(decide(&a).is_err());
     }
 
     #[test]

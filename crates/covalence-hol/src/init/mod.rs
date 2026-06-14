@@ -32,6 +32,7 @@ pub mod ext;
 pub mod int;
 pub mod logic;
 pub mod nat;
+pub mod recursion;
 pub mod set;
 
 /// The full `covalence-core` definition catalogue (types, term

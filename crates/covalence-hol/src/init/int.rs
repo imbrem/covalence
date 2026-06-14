@@ -27,6 +27,20 @@
 //! [`init::nat`] through the quotient. Discharging them is downstream
 //! work; until then they are the `int` postulate set. The public surface
 //! (these `fn`s) does not change when the proofs land — only the bodies.
+//!
+//! ## What the proofs are waiting on
+//!
+//! Two ingredients. The **`nat` side** is in place: [`init::nat`] proves
+//! the additive theory (`add_comm`/`add_assoc`/`add_zero`/…) by induction,
+//! and the order/multiplicative facts will follow the same way. The
+//! **quotient side** is now started in [`init::quotient`](crate::init::quotient):
+//! `int` is a subtype of the powerset, so the kernel's subtype laws apply,
+//! and `quotient::class_intro` gives the forward lifting law
+//! `rel a b → mkInt a = mkInt b` — enough to *prove `int` equations* (most
+//! of the ring axioms). The converse and the `int_rel`-is-an-equivalence
+//! prerequisite are tracked in `SKELETONS.md`. Each postulate here will
+//! unfold the relevant `int` op to its representative-pair body, lift the
+//! `nat` fact through `class_intro`, and re-quotient.
 
 use covalence_core::{Term, Thm, Type};
 

@@ -18,33 +18,6 @@ it is how unfinished work stays discoverable.
 
 ## Postulates pending proof
 
-- **`init::nat::rec_holds`** in `crates/covalence-hol/src/init/nat.rs` — the
-  *single* remaining `nat` postulate (`Thm::assume`): `natRec` satisfies its
-  recursion equations,
-  `∀z f. (natRec z f 0 = z) ∧ (∀n. natRec z f (S n) = f n (natRec z f n))`.
-
-  Everything else is already derived from it: the four `add`/`mul` recursion
-  equations (`add_base`/`add_step`/`mul_base`/`mul_step`) δ-unfold `nat.add` /
-  `nat.mul` / `iter` down to `natRec` and apply `rec_holds`, so each carries
-  exactly the one `rec_holds` hypothesis. (Induction and the freeness axioms
-  `succ_inj` / `zero_ne_succ` are genuine, via `Thm::nat_induct` /
-  `Thm::succ_inj` / `Thm::zero_ne_succ`.)
-
-  Discharging `rec_holds` — the *soundness of PA in HOL* step — needs **no new
-  computation primitive**: `natRec` exists by `ε` (the recursion theorem
-  `∃r. P_rec r`), so `Thm::spec_ax(natRec, ·)` + choice + induction prove it.
-  The kernel already has every primitive required. The moment `rec_holds`
-  becomes a hypothesis-free proof, all four arithmetic facts become genuine
-  theorems automatically — no other change.
-
-  **In progress** in `crates/covalence-hol/src/init/recursion.rs` (graph
-  construction): the graph predicate and its base/step lemmas are proved, and
-  the **existence** half — `∀n. ∃a. Graph z f n a` — is proved axiom-free
-  (`graph_total`). Remaining: uniqueness (`∀n a b. Graph n a ∧ Graph n b ⟹
-  a = b`, by induction on freeness), assembly (`r ≜ λz f n. ε a. Graph z f n a`,
-  prove `P_rec r`), and wiring into `rec_holds`. The module carries a
-  `dead_code` allow until then.
-
 - **The `int` ordered-ring theory** in
   `crates/covalence-hol/src/init/int.rs` is **entirely postulated** via the
   module's `axiom` helper (`Thm::assume`, each carrying its statement as a
@@ -55,10 +28,33 @@ it is how unfinished work stays discoverable.
   (`lt_add_mono`, `lt_mul_pos`), and discreteness (`lt_succ`:
   `a < b ⟺ a + 1 ≤ b`). Since `int := (nat × nat) / ~` (Grothendieck), each is
   a HOL theorem derivable from the `nat` Peano facts through the quotient;
-  filling the proofs in is downstream work and does not change the public
-  `fn` surface. These are the ingredients the Alethe `la_generic` /
-  `la_mult_*` checker will consume.
+  filling the proofs in does not change the public `fn` surface. These are
+  the ingredients the Alethe `la_generic` / `la_mult_*` checker will consume.
 
+  **Status: the lifting API now exists; applying it to `int` is the work.**
+  The `nat` half is available and **fully proved** — `init::nat` proves
+  `add_zero`/`add_succ_r`/`add_comm`/`add_assoc` by induction (the `induct`
+  helper); `rec_holds` is now a genuine theorem (recursion theorem), so these
+  carry no hypotheses. And `init::quotient` now provides the lifting machinery:
+  `TypeSpec::quot` is a subtype of the powerset, so the kernel's subtype
+  laws *do* apply (the "rejected" case is only for specs whose `tm` is a
+  raw relation; `quot`'s `tm` is the `close` predicate). `quotient::class_intro`
+  derives the **forward** law `Γ ⊢ rel a b → Γ ⊢ mkClass a = mkClass b`,
+  the workhorse for proving `int` *equations*.
+
+  Remaining for `int`: (a) the **converse** `mkClass a = mkClass b ⟹ rel a b`
+  in `init::quotient` — recipe (and the η gotcha) is in that module's docs;
+  needs `Thm::spec_rep_abs_fwd` + a proof that `classOf a` satisfies the
+  `close` predicate. (b) Prove `int_rel` is an equivalence: `refl`/`symm`
+  are trivial (`refl`/`sym` of a `nat` equation); `trans` now has its
+  prerequisite — `init::nat::add_cancel`. (c) Reconcile the generic
+  `classOf a = λx. rel a x` with `defs/int.rs`'s β-reduced `class_of` (a β
+  step). Then each `int` axiom unfolds the op to its representative-pair
+  body, lifts the `nat` fact through `class_intro`, and re-quotients.
+  Still-needed `nat` facts for the *order/multiplicative* `int` axioms:
+  `mul_succ_r` / `mul_comm` / `mul_assoc` / `distrib`, and the `le`/`lt`
+  order facts (reflexivity, transitivity, monotonicity). `init::nat` already
+  has the additive theory + `add_cancel` + `mul_zero`.
 ## Partial subsystems
 
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in

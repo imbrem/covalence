@@ -22,19 +22,50 @@
 //!   postulated pending the downstream derivations; see each module).
 //! - [`set`] — the `TypeSpec`-backed set membership / extensionality API.
 //!
+//! plus the per-theory theorem catalogues — [`cond`] (the boolean
+//! conditional's reduction clauses), [`nat`], [`int`], [`coprod`],
+//! [`option`], [`stream`], [`recursion`], [`rel`], and [`set`].
+//!
 //! Efficiency is explicitly *not* a goal: `init` runs once at startup.
 //! The point is for the rest of `covalence-hol` to depend on this
 //! stable surface; once `covalence-core` is settled, faster paths can
 //! land behind the same API.
 
+/// Define a nullary `-> Thm` function whose proof is built **once** and
+/// cached in a `LazyLock`. The `init` proofs run at startup and many are
+/// sizeable (inductions, the recursion theorem), so recomputing one per
+/// call is pure waste. Doc comments and visibility pass through.
+///
+/// ```ignore
+/// cached_thm! {
+///     /// `⊢ T`.
+///     pub fn truth() -> Thm { /* build it */ }
+/// }
+/// ```
+macro_rules! cached_thm {
+    ($(#[$attr:meta])* $vis:vis fn $name:ident() -> Thm $body:block) => {
+        $(#[$attr])*
+        $vis fn $name() -> ::covalence_core::Thm {
+            static CACHE: ::std::sync::LazyLock<::covalence_core::Thm> =
+                ::std::sync::LazyLock::new(|| $body);
+            CACHE.clone()
+        }
+    };
+}
+
+pub mod cond;
 pub mod eq;
 pub mod ext;
 pub mod int;
 pub mod logic;
+pub mod coprod;
 pub mod nat;
+pub mod option;
+pub mod quotient;
 pub mod recursion;
 pub mod rel;
 pub mod set;
+pub mod stream;
 
 /// The full `covalence-core` definition catalogue (types, term
 /// constructors, the `TypeSpec` / `TermSpec` handles, `Canonical`, …).

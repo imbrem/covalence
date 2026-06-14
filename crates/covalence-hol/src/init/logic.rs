@@ -34,23 +34,27 @@ pub use covalence_core::defs::{
     not_spec, or, or_spec,
 };
 
+use covalence_core::defs::cond_spec;
 use covalence_core::{Error, Result, Term, Thm, Type, TypeKind};
 
+use crate::init::cond::{cond_false, cond_true};
 use crate::init::ext::{TermExt, ThmExt};
 
 // ============================================================================
 // Truth
 // ============================================================================
 
-/// `⊢ T`. Derived (no postulate): [`Thm::reduce_prim`] decides
-/// `(T = T) = T` on the closed literals, and `refl T : ⊢ T = T`
-/// discharges the antecedent via [`Thm::eq_mp`].
-pub fn truth() -> Thm {
-    let t = Term::bool_lit(true);
-    let refl_t = Thm::refl(t).expect("truth: refl T");
-    let t_eq_t = refl_t.concl().clone();
-    let reduced = Thm::reduce_prim(t_eq_t).expect("truth: reduce_prim (T=T)");
-    reduced.eq_mp(refl_t).expect("truth: eq_mp")
+cached_thm! {
+    /// `⊢ T`. Derived (no postulate): [`Thm::reduce_prim`] decides
+    /// `(T = T) = T` on the closed literals, and `refl T : ⊢ T = T`
+    /// discharges the antecedent via [`Thm::eq_mp`].
+    pub fn truth() -> Thm {
+        let t = Term::bool_lit(true);
+        let refl_t = Thm::refl(t).expect("truth: refl T");
+        let t_eq_t = refl_t.concl().clone();
+        let reduced = Thm::reduce_prim(t_eq_t).expect("truth: reduce_prim (T=T)");
+        reduced.eq_mp(refl_t).expect("truth: eq_mp")
+    }
 }
 
 // ============================================================================
@@ -63,17 +67,19 @@ pub fn and_sym(pq: Thm) -> Result<Thm> {
     q.and_intro(p)
 }
 
-/// `⊢ (p ∧ q) ⟹ (q ∧ p)` for free `p`, `q : bool` — commutativity of
-/// `∧` as a closed, hypothesis-free theorem. Assume `p ∧ q`, swap with
-/// [`and_sym`], discharge.
-pub fn and_comm() -> Thm {
-    let p = Term::free("p", Type::bool());
-    let q = Term::free("q", Type::bool());
-    let pq = p.and(q).expect("and_comm: build p ∧ q");
-    let assumed = Thm::assume(pq.clone()).expect("and_comm: assume p ∧ q");
-    and_sym(assumed)
-        .and_then(|swapped| swapped.imp_intro(&pq))
-        .expect("and_comm: discharge into (p∧q) ⟹ (q∧p)")
+cached_thm! {
+    /// `⊢ (p ∧ q) ⟹ (q ∧ p)` for free `p`, `q : bool` — commutativity of
+    /// `∧` as a closed, hypothesis-free theorem. Assume `p ∧ q`, swap with
+    /// [`and_sym`], discharge.
+    pub fn and_comm() -> Thm {
+        let p = Term::free("p", Type::bool());
+        let q = Term::free("q", Type::bool());
+        let pq = p.and(q).expect("and_comm: build p ∧ q");
+        let assumed = Thm::assume(pq.clone()).expect("and_comm: assume p ∧ q");
+        and_sym(assumed)
+            .and_then(|swapped| swapped.imp_intro(&pq))
+            .expect("and_comm: discharge into (p∧q) ⟹ (q∧p)")
+    }
 }
 
 // ============================================================================
@@ -94,16 +100,18 @@ pub fn or_sym(pq: Thm) -> Result<Thm> {
     pq.or_elim(left, right)
 }
 
-/// `⊢ (p ∨ q) ⟹ (q ∨ p)` for free `p`, `q : bool` — commutativity of
-/// `∨` as a closed, hypothesis-free theorem.
-pub fn or_comm() -> Thm {
-    let p = Term::free("p", Type::bool());
-    let q = Term::free("q", Type::bool());
-    let pq = p.or(q).expect("or_comm: build p ∨ q");
-    let assumed = Thm::assume(pq.clone()).expect("or_comm: assume p ∨ q");
-    or_sym(assumed)
-        .and_then(|swapped| swapped.imp_intro(&pq))
-        .expect("or_comm: discharge into (p∨q) ⟹ (q∨p)")
+cached_thm! {
+    /// `⊢ (p ∨ q) ⟹ (q ∨ p)` for free `p`, `q : bool` — commutativity of
+    /// `∨` as a closed, hypothesis-free theorem.
+    pub fn or_comm() -> Thm {
+        let p = Term::free("p", Type::bool());
+        let q = Term::free("q", Type::bool());
+        let pq = p.or(q).expect("or_comm: build p ∨ q");
+        let assumed = Thm::assume(pq.clone()).expect("or_comm: assume p ∨ q");
+        or_sym(assumed)
+            .and_then(|swapped| swapped.imp_intro(&pq))
+            .expect("or_comm: discharge into (p∨q) ⟹ (q∨p)")
+    }
 }
 
 /// Parse `App(App(\/, p), q)` → `(p, q)`. Returns `None` unless the
@@ -289,7 +297,6 @@ fn inject(lit: Thm, target: &[Term], idx: usize) -> Result<Thm> {
 fn elim_disj(
     clause: Thm,
     lits: &[Term],
-    goal: &Term,
     branch: &impl Fn(&Term) -> Result<Thm>,
 ) -> Result<Thm> {
     match lits {
@@ -303,7 +310,7 @@ fn elim_disj(
             let left = branch(head)?; // ⊢ head ⟹ goal
             // ⊢ rest_disj ⟹ goal: assume the tail, recurse, discharge.
             let assumed = Thm::assume(rest_disj.clone())?;
-            let under = elim_disj(assumed, rest, goal, branch)?;
+            let under = elim_disj(assumed, rest, branch)?;
             let right = under.imp_intro(&rest_disj)?;
             clause.or_elim(left, right)
         }
@@ -352,14 +359,14 @@ pub fn resolve_on(left: Thm, right: Thm, pivot: &Term) -> Result<Thm> {
         if l == pivot {
             let p_assumed = Thm::assume(pivot.clone())?; // {pivot} ⊢ pivot
             let n_branch = |m: &Term| n_branch(m, &not_pivot, &p_assumed, &goal, &resolvent);
-            let under = elim_disj(cn.clone(), &nl, &goal, &n_branch)?;
+            let under = elim_disj(cn.clone(), &nl, &n_branch)?;
             under.imp_intro(pivot) // cn.hyps ⊢ pivot ⟹ goal
         } else {
             lit_branch(l, &resolvent)
         }
     };
 
-    elim_disj(cp, &pl, &goal, &p_branch)
+    elim_disj(cp, &pl, &p_branch)
 }
 
 /// `⊢ l ⟹ build_disj(resolvent)` for a surviving literal `l`: assume
@@ -785,7 +792,43 @@ fn simp_at(node: &Term) -> Result<Option<Thm>> {
             return iff_simp(&a, &b);
         }
     }
+    if let Some(step) = cond_simp(node)? {
+        return Ok(Some(step));
+    }
     Ok(None)
+}
+
+/// `cond` with a decided guard: `cond T x y → x`, `cond F x y → y`.
+/// Returns `None` for any other node, including a `cond` whose guard has
+/// not (yet) reduced to a `T` / `F` literal. The branch type is
+/// arbitrary, so unlike the connective rules this can fire at a non-`bool`
+/// node — but only on a literal-guarded conditional, which is always a
+/// genuine reduction.
+fn cond_simp(node: &Term) -> Result<Option<Thm>> {
+    // node = ((cond[α] c) x) y ?
+    let Some((f1, y)) = node.as_app() else {
+        return Ok(None);
+    };
+    let Some((f2, x)) = f1.as_app() else {
+        return Ok(None);
+    };
+    let Some((head, c)) = f2.as_app() else {
+        return Ok(None);
+    };
+    let Some((spec, args)) = head.as_spec() else {
+        return Ok(None);
+    };
+    if !spec.ptr_eq(&cond_spec()) {
+        return Ok(None);
+    }
+    let Some(alpha) = args.iter().next() else {
+        return Ok(None);
+    };
+    match c.as_bool() {
+        Some(true) => cond_true(alpha, x, y).map(Some),
+        Some(false) => cond_false(alpha, x, y).map(Some),
+        None => Ok(None),
+    }
 }
 
 // -- the `T`/`F` literals --
@@ -1156,7 +1199,7 @@ mod tests {
     fn clause_intro_excluded_middle() {
         // clause_intro({a} ⊢ a, [a])  =  ⊢ ¬a ∨ a.
         let a = Term::free("a", b());
-        let cl = clause_intro(Thm::assume(a.clone()).unwrap(), &[a.clone()]).unwrap();
+        let cl = clause_intro(Thm::assume(a.clone()).unwrap(), std::slice::from_ref(&a)).unwrap();
         assert!(cl.hyps().is_empty(), "the only hyp was clausified away");
         let expected = a.clone().not().unwrap().or(a).unwrap();
         assert_eq!(cl.concl(), &expected);
@@ -1204,7 +1247,7 @@ mod tests {
         // {¬a} ⊢ ¬a  ⟶  ⊢ a ∨ ¬a   (the literal stays positive).
         let a = Term::free("a", b());
         let na = a.clone().not().unwrap();
-        let cl = clause_intro_neg(Thm::assume(na.clone()).unwrap(), &[a.clone()]).unwrap();
+        let cl = clause_intro_neg(Thm::assume(na.clone()).unwrap(), std::slice::from_ref(&a)).unwrap();
         assert!(cl.hyps().is_empty());
         assert_eq!(cl.concl(), &a.clone().or(na).unwrap());
     }
@@ -1286,6 +1329,26 @@ mod tests {
         let bad = a.clone().iff(a.clone().not().unwrap()).unwrap();
         let out = decide(&bad).unwrap();
         assert_eq!(out.concl(), &bad.not().unwrap());
+    }
+
+    #[test]
+    fn simp_collapses_a_decided_cond() {
+        let p = Term::free("p", b());
+        let q = Term::free("q", b());
+        // cond T p q → p ;  cond F p q → q.
+        let then = Term::cond(tt(), p.clone(), q.clone());
+        assert_eq!(rhs_of(&simp(&then).unwrap()), p, "cond T p q = p");
+        let els = Term::cond(ff(), p.clone(), q.clone());
+        assert_eq!(rhs_of(&simp(&els).unwrap()), q, "cond F p q = q");
+        // The guard is simplified first: cond (T ∧ T) p q → cond T p q → p.
+        let guarded = Term::cond(tt().and(tt()).unwrap(), p.clone(), q.clone());
+        let eq = simp(&guarded).unwrap();
+        assert_eq!(rhs_of(&eq), p, "the guard reduces, then cond fires");
+        assert!(eq.hyps().is_empty(), "a decided cond is a genuine reduction");
+        // An undecided guard leaves the conditional in place.
+        let a = Term::free("a", b());
+        let open = Term::cond(a, p.clone(), q.clone());
+        assert_eq!(rhs_of(&simp(&open).unwrap()), open, "open guard → cond kept");
     }
 
     #[test]
@@ -1396,6 +1459,47 @@ mod tests {
         let c = Term::free("c", b());
         // a ∨ c is not equal to a ∧ c.
         assert!(prop_eq(&a.clone().or(c.clone()).unwrap(), &a.and(c).unwrap()).is_err());
+    }
+
+    #[test]
+    fn prop_eq_handles_de_morgan_absorption_and_implication() {
+        let a = Term::free("a", b());
+        let c = Term::free("c", b());
+        let want = |l: Term, r: Term| {
+            let eq = prop_eq(&l, &r).unwrap();
+            assert_eq!(eq.concl(), &l.clone().equals(r).unwrap());
+            assert!(eq.hyps().is_empty() && eq.has_no_obs());
+        };
+        // De Morgan: ¬(a ∧ c) = (¬a ∨ ¬c)
+        want(
+            a.clone().and(c.clone()).unwrap().not().unwrap(),
+            a.clone().not().unwrap().or(c.clone().not().unwrap()).unwrap(),
+        );
+        // Absorption: a ∨ (a ∧ c) = a
+        want(a.clone().or(a.clone().and(c.clone()).unwrap()).unwrap(), a.clone());
+        // Implication as disjunction: (a ⟹ c) = (¬a ∨ c)
+        want(
+            a.clone().imp(c.clone()).unwrap(),
+            a.clone().not().unwrap().or(c.clone()).unwrap(),
+        );
+        // Biconditional: (a ⟺ c) = ((a ⟹ c) ∧ (c ⟹ a))
+        want(
+            a.clone().iff(c.clone()).unwrap(),
+            a.clone()
+                .imp(c.clone())
+                .unwrap()
+                .and(c.clone().imp(a.clone()).unwrap())
+                .unwrap(),
+        );
+    }
+
+    #[test]
+    fn prop_eq_handles_four_atoms() {
+        // Full commutative-reassociation across four atoms.
+        let [a, c, d, e] = ["a", "c", "d", "e"].map(|n| Term::free(n, b()));
+        let l = a.clone().or(c.clone()).unwrap().or(d.clone().or(e.clone()).unwrap()).unwrap();
+        let r = e.or(d).unwrap().or(c.or(a).unwrap()).unwrap();
+        assert!(prop_eq(&l, &r).unwrap().hyps().is_empty());
     }
 
     #[test]

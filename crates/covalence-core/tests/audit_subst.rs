@@ -450,17 +450,24 @@ fn type_of_spec_rep_newtype_no_tvars() {
     assert_eq!(*cod, covalence_core::defs::u32_ty());
 }
 
+/// Coprod's tagged carrier relation `nat → bool → bool → bool`.
+fn coprod_nat_bool_carrier() -> Type {
+    Type::fun(
+        Type::nat(),
+        Type::fun(Type::bool(), Type::fun(Type::bool(), Type::bool())),
+    )
+}
+
 #[test]
 fn type_of_spec_abs_polymorphic_positional_args() {
-    // coprod := subtype with carrier ('a -> 'b -> bool), tvars [a, b].
-    // spec_abs(coprod, [nat, bool]) : (nat -> bool -> bool) ->
-    // coprod nat bool.
+    // coprod := subtype with tagged carrier ('a -> 'b -> bool -> bool),
+    // tvars [a, b]. spec_abs(coprod, [nat, bool]) :
+    // (nat -> bool -> bool -> bool) -> coprod nat bool.
     let spec = covalence_core::defs::coprod_spec();
     let abs = Term::spec_abs(spec.clone(), vec![Type::nat(), Type::bool()]);
     let ty = abs.type_of().unwrap();
-    let carrier = Type::fun(Type::nat(), Type::fun(Type::bool(), Type::bool()));
     let wrapper = covalence_core::defs::coprod(Type::nat(), Type::bool());
-    assert_eq!(ty, Type::fun(carrier, wrapper));
+    assert_eq!(ty, Type::fun(coprod_nat_bool_carrier(), wrapper));
 }
 
 #[test]
@@ -468,9 +475,8 @@ fn type_of_spec_rep_polymorphic_is_inverse_of_abs() {
     let spec = covalence_core::defs::coprod_spec();
     let rep = Term::spec_rep(spec.clone(), vec![Type::nat(), Type::bool()]);
     let ty = rep.type_of().unwrap();
-    let carrier = Type::fun(Type::nat(), Type::fun(Type::bool(), Type::bool()));
     let wrapper = covalence_core::defs::coprod(Type::nat(), Type::bool());
-    assert_eq!(ty, Type::fun(wrapper, carrier));
+    assert_eq!(ty, Type::fun(wrapper, coprod_nat_bool_carrier()));
 }
 
 #[test]

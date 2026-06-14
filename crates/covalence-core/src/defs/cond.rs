@@ -1,39 +1,73 @@
 //! `cond : bool → 'a → 'a → 'a` — the Boolean conditional
 //! (`if b then x else y`).
 //!
-//! Declaration-only. The kernel commits to the standard
-//! semantics:
+//! A **let-style** definition, the HOL Light `COND` (`bool.ml`):
+//!
+//! ```text
+//!     cond ≡ λt x y. ε z. (t = T ⟹ z = x) ∧ (t = F ⟹ z = y)
+//! ```
+//!
+//! From this, the reduction equations
 //!
 //! ```text
 //!     cond T x y  =  x
 //!     cond F x y  =  y
 //! ```
 //!
-//! These reduction equations are postulated downstream in
-//! `covalence-hol` (or proved from Hilbert ε once a
-//! derivation lands). At the kernel level `cond` is a
-//! declaration-only TermSpec: it has a type but no body.
+//! are **derived** (not postulated) downstream in
+//! `covalence-hol`'s `init::cond` via the choice axiom
+//! [`crate::Thm::select_ax`] — the same way HOL Light proves
+//! `COND_CLAUSES`. At the kernel level `cond` unfolds to its body
+//! through [`crate::Thm::unfold_term_spec`] like any other defined
+//! constant; `reduce_prim` has no `cond`-specific rule (the branches
+//! are arbitrary terms, not literals), so it is δ-unfolded explicitly.
 
 use std::sync::LazyLock;
 
+use crate::hol;
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
 use super::spec::TermSpec;
 
-/// `cond : bool → 'a → 'a → 'a` — Boolean conditional, declared
-/// only (no kernel reduction rule; postulated downstream).
+/// `λt x y. ε z. (t = T ⟹ z = x) ∧ (t = F ⟹ z = y)` — the HOL Light
+/// `COND` body, polymorphic in `α = tfree("a")`.
+fn cond_body() -> Term {
+    let alpha = Type::tfree("a");
+    let t = Term::free("t", Type::bool());
+    let x = Term::free("x", alpha.clone());
+    let y = Term::free("y", alpha.clone());
+    let z = Term::free("z", alpha.clone());
+
+    // (t = T ⟹ z = x) ∧ (t = F ⟹ z = y)
+    let t_true = hol::hol_eq(t.clone(), Term::bool_lit(true));
+    let t_false = hol::hol_eq(t.clone(), Term::bool_lit(false));
+    let z_is_x = hol::hol_eq(z.clone(), x.clone());
+    let z_is_y = hol::hol_eq(z.clone(), y.clone());
+    let conj = hol::hol_and(hol::hol_imp(t_true, z_is_x), hol::hol_imp(t_false, z_is_y));
+
+    // ε z:α. conj
+    let pred = hol::pub_abs("z", alpha.clone(), conj);
+    let eps = Term::app(Term::select_op(alpha.clone()), pred);
+
+    // λt x y. eps
+    hol::pub_abs(
+        "t",
+        Type::bool(),
+        hol::pub_abs("x", alpha.clone(), hol::pub_abs("y", alpha, eps)),
+    )
+}
+
+/// `cond : bool → 'a → 'a → 'a` — the Boolean conditional, a let-style
+/// definition (body via [`cond_body`]). Its defining equation is
+/// available through [`crate::Thm::unfold_term_spec`].
 pub fn cond_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
-        let alpha = Type::tfree("a");
-        TermSpec::new(
-            Canonical::Cond,
-            Some(Type::fun(
-                Type::bool(),
-                Type::fun(alpha.clone(), Type::fun(alpha.clone(), alpha)),
-            )),
-            None,
-        )
+        let body = cond_body();
+        let ty = body
+            .type_of()
+            .expect("cond_spec: body must type-check to bool → α → α → α");
+        TermSpec::new(Canonical::Cond, Some(ty), Some(body))
     });
     LAZY.clone()
 }

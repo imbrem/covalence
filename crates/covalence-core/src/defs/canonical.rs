@@ -213,9 +213,11 @@ pub enum Canonical {
 
     // ---- Term-level: bool / option fundamentals ----
     /// `cond : bool → 'a → 'a → 'a` — the Boolean conditional
-    /// (`if b then x else y`). Declaration-only; reduction rules
-    /// `cond T x y = x` and `cond F x y = y` are postulated / proved
-    /// downstream. Construct applications with [`crate::Term::cond`].
+    /// (`if b then x else y`). A let-style definition
+    /// (`λt x y. ε z. (t = T ⟹ z = x) ∧ (t = F ⟹ z = y)`); the
+    /// reduction rules `cond T x y = x` and `cond F x y = y` are
+    /// *derived* downstream (`covalence-hol`'s `init::cond`) via the
+    /// choice axiom. Construct applications with [`crate::Term::cond`].
     Cond,
     /// `option.isSome : option 'a → bool`. True for `some _`, false for
     /// `none`. Defined via `option.case`.

@@ -16,6 +16,41 @@ it is how unfinished work stays discoverable.
   will land here as the HOL-on-store stack comes online. See the
   `covalence-kernel` crate-root docs and `docs/roadmap.md`.
 
+## Postulates pending proof
+
+- **The `int` ordered-ring theory** in
+  `crates/covalence-hol/src/init/int.rs` is **entirely postulated** via the
+  module's `axiom` helper (`Thm::assume`, each carrying its statement as a
+  self-hyp). Seventeen theorems: the commutative-ring axioms (`add_comm`,
+  `add_assoc`, `add_zero`, `add_neg`, `mul_comm`, `mul_assoc`, `mul_one`,
+  `mul_zero`, `distrib`, `sub_def`), the linear order (`lt_irrefl`,
+  `lt_trans`, `lt_trichotomy`, `le_def`), ordered-ring compatibility
+  (`lt_add_mono`, `lt_mul_pos`), and discreteness (`lt_succ`:
+  `a < b ⟺ a + 1 ≤ b`). Since `int := (nat × nat) / ~` (Grothendieck), each is
+  a HOL theorem derivable from the `nat` Peano facts through the quotient;
+  filling the proofs in does not change the public `fn` surface. These are
+  the ingredients the Alethe `la_generic` / `la_mult_*` checker will consume.
+
+  **Status: the lifting API now exists; applying it to `int` is the work.**
+  The `nat` half is available — `init::nat` proves `add_zero`/`add_succ_r`/
+  `add_comm`/`add_assoc` by induction (the `induct` helper), resting only
+  on `rec_holds`. And `init::quotient` now provides the lifting machinery:
+  `TypeSpec::quot` is a subtype of the powerset, so the kernel's subtype
+  laws *do* apply (the "rejected" case is only for specs whose `tm` is a
+  raw relation; `quot`'s `tm` is the `close` predicate). `quotient::class_intro`
+  derives the **forward** law `Γ ⊢ rel a b → Γ ⊢ mkClass a = mkClass b`,
+  the workhorse for proving `int` *equations*.
+
+  Remaining for `int`: (a) the **converse** `mkClass a = mkClass b ⟹ rel a b`
+  in `init::quotient` (needs `Thm::spec_rep_abs_fwd` + a proof that
+  `classOf a` satisfies the `close` predicate); (b) prove `int_rel` is an
+  equivalence (`symm` is trivial; `trans` needs a `nat` **cancellation**
+  lemma `a + c = b + c ⟹ a = b`, not yet in `init::nat`); (c) reconcile the
+  generic `classOf a = λx. rel a x` with `defs/int.rs`'s β-reduced
+  `class_of` (a β step); then each `int` axiom unfolds the op to its
+  representative-pair body, lifts the `nat` fact through `class_intro`, and
+  re-quotients. The order/multiplicative `nat` facts (`le`/`lt` transitivity,
+  cancellation, `mul` laws) are the other prerequisite.
 ## Partial subsystems
 
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in

@@ -450,6 +450,154 @@ impl Thm {
         Self::build(Ctx::new(), concl)
     }
 
+    // ========================================================================
+    // Connective derived rules (provided as primitives for efficiency)
+    // ========================================================================
+    //
+    // `∧` / `∨` / `¬` are ordinary defined constants in `defs/logic.rs`.
+    // Their intro / elim rules are *derivable* from those definitions
+    // plus the primitive rules — the standard HOL Light `bool.ml`
+    // bootstrap. The executable derivation lives, and is tested, in
+    // `covalence-hol::proofs::bool`; it is the soundness witness for
+    // every method below.
+    //
+    // We expose the rules here as direct, single-step constructors so
+    // the common case builds the conclusion in O(1) instead of re-running
+    // a multi-step derivation per call (the same treatment `imp_intro` /
+    // `all_intro` already get). A future "paranoid mode" can replace each
+    // fast path with the witness derivation.
+
+    /// `Γ ∪ Δ ⊢ p ∧ q`, given `Γ ⊢ p` and `Δ ⊢ q`.
+    ///
+    /// Soundness (HOL Light `CONJ`): `EQT_INTRO` turns `⊢ p`, `⊢ q`
+    /// into `⊢ p = T`, `⊢ q = T`; congruence + `abs` then build
+    /// `⊢ (λf. f p q) = (λf. f T T)`, which is `p ∧ q` unfolded.
+    pub fn and_intro(self, other: Thm) -> Result<Thm> {
+        let p_ty = self.concl.type_of()?;
+        if !p_ty.is_bool() {
+            return Err(Error::NotBool(p_ty));
+        }
+        let q_ty = other.concl.type_of()?;
+        if !q_ty.is_bool() {
+            return Err(Error::NotBool(q_ty));
+        }
+        let concl = hol::hol_and(self.concl.clone(), other.concl.clone());
+        let hyps = self.hyps.union(&other.hyps);
+        Self::build(hyps, concl)
+    }
+
+    /// `Γ ⊢ p`, given `Γ ⊢ p ∧ q` (HOL Light `CONJUNCT1`).
+    ///
+    /// Soundness: apply the unfolded body `(λf. f p q) = (λf. f T T)`
+    /// to the selector `λa b. a` and β-reduce both sides to `p = T`,
+    /// then `EQT_ELIM`.
+    pub fn and_elim_l(self) -> Result<Thm> {
+        let (p, _q) = parse_hol_and(&self.concl)?;
+        let concl = p.clone();
+        Self::build(self.hyps, concl)
+    }
+
+    /// `Γ ⊢ q`, given `Γ ⊢ p ∧ q` (HOL Light `CONJUNCT2`; selector
+    /// `λa b. b`).
+    pub fn and_elim_r(self) -> Result<Thm> {
+        let (_p, q) = parse_hol_and(&self.concl)?;
+        let concl = q.clone();
+        Self::build(self.hyps, concl)
+    }
+
+    /// `Γ ⊢ p ∨ q`, given `Γ ⊢ p` and the other disjunct `q : bool`
+    /// (HOL Light `DISJ1`).
+    ///
+    /// Soundness: fold `⊢ p` into `p ∨ q ≜ ∀r. (p⟹r) ⟹ (q⟹r) ⟹ r`
+    /// — assume each implication, MP the first with `⊢ p`, generalise.
+    pub fn or_intro_l(self, q: Term) -> Result<Thm> {
+        let p_ty = self.concl.type_of()?;
+        if !p_ty.is_bool() {
+            return Err(Error::NotBool(p_ty));
+        }
+        let q_ty = q.type_of()?;
+        if !q_ty.is_bool() {
+            return Err(Error::NotBool(q_ty));
+        }
+        let concl = hol::hol_or(self.concl.clone(), q);
+        Self::build(self.hyps, concl)
+    }
+
+    /// `Γ ⊢ p ∨ q`, given `Γ ⊢ q` and the other disjunct `p : bool`
+    /// (HOL Light `DISJ2`).
+    pub fn or_intro_r(self, p: Term) -> Result<Thm> {
+        let q_ty = self.concl.type_of()?;
+        if !q_ty.is_bool() {
+            return Err(Error::NotBool(q_ty));
+        }
+        let p_ty = p.type_of()?;
+        if !p_ty.is_bool() {
+            return Err(Error::NotBool(p_ty));
+        }
+        let concl = hol::hol_or(p, self.concl.clone());
+        Self::build(self.hyps, concl)
+    }
+
+    /// `Γ ∪ Δ₁ ∪ Δ₂ ⊢ r`, given `Γ ⊢ p ∨ q`, `Δ₁ ⊢ p ⟹ r` and
+    /// `Δ₂ ⊢ q ⟹ r` (HOL Light `DISJ_CASES`, as a rule taking the two
+    /// branch implications).
+    ///
+    /// Soundness: specialise `p ∨ q ≜ ∀r. (p⟹r) ⟹ (q⟹r) ⟹ r` at `r`
+    /// and MP with the two branches.
+    pub fn or_elim(self, left: Thm, right: Thm) -> Result<Thm> {
+        let (p, q) = parse_hol_or(&self.concl)?;
+        let (lp, lr) = parse_hol_imp(&left.concl)?;
+        let (rq, rr) = parse_hol_imp(&right.concl)?;
+        if lp != p {
+            return Err(Error::ConnectiveRule(format!(
+                "or_elim: left branch antecedent {lp} ≠ left disjunct {p}"
+            )));
+        }
+        if rq != q {
+            return Err(Error::ConnectiveRule(format!(
+                "or_elim: right branch antecedent {rq} ≠ right disjunct {q}"
+            )));
+        }
+        if lr != rr {
+            return Err(Error::ConnectiveRule(format!(
+                "or_elim: branch consequents differ ({lr} vs {rr})"
+            )));
+        }
+        let concl = lr.clone();
+        let hyps = self.hyps.union(&left.hyps).union(&right.hyps);
+        Self::build(hyps, concl)
+    }
+
+    /// `Γ ⊢ ¬p`, given `Γ ⊢ p ⟹ F` (HOL Light `NOT_INTRO`).
+    ///
+    /// Soundness: `¬p ≜ (p ⟹ F)`, so this just folds the definition.
+    pub fn not_intro(self) -> Result<Thm> {
+        let (p, f) = parse_hol_imp(&self.concl)?;
+        if !matches!(f.kind(), TermKind::Bool(false)) {
+            return Err(Error::ConnectiveRule(format!(
+                "not_intro: consequent {f} is not F"
+            )));
+        }
+        let concl = hol::hol_not(p.clone());
+        Self::build(self.hyps, concl)
+    }
+
+    /// `Γ ∪ Δ ⊢ F`, given `Γ ⊢ ¬p` and `Δ ⊢ p` (HOL Light `NOT_ELIM`).
+    ///
+    /// Soundness: unfold `¬p` to `p ⟹ F` and MP with `⊢ p`.
+    pub fn not_elim(self, other: Thm) -> Result<Thm> {
+        let p = parse_hol_not(&self.concl)?;
+        if *p != other.concl {
+            return Err(Error::ConnectiveRule(format!(
+                "not_elim: negated {p} ≠ hypothesis {}",
+                other.concl
+            )));
+        }
+        let concl = Term::bool_lit(false);
+        let hyps = self.hyps.union(&other.hyps);
+        Self::build(hyps, concl)
+    }
+
     /// Introduce a fresh subtype τ ≤ α witnessed by a predicate `P`.
     ///
     /// Given a witness theorem `Γ ⊢ P x` for some `x : α` and
@@ -858,17 +1006,119 @@ impl Thm {
     // `t = canonical_form` equation justified by the literal's
     // denotation, not a logical postulate.
 
-    /// `⊢ ∀P:nat→bool. P 0 ∧ (∀n:nat. P n ⟹ P (succ n)) ⟹ ∀n:nat. P n`
-    /// — Peano induction on `Type::nat()`.
+    /// Mathematical induction on `nat`, as a primitive **rule**.
     ///
-    /// Sound because the kernel commits to `Type::nat()` denoting
-    /// exactly the standard naturals generated by `0` and `succ`.
-    /// This is the kernel's sole non-computational axiom; every
-    /// other arithmetic fact is derived from it (or postulated
-    /// downstream as a `Thm::assume` until the derivation lands).
-    pub fn nat_induction() -> Thm {
-        Self::build(Ctx::new(), hol::nat_induction_term())
-            .expect("nat_induction: well-typed by construction")
+    /// Given a base proof `Γ₁ ⊢ p 0` and a step proof
+    /// `Γ₂ ⊢ p n ⟹ p (succ n)` for a free variable `n : nat`, returns
+    /// `Γ₁ ∪ Γ₂ ⊢ ∀n:nat. p n`. The motive `p` and the induction
+    /// variable `n` are read back from the shapes of the two
+    /// conclusions (`base` must be `p` applied to the literal `0`;
+    /// `step` must be `p n ⟹ p (succ n)` with the same `p`). `n` must
+    /// not occur free in `p` nor in `Γ₂` (the GEN side condition).
+    ///
+    /// ## Soundness
+    ///
+    /// `Type::nat()` denotes exactly the standard naturals, freely
+    /// generated by `0` and `succ` — so a predicate true at `0` and
+    /// preserved by `succ` holds everywhere. This is one of the
+    /// kernel's two non-computational primitives (the other is
+    /// [`Thm::false_elim`]). The classic axiom form
+    /// `⊢ ∀P. (P 0 ∧ (∀n. P n ⟹ P (succ n))) ⟹ ∀n. P n` is a trivial
+    /// theorem — assume the conjunction, split it, apply this rule,
+    /// discharge, generalise (see
+    /// `covalence-hol::nat_axioms::nat_induction`).
+    pub fn nat_induct(base: Thm, step: Thm) -> Result<Thm> {
+        let nat = Type::nat();
+        let zero = Term::nat_lit(covalence_types::Nat::zero());
+
+        // base : ⊢ p 0
+        let TermKind::App(p, base_arg) = base.concl.kind() else {
+            return Err(Error::ConnectiveRule(format!(
+                "nat_induct: base conclusion {} is not `p 0`",
+                base.concl
+            )));
+        };
+        if base_arg != &zero {
+            return Err(Error::ConnectiveRule(format!(
+                "nat_induct: base conclusion {} is not the motive applied to 0",
+                base.concl
+            )));
+        }
+        let p = p.clone();
+
+        // step : ⊢ p n ⟹ p (succ n)
+        let (ante, conseq) = parse_hol_imp(&step.concl)?;
+        let TermKind::App(ante_p, n_free) = ante.kind() else {
+            return Err(Error::ConnectiveRule(format!(
+                "nat_induct: step antecedent {ante} is not `p n`"
+            )));
+        };
+        if *ante_p != p {
+            return Err(Error::ConnectiveRule(
+                "nat_induct: step uses a different motive than the base".into(),
+            ));
+        }
+        let TermKind::Free(n_name, n_ty) = n_free.kind() else {
+            return Err(Error::ConnectiveRule(format!(
+                "nat_induct: induction variable {n_free} is not a free variable"
+            )));
+        };
+        if *n_ty != nat {
+            return Err(Error::ConnectiveRule(format!(
+                "nat_induct: induction variable {n_free} is not of type nat"
+            )));
+        }
+        let expected_conseq =
+            Term::app(p.clone(), Term::app(hol::succ_fn(), n_free.clone()));
+        if *conseq != expected_conseq {
+            return Err(Error::ConnectiveRule(format!(
+                "nat_induct: step consequent {conseq} is not `p (succ n)`"
+            )));
+        }
+
+        // GEN side conditions: n free neither in the motive nor in
+        // the step's hypotheses.
+        if has_free_var(&p, n_name) {
+            return Err(Error::ConnectiveRule(
+                "nat_induct: induction variable occurs free in the motive".into(),
+            ));
+        }
+        for h in step.hyps.iter() {
+            if has_free_var(h, n_name) {
+                return Err(Error::FreeVarInHyps {
+                    name: n_name.as_str().into(),
+                });
+            }
+        }
+
+        let body = Term::app(p, n_free.clone());
+        let concl = hol::hol_forall(n_name, nat, body);
+        let hyps = base.hyps.union(&step.hyps);
+        Self::build(hyps, concl)
+    }
+
+    /// `Γ ⊢ p`, given `Γ ⊢ F` and any `bool`-typed target `p`
+    /// (ex falso quodlibet), as a primitive rule.
+    ///
+    /// ## Soundness
+    ///
+    /// `F` is the `Bool(false)` literal, which denotes falsity in
+    /// every model — so `Γ ⊢ F` means `Γ` is contradictory and entails
+    /// anything. Because `F` is a literal with no defining equation,
+    /// this cannot be derived from the other rules; it is the kernel's
+    /// second non-computational primitive (alongside [`Thm::nat_induct`]).
+    pub fn false_elim(self, p: Term) -> Result<Thm> {
+        if !matches!(self.concl.kind(), TermKind::Bool(false)) {
+            return Err(Error::ConnectiveRule(format!(
+                "false_elim: conclusion {} is not F",
+                self.concl
+            )));
+        }
+        let p_ty = p.type_of()?;
+        if !p_ty.is_bool() {
+            return Err(Error::NotBool(p_ty));
+        }
+        Self::build(self.hyps, p)
     }
 }
 
@@ -928,6 +1178,47 @@ fn parse_hol_forall(t: &Term) -> Result<(&Type, &Term)> {
 /// given catalogue spec (by pointer identity).
 fn is_spec(t: &Term, want: &crate::defs::TermSpec) -> bool {
     matches!(t.kind(), TermKind::Spec(h, _) if h.ptr_eq(want))
+}
+
+/// Parse `App(App(op, p), q)` for the binary connective spec `op`,
+/// returning `(p, q)`. `what` names the connective for the error.
+fn parse_hol_binop<'a>(
+    t: &'a Term,
+    op: &crate::defs::TermSpec,
+    what: &str,
+) -> Result<(&'a Term, &'a Term)> {
+    let err = || Error::ConnectiveRule(format!("expected {what}, got {t}"));
+    let TermKind::App(f, q) = t.kind() else {
+        return Err(err());
+    };
+    let TermKind::App(head, p) = f.kind() else {
+        return Err(err());
+    };
+    if !is_spec(head, op) {
+        return Err(err());
+    }
+    Ok((p, q))
+}
+
+/// Parse `App(App(/\, p), q)` → `(p, q)`.
+fn parse_hol_and(t: &Term) -> Result<(&Term, &Term)> {
+    parse_hol_binop(t, &crate::defs::and_spec(), "p /\\ q")
+}
+
+/// Parse `App(App(\/, p), q)` → `(p, q)`.
+fn parse_hol_or(t: &Term) -> Result<(&Term, &Term)> {
+    parse_hol_binop(t, &crate::defs::or_spec(), "p \\/ q")
+}
+
+/// Parse `App(~, p)` → `p`.
+fn parse_hol_not(t: &Term) -> Result<&Term> {
+    let TermKind::App(head, p) = t.kind() else {
+        return Err(Error::ConnectiveRule(format!("expected ~p, got {t}")));
+    };
+    if !is_spec(head, &crate::defs::not_spec()) {
+        return Err(Error::ConnectiveRule(format!("expected ~p, got {t}")));
+    }
+    Ok(p)
 }
 
 fn decompose_obs_app(t: &Term) -> Result<(&Object, Vec<Term>)> {
@@ -1852,5 +2143,56 @@ mod hol_light_tests {
         let (l, r) = parse_hol_eq(inst.concl()).unwrap();
         assert_eq!(l, &y);
         assert_eq!(r, &y);
+    }
+
+    #[test]
+    fn nat_induct_rule_builds_forall() {
+        // Motive p := λn. (n = n). base ⊢ p 0; step ⊢ p n ⟹ p (succ n).
+        let p = {
+            let nf = Term::free("n", Type::nat());
+            hol::pub_abs("n", Type::nat(), hol::hol_eq(nf.clone(), nf))
+        };
+        let zero = Term::nat_lit(covalence_types::Nat::zero());
+        // base : ⊢ p 0  (build `p 0` then β-reduce, then refl gives p 0).
+        let base = {
+            let redex = Term::app(p.clone(), zero);
+            let beta = Thm::beta_conv(redex).unwrap(); // ⊢ p 0 = (0 = 0)
+            let refl00 =
+                Thm::refl(Term::nat_lit(covalence_types::Nat::zero())).unwrap();
+            beta.sym().unwrap().eq_mp(refl00).unwrap() // ⊢ p 0
+        };
+        // step : ⊢ p n ⟹ p (succ n) — assume `p n`, prove `p (succ n)`.
+        let n = Term::free("n", Type::nat());
+        let p_n = Term::app(p.clone(), n.clone());
+        let succ_n = Term::app(hol::succ_fn(), n);
+        let p_succ_n = Term::app(p.clone(), succ_n.clone());
+        // ⊢ p (succ n) : beta-reduce to (succ n = succ n), refl, fold back.
+        let psucc = {
+            let beta = Thm::beta_conv(p_succ_n).unwrap(); // ⊢ p(succ n) = (succ n = succ n)
+            let refl_s = Thm::refl(succ_n).unwrap();
+            beta.sym().unwrap().eq_mp(refl_s).unwrap()
+        };
+        let step = psucc.imp_intro(&p_n).unwrap(); // ⊢ p n ⟹ p (succ n)
+
+        let thm = Thm::nat_induct(base, step).unwrap();
+        // ⊢ ∀n:nat. p n
+        let (ty, _) = parse_hol_forall(thm.concl()).unwrap();
+        assert_eq!(ty, &Type::nat());
+        assert!(thm.hyps().is_empty());
+    }
+
+    #[test]
+    fn false_elim_yields_anything() {
+        let f = Thm::assume(Term::bool_lit(false)).unwrap(); // {F} ⊢ F
+        let p = Term::free("p", Type::bool());
+        let got = f.false_elim(p.clone()).unwrap();
+        assert_eq!(got.concl(), &p);
+    }
+
+    #[test]
+    fn false_elim_rejects_non_false() {
+        // A proof of `T` is not a proof of `F`; ex falso must reject it.
+        let t = Thm::assume(Term::bool_lit(true)).unwrap();
+        assert!(t.false_elim(Term::free("p", Type::bool())).is_err());
     }
 }

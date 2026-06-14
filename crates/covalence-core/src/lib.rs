@@ -37,7 +37,7 @@
 //!       ▼
 //!   covalence-hol                        (untrusted shell: HOL
 //!       │                                 builders, hashing, sexp,
-//!       │                                 stdlib lazy statics, WASM)
+//!       │                                 init lazy statics, WASM)
 //!       ▼
 //!   covalence-shell, application code    (REPL, server, …)
 //! ```

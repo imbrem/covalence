@@ -62,7 +62,7 @@ fn assume_hol(body: Term) -> Thm {
 /// `⊢ ∀P:int→bool. (∀n:nat. P (int_of_nat n)) ∧ (∀n:nat. P (-(int_of_nat n)))
 ///                ⟹ ∀z:int. P z` — bidirectional integer induction.
 ///
-/// Derivable from `Thm::nat_induction` once `int` becomes a
+/// Derivable from `Thm::nat_induct` once `int` becomes a
 /// genuinely derived TypeSpec with a constructive case-split
 /// (positive / negative on the `int := signed2 nat` carrier).
 /// Until that derivation lands, postulated via `Thm::assume`.

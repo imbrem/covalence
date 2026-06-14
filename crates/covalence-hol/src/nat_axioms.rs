@@ -14,14 +14,15 @@
 //!    These plus Peano are the only postulates this module exposes.
 //! 2. **Peano axioms** ([`nat_zero_ne_succ`], [`nat_succ_inj`],
 //!    [`nat_induction`]) — intrinsic to the `nat` *type*, not to any
-//!    operation. Only [`nat_induction`] is a bona-fide kernel axiom;
-//!    the other two are postulated downstream (see below).
+//!    operation. [`nat_induction`] is now *derived* from the kernel's
+//!    induction rule [`Thm::nat_induct`] (hyp-free); the other two are
+//!    still postulated downstream (see below).
 //!
 //! Standard algebraic properties (`add_comm`, `add_assoc`, etc.) are
 //! *derived theorems*. Today they are still postulated via
 //! [`nat_add_comm`] etc. and tagged `TODO: prove from definitional
 //! axioms` — those stubs are scheduled to be replaced by real proofs
-//! using Peano induction ([`crate::proofs::nat::nat_induct`]).
+//! using the induction rule [`Thm::nat_induct`].
 //! Consumers depend only on the surface `LazyLock<Thm>` constants, so
 //! the swap is invisible.
 
@@ -72,17 +73,48 @@ fn assume_hol(body: Term) -> Thm {
 // ============================================================================
 
 /// `⊢ ∀P:nat→bool. P 0 ∧ (∀n. P n ⟹ P (succ n)) ⟹ ∀n. P n` —
-/// mathematical induction on naturals. Now a **bona-fide kernel
-/// axiom** ([`Thm::nat_induction`]) with empty hypotheses, no longer
-/// a `Thm::assume`-postulated form.
+/// the classic induction *axiom*, now **derived** (hyp-free) from the
+/// kernel's induction *rule* [`Thm::nat_induct`]: assume the
+/// conjunction, split it with `and_elim`, `all_elim` the step at a
+/// fresh `n`, apply the rule, then discharge and generalise.
 pub fn nat_induction() -> Thm {
-    Thm::nat_induction()
+    static AX: LazyLock<Thm> = LazyLock::new(|| {
+        let ctx = ctx();
+        let pred_ty = Type::fun(nat_ty(), Type::bool());
+        let p = Term::free("P", pred_ty.clone());
+        let n = Term::free("n", nat_ty());
+
+        // antecedent: P 0 ∧ (∀n. P n ⟹ P (succ n))
+        let p0 = Term::app(p.clone(), zero());
+        let step_body = ctx.mk_imp(
+            Term::app(p.clone(), n.clone()),
+            Term::app(p.clone(), succ(n.clone())),
+        );
+        let step_all = ctx.mk_forall("n", nat_ty(), step_body);
+        let ante = ctx.mk_and(p0, step_all);
+
+        let h = Thm::assume(ante.clone()).expect("nat_induction: assume");
+        let base = h.clone().and_elim_l().expect("nat_induction: and_elim_l");
+        let step = h
+            .and_elim_r()
+            .expect("nat_induction: and_elim_r")
+            .all_elim(n)
+            .expect("nat_induction: all_elim step");
+
+        Thm::nat_induct(base, step)
+            .expect("nat_induction: nat_induct rule") // {ante} ⊢ ∀n. P n
+            .imp_intro(&ante)
+            .expect("nat_induction: imp_intro")
+            .all_intro("P", pred_ty)
+            .expect("nat_induction: all_intro P")
+    });
+    AX.clone()
 }
 
 /// `⊢ ∀n:nat. ¬(0 = succ n)` — zero is never a successor.
 ///
 /// Postulated via `Thm::assume`. A future derivation goes through
-/// [`Thm::nat_induction`] (via [`crate::proofs::nat::nat_induct`])
+/// [`Thm::nat_induct`]
 /// with the predicate `P n = ¬(0 = succ n)`; the base case `¬(0 = 1)`
 /// is already derived in [`crate::proofs::nat::nat_zero_ne_one`] from
 /// `Thm::reduce_prim` on the closed literals.
@@ -209,7 +241,7 @@ pub fn natrec_def_succ() -> Thm {
 // The following five facts (`nat_add_def`, `nat_mul_def`,
 // `nat_pred_zero`, `nat_pred_succ`, `nat_sub_def`) were previously
 // kernel axioms exposed on `Thm::*`. They are now derivable from
-// `Thm::nat_induction` + `Thm::define` (introducing `+`/`*`/`pred`/
+// `Thm::nat_induct` + `Thm::define` (introducing `+`/`*`/`pred`/
 // `-` from `natrec` is a `define` call; their defining equations are
 // then automatic, and the recursion-step equations follow by
 // induction). Until the WASM-proof rewrite lands those derivations,
@@ -534,18 +566,17 @@ mod tests {
         assert_eq!(ax.hyps().iter().next().unwrap(), ax.concl());
     }
 
-    /// Bona-fide kernel axiom: empty hyps (kernel is the trust
-    /// anchor). HOL is folded into the kernel, so axiom conclusions
-    /// are `bool`-typed terms.
+    /// Hyp-free theorem: empty hyps, `bool`-typed conclusion.
     fn check_kernel(ax: Thm) {
         let ty = ax.concl().type_of().unwrap();
-        assert!(ty.is_bool(), "axiom conclusion {ty} is not bool");
-        assert!(ax.hyps().is_empty(), "kernel axiom must have no hyps");
+        assert!(ty.is_bool(), "conclusion {ty} is not bool");
+        assert!(ax.hyps().is_empty(), "expected no hyps");
     }
 
     #[test]
     fn peano_axioms_well_formed() {
-        // `nat_induction` is a bona-fide kernel axiom (zero hyps).
+        // `nat_induction` is now derived from the kernel rule
+        // `Thm::nat_induct` — hyp-free.
         check_kernel(nat_induction());
         // `nat_zero_ne_succ` / `nat_succ_inj` are postulated via
         // `Thm::assume` until their induction-based derivations land;

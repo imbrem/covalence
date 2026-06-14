@@ -19,7 +19,7 @@
 //!   the definitional axioms + Peano induction. The re-export
 //!   surface stays stable when those proofs land.
 //!
-//! Consumers should reach for `stdlib::nat::*` and never touch
+//! Consumers should reach for `init::nat::*` and never touch
 //! `covalence-core` or the rest of `covalence-hol` directly.
 
 use covalence_core::{defs, Term, Type};

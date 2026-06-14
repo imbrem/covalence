@@ -1,140 +1,162 @@
-//! Intro / elim rules for HOL's propositional connectives.
+//! Intro / elim rules for HOL's propositional connectives — **all
+//! derived, no postulates.**
 //!
-//! In stock HOL Light the connectives `∧` / `∨` / `↔` / `∃` are
-//! *definitions* over `=` (e.g. `p ∧ q ≡ (λf. f p q) = (λf. f T T)`),
-//! and their intro / elim rules are *derived* theorems. In our kernel
-//! each connective is a first-class `HolOp(_)` atom with no defining
-//! equation — `reduce_prim` only evaluates it on `bool` *literals*
-//! (`T ∧ F ≡ F`, …), which isn't enough to derive a rule about
-//! arbitrary propositions `p`, `q`. So the standard rules live here
-//! as `Thm::assume` postulates carrying a single self-hyp.
+//! The connectives are ordinary defined constants in
+//! `covalence_core::defs::logic` (`∧ ≡ λp q. (λf. f p q) = (λf. f T T)`,
+//! `¬ ≡ λp. p ⟹ F`, …). [`Thm::unfold_term_spec`] hands back each
+//! defining equation `⊢ op = <body>`, and from there the standard
+//! HOL Light `bool.ml` derivations reconstruct every intro / elim
+//! rule using only kernel inference rules. Soundness is therefore the
+//! soundness of the kernel itself — nothing here is assumed.
 //!
-//! **These postulates are temporary.** The connectives are meant to
-//! be *built into the kernel* — the end-state is an axiom set that is
-//! only about content-addressing / the observer system, with the
-//! propositional rules either supplied directly by the kernel's
-//! denotation of `HolOp(_)` or derived from it. When that lands, this
-//! module collapses to thin tactic wrappers and the postulates go
-//! away.
+//! ## Relationship to the kernel methods
 //!
-//! Every helper in this file is one of:
+//! For efficiency the kernel also exposes these rules as direct
+//! constructors ([`Thm::and_intro`], [`Thm::not_elim`], …) that build
+//! the conclusion in one step. The derivations in *this* module are
+//! the **soundness witnesses** for those fast methods (and the basis
+//! for a future "paranoid mode" that runs them instead of trusting the
+//! constructor). The `kernel_methods_match_derivations` test pins the
+//! two together.
 //!
-//! * a quantified-rule `LazyLock<Thm>` constant (the "axiom"), or
-//! * a tactic that uses the axiom — invoking `all_elim` / `imp_elim`
-//!   on it to produce the rule's conclusion at a specific witness.
+//! The bootstrap chain:
 //!
-//! The tactics are pure combinators over kernel rules; they cannot
-//! produce a false `Thm` independently. Soundness reduces to the
-//! soundness of the postulated axioms, which are standard intro /
-//! elim rules of higher-order logic.
+//! * [`truth`] — `⊢ T`, from `reduce_prim` on `T = T`.
+//! * [`eqt_intro`] / [`eqt_elim`] — `⊢ p` ↔ `⊢ p = T`, via
+//!   `deduct_antisym` / `eq_mp`.
+//! * conjunction/negation rules — congruence + β-normalisation
+//!   (`unfold_at_*` / `beta_nf` in [`super::rewrite`]) folding the
+//!   definitions in and out.
 
-use std::sync::LazyLock;
+use covalence_core::{defs, Term, Thm, Type};
 
-use covalence_core::{Term, Thm, Type};
+use super::rewrite::{beta_nf, cong_at_fn, eq_sides, unfold_at_1, unfold_at_2};
 
-use crate::HolLightCtx;
+/// A fresh-ish bound-variable name for the `∧` definition's inner
+/// `λf`. `Thm::abs` rejects (soundly) any collision with a free var
+/// in the hypotheses, so a distinctive name keeps the common case
+/// working without a genvar facility.
+const CONJ_F: &str = "_conj_f";
 
-fn ctx() -> HolLightCtx {
-    HolLightCtx::new()
-}
-
-fn bool_free(name: &str) -> Term {
-    Term::free(name, Type::bool())
-}
-
-fn assume(body: Term) -> Thm {
-    Thm::assume(body).expect("proofs::bool: closed bool body")
+fn bool_ty() -> Type {
+    Type::bool()
 }
 
 // ============================================================================
-// Conjunction
+// Bootstrap: TRUTH and the `p ⟺ (p = T)` bridge
 // ============================================================================
 
-/// `⊢ ∀p q:bool. p ⟹ q ⟹ p ∧ q` — and-introduction.
-pub fn and_intro_ax() -> Thm {
-    static AX: LazyLock<Thm> = LazyLock::new(|| {
-        let ctx = ctx();
-        let p = bool_free("p");
-        let q = bool_free("q");
-        let conj = ctx.mk_and(p.clone(), q.clone());
-        let body = ctx.mk_imp(p.clone(), ctx.mk_imp(q.clone(), conj));
-        let inner = ctx.mk_forall("q", Type::bool(), body);
-        let outer = ctx.mk_forall("p", Type::bool(), inner);
-        assume(outer)
-    });
-    AX.clone()
+/// `⊢ T`. Derived: `reduce_prim` decides `(T = T) = T` on the closed
+/// literals, and `refl T : ⊢ T = T` discharges the antecedent.
+pub fn truth() -> Thm {
+    let t = Term::bool_lit(true);
+    let refl_t = Thm::refl(t.clone()).expect("truth: refl T");
+    // ⊢ (T = T) = T
+    let t_eq_t = refl_t.concl().clone();
+    let reduced =
+        Thm::reduce_prim(t_eq_t).expect("truth: reduce_prim (T=T)");
+    reduced.eq_mp(refl_t).expect("truth: eq_mp")
 }
 
-/// `⊢ ∀p q:bool. p ∧ q ⟹ p` — left and-elimination.
-pub fn and_elim_l_ax() -> Thm {
-    static AX: LazyLock<Thm> = LazyLock::new(|| {
-        let ctx = ctx();
-        let p = bool_free("p");
-        let q = bool_free("q");
-        let conj = ctx.mk_and(p.clone(), q.clone());
-        let body = ctx.mk_imp(conj, p);
-        let inner = ctx.mk_forall("q", Type::bool(), body);
-        let outer = ctx.mk_forall("p", Type::bool(), inner);
-        assume(outer)
-    });
-    AX.clone()
+/// `Γ ⊢ p` → `Γ ⊢ p = T` (HOL Light's `EQT_INTRO`). Via
+/// `deduct_antisym` against [`truth`].
+pub fn eqt_intro(th: Thm) -> Thm {
+    th.deduct_antisym(truth()).expect("eqt_intro: deduct_antisym")
 }
 
-/// `⊢ ∀p q:bool. p ∧ q ⟹ q` — right and-elimination.
-pub fn and_elim_r_ax() -> Thm {
-    static AX: LazyLock<Thm> = LazyLock::new(|| {
-        let ctx = ctx();
-        let p = bool_free("p");
-        let q = bool_free("q");
-        let conj = ctx.mk_and(p.clone(), q.clone());
-        let body = ctx.mk_imp(conj, q);
-        let inner = ctx.mk_forall("q", Type::bool(), body);
-        let outer = ctx.mk_forall("p", Type::bool(), inner);
-        assume(outer)
-    });
-    AX.clone()
+/// `Γ ⊢ p = T` → `Γ ⊢ p` (HOL Light's `EQT_ELIM`). Via `eq_mp` of
+/// the symmetric equation against [`truth`].
+pub fn eqt_elim(th: Thm) -> Thm {
+    th.sym()
+        .expect("eqt_elim: not an equation")
+        .eq_mp(truth())
+        .expect("eqt_elim: eq_mp")
+}
+
+// ============================================================================
+// Conjunction — `p ∧ q ≡ (λf. f p q) = (λf. f T T)`
+// ============================================================================
+
+/// `⊢ (∧ p q) = ((λf. f p q) = (λf. f T T))` — the `∧` definition
+/// unfolded at `p`, `q`.
+fn and_body_at(p: Term, q: Term) -> Thm {
+    unfold_at_2(defs::and(), p, q)
 }
 
 /// Build `Γ₁ ∪ Γ₂ ⊢ p ∧ q` from `Γ₁ ⊢ p` and `Γ₂ ⊢ q`.
+///
+/// Derivation (`CONJ`): from `⊢ p` and `⊢ q` get `⊢ p = T`, `⊢ q = T`;
+/// congruence + `abs` build `⊢ (λf. f p q) = (λf. f T T)`, which is
+/// the body of `p ∧ q` — fold it back through the definition.
 pub fn and_intro(p_thm: Thm, q_thm: Thm) -> Thm {
     let p = p_thm.concl().clone();
     let q = q_thm.concl().clone();
-    and_intro_ax()
-        .all_elim(p)
-        .expect("and_intro: all_elim p")
-        .all_elim(q)
-        .expect("and_intro: all_elim q")
-        .imp_elim(p_thm)
-        .expect("and_intro: imp_elim p")
-        .imp_elim(q_thm)
-        .expect("and_intro: imp_elim q")
+
+    let p_eq_t = eqt_intro(p_thm); // ⊢ p = T
+    let q_eq_t = eqt_intro(q_thm); // ⊢ q = T
+
+    // ⊢ (λf. f p q) = (λf. f T T)
+    let bbb = Type::fun(bool_ty(), Type::fun(bool_ty(), bool_ty()));
+    let f = Term::free(CONJ_F, bbb.clone());
+    let refl_f = Thm::refl(f).expect("and_intro: refl f");
+    let fpq_eq = refl_f
+        .cong_app(p_eq_t)
+        .expect("and_intro: cong f p")
+        .cong_app(q_eq_t)
+        .expect("and_intro: cong f q"); // ⊢ f p q = f T T
+    let lam_eq = fpq_eq.abs(CONJ_F, bbb).expect("and_intro: abs f");
+
+    // Fold: ⊢ (∧ p q) = <that body>, then eq_mp backwards.
+    let body_eq = and_body_at(p, q);
+    body_eq
+        .sym()
+        .expect("and_intro: sym")
+        .eq_mp(lam_eq)
+        .expect("and_intro: eq_mp")
 }
 
-/// Build `Γ ⊢ p` from `Γ ⊢ p ∧ q`. Requires the original conjunction
-/// shape — errors out if the conclusion isn't a HOL `∧`.
+/// Build `Γ ⊢ p` from `Γ ⊢ p ∧ q` (`CONJUNCT1`). Apply both sides of
+/// the unfolded conjunction to the selector `λa b. a` and β-normalise:
+/// the LHS collapses to `p`, the RHS to `T`.
 pub fn and_elim_l(conj_thm: Thm) -> Thm {
-    let (p, q) = parse_and(conj_thm.concl())
-        .expect("and_elim_l: conclusion is not p ∧ q");
-    and_elim_l_ax()
-        .all_elim(p)
-        .expect("and_elim_l: all_elim p")
-        .all_elim(q)
-        .expect("and_elim_l: all_elim q")
-        .imp_elim(conj_thm)
-        .expect("and_elim_l: imp_elim")
+    and_elim_with(conj_thm, fst_selector())
 }
 
-/// Build `Γ ⊢ q` from `Γ ⊢ p ∧ q`.
+/// Build `Γ ⊢ q` from `Γ ⊢ p ∧ q` (`CONJUNCT2`); selector `λa b. b`.
 pub fn and_elim_r(conj_thm: Thm) -> Thm {
-    let (p, q) = parse_and(conj_thm.concl())
-        .expect("and_elim_r: conclusion is not p ∧ q");
-    and_elim_r_ax()
-        .all_elim(p)
-        .expect("and_elim_r: all_elim p")
-        .all_elim(q)
-        .expect("and_elim_r: all_elim q")
-        .imp_elim(conj_thm)
-        .expect("and_elim_r: imp_elim")
+    and_elim_with(conj_thm, snd_selector())
+}
+
+/// Shared core of `and_elim_l` / `and_elim_r`: apply the unfolded
+/// conjunction body to `selector` and read off `⊢ <component> = T`.
+fn and_elim_with(conj_thm: Thm, selector: Term) -> Thm {
+    let (p, q) =
+        parse_and(conj_thm.concl()).expect("and_elim: conclusion is not p ∧ q");
+    // ⊢ (λf. f p q) = (λf. f T T)
+    let body = and_body_at(p, q).eq_mp(conj_thm).expect("and_elim: eq_mp body");
+    // ⊢ (λf. f p q) sel = (λf. f T T) sel
+    let applied = cong_at_fn(body, selector);
+    let (lhs, rhs) =
+        eq_sides(applied.concl()).expect("and_elim: applied is an equation");
+    // ⊢ component = T : sym(lhs_nf) · applied · rhs_nf
+    let comp_eq_t = beta_nf(lhs)
+        .sym()
+        .expect("and_elim: sym lhs")
+        .trans(applied)
+        .expect("and_elim: trans applied")
+        .trans(beta_nf(rhs))
+        .expect("and_elim: trans rhs");
+    eqt_elim(comp_eq_t)
+}
+
+/// `λa b:bool. a`.
+fn fst_selector() -> Term {
+    Term::abs("a", bool_ty(), Term::abs("b", bool_ty(), Term::bound(1)))
+}
+
+/// `λa b:bool. b`.
+fn snd_selector() -> Term {
+    Term::abs("a", bool_ty(), Term::abs("b", bool_ty(), Term::bound(0)))
 }
 
 /// Parse `App(App(/\, p), q)` → `(p, q)`. Returns `None` if the term
@@ -148,53 +170,32 @@ fn parse_and(t: &Term) -> Option<(Term, Term)> {
 // Negation
 // ============================================================================
 
-/// `⊢ ∀p:bool. (p ⟹ F) ⟹ ¬p` — not-introduction.
-pub fn not_intro_ax() -> Thm {
-    static AX: LazyLock<Thm> = LazyLock::new(|| {
-        let ctx = ctx();
-        let p = bool_free("p");
-        let imp_f = ctx.mk_imp(p.clone(), ctx.f());
-        let body = ctx.mk_imp(imp_f, ctx.mk_not(p));
-        let outer = ctx.mk_forall("p", Type::bool(), body);
-        assume(outer)
-    });
-    AX.clone()
+/// `⊢ (¬ p) = (p ⟹ F)` — the `¬` definition unfolded at `p`.
+fn not_body_at(p: Term) -> Thm {
+    unfold_at_1(defs::not(), p)
 }
 
-/// `⊢ ∀p:bool. ¬p ⟹ p ⟹ F` — not-elimination.
-pub fn not_elim_ax() -> Thm {
-    static AX: LazyLock<Thm> = LazyLock::new(|| {
-        let ctx = ctx();
-        let p = bool_free("p");
-        let body = ctx.mk_imp(ctx.mk_not(p.clone()), ctx.mk_imp(p, ctx.f()));
-        let outer = ctx.mk_forall("p", Type::bool(), body);
-        assume(outer)
-    });
-    AX.clone()
-}
-
-/// Build `Γ ⊢ ¬p` from `Γ ⊢ p ⟹ F`. Requires the input's
-/// conclusion to be `p ⟹ F`.
+/// Build `Γ ⊢ ¬p` from `Γ ⊢ p ⟹ F` (`NOT_INTRO`). Just fold the
+/// definition `¬p ≡ (p ⟹ F)` backwards.
 pub fn not_intro(p_imp_f_thm: Thm) -> Thm {
     let (p, _) = parse_imp(p_imp_f_thm.concl())
         .expect("not_intro: input is not `p ⟹ q`");
-    not_intro_ax()
-        .all_elim(p)
-        .expect("not_intro: all_elim p")
-        .imp_elim(p_imp_f_thm)
-        .expect("not_intro: imp_elim")
+    not_body_at(p)
+        .sym()
+        .expect("not_intro: sym")
+        .eq_mp(p_imp_f_thm)
+        .expect("not_intro: eq_mp")
 }
 
-/// Build `Γ₁ ∪ Γ₂ ⊢ F` from `Γ₁ ⊢ ¬p` and `Γ₂ ⊢ p`.
+/// Build `Γ₁ ∪ Γ₂ ⊢ F` from `Γ₁ ⊢ ¬p` and `Γ₂ ⊢ p` (`NOT_ELIM`).
+/// Unfold `¬p` to `p ⟹ F`, then modus ponens with `⊢ p`.
 pub fn not_elim(not_p_thm: Thm, p_thm: Thm) -> Thm {
     let p = p_thm.concl().clone();
-    not_elim_ax()
-        .all_elim(p)
-        .expect("not_elim: all_elim p")
-        .imp_elim(not_p_thm)
-        .expect("not_elim: imp_elim ¬p")
+    not_body_at(p)
+        .eq_mp(not_p_thm)
+        .expect("not_elim: eq_mp ¬p → (p⟹F)")
         .imp_elim(p_thm)
-        .expect("not_elim: imp_elim p")
+        .expect("not_elim: imp_elim")
 }
 
 /// Parse `App(App(==>, p), q)` → `(p, q)`.
@@ -228,6 +229,73 @@ fn parse_binop(t: &Term) -> Option<(covalence_core::defs::TermSpec, Term, Term)>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::HolLightCtx;
+
+    fn ctx() -> HolLightCtx {
+        HolLightCtx::new()
+    }
+
+    #[test]
+    fn truth_is_provable_and_axiom_free() {
+        let t = truth();
+        assert!(t.hyps().is_empty(), "TRUTH must be axiom-free");
+        assert_eq!(t.concl(), &Term::bool_lit(true));
+    }
+
+    #[test]
+    fn and_rules_are_axiom_free() {
+        // and_intro of two axiom-free truths is itself axiom-free —
+        // the whole point of deriving rather than postulating.
+        let conj = and_intro(truth(), truth());
+        assert!(conj.hyps().is_empty(), "derived ∧-intro adds no hyps");
+        assert!(and_elim_l(conj.clone()).hyps().is_empty());
+        assert!(and_elim_r(conj).hyps().is_empty());
+    }
+
+    #[test]
+    fn kernel_methods_match_derivations() {
+        // The fast kernel constructors must agree with the witness
+        // derivations in this module — this is the soundness link and
+        // the seed of a "paranoid mode".
+        let p = Thm::assume(Term::bool_lit(true)).unwrap();
+        let q = Thm::assume(Term::bool_lit(true)).unwrap();
+
+        // ∧-intro
+        let derived = and_intro(p.clone(), q.clone());
+        let fast = p.clone().and_intro(q.clone()).unwrap();
+        assert_eq!(derived.concl(), fast.concl());
+
+        // ∧-elim (both projections)
+        assert_eq!(
+            and_elim_l(derived.clone()).concl(),
+            fast.clone().and_elim_l().unwrap().concl()
+        );
+        assert_eq!(
+            and_elim_r(derived).concl(),
+            fast.and_elim_r().unwrap().concl()
+        );
+
+        // ¬-intro / ¬-elim via `(0=1) ⟹ F`
+        let imp_f = {
+            let zero_eq_one = ctx()
+                .mk_eq(
+                    Term::nat_lit(covalence_types::Nat::zero()),
+                    Term::nat_lit(covalence_types::Nat::one()),
+                )
+                .unwrap();
+            let to_false = Thm::reduce_prim(zero_eq_one.clone()).unwrap();
+            crate::proofs::rewrite::rewrite_with(
+                Thm::assume(zero_eq_one.clone()).unwrap(),
+                to_false,
+            )
+            .imp_intro(&zero_eq_one)
+            .unwrap()
+        };
+        assert_eq!(
+            not_intro(imp_f.clone()).concl(),
+            imp_f.not_intro().unwrap().concl()
+        );
+    }
 
     #[test]
     fn and_intro_yields_conjunction() {

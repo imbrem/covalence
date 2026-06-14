@@ -75,6 +75,115 @@ pub fn sym(eq: Thm) -> Thm {
     eq.sym().expect("sym: not an equation")
 }
 
+/// Split an equation term `App(App(=, lhs), rhs)` into `(lhs, rhs)`.
+/// Returns `None` if `t` is not an `=`-headed application.
+pub fn eq_sides(t: &Term) -> Option<(Term, Term)> {
+    use covalence_core::TermKind;
+    let TermKind::App(f, rhs) = t.kind() else {
+        return None;
+    };
+    let TermKind::App(head, lhs) = f.kind() else {
+        return None;
+    };
+    let TermKind::Eq(_) = head.kind() else {
+        return None;
+    };
+    Some((lhs.clone(), rhs.clone()))
+}
+
+/// `⊢ t = nf`, where `nf` is the β-normal form of `t`. A full
+/// normalising conversion built from the kernel's `refl` / `cong_app`
+/// / `abs` / `beta_conv` / `trans` — descends into both sides of an
+/// application and under binders, β-reducing every redex it exposes.
+///
+/// Terminates because kernel terms are simply typed (hence strongly
+/// normalising). Used to evaluate the body of a definition after it
+/// has been applied to concrete arguments (see [`unfold_at_1`] /
+/// [`unfold_at_2`]).
+pub fn beta_nf(t: Term) -> Thm {
+    use covalence_core::{subst, TermKind};
+    match t.kind() {
+        TermKind::App(f, x) => {
+            let f_nf = beta_nf(f.clone());
+            let x_nf = beta_nf(x.clone());
+            // ⊢ f x = f' x'
+            let comb = f_nf.cong_app(x_nf).expect("beta_nf: cong_app");
+            let (_, fx_rhs) =
+                eq_sides(comb.concl()).expect("beta_nf: comb is an equation");
+            // If the normalised function side is a λ, `f' x'` is a
+            // redex — fire it and keep normalising the result.
+            if let TermKind::App(f_prime, _) = fx_rhs.kind()
+                && matches!(f_prime.kind(), TermKind::Abs(..))
+            {
+                let beta = Thm::beta_conv(fx_rhs.clone())
+                    .expect("beta_nf: beta_conv");
+                let (_, body) =
+                    eq_sides(beta.concl()).expect("beta_nf: beta is an equation");
+                let body_nf = beta_nf(body);
+                return comb
+                    .trans(beta)
+                    .expect("beta_nf: trans redex")
+                    .trans(body_nf)
+                    .expect("beta_nf: trans body");
+            }
+            comb
+        }
+        TermKind::Abs(_, ty, body) => {
+            // Normalise under the binder: open with a fresh free var,
+            // normalise, re-abstract.
+            let fresh = fresh_name(body);
+            let wit = Term::free(fresh.as_str(), ty.clone());
+            let opened = subst::open(body, &wit);
+            let opened_nf = beta_nf(opened);
+            opened_nf
+                .abs(fresh.as_str(), ty.clone())
+                .expect("beta_nf: abs")
+        }
+        _ => Thm::refl(t).expect("beta_nf: refl on a leaf"),
+    }
+}
+
+/// A free-variable name that does not occur free in `body`.
+fn fresh_name(body: &Term) -> String {
+    let mut i = 0usize;
+    loop {
+        let name = format!("_bnf{i}");
+        if !covalence_core::subst::has_free_var(body, &name) {
+            return name;
+        }
+        i += 1;
+    }
+}
+
+/// Unfold a unary defined constant at an argument:
+/// `⊢ op arg = body[arg]`, given `op` is a let-style `Spec` leaf
+/// (its definition is `op = λx. body`).
+///
+/// Uses a *single* top-level β-step ([`Thm::beta_conv`]), **not** full
+/// normalisation — so `arg` is substituted in verbatim and any redexes
+/// *inside* `arg` are preserved (callers that want them reduced apply
+/// [`beta_nf`] themselves).
+pub fn unfold_at_1(op: Term, arg: Term) -> Thm {
+    let def = Thm::unfold_term_spec(op).expect("unfold_at_1: unfold_term_spec");
+    let applied = cong_at_fn(def, arg); // ⊢ op arg = (λx.body) arg
+    let (_, redex) =
+        eq_sides(applied.concl()).expect("unfold_at_1: applied is an equation");
+    let beta = Thm::beta_conv(redex).expect("unfold_at_1: beta_conv");
+    applied.trans(beta).expect("unfold_at_1: trans")
+}
+
+/// Unfold a binary defined constant at two arguments:
+/// `⊢ op a b = body[a, b]`, given `op = λx y. body`. One top-level
+/// β-step per argument (see [`unfold_at_1`]).
+pub fn unfold_at_2(op: Term, a: Term, b: Term) -> Thm {
+    let step1 = unfold_at_1(op, a); // ⊢ op a = (λy. body[a])
+    let applied = cong_at_fn(step1, b); // ⊢ (op a) b = (λy. body[a]) b
+    let (_, redex) =
+        eq_sides(applied.concl()).expect("unfold_at_2: applied is an equation");
+    let beta = Thm::beta_conv(redex).expect("unfold_at_2: beta_conv");
+    applied.trans(beta).expect("unfold_at_2: trans")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

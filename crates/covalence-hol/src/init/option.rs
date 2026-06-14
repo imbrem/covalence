@@ -1,6 +1,6 @@
 //! Polymorphic `option 'a` — `none` or `some x`.
 //!
-//! Layered the same way as [`crate::stdlib::nat`]:
+//! Layered the same way as [`crate::init::nat`]:
 //! 1. **Distinctness / injectivity** of the constructors
 //!    ([`axiom_none_ne_some`], [`axiom_some_inj`]).
 //! 2. **Recursor** [`option_rec_at`] / [`option_rec_apply`] with
@@ -24,7 +24,7 @@ fn ctx() -> HolLightCtx {
 }
 
 fn assume_hol(body: Term) -> Thm {
-    Thm::assume(body).expect("stdlib::option: assume")
+    Thm::assume(body).expect("init::option: assume")
 }
 
 /// `option α` — the polymorphic option type.

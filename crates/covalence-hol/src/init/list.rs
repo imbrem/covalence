@@ -1,6 +1,6 @@
 //! Polymorphic lists.
 //!
-//! Layered like [`crate::stdlib::nat`] and [`crate::stdlib::option`]:
+//! Layered like [`crate::init::nat`] and [`crate::init::option`]:
 //! 1. **Constructor distinctness / injectivity**
 //!    ([`axiom_nil_ne_cons`], [`axiom_cons_inj`]).
 //! 2. **Induction** ([`axiom_list_induction`]).
@@ -24,7 +24,7 @@ fn ctx() -> HolLightCtx {
 }
 
 fn assume_hol(body: Term) -> Thm {
-    Thm::assume(body).expect("stdlib::list: assume")
+    Thm::assume(body).expect("init::list: assume")
 }
 
 // ============================================================================

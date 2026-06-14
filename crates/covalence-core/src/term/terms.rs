@@ -31,7 +31,7 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use bytes::Bytes;
 use covalence_types::{Int, Nat};
@@ -107,8 +107,7 @@ impl Def {
         if self.instance_type == self.original.body_type {
             return self.original.body.clone();
         }
-        let mut sub: std::collections::BTreeMap<SmolStr, Type> =
-            std::collections::BTreeMap::new();
+        let mut sub: std::collections::BTreeMap<SmolStr, Type> = std::collections::BTreeMap::new();
         crate::subst::match_types(&self.original.body_type, &self.instance_type, &mut sub)
             .expect("Def: instance_type unreachable from body_type — kernel bug");
         let mut result = self.original.body.clone();
@@ -309,7 +308,9 @@ impl Term {
     /// HOL `bool` literal — `Bool(true)` is `T`, `Bool(false)` is
     /// `F`. Kernel type `bool`.
     pub fn bool_lit(b: bool) -> Self {
-        Self::alloc(TermKind::Bool(b))
+        static TRUE: LazyLock<Term> = LazyLock::new(|| Term::alloc(TermKind::Bool(true)));
+        static FALSE: LazyLock<Term> = LazyLock::new(|| Term::alloc(TermKind::Bool(false)));
+        if b { TRUE.clone() } else { FALSE.clone() }
     }
 
     /// HOL `=` at element type `alpha` (full type `α → α → bool`).
@@ -620,4 +621,3 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
         TermKind::Def(d) => Ok(d.instance_type().clone()),
     }
 }
-

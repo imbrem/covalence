@@ -1,6 +1,6 @@
 //! HOL integers — backed by the kernel's primitive `int` type.
 //!
-//! Same architecture as `stdlib::nat`: the kernel provides the type
+//! Same architecture as `init::nat`: the kernel provides the type
 //! and closed-form computation; the open-form HOL ring axioms come
 //! from `crate::int_axioms` and are re-exported here.
 

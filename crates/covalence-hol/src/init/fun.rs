@@ -3,7 +3,7 @@
 //! Both are polymorphic: `id : 'a → 'a` and
 //! `compose : ('b → 'c) → ('a → 'b) → ('a → 'c)`.
 //!
-//! Layered like the other stdlib modules:
+//! Layered like the other init modules:
 //! 1. **Definitional axioms** — [`axiom_id_def`] (`id x = x`) and
 //!    [`axiom_compose_def`] (`compose f g x = f (g x)`) fix the
 //!    meaning of each constant by a single equation.
@@ -24,7 +24,7 @@ fn ctx() -> HolLightCtx {
 }
 
 fn assume_hol(body: Term) -> Thm {
-        Thm::assume(body).expect("stdlib::fun: assume on closed bool body cannot fail")
+        Thm::assume(body).expect("init::fun: assume on closed bool body cannot fail")
 }
 
 // ============================================================================
@@ -43,7 +43,7 @@ pub fn id_generic() -> Term {
 
 /// Apply `id` to a term `x`. Type-inferred from `x`'s type.
 pub fn id_app(x: Term) -> Term {
-    let alpha = x.type_of().expect("stdlib::fun::id_app: x must be typed");
+    let alpha = x.type_of().expect("init::fun::id_app: x must be typed");
     Term::app(id_at(alpha), x)
 }
 

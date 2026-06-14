@@ -12,14 +12,14 @@ use std::sync::LazyLock;
 use crate::HolLightCtx;
 use covalence_core::{defs, Term, Thm, Type};
 
-use crate::stdlib::nat;
+use crate::init::nat;
 
 fn ctx() -> HolLightCtx {
     HolLightCtx::new()
 }
 
 fn assume_hol(body: Term) -> Thm {
-    Thm::assume(body).expect("stdlib::bytes: assume")
+    Thm::assume(body).expect("init::bytes: assume")
 }
 
 // ============================================================================

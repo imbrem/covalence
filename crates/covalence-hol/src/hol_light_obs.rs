@@ -17,7 +17,7 @@
 //! - `T` / `F` are the [`TermKind::Bool`] literals.
 //! - `=` / `ε` are the primitive [`TermKind::Eq`] / [`TermKind::Select`]
 //!   constants; the connectives (`∧ ∨ ¬ ⟹ ⟺ ∀ ∃`) are the defined
-//!   constants in [`covalence_core::defs::logic`], applied via `App`.
+//!   constants in `covalence_core::defs::logic`, applied via `App`.
 //!
 //! There is no `Trueprop` coercion and no `eq_reflection` bridge
 //! axiom: a HOL judgement `Γ ⊢ p` is just a kernel `Thm` whose
@@ -199,6 +199,7 @@ impl HolLightCtx {
     }
 }
 
-// `HolLight` enum + `IsHolLight` marker trait removed:
-// HOL primitives are now first-class kernel atoms (`Type::bool()`,
-// `Term::Bool(_)`, `Term::HolOp(_, _)`), not an observer family.
+// `HolLight` enum + `IsHolLight` marker trait removed: HOL primitives
+// are now kernel atoms (`Type::bool()`, `Term::bool_lit(_)`, the `Eq` /
+// `Select` leaves) and the `defs::logic` connectives, not an observer
+// family.

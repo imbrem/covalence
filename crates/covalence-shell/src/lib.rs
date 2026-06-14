@@ -28,11 +28,10 @@ pub use kernel::Kernel;
 pub mod prover;
 mod prover_kernel;
 
-// `stdlib` and `PureHol` were re-exports of `covalence_hol`'s
-// proof-heavy modules, which are gated out during the Pure→HOL
-// collapse migration. Re-introduce once the WASM-proof rewrite
-// lands a stdlib over HOL-Light rules.
-// pub use covalence_hol::stdlib;
+// `init` (formerly `stdlib`) and `PureHol` were re-exports of
+// `covalence_hol`'s proof-heavy modules. Re-introduce once the
+// WASM-proof rewrite lands the `init` library over HOL-Light rules.
+// pub use covalence_hol::init;
 
 pub use prover::{Prover, ProverError};
 

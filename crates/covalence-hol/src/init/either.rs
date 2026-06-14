@@ -1,7 +1,7 @@
 //! Polymorphic `either 'a 'b` — `left x` or `right y`.
 //!
-//! Layered the same way as [`crate::stdlib::option`] /
-//! [`crate::stdlib::list`]:
+//! Layered the same way as [`crate::init::option`] /
+//! [`crate::init::list`]:
 //! 1. Constructor distinctness / injectivity ([`axiom_left_inj`],
 //!    [`axiom_right_inj`], [`axiom_left_ne_right`]).
 //! 2. Case analysis ([`axiom_either_cases`]).
@@ -20,7 +20,7 @@ fn ctx() -> HolLightCtx {
 }
 
 fn assume_hol(body: Term) -> Thm {
-    Thm::assume(body).expect("stdlib::either: assume")
+    Thm::assume(body).expect("init::either: assume")
 }
 
 /// `either α β`.

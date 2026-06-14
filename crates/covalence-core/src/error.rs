@@ -23,6 +23,9 @@ pub enum Error {
     #[error("expected HOL universal (∀x:τ. body : bool), got {0}")]
     NotHolForall(String),
 
+    #[error("connective rule: {0}")]
+    ConnectiveRule(String),
+
     #[error("type mismatch: expected {expected}, got {got}")]
     TypeMismatch { expected: Type, got: Type },
 

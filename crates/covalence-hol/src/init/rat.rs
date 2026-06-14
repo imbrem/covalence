@@ -20,14 +20,14 @@ use std::sync::LazyLock;
 use crate::HolLightCtx;
 use covalence_core::{Term, Thm, Type};
 
-use crate::stdlib::int;
+use crate::init::int;
 
 fn ctx() -> HolLightCtx {
     HolLightCtx::new()
 }
 
 fn assume_hol(body: Term) -> Thm {
-    Thm::assume(body).expect("stdlib::rat: assume")
+    Thm::assume(body).expect("init::rat: assume")
 }
 
 // ============================================================================

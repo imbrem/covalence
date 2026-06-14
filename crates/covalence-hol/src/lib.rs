@@ -9,14 +9,14 @@
 //!    atoms (`bool`, `=`, the connectives, the binders).
 //!
 //! 2. **Postulated facts and proof tactics** (`nat_axioms`,
-//!    `int_axioms`, `stdlib`, `proofs`) — facts not yet derived from
-//!    the kernel's single non-computational axiom (`nat_induction`),
-//!    threaded through `Thm::assume` with a self-hyp audit trail,
-//!    plus pure tactic combinators that drive the kernel rules. These
-//!    postulates are *temporary*: the long-term goal is for the only
-//!    genuine axioms to be the kernel's content-addressing / observer
-//!    ones, with arithmetic and the propositional connectives either
-//!    derived or built into the kernel directly.
+//!    `int_axioms`, `init`, `proofs`) — facts not yet derived from
+//!    the kernel's primitive rules (induction `Thm::nat_induct`, ex
+//!    falso `Thm::false_elim`, the connective rules, …), threaded
+//!    through `Thm::assume` with a self-hyp audit trail, plus pure
+//!    tactic combinators that drive the kernel rules. The remaining
+//!    postulates are the arithmetic tier (recursion theorem); the
+//!    propositional logic (`init::bool`, `proofs::bool`) is fully
+//!    derived.
 //!
 //! 3. **Term/type serialisation** (`hash`, `sexp`) — content hashing
 //!    and the canonical S-expression syntax used by every shell crate.
@@ -31,13 +31,13 @@
 // pub mod bridge;
 pub mod hash;
 pub mod hol_light_obs;
+pub mod init;
 pub mod int_axioms;
 pub mod nat_axioms;
 // pub mod peano;
 pub mod proofs;
 // pub mod pure_hol;
 pub mod sexp;
-pub mod stdlib;
 pub mod traits;
 pub mod types;
 

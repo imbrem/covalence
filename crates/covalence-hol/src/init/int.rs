@@ -13,8 +13,8 @@
 //! ingredients an integer-linear-arithmetic certificate checker (the
 //! Alethe `la_generic` / `la_mult_*` family) needs:
 //!
-//! - **Commutative ring** — [`add_comm`] (**proved**), [`add_assoc`],
-//!   [`add_zero`], [`add_neg`], [`mul_comm`], [`mul_assoc`], [`mul_one`],
+//! - **Commutative ring** — [`add_comm`] / [`mul_comm`] (**proved**),
+//!   [`add_assoc`], [`add_zero`], [`add_neg`], [`mul_assoc`], [`mul_one`],
 //!   [`mul_zero`], [`distrib`], [`sub_def`].
 //! - **Linear order** — [`lt_irrefl`], [`lt_trans`], [`lt_trichotomy`],
 //!   [`le_def`].
@@ -272,6 +272,26 @@ fn add_defining_eq(a: &Term, b: &Term) -> Result<Thm> {
         .rhs_conv(|t| t.reduce())
 }
 
+/// `⊢ int.mul a b = abs(classOf (pair P1 P2))` — `int.mul`'s defining
+/// equation, with `P1 = fa·fb + sa·sb`, `P2 = fa·sb + sa·fb`
+/// (`fa = fst(rep a)`, `sa = snd(rep a)`, …).
+fn mul_defining_eq(a: &Term, b: &Term) -> Result<Thm> {
+    mul(a.clone(), b.clone())
+        .delta_all(covalence_core::defs::int_mul_spec().symbol())?
+        .rhs_conv(|t| t.reduce())
+}
+
+/// `⊢ t = t'`, applying each `eqs[i]` (`rw_all`, all occurrences) to the
+/// running RHS in turn.
+fn rewrite_seq(t: &Term, eqs: &[Thm]) -> Result<Thm> {
+    let mut acc = Thm::refl(t.clone())?;
+    for eq in eqs {
+        let cur = acc.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+        acc = acc.trans(cur.rw_all(eq)?)?;
+    }
+    Ok(acc)
+}
+
 // ============================================================================
 // Commutative ring
 // ============================================================================
@@ -334,13 +354,46 @@ pub fn add_neg() -> Thm {
     axiom(forall_int(&["a"], eq))
 }
 
-/// `⊢ ∀a b. a * b = b * a`.
-pub fn mul_comm() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a b. a * b = b * a` — **proved**. Like [`add_comm`], `int.mul`
+    /// is built from `nat::mul` on representatives, so commutativity is *on
+    /// the nose*: the first component `fa·fb + sa·sb` commutes to
+    /// `fb·fa + sb·sa` by `nat::mul_comm`, and the second `fa·sb + sa·fb`
+    /// to `fb·sa + sb·fa` by `nat::mul_comm` (each product) plus one
+    /// `nat::add_comm` (to swap the two summands). Unfold + rewrite.
+    pub fn mul_comm() -> Thm {
+        mul_comm_impl().expect("int::mul_comm derivation")
+    }
+}
+fn mul_comm_impl() -> Result<Thm> {
     let (a, b) = (var("a"), var("b"));
-    let eq = mul(a.clone(), b.clone())
-        .equals(mul(b, a))
-        .expect("mul_comm");
-    axiom(forall_int(&["a", "b"], eq))
+    let dl = mul_defining_eq(&a, &b)?;
+    let dr = mul_defining_eq(&b, &a)?;
+
+    let (rpa, rpb) = (rep_pair(&a), rep_pair(&b));
+    let (fa, sa) = (fst_nn(&rpa), snd_nn(&rpa));
+    let (fb, sb) = (fst_nn(&rpb), snd_nn(&rpb));
+    let mc = |x: &Term, y: &Term| -> Result<Thm> {
+        nat::mul_comm().all_elim(x.clone())?.all_elim(y.clone())
+    };
+    // P1: fa·fb→fb·fa, sa·sb→sb·sa.  P2: fa·sb→sb·fa, sa·fb→fb·sa, then
+    // swap the two summands (sb·fa)+(fb·sa) → (fb·sa)+(sb·fa).
+    let eqs = [
+        mc(&fa, &fb)?,
+        mc(&sa, &sb)?,
+        mc(&fa, &sb)?,
+        mc(&sa, &fb)?,
+        nat::add_comm()
+            .all_elim(nat::mul(sb.clone(), fa.clone()))?
+            .all_elim(nat::mul(fb.clone(), sa.clone()))?,
+    ];
+
+    let t0 = dl.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let rewritten = rewrite_seq(&t0, &eqs)?; // ⊢ dl.rhs = dr.rhs
+    dl.trans(rewritten)?
+        .trans(dr.sym()?)?
+        .all_intro("b", int())?
+        .all_intro("a", int())
 }
 
 /// `⊢ ∀a b c. (a * b) * c = a * (b * c)`.
@@ -470,7 +523,6 @@ mod tests {
             add_assoc(),
             add_zero(),
             add_neg(),
-            mul_comm(),
             mul_assoc(),
             mul_one(),
             mul_zero(),
@@ -508,6 +560,16 @@ mod tests {
         let (a, b) = (var("a"), var("b"));
         let inst = thm.all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
         let expected = add(a.clone(), b.clone()).equals(add(b, a)).unwrap();
+        assert_eq!(inst.concl(), &expected);
+    }
+
+    #[test]
+    fn mul_comm_is_a_genuine_theorem() {
+        let thm = mul_comm();
+        assert!(thm.hyps().is_empty(), "int::mul_comm is proved, not postulated");
+        let (a, b) = (var("a"), var("b"));
+        let inst = thm.all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
+        let expected = mul(a.clone(), b.clone()).equals(mul(b, a)).unwrap();
         assert_eq!(inst.concl(), &expected);
     }
 
@@ -572,4 +634,3 @@ mod tests {
         assert!(lifted.hyps().iter().any(|h| h == &rel_app(&p, &q)));
     }
 }
-

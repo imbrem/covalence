@@ -21,10 +21,12 @@ it is how unfinished work stays discoverable.
 - **The `int` ordered-ring theory** in
   `crates/covalence-hol/src/init/int.rs` is **mostly postulated** via the
   module's `axiom` helper (`Thm::assume`, each carrying its statement as a
-  self-hyp). `add_comm` is now **proved** (the op-unfolding + representative
-  rewrite pattern below); 16 postulates remain: the commutative-ring axioms
-  (`add_assoc`, `add_zero`, `add_neg`, `mul_comm`, `mul_assoc`, `mul_one`,
-  `mul_zero`, `distrib`, `sub_def`), the linear order (`lt_irrefl`,
+  self-hyp). `add_comm` and `mul_comm` are now **proved** (the op-unfolding
+  + representative-rewrite pattern below; both commute *on the nose* as the
+  ops are componentwise `nat` add/mul on representatives); 15 postulates
+  remain: the commutative-ring axioms (`add_assoc`, `add_zero`, `add_neg`,
+  `mul_assoc`, `mul_one`, `mul_zero`, `distrib`, `sub_def`), the linear
+  order (`lt_irrefl`,
   `lt_trans`, `lt_trichotomy`, `le_def`), ordered-ring compatibility
   (`lt_add_mono`, `lt_mul_pos`), and discreteness (`lt_succ`:
   `a < b ⟺ a + 1 ≤ b`). Since `int := (nat × nat) / ~` (Grothendieck), each is

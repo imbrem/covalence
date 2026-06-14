@@ -36,7 +36,23 @@ pub enum BridgeError {
     #[error("parametric sort `{name}` (arity {arity}) not yet supported")]
     ParametricSort { name: String, arity: u32 },
 
+    /// A required step argument (`:premises` / `:args` / clause) was
+    /// missing or the wrong shape for the rule.
+    #[error("malformed `{rule}` step: {detail}")]
+    BadStep { rule: String, detail: String },
+
+    /// A kernel rule rejected the constructed proof — a bug in the
+    /// bridge's translation, not in the kernel.
+    #[error("kernel rejected proof step: {0}")]
+    Kernel(String),
+
     /// An Alethe-level error (parse, structural).
     #[error(transparent)]
     Alethe(#[from] AletheError),
+}
+
+impl From<covalence_core::Error> for BridgeError {
+    fn from(e: covalence_core::Error) -> Self {
+        BridgeError::Kernel(e.to_string())
+    }
 }

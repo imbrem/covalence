@@ -9,18 +9,22 @@
 //!   - [`BridgeError`] — error type, including the `NotImplemented` escape
 //!     hatch used by rules that haven't been wired through yet.
 //!
-//! # ⚠️ Status: skeleton
+//! # Backends
 //!
-//! The concrete `KernelAletheBridge` impl (against the legacy `Prover`
-//! trait) was removed in the kernel rewrite. Recover it from
-//! `backup/pre-hol-cleanup` if needed; a new impl over the HOL-on-store
-//! stack lands here later. What remains is the backend-agnostic trait +
-//! driver + SMT/Alethe parsing.
+//! [`HolAletheBridge`] is the concrete backend over the
+//! `covalence-core` HOL kernel: it replays an Alethe refutation as a
+//! kernel derivation and reports `Unsat` when it reaches the empty
+//! clause. It covers the QF_UF fragment today; the remaining rule
+//! families (rewrite `hole`s, subproofs) are tracked in `SKELETONS.md`.
+//! The legacy `Prover`-based `KernelAletheBridge` removed in the kernel
+//! rewrite can still be recovered from `backup/pre-hol-cleanup`.
 
 pub mod bridge;
 pub mod error;
+pub mod hol;
 pub mod ingest;
 
 pub use bridge::AletheBridge;
 pub use error::BridgeError;
+pub use hol::HolAletheBridge;
 pub use ingest::{ingest_alethe, ingest_problem, ingest_proof};

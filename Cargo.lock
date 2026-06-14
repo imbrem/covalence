@@ -896,6 +896,8 @@ dependencies = [
 name = "covalence-alethe"
 version = "0.0.0"
 dependencies = [
+ "covalence-core",
+ "covalence-hol",
  "covalence-sexp",
  "covalence-smt",
  "covalence-types",

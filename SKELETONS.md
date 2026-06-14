@@ -16,6 +16,31 @@ it is how unfinished work stays discoverable.
   will land here as the HOL-on-store stack comes online. See the
   `covalence-kernel` crate-root docs and `docs/roadmap.md`.
 
+## Partial subsystems
+
+- **`covalence-alethe` rule coverage.** `HolAletheBridge` (in
+  `crates/covalence-alethe/src/hol.rs`) checks the QF_UF fragment —
+  `assume`, `resolution` / `th_resolution`, `refl`, `trans`, `symm`,
+  `cong`, `equiv_pos2`, `false`. The following return
+  `BridgeError::NotImplemented` (or `UnknownRule`) and still need wiring:
+  - **`hole`** — cvc5's "untranslated rewrite" escape hatch. Cannot be
+    checked without reconstructing the omitted rewrite; surfaced rather
+    than trusted. Most cvc5 QF_UF proofs that reason about disequality
+    (`¬(x = x)` → `false`) currently hit this.
+  - **Subproofs** — `anchor` and any `step` carrying `:discharge`
+    (`subproof`, `bind`, `let`, …). The bridge rejects `:discharge`.
+  - **The rest of the propositional rule family** — `equiv_pos1`,
+    `and_pos`/`and_neg`, `or_pos`/`or_neg`, `implies_pos`/`implies_neg`,
+    `not_not`, `contraction`, `tautology`, `ite*`, plus the equality
+    lemmas `eq_reflexive`/`eq_transitive`/`eq_symmetric`/`eq_congruent`.
+    Each is either a `clause_intro` of an intuitionistic sequent or a
+    direct equality derivation — the `init/logic.rs` machinery is in
+    place; they just need cases in `hol.rs::step`.
+  - **Theory arithmetic** (`la_*`, `lia_*`, …) — out of scope until the
+    kernel's `int`/`real` arithmetic is wired through term translation.
+  - **Parametric sorts** (`declare-sort` arity > 0) — rejected with
+    `ParametricSort`.
+
 ## Registry maintenance
 
 - **`SKELETONS.md` itself is incomplete.** This file was created to fix the

@@ -23,10 +23,12 @@
 
 mod observer;
 pub mod set;
+mod spec;
 mod term;
 
 pub use observer::{Hint, ObsEq, ObsImp, ObsTrue, Object, Observer};
 pub use set::TermSet;
+pub use spec::TermSpec;
 pub use term::{Def, Term, TermKind};
 
 // Re-export the type language so `crate::term::{Type, TypeKind,

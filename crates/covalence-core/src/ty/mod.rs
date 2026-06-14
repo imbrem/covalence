@@ -13,7 +13,9 @@
 //!   type arguments used throughout `TypeKind` / `TermKind`.
 
 mod list;
+mod spec;
 mod ty;
 
 pub use list::TypeList;
+pub use spec::TypeSpec;
 pub use ty::{BinderHint, Type, TypeKind};

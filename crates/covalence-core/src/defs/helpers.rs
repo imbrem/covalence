@@ -8,6 +8,6 @@ use crate::term::{Term, Type};
 /// The "any" predicate `λ_:τ. T` for the carrier type τ. Used by
 /// `TypeSpec::newtype` and every `def name args := ty` (no `where
 /// pred`) catalogue entry.
-pub(super) fn any(carrier: &Type) -> Term {
+pub(crate) fn any(carrier: &Type) -> Term {
     Term::abs("_", carrier.clone(), Term::bool_lit(true))
 }

@@ -36,7 +36,9 @@ use std::sync::{Arc, LazyLock};
 use covalence_types::{Bytes, Int, Nat};
 use smol_str::SmolStr;
 
-use crate::defs::{TermSpec, TypeSpec};
+use crate::ty::TypeSpec;
+
+use super::spec::TermSpec;
 use crate::error::{Error, Result};
 
 use super::observer::{Object, Observer};

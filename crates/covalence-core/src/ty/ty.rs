@@ -18,10 +18,10 @@ use std::sync::{Arc, LazyLock};
 
 use smol_str::SmolStr;
 
-use crate::defs::TypeSpec;
 use crate::term::{Object, Observer};
 
 use super::list::TypeList;
+use super::spec::TypeSpec;
 
 // ============================================================================
 // BinderHint

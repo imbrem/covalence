@@ -21,6 +21,7 @@
 //! [`Canonical`]: super::canonical::Canonical
 
 use std::fmt;
+use std::hash::Hash;
 
 /// Object-safe trait for things that can name a spec.
 pub trait Symbol: fmt::Debug + Send + Sync + 'static {
@@ -33,4 +34,26 @@ impl Symbol for smol_str::SmolStr {
     fn label(&self) -> &str {
         self.as_str()
     }
+}
+
+// ============================================================================
+// Symbol comparison / hash helpers (shared by `TypeSpec` / `TermSpec`)
+// ============================================================================
+
+/// Structural equality of two `dyn Symbol`s.
+pub(crate) fn symbol_eq(a: &dyn Symbol, b: &dyn Symbol) -> bool {
+    // TODO: generalize
+    std::ptr::addr_eq(a, b)
+}
+
+pub(crate) fn symbol_cmp(a: &dyn Symbol, b: &dyn Symbol) -> std::cmp::Ordering {
+    // TODO: generalize
+    (a as *const dyn Symbol)
+        .cast::<()>()
+        .cmp(&(b as *const dyn Symbol).cast::<()>())
+}
+
+pub(crate) fn symbol_hash<H: std::hash::Hasher>(s: &dyn Symbol, state: &mut H) {
+    // TODO: generalize
+    s.label().hash(state)
 }

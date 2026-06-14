@@ -86,7 +86,7 @@ mod cond;
 mod coprod;
 mod fail;
 mod floats;
-mod helpers;
+pub(crate) mod helpers;
 mod int;
 mod list;
 mod logic;
@@ -102,7 +102,7 @@ mod set;
 mod sigs;
 mod spec;
 mod stream;
-mod symbol;
+pub(crate) mod symbol;
 mod unit;
 
 pub use bits::{

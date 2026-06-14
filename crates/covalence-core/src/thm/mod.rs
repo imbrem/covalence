@@ -42,7 +42,7 @@ use crate::hol;
 use crate::subst::{close, find_free_type, has_free_var, open, subst_free, subst_tfree_in_term};
 
 use crate::term::{
-    Object, ObsEq, ObsImp, ObsTrue, Observer, Term, TermKind, Type, TypeEnv, type_of_in,
+    Object, ObsEq, ObsImp, ObsTrue, Observer, Term, TermKind, Type, TypeEnv, TypeKind, type_of_in,
 };
 
 mod typedef;
@@ -699,6 +699,110 @@ impl Thm {
         Self::build(Ctx::new(), hol::hol_eq(t, unfolded))
     }
 
+    /// `⊢ (p w) ⟹ p(t)` for a **def-style** TermSpec leaf
+    /// `t = Spec(spec, args)` with selector predicate `p` (its `tm` at
+    /// the supplied type args) and any witness `w` of the spec's
+    /// carrier type. The def-style analogue of [`Thm::select_ax`]: each
+    /// *named* def-spec is its OWN choice — if `p` is inhabited
+    /// (witnessed by `w`), then `t` satisfies `p`.
+    ///
+    /// Returns [`Error::SpecIsLetStyle`] for a let-style spec,
+    /// [`Error::SpecHasNoBody`] for a declaration-only one,
+    /// [`Error::NotASpec`] for a non-spec term, and a type mismatch if
+    /// `w` is not of the carrier type.
+    ///
+    /// ## Soundness
+    ///
+    /// Unconditionally sound, exactly like [`Thm::select_ax`]. If `p`
+    /// is inhabited, the kernel interprets the def-spec as some element
+    /// satisfying `p`, so `p(t)` holds; if `p` is empty, the premise
+    /// `p w` is false for every `w` and the implication is vacuous.
+    ///
+    /// Crucially this does **not** equate `t` with `ε p` or with any
+    /// other spec sharing `p`: distinct named def-specs are
+    /// independent choices. Think of `ε` / [`TermKind::Select`] as the
+    /// single distinguished *anonymous* def-spec, whose choice axiom is
+    /// [`Thm::select_ax`]; every named def-spec gets its own via this
+    /// rule.
+    ///
+    /// (A *let*-style spec `c ≡ body` is the special case whose
+    /// predicate is `λx. x = body`: `spec_ax` then yields
+    /// `(body = body) ⟹ (c = body)`, and `refl` discharges the
+    /// premise — exactly [`Thm::unfold_term_spec`]. The two spec kinds
+    /// will eventually be consolidated on this footing.)
+    pub fn spec_ax(t: Term, w: Term) -> Result<Thm> {
+        let (spec, args) = match t.kind() {
+            TermKind::Spec(spec, args) => (spec.clone(), args.clone()),
+            _ => return Err(Error::NotASpec),
+        };
+        let declared_ty = spec.ty().ok_or(Error::SpecHasNoBody)?.clone();
+        let body = spec.tm().ok_or(Error::SpecHasNoBody)?.clone();
+
+        // def-style ↔ body : declared_ty → bool (let-style ↔ body :
+        // declared_ty, handled by `unfold_term_spec`).
+        let body_ty = body.type_of()?;
+        if body_ty != Type::fun(declared_ty.clone(), Type::bool()) {
+            return Err(Error::SpecIsLetStyle);
+        }
+
+        // Instantiate the predicate at the supplied type args — same
+        // positional order as `unfold_term_spec` / `type_of_in`.
+        let tvars = declared_ty.free_tvars();
+        let mut pred = body;
+        for (tvar, arg) in tvars.iter().zip(args.iter()) {
+            pred = subst_tfree_in_term(&pred, tvar, arg);
+        }
+
+        // `w` must inhabit the spec's carrier (= `t`'s type), so that
+        // both `p w` and `p t` type-check at `bool`.
+        let carrier = t.type_of()?;
+        let w_ty = w.type_of()?;
+        if w_ty != carrier {
+            return Err(Error::TypeMismatch {
+                expected: carrier,
+                got: w_ty,
+            });
+        }
+
+        let prem = Term::app(pred.clone(), w);
+        let concl = Term::app(pred, t.clone());
+        Self::build(Ctx::new(), hol::hol_imp(prem, concl))
+    }
+
+    /// `⊢ (p x) ⟹ (p (ε p))` — Hilbert's choice axiom (HOL Light's
+    /// `SELECT_AX`), the characterising rule of the `ε` primitive
+    /// ([`TermKind::Select`]). `p` must have a function type
+    /// `α → bool` and `x : α`; then `ε p = Select(p) : α`.
+    ///
+    /// ## Soundness
+    ///
+    /// `ε p` denotes *some* element satisfying `p` whenever one exists,
+    /// so if `p` holds at the witness `x` it holds at `ε p`. This is
+    /// the standard Hilbert-choice interpretation of `Select` (the
+    /// axiom that was previously declared-but-unexposed). Combined with
+    /// the connective definitions it yields the existence form
+    /// `(∃x. p x) ⟹ p (ε p)` downstream.
+    pub fn select_ax(p: Term, x: Term) -> Result<Thm> {
+        let p_ty = p.type_of()?;
+        let TypeKind::Fun(dom, cod) = p_ty.kind() else {
+            return Err(Error::NotFunction(p_ty));
+        };
+        if !cod.is_bool() {
+            return Err(Error::NotBool(cod.clone()));
+        }
+        let x_ty = x.type_of()?;
+        if *dom != x_ty {
+            return Err(Error::TypeMismatch {
+                expected: dom.clone(),
+                got: x_ty,
+            });
+        }
+        let choice = Term::app(Term::select_op(dom.clone()), p.clone());
+        let prem = Term::app(p.clone(), x);
+        let concl = Term::app(p, choice);
+        Self::build(Ctx::new(), hol::hol_imp(prem, concl))
+    }
+
     /// Single-step closed-form computation: `⊢ t = result` where `t` is a
     /// kernel literal operation applied to all-literal arguments, and
     /// `result` is the computed value. Returns [`Error::NotReducible`] for
@@ -1000,6 +1104,69 @@ impl Thm {
             return Err(Error::NotBool(p_ty));
         }
         Self::build(self.hyps, p)
+    }
+
+    // ========================================================================
+    // nat freeness (the constructors `0` / `succ` are free)
+    // ========================================================================
+    //
+    // `nat` is the kernel's freely-generated naturals: the `Nat`
+    // literals are the `0`/`succ`-numerals and [`Term::succ`]
+    // ([`TermKind::Succ`]) is the successor constructor. "Freely
+    // generated" is exactly the commitment [`Thm::nat_induct`] already
+    // relies on; these two rules expose its other half — that distinct
+    // constructor expressions denote distinct numbers — as
+    // non-computational primitives (the literal cases already reduce
+    // via [`Thm::reduce_prim`]; these cover *open* terms).
+
+    /// `⊢ (succ m = succ n) ⟹ (m = n)` — successor injectivity. `m`
+    /// and `n` must type-check at `nat`.
+    ///
+    /// ## Soundness
+    ///
+    /// `Type::nat()` denotes the standard naturals, freely generated by
+    /// `0` and `succ`; a free constructor is injective. Sound in every
+    /// model the kernel admits (the same `nat` semantics
+    /// [`Thm::nat_induct`] and [`Thm::zero_ne_succ`] rest on).
+    pub fn succ_inj(m: Term, n: Term) -> Result<Thm> {
+        let nat = Type::nat();
+        for t in [&m, &n] {
+            let ty = t.type_of()?;
+            if ty != nat {
+                return Err(Error::TypeMismatch {
+                    expected: nat.clone(),
+                    got: ty,
+                });
+            }
+        }
+        let prem = hol::hol_eq(
+            Term::app(Term::succ(), m.clone()),
+            Term::app(Term::succ(), n.clone()),
+        );
+        let concl = hol::hol_eq(m, n);
+        Self::build(Ctx::new(), hol::hol_imp(prem, concl))
+    }
+
+    /// `⊢ ¬(0 = succ n)` — zero is not a successor. `n` must type-check
+    /// at `nat`.
+    ///
+    /// ## Soundness
+    ///
+    /// As [`Thm::succ_inj`]: `0` and `succ _` are distinct constructors
+    /// of the freely-generated `nat`, so they never denote the same
+    /// number.
+    pub fn zero_ne_succ(n: Term) -> Result<Thm> {
+        let nat = Type::nat();
+        let n_ty = n.type_of()?;
+        if n_ty != nat {
+            return Err(Error::TypeMismatch {
+                expected: nat,
+                got: n_ty,
+            });
+        }
+        let zero = Term::nat_lit(covalence_types::Nat::zero());
+        let eq = hol::hol_eq(zero, Term::app(Term::succ(), n));
+        Self::build(Ctx::new(), hol::hol_not(eq))
     }
 }
 

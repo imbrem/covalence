@@ -25,6 +25,7 @@
 pub mod eq;
 pub mod ext;
 pub mod logic;
+pub mod nat;
 
 /// The full `covalence-core` definition catalogue (types, term
 /// constructors, the `TypeSpec` / `TermSpec` handles, `Canonical`, …).

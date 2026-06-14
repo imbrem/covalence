@@ -43,6 +43,7 @@ fn close_at(t: &Term, name: &str, depth: u32) -> Term {
         | TermKind::SpecAbs(..)
         | TermKind::SpecRep(..)
         | TermKind::Obs(..)
+        | TermKind::Succ
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => Term::app(close_at(f, name, depth), close_at(x, name, depth)),
         TermKind::Abs(ty, body) => {
@@ -83,6 +84,7 @@ fn inst(t: &Term, u: &Term, depth: u32) -> Term {
         | TermKind::SpecAbs(..)
         | TermKind::SpecRep(..)
         | TermKind::Obs(..)
+        | TermKind::Succ
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => Term::app(inst(f, u, depth), inst(x, u, depth)),
         TermKind::Abs(ty, body) => {
@@ -140,6 +142,7 @@ fn shift_inner(t: &Term, delta: i64, cutoff: u32) -> Term {
         | TermKind::SpecAbs(..)
         | TermKind::SpecRep(..)
         | TermKind::Obs(..)
+        | TermKind::Succ
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => {
             Term::app(shift_inner(f, delta, cutoff), shift_inner(x, delta, cutoff))
@@ -173,6 +176,7 @@ fn subst_free_at(t: &Term, name: &str, r: &Term, depth: u32) -> Term {
         | TermKind::SpecAbs(..)
         | TermKind::SpecRep(..)
         | TermKind::Obs(..)
+        | TermKind::Succ
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => Term::app(
             subst_free_at(f, name, r, depth),
@@ -274,6 +278,7 @@ pub fn subst_tfrees_in_term(t: &Term, sub: &BTreeMap<SmolStr, Type>) -> Term {
         TermKind::Bool(b) => Term::bool_lit(*b),
         TermKind::Eq(alpha) => Term::eq_op(st(alpha)),
         TermKind::Select(alpha) => Term::select_op(st(alpha)),
+        TermKind::Succ => Term::succ(),
         TermKind::Spec(spec, args) => {
             Term::term_spec(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
         }
@@ -309,6 +314,7 @@ pub fn subst_tfree_in_term(t: &Term, name: &str, r: &Type) -> Term {
         TermKind::Bool(b) => Term::bool_lit(*b),
         TermKind::Eq(alpha) => Term::eq_op(st(alpha)),
         TermKind::Select(alpha) => Term::select_op(st(alpha)),
+        TermKind::Succ => Term::succ(),
         // For a `Spec` leaf the type args participate in type-var
         // substitution; the spec handle (`Arc`-shared) is untouched.
         TermKind::Spec(spec, args) => {
@@ -362,6 +368,7 @@ fn is_closed_at(t: &Term, depth: u32) -> bool {
         | TermKind::SpecAbs(..)
         | TermKind::SpecRep(..)
         | TermKind::Obs(..)
+        | TermKind::Succ
         | TermKind::Def(_) => true,
         TermKind::App(a, b) => {
             is_closed_at(a, depth) && is_closed_at(b, depth)
@@ -396,6 +403,7 @@ pub fn find_free_type(t: &Term, name: &str) -> Option<Type> {
         | TermKind::SpecAbs(..)
         | TermKind::SpecRep(..)
         | TermKind::Obs(..)
+        | TermKind::Succ
         | TermKind::Def(_) => None,
         TermKind::App(a, b) => {
             find_free_type(a, name).or_else(|| find_free_type(b, name))
@@ -428,6 +436,7 @@ fn uses_bound_at(t: &Term, target: u32, depth: u32) -> bool {
         | TermKind::SpecAbs(..)
         | TermKind::SpecRep(..)
         | TermKind::Obs(..)
+        | TermKind::Succ
         | TermKind::Def(_) => false,
         TermKind::App(a, b) => {
             uses_bound_at(a, target, depth) || uses_bound_at(b, target, depth)
@@ -488,6 +497,7 @@ pub fn collect_term_tvars(t: &Term, out: &mut std::collections::BTreeSet<SmolStr
         | TermKind::Nat(_)
         | TermKind::Int(_)
         | TermKind::SmallInt(_)
+        | TermKind::Succ
         | TermKind::Bool(_) => {}
         TermKind::Def(d) => collect_term_tvars(&d.body(), out),
     }

@@ -46,6 +46,12 @@ pub(crate) fn reduce_prim_term(t: &Term) -> Option<Term> {
         return None;
     }
 
+    // The primitive successor on a closed literal: `succ n → n + 1`.
+    if let TermKind::Succ = head.kind() {
+        return unary(&args, as_nat_lit)
+            .map(|n| Term::nat_lit(Nat::from_inner(n.as_inner() + 1u32)));
+    }
+
     // Term-spec catalogue dispatch: closed-form reduction by pointer
     // identity on the spec handle. The canonical handles live in
     // `crate::defs`; both code paths reach the same `Arc` so
@@ -121,7 +127,6 @@ fn literal_eq(a: &Term, b: &Term) -> Option<bool> {
 #[derive(Clone, Copy)]
 enum Prim {
     // nat → nat (unary)
-    NatSucc,
     NatPred,
     // nat → nat → nat
     NatAdd,
@@ -177,7 +182,6 @@ static PRIM_TABLE: LazyLock<HashMap<usize, Prim>> = LazyLock::new(|| {
     // (canonical-handle accessor, op) pairs.
     type Entry = (fn() -> defs::TermSpec, Prim);
     let entries: &[Entry] = &[
-        (defs::nat_succ_spec, Prim::NatSucc),
         (defs::nat_pred_spec, Prim::NatPred),
         (defs::nat_add_spec, Prim::NatAdd),
         (defs::nat_mul_spec, Prim::NatMul),
@@ -248,10 +252,7 @@ fn unary<'a, T>(args: &'a [Term], extract: impl Fn(&'a Term) -> Option<T>) -> Op
 fn eval_prim(prim: Prim, args: &[Term]) -> Option<Term> {
     use Prim::*;
     match prim {
-        // ---- nat: constructors / unary ----
-        NatSucc => Some(Term::nat_lit(Nat::from_inner(
-            unary(args, as_nat_lit)?.as_inner() + 1u32,
-        ))),
+        // ---- nat: unary ----
         // Saturating predecessor: `pred 0 = 0`.
         NatPred => Some(Term::nat_lit(
             unary(args, as_nat_lit)?

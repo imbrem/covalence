@@ -72,11 +72,29 @@ impl std::fmt::Debug for TermSpecInner {
 pub struct TypeSpec(Arc<TypeSpecInner>);
 
 impl TypeSpec {
-    /// Build a new type-spec with the given symbol, carrier, and
-    /// predicate/body. The symbol can be any `Symbol` impl — typically
-    /// [`super::Canonical`] for kernel-shipped definitions or
-    /// `SmolStr` for user-supplied names.
-    pub fn new<S: Symbol>(symbol: S, ty: Option<Type>, tm: Option<Term>) -> Self {
+    /// A **subtype**: the carrier type `carrier` carved down by a
+    /// selector predicate `pred : carrier → bool` (Hilbert-ε style —
+    /// the type denotes `{ x : carrier | pred x }`). Most kernel types
+    /// are built via this or [`Self::newtype`]; we expose those two
+    /// intents rather than the raw `(Option, Option)` shape so the
+    /// representation can change/extend later.
+    pub fn subtype<S: Symbol>(symbol: S, carrier: Type, pred: Term) -> Self {
+        Self::raw(symbol, Some(carrier), Some(pred))
+    }
+
+    /// A **newtype**: a fresh symbol over `base` with the trivial
+    /// (always-true) predicate — `newtype S base` is isomorphic to
+    /// `base` but a distinct type (e.g. `result a b := coprod a b`,
+    /// `u8 := prod u4 u4`).
+    pub fn newtype<S: Symbol>(symbol: S, base: Type) -> Self {
+        let pred = super::helpers::any(&base);
+        Self::raw(symbol, Some(base), Some(pred))
+    }
+
+    /// Raw constructor (escape hatch — prefer [`Self::subtype`] /
+    /// [`Self::newtype`]). Used for the few specs that need an absent
+    /// carrier or body.
+    pub(super) fn raw<S: Symbol>(symbol: S, ty: Option<Type>, tm: Option<Term>) -> Self {
         Self(Arc::new(TypeSpecInner {
             symbol: Arc::new(symbol),
             ty,

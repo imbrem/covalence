@@ -16,18 +16,58 @@
 //! expression to the wrong value. We treat it as audit-required
 //! even though it's "below" `thm`.
 //!
+//! ## Sound vs complete — every spec should be *defined*
+//!
+//! A `TermSpec` has an optional definition body (`tm`):
+//!
+//! - **Defined** (`let_term!` = a let-style lambda body, or
+//!   `spec_term!` = a def-style Hilbert-ε selector predicate giving a
+//!   first-order characterisation). The spec *means something*: its
+//!   defining equations are provable, so theorems about it can be
+//!   derived. This is **complete**.
+//! - **Declaration-only** (`term_decl!`, `tm = None`). The spec is an
+//!   opaque atom — *some* element of its function type, but the kernel
+//!   commits to nothing about it. This is **sound but incomplete**:
+//!   you can't prove anything about the op in open form.
+//!
+//! **The goal is for every op to be defined**, not declaration-only.
+//! Crucially, **the definition does not affect efficiency**: closed
+//! literal computation always goes through `builtins::reduce_spec`
+//! (pointer-match on the handle), which is independent of `tm`. So
+//! giving `intAdd` its full first-order spec costs nothing at runtime;
+//! it just makes the op *complete*.
+//!
+//! ## This module is a broadly-correct TODO list
+//!
+//! Treat `defs/` as a checklist of definitions to be filled in, each
+//! mostly **independently**. Get every entry *broadly correct* — the
+//! right type/shape/structure — and leave a `TODO` where a definition
+//! is a placeholder. We do **not prove anything here**: lemmas about
+//! these definitions (that `+` is commutative, that the quotient
+//! relation is an equivalence, …) belong in `covalence-hol`. That
+//! separation is what lets the definitions be filled in independently.
+//!
+//! Known placeholders (broadly-correct shapes, TODO to finalize):
+//! `int := (nat×nat)/~` and `rat := (int×int)/~` use a placeholder
+//! `=` for the quotient relation (the real relations —
+//! `a+d = c+b` and `a*d = c*b` — need pair projections); the remaining
+//! declaration-only term ops (`int{Succ,Pred,Add,…}`, `nat{Div,BitAnd,…}`,
+//! the byte conversions) still need definitional bodies. Tracked in
+//! `docs/roadmap.md`.
+//!
 //! ## Module layout
 //!
 //! Each concept gets its own file at the root of `defs/`. Submodules
 //! import each other freely — `option` depends on `coprod` for the
 //! eventual unfolding of `option α := coprod α unit`, `list` depends
 //! on `option` for its constructor, `blob` depends on `list`/widths,
-//! and so on. The `helpers` module hosts the `close_spec`/`quot_spec`
-//! factories and a few small utilities shared by every spec entry.
+//! and so on. The `quotient` module hosts the `TypeSpec::close` /
+//! `TypeSpec::quot` constructors; `helpers` has small shared utilities.
 
 #[macro_use]
 mod macros;
 
+mod bits;
 mod blob;
 mod canonical;
 mod cond;
@@ -40,6 +80,7 @@ mod logic;
 mod nat;
 mod option;
 mod prod;
+mod quotient;
 mod rat;
 mod real;
 mod rel;
@@ -50,27 +91,23 @@ mod spec;
 mod stream;
 mod symbol;
 
+pub use bits::{
+    bit_spec, bit_ty, u2_spec, u2_ty, u4_spec, u4_ty, u8_spec, u8_ty, u16_spec, u16_ty, u32_spec,
+    u32_ty, u64_spec, u64_ty, u128_spec, u128_ty, u256_spec, u256_ty, u512_spec, u512_ty,
+};
 pub use blob::{
     bytes_at, bytes_at_spec, bytes_cat, bytes_cat_spec, bytes_cons_nat, bytes_cons_nat_spec,
     bytes_len, bytes_len_spec, bytes_slice, bytes_slice_spec, bytes_spec,
 };
 pub use canonical::Canonical;
-pub use coprod::{
-    bit_spec, bit_ty, coprod, coprod_spec, result, result_spec, u128_spec, u128_ty, u16_spec,
-    u16_ty, u2_spec, u2_ty, u256_spec, u256_ty, u32_spec, u32_ty, u4_spec, u4_ty, u512_spec,
-    u512_ty, u64_spec, u64_ty, u8_spec, u8_ty,
-};
+pub use cond::{cond, cond_spec};
+pub use coprod::{coprod, coprod_spec};
 pub use floats::{f32_spec, f32_ty, f64_spec, f64_ty};
-pub use helpers::{close_spec, quot_spec};
 pub use int::{
     int_abs, int_abs_spec, int_add, int_add_spec, int_div, int_div_spec, int_le, int_le_spec,
     int_lt, int_lt_spec, int_mod, int_mod_spec, int_mul, int_mul_spec, int_neg, int_neg_spec,
-    int_pred, int_pred_spec, int_sgn, int_sgn_spec, int_sub, int_sub_spec, int_succ,
-    int_succ_spec, int_ty_spec, int_zero,
-};
-pub use logic::{
-    and, and_spec, exists, exists_spec, forall, forall_spec, iff, iff_spec, imp, imp_spec, not,
-    not_spec, or, or_spec,
+    int_pred, int_pred_spec, int_sgn, int_sgn_spec, int_sub, int_sub_spec, int_succ, int_succ_spec,
+    int_ty_spec, int_zero,
 };
 pub use list::{
     cons, cons_spec, head, head_spec, list, list_cat, list_cat_spec, list_filter, list_filter_spec,
@@ -79,29 +116,30 @@ pub use list::{
     list_repeat, list_repeat_spec, list_skip, list_skip_spec, list_spec, list_take, list_take_spec,
     nil, nil_spec, tail, tail_spec,
 };
+pub use logic::{
+    and, and_spec, exists, exists_spec, forall, forall_spec, iff, iff_spec, imp, imp_spec, not,
+    not_spec, or, or_spec,
+};
 pub use nat::{
     iter, iter_spec, nat_add, nat_add_spec, nat_bit_and, nat_bit_and_spec, nat_bit_or,
     nat_bit_or_spec, nat_bit_xor, nat_bit_xor_spec, nat_div, nat_div_spec, nat_from_bytes_be,
     nat_from_bytes_be_spec, nat_from_bytes_le, nat_from_bytes_le_spec, nat_le, nat_le_spec, nat_lt,
-    nat_lt_spec, nat_mod, nat_mod_spec, nat_mul, nat_mul_spec, nat_pow, nat_pow_spec,
-    nat_pred, nat_pred_spec, nat_rec, nat_rec_spec, nat_shl, nat_shl_spec, nat_shr, nat_shr_spec,
-    nat_sub, nat_sub_spec, nat_succ, nat_succ_spec, nat_to_bytes_be, nat_to_bytes_be_spec,
-    nat_to_bytes_le, nat_to_bytes_le_spec, nat_to_int, nat_to_int_spec,
+    nat_lt_spec, nat_mod, nat_mod_spec, nat_mul, nat_mul_spec, nat_pow, nat_pow_spec, nat_pred,
+    nat_pred_spec, nat_rec, nat_rec_spec, nat_shl, nat_shl_spec, nat_shr, nat_shr_spec, nat_sub,
+    nat_sub_spec, nat_succ, nat_succ_spec, nat_to_bytes_be, nat_to_bytes_be_spec, nat_to_bytes_le,
+    nat_to_bytes_le_spec, nat_to_int, nat_to_int_spec,
 };
-pub use cond::{cond, cond_spec};
 pub use option::{
     from_some, from_some_spec, is_some, is_some_spec, none, none_spec, option, option_case,
     option_case_spec, option_spec, some, some_spec,
 };
 pub use prod::{prod, prod_spec, signed1, signed1_spec, signed2, signed2_spec};
-pub use rat::{
-    field_of_fractions, field_of_fractions_spec, rat_le, rat_le_spec, rat_spec, rat_ty,
-};
+pub use rat::{rat_le, rat_le_spec, rat_spec, rat_ty};
 pub use real::{real_spec, real_ty};
 pub use rel::{
     part, part_spec, per, per_spec, pord, pord_spec, preord, preord_spec, rel, rel_spec,
 };
-pub use result::{err, err_spec, ok, ok_spec};
+pub use result::{err, err_spec, ok, ok_spec, result, result_spec};
 pub use set::{
     list_to_set, list_to_set_spec, set, set_card, set_card_spec, set_diff, set_diff_spec,
     set_intersect, set_intersect_spec, set_spec, set_subset, set_subset_spec, set_union,
@@ -315,21 +353,12 @@ mod tests {
     }
 
     #[test]
-    fn fixed_width_chain_doubles() {
-        let u2_spec = u2_spec();
-        let carrier = u2_spec.ty().expect("u2 has carrier");
-        let expected = Type::fun(bit_ty(), Type::fun(bit_ty(), Type::bool()));
-        assert_eq!(carrier, &expected);
-
-        let u4_spec = u4_spec();
-        let carrier = u4_spec.ty().expect("u4 has carrier");
-        let expected = Type::fun(u2_ty(), Type::fun(u2_ty(), Type::bool()));
-        assert_eq!(carrier, &expected);
-
-        let u64_spec = u64_spec();
-        let carrier = u64_spec.ty().expect("u64 has carrier");
-        let expected = Type::fun(u32_ty(), Type::fun(u32_ty(), Type::bool()));
-        assert_eq!(carrier, &expected);
+    fn fixed_width_chain_is_products() {
+        // u{2n} := prod u{n} u{n} (a *product* — |prev|² values), so
+        // the carrier is the `prod prev prev` type.
+        assert_eq!(u2_spec().ty().unwrap(), &prod(bit_ty(), bit_ty()));
+        assert_eq!(u4_spec().ty().unwrap(), &prod(u2_ty(), u2_ty()));
+        assert_eq!(u64_spec().ty().unwrap(), &prod(u32_ty(), u32_ty()));
     }
 
     #[test]
@@ -400,10 +429,7 @@ mod tests {
     #[test]
     fn cons_at_nat_has_expected_type() {
         let c = cons(Type::nat());
-        let expected = Type::fun(
-            Type::nat(),
-            Type::fun(list(Type::nat()), list(Type::nat())),
-        );
+        let expected = Type::fun(Type::nat(), Type::fun(list(Type::nat()), list(Type::nat())));
         assert_eq!(c.type_of().unwrap(), expected);
     }
 
@@ -454,10 +480,7 @@ mod tests {
     fn real_carrier_is_rat_to_bool() {
         // `real := { rat } close ratLe` ⟹ carrier is `rat → bool`.
         let spec = real_spec();
-        assert_eq!(
-            spec.ty().cloned(),
-            Some(Type::fun(rat_ty(), Type::bool())),
-        );
+        assert_eq!(spec.ty().cloned(), Some(Type::fun(rat_ty(), Type::bool())),);
     }
 
     #[test]
@@ -467,10 +490,7 @@ mod tests {
         let spec = real_spec();
         let tm = spec.tm().expect("real has a selector predicate");
         let ty = tm.type_of().expect("real selector type-checks");
-        let expected = Type::fun(
-            Type::fun(rat_ty(), Type::bool()),
-            Type::bool(),
-        );
+        let expected = Type::fun(Type::fun(rat_ty(), Type::bool()), Type::bool());
         assert_eq!(ty, expected);
     }
 
@@ -478,7 +498,7 @@ mod tests {
     fn close_spec_factory_well_typed() {
         let car = Type::int();
         let pred = int_le();
-        let handle = close_spec(Canonical::Real, car, pred);
+        let handle = TypeSpec::close(Canonical::Real, car, pred);
         let tm = handle.tm().expect("close: has tm");
         let ty = tm.type_of().expect("close predicate type-of");
         let expected = Type::fun(Type::fun(Type::int(), Type::bool()), Type::bool());
@@ -521,10 +541,7 @@ mod tests {
         let f = stream::stream_at(alpha.clone());
         assert_eq!(
             f.type_of().unwrap(),
-            Type::fun(
-                stream(alpha.clone()),
-                Type::fun(Type::nat(), alpha),
-            ),
+            Type::fun(stream(alpha.clone()), Type::fun(Type::nat(), alpha),),
         );
     }
 
@@ -535,10 +552,7 @@ mod tests {
         let f = stream::stream_make(alpha.clone());
         assert_eq!(
             f.type_of().unwrap(),
-            Type::fun(
-                Type::fun(Type::nat(), alpha.clone()),
-                stream(alpha),
-            ),
+            Type::fun(Type::fun(Type::nat(), alpha.clone()), stream(alpha),),
         );
     }
 
@@ -632,7 +646,6 @@ mod tests {
         assert_eq!(Canonical::Set.label(), "set");
         assert_eq!(Canonical::Coprod.label(), "coprod");
         assert_eq!(Canonical::Option.label(), "option");
-        assert_eq!(Canonical::FieldOfFractions.label(), "fieldOfFractions");
         assert_eq!(Canonical::Real.label(), "real");
     }
 
@@ -652,7 +665,7 @@ mod tests {
 
     #[test]
     fn typespec_construction_round_trips() {
-        let spec = TypeSpec::new(
+        let spec = TypeSpec::raw(
             Canonical::Set,
             Some(Type::fun(Type::tfree("a"), Type::bool())),
             None,
@@ -678,9 +691,9 @@ mod tests {
         let b: smol_str::SmolStr = "myType".into();
         let c: smol_str::SmolStr = "otherType".into();
         let ty = Some(Type::tfree("a"));
-        let s1 = TypeSpec::new(a, ty.clone(), None);
-        let s2 = TypeSpec::new(b, ty.clone(), None);
-        let s3 = TypeSpec::new(c, ty, None);
+        let s1 = TypeSpec::raw(a, ty.clone(), None);
+        let s2 = TypeSpec::raw(b, ty.clone(), None);
+        let s3 = TypeSpec::raw(c, ty, None);
         assert_eq!(s1, s2);
         assert_ne!(s1, s3);
     }

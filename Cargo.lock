@@ -937,7 +937,6 @@ dependencies = [
 name = "covalence-core"
 version = "0.0.0"
 dependencies = [
- "bytes",
  "covalence-types",
  "smol_str",
  "thiserror 2.0.18",

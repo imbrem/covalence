@@ -6,7 +6,6 @@ use crate::hol;
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
-use super::helpers::any;
 use super::spec::TypeSpec;
 
 /// `rel 'a 'b := 'a → 'b → bool`.
@@ -15,7 +14,7 @@ pub fn rel_spec() -> TypeSpec {
         let alpha = Type::tfree("a");
         let beta = Type::tfree("b");
         let carrier = Type::fun(alpha, Type::fun(beta, Type::bool()));
-        TypeSpec::new(Canonical::Rel, Some(carrier.clone()), Some(any(&carrier)))
+        TypeSpec::newtype(Canonical::Rel, carrier)
     });
     LAZY.clone()
 }
@@ -92,7 +91,7 @@ fn combine_props(alpha: Type, props: &[fn(Type) -> Term]) -> Term {
 fn rel_property_spec(symbol: Canonical, props: &[fn(Type) -> Term]) -> TypeSpec {
     let alpha = Type::tfree("a");
     let carrier = Type::fun(alpha.clone(), Type::fun(alpha.clone(), Type::bool()));
-    TypeSpec::new(symbol, Some(carrier), Some(combine_props(alpha, props)))
+    TypeSpec::subtype(symbol, carrier, combine_props(alpha, props))
 }
 
 /// `preord 'a := rel 'a 'a where (transitive ∧ reflexive)`.

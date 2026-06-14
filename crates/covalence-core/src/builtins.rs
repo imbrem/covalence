@@ -250,10 +250,7 @@ fn reduce_spec(handle: &defs::TermSpec, args: &[Term]) -> Option<Term> {
         }
         let a = as_blob(&args[0])?;
         let b = as_blob(&args[1])?;
-        let mut out = Vec::with_capacity(a.len() + b.len());
-        out.extend_from_slice(a);
-        out.extend_from_slice(b);
-        return Some(Term::blob(out));
+        return Some(Term::blob(covalence_types::blob::cat(a, b)));
     }
     if handle.ptr_eq(&defs::bytes_cons_nat_spec()) {
         if args.len() != 2 {
@@ -261,11 +258,7 @@ fn reduce_spec(handle: &defs::TermSpec, args: &[Term]) -> Option<Term> {
         }
         let n = as_nat_lit(&args[0])?;
         let bs = as_blob(&args[1])?;
-        let byte = nat_mod_256(n);
-        let mut out = Vec::with_capacity(1 + bs.len());
-        out.push(byte);
-        out.extend_from_slice(bs);
-        return Some(Term::blob(out));
+        return Some(Term::blob(covalence_types::blob::cons(nat_mod_256(n), bs)));
     }
     if handle.ptr_eq(&defs::bytes_len_spec()) {
         if args.len() != 1 {
@@ -279,8 +272,8 @@ fn reduce_spec(handle: &defs::TermSpec, args: &[Term]) -> Option<Term> {
             return None;
         }
         let bs = as_blob(&args[0])?;
-        let idx = as_nat_lit(&args[1])?;
-        let byte = nat_to_usize(idx).and_then(|i| bs.get(i)).copied().unwrap_or(0);
+        let idx = nat_to_usize(as_nat_lit(&args[1])?).unwrap_or(usize::MAX);
+        let byte = covalence_types::blob::at(bs, idx);
         return Some(Term::nat_lit(Nat::from_inner((byte as u32).into())));
     }
     if handle.ptr_eq(&defs::bytes_slice_spec()) {
@@ -288,13 +281,9 @@ fn reduce_spec(handle: &defs::TermSpec, args: &[Term]) -> Option<Term> {
             return None;
         }
         let bs = as_blob(&args[0])?;
-        let start = as_nat_lit(&args[1])?;
-        let len = as_nat_lit(&args[2])?;
-        let start_usize = nat_to_usize(start).unwrap_or(usize::MAX);
-        let len_usize = nat_to_usize(len).unwrap_or(usize::MAX);
-        let start_clipped = start_usize.min(bs.len());
-        let end_clipped = start_clipped.saturating_add(len_usize).min(bs.len());
-        return Some(Term::blob(bs[start_clipped..end_clipped].to_vec()));
+        let start = nat_to_usize(as_nat_lit(&args[1])?).unwrap_or(usize::MAX);
+        let len = nat_to_usize(as_nat_lit(&args[2])?).unwrap_or(usize::MAX);
+        return Some(Term::blob(covalence_types::blob::slice(bs, start, len)));
     }
     if handle.ptr_eq(&defs::nat_from_bytes_be_spec()) {
         if args.len() != 1 {

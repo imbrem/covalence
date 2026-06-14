@@ -5,7 +5,6 @@ use std::sync::LazyLock;
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
-use super::helpers::any;
 use super::list::list;
 use super::spec::{TermSpec, TypeSpec};
 
@@ -14,7 +13,7 @@ pub fn set_spec() -> TypeSpec {
     static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
         let carrier = Type::fun(alpha, Type::bool());
-        TypeSpec::new(Canonical::Set, Some(carrier.clone()), Some(any(&carrier)))
+        TypeSpec::newtype(Canonical::Set, carrier)
     });
     LAZY.clone()
 }

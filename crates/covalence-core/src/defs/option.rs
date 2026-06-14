@@ -31,7 +31,6 @@ use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
 use super::coprod::coprod;
-use super::helpers::any;
 use super::spec::{TermSpec, TypeSpec};
 
 /// `option 'a := coprod 'a unit`. Opaque TypeSpec wrapper. Its
@@ -45,11 +44,7 @@ pub fn option_spec() -> TypeSpec {
     static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
         let carrier = coprod(alpha, Type::unit());
-        TypeSpec::new(
-            Canonical::Option,
-            Some(carrier.clone()),
-            Some(any(&carrier)),
-        )
+        TypeSpec::newtype(Canonical::Option, carrier)
     });
     LAZY.clone()
 }

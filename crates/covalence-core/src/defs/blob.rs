@@ -6,8 +6,7 @@ use std::sync::LazyLock;
 use crate::term::Type;
 
 use super::canonical::Canonical;
-use super::coprod::u8_ty;
-use super::helpers::any;
+use super::bits::u8_ty;
 use super::list::list;
 use super::spec::TypeSpec;
 
@@ -17,7 +16,7 @@ use super::spec::TypeSpec;
 pub fn bytes_spec() -> TypeSpec {
     static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
         let carrier = list(u8_ty());
-        TypeSpec::new(Canonical::Bytes, Some(carrier.clone()), Some(any(&carrier)))
+        TypeSpec::newtype(Canonical::Bytes, carrier)
     });
     LAZY.clone()
 }

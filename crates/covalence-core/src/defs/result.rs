@@ -10,8 +10,22 @@ use std::sync::LazyLock;
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
-use super::coprod::result;
-use super::spec::TermSpec;
+use super::coprod::coprod;
+use super::spec::{TermSpec, TypeSpec};
+
+/// `result 'a 'b := coprod 'a 'b` — WASM component-model result. Just
+/// a distinct *symbol* whose carrier is `coprod 'a 'b`; the disjoint-
+/// union structure is `coprod`'s, not duplicated here.
+pub fn result_spec() -> TypeSpec {
+    static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
+        let carrier = coprod(Type::tfree("a"), Type::tfree("b"));
+        TypeSpec::newtype(Canonical::Result, carrier)
+    });
+    LAZY.clone()
+}
+pub fn result(alpha: Type, beta: Type) -> Type {
+    Type::spec(result_spec(), vec![alpha, beta])
+}
 
 /// `ok : 'a → result 'a 'b`.
 pub fn ok_spec() -> TermSpec {

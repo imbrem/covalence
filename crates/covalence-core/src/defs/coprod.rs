@@ -1,4 +1,6 @@
-//! `coprod 'a 'b` + `result 'a 'b` alias + fixed-width unsigned chain.
+//! `coprod 'a 'b` (disjoint union) + `result 'a 'b` alias. The
+//! fixed-width unsigned chain (`bit`, `u2` … `u512`) lives in
+//! `super::bits`.
 
 use std::sync::LazyLock;
 
@@ -46,72 +48,10 @@ pub fn coprod_spec() -> TypeSpec {
         let alpha = Type::tfree("a");
         let beta = Type::tfree("b");
         let carrier = Type::fun(alpha, Type::fun(beta, Type::bool()));
-        TypeSpec::new(Canonical::Coprod, Some(carrier), Some(coprod_predicate()))
+        TypeSpec::subtype(Canonical::Coprod, carrier, coprod_predicate())
     });
     LAZY.clone()
 }
 pub fn coprod(alpha: Type, beta: Type) -> Type {
     Type::spec(coprod_spec(), vec![alpha, beta])
 }
-
-/// `result 'a 'b := coprod 'a 'b` — WASM component-model result.
-pub fn result_spec() -> TypeSpec {
-    static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
-        let alpha = Type::tfree("a");
-        let beta = Type::tfree("b");
-        let carrier = Type::fun(alpha.clone(), Type::fun(beta.clone(), Type::bool()));
-        TypeSpec::new(
-            Canonical::Result,
-            Some(carrier),
-            Some(coprod_predicate_at(alpha, beta)),
-        )
-    });
-    LAZY.clone()
-}
-pub fn result(alpha: Type, beta: Type) -> Type {
-    Type::spec(result_spec(), vec![alpha, beta])
-}
-
-fn fixed_width_spec(symbol: Canonical, prev: Type) -> TypeSpec {
-    let carrier = Type::fun(prev.clone(), Type::fun(prev.clone(), Type::bool()));
-    TypeSpec::new(
-        symbol,
-        Some(carrier),
-        Some(coprod_predicate_at(prev.clone(), prev)),
-    )
-}
-
-/// `u1 (bit) := coprod unit unit`.
-pub fn bit_spec() -> TypeSpec {
-    static LAZY: LazyLock<TypeSpec> =
-        LazyLock::new(|| fixed_width_spec(Canonical::Bit, Type::unit()));
-    LAZY.clone()
-}
-pub fn bit_ty() -> Type {
-    static LAZY: LazyLock<Type> = LazyLock::new(|| Type::spec(bit_spec(), vec![]));
-    LAZY.clone()
-}
-
-macro_rules! width {
-    ($spec_fn:ident, $type_fn:ident, $canon:expr, $prev_fn:ident) => {
-        pub fn $spec_fn() -> TypeSpec {
-            static LAZY: LazyLock<TypeSpec> =
-                LazyLock::new(|| fixed_width_spec($canon, $prev_fn()));
-            LAZY.clone()
-        }
-        pub fn $type_fn() -> Type {
-            static LAZY: LazyLock<Type> = LazyLock::new(|| Type::spec($spec_fn(), vec![]));
-            LAZY.clone()
-        }
-    };
-}
-
-width!(u2_spec, u2_ty, Canonical::U2, bit_ty);
-width!(u4_spec, u4_ty, Canonical::U4, u2_ty);
-width!(u8_spec, u8_ty, Canonical::U8, u4_ty);
-width!(u16_spec, u16_ty, Canonical::U16, u8_ty);
-width!(u32_spec, u32_ty, Canonical::U32, u16_ty);
-width!(u64_spec, u64_ty, Canonical::U64, u32_ty);
-width!(u128_spec, u128_ty, Canonical::U128, u64_ty);
-width!(u256_spec, u256_ty, Canonical::U256, u128_ty);
-width!(u512_spec, u512_ty, Canonical::U512, u256_ty);

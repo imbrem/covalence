@@ -5,14 +5,20 @@
 //!   primitive value type.
 //! - [`Int`] and [`Nat`] (behind the default `int` feature) — arbitrary
 //!   precision signed and non-negative integers, wrapping `num-bigint`.
+//! - [`Bytes`] — the byte-string primitive value type (re-exported from
+//!   the `bytes` crate), with operations in [`blob`] (`cat` / `cons` /
+//!   `at` / `slice`).
 
 pub use bytes;
+pub use bytes::Bytes;
 
 mod decision;
 pub use decision::{Decision, ParseDecisionError};
 
 mod bits;
 pub use bits::Bits;
+
+pub mod blob;
 
 #[cfg(feature = "int")]
 mod int;

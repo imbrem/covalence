@@ -58,8 +58,34 @@ Brief, so we can refill correctly:
 
 Expose complete, tested pure definitions for
 `defs/{nat, int, rat, real, bytes, list, stream, option, result}` with
-all basic operations. Longer-term: `f32`/`f64` re-axiomatized through
-`real`.
+all basic operations. These are exactly the WebAssembly component-model
+primitive types plus a few mathematics-native types. Longer-term:
+`f32`/`f64` re-axiomatized through `real`.
+
+**Sound vs complete — define every op.** Today many ops are
+*declaration-only* (`term_decl!`, `tm = None`): opaque atoms that
+`reduce_spec` evaluates on literals but that have no definition, so
+they're *sound but incomplete* — nothing about them is provable in
+open form. Each must become **defined**: a `let_term!` body or a
+`spec_term!` first-order ε-selector spec (e.g. `intAdd` is the unique
+function satisfying the addition equations). **This does not affect
+efficiency** — closed-literal reduction always goes through
+`reduce_spec` by pointer-match, independent of the definition body.
+
+Declaration-only ops to define (the tracker):
+`int{Succ,Pred,Add,Sub,Mul,Div,Mod,Le,Lt,Neg,Abs,Sgn}`,
+`nat{Div,BitAnd,BitOr,BitXor,ToBytesLe,ToBytesBe,FromBytesLe,FromBytesBe}`,
+and the `bytes{Cat,ConsNat,Len,At,Slice}` ops (their *implementations*
+now live in `covalence_types::blob`; they still need definitional
+bodies). `succ`/`pred` are the primitive constructors.
+
+**Decision: define `int := quot (nat × nat)`** (the Grothendieck
+construction; `quot_spec` already exists in `defs/helpers.rs`), not
+`signed2 nat`. Then every integer op is a clean equational definition
+on representatives — `[(a,b)] + [(c,d)] = [(a+c, b+d)]`,
+`-[(a,b)] = [(b,a)]`, `[(a,b)] * [(c,d)] = [(a*c+b*d, a*d+b*c)]`,
+`[(a,b)] ≤ [(c,d)] ⟺ a+d ≤ c+b`, … — instead of painful two's-complement
+specs.
 
 - Add **definition macros** to `covalence-core` so defining an op (its
   body, type, `Canonical` label, and `reduce_spec` literal-dispatch

@@ -63,9 +63,16 @@ macro_rules! let_term {
 
 /// `term_decl!(/// doc...\nspec_fn, accessor, Canonical::Sym, ty_expr);`
 ///
-/// Declare a term-spec with only a type (no body, no predicate).
-/// Use for ops whose body / characterisation is still TODO; the
-/// kernel can dispatch reductions on the spec handle without it.
+/// Declare a term-spec with only a type (no body, no predicate) — an
+/// **opaque atom**. `reduce_spec` can still evaluate it on closed
+/// literals, but it has no definition, so it is **sound but
+/// incomplete**: nothing about it is provable in open form.
+///
+/// **This is a placeholder, not a finished op.** Every op should
+/// eventually be `let_term!` (a body) or `spec_term!` (a first-order
+/// ε-selector spec) instead — see the "sound vs complete" note in the
+/// `defs` module docs and the op tracker in `docs/roadmap.md`. The
+/// definition does *not* affect reduction efficiency.
 macro_rules! term_decl {
     (
         $(#[$accessor_meta:meta])*

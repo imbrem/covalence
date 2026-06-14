@@ -120,14 +120,13 @@ pub enum Canonical {
     Signed1,
     /// `signed2 'a := prod bit 'a` (a or −(a+1)) — two's-complement-ish.
     Signed2,
-    /// `int := signed2 nat` — the type of integer literals
-    /// (`TermKind::Int`). Was the kernel-primitive `TypeKind::Int`
-    /// before the migration to spec-derived numerical types.
+    /// `int := (nat × nat) / ~` (Grothendieck) — the type of integer
+    /// literals (`TermKind::Int`). Was the kernel-primitive
+    /// `TypeKind::Int` before the migration to spec-derived types.
     Int,
 
     // ---- Rationals / reals / floats ----
     /// `fieldOfFractions[mul, zero] 'a := prod 'a 'a quot (standard)`.
-    FieldOfFractions,
     /// `rat := fieldOfFractions int`.
     Rat,
     /// `ratLe : rat → rat → bool` — the order relation on rationals.
@@ -374,7 +373,6 @@ impl Canonical {
             Canonical::Signed1 => "signed1",
             Canonical::Signed2 => "signed2",
             Canonical::Int => "int",
-            Canonical::FieldOfFractions => "fieldOfFractions",
             Canonical::Rat => "rat",
             Canonical::RatLe => "ratLe",
             Canonical::Real => "real",

@@ -31,7 +31,6 @@ use crate::hol;
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
-use super::helpers::any;
 use super::nat::{iter, nat_le};
 use super::option::{none, option};
 use super::spec::{TermSpec, TypeSpec};
@@ -45,7 +44,7 @@ pub fn stream_spec() -> TypeSpec {
     static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
         let carrier = Type::fun(Type::nat(), alpha);
-        TypeSpec::new(Canonical::Stream, Some(carrier.clone()), Some(any(&carrier)))
+        TypeSpec::newtype(Canonical::Stream, carrier)
     });
     LAZY.clone()
 }

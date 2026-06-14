@@ -33,8 +33,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, LazyLock};
 
-use bytes::Bytes;
-use covalence_types::{Int, Nat};
+use covalence_types::{Bytes, Int, Nat};
 use smol_str::SmolStr;
 
 use crate::error::{Error, Result};

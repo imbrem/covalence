@@ -1,27 +1,40 @@
-//! `int := signed2 nat` type spec, plus term-level int arithmetic /
-//! comparison / coercion.
+//! `int := (nat × nat) / ~` (Grothendieck construction), plus
+//! term-level int arithmetic / comparison / coercion.
 
 use std::sync::LazyLock;
 
+use crate::hol;
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
-use super::helpers::any;
-use super::prod::signed2;
+use super::prod::prod;
 use super::sigs;
 use super::spec::{TermSpec, TypeSpec};
 
 // ============================================================================
-// `int` as a derived TypeSpec
+// `int` as a derived TypeSpec — the Grothendieck construction
 // ============================================================================
 
-/// `int := signed2 nat` — the type of integer literals
-/// (`TermKind::Int`). Derived TypeSpec (Canonical::Int); was the
-/// kernel-primitive `TypeKind::Int` before the spec migration.
+/// `int := (nat × nat) / ~`, where `(a, b)` represents `a − b` and
+/// `(a, b) ~ (c, d) ⟺ a + d = c + b`. The type of integer literals
+/// (`TermKind::Int`).
+///
+/// ⚠️ TODO (broadly-correct shape, not finalized): the equivalence
+/// below is a placeholder (`=` on pairs); the real relation needs pair
+/// projections. Nothing downstream inspects the typedef, so the
+/// *shape* — a quotient of `nat × nat` — is what matters here. See the
+/// `defs` module docs / `docs/roadmap.md`.
 pub fn int_ty_spec() -> TypeSpec {
     static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
-        let carrier = signed2(Type::nat());
-        TypeSpec::new(Canonical::Int, Some(carrier.clone()), Some(any(&carrier)))
+        let pair = prod(Type::nat(), Type::nat());
+        let p = Term::free("p", pair.clone());
+        let q = Term::free("q", pair.clone());
+        let rel = hol::pub_abs(
+            "p",
+            pair.clone(),
+            hol::pub_abs("q", pair.clone(), hol::hol_eq(p, q)),
+        );
+        TypeSpec::quot(Canonical::Int, pair, rel)
     });
     LAZY.clone()
 }

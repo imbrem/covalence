@@ -24,7 +24,7 @@ pub fn list_spec() -> TypeSpec {
     static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
         let carrier = stream(option(alpha.clone()));
-        TypeSpec::new(Canonical::List, Some(carrier), Some(finite(alpha)))
+        TypeSpec::subtype(Canonical::List, carrier, finite(alpha))
     });
     LAZY.clone()
 }

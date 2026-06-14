@@ -1,57 +1,57 @@
-//! `rat`, `fieldOfFractions`, and the `ratLe` order constant.
+//! `rat := (int × int⁺) / ~` and the `ratLe` order constant.
 //!
-//! `rat` is a placeholder — once `fieldOfFractions int` is fleshed
-//! out (with a real quotient by the proportionality relation),
-//! `rat` will become `fieldOfFractions int`. For now it's an
-//! opaque TypeSpec over `int` with the trivially-true selector.
+//! `rat` is the quotient of numerator/denominator pairs by
+//! cross-multiplication: `(a, b)` represents `a / b` and
+//! `(a, b) ~ (c, d) ⟺ a*d = c*b`.
 //!
-//! `ratLe : rat → rat → bool` is the order on rationals. It's
-//! declaration-only at the kernel level; the standard order axioms
-//! (reflexivity, transitivity, antisymmetry, totality, plus
-//! compatibility with `+` / `*`) live downstream in
-//! `covalence-hol`, where they're postulated as theorems and later
-//! discharged once `rat` has its real construction.
+//! ⚠️ TODO (broadly-correct shape, not finalized). Two things the real
+//! construction must get right, neither captured by the placeholder
+//! below:
+//!   1. **The denominator must be nonzero.** With zero denominators,
+//!      `a*0 = 0*0` makes every `(a, 0)` equivalent, collapsing all
+//!      "`x/0`" into one spurious class. Restrict the second component
+//!      to `int⁺` (positive ints, which also fixes sign canonicality),
+//!      or carve out `b ≠ 0`. `(0, a)` with `a ≠ 0` is fine (it's `0`).
+//!   2. The `~` relation here is a placeholder (`=` on pairs); the real
+//!      cross-multiplication `a*d = c*b` needs pair projections.
+//! The *shape* — a quotient of numerator/denominator pairs — is what
+//! matters for now. See the `defs` module docs / `docs/roadmap.md`.
 //!
-//! `ratLe` exists in `defs/` because it's needed *here* to define
-//! `real := { rat } close ratLe` (Dedekind cuts).
+//! `ratLe : rat → rat → bool` is the order on rationals,
+//! declaration-only at the kernel level (order axioms are proved
+//! downstream). It lives here because it's needed to define
+//! `real := close rat ratLe` (Dedekind cuts).
 
 use std::sync::LazyLock;
 
+use crate::hol;
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
-use super::helpers::any;
 use super::prod::prod;
 use super::spec::{TermSpec, TypeSpec};
 
-/// `rat` — placeholder; will become `fieldOfFractions int`.
+/// `rat := (int × int⁺) / ~` — the rationals as numerator/denominator
+/// pairs modulo cross-multiplication. (TODO: the carrier here is
+/// `prod int int` and the relation is a placeholder `=`; the real
+/// construction restricts the denominator to nonzero — see module docs.)
 pub fn rat_spec() -> TypeSpec {
     static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
-        let carrier = Type::int();
-        TypeSpec::new(Canonical::Rat, Some(carrier.clone()), Some(any(&carrier)))
+        let pair = prod(Type::int(), Type::int());
+        let p = Term::free("p", pair.clone());
+        let q = Term::free("q", pair.clone());
+        let rel = hol::pub_abs(
+            "p",
+            pair.clone(),
+            hol::pub_abs("q", pair.clone(), hol::hol_eq(p, q)),
+        );
+        TypeSpec::quot(Canonical::Rat, pair, rel)
     });
     LAZY.clone()
 }
 pub fn rat_ty() -> Type {
     static LAZY: LazyLock<Type> = LazyLock::new(|| Type::spec(rat_spec(), vec![]));
     LAZY.clone()
-}
-
-/// `fieldOfFractions 'a` — placeholder.
-pub fn field_of_fractions_spec() -> TypeSpec {
-    static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
-        let alpha = Type::tfree("a");
-        let carrier = prod(alpha.clone(), alpha);
-        TypeSpec::new(
-            Canonical::FieldOfFractions,
-            Some(carrier.clone()),
-            Some(any(&carrier)),
-        )
-    });
-    LAZY.clone()
-}
-pub fn field_of_fractions(alpha: Type) -> Type {
-    Type::spec(field_of_fractions_spec(), vec![alpha])
 }
 
 /// `ratLe : rat → rat → bool` — the order on `rat`. Declaration-only.

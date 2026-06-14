@@ -5,8 +5,8 @@ use std::sync::LazyLock;
 use crate::hol;
 use crate::term::{Term, Type};
 
+use super::bits::bit_ty;
 use super::canonical::Canonical;
-use super::coprod::bit_ty;
 use super::spec::TypeSpec;
 
 pub(super) fn prod_predicate_at(alpha: Type, beta: Type) -> Term {
@@ -41,7 +41,7 @@ pub fn prod_spec() -> TypeSpec {
         let alpha = Type::tfree("a");
         let beta = Type::tfree("b");
         let carrier = Type::fun(alpha, Type::fun(beta, Type::bool()));
-        TypeSpec::new(Canonical::Prod, Some(carrier), Some(prod_predicate()))
+        TypeSpec::subtype(Canonical::Prod, carrier, prod_predicate())
     });
     LAZY.clone()
 }
@@ -53,11 +53,7 @@ fn build_signed_spec(symbol: Canonical) -> TypeSpec {
     let alpha = Type::tfree("a");
     let bit_t = bit_ty();
     let carrier = Type::fun(bit_t.clone(), Type::fun(alpha.clone(), Type::bool()));
-    TypeSpec::new(
-        symbol,
-        Some(carrier),
-        Some(prod_predicate_at(bit_t, alpha)),
-    )
+    TypeSpec::subtype(symbol, carrier, prod_predicate_at(bit_t, alpha))
 }
 
 /// `signed1 'a := prod bit 'a`.

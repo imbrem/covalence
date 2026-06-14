@@ -23,16 +23,15 @@ use std::sync::LazyLock;
 use crate::term::Type;
 
 use super::canonical::Canonical;
-use super::helpers::close_spec;
 use super::rat::{rat_le, rat_ty};
 use super::spec::TypeSpec;
 
-/// `real := { rat } close ratLe` — Dedekind cuts. Carrier is
-/// `rat → bool`; selector predicate enforces upward closure under
-/// `ratLe` plus non-emptiness.
+/// `real := close rat ratLe` — Dedekind cuts. Carrier is `rat → bool`;
+/// selector predicate enforces upward closure under `ratLe` plus
+/// non-emptiness.
 pub fn real_spec() -> TypeSpec {
     static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
-        close_spec(Canonical::Real, rat_ty(), rat_le())
+        TypeSpec::close(Canonical::Real, rat_ty(), rat_le())
     });
     LAZY.clone()
 }

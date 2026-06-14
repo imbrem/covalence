@@ -1,4 +1,4 @@
-//! Pure's term language (the type language lives in [`crate::ty`]).
+//! Core's term language (the type language lives in [`crate::ty`]).
 //!
 //! Locally-nameless: bound variables use de Bruijn indices, free
 //! variables and constants carry their declared type. Meta-implication,
@@ -18,7 +18,7 @@
 //!
 //! `term` and [`crate::ty`] are mutually recursive: a `Term` carries
 //! `Type`s, and a `Type` (via `TyConObs`) carries an `Object`. The
-//! `Type` / `TypeKind` / `BinderHint` names are re-exported here so
+//! `Type` / `TypeKind` names are re-exported here so
 //! existing `crate::term::{Term, Type, …}` imports keep working.
 
 mod observer;

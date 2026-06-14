@@ -4,7 +4,7 @@
 //! matcher here. Each match arm corresponds to one entry in the
 //! catalogue documented on `Thm::reduce_prim`.
 //!
-//! This module is in the Pure TCB. Audit by checking that:
+//! This module is in the Core TCB. Audit by checking that:
 //!
 //! - Each reduction matches the documented arithmetic semantics
 //!   (Euclidean div/mod with `n/0 = n%0 = 0`; saturating nat sub

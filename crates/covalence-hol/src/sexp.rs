@@ -32,20 +32,18 @@
 //!       |  (bytes)                   ;; the type of Blob(_) terms
 //!       |  (fun TYPE TYPE)           ;; function type τ ⇒ σ
 //!       |  (tycon NAME TYPE*)        ;; user-declared structural tycon
-//!       |  (tycon-obs OBS HINT TYPE*) ;; Arc-identity tycon (process-local;
+//!       |  (tycon-obs OBS TYPE*)     ;; Arc-identity tycon (process-local;
 //!                                       OBS payload is handler-specific)
 //! ```
 //!
-//! Terms:
+//! Terms (binders are anonymous — `INDEX` is a de Bruijn index):
 //!
 //! ```text
 //! term ::= (bound INDEX)
 //!       |  (free NAME TYPE)
 //!       |  (const NAME TYPE)
 //!       |  (app TERM TERM)
-//!       |  (abs HINT TYPE TERM)
-//!       |  (imp TERM TERM)
-//!       |  (all HINT TYPE TERM)
+//!       |  (abs TYPE TERM)
 //!       |  (eq TERM TERM)
 //!       |  (blob BYTES)
 //!       |  (obs OBS TYPE)            ;; OBS payload is handler-specific

@@ -10,7 +10,7 @@
 //!
 //! The **only** kernel rule that operates on observations is
 //! [`crate::Thm::obs_eq`], which equates two applications whose heads
-//! are observations of the same Rust type at the same Pure type. There
+//! are observations of the same Rust type at the same Core type. There
 //! is no kernel rule for "this observation is true / equal to some
 //! non-observation term" — that kind of fact is added via
 //! [`crate::Thm::assume`] as an explicit meaning axiom, visible in
@@ -68,8 +68,8 @@ impl<T: Any + Send + Sync + fmt::Debug> Hint for T {
 /// a prop-typed observation directly, gated by the observer's policy.
 ///
 /// **Implementations are NOT part of the TCB.** Soundness is
-/// guaranteed by Pure's parametric-ε model: for any observer whose
-/// final Pure type is `prop`, the standard ε-interpretation maps it
+/// guaranteed by Core's parametric-ε model: for any observer whose
+/// final Core type is `prop`, the standard ε-interpretation maps it
 /// to `⊤` (truth). Returning `true` from `obs_true` is sound — the
 /// model already satisfies the proposition. Returning `false` is
 /// sound — the kernel simply doesn't derive it.
@@ -84,7 +84,7 @@ pub trait ObsTrue: Observer {
 /// Per-observer-Rust-type policy for the kernel's
 /// [`crate::Thm::obs_imp`] rule: a way to mint a **lazy theorem**
 /// `⊢ h₀ ⟹ h₁ ⟹ … ⟹ hₙ ⟹ (obs O) args`
-/// where each `hᵢ` is a Pure proposition and the consequent is a
+/// where each `hᵢ` is a Core proposition and the consequent is a
 /// prop-typed obs application. The policy decides whether the
 /// implication chain is HOL-derivable (or whatever-derivable for
 /// other observer theories) given the supplied hyps.
@@ -120,10 +120,10 @@ pub trait ObsImp: Observer {
 /// ## Why no trust is required
 ///
 /// The model interprets every `Obs` whose underlying Rust type is `O`
-/// at Pure type τ as `ε_O(τ)` — the per-`O`, per-τ canonical
+/// at Core type τ as `ε_O(τ)` — the per-`O`, per-τ canonical
 /// inhabitant. With `ε_O(τ → σ) = λ_. ε_O(σ)` and `ε_O(bool) = ⊤`,
 /// any two `(obs o)(args…)` and `(obs o')(args'…)` with both heads
-/// of Rust type `O` and the same final Pure type τ interpret to the
+/// of Rust type `O` and the same final Core type τ interpret to the
 /// same `ε_O(τ)`. So:
 ///
 /// - Returning `true` from `obs_eq` is sound: the model already

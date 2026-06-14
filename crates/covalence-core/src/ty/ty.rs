@@ -1,4 +1,4 @@
-//! The type language: `Type`, `TypeKind`, and `BinderHint`.
+//! The type language: `Type` and `TypeKind`.
 //!
 //! Type identity is structural (`PartialEq` on `TypeKind`); the
 //! constructors below return `Arc`-wrapped instances so identical
@@ -6,10 +6,6 @@
 //! (`prop`, `bool`, `nat`, `int`, `bytes`, `unit`) are cached behind
 //! `LazyLock` so calls like `Type::bool()` are O(1) `Arc` bumps.
 //!
-//! `BinderHint` lives here too — it's the α-transparent display label
-//! used by both `TypeKind::TyConObs` (type-side) and `TermKind::Abs`
-//! / `TermKind::All` / `Def` (term-side). Putting it in `types` keeps
-//! the dependency edge clean: `types` is loaded before `terms`.
 
 use std::cmp::Ordering;
 use std::fmt;
@@ -55,7 +51,7 @@ pub enum TypeKind {
     /// Type constructor whose identity is the wrapped observer's `Arc`
     /// pointer. **Process-local** — two `Type::tycon_obs` calls with
     /// independently constructed observers compare unequal even if they
-    /// share the same `BinderHint` and args. Mirrors `TermKind::Obs` on the
+    /// share the same observer. Mirrors `TermKind::Obs` on the
     /// type side: the same Rust observer type is the unifying ε-family
     /// across term- and type-level uses (one theory → one identity).
     ///

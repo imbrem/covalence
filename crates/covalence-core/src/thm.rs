@@ -1,4 +1,4 @@
-//! Pure theorems and the LCF rule API.
+//! Core theorems and the LCF rule API.
 //!
 //! `Thm` is the opaque kernel type. Its only constructor is the
 //! private `Thm::build`, which type-checks the conclusion and every
@@ -14,7 +14,7 @@
 //! (test via [`Thm::has_no_obs`]) is **universally true** with no
 //! oracle dependencies, the same property HOL Light's `thm` has.
 //!
-//! The rule set is Pure-shaped:
+//! The rule set is Core-shaped:
 //!
 //! - LF: `assume`, `imp_intro`/`imp_elim`, `all_intro`/`all_elim`.
 //! - Equality: `refl`, `trans`, `sym`, `cong_app`, `cong_abs`,
@@ -121,7 +121,7 @@ impl Thm {
     // ========================================================================
     //
     // The ten HOL Light primitive inference rules. After the
-    // Pure→HOL collapse these are THE inference rules — the only
+    // Core→HOL collapse these are THE inference rules — the only
     // paths to a `Thm` value besides the kernel axioms below
     // (induction, definitional equations, etc.).
     //
@@ -774,8 +774,8 @@ impl Thm {
     /// same name" — the two `Def`s are simply different symbols that
     /// happen to share a display label.
     ///
-    /// The `name` is display-only (an α-transparent [`BinderHint`]). The
-    /// `body` must be a valid Pure term (typeable in isolation).
+    /// The `name` is a display-only label (a `SmolStr`). The
+    /// `body` must be a valid Core term (typeable in isolation).
     ///
     /// ## Soundness
     ///
@@ -897,7 +897,7 @@ impl Thm {
     /// - `expr1` and `expr2` each have the form `(obs head)(arg1)(arg2)…`
     ///   (zero or more applications of an `Obs` leaf at the head).
     /// - both head observers downcast successfully to Rust type `O`.
-    /// - both expressions have the same Pure type.
+    /// - both expressions have the same Core type.
     /// - the observer's [`ObsEq::obs_eq`] method, called with the two
     ///   observers and their args, returns `true`.
     ///
@@ -914,7 +914,7 @@ impl Thm {
     /// - `expr` decomposes as `(obs head)(arg1)(arg2)…` with an `Obs`
     ///   leaf at the head and zero or more applications.
     /// - the head observer downcasts to Rust type `O`.
-    /// - `expr` has final Pure type `prop`.
+    /// - `expr` has final Core type `prop`.
     /// - `O::obs_true(args, hint)` returns `true`.
     ///
     /// ## Soundness
@@ -1708,7 +1708,7 @@ mod hol_light_tests {
     fn hol_deduct_antisym_rejects_non_bool_lhs() {
         // ⊢ (5 : nat)  is not a valid Thm at all (Thm::build rejects).
         // So construct an assumption-based Thm with nat conclusion via
-        // Pure assume (which accepts prop) and verify deduct_antisym
+        // Core assume (which accepts prop) and verify deduct_antisym
         // rejects on non-bool.
         // Build via Thm::assume on a hol_eq — the conclusion is bool.
         // Then forcibly check the not-bool branch via a HOL-Light eq

@@ -11,11 +11,9 @@
 //!
 //! ## α-equivalence is structural equality
 //!
-//! Each `Abs` and `All` carries a [`BinderHint`] — a display label for
-//! the binder. The `BinderHint` type is *transparent* to `PartialEq`,
-//! `Hash`, and `Ord`: two `BinderHint`s always compare equal and hash
-//! the same. So structural equality on `TermKind` is α-equivalence;
-//! rules can use `==` freely without worrying about display labels.
+//! Binders (`Abs`) are anonymous — bound variables are pure de Bruijn
+//! indices with no display label — so structural equality on
+//! `TermKind` is exactly α-equivalence; rules can use `==` freely.
 //!
 //! ## Observations
 //!
@@ -48,12 +46,12 @@ use crate::ty::{Type, TypeKind, TypeList};
 // Def — fresh defined constants
 // ============================================================================
 
-/// A defined constant. Carries a display [`BinderHint`] (the name, for
-/// pretty-printing) and the definition body behind an `Arc`. Each
+/// A defined constant. Carries a display name (a `SmolStr`) and the
+/// definition body behind an `Arc`. Each
 /// [`crate::Thm::define`] call allocates a *fresh* `Arc`, so two
 /// distinct definitions — even with the same name and the same body
 /// — produce distinct `Def`s. Identity is `Arc::ptr_eq`; the name is
-/// display-only (transparent to `Eq`/`Hash`/`Ord`, like [`BinderHint`]).
+/// display-only (transparent to `Eq`/`Hash`/`Ord`).
 ///
 /// This is how we get freshness without a stateful kernel signature:
 /// the allocator gives us a unique pointer per call.
@@ -275,7 +273,7 @@ pub enum TermKind {
     /// eliminators (`coprodCase`/`fst`/`snd`/`option_case`/…) to reach
     /// a wrapper value's underlying carrier representation.
     SpecRep(TypeSpec, TypeList),
-    /// Typed observation leaf: observer + Pure type. The kernel
+    /// Typed observation leaf: observer + Core type. The kernel
     /// compares these by `Arc` pointer identity (via [`Object`]'s
     /// impls), never by the user's `Eq` on the underlying observer.
     Obs(Object, Type),

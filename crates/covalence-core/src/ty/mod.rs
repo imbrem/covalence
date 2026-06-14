@@ -1,4 +1,4 @@
-//! Pure's type language.
+//! Core's type language.
 //!
 //! Mutually recursive with [`crate::term`]: a [`Type`] (via
 //! `TyConObs`) carries an `Object` from `term::observer`, and a `Term`
@@ -7,8 +7,7 @@
 //! Submodules:
 //!
 //! - [`ty`](self::ty) — `Type`, `TypeKind`, the cached primitive types
-//!   (`nat`, `bool`, `int`, `bytes`, `unit`), and `BinderHint` (the
-//!   α-transparent display label shared with term binders).
+//!   (`nat`, `bool`, `int`, `bytes`, `unit`).
 //! - [`list`] — `TypeList`, the wrapper around an ordered list of
 //!   type arguments used throughout `TypeKind` / `TermKind`.
 

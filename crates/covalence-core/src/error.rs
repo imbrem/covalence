@@ -2,7 +2,7 @@ use smol_str::SmolStr;
 
 use crate::term::Type;
 
-/// Errors produced by Pure's typing and inference rules.
+/// Errors produced by Core's typing and inference rules.
 ///
 /// Term-shaped fields are carried as `String` (their `Display` form)
 /// rather than concrete `Term<O>` values, so `Error` is *not* generic
@@ -123,7 +123,7 @@ pub enum Error {
     )]
     SpecIsDefStyle,
 
-    #[error("concl_eq_parts: conclusion is not a Pure-meta equation")]
+    #[error("concl_eq_parts: conclusion is not a Core-meta equation")]
     NotAnEquation,
 
     #[error(

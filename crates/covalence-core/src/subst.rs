@@ -463,17 +463,32 @@ pub fn collect_term_tvars(t: &Term, out: &mut std::collections::BTreeSet<SmolStr
             collect_term_tvars(a, out);
             collect_term_tvars(b, out);
         }
+        // The logical primitives carry an element type that is part of
+        // the term's interior: `Eq(α) : α → α → bool` and
+        // `Select(α) : (α → bool) → α`. A tvar appearing only here is
+        // still a real interior tvar (notably `Select`/ε denotes a
+        // type-dependent value), so it must be collected — otherwise
+        // `define`'s phantom-tvar check would miss it.
+        TermKind::Eq(alpha) | TermKind::Select(alpha) => {
+            for n in alpha.free_tvars() {
+                out.insert(n);
+            }
+        }
+        // Derived-spec leaves carry their positional type arguments;
+        // collect each.
+        TermKind::Spec(_, args) | TermKind::SpecAbs(_, args) | TermKind::SpecRep(_, args) => {
+            for arg in args.iter() {
+                for n in arg.free_tvars() {
+                    out.insert(n);
+                }
+            }
+        }
         TermKind::Bound(_)
         | TermKind::Blob(_)
         | TermKind::Nat(_)
         | TermKind::Int(_)
         | TermKind::SmallInt(_)
-        | TermKind::Bool(_)
-        | TermKind::Eq(_)
-        | TermKind::Select(_)
-        | TermKind::Spec(_, _)
-        | TermKind::SpecAbs(..)
-        | TermKind::SpecRep(..) => {}
+        | TermKind::Bool(_) => {}
         TermKind::Def(d) => collect_term_tvars(&d.body(), out),
     }
 }

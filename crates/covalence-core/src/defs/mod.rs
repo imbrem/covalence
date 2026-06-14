@@ -47,13 +47,25 @@
 //! relation is an equivalence, …) belong in `covalence-hol`. That
 //! separation is what lets the definitions be filled in independently.
 //!
-//! Known placeholders (broadly-correct shapes, TODO to finalize):
-//! `int := (nat×nat)/~` and `rat := (int×int)/~` use a placeholder
-//! `=` for the quotient relation (the real relations —
-//! `a+d = c+b` and `a*d = c*b` — need pair projections); the remaining
-//! declaration-only term ops (`int{Succ,Pred,Add,…}`, `nat{Div,BitAnd,…}`,
-//! the byte conversions) still need definitional bodies. Tracked in
-//! `docs/roadmap.md`.
+//! Status (see `docs/roadmap.md` for the live tracker):
+//! - **Defined.** The structural types and their constructors —
+//!   `prod` (`pair`/`fst`/`snd`), `coprod` (`inl`/`inr`/`coprodCase`),
+//!   `option`/`result` (via the kernel `abs`/`rep` coercions),
+//!   `list` (`nil`/`cons`/`head`/`tail`/`listIndex` over the `stream`
+//!   carrier), all `stream` ops, `unit` (the bool-subtype `{b | b=T}`),
+//!   and the `int`/`rat` **quotient relations** (`a+d=c+b`, `a*d=c*b`,
+//!   built from `fst`/`snd`). All `int` arithmetic (`int{Succ,Pred,
+//!   Neg,Add,Sub,Mul,Le,Lt,Abs,Sgn}`) is defined via the Grothendieck
+//!   construction.
+//! - **Declaration-only (TODO).** Ops needing recursion the kernel
+//!   does not yet expose: `int{Div,Mod}`, `nat{Div,BitAnd,BitOr,
+//!   BitXor}` and the nat↔byte conversions, the byte ops
+//!   (`bytes{Cat,ConsNat,Len,At,Slice}`), the higher-order `list` ops
+//!   (`list{Length,Cat,Map,Filter,Foldr,Foldl,Take,Skip,Repeat,
+//!   Flatten}`), `ratLe`, and `cond`. These still **reduce on
+//!   literals** via `builtins::reduce_spec` where applicable; they
+//!   just lack open-form definitional bodies. One open refinement:
+//!   `rat`'s base should carve out a nonzero denominator.
 //!
 //! ## Module layout
 //!
@@ -90,6 +102,7 @@ mod sigs;
 mod spec;
 mod stream;
 mod symbol;
+mod unit;
 
 pub use bits::{
     bit_spec, bit_ty, u2_spec, u2_ty, u4_spec, u4_ty, u8_spec, u8_ty, u16_spec, u16_ty, u32_spec,
@@ -101,7 +114,9 @@ pub use blob::{
 };
 pub use canonical::Canonical;
 pub use cond::{cond, cond_spec};
-pub use coprod::{coprod, coprod_spec};
+pub use coprod::{
+    coprod, coprod_case, coprod_case_spec, coprod_spec, inl, inl_spec, inr, inr_spec,
+};
 pub use floats::{f32_spec, f32_ty, f64_spec, f64_ty};
 pub use int::{
     int_abs, int_abs_spec, int_add, int_add_spec, int_div, int_div_spec, int_le, int_le_spec,
@@ -133,7 +148,10 @@ pub use option::{
     from_some, from_some_spec, is_some, is_some_spec, none, none_spec, option, option_case,
     option_case_spec, option_spec, some, some_spec,
 };
-pub use prod::{prod, prod_spec, signed1, signed1_spec, signed2, signed2_spec};
+pub use prod::{
+    fst, fst_spec, pair, pair_spec, prod, prod_spec, signed1, signed1_spec, signed2, signed2_spec,
+    snd, snd_spec,
+};
 pub use rat::{rat_le, rat_le_spec, rat_spec, rat_ty};
 pub use real::{real_spec, real_ty};
 pub use rel::{
@@ -152,6 +170,7 @@ pub use stream::{
     stream_make_spec, stream_nth, stream_nth_spec, stream_spec, stream_tail, stream_tail_spec,
 };
 pub use symbol::Symbol;
+pub use unit::{unit_nil, unit_nil_spec, unit_spec};
 
 #[cfg(test)]
 mod tests {
@@ -284,7 +303,7 @@ mod tests {
 
     #[test]
     fn nat_add_term_display() {
-        assert_eq!(format!("{}", nat_add()), "natAdd");
+        assert_eq!(format!("{}", nat_add()), "nat.add");
     }
 
     #[test]

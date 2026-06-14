@@ -85,7 +85,8 @@ const TY_FUN: u8 = 0x03;
 const TY_TYCON: u8 = 0x04;
 const TY_TYCON_OBS: u8 = 0x05;
 const TY_NAT: u8 = 0x06;
-const TY_UNIT: u8 = 0x08;
+// 0x08 = TY_UNIT (removed; `unit` is now the bool-subtype TypeSpec,
+// hashed via TY_SPEC). Do not reuse.
 const TY_SPEC: u8 = 0x09;
 const TY_BOOL: u8 = 0x0a;
 
@@ -107,6 +108,8 @@ const T_BOOL: u8 = 0x0e;
 const T_EQ: u8 = 0x0f;
 const T_SPEC: u8 = 0x10;
 const T_SELECT: u8 = 0x11;
+const T_SPEC_ABS: u8 = 0x12;
+const T_SPEC_REP: u8 = 0x13;
 
 // ============================================================================
 // Stateless API
@@ -179,7 +182,6 @@ impl Hasher {
                 ctx.tag(buf)
             }
             TypeKind::Nat => ctx.tag([TY_NAT]),
-            TypeKind::Unit => ctx.tag([TY_UNIT]),
             TypeKind::Bool => ctx.tag([TY_BOOL]),
             TypeKind::Fun(a, b) => {
                 let ah = self.hash_type(a, oh);
@@ -343,7 +345,41 @@ impl Hasher {
                 }
                 ctx.tag(buf)
             }
+            // `abs`/`rep` coercions: tag + spec label + type args,
+            // exactly like `T_SPEC` but with their own tag byte so the
+            // abstraction and its representation never collide with the
+            // bare spec leaf.
+            TermKind::SpecAbs(spec, args) => {
+                self.hash_coercion(T_SPEC_ABS, spec.symbol().label(), args, oh, ctx)
+            }
+            TermKind::SpecRep(spec, args) => {
+                self.hash_coercion(T_SPEC_REP, spec.symbol().label(), args, oh, ctx)
+            }
         }
+    }
+
+    /// Hash an `abs`/`rep` spec coercion leaf: `tag · |label| · label ·
+    /// |args| · arg-hashes…`. Shared by the [`TermKind::SpecAbs`] and
+    /// [`TermKind::SpecRep`] arms.
+    fn hash_coercion(
+        &mut self,
+        tag: u8,
+        label: &str,
+        args: &[Type],
+        oh: &dyn ObsHasher,
+        ctx: &Blake3Ctx,
+    ) -> O256 {
+        let label = label.as_bytes();
+        let mut buf = Vec::with_capacity(1 + 1 + label.len() + 4 + 32 * args.len());
+        buf.push(tag);
+        buf.push(label.len() as u8);
+        buf.extend_from_slice(label);
+        buf.extend_from_slice(&(args.len() as u32).to_le_bytes());
+        for arg in args {
+            let h = self.hash_type(arg, oh);
+            buf.extend_from_slice(h.as_bytes());
+        }
+        ctx.tag(buf)
     }
 }
 

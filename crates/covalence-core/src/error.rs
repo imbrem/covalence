@@ -125,6 +125,12 @@ pub enum Error {
 
     #[error("concl_eq_parts: conclusion is not a Pure-meta equation")]
     NotAnEquation,
+
+    #[error(
+        "spec abs/rep: the TypeSpec is carrier-less (its `ty` is None), so \
+         it has no abstraction/representation coercion"
+    )]
+    SpecHasNoCarrier,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

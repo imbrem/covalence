@@ -273,11 +273,18 @@ this is fine, that's why we check `ty` and `tm` too!
 
 - `def signed2 'a := prod bit 'a` (interpret as: a or -(a + 1))
 
-- `def int := signed2 nat`
+- `def int := quot (nat × nat)` — the Grothendieck construction, where
+  `(a, b)` represents `a − b` and `(a, b) ~ (c, d) ⟺ a + d = c + b`.
+  (Chosen over `signed2 nat` so every integer op is a clean equational
+  definition on representatives — see `docs/roadmap.md`. `signed1`/
+  `signed2` remain in the catalogue as general two's-complement-style
+  wrappers.)
 
 - `def fieldOfFractions[mul, zero] 'a := prod 'a 'a quot (ye olde standard quotient)`
 
-- `def rat := fieldOfFractions[mul, zero] int`
+- `def rat := fieldOfFractions[mul, zero] int` — concretely
+  `quot (int × int)` by cross-multiplication `(a, b) ~ (c, d) ⟺
+  a·d = c·b` (with the nonzero-denominator carve as a tracked refinement).
 
 - `def real := { rat } close (ratLe)` -- Dedekind cuts
 

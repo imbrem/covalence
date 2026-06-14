@@ -132,7 +132,6 @@ pub fn type_to_sexp(ty: &Type, ser: &dyn ObsSerializer) -> Result<SExpr> {
     Ok(match ty.kind() {
         TypeKind::TFree(name) => list2("tfree", sym(name)),
         TypeKind::Nat => list1("nat"),
-        TypeKind::Unit => list1("unit"),
         TypeKind::Bool => list1("bool"),
         TypeKind::Fun(a, b) => list3("fun", type_to_sexp(a, ser)?, type_to_sexp(b, ser)?),
         TypeKind::Tycon(name, args) => {
@@ -245,6 +244,7 @@ fn parse_type_spec(children: &[SExpr], parser: &dyn ObsParser) -> Result<Type> {
         // `(spec LABEL …)` printed.
         "int" => defs::int_ty_spec(),
         "bytes" => defs::bytes_spec(),
+        "unit" => defs::unit_spec(),
         // Other canonical TypeSpecs land here as the type-hierarchy
         // catalogue gets wired up. Anything not recognised is an error.
         other => {
@@ -259,6 +259,24 @@ fn parse_type_spec(children: &[SExpr], parser: &dyn ObsParser) -> Result<Type> {
 // ============================================================================
 // Terms
 // ============================================================================
+
+/// Serialise an `abs`/`rep` spec coercion as `(HEAD LABEL TYPE*)`,
+/// mirroring the `(term-spec …)` shape. `HEAD` is `spec-abs` or
+/// `spec-rep`.
+fn spec_coercion_to_sexp(
+    head: &str,
+    spec: &covalence_core::defs::TypeSpec,
+    args: &[Type],
+    ser: &dyn ObsSerializer,
+) -> Result<SExpr> {
+    let mut children = Vec::with_capacity(2 + args.len());
+    children.push(sym(head));
+    children.push(sym(spec.symbol().label()));
+    for arg in args {
+        children.push(type_to_sexp(arg, ser)?);
+    }
+    Ok(SExp::List(children))
+}
 
 /// Serialise a `Term` to S-expression form, delegating `Obs` payloads
 /// to `ser`.
@@ -295,6 +313,8 @@ pub fn term_to_sexp(t: &Term, ser: &dyn ObsSerializer) -> Result<SExpr> {
             }
             SExp::List(children)
         }
+        TermKind::SpecAbs(spec, args) => spec_coercion_to_sexp("spec-abs", spec, args, ser)?,
+        TermKind::SpecRep(spec, args) => spec_coercion_to_sexp("spec-rep", spec, args, ser)?,
         TermKind::Obs(observer, ty) => {
             let payload = ser.obs_to_sexp(observer)?;
             list3("obs", payload, type_to_sexp(ty, ser)?)

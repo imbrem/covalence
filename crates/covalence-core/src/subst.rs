@@ -39,6 +39,8 @@ fn close_at(t: &Term, name: &str, depth: u32) -> Term {
         | TermKind::Eq(_)
         | TermKind::Select(_)
         | TermKind::Spec(_, _)
+        | TermKind::SpecAbs(..)
+        | TermKind::SpecRep(..)
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => Term::app(close_at(f, name, depth), close_at(x, name, depth)),
@@ -76,6 +78,8 @@ fn inst(t: &Term, u: &Term, depth: u32) -> Term {
         | TermKind::Eq(_)
         | TermKind::Select(_)
         | TermKind::Spec(_, _)
+        | TermKind::SpecAbs(..)
+        | TermKind::SpecRep(..)
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => Term::app(inst(f, u, depth), inst(x, u, depth)),
@@ -130,6 +134,8 @@ fn shift_inner(t: &Term, delta: i64, cutoff: u32) -> Term {
         | TermKind::Eq(_)
         | TermKind::Select(_)
         | TermKind::Spec(_, _)
+        | TermKind::SpecAbs(..)
+        | TermKind::SpecRep(..)
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => {
@@ -164,6 +170,8 @@ fn subst_free_at(t: &Term, name: &str, r: &Term, depth: u32) -> Term {
         | TermKind::Eq(_)
         | TermKind::Select(_)
         | TermKind::Spec(_, _)
+        | TermKind::SpecAbs(..)
+        | TermKind::SpecRep(..)
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => Term::app(
@@ -186,7 +194,7 @@ fn subst_free_at(t: &Term, name: &str, r: &Term, depth: u32) -> Term {
 pub fn subst_tfree_in_type(ty: &Type, name: &str, r: &Type) -> Type {
     match ty.kind() {
         TypeKind::TFree(n) if n == name => r.clone(),
-        TypeKind::TFree(_) | TypeKind::Nat | TypeKind::Unit | TypeKind::Bool => ty.clone(),
+        TypeKind::TFree(_) | TypeKind::Nat | TypeKind::Bool => ty.clone(),
         TypeKind::Fun(a, b) => Type::fun(
             subst_tfree_in_type(a, name, r),
             subst_tfree_in_type(b, name, r),
@@ -244,6 +252,15 @@ pub fn subst_tfree_in_term(t: &Term, name: &str, r: &Type) -> Term {
         TermKind::Spec(spec, args) => {
             Term::term_spec(spec.clone(), args.iter().map(&st).collect())
         }
+        // `abs`/`rep` coercions carry type args that participate in
+        // type-var substitution; the spec handle (`Arc`-shared) is
+        // untouched, exactly like `TermKind::Spec`.
+        TermKind::SpecAbs(spec, args) => {
+            Term::spec_abs(spec.clone(), args.iter().map(&st).collect())
+        }
+        TermKind::SpecRep(spec, args) => {
+            Term::spec_rep(spec.clone(), args.iter().map(&st).collect())
+        }
         TermKind::Obs(observer, ty) => Term::obs_from_dyn(observer.clone(), st(ty)),
         // `Def` carries an `original` Arc identity (the unique
         // `Thm::define` call) plus an `instance_type`. Substitution
@@ -279,6 +296,8 @@ fn is_closed_at(t: &Term, depth: u32) -> bool {
         | TermKind::Eq(_)
         | TermKind::Select(_)
         | TermKind::Spec(_, _)
+        | TermKind::SpecAbs(..)
+        | TermKind::SpecRep(..)
         | TermKind::Obs(..)
         | TermKind::Def(_) => true,
         TermKind::App(a, b) => {
@@ -310,6 +329,8 @@ pub fn find_free_type(t: &Term, name: &str) -> Option<Type> {
         | TermKind::Eq(_)
         | TermKind::Select(_)
         | TermKind::Spec(_, _)
+        | TermKind::SpecAbs(..)
+        | TermKind::SpecRep(..)
         | TermKind::Obs(..)
         | TermKind::Def(_) => None,
         TermKind::App(a, b) => {
@@ -339,6 +360,8 @@ fn uses_bound_at(t: &Term, target: u32, depth: u32) -> bool {
         | TermKind::Eq(_)
         | TermKind::Select(_)
         | TermKind::Spec(_, _)
+        | TermKind::SpecAbs(..)
+        | TermKind::SpecRep(..)
         | TermKind::Obs(..)
         | TermKind::Def(_) => false,
         TermKind::App(a, b) => {
@@ -382,7 +405,9 @@ pub fn collect_term_tvars(t: &Term, out: &mut std::collections::BTreeSet<SmolStr
         | TermKind::Bool(_)
         | TermKind::Eq(_)
         | TermKind::Select(_)
-        | TermKind::Spec(_, _) => {}
+        | TermKind::Spec(_, _)
+        | TermKind::SpecAbs(..)
+        | TermKind::SpecRep(..) => {}
         TermKind::Def(d) => collect_term_tvars(&d.body(), out),
     }
 }

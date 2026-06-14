@@ -36,6 +36,7 @@ use std::sync::{Arc, LazyLock};
 use covalence_types::{Bytes, Int, Nat};
 use smol_str::SmolStr;
 
+use crate::defs::{TermSpec, TypeSpec};
 use crate::error::{Error, Result};
 
 use super::observers::{Object, Observer};
@@ -237,7 +238,7 @@ pub enum TermKind {
     /// `(α → bool) → α`). The other logical primitive. Its
     /// characterising axiom (choice) is not yet exposed as a rule.
     Select(Type),
-    /// Application of a derived-term [`crate::defs::TermSpec`]
+    /// Application of a derived-term [`TermSpec`]
     /// factory to type arguments. The spec is process-shared
     /// (`LazyLock`-backed) and `args` is the positional substitution
     /// for the spec's type variables.
@@ -246,7 +247,31 @@ pub enum TermKind {
     /// (`natAdd`, `listMap`, …) as catalogue entries instead of
     /// dedicated kernel variants. `Thm::reduce_prim` recognises a
     /// `Spec(h, args)` leaf by `h.ptr_eq(&catalogue_handle)`.
-    Spec(crate::defs::TermSpec, Vec<Type>),
+    Spec(TermSpec, Vec<Type>),
+    /// Abstraction coercion `abs : carrier → (spec args)` for a
+    /// derived [`TypeSpec`]. The `carrier` is the spec's
+    /// `ty()` with `args` substituted positionally for its type
+    /// variables (`spec.ty().free_tvars()` order — canonical
+    /// alphabetical), and `(spec args)` is the opaque
+    /// [`TypeKind::Spec`] wrapper.
+    ///
+    /// This is HOL Light's typedef `abs`, but keyed by the
+    /// process-shared spec handle rather than a fresh `Obs` marker —
+    /// so every catalogue type gets its abstraction "for free"
+    /// (`inl`/`some`/`ok`/`pair`/… are built from it). It carries **no
+    /// theorems**: the bijection equations (`rep (abs x) = x` when the
+    /// carrier value satisfies the predicate, `abs (rep y) = y`
+    /// always) are derived downstream in `covalence-hol`. Adding the
+    /// leaf alone is sound — it is just a typed constant the kernel
+    /// commits nothing about. (Soundness audit: every shipped
+    /// `TypeSpec` is inhabited, so its `abs` lands in a non-empty
+    /// type.)
+    SpecAbs(TypeSpec, Vec<Type>),
+    /// Representation coercion `rep : (spec args) → carrier` — the
+    /// inverse direction of [`TermKind::SpecAbs`]. Used by the
+    /// eliminators (`coprodCase`/`fst`/`snd`/`option_case`/…) to reach
+    /// a wrapper value's underlying carrier representation.
+    SpecRep(TypeSpec, Vec<Type>),
     /// Typed observation leaf: observer + Pure type. The kernel
     /// compares these by `Arc` pointer identity (via [`Object`]'s
     /// impls), never by the user's `Eq` on the underlying observer.
@@ -323,12 +348,25 @@ impl Term {
         Self::alloc(TermKind::Select(alpha))
     }
 
-    /// Apply a derived-term [`crate::defs::TermSpec`] to type
+    /// Apply a derived-term [`TermSpec`] to type
     /// arguments. The spec is process-shared (`LazyLock`-backed in
     /// `crate::defs`); two calls with handles from the same lazy
     /// static pointer-equal at the spec component.
-    pub fn term_spec(spec: crate::defs::TermSpec, args: Vec<Type>) -> Self {
+    pub fn term_spec(spec: TermSpec, args: Vec<Type>) -> Self {
         Self::alloc(TermKind::Spec(spec, args))
+    }
+
+    /// The abstraction coercion `abs : carrier → (spec args)` for a
+    /// derived [`TypeSpec`] (see [`TermKind::SpecAbs`]).
+    /// `args` instantiates the spec's type variables positionally.
+    pub fn spec_abs(spec: TypeSpec, args: Vec<Type>) -> Self {
+        Self::alloc(TermKind::SpecAbs(spec, args))
+    }
+
+    /// The representation coercion `rep : (spec args) → carrier` for a
+    /// derived [`TypeSpec`] (see [`TermKind::SpecRep`]).
+    pub fn spec_rep(spec: TypeSpec, args: Vec<Type>) -> Self {
+        Self::alloc(TermKind::SpecRep(spec, args))
     }
 
     /// Wrap an observer as a typed leaf. The kernel treats the
@@ -382,6 +420,8 @@ impl Term {
             | TermKind::Int(_)
             | TermKind::Bool(_)
             | TermKind::Spec(_, _)
+            | TermKind::SpecAbs(..)
+            | TermKind::SpecRep(..)
             | TermKind::Eq(_)
             | TermKind::Select(_) => true,
             TermKind::App(a, b) => a.has_no_obs() && b.has_no_obs(),
@@ -404,6 +444,8 @@ impl Term {
             | TermKind::Int(_)
             | TermKind::Bool(_)
             | TermKind::Spec(_, _)
+            | TermKind::SpecAbs(..)
+            | TermKind::SpecRep(..)
             | TermKind::Eq(_)
             | TermKind::Select(_) => true,
             TermKind::App(a, b) => a.all_obs_match::<O>() && b.all_obs_match::<O>(),
@@ -432,6 +474,8 @@ impl Term {
             | TermKind::Int(_)
             | TermKind::Bool(_)
             | TermKind::Spec(_, _)
+            | TermKind::SpecAbs(..)
+            | TermKind::SpecRep(..)
             | TermKind::Eq(_)
             | TermKind::Select(_) => Ok(()),
             TermKind::App(a, b) => {
@@ -475,6 +519,20 @@ impl fmt::Debug for Term {
     }
 }
 
+/// Display a spec coercion leaf (`abs`/`rep`) as `kw[label]` (no
+/// type args) or `(kw[label] arg …)` (with args).
+fn fmt_coercion(f: &mut fmt::Formatter<'_>, kw: &str, label: &str, args: &[Type]) -> fmt::Result {
+    if args.is_empty() {
+        write!(f, "{kw}[{label}]")
+    } else {
+        write!(f, "({kw}[{label}]")?;
+        for a in args {
+            write!(f, " {a}")?;
+        }
+        write!(f, ")")
+    }
+}
+
 impl fmt::Display for Term {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind() {
@@ -500,6 +558,8 @@ impl fmt::Display for Term {
                     write!(f, ")")
                 }
             }
+            TermKind::SpecAbs(spec, args) => fmt_coercion(f, "abs", spec.symbol().label(), args),
+            TermKind::SpecRep(spec, args) => fmt_coercion(f, "rep", spec.symbol().label(), args),
             TermKind::Obs(observer, ty) => write!(f, "obs[{:?}:{}]", observer, ty),
             TermKind::Def(d) => write!(f, "{}", d),
         }
@@ -521,6 +581,21 @@ pub(crate) struct TypeEnv {
     /// First-seen type for each Free name; subsequent occurrences must
     /// match. Scope is whatever set of terms share this env.
     frees: BTreeMap<SmolStr, Type>,
+}
+
+/// The carrier type of a derived [`TypeSpec`] at the
+/// given type `args`: the spec's stored `ty()` with each free tvar
+/// (in `free_tvars()` canonical order) replaced positionally. This is
+/// the same substitution `TypeKind::Spec` uses to denote the wrapper,
+/// so `abs`/`rep` coerce between `carrier` and `(spec args)`
+/// faithfully. Errors if the spec is carrier-less (`ty = None`).
+fn spec_carrier(spec: &TypeSpec, args: &[Type]) -> Result<Type> {
+    let mut result = spec.ty().cloned().ok_or(Error::SpecHasNoCarrier)?;
+    let tvars = result.free_tvars();
+    for (tvar_name, arg) in tvars.iter().zip(args.iter()) {
+        result = crate::subst::subst_tfree_in_type(&result, tvar_name, arg);
+    }
+    Ok(result)
 }
 
 /// Type-check `t` in `env`. The env carries the binder context plus
@@ -596,6 +671,23 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
                 result = crate::subst::subst_tfree_in_type(&result, tvar_name, arg);
             }
             Ok(result)
+        }
+        // `abs` at `(spec, args)` has type `carrier → (spec args)`;
+        // `rep` the reverse. `carrier` is the TypeSpec's stored
+        // `ty()` with `args` substituted positionally for its tvars —
+        // exactly the substitution `Type::spec`/`TypeKind::Spec` use,
+        // so `abs`/`rep` round-trip the same wrapper type the leaf
+        // denotes. A spec with no carrier (`ty = None`) has no
+        // abstraction.
+        TermKind::SpecAbs(spec, args) => {
+            let carrier = spec_carrier(spec, args)?;
+            let wrapper = Type::spec(spec.clone(), args.clone());
+            Ok(Type::fun(carrier, wrapper))
+        }
+        TermKind::SpecRep(spec, args) => {
+            let carrier = spec_carrier(spec, args)?;
+            let wrapper = Type::spec(spec.clone(), args.clone());
+            Ok(Type::fun(wrapper, carrier))
         }
         // `=` at α has type `α → α → bool`; `ε` at α has type
         // `(α → bool) → α`. Both are well-shaped by construction (the

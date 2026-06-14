@@ -97,12 +97,6 @@ pub enum TypeKind {
     /// numbers (non-negative integers, arbitrary precision). The
     /// kernel's foundational data type (see `docs/type-hierarchy.md`).
     Nat,
-    /// Singleton type — exactly one inhabitant (kernel "trivial"
-    /// representative `ε(λ_. T)`). Built in alongside the other
-    /// primitive types so the derived `defs::*` catalogue can spec
-    /// `prod` (the empty product) and `option α` (= `coprod α unit`)
-    /// without bottoming out into a typedef.
-    Unit,
     /// The HOL formula type — two inhabitants `T` and `F`. Built in
     /// as a first-class variant (not a named `Tycon`) so the HOL-
     /// Light kernel rules (`hol_refl`, `hol_eq_mp`, …) recognise
@@ -149,7 +143,6 @@ pub enum TypeKind {
 // wrapped in `Type::spec(…)`. The wrap itself is cached at the
 // `Type::int()` / `Type::bytes()` call sites below.
 static NAT: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Nat)));
-static UNIT: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Unit)));
 static BOOL: LazyLock<Type> = LazyLock::new(|| Type(Arc::new(TypeKind::Bool)));
 
 impl Type {
@@ -189,8 +182,9 @@ impl Type {
         NAT.clone()
     }
 
-    /// The integer type — `int := signed2 nat`. Returns a shared
-    /// instance; calls are O(1) `Arc` bumps. A derived TypeSpec
+    /// The integer type — `int := (nat × nat) / ~`, the Grothendieck
+    /// construction (a pair `(a, b)` represents `a − b`). Returns a
+    /// shared instance; calls are O(1) `Arc` bumps. A derived TypeSpec
     /// (`crate::defs::int_ty_spec`) wrapping a 0-ary
     /// `TypeKind::Spec(int_ty_spec, [])` leaf. Literal terms of this
     /// type are constructed via [`crate::Term::int_lit`].
@@ -200,9 +194,16 @@ impl Type {
         LAZY.clone()
     }
 
-    /// The singleton type — `unit`. Has exactly one inhabitant.
+    /// The singleton type — `unit := { b : bool | b = T }`. Has
+    /// exactly one inhabitant. A derived TypeSpec
+    /// (`crate::defs::unit_spec`) wrapping a 0-ary
+    /// `TypeKind::Spec(unit_spec, [])` leaf (was the kernel-primitive
+    /// `TypeKind::Unit` before the bool-subtype migration). The
+    /// singleton fact is the kernel rule [`crate::Thm::unit_eq`].
     pub fn unit() -> Self {
-        UNIT.clone()
+        static LAZY: LazyLock<Type> =
+            LazyLock::new(|| Type::spec(crate::defs::unit_spec(), Vec::new()));
+        LAZY.clone()
     }
 
     /// The HOL formula type — `bool`. Returns a shared instance;
@@ -271,7 +272,7 @@ pub(crate) fn free_tvars_into(ty: &Type, out: &mut std::collections::BTreeSet<Sm
         TypeKind::TFree(name) => {
             out.insert(name.clone());
         }
-        TypeKind::Nat | TypeKind::Unit | TypeKind::Bool => {}
+        TypeKind::Nat | TypeKind::Bool => {}
         TypeKind::Fun(a, b) => {
             free_tvars_into(a, out);
             free_tvars_into(b, out);
@@ -320,7 +321,6 @@ impl fmt::Display for Type {
         match self.kind() {
             TypeKind::TFree(n) => write!(f, "'{}", n),
             TypeKind::Nat => write!(f, "nat"),
-            TypeKind::Unit => write!(f, "unit"),
             TypeKind::Bool => write!(f, "bool"),
             TypeKind::Fun(a, b) => write!(f, "({} ⇒ {})", a, b),
             TypeKind::Tycon(name, args) => {

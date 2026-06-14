@@ -26,10 +26,19 @@ a couple of well-justified additions:
   soundness justified by the standard HOL Light derivation in each
   docstring (and, for the connectives, by an executable witness in
   `covalence-hol::proofs::bool`).
-- Two non-computational primitive **rules**: **Peano induction on
-  `nat`** (`Thm::nat_induct`: base + step ⟹ `∀n. P n`) and **ex falso**
-  (`Thm::false_elim`: `⊢ F` ⟹ `⊢ p`). The classic induction *axiom*
-  `⊢ ∀P. (P 0 ∧ …) ⟹ ∀n. P n` is a trivial theorem on top of the rule.
+- Three non-computational primitive **rules**: **Peano induction on
+  `nat`** (`Thm::nat_induct`: base + step ⟹ `∀n. P n`), **ex falso**
+  (`Thm::false_elim`: `⊢ F` ⟹ `⊢ p`), and the **`unit` singleton rule**
+  (`Thm::unit_eq`: `⊢ a = b` for any `a, b : unit`, since
+  `unit := { b : bool | b = T }` is a one-element type). The classic
+  induction *axiom* `⊢ ∀P. (P 0 ∧ …) ⟹ ∀n. P n` is a trivial theorem on
+  top of the induction rule.
+- Spec **abs/rep coercions** (`Term::spec_abs` / `Term::spec_rep`):
+  for any derived `TypeSpec`, the typed leaves `abs : carrier → (spec
+  args)` and `rep : (spec args) → carrier`. They carry no theorems
+  (the bijection equations are derived downstream), so adding them is
+  sound; they let the `defs/` catalogue *define* constructors like
+  `option.some := λa. abs (coprod.inl a)`.
 - Two accelerated reduction rules (`reduce_prim`, `unfold_term_spec`)
   that emit `⊢ t = canonical_form` for closed-literal computations.
   Sound by the literal's denotation, not a logical postulate.
@@ -74,7 +83,6 @@ TypeKind                       Constructor          Notes
 ─────────                      ───────────          ─────
 TFree(SmolStr)                 Type::tfree(name)    type variable
 Nat                            Type::nat()          kernel-primitive
-Unit                           Type::unit()         singleton
 Bool                           Type::bool()         HOL formula type
 Fun(Type, Type)                Type::fun(d, c)      function type
 Tycon(SmolStr, Vec<Type>)      Type::tycon(name, args)        named structural tycon
@@ -84,9 +92,12 @@ Spec(TypeSpec, Vec<Type>)      Type::spec(spec, args)         derived TypeSpec a
 ```
 
 `Type::int()` returns `Type::spec(int_ty_spec(), [])` where
-`int_ty_spec()` is the derived TypeSpec `int := signed2 nat`.
-`Type::bytes()` returns `Type::spec(bytes_spec(), [])` where
-`bytes_spec()` is `bytes := list u8`.
+`int_ty_spec()` is the derived TypeSpec `int := (nat × nat) / ~`
+(Grothendieck construction). `Type::bytes()` returns
+`Type::spec(bytes_spec(), [])` where `bytes_spec()` is `bytes := list u8`.
+`Type::unit()` returns `Type::spec(unit_spec(), [])` where `unit_spec()`
+is the bool-subtype `unit := { b : bool | b = T }` (a derived TypeSpec,
+no longer a builtin `TypeKind`).
 
 There is **no `TypeKind::Prop`** — the kernel has no Pure meta-prop
 type; every formula is `bool`.
@@ -278,6 +289,11 @@ Thm::nat_induct(base, step) -> Result<Thm>
 
 Thm::false_elim(self, p) -> Result<Thm>
     // Γ ⊢ F  ⟹  Γ ⊢ p   (ex falso; F is the Bool(false) literal)
+
+Thm::unit_eq(a, b) -> Result<Thm>
+    // a, b : unit  ⟹  ⊢ a = b
+    // Sound because unit := { b : bool | b = T } is a one-element type,
+    // so any two inhabitants denote the same element.
 ```
 
 **That is the entire non-computational axiom surface.** The classic
@@ -427,7 +443,7 @@ The kernel has gone through several large refactors on the
    closed-form reduction.
 
 3. **`int` and `bytes` derived**: `Type::int()` is now
-   `Type::spec(int_ty_spec(), [])` (`int := signed2 nat`);
+   `Type::spec(int_ty_spec(), [])` (`int := (nat × nat) / ~`);
    `Type::bytes()` is `Type::spec(bytes_spec(), [])`
    (`bytes := list u8`). Literals (`TermKind::Int(Int)`,
    `TermKind::Blob(Bytes)`) stay as kernel built-ins for binary-data

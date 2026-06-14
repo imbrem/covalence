@@ -134,6 +134,34 @@ impl Thm {
         Self::build(Ctx::new(), concl)
     }
 
+    /// `⊢ a = b`, for any two terms `a, b : unit` — the singleton rule
+    /// for `unit := { b : bool | b = T }`.
+    ///
+    /// Soundness: `unit` is the bool-subtype carved by `λb. b = T`, so
+    /// it is interpreted in every model as a one-element set (the
+    /// `abs`-image of `{T}`). Hence any two terms of type `unit` denote
+    /// the same element and `a = b` holds. Both arguments are required
+    /// to type-check at `unit` (an open or ill-typed term is rejected),
+    /// and the equation carries no hypotheses.
+    pub fn unit_eq(a: Term, b: Term) -> Result<Thm> {
+        let a_ty = a.type_of()?;
+        if a_ty != Type::unit() {
+            return Err(Error::TypeMismatch {
+                expected: Type::unit(),
+                got: a_ty,
+            });
+        }
+        let b_ty = b.type_of()?;
+        if b_ty != Type::unit() {
+            return Err(Error::TypeMismatch {
+                expected: Type::unit(),
+                got: b_ty,
+            });
+        }
+        let concl = hol::hol_eq(a, b);
+        Self::build(Ctx::new(), concl)
+    }
+
     /// `Γ ∪ Δ ⊢ s = u`, given `Γ ⊢ s = t` and `Δ ⊢ t = u` (HOL `=`).
     pub fn trans(self, other: Thm) -> Result<Thm> {
         let (s, t1) = parse_hol_eq(&self.concl)?;

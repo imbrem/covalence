@@ -110,11 +110,9 @@ impl Def {
         let mut sub: std::collections::BTreeMap<SmolStr, Type> = std::collections::BTreeMap::new();
         crate::subst::match_types(&self.original.body_type, &self.instance_type, &mut sub)
             .expect("Def: instance_type unreachable from body_type — kernel bug");
-        let mut result = self.original.body.clone();
-        for (tv, replacement) in sub {
-            result = crate::subst::subst_tfree_in_term(&result, tv.as_str(), &replacement);
-        }
-        result
+        // Simultaneous apply: a sequential fold could cascade a
+        // matched substitution like `{a:=b, b:=c}` into `a → c`.
+        crate::subst::subst_tfrees_in_term(&self.original.body, &sub)
     }
 
     /// Identity of the original definition (stable across
@@ -590,12 +588,22 @@ pub(crate) struct TypeEnv {
 /// so `abs`/`rep` coerce between `carrier` and `(spec args)`
 /// faithfully. Errors if the spec is carrier-less (`ty = None`).
 fn spec_carrier(spec: &TypeSpec, args: &[Type]) -> Result<Type> {
-    let mut result = spec.ty().cloned().ok_or(Error::SpecHasNoCarrier)?;
-    let tvars = result.free_tvars();
-    for (tvar_name, arg) in tvars.iter().zip(args.iter()) {
-        result = crate::subst::subst_tfree_in_type(&result, tvar_name, arg);
-    }
-    Ok(result)
+    let result = spec.ty().cloned().ok_or(Error::SpecHasNoCarrier)?;
+    Ok(crate::subst::subst_tfrees_in_type(
+        &result,
+        &positional_tvar_sub(&result, args),
+    ))
+}
+
+/// Build the substitution mapping `ty`'s free type variables (in
+/// `free_tvars()` canonical alphabetical order) to `args` positionally.
+/// Used to instantiate a spec's stored type/carrier; the result feeds
+/// [`crate::subst::subst_tfrees_in_type`] for a *simultaneous* apply.
+fn positional_tvar_sub(ty: &Type, args: &[Type]) -> std::collections::BTreeMap<SmolStr, Type> {
+    ty.free_tvars()
+        .into_iter()
+        .zip(args.iter().cloned())
+        .collect()
 }
 
 /// Type-check `t` in `env`. The env carries the binder context plus
@@ -660,17 +668,18 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
         // factory's carrier) with positional type-arg substitution
         // applied. The spec is held by handle; deref is cheap.
         TermKind::Spec(spec, args) => {
-            let mut result = spec
+            let result = spec
                 .ty()
                 .cloned()
                 .ok_or_else(|| Error::NotBool(Type::bool()))?;
             // free_tvars on the carrier gives the spec's tvar names
-            // in canonical alphabetical order. Substitute positionally.
-            let tvars = result.free_tvars();
-            for (tvar_name, arg) in tvars.iter().zip(args.iter()) {
-                result = crate::subst::subst_tfree_in_type(&result, tvar_name, arg);
-            }
-            Ok(result)
+            // in canonical alphabetical order. Substitute positionally
+            // and *simultaneously* (a sequential fold would cascade,
+            // e.g. instantiating `[a:=b, b:=c]` would turn `a` into `c`).
+            Ok(crate::subst::subst_tfrees_in_type(
+                &result,
+                &positional_tvar_sub(&result, args),
+            ))
         }
         // `abs` at `(spec, args)` has type `carrier → (spec args)`;
         // `rep` the reverse. `carrier` is the TypeSpec's stored

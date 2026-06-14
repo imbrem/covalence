@@ -382,6 +382,42 @@ pub enum Canonical {
     /// in the list.
     ListElems,
 
+    // ---- Term-level: relation operations ----
+    /// `rel.mk : ('a → 'b → bool) → rel 'a 'b` — wrap a two-place
+    /// predicate into a relation (the `abs` coercion, named).
+    RelMk,
+    /// `rel.holds : rel 'a 'b → 'a → 'b → bool` — does the relation
+    /// relate the two arguments (the `rep` coercion applied, named).
+    RelHolds,
+    /// `rel.id : rel 'a 'a` ≡ `mk (λx y. x = y)` — the identity
+    /// (equality) relation.
+    RelId,
+    /// `rel.compose : rel 'b 'c → rel 'a 'b → rel 'a 'c` ≡
+    /// `λs r. mk (λx z. ∃y. holds r x y ∧ holds s y z)` — relational
+    /// composition `s ∘ r`.
+    RelCompose,
+    /// `rel.converse : rel 'a 'b → rel 'b 'a` ≡
+    /// `λr. mk (λy x. holds r x y)` — the converse relation.
+    RelConverse,
+    /// `rel.deterministic : rel 'a 'b → bool` ≡
+    /// `λr. ∀x y y'. holds r x y ⟹ holds r x y' ⟹ y = y'` —
+    /// single-valuedness (at most one image per input).
+    RelDeterministic,
+    /// `rel.total : rel 'a 'b → bool` ≡ `λr. ∀x. ∃y. holds r x y` —
+    /// totality (at least one image per input).
+    RelTotal,
+    /// `rel.isFunction : rel 'a 'b → bool` ≡
+    /// `λr. deterministic r ∧ total r` — the relation is the graph of a
+    /// total function.
+    RelIsFunction,
+    /// `rel.toFun : rel 'a 'b → ('a → 'b)` ≡
+    /// `λr x. ε y. holds r x y` — pick a function respecting the
+    /// relation (the function when `isFunction r`, ε-junk otherwise).
+    RelToFun,
+    /// `rel.graph : ('a → 'b) → rel 'a 'b` ≡ `λf. mk (λx y. f x = y)` —
+    /// the graph of a function as a relation.
+    RelGraph,
+
     // ---- Term-level: stream operations ----
     /// `streamAt : stream 'a → nat → 'a` — the bridge from opaque
     /// `stream α` back to its carrier function (apply at index).
@@ -552,6 +588,16 @@ impl Canonical {
             Canonical::SetImage => "set.image",
             Canonical::SetPreimage => "set.preimage",
             Canonical::ListElems => "list.elems",
+            Canonical::RelMk => "rel.mk",
+            Canonical::RelHolds => "rel.holds",
+            Canonical::RelId => "rel.id",
+            Canonical::RelCompose => "rel.compose",
+            Canonical::RelConverse => "rel.converse",
+            Canonical::RelDeterministic => "rel.deterministic",
+            Canonical::RelTotal => "rel.total",
+            Canonical::RelIsFunction => "rel.isFunction",
+            Canonical::RelToFun => "rel.toFun",
+            Canonical::RelGraph => "rel.graph",
             Canonical::Stream => "stream",
             Canonical::StreamAt => "stream.at",
             Canonical::StreamMk => "stream.mk",

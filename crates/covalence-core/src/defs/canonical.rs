@@ -315,18 +315,34 @@ pub enum Canonical {
     ListFlatten,
 
     // ---- Term-level: set operations ----
-    /// `setUnion : set 'a → set 'a → set 'a`.
+    /// `set.mk : ('a → bool) → set 'a` — wrap a membership predicate
+    /// into a set (the `abs` coercion, named). The constructor every
+    /// other set op funnels through.
+    SetMk,
+    /// `set.mem : 'a → set 'a → bool` — membership (the `rep` coercion
+    /// applied, named).
+    SetMem,
+    /// `set.union : set 'a → set 'a → set 'a`.
     SetUnion,
-    /// `setIntersect : set 'a → set 'a → set 'a`.
+    /// `set.intersect : set 'a → set 'a → set 'a`.
     SetIntersect,
-    /// `setDiff : set 'a → set 'a → set 'a`.
+    /// `set.diff : set 'a → set 'a → set 'a`.
     SetDiff,
-    /// `setSubset : set 'a → set 'a → bool`.
+    /// `set.subset : set 'a → set 'a → bool`.
     SetSubset,
-    /// `setCard : set 'a → nat`.
+    /// `set.flatten : set (set 'a) → set 'a` — union of a set of sets.
+    SetFlatten,
+    /// `set.all : set bool → bool` — `T` iff every member is `T`
+    /// (big conjunction over the set).
+    SetAll,
+    /// `set.any : set bool → bool` — `T` iff some member is `T`
+    /// (big disjunction over the set).
+    SetAny,
+    /// `set.card : set 'a → nat`.
     SetCard,
-    /// `listToSet : list 'a → set 'a`.
-    ListToSet,
+    /// `list.elems : list 'a → set 'a` — the set of elements appearing
+    /// in the list.
+    ListElems,
 
     // ---- Term-level: stream operations ----
     /// `streamAt : stream 'a → nat → 'a` — the bridge from opaque
@@ -473,12 +489,17 @@ impl Canonical {
             Canonical::ListIndex => "list.index",
             Canonical::ListRepeat => "list.repeat",
             Canonical::ListFlatten => "list.flatten",
+            Canonical::SetMk => "set.mk",
+            Canonical::SetMem => "set.mem",
             Canonical::SetUnion => "set.union",
             Canonical::SetIntersect => "set.intersect",
             Canonical::SetDiff => "set.diff",
             Canonical::SetSubset => "set.subset",
+            Canonical::SetFlatten => "set.flatten",
+            Canonical::SetAll => "set.all",
+            Canonical::SetAny => "set.any",
             Canonical::SetCard => "set.card",
-            Canonical::ListToSet => "list.toSet",
+            Canonical::ListElems => "list.elems",
             Canonical::Stream => "stream",
             Canonical::StreamAt => "stream.at",
             Canonical::StreamMake => "stream.make",

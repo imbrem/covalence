@@ -596,6 +596,29 @@ fn match_types_is_one_way_not_unification() {
     assert!(subst::match_types(&Type::nat(), &Type::tfree("b"), &mut sub).is_err());
 }
 
+#[test]
+fn match_types_bool_and_spec_arms() {
+    // `bool` matches `bool` (no schematic var).
+    let mut sub = BTreeMap::new();
+    assert!(subst::match_types(&Type::bool(), &Type::bool(), &mut sub).is_ok());
+    assert!(sub.is_empty());
+
+    // A `Spec` pattern with an inner tvar binds it from the target:
+    // `set 'a` vs `set nat` → {a := nat}. This is the path `Def::body`
+    // uses to recover the substitution; without the `Spec` arm it would
+    // erroneously fail (and `Def::body`'s `.expect` would panic).
+    let set_a = covalence_core::defs::set(Type::tfree("a"));
+    let set_nat = covalence_core::defs::set(Type::nat());
+    let mut sub = BTreeMap::new();
+    assert!(subst::match_types(&set_a, &set_nat, &mut sub).is_ok());
+    assert_eq!(sub.get("a"), Some(&Type::nat()));
+
+    // Different spec heads do not match (`set 'a` vs `option nat`).
+    let opt_nat = covalence_core::defs::option(Type::nat());
+    let mut sub = BTreeMap::new();
+    assert!(subst::match_types(&set_a, &opt_nat, &mut sub).is_err());
+}
+
 // ===========================================================================
 // predicates: is_closed / has_free_var / find_free_type / uses_bound_outer
 //             / collect_term_tvars

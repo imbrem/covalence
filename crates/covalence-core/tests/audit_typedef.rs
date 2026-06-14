@@ -120,6 +120,28 @@ fn define_accepts_polymorphic_body() {
     assert_eq!(d.instance_type(), &Type::fun(alpha.clone(), alpha));
 }
 
+#[test]
+fn define_polymorphic_over_spec_type_instantiates_without_panic() {
+    // A `Def` whose body type is a `Spec` carrying a tvar (`set 'a`).
+    // After `inst_tfree 'a := nat`, `Def::instance_type()` is `set nat`
+    // ≠ the recorded `body_type` `set 'a`, so `Def::body()` must recover
+    // the substitution via `match_types(set 'a, set nat)`. Before
+    // `match_types` learned the `Spec` arm this panicked; the walk below
+    // (`has_no_obs` reaches `Def::body`) must now succeed.
+    let alpha = Type::tfree("a");
+    let set_a = covalence_core::defs::set(alpha.clone());
+    let body = Term::free("s", set_a.clone());
+    let thm = Thm::define("poly_set", body).expect("define over set 'a");
+    // body_type is set 'a; no instantiation yet.
+    let inst = thm.inst_tfree("a", Type::nat()).expect("inst_tfree set spec");
+    // Forces Def::body() -> match_types(set 'a, set nat).
+    assert!(inst.has_no_obs(), "body has no obs leaves");
+    // The Def now reads at the instantiated type.
+    let (l, _r) = parse_hol_eq(inst.concl()).unwrap();
+    let TermKind::Def(d) = l.kind() else { panic!("lhs not a Def") };
+    assert_eq!(d.instance_type(), &covalence_core::defs::set(Type::nat()));
+}
+
 // ===========================================================================
 // define — freshness / non-conservativity guard
 // ===========================================================================

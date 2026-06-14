@@ -32,14 +32,20 @@
 //! `define`, `observe`, and the user-supplied `O → Thm` conversion
 //! are not in this MVP step.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
+
+use smol_str::SmolStr;
 
 use crate::builtins;
 use crate::ctx::Ctx;
 use crate::error::{Error, Result};
 use crate::hol;
-use crate::subst::{close, find_free_type, has_free_var, open, subst_free, subst_tfree_in_term};
+use crate::subst::{
+    close, find_free_type, has_free_var, open, subst_free, subst_tfree_in_term,
+    subst_tfrees_in_term,
+};
 
 use crate::term::{
     Object, ObsEq, ObsImp, ObsTrue, Observer, Term, TermKind, Type, TypeEnv, TypeKind, type_of_in,
@@ -690,12 +696,11 @@ impl Thm {
         // Substitute the spec's type variables positionally for the
         // supplied type arguments. `free_tvars` produces a sorted,
         // deduplicated list — the same order `type_of_in` uses when
-        // typing a `TermKind::Spec` leaf.
+        // typing a `TermKind::Spec` leaf. The substitution must be
+        // simultaneous (see [`inst_spec_tvars`]): a sequential fold
+        // would mangle a parameter swap.
         let tvars = declared_ty.free_tvars();
-        let mut unfolded = body;
-        for (tvar, arg) in tvars.iter().zip(args.iter()) {
-            unfolded = subst_tfree_in_term(&unfolded, tvar, arg);
-        }
+        let unfolded = inst_spec_tvars(&body, &tvars, &args);
 
         Self::build(Ctx::new(), hol::hol_eq(t, unfolded))
     }
@@ -747,12 +752,10 @@ impl Thm {
         }
 
         // Instantiate the predicate at the supplied type args — same
-        // positional order as `unfold_term_spec` / `type_of_in`.
+        // positional order as `unfold_term_spec` / `type_of_in`, and
+        // simultaneously (see [`inst_spec_tvars`]).
         let tvars = declared_ty.free_tvars();
-        let mut pred = body;
-        for (tvar, arg) in tvars.iter().zip(args.iter()) {
-            pred = subst_tfree_in_term(&pred, tvar, arg);
-        }
+        let pred = inst_spec_tvars(&body, &tvars, &args);
 
         // `w` must inhabit the spec's carrier (= `t`'s type), so that
         // both `p w` and `p t` type-check at `bool`.
@@ -1345,13 +1348,27 @@ fn spec_coercions(spec: &TypeSpec, args: &TypeList) -> Result<(Term, Term, Type,
 /// Errors with [`Error::NotASubtype`] unless the spec's `tm` is present
 /// and types as `carrier → bool` — rejecting carrier-less specs and
 /// quotient specs (whose `tm` is a `carrier → carrier → bool` relation).
+/// Positionally instantiate a spec's type variables — the sorted,
+/// deduplicated `free_tvars` of its declared type — with the supplied
+/// instance `args`, **simultaneously**. A sequential fold would cascade
+/// an argument swap like `{a:=b, b:=a}` into `{a:=a, b:=a}` (the second
+/// substitution rewriting the `b`s the first one just introduced), so a
+/// two-type-parameter spec instantiated with its parameters swapped
+/// would collapse both to one type. `subst_tfrees_in_term` applies the
+/// whole map in a single pass and avoids that.
+fn inst_spec_tvars(body: &Term, tvars: &[SmolStr], args: &TypeList) -> Term {
+    let sub: BTreeMap<SmolStr, Type> = tvars
+        .iter()
+        .cloned()
+        .zip(args.iter().cloned())
+        .collect();
+    subst_tfrees_in_term(body, &sub)
+}
+
 fn subtype_pred(spec: &TypeSpec, args: &TypeList, carrier: &Type) -> Result<Term> {
     let body = spec.tm().ok_or(Error::NotASubtype)?.clone();
     let tvars = spec.ty().ok_or(Error::SpecHasNoCarrier)?.free_tvars();
-    let mut pred = body;
-    for (tvar, arg) in tvars.iter().zip(args.iter()) {
-        pred = subst_tfree_in_term(&pred, tvar, arg);
-    }
+    let pred = inst_spec_tvars(&body, &tvars, args);
     if pred.type_of()? != Type::fun(carrier.clone(), Type::bool()) {
         return Err(Error::NotASubtype);
     }

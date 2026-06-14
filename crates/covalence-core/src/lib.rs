@@ -65,7 +65,8 @@ pub mod thm;
 
 pub use error::{Error, Result};
 pub use term::{
-    Def, Hint, ObsEq, ObsImp, ObsTrue, Object, Observer, Term, TermKind, Type, TypeKind,
+    Def, Hint, IntTag, ObsEq, ObsImp, ObsTrue, Object, Observer, SmallIntLiteral, Term, TermKind,
+    Type, TypeKind,
 };
 pub use ty::{TypeList, TypeSpec};
 pub use term::TermSpec;

@@ -102,3 +102,37 @@ width!(u64_spec, u64_ty, Canonical::U64, 64);
 width!(u128_spec, u128_ty, Canonical::U128, 128);
 width!(u256_spec, u256_ty, Canonical::U256, 256);
 width!(u512_spec, u512_ty, Canonical::U512, 512);
+
+/// `sN := uN` — a signed fixed-width integer as a thin newtype over
+/// the unsigned `uN` of the same width. Same bit representation
+/// (`uN`'s carrier), distinct type; the signed *interpretation* of
+/// those bits is an operation concern, not a representational one.
+/// Matches the WebAssembly component model's signed integers.
+fn signed_width_spec(symbol: Canonical, unsigned: Type) -> TypeSpec {
+    TypeSpec::newtype(symbol, unsigned)
+}
+
+macro_rules! signed_width {
+    ($spec_fn:ident, $type_fn:ident, $canon:expr, $unsigned_ty:ident) => {
+        pub fn $spec_fn() -> TypeSpec {
+            static LAZY: LazyLock<TypeSpec> =
+                LazyLock::new(|| signed_width_spec($canon, $unsigned_ty()));
+            LAZY.clone()
+        }
+        pub fn $type_fn() -> Type {
+            static LAZY: LazyLock<Type> = LazyLock::new(|| Type::spec($spec_fn(), vec![]));
+            LAZY.clone()
+        }
+    };
+}
+
+signed_width!(s1_spec, s1_ty, Canonical::S1, bit_ty);
+signed_width!(s2_spec, s2_ty, Canonical::S2, u2_ty);
+signed_width!(s4_spec, s4_ty, Canonical::S4, u4_ty);
+signed_width!(s8_spec, s8_ty, Canonical::S8, u8_ty);
+signed_width!(s16_spec, s16_ty, Canonical::S16, u16_ty);
+signed_width!(s32_spec, s32_ty, Canonical::S32, u32_ty);
+signed_width!(s64_spec, s64_ty, Canonical::S64, u64_ty);
+signed_width!(s128_spec, s128_ty, Canonical::S128, u128_ty);
+signed_width!(s256_spec, s256_ty, Canonical::S256, u256_ty);
+signed_width!(s512_spec, s512_ty, Canonical::S512, u512_ty);

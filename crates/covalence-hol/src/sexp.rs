@@ -52,7 +52,7 @@
 //! Theorems serialise but do **not** parse back from S-expressions.
 
 use bytes::Bytes;
-use covalence_core::{Object, Term, TermKind, Thm, Type, TypeKind};
+use covalence_core::{IntTag, Object, SmallIntLiteral, Term, TermKind, Thm, Type, TypeKind};
 use covalence_sexp::{Atom, SExp, SExpr};
 
 /// Errors produced by S-expression parsing of Core terms / types.
@@ -294,6 +294,11 @@ pub fn term_to_sexp(t: &Term, ser: &dyn ObsSerializer) -> Result<SExpr> {
         ),
         TermKind::Nat(n) => list2("nat-lit", sym(n.as_inner().to_string().as_str())),
         TermKind::Int(n) => list2("int-lit", sym(n.as_inner().to_string().as_str())),
+        TermKind::SmallInt(lit) => list3(
+            "small-int",
+            sym(lit.tag.label()),
+            sym(lit.bits.to_string().as_str()),
+        ),
         TermKind::Bool(b) => list2("bool-lit", sym(if *b { "T" } else { "F" })),
         TermKind::Eq(alpha) => list2("eq", type_to_sexp(alpha, ser)?),
         TermKind::Select(alpha) => list2("select", type_to_sexp(alpha, ser)?),
@@ -365,6 +370,17 @@ pub fn term_from_sexp(s: &SExpr, parser: &dyn ObsParser) -> Result<Term> {
                 )));
             }
             Ok(Term::blob(bytes.clone()))
+        }
+        "small-int" => {
+            expect_arity(children, 3, "small-int")?;
+            let tag_s = expect_symbol(&children[1], "small-int tag")?;
+            let tag = IntTag::from_label(tag_s)
+                .ok_or_else(|| SexpError(format!("small-int: unknown tag {:?}", tag_s)))?;
+            let bits_s = expect_symbol(&children[2], "small-int bits")?;
+            let bits = bits_s
+                .parse::<u64>()
+                .map_err(|e| SexpError(format!("small-int: not a u64: {}", e)))?;
+            Ok(Term::small_int(SmallIntLiteral::new(tag, bits)))
         }
         "obs" => {
             expect_arity(children, 3, "obs")?;

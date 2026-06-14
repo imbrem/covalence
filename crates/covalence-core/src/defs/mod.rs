@@ -88,6 +88,7 @@ mod fail;
 mod floats;
 pub(crate) mod helpers;
 mod int;
+pub(crate) mod int_ops;
 mod list;
 mod logic;
 mod nat;
@@ -106,9 +107,11 @@ pub(crate) mod symbol;
 mod unit;
 
 pub use bits::{
-    bit_spec, bit_ty, bits_len, bits_len_spec, bits_spec, bits_ty, u2_spec, u2_ty, u4_spec, u4_ty,
-    u8_spec, u8_ty, u16_spec, u16_ty, u32_spec, u32_ty, u64_spec, u64_ty, u128_spec, u128_ty,
-    u256_spec, u256_ty, u512_spec, u512_ty,
+    bit_spec, bit_ty, bits_len, bits_len_spec, bits_spec, bits_ty, s1_spec, s1_ty, s2_spec, s2_ty,
+    s4_spec, s4_ty, s8_spec, s8_ty, s16_spec, s16_ty, s32_spec, s32_ty, s64_spec, s64_ty, s128_spec,
+    s128_ty, s256_spec, s256_ty, s512_spec, s512_ty, u2_spec, u2_ty, u4_spec, u4_ty, u8_spec, u8_ty,
+    u16_spec, u16_ty, u32_spec, u32_ty, u64_spec, u64_ty, u128_spec, u128_ty, u256_spec, u256_ty,
+    u512_spec, u512_ty,
 };
 pub use blob::{
     bytes_at, bytes_at_spec, bytes_cat, bytes_cat_spec, bytes_cons_nat, bytes_cons_nat_spec,
@@ -126,6 +129,10 @@ pub use int::{
     int_lt, int_lt_spec, int_mod, int_mod_spec, int_mul, int_mul_spec, int_neg, int_neg_spec,
     int_pos_spec, int_pos_ty, int_pred, int_pred_spec, int_sgn, int_sgn_spec, int_sub, int_sub_spec,
     int_succ, int_succ_spec, int_ty_spec, int_zero,
+};
+pub use int_ops::{
+    int_from_int, int_from_nat, int_op, int_op_spec, int_sext, int_to_int, int_to_nat, int_zext,
+    list_index_int, list_index_int_spec, IntOp,
 };
 pub use list::{
     cons, cons_spec, head, head_spec, list, list_cat, list_cat_spec, list_filter, list_filter_spec,
@@ -382,6 +389,67 @@ mod tests {
     fn bits_is_list_bool() {
         // bits := list bool — a newtype over `list bool`.
         assert_eq!(bits_spec().ty().unwrap(), &list(Type::bool()));
+    }
+
+    #[test]
+    fn signed_widths_are_newtypes_over_unsigned() {
+        // sN := uN — a thin newtype; the carrier is the unsigned uN.
+        assert_eq!(s1_spec().ty().unwrap(), &bit_ty());
+        assert_eq!(s8_spec().ty().unwrap(), &u8_ty());
+        assert_eq!(s32_spec().ty().unwrap(), &u32_ty());
+        assert_eq!(s512_spec().ty().unwrap(), &u512_ty());
+        // …and a distinct type from its unsigned carrier.
+        assert_ne!(s8_ty(), u8_ty());
+    }
+
+    #[test]
+    fn int_ops_have_expected_types() {
+        use crate::term::IntTag;
+        // u8.add : u8 → u8 → u8
+        assert_eq!(
+            int_op_spec(IntTag::U8, IntOp::Add).ty().cloned(),
+            Some(Type::fun(u8_ty(), Type::fun(u8_ty(), u8_ty()))),
+        );
+        // s32.lt : s32 → s32 → bool
+        assert_eq!(
+            int_op_spec(IntTag::S32, IntOp::Lt).ty().cloned(),
+            Some(Type::fun(s32_ty(), Type::fun(s32_ty(), Type::bool()))),
+        );
+        // u8.toNat : u8 → nat ; s8.toInt : s8 → int
+        assert_eq!(
+            int_to_nat(IntTag::U8).type_of().unwrap(),
+            Type::fun(u8_ty(), Type::nat()),
+        );
+        assert_eq!(
+            int_to_int(IntTag::S8).type_of().unwrap(),
+            Type::fun(s8_ty(), Type::int()),
+        );
+    }
+
+    #[test]
+    fn list_index_by_fixed_width_is_polymorphic() {
+        use crate::term::IntTag;
+        // list.index.u8 : u8 → list 'a → option 'a — has a real body
+        // and type-checks at a concrete element type.
+        let idx = list_index_int(IntTag::U8, Type::nat());
+        assert_eq!(
+            idx.type_of().unwrap(),
+            Type::fun(u8_ty(), Type::fun(list(Type::nat()), option(Type::nat()))),
+        );
+        assert!(list_index_int_spec(IntTag::U8).tm().is_some(), "has a body");
+    }
+
+    #[test]
+    fn small_int_literals_have_fixed_width_types() {
+        use crate::Term;
+        assert_eq!(Term::u8_lit(255).type_of().unwrap(), u8_ty());
+        assert_eq!(Term::u16_lit(0).type_of().unwrap(), u16_ty());
+        assert_eq!(Term::u32_lit(7).type_of().unwrap(), u32_ty());
+        assert_eq!(Term::u64_lit(1).type_of().unwrap(), u64_ty());
+        assert_eq!(Term::s8_lit(-1).type_of().unwrap(), s8_ty());
+        assert_eq!(Term::s16_lit(-1).type_of().unwrap(), s16_ty());
+        assert_eq!(Term::s32_lit(-1).type_of().unwrap(), s32_ty());
+        assert_eq!(Term::s64_lit(-1).type_of().unwrap(), s64_ty());
     }
 
     #[test]

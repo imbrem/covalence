@@ -35,6 +35,7 @@ fn close_at(t: &Term, name: &str, depth: u32) -> Term {
         | TermKind::Blob(_)
         | TermKind::Nat(_)
         | TermKind::Int(_)
+        | TermKind::SmallInt(_)
         | TermKind::Bool(_)
         | TermKind::Eq(_)
         | TermKind::Select(_)
@@ -74,6 +75,7 @@ fn inst(t: &Term, u: &Term, depth: u32) -> Term {
         | TermKind::Blob(_)
         | TermKind::Nat(_)
         | TermKind::Int(_)
+        | TermKind::SmallInt(_)
         | TermKind::Bool(_)
         | TermKind::Eq(_)
         | TermKind::Select(_)
@@ -130,6 +132,7 @@ fn shift_inner(t: &Term, delta: i64, cutoff: u32) -> Term {
         | TermKind::Blob(_)
         | TermKind::Nat(_)
         | TermKind::Int(_)
+        | TermKind::SmallInt(_)
         | TermKind::Bool(_)
         | TermKind::Eq(_)
         | TermKind::Select(_)
@@ -162,6 +165,7 @@ fn subst_free_at(t: &Term, name: &str, r: &Term, depth: u32) -> Term {
         | TermKind::Blob(_)
         | TermKind::Nat(_)
         | TermKind::Int(_)
+        | TermKind::SmallInt(_)
         | TermKind::Bool(_)
         | TermKind::Eq(_)
         | TermKind::Select(_)
@@ -235,6 +239,7 @@ pub fn subst_tfree_in_term(t: &Term, name: &str, r: &Type) -> Term {
         TermKind::Blob(b) => Term::blob(b.clone()),
         TermKind::Nat(n) => Term::nat_lit(n.clone()),
         TermKind::Int(n) => Term::int_lit(n.clone()),
+        TermKind::SmallInt(lit) => Term::small_int(*lit),
         TermKind::Bool(b) => Term::bool_lit(*b),
         TermKind::Eq(alpha) => Term::eq_op(st(alpha)),
         TermKind::Select(alpha) => Term::select_op(st(alpha)),
@@ -283,6 +288,7 @@ fn is_closed_at(t: &Term, depth: u32) -> bool {
         | TermKind::Blob(_)
         | TermKind::Nat(_)
         | TermKind::Int(_)
+        | TermKind::SmallInt(_)
         | TermKind::Bool(_)
         | TermKind::Eq(_)
         | TermKind::Select(_)
@@ -316,6 +322,7 @@ pub fn find_free_type(t: &Term, name: &str) -> Option<Type> {
         | TermKind::Blob(_)
         | TermKind::Nat(_)
         | TermKind::Int(_)
+        | TermKind::SmallInt(_)
         | TermKind::Bool(_)
         | TermKind::Eq(_)
         | TermKind::Select(_)
@@ -347,6 +354,7 @@ fn uses_bound_at(t: &Term, target: u32, depth: u32) -> bool {
         | TermKind::Blob(_)
         | TermKind::Nat(_)
         | TermKind::Int(_)
+        | TermKind::SmallInt(_)
         | TermKind::Bool(_)
         | TermKind::Eq(_)
         | TermKind::Select(_)
@@ -393,6 +401,7 @@ pub fn collect_term_tvars(t: &Term, out: &mut std::collections::BTreeSet<SmolStr
         | TermKind::Blob(_)
         | TermKind::Nat(_)
         | TermKind::Int(_)
+        | TermKind::SmallInt(_)
         | TermKind::Bool(_)
         | TermKind::Eq(_)
         | TermKind::Select(_)

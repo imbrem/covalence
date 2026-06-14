@@ -29,7 +29,7 @@ mod term;
 pub use observer::{Hint, ObsEq, ObsImp, ObsTrue, Object, Observer};
 pub use set::TermSet;
 pub use spec::TermSpec;
-pub use term::{Def, Term, TermKind};
+pub use term::{Def, IntTag, SmallIntLiteral, Term, TermKind};
 
 // Re-export the type language so `crate::term::{Type, TypeKind}`
 // continues to resolve (the canonical home is `crate::ty`).

@@ -20,14 +20,17 @@
 //!   [`add_base`] / [`add_step`] / [`mul_base`] / [`mul_step`], by
 //!   δ-unfolding `nat.add` / `nat.mul` / `iter` down to `natRec` and
 //!   applying [`rec_holds`]; and on top of those, the **additive theory**
-//!   [`add_zero`] / [`add_succ_r`] / [`add_comm`] / [`add_assoc`], proved
-//!   by `nat`-induction (the [`induct`] helper). Each therefore carries
-//!   exactly *one* hypothesis — [`rec_holds`]'s conclusion. **The moment
-//!   `rec_holds` becomes a hypothesis-free proof, all of these become
-//!   genuine theorems automatically, with no change here.**
+//!   [`add_zero`] / [`add_succ_r`] / [`add_comm`] / [`add_assoc`] /
+//!   [`add_cancel`] (via [`succ_inj`]) and the multiplicative right-zero
+//!   [`mul_zero`], proved by `nat`-induction (the [`induct`] helper). Each
+//!   therefore carries exactly *one* hypothesis — [`rec_holds`]'s
+//!   conclusion. **The moment `rec_holds` becomes a hypothesis-free proof,
+//!   all of these become genuine theorems automatically, with no change
+//!   here.**
 //!
-//! These additive facts are the `nat` half of what the `int` quotient
-//! lift ([`init::int`](crate::init::int)) needs.
+//! These are the `nat` half of what the `int` quotient lift
+//! ([`init::int`](crate::init::int)) needs — `add_cancel` in particular is
+//! what `int_rel`'s transitivity rests on.
 
 use covalence_core::{Result, Term, Thm, Type, defs, subst};
 use covalence_types::Nat;
@@ -506,6 +509,29 @@ fn add_cancel_impl() -> Result<Thm> {
         .all_intro("a", nat())
 }
 
+/// `⊢ ∀a. a * 0 = 0` — right zero of `*` (the recursion equation gives
+/// the *left* zero `0 * a = 0`; this is the induction-on-`a` mirror).
+pub fn mul_zero() -> Thm {
+    mul_zero_impl().expect("mul_zero derivation")
+}
+fn mul_zero_impl() -> Result<Thm> {
+    let n = var("n");
+    let body = mul(n.clone(), zero()).equals(zero())?; // n * 0 = 0
+    let motive = Term::abs(nat(), subst::close(&body, "n"));
+
+    // base: 0 * 0 = 0.
+    let base = mul_base().all_elim(zero())?;
+
+    // step: (n * 0 = 0) ⟹ (S n * 0 = 0).
+    let ihc = mul(n.clone(), zero()).equals(zero())?;
+    let e1 = mul_step().all_elim(n.clone())?.all_elim(zero())?; // S n * 0 = 0 + n * 0
+    let e2 = Thm::assume(ihc.clone())?.cong_arg(Term::app(nat_add(), zero()))?; // 0 + n*0 = 0 + 0
+    let e3 = add_base().all_elim(zero())?; // 0 + 0 = 0
+    let step = e1.trans(e2)?.trans(e3)?.imp_intro(&ihc)?;
+
+    induct(&motive, base, step)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -569,6 +595,16 @@ mod tests {
         // depends only on rec_holds (succ_inj is genuine).
         let rh = rec_holds().concl().clone();
         assert!(add_cancel().hyps().iter().all(|h| h == &rh));
+    }
+
+    #[test]
+    fn mul_zero_proves_right_zero() {
+        // ⊢ ∀a. a * 0 = 0, specialising to 7 * 0 = 0.
+        let seven = Term::nat_lit(Nat::from_inner(7u32.into()));
+        let inst = mul_zero().all_elim(seven.clone()).unwrap();
+        assert_eq!(inst.concl(), &mul(seven, zero()).equals(zero()).unwrap());
+        let rh = rec_holds().concl().clone();
+        assert!(mul_zero().hyps().iter().all(|h| h == &rh));
     }
 
     /// Every derived recursion equation depends on **exactly** the one

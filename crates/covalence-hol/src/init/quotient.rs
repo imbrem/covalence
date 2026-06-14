@@ -25,9 +25,30 @@
 //!   and transitivity of `rel` (supplied as `∀`-theorems) and function
 //!   extensionality (derived inline) — **not** the `close` predicate.
 //!
-//! The converse (`mkClass a = mkClass b ⟹ rel a b`, which additionally
-//! needs `Thm::spec_rep_abs_fwd` and a proof that `classOf a` satisfies the
-//! quotient's carving predicate) is the next step; see `SKELETONS.md`.
+//! ## The converse — `class_elim` (TODO, recipe below)
+//!
+//! `mkClass a = mkClass b ⟹ rel a b` is the converse, needed for `int`
+//! *dis*equations and the order axioms. The shape is:
+//!
+//! 1. `cong_arg(rep)` on the class equation → `rep (abs cₐ) = rep (abs c_b)`.
+//! 2. `Thm::spec_rep_abs_fwd(spec, args, cₐ)` gives `P cₐ ⟹ rep (abs cₐ) = cₐ`;
+//!    discharge `P cₐ` (below) to collapse each side to `cₐ` / `c_b`.
+//! 3. So `cₐ = c_b`; apply to `a` (`cong_fn`, β-reduce) → `rel a a = rel b a`;
+//!    `rel a a` (refl) gives `rel b a`; `symm` flips to `rel a b`.
+//!
+//! The work is **step 2's `P cₐ`** — that `classOf a` is a non-empty,
+//! symmetric-closure-upward-closed set (`P = spec.tm()`, the `close`
+//! predicate). It needs `refl` (for non-emptiness, witness `a`) and
+//! `symm`/`trans` (for upward-closure, after `or_elim` on the symmetric
+//! closure `rel x y ∨ rel y x`).
+//!
+//! ⚠️ **η gotcha.** `close_predicate` writes membership as `S x`, so under
+//! `S := classOf a` it becomes `(classOf a) x` *under the `∀`/`∃` binders* —
+//! an η-*expanded* `λx. (classOf a) x`, **not** `classOf a`. Build the
+//! `exists_intro` predicate and the closed-part body in that η-expanded
+//! shape (extract them from `beta_conv (P cₐ)`'s RHS rather than
+//! reconstructing) so they match what `spec_rep_abs_fwd`'s antecedent
+//! expects. See `SKELETONS.md`.
 
 use covalence_core::defs::TypeSpec;
 use covalence_core::{Error, Result, Term, Thm, Type};

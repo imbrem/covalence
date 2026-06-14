@@ -106,8 +106,9 @@ pub(crate) mod symbol;
 mod unit;
 
 pub use bits::{
-    bit_spec, bit_ty, u2_spec, u2_ty, u4_spec, u4_ty, u8_spec, u8_ty, u16_spec, u16_ty, u32_spec,
-    u32_ty, u64_spec, u64_ty, u128_spec, u128_ty, u256_spec, u256_ty, u512_spec, u512_ty,
+    bit_spec, bit_ty, bits_len, bits_len_spec, bits_spec, bits_ty, u2_spec, u2_ty, u4_spec, u4_ty,
+    u8_spec, u8_ty, u16_spec, u16_ty, u32_spec, u32_ty, u64_spec, u64_ty, u128_spec, u128_ty,
+    u256_spec, u256_ty, u512_spec, u512_ty,
 };
 pub use blob::{
     bytes_at, bytes_at_spec, bytes_cat, bytes_cat_spec, bytes_cons_nat, bytes_cons_nat_spec,
@@ -378,12 +379,20 @@ mod tests {
     }
 
     #[test]
-    fn fixed_width_chain_is_products() {
-        // u{2n} := prod u{n} u{n} (a *product* — |prev|² values), so
-        // the carrier is the `prod prev prev` type.
-        assert_eq!(u2_spec().ty().unwrap(), &prod(bit_ty(), bit_ty()));
-        assert_eq!(u4_spec().ty().unwrap(), &prod(u2_ty(), u2_ty()));
-        assert_eq!(u64_spec().ty().unwrap(), &prod(u32_ty(), u32_ty()));
+    fn bits_is_list_bool() {
+        // bits := list bool — a newtype over `list bool`.
+        assert_eq!(bits_spec().ty().unwrap(), &list(Type::bool()));
+    }
+
+    #[test]
+    fn fixed_widths_are_bits_subtypes() {
+        // uN := { v : bits | length v = N } — every fixed width is a
+        // subtype of `bits` (not a product chain), so the carrier is
+        // `bits` for all of them.
+        assert_eq!(bit_spec().ty().unwrap(), &bits_ty());
+        assert_eq!(u2_spec().ty().unwrap(), &bits_ty());
+        assert_eq!(u8_spec().ty().unwrap(), &bits_ty());
+        assert_eq!(u64_spec().ty().unwrap(), &bits_ty());
     }
 
     #[test]

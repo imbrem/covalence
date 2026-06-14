@@ -87,29 +87,32 @@ pub enum Canonical {
     /// = f a` and `coprodCase f g (inr b) = g b`.
     CoprodCase,
 
-    // ---- Fixed-width unsigned integers ----
-    /// `u1 := coprod unit unit` (bit).
-    Bit,
-    /// `u2 := coprod bit bit` (crumb).
-    U2,
-    /// `u4 := coprod u2 u2` (nybble).
-    U4,
-    /// `u8 := coprod u4 u4` (byte).
-    U8,
-    /// `u16 := coprod u8 u8`.
-    U16,
-    /// `u32 := coprod u16 u16` (word).
-    U32,
-    /// `u64 := coprod u32 u32` (dword).
-    U64,
-    /// `u128 := coprod u64 u64` (qword).
-    U128,
-    /// `u256 := coprod u128 u128` (yword).
-    U256,
-    /// `u512 := coprod u256 u256` (zword).
-    U512,
-    /// `bits := list bool`.
+    // ---- Bit strings and fixed-width unsigned integers ----
+    /// `bits := list bool` — variable-length bit strings.
     Bits,
+    /// `bits.len : bits → nat` — bit-string length (`list.length` of
+    /// the underlying `list bool`).
+    BitsLen,
+    /// `u1 (bit) := { v : bits | bits.len v = 1 }`.
+    Bit,
+    /// `u2 := { v : bits | bits.len v = 2 }` (crumb).
+    U2,
+    /// `u4 := { v : bits | bits.len v = 4 }` (nybble).
+    U4,
+    /// `u8 := { v : bits | bits.len v = 8 }` (byte).
+    U8,
+    /// `u16 := { v : bits | bits.len v = 16 }`.
+    U16,
+    /// `u32 := { v : bits | bits.len v = 32 }` (word).
+    U32,
+    /// `u64 := { v : bits | bits.len v = 64 }` (dword).
+    U64,
+    /// `u128 := { v : bits | bits.len v = 128 }` (qword).
+    U128,
+    /// `u256 := { v : bits | bits.len v = 256 }` (yword).
+    U256,
+    /// `u512 := { v : bits | bits.len v = 512 }` (zword).
+    U512,
     /// `fin n := coprod (fin (n-1)) unit` (fixed-size finite type).
     Fin,
 
@@ -427,6 +430,8 @@ impl Canonical {
             Canonical::Inl => "coprod.inl",
             Canonical::Inr => "coprod.inr",
             Canonical::CoprodCase => "coprod.case",
+            Canonical::Bits => "bits",
+            Canonical::BitsLen => "bits.len",
             Canonical::Bit => "bit",
             Canonical::U2 => "u2",
             Canonical::U4 => "u4",
@@ -437,7 +442,6 @@ impl Canonical {
             Canonical::U128 => "u128",
             Canonical::U256 => "u256",
             Canonical::U512 => "u512",
-            Canonical::Bits => "bits",
             Canonical::Fin => "fin",
             Canonical::Option => "option",
             Canonical::List => "list",

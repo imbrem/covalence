@@ -136,6 +136,37 @@ fn nat_induct_happy_path_builds_forall() {
 }
 
 #[test]
+fn nat_induct_allows_free_var_in_base_hyps() {
+    // SOUND asymmetry: the induction variable `n` MAY occur free in the
+    // base hypotheses Γ₁ (only Γ₂, the step's, must avoid it). The
+    // conclusion `∀n. p n` does not mention the free `n` (n ∉ FV(p)), so
+    // in any model + valuation where Γ₁ holds, the base still gives `p 0`
+    // and the step (n ∉ FV(Γ₂), so it holds ∀k) drives the induction —
+    // the free `n` in Γ₁ is simply fixed by the valuation. Hence
+    // `nat_induct` checks only the step's hyps, by design.
+    let p = refl_motive();
+    let base0 = prove_refl_motive_at(&p, zero()); // ⊢ p 0 (no hyps)
+    let n = Term::free("n", Type::nat());
+    // Weaken the base to carry a hyp mentioning the free induction var.
+    let base_hyp = hol_eq(n.clone(), n.clone()); // (n = n) : bool
+    let base = base0
+        .weaken(covalence_core::Ctx::singleton(base_hyp.clone()))
+        .unwrap();
+    // Clean step: no free `n` in its hyps.
+    let p_n = Term::app(p.clone(), n.clone());
+    let psucc = prove_refl_motive_at(&p, succ(n.clone()));
+    let step = psucc.imp_intro(&p_n).unwrap(); // ⊢ p n ⟹ p (succ n)
+
+    let thm = Thm::nat_induct(base, step).expect("free `n` in base hyps is allowed");
+    assert_eq!(
+        thm.concl(),
+        &forall_nat(Term::app(p, n.clone())),
+        "conclusion is ∀n:nat. p n"
+    );
+    assert!(thm.hyps().contains(&base_hyp), "the base hypothesis is carried");
+}
+
+#[test]
 fn nat_induct_conclusion_is_forall_at_nat() {
     let (base, step, _) = refl_induction_inputs();
     let thm = Thm::nat_induct(base, step).unwrap();

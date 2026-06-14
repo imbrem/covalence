@@ -7,8 +7,9 @@
 //! This module is in the Core TCB. Audit by checking that:
 //!
 //! - Each reduction matches the documented arithmetic semantics
-//!   (Euclidean div/mod with `n/0 = n%0 = 0`; saturating nat sub
-//!   and pred; byte-cons mod-256 on the nat operand).
+//!   (Euclidean div/mod with `n/0 = 0` and `n%0 = n` — see the
+//!   soundness note on `nat.mod` below; saturating nat sub and pred;
+//!   byte-cons mod-256 on the nat operand).
 //! - No unsound shortcut: the function returns `None` for any
 //!   shape that isn't an exact-arity application of a `Prim` to
 //!   the right number of literal arguments.
@@ -17,6 +18,9 @@
 //!   and re-encode through `store`: arithmetic wraps mod `2^width`,
 //!   signed/unsigned `div`/`rem`/`shr`/comparisons read the operand's
 //!   tag, and `div`/`rem` by zero yield `0` (mirroring `nat`/`int`).
+
+use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use covalence_types::{Int, Nat, Sign};
 
@@ -108,262 +112,266 @@ fn literal_eq(a: &Term, b: &Term) -> Option<bool> {
     }
 }
 
-/// Dispatch closed-form reduction for a term-spec leaf applied to
-/// `args`. The handle is compared by `ptr_eq` against the canonical
-/// catalogue lazy statics — entries the kernel commits to a Rust-
-/// side computation for. Anything not in this table falls through to
-/// `None`; the user can still build proofs about the term abstractly
-/// (via the postulated definitional axioms in `covalence-hol`).
+/// A reducible nat / int / bytes catalogue operation — one of the
+/// term-spec constants the kernel commits to a Rust-side computation for.
+/// Each variant maps one-to-one to a canonical `defs::*_spec()` handle in
+/// [`PRIM_TABLE`], and its arithmetic lives in the matching arm of
+/// [`eval_prim`]. (The fixed-width `uN`/`sN` ops have their own registry,
+/// [`crate::defs::int_ops`].)
+#[derive(Clone, Copy)]
+enum Prim {
+    // nat → nat (unary)
+    NatSucc,
+    NatPred,
+    // nat → nat → nat
+    NatAdd,
+    NatMul,
+    NatSub,
+    NatDiv,
+    NatMod,
+    NatPow,
+    NatShl,
+    NatShr,
+    NatBitAnd,
+    NatBitOr,
+    NatBitXor,
+    // nat → nat → bool
+    NatLe,
+    NatLt,
+    // nat ↔ int / bytes
+    NatToInt,
+    NatToBytesLe,
+    NatToBytesBe,
+    NatFromBytesLe,
+    NatFromBytesBe,
+    // int (unary)
+    IntSucc,
+    IntPred,
+    IntNeg,
+    IntAbs,
+    IntSgn,
+    // int → int → int / bool
+    IntAdd,
+    IntMul,
+    IntSub,
+    IntDiv,
+    IntMod,
+    IntLe,
+    IntLt,
+    // bytes
+    BytesCat,
+    BytesConsNat,
+    BytesLen,
+    BytesAt,
+    BytesSlice,
+}
+
+/// `spec.ptr_id() → Prim` — the dispatch table, built once from the
+/// canonical `defs` handles. A user-built spec that merely *shares a
+/// label* is a different `Arc` allocation, so it is absent here and never
+/// reduces — exactly the safety the per-arm `ptr_eq` chain used to give.
+///
+/// This list is the single audit point for *what reduces*; the semantics
+/// of each entry live in [`eval_prim`].
+static PRIM_TABLE: LazyLock<HashMap<usize, Prim>> = LazyLock::new(|| {
+    // (canonical-handle accessor, op) pairs.
+    type Entry = (fn() -> defs::TermSpec, Prim);
+    let entries: &[Entry] = &[
+        (defs::nat_succ_spec, Prim::NatSucc),
+        (defs::nat_pred_spec, Prim::NatPred),
+        (defs::nat_add_spec, Prim::NatAdd),
+        (defs::nat_mul_spec, Prim::NatMul),
+        (defs::nat_sub_spec, Prim::NatSub),
+        (defs::nat_div_spec, Prim::NatDiv),
+        (defs::nat_mod_spec, Prim::NatMod),
+        (defs::nat_pow_spec, Prim::NatPow),
+        (defs::nat_shl_spec, Prim::NatShl),
+        (defs::nat_shr_spec, Prim::NatShr),
+        (defs::nat_bit_and_spec, Prim::NatBitAnd),
+        (defs::nat_bit_or_spec, Prim::NatBitOr),
+        (defs::nat_bit_xor_spec, Prim::NatBitXor),
+        (defs::nat_le_spec, Prim::NatLe),
+        (defs::nat_lt_spec, Prim::NatLt),
+        (defs::nat_to_int_spec, Prim::NatToInt),
+        (defs::nat_to_bytes_le_spec, Prim::NatToBytesLe),
+        (defs::nat_to_bytes_be_spec, Prim::NatToBytesBe),
+        (defs::nat_from_bytes_le_spec, Prim::NatFromBytesLe),
+        (defs::nat_from_bytes_be_spec, Prim::NatFromBytesBe),
+        (defs::int_succ_spec, Prim::IntSucc),
+        (defs::int_pred_spec, Prim::IntPred),
+        (defs::int_neg_spec, Prim::IntNeg),
+        (defs::int_abs_spec, Prim::IntAbs),
+        (defs::int_sgn_spec, Prim::IntSgn),
+        (defs::int_add_spec, Prim::IntAdd),
+        (defs::int_mul_spec, Prim::IntMul),
+        (defs::int_sub_spec, Prim::IntSub),
+        (defs::int_div_spec, Prim::IntDiv),
+        (defs::int_mod_spec, Prim::IntMod),
+        (defs::int_le_spec, Prim::IntLe),
+        (defs::int_lt_spec, Prim::IntLt),
+        (defs::bytes_cat_spec, Prim::BytesCat),
+        (defs::bytes_cons_nat_spec, Prim::BytesConsNat),
+        (defs::bytes_len_spec, Prim::BytesLen),
+        (defs::bytes_at_spec, Prim::BytesAt),
+        (defs::bytes_slice_spec, Prim::BytesSlice),
+    ];
+    entries.iter().map(|(f, p)| (f().ptr_id(), *p)).collect()
+});
+
+/// Dispatch closed-form reduction for a term-spec leaf applied to `args`.
+/// The handle is matched by pointer identity: the nat/int/bytes catalogue
+/// via [`PRIM_TABLE`], then the fixed-width integer ops via
+/// [`crate::defs::int_ops::lookup_op`]. Returns `None` for any handle in
+/// neither table — the user can still reason about it abstractly via its
+/// definitional axioms in `covalence-hol`.
 fn reduce_spec(handle: &defs::TermSpec, args: &[Term]) -> Option<Term> {
-    // Constructors / unary ops
-    if handle.ptr_eq(&defs::nat_succ_spec()) {
-        if args.len() != 1 {
-            return None;
-        }
-        let n = as_nat_lit(&args[0])?;
-        return Some(Term::nat_lit(Nat::from_inner(n.as_inner() + 1u32)));
+    if let Some(&prim) = PRIM_TABLE.get(&handle.ptr_id()) {
+        return eval_prim(prim, args);
     }
-    if handle.ptr_eq(&defs::nat_pred_spec()) {
-        if args.len() != 1 {
-            return None;
-        }
-        let n = as_nat_lit(&args[0])?;
-        return Some(Term::nat_lit(
-            n.checked_sub(&Nat::one()).unwrap_or_else(Nat::zero),
-        ));
+    let key = defs::int_ops::lookup_op(handle)?;
+    reduce_int_op(key, args)
+}
+
+/// Extract a single literal argument: `None` unless `args` is exactly one
+/// element that `extract` recognises.
+fn unary<'a, T>(args: &'a [Term], extract: impl Fn(&'a Term) -> Option<T>) -> Option<T> {
+    match args {
+        [a] => extract(a),
+        _ => None,
     }
-    if handle.ptr_eq(&defs::int_succ_spec()) {
-        if args.len() != 1 {
-            return None;
-        }
-        let n = as_int_lit(&args[0])?;
-        return Some(Term::int_lit(n + &Int::one()));
-    }
-    if handle.ptr_eq(&defs::int_pred_spec()) {
-        if args.len() != 1 {
-            return None;
-        }
-        let n = as_int_lit(&args[0])?;
-        return Some(Term::int_lit(n - &Int::one()));
-    }
-    // Nat arithmetic
-    if handle.ptr_eq(&defs::nat_add_spec()) {
-        return reduce_nat_binop(args, |a, b| a + b);
-    }
-    if handle.ptr_eq(&defs::nat_mul_spec()) {
-        return reduce_nat_binop(args, |a, b| a * b);
-    }
-    if handle.ptr_eq(&defs::nat_sub_spec()) {
-        return reduce_nat_binop(args, |a, b| a.checked_sub(b).unwrap_or_else(Nat::zero));
-    }
-    if handle.ptr_eq(&defs::nat_div_spec()) {
-        return reduce_nat_binop(args, |a, b| {
-            if b.is_zero() {
-                Nat::zero()
-            } else {
-                a / b
+}
+
+/// Compute the result of one [`Prim`] on `args`. Arity and literal-kind
+/// checks live in the `unary` / `reduce_*` helpers, so each arm is just
+/// the operation; edge-case conventions (saturation, div/mod by zero,
+/// oversize refusal) are commented where they bear on soundness.
+fn eval_prim(prim: Prim, args: &[Term]) -> Option<Term> {
+    use Prim::*;
+    match prim {
+        // ---- nat: constructors / unary ----
+        NatSucc => Some(Term::nat_lit(Nat::from_inner(
+            unary(args, as_nat_lit)?.as_inner() + 1u32,
+        ))),
+        // Saturating predecessor: `pred 0 = 0`.
+        NatPred => Some(Term::nat_lit(
+            unary(args, as_nat_lit)?
+                .checked_sub(&Nat::one())
+                .unwrap_or_else(Nat::zero),
+        )),
+
+        // ---- nat: binary arithmetic / bitwise ----
+        NatAdd => reduce_nat_binop(args, |a, b| a + b),
+        NatMul => reduce_nat_binop(args, |a, b| a * b),
+        // Saturating subtraction: `a - b = 0` when `b > a`.
+        NatSub => reduce_nat_binop(args, |a, b| a.checked_sub(b).unwrap_or_else(Nat::zero)),
+        // `a / 0 = 0` (paired with `a mod 0 = a` below).
+        NatDiv => reduce_nat_binop(args, |a, b| if b.is_zero() { Nat::zero() } else { a / b }),
+        NatMod => reduce_nat_binop(args, |a, b| {
+            // `n mod 0 = n` (NOT 0) — FORCED for soundness. `nat.mod` has a
+            // let-style body `λn m. n - (n/m)*m`, which at `m = 0` (with
+            // `n/0 = 0`) evaluates to `n - 0 = n`. Returning 0 here would
+            // let `unfold_term_spec` (→ n) and `reduce_prim` (→ 0) derive
+            // `n = 0` for any `n` — a contradiction. `n mod 0 = n` also
+            // satisfies `n = (n/m)*m + (n mod m)` and matches Lean/Coq.
+            if b.is_zero() { a.clone() } else { a % b }
+        }),
+        NatPow => match args {
+            [base, exp] => {
+                let base = as_nat_lit(base)?;
+                let exp = as_nat_lit(exp)?;
+                // `BigUint::pow` takes a `u32` exponent. Refuse an oversize
+                // exponent rather than truncate it.
+                let exp_digits = exp.as_inner().to_u32_digits();
+                if exp_digits.len() > 1 {
+                    return None;
+                }
+                Some(Term::nat_lit(base.pow(exp_digits.first().copied().unwrap_or(0))))
             }
-        });
-    }
-    if handle.ptr_eq(&defs::nat_mod_spec()) {
-        return reduce_nat_binop(args, |a, b| {
-            if b.is_zero() {
-                Nat::zero()
-            } else {
-                a % b
+            _ => None,
+        },
+        NatShl => reduce_nat_shift(args, true),
+        NatShr => reduce_nat_shift(args, false),
+        NatBitAnd => reduce_nat_binop(args, |a, b| Nat::from_inner(a.as_inner() & b.as_inner())),
+        NatBitOr => reduce_nat_binop(args, |a, b| Nat::from_inner(a.as_inner() | b.as_inner())),
+        NatBitXor => reduce_nat_binop(args, |a, b| Nat::from_inner(a.as_inner() ^ b.as_inner())),
+
+        // ---- nat: comparison ----
+        NatLe => reduce_nat_cmp(args, |a, b| a <= b),
+        NatLt => reduce_nat_cmp(args, |a, b| a < b),
+
+        // ---- nat ↔ int / bytes ----
+        NatToInt => {
+            let n = unary(args, as_nat_lit)?;
+            let sign = if n.is_zero() { Sign::Zero } else { Sign::Positive };
+            Some(Term::int_lit(Int::from_sign_nat(sign, n.clone())))
+        }
+        NatToBytesLe => Some(Term::blob(unary(args, as_nat_lit)?.to_bytes_le())),
+        NatToBytesBe => Some(Term::blob(unary(args, as_nat_lit)?.to_bytes_be())),
+        NatFromBytesLe => Some(Term::nat_lit(Nat::from_bytes_le(unary(args, as_blob)?))),
+        NatFromBytesBe => Some(Term::nat_lit(Nat::from_bytes_be(unary(args, as_blob)?))),
+
+        // ---- int: unary ----
+        IntSucc => Some(Term::int_lit(unary(args, as_int_lit)? + &Int::one())),
+        IntPred => Some(Term::int_lit(unary(args, as_int_lit)? - &Int::one())),
+        IntNeg => Some(Term::int_lit(-unary(args, as_int_lit)?)),
+        IntAbs => Some(Term::nat_lit(unary(args, as_int_lit)?.abs())),
+        IntSgn => {
+            let sgn = match unary(args, as_int_lit)?.sign() {
+                Sign::Negative => Int::from_sign_nat(Sign::Negative, Nat::one()),
+                Sign::Zero => Int::zero(),
+                Sign::Positive => Int::from_sign_nat(Sign::Positive, Nat::one()),
+            };
+            Some(Term::int_lit(sgn))
+        }
+
+        // ---- int: binary arithmetic / comparison ----
+        IntAdd => reduce_int_binop(args, |a, b| a + b),
+        IntMul => reduce_int_binop(args, |a, b| a * b),
+        IntSub => reduce_int_binop(args, |a, b| a - b),
+        // Truncating division; `a / 0 = 0`, `a mod 0 = 0`. (int div/mod
+        // are declaration-only — no let-style body — so unlike `nat.mod`
+        // there is no body to keep these consistent with.)
+        IntDiv => reduce_int_binop(args, |a, b| if b.is_zero() { Int::zero() } else { a / b }),
+        IntMod => reduce_int_binop(args, |a, b| if b.is_zero() { Int::zero() } else { a % b }),
+        IntLe => reduce_int_cmp(args, |a, b| a <= b),
+        IntLt => reduce_int_cmp(args, |a, b| a < b),
+
+        // ---- bytes ----
+        BytesCat => match args {
+            [a, b] => Some(Term::blob(covalence_types::blob::cat(as_blob(a)?, as_blob(b)?))),
+            _ => None,
+        },
+        // The nat operand is reduced mod 256 to a single byte.
+        BytesConsNat => match args {
+            [n, bs] => Some(Term::blob(covalence_types::blob::cons(
+                nat_mod_256(as_nat_lit(n)?),
+                as_blob(bs)?,
+            ))),
+            _ => None,
+        },
+        BytesLen => Some(Term::nat_lit(Nat::from_inner(unary(args, as_blob)?.len().into()))),
+        // Out-of-bounds index reads as 0.
+        BytesAt => match args {
+            [bs, i] => {
+                let bs = as_blob(bs)?;
+                let idx = nat_to_usize(as_nat_lit(i)?).unwrap_or(usize::MAX);
+                Some(Term::nat_lit(Nat::from_inner(
+                    (covalence_types::blob::at(bs, idx) as u32).into(),
+                )))
             }
-        });
-    }
-    if handle.ptr_eq(&defs::nat_pow_spec()) {
-        if args.len() != 2 {
-            return None;
-        }
-        let base = as_nat_lit(&args[0])?;
-        let exp = as_nat_lit(&args[1])?;
-        // BigUint::pow takes a u32 exponent. Refuse oversize exponents
-        // rather than truncate — `reduce_prim` falls back to abstract
-        // reasoning in that case.
-        let exp_digits = exp.as_inner().to_u32_digits();
-        if exp_digits.len() > 1 {
-            return None;
-        }
-        let exp_u32 = exp_digits.first().copied().unwrap_or(0);
-        return Some(Term::nat_lit(base.pow(exp_u32)));
-    }
-    if handle.ptr_eq(&defs::nat_le_spec()) {
-        return reduce_nat_cmp(args, |a, b| a <= b);
-    }
-    if handle.ptr_eq(&defs::nat_lt_spec()) {
-        return reduce_nat_cmp(args, |a, b| a < b);
-    }
-    if handle.ptr_eq(&defs::nat_to_int_spec()) {
-        if args.len() != 1 {
-            return None;
-        }
-        let n = as_nat_lit(&args[0])?;
-        let sign = if n.is_zero() {
-            Sign::Zero
-        } else {
-            Sign::Positive
-        };
-        return Some(Term::int_lit(Int::from_sign_nat(sign, n.clone())));
-    }
-    if handle.ptr_eq(&defs::nat_shl_spec()) {
-        return reduce_nat_shift(args, true);
-    }
-    if handle.ptr_eq(&defs::nat_shr_spec()) {
-        return reduce_nat_shift(args, false);
-    }
-    if handle.ptr_eq(&defs::nat_bit_and_spec()) {
-        return reduce_nat_binop(args, |a, b| {
-            Nat::from_inner(a.as_inner() & b.as_inner())
-        });
-    }
-    if handle.ptr_eq(&defs::nat_bit_or_spec()) {
-        return reduce_nat_binop(args, |a, b| {
-            Nat::from_inner(a.as_inner() | b.as_inner())
-        });
-    }
-    if handle.ptr_eq(&defs::nat_bit_xor_spec()) {
-        return reduce_nat_binop(args, |a, b| {
-            Nat::from_inner(a.as_inner() ^ b.as_inner())
-        });
-    }
-    if handle.ptr_eq(&defs::nat_to_bytes_le_spec()) {
-        if args.len() != 1 {
-            return None;
-        }
-        let n = as_nat_lit(&args[0])?;
-        return Some(Term::blob(n.to_bytes_le()));
-    }
-    if handle.ptr_eq(&defs::nat_to_bytes_be_spec()) {
-        if args.len() != 1 {
-            return None;
-        }
-        let n = as_nat_lit(&args[0])?;
-        return Some(Term::blob(n.to_bytes_be()));
-    }
-    if handle.ptr_eq(&defs::nat_from_bytes_le_spec()) {
-        if args.len() != 1 {
-            return None;
-        }
-        let bs = as_blob(&args[0])?;
-        return Some(Term::nat_lit(Nat::from_bytes_le(bs)));
-    }
-    // ---- Bytes ----
-    if handle.ptr_eq(&defs::bytes_cat_spec()) {
-        if args.len() != 2 {
-            return None;
-        }
-        let a = as_blob(&args[0])?;
-        let b = as_blob(&args[1])?;
-        return Some(Term::blob(covalence_types::blob::cat(a, b)));
-    }
-    if handle.ptr_eq(&defs::bytes_cons_nat_spec()) {
-        if args.len() != 2 {
-            return None;
-        }
-        let n = as_nat_lit(&args[0])?;
-        let bs = as_blob(&args[1])?;
-        return Some(Term::blob(covalence_types::blob::cons(nat_mod_256(n), bs)));
-    }
-    if handle.ptr_eq(&defs::bytes_len_spec()) {
-        if args.len() != 1 {
-            return None;
-        }
-        let bs = as_blob(&args[0])?;
-        return Some(Term::nat_lit(Nat::from_inner(bs.len().into())));
-    }
-    if handle.ptr_eq(&defs::bytes_at_spec()) {
-        if args.len() != 2 {
-            return None;
-        }
-        let bs = as_blob(&args[0])?;
-        let idx = nat_to_usize(as_nat_lit(&args[1])?).unwrap_or(usize::MAX);
-        let byte = covalence_types::blob::at(bs, idx);
-        return Some(Term::nat_lit(Nat::from_inner((byte as u32).into())));
-    }
-    if handle.ptr_eq(&defs::bytes_slice_spec()) {
-        if args.len() != 3 {
-            return None;
-        }
-        let bs = as_blob(&args[0])?;
-        let start = nat_to_usize(as_nat_lit(&args[1])?).unwrap_or(usize::MAX);
-        let len = nat_to_usize(as_nat_lit(&args[2])?).unwrap_or(usize::MAX);
-        return Some(Term::blob(covalence_types::blob::slice(bs, start, len)));
-    }
-    if handle.ptr_eq(&defs::nat_from_bytes_be_spec()) {
-        if args.len() != 1 {
-            return None;
-        }
-        let bs = as_blob(&args[0])?;
-        return Some(Term::nat_lit(Nat::from_bytes_be(bs)));
-    }
-    // Int arithmetic
-    if handle.ptr_eq(&defs::int_add_spec()) {
-        return reduce_int_binop(args, |a, b| a + b);
-    }
-    if handle.ptr_eq(&defs::int_mul_spec()) {
-        return reduce_int_binop(args, |a, b| a * b);
-    }
-    if handle.ptr_eq(&defs::int_sub_spec()) {
-        return reduce_int_binop(args, |a, b| a - b);
-    }
-    if handle.ptr_eq(&defs::int_div_spec()) {
-        return reduce_int_binop(args, |a, b| {
-            if b.is_zero() {
-                Int::zero()
-            } else {
-                a / b
+            _ => None,
+        },
+        // Saturating slice with `(start, len)` convention.
+        BytesSlice => match args {
+            [bs, start, len] => {
+                let bs = as_blob(bs)?;
+                let start = nat_to_usize(as_nat_lit(start)?).unwrap_or(usize::MAX);
+                let len = nat_to_usize(as_nat_lit(len)?).unwrap_or(usize::MAX);
+                Some(Term::blob(covalence_types::blob::slice(bs, start, len)))
             }
-        });
+            _ => None,
+        },
     }
-    if handle.ptr_eq(&defs::int_mod_spec()) {
-        return reduce_int_binop(args, |a, b| {
-            if b.is_zero() {
-                Int::zero()
-            } else {
-                a % b
-            }
-        });
-    }
-    if handle.ptr_eq(&defs::int_le_spec()) {
-        return reduce_int_cmp(args, |a, b| a <= b);
-    }
-    if handle.ptr_eq(&defs::int_lt_spec()) {
-        return reduce_int_cmp(args, |a, b| a < b);
-    }
-    if handle.ptr_eq(&defs::int_neg_spec()) {
-        if args.len() != 1 {
-            return None;
-        }
-        let n = as_int_lit(&args[0])?;
-        return Some(Term::int_lit(-n));
-    }
-    if handle.ptr_eq(&defs::int_abs_spec()) {
-        if args.len() != 1 {
-            return None;
-        }
-        let n = as_int_lit(&args[0])?;
-        return Some(Term::nat_lit(n.abs()));
-    }
-    if handle.ptr_eq(&defs::int_sgn_spec()) {
-        if args.len() != 1 {
-            return None;
-        }
-        let n = as_int_lit(&args[0])?;
-        let sgn = match n.sign() {
-            Sign::Negative => Int::from_sign_nat(Sign::Negative, Nat::one()),
-            Sign::Zero => Int::zero(),
-            Sign::Positive => Int::from_sign_nat(Sign::Positive, Nat::one()),
-        };
-        return Some(Term::int_lit(sgn));
-    }
-    // ---- Fixed-width integer ops (u8…u64 / s8…s64) ----
-    if let Some(key) = defs::int_ops::lookup_op(handle) {
-        return reduce_int_op(key, args);
-    }
-    None
 }
 
 // ============================================================================
@@ -791,9 +799,12 @@ mod tests {
     }
 
     #[test]
-    fn nat_div_mod_zero_returns_zero() {
+    fn nat_div_mod_zero() {
+        // `n / 0 = 0` and `n mod 0 = n` (the Euclidean convention; the
+        // `mod` value is forced by `nat.mod`'s let-style body — see the
+        // comment in `reduce_spec`).
         assert_reduces(binary(defs::nat_div(), nat(10), nat(0)), nat(0));
-        assert_reduces(binary(defs::nat_mod(), nat(10), nat(0)), nat(0));
+        assert_reduces(binary(defs::nat_mod(), nat(10), nat(0)), nat(10));
         assert_reduces(binary(defs::nat_div(), nat(17), nat(5)), nat(3));
         assert_reduces(binary(defs::nat_mod(), nat(17), nat(5)), nat(2));
     }

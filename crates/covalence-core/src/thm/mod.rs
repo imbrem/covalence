@@ -649,74 +649,28 @@ impl Thm {
         Self::build(hyps, concl)
     }
 
-    /// Introduce a fresh subtype τ ≤ α witnessed by a predicate `P`.
+    /// `⊢ Spec(spec, args) = subst(spec.tm, tvars, args)` for a
+    /// **let-style** `TermSpec` — one whose body `tm` has the spec's own
+    /// declared type (`type_of(tm) == spec.ty`). The spec's type
+    /// variables (in `free_tvars()` canonical order) are substituted
+    /// positionally by `args`.
     ///
-    /// Given a witness theorem `Γ ⊢ P x` for some `x : α` and
-    /// `P : α → prop`, allocate a fresh type constructor and two
-    /// fresh constants `abs : α → τ`, `rep : τ → α`, returning a
-    /// [`TypeDef`] bundle of:
-    ///
-    /// - `tau`: the new type, parameterised by the free type variables
-    ///   of α (so `inst_tfree` propagates correctly).
-    /// - `abs`, `rep`: the bijection constants (Obs leaves; their Arc
-    ///   identity ties them to this typedef).
-    /// - `abs_rep`:    `Γ ⊢ ⋀a:τ. abs (rep a) ≡ a`
-    /// - `rep_abs_fwd`: `Γ ⊢ ⋀r:α. P r ⟹ rep (abs r) ≡ r`
-    /// - `rep_abs_back`: `Γ ⊢ ⋀r:α. rep (abs r) ≡ r ⟹ P r`
-    ///
-    /// The witness's hypotheses are propagated to all three returned
-    /// theorems — matching HOL Light's discipline. Use the disjunct
-    /// trick at the HOL layer (`Q := λx. P x ∨ x = ε P`) if you want
-    /// to avoid the inhabitedness obligation.
+    /// Errors:
+    /// - [`Error::NotASpec`] if `t` is not a `TermKind::Spec` leaf.
+    /// - [`Error::SpecHasNoBody`] for a declaration-only spec (`tm = None`).
+    /// - [`Error::SpecIsDefStyle`] if `tm` is a `ty → bool` selector
+    ///   predicate (ε-style) rather than the body itself.
     ///
     /// ## Soundness
     ///
-    /// The fresh `tau`, `abs`, `rep` are interpreted in any model by
-    /// fixing τ as a subset of α witnessed by the equivalence
-    /// `P r ↔ rep (abs r) = r`. The witness theorem certifies that
-    /// the subset is non-empty (so τ is inhabited) — without it the
-    /// degenerate case is logically vacuous but the rule still
-    /// admits a model (τ singleton at the canonical witness).
-    /// Single-step computation rule on builtin primitives applied to
-    /// concrete literal arguments. Returns `⊢ t ≡ result` where
-    /// `result` is the canonical value of evaluating the operation;
-    /// returns an `Err(NotReducible)` for terms that aren't a
-    /// primitive-application with all-literal arguments (the rule is
-    /// deliberately conservative — it doesn't reduce subterms or
-    /// follow β/δ chains).
-    ///
-    /// **Catalogue**:
-    ///
-    /// - `App(Prim(NatArith Succ), NatLit a)` → `NatLit(a + 1)`
-    /// - `App(Prim(NatArith Pred), NatLit a)` → `NatLit(a − 1)` saturating at 0
-    /// - `App(App(Prim(NatArith Add), NatLit a), NatLit b)` → `NatLit(a + b)`
-    /// - similarly for `Mul`, `Sub` (saturating), `Div` (`a/0 = 0`), `Mod` (`a%0 = 0`)
-    /// - `App(Prim(IntArith Succ/Pred), IntLit a)` → `IntLit(a ± 1)`
-    /// - `App(Prim(IntNeg), IntLit a)` → `IntLit(−a)`
-    /// - `App(App(Prim(IntArith *), IntLit a), IntLit b)` for each binop
-    /// - `App(App(Prim(BytesCat), Blob a), Blob b)` → `Blob(a ++ b)`
-    /// - `App(App(Prim(BytesConsNat), NatLit n), Blob b)` → `Blob([n%256, ...b])`
-    /// - `App(Prim(BytesLen), Blob b)` → `NatLit(b.len())`
-    /// - `App(App(Prim(BytesAt), Blob b), NatLit i)` → `NatLit(b[i] or 0)`
-    /// - `App(App(App(Prim(BytesSlice), Blob b), NatLit start), NatLit len)`
-    ///   → `Blob(b[start..min(start+len, b.len())])`
-    /// - `App(Prim(NatToInt), NatLit n)` → `IntLit(n)`
-    /// - `App(App(Eq(_), lit_a), lit_b)` where `lit_a` and
-    ///   `lit_b` are kernel literals of the same kind (`Bool`,
-    ///   `Nat`, `Int`, or `Blob`) → `Bool(a == b)`. This is the
-    ///   kernel's commitment to literal distinctness — sound
-    ///   because each literal kind has a fixed denotation in any
-    ///   model.
-    /// `⊢ term_spec(spec, args) ≡ subst(spec.tm, tvars, args)` for a
-    /// **let-style** TermSpec (i.e., one whose `tm` is the body
-    /// itself, with `type_of(tm) == spec.ty`). Returns
-    /// `Err(SpecIsDefStyle)` when `tm` is a `ty → bool` selector
-    /// predicate (ε-style), and `Err(SpecHasNoBody)` for
-    /// declaration-only specs.
-    ///
-    /// Sound because a let-style spec's denotation is literally its
-    /// body at the supplied type-args; the kernel commits to that
-    /// equation when it builds the spec.
+    /// A let-style spec's denotation *is* its body at the supplied
+    /// type-args — that is the definitional equation the kernel commits
+    /// to when the spec is built. This holds for any body, including
+    /// user-constructed `TermSpec`s, so the rule needs no trust in the
+    /// catalogue. (Note: when a spec is **also** in `reduce_prim`'s table
+    /// — e.g. `nat.add`, `nat.mod` — the two rules commit two facts about
+    /// it, so the body MUST denote the same function `reduce_prim`
+    /// computes; see `audit_reduce::audit_reduce_matches_body_nat_ops`.)
     pub fn unfold_term_spec(t: Term) -> Result<Thm> {
         let (spec, args) = match t.kind() {
             TermKind::Spec(spec, args) => (spec.clone(), args.clone()),
@@ -745,7 +699,38 @@ impl Thm {
         Self::build(Ctx::new(), hol::hol_eq(t, unfolded))
     }
 
+    /// Single-step closed-form computation: `⊢ t = result` where `t` is a
+    /// kernel literal operation applied to all-literal arguments, and
+    /// `result` is the computed value. Returns [`Error::NotReducible`] for
+    /// any other shape — the rule is deliberately conservative: it does
+    /// not reduce subterms or follow β/δ chains.
+    ///
+    /// The catalogue (dispatched by `builtins::reduce_prim_term`):
+    ///
+    /// - HOL `=` over two same-kind literals (`Bool`/`Nat`/`Int`/
+    ///   `SmallInt`/`Blob`) → `Bool(a == b)`.
+    /// - the `nat.*` / `int.*` / `bytes.*` arithmetic, comparison, bitwise
+    ///   and conversion specs (see `builtins::Prim` for the full list),
+    ///   and the fixed-width `uN`/`sN` ops (`defs::int_ops`).
+    ///
+    /// Conventions worth noting: nat `sub`/`pred` saturate at 0; `n/0 = 0`
+    /// and `n mod 0 = n` (the latter forced by `nat.mod`'s body — see
+    /// `builtins::eval_prim`); fixed-width arithmetic wraps mod `2^width`.
+    ///
+    /// ## Soundness
+    ///
+    /// Each reduction is `t = canonical_value`, true by the literals'
+    /// fixed denotation in every model — not a logical postulate. (The
+    /// literal-distinctness case `Nat(5) = Nat(6) → F` is the kernel's
+    /// denotational commitment that distinct literals denote distinct
+    /// values.)
     pub fn reduce_prim(t: Term) -> Result<Thm> {
+        // Type-check `t` up front. `reduce_prim_term` matches purely on
+        // shape and would happily "reduce" an ill-typed application such
+        // as `Eq(nat)` applied to two `bool` literals; building the
+        // conclusion via `hol::hol_eq` would then panic on `t`'s bad
+        // type. Validating here turns that into a clean `Err`.
+        let _ = t.type_of()?;
         let reduced = builtins::reduce_prim_term(&t).ok_or(Error::NotReducible)?;
         Self::build(Ctx::new(), hol::hol_eq(t, reduced))
     }

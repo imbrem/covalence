@@ -159,9 +159,13 @@ fn nat_div_zero_is_zero() {
 }
 
 #[test]
-fn nat_mod_zero_is_zero() {
-    // n % 0 = 0 (kernel convention).
-    assert_reduces(app2(defs::nat_mod(), nat(10), nat(0)), nat(0));
+fn nat_mod_by_zero_is_identity() {
+    // n % 0 = n (Euclidean convention). This value is FORCED by
+    // soundness: `nat.mod` has a let-style body `λn m. n - (n/m)*m`,
+    // which at m=0 (with n/0=0) is `n - 0 = n`. If `reduce_prim` gave 0
+    // here, `unfold_term_spec` + `reduce_prim` would derive `n = 0` for
+    // any n. See `audit_natmod_by_zero_sound` for the regression guard.
+    assert_reduces(app2(defs::nat_mod(), nat(10), nat(0)), nat(10));
     assert_reduces(app2(defs::nat_mod(), nat(0), nat(0)), nat(0));
     assert_reduces(app2(defs::nat_mod(), nat(17), nat(5)), nat(2));
     assert_reduces(app2(defs::nat_mod(), nat(20), nat(4)), nat(0));
@@ -735,6 +739,23 @@ fn hol_eq_non_literal_refuses() {
 }
 
 #[test]
+fn hol_eq_ill_typed_operands_refuse_without_panic() {
+    // `Eq(nat)` applied to two `bool` literals is ILL-TYPED (the eq
+    // operator wants `nat` operands). `literal_eq` matches the
+    // `(Bool, Bool)` shape, so before the `type_of` guard in
+    // `reduce_prim` this panicked while building the conclusion. It must
+    // now return a clean `Err`.
+    let t = Term::app(Term::app(Term::eq_op(Type::nat()), Term::bool_lit(true)), Term::bool_lit(false));
+    assert!(
+        Thm::reduce_prim(t).is_err(),
+        "ill-typed Eq application must Err, not panic"
+    );
+    // Symmetric: `Eq(bool)` over two `nat` literals.
+    let t2 = Term::app(Term::app(Term::eq_op(Type::bool()), nat(1)), nat(2));
+    assert!(Thm::reduce_prim(t2).is_err());
+}
+
+#[test]
 fn hol_eq_partial_application_refuses() {
     // `= ` applied to only one argument (the eq op applied to one term).
     let partial = Term::app(Term::eq_op(Type::nat()), nat(5));
@@ -879,4 +900,166 @@ fn unfold_non_spec_errs() {
     let err =
         Thm::unfold_term_spec(Term::eq_op(Type::nat())).expect_err("eq op is not a spec");
     assert!(matches!(err, covalence_core::Error::NotASpec));
+}
+
+// ============================================================================
+// reduce_prim ↔ unfold_term_spec consistency (soundness class guard)
+//
+// Several reducible specs (`nat.add`, `nat.mod`, `bytes.cat`, …) are ALSO
+// let-style — i.e. `unfold_term_spec` hands back `⊢ spec = body`. When a
+// spec is reachable by BOTH rules, the kernel commits to two equations
+// about it: `spec lit… = reduce_prim(spec lit…)` and `spec = body`. If the
+// body, evaluated on the same literals, disagrees with `reduce_prim`, the
+// theory is INCONSISTENT (`⊢ litₐ = lit_b` for distinct literals, hence
+// `⊢ F`). This module evaluates the body through the kernel and asserts it
+// agrees with `reduce_prim`. The historical break was `nat.mod n 0`:
+// `reduce_prim` gave `0` while the body `n - (n/m)*m` gives `n`.
+// ============================================================================
+
+/// The RHS of a `⊢ lhs = rhs` theorem.
+fn rhs_of(thm: &Thm) -> Term {
+    let TermKind::App(f, rhs) = thm.concl().kind() else {
+        panic!("not an equation: {}", thm.concl());
+    };
+    let TermKind::App(_, _) = f.kind() else {
+        panic!("not an equation: {}", thm.concl());
+    };
+    rhs.clone()
+}
+
+/// Prove `⊢ t = v` where `v` is a literal, for a closed nat/int/bool/bytes
+/// term over the reducible catalogue. Call-by-value: evaluate arguments to
+/// literals (with congruence), then reduce the head application — preferring
+/// `reduce_prim`, falling back to `unfold_term_spec` + β for let-style
+/// specs that don't reduce at the root. Every step is a real kernel
+/// inference, so the returned `Thm` is genuinely derivable.
+fn eval(t: &Term) -> Thm {
+    match t.kind() {
+        TermKind::Nat(_)
+        | TermKind::Int(_)
+        | TermKind::Bool(_)
+        | TermKind::Blob(_)
+        | TermKind::SmallInt(_) => Thm::refl(t.clone()).expect("literal refl"),
+        TermKind::App(..) => {
+            // Spine: head applied to args left-to-right.
+            let mut head = t.clone();
+            let mut args = Vec::new();
+            while let TermKind::App(f, x) = head.kind() {
+                args.push(x.clone());
+                head = f.clone();
+            }
+            args.reverse();
+            // Evaluate every argument, threading congruence so that
+            // `cur : ⊢ t = head v1 … vn`.
+            let mut cur = Thm::refl(head.clone()).expect("head refl");
+            for a in &args {
+                cur = cur.mk_comb(eval(a)).expect("arg congruence");
+            }
+            let applied = rhs_of(&cur); // head v1 … vn (args now literals)
+            let reduced = reduce_head(&applied);
+            cur.trans(reduced).expect("trans onto reduced head")
+        }
+        other => panic!("eval: unsupported leaf {other:?}"),
+    }
+}
+
+/// Reduce `applied` = `head v1 … vn` (args already literals) to a literal,
+/// returning `⊢ applied = literal`.
+fn reduce_head(applied: &Term) -> Thm {
+    if let Ok(r) = Thm::reduce_prim(applied.clone()) {
+        // reduce_prim's RHS is a literal already; refl-trans for safety.
+        return r;
+    }
+    // Fall back to unfolding the let-style head spec, then β-reduce and
+    // recursively evaluate.
+    let mut head = applied.clone();
+    let mut args = Vec::new();
+    while let TermKind::App(f, x) = head.kind() {
+        args.push(x.clone());
+        head = f.clone();
+    }
+    args.reverse();
+    let unf = Thm::unfold_term_spec(head.clone())
+        .unwrap_or_else(|e| panic!("cannot reduce head {applied}: {e:?}"));
+    // Rebuild `head v1 … vn = body v1 … vn` by congruence on `head = body`.
+    let mut cong = unf;
+    for a in &args {
+        cong = cong.mk_comb(Thm::refl(a.clone()).unwrap()).unwrap();
+    }
+    // β-reduce the `body v1 … vn` spine fully, then recurse.
+    let beta_normal = beta_spine(&rhs_of(&cong));
+    cong.trans(beta_normal.clone())
+        .unwrap()
+        .trans(eval(&rhs_of(&beta_normal)))
+        .unwrap()
+}
+
+/// Prove `⊢ t = t'` where `t'` is `t` with every outermost
+/// `(λ. body) arg` β-redex (left spine) contracted.
+fn beta_spine(t: &Term) -> Thm {
+    // Find the redexes on the application spine and contract innermost-first.
+    match t.kind() {
+        TermKind::App(f, x) => {
+            // First normalise the function part's spine.
+            let f_eq = beta_spine(f);
+            let f_norm = rhs_of(&f_eq);
+            let app_eq = f_eq.mk_comb(Thm::refl(x.clone()).unwrap()).unwrap();
+            if let TermKind::Abs(..) = f_norm.kind() {
+                let redex = rhs_of(&app_eq); // (λ. body) x
+                let contracted = Thm::beta_conv(redex).unwrap();
+                app_eq.trans(contracted).unwrap()
+            } else {
+                app_eq
+            }
+        }
+        _ => Thm::refl(t.clone()).unwrap(),
+    }
+}
+
+/// For each `(n, m)`, the body-evaluated value of `nat.mod n m` must equal
+/// `reduce_prim`'s value — otherwise the kernel is inconsistent. Includes
+/// the historical `m = 0` hole.
+#[test]
+fn audit_natmod_reduce_matches_body() {
+    for (n, m) in [(5, 0), (10, 0), (0, 0), (17, 5), (20, 4), (3, 7), (1, 1)] {
+        let t = app2(defs::nat_mod(), nat(n), nat(m));
+        let via_reduce = rhs_of(&Thm::reduce_prim(t.clone()).unwrap());
+        let via_body = rhs_of(&eval(&t));
+        assert_eq!(
+            via_reduce, via_body,
+            "nat.mod {n} {m}: reduce_prim={via_reduce} but body={via_body} \
+             — these MUST agree or the kernel is inconsistent"
+        );
+    }
+}
+
+/// Sweep the reducible let-style nat ops at assorted points (including
+/// div/mod/sub boundaries) and assert `reduce_prim` agrees with evaluating
+/// the unfolded body. This is the general guard for the
+/// "let-style spec also in the reduce_prim catalogue" soundness class.
+#[test]
+fn audit_reduce_matches_body_nat_ops() {
+    let cases: &[(fn() -> Term, u64, u64)] = &[
+        (defs::nat_add as fn() -> Term, 3, 4),
+        (defs::nat_add, 0, 0),
+        (defs::nat_mul, 6, 7),
+        (defs::nat_mul, 0, 9),
+        (defs::nat_sub, 2, 5), // saturating
+        (defs::nat_sub, 9, 3),
+        (defs::nat_pow, 2, 5),
+        (defs::nat_pow, 7, 0),
+        (defs::nat_mod, 5, 0), // the hole
+        (defs::nat_mod, 17, 5),
+        (defs::nat_shl, 1, 4),
+        (defs::nat_shr, 16, 2),
+    ];
+    for (f, a, b) in cases {
+        let t = app2(f(), nat(*a), nat(*b));
+        let via_reduce = rhs_of(&Thm::reduce_prim(t.clone()).unwrap());
+        let via_body = rhs_of(&eval(&t));
+        assert_eq!(
+            via_reduce, via_body,
+            "{t}: reduce_prim={via_reduce} but unfolded body={via_body}"
+        );
+    }
 }

@@ -1,47 +1,25 @@
-//! Covalence shell: high-level generic APIs around the HOL kernel.
+//! Covalence shell — userspace helpers over the kernel.
 //!
-//! This crate hosts:
+//! A thin, *untrusted* convenience layer on top of [`covalence_kernel`]
+//! (the "OS-kernel": facts + blob store + trees) and [`covalence_hol`]
+//! (the high-level proof API over the `covalence-core` TCB). Downstream
+//! frontends, the REPL, the server, and the CLI depend on the shell rather
+//! than reaching into the kernel directly.
 //!
-//!   - The `SyncBackend` / `AsyncBackend` runtime traits + a concrete
-//!     in-memory `Kernel` wrapping the content-addressed store.
-//!   - The [`Prover`] trait — a high-level, kernel-agnostic theorem-prover
-//!     API that downstream frontends (Alethe, OpenTheory, …) target. The
-//!     impl lowers it to [`covalence_kernel::Kernel`].
+//! # ⚠️ Status: skeleton
 //!
-//! A future PureHol-backed `hol` module will host the untrusted
-//! shell-side adapter (sexp serialisation, content hashing,
-//! pretty-printing) over `covalence_hol::PureHol`. The legacy
-//! HolPrim adapter (wrapping the arena kernel) was removed once
-//! consumers moved to PureHol directly.
+//! The legacy [`Prover`] trait and its arena-kernel adapter were removed in
+//! the kernel rewrite (recover from `backup/pre-hol-cleanup` if needed).
+//! What remains are re-exports of the kernel's backend surface plus the HOL
+//! builder API; new userspace helpers land here as the HOL-on-store stack
+//! comes online.
 //!
-//! When the kernel is rewritten, the [`Prover`] trait is the surface that
-//! stays stable; impls underneath migrate, with individual operations
-//! stubbed via [`ProverError::NotImplemented`] during the transition so
-//! frontends keep compiling.
+//! [`Prover`]: https://example.invalid/removed
 
-mod traits;
-pub use traits::{AsyncBackend, BackendInfo, KernelError, SyncBackend};
+// Backend / blob-store surface, re-exported from the kernel so existing
+// consumers keep depending only on `covalence-shell`.
+pub use covalence_kernel::{AsyncBackend, BackendInfo, Kernel, KernelError, SyncBackend};
 
-mod kernel;
-pub use kernel::Kernel;
-
-pub mod prover;
-mod prover_kernel;
-
-// `init` (formerly `stdlib`) and `PureHol` were re-exports of
-// `covalence_hol`'s proof-heavy modules. Re-introduce once the
-// WASM-proof rewrite lands the `init` library over HOL-Light rules.
-// pub use covalence_hol::init;
-
-pub use prover::{Prover, ProverError};
-
-/// Re-exports from `covalence-kernel` that downstream prover frontends need
-/// in their signatures. Centralising them here lets frontends depend only on
-/// `covalence-shell`.
-pub use covalence_kernel::primop::{PrimOp1, PrimOp2};
-
-/// HOL term-builder re-exports that downstream consumers need.
-/// `PureHol` (the HolLightKernel impl) is gated until the WASM-proof
-/// rewrite reinstates it on HOL-Light rules.
-pub use covalence_hol::{HolLightCtx, HolLightKernel};
-pub use covalence_core::{Term, Thm, Type, TypeDef, TypeKind};
+// HOL builder API + term/type/theorem types (the latter re-exported from
+// `covalence-hol`, so the shell never depends on the TCB crate directly).
+pub use covalence_hol::{HolLightCtx, HolLightKernel, Term, Thm, Type, TypeDef, TypeKind};

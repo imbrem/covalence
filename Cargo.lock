@@ -896,9 +896,7 @@ dependencies = [
 name = "covalence-alethe"
 version = "0.0.0"
 dependencies = [
- "covalence-kernel",
  "covalence-sexp",
- "covalence-shell",
  "covalence-smt",
  "covalence-types",
  "thiserror 2.0.18",
@@ -953,9 +951,7 @@ dependencies = [
 name = "covalence-egglog"
 version = "0.0.0"
 dependencies = [
- "covalence-kernel",
  "covalence-sexp",
- "covalence-shell",
  "covalence-types",
  "egglog",
  "thiserror 2.0.18",
@@ -1058,11 +1054,11 @@ dependencies = [
 name = "covalence-kernel"
 version = "0.0.0"
 dependencies = [
- "bytes",
  "covalence-hash",
- "covalence-sexp",
- "covalence-types",
- "smol_str",
+ "covalence-hol",
+ "covalence-object",
+ "covalence-store",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1141,7 +1137,6 @@ name = "covalence-opentheory"
 version = "0.0.0"
 dependencies = [
  "covalence-hol",
- "covalence-shell",
  "smol_str",
  "thiserror 2.0.18",
  "ureq",
@@ -1285,16 +1280,8 @@ dependencies = [
 name = "covalence-shell"
 version = "0.0.0"
 dependencies = [
- "bytes",
- "covalence-core",
- "covalence-hash",
  "covalence-hol",
  "covalence-kernel",
- "covalence-object",
- "covalence-store",
- "covalence-types",
- "smol_str",
- "thiserror 2.0.18",
 ]
 
 [[package]]

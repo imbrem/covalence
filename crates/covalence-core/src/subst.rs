@@ -520,6 +520,7 @@ pub fn match_types(
             }
         },
         (TypeKind::Nat, TypeKind::Nat) => Ok(()),
+        (TypeKind::Bool, TypeKind::Bool) => Ok(()),
         (TypeKind::Fun(pa, pb), TypeKind::Fun(ta, tb)) => {
             match_types(pa, ta, sub)?;
             match_types(pb, tb, sub)
@@ -534,6 +535,20 @@ pub fn match_types(
         }
         (TypeKind::TyConObs(po, pa), TypeKind::TyConObs(to, ta))
             if po.ptr_id() == to.ptr_id() && pa.len() == ta.len() =>
+        {
+            for (p, t) in pa.iter().zip(ta) {
+                match_types(p, t, sub)?;
+            }
+            Ok(())
+        }
+        // A derived-spec application: the handle is invariant under
+        // tvar substitution (only the args change), so the two sides
+        // must carry the same spec; recurse into the positional args.
+        // Without this arm, `Def::body` would panic recovering the
+        // substitution for any `Def` typed at a `Spec` (e.g. `int`,
+        // `bytes`, `set 'a`).
+        (TypeKind::Spec(ps, pa), TypeKind::Spec(ts, ta))
+            if ps == ts && pa.len() == ta.len() =>
         {
             for (p, t) in pa.iter().zip(ta) {
                 match_types(p, t, sub)?;

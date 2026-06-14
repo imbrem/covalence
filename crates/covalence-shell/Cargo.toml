@@ -3,14 +3,8 @@ name = "covalence-shell"
 version = "0.0.0"
 edition = "2024"
 
+# Userspace helpers over the kernel. Re-exports the kernel's backend
+# surface + the HOL builder API; downstream consumers depend only on this.
 [dependencies]
-covalence-hash = { path = "../covalence-hash", default-features = false }
-covalence-store = { path = "../covalence-store" }
-covalence-object = { path = "../covalence-object" }
 covalence-kernel = { path = "../covalence-kernel" }
 covalence-hol = { path = "../covalence-hol" }
-covalence-core = { path = "../covalence-core" }
-covalence-types = { path = "../covalence-types" }
-bytes = "1"
-smol_str = "0.3"
-thiserror = "2"

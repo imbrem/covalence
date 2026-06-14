@@ -1,6 +1,5 @@
-//! Error type for the Alethe → Prover bridge.
+//! Error type for the Alethe bridge.
 
-use covalence_shell::ProverError;
 use covalence_smt::AletheError;
 
 /// Errors raised by an [`AletheBridge`](crate::bridge::AletheBridge) or its driver.
@@ -40,8 +39,4 @@ pub enum BridgeError {
     /// An Alethe-level error (parse, structural).
     #[error(transparent)]
     Alethe(#[from] AletheError),
-
-    /// An underlying Prover (kernel) error.
-    #[error(transparent)]
-    Prover(#[from] ProverError),
 }

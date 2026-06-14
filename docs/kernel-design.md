@@ -64,14 +64,21 @@ so the audit chain is visible in any final theorem.
 crates/covalence-core/src/
 ├── lib.rs             — module declarations + re-exports
 ├── term/
-│   ├── observers.rs   — Observer / ObsTrue / ObsImp / ObsEq traits + Object
-│   ├── types.rs       — Type, TypeKind, BinderHint, cached LazyLocks
-│   └── terms.rs       — Term, TermKind (incl. Eq/Select primitives), Def, TypeEnv, type_of_in
-├── ctx.rs             — Ctx (hypothesis BTreeSet, structurally shared)
-├── subst.rs           — close / open / shift_by / subst_free / subst_tfree_in_*
-├── builtins.rs        — reduce_prim_term (literal arithmetic) + reduce_spec (catalogue dispatch)
+│   ├── observer.rs    — Observer / ObsTrue / ObsImp / ObsEq traits + Object
+│   ├── term.rs        — Term, TermKind (incl. Eq/Select primitives), Def, TypeEnv, type_of_in
+│   ├── spec.rs        — TermSpec handle
+│   └── set.rs         — TermSet (structurally-shared hyp set backing Ctx)
+├── ty/
+│   ├── ty.rs          — Type, TypeKind, cached LazyLocks
+│   ├── spec.rs        — TypeSpec handle
+│   └── list.rs        — TypeList
+├── ctx.rs             — Ctx (hypothesis set, structurally shared)
+├── subst.rs           — close / open / shift_by / subst_free / subst_tfree_in_* / match_types
+├── builtins.rs        — reduce_prim_term + reduce_spec (PRIM_TABLE ptr_id dispatch)
 ├── hol.rs             — HOL-connective constructors (hol_eq/hol_imp/hol_forall/hol_not/…)
-├── thm.rs             — Thm + every rule method (the LCF API)
+├── thm/
+│   ├── mod.rs         — Thm + the equality/connective/induction/observer rules (the LCF API)
+│   └── typedef.rs     — define + new_type_definition (conservative extension)
 ├── error.rs           — Error variants
 └── defs/              — TypeSpec / TermSpec catalogue (semi-trusted; see §6)
 ```
@@ -407,12 +414,37 @@ sound, what makes `reduce_prim`'s `T = F → F` sound, etc.
 - It does not have built-in support for higher-order rewriting,
   proof tactics, or any automation. Those live downstream.
 
-### Audit confidence (as of 2026-06-13)
+### A coupling the catalogue MUST respect
 
-After [two careful audit passes](#) the kernel has no known
-soundness holes — temporary or otherwise. Every rule produces only
-theorems true in any model that interprets the foundational types
-canonically and assigns ε-families per observer Rust-type.
+When a catalogue spec is reachable by **both** `reduce_prim` and
+`unfold_term_spec` — i.e. it is a `let_term!` (let-style body) **and**
+listed in `builtins::PRIM_TABLE` (e.g. `nat.add`, `nat.mod`,
+`bytes.cat`) — the kernel commits to two facts about it:
+`spec lit… = reduce_prim(spec lit…)` and `spec = body`. These are
+consistent **only if the body denotes the same function `reduce_prim`
+computes**, on every input. A divergence makes the theory inconsistent
+(it derives `litₐ = lit_b` for distinct literals, hence `⊢ F`). This is
+guarded by `tests/audit_reduce.rs::audit_reduce_matches_body_nat_ops`,
+which evaluates the unfolded body through the kernel and compares it to
+`reduce_prim`. (Declaration-only specs — `tm = None`, e.g. `int.div`,
+`int.mod`, the `uN`/`sN` ops — have no body, so they are immune.)
+
+### Audit confidence (as of 2026-06-14)
+
+A third audit pass (2026-06-14) found and fixed one real hole: `nat.mod
+n 0` reduced to `0` while its let-style body `λn m. n - (n/m)*m`
+evaluates to `n` at `m = 0`, so `unfold` + `reduce_prim` derived
+`n = 0` (`⊢ 0 = 5` reproduced unconditionally). The reduction now
+returns `n` (the Euclidean convention `n mod 0 = n`), matching the body;
+see the coupling note above. The same pass added the
+`reduce_prim`/`unfold` consistency guards and hardened two non-soundness
+panics (`reduce_prim` on an ill-typed `Eq` application; `match_types`
+missing its `Bool`/`Spec` arms, panicking in `Def::body`).
+
+With that fix the kernel has no known soundness holes. Every rule
+produces only theorems true in any model that interprets the
+foundational types canonically and assigns ε-families per observer
+Rust-type.
 
 Remaining hardening opportunities (not soundness gaps):
 

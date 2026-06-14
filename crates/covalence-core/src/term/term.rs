@@ -390,6 +390,15 @@ pub enum TermKind {
     /// `(α → bool) → α`). The other logical primitive. Its
     /// characterising axiom (choice) is not yet exposed as a rule.
     Select(Type),
+    /// The `nat` successor function `succ : nat → nat`. A primitive
+    /// constructor (not a `defs` definition): `nat` is the kernel's
+    /// freely-generated naturals (`0` literals + `succ`), so the kernel
+    /// commits to `succ` being injective and
+    /// `0 ≠ succ n` — exposed as the freeness rules
+    /// [`crate::Thm::succ_inj`] / [`crate::Thm::zero_ne_succ`], and to
+    /// `succ (n : literal)` reducing to the next literal
+    /// ([`crate::Thm::reduce_prim`]). Applied via the usual `App` chain.
+    Succ,
     /// Application of a derived-term [`TermSpec`]
     /// factory to type arguments. The spec is process-shared
     /// (`LazyLock`-backed) and `args` is the positional substitution
@@ -592,6 +601,13 @@ impl Term {
         Self::alloc(TermKind::Select(alpha))
     }
 
+    /// The primitive successor function `succ : nat → nat`. Apply via
+    /// [`Term::app`]; see [`TermKind::Succ`].
+    pub fn succ() -> Self {
+        static SUCC: LazyLock<Term> = LazyLock::new(|| Term::alloc(TermKind::Succ));
+        SUCC.clone()
+    }
+
     /// Apply a derived-term [`TermSpec`] to type
     /// arguments. The spec is process-shared (`LazyLock`-backed in
     /// `crate::defs`); two calls with handles from the same lazy
@@ -668,7 +684,8 @@ impl Term {
             | TermKind::SpecAbs(..)
             | TermKind::SpecRep(..)
             | TermKind::Eq(_)
-            | TermKind::Select(_) => true,
+            | TermKind::Select(_)
+            | TermKind::Succ => true,
             TermKind::App(a, b) => a.has_no_obs() && b.has_no_obs(),
             TermKind::Abs(_, body) => body.has_no_obs(),
             TermKind::Def(d) => d.body().has_no_obs(),
@@ -693,7 +710,8 @@ impl Term {
             | TermKind::SpecAbs(..)
             | TermKind::SpecRep(..)
             | TermKind::Eq(_)
-            | TermKind::Select(_) => true,
+            | TermKind::Select(_)
+            | TermKind::Succ => true,
             TermKind::App(a, b) => a.all_obs_match::<O>() && b.all_obs_match::<O>(),
             TermKind::Abs(_, body) => body.all_obs_match::<O>(),
             TermKind::Def(d) => d.body().all_obs_match::<O>(),
@@ -724,7 +742,8 @@ impl Term {
             | TermKind::SpecAbs(..)
             | TermKind::SpecRep(..)
             | TermKind::Eq(_)
-            | TermKind::Select(_) => Ok(()),
+            | TermKind::Select(_)
+            | TermKind::Succ => Ok(()),
             TermKind::App(a, b) => {
                 a.for_each_obs::<O, F>(f)?;
                 b.for_each_obs::<O, F>(f)
@@ -794,6 +813,7 @@ impl fmt::Display for Term {
             TermKind::Bool(b) => write!(f, "{}", if *b { "T" } else { "F" }),
             TermKind::Eq(alpha) => write!(f, "=:{alpha}"),
             TermKind::Select(alpha) => write!(f, "@:{alpha}"),
+            TermKind::Succ => write!(f, "succ"),
             TermKind::Spec(spec, args) => {
                 if args.is_empty() {
                     write!(f, "{}", spec.symbol().label())
@@ -959,6 +979,8 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
             Type::fun(alpha.clone(), Type::bool()),
             alpha.clone(),
         )),
+        // `succ : nat → nat`, monomorphic.
+        TermKind::Succ => Ok(Type::fun(Type::nat(), Type::nat())),
         TermKind::Obs(_, ty) => Ok(ty.clone()),
         // A `Def` denotes its body at the current instance type.
         // The body was validated once at `Thm::define` time, and

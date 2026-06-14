@@ -25,22 +25,22 @@
 //!
 //! ## Status of the axioms (read this)
 //!
-//! In the shallow impl exactly **one** axiom is genuinely a
-//! hypothesis-free HOL theorem today: [`Peano::induct`], backed by the
-//! kernel primitive `Thm::nat_induct`. The other six
-//! ([`zero_ne_succ`](Peano::zero_ne_succ), [`succ_inj`](Peano::succ_inj),
-//! the `add`/`mul` recursion equations) are **postulated** — the kernel
-//! does not yet expose `natRec`'s computation equations or `nat`'s
-//! freeness over *variables*, only over closed literals. The shallow
-//! impl `assume`s them, so a PA proof comes out as
-//! `{axioms used} ⊢ φ` — the honest shallow embedding of
-//! *PA-derivability*. Discharging those hypotheses by proving each
-//! axiom as a real `⊢ axiom` HOL theorem **is** the soundness step;
-//! it needs new kernel primitives (recorded in `SKELETONS.md`).
+//! In the shallow impl, **three** axioms are genuine hypothesis-free
+//! HOL theorems: [`induct`](Peano::induct) (kernel `Thm::nat_induct`)
+//! and the two freeness axioms [`succ_inj`](Peano::succ_inj) /
+//! [`zero_ne_succ`](Peano::zero_ne_succ) (kernel `Thm::succ_inj` /
+//! `Thm::zero_ne_succ`, since `succ` is now the primitive
+//! `TermKind::Succ`). The remaining **four** — the `add`/`mul`
+//! recursion equations — are still **postulated** (`Thm::assume`), so a
+//! PA proof using them comes out as `{axioms used} ⊢ φ`, the honest
+//! shallow embedding of *PA-derivability*.
 //!
-//! Until then the trait is complete and usable; only the truth-status
-//! of six leaves is provisional, and flipping them to proved theorems
-//! is a localized change behind this same API.
+//! Discharging the four is the **soundness** step. It needs *no new
+//! computation primitive*: `natRec` exists by `ε` (choice over its
+//! recursion-uniqueness predicate), so once `ε`/choice is exposed its
+//! equations follow by induction, and the `add`/`mul` axioms with them.
+//! Recorded in `SKELETONS.md`; flipping them to proofs is a localized
+//! change behind this same API.
 
 /// Reasoning in first-order Peano arithmetic, generic over the proof
 /// representation. See the [module docs](self).

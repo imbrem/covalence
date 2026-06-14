@@ -830,3 +830,50 @@ fn false_elim_rejects_non_false() {
     let t = Thm::assume(Term::bool_lit(true)).unwrap();
     assert!(t.false_elim(Term::free("p", Type::bool())).is_err());
 }
+
+// ---- nat freeness primitives ----
+
+#[test]
+fn succ_reduces_on_literals() {
+    // The primitive `succ` evaluates on a closed literal.
+    let app = Term::app(Term::succ(), Term::nat_lit(7u32));
+    let thm = Thm::reduce_prim(app.clone()).expect("reduce succ 7");
+    let (lhs, rhs) = parse_hol_eq(thm.concl()).unwrap();
+    assert_eq!(lhs, &app);
+    assert_eq!(rhs, &Term::nat_lit(8u32));
+}
+
+#[test]
+fn succ_inj_shape_and_hyp_free() {
+    // ⊢ (succ m = succ n) ⟹ (m = n), no hypotheses.
+    let m = Term::free("m", Type::nat());
+    let n = Term::free("n", Type::nat());
+    let thm = Thm::succ_inj(m.clone(), n.clone()).expect("succ_inj");
+    assert!(thm.hyps().is_empty());
+    let (prem, concl) = parse_hol_imp(thm.concl()).unwrap();
+    assert_eq!(
+        prem,
+        &Term::app(
+            Term::app(Term::eq_op(Type::nat()), Term::app(Term::succ(), m.clone())),
+            Term::app(Term::succ(), n.clone()),
+        )
+    );
+    let (cl, cr) = parse_hol_eq(concl).unwrap();
+    assert_eq!((cl, cr), (&m, &n));
+}
+
+#[test]
+fn zero_ne_succ_shape_and_hyp_free() {
+    // ⊢ ¬(0 = succ n).
+    let n = Term::free("n", Type::nat());
+    let thm = Thm::zero_ne_succ(n).expect("zero_ne_succ");
+    assert!(thm.hyps().is_empty());
+    assert!(thm.concl().type_of().unwrap().is_bool());
+}
+
+#[test]
+fn freeness_rules_reject_non_nat() {
+    let b = Term::free("b", Type::bool());
+    assert!(Thm::succ_inj(b.clone(), b.clone()).is_err());
+    assert!(Thm::zero_ne_succ(b).is_err());
+}

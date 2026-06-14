@@ -302,6 +302,7 @@ pub fn term_to_sexp(t: &Term, ser: &dyn ObsSerializer) -> Result<SExpr> {
         TermKind::Bool(b) => list2("bool-lit", sym(if *b { "T" } else { "F" })),
         TermKind::Eq(alpha) => list2("eq", type_to_sexp(alpha, ser)?),
         TermKind::Select(alpha) => list2("select", type_to_sexp(alpha, ser)?),
+        TermKind::Succ => list1("succ"),
         TermKind::Spec(spec, args) => {
             let mut children = Vec::with_capacity(2 + args.len());
             children.push(sym("term-spec"));
@@ -395,6 +396,10 @@ pub fn term_from_sexp(s: &SExpr, parser: &dyn ObsParser) -> Result<Term> {
         "select" => {
             expect_arity(children, 2, "select")?;
             Ok(Term::select_op(type_from_sexp(&children[1], parser)?))
+        }
+        "succ" => {
+            expect_arity(children, 1, "succ")?;
+            Ok(Term::succ())
         }
         "def" => {
             // Round-trip via S-expressions *does not* preserve `Def`

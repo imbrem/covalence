@@ -155,7 +155,7 @@ pub use nat::{
     nat_from_bytes_be_spec, nat_from_bytes_le, nat_from_bytes_le_spec, nat_le, nat_le_spec, nat_lt,
     nat_lt_spec, nat_mod, nat_mod_spec, nat_mul, nat_mul_spec, nat_pow, nat_pow_spec, nat_pred,
     nat_pred_spec, nat_rec, nat_rec_spec, nat_shl, nat_shl_spec, nat_shr, nat_shr_spec, nat_sub,
-    nat_sub_spec, nat_succ, nat_succ_spec, nat_to_bytes_be, nat_to_bytes_be_spec, nat_to_bytes_le,
+    nat_sub_spec, nat_succ, nat_to_bytes_be, nat_to_bytes_be_spec, nat_to_bytes_le,
     nat_to_bytes_le_spec, nat_to_int, nat_to_int_spec,
 };
 pub use option::{

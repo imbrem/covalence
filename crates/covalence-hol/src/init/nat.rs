@@ -10,22 +10,25 @@
 //!
 //! ## What is proved vs postulated
 //!
-//! - **Induction** is genuine: `Thm::nat_induct` is a kernel primitive,
-//!   so [`Peano::induct`] mints a hypothesis-free theorem.
-//! - **The six structural axioms** ([`zero_ne_succ`](Peano::zero_ne_succ),
-//!   [`succ_inj`](Peano::succ_inj), the `add`/`mul` equations) are
-//!   **postulated** via [`Hol::axiom`] = `Thm::assume`. The kernel
-//!   reduces `succ`/`natRec` only on closed literals, and exposes
-//!   neither `natRec`'s computation equations nor `nat`'s freeness over
-//!   *variables*, so these are not yet derivable. A PA proof therefore
-//!   comes out as `{axioms used} ⊢ φ`: the hypotheses name exactly the
-//!   axioms relied on (the shallow embedding of PA-derivability).
+//! - **Genuine** (hypothesis-free HOL theorems):
+//!   - [`induct`](Peano::induct) — kernel primitive `Thm::nat_induct`.
+//!   - [`succ_inj`](Peano::succ_inj) / [`zero_ne_succ`](Peano::zero_ne_succ)
+//!     — the kernel freeness primitives `Thm::succ_inj` /
+//!     `Thm::zero_ne_succ` (`succ` is now a primitive `TermKind::Succ`),
+//!     generalised with `all_intro`.
+//! - **Postulated** via [`Hol::axiom`] = `Thm::assume`: the four
+//!   `add`/`mul` recursion equations. These hold definitionally but
+//!   are not yet *derivable*, because `nat_add` / `nat_mul` unfold to
+//!   `natRec`, whose computation equations are not yet available over
+//!   variables. A PA proof using them comes out as `{axioms used} ⊢ φ`,
+//!   the hypotheses naming exactly the postulates relied on.
 //!
-//! Discharging those hypotheses — proving each `⊢ axiom` as a real HOL
-//! theorem — is the **soundness of PA in HOL** step, and needs new
-//! kernel primitives (the `natRec` equations + `succ` injectivity /
-//! `0 ≠ S n`). Tracked in `SKELETONS.md`; the trait/API does not change
-//! when they land.
+//! The intended route for the four remaining ones is **not** a new
+//! kernel primitive: `natRec` exists *by `ε`* (it is the choice over
+//! its recursion-uniqueness predicate), so once `ε`/choice is exposed
+//! the recursion equations are **derivable by induction** — at which
+//! point the `Hol::axiom` calls become real derivations with no API
+//! change. Tracked in `SKELETONS.md`.
 
 use covalence_core::{Error, Result, Term, Thm, Type, defs};
 use covalence_types::Nat;
@@ -86,30 +89,20 @@ impl Peano for Hol {
     // ---- axioms (postulated; see module docs) ----
 
     fn zero_ne_succ(&self) -> Thm {
-        let n = self.var("n");
-        let eq = self
-            .zero()
-            .equals(self.succ(n))
-            .expect("zero_ne_succ: 0 = S n");
-        let body = eq.not().expect("zero_ne_succ: ¬");
-        let term = body.forall("n", Self::nat()).expect("zero_ne_succ: ∀n");
-        Self::axiom(term)
+        // Genuine: the kernel freeness rule gives `⊢ ¬(0 = S n)` for
+        // free `n`; generalise.
+        Thm::zero_ne_succ(self.var("n"))
+            .and_then(|t| t.all_intro("n", Self::nat()))
+            .expect("zero_ne_succ: kernel freeness rule")
     }
 
     fn succ_inj(&self) -> Thm {
-        let m = self.var("m");
-        let n = self.var("n");
-        let prem = self
-            .succ(m.clone())
-            .equals(self.succ(n.clone()))
-            .expect("succ_inj: S m = S n");
-        let concl = m.equals(n).expect("succ_inj: m = n");
-        let imp = prem.imp(concl).expect("succ_inj: ⟹");
-        let term = imp
-            .forall("n", Self::nat())
-            .and_then(|t| t.forall("m", Self::nat()))
-            .expect("succ_inj: ∀m n");
-        Self::axiom(term)
+        // Genuine: `⊢ (S m = S n) ⟹ (m = n)` for free `m`, `n`;
+        // generalise inner-first.
+        Thm::succ_inj(self.var("m"), self.var("n"))
+            .and_then(|t| t.all_intro("n", Self::nat()))
+            .and_then(|t| t.all_intro("m", Self::nat()))
+            .expect("succ_inj: kernel freeness rule")
     }
 
     fn add_base(&self) -> Thm {
@@ -178,7 +171,7 @@ mod tests {
     }
 
     #[test]
-    fn axioms_are_well_typed_and_carry_their_postulate() {
+    fn all_axioms_are_well_typed() {
         let h = hol();
         for ax in [
             h.zero_ne_succ(),
@@ -188,11 +181,26 @@ mod tests {
             h.mul_base(),
             h.mul_step(),
         ] {
-            // bool-typed conclusion …
             assert!(ax.concl().type_of().unwrap().is_bool());
-            // … postulated: it appears as its own hypothesis.
+        }
+    }
+
+    #[test]
+    fn freeness_axioms_are_genuine() {
+        // succ_inj / zero_ne_succ are real HOL theorems now — no hyps.
+        let h = hol();
+        assert!(h.succ_inj().hyps().is_empty(), "succ_inj is proved");
+        assert!(h.zero_ne_succ().hyps().is_empty(), "zero_ne_succ is proved");
+    }
+
+    #[test]
+    fn arithmetic_axioms_are_postulated() {
+        // The add/mul equations carry themselves as hypotheses until ε
+        // + induction discharge them.
+        let h = hol();
+        for ax in [h.add_base(), h.add_step(), h.mul_base(), h.mul_step()] {
             assert!(
-                ax.hyps().iter().any(|h| h == ax.concl()),
+                ax.hyps().iter().any(|hyp| hyp == ax.concl()),
                 "a postulated axiom carries itself as a hypothesis"
             );
         }
@@ -225,8 +233,8 @@ mod tests {
 
         let expected = h.zero().equals(h.zero()).unwrap();
         assert_eq!(q.concl(), &expected);
-        // The derivation depends only on the succ_inj postulate.
-        assert!(q.hyps().iter().any(|hyp| hyp == h.succ_inj().concl()));
+        // succ_inj is genuine, so this derivation is hypothesis-free.
+        assert!(q.hyps().is_empty(), "derived from proved axioms only");
     }
 
     #[test]

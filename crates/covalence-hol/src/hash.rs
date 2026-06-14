@@ -111,6 +111,7 @@ const T_SELECT: u8 = 0x11;
 const T_SPEC_ABS: u8 = 0x12;
 const T_SPEC_REP: u8 = 0x13;
 const T_SMALL_INT: u8 = 0x14;
+const T_SUCC: u8 = 0x15;
 
 // ============================================================================
 // Stateless API
@@ -329,6 +330,8 @@ impl Hasher {
                 ctx.tag(buf)
             }
             TermKind::Bool(b) => ctx.tag([T_BOOL, u8::from(*b)]),
+            // The primitive successor constant — a bare tag.
+            TermKind::Succ => ctx.tag([T_SUCC]),
             // `=` and `ε` carry their element type α.
             TermKind::Eq(alpha) => {
                 let ty_h = self.hash_type(alpha, oh);

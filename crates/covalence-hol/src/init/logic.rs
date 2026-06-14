@@ -1462,6 +1462,47 @@ mod tests {
     }
 
     #[test]
+    fn prop_eq_handles_de_morgan_absorption_and_implication() {
+        let a = Term::free("a", b());
+        let c = Term::free("c", b());
+        let want = |l: Term, r: Term| {
+            let eq = prop_eq(&l, &r).unwrap();
+            assert_eq!(eq.concl(), &l.clone().equals(r).unwrap());
+            assert!(eq.hyps().is_empty() && eq.has_no_obs());
+        };
+        // De Morgan: ¬(a ∧ c) = (¬a ∨ ¬c)
+        want(
+            a.clone().and(c.clone()).unwrap().not().unwrap(),
+            a.clone().not().unwrap().or(c.clone().not().unwrap()).unwrap(),
+        );
+        // Absorption: a ∨ (a ∧ c) = a
+        want(a.clone().or(a.clone().and(c.clone()).unwrap()).unwrap(), a.clone());
+        // Implication as disjunction: (a ⟹ c) = (¬a ∨ c)
+        want(
+            a.clone().imp(c.clone()).unwrap(),
+            a.clone().not().unwrap().or(c.clone()).unwrap(),
+        );
+        // Biconditional: (a ⟺ c) = ((a ⟹ c) ∧ (c ⟹ a))
+        want(
+            a.clone().iff(c.clone()).unwrap(),
+            a.clone()
+                .imp(c.clone())
+                .unwrap()
+                .and(c.clone().imp(a.clone()).unwrap())
+                .unwrap(),
+        );
+    }
+
+    #[test]
+    fn prop_eq_handles_four_atoms() {
+        // Full commutative-reassociation across four atoms.
+        let [a, c, d, e] = ["a", "c", "d", "e"].map(|n| Term::free(n, b()));
+        let l = a.clone().or(c.clone()).unwrap().or(d.clone().or(e.clone()).unwrap()).unwrap();
+        let r = e.or(d).unwrap().or(c.or(a).unwrap()).unwrap();
+        assert!(prop_eq(&l, &r).unwrap().hyps().is_empty());
+    }
+
+    #[test]
     fn and_sym_swaps_a_conjunction() {
         let p = Thm::assume(Term::bool_lit(true)).unwrap();
         let q = Thm::assume(Term::bool_lit(false)).unwrap();

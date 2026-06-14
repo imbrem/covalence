@@ -23,7 +23,8 @@
 //! - [`set`] — the `TypeSpec`-backed set membership / extensionality API.
 //!
 //! plus the per-theory theorem catalogues — [`cond`] (the boolean
-//! conditional's reduction clauses), [`nat`], and [`set`].
+//! conditional's reduction clauses), [`nat`], [`int`], [`coprod`],
+//! [`option`], [`stream`], [`recursion`], [`rel`], and [`set`].
 //!
 //! Efficiency is explicitly *not* a goal: `init` runs once at startup.
 //! The point is for the rest of `covalence-hol` to depend on this
@@ -57,11 +58,14 @@ pub mod eq;
 pub mod ext;
 pub mod int;
 pub mod logic;
+pub mod coprod;
 pub mod nat;
+pub mod option;
 pub mod quotient;
 pub mod recursion;
 pub mod rel;
 pub mod set;
+pub mod stream;
 
 /// The full `covalence-core` definition catalogue (types, term
 /// constructors, the `TypeSpec` / `TermSpec` handles, `Canonical`, …).

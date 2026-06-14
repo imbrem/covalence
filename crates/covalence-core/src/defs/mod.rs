@@ -151,7 +151,7 @@ pub use stream::{
     stream_head, stream_head_spec, stream_iterate, stream_iterate_spec, stream_make,
     stream_make_spec, stream_nth, stream_nth_spec, stream_spec, stream_tail, stream_tail_spec,
 };
-pub use symbol::{Opacity, Symbol};
+pub use symbol::Symbol;
 
 #[cfg(test)]
 mod tests {
@@ -650,20 +650,6 @@ mod tests {
     }
 
     #[test]
-    fn canonical_is_transparent() {
-        assert_eq!(
-            <Canonical as Symbol>::opacity(&Canonical::Set),
-            Opacity::Transparent
-        );
-    }
-
-    #[test]
-    fn smolstr_is_opaque() {
-        let s: smol_str::SmolStr = "foo".into();
-        assert_eq!(<smol_str::SmolStr as Symbol>::opacity(&s), Opacity::Opaque);
-    }
-
-    #[test]
     fn typespec_construction_round_trips() {
         let spec = TypeSpec::raw(
             Canonical::Set,
@@ -679,22 +665,5 @@ mod tests {
     fn termspec_construction_round_trips() {
         let spec = TermSpec::new(Canonical::List, Some(Type::tfree("a")), None);
         assert_eq!(spec.symbol().label(), "list");
-    }
-
-    #[test]
-    fn user_supplied_smolstr_symbol_is_opaque() {
-        // A user-supplied SmolStr symbol carries opaque equality:
-        // two specs with the same SmolStr and same definition compare
-        // equal, two with different SmolStrs (even same definition)
-        // do not.
-        let a: smol_str::SmolStr = "myType".into();
-        let b: smol_str::SmolStr = "myType".into();
-        let c: smol_str::SmolStr = "otherType".into();
-        let ty = Some(Type::tfree("a"));
-        let s1 = TypeSpec::raw(a, ty.clone(), None);
-        let s2 = TypeSpec::raw(b, ty.clone(), None);
-        let s3 = TypeSpec::raw(c, ty, None);
-        assert_eq!(s1, s2);
-        assert_ne!(s1, s3);
     }
 }

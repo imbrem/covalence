@@ -10,7 +10,7 @@
 //! structurally distinct — this is fine, the symbol is purely
 //! display.
 
-use super::symbol::{Opacity, Symbol};
+use super::symbol::Symbol;
 use std::fmt;
 
 /// Names for the kernel's derived-type / derived-term catalogue.
@@ -462,13 +462,6 @@ impl fmt::Display for Canonical {
 }
 
 impl Symbol for Canonical {
-    /// Canonical kernel symbols are *transparent*: the symbol is a
-    /// display label only; structural equality on a spec depends on
-    /// `ty` and `tm`. Two `Canonical` symbols with identical
-    /// definitions are structurally interchangeable.
-    fn opacity(&self) -> Opacity {
-        Opacity::Transparent
-    }
     fn label(&self) -> &str {
         Canonical::label(self)
     }

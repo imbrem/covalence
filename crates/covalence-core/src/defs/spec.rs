@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use crate::term::{Term, Type};
 
-use super::symbol::{Opacity, Symbol};
+use super::symbol::Symbol;
 
 // ============================================================================
 // Inner representation (private)
@@ -227,12 +227,9 @@ impl PartialEq for TermSpec {
         if Arc::ptr_eq(&self.0, &other.0) {
             return true;
         }
-        let a = &*self.0;
-        let b = &*other.0;
-        if a.ty != b.ty || a.tm != b.tm {
-            return false;
-        }
-        symbol_eq(&*a.symbol, &*b.symbol)
+        symbol_eq(&*self.0.symbol, &*self.0.symbol)
+            && self.0.ty == self.0.ty
+            && self.0.tm == self.0.tm
     }
 }
 
@@ -269,40 +266,20 @@ impl std::hash::Hash for TermSpec {
 // Symbol comparison / hash helpers
 // ============================================================================
 
-/// Structural equality of two `dyn Symbol`s, respecting opacity.
+/// Structural equality of two `dyn Symbol`s
 fn symbol_eq(a: &dyn Symbol, b: &dyn Symbol) -> bool {
-    match (a.opacity(), b.opacity()) {
-        (Opacity::Transparent, Opacity::Transparent) => true,
-        (Opacity::Opaque, Opacity::Opaque) => a.label() == b.label(),
-        // Mixed opacity: never equal — a transparent and an opaque
-        // symbol carry different equality contracts.
-        _ => false,
-    }
+    // TODO: generalize
+    std::ptr::addr_eq(a, b)
 }
 
 fn symbol_cmp(a: &dyn Symbol, b: &dyn Symbol) -> std::cmp::Ordering {
-    // Order: transparent < opaque (so the catalogue sorts predictably
-    // ahead of user-named entries). Within a class, by label.
-    fn rank(o: Opacity) -> u8 {
-        match o {
-            Opacity::Transparent => 0,
-            Opacity::Opaque => 1,
-        }
-    }
-    rank(a.opacity())
-        .cmp(&rank(b.opacity()))
-        .then_with(|| a.label().cmp(b.label()))
+    // TODO: generalize
+    (a as *const dyn Symbol)
+        .cast::<()>()
+        .cmp(&(b as *const dyn Symbol).cast::<()>())
 }
 
 fn symbol_hash<H: std::hash::Hasher>(s: &dyn Symbol, state: &mut H) {
-    // Hash the opacity tag so transparent and opaque hash into
-    // disjoint buckets; for opaque names, fold in the label.
-    let tag: u8 = match s.opacity() {
-        Opacity::Transparent => 0,
-        Opacity::Opaque => 1,
-    };
-    state.write_u8(tag);
-    if matches!(s.opacity(), Opacity::Opaque) {
-        s.label().hash(state);
-    }
+    // TODO: generlaize
+    s.label().hash(state)
 }

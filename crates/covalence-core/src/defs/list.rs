@@ -250,23 +250,10 @@ fn list_map_body() -> Term {
     hol::pub_abs("f", f_ty, lam_xs)
 }
 
-/// `listMap : ('a → 'b) → list 'a → list 'b` — map pointwise over the
-/// carrier stream's `option` elements.
-pub fn list_map_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
-        let alpha = Type::tfree("a");
-        let beta = Type::tfree("b");
-        let f_ty = Type::fun(alpha.clone(), beta.clone());
-        TermSpec::new(
-            Canonical::ListMap,
-            Some(Type::fun(f_ty, Type::fun(list(alpha), list(beta)))),
-            Some(list_map_body()),
-        )
-    });
-    LAZY.clone()
-}
-pub fn list_map(alpha: Type, beta: Type) -> Term {
-    Term::term_spec(list_map_spec(), vec![alpha, beta])
+poly_let_term! {
+    /// `listMap : ('a → 'b) → list 'a → list 'b` — map pointwise over
+    /// the carrier stream's `option` elements.
+    list_map_spec, list_map(alpha, beta), Canonical::ListMap, list_map_body()
 }
 
 fn list_filter_body() -> Term {

@@ -126,15 +126,19 @@ macro_rules! spec_term {
     };
 }
 
-/// `poly_let_term!(/// doc...\nspec_fn, accessor(alpha), Canonical::Sym, body_expr);`
+/// `poly_let_term!(/// doc...\nspec_fn, accessor(alpha[, beta, ...]), Canonical::Sym, body_expr);`
 ///
-/// One-type-parameter polymorphic let-style term. The body is
-/// expressed with `Type::tfree("a")` for the bound `α`; `ty` is
-/// computed from the body once and frozen in the spec.
+/// Polymorphic let-style term in one *or more* type parameters. The
+/// body is expressed with `Type::tfree("a")` (and `"b"`, … for further
+/// parameters); `ty` is computed from the body once and frozen in the
+/// spec. The accessor takes one `Type` per type parameter, in the same
+/// order they are substituted positionally into the spec — so by
+/// convention list them as `(alpha, beta, …)` matching `tfree("a")`,
+/// `tfree("b")`, ….
 macro_rules! poly_let_term {
     (
         $(#[$accessor_meta:meta])*
-        $spec_fn:ident, $accessor:ident($alpha:ident), $sym:expr, $body:expr $(,)?
+        $spec_fn:ident, $accessor:ident($($targ:ident),+ $(,)?), $sym:expr, $body:expr $(,)?
     ) => {
         pub fn $spec_fn() -> $crate::defs::TermSpec {
             static LAZY: std::sync::LazyLock<$crate::defs::TermSpec> =
@@ -156,8 +160,8 @@ macro_rules! poly_let_term {
         }
 
         $(#[$accessor_meta])*
-        pub fn $accessor($alpha: $crate::term::Type) -> $crate::term::Term {
-            $crate::term::Term::term_spec($spec_fn(), vec![$alpha])
+        pub fn $accessor($($targ: $crate::term::Type),+) -> $crate::term::Term {
+            $crate::term::Term::term_spec($spec_fn(), vec![$($targ),+])
         }
     };
 }

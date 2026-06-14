@@ -430,8 +430,7 @@ poly_let_term! {
 }
 
 // ============================================================================
-// Image / preimage under a function (two type parameters, so these use
-// the explicit spec form rather than `poly_let_term!`).
+// Image / preimage under a function (two type parameters).
 // ============================================================================
 
 fn set_image_body() -> Term {
@@ -452,21 +451,11 @@ fn set_image_body() -> Term {
     hol::pub_abs("f", f_ty, lam_s)
 }
 
-/// `set.image : ('a → 'b) → set 'a → set 'b` ≡
-/// `λf s. mk (λy. ∃x. mem x s ∧ f x = y)` — the direct image of `s`
-/// under `f`.
-pub fn set_image_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
-        let alpha = Type::tfree("a");
-        let beta = Type::tfree("b");
-        let f_ty = Type::fun(alpha.clone(), beta.clone());
-        let ty = Type::fun(f_ty, Type::fun(set(alpha), set(beta)));
-        TermSpec::new(Canonical::SetImage, Some(ty), Some(set_image_body()))
-    });
-    LAZY.clone()
-}
-pub fn set_image(alpha: Type, beta: Type) -> Term {
-    Term::term_spec(set_image_spec(), vec![alpha, beta])
+poly_let_term! {
+    /// `set.image : ('a → 'b) → set 'a → set 'b` ≡
+    /// `λf s. mk (λy. ∃x. mem x s ∧ f x = y)` — the direct image of `s`
+    /// under `f`.
+    set_image_spec, set_image(alpha, beta), Canonical::SetImage, set_image_body()
 }
 
 fn set_preimage_body() -> Term {
@@ -484,18 +473,8 @@ fn set_preimage_body() -> Term {
     hol::pub_abs("f", f_ty, lam_t)
 }
 
-/// `set.preimage : ('a → 'b) → set 'b → set 'a` ≡
-/// `λf t. mk (λx. mem (f x) t)` — the preimage of `t` under `f`.
-pub fn set_preimage_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
-        let alpha = Type::tfree("a");
-        let beta = Type::tfree("b");
-        let f_ty = Type::fun(alpha.clone(), beta.clone());
-        let ty = Type::fun(f_ty, Type::fun(set(beta), set(alpha)));
-        TermSpec::new(Canonical::SetPreimage, Some(ty), Some(set_preimage_body()))
-    });
-    LAZY.clone()
-}
-pub fn set_preimage(alpha: Type, beta: Type) -> Term {
-    Term::term_spec(set_preimage_spec(), vec![alpha, beta])
+poly_let_term! {
+    /// `set.preimage : ('a → 'b) → set 'b → set 'a` ≡
+    /// `λf t. mk (λx. mem (f x) t)` — the preimage of `t` under `f`.
+    set_preimage_spec, set_preimage(alpha, beta), Canonical::SetPreimage, set_preimage_body()
 }

@@ -8,6 +8,9 @@ object-store = ["dep:covalence-store", "dep:flate2"]
 odb = ["object-store", "dep:gix-odb", "dep:gix-object"]
 lfs = ["dep:covalence-store"]
 sqlite = ["object-store", "dep:covalence-sqlite"]
+# Per-repo cog store under `.git/cog-<uuid>/`: a SQLite blob store, a
+# BLAKE3 loose-object store for large blobs, and the path/discovery glue.
+cog = ["sqlite", "covalence-store/sqlite"]
 clone = ["sqlite", "odb", "dep:ureq", "dep:covalence-object"]
 # Async wrapper over `clone` that runs the sync clone on tokio's blocking
 # pool, suitable for axum handlers and other tokio contexts.

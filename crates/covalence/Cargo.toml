@@ -33,7 +33,7 @@ covalence-shell = { path = "../covalence-shell" }
 covalence-store = { path = "../covalence-store", features = ["sqlite"] }
 # covalence-git is gated off WASM: its `clone` feature transitively pulls
 # in libsqlite3-sys, whose sqlite3.c build needs a real WASI sysroot.
-covalence-git = { path = "../covalence-git", optional = true, features = ["clone"] }
+covalence-git = { path = "../covalence-git", optional = true, features = ["clone", "cog"] }
 covalence-hol = { path = "../covalence-hol", optional = true }
 covalence-opentheory = { path = "../covalence-opentheory", optional = true }
 covalence-wasm = { path = "../covalence-wasm", default-features = false }

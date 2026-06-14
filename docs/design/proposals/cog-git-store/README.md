@@ -1,6 +1,12 @@
 # Cog Git Store — dogfooding cog to serve test assets
 
-> **STATUS: SKETCH.** Not built. A staged plan for a zero-install,
+> **STATUS: IN PROGRESS — foundation landed.** The §0 default
+> (`CogStoreDir` + SQLite store under `.git/cog-<uuid>/`), the §1.1
+> `OverlayStore`/`SizeRouter` combinators, and the §2 BLAKE3
+> `Blake3LooseStore` are implemented and tested, wired through
+> `cov cog store {info,add,cat} [--routed]`. Still to do: §1.2–1.3 git
+> indexing, §3 `cov cog fetch`, §4 the `set.mm` test. A staged plan for a
+> zero-install,
 > per-repo content store that lives *inside* an existing `.git`
 > directory, indexes the surrounding git repo, spills large blobs to a
 > BLAKE3 loose-object store, and lazily fetches missing hashes from
@@ -396,12 +402,17 @@ the [PR checklist][claude] that `COV_TEST_SETMM` is off by default.
 
 ## 5. Build order
 
-1. **§0.2** `CogStoreDir` + `open_default()` — the SQLite-only default
-   under `.git/cog-<uuid>/`. Wire into the CLI's `resolve_store`.
-2. **§1.1** `OverlayStore` in `covalence-store` (generic, reusable).
-3. **§1.2–1.3** `git_index` + indexer + ODB-by-O256 adapter +
-   `cov cog index`.
-4. **§2** generalized BLAKE3 loose store + `SizeRouter` → triple store.
+1. **[done] §0.2** `CogStoreDir` + `open_default()` — the SQLite-only
+   default under `.git/cog-<uuid>/` (commondir-anchored), exposed as
+   `cov cog store`.
+2. **[done] §1.1** `OverlayStore` + `SizeRouter` in `covalence-store`
+   (generic, reusable).
+3. **[done] §2** `Blake3LooseStore` + `SizeRouter` wiring →
+   `cov cog store --routed` (SQLite + loose). *(BLAKE3 loose store added
+   as a sibling to `LfsStore` rather than generalizing it; revisit if a
+   shared generic loose store proves worthwhile.)*
+4. **[next] §1.2–1.3** `git_index` + indexer + ODB-by-O256 adapter +
+   `cov cog index`; fold the git layer into the overlay → triple store.
 5. **§3a** `cov cog fetch` for file URLs + content-addressed cache.
 6. **§3b–3d** provenance/url-cache, conditional GET, git-URL fetch,
    federation — as needed.

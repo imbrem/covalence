@@ -14,6 +14,9 @@ pub enum CogCommand {
     /// Clone a git repository into a covalence store
     Clone(CloneArgs),
 
+    /// Inspect or populate the per-repo cog store under `.git/cog-<uuid>/`
+    Store(StoreArgs),
+
     /// Mount a tree object (by O256 hash) as a read-only FUSE filesystem
     ///
     /// Linux-only scaffold. No range requests; reading a large file pulls
@@ -113,6 +116,46 @@ pub struct CloneArgs {
     pub store: Option<std::path::PathBuf>,
 }
 
+/// Inspect or populate the per-repo cog store under `.git/cog-<uuid>/`.
+#[derive(clap::Args)]
+pub struct StoreArgs {
+    #[command(subcommand)]
+    pub command: Option<StoreCommand>,
+
+    /// Route large blobs (>= threshold bytes) to the BLAKE3 loose store;
+    /// small blobs stay in SQLite. Reads consult both layers.
+    #[arg(long, global = true)]
+    pub routed: bool,
+
+    /// Size threshold in bytes for `--routed` (default 1 MiB).
+    #[arg(long, global = true)]
+    pub threshold: Option<u64>,
+}
+
+#[derive(Subcommand)]
+pub enum StoreCommand {
+    /// Show the resolved cog-store paths (the default).
+    Info,
+
+    /// Insert files into the store, printing each blob's BLAKE3 (O256).
+    Add(StoreAddArgs),
+
+    /// Write a blob (by O256 hex) to stdout.
+    Cat(StoreCatArgs),
+}
+
+#[derive(clap::Args)]
+pub struct StoreAddArgs {
+    /// Files to insert.
+    pub paths: Vec<std::path::PathBuf>,
+}
+
+#[derive(clap::Args)]
+pub struct StoreCatArgs {
+    /// O256 hex (64 chars) of the blob to read.
+    pub hash: String,
+}
+
 pub fn run(args: CogArgs) {
     match args.command {
         None => println!("cogit {} ({})", covalence_git::VERSION, covalence::TARGET),
@@ -124,6 +167,12 @@ pub fn run(args: CogArgs) {
         }
         Some(CogCommand::Clone(args)) => {
             if let Err(e) = run_clone(args) {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+        Some(CogCommand::Store(args)) => {
+            if let Err(e) = run_store(args) {
                 eprintln!("{e}");
                 std::process::exit(1);
             }
@@ -262,6 +311,78 @@ fn push_to_server(
     }
     println!("Pushed {} blob(s) and {} tree(s)", blobs.len(), trees.len());
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// cov cog store — per-repo cog store under .git/cog-<uuid>/
+// ---------------------------------------------------------------------------
+
+fn run_store(args: StoreArgs) -> std::io::Result<()> {
+    use covalence_git::cog::CogStoreDir;
+    use covalence_store::ContentStore;
+
+    let dir = CogStoreDir::discover()?.ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no git repository found in the current directory or any ancestor",
+        )
+    })?;
+
+    match args.command.unwrap_or(StoreCommand::Info) {
+        StoreCommand::Info => {
+            println!("cog store: {}", dir.dir().display());
+            println!("  db:      {}", dir.db_path().display());
+            println!("  objects: {}", dir.objects_dir().display());
+            println!(
+                "  mode:    {}",
+                if args.routed { "routed" } else { "sqlite" }
+            );
+            if !dir.dir().exists() {
+                println!("  (not yet created — `cog store add` initializes it)");
+            }
+            Ok(())
+        }
+        StoreCommand::Add(add) => {
+            let store = open_store(&dir, args.routed, args.threshold)?;
+            for path in &add.paths {
+                let data = std::fs::read(path)
+                    .map_err(|e| std::io::Error::new(e.kind(), format!("{}: {e}", path.display())))?;
+                let key = store
+                    .insert(&data)
+                    .map_err(|e| std::io::Error::other(e.to_string()))?;
+                println!("{key}  {}", path.display());
+            }
+            Ok(())
+        }
+        StoreCommand::Cat(cat) => {
+            use std::io::Write;
+            let key = covalence_store::O256::from_hex(&cat.hash).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("invalid O256 hex: {}", cat.hash),
+                )
+            })?;
+            let store = open_store(&dir, args.routed, args.threshold)?;
+            let data = store.get(&key).ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::NotFound, format!("not in store: {key}"))
+            })?;
+            std::io::stdout().write_all(&data)
+        }
+    }
+}
+
+/// Open the cog store, optionally size-routed (SQLite + BLAKE3 loose).
+fn open_store(
+    dir: &covalence_git::cog::CogStoreDir,
+    routed: bool,
+    threshold: Option<u64>,
+) -> std::io::Result<covalence_store::BlobStore<covalence_store::O256>> {
+    let result = if routed {
+        dir.open_routed(threshold.unwrap_or(covalence_store::DEFAULT_SIZE_THRESHOLD))
+    } else {
+        dir.open_default()
+    };
+    result.map_err(|e| std::io::Error::other(e.to_string()))
 }
 
 fn run_hash_blob(args: HashBlobArgs) -> std::io::Result<()> {

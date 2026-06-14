@@ -21,6 +21,9 @@ pub mod lfs;
 #[cfg(feature = "clone")]
 pub mod clone;
 
+#[cfg(feature = "cog")]
+pub mod cog;
+
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Hash algorithm for `hash_blob`.

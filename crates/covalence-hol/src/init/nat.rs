@@ -452,6 +452,60 @@ fn add_assoc_impl() -> Result<Thm> {
     induct(&motive, base, step)
 }
 
+/// `⊢ ∀a b c. (a + c = b + c) ⟹ (a = b)` — right cancellation of `+`.
+/// Proved by induction on the cancelled summand, using successor
+/// injectivity ([`succ_inj`]) at the step. This is the `nat` lemma the
+/// `int` quotient relation's transitivity rests on.
+pub fn add_cancel() -> Thm {
+    add_cancel_impl().expect("add_cancel derivation")
+}
+fn add_cancel_impl() -> Result<Thm> {
+    let (a, b) = (var("a"), var("b"));
+    // body[n] ≔ (a + n = b + n) ⟹ (a = b)
+    let body_at = |t: &Term| -> Result<Term> {
+        add(a.clone(), t.clone())
+            .equals(add(b.clone(), t.clone()))?
+            .imp(a.clone().equals(b.clone())?)
+    };
+    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+    // base: (a + 0 = b + 0) ⟹ (a = b) — strip the `+ 0`s and chain.
+    let base = {
+        let prem = add(a.clone(), zero()).equals(add(b.clone(), zero()))?;
+        let az = add_zero().all_elim(a.clone())?; // a + 0 = a
+        let bz = add_zero().all_elim(b.clone())?; // b + 0 = b
+        az.sym()?
+            .trans(Thm::assume(prem.clone())?)?
+            .trans(bz)? // {a+0=b+0} ⊢ a = b
+            .imp_intro(&prem)?
+    };
+
+    // step: body[n] ⟹ body[S n].
+    let n = var("n");
+    let ihc = body_at(&n)?;
+    let inner = {
+        let prem = add(a.clone(), succ(n.clone())).equals(add(b.clone(), succ(n.clone())))?;
+        // a + S n = S(a + n),  b + S n = S(b + n).
+        let asr = add_succ_r().all_elim(a.clone())?.all_elim(n.clone())?;
+        let bsr = add_succ_r().all_elim(b.clone())?.all_elim(n.clone())?;
+        // {a+Sn=b+Sn} ⊢ S(a+n) = S(b+n).
+        let ssucc = asr.sym()?.trans(Thm::assume(prem.clone())?)?.trans(bsr)?;
+        // succ injectivity: S(a+n) = S(b+n) ⟹ a+n = b+n.
+        let acn = succ_inj()
+            .all_elim(add(a.clone(), n.clone()))?
+            .all_elim(add(b.clone(), n.clone()))?
+            .imp_elim(ssucc)?; // {a+Sn=b+Sn} ⊢ a+n = b+n
+        // Apply the induction hypothesis.
+        Thm::assume(ihc.clone())?
+            .imp_elim(acn)? // {body n, a+Sn=b+Sn} ⊢ a = b
+            .imp_intro(&prem)? // {body n} ⊢ (a+Sn=b+Sn) ⟹ (a=b)
+    };
+    let step = inner.imp_intro(&ihc)?;
+    induct(&motive, base, step)?
+        .all_intro("b", nat())?
+        .all_intro("a", nat())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -499,6 +553,22 @@ mod tests {
         for t in [add_succ_r(), add_comm(), add_assoc()] {
             assert!(t.hyps().iter().all(|h| h == &rh), "depends only on rec_holds");
         }
+    }
+
+    #[test]
+    fn add_cancel_cancels_a_common_summand() {
+        // ∀a b c. (a+c = b+c) ⟹ (a=b); instantiate to a concrete implication.
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let thm = add_cancel()
+            .all_elim(a.clone()).unwrap()
+            .all_elim(b.clone()).unwrap()
+            .all_elim(c.clone()).unwrap();
+        let prem = add(a.clone(), c.clone()).equals(add(b.clone(), c)).unwrap();
+        let concl = a.equals(b).unwrap();
+        assert_eq!(thm.concl(), &prem.imp(concl).unwrap());
+        // depends only on rec_holds (succ_inj is genuine).
+        let rh = rec_holds().concl().clone();
+        assert!(add_cancel().hyps().iter().all(|h| h == &rh));
     }
 
     /// Every derived recursion equation depends on **exactly** the one

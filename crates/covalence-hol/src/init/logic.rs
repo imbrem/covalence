@@ -423,8 +423,13 @@ pub fn dne(thm: Thm) -> Result<Thm> {
 //
 // Covered identities (and their mirrors): `p∧p=p`, `p∨p=p`, `p∧T=p`,
 // `T∧p=p`, `p∨F=p`, `F∨p=p`, `p∧F=F`, `F∧p=F`, `p∨T=T`, `T∨p=T`,
-// `p∧¬p=F`, `p∨¬p=T`, `¬T=F`, `¬F=T`, `¬¬p=p`, and the implication forms
-// `F⟹p=T`, `p⟹T=T`, `T⟹p=p`, `p⟹F=¬p`, `p⟹p=T`.
+// `p∧¬p=F`, `p∨¬p=T`, `¬T=F`, `¬F=T`, `¬¬p=p`, the implication forms
+// `F⟹p=T`, `p⟹T=T`, `T⟹p=p`, `p⟹F=¬p`, `p⟹p=T`, and — since `⟺`
+// is `λp q. p = q` — the `bool`-equality / biconditional forms `(p=p)=T`,
+// `(p=T)=p`, `(T=p)=p`, `(p=F)=¬p`, `(F=p)=¬p`, `(p=¬p)=F`. A
+// biconditional that matches one of those is unfolded to the primitive
+// equation and simplified on the next pass; a contingent `⟺` is left as
+// the unfolded `=` (its definitional form).
 
 /// `⊢ t = t'`, the propositional **simplification** of `t`: every
 /// connective identity above is applied, repeatedly and under congruence,
@@ -492,6 +497,13 @@ fn simp_at(node: &Term) -> Result<Option<Thm>> {
     if let Some(x) = parse_not(node) {
         return not_simp(&x);
     }
+    // Primitive `=` at `bool` — `(=)` and `⟺` coincide, so this also
+    // catches what `iff` unfolds to.
+    if let Some((a, b)) = node.as_eq()
+        && a.type_of().map(|t| t.is_bool()).unwrap_or(false)
+    {
+        return eq_simp(&a.clone(), &b.clone());
+    }
     if let Some((spec, a, b)) = parse_binop(node) {
         if spec.ptr_eq(&and_spec()) {
             return and_simp(&a, &b);
@@ -501,6 +513,9 @@ fn simp_at(node: &Term) -> Result<Option<Thm>> {
         }
         if spec.ptr_eq(&imp_spec()) {
             return imp_simp(&a, &b);
+        }
+        if spec.ptr_eq(&iff_spec()) {
+            return iff_simp(&a, &b);
         }
     }
     Ok(None)
@@ -684,6 +699,103 @@ fn imp_simp(a: &Term, b: &Term) -> Result<Option<Thm>> {
     Ok(None)
 }
 
+/// Primitive `=`-at-`bool` simplifications: `(a=a)=T`, `(a=T)=a`,
+/// `(T=a)=a`, `(a=F)=¬a`, `(F=a)=¬a`.
+fn eq_simp(a: &Term, b: &Term) -> Result<Option<Thm>> {
+    if a == b {
+        // (a = a) = T
+        return Ok(Some(Thm::refl(a.clone())?.eqt_intro()?));
+    }
+    if is_t(b) {
+        // (a = T) = a
+        let fwd = Thm::assume(a.clone())?.eqt_intro()?; // {a} ⊢ a=T
+        let bwd = Thm::assume(a.clone().equals(tt())?)?.eqt_elim()?; // {a=T} ⊢ a
+        return Ok(Some(fwd.deduct_antisym(bwd)?));
+    }
+    if is_t(a) {
+        // (T = a) = a
+        let fwd = Thm::assume(b.clone())?.eqt_intro()?.sym()?; // {b} ⊢ T=b
+        let bwd = Thm::assume(tt().equals(b.clone())?)?.sym()?.eqt_elim()?; // {T=b} ⊢ b
+        return Ok(Some(fwd.deduct_antisym(bwd)?));
+    }
+    if is_f(b) {
+        // (a = F) = ¬a
+        return Ok(Some(eq_false(a, false)?));
+    }
+    if is_f(a) {
+        // (F = a) = ¬a
+        return Ok(Some(eq_false(b, true)?));
+    }
+    if complementary(a, b) {
+        // (a = b) = F — complementary bools are never equal.
+        let eq = a.clone().equals(b.clone())?;
+        // Reduce to the canonical contradiction `x = ¬x` (x the positive
+        // atom), so the excluded-middle split is symmetric.
+        let (xeqnx, x) = if parse_not(b).as_ref() == Some(a) {
+            (Thm::assume(eq.clone())?, a.clone()) // a = ¬a
+        } else {
+            (Thm::assume(eq.clone())?.sym()?, b.clone()) // (¬b = b) ⟹ b = ¬b
+        };
+        let nx = x.clone().not()?;
+        // x ⟹ F : x and (x = ¬x) give ¬x, contradiction.
+        let from_x = {
+            let xt = Thm::assume(x.clone())?;
+            xeqnx.clone().eq_mp(xt.clone())?.not_elim(xt)?.imp_intro(&x)?
+        };
+        // ¬x ⟹ F : ¬x and (¬x = x) give x, contradiction.
+        let from_nx = {
+            let nxt = Thm::assume(nx.clone())?;
+            let xres = xeqnx.sym()?.eq_mp(nxt.clone())?; // ⊢ x
+            nxt.not_elim(xres)?.imp_intro(&nx)?
+        };
+        let fwd = Thm::lem(x)?.or_elim(from_x, from_nx)?; // {a=b} ⊢ F
+        let bwd = Thm::assume(ff())?.false_elim(eq)?; // {F} ⊢ a=b
+        return Ok(Some(bwd.deduct_antisym(fwd)?));
+    }
+    Ok(None)
+}
+
+/// `⊢ (a = F) = ¬a` (or `⊢ (F = a) = ¬a` when `flipped`).
+fn eq_false(a: &Term, flipped: bool) -> Result<Thm> {
+    let eq = if flipped {
+        ff().equals(a.clone())?
+    } else {
+        a.clone().equals(ff())?
+    };
+    let na = a.clone().not()?;
+    // {a = F} ⊢ ¬a : a forces F, contradiction, discharge.
+    let a_eq_f = if flipped {
+        Thm::assume(eq.clone())?.sym()? // {F=a} ⊢ a=F
+    } else {
+        Thm::assume(eq.clone())? // {a=F} ⊢ a=F
+    };
+    let fwd = a_eq_f
+        .eq_mp(Thm::assume(a.clone())?)? // {…, a} ⊢ F
+        .imp_intro(a)?
+        .not_intro()?; // {a=F or F=a} ⊢ ¬a
+    // {¬a} ⊢ a = F : under ¬a, a and F agree.
+    let a_from_f = Thm::assume(ff())?.false_elim(a.clone())?; // {F} ⊢ a
+    let f_from_a = Thm::assume(na.clone())?.not_elim(Thm::assume(a.clone())?)?; // {¬a,a} ⊢ F
+    let bwd_af = a_from_f.deduct_antisym(f_from_a)?; // {¬a} ⊢ a = F
+    let bwd = if flipped { bwd_af.sym()? } else { bwd_af }; // {¬a} ⊢ (F=a)/(a=F)
+    bwd.deduct_antisym(fwd) // ⊢ eq = ¬a
+}
+
+/// `⟺` simplifications. Since `iff ≡ λp q. p = q`, a simplifiable
+/// biconditional is unfolded to a primitive `bool` equation and handed to
+/// [`eq_simp`] on the next pass; otherwise it is left alone.
+fn iff_simp(a: &Term, b: &Term) -> Result<Option<Thm>> {
+    let simplifiable =
+        a == b || is_t(a) || is_t(b) || is_f(a) || is_f(b) || complementary(a, b);
+    if !simplifiable {
+        return Ok(None);
+    }
+    let node = a.clone().iff(b.clone())?;
+    // ⊢ (a ⟺ b) = ((λp q. p = q) a b), then β-reduce the rhs to `a = b`.
+    let eq_form = node.delta_all(iff_spec().symbol())?.reduce_rhs()?;
+    Ok(Some(eq_form))
+}
+
 /// Parse a binary-connective application `App(App(op, a), b)` →
 /// `(op_spec, a, b)`. Callers filter on the spec by `ptr_eq`.
 fn parse_binop(t: &Term) -> Option<(covalence_core::defs::TermSpec, Term, Term)> {
@@ -854,6 +966,59 @@ mod tests {
             assert_eq!(rhs_of(&eq), want, "simp {input}");
             assert!(eq.hyps().is_empty(), "simp of a closed term is axiom-free");
         }
+    }
+
+    #[test]
+    fn simp_iff_and_bool_equality() {
+        let a = Term::free("a", b());
+        let cases: Vec<(Term, Term)> = vec![
+            // primitive `=` at bool
+            (a.clone().equals(a.clone()).unwrap(), tt()), // (a=a) = T
+            (a.clone().equals(tt()).unwrap(), a.clone()), // (a=T) = a
+            (tt().equals(a.clone()).unwrap(), a.clone()), // (T=a) = a
+            (a.clone().equals(ff()).unwrap(), a.clone().not().unwrap()), // (a=F) = ¬a
+            (ff().equals(a.clone()).unwrap(), a.clone().not().unwrap()), // (F=a) = ¬a
+            (a.clone().equals(a.clone().not().unwrap()).unwrap(), ff()), // (a=¬a) = F
+            (a.clone().not().unwrap().equals(a.clone()).unwrap(), ff()), // (¬a=a) = F
+            // the biconditional, which unfolds to the above
+            (a.clone().iff(a.clone()).unwrap(), tt()),    // (a ⟺ a) = T
+            (a.clone().iff(tt()).unwrap(), a.clone()),    // (a ⟺ T) = a
+            (a.clone().iff(ff()).unwrap(), a.clone().not().unwrap()), // (a ⟺ F) = ¬a
+        ];
+        for (input, want) in cases {
+            let eq = simp(&input).unwrap();
+            assert_eq!(eq.concl().as_eq().unwrap().0, &input, "lhs preserved for {input}");
+            assert_eq!(rhs_of(&eq), want, "simp {input}");
+            assert!(eq.hyps().is_empty());
+        }
+    }
+
+    #[test]
+    fn simp_leaves_contingent_iff_and_nonbool_eq_alone() {
+        // A genuine biconditional `a ⟺ c` has no identity to fire — but
+        // note `simp` still unfolds it to `a = c` (its definitional form).
+        let a = Term::free("a", b());
+        let c = Term::free("c", b());
+        let iff = a.clone().iff(c.clone()).unwrap();
+        // No T/F/idempotence pattern → left as the iff term, unchanged.
+        assert_eq!(rhs_of(&simp(&iff).unwrap()), iff);
+        // A non-bool equation is not propositional — untouched.
+        let n = Term::free("n", Type::nat());
+        let neq = n.clone().equals(n.clone()).unwrap();
+        assert_eq!(rhs_of(&simp(&neq).unwrap()), neq);
+    }
+
+    #[test]
+    fn tauto_decide_cover_iff() {
+        let a = Term::free("a", b());
+        // a ⟺ a is a tautology.
+        let refl_iff = a.clone().iff(a.clone()).unwrap();
+        assert_eq!(tauto(&refl_iff).unwrap().concl(), &refl_iff);
+        // a ⟺ ¬a is contradictory → it unfolds to `a = ¬a`, which the
+        // complement rule sends to F, so decide proves its negation.
+        let bad = a.clone().iff(a.clone().not().unwrap()).unwrap();
+        let out = decide(&bad).unwrap();
+        assert_eq!(out.concl(), &bad.not().unwrap());
     }
 
     #[test]

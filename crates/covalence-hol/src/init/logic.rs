@@ -386,6 +386,48 @@ fn disch_neg(thm: Thm, a: &Term) -> Result<Thm> {
     Thm::lem(a.clone())?.or_elim(branch_a, branch_na)
 }
 
+/// `Γ ⊢ a ⟹ b` → `Γ ⊢ ¬a ∨ b` — material implication as a two-literal
+/// clause. Apply the implication to an assumed `a`, then clausify it away.
+pub fn imp_clause(thm: Thm) -> Result<Thm> {
+    let (a, _) = dest_imp(thm.concl()).ok_or_else(|| {
+        Error::ConnectiveRule(format!("imp_clause: `{}` is not an implication", thm.concl()))
+    })?;
+    let seq = thm.imp_elim(Thm::assume(a.clone())?)?; // Γ, {a} ⊢ b
+    clause_intro(seq, &[a])
+}
+
+/// `Γ ⊢ a = b` → `Γ ⊢ ¬a ∨ b` — the left half of a biconditional as a
+/// clause (Alethe `equiv1`; `=` at `bool` is `⟺`).
+pub fn iff_clause_left(thm: Thm) -> Result<Thm> {
+    let a = thm
+        .concl()
+        .as_eq()
+        .ok_or(Error::NotAnEquation)?
+        .0
+        .clone();
+    let seq = thm.eq_mp(Thm::assume(a.clone())?)?; // Γ, {a} ⊢ b
+    clause_intro(seq, &[a])
+}
+
+/// `Γ ⊢ a = b` → `Γ ⊢ a ∨ ¬b` — the right half of a biconditional as a
+/// clause (Alethe `equiv2`).
+pub fn iff_clause_right(thm: Thm) -> Result<Thm> {
+    let b = thm
+        .concl()
+        .as_eq()
+        .ok_or(Error::NotAnEquation)?
+        .1
+        .clone();
+    let seq = thm.sym()?.eq_mp(Thm::assume(b.clone())?)?; // Γ, {b} ⊢ a
+    clause_intro(seq, &[b])
+}
+
+/// Parse `App(App(⟹, a), b)` → `(a, b)` if `t` is a HOL implication.
+fn dest_imp(t: &Term) -> Option<(Term, Term)> {
+    let (spec, a, b) = parse_binop(t)?;
+    spec.ptr_eq(&imp_spec()).then_some((a, b))
+}
+
 // ============================================================================
 // Double-negation elimination
 // ============================================================================
@@ -435,32 +477,62 @@ pub fn dne(thm: Thm) -> Result<Thm> {
 /// until none fires. Leaves non-`bool` and non-connective structure
 /// untouched (and never descends under a binder). The result equation has
 /// the same hypotheses as the input (none, for a closed `t`).
+///
+/// `simp` does **only** the connective layer — it never evaluates
+/// arithmetic. For closed computation as well, use [`normalize`], which
+/// interleaves [`simp`] with βι-reduction.
 pub fn simp(t: &Term) -> Result<Thm> {
     simp_conv(t)
 }
 
-/// `⊢ p`, if `p` is a **trivial tautology** — i.e. [`simp`] reduces it to
-/// `T`. Errors otherwise (the theorem is left unproven). The propositional
-/// analogue of [`TermExt::prove_true`](crate::init::ext::TermExt::prove_true),
-/// which decides by βι-evaluation rather than connective simplification.
+/// `⊢ t = nf`: normalise `t` by interleaving βι-reduction
+/// ([`reduce`](crate::init::ext::TermExt::reduce) — closed `nat`/`int`
+/// arithmetic, literal `=`) with propositional [`simp`] until neither
+/// fires. The combined normal form decides strictly more than either
+/// alone: it folds `(2 + 2 = 4)` *and* `(p ∨ ¬p)` to `T`.
+pub fn normalize(t: &Term) -> Result<Thm> {
+    let mut acc = Thm::refl(t.clone())?;
+    // Each pass shrinks the term toward a normal form; the cap is a
+    // defensive backstop against a hypothetical reduce/simp oscillation.
+    for _ in 0..1024 {
+        let cur = eq_rhs(&acc);
+        let reduced = cur.reduce()?; // ⊢ cur = cur'  (βι)
+        if eq_rhs(&reduced) != cur {
+            acc = acc.trans(reduced)?;
+            continue;
+        }
+        let simped = simp(&cur)?; // ⊢ cur = cur''  (connectives)
+        if eq_rhs(&simped) != cur {
+            acc = acc.trans(simped)?;
+            continue;
+        }
+        return Ok(acc);
+    }
+    Err(Error::ConnectiveRule("normalize: did not converge".into()))
+}
+
+/// `⊢ p`, if `p` is a **trivial tautology** — i.e. [`normalize`] reduces
+/// it to `T`. This covers both propositional tautologies (`p ∨ ¬p`) and
+/// closed decidable goals (`2 + 2 = 4`). Errors otherwise, leaving the
+/// theorem unproven. (Alethe's `evaluate` rule is exactly this.)
 pub fn tauto(p: &Term) -> Result<Thm> {
-    let eq = simp(p)?; // ⊢ p = p'
-    let rhs = eq.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
-    if matches!(rhs.as_bool(), Some(true)) {
+    let eq = normalize(p)?; // ⊢ p = nf
+    let nf = eq_rhs(&eq);
+    if matches!(nf.as_bool(), Some(true)) {
         eq.eqt_elim() // ⊢ p
     } else {
         Err(Error::ConnectiveRule(format!(
-            "tauto: `{p}` simplifies to `{rhs}`, not `T`"
+            "tauto: `{p}` normalises to `{nf}`, not `T`"
         )))
     }
 }
 
 /// Prove `p` *or* `¬p`, whichever is a trivial tautology (see [`tauto`]).
 ///
-/// Returns `⊢ p` when `p` simplifies to `T`, else `⊢ ¬p` when `¬p` does,
-/// else an error — a one-sided decision procedure for the fragment [`simp`]
-/// normalises. Inspect the returned theorem's conclusion to learn which
-/// way it went.
+/// Returns `⊢ p` when `p` normalises to `T`, else `⊢ ¬p` when `¬p` does,
+/// else an error — a one-sided decision procedure for the fragment
+/// [`normalize`] decides. Inspect the returned theorem's conclusion to
+/// learn which way it went.
 pub fn decide(p: &Term) -> Result<Thm> {
     if let Ok(thm) = tauto(p) {
         return Ok(thm);
@@ -469,6 +541,11 @@ pub fn decide(p: &Term) -> Result<Thm> {
     tauto(&np).map_err(|_| {
         Error::ConnectiveRule(format!("decide: neither `{p}` nor its negation is a trivial tautology"))
     })
+}
+
+/// The right-hand side of an equational theorem.
+fn eq_rhs(thm: &Thm) -> Term {
+    thm.concl().as_eq().expect("equational theorem").1.clone()
 }
 
 /// The normalising conversion behind [`simp`]: congruence-descend, then
@@ -1018,6 +1095,44 @@ mod tests {
         let bad = a.clone().iff(a.clone().not().unwrap()).unwrap();
         let out = decide(&bad).unwrap();
         assert_eq!(out.concl(), &bad.not().unwrap());
+    }
+
+    #[test]
+    fn imp_and_iff_clausify() {
+        let a = Term::free("a", b());
+        let c = Term::free("c", b());
+        // a ⟹ c  ⊢  ¬a ∨ c
+        let imp = Thm::assume(a.clone().imp(c.clone()).unwrap()).unwrap();
+        let cl = imp_clause(imp).unwrap();
+        assert_eq!(cl.concl(), &a.clone().not().unwrap().or(c.clone()).unwrap());
+        // a = c  ⊢  ¬a ∨ c   (equiv1)
+        let eq = Thm::assume(a.clone().equals(c.clone()).unwrap()).unwrap();
+        let l = iff_clause_left(eq.clone()).unwrap();
+        assert_eq!(l.concl(), &a.clone().not().unwrap().or(c.clone()).unwrap());
+        // a = c  ⊢  a ∨ ¬c   (equiv2 — order is ¬c ∨ a, same literals)
+        let r = iff_clause_right(eq).unwrap();
+        assert_eq!(r.concl(), &c.clone().not().unwrap().or(a.clone()).unwrap());
+    }
+
+    #[test]
+    fn normalize_and_tauto_decide_closed_arithmetic() {
+        // tauto now folds closed arithmetic, not just connectives.
+        let two_plus_two = covalence_core::defs::int_add()
+            .apply(Term::int_lit(2))
+            .unwrap()
+            .apply(Term::int_lit(2))
+            .unwrap();
+        let goal = two_plus_two.equals(Term::int_lit(4)).unwrap(); // (2+2 = 4)
+        assert!(tauto(&goal).is_ok(), "tauto proves a closed integer fact");
+        // The false version: 2 + 2 = 5 → decide proves its negation.
+        let bad = covalence_core::defs::int_add()
+            .apply(Term::int_lit(2))
+            .unwrap()
+            .apply(Term::int_lit(2))
+            .unwrap()
+            .equals(Term::int_lit(5))
+            .unwrap();
+        assert_eq!(decide(&bad).unwrap().concl(), &bad.not().unwrap());
     }
 
     #[test]

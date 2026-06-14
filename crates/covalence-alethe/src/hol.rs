@@ -27,10 +27,13 @@
 //!
 //! ## Scope
 //!
-//! The QF_UF fragment — `assume`, `resolution` / `th_resolution`, `refl`,
-//! `trans`, `symm`, `cong`, `eq_*`, `equiv_pos2`, `false` — is wired
-//! through, plus the **integer term layer** (`Int`, literals, `+ - * <
-//! <= > >=` over the `defs` `int` catalogue).
+//! Wired through: the QF_UF core (`assume`, `resolution` /
+//! `th_resolution`, `refl`, `trans`, `symm`, `cong`, `equiv_pos2`,
+//! `false`); the propositional family (`equiv1`, `equiv2`, `implies`,
+//! `and`, `and_intro`, `not_not`, `evaluate`, `equiv_simplify`) — thin
+//! wrappers over [`covalence_hol::init::logic`]; and the **integer term
+//! layer** (`Int`, literals, `+ - * < <= > >=` over the `defs` `int`
+//! catalogue).
 //!
 //! cvc5's `hole` ("untranslated rewrite") is **re-derived, not trusted**:
 //! every hole is a unit clause `(cl L)` and [`hole`] proves `⊢ L` in the
@@ -46,7 +49,6 @@ use std::collections::HashMap;
 
 use covalence_core::{Term, Thm, Type, defs};
 use covalence_hol::HolLightCtx;
-use covalence_hol::init::ext::{TermExt, ThmExt};
 use covalence_hol::init::logic;
 use covalence_sexp::SExpr;
 use covalence_types::Decision;
@@ -318,7 +320,7 @@ impl AletheBridge for HolAletheBridge {
         clause: &[SExpr],
         rule: &str,
         premises: &[Thm],
-        _args: &[SExpr],
+        args: &[SExpr],
         discharge: &[Thm],
     ) -> R<Thm> {
         if !discharge.is_empty() {
@@ -336,10 +338,17 @@ impl AletheBridge for HolAletheBridge {
             "cong" => cong(&lits, premises)?,
             "equiv_pos2" => equiv_pos2(&lits)?,
             "false" => false_rule(&lits)?,
-            // cvc5's "untranslated rewrite": re-derive it in the kernel
-            // rather than trust it. Closed arithmetic + propositional
-            // simplification are discharged; anything else is reported.
-            "hole" => hole(&lits)?,
+            // Propositional rules — thin wrappers over `init::logic`.
+            "equiv1" => logic::iff_clause_left(one_premise(premises, rule)?)?,
+            "equiv2" => logic::iff_clause_right(one_premise(premises, rule)?)?,
+            "implies" => logic::imp_clause(one_premise(premises, rule)?)?,
+            "and_intro" => and_intro(premises)?,
+            "and" => and_elim(premises, args, rule)?,
+            "not_not" => not_not(&lits)?,
+            // Re-derived rather than trusted: a stated rewrite / evaluation
+            // is replayed in the kernel (closed arithmetic + simplification).
+            "hole" | "equiv_simplify" => rewrite(&lits)?,
+            "evaluate" => evaluate(&lits)?,
             other => return Err(BridgeError::UnknownRule(other.to_string())),
         };
 
@@ -458,64 +467,130 @@ fn false_rule(lits: &[Term]) -> R<Thm> {
         .map_err(Into::into)
 }
 
-/// `hole`: re-derive cvc5's "untranslated rewrite" in the kernel. Its
-/// clause is a unit `(cl L)`; we prove `⊢ L` ourselves — an equation by
-/// normalising both sides to a common form, any other literal by
-/// normalising it to `T`. Soundness-preserving: nothing is trusted.
-fn hole(lits: &[Term]) -> R<Thm> {
+/// `and_intro`: build `(cl (and p₁ … pₙ))` from unit-clause premises
+/// `⊢ pᵢ`, left-associating to match the term translation of `(and …)`.
+fn and_intro(premises: &[Thm]) -> R<Thm> {
+    let mut iter = premises.iter().cloned();
+    let mut acc = iter.next().ok_or_else(|| BridgeError::BadStep {
+        rule: "and_intro".into(),
+        detail: "no premises".into(),
+    })?;
+    for next in iter {
+        acc = acc.and_intro(next)?;
+    }
+    Ok(acc)
+}
+
+/// `and`: project the `i`-th conjunct out of a premise `⊢ (and t₀ … tₙ)`,
+/// with `i` supplied in `:args`. The conjunction is left-associated (as
+/// the term translation builds it), so we peel `and_elim_l` down to the
+/// index and read it off.
+fn and_elim(premises: &[Thm], args: &[SExpr], rule: &str) -> R<Thm> {
+    let prem = one_premise(premises, rule)?;
+    let i = args
+        .first()
+        .and_then(|a| a.as_symbol())
+        .and_then(|s| s.parse::<usize>().ok())
+        .ok_or_else(|| BridgeError::BadStep {
+            rule: rule.into(),
+            detail: "missing/invalid conjunct index in :args".into(),
+        })?;
+    let n = count_conjuncts(prem.concl());
+    if i >= n {
+        return Err(BridgeError::BadStep {
+            rule: rule.into(),
+            detail: format!("conjunct index {i} out of range (n = {n})"),
+        });
+    }
+    and_at(prem, n, i)
+}
+
+/// Extract conjunct `i` of `n` from a left-associated conjunction
+/// `(…((t₀ ∧ t₁) ∧ t₂)… ∧ tₙ₋₁)`.
+fn and_at(thm: Thm, n: usize, i: usize) -> R<Thm> {
+    if n == 1 {
+        Ok(thm) // a lone conjunct — `thm` already proves it
+    } else if i + 1 == n {
+        Ok(thm.and_elim_r()?) // the rightmost conjunct
+    } else {
+        and_at(thm.and_elim_l()?, n - 1, i) // peel the right, recurse left
+    }
+}
+
+/// Count the conjuncts of a left-associated conjunction (`≥ 1`).
+fn count_conjuncts(t: &Term) -> usize {
+    match dest_and(t) {
+        Some((l, _)) => count_conjuncts(&l) + 1,
+        None => 1,
+    }
+}
+
+/// `App(App(∧, a), b)` → `(a, b)`, if `t` is a HOL conjunction.
+fn dest_and(t: &Term) -> Option<(Term, Term)> {
+    let (f, b) = t.as_app()?;
+    let (head, a) = f.as_app()?;
+    let (spec, _) = head.as_spec()?;
+    spec.ptr_eq(&defs::and_spec()).then(|| (a.clone(), b.clone()))
+}
+
+/// `not_not`: the tautology clause `(cl (not (not (not p))) p)`, i.e.
+/// `¬¬¬p ∨ p`. Derived by clausifying `dne : {¬¬p} ⊢ p`.
+fn not_not(lits: &[Term]) -> R<Thm> {
+    let [triple_neg, _p] = lits else {
+        return Err(BridgeError::BadStep {
+            rule: "not_not".into(),
+            detail: "expected a 2-literal clause".into(),
+        });
+    };
+    let double_neg = dest_not(triple_neg).ok_or_else(|| BridgeError::BadStep {
+        rule: "not_not".into(),
+        detail: "first literal is not `¬¬¬p`".into(),
+    })?;
+    let seq = logic::dne(Thm::assume(double_neg.clone())?)?; // {¬¬p} ⊢ p
+    Ok(logic::clause_intro(seq, &[double_neg])?)
+}
+
+/// `evaluate`: a unit clause `(cl L)` whose `L` evaluates to `T`.
+fn evaluate(lits: &[Term]) -> R<Thm> {
     let [lit] = lits else {
-        return Err(BridgeError::NotImplemented("hole (non-unit clause)".into()));
+        return Err(BridgeError::BadStep {
+            rule: "evaluate".into(),
+            detail: "expected a unit clause".into(),
+        });
+    };
+    logic::tauto(lit).map_err(|_| BridgeError::NotImplemented(format!("evaluate: `{lit}`")))
+}
+
+/// Re-derive a stated rewrite (`hole` / `equiv_simplify`) in the kernel.
+/// The clause is a unit `(cl L)`; we prove `⊢ L` ourselves — an equation
+/// by normalising both sides to a common form, any other literal by
+/// normalising it to `T`. Soundness-preserving: nothing is trusted.
+fn rewrite(lits: &[Term]) -> R<Thm> {
+    let [lit] = lits else {
+        return Err(BridgeError::NotImplemented("rewrite (non-unit clause)".into()));
     };
     if let Some((lhs, rhs)) = lit.as_eq() {
         return discharge_eq(lhs, rhs);
     }
-    let conv = normalize(lit)?; // ⊢ L = nf
-    if matches!(rhs_of(&conv).as_bool(), Some(true)) {
-        Ok(conv.eqt_elim()?) // ⊢ L
-    } else {
-        Err(BridgeError::NotImplemented(format!(
-            "hole: cannot re-derive `{lit}`"
-        )))
-    }
+    logic::tauto(lit).map_err(|_| BridgeError::NotImplemented(format!("rewrite: `{lit}`")))
 }
 
-/// Prove `⊢ lhs = rhs` by normalising both sides to a shared form.
+/// Prove `⊢ lhs = rhs` by [`logic::normalize`]-ing both sides to a shared
+/// form (closed arithmetic + connective identities).
 fn discharge_eq(lhs: &Term, rhs: &Term) -> R<Thm> {
-    let nl = normalize(lhs)?; // ⊢ lhs = nl'
-    let nr = normalize(rhs)?; // ⊢ rhs = nr'
-    if rhs_of(&nl) == rhs_of(&nr) {
+    let nl = logic::normalize(lhs)?; // ⊢ lhs = nl'
+    let nr = logic::normalize(rhs)?; // ⊢ rhs = nr'
+    if eq_rhs(&nl) == eq_rhs(&nr) {
         Ok(nl.trans(nr.sym()?)?) // ⊢ lhs = rhs
     } else {
         Err(BridgeError::NotImplemented(format!(
-            "hole: `{lhs}` and `{rhs}` have no shared normal form"
+            "rewrite: `{lhs}` and `{rhs}` have no shared normal form"
         )))
     }
 }
 
-/// `⊢ t = nf`: alternately βι-`reduce` (closed `nat`/`int` arithmetic,
-/// literal `=`) and propositionally `simp` (connective identities) until
-/// neither changes. The recompute backend for [`hole`].
-fn normalize(t: &Term) -> R<Thm> {
-    let mut acc = Thm::refl(t.clone())?;
-    for _ in 0..64 {
-        let cur = rhs_of(&acc);
-        let reduced = cur.reduce()?; // ⊢ cur = cur'  (βι)
-        if rhs_of(&reduced) != cur {
-            acc = acc.trans(reduced)?;
-            continue;
-        }
-        let simped = logic::simp(&cur)?; // ⊢ cur = cur''  (connectives)
-        if rhs_of(&simped) != cur {
-            acc = acc.trans(simped)?;
-            continue;
-        }
-        return Ok(acc);
-    }
-    Err(BridgeError::Kernel("normalize: did not converge".into()))
-}
-
 /// The right-hand side of an equational theorem.
-fn rhs_of(thm: &Thm) -> Term {
+fn eq_rhs(thm: &Thm) -> Term {
     thm.concl().as_eq().expect("equational theorem").1.clone()
 }
 

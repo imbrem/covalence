@@ -37,10 +37,12 @@ it is how unfinished work stays discoverable.
 ## Partial subsystems
 
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in
-  `crates/covalence-alethe/src/hol.rs`) checks the QF_UF fragment —
-  `assume`, `resolution` / `th_resolution`, `refl`, `trans`, `symm`,
-  `cong`, `equiv_pos2`, `false` — plus the integer term layer (`Int`,
-  literals, `+ - * < <= > >=`) and `hole` re-derivation by
+  `crates/covalence-alethe/src/hol.rs`) checks the QF_UF core (`assume`,
+  `resolution` / `th_resolution`, `refl`, `trans`, `symm`, `cong`,
+  `equiv_pos2`, `false`), the propositional family (`equiv1`, `equiv2`,
+  `implies`, `and`, `and_intro`, `not_not`, `evaluate`,
+  `equiv_simplify`), the integer term layer (`Int`, literals,
+  `+ - * < <= > >=`), and `hole` / rewrite re-derivation by
   `reduce`+`simp`. The following return `BridgeError::NotImplemented` (or
   `UnknownRule`) and still need wiring:
   - **`hole` beyond closed arithmetic / propositional.** The recompute
@@ -61,13 +63,13 @@ it is how unfinished work stays discoverable.
   - **Subproofs** — `anchor` and any `step` carrying `:discharge`
     (`subproof`, `bind`, `let`, …). The bridge rejects `:discharge`.
   - **The rest of the propositional rule family** — `equiv_pos1`,
-    `equiv_simplify`, `equiv1`/`equiv2`, `implies`, `and_intro`/`and_pos`/
-    `and_neg`, `or_pos`/`or_neg`, `implies_pos`/`implies_neg`, `not_not`,
-    `contraction`, `tautology`, `evaluate`, `ite*`, plus the equality
-    lemmas `eq_reflexive`/`eq_transitive`/`eq_symmetric`/`eq_congruent`.
-    Each is a `clause_intro` of an intuitionistic sequent, a `simp`/
-    `tauto`, or a direct equality derivation — the `init/logic.rs`
-    machinery is in place; they just need cases in `hol.rs::step`.
+    `equiv_neg1`/`equiv_neg2`, `and_pos`/`and_neg`, `or`/`or_pos`/`or_neg`,
+    `implies_pos`/`implies_neg`, `contraction`, `tautology`, `ite*`, plus
+    the equality lemmas `eq_reflexive`/`eq_transitive`/`eq_symmetric`/
+    `eq_congruent`. Each is a `clause_intro` of an intuitionistic sequent,
+    a `simp`/`tauto`, or a direct equality derivation — the
+    `init/logic.rs` machinery is in place; they just need cases in
+    `hol.rs::step` (cf. the `equiv1`/`implies`/`and` cases already there).
   - **Parametric sorts** (`declare-sort` arity > 0) — rejected with
     `ParametricSort`.
 

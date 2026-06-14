@@ -117,6 +117,62 @@ fn embedded_inta_closed_arithmetic() {
     assert_eq!(check(INTA_PROBLEM, INTA_PROOF), Decision::Unsat);
 }
 
+// ---------------------------------------------------------------------
+// IMP — the `implies` rule: (p ⟹ q), p, ¬q.
+// ---------------------------------------------------------------------
+
+const IMP_PROBLEM: &str = "\
+(set-logic QF_UF)
+(declare-fun p () Bool)
+(declare-fun q () Bool)
+(assert (=> p q))
+(assert p)
+(assert (not q))
+";
+
+const IMP_PROOF: &str = "\
+(assume a0 (! (=> p q) :named @p_1))
+(assume a1 p)
+(assume a2 (! (not q) :named @p_2))
+(step t0 (cl (not p) q) :rule implies :premises (a0))
+(step t1 (cl q) :rule resolution :premises (t0 a1))
+(step t2 (cl) :rule resolution :premises (t1 a2))
+";
+
+#[test]
+fn embedded_imp_implies_rule() {
+    assert_eq!(check(IMP_PROBLEM, IMP_PROOF), Decision::Unsat);
+}
+
+// ---------------------------------------------------------------------
+// AND — the `and` projection rule: p = (q ∧ r), p, ¬q.
+// ---------------------------------------------------------------------
+
+const AND_PROBLEM: &str = "\
+(set-logic QF_UF)
+(declare-fun p () Bool)
+(declare-fun q () Bool)
+(declare-fun r () Bool)
+(assert (= p (and q r)))
+(assert p)
+(assert (not q))
+";
+
+const AND_PROOF: &str = "\
+(assume a0 (! (= p (! (and q r) :named @p_1)) :named @p_2))
+(assume a1 p)
+(assume a2 (! (not q) :named @p_3))
+(step t0 (cl (not @p_2) (not p) @p_1) :rule equiv_pos2)
+(step t1 (cl @p_1) :rule resolution :premises (t0 a0 a1))
+(step t2 (cl q) :rule and :premises (t1) :args (0))
+(step t3 (cl) :rule resolution :premises (t2 a2))
+";
+
+#[test]
+fn embedded_and_projection_rule() {
+    assert_eq!(check(AND_PROBLEM, AND_PROOF), Decision::Unsat);
+}
+
 #[test]
 fn unrecomputable_hole_is_reported_not_silently_trusted() {
     // The recompute hook discharges closed/structural rewrites, but a
@@ -166,5 +222,28 @@ mod live {
         // cvc5's real proof of ¬(1+2=3) leans entirely on `hole` rewrites
         // that are closed arithmetic — our recompute hook discharges them.
         assert_eq!(solve_and_check(INTA_PROBLEM), Decision::Unsat);
+    }
+
+    #[test]
+    fn live_imp() {
+        assert_eq!(solve_and_check(IMP_PROBLEM), Decision::Unsat);
+    }
+
+    #[test]
+    fn live_and() {
+        assert_eq!(solve_and_check(AND_PROBLEM), Decision::Unsat);
+    }
+
+    /// ¬¬p, ¬p — cvc5 discharges the double-negation via a `(¬¬p = p)`
+    /// hole, which `simp` re-derives.
+    #[test]
+    fn live_double_negation() {
+        let problem = "\
+(set-logic QF_UF)
+(declare-fun p () Bool)
+(assert (not (not p)))
+(assert (not p))
+";
+        assert_eq!(solve_and_check(problem), Decision::Unsat);
     }
 }

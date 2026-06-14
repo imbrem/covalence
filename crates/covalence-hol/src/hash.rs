@@ -110,6 +110,7 @@ const T_SPEC: u8 = 0x10;
 const T_SELECT: u8 = 0x11;
 const T_SPEC_ABS: u8 = 0x12;
 const T_SPEC_REP: u8 = 0x13;
+const T_SMALL_INT: u8 = 0x14;
 
 // ============================================================================
 // Stateless API
@@ -314,6 +315,17 @@ impl Hasher {
                 buf.push(T_INT_LIT);
                 buf.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
                 buf.extend_from_slice(bytes);
+                ctx.tag(buf)
+            }
+            // Hash a small-int literal by its tag label + the raw
+            // `u64` bits — both stable across processes.
+            TermKind::SmallInt(lit) => {
+                let label = lit.tag.label().as_bytes();
+                let mut buf = Vec::with_capacity(1 + 1 + label.len() + 8);
+                buf.push(T_SMALL_INT);
+                buf.push(label.len() as u8);
+                buf.extend_from_slice(label);
+                buf.extend_from_slice(&lit.bits.to_le_bytes());
                 ctx.tag(buf)
             }
             TermKind::Bool(b) => ctx.tag([T_BOOL, u8::from(*b)]),

@@ -204,6 +204,153 @@ impl fmt::Display for Def {
 #[derive(Clone)]
 pub struct Term(Arc<TermKind>);
 
+/// Width-and-signedness tag of a [`SmallIntLiteral`] — the fixed-width
+/// integer types of the WebAssembly component model (`u8`…`u64`,
+/// `s8`…`s64`). Each maps to a kernel type via [`IntTag::ty`].
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum IntTag {
+    U8,
+    U16,
+    U32,
+    U64,
+    S8,
+    S16,
+    S32,
+    S64,
+}
+
+impl IntTag {
+    /// The kernel type of a literal carrying this tag (`u8 := { v :
+    /// bits | bits.len v = 8 }`, `s8 := u8`, …).
+    pub fn ty(self) -> Type {
+        match self {
+            IntTag::U8 => crate::defs::u8_ty(),
+            IntTag::U16 => crate::defs::u16_ty(),
+            IntTag::U32 => crate::defs::u32_ty(),
+            IntTag::U64 => crate::defs::u64_ty(),
+            IntTag::S8 => crate::defs::s8_ty(),
+            IntTag::S16 => crate::defs::s16_ty(),
+            IntTag::S32 => crate::defs::s32_ty(),
+            IntTag::S64 => crate::defs::s64_ty(),
+        }
+    }
+
+    /// Display / serialisation label (`"u8"`, `"s64"`, …). Stable
+    /// across processes — used by content hashing and S-expressions.
+    pub fn label(self) -> &'static str {
+        match self {
+            IntTag::U8 => "u8",
+            IntTag::U16 => "u16",
+            IntTag::U32 => "u32",
+            IntTag::U64 => "u64",
+            IntTag::S8 => "s8",
+            IntTag::S16 => "s16",
+            IntTag::S32 => "s32",
+            IntTag::S64 => "s64",
+        }
+    }
+
+    /// Parse a tag from its [`IntTag::label`].
+    pub fn from_label(s: &str) -> Option<Self> {
+        Some(match s {
+            "u8" => IntTag::U8,
+            "u16" => IntTag::U16,
+            "u32" => IntTag::U32,
+            "u64" => IntTag::U64,
+            "s8" => IntTag::S8,
+            "s16" => IntTag::S16,
+            "s32" => IntTag::S32,
+            "s64" => IntTag::S64,
+            _ => return None,
+        })
+    }
+
+    /// `true` for the signed tags (`s8`…`s64`).
+    pub fn is_signed(self) -> bool {
+        matches!(self, IntTag::S8 | IntTag::S16 | IntTag::S32 | IntTag::S64)
+    }
+
+    /// The bit width of this type (`8`, `16`, `32`, or `64`).
+    pub fn width(self) -> u32 {
+        match self {
+            IntTag::U8 | IntTag::S8 => 8,
+            IntTag::U16 | IntTag::S16 => 16,
+            IntTag::U32 | IntTag::S32 => 32,
+            IntTag::U64 | IntTag::S64 => 64,
+        }
+    }
+
+    /// Every tag, unsigned widths then signed widths. Used to
+    /// enumerate the fixed-width integer catalogue.
+    pub const ALL: [IntTag; 8] = [
+        IntTag::U8,
+        IntTag::U16,
+        IntTag::U32,
+        IntTag::U64,
+        IntTag::S8,
+        IntTag::S16,
+        IntTag::S32,
+        IntTag::S64,
+    ];
+}
+
+/// A fixed-width integer literal: a type tag plus the raw value held
+/// in a `u64`. Unsigned values are zero-extended, signed values
+/// sign-extended into the 64 bits, so `bits` round-trips with `tag`.
+/// Build one with [`SmallIntLiteral::u8`] … [`SmallIntLiteral::s64`].
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SmallIntLiteral {
+    pub tag: IntTag,
+    pub bits: u64,
+}
+
+impl SmallIntLiteral {
+    /// Raw constructor from a tag and an already-extended `u64`.
+    pub fn new(tag: IntTag, bits: u64) -> Self {
+        Self { tag, bits }
+    }
+
+    /// The kernel type of this literal (`self.tag.ty()`).
+    pub fn ty(self) -> Type {
+        self.tag.ty()
+    }
+
+    pub fn u8(v: u8) -> Self {
+        Self::new(IntTag::U8, v as u64)
+    }
+    pub fn u16(v: u16) -> Self {
+        Self::new(IntTag::U16, v as u64)
+    }
+    pub fn u32(v: u32) -> Self {
+        Self::new(IntTag::U32, v as u64)
+    }
+    pub fn u64(v: u64) -> Self {
+        Self::new(IntTag::U64, v)
+    }
+    pub fn s8(v: i8) -> Self {
+        Self::new(IntTag::S8, v as u64)
+    }
+    pub fn s16(v: i16) -> Self {
+        Self::new(IntTag::S16, v as u64)
+    }
+    pub fn s32(v: i32) -> Self {
+        Self::new(IntTag::S32, v as u64)
+    }
+    pub fn s64(v: i64) -> Self {
+        Self::new(IntTag::S64, v as u64)
+    }
+}
+
+impl fmt::Display for SmallIntLiteral {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.tag.is_signed() {
+            write!(f, "{}{}", self.bits as i64, self.tag.label())
+        } else {
+            write!(f, "{}{}", self.bits, self.tag.label())
+        }
+    }
+}
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TermKind {
     /// de Bruijn–indexed bound variable. Index 0 refers to the
@@ -226,6 +373,12 @@ pub enum TermKind {
     Nat(Nat),
     /// Builtin: integer literal. Kernel type `int`.
     Int(Int),
+    /// Builtin: fixed-width integer literal (`u8`…`u64`, `s8`…`s64`) —
+    /// the WebAssembly component model's small integers. Carries a
+    /// [`SmallIntLiteral`] (type tag + raw `u64` value); the kernel
+    /// type is `lit.ty()`. Closed `=` over two of these decides by
+    /// `Thm::reduce_prim` (structural literal equality).
+    SmallInt(SmallIntLiteral),
     /// Builtin: HOL `bool` literal (`T` / `F`). Kernel type
     /// `TypeKind::Bool`. First-class kernel atom — not a separate
     /// observer system.
@@ -329,6 +482,44 @@ impl Term {
         Self::alloc(TermKind::Int(n.into()))
     }
 
+    /// Fixed-width integer literal from an already-built
+    /// [`SmallIntLiteral`].
+    pub fn small_int(lit: SmallIntLiteral) -> Self {
+        Self::alloc(TermKind::SmallInt(lit))
+    }
+    /// `u8` literal (kernel type `u8`).
+    pub fn u8_lit(v: u8) -> Self {
+        Self::small_int(SmallIntLiteral::u8(v))
+    }
+    /// `u16` literal (kernel type `u16`).
+    pub fn u16_lit(v: u16) -> Self {
+        Self::small_int(SmallIntLiteral::u16(v))
+    }
+    /// `u32` literal (kernel type `u32`).
+    pub fn u32_lit(v: u32) -> Self {
+        Self::small_int(SmallIntLiteral::u32(v))
+    }
+    /// `u64` literal (kernel type `u64`).
+    pub fn u64_lit(v: u64) -> Self {
+        Self::small_int(SmallIntLiteral::u64(v))
+    }
+    /// `s8` literal (kernel type `s8`).
+    pub fn s8_lit(v: i8) -> Self {
+        Self::small_int(SmallIntLiteral::s8(v))
+    }
+    /// `s16` literal (kernel type `s16`).
+    pub fn s16_lit(v: i16) -> Self {
+        Self::small_int(SmallIntLiteral::s16(v))
+    }
+    /// `s32` literal (kernel type `s32`).
+    pub fn s32_lit(v: i32) -> Self {
+        Self::small_int(SmallIntLiteral::s32(v))
+    }
+    /// `s64` literal (kernel type `s64`).
+    pub fn s64_lit(v: i64) -> Self {
+        Self::small_int(SmallIntLiteral::s64(v))
+    }
+
     /// HOL `bool` literal — `Bool(true)` is `T`, `Bool(false)` is
     /// `F`. Kernel type `bool`.
     pub fn bool_lit(b: bool) -> Self {
@@ -418,6 +609,7 @@ impl Term {
             | TermKind::Blob(_)
             | TermKind::Nat(_)
             | TermKind::Int(_)
+            | TermKind::SmallInt(_)
             | TermKind::Bool(_)
             | TermKind::Spec(_, _)
             | TermKind::SpecAbs(..)
@@ -442,6 +634,7 @@ impl Term {
             | TermKind::Blob(_)
             | TermKind::Nat(_)
             | TermKind::Int(_)
+            | TermKind::SmallInt(_)
             | TermKind::Bool(_)
             | TermKind::Spec(_, _)
             | TermKind::SpecAbs(..)
@@ -472,6 +665,7 @@ impl Term {
             | TermKind::Blob(_)
             | TermKind::Nat(_)
             | TermKind::Int(_)
+            | TermKind::SmallInt(_)
             | TermKind::Bool(_)
             | TermKind::Spec(_, _)
             | TermKind::SpecAbs(..)
@@ -544,6 +738,7 @@ impl fmt::Display for Term {
             TermKind::Blob(b) => write!(f, "blob[{}]", b.len()),
             TermKind::Nat(n) => write!(f, "{}n", n.as_inner()),
             TermKind::Int(n) => write!(f, "{}i", n.as_inner()),
+            TermKind::SmallInt(lit) => write!(f, "{}", lit),
             TermKind::Bool(b) => write!(f, "{}", if *b { "T" } else { "F" }),
             TermKind::Eq(alpha) => write!(f, "=:{alpha}"),
             TermKind::Select(alpha) => write!(f, "@:{alpha}"),
@@ -655,6 +850,7 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
         TermKind::Blob(_) => Ok(Type::bytes()),
         TermKind::Nat(_) => Ok(Type::nat()),
         TermKind::Int(_) => Ok(Type::int()),
+        TermKind::SmallInt(lit) => Ok(lit.ty()),
         TermKind::Bool(_) => Ok(Type::bool()),
         // A `Spec` leaf's type is the spec's own `ty` field (the
         // factory's carrier) with positional type-arg substitution

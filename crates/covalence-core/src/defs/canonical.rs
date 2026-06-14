@@ -113,6 +113,20 @@ pub enum Canonical {
     U256,
     /// `u512 := { v : bits | bits.len v = 512 }` (zword).
     U512,
+    /// Signed fixed-width integers, thin typedefs over the unsigned
+    /// `uN` of the same width (matching the WebAssembly component
+    /// model's `s8`…`s64`; `s1`…`s4`/`s128`…`s512` round out the set).
+    /// `sN := uN` — same bit representation, distinct type.
+    S1,
+    S2,
+    S4,
+    S8,
+    S16,
+    S32,
+    S64,
+    S128,
+    S256,
+    S512,
     /// `fin n := coprod (fin (n-1)) unit` (fixed-size finite type).
     Fin,
 
@@ -401,6 +415,16 @@ impl Canonical {
             Canonical::U128 => "u128",
             Canonical::U256 => "u256",
             Canonical::U512 => "u512",
+            Canonical::S1 => "s1",
+            Canonical::S2 => "s2",
+            Canonical::S4 => "s4",
+            Canonical::S8 => "s8",
+            Canonical::S16 => "s16",
+            Canonical::S32 => "s32",
+            Canonical::S64 => "s64",
+            Canonical::S128 => "s128",
+            Canonical::S256 => "s256",
+            Canonical::S512 => "s512",
             Canonical::Fin => "fin",
             Canonical::Option => "option",
             Canonical::List => "list",

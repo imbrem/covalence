@@ -12,11 +12,17 @@
 //! - No unsound shortcut: the function returns `None` for any
 //!   shape that isn't an exact-arity application of a `Prim` to
 //!   the right number of literal arguments.
+//! - The fixed-width integer ops (`u8`…`u64` / `s8`…`s64`, dispatched
+//!   via [`crate::defs::int_ops::lookup_op`]) compute in 128-bit space
+//!   and re-encode through `store`: arithmetic wraps mod `2^width`,
+//!   signed/unsigned `div`/`rem`/`shr`/comparisons read the operand's
+//!   tag, and `div`/`rem` by zero yield `0` (mirroring `nat`/`int`).
 
 use covalence_types::{Int, Nat, Sign};
 
 use crate::defs;
-use crate::term::{Term, TermKind};
+use crate::defs::int_ops::{IntOp, OpKey};
+use crate::term::{IntTag, SmallIntLiteral, Term, TermKind};
 
 /// One-step reduction. Returns the reduced term when `t` is an
 /// exactly-shaped `TermKind::Spec` application with all-literal
@@ -25,10 +31,10 @@ use crate::term::{Term, TermKind};
 pub(crate) fn reduce_prim_term(t: &Term) -> Option<Term> {
     let (head, args) = unwind_app(t);
 
-    // HOL `=` decided on closed literals: `Bool`, `Nat`, `Int`, or
-    // `Blob`. The kernel commits to literal distinctness — two
-    // literals of the same kind are equal iff they are structurally
-    // equal.
+    // HOL `=` decided on closed literals: `Bool`, `Nat`, `Int`,
+    // `SmallInt`, or `Blob`. The kernel commits to literal
+    // distinctness — two literals of the same kind are equal iff they
+    // are structurally equal.
     if let TermKind::Eq(_) = head.kind() {
         if args.len() == 2 {
             return literal_eq(&args[0], &args[1]).map(Term::bool_lit);
@@ -88,14 +94,15 @@ fn as_blob(t: &Term) -> Option<&[u8]> {
 }
 
 /// Decide structural equality of two kernel literals (`Bool`, `Nat`,
-/// `Int`, `Blob`). Returns `None` if either argument is not a
-/// recognised literal at one of those types — the rule is undefined
-/// (and `reduce_prim` errors) for non-literal arguments.
+/// `Int`, `SmallInt`, `Blob`). Returns `None` if either argument is
+/// not a recognised literal at one of those types — the rule is
+/// undefined (and `reduce_prim` errors) for non-literal arguments.
 fn literal_eq(a: &Term, b: &Term) -> Option<bool> {
     match (a.kind(), b.kind()) {
         (TermKind::Bool(x), TermKind::Bool(y)) => Some(x == y),
         (TermKind::Nat(x), TermKind::Nat(y)) => Some(x == y),
         (TermKind::Int(x), TermKind::Int(y)) => Some(x == y),
+        (TermKind::SmallInt(x), TermKind::SmallInt(y)) => Some(x == y),
         (TermKind::Blob(x), TermKind::Blob(y)) => Some(x == y),
         _ => None,
     }
@@ -352,7 +359,289 @@ fn reduce_spec(handle: &defs::TermSpec, args: &[Term]) -> Option<Term> {
         };
         return Some(Term::int_lit(sgn));
     }
+    // ---- Fixed-width integer ops (u8…u64 / s8…s64) ----
+    if let Some(key) = defs::int_ops::lookup_op(handle) {
+        return reduce_int_op(key, args);
+    }
     None
+}
+
+// ============================================================================
+// Fixed-width integer reduction
+//
+// All values are computed in 128-bit space and re-encoded into the
+// operand's tag via `store` (masking to the tag's width and
+// sign-extending signed results into the literal's `u64` payload, so
+// the result round-trips with `SmallIntLiteral`).
+// ============================================================================
+
+fn as_small_int(t: &Term) -> Option<SmallIntLiteral> {
+    match t.kind() {
+        TermKind::SmallInt(lit) => Some(*lit),
+        _ => None,
+    }
+}
+
+/// Low-`width`-bits mask.
+fn width_mask(width: u32) -> u128 {
+    if width >= 128 {
+        u128::MAX
+    } else {
+        (1u128 << width) - 1
+    }
+}
+
+/// The unsigned value of `bits` interpreted at `tag` (low `width`
+/// bits, zero-extended).
+fn value_u(tag: IntTag, bits: u64) -> u128 {
+    (bits as u128) & width_mask(tag.width())
+}
+
+/// The signed (two's-complement) value of `bits` interpreted at `tag`.
+fn value_s(tag: IntTag, bits: u64) -> i128 {
+    let w = tag.width();
+    let m = width_mask(w);
+    let u = (bits as u128) & m;
+    if u & (1u128 << (w - 1)) != 0 {
+        (u as i128) - ((m + 1) as i128)
+    } else {
+        u as i128
+    }
+}
+
+/// Encode a low-bits result into the canonical `u64` payload for
+/// `tag`: mask to `width`, then sign-extend (signed) / zero-extend
+/// (unsigned) into the full 64 bits.
+fn store(tag: IntTag, low: u128) -> u64 {
+    let w = tag.width();
+    let m = width_mask(w);
+    let low = low & m;
+    if tag.is_signed() && (low & (1u128 << (w - 1))) != 0 {
+        (low | !m) as u64
+    } else {
+        low as u64
+    }
+}
+
+/// Low `width` bits of a `Nat`, via its little-endian byte encoding.
+fn nat_low_bits(n: &Nat, width: u32) -> u128 {
+    let bytes = n.to_bytes_le();
+    let nbytes = width.div_ceil(8) as usize;
+    let mut acc: u128 = 0;
+    for i in 0..nbytes {
+        if let Some(&b) = bytes.get(i) {
+            acc |= (b as u128) << (8 * i);
+        }
+    }
+    acc & width_mask(width)
+}
+
+fn int_binop(tag: IntTag, op: IntOp, ab: u64, bb: u64) -> u64 {
+    let w = tag.width();
+    let m = width_mask(w);
+    let au = value_u(tag, ab);
+    let bu = value_u(tag, bb);
+    let low = match op {
+        IntOp::Add => au.wrapping_add(bu) & m,
+        IntOp::Sub => au.wrapping_sub(bu) & m,
+        IntOp::Mul => au.wrapping_mul(bu) & m,
+        IntOp::And => au & bu,
+        IntOp::Or => au | bu,
+        IntOp::Xor => au ^ bu,
+        IntOp::Shl => {
+            let s = (bu % w as u128) as u32;
+            (au << s) & m
+        }
+        IntOp::Shr => {
+            let s = (bu % w as u128) as u32;
+            if tag.is_signed() {
+                ((value_s(tag, ab) >> s) as u128) & m
+            } else {
+                au >> s
+            }
+        }
+        // Euclidean-style: division by zero yields 0 (mirrors nat/int).
+        IntOp::Div => {
+            if tag.is_signed() {
+                let bv = value_s(tag, bb);
+                if bv == 0 {
+                    0
+                } else {
+                    (value_s(tag, ab).wrapping_div(bv) as u128) & m
+                }
+            } else if bu == 0 {
+                0
+            } else {
+                au / bu
+            }
+        }
+        IntOp::Rem => {
+            if tag.is_signed() {
+                let bv = value_s(tag, bb);
+                if bv == 0 {
+                    0
+                } else {
+                    (value_s(tag, ab).wrapping_rem(bv) as u128) & m
+                }
+            } else if bu == 0 {
+                0
+            } else {
+                au % bu
+            }
+        }
+        IntOp::Lt | IntOp::Le | IntOp::Gt | IntOp::Ge | IntOp::Neg | IntOp::Not => {
+            unreachable!("non-binary-arith op routed to int_binop")
+        }
+    };
+    store(tag, low)
+}
+
+fn int_cmp(tag: IntTag, op: IntOp, ab: u64, bb: u64) -> bool {
+    if tag.is_signed() {
+        let a = value_s(tag, ab);
+        let b = value_s(tag, bb);
+        match op {
+            IntOp::Lt => a < b,
+            IntOp::Le => a <= b,
+            IntOp::Gt => a > b,
+            IntOp::Ge => a >= b,
+            _ => unreachable!("non-comparison op routed to int_cmp"),
+        }
+    } else {
+        let a = value_u(tag, ab);
+        let b = value_u(tag, bb);
+        match op {
+            IntOp::Lt => a < b,
+            IntOp::Le => a <= b,
+            IntOp::Gt => a > b,
+            IntOp::Ge => a >= b,
+            _ => unreachable!("non-comparison op routed to int_cmp"),
+        }
+    }
+}
+
+fn int_unary(tag: IntTag, op: IntOp, ab: u64) -> u64 {
+    let au = value_u(tag, ab);
+    match op {
+        IntOp::Neg => store(tag, 0u128.wrapping_sub(au)),
+        IntOp::Not => store(tag, !au),
+        _ => unreachable!("non-unary op routed to int_unary"),
+    }
+}
+
+fn reduce_int_op(key: OpKey, args: &[Term]) -> Option<Term> {
+    match key {
+        OpKey::Op(tag, op) if op.is_unary() => {
+            if args.len() != 1 {
+                return None;
+            }
+            let a = as_small_int(&args[0])?;
+            if a.tag != tag {
+                return None;
+            }
+            Some(Term::small_int(SmallIntLiteral::new(tag, int_unary(tag, op, a.bits))))
+        }
+        OpKey::Op(tag, op) if op.is_cmp() => {
+            if args.len() != 2 {
+                return None;
+            }
+            let a = as_small_int(&args[0])?;
+            let b = as_small_int(&args[1])?;
+            if a.tag != tag || b.tag != tag {
+                return None;
+            }
+            Some(Term::bool_lit(int_cmp(tag, op, a.bits, b.bits)))
+        }
+        OpKey::Op(tag, op) => {
+            if args.len() != 2 {
+                return None;
+            }
+            let a = as_small_int(&args[0])?;
+            let b = as_small_int(&args[1])?;
+            if a.tag != tag || b.tag != tag {
+                return None;
+            }
+            Some(Term::small_int(SmallIntLiteral::new(
+                tag,
+                int_binop(tag, op, a.bits, b.bits),
+            )))
+        }
+        OpKey::Zext(src, dst) => {
+            if args.len() != 1 {
+                return None;
+            }
+            let a = as_small_int(&args[0])?;
+            if a.tag != src {
+                return None;
+            }
+            Some(Term::small_int(SmallIntLiteral::new(
+                dst,
+                store(dst, value_u(src, a.bits)),
+            )))
+        }
+        OpKey::Sext(src, dst) => {
+            if args.len() != 1 {
+                return None;
+            }
+            let a = as_small_int(&args[0])?;
+            if a.tag != src {
+                return None;
+            }
+            Some(Term::small_int(SmallIntLiteral::new(
+                dst,
+                store(dst, value_s(src, a.bits) as u128),
+            )))
+        }
+        OpKey::ToNat(tag) => {
+            if args.len() != 1 {
+                return None;
+            }
+            let a = as_small_int(&args[0])?;
+            if a.tag != tag {
+                return None;
+            }
+            Some(Term::nat_lit(Nat::from(value_u(tag, a.bits))))
+        }
+        OpKey::ToInt(tag) => {
+            if args.len() != 1 {
+                return None;
+            }
+            let a = as_small_int(&args[0])?;
+            if a.tag != tag {
+                return None;
+            }
+            let z = if tag.is_signed() {
+                Int::from(value_s(tag, a.bits))
+            } else {
+                Int::from(value_u(tag, a.bits))
+            };
+            Some(Term::int_lit(z))
+        }
+        OpKey::FromNat(tag) => {
+            if args.len() != 1 {
+                return None;
+            }
+            let n = as_nat_lit(&args[0])?;
+            Some(Term::small_int(SmallIntLiteral::new(
+                tag,
+                store(tag, nat_low_bits(n, tag.width())),
+            )))
+        }
+        OpKey::FromInt(tag) => {
+            if args.len() != 1 {
+                return None;
+            }
+            let z = as_int_lit(&args[0])?;
+            let w = tag.width();
+            let mag_low = nat_low_bits(&z.abs(), w);
+            let low = if z.is_negative() {
+                (width_mask(w) + 1).wrapping_sub(mag_low) & width_mask(w)
+            } else {
+                mag_low
+            };
+            Some(Term::small_int(SmallIntLiteral::new(tag, store(tag, low))))
+        }
+    }
 }
 
 fn reduce_nat_binop(args: &[Term], op: impl Fn(&Nat, &Nat) -> Nat) -> Option<Term> {
@@ -523,6 +812,135 @@ mod tests {
     }
 
     #[test]
+    fn fixed_width_arith_wraps() {
+        use defs::IntOp::*;
+        let u8 = IntTag::U8;
+        let op = |o| defs::int_op(u8, o);
+        // 200 + 100 = 300 ≡ 44 (mod 256)
+        assert_reduces(
+            binary(op(Add), Term::u8_lit(200), Term::u8_lit(100)),
+            Term::u8_lit(44),
+        );
+        // 5 - 8 ≡ 253 (mod 256)
+        assert_reduces(
+            binary(op(Sub), Term::u8_lit(5), Term::u8_lit(8)),
+            Term::u8_lit(253),
+        );
+        // 20 * 20 = 400 ≡ 144 (mod 256)
+        assert_reduces(
+            binary(op(Mul), Term::u8_lit(20), Term::u8_lit(20)),
+            Term::u8_lit(144),
+        );
+        assert_reduces(
+            binary(op(Div), Term::u8_lit(200), Term::u8_lit(7)),
+            Term::u8_lit(28),
+        );
+        assert_reduces(
+            binary(op(Rem), Term::u8_lit(200), Term::u8_lit(7)),
+            Term::u8_lit(4),
+        );
+        // div by zero → 0
+        assert_reduces(
+            binary(op(Div), Term::u8_lit(5), Term::u8_lit(0)),
+            Term::u8_lit(0),
+        );
+    }
+
+    #[test]
+    fn fixed_width_signed_div_and_shr() {
+        use defs::IntOp::*;
+        let s8 = IntTag::S8;
+        // -7 / 2 = -3 (truncating toward zero)
+        assert_reduces(
+            binary(defs::int_op(s8, Div), Term::s8_lit(-7), Term::s8_lit(2)),
+            Term::s8_lit(-3),
+        );
+        // -8 >> 1 = -4 (arithmetic shift)
+        assert_reduces(
+            binary(defs::int_op(s8, Shr), Term::s8_lit(-8), Term::s8_lit(1)),
+            Term::s8_lit(-4),
+        );
+        // unsigned 0x80 >> 1 = 0x40 (logical shift)
+        assert_reduces(
+            binary(defs::int_op(IntTag::U8, Shr), Term::u8_lit(0x80), Term::u8_lit(1)),
+            Term::u8_lit(0x40),
+        );
+    }
+
+    #[test]
+    fn fixed_width_bitwise_and_compare() {
+        use defs::IntOp::*;
+        let u8 = IntTag::U8;
+        assert_reduces(
+            binary(defs::int_op(u8, And), Term::u8_lit(0b1100), Term::u8_lit(0b1010)),
+            Term::u8_lit(0b1000),
+        );
+        assert_reduces(
+            binary(defs::int_op(u8, Xor), Term::u8_lit(0b1100), Term::u8_lit(0b1010)),
+            Term::u8_lit(0b0110),
+        );
+        // unsigned: 200 < 100 is false
+        assert_reduces(
+            binary(defs::int_op(u8, Lt), Term::u8_lit(200), Term::u8_lit(100)),
+            Term::bool_lit(false),
+        );
+        // signed: -1 < 1 is true (but the same bits, 0xFF < 0x01, would
+        // be false unsigned)
+        assert_reduces(
+            binary(defs::int_op(IntTag::S8, Lt), Term::s8_lit(-1), Term::s8_lit(1)),
+            Term::bool_lit(true),
+        );
+        assert_reduces(
+            Term::app(defs::int_op(u8, Not), Term::u8_lit(0)),
+            Term::u8_lit(255),
+        );
+        assert_reduces(
+            Term::app(defs::int_op(u8, Neg), Term::u8_lit(1)),
+            Term::u8_lit(255),
+        );
+    }
+
+    #[test]
+    fn fixed_width_conversions() {
+        // zext u8 → u32 (zero-extend)
+        assert_reduces(
+            Term::app(defs::int_zext(IntTag::U8, IntTag::U32), Term::u8_lit(200)),
+            Term::u32_lit(200),
+        );
+        // sext s8 → s32 (sign-extend a negative)
+        assert_reduces(
+            Term::app(defs::int_sext(IntTag::S8, IntTag::S32), Term::s8_lit(-1)),
+            Term::s32_lit(-1),
+        );
+        // zext as wrap: u32 0x1FF → u8 0xFF
+        assert_reduces(
+            Term::app(defs::int_zext(IntTag::U32, IntTag::U8), Term::u32_lit(0x1FF)),
+            Term::u8_lit(0xFF),
+        );
+    }
+
+    #[test]
+    fn fixed_width_nat_int_casts() {
+        // toNat / toInt
+        assert_reduces(Term::app(defs::int_to_nat(IntTag::U8), Term::u8_lit(200)), nat(200));
+        assert_reduces(Term::app(defs::int_to_int(IntTag::S8), Term::s8_lit(-5)), int(-5));
+        // fromNat wraps mod 256
+        assert_reduces(
+            Term::app(defs::int_from_nat(IntTag::U8), nat(300)),
+            Term::u8_lit(44),
+        );
+        // fromInt wraps a negative into two's complement
+        assert_reduces(
+            Term::app(defs::int_from_int(IntTag::S8), int(-1)),
+            Term::s8_lit(-1),
+        );
+        assert_reduces(
+            Term::app(defs::int_from_int(IntTag::U8), int(-1)),
+            Term::u8_lit(255),
+        );
+    }
+
+    #[test]
     fn bytes_cat_concatenates() {
         let cat = binary(
             defs::bytes_cat(),
@@ -610,6 +1028,22 @@ mod tests {
     fn hol_eq_decides_int_literals() {
         assert_reduces(hol_eq(int(-3), int(-3)), Term::bool_lit(true));
         assert_reduces(hol_eq(int(-3), int(3)), Term::bool_lit(false));
+    }
+
+    #[test]
+    fn hol_eq_decides_small_int_literals() {
+        assert_reduces(
+            hol_eq(Term::u8_lit(200), Term::u8_lit(200)),
+            Term::bool_lit(true),
+        );
+        assert_reduces(
+            hol_eq(Term::u8_lit(200), Term::u8_lit(201)),
+            Term::bool_lit(false),
+        );
+        assert_reduces(
+            hol_eq(Term::s64_lit(-1), Term::s64_lit(-1)),
+            Term::bool_lit(true),
+        );
     }
 
     #[test]

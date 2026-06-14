@@ -48,7 +48,7 @@ use covalence_core::defs::{fst, int_pos_spec, int_pos_ty, prod, snd};
 use covalence_core::{Result, Term, Thm, Type, subst};
 
 use crate::init::ext::TermExt;
-use crate::init::{int, nat};
+use crate::init::{int, logic, nat};
 
 // Re-export the `defs/rat.rs` catalogue (the type handles + the declared
 // `ratLe` order constant; bodies stay in `covalence_core::defs`).
@@ -444,6 +444,158 @@ pub fn mul_inv() -> Thm {
     axiom(forall_rat(&["a"], body))
 }
 
+// ============================================================================
+// Strict order — defined via cross-multiplication; linear-order axioms
+// postulated
+// ============================================================================
+
+/// `a < b` on `int`.
+fn ilt(a: Term, b: Term) -> Term {
+    Term::app(Term::app(int::int_lt(), a), b)
+}
+
+/// `ratLt : rat → rat → bool` ≡ `(a/b) < (c/d) ⟺ a·d < c·b` (valid
+/// because denominators are strictly positive). Defined here at the
+/// representative level — `defs/rat.rs` ships only the declaration-only
+/// `ratLe`; `<` is the strict companion the density statement is phrased
+/// in.
+pub fn rat_lt() -> Term {
+    let (x, y) = (Term::free("x", rat()), Term::free("y", rat()));
+    let (px, py) = (rep_pair(x.clone()), rep_pair(y.clone()));
+    let body = ilt(imul(num(&px), den(&py)), imul(num(&py), den(&px)));
+    Term::abs(rat(), subst::close(&Term::abs(rat(), subst::close(&body, "y")), "x"))
+}
+
+/// `a < b` on `rat`.
+fn rlt(a: Term, b: Term) -> Term {
+    Term::app(Term::app(rat_lt(), a), b)
+}
+/// `a ≤ b` on `rat` (the declared kernel `ratLe`).
+fn rle(a: Term, b: Term) -> Term {
+    Term::app(Term::app(rat_le(), a), b)
+}
+
+/// `⊢ ∀a. ¬(a < a)` — irreflexivity.
+pub fn lt_irrefl() -> Thm {
+    let a = rvar("a");
+    axiom(forall_rat(&["a"], rlt(a.clone(), a).not().expect("lt_irrefl")))
+}
+
+/// `⊢ ∀a b c. a < b ⟹ b < c ⟹ a < c` — transitivity.
+pub fn lt_trans() -> Thm {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let inner = rlt(b.clone(), c.clone())
+        .imp(rlt(a.clone(), c))
+        .expect("lt_trans inner");
+    let body = rlt(a, b).imp(inner).expect("lt_trans");
+    axiom(forall_rat(&["a", "b", "c"], body))
+}
+
+/// `⊢ ∀a b. a < b ∨ a = b ∨ b < a` — trichotomy (totality).
+pub fn lt_trichotomy() -> Thm {
+    let (a, b) = (rvar("a"), rvar("b"));
+    let eq = a.clone().equals(b.clone()).expect("trichotomy: a = b");
+    let tail = eq.or(rlt(b.clone(), a.clone())).expect("trichotomy tail");
+    let body = rlt(a, b).or(tail).expect("trichotomy");
+    axiom(forall_rat(&["a", "b"], body))
+}
+
+/// `⊢ ∀a b. (a ≤ b) = (a < b ∨ a = b)` — `≤` in terms of `<`.
+pub fn le_def() -> Thm {
+    let (a, b) = (rvar("a"), rvar("b"));
+    let rhs = rlt(a.clone(), b.clone())
+        .or(a.clone().equals(b.clone()).expect("le_def: a = b"))
+        .expect("le_def rhs");
+    let eq = rle(a, b).equals(rhs).expect("le_def");
+    axiom(forall_rat(&["a", "b"], eq))
+}
+
+// ============================================================================
+// Density — DERIVED from the two mediant inequalities
+// ============================================================================
+//
+// The witness between `x < y` is the **mediant** `(a+c)/(b+d)` of
+// representatives `x = a/b`, `y = c/d` — strictly between `x` and `y`
+// exactly when `x < y`, and (unlike the midpoint `(x+y)/2`) needing no
+// division to construct. The two mediant inequalities are the postulated
+// leaves; `dense` itself is a genuine derivation from them.
+
+/// `ratMediant : rat → rat → rat` ≡ `(a/b) ⊕ (c/d) = (a+c)/(b+d)`.
+pub fn mediant() -> Term {
+    binary_rat(|px, py| {
+        ip(iadd(num(px), num(py)), to_pos(iadd(den(px), den(py))))
+    })
+}
+/// `mediant a b` applied.
+fn med(a: Term, b: Term) -> Term {
+    Term::app(Term::app(mediant(), a), b)
+}
+
+/// `⊢ ∀x y. x < y ⟹ x < mediant x y` — the mediant exceeds the smaller.
+///
+/// **Postulated** (audit hyp). Unfolds to the `int` order fact
+/// `a·d < c·b ⟹ a·(b+d) < (a+c)·b` lifted through the quotient — blocked
+/// on the `int` ordered-ring theory (`SKELETONS.md`).
+pub fn mediant_gt() -> Thm {
+    let (x, y) = (rvar("x"), rvar("y"));
+    let concl = rlt(x.clone(), med(x.clone(), y.clone()));
+    let body = rlt(x, y).imp(concl).expect("mediant_gt");
+    axiom(forall_rat(&["x", "y"], body))
+}
+
+/// `⊢ ∀x y. x < y ⟹ mediant x y < y` — the mediant is below the larger.
+///
+/// **Postulated** (audit hyp) — the mirror of [`mediant_gt`].
+pub fn mediant_lt() -> Thm {
+    let (x, y) = (rvar("x"), rvar("y"));
+    let concl = rlt(med(x.clone(), y.clone()), y.clone());
+    let body = rlt(x, y).imp(concl).expect("mediant_lt");
+    axiom(forall_rat(&["x", "y"], body))
+}
+
+cached_thm! {
+    /// `⊢ ∀x y. x < y ⟹ ∃z. x < z ∧ z < y` — **the rationals are dense.**
+    ///
+    /// A genuine derivation: the mediant `z = mediant x y` is the witness,
+    /// `mediant_gt` / `mediant_lt` give the two strict inequalities, and
+    /// `∃`-introduction + `∧`-introduction package them. The only
+    /// postulated leaves are the two mediant inequalities; once they are
+    /// discharged this theorem is hypothesis-free.
+    pub fn dense() -> Thm {
+        dense_impl().expect("dense derivation")
+    }
+}
+fn dense_impl() -> Result<Thm> {
+    let (x, y) = (rvar("x"), rvar("y"));
+    let m = med(x.clone(), y.clone());
+    let hyp = rlt(x.clone(), y.clone());
+    let h = Thm::assume(hyp.clone())?;
+
+    // {x<y} ⊢ x < m   and   {x<y} ⊢ m < y.
+    let gt = mediant_gt()
+        .all_elim(x.clone())?
+        .all_elim(y.clone())?
+        .imp_elim(h.clone())?;
+    let lt = mediant_lt()
+        .all_elim(x.clone())?
+        .all_elim(y.clone())?
+        .imp_elim(h)?;
+    let conj = gt.and_intro(lt)?; // {x<y} ⊢ x < m ∧ m < y
+
+    // ∃z. x < z ∧ z < y, with witness `m`.
+    let z = rvar("z");
+    let pred_body = rlt(x.clone(), z.clone()).and(rlt(z.clone(), y.clone()))?;
+    let pred = Term::abs(rat(), subst::close(&pred_body, "z"));
+    let pf = Thm::beta_conv(Term::app(pred.clone(), m.clone()))?
+        .sym()?
+        .eq_mp(conj)?; // {x<y} ⊢ pred m
+    let ex = logic::exists_intro(pred, m, pf)?; // {x<y} ⊢ ∃z. x<z ∧ z<y
+
+    ex.imp_intro(&hyp)?
+        .all_intro("y", rat())?
+        .all_intro("x", rat())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -584,6 +736,59 @@ mod tests {
             .equals(radd(two, one))
             .unwrap();
         assert_eq!(inst.concl(), &expected);
+    }
+
+    #[test]
+    fn order_axioms_are_well_typed_and_self_flagged() {
+        for ax in [lt_irrefl(), lt_trans(), lt_trichotomy(), le_def()] {
+            assert!(ax.concl().type_of().unwrap().is_bool());
+            assert!(ax.hyps().iter().any(|h| h == ax.concl()));
+        }
+    }
+
+    #[test]
+    fn rat_lt_and_mediant_have_expected_types() {
+        let r = rat();
+        assert_eq!(
+            rat_lt().type_of().unwrap(),
+            Type::fun(r.clone(), Type::fun(r.clone(), Type::bool()))
+        );
+        assert_eq!(
+            mediant().type_of().unwrap(),
+            Type::fun(r.clone(), Type::fun(r.clone(), r))
+        );
+    }
+
+    #[test]
+    fn dense_is_derived_from_the_mediant_postulates() {
+        let thm = dense();
+        // The statement: ∀x y. x < y ⟹ ∃z. x < z ∧ z < y.
+        let (x, y) = (rvar("x"), rvar("y"));
+        let inst = thm
+            .clone()
+            .all_elim(x.clone())
+            .and_then(|t| t.all_elim(y.clone()))
+            .unwrap();
+        // The consequent of the (instantiated) implication is an ∃.
+        let (ante, conseq) = {
+            let c = inst.concl();
+            // c = (x < y) ⟹ ∃z. …
+            let (head, conseq) = c.as_app().unwrap();
+            let (_imp, ante) = head.as_app().unwrap();
+            (ante.clone(), conseq.clone())
+        };
+        assert_eq!(ante, rlt(x, y));
+        // The consequent is `exists[rat] pred`.
+        let head = conseq.as_app().expect("consequent is an application").0;
+        assert_eq!(head, &covalence_core::defs::exists(rat()));
+
+        // dense is genuine *modulo* exactly the two mediant postulates: it
+        // carries them (and nothing else) as hypotheses.
+        let hyps = thm.hyps();
+        assert_eq!(hyps.len(), 2, "only the two mediant postulates remain");
+        for h in hyps {
+            assert!(h.type_of().unwrap().is_bool());
+        }
     }
 
     #[test]

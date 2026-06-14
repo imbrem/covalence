@@ -45,10 +45,10 @@
 //!   mediant `(a+c)/(b+d)`, the witness that needs no division.
 
 use covalence_core::defs::{fst, int_pos_spec, int_pos_ty, prod, snd};
-use covalence_core::{Result, Term, Thm, Type};
+use covalence_core::{Result, Term, Thm, Type, subst};
 
 use crate::init::ext::TermExt;
-use crate::init::int;
+use crate::init::{int, nat};
 
 // Re-export the `defs/rat.rs` catalogue (the type handles + the declared
 // `ratLe` order constant; bodies stay in `covalence_core::defs`).
@@ -112,23 +112,150 @@ fn mk_rat(p: &Term) -> Term {
     crate::init::quotient::mk_class(&rat_spec(), &[], &ip_pair(), &rat_rel(), p)
 }
 
+/// `⊢ rat_rel p q` → `⊢ <β-reduced cross-mult equation>`.
+fn reduce_rel(thm: Thm) -> Result<Thm> {
+    thm.concl().reduce()?.eq_mp(thm)
+}
+
+/// `⊢ <β-reduced cross-mult equation>` → `⊢ rat_rel p q`, for the given
+/// application.
+fn expand_rel(eq: Thm, app: &Term) -> Result<Thm> {
+    app.reduce()?.sym()?.eq_mp(eq)
+}
+
+/// `1 : int.pos` — the abstraction of the `int` literal `1`. The
+/// canonical denominator for the integer / rational embeddings.
+fn one_pos() -> Term {
+    Term::app(Term::spec_abs(int_pos_spec(), Vec::new()), Term::int_lit(1i128))
+}
+
+/// `pair a b : int × int.pos`.
+fn ip(a: Term, b: Term) -> Term {
+    Term::app(
+        Term::app(covalence_core::defs::pair(Type::int(), int_pos_ty()), a),
+        b,
+    )
+}
+
+/// Postulate a `rat` axiom: `{t} ⊢ t`. The self-hypothesis is the audit
+/// trail — every proof built on it carries it, flagging the unproved leaf
+/// until the quotient derivation discharges it (cf. `init::int::axiom`).
+fn axiom(t: Term) -> Thm {
+    Thm::assume(t).expect("init::rat::axiom: term must be bool-typed")
+}
+
+/// Universally close `body` over the named representative-pair variables,
+/// outermost first.
+fn forall_pair(vars: &[&str], body: Term) -> Term {
+    let mut t = body;
+    for name in vars.iter().rev() {
+        t = t.forall(name, ip_pair()).expect("forall_pair: bind variable");
+    }
+    t
+}
+
+// ============================================================================
+// `rat_rel` is an equivalence
+// ============================================================================
+//
+// `refl` / `symm` are pure `int`-equation manipulations of the cross-
+// multiplication body and are **proved** outright. `trans` is the one
+// piece that needs `int` *multiplicative cancellation by a positive*
+// denominator (from `a·d = c·b` and `c·f = e·d`, cancel `d` to reach
+// `a·f = e·b`); that `int` fact is not yet discharged, so `trans` is a
+// postulate (`SKELETONS.md`).
+
+cached_thm! {
+    /// `⊢ ∀p. rat_rel p p` — reflexivity (`num p · den p = num p · den p`).
+    pub fn rat_rel_refl() -> Thm {
+        rat_rel_refl_impl().expect("rat_rel_refl")
+    }
+}
+fn rat_rel_refl_impl() -> Result<Thm> {
+    let p = Term::free("p", ip_pair());
+    let reduced = Thm::refl(imul(num(&p), den(&p)))?;
+    expand_rel(reduced, &rel_app(&p, &p))?.all_intro("p", ip_pair())
+}
+
+cached_thm! {
+    /// `⊢ ∀p q. rat_rel p q ⟹ rat_rel q p` — symmetry (`sym` of the
+    /// defining cross-multiplication equation).
+    pub fn rat_rel_symm() -> Thm {
+        rat_rel_symm_impl().expect("rat_rel_symm")
+    }
+}
+fn rat_rel_symm_impl() -> Result<Thm> {
+    let (p, q) = (Term::free("p", ip_pair()), Term::free("q", ip_pair()));
+    let hyp = rel_app(&p, &q);
+    let flipped = reduce_rel(Thm::assume(hyp.clone())?)?.sym()?; // ⊢ num q·den p = num p·den q
+    expand_rel(flipped, &rel_app(&q, &p))?
+        .imp_intro(&hyp)?
+        .all_intro("q", ip_pair())?
+        .all_intro("p", ip_pair())
+}
+
+cached_thm! {
+    /// `⊢ ∀p q r. rat_rel p q ⟹ rat_rel q r ⟹ rat_rel p r` —
+    /// transitivity.
+    ///
+    /// **Postulated** (audit hyp). The derivation: from `num p · den q =
+    /// num q · den p` and `num q · den r = num r · den q`, multiply the
+    /// first by `den r` and the second by `den p`, commute/associate so
+    /// the common `num q · den q · den r` factor matches, giving
+    /// `(num p · den r) · den q = (num r · den p) · den q`, then cancel
+    /// `den q` (strictly positive, hence nonzero) — the `int`
+    /// multiplicative cancellation that is not yet a proved `int` fact.
+    pub fn rat_rel_trans() -> Thm {
+        let (p, q, r) = (
+            Term::free("p", ip_pair()),
+            Term::free("q", ip_pair()),
+            Term::free("r", ip_pair()),
+        );
+        let pr = rel_app(&p, &r);
+        let body = rel_app(&p, &q)
+            .imp(rel_app(&q, &r).imp(pr).expect("rat_rel_trans inner"))
+            .expect("rat_rel_trans");
+        axiom(forall_pair(&["p", "q", "r"], body))
+    }
+}
+
+// ============================================================================
+// Maps in: ℤ ↪ ℚ and ℕ ↪ ℚ (the latter by composition)
+// ============================================================================
+
+/// `of_int : int → rat` ≡ `λa. mkRat (a, 1)` — the ring embedding of the
+/// integers (numerator `a`, denominator `1`).
+pub fn of_int() -> Term {
+    let a = Term::free("a", Type::int());
+    let body = mk_rat(&ip(a.clone(), one_pos()));
+    Term::abs(Type::int(), subst::close(&body, "a"))
+}
+
+/// `of_nat : nat → rat` ≡ `λn. of_int (nat.toInt n)` — the embedding of
+/// the naturals, **by composition** through `of_int` and the nat→int
+/// coercion.
+pub fn of_nat() -> Term {
+    let n = Term::free("n", Type::nat());
+    let body = Term::app(of_int(), Term::app(nat::nat_to_int(), n.clone()));
+    Term::abs(Type::nat(), subst::close(&body, "n"))
+}
+
+cached_thm! {
+    /// `⊢ ∀n. of_nat n = of_int (nat.toInt n)` — the naturals embed
+    /// through the integers (the defining composition, by β).
+    pub fn of_nat_via_int() -> Thm {
+        of_nat_via_int_impl().expect("of_nat_via_int")
+    }
+}
+fn of_nat_via_int_impl() -> Result<Thm> {
+    let n = Term::free("n", Type::nat());
+    let redex = Term::app(of_nat(), n.clone()); // (λn. of_int (toInt n)) n
+    Thm::beta_conv(redex)?.all_intro("n", Type::nat())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// `pair a b : int × int.pos` from an `int` numerator and an
-    /// `int.pos` denominator.
-    fn ip(a: Term, b: Term) -> Term {
-        Term::app(
-            Term::app(covalence_core::defs::pair(Type::int(), int_pos_ty()), a),
-            b,
-        )
-    }
-
-    /// `1 : int.pos` — the abstraction of the `int` literal `1`.
-    fn one_pos() -> Term {
-        Term::app(Term::spec_abs(int_pos_spec(), Vec::new()), Term::int_lit(1i128))
-    }
 
     #[test]
     fn rat_ty_matches_the_catalogue() {
@@ -162,5 +289,74 @@ mod tests {
     fn mk_rat_is_a_rational() {
         let p = ip(Term::int_lit(5i128), one_pos());
         assert_eq!(mk_rat(&p).type_of().unwrap(), rat());
+    }
+
+    #[test]
+    fn rat_rel_refl_and_symm_are_genuine() {
+        // refl / symm are proved outright (no hypotheses).
+        for t in [rat_rel_refl(), rat_rel_symm()] {
+            assert!(t.hyps().is_empty(), "rat_rel refl/symm are proved");
+            assert!(t.concl().type_of().unwrap().is_bool());
+        }
+        let (p, q) = (Term::free("p", ip_pair()), Term::free("q", ip_pair()));
+        assert_eq!(rat_rel_refl().all_elim(p.clone()).unwrap().concl(), &rel_app(&p, &p));
+        let symm = rat_rel_symm()
+            .all_elim(p.clone())
+            .unwrap()
+            .all_elim(q.clone())
+            .unwrap();
+        assert_eq!(symm.concl(), &rel_app(&p, &q).imp(rel_app(&q, &p)).unwrap());
+    }
+
+    #[test]
+    fn rat_rel_trans_is_a_self_flagged_postulate() {
+        let t = rat_rel_trans();
+        assert!(t.concl().type_of().unwrap().is_bool());
+        assert!(
+            t.hyps().iter().any(|h| h == t.concl()),
+            "the postulate carries itself as a hypothesis"
+        );
+    }
+
+    #[test]
+    fn class_intro_lifts_rat_rel_to_a_class_equation() {
+        // With symm proved and trans postulated, the forward quotient law
+        // lifts a `~`-fact to a rat-class equation over the real spec.
+        use crate::init::quotient;
+        let (p, q) = (Term::free("p", ip_pair()), Term::free("q", ip_pair()));
+        let ab = Thm::assume(rel_app(&p, &q)).unwrap();
+        let lifted = quotient::class_intro(
+            &rat_spec(),
+            &[],
+            &ip_pair(),
+            &rat_rel_symm(),
+            &rat_rel_trans(),
+            ab,
+        )
+        .expect("class_intro on rat_rel");
+        let (l, r) = lifted.concl().as_eq().expect("lifted to a class equation");
+        assert_eq!(l, &mk_rat(&p));
+        assert_eq!(r, &mk_rat(&q));
+        assert!(lifted.hyps().iter().any(|h| h == &rel_app(&p, &q)));
+    }
+
+    #[test]
+    fn maps_have_the_expected_types() {
+        assert_eq!(of_int().type_of().unwrap(), Type::fun(Type::int(), rat()));
+        assert_eq!(of_nat().type_of().unwrap(), Type::fun(Type::nat(), rat()));
+    }
+
+    #[test]
+    fn of_nat_factors_through_of_int() {
+        // ∀n. of_nat n = of_int (nat.toInt n); specialise to a concrete n.
+        let n = Term::free("k", Type::nat());
+        let inst = of_nat_via_int().all_elim(n.clone()).unwrap();
+        let lhs = Term::app(of_nat(), n.clone());
+        let rhs = Term::app(of_int(), Term::app(nat::nat_to_int(), n));
+        // of_nat_via_int is a β-fact: genuine, hypothesis-free.
+        assert!(of_nat_via_int().hyps().is_empty());
+        let (l, r) = inst.concl().as_eq().unwrap();
+        assert_eq!(l, &lhs);
+        assert_eq!(r, &rhs);
     }
 }

@@ -61,6 +61,29 @@ it is how unfinished work stays discoverable.
     `mul_succ_r` / `mul_comm` / `mul_assoc` / `distrib`, and the `le`/`lt`
     order facts. `init::nat` already has the additive theory, `add_cancel`,
     `add_interchange`, and `mul_zero`.
+- **The `rat` quotient + ordered-field theory** in
+  `crates/covalence-hol/src/init/rat.rs`. `rat := (int × int.pos) / ~`
+  (cross-multiplication). Proved outright: `rat_rel_refl`, `rat_rel_symm`
+  (pure `int`-equation `refl`/`sym`), and `of_nat_via_int` (the ℕ↪ℚ
+  embedding factors through ℤ↪ℚ, by β). **Postulated** via the module's
+  `axiom` helper (each carrying its statement as a self-hyp):
+  - `rat_rel_trans` — transitivity of the cross-multiplication relation.
+    Needs `int` *multiplicative cancellation by a positive* (cancel the
+    common positive denominator), an `int` fact not yet discharged. Once
+    that lands, this becomes the int-analogue of `int_rel_trans`.
+  - The ordered-field axioms over `rat_zero`/`rat_one`/`rat_add`/
+    `rat_neg`/`rat_mul`/`rat_lt` (commutative-ring `add_*`/`mul_*`/
+    `distrib`, multiplicative inverse `mul_inv`, and the linear order
+    `lt_*`/`le_def`). Each is a HOL theorem derivable from the `int`
+    ordered-ring theory through the quotient; filling them in does not
+    change the public `fn` surface. They depend transitively on the
+    `int` postulates above.
+  - The two **mediant inequalities** `mediant_gt` / `mediant_lt` — the
+    only postulated leaves of `dense` (which is itself *derived* from
+    them via the mediant `(a+c)/(b+d)`, no division needed). Each unfolds
+    to an `int` order fact (`a·d < c·b ⟹ a·(b+d) < (a+c)·b`, etc.)
+    lifted through the quotient — blocked on the same `int` order theory.
+
 ## Partial subsystems
 
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in

@@ -68,7 +68,7 @@ impl HolLightCtx {
         Type::bool()
     }
 
-    /// Pure function type α → β. HOL doesn't add a new function-type
+    /// Core function type α → β. HOL doesn't add a new function-type
     /// constructor; we re-use the kernel's `Fun`.
     pub fn fun_type(&self, a: Type, b: Type) -> Type {
         Type::fun(a, b)

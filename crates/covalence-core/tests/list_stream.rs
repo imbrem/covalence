@@ -145,15 +145,25 @@ fn list_index_at_tfree_type() {
 
 #[test]
 fn defined_list_ops_carry_bodies_matching_their_ty() {
-    // nil/cons/head/tail/listIndex are now *defined* via the stream
-    // carrier bridge. Each carries a body whose type matches the
-    // recorded spec ty.
+    // Constructors/destructors plus the `let`-style ops are *defined*
+    // (via the stream carrier bridge or via foldr). Each carries a body
+    // whose type matches the recorded spec ty. (foldr/foldl are
+    // ε-predicate ops — checked separately, since their body type is
+    // `ty → bool`.)
     let specs = [
         ("nil", nil_spec()),
         ("cons", cons_spec()),
         ("head", head_spec()),
         ("tail", tail_spec()),
         ("listIndex", list_index_spec()),
+        ("listLength", list_length_spec()),
+        ("listCat", list_cat_spec()),
+        ("listMap", list_map_spec()),
+        ("listFilter", list_filter_spec()),
+        ("listTake", list_take_spec()),
+        ("listSkip", list_skip_spec()),
+        ("listRepeat", list_repeat_spec()),
+        ("listFlatten", list_flatten_spec()),
     ];
     for (name, spec) in specs {
         let tm = spec
@@ -186,30 +196,27 @@ fn cons_body_type_is_curried_prepend() {
 }
 
 // ============================================================================
-// 4. Declaration-only list ops: no body, but accessor type is correct
+// 4. Structural recursors: ε-predicate ops (listFoldr / listFoldl)
 // ============================================================================
 
 #[test]
-fn declaration_only_list_ops_have_no_body() {
-    let specs = [
-        ("listLength", list_length_spec()),
-        ("listCat", list_cat_spec()),
-        ("listMap", list_map_spec()),
-        ("listFilter", list_filter_spec()),
-        ("listFoldr", list_foldr_spec()),
-        ("listFoldl", list_foldl_spec()),
-        ("listTake", list_take_spec()),
-        ("listSkip", list_skip_spec()),
-        ("listRepeat", list_repeat_spec()),
-        ("listFlatten", list_flatten_spec()),
-    ];
+fn fold_recursors_carry_selector_predicates() {
+    // listFoldr / listFoldl are def-style: their `tm` is a Hilbert-ε
+    // selector predicate over the fold function, so its type is
+    // `ty → bool` (NOT the recorded function `ty` itself).
+    let specs = [("listFoldr", list_foldr_spec()), ("listFoldl", list_foldl_spec())];
     for (name, spec) in specs {
-        assert!(
-            spec.tm().is_none(),
-            "{name} should be declaration-only (no body)"
-        );
-        // ...but it still has a committed type signature.
-        assert!(spec.ty().is_some(), "{name} should have a committed ty");
+        let recorded = spec
+            .ty()
+            .unwrap_or_else(|| panic!("{name} has a committed ty"));
+        let pred = spec
+            .tm()
+            .unwrap_or_else(|| panic!("{name} carries a selector predicate"));
+        let pred_ty = pred
+            .type_of()
+            .unwrap_or_else(|e| panic!("{name} predicate type-of: {e:?}"));
+        let expected = Type::fun(recorded.clone(), Type::bool());
+        assert_eq!(pred_ty, expected, "{name}: predicate is `ty → bool`");
     }
 }
 
@@ -340,11 +347,11 @@ fn stream_at_has_extract_type() {
 }
 
 #[test]
-fn stream_make_has_build_type() {
-    // streamMake : (nat → α) → stream α
+fn stream_mk_has_build_type() {
+    // streamMk : (nat → α) → stream α
     let a = Type::int();
     let expected = Type::fun(Type::fun(Type::nat(), a.clone()), stream(a));
-    assert_eq!(stream_make(Type::int()).type_of().unwrap(), expected);
+    assert_eq!(stream_mk(Type::int()).type_of().unwrap(), expected);
 }
 
 #[test]
@@ -401,17 +408,21 @@ fn finite_has_stream_option_to_bool_type() {
 // ============================================================================
 
 #[test]
-fn declaration_only_stream_bridge_ops_have_no_body() {
-    // streamAt / streamMake are the declaration-only abs/rep bridge.
-    assert!(stream_at_spec().tm().is_none(), "streamAt is decl-only");
-    assert!(stream_make_spec().tm().is_none(), "streamMake is decl-only");
+fn stream_bridge_ops_are_abs_rep_coercions() {
+    // streamAt / streamMk are now `let`-defined as the newtype
+    // rep / abs coercions, so each carries a body.
+    assert!(stream_at_spec().tm().is_some(), "streamAt has a body (rep)");
+    assert!(stream_mk_spec().tm().is_some(), "streamMk has a body (abs)");
 }
 
 #[test]
 fn defined_stream_ops_carry_bodies_matching_their_ty() {
-    // head/tail/const/iterate/nth/finite are defined in terms of the
-    // bridge ops; each has a body whose type matches its recorded ty.
+    // every stream op is defined in terms of the bridge ops (or, for
+    // the bridge ops themselves, the abs/rep coercions); each has a
+    // body whose type matches its recorded ty.
     let specs = [
+        ("streamAt", stream_at_spec()),
+        ("streamMk", stream_mk_spec()),
         ("streamHead", stream_head_spec()),
         ("streamTail", stream_tail_spec()),
         ("streamConst", stream_const_spec()),

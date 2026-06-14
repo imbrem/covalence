@@ -55,7 +55,7 @@ use bytes::Bytes;
 use covalence_core::{Object, Term, TermKind, Thm, Type, TypeKind};
 use covalence_sexp::{Atom, SExp, SExpr};
 
-/// Errors produced by S-expression parsing of Pure terms / types.
+/// Errors produced by S-expression parsing of Core terms / types.
 #[derive(Debug, thiserror::Error)]
 #[error("S-expression syntax: {0}")]
 pub struct SexpError(pub String);

@@ -11,7 +11,7 @@
 //!   are slated to disappear once the connectives are built into the
 //!   kernel (the target axiom set is content-addressing only).
 //!
-//! Pure tactics can't produce a false `Thm` independently; they're
+//! Core tactics can't produce a false `Thm` independently; they're
 //! plumbing that turns multi-step kernel sequences into one-line
 //! call sites. Postulated rules sit behind a `LazyLock<Thm>` so
 //! every consumer shares a single instance.

@@ -117,7 +117,7 @@ pub enum Canonical {
     /// `option 'a := coprod 'a unit`.
     Option,
     /// `stream 'a := nat → 'a` (opaque TypeSpec wrapper; bridge to
-    /// the carrier via `stream_at` / `stream_make`).
+    /// the carrier via `stream_at` / `stream_mk`).
     Stream,
     /// `list 'a := stream (option 'a) where finite 'a`.
     List,
@@ -315,28 +315,69 @@ pub enum Canonical {
     ListFlatten,
 
     // ---- Term-level: set operations ----
-    /// `setUnion : set 'a → set 'a → set 'a`.
+    /// `set.mk : ('a → bool) → set 'a` — wrap a membership predicate
+    /// into a set (the `abs` coercion, named). The constructor every
+    /// other set op funnels through.
+    SetMk,
+    /// `set.mem : 'a → set 'a → bool` — membership (the `rep` coercion
+    /// applied, named).
+    SetMem,
+    /// `set.empty : set 'a` — the empty set `mk (λx. F)`.
+    SetEmpty,
+    /// `set.singleton : 'a → set 'a` — `λa. mk (λx. x = a)`.
+    SetSingleton,
+    /// `set.insert : 'a → set 'a → set 'a` — add an element,
+    /// `λa s. mk (λx. x = a ∨ mem x s)`.
+    SetInsert,
+    /// `set.union : set 'a → set 'a → set 'a`.
     SetUnion,
-    /// `setIntersect : set 'a → set 'a → set 'a`.
+    /// `set.intersect : set 'a → set 'a → set 'a`.
     SetIntersect,
-    /// `setDiff : set 'a → set 'a → set 'a`.
+    /// `set.diff : set 'a → set 'a → set 'a`.
     SetDiff,
-    /// `setSubset : set 'a → set 'a → bool`.
+    /// `set.subset : set 'a → set 'a → bool`.
     SetSubset,
-    /// `setCard : set 'a → nat`.
+    /// `set.isEmpty : set 'a → bool` — `λs. ∀x. ¬ mem x s`.
+    SetIsEmpty,
+    /// `set.flatten : set (set 'a) → set 'a` — union of a set of sets.
+    SetFlatten,
+    /// `set.all : set bool → bool` — `T` iff every member is `T`
+    /// (big conjunction over the set).
+    SetAll,
+    /// `set.any : set bool → bool` — `T` iff some member is `T`
+    /// (big disjunction over the set).
+    SetAny,
+    /// `set.finite : set 'a → bool` — `λs. ∃l:list 'a. list.elems l = s`
+    /// (Kuratowski-finite: the set is the element-set of some list).
+    SetFinite,
+    /// `set.card : set 'a → nat` — cardinality (the minimal length of a
+    /// list whose `elems` is the set; junk on infinite sets).
     SetCard,
-    /// `listToSet : list 'a → set 'a`.
-    ListToSet,
+    /// `set.card? : set 'a → option nat` — cardinality as an option,
+    /// `none` for infinite sets, `some (card s)` when finite.
+    SetCardOpt,
+    /// `set.min : set nat → nat` — least element (`0` for the empty
+    /// set, by convention). Total by well-ordering of `nat`.
+    SetMin,
+    /// `set.image : ('a → 'b) → set 'a → set 'b` — direct image
+    /// `λf s. mk (λy. ∃x. mem x s ∧ f x = y)`.
+    SetImage,
+    /// `set.preimage : ('a → 'b) → set 'b → set 'a` — preimage
+    /// `λf t. mk (λx. mem (f x) t)`.
+    SetPreimage,
+    /// `list.elems : list 'a → set 'a` — the set of elements appearing
+    /// in the list.
+    ListElems,
 
     // ---- Term-level: stream operations ----
     /// `streamAt : stream 'a → nat → 'a` — the bridge from opaque
     /// `stream α` back to its carrier function (apply at index).
-    /// Declaration-only.
+    /// Defined as the newtype `rep` coercion.
     StreamAt,
-    /// `streamMake : (nat → 'a) → stream 'a` — the bridge from a
+    /// `streamMk : (nat → 'a) → stream 'a` — the bridge from a
     /// `nat → α` function to the opaque `stream α`. Inverse of
-    /// `streamAt` under η. Declaration-only.
-    StreamMake,
+    /// `streamAt` under η. Defined as the newtype `abs` coercion.
+    StreamMk,
     /// `streamHead : stream 'a → 'a` — `λs. stream_at s 0`.
     StreamHead,
     /// `streamTail : stream 'a → stream 'a` — `λs n. s (succ n)`.
@@ -473,15 +514,29 @@ impl Canonical {
             Canonical::ListIndex => "list.index",
             Canonical::ListRepeat => "list.repeat",
             Canonical::ListFlatten => "list.flatten",
+            Canonical::SetMk => "set.mk",
+            Canonical::SetMem => "set.mem",
+            Canonical::SetEmpty => "set.empty",
+            Canonical::SetSingleton => "set.singleton",
+            Canonical::SetInsert => "set.insert",
             Canonical::SetUnion => "set.union",
             Canonical::SetIntersect => "set.intersect",
             Canonical::SetDiff => "set.diff",
             Canonical::SetSubset => "set.subset",
+            Canonical::SetIsEmpty => "set.isEmpty",
+            Canonical::SetFlatten => "set.flatten",
+            Canonical::SetAll => "set.all",
+            Canonical::SetAny => "set.any",
+            Canonical::SetFinite => "set.finite",
             Canonical::SetCard => "set.card",
-            Canonical::ListToSet => "list.toSet",
+            Canonical::SetCardOpt => "set.card?",
+            Canonical::SetMin => "set.min",
+            Canonical::SetImage => "set.image",
+            Canonical::SetPreimage => "set.preimage",
+            Canonical::ListElems => "list.elems",
             Canonical::Stream => "stream",
             Canonical::StreamAt => "stream.at",
-            Canonical::StreamMake => "stream.make",
+            Canonical::StreamMk => "stream.mk",
             Canonical::StreamHead => "stream.head",
             Canonical::StreamTail => "stream.tail",
             Canonical::StreamCons => "stream.cons",

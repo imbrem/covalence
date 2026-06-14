@@ -161,15 +161,19 @@ pub use rel::{
 };
 pub use result::{err, err_spec, ok, ok_spec, result, result_spec};
 pub use set::{
-    list_to_set, list_to_set_spec, set, set_card, set_card_spec, set_diff, set_diff_spec,
-    set_intersect, set_intersect_spec, set_spec, set_subset, set_subset_spec, set_union,
-    set_union_spec,
+    list_elems, list_elems_spec, set, set_all, set_all_spec, set_any, set_any_spec, set_card,
+    set_card_opt, set_card_opt_spec, set_card_spec, set_diff, set_diff_spec, set_empty,
+    set_empty_spec, set_finite, set_finite_spec, set_flatten, set_flatten_spec, set_image,
+    set_image_spec, set_insert, set_insert_spec, set_intersect, set_intersect_spec, set_is_empty,
+    set_is_empty_spec, set_mem, set_mem_spec, set_min, set_min_spec, set_mk, set_mk_spec,
+    set_preimage, set_preimage_spec, set_singleton, set_singleton_spec, set_spec, set_subset,
+    set_subset_spec, set_union, set_union_spec,
 };
 pub use spec::{TermSpec, TypeSpec};
 pub use stream::{
     finite, finite_spec, stream, stream_at, stream_at_spec, stream_const, stream_const_spec,
-    stream_head, stream_head_spec, stream_iterate, stream_iterate_spec, stream_make,
-    stream_make_spec, stream_nth, stream_nth_spec, stream_spec, stream_tail, stream_tail_spec,
+    stream_head, stream_head_spec, stream_iterate, stream_iterate_spec, stream_mk,
+    stream_mk_spec, stream_nth, stream_nth_spec, stream_spec, stream_tail, stream_tail_spec,
 };
 pub use symbol::Symbol;
 pub use unit::{unit_nil, unit_nil_spec, unit_spec};
@@ -536,7 +540,7 @@ mod tests {
     fn stream_is_opaque_typespec() {
         // `stream α` is a TypeKind::Spec wrapper over the carrier
         // `nat → α`. Opaque to the type-checker — you can't apply
-        // `s : stream α` directly. Use `stream_at` / `stream_make`
+        // `s : stream α` directly. Use `stream_at` / `stream_mk`
         // to bridge between the spec leaf and the carrier function.
         let s = stream(Type::nat());
         match s.kind() {
@@ -567,10 +571,10 @@ mod tests {
     }
 
     #[test]
-    fn stream_make_returns_stream_from_function() {
-        // stream_make : (nat → α) → stream α
+    fn stream_mk_returns_stream_from_function() {
+        // stream_mk : (nat → α) → stream α
         let alpha = Type::tfree("a");
-        let f = stream::stream_make(alpha.clone());
+        let f = stream::stream_mk(alpha.clone());
         assert_eq!(
             f.type_of().unwrap(),
             Type::fun(Type::fun(Type::nat(), alpha.clone()), stream(alpha),),

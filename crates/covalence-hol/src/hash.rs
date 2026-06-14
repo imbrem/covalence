@@ -92,8 +92,8 @@ const TY_BOOL: u8 = 0x0a;
 
 // ---- term tags ----
 //
-// 0x05 = T_IMP (removed Pure ⟹), 0x06 = T_ALL (removed Pure ⋀),
-// 0x07 = T_EQ (removed Pure ≡). Do not reuse.
+// 0x05 = T_IMP (removed Core ⟹), 0x06 = T_ALL (removed Core ⋀),
+// 0x07 = T_EQ (removed Core ≡). Do not reuse.
 const T_BOUND: u8 = 0x00;
 const T_FREE: u8 = 0x01;
 const T_CONST: u8 = 0x02;

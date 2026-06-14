@@ -9,13 +9,16 @@
 //!
 //! `nil`/`cons`/`head`/`tail`/`listIndex` are *defined* here in terms
 //! of the `stream` carrier (via the `abs`/`rep` bridge — see below).
-//! The remaining higher-order operations (`listLength`, `listCat`,
-//! `listMap`, `listFilter`, `listFoldr`/`listFoldl`, `listTake`/
-//! `listSkip`, `listRepeat`, `listFlatten`) stay **declaration-only**:
-//! a clean structural definition needs a `list` recursor (fold over
-//! the finite prefix), which the kernel does not yet expose. They have
-//! committed type signatures; their bodies are tracked in
-//! `docs/roadmap.md`.
+//!
+//! The higher-order operations are all defined too. The two structural
+//! recursors are `listFoldr` / `listFoldl`, given Hilbert-ε selector
+//! predicates by their defining equations (`fr f z nil = z`,
+//! `fr f z (cons x xs) = f x (fr f z xs)`, and the left-fold mirror) —
+//! the same shape as `natRec` in [`crate::defs::nat`]. Everything else
+//! is a `let` definition: the *positional* ops (`listTake`, `listSkip`,
+//! `listRepeat`, `listMap`, `listIndex`) work pointwise on the carrier
+//! stream, while the *structural* ops (`listLength`, `listCat`,
+//! `listFilter`, `listFlatten`) factor through `listFoldr`.
 
 use std::sync::LazyLock;
 
@@ -23,11 +26,11 @@ use crate::hol;
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
-use super::nat::nat_rec;
-use super::option::{none, option, some};
+use super::nat::{nat_add, nat_lt, nat_rec};
+use super::option::{none, option, option_case, some};
 use super::spec::{TermSpec, TypeSpec};
 use super::stream::{
-    finite, stream, stream_at, stream_const, stream_head, stream_make, stream_tail,
+    finite, stream, stream_at, stream_const, stream_head, stream_mk, stream_tail,
 };
 
 /// `list 'a := stream (option 'a) where finite`. The carrier is
@@ -51,7 +54,7 @@ pub fn list(alpha: Type) -> Type {
 // (`abs`/`rep` cross between `list α` and `stream (option α)`).
 //
 //   nil       ≔ abs (streamConst none)
-//   cons x xs ≔ abs (streamMake (λn. natRec (some x)
+//   cons x xs ≔ abs (streamMk (λn. natRec (some x)
 //                                      (λk _. streamAt (rep xs) k) n))
 //   head xs   ≔ streamHead (rep xs)
 //   tail xs   ≔ abs (streamTail (rep xs))
@@ -94,7 +97,7 @@ fn cons_body() -> Term {
     let rec = Term::app(Term::app(Term::app(nat_rec(opt.clone()), some_x), f), n);
     let stream_fn = hol::pub_abs("n", Type::nat(), rec);
 
-    let made = Term::app(stream_make(opt), stream_fn);
+    let made = Term::app(stream_mk(opt), stream_fn);
     let consed = Term::app(Term::spec_abs(list_spec(), vec![alpha.clone()]), made);
     let lam_xs = hol::pub_abs("xs", list_a, consed);
     hol::pub_abs("x", alpha, lam_xs)
@@ -137,14 +140,32 @@ poly_let_term! {
     tail_spec, tail(alpha), Canonical::Tail, tail_body()
 }
 
-/// `listLength : list 'a → nat`.
+fn list_length_body() -> Term {
+    // listLength ≔ λxs. listFoldr (λ_:α. λacc:nat. succ acc) 0 xs
+    let alpha = Type::tfree("a");
+    let acc = Term::free("acc", Type::nat());
+    let succ_acc = Term::app(hol::succ_fn(), acc);
+    // λ_:α. λacc:nat. succ acc  (the element is ignored)
+    let step = Term::abs(alpha.clone(), hol::pub_abs("acc", Type::nat(), succ_acc));
+    let xs = Term::free("xs", list(alpha.clone()));
+    let folded = Term::app(
+        Term::app(
+            Term::app(list_foldr(alpha.clone(), Type::nat()), step),
+            hol::zero(),
+        ),
+        xs,
+    );
+    hol::pub_abs("xs", list(alpha), folded)
+}
+
+/// `listLength : list 'a → nat` ≡ `λxs. foldr (λ_ acc. succ acc) 0 xs`.
 pub fn list_length_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
         TermSpec::new(
             Canonical::ListLength,
             Some(Type::fun(list(alpha), Type::nat())),
-            None,
+            Some(list_length_body()),
         )
     });
     LAZY.clone()
@@ -153,7 +174,24 @@ pub fn list_length(alpha: Type) -> Term {
     Term::term_spec(list_length_spec(), vec![alpha])
 }
 
-/// `listCat : list 'a → list 'a → list 'a`.
+fn list_cat_body() -> Term {
+    // listCat ≔ λxs ys. listFoldr cons ys xs
+    let alpha = Type::tfree("a");
+    let la = list(alpha.clone());
+    let xs = Term::free("xs", la.clone());
+    let ys = Term::free("ys", la.clone());
+    let folded = Term::app(
+        Term::app(
+            Term::app(list_foldr(alpha.clone(), la.clone()), cons(alpha.clone())),
+            ys,
+        ),
+        xs,
+    );
+    let lam_ys = hol::pub_abs("ys", la.clone(), folded);
+    hol::pub_abs("xs", la, lam_ys)
+}
+
+/// `listCat : list 'a → list 'a → list 'a` ≡ `λxs ys. foldr cons ys xs`.
 pub fn list_cat_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
@@ -161,7 +199,7 @@ pub fn list_cat_spec() -> TermSpec {
         TermSpec::new(
             Canonical::ListCat,
             Some(Type::fun(la.clone(), Type::fun(la.clone(), la))),
-            None,
+            Some(list_cat_body()),
         )
     });
     LAZY.clone()
@@ -170,25 +208,84 @@ pub fn list_cat(alpha: Type) -> Term {
     Term::term_spec(list_cat_spec(), vec![alpha])
 }
 
-/// `listMap : ('a → 'b) → list 'a → list 'b`.
-pub fn list_map_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
-        let alpha = Type::tfree("a");
-        let beta = Type::tfree("b");
-        let f_ty = Type::fun(alpha.clone(), beta.clone());
-        TermSpec::new(
-            Canonical::ListMap,
-            Some(Type::fun(f_ty, Type::fun(list(alpha), list(beta)))),
-            None,
-        )
-    });
-    LAZY.clone()
-}
-pub fn list_map(alpha: Type, beta: Type) -> Term {
-    Term::term_spec(list_map_spec(), vec![alpha, beta])
+fn list_map_body() -> Term {
+    // listMap ≔ λf xs. abs (streamMk (λi. optionCase none (λx. some (f x))
+    //                                       (streamAt (rep xs) i)))
+    // Pointwise over the carrier stream: map the `option α` at each index.
+    let alpha = Type::tfree("a");
+    let beta = Type::tfree("b");
+    let opt_a = option(alpha.clone());
+    let opt_b = option(beta.clone());
+    let f_ty = Type::fun(alpha.clone(), beta.clone());
+
+    let f = Term::free("f", f_ty.clone());
+    let xs = Term::free("xs", list(alpha.clone()));
+    let i = Term::free("i", Type::nat());
+
+    // streamAt (rep xs) i : option α
+    let rep_xs = Term::app(Term::spec_rep(list_spec(), vec![alpha.clone()]), xs);
+    let elem = Term::app(Term::app(stream_at(opt_a.clone()), rep_xs), i);
+
+    // some-branch: λx:α. some (f x) : α → option β
+    let x = Term::free("x", alpha.clone());
+    let some_fx = Term::app(some(beta.clone()), Term::app(f.clone(), x));
+    let some_branch = hol::pub_abs("x", alpha.clone(), some_fx);
+
+    // optionCase none (λx. some (f x)) elem : option β
+    let case = option_case(alpha.clone(), opt_b.clone());
+    let mapped = Term::app(
+        Term::app(Term::app(case, none(beta.clone())), some_branch),
+        elem,
+    );
+
+    // abs (streamMk (λi. mapped)) : list β
+    let made = Term::app(stream_mk(opt_b), hol::pub_abs("i", Type::nat(), mapped));
+    let result = Term::app(Term::spec_abs(list_spec(), vec![beta.clone()]), made);
+
+    let lam_xs = hol::pub_abs("xs", list(alpha), result);
+    hol::pub_abs("f", f_ty, lam_xs)
 }
 
-/// `listFilter : ('a → bool) → list 'a → list 'a`.
+poly_let_term! {
+    /// `listMap : ('a → 'b) → list 'a → list 'b` — map pointwise over
+    /// the carrier stream's `option` elements.
+    list_map_spec, list_map(alpha, beta), Canonical::ListMap, list_map_body()
+}
+
+fn list_filter_body() -> Term {
+    // listFilter ≔ λp xs. listFoldr (λx acc. cond (p x) (cons x acc) acc) nil xs
+    let alpha = Type::tfree("a");
+    let la = list(alpha.clone());
+    let p_ty = Type::fun(alpha.clone(), Type::bool());
+
+    let p = Term::free("p", p_ty.clone());
+    let xs = Term::free("xs", la.clone());
+
+    // step: λx:α. λacc:list α. cond (p x) (cons x acc) acc
+    let x = Term::free("x", alpha.clone());
+    let acc = Term::free("acc", la.clone());
+    let p_x = Term::app(p.clone(), x.clone());
+    let cons_x_acc = Term::app(Term::app(cons(alpha.clone()), x.clone()), acc.clone());
+    let chosen = Term::cond(p_x, cons_x_acc, acc);
+    let step = hol::pub_abs(
+        "x",
+        alpha.clone(),
+        hol::pub_abs("acc", la.clone(), chosen),
+    );
+
+    let folded = Term::app(
+        Term::app(
+            Term::app(list_foldr(alpha.clone(), la.clone()), step),
+            nil(alpha.clone()),
+        ),
+        xs,
+    );
+    let lam_xs = hol::pub_abs("xs", la, folded);
+    hol::pub_abs("p", p_ty, lam_xs)
+}
+
+/// `listFilter : ('a → bool) → list 'a → list 'a` ≡
+/// `λp xs. foldr (λx acc. cond (p x) (cons x acc) acc) nil xs`.
 pub fn list_filter_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
@@ -197,7 +294,7 @@ pub fn list_filter_spec() -> TermSpec {
         TermSpec::new(
             Canonical::ListFilter,
             Some(Type::fun(p_ty, Type::fun(la.clone(), la))),
-            None,
+            Some(list_filter_body()),
         )
     });
     LAZY.clone()
@@ -206,7 +303,45 @@ pub fn list_filter(alpha: Type) -> Term {
     Term::term_spec(list_filter_spec(), vec![alpha])
 }
 
-/// `listFoldr : ('a → 'b → 'b) → 'b → list 'a → 'b`.
+/// Selector predicate for `listFoldr` — the right-fold defining
+/// equations: `λfr. ∀f z. fr f z nil = z ∧
+/// ∀x xs. fr f z (cons x xs) = f x (fr f z xs)`.
+fn list_foldr_predicate() -> Term {
+    let alpha = Type::tfree("a");
+    let beta = Type::tfree("b");
+    let la = list(alpha.clone());
+    let f_ty = Type::fun(alpha.clone(), Type::fun(beta.clone(), beta.clone()));
+    let fr_ty = Type::fun(
+        f_ty.clone(),
+        Type::fun(beta.clone(), Type::fun(la.clone(), beta.clone())),
+    );
+
+    let fr = Term::free("fr", fr_ty.clone());
+    let f = Term::free("f", f_ty.clone());
+    let z = Term::free("z", beta.clone());
+
+    // fr f z : list α → β
+    let fr_f_z = Term::app(Term::app(fr, f.clone()), z.clone());
+
+    // base: fr f z nil = z
+    let base = hol::hol_eq(Term::app(fr_f_z.clone(), nil(alpha.clone())), z.clone());
+
+    // step: ∀x xs. fr f z (cons x xs) = f x (fr f z xs)
+    let x = Term::free("x", alpha.clone());
+    let xs = Term::free("xs", la.clone());
+    let cons_x_xs = Term::app(Term::app(cons(alpha.clone()), x.clone()), xs.clone());
+    let lhs = Term::app(fr_f_z.clone(), cons_x_xs);
+    let rhs = Term::app(Term::app(f.clone(), x.clone()), Term::app(fr_f_z, xs.clone()));
+    let step_eq = hol::hol_eq(lhs, rhs);
+    let step = hol::hol_forall("x", alpha, hol::hol_forall("xs", la, step_eq));
+
+    let body = hol::hol_and(base, step);
+    let body_fz = hol::hol_forall("f", f_ty, hol::hol_forall("z", beta, body));
+    hol::pub_abs("fr", fr_ty, body_fz)
+}
+
+/// `listFoldr : ('a → 'b → 'b) → 'b → list 'a → 'b`. The right-fold
+/// recursor; pinned by [`list_foldr_predicate`] (Hilbert ε).
 pub fn list_foldr_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
@@ -218,7 +353,7 @@ pub fn list_foldr_spec() -> TermSpec {
                 f_ty,
                 Type::fun(beta.clone(), Type::fun(list(alpha), beta)),
             )),
-            None,
+            Some(list_foldr_predicate()),
         )
     });
     LAZY.clone()
@@ -227,7 +362,49 @@ pub fn list_foldr(alpha: Type, beta: Type) -> Term {
     Term::term_spec(list_foldr_spec(), vec![alpha, beta])
 }
 
-/// `listFoldl : ('b → 'a → 'b) → 'b → list 'a → 'b`.
+/// Selector predicate for `listFoldl` — the left-fold defining
+/// equations: `λfl. ∀f z. fl f z nil = z ∧
+/// ∀x xs. fl f z (cons x xs) = fl f (f z x) xs`.
+fn list_foldl_predicate() -> Term {
+    let alpha = Type::tfree("a");
+    let beta = Type::tfree("b");
+    let la = list(alpha.clone());
+    let f_ty = Type::fun(beta.clone(), Type::fun(alpha.clone(), beta.clone()));
+    let fl_ty = Type::fun(
+        f_ty.clone(),
+        Type::fun(beta.clone(), Type::fun(la.clone(), beta.clone())),
+    );
+
+    let fl = Term::free("fl", fl_ty.clone());
+    let f = Term::free("f", f_ty.clone());
+    let z = Term::free("z", beta.clone());
+
+    // fl f : β → list α → β
+    let fl_f = Term::app(fl, f.clone());
+
+    // base: fl f z nil = z
+    let base = hol::hol_eq(
+        Term::app(Term::app(fl_f.clone(), z.clone()), nil(alpha.clone())),
+        z.clone(),
+    );
+
+    // step: ∀x xs. fl f z (cons x xs) = fl f (f z x) xs
+    let x = Term::free("x", alpha.clone());
+    let xs = Term::free("xs", la.clone());
+    let cons_x_xs = Term::app(Term::app(cons(alpha.clone()), x.clone()), xs.clone());
+    let lhs = Term::app(Term::app(fl_f.clone(), z.clone()), cons_x_xs);
+    let f_z_x = Term::app(Term::app(f.clone(), z.clone()), x.clone());
+    let rhs = Term::app(Term::app(fl_f, f_z_x), xs.clone());
+    let step_eq = hol::hol_eq(lhs, rhs);
+    let step = hol::hol_forall("x", alpha, hol::hol_forall("xs", la, step_eq));
+
+    let body = hol::hol_and(base, step);
+    let body_fz = hol::hol_forall("f", f_ty, hol::hol_forall("z", beta, body));
+    hol::pub_abs("fl", fl_ty, body_fz)
+}
+
+/// `listFoldl : ('b → 'a → 'b) → 'b → list 'a → 'b`. The left-fold
+/// recursor; pinned by [`list_foldl_predicate`] (Hilbert ε).
 pub fn list_foldl_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
@@ -239,7 +416,7 @@ pub fn list_foldl_spec() -> TermSpec {
                 f_ty,
                 Type::fun(beta.clone(), Type::fun(list(alpha), beta)),
             )),
-            None,
+            Some(list_foldl_predicate()),
         )
     });
     LAZY.clone()
@@ -248,7 +425,28 @@ pub fn list_foldl(alpha: Type, beta: Type) -> Term {
     Term::term_spec(list_foldl_spec(), vec![alpha, beta])
 }
 
-/// `listTake : nat → list 'a → list 'a`.
+fn list_take_body() -> Term {
+    // listTake ≔ λn xs. abs (streamMk (λi. cond (natLt i n)
+    //                                        (streamAt (rep xs) i) none))
+    let alpha = Type::tfree("a");
+    let opt_a = option(alpha.clone());
+    let n = Term::free("n", Type::nat());
+    let xs = Term::free("xs", list(alpha.clone()));
+    let i = Term::free("i", Type::nat());
+
+    let rep_xs = Term::app(Term::spec_rep(list_spec(), vec![alpha.clone()]), xs);
+    let elem = Term::app(Term::app(stream_at(opt_a.clone()), rep_xs), i.clone());
+    let lt = Term::app(Term::app(nat_lt(), i), n.clone());
+    let chosen = Term::cond(lt, elem, none(alpha.clone()));
+
+    let made = Term::app(stream_mk(opt_a), hol::pub_abs("i", Type::nat(), chosen));
+    let result = Term::app(Term::spec_abs(list_spec(), vec![alpha.clone()]), made);
+    let lam_xs = hol::pub_abs("xs", list(alpha), result);
+    hol::pub_abs("n", Type::nat(), lam_xs)
+}
+
+/// `listTake : nat → list 'a → list 'a` — keep the first `n` elements
+/// (positions `≥ n` become `none`), pointwise on the carrier stream.
 pub fn list_take_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
@@ -256,7 +454,7 @@ pub fn list_take_spec() -> TermSpec {
         TermSpec::new(
             Canonical::ListTake,
             Some(Type::fun(Type::nat(), Type::fun(la.clone(), la))),
-            None,
+            Some(list_take_body()),
         )
     });
     LAZY.clone()
@@ -265,7 +463,26 @@ pub fn list_take(alpha: Type) -> Term {
     Term::term_spec(list_take_spec(), vec![alpha])
 }
 
-/// `listSkip : nat → list 'a → list 'a`.
+fn list_skip_body() -> Term {
+    // listSkip ≔ λn xs. abs (streamMk (λi. streamAt (rep xs) (natAdd i n)))
+    let alpha = Type::tfree("a");
+    let opt_a = option(alpha.clone());
+    let n = Term::free("n", Type::nat());
+    let xs = Term::free("xs", list(alpha.clone()));
+    let i = Term::free("i", Type::nat());
+
+    let rep_xs = Term::app(Term::spec_rep(list_spec(), vec![alpha.clone()]), xs);
+    let idx = Term::app(Term::app(nat_add(), i), n.clone());
+    let elem = Term::app(Term::app(stream_at(opt_a.clone()), rep_xs), idx);
+
+    let made = Term::app(stream_mk(opt_a), hol::pub_abs("i", Type::nat(), elem));
+    let result = Term::app(Term::spec_abs(list_spec(), vec![alpha.clone()]), made);
+    let lam_xs = hol::pub_abs("xs", list(alpha), result);
+    hol::pub_abs("n", Type::nat(), lam_xs)
+}
+
+/// `listSkip : nat → list 'a → list 'a` — drop the first `n` elements
+/// by shifting the carrier stream's indices up by `n`.
 pub fn list_skip_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
@@ -273,7 +490,7 @@ pub fn list_skip_spec() -> TermSpec {
         TermSpec::new(
             Canonical::ListSkip,
             Some(Type::fun(Type::nat(), Type::fun(la.clone(), la))),
-            None,
+            Some(list_skip_body()),
         )
     });
     LAZY.clone()
@@ -300,7 +517,26 @@ poly_let_term! {
     list_index_spec, list_index(alpha), Canonical::ListIndex, list_index_body()
 }
 
-/// `listRepeat : nat → 'a → list 'a`.
+fn list_repeat_body() -> Term {
+    // listRepeat ≔ λn x. abs (streamMk (λi. cond (natLt i n) (some x) none))
+    let alpha = Type::tfree("a");
+    let opt_a = option(alpha.clone());
+    let n = Term::free("n", Type::nat());
+    let x = Term::free("x", alpha.clone());
+    let i = Term::free("i", Type::nat());
+
+    let lt = Term::app(Term::app(nat_lt(), i), n.clone());
+    let some_x = Term::app(some(alpha.clone()), x.clone());
+    let chosen = Term::cond(lt, some_x, none(alpha.clone()));
+
+    let made = Term::app(stream_mk(opt_a), hol::pub_abs("i", Type::nat(), chosen));
+    let result = Term::app(Term::spec_abs(list_spec(), vec![alpha.clone()]), made);
+    let lam_x = hol::pub_abs("x", alpha.clone(), result);
+    hol::pub_abs("n", Type::nat(), lam_x)
+}
+
+/// `listRepeat : nat → 'a → list 'a` — the list of `n` copies of `x`,
+/// built pointwise on the carrier stream.
 pub fn list_repeat_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
@@ -310,7 +546,7 @@ pub fn list_repeat_spec() -> TermSpec {
                 Type::nat(),
                 Type::fun(alpha.clone(), list(alpha)),
             )),
-            None,
+            Some(list_repeat_body()),
         )
     });
     LAZY.clone()
@@ -319,14 +555,31 @@ pub fn list_repeat(alpha: Type) -> Term {
     Term::term_spec(list_repeat_spec(), vec![alpha])
 }
 
-/// `listFlatten : list (list 'a) → list 'a`.
+fn list_flatten_body() -> Term {
+    // listFlatten ≔ λxss. listFoldr listCat nil xss
+    let alpha = Type::tfree("a");
+    let la = list(alpha.clone());
+    let lla = list(la.clone());
+    let xss = Term::free("xss", lla.clone());
+    let folded = Term::app(
+        Term::app(
+            Term::app(list_foldr(la.clone(), la.clone()), list_cat(alpha.clone())),
+            nil(alpha.clone()),
+        ),
+        xss,
+    );
+    hol::pub_abs("xss", lla, folded)
+}
+
+/// `listFlatten : list (list 'a) → list 'a` ≡
+/// `λxss. foldr cat nil xss`.
 pub fn list_flatten_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
         TermSpec::new(
             Canonical::ListFlatten,
             Some(Type::fun(list(list(alpha.clone())), list(alpha))),
-            None,
+            Some(list_flatten_body()),
         )
     });
     LAZY.clone()

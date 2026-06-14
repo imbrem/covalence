@@ -12,14 +12,16 @@
 //!
 //! ```text
 //!     stream_at   : stream 'a → nat → 'a       (extract an element)
-//!     stream_make : (nat → 'a) → stream 'a     (build from a function)
+//!     stream_mk : (nat → 'a) → stream 'a     (build from a function)
 //! ```
 //!
-//! These are declaration-only TermSpecs — the kernel commits to
-//! their meaning at the model level (stream_at ∘ stream_make = id
-//! and stream_make ∘ stream_at = id under η). All other
+//! `stream_at` is exactly the newtype `rep` coercion and
+//! `stream_mk` is exactly `abs` (see [`Term::spec_rep`] /
+//! [`Term::spec_abs`]); the round-trip equations
+//! (stream_at ∘ stream_mk = id, stream_mk ∘ stream_at = id
+//! under η) are the spec's `abs_rep`/`rep_abs` landings. All other
 //! stream operations (head/tail/cons/const/iterate/nth) are
-//! defined in terms of `stream_at` + `stream_make`.
+//! defined in terms of `stream_at` + `stream_mk`.
 //!
 //! `list α` is the subset of `stream (option α)` satisfying the
 //! `finite` predicate at the bottom of this module:
@@ -33,13 +35,13 @@ use crate::term::{Term, Type};
 use super::canonical::Canonical;
 use super::nat::{iter, nat_le};
 use super::option::{none, option};
-use super::spec::{TermSpec, TypeSpec};
+use super::spec::TypeSpec;
 
 /// `stream 'a := nat → 'a`. The selector predicate is trivially
 /// true — every function from `nat` to `α` is a stream — but the
 /// wrapper still introduces `stream α` as a distinct TypeKind::Spec
 /// leaf. Cross from "stream α" to "nat → α" (and back) via
-/// `stream_at` / `stream_make`.
+/// `stream_at` / `stream_mk`.
 pub fn stream_spec() -> TypeSpec {
     static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
@@ -54,69 +56,55 @@ pub fn stream(alpha: Type) -> Type {
 }
 
 // ============================================================================
-// stream_at / stream_make — the abs/rep bridge
+// stream_at / stream_mk — the abs/rep bridge
 //
-// `stream α` is opaque to the type-checker (a Spec leaf), so we
-// expose declaration-only TermSpecs to convert between the opaque
-// `stream α` and its underlying carrier `nat → α`. Semantically:
+// `stream α` is opaque to the type-checker (a Spec leaf). The two
+// bridge constants are *exactly* the newtype coercions the kernel
+// already exposes for any `TypeSpec`:
 //
-//     ∀(s : stream α), n : nat. stream_at s n  ≜  the nth element
-//     ∀(f : nat → α). stream_make f             ≜  the stream whose nth
-//                                                  element is f n
+//     stream_at  ≔ rep : stream α → (nat → α)
+//     stream_mk  ≔ abs : (nat → α) → stream α
 //
-// Under η + the trivially-true selector predicate:
+// so they are `let`-defined (not declaration-only) by deferring to
+// [`Term::spec_rep`] / [`Term::spec_abs`]. Semantically:
 //
-//     stream_at  ∘ stream_make  = id            (rep ∘ abs = id)
-//     stream_make ∘ stream_at   = id            (abs ∘ rep = id)
+//     ∀(s : stream α), n : nat. stream_at s n  =  rep s n  (the nth element)
+//     ∀(f : nat → α). stream_mk f              =  abs f    (stream of f)
 //
-// These equations would be derived downstream using
-// `Thm::new_type_definition`'s `abs_rep` / `rep_abs_*` landings.
+// The round-trip equations (rep ∘ abs = id, abs ∘ rep = id under η)
+// are the spec's `abs_rep` / `rep_abs_*` landings, derived downstream.
 // ============================================================================
 
-/// `streamAt : stream 'a → nat → 'a`. Extract the nth element.
-/// Declaration-only — semantics is "apply the underlying
-/// `nat → α` function representation".
-pub fn stream_at_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
-        let alpha = Type::tfree("a");
-        let stream_a = stream(alpha.clone());
-        TermSpec::new(
-            Canonical::StreamAt,
-            Some(Type::fun(stream_a, Type::fun(Type::nat(), alpha))),
-            None,
-        )
-    });
-    LAZY.clone()
-}
-pub fn stream_at(alpha: Type) -> Term {
-    Term::term_spec(stream_at_spec(), vec![alpha])
+/// Body of `streamAt := rep` — the newtype representation coercion
+/// `stream α → (nat → α)`.
+fn stream_at_body() -> Term {
+    Term::spec_rep(stream_spec(), vec![Type::tfree("a")])
 }
 
-/// `streamMake : (nat → 'a) → stream 'a`. Build a stream from a
-/// function representation. Declaration-only — semantics is the
-/// canonical injection from the carrier into the opaque stream
-/// type. Inverse of `stream_at` (under η).
-pub fn stream_make_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
-        let alpha = Type::tfree("a");
-        let f_ty = Type::fun(Type::nat(), alpha.clone());
-        TermSpec::new(
-            Canonical::StreamMake,
-            Some(Type::fun(f_ty, stream(alpha))),
-            None,
-        )
-    });
-    LAZY.clone()
+poly_let_term! {
+    /// `streamAt : stream 'a → nat → 'a` ≡ `rep`. Extract the nth
+    /// element by dropping into the `nat → α` carrier.
+    stream_at_spec, stream_at(alpha), Canonical::StreamAt, stream_at_body()
 }
-pub fn stream_make(alpha: Type) -> Term {
-    Term::term_spec(stream_make_spec(), vec![alpha])
+
+/// Body of `streamMk := abs` — the newtype abstraction coercion
+/// `(nat → α) → stream α`.
+fn stream_mk_body() -> Term {
+    Term::spec_abs(stream_spec(), vec![Type::tfree("a")])
+}
+
+poly_let_term! {
+    /// `streamMk : (nat → 'a) → stream 'a` ≡ `abs`. Inject a
+    /// `nat → α` function into the opaque stream type. Inverse of
+    /// `stream_at` under η.
+    stream_mk_spec, stream_mk(alpha), Canonical::StreamMk, stream_mk_body()
 }
 
 // ============================================================================
 // Stream operations
 //
 // Each is a let-style TermSpec whose body uses `stream_at` to
-// reach into the opaque stream type, and `stream_make` to build
+// reach into the opaque stream type, and `stream_mk` to build
 // the result when it's also a stream.
 // ============================================================================
 
@@ -135,7 +123,7 @@ poly_let_term! {
     stream_head_spec, stream_head(alpha), Canonical::StreamHead, stream_head_body()
 }
 
-/// Body of `streamTail := λs:stream α. stream_make (λn:nat. stream_at s (succ n))`.
+/// Body of `streamTail := λs:stream α. stream_mk (λn:nat. stream_at s (succ n))`.
 fn stream_tail_body() -> Term {
     let alpha = Type::tfree("a");
     let stream_a = stream(alpha.clone());
@@ -145,34 +133,34 @@ fn stream_tail_body() -> Term {
     // stream_at s (succ n)
     let elem = Term::app(Term::app(stream_at(alpha.clone()), s.clone()), succ_n);
     let lam_n = hol::pub_abs("n", Type::nat(), elem);
-    // stream_make (λn. stream_at s (succ n))
-    let body = Term::app(stream_make(alpha), lam_n);
+    // stream_mk (λn. stream_at s (succ n))
+    let body = Term::app(stream_mk(alpha), lam_n);
     hol::pub_abs("s", stream_a, body)
 }
 
 poly_let_term! {
     /// `streamTail : stream 'a → stream 'a` —
-    /// `λs. stream_make (λn. stream_at s (succ n))`. Drop the
+    /// `λs. stream_mk (λn. stream_at s (succ n))`. Drop the
     /// first element.
     stream_tail_spec, stream_tail(alpha), Canonical::StreamTail, stream_tail_body()
 }
 
-/// Body of `streamConst := λx:α. stream_make (λ_:nat. x)`.
+/// Body of `streamConst := λx:α. stream_mk (λ_:nat. x)`.
 fn stream_const_body() -> Term {
     let alpha = Type::tfree("a");
     let x = Term::free("x", alpha.clone());
     let n_lambda = Term::abs(Type::nat(), x.clone());
-    let body = Term::app(stream_make(alpha.clone()), n_lambda);
+    let body = Term::app(stream_mk(alpha.clone()), n_lambda);
     hol::pub_abs("x", alpha, body)
 }
 
 poly_let_term! {
     /// `streamConst : 'a → stream 'a` —
-    /// `λx. stream_make (λ_. x)`. The constant stream `x, x, x, …`.
+    /// `λx. stream_mk (λ_. x)`. The constant stream `x, x, x, …`.
     stream_const_spec, stream_const(alpha), Canonical::StreamConst, stream_const_body()
 }
 
-/// Body of `streamIterate := λx:α. λf:α→α. stream_make (λn:nat. iter n f x)`.
+/// Body of `streamIterate := λx:α. λf:α→α. stream_mk (λn:nat. iter n f x)`.
 fn stream_iterate_body() -> Term {
     let alpha = Type::tfree("a");
     let alpha_to_alpha = Type::fun(alpha.clone(), alpha.clone());
@@ -186,9 +174,9 @@ fn stream_iterate_body() -> Term {
     let app2 = Term::app(app1, f.clone());
     let iter_body = Term::app(app2, x.clone());
 
-    // stream_make (λn. iter n f x)
+    // stream_mk (λn. iter n f x)
     let lam_n = hol::pub_abs("n", Type::nat(), iter_body);
-    let body = Term::app(stream_make(alpha.clone()), lam_n);
+    let body = Term::app(stream_mk(alpha.clone()), lam_n);
 
     let lam_f = hol::pub_abs("f", alpha_to_alpha, body);
     hol::pub_abs("x", alpha, lam_f)
@@ -196,7 +184,7 @@ fn stream_iterate_body() -> Term {
 
 poly_let_term! {
     /// `streamIterate : 'a → ('a → 'a) → stream 'a` —
-    /// `λx f. stream_make (λn. iter n f x)`. The stream
+    /// `λx f. stream_mk (λn. iter n f x)`. The stream
     /// `x, f x, f (f x), …`.
     stream_iterate_spec, stream_iterate(alpha), Canonical::StreamIterate, stream_iterate_body()
 }

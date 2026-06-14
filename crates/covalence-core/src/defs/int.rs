@@ -29,11 +29,12 @@
 //! ops *provable* (`covalence-hol` derives the defining equations);
 //! they do not change reduction.
 //!
-//! `intDiv`/`intMod` remain declaration-only: Euclidean division on
-//! the quotient needs well-founded recursion the kernel does not yet
-//! expose. They still reduce on literals (truncating toward zero,
-//! `n/0 = n%0 = 0`) via `builtins::reduce_spec`. (TODO — see
-//! `docs/roadmap.md`.)
+//! `intDiv`/`intMod` are defined by composing the sign/magnitude ops
+//! (`intSgn`/`intAbs`/`intMul`/`intSub`, `natDiv`, `natToInt`) rather than
+//! via the Grothendieck pairs — truncating division toward zero with
+//! `x / 0 = 0` and `x mod 0 = x`. Because those sub-ops reduce on
+//! literals, these bodies reduce too, so the reductions in `builtins.rs`
+//! must agree with them (see the section comment on the definitions).
 
 use std::sync::LazyLock;
 
@@ -42,10 +43,9 @@ use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
 use super::cond::cond;
-use super::nat::{nat_add, nat_le, nat_mul, nat_succ};
+use super::nat::{nat_add, nat_div, nat_le, nat_mul, nat_succ, nat_to_int};
 use super::prod::{fst, pair, prod, snd};
-use super::sigs;
-use super::spec::{TermSpec, TypeSpec};
+use super::spec::TypeSpec;
 
 // ============================================================================
 // `int` as a derived TypeSpec — the Grothendieck construction
@@ -361,31 +361,56 @@ fn int_neg_lit() -> Term {
 }
 
 // ============================================================================
-// Euclidean div / mod — declaration-only (reduce on literals only).
+// Truncating div / mod — definitional bodies.
+//
+// `intDiv x y = (sgn x · sgn y) · natToInt (|x| div |y|)` truncates toward
+// zero, and `intMod x y = x − (intDiv x y)·y` is the matching remainder
+// (sign of the dividend). Unlike the Grothendieck ops above — whose bodies
+// are stuck at `ε`/`abs`/`rep` and are sound by the model alone — these
+// bodies are built from *reduce_prim-reducible* sub-ops (`intSgn`/`intAbs`/
+// `intMul`/`intSub`, `natDiv`, `natToInt`), so they reduce to a literal on
+// literal arguments. The `unfold`/`reduce_prim` coupling is therefore
+// *derivable*, and the reductions in `builtins.rs` MUST agree with these
+// bodies on every input: `x / 0 = 0` (because `sgn 0 = 0`) and
+// `x mod 0 = x` (the Euclidean identity `x = (x/y)·y + x mod y` at y=0).
+// This is the same coupling as `nat.mod`; see `kernel-design.md` §9 and the
+// guard in `tests/audit_reduce.rs`.
 // ============================================================================
 
-fn int_bin_op(symbol: Canonical) -> TermSpec {
-    TermSpec::new(symbol, Some(sigs::int_int_to_int()), None)
+fn int_div_body() -> Term {
+    // (sgn x · sgn y) · natToInt (|x| div |y|)
+    let x = Term::free("x", Type::int());
+    let y = Term::free("y", Type::int());
+    let sgn = |t: Term| Term::app(int_sgn(), t);
+    let abs = |t: Term| Term::app(int_abs(), t);
+    let sgn_prod = Term::app(Term::app(int_mul(), sgn(x.clone())), sgn(y.clone()));
+    let mag = Term::app(
+        nat_to_int(),
+        Term::app(Term::app(nat_div(), abs(x.clone())), abs(y.clone())),
+    );
+    let body = Term::app(Term::app(int_mul(), sgn_prod), mag);
+    hol::pub_abs("x", Type::int(), hol::pub_abs("y", Type::int(), body))
 }
 
-/// `intDiv : int → int → int` (Euclidean toward zero, `n/0 = 0`).
-/// Declaration-only — reduces on literals via `builtins::reduce_spec`.
-pub fn int_div_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| int_bin_op(Canonical::IntDiv));
-    LAZY.clone()
-}
-pub fn int_div() -> Term {
-    static LAZY: LazyLock<Term> = LazyLock::new(|| Term::term_spec(int_div_spec(), vec![]));
-    LAZY.clone()
+let_term! {
+    /// `intDiv : int → int → int` — truncating division toward zero,
+    /// `x / 0 = 0`. Defined as `(sgn x · sgn y) · natToInt (|x| div |y|)`.
+    int_div_spec, int_div, Canonical::IntDiv, int_div_body()
 }
 
-/// `intMod : int → int → int` (Euclidean, `n%0 = 0`).
-/// Declaration-only — reduces on literals via `builtins::reduce_spec`.
-pub fn int_mod_spec() -> TermSpec {
-    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| int_bin_op(Canonical::IntMod));
-    LAZY.clone()
+fn int_mod_body() -> Term {
+    // x − (intDiv x y) · y
+    let x = Term::free("x", Type::int());
+    let y = Term::free("y", Type::int());
+    let q = Term::app(Term::app(int_div(), x.clone()), y.clone());
+    let qy = Term::app(Term::app(int_mul(), q), y.clone());
+    let body = Term::app(Term::app(int_sub(), x.clone()), qy);
+    hol::pub_abs("x", Type::int(), hol::pub_abs("y", Type::int(), body))
 }
-pub fn int_mod() -> Term {
-    static LAZY: LazyLock<Term> = LazyLock::new(|| Term::term_spec(int_mod_spec(), vec![]));
-    LAZY.clone()
+
+let_term! {
+    /// `intMod : int → int → int` — remainder matching truncating division
+    /// (sign of the dividend), `x mod 0 = x`. Defined as
+    /// `x − (intDiv x y) · y`.
+    int_mod_spec, int_mod, Canonical::IntMod, int_mod_body()
 }

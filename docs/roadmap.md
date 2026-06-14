@@ -72,12 +72,20 @@ function satisfying the addition equations). **This does not affect
 efficiency** — closed-literal reduction always goes through
 `reduce_spec` by pointer-match, independent of the definition body.
 
-Declaration-only ops to define (the tracker):
-`int{Succ,Pred,Add,Sub,Mul,Div,Mod,Le,Lt,Neg,Abs,Sgn}`,
-`nat{Div,BitAnd,BitOr,BitXor,ToBytesLe,ToBytesBe,FromBytesLe,FromBytesBe}`,
-and the `bytes{Cat,ConsNat,Len,At,Slice}` ops (their *implementations*
-now live in `covalence_types::blob`; they still need definitional
-bodies). `succ`/`pred` are the primitive constructors.
+Declaration-only ops still to define (the tracker):
+`nat{Div,BitAnd,BitOr,BitXor,ToBytesLe,ToBytesBe,FromBytesLe,FromBytesBe}`
+and the `bytes{ConsNat,At}` ops (their *implementations* now live in
+`covalence_types::blob`; they still need definitional bodies).
+`succ`/`pred` are the primitive constructors. The **`int` catalogue is
+fully defined**: `int{Succ,Pred,Add,Sub,Mul,Le,Lt,Neg,Abs,Sgn}` via the
+Grothendieck construction, and `int{Div,Mod}` via sign/magnitude
+composition (`(sgn x·sgn y)·natToInt(|x| div |y|)` and `x − (x/y)·y`,
+truncating toward zero). The `bytes{Cat,Len,Slice}` ops are also defined.
+
+Note: when `nat.div` gains a body it becomes *reducible*, so — like
+`nat.mod` and `int.div`/`int.mod` — its body must agree with `reduce_spec`
+on every input (the coupling in `kernel-design.md` §9); add it to
+`audit_reduce_matches_body`.
 
 **Decision: define `int := quot (nat × nat)`** (the Grothendieck
 construction; `quot_spec` already exists in `defs/helpers.rs`), not

@@ -193,18 +193,23 @@ fn defined_int_op_bodies_typecheck() {
 }
 
 #[test]
-fn int_div_mod_are_declaration_only() {
-    assert!(
-        defs::int_div_spec().tm().is_none(),
-        "intDiv should be declaration-only"
-    );
-    assert!(
-        defs::int_mod_spec().tm().is_none(),
-        "intMod should be declaration-only"
-    );
-    // ...but they still carry a recorded signature.
-    assert!(defs::int_div_spec().ty().is_some());
-    assert!(defs::int_mod_spec().ty().is_some());
+fn int_div_mod_have_let_style_bodies() {
+    // intDiv/intMod are now defined (truncating division built from
+    // intSgn/intAbs/intMul/intSub + natDiv/natToInt), so they carry a
+    // let-style body whose type is the spec's own type — `unfold_term_spec`
+    // succeeds and reduces them.
+    for spec in [defs::int_div_spec(), defs::int_mod_spec()] {
+        let ty = spec.ty().expect("recorded signature");
+        let body = spec.tm().expect("let-style body present");
+        assert_eq!(
+            &body.type_of().unwrap(),
+            ty,
+            "let-style: body has the spec's declared type"
+        );
+    }
+    // And the unfolding equation is derivable.
+    assert!(Thm::unfold_term_spec(defs::int_div()).is_ok());
+    assert!(Thm::unfold_term_spec(defs::int_mod()).is_ok());
 }
 
 // ============================================================================
@@ -273,9 +278,9 @@ fn int_div_literals() {
 #[test]
 fn int_mod_literals() {
     assert_reduces(bin(defs::int_mod(), int(17), int(5)), int(2));
-    // Mod by zero → 0 (kernel convention).
-    assert_reduces(bin(defs::int_mod(), int(17), int(0)), int(0));
-    assert_reduces(bin(defs::int_mod(), int(-17), int(0)), int(0));
+    // x mod 0 = x (Euclidean convention, matching int.mod's body).
+    assert_reduces(bin(defs::int_mod(), int(17), int(0)), int(17));
+    assert_reduces(bin(defs::int_mod(), int(-17), int(0)), int(-17));
 }
 
 #[test]

@@ -941,3 +941,19 @@ fn spec_ax_rejects_wrong_witness_type() {
     // a `nat` witness, not the recursor carrier type → reject.
     assert!(Thm::spec_ax(nr, Term::free("w", Type::nat())).is_err());
 }
+
+#[test]
+fn lem_is_axiom_free_disjunction() {
+    let p = Term::free("p", Type::bool());
+    let thm = Thm::lem(p.clone()).unwrap();
+    assert!(thm.hyps().is_empty(), "LEM carries no hypotheses");
+    // Conclusion is `p ∨ ¬p`.
+    let expected = crate::hol::hol_or(p.clone(), crate::hol::hol_not(p));
+    assert_eq!(thm.concl(), &expected);
+}
+
+#[test]
+fn lem_rejects_non_bool() {
+    // LEM is only well-formed at type bool.
+    assert!(Thm::lem(Term::free("n", Type::nat())).is_err());
+}

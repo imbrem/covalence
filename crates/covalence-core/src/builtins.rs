@@ -329,11 +329,13 @@ fn eval_prim(prim: Prim, args: &[Term]) -> Option<Term> {
         IntAdd => reduce_int_binop(args, |a, b| a + b),
         IntMul => reduce_int_binop(args, |a, b| a * b),
         IntSub => reduce_int_binop(args, |a, b| a - b),
-        // Truncating division; `a / 0 = 0`, `a mod 0 = 0`. (int div/mod
-        // are declaration-only — no let-style body — so unlike `nat.mod`
-        // there is no body to keep these consistent with.)
+        // Truncating division; remainder takes the dividend's sign.
+        // `a / 0 = 0` and `a mod 0 = a`. `int.div`/`int.mod` now have
+        // let-style bodies (`defs::int_div`/`int_mod`) built from
+        // reduce_prim-reducible sub-ops, so — exactly as for `nat.mod` —
+        // `a mod 0` MUST be `a` (the body's value at `b = 0`), not 0.
         IntDiv => reduce_int_binop(args, |a, b| if b.is_zero() { Int::zero() } else { a / b }),
-        IntMod => reduce_int_binop(args, |a, b| if b.is_zero() { Int::zero() } else { a % b }),
+        IntMod => reduce_int_binop(args, |a, b| if b.is_zero() { a.clone() } else { a % b }),
         IntLe => reduce_int_cmp(args, |a, b| a <= b),
         IntLt => reduce_int_cmp(args, |a, b| a < b),
 

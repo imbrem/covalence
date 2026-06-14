@@ -4,7 +4,14 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
+covalence-core = { path = "../covalence-core" }
+covalence-hol = { path = "../covalence-hol" }
 covalence-sexp = { path = "../covalence-sexp" }
 covalence-smt = { path = "../covalence-smt" }
 covalence-types = { path = "../covalence-types" }
 thiserror = "2"
+
+[features]
+# End-to-end tests that shell out to a real cvc5 binary on $PATH (the
+# Cvc5Solver lives in covalence-smt behind its own `cvc5` feature).
+cvc5 = ["covalence-smt/cvc5"]

@@ -26,11 +26,13 @@ a couple of well-justified additions:
   soundness justified by the standard HOL Light derivation in each
   docstring (and, for the connectives, by an executable witness in
   `covalence-hol::proofs::bool`).
-- Three non-computational primitive **rules**: **Peano induction on
+- Four non-computational primitive **rules**: **Peano induction on
   `nat`** (`Thm::nat_induct`: base + step ⟹ `∀n. P n`), **ex falso**
-  (`Thm::false_elim`: `⊢ F` ⟹ `⊢ p`), and the **`unit` singleton rule**
+  (`Thm::false_elim`: `⊢ F` ⟹ `⊢ p`), the **`unit` singleton rule**
   (`Thm::unit_eq`: `⊢ a = b` for any `a, b : unit`, since
-  `unit := { b : bool | b = T }` is a one-element type). The classic
+  `unit := { b : bool | b = T }` is a one-element type), and **excluded
+  middle** (`Thm::lem`: `⊢ p ∨ ¬p` — the classicality axiom, derivable
+  from ε the usual HOL way, exposed directly for now). The classic
   induction *axiom* `⊢ ∀P. (P 0 ∧ …) ⟹ ∀n. P n` is a trivial theorem on
   top of the induction rule.
 - Spec **abs/rep coercions** (`Term::spec_abs` / `Term::spec_rep`):
@@ -301,6 +303,12 @@ Thm::unit_eq(a, b) -> Result<Thm>
     // a, b : unit  ⟹  ⊢ a = b
     // Sound because unit := { b : bool | b = T } is a one-element type,
     // so any two inhabitants denote the same element.
+
+Thm::lem(p) -> Result<Thm>
+    // p : bool  ⟹  ⊢ p ∨ ¬p   (excluded middle; the classicality axiom)
+    // Sound in the standard two-valued model. HOL Light *derives* this
+    // from ε (Select) + extensionality + deduct_antisym; exposed here as
+    // a direct constructor for now, a standing derivation target.
 ```
 
 **That is the entire non-computational axiom surface.** The classic
@@ -423,11 +431,20 @@ listed in `builtins::PRIM_TABLE` (e.g. `nat.add`, `nat.mod`,
 `spec lit… = reduce_prim(spec lit…)` and `spec = body`. These are
 consistent **only if the body denotes the same function `reduce_prim`
 computes**, on every input. A divergence makes the theory inconsistent
-(it derives `litₐ = lit_b` for distinct literals, hence `⊢ F`). This is
-guarded by `tests/audit_reduce.rs::audit_reduce_matches_body_nat_ops`,
-which evaluates the unfolded body through the kernel and compares it to
-`reduce_prim`. (Declaration-only specs — `tm = None`, e.g. `int.div`,
-`int.mod`, the `uN`/`sN` ops — have no body, so they are immune.)
+(it derives `litₐ = lit_b` for distinct literals, hence `⊢ F`).
+
+The risk is **derivable** — and so guarded by
+`tests/audit_reduce.rs::audit_reduce_matches_body` — exactly when the
+body bottoms out in `reduce_prim`-reducible sub-ops, so the body itself
+reduces to a literal. That is the case for `nat.mod` (`n − (n/m)·m`) and
+`int.div` / `int.mod` (built from `intSgn`/`intAbs`/`intMul`/`intSub` +
+`natDiv`/`natToInt`); for those, `x / 0 = 0` and `x mod 0 = x` (the
+Euclidean convention) are forced. The Grothendieck / `iter` ops
+(`nat.add`, `int.add`, …) instead bottom out at `ε` (`natRec`,
+`abs`/`rep`); their bodies are stuck and cannot be reduced to a literal,
+so they are sound by the model alone with no derivable contradiction
+(see `iter_based_bodies_are_stuck`). Declaration-only specs (`tm = None`,
+e.g. the `uN`/`sN` ops) have no body and are likewise immune.
 
 ### Audit confidence (as of 2026-06-14)
 

@@ -34,6 +34,20 @@ it is how unfinished work stays discoverable.
   replace the `Hol::axiom` calls with real derivations; the `Peano` trait/API
   does not change.
 
+- **The `int` ordered-ring theory** in
+  `crates/covalence-hol/src/init/int.rs` is **entirely postulated** via the
+  module's `axiom` helper (`Thm::assume`, each carrying its statement as a
+  self-hyp). Seventeen theorems: the commutative-ring axioms (`add_comm`,
+  `add_assoc`, `add_zero`, `add_neg`, `mul_comm`, `mul_assoc`, `mul_one`,
+  `mul_zero`, `distrib`, `sub_def`), the linear order (`lt_irrefl`,
+  `lt_trans`, `lt_trichotomy`, `le_def`), ordered-ring compatibility
+  (`lt_add_mono`, `lt_mul_pos`), and discreteness (`lt_succ`:
+  `a < b ⟺ a + 1 ≤ b`). Since `int := (nat × nat) / ~` (Grothendieck), each is
+  a HOL theorem derivable from the `nat` Peano facts through the quotient;
+  filling the proofs in is downstream work and does not change the public
+  `fn` surface. These are the ingredients the Alethe `la_generic` /
+  `la_mult_*` checker will consume.
+
 ## Partial subsystems
 
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in

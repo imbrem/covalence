@@ -22,6 +22,7 @@
 pub mod hash;
 pub mod hol_light_obs;
 pub mod init;
+pub mod peano;
 pub mod proofs;
 pub mod sexp;
 pub mod traits;

@@ -16,6 +16,21 @@ it is how unfinished work stays discoverable.
   will land here as the HOL-on-store stack comes online. See the
   `covalence-kernel` crate-root docs and `docs/roadmap.md`.
 
+## Postulates pending proof
+
+- **The six structural Peano axioms** in `crates/covalence-hol/src/init/nat.rs`
+  (`Hol::{zero_ne_succ, succ_inj, add_base, add_step, mul_base, mul_step}`) are
+  **postulated** via `Thm::assume`, not proved. The kernel reduces `succ` /
+  `natRec` only on closed literals and exposes neither `natRec`'s computation
+  equations nor `nat`'s freeness (`S` injective, `0 ≠ S n`) over variables, so
+  these are not yet derivable HOL theorems. Only induction (`Peano::induct` →
+  `Thm::nat_induct`) is genuine.
+
+  Discharging them — the *soundness of PA in HOL* step — needs new
+  `covalence-core` kernel primitives: the `natRec` base/step equations and
+  `nat` freeness. When those land, replace the `Hol::axiom` calls with real
+  derivations; the `Peano` trait/API does not change.
+
 ## Registry maintenance
 
 - **`SKELETONS.md` itself is incomplete.** This file was created to fix the

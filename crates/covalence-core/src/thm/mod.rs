@@ -234,8 +234,20 @@ impl Thm {
         Self::build(self.hyps, concl)
     }
 
-    /// `⊢ (λx:τ. body) arg = body[arg/0] : bool` — β-conversion as
-    /// a HOL equation.
+    /// `⊢ (λx:τ. body) arg = body[arg/0]` — one β-step as a HOL
+    /// equation, with no hypotheses.
+    ///
+    /// Spec — exactly one outermost β-contraction:
+    /// - `app` must be syntactically `App(Abs(τ, body), arg)`, and
+    ///   `arg` must type-check at `τ`; otherwise this errors
+    ///   ([`Error::NotApp`] / [`Error::NotAbs`] / [`Error::TypeMismatch`]).
+    /// - It fires the *top* redex only — it does **not** recurse into
+    ///   `body` or `arg`, so redexes nested in either are preserved.
+    /// - β only: it performs no δ-unfolding (see
+    ///   [`Thm::unfold_term_spec`]), no literal/primitive computation
+    ///   (see [`Thm::reduce_prim`] — e.g. `(λx. x) (2 + 3)` reduces to
+    ///   `2 + 3`, *not* `5`), and no η-contraction (see
+    ///   [`Thm::eta_conv`]).
     pub fn beta_conv(app: Term) -> Result<Thm> {
         let TermKind::App(fun, arg) = app.kind() else {
             return Err(Error::NotApp(format!("{}", app)));

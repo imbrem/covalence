@@ -447,6 +447,58 @@ impl Term {
         Arc::as_ptr(&self.0) as usize
     }
 
+    // ---- structural accessors ----
+    //
+    // Borrowing matchers over the common `TermKind` shapes. Downstream
+    // (untrusted) code should prefer these to matching `TermKind`
+    // directly, so the kernel can evolve the representation without
+    // breaking every walker. They return borrows; clone at the call
+    // site if you need owned terms.
+
+    /// If this is an application `f x`, return `(f, x)`.
+    pub fn as_app(&self) -> Option<(&Term, &Term)> {
+        match self.kind() {
+            TermKind::App(f, x) => Some((f, x)),
+            _ => None,
+        }
+    }
+
+    /// If this is an abstraction `λ:ty. body`, return `(ty, body)`.
+    /// `body` still uses `Bound(0)` for the binder.
+    pub fn as_abs(&self) -> Option<(&Type, &Term)> {
+        match self.kind() {
+            TermKind::Abs(ty, body) => Some((ty, body)),
+            _ => None,
+        }
+    }
+
+    /// If this is a HOL equation `lhs = rhs` — i.e. the primitive `=`
+    /// applied to two arguments, `App(App(Eq(_), lhs), rhs)` — return
+    /// `(lhs, rhs)`. Note this matches `=` at *any* element type,
+    /// including `bool` (where it is the biconditional).
+    pub fn as_eq(&self) -> Option<(&Term, &Term)> {
+        let (f, rhs) = self.as_app()?;
+        let (head, lhs) = f.as_app()?;
+        matches!(head.kind(), TermKind::Eq(_)).then_some((lhs, rhs))
+    }
+
+    /// If this is a derived-term spec application `Spec(handle, args)`,
+    /// return `(handle, args)`.
+    pub fn as_spec(&self) -> Option<(&TermSpec, &TypeList)> {
+        match self.kind() {
+            TermKind::Spec(s, args) => Some((s, args)),
+            _ => None,
+        }
+    }
+
+    /// If this is a HOL `bool` literal (`T` / `F`), return its value.
+    pub fn as_bool(&self) -> Option<bool> {
+        match self.kind() {
+            TermKind::Bool(b) => Some(*b),
+            _ => None,
+        }
+    }
+
     fn alloc(kind: TermKind) -> Self {
         Term(Arc::new(kind))
     }

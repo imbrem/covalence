@@ -28,8 +28,6 @@
 //! These additive facts are the `nat` half of what the `int` quotient
 //! lift ([`init::int`](crate::init::int)) needs.
 
-use std::sync::LazyLock;
-
 use covalence_core::{Result, Term, Thm, Type, defs, subst};
 use covalence_types::Nat;
 
@@ -83,38 +81,40 @@ fn rhs(thm: &Thm) -> Term {
 // Freeness — genuine, from the kernel primitives
 // ============================================================================
 
-/// `⊢ ∀m n. (S m = S n) ⟹ (m = n)` — successor injectivity.
-pub fn succ_inj() -> Thm {
-    Thm::succ_inj(var("m"), var("n"))
-        .and_then(|t| t.all_intro("n", nat()))
-        .and_then(|t| t.all_intro("m", nat()))
-        .expect("succ_inj: kernel freeness rule")
+cached_thm! {
+    /// `⊢ ∀m n. (S m = S n) ⟹ (m = n)` — successor injectivity.
+    pub fn succ_inj() -> Thm {
+        Thm::succ_inj(var("m"), var("n"))
+            .and_then(|t| t.all_intro("n", nat()))
+            .and_then(|t| t.all_intro("m", nat()))
+            .expect("succ_inj: kernel freeness rule")
+    }
 }
 
-/// `⊢ ∀n. ¬(0 = S n)` — zero is not a successor.
-pub fn zero_ne_succ() -> Thm {
-    Thm::zero_ne_succ(var("n"))
-        .and_then(|t| t.all_intro("n", nat()))
-        .expect("zero_ne_succ: kernel freeness rule")
+cached_thm! {
+    /// `⊢ ∀n. ¬(0 = S n)` — zero is not a successor.
+    pub fn zero_ne_succ() -> Thm {
+        Thm::zero_ne_succ(var("n"))
+            .and_then(|t| t.all_intro("n", nat()))
+            .expect("zero_ne_succ: kernel freeness rule")
+    }
 }
 
 // ============================================================================
 // The recursion equation — now a genuine theorem
 // ============================================================================
 
-/// `⊢ ∀z f. (natRec z f 0 = z) ∧ (∀n. natRec z f (S n) = f n (natRec z f n))`
-/// at `α = nat` — `natRec` satisfies its recursion equations.
-///
-/// **Fully proved**, no hypotheses: the recursion theorem
-/// ([`crate::init::recursion`]) constructs a recursor by Hilbert choice
-/// over its graph, and `spec_ax(natRec, ·)` transfers the equations to
-/// `natRec`. Cached behind a [`LazyLock`] — the proof is a sizeable
-/// construction, run once.
-pub fn rec_holds() -> Thm {
-    static REC_HOLDS: LazyLock<Thm> = LazyLock::new(|| {
+cached_thm! {
+    /// `⊢ ∀z f. (natRec z f 0 = z) ∧ (∀n. natRec z f (S n) = f n (natRec z f n))`
+    /// at `α = nat` — `natRec` satisfies its recursion equations.
+    ///
+    /// **Fully proved**, no hypotheses: the recursion theorem
+    /// ([`crate::init::recursion`]) constructs a recursor by Hilbert choice
+    /// over its graph, and `spec_ax(natRec, ·)` transfers the equations to
+    /// `natRec`. Cached — the proof is a sizeable construction, run once.
+    pub fn rec_holds() -> Thm {
         crate::init::recursion::rec_holds_proof().expect("recursion theorem proves rec_holds")
-    });
-    REC_HOLDS.clone()
+    }
 }
 
 /// `⊢ natRec z f 0 = z` — the base equation at a concrete `z`, `f`.
@@ -160,9 +160,11 @@ fn eval(t: Term) -> Result<Thm> {
 // Recursion equations for + / * — DERIVED from `rec_holds`
 // ============================================================================
 
-/// `⊢ ∀m. 0 + m = m`. Depends only on [`rec_holds`].
-pub fn add_base() -> Thm {
-    add_base_impl().expect("add_base derivation")
+cached_thm! {
+    /// `⊢ ∀m. 0 + m = m`. Depends only on [`rec_holds`].
+    pub fn add_base() -> Thm {
+        add_base_impl().expect("add_base derivation")
+    }
 }
 fn add_base_impl() -> Result<Thm> {
     let m = var("m");
@@ -172,9 +174,11 @@ fn add_base_impl() -> Result<Thm> {
     conv.trans(rz)?.all_intro("m", nat())
 }
 
-/// `⊢ ∀n m. S n + m = S (n + m)`. Depends only on [`rec_holds`].
-pub fn add_step() -> Thm {
-    add_step_impl().expect("add_step derivation")
+cached_thm! {
+    /// `⊢ ∀n m. S n + m = S (n + m)`. Depends only on [`rec_holds`].
+    pub fn add_step() -> Thm {
+        add_step_impl().expect("add_step derivation")
+    }
 }
 fn add_step_impl() -> Result<Thm> {
     let n = var("n");
@@ -199,9 +203,11 @@ fn mul_step_fn(m: Term) -> Term {
     Term::abs(nat(), inner) // λ_. (λx. m + x)
 }
 
-/// `⊢ ∀m. 0 * m = 0`. Depends only on [`rec_holds`].
-pub fn mul_base() -> Thm {
-    mul_base_impl().expect("mul_base derivation")
+cached_thm! {
+    /// `⊢ ∀m. 0 * m = 0`. Depends only on [`rec_holds`].
+    pub fn mul_base() -> Thm {
+        mul_base_impl().expect("mul_base derivation")
+    }
 }
 fn mul_base_impl() -> Result<Thm> {
     let m = var("m");
@@ -211,9 +217,11 @@ fn mul_base_impl() -> Result<Thm> {
     conv.trans(rz)?.all_intro("m", nat())
 }
 
-/// `⊢ ∀n m. S n * m = m + n * m`. Depends only on [`rec_holds`].
-pub fn mul_step() -> Thm {
-    mul_step_impl().expect("mul_step derivation")
+cached_thm! {
+    /// `⊢ ∀n m. S n * m = m + n * m`. Depends only on [`rec_holds`].
+    pub fn mul_step() -> Thm {
+        mul_step_impl().expect("mul_step derivation")
+    }
 }
 fn mul_step_impl() -> Result<Thm> {
     let n = var("n");
@@ -267,10 +275,12 @@ fn induct(motive: &Term, base: Thm, step: Thm) -> Result<Thm> {
     crate::init::eq::beta_nf(applied.concl().clone()).eq_mp(applied)
 }
 
-/// `⊢ ∀a. a + 0 = a` — right unit of `+` (the recursion equation gives the
-/// *left* unit `0 + a = a`; this is the induction-on-`a` mirror).
-pub fn add_zero() -> Thm {
-    add_zero_impl().expect("add_zero derivation")
+cached_thm! {
+    /// `⊢ ∀a. a + 0 = a` — right unit of `+` (the recursion equation gives
+    /// the *left* unit `0 + a = a`; this is the induction-on-`a` mirror).
+    pub fn add_zero() -> Thm {
+        add_zero_impl().expect("add_zero derivation")
+    }
 }
 fn add_zero_impl() -> Result<Thm> {
     let n = var("n");
@@ -295,10 +305,12 @@ fn cong_add_l(eq: Thm, c: Term) -> Result<Thm> {
     eq.cong_arg(nat_add())?.cong_fn(c)
 }
 
-/// `⊢ ∀a b. a + S b = S (a + b)` — the successor-on-the-right equation
-/// (mirror of [`add_step`], which moves a successor on the *left*).
-pub fn add_succ_r() -> Thm {
-    add_succ_r_impl().expect("add_succ_r derivation")
+cached_thm! {
+    /// `⊢ ∀a b. a + S b = S (a + b)` — the successor-on-the-right equation
+    /// (mirror of [`add_step`], which moves a successor on the *left*).
+    pub fn add_succ_r() -> Thm {
+        add_succ_r_impl().expect("add_succ_r derivation")
+    }
 }
 fn add_succ_r_impl() -> Result<Thm> {
     // body[n] ≔ ∀b. n + S b = S (n + b)
@@ -337,9 +349,11 @@ fn add_succ_r_impl() -> Result<Thm> {
     induct(&motive, base, step)
 }
 
-/// `⊢ ∀a b. a + b = b + a` — commutativity of `+`.
-pub fn add_comm() -> Thm {
-    add_comm_impl().expect("add_comm derivation")
+cached_thm! {
+    /// `⊢ ∀a b. a + b = b + a` — commutativity of `+`.
+    pub fn add_comm() -> Thm {
+        add_comm_impl().expect("add_comm derivation")
+    }
 }
 fn add_comm_impl() -> Result<Thm> {
     // body[n] ≔ ∀b. n + b = b + n
@@ -374,9 +388,11 @@ fn add_comm_impl() -> Result<Thm> {
     induct(&motive, base, step)
 }
 
-/// `⊢ ∀a b c. (a + b) + c = a + (b + c)` — associativity of `+`.
-pub fn add_assoc() -> Thm {
-    add_assoc_impl().expect("add_assoc derivation")
+cached_thm! {
+    /// `⊢ ∀a b c. (a + b) + c = a + (b + c)` — associativity of `+`.
+    pub fn add_assoc() -> Thm {
+        add_assoc_impl().expect("add_assoc derivation")
+    }
 }
 fn add_assoc_impl() -> Result<Thm> {
     // body[n] ≔ ∀b c. (n + b) + c = n + (b + c)
@@ -444,9 +460,8 @@ mod tests {
         let five = Term::nat_lit(Nat::from_inner(5u32.into()));
         let inst = thm.clone().all_elim(five.clone()).unwrap();
         assert_eq!(inst.concl(), &add(five.clone(), zero()).equals(five).unwrap());
-        // and it rests only on rec_holds, like the recursion equations.
-        let rh = rec_holds().concl().clone();
-        assert!(thm.hyps().iter().all(|h| h == &rh));
+        // rec_holds is proved, so this is hypothesis-free.
+        assert!(thm.hyps().is_empty());
     }
 
     #[test]
@@ -469,10 +484,9 @@ mod tests {
         let l = add(add(lit(1), lit(2)), lit(3));
         let r = add(lit(1), add(lit(2), lit(3)));
         assert_eq!(assoc.concl(), &l.equals(r).unwrap());
-        // all rest only on rec_holds.
-        let rh = rec_holds().concl().clone();
+        // rec_holds is proved, so all of these are hypothesis-free.
         for t in [add_succ_r(), add_comm(), add_assoc()] {
-            assert!(t.hyps().iter().all(|h| h == &rh), "depends only on rec_holds");
+            assert!(t.hyps().is_empty(), "fully proved");
         }
     }
 

@@ -27,6 +27,28 @@
 //! stable surface; once `covalence-core` is settled, faster paths can
 //! land behind the same API.
 
+/// Define a nullary `-> Thm` function whose proof is built **once** and
+/// cached in a `LazyLock`. The `init` proofs run at startup and many are
+/// sizeable (inductions, the recursion theorem), so recomputing one per
+/// call is pure waste. Doc comments and visibility pass through.
+///
+/// ```ignore
+/// cached_thm! {
+///     /// `⊢ T`.
+///     pub fn truth() -> Thm { /* build it */ }
+/// }
+/// ```
+macro_rules! cached_thm {
+    ($(#[$attr:meta])* $vis:vis fn $name:ident() -> Thm $body:block) => {
+        $(#[$attr])*
+        $vis fn $name() -> ::covalence_core::Thm {
+            static CACHE: ::std::sync::LazyLock<::covalence_core::Thm> =
+                ::std::sync::LazyLock::new(|| $body);
+            CACHE.clone()
+        }
+    };
+}
+
 pub mod eq;
 pub mod ext;
 pub mod int;

@@ -42,15 +42,17 @@ use crate::init::ext::{TermExt, ThmExt};
 // Truth
 // ============================================================================
 
-/// `⊢ T`. Derived (no postulate): [`Thm::reduce_prim`] decides
-/// `(T = T) = T` on the closed literals, and `refl T : ⊢ T = T`
-/// discharges the antecedent via [`Thm::eq_mp`].
-pub fn truth() -> Thm {
-    let t = Term::bool_lit(true);
-    let refl_t = Thm::refl(t).expect("truth: refl T");
-    let t_eq_t = refl_t.concl().clone();
-    let reduced = Thm::reduce_prim(t_eq_t).expect("truth: reduce_prim (T=T)");
-    reduced.eq_mp(refl_t).expect("truth: eq_mp")
+cached_thm! {
+    /// `⊢ T`. Derived (no postulate): [`Thm::reduce_prim`] decides
+    /// `(T = T) = T` on the closed literals, and `refl T : ⊢ T = T`
+    /// discharges the antecedent via [`Thm::eq_mp`].
+    pub fn truth() -> Thm {
+        let t = Term::bool_lit(true);
+        let refl_t = Thm::refl(t).expect("truth: refl T");
+        let t_eq_t = refl_t.concl().clone();
+        let reduced = Thm::reduce_prim(t_eq_t).expect("truth: reduce_prim (T=T)");
+        reduced.eq_mp(refl_t).expect("truth: eq_mp")
+    }
 }
 
 // ============================================================================
@@ -63,17 +65,19 @@ pub fn and_sym(pq: Thm) -> Result<Thm> {
     q.and_intro(p)
 }
 
-/// `⊢ (p ∧ q) ⟹ (q ∧ p)` for free `p`, `q : bool` — commutativity of
-/// `∧` as a closed, hypothesis-free theorem. Assume `p ∧ q`, swap with
-/// [`and_sym`], discharge.
-pub fn and_comm() -> Thm {
-    let p = Term::free("p", Type::bool());
-    let q = Term::free("q", Type::bool());
-    let pq = p.and(q).expect("and_comm: build p ∧ q");
-    let assumed = Thm::assume(pq.clone()).expect("and_comm: assume p ∧ q");
-    and_sym(assumed)
-        .and_then(|swapped| swapped.imp_intro(&pq))
-        .expect("and_comm: discharge into (p∧q) ⟹ (q∧p)")
+cached_thm! {
+    /// `⊢ (p ∧ q) ⟹ (q ∧ p)` for free `p`, `q : bool` — commutativity of
+    /// `∧` as a closed, hypothesis-free theorem. Assume `p ∧ q`, swap with
+    /// [`and_sym`], discharge.
+    pub fn and_comm() -> Thm {
+        let p = Term::free("p", Type::bool());
+        let q = Term::free("q", Type::bool());
+        let pq = p.and(q).expect("and_comm: build p ∧ q");
+        let assumed = Thm::assume(pq.clone()).expect("and_comm: assume p ∧ q");
+        and_sym(assumed)
+            .and_then(|swapped| swapped.imp_intro(&pq))
+            .expect("and_comm: discharge into (p∧q) ⟹ (q∧p)")
+    }
 }
 
 // ============================================================================
@@ -94,16 +98,18 @@ pub fn or_sym(pq: Thm) -> Result<Thm> {
     pq.or_elim(left, right)
 }
 
-/// `⊢ (p ∨ q) ⟹ (q ∨ p)` for free `p`, `q : bool` — commutativity of
-/// `∨` as a closed, hypothesis-free theorem.
-pub fn or_comm() -> Thm {
-    let p = Term::free("p", Type::bool());
-    let q = Term::free("q", Type::bool());
-    let pq = p.or(q).expect("or_comm: build p ∨ q");
-    let assumed = Thm::assume(pq.clone()).expect("or_comm: assume p ∨ q");
-    or_sym(assumed)
-        .and_then(|swapped| swapped.imp_intro(&pq))
-        .expect("or_comm: discharge into (p∨q) ⟹ (q∨p)")
+cached_thm! {
+    /// `⊢ (p ∨ q) ⟹ (q ∨ p)` for free `p`, `q : bool` — commutativity of
+    /// `∨` as a closed, hypothesis-free theorem.
+    pub fn or_comm() -> Thm {
+        let p = Term::free("p", Type::bool());
+        let q = Term::free("q", Type::bool());
+        let pq = p.or(q).expect("or_comm: build p ∨ q");
+        let assumed = Thm::assume(pq.clone()).expect("or_comm: assume p ∨ q");
+        or_sym(assumed)
+            .and_then(|swapped| swapped.imp_intro(&pq))
+            .expect("or_comm: discharge into (p∨q) ⟹ (q∨p)")
+    }
 }
 
 /// Parse `App(App(\/, p), q)` → `(p, q)`. Returns `None` unless the
@@ -289,7 +295,6 @@ fn inject(lit: Thm, target: &[Term], idx: usize) -> Result<Thm> {
 fn elim_disj(
     clause: Thm,
     lits: &[Term],
-    goal: &Term,
     branch: &impl Fn(&Term) -> Result<Thm>,
 ) -> Result<Thm> {
     match lits {
@@ -303,7 +308,7 @@ fn elim_disj(
             let left = branch(head)?; // ⊢ head ⟹ goal
             // ⊢ rest_disj ⟹ goal: assume the tail, recurse, discharge.
             let assumed = Thm::assume(rest_disj.clone())?;
-            let under = elim_disj(assumed, rest, goal, branch)?;
+            let under = elim_disj(assumed, rest, branch)?;
             let right = under.imp_intro(&rest_disj)?;
             clause.or_elim(left, right)
         }
@@ -352,14 +357,14 @@ pub fn resolve_on(left: Thm, right: Thm, pivot: &Term) -> Result<Thm> {
         if l == pivot {
             let p_assumed = Thm::assume(pivot.clone())?; // {pivot} ⊢ pivot
             let n_branch = |m: &Term| n_branch(m, &not_pivot, &p_assumed, &goal, &resolvent);
-            let under = elim_disj(cn.clone(), &nl, &goal, &n_branch)?;
+            let under = elim_disj(cn.clone(), &nl, &n_branch)?;
             under.imp_intro(pivot) // cn.hyps ⊢ pivot ⟹ goal
         } else {
             lit_branch(l, &resolvent)
         }
     };
 
-    elim_disj(cp, &pl, &goal, &p_branch)
+    elim_disj(cp, &pl, &p_branch)
 }
 
 /// `⊢ l ⟹ build_disj(resolvent)` for a surviving literal `l`: assume
@@ -1052,7 +1057,7 @@ mod tests {
     fn clause_intro_excluded_middle() {
         // clause_intro({a} ⊢ a, [a])  =  ⊢ ¬a ∨ a.
         let a = Term::free("a", b());
-        let cl = clause_intro(Thm::assume(a.clone()).unwrap(), &[a.clone()]).unwrap();
+        let cl = clause_intro(Thm::assume(a.clone()).unwrap(), std::slice::from_ref(&a)).unwrap();
         assert!(cl.hyps().is_empty(), "the only hyp was clausified away");
         let expected = a.clone().not().unwrap().or(a).unwrap();
         assert_eq!(cl.concl(), &expected);
@@ -1100,7 +1105,7 @@ mod tests {
         // {¬a} ⊢ ¬a  ⟶  ⊢ a ∨ ¬a   (the literal stays positive).
         let a = Term::free("a", b());
         let na = a.clone().not().unwrap();
-        let cl = clause_intro_neg(Thm::assume(na.clone()).unwrap(), &[a.clone()]).unwrap();
+        let cl = clause_intro_neg(Thm::assume(na.clone()).unwrap(), std::slice::from_ref(&a)).unwrap();
         assert!(cl.hyps().is_empty());
         assert_eq!(cl.concl(), &a.clone().or(na).unwrap());
     }

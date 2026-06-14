@@ -32,9 +32,10 @@ it is how unfinished work stays discoverable.
   the ingredients the Alethe `la_generic` / `la_mult_*` checker will consume.
 
   **Status: the lifting API now exists; applying it to `int` is the work.**
-  The `nat` half is available — `init::nat` proves `add_zero`/`add_succ_r`/
-  `add_comm`/`add_assoc` by induction (the `induct` helper), resting only
-  on `rec_holds`. And `init::quotient` now provides the lifting machinery:
+  The `nat` half is available and **fully proved** — `init::nat` proves
+  `add_zero`/`add_succ_r`/`add_comm`/`add_assoc` by induction (the `induct`
+  helper); `rec_holds` is now a genuine theorem (recursion theorem), so these
+  carry no hypotheses. And `init::quotient` now provides the lifting machinery:
   `TypeSpec::quot` is a subtype of the powerset, so the kernel's subtype
   laws *do* apply (the "rejected" case is only for specs whose `tm` is a
   raw relation; `quot`'s `tm` is the `close` predicate). `quotient::class_intro`

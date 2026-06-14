@@ -117,7 +117,7 @@ pub enum Canonical {
     /// `option 'a := coprod 'a unit`.
     Option,
     /// `stream 'a := nat → 'a` (opaque TypeSpec wrapper; bridge to
-    /// the carrier via `stream_at` / `stream_make`).
+    /// the carrier via `stream_at` / `stream_mk`).
     Stream,
     /// `list 'a := stream (option 'a) where finite 'a`.
     List,
@@ -331,12 +331,12 @@ pub enum Canonical {
     // ---- Term-level: stream operations ----
     /// `streamAt : stream 'a → nat → 'a` — the bridge from opaque
     /// `stream α` back to its carrier function (apply at index).
-    /// Declaration-only.
+    /// Defined as the newtype `rep` coercion.
     StreamAt,
-    /// `streamMake : (nat → 'a) → stream 'a` — the bridge from a
+    /// `streamMk : (nat → 'a) → stream 'a` — the bridge from a
     /// `nat → α` function to the opaque `stream α`. Inverse of
-    /// `streamAt` under η. Declaration-only.
-    StreamMake,
+    /// `streamAt` under η. Defined as the newtype `abs` coercion.
+    StreamMk,
     /// `streamHead : stream 'a → 'a` — `λs. stream_at s 0`.
     StreamHead,
     /// `streamTail : stream 'a → stream 'a` — `λs n. s (succ n)`.
@@ -481,7 +481,7 @@ impl Canonical {
             Canonical::ListToSet => "list.toSet",
             Canonical::Stream => "stream",
             Canonical::StreamAt => "stream.at",
-            Canonical::StreamMake => "stream.make",
+            Canonical::StreamMk => "stream.mk",
             Canonical::StreamHead => "stream.head",
             Canonical::StreamTail => "stream.tail",
             Canonical::StreamCons => "stream.cons",

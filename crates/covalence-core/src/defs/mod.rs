@@ -168,8 +168,8 @@ pub use set::{
 pub use spec::{TermSpec, TypeSpec};
 pub use stream::{
     finite, finite_spec, stream, stream_at, stream_at_spec, stream_const, stream_const_spec,
-    stream_head, stream_head_spec, stream_iterate, stream_iterate_spec, stream_make,
-    stream_make_spec, stream_nth, stream_nth_spec, stream_spec, stream_tail, stream_tail_spec,
+    stream_head, stream_head_spec, stream_iterate, stream_iterate_spec, stream_mk,
+    stream_mk_spec, stream_nth, stream_nth_spec, stream_spec, stream_tail, stream_tail_spec,
 };
 pub use symbol::Symbol;
 pub use unit::{unit_nil, unit_nil_spec, unit_spec};
@@ -536,7 +536,7 @@ mod tests {
     fn stream_is_opaque_typespec() {
         // `stream α` is a TypeKind::Spec wrapper over the carrier
         // `nat → α`. Opaque to the type-checker — you can't apply
-        // `s : stream α` directly. Use `stream_at` / `stream_make`
+        // `s : stream α` directly. Use `stream_at` / `stream_mk`
         // to bridge between the spec leaf and the carrier function.
         let s = stream(Type::nat());
         match s.kind() {
@@ -567,10 +567,10 @@ mod tests {
     }
 
     #[test]
-    fn stream_make_returns_stream_from_function() {
-        // stream_make : (nat → α) → stream α
+    fn stream_mk_returns_stream_from_function() {
+        // stream_mk : (nat → α) → stream α
         let alpha = Type::tfree("a");
-        let f = stream::stream_make(alpha.clone());
+        let f = stream::stream_mk(alpha.clone());
         assert_eq!(
             f.type_of().unwrap(),
             Type::fun(Type::fun(Type::nat(), alpha.clone()), stream(alpha),),

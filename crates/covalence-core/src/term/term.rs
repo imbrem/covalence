@@ -40,7 +40,7 @@ use crate::defs::{TermSpec, TypeSpec};
 use crate::error::{Error, Result};
 
 use super::observer::{Object, Observer};
-use crate::ty::{BinderHint, Type, TypeKind};
+use crate::ty::{BinderHint, Type, TypeKind, TypeList};
 
 // ============================================================================
 // Def — fresh defined constants
@@ -247,7 +247,7 @@ pub enum TermKind {
     /// (`natAdd`, `listMap`, …) as catalogue entries instead of
     /// dedicated kernel variants. `Thm::reduce_prim` recognises a
     /// `Spec(h, args)` leaf by `h.ptr_eq(&catalogue_handle)`.
-    Spec(TermSpec, Vec<Type>),
+    Spec(TermSpec, TypeList),
     /// Abstraction coercion `abs : carrier → (spec args)` for a
     /// derived [`TypeSpec`]. The `carrier` is the spec's
     /// `ty()` with `args` substituted positionally for its type
@@ -266,12 +266,12 @@ pub enum TermKind {
     /// commits nothing about. (Soundness audit: every shipped
     /// `TypeSpec` is inhabited, so its `abs` lands in a non-empty
     /// type.)
-    SpecAbs(TypeSpec, Vec<Type>),
+    SpecAbs(TypeSpec, TypeList),
     /// Representation coercion `rep : (spec args) → carrier` — the
     /// inverse direction of [`TermKind::SpecAbs`]. Used by the
     /// eliminators (`coprodCase`/`fst`/`snd`/`option_case`/…) to reach
     /// a wrapper value's underlying carrier representation.
-    SpecRep(TypeSpec, Vec<Type>),
+    SpecRep(TypeSpec, TypeList),
     /// Typed observation leaf: observer + Pure type. The kernel
     /// compares these by `Arc` pointer identity (via [`Object`]'s
     /// impls), never by the user's `Eq` on the underlying observer.
@@ -352,21 +352,21 @@ impl Term {
     /// arguments. The spec is process-shared (`LazyLock`-backed in
     /// `crate::defs`); two calls with handles from the same lazy
     /// static pointer-equal at the spec component.
-    pub fn term_spec(spec: TermSpec, args: Vec<Type>) -> Self {
-        Self::alloc(TermKind::Spec(spec, args))
+    pub fn term_spec(spec: TermSpec, args: impl Into<TypeList>) -> Self {
+        Self::alloc(TermKind::Spec(spec, args.into()))
     }
 
     /// The abstraction coercion `abs : carrier → (spec args)` for a
     /// derived [`TypeSpec`] (see [`TermKind::SpecAbs`]).
     /// `args` instantiates the spec's type variables positionally.
-    pub fn spec_abs(spec: TypeSpec, args: Vec<Type>) -> Self {
-        Self::alloc(TermKind::SpecAbs(spec, args))
+    pub fn spec_abs(spec: TypeSpec, args: impl Into<TypeList>) -> Self {
+        Self::alloc(TermKind::SpecAbs(spec, args.into()))
     }
 
     /// The representation coercion `rep : (spec args) → carrier` for a
     /// derived [`TypeSpec`] (see [`TermKind::SpecRep`]).
-    pub fn spec_rep(spec: TypeSpec, args: Vec<Type>) -> Self {
-        Self::alloc(TermKind::SpecRep(spec, args))
+    pub fn spec_rep(spec: TypeSpec, args: impl Into<TypeList>) -> Self {
+        Self::alloc(TermKind::SpecRep(spec, args.into()))
     }
 
     /// Wrap an observer as a typed leaf. The kernel treats the

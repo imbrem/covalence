@@ -203,7 +203,7 @@ pub fn subst_tfree_in_type(ty: &Type, name: &str, r: &Type) -> Type {
             n.clone(),
             args.iter()
                 .map(|a| subst_tfree_in_type(a, name, r))
-                .collect(),
+                .collect::<Vec<_>>(),
         ),
         // For a `Spec` leaf the args participate in type-var
         // substitution; the spec itself (`Arc`-shared) is untouched.
@@ -215,7 +215,7 @@ pub fn subst_tfree_in_type(ty: &Type, name: &str, r: &Type) -> Type {
             spec.clone(),
             args.iter()
                 .map(|a| subst_tfree_in_type(a, name, r))
-                .collect(),
+                .collect::<Vec<_>>(),
         ),
         // The observer Arc identity is preserved; only the type-arg
         // substitution propagates. `list 'a` after 'a := bytes becomes
@@ -224,7 +224,7 @@ pub fn subst_tfree_in_type(ty: &Type, name: &str, r: &Type) -> Type {
         TypeKind::TyConObs(observer, hint, args) => Type::tycon_obs_from_dyn(
             observer.clone(),
             hint.clone(),
-            args.iter().map(|a| subst_tfree_in_type(a, name, r)).collect(),
+            args.iter().map(|a| subst_tfree_in_type(a, name, r)).collect::<Vec<_>>(),
         ),
     }
 }
@@ -250,16 +250,16 @@ pub fn subst_tfree_in_term(t: &Term, name: &str, r: &Type) -> Term {
         // For a `Spec` leaf the type args participate in type-var
         // substitution; the spec handle (`Arc`-shared) is untouched.
         TermKind::Spec(spec, args) => {
-            Term::term_spec(spec.clone(), args.iter().map(&st).collect())
+            Term::term_spec(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
         }
         // `abs`/`rep` coercions carry type args that participate in
         // type-var substitution; the spec handle (`Arc`-shared) is
         // untouched, exactly like `TermKind::Spec`.
         TermKind::SpecAbs(spec, args) => {
-            Term::spec_abs(spec.clone(), args.iter().map(&st).collect())
+            Term::spec_abs(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
         }
         TermKind::SpecRep(spec, args) => {
-            Term::spec_rep(spec.clone(), args.iter().map(&st).collect())
+            Term::spec_rep(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
         }
         TermKind::Obs(observer, ty) => Term::obs_from_dyn(observer.clone(), st(ty)),
         // `Def` carries an `original` Arc identity (the unique

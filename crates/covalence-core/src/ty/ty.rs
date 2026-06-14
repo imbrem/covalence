@@ -21,6 +21,8 @@ use smol_str::SmolStr;
 use crate::defs::TypeSpec;
 use crate::term::{Object, Observer};
 
+use super::list::TypeList;
+
 // ============================================================================
 // BinderHint
 // ============================================================================
@@ -110,7 +112,7 @@ pub enum TypeKind {
     /// User-declared type constructor applied to arguments.
     /// **Structural identity** by name + args — cross-process stable.
     /// Best for "named uninterpreted" cases (HOL `num`, `list`, …).
-    Tycon(SmolStr, Vec<Type>),
+    Tycon(SmolStr, TypeList),
     /// Type constructor whose identity is the wrapped observer's `Arc`
     /// pointer. **Process-local** — two `Type::tycon_obs` calls with
     /// independently constructed observers compare unequal even if they
@@ -122,7 +124,7 @@ pub enum TypeKind {
     /// `Object` plus the args; the args participate in equality so
     /// that `list α` and `list β` are distinct even though they share
     /// the same constructor.
-    TyConObs(Object, BinderHint, Vec<Type>),
+    TyConObs(Object, BinderHint, TypeList),
     /// Application of a derived-type [`TypeSpec`]
     /// factory to type arguments. The spec is process-shared
     /// (`LazyLock`-backed) and `args` is the positional
@@ -133,7 +135,7 @@ pub enum TypeKind {
     /// type catalogue (`set α`, `rel α β`, `option α`, …) into the
     /// kernel's type system without committing each one to its own
     /// `TypeKind` variant.
-    Spec(TypeSpec, Vec<Type>),
+    Spec(TypeSpec, TypeList),
 }
 
 // Cached canonical instances of the common `Type`s, so the methods
@@ -219,8 +221,8 @@ impl Type {
         Self::alloc(TypeKind::Fun(dom, cod))
     }
 
-    pub fn tycon(name: impl Into<SmolStr>, args: Vec<Type>) -> Self {
-        Self::alloc(TypeKind::Tycon(name.into(), args))
+    pub fn tycon(name: impl Into<SmolStr>, args: impl Into<TypeList>) -> Self {
+        Self::alloc(TypeKind::Tycon(name.into(), args.into()))
     }
 
     /// Apply a derived-type [`TypeSpec`] to type
@@ -229,8 +231,8 @@ impl Type {
     /// process-shared (`LazyLock`-backed in `crate::defs`), so two
     /// `Type::spec(defs::set_spec(), …)` calls land at the same
     /// kind of leaf and pointer-equal at the spec component.
-    pub fn spec(spec: TypeSpec, args: Vec<Type>) -> Self {
-        Self::alloc(TypeKind::Spec(spec, args))
+    pub fn spec(spec: TypeSpec, args: impl Into<TypeList>) -> Self {
+        Self::alloc(TypeKind::Spec(spec, args.into()))
     }
 
     /// Construct a fresh-identity type constructor wrapping an
@@ -242,9 +244,13 @@ impl Type {
     pub fn tycon_obs<O: Observer>(
         observer: O,
         hint: impl Into<BinderHint>,
-        args: Vec<Type>,
+        args: impl Into<TypeList>,
     ) -> Self {
-        Self::alloc(TypeKind::TyConObs(Object::new(observer), hint.into(), args))
+        Self::alloc(TypeKind::TyConObs(
+            Object::new(observer),
+            hint.into(),
+            args.into(),
+        ))
     }
 
     /// Like [`Type::tycon_obs`] but reuses an existing [`Object`]
@@ -253,9 +259,9 @@ impl Type {
     pub fn tycon_obs_from_dyn(
         observer: Object,
         hint: impl Into<BinderHint>,
-        args: Vec<Type>,
+        args: impl Into<TypeList>,
     ) -> Self {
-        Self::alloc(TypeKind::TyConObs(observer, hint.into(), args))
+        Self::alloc(TypeKind::TyConObs(observer, hint.into(), args.into()))
     }
 
     /// True when this is `Type::bool()` — the HOL formula type. The

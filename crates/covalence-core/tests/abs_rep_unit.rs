@@ -146,11 +146,11 @@ fn result_abs_rep_types() {
 
 #[test]
 fn coprod_abs_rep_types() {
-    // carrier of coprod is `a -> b -> bool`.
+    // carrier of coprod is the tagged relation `a -> b -> bool -> bool`.
     let args = vec![Type::nat(), Type::bool()];
     let carrier = Type::fun(
         Type::nat(),
-        Type::fun(Type::bool(), Type::bool()),
+        Type::fun(Type::bool(), Type::fun(Type::bool(), Type::bool())),
     );
     let wrapper = defs::coprod(Type::nat(), Type::bool());
 

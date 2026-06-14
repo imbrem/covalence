@@ -10,27 +10,26 @@ use crate::term::{Term, Type};
 use super::canonical::Canonical;
 use super::spec::{TermSpec, TypeSpec};
 
-/// Build the coprod predicate at concrete carriers α, β.
+/// The carrier relation type `α → β → bool → bool` — a relation on
+/// `(α, β)` with an extra `bool` discriminator slot (see [`left_rel`]).
+fn coprod_carrier(alpha: Type, beta: Type) -> Type {
+    Type::fun(alpha, Type::fun(beta, Type::fun(Type::bool(), Type::bool())))
+}
+
+/// Build the coprod predicate at concrete carriers α, β:
+/// `λR. (∃a. R = left_rel a) ∨ (∃b. R = right_rel b)`.
 pub(super) fn coprod_predicate_at(alpha: Type, beta: Type) -> Term {
-    let rel_ty = Type::fun(alpha.clone(), Type::fun(beta.clone(), Type::bool()));
+    let rel_ty = coprod_carrier(alpha.clone(), beta.clone());
     let r = Term::free("R", rel_ty.clone());
 
     let p1 = {
         let a_free = Term::free("a", alpha.clone());
-        let x_free = Term::free("x", alpha.clone());
-        let inner = hol::hol_eq(x_free, a_free);
-        let lam_y = hol::pub_abs("y", beta.clone(), inner);
-        let lam_xy = hol::pub_abs("x", alpha.clone(), lam_y);
-        let r_eq = hol::hol_eq(r.clone(), lam_xy);
+        let r_eq = hol::hol_eq(r.clone(), left_rel(a_free, alpha.clone(), beta.clone()));
         hol::hol_exists("a", alpha.clone(), r_eq)
     };
     let p2 = {
         let b_free = Term::free("b", beta.clone());
-        let y_free = Term::free("y", beta.clone());
-        let inner = hol::hol_eq(y_free, b_free);
-        let lam_y = hol::pub_abs("y", beta.clone(), inner);
-        let lam_xy = hol::pub_abs("x", alpha.clone(), lam_y);
-        let r_eq = hol::hol_eq(r.clone(), lam_xy);
+        let r_eq = hol::hol_eq(r.clone(), right_rel(b_free, alpha.clone(), beta.clone()));
         hol::hol_exists("b", beta.clone(), r_eq)
     };
 
@@ -47,7 +46,7 @@ pub fn coprod_spec() -> TypeSpec {
     static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
         let beta = Type::tfree("b");
-        let carrier = Type::fun(alpha, Type::fun(beta, Type::bool()));
+        let carrier = coprod_carrier(alpha, beta);
         TypeSpec::subtype(Canonical::Coprod, carrier, coprod_predicate())
     });
     LAZY.clone()
@@ -59,14 +58,20 @@ pub fn coprod(alpha: Type, beta: Type) -> Type {
 // ============================================================================
 // inl / inr / coprodCase — injections and eliminator
 //
-// A `coprod α β` value is the abstraction of one of two carrier
-// relations: `λx y. x = a` (left, witnessing `a : α`) or
-// `λx y. y = b` (right, witnessing `b : β`). So:
+// A `coprod α β` value is the abstraction of one of two **tagged**
+// carrier relations: `λx y z. z ∧ (x = a)` (left, witnessing `a : α`)
+// or `λx y z. ¬z ∧ (y = b)` (right, witnessing `b : β`). So:
 //
-//   inl a ≔ abs (λx y. x = a)
-//   inr b ≔ abs (λx y. y = b)
+//   inl a ≔ abs (λx y z. z ∧ (x = a))
+//   inr b ≔ abs (λx y z. ¬z ∧ (y = b))
 //
-// and the eliminator is the ε that returns the matching branch:
+// The `z : bool` discriminator (`T` left, `F` right) is what keeps the
+// two injections disjoint and injective for *all* carriers — without it
+// (`λx y. x = a` / `λx y. y = b`) `inl a` and `inr b` collapse to the
+// same relation whenever both α and β are singletons, which made e.g.
+// `option unit` identify `some _` with `none`. See `left_rel`.
+//
+// The eliminator is the ε that returns the matching branch:
 //
 //   coprodCase f g c ≔ ε(λr. (∀a. rep c = leftRel a  ⟹ r = f a)
 //                          ∧ (∀b. rep c = rightRel b ⟹ r = g b))
@@ -77,20 +82,31 @@ pub fn coprod(alpha: Type, beta: Type) -> Type {
 // committed here.
 // ============================================================================
 
-/// `λx y. x = a` — the left injection's carrier relation (`y` unused).
+/// `λx y z. z ∧ (x = a)` — the left injection's carrier relation (`y`
+/// unused). The `z : bool` **discriminator** is `T` on the left; it
+/// makes `inl`/`inr` disjoint and each injective *unconditionally* (for
+/// any carriers, including singletons like `unit`), which the untagged
+/// `λx y. x = a` failed to do — there `inl a = inr b` whenever both
+/// carriers were singletons (so `option unit` collapsed `some _` into
+/// `none`).
 fn left_rel(a: Term, alpha: Type, beta: Type) -> Term {
     let x = Term::free("x", alpha.clone());
-    let inner = hol::hol_eq(x, a);
-    let lam_y = hol::pub_abs("y", beta, inner);
-    hol::pub_abs("x", alpha, lam_y)
+    let z = Term::free("z", Type::bool());
+    let inner = hol::hol_and(z, hol::hol_eq(x, a)); // z ∧ (x = a)
+    let lam_z = hol::pub_abs("z", Type::bool(), inner);
+    let lam_yz = hol::pub_abs("y", beta, lam_z);
+    hol::pub_abs("x", alpha, lam_yz)
 }
 
-/// `λx y. y = b` — the right injection's carrier relation (`x` unused).
+/// `λx y z. (¬z) ∧ (y = b)` — the right injection's carrier relation
+/// (`x` unused). The discriminator `z` is `F` on the right.
 fn right_rel(b: Term, alpha: Type, beta: Type) -> Term {
     let y = Term::free("y", beta.clone());
-    let inner = hol::hol_eq(y, b);
-    let lam_y = hol::pub_abs("y", beta, inner);
-    hol::pub_abs("x", alpha, lam_y)
+    let z = Term::free("z", Type::bool());
+    let inner = hol::hol_and(hol::hol_not(z), hol::hol_eq(y, b)); // ¬z ∧ (y = b)
+    let lam_z = hol::pub_abs("z", Type::bool(), inner);
+    let lam_yz = hol::pub_abs("y", beta, lam_z);
+    hol::pub_abs("x", alpha, lam_yz)
 }
 
 fn inl_body() -> Term {

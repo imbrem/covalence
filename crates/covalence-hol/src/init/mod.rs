@@ -7,18 +7,24 @@
 //! API so that churn in `covalence-core` is absorbed *here* rather than
 //! scattered across the rest of the shell.
 //!
-//! Three pieces:
+//! The pieces:
 //!
 //! - [`ext`] — the [`TermExt`] / [`ThmExt`] extension traits: the
 //!   insulation layer of convenience constructors and derived proof
 //!   steps over the kernel's `Term` / `Thm`.
 //! - [`logic`] — the connectives re-exported, plus their proved
-//!   properties ([`truth`], commutativity, …).
+//!   properties ([`truth`], commutativity, …) and the classical clause /
+//!   simplification procedures ([`logic::resolve`], [`logic::simp`], …).
 //! - [`eq`] — equality reasoning and the canonical rewriting
 //!   conversion ([`eq::rewrite`]) that proof code should use everywhere.
+//! - [`nat`] / [`int`] — the arithmetic catalogues re-exported, paired
+//!   with their Peano / ordered-ring theorems (some proved, some
+//!   postulated pending the downstream derivations; see each module).
+//! - [`set`] — the `TypeSpec`-backed set membership / extensionality API.
 //!
 //! plus the per-theory theorem catalogues — [`cond`] (the boolean
-//! conditional's reduction clauses), [`nat`], and [`set`].
+//! conditional's reduction clauses), [`nat`], [`int`], [`coprod`],
+//! [`option`], [`stream`], [`recursion`], [`rel`], and [`set`].
 //!
 //! Efficiency is explicitly *not* a goal: `init` runs once at startup.
 //! The point is for the rest of `covalence-hol` to depend on this
@@ -28,10 +34,15 @@
 pub mod cond;
 pub mod eq;
 pub mod ext;
+pub mod int;
 pub mod logic;
+pub mod coprod;
 pub mod nat;
+pub mod option;
+pub mod recursion;
 pub mod rel;
 pub mod set;
+pub mod stream;
 
 /// The full `covalence-core` definition catalogue (types, term
 /// constructors, the `TypeSpec` / `TermSpec` handles, `Canonical`, …).

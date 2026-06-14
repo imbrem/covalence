@@ -20,7 +20,16 @@
 //! - **extensionality** ([`ext`]): from `⊢ ∀x. mem x s = mem x t`
 //!   conclude `⊢ s = t`.
 //!
-//! Everything else (`union_comm`, …) is derived from those two, and a
+//! On top of those sits the one-shot prover [`set_eq`]: it normalises
+//! both sides' membership with [`mem_norm`] (recursively expanding
+//! nested `∪ ∩ \ …`) and decides the resulting boolean equality with
+//! [`prop_eq`](crate::init::logic::prop_eq) — so a whole set identity
+//! (`union_comm`, `union_assoc`, `inter_union_distrib`, …) is stated and
+//! discharged in one line. The [`subset_unfold`] / [`subset_refl`] /
+//! [`subset_antisym`] family connects `⊆` to equality on the same
+//! footing.
+//!
+//! Everything else (`union_comm`, …) is derived from those, and a
 //! consumer that stays above this line never mentions `abs`/`rep`. The
 //! `newtype` representation could be swapped for a literal-backed
 //! builtin without touching a single downstream proof.
@@ -36,12 +45,11 @@
 //!
 //! [`init::nat`]: crate::init::nat
 
-use covalence_core::defs::Symbol;
 use covalence_core::{Error, Result, Term, Thm, Type};
 
 use crate::init::eq::trans_chain;
 use crate::init::ext::{TermExt, ThmExt};
-use crate::init::logic::{and_sym, or_sym, simp, truth};
+use crate::init::logic::{prop_eq, truth};
 
 // Re-export the `defs/set.rs` term catalogue (the `*_spec` handles stay
 // in `covalence_core::defs`, reached via the blanket re-export there).
@@ -53,7 +61,7 @@ pub use covalence_core::defs::{
 
 use covalence_core::defs::{
     set_diff_spec, set_empty_spec, set_insert_spec, set_intersect_spec, set_mem_spec, set_mk_spec,
-    set_singleton_spec, set_spec, set_union_spec,
+    set_singleton_spec, set_spec, set_subset_spec, set_union_spec,
 };
 
 // ============================================================================
@@ -171,51 +179,56 @@ fn mem_rep(alpha: &Type, x: &Term, s: &Term) -> Result<Thm> {
 // Membership lemmas — the high-level computational surface.
 //
 // Each says `mem x (op args) = <bool formula>` and is proved uniformly:
-// δ-unfold `op` to expose `set.mk pred`, push membership through with
-// `mem_mk`, then β-reduce `pred x` to the formula.
+// δ-unfold the *head* operation only (leaving its set arguments opaque)
+// to expose `set.mk pred`, push membership through with `mem_mk`, then
+// β-reduce `pred x` to the formula.
 // ============================================================================
 
 /// `⊢ set.mem x set.empty = F`.
 pub fn mem_empty(alpha: &Type, x: &Term) -> Result<Thm> {
-    let st = set_empty(alpha.clone());
-    mem_of(alpha, x, &st, set_empty_spec().symbol())
+    mem_of(alpha, x, &set_empty(alpha.clone()))
 }
 
 /// `⊢ set.mem x (set.singleton a) = (x = a)`.
 pub fn mem_singleton(alpha: &Type, x: &Term, a: &Term) -> Result<Thm> {
-    let st = Term::app(set_singleton(alpha.clone()), a.clone());
-    mem_of(alpha, x, &st, set_singleton_spec().symbol())
+    mem_of(alpha, x, &Term::app(set_singleton(alpha.clone()), a.clone()))
 }
 
 /// `⊢ set.mem x (set.insert a s) = (x = a ∨ set.mem x s)`.
 pub fn mem_insert(alpha: &Type, x: &Term, a: &Term, s: &Term) -> Result<Thm> {
-    let st = Term::app(Term::app(set_insert(alpha.clone()), a.clone()), s.clone());
-    mem_of(alpha, x, &st, set_insert_spec().symbol())
+    mem_of(
+        alpha,
+        x,
+        &Term::app(Term::app(set_insert(alpha.clone()), a.clone()), s.clone()),
+    )
 }
 
 /// `⊢ set.mem x (set.union s t) = (set.mem x s ∨ set.mem x t)`.
 pub fn mem_union(alpha: &Type, x: &Term, s: &Term, t: &Term) -> Result<Thm> {
-    let st = union(alpha, s, t);
-    mem_of(alpha, x, &st, set_union_spec().symbol())
+    mem_of(alpha, x, &union(alpha, s, t))
 }
 
 /// `⊢ set.mem x (set.intersect s t) = (set.mem x s ∧ set.mem x t)`.
 pub fn mem_intersect(alpha: &Type, x: &Term, s: &Term, t: &Term) -> Result<Thm> {
-    let st = Term::app(Term::app(set_intersect(alpha.clone()), s.clone()), t.clone());
-    mem_of(alpha, x, &st, set_intersect_spec().symbol())
+    mem_of(alpha, x, &inter(alpha, s, t))
 }
 
 /// `⊢ set.mem x (set.diff s t) = (set.mem x s ∧ ¬ set.mem x t)`.
 pub fn mem_diff(alpha: &Type, x: &Term, s: &Term, t: &Term) -> Result<Thm> {
-    let st = Term::app(Term::app(set_diff(alpha.clone()), s.clone()), t.clone());
-    mem_of(alpha, x, &st, set_diff_spec().symbol())
+    mem_of(
+        alpha,
+        x,
+        &Term::app(Term::app(set_diff(alpha.clone()), s.clone()), t.clone()),
+    )
 }
 
-/// `⊢ set.mem x st = body[x]`, where `st` δ-unfolds (`op`) and β-reduces
-/// to `set.mk (λ. body)`. The shared engine of the `mem_*` lemmas.
-fn mem_of(alpha: &Type, x: &Term, st: &Term, op: &dyn Symbol) -> Result<Thm> {
-    // st = set.mk pred  (δ-unfold the operation, β-reduce the spine).
-    let as_mk = st.delta_all(op)?.rhs_conv(|t| t.reduce())?;
+/// `⊢ set.mem x st = body[x]`, where `st = op a₁ … aₙ` and the **head**
+/// operation `op` δ-unfolds (its arguments staying opaque) so the body
+/// β-reduces to `set.mk (λ. body)`. The shared engine of the `mem_*`
+/// lemmas.
+fn mem_of(alpha: &Type, x: &Term, st: &Term) -> Result<Thm> {
+    // st = set.mk pred  (δ-unfold ONLY the head op, β-reduce the spine).
+    let as_mk = delta_head(st)?.rhs_conv(|t| t.reduce())?;
     let mk_pred = rhs_of(&as_mk)?;
     let pred = mk_pred.as_app().ok_or(Error::NotAnEquation)?.1.clone();
     // mem x st = mem x (set.mk pred):
@@ -228,106 +241,247 @@ fn mem_of(alpha: &Type, x: &Term, st: &Term, op: &dyn Symbol) -> Result<Thm> {
     trans_chain([step1, step2, step3])
 }
 
-// ============================================================================
-// Theorems — derived purely through `mem_*` + `ext` (no `abs`/`rep`).
-// ============================================================================
-
-/// `⊢ set.union s t = set.union t s` — commutativity of union (free
-/// `s`, `t : set 'a`). Pointwise: membership in either side is the same
-/// disjunction up to [`or_comm_eq`], so the sets agree by [`ext`].
-pub fn union_comm() -> Thm {
-    binop_comm(set_union_spec().symbol().label(), or_comm_eq, union).expect("union_comm")
+/// `⊢ st = body a₁ … aₙ` — δ-unfold **only** the spine head of
+/// `st = head a₁ … aₙ`, leaving every argument untouched (unlike
+/// [`TermExt::delta_all`](crate::init::ext::TermExt::delta_all), which
+/// would unfold nested occurrences in the arguments too).
+fn delta_head(st: &Term) -> Result<Thm> {
+    let (head, args) = spine(st);
+    let mut acc = head.delta()?; // ⊢ head = body
+    for arg in args {
+        acc = acc.cong_fn(arg.clone())?; // append `arg` to both sides by congruence
+    }
+    Ok(acc)
 }
 
-/// `⊢ set.intersect s t = set.intersect t s` — commutativity of
-/// intersection.
-pub fn inter_comm() -> Thm {
-    let inter = |a: &Type, s: &Term, t: &Term| {
-        Term::app(Term::app(set_intersect(a.clone()), s.clone()), t.clone())
+// ============================================================================
+// Membership normalisation — recursively compute `mem x st` to a boolean
+// formula over the *atomic* memberships `mem x <var>`.
+// ============================================================================
+
+/// `⊢ set.mem x st = <bool formula>`, fully expanding a nested set
+/// expression `st` (built from `∪ ∩ \ insert singleton ∅`) down to a
+/// propositional combination of atomic memberships `set.mem x <leaf>`.
+/// The recursive engine behind [`set_eq`]: each node fires its `mem_*`
+/// lemma, then its set-valued children are normalised and rewritten in.
+/// Opaque leaves (a free `set` variable, an operation not handled here)
+/// are left as `set.mem x <leaf>` atoms.
+pub fn mem_norm(alpha: &Type, x: &Term, st: &Term) -> Result<Thm> {
+    let (head, args) = spine(st);
+    let label = head.as_spec().map(|(s, _)| s.symbol().label());
+    let label = match label {
+        Some(l) => l,
+        None => return Thm::refl(mem(alpha, x, st)), // free var / non-spec head
     };
-    binop_comm(set_intersect_spec().symbol().label(), and_comm_eq, inter).expect("inter_comm")
-}
-
-/// `⊢ set.union s set.empty = s` — the empty set is a right identity for
-/// union. Pointwise `mem x (s ∪ ∅) = (mem x s ∨ F) = mem x s`.
-pub fn union_empty() -> Thm {
-    let alpha = Type::tfree("a");
-    let s = Term::free("s", set(alpha.clone()));
-    let v = Term::free("x", alpha.clone());
-    let empty = set_empty(alpha.clone());
-    let st = union(&alpha, &s, &empty);
-
-    // mem x (s ∪ ∅) = (mem x s ∨ mem x ∅)
-    let lm = mem_union(&alpha, &v, &s, &empty).expect("union_empty: mem_union");
-    // mem x ∅ = F, used to rewrite the right disjunct.
-    let me = mem_empty(&alpha, &v).expect("union_empty: mem_empty");
-    let with_f = lm.rhs_conv(|t| t.rw_all(&me)).expect("union_empty: rewrite ∅→F");
-    // (mem x s ∨ F) = mem x s
-    let or_f = simp(&rhs_of_owned(&with_f)).expect("union_empty: simp ∨F");
-    let mem_eq = with_f.trans(or_f).expect("union_empty: chain");
-
-    let all = mem_eq.all_intro("x", alpha.clone()).expect("union_empty: ∀x");
-    ext(&alpha, &st, &s, all).expect("union_empty: ext")
-}
-
-/// Generic commutativity proof for a pointwise binary set operation
-/// `op` whose membership is `combine (mem x s) (mem x t)`, given the
-/// connective's commutativity-as-equation `comm_eq`.
-fn binop_comm(
-    op_label: &str,
-    comm_eq: fn(Term, Term) -> Result<Thm>,
-    build: impl Fn(&Type, &Term, &Term) -> Term,
-) -> Result<Thm> {
-    let alpha = Type::tfree("a");
-    let sa = set(alpha.clone());
-    let s = Term::free("s", sa.clone());
-    let t = Term::free("t", sa.clone());
-    let v = Term::free("x", alpha.clone());
-
-    let mem_op = |s: &Term, t: &Term| mem_binop(&alpha, &v, s, t, op_label);
-    let lm = mem_op(&s, &t)?; // mem x (op s t) = combine (mem x s) (mem x t)
-    let rm = mem_op(&t, &s)?; // mem x (op t s) = combine (mem x t) (mem x s)
-    let cc = comm_eq(mem(&alpha, &v, &s), mem(&alpha, &v, &t))?; // combine swap
-    let mem_eq = trans_chain([lm, cc, rm.sym()?])?; // mem x (op s t) = mem x (op t s)
-
-    let all = mem_eq.all_intro("x", alpha.clone())?;
-    ext(&alpha, &build(&alpha, &s, &t), &build(&alpha, &t, &s), all)
-}
-
-/// Dispatch a pointwise binary-op membership lemma by the operation's
-/// catalogue label (used by [`binop_comm`], which is generic over the op).
-fn mem_binop(alpha: &Type, x: &Term, s: &Term, t: &Term, op_label: &str) -> Result<Thm> {
-    match op_label {
-        l if l == set_union_spec().symbol().label() => mem_union(alpha, x, s, t),
-        l if l == set_intersect_spec().symbol().label() => mem_intersect(alpha, x, s, t),
-        l if l == set_diff_spec().symbol().label() => mem_diff(alpha, x, s, t),
-        other => Err(Error::ConnectiveRule(format!(
-            "mem_binop: unsupported set operation `{other}`"
-        ))),
+    if label == set_union_spec().symbol().label() && args.len() == 2 {
+        let base = mem_union(alpha, x, args[0], args[1])?;
+        expand_children(alpha, x, base, &[args[0], args[1]])
+    } else if label == set_intersect_spec().symbol().label() && args.len() == 2 {
+        let base = mem_intersect(alpha, x, args[0], args[1])?;
+        expand_children(alpha, x, base, &[args[0], args[1]])
+    } else if label == set_diff_spec().symbol().label() && args.len() == 2 {
+        let base = mem_diff(alpha, x, args[0], args[1])?;
+        expand_children(alpha, x, base, &[args[0], args[1]])
+    } else if label == set_insert_spec().symbol().label() && args.len() == 2 {
+        // insert a s: only `s` (the second arg) is a set to recurse into.
+        let base = mem_insert(alpha, x, args[0], args[1])?;
+        expand_children(alpha, x, base, &[args[1]])
+    } else if label == set_singleton_spec().symbol().label() && args.len() == 1 {
+        mem_singleton(alpha, x, args[0])
+    } else if label == set_empty_spec().symbol().label() && args.is_empty() {
+        mem_empty(alpha, x)
+    } else {
+        Thm::refl(mem(alpha, x, st)) // an operation we don't normalise
     }
 }
 
-// ============================================================================
-// Connective commutativity as equations (helpers shared by the theorems).
-// ============================================================================
-
-/// `⊢ (p ∨ q) = (q ∨ p)` — disjunction commutativity as an equation,
-/// from the two directions of [`or_sym`] via `deduct_antisym`.
-fn or_comm_eq(p: Term, q: Term) -> Result<Thm> {
-    let pq = p.clone().or(q.clone())?;
-    let qp = q.or(p)?;
-    let fwd = or_sym(Thm::assume(pq.clone())?)?; // {p∨q} ⊢ q∨p
-    let bwd = or_sym(Thm::assume(qp.clone())?)?; // {q∨p} ⊢ p∨q
-    bwd.deduct_antisym(fwd) // ⊢ (p∨q) = (q∨p)
+/// Rewrite each `set.mem x child` atom in `base`'s right-hand side by
+/// the child's own [`mem_norm`], expanding the formula bottom-up.
+fn expand_children(alpha: &Type, x: &Term, base: Thm, children: &[&Term]) -> Result<Thm> {
+    let mut acc = base;
+    for child in children {
+        let child_norm = mem_norm(alpha, x, child)?; // ⊢ mem x child = formula
+        acc = acc.rhs_conv(|t| t.rw_all(&child_norm))?;
+    }
+    Ok(acc)
 }
 
-/// `⊢ (p ∧ q) = (q ∧ p)` — conjunction commutativity as an equation.
-fn and_comm_eq(p: Term, q: Term) -> Result<Thm> {
-    let pq = p.clone().and(q.clone())?;
-    let qp = q.and(p)?;
-    let fwd = and_sym(Thm::assume(pq.clone())?)?; // {p∧q} ⊢ q∧p
-    let bwd = and_sym(Thm::assume(qp.clone())?)?; // {q∧p} ⊢ p∧q
-    bwd.deduct_antisym(fwd) // ⊢ (p∧q) = (q∧p)
+/// Peel an application spine `f a₁ … aₙ` into `(f, [a₁, …, aₙ])`.
+fn spine(t: &Term) -> (&Term, Vec<&Term>) {
+    let mut args = Vec::new();
+    let mut head = t;
+    while let Some((f, a)) = head.as_app() {
+        args.push(a);
+        head = f;
+    }
+    args.reverse();
+    (head, args)
+}
+
+// ============================================================================
+// `set_eq` — decide a set equality by membership + propositional reasoning.
+// ============================================================================
+
+/// `⊢ s = t` for set expressions `s`, `t` whose memberships are
+/// propositionally equal. Normalises `set.mem x s` and `set.mem x t`
+/// with [`mem_norm`], bridges the two boolean formulas with
+/// [`prop_eq`](crate::init::logic::prop_eq) (which handles commutativity,
+/// associativity, distribution, …), and closes by [`ext`]. This is the
+/// one-shot prover the set-algebra theorems below are built on — a
+/// consumer states the equation and `set_eq` discharges it, never
+/// touching `abs`/`rep`. Errors if the memberships are not propositionally
+/// equal.
+pub fn set_eq(alpha: &Type, s: &Term, t: &Term) -> Result<Thm> {
+    const PT: &str = "_set_x";
+    let x = Term::free(PT, alpha.clone());
+    let ns = mem_norm(alpha, &x, s)?; // ⊢ mem x s = Bs
+    let nt = mem_norm(alpha, &x, t)?; // ⊢ mem x t = Bt
+    let bridge = prop_eq(&rhs_of(&ns)?, &rhs_of(&nt)?)?; // ⊢ Bs = Bt
+    let mem_eq = ns.trans(bridge)?.trans(nt.sym()?)?; // ⊢ mem x s = mem x t
+    let all = mem_eq.all_intro(PT, alpha.clone())?;
+    ext(alpha, s, t, all)
+}
+
+// ============================================================================
+// Set-algebra theorems — each a one-liner over `set_eq`.
+// ============================================================================
+
+/// `⊢ set.union s t = set.union t s` — union is commutative.
+pub fn union_comm() -> Thm {
+    let (a, s, t, _u) = vars();
+    set_eq(&a, &union(&a, &s, &t), &union(&a, &t, &s)).expect("union_comm")
+}
+
+/// `⊢ set.intersect s t = set.intersect t s` — intersection is commutative.
+pub fn inter_comm() -> Thm {
+    let (a, s, t, _u) = vars();
+    set_eq(&a, &inter(&a, &s, &t), &inter(&a, &t, &s)).expect("inter_comm")
+}
+
+/// `⊢ set.union (set.union s t) u = set.union s (set.union t u)` —
+/// union is associative.
+pub fn union_assoc() -> Thm {
+    let (a, s, t, u) = vars();
+    let lhs = union(&a, &union(&a, &s, &t), &u);
+    let rhs = union(&a, &s, &union(&a, &t, &u));
+    set_eq(&a, &lhs, &rhs).expect("union_assoc")
+}
+
+/// `⊢ set.intersect (set.intersect s t) u = set.intersect s
+/// (set.intersect t u)` — intersection is associative.
+pub fn inter_assoc() -> Thm {
+    let (a, s, t, u) = vars();
+    let lhs = inter(&a, &inter(&a, &s, &t), &u);
+    let rhs = inter(&a, &s, &inter(&a, &t, &u));
+    set_eq(&a, &lhs, &rhs).expect("inter_assoc")
+}
+
+/// `⊢ set.union s s = s` — union is idempotent.
+pub fn union_idem() -> Thm {
+    let (a, s, _t, _u) = vars();
+    set_eq(&a, &union(&a, &s, &s), &s).expect("union_idem")
+}
+
+/// `⊢ set.intersect s s = s` — intersection is idempotent.
+pub fn inter_idem() -> Thm {
+    let (a, s, _t, _u) = vars();
+    set_eq(&a, &inter(&a, &s, &s), &s).expect("inter_idem")
+}
+
+/// `⊢ set.union s set.empty = s` — `∅` is a (right) identity for union.
+pub fn union_empty() -> Thm {
+    let (a, s, _t, _u) = vars();
+    set_eq(&a, &union(&a, &s, &set_empty(a.clone())), &s).expect("union_empty")
+}
+
+/// `⊢ set.intersect s set.empty = set.empty` — `∅` absorbs intersection.
+pub fn inter_empty() -> Thm {
+    let (a, s, _t, _u) = vars();
+    let empty = set_empty(a.clone());
+    set_eq(&a, &inter(&a, &s, &empty), &empty).expect("inter_empty")
+}
+
+/// `⊢ set.intersect s (set.union t u) = set.union (set.intersect s t)
+/// (set.intersect s u)` — intersection distributes over union.
+pub fn inter_union_distrib() -> Thm {
+    let (a, s, t, u) = vars();
+    let lhs = inter(&a, &s, &union(&a, &t, &u));
+    let rhs = union(&a, &inter(&a, &s, &t), &inter(&a, &s, &u));
+    set_eq(&a, &lhs, &rhs).expect("inter_union_distrib")
+}
+
+// ============================================================================
+// Subset.
+// ============================================================================
+
+/// `⊢ set.subset s t = (∀x. set.mem x s ⟹ set.mem x t)` — the defining
+/// unfolding of `⊆`.
+pub fn subset_unfold(alpha: &Type, s: &Term, t: &Term) -> Result<Thm> {
+    let st = Term::app(Term::app(set_subset(alpha.clone()), s.clone()), t.clone());
+    st.delta_all(set_subset_spec().symbol())?.rhs_conv(|x| x.reduce())
+}
+
+/// `⊢ set.subset s s` — `⊆` is reflexive.
+pub fn subset_refl() -> Thm {
+    let (a, s, _t, _u) = vars();
+    let v = Term::free("x", a.clone());
+    let ms = mem(&a, &v, &s);
+    let imp = Thm::assume(ms.clone())
+        .and_then(|h| h.imp_intro(&ms)) // ⊢ mem x s ⟹ mem x s
+        .and_then(|t| t.all_intro("x", a.clone())) // ⊢ ∀x. …
+        .expect("subset_refl: ∀x. mem x s ⟹ mem x s");
+    subset_unfold(&a, &s, &s)
+        .and_then(|u| u.sym()?.eq_mp(imp)) // ⊢ set.subset s s
+        .expect("subset_refl: fold")
+}
+
+/// `⊢ set.subset s t ⟹ set.subset t s ⟹ s = t` — antisymmetry of `⊆`,
+/// the subset route to set equality. Each direction supplies one half of
+/// the membership equivalence at every point; [`ext`] then concludes.
+pub fn subset_antisym() -> Thm {
+    let (a, s, t, _u) = vars();
+    let v = Term::free("x", a.clone());
+    let sub_st = subset_tm(&a, &s, &t);
+    let sub_ts = subset_tm(&a, &t, &s);
+
+    let build = || -> Result<Thm> {
+        // ∀x. mem x s ⟹ mem x t   and   ∀x. mem x t ⟹ mem x s
+        let all_st = subset_unfold(&a, &s, &t)?.eq_mp(Thm::assume(sub_st.clone())?)?;
+        let all_ts = subset_unfold(&a, &t, &s)?.eq_mp(Thm::assume(sub_ts.clone())?)?;
+        let imp_st = all_st.all_elim(v.clone())?; // {s⊆t} ⊢ mem v s ⟹ mem v t
+        let imp_ts = all_ts.all_elim(v.clone())?; // {t⊆s} ⊢ mem v t ⟹ mem v s
+        let ms = mem(&a, &v, &s);
+        let mt = mem(&a, &v, &t);
+        let s_to_t = imp_st.imp_elim(Thm::assume(ms.clone())?)?; // {…, mem v s} ⊢ mem v t
+        let t_to_s = imp_ts.imp_elim(Thm::assume(mt.clone())?)?; // {…, mem v t} ⊢ mem v s
+        let mem_eq = t_to_s.deduct_antisym(s_to_t)?; // {s⊆t, t⊆s} ⊢ mem v s = mem v t
+        let all_eq = mem_eq.all_intro("x", a.clone())?;
+        let s_eq_t = ext(&a, &s, &t, all_eq)?; // {s⊆t, t⊆s} ⊢ s = t
+        s_eq_t.imp_intro(&sub_ts)?.imp_intro(&sub_st)
+    };
+    build().expect("subset_antisym")
+}
+
+/// `set.subset[α] s t : bool` — builder.
+fn subset_tm(alpha: &Type, s: &Term, t: &Term) -> Term {
+    Term::app(Term::app(set_subset(alpha.clone()), s.clone()), t.clone())
+}
+
+/// `set.intersect[α] s t : set α`.
+fn inter(alpha: &Type, s: &Term, t: &Term) -> Term {
+    Term::app(Term::app(set_intersect(alpha.clone()), s.clone()), t.clone())
+}
+
+/// Canonical free `(α, s, t, u)` for the closed algebra theorems.
+fn vars() -> (Type, Term, Term, Term) {
+    let alpha = Type::tfree("a");
+    let sa = set(alpha.clone());
+    (
+        alpha.clone(),
+        Term::free("s", sa.clone()),
+        Term::free("t", sa.clone()),
+        Term::free("u", sa),
+    )
 }
 
 // ============================================================================
@@ -337,12 +491,6 @@ fn and_comm_eq(p: Term, q: Term) -> Result<Thm> {
 /// The right-hand side of an equational theorem.
 fn rhs_of(thm: &Thm) -> Result<Term> {
     Ok(thm.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone())
-}
-
-/// The right-hand side of an equational theorem (panicking — for the
-/// `expect`-style closed proofs).
-fn rhs_of_owned(thm: &Thm) -> Term {
-    thm.concl().as_eq().expect("equational theorem").1.clone()
 }
 
 #[cfg(test)]
@@ -465,5 +613,73 @@ mod tests {
             .equals(s)
             .unwrap();
         assert_eq!(thm.concl(), &expected);
+    }
+
+    /// Every algebra theorem must be a genuine, oracle-free equation.
+    fn assert_genuine_eq(thm: &Thm) {
+        assert!(thm.hyps().is_empty(), "theorem must be proved, not postulated");
+        assert!(thm.has_no_obs(), "theorem must be oracle-free");
+    }
+
+    #[test]
+    fn algebra_laws_are_genuine() {
+        for thm in [
+            union_assoc(),
+            inter_assoc(),
+            union_idem(),
+            inter_idem(),
+            inter_empty(),
+            inter_union_distrib(),
+        ] {
+            assert_genuine_eq(&thm);
+            assert!(thm.concl().as_eq().is_some(), "conclusion is an equation");
+        }
+    }
+
+    #[test]
+    fn union_idem_collapses() {
+        let thm = union_idem();
+        let s = setvar("s");
+        assert_eq!(thm.concl(), &union(&alpha(), &s, &s).equals(s).unwrap());
+    }
+
+    #[test]
+    fn inter_union_distrib_shape() {
+        // s ∩ (t ∪ u) = (s ∩ t) ∪ (s ∩ u).
+        let thm = inter_union_distrib();
+        let (a, s, t, u) = vars();
+        let lhs = inter(&a, &s, &union(&a, &t, &u));
+        let rhs = union(&a, &inter(&a, &s, &t), &inter(&a, &s, &u));
+        assert_eq!(thm.concl(), &lhs.equals(rhs).unwrap());
+    }
+
+    #[test]
+    fn subset_refl_is_genuine() {
+        let thm = subset_refl();
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        let s = setvar("s");
+        assert_eq!(thm.concl(), &subset_tm(&alpha(), &s, &s));
+    }
+
+    #[test]
+    fn subset_antisym_shape() {
+        // ⊢ s ⊆ t ⟹ t ⊆ s ⟹ s = t.
+        let thm = subset_antisym();
+        assert!(thm.hyps().is_empty(), "subset_antisym is proved");
+        assert!(thm.has_no_obs());
+        let (a, s, t, _u) = vars();
+        let expected = subset_tm(&a, &s, &t)
+            .imp(subset_tm(&a, &t, &s).imp(s.equals(t).unwrap()).unwrap())
+            .unwrap();
+        assert_eq!(thm.concl(), &expected);
+    }
+
+    #[test]
+    fn subset_unfold_exposes_forall_imp() {
+        let (a, s, t, _u) = vars();
+        let thm = subset_unfold(&a, &s, &t).unwrap();
+        // lhs is `set.subset s t`; rhs is a `∀`-headed term.
+        let (lhs, _rhs) = thm.concl().as_eq().unwrap();
+        assert_eq!(lhs, &subset_tm(&a, &s, &t));
     }
 }

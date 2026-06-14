@@ -22,6 +22,9 @@
 //!   postulated pending the downstream derivations; see each module).
 //! - [`set`] — the `TypeSpec`-backed set membership / extensionality API.
 //!
+//! plus the per-theory theorem catalogues — [`cond`] (the boolean
+//! conditional's reduction clauses), [`nat`], and [`set`].
+//!
 //! Efficiency is explicitly *not* a goal: `init` runs once at startup.
 //! The point is for the rest of `covalence-hol` to depend on this
 //! stable surface; once `covalence-core` is settled, faster paths can
@@ -49,6 +52,7 @@ macro_rules! cached_thm {
     };
 }
 
+pub mod cond;
 pub mod eq;
 pub mod ext;
 pub mod int;

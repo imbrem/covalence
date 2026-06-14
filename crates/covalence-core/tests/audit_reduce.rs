@@ -875,8 +875,8 @@ fn unfold_def_style_errs() {
 
 #[test]
 fn unfold_declaration_only_errs() {
-    // `cond` is declaration-only (`tm = None`): unfold => SpecHasNoBody.
-    let t = defs::cond(Type::nat());
+    // `nat.div` is declaration-only (`tm = None`): unfold => SpecHasNoBody.
+    let t = defs::nat_div();
     let err = Thm::unfold_term_spec(t).expect_err("declaration-only spec must not unfold");
     assert!(
         matches!(err, covalence_core::Error::SpecHasNoBody),

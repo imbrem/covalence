@@ -322,6 +322,13 @@ pub enum Canonical {
     /// `set.mem : 'a → set 'a → bool` — membership (the `rep` coercion
     /// applied, named).
     SetMem,
+    /// `set.empty : set 'a` — the empty set `mk (λx. F)`.
+    SetEmpty,
+    /// `set.singleton : 'a → set 'a` — `λa. mk (λx. x = a)`.
+    SetSingleton,
+    /// `set.insert : 'a → set 'a → set 'a` — add an element,
+    /// `λa s. mk (λx. x = a ∨ mem x s)`.
+    SetInsert,
     /// `set.union : set 'a → set 'a → set 'a`.
     SetUnion,
     /// `set.intersect : set 'a → set 'a → set 'a`.
@@ -330,6 +337,8 @@ pub enum Canonical {
     SetDiff,
     /// `set.subset : set 'a → set 'a → bool`.
     SetSubset,
+    /// `set.isEmpty : set 'a → bool` — `λs. ∀x. ¬ mem x s`.
+    SetIsEmpty,
     /// `set.flatten : set (set 'a) → set 'a` — union of a set of sets.
     SetFlatten,
     /// `set.all : set bool → bool` — `T` iff every member is `T`
@@ -338,8 +347,24 @@ pub enum Canonical {
     /// `set.any : set bool → bool` — `T` iff some member is `T`
     /// (big disjunction over the set).
     SetAny,
-    /// `set.card : set 'a → nat`.
+    /// `set.finite : set 'a → bool` — `λs. ∃l:list 'a. list.elems l = s`
+    /// (Kuratowski-finite: the set is the element-set of some list).
+    SetFinite,
+    /// `set.card : set 'a → nat` — cardinality (the minimal length of a
+    /// list whose `elems` is the set; junk on infinite sets).
     SetCard,
+    /// `set.card? : set 'a → option nat` — cardinality as an option,
+    /// `none` for infinite sets, `some (card s)` when finite.
+    SetCardOpt,
+    /// `set.min : set nat → nat` — least element (`0` for the empty
+    /// set, by convention). Total by well-ordering of `nat`.
+    SetMin,
+    /// `set.image : ('a → 'b) → set 'a → set 'b` — direct image
+    /// `λf s. mk (λy. ∃x. mem x s ∧ f x = y)`.
+    SetImage,
+    /// `set.preimage : ('a → 'b) → set 'b → set 'a` — preimage
+    /// `λf t. mk (λx. mem (f x) t)`.
+    SetPreimage,
     /// `list.elems : list 'a → set 'a` — the set of elements appearing
     /// in the list.
     ListElems,
@@ -491,14 +516,23 @@ impl Canonical {
             Canonical::ListFlatten => "list.flatten",
             Canonical::SetMk => "set.mk",
             Canonical::SetMem => "set.mem",
+            Canonical::SetEmpty => "set.empty",
+            Canonical::SetSingleton => "set.singleton",
+            Canonical::SetInsert => "set.insert",
             Canonical::SetUnion => "set.union",
             Canonical::SetIntersect => "set.intersect",
             Canonical::SetDiff => "set.diff",
             Canonical::SetSubset => "set.subset",
+            Canonical::SetIsEmpty => "set.isEmpty",
             Canonical::SetFlatten => "set.flatten",
             Canonical::SetAll => "set.all",
             Canonical::SetAny => "set.any",
+            Canonical::SetFinite => "set.finite",
             Canonical::SetCard => "set.card",
+            Canonical::SetCardOpt => "set.card?",
+            Canonical::SetMin => "set.min",
+            Canonical::SetImage => "set.image",
+            Canonical::SetPreimage => "set.preimage",
             Canonical::ListElems => "list.elems",
             Canonical::Stream => "stream",
             Canonical::StreamAt => "stream.at",

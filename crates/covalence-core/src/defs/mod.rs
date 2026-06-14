@@ -162,8 +162,11 @@ pub use rel::{
 pub use result::{err, err_spec, ok, ok_spec, result, result_spec};
 pub use set::{
     list_elems, list_elems_spec, set, set_all, set_all_spec, set_any, set_any_spec, set_card,
-    set_card_spec, set_diff, set_diff_spec, set_flatten, set_flatten_spec, set_intersect,
-    set_intersect_spec, set_mem, set_mem_spec, set_mk, set_mk_spec, set_spec, set_subset,
+    set_card_opt, set_card_opt_spec, set_card_spec, set_diff, set_diff_spec, set_empty,
+    set_empty_spec, set_finite, set_finite_spec, set_flatten, set_flatten_spec, set_image,
+    set_image_spec, set_insert, set_insert_spec, set_intersect, set_intersect_spec, set_is_empty,
+    set_is_empty_spec, set_mem, set_mem_spec, set_min, set_min_spec, set_mk, set_mk_spec,
+    set_preimage, set_preimage_spec, set_singleton, set_singleton_spec, set_spec, set_subset,
     set_subset_spec, set_union, set_union_spec,
 };
 pub use spec::{TermSpec, TypeSpec};

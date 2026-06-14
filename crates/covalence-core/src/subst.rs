@@ -224,6 +224,72 @@ pub fn subst_tfree_in_type(ty: &Type, name: &str, r: &Type) -> Type {
     }
 }
 
+/// Simultaneous version of [`subst_tfree_in_type`]: replace each
+/// `TFree(n)` by `sub[n]` in a *single* pass. Unlike folding
+/// [`subst_tfree_in_type`] over the map's entries, a replacement that
+/// itself mentions another substituted name is **not** re-substituted —
+/// so `{a:=b, b:=c}` maps `a → b` and `b → c` (a fold would cascade
+/// `a → b → c`). This is the correct semantics for instantiating a
+/// spec's type variables positionally.
+pub fn subst_tfrees_in_type(ty: &Type, sub: &BTreeMap<SmolStr, Type>) -> Type {
+    if sub.is_empty() {
+        return ty.clone();
+    }
+    let go = |a: &Type| subst_tfrees_in_type(a, sub);
+    match ty.kind() {
+        TypeKind::TFree(n) => sub.get(n).cloned().unwrap_or_else(|| ty.clone()),
+        TypeKind::Nat | TypeKind::Bool => ty.clone(),
+        TypeKind::Fun(a, b) => Type::fun(go(a), go(b)),
+        TypeKind::Tycon(n, args) => {
+            Type::tycon(n.clone(), args.iter().map(go).collect::<Vec<_>>())
+        }
+        TypeKind::Spec(spec, args) => {
+            Type::spec(spec.clone(), args.iter().map(go).collect::<Vec<_>>())
+        }
+        TypeKind::TyConObs(observer, args) => {
+            Type::tycon_obs_from_dyn(observer.clone(), args.iter().map(go).collect::<Vec<_>>())
+        }
+    }
+}
+
+/// Simultaneous version of [`subst_tfree_in_term`] over every type
+/// annotation in `t` (see [`subst_tfrees_in_type`] for why a single
+/// pass matters — it avoids cascading `{a:=b, b:=c}` into `a → c`).
+pub fn subst_tfrees_in_term(t: &Term, sub: &BTreeMap<SmolStr, Type>) -> Term {
+    if sub.is_empty() {
+        return t.clone();
+    }
+    let st = |ty: &Type| subst_tfrees_in_type(ty, sub);
+    let go = |x: &Term| subst_tfrees_in_term(x, sub);
+    match t.kind() {
+        TermKind::Bound(i) => Term::bound(*i),
+        TermKind::Free(n, ty) => Term::free(n.clone(), st(ty)),
+        TermKind::Const(n, ty) => Term::const_(n.clone(), st(ty)),
+        TermKind::App(f, x) => Term::app(go(f), go(x)),
+        TermKind::Abs(ty, body) => Term::abs(st(ty), go(body)),
+        TermKind::Blob(b) => Term::blob(b.clone()),
+        TermKind::Nat(n) => Term::nat_lit(n.clone()),
+        TermKind::Int(n) => Term::int_lit(n.clone()),
+        TermKind::SmallInt(lit) => Term::small_int(*lit),
+        TermKind::Bool(b) => Term::bool_lit(*b),
+        TermKind::Eq(alpha) => Term::eq_op(st(alpha)),
+        TermKind::Select(alpha) => Term::select_op(st(alpha)),
+        TermKind::Spec(spec, args) => {
+            Term::term_spec(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
+        }
+        TermKind::SpecAbs(spec, args) => {
+            Term::spec_abs(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
+        }
+        TermKind::SpecRep(spec, args) => {
+            Term::spec_rep(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
+        }
+        TermKind::Obs(observer, ty) => Term::obs_from_dyn(observer.clone(), st(ty)),
+        TermKind::Def(d) => {
+            Term::def(d.with_instance_type(subst_tfrees_in_type(d.instance_type(), sub)))
+        }
+    }
+}
+
 /// Replace every `TFree(name)` with `r` in every type annotation inside
 /// `t`, including the `ty` field of any `Obs` leaf. The observer value
 /// itself is opaque and untouched.

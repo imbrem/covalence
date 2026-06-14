@@ -86,6 +86,7 @@ mod cond;
 mod coprod;
 mod fail;
 mod floats;
+mod fun;
 pub(crate) mod helpers;
 mod int;
 pub(crate) mod int_ops;
@@ -124,6 +125,9 @@ pub use coprod::{
 };
 pub use fail::{fail, fail_spec};
 pub use floats::{f32_spec, f32_ty, f64_spec, f64_ty};
+pub use fun::{
+    compose, compose_spec, flip, flip_spec, id, id_spec, konst, konst_spec,
+};
 pub use int::{
     int_abs, int_abs_spec, int_add, int_add_spec, int_div, int_div_spec, int_le, int_le_spec,
     int_lt, int_lt_spec, int_mod, int_mod_spec, int_mul, int_mul_spec, int_neg, int_neg_spec,
@@ -165,7 +169,11 @@ pub use prod::{
 pub use rat::{rat_le, rat_le_spec, rat_spec, rat_ty};
 pub use real::{real_spec, real_ty};
 pub use rel::{
-    part, part_spec, per, per_spec, pord, pord_spec, preord, preord_spec, rel, rel_spec,
+    part, part_spec, per, per_spec, pord, pord_spec, preord, preord_spec, rel, rel_compose,
+    rel_compose_spec, rel_converse, rel_converse_spec, rel_deterministic, rel_deterministic_spec,
+    rel_graph, rel_graph_spec, rel_holds, rel_holds_spec, rel_id, rel_id_spec, rel_is_function,
+    rel_is_function_spec, rel_mk, rel_mk_spec, rel_spec, rel_to_fun, rel_to_fun_spec, rel_total,
+    rel_total_spec,
 };
 pub use result::{err, err_spec, ok, ok_spec, result, result_spec};
 pub use set::{

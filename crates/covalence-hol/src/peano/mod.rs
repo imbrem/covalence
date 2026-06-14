@@ -1,10 +1,30 @@
 //! A trait for reasoning in first-order **Peano arithmetic** (PA).
 //!
-//! [`Peano`] is the abstract interface of "doing a PA proof": the term
-//! constructors (`0`, successor, `+`, `*`, variables), the PA axioms
-//! (as proofs), and the inference rules (induction, ∀-elimination,
-//! modus ponens). It is generic over *what a PA proof is* via the
-//! associated [`Peano::Proof`] type — and that is the whole point.
+//! [`Peano`] is the abstract interface of "doing a PA proof". It is
+//! generic over three representations, the associated types
+//! [`Term`](Peano::Term) / [`Prop`](Peano::Prop) /
+//! [`Proof`](Peano::Proof) — and that genericity is the whole point.
+//!
+//! ## Three layers: expression theory, first-order logic, proofs
+//!
+//! PA is **first-order logic over an arithmetic expression theory**, and
+//! the trait keeps those layers visible:
+//!
+//! - **Expression theory** ([`Term`](Peano::Term)) — the `nat`-sorted
+//!   term language: `0`, successor, `+`, `*`, variables.
+//! - **First-order logic** ([`Prop`](Peano::Prop)) — formulas built from
+//!   the one relation symbol `=` ([`eq`](Peano::eq)) by the connectives
+//!   ([`not`](Peano::not) / [`and`](Peano::and) / [`or`](Peano::or) /
+//!   [`implies`](Peano::implies) / [`iff`](Peano::iff)) and quantifiers
+//!   ([`forall`](Peano::forall) / [`exists`](Peano::exists)) over term
+//!   variables. This layer is *not* arithmetic-specific — it is the FOL
+//!   scaffolding. Eventually it will be factored into a generic
+//!   `FirstOrder<Expr>` framework that **wraps any expression theory in
+//!   first-order logic**; PA is then `FirstOrder<arithmetic>` plus the
+//!   six arithmetic axioms.
+//! - **Proofs** ([`Proof`](Peano::Proof)) — the PA axioms (as proofs)
+//!   and the inference rules; [`concl`](Peano::concl) reads back the
+//!   `Prop` a proof establishes.
 //!
 //! ## Two implementations, one API (the mirror principle)
 //!
@@ -23,24 +43,14 @@
 //! *symbolic metatheory*: PA as an object logic with HOL as the
 //! metalogic (see `docs/VISION.md` §2).
 //!
-//! ## Status of the axioms (read this)
+//! ## Status of the axioms
 //!
-//! In the shallow impl, **three** axioms are genuine hypothesis-free
-//! HOL theorems: [`induct`](Peano::induct) (kernel `Thm::nat_induct`)
-//! and the two freeness axioms [`succ_inj`](Peano::succ_inj) /
-//! [`zero_ne_succ`](Peano::zero_ne_succ) (kernel `Thm::succ_inj` /
-//! `Thm::zero_ne_succ`, since `succ` is now the primitive
-//! `TermKind::Succ`). The remaining **four** — the `add`/`mul`
-//! recursion equations — are still **postulated** (`Thm::assume`), so a
-//! PA proof using them comes out as `{axioms used} ⊢ φ`, the honest
-//! shallow embedding of *PA-derivability*.
-//!
-//! Discharging the four is the **soundness** step. It needs *no new
-//! computation primitive*: `natRec` exists by `ε` (choice over its
-//! recursion-uniqueness predicate), so once `ε`/choice is exposed its
-//! equations follow by induction, and the `add`/`mul` axioms with them.
-//! Recorded in `SKELETONS.md`; flipping them to proofs is a localized
-//! change behind this same API.
+//! In the shallow impl **every** PA axiom is now a genuine
+//! hypothesis-free HOL theorem: induction and the freeness axioms via
+//! kernel primitives, and the four `add`/`mul` recursion equations via
+//! the recursion theorem ([`crate::init::recursion`], which discharged
+//! the last postulate). So a shallow PA proof is an outright HOL
+//! theorem — PA is sound in HOL with nothing assumed.
 
 pub mod shallow;
 
@@ -49,14 +59,16 @@ pub use shallow::Hol;
 /// Reasoning in first-order Peano arithmetic, generic over the proof
 /// representation. See the [module docs](self).
 pub trait Peano {
-    /// The representation of PA terms (`nat`-sorted).
+    /// PA terms — the `nat`-sorted *expression* language.
     type Term: Clone;
-    /// The representation of a PA proof / derivation.
+    /// PA propositions — the first-order *formulas* over terms.
+    type Prop: Clone;
+    /// A PA proof / derivation.
     type Proof: Clone;
     /// Failure type for the inference rules.
     type Error;
 
-    // ---- term constructors ----
+    // ---- expression theory: term constructors ----
 
     /// A PA variable `name` (sort `nat`).
     fn var(&self, name: &str) -> Self::Term;
@@ -68,6 +80,29 @@ pub trait Peano {
     fn add(&self, a: Self::Term, b: Self::Term) -> Self::Term;
     /// Multiplication `a * b`.
     fn mul(&self, a: Self::Term, b: Self::Term) -> Self::Term;
+
+    // ---- first-order logic: formula constructors ----
+
+    /// The atomic formula `a = b` — PA's sole relation symbol.
+    fn eq(&self, a: Self::Term, b: Self::Term) -> Self::Prop;
+    /// Negation `¬p`.
+    fn not(&self, p: Self::Prop) -> Self::Prop;
+    /// Conjunction `p ∧ q`.
+    fn and(&self, p: Self::Prop, q: Self::Prop) -> Self::Prop;
+    /// Disjunction `p ∨ q`.
+    fn or(&self, p: Self::Prop, q: Self::Prop) -> Self::Prop;
+    /// Implication `p ⟹ q`.
+    fn implies(&self, p: Self::Prop, q: Self::Prop) -> Self::Prop;
+    /// Biconditional `p ⟺ q`.
+    fn iff(&self, p: Self::Prop, q: Self::Prop) -> Self::Prop;
+    /// Universal quantification `∀name. body`, binding the term variable
+    /// `name` in `body`.
+    fn forall(&self, name: &str, body: Self::Prop) -> Self::Prop;
+    /// Existential quantification `∃name. body`.
+    fn exists(&self, name: &str, body: Self::Prop) -> Self::Prop;
+
+    /// The proposition a proof establishes (its conclusion).
+    fn concl(&self, proof: &Self::Proof) -> Self::Prop;
 
     // ---- the Peano axioms (as proofs) ----
 

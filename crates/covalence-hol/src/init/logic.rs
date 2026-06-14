@@ -548,6 +548,110 @@ fn eq_rhs(thm: &Thm) -> Term {
     thm.concl().as_eq().expect("equational theorem").1.clone()
 }
 
+// ============================================================================
+// Propositional equality — a complete decision procedure
+// ============================================================================
+//
+// `prop_eq p q` proves `⊢ p = q` whenever `p` and `q` denote the same
+// boolean function of their atoms — including rearrangements `simp`
+// cannot reach (commutativity, associativity, distribution). Where
+// `simp` is a *directed* normaliser, this decides by **Shannon
+// expansion**: split on an atom with [`Thm::lem`], rewrite it to `T` /
+// `F` on each branch, recurse, and recombine with `or_elim`; at the
+// leaves every atom is a literal, so `simp` collapses both sides to `T`
+// or `F` and they must agree. It is the propositional engine the set
+// algebra (`init::set`) builds its extensional equalities on.
+
+/// `⊢ p = q` for propositional `p`, `q` equal as boolean functions of
+/// their atoms. Complete for the propositional fragment (`∧ ∨ ¬ ⟹ ⟺`
+/// and `=`-at-`bool` over arbitrary atoms): it proves every genuine
+/// equality — commutativity and associativity included — and errors
+/// (minting nothing) when some valuation separates them. Cost is
+/// exponential in the atom count, so it is meant for the small formulas
+/// that arise from membership normalisation, not large goals.
+pub fn prop_eq(p: &Term, q: &Term) -> Result<Thm> {
+    if p == q {
+        return Thm::refl(p.clone());
+    }
+    let mut atoms = Vec::new();
+    collect_atoms(p, &mut atoms);
+    collect_atoms(q, &mut atoms);
+
+    let Some(atom) = atoms.into_iter().next() else {
+        // No atoms: both are closed `T`/`F` combinations. `simp` decides.
+        let sp = simp(p)?; // ⊢ p = vp
+        let sq = simp(q)?; // ⊢ q = vq
+        let vp = sp.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+        let vq = sq.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+        if vp == vq {
+            return sp.trans(sq.sym()?);
+        }
+        return Err(Error::ConnectiveRule(format!(
+            "prop_eq: `{p}` and `{q}` differ under a valuation (`{vp}` vs `{vq}`)"
+        )));
+    };
+
+    // `a` true branch: {a} ⊢ a = T, rewrite both sides, recurse.
+    let a_t = Thm::assume(atom.clone())?.eqt_intro()?; // {a} ⊢ a = T
+    let pt = p.rw_all(&a_t)?; // {a} ⊢ p = p[T]
+    let qt = q.rw_all(&a_t)?; // {a} ⊢ q = q[T]
+    let rec_t = prop_eq(&rhs_of(&pt)?, &rhs_of(&qt)?)?; // ⊢ p[T] = q[T]
+    let under_a = pt.trans(rec_t)?.trans(qt.sym()?)?; // {a} ⊢ p = q
+
+    // `a` false branch: {¬a} ⊢ a = F.
+    let a_f = eq_false(&atom, false)?
+        .sym()?
+        .eq_mp(Thm::assume(atom.clone().not()?)?)?; // {¬a} ⊢ a = F
+    let pf = p.rw_all(&a_f)?;
+    let qf = q.rw_all(&a_f)?;
+    let rec_f = prop_eq(&rhs_of(&pf)?, &rhs_of(&qf)?)?;
+    let under_na = pf.trans(rec_f)?.trans(qf.sym()?)?; // {¬a} ⊢ p = q
+
+    // Recombine: a ⟹ (p=q) and ¬a ⟹ (p=q), discharged through LEM.
+    let branch_a = under_a.imp_intro(&atom)?;
+    let branch_na = under_na.imp_intro(&atom.clone().not()?)?;
+    Thm::lem(atom)?.or_elim(branch_a, branch_na)
+}
+
+/// The right-hand side of an equational theorem's conclusion.
+fn rhs_of(thm: &Thm) -> Result<Term> {
+    Ok(thm.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone())
+}
+
+/// Collect the distinct **atoms** of a propositional term `t` — the
+/// maximal `bool`-typed subterms whose head is not a connective
+/// (`∧ ∨ ¬ ⟹ ⟺`), a `bool` literal, or a `bool`-typed `=`. The atoms
+/// are the variables Shannon expansion splits on.
+fn collect_atoms(t: &Term, out: &mut Vec<Term>) {
+    if is_t(t) || is_f(t) {
+        return;
+    }
+    if let Some(x) = parse_not(t) {
+        collect_atoms(&x, out);
+        return;
+    }
+    if let Some((spec, a, b)) = parse_binop(t)
+        && (spec.ptr_eq(&and_spec())
+            || spec.ptr_eq(&or_spec())
+            || spec.ptr_eq(&imp_spec())
+            || spec.ptr_eq(&iff_spec()))
+    {
+        collect_atoms(&a, out);
+        collect_atoms(&b, out);
+        return;
+    }
+    if let Some((a, b)) = t.as_eq()
+        && a.type_of().map(|ty| ty.is_bool()).unwrap_or(false)
+    {
+        collect_atoms(a, out);
+        collect_atoms(b, out);
+        return;
+    }
+    if !out.contains(t) {
+        out.push(t.clone());
+    }
+}
+
 /// The normalising conversion behind [`simp`]: congruence-descend, then
 /// fire a local rule and recurse to a fixpoint.
 fn simp_conv(t: &Term) -> Result<Thm> {
@@ -1176,6 +1280,35 @@ mod tests {
         assert_eq!(out.concl(), &contra.not().unwrap());
         // A contingent atom is decided neither way.
         assert!(decide(&a).is_err());
+    }
+
+    #[test]
+    fn prop_eq_decides_commutativity_and_associativity() {
+        let a = Term::free("a", b());
+        let c = Term::free("c", b());
+        let d = Term::free("d", b());
+        // commutativity
+        let lhs = a.clone().or(c.clone()).unwrap();
+        let rhs = c.clone().or(a.clone()).unwrap();
+        let eq = prop_eq(&lhs, &rhs).unwrap();
+        assert_eq!(eq.concl(), &lhs.clone().equals(rhs).unwrap());
+        assert!(eq.hyps().is_empty(), "prop_eq result is axiom-free");
+        // associativity
+        let l = a.clone().or(c.clone()).unwrap().or(d.clone()).unwrap();
+        let r = a.clone().or(c.clone().or(d.clone()).unwrap()).unwrap();
+        assert!(prop_eq(&l, &r).is_ok());
+        // distribution: a ∧ (c ∨ d) = (a ∧ c) ∨ (a ∧ d)
+        let dl = a.clone().and(c.clone().or(d.clone()).unwrap()).unwrap();
+        let dr = a.clone().and(c.clone()).unwrap().or(a.and(d).unwrap()).unwrap();
+        assert!(prop_eq(&dl, &dr).is_ok());
+    }
+
+    #[test]
+    fn prop_eq_rejects_non_equal_formulas() {
+        let a = Term::free("a", b());
+        let c = Term::free("c", b());
+        // a ∨ c is not equal to a ∧ c.
+        assert!(prop_eq(&a.clone().or(c.clone()).unwrap(), &a.and(c).unwrap()).is_err());
     }
 
     #[test]

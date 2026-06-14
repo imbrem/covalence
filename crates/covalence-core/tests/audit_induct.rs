@@ -624,8 +624,11 @@ fn spec_abs_rep_result_polymorphic_two_vars() {
 
 #[test]
 fn spec_abs_rep_coprod() {
-    // carrier of coprod a b is `a → b → bool`.
-    let carrier = Type::fun(Type::nat(), Type::fun(Type::bool(), Type::bool()));
+    // carrier of coprod a b is the tagged relation `a → b → bool → bool`.
+    let carrier = Type::fun(
+        Type::nat(),
+        Type::fun(Type::bool(), Type::fun(Type::bool(), Type::bool())),
+    );
     assert_abs_rep(
         defs::coprod_spec(),
         vec![Type::nat(), Type::bool()],

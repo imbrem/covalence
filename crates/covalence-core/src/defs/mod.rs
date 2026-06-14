@@ -351,7 +351,9 @@ mod tests {
             .unwrap_or_else(|e| panic!("coprod predicate type-of: {e:?}"));
         let alpha = Type::tfree("a");
         let beta = Type::tfree("b");
-        let carrier = Type::fun(alpha, Type::fun(beta, Type::bool()));
+        // Carrier is the *tagged* relation `α → β → bool → bool` (the
+        // trailing `bool` is the inl/inr discriminator).
+        let carrier = Type::fun(alpha, Type::fun(beta, Type::fun(Type::bool(), Type::bool())));
         let expected = Type::fun(carrier, Type::bool());
         assert_eq!(ty, expected);
     }

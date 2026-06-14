@@ -15,7 +15,7 @@ use super::canonical::Canonical;
 /// `ε(λx:'a. T)` — an arbitrary inhabitant of `'a`.
 fn fail_body() -> Term {
     let alpha = Type::tfree("a");
-    let pred = Term::abs("x", alpha.clone(), Term::bool_lit(true));
+    let pred = Term::abs(alpha.clone(), Term::bool_lit(true));
     Term::app(Term::select_op(alpha), pred)
 }
 

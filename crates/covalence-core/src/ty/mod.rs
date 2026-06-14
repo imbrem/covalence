@@ -18,4 +18,4 @@ mod ty;
 
 pub use list::TypeList;
 pub use spec::TypeSpec;
-pub use ty::{BinderHint, Type, TypeKind};
+pub use ty::{Type, TypeKind};

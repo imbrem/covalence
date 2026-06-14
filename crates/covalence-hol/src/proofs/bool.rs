@@ -151,12 +151,12 @@ fn and_elim_with(conj_thm: Thm, selector: Term) -> Thm {
 
 /// `λa b:bool. a`.
 fn fst_selector() -> Term {
-    Term::abs("a", bool_ty(), Term::abs("b", bool_ty(), Term::bound(1)))
+    Term::abs(bool_ty(), Term::abs(bool_ty(), Term::bound(1)))
 }
 
 /// `λa b:bool. b`.
 fn snd_selector() -> Term {
-    Term::abs("a", bool_ty(), Term::abs("b", bool_ty(), Term::bound(0)))
+    Term::abs(bool_ty(), Term::abs(bool_ty(), Term::bound(0)))
 }
 
 /// Parse `App(App(/\, p), q)` → `(p, q)`. Returns `None` if the term

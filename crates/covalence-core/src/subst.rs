@@ -44,8 +44,8 @@ fn close_at(t: &Term, name: &str, depth: u32) -> Term {
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => Term::app(close_at(f, name, depth), close_at(x, name, depth)),
-        TermKind::Abs(hint, ty, body) => {
-            Term::abs(hint.clone(), ty.clone(), close_at(body, name, depth + 1))
+        TermKind::Abs(ty, body) => {
+            Term::abs(ty.clone(), close_at(body, name, depth + 1))
         }
     }
 }
@@ -83,8 +83,8 @@ fn inst(t: &Term, u: &Term, depth: u32) -> Term {
         | TermKind::Obs(..)
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => Term::app(inst(f, u, depth), inst(x, u, depth)),
-        TermKind::Abs(hint, ty, body) => {
-            Term::abs(hint.clone(), ty.clone(), inst(body, u, depth + 1))
+        TermKind::Abs(ty, body) => {
+            Term::abs(ty.clone(), inst(body, u, depth + 1))
         }
     }
 }
@@ -141,11 +141,7 @@ fn shift_inner(t: &Term, delta: i64, cutoff: u32) -> Term {
         TermKind::App(f, x) => {
             Term::app(shift_inner(f, delta, cutoff), shift_inner(x, delta, cutoff))
         }
-        TermKind::Abs(hint, ty, body) => Term::abs(
-            hint.clone(),
-            ty.clone(),
-            shift_inner(body, delta, cutoff + 1),
-        ),
+        TermKind::Abs(ty, body) => Term::abs(ty.clone(), shift_inner(body, delta, cutoff + 1)),
     }
 }
 
@@ -178,11 +174,7 @@ fn subst_free_at(t: &Term, name: &str, r: &Term, depth: u32) -> Term {
             subst_free_at(f, name, r, depth),
             subst_free_at(x, name, r, depth),
         ),
-        TermKind::Abs(hint, ty, body) => Term::abs(
-            hint.clone(),
-            ty.clone(),
-            subst_free_at(body, name, r, depth + 1),
-        ),
+        TermKind::Abs(ty, body) => Term::abs(ty.clone(), subst_free_at(body, name, r, depth + 1)),
     }
 }
 
@@ -221,9 +213,8 @@ pub fn subst_tfree_in_type(ty: &Type, name: &str, r: &Type) -> Type {
         // substitution propagates. `list 'a` after 'a := bytes becomes
         // `list bytes` with the same constructor identity — exactly
         // what we want for polymorphic typedefs.
-        TypeKind::TyConObs(observer, hint, args) => Type::tycon_obs_from_dyn(
+        TypeKind::TyConObs(observer, args) => Type::tycon_obs_from_dyn(
             observer.clone(),
-            hint.clone(),
             args.iter().map(|a| subst_tfree_in_type(a, name, r)).collect::<Vec<_>>(),
         ),
     }
@@ -240,7 +231,7 @@ pub fn subst_tfree_in_term(t: &Term, name: &str, r: &Type) -> Term {
         TermKind::Free(n, ty) => Term::free(n.clone(), st(ty)),
         TermKind::Const(n, ty) => Term::const_(n.clone(), st(ty)),
         TermKind::App(f, x) => Term::app(sub(f), sub(x)),
-        TermKind::Abs(hint, ty, body) => Term::abs(hint.clone(), st(ty), sub(body)),
+        TermKind::Abs(ty, body) => Term::abs(st(ty), sub(body)),
         TermKind::Blob(b) => Term::blob(b.clone()),
         TermKind::Nat(n) => Term::nat_lit(n.clone()),
         TermKind::Int(n) => Term::int_lit(n.clone()),
@@ -303,7 +294,7 @@ fn is_closed_at(t: &Term, depth: u32) -> bool {
         TermKind::App(a, b) => {
             is_closed_at(a, depth) && is_closed_at(b, depth)
         }
-        TermKind::Abs(_, _, body) => is_closed_at(body, depth + 1),
+        TermKind::Abs(_, body) => is_closed_at(body, depth + 1),
     }
 }
 
@@ -336,7 +327,7 @@ pub fn find_free_type(t: &Term, name: &str) -> Option<Type> {
         TermKind::App(a, b) => {
             find_free_type(a, name).or_else(|| find_free_type(b, name))
         }
-        TermKind::Abs(_, _, body) => find_free_type(body, name),
+        TermKind::Abs(_, body) => find_free_type(body, name),
     }
 }
 
@@ -367,7 +358,7 @@ fn uses_bound_at(t: &Term, target: u32, depth: u32) -> bool {
         TermKind::App(a, b) => {
             uses_bound_at(a, target, depth) || uses_bound_at(b, target, depth)
         }
-        TermKind::Abs(_, _, body) => {
+        TermKind::Abs(_, body) => {
             uses_bound_at(body, target, depth + 1)
         }
     }
@@ -388,7 +379,7 @@ pub fn collect_term_tvars(t: &Term, out: &mut std::collections::BTreeSet<SmolStr
                 out.insert(n);
             }
         }
-        TermKind::Abs(_, ty, body) => {
+        TermKind::Abs(ty, body) => {
             for n in ty.free_tvars() {
                 out.insert(n);
             }
@@ -451,7 +442,7 @@ pub fn match_types(
             }
             Ok(())
         }
-        (TypeKind::TyConObs(po, _, pa), TypeKind::TyConObs(to, _, ta))
+        (TypeKind::TyConObs(po, pa), TypeKind::TyConObs(to, ta))
             if po.ptr_id() == to.ptr_id() && pa.len() == ta.len() =>
         {
             for (p, t) in pa.iter().zip(ta) {

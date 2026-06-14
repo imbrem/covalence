@@ -104,7 +104,7 @@ fn option_case_body() -> Term {
 
     let rep_o = Term::app(Term::spec_rep(option_spec(), vec![alpha.clone()]), o);
     // λ_:unit. d  — the none branch ignores its (unit) argument.
-    let g = Term::abs("_", Type::unit(), d.clone());
+    let g = Term::abs(Type::unit(), d.clone());
     let case = coprod_case(alpha.clone(), Type::unit(), beta.clone());
     let applied = Term::app(Term::app(Term::app(case, f.clone()), g), rep_o);
 
@@ -134,7 +134,7 @@ fn is_some_body() -> Term {
     // λo. optionCase F (λ_. T) o
     let alpha = Type::tfree("a");
     let o = Term::free("o", option(alpha.clone()));
-    let f = Term::abs("_", alpha.clone(), Term::bool_lit(true)); // some _ ↦ T
+    let f = Term::abs(alpha.clone(), Term::bool_lit(true)); // some _ ↦ T
     let case = option_case(alpha.clone(), Type::bool());
     let applied = Term::app(Term::app(Term::app(case, Term::bool_lit(false)), f), o);
     hol::pub_abs("o", option(alpha), applied)

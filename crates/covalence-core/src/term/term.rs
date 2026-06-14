@@ -42,7 +42,7 @@ use super::spec::TermSpec;
 use crate::error::{Error, Result};
 
 use super::observer::{Object, Observer};
-use crate::ty::{BinderHint, Type, TypeKind, TypeList};
+use crate::ty::{Type, TypeKind, TypeList};
 
 // ============================================================================
 // Def — fresh defined constants
@@ -77,7 +77,7 @@ pub struct Def {
 
 #[derive(Debug)]
 struct DefOriginal {
-    name: BinderHint,
+    name: SmolStr,
     body: Term,
     /// Cached `body.type_of()` — the most-general (polymorphic)
     /// type of this constant. `instance_type` always equals this
@@ -88,8 +88,8 @@ struct DefOriginal {
 }
 
 impl Def {
-    pub fn name(&self) -> &BinderHint {
-        &self.original.name
+    pub fn name(&self) -> &str {
+        self.original.name.as_str()
     }
 
     /// The type at which this `Def` is currently used. For the
@@ -125,7 +125,7 @@ impl Def {
         Arc::as_ptr(&self.original) as usize
     }
 
-    pub(crate) fn new_internal(name: BinderHint, body: Term, body_type: Type) -> Self {
+    pub(crate) fn new_internal(name: SmolStr, body: Term, body_type: Type) -> Self {
         let original = Arc::new(DefOriginal {
             name,
             body,
@@ -217,9 +217,10 @@ pub enum TermKind {
     Const(SmolStr, Type),
     /// Application `f x`.
     App(Term, Term),
-    /// Abstraction `λ(hint:ty). body`. `body` uses Bound(0) for the
-    /// binder; `hint` is a display label (α-transparent).
-    Abs(BinderHint, Type, Term),
+    /// Abstraction `λ:ty. body`. `body` uses `Bound(0)` for the binder.
+    /// Binders are anonymous — bound variables are pure de Bruijn
+    /// indices (printed `#i`), with no display label in the kernel.
+    Abs(Type, Term),
     /// Builtin: opaque byte literal of kernel type `bytes`.
     Blob(Bytes),
     /// Builtin: natural-number literal. Kernel type `nat`. See
@@ -314,8 +315,10 @@ impl Term {
     pub fn app(fun: Term, arg: Term) -> Self {
         Self::alloc(TermKind::App(fun, arg))
     }
-    pub fn abs(hint: impl Into<BinderHint>, ty: Type, body: Term) -> Self {
-        Self::alloc(TermKind::Abs(hint.into(), ty, body))
+    /// `λ:ty. body` — anonymous abstraction. `body` must already use
+    /// `Bound(0)` for the binder (see [`crate::subst::close`]).
+    pub fn abs(ty: Type, body: Term) -> Self {
+        Self::alloc(TermKind::Abs(ty, body))
     }
     pub fn blob(bytes: impl Into<Bytes>) -> Self {
         Self::alloc(TermKind::Blob(bytes.into()))
@@ -427,7 +430,7 @@ impl Term {
             | TermKind::Eq(_)
             | TermKind::Select(_) => true,
             TermKind::App(a, b) => a.has_no_obs() && b.has_no_obs(),
-            TermKind::Abs(_, _, body) => body.has_no_obs(),
+            TermKind::Abs(_, body) => body.has_no_obs(),
             TermKind::Def(d) => d.body().has_no_obs(),
         }
     }
@@ -451,7 +454,7 @@ impl Term {
             | TermKind::Eq(_)
             | TermKind::Select(_) => true,
             TermKind::App(a, b) => a.all_obs_match::<O>() && b.all_obs_match::<O>(),
-            TermKind::Abs(_, _, body) => body.all_obs_match::<O>(),
+            TermKind::Abs(_, body) => body.all_obs_match::<O>(),
             TermKind::Def(d) => d.body().all_obs_match::<O>(),
         }
     }
@@ -484,7 +487,7 @@ impl Term {
                 a.for_each_obs::<O, F>(f)?;
                 b.for_each_obs::<O, F>(f)
             }
-            TermKind::Abs(_, _, body) => body.for_each_obs::<O, F>(f),
+            TermKind::Abs(_, body) => body.for_each_obs::<O, F>(f),
             TermKind::Def(d) => d.body().for_each_obs::<O, F>(f),
         }
     }
@@ -538,11 +541,10 @@ fn fmt_coercion(f: &mut fmt::Formatter<'_>, kw: &str, label: &str, args: &[Type]
 impl fmt::Display for Term {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind() {
-            TermKind::Bound(i) => write!(f, "@{}", i),
+            TermKind::Bound(i) => write!(f, "#{}", i),
             TermKind::Free(name, _) | TermKind::Const(name, _) => write!(f, "{}", name),
             TermKind::App(g, x) => write!(f, "({} {})", g, x),
-            TermKind::Abs(hint, ty, body) if hint.is_empty() => write!(f, "(λ:{}. {})", ty, body),
-            TermKind::Abs(hint, ty, body) => write!(f, "(λ{}:{}. {})", hint, ty, body),
+            TermKind::Abs(ty, body) => write!(f, "(λ:{}. {})", ty, body),
             TermKind::Blob(b) => write!(f, "blob[{}]", b.len()),
             TermKind::Nat(n) => write!(f, "{}n", n.as_inner()),
             TermKind::Int(n) => write!(f, "{}i", n.as_inner()),
@@ -648,7 +650,7 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
             }
             Ok(cod.clone())
         }
-        TermKind::Abs(_, ty, body) => {
+        TermKind::Abs(ty, body) => {
             env.ctx.push(ty.clone());
             let body_ty = type_of_in(body, env);
             env.ctx.pop();

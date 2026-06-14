@@ -161,7 +161,7 @@ poly_let_term! {
 fn stream_const_body() -> Term {
     let alpha = Type::tfree("a");
     let x = Term::free("x", alpha.clone());
-    let n_lambda = Term::abs("_", Type::nat(), x.clone());
+    let n_lambda = Term::abs(Type::nat(), x.clone());
     let body = Term::app(stream_make(alpha.clone()), n_lambda);
     hol::pub_abs("x", alpha, body)
 }

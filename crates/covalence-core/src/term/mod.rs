@@ -31,8 +31,8 @@ pub use set::TermSet;
 pub use spec::TermSpec;
 pub use term::{Def, Term, TermKind};
 
-// Re-export the type language so `crate::term::{Type, TypeKind,
-// BinderHint}` continues to resolve (the canonical home is `crate::ty`).
-pub use crate::ty::{BinderHint, Type, TypeKind};
+// Re-export the type language so `crate::term::{Type, TypeKind}`
+// continues to resolve (the canonical home is `crate::ty`).
+pub use crate::ty::{Type, TypeKind};
 
 pub(crate) use term::{TypeEnv, type_of_in};

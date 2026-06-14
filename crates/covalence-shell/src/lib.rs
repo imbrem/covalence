@@ -44,4 +44,4 @@ pub use covalence_kernel::primop::{PrimOp1, PrimOp2};
 /// `PureHol` (the HolLightKernel impl) is gated until the WASM-proof
 /// rewrite reinstates it on HOL-Light rules.
 pub use covalence_hol::{HolLightCtx, HolLightKernel};
-pub use covalence_core::{BinderHint, Term, Thm, Type, TypeDef, TypeKind};
+pub use covalence_core::{Term, Thm, Type, TypeDef, TypeKind};

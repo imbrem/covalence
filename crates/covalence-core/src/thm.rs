@@ -32,9 +32,11 @@ use crate::ctx::Ctx;
 use crate::error::{Error, Result};
 use crate::hol;
 use crate::subst::{close, find_free_type, has_free_var, open, subst_free, subst_tfree_in_term};
+use smol_str::SmolStr;
+
 use crate::term::{
-    BinderHint, Def, Object, ObsEq, ObsImp, ObsTrue, Observer, Term, TermKind, Type, TypeEnv,
-    TypeKind, type_of_in,
+    Def, Object, ObsEq, ObsImp, ObsTrue, Observer, Term, TermKind, Type, TypeEnv, TypeKind,
+    type_of_in,
 };
 
 #[derive(Clone)]
@@ -217,8 +219,8 @@ impl Thm {
         }
         let s = s.clone();
         let t = t.clone();
-        let s_abs = Term::abs(name, ty.clone(), close(&s, name));
-        let t_abs = Term::abs(name, ty, close(&t, name));
+        let s_abs = Term::abs(ty.clone(), close(&s, name));
+        let t_abs = Term::abs(ty, close(&t, name));
         let concl = hol::hol_eq(s_abs, t_abs);
         Self::build(self.hyps, concl)
     }
@@ -229,7 +231,7 @@ impl Thm {
         let TermKind::App(fun, arg) = app.kind() else {
             return Err(Error::NotApp(format!("{}", app)));
         };
-        let TermKind::Abs(_, ty, body) = fun.kind() else {
+        let TermKind::Abs(ty, body) = fun.kind() else {
             return Err(Error::NotAbs(format!("{}", fun)));
         };
         let arg_ty = arg.type_of()?;
@@ -459,7 +461,7 @@ impl Thm {
     /// exposed as a rule that discharges well-formedness in one
     /// step).
     pub fn eta_conv(abs: Term) -> Result<Thm> {
-        let TermKind::Abs(_, ty, body) = abs.kind() else {
+        let TermKind::Abs(ty, body) = abs.kind() else {
             return Err(Error::NotAbs(format!("{}", abs)));
         };
         let TermKind::App(f, x) = body.kind() else {
@@ -655,9 +657,9 @@ impl Thm {
     /// degenerate case is logically vacuous but the rule still
     /// admits a model (τ singleton at the canonical witness).
     pub fn new_type_definition(
-        hint: impl Into<BinderHint>,
-        abs_hint: impl Into<BinderHint>,
-        rep_hint: impl Into<BinderHint>,
+        hint: impl Into<SmolStr>,
+        abs_hint: impl Into<SmolStr>,
+        rep_hint: impl Into<SmolStr>,
         witness: Thm,
     ) -> Result<TypeDef> {
         // 1. Decompose witness's concl as `P x` (an application).
@@ -696,7 +698,8 @@ impl Thm {
         //    zero-sized struct with no methods, so user code can never
         //    forge or equate it across calls.
         let marker = TypeDefMarker::new();
-        let tau = Type::tycon_obs(marker.clone(), hint.into(), tvar_types);
+        let _ = hint;
+        let tau = Type::tycon_obs(marker.clone(), tvar_types);
 
         // 6. Build abs and rep as Obs leaves wrapping per-role markers
         //    that carry a reference to the shared typedef marker. This
@@ -781,7 +784,7 @@ impl Thm {
     /// the prior theory, we extend by interpreting this `Def` as
     /// `⟦body⟧` — a conservative extension. No global signature is
     /// needed because the allocator gives us uniqueness per call.
-    pub fn define(name: impl Into<BinderHint>, body: Term) -> Result<Thm> {
+    pub fn define(name: impl Into<SmolStr>, body: Term) -> Result<Thm> {
         let body_type = body.type_of()?;
         // Soundness check (Isabelle/Pure parity): no "phantom"
         // tvars — every free tvar appearing inside any type
@@ -1195,7 +1198,7 @@ fn parse_hol_forall(t: &Term) -> Result<(&Type, &Term)> {
     if !is_spec(forall_head, &crate::defs::forall_spec()) {
         return Err(Error::NotHolForall(format!("{}", t)));
     }
-    let TermKind::Abs(_, ty, body) = lambda.kind() else {
+    let TermKind::Abs(ty, body) = lambda.kind() else {
         return Err(Error::NotHolForall(format!("{}", t)));
     };
     Ok((ty, body))
@@ -1340,11 +1343,11 @@ impl TypeDefMarker {
 struct TypeDefAbsMarker {
     #[allow(dead_code)]
     typedef: Arc<TypeDefMarkerInner>,
-    hint: BinderHint,
+    hint: SmolStr,
 }
 
 impl TypeDefAbsMarker {
-    fn new(m: &TypeDefMarker, hint: BinderHint) -> Self {
+    fn new(m: &TypeDefMarker, hint: SmolStr) -> Self {
         TypeDefAbsMarker {
             typedef: Arc::clone(&m.0),
             hint,
@@ -1366,11 +1369,11 @@ impl fmt::Debug for TypeDefAbsMarker {
 struct TypeDefRepMarker {
     #[allow(dead_code)]
     typedef: Arc<TypeDefMarkerInner>,
-    hint: BinderHint,
+    hint: SmolStr,
 }
 
 impl TypeDefRepMarker {
-    fn new(m: &TypeDefMarker, hint: BinderHint) -> Self {
+    fn new(m: &TypeDefMarker, hint: SmolStr) -> Self {
         TypeDefRepMarker {
             typedef: Arc::clone(&m.0),
             hint,
@@ -1427,7 +1430,7 @@ mod hol_light_tests {
     #[test]
     fn hol_beta_conv_reduces() {
         // (λx:nat. x) (succ 0) = succ 0
-        let id = Term::abs("x", Type::nat(), Term::bound(0));
+        let id = Term::abs(Type::nat(), Term::bound(0));
         let arg = Term::app(crate::defs::nat_succ(), Term::nat_lit(0u32));
         let app = Term::app(id, arg.clone());
         let thm = Thm::beta_conv(app.clone()).expect("β");
@@ -1535,7 +1538,7 @@ mod hol_light_tests {
         let refl = Thm::refl(x).unwrap();
         let abs = refl.abs("x", Type::nat()).expect("abs");
         let (l, r) = parse_hol_eq(abs.concl()).unwrap();
-        let lam = Term::abs("x", Type::nat(), Term::bound(0));
+        let lam = Term::abs(Type::nat(), Term::bound(0));
         assert_eq!(l, &lam);
         assert_eq!(r, &lam);
     }
@@ -1656,7 +1659,7 @@ mod hol_light_tests {
     #[test]
     fn hol_beta_conv_rejects_arg_type_mismatch() {
         // λx:nat. x  applied to a bool — type mismatch.
-        let id = Term::abs("x", Type::nat(), Term::bound(0));
+        let id = Term::abs(Type::nat(), Term::bound(0));
         let bad_arg = Term::bool_lit(true);
         let app = Term::app(id, bad_arg);
         let err = Thm::beta_conv(app).unwrap_err();
@@ -2077,7 +2080,7 @@ mod hol_light_tests {
     fn eta_conv_simple() {
         // λx:nat. succ x  --eta-->  succ
         let succ = crate::defs::nat_succ();
-        let lambda = Term::abs("x", Type::nat(),
+        let lambda = Term::abs(Type::nat(),
             Term::app(crate::subst::shift_by(&succ, 1, 0), Term::bound(0)));
         let thm = Thm::eta_conv(lambda.clone()).expect("eta");
         let (l, r) = parse_hol_eq(thm.concl()).unwrap();
@@ -2095,7 +2098,7 @@ mod hol_light_tests {
     #[test]
     fn eta_conv_rejects_body_not_app() {
         // λx:nat. x is `Abs(_, nat, Bound(0))` — not an app shape.
-        let lambda = Term::abs("x", Type::nat(), Term::bound(0));
+        let lambda = Term::abs(Type::nat(), Term::bound(0));
         let err = Thm::eta_conv(lambda).unwrap_err();
         assert!(matches!(err, Error::EtaShape));
     }
@@ -2106,7 +2109,7 @@ mod hol_light_tests {
         let succ = crate::defs::nat_succ();
         let inner = Term::app(crate::subst::shift_by(&succ, 1, 0), Term::bound(0));
         let outer = Term::app(crate::subst::shift_by(&succ, 1, 0), inner);
-        let lambda = Term::abs("x", Type::nat(), outer);
+        let lambda = Term::abs(Type::nat(), outer);
         let err = Thm::eta_conv(lambda).unwrap_err();
         assert!(matches!(err, Error::EtaShape));
     }
@@ -2115,8 +2118,8 @@ mod hol_light_tests {
     fn eta_conv_rejects_bound_zero_free_in_f() {
         // λx:nat. (λy. x) x — `f` (= λy. x) uses Bound(0) outside its own binder,
         // which is `Bound(0)` referring to the outer x. EtaShape.
-        let inner = Term::abs("y", Type::nat(), Term::bound(1)); // refers to outer x
-        let lambda = Term::abs("x", Type::nat(), Term::app(inner, Term::bound(0)));
+        let inner = Term::abs(Type::nat(), Term::bound(1)); // refers to outer x
+        let lambda = Term::abs(Type::nat(), Term::app(inner, Term::bound(0)));
         let err = Thm::eta_conv(lambda).unwrap_err();
         assert!(matches!(err, Error::EtaShape));
     }

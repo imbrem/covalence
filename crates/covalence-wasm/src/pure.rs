@@ -202,7 +202,7 @@ impl cov::pure::api::HostTerm for PureHost {
     ) -> wasmtime::Result<Resource<Term>> {
         let ty = self.table.get(&ty)?.clone();
         let body = self.table.get(&body)?.clone();
-        self.push_term(Term::abs(&hint, ty, body))
+        self.push_term(Term::abs(ty, body))
     }
 
     fn imp(

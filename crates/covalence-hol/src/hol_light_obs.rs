@@ -157,7 +157,7 @@ impl HolLightCtx {
     /// `Thm::all_elim` correctly substitutes a witness for them.
     pub fn mk_forall(&self, hint: &str, alpha: Type, body: Term) -> Term {
         let closed = covalence_core::subst::close(&body, hint);
-        let lambda = Term::abs(hint, alpha.clone(), closed);
+        let lambda = Term::abs(alpha.clone(), closed);
         Term::app(self.forall_at(alpha), lambda)
     }
 
@@ -169,7 +169,7 @@ impl HolLightCtx {
     /// occurrences of `hint` in `body` so the binder actually binds.
     pub fn mk_exists(&self, hint: &str, alpha: Type, body: Term) -> Term {
         let closed = covalence_core::subst::close(&body, hint);
-        let lambda = Term::abs(hint, alpha.clone(), closed);
+        let lambda = Term::abs(alpha.clone(), closed);
         Term::app(self.exists_at(alpha), lambda)
     }
 
@@ -182,7 +182,7 @@ impl HolLightCtx {
     /// occurrences of `hint` in `body` so the binder actually binds.
     pub fn mk_select(&self, hint: &str, alpha: Type, body: Term) -> Term {
         let closed = covalence_core::subst::close(&body, hint);
-        let lambda = Term::abs(hint, alpha.clone(), closed);
+        let lambda = Term::abs(alpha.clone(), closed);
         Term::app(self.select_at(alpha), lambda)
     }
 

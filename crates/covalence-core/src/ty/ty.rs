@@ -23,67 +23,6 @@ use crate::term::{Object, Observer};
 use super::list::TypeList;
 use super::spec::TypeSpec;
 
-// ============================================================================
-// BinderHint
-// ============================================================================
-
-/// A display label for an `Abs`/`All` binder, or for a `TyConObs`
-/// constructor. Transparent to equality and ordering —
-/// `BinderHint("x") == BinderHint("y")` is `true`. Only `Display` and
-/// `Debug` distinguish them, so that α-equivalence is structural
-/// equality on `TermKind` and structural equality on `TypeKind`.
-#[derive(Clone, Default)]
-pub struct BinderHint(pub SmolStr);
-
-impl BinderHint {
-    pub fn new(s: impl Into<SmolStr>) -> Self {
-        BinderHint(s.into())
-    }
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
-    }
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl<S: Into<SmolStr>> From<S> for BinderHint {
-    fn from(s: S) -> Self {
-        BinderHint(s.into())
-    }
-}
-
-impl PartialEq for BinderHint {
-    fn eq(&self, _: &Self) -> bool {
-        true
-    }
-}
-impl Eq for BinderHint {}
-impl Hash for BinderHint {
-    fn hash<H: Hasher>(&self, _: &mut H) {}
-}
-impl Ord for BinderHint {
-    fn cmp(&self, _: &Self) -> Ordering {
-        Ordering::Equal
-    }
-}
-impl PartialOrd for BinderHint {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl fmt::Debug for BinderHint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.0)
-    }
-}
-
-impl fmt::Display for BinderHint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
 
 // ============================================================================
 // Type
@@ -120,11 +59,11 @@ pub enum TypeKind {
     /// type side: the same Rust observer type is the unifying ε-family
     /// across term- and type-level uses (one theory → one identity).
     ///
-    /// The [`BinderHint`] is α-transparent (display only). Identity is the
-    /// `Object` plus the args; the args participate in equality so
-    /// that `list α` and `list β` are distinct even though they share
-    /// the same constructor.
-    TyConObs(Object, BinderHint, TypeList),
+    /// Identity is the `Object` plus the args; the args participate in
+    /// equality so that `list α` and `list β` are distinct even though
+    /// they share the same constructor. The constructor is anonymous —
+    /// no display label is stored.
+    TyConObs(Object, TypeList),
     /// Application of a derived-type [`TypeSpec`]
     /// factory to type arguments. The spec is process-shared
     /// (`LazyLock`-backed) and `args` is the positional
@@ -237,31 +176,18 @@ impl Type {
 
     /// Construct a fresh-identity type constructor wrapping an
     /// observer. The Arc-pointer identity of `observer` is the
-    /// distinguishing identity; `hint` is display-only (α-transparent).
-    /// Distinct calls with independently-constructed observers produce
-    /// distinct types — that's the freshness primitive
-    /// [`crate::Thm::new_type_definition`] uses.
-    pub fn tycon_obs<O: Observer>(
-        observer: O,
-        hint: impl Into<BinderHint>,
-        args: impl Into<TypeList>,
-    ) -> Self {
-        Self::alloc(TypeKind::TyConObs(
-            Object::new(observer),
-            hint.into(),
-            args.into(),
-        ))
+    /// distinguishing identity. Distinct calls with independently-
+    /// constructed observers produce distinct types — that's the
+    /// freshness primitive [`crate::Thm::new_type_definition`] uses.
+    pub fn tycon_obs<O: Observer>(observer: O, args: impl Into<TypeList>) -> Self {
+        Self::alloc(TypeKind::TyConObs(Object::new(observer), args.into()))
     }
 
     /// Like [`Type::tycon_obs`] but reuses an existing [`Object`]
     /// handle (preserving its `Arc` identity). Used internally by
     /// kernel rules and by deserialisers that already have a `Object`.
-    pub fn tycon_obs_from_dyn(
-        observer: Object,
-        hint: impl Into<BinderHint>,
-        args: impl Into<TypeList>,
-    ) -> Self {
-        Self::alloc(TypeKind::TyConObs(observer, hint.into(), args.into()))
+    pub fn tycon_obs_from_dyn(observer: Object, args: impl Into<TypeList>) -> Self {
+        Self::alloc(TypeKind::TyConObs(observer, args.into()))
     }
 
     /// True when this is `Type::bool()` — the HOL formula type. The
@@ -292,7 +218,7 @@ pub(crate) fn free_tvars_into(ty: &Type, out: &mut std::collections::BTreeSet<Sm
             free_tvars_into(a, out);
             free_tvars_into(b, out);
         }
-        TypeKind::Tycon(_, args) | TypeKind::TyConObs(_, _, args) | TypeKind::Spec(_, args) => {
+        TypeKind::Tycon(_, args) | TypeKind::TyConObs(_, args) | TypeKind::Spec(_, args) => {
             for a in args {
                 free_tvars_into(a, out);
             }
@@ -360,16 +286,11 @@ impl fmt::Display for Type {
                     write!(f, ")")
                 }
             }
-            TypeKind::TyConObs(observer, hint, args) => {
-                // `<hint#ptr>` for the constructor head, then args.
-                // `hint` is the user-visible label; the pointer suffix
-                // disambiguates fresh allocations sharing a name.
+            TypeKind::TyConObs(observer, args) => {
+                // Anonymous fresh-identity constructor: `tycon#ptr`,
+                // disambiguated by the observer's pointer identity.
                 let ptr = observer.ptr_id();
-                let label = if hint.is_empty() {
-                    format!("tycon#{ptr:x}")
-                } else {
-                    format!("{hint}#{ptr:x}")
-                };
+                let label = format!("tycon#{ptr:x}");
                 if args.is_empty() {
                     write!(f, "{label}")
                 } else {

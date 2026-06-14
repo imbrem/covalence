@@ -86,7 +86,7 @@ fn cons_body() -> Term {
     // f = λk:nat. λ_:option α. streamAt (rep xs) k  (the value at k+1)
     let k = Term::free("k", Type::nat());
     let at_k = Term::app(Term::app(stream_at(opt.clone()), rep_xs), k);
-    let f = hol::pub_abs("k", Type::nat(), Term::abs("_", opt.clone(), at_k));
+    let f = hol::pub_abs("k", Type::nat(), Term::abs(opt.clone(), at_k));
 
     // λn. natRec[option α] (some x) f n
     let n = Term::free("n", Type::nat());

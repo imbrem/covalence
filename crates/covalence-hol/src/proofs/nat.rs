@@ -21,7 +21,7 @@ use super::rewrite::rewrite_with;
 /// `subst::close` to bind the free occurrences.
 pub fn nat_predicate(n_name: &str, body: Term) -> Term {
     let bound = close(&body, n_name);
-    Term::abs(n_name, Type::nat(), bound)
+    Term::abs(Type::nat(), bound)
 }
 
 // ============================================================================
@@ -90,7 +90,7 @@ mod tests {
         // The kernel rule reads back P and n from the shapes and
         // returns ⊢ ∀n:nat. p n.
         let true_term = ctx().t();
-        let p = Term::abs("n", Type::nat(), true_term.clone());
+        let p = Term::abs(Type::nat(), true_term.clone());
 
         // base : {T} ⊢ p 0  (in the applied `p 0` shape the rule wants)
         let base_redex = Term::app(p.clone(), Term::nat_lit(Nat::zero()));
@@ -124,7 +124,7 @@ mod tests {
         let covalence_core::TermKind::App(_, lam) = conclusion.concl().kind() else {
             panic!("expected forall application, got {:?}", conclusion.concl());
         };
-        let covalence_core::TermKind::Abs(_, ty, _) = lam.kind() else {
+        let covalence_core::TermKind::Abs(ty, _) = lam.kind() else {
             panic!("expected lambda body");
         };
         assert_eq!(ty, &Type::nat());

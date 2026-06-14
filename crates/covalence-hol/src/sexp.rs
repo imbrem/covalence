@@ -143,12 +143,11 @@ pub fn type_to_sexp(ty: &Type, ser: &dyn ObsSerializer) -> Result<SExpr> {
             }
             SExp::List(children)
         }
-        TypeKind::TyConObs(observer, hint, args) => {
+        TypeKind::TyConObs(observer, args) => {
             let payload = ser.obs_to_sexp(observer)?;
-            let mut children = Vec::with_capacity(3 + args.len());
+            let mut children = Vec::with_capacity(2 + args.len());
             children.push(sym("tycon-obs"));
             children.push(payload);
-            children.push(sym(hint.as_str()));
             for arg in args {
                 children.push(type_to_sexp(arg, ser)?);
             }
@@ -208,18 +207,17 @@ pub fn type_from_sexp(s: &SExpr, parser: &dyn ObsParser) -> Result<Type> {
             Ok(Type::tycon(name, args))
         }
         "tycon-obs" => {
-            if children.len() < 3 {
+            if children.len() < 2 {
                 return Err(SexpError(
-                    "tycon-obs: expected (tycon-obs PAYLOAD HINT TYPE*)".into(),
+                    "tycon-obs: expected (tycon-obs PAYLOAD TYPE*)".into(),
                 ));
             }
             let observer = parser.obs_from_sexp(&children[1])?;
-            let hint = expect_symbol(&children[2], "tycon-obs hint")?;
-            let args = children[3..]
+            let args = children[2..]
                 .iter()
                 .map(|c| type_from_sexp(c, parser))
                 .collect::<Result<Vec<_>>>()?;
-            Ok(Type::tycon_obs_from_dyn(observer, hint, args))
+            Ok(Type::tycon_obs_from_dyn(observer, args))
         }
         other => Err(SexpError(format!("unknown type head: {}", other))),
     }
@@ -286,12 +284,9 @@ pub fn term_to_sexp(t: &Term, ser: &dyn ObsSerializer) -> Result<SExpr> {
         TermKind::Free(name, ty) => list3("free", sym(name), type_to_sexp(ty, ser)?),
         TermKind::Const(name, ty) => list3("const", sym(name), type_to_sexp(ty, ser)?),
         TermKind::App(f, x) => list3("app", term_to_sexp(f, ser)?, term_to_sexp(x, ser)?),
-        TermKind::Abs(hint, ty, body) => list4(
-            "abs",
-            sym(hint.as_str()),
-            type_to_sexp(ty, ser)?,
-            term_to_sexp(body, ser)?,
-        ),
+        TermKind::Abs(ty, body) => {
+            list3("abs", type_to_sexp(ty, ser)?, term_to_sexp(body, ser)?)
+        }
         TermKind::Blob(bytes) => list2(
             "blob",
             SExp::Atom(Atom::Str {
@@ -319,7 +314,7 @@ pub fn term_to_sexp(t: &Term, ser: &dyn ObsSerializer) -> Result<SExpr> {
             let payload = ser.obs_to_sexp(observer)?;
             list3("obs", payload, type_to_sexp(ty, ser)?)
         }
-        TermKind::Def(d) => list3("def", sym(d.name().as_str()), term_to_sexp(&d.body(), ser)?),
+        TermKind::Def(d) => list3("def", sym(d.name()), term_to_sexp(&d.body(), ser)?),
     })
 }
 
@@ -357,11 +352,10 @@ pub fn term_from_sexp(s: &SExpr, parser: &dyn ObsParser) -> Result<Term> {
             ))
         }
         "abs" => {
-            expect_arity(children, 4, "abs")?;
-            let hint = expect_symbol(&children[1], "abs hint")?;
-            let ty = type_from_sexp(&children[2], parser)?;
-            let body = term_from_sexp(&children[3], parser)?;
-            Ok(Term::abs(hint, ty, body))
+            expect_arity(children, 3, "abs")?;
+            let ty = type_from_sexp(&children[1], parser)?;
+            let body = term_from_sexp(&children[2], parser)?;
+            Ok(Term::abs(ty, body))
         }
         "blob" => {
             expect_arity(children, 2, "blob")?;
@@ -453,9 +447,6 @@ fn list2(head: &str, a: SExpr) -> SExpr {
 }
 fn list3(head: &str, a: SExpr, b: SExpr) -> SExpr {
     SExp::List(vec![sym(head), a, b])
-}
-fn list4(head: &str, a: SExpr, b: SExpr, c: SExpr) -> SExpr {
-    SExp::List(vec![sym(head), a, b, c])
 }
 
 fn expect_list<'a>(s: &'a SExpr, what: &str) -> Result<&'a [SExpr]> {

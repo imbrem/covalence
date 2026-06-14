@@ -205,7 +205,7 @@ impl Hasher {
             // hashes. `BinderHint` is α-transparent in the kernel (excluded
             // from `Hash`/`Eq`) so we exclude it here too — two
             // α-equivalent `TyConObs` types must hash equally.
-            TypeKind::TyConObs(observer, _hint, args) => {
+            TypeKind::TyConObs(observer, args) => {
                 let payload = oh.obs_payload(observer);
                 let mut buf = Vec::with_capacity(1 + 4 + payload.len() + 4 + 32 * args.len());
                 buf.push(TY_TYCON_OBS);
@@ -261,7 +261,7 @@ impl Hasher {
                 let xh = self.hash_term(x, oh);
                 binary(ctx, T_APP, fh, xh)
             }
-            TermKind::Abs(_, ty, body) => {
+            TermKind::Abs(ty, body) => {
                 let th = self.hash_type(ty, oh);
                 let bh = self.hash_term(body, oh);
                 binary(ctx, T_ABS, th, bh)
@@ -289,7 +289,7 @@ impl Hasher {
             // body — that's fine for the `Hash`-vs-`Eq` contract,
             // which only requires equal values to hash equally.
             TermKind::Def(d) => {
-                let name_bytes = d.name().as_str().as_bytes();
+                let name_bytes = d.name().as_bytes();
                 let body_h = self.hash_term(&d.body(), oh);
                 let mut buf = Vec::with_capacity(1 + 4 + name_bytes.len() + 32);
                 buf.push(T_DEF);

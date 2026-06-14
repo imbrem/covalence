@@ -9,5 +9,5 @@ use crate::term::{Term, Type};
 /// `TypeSpec::newtype` and every `def name args := ty` (no `where
 /// pred`) catalogue entry.
 pub(crate) fn any(carrier: &Type) -> Term {
-    Term::abs("_", carrier.clone(), Term::bool_lit(true))
+    Term::abs(carrier.clone(), Term::bool_lit(true))
 }

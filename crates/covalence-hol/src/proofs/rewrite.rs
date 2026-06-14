@@ -128,7 +128,7 @@ pub fn beta_nf(t: Term) -> Thm {
             }
             comb
         }
-        TermKind::Abs(_, ty, body) => {
+        TermKind::Abs(ty, body) => {
             // Normalise under the binder: open with a fresh free var,
             // normalise, re-abstract.
             let fresh = fresh_name(body);

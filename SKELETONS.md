@@ -43,15 +43,18 @@ it is how unfinished work stays discoverable.
   the workhorse for proving `int` *equations*.
 
   Remaining for `int`: (a) the **converse** `mkClass a = mkClass b ⟹ rel a b`
-  in `init::quotient` (needs `Thm::spec_rep_abs_fwd` + a proof that
-  `classOf a` satisfies the `close` predicate); (b) prove `int_rel` is an
-  equivalence (`symm` is trivial; `trans` needs a `nat` **cancellation**
-  lemma `a + c = b + c ⟹ a = b`, not yet in `init::nat`); (c) reconcile the
-  generic `classOf a = λx. rel a x` with `defs/int.rs`'s β-reduced
-  `class_of` (a β step); then each `int` axiom unfolds the op to its
-  representative-pair body, lifts the `nat` fact through `class_intro`, and
-  re-quotients. The order/multiplicative `nat` facts (`le`/`lt` transitivity,
-  cancellation, `mul` laws) are the other prerequisite.
+  in `init::quotient` — recipe (and the η gotcha) is in that module's docs;
+  needs `Thm::spec_rep_abs_fwd` + a proof that `classOf a` satisfies the
+  `close` predicate. (b) Prove `int_rel` is an equivalence: `refl`/`symm`
+  are trivial (`refl`/`sym` of a `nat` equation); `trans` now has its
+  prerequisite — `init::nat::add_cancel`. (c) Reconcile the generic
+  `classOf a = λx. rel a x` with `defs/int.rs`'s β-reduced `class_of` (a β
+  step). Then each `int` axiom unfolds the op to its representative-pair
+  body, lifts the `nat` fact through `class_intro`, and re-quotients.
+  Still-needed `nat` facts for the *order/multiplicative* `int` axioms:
+  `mul_succ_r` / `mul_comm` / `mul_assoc` / `distrib`, and the `le`/`lt`
+  order facts (reflexivity, transitivity, monotonicity). `init::nat` already
+  has the additive theory + `add_cancel` + `mul_zero`.
 ## Partial subsystems
 
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in

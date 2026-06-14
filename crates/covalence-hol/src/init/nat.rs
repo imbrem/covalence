@@ -20,13 +20,15 @@
 //!   [`add_base`] / [`add_step`] / [`mul_base`] / [`mul_step`], by
 //!   δ-unfolding `nat.add` / `nat.mul` / `iter` down to `natRec` and
 //!   applying [`rec_holds`]; and on top of those, the **additive theory**
-//!   [`add_zero`] / [`add_succ_r`] / [`add_comm`] / [`add_assoc`], proved
-//!   by `nat`-induction (the [`induct`] helper). Since `rec_holds` is
-//!   hypothesis-free, all of these are genuine theorems — and the whole
-//!   shallow Peano embedding with them.
+//!   [`add_zero`] / [`add_succ_r`] / [`add_comm`] / [`add_assoc`] /
+//!   [`add_cancel`] (via [`succ_inj`]) and the multiplicative right-zero
+//!   [`mul_zero`], proved by `nat`-induction (the [`induct`] helper). Since
+//!   `rec_holds` is hypothesis-free, all of these are genuine theorems — and
+//!   the whole shallow Peano embedding with them.
 //!
-//! These additive facts are the `nat` half of what the `int` quotient
-//! lift ([`init::int`](crate::init::int)) needs.
+//! These are the `nat` half of what the `int` quotient lift
+//! ([`init::int`](crate::init::int)) needs — `add_cancel` in particular is
+//! what `int_rel`'s transitivity rests on.
 
 use covalence_core::{Result, Term, Thm, Type, defs, subst};
 use covalence_types::Nat;
@@ -443,6 +445,87 @@ fn add_assoc_impl() -> Result<Thm> {
     induct(&motive, base, step)
 }
 
+cached_thm! {
+    /// `⊢ ∀a b c. (a + c = b + c) ⟹ (a = b)` — right cancellation of `+`.
+    /// Proved by induction on the cancelled summand, using successor
+    /// injectivity ([`succ_inj`]) at the step. This is the `nat` lemma the
+    /// `int` quotient relation's transitivity rests on.
+    pub fn add_cancel() -> Thm {
+        add_cancel_impl().expect("add_cancel derivation")
+    }
+}
+fn add_cancel_impl() -> Result<Thm> {
+    let (a, b) = (var("a"), var("b"));
+    // body[n] ≔ (a + n = b + n) ⟹ (a = b)
+    let body_at = |t: &Term| -> Result<Term> {
+        add(a.clone(), t.clone())
+            .equals(add(b.clone(), t.clone()))?
+            .imp(a.clone().equals(b.clone())?)
+    };
+    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+    // base: (a + 0 = b + 0) ⟹ (a = b) — strip the `+ 0`s and chain.
+    let base = {
+        let prem = add(a.clone(), zero()).equals(add(b.clone(), zero()))?;
+        let az = add_zero().all_elim(a.clone())?; // a + 0 = a
+        let bz = add_zero().all_elim(b.clone())?; // b + 0 = b
+        az.sym()?
+            .trans(Thm::assume(prem.clone())?)?
+            .trans(bz)? // {a+0=b+0} ⊢ a = b
+            .imp_intro(&prem)?
+    };
+
+    // step: body[n] ⟹ body[S n].
+    let n = var("n");
+    let ihc = body_at(&n)?;
+    let inner = {
+        let prem = add(a.clone(), succ(n.clone())).equals(add(b.clone(), succ(n.clone())))?;
+        // a + S n = S(a + n),  b + S n = S(b + n).
+        let asr = add_succ_r().all_elim(a.clone())?.all_elim(n.clone())?;
+        let bsr = add_succ_r().all_elim(b.clone())?.all_elim(n.clone())?;
+        // {a+Sn=b+Sn} ⊢ S(a+n) = S(b+n).
+        let ssucc = asr.sym()?.trans(Thm::assume(prem.clone())?)?.trans(bsr)?;
+        // succ injectivity: S(a+n) = S(b+n) ⟹ a+n = b+n.
+        let acn = succ_inj()
+            .all_elim(add(a.clone(), n.clone()))?
+            .all_elim(add(b.clone(), n.clone()))?
+            .imp_elim(ssucc)?; // {a+Sn=b+Sn} ⊢ a+n = b+n
+        // Apply the induction hypothesis.
+        Thm::assume(ihc.clone())?
+            .imp_elim(acn)? // {body n, a+Sn=b+Sn} ⊢ a = b
+            .imp_intro(&prem)? // {body n} ⊢ (a+Sn=b+Sn) ⟹ (a=b)
+    };
+    let step = inner.imp_intro(&ihc)?;
+    induct(&motive, base, step)?
+        .all_intro("b", nat())?
+        .all_intro("a", nat())
+}
+
+cached_thm! {
+    /// `⊢ ∀a. a * 0 = 0` — right zero of `*` (the recursion equation gives
+    /// the *left* zero `0 * a = 0`; this is the induction-on-`a` mirror).
+    pub fn mul_zero() -> Thm {
+        mul_zero_impl().expect("mul_zero derivation")
+    }
+}
+fn mul_zero_impl() -> Result<Thm> {
+    let n = var("n");
+    let body = mul(n.clone(), zero()).equals(zero())?; // n * 0 = 0
+    let motive = Term::abs(nat(), subst::close(&body, "n"));
+
+    // base: 0 * 0 = 0.
+    let base = mul_base().all_elim(zero())?;
+
+    // step: (n * 0 = 0) ⟹ (S n * 0 = 0).
+    let ihc = mul(n.clone(), zero()).equals(zero())?;
+    let e1 = mul_step().all_elim(n.clone())?.all_elim(zero())?; // S n * 0 = 0 + n * 0
+    let e2 = Thm::assume(ihc.clone())?.cong_arg(Term::app(nat_add(), zero()))?; // 0 + n*0 = 0 + 0
+    let e3 = add_base().all_elim(zero())?; // 0 + 0 = 0
+    let step = e1.trans(e2)?.trans(e3)?.imp_intro(&ihc)?;
+
+    induct(&motive, base, step)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -488,6 +571,31 @@ mod tests {
         for t in [add_succ_r(), add_comm(), add_assoc()] {
             assert!(t.hyps().is_empty(), "fully proved");
         }
+    }
+
+    #[test]
+    fn add_cancel_cancels_a_common_summand() {
+        // ∀a b c. (a+c = b+c) ⟹ (a=b); instantiate to a concrete implication.
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let thm = add_cancel()
+            .all_elim(a.clone()).unwrap()
+            .all_elim(b.clone()).unwrap()
+            .all_elim(c.clone()).unwrap();
+        let prem = add(a.clone(), c.clone()).equals(add(b.clone(), c)).unwrap();
+        let concl = a.equals(b).unwrap();
+        assert_eq!(thm.concl(), &prem.imp(concl).unwrap());
+        // rec_holds is proved (succ_inj is genuine), so this is hypothesis-free.
+        assert!(add_cancel().hyps().is_empty());
+    }
+
+    #[test]
+    fn mul_zero_proves_right_zero() {
+        // ⊢ ∀a. a * 0 = 0, specialising to 7 * 0 = 0.
+        let seven = Term::nat_lit(Nat::from_inner(7u32.into()));
+        let inst = mul_zero().all_elim(seven.clone()).unwrap();
+        assert_eq!(inst.concl(), &mul(seven, zero()).equals(zero()).unwrap());
+        // rec_holds is proved, so this is hypothesis-free.
+        assert!(mul_zero().hyps().is_empty());
     }
 
     /// `rec_holds` is now a genuine theorem, so every fact derived from

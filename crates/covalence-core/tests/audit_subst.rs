@@ -450,17 +450,24 @@ fn type_of_spec_rep_newtype_no_tvars() {
     assert_eq!(*cod, covalence_core::defs::u32_ty());
 }
 
+/// Coprod's tagged carrier relation `nat → bool → bool → bool`.
+fn coprod_nat_bool_carrier() -> Type {
+    Type::fun(
+        Type::nat(),
+        Type::fun(Type::bool(), Type::fun(Type::bool(), Type::bool())),
+    )
+}
+
 #[test]
 fn type_of_spec_abs_polymorphic_positional_args() {
-    // coprod := subtype with carrier ('a -> 'b -> bool), tvars [a, b].
-    // spec_abs(coprod, [nat, bool]) : (nat -> bool -> bool) ->
-    // coprod nat bool.
+    // coprod := subtype with tagged carrier ('a -> 'b -> bool -> bool),
+    // tvars [a, b]. spec_abs(coprod, [nat, bool]) :
+    // (nat -> bool -> bool -> bool) -> coprod nat bool.
     let spec = covalence_core::defs::coprod_spec();
     let abs = Term::spec_abs(spec.clone(), vec![Type::nat(), Type::bool()]);
     let ty = abs.type_of().unwrap();
-    let carrier = Type::fun(Type::nat(), Type::fun(Type::bool(), Type::bool()));
     let wrapper = covalence_core::defs::coprod(Type::nat(), Type::bool());
-    assert_eq!(ty, Type::fun(carrier, wrapper));
+    assert_eq!(ty, Type::fun(coprod_nat_bool_carrier(), wrapper));
 }
 
 #[test]
@@ -468,9 +475,8 @@ fn type_of_spec_rep_polymorphic_is_inverse_of_abs() {
     let spec = covalence_core::defs::coprod_spec();
     let rep = Term::spec_rep(spec.clone(), vec![Type::nat(), Type::bool()]);
     let ty = rep.type_of().unwrap();
-    let carrier = Type::fun(Type::nat(), Type::fun(Type::bool(), Type::bool()));
     let wrapper = covalence_core::defs::coprod(Type::nat(), Type::bool());
-    assert_eq!(ty, Type::fun(wrapper, carrier));
+    assert_eq!(ty, Type::fun(wrapper, coprod_nat_bool_carrier()));
 }
 
 #[test]
@@ -523,6 +529,71 @@ fn subst_tfrees_simultaneous_no_cascade_term() {
         Term::free("q", Type::tfree("c")),
     );
     assert_eq!(out, expected);
+}
+
+#[test]
+fn subst_tfrees_swaps_two_params_type() {
+    // The case the rel-theory bug hit: a *swap* `{a := b, b := a}` on
+    // `a -> b` must give `b -> a` (a sequential fold collapses it to
+    // `a -> a`, because `a := b` then `b := a` rewrites the `b`s it just
+    // introduced). This is the hardest simultaneous case.
+    let ty = Type::fun(ty_a(), Type::tfree("b"));
+    let mut sub: BTreeMap<smol_str::SmolStr, Type> = BTreeMap::new();
+    sub.insert("a".into(), Type::tfree("b"));
+    sub.insert("b".into(), Type::tfree("a"));
+    let out = subst::subst_tfrees_in_type(&ty, &sub);
+    assert_eq!(out, Type::fun(Type::tfree("b"), Type::tfree("a")), "swap a<->b");
+    // The cascade bug would collapse both to one variable.
+    assert_ne!(out, Type::fun(Type::tfree("a"), Type::tfree("a")));
+    assert_ne!(out, Type::fun(Type::tfree("b"), Type::tfree("b")));
+}
+
+#[test]
+fn subst_tfrees_swaps_two_params_term() {
+    // Same swap at the term level (Free annotations + an Eq op).
+    let t = Term::app(
+        Term::app(Term::eq_op(ty_a()), Term::free("p", ty_a())),
+        Term::free("q", Type::tfree("b")),
+    );
+    let mut sub: BTreeMap<smol_str::SmolStr, Type> = BTreeMap::new();
+    sub.insert("a".into(), Type::tfree("b"));
+    sub.insert("b".into(), Type::tfree("a"));
+    let out = subst::subst_tfrees_in_term(&t, &sub);
+    let expected = Term::app(
+        Term::app(Term::eq_op(Type::tfree("b")), Term::free("p", Type::tfree("b"))),
+        Term::free("q", Type::tfree("a")),
+    );
+    assert_eq!(out, expected);
+}
+
+#[test]
+fn subst_tfrees_three_cycle() {
+    // A 3-cycle `{a:=b, b:=c, c:=a}` on `a -> b -> c` rotates to
+    // `b -> c -> a` — no fold order reproduces this.
+    let ty = Type::fun(ty_a(), Type::fun(Type::tfree("b"), Type::tfree("c")));
+    let mut sub: BTreeMap<smol_str::SmolStr, Type> = BTreeMap::new();
+    sub.insert("a".into(), Type::tfree("b"));
+    sub.insert("b".into(), Type::tfree("c"));
+    sub.insert("c".into(), Type::tfree("a"));
+    let out = subst::subst_tfrees_in_type(&ty, &sub);
+    let expected = Type::fun(Type::tfree("b"), Type::fun(Type::tfree("c"), Type::tfree("a")));
+    assert_eq!(out, expected);
+}
+
+#[test]
+fn subst_tfrees_replacement_is_not_reprocessed() {
+    // A replacement that *is* a substituted key must be returned verbatim,
+    // never re-substituted: `{a := a}` is the identity, and `{a := nat}`
+    // where `nat` is irrelevant. The subtle one: `{a := b}` where `b` is
+    // NOT a key leaves `b` alone, and `{a := b, b := nat}` gives `a -> b`
+    // not `a -> nat` for the `a` occurrence.
+    let ty = Type::fun(ty_a(), Type::tfree("b"));
+    let mut sub: BTreeMap<smol_str::SmolStr, Type> = BTreeMap::new();
+    sub.insert("a".into(), Type::tfree("b"));
+    sub.insert("b".into(), Type::nat());
+    let out = subst::subst_tfrees_in_type(&ty, &sub);
+    // `a` -> `b` (the value, NOT re-substituted to nat); `b` -> nat.
+    assert_eq!(out, Type::fun(Type::tfree("b"), Type::nat()));
 }
 
 #[test]

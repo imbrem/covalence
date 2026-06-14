@@ -943,6 +943,31 @@ fn spec_ax_rejects_wrong_witness_type() {
 }
 
 #[test]
+fn select_ax_rejects_witness_type_mismatch() {
+    // The witness `x` must inhabit the predicate's domain α.
+    let p = Term::free("p", Type::fun(Type::nat(), Type::bool()));
+    let x = Term::free("x", Type::bool()); // bool, not nat
+    assert!(matches!(
+        Thm::select_ax(p, x),
+        Err(Error::TypeMismatch { .. })
+    ));
+}
+
+#[test]
+fn spec_ax_rejects_declaration_only_and_non_spec() {
+    // A declaration-only spec (`tm = None`) has no predicate. `nat.div` is
+    // declaration-only by design — it only reduces on literals, no body.
+    let decl = crate::defs::nat_div();
+    let w = Term::free("w", decl.type_of().unwrap());
+    assert!(matches!(Thm::spec_ax(decl, w), Err(Error::SpecHasNoBody)));
+    // A non-spec term is rejected before anything else.
+    assert!(matches!(
+        Thm::spec_ax(Term::nat_lit(5u32), Term::nat_lit(0u32)),
+        Err(Error::NotASpec)
+    ));
+}
+
+#[test]
 fn lem_is_axiom_free_disjunction() {
     let p = Term::free("p", Type::bool());
     let thm = Thm::lem(p.clone()).unwrap();
@@ -956,6 +981,48 @@ fn lem_is_axiom_free_disjunction() {
 fn lem_rejects_non_bool() {
     // LEM is only well-formed at type bool.
     assert!(Thm::lem(Term::free("n", Type::nat())).is_err());
+}
+
+#[test]
+fn lem_on_bool_literals_and_compound_props() {
+    // Literal propositions: `T ∨ ¬T`, `F ∨ ¬F`.
+    for b in [true, false] {
+        let p = Term::bool_lit(b);
+        let thm = Thm::lem(p.clone()).unwrap();
+        assert!(thm.hyps().is_empty());
+        assert_eq!(thm.concl(), &crate::hol::hol_or(p.clone(), crate::hol::hol_not(p)));
+    }
+    // A compound proposition (an equation at nat) is `bool`-typed, so LEM
+    // applies and the disjuncts are that whole proposition.
+    let eq = crate::hol::hol_eq(Term::nat_lit(3u32), Term::free("k", Type::nat()));
+    let thm = Thm::lem(eq.clone()).unwrap();
+    let (l, r) = parse_hol_or(thm.concl()).unwrap();
+    assert_eq!(l, &eq);
+    assert_eq!(r, &crate::hol::hol_not(eq));
+}
+
+#[test]
+fn lem_rejects_open_term() {
+    // An open term (dangling `Bound`) is not typeable, so LEM rejects it
+    // rather than building an ill-formed disjunction.
+    assert!(Thm::lem(Term::bound(0)).is_err());
+}
+
+#[test]
+fn lem_drives_a_case_split_via_or_elim() {
+    // The canonical use of LEM: case-split on `p ∨ ¬p`. With `p ⟹ r` and
+    // `¬p ⟹ r`, `or_elim` yields `r`. Here both branches are the vacuous
+    // discharge of `assume r`, so the result is `{r} ⊢ r` — exercising
+    // that LEM's disjunction is structurally an `or_elim` premise.
+    let p = Term::free("p", Type::bool());
+    let r = Term::free("r", Type::bool());
+    let lem = Thm::lem(p.clone()).unwrap(); // ⊢ p ∨ ¬p
+    let r_thm = Thm::assume(r.clone()).unwrap(); // {r} ⊢ r
+    let left = r_thm.clone().imp_intro(&p).unwrap(); // {r} ⊢ p ⟹ r
+    let right = r_thm.imp_intro(&crate::hol::hol_not(p)).unwrap(); // {r} ⊢ ¬p ⟹ r
+    let out = lem.or_elim(left, right).expect("LEM feeds or_elim");
+    assert_eq!(out.concl(), &r);
+    assert!(out.hyps().contains(&r) && out.hyps().len() == 1);
 }
 
 // ---- TypeSpec subtype laws (spec_abs_rep / spec_rep_abs_fwd / _back) ----

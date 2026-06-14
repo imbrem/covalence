@@ -471,7 +471,13 @@ fn int_binop(tag: IntTag, op: IntOp, ab: u64, bb: u64) -> u64 {
                 au >> s
             }
         }
-        // Euclidean-style: division by zero yields 0 (mirrors nat/int).
+        // Truncating division; `x / 0 = 0` and `x rem 0 = x` (Euclidean,
+        // mirroring nat/int). Both `int.Div`/`int.Rem` now have let-style
+        // bodies (`defs::int_ops::op_body`), so these values are FORCED to
+        // match the bodies: `Div`'s body is `fromInt(intDiv …)` (→ 0 at
+        // y=0, since `int.div n 0 = 0`), and `Rem`'s is `fromInt(intMod …)`
+        // / `fromNat(natMod …)` (→ the dividend at y=0). `au` is the
+        // dividend's low-`w` bits, i.e. its own value.
         IntOp::Div => {
             if tag.is_signed() {
                 let bv = value_s(tag, bb);
@@ -490,12 +496,12 @@ fn int_binop(tag: IntTag, op: IntOp, ab: u64, bb: u64) -> u64 {
             if tag.is_signed() {
                 let bv = value_s(tag, bb);
                 if bv == 0 {
-                    0
+                    au
                 } else {
                     (value_s(tag, ab).wrapping_rem(bv) as u128) & m
                 }
             } else if bu == 0 {
-                0
+                au
             } else {
                 au % bu
             }

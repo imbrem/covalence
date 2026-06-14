@@ -4,7 +4,7 @@
 //! primitives are `=` ([`term::TermKind::Eq`]) and `ε`
 //! ([`term::TermKind::Select`]); `T`/`F` are `bool` literals and every
 //! connective / quantifier (`∧ ∨ ¬ ⟹ ⟺ ∀ ∃`) is an ordinary defined
-//! constant in [`defs::logic`]. The single opaque type is [`Thm`]; its
+//! constant in `defs::logic`. The single opaque type is [`Thm`]; its
 //! only constructors are the inference-rule methods, so soundness reduces
 //! to those rules plus the kernel's commitment to its primitive types'
 //! denotations (`nat` = the standard naturals, `bool` = two values, …).

@@ -47,6 +47,38 @@
 
 use covalence_core::{Error, Result, Term, Thm};
 
+use crate::init::ext::{TermExt, ThmExt};
+
+/// Peel an application spine `f a₁ … aₙ` into `(f, [a₁, …, aₙ])`.
+/// The head `f` is the left-most non-application; the args are in
+/// left-to-right order.
+pub fn spine(t: &Term) -> (&Term, Vec<&Term>) {
+    let mut args = Vec::new();
+    let mut head = t;
+    while let Some((f, a)) = head.as_app() {
+        args.push(a);
+        head = f;
+    }
+    args.reverse();
+    (head, args)
+}
+
+/// `⊢ st = body a₁ … aₙ` — δ-unfold **only** the spine head of
+/// `st = head a₁ … aₙ` (a defined-constant `Spec` leaf), leaving every
+/// argument untouched. Unlike [`TermExt::delta_all`] — which unfolds
+/// nested occurrences in the arguments too — this is the right tool when
+/// the arguments must stay opaque (e.g. computing one membership /
+/// element step over a *nested* expression). Errors if the head is not a
+/// let-style unfoldable `Spec`.
+pub fn delta_head(st: &Term) -> Result<Thm> {
+    let (head, args) = spine(st);
+    let mut acc = head.delta()?; // ⊢ head = body
+    for arg in args {
+        acc = acc.cong_fn(arg.clone())?; // append `arg` to both sides by congruence
+    }
+    Ok(acc)
+}
+
 /// Chain [`Thm::trans`] across a sequence of equational theorems:
 /// `[A=B, B=C, C=D]` → `A=D`. Errors with [`Error::ConnectiveRule`] on
 /// an empty sequence, and propagates any middle-term mismatch from

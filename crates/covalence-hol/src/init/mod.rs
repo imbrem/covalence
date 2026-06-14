@@ -26,6 +26,7 @@ pub mod eq;
 pub mod ext;
 pub mod logic;
 pub mod nat;
+pub mod rel;
 pub mod set;
 
 /// The full `covalence-core` definition catalogue (types, term

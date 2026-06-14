@@ -1013,3 +1013,33 @@ fn subtype_laws_reject_non_subtype_carrier() {
     let args = crate::ty::TypeList::from(vec![elem]);
     assert!(Thm::spec_rep_abs_fwd(spec, args, Term::free("n", Type::nat())).is_err());
 }
+
+#[test]
+fn unfold_term_spec_handles_swapped_type_params() {
+    // Regression: a multi-type-parameter let-spec instantiated with its
+    // parameters *swapped*. `rel.holds : rel 'a 'b → 'a → 'b → bool`
+    // unfolded at `['b,'a]` must yield a body of type
+    // `rel 'b 'a → 'b → 'a → bool`. A sequential `{a:=b, b:=a}` fold
+    // would cascade — `a→b` then `b→a` collapses both to one variable,
+    // giving the bogus `rel 'a 'a → …`. Simultaneous substitution fixes
+    // it.
+    let a = Type::tfree("a");
+    let b = Type::tfree("b");
+    let holds = crate::defs::rel_holds(b.clone(), a.clone()); // rel.holds['b,'a]
+    let expected_ty = Type::fun(
+        crate::defs::rel(b.clone(), a.clone()),
+        Type::fun(b.clone(), Type::fun(a.clone(), Type::bool())),
+    );
+    assert_eq!(holds.type_of().unwrap(), expected_ty, "leaf type at ['b,'a]");
+
+    let thm = Thm::unfold_term_spec(holds.clone()).expect("unfold rel.holds['b,'a]");
+    assert!(thm.hyps().is_empty());
+    let (lhs, rhs) = parse_hol_eq(thm.concl()).unwrap();
+    assert_eq!(lhs, &holds);
+    // The unfolded body must keep the swapped type — not collapse to one.
+    assert_eq!(
+        rhs.type_of().unwrap(),
+        expected_ty,
+        "unfolded body preserves swapped type parameters"
+    );
+}

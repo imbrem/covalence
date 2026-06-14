@@ -193,6 +193,80 @@ pub(crate) fn graph_total(z: &Term, f: &Term) -> Result<Thm> {
     Thm::nat_induct(base, step)
 }
 
+// ============================================================================
+// Uniqueness, part 1: inversion lemmas via "determinizing" instances
+// ============================================================================
+
+/// `⊢ redex`, given `⊢ (redex β-reduced)`. Bridges a fact about a
+/// β-normal body back to the un-reduced application the graph carries.
+///
+/// **β only** (`beta_nf`, not `reduce`): the instances apply relations
+/// to literals like `0`, and we must *not* let ι collapse the resulting
+/// `0 = 0` to `T` — the proofs are stated with the equation intact.
+fn prove_redex(redex: Term, reduced_proof: Thm) -> Result<Thm> {
+    crate::init::eq::beta_nf(redex).sym()?.eq_mp(reduced_proof)
+}
+
+/// β-normalise a theorem's conclusion (β only — see [`prove_redex`]).
+fn reduce_concl(thm: Thm) -> Result<Thm> {
+    crate::init::eq::beta_nf(thm.concl().clone()).eq_mp(thm)
+}
+
+/// The determinizing relation `λk c. (k = 0) ⟹ (c = z)` — closed under
+/// the recursion rules, and pins the value at `0` to `z`.
+fn det_zero(z: &Term) -> Result<Term> {
+    let k = var("k");
+    let c = var("c");
+    let body = k.equals(zero())?.imp(c.equals(z.clone())?)?;
+    let lam_c = Term::abs(nat(), subst::close(&body, "c"));
+    Ok(Term::abs(nat(), subst::close(&lam_c, "k")))
+}
+
+/// `⊢ closed(z, f, det_zero z)`.
+fn det_zero_closed(z: &Term, f: &Term) -> Result<Thm> {
+    let g = det_zero(z)?;
+    // conj1: ⊢ G 0 z  (G 0 z β-reduces to (0=0) ⟹ (z=z)).
+    let eq00 = zero().equals(zero())?;
+    let g0z_body = Thm::refl(z.clone())?.imp_intro(&eq00)?; // ⊢ (0=0) ⟹ (z=z)
+    let conj1 = prove_redex(app2(g.clone(), zero(), z.clone())?, g0z_body)?;
+
+    // conj2: ⊢ ∀m b. G m b ⟹ G (S m) (f m b)  — the consequent is
+    // vacuously true (S m ≠ 0), so it holds regardless of the antecedent.
+    let m = var("m");
+    let b = var("b");
+    let sm = succ(m.clone());
+    let fmb = app2(f.clone(), m.clone(), b.clone())?;
+    let sm_eq_0 = sm.clone().equals(zero())?;
+    // {S m = 0} ⊢ f m b = z, by ex falso (S m = 0 contradicts 0 ≠ S m).
+    let contra = Thm::zero_ne_succ(m.clone())?
+        .not_elim(Thm::assume(sm_eq_0.clone())?.sym()?)? // ⊢ F
+        .false_elim(fmb.clone().equals(z.clone())?)?; //     ⊢ f m b = z
+    let g_succ_body = contra.imp_intro(&sm_eq_0)?; // ⊢ (S m = 0) ⟹ (f m b = z)
+    let g_succ = prove_redex(app2(g.clone(), sm, fmb)?, g_succ_body)?;
+    let conj2 = g_succ
+        .imp_intro(&app2(g.clone(), m.clone(), b.clone())?)?
+        .all_intro("b", nat())?
+        .all_intro("m", nat())?;
+
+    conj1.and_intro(conj2)
+}
+
+/// `⊢ Graph z f 0 a ⟹ a = z`, for free `a` — the graph forces the
+/// value at `0` to be `z`. Instantiate the graph's `∀G` at
+/// [`det_zero`], discharge closure, and read off `a = z`.
+pub(crate) fn graph_base_inv(z: &Term, f: &Term) -> Result<Thm> {
+    let a = var("a");
+    let g = det_zero(z)?;
+    let gh = graph(z, f, zero(), a.clone())?;
+    // {GH} ⊢ G 0 a, then β-reduce to (0=0) ⟹ (a=z), then MP refl.
+    let g0a = Thm::assume(gh.clone())?
+        .all_elim(g)?
+        .imp_elim(det_zero_closed(z, f)?)?;
+    reduce_concl(g0a)? // {GH} ⊢ (0=0) ⟹ (a=z)
+        .imp_elim(Thm::refl(zero())?)? // {GH} ⊢ a = z
+        .imp_intro(&gh) //                  ⊢ Graph z f 0 a ⟹ a = z
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,5 +310,18 @@ mod tests {
         let reduced = beta_reduce_thm(inst).unwrap();
         let expected = graph(&z, &f, k, var("a")).unwrap().exists("a", nat()).unwrap();
         assert_eq!(reduced.concl(), &expected);
+    }
+
+    #[test]
+    fn graph_base_inv_pins_value_to_z() {
+        let (z, f) = zf();
+        let thm = graph_base_inv(&z, &f).unwrap();
+        assert!(thm.hyps().is_empty(), "base inversion must be axiom-free");
+        let a = var("a");
+        let expected = graph(&z, &f, zero(), a.clone())
+            .unwrap()
+            .imp(a.equals(z.clone()).unwrap())
+            .unwrap();
+        assert_eq!(thm.concl(), &expected);
     }
 }

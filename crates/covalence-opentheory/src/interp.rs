@@ -710,10 +710,12 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
     }
 }
 
-// PureHol-backed integration tests are gated while
+// PureHol-backed integration tests are gated off while
 // `covalence-hol::pure_hol` is being migrated to the HOL-Light
-// primitive rule set. Preserved in git history.
-#[cfg(all(test, feature = "_pure_hol_tests_disabled"))]
+// primitive rule set. The `any()` predicate is always false, so this
+// module never compiles (re-enable by replacing `all(test, any())`
+// with `test`); kept in-tree rather than only in git history.
+#[cfg(all(test, any()))]
 mod tests {
     use super::*;
     use covalence_hol::HolLightTerms;

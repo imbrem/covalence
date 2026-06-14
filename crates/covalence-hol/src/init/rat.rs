@@ -253,6 +253,197 @@ fn of_nat_via_int_impl() -> Result<Thm> {
     Thm::beta_conv(redex)?.all_intro("n", Type::nat())
 }
 
+// ============================================================================
+// Field operations — defined at the representative level
+// ============================================================================
+//
+// Each op picks a representative pair from its argument(s) via `repPair`,
+// computes on the `int` numerator/denominator components, and re-quotients
+// with `mkRat`. The denominators are kept strictly positive: a product of
+// positives is positive, so `to_pos` re-wraps an `int` denominator into
+// `int.pos` (the *value* is positive; a proof of that positivity is part
+// of the downstream quotient derivations, not needed to build the term).
+
+/// `repPair x ≔ ε(λp. rep x p)` — a representative pair drawn from the
+/// class of the rat term `x`.
+fn rep_pair(x: Term) -> Term {
+    let pair_ty = ip_pair();
+    let rep = Term::spec_rep(rat_spec(), Vec::new());
+    let rep_x = Term::app(rep, x); // (int×int.pos) → bool
+    let p = Term::free("p", pair_ty.clone());
+    let pred = Term::abs(pair_ty.clone(), subst::close(&Term::app(rep_x, p), "p"));
+    Term::app(Term::select_op(pair_ty), pred)
+}
+
+/// `snd p : int.pos` — the denominator of a representative pair as an
+/// `int.pos` (not coerced down to `int`).
+fn den_pos(p: &Term) -> Term {
+    Term::app(snd(Type::int(), int_pos_ty()), p.clone())
+}
+
+/// `abs z : int.pos` — re-wrap an `int` as `int.pos` (used for the
+/// always-positive product denominators).
+fn to_pos(z: Term) -> Term {
+    Term::app(Term::spec_abs(int_pos_spec(), Vec::new()), z)
+}
+
+/// `a + b` on `int`.
+fn iadd(a: Term, b: Term) -> Term {
+    Term::app(Term::app(int::int_add(), a), b)
+}
+
+/// `mkRat (build px py)` for a binary op: `px = repPair x`, `py = repPair y`.
+fn binary_rat(build: impl Fn(&Term, &Term) -> Term) -> Term {
+    let (x, y) = (Term::free("x", rat()), Term::free("y", rat()));
+    let body = mk_rat(&build(&rep_pair(x.clone()), &rep_pair(y.clone())));
+    Term::abs(rat(), subst::close(&Term::abs(rat(), subst::close(&body, "y")), "x"))
+}
+
+/// `0 : rat` ≡ `mkRat (0, 1)`.
+pub fn rat_zero() -> Term {
+    mk_rat(&ip(Term::int_lit(0i128), one_pos()))
+}
+
+/// `1 : rat` ≡ `mkRat (1, 1)`.
+pub fn rat_one() -> Term {
+    mk_rat(&ip(Term::int_lit(1i128), one_pos()))
+}
+
+/// `ratAdd : rat → rat → rat` ≡ `(a/b) + (c/d) = (a·d + c·b)/(b·d)`.
+pub fn rat_add() -> Term {
+    binary_rat(|px, py| {
+        let n = iadd(imul(num(px), den(py)), imul(num(py), den(px)));
+        ip(n, to_pos(imul(den(px), den(py))))
+    })
+}
+
+/// `ratMul : rat → rat → rat` ≡ `(a/b) · (c/d) = (a·c)/(b·d)`.
+pub fn rat_mul() -> Term {
+    binary_rat(|px, py| {
+        ip(imul(num(px), num(py)), to_pos(imul(den(px), den(py))))
+    })
+}
+
+/// `ratNeg : rat → rat` ≡ `-(a/b) = (-a)/b` (denominator unchanged).
+pub fn rat_neg() -> Term {
+    let x = Term::free("x", rat());
+    let px = rep_pair(x.clone());
+    let neg_num = Term::app(int::int_neg(), num(&px));
+    let body = mk_rat(&ip(neg_num, den_pos(&px)));
+    Term::abs(rat(), subst::close(&body, "x"))
+}
+
+// ============================================================================
+// Commutative-ring axioms (and the field inverse) — postulated
+// ============================================================================
+//
+// Same audit-trail style as `init::int`: each is a `Thm::assume` carrying
+// its statement as a self-hyp. They are HOL theorems of the quotient,
+// derivable from the `int` ordered-ring theory; discharging them does not
+// change this public surface. See `SKELETONS.md`.
+
+fn rvar(name: &str) -> Term {
+    Term::free(name, rat())
+}
+fn radd(a: Term, b: Term) -> Term {
+    Term::app(Term::app(rat_add(), a), b)
+}
+fn rmul(a: Term, b: Term) -> Term {
+    Term::app(Term::app(rat_mul(), a), b)
+}
+fn rneg(a: Term) -> Term {
+    Term::app(rat_neg(), a)
+}
+fn forall_rat(vars: &[&str], body: Term) -> Term {
+    let mut t = body;
+    for name in vars.iter().rev() {
+        t = t.forall(name, rat()).expect("forall_rat: bind variable");
+    }
+    t
+}
+
+/// `⊢ ∀a b. a + b = b + a`.
+pub fn add_comm() -> Thm {
+    let (a, b) = (rvar("a"), rvar("b"));
+    let eq = radd(a.clone(), b.clone()).equals(radd(b, a)).expect("add_comm");
+    axiom(forall_rat(&["a", "b"], eq))
+}
+
+/// `⊢ ∀a b c. (a + b) + c = a + (b + c)`.
+pub fn add_assoc() -> Thm {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let lhs = radd(radd(a.clone(), b.clone()), c.clone());
+    let rhs = radd(a, radd(b, c));
+    axiom(forall_rat(&["a", "b", "c"], lhs.equals(rhs).expect("add_assoc")))
+}
+
+/// `⊢ ∀a. a + 0 = a`.
+pub fn add_zero() -> Thm {
+    let a = rvar("a");
+    let eq = radd(a.clone(), rat_zero()).equals(a).expect("add_zero");
+    axiom(forall_rat(&["a"], eq))
+}
+
+/// `⊢ ∀a. a + (-a) = 0` — additive inverse.
+pub fn add_neg() -> Thm {
+    let a = rvar("a");
+    let eq = radd(a.clone(), rneg(a)).equals(rat_zero()).expect("add_neg");
+    axiom(forall_rat(&["a"], eq))
+}
+
+/// `⊢ ∀a b. a * b = b * a`.
+pub fn mul_comm() -> Thm {
+    let (a, b) = (rvar("a"), rvar("b"));
+    let eq = rmul(a.clone(), b.clone()).equals(rmul(b, a)).expect("mul_comm");
+    axiom(forall_rat(&["a", "b"], eq))
+}
+
+/// `⊢ ∀a b c. (a * b) * c = a * (b * c)`.
+pub fn mul_assoc() -> Thm {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let lhs = rmul(rmul(a.clone(), b.clone()), c.clone());
+    let rhs = rmul(a, rmul(b, c));
+    axiom(forall_rat(&["a", "b", "c"], lhs.equals(rhs).expect("mul_assoc")))
+}
+
+/// `⊢ ∀a. a * 1 = a`.
+pub fn mul_one() -> Thm {
+    let a = rvar("a");
+    let eq = rmul(a.clone(), rat_one()).equals(a).expect("mul_one");
+    axiom(forall_rat(&["a"], eq))
+}
+
+/// `⊢ ∀a. a * 0 = 0`.
+pub fn mul_zero() -> Thm {
+    let a = rvar("a");
+    let eq = rmul(a, rat_zero()).equals(rat_zero()).expect("mul_zero");
+    axiom(forall_rat(&["a"], eq))
+}
+
+/// `⊢ ∀a b c. a * (b + c) = a * b + a * c` — left distributivity.
+pub fn distrib() -> Thm {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let lhs = rmul(a.clone(), radd(b.clone(), c.clone()));
+    let rhs = radd(rmul(a.clone(), b), rmul(a, c));
+    axiom(forall_rat(&["a", "b", "c"], lhs.equals(rhs).expect("distrib")))
+}
+
+/// `⊢ ∀a. ¬(a = 0) ⟹ ∃b. a * b = 1` — the field axiom (multiplicative
+/// inverse). This is what makes `rat` a *field* rather than just a ring,
+/// and underwrites division (and so the midpoint form of density).
+pub fn mul_inv() -> Thm {
+    let a = rvar("a");
+    let b = rvar("b");
+    let has_inv = rmul(a.clone(), b)
+        .equals(rat_one())
+        .expect("mul_inv: a * b = 1")
+        .exists("b", rat())
+        .expect("mul_inv: ∃b");
+    let neq = a.clone().equals(rat_zero()).expect("mul_inv: a = 0").not().expect("mul_inv: ≠");
+    let body = neq.imp(has_inv).expect("mul_inv");
+    axiom(forall_rat(&["a"], body))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -344,6 +535,55 @@ mod tests {
     fn maps_have_the_expected_types() {
         assert_eq!(of_int().type_of().unwrap(), Type::fun(Type::int(), rat()));
         assert_eq!(of_nat().type_of().unwrap(), Type::fun(Type::nat(), rat()));
+    }
+
+    #[test]
+    fn operations_have_the_expected_types() {
+        let r = rat();
+        let bin = Type::fun(r.clone(), Type::fun(r.clone(), r.clone()));
+        assert_eq!(rat_add().type_of().unwrap(), bin);
+        assert_eq!(rat_mul().type_of().unwrap(), bin);
+        assert_eq!(rat_neg().type_of().unwrap(), Type::fun(r.clone(), r.clone()));
+        assert_eq!(rat_zero().type_of().unwrap(), r);
+        assert_eq!(rat_one().type_of().unwrap(), rat());
+    }
+
+    #[test]
+    fn ring_axioms_are_well_typed_and_self_flagged() {
+        let all = [
+            add_comm(),
+            add_assoc(),
+            add_zero(),
+            add_neg(),
+            mul_comm(),
+            mul_assoc(),
+            mul_one(),
+            mul_zero(),
+            distrib(),
+            mul_inv(),
+        ];
+        for ax in all {
+            assert!(ax.concl().type_of().unwrap().is_bool());
+            assert!(
+                ax.hyps().iter().any(|h| h == ax.concl()),
+                "a postulated rat axiom carries itself as a hypothesis"
+            );
+        }
+    }
+
+    #[test]
+    fn add_comm_specialises() {
+        // ∀a b. a+b = b+a  ⟹  of_int 1 + of_int 2 = of_int 2 + of_int 1.
+        let one = Term::app(of_int(), Term::int_lit(1i128));
+        let two = Term::app(of_int(), Term::int_lit(2i128));
+        let inst = add_comm()
+            .all_elim(one.clone())
+            .and_then(|t| t.all_elim(two.clone()))
+            .expect("specialise add_comm");
+        let expected = radd(one.clone(), two.clone())
+            .equals(radd(two, one))
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
     }
 
     #[test]

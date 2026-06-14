@@ -3,11 +3,11 @@ name = "covalence-kernel"
 version = "0.0.0"
 edition = "2024"
 
+# The "OS-kernel" layer: wires covalence-hol (proof API over the
+# covalence-core TCB) to the content-addressed blob store + tree objects.
 [dependencies]
-bytes = "1"
-smol_str = "0.3"
+covalence-hol = { path = "../covalence-hol" }
+covalence-store = { path = "../covalence-store" }
+covalence-object = { path = "../covalence-object" }
 covalence-hash = { path = "../covalence-hash", default-features = false }
-covalence-types = { path = "../covalence-types" }
-
-[dev-dependencies]
-covalence-sexp = { path = "../covalence-sexp" }
+thiserror = "2"

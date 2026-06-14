@@ -5,10 +5,6 @@ edition = "2024"
 
 [dependencies]
 covalence-sexp = { path = "../covalence-sexp" }
-covalence-shell = { path = "../covalence-shell" }
 covalence-smt = { path = "../covalence-smt" }
 covalence-types = { path = "../covalence-types" }
 thiserror = "2"
-
-[dev-dependencies]
-covalence-kernel = { path = "../covalence-kernel" }

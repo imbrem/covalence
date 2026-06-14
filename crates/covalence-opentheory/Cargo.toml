@@ -12,6 +12,3 @@ covalence-hol = { path = "../covalence-hol" }
 smol_str = "0.3"
 thiserror = "2"
 ureq = { version = "3", optional = true }
-
-[dev-dependencies]
-covalence-shell = { path = "../covalence-shell" }

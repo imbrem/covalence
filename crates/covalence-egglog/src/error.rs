@@ -1,6 +1,4 @@
-//! Error type for the egglog → Prover bridge.
-
-use covalence_shell::ProverError;
+//! Error type for the egglog bridge.
 
 /// Errors raised by an [`EgglogBridge`](crate::bridge::EgglogBridge) or its
 /// driver.
@@ -48,8 +46,4 @@ pub enum BridgeError {
     /// Catch-all for shapes the bridge couldn't make sense of.
     #[error("malformed: {0}")]
     Malformed(String),
-
-    /// An underlying Prover (kernel) error.
-    #[error(transparent)]
-    Prover(#[from] ProverError),
 }

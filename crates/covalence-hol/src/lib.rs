@@ -29,3 +29,8 @@ pub mod types;
 pub use hol_light_obs::HolLightCtx;
 pub use traits::{HolLightKernel, HolLightTerms, HolLightTypes};
 pub use types::{BOOL_TYCON_ID, EQ_CONST_ID, FUN_TYCON_ID, HolError, NameId};
+
+// Re-export the TCB term/type/theorem types that the builder API works
+// with, so downstream layers reach the kernel through `covalence-hol`
+// rather than depending on the `covalence-core` TCB crate directly.
+pub use covalence_core::{Term, Thm, Type, TypeDef, TypeKind};

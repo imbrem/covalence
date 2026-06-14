@@ -2,6 +2,19 @@
 
 Experimental VCS and theorem prover. Monorepo with Rust crates, a VSCode browser extension, and a SvelteKit web app.
 
+## Skeletons (STRICT)
+
+[`SKELETONS.md`](./SKELETONS.md) is the authoritative registry of every
+intentional placeholder in the repo: empty/stub modules, removed-pending-rewrite
+subsystems, `NotImplemented` / `todo!()` / `unimplemented!()` stubs, and any
+test that is commented out, `#[ignore]`d, or deleted "for later".
+
+**Whenever you leave a skeleton — stub an operation, gut a module, disable or
+delete a test "for now", or drop in a placeholder — you MUST add a matching
+entry to `SKELETONS.md` in the same change.** When you fill a skeleton in,
+delete its entry. Never silently leave work unfinished; record it there so it
+is discoverable.
+
 ## Build & Run
 
 ```sh

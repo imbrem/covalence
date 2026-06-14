@@ -309,6 +309,24 @@ Thm::lem(p) -> Result<Thm>
     // Sound in the standard two-valued model. HOL Light *derives* this
     // from ε (Select) + extensionality + deduct_antisym; exposed here as
     // a direct constructor for now, a standing derivation target.
+
+Thm::succ_inj(m, n) -> Result<Thm>
+    // m, n : nat  ⟹  ⊢ (succ m = succ n) ⟹ (m = n)
+Thm::zero_ne_succ(n) -> Result<Thm>
+    // n : nat  ⟹  ⊢ ¬(0 = succ n)
+    // nat freeness: `0` / `succ` (TermKind::Succ) are distinct, injective
+    // constructors of the freely-generated nat — the other half of the
+    // commitment nat_induct rests on.
+
+Thm::select_ax(p, x) -> Result<Thm>
+    // p : α → bool, x : α  ⟹  ⊢ (p x) ⟹ p (ε p)   (Hilbert choice; the
+    // characterising axiom of the ε / Select primitive).
+Thm::spec_ax(t, w) -> Result<Thm>
+    // t = Spec(spec, args) def-style with predicate p, w : carrier
+    //   ⟹  ⊢ (p w) ⟹ p(t)   (each named def-spec is its own choice; the
+    // def-style analogue of select_ax). Sound unconditionally; does NOT
+    // equate t with ε p or any other spec sharing p. See §9 for its
+    // coupling with reduce_prim on the reduced def-specs nat.le / nat.lt.
 ```
 
 **That is the entire non-computational axiom surface.** The classic

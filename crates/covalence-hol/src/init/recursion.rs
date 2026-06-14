@@ -17,12 +17,7 @@
 //! 4. **Assemble** `r z f n ≜ ε a. Graph z f n a`, prove `P_rec r`,
 //!    `∃`-introduce. *(next)*
 //!
-//! Steps 3–4 are not wired yet, so [`graph_total`] is unreachable from
-//! non-test code — hence the module-level `dead_code` allow. It comes
-//! off once the theorem lands in `rec_holds` (tracked in `SKELETONS.md`).
-#![allow(dead_code)]
-
-use covalence_core::{Result, Term, Thm, Type, subst};
+use covalence_core::{Result, Term, Thm, Type, defs, subst};
 
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic::{exists_elim, exists_intro};
@@ -466,6 +461,121 @@ pub(crate) fn graph_det(z: &Term, f: &Term) -> Result<Thm> {
     Thm::nat_induct(base, step)
 }
 
+// ============================================================================
+// Assembly: the recursor via ε, its equations, and the recursion theorem
+// ============================================================================
+
+/// `nat → (nat → nat → nat) → nat → nat` — the recursor's type at `nat`.
+fn rec_ty() -> Type {
+    Type::fun(nat(), Type::fun(f_ty(), Type::fun(nat(), nat())))
+}
+
+/// `λa. Graph z f n a` — the predicate the recursor chooses from.
+fn graph_pred(z: &Term, f: &Term, n: &Term) -> Result<Term> {
+    Ok(Term::abs(nat(), subst::close(&graph(z, f, n.clone(), var("a"))?, "a")))
+}
+
+/// `ε a. Graph z f n a` — the chosen value at `n`.
+fn rec_at(z: &Term, f: &Term, n: &Term) -> Result<Term> {
+    Ok(Term::app(Term::select_op(nat()), graph_pred(z, f, n)?))
+}
+
+/// `⊢ Graph z f n (ε a. Graph z f n a)`, for free `n` — the chosen
+/// value really is in the graph. From totality + Hilbert choice.
+fn graph_at_rec(z: &Term, f: &Term) -> Result<Thm> {
+    let n = var("n");
+    let pred = graph_pred(z, f, &n)?;
+    let exists_n = beta_reduce_thm(graph_total(z, f)?.all_elim(n.clone())?)?;
+    let choose = Thm::select_ax(pred.clone(), var("a"))?.all_intro("a", nat())?;
+    let eps = Term::app(Term::select_op(nat()), pred.clone());
+    beta_reduce_thm(exists_elim(exists_n, Term::app(pred, eps), choose)?)
+}
+
+/// The closed recursor `λz f n. ε a. Graph z f n a`.
+fn recursor() -> Result<Term> {
+    let z = Term::free("z", nat());
+    let f = Term::free("f", f_ty());
+    let body = rec_at(&z, &f, &var("n"))?;
+    let lam_n = Term::abs(nat(), subst::close(&body, "n"));
+    let lam_f = Term::abs(f_ty(), subst::close(&lam_n, "f"));
+    Ok(Term::abs(nat(), subst::close(&lam_f, "z")))
+}
+
+/// `r z f k`.
+fn rzfk(r: &Term, z: &Term, f: &Term, k: Term) -> Result<Term> {
+    r.clone().apply(z.clone())?.apply(f.clone())?.apply(k)
+}
+
+/// `natRec`'s recursion predicate `P_rec`, instantiated at `α := nat` —
+/// the exact predicate `spec_ax(natRec, ·)` works with.
+fn p_rec_pred() -> Result<Term> {
+    let poly = defs::nat_rec_spec()
+        .tm()
+        .expect("natRec carries a selector predicate")
+        .clone();
+    Ok(subst::subst_tfree_in_term(&poly, "a", &nat()))
+}
+
+/// `⊢ ∃r. P_rec r` — **the recursion theorem** for `nat`. A recursor
+/// exists. Built by assembling the graph: `r ≜ λz f n. ε a. Graph z f n a`
+/// satisfies the recursion equations (base inversion at `0`, step +
+/// determinacy at `S n`), so it witnesses the existential.
+fn recursion_theorem() -> Result<Thm> {
+    let r = recursor()?;
+    let z = Term::free("z", nat());
+    let f = Term::free("f", f_ty());
+    let n = var("n");
+
+    // eq1: ⊢ r z f 0 = z
+    let eq1 = crate::init::eq::beta_nf(rzfk(&r, &z, &f, zero())?).trans(
+        graph_base_inv(&z, &f)?
+            .inst("a", rec_at(&z, &f, &zero())?)?
+            .imp_elim(graph_at_rec(&z, &f)?.inst("n", zero())?)?,
+    )?;
+
+    // eq2: ⊢ ∀n. r z f (S n) = f n (r z f n)
+    let rec_n = rec_at(&z, &f, &n)?;
+    let g_at_n = graph_at_rec(&z, &f)?; // ⊢ Graph z f n rec_n
+    let g_step = graph_step(&z, &f, &n, &rec_n)?.imp_elim(g_at_n)?; // ⊢ Graph z f (S n) (f n rec_n)
+    let g_at_sn = graph_at_rec(&z, &f)?.inst("n", succ(n.clone()))?; // ⊢ Graph z f (S n) rec_{Sn}
+    let fnrecn = app2(f.clone(), n.clone(), rec_n.clone())?;
+    let det_eq = beta_reduce_thm(graph_det(&z, &f)?.all_elim(succ(n.clone()))?)?
+        .all_elim(rec_at(&z, &f, &succ(n.clone()))?)?
+        .all_elim(fnrecn)?
+        .imp_elim(g_at_sn)?
+        .imp_elim(g_step)?; // ⊢ rec_{Sn} = f n rec_n
+    let f_cong = crate::init::eq::beta_nf(rzfk(&r, &z, &f, n.clone())?)
+        .sym()?
+        .cong_arg(Term::app(f.clone(), n.clone()))?; // ⊢ f n rec_n = f n (r z f n)
+    let eq2 = crate::init::eq::beta_nf(rzfk(&r, &z, &f, succ(n.clone()))?)
+        .trans(det_eq)?
+        .trans(f_cong)?
+        .all_intro("n", nat())?;
+
+    // P_rec body, generalised over z, f.
+    let prec_body = eq1
+        .and_intro(eq2)?
+        .all_intro("f", f_ty())?
+        .all_intro("z", nat())?;
+
+    let pred = p_rec_pred()?;
+    exists_intro(pred.clone(), r.clone(), beta_expand(&pred, r, prec_body)?)
+}
+
+/// `⊢ ∀z f. (natRec z f 0 = z) ∧ (∀n. natRec z f (S n) = f n (natRec z f n))`
+/// — the recursion equations for `natRec`, **fully proved** (no
+/// hypotheses). Discharges [`crate::init::nat::rec_holds`]: the
+/// recursion theorem gives a recursor, and `spec_ax(natRec, ·)`
+/// transfers its equations to `natRec` itself.
+pub(crate) fn rec_holds_proof() -> Result<Thm> {
+    let pred = p_rec_pred()?;
+    let natrec = defs::nat_rec(nat());
+    let step = Thm::spec_ax(natrec.clone(), Term::free("r", rec_ty()))?
+        .all_intro("r", rec_ty())?; // ⊢ ∀r. P_rec r ⟹ P_rec natRec
+    let p_nr = exists_elim(recursion_theorem()?, Term::app(pred, natrec), step)?;
+    beta_reduce_thm(p_nr)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -575,5 +685,20 @@ mod tests {
             .forall("a", nat())
             .unwrap();
         assert_eq!(reduced.concl(), &expected);
+    }
+
+    #[test]
+    fn recursion_theorem_is_axiom_free() {
+        let rt = recursion_theorem().unwrap();
+        assert!(rt.hyps().is_empty(), "∃r. P_rec r must be axiom-free");
+        assert!(rt.concl().type_of().unwrap().is_bool());
+    }
+
+    #[test]
+    fn rec_holds_is_fully_proved() {
+        let thm = rec_holds_proof().unwrap();
+        assert!(thm.hyps().is_empty(), "rec_holds is now a genuine theorem");
+        // It proves exactly the statement init::nat::rec_holds asserts.
+        assert_eq!(thm.concl(), crate::init::nat::rec_holds().concl());
     }
 }

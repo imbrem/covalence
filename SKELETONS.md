@@ -16,35 +16,6 @@ it is how unfinished work stays discoverable.
   will land here as the HOL-on-store stack comes online. See the
   `covalence-kernel` crate-root docs and `docs/roadmap.md`.
 
-## Postulates pending proof
-
-- **`init::nat::rec_holds`** in `crates/covalence-hol/src/init/nat.rs` — the
-  *single* remaining `nat` postulate (`Thm::assume`): `natRec` satisfies its
-  recursion equations,
-  `∀z f. (natRec z f 0 = z) ∧ (∀n. natRec z f (S n) = f n (natRec z f n))`.
-
-  Everything else is already derived from it: the four `add`/`mul` recursion
-  equations (`add_base`/`add_step`/`mul_base`/`mul_step`) δ-unfold `nat.add` /
-  `nat.mul` / `iter` down to `natRec` and apply `rec_holds`, so each carries
-  exactly the one `rec_holds` hypothesis. (Induction and the freeness axioms
-  `succ_inj` / `zero_ne_succ` are genuine, via `Thm::nat_induct` /
-  `Thm::succ_inj` / `Thm::zero_ne_succ`.)
-
-  Discharging `rec_holds` — the *soundness of PA in HOL* step — needs **no new
-  computation primitive**: `natRec` exists by `ε` (the recursion theorem
-  `∃r. P_rec r`), so `Thm::spec_ax(natRec, ·)` + choice + induction prove it.
-  The kernel already has every primitive required. The moment `rec_holds`
-  becomes a hypothesis-free proof, all four arithmetic facts become genuine
-  theorems automatically — no other change.
-
-  **In progress** in `crates/covalence-hol/src/init/recursion.rs` (graph
-  construction): the graph predicate and its base/step lemmas are proved, and
-  the **existence** half — `∀n. ∃a. Graph z f n a` — is proved axiom-free
-  (`graph_total`). Remaining: uniqueness (`∀n a b. Graph n a ∧ Graph n b ⟹
-  a = b`, by induction on freeness), assembly (`r ≜ λz f n. ε a. Graph z f n a`,
-  prove `P_rec r`), and wiring into `rec_holds`. The module carries a
-  `dead_code` allow until then.
-
 ## Partial subsystems
 
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in

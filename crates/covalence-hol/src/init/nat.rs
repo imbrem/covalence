@@ -8,21 +8,21 @@
 //! of Peano arithmetic into HOL (the [`Peano`] trait impl) lives in
 //! [`crate::peano::shallow`] and reads its axioms from here.
 //!
-//! ## The single postulate, and everything derived from it
+//! ## Everything is proved — no postulates
 //!
-//! - **Genuine** (hypothesis-free): [`succ_inj`] / [`zero_ne_succ`]
-//!   (kernel freeness primitives generalised with `all_intro`).
+//! - **Freeness**: [`succ_inj`] / [`zero_ne_succ`] (kernel freeness
+//!   primitives generalised with `all_intro`).
 //! - **[`rec_holds`]** — `natRec` satisfies its recursion equations.
-//!   This is the **one** remaining `nat` postulate (`Thm::assume`,
-//!   flagged in `SKELETONS.md`). The plan (option **B**) is to prove it
-//!   via the recursion theorem (`∃r. P_rec r` + `spec_ax` + induction).
-//! - **Derived from [`rec_holds`] alone**: the four recursion equations
+//!   Now a **genuine theorem**: the recursion theorem
+//!   ([`crate::init::recursion`]) builds a recursor by Hilbert choice
+//!   over its graph and `spec_ax` transfers the equations to `natRec`.
+//! - **Derived from [`rec_holds`]**: the four recursion equations
 //!   [`add_base`] / [`add_step`] / [`mul_base`] / [`mul_step`], by
 //!   δ-unfolding `nat.add` / `nat.mul` / `iter` down to `natRec` and
-//!   applying [`rec_holds`]. Each therefore carries exactly *one*
-//!   hypothesis — [`rec_holds`]'s conclusion. **The moment `rec_holds`
-//!   becomes a hypothesis-free proof, all four become genuine theorems
-//!   automatically, with no change here.**
+//!   applying [`rec_holds`]. Since `rec_holds` is hypothesis-free, so
+//!   are these — and the whole shallow Peano embedding with them.
+
+use std::sync::LazyLock;
 
 use covalence_core::{Result, Term, Thm, Type, defs, subst};
 use covalence_types::Nat;
@@ -64,16 +64,6 @@ fn var(name: &str) -> Term {
     Term::free(name, nat())
 }
 
-/// `nat → nat → nat`, the type of a `natRec` step over `nat`.
-fn step_ty() -> Type {
-    Type::fun(nat(), Type::fun(nat(), nat()))
-}
-
-/// `natRec[nat] a b c`.
-fn rec3(a: Term, b: Term, c: Term) -> Term {
-    Term::app(Term::app(Term::app(nat_rec(nat()), a), b), c)
-}
-
 /// The RHS of an equational theorem (panics if not `⊢ _ = _`).
 fn rhs(thm: &Thm) -> Term {
     thm.concl()
@@ -103,38 +93,22 @@ pub fn zero_ne_succ() -> Thm {
 }
 
 // ============================================================================
-// The recursion equation — the single postulate (pending the recursion theorem)
+// The recursion equation — now a genuine theorem
 // ============================================================================
 
 /// `⊢ ∀z f. (natRec z f 0 = z) ∧ (∀n. natRec z f (S n) = f n (natRec z f n))`
 /// at `α = nat` — `natRec` satisfies its recursion equations.
 ///
-/// **Postulated** for now (the only `nat` postulate). Proving it via the
-/// recursion theorem discharges everything below automatically — see the
-/// [module docs](self).
+/// **Fully proved**, no hypotheses: the recursion theorem
+/// ([`crate::init::recursion`]) constructs a recursor by Hilbert choice
+/// over its graph, and `spec_ax(natRec, ·)` transfers the equations to
+/// `natRec`. Cached behind a [`LazyLock`] — the proof is a sizeable
+/// construction, run once.
 pub fn rec_holds() -> Thm {
-    let z = var("z");
-    let f = Term::free("f", step_ty());
-    let n = var("n");
-
-    // natRec z f 0 = z
-    let base = rec3(z.clone(), f.clone(), zero())
-        .equals(z.clone())
-        .expect("rec_holds: base eq");
-    // ∀n. natRec z f (S n) = f n (natRec z f n)
-    let step_lhs = rec3(z.clone(), f.clone(), succ(n.clone()));
-    let step_rhs = Term::app(Term::app(f.clone(), n.clone()), rec3(z.clone(), f.clone(), n));
-    let step = step_lhs
-        .equals(step_rhs)
-        .and_then(|e| e.forall("n", nat()))
-        .expect("rec_holds: step");
-    let body = base.and(step).expect("rec_holds: ∧");
-    let all = body
-        .forall("f", step_ty())
-        .and_then(|t| t.forall("z", nat()))
-        .expect("rec_holds: ∀z f");
-
-    Thm::assume(all).expect("rec_holds: assume")
+    static REC_HOLDS: LazyLock<Thm> = LazyLock::new(|| {
+        crate::init::recursion::rec_holds_proof().expect("recursion theorem proves rec_holds")
+    });
+    REC_HOLDS.clone()
 }
 
 /// `⊢ natRec z f 0 = z` — the base equation at a concrete `z`, `f`.
@@ -262,18 +236,17 @@ mod tests {
         assert!(zero_ne_succ().hyps().is_empty(), "zero_ne_succ is proved");
     }
 
-    /// Every derived recursion equation depends on **exactly** the one
-    /// `rec_holds` postulate — nothing else. So discharging `rec_holds`
-    /// discharges them all.
+    /// `rec_holds` is now a genuine theorem, so every fact derived from
+    /// it — the four `add`/`mul` recursion equations — is hypothesis-free
+    /// too.
     #[test]
-    fn arithmetic_facts_depend_only_on_rec_holds() {
-        let postulate = rec_holds().concl().clone();
+    fn arithmetic_facts_are_fully_proved() {
+        assert!(rec_holds().hyps().is_empty(), "rec_holds is proved");
         for fact in [add_base(), add_step(), mul_base(), mul_step()] {
             assert!(fact.concl().type_of().unwrap().is_bool());
-            assert_eq!(
-                fact.hyps().iter().collect::<Vec<_>>(),
-                vec![&postulate],
-                "a derived nat fact must rest on rec_holds alone"
+            assert!(
+                fact.hyps().is_empty(),
+                "a derived nat fact must be hypothesis-free"
             );
         }
     }

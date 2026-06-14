@@ -42,3 +42,21 @@ pub fn cond_spec() -> TermSpec {
 pub fn cond(alpha: Type) -> Term {
     Term::term_spec(cond_spec(), vec![alpha])
 }
+
+impl Term {
+    /// `cond c tt ff : α` — the boolean conditional [`cond`] applied,
+    /// with `α` inferred from `tt`. Convenience builder for writing
+    /// case-split definitions.
+    ///
+    /// **Panics** if `tt` is not well-typed (an open / ill-typed term).
+    /// Callers in trusted spec-build paths pass fully-typed `tt`, so the
+    /// panic is unreachable there; out-of-band callers should
+    /// pre-validate with `tt.type_of()`.
+    pub fn cond(c: Term, tt: Term, ff: Term) -> Term {
+        let alpha = tt
+            .type_of()
+            .expect("Term::cond: `tt` must be well-typed to infer the result type");
+        let op = cond(alpha);
+        Term::app(Term::app(Term::app(op, c), tt), ff)
+    }
+}

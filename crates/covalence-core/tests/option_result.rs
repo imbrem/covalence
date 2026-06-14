@@ -103,9 +103,9 @@ fn is_some_at_nat_is_predicate_on_option() {
 }
 
 #[test]
-fn from_some_at_int_extracts_to_carrier() {
+fn unwrap_at_int_extracts_to_carrier() {
     let expected = Type::fun(option(Type::int()), Type::int());
-    assert_ty(&from_some(Type::int()), &expected);
+    assert_ty(&unwrap(Type::int()), &expected);
 }
 
 #[test]
@@ -165,7 +165,7 @@ fn all_option_result_specs_carry_bodies() {
     assert!(none_spec().tm().is_some(), "none has a body");
     assert!(option_case_spec().tm().is_some(), "optionCase has a body");
     assert!(is_some_spec().tm().is_some(), "isSome has a body");
-    assert!(from_some_spec().tm().is_some(), "fromSome has a body");
+    assert!(unwrap_spec().tm().is_some(), "unwrap has a body");
     assert!(ok_spec().tm().is_some(), "ok has a body");
     assert!(err_spec().tm().is_some(), "err has a body");
 }
@@ -179,7 +179,7 @@ fn spec_bodies_typecheck_to_recorded_type() {
         ("none", none_spec()),
         ("optionCase", option_case_spec()),
         ("isSome", is_some_spec()),
-        ("fromSome", from_some_spec()),
+        ("unwrap", unwrap_spec()),
         ("ok", ok_spec()),
         ("err", err_spec()),
     ];
@@ -236,7 +236,7 @@ fn constructor_term_leaf_labels() {
         "option.case"
     );
     assert_eq!(term_spec_label(&is_some(Type::nat())), "option.isSome");
-    assert_eq!(term_spec_label(&from_some(Type::nat())), "option.fromSome");
+    assert_eq!(term_spec_label(&unwrap(Type::nat())), "option.unwrap");
 }
 
 #[test]
@@ -328,14 +328,14 @@ fn option_of_tfree() {
 }
 
 #[test]
-fn is_some_and_from_some_at_unit() {
+fn is_some_and_unwrap_at_unit() {
     // option unit is a legitimate type; accessors specialize cleanly.
     assert_ty(
         &is_some(Type::unit()),
         &Type::fun(option(Type::unit()), Type::bool()),
     );
     assert_ty(
-        &from_some(Type::unit()),
+        &unwrap(Type::unit()),
         &Type::fun(option(Type::unit()), Type::unit()),
     );
 }

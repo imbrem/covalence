@@ -315,8 +315,9 @@ fn rat_type_kind_is_spec_rat() {
 
 #[test]
 fn rat_spec_carrier_is_powerset_of_int_pair() {
-    // Carrier of the quotient = (prod int int) → bool.
-    let want = Type::fun(defs::prod(Type::int(), Type::int()), Type::bool());
+    // Carrier of the quotient = (prod int int.pos) → bool — the
+    // denominator is drawn from the strictly-positive integers.
+    let want = Type::fun(defs::prod(Type::int(), defs::int_pos_ty()), Type::bool());
     assert_eq!(defs::rat_spec().ty(), Some(&want));
 }
 
@@ -338,4 +339,38 @@ fn rat_le_is_declaration_only() {
         "ratLe should be declaration-only"
     );
     assert!(defs::rat_le_spec().ty().is_some());
+}
+
+// ===========================================================================
+// int.pos — the strictly-positive integers subtype (rat's denominator)
+// ===========================================================================
+
+#[test]
+fn int_pos_kind_is_spec_labelled() {
+    let ty = defs::int_pos_ty();
+    match ty.kind() {
+        TypeKind::Spec(spec, args) => {
+            assert_eq!(spec.symbol().label(), "int.pos");
+            assert!(args.is_empty());
+        }
+        other => panic!("expected TypeKind::Spec, got {other:?}"),
+    }
+}
+
+#[test]
+fn int_pos_is_subtype_of_int_with_predicate() {
+    let spec = defs::int_pos_spec();
+    // carrier is `int`; the selector predicate `λx. 0 < x` is present.
+    assert_eq!(spec.ty(), Some(&Type::int()));
+    let pred = spec.tm().expect("int.pos has a selector predicate");
+    // predicate : int → bool
+    assert_eq!(
+        pred.type_of().unwrap(),
+        Type::fun(Type::int(), Type::bool())
+    );
+}
+
+#[test]
+fn int_pos_spec_is_shared_singleton() {
+    assert!(defs::int_pos_spec().ptr_eq(&defs::int_pos_spec()));
 }

@@ -36,6 +36,10 @@ pub enum Canonical {
     /// `(?) := λP. !q. (!x. P x ==> q) ==> q`.
     Exists,
 
+    /// `fail : 'a := ε(λx. T)` — the unspecified inhabitant of any
+    /// type; the result of partial ops on their "no answer" branch.
+    Fail,
+
     // ---- Singleton ----
     /// `unit := { b : bool | b = T }` — the one-element type. Defined
     /// in `defs/unit.rs` as a bool-subtype (was a builtin
@@ -145,6 +149,9 @@ pub enum Canonical {
     /// literals (`TermKind::Int`). Was the kernel-primitive
     /// `TypeKind::Int` before the migration to spec-derived types.
     Int,
+    /// `int.pos := { x : int | 0 < x }` — strictly-positive integers
+    /// (the denominator type for `rat`).
+    IntPos,
 
     // ---- Rationals / reals / floats ----
     /// `fieldOfFractions[mul, zero] 'a := prod 'a 'a quot (standard)`.
@@ -180,16 +187,16 @@ pub enum Canonical {
     // ---- Term-level: bool / option fundamentals ----
     /// `cond : bool → 'a → 'a → 'a` — the Boolean conditional
     /// (`if b then x else y`). Declaration-only; reduction rules
-    /// `cond T x y = x` and `cond F x y = y` are postulated /
-    /// proved downstream.
+    /// `cond T x y = x` and `cond F x y = y` are postulated / proved
+    /// downstream. Construct applications with [`crate::Term::cond`].
     Cond,
-    /// `isSome : option 'a → bool`. True for `some _`, false for
-    /// `none`. Declaration-only.
+    /// `option.isSome : option 'a → bool`. True for `some _`, false for
+    /// `none`. Defined via `option.case`.
     IsSome,
-    /// `fromSome : option 'a → 'a`. Extract the wrapped value if
-    /// `some _`; unspecified (Hilbert-ε at the model level) for
-    /// `none`. Declaration-only.
-    FromSome,
+    /// `option.unwrap : option 'a → 'a`. Extract the wrapped value if
+    /// `some _`; the unspecified Hilbert-ε value for `none`. Defined
+    /// via `option.case`.
+    Unwrap,
     /// `optionCase : 'b → ('a → 'b) → option 'a → 'b` — the
     /// option eliminator. `optionCase default f none = default`
     /// and `optionCase default f (some x) = f x`. Declaration-only.
@@ -355,13 +362,14 @@ impl Canonical {
     /// serialisation.
     pub fn label(&self) -> &'static str {
         match self {
-            Canonical::And => "/\\",
-            Canonical::Or => "\\/",
-            Canonical::Not => "~",
-            Canonical::Imp => "==>",
-            Canonical::Iff => "<=>",
-            Canonical::Forall => "!",
-            Canonical::Exists => "?",
+            Canonical::And => "bool.and",
+            Canonical::Or => "bool.or",
+            Canonical::Not => "bool.not",
+            Canonical::Imp => "bool.imp",
+            Canonical::Iff => "bool.iff",
+            Canonical::Forall => "bool.forall",
+            Canonical::Exists => "bool.exists",
+            Canonical::Fail => "fail",
             Canonical::Unit => "unit",
             Canonical::UnitNil => "unit.nil",
             Canonical::Set => "set",
@@ -402,6 +410,7 @@ impl Canonical {
             Canonical::Signed1 => "signed1",
             Canonical::Signed2 => "signed2",
             Canonical::Int => "int",
+            Canonical::IntPos => "int.pos",
             Canonical::Rat => "rat",
             Canonical::RatLe => "rat.le",
             Canonical::Real => "real",
@@ -413,7 +422,7 @@ impl Canonical {
             Canonical::Err => "result.err",
             Canonical::Cond => "bool.cond",
             Canonical::IsSome => "option.isSome",
-            Canonical::FromSome => "option.fromSome",
+            Canonical::Unwrap => "option.unwrap",
             Canonical::OptionCase => "option.case",
             Canonical::Nil => "list.nil",
             Canonical::Cons => "list.cons",

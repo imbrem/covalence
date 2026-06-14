@@ -34,6 +34,7 @@ use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
 use super::coprod::{coprod, coprod_case, inl, inr};
+use super::fail::fail;
 use super::spec::{TermSpec, TypeSpec};
 use super::unit::unit_nil;
 
@@ -130,43 +131,36 @@ pub fn option_case(alpha: Type, beta: Type) -> Term {
 }
 
 fn is_some_body() -> Term {
+    // λo. optionCase F (λ_. T) o
     let alpha = Type::tfree("a");
     let o = Term::free("o", option(alpha.clone()));
-    let rep_o = Term::app(Term::spec_rep(option_spec(), vec![alpha.clone()]), o);
     let f = Term::abs("_", alpha.clone(), Term::bool_lit(true)); // some _ ↦ T
-    let g = Term::abs("_", Type::unit(), Term::bool_lit(false)); // none  ↦ F
-    let case = coprod_case(alpha.clone(), Type::unit(), Type::bool());
-    let applied = Term::app(Term::app(Term::app(case, f), g), rep_o);
+    let case = option_case(alpha.clone(), Type::bool());
+    let applied = Term::app(Term::app(Term::app(case, Term::bool_lit(false)), f), o);
     hol::pub_abs("o", option(alpha), applied)
 }
 
 poly_let_term! {
-    /// `isSome : option 'a → bool` ≡
-    /// `λo. coprodCase (λ_. T) (λ_. F) (rep o)`. True iff `some _`.
+    /// `isSome : option 'a → bool` ≡ `λo. optionCase F (λ_. T) o`.
+    /// True iff `some _`.
     is_some_spec, is_some(alpha), Canonical::IsSome, is_some_body()
 }
 
-fn from_some_body() -> Term {
+fn unwrap_body() -> Term {
+    // λo. optionCase fail (λx. x) o
     let alpha = Type::tfree("a");
     let o = Term::free("o", option(alpha.clone()));
-    let rep_o = Term::app(Term::spec_rep(option_spec(), vec![alpha.clone()]), o);
     // some-branch: identity λx. x
-    let f = hol::pub_abs("x", alpha.clone(), Term::free("x", alpha.clone()));
-    // none-branch: the unspecified canonical ε(λx. T), ignoring unit.
-    let arb = Term::app(
-        Term::select_op(alpha.clone()),
-        Term::abs("x", alpha.clone(), Term::bool_lit(true)),
-    );
-    let g = Term::abs("_", Type::unit(), arb);
-    let case = coprod_case(alpha.clone(), Type::unit(), alpha.clone());
-    let applied = Term::app(Term::app(Term::app(case, f), g), rep_o);
+    let id = hol::pub_abs("x", alpha.clone(), Term::free("x", alpha.clone()));
+    // none-branch default: the unspecified value `fail`.
+    let case = option_case(alpha.clone(), alpha.clone());
+    let applied = Term::app(Term::app(Term::app(case, fail(alpha.clone())), id), o);
     hol::pub_abs("o", option(alpha), applied)
 }
 
 poly_let_term! {
-    /// `fromSome : option 'a → 'a` ≡
-    /// `λo. coprodCase (λx. x) (λ_. ε(λx. T)) (rep o)`. Extract the
-    /// wrapped value if `some _`; for `none`, the Hilbert-ε value
-    /// (unspecified at the kernel level).
-    from_some_spec, from_some(alpha), Canonical::FromSome, from_some_body()
+    /// `unwrap : option 'a → 'a` ≡ `λo. optionCase fail (λx. x) o`.
+    /// Extract the wrapped value if `some _`; for `none`, the
+    /// unspecified `fail` value.
+    unwrap_spec, unwrap(alpha), Canonical::Unwrap, unwrap_body()
 }

@@ -1,32 +1,26 @@
-//! `rat := (int × int) / ~` and the `ratLe` order constant.
+//! `rat := (int × int.pos) / ~` and the `ratLe` order constant.
 //!
-//! A pair `(a, b) : int × int` represents the rational `a / b`, and
-//! two pairs are identified by cross-multiplication:
+//! A pair `(a, b) : int × int.pos` represents the rational `a / b`,
+//! with the denominator drawn from [`int.pos`](super::int::int_pos_ty)
+//! — the strictly-positive integers — so it is **always nonzero**
+//! (no `x/0` to collapse, no base to carve) and canonically positive,
+//! which also fixes sign handling for the order. Pairs are identified
+//! by cross-multiplication:
 //!
 //! ```text
 //!     (a, b) ~ (c, d)  ⟺  a · d = c · b
 //! ```
 //!
-//! built with `fst`/`snd` on `prod int int` and `intMul`. The carrier
-//! of the quotient is `(prod int int) → bool` (a class is the set of
+//! built from `fst`/`snd` on `prod int int.pos`, the `int.pos → int`
+//! representation coercion (`rep`), and `int.mul`. The carrier of the
+//! quotient is `(prod int int.pos) → bool` (a class is the set of
 //! equivalent numerator/denominator pairs).
 //!
-//! ⚠️ Remaining refinement (TODO — `docs/roadmap.md`): the
-//! **denominator should be nonzero**. With `b = 0` admitted, `a·0 =
-//! c·0` makes every `(a, 0)` equivalent, collapsing all "`x/0`" into a
-//! single spurious class. The faithful construction carves the base to
-//! `{ (a, b) | b ≠ 0 }` before quotienting (the cross-multiplication
-//! relation is then exactly rational equality). The *cross-multiplication
-//! relation itself* — the headline correctness fix over the previous
-//! placeholder `=` — is in place here; the nonzero-denominator carve is
-//! the open item.
-//!
-//! `ratLe : rat → rat → bool` is the order on rationals. It is
-//! declaration-only at the kernel level: a representative-based body
-//! (`a·d ≤ c·b`) needs sign-aware denominator normalization (the
-//! inequality flips for negative denominators), so the order axioms
-//! are proved downstream once `rat` has its nonzero-positive
-//! canonical form. It lives here because it is needed to define
+//! `ratLe : rat → rat → bool` is the order on rationals, declaration-
+//! only at the kernel level: a representative-based body
+//! (`a · d ≤ c · b`, valid because denominators are positive) is a
+//! straightforward follow-up, but the order axioms are proved
+//! downstream. It lives here because it is needed to define
 //! `real := close rat ratLe` (Dedekind cuts).
 
 use std::sync::LazyLock;
@@ -35,38 +29,45 @@ use crate::hol;
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
-use super::int::int_mul;
+use super::int::{int_mul, int_pos_spec, int_pos_ty};
 use super::prod::{fst, prod, snd};
 use super::spec::{TermSpec, TypeSpec};
 
-/// `int × int` — the numerator/denominator carrier.
-fn ii_pair() -> Type {
-    prod(Type::int(), Type::int())
+/// `int × int.pos` — the numerator/denominator carrier.
+fn ip_pair() -> Type {
+    prod(Type::int(), int_pos_ty())
 }
 
-/// `λp q. fst p * snd q = fst q * snd p` — cross-multiplication
+/// `fst p : int` — the numerator of a representative pair.
+fn num(p: Term) -> Term {
+    Term::app(fst(Type::int(), int_pos_ty()), p)
+}
+
+/// `rep (snd p) : int` — the (positive) denominator of a representative
+/// pair, coerced from `int.pos` down to its underlying `int`.
+fn den(p: Term) -> Term {
+    let d_pos = Term::app(snd(Type::int(), int_pos_ty()), p);
+    let rep = Term::spec_rep(int_pos_spec(), Vec::new());
+    Term::app(rep, d_pos)
+}
+
+/// `λp q. num p · den q = num q · den p` — cross-multiplication
 /// `(a, b) ~ (c, d) ⟺ a·d = c·b`.
 fn rat_rel() -> Term {
-    let pair_ty = ii_pair();
+    let pair_ty = ip_pair();
     let p = Term::free("p", pair_ty.clone());
     let q = Term::free("q", pair_ty.clone());
-    let fp = Term::app(fst(Type::int(), Type::int()), p.clone());
-    let sp = Term::app(snd(Type::int(), Type::int()), p);
-    let fq = Term::app(fst(Type::int(), Type::int()), q.clone());
-    let sq = Term::app(snd(Type::int(), Type::int()), q);
-    // a·d = c·b
-    let lhs = Term::app(Term::app(int_mul(), fp), sq);
-    let rhs = Term::app(Term::app(int_mul(), fq), sp);
+    let lhs = Term::app(Term::app(int_mul(), num(p.clone())), den(q.clone()));
+    let rhs = Term::app(Term::app(int_mul(), num(q)), den(p));
     let eq = hol::hol_eq(lhs, rhs);
     hol::pub_abs("p", pair_ty.clone(), hol::pub_abs("q", pair_ty, eq))
 }
 
-/// `rat := (int × int) / ~` — the rationals as numerator/denominator
-/// pairs modulo cross-multiplication. (TODO: carve the base to
-/// nonzero denominators — see module docs.)
+/// `rat := (int × int.pos) / ~` — the rationals as numerator/denominator
+/// pairs (positive denominator) modulo cross-multiplication.
 pub fn rat_spec() -> TypeSpec {
     static LAZY: LazyLock<TypeSpec> =
-        LazyLock::new(|| TypeSpec::quot(Canonical::Rat, ii_pair(), rat_rel()));
+        LazyLock::new(|| TypeSpec::quot(Canonical::Rat, ip_pair(), rat_rel()));
     LAZY.clone()
 }
 pub fn rat_ty() -> Type {

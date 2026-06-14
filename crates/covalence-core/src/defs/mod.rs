@@ -64,8 +64,8 @@
 //!   (`list{Length,Cat,Map,Filter,Foldr,Foldl,Take,Skip,Repeat,
 //!   Flatten}`), `ratLe`, and `cond`. These still **reduce on
 //!   literals** via `builtins::reduce_spec` where applicable; they
-//!   just lack open-form definitional bodies. One open refinement:
-//!   `rat`'s base should carve out a nonzero denominator.
+//!   just lack open-form definitional bodies. (`rat` now draws its
+//!   denominator from `int.pos`, so it is correctly nonzero.)
 //!
 //! ## Module layout
 //!
@@ -84,6 +84,7 @@ mod blob;
 mod canonical;
 mod cond;
 mod coprod;
+mod fail;
 mod floats;
 mod helpers;
 mod int;
@@ -117,12 +118,13 @@ pub use cond::{cond, cond_spec};
 pub use coprod::{
     coprod, coprod_case, coprod_case_spec, coprod_spec, inl, inl_spec, inr, inr_spec,
 };
+pub use fail::{fail, fail_spec};
 pub use floats::{f32_spec, f32_ty, f64_spec, f64_ty};
 pub use int::{
     int_abs, int_abs_spec, int_add, int_add_spec, int_div, int_div_spec, int_le, int_le_spec,
     int_lt, int_lt_spec, int_mod, int_mod_spec, int_mul, int_mul_spec, int_neg, int_neg_spec,
-    int_pred, int_pred_spec, int_sgn, int_sgn_spec, int_sub, int_sub_spec, int_succ, int_succ_spec,
-    int_ty_spec, int_zero,
+    int_pos_spec, int_pos_ty, int_pred, int_pred_spec, int_sgn, int_sgn_spec, int_sub, int_sub_spec,
+    int_succ, int_succ_spec, int_ty_spec, int_zero,
 };
 pub use list::{
     cons, cons_spec, head, head_spec, list, list_cat, list_cat_spec, list_filter, list_filter_spec,
@@ -145,8 +147,8 @@ pub use nat::{
     nat_to_bytes_le_spec, nat_to_int, nat_to_int_spec,
 };
 pub use option::{
-    from_some, from_some_spec, is_some, is_some_spec, none, none_spec, option, option_case,
-    option_case_spec, option_spec, some, some_spec,
+    is_some, is_some_spec, none, none_spec, option, option_case, option_case_spec, option_spec,
+    some, some_spec, unwrap, unwrap_spec,
 };
 pub use prod::{
     fst, fst_spec, pair, pair_spec, prod, prod_spec, signed1, signed1_spec, signed2, signed2_spec,
@@ -637,10 +639,10 @@ mod tests {
     }
 
     #[test]
-    fn is_some_and_from_some_typed_correctly() {
+    fn is_some_and_unwrap_typed_correctly() {
         let alpha = Type::tfree("a");
         let is_s = is_some(alpha.clone());
-        let from_s = from_some(alpha.clone());
+        let from_s = unwrap(alpha.clone());
         assert_eq!(
             is_s.type_of().unwrap(),
             Type::fun(option(alpha.clone()), Type::bool()),

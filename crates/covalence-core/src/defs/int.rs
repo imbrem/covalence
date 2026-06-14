@@ -98,6 +98,27 @@ pub fn int_ty_spec() -> TypeSpec {
     LAZY.clone()
 }
 
+/// `λx:int. 0 < x` — the selector predicate carving `int.pos` out of
+/// `int`.
+fn int_pos_predicate() -> Term {
+    let x = Term::free("x", Type::int());
+    let pos = Term::app(Term::app(int_lt(), int_zero()), x);
+    hol::pub_abs("x", Type::int(), pos)
+}
+
+/// `int.pos := { x : int | 0 < x }` — the strictly-positive integers.
+/// The denominator type for `rat`.
+pub fn int_pos_spec() -> TypeSpec {
+    static LAZY: LazyLock<TypeSpec> =
+        LazyLock::new(|| TypeSpec::subtype(Canonical::IntPos, Type::int(), int_pos_predicate()));
+    LAZY.clone()
+}
+/// `int.pos` — the strictly-positive integers type.
+pub fn int_pos_ty() -> Type {
+    static LAZY: LazyLock<Type> = LazyLock::new(|| Type::spec(int_pos_spec(), vec![]));
+    LAZY.clone()
+}
+
 // ----------------------------------------------------------------------------
 // class ↔ representative bridge
 // ----------------------------------------------------------------------------

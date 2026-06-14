@@ -156,12 +156,11 @@ fn build_disj(lits: &[Term]) -> Result<Term> {
 }
 
 /// Split a clause into its literals by fully walking the `∨`-spine
-/// (see the module-level ⚠️ note on naive splitting). `F` (the empty
-/// clause) splits to `[]`.
+/// (see the module-level ⚠️ note on naive splitting). `F` is treated as
+/// an ordinary literal here — the *empty* clause is `build_disj(&[])`,
+/// also `F`, so the two coincide structurally; callers that must tell a
+/// unit `(cl false)` from the empty `(cl)` track arity separately.
 fn disjuncts(t: &Term) -> Vec<Term> {
-    if matches!(t.as_bool(), Some(false)) {
-        return Vec::new();
-    }
     match parse_or(t) {
         Some((a, b)) => {
             let mut v = vec![a];

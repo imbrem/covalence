@@ -42,19 +42,25 @@ it is how unfinished work stays discoverable.
   derives the **forward** law `Γ ⊢ rel a b → Γ ⊢ mkClass a = mkClass b`,
   the workhorse for proving `int` *equations*.
 
-  Remaining for `int`: (a) the **converse** `mkClass a = mkClass b ⟹ rel a b`
-  in `init::quotient` — recipe (and the η gotcha) is in that module's docs;
-  needs `Thm::spec_rep_abs_fwd` + a proof that `classOf a` satisfies the
-  `close` predicate. (b) Prove `int_rel` is an equivalence: `refl`/`symm`
-  are trivial (`refl`/`sym` of a `nat` equation); `trans` now has its
-  prerequisite — `init::nat::add_cancel`. (c) Reconcile the generic
-  `classOf a = λx. rel a x` with `defs/int.rs`'s β-reduced `class_of` (a β
-  step). Then each `int` axiom unfolds the op to its representative-pair
-  body, lifts the `nat` fact through `class_intro`, and re-quotients.
-  Still-needed `nat` facts for the *order/multiplicative* `int` axioms:
-  `mul_succ_r` / `mul_comm` / `mul_assoc` / `distrib`, and the `le`/`lt`
-  order facts (reflexivity, transitivity, monotonicity). `init::nat` already
-  has the additive theory + `add_cancel` + `mul_zero`.
+  Progress: `int_rel` is now a **proven equivalence**
+  (`init::int::int_rel_refl`/`_symm`/`_trans`, `trans` via
+  `nat::add_interchange` + `nat::add_cancel`), and `quotient::class_intro`
+  already lifts `⊢ int_rel p q` to `mkClass p = mkClass q` over the real
+  `int_ty_spec` (tested). Remaining for `int`:
+  - (a) the **β reconciliation** — `class_intro`'s `classOf a = λx. rel a x`
+    vs `defs/int.rs`'s β-reduced `mk_int`;
+  - (b) **unfold each `int` op** to its representative-pair body (δ + the
+    quotient coercions), so an axiom like `add_comm` reduces to a `nat`
+    fact lifted through `class_intro` — this discharges the 10 ring-equation
+    postulates;
+  - (c) the **converse** `mkClass a = mkClass b ⟹ rel a b` in
+    `init::quotient` (recipe + η gotcha in that module's docs; needs
+    `Thm::spec_rep_abs_fwd` + the `close`-predicate proof) — for the
+    *order* axioms (the other 7);
+  - still-needed `nat` facts for the *order/multiplicative* `int` axioms:
+    `mul_succ_r` / `mul_comm` / `mul_assoc` / `distrib`, and the `le`/`lt`
+    order facts. `init::nat` already has the additive theory, `add_cancel`,
+    `add_interchange`, and `mul_zero`.
 ## Partial subsystems
 
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in

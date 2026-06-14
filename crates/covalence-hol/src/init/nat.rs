@@ -307,6 +307,56 @@ fn cong_add_l(eq: Thm, c: Term) -> Result<Thm> {
     eq.cong_arg(nat_add())?.cong_fn(c)
 }
 
+/// `⊢ (x₁ + y₁) = (x₂ + y₂)` from `⊢ x₁ = x₂` and `⊢ y₁ = y₂`.
+pub(crate) fn cong_add(xs: Thm, ys: Thm) -> Result<Thm> {
+    xs.cong_arg(nat_add())?.cong_app(ys)
+}
+
+cached_thm! {
+    /// `⊢ ∀a b c d. (a + b) + (c + d) = (a + d) + (b + c)` — the additive
+    /// rearrangement the Grothendieck `int` relation's transitivity needs
+    /// (it pairs the "outer" summands `a, d` and the "inner" summands
+    /// `b, c`). Both sides equal `a + ((b + c) + d)`.
+    pub fn add_interchange() -> Thm {
+        add_interchange_impl().expect("add_interchange derivation")
+    }
+}
+fn add_interchange_impl() -> Result<Thm> {
+    let (a, b, c, d) = (var("a"), var("b"), var("c"), var("d"));
+    let add_a = Term::app(nat_add(), a.clone());
+
+    // (a+b)+(c+d) = a+((b+c)+d).
+    let s1 = add_assoc()
+        .all_elim(a.clone())?
+        .all_elim(b.clone())?
+        .all_elim(add(c.clone(), d.clone()))?; // (a+b)+(c+d) = a+(b+(c+d))
+    let s2 = add_assoc()
+        .all_elim(b.clone())?
+        .all_elim(c.clone())?
+        .all_elim(d.clone())?
+        .sym()? // b+(c+d) = (b+c)+d
+        .cong_arg(add_a.clone())?; // a+(b+(c+d)) = a+((b+c)+d)
+    let lhs_to_mid = s1.trans(s2)?;
+
+    // (a+d)+(b+c) = a+((b+c)+d).
+    let t1 = add_assoc()
+        .all_elim(a.clone())?
+        .all_elim(d.clone())?
+        .all_elim(add(b.clone(), c.clone()))?; // (a+d)+(b+c) = a+(d+(b+c))
+    let t2 = add_comm()
+        .all_elim(d.clone())?
+        .all_elim(add(b.clone(), c.clone()))? // d+(b+c) = (b+c)+d
+        .cong_arg(add_a)?; // a+(d+(b+c)) = a+((b+c)+d)
+    let rhs_to_mid = t1.trans(t2)?;
+
+    lhs_to_mid
+        .trans(rhs_to_mid.sym()?)? // (a+b)+(c+d) = (a+d)+(b+c)
+        .all_intro("d", nat())?
+        .all_intro("c", nat())?
+        .all_intro("b", nat())?
+        .all_intro("a", nat())
+}
+
 cached_thm! {
     /// `⊢ ∀a b. a + S b = S (a + b)` — the successor-on-the-right equation
     /// (mirror of [`add_step`], which moves a successor on the *left*).

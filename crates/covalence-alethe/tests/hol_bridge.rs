@@ -86,13 +86,101 @@ fn unfinished_proof_is_unknown() {
     assert_eq!(check(UF1_PROBLEM, proof), Decision::Unknown);
 }
 
+// ---------------------------------------------------------------------
+// INT-A — closed integer arithmetic: ¬(1 + 2 = 3). The `hole` steps
+// (1+2=3, 3=3=true, ¬true=false) are all re-derived in the kernel.
+// ---------------------------------------------------------------------
+
+const INTA_PROBLEM: &str = "\
+(set-logic QF_LIA)
+(assert (not (= (+ 1 2) 3)))
+";
+
+const INTA_PROOF: &str = "\
+(assume a0 (! (not (! (= (+ 1 2) 3) :named @p_1)) :named @p_2))
+(step t0 (cl (not (! (= @p_2 false) :named @p_3)) (not @p_2) false) :rule equiv_pos2)
+(step t1 (cl @p_1) :rule hole :args (\"untranslated rewrite\"))
+(step t2 (cl (! (= 3 3) :named @p_5)) :rule refl)
+(step t3 (cl (= @p_1 @p_5)) :rule cong :premises (t1 t2))
+(step t4 (cl (= @p_5 true)) :rule hole :args (\"untranslated rewrite\"))
+(step t5 (cl (= @p_1 true)) :rule trans :premises (t3 t4))
+(step t6 (cl (= @p_2 (! (not true) :named @p_4))) :rule cong :premises (t5))
+(step t7 (cl (= @p_4 false)) :rule hole :args (\"untranslated rewrite\"))
+(step t8 (cl @p_3) :rule trans :premises (t6 t7))
+(step t9 (cl false) :rule resolution :premises (t0 t8 a0))
+(step t10 (cl (not false)) :rule false)
+(step t11 (cl) :rule resolution :premises (t9 t10))
+";
+
 #[test]
-fn untranslated_hole_is_reported_not_silently_trusted() {
-    // cvc5 emits `hole` for rewrites it cannot express in Alethe. We must
-    // refuse it (NotImplemented), never wave it through.
+fn embedded_inta_closed_arithmetic() {
+    assert_eq!(check(INTA_PROBLEM, INTA_PROOF), Decision::Unsat);
+}
+
+// ---------------------------------------------------------------------
+// IMP — the `implies` rule: (p ⟹ q), p, ¬q.
+// ---------------------------------------------------------------------
+
+const IMP_PROBLEM: &str = "\
+(set-logic QF_UF)
+(declare-fun p () Bool)
+(declare-fun q () Bool)
+(assert (=> p q))
+(assert p)
+(assert (not q))
+";
+
+const IMP_PROOF: &str = "\
+(assume a0 (! (=> p q) :named @p_1))
+(assume a1 p)
+(assume a2 (! (not q) :named @p_2))
+(step t0 (cl (not p) q) :rule implies :premises (a0))
+(step t1 (cl q) :rule resolution :premises (t0 a1))
+(step t2 (cl) :rule resolution :premises (t1 a2))
+";
+
+#[test]
+fn embedded_imp_implies_rule() {
+    assert_eq!(check(IMP_PROBLEM, IMP_PROOF), Decision::Unsat);
+}
+
+// ---------------------------------------------------------------------
+// AND — the `and` projection rule: p = (q ∧ r), p, ¬q.
+// ---------------------------------------------------------------------
+
+const AND_PROBLEM: &str = "\
+(set-logic QF_UF)
+(declare-fun p () Bool)
+(declare-fun q () Bool)
+(declare-fun r () Bool)
+(assert (= p (and q r)))
+(assert p)
+(assert (not q))
+";
+
+const AND_PROOF: &str = "\
+(assume a0 (! (= p (! (and q r) :named @p_1)) :named @p_2))
+(assume a1 p)
+(assume a2 (! (not q) :named @p_3))
+(step t0 (cl (not @p_2) (not p) @p_1) :rule equiv_pos2)
+(step t1 (cl @p_1) :rule resolution :premises (t0 a0 a1))
+(step t2 (cl q) :rule and :premises (t1) :args (0))
+(step t3 (cl) :rule resolution :premises (t2 a2))
+";
+
+#[test]
+fn embedded_and_projection_rule() {
+    assert_eq!(check(AND_PROBLEM, AND_PROOF), Decision::Unsat);
+}
+
+#[test]
+fn unrecomputable_hole_is_reported_not_silently_trusted() {
+    // The recompute hook discharges closed/structural rewrites, but a
+    // rewrite between two *distinct* uninterpreted terms has no shared
+    // normal form — it must be refused (NotImplemented), never trusted.
     let proof = "\
 (assume a0 (= a b))
-(step t1 (cl (= b b)) :rule hole :args (\"untranslated rewrite\"))
+(step t1 (cl (= a b)) :rule hole :args (\"untranslated rewrite\"))
 ";
     let problem = parse_smtlib2(UF1_PROBLEM).unwrap();
     let proof = parse_alethe(proof).unwrap();
@@ -127,5 +215,35 @@ mod live {
     #[test]
     fn live_uf1() {
         assert_eq!(solve_and_check(UF1_PROBLEM), Decision::Unsat);
+    }
+
+    #[test]
+    fn live_inta_closed_arithmetic() {
+        // cvc5's real proof of ¬(1+2=3) leans entirely on `hole` rewrites
+        // that are closed arithmetic — our recompute hook discharges them.
+        assert_eq!(solve_and_check(INTA_PROBLEM), Decision::Unsat);
+    }
+
+    #[test]
+    fn live_imp() {
+        assert_eq!(solve_and_check(IMP_PROBLEM), Decision::Unsat);
+    }
+
+    #[test]
+    fn live_and() {
+        assert_eq!(solve_and_check(AND_PROBLEM), Decision::Unsat);
+    }
+
+    /// ¬¬p, ¬p — cvc5 discharges the double-negation via a `(¬¬p = p)`
+    /// hole, which `simp` re-derives.
+    #[test]
+    fn live_double_negation() {
+        let problem = "\
+(set-logic QF_UF)
+(declare-fun p () Bool)
+(assert (not (not p)))
+(assert (not p))
+";
+        assert_eq!(solve_and_check(problem), Decision::Unsat);
     }
 }

@@ -18,21 +18,24 @@ it is how unfinished work stays discoverable.
 
 ## Postulates pending proof
 
-- **The four `add`/`mul` Peano axioms** in
-  `crates/covalence-hol/src/init/nat.rs`
-  (`Hol::{add_base, add_step, mul_base, mul_step}`) are **postulated** via
-  `Thm::assume`, not proved. `nat_add`/`nat_mul` unfold to `natRec`, whose
-  recursion equations are not yet available over variables. (Induction and
-  the two freeness axioms `succ_inj` / `zero_ne_succ` are now genuine — backed
-  by `Thm::nat_induct` and the `Thm::succ_inj` / `Thm::zero_ne_succ`
-  freeness primitives.)
+- **`init::nat::rec_holds`** in `crates/covalence-hol/src/init/nat.rs` — the
+  *single* remaining `nat` postulate (`Thm::assume`): `natRec` satisfies its
+  recursion equations,
+  `∀z f. (natRec z f 0 = z) ∧ (∀n. natRec z f (S n) = f n (natRec z f n))`.
 
-  Discharging them — the *soundness of PA in HOL* step — does **not** need a
-  new computation primitive: `natRec` exists by `ε` (choice over its
-  recursion-uniqueness predicate), so once `ε`/choice is exposed the recursion
-  equations follow by induction, and these four with them. When that lands,
-  replace the `Hol::axiom` calls with real derivations; the `Peano` trait/API
-  does not change.
+  Everything else is already derived from it: the four `add`/`mul` recursion
+  equations (`add_base`/`add_step`/`mul_base`/`mul_step`) δ-unfold `nat.add` /
+  `nat.mul` / `iter` down to `natRec` and apply `rec_holds`, so each carries
+  exactly the one `rec_holds` hypothesis. (Induction and the freeness axioms
+  `succ_inj` / `zero_ne_succ` are genuine, via `Thm::nat_induct` /
+  `Thm::succ_inj` / `Thm::zero_ne_succ`.)
+
+  Discharging `rec_holds` — the *soundness of PA in HOL* step — needs **no new
+  computation primitive**: `natRec` exists by `ε` (the recursion theorem
+  `∃r. P_rec r`), so `Thm::spec_ax(natRec, ·)` + choice + induction prove it.
+  The kernel already has every primitive required. The moment `rec_holds`
+  becomes a hypothesis-free proof, all four arithmetic facts become genuine
+  theorems automatically — no other change.
 
 ## Partial subsystems
 

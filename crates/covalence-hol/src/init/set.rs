@@ -411,28 +411,60 @@ pub fn inter_union_distrib() -> Thm {
 }
 
 // ============================================================================
-// Subset.
+// Subset — the high-level interface is `subset_intro` / `subset_elim`
+// (the membership characterisation), out of which the order laws follow.
 // ============================================================================
 
 /// `⊢ set.subset s t = (∀x. set.mem x s ⟹ set.mem x t)` — the defining
 /// unfolding of `⊆`.
 pub fn subset_unfold(alpha: &Type, s: &Term, t: &Term) -> Result<Thm> {
-    let st = Term::app(Term::app(set_subset(alpha.clone()), s.clone()), t.clone());
+    let st = subset_tm(alpha, s, t);
     st.delta_all(set_subset_spec().symbol())?.rhs_conv(|x| x.reduce())
+}
+
+/// **Subset introduction.** From `all_imp : Γ ⊢ ∀x. set.mem x s ⟹
+/// set.mem x t`, conclude `Γ ⊢ set.subset s t`. The `⊆` companion to
+/// [`ext`] — proofs build `⊆` facts through this, never by unfolding the
+/// definition.
+pub fn subset_intro(alpha: &Type, s: &Term, t: &Term, all_imp: Thm) -> Result<Thm> {
+    subset_unfold(alpha, s, t)?.sym()?.eq_mp(all_imp)
+}
+
+/// **Subset elimination.** From `sub : Γ ⊢ set.subset s t`, recover
+/// `Γ ⊢ ∀x. set.mem x s ⟹ set.mem x t`.
+pub fn subset_elim(alpha: &Type, s: &Term, t: &Term, sub: Thm) -> Result<Thm> {
+    subset_unfold(alpha, s, t)?.eq_mp(sub)
 }
 
 /// `⊢ set.subset s s` — `⊆` is reflexive.
 pub fn subset_refl() -> Thm {
     let (a, s, _t, _u) = vars();
+    pointwise_subset(&a, &s, &s, |v| {
+        let ms = mem(&a, v, &s);
+        Thm::assume(ms.clone())?.imp_intro(&ms) // ⊢ mem v s ⟹ mem v s
+    })
+    .expect("subset_refl")
+}
+
+/// `⊢ set.subset s t ⟹ set.subset t u ⟹ set.subset s u` — transitivity
+/// of `⊆`.
+pub fn subset_trans() -> Thm {
+    let (a, s, t, u) = vars();
     let v = Term::free("x", a.clone());
-    let ms = mem(&a, &v, &s);
-    let imp = Thm::assume(ms.clone())
-        .and_then(|h| h.imp_intro(&ms)) // ⊢ mem x s ⟹ mem x s
-        .and_then(|t| t.all_intro("x", a.clone())) // ⊢ ∀x. …
-        .expect("subset_refl: ∀x. mem x s ⟹ mem x s");
-    subset_unfold(&a, &s, &s)
-        .and_then(|u| u.sym()?.eq_mp(imp)) // ⊢ set.subset s s
-        .expect("subset_refl: fold")
+    let sub_st = subset_tm(&a, &s, &t);
+    let sub_tu = subset_tm(&a, &t, &u);
+
+    let build = || -> Result<Thm> {
+        let imp_st = subset_elim(&a, &s, &t, Thm::assume(sub_st.clone())?)?.all_elim(v.clone())?;
+        let imp_tu = subset_elim(&a, &t, &u, Thm::assume(sub_tu.clone())?)?.all_elim(v.clone())?;
+        // mem v s ⟹ mem v u: chain the two implications through mem v t.
+        let mem_s = Thm::assume(mem(&a, &v, &s))?;
+        let mem_u = imp_tu.imp_elim(imp_st.imp_elim(mem_s)?)?; // {s⊆t, t⊆u, mem v s} ⊢ mem v u
+        let all = mem_u.imp_intro(&mem(&a, &v, &s))?.all_intro("x", a.clone())?;
+        let sub_su = subset_intro(&a, &s, &u, all)?; // {s⊆t, t⊆u} ⊢ s ⊆ u
+        sub_su.imp_intro(&sub_tu)?.imp_intro(&sub_st)
+    };
+    build().expect("subset_trans")
 }
 
 /// `⊢ set.subset s t ⟹ set.subset t s ⟹ s = t` — antisymmetry of `⊆`,
@@ -445,21 +477,71 @@ pub fn subset_antisym() -> Thm {
     let sub_ts = subset_tm(&a, &t, &s);
 
     let build = || -> Result<Thm> {
-        // ∀x. mem x s ⟹ mem x t   and   ∀x. mem x t ⟹ mem x s
-        let all_st = subset_unfold(&a, &s, &t)?.eq_mp(Thm::assume(sub_st.clone())?)?;
-        let all_ts = subset_unfold(&a, &t, &s)?.eq_mp(Thm::assume(sub_ts.clone())?)?;
-        let imp_st = all_st.all_elim(v.clone())?; // {s⊆t} ⊢ mem v s ⟹ mem v t
-        let imp_ts = all_ts.all_elim(v.clone())?; // {t⊆s} ⊢ mem v t ⟹ mem v s
-        let ms = mem(&a, &v, &s);
-        let mt = mem(&a, &v, &t);
-        let s_to_t = imp_st.imp_elim(Thm::assume(ms.clone())?)?; // {…, mem v s} ⊢ mem v t
-        let t_to_s = imp_ts.imp_elim(Thm::assume(mt.clone())?)?; // {…, mem v t} ⊢ mem v s
+        let imp_st = subset_elim(&a, &s, &t, Thm::assume(sub_st.clone())?)?.all_elim(v.clone())?;
+        let imp_ts = subset_elim(&a, &t, &s, Thm::assume(sub_ts.clone())?)?.all_elim(v.clone())?;
+        let s_to_t = imp_st.imp_elim(Thm::assume(mem(&a, &v, &s))?)?; // {…, mem v s} ⊢ mem v t
+        let t_to_s = imp_ts.imp_elim(Thm::assume(mem(&a, &v, &t))?)?; // {…, mem v t} ⊢ mem v s
         let mem_eq = t_to_s.deduct_antisym(s_to_t)?; // {s⊆t, t⊆s} ⊢ mem v s = mem v t
         let all_eq = mem_eq.all_intro("x", a.clone())?;
         let s_eq_t = ext(&a, &s, &t, all_eq)?; // {s⊆t, t⊆s} ⊢ s = t
         s_eq_t.imp_intro(&sub_ts)?.imp_intro(&sub_st)
     };
     build().expect("subset_antisym")
+}
+
+/// `⊢ set.subset set.empty s` — `∅` is the least set.
+pub fn empty_subset() -> Thm {
+    let (a, s, _t, _u) = vars();
+    let empty = set_empty(a.clone());
+    pointwise_subset(&a, &empty, &s, |v| {
+        // mem v ∅ ⟹ mem v s : the antecedent is `F`, so ex falso.
+        let mem_empty_v = mem(&a, v, &empty);
+        let f = mem_empty(&a, v)?.eq_mp(Thm::assume(mem_empty_v.clone())?)?; // {mem v ∅} ⊢ F
+        f.false_elim(mem(&a, v, &s))?.imp_intro(&mem_empty_v)
+    })
+    .expect("empty_subset")
+}
+
+/// `⊢ set.subset s (set.union s t)` — a set is contained in its unions.
+pub fn subset_union_l() -> Thm {
+    let (a, s, t, _u) = vars();
+    let st = union(&a, &s, &t);
+    pointwise_subset(&a, &s, &st, |v| {
+        // mem v s ⟹ mem v (s∪t) : inject on the left, refold via mem_union.
+        let disj = Thm::assume(mem(&a, v, &s))?.or_intro_l(mem(&a, v, &t))?; // {mem v s} ⊢ mem v s ∨ mem v t
+        mem_union(&a, v, &s, &t)?
+            .sym()?
+            .eq_mp(disj)? // {mem v s} ⊢ mem v (s∪t)
+            .imp_intro(&mem(&a, v, &s))
+    })
+    .expect("subset_union_l")
+}
+
+/// `⊢ set.subset (set.intersect s t) s` — an intersection is contained in
+/// its factors.
+pub fn inter_subset_l() -> Thm {
+    let (a, s, t, _u) = vars();
+    let st = inter(&a, &s, &t);
+    pointwise_subset(&a, &st, &s, |v| {
+        // mem v (s∩t) ⟹ mem v s : unfold to the conjunction, take the left.
+        let conj = mem_intersect(&a, v, &s, &t)?.eq_mp(Thm::assume(mem(&a, v, &st))?)?;
+        conj.and_elim_l()?.imp_intro(&mem(&a, v, &st))
+    })
+    .expect("inter_subset_l")
+}
+
+/// `⊢ set.subset s t` from a per-point `branch` proving
+/// `⊢ set.mem v s ⟹ set.mem v t` (for the canonical witness `v = "x"`),
+/// closed with [`subset_intro`]. The shared shape of the `⊆` lemmas.
+fn pointwise_subset(
+    alpha: &Type,
+    s: &Term,
+    t: &Term,
+    branch: impl FnOnce(&Term) -> Result<Thm>,
+) -> Result<Thm> {
+    let v = Term::free("x", alpha.clone());
+    let all = branch(&v)?.all_intro("x", alpha.clone())?;
+    subset_intro(alpha, s, t, all)
 }
 
 /// `set.subset[α] s t : bool` — builder.
@@ -659,6 +741,48 @@ mod tests {
         assert!(thm.hyps().is_empty() && thm.has_no_obs());
         let s = setvar("s");
         assert_eq!(thm.concl(), &subset_tm(&alpha(), &s, &s));
+    }
+
+    #[test]
+    fn subset_order_laws_are_genuine() {
+        for thm in [subset_refl(), subset_trans(), empty_subset(), subset_union_l(), inter_subset_l()] {
+            assert!(thm.hyps().is_empty(), "subset law must be proved");
+            assert!(thm.has_no_obs(), "subset law must be oracle-free");
+        }
+    }
+
+    #[test]
+    fn subset_trans_shape() {
+        let thm = subset_trans();
+        let (a, s, t, u) = vars();
+        let expected = subset_tm(&a, &s, &t)
+            .imp(
+                subset_tm(&a, &t, &u)
+                    .imp(subset_tm(&a, &s, &u))
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(thm.concl(), &expected);
+    }
+
+    #[test]
+    fn empty_subset_shape() {
+        let (a, s, _t, _u) = vars();
+        let thm = empty_subset();
+        assert_eq!(thm.concl(), &subset_tm(&a, &set_empty(a.clone()), &s));
+    }
+
+    #[test]
+    fn subset_union_and_inter_bounds() {
+        let (a, s, t, _u) = vars();
+        assert_eq!(
+            subset_union_l().concl(),
+            &subset_tm(&a, &s, &union(&a, &s, &t))
+        );
+        assert_eq!(
+            inter_subset_l().concl(),
+            &subset_tm(&a, &inter(&a, &s, &t), &s)
+        );
     }
 
     #[test]

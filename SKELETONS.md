@@ -37,6 +37,14 @@ it is how unfinished work stays discoverable.
   becomes a hypothesis-free proof, all four arithmetic facts become genuine
   theorems automatically — no other change.
 
+  **In progress** in `crates/covalence-hol/src/init/recursion.rs` (graph
+  construction): the graph predicate and its base/step lemmas are proved, and
+  the **existence** half — `∀n. ∃a. Graph z f n a` — is proved axiom-free
+  (`graph_total`). Remaining: uniqueness (`∀n a b. Graph n a ∧ Graph n b ⟹
+  a = b`, by induction on freeness), assembly (`r ≜ λz f n. ε a. Graph z f n a`,
+  prove `P_rec r`), and wiring into `rec_holds`. The module carries a
+  `dead_code` allow until then.
+
 ## Partial subsystems
 
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in

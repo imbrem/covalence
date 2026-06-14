@@ -877,3 +877,67 @@ fn freeness_rules_reject_non_nat() {
     assert!(Thm::succ_inj(b.clone(), b.clone()).is_err());
     assert!(Thm::zero_ne_succ(b).is_err());
 }
+
+// ---- choice (ε) + def-style spec unfolding ----
+
+#[test]
+fn select_ax_shape_and_hyp_free() {
+    // p : nat → bool, x : nat  ⊢  (p x) ⟹ (p (ε p))
+    let p = Term::free("p", Type::fun(Type::nat(), Type::bool()));
+    let x = Term::free("x", Type::nat());
+    let thm = Thm::select_ax(p.clone(), x.clone()).unwrap();
+    assert!(thm.hyps().is_empty());
+    let (prem, concl) = parse_hol_imp(thm.concl()).unwrap();
+    assert_eq!(prem, &Term::app(p.clone(), x));
+    let expected = Term::app(
+        p.clone(),
+        Term::app(Term::select_op(Type::nat()), p),
+    );
+    assert_eq!(concl, &expected);
+}
+
+#[test]
+fn select_ax_rejects_non_predicate() {
+    // p must be `α → bool`.
+    let bad = Term::free("p", Type::fun(Type::nat(), Type::nat()));
+    assert!(Thm::select_ax(bad, Term::free("x", Type::nat())).is_err());
+}
+
+#[test]
+fn spec_ax_on_natrec_is_the_choice_implication() {
+    // natRec is def-style; spec_ax gives `(P_rec w) ⟹ P_rec(natRec)`.
+    let nr = crate::defs::nat_rec(Type::nat());
+    let rty = nr.type_of().unwrap(); // the recursor carrier type
+    let w = Term::free("w", rty);
+    let thm = Thm::spec_ax(nr.clone(), w.clone()).unwrap();
+    assert!(thm.hyps().is_empty());
+    let (prem, concl) = parse_hol_imp(thm.concl()).unwrap();
+    // premise applies the predicate to the witness …
+    let TermKind::App(_p1, pw_arg) = prem.kind() else {
+        panic!("premise is not `p w`");
+    };
+    assert_eq!(pw_arg, &w);
+    // … conclusion applies the SAME predicate to natRec itself (NOT to
+    // `ε p` — the spec is not equated with the anonymous choice).
+    let TermKind::App(_p2, pt_arg) = concl.kind() else {
+        panic!("conclusion is not `p t`");
+    };
+    assert_eq!(pt_arg, &nr);
+}
+
+#[test]
+fn spec_ax_rejects_let_style() {
+    // nat_add is a let-style spec → must be refused.
+    let w = Term::free("w", crate::defs::nat_add().type_of().unwrap());
+    assert!(matches!(
+        Thm::spec_ax(crate::defs::nat_add(), w),
+        Err(Error::SpecIsLetStyle)
+    ));
+}
+
+#[test]
+fn spec_ax_rejects_wrong_witness_type() {
+    let nr = crate::defs::nat_rec(Type::nat());
+    // a `nat` witness, not the recursor carrier type → reject.
+    assert!(Thm::spec_ax(nr, Term::free("w", Type::nat())).is_err());
+}

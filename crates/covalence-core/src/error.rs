@@ -123,6 +123,12 @@ pub enum Error {
     )]
     SpecIsDefStyle,
 
+    #[error(
+        "unfold_def_spec: spec is let-style (its `tm` is the body itself, \
+         not a `ty → bool` predicate); use unfold_term_spec instead"
+    )]
+    SpecIsLetStyle,
+
     #[error("concl_eq_parts: conclusion is not a Core-meta equation")]
     NotAnEquation,
 

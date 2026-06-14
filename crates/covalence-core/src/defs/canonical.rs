@@ -40,6 +40,16 @@ pub enum Canonical {
     /// type; the result of partial ops on their "no answer" branch.
     Fail,
 
+    // ---- Function combinators (point-free utilities) ----
+    /// `fun.id : 'a → 'a` ≡ `λx. x`.
+    Id,
+    /// `fun.const : 'a → 'b → 'a` ≡ `λx _. x`.
+    Const,
+    /// `fun.compose : ('b → 'c) → ('a → 'b) → 'a → 'c` ≡ `λg f x. g (f x)`.
+    Compose,
+    /// `fun.flip : ('a → 'b → 'c) → 'b → 'a → 'c` ≡ `λf y x. f x y`.
+    Flip,
+
     // ---- Singleton ----
     /// `unit := { b : bool | b = T }` — the one-element type. Defined
     /// in `defs/unit.rs` as a bool-subtype (was a builtin
@@ -414,6 +424,10 @@ impl Canonical {
             Canonical::Forall => "bool.forall",
             Canonical::Exists => "bool.exists",
             Canonical::Fail => "fail",
+            Canonical::Id => "fun.id",
+            Canonical::Const => "fun.const",
+            Canonical::Compose => "fun.compose",
+            Canonical::Flip => "fun.flip",
             Canonical::Unit => "unit",
             Canonical::UnitNil => "unit.nil",
             Canonical::Set => "set",

@@ -86,6 +86,7 @@ mod cond;
 mod coprod;
 mod fail;
 mod floats;
+mod fun;
 mod helpers;
 mod int;
 mod list;
@@ -121,6 +122,9 @@ pub use coprod::{
 };
 pub use fail::{fail, fail_spec};
 pub use floats::{f32_spec, f32_ty, f64_spec, f64_ty};
+pub use fun::{
+    compose, compose_spec, flip, flip_spec, id, id_spec, konst, konst_spec,
+};
 pub use int::{
     int_abs, int_abs_spec, int_add, int_add_spec, int_div, int_div_spec, int_le, int_le_spec,
     int_lt, int_lt_spec, int_mod, int_mod_spec, int_mul, int_mul_spec, int_neg, int_neg_spec,

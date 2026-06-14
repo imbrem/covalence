@@ -1174,3 +1174,43 @@ fn iter_based_bodies_are_stuck() {
         );
     }
 }
+
+/// A SECOND coupling, introduced by `Thm::spec_ax`: it exposes a def-style
+/// spec's *predicate* as a kernel fact (`(pred w) ⟹ pred(t)`). For a
+/// def-style spec that is ALSO in the `reduce_prim` table — only `nat.le`
+/// and `nat.lt` — the predicate's solutions must agree with `reduce_prim`,
+/// or `spec_ax` + `reduce_prim` are jointly inconsistent (the theory has no
+/// model). Their predicates are the four defining recursion equations,
+/// which pin down a UNIQUE solution, so it suffices that `reduce_prim`
+/// *satisfies* those equations (uniqueness is by construction). See
+/// `kernel-design.md` §9.
+#[test]
+fn audit_reduced_def_specs_satisfy_their_predicate() {
+    fn reduce_bool(t: Term) -> bool {
+        match rhs_of(&Thm::reduce_prim(t.clone()).unwrap()).kind() {
+            TermKind::Bool(b) => *b,
+            other => panic!("{t}: reduced to non-bool {other:?}"),
+        }
+    }
+    // (accessor, cmp 0 0, cmp 0 (S m), cmp (S n) 0) — the three base clauses
+    // of `nat_cmp_predicate`; the fourth (recursion) is checked below.
+    let cases: &[(fn() -> Term, bool, bool, bool)] = &[
+        (defs::nat_le as fn() -> Term, true, true, false),
+        (defs::nat_lt, false, true, false),
+    ];
+    for &(cmp, zz, zs, sz) in cases {
+        assert_eq!(reduce_bool(app2(cmp(), nat(0), nat(0))), zz, "cmp 0 0");
+        for m in [0u64, 1, 5, 42] {
+            assert_eq!(reduce_bool(app2(cmp(), nat(0), nat(m + 1))), zs, "cmp 0 (S m)");
+            assert_eq!(reduce_bool(app2(cmp(), nat(m + 1), nat(0))), sz, "cmp (S n) 0");
+        }
+        // Recursion clause: `cmp (S n) (S m) = cmp n m`.
+        for (n, m) in [(0u64, 0u64), (3, 5), (5, 3), (2, 2), (7, 0), (0, 7)] {
+            assert_eq!(
+                reduce_bool(app2(cmp(), nat(n + 1), nat(m + 1))),
+                reduce_bool(app2(cmp(), nat(n), nat(m))),
+                "cmp (S n) (S m) = cmp n m at ({n},{m})"
+            );
+        }
+    }
+}

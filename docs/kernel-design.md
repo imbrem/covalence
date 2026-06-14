@@ -436,7 +436,26 @@ Euclidean convention) are forced. The Grothendieck / `iter` ops
 `abs`/`rep`); their bodies are stuck and cannot be reduced to a literal,
 so they are sound by the model alone with no derivable contradiction
 (see `iter_based_bodies_are_stuck`). Declaration-only specs (`tm = None`,
-e.g. the `uN`/`sN` ops) have no body and are likewise immune.
+e.g. the `uN`/`sN` conversions) have no body and are likewise immune.
+
+**A second coupling — `spec_ax` vs `reduce_prim`.** `Thm::spec_ax`
+exposes a *def-style* spec's selector predicate `p` as a kernel fact
+(`(p w) ⟹ p(t)`, the per-spec choice axiom). For a def-style spec that
+is **also** in `PRIM_TABLE` — currently only `nat.le` and `nat.lt` — the
+kernel then commits to *both* `(p w) ⟹ p(t)` and the `reduce_prim`
+values, so they must be jointly satisfiable: **every function satisfying
+`p` must agree with `reduce_prim` on all reducible inputs.** If `p` were
+weak enough to admit a function disagreeing with `reduce_prim` at a
+reducible point, `spec_ax` (discharging `p w` for that function) plus
+`reduce_prim` would derive `litₐ = lit_b` — `⊢ F`. `nat.le`/`nat.lt`'s
+predicates are their four defining recursion equations, which have a
+*unique* solution (the real `≤`/`<`) that `reduce_prim` computes, so
+they are safe. The guard
+`tests/audit_reduce.rs::audit_reduced_def_specs_satisfy_their_predicate`
+checks `reduce_prim` satisfies those equations; uniqueness is by
+construction. **Any future def-style spec added to `PRIM_TABLE` must
+satisfy this** (give it a predicate with a unique solution = its
+reduction, and add it to that guard).
 
 ### Audit confidence (as of 2026-06-14)
 
@@ -450,10 +469,21 @@ see the coupling note above. The same pass added the
 panics (`reduce_prim` on an ill-typed `Eq` application; `match_types`
 missing its `Bool`/`Spec` arms, panicking in `Def::body`).
 
-With that fix the kernel has no known soundness holes. Every rule
-produces only theorems true in any model that interprets the
-foundational types canonically and assigns ε-families per observer
-Rust-type.
+A fourth pass (2026-06-14) audited the `high-hol` merge, which added new
+TCB primitives/axioms: `succ` as a first-class `TermKind::Succ`
+(monomorphic `nat → nat`) with the Peano freeness rules `Thm::succ_inj`
+/ `Thm::zero_ne_succ`; Hilbert choice `Thm::select_ax` for `ε`; and
+`Thm::spec_ax` (per-def-spec choice). All are standard, sound under the
+existing model commitments (standard naturals + classical HOL with
+choice); `select_ax`/`spec_ax` coexist with the observer ε-families
+(distinct operators). `Succ` is handled as a closed, tvar-free no-op
+leaf in every substitution / predicate walk. The pass surfaced the
+second coupling documented above (`spec_ax` × `reduce_prim` on `nat.le`/
+`nat.lt`) and added its guard; no hole.
+
+With these the kernel has no known soundness holes. Every rule produces
+only theorems true in any model that interprets the foundational types
+canonically and assigns ε-families per observer Rust-type.
 
 Remaining hardening opportunities (not soundness gaps):
 

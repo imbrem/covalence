@@ -34,7 +34,7 @@ pub use covalence_core::defs::{
     not_spec, or, or_spec,
 };
 
-use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_core::{Error, Result, Term, Thm, Type, TypeKind};
 
 use crate::init::ext::{TermExt, ThmExt};
 
@@ -122,6 +122,93 @@ fn parse_not(t: &Term) -> Option<Term> {
     let (head, p) = t.as_app()?;
     let (spec, _) = head.as_spec()?;
     spec.ptr_eq(&not_spec()).then(|| p.clone())
+}
+
+// ============================================================================
+// Existential quantifier — intro / elim
+// ============================================================================
+//
+// `∃` is the defined connective `exists ≡ λP. ∀q. (∀x. P x ⟹ q) ⟹ q`
+// (`defs::logic`). The kernel ships `∀`-intro/elim (`all_intro` /
+// `all_elim`) but no `∃` rules, so we derive them here from that
+// definition — the workhorses for any existence proof (notably the
+// recursion theorem). Both keep the predicate *applied* (`pred x`,
+// un-β-reduced), matching the form [`unfold_at_1`] produces, so callers
+// must state `step` with `pred x` in the same shape.
+//
+// [`unfold_at_1`]: crate::proofs::rewrite::unfold_at_1
+
+/// Parse `exists[α] pred` → `(α, pred)`. `None` unless `t` is the
+/// `exists` connective spec applied to a predicate.
+fn parse_exists(t: &Term) -> Option<(Type, Term)> {
+    let (head, pred) = t.as_app()?;
+    let (spec, args) = head.as_spec()?;
+    if !spec.ptr_eq(&exists_spec()) {
+        return None;
+    }
+    Some((args.iter().next()?.clone(), pred.clone()))
+}
+
+/// **∃-introduction.** From `⊢ pred witness` conclude `⊢ ∃x. pred x`
+/// (i.e. `⊢ exists[α] pred`), where `pred : α → bool` and the witness
+/// is `witness : α`.
+///
+/// Derivation: `∃x. pred x` unfolds to `∀q. (∀x. pred x ⟹ q) ⟹ q`;
+/// fix `q`, assume `∀x. pred x ⟹ q`, specialise at `witness`, MP with
+/// the input, discharge and generalise `q`, then fold the definition.
+pub fn exists_intro(pred: Term, witness: Term, proof: Thm) -> Result<Thm> {
+    let TypeKind::Fun(alpha, cod) = pred.type_of()?.kind().clone() else {
+        return Err(Error::ConnectiveRule(format!(
+            "exists_intro: predicate {pred} is not a function"
+        )));
+    };
+    if !cod.is_bool() {
+        return Err(Error::ConnectiveRule(format!(
+            "exists_intro: predicate {pred} does not return bool"
+        )));
+    }
+    let q = Term::free("q", Type::bool());
+    let xname = "__exi_x";
+    let xv = Term::free(xname, alpha.clone());
+    // H = ∀x. pred x ⟹ q
+    let h = pred
+        .clone()
+        .apply(xv)?
+        .imp(q.clone())?
+        .forall(xname, alpha.clone())?;
+    // {H} ⊢ q, then discharge and ∀-generalise q.
+    let unfolded = Thm::assume(h.clone())?
+        .all_elim(witness)?
+        .imp_elim(proof)?
+        .imp_intro(&h)?
+        .all_intro("q", Type::bool())?;
+    // Fold `∀q. (∀x. pred x ⟹ q) ⟹ q` back into `∃x. pred x`.
+    let unfold = crate::proofs::rewrite::unfold_at_1(exists(alpha), pred);
+    unfold.sym()?.eq_mp(unfolded)
+}
+
+/// **∃-elimination.** From `⊢ ∃x. pred x` and a step
+/// `⊢ ∀x. pred x ⟹ c` (with `c` not depending on `x`), conclude
+/// `⊢ c`.
+///
+/// Derivation: unfold the existential to `∀q. (∀x. pred x ⟹ q) ⟹ q`,
+/// specialise `q := c`, then MP with `step`.
+pub fn exists_elim(exists_thm: Thm, c: Term, step: Thm) -> Result<Thm> {
+    let (head, _pred) = exists_thm.concl().as_app().ok_or_else(|| {
+        Error::ConnectiveRule(format!(
+            "exists_elim: conclusion is not ∃: {}",
+            exists_thm.concl()
+        ))
+    })?;
+    if parse_exists(exists_thm.concl()).is_none() {
+        return Err(Error::ConnectiveRule(format!(
+            "exists_elim: conclusion is not ∃: {}",
+            exists_thm.concl()
+        )));
+    }
+    let pred = exists_thm.concl().as_app().unwrap().1.clone();
+    let unfold = crate::proofs::rewrite::unfold_at_1(head.clone(), pred);
+    unfold.eq_mp(exists_thm)?.all_elim(c)?.imp_elim(step)
 }
 
 // ============================================================================
@@ -1075,5 +1162,59 @@ mod tests {
         let (_head, l) = f.as_app().unwrap();
         assert_eq!(l, &Term::bool_lit(false));
         assert_eq!(r, &Term::bool_lit(true));
+    }
+
+    // ---- existential ----
+
+    /// `λx:nat. P[x]` from a body that mentions `Free(name, nat)`.
+    fn nat_pred(name: &str, body: Term) -> Term {
+        Term::abs(Type::nat(), covalence_core::subst::close(&body, name))
+    }
+
+    fn nat0() -> Term {
+        Term::nat_lit(covalence_types::Nat::zero())
+    }
+
+    /// `⊢ pred witness` for `pred = λx. body`, given `⊢ body[witness]`.
+    fn pred_at(pred: &Term, witness: Term, body_proof: Thm) -> Thm {
+        // body_proof : ⊢ body[witness] ; β backwards gives ⊢ pred witness.
+        let redex = Term::app(pred.clone(), witness);
+        Thm::beta_conv(redex).unwrap().sym().unwrap().eq_mp(body_proof).unwrap()
+    }
+
+    #[test]
+    fn exists_intro_builds_an_existential() {
+        // From ⊢ (0 = 0) get ⊢ ∃x:nat. x = 0.
+        let x = Term::free("x", Type::nat());
+        let pred = nat_pred("x", x.equals(nat0()).unwrap()); // λx. x = 0
+        let proof = pred_at(&pred, nat0(), Thm::refl(nat0()).unwrap()); // ⊢ pred 0
+        let ex = exists_intro(pred.clone(), nat0(), proof).unwrap();
+
+        assert!(ex.hyps().is_empty());
+        let (alpha, got_pred) = parse_exists(ex.concl()).expect("∃ shape");
+        assert_eq!(alpha, Type::nat());
+        assert_eq!(got_pred, pred);
+    }
+
+    #[test]
+    fn exists_elim_discharges_to_a_goal() {
+        // ∃x:nat. x = x  ⊢  T, via step ∀x. (x = x) ⟹ T.
+        let x = Term::free("x", Type::nat());
+        let pred = nat_pred("x", x.clone().equals(x).unwrap()); // λx. x = x
+        let proof = pred_at(&pred, nat0(), Thm::refl(nat0()).unwrap());
+        let ex = exists_intro(pred.clone(), nat0(), proof).unwrap();
+
+        // step : ⊢ ∀x. pred x ⟹ T  (the body must keep `pred x` applied).
+        let xv = Term::free("y", Type::nat());
+        let pred_x = pred.clone().apply(xv).unwrap(); // pred y
+        let step = truth()
+            .imp_intro(&pred_x) // {} ⊢ pred y ⟹ T
+            .unwrap()
+            .all_intro("y", Type::nat())
+            .unwrap();
+
+        let out = exists_elim(ex, Term::bool_lit(true), step).unwrap();
+        assert_eq!(out.concl(), &Term::bool_lit(true));
+        assert!(out.hyps().is_empty());
     }
 }

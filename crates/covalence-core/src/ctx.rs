@@ -1,177 +1,93 @@
-//! Immutable, structurally-shared sets of Pure terms.
+//! `Ctx` — a theorem's hypothesis context.
 //!
-//! `Ctx` is the type of a theorem's hypothesis context. The
-//! kernel never exposes its backing representation: this module is
-//! the only place that knows whether hyps are stored as a
-//! `BTreeSet`, a hash-trie, or anything else. Downstream code goes
-//! through the methods here.
-//!
-//! ## Current representation
-//!
-//! `Option<Arc<BTreeSet<Term>>>` — `None` for the empty context (no
-//! allocation), `Some(Arc<...>)` for non-empty. Most kernel rules
-//! propagate their hypotheses unchanged, so the `Arc` is shared
-//! across many `Thm` values, and `union` is O(1) when either side
-//! is empty or both sides are pointer-equal.
+//! `Ctx` is an **opaque** newtype over [`crate::term::TermSet`]: it
+//! adds the "this is a theorem's hypothesis context" identity on top
+//! of the generic structurally-shared term-set mechanism, and is the
+//! only shape the kernel exposes for theorem hypotheses. The backing
+//! representation lives entirely in [`crate::term::set`]; this module
+//! just re-presents the needed API by delegating to it.
 //!
 //! ## Iteration order
 //!
-//! Iteration follows the underlying `BTreeSet` order. Callers must
-//! treat the order as stable for a given `Ctx` value but not
-//! semantically meaningful — equality is set equality.
-
-use std::collections::BTreeSet;
-use std::sync::Arc;
+//! Iteration follows the underlying set's order. Callers must treat
+//! the order as stable for a given `Ctx` value but not semantically
+//! meaningful — equality is set equality.
 
 use crate::term::Term;
+use crate::term::set::{self, TermSet};
 
-/// A context for a Pure theorem.
-#[derive(Clone, Default)]
-pub struct Ctx(Option<Arc<BTreeSet<Term>>>);
+/// A context for a theorem — an opaque set of hypotheses.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct Ctx(TermSet);
 
 impl Ctx {
     /// The empty context. Does not allocate.
     pub fn new() -> Self {
-        Ctx(None)
+        Ctx(TermSet::new())
     }
 
     /// A context with a single hypothesis.
     pub fn singleton(t: Term) -> Self {
-        let mut s = BTreeSet::new();
-        s.insert(t);
-        Ctx(Some(Arc::new(s)))
+        Ctx(TermSet::singleton(t))
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.is_none()
+        self.0.is_empty()
     }
 
     pub fn len(&self) -> usize {
-        self.0.as_deref().map_or(0, BTreeSet::len)
+        self.0.len()
     }
 
     pub fn contains(&self, t: &Term) -> bool {
-        self.0.as_deref().is_some_and(|s| s.contains(t))
+        self.0.contains(t)
     }
 
     /// Iterate over hypotheses in the underlying set's order.
-    pub fn iter(&self) -> Iter<'_> {
-        Iter(self.0.as_deref().map(|s| s.iter()))
+    pub fn iter(&self) -> set::Iter<'_> {
+        self.0.iter()
     }
 
-    /// Return the `idx`-th hypothesis in iteration order, or `None`
-    /// if out of range. Linear in `idx` over the underlying
-    /// `BTreeSet`; used by external bindings that need indexed
-    /// access (e.g. the WIT `ctx.at` accessor).
+    /// Return the `idx`-th hypothesis in iteration order, or `None`.
     pub fn at(&self, idx: usize) -> Option<&Term> {
-        self.0.as_deref().and_then(|s| s.iter().nth(idx))
+        self.0.at(idx)
     }
 
-    /// Return a new context with `t` added. Shares the prefix with
-    /// `self` via `Arc` only as long as `self` is the sole owner;
-    /// otherwise clones.
+    /// Return a new context with `t` added.
     pub fn insert(&self, t: Term) -> Self {
-        match &self.0 {
-            None => Self::singleton(t),
-            Some(arc) => {
-                if arc.contains(&t) {
-                    return self.clone();
-                }
-                let mut s = (**arc).clone();
-                s.insert(t);
-                Ctx(Some(Arc::new(s)))
-            }
-        }
+        Ctx(self.0.insert(t))
     }
 
-    /// Return a new context without `t`. If `t` was not present,
-    /// returns a clone of `self` (cheap — just an `Arc::clone`).
+    /// Return a new context without `t`.
     pub fn remove(&self, t: &Term) -> Self {
-        match &self.0 {
-            None => Self::new(),
-            Some(arc) => {
-                if !arc.contains(t) {
-                    return self.clone();
-                }
-                let mut s = (**arc).clone();
-                s.remove(t);
-                if s.is_empty() {
-                    Ctx(None)
-                } else {
-                    Ctx(Some(Arc::new(s)))
-                }
-            }
-        }
+        Ctx(self.0.remove(t))
     }
 
-    /// `true` iff every term in `self` is also in `other`. The
-    /// empty context is a subset of every context; pointer-equal
-    /// contexts short-circuit to `true`.
+    /// `true` iff every term in `self` is also in `other`.
     pub fn is_subset(&self, other: &Self) -> bool {
-        match (&self.0, &other.0) {
-            (None, _) => true,
-            (Some(_), None) => false,
-            (Some(a), Some(b)) => Arc::ptr_eq(a, b) || a.is_subset(b),
-        }
+        self.0.is_subset(&other.0)
     }
 
-    /// Set-theoretic union. `a.union(&empty) == empty.union(&a) ==
-    /// a` is O(1) (no clone of the underlying `BTreeSet`), and
-    /// `a.union(&a)` short-circuits via `Arc::ptr_eq`.
+    /// Set-theoretic union.
     pub fn union(&self, other: &Self) -> Self {
-        match (&self.0, &other.0) {
-            (None, _) => other.clone(),
-            (_, None) => self.clone(),
-            (Some(a), Some(b)) => {
-                if Arc::ptr_eq(a, b) {
-                    return self.clone();
-                }
-                let mut out = (**a).clone();
-                out.extend(b.iter().cloned());
-                Ctx(Some(Arc::new(out)))
-            }
-        }
+        Ctx(self.0.union(&other.0))
     }
 
-    /// Apply `f` to every term, returning a new context with the
-    /// images. Used by `inst_tfree` and similar whole-context
-    /// transformations.
-    pub fn map<F: FnMut(&Term) -> Term>(&self, mut f: F) -> Self {
-        match &self.0 {
-            None => Self::new(),
-            Some(arc) => {
-                let s: BTreeSet<Term> = arc.iter().map(&mut f).collect();
-                if s.is_empty() {
-                    Ctx(None)
-                } else {
-                    Ctx(Some(Arc::new(s)))
-                }
-            }
-        }
+    /// Apply `f` to every hypothesis, returning a new context.
+    pub fn map<F: FnMut(&Term) -> Term>(&self, f: F) -> Self {
+        Ctx(self.0.map(f))
     }
 }
-
-impl PartialEq for Ctx {
-    fn eq(&self, other: &Self) -> bool {
-        match (&self.0, &other.0) {
-            (None, None) => true,
-            (None, Some(s)) | (Some(s), None) => s.is_empty(),
-            (Some(a), Some(b)) => Arc::ptr_eq(a, b) || **a == **b,
-        }
-    }
-}
-
-impl Eq for Ctx {}
 
 impl std::fmt::Debug for Ctx {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_set().entries(self.iter()).finish()
+        self.0.fmt(f)
     }
 }
 
 impl<'a> IntoIterator for &'a Ctx {
     type Item = &'a Term;
-    type IntoIter = Iter<'a>;
+    type IntoIter = set::Iter<'a>;
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
@@ -179,30 +95,6 @@ impl<'a> IntoIterator for &'a Ctx {
 
 impl FromIterator<Term> for Ctx {
     fn from_iter<I: IntoIterator<Item = Term>>(iter: I) -> Self {
-        let s: BTreeSet<Term> = iter.into_iter().collect();
-        if s.is_empty() {
-            Ctx(None)
-        } else {
-            Ctx(Some(Arc::new(s)))
-        }
-    }
-}
-
-/// Iterator over a [`Ctx`].
-pub struct Iter<'a>(Option<std::collections::btree_set::Iter<'a, Term>>);
-
-impl<'a> Iterator for Iter<'a> {
-    type Item = &'a Term;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.as_mut().and_then(|it| it.next())
-    }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.as_ref().map_or((0, Some(0)), |it| it.size_hint())
-    }
-}
-
-impl ExactSizeIterator for Iter<'_> {
-    fn len(&self) -> usize {
-        self.0.as_ref().map_or(0, ExactSizeIterator::len)
+        Ctx(TermSet::from_iter(iter))
     }
 }

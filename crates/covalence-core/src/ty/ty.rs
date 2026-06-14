@@ -18,7 +18,8 @@ use std::sync::{Arc, LazyLock};
 
 use smol_str::SmolStr;
 
-use super::observers::{Object, Observer};
+use crate::defs::TypeSpec;
+use crate::term::{Object, Observer};
 
 // ============================================================================
 // BinderHint
@@ -122,7 +123,7 @@ pub enum TypeKind {
     /// that `list α` and `list β` are distinct even though they share
     /// the same constructor.
     TyConObs(Object, BinderHint, Vec<Type>),
-    /// Application of a derived-type [`crate::defs::TypeSpec`]
+    /// Application of a derived-type [`TypeSpec`]
     /// factory to type arguments. The spec is process-shared
     /// (`LazyLock`-backed) and `args` is the positional
     /// substitution for the spec's type variables (in
@@ -132,7 +133,7 @@ pub enum TypeKind {
     /// type catalogue (`set α`, `rel α β`, `option α`, …) into the
     /// kernel's type system without committing each one to its own
     /// `TypeKind` variant.
-    Spec(crate::defs::TypeSpec, Vec<Type>),
+    Spec(TypeSpec, Vec<Type>),
 }
 
 // Cached canonical instances of the common `Type`s, so the methods
@@ -222,13 +223,13 @@ impl Type {
         Self::alloc(TypeKind::Tycon(name.into(), args))
     }
 
-    /// Apply a derived-type [`crate::defs::TypeSpec`] to type
+    /// Apply a derived-type [`TypeSpec`] to type
     /// arguments. The spec's type variables (in `ty.free_tvars()`
     /// order) are substituted positionally by `args`. The handle is
     /// process-shared (`LazyLock`-backed in `crate::defs`), so two
     /// `Type::spec(defs::set_spec(), …)` calls land at the same
     /// kind of leaf and pointer-equal at the spec component.
-    pub fn spec(spec: crate::defs::TypeSpec, args: Vec<Type>) -> Self {
+    pub fn spec(spec: TypeSpec, args: Vec<Type>) -> Self {
         Self::alloc(TypeKind::Spec(spec, args))
     }
 
@@ -238,14 +239,22 @@ impl Type {
     /// Distinct calls with independently-constructed observers produce
     /// distinct types — that's the freshness primitive
     /// [`crate::Thm::new_type_definition`] uses.
-    pub fn tycon_obs<O: Observer>(observer: O, hint: impl Into<BinderHint>, args: Vec<Type>) -> Self {
+    pub fn tycon_obs<O: Observer>(
+        observer: O,
+        hint: impl Into<BinderHint>,
+        args: Vec<Type>,
+    ) -> Self {
         Self::alloc(TypeKind::TyConObs(Object::new(observer), hint.into(), args))
     }
 
     /// Like [`Type::tycon_obs`] but reuses an existing [`Object`]
     /// handle (preserving its `Arc` identity). Used internally by
     /// kernel rules and by deserialisers that already have a `Object`.
-    pub fn tycon_obs_from_dyn(observer: Object, hint: impl Into<BinderHint>, args: Vec<Type>) -> Self {
+    pub fn tycon_obs_from_dyn(
+        observer: Object,
+        hint: impl Into<BinderHint>,
+        args: Vec<Type>,
+    ) -> Self {
         Self::alloc(TypeKind::TyConObs(observer, hint.into(), args))
     }
 
@@ -359,7 +368,9 @@ impl fmt::Display for Type {
                     write!(f, "{label}")
                 } else {
                     write!(f, "({label}")?;
-                    for a in args { write!(f, " {a}")?; }
+                    for a in args {
+                        write!(f, " {a}")?;
+                    }
                     write!(f, ")")
                 }
             }

@@ -39,8 +39,8 @@ use smol_str::SmolStr;
 use crate::defs::{TermSpec, TypeSpec};
 use crate::error::{Error, Result};
 
-use super::observers::{Object, Observer};
-use super::types::{BinderHint, Type, TypeKind};
+use super::observer::{Object, Observer};
+use crate::ty::{BinderHint, Type, TypeKind};
 
 // ============================================================================
 // Def — fresh defined constants

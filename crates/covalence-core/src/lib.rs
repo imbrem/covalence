@@ -59,6 +59,7 @@ pub mod error;
 mod hol;
 pub mod subst;
 pub mod term;
+pub mod ty;
 pub mod ctx;
 pub mod thm;
 

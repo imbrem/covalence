@@ -22,7 +22,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use super::terms::Term;
+use super::term::Term;
 
 /// Marker trait for types that may be wrapped in [`Object`].
 ///

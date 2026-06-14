@@ -19,10 +19,11 @@ it is how unfinished work stays discoverable.
 ## Postulates pending proof
 
 - **The `int` ordered-ring theory** in
-  `crates/covalence-hol/src/init/int.rs` is **entirely postulated** via the
+  `crates/covalence-hol/src/init/int.rs` is **mostly postulated** via the
   module's `axiom` helper (`Thm::assume`, each carrying its statement as a
-  self-hyp). Seventeen theorems: the commutative-ring axioms (`add_comm`,
-  `add_assoc`, `add_zero`, `add_neg`, `mul_comm`, `mul_assoc`, `mul_one`,
+  self-hyp). `add_comm` is now **proved** (the op-unfolding + representative
+  rewrite pattern below); 16 postulates remain: the commutative-ring axioms
+  (`add_assoc`, `add_zero`, `add_neg`, `mul_comm`, `mul_assoc`, `mul_one`,
   `mul_zero`, `distrib`, `sub_def`), the linear order (`lt_irrefl`,
   `lt_trans`, `lt_trichotomy`, `le_def`), ordered-ring compatibility
   (`lt_add_mono`, `lt_mul_pos`), and discreteness (`lt_succ`:

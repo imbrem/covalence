@@ -57,6 +57,7 @@ pub mod cond;
 pub mod eq;
 pub mod ext;
 pub mod int;
+pub mod list;
 pub mod logic;
 pub mod coprod;
 pub mod nat;

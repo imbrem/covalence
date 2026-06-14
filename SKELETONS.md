@@ -57,6 +57,33 @@ it is how unfinished work stays discoverable.
   has the additive theory + `add_cancel` + `mul_zero`.
 ## Partial subsystems
 
+- **`covalence-hol` list theory** in `crates/covalence-hol/src/init/list.rs`.
+  Only the **`nil`-side computational foundation** is proved so far — the
+  `abs`/`rep` seam (`rep_abs_finite`), the finiteness gate (`finite_const_none`,
+  `finite_nonempty`), element-access unfolding (`index_unfold`), and the empty
+  list facts (`index_nil`, `head_nil`). All are genuine (hypothesis- and
+  oracle-free). Still missing:
+  - **`cons`-side computations** — `index`/`head`/`tail` of `cons x xs`. Each
+    needs `finite (cons-stream)`, a finiteness-*preservation* lemma that rests
+    on `nat` **ordering** theory (`nat_le` successor/predecessor lemmas) not yet
+    developed in `init/nat.rs` (which currently has only `add`/`mul` facts). Add
+    the `nat_le` lemmas first, then `finite_cons`, then the `cons` element
+    lemmas follow the `init::stream` `at_of` pattern.
+  - **`tail_cons` / list extensionality / induction** — `tail (cons x xs) = xs`
+    needs extensionality on the carrier stream (pointwise-equal ⟹ equal),
+    re-discharging finiteness; list induction is the structural-recursion
+    companion.
+  - **Structural recursors `list_foldr` / `list_foldl`** — pinned by Hilbert-ε
+    selector predicates (defined in `defs/list.rs`), so their defining equations
+    (`fr f z nil = z`, `fr f z (cons x xs) = f x (fr f z xs)`, and the left-fold
+    mirror) need a **list recursion theorem** — the analogue of
+    `crate::init::recursion` for `nat` (graph construction → existence →
+    uniqueness → assemble via ε). This is the major undertaking.
+  - **Ops riding on the recursors** — `length`/`cat`/`filter`/`flatten`
+    (factored through `foldr`) and the pointwise `map`/`take`/`skip`/`repeat`
+    (need the `cons`-side stream computations). No `*_nil`/`*_cons` clauses for
+    any of these yet.
+
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in
   `crates/covalence-alethe/src/hol.rs`) checks the QF_UF core (`assume`,
   `resolution` / `th_resolution`, `refl`, `trans`, `symm`, `cong`,

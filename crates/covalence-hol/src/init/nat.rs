@@ -21,8 +21,9 @@
 //!   δ-unfolding `nat.add` / `nat.mul` / `iter` down to `natRec` and
 //!   applying [`rec_holds`]; and on top of those, the **additive theory**
 //!   [`add_zero`] / [`add_succ_r`] / [`add_comm`] / [`add_assoc`] /
-//!   [`add_cancel`] (via [`succ_inj`]) and the multiplicative right-zero
-//!   [`mul_zero`], proved by `nat`-induction (the [`induct`] helper). Since
+//!   [`add_cancel`] (via [`succ_inj`]) and the multiplicative theory
+//!   [`mul_zero`] / [`mul_succ_r`] / [`mul_comm`], proved by `nat`-induction
+//!   (the [`induct`] helper). Since
 //!   `rec_holds` is hypothesis-free, all of these are genuine theorems — and
 //!   the whole shallow Peano embedding with them.
 //!
@@ -576,6 +577,127 @@ fn mul_zero_impl() -> Result<Thm> {
     induct(&motive, base, step)
 }
 
+cached_thm! {
+    /// `⊢ ∀a b. a * S b = a + a * b` — successor-on-the-right for `*`
+    /// (`mul_step` moves a successor on the *left*).
+    pub fn mul_succ_r() -> Thm {
+        mul_succ_r_impl().expect("mul_succ_r derivation")
+    }
+}
+fn mul_succ_r_impl() -> Result<Thm> {
+    // body[n] ≔ ∀b. n * S b = n + n * b
+    let body_at = |t: &Term| -> Result<Term> {
+        let b = var("b");
+        mul(t.clone(), succ(b.clone()))
+            .equals(add(t.clone(), mul(t.clone(), b)))?
+            .forall("b", nat())
+    };
+    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+    // base: ∀b. 0 * S b = 0 + 0 * b   (both sides reduce to 0).
+    let base = {
+        let b = var("b");
+        let e1 = mul_base().all_elim(succ(b.clone()))?; // 0 * Sb = 0
+        let rhs0 = mul_base()
+            .all_elim(b.clone())?
+            .cong_arg(Term::app(nat_add(), zero()))? // 0 + 0*b = 0 + 0
+            .trans(add_base().all_elim(zero())?)?; // = 0
+        e1.trans(rhs0.sym()?)?.all_intro("b", nat())?
+    };
+
+    // step: body[n] ⟹ body[S n].
+    let n = var("n");
+    let ihc = body_at(&n)?;
+    let inner = {
+        let b = var("b");
+        let nb = mul(n.clone(), b.clone());
+        // Sn * Sb = Sb + n*Sb = Sb + (n + n*b).
+        let l = mul_step()
+            .all_elim(n.clone())?
+            .all_elim(succ(b.clone()))? // Sn*Sb = Sb + n*Sb
+            .trans(
+                Thm::assume(ihc.clone())?
+                    .all_elim(b.clone())? // n*Sb = n + n*b
+                    .cong_arg(Term::app(nat_add(), succ(b.clone())))?, // Sb + n*Sb = Sb + (n+nb)
+            )?;
+        // Sn + Sn*b = Sn + (b + n*b).
+        let r = mul_step()
+            .all_elim(n.clone())?
+            .all_elim(b.clone())? // Sn*b = b + n*b
+            .cong_arg(Term::app(nat_add(), succ(n.clone())))?; // Sn + Sn*b = Sn + (b+nb)
+        // Sb + (n+nb) = Sn + (b+nb), via succ + b+(n+nb)=n+(b+nb).
+        let inner_eq = add_assoc()
+            .all_elim(b.clone())?
+            .all_elim(n.clone())?
+            .all_elim(nb.clone())?
+            .sym()? // b+(n+nb) = (b+n)+nb
+            .trans(cong_add_l(
+                add_comm().all_elim(b.clone())?.all_elim(n.clone())?,
+                nb.clone(),
+            )?)? // = (n+b)+nb
+            .trans(add_assoc().all_elim(n.clone())?.all_elim(b.clone())?.all_elim(nb.clone())?)?; // = n+(b+nb)
+        let middle = add_step()
+            .all_elim(b.clone())?
+            .all_elim(add(n.clone(), nb.clone()))? // Sb+(n+nb) = S(b+(n+nb))
+            .trans(inner_eq.cong_arg(nat_succ())?)? // = S(n+(b+nb))
+            .trans(
+                add_step()
+                    .all_elim(n.clone())?
+                    .all_elim(add(b.clone(), nb.clone()))?
+                    .sym()?, // = Sn+(b+nb)
+            )?;
+        l.trans(middle)?.trans(r.sym()?)?.all_intro("b", nat())?
+    };
+    let step = inner.imp_intro(&ihc)?;
+    induct(&motive, base, step)
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. a * b = b * a` — commutativity of `*` (uses [`mul_succ_r`]).
+    pub fn mul_comm() -> Thm {
+        mul_comm_impl().expect("mul_comm derivation")
+    }
+}
+fn mul_comm_impl() -> Result<Thm> {
+    // body[n] ≔ ∀b. n * b = b * n
+    let body_at = |t: &Term| -> Result<Term> {
+        let b = var("b");
+        mul(t.clone(), b.clone())
+            .equals(mul(b, t.clone()))?
+            .forall("b", nat())
+    };
+    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+    // base: ∀b. 0 * b = b * 0  (both 0).
+    let base = {
+        let b = var("b");
+        mul_base()
+            .all_elim(b.clone())? // 0*b = 0
+            .trans(mul_zero().all_elim(b.clone())?.sym()?)? // = b*0
+            .all_intro("b", nat())?
+    };
+
+    // step: body[n] ⟹ body[S n].
+    let n = var("n");
+    let ihc = body_at(&n)?;
+    let inner = {
+        let b = var("b");
+        // Sn*b = b + n*b = b + b*n = b*Sn.
+        mul_step()
+            .all_elim(n.clone())?
+            .all_elim(b.clone())? // Sn*b = b + n*b
+            .trans(
+                Thm::assume(ihc.clone())?
+                    .all_elim(b.clone())? // n*b = b*n
+                    .cong_arg(Term::app(nat_add(), b.clone()))?, // b + n*b = b + b*n
+            )?
+            .trans(mul_succ_r().all_elim(b.clone())?.all_elim(n.clone())?.sym()?)? // b + b*n = b*Sn
+            .all_intro("b", nat())?
+    };
+    let step = inner.imp_intro(&ihc)?;
+    induct(&motive, base, step)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -584,6 +706,22 @@ mod tests {
     fn freeness_theorems_are_genuine() {
         assert!(succ_inj().hyps().is_empty(), "succ_inj is proved");
         assert!(zero_ne_succ().hyps().is_empty(), "zero_ne_succ is proved");
+    }
+
+    #[test]
+    fn multiplicative_theory_proves_the_facts() {
+        let (a, b) = (var("a"), var("b"));
+        // mul_succ_r: a * S b = a + a*b
+        let sr = mul_succ_r().all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
+        assert_eq!(
+            sr.concl(),
+            &mul(a.clone(), succ(b.clone())).equals(add(a.clone(), mul(a.clone(), b.clone()))).unwrap()
+        );
+        // mul_comm: a * b = b * a
+        let comm = mul_comm().all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
+        assert_eq!(comm.concl(), &mul(a.clone(), b.clone()).equals(mul(b, a)).unwrap());
+        // genuine (no hyps).
+        assert!(mul_succ_r().hyps().is_empty() && mul_comm().hyps().is_empty());
     }
 
     #[test]

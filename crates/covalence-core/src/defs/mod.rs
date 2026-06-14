@@ -62,10 +62,12 @@
 //!   BitXor}` and the nat↔byte conversions, the byte ops
 //!   (`bytes{Cat,ConsNat,Len,At,Slice}`), the higher-order `list` ops
 //!   (`list{Length,Cat,Map,Filter,Foldr,Foldl,Take,Skip,Repeat,
-//!   Flatten}`), `ratLe`, and `cond`. These still **reduce on
+//!   Flatten}`), and `ratLe`. These still **reduce on
 //!   literals** via `builtins::reduce_spec` where applicable; they
 //!   just lack open-form definitional bodies. (`rat` now draws its
 //!   denominator from `int.pos`, so it is correctly nonzero.)
+//!   `cond` is now a let-style definition (HOL Light `COND`); its
+//!   clauses are derived in `covalence-hol`'s `init::cond`.
 //!
 //! ## Module layout
 //!

@@ -34,8 +34,10 @@ pub use covalence_core::defs::{
     not_spec, or, or_spec,
 };
 
+use covalence_core::defs::cond_spec;
 use covalence_core::{Error, Result, Term, Thm, Type};
 
+use crate::init::cond::{cond_false, cond_true};
 use crate::init::ext::{TermExt, ThmExt};
 
 // ============================================================================
@@ -622,7 +624,43 @@ fn simp_at(node: &Term) -> Result<Option<Thm>> {
             return iff_simp(&a, &b);
         }
     }
+    if let Some(step) = cond_simp(node)? {
+        return Ok(Some(step));
+    }
     Ok(None)
+}
+
+/// `cond` with a decided guard: `cond T x y → x`, `cond F x y → y`.
+/// Returns `None` for any other node, including a `cond` whose guard has
+/// not (yet) reduced to a `T` / `F` literal. The branch type is
+/// arbitrary, so unlike the connective rules this can fire at a non-`bool`
+/// node — but only on a literal-guarded conditional, which is always a
+/// genuine reduction.
+fn cond_simp(node: &Term) -> Result<Option<Thm>> {
+    // node = ((cond[α] c) x) y ?
+    let Some((f1, y)) = node.as_app() else {
+        return Ok(None);
+    };
+    let Some((f2, x)) = f1.as_app() else {
+        return Ok(None);
+    };
+    let Some((head, c)) = f2.as_app() else {
+        return Ok(None);
+    };
+    let Some((spec, args)) = head.as_spec() else {
+        return Ok(None);
+    };
+    if !spec.ptr_eq(&cond_spec()) {
+        return Ok(None);
+    }
+    let Some(alpha) = args.iter().next() else {
+        return Ok(None);
+    };
+    match c.as_bool() {
+        Some(true) => cond_true(alpha, x, y).map(Some),
+        Some(false) => cond_false(alpha, x, y).map(Some),
+        None => Ok(None),
+    }
 }
 
 // -- the `T`/`F` literals --
@@ -1123,6 +1161,26 @@ mod tests {
         let bad = a.clone().iff(a.clone().not().unwrap()).unwrap();
         let out = decide(&bad).unwrap();
         assert_eq!(out.concl(), &bad.not().unwrap());
+    }
+
+    #[test]
+    fn simp_collapses_a_decided_cond() {
+        let p = Term::free("p", b());
+        let q = Term::free("q", b());
+        // cond T p q → p ;  cond F p q → q.
+        let then = Term::cond(tt(), p.clone(), q.clone());
+        assert_eq!(rhs_of(&simp(&then).unwrap()), p, "cond T p q = p");
+        let els = Term::cond(ff(), p.clone(), q.clone());
+        assert_eq!(rhs_of(&simp(&els).unwrap()), q, "cond F p q = q");
+        // The guard is simplified first: cond (T ∧ T) p q → cond T p q → p.
+        let guarded = Term::cond(tt().and(tt()).unwrap(), p.clone(), q.clone());
+        let eq = simp(&guarded).unwrap();
+        assert_eq!(rhs_of(&eq), p, "the guard reduces, then cond fires");
+        assert!(eq.hyps().is_empty(), "a decided cond is a genuine reduction");
+        // An undecided guard leaves the conditional in place.
+        let a = Term::free("a", b());
+        let open = Term::cond(a, p.clone(), q.clone());
+        assert_eq!(rhs_of(&simp(&open).unwrap()), open, "open guard → cond kept");
     }
 
     #[test]

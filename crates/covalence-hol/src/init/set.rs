@@ -47,7 +47,7 @@
 
 use covalence_core::{Error, Result, Term, Thm, Type};
 
-use crate::init::eq::trans_chain;
+use crate::init::eq::{delta_head, spine, trans_chain};
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic::{prop_eq, truth};
 
@@ -241,19 +241,6 @@ fn mem_of(alpha: &Type, x: &Term, st: &Term) -> Result<Thm> {
     trans_chain([step1, step2, step3])
 }
 
-/// `⊢ st = body a₁ … aₙ` — δ-unfold **only** the spine head of
-/// `st = head a₁ … aₙ`, leaving every argument untouched (unlike
-/// [`TermExt::delta_all`](crate::init::ext::TermExt::delta_all), which
-/// would unfold nested occurrences in the arguments too).
-fn delta_head(st: &Term) -> Result<Thm> {
-    let (head, args) = spine(st);
-    let mut acc = head.delta()?; // ⊢ head = body
-    for arg in args {
-        acc = acc.cong_fn(arg.clone())?; // append `arg` to both sides by congruence
-    }
-    Ok(acc)
-}
-
 // ============================================================================
 // Membership normalisation — recursively compute `mem x st` to a boolean
 // formula over the *atomic* memberships `mem x <var>`.
@@ -304,18 +291,6 @@ fn expand_children(alpha: &Type, x: &Term, base: Thm, children: &[&Term]) -> Res
         acc = acc.rhs_conv(|t| t.rw_all(&child_norm))?;
     }
     Ok(acc)
-}
-
-/// Peel an application spine `f a₁ … aₙ` into `(f, [a₁, …, aₙ])`.
-fn spine(t: &Term) -> (&Term, Vec<&Term>) {
-    let mut args = Vec::new();
-    let mut head = t;
-    while let Some((f, a)) = head.as_app() {
-        args.push(a);
-        head = f;
-    }
-    args.reverse();
-    (head, args)
 }
 
 // ============================================================================

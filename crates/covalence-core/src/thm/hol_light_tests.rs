@@ -957,3 +957,59 @@ fn lem_rejects_non_bool() {
     // LEM is only well-formed at type bool.
     assert!(Thm::lem(Term::free("n", Type::nat())).is_err());
 }
+
+// ---- TypeSpec subtype laws (spec_abs_rep / spec_rep_abs_fwd / _back) ----
+
+#[test]
+fn spec_abs_rep_unconditional_for_set_newtype() {
+    // `set bool` is a newtype over `bool → bool`. abs (rep s) = s.
+    let elem = Type::bool();
+    let spec = crate::defs::set_spec();
+    let args = crate::ty::TypeList::from(vec![elem.clone()]);
+    let s = Term::free("s", Type::spec(spec.clone(), args.clone()));
+    let thm = Thm::spec_abs_rep(spec, args, s.clone()).expect("abs (rep s) = s");
+    assert!(thm.hyps().is_empty());
+    let (_l, r) = parse_hol_eq(thm.concl()).unwrap();
+    assert_eq!(r, &s, "rhs is the wrapper element itself");
+}
+
+#[test]
+fn spec_rep_abs_fwd_discharges_to_unconditional_for_newtype() {
+    // For a newtype the premise `P p` is `(λ_. T) p`; β + truth discharge
+    // it, yielding the unconditional `rep (abs p) = p`.
+    let elem = Type::bool();
+    let carrier = Type::fun(elem.clone(), Type::bool()); // set bool's carrier
+    let spec = crate::defs::set_spec();
+    let args = crate::ty::TypeList::from(vec![elem]);
+    let p = Term::free("p", carrier);
+    let imp = Thm::spec_rep_abs_fwd(spec, args, p.clone()).expect("P p ⟹ rep (abs p) = p");
+    assert!(imp.hyps().is_empty());
+    // The antecedent `(λ_. T) p` β-reduces to `T`.
+    let (prem, _eq) = parse_hol_imp(imp.concl()).unwrap();
+    let beta = Thm::beta_conv(prem.clone()).expect("β on (λ_. T) p");
+    assert_eq!(beta.concl().as_eq().unwrap().1, &Term::bool_lit(true));
+}
+
+#[test]
+fn spec_rep_abs_back_has_emptiness_escape() {
+    // back: rep (abs a) = a ⟹ (P a ∨ ¬∃x. P x).
+    let elem = Type::bool();
+    let carrier = Type::fun(elem.clone(), Type::bool());
+    let spec = crate::defs::set_spec();
+    let args = crate::ty::TypeList::from(vec![elem]);
+    let a = Term::free("p", carrier);
+    let thm = Thm::spec_rep_abs_back(spec, args, a).expect("back direction");
+    assert!(thm.hyps().is_empty());
+    // Conclusion is an implication whose consequent is a disjunction.
+    let (_prem, disj) = parse_hol_imp(thm.concl()).unwrap();
+    assert!(parse_hol_or(disj).is_ok(), "consequent is `P a ∨ ¬∃x. P x`");
+}
+
+#[test]
+fn subtype_laws_reject_non_subtype_carrier() {
+    // A type mismatch: feeding a `nat` where the carrier is `bool → bool`.
+    let elem = Type::bool();
+    let spec = crate::defs::set_spec();
+    let args = crate::ty::TypeList::from(vec![elem]);
+    assert!(Thm::spec_rep_abs_fwd(spec, args, Term::free("n", Type::nat())).is_err());
+}

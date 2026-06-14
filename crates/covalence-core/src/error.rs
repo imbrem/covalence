@@ -137,6 +137,13 @@ pub enum Error {
          it has no abstraction/representation coercion"
     )]
     SpecHasNoCarrier,
+
+    #[error(
+        "spec subtype law: the TypeSpec is not a subtype (its predicate is \
+         absent or is not a `carrier → bool` selector — e.g. a quotient's \
+         relation), so the rep/abs subtype laws do not apply"
+    )]
+    NotASubtype,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

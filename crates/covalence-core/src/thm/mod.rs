@@ -44,6 +44,7 @@ use crate::subst::{close, find_free_type, has_free_var, open, subst_free, subst_
 use crate::term::{
     Object, ObsEq, ObsImp, ObsTrue, Observer, Term, TermKind, Type, TypeEnv, TypeKind, type_of_in,
 };
+use crate::ty::{TypeList, TypeSpec};
 
 mod typedef;
 pub use typedef::TypeDef;
@@ -803,6 +804,130 @@ impl Thm {
         Self::build(Ctx::new(), hol::hol_imp(prem, concl))
     }
 
+    // ========================================================================
+    // Derived-type (TypeSpec abs/rep) laws
+    // ========================================================================
+    //
+    // A `TypeSpec` introduces a derived type `τ := { x : carrier | P x }`
+    // carved from its `carrier` by the predicate `P = spec.tm()` (a
+    // `newtype` is the special case `P = λ_. T`). The kernel's typed
+    // coercions `abs : carrier → τ` ([`Term::spec_abs`]) and
+    // `rep : τ → carrier` ([`Term::spec_rep`]) carry no theorems on their
+    // own; the three rules below are the *witness-free* bijection laws that
+    // characterise them. They are the `TypeSpec` analogue of the
+    // [`TypeDef`] theorems [`Thm::new_type_definition`] mints — but here
+    // **no non-emptiness witness is supplied**, so the "back" direction is
+    // correspondingly weakened (see [`Thm::spec_rep_abs_back`]).
+    //
+    // ## The total interpretation these are sound under
+    //
+    // Fix a model. Let `A = ⟦carrier⟧` and `S = { x ∈ A | ⟦P⟧ x }`.
+    // - If `S ≠ ∅`: `⟦τ⟧ = S`, `⟦rep⟧` is the inclusion `S ↪ A`, and
+    //   `⟦abs⟧` is a retraction `A ↠ S` (the identity on `S`, sending the
+    //   rest of `A` to an arbitrary fixed element of `S`).
+    // - If `S = ∅`: `τ` must still be non-empty (HOL types are), so
+    //   `⟦τ⟧ = A` with `⟦abs⟧ = ⟦rep⟧ = id`.
+    // Every other kernel rule treats `abs`/`rep` as uninterpreted symbols,
+    // so committing to this interpretation is consistent. (The `TypeSpec`
+    // coercions are entirely separate from the obs-leaf abs/rep that
+    // `new_type_definition` introduces, so the two never interfere.)
+
+    /// `⊢ abs (rep a) = a`, for any `a : τ` of a carrier-bearing
+    /// [`TypeSpec`] `(spec, args)` — the **unconditional** round-trip on
+    /// the wrapper side.
+    ///
+    /// ## Soundness
+    ///
+    /// Holds in both cases of the [interpretation](#) above: when `S ≠ ∅`,
+    /// `rep a ∈ S` and `abs` is the identity on `S`, so `abs (rep a) = a`;
+    /// when `S = ∅`, `abs` and `rep` are the identity. It needs no
+    /// predicate, so it is equally valid for `newtype`s, `subtype`s, and
+    /// quotient specs (where `abs ∘ rep = id` on the quotient likewise
+    /// holds). Errors with [`Error::SpecHasNoCarrier`] if the spec has no
+    /// carrier, and a [type mismatch](Error::TypeMismatch) unless
+    /// `a : τ = spec args`.
+    pub fn spec_abs_rep(spec: TypeSpec, args: impl Into<TypeList>, a: Term) -> Result<Thm> {
+        let args = args.into();
+        let (abs, rep, _carrier, wrapper) = spec_coercions(&spec, &args)?;
+        let a_ty = a.type_of()?;
+        if a_ty != wrapper {
+            return Err(Error::TypeMismatch {
+                expected: wrapper,
+                got: a_ty,
+            });
+        }
+        let lhs = Term::app(abs, Term::app(rep, a.clone()));
+        Self::build(Ctx::new(), hol::hol_eq(lhs, a))
+    }
+
+    /// `⊢ P a ⟹ rep (abs a) = a`, for `a : carrier` of a **subtype**
+    /// [`TypeSpec`] with selector predicate `P = spec.tm()` — the
+    /// *conditional* round-trip on the carrier side.
+    ///
+    /// For a `newtype` (`P = λ_. T`) the premise `P a` reduces to `T`, so
+    /// discharging it (β + `truth`) yields the unconditional
+    /// `⊢ rep (abs a) = a`.
+    ///
+    /// ## Soundness
+    ///
+    /// Assume `⟦P⟧ a`. Then `a ∈ S`, so `S ≠ ∅`; `abs` is the identity on
+    /// `S` and `rep` the inclusion, hence `rep (abs a) = a`. If `¬⟦P⟧ a`
+    /// the implication is vacuous. Errors with [`Error::NotASubtype`]
+    /// unless `spec.tm()` is a `carrier → bool` predicate (so quotient
+    /// specs, whose `tm` is a relation, are rejected), and with a type
+    /// mismatch unless `a : carrier`.
+    pub fn spec_rep_abs_fwd(spec: TypeSpec, args: impl Into<TypeList>, a: Term) -> Result<Thm> {
+        let args = args.into();
+        let (abs, rep, carrier, _wrapper) = spec_coercions(&spec, &args)?;
+        let a_ty = a.type_of()?;
+        if a_ty != carrier {
+            return Err(Error::TypeMismatch {
+                expected: carrier,
+                got: a_ty,
+            });
+        }
+        let pred = subtype_pred(&spec, &args, &carrier)?;
+        let prem = Term::app(pred, a.clone());
+        let eq = hol::hol_eq(Term::app(rep, Term::app(abs, a.clone())), a);
+        Self::build(Ctx::new(), hol::hol_imp(prem, eq))
+    }
+
+    /// `⊢ rep (abs a) = a ⟹ (P a ∨ ¬∃x. P x)`, for `a : carrier` of a
+    /// **subtype** [`TypeSpec`] — the *witness-free* converse of
+    /// [`spec_rep_abs_fwd`](Thm::spec_rep_abs_fwd).
+    ///
+    /// With a non-emptiness witness this would be the clean
+    /// `rep (abs a) = a ⟹ P a` (HOL Light's `rep_abs` back direction).
+    /// Lacking one, the predicate may be *empty*, in which case `τ`
+    /// collapses to the whole carrier and `rep (abs a) = a` holds for
+    /// every `a` without `P a`; the extra disjunct `¬∃x. P x` is exactly
+    /// that escape hatch.
+    ///
+    /// ## Soundness
+    ///
+    /// Assume `rep (abs a) = a`. If `S = ∅` then `¬∃x. ⟦P⟧ x`, the right
+    /// disjunct. If `S ≠ ∅` then `abs a ∈ S` and `rep` is injective with
+    /// image `S`, so `a = rep (abs a) ∈ S`, giving `⟦P⟧ a`, the left
+    /// disjunct. Same shape/error conditions as
+    /// [`spec_rep_abs_fwd`](Thm::spec_rep_abs_fwd).
+    pub fn spec_rep_abs_back(spec: TypeSpec, args: impl Into<TypeList>, a: Term) -> Result<Thm> {
+        let args = args.into();
+        let (abs, rep, carrier, _wrapper) = spec_coercions(&spec, &args)?;
+        let a_ty = a.type_of()?;
+        if a_ty != carrier {
+            return Err(Error::TypeMismatch {
+                expected: carrier,
+                got: a_ty,
+            });
+        }
+        let pred = subtype_pred(&spec, &args, &carrier)?;
+        let prem = hol::hol_eq(Term::app(rep, Term::app(abs, a.clone())), a.clone());
+        let pa = Term::app(pred.clone(), a);
+        let some_x = hol::hol_exists("x", carrier.clone(), Term::app(pred, Term::free("x", carrier)));
+        let disj = hol::hol_or(pa, hol::hol_not(some_x));
+        Self::build(Ctx::new(), hol::hol_imp(prem, disj))
+    }
+
     /// Single-step closed-form computation: `⊢ t = result` where `t` is a
     /// kernel literal operation applied to all-literal arguments, and
     /// `result` is the computed value. Returns [`Error::NotReducible`] for
@@ -1200,6 +1325,39 @@ impl Thm {
 /// list; otherwise return an error.
 /// Parse an `Eq`-headed application — `App(App(=, lhs), rhs)` — and
 /// return `(lhs, rhs)` by reference.
+/// Build the typed `abs`/`rep` coercions of a `TypeSpec` at `args` and
+/// recover its `(carrier, wrapper)` types. The shared front-end of the
+/// `spec_*` subtype laws. Errors with [`Error::SpecHasNoCarrier`] for a
+/// carrier-less spec.
+fn spec_coercions(spec: &TypeSpec, args: &TypeList) -> Result<(Term, Term, Type, Type)> {
+    let abs = Term::spec_abs(spec.clone(), args.clone());
+    let rep = Term::spec_rep(spec.clone(), args.clone());
+    // `abs : carrier → wrapper`; its `type_of` errors if no carrier.
+    let TypeKind::Fun(carrier, wrapper) = abs.type_of()?.kind().clone() else {
+        return Err(Error::SpecHasNoCarrier);
+    };
+    Ok((abs, rep, carrier, wrapper))
+}
+
+/// The selector predicate `P : carrier → bool` of a **subtype**
+/// `TypeSpec`, instantiated positionally at `args` (the same
+/// substitution [`Thm::unfold_term_spec`] / [`Thm::spec_ax`] use).
+/// Errors with [`Error::NotASubtype`] unless the spec's `tm` is present
+/// and types as `carrier → bool` — rejecting carrier-less specs and
+/// quotient specs (whose `tm` is a `carrier → carrier → bool` relation).
+fn subtype_pred(spec: &TypeSpec, args: &TypeList, carrier: &Type) -> Result<Term> {
+    let body = spec.tm().ok_or(Error::NotASubtype)?.clone();
+    let tvars = spec.ty().ok_or(Error::SpecHasNoCarrier)?.free_tvars();
+    let mut pred = body;
+    for (tvar, arg) in tvars.iter().zip(args.iter()) {
+        pred = subst_tfree_in_term(&pred, tvar, arg);
+    }
+    if pred.type_of()? != Type::fun(carrier.clone(), Type::bool()) {
+        return Err(Error::NotASubtype);
+    }
+    Ok(pred)
+}
+
 fn parse_hol_eq(t: &Term) -> Result<(&Term, &Term)> {
     let TermKind::App(f, rhs) = t.kind() else {
         return Err(Error::NotHolEq(format!("{}", t)));

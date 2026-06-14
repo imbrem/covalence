@@ -37,10 +37,20 @@ a couple of well-justified additions:
   top of the induction rule.
 - Spec **abs/rep coercions** (`Term::spec_abs` / `Term::spec_rep`):
   for any derived `TypeSpec`, the typed leaves `abs : carrier → (spec
-  args)` and `rep : (spec args) → carrier`. They carry no theorems
-  (the bijection equations are derived downstream), so adding them is
-  sound; they let the `defs/` catalogue *define* constructors like
-  `option.some := λa. abs (coprod.inl a)`.
+  args)` and `rep : (spec args) → carrier`. The bare leaves carry no
+  theorems, so adding them is sound; they let the `defs/` catalogue
+  *define* constructors like `option.some := λa. abs (coprod.inl a)`.
+  Their **witness-free subtype bijection laws** are three rules —
+  `Thm::spec_abs_rep` (`⊢ abs (rep a) = a`, unconditional),
+  `Thm::spec_rep_abs_fwd` (`⊢ P a ⟹ rep (abs a) = a`), and
+  `Thm::spec_rep_abs_back` (`⊢ rep (abs a) = a ⟹ (P a ∨ ¬∃x. P x)`,
+  the converse weakened because no non-emptiness witness is supplied).
+  `P = spec.tm()` is the carving predicate (`λ_. T` for a `newtype`, so
+  the `_fwd` premise discharges to give the unconditional round-trip);
+  quotient specs, whose `tm` is a relation, are rejected. These are the
+  `TypeSpec` analogue of the `new_type_definition` bijection theorems
+  and are what `covalence-hol::init::set` builds its membership /
+  extensionality API on.
 - Two accelerated reduction rules (`reduce_prim`, `unfold_term_spec`)
   that emit `⊢ t = canonical_form` for closed-literal computations.
   Sound by the literal's denotation, not a logical postulate.

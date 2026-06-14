@@ -20,6 +20,28 @@ use std::fmt;
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Canonical {
+    // ---- Logical connectives (defined over `=` / `ε` + bool literals) ----
+    //
+    // `=` (`TermKind::Eq`) and `ε` (`TermKind::Select`) are the only
+    // logical *primitives*; every connective below is an ordinary
+    // let-style definition, unfolded by `Thm::unfold_term_spec` and
+    // (on `bool` literals) reduced by `Thm::reduce_prim` — exactly
+    // like the arithmetic ops. `T`/`F` stay `TermKind::Bool` literals.
+    /// `(/\) := λp q. (λf. f p q) = (λf. f T T)`.
+    And,
+    /// `(\/) := λp q. !r. (p ==> r) ==> (q ==> r) ==> r`.
+    Or,
+    /// `(~) := λp. p ==> F`.
+    Not,
+    /// `(==>) := λp q. (p /\ q) = p`.
+    Imp,
+    /// `(<=>) := λp q. p = q` (bool equality).
+    Iff,
+    /// `(!) := λP. P = (λx. T)`.
+    Forall,
+    /// `(?) := λP. !q. (!x. P x ==> q) ==> q`.
+    Exists,
+
     // ---- Relational/algebraic primitives ----
     /// `set 'a := 'a → bool`.
     Set,
@@ -313,6 +335,13 @@ impl Canonical {
     /// serialisation.
     pub fn label(&self) -> &'static str {
         match self {
+            Canonical::And => "/\\",
+            Canonical::Or => "\\/",
+            Canonical::Not => "~",
+            Canonical::Imp => "==>",
+            Canonical::Iff => "<=>",
+            Canonical::Forall => "!",
+            Canonical::Exists => "?",
             Canonical::Set => "set",
             Canonical::Rel => "rel",
             Canonical::Preord => "preord",

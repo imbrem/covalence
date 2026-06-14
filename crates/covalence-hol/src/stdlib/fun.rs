@@ -24,7 +24,7 @@ fn ctx() -> HolLightCtx {
 }
 
 fn assume_hol(body: Term) -> Thm {
-        Thm::assume(body).expect("stdlib::fun: assume on closed Trueprop cannot fail")
+        Thm::assume(body).expect("stdlib::fun: assume on closed bool body cannot fail")
 }
 
 // ============================================================================

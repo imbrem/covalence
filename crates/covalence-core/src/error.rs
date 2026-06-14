@@ -23,16 +23,6 @@ pub enum Error {
     #[error("expected HOL universal (∀x:τ. body : bool), got {0}")]
     NotHolForall(String),
 
-    #[error(
-        "HOL operator {op:?} has non-canonical instance type {got}; \
-         expected shape {expected}"
-    )]
-    HolOpShape {
-        op: crate::term::HolOp,
-        got: Type,
-        expected: &'static str,
-    },
-
     #[error("type mismatch: expected {expected}, got {got}")]
     TypeMismatch { expected: Type, got: Type },
 

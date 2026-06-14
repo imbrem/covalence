@@ -1,6 +1,6 @@
-//! HOL natural numbers — backed by Pure's primitive `nat` type.
+//! HOL natural numbers — backed by the kernel's primitive `nat` type.
 //!
-//! All Nat is now Pure's primitive `Type::nat()` (an arbitrary-
+//! All Nat is the kernel's primitive `Type::nat()` (an arbitrary-
 //! precision unsigned integer with computational equality on
 //! literals via `Thm::reduce_prim`). The HOL theorems about open
 //! forms come from `crate::nat_axioms`:
@@ -12,15 +12,15 @@
 //!   ([`axiom_natrec_zero`], [`axiom_natrec_succ`]).
 //! - **Operation defining equations** ([`axiom_add_def`],
 //!   [`axiom_mul_def`], [`axiom_pred_zero`], [`axiom_pred_succ`],
-//!   [`axiom_sub_def`]) — each fixes the meaning of a Pure prim in
-//!   terms of `natrec` / `succ` / `pred`.
+//!   [`axiom_sub_def`]) — each fixes the meaning of a kernel `defs/`
+//!   spec in terms of `natrec` / `succ` / `pred`.
 //! - **Derived theorems** (`axiom_add_zero_r`, `axiom_add_comm`, …)
 //!   — currently postulated, scheduled to be replaced by proofs from
 //!   the definitional axioms + Peano induction. The re-export
 //!   surface stays stable when those proofs land.
 //!
 //! Consumers should reach for `stdlib::nat::*` and never touch
-//! `covalence-pure` or `covalence-hol` directly.
+//! `covalence-core` or the rest of `covalence-hol` directly.
 
 use covalence_core::{defs, Term, Type};
 
@@ -33,12 +33,17 @@ pub use crate::nat_axioms::{
     natrec_def_zero as axiom_natrec_zero,
 };
 
-// Peano axioms — intrinsic to the type. `nat_succ_inj` and
-// `nat_zero_ne_succ` were Rust-encoded proofs in the now-gated
-// `peano` module; they'll be re-derived in the WASM proof format.
+// Peano axioms — intrinsic to the type. `axiom_induction` is a
+// bona-fide kernel axiom; `axiom_zero_ne_succ` / `axiom_succ_inj`
+// are postulated in `nat_axioms` (each with a self-hyp) pending
+// their induction-based derivations.
 pub use crate::nat_axioms::nat_induction as axiom_induction;
+pub use crate::nat_axioms::{
+    nat_succ_inj as axiom_succ_inj, nat_zero_ne_succ as axiom_zero_ne_succ,
+};
 
-// Definitional axioms — each fixes a Pure prim via natrec / succ / pred.
+// Definitional axioms — each fixes a kernel `defs/` spec via
+// natrec / succ / pred.
 pub use crate::nat_axioms::{
     nat_add_def as axiom_add_def, nat_mul_def as axiom_mul_def,
     nat_pred_succ as axiom_pred_succ, nat_pred_zero as axiom_pred_zero,

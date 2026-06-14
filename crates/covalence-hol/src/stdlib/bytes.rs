@@ -1,6 +1,6 @@
-//! HOL bytes — backed by Pure's primitive `bytes` type plus the
-//! `BytesCat`/`BytesConsNat`/`BytesLen`/`BytesAt`/`BytesSlice`
-//! reduction prims.
+//! HOL bytes — backed by the kernel's primitive `bytes` type plus
+//! the `bytesCat`/`bytesConsNat`/`bytesLen`/`bytesAt`/`bytesSlice`
+//! reduction specs.
 //!
 //! Closed-form facts (`cat (blob[1,2]) (blob[3]) = blob[1,2,3]`)
 //! decide by `Thm::reduce_prim`. Open-form facts (induction over

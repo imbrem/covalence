@@ -5,15 +5,13 @@
 //! rewriting patterns so call sites read like proofs rather than
 //! plumbing.
 //!
-//! ## Pure / HOL equality
+//! ## A single equality
 //!
-//! The Pure→HOL collapse removed the `Trueprop` wrapper and the
-//! `eq_reflection` bridge. Every equality at the kernel level is now
-//! a single HOL `=` — both `Thm::refl(t)` (which is documented as
-//! producing the underlying Pure meta-equality) and
-//! `ctx.mk_eq(lhs, rhs)` produce the *same* `HolOp::Eq`-headed
-//! term. Helpers in this module therefore work uniformly on any
-//! equational theorem.
+//! HOL is folded into the kernel, so there is no `Trueprop` wrapper
+//! and no `eq_reflection` bridge: every equality is one HOL `=`.
+//! Both `Thm::refl(t)` and `ctx.mk_eq(lhs, rhs)` produce the *same*
+//! `TermKind::Eq`-headed term, so the helpers here work uniformly on
+//! any equational theorem.
 
 use covalence_core::{Term, Thm};
 

@@ -1,9 +1,9 @@
 //! HOL standard library.
 //!
 //! Process-global `LazyLock`-initialised types and constants built
-//! on top of `covalence-pure` (TCB) and `covalence-hol`
+//! on top of `covalence-core` (the TCB) and `covalence-hol`
 //! (`HolLightCtx`). Internal definitions — predicates, witnesses,
-//! Pure-level encodings — are PRIVATE so they can be refined later
+//! kernel-level encodings — are PRIVATE so they can be refined later
 //! (e.g., switching `Nat` from `bytes`-bijection to canonical
 //! little-endian encoding) without breaking downstream callers.
 //!

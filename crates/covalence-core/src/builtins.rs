@@ -16,7 +16,7 @@
 use covalence_types::{Int, Nat, Sign};
 
 use crate::defs;
-use crate::term::{HolOp, Term, TermKind};
+use crate::term::{Term, TermKind};
 
 /// One-step reduction. Returns the reduced term when `t` is an
 /// exactly-shaped `TermKind::Spec` application with all-literal
@@ -29,7 +29,7 @@ pub(crate) fn reduce_prim_term(t: &Term) -> Option<Term> {
     // `Blob`. The kernel commits to literal distinctness — two
     // literals of the same kind are equal iff they are structurally
     // equal.
-    if let TermKind::HolOp(HolOp::Eq, _) = head.kind() {
+    if let TermKind::Eq(_) = head.kind() {
         if args.len() == 2 {
             return literal_eq(&args[0], &args[1]).map(Term::bool_lit);
         }
@@ -468,7 +468,7 @@ mod tests {
         let thm = Thm::reduce_prim(t.clone()).unwrap_or_else(|e| {
             panic!("reduce failed for {t:?}: {e:?}")
         });
-        // Conclusion shape: App(App(HolOp::Eq, lhs), rhs) — a HOL
+        // Conclusion shape: App(App(Eq, lhs), rhs) — a HOL
         // equation at bool. Walk it structurally.
         let TermKind::App(eq_lhs_app, rhs) = thm.concl().kind() else {
             panic!("concl is not an App: {:?}", thm.concl());
@@ -477,7 +477,7 @@ mod tests {
             panic!("concl LHS is not an App: {:?}", thm.concl());
         };
         assert!(
-            matches!(eq_op.kind(), TermKind::HolOp(crate::term::HolOp::Eq, _)),
+            matches!(eq_op.kind(), TermKind::Eq(_)),
             "concl head is not HOL =: {:?}",
             thm.concl()
         );
@@ -591,10 +591,7 @@ mod tests {
 
 
     fn hol_eq_at(alpha: Type) -> Term {
-        Term::hol_op(
-            HolOp::Eq,
-            Type::fun(alpha.clone(), Type::fun(alpha, Type::bool())),
-        )
+        Term::eq_op(alpha)
     }
 
     fn hol_eq(lhs: Term, rhs: Term) -> Term {

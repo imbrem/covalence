@@ -13,71 +13,51 @@ use std::sync::LazyLock;
 
 use covalence_types::Nat;
 
+use crate::defs;
 use crate::subst::close;
-use crate::term::{HolOp, Term, Type};
+use crate::term::{Term, Type};
 
 // ============================================================================
 // Bool, HOL connective constructors
 // ============================================================================
+//
+// `=` is the primitive `TermKind::Eq`; every connective below is the
+// defined constant from `crate::defs::logic` (a `Spec` leaf). The
+// `hol_*` builders just spell the application chains.
 
 /// The HOL formula type — `bool`.
 fn bool_ty() -> Type {
     Type::bool()
 }
 
-/// HOL `==>` at `bool → bool → bool`.
-fn hol_imp_op() -> Term {
-    let b = bool_ty();
-    Term::hol_op(HolOp::Imp, Type::fun(b.clone(), Type::fun(b.clone(), b)))
-}
-
-/// HOL `p ⟹ q : bool`.
+/// HOL `p ⟹ q : bool` — `imp` applied to `p` and `q`.
 pub(crate) fn hol_imp(p: Term, q: Term) -> Term {
-    Term::app(Term::app(hol_imp_op(), p), q)
-}
-
-/// HOL `/\` at `bool → bool → bool`.
-fn hol_and_op() -> Term {
-    let b = bool_ty();
-    Term::hol_op(HolOp::And, Type::fun(b.clone(), Type::fun(b.clone(), b)))
+    Term::app(Term::app(defs::imp(), p), q)
 }
 
 /// HOL `p ∧ q : bool`.
 pub(crate) fn hol_and(p: Term, q: Term) -> Term {
-    Term::app(Term::app(hol_and_op(), p), q)
-}
-
-/// HOL `\/` at `bool → bool → bool`.
-fn hol_or_op() -> Term {
-    let b = bool_ty();
-    Term::hol_op(HolOp::Or, Type::fun(b.clone(), Type::fun(b.clone(), b)))
+    Term::app(Term::app(defs::and(), p), q)
 }
 
 /// HOL `p ∨ q : bool`.
 pub(crate) fn hol_or(p: Term, q: Term) -> Term {
-    Term::app(Term::app(hol_or_op(), p), q)
+    Term::app(Term::app(defs::or(), p), q)
 }
 
-/// HOL `∃` at `(α → bool) → bool`.
-fn exists_at(alpha: Type) -> Term {
-    let pred = Type::fun(alpha, bool_ty());
-    Term::hol_op(HolOp::Exists, Type::fun(pred, bool_ty()))
-}
-
-/// HOL `∃x:α. body[x]` — `Exists (λx:α. body[Bound 0])`.
+/// HOL `∃x:α. body[x]` — `exists[α] (λx:α. body[Bound 0])`.
 pub(crate) fn hol_exists(hint: &str, alpha: Type, body: Term) -> Term {
     let closed = close(&body, hint);
     let lambda = Term::abs(hint, alpha.clone(), closed);
-    Term::app(exists_at(alpha), lambda)
+    Term::app(defs::exists(alpha), lambda)
 }
 
-/// HOL `∀` at `(α → bool) → bool`.
+/// HOL `∀` at `(α → bool) → bool` — the `forall` spec at `α`.
 pub(crate) fn forall_at(alpha: Type) -> Term {
-    let pred = Type::fun(alpha, bool_ty());
-    Term::hol_op(HolOp::Forall, Type::fun(pred, bool_ty()))
+    defs::forall(alpha)
 }
 
-/// HOL `∀x:α. body[x]` — `Forall (λx:α. body[Bound 0])`. The free
+/// HOL `∀x:α. body[x]` — `forall[α] (λx:α. body[Bound 0])`. The free
 /// variable `Free(hint, α)` in `body` is closed into `Bound(0)`.
 pub(crate) fn hol_forall(hint: &str, alpha: Type, body: Term) -> Term {
     let closed = close(&body, hint);
@@ -85,12 +65,9 @@ pub(crate) fn hol_forall(hint: &str, alpha: Type, body: Term) -> Term {
     Term::app(forall_at(alpha), lambda)
 }
 
-/// HOL `=` at `α → α → bool`.
+/// HOL `=` at `α → α → bool` — the primitive `TermKind::Eq`.
 fn eq_at(alpha: Type) -> Term {
-    Term::hol_op(
-        HolOp::Eq,
-        Type::fun(alpha.clone(), Type::fun(alpha, bool_ty())),
-    )
+    Term::eq_op(alpha)
 }
 
 /// HOL `lhs = rhs : bool`, types inferred from `lhs`.

@@ -656,7 +656,7 @@ impl Thm {
     /// - `App(App(App(Prim(BytesSlice), Blob b), NatLit start), NatLit len)`
     ///   → `Blob(b[start..min(start+len, b.len())])`
     /// - `App(Prim(NatToInt), NatLit n)` → `IntLit(n)`
-    /// - `App(App(HolOp(Eq, _), lit_a), lit_b)` where `lit_a` and
+    /// - `App(App(Eq(_), lit_a), lit_b)` where `lit_a` and
     ///   `lit_b` are kernel literals of the same kind (`Bool`,
     ///   `Nat`, `Int`, or `Blob`) → `Bool(a == b)`. This is the
     ///   kernel's commitment to literal distinctness — sound
@@ -805,8 +805,8 @@ impl Thm {
             return Err(Error::ObsEqRefused);
         }
         // Build hyp[0] ⟹ hyp[1] ⟹ ... ⟹ expr (right-associative)
-        // using HOL `⟹` (HolOp::Imp). All hyps and the consequent
-        // are bool-typed (checked above).
+        // using HOL `⟹` (the `imp` connective). All hyps and the
+        // consequent are bool-typed (checked above).
         let mut result = expr;
         for h in hyps.into_iter().rev() {
             result = hol::hol_imp(h, result);
@@ -875,8 +875,8 @@ impl Thm {
 /// Walk down through `App`s collecting arguments left-to-right. If
 /// the final node is an `Obs` leaf, return its observer and the args
 /// list; otherwise return an error.
-/// Parse a `HolOp(Eq, _)`-headed application — `App(App(=, lhs), rhs)`
-/// — and return `(lhs, rhs)` by reference.
+/// Parse an `Eq`-headed application — `App(App(=, lhs), rhs)` — and
+/// return `(lhs, rhs)` by reference.
 fn parse_hol_eq(t: &Term) -> Result<(&Term, &Term)> {
     let TermKind::App(f, rhs) = t.kind() else {
         return Err(Error::NotHolEq(format!("{}", t)));
@@ -884,14 +884,15 @@ fn parse_hol_eq(t: &Term) -> Result<(&Term, &Term)> {
     let TermKind::App(head, lhs) = f.kind() else {
         return Err(Error::NotHolEq(format!("{}", t)));
     };
-    let TermKind::HolOp(crate::term::HolOp::Eq, _) = head.kind() else {
+    let TermKind::Eq(_) = head.kind() else {
         return Err(Error::NotHolEq(format!("{}", t)));
     };
     Ok((lhs, rhs))
 }
 
-/// Parse a `HolOp(Imp, _)`-headed application —
-/// `App(App(⟹, p), q)` — and return `(p, q)`.
+/// Parse an `imp`-headed application — `App(App(⟹, p), q)` — and
+/// return `(p, q)`. `⟹` is the defined connective spec
+/// [`crate::defs::imp_spec`].
 fn parse_hol_imp(t: &Term) -> Result<(&Term, &Term)> {
     let TermKind::App(f, q) = t.kind() else {
         return Err(Error::NotHolImp(format!("{}", t)));
@@ -899,27 +900,34 @@ fn parse_hol_imp(t: &Term) -> Result<(&Term, &Term)> {
     let TermKind::App(head, p) = f.kind() else {
         return Err(Error::NotHolImp(format!("{}", t)));
     };
-    let TermKind::HolOp(crate::term::HolOp::Imp, _) = head.kind() else {
+    if !is_spec(head, &crate::defs::imp_spec()) {
         return Err(Error::NotHolImp(format!("{}", t)));
-    };
+    }
     Ok((p, q))
 }
 
-/// Parse a `HolOp(Forall, _)`-headed application —
-/// `App(∀_at_τ, Abs(_, τ, body))` — and return `(τ, body)`. The
-/// body still has `Bound(0)` referring to the bound variable; use
+/// Parse a `forall`-headed application —
+/// `App(∀[τ], Abs(_, τ, body))` — and return `(τ, body)`. `∀` is the
+/// defined connective spec [`crate::defs::forall_spec`]. The body
+/// still has `Bound(0)` referring to the bound variable; use
 /// `subst::open` to instantiate.
 fn parse_hol_forall(t: &Term) -> Result<(&Type, &Term)> {
     let TermKind::App(forall_head, lambda) = t.kind() else {
         return Err(Error::NotHolForall(format!("{}", t)));
     };
-    let TermKind::HolOp(crate::term::HolOp::Forall, _) = forall_head.kind() else {
+    if !is_spec(forall_head, &crate::defs::forall_spec()) {
         return Err(Error::NotHolForall(format!("{}", t)));
-    };
+    }
     let TermKind::Abs(_, ty, body) = lambda.kind() else {
         return Err(Error::NotHolForall(format!("{}", t)));
     };
     Ok((ty, body))
+}
+
+/// `true` iff `t` is a `Spec(handle, _)` leaf whose handle is the
+/// given catalogue spec (by pointer identity).
+fn is_spec(t: &Term, want: &crate::defs::TermSpec) -> bool {
+    matches!(t.kind(), TermKind::Spec(h, _) if h.ptr_eq(want))
 }
 
 fn decompose_obs_app(t: &Term) -> Result<(&Object, Vec<Term>)> {
@@ -1844,147 +1852,5 @@ mod hol_light_tests {
         let (l, r) = parse_hol_eq(inst.concl()).unwrap();
         assert_eq!(l, &y);
         assert_eq!(r, &y);
-    }
-
-    // =================================================================
-    // HolOp shape validation — type_of_in rejects ill-shaped HolOp
-    // leaves so the kernel never type-checks visibly nonsensical
-    // operator instances.
-    // =================================================================
-
-    #[test]
-    fn type_of_rejects_eq_with_mixed_arg_types() {
-        // HolOp(Eq, nat → int → bool) — claims an Eq taking mixed
-        // arg types. Application onto literal arguments would
-        // type-check at bool *without the shape validation*, but
-        // the shape check rejects the operator leaf itself.
-        let weird = Term::hol_op(
-            crate::term::HolOp::Eq,
-            Type::fun(Type::nat(), Type::fun(Type::int(), Type::bool())),
-        );
-        let err = weird.type_of().unwrap_err();
-        assert!(matches!(err, Error::HolOpShape { .. }));
-    }
-
-    #[test]
-    fn type_of_rejects_imp_with_non_bool_domain() {
-        // HolOp(Imp, nat → bool → bool) — implication claims to take a
-        // nat antecedent.
-        let weird = Term::hol_op(
-            crate::term::HolOp::Imp,
-            Type::fun(Type::nat(), Type::fun(Type::bool(), Type::bool())),
-        );
-        let err = weird.type_of().unwrap_err();
-        assert!(matches!(err, Error::HolOpShape { .. }));
-    }
-
-    #[test]
-    fn type_of_rejects_forall_with_non_predicate_arg() {
-        // HolOp(Forall, nat → bool) — forall claims to take a nat
-        // arg, not a predicate.
-        let weird = Term::hol_op(
-            crate::term::HolOp::Forall,
-            Type::fun(Type::nat(), Type::bool()),
-        );
-        let err = weird.type_of().unwrap_err();
-        assert!(matches!(err, Error::HolOpShape { .. }));
-    }
-
-    #[test]
-    fn type_of_rejects_forall_with_wrong_codomain() {
-        // HolOp(Forall, (nat → bool) → nat) — forall returning nat
-        // instead of bool.
-        let pred = Type::fun(Type::nat(), Type::bool());
-        let weird = Term::hol_op(
-            crate::term::HolOp::Forall,
-            Type::fun(pred, Type::nat()),
-        );
-        let err = weird.type_of().unwrap_err();
-        assert!(matches!(err, Error::HolOpShape { .. }));
-    }
-
-    #[test]
-    fn type_of_rejects_select_with_wrong_codomain() {
-        // HolOp(Select, (nat → bool) → bool) — select must return α
-        // (= nat here), not bool.
-        let pred = Type::fun(Type::nat(), Type::bool());
-        let weird = Term::hol_op(
-            crate::term::HolOp::Select,
-            Type::fun(pred, Type::bool()),
-        );
-        let err = weird.type_of().unwrap_err();
-        assert!(matches!(err, Error::HolOpShape { .. }));
-    }
-
-    #[test]
-    fn type_of_rejects_not_with_wrong_shape() {
-        // HolOp(Not, nat → nat) — claims Not is nat → nat.
-        let weird = Term::hol_op(
-            crate::term::HolOp::Not,
-            Type::fun(Type::nat(), Type::nat()),
-        );
-        let err = weird.type_of().unwrap_err();
-        assert!(matches!(err, Error::HolOpShape { .. }));
-    }
-
-    #[test]
-    fn type_of_accepts_canonical_hol_ops() {
-        // Spot-check that the canonical shapes still type-check.
-        let alpha = Type::tfree("a");
-        let pred = Type::fun(alpha.clone(), Type::bool());
-
-        // Eq : α → α → bool
-        let eq = Term::hol_op(
-            crate::term::HolOp::Eq,
-            Type::fun(alpha.clone(), Type::fun(alpha.clone(), Type::bool())),
-        );
-        assert!(eq.type_of().is_ok());
-
-        // Imp : bool → bool → bool
-        let imp = Term::hol_op(
-            crate::term::HolOp::Imp,
-            Type::fun(Type::bool(), Type::fun(Type::bool(), Type::bool())),
-        );
-        assert!(imp.type_of().is_ok());
-
-        // Forall : (α → bool) → bool
-        let forall = Term::hol_op(
-            crate::term::HolOp::Forall,
-            Type::fun(pred.clone(), Type::bool()),
-        );
-        assert!(forall.type_of().is_ok());
-
-        // Select : (α → bool) → α
-        let select = Term::hol_op(
-            crate::term::HolOp::Select,
-            Type::fun(pred, alpha),
-        );
-        assert!(select.type_of().is_ok());
-
-        // Not : bool → bool
-        let not = Term::hol_op(
-            crate::term::HolOp::Not,
-            Type::fun(Type::bool(), Type::bool()),
-        );
-        assert!(not.type_of().is_ok());
-    }
-
-    #[test]
-    fn ill_shaped_hol_op_cannot_enter_thm() {
-        // The shape validation runs from `type_of_in`, which is what
-        // `Thm::build` calls — so ill-shaped HolOp terms can never
-        // appear in a Thm conclusion or hypothesis.
-        let weird_eq = Term::hol_op(
-            crate::term::HolOp::Eq,
-            Type::fun(Type::nat(), Type::fun(Type::int(), Type::bool())),
-        );
-        let weird_eq_at_lits = Term::app(
-            Term::app(weird_eq, Term::nat_lit(5u32)),
-            Term::int_lit(5),
-        );
-        // Even though structurally the term has bool result, build
-        // fails because the underlying HolOp is ill-shaped.
-        let err = Thm::assume(weird_eq_at_lits).unwrap_err();
-        assert!(matches!(err, Error::HolOpShape { .. }));
     }
 }

@@ -49,7 +49,7 @@ crates/covalence-core/src/
 ├── term/
 │   ├── observers.rs   — Observer / ObsTrue / ObsImp / ObsEq traits + Object
 │   ├── types.rs       — Type, TypeKind, BinderHint, cached LazyLocks
-│   └── terms.rs       — Term, TermKind, Def, HolOp, TypeEnv, type_of_in
+│   └── terms.rs       — Term, TermKind (incl. Eq/Select primitives), Def, TypeEnv, type_of_in
 ├── ctx.rs             — Ctx (hypothesis BTreeSet, structurally shared)
 ├── subst.rs           — close / open / shift_by / subst_free / subst_tfree_in_*
 ├── builtins.rs        — reduce_prim_term (literal arithmetic) + reduce_spec (catalogue dispatch)
@@ -98,35 +98,41 @@ Nat(Nat)                       Term::nat_lit(n)         arbitrary-precision lite
 Int(Int)                       Term::int_lit(n)
 Bool(bool)                     Term::bool_lit(b)        T or F
 Blob(Bytes)                    Term::blob(bs)           byte-string literal
-HolOp(HolOp, Type)             Term::hol_op(op, ty)     HOL connective at instance type
+Eq(Type)                       Term::eq_op(alpha)       `=` at element type α
+Select(Type)                   Term::select_op(alpha)   `ε` (choice) at element type α
 Spec(TermSpec, Vec<Type>)      Term::term_spec(spec, ty_args)   derived TermSpec
 Obs(Object, Type)              Term::obs(o, ty)         observer leaf
 Def(Def)                       Term::def(d)             defined constant
 ```
 
-`HolOp` carries the 9 HOL connectives: `Eq`, `Imp`, `Not`, `And`,
-`Or`, `Iff`, `Forall`, `Exists`, `Select`. There is **no
-`HolOp::Trueprop`** — every formula is bool-typed.
+**`=` and `ε` are the only logical primitives.** `Eq(α)` has type
+`α → α → bool` and `Select(α)` has type `(α → bool) → α`; each is an
+ordinary applicable operator (formula `a = b` is `App(App(Eq(α), a), b)`,
+the same App-shape as everything else). There is **no Pure
+meta-layer** — no `TermKind::Imp/All`, no `Trueprop`, no
+`TypeKind::Prop`. Every formula is `bool`-typed.
 
-There is **no `TermKind::Imp/All/Eq`** — the Pure meta-equality /
-meta-universal / meta-implication variants are gone. HOL operators
-in their canonical instance types do all the work.
+The propositional connectives and quantifiers — `∧ ∨ ¬ ⟹ ⟺ ∀ ∃` —
+are **not kernel variants**. They are ordinary let-style definitions
+in `defs/logic.rs` over `=`/`ε`/`T`/`F` (the HOL Light `bool.ml`
+bootstrap), e.g. `(∧) ≜ λp q. (λf. f p q) = (λf. f T T)` and
+`(!) ≜ λP. P = (λx. T)`. So:
 
-### HolOp instance-type validation
+- `Thm::unfold_term_spec(op)` hands back the defining equation
+  `⊢ op = <body>` — the hook `covalence-hol` uses to *derive* the
+  connectives' intro/elim rules instead of postulating them.
+- `Thm::reduce_prim` decides them on `bool` literals by the same
+  pointer-match dispatch as the arithmetic specs.
 
-`type_of_in` validates that each `HolOp` leaf's stored type matches
-the canonical shape:
+`imp_intro`/`imp_elim`/`all_intro`/`all_elim` remain kernel-provided
+derived rules that build/parse the `imp`/`forall` specs (sound by the
+standard HOL Light derivations); they are not re-derived from
+`deduct_antisym`.
 
-| HolOp      | Required shape          |
-|------------|------------------------|
-| `Eq`, `Iff`  | `α → α → bool`         |
-| `Imp`, `And`, `Or` | `bool → bool → bool` |
-| `Not`      | `bool → bool`           |
-| `Forall`, `Exists` | `(α → bool) → bool` |
-| `Select`   | `(α → bool) → α`        |
-
-So ill-shaped HolOp terms (e.g. an "equality" with mixed argument
-types) are rejected at type-check time and can never enter a `Thm`.
+Since `Eq`/`Select` store their element type α directly, they are
+well-shaped by construction — there is no instance-type validation to
+run (the previous `HolOp` shape check and its `HolOpShape` error are
+gone).
 
 ## 5. Inference rules (the `Thm` API)
 
@@ -195,7 +201,7 @@ sound one-shot computation step)
 Thm::reduce_prim(t) -> Result<Thm>
     // Closed-form arithmetic on literal operands. Returns ⊢ t = canonical.
     // Catalogue:
-    //   App(App(HolOp::Eq, _), lit_a, lit_b)  →  Bool(a == b)
+    //   App(App(Eq(_), lit_a), lit_b)         →  Bool(a == b)
     //   App(nat_succ_spec, Nat(n))            →  Nat(n+1)
     //   App(nat_pred_spec, Nat(n))            →  Nat(max(n-1, 0))
     //   App(App(nat_add_spec, Nat(a)), Nat(b)) →  Nat(a+b)
@@ -302,7 +308,7 @@ ctx.insert(&t)                // assume
 
 **INSIDE the TCB** (audit these — bugs = false theorems):
 
-- `term/` (Term/Type/HolOp/Object structural representation)
+- `term/` (Term/Type/Eq/Select/Object structural representation)
 - `ctx.rs` (hypothesis set)
 - `subst.rs` (substitution and de Bruijn shifting)
 - `builtins.rs` (reduce_prim_term, reduce_spec)
@@ -406,10 +412,17 @@ The kernel has gone through several large refactors on the
    derivations land downstream, postulated via `Thm::assume(body)`
    in `covalence-hol::nat_axioms` / `int_axioms` / `stdlib/*`.
 
-5. **HolOp shape validation**: `type_of_in` now rejects ill-shaped
-   HolOp leaves (Eq must be `α → α → bool`, Forall must be
-   `(α → bool) → bool`, etc.) so weird operator constructions
-   can't enter a `Thm`.
+5. **Connectives demoted to definitions**: `TermKind::HolOp` (the
+   9-variant connective enum) was removed. Only `=` and `ε` survive as
+   logical primitives — the new `TermKind::Eq(Type)` / `Select(Type)`
+   leaves. The propositional connectives and quantifiers
+   (`∧ ∨ ¬ ⟹ ⟺ ∀ ∃`) became ordinary let-style TermSpecs in
+   `defs/logic.rs`, unfolded by `unfold_term_spec`. This dropped the
+   bespoke `validate_hol_op_shape` check and its `HolOpShape` error
+   (`Eq`/`Select` store α directly, so they're well-shaped by
+   construction). The longer-term aim is to derive the connective
+   intro/elim rules from these definitions in `covalence-hol`,
+   shrinking the postulate set toward content-addressing only.
 
 Git history on `kernel-design` is the authoritative record;
 `docs/design/proposals/stacked-pure-hol/` records the design

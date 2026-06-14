@@ -1,5 +1,7 @@
-//! The term language: `Term`, `TermKind`, plus `Def`, `HolOp`, and
-//! the type-checker (`TypeEnv` + `type_of_in`).
+//! The term language: `Term`, `TermKind`, plus `Def` and the
+//! type-checker (`TypeEnv` + `type_of_in`). The only logical
+//! primitives are `=` (`TermKind::Eq`) and `ε` (`TermKind::Select`);
+//! all other connectives live in `crate::defs::logic`.
 //!
 //! Locally-nameless: bound variables use de Bruijn indices, free
 //! variables and constants carry their declared type. Meta-implication,
@@ -185,69 +187,16 @@ impl fmt::Display for Def {
 }
 
 // ============================================================================
-// HolOp — folded-in HOL primitive operators
+// Logical primitives — `=` and `ε`
 // ============================================================================
-
-/// HOL Light's primitive operators, folded into the kernel.
-///
-/// Every variant denotes a *single* HOL constant. The
-/// [`TermKind::HolOp`] variant pairs it with the instance type at the
-/// point of use:
-///
-/// - Non-polymorphic ops (`Imp`, `Not`, `And`, `Or`, `Iff`) take a
-///   fixed type (e.g., `bool → bool → bool`).
-/// - Polymorphic ops (`Eq`, `Forall`, `Exists`, `Select`) carry the
-///   instance type at α (e.g., `Eq` at α has full type
-///   `α → α → bool`).
-///
-/// Soundness for the type field is enforced by `type_of_in`, which
-/// matches the stored type against the operator's expected shape.
-/// True / False are *not* HOL ops — they are kernel literals
-/// [`TermKind::Bool`].
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub enum HolOp {
-    /// HOL `=` at type `α → α → bool` for the α stored alongside.
-    Eq,
-    /// HOL `==>` at type `bool → bool → bool`.
-    Imp,
-    /// HOL `~` at type `bool → bool`.
-    Not,
-    /// HOL `/\` at type `bool → bool → bool`.
-    And,
-    /// HOL `\/` at type `bool → bool → bool`.
-    Or,
-    /// HOL `<=>` at type `bool → bool → bool`.
-    Iff,
-    /// HOL `∀` at type `(α → bool) → bool`.
-    Forall,
-    /// HOL `∃` at type `(α → bool) → bool`.
-    Exists,
-    /// HOL `ε` (Hilbert's choice) at type `(α → bool) → α`.
-    Select,
-}
-
-impl HolOp {
-    /// Printable label, matching HOL Light's surface syntax.
-    pub fn label(&self) -> &'static str {
-        match self {
-            HolOp::Eq => "=",
-            HolOp::Imp => "==>",
-            HolOp::Not => "~",
-            HolOp::And => "/\\",
-            HolOp::Or => "\\/",
-            HolOp::Iff => "<=>",
-            HolOp::Forall => "!",
-            HolOp::Exists => "?",
-            HolOp::Select => "@",
-        }
-    }
-}
-
-impl fmt::Display for HolOp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.label())
-    }
-}
+//
+// `=` ([`TermKind::Eq`]) and `ε` ([`TermKind::Select`]) are the kernel's
+// only logical primitives. Every other connective / quantifier
+// (`∧ ∨ ¬ ⟹ ⟺ ∀ ∃`) is an ordinary defined constant in
+// [`crate::defs::logic`], unfolded by `Thm::unfold_term_spec` and
+// reduced on `bool` literals by `Thm::reduce_prim`. `T` / `F` are the
+// `TermKind::Bool` literals. Each primitive carries its *element* type
+// α: `Eq(α) : α → α → bool` and `Select(α) : (α → bool) → α`.
 
 // ============================================================================
 // Term
@@ -282,10 +231,14 @@ pub enum TermKind {
     /// `TypeKind::Bool`. First-class kernel atom — not a separate
     /// observer system.
     Bool(bool),
-    /// Folded-in HOL primitive operator at its instance type. See
-    /// [`HolOp`] for the catalogue. Applications are formed by the
+    /// HOL `=` at element type α (full type `α → α → bool`). One of
+    /// the two logical primitives. Applications are formed by the
     /// usual `App` chain.
-    HolOp(HolOp, Type),
+    Eq(Type),
+    /// HOL `ε` (Hilbert's choice) at element type α (full type
+    /// `(α → bool) → α`). The other logical primitive. Its
+    /// characterising axiom (choice) is not yet exposed as a rule.
+    Select(Type),
     /// Application of a derived-term [`crate::defs::TermSpec`]
     /// factory to type arguments. The spec is process-shared
     /// (`LazyLock`-backed) and `args` is the positional substitution
@@ -359,10 +312,15 @@ impl Term {
         Self::alloc(TermKind::Bool(b))
     }
 
-    /// HOL operator constant at the supplied instance type. Used by
-    /// `covalence-hol`'s `HolLightCtx::mk_*` builders.
-    pub fn hol_op(op: HolOp, ty: Type) -> Self {
-        Self::alloc(TermKind::HolOp(op, ty))
+    /// HOL `=` at element type `alpha` (full type `α → α → bool`).
+    pub fn eq_op(alpha: Type) -> Self {
+        Self::alloc(TermKind::Eq(alpha))
+    }
+
+    /// HOL `ε` (Hilbert choice) at element type `alpha` (full type
+    /// `(α → bool) → α`).
+    pub fn select_op(alpha: Type) -> Self {
+        Self::alloc(TermKind::Select(alpha))
     }
 
     /// Apply a derived-term [`crate::defs::TermSpec`] to type
@@ -424,7 +382,8 @@ impl Term {
             | TermKind::Int(_)
             | TermKind::Bool(_)
             | TermKind::Spec(_, _)
-            | TermKind::HolOp(_, _) => true,
+            | TermKind::Eq(_)
+            | TermKind::Select(_) => true,
             TermKind::App(a, b) => a.has_no_obs() && b.has_no_obs(),
             TermKind::Abs(_, _, body) => body.has_no_obs(),
             TermKind::Def(d) => d.body().has_no_obs(),
@@ -445,7 +404,8 @@ impl Term {
             | TermKind::Int(_)
             | TermKind::Bool(_)
             | TermKind::Spec(_, _)
-            | TermKind::HolOp(_, _) => true,
+            | TermKind::Eq(_)
+            | TermKind::Select(_) => true,
             TermKind::App(a, b) => a.all_obs_match::<O>() && b.all_obs_match::<O>(),
             TermKind::Abs(_, _, body) => body.all_obs_match::<O>(),
             TermKind::Def(d) => d.body().all_obs_match::<O>(),
@@ -472,7 +432,8 @@ impl Term {
             | TermKind::Int(_)
             | TermKind::Bool(_)
             | TermKind::Spec(_, _)
-            | TermKind::HolOp(_, _) => Ok(()),
+            | TermKind::Eq(_)
+            | TermKind::Select(_) => Ok(()),
             TermKind::App(a, b) => {
                 a.for_each_obs::<O, F>(f)?;
                 b.for_each_obs::<O, F>(f)
@@ -526,7 +487,8 @@ impl fmt::Display for Term {
             TermKind::Nat(n) => write!(f, "{}n", n.as_inner()),
             TermKind::Int(n) => write!(f, "{}i", n.as_inner()),
             TermKind::Bool(b) => write!(f, "{}", if *b { "T" } else { "F" }),
-            TermKind::HolOp(op, ty) => write!(f, "{op}:{ty}"),
+            TermKind::Eq(alpha) => write!(f, "=:{alpha}"),
+            TermKind::Select(alpha) => write!(f, "@:{alpha}"),
             TermKind::Spec(spec, args) => {
                 if args.is_empty() {
                     write!(f, "{}", spec.symbol().label())
@@ -635,10 +597,17 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
             }
             Ok(result)
         }
-        TermKind::HolOp(op, ty) => {
-            validate_hol_op_shape(*op, ty)?;
-            Ok(ty.clone())
-        }
+        // `=` at α has type `α → α → bool`; `ε` at α has type
+        // `(α → bool) → α`. Both are well-shaped by construction (the
+        // stored type *is* α), so there is nothing to validate.
+        TermKind::Eq(alpha) => Ok(Type::fun(
+            alpha.clone(),
+            Type::fun(alpha.clone(), Type::bool()),
+        )),
+        TermKind::Select(alpha) => Ok(Type::fun(
+            Type::fun(alpha.clone(), Type::bool()),
+            alpha.clone(),
+        )),
         TermKind::Obs(_, ty) => Ok(ty.clone()),
         // A `Def` denotes its body at the current instance type.
         // The body was validated once at `Thm::define` time, and
@@ -652,133 +621,3 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
     }
 }
 
-/// Validate that a `HolOp` leaf's stored instance type matches the
-/// canonical shape for that operator. This closes a soundness-
-/// hygiene hole: without this check, a user could construct e.g.
-/// `Term::hol_op(HolOp::Eq, fun(nat, fun(int, bool)))` claiming an
-/// "equality" that takes mixed argument types. Such a term still
-/// can't extract `⊢ ⊥` from the kernel (`reduce_prim`'s
-/// `literal_eq` returns `None` for mismatched-kind operands, and
-/// none of the inference rules accept the ill-shaped term as a
-/// productive premise), but it allows visibly nonsensical terms
-/// into well-typed positions. We reject at type-check time so the
-/// kernel's commitment to HOL Light's denotational semantics is
-/// crisp.
-fn validate_hol_op_shape(op: HolOp, ty: &Type) -> Result<()> {
-    use crate::term::HolOp::*;
-    // `α → α → bool` shape — α captured by the inner-domain.
-    let check_eq_shape = || -> Result<()> {
-        let TypeKind::Fun(dom1, rest) = ty.kind() else {
-            return Err(Error::HolOpShape {
-                op,
-                got: ty.clone(),
-                expected: "α → α → bool",
-            });
-        };
-        let TypeKind::Fun(dom2, cod) = rest.kind() else {
-            return Err(Error::HolOpShape {
-                op,
-                got: ty.clone(),
-                expected: "α → α → bool",
-            });
-        };
-        if dom1 != dom2 || !cod.is_bool() {
-            return Err(Error::HolOpShape {
-                op,
-                got: ty.clone(),
-                expected: "α → α → bool",
-            });
-        }
-        Ok(())
-    };
-    // `bool → bool → bool` shape (Imp, And, Or, Iff).
-    let check_bool_binop = || -> Result<()> {
-        let TypeKind::Fun(dom1, rest) = ty.kind() else {
-            return Err(Error::HolOpShape {
-                op,
-                got: ty.clone(),
-                expected: "bool → bool → bool",
-            });
-        };
-        let TypeKind::Fun(dom2, cod) = rest.kind() else {
-            return Err(Error::HolOpShape {
-                op,
-                got: ty.clone(),
-                expected: "bool → bool → bool",
-            });
-        };
-        if !dom1.is_bool() || !dom2.is_bool() || !cod.is_bool() {
-            return Err(Error::HolOpShape {
-                op,
-                got: ty.clone(),
-                expected: "bool → bool → bool",
-            });
-        }
-        Ok(())
-    };
-    // `bool → bool` shape (Not).
-    let check_bool_unop = || -> Result<()> {
-        let TypeKind::Fun(dom, cod) = ty.kind() else {
-            return Err(Error::HolOpShape {
-                op,
-                got: ty.clone(),
-                expected: "bool → bool",
-            });
-        };
-        if !dom.is_bool() || !cod.is_bool() {
-            return Err(Error::HolOpShape {
-                op,
-                got: ty.clone(),
-                expected: "bool → bool",
-            });
-        }
-        Ok(())
-    };
-    // `(α → bool) → bool` (Forall, Exists) or `(α → bool) → α` (Select).
-    let check_quantifier = |result_is_alpha: bool, expected_str: &'static str| -> Result<()> {
-        let TypeKind::Fun(pred_ty, cod) = ty.kind() else {
-            return Err(Error::HolOpShape {
-                op,
-                got: ty.clone(),
-                expected: expected_str,
-            });
-        };
-        let TypeKind::Fun(alpha, pred_cod) = pred_ty.kind() else {
-            return Err(Error::HolOpShape {
-                op,
-                got: ty.clone(),
-                expected: expected_str,
-            });
-        };
-        if !pred_cod.is_bool() {
-            return Err(Error::HolOpShape {
-                op,
-                got: ty.clone(),
-                expected: expected_str,
-            });
-        }
-        if result_is_alpha {
-            if cod != alpha {
-                return Err(Error::HolOpShape {
-                    op,
-                    got: ty.clone(),
-                    expected: expected_str,
-                });
-            }
-        } else if !cod.is_bool() {
-            return Err(Error::HolOpShape {
-                op,
-                got: ty.clone(),
-                expected: expected_str,
-            });
-        }
-        Ok(())
-    };
-    match op {
-        Eq => check_eq_shape(),
-        Imp | And | Or | Iff => check_bool_binop(),
-        Not => check_bool_unop(),
-        Forall | Exists => check_quantifier(false, "(α → bool) → bool"),
-        Select => check_quantifier(true, "(α → bool) → α"),
-    }
-}

@@ -35,7 +35,7 @@ pub fn nat_predicate(n_name: &str, body: Term) -> Term {
 /// * `base` — a Thm with conclusion `P 0` (i.e. `p_lambda 0` after
 ///   β-reduction). The caller is responsible for matching the
 ///   β-normal form expected by `Thm::nat_induction` (β-reduction
-///   under `HolOp::App` is handled by the user; the kernel does
+///   under application is handled by the user; the kernel does
 ///   *not* normalise on its own).
 /// * `step` — a Thm with conclusion
 ///   `∀n:nat. P n ⟹ P (succ n)`.
@@ -182,14 +182,15 @@ mod tests {
     fn nat_zero_ne_one_is_negation_of_eq() {
         let thm = nat_zero_ne_one();
         assert!(thm.concl().type_of().unwrap().is_bool());
-        // Structure: ¬(0 = 1).
+        // Structure: ¬(0 = 1) — `not` connective spec applied to the
+        // equation.
         let covalence_core::TermKind::App(head, _eq) = thm.concl().kind() else {
             panic!("expected ¬ application, got {:?}", thm.concl());
         };
-        assert!(matches!(
-            head.kind(),
-            covalence_core::TermKind::HolOp(covalence_core::term::HolOp::Not, _)
-        ));
+        let covalence_core::TermKind::Spec(h, _) = head.kind() else {
+            panic!("expected `not` spec head, got {:?}", head);
+        };
+        assert!(h.ptr_eq(&covalence_core::defs::not_spec()));
     }
 
     #[test]

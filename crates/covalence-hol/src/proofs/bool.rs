@@ -1,13 +1,21 @@
-//! Postulated intro / elim rules for HOL's propositional connectives.
+//! Intro / elim rules for HOL's propositional connectives.
 //!
 //! In stock HOL Light the connectives `∧` / `∨` / `↔` / `∃` are
 //! *definitions* over `=` (e.g. `p ∧ q ≡ (λf. f p q) = (λf. f T T)`),
-//! and their intro / elim rules are *derived* theorems. In our
-//! kernel each connective is a primitive `HolOp(_)` first-class
-//! atom (no defining equation), so we can't derive the rules from
-//! `=` alone. Until the connectives get defining theorems via
-//! `Thm::define`, the standard rules live here as `Thm::assume`
-//! postulates carrying a single self-hyp.
+//! and their intro / elim rules are *derived* theorems. In our kernel
+//! each connective is a first-class `HolOp(_)` atom with no defining
+//! equation — `reduce_prim` only evaluates it on `bool` *literals*
+//! (`T ∧ F ≡ F`, …), which isn't enough to derive a rule about
+//! arbitrary propositions `p`, `q`. So the standard rules live here
+//! as `Thm::assume` postulates carrying a single self-hyp.
+//!
+//! **These postulates are temporary.** The connectives are meant to
+//! be *built into the kernel* — the end-state is an axiom set that is
+//! only about content-addressing / the observer system, with the
+//! propositional rules either supplied directly by the kernel's
+//! denotation of `HolOp(_)` or derived from it. When that lands, this
+//! module collapses to thin tactic wrappers and the postulates go
+//! away.
 //!
 //! Every helper in this file is one of:
 //!
@@ -129,20 +137,11 @@ pub fn and_elim_r(conj_thm: Thm) -> Thm {
         .expect("and_elim_r: imp_elim")
 }
 
-/// Parse `App(App(HolOp::And, p), q)` → `(p, q)`. Returns `None`
-/// if the term isn't a HOL conjunction.
+/// Parse `App(App(/\, p), q)` → `(p, q)`. Returns `None` if the term
+/// isn't a HOL conjunction (the `and` connective spec applied twice).
 fn parse_and(t: &Term) -> Option<(Term, Term)> {
-    use covalence_core::{term::HolOp, TermKind};
-    let TermKind::App(f, q) = t.kind() else {
-        return None;
-    };
-    let TermKind::App(head, p) = f.kind() else {
-        return None;
-    };
-    let TermKind::HolOp(HolOp::And, _) = head.kind() else {
-        return None;
-    };
-    Some((p.clone(), q.clone()))
+    let (op, p, q) = parse_binop(t)?;
+    op.ptr_eq(&covalence_core::defs::and_spec()).then_some((p, q))
 }
 
 // ============================================================================
@@ -198,19 +197,28 @@ pub fn not_elim(not_p_thm: Thm, p_thm: Thm) -> Thm {
         .expect("not_elim: imp_elim p")
 }
 
-/// Parse `App(App(HolOp::Imp, p), q)` → `(p, q)`.
+/// Parse `App(App(==>, p), q)` → `(p, q)`.
 fn parse_imp(t: &Term) -> Option<(Term, Term)> {
-    use covalence_core::{term::HolOp, TermKind};
+    let (op, p, q) = parse_binop(t)?;
+    op.ptr_eq(&covalence_core::defs::imp_spec()).then_some((p, q))
+}
+
+/// Parse a binary-connective application `App(App(op, p), q)` →
+/// `(op_spec, p, q)` for *any* connective spec head. Callers filter on
+/// the returned spec by `TermSpec::ptr_eq` (see [`parse_and`] /
+/// [`parse_imp`]).
+fn parse_binop(t: &Term) -> Option<(covalence_core::defs::TermSpec, Term, Term)> {
+    use covalence_core::TermKind;
     let TermKind::App(f, q) = t.kind() else {
         return None;
     };
     let TermKind::App(head, p) = f.kind() else {
         return None;
     };
-    let TermKind::HolOp(HolOp::Imp, _) = head.kind() else {
+    let TermKind::Spec(h, _) = head.kind() else {
         return None;
     };
-    Some((p.clone(), q.clone()))
+    Some((h.clone(), p.clone(), q.clone()))
 }
 
 // ============================================================================

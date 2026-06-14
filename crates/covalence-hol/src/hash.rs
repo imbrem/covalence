@@ -1,9 +1,18 @@
-//! Content hashing for Pure terms and types.
+//! Content hashing for kernel terms and types.
 //!
 //! Outside the TCB. Hashes are computed on demand by walking the
-//! graph. No inference rule in `covalence-pure` consumes a hash, so
+//! graph. No inference rule in `covalence-core` consumes a hash, so
 //! a bug here cannot produce a false `Thm` — at worst it confuses a
 //! downstream cache.
+//!
+//! ## Tag values are NOT stable yet
+//!
+//! The `T_*` / `TY_*` tag bytes below are an internal, in-flux
+//! encoding. While the kernel surface is still moving we reassign and
+//! reuse them freely — there is no persisted-hash backwards-compat to
+//! preserve, so do not add "reserved, do not reuse" bookkeeping. This
+//! changes once we commit to a stable content-address format; that
+//! transition will be called out explicitly when it happens.
 //!
 //! ## Observer payloads
 //!
@@ -70,12 +79,7 @@ fn type_ctx() -> &'static Blake3Ctx {
     CTX.get_or_init(|| Blake3Ctx::new("covalence pure type v0"))
 }
 
-// ---- type tags ----
-//
-// Tag values are reserved across the Pure→HOL collapse so any
-// persisted hashes from older revisions still resolve unambiguously.
-// 0x01 = TY_PROP (removed), 0x02 = TY_BYTES (now via TY_SPEC),
-// 0x07 = TY_INT (now via TY_SPEC). Do not reuse those values.
+// ---- type tags (unstable; see module doc) ----
 const TY_TFREE: u8 = 0x00;
 const TY_FUN: u8 = 0x03;
 const TY_TYCON: u8 = 0x04;
@@ -100,8 +104,9 @@ const T_DEF: u8 = 0x0a;
 const T_NAT_LIT: u8 = 0x0b;
 const T_INT_LIT: u8 = 0x0c;
 const T_BOOL: u8 = 0x0e;
-const T_HOL_OP: u8 = 0x0f;
+const T_EQ: u8 = 0x0f;
 const T_SPEC: u8 = 0x10;
+const T_SELECT: u8 = 0x11;
 
 // ============================================================================
 // Stateless API
@@ -310,13 +315,18 @@ impl Hasher {
                 ctx.tag(buf)
             }
             TermKind::Bool(b) => ctx.tag([T_BOOL, u8::from(*b)]),
-            TermKind::HolOp(op, ty) => {
-                let ty_h = self.hash_type(ty, oh);
-                let label = op.label().as_bytes();
-                let mut buf = Vec::with_capacity(1 + 1 + label.len() + 32);
-                buf.push(T_HOL_OP);
-                buf.push(label.len() as u8);
-                buf.extend_from_slice(label);
+            // `=` and `ε` carry their element type α.
+            TermKind::Eq(alpha) => {
+                let ty_h = self.hash_type(alpha, oh);
+                let mut buf = Vec::with_capacity(1 + 32);
+                buf.push(T_EQ);
+                buf.extend_from_slice(ty_h.as_bytes());
+                ctx.tag(buf)
+            }
+            TermKind::Select(alpha) => {
+                let ty_h = self.hash_type(alpha, oh);
+                let mut buf = Vec::with_capacity(1 + 32);
+                buf.push(T_SELECT);
                 buf.extend_from_slice(ty_h.as_bytes());
                 ctx.tag(buf)
             }

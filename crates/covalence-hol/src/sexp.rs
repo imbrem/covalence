@@ -1,4 +1,4 @@
-//! Canonical S-expression syntax for Pure terms, types, and theorems.
+//! Canonical S-expression syntax for kernel terms, types, and theorems.
 //!
 //! Outside the TCB. The kernel does not consume S-expressions for any
 //! inference; this module exists so callers (tests, the REPL, FFI
@@ -6,10 +6,10 @@
 //!
 //! ## Observers (Object) handling
 //!
-//! Pure's `TermKind::Obs` leaves carry a [`Object`] — a type-erased
-//! observation handle. Pure-shell cannot know about every user
-//! observer type, so serialisation and parsing of the `obs` form
-//! delegate to a caller-supplied **handler**:
+//! The kernel's `TermKind::Obs` leaves carry a [`Object`] — a
+//! type-erased observation handle. This module cannot know about
+//! every user observer type, so serialisation and parsing of the
+//! `obs` form delegate to a caller-supplied **handler**:
 //!
 //! - [`ObsSerializer`] takes a `&Object` and produces the s-expression
 //!   payload for the observer (typically by attempting `downcast` to
@@ -241,8 +241,7 @@ fn parse_type_spec(children: &[SExpr], parser: &dyn ObsParser) -> Result<Type> {
         .map(|c| type_from_sexp(c, parser))
         .collect::<Result<Vec<_>>>()?;
     let spec = match label {
-        // Wrapping types added during the Pure→HOL collapse migration.
-        // Each branch returns the canonical TypeSpec handle that
+        // Canonical `defs/` TypeSpecs, keyed by the label that
         // `(spec LABEL …)` printed.
         "int" => defs::int_ty_spec(),
         "bytes" => defs::bytes_spec(),
@@ -285,7 +284,8 @@ pub fn term_to_sexp(t: &Term, ser: &dyn ObsSerializer) -> Result<SExpr> {
         TermKind::Nat(n) => list2("nat-lit", sym(n.as_inner().to_string().as_str())),
         TermKind::Int(n) => list2("int-lit", sym(n.as_inner().to_string().as_str())),
         TermKind::Bool(b) => list2("bool-lit", sym(if *b { "T" } else { "F" })),
-        TermKind::HolOp(op, ty) => list3("hol-op", sym(op.label()), type_to_sexp(ty, ser)?),
+        TermKind::Eq(alpha) => list2("eq", type_to_sexp(alpha, ser)?),
+        TermKind::Select(alpha) => list2("select", type_to_sexp(alpha, ser)?),
         TermKind::Spec(spec, args) => {
             let mut children = Vec::with_capacity(2 + args.len());
             children.push(sym("term-spec"));
@@ -359,6 +359,14 @@ pub fn term_from_sexp(s: &SExpr, parser: &dyn ObsParser) -> Result<Term> {
             let observer = parser.obs_from_sexp(&children[1])?;
             let ty = type_from_sexp(&children[2], parser)?;
             Ok(Term::obs_from_dyn(observer, ty))
+        }
+        "eq" => {
+            expect_arity(children, 2, "eq")?;
+            Ok(Term::eq_op(type_from_sexp(&children[1], parser)?))
+        }
+        "select" => {
+            expect_arity(children, 2, "select")?;
+            Ok(Term::select_op(type_from_sexp(&children[1], parser)?))
         }
         "def" => {
             // Round-trip via S-expressions *does not* preserve `Def`

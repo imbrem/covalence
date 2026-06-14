@@ -36,6 +36,7 @@ mod floats;
 mod helpers;
 mod int;
 mod list;
+mod logic;
 mod nat;
 mod option;
 mod prod;
@@ -66,6 +67,10 @@ pub use int::{
     int_lt, int_lt_spec, int_mod, int_mod_spec, int_mul, int_mul_spec, int_neg, int_neg_spec,
     int_pred, int_pred_spec, int_sgn, int_sgn_spec, int_sub, int_sub_spec, int_succ,
     int_succ_spec, int_ty_spec, int_zero,
+};
+pub use logic::{
+    and, and_spec, exists, exists_spec, forall, forall_spec, iff, iff_spec, imp, imp_spec, not,
+    not_spec, or, or_spec,
 };
 pub use list::{
     cons, cons_spec, head, head_spec, list, list_cat, list_cat_spec, list_filter, list_filter_spec,

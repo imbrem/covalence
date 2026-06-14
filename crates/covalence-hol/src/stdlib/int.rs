@@ -1,8 +1,8 @@
-//! HOL integers — backed by Pure's primitive `int` type.
+//! HOL integers — backed by the kernel's primitive `int` type.
 //!
-//! Same architecture as `stdlib::nat`: Pure provides the type and
-//! closed-form computation; the open-form HOL ring axioms come from
-//! `crate::int_axioms` and are re-exported here.
+//! Same architecture as `stdlib::nat`: the kernel provides the type
+//! and closed-form computation; the open-form HOL ring axioms come
+//! from `crate::int_axioms` and are re-exported here.
 
 use covalence_core::{defs, Term, Type};
 

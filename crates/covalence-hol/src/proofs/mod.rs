@@ -2,12 +2,14 @@
 //!
 //! Nothing here is part of the TCB. Each submodule is one of:
 //!
-//! * a set of *postulates* (`Thm::assume`-style with a self-hyp
-//!   audit trail) for rules whose `Thm::define`-based derivation
-//!   hasn't landed yet — see [`bool`] for HOL connective intro /
-//!   elim rules;
 //! * a set of *pure tactics* — combinators over the kernel's
-//!   inference rules — see [`rewrite`] and [`nat`].
+//!   inference rules — see [`rewrite`] and [`nat`];
+//! * a set of *temporary postulates* (`Thm::assume`-style with a
+//!   self-hyp audit trail) for rules the kernel doesn't yet supply —
+//!   see [`mod@bool`] for the HOL connective intro / elim
+//!   rules. These
+//!   are slated to disappear once the connectives are built into the
+//!   kernel (the target axiom set is content-addressing only).
 //!
 //! Pure tactics can't produce a false `Thm` independently; they're
 //! plumbing that turns multi-step kernel sequences into one-line

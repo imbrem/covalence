@@ -2,11 +2,14 @@
 //!
 //! Provides the standard HOL Light rule-axioms for `∧` / `∨` / `⟹`
 //! / `¬` / `∀` / `∃` as `LazyLock<Thm>` constants. Each is a
-//! `Thm::assume` over a Trueprop-wrapped HOL term — the standard
+//! `Thm::assume` over a `bool`-typed HOL term — the standard
 //! axiom-as-hypothesis pattern; downstream derivations that use a
-//! rule carry the rule's concl in their hyps for audit, and
-//! `PureHol::hyps()` filters such axiom hyps from the user-facing
-//! report (see `pure_hol.rs`).
+//! rule carry the rule's concl in their hyps for audit.
+//!
+//! Like [`crate::proofs::bool`], these are *temporary* postulates:
+//! the connectives are first-class kernel atoms and are meant to be
+//! built into the kernel, leaving content-addressing as the only
+//! genuine axiom family.
 //!
 //! The connectives themselves (`mk_and`, `mk_or`, `mk_imp`,
 //! `mk_not`, `mk_forall`, `mk_exists`) live on
@@ -37,7 +40,7 @@
 //! variants returning the axiom instantiated at a specific
 //! carrier type. The underlying `LazyLock<Thm>` stores the
 //! generic-type version and `Thm::inst_tfree` produces specific
-//! instances on demand (cheap via the new Pure `Def` design).
+//! instances on demand.
 //!
 //! - `axiom_spec_at(α)`: `⊢ ∀(P:α→bool). ∀(y:α). (∀x. P x) ⟹ P y`
 //! - `axiom_exists_intro_at(α)`: `⊢ ∀(P:α→bool). ∀(y:α). P y ⟹ ∃x. P x`
@@ -51,10 +54,9 @@ use covalence_core::{Term, Thm, Type};
 // Helpers
 // ============================================================================
 
-/// Wrap a HOL bool term `body` in `Trueprop` and assume it, giving
-/// `{Trueprop body} ⊢ Trueprop body`. The single hypothesis is
-/// the standard audit-trail; downstream `PureHol::hyps()` filters
-/// it from the user-facing report.
+/// Assume a HOL `bool` term `body`, giving `{body} ⊢ body`. The
+/// single hypothesis is the standard audit-trail marking the result
+/// as a postulate rather than a derived theorem.
 fn assume_hol_axiom(body: Term) -> Thm {
     Thm::assume(body).expect("stdlib::bool: axiom body must be HOL bool-typed")
 }
@@ -324,7 +326,7 @@ mod tests {
         assert_eq!(ax.hyps().iter().next().unwrap(), ax.concl());
         assert!(
             ax.concl().type_of().unwrap().is_bool(),
-            "axiom concl must be prop-typed"
+            "axiom concl must be bool-typed"
         );
     }
 

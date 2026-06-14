@@ -1,9 +1,11 @@
-//! Foundational HOL definitions over Pure's primitive `nat` type.
+//! Foundational HOL definitions over the kernel's primitive `nat` type.
 //!
-//! Pure exposes `Type::nat()` + `NatLit` + `Prim::NatArith(_)` and
-//! decides closed-form arithmetic by reflexivity via
-//! `Thm::reduce_prim`. The HOL-level reasoning machinery for
-//! open-form terms is layered on top in two stages:
+//! `covalence-core` exposes [`Type::nat`] + the `Nat` literal
+//! ([`Term::nat_lit`]) and decides *closed-form* arithmetic by
+//! reflexivity via [`Thm::reduce_prim`] — the `nat_add`/`nat_mul`/…
+//! [`covalence_core::defs`] specs reduce on literal arguments inside
+//! the kernel. The HOL-level reasoning machinery for *open-form*
+//! terms is layered on top here in two stages:
 //!
 //! 1. **Definitional axioms** ([`natrec_def_zero`], [`natrec_def_succ`],
 //!    [`nat_add_def`], [`nat_mul_def`], [`nat_pred_zero`],
@@ -12,14 +14,16 @@
 //!    These plus Peano are the only postulates this module exposes.
 //! 2. **Peano axioms** ([`nat_zero_ne_succ`], [`nat_succ_inj`],
 //!    [`nat_induction`]) — intrinsic to the `nat` *type*, not to any
-//!    operation.
+//!    operation. Only [`nat_induction`] is a bona-fide kernel axiom;
+//!    the other two are postulated downstream (see below).
 //!
 //! Standard algebraic properties (`add_comm`, `add_assoc`, etc.) are
 //! *derived theorems*. Today they are still postulated via
 //! [`nat_add_comm`] etc. and tagged `TODO: prove from definitional
 //! axioms` — those stubs are scheduled to be replaced by real proofs
-//! using Peano induction. Consumers depend only on the surface
-//! `LazyLock<Thm>` constants, so the swap is invisible.
+//! using Peano induction ([`crate::proofs::nat::nat_induct`]).
+//! Consumers depend only on the surface `LazyLock<Thm>` constants, so
+//! the swap is invisible.
 
 use std::sync::LazyLock;
 
@@ -60,7 +64,7 @@ fn mul(a: Term, b: Term) -> Term {
 }
 
 fn assume_hol(body: Term) -> Thm {
-        Thm::assume(body).expect("nat_axioms: Thm::assume on a closed Trueprop cannot fail")
+        Thm::assume(body).expect("nat_axioms: Thm::assume on a closed bool body cannot fail")
 }
 
 // ============================================================================
@@ -77,12 +81,11 @@ pub fn nat_induction() -> Thm {
 
 /// `⊢ ∀n:nat. ¬(0 = succ n)` — zero is never a successor.
 ///
-/// Postulated via `Thm::assume`; the old Rust-encoded proof in
-/// `crate::peano` relied on the now-removed Pure→HOL bridge layer
-/// (see `docs/design/proposals/stacked-pure-hol/next-stages.md`).
-/// A future derivation goes through `Thm::nat_induction` with the
-/// predicate `P n = ¬(0 = succ n)`; the base case `¬(0 = 1)` is
-/// already decidable via `Thm::reduce_prim` on the closed literals.
+/// Postulated via `Thm::assume`. A future derivation goes through
+/// [`Thm::nat_induction`] (via [`crate::proofs::nat::nat_induct`])
+/// with the predicate `P n = ¬(0 = succ n)`; the base case `¬(0 = 1)`
+/// is already derived in [`crate::proofs::nat::nat_zero_ne_one`] from
+/// `Thm::reduce_prim` on the closed literals.
 pub fn nat_zero_ne_succ() -> Thm {
     static AX: LazyLock<Thm> = LazyLock::new(|| {
         let ctx = ctx();
@@ -99,11 +102,10 @@ pub fn nat_zero_ne_succ() -> Thm {
 
 /// `⊢ ∀m n:nat. succ m = succ n ⟹ m = n` — successor is injective.
 ///
-/// Postulated via `Thm::assume`. The derivation in the old
-/// `crate::peano` module applied `pred` to both sides via `cong_app`
-/// and used `pred (succ k) = k` ([`nat_pred_succ`]) twice; that
-/// derivation will be restored once the postulate-free `nat_pred_*`
-/// proofs land.
+/// Postulated via `Thm::assume`. A future derivation applies `pred`
+/// to both sides via `cong_app` and uses `pred (succ k) = k`
+/// ([`nat_pred_succ`]) twice; it lands once the postulate-free
+/// `nat_pred_*` proofs do.
 pub fn nat_succ_inj() -> Thm {
     static AX: LazyLock<Thm> = LazyLock::new(|| {
         let ctx = ctx();
@@ -533,11 +535,11 @@ mod tests {
     }
 
     /// Bona-fide kernel axiom: empty hyps (kernel is the trust
-    /// anchor). After the Pure→HOL migration, axiom conclusions
-    /// are `bool`-typed rather than `prop`-typed.
+    /// anchor). HOL is folded into the kernel, so axiom conclusions
+    /// are `bool`-typed terms.
     fn check_kernel(ax: Thm) {
         let ty = ax.concl().type_of().unwrap();
-        assert!(ty.is_bool(), "axiom conclusion {ty} is neither bool nor prop");
+        assert!(ty.is_bool(), "axiom conclusion {ty} is not bool");
         assert!(ax.hyps().is_empty(), "kernel axiom must have no hyps");
     }
 
@@ -546,8 +548,8 @@ mod tests {
         // `nat_induction` is a bona-fide kernel axiom (zero hyps).
         check_kernel(nat_induction());
         // `nat_zero_ne_succ` / `nat_succ_inj` are postulated via
-        // `Thm::assume` until the Pure→HOL bridge derivations are
-        // re-landed; each carries one self-hyp.
+        // `Thm::assume` until their induction-based derivations land;
+        // each carries one self-hyp.
         check(nat_zero_ne_succ());
         check(nat_succ_inj());
     }

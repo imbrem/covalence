@@ -17,7 +17,7 @@
 //!   and `BinderHint` (the α-transparent display label used by both
 //!   binders and `TyConObs`).
 //! - [`terms`] — the term language: `Term`, `TermKind`, `Def`,
-//!   `HolOp`, and the type-checker (`TypeEnv` + `type_of_in`).
+//!   and the type-checker (`TypeEnv` + `type_of_in`).
 //!
 //! Everything is re-exported at the `crate::term` level, so existing
 //! `use crate::term::{Term, Type, ...}` imports continue to work.
@@ -27,7 +27,7 @@ mod terms;
 mod types;
 
 pub use observers::{Hint, ObsEq, ObsImp, ObsTrue, Object, Observer};
-pub use terms::{Def, HolOp, Term, TermKind};
+pub use terms::{Def, Term, TermKind};
 pub use types::{BinderHint, Type, TypeKind};
 
 pub(crate) use terms::{TypeEnv, type_of_in};

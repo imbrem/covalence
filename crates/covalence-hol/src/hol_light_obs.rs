@@ -1,98 +1,46 @@
-//! HOL Light bootstrap on top of `covalence-pure`.
+//! HOL term/type builder over the `covalence-core` kernel.
 //!
 //! ## What this module is
 //!
-//! A single Rust `enum` ([`HolLight`]) that carries every HOL Light
-//! primitive — `bool`, `=`, `T`, `F`, `⟹`, `¬`, `∧`, `∨`, `↔`, `∀`,
-//! `∃`, `ε`, plus `Trueprop` — as variants of one observer family.
-//! Plus the polymorphic `eq_reflection` axiom that bridges HOL
-//! bool-equality to Pure meta-equality. That's it.
+//! [`HolLightCtx`] — a zero-sized handle whose methods construct HOL
+//! terms and types out of the kernel's first-class atoms. It is pure
+//! syntax plumbing: every method returns a [`Term`] or [`Type`], not a
+//! [`covalence_core::Thm`], so nothing here can widen the TCB.
 //!
-//! All observers and the `eq_reflection` axiom are process-global
-//! lazy statics. [`HolLightCtx`] is a zero-sized handle over them —
-//! constructing one is free.
+//! ## Why it's so thin
 //!
-//! ## Mapping to Isabelle/HOL
+//! HOL is folded into the kernel. `bool`, `=`, `T`, `F`, `⟹`, `¬`,
+//! `∧`, `∨`, `↔`, `∀`, `∃`, `ε` are not an observer family layered on
+//! a separate meta-logic — they are kernel atoms directly:
 //!
-//! `covalence-pure` plays the role of Isabelle/Pure: the meta-logic
-//! with `prop`, meta-`⋀`, meta-`⟹`, meta-`≡`, plus the standard
-//! inference rules (`assume`, `imp_intro/elim`, `all_intro/elim`,
-//! `refl`/`trans`/`sym`, `cong_app`/`cong_abs`, `beta_conv`,
-//! `eta_conv`, `eq_mp`, `inst_tfree`).
+//! - `bool` is [`Type::bool`].
+//! - `T` / `F` are the [`TermKind::Bool`] literals.
+//! - `=` / `ε` are the primitive [`TermKind::Eq`] / [`TermKind::Select`]
+//!   constants; the connectives (`∧ ∨ ¬ ⟹ ⟺ ∀ ∃`) are the defined
+//!   constants in [`covalence_core::defs::logic`], applied via `App`.
 //!
-//! `covalence-hol` plays the role of Isabelle/HOL: HOL as a *theory*
-//! built on top of the meta-logic. Standard Isabelle/HOL ships with:
+//! There is no `Trueprop` coercion and no `eq_reflection` bridge
+//! axiom: a HOL judgement `Γ ⊢ p` is just a kernel `Thm` whose
+//! conclusion and hypotheses are `bool`-typed terms. The kernel's 10
+//! primitive + 8 derived rules already operate directly on these
+//! atoms, so this module only has to *spell the terms*, not bridge
+//! between two logics.
 //!
-//! - `bool` as a separate type (we encode it as `TyConObs(Bool_obs, "bool", [])`).
-//! - `Trueprop : bool ⇒ prop` as the explicit coercion (our [`HolLight::Trueprop`]).
-//! - HOL `=` as a constant at `'a ⇒ 'a ⇒ bool` (our [`HolLight::Eq`]).
-//! - One bridge axiom — `eq_reflection : (x = y) ⟹ (x ≡ y)` — that
-//!   we mirror exactly in [`HolLightCtx::eq_reflection_axiom`].
+//! ## The one subtlety: binders auto-close
 //!
-//! From the `eq_reflection` axiom plus Pure's primitives, every HOL
-//! Light rule derives the way Isabelle does it. The audit-trail
-//! discipline matches HOL Light's: any HOL theorem that relies on
-//! `eq_reflection` carries it in the hypothesis set.
+//! The kernel represents bound variables locally-namelessly
+//! ([`Bound`](covalence_core::TermKind::Bound)). A caller assembling a
+//! quantifier body naturally writes free variables
+//! ([`Term::free`]); [`HolLightCtx::mk_forall`] / [`mk_exists`] /
+//! [`mk_select`] therefore call [`covalence_core::subst::close`] to
+//! bind the named free variable before wrapping it in [`Term::abs`].
+//! Skip that and the binder binds nothing, so `Thm::all_elim` has no
+//! position to substitute into.
 //!
-//! ## Tarski-T encoding
-//!
-//! HOL judgements live in Pure as `⊢_Pure Trueprop p`. A HOL theorem
-//! `Γ ⊢_HOL p` (with `p : bool` and each `h ∈ Γ : bool`) is the Pure
-//! theorem
-//!
-//! ```text
-//! {eq_reflection, ETA, SELECT, INFINITY, …} ∪ {Trueprop h | h ∈ Γ}
-//!     ⊢_Pure Trueprop p
-//! ```
-//!
-//! Pure's hypothesis set carries every axiom the conclusion depends
-//! on (eq_reflection plus whichever standard HOL axioms apply) and
-//! the HOL hypotheses lifted through Trueprop.
-//!
-//! ## The 10 HOL Light rules
-//!
-//! Status: all 10 derive via `eq_reflection` plus Pure's primitives.
-//! The (forthcoming) `PureHol` kernel adapter wires each one up.
-//!
-//! | HOL Light rule    | Derived from                        |
-//! |-------------------|-------------------------------------|
-//! | REFL              | Pure `refl` + eq_reflection (bwd)   |
-//! | TRANS             | eq_reflection (fwd) + Pure `trans` + eq_reflection (bwd) |
-//! | MK_COMB           | eq_reflection (fwd) + Pure `cong_app` + eq_reflection (bwd) |
-//! | ABS               | eq_reflection (fwd) + Pure `cong_abs` (checks "x not free in hyps") + eq_reflection (bwd) |
-//! | BETA              | Pure `beta_conv` + eq_reflection (bwd) |
-//! | ASSUME            | Pure `assume` on `Trueprop p` directly |
-//! | EQ_MP at bool     | eq_reflection (fwd) + Pure `eq_mp` |
-//! | DEDUCT_ANTISYM    | Pure `imp_intro` + iff_def (defined HOL constant) |
-//! | INST              | Pure `all_intro` (checks "x not free in hyps") + `all_elim` |
-//! | INST_TYPE         | Pure `inst_tfree` directly          |
-//!
-//! Pure's primitives already enforce the hypothesis-side-conditions
-//! the conditioned HOL Light rules require (ABS, INST), and apply
-//! substitutions uniformly across the hypothesis set (INST, INST_TYPE).
-//! There's no soundness gap to engineer around.
-//!
-//! ## Why we don't use the "axiomless" approach
-//!
-//! An earlier version of this module attempted to avoid the
-//! eq_reflection axiom by recognising HOL-Light-derivable shapes
-//! directly in the [`covalence_core::ObsTrue`] and
-//! [`covalence_core::ObsImp`] policies. The pattern looked appealing
-//! — fewer hypotheses, no axiom to thread through — but the analysis
-//! showed that ABS and INST cannot soundly fit. The pattern was
-//! removed. See the project's `audit` commit for the analysis.
+//! [`mk_exists`]: HolLightCtx::mk_exists
+//! [`mk_select`]: HolLightCtx::mk_select
 
-use covalence_core::{HolOp, Term, TermKind, Type};
-
-// ============================================================================
-// HOL bridge axioms (still postulated)
-// ============================================================================
-//
-// `Bool`, `Eq`, `True`, `False`, `Imp`, `Not`, `And`, `Or`, `Iff`,
-// `Forall`, `Exists`, `Select`, `Trueprop` are no longer observer
-// objects — they are first-class kernel atoms (`Type::bool()`,
-// `Term::Bool(_)`, `Term::HolOp(_, _)`). The HOL bridge axioms
-// below stay postulated as lazy theorems for now.
+use covalence_core::{Term, TermKind, Type, defs};
 
 // ============================================================================
 // HolLightCtx — zero-sized handle on the process-global HOL primitives
@@ -121,17 +69,20 @@ impl HolLightCtx {
     }
 
     /// Pure function type α → β. HOL doesn't add a new function-type
-    /// constructor; we re-use Pure's `Fun`.
+    /// constructor; we re-use the kernel's `Fun`.
     pub fn fun_type(&self, a: Type, b: Type) -> Type {
         Type::fun(a, b)
     }
 
-    // ---- HOL constants — now folded into core via TermKind::HolOp ----
+    // ---- HOL constants ----
+    //
+    // `=` is the primitive `TermKind::Eq`; the connectives are the
+    // defined constants in `covalence_core::defs::logic` (applied
+    // `Spec` leaves). These builders just spell the application chains.
 
     /// HOL `=` instantiated at `α → α → bool`.
     pub fn eq_at(&self, alpha: Type) -> Term {
-        let ty = Type::fun(alpha.clone(), Type::fun(alpha, self.bool_type()));
-        Term::hol_op(HolOp::Eq, ty)
+        Term::eq_op(alpha)
     }
 
     /// `t = u : bool`, given `t` and `u` of the same type α. Errors
@@ -152,61 +103,54 @@ impl HolLightCtx {
         Term::bool_lit(false)
     }
 
-    fn bool_binop_ty(&self) -> Type {
-        let b = self.bool_type();
-        Type::fun(b.clone(), Type::fun(b.clone(), b))
-    }
-
-    /// HOL `==>` at `bool → bool → bool`.
+    /// HOL `==>` — the `imp` connective.
     pub fn imp_op(&self) -> Term {
-        Term::hol_op(HolOp::Imp, self.bool_binop_ty())
+        defs::imp()
     }
     /// HOL `p ==> q`.
     pub fn mk_imp(&self, p: Term, q: Term) -> Term {
         Term::app(Term::app(self.imp_op(), p), q)
     }
 
-    /// HOL `~` at `bool → bool`.
+    /// HOL `~` — the `not` connective.
     pub fn not_op(&self) -> Term {
-        let b = self.bool_type();
-        Term::hol_op(HolOp::Not, Type::fun(b.clone(), b))
+        defs::not()
     }
     /// HOL `~ p`.
     pub fn mk_not(&self, p: Term) -> Term {
         Term::app(self.not_op(), p)
     }
 
-    /// HOL `/\` at `bool → bool → bool`.
+    /// HOL `/\` — the `and` connective.
     pub fn and_op(&self) -> Term {
-        Term::hol_op(HolOp::And, self.bool_binop_ty())
+        defs::and()
     }
     /// HOL `p /\ q`.
     pub fn mk_and(&self, p: Term, q: Term) -> Term {
         Term::app(Term::app(self.and_op(), p), q)
     }
 
-    /// HOL `\/` at `bool → bool → bool`.
+    /// HOL `\/` — the `or` connective.
     pub fn or_op(&self) -> Term {
-        Term::hol_op(HolOp::Or, self.bool_binop_ty())
+        defs::or()
     }
     /// HOL `p \/ q`.
     pub fn mk_or(&self, p: Term, q: Term) -> Term {
         Term::app(Term::app(self.or_op(), p), q)
     }
 
-    /// HOL `<=>` at `bool → bool → bool`.
+    /// HOL `<=>` — the `iff` connective.
     pub fn iff_op(&self) -> Term {
-        Term::hol_op(HolOp::Iff, self.bool_binop_ty())
+        defs::iff()
     }
     /// HOL `p <=> q`.
     pub fn mk_iff(&self, p: Term, q: Term) -> Term {
         Term::app(Term::app(self.iff_op(), p), q)
     }
 
-    /// HOL `∀` at `(α → bool) → bool`.
+    /// HOL `∀` at `(α → bool) → bool` — the `forall` spec at `α`.
     pub fn forall_at(&self, alpha: Type) -> Term {
-        let pred = Type::fun(alpha, self.bool_type());
-        Term::hol_op(HolOp::Forall, Type::fun(pred, self.bool_type()))
+        defs::forall(alpha)
     }
     /// HOL `∀x:α. body` — `Forall (λx:α. body)`. Auto-closes free
     /// occurrences of `hint` in `body` to `Bound(0)` so that
@@ -217,10 +161,9 @@ impl HolLightCtx {
         Term::app(self.forall_at(alpha), lambda)
     }
 
-    /// HOL `∃` at `(α → bool) → bool`.
+    /// HOL `∃` at `(α → bool) → bool` — the `exists` spec at `α`.
     pub fn exists_at(&self, alpha: Type) -> Term {
-        let pred = Type::fun(alpha, self.bool_type());
-        Term::hol_op(HolOp::Exists, Type::fun(pred, self.bool_type()))
+        defs::exists(alpha)
     }
     /// HOL `∃x:α. body` — `Exists (λx:α. body)`. Auto-closes free
     /// occurrences of `hint` in `body` so the binder actually binds.
@@ -230,10 +173,10 @@ impl HolLightCtx {
         Term::app(self.exists_at(alpha), lambda)
     }
 
-    /// HOL `ε` (Hilbert's choice) at `(α → bool) → α`.
+    /// HOL `ε` (Hilbert's choice) at `(α → bool) → α` — the primitive
+    /// `TermKind::Select`.
     pub fn select_at(&self, alpha: Type) -> Term {
-        let pred = Type::fun(alpha.clone(), self.bool_type());
-        Term::hol_op(HolOp::Select, Type::fun(pred, alpha))
+        Term::select_op(alpha)
     }
     /// HOL `ε x:α. body` — `Select (λx:α. body)`. Auto-closes free
     /// occurrences of `hint` in `body` so the binder actually binds.

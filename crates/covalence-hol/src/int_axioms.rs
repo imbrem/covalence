@@ -1,4 +1,4 @@
-//! Foundational HOL axioms about Pure's primitive `int` type.
+//! Foundational HOL axioms about the kernel's primitive `int` type.
 //!
 //! Unlike `nat` (which has a single-direction recursor `natrec` so
 //! every arithmetic op is `op ≡ natrec base step n`), `int` does not
@@ -52,7 +52,7 @@ fn mul(a: Term, b: Term) -> Term {
 }
 
 fn assume_hol(body: Term) -> Thm {
-        Thm::assume(body).expect("int_axioms: Thm::assume on a closed Trueprop cannot fail")
+        Thm::assume(body).expect("int_axioms: Thm::assume on a closed bool body cannot fail")
 }
 
 // ============================================================================

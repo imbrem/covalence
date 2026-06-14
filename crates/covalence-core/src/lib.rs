@@ -13,8 +13,9 @@
 //! `Soundness:` docstring justifying each: the well-known derived rules
 //! (`sym`, `cong_app`/`cong_abs`, `imp_intro`/`imp_elim`,
 //! `all_intro`/`all_elim`, `eta_conv`) and connective rules
-//! (`and_*`/`or_*`/`not_*`); three non-computational primitives
-//! ([`Thm::nat_induct`], [`Thm::false_elim`], [`Thm::unit_eq`]); the
+//! (`and_*`/`or_*`/`not_*`); four non-computational primitives
+//! ([`Thm::nat_induct`], [`Thm::false_elim`], [`Thm::unit_eq`],
+//! [`Thm::lem`] — the classicality axiom); the
 //! conservative-extension primitives ([`Thm::define`],
 //! [`Thm::new_type_definition`]); the accelerated reduction rules
 //! ([`Thm::reduce_prim`], [`Thm::unfold_term_spec`]); and the observer

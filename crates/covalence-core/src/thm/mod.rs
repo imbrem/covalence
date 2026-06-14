@@ -1168,6 +1168,31 @@ impl Thm {
         let eq = hol::hol_eq(zero, Term::app(Term::succ(), n));
         Self::build(Ctx::new(), hol::hol_not(eq))
     }
+
+    /// `⊢ p ∨ ¬p`, for any `p : bool` — the law of excluded middle, as
+    /// a primitive rule. No hypotheses.
+    ///
+    /// ## Soundness
+    ///
+    /// This is the kernel's classicality axiom. HOL `=` and the `Bool`
+    /// literals are interpreted in the standard two-valued model, where
+    /// every `bool`-typed term denotes either `T` or `F`; in either case
+    /// `p ∨ ¬p` holds. Equivalently it is HOL Light's `EXCLUDED_MIDDLE`,
+    /// which is *derivable* there from the choice/`ε` infrastructure
+    /// (`Select`) together with extensionality and `deduct_antisym` —
+    /// the kernel already has every ingredient. It is exposed here as a
+    /// direct constructor for simplicity and efficiency; replacing it
+    /// with that derivation (and dropping it from the axiom surface) is
+    /// a standing cleanup, mirroring the connective fast-rules whose
+    /// soundness witnesses live in `covalence-hol::proofs`.
+    pub fn lem(p: Term) -> Result<Thm> {
+        let p_ty = p.type_of()?;
+        if !p_ty.is_bool() {
+            return Err(Error::NotBool(p_ty));
+        }
+        let concl = hol::hol_or(p.clone(), hol::hol_not(p));
+        Self::build(Ctx::new(), concl)
+    }
 }
 
 /// Walk down through `App`s collecting arguments left-to-right. If

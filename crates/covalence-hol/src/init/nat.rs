@@ -1,280 +1,167 @@
-//! The **shallow** embedding of Peano arithmetic into HOL: a PA term
-//! is the HOL `nat` term, a PA proof is a HOL [`Thm`] about `nat`.
+//! `nat` theorems: the `defs/nat.rs` catalogue re-exported, plus the
+//! proved Peano properties of HOL `nat` — mirroring how [`init::logic`]
+//! pairs the connective definitions with their proved facts.
 //!
-//! [`Hol`] is the trivial implementation of [`Peano`] — "trivial"
-//! because PA reasoning is *just* HOL reasoning over `nat`. The
-//! inference rules forward straight to the kernel
-//! ([`induct`](Hol::induct) → `Thm::nat_induct`,
-//! [`specialize`](Peano::specialize) → `Thm::all_elim`,
-//! [`mp`](Peano::mp) → `Thm::imp_elim`).
+//! [`init::logic`]: crate::init::logic
 //!
-//! ## What is proved vs postulated
+//! This module is the home of the *theorems*; the **shallow embedding**
+//! of Peano arithmetic into HOL (the [`Peano`] trait impl) lives in
+//! [`crate::peano::shallow`] and reads its axioms from here.
 //!
-//! - **Genuine** (hypothesis-free HOL theorems):
-//!   - [`induct`](Peano::induct) — kernel primitive `Thm::nat_induct`.
-//!   - [`succ_inj`](Peano::succ_inj) / [`zero_ne_succ`](Peano::zero_ne_succ)
-//!     — the kernel freeness primitives `Thm::succ_inj` /
-//!     `Thm::zero_ne_succ` (`succ` is now a primitive `TermKind::Succ`),
-//!     generalised with `all_intro`.
-//! - **Postulated** via [`Hol::axiom`] = `Thm::assume`: the four
-//!   `add`/`mul` recursion equations. These hold definitionally but
-//!   are not yet *derivable*, because `nat_add` / `nat_mul` unfold to
-//!   `natRec`, whose computation equations are not yet available over
-//!   variables. A PA proof using them comes out as `{axioms used} ⊢ φ`,
-//!   the hypotheses naming exactly the postulates relied on.
+//! ## Status
 //!
-//! The intended route for the four remaining ones is **not** a new
-//! kernel primitive: `natRec` exists *by `ε`* (it is the choice over
-//! its recursion-uniqueness predicate), so once `ε`/choice is exposed
-//! the recursion equations are **derivable by induction** — at which
-//! point the `Hol::axiom` calls become real derivations with no API
-//! change. Tracked in `SKELETONS.md`.
+//! - **Genuine** (hypothesis-free): [`succ_inj`] / [`zero_ne_succ`]
+//!   (kernel freeness primitives generalised with `all_intro`), and
+//!   induction directly via `Thm::nat_induct`.
+//! - **Postulated** (`Thm::assume`, flagged in `SKELETONS.md`): the
+//!   four recursion equations [`add_base`] / [`add_step`] / [`mul_base`]
+//!   / [`mul_step`]. The goal (option **B**) is to discharge these by
+//!   proving the **recursion theorem** [`nat_recursion`] outright — the
+//!   recursor exists (`∃r. P_rec r`), so `spec_ax(natRec, ·)` +
+//!   `select`/choice + induction give `natRec`'s equations, and the
+//!   `add`/`mul` equations follow by unfolding. Until that lands these
+//!   four are the only `nat` postulates.
 
-use covalence_core::{Error, Result, Term, Thm, Type, defs};
+use covalence_core::{Term, Thm, Type};
 use covalence_types::Nat;
 
 use crate::init::ext::TermExt;
-use crate::peano::Peano;
 
-/// Shallow PA-in-HOL: `Term = nat` HOL term, `Proof = Thm`. Zero-sized.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Hol;
+// Re-export the `defs/nat.rs` term catalogue (the operations; the
+// `*_spec` handles stay in `covalence_core::defs`).
+pub use covalence_core::defs::{
+    iter, nat_add, nat_div, nat_le, nat_lt, nat_mod, nat_mul, nat_pow, nat_pred, nat_rec, nat_sub,
+    nat_succ, nat_to_int,
+};
 
-impl Hol {
-    /// Construct a handle. Free; no allocation.
-    pub fn new() -> Self {
-        Self
-    }
+// ============================================================================
+// Small term helpers (private — the public surface is theorems)
+// ============================================================================
 
-    fn nat() -> Type {
-        Type::nat()
-    }
-
-    /// Postulate a PA axiom: `{t} ⊢ t`. The self-hypothesis is the
-    /// audit trail — every PA proof built on this axiom carries it,
-    /// flagging the unproved leaf until the kernel can discharge it
-    /// (see the [module docs](self)).
-    fn axiom(t: Term) -> Thm {
-        Thm::assume(t).expect("Hol::axiom: PA axiom must be a bool-typed term")
-    }
+fn nat() -> Type {
+    Type::nat()
 }
 
-impl Peano for Hol {
-    type Term = Term;
-    type Proof = Thm;
-    type Error = Error;
+pub(crate) fn zero() -> Term {
+    Term::nat_lit(Nat::zero())
+}
 
-    // ---- term constructors ----
+pub(crate) fn succ(n: Term) -> Term {
+    Term::app(nat_succ(), n)
+}
 
-    fn var(&self, name: &str) -> Term {
-        Term::free(name, Self::nat())
-    }
+pub(crate) fn add(a: Term, b: Term) -> Term {
+    Term::app(Term::app(nat_add(), a), b)
+}
 
-    fn zero(&self) -> Term {
-        Term::nat_lit(Nat::zero())
-    }
+pub(crate) fn mul(a: Term, b: Term) -> Term {
+    Term::app(Term::app(nat_mul(), a), b)
+}
 
-    fn succ(&self, n: Term) -> Term {
-        Term::app(defs::nat_succ(), n)
-    }
+fn var(name: &str) -> Term {
+    Term::free(name, nat())
+}
 
-    fn add(&self, a: Term, b: Term) -> Term {
-        Term::app(Term::app(defs::nat_add(), a), b)
-    }
+/// Postulate a `nat` axiom: `{t} ⊢ t`. The self-hypothesis is the audit
+/// trail — every proof built on it carries it, flagging the unproved
+/// leaf until [`nat_recursion`] discharges it.
+fn axiom(t: Term) -> Thm {
+    Thm::assume(t).expect("init::nat::axiom: term must be bool-typed")
+}
 
-    fn mul(&self, a: Term, b: Term) -> Term {
-        Term::app(Term::app(defs::nat_mul(), a), b)
-    }
+// ============================================================================
+// Freeness — genuine, from the kernel primitives
+// ============================================================================
 
-    // ---- axioms (postulated; see module docs) ----
+/// `⊢ ∀m n. (S m = S n) ⟹ (m = n)` — successor injectivity.
+pub fn succ_inj() -> Thm {
+    Thm::succ_inj(var("m"), var("n"))
+        .and_then(|t| t.all_intro("n", nat()))
+        .and_then(|t| t.all_intro("m", nat()))
+        .expect("succ_inj: kernel freeness rule")
+}
 
-    fn zero_ne_succ(&self) -> Thm {
-        // Genuine: the kernel freeness rule gives `⊢ ¬(0 = S n)` for
-        // free `n`; generalise.
-        Thm::zero_ne_succ(self.var("n"))
-            .and_then(|t| t.all_intro("n", Self::nat()))
-            .expect("zero_ne_succ: kernel freeness rule")
-    }
+/// `⊢ ∀n. ¬(0 = S n)` — zero is not a successor.
+pub fn zero_ne_succ() -> Thm {
+    Thm::zero_ne_succ(var("n"))
+        .and_then(|t| t.all_intro("n", nat()))
+        .expect("zero_ne_succ: kernel freeness rule")
+}
 
-    fn succ_inj(&self) -> Thm {
-        // Genuine: `⊢ (S m = S n) ⟹ (m = n)` for free `m`, `n`;
-        // generalise inner-first.
-        Thm::succ_inj(self.var("m"), self.var("n"))
-            .and_then(|t| t.all_intro("n", Self::nat()))
-            .and_then(|t| t.all_intro("m", Self::nat()))
-            .expect("succ_inj: kernel freeness rule")
-    }
+// ============================================================================
+// Recursion equations — postulated, pending the recursion theorem (B)
+// ============================================================================
 
-    fn add_base(&self) -> Thm {
-        let m = self.var("m");
-        let lhs = self.add(self.zero(), m.clone());
-        let eq = lhs.equals(m).expect("add_base: 0 + m = m");
-        let term = eq.forall("m", Self::nat()).expect("add_base: ∀m");
-        Self::axiom(term)
-    }
+/// `⊢ ∀m. 0 + m = m`.
+pub fn add_base() -> Thm {
+    let m = var("m");
+    let eq = add(zero(), m.clone()).equals(m).expect("add_base: 0 + m = m");
+    axiom(eq.forall("m", nat()).expect("add_base: ∀m"))
+}
 
-    fn add_step(&self) -> Thm {
-        let n = self.var("n");
-        let m = self.var("m");
-        let lhs = self.add(self.succ(n.clone()), m.clone());
-        let rhs = self.succ(self.add(n, m.clone()));
-        let eq = lhs.equals(rhs).expect("add_step: S n + m = S (n + m)");
-        let term = eq
-            .forall("m", Self::nat())
-            .and_then(|t| t.forall("n", Self::nat()))
-            .expect("add_step: ∀n m");
-        Self::axiom(term)
-    }
+/// `⊢ ∀n m. S n + m = S (n + m)`.
+pub fn add_step() -> Thm {
+    let n = var("n");
+    let m = var("m");
+    let lhs = add(succ(n.clone()), m.clone());
+    let rhs = succ(add(n, m.clone()));
+    let eq = lhs.equals(rhs).expect("add_step: S n + m = S (n + m)");
+    let term = eq
+        .forall("m", nat())
+        .and_then(|t| t.forall("n", nat()))
+        .expect("add_step: ∀n m");
+    axiom(term)
+}
 
-    fn mul_base(&self) -> Thm {
-        let m = self.var("m");
-        let lhs = self.mul(self.zero(), m);
-        let eq = lhs.equals(self.zero()).expect("mul_base: 0 * m = 0");
-        let term = eq.forall("m", Self::nat()).expect("mul_base: ∀m");
-        Self::axiom(term)
-    }
+/// `⊢ ∀m. 0 * m = 0`.
+pub fn mul_base() -> Thm {
+    let m = var("m");
+    let eq = mul(zero(), m).equals(zero()).expect("mul_base: 0 * m = 0");
+    axiom(eq.forall("m", nat()).expect("mul_base: ∀m"))
+}
 
-    fn mul_step(&self) -> Thm {
-        let n = self.var("n");
-        let m = self.var("m");
-        let lhs = self.mul(self.succ(n.clone()), m.clone());
-        let rhs = self.add(m.clone(), self.mul(n, m));
-        let eq = lhs.equals(rhs).expect("mul_step: S n * m = m + n * m");
-        let term = eq
-            .forall("m", Self::nat())
-            .and_then(|t| t.forall("n", Self::nat()))
-            .expect("mul_step: ∀n m");
-        Self::axiom(term)
-    }
-
-    // ---- inference rules (genuine kernel forwarding) ----
-
-    fn induct(&self, base: Thm, step: Thm) -> Result<Thm> {
-        Thm::nat_induct(base, step)
-    }
-
-    fn specialize(&self, univ: Thm, witness: Term) -> Result<Thm> {
-        univ.all_elim(witness)
-    }
-
-    fn mp(&self, implication: Thm, antecedent: Thm) -> Result<Thm> {
-        implication.imp_elim(antecedent)
-    }
+/// `⊢ ∀n m. S n * m = m + n * m`.
+pub fn mul_step() -> Thm {
+    let n = var("n");
+    let m = var("m");
+    let lhs = mul(succ(n.clone()), m.clone());
+    let rhs = add(m.clone(), mul(n, m));
+    let eq = lhs.equals(rhs).expect("mul_step: S n * m = m + n * m");
+    let term = eq
+        .forall("m", nat())
+        .and_then(|t| t.forall("n", nat()))
+        .expect("mul_step: ∀n m");
+    axiom(term)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn hol() -> Hol {
-        Hol::new()
+    #[test]
+    fn freeness_theorems_are_genuine() {
+        assert!(succ_inj().hyps().is_empty(), "succ_inj is proved");
+        assert!(zero_ne_succ().hyps().is_empty(), "zero_ne_succ is proved");
+        assert!(succ_inj().concl().type_of().unwrap().is_bool());
+        assert!(zero_ne_succ().concl().type_of().unwrap().is_bool());
     }
 
     #[test]
-    fn all_axioms_are_well_typed() {
-        let h = hol();
-        for ax in [
-            h.zero_ne_succ(),
-            h.succ_inj(),
-            h.add_base(),
-            h.add_step(),
-            h.mul_base(),
-            h.mul_step(),
-        ] {
+    fn recursion_equations_are_postulated() {
+        for ax in [add_base(), add_step(), mul_base(), mul_step()] {
             assert!(ax.concl().type_of().unwrap().is_bool());
-        }
-    }
-
-    #[test]
-    fn freeness_axioms_are_genuine() {
-        // succ_inj / zero_ne_succ are real HOL theorems now — no hyps.
-        let h = hol();
-        assert!(h.succ_inj().hyps().is_empty(), "succ_inj is proved");
-        assert!(h.zero_ne_succ().hyps().is_empty(), "zero_ne_succ is proved");
-    }
-
-    #[test]
-    fn arithmetic_axioms_are_postulated() {
-        // The add/mul equations carry themselves as hypotheses until ε
-        // + induction discharge them.
-        let h = hol();
-        for ax in [h.add_base(), h.add_step(), h.mul_base(), h.mul_step()] {
             assert!(
-                ax.hyps().iter().any(|hyp| hyp == ax.concl()),
+                ax.hyps().iter().any(|h| h == ax.concl()),
                 "a postulated axiom carries itself as a hypothesis"
             );
         }
     }
 
     #[test]
-    fn add_base_has_the_expected_shape() {
-        let h = hol();
-        // ∀m. 0 + m = m  — peel ∀, β-instantiate at a fresh var, check.
-        let inst = h
-            .specialize(h.add_base(), h.var("k"))
-            .expect("specialize add_base");
-        let expected = h
-            .add(h.zero(), h.var("k"))
-            .equals(h.var("k"))
-            .unwrap();
+    fn add_base_specialises() {
+        // ∀m. 0 + m = m  ⟹(spec k)  0 + k = k.
+        let inst = add_base().all_elim(var("k")).expect("specialize add_base");
+        let expected = add(zero(), var("k")).equals(var("k")).unwrap();
         assert_eq!(inst.concl(), &expected);
-    }
-
-    #[test]
-    fn specialize_then_mp_derives_zero_eq_zero() {
-        // From succ_inj: ∀m n. S m = S n ⟹ m = n.
-        // Specialize m,n := 0, MP with ⊢ S 0 = S 0, get ⊢ 0 = 0.
-        let h = hol();
-        let p = h.succ_inj();
-        let p1 = h.specialize(p, h.zero()).unwrap();
-        let p2 = h.specialize(p1, h.zero()).unwrap();
-        let refl = Thm::refl(h.succ(h.zero())).unwrap(); // ⊢ S 0 = S 0
-        let q = h.mp(p2, refl).unwrap();
-
-        let expected = h.zero().equals(h.zero()).unwrap();
-        assert_eq!(q.concl(), &expected);
-        // succ_inj is genuine, so this derivation is hypothesis-free.
-        assert!(q.hyps().is_empty(), "derived from proved axioms only");
-    }
-
-    #[test]
-    fn induction_is_genuine_and_axiom_free() {
-        // Prove ⊢ ∀n. P n for the trivial motive P := λn. T, with no
-        // postulate dependency — induction is a real kernel rule.
-        let h = hol();
-        let t = Term::bool_lit(true);
-        let p = Term::abs(Type::nat(), t.clone()); // λn. T
-
-        // base : ⊢ P 0   (in applied `P 0` shape)
-        let base = Thm::beta_conv(Term::app(p.clone(), h.zero()))
-            .unwrap()
-            .sym()
-            .unwrap()
-            .eq_mp(crate::init::logic::truth())
-            .unwrap();
-
-        // step : ⊢ P n ⟹ P (S n)   (free n, ungeneralised)
-        let n = h.var("n");
-        let p_n = Thm::beta_conv(Term::app(p.clone(), n.clone()))
-            .unwrap()
-            .sym()
-            .unwrap()
-            .eq_mp(crate::init::logic::truth())
-            .unwrap();
-        let p_succ_n = Thm::beta_conv(Term::app(p, h.succ(n)))
-            .unwrap()
-            .sym()
-            .unwrap()
-            .eq_mp(crate::init::logic::truth())
-            .unwrap();
-        let step = p_succ_n.imp_intro(p_n.concl()).unwrap();
-
-        let all = h.induct(base, step).unwrap();
-        // ⊢ ∀n:nat. P n, and — crucially — no postulate hypotheses.
-        assert!(all.hyps().is_empty(), "induction adds no PA postulates");
-        let covalence_core::TermKind::App(_forall, lam) = all.concl().kind() else {
-            panic!("expected a ∀ application");
-        };
-        assert!(lam.as_abs().map(|(ty, _)| ty == &Type::nat()).unwrap_or(false));
     }
 }

@@ -42,6 +42,10 @@
 //! Recorded in `SKELETONS.md`; flipping them to proofs is a localized
 //! change behind this same API.
 
+pub mod shallow;
+
+pub use shallow::Hol;
+
 /// Reasoning in first-order Peano arithmetic, generic over the proof
 /// representation. See the [module docs](self).
 pub trait Peano {

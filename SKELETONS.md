@@ -55,9 +55,19 @@ it is how unfinished work stays discoverable.
   (`lt_add_mono`, `lt_mul_pos`), and discreteness (`lt_succ`:
   `a < b ⟺ a + 1 ≤ b`). Since `int := (nat × nat) / ~` (Grothendieck), each is
   a HOL theorem derivable from the `nat` Peano facts through the quotient;
-  filling the proofs in is downstream work and does not change the public
-  `fn` surface. These are the ingredients the Alethe `la_generic` /
-  `la_mult_*` checker will consume.
+  filling the proofs in does not change the public `fn` surface. These are
+  the ingredients the Alethe `la_generic` / `la_mult_*` checker will consume.
+
+  **Blocked on quotient infrastructure, not on `nat`.** The `nat` half is
+  now available — `init::nat` proves `add_zero`/`add_succ_r`/`add_comm`/
+  `add_assoc` by induction (the `induct` helper), resting only on
+  `rec_holds`, and the order/multiplicative `nat` facts will follow the
+  same way. What is missing is quotient-`TypeSpec` reasoning: the
+  class-equality rule `mkInt p = mkInt q ⟺ p ~ q` and operation
+  well-definedness. The kernel's subtype bijection rules
+  (`spec_abs_rep` / `spec_rep_abs_*`) reject quotient specs, so this needs
+  a kernel/`init` quotient API before the `int` postulates can be
+  discharged.
 
 ## Partial subsystems
 

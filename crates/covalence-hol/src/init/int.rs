@@ -27,6 +27,20 @@
 //! [`init::nat`] through the quotient. Discharging them is downstream
 //! work; until then they are the `int` postulate set. The public surface
 //! (these `fn`s) does not change when the proofs land — only the bodies.
+//!
+//! ## What the proofs are waiting on
+//!
+//! Two ingredients. The **`nat` side** is now in place: [`init::nat`]
+//! proves the additive theory (`add_comm`/`add_assoc`/`add_zero`/…) by
+//! induction, and the order/multiplicative facts will follow the same
+//! way. The **quotient side** is the gap: lifting a `nat` fact to `int`
+//! needs the class-equality characterisation `mkInt p = mkInt q ⟺ p ~ q`
+//! and well-definedness of the Grothendieck operations — quotient
+//! `TypeSpec` reasoning the kernel does **not** yet expose (the subtype
+//! `spec_abs_rep` / `spec_rep_abs` rules reject quotient specs). Once that
+//! lands, each postulate here unfolds the relevant `int` op to its
+//! representative-pair body, rewrites with the `nat` facts, and
+//! re-quotients.
 
 use covalence_core::{Term, Thm, Type};
 

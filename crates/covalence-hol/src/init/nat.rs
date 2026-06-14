@@ -19,10 +19,15 @@
 //! - **Derived from [`rec_holds`] alone**: the four recursion equations
 //!   [`add_base`] / [`add_step`] / [`mul_base`] / [`mul_step`], by
 //!   δ-unfolding `nat.add` / `nat.mul` / `iter` down to `natRec` and
-//!   applying [`rec_holds`]. Each therefore carries exactly *one*
-//!   hypothesis — [`rec_holds`]'s conclusion. **The moment `rec_holds`
-//!   becomes a hypothesis-free proof, all four become genuine theorems
-//!   automatically, with no change here.**
+//!   applying [`rec_holds`]; and on top of those, the **additive theory**
+//!   [`add_zero`] / [`add_succ_r`] / [`add_comm`] / [`add_assoc`], proved
+//!   by `nat`-induction (the [`induct`] helper). Each therefore carries
+//!   exactly *one* hypothesis — [`rec_holds`]'s conclusion. **The moment
+//!   `rec_holds` becomes a hypothesis-free proof, all of these become
+//!   genuine theorems automatically, with no change here.**
+//!
+//! These additive facts are the `nat` half of what the `int` quotient
+//! lift ([`init::int`](crate::init::int)) needs.
 
 use covalence_core::{Result, Term, Thm, Type, defs, subst};
 use covalence_types::Nat;
@@ -252,6 +257,201 @@ fn mul_step_impl() -> Result<Thm> {
     eq.all_intro("m", nat())?.all_intro("n", nat())
 }
 
+// ============================================================================
+// Additive theory — proved by induction from the recursion equations
+// ============================================================================
+//
+// These carry the single `rec_holds` hypothesis (inherited through
+// `add_base` / `add_step`), so they become genuine theorems the moment
+// `rec_holds` is discharged — exactly like the recursion equations above.
+
+/// `⊢ f arg` from a proof of its β-reduct — wrap a fact into the "applied"
+/// form `nat_induct` wants.
+fn beta_expand(f: &Term, arg: Term, body: Thm) -> Result<Thm> {
+    Thm::beta_conv(Term::app(f.clone(), arg))?.sym()?.eq_mp(body)
+}
+
+/// `⊢ body[arg]` from `⊢ f arg` — β-reduce a redex conclusion.
+fn beta_reduce_thm(thm: Thm) -> Result<Thm> {
+    Thm::beta_conv(thm.concl().clone())?.eq_mp(thm)
+}
+
+/// Prove `⊢ ∀n. body` by `nat`-induction. `motive` is `λn. body`; `base`
+/// proves the β-reduct `body[0/n]`; `step` proves `body[n] ⟹ body[S n]`
+/// for the free variable `n`. Wraps both into [`Thm::nat_induct`]'s applied
+/// form and β-normalises the result for a readable conclusion.
+fn induct(motive: &Term, base: Thm, step: Thm) -> Result<Thm> {
+    let n = var("n");
+    let base = beta_expand(motive, zero(), base)?; // ⊢ motive 0
+    let pn = Term::app(motive.clone(), n.clone());
+    let body_n = beta_reduce_thm(Thm::assume(pn.clone())?)?; // {motive n} ⊢ body[n]
+    let body_sn = step.imp_elim(body_n)?; //                    {motive n} ⊢ body[S n]
+    let p_sn = beta_expand(motive, succ(n.clone()), body_sn)?; // {motive n} ⊢ motive (S n)
+    let step = p_sn.imp_intro(&pn)?; //                          ⊢ motive n ⟹ motive (S n)
+    let applied = Thm::nat_induct(base, step)?; //               ⊢ ∀n. motive n
+    crate::init::eq::beta_nf(applied.concl().clone()).eq_mp(applied)
+}
+
+/// `⊢ ∀a. a + 0 = a` — right unit of `+` (the recursion equation gives the
+/// *left* unit `0 + a = a`; this is the induction-on-`a` mirror).
+pub fn add_zero() -> Thm {
+    add_zero_impl().expect("add_zero derivation")
+}
+fn add_zero_impl() -> Result<Thm> {
+    let n = var("n");
+    let body = add(n.clone(), zero()).equals(n.clone())?; // n + 0 = n
+    let motive = Term::abs(nat(), subst::close(&body, "n"));
+
+    // base: 0 + 0 = 0.
+    let base = add_base().all_elim(zero())?;
+
+    // step: (n + 0 = n) ⟹ (S n + 0 = S n).
+    let ih_concl = add(n.clone(), zero()).equals(n.clone())?;
+    let ih = Thm::assume(ih_concl.clone())?; // {n+0=n} ⊢ n + 0 = n
+    let s = add_step().all_elim(n.clone())?.all_elim(zero())?; // ⊢ S n + 0 = S(n + 0)
+    let cong = ih.cong_arg(nat_succ())?; //                       {n+0=n} ⊢ S(n+0) = S n
+    let step = s.trans(cong)?.imp_intro(&ih_concl)?; //  ⊢ (n+0=n) ⟹ (S n + 0 = S n)
+
+    induct(&motive, base, step)
+}
+
+/// `⊢ x + c = y + c` from `⊢ x = y` — congruence on `+`'s left argument.
+fn cong_add_l(eq: Thm, c: Term) -> Result<Thm> {
+    eq.cong_arg(nat_add())?.cong_fn(c)
+}
+
+/// `⊢ ∀a b. a + S b = S (a + b)` — the successor-on-the-right equation
+/// (mirror of [`add_step`], which moves a successor on the *left*).
+pub fn add_succ_r() -> Thm {
+    add_succ_r_impl().expect("add_succ_r derivation")
+}
+fn add_succ_r_impl() -> Result<Thm> {
+    // body[n] ≔ ∀b. n + S b = S (n + b)
+    let body_at = |t: &Term| -> Result<Term> {
+        let b = var("b");
+        add(t.clone(), succ(b.clone()))
+            .equals(succ(add(t.clone(), b)))?
+            .forall("b", nat())
+    };
+    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+    // base: ∀b. 0 + S b = S (0 + b).
+    let base = {
+        let b = var("b");
+        let e1 = add_base().all_elim(succ(b.clone()))?; // 0 + Sb = Sb
+        let e2 = add_base().all_elim(b.clone())?.cong_arg(nat_succ())?.sym()?; // Sb = S(0+b)
+        e1.trans(e2)?.all_intro("b", nat())?
+    };
+
+    // step: body[n] ⟹ body[S n].
+    let n = var("n");
+    let ihc = body_at(&n)?;
+    let inner = {
+        let b = var("b");
+        let ih_b = Thm::assume(ihc.clone())?.all_elim(b.clone())?; // n + Sb = S(n+b)
+        let s1 = add_step().all_elim(n.clone())?.all_elim(succ(b.clone()))?; // Sn+Sb = S(n+Sb)
+        let s2 = ih_b.cong_arg(nat_succ())?; //                                S(n+Sb) = S(S(n+b))
+        let s3 = add_step()
+            .all_elim(n.clone())?
+            .all_elim(b.clone())?
+            .cong_arg(nat_succ())?
+            .sym()?; //                                                       S(S(n+b)) = S(Sn+b)
+        s1.trans(s2)?.trans(s3)?.all_intro("b", nat())?
+    };
+    let step = inner.imp_intro(&ihc)?;
+    induct(&motive, base, step)
+}
+
+/// `⊢ ∀a b. a + b = b + a` — commutativity of `+`.
+pub fn add_comm() -> Thm {
+    add_comm_impl().expect("add_comm derivation")
+}
+fn add_comm_impl() -> Result<Thm> {
+    // body[n] ≔ ∀b. n + b = b + n
+    let body_at = |t: &Term| -> Result<Term> {
+        let b = var("b");
+        add(t.clone(), b.clone())
+            .equals(add(b, t.clone()))?
+            .forall("b", nat())
+    };
+    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+    // base: ∀b. 0 + b = b + 0.
+    let base = {
+        let b = var("b");
+        let e1 = add_base().all_elim(b.clone())?; // 0 + b = b
+        let e2 = add_zero().all_elim(b.clone())?.sym()?; // b = b + 0
+        e1.trans(e2)?.all_intro("b", nat())?
+    };
+
+    // step: body[n] ⟹ body[S n].
+    let n = var("n");
+    let ihc = body_at(&n)?;
+    let inner = {
+        let b = var("b");
+        let ih_b = Thm::assume(ihc.clone())?.all_elim(b.clone())?; // n + b = b + n
+        let s1 = add_step().all_elim(n.clone())?.all_elim(b.clone())?; // Sn+b = S(n+b)
+        let s2 = ih_b.cong_arg(nat_succ())?; //                          S(n+b) = S(b+n)
+        let s3 = add_succ_r().all_elim(b.clone())?.all_elim(n.clone())?.sym()?; // S(b+n) = b+Sn
+        s1.trans(s2)?.trans(s3)?.all_intro("b", nat())?
+    };
+    let step = inner.imp_intro(&ihc)?;
+    induct(&motive, base, step)
+}
+
+/// `⊢ ∀a b c. (a + b) + c = a + (b + c)` — associativity of `+`.
+pub fn add_assoc() -> Thm {
+    add_assoc_impl().expect("add_assoc derivation")
+}
+fn add_assoc_impl() -> Result<Thm> {
+    // body[n] ≔ ∀b c. (n + b) + c = n + (b + c)
+    let body_at = |t: &Term| -> Result<Term> {
+        let (b, c) = (var("b"), var("c"));
+        let lhs = add(add(t.clone(), b.clone()), c.clone());
+        let rhs = add(t.clone(), add(b, c));
+        lhs.equals(rhs)?.forall("c", nat())?.forall("b", nat())
+    };
+    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+    // base: ∀b c. (0 + b) + c = 0 + (b + c).
+    let base = {
+        let (b, c) = (var("b"), var("c"));
+        // (0 + b) + c = b + c
+        let lhs = cong_add_l(add_base().all_elim(b.clone())?, c.clone())?;
+        // 0 + (b + c) = b + c
+        let rhs = add_base().all_elim(add(b.clone(), c.clone()))?;
+        lhs.trans(rhs.sym()?)? // (0+b)+c = 0+(b+c)
+            .all_intro("c", nat())?
+            .all_intro("b", nat())?
+    };
+
+    // step: body[n] ⟹ body[S n].
+    let n = var("n");
+    let ihc = body_at(&n)?;
+    let inner = {
+        let (b, c) = (var("b"), var("c"));
+        let ih_bc = Thm::assume(ihc.clone())?
+            .all_elim(b.clone())?
+            .all_elim(c.clone())?; // (n+b)+c = n+(b+c)
+        // (Sn + b) + c = (S(n+b)) + c
+        let s1 = cong_add_l(add_step().all_elim(n.clone())?.all_elim(b.clone())?, c.clone())?;
+        // (S(n+b)) + c = S((n+b)+c)
+        let s2 = add_step().all_elim(add(n.clone(), b.clone()))?.all_elim(c.clone())?;
+        // S((n+b)+c) = S(n+(b+c))
+        let s3 = ih_bc.cong_arg(nat_succ())?;
+        // S(n+(b+c)) = Sn + (b+c)
+        let s4 = add_step()
+            .all_elim(n.clone())?
+            .all_elim(add(b.clone(), c.clone()))?
+            .sym()?;
+        s1.trans(s2)?.trans(s3)?.trans(s4)?
+            .all_intro("c", nat())?
+            .all_intro("b", nat())?
+    };
+    let step = inner.imp_intro(&ihc)?;
+    induct(&motive, base, step)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,6 +460,45 @@ mod tests {
     fn freeness_theorems_are_genuine() {
         assert!(succ_inj().hyps().is_empty(), "succ_inj is proved");
         assert!(zero_ne_succ().hyps().is_empty(), "zero_ne_succ is proved");
+    }
+
+    #[test]
+    fn add_zero_proves_right_unit() {
+        // ⊢ ∀n. n + 0 = n, specialising to 5 + 0 = 5.
+        let thm = add_zero();
+        let five = Term::nat_lit(Nat::from_inner(5u32.into()));
+        let inst = thm.clone().all_elim(five.clone()).unwrap();
+        assert_eq!(inst.concl(), &add(five.clone(), zero()).equals(five).unwrap());
+        // and it rests only on rec_holds, like the recursion equations.
+        let rh = rec_holds().concl().clone();
+        assert!(thm.hyps().iter().all(|h| h == &rh));
+    }
+
+    #[test]
+    fn additive_theory_proves_the_ring_facts() {
+        let lit = |n: u32| Term::nat_lit(Nat::from_inner(n.into()));
+        // add_succ_r: 2 + S 3 = S (2 + 3)
+        let sr = add_succ_r().all_elim(lit(2)).unwrap().all_elim(lit(3)).unwrap();
+        assert_eq!(
+            sr.concl(),
+            &add(lit(2), succ(lit(3))).equals(succ(add(lit(2), lit(3)))).unwrap()
+        );
+        // add_comm: 2 + 3 = 3 + 2
+        let comm = add_comm().all_elim(lit(2)).unwrap().all_elim(lit(3)).unwrap();
+        assert_eq!(comm.concl(), &add(lit(2), lit(3)).equals(add(lit(3), lit(2))).unwrap());
+        // add_assoc: (1 + 2) + 3 = 1 + (2 + 3)
+        let assoc = add_assoc()
+            .all_elim(lit(1)).unwrap()
+            .all_elim(lit(2)).unwrap()
+            .all_elim(lit(3)).unwrap();
+        let l = add(add(lit(1), lit(2)), lit(3));
+        let r = add(lit(1), add(lit(2), lit(3)));
+        assert_eq!(assoc.concl(), &l.equals(r).unwrap());
+        // all rest only on rec_holds.
+        let rh = rec_holds().concl().clone();
+        for t in [add_succ_r(), add_comm(), add_assoc()] {
+            assert!(t.hyps().iter().all(|h| h == &rh), "depends only on rec_holds");
+        }
     }
 
     /// Every derived recursion equation depends on **exactly** the one

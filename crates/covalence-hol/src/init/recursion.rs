@@ -24,7 +24,7 @@
 
 use covalence_core::{Result, Term, Thm, Type, subst};
 
-use crate::init::ext::TermExt;
+use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic::{exists_elim, exists_intro};
 use crate::init::nat::{succ, zero};
 
@@ -267,6 +267,119 @@ pub(crate) fn graph_base_inv(z: &Term, f: &Term) -> Result<Thm> {
         .imp_intro(&gh) //                  ⊢ Graph z f 0 a ⟹ a = z
 }
 
+// ============================================================================
+// Uniqueness, part 2: step inversion via the "Good" instance
+// ============================================================================
+
+/// `λd. Graph z f j d ∧ c = f j d` — the predicate of the existential
+/// inside `wit`.
+fn wit_pred(z: &Term, f: &Term, j: &Term, c: &Term) -> Result<Term> {
+    let d = var("d");
+    let body =
+        graph(z, f, j.clone(), d.clone())?.and(c.clone().equals(app2(f.clone(), j.clone(), d)?)?)?;
+    Ok(Term::abs(nat(), subst::close(&body, "d")))
+}
+
+/// `wit z f k c ≜ ∀j. (k = S j) ⟹ (∃d. Graph z f j d ∧ c = f j d)` —
+/// "if `k` is a successor `S j`, then `c` is `f j` of *some* value the
+/// graph relates to `j`".
+fn wit(z: &Term, f: &Term, k: &Term, c: &Term) -> Result<Term> {
+    let j = var("j");
+    let d = var("d");
+    let exists_d = graph(z, f, j.clone(), d.clone())?
+        .and(c.clone().equals(app2(f.clone(), j.clone(), d)?)?)?
+        .exists("d", nat())?;
+    k.clone()
+        .equals(succ(j.clone()))?
+        .imp(exists_d)?
+        .forall("j", nat())
+}
+
+/// `Good ≜ λk c. Graph z f k c ∧ wit z f k c` — a *closed* relation that
+/// additionally records the predecessor structure, so `Good (S n) a`
+/// exposes `a = f n c` for a graph-related `c`.
+fn good(z: &Term, f: &Term) -> Result<Term> {
+    let k = var("k");
+    let c = var("c");
+    let body = graph(z, f, k.clone(), c.clone())?.and(wit(z, f, &k, &c)?)?;
+    let lam_c = Term::abs(nat(), subst::close(&body, "c"));
+    Ok(Term::abs(nat(), subst::close(&lam_c, "k")))
+}
+
+/// `⊢ wit z f 0 z` — vacuous, since `0` is never `S j`.
+fn wit_zero(z: &Term, f: &Term) -> Result<Thm> {
+    let j = var("j");
+    let zero_eq_sj = zero().equals(succ(j.clone()))?;
+    let exists_d = graph(z, f, j.clone(), var("d"))?
+        .and(z.clone().equals(app2(f.clone(), j.clone(), var("d"))?)?)?
+        .exists("d", nat())?;
+    Thm::zero_ne_succ(j.clone())?
+        .not_elim(Thm::assume(zero_eq_sj.clone())?)? // ⊢ F
+        .false_elim(exists_d)? //                       ⊢ ∃d. …
+        .imp_intro(&zero_eq_sj)? //                     ⊢ (0 = S j) ⟹ ∃d. …
+        .all_intro("j", nat())
+}
+
+/// `⊢ closed(z, f, Good)`.
+fn good_closed(z: &Term, f: &Term) -> Result<Thm> {
+    let g = good(z, f)?;
+
+    // conj1: ⊢ Good 0 z  (β-reduces to Graph 0 z ∧ wit 0 z).
+    let conj1 = {
+        let reduced = graph_base(z, f)?.and_intro(wit_zero(z, f)?)?;
+        prove_redex(app2(g.clone(), zero(), z.clone())?, reduced)?
+    };
+
+    // conj2: ⊢ ∀m b. Good m b ⟹ Good (S m) (f m b).
+    let m = var("m");
+    let b = var("b");
+    let good_mb = app2(g.clone(), m.clone(), b.clone())?;
+    let gm = reduce_concl(Thm::assume(good_mb.clone())?)?.and_elim_l()?; // {GA} ⊢ Graph m b
+
+    // Graph (S m) (f m b)
+    let g_succ = graph_step(z, f, &m, &b)?.imp_elim(gm.clone())?; // {GA} ⊢ Graph (S m) (f m b)
+
+    // wit (S m) (f m b): for free j, given S m = S j, succ_inj gives m = j,
+    // so witness d := b — Graph j b (rewrite Graph m b) and f m b = f j b.
+    let j = var("j");
+    let fmb = app2(f.clone(), m.clone(), b.clone())?;
+    let smsj = succ(m.clone()).equals(succ(j.clone()))?;
+    let mj = Thm::succ_inj(m.clone(), j.clone())?.imp_elim(Thm::assume(smsj.clone())?)?; // {SMSJ} ⊢ m = j
+    let graph_jb = gm.rewrite(&mj)?; // {GA, SMSJ} ⊢ Graph j b
+    let fmb_eq_fjb = fmb.clone().rw_all(&mj)?; // {SMSJ} ⊢ f m b = f j b
+    let conj = graph_jb.and_intro(fmb_eq_fjb)?; // {GA, SMSJ} ⊢ Graph j b ∧ f m b = f j b
+    let pred_d = wit_pred(z, f, &j, &fmb)?;
+    let ex_d = exists_intro(pred_d.clone(), b.clone(), beta_expand(&pred_d, b.clone(), conj)?)?;
+    let wit_succ = ex_d.imp_intro(&smsj)?.all_intro("j", nat())?; // {GA} ⊢ wit (S m) (f m b)
+
+    let conj2 = {
+        let reduced = g_succ.and_intro(wit_succ)?;
+        prove_redex(app2(g.clone(), succ(m.clone()), fmb)?, reduced)?
+    }
+    .imp_intro(&good_mb)?
+    .all_intro("b", nat())?
+    .all_intro("m", nat())?;
+
+    conj1.and_intro(conj2)
+}
+
+/// `⊢ Graph z f (S n) a ⟹ (∃c. Graph z f n c ∧ a = f n c)`, for free
+/// `n`, `a` — the step-inversion lemma.
+pub(crate) fn graph_step_inv(z: &Term, f: &Term) -> Result<Thm> {
+    let n = var("n");
+    let a = var("a");
+    let gh = graph(z, f, succ(n.clone()), a.clone())?; // Graph (S n) a
+    // {GH} ⊢ Good (S n) a, β-reduce, take the wit conjunct, specialise at n.
+    let good_sn_a = Thm::assume(gh.clone())?
+        .all_elim(good(z, f)?)?
+        .imp_elim(good_closed(z, f)?)?;
+    let ex_c = reduce_concl(good_sn_a)? // {GH} ⊢ Graph (S n) a ∧ wit (S n) a
+        .and_elim_r()? //                  {GH} ⊢ ∀j. (S n = S j) ⟹ ∃d. …
+        .all_elim(n.clone())? //           {GH} ⊢ (S n = S n) ⟹ ∃d. Graph n d ∧ a = f n d
+        .imp_elim(Thm::refl(succ(n.clone()))?)?; // {GH} ⊢ ∃d. Graph n d ∧ a = f n d
+    ex_c.imp_intro(&gh)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -321,6 +434,33 @@ mod tests {
         let expected = graph(&z, &f, zero(), a.clone())
             .unwrap()
             .imp(a.equals(z.clone()).unwrap())
+            .unwrap();
+        assert_eq!(thm.concl(), &expected);
+    }
+
+    #[test]
+    fn good_closed_is_axiom_free() {
+        let (z, f) = zf();
+        assert!(good_closed(&z, &f).unwrap().hyps().is_empty());
+    }
+
+    #[test]
+    fn graph_step_inv_exposes_predecessor() {
+        let (z, f) = zf();
+        let thm = graph_step_inv(&z, &f).unwrap();
+        assert!(thm.hyps().is_empty(), "step inversion must be axiom-free");
+
+        let n = var("n");
+        let a = var("a");
+        let d = var("d");
+        let inner = graph(&z, &f, n.clone(), d.clone())
+            .unwrap()
+            .and(a.clone().equals(app2(f.clone(), n.clone(), d).unwrap()).unwrap())
+            .unwrap();
+        let exists_c = inner.exists("d", nat()).unwrap();
+        let expected = graph(&z, &f, succ(n.clone()), a.clone())
+            .unwrap()
+            .imp(exists_c)
             .unwrap();
         assert_eq!(thm.concl(), &expected);
     }

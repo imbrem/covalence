@@ -19,12 +19,28 @@
 //! the reverse map and never reduces — the same safety the `ptr_eq`
 //! dispatch gives the hand-written ops.
 //!
-//! These ops are **declaration-only** (`tm = None`): sound, and
-//! complete *on literals* through the reduction rules in
-//! `builtins.rs`. Open-form definitional bodies (e.g. via the `bits`
-//! carrier) are a follow-up — see `docs/roadmap.md`. The one
-//! exception is list-indexing-by-`uN`/`sN`, which gets a real body
-//! (`list.index` composed with `toNat`).
+//! ## Definitional bodies
+//!
+//! The **conversions** (`toNat`/`toInt`/`fromNat`/`fromInt`/`zext`/`sext`)
+//! stay **declaration-only** (`tm = None`): they are the primitive
+//! reducible interface between `uN`/`sN` and `nat`/`int` (sound, and
+//! complete *on literals* via `builtins.rs`). Every **operation** is then
+//! *defined* over them in [`op_body`] — `add`/`sub`/`mul`/`neg` and
+//! `div`/`rem` as `fromInt(intOp (toInt x) (toInt y))` (signed tags) or
+//! `fromNat(natOp (toNat x) (toNat y))` (unsigned), bitwise / shifts via
+//! the `nat` bit ops, comparisons via `nat.<` / `int.<`. The lone
+//! exception still pending is the **arithmetic right shift** `sN >>`
+//! (needs a floor-division the catalogue does not yet expose — see
+//! `SKELETONS.md`), which remains declaration-only.
+//!
+//! Because every body reduces to a literal on literal arguments, it is
+//! *derivably coupled* to `builtins::reduce_int_op` and must denote the
+//! exact same function — guarded by
+//! `tests/audit_reduce.rs::audit_reduce_matches_body`. See the
+//! [`op_body`] section comment and `kernel-design.md` §9.
+//!
+//! Also defined: list-indexing-by-`uN`/`sN`, a real body (`list.index`
+//! composed with `toNat`).
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -34,7 +50,12 @@ use smol_str::SmolStr;
 use crate::hol;
 use crate::term::{IntTag, Term, Type};
 
+use super::int::{int_add, int_div, int_le, int_lt, int_mod, int_mul, int_neg, int_sub};
 use super::list::{list, list_index};
+use super::nat::{
+    nat_bit_and, nat_bit_or, nat_bit_xor, nat_div, nat_le, nat_lt, nat_mod, nat_shl, nat_shr,
+    nat_sub,
+};
 use super::spec::TermSpec;
 
 // ============================================================================
@@ -199,15 +220,193 @@ fn all_keys() -> Vec<OpKey> {
 }
 
 /// `OpKey → TermSpec`, the canonical cached specs (one `Arc` each).
+///
+/// Built in two phases so a *defined* op's body can reference the primitive
+/// conversion specs by the SAME `Arc` the registry dispatches on, without
+/// re-entering this `LazyLock` through the public accessors:
+///
+/// 1. a declaration-only (`tm = None`) spec for every op;
+/// 2. overwrite each *defined* op (see [`op_body`]) with a let-style spec
+///    whose body is built from the phase-1 conversion specs in the map.
 static FORWARD: LazyLock<HashMap<OpKey, TermSpec>> = LazyLock::new(|| {
-    all_keys()
-        .into_iter()
-        .map(|key| {
-            let spec = TermSpec::new(SmolStr::from(key.label()), Some(key.ty()), None);
-            (key, spec)
+    let keys = all_keys();
+    let mut map: HashMap<OpKey, TermSpec> = keys
+        .iter()
+        .map(|&key| {
+            (
+                key,
+                TermSpec::new(SmolStr::from(key.label()), Some(key.ty()), None),
+            )
         })
-        .collect()
+        .collect();
+    for &key in &keys {
+        if let Some(body) = op_body(key, &map) {
+            map.insert(
+                key,
+                TermSpec::new(SmolStr::from(key.label()), Some(key.ty()), Some(body)),
+            );
+        }
+    }
+    map
 });
+
+// ============================================================================
+// Definitional bodies
+//
+// The fixed-width ops are *defined* by composing the primitive conversions
+// (`toNat`/`toInt`/`fromNat`/`fromInt`, which stay declaration-only — they
+// are the reducible interface to `nat`/`int`) with `nat`/`int` arithmetic.
+//
+// SOUNDNESS: every body reduces to a literal on literal arguments (its
+// sub-ops all reduce), so it is *derivably coupled* to `builtins::
+// reduce_int_op` — each body MUST denote exactly the function the reduction
+// computes, on every input. The coupling is enforced by
+// `tests/audit_reduce.rs::audit_reduce_matches_body`. See `kernel-design.md`
+// §9 for the coupling and the `nat.mod` precedent.
+// ============================================================================
+
+/// The definitional body of `key`, or `None` if the op is still
+/// declaration-only. `map` supplies the phase-1 specs the bodies reference.
+fn op_body(key: OpKey, map: &HashMap<OpKey, TermSpec>) -> Option<Term> {
+    let OpKey::Op(tag, op) = key else {
+        // Conversions / casts (toNat/toInt/fromNat/fromInt/zext/sext) are
+        // the primitive reducible interface; they keep `tm = None`.
+        return None;
+    };
+    let signed = tag.is_signed();
+    Some(match op {
+        // Ring ops are sign-uniform: two's-complement add/sub/mul/neg are
+        // bit-identical for `uN` and `sN`, so wrap the (signed or unsigned,
+        // per `toInt[tag]`) integer result back in with `fromInt[tag]`.
+        IntOp::Add => int_ring_body(tag, int_add(), map),
+        IntOp::Sub => int_ring_body(tag, int_sub(), map),
+        IntOp::Mul => int_ring_body(tag, int_mul(), map),
+        IntOp::Neg => int_unary_body(tag, int_neg(), map),
+
+        // Bitwise ops are sign-uniform: work on the unsigned bit value.
+        IntOp::And => nat_binop_body(tag, nat_bit_and(), map),
+        IntOp::Or => nat_binop_body(tag, nat_bit_or(), map),
+        IntOp::Xor => nat_binop_body(tag, nat_bit_xor(), map),
+        // `~x = (2^w − 1) − x` (the all-ones mask minus the value).
+        IntOp::Not => {
+            let to_nat = conv(map, OpKey::ToNat(tag));
+            let from_nat = conv(map, OpKey::FromNat(tag));
+            let xn = Term::app(to_nat, Term::free("x", tag.ty()));
+            let comp = Term::app(Term::app(nat_sub(), all_ones(tag.width())), xn);
+            hol::pub_abs("x", tag.ty(), Term::app(from_nat, comp))
+        }
+
+        // Comparisons are sign-DEPENDENT: unsigned tags compare `toNat`
+        // values with `nat.<`, signed tags compare `toInt` values with
+        // `int.<`. `gt`/`ge` swap the operands of `lt`/`le`.
+        IntOp::Lt if signed => int_cmp_body(tag, int_lt(), false, map),
+        IntOp::Le if signed => int_cmp_body(tag, int_le(), false, map),
+        IntOp::Gt if signed => int_cmp_body(tag, int_lt(), true, map),
+        IntOp::Ge if signed => int_cmp_body(tag, int_le(), true, map),
+        IntOp::Lt => nat_cmp_body(tag, nat_lt(), false, map),
+        IntOp::Le => nat_cmp_body(tag, nat_le(), false, map),
+        IntOp::Gt => nat_cmp_body(tag, nat_lt(), true, map),
+        IntOp::Ge => nat_cmp_body(tag, nat_le(), true, map),
+
+        // Division / remainder are sign-DEPENDENT (truncating). `x / 0 = 0`
+        // and `x rem 0 = x` (Euclidean) on both sides — see
+        // `builtins::int_binop`.
+        IntOp::Div if signed => int_ring_body(tag, int_div(), map),
+        IntOp::Rem if signed => int_ring_body(tag, int_mod(), map),
+        IntOp::Div => nat_binop_body(tag, nat_div(), map),
+        IntOp::Rem => nat_binop_body(tag, nat_mod(), map),
+
+        // Left shift is sign-uniform; the shift amount is taken mod width
+        // (matching `builtins`). Right shift differs by sign — only the
+        // unsigned (logical) case has a body here; arithmetic `sN >>` needs
+        // a floor-division the catalogue does not yet expose, so it stays
+        // declaration-only (reduces on literals via `builtins`).
+        IntOp::Shl => shift_body(tag, nat_shl(), map),
+        IntOp::Shr if !signed => shift_body(tag, nat_shr(), map),
+        IntOp::Shr => return None,
+    })
+}
+
+/// The all-ones mask `2^width − 1` as a `nat` literal.
+fn all_ones(width: u32) -> Term {
+    use covalence_types::Nat;
+    let two_pow = Nat::from_inner(Nat::one().as_inner() << (width as usize));
+    Term::nat_lit(two_pow.checked_sub(&Nat::one()).expect("2^width ≥ 1"))
+}
+
+/// The conversion spec `key` (must be a phase-1 entry) as a 0-ary term.
+fn conv(map: &HashMap<OpKey, TermSpec>, key: OpKey) -> Term {
+    Term::term_spec(map[&key].clone(), Vec::new())
+}
+
+/// `λx y:tag. fromInt[tag] (op (toInt[tag] x) (toInt[tag] y))` — a binary
+/// op lifted through `toInt`/`fromInt`.
+fn int_ring_body(tag: IntTag, op: Term, map: &HashMap<OpKey, TermSpec>) -> Term {
+    let to_int = conv(map, OpKey::ToInt(tag));
+    let from_int = conv(map, OpKey::FromInt(tag));
+    let xi = Term::app(to_int.clone(), Term::free("x", tag.ty()));
+    let yi = Term::app(to_int, Term::free("y", tag.ty()));
+    let wrapped = Term::app(from_int, Term::app(Term::app(op, xi), yi));
+    hol::pub_abs("x", tag.ty(), hol::pub_abs("y", tag.ty(), wrapped))
+}
+
+/// `λx:tag. fromInt[tag] (op (toInt[tag] x))` — a unary op lifted through
+/// `toInt`/`fromInt`.
+fn int_unary_body(tag: IntTag, op: Term, map: &HashMap<OpKey, TermSpec>) -> Term {
+    let to_int = conv(map, OpKey::ToInt(tag));
+    let from_int = conv(map, OpKey::FromInt(tag));
+    let xi = Term::app(to_int, Term::free("x", tag.ty()));
+    let wrapped = Term::app(from_int, Term::app(op, xi));
+    hol::pub_abs("x", tag.ty(), wrapped)
+}
+
+/// `λx y:tag. fromNat[tag] (op (toNat[tag] x) (toNat[tag] y))` — a binary op
+/// lifted through the UNSIGNED interpretation (`toNat`/`fromNat`). Used for
+/// the bitwise ops and unsigned div/rem, whose result fits in `width` bits.
+fn nat_binop_body(tag: IntTag, op: Term, map: &HashMap<OpKey, TermSpec>) -> Term {
+    let to_nat = conv(map, OpKey::ToNat(tag));
+    let from_nat = conv(map, OpKey::FromNat(tag));
+    let xn = Term::app(to_nat.clone(), Term::free("x", tag.ty()));
+    let yn = Term::app(to_nat, Term::free("y", tag.ty()));
+    let wrapped = Term::app(from_nat, Term::app(Term::app(op, xn), yn));
+    hol::pub_abs("x", tag.ty(), hol::pub_abs("y", tag.ty(), wrapped))
+}
+
+/// `λx y:tag. cmp (toNat x) (toNat y)` (operands swapped if `swap`) — an
+/// unsigned comparison (`bool` result, no wrap).
+fn nat_cmp_body(tag: IntTag, cmp: Term, swap: bool, map: &HashMap<OpKey, TermSpec>) -> Term {
+    cmp_body(tag, conv(map, OpKey::ToNat(tag)), cmp, swap)
+}
+
+/// `λx y:tag. cmp (toInt x) (toInt y)` (operands swapped if `swap`) — a
+/// signed comparison.
+fn int_cmp_body(tag: IntTag, cmp: Term, swap: bool, map: &HashMap<OpKey, TermSpec>) -> Term {
+    cmp_body(tag, conv(map, OpKey::ToInt(tag)), cmp, swap)
+}
+
+/// Shared comparison body: `λx y:tag. cmp (conv x) (conv y)`, optionally
+/// swapping the two operands (so `gt`/`ge` reuse `lt`/`le`).
+fn cmp_body(tag: IntTag, conv: Term, cmp: Term, swap: bool) -> Term {
+    let xc = Term::app(conv.clone(), Term::free("x", tag.ty()));
+    let yc = Term::app(conv, Term::free("y", tag.ty()));
+    let (l, r) = if swap { (yc, xc) } else { (xc, yc) };
+    let body = Term::app(Term::app(cmp, l), r);
+    hol::pub_abs("x", tag.ty(), hol::pub_abs("y", tag.ty(), body))
+}
+
+/// `λx y:tag. fromNat[tag] (shift (toNat x) (toNat y mod width))` — a shift
+/// by `toNat y mod width` (matching `builtins`'s shift-amount masking).
+/// `shift` is `nat.shl` (left) or `nat.shr` (logical right).
+fn shift_body(tag: IntTag, shift: Term, map: &HashMap<OpKey, TermSpec>) -> Term {
+    let to_nat = conv(map, OpKey::ToNat(tag));
+    let from_nat = conv(map, OpKey::FromNat(tag));
+    let xn = Term::app(to_nat.clone(), Term::free("x", tag.ty()));
+    let yn = Term::app(to_nat, Term::free("y", tag.ty()));
+    let width = Term::nat_lit(u64::from(tag.width()));
+    let amount = Term::app(Term::app(nat_mod(), yn), width);
+    let shifted = Term::app(Term::app(shift, xn), amount);
+    hol::pub_abs("x", tag.ty(), hol::pub_abs("y", tag.ty(), Term::app(from_nat, shifted)))
+}
 
 /// `spec.ptr_id() → OpKey`, the reverse map used by reduction
 /// dispatch. Only the canonical `FORWARD` allocations appear here.

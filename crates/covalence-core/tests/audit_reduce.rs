@@ -489,14 +489,15 @@ fn small_int_div_rem_unsigned() {
         app2(intop(IntTag::U8, Rem), Term::u8_lit(200), Term::u8_lit(7)),
         Term::u8_lit(4),
     );
-    // Div / Rem by zero => 0.
+    // Div by zero => 0; Rem by zero => the dividend (Euclidean `x rem 0 =
+    // x`, matching the let-style body — see `audit_reduce_matches_body`).
     assert_reduces(
         app2(intop(IntTag::U8, Div), Term::u8_lit(5), Term::u8_lit(0)),
         Term::u8_lit(0),
     );
     assert_reduces(
         app2(intop(IntTag::U8, Rem), Term::u8_lit(5), Term::u8_lit(0)),
-        Term::u8_lit(0),
+        Term::u8_lit(5),
     );
 }
 
@@ -517,14 +518,14 @@ fn small_int_div_rem_signed() {
         app2(intop(IntTag::S8, Div), Term::s8_lit(7), Term::s8_lit(-2)),
         Term::s8_lit(-3),
     );
-    // Signed div by zero => 0.
+    // Signed div by zero => 0; rem by zero => the dividend.
     assert_reduces(
         app2(intop(IntTag::S8, Div), Term::s8_lit(-5), Term::s8_lit(0)),
         Term::s8_lit(0),
     );
     assert_reduces(
         app2(intop(IntTag::S8, Rem), Term::s8_lit(-5), Term::s8_lit(0)),
-        Term::s8_lit(0),
+        Term::s8_lit(-5),
     );
 }
 
@@ -882,13 +883,33 @@ fn unfold_declaration_only_errs() {
         matches!(err, covalence_core::Error::SpecHasNoBody),
         "expected SpecHasNoBody, got {err:?}"
     );
-    // The fixed-width int ops are also declaration-only.
-    let op = defs::int_op(IntTag::U8, IntOp::Add);
-    let err = Thm::unfold_term_spec(op).expect_err("int op spec must not unfold");
+    // The fixed-width *conversions* (toNat/toInt/fromNat/fromInt) stay
+    // declaration-only — they are the primitive reducible interface.
+    let conv = defs::int_to_nat(IntTag::U8);
+    let err = Thm::unfold_term_spec(conv).expect_err("conversion spec must not unfold");
     assert!(
         matches!(err, covalence_core::Error::SpecHasNoBody),
-        "expected SpecHasNoBody for int op, got {err:?}"
+        "expected SpecHasNoBody for conversion, got {err:?}"
     );
+}
+
+#[test]
+fn defined_fixed_width_ops_unfold_to_their_bodies() {
+    // The ring ops (add/sub/mul/neg) now have let-style bodies — unfold
+    // succeeds and yields `⊢ op = body` with the spec on the LHS.
+    for op in [IntOp::Add, IntOp::Sub, IntOp::Mul, IntOp::Neg] {
+        let t = defs::int_op(IntTag::U8, op);
+        let thm = Thm::unfold_term_spec(t.clone()).expect("defined op unfolds");
+        assert!(thm.hyps().is_empty());
+        let TermKind::App(eq_lhs, _) = thm.concl().kind() else {
+            panic!("unfold concl not an application");
+        };
+        let TermKind::App(eq_head, lhs) = eq_lhs.kind() else {
+            panic!("unfold concl LHS not an application");
+        };
+        assert!(matches!(eq_head.kind(), TermKind::Eq(_)));
+        assert_eq!(lhs, &t, "unfold LHS is the op itself");
+    }
 }
 
 #[test]
@@ -1037,6 +1058,86 @@ fn audit_reduce_matches_body() {
     ] {
         probes.push(app2(defs::int_div(), int(x), int(y)));
         probes.push(app2(defs::int_mod(), int(x), int(y)));
+    }
+    // Fixed-width ring ops (add/sub/mul/neg) — sign-uniform, with overflow
+    // and the neg-of-min edge. Both unsigned (uN) and signed (sN) tags, so
+    // both `toInt` interpretations are exercised.
+    let u8 = |v: u8| Term::u8_lit(v);
+    let s8 = |v: i8| Term::s8_lit(v);
+    for (a, b) in [(200u8, 100u8), (5, 8), (0, 0), (20, 20), (255, 1)] {
+        probes.push(app2(defs::int_op(IntTag::U8, IntOp::Add), u8(a), u8(b)));
+        probes.push(app2(defs::int_op(IntTag::U8, IntOp::Sub), u8(a), u8(b)));
+        probes.push(app2(defs::int_op(IntTag::U8, IntOp::Mul), u8(a), u8(b)));
+    }
+    for v in [0u8, 1, 127, 128, 255] {
+        probes.push(app1(defs::int_op(IntTag::U8, IntOp::Neg), u8(v)));
+    }
+    for (a, b) in [(100i8, 50i8), (-100, 50), (-3, 4), (127, 1), (-128, -1)] {
+        probes.push(app2(defs::int_op(IntTag::S8, IntOp::Add), s8(a), s8(b)));
+        probes.push(app2(defs::int_op(IntTag::S8, IntOp::Sub), s8(a), s8(b)));
+        probes.push(app2(defs::int_op(IntTag::S8, IntOp::Mul), s8(a), s8(b)));
+    }
+    for v in [0i8, 1, -1, 127, -128] {
+        probes.push(app1(defs::int_op(IntTag::S8, IntOp::Neg), s8(v)));
+    }
+    // A wider tag, to catch any width-specific masking error.
+    probes.push(app2(
+        defs::int_op(IntTag::U32, IntOp::Mul),
+        Term::u32_lit(100_000),
+        Term::u32_lit(100_000),
+    ));
+    probes.push(app2(
+        defs::int_op(IntTag::S32, IntOp::Sub),
+        Term::s32_lit(i32::MIN),
+        Term::s32_lit(1),
+    ));
+    // Bitwise / comparison / shift / div / rem. UNSIGNED tag (u8): every
+    // defined binary op (incl. logical `shr`); plus unary `not`.
+    {
+        use IntOp::*;
+        let u8_pairs = [
+            (0xCCu8, 0xAA),
+            (0, 255),
+            (255, 255),
+            (200, 7),
+            (5, 0), // div/rem by zero
+            (0, 5),
+            (1, 4),
+            (1, 8),   // shift == width  (→ amount 0)
+            (1, 100), // shift > width   (→ amount mod width)
+            (5, 5),
+            (200, 100),
+            (100, 200),
+        ];
+        for op in [And, Or, Xor, Div, Rem, Shl, Shr, Lt, Le, Gt, Ge] {
+            for (a, b) in u8_pairs {
+                probes.push(app2(defs::int_op(IntTag::U8, op), u8(a), u8(b)));
+            }
+        }
+        for v in [0u8, 1, 128, 255] {
+            probes.push(app1(defs::int_op(IntTag::U8, Not), u8(v)));
+        }
+        // SIGNED tag (s8): every defined op EXCEPT arithmetic `shr` (still
+        // declaration-only — it has no body, so it is not in this guard).
+        let s8_pairs = [
+            (-1i8, 1i8),
+            (1, -1),
+            (-128, 127),
+            (-7, 2),
+            (7, -2),
+            (-5, 0), // div/rem by zero
+            (-128, -1), // div overflow edge
+            (5, 5),
+            (-50, 50),
+        ];
+        for op in [And, Or, Xor, Div, Rem, Shl, Lt, Le, Gt, Ge] {
+            for (a, b) in s8_pairs {
+                probes.push(app2(defs::int_op(IntTag::S8, op), s8(a), s8(b)));
+            }
+        }
+        for v in [0i8, -1, 127, -128] {
+            probes.push(app1(defs::int_op(IntTag::S8, Not), s8(v)));
+        }
     }
     for t in probes {
         let via_reduce = rhs_of(&Thm::reduce_prim(t.clone()).unwrap());

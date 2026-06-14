@@ -943,6 +943,30 @@ fn spec_ax_rejects_wrong_witness_type() {
 }
 
 #[test]
+fn select_ax_rejects_witness_type_mismatch() {
+    // The witness `x` must inhabit the predicate's domain α.
+    let p = Term::free("p", Type::fun(Type::nat(), Type::bool()));
+    let x = Term::free("x", Type::bool()); // bool, not nat
+    assert!(matches!(
+        Thm::select_ax(p, x),
+        Err(Error::TypeMismatch { .. })
+    ));
+}
+
+#[test]
+fn spec_ax_rejects_declaration_only_and_non_spec() {
+    // A declaration-only spec (`tm = None`, e.g. `cond`) has no predicate.
+    let decl = crate::defs::cond(Type::nat());
+    let w = Term::free("w", decl.type_of().unwrap());
+    assert!(matches!(Thm::spec_ax(decl, w), Err(Error::SpecHasNoBody)));
+    // A non-spec term is rejected before anything else.
+    assert!(matches!(
+        Thm::spec_ax(Term::nat_lit(5u32), Term::nat_lit(0u32)),
+        Err(Error::NotASpec)
+    ));
+}
+
+#[test]
 fn lem_is_axiom_free_disjunction() {
     let p = Term::free("p", Type::bool());
     let thm = Thm::lem(p.clone()).unwrap();

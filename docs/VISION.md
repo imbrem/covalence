@@ -1,10 +1,13 @@
 # Covalence — Vision
 
-> **STATUS: WORKING DRAFT.** Top-level navigation doc capturing the
-> system's organizing ideas. Sits between the absolute summary
-> (sentence + bullets) and the full vision in
-> [`ARCHITECTURE.md`](../ARCHITECTURE.md). Read in ~10 minutes; from
-> here, follow the cross-reference table in §7 to depth.
+> **STATUS: WORKING DRAFT.** Top-level doc capturing the system's
+> organizing ideas — read in ~10 minutes. This is now the canonical
+> vision doc (the older, longer `ARCHITECTURE.md` was retired; recover
+> it from the `backup/pre-hol-cleanup` branch if you need the
+> pre-collapse detail). For the kernel see
+> [`kernel-design.md`](./kernel-design.md), for the type catalogue see
+> [`type-hierarchy.md`](./type-hierarchy.md), for what's next see
+> [`roadmap.md`](./roadmap.md).
 
 ---
 
@@ -61,7 +64,7 @@ among several.
 
 - **Theories.** Each is a HOL-style theory object — a set of
   declarations and axioms — with a content-addressed identity
-  ([`Name256`](./design/proposals/layered-framework/00-glossary.md#name256)).
+  (`Name256`).
   Classical HOL (imported via OpenTheory), Isabelle/HOL, ZFC, HoTT, an
   intuitionistic propositional logic, your specific domain theory —
   all live side-by-side.
@@ -100,10 +103,10 @@ theorem's hypothesis list. If `Con(ZFC)` ever turns out to be wrong,
 the theorems become Thms-with-falsified-hypotheses — still Thms,
 just less useful.
 
-Full treatment: [`modified-hol.md`
-§3.5](./design/proposals/layered-framework/notes/modified-hol.md#35-borrowing-power-via-cont)
-and [`modified-hol.md`
-§4](./design/proposals/layered-framework/notes/modified-hol.md#4-reverse-math-workflow).
+Full treatment: `modified-hol.md`
+§3.5
+and `modified-hol.md`
+§4.
 
 ---
 
@@ -169,8 +172,8 @@ plus arbitrarily clever untrusted machinery plus soundness by
 re-checkability. The certificate-checker is to the SMT solver what
 the kernel's inference rules are to a tactic engine.
 
-Full treatment: [`modified-hol.md`
-§3.7](./design/proposals/layered-framework/notes/modified-hol.md#37-self-extending-via-proven-oracles).
+Full treatment: `modified-hol.md`
+§3.7.
 
 ---
 
@@ -228,8 +231,8 @@ inner/outer factoring of the bottom is for **audit clarity**, not
 modularity — they could be implemented as one layer, but separating
 "pure logic" from "operational machinery for hashes / signatures /
 ZKPs / range proofs" makes the audit story tractable. Full treatment:
-[`modified-hol.md`
-§3](./design/proposals/layered-framework/notes/modified-hol.md#3-the-layered-structure).
+`modified-hol.md`
+§3.
 
 ---
 
@@ -243,54 +246,42 @@ sub-docs.
   kernel consumes another's facts under a PKI assumption. Same as
   trusting any other authority — federation is the special case where
   the authority is another kernel instance. Post-MVP; see
-  [`ARCHITECTURE.md` §10.2](../ARCHITECTURE.md) and the planned
-  [`09-federation.md`](./design/proposals/layered-framework/README.md).
+  `ARCHITECTURE.md` §10.2 and the planned
+  `09-federation.md`.
 - **Mount / namespaces.** The mountable-filesystem-view of theorem
   storage; mount-as-Horn-clause-assertion. Post-MVP; see
-  [`ARCHITECTURE.md` §10](../ARCHITECTURE.md).
+  `ARCHITECTURE.md` §10.
 - **Format plane.** `valid(format, data)` as an oracle relation;
   keyed-BLAKE3 typed identity. Post-MVP; see
-  [`ARCHITECTURE.md` §12](../ARCHITECTURE.md).
+  `ARCHITECTURE.md` §12.
 - **Base-shift functor.** Porting the entire development to a new
   foundation (HOL → ZFC, HOL → HoTT, …) via a single functor. Internal
   re-hosting (the default plan) is post-MVP; external re-hosting is a
   later consilience upgrade. See
-  [`ARCHITECTURE.md` §8](../ARCHITECTURE.md).
+  `ARCHITECTURE.md` §8.
 - **Probability as an internal logic.** `L_prob` for quantifying
   confidence in mirror-agreement and crypto assumptions. Post-MVP;
-  see [`ARCHITECTURE.md` §7](../ARCHITECTURE.md).
+  see `ARCHITECTURE.md` §7.
 - **VCS as a particular theory inside the prover.** The endgame
   reunification — VCS operations defined inside the kernel's logic;
   the trusted Rust VCS proven to match the theory. Long-tail; see
-  [shared-backbone Phase 4](./design/proposals/shared-backbone/00-overview.md#5-the-four-phases).
+  shared-backbone Phase 4.
 
 ---
 
 ## 7. Where to read next
 
-Different docs for different questions.
+The docs were pared to the current design. The surviving set:
 
-| Question | Read | Length |
-|---|---|---|
-| The full vision; planes, mirrors, oracles, base-shift | [`../ARCHITECTURE.md`](../ARCHITECTURE.md) | ~600 lines |
-| Operational invariants for kernel work | [`../AGENTS.md`](../AGENTS.md) | ~270 lines |
-| What "modified HOL" means; the bottom layer in depth | [`design/proposals/layered-framework/notes/modified-hol.md`](./design/proposals/layered-framework/notes/modified-hol.md) | ~750 lines |
-| The kernel layer's design | [`design/proposals/layered-framework/`](./design/proposals/layered-framework/) | proposal set |
-| The path to the vision (substrate + parallel streams + kill list) | [`design/proposals/shared-backbone/00-overview.md`](./design/proposals/shared-backbone/00-overview.md) | ~350 lines |
-| The trajectory of how this vision was extracted | [`design/proposals/shared-backbone/notes/session-2026-06-06.md`](./design/proposals/shared-backbone/notes/session-2026-06-06.md) | ~570 lines |
-| Honest snapshot of what's built today | [`where-we-are.md`](./where-we-are.md) | ~300 lines |
-| Build commands and crate conventions | [`../CLAUDE.md`](../CLAUDE.md) | ~140 lines |
+| Question | Read |
+|---|---|
+| This vision | (you are here) |
+| The kernel TCB (terms, rules, `defs/`) | [`kernel-design.md`](./kernel-design.md) |
+| The type catalogue & equality hierarchy | [`type-hierarchy.md`](./type-hierarchy.md) |
+| What's next (finalize defs, rewire shell) | [`roadmap.md`](./roadmap.md) |
+| Build commands & crate map | [`../CLAUDE.md`](../CLAUDE.md) |
 
-### Reading paths
-
-- **Just want the elevator pitch?** Stop here.
-- **Going to write kernel code?** This doc → [`../AGENTS.md`](../AGENTS.md)
-  → [`modified-hol.md`](./design/proposals/layered-framework/notes/modified-hol.md).
-- **Going to write shells / oracles / VCS code?** This doc →
-  [`shared-backbone/00-overview.md`](./design/proposals/shared-backbone/00-overview.md)
-  → [`where-we-are.md`](./where-we-are.md).
-- **Want the full design philosophy?** This doc →
-  [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
-- **Want to know why a specific decision was made?** Search the
-  session notes in
-  [`design/proposals/shared-backbone/notes/`](./design/proposals/shared-backbone/notes/).
+Older deep-dives (the full `ARCHITECTURE.md`, the `layered-framework`
+and `shared-backbone` proposal sets, the session notes) were retired
+to the `backup/pre-hol-cleanup` branch; recover them from there if you
+need the historical detail.

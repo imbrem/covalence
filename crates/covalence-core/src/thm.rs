@@ -1025,8 +1025,7 @@ impl Thm {
     /// [`Thm::false_elim`]). The classic axiom form
     /// `⊢ ∀P. (P 0 ∧ (∀n. P n ⟹ P (succ n))) ⟹ ∀n. P n` is a trivial
     /// theorem — assume the conjunction, split it, apply this rule,
-    /// discharge, generalise (see
-    /// `covalence-hol::nat_axioms::nat_induction`).
+    /// discharge, generalise.
     pub fn nat_induct(base: Thm, step: Thm) -> Result<Thm> {
         let nat = Type::nat();
         let zero = Term::nat_lit(covalence_types::Nat::zero());

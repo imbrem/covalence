@@ -4,14 +4,12 @@ An experimental LCF-style theorem prover and VCS using WASM components.
 Metatheory is the default mode; the kernel extends itself by proof
 rather than by trust.
 
-**Read first:** [`docs/README.md`](./docs/README.md) for the docs map.
-
-Recommended path:
-[`docs/c4.md`](./docs/c4.md) (repo architecture map) →
-[`docs/where-we-are.md`](./docs/where-we-are.md) (current status) →
+Recommended reading path:
 [`docs/VISION.md`](./docs/VISION.md) (10-minute overview) →
-[`ARCHITECTURE.md`](./ARCHITECTURE.md) (canonical philosophy) →
-[`AGENTS.md`](./AGENTS.md) (implementation invariants).
+[`docs/kernel-design.md`](./docs/kernel-design.md) (the kernel TCB) →
+[`docs/type-hierarchy.md`](./docs/type-hierarchy.md) (type catalogue) →
+[`docs/roadmap.md`](./docs/roadmap.md) (what's next) →
+[`CLAUDE.md`](./CLAUDE.md) (build commands & crate map).
 
 ## Repository Layout
 

@@ -68,7 +68,6 @@ pub fn nat_zero_ne_one() -> Thm {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::nat_axioms;
 
     fn ctx() -> HolLightCtx {
         HolLightCtx::new()
@@ -133,8 +132,6 @@ mod tests {
         // The rule unions base/step hyps, so the `assume(T)`
         // scaffolding propagates: `{T} ⊢ ∀n:nat. p n`.
         assert!(!conclusion.hyps().is_empty());
-        // and the derived axiom form is available
-        let _ = nat_axioms::nat_induction;
     }
 
     #[test]

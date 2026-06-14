@@ -18,7 +18,6 @@ covalence-llm = { path = "../covalence-llm", optional = true, default-features =
 bytes = "1"
 covalence-graph = { path = "../covalence-graph" }
 covalence-hash = { path = "../covalence-hash" }
-covalence-core = { path = "../covalence-core" }
 covalence-sexp = { path = "../covalence-sexp" }
 covalence-shell = { path = "../covalence-shell" }
 covalence-store = { path = "../covalence-store", features = ["memory", "sqlite"] }

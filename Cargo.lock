@@ -1188,7 +1188,6 @@ dependencies = [
  "axum",
  "bytes",
  "bzip2",
- "covalence-core",
  "covalence-git",
  "covalence-graph",
  "covalence-hash",

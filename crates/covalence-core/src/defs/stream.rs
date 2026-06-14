@@ -70,10 +70,8 @@ pub fn stream(alpha: Type) -> Type {
 //     stream_at  ∘ stream_make  = id            (rep ∘ abs = id)
 //     stream_make ∘ stream_at   = id            (abs ∘ rep = id)
 //
-// These equations are postulated downstream until a derivation
-// using `Thm::new_type_definition`'s `abs_rep` / `rep_abs_*`
-// landings replaces them. (Same pattern as `nat_axioms` in
-// `covalence-hol`.)
+// These equations would be derived downstream using
+// `Thm::new_type_definition`'s `abs_rep` / `rep_abs_*` landings.
 // ============================================================================
 
 /// `streamAt : stream 'a → nat → 'a`. Extract the nth element.

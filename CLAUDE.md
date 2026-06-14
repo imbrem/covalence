@@ -50,31 +50,29 @@ COV_API=https://cov.example.com bun run dev:web # remote backend
 
 ## Reference Docs
 
-Design docs at the repo root drive everything above the build system:
+The docs were pared down to the **current design only** (the old
+multi-design docs — `ARCHITECTURE.md`, `AGENTS.md`, the arena/egraph
+prover docs, `docs/design/proposals/*`, the old `MVP_DESIGN.md` /
+`plan.md` — were deleted; recover any of them from the
+`backup/pre-hol-cleanup` branch if needed). The four that remain:
 
+- **[`docs/VISION.md`](./docs/VISION.md)** — the system vision
+  (metatheory-as-default, scoped truths, the mirror principle, stores
+  + WASM oracles).
+- **[`docs/type-hierarchy.md`](./docs/type-hierarchy.md)** — the
+  design we are building: the equality hierarchy and the `defs/` type
+  catalogue (nat/int/rat/real/bytes/list/stream/option/result, → f32/f64).
 - **[`docs/kernel-design.md`](./docs/kernel-design.md)** — canonical
-  reference for `covalence-core` (the kernel TCB). Inference-rule
-  surface, axiom inventory, type/term representation, soundness
-  notes, audit confidence. **Read this first if you're touching the
+  reference for `covalence-core` (the kernel TCB): term/type
+  representation, the inference-rule surface, the two non-computational
+  primitive rules, the `defs/` catalogue. **Read first if touching the
   kernel.**
-- **[`ARCHITECTURE.md`](./ARCHITECTURE.md)** — system-level design
-  and philosophy. The mirror principle, the three planes (logic /
-  execution / content / format), the disjunct trick, the profunctor
-  model, base-shift. Older than `docs/kernel-design.md` — some
-  kernel-specific claims (LCF arenas, Pure/HOL split) reflect the
-  pre-collapse era; the system-level invariants are still
-  authoritative.
-- **[`AGENTS.md`](./AGENTS.md)** — operational distillation:
-  TCB boundary, "looks like a bug but is intended" guarantees,
-  grep-target invariants, suggested build order. The "kernel
-  primitives" list there is from the legacy arena-kernel direction;
-  the current kernel surface is in `docs/kernel-design.md`.
+- **[`docs/roadmap.md`](./docs/roadmap.md)** — what's next: finalize
+  the `defs/` operations, the `covalence-kernel` re-export façade, and
+  wiring `covalence-core` proofs back through the shell.
 
-Subsystem skills (auto-loaded when relevant):
-- **architecture** — Repo layout, dependency graph, key rules, CLI features, REPL commands
-- **wasm-guide** — covalence-wasm features, proposition deciding, WASM memory config
-- **vscode-extension** — VSCode extension transport modes, LSP details
-- **web-server** — Web server architecture, SvelteKit frontend, static embedding
+Subsystem skills (auto-loaded when relevant): **wasm-guide**,
+**vscode-extension**, **web-server**.
 
 ## Pull Request Checklist
 
@@ -106,15 +104,15 @@ The following crates provide the main application functionality:
 
 - **covalence-store** — content-addressed blob store. Provides `ContentStore` trait, `BlobStore`, `TaggedStore`/`TaggedBlobStore`, `ObjectStore`/`KeyedObjectStore`, `GitPrefixStore`, `SharedMemoryStore`, `KvStore`, and `SqliteStore` (behind the `sqlite` feature, depends on `covalence-sqlite`).
 - **covalence-object** — object serialization. Provides `Dir`/`DirBuilder` (directory structures with mode, name, child), `Table`/`TableBuilder` (row-based tables with LEB128 encoding), and git tree format conversion.
-- **covalence-core** — **the TCB** (~3 KLoC, safe Rust). HOL Light kernel: locally-nameless terms (`Term`/`Type`/`HolOp` — no Pure-meta `TermKind::Imp/All/Eq`, no `HolOp::Trueprop`, no `TypeKind::Prop`), HOL Light's 10 primitive inference rules + 8 well-known derived rules (sym, cong_app/abs, imp_intro/elim, all_intro/elim, eta_conv — each with a `Soundness:` docstring pointing at the standard derivation), `weaken`, `define` + `new_type_definition` (conservative-extension primitives), `reduce_prim` + `unfold_term_spec` (accelerated reduction rules — sound by literal denotation, not logical postulates), and a **single non-computational axiom: `Thm::nat_induction`**. Every other arithmetic/logical fact is derivable from it + the rule set + `define`; until those derivations land downstream, consumers postulate them via `Thm::assume(body)` with a self-hyp audit trail. The observer rules `Thm::obs_eq<O: ObsEq>` / `obs_true` / `obs_imp` are sound under a parametric ε-model regardless of user impls. `int := signed2 nat` and `bytes := list u8` are derived TypeSpecs in `defs/`; literals (`TermKind::Int`, `TermKind::Blob`) stay as built-ins for binary-data efficiency. **Canonical reference: [`docs/kernel-design.md`](./docs/kernel-design.md).**
-- **covalence-hol** — non-TCB shell around `covalence-core`. (1) HOL Light builder API (`HolLightCtx`, `HolLightKernel`/`HolLightTerms`/`HolLightTypes` traits). (2) Downstream postulates (`nat_axioms`/`int_axioms`/`stdlib/*`) for facts not yet derived from `nat_induction` — each goes through `Thm::assume(body)` and carries the body as a self-hyp. (3) Content hashing (BLAKE3-keyed) and canonical S-expression syntax (absorbed from the now-deleted `covalence-pure-shell`). The `pure_hol`/`peano`/`bridge` modules are **gated** pending the WASM-based proof rewrite.
-- **covalence-kernel** — *planned for rewrite.* The current implementation (arena + egraph + UF HOL kernel) will be replaced by an orchestration shell wiring `covalence-core` + `covalence-hol` + `covalence-store` + WASM evaluator + tree-store. See `docs/design/proposals/stacked-pure-hol/next-stages.md` for the migration plan.
+- **covalence-core** — **the TCB** (safe Rust). HOL-Light-style kernel with locally-nameless `Term`/`Type`. The only logical primitives are `=` (`TermKind::Eq`) and `ε` (`TermKind::Select`); `T`/`F` are `Bool` literals; every connective (`∧ ∨ ¬ ⟹ ⟺ ∀ ∃`) is an ordinary *defined constant* in `defs/logic.rs`. Rules: HOL Light's 10 primitives + well-known derived rules provided as fast constructors with `Soundness:` docstrings (sym, cong_app/abs, imp_intro/elim, all_intro/elim, eta_conv, **and the connective rules** and_intro/and_elim/or_intro/or_elim/not_intro/not_elim); `define` + `new_type_definition` (conservative extension); `reduce_prim` + `unfold_term_spec` (accelerated reduction — sound by literal denotation). **Two non-computational primitive rules**: `Thm::nat_induct` (induction: base+step ⟹ `∀n. P n`) and `Thm::false_elim` (ex falso). The observer rules `obs_eq`/`obs_true`/`obs_imp` are sound under a parametric ε-model. The `defs/` catalogue holds the type/term definitions (`int := signed2 nat`, `bytes := list u8`, the logic connectives, nat/int arithmetic, …); literals (`TermKind::Int`, `Blob`) stay built-in for binary-data efficiency. **Canonical reference: [`docs/kernel-design.md`](./docs/kernel-design.md).**
+- **covalence-hol** — **the HOL "rewrite": a non-TCB shell over `covalence-core`.** (1) HOL term/type builder API (`HolLightCtx`, the `HolLightKernel`/`HolLightTerms`/`HolLightTypes` traits). (2) `proofs/` — pure proof tactics (`beta_nf`, `unfold_at_*`, rewriting) and the executable derivations that witness the soundness of the kernel's fast connective methods. (3) Content hashing (BLAKE3-keyed) and canonical S-expression syntax. *No postulates* — the old `nat_axioms`/`int_axioms`/`init` (formerly `stdlib`) postulate catalogues and the gated Pure-era `bridge`/`peano`/`pure_hol` modules were deleted (recover from `backup/pre-hol-cleanup`).
+- **covalence-kernel** — *legacy, pending rewire.* The current contents (arena + egraph + UF kernel) are superseded; the target is a thin **re-export façade** = `covalence-hol` + `covalence-store` + … (the whole TCB + content-addressing foundation) that `covalence-shell` sits on top of. See [`docs/roadmap.md`](./docs/roadmap.md). The whole app stack (`covalence-shell`, `repl`, `serve`, `client`, `alethe`, `egglog`, the `cov` CLI) currently rides on this legacy crate and migrates with it.
 - **covalence-repl** — S-expression REPL with kernel integration.
 - **covalence-serve** — HTTP/WebSocket server (axum 0.8) with REST API, REPL WebSocket, and optional static file embedding.
 - **covalence-client** — remote kernel client (sync via ureq, async via hyper).
 - **covalence-lsp** — language server using `lsp-server` 0.7 + `lsp-types` 0.97.
 - **covalence-proto** — service discovery and configuration (Unix sockets, JSON descriptors).
-- **covalence-python** — Python bindings via PyO3 0.28.
+- **covalence-python** — Python bindings via PyO3 0.28 for the content-addressing / store / WASM / SAT / graph surface. (The HOL kernel bindings — the `pure` module exposing `Type`/`Term`/`Thm` — were removed in the rewrite; they'll be reinstated on `covalence-hol`.)
 - **covalence** — CLI binary (`cov`) using clap 4 + color-eyre.
 
 This ensures dependencies are centralized and can be extended with project-specific functionality without touching every consumer.

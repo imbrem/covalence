@@ -15,7 +15,7 @@ The `Val`/`ValType` types in `src/val.rs` are engine-agnostic and are the intend
 
 ## Proposition Deciding
 
-**Status: not currently implemented in any Rust crate.** Earlier kernel iterations included a `decide` function that asked "does this proposition WASM component call `attest()`", but no such Rust API exists in this branch — `grep -rn "fn decide" crates/` returns nothing. The current `covalence-kernel` is a HOL kernel (see `crates/covalence-kernel/src/{arena,prop,thm,...}.rs`).
+**Status: not currently implemented in any Rust crate.** Earlier kernel iterations included a `decide` function that asked "does this proposition WASM component call `attest()`", but no such Rust API exists in this branch — `grep -rn "fn decide" crates/` returns nothing. The kernel (`covalence-core` + `covalence-hol`) is a HOL-Light-style theorem prover; WASM oracles join it via the observer rules, not a built-in `decide`.
 
 References that remain:
 

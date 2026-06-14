@@ -34,7 +34,7 @@ pub use covalence_core::defs::{
     not_spec, or, or_spec,
 };
 
-use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_core::{Error, Result, Term, Thm, Type, TypeKind};
 
 use crate::init::ext::{TermExt, ThmExt};
 
@@ -125,6 +125,93 @@ fn parse_not(t: &Term) -> Option<Term> {
 }
 
 // ============================================================================
+// Existential quantifier — intro / elim
+// ============================================================================
+//
+// `∃` is the defined connective `exists ≡ λP. ∀q. (∀x. P x ⟹ q) ⟹ q`
+// (`defs::logic`). The kernel ships `∀`-intro/elim (`all_intro` /
+// `all_elim`) but no `∃` rules, so we derive them here from that
+// definition — the workhorses for any existence proof (notably the
+// recursion theorem). Both keep the predicate *applied* (`pred x`,
+// un-β-reduced), matching the form [`unfold_at_1`] produces, so callers
+// must state `step` with `pred x` in the same shape.
+//
+// [`unfold_at_1`]: crate::proofs::rewrite::unfold_at_1
+
+/// Parse `exists[α] pred` → `(α, pred)`. `None` unless `t` is the
+/// `exists` connective spec applied to a predicate.
+fn parse_exists(t: &Term) -> Option<(Type, Term)> {
+    let (head, pred) = t.as_app()?;
+    let (spec, args) = head.as_spec()?;
+    if !spec.ptr_eq(&exists_spec()) {
+        return None;
+    }
+    Some((args.iter().next()?.clone(), pred.clone()))
+}
+
+/// **∃-introduction.** From `⊢ pred witness` conclude `⊢ ∃x. pred x`
+/// (i.e. `⊢ exists[α] pred`), where `pred : α → bool` and the witness
+/// is `witness : α`.
+///
+/// Derivation: `∃x. pred x` unfolds to `∀q. (∀x. pred x ⟹ q) ⟹ q`;
+/// fix `q`, assume `∀x. pred x ⟹ q`, specialise at `witness`, MP with
+/// the input, discharge and generalise `q`, then fold the definition.
+pub fn exists_intro(pred: Term, witness: Term, proof: Thm) -> Result<Thm> {
+    let TypeKind::Fun(alpha, cod) = pred.type_of()?.kind().clone() else {
+        return Err(Error::ConnectiveRule(format!(
+            "exists_intro: predicate {pred} is not a function"
+        )));
+    };
+    if !cod.is_bool() {
+        return Err(Error::ConnectiveRule(format!(
+            "exists_intro: predicate {pred} does not return bool"
+        )));
+    }
+    let q = Term::free("q", Type::bool());
+    let xname = "__exi_x";
+    let xv = Term::free(xname, alpha.clone());
+    // H = ∀x. pred x ⟹ q
+    let h = pred
+        .clone()
+        .apply(xv)?
+        .imp(q.clone())?
+        .forall(xname, alpha.clone())?;
+    // {H} ⊢ q, then discharge and ∀-generalise q.
+    let unfolded = Thm::assume(h.clone())?
+        .all_elim(witness)?
+        .imp_elim(proof)?
+        .imp_intro(&h)?
+        .all_intro("q", Type::bool())?;
+    // Fold `∀q. (∀x. pred x ⟹ q) ⟹ q` back into `∃x. pred x`.
+    let unfold = crate::proofs::rewrite::unfold_at_1(exists(alpha), pred);
+    unfold.sym()?.eq_mp(unfolded)
+}
+
+/// **∃-elimination.** From `⊢ ∃x. pred x` and a step
+/// `⊢ ∀x. pred x ⟹ c` (with `c` not depending on `x`), conclude
+/// `⊢ c`.
+///
+/// Derivation: unfold the existential to `∀q. (∀x. pred x ⟹ q) ⟹ q`,
+/// specialise `q := c`, then MP with `step`.
+pub fn exists_elim(exists_thm: Thm, c: Term, step: Thm) -> Result<Thm> {
+    let (head, _pred) = exists_thm.concl().as_app().ok_or_else(|| {
+        Error::ConnectiveRule(format!(
+            "exists_elim: conclusion is not ∃: {}",
+            exists_thm.concl()
+        ))
+    })?;
+    if parse_exists(exists_thm.concl()).is_none() {
+        return Err(Error::ConnectiveRule(format!(
+            "exists_elim: conclusion is not ∃: {}",
+            exists_thm.concl()
+        )));
+    }
+    let pred = exists_thm.concl().as_app().unwrap().1.clone();
+    let unfold = crate::proofs::rewrite::unfold_at_1(head.clone(), pred);
+    unfold.eq_mp(exists_thm)?.all_elim(c)?.imp_elim(step)
+}
+
+// ============================================================================
 // Clause reasoning — resolution and clausification
 // ============================================================================
 //
@@ -156,12 +243,11 @@ fn build_disj(lits: &[Term]) -> Result<Term> {
 }
 
 /// Split a clause into its literals by fully walking the `∨`-spine
-/// (see the module-level ⚠️ note on naive splitting). `F` (the empty
-/// clause) splits to `[]`.
+/// (see the module-level ⚠️ note on naive splitting). `F` is treated as
+/// an ordinary literal here — the *empty* clause is `build_disj(&[])`,
+/// also `F`, so the two coincide structurally; callers that must tell a
+/// unit `(cl false)` from the empty `(cl)` track arity separately.
 fn disjuncts(t: &Term) -> Vec<Term> {
-    if matches!(t.as_bool(), Some(false)) {
-        return Vec::new();
-    }
     match parse_or(t) {
         Some((a, b)) => {
             let mut v = vec![a];
@@ -387,6 +473,48 @@ fn disch_neg(thm: Thm, a: &Term) -> Result<Thm> {
     Thm::lem(a.clone())?.or_elim(branch_a, branch_na)
 }
 
+/// `Γ ⊢ a ⟹ b` → `Γ ⊢ ¬a ∨ b` — material implication as a two-literal
+/// clause. Apply the implication to an assumed `a`, then clausify it away.
+pub fn imp_clause(thm: Thm) -> Result<Thm> {
+    let (a, _) = dest_imp(thm.concl()).ok_or_else(|| {
+        Error::ConnectiveRule(format!("imp_clause: `{}` is not an implication", thm.concl()))
+    })?;
+    let seq = thm.imp_elim(Thm::assume(a.clone())?)?; // Γ, {a} ⊢ b
+    clause_intro(seq, &[a])
+}
+
+/// `Γ ⊢ a = b` → `Γ ⊢ ¬a ∨ b` — the left half of a biconditional as a
+/// clause (Alethe `equiv1`; `=` at `bool` is `⟺`).
+pub fn iff_clause_left(thm: Thm) -> Result<Thm> {
+    let a = thm
+        .concl()
+        .as_eq()
+        .ok_or(Error::NotAnEquation)?
+        .0
+        .clone();
+    let seq = thm.eq_mp(Thm::assume(a.clone())?)?; // Γ, {a} ⊢ b
+    clause_intro(seq, &[a])
+}
+
+/// `Γ ⊢ a = b` → `Γ ⊢ a ∨ ¬b` — the right half of a biconditional as a
+/// clause (Alethe `equiv2`).
+pub fn iff_clause_right(thm: Thm) -> Result<Thm> {
+    let b = thm
+        .concl()
+        .as_eq()
+        .ok_or(Error::NotAnEquation)?
+        .1
+        .clone();
+    let seq = thm.sym()?.eq_mp(Thm::assume(b.clone())?)?; // Γ, {b} ⊢ a
+    clause_intro(seq, &[b])
+}
+
+/// Parse `App(App(⟹, a), b)` → `(a, b)` if `t` is a HOL implication.
+fn dest_imp(t: &Term) -> Option<(Term, Term)> {
+    let (spec, a, b) = parse_binop(t)?;
+    spec.ptr_eq(&imp_spec()).then_some((a, b))
+}
+
 // ============================================================================
 // Double-negation elimination
 // ============================================================================
@@ -436,32 +564,62 @@ pub fn dne(thm: Thm) -> Result<Thm> {
 /// until none fires. Leaves non-`bool` and non-connective structure
 /// untouched (and never descends under a binder). The result equation has
 /// the same hypotheses as the input (none, for a closed `t`).
+///
+/// `simp` does **only** the connective layer — it never evaluates
+/// arithmetic. For closed computation as well, use [`normalize`], which
+/// interleaves [`simp`] with βι-reduction.
 pub fn simp(t: &Term) -> Result<Thm> {
     simp_conv(t)
 }
 
-/// `⊢ p`, if `p` is a **trivial tautology** — i.e. [`simp`] reduces it to
-/// `T`. Errors otherwise (the theorem is left unproven). The propositional
-/// analogue of [`TermExt::prove_true`](crate::init::ext::TermExt::prove_true),
-/// which decides by βι-evaluation rather than connective simplification.
+/// `⊢ t = nf`: normalise `t` by interleaving βι-reduction
+/// ([`reduce`](crate::init::ext::TermExt::reduce) — closed `nat`/`int`
+/// arithmetic, literal `=`) with propositional [`simp`] until neither
+/// fires. The combined normal form decides strictly more than either
+/// alone: it folds `(2 + 2 = 4)` *and* `(p ∨ ¬p)` to `T`.
+pub fn normalize(t: &Term) -> Result<Thm> {
+    let mut acc = Thm::refl(t.clone())?;
+    // Each pass shrinks the term toward a normal form; the cap is a
+    // defensive backstop against a hypothetical reduce/simp oscillation.
+    for _ in 0..1024 {
+        let cur = eq_rhs(&acc);
+        let reduced = cur.reduce()?; // ⊢ cur = cur'  (βι)
+        if eq_rhs(&reduced) != cur {
+            acc = acc.trans(reduced)?;
+            continue;
+        }
+        let simped = simp(&cur)?; // ⊢ cur = cur''  (connectives)
+        if eq_rhs(&simped) != cur {
+            acc = acc.trans(simped)?;
+            continue;
+        }
+        return Ok(acc);
+    }
+    Err(Error::ConnectiveRule("normalize: did not converge".into()))
+}
+
+/// `⊢ p`, if `p` is a **trivial tautology** — i.e. [`normalize`] reduces
+/// it to `T`. This covers both propositional tautologies (`p ∨ ¬p`) and
+/// closed decidable goals (`2 + 2 = 4`). Errors otherwise, leaving the
+/// theorem unproven. (Alethe's `evaluate` rule is exactly this.)
 pub fn tauto(p: &Term) -> Result<Thm> {
-    let eq = simp(p)?; // ⊢ p = p'
-    let rhs = eq.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
-    if matches!(rhs.as_bool(), Some(true)) {
+    let eq = normalize(p)?; // ⊢ p = nf
+    let nf = eq_rhs(&eq);
+    if matches!(nf.as_bool(), Some(true)) {
         eq.eqt_elim() // ⊢ p
     } else {
         Err(Error::ConnectiveRule(format!(
-            "tauto: `{p}` simplifies to `{rhs}`, not `T`"
+            "tauto: `{p}` normalises to `{nf}`, not `T`"
         )))
     }
 }
 
 /// Prove `p` *or* `¬p`, whichever is a trivial tautology (see [`tauto`]).
 ///
-/// Returns `⊢ p` when `p` simplifies to `T`, else `⊢ ¬p` when `¬p` does,
-/// else an error — a one-sided decision procedure for the fragment [`simp`]
-/// normalises. Inspect the returned theorem's conclusion to learn which
-/// way it went.
+/// Returns `⊢ p` when `p` normalises to `T`, else `⊢ ¬p` when `¬p` does,
+/// else an error — a one-sided decision procedure for the fragment
+/// [`normalize`] decides. Inspect the returned theorem's conclusion to
+/// learn which way it went.
 pub fn decide(p: &Term) -> Result<Thm> {
     if let Ok(thm) = tauto(p) {
         return Ok(thm);
@@ -574,6 +732,11 @@ fn collect_atoms(t: &Term, out: &mut Vec<Term>) {
     if !out.contains(t) {
         out.push(t.clone());
     }
+}
+
+/// The right-hand side of an equational theorem.
+fn eq_rhs(thm: &Thm) -> Term {
+    thm.concl().as_eq().expect("equational theorem").1.clone()
 }
 
 /// The normalising conversion behind [`simp`]: congruence-descend, then
@@ -1126,6 +1289,44 @@ mod tests {
     }
 
     #[test]
+    fn imp_and_iff_clausify() {
+        let a = Term::free("a", b());
+        let c = Term::free("c", b());
+        // a ⟹ c  ⊢  ¬a ∨ c
+        let imp = Thm::assume(a.clone().imp(c.clone()).unwrap()).unwrap();
+        let cl = imp_clause(imp).unwrap();
+        assert_eq!(cl.concl(), &a.clone().not().unwrap().or(c.clone()).unwrap());
+        // a = c  ⊢  ¬a ∨ c   (equiv1)
+        let eq = Thm::assume(a.clone().equals(c.clone()).unwrap()).unwrap();
+        let l = iff_clause_left(eq.clone()).unwrap();
+        assert_eq!(l.concl(), &a.clone().not().unwrap().or(c.clone()).unwrap());
+        // a = c  ⊢  a ∨ ¬c   (equiv2 — order is ¬c ∨ a, same literals)
+        let r = iff_clause_right(eq).unwrap();
+        assert_eq!(r.concl(), &c.clone().not().unwrap().or(a.clone()).unwrap());
+    }
+
+    #[test]
+    fn normalize_and_tauto_decide_closed_arithmetic() {
+        // tauto now folds closed arithmetic, not just connectives.
+        let two_plus_two = covalence_core::defs::int_add()
+            .apply(Term::int_lit(2))
+            .unwrap()
+            .apply(Term::int_lit(2))
+            .unwrap();
+        let goal = two_plus_two.equals(Term::int_lit(4)).unwrap(); // (2+2 = 4)
+        assert!(tauto(&goal).is_ok(), "tauto proves a closed integer fact");
+        // The false version: 2 + 2 = 5 → decide proves its negation.
+        let bad = covalence_core::defs::int_add()
+            .apply(Term::int_lit(2))
+            .unwrap()
+            .apply(Term::int_lit(2))
+            .unwrap()
+            .equals(Term::int_lit(5))
+            .unwrap();
+        assert_eq!(decide(&bad).unwrap().concl(), &bad.not().unwrap());
+    }
+
+    #[test]
     fn simp_recurses_under_congruence() {
         // (a ∧ T) ∨ (b ∧ b)  simplifies to  a ∨ b.
         let a = Term::free("a", b());
@@ -1249,5 +1450,59 @@ mod tests {
         let (_head, l) = f.as_app().unwrap();
         assert_eq!(l, &Term::bool_lit(false));
         assert_eq!(r, &Term::bool_lit(true));
+    }
+
+    // ---- existential ----
+
+    /// `λx:nat. P[x]` from a body that mentions `Free(name, nat)`.
+    fn nat_pred(name: &str, body: Term) -> Term {
+        Term::abs(Type::nat(), covalence_core::subst::close(&body, name))
+    }
+
+    fn nat0() -> Term {
+        Term::nat_lit(covalence_types::Nat::zero())
+    }
+
+    /// `⊢ pred witness` for `pred = λx. body`, given `⊢ body[witness]`.
+    fn pred_at(pred: &Term, witness: Term, body_proof: Thm) -> Thm {
+        // body_proof : ⊢ body[witness] ; β backwards gives ⊢ pred witness.
+        let redex = Term::app(pred.clone(), witness);
+        Thm::beta_conv(redex).unwrap().sym().unwrap().eq_mp(body_proof).unwrap()
+    }
+
+    #[test]
+    fn exists_intro_builds_an_existential() {
+        // From ⊢ (0 = 0) get ⊢ ∃x:nat. x = 0.
+        let x = Term::free("x", Type::nat());
+        let pred = nat_pred("x", x.equals(nat0()).unwrap()); // λx. x = 0
+        let proof = pred_at(&pred, nat0(), Thm::refl(nat0()).unwrap()); // ⊢ pred 0
+        let ex = exists_intro(pred.clone(), nat0(), proof).unwrap();
+
+        assert!(ex.hyps().is_empty());
+        let (alpha, got_pred) = parse_exists(ex.concl()).expect("∃ shape");
+        assert_eq!(alpha, Type::nat());
+        assert_eq!(got_pred, pred);
+    }
+
+    #[test]
+    fn exists_elim_discharges_to_a_goal() {
+        // ∃x:nat. x = x  ⊢  T, via step ∀x. (x = x) ⟹ T.
+        let x = Term::free("x", Type::nat());
+        let pred = nat_pred("x", x.clone().equals(x).unwrap()); // λx. x = x
+        let proof = pred_at(&pred, nat0(), Thm::refl(nat0()).unwrap());
+        let ex = exists_intro(pred.clone(), nat0(), proof).unwrap();
+
+        // step : ⊢ ∀x. pred x ⟹ T  (the body must keep `pred x` applied).
+        let xv = Term::free("y", Type::nat());
+        let pred_x = pred.clone().apply(xv).unwrap(); // pred y
+        let step = truth()
+            .imp_intro(&pred_x) // {} ⊢ pred y ⟹ T
+            .unwrap()
+            .all_intro("y", Type::nat())
+            .unwrap();
+
+        let out = exists_elim(ex, Term::bool_lit(true), step).unwrap();
+        assert_eq!(out.concl(), &Term::bool_lit(true));
+        assert!(out.hyps().is_empty());
     }
 }

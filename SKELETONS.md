@@ -18,44 +18,93 @@ it is how unfinished work stays discoverable.
 
 ## Postulates pending proof
 
-- **The four `add`/`mul` Peano axioms** in
-  `crates/covalence-hol/src/init/nat.rs`
-  (`Hol::{add_base, add_step, mul_base, mul_step}`) are **postulated** via
-  `Thm::assume`, not proved. `nat_add`/`nat_mul` unfold to `natRec`, whose
-  recursion equations are not yet available over variables. (Induction and
-  the two freeness axioms `succ_inj` / `zero_ne_succ` are now genuine — backed
-  by `Thm::nat_induct` and the `Thm::succ_inj` / `Thm::zero_ne_succ`
-  freeness primitives.)
+- **`init::nat::rec_holds`** in `crates/covalence-hol/src/init/nat.rs` — the
+  *single* remaining `nat` postulate (`Thm::assume`): `natRec` satisfies its
+  recursion equations,
+  `∀z f. (natRec z f 0 = z) ∧ (∀n. natRec z f (S n) = f n (natRec z f n))`.
 
-  Discharging them — the *soundness of PA in HOL* step — does **not** need a
-  new computation primitive: `natRec` exists by `ε` (choice over its
-  recursion-uniqueness predicate), so once `ε`/choice is exposed the recursion
-  equations follow by induction, and these four with them. When that lands,
-  replace the `Hol::axiom` calls with real derivations; the `Peano` trait/API
-  does not change.
+  Everything else is already derived from it: the four `add`/`mul` recursion
+  equations (`add_base`/`add_step`/`mul_base`/`mul_step`) δ-unfold `nat.add` /
+  `nat.mul` / `iter` down to `natRec` and apply `rec_holds`, so each carries
+  exactly the one `rec_holds` hypothesis. (Induction and the freeness axioms
+  `succ_inj` / `zero_ne_succ` are genuine, via `Thm::nat_induct` /
+  `Thm::succ_inj` / `Thm::zero_ne_succ`.)
+
+  Discharging `rec_holds` — the *soundness of PA in HOL* step — needs **no new
+  computation primitive**: `natRec` exists by `ε` (the recursion theorem
+  `∃r. P_rec r`), so `Thm::spec_ax(natRec, ·)` + choice + induction prove it.
+  The kernel already has every primitive required. The moment `rec_holds`
+  becomes a hypothesis-free proof, all four arithmetic facts become genuine
+  theorems automatically — no other change.
+
+  **In progress** in `crates/covalence-hol/src/init/recursion.rs` (graph
+  construction): the graph predicate and its base/step lemmas are proved, and
+  the **existence** half — `∀n. ∃a. Graph z f n a` — is proved axiom-free
+  (`graph_total`). Remaining: uniqueness (`∀n a b. Graph n a ∧ Graph n b ⟹
+  a = b`, by induction on freeness), assembly (`r ≜ λz f n. ε a. Graph z f n a`,
+  prove `P_rec r`), and wiring into `rec_holds`. The module carries a
+  `dead_code` allow until then.
+
+- **The `int` ordered-ring theory** in
+  `crates/covalence-hol/src/init/int.rs` is **entirely postulated** via the
+  module's `axiom` helper (`Thm::assume`, each carrying its statement as a
+  self-hyp). Seventeen theorems: the commutative-ring axioms (`add_comm`,
+  `add_assoc`, `add_zero`, `add_neg`, `mul_comm`, `mul_assoc`, `mul_one`,
+  `mul_zero`, `distrib`, `sub_def`), the linear order (`lt_irrefl`,
+  `lt_trans`, `lt_trichotomy`, `le_def`), ordered-ring compatibility
+  (`lt_add_mono`, `lt_mul_pos`), and discreteness (`lt_succ`:
+  `a < b ⟺ a + 1 ≤ b`). Since `int := (nat × nat) / ~` (Grothendieck), each is
+  a HOL theorem derivable from the `nat` Peano facts through the quotient;
+  filling the proofs in does not change the public `fn` surface. These are
+  the ingredients the Alethe `la_generic` / `la_mult_*` checker will consume.
+
+  **Blocked on quotient infrastructure, not on `nat`.** The `nat` half is
+  now available — `init::nat` proves `add_zero`/`add_succ_r`/`add_comm`/
+  `add_assoc` by induction (the `induct` helper), resting only on
+  `rec_holds`, and the order/multiplicative `nat` facts will follow the
+  same way. What is missing is quotient-`TypeSpec` reasoning: the
+  class-equality rule `mkInt p = mkInt q ⟺ p ~ q` and operation
+  well-definedness. The kernel's subtype bijection rules
+  (`spec_abs_rep` / `spec_rep_abs_*`) reject quotient specs, so this needs
+  a kernel/`init` quotient API before the `int` postulates can be
+  discharged.
 
 ## Partial subsystems
 
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in
-  `crates/covalence-alethe/src/hol.rs`) checks the QF_UF fragment —
-  `assume`, `resolution` / `th_resolution`, `refl`, `trans`, `symm`,
-  `cong`, `equiv_pos2`, `false`. The following return
-  `BridgeError::NotImplemented` (or `UnknownRule`) and still need wiring:
-  - **`hole`** — cvc5's "untranslated rewrite" escape hatch. Cannot be
-    checked without reconstructing the omitted rewrite; surfaced rather
-    than trusted. Most cvc5 QF_UF proofs that reason about disequality
-    (`¬(x = x)` → `false`) currently hit this.
+  `crates/covalence-alethe/src/hol.rs`) checks the QF_UF core (`assume`,
+  `resolution` / `th_resolution`, `refl`, `trans`, `symm`, `cong`,
+  `equiv_pos2`, `false`), the propositional family (`equiv1`, `equiv2`,
+  `implies`, `and`, `and_intro`, `not_not`, `evaluate`,
+  `equiv_simplify`), the integer term layer (`Int`, literals,
+  `+ - * < <= > >=`), and `hole` / rewrite re-derivation by
+  `reduce`+`simp`. The following return `BridgeError::NotImplemented` (or
+  `UnknownRule`) and still need wiring:
+  - **`hole` beyond closed arithmetic / propositional.** The recompute
+    hook (`hol.rs::hole` → `normalize`) discharges a hole whose two sides
+    share a `reduce`+`simp` normal form — closed `int` arithmetic
+    (`1+2=3`), literal `=`, connective identities (`¬true=false`). A hole
+    needing *variable-level ring normalisation* (`x+1 = 1+x`, distributes
+    `*`) has no shared normal form yet → reported. Needs proved `int`
+    ring identities (`add_comm`/`assoc`/`mul_distrib`) from the Peano/int
+    theory + a linear normaliser. Likewise disequality-reflexivity holes
+    over uninterpreted terms.
+  - **Linear-arithmetic core** — `la_generic`, `la_mult_pos`/`la_mult_neg`,
+    `la_rw_eq`, `la_disequality`, `la_tautology`, `la_totality`. The LIA
+    proper: Farkas certificates over rational coefficients. Blocked on the
+    **ordered-ring theory of `int`** (`le`/`lt` transitivity, add-
+    monotonicity, sign rules) that the `high-hol` Peano build-up is
+    producing. This is the major remaining undertaking.
   - **Subproofs** — `anchor` and any `step` carrying `:discharge`
     (`subproof`, `bind`, `let`, …). The bridge rejects `:discharge`.
   - **The rest of the propositional rule family** — `equiv_pos1`,
-    `and_pos`/`and_neg`, `or_pos`/`or_neg`, `implies_pos`/`implies_neg`,
-    `not_not`, `contraction`, `tautology`, `ite*`, plus the equality
-    lemmas `eq_reflexive`/`eq_transitive`/`eq_symmetric`/`eq_congruent`.
-    Each is either a `clause_intro` of an intuitionistic sequent or a
-    direct equality derivation — the `init/logic.rs` machinery is in
-    place; they just need cases in `hol.rs::step`.
-  - **Theory arithmetic** (`la_*`, `lia_*`, …) — out of scope until the
-    kernel's `int`/`real` arithmetic is wired through term translation.
+    `equiv_neg1`/`equiv_neg2`, `and_pos`/`and_neg`, `or`/`or_pos`/`or_neg`,
+    `implies_pos`/`implies_neg`, `contraction`, `tautology`, `ite*`, plus
+    the equality lemmas `eq_reflexive`/`eq_transitive`/`eq_symmetric`/
+    `eq_congruent`. Each is a `clause_intro` of an intuitionistic sequent,
+    a `simp`/`tauto`, or a direct equality derivation — the
+    `init/logic.rs` machinery is in place; they just need cases in
+    `hol.rs::step` (cf. the `equiv1`/`implies`/`and` cases already there).
   - **Parametric sorts** (`declare-sort` arity > 0) — rejected with
     `ParametricSort`.
 

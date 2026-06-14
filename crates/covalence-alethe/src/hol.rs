@@ -27,11 +27,23 @@
 //!
 //! ## Scope
 //!
-//! The QF_UF fragment — `assume`, `resolution` / `th_resolution`, `refl`,
-//! `trans`, `symm`, `cong`, `eq_*`, `equiv_pos2`, `false` — is wired
-//! through. Rewrite `hole`s, subproofs (`anchor` / `:discharge`), and the
-//! remaining rule families return [`BridgeError::NotImplemented`]; see
-//! `SKELETONS.md`.
+//! Wired through: the QF_UF core (`assume`, `resolution` /
+//! `th_resolution`, `refl`, `trans`, `symm`, `cong`, `equiv_pos2`,
+//! `false`); the propositional family (`equiv1`, `equiv2`, `implies`,
+//! `and`, `and_intro`, `not_not`, `evaluate`, `equiv_simplify`) — thin
+//! wrappers over [`covalence_hol::init::logic`]; and the **integer term
+//! layer** (`Int`, literals, `+ - * < <= > >=` over the `defs` `int`
+//! catalogue).
+//!
+//! cvc5's `hole` ("untranslated rewrite") is **re-derived, not trusted**:
+//! every hole is a unit clause `(cl L)` and [`hole`] proves `⊢ L` in the
+//! kernel by βι-`reduce` (closed `int` arithmetic, literal `=`) + `simp`
+//! (connective identities). That discharges the *closed-arithmetic* and
+//! propositional rewrites; a hole needing variable-level ring
+//! normalisation (`x + 1 = 1 + x`) or the linear-arithmetic core
+//! (`la_generic`, `la_mult_*`) has no shared normal form yet and is
+//! reported `NotImplemented`. Subproofs (`anchor` / `:discharge`) and the
+//! remaining rule families are likewise reported; see `SKELETONS.md`.
 
 use std::collections::HashMap;
 
@@ -81,8 +93,10 @@ impl HolAletheBridge {
     /// Resolve a sort S-expression to a HOL type.
     fn sort_to_type(&self, e: &SExpr) -> R<Type> {
         if let Some(sym) = e.as_symbol() {
-            if sym == "Bool" {
-                return Ok(Type::bool());
+            match sym {
+                "Bool" => return Ok(Type::bool()),
+                "Int" => return Ok(Type::int()),
+                _ => {}
             }
             return self
                 .sorts
@@ -108,6 +122,10 @@ impl HolAletheBridge {
                         .get(sym)
                         .cloned()
                         .ok_or_else(|| BridgeError::Malformed(format!("unknown :named ref {sym}"))),
+                    // An integer literal (cvc5 writes negatives bare, e.g. `-6`).
+                    _ if sym.parse::<i128>().is_ok() => {
+                        Ok(Term::int_lit(sym.parse::<i128>().unwrap()))
+                    }
                     _ => {
                         let ty = self
                             .funs
@@ -144,6 +162,18 @@ impl HolAletheBridge {
                         let r = self.term(&items[2])?;
                         HolLightCtx::new().mk_eq(l, r).map_err(Into::into)
                     }
+                    // Linear integer arithmetic.
+                    "+" => self.fold_int(&items[1..], defs::int_add()),
+                    "*" => self.fold_int(&items[1..], defs::int_mul()),
+                    "-" if items.len() == 2 => {
+                        let x = self.term(&items[1])?;
+                        checked(Term::app(defs::int_neg(), x))
+                    }
+                    "-" => self.fold_int(&items[1..], defs::int_sub()),
+                    "<" => self.int_cmp(items, defs::int_lt(), false),
+                    "<=" => self.int_cmp(items, defs::int_le(), false),
+                    ">" => self.int_cmp(items, defs::int_lt(), true),
+                    ">=" => self.int_cmp(items, defs::int_le(), true),
                     // Uninterpreted application `(f a1 … an)`.
                     _ => {
                         let mut t = self.term(&items[0])?;
@@ -194,6 +224,32 @@ impl HolAletheBridge {
             acc = op(&ctx, acc, t);
         }
         Ok(acc)
+    }
+
+    /// Left-fold an n-ary integer operator (`+`/`-`/`*`) applied as a
+    /// curried HOL constant.
+    fn fold_int(&mut self, args: &[SExpr], op: Term) -> R<Term> {
+        if args.is_empty() {
+            return Err(BridgeError::Malformed("nullary arithmetic op".into()));
+        }
+        let mut acc = self.term(&args[0])?;
+        for a in &args[1..] {
+            let t = self.term(a)?;
+            acc = Term::app(Term::app(op.clone(), acc), t);
+        }
+        checked(acc)
+    }
+
+    /// A binary integer comparison `(op a b)`; `swap` flips the operands
+    /// (so `>`/`>=` reuse `<`/`<=`).
+    fn int_cmp(&mut self, items: &[SExpr], op: Term, swap: bool) -> R<Term> {
+        if items.len() != 3 {
+            return Err(BridgeError::Malformed(format!("comparison arity: {items:?}")));
+        }
+        let a = self.term(&items[1])?;
+        let b = self.term(&items[2])?;
+        let (lo, hi) = if swap { (b, a) } else { (a, b) };
+        checked(Term::app(Term::app(op, lo), hi))
     }
 
     // -----------------------------------------------------------------
@@ -264,7 +320,7 @@ impl AletheBridge for HolAletheBridge {
         clause: &[SExpr],
         rule: &str,
         premises: &[Thm],
-        _args: &[SExpr],
+        args: &[SExpr],
         discharge: &[Thm],
     ) -> R<Thm> {
         if !discharge.is_empty() {
@@ -282,7 +338,17 @@ impl AletheBridge for HolAletheBridge {
             "cong" => cong(&lits, premises)?,
             "equiv_pos2" => equiv_pos2(&lits)?,
             "false" => false_rule(&lits)?,
-            "hole" => return Err(BridgeError::NotImplemented("hole (untranslated)".into())),
+            // Propositional rules — thin wrappers over `init::logic`.
+            "equiv1" => logic::iff_clause_left(one_premise(premises, rule)?)?,
+            "equiv2" => logic::iff_clause_right(one_premise(premises, rule)?)?,
+            "implies" => logic::imp_clause(one_premise(premises, rule)?)?,
+            "and_intro" => and_intro(premises)?,
+            "and" => and_elim(premises, args, rule)?,
+            "not_not" => not_not(&lits)?,
+            // Re-derived rather than trusted: a stated rewrite / evaluation
+            // is replayed in the kernel (closed arithmetic + simplification).
+            "hole" | "equiv_simplify" => rewrite(&lits)?,
+            "evaluate" => evaluate(&lits)?,
             other => return Err(BridgeError::UnknownRule(other.to_string())),
         };
 
@@ -401,6 +467,139 @@ fn false_rule(lits: &[Term]) -> R<Thm> {
         .map_err(Into::into)
 }
 
+/// `and_intro`: build `(cl (and p₁ … pₙ))` from unit-clause premises
+/// `⊢ pᵢ`, left-associating to match the term translation of `(and …)`.
+fn and_intro(premises: &[Thm]) -> R<Thm> {
+    let mut iter = premises.iter().cloned();
+    let mut acc = iter.next().ok_or_else(|| BridgeError::BadStep {
+        rule: "and_intro".into(),
+        detail: "no premises".into(),
+    })?;
+    for next in iter {
+        acc = acc.and_intro(next)?;
+    }
+    Ok(acc)
+}
+
+/// `and`: project the `i`-th conjunct out of a premise `⊢ (and t₀ … tₙ)`,
+/// with `i` supplied in `:args`. The conjunction is left-associated (as
+/// the term translation builds it), so we peel `and_elim_l` down to the
+/// index and read it off.
+fn and_elim(premises: &[Thm], args: &[SExpr], rule: &str) -> R<Thm> {
+    let prem = one_premise(premises, rule)?;
+    let i = args
+        .first()
+        .and_then(|a| a.as_symbol())
+        .and_then(|s| s.parse::<usize>().ok())
+        .ok_or_else(|| BridgeError::BadStep {
+            rule: rule.into(),
+            detail: "missing/invalid conjunct index in :args".into(),
+        })?;
+    let n = count_conjuncts(prem.concl());
+    if i >= n {
+        return Err(BridgeError::BadStep {
+            rule: rule.into(),
+            detail: format!("conjunct index {i} out of range (n = {n})"),
+        });
+    }
+    and_at(prem, n, i)
+}
+
+/// Extract conjunct `i` of `n` from a left-associated conjunction
+/// `(…((t₀ ∧ t₁) ∧ t₂)… ∧ tₙ₋₁)`.
+fn and_at(thm: Thm, n: usize, i: usize) -> R<Thm> {
+    if n == 1 {
+        Ok(thm) // a lone conjunct — `thm` already proves it
+    } else if i + 1 == n {
+        Ok(thm.and_elim_r()?) // the rightmost conjunct
+    } else {
+        and_at(thm.and_elim_l()?, n - 1, i) // peel the right, recurse left
+    }
+}
+
+/// Count the conjuncts of a left-associated conjunction (`≥ 1`).
+fn count_conjuncts(t: &Term) -> usize {
+    match dest_and(t) {
+        Some((l, _)) => count_conjuncts(&l) + 1,
+        None => 1,
+    }
+}
+
+/// `App(App(∧, a), b)` → `(a, b)`, if `t` is a HOL conjunction.
+fn dest_and(t: &Term) -> Option<(Term, Term)> {
+    let (f, b) = t.as_app()?;
+    let (head, a) = f.as_app()?;
+    let (spec, _) = head.as_spec()?;
+    spec.ptr_eq(&defs::and_spec()).then(|| (a.clone(), b.clone()))
+}
+
+/// `not_not`: the tautology clause `(cl (not (not (not p))) p)`, i.e.
+/// `¬¬¬p ∨ p`. Derived by clausifying `dne : {¬¬p} ⊢ p`.
+fn not_not(lits: &[Term]) -> R<Thm> {
+    let [triple_neg, _p] = lits else {
+        return Err(BridgeError::BadStep {
+            rule: "not_not".into(),
+            detail: "expected a 2-literal clause".into(),
+        });
+    };
+    let double_neg = dest_not(triple_neg).ok_or_else(|| BridgeError::BadStep {
+        rule: "not_not".into(),
+        detail: "first literal is not `¬¬¬p`".into(),
+    })?;
+    let seq = logic::dne(Thm::assume(double_neg.clone())?)?; // {¬¬p} ⊢ p
+    Ok(logic::clause_intro(seq, &[double_neg])?)
+}
+
+/// `evaluate`: a unit clause `(cl L)` whose `L` evaluates to `T`.
+fn evaluate(lits: &[Term]) -> R<Thm> {
+    let [lit] = lits else {
+        return Err(BridgeError::BadStep {
+            rule: "evaluate".into(),
+            detail: "expected a unit clause".into(),
+        });
+    };
+    logic::tauto(lit).map_err(|_| BridgeError::NotImplemented(format!("evaluate: `{lit}`")))
+}
+
+/// Re-derive a stated rewrite (`hole` / `equiv_simplify`) in the kernel.
+/// The clause is a unit `(cl L)`; we prove `⊢ L` ourselves — an equation
+/// by normalising both sides to a common form, any other literal by
+/// normalising it to `T`. Soundness-preserving: nothing is trusted.
+fn rewrite(lits: &[Term]) -> R<Thm> {
+    let [lit] = lits else {
+        return Err(BridgeError::NotImplemented("rewrite (non-unit clause)".into()));
+    };
+    if let Some((lhs, rhs)) = lit.as_eq() {
+        return discharge_eq(lhs, rhs);
+    }
+    logic::tauto(lit).map_err(|_| BridgeError::NotImplemented(format!("rewrite: `{lit}`")))
+}
+
+/// Prove `⊢ lhs = rhs` by [`logic::normalize`]-ing both sides to a shared
+/// form (closed arithmetic + connective identities).
+fn discharge_eq(lhs: &Term, rhs: &Term) -> R<Thm> {
+    let nl = logic::normalize(lhs)?; // ⊢ lhs = nl'
+    let nr = logic::normalize(rhs)?; // ⊢ rhs = nr'
+    if eq_rhs(&nl) == eq_rhs(&nr) {
+        Ok(nl.trans(nr.sym()?)?) // ⊢ lhs = rhs
+    } else {
+        Err(BridgeError::NotImplemented(format!(
+            "rewrite: `{lhs}` and `{rhs}` have no shared normal form"
+        )))
+    }
+}
+
+/// The right-hand side of an equational theorem.
+fn eq_rhs(thm: &Thm) -> Term {
+    thm.concl().as_eq().expect("equational theorem").1.clone()
+}
+
+/// Validate a freshly built term, returning it only if well-typed.
+fn checked(t: Term) -> R<Term> {
+    t.type_of()?;
+    Ok(t)
+}
+
 // =====================================================================
 // Helpers
 // =====================================================================
@@ -451,11 +650,28 @@ fn dest_not(t: &Term) -> Option<Term> {
 
 /// Verify the derived theorem proves the clause the proof stated.
 ///
-/// Compares the derived conclusion's top-level disjuncts to the stated
-/// literals as a multiset (resolution may legitimately reorder them).
-/// The empty clause `(cl)` corresponds to `⊢ F` (no disjuncts).
+/// The empty clause `(cl)` is `⊢ F`; any other clause of `n` literals is
+/// a right-associated `n`-way disjunction. We split the conclusion to the
+/// stated arity (so a literal that *is* `F` is kept, not mistaken for the
+/// empty clause) and compare as a multiset — resolution may reorder.
 fn check_matches(id: &str, rule: &str, lits: &[Term], thm: &Thm) -> R<()> {
-    let mut derived: Vec<String> = disjuncts(thm.concl()).iter().map(|t| t.to_string()).collect();
+    if lits.is_empty() {
+        return match thm.concl().as_bool() {
+            Some(false) => Ok(()),
+            _ => Err(BridgeError::Kernel(format!(
+                "step {id} (`{rule}`): expected the empty clause `F`, derived `{}`",
+                thm.concl()
+            ))),
+        };
+    }
+    let derived = split_clause(thm.concl(), lits.len()).ok_or_else(|| {
+        BridgeError::Kernel(format!(
+            "step {id} (`{rule}`): derived `{}` is not a {}-literal clause",
+            thm.concl(),
+            lits.len()
+        ))
+    })?;
+    let mut derived: Vec<String> = derived.iter().map(|t| t.to_string()).collect();
     let mut stated: Vec<String> = lits.iter().map(|t| t.to_string()).collect();
     derived.sort();
     stated.sort();
@@ -467,20 +683,77 @@ fn check_matches(id: &str, rule: &str, lits: &[Term], thm: &Thm) -> R<()> {
     Ok(())
 }
 
-/// Split a clause term into its top-level `∨` literals; `F` → `[]`.
-fn disjuncts(t: &Term) -> Vec<Term> {
-    if matches!(t.as_bool(), Some(false)) {
-        return Vec::new();
+/// Peel exactly `n` literals off a right-associated `∨`-spine; `None` if
+/// the term has fewer than `n` top-level disjuncts.
+fn split_clause(t: &Term, n: usize) -> Option<Vec<Term>> {
+    if n <= 1 {
+        return Some(vec![t.clone()]);
     }
-    // `App(App(∨, a), b)` → a :: disjuncts(b).
-    if let Some((f, b)) = t.as_app()
-        && let Some((head, a)) = f.as_app()
-        && let Some((spec, _)) = head.as_spec()
-        && spec.ptr_eq(&defs::or_spec())
-    {
-        let mut v = vec![a.clone()];
-        v.extend(disjuncts(b));
-        return v;
+    let (f, b) = t.as_app()?;
+    let (head, a) = f.as_app()?;
+    let (spec, _) = head.as_spec()?;
+    if !spec.ptr_eq(&defs::or_spec()) {
+        return None;
     }
-    vec![t.clone()]
+    let mut v = vec![a.clone()];
+    v.extend(split_clause(b, n - 1)?);
+    Some(v)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use covalence_sexp::parse_smt;
+
+    /// Parse a single SMT term and translate it through a bridge whose
+    /// `Int` symbols are pre-declared.
+    fn translate(decls: &[(&str, Type)], src: &str) -> Term {
+        let mut b = HolAletheBridge::new();
+        for (name, ty) in decls {
+            b.funs.insert(name.to_string(), ty.clone());
+        }
+        let exprs = parse_smt(src).expect("parse");
+        b.term(&exprs[0]).expect("translate")
+    }
+
+    #[test]
+    fn translates_integer_literals_and_arithmetic() {
+        let int = Type::int();
+        let x = || Term::free("x", int.clone());
+        let lit = |n: i128| Term::int_lit(n);
+        let app2 = |op: Term, a: Term, c: Term| Term::app(Term::app(op, a), c);
+
+        // negative literal
+        assert_eq!(translate(&[], "-6"), lit(-6));
+        // (+ x 1)
+        assert_eq!(
+            translate(&[("x", int.clone())], "(+ x 1)"),
+            app2(defs::int_add(), x(), lit(1))
+        );
+        // (- x) is unary negation
+        assert_eq!(
+            translate(&[("x", int.clone())], "(- x)"),
+            Term::app(defs::int_neg(), x())
+        );
+        // (* 2 3) — closed, folds left
+        assert_eq!(translate(&[], "(* 2 3)"), app2(defs::int_mul(), lit(2), lit(3)));
+    }
+
+    #[test]
+    fn comparisons_map_gt_to_swapped_lt() {
+        let int = Type::int();
+        let x = || Term::free("x", int.clone());
+        let lit5 = Term::int_lit(5);
+        let app2 = |op: Term, a: Term, c: Term| Term::app(Term::app(op, a), c);
+        // (< x 5)  →  int.lt x 5
+        assert_eq!(
+            translate(&[("x", int.clone())], "(< x 5)"),
+            app2(defs::int_lt(), x(), lit5.clone())
+        );
+        // (> x 5)  →  int.lt 5 x   (operands swapped)
+        assert_eq!(
+            translate(&[("x", int.clone())], "(> x 5)"),
+            app2(defs::int_lt(), lit5, x())
+        );
+    }
 }

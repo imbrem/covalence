@@ -56,10 +56,11 @@
 //! axiom reduces to a `nat` fact lifted through `class_intro` /
 //! `class_elim`.
 
-use covalence_core::defs::{fst, prod, snd};
+use covalence_core::defs::{fst, pair, prod, snd};
 use covalence_core::{Error, Result, Term, Thm, Type, subst};
 
 use crate::init::ext::{TermExt, ThmExt};
+use crate::init::quotient;
 use crate::init::nat;
 
 // Re-export the `defs/int.rs` term catalogue (the operations; the
@@ -262,12 +263,11 @@ fn forall_int(vars: &[&str], body: Term) -> Term {
 /// `repPair a ≔ ε(λp. rep a p)` — a representative pair of the int `a`.
 /// Reconstructs `defs/int.rs`'s private `rep_pair` so the unfolded op
 /// bodies match it structurally (and rewrites can target the components).
+/// Delegates to [`quotient::rep_class`] so the bound variable is chosen
+/// **capture-avoiding** — `a` may itself mention a free `nat × nat`
+/// variable (it does in `mk_int p`), which a fixed bound name would capture.
 fn rep_pair(a: &Term) -> Term {
-    let rep = Term::spec_rep(covalence_core::defs::int_ty_spec(), Vec::<Type>::new());
-    let rep_a = Term::app(rep, a.clone());
-    let p = Term::free("p", nn());
-    let pred = Term::abs(nn(), subst::close(&Term::app(rep_a, p), "p"));
-    Term::app(Term::select_op(nn()), pred)
+    quotient::rep_class(&spec(), &[], &nn(), a)
 }
 
 /// `⊢ int.add a b = abs(classOf (pair Pa Pb))` — `int.add`'s δ-unfolded,
@@ -298,6 +298,296 @@ fn rewrite_seq(t: &Term, eqs: &[Thm]) -> Result<Thm> {
     }
     Ok(acc)
 }
+
+// ============================================================================
+// Quotient lifting bridge — `int` ops as `mk_int` of `nat`-pairs
+// ============================================================================
+//
+// `int := (nat×nat)/~`. The strategy for the ring/order axioms: replace each
+// bound `int` variable `a` by `mk_int(rep_pair a)` ([`recon`], = quotient
+// induction), unfold each op to `mk_int` of a componentwise `nat`-pair build
+// ([`add_class`] / [`mul_class`] / …), and discharge the residual class
+// equation either by `nat`-algebra congruence (when the pairs match on the
+// nose) or by [`quotient::class_intro`] from a `~`-fact (when they don't).
+
+/// The `int` type-spec handle.
+#[allow(dead_code)]
+fn spec() -> covalence_core::defs::TypeSpec {
+    covalence_core::defs::int_ty_spec()
+}
+
+/// `pair a b : nat × nat`.
+#[allow(dead_code)]
+fn pair_nn(a: Term, b: Term) -> Term {
+    Term::app(Term::app(pair(Type::nat(), Type::nat()), a), b)
+}
+
+/// `mkInt p ≔ abs(λx. int_rel p x)` — the quotient class of the pair `p`,
+/// in [`quotient::mk_class`] form (the canonical shape `class_intro` /
+/// `class_elim` / `recon` speak).
+#[allow(dead_code)]
+fn mk_int(p: &Term) -> Term {
+    quotient::mk_class(&spec(), &[], &nn(), &int_rel(), p)
+}
+
+/// `(0, 0) : nat × nat` — a base witness for `recon`'s non-emptiness side.
+#[allow(dead_code)]
+fn pair00() -> Term {
+    pair_nn(nat::zero(), nat::zero())
+}
+
+/// `⊢ int_rel p x = (fst p + snd x = fst x + snd p)` — two β-steps, **no**
+/// `ι` (so `fst p` is left intact even when `p` is a literal pair). Matches
+/// the body shape `defs/int.rs`'s `class_of` writes.
+#[allow(dead_code)]
+fn int_rel_beta(p: &Term, x: &Term) -> Result<Thm> {
+    let ir_p = Term::app(int_rel(), p.clone()); // (λp' q. body) p
+    let s1 = Thm::beta_conv(ir_p.clone())?; // ⊢ int_rel p = λq. body[p]
+    let s2 = s1.cong_fn(x.clone())?; // ⊢ (int_rel p) x = (λq. body[p]) x
+    let mid = s2.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let s3 = Thm::beta_conv(mid)?; // ⊢ (λq. body[p]) x = body[p][x]
+    s2.trans(s3)
+}
+
+/// `⊢ abs(class_of_defs p) = mk_int p` — the **β reconciliation**: the
+/// β-reduced class body `defs/int.rs` produces (the RHS shape of
+/// [`add_defining_eq`] etc.) equals the un-reduced `quotient::mk_class`
+/// form. Built by β-normalising `λx. int_rel p x` under the binder.
+#[allow(dead_code)]
+fn defs_to_mk_int(p: &Term) -> Result<Thm> {
+    let x = Term::free("__cls", nn());
+    let body_eq = int_rel_beta(p, &x)?; // ⊢ int_rel p x = defs_body
+    let lam_eq = body_eq.abs("__cls", nn())?; // ⊢ (λx. int_rel p x) = (λx. defs_body)
+    let abs = Term::spec_abs(spec(), Vec::<Type>::new());
+    // ⊢ mk_int p = abs(class_of_defs p), then flip.
+    lam_eq.cong_arg(abs)?.sym()
+}
+
+/// **Reconstruction.** `⊢ a = mk_int(rep_pair a)` for any `a : int`.
+#[allow(dead_code)]
+fn recon(a: &Term) -> Result<Thm> {
+    quotient::recon(
+        &spec(),
+        &[],
+        &nn(),
+        &int_rel(),
+        &int_rel_refl(),
+        &int_rel_symm(),
+        &int_rel_trans(),
+        &pair00(),
+        a,
+    )
+}
+
+/// `⊢ int_rel p (rep_pair (mk_int p))` — the chosen representative of `[p]`
+/// is `~`-related to `p` ([`quotient::round_trip`]).
+#[allow(dead_code)]
+fn round_trip(p: &Term) -> Result<Thm> {
+    quotient::round_trip(&spec(), &[], &nn(), &int_rel(), &int_rel_refl(), p)
+}
+
+/// `⊢ (a + b) + (c + d) = (a + c) + (b + d)` on `nat` — the "middle swap"
+/// rearrangement (commute the right summand, then [`nat::add_interchange`]).
+#[allow(dead_code)]
+fn mid_swap(a: &Term, b: &Term, c: &Term, d: &Term) -> Result<Thm> {
+    let comm_cd = nat::add_comm().all_elim(c.clone())?.all_elim(d.clone())?; // c+d = d+c
+    let left = comm_cd.cong_arg(Term::app(nat::nat_add(), nat::add(a.clone(), b.clone())))?; // (a+b)+(c+d) = (a+b)+(d+c)
+    let inter = elim4(nat::add_interchange(), a, b, d, c)?; // (a+b)+(d+c) = (a+c)+(b+d)
+    left.trans(inter)
+}
+
+/// Parse an `int_rel a b` application into `(a, b)`.
+#[allow(dead_code)]
+fn dest_rel_app(t: &Term) -> Result<(Term, Term)> {
+    let (rel_a, b) = t.as_app().ok_or(Error::NotAnEquation)?;
+    let (_rel, a) = rel_a.as_app().ok_or(Error::NotAnEquation)?;
+    Ok((a.clone(), b.clone()))
+}
+
+/// `pair (fst x + fst y) (snd x + snd y)` — the Grothendieck sum of two
+/// representative pairs (`int.add`'s componentwise build).
+#[allow(dead_code)]
+fn add_pair(x: &Term, y: &Term) -> Term {
+    pair_nn(
+        nat::add(fst_nn(x), fst_nn(y)),
+        nat::add(snd_nn(x), snd_nn(y)),
+    )
+}
+
+/// `⊢ int_rel (pair a1 a2) (pair b1 b2)` from the β-reduced relation
+/// `g : ⊢ a1 + b2 = b1 + a2`. `fst`/`snd` of a literal pair are stuck under
+/// `reduce` (ε-defined, not primitive), so we bridge `int_rel`'s body via
+/// the proven prod projection theorems instead.
+#[allow(dead_code)]
+fn rel_of_pairs(a1: &Term, a2: &Term, b1: &Term, b2: &Term, g: Thm) -> Result<Thm> {
+    let n = Type::nat();
+    let a = pair_nn(a1.clone(), a2.clone());
+    let b = pair_nn(b1.clone(), b2.clone());
+    let beta = int_rel_beta(&a, &b)?; // ⊢ int_rel a b = (fst a + snd b = fst b + snd a)
+    let br = beta.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let projs = [
+        crate::init::prod::fst_pair(&n, &n, a1, a2)?, // fst a = a1
+        crate::init::prod::snd_pair(&n, &n, b1, b2)?, // snd b = b2
+        crate::init::prod::fst_pair(&n, &n, b1, b2)?, // fst b = b1
+        crate::init::prod::snd_pair(&n, &n, a1, a2)?, // snd a = a2
+    ];
+    let proj_eq = rewrite_seq(&br, &projs)?; // ⊢ br = (a1 + b2 = b1 + a2)
+    beta.trans(proj_eq)?.sym()?.eq_mp(g) // ⊢ int_rel a b
+}
+
+/// **Additive well-definedness.** From `⊢ int_rel x x'` and `⊢ int_rel y y'`
+/// conclude `⊢ int_rel (add_pair x y) (add_pair x' y')` — `int.add` respects
+/// `~`. Pure `nat` algebra: add the two defining equations and re-pair the
+/// four `fst`/`snd` summands ([`mid_swap`]).
+#[allow(dead_code)]
+fn add_pair_cong(h1: Thm, h2: Thm) -> Result<Thm> {
+    let (x, xp) = dest_rel_app(h1.concl())?;
+    let (y, yp) = dest_rel_app(h2.concl())?;
+    let e1 = reduce_rel(h1)?; // fx + sx' = fx' + sx
+    let e2 = reduce_rel(h2)?; // fy + sy' = fy' + sy
+
+    let (fx, sx) = (fst_nn(&x), snd_nn(&x));
+    let (fxp, sxp) = (fst_nn(&xp), snd_nn(&xp));
+    let (fy, sy) = (fst_nn(&y), snd_nn(&y));
+    let (fyp, syp) = (fst_nn(&yp), snd_nn(&yp));
+
+    // (fx+fy)+(sx'+sy') = (fx+sx')+(fy+sy') = (fx'+sx)+(fy'+sy) = (fx'+fy')+(sx+sy).
+    let g = mid_swap(&fx, &fy, &sxp, &syp)?
+        .trans(nat::cong_add(e1, e2)?)?
+        .trans(mid_swap(&fxp, &fyp, &sx, &sy)?.sym()?)?;
+    rel_of_pairs(
+        &nat::add(fx.clone(), fy.clone()),
+        &nat::add(sx, sy),
+        &nat::add(fxp, fyp),
+        &nat::add(sxp, syp),
+        g,
+    )
+}
+
+/// **Additive computation rule.** `⊢ int.add (mk_int p) (mk_int q) =
+/// mk_int (add_pair p q)`. Unfold `int.add` on the two classes, then use the
+/// round-trips `p ~ rep_pair[p]`, `q ~ rep_pair[q]` and additive
+/// well-definedness to re-quotient the chosen representatives back to `p`, `q`.
+#[allow(dead_code)]
+fn add_class(p: &Term, q: &Term) -> Result<Thm> {
+    let (mp, mq) = (mk_int(p), mk_int(q));
+    let dl = add_defining_eq(&mp, &mq)?; // int.add mp mq = abs(class_of_defs(add_pair RPp RPq))
+    let (rpp, rpq) = (rep_pair(&mp), rep_pair(&mq));
+    let big = add_pair(&rpp, &rpq);
+    let dl = dl.trans(defs_to_mk_int(&big)?)?; // = mk_int(add_pair RPp RPq)
+
+    // RPp ~ p, RPq ~ q (symm of the round-trips).
+    let rpp_p = inst2(int_rel_symm(), p, &rpp)?.imp_elim(round_trip(p)?)?;
+    let rpq_q = inst2(int_rel_symm(), q, &rpq)?.imp_elim(round_trip(q)?)?;
+    let cong = add_pair_cong(rpp_p, rpq_q)?; // int_rel (add_pair RPp RPq) (add_pair p q)
+    let lift = quotient::class_intro(&spec(), &[], &nn(), &int_rel_symm(), &int_rel_trans(), cong)?;
+    dl.trans(lift) // = mk_int(add_pair p q)
+}
+
+/// Specialise a `∀x y. …` theorem at two witnesses.
+#[allow(dead_code)]
+fn inst2(thm: Thm, a: &Term, b: &Term) -> Result<Thm> {
+    thm.all_elim(a.clone())?.all_elim(b.clone())
+}
+
+// ============================================================================
+// The `MK(f, s)` component layer — `int` values as explicit `nat`-pairs
+// ============================================================================
+//
+// Working with `mk_int(rep_pair a)` directly is awkward: `rep_pair a` is an
+// `ε`-pair whose `fst`/`snd` are stuck. So we normalise every reconstructed
+// value to `MK(f, s) ≔ mk_int(pair f s)` for explicit `nat` components `f`,
+// `s` (via surjective pairing), and the op rules then combine components on
+// the nose. The ring identities reduce to `nat` algebra on `f`/`s`.
+//
+// NOTE: WIP — this layer and the `add_assoc` proof below are commented out
+// pending a fix to the leaf-vs-unfolded `pair` form mismatch in
+// `add_via_components`. The lower-level machinery (`recon`, `add_class`,
+// `round_trip`) is proved and exercised by `recon_and_add_class_hold_on_int`.
+/*
+/// `MK(f, s) ≔ mk_int(pair f s)`.
+fn mkfs(f: &Term, s: &Term) -> Term {
+    mk_int(&pair_nn(f.clone(), s.clone()))
+}
+
+/// `fst (rep_pair a)` — the first `nat` component of `a`'s chosen
+/// representative.
+fn fcomp(a: &Term) -> Term {
+    fst_nn(&rep_pair(a))
+}
+/// `snd (rep_pair a)` — the second component.
+fn scomp(a: &Term) -> Term {
+    snd_nn(&rep_pair(a))
+}
+
+/// **Reconstruction in component form.** `⊢ a = MK(fst(rep_pair a),
+/// snd(rep_pair a))` — `recon` followed by surjective pairing of the chosen
+/// representative.
+fn recon_mk(a: &Term) -> Result<Thm> {
+    // a = mk_int(rep_pair a); rewrite rep_pair a ↦ pair (fst rp)(snd rp).
+    let rp = rep_pair(a);
+    let surj = crate::init::prod::surjective_pairing(&Type::nat(), &Type::nat(), &rp)?; // pair(fst rp)(snd rp) = rp
+    recon(a)?.rhs_conv(|t| t.rw_all(&surj.sym()?))
+}
+
+/// **Additive computation in component form.** `⊢ int.add (MK fa sa)(MK fb
+/// sb) = MK (fa+fb) (sa+sb)` — [`add_class`] with the `add_pair` of two
+/// literal pairs simplified componentwise (prod projections).
+fn add_mk(fa: &Term, sa: &Term, fb: &Term, sb: &Term) -> Result<Thm> {
+    let (pa, pb) = (pair_nn(fa.clone(), sa.clone()), pair_nn(fb.clone(), sb.clone()));
+    let ac = add_class(&pa, &pb)?; // = mk_int(add_pair pa pb)
+    let n = Type::nat();
+    let projs = [
+        crate::init::prod::fst_pair(&n, &n, fa, sa)?,
+        crate::init::prod::fst_pair(&n, &n, fb, sb)?,
+        crate::init::prod::snd_pair(&n, &n, fa, sa)?,
+        crate::init::prod::snd_pair(&n, &n, fb, sb)?,
+    ];
+    ac.rhs_conv(|t| rewrite_seq(t, &projs)) // = MK (fa+fb)(sa+sb)
+}
+
+/// `⊢ MK f s = MK f' s'` from `⊢ f = f'` and `⊢ s = s'` — congruence of the
+/// component constructor (rewrite the two components inside `mk_int`).
+fn mkfs_cong(f_eq: Thm, s_eq: Thm) -> Result<Thm> {
+    let (f, s) = (
+        f_eq.concl().as_eq().ok_or(Error::NotAnEquation)?.0.clone(),
+        s_eq.concl().as_eq().ok_or(Error::NotAnEquation)?.0.clone(),
+    );
+    rewrite_seq(&mkfs(&f, &s), &[f_eq, s_eq])
+}
+
+/// `⊢ int.add a b = MK (fa+fb)(sa+sb)`, where `MK fa sa = a`, `MK fb sb = b`
+/// are the component reconstructions — congruence of `+` over `ra`/`rb`
+/// chained with [`add_mk`]. Returns the equation and the four components.
+fn add_via_components(ra: &Thm, rb: &Thm) -> Result<Thm> {
+    let (a, ma) = dest_eq(ra)?; // a = MK fa sa
+    let (b, mb) = dest_eq(rb)?;
+    let (fa, sa) = mk_components(&ma)?;
+    let (fb, sb) = mk_components(&mb)?;
+    // int.add a b = int.add (MK fa sa)(MK fb sb)
+    let cong = Thm::refl(int_add())?.cong_app(ra.clone())?.cong_app(rb.clone())?;
+    let _ = (a, b);
+    cong.trans(add_mk(&fa, &sa, &fb, &sb)?)
+}
+
+/// Split an equation theorem `⊢ l = r` into `(l, r)`.
+fn dest_eq(thm: &Thm) -> Result<(Term, Term)> {
+    let (l, r) = thm.concl().as_eq().ok_or(Error::NotAnEquation)?;
+    Ok((l.clone(), r.clone()))
+}
+
+/// From `MK f s = mk_int(pair f s)`, read off `(f, s)`.
+fn mk_components(mk: &Term) -> Result<(Term, Term)> {
+    // mk = abs(λx. int_rel (pair f s) x). Dig out `pair f s`, then f, s.
+    let lam = mk.as_app().ok_or(Error::NotAnEquation)?.1.clone(); // λx. int_rel (pair f s) x
+    let body = lam.as_abs().ok_or(Error::NotAnEquation)?.1.clone(); // int_rel (pair f s) #0
+    let rel_p = body.as_app().ok_or(Error::NotAnEquation)?.0.clone(); // int_rel (pair f s)
+    let p = rel_p.as_app().ok_or(Error::NotAnEquation)?.1.clone(); // pair f s
+    let (pair_f, s) = p.as_app().ok_or(Error::NotAnEquation)?;
+    let f = pair_f.as_app().ok_or(Error::NotAnEquation)?.1.clone();
+    Ok((f, s.clone()))
+}
+*/
 
 // ============================================================================
 // Commutative ring
@@ -336,7 +626,9 @@ fn add_comm_impl() -> Result<Thm> {
         .all_intro("a", int())
 }
 
-/// `⊢ ∀a b c. (a + b) + c = a + (b + c)`.
+/// `⊢ ∀a b c. (a + b) + c = a + (b + c)`. **Postulate** — the quotient-lift
+/// proof via the `MK` component layer (commented out above) is WIP, blocked
+/// on a leaf-vs-unfolded `pair` form mismatch in `add_via_components`.
 pub fn add_assoc() -> Thm {
     let (a, b, c) = (var("a"), var("b"), var("c"));
     let lhs = add(add(a.clone(), b.clone()), c.clone());
@@ -344,6 +636,38 @@ pub fn add_assoc() -> Thm {
     let eq = lhs.equals(rhs).expect("add_assoc");
     axiom(forall_int(&["a", "b", "c"], eq))
 }
+
+/* WIP add_assoc proof — depends on the commented `MK` layer above:
+fn add_assoc_impl() -> Result<Thm> {
+    let (a, b, c) = (var("a"), var("b"), var("c"));
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+
+    // (a+b)+c = MK ((fa+fb)+fc) ((sa+sb)+sc)
+    let ab = add_via_components(&ra, &rb)?;
+    let lhs = add_via_components(&ab, &rc)?;
+    // a+(b+c) = MK (fa+(fb+fc)) (sa+(sb+sc))
+    let bc = add_via_components(&rb, &rc)?;
+    let rhs = add_via_components(&ra, &bc)?;
+
+    let (fa, sa) = (fcomp(&a), scomp(&a));
+    let (fb, sb) = (fcomp(&b), scomp(&b));
+    let (fc, sc) = (fcomp(&c), scomp(&c));
+    let assoc_f = elim3(nat::add_assoc(), &fa, &fb, &fc)?; // (fa+fb)+fc = fa+(fb+fc)
+    let assoc_s = elim3(nat::add_assoc(), &sa, &sb, &sc)?;
+    let bridge = mkfs_cong(assoc_f, assoc_s)?;
+
+    lhs.trans(bridge)?
+        .trans(rhs.sym()?)?
+        .all_intro("c", int())?
+        .all_intro("b", int())?
+        .all_intro("a", int())
+}
+
+/// Specialise a `∀a b c. …` theorem at three witnesses.
+fn elim3(thm: Thm, a: &Term, b: &Term, c: &Term) -> Result<Thm> {
+    thm.all_elim(a.clone())?.all_elim(b.clone())?.all_elim(c.clone())
+}
+*/
 
 /// `⊢ ∀a. a + 0 = a`.
 pub fn add_zero() -> Thm {
@@ -557,6 +881,24 @@ mod tests {
                 "a postulated axiom carries itself as a hypothesis"
             );
         }
+    }
+
+    #[test]
+    fn recon_and_add_class_hold_on_int() {
+        // recon: ⊢ a = mk_int(rep_pair a), genuine.
+        let a = var("a");
+        let rt = recon(&a).expect("recon on int");
+        assert!(rt.hyps().is_empty(), "recon is genuine");
+        assert_eq!(rt.concl().as_eq().unwrap().0, &a);
+
+        // add_class: ⊢ int.add (mk_int u)(mk_int v) = mk_int(add_pair u v).
+        // (Witness pair vars avoid the names internal machinery introduces.)
+        let (u, v) = (Term::free("uu", nn()), Term::free("vv", nn()));
+        let ac = add_class(&u, &v).expect("add_class");
+        assert!(ac.hyps().is_empty(), "add_class is genuine");
+        let (l, r) = ac.concl().as_eq().unwrap();
+        assert_eq!(l, &add(mk_int(&u), mk_int(&v)));
+        assert_eq!(r, &mk_int(&add_pair(&u, &v)));
     }
 
     #[test]

@@ -168,8 +168,8 @@ fn determines(ex: Thm, a: &Term, b: &Term, c: &Term, first: bool) -> Result<Thm>
     let conj_eq = eqn
         .cong_fn(a.clone())?
         .cong_fn(b.clone())?
-        .lhs_conv(|t| Ok(crate::init::eq::beta_nf(t.clone())))? // (a=a ∧ b=b) = …
-        .rhs_conv(|t| Ok(crate::init::eq::beta_nf(t.clone())))?; // … = (a=c ∧ b=w) | (a=w ∧ b=c)
+        .lhs_conv(beta2)? // (a=a ∧ b=b) = …
+        .rhs_conv(beta2)?; // … = (a=c ∧ b=w) | (a=w ∧ b=c)
     let lhs_true = Thm::refl(a.clone())?.and_intro(Thm::refl(b.clone())?)?; // ⊢ a=a ∧ b=b
     let rhs_conj = conj_eq.eq_mp(lhs_true)?; // {pred_w} ⊢ RHS conjunction
     // `first` ⇒ the fixed component `c` is the *first* relation arg, so
@@ -202,18 +202,23 @@ pub fn snd_pair(alpha: &Type, beta: &Type, a: &Term, b: &Term) -> Result<Thm> {
 /// satisfies `P` so the choice does too ([`Thm::select_ax`]), and pin its
 /// value with [`determines`].
 fn projection(alpha: &Type, beta: &Type, a: &Term, b: &Term, first: bool) -> Result<Thm> {
-    let (proj_spec, proj) = if first {
-        (fst_spec(), fst(alpha.clone(), beta.clone()))
+    let proj = if first {
+        fst(alpha.clone(), beta.clone())
     } else {
-        (snd_spec(), snd(alpha.clone(), beta.clone()))
+        snd(alpha.clone(), beta.clone())
     };
     // chosen component for this projection (`a` for fst, `b` for snd).
     let comp = if first { a } else { b };
 
     // proj (pair a b) = ε P, with `rep (pair a b)` rewritten to pairRel a b.
     let rp = rep_pair(alpha, beta, a, b)?; // ⊢ rep (pair a b) = pairRel a b
-    let unfold = Term::app(proj, pair_at(alpha, beta, a, b))
-        .delta_all(proj_spec.symbol())?
+    // Unfold the **head** projection only (`delta` + `cong_fn`), not
+    // `delta_all` — the latter also unfolds any `fst`/`snd` *inside* `a`/`b`
+    // (when a component is itself a projection), desyncing the body from
+    // `rp`'s rewrite pattern.
+    let unfold = proj
+        .delta()? // ⊢ proj = body
+        .cong_fn(pair_at(alpha, beta, a, b))? // ⊢ proj (pair a b) = body (pair a b)
         .rhs_conv(|t| t.reduce())?
         .rhs_conv(|t| t.rw_all(&rp))?; // ⊢ proj (pair a b) = ε P
     let eps = rhs_of(&unfold)?;
@@ -221,7 +226,7 @@ fn projection(alpha: &Type, beta: &Type, a: &Term, b: &Term, first: bool) -> Res
 
     // ⊢ P comp — the chosen component satisfies the predicate (witness the
     // other component by `b`/`a` respectively, then refl).
-    let at_comp = pred_holds(&p, a, b, comp)?;
+    let at_comp = pred_holds(&p, a, b, comp, first)?;
     // ⊢ P (ε P) — the choice satisfies it too.
     let at_eps = Thm::select_ax(p.clone(), comp.clone())?.imp_elim(at_comp)?;
     let ex_eps = Thm::beta_conv(Term::app(p, eps.clone()))?.eq_mp(at_eps)?; // ⊢ ∃w. pairRel a b = pairRel …
@@ -233,38 +238,28 @@ fn projection(alpha: &Type, beta: &Type, a: &Term, b: &Term, first: bool) -> Res
 
 /// `⊢ P comp`, where `P` is the projection predicate `λs. ∃w. pairRel a b
 /// = pairRel …` and `comp` the chosen component — witness the *other*
-/// component, discharge by reflexivity.
-fn pred_holds(p: &Term, a: &Term, b: &Term, comp: &Term) -> Result<Thm> {
+/// component, discharge by reflexivity. `first` says which projection we
+/// are on (so the bound var is the *other* component): `fst` ranges its `s`
+/// over the first component and `∃`-binds the second, so its witness is
+/// `b`; `snd` is the mirror, witness `a`. (Choosing by the `first` flag —
+/// not by component type — is essential when `α = β`, where the two
+/// components are type-indistinguishable.)
+fn pred_holds(p: &Term, a: &Term, b: &Term, comp: &Term, first: bool) -> Result<Thm> {
     // P comp β= ∃w. pairRel a b = pairRel … (with `comp` slotted in).
     let beta = Thm::beta_conv(Term::app(p.clone(), comp.clone()))?;
     let ex = rhs_of(&beta)?;
     let inner_pred = ex.as_app().ok_or(Error::NotAnEquation)?.1.clone();
     // The witness for the bound (other) component: `b` for fst (∃b'), `a`
     // for snd (∃a'). The body then reduces to `pairRel a b = pairRel a b`.
-    let dom = match inner_pred.type_of()?.kind().clone() {
-        covalence_core::TypeKind::Fun(d, _) => d,
-        _ => return Err(Error::NotAnEquation),
-    };
+    let wit = if first { b.clone() } else { a.clone() };
     // The relation `pairRel a b` is the LHS of the (reflexive) inner body.
     let rel = {
-        let body = Thm::beta_conv(Term::app(inner_pred.clone(), other_witness(a, b, &dom)?))?;
+        let body = Thm::beta_conv(Term::app(inner_pred.clone(), wit.clone()))?;
         rhs_of(&body)?.as_eq().ok_or(Error::NotAnEquation)?.0.clone()
     };
-    let wit = other_witness(a, b, &dom)?;
     let at_wit = beta_expand(&inner_pred, wit.clone(), Thm::refl(rel)?)?; // ⊢ inner_pred wit
     let inner_ex = exists_intro(inner_pred, wit, at_wit)?; // ⊢ ∃w. …
     beta.sym()?.eq_mp(inner_ex) // ⊢ P comp
-}
-
-/// The witness for the existentially-bound component: `b` when the bound
-/// var has `b`'s type, else `a`. (`pred_holds` needs the *other*
-/// component than the one being projected.)
-fn other_witness(a: &Term, b: &Term, dom: &Type) -> Result<Term> {
-    if b.type_of()? == *dom {
-        Ok(b.clone())
-    } else {
-        Ok(a.clone())
-    }
 }
 
 // ============================================================================
@@ -365,7 +360,7 @@ fn proj_value(
     let eps = rhs_of(&unfold)?;
     let pp = eps.as_app().ok_or(Error::NotAnEquation)?.1.clone();
 
-    let at_comp = pred_holds(&pp, a0, b0, comp)?;
+    let at_comp = pred_holds(&pp, a0, b0, comp, first)?;
     let at_eps = Thm::select_ax(pp.clone(), comp.clone())?.imp_elim(at_comp)?;
     let ex_eps = Thm::beta_conv(Term::app(pp, eps.clone()))?.eq_mp(at_eps)?;
     let comp_eq_eps = determines(ex_eps, a0, b0, &eps, first)?;
@@ -449,6 +444,21 @@ pub fn pair_inj(alpha: &Type, beta: &Type, a: &Term, b: &Term, c: &Term, d: &Ter
 /// The right-hand side of an equational theorem's conclusion.
 fn rhs_of(thm: &Thm) -> Result<Term> {
     Ok(thm.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone())
+}
+
+/// `⊢ ((λx.λy. body) p) q = body[p][q]` — reduce the **outer two** β-redexes
+/// of a binary-relation application, leaving `p`, `q`, and `body`'s
+/// sub-structure untouched. Unlike a full normaliser ([`beta_nf`]), this does
+/// not descend into `p`/`q`, so a compound component carrying un-reduced
+/// redexes (e.g. `mk_int`'s `λx. int_rel … x`) still matches `refl`.
+///
+/// [`beta_nf`]: crate::init::eq::beta_nf
+fn beta2(t: &Term) -> Result<Thm> {
+    let (fp, q) = t.as_app().ok_or(Error::NotAnEquation)?; // (λx.λy. body) p , q
+    let s1 = Thm::beta_conv(fp.clone())?; // (λx.λy. body) p = λy. body[p]
+    let s2 = s1.cong_fn(q.clone())?; // (…) p q = (λy. body[p]) q
+    let mid = rhs_of(&s2)?;
+    s2.trans(Thm::beta_conv(mid)?) // = body[p][q]
 }
 
 /// `⊢ f arg` from `⊢ body`, where `body` is `f arg` β-reduced.

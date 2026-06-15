@@ -23,10 +23,10 @@
 //! - [`set`] — the `TypeSpec`-backed set membership / extensionality API.
 //!
 //! plus the per-theory theorem catalogues — [`cond`] (the boolean
-//! conditional's reduction clauses), [`nat`], [`int`], [`coprod`],
-//! [`option`], [`prod`] (the pair projections, surjective pairing, and
-//! injectivity), [`list`] (the `nil`-side element computations),
-//! [`stream`], [`recursion`], [`rel`], and [`set`].
+//! conditional's reduction clauses), [`nat`], [`int`], [`rat`], [`real`],
+//! [`coprod`], [`option`], [`prod`] (the pair projections, surjective
+//! pairing, and injectivity), [`list`] (the `nil`-side element
+//! computations), [`stream`], [`recursion`], [`rel`], and [`set`].
 //!
 //! Efficiency is explicitly *not* a goal: `init` runs once at startup.
 //! The point is for the rest of `covalence-hol` to depend on this
@@ -87,6 +87,8 @@ pub mod nat;
 pub mod option;
 pub mod prod;
 pub mod quotient;
+pub mod rat;
+pub mod real;
 pub mod recursion;
 pub mod rel;
 pub mod set;

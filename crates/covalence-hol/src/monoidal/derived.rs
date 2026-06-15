@@ -12,9 +12,9 @@
 //! inverse) — show that the symmetric-monoidal coherence facts follow
 //! from the β/η laws plus the category laws alone.
 
-use crate::monoidal::Monoidal;
+use crate::monoidal::{Category, Monoidal};
 
-type P<M> = Result<<M as Monoidal>::Proof, <M as Monoidal>::Error>;
+type P<M> = Result<<M as Category>::Proof, <M as Category>::Error>;
 
 /// **Extensionality / uniqueness for the copairing.** Given `lhs`, `rhs :
 /// a ⊕ b → c` that agree after pre-composition with each injection —

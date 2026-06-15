@@ -111,6 +111,53 @@ it is how unfinished work stays discoverable.
     `le`/`lt` order theory is now developed too — reflexivity, irreflexivity,
     successor cancellation, the zero facts, totality, antisymmetry, the
     `<`/`≤` bridge, and **transitivity** (`le_trans`).
+- **The `rat` quotient + ordered-field theory** in
+  `crates/covalence-hol/src/init/rat.rs`. `rat := (int × int.pos) / ~`
+  (cross-multiplication). Proved outright: `rat_rel_refl`, `rat_rel_symm`
+  (pure `int`-equation `refl`/`sym`); `of_nat_via_int` (the ℕ↪ℚ
+  embedding factors through ℤ↪ℚ, by β); and `add_comm` / `mul_comm` —
+  proved **on the nose**, exactly as `init::int`'s are: `ratAdd`/`ratMul`
+  are componentwise on representatives, so the two representative pairs are
+  provably equal (numerator + denominator each by the proved `int`
+  commutativity facts) and equal representatives lift to equal classes by
+  congruence under `mkRat`; no quotient relation and no `int` cancellation
+  are involved. **Postulated** via the module's `axiom` helper (each
+  carrying its statement as a self-hyp):
+  - `rat_rel_trans` — transitivity of the cross-multiplication relation.
+    Needs `int` *multiplicative cancellation by a positive* (cancel the
+    common positive denominator), an `int` fact not yet discharged. Once
+    that lands, this becomes the int-analogue of `int_rel_trans`.
+  - The remaining ordered-field axioms over `rat_zero`/`rat_one`/`rat_add`/
+    `rat_neg`/`rat_mul`/`rat_lt` (commutative-ring `add_assoc`/`add_zero`/
+    `add_neg`/`mul_assoc`/`mul_one`/`mul_zero`/`distrib`, multiplicative
+    inverse `mul_inv`, the linear order `lt_*`/`le_def`, and the base
+    strictness fact `zero_lt_one` — `ratLt` picks ε-representatives, so
+    `0 < 1` is not reducible). Each is a HOL theorem derivable from the
+    `int` ordered-ring theory through the quotient; filling them in does
+    not change the public `fn` surface. They depend transitively on the
+    `int` postulates above. (The `≤` toolkit
+    `le_refl`/`lt_imp_le`/`le_trans`/`not_one_le_zero` is **not**
+    postulated — it is *derived* from `le_def` + the strict-order facts.)
+  - The two **mediant inequalities** `mediant_gt` / `mediant_lt` — the
+    only postulated leaves of `dense` (which is itself *derived* from
+    them via the mediant `(a+c)/(b+d)`, no division needed). Each unfolds
+    to an `int` order fact (`a·d < c·b ⟹ a·(b+d) < (a+c)·b`, etc.)
+    lifted through the quotient — blocked on the same `int` order theory.
+
+- **The `real` Dedekind-cut theory** in
+  `crates/covalence-hol/src/init/real.rs`. `real := close rat ratLe`
+  (upper cuts). **Proved**: `is_cut` (every principal up-set `ratLe q` is a
+  genuine cut, from the `rat` `≤` toolkit) and `zero_ne_one` (`⊢ ¬(0 = 1)`,
+  via distinct principal cuts transported through the subtype `rep`/`abs`).
+  Both are genuine *modulo* the `rat` order postulates they consume.
+  **Postulated** via the module's `axiom` helper (self-flagged):
+  - `sup_is_ub` / `sup_is_least` — the two least-upper-bound properties of
+    the supremum cut `real_sup A` (the intersection of the members'
+    cut-sets). Each unfolds to a set/order fact about the cuts, blocked on
+    the same `rat`/order theory. `complete` (the least-upper-bound property,
+    "the reals are complete") is itself **derived** from these two, with
+    `real_sup A` as the witness — the direct analogue of how `rat::dense`
+    is derived from its mediant postulates.
 
 ## Partial subsystems
 

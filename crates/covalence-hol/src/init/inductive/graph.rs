@@ -87,10 +87,18 @@ pub(super) fn ctor_instance(
         }
     }
     let head = apply_all(ctor.ctor.clone(), &args)?;
-    let step_args: Vec<Term> =
-        args.iter().cloned().chain(rec_pairs.iter().map(|(_, b)| b.clone())).collect();
+    let step_args: Vec<Term> = args
+        .iter()
+        .cloned()
+        .chain(rec_pairs.iter().map(|(_, b)| b.clone()))
+        .collect();
     let value = apply_all(step.clone(), &step_args)?;
-    Ok(CtorInstance { args, head, value, rec_pairs })
+    Ok(CtorInstance {
+        args,
+        head,
+        value,
+        rec_pairs,
+    })
 }
 
 /// The closure clause for one constructor:

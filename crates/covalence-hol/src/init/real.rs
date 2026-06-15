@@ -316,7 +316,9 @@ fn of_rat_mono_impl() -> Result<Thm> {
     let q = Term::free("q", ratt());
     let cutrb_q = Term::app(cut_of(rb.clone()), q.clone());
     // {cutOf(rb) q} ⊢ ratLe b q  (rewrite the cut-set to the up-set, at q).
-    let lbq = cb.cong_fn(q.clone())?.eq_mp(Thm::assume(cutrb_q.clone())?)?;
+    let lbq = cb
+        .cong_fn(q.clone())?
+        .eq_mp(Thm::assume(cutrb_q.clone())?)?;
     // {ratLe a b, cutOf(rb) q} ⊢ ratLe a q.
     let laq = rat::le_trans()
         .all_elim(a.clone())?
@@ -675,7 +677,10 @@ mod tests {
             Term::free("t", real()),
         );
         // refl specialises to `r ≤ r`.
-        assert_eq!(le_refl().all_elim(r.clone()).unwrap().concl(), &rle(r.clone(), r.clone()));
+        assert_eq!(
+            le_refl().all_elim(r.clone()).unwrap().concl(),
+            &rle(r.clone(), r.clone())
+        );
         // trans specialises to `r ≤ s ⟹ s ≤ t ⟹ r ≤ t`.
         let tr = le_trans()
             .all_elim(r.clone())
@@ -685,13 +690,25 @@ mod tests {
             .all_elim(t.clone())
             .unwrap();
         let expected_tr = rle(r.clone(), s.clone())
-            .imp(rle(s.clone(), t.clone()).imp(rle(r.clone(), t.clone())).unwrap())
+            .imp(
+                rle(s.clone(), t.clone())
+                    .imp(rle(r.clone(), t.clone()))
+                    .unwrap(),
+            )
             .unwrap();
         assert_eq!(tr.concl(), &expected_tr);
         // antisym specialises to `r ≤ s ⟹ s ≤ r ⟹ r = s`.
-        let anti = le_antisym().all_elim(r.clone()).unwrap().all_elim(s.clone()).unwrap();
+        let anti = le_antisym()
+            .all_elim(r.clone())
+            .unwrap()
+            .all_elim(s.clone())
+            .unwrap();
         let expected_anti = rle(r.clone(), s.clone())
-            .imp(rle(s.clone(), r.clone()).imp(r.clone().equals(s.clone()).unwrap()).unwrap())
+            .imp(
+                rle(s.clone(), r.clone())
+                    .imp(r.clone().equals(s.clone()).unwrap())
+                    .unwrap(),
+            )
             .unwrap();
         assert_eq!(anti.concl(), &expected_anti);
     }
@@ -701,7 +718,12 @@ mod tests {
         let thm = of_rat_mono();
         // Shape: ∀a b. ratLe a b ⟹ of_rat a ≤ of_rat b.
         let (a, b) = (Term::free("a", ratt()), Term::free("b", ratt()));
-        let inst = thm.clone().all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
+        let inst = thm
+            .clone()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap();
         let oa = Term::app(of_rat(), a.clone());
         let ob = Term::app(of_rat(), b.clone());
         let expected = rat_le_app(&a, &b).imp(rle(oa, ob)).unwrap();

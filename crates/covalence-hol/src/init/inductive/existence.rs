@@ -205,8 +205,11 @@ fn total_case(
         acc = exists_elim(ih_exists, goal.clone(), step)?;
     }
 
-    let ih_terms: Vec<Term> =
-        inst.rec_pairs.iter().map(|(sub, _)| Term::app(motive.clone(), sub.clone())).collect();
+    let ih_terms: Vec<Term> = inst
+        .rec_pairs
+        .iter()
+        .map(|(sub, _)| Term::app(motive.clone(), sub.clone()))
+        .collect();
     discharge_conj(acc, &ih_terms)
 }
 
@@ -239,13 +242,22 @@ mod tests {
             relation: "G",
             ctors: vec![
                 Constructor::nullary(zero()),
-                Constructor::new(nat_succ(), vec![Arg::Rec { name: "m", image: "b" }]),
+                Constructor::new(
+                    nat_succ(),
+                    vec![Arg::Rec {
+                        name: "m",
+                        image: "b",
+                    }],
+                ),
             ],
         }
     }
 
     fn zf() -> (Term, Term) {
-        (Term::free("z", nat()), Term::free("f", Type::fun(nat(), Type::fun(nat(), nat()))))
+        (
+            Term::free("z", nat()),
+            Term::free("f", Type::fun(nat(), Type::fun(nat(), nat()))),
+        )
     }
 
     /// `graph_intro` at the nullary constructor is `⊢ Graph z f 0 z`, with

@@ -45,11 +45,37 @@ it is how unfinished work stays discoverable.
   derives the **forward** law `Γ ⊢ rel a b → Γ ⊢ mkClass a = mkClass b`,
   the workhorse for proving `int` *equations*.
 
-  Progress: `int_rel` is now a **proven equivalence**
-  (`init::int::int_rel_refl`/`_symm`/`_trans`, `trans` via
-  `nat::add_interchange` + `nat::add_cancel`), and `quotient::class_intro`
-  already lifts `⊢ int_rel p q` to `mkClass p = mkClass q` over the real
-  `int_ty_spec` (tested). Remaining for `int`:
+  Progress: `int_rel` is a **proven equivalence**
+  (`init::int::int_rel_refl`/`_symm`/`_trans`); `quotient::class_intro`
+  lifts `⊢ int_rel p q` to `mkClass p = mkClass q`; **`add_comm` and
+  `mul_comm` are proved** (on the nose); and the **round-trip**
+  (`quotient::round_trip`: `⊢ rel a (rep_class (mk_class a))`, via
+  `close_pred_holds` + `spec_rep_abs_fwd` + `select_ax`) is **done and
+  tested on the real `int_ty_spec`** — the keystone for the nested-op
+  axioms.
+
+  The path for the remaining ring-equation axioms (`add_assoc`, `add_neg`,
+  `mul_assoc`, `distrib`):
+  - Unfold both sides with `delta_all(int_add/int_mul)`; a *nested* op like
+    `int.add a b` unfolds to `mk_int P_ab` (a *proper* class), and the
+    outer op sees `rep_pair(mk_int P_ab)`.
+  - `round_trip(P_ab)` + the β-bridge `mk_class p = mk_int p` (verified:
+    `beta_nf(λx. int_rel p x) == defs class_of p`) give
+    `int_rel (rep_pair(mk_int P_ab)) P_ab`, i.e. the chosen representative
+    of `a+b` is `~` its componentwise pair.
+  - `class_intro` on a `nat`-algebra combination of those `~`-facts closes
+    the axiom.
+  - ⚠️ **No quotient induction.** `a = mk_int(rep_pair a)` is *false* for a
+    free `int` var: `quot` = `close` admits junk (unions of classes), so a
+    free `a` need not be a single class. The axioms work because the *ops*
+    always produce `mk_int` (proper) values — route the round-trip through
+    those intermediates, never through the free variables.
+  - The `0`/`1` axioms (`add_zero`, `mul_one`, `mul_zero`, `sub_def` uses
+    `neg`) additionally need **literal coherence**: relating `int_lit 0` /
+    `int_lit 1` to their quotient representatives (`(0,0)` / `(1,0)`), a
+    separate lemma.
+
+  Older remaining-list (still accurate for the order axioms):
   - (a) the **β reconciliation** — `class_intro`'s `classOf a = λx. rel a x`
     vs `defs/int.rs`'s β-reduced `mk_int`;
   - (b) **unfold each `int` op** to its representative-pair body (δ + the

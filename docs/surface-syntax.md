@@ -93,13 +93,17 @@ makes "the query planner can be an LLM" a safe thing to say out loud.
 
 ### 1.3 Everything is a pure S-expression
 
-There is **no infix syntax**. The arrows, colons, and rewrite arrows
-that appear in this document — `'a -> 'b`, `none : option 'a`, `lhs =>
-rhs` — are **prose sugar for readability only**. The actual language is
-*pure S-expressions*, in which every reserved word is a **`#`-headed
-builtin**:
+The language is **pure S-expressions with no sugar**. There is no infix
+syntax and no surface-level shorthand: every reserved word is a
+**`#`-headed builtin**, and the parser (`surface::parse` /
+`surface::parse_str`) accepts *only* these forms — nothing desugars.
 
-| sugar (used in prose below) | pure form |
+The arrows, colons, and rewrite arrows that still appear in this
+document — `'a -> 'b`, `none : option 'a`, `lhs => rhs` — are **informal
+notation in the prose of this doc only**; they are *not* part of the
+language and are *not* accepted by the parser. The real forms are:
+
+| informal notation in this doc | actual (and only) form |
 |---|---|
 | `'a -> 'b` | `(#fn 'a 'b)` |
 | `none : option 'a` | `(#sig none (option 'a))` |
@@ -144,8 +148,9 @@ So the §4.1 `option` spec, written out in the real pure syntax, is:
     (#rw (case (some a) b f) (f a))))
 ```
 
-The remaining sections keep using the lighter sugar for legibility, but
-that table is the whole translation — there is nothing else to it.
+The remaining sections of this doc keep writing the lighter informal
+notation for legibility, but remember it is just exposition: the table
+above is the whole story, and only the right-hand column is a language.
 
 ### 1.4 The term sublanguage (and lifting it into the TCB)
 
@@ -186,7 +191,8 @@ hand-threaded `Term::app` / `Term::abs` Rust. The directive and proof
 layers stay firmly outside the TCB (they only ever *produce checkable
 obligations*); the term sublanguage is the one piece we may choose to
 trust directly, so it is kept as a sharply-delimited grammar from the
-start. A first sketch of the AST lives in
+start. A first sketch of the AST — and a parser (`parse` / `parse_str`)
+lowering pure S-expressions into it — lives in
 [`crates/covalence-hol/src/surface/`](../crates/covalence-hol/src/surface/).
 
 ---

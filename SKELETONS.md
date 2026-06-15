@@ -18,12 +18,13 @@ it is how unfinished work stays discoverable.
 
 - **`crates/covalence-hol/src/surface/`** — design sketch of the surface
   syntax (the "generalized Haskell" authoring layer, `docs/surface-syntax.md`).
-  The AST (`surface::ast`) and the `#`-builtin registry (`surface::Builtin`)
-  are sketched, but `surface::parse` is a stub returning
-  `SurfaceError::NotImplemented` — the lowering from `covalence_sexp::SExpr`
-  to the directive AST is unwritten, and the elaborator (surface → low-level
-  S-expr → kernel object), the `#by` tactic grammar, and `#import` content
-  addressing are all future work.
+  The AST (`surface::ast`), the `#`-builtin registry (`surface::Builtin`), and
+  the parser (`surface::parse` / `parse_str`, pure S-expr → directive AST) are
+  implemented, but the layers above remain stubs: the **elaborator** (surface
+  → low-level S-expr → kernel object), the **`#by` tactic grammar** (proof
+  steps are kept as raw `SExpr`s in `Proof::steps`), and **`#import` content
+  addressing** (`ImportTarget::Hash` is parsed but not resolved) are all future
+  work.
 
 ## Postulates pending proof
 

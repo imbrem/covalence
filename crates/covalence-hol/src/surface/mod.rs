@@ -46,18 +46,21 @@
 //!
 //! ## Status
 //!
-//! The AST ([`ast`]) is sketched; [`parse`] is a stub (see
-//! `SKELETONS.md`). The elaborator (surface → low-level S-expr → kernel
-//! object) is future work; see `docs/surface-syntax.md` §8.
+//! The AST ([`ast`]) is sketched and [`parse`] / [`parse_str`] lower pure
+//! S-expressions into it. The *elaborator* (surface → low-level S-expr →
+//! kernel object), the `#by` tactic grammar, and `#import` content
+//! addressing are future work; see `docs/surface-syntax.md` §8.
 //!
 //! [`docs/surface-syntax.md`]: ../../../docs/surface-syntax.md
 
 pub mod ast;
+mod parse;
 
 pub use ast::{
     Def, DefBody, DefSort, Directive, Import, ImportTarget, Kind, Name, NameClass, Proof, Rule,
     Sig, Statement, Term, ThmDecl, Ty, TyDeclItem,
 };
+pub use parse::{parse, parse_str};
 
 /// The reserved `#`-headed keywords of the surface language.
 ///
@@ -199,25 +202,9 @@ impl Builtin {
 /// Errors from parsing / lowering the surface syntax.
 #[derive(Debug, thiserror::Error)]
 pub enum SurfaceError {
-    /// A part of the surface front-end that is sketched but not yet
-    /// implemented (see `SKELETONS.md`).
-    #[error("surface syntax: not yet implemented: {0}")]
-    NotImplemented(&'static str),
     /// A structural error in the S-expression shape.
     #[error("surface syntax: {0}")]
     Malformed(String),
-}
-
-/// Parse a sequence of surface [`Directive`]s from already-parsed
-/// S-expressions (use [`covalence_sexp::parse`] to get the input).
-///
-/// **Skeleton:** the AST in [`ast`] is fully sketched but the lowering
-/// from [`covalence_sexp::SExpr`] is not written yet. Tracked in
-/// `SKELETONS.md`.
-pub fn parse(_exprs: &[covalence_sexp::SExpr]) -> Result<Vec<Directive>, SurfaceError> {
-    Err(SurfaceError::NotImplemented(
-        "surface::parse: S-expression lowering to the directive AST",
-    ))
 }
 
 #[cfg(test)]
@@ -247,13 +234,5 @@ mod tests {
         assert_eq!(Name("'a".into()).class(), NameClass::TyVar);
         assert_eq!(Name("coprod.case".into()).class(), NameClass::Catalogue);
         assert_eq!(Name("option".into()).class(), NameClass::Local);
-    }
-
-    #[test]
-    fn parse_is_stubbed() {
-        assert!(matches!(
-            parse(&[]),
-            Err(SurfaceError::NotImplemented(_))
-        ));
     }
 }

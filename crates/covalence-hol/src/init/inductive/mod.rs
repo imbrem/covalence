@@ -58,4 +58,4 @@ pub mod uniqueness;
 mod util;
 
 pub use data::Inductive;
-pub use sig::{Arg, Constructor, InductiveSig};
+pub use sig::{Arg, Constructor, GenArg, GenConstructor, GenSig, InductiveSig};

@@ -87,6 +87,21 @@ it is how unfinished work stays discoverable.
     to an `int` order fact (`a·d < c·b ⟹ a·(b+d) < (a+c)·b`, etc.)
     lifted through the quotient — blocked on the same `int` order theory.
 
+- **The `real` Dedekind-cut theory** in
+  `crates/covalence-hol/src/init/real.rs`. `real := close rat ratLe`
+  (upper cuts). **Proved**: `is_cut` (every principal up-set `ratLe q` is a
+  genuine cut, from the `rat` `≤` toolkit) and `zero_ne_one` (`⊢ ¬(0 = 1)`,
+  via distinct principal cuts transported through the subtype `rep`/`abs`).
+  Both are genuine *modulo* the `rat` order postulates they consume.
+  **Postulated** via the module's `axiom` helper (self-flagged):
+  - `sup_is_ub` / `sup_is_least` — the two least-upper-bound properties of
+    the supremum cut `real_sup A` (the intersection of the members'
+    cut-sets). Each unfolds to a set/order fact about the cuts, blocked on
+    the same `rat`/order theory. `complete` (the least-upper-bound property,
+    "the reals are complete") is itself **derived** from these two, with
+    `real_sup A` as the witness — the direct analogue of how `rat::dense`
+    is derived from its mediant postulates.
+
 ## Partial subsystems
 
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in

@@ -29,6 +29,22 @@
 //! These are the `nat` half of what the `int` quotient lift
 //! ([`init::int`](crate::init::int)) needs — `add_cancel` in particular is
 //! what `int_rel`'s transitivity rests on.
+//!
+//! ## Subtraction and order
+//!
+//! - **`pred` / `sub`**: [`pred_zero`] / [`pred_succ`] (now that `nat.pred`
+//!   carries a `natRec` body), then [`sub_zero`] / [`sub_succ`] /
+//!   [`zero_sub`] / [`sub_succ_succ`] from the recursion equations.
+//! - **`nat.le` / `nat.lt`** are def-style *selector predicates*, so their
+//!   defining clauses ([`le_body`] / [`lt_body`]) are transferred from a
+//!   saturating-subtraction witness (`n ≤ m ⟺ n - m = 0`,
+//!   `n < m ⟺ S n - m = 0`) via `Thm::spec_ax`. On top: successor
+//!   cancellation ([`le_succ_succ`] / [`lt_succ_succ`]), the zero facts
+//!   ([`le_zero`] / [`zero_lt_succ`] / [`not_succ_le_zero`] /
+//!   [`not_lt_zero`]), reflexivity/irreflexivity ([`le_refl`] /
+//!   [`lt_irrefl`]), totality ([`le_total`]), antisymmetry ([`le_antisym`]),
+//!   and the strict/non-strict bridge [`lt_iff_succ_le`]. Transitivity is
+//!   the one order law still pending (see `SKELETONS.md`).
 
 use covalence_core::{Result, Term, Thm, Type, defs, subst};
 use covalence_types::Nat;
@@ -1058,9 +1074,256 @@ fn not_lt_zero_impl() -> Result<Thm> {
     eqf_elim(all_eq.all_elim(var("n"))?)?.all_intro("n", nat())
 }
 
+// ---- double-induction order properties ----
+
+/// Prove `⊢ ∀a b. body(a,b)` by induction on `a`. `base` proves
+/// `⊢ ∀b. body(0,b)`; `step` receives the induction hypothesis
+/// `⊢ ∀b. body(a,b)` (free `a`) and must return `⊢ ∀b. body(S a, b)`
+/// (typically by an inner induction on `b`).
+fn induct_forall2(
+    body_at: impl Fn(&Term, &Term) -> Result<Term>,
+    base: Thm,
+    step: impl FnOnce(Thm) -> Result<Thm>,
+) -> Result<Thm> {
+    let a = var("a");
+    let b = var("b");
+    let motive = {
+        let body = body_at(&a, &b)?.forall("b", nat())?;
+        Term::abs(nat(), subst::close(&body, "a"))
+    };
+    let ih_concl = body_at(&a, &b)?.forall("b", nat())?;
+    let step_thm = step(Thm::assume(ih_concl.clone())?)?.imp_intro(&ih_concl)?;
+    induct_on("a", &motive, base, step_thm)
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. (a ≤ b) ∨ (b ≤ a)` — `≤` is total.
+    pub fn le_total() -> Thm {
+        le_total_impl().expect("le_total")
+    }
+}
+fn le_total_impl() -> Result<Thm> {
+    let disj = |a: &Term, b: &Term| le_t(a.clone(), b.clone()).or(le_t(b.clone(), a.clone()));
+
+    // base a = 0: ∀b. (0 ≤ b) ∨ (b ≤ 0)   — left disjunct via le_zero.
+    let base = {
+        let b = var("b");
+        le_zero()
+            .all_elim(b.clone())?
+            .or_intro_l(le_t(b.clone(), zero()))?
+            .all_intro("b", nat())?
+    };
+
+    let step = |ih_a: Thm| -> Result<Thm> {
+        let a = var("a");
+        let b = var("b");
+        // inner motive_b(b) = (S a ≤ b) ∨ (b ≤ S a)
+        let motive_b = {
+            let body = disj(&succ(a.clone()), &b)?;
+            Term::abs(nat(), subst::close(&body, "b"))
+        };
+        // inner base b = 0: right disjunct (0 ≤ S a).
+        let inner_base = le_zero()
+            .all_elim(succ(a.clone()))?
+            .or_intro_r(le_t(succ(a.clone()), zero()))?;
+        // inner step: from IH_a @ b decide (S a ≤ S b) ∨ (S b ≤ S a).
+        let inner_ihc = disj(&succ(a.clone()), &b)?;
+        let goal_l = le_t(succ(a.clone()), succ(b.clone()));
+        let goal_r = le_t(succ(b.clone()), succ(a.clone()));
+        let c4ab = le_c4().all_elim(a.clone())?.all_elim(b.clone())?; // (Sa≤Sb)=(a≤b)
+        let c4ba = le_c4().all_elim(b.clone())?.all_elim(a.clone())?; // (Sb≤Sa)=(b≤a)
+        let left = c4ab
+            .sym()?
+            .eq_mp(Thm::assume(le_t(a.clone(), b.clone()))?)? // Sa≤Sb
+            .or_intro_l(goal_r.clone())?
+            .imp_intro(&le_t(a.clone(), b.clone()))?;
+        let right = c4ba
+            .sym()?
+            .eq_mp(Thm::assume(le_t(b.clone(), a.clone()))?)? // Sb≤Sa
+            .or_intro_r(goal_l.clone())?
+            .imp_intro(&le_t(b.clone(), a.clone()))?;
+        let inner_step = ih_a
+            .all_elim(b.clone())? // (a≤b)∨(b≤a)
+            .or_elim(left, right)?
+            .imp_intro(&inner_ihc)?;
+        induct_on("b", &motive_b, inner_base, inner_step)
+    };
+
+    induct_forall2(|a, b| disj(a, b), base, step)
+}
+
+/// `⊢ ∀b. (b ≤ 0) ⟹ (b = 0)` — `0` is the least element strictly.
+fn le_zero_iff() -> Result<Thm> {
+    let b = var("b");
+    let body = le_t(b.clone(), zero()).imp(b.clone().equals(zero())?)?;
+    let motive = Term::abs(nat(), subst::close(&body, "b"));
+    // base: (0 ≤ 0) ⟹ (0 = 0).
+    let base = Thm::refl(zero())?.imp_intro(&le_t(zero(), zero()))?;
+    // step: (S b ≤ 0) ⟹ (S b = 0) — antecedent is false.
+    let sb_le_0 = le_t(succ(b.clone()), zero());
+    let inner = not_succ_le_zero()
+        .all_elim(b.clone())?
+        .not_elim(Thm::assume(sb_le_0.clone())?)? // {Sb≤0} ⊢ F
+        .false_elim(succ(b.clone()).equals(zero())?)? // {Sb≤0} ⊢ Sb=0
+        .imp_intro(&sb_le_0)?;
+    let ihc = body.clone();
+    induct_on("b", &motive, base, inner.imp_intro(&ihc)?)
+}
+
+/// `(a ≤ b) ⟹ (b ≤ a) ⟹ (a = b)` — the antisymmetry body at `a`, `b`.
+fn antisym_body(a: &Term, b: &Term) -> Result<Term> {
+    le_t(a.clone(), b.clone())
+        .imp(le_t(b.clone(), a.clone()).imp(a.clone().equals(b.clone())?)?)
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. (a ≤ b) ⟹ (b ≤ a) ⟹ (a = b)` — antisymmetry of `≤`.
+    pub fn le_antisym() -> Thm {
+        le_antisym_impl().expect("le_antisym")
+    }
+}
+fn le_antisym_impl() -> Result<Thm> {
+    // base a = 0: ∀b. (0≤b) ⟹ (b≤0) ⟹ (0=b).
+    let base = {
+        let b = var("b");
+        let b_le_0 = le_t(b.clone(), zero());
+        let inner = le_zero_iff()?
+            .all_elim(b.clone())?
+            .imp_elim(Thm::assume(b_le_0.clone())?)? // {b≤0} ⊢ b=0
+            .sym()? // {b≤0} ⊢ 0=b
+            .imp_intro(&b_le_0)?;
+        inner
+            .imp_intro(&le_t(zero(), b.clone()))?
+            .all_intro("b", nat())?
+    };
+
+    let step = |ih_a: Thm| -> Result<Thm> {
+        let a = var("a");
+        let b = var("b");
+        let motive_b = {
+            let body = antisym_body(&succ(a.clone()), &b)?;
+            Term::abs(nat(), subst::close(&body, "b"))
+        };
+        // inner base b = 0: (Sa≤0) ⟹ (0≤Sa) ⟹ (Sa=0) — antecedent false.
+        let inner_base = {
+            let sa_le_0 = le_t(succ(a.clone()), zero());
+            not_succ_le_zero()
+                .all_elim(a.clone())?
+                .not_elim(Thm::assume(sa_le_0.clone())?)? // {Sa≤0} ⊢ F
+                .false_elim(
+                    le_t(zero(), succ(a.clone()))
+                        .imp(succ(a.clone()).equals(zero())?)?,
+                )? // {Sa≤0} ⊢ (0≤Sa)⟹(Sa=0)
+                .imp_intro(&sa_le_0)?
+        };
+        // inner step b = S b': use IH_a @ b' on the cancelled successors.
+        let inner_ihc = antisym_body(&succ(a.clone()), &b)?;
+        let sa_le_sb = le_t(succ(a.clone()), succ(b.clone()));
+        let sb_le_sa = le_t(succ(b.clone()), succ(a.clone()));
+        let c4ab = le_c4().all_elim(a.clone())?.all_elim(b.clone())?; // (Sa≤Sb)=(a≤b)
+        let c4ba = le_c4().all_elim(b.clone())?.all_elim(a.clone())?; // (Sb≤Sa)=(b≤a)
+        let ab = c4ab.eq_mp(Thm::assume(sa_le_sb.clone())?)?; // {Sa≤Sb} ⊢ a≤b
+        let ba = c4ba.eq_mp(Thm::assume(sb_le_sa.clone())?)?; // {Sb≤Sa} ⊢ b≤a
+        let inner_step = ih_a
+            .all_elim(b.clone())?
+            .imp_elim(ab)?
+            .imp_elim(ba)? // {…} ⊢ a=b
+            .cong_arg(nat_succ())? // Sa=Sb
+            .imp_intro(&sb_le_sa)?
+            .imp_intro(&sa_le_sb)? // ⊢ motive_b(S b)
+            .imp_intro(&inner_ihc)?; // ⊢ motive_b(b) ⟹ motive_b(S b)
+        induct_on("b", &motive_b, inner_base, inner_step)
+    };
+
+    induct_forall2(antisym_body, base, step)
+}
+
+/// `(a < b) = (S a ≤ b)` — the `<`/`≤` bridge body at `a`, `b`.
+fn lt_succ_le_body(a: &Term, b: &Term) -> Result<Term> {
+    lt_t(a.clone(), b.clone()).equals(le_t(succ(a.clone()), b.clone()))
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. (a < b) = (S a ≤ b)` — strict `<` is `≤` shifted by one
+    /// (both are decided by `S a - b = 0`).
+    pub fn lt_iff_succ_le() -> Thm {
+        lt_iff_succ_le_impl().expect("lt_iff_succ_le")
+    }
+}
+fn lt_iff_succ_le_impl() -> Result<Thm> {
+    // base a = 0: ∀b. (0 < b) = (S 0 ≤ b)  — inner induction on b.
+    let base = {
+        let b = var("b");
+        let motive_b = Term::abs(nat(), subst::close(&lt_succ_le_body(&zero(), &b)?, "b"));
+        // b = 0: both sides are F.
+        let ib = lt_c1().trans(le_c3().all_elim(zero())?.sym()?)?;
+        // b = S b': both sides are T.
+        let ihc = lt_succ_le_body(&zero(), &b)?;
+        let lhs_t = lt_c2().all_elim(b.clone())?; // (0 < S b) = T
+        let rhs_t = le_c4()
+            .all_elim(zero())?
+            .all_elim(b.clone())? // (S 0 ≤ S b) = (0 ≤ b)
+            .trans(le_zero().all_elim(b.clone())?.eqt_intro()?)?; // = T
+        let is = lhs_t.trans(rhs_t.sym()?)?.imp_intro(&ihc)?;
+        induct_on("b", &motive_b, ib, is)?
+    };
+
+    let step = |ih_a: Thm| -> Result<Thm> {
+        let a = var("a");
+        let b = var("b");
+        let motive_b = Term::abs(nat(), subst::close(&lt_succ_le_body(&succ(a.clone()), &b)?, "b"));
+        // b = 0: both sides F.
+        let ib = lt_c3()
+            .all_elim(a.clone())? // (S a < 0) = F
+            .trans(le_c3().all_elim(succ(a.clone()))?.sym()?)?; // = (S(S a) ≤ 0)
+        // b = S b': cancel a successor on both sides, then IH_a @ b'.
+        let ihc = lt_succ_le_body(&succ(a.clone()), &b)?;
+        let lhs_eq = lt_c4().all_elim(a.clone())?.all_elim(b.clone())?; // (Sa<Sb)=(a<b)
+        let rhs_eq = le_c4().all_elim(succ(a.clone()))?.all_elim(b.clone())?; // (S(Sa)≤Sb)=(Sa≤b)
+        let is = lhs_eq
+            .trans(ih_a.all_elim(b.clone())?)? // (Sa<Sb)=(Sa≤b)
+            .trans(rhs_eq.sym()?)? // =(S(Sa)≤Sb)
+            .imp_intro(&ihc)?;
+        induct_on("b", &motive_b, ib, is)
+    };
+
+    induct_forall2(lt_succ_le_body, base, step)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lt_iff_succ_le_holds() {
+        // ⊢ ∀a b. (a < b) = (S a ≤ b); instantiate and sanity-check shape.
+        let inst = lt_iff_succ_le()
+            .all_elim(var("a")).unwrap()
+            .all_elim(var("b")).unwrap();
+        assert_eq!(inst.concl(), &lt_succ_le_body(&var("a"), &var("b")).unwrap());
+        assert!(lt_iff_succ_le().hyps().is_empty());
+    }
+
+    #[test]
+    fn le_antisym_holds() {
+        // ⊢ ∀a b. a≤b ⟹ b≤a ⟹ a=b, instantiated.
+        let inst = le_antisym()
+            .all_elim(var("a")).unwrap()
+            .all_elim(var("b")).unwrap();
+        assert_eq!(inst.concl(), &antisym_body(&var("a"), &var("b")).unwrap());
+        assert!(le_antisym().hyps().is_empty());
+    }
+
+    #[test]
+    fn le_total_holds() {
+        // ⊢ ∀a b. a≤b ∨ b≤a, instantiated.
+        let inst = le_total()
+            .all_elim(var("a")).unwrap()
+            .all_elim(var("b")).unwrap();
+        let expected = le_t(var("a"), var("b")).or(le_t(var("b"), var("a"))).unwrap();
+        assert_eq!(inst.concl(), &expected);
+        assert!(le_total().hyps().is_empty());
+    }
 
     #[test]
     fn order_basic_facts_are_proved() {

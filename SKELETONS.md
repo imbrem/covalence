@@ -55,6 +55,22 @@ it is how unfinished work stays discoverable.
   `mul_succ_r` / `mul_comm` / `mul_assoc` / `distrib`, and the `le`/`lt`
   order facts (reflexivity, transitivity, monotonicity). `init::nat` already
   has the additive theory + `add_cancel` + `mul_zero`.
+## Pending theorems
+
+- **`nat.le` transitivity** in `crates/covalence-hol/src/init/nat.rs`.
+  The order theory proves reflexivity, irreflexivity, successor
+  cancellation, the zero facts, **totality** (`le_total`),
+  **antisymmetry** (`le_antisym`), and the `<`/`≤` bridge
+  (`lt_iff_succ_le`) — but **not** transitivity `∀a b c. a≤b → b≤c → a≤c`.
+  It is a triple case-analysis: induct on the middle `b` (base `b = 0`
+  closes by `le_zero_iff` + `le_zero`), and in the `S b'` step run
+  `induct_forall2` over `(a, c)` — case `a = 0` closes by `le_zero`, case
+  `c = 0` is vacuous (`S b' ≤ 0` is false), and `a = S a' ∧ c = S c'`
+  cancels all three successors (`le_succ_succ`) and applies the
+  outer induction hypothesis at `(a', c')`. Alternatively prove the
+  additive characterisation `le_iff_add : (a ≤ b) = (∃k. a + k = b)` and
+  get transitivity/antisymmetry uniformly from `+`.
+
 ## Partial subsystems
 
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in

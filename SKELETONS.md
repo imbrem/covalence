@@ -19,22 +19,31 @@ it is how unfinished work stays discoverable.
 ## Postulates pending proof
 
 - **The `int` ordered-ring theory** in
-  `crates/covalence-hol/src/init/int.rs` is **mostly postulated** via the
-  module's `axiom` helper (`Thm::assume`, each carrying its statement as a
-  self-hyp). `add_comm` and `mul_comm` are now **proved** (the op-unfolding
-  + representative-rewrite pattern below; both commute *on the nose* as the
-  ops are componentwise `nat` add/mul on representatives); 15 postulates
-  remain: the commutative-ring axioms (`add_assoc`, `add_zero`, `add_neg`,
-  `mul_assoc`, `mul_one`, `mul_zero`, `distrib`, `sub_def`), the linear
-  order (`lt_irrefl`,
-  `lt_trans`, `lt_trichotomy`, `le_def`), ordered-ring compatibility
-  (`lt_add_mono`, `lt_mul_pos`), and discreteness (`lt_succ`:
-  `a < b ⟺ a + 1 ≤ b`). Since `int := (nat × nat) / ~` (Grothendieck), each is
-  a HOL theorem derivable from the `nat` Peano facts through the quotient;
+  `crates/covalence-hol/src/init/int.rs`: the **additive commutative group is
+  now fully proved** through the quotient — `add_comm`, `add_assoc`,
+  `add_zero`, `add_neg`, `sub_def`, and `mul_comm`. **9 postulates remain**
+  (still `Thm::assume` via the module's `axiom` helper, each carrying its
+  statement as a self-hyp):
+  - **multiplicative ring** — `mul_assoc`, `mul_one`, `mul_zero`, `distrib`.
+    Blocked on **multiplication well-definedness** (a `mul_pair_cong`:
+    `int_rel`-respecting of the Grothendieck product, the one genuinely
+    tedious `nat` commutative-algebra lemma — prove it per-argument and
+    chain) plus **literal-`1` coherence** (`int_lit 1 = MK(1,0)`, the
+    `mul_one`/`mul_zero` analogue of the proved `lit0_mk`).
+  - **linear order** — `lt_irrefl`, `lt_trans`, `lt_trichotomy`, `le_def`;
+    **ordered-ring compatibility** — `lt_add_mono`, `lt_mul_pos`;
+    **discreteness** — `lt_succ` (`a < b ⟺ a + 1 ≤ b`). These unfold
+    `int.le`/`int.lt` to the `nat` comparison on representatives
+    (`a − b ⋚ c − d ⟺ a + d ⋚ c + b`); `lt_irrefl`/`le_def` are on-the-nose
+    like `add_comm`, but `lt_trans`/`lt_trichotomy`/`lt_add_mono`/`lt_succ`
+    need more **`nat` `lt` theory** (transitivity, add-monotonicity/cancel,
+    trichotomy, the `< / ≤` bridge) than `init::nat` currently exposes.
+
+  Since `int := (nat × nat) / ~` (Grothendieck), each is a HOL theorem;
   filling the proofs in does not change the public `fn` surface. These are
   the ingredients the Alethe `la_generic` / `la_mult_*` checker will consume.
   The `int` semiring/ring embedding (`crate::semiring::Int` /
-  `crate::ring::Int`) forwards its axioms here, so it inherits these
+  `crate::ring::Int`) forwards its axioms here, so it inherits the remaining
   postulates (and their self-hyp audit trail) until they are discharged; the
   `nat` semiring embedding (`crate::semiring::Nat`), by contrast, is fully
   proved.

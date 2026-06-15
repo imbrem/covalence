@@ -36,7 +36,8 @@
 //! - **Maps in.** [`of_int`] (`a ↦ a/1`) and [`of_nat`] (`= of_int ∘
 //!   nat.toInt`, by composition) embed the integers and naturals.
 //! - **Ring / order.** The field operations ([`rat_zero`], [`rat_one`],
-//!   [`rat_add`], [`rat_neg`], [`rat_mul`]) and the strict order
+//!   [`rat_add`], [`rat_sub`], [`rat_neg`], [`rat_mul`], [`rat_inv`],
+//!   [`rat_div`]) and the strict order
 //!   ([`rat_lt`]) are defined at the representative level. [`add_comm`] /
 //!   [`mul_comm`] are **proved** — on the nose, exactly as `init::int`'s
 //!   are, since the ops are componentwise on representatives (so equal
@@ -310,6 +311,11 @@ fn iadd(a: Term, b: Term) -> Term {
     Term::app(Term::app(int::int_add(), a), b)
 }
 
+/// `a - b` on `int`.
+fn isub(a: Term, b: Term) -> Term {
+    Term::app(Term::app(int::int_sub(), a), b)
+}
+
 /// `mkRat (build px py)` for a binary op: `px = repPair x`, `py = repPair y`.
 fn binary_rat(build: impl Fn(&Term, &Term) -> Term) -> Term {
     let (x, y) = (Term::free("x", rat()), Term::free("y", rat()));
@@ -350,6 +356,44 @@ pub fn rat_neg() -> Term {
     let neg_num = Term::app(int::int_neg(), num(&px));
     let body = mk_rat(&ip(neg_num, den_pos(&px)));
     Term::abs(rat(), subst::close(&body, "x"))
+}
+
+/// `ratSub : rat → rat → rat` ≡ `(a/b) - (c/d) = (a·d - c·b)/(b·d)` —
+/// numerator by `int` subtraction, denominator the common positive product
+/// (the additive companion of [`rat_add`]).
+pub fn rat_sub() -> Term {
+    binary_rat(|px, py| {
+        let n = isub(imul(num(px), den(py)), imul(num(py), den(px)));
+        ip(n, to_pos(imul(den(px), den(py))))
+    })
+}
+
+/// `ratInv : rat → rat` ≡ `(a/b)⁻¹ = (sgn a · b)/(sgn a · a)` — the
+/// multiplicative inverse (`b/a` with the sign moved onto the numerator so
+/// the denominator `sgn a · a = |a|` stays strictly positive). Junk at
+/// `0` (`sgn 0 · 0 = 0`), as the field inverse of `0` is unconstrained.
+pub fn rat_inv() -> Term {
+    let x = Term::free("x", rat());
+    let px = rep_pair(x.clone());
+    let (a, b) = (num(&px), den(&px));
+    let sgn = Term::app(int::int_sgn(), a.clone());
+    let new_num = imul(sgn.clone(), b); // sgn(a)·b
+    let new_den = to_pos(imul(sgn, a)); // sgn(a)·a = |a| > 0
+    let body = mk_rat(&ip(new_num, new_den));
+    Term::abs(rat(), subst::close(&body, "x"))
+}
+
+/// `ratDiv : rat → rat → rat` ≡ `x / y = x · y⁻¹` — division as
+/// multiplication by the inverse (so `x / 0 = x · 0⁻¹` inherits the
+/// junk inverse of `0`).
+pub fn rat_div() -> Term {
+    let (x, y) = (Term::free("x", rat()), Term::free("y", rat()));
+    let inv_y = Term::app(rat_inv(), y.clone());
+    let body = Term::app(Term::app(rat_mul(), x.clone()), inv_y);
+    Term::abs(
+        rat(),
+        subst::close(&Term::abs(rat(), subst::close(&body, "y")), "x"),
+    )
 }
 
 // ============================================================================
@@ -1034,12 +1078,13 @@ mod tests {
     fn operations_have_the_expected_types() {
         let r = rat();
         let bin = Type::fun(r.clone(), Type::fun(r.clone(), r.clone()));
+        let un = Type::fun(r.clone(), r.clone());
         assert_eq!(rat_add().type_of().unwrap(), bin);
+        assert_eq!(rat_sub().type_of().unwrap(), bin);
         assert_eq!(rat_mul().type_of().unwrap(), bin);
-        assert_eq!(
-            rat_neg().type_of().unwrap(),
-            Type::fun(r.clone(), r.clone())
-        );
+        assert_eq!(rat_div().type_of().unwrap(), bin);
+        assert_eq!(rat_neg().type_of().unwrap(), un);
+        assert_eq!(rat_inv().type_of().unwrap(), un);
         assert_eq!(rat_zero().type_of().unwrap(), r);
         assert_eq!(rat_one().type_of().unwrap(), rat());
     }

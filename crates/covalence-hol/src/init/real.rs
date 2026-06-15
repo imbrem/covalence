@@ -3,8 +3,9 @@
 //!
 //! ## The construction
 //!
-//! `real := close rat ratLe` ([`defs/real.rs`](covalence_core::defs)) is
-//! the type of **upper Dedekind cuts**: a real is a non-empty subset of
+//! `real := close rat ratLe` ([`real_spec`]) is the type of **upper
+//! Dedekind cuts** — defined here in the shell, not the kernel catalogue
+//! (see [`real_spec`] for why). A real is a non-empty subset of
 //! `rat` that is upward-closed under `≤`. The carrier of the subtype is
 //! the powerset `rat → bool`, and the selector predicate (the `close`
 //! predicate, [`cut_pred`]) is
@@ -46,14 +47,43 @@
 //!   exactly as `rat::dense` is derived from the mediant postulates: the
 //!   supremum is the *intersection of the cut-sets* ([`real_sup`]).
 
-use covalence_core::defs::{real_spec, real_ty};
+use std::sync::LazyLock;
+
+use covalence_core::defs::TypeSpec;
 use covalence_core::{Result, Term, Thm, Type, subst};
+use smol_str::SmolStr;
 
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::{cat, logic, rat};
 
-// Re-export the `defs/real.rs` catalogue.
-pub use covalence_core::defs::real_ty as real_type;
+// ============================================================================
+// The `real` type — a shell-defined Dedekind-cut construction
+// ============================================================================
+//
+// `real := close rat ratLe` lives here in the shell, **not** in the kernel
+// catalogue (`covalence-core`): the reals are not needed for the kernel's
+// binary-data / float substrate (rationals suffice), so they are built as an
+// ordinary derived `close`-subtype over the `rat` order. The kernel's
+// witness-free subtype laws (`spec_abs_rep`, `spec_rep_abs_fwd`) apply to it
+// exactly as to any `close` spec — no kernel support is required.
+
+/// `real := close rat ratLe` — Dedekind cuts (upper cuts). Carrier is
+/// `rat → bool`; the `close` selector predicate enforces upward closure
+/// under `ratLe` plus non-emptiness.
+pub fn real_spec() -> TypeSpec {
+    static LAZY: LazyLock<TypeSpec> =
+        LazyLock::new(|| TypeSpec::close(SmolStr::new_static("real"), rat::rat_ty(), rat::rat_le()));
+    LAZY.clone()
+}
+/// `real` as a 0-ary [`Type`].
+pub fn real_ty() -> Type {
+    static LAZY: LazyLock<Type> = LazyLock::new(|| Type::spec(real_spec(), vec![]));
+    LAZY.clone()
+}
+/// Alias for [`real_ty`] (the catalogue-style name).
+pub fn real_type() -> Type {
+    real_ty()
+}
 
 // ============================================================================
 // Coercions and small term helpers
@@ -585,8 +615,12 @@ mod tests {
     }
 
     #[test]
-    fn real_ty_matches_the_catalogue() {
-        assert_eq!(real(), covalence_core::defs::real_ty());
+    fn real_ty_is_a_zero_ary_spec() {
+        use covalence_core::ty::TypeKind;
+        // `real` is the shell-defined `close` spec (no longer in the kernel
+        // catalogue), a 0-ary spec type and not bool.
+        assert_eq!(real(), real_ty());
+        assert!(matches!(real().kind(), TypeKind::Spec(_, args) if args.is_empty()));
         assert!(!real().is_bool());
     }
 

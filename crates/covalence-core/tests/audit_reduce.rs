@@ -172,6 +172,45 @@ fn nat_mod_by_zero_is_identity() {
 }
 
 #[test]
+fn nat_div_reduction_satisfies_its_selector_predicate() {
+    // SOUNDNESS GUARD for the def-style `nat.div`. `nat.div` carries the
+    // selector predicate
+    //   λd. ∀n m. (m=0 ⟹ d n m = 0) ∧
+    //             (¬(m=0) ⟹ d n m * m ≤ n ∧ n < S(d n m) * m)
+    // and `spec_ax` only stays consistent with the `builtins` reduction
+    // if the *reduction itself* satisfies that predicate (otherwise the
+    // kernel has no model — nat.div cannot be both the floor and a
+    // predicate-satisfier). Here we evaluate each predicate clause on the
+    // reduced `q = n / m` and assert it holds, across a wide range of
+    // (n, m) — every quotient/divisor shape including the boundaries
+    // n < m, n = q*m exactly, and m = 0.
+    let red = |t: Term| rhs_of(&Thm::reduce_prim(t).expect("reduces"));
+    let t = || Term::bool_lit(true);
+    let mut probes: Vec<(u64, u64)> = Vec::new();
+    for n in [0u64, 1, 2, 3, 5, 7, 10, 16, 17, 23, 24, 100, 255, 1000] {
+        for m in [0u64, 1, 2, 3, 4, 5, 7, 8, 16, 100, 256] {
+            probes.push((n, m));
+        }
+    }
+    for (n, m) in probes {
+        let q = red(app2(defs::nat_div(), nat(n), nat(m)));
+        if m == 0 {
+            // clause 1: m = 0 ⟹ d n m = 0.
+            assert_eq!(q, nat(0), "n/0 must reduce to 0 (n={n})");
+            continue;
+        }
+        // clause 2a: q * m ≤ n.
+        let lower = red(app2(defs::nat_le(), red(app2(defs::nat_mul(), q.clone(), nat(m))), nat(n)));
+        assert_eq!(lower, t(), "q*m ≤ n fails at n={n}, m={m} (q={q:?})");
+        // clause 2b: n < S(q) * m.
+        let sq = red(app1(defs::nat_succ(), q.clone()));
+        let sq_m = red(app2(defs::nat_mul(), sq, nat(m)));
+        let upper = red(app2(defs::nat_lt(), nat(n), sq_m));
+        assert_eq!(upper, t(), "n < S(q)*m fails at n={n}, m={m} (q={q:?})");
+    }
+}
+
+#[test]
 fn nat_div_mod_satisfy_euclidean_law() {
     // The two `builtins` reductions must jointly satisfy the Euclidean
     // division law: for all n, m,  n = (n / m) * m + (n mod m),  and for

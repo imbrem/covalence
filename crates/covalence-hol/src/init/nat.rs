@@ -43,8 +43,10 @@
 //!   ([`le_zero`] / [`zero_lt_succ`] / [`not_succ_le_zero`] /
 //!   [`not_lt_zero`]), reflexivity/irreflexivity ([`le_refl`] /
 //!   [`lt_irrefl`]), totality ([`le_total`]), antisymmetry ([`le_antisym`]),
-//!   and the strict/non-strict bridge [`lt_iff_succ_le`]. Transitivity is
-//!   the one order law still pending (see `SKELETONS.md`).
+//!   transitivity ([`le_trans`]), and the strict/non-strict bridge
+//!   [`lt_iff_succ_le`]. Transitivity goes through the additive lemmas
+//!   [`le_add_r`] (`a ≤ a + k`) and [`le_add_sub`]
+//!   (`a ≤ b ⟹ a + (b - a) = b`), making `≤` a full linear order.
 
 use covalence_core::{Result, Term, Thm, Type, defs, subst};
 use covalence_types::Nat;
@@ -1290,9 +1292,183 @@ fn lt_iff_succ_le_impl() -> Result<Thm> {
     induct_forall2(lt_succ_le_body, base, step)
 }
 
+// ---- transitivity, via the additive structure of ≤ ----
+
+cached_thm! {
+    /// `⊢ ∀a k. a ≤ a + k` — adding on the right never decreases.
+    pub fn le_add_r() -> Thm {
+        le_add_r_impl().expect("le_add_r")
+    }
+}
+fn le_add_r_impl() -> Result<Thm> {
+    let a = var("a");
+    // motive λa. ∀k. a ≤ a + k
+    let body_at = |t: &Term| -> Result<Term> {
+        let k = var("k");
+        le_t(t.clone(), add(t.clone(), k.clone())).forall("k", nat())
+    };
+    let motive = Term::abs(nat(), subst::close(&body_at(&a)?, "a"));
+    // base a = 0: ∀k. 0 ≤ 0 + k.
+    let base = {
+        let k = var("k");
+        le_zero()
+            .all_elim(add(zero(), k.clone()))?
+            .all_intro("k", nat())?
+    };
+    // step: (∀k. a ≤ a+k) ⟹ (∀k. S a ≤ S a + k).
+    let ihc = body_at(&a)?;
+    let k = var("k");
+    let ih_k = Thm::assume(ihc.clone())?.all_elim(k.clone())?; // a ≤ a+k
+    let c4 = le_c4()
+        .all_elim(a.clone())?
+        .all_elim(add(a.clone(), k.clone()))?; // (Sa ≤ S(a+k)) = (a ≤ a+k)
+    let sa_le = c4.sym()?.eq_mp(ih_k)?; // Sa ≤ S(a+k)
+    let astep = add_step().all_elim(a.clone())?.all_elim(k.clone())?; // Sa+k = S(a+k)
+    // (Sa ≤ S(a+k)) = (Sa ≤ Sa+k)  by rewriting S(a+k) ↦ Sa+k.
+    let congle = Thm::refl(nat_le())?
+        .cong_app(Thm::refl(succ(a.clone()))?)?
+        .cong_app(astep.sym()?)?;
+    let step = congle
+        .eq_mp(sa_le)?
+        .all_intro("k", nat())?
+        .imp_intro(&ihc)?;
+    induct_on("a", &motive, base, step)
+}
+
+/// `(a ≤ b) ⟹ a + (b - a) = b` — the order/subtraction body at `a`, `b`.
+fn le_add_sub_body(a: &Term, b: &Term) -> Result<Term> {
+    le_t(a.clone(), b.clone()).imp(add(a.clone(), sub(b.clone(), a.clone())).equals(b.clone())?)
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. (a ≤ b) ⟹ a + (b - a) = b` — `≤` lets subtraction undo
+    /// addition.
+    pub fn le_add_sub() -> Thm {
+        le_add_sub_impl().expect("le_add_sub")
+    }
+}
+fn le_add_sub_impl() -> Result<Thm> {
+    // base a = 0: ∀b. (0 ≤ b) ⟹ 0 + (b - 0) = b.
+    let base = {
+        let b = var("b");
+        add_base()
+            .all_elim(sub(b.clone(), zero()))? // 0 + (b-0) = b-0
+            .trans(sub_zero().all_elim(b.clone())?)? // = b
+            .imp_intro(&le_t(zero(), b.clone()))?
+            .all_intro("b", nat())?
+    };
+
+    let step = |ih_a: Thm| -> Result<Thm> {
+        let a = var("a");
+        let b = var("b");
+        let motive_b = Term::abs(nat(), subst::close(&le_add_sub_body(&succ(a.clone()), &b)?, "b"));
+        // inner base b = 0: (S a ≤ 0) ⟹ … — antecedent false.
+        let inner_base = {
+            let sa0 = le_t(succ(a.clone()), zero());
+            not_succ_le_zero()
+                .all_elim(a.clone())?
+                .not_elim(Thm::assume(sa0.clone())?)?
+                .false_elim(
+                    add(succ(a.clone()), sub(zero(), succ(a.clone()))).equals(zero())?,
+                )?
+                .imp_intro(&sa0)?
+        };
+        // inner step b = S b': cancel one successor, apply IH_a @ b'.
+        let inner_ihc = le_add_sub_body(&succ(a.clone()), &b)?;
+        let sasb = le_t(succ(a.clone()), succ(b.clone()));
+        let ab = le_c4()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .eq_mp(Thm::assume(sasb.clone())?)?; // {Sa≤Sb} ⊢ a≤b
+        let iha = ih_a.all_elim(b.clone())?.imp_elim(ab)?; // {Sa≤Sb} ⊢ a+(b-a)=b
+        let ss = sub_succ_succ().all_elim(b.clone())?.all_elim(a.clone())?; // Sb-Sa = b-a
+        // Sa+(Sb-Sa) = Sa+(b-a) = S(a+(b-a)) = S b = S b'
+        let eq = ss
+            .cong_arg(Term::app(nat_add(), succ(a.clone())))? // Sa+(Sb-Sa) = Sa+(b-a)
+            .trans(
+                add_step()
+                    .all_elim(a.clone())?
+                    .all_elim(sub(b.clone(), a.clone()))?, // = S(a+(b-a))
+            )?
+            .trans(iha.cong_arg(nat_succ())?)?; // = S b
+        let inner_step = eq.imp_intro(&sasb)?.imp_intro(&inner_ihc)?;
+        induct_on("b", &motive_b, inner_base, inner_step)
+    };
+
+    induct_forall2(le_add_sub_body, base, step)
+}
+
+cached_thm! {
+    /// `⊢ ∀a b c. (a ≤ b) ⟹ (b ≤ c) ⟹ (a ≤ c)` — transitivity of `≤`.
+    ///
+    /// `a ≤ b` and `b ≤ c` give `a + (b-a) = b` and `b + (c-b) = c`
+    /// ([`le_add_sub`]), so `a + ((b-a) + (c-b)) = c` by associativity,
+    /// and [`le_add_r`] turns that into `a ≤ c`.
+    pub fn le_trans() -> Thm {
+        le_trans_impl().expect("le_trans")
+    }
+}
+fn le_trans_impl() -> Result<Thm> {
+    let (a, b, c) = (var("a"), var("b"), var("c"));
+    let hab = le_t(a.clone(), b.clone());
+    let hbc = le_t(b.clone(), c.clone());
+    let (p, q) = (sub(b.clone(), a.clone()), sub(c.clone(), b.clone())); // b-a, c-b
+
+    let e1 = le_add_sub()
+        .all_elim(a.clone())?
+        .all_elim(b.clone())?
+        .imp_elim(Thm::assume(hab.clone())?)?; // {a≤b} ⊢ a+(b-a) = b
+    let e2 = le_add_sub()
+        .all_elim(b.clone())?
+        .all_elim(c.clone())?
+        .imp_elim(Thm::assume(hbc.clone())?)?; // {b≤c} ⊢ b+(c-b) = c
+
+    // a + (p+q) = (a+p)+q = b+q = c
+    let a_pq_eq_c = add_assoc()
+        .all_elim(a.clone())?
+        .all_elim(p.clone())?
+        .all_elim(q.clone())? // (a+p)+q = a+(p+q)
+        .sym()?
+        .trans(cong_add_l(e1, q.clone())?)? // = b+q
+        .trans(e2)?; // = c
+
+    // a ≤ a+(p+q), then rewrite a+(p+q) ↦ c.
+    let lar = le_add_r()
+        .all_elim(a.clone())?
+        .all_elim(add(p.clone(), q.clone()))?; // a ≤ a+(p+q)
+    let a_le_c = Thm::refl(nat_le())?
+        .cong_app(Thm::refl(a.clone())?)?
+        .cong_app(a_pq_eq_c)? // (a ≤ a+(p+q)) = (a ≤ c)
+        .eq_mp(lar)?;
+
+    a_le_c
+        .imp_intro(&hbc)?
+        .imp_intro(&hab)?
+        .all_intro("c", nat())?
+        .all_intro("b", nat())?
+        .all_intro("a", nat())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn le_trans_holds() {
+        // ⊢ ∀a b c. a≤b ⟹ b≤c ⟹ a≤c.
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let inst = le_trans()
+            .all_elim(a.clone()).unwrap()
+            .all_elim(b.clone()).unwrap()
+            .all_elim(c.clone()).unwrap();
+        let want = le_t(a.clone(), b.clone())
+            .imp(le_t(b.clone(), c.clone()).imp(le_t(a, c)).unwrap())
+            .unwrap();
+        assert_eq!(inst.concl(), &want);
+        for t in [le_add_r(), le_add_sub(), le_trans()] {
+            assert!(t.hyps().is_empty(), "transitivity chain is hypothesis-free");
+        }
+    }
 
     #[test]
     fn lt_iff_succ_le_holds() {

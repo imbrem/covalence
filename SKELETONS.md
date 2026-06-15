@@ -146,10 +146,17 @@ it is how unfinished work stays discoverable.
 
 - **The `real` Dedekind-cut theory** in
   `crates/covalence-hol/src/init/real.rs`. `real := close rat ratLe`
-  (upper cuts). **Proved**: `is_cut` (every principal up-set `ratLe q` is a
-  genuine cut, from the `rat` `≤` toolkit) and `zero_ne_one` (`⊢ ¬(0 = 1)`,
-  via distinct principal cuts transported through the subtype `rep`/`abs`).
-  Both are genuine *modulo* the `rat` order postulates they consume.
+  (upper cuts). **Proved with no postulates**: the `realLe` partial-order
+  laws `le_refl` / `le_trans` / `le_antisym` — `realLe` is reverse inclusion
+  of cut-sets, so reflexivity/transitivity are pure logic and antisymmetry
+  is pure subtype structure (mutual inclusion ⟹ pointwise-equal cut-sets by
+  function extensionality ⟹ equal reals by the round-trip
+  `Thm::spec_abs_rep`); none touch the `rat`/order postulates. **Proved
+  *modulo* the `rat` order postulates** they consume: `is_cut` (every
+  principal up-set `ratLe q` is a genuine cut, from the `rat` `≤` toolkit),
+  `of_rat_mono` (the principal-cut embedding is monotone, by `rat::le_trans`
+  + the round-trip), and `zero_ne_one` (`⊢ ¬(0 = 1)`, via distinct principal
+  cuts transported through the subtype `rep`/`abs`).
   **Postulated** via the module's `axiom` helper (self-flagged):
   - `sup_is_ub` / `sup_is_least` — the two least-upper-bound properties of
     the supremum cut `real_sup A` (the intersection of the members'

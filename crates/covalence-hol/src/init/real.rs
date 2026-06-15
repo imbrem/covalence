@@ -28,6 +28,13 @@
 //! - **Scaffolding** (this layer): the coercions, [`of_rat`], the order
 //!   [`real_le`] (reverse inclusion of cut-sets), and [`real_zero`] /
 //!   [`real_one`].
+//! - **Order: `≤` is a partial order** — [`le_refl`], [`le_trans`],
+//!   [`le_antisym`] are **fully proved with no postulates**: reverse
+//!   inclusion of cut-sets makes reflexivity / transitivity pure logic, and
+//!   antisymmetry pure subtype structure (mutual inclusion ⟹ equal cut-sets
+//!   by extensionality ⟹ equal reals by the round-trip [`Thm::spec_abs_rep`]).
+//!   [`of_rat_mono`] — the principal-cut embedding is monotone — is proved
+//!   too (genuine *modulo* the `rat` order postulates it consumes).
 //! - **`is_cut`** — `⊢ cut_pred (ratLe q)`, that every principal up-set is
 //!   a genuine cut — is **proved** from the `rat` `≤` toolkit
 //!   (`le_trans` for upward closure, `le_refl` for non-emptiness).
@@ -43,7 +50,7 @@ use covalence_core::defs::{real_spec, real_ty};
 use covalence_core::{Result, Term, Thm, Type, subst};
 
 use crate::init::ext::{TermExt, ThmExt};
-use crate::init::{logic, rat};
+use crate::init::{cat, logic, rat};
 
 // Re-export the `defs/real.rs` catalogue.
 pub use covalence_core::defs::real_ty as real_type;
@@ -142,6 +149,165 @@ fn rle(r: Term, s: Term) -> Term {
 /// `ratLe a b` — a rational `≤` atom.
 fn rat_le_app(a: &Term, b: &Term) -> Term {
     Term::app(Term::app(rat::rat_le(), a.clone()), b.clone())
+}
+
+// ============================================================================
+// `realLe` is a partial order — fully proved, no postulates
+// ============================================================================
+//
+// `realLe` is reverse inclusion of cut-sets, so the order laws are pure
+// logic on that definition (reflexivity / transitivity) and pure subtype
+// structure (antisymmetry: equal cut-sets ⟹ equal reals, via the kernel
+// round-trip `spec_abs_rep` + function extensionality). None of them touch
+// the `rat`/order postulates — this is the genuine analogue of `rat`'s `≤`
+// toolkit, one level up. (`init::rat`'s `le_refl`/`le_trans` rest on the
+// `rat` order postulates; the `real` ones rest on nothing.)
+
+/// `⊢ r ≤ s` → `⊢ ∀q. cutOf s q ⟹ cutOf r q` — the β-reduced order body.
+fn reduce_le(thm: Thm) -> Result<Thm> {
+    thm.concl().reduce()?.eq_mp(thm)
+}
+
+/// `⊢ ∀q. cutOf s q ⟹ cutOf r q` → `⊢ r ≤ s`, for the application `r ≤ s`.
+fn expand_le(body: Thm, app: &Term) -> Result<Thm> {
+    app.reduce()?.sym()?.eq_mp(body)
+}
+
+cached_thm! {
+    /// `⊢ ∀r. r ≤ r` — reflexivity. `r ≤ r` is `∀q. cutOf r q ⟹ cutOf r q`,
+    /// the identity implication.
+    pub fn le_refl() -> Thm {
+        le_refl_impl().expect("real::le_refl")
+    }
+}
+fn le_refl_impl() -> Result<Thm> {
+    let r = Term::free("r", real());
+    let crq = Term::app(cut_of(r.clone()), Term::free("q", ratt()));
+    let body = Thm::assume(crq.clone())?
+        .imp_intro(&crq)?
+        .all_intro("q", ratt())?; // ⊢ ∀q. cutOf r q ⟹ cutOf r q
+    expand_le(body, &rle(r.clone(), r.clone()))?.all_intro("r", real())
+}
+
+cached_thm! {
+    /// `⊢ ∀r s t. r ≤ s ⟹ s ≤ t ⟹ r ≤ t` — transitivity. Reverse inclusion
+    /// composes: `cutOf t q ⟹ cutOf s q ⟹ cutOf r q`.
+    pub fn le_trans() -> Thm {
+        le_trans_impl().expect("real::le_trans")
+    }
+}
+fn le_trans_impl() -> Result<Thm> {
+    let (r, s, t) = (
+        Term::free("r", real()),
+        Term::free("s", real()),
+        Term::free("t", real()),
+    );
+    let (hrs, hst) = (rle(r.clone(), s.clone()), rle(s.clone(), t.clone()));
+    let brs = reduce_le(Thm::assume(hrs.clone())?)?; // {r≤s} ⊢ ∀q. cutOf s q ⟹ cutOf r q
+    let bst = reduce_le(Thm::assume(hst.clone())?)?; // {s≤t} ⊢ ∀q. cutOf t q ⟹ cutOf s q
+
+    let q = Term::free("q", ratt());
+    let rs_q = brs.all_elim(q.clone())?; // cutOf s q ⟹ cutOf r q
+    let st_q = bst.all_elim(q.clone())?; // cutOf t q ⟹ cutOf s q
+    let ctq = Term::app(cut_of(t.clone()), q); // cutOf t q
+    // {cutOf t q} ⊢ cutOf r q, threading through cutOf s q.
+    let crq = rs_q.imp_elim(st_q.imp_elim(Thm::assume(ctq.clone())?)?)?;
+    let goal_body = crq.imp_intro(&ctq)?.all_intro("q", ratt())?;
+
+    expand_le(goal_body, &rle(r.clone(), t.clone()))?
+        .imp_intro(&hst)?
+        .imp_intro(&hrs)?
+        .all_intro("t", real())?
+        .all_intro("s", real())?
+        .all_intro("r", real())
+}
+
+cached_thm! {
+    /// `⊢ ∀r s. r ≤ s ⟹ s ≤ r ⟹ r = s` — antisymmetry. Mutual reverse
+    /// inclusion makes the two cut-sets pointwise-equal; function
+    /// extensionality lifts that to `cutOf r = cutOf s`, and the subtype
+    /// round-trip [`Thm::spec_abs_rep`] (`abs (rep x) = x`) turns equal
+    /// cut-sets into equal reals.
+    pub fn le_antisym() -> Thm {
+        le_antisym_impl().expect("real::le_antisym")
+    }
+}
+fn le_antisym_impl() -> Result<Thm> {
+    let (r, s) = (Term::free("r", real()), Term::free("s", real()));
+    let (hrs, hsr) = (rle(r.clone(), s.clone()), rle(s.clone(), r.clone()));
+    let brs = reduce_le(Thm::assume(hrs.clone())?)?; // {r≤s} ⊢ ∀q. cutOf s q ⟹ cutOf r q
+    let bsr = reduce_le(Thm::assume(hsr.clone())?)?; // {s≤r} ⊢ ∀q. cutOf r q ⟹ cutOf s q
+
+    let q = Term::free("q", ratt());
+    let rs_q = brs.all_elim(q.clone())?; // cutOf s q ⟹ cutOf r q
+    let sr_q = bsr.all_elim(q.clone())?; // cutOf r q ⟹ cutOf s q
+    let crq = Term::app(cut_of(r.clone()), q.clone());
+    let csq = Term::app(cut_of(s.clone()), q);
+    let from_s = rs_q.imp_elim(Thm::assume(csq.clone())?)?; // {cutOf s q} ⊢ cutOf r q
+    let from_r = sr_q.imp_elim(Thm::assume(crq.clone())?)?; // {cutOf r q} ⊢ cutOf s q
+    let pointwise = from_s.deduct_antisym(from_r)?; // ⊢ cutOf r q = cutOf s q
+
+    // Extensionality: ⊢ cutOf r = cutOf s, i.e. rep r = rep s.
+    let reps_eq = cat::fun_ext(pointwise, "q", &ratt())?;
+    let abs_eq = reps_eq.cong_arg(real_abs())?; // ⊢ abs (rep r) = abs (rep s)
+    let r_eq = Thm::spec_abs_rep(real_spec(), Vec::new(), r.clone())?; // ⊢ abs (rep r) = r
+    let s_eq = Thm::spec_abs_rep(real_spec(), Vec::new(), s.clone())?; // ⊢ abs (rep s) = s
+    let rs_eq = r_eq.sym()?.trans(abs_eq)?.trans(s_eq)?; // ⊢ r = s
+
+    rs_eq
+        .imp_intro(&hsr)?
+        .imp_intro(&hrs)?
+        .all_intro("s", real())?
+        .all_intro("r", real())
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. ratLe a b ⟹ of_rat a ≤ of_rat b` — the principal-cut
+    /// embedding is **monotone**. Reverse inclusion: `a ≤ b` shrinks the
+    /// up-set, so `{x | b ≤ x} ⊆ {x | a ≤ x}` (by `rat::le_trans`). The
+    /// cut-sets are recovered through the subtype round-trip
+    /// ([`Thm::spec_rep_abs_fwd`] discharged by [`is_cut`]). Genuine *modulo*
+    /// the `rat` order postulates `rat::le_trans` / `is_cut` rest on.
+    pub fn of_rat_mono() -> Thm {
+        of_rat_mono_impl().expect("real::of_rat_mono")
+    }
+}
+fn of_rat_mono_impl() -> Result<Thm> {
+    let (a, b) = (Term::free("a", ratt()), Term::free("b", ratt()));
+    let hyp = rat_le_app(&a, &b); // ratLe a b
+    let (ra, rb) = (mk_real(upper_cut(a.clone())), mk_real(upper_cut(b.clone())));
+
+    // cutOf(ra) = upper_cut a  and  cutOf(rb) = upper_cut b (round-trip).
+    let ca = Thm::spec_rep_abs_fwd(real_spec(), Vec::new(), upper_cut(a.clone()))?
+        .imp_elim(is_cut(&a)?)?;
+    let cb = Thm::spec_rep_abs_fwd(real_spec(), Vec::new(), upper_cut(b.clone()))?
+        .imp_elim(is_cut(&b)?)?;
+
+    let q = Term::free("q", ratt());
+    let cutrb_q = Term::app(cut_of(rb.clone()), q.clone());
+    // {cutOf(rb) q} ⊢ ratLe b q  (rewrite the cut-set to the up-set, at q).
+    let lbq = cb.cong_fn(q.clone())?.eq_mp(Thm::assume(cutrb_q.clone())?)?;
+    // {ratLe a b, cutOf(rb) q} ⊢ ratLe a q.
+    let laq = rat::le_trans()
+        .all_elim(a.clone())?
+        .all_elim(b.clone())?
+        .all_elim(q.clone())?
+        .imp_elim(Thm::assume(hyp.clone())?)?
+        .imp_elim(lbq)?;
+    // Rewrite back: ratLe a q is `cutOf(ra) q`.
+    let cutra_q = ca.cong_fn(q.clone())?.sym()?.eq_mp(laq)?; // ⊢ cutOf(ra) q
+    let body = cutra_q.imp_intro(&cutrb_q)?.all_intro("q", ratt())?;
+    let le_ra_rb = expand_le(body, &rle(ra.clone(), rb.clone()))?; // {hyp} ⊢ ra ≤ rb
+
+    // ra = of_rat a, rb = of_rat b (β), so rewrite into the embedding form.
+    let oa = Thm::beta_conv(Term::app(of_rat(), a.clone()))?; // ⊢ of_rat a = ra
+    let ob = Thm::beta_conv(Term::app(of_rat(), b.clone()))?; // ⊢ of_rat b = rb
+    le_ra_rb
+        .rewrite(&oa.sym()?)?
+        .rewrite(&ob.sym()?)? // {hyp} ⊢ of_rat a ≤ of_rat b
+        .imp_intro(&hyp)?
+        .all_intro("b", ratt())?
+        .all_intro("a", ratt())
 }
 
 // ============================================================================
@@ -451,6 +617,58 @@ mod tests {
         // Conclusion is exactly the redex `cut_pred (ratLe q)`.
         assert_eq!(thm.concl(), &Term::app(cut_pred(), upper_cut(q)));
         assert!(thm.concl().type_of().unwrap().is_bool());
+    }
+
+    #[test]
+    fn le_is_a_partial_order_and_genuine() {
+        // reflexivity / transitivity / antisymmetry are all hypothesis-free
+        // (no postulates — pure cut-set reverse-inclusion structure).
+        for t in [le_refl(), le_trans(), le_antisym()] {
+            assert!(t.hyps().is_empty(), "real `≤` order laws are fully proved");
+            assert!(t.concl().type_of().unwrap().is_bool());
+        }
+
+        let (r, s, t) = (
+            Term::free("r", real()),
+            Term::free("s", real()),
+            Term::free("t", real()),
+        );
+        // refl specialises to `r ≤ r`.
+        assert_eq!(le_refl().all_elim(r.clone()).unwrap().concl(), &rle(r.clone(), r.clone()));
+        // trans specialises to `r ≤ s ⟹ s ≤ t ⟹ r ≤ t`.
+        let tr = le_trans()
+            .all_elim(r.clone())
+            .unwrap()
+            .all_elim(s.clone())
+            .unwrap()
+            .all_elim(t.clone())
+            .unwrap();
+        let expected_tr = rle(r.clone(), s.clone())
+            .imp(rle(s.clone(), t.clone()).imp(rle(r.clone(), t.clone())).unwrap())
+            .unwrap();
+        assert_eq!(tr.concl(), &expected_tr);
+        // antisym specialises to `r ≤ s ⟹ s ≤ r ⟹ r = s`.
+        let anti = le_antisym().all_elim(r.clone()).unwrap().all_elim(s.clone()).unwrap();
+        let expected_anti = rle(r.clone(), s.clone())
+            .imp(rle(s.clone(), r.clone()).imp(r.clone().equals(s.clone()).unwrap()).unwrap())
+            .unwrap();
+        assert_eq!(anti.concl(), &expected_anti);
+    }
+
+    #[test]
+    fn of_rat_is_monotone() {
+        let thm = of_rat_mono();
+        // Shape: ∀a b. ratLe a b ⟹ of_rat a ≤ of_rat b.
+        let (a, b) = (Term::free("a", ratt()), Term::free("b", ratt()));
+        let inst = thm.clone().all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
+        let oa = Term::app(of_rat(), a.clone());
+        let ob = Term::app(of_rat(), b.clone());
+        let expected = rat_le_app(&a, &b).imp(rle(oa, ob)).unwrap();
+        assert_eq!(inst.concl(), &expected);
+        // Genuine modulo the rat-order postulates: no equation hyp, all bool.
+        for h in thm.hyps() {
+            assert!(h.type_of().unwrap().is_bool());
+        }
     }
 
     #[test]

@@ -90,6 +90,23 @@ it is how unfinished work stays discoverable.
     `mul_succ_r` / `mul_comm` / `mul_assoc` / `distrib`, and the `le`/`lt`
     order facts. `init::nat` already has the additive theory, `add_cancel`,
     `add_interchange`, and `mul_zero`.
+
+## Pending theorems
+
+- **`nat.le` transitivity** in `crates/covalence-hol/src/init/nat.rs`.
+  The order theory proves reflexivity, irreflexivity, successor
+  cancellation, the zero facts, **totality** (`le_total`),
+  **antisymmetry** (`le_antisym`), and the `<`/`≤` bridge
+  (`lt_iff_succ_le`) — but **not** transitivity `∀a b c. a≤b → b≤c → a≤c`.
+  It is a triple case-analysis: induct on the middle `b` (base `b = 0`
+  closes by `le_zero_iff` + `le_zero`), and in the `S b'` step run
+  `induct_forall2` over `(a, c)` — case `a = 0` closes by `le_zero`, case
+  `c = 0` is vacuous (`S b' ≤ 0` is false), and `a = S a' ∧ c = S c'`
+  cancels all three successors (`le_succ_succ`) and applies the
+  outer induction hypothesis at `(a', c')`. Alternatively prove the
+  additive characterisation `le_iff_add : (a ≤ b) = (∃k. a + k = b)` and
+  get transitivity/antisymmetry uniformly from `+`.
+
 ## Partial subsystems
 
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in
@@ -153,10 +170,12 @@ coupling guard.
   (round toward −∞), which `int` does not yet expose (`int.div` truncates
   toward zero). The *unsigned* `uN.shr` and every other `uN`/`sN` op
   (add/sub/mul/neg/and/or/xor/not/lt/le/gt/ge/shl/div/rem) are now defined.
-- **`nat` ops, `crates/covalence-core/src/defs/nat.rs`** — `natDiv`,
-  `natBitAnd/Or/Xor`, `natToBytesLe/Be`, `natFromBytesLe/Be` are
-  `term_decl!` (declaration-only). `natDiv` in particular is *reducible*, so
-  when it gets a body it must be added to the coupling guard.
+- **`nat` ops, `crates/covalence-core/src/defs/nat.rs`** — `natBitAnd/Or/Xor`,
+  `natToBytesLe/Be`, `natFromBytesLe/Be` are `term_decl!`
+  (declaration-only). (`natDiv` now carries a def-style Euclidean selector
+  predicate; it is not let-style, so its `builtins` reduction is checked
+  against the predicate by `nat_div_mod_satisfy_euclidean_law` rather than
+  the unfold-based `audit_reduce_matches_body` coupling guard.)
 - **`bytes` ops, `crates/covalence-core/src/defs/blob.rs`** — `bytesConsNat`,
   `bytesAt` are declaration-only (need a `nat ↔ u8` conversion).
 - **Fixed-width conversions** (`toNat`/`toInt`/`fromNat`/`fromInt`/`zext`/

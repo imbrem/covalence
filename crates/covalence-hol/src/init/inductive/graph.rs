@@ -20,11 +20,10 @@
 //!   Graph fs t a  ≜  ∀G. closed(fs, G) ⟹ G t a
 //! ```
 //!
-//! These are **pure term builders** — no proof. The matching proofs
-//! (totality, determinacy, the per-constructor inversion lemmas, the
-//! ε-assembly) are the engine's next layer; for now `nat`'s hand-written
-//! construction in [`crate::init::recursion`] supplies them and consumes
-//! these builders, which is what validates them.
+//! These are **pure term builders** — no proof. The proofs over them are
+//! the engine's other layers: [`super::existence`] (graph introduction +
+//! totality, generic), and — still specialised to `nat` in
+//! [`crate::init::recursion`] — determinacy and the ε-assembly.
 
 use covalence_core::{Error, Result, Term, Type};
 
@@ -32,7 +31,7 @@ use super::sig::{Arg, Constructor, InductiveSig};
 use crate::init::ext::TermExt;
 
 /// `g x y`.
-fn app2(g: &Term, x: Term, y: Term) -> Result<Term> {
+pub(super) fn app2(g: &Term, x: Term, y: Term) -> Result<Term> {
     g.clone().apply(x)?.apply(y)
 }
 
@@ -44,45 +43,77 @@ fn apply_all(head: Term, args: &[Term]) -> Result<Term> {
 /// Right-associated conjunction `t₀ ∧ (t₁ ∧ … ∧ tₙ)`. Errors on an empty
 /// slice (the engine never builds an empty antecedent — a constructor
 /// with no recursive arguments drops the antecedent entirely).
-fn conj(ts: &[Term]) -> Result<Term> {
+pub(super) fn conj(ts: &[Term]) -> Result<Term> {
     match ts {
-        [] => Err(Error::ConnectiveRule("inductive::graph: empty conjunction".into())),
+        [] => Err(Error::ConnectiveRule(
+            "inductive::graph: empty conjunction".into(),
+        )),
         [last] => Ok(last.clone()),
         [head, rest @ ..] => head.clone().and(conj(rest)?),
     }
+}
+
+/// One constructor's clause materialised over **fresh argument / image
+/// variables** (named from the [`Constructor`]'s binder hints) — the
+/// shared backbone of both the closure clause (`clause`) and the
+/// per-constructor graph-introduction proof
+/// ([`super::existence::graph_intro`]).
+pub(super) struct CtorInstance {
+    /// The argument variables `x⃗`, in declaration order.
+    pub args: Vec<Term>,
+    /// The constructor applied to its arguments, `C x⃗`.
+    pub head: Term,
+    /// The step value `f x⃗ b⃗` — the recursor's result at this case.
+    pub value: Term,
+    /// The recursive `(sub-term rⱼ, image bⱼ)` pairs, in declaration order.
+    pub rec_pairs: Vec<(Term, Term)>,
+}
+
+/// Materialise constructor `ctor` with step term `step` over fresh
+/// variables. See [`CtorInstance`].
+pub(super) fn ctor_instance(
+    t_ty: &Type,
+    beta: &Type,
+    ctor: &Constructor,
+    step: &Term,
+) -> Result<CtorInstance> {
+    let mut args = Vec::with_capacity(ctor.args.len());
+    let mut rec_pairs = Vec::new();
+    for arg in &ctor.args {
+        let v = Term::free(arg.name(), arg.ty(t_ty));
+        args.push(v.clone());
+        if let Some(image) = arg.image() {
+            rec_pairs.push((v, Term::free(image, beta.clone())));
+        }
+    }
+    let head = apply_all(ctor.ctor.clone(), &args)?;
+    let step_args: Vec<Term> = args
+        .iter()
+        .cloned()
+        .chain(rec_pairs.iter().map(|(_, b)| b.clone()))
+        .collect();
+    let value = apply_all(step.clone(), &step_args)?;
+    Ok(CtorInstance {
+        args,
+        head,
+        value,
+        rec_pairs,
+    })
 }
 
 /// The closure clause for one constructor:
 /// `∀x⃗ b⃗. (⋀ G rⱼ bⱼ) ⟹ G (C x⃗) (f x⃗ b⃗)` (no antecedent when the
 /// constructor is non-recursive).
 fn clause(t_ty: &Type, beta: &Type, ctor: &Constructor, step: &Term, g: &Term) -> Result<Term> {
-    // Materialise the argument vars (and, for recursive args, their image
-    // vars), preserving declaration order.
-    let mut arg_vars = Vec::with_capacity(ctor.args.len());
-    let mut images = Vec::new(); // (sub-term var, image var) per recursive arg
-    for arg in &ctor.args {
-        let v = Term::free(arg.name(), arg.ty(t_ty));
-        arg_vars.push(v.clone());
-        if let Some(image) = arg.image() {
-            images.push((v, Term::free(image, beta.clone())));
-        }
-    }
-
-    // consequent: G (C x⃗) (f x⃗ b⃗)
-    let head = apply_all(ctor.ctor.clone(), &arg_vars)?;
-    let step_args: Vec<Term> = arg_vars
-        .iter()
-        .cloned()
-        .chain(images.iter().map(|(_, img)| img.clone()))
-        .collect();
-    let value = apply_all(step.clone(), &step_args)?;
-    let consequent = app2(g, head, value)?;
+    let inst = ctor_instance(t_ty, beta, ctor, step)?;
+    let consequent = app2(g, inst.head, inst.value)?;
 
     // antecedent (⋀ G rⱼ bⱼ), folded in only when there are recursive args
-    let body = if images.is_empty() {
+    let body = if inst.rec_pairs.is_empty() {
         consequent
     } else {
-        let conjs: Vec<Term> = images
+        let conjs: Vec<Term> = inst
+            .rec_pairs
             .iter()
             .map(|(sub, img)| app2(g, sub.clone(), img.clone()))
             .collect::<Result<_>>()?;
@@ -102,13 +133,13 @@ fn clause(t_ty: &Type, beta: &Type, ctor: &Constructor, step: &Term, g: &Term) -
 }
 
 /// The type of the impredicative relation variable, `T → β → bool`.
-fn relation_ty(sig: &InductiveSig, beta: &Type) -> Type {
+pub(super) fn relation_ty(sig: &InductiveSig, beta: &Type) -> Type {
     Type::fun(sig.ty.clone(), Type::fun(beta.clone(), Type::bool()))
 }
 
 /// `closed(fs, G)` — `G` is closed under every constructor's recursion
-/// rule: the right-associated conjunction of the per-constructor
-/// [`clause`]s. `steps` must have one entry per constructor.
+/// rule: the right-associated conjunction of the per-constructor clauses.
+/// `steps` must have one entry per constructor.
 pub fn closed(sig: &InductiveSig, steps: &[Term], beta: &Type, g: &Term) -> Result<Term> {
     if steps.len() != sig.arity() {
         return Err(Error::ConnectiveRule(format!(
@@ -132,7 +163,9 @@ pub fn graph(sig: &InductiveSig, steps: &[Term], beta: &Type, t: Term, a: Term) 
     let g_ty = relation_ty(sig, beta);
     let g = Term::free(sig.relation, g_ty.clone());
     let gta = app2(&g, t, a)?;
-    closed(sig, steps, beta, &g)?.imp(gta)?.forall(sig.relation, g_ty)
+    closed(sig, steps, beta, &g)?
+        .imp(gta)?
+        .forall(sig.relation, g_ty)
 }
 
 #[cfg(test)]
@@ -151,7 +184,13 @@ mod tests {
             relation: "G",
             ctors: vec![
                 Constructor::nullary(zero()),
-                Constructor::new(nat_succ(), vec![Arg::Rec { name: "m", image: "b" }]),
+                Constructor::new(
+                    nat_succ(),
+                    vec![Arg::Rec {
+                        name: "m",
+                        image: "b",
+                    }],
+                ),
             ],
         }
     }
@@ -177,7 +216,13 @@ mod tests {
         let gmb = app2(&g, m.clone(), b.clone()).unwrap();
         let fmb = f.apply(m.clone()).unwrap().apply(b.clone()).unwrap();
         let g_succ = app2(&g, succ(m), fmb).unwrap();
-        let step = gmb.imp(g_succ).unwrap().forall("b", nat()).unwrap().forall("m", nat()).unwrap();
+        let step = gmb
+            .imp(g_succ)
+            .unwrap()
+            .forall("b", nat())
+            .unwrap()
+            .forall("m", nat())
+            .unwrap();
         let expected = g0z.and(step).unwrap();
 
         assert_eq!(got, expected);
@@ -191,7 +236,14 @@ mod tests {
         let n = Term::free("n", nat());
         let a = Term::free("a", nat());
 
-        let got = graph(&nat_sig(), &[z.clone(), f.clone()], &nat(), n.clone(), a.clone()).unwrap();
+        let got = graph(
+            &nat_sig(),
+            &[z.clone(), f.clone()],
+            &nat(),
+            n.clone(),
+            a.clone(),
+        )
+        .unwrap();
 
         let g = g_var();
         let g_ty = relation_ty(&nat_sig(), &nat());
@@ -216,10 +268,16 @@ mod tests {
         let t = nat(); // stand-in for `list α`
         let beta = nat();
         // C : α → T → T  and step f : α → T → β → β.
-        let c = Term::free("C", Type::fun(elem.clone(), Type::fun(t.clone(), t.clone())));
+        let c = Term::free(
+            "C",
+            Type::fun(elem.clone(), Type::fun(t.clone(), t.clone())),
+        );
         let f = Term::free(
             "f",
-            Type::fun(elem.clone(), Type::fun(t.clone(), Type::fun(beta.clone(), beta.clone()))),
+            Type::fun(
+                elem.clone(),
+                Type::fun(t.clone(), Type::fun(beta.clone(), beta.clone())),
+            ),
         );
         let sig = InductiveSig {
             ty: t.clone(),
@@ -227,8 +285,14 @@ mod tests {
             ctors: vec![Constructor::new(
                 c.clone(),
                 vec![
-                    Arg::Param { ty: elem.clone(), name: "x" },
-                    Arg::Rec { name: "xs", image: "b" },
+                    Arg::Param {
+                        ty: elem.clone(),
+                        name: "x",
+                    },
+                    Arg::Rec {
+                        name: "xs",
+                        image: "b",
+                    },
                 ],
             )],
         };
@@ -241,7 +305,13 @@ mod tests {
         let b = Term::free("b", beta.clone());
         let gxsb = app2(&g, xs.clone(), b.clone()).unwrap();
         let cons = c.apply(x.clone()).unwrap().apply(xs.clone()).unwrap();
-        let fval = f.apply(x.clone()).unwrap().apply(xs.clone()).unwrap().apply(b.clone()).unwrap();
+        let fval = f
+            .apply(x.clone())
+            .unwrap()
+            .apply(xs.clone())
+            .unwrap()
+            .apply(b.clone())
+            .unwrap();
         let g_cons = app2(&g, cons, fval).unwrap();
         let expected = gxsb
             .imp(g_cons)
@@ -261,6 +331,9 @@ mod tests {
     fn step_count_must_match_arity() {
         let g = g_var();
         let err = closed(&nat_sig(), &[Term::free("z", nat())], &nat(), &g);
-        assert!(err.is_err(), "1 step for a 2-constructor signature must error");
+        assert!(
+            err.is_err(),
+            "1 step for a 2-constructor signature must error"
+        );
     }
 }

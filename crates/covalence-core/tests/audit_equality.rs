@@ -152,7 +152,10 @@ fn sym_rejects_non_eq() {
 fn sym_rejects_imp_shaped_non_eq() {
     // A bool conclusion that is App(App(_, _), _) but head is not Eq.
     // Use App(App(f, x), y) where f : nat→nat→bool.
-    let f = Term::free("f", Type::fun(Type::nat(), Type::fun(Type::nat(), Type::bool())));
+    let f = Term::free(
+        "f",
+        Type::fun(Type::nat(), Type::fun(Type::nat(), Type::bool())),
+    );
     let app = Term::app(Term::app(f, nat("x")), nat("y"));
     let thm = Thm::assume(app).unwrap();
     assert!(matches!(thm.sym().unwrap_err(), Error::NotHolEq(_)));
@@ -295,7 +298,11 @@ fn cong_app_is_mk_comb() {
 fn mk_comb_unions_hyps() {
     // f = g with hyp Hf;  x = y with hyp Hx.
     let fnt = Type::fun(Type::nat(), Type::nat());
-    let hf = eq_at(fnt.clone(), Term::free("f", fnt.clone()), Term::free("g", fnt.clone()));
+    let hf = eq_at(
+        fnt.clone(),
+        Term::free("f", fnt.clone()),
+        Term::free("g", fnt.clone()),
+    );
     let hx = nat_eq(nat("x"), nat("y"));
     let res = Thm::assume(hf.clone())
         .unwrap()
@@ -349,12 +356,7 @@ fn mk_comb_free_var_consistency_across_f_and_x() {
     let fnt = Type::fun(Type::nat(), Type::nat());
     let z_fun = Term::free("z", fnt.clone());
     let z_nat = Term::free("z", Type::nat());
-    let f_eq = Thm::assume(eq_at(
-        fnt.clone(),
-        Term::free("f", fnt.clone()),
-        z_fun,
-    ))
-    .unwrap();
+    let f_eq = Thm::assume(eq_at(fnt.clone(), Term::free("f", fnt.clone()), z_fun)).unwrap();
     // arg side: z_nat = w  (z : nat here)
     let x_eq = Thm::assume(nat_eq(z_nat, nat("w"))).unwrap();
     // f z and g w: but g = z_fun (nat→nat), applied to z_nat (nat).
@@ -479,10 +481,7 @@ fn beta_conv_rejects_non_app() {
 #[test]
 fn beta_conv_rejects_non_abs_head() {
     let app = Term::app(covalence_core::defs::nat_succ(), n5());
-    assert!(matches!(
-        Thm::beta_conv(app).unwrap_err(),
-        Error::NotAbs(_)
-    ));
+    assert!(matches!(Thm::beta_conv(app).unwrap_err(), Error::NotAbs(_)));
 }
 
 #[test]
@@ -831,7 +830,10 @@ fn weaken_rejects_non_superset() {
     let q = boolv("q");
     let thm = Thm::assume(p).unwrap();
     let target: covalence_core::Ctx = [q].into_iter().collect();
-    assert!(matches!(thm.weaken(target).unwrap_err(), Error::NotASuperset));
+    assert!(matches!(
+        thm.weaken(target).unwrap_err(),
+        Error::NotASuperset
+    ));
 }
 
 #[test]

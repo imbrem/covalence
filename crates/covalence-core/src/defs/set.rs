@@ -344,7 +344,10 @@ fn covers(alpha: &Type, s: &Term, n: &Term) -> Term {
     let l = Term::free("l", la.clone());
     let elems_l = Term::app(list_elems(alpha.clone()), l.clone());
     let len_l = Term::app(list_length(alpha.clone()), l.clone());
-    let conj = hol::hol_and(hol::hol_eq(elems_l, s.clone()), hol::hol_eq(len_l, n.clone()));
+    let conj = hol::hol_and(
+        hol::hol_eq(elems_l, s.clone()),
+        hol::hol_eq(len_l, n.clone()),
+    );
     hol::hol_exists("l", la, conj)
 }
 

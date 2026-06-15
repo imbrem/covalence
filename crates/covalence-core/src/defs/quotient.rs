@@ -55,7 +55,10 @@ fn close_predicate(base: Type, rel: Term) -> Term {
 /// `z` must be a free/closed term; the result is the carrier value a
 /// quotient element abstracts.
 fn class_of(base: &Type, rel: &Term, z: &Term) -> Term {
-    let body = Term::app(Term::app(rel.clone(), z.clone()), Term::free("y", base.clone()));
+    let body = Term::app(
+        Term::app(rel.clone(), z.clone()),
+        Term::free("y", base.clone()),
+    );
     hol::pub_abs("y", base.clone(), body)
 }
 

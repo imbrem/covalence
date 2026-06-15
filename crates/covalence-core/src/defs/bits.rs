@@ -81,8 +81,7 @@ fn fixed_width_spec(symbol: Canonical, width: u64) -> TypeSpec {
 macro_rules! width {
     ($spec_fn:ident, $type_fn:ident, $canon:expr, $width:expr) => {
         pub fn $spec_fn() -> TypeSpec {
-            static LAZY: LazyLock<TypeSpec> =
-                LazyLock::new(|| fixed_width_spec($canon, $width));
+            static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| fixed_width_spec($canon, $width));
             LAZY.clone()
         }
         pub fn $type_fn() -> Type {

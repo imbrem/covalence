@@ -111,31 +111,101 @@ it is how unfinished work stays discoverable.
     `le`/`lt` order theory is now developed too — reflexivity, irreflexivity,
     successor cancellation, the zero facts, totality, antisymmetry, the
     `<`/`≤` bridge, and **transitivity** (`le_trans`).
+- **The `rat` quotient + ordered-field theory** in
+  `crates/covalence-hol/src/init/rat.rs`. `rat := (int × int.pos) / ~`
+  (cross-multiplication). Proved outright: `rat_rel_refl`, `rat_rel_symm`
+  (pure `int`-equation `refl`/`sym`); `of_nat_via_int` (the ℕ↪ℚ
+  embedding factors through ℤ↪ℚ, by β); and `add_comm` / `mul_comm` —
+  proved **on the nose**, exactly as `init::int`'s are: `ratAdd`/`ratMul`
+  are componentwise on representatives, so the two representative pairs are
+  provably equal (numerator + denominator each by the proved `int`
+  commutativity facts) and equal representatives lift to equal classes by
+  congruence under `mkRat`; no quotient relation and no `int` cancellation
+  are involved. **Postulated** via the module's `axiom` helper (each
+  carrying its statement as a self-hyp):
+  - `rat_rel_trans` — transitivity of the cross-multiplication relation.
+    Needs `int` *multiplicative cancellation by a positive* (cancel the
+    common positive denominator), an `int` fact not yet discharged. Once
+    that lands, this becomes the int-analogue of `int_rel_trans`.
+  - The remaining ordered-field axioms over `rat_zero`/`rat_one`/`rat_add`/
+    `rat_neg`/`rat_mul`/`rat_lt` (commutative-ring `add_assoc`/`add_zero`/
+    `add_neg`/`mul_assoc`/`mul_one`/`mul_zero`/`distrib`, multiplicative
+    inverse `mul_inv`, the linear order `lt_*`/`le_def`, and the base
+    strictness fact `zero_lt_one` — `ratLt` picks ε-representatives, so
+    `0 < 1` is not reducible). Each is a HOL theorem derivable from the
+    `int` ordered-ring theory through the quotient; filling them in does
+    not change the public `fn` surface. They depend transitively on the
+    `int` postulates above. (The `≤` toolkit
+    `le_refl`/`lt_imp_le`/`le_trans`/`not_one_le_zero` is **not**
+    postulated — it is *derived* from `le_def` + the strict-order facts.)
+  - The two **mediant inequalities** `mediant_gt` / `mediant_lt` — the
+    only postulated leaves of `dense` (which is itself *derived* from
+    them via the mediant `(a+c)/(b+d)`, no division needed). Each unfolds
+    to an `int` order fact (`a·d < c·b ⟹ a·(b+d) < (a+c)·b`, etc.)
+    lifted through the quotient — blocked on the same `int` order theory.
+
+- **The `real` Dedekind-cut theory** in
+  `crates/covalence-hol/src/init/real.rs`. `real := close rat ratLe`
+  (upper cuts). **Proved with no postulates**: the `realLe` partial-order
+  laws `le_refl` / `le_trans` / `le_antisym` — `realLe` is reverse inclusion
+  of cut-sets, so reflexivity/transitivity are pure logic and antisymmetry
+  is pure subtype structure (mutual inclusion ⟹ pointwise-equal cut-sets by
+  function extensionality ⟹ equal reals by the round-trip
+  `Thm::spec_abs_rep`); none touch the `rat`/order postulates. **Proved
+  *modulo* the `rat` order postulates** they consume: `is_cut` (every
+  principal up-set `ratLe q` is a genuine cut, from the `rat` `≤` toolkit),
+  `of_rat_mono` (the principal-cut embedding is monotone, by `rat::le_trans`
+  + the round-trip), and `zero_ne_one` (`⊢ ¬(0 = 1)`, via distinct principal
+  cuts transported through the subtype `rep`/`abs`).
+  **Postulated** via the module's `axiom` helper (self-flagged):
+  - `sup_is_ub` / `sup_is_least` — the two least-upper-bound properties of
+    the supremum cut `real_sup A` (the intersection of the members'
+    cut-sets). Each unfolds to a set/order fact about the cuts, blocked on
+    the same `rat`/order theory. `complete` (the least-upper-bound property,
+    "the reals are complete") is itself **derived** from these two, with
+    `real_sup A` as the witness — the direct analogue of how `rat::dense`
+    is derived from its mediant postulates.
 
 ## Partial subsystems
 
 - **`covalence-hol` inductive-type engine** in
   `crates/covalence-hol/src/init/inductive/`. The shared infrastructure for
   basic inductive types (single-sorted, parametric, first-order,
-  strictly-positive, directly-recursive). **Only the term layer is in place:**
-  `sig.rs` is the signature data model (`InductiveSig` / `Constructor` /
-  `Arg`), and `graph.rs` builds the impredicative recursion graph
-  (`closed` / `graph`) generically from a signature. `nat`'s construction in
-  `init/recursion.rs` consumes these builders (its `nat_sig`), which validates
-  them. Still missing — the **proof layer**, currently hand-specialised to
-  `nat` in `init/recursion.rs`:
-  - **Generic per-constructor inversion lemmas** — the abstraction of
-    `graph_base_inv` (nullary) and `graph_step_inv` (recursive) to an arbitrary
-    constructor: `Graph (Cᵢ x⃗) a ⟹ ∃b⃗. (⋀ Graph rⱼ bⱼ) ∧ a = fᵢ x⃗ b⃗`, via the
-    per-constructor "determinizing" / "good" instances (`det_zero` / `good`).
-  - **Generic totality / determinacy** — fold the supplied induction principle
-    over the inversion lemmas (the bodies of `graph_total` / `graph_det`), then
-    ε-assemble (`recursion_theorem`) into `⊢ ∃rec. P_rec rec`.
-  - **The two feeders** — the engine *consumes* an induction principle plus
-    constructor freeness (injectivity + disjointness). For `nat` these are the
-    kernel primitives (`nat_induct`, `succ_inj`, `zero_ne_succ`); for `list`
-    they must be *derived* from the `stream (option α)` carrier (list induction
-    is the blocker — see the list theory entry below).
+  strictly-positive, directly-recursive). **In place:**
+  - `sig.rs` — the signature data model (`InductiveSig` / `Constructor` / `Arg`).
+  - `data.rs` — the `Inductive` **trait**, the lifting seam: the engine
+    consumes induction (and later freeness) only through it, never calling a
+    kernel rule directly. `nat`'s `NatTheory` adapter sources induction from
+    `Thm::nat_induct`.
+  - `graph.rs` — the impredicative recursion graph (`closed` / `graph` /
+    `ctor_instance`), generic over a signature.
+  - `existence.rs` — `graph_intro` (per-constructor introduction) and
+    `graph_total` (`⊢ ∀t. ∃a. Graph t a`, by the supplied induction). Generic
+    over `Inductive`; `nat` consumes them (`init/recursion.rs`).
+
+  Still **specialised to `nat`** in `init/recursion.rs` (the next generalisation
+  targets):
+  - **Uniqueness** — the per-constructor inversion lemmas (`graph_base_inv`
+    nullary / `graph_step_inv` recursive → `Graph (Cᵢ x⃗) a ⟹ ∃b⃗. (⋀ Graph rⱼ bⱼ)
+    ∧ a = fᵢ x⃗ b⃗`, via the "determinizing" / "good" instances `det_zero` /
+    `good`) and `graph_det`. These need **constructor freeness** (injectivity +
+    distinctness) added to the `Inductive` trait — for `nat` from `succ_inj` /
+    `zero_ne_succ`.
+  - **ε-assembly** — `recursion_theorem` / `rec_holds_proof` generalised to emit
+    `⊢ ∃rec. P_rec rec` from totality + determinacy for any signature.
+  - **The multi-recursive-argument path** in `existence.rs` (conjunctive IHs /
+    antecedents) is written but only exercised by `nat`'s ≤1-rec-arg cases; a
+    binary-tree or `list` signature is the first real test.
+
+  **Lifting to internal HOL (future).** The trait seam exists precisely so the
+  proofs can be re-targeted: today `nat` is a kernel primitive, but we may later
+  define `nat` from `ind` the standard HOL way (`0`/`SUC` carved out of an
+  infinite type via `NUM_REP`), where induction and freeness are **derived
+  theorems**. That presentation supplies the same `Inductive` interface and so
+  drives the same engine — lifting these proofs into internal HOL becomes
+  writing one new `Inductive` impl, not re-deriving the graph route. Keeping
+  every engine entry point generic over `I: Inductive` (never a concrete `nat`)
+  is the standing constraint that keeps this open.
 
 - **`covalence-hol` list theory** in `crates/covalence-hol/src/init/list.rs`.
   Only the **`nil`-side computational foundation** is proved so far — the

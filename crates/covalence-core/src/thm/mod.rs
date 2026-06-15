@@ -926,7 +926,11 @@ impl Thm {
         let pred = subtype_pred(&spec, &args, &carrier)?;
         let prem = hol::hol_eq(Term::app(rep, Term::app(abs, a.clone())), a.clone());
         let pa = Term::app(pred.clone(), a);
-        let some_x = hol::hol_exists("x", carrier.clone(), Term::app(pred, Term::free("x", carrier)));
+        let some_x = hol::hol_exists(
+            "x",
+            carrier.clone(),
+            Term::app(pred, Term::free("x", carrier)),
+        );
         let disj = hol::hol_or(pa, hol::hol_not(some_x));
         Self::build(Ctx::new(), hol::hol_imp(prem, disj))
     }
@@ -1181,8 +1185,7 @@ impl Thm {
                 "nat_induct: induction variable {n_free} is not of type nat"
             )));
         }
-        let expected_conseq =
-            Term::app(p.clone(), Term::app(hol::succ_fn(), n_free.clone()));
+        let expected_conseq = Term::app(p.clone(), Term::app(hol::succ_fn(), n_free.clone()));
         if *conseq != expected_conseq {
             return Err(Error::ConnectiveRule(format!(
                 "nat_induct: step consequent {conseq} is not `p (succ n)`"
@@ -1357,11 +1360,7 @@ fn spec_coercions(spec: &TypeSpec, args: &TypeList) -> Result<(Term, Term, Type,
 /// would collapse both to one type. `subst_tfrees_in_term` applies the
 /// whole map in a single pass and avoids that.
 fn inst_spec_tvars(body: &Term, tvars: &[SmolStr], args: &TypeList) -> Term {
-    let sub: BTreeMap<SmolStr, Type> = tvars
-        .iter()
-        .cloned()
-        .zip(args.iter().cloned())
-        .collect();
+    let sub: BTreeMap<SmolStr, Type> = tvars.iter().cloned().zip(args.iter().cloned()).collect();
     subst_tfrees_in_term(body, &sub)
 }
 
@@ -1507,7 +1506,6 @@ impl fmt::Display for Thm {
         write!(f, " ⊢ {}", self.concl)
     }
 }
-
 
 #[cfg(test)]
 mod hol_light_tests;

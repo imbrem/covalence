@@ -42,9 +42,7 @@ fn port_kind_str(k: PortKind) -> &'static str {
 
 fn parse_node_kind(s: &str) -> PyResult<NodeKind> {
     NodeKind::parse(s).ok_or_else(|| {
-        PyValueError::new_err(format!(
-            "node kind must be 'pure' or 'ordered', got {s:?}"
-        ))
+        PyValueError::new_err(format!("node kind must be 'pure' or 'ordered', got {s:?}"))
     })
 }
 
@@ -440,14 +438,10 @@ impl PyStringDiagram {
     ) -> PyResult<String> {
         let mut store = OverlayMap::default();
         if let Some(ll) = labels {
-            store
-                .blobs
-                .insert(ll.inner.hash(), ll.inner.to_bytes());
+            store.blobs.insert(ll.inner.hash(), ll.inner.to_bytes());
         }
         if let Some(kf) = kinds {
-            store
-                .blobs
-                .insert(kf.inner.hash(), kf.inner.to_bytes());
+            store.blobs.insert(kf.inner.hash(), kf.inner.to_bytes());
         }
         let resolved: ResolvedDiagram<Bytes> = self
             .inner

@@ -286,7 +286,9 @@ fn eval_prim(prim: Prim, args: &[Term]) -> Option<Term> {
                 if exp_digits.len() > 1 {
                     return None;
                 }
-                Some(Term::nat_lit(base.pow(exp_digits.first().copied().unwrap_or(0))))
+                Some(Term::nat_lit(
+                    base.pow(exp_digits.first().copied().unwrap_or(0)),
+                ))
             }
             _ => None,
         },
@@ -303,7 +305,11 @@ fn eval_prim(prim: Prim, args: &[Term]) -> Option<Term> {
         // ---- nat ↔ int / bytes ----
         NatToInt => {
             let n = unary(args, as_nat_lit)?;
-            let sign = if n.is_zero() { Sign::Zero } else { Sign::Positive };
+            let sign = if n.is_zero() {
+                Sign::Zero
+            } else {
+                Sign::Positive
+            };
             Some(Term::int_lit(Int::from_sign_nat(sign, n.clone())))
         }
         NatToBytesLe => Some(Term::blob(unary(args, as_nat_lit)?.to_bytes_le())),
@@ -341,7 +347,10 @@ fn eval_prim(prim: Prim, args: &[Term]) -> Option<Term> {
 
         // ---- bytes ----
         BytesCat => match args {
-            [a, b] => Some(Term::blob(covalence_types::blob::cat(as_blob(a)?, as_blob(b)?))),
+            [a, b] => Some(Term::blob(covalence_types::blob::cat(
+                as_blob(a)?,
+                as_blob(b)?,
+            ))),
             _ => None,
         },
         // The nat operand is reduced mod 256 to a single byte.
@@ -352,7 +361,9 @@ fn eval_prim(prim: Prim, args: &[Term]) -> Option<Term> {
             ))),
             _ => None,
         },
-        BytesLen => Some(Term::nat_lit(Nat::from_inner(unary(args, as_blob)?.len().into()))),
+        BytesLen => Some(Term::nat_lit(Nat::from_inner(
+            unary(args, as_blob)?.len().into(),
+        ))),
         // Out-of-bounds index reads as 0.
         BytesAt => match args {
             [bs, i] => {
@@ -556,7 +567,10 @@ fn reduce_int_op(key: OpKey, args: &[Term]) -> Option<Term> {
             if a.tag != tag {
                 return None;
             }
-            Some(Term::small_int(SmallIntLiteral::new(tag, int_unary(tag, op, a.bits))))
+            Some(Term::small_int(SmallIntLiteral::new(
+                tag,
+                int_unary(tag, op, a.bits),
+            )))
         }
         OpKey::Op(tag, op) if op.is_cmp() => {
             if args.len() != 2 {
@@ -760,9 +774,8 @@ mod tests {
     }
 
     fn assert_reduces(t: Term, want: Term) {
-        let thm = Thm::reduce_prim(t.clone()).unwrap_or_else(|e| {
-            panic!("reduce failed for {t:?}: {e:?}")
-        });
+        let thm = Thm::reduce_prim(t.clone())
+            .unwrap_or_else(|e| panic!("reduce failed for {t:?}: {e:?}"));
         // Conclusion shape: App(App(Eq, lhs), rhs) — a HOL
         // equation at bool. Walk it structurally.
         let TermKind::App(eq_lhs_app, rhs) = thm.concl().kind() else {
@@ -882,7 +895,11 @@ mod tests {
         );
         // unsigned 0x80 >> 1 = 0x40 (logical shift)
         assert_reduces(
-            binary(defs::int_op(IntTag::U8, Shr), Term::u8_lit(0x80), Term::u8_lit(1)),
+            binary(
+                defs::int_op(IntTag::U8, Shr),
+                Term::u8_lit(0x80),
+                Term::u8_lit(1),
+            ),
             Term::u8_lit(0x40),
         );
     }
@@ -892,11 +909,19 @@ mod tests {
         use defs::IntOp::*;
         let u8 = IntTag::U8;
         assert_reduces(
-            binary(defs::int_op(u8, And), Term::u8_lit(0b1100), Term::u8_lit(0b1010)),
+            binary(
+                defs::int_op(u8, And),
+                Term::u8_lit(0b1100),
+                Term::u8_lit(0b1010),
+            ),
             Term::u8_lit(0b1000),
         );
         assert_reduces(
-            binary(defs::int_op(u8, Xor), Term::u8_lit(0b1100), Term::u8_lit(0b1010)),
+            binary(
+                defs::int_op(u8, Xor),
+                Term::u8_lit(0b1100),
+                Term::u8_lit(0b1010),
+            ),
             Term::u8_lit(0b0110),
         );
         // unsigned: 200 < 100 is false
@@ -907,7 +932,11 @@ mod tests {
         // signed: -1 < 1 is true (but the same bits, 0xFF < 0x01, would
         // be false unsigned)
         assert_reduces(
-            binary(defs::int_op(IntTag::S8, Lt), Term::s8_lit(-1), Term::s8_lit(1)),
+            binary(
+                defs::int_op(IntTag::S8, Lt),
+                Term::s8_lit(-1),
+                Term::s8_lit(1),
+            ),
             Term::bool_lit(true),
         );
         assert_reduces(
@@ -934,7 +963,10 @@ mod tests {
         );
         // zext as wrap: u32 0x1FF → u8 0xFF
         assert_reduces(
-            Term::app(defs::int_zext(IntTag::U32, IntTag::U8), Term::u32_lit(0x1FF)),
+            Term::app(
+                defs::int_zext(IntTag::U32, IntTag::U8),
+                Term::u32_lit(0x1FF),
+            ),
             Term::u8_lit(0xFF),
         );
     }
@@ -942,8 +974,14 @@ mod tests {
     #[test]
     fn fixed_width_nat_int_casts() {
         // toNat / toInt
-        assert_reduces(Term::app(defs::int_to_nat(IntTag::U8), Term::u8_lit(200)), nat(200));
-        assert_reduces(Term::app(defs::int_to_int(IntTag::S8), Term::s8_lit(-5)), int(-5));
+        assert_reduces(
+            Term::app(defs::int_to_nat(IntTag::U8), Term::u8_lit(200)),
+            nat(200),
+        );
+        assert_reduces(
+            Term::app(defs::int_to_int(IntTag::S8), Term::s8_lit(-5)),
+            int(-5),
+        );
         // fromNat wraps mod 256
         assert_reduces(
             Term::app(defs::int_from_nat(IntTag::U8), nat(300)),
@@ -1015,7 +1053,6 @@ mod tests {
         assert_reduces(Term::app(defs::nat_to_int(), nat(42)), int(42));
         assert_reduces(Term::app(defs::nat_to_int(), nat(0)), int(0));
     }
-
 
     fn hol_eq_at(alpha: Type) -> Term {
         Term::eq_op(alpha)
@@ -1241,7 +1278,10 @@ mod tests {
         let partial = defs::nat_add();
         assert!(Thm::reduce_prim(partial).is_err());
         // An `App` whose head is not a TermSpec/HolOp.
-        let not_spec = Term::app(Term::const_("f", Type::fun(Type::nat(), Type::nat())), nat(5));
+        let not_spec = Term::app(
+            Term::const_("f", Type::fun(Type::nat(), Type::nat())),
+            nat(5),
+        );
         assert!(Thm::reduce_prim(not_spec).is_err());
         // Args that aren't literals (one is a `Free`).
         let not_lit = Term::app(

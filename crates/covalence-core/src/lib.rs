@@ -64,21 +64,21 @@
 //!   (`defs/`, semi-trusted — see `docs/kernel-design.md` §6).
 
 mod builtins;
+pub mod ctx;
 pub mod defs;
 pub mod error;
 mod hol;
 pub mod subst;
 pub mod term;
-pub mod ty;
-pub mod ctx;
 pub mod thm;
+pub mod ty;
 
+pub use ctx::Ctx;
 pub use error::{Error, Result};
+pub use term::TermSpec;
 pub use term::{
-    Def, Hint, IntTag, ObsEq, ObsImp, ObsTrue, Object, Observer, SmallIntLiteral, Term, TermKind,
+    Def, Hint, IntTag, Object, ObsEq, ObsImp, ObsTrue, Observer, SmallIntLiteral, Term, TermKind,
     Type, TypeKind,
 };
-pub use ty::{TypeList, TypeSpec};
-pub use term::TermSpec;
-pub use ctx::Ctx;
 pub use thm::{Thm, TypeDef};
+pub use ty::{TypeList, TypeSpec};

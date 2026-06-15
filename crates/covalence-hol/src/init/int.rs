@@ -60,8 +60,8 @@ use covalence_core::defs::{fst, pair, prod, snd};
 use covalence_core::{Error, Result, Term, Thm, Type, subst};
 
 use crate::init::ext::{TermExt, ThmExt};
-use crate::init::quotient;
 use crate::init::nat;
+use crate::init::quotient;
 
 // Re-export the `defs/int.rs` term catalogue (the operations; the
 // `*_spec` handles stay in `covalence_core::defs`).
@@ -148,43 +148,33 @@ fn expand_rel(eq: Thm, app: &Term) -> Result<Thm> {
 
 cached_thm! {
     /// `⊢ ∀p. int_rel p p` — reflexivity (`fst p + snd p = fst p + snd p`).
-    pub fn int_rel_refl() -> Thm {
-        int_rel_refl_impl().expect("int_rel_refl")
+    pub fn int_rel_refl() -> Result<Thm> {
+        let p = Term::free("p", nn());
+        let reduced = Thm::refl(nat::add(fst_nn(&p), snd_nn(&p)))?;
+        expand_rel(reduced, &rel_app(&p, &p))?.all_intro("p", nn())
     }
-}
-fn int_rel_refl_impl() -> Result<Thm> {
-    let p = Term::free("p", nn());
-    let reduced = Thm::refl(nat::add(fst_nn(&p), snd_nn(&p)))?;
-    expand_rel(reduced, &rel_app(&p, &p))?.all_intro("p", nn())
 }
 
 cached_thm! {
     /// `⊢ ∀p q. int_rel p q ⟹ int_rel q p` — symmetry (`sym` of the
     /// defining `nat` equation).
-    pub fn int_rel_symm() -> Thm {
-        int_rel_symm_impl().expect("int_rel_symm")
+    pub fn int_rel_symm() -> Result<Thm> {
+        let (p, q) = (Term::free("p", nn()), Term::free("q", nn()));
+        let hyp = rel_app(&p, &q);
+        let flipped = reduce_rel(Thm::assume(hyp.clone())?)?.sym()?; // ⊢ fst q+snd p = fst p+snd q
+        expand_rel(flipped, &rel_app(&q, &p))?
+            .imp_intro(&hyp)?
+            .all_intro("q", nn())?
+            .all_intro("p", nn())
     }
-}
-fn int_rel_symm_impl() -> Result<Thm> {
-    let (p, q) = (Term::free("p", nn()), Term::free("q", nn()));
-    let hyp = rel_app(&p, &q);
-    let flipped = reduce_rel(Thm::assume(hyp.clone())?)?.sym()?; // ⊢ fst q+snd p = fst p+snd q
-    expand_rel(flipped, &rel_app(&q, &p))?
-        .imp_intro(&hyp)?
-        .all_intro("q", nn())?
-        .all_intro("p", nn())
 }
 
 cached_thm! {
     /// `⊢ ∀p q r. int_rel p q ⟹ int_rel q r ⟹ int_rel p r` —
     /// transitivity, by adding the two defining equations and cancelling
     /// the common `nat` summand (`add_interchange` + `add_cancel`).
-    pub fn int_rel_trans() -> Thm {
-        int_rel_trans_impl().expect("int_rel_trans")
-    }
-}
-fn int_rel_trans_impl() -> Result<Thm> {
-    let (p, q, r) = (
+    pub fn int_rel_trans() -> Result<Thm> {
+        let (p, q, r) = (
         Term::free("p", nn()),
         Term::free("q", nn()),
         Term::free("r", nn()),
@@ -216,11 +206,12 @@ fn int_rel_trans_impl() -> Result<Thm> {
         .imp_elim(cancel_eq)?; // ⊢ fp+sr = fr+sp
 
     expand_rel(reduced, &rel_app(&p, &r))?
-        .imp_intro(&h2)?
-        .imp_intro(&h1)?
-        .all_intro("r", nn())?
-        .all_intro("q", nn())?
-        .all_intro("p", nn())
+            .imp_intro(&h2)?
+            .imp_intro(&h1)?
+            .all_intro("r", nn())?
+            .all_intro("q", nn())?
+            .all_intro("p", nn())
+    }
 }
 
 /// Specialise a `∀a b c d. …` theorem at four `nat` witnesses.
@@ -599,19 +590,19 @@ cached_thm! {
     /// (`Pa = fst(rep a)+fst(rep b) = fst(rep b)+fst(rep a) = Qa` by
     /// `nat::add_comm`, likewise `Pb = Qb`), so no quotient lifting is
     /// needed: unfold both sides and rewrite the representative components.
-    pub fn add_comm() -> Thm {
-        add_comm_impl().expect("int::add_comm derivation")
-    }
-}
-fn add_comm_impl() -> Result<Thm> {
-    let (a, b) = (var("a"), var("b"));
+    pub fn add_comm() -> Result<Thm> {
+        let (a, b) = (var("a"), var("b"));
     let dl = add_defining_eq(&a, &b)?; // int.add a b = abs(classOf(pair Pa Pb))
     let dr = add_defining_eq(&b, &a)?; // int.add b a = abs(classOf(pair Qa Qb))
 
     // Pa = Qa (commute first components); Pb = Qb (second components).
     let (rpa, rpb) = (rep_pair(&a), rep_pair(&b));
-    let eq_a = nat::add_comm().all_elim(fst_nn(&rpa))?.all_elim(fst_nn(&rpb))?;
-    let eq_b = nat::add_comm().all_elim(snd_nn(&rpa))?.all_elim(snd_nn(&rpb))?;
+    let eq_a = nat::add_comm()
+        .all_elim(fst_nn(&rpa))?
+        .all_elim(fst_nn(&rpb))?;
+    let eq_b = nat::add_comm()
+        .all_elim(snd_nn(&rpa))?
+        .all_elim(snd_nn(&rpb))?;
 
     // Rewrite the RHS of `dl` (Pa→Qa, Pb→Qb) into the RHS of `dr`.
     let t0 = dl.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
@@ -624,6 +615,7 @@ fn add_comm_impl() -> Result<Thm> {
         .trans(dr.sym()?)? // int.add a b = int.add b a
         .all_intro("b", int())?
         .all_intro("a", int())
+    }
 }
 
 /// `⊢ ∀a b c. (a + b) + c = a + (b + c)`. **Postulate** — the quotient-lift
@@ -672,7 +664,9 @@ fn elim3(thm: Thm, a: &Term, b: &Term, c: &Term) -> Result<Thm> {
 /// `⊢ ∀a. a + 0 = a`.
 pub fn add_zero() -> Thm {
     let a = var("a");
-    let eq = add(a.clone(), lit(0)).equals(a).expect("add_zero: a + 0 = a");
+    let eq = add(a.clone(), lit(0))
+        .equals(a)
+        .expect("add_zero: a + 0 = a");
     axiom(forall_int(&["a"], eq))
 }
 
@@ -692,13 +686,9 @@ cached_thm! {
     /// `fb·fa + sb·sa` by `nat::mul_comm`, and the second `fa·sb + sa·fb`
     /// to `fb·sa + sb·fa` by `nat::mul_comm` (each product) plus one
     /// `nat::add_comm` (to swap the two summands). Unfold + rewrite.
-    pub fn mul_comm() -> Thm {
-        mul_comm_impl().expect("int::mul_comm derivation")
-    }
-}
-fn mul_comm_impl() -> Result<Thm> {
-    let (a, b) = (var("a"), var("b"));
-    let dl = mul_defining_eq(&a, &b)?;
+    pub fn mul_comm() -> Result<Thm> {
+        let (a, b) = (var("a"), var("b"));
+        let dl = mul_defining_eq(&a, &b)?;
     let dr = mul_defining_eq(&b, &a)?;
 
     let (rpa, rpb) = (rep_pair(&a), rep_pair(&b));
@@ -725,6 +715,7 @@ fn mul_comm_impl() -> Result<Thm> {
         .trans(dr.sym()?)?
         .all_intro("b", int())?
         .all_intro("a", int())
+    }
 }
 
 /// `⊢ ∀a b c. (a * b) * c = a * (b * c)`.
@@ -739,7 +730,9 @@ pub fn mul_assoc() -> Thm {
 /// `⊢ ∀a. a * 1 = a`.
 pub fn mul_one() -> Thm {
     let a = var("a");
-    let eq = mul(a.clone(), lit(1)).equals(a).expect("mul_one: a * 1 = a");
+    let eq = mul(a.clone(), lit(1))
+        .equals(a)
+        .expect("mul_one: a * 1 = a");
     axiom(forall_int(&["a"], eq))
 }
 
@@ -763,7 +756,9 @@ pub fn distrib() -> Thm {
 pub fn sub_def() -> Thm {
     let (a, b) = (var("a"), var("b"));
     let sub = Term::app(Term::app(int_sub(), a.clone()), b.clone());
-    let eq = sub.equals(add(a, neg(b))).expect("sub_def: a - b = a + (-b)");
+    let eq = sub
+        .equals(add(a, neg(b)))
+        .expect("sub_def: a - b = a + (-b)");
     axiom(forall_int(&["a", "b"], eq))
 }
 
@@ -904,10 +899,17 @@ mod tests {
     #[test]
     fn add_comm_is_a_genuine_theorem() {
         let thm = add_comm();
-        assert!(thm.hyps().is_empty(), "int::add_comm is proved, not postulated");
+        assert!(
+            thm.hyps().is_empty(),
+            "int::add_comm is proved, not postulated"
+        );
         // ∀a b. a + b = b + a, specialised.
         let (a, b) = (var("a"), var("b"));
-        let inst = thm.all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
+        let inst = thm
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap();
         let expected = add(a.clone(), b.clone()).equals(add(b, a)).unwrap();
         assert_eq!(inst.concl(), &expected);
     }
@@ -915,9 +917,16 @@ mod tests {
     #[test]
     fn mul_comm_is_a_genuine_theorem() {
         let thm = mul_comm();
-        assert!(thm.hyps().is_empty(), "int::mul_comm is proved, not postulated");
+        assert!(
+            thm.hyps().is_empty(),
+            "int::mul_comm is proved, not postulated"
+        );
         let (a, b) = (var("a"), var("b"));
-        let inst = thm.all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
+        let inst = thm
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap();
         let expected = mul(a.clone(), b.clone()).equals(mul(b, a)).unwrap();
         assert_eq!(inst.concl(), &expected);
     }
@@ -955,9 +964,16 @@ mod tests {
         let p = Term::free("p", nn());
         let q = Term::free("q", nn());
         // refl specialises to `int_rel p p`.
-        assert_eq!(int_rel_refl().all_elim(p.clone()).unwrap().concl(), &rel_app(&p, &p));
+        assert_eq!(
+            int_rel_refl().all_elim(p.clone()).unwrap().concl(),
+            &rel_app(&p, &p)
+        );
         // symm specialises to `int_rel p q ⟹ int_rel q p`.
-        let symm = int_rel_symm().all_elim(p.clone()).unwrap().all_elim(q.clone()).unwrap();
+        let symm = int_rel_symm()
+            .all_elim(p.clone())
+            .unwrap()
+            .all_elim(q.clone())
+            .unwrap();
         assert_eq!(symm.concl(), &rel_app(&p, &q).imp(rel_app(&q, &p)).unwrap());
     }
 
@@ -989,16 +1005,13 @@ mod tests {
         let (p, q) = (Term::free("p", nn()), Term::free("q", nn()));
         // From {int_rel p q} ⊢ int_rel p q, lift to mkClass p = mkClass q.
         let ab = Thm::assume(rel_app(&p, &q)).unwrap();
-        let lifted = quotient::class_intro(
-            &spec,
-            &[],
-            &nn(),
-            &int_rel_symm(),
-            &int_rel_trans(),
-            ab,
-        )
-        .expect("class_intro on int_rel");
-        assert!(lifted.concl().as_eq().is_some(), "lifted to a class equation");
+        let lifted =
+            quotient::class_intro(&spec, &[], &nn(), &int_rel_symm(), &int_rel_trans(), ab)
+                .expect("class_intro on int_rel");
+        assert!(
+            lifted.concl().as_eq().is_some(),
+            "lifted to a class equation"
+        );
         assert!(lifted.hyps().iter().any(|h| h == &rel_app(&p, &q)));
     }
 }

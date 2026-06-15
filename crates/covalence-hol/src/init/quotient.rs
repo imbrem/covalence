@@ -190,7 +190,12 @@ fn quot_pred_holds(spec: &TypeSpec, base: &Type, rel: &Term, a: &Term) -> Result
         .ok_or_else(|| Error::ConnectiveRule("quotient: spec has no carving predicate".into()))?
         .clone();
     let body_eq = Thm::beta_conv(Term::app(pred, coa.clone()))?; // ⊢ P(coa) = (∃z. coa = classOf z)
-    let body = body_eq.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let body = body_eq
+        .concl()
+        .as_eq()
+        .ok_or(Error::NotAnEquation)?
+        .1
+        .clone();
     let exists_pred = body.as_app().ok_or(Error::NotAnEquation)?.1.clone(); // λz. coa = classOf z
 
     // ⊢ exists_pred a, i.e. `coa = classOf a`, which is `coa = coa` (refl).
@@ -226,7 +231,9 @@ pub fn round_trip(
 
     // ⊢ φ a, since φ a → (rep mkc) a = coa a → rel a a.
     let rel_aa = inst3(refl, &[a])?;
-    let coa_a = Thm::beta_conv(Term::app(coa.clone(), a.clone()))?.sym()?.eq_mp(rel_aa)?; // ⊢ coa a
+    let coa_a = Thm::beta_conv(Term::app(coa.clone(), a.clone()))?
+        .sym()?
+        .eq_mp(rel_aa)?; // ⊢ coa a
     let repmkc_a = rep_abs.clone().cong_fn(a.clone())?.sym()?.eq_mp(coa_a)?; // ⊢ (rep mkc) a
     let phi_a = Thm::beta_conv(Term::app(phi.clone(), a.clone()))?
         .sym()?
@@ -323,13 +330,11 @@ pub fn recon(
     let rep_a = Term::app(rep.clone(), a.clone());
 
     // ⊢ abs(rep a) = a.
-    let abs_rep = Thm::spec_abs_rep(spec.clone(), args.to_vec(), a.clone())
-        ?;
+    let abs_rep = Thm::spec_abs_rep(spec.clone(), args.to_vec(), a.clone())?;
 
     // ⊢ P(rep a) ∨ ¬∃S. P S — back direction at `rep a`, whose premise
     // `rep(abs(rep a)) = rep a` is `abs_rep` pushed under `rep`.
-    let back = Thm::spec_rep_abs_back(spec.clone(), args.to_vec(), rep_a.clone())
-        ?;
+    let back = Thm::spec_rep_abs_back(spec.clone(), args.to_vec(), rep_a.clone())?;
     let prem = abs_rep.clone().cong_arg(rep.clone())?; // rep(abs(rep a)) = rep a
     let disj = back.imp_elim(prem)?;
 
@@ -415,7 +420,9 @@ pub fn recon(
     // ⊢ a = mk_class eps.
     let mkz_eq_a = h.sym()?.cong_arg(abs)?.trans(abs_rep)?; // abs(classOf z) = a
     let body = mkz_eq_a.sym()?.trans(classes)?; // {h} ⊢ a = mk_class eps
-    let step = body.imp_intro(&app_tm)?.all_intro("__recon_z", base.clone())?;
+    let step = body
+        .imp_intro(&app_tm)?
+        .all_intro("__recon_z", base.clone())?;
 
     logic::exists_elim(exists_z, a.clone().equals(goal_rhs)?, step)
 }
@@ -502,7 +509,11 @@ mod tests {
     /// mkClass b` must imply `a = b`.
     fn nat_eq_quot() -> (TypeSpec, Term, Type) {
         let rel = Term::eq_op(Type::nat());
-        let spec = TypeSpec::quot(smol_str::SmolStr::new_static("q.test"), Type::nat(), rel.clone());
+        let spec = TypeSpec::quot(
+            smol_str::SmolStr::new_static("q.test"),
+            Type::nat(),
+            rel.clone(),
+        );
         (spec, rel, Type::nat())
     }
 
@@ -517,8 +528,7 @@ mod tests {
             .equals(mk_class(&spec, &[], &base, &rel, &b))
             .unwrap();
         let assumed = Thm::assume(class_eq.clone()).unwrap();
-        let recovered =
-            class_elim(&spec, &[], &base, &rel, &eq_refl(), &a, &b, assumed).unwrap();
+        let recovered = class_elim(&spec, &[], &base, &rel, &eq_refl(), &a, &b, assumed).unwrap();
 
         assert_eq!(recovered.concl(), &eq(&a, &b));
         // The only hypothesis is the class equation we started from.
@@ -545,13 +555,24 @@ mod tests {
         let a = Term::free("a", Type::spec(spec.clone(), vec![])); // a quotient element
         let bw = super::super::nat::zero(); // any base element witnesses non-emptiness
         let rt = recon(
-            &spec, &[], &base, &rel, &eq_refl(), &eq_symm(), &eq_trans(), &bw, &a,
+            &spec,
+            &[],
+            &base,
+            &rel,
+            &eq_refl(),
+            &eq_symm(),
+            &eq_trans(),
+            &bw,
+            &a,
         )
         .expect("recon on nat-eq quotient");
         // ⊢ a = mk_class(rep_class a), hypothesis-free.
         assert!(rt.hyps().is_empty(), "recon is genuine");
         let (l, r) = rt.concl().as_eq().expect("recon yields an equation");
         assert_eq!(l, &a);
-        assert_eq!(r, &mk_class(&spec, &[], &base, &rel, &rep_class(&spec, &[], &base, &a)));
+        assert_eq!(
+            r,
+            &mk_class(&spec, &[], &base, &rel, &rep_class(&spec, &[], &base, &a))
+        );
     }
 }

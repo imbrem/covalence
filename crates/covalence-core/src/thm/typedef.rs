@@ -11,9 +11,9 @@ use std::sync::Arc;
 
 use smol_str::SmolStr;
 
+use crate::ctx::Ctx;
 use crate::error::{Error, Result};
 use crate::hol;
-use crate::ctx::Ctx;
 use crate::term::{Def, Term, TermKind, Type, TypeKind};
 
 use super::Thm;
@@ -101,11 +101,7 @@ impl Thm {
             hol::hol_imp(p_at_r.clone(), rep_abs_eq.clone()),
         );
         //    back: ⊢ ∀r:α. rep (abs r) = r ⟹ P r
-        let back_concl = hol::hol_forall(
-            "r",
-            alpha,
-            hol::hol_imp(rep_abs_eq, p_at_r),
-        );
+        let back_concl = hol::hol_forall("r", alpha, hol::hol_imp(rep_abs_eq, p_at_r));
 
         // 8. Propagate witness's hyps to each emitted theorem — every
         //    fact about the new typedef depends on the witness's

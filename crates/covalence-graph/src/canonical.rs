@@ -340,8 +340,8 @@ fn decode_ports(d: &mut Cursor<'_>) -> Result<Vec<Port>, DecodeError> {
         let type_id = TypeId(d.read_u64()?);
         let name_len = d.read_u32()? as usize;
         let name_bytes = d.take(name_len)?.to_vec();
-        let name =
-            String::from_utf8(name_bytes).map_err(|_| DecodeError::BadUtf8 { what: "port name" })?;
+        let name = String::from_utf8(name_bytes)
+            .map_err(|_| DecodeError::BadUtf8 { what: "port name" })?;
         ports.push(Port {
             name,
             type_id,

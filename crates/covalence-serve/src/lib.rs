@@ -196,10 +196,7 @@ pub fn build_router(state: AppState, api_only: bool) -> Router {
         .route("/api/objects/tree/json", post(api::tree_insert_json))
         .route("/api/objects/tree/git", post(api::tree_insert_git))
         .route("/api/objects/info/{hash}", get(api::object_info))
-        .route(
-            "/api/objects/tag",
-            post(api::register_tag),
-        )
+        .route("/api/objects/tag", post(api::register_tag))
         .route("/api/objects/tag/{hash}", get(api::lookup_tag))
         .route("/api/objects/{hash}", head(api::object_head))
         .route(

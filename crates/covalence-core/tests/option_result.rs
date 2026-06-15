@@ -10,7 +10,7 @@
 //! never derived equalities like `optionCase d f none = d`.
 
 use covalence_core::defs::*;
-use covalence_core::{Term, Type, TermKind, TypeKind};
+use covalence_core::{Term, TermKind, Type, TypeKind};
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -230,7 +230,10 @@ fn constructor_term_leaf_labels() {
     assert_eq!(term_spec_label(&some(Type::nat())), "option.some");
     assert_eq!(term_spec_label(&none(Type::nat())), "option.none");
     assert_eq!(term_spec_label(&ok(Type::nat(), Type::int())), "result.ok");
-    assert_eq!(term_spec_label(&err(Type::nat(), Type::int())), "result.err");
+    assert_eq!(
+        term_spec_label(&err(Type::nat(), Type::int())),
+        "result.err"
+    );
     assert_eq!(
         term_spec_label(&option_case(Type::nat(), Type::int())),
         "option.case"

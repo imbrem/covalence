@@ -78,7 +78,9 @@ fn round_trip(a: &Type, b: &Type, rel: &Term, witness: &Term, left: bool) -> Res
     let beta = Thm::beta_conv(prem)?; // ⊢ prem = (D1 ∨ D2)
     let disj = rhs_of(&beta)?;
     let (d1, d2) = parse_or(&disj).ok_or_else(|| {
-        Error::ConnectiveRule(format!("coprod round_trip: predicate is not a disjunction: {disj}"))
+        Error::ConnectiveRule(format!(
+            "coprod round_trip: predicate is not a disjunction: {disj}"
+        ))
     })?;
     let chosen = if left { &d1 } else { &d2 };
     let pred = chosen.as_app().ok_or(Error::NotAnEquation)?.1.clone(); // the ∃'s λ
@@ -254,7 +256,12 @@ pub fn case_inl(a: &Type, b: &Type, gamma: &Type, f: &Term, g: &Term, av: &Term)
     let p_at = pred_at_inl(a, b, f, g, av, &pred, &witness)?;
     // ⊢ ε pred = f av, from the left clause at `a := av`.
     let at_choice = Thm::select_ax(pred.clone(), witness.clone())?.imp_elim(p_at)?;
-    let eps = at_choice.concl().as_app().ok_or(Error::NotAnEquation)?.1.clone();
+    let eps = at_choice
+        .concl()
+        .as_app()
+        .ok_or(Error::NotAnEquation)?
+        .1
+        .clone();
     let conj = Thm::beta_conv(Term::app(pred.clone(), eps))?.eq_mp(at_choice)?;
     let left_clause = conj.and_elim_l()?; // ∀a. rep(inl av)=leftRel a ⟹ ε = f a
     let pinned = left_clause
@@ -272,7 +279,12 @@ pub fn case_inr(a: &Type, b: &Type, gamma: &Type, f: &Term, g: &Term, bv: &Term)
 
     let p_at = pred_at_inr(a, b, f, g, bv, &pred, &witness)?;
     let at_choice = Thm::select_ax(pred.clone(), witness.clone())?.imp_elim(p_at)?;
-    let eps = at_choice.concl().as_app().ok_or(Error::NotAnEquation)?.1.clone();
+    let eps = at_choice
+        .concl()
+        .as_app()
+        .ok_or(Error::NotAnEquation)?
+        .1
+        .clone();
     let conj = Thm::beta_conv(Term::app(pred.clone(), eps))?.eq_mp(at_choice)?;
     let right_clause = conj.and_elim_r()?; // ∀b. rep(inr bv)=rightRel b ⟹ ε = g b
     let pinned = right_clause
@@ -338,7 +350,10 @@ fn pred_at_inl(
     let bad = rep_eq.sym()?.trans(hr)?; // {H} ⊢ leftRel av = rightRel __cib
     let f_false = left_ne_right(a, b, av, &b_var)?.not_elim(bad)?; // {H} ⊢ F
     let goal = witness.clone().equals(Term::app(g.clone(), b_var))?;
-    let right_clause = f_false.false_elim(goal)?.imp_intro(&ante_r)?.all_intro("__cib", b.clone())?;
+    let right_clause = f_false
+        .false_elim(goal)?
+        .imp_intro(&ante_r)?
+        .all_intro("__cib", b.clone())?;
 
     let conj = left_clause.and_intro(right_clause)?;
     Thm::beta_conv(Term::app(pred.clone(), witness.clone()))?
@@ -366,7 +381,10 @@ fn pred_at_inr(
     let bad = rep_eq.clone().sym()?.trans(hl)?; // {H} ⊢ rightRel bv = leftRel __cia
     let f_false = left_ne_right(a, b, &a_var, bv)?.not_elim(bad.sym()?)?; // {H} ⊢ F
     let goal = witness.clone().equals(Term::app(f.clone(), a_var))?;
-    let left_clause = f_false.false_elim(goal)?.imp_intro(&ante_l)?.all_intro("__cia", a.clone())?;
+    let left_clause = f_false
+        .false_elim(goal)?
+        .imp_intro(&ante_l)?
+        .all_intro("__cia", a.clone())?;
 
     // Right clause: ∀b. rep(inr bv) = rightRel b ⟹ g bv = g b.
     let b_var = Term::free("__cib", b.clone());
@@ -528,8 +546,14 @@ fn map_to_inj(
         ex.or_intro_r(goal_l.clone())?
     };
     // ⊢ ∀v. pred v ⟹ goal, then close the existential.
-    let step = full.imp_intro(&ante_app)?.all_intro("__mtv", carrier.clone())?;
-    let branch = exists_elim(Thm::assume(ex_rel.clone())?, full_goal(goal_l, goal_r)?, step)?;
+    let step = full
+        .imp_intro(&ante_app)?
+        .all_intro("__mtv", carrier.clone())?;
+    let branch = exists_elim(
+        Thm::assume(ex_rel.clone())?,
+        full_goal(goal_l, goal_r)?,
+        step,
+    )?;
     branch.imp_intro(ex_rel)
 }
 
@@ -616,7 +640,9 @@ fn eta_branch(
         .trans(mij_reduce)?; // ⊢ k c = m (inj v)
     let point = m_lhs.trans(k_rhs.sym()?)?; // ⊢ m c = k c
     // ⊢ ∀v. pred v ⟹ (m c = k c), then exists-eliminate the witness.
-    let step = point.imp_intro(&ante_app)?.all_intro("__ebv", carrier.clone())?;
+    let step = point
+        .imp_intro(&ante_app)?
+        .all_intro("__ebv", carrier.clone())?;
     let branch = exists_elim(Thm::assume(ex_inj.clone())?, goal.clone(), step)?;
     branch.imp_intro(ex_inj)
 }
@@ -689,7 +715,10 @@ mod tests {
             .unwrap()
             .apply(g)
             .unwrap()
-            .apply(Term::app(inl(av.type_of().unwrap(), Type::tfree("b")), av.clone()))
+            .apply(Term::app(
+                inl(av.type_of().unwrap(), Type::tfree("b")),
+                av.clone(),
+            ))
             .unwrap();
         assert_eq!(thm.concl(), &lhs.equals(Term::app(f, av)).unwrap());
     }

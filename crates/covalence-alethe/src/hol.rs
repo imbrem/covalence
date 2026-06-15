@@ -117,11 +117,11 @@ impl HolAletheBridge {
                 match sym {
                     "true" => Ok(Term::bool_lit(true)),
                     "false" => Ok(Term::bool_lit(false)),
-                    _ if sym.starts_with('@') => self
-                        .named
-                        .get(sym)
-                        .cloned()
-                        .ok_or_else(|| BridgeError::Malformed(format!("unknown :named ref {sym}"))),
+                    _ if sym.starts_with('@') => {
+                        self.named.get(sym).cloned().ok_or_else(|| {
+                            BridgeError::Malformed(format!("unknown :named ref {sym}"))
+                        })
+                    }
                     // An integer literal (cvc5 writes negatives bare, e.g. `-6`).
                     _ if sym.parse::<i128>().is_ok() => {
                         Ok(Term::int_lit(sym.parse::<i128>().unwrap()))
@@ -244,7 +244,9 @@ impl HolAletheBridge {
     /// (so `>`/`>=` reuse `<`/`<=`).
     fn int_cmp(&mut self, items: &[SExpr], op: Term, swap: bool) -> R<Term> {
         if items.len() != 3 {
-            return Err(BridgeError::Malformed(format!("comparison arity: {items:?}")));
+            return Err(BridgeError::Malformed(format!(
+                "comparison arity: {items:?}"
+            )));
         }
         let a = self.term(&items[1])?;
         let b = self.term(&items[2])?;
@@ -530,7 +532,8 @@ fn dest_and(t: &Term) -> Option<(Term, Term)> {
     let (f, b) = t.as_app()?;
     let (head, a) = f.as_app()?;
     let (spec, _) = head.as_spec()?;
-    spec.ptr_eq(&defs::and_spec()).then(|| (a.clone(), b.clone()))
+    spec.ptr_eq(&defs::and_spec())
+        .then(|| (a.clone(), b.clone()))
 }
 
 /// `not_not`: the tautology clause `(cl (not (not (not p))) p)`, i.e.
@@ -567,7 +570,9 @@ fn evaluate(lits: &[Term]) -> R<Thm> {
 /// normalising it to `T`. Soundness-preserving: nothing is trusted.
 fn rewrite(lits: &[Term]) -> R<Thm> {
     let [lit] = lits else {
-        return Err(BridgeError::NotImplemented("rewrite (non-unit clause)".into()));
+        return Err(BridgeError::NotImplemented(
+            "rewrite (non-unit clause)".into(),
+        ));
     };
     if let Some((lhs, rhs)) = lit.as_eq() {
         return discharge_eq(lhs, rhs);
@@ -736,7 +741,10 @@ mod tests {
             Term::app(defs::int_neg(), x())
         );
         // (* 2 3) — closed, folds left
-        assert_eq!(translate(&[], "(* 2 3)"), app2(defs::int_mul(), lit(2), lit(3)));
+        assert_eq!(
+            translate(&[], "(* 2 3)"),
+            app2(defs::int_mul(), lit(2), lit(3))
+        );
     }
 
     #[test]

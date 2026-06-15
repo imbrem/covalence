@@ -23,8 +23,8 @@ use pyo3::prelude::*;
 use slotmap::SlotMap;
 
 use covalence_wasm::build::wasm_encoder::{
-    CanonicalOption, ComponentBuilder as WeComponentBuilder, ComponentExportKind,
-    ComponentTypeRef, ComponentValType, ExportKind, InstanceType, ModuleArg,
+    CanonicalOption, ComponentBuilder as WeComponentBuilder, ComponentExportKind, ComponentTypeRef,
+    ComponentValType, ExportKind, InstanceType, ModuleArg,
 };
 use covalence_wasm::build::{self as cwb, FuncIdx, ValType};
 
@@ -318,8 +318,7 @@ impl SystemBuilder {
 
             let mut aliased = Vec::with_capacity(inst.exports.len());
             for name in &inst.exports {
-                let func_idx =
-                    cb.alias_export(inst_idx, name.as_str(), ComponentExportKind::Func);
+                let func_idx = cb.alias_export(inst_idx, name.as_str(), ComponentExportKind::Func);
                 aliased.push(func_idx);
             }
             instance_aliased.push(aliased);
@@ -329,8 +328,8 @@ impl SystemBuilder {
         let core_module_idx = cb.core_module_raw(None, &module_bytes);
 
         // 5. Canon-lower each component func into a core func.
-        let attest_lowered = attest_func_idx
-            .map(|f| cb.lower_func(None, f, std::iter::empty::<CanonicalOption>()));
+        let attest_lowered =
+            attest_func_idx.map(|f| cb.lower_func(None, f, std::iter::empty::<CanonicalOption>()));
         let instance_lowered: Vec<Vec<u32>> = instance_aliased
             .iter()
             .map(|aliased| {
@@ -345,10 +344,7 @@ impl SystemBuilder {
         let mut with_args: Vec<(String, u32)> = Vec::new();
 
         if let Some(att) = attest_lowered {
-            let env_inst = cb.core_instantiate_exports(
-                None,
-                [("attest", ExportKind::Func, att)],
-            );
+            let env_inst = cb.core_instantiate_exports(None, [("attest", ExportKind::Func, att)]);
             with_args.push(("env".to_string(), env_inst));
         }
 
@@ -380,8 +376,7 @@ impl SystemBuilder {
             let name = match entry {
                 ExportEntry::NoOp(n) | ExportEntry::Explicit(n, _) => n.as_str(),
             };
-            let core_func_idx =
-                cb.core_alias_export(None, main_core_inst, name, ExportKind::Func);
+            let core_func_idx = cb.core_alias_export(None, main_core_inst, name, ExportKind::Func);
             let lifted = cb.lift_func(
                 None,
                 core_func_idx,
@@ -465,7 +460,6 @@ impl WeComponentBuilderExt for WeComponentBuilder {
         self.type_instance(None, &inst_ty)
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // Hash extraction helpers

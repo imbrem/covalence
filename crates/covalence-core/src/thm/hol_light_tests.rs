@@ -588,7 +588,7 @@ fn disch_mp_round_trips() {
     // From {p} ⊢ p, DISCH then MP back with ⊢ p should recover ⊢ p.
     let p = Term::free("p", Type::bool());
     let assumed = Thm::assume(p.clone()).unwrap();
-    let imp = assumed.imp_intro(&p).unwrap();   // ⊢ p ⟹ p
+    let imp = assumed.imp_intro(&p).unwrap(); // ⊢ p ⟹ p
     let p_thm = Thm::assume(p.clone()).unwrap();
     let recovered = imp.imp_elim(p_thm).unwrap(); // ⊢ p
     assert_eq!(recovered.concl(), &p);
@@ -601,7 +601,7 @@ fn all_intro_generalises_free_var() {
     // ⊢ p[x]   --all_intro x:nat-->   ⊢ ∀x:nat. p[x]
     // Construct ⊢ x = x : bool by refl, then generalise.
     let x = Term::free("x", Type::nat());
-    let refl = Thm::refl(x).unwrap();   // ⊢ x = x : bool
+    let refl = Thm::refl(x).unwrap(); // ⊢ x = x : bool
     let univ = refl.all_intro("x", Type::nat()).expect("all_intro");
     let (ty, _body) = parse_hol_forall(univ.concl()).unwrap();
     assert_eq!(ty, &Type::nat());
@@ -685,8 +685,10 @@ fn gen_spec_round_trips_at_concrete_witness() {
 fn eta_conv_simple() {
     // λx:nat. succ x  --eta-->  succ
     let succ = crate::defs::nat_succ();
-    let lambda = Term::abs(Type::nat(),
-        Term::app(crate::subst::shift_by(&succ, 1, 0), Term::bound(0)));
+    let lambda = Term::abs(
+        Type::nat(),
+        Term::app(crate::subst::shift_by(&succ, 1, 0), Term::bound(0)),
+    );
     let thm = Thm::eta_conv(lambda.clone()).expect("eta");
     let (l, r) = parse_hol_eq(thm.concl()).unwrap();
     assert_eq!(l, &lambda);
@@ -792,8 +794,7 @@ fn nat_induct_rule_builds_forall() {
     let base = {
         let redex = Term::app(p.clone(), zero);
         let beta = Thm::beta_conv(redex).unwrap(); // ⊢ p 0 = (0 = 0)
-        let refl00 =
-            Thm::refl(Term::nat_lit(covalence_types::Nat::zero())).unwrap();
+        let refl00 = Thm::refl(Term::nat_lit(covalence_types::Nat::zero())).unwrap();
         beta.sym().unwrap().eq_mp(refl00).unwrap() // ⊢ p 0
     };
     // step : ⊢ p n ⟹ p (succ n) — assume `p n`, prove `p (succ n)`.
@@ -889,10 +890,7 @@ fn select_ax_shape_and_hyp_free() {
     assert!(thm.hyps().is_empty());
     let (prem, concl) = parse_hol_imp(thm.concl()).unwrap();
     assert_eq!(prem, &Term::app(p.clone(), x));
-    let expected = Term::app(
-        p.clone(),
-        Term::app(Term::select_op(Type::nat()), p),
-    );
+    let expected = Term::app(p.clone(), Term::app(Term::select_op(Type::nat()), p));
     assert_eq!(concl, &expected);
 }
 
@@ -992,7 +990,10 @@ fn lem_on_bool_literals_and_compound_props() {
         let p = Term::bool_lit(b);
         let thm = Thm::lem(p.clone()).unwrap();
         assert!(thm.hyps().is_empty());
-        assert_eq!(thm.concl(), &crate::hol::hol_or(p.clone(), crate::hol::hol_not(p)));
+        assert_eq!(
+            thm.concl(),
+            &crate::hol::hol_or(p.clone(), crate::hol::hol_not(p))
+        );
     }
     // A compound proposition (an equation at nat) is `bool`-typed, so LEM
     // applies and the disjuncts are that whole proposition.
@@ -1099,7 +1100,11 @@ fn unfold_term_spec_handles_swapped_type_params() {
         crate::defs::rel(b.clone(), a.clone()),
         Type::fun(b.clone(), Type::fun(a.clone(), Type::bool())),
     );
-    assert_eq!(holds.type_of().unwrap(), expected_ty, "leaf type at ['b,'a]");
+    assert_eq!(
+        holds.type_of().unwrap(),
+        expected_ty,
+        "leaf type at ['b,'a]"
+    );
 
     let thm = Thm::unfold_term_spec(holds.clone()).expect("unfold rel.holds['b,'a]");
     assert!(thm.hyps().is_empty());

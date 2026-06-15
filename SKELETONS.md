@@ -309,10 +309,14 @@ coupling guard.
 
 The S-expression authoring + replay layer (`Env`/prelude, the `infer`
 type-inference elaborator, `Drv` proof terms, the `check` interpreter, the
-`rw`/`tauto` tactics). The **parse → replay** direction is built and tested;
-`script/theories/logic.cov` ports `truth`/`and.comm`/`or.comm` (checked equal
-to the Rust originals) plus lemma application (`inst`/`inst-tfree` + MP).
-These are deliberately deferred:
+`rw`/`tauto` tactics, and the `cov_theory!` loader macro). The
+**parse → replay** direction is built and tested; `init::logic`'s
+`truth`/`and_comm`/`or_comm` are now **loaded from `init/logic.cov`** via
+`cov_theory!` (replacing the hand-written Rust proofs — the whole crate's
+~225 tests still pass, since everything downstream of `truth()` re-checks).
+`run(src, resolver)` resolves `(open NAME)` against caller-supplied envs and
+returns a `Theory` whose `env()` is `open`-able by other scripts. These are
+deliberately deferred:
 
 - **Inference is best-effort (untrusted).** `infer.rs` does Hindley–Milner
   unification for free-variable and binder-domain types; it is not complete

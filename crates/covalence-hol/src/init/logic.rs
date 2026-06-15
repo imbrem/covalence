@@ -41,21 +41,29 @@ use crate::init::cond::{cond_false, cond_true};
 use crate::init::ext::{TermExt, ThmExt};
 
 // ============================================================================
-// Truth
+// Theorems loaded from `logic.cov`
 // ============================================================================
+//
+// `truth`, `and_comm`, and `or_comm` are no longer hand-written here: they
+// are *replayed* from the colocated `logic.cov` proof script through the
+// `script` layer (the kernel re-checks every step). `cov::env()` exposes
+// the resulting environment for downstream theories to `(open …)`.
+//
+// Keep `logic.cov` `tauto`-free: `truth` is loaded from it and the
+// `tauto`/`normalize` machinery below depends on `truth`, so a `(tauto …)`
+// directive there would re-enter this theory's own initialisation.
 
-cached_thm! {
-    /// `⊢ T`. Derived (no postulate): [`Thm::reduce_prim`] decides
-    /// `(T = T) = T` on the closed literals, and `refl T : ⊢ T = T`
-    /// discharges the antecedent via [`Thm::eq_mp`].
-    pub fn truth() -> Thm {
-        let t = Term::bool_lit(true);
-        let refl_t = Thm::refl(t).expect("truth: refl T");
-        let t_eq_t = refl_t.concl().clone();
-        let reduced = Thm::reduce_prim(t_eq_t).expect("truth: reduce_prim (T=T)");
-        reduced.eq_mp(refl_t).expect("truth: eq_mp")
+crate::cov_theory! {
+    /// Propositional lemmas loaded from `logic.cov`.
+    pub mod cov from "logic.cov" {
+        open "core" = crate::script::Env::core();
+        "truth"    => pub fn truth;
+        "and.comm" => pub fn and_comm;
+        "or.comm"  => pub fn or_comm;
     }
 }
+
+pub use cov::{and_comm, or_comm, truth};
 
 // ============================================================================
 // Conjunction
@@ -65,21 +73,6 @@ cached_thm! {
 pub fn and_sym(pq: Thm) -> Result<Thm> {
     let (p, q) = pq.conjuncts()?;
     q.and_intro(p)
-}
-
-cached_thm! {
-    /// `⊢ (p ∧ q) ⟹ (q ∧ p)` for free `p`, `q : bool` — commutativity of
-    /// `∧` as a closed, hypothesis-free theorem. Assume `p ∧ q`, swap with
-    /// [`and_sym`], discharge.
-    pub fn and_comm() -> Thm {
-        let p = Term::free("p", Type::bool());
-        let q = Term::free("q", Type::bool());
-        let pq = p.and(q).expect("and_comm: build p ∧ q");
-        let assumed = Thm::assume(pq.clone()).expect("and_comm: assume p ∧ q");
-        and_sym(assumed)
-            .and_then(|swapped| swapped.imp_intro(&pq))
-            .expect("and_comm: discharge into (p∧q) ⟹ (q∧p)")
-    }
 }
 
 // ============================================================================
@@ -102,20 +95,6 @@ pub fn or_sym(pq: Thm) -> Result<Thm> {
         .or_intro_l(p.clone())?
         .imp_intro(&q)?;
     pq.or_elim(left, right)
-}
-
-cached_thm! {
-    /// `⊢ (p ∨ q) ⟹ (q ∨ p)` for free `p`, `q : bool` — commutativity of
-    /// `∨` as a closed, hypothesis-free theorem.
-    pub fn or_comm() -> Thm {
-        let p = Term::free("p", Type::bool());
-        let q = Term::free("q", Type::bool());
-        let pq = p.or(q).expect("or_comm: build p ∨ q");
-        let assumed = Thm::assume(pq.clone()).expect("or_comm: assume p ∨ q");
-        or_sym(assumed)
-            .and_then(|swapped| swapped.imp_intro(&pq))
-            .expect("or_comm: discharge into (p∨q) ⟹ (q∨p)")
-    }
 }
 
 /// Parse `App(App(\/, p), q)` → `(p, q)`. Returns `None` unless the

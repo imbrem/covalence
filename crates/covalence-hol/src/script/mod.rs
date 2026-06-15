@@ -34,6 +34,31 @@ pub use syntax::{ConstDef, Env, Scope, parse_term, parse_type};
 use covalence_core::{Thm, Type};
 use covalence_sexp::SExpr;
 
+/// A replayed theory: the environment it produced (with all its lemmas,
+/// `open`-able by other theories) plus the ordered list of theorems.
+pub struct Theory {
+    env: Env,
+    pub thms: Vec<NamedThm>,
+}
+
+impl Theory {
+    /// The environment this theory produced — pass it as an `(open NAME)`
+    /// target when running a downstream script.
+    pub fn env(&self) -> Env {
+        self.env.clone()
+    }
+
+    /// Look up a proven lemma by name (panics if absent — for the
+    /// `cov_theory!` accessor functions, which name lemmas statically).
+    pub fn lemma(&self, name: &str) -> Thm {
+        self.env
+            .lemmas
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| panic!("theory has no lemma `{name}`"))
+    }
+}
+
 /// Errors from parsing or replaying a proof script.
 #[derive(Debug, thiserror::Error)]
 pub enum ScriptError {
@@ -57,34 +82,105 @@ pub struct NamedThm {
     pub thm: Thm,
 }
 
-/// Parse and replay a whole script, returning every `(thm …)` it proves.
-/// Later theorems may reference earlier ones via `(lemma NAME)`.
-pub fn run_str(src: &str) -> Result<Vec<NamedThm>, ScriptError> {
+/// Parse and replay a whole script. `(open NAME)` directives are resolved
+/// by `resolver` (returning the `Env` to merge in); `(thm …)` directives
+/// are checked and accumulate into the running environment so later
+/// theorems can reference earlier ones — and any opened theory's lemmas —
+/// via `(lemma NAME)`.
+pub fn run(
+    src: &str,
+    resolver: impl Fn(&str) -> Option<Env>,
+) -> Result<Theory, ScriptError> {
     let exprs =
         covalence_sexp::parse(src).map_err(|e| ScriptError::Syntax(format!("sexp: {e}")))?;
-    let mut env = Env::core();
-    let mut out = Vec::new();
+    let mut env = Env::empty();
+    let mut thms = Vec::new();
     for e in &exprs {
         let ch = syntax::list(e, "directive")?;
         match syntax::head_sym(ch)? {
             "open" => {
                 syntax::arity(ch, 2, "open")?;
-                match syntax::sym(&ch[1], "prelude name")? {
-                    "core" => env = Env::core(),
-                    other => return Err(ScriptError::Unbound(format!("prelude `{other}`"))),
-                }
+                let name = syntax::sym(&ch[1], "environment name")?;
+                let opened = resolver(name)
+                    .ok_or_else(|| ScriptError::Unbound(format!("environment `{name}`")))?;
+                env.open(&opened);
             }
             "thm" => {
                 let nt = run_thm(ch, &env)?;
                 env.lemmas.insert(nt.name.clone(), nt.thm.clone());
-                out.push(nt);
+                thms.push(nt);
             }
             other => {
                 return Err(ScriptError::Syntax(format!("unknown directive: {other}")));
             }
         }
     }
-    Ok(out)
+    Ok(Theory { env, thms })
+}
+
+/// Replay a script whose only available environment is the `core` prelude,
+/// returning the theorems it proves.
+pub fn run_str(src: &str) -> Result<Vec<NamedThm>, ScriptError> {
+    Ok(run(src, |name| (name == "core").then(Env::core))?.thms)
+}
+
+/// Load a `.cov` proof script as a Rust module: run it once, lazily, with
+/// the given `open` environments available, then expose chosen lemmas as
+/// `fn() -> Thm` accessors plus the resulting environment via `env()`
+/// (which downstream theories can `open`).
+///
+/// ```ignore
+/// crate::cov_theory! {
+///     /// Propositional logic, ported from Rust.
+///     pub mod cov from "logic.cov" {
+///         open "core" = crate::script::Env::core();
+///         "truth"    => pub fn truth;
+///         "and.comm" => pub fn and_comm;
+///     }
+/// }
+/// pub use cov::{and_comm, truth};   // drop-in replacements for the old fns
+/// ```
+///
+/// The `include_str!` path is relative to the invoking file, so place the
+/// `.cov` beside the `.rs` that loads it. Parse/check failures panic at
+/// first use (like `cached_thm!`), since a theory is a static resource.
+#[macro_export]
+macro_rules! cov_theory {
+    (
+        $(#[$meta:meta])*
+        $vis:vis mod $modname:ident from $src:literal {
+            $( open $oname:literal = $oenv:expr ; )*
+            $( $lemma:literal => $lvis:vis fn $fn:ident ; )*
+        }
+    ) => {
+        $(#[$meta])*
+        $vis mod $modname {
+            #[allow(unused_imports)]
+            use super::*;
+
+            static THEORY: ::std::sync::LazyLock<$crate::script::Theory> =
+                ::std::sync::LazyLock::new(|| {
+                    $crate::script::run(include_str!($src), |__name| match __name {
+                        $( $oname => Some($oenv), )*
+                        _ => None,
+                    })
+                    .unwrap_or_else(|__e| {
+                        panic!("cov_theory `{}`: {}", stringify!($modname), __e)
+                    })
+                });
+
+            /// The environment this theory produces (`open` it elsewhere).
+            $vis fn env() -> $crate::script::Env {
+                THEORY.env()
+            }
+
+            $(
+                $lvis fn $fn() -> $crate::Thm {
+                    THEORY.lemma($lemma)
+                }
+            )*
+        }
+    };
 }
 
 fn run_thm(ch: &[SExpr], env: &Env) -> Result<NamedThm, ScriptError> {
@@ -270,6 +366,35 @@ mod tests {
             "#,
         );
         assert_eq!(thm.concl(), crate::init::logic::and_comm().concl());
+    }
+
+    #[test]
+    fn opens_a_loaded_theory_env() {
+        // A separate script `(open logic)`s the environment produced by the
+        // `cov_theory!`-loaded `init::logic::cov`, and applies one of its
+        // lemmas by name — demonstrating the exposed env + cross-theory
+        // `(lemma …)` reference.
+        let theory = run(
+            r#"
+            (open core)
+            (open logic)
+            (thm use.and.comm
+              (concl (and b a))
+              (proof
+                (imp-elim
+                  (inst p a (inst q b (lemma and.comm)))
+                  (assume (and a b)))))
+            "#,
+            |name| match name {
+                "core" => Some(Env::core()),
+                "logic" => Some(crate::init::logic::cov::env()),
+                _ => None,
+            },
+        )
+        .expect("should replay against the opened `logic` env");
+        assert_eq!(theory.thms.len(), 1);
+        // {a ∧ b} ⊢ b ∧ a — carries the single hypothesis
+        assert_eq!(theory.thms[0].thm.hyps().len(), 1);
     }
 
     #[test]

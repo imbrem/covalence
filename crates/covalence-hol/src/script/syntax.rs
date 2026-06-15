@@ -30,12 +30,30 @@ pub enum ConstDef {
 
 /// The name-resolution environment: the prelude of catalogue constants
 /// plus the lemmas proven so far (referenceable by later proofs).
+#[derive(Clone, Default)]
 pub struct Env {
     pub consts: HashMap<String, ConstDef>,
     pub lemmas: HashMap<String, Thm>,
 }
 
 impl Env {
+    /// An empty environment (no constants, no lemmas).
+    pub fn empty() -> Self {
+        Env::default()
+    }
+
+    /// Merge another environment in (its constants and lemmas shadow
+    /// existing entries of the same name). This is what `(open NAME)`
+    /// does once `NAME` is resolved to an `Env`.
+    pub fn open(&mut self, other: &Env) {
+        for (k, v) in &other.consts {
+            self.consts.insert(k.clone(), v.clone());
+        }
+        for (k, v) in &other.lemmas {
+            self.lemmas.insert(k.clone(), v.clone());
+        }
+    }
+
     /// The `core` prelude — exposes `covalence-core`'s `defs/` catalogue
     /// (the logic connectives + the nat operations) by dotted name. This
     /// is the churn boundary: a `defs/` refactor updates entries here,

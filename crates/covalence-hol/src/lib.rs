@@ -32,6 +32,7 @@ pub mod monoidal;
 pub mod peano;
 pub mod proofs;
 pub mod ring;
+pub mod script;
 pub mod semiring;
 pub mod sexp;
 pub mod surface;

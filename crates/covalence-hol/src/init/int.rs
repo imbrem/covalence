@@ -1420,59 +1420,304 @@ cached_thm! {
 }
 
 // ============================================================================
+// Order machinery — `int.le` / `int.lt` as the `nat` comparison on components
+// ============================================================================
+//
+// `int.le`/`int.lt` pick ε-representatives and compare `a + d ⋚ c + b`. On the
+// `MK(f, s)` form the comparison reads off the *clean* components (`le_mk` /
+// `lt_mk`) — the ε-reps are `round_trip`-related to `(f, s)`, and the
+// comparison is invariant under that (`nat::le_cross` / `lt_cross`). Then each
+// order axiom is a `nat` order fact lifted through `*_via_components`.
+
+/// `⊢ int.lt a b = nat.lt (fst(rep a)+snd(rep b)) (fst(rep b)+snd(rep a))`.
+fn lt_defining_eq(a: &Term, b: &Term) -> Result<Thm> {
+    lt(a.clone(), b.clone())
+        .delta_all(covalence_core::defs::int_lt_spec().symbol())?
+        .rhs_conv(|t| t.reduce())
+}
+/// `⊢ int.le a b = nat.le (…)(…)` — the `≤` mirror of [`lt_defining_eq`].
+fn le_defining_eq(a: &Term, b: &Term) -> Result<Thm> {
+    le(a.clone(), b.clone())
+        .delta_all(covalence_core::defs::int_le_spec().symbol())?
+        .rhs_conv(|t| t.reduce())
+}
+
+/// The cross-sum bridge for `MK fa sa` vs `MK fb sb`:
+/// `⊢ (F1+S2)+(fb+sa) = (fa+sb)+(F2+S1)`, where `F1/S1` (resp. `F2/S2`) are
+/// the components of the ε-representative `int.le`/`int.lt` picks for `MK fa
+/// sa` (resp. `MK fb sb`). Shared by [`le_mk`] / [`lt_mk`].
+fn cmp_cross_eq(fa: &Term, sa: &Term, fb: &Term, sb: &Term) -> Result<Thm> {
+    let n = Type::nat();
+    let (rp, rq) = (rep_pair(&mkfs(fa, sa)), rep_pair(&mkfs(fb, sb)));
+    let (cf1, cs1) = (fst_nn(&rp), snd_nn(&rp)); // F1, S1
+    let (cf2, cs2) = (fst_nn(&rq), snd_nn(&rq)); // F2, S2
+    // r1: fa + S1 = F1 + sa ; r2: fb + S2 = F2 + sb  (round_trip + projections).
+    let r1 = reduce_rel(round_trip(&pair_nn(fa.clone(), sa.clone()))?)?
+        .rewrite(&crate::init::prod::fst_pair(&n, &n, fa, sa)?)?
+        .rewrite(&crate::init::prod::snd_pair(&n, &n, fa, sa)?)?;
+    let r2 = reduce_rel(round_trip(&pair_nn(fb.clone(), sb.clone()))?)?
+        .rewrite(&crate::init::prod::fst_pair(&n, &n, fb, sb)?)?
+        .rewrite(&crate::init::prod::snd_pair(&n, &n, fb, sb)?)?;
+    // S2 + fb = fb + S2 = F2 + sb = sb + F2.
+    let s2_fb = nat::add_comm()
+        .all_elim(cs2.clone())?
+        .all_elim(fb.clone())?
+        .trans(r2)?
+        .trans(
+            nat::add_comm()
+                .all_elim(cf2.clone())?
+                .all_elim(sb.clone())?,
+        )?;
+    // (F1+S2)+(fb+sa) = (F1+sa)+(S2+fb) = (fa+S1)+(sb+F2) = (fa+sb)+(F2+S1).
+    elim4(nat::add_interchange(), &cf1, &cs2, fb, sa)?
+        .trans(nat::cong_add(r1.sym()?, s2_fb)?)?
+        .trans(elim4(nat::add_interchange(), fa, sb, &cf2, &cs1)?.sym()?)
+}
+
+/// **Strict comparison computation rule.** `⊢ int.lt (MK fa sa)(MK fb sb) =
+/// nat.lt (fa+sb)(fb+sa)`.
+fn lt_mk(fa: &Term, sa: &Term, fb: &Term, sb: &Term) -> Result<Thm> {
+    let de = lt_defining_eq(&mkfs(fa, sa), &mkfs(fb, sb))?;
+    let (rp, rq) = (rep_pair(&mkfs(fa, sa)), rep_pair(&mkfs(fb, sb)));
+    let (cf1, cs1) = (fst_nn(&rp), snd_nn(&rp));
+    let (cf2, cs2) = (fst_nn(&rq), snd_nn(&rq));
+    let well = nat::lt_cross()
+        .all_elim(nat::add(cf1, cs2))?
+        .all_elim(nat::add(cf2, cs1))?
+        .all_elim(nat::add(fa.clone(), sb.clone()))?
+        .all_elim(nat::add(fb.clone(), sa.clone()))?
+        .imp_elim(cmp_cross_eq(fa, sa, fb, sb)?)?;
+    de.trans(well)
+}
+
+/// **Non-strict comparison computation rule.** `⊢ int.le (MK fa sa)(MK fb
+/// sb) = nat.le (fa+sb)(fb+sa)`.
+fn le_mk(fa: &Term, sa: &Term, fb: &Term, sb: &Term) -> Result<Thm> {
+    let de = le_defining_eq(&mkfs(fa, sa), &mkfs(fb, sb))?;
+    let (rp, rq) = (rep_pair(&mkfs(fa, sa)), rep_pair(&mkfs(fb, sb)));
+    let (cf1, cs1) = (fst_nn(&rp), snd_nn(&rp));
+    let (cf2, cs2) = (fst_nn(&rq), snd_nn(&rq));
+    let well = nat::le_cross()
+        .all_elim(nat::add(cf1, cs2))?
+        .all_elim(nat::add(cf2, cs1))?
+        .all_elim(nat::add(fa.clone(), sb.clone()))?
+        .all_elim(nat::add(fb.clone(), sa.clone()))?
+        .imp_elim(cmp_cross_eq(fa, sa, fb, sb)?)?;
+    de.trans(well)
+}
+
+/// `⊢ int.lt a b = nat.lt (fa+sb)(fb+sa)`, where `ra : a = MK fa sa`,
+/// `rb : b = MK fb sb`.
+fn lt_via_components(ra: &Thm, rb: &Thm) -> Result<Thm> {
+    let (fa, sa) = mk_components(&dest_eq(ra)?.1)?;
+    let (fb, sb) = mk_components(&dest_eq(rb)?.1)?;
+    Thm::refl(int_lt())?
+        .cong_app(ra.clone())?
+        .cong_app(rb.clone())?
+        .trans(lt_mk(&fa, &sa, &fb, &sb)?)
+}
+/// `⊢ int.le a b = nat.le (fa+sb)(fb+sa)` — the `≤` mirror.
+fn le_via_components(ra: &Thm, rb: &Thm) -> Result<Thm> {
+    let (fa, sa) = mk_components(&dest_eq(ra)?.1)?;
+    let (fb, sb) = mk_components(&dest_eq(rb)?.1)?;
+    Thm::refl(int_le())?
+        .cong_app(ra.clone())?
+        .cong_app(rb.clone())?
+        .trans(le_mk(&fa, &sa, &fb, &sb)?)
+}
+
+/// `⊢ (a = b) = (fst(rep a)+snd(rep b) = fst(rep b)+snd(rep a))` — `int`
+/// equality is the Grothendieck relation on representatives. Forward by
+/// congruence; backward by `class_intro` + `recon`.
+fn int_eq_iff(a: &Term, b: &Term) -> Result<Thm> {
+    let (fa, sa, fb, sb) = (fcomp(a), scomp(a), fcomp(b), scomp(b));
+    let nat_eq = nat::add(fa.clone(), sb.clone()).equals(nat::add(fb.clone(), sa.clone()))?; // X = Y
+    let int_eq = a.clone().equals(b.clone())?;
+    // forward: {a = b} ⊢ X = Y.
+    let fwd = {
+        let rp_eq = rep_pair(a).rw_all(&Thm::assume(int_eq.clone())?)?; // rep a = rep b
+        let n = (Type::nat(), Type::nat());
+        nat::cong_add(
+            rp_eq.clone().cong_arg(fst(n.0.clone(), n.1.clone()))?, // fst(rep a) = fst(rep b)
+            rp_eq.cong_arg(snd(n.0, n.1))?.sym()?,                  // snd(rep b) = snd(rep a)
+        )?
+    };
+    // backward: {X = Y} ⊢ a = b.
+    let bwd = {
+        let rel = expand_rel(
+            Thm::assume(nat_eq.clone())?,
+            &rel_app(&rep_pair(a), &rep_pair(b)),
+        )?; // int_rel (rep a)(rep b)
+        let classes =
+            quotient::class_intro(&spec(), &[], &nn(), &int_rel_symm(), &int_rel_trans(), rel)?;
+        recon(a)?.trans(classes)?.trans(recon(b)?.sym()?)? // a = b
+    };
+    bwd.deduct_antisym(fwd) // ⊢ (a = b) = (X = Y)
+}
+
+// ============================================================================
 // Linear order
 // ============================================================================
 
-/// `⊢ ∀a. ¬(a < a)` — irreflexivity.
-pub fn lt_irrefl() -> Thm {
-    let a = var("a");
-    let body = lt(a.clone(), a).not().expect("lt_irrefl: ¬(a < a)");
-    axiom(forall_int(&["a"], body))
+cached_thm! {
+    /// `⊢ ∀a. ¬(a < a)` — **proved**. `int.lt a a = nat.lt N N` (`N = fa+sa`)
+    /// and `nat::lt_irrefl`.
+    pub fn lt_irrefl() -> Result<Thm> {
+        let a = var("a");
+        let ra = recon_mk(&a)?;
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let de = lt_via_components(&ra, &ra)?; // int.lt a a = nat.lt(fa+sa)(fa+sa)
+        nat::lt_irrefl()
+            .all_elim(nat::add(fa, sa))?
+            .rewrite(&de.sym()?)? // ¬(int.lt a a)
+            .all_intro("a", int())
+    }
 }
 
-/// `⊢ ∀a b c. a < b ⟹ b < c ⟹ a < c` — transitivity.
-pub fn lt_trans() -> Thm {
-    let (a, b, c) = (var("a"), var("b"), var("c"));
-    let inner = lt(b.clone(), c.clone())
-        .imp(lt(a.clone(), c))
-        .expect("lt_trans inner");
-    let body = lt(a, b).imp(inner).expect("lt_trans");
-    axiom(forall_int(&["a", "b", "c"], body))
+cached_thm! {
+    /// `⊢ ∀a b c. a < b ⟹ b < c ⟹ a < c` — **proved**. Add the two
+    /// representative inequalities, re-pair, and cancel the common summand.
+    pub fn lt_trans() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let (fb, sb) = (fcomp(&b), scomp(&b));
+        let (fc, sc) = (fcomp(&c), scomp(&c));
+        let (hab, hbc) = (lt(a.clone(), b.clone()), lt(b.clone(), c.clone()));
+
+        let e1 = lt_via_components(&ra, &rb)?.eq_mp(Thm::assume(hab.clone())?)?; // (fa+sb)<(fb+sa)
+        let e2 = lt_via_components(&rb, &rc)?.eq_mp(Thm::assume(hbc.clone())?)?; // (fb+sc)<(fc+sb)
+        let summed = nat::add_lt_add()
+            .all_elim(nat::add(fa.clone(), sb.clone()))?
+            .all_elim(nat::add(fb.clone(), sa.clone()))?
+            .all_elim(nat::add(fb.clone(), sc.clone()))?
+            .all_elim(nat::add(fc.clone(), sb.clone()))?
+            .imp_elim(e1)?
+            .imp_elim(e2)?; // (fa+sb)+(fb+sc) < (fb+sa)+(fc+sb)
+
+        // (fa+sb)+(fb+sc) = (fa+sc)+(fb+sb).
+        let eq_l = elim4(nat::add_interchange(), &fa, &sb, &fb, &sc)?.trans(cong_add_r(
+            &nat::add(fa.clone(), sc.clone()),
+            nat::add_comm().all_elim(sb.clone())?.all_elim(fb.clone())?,
+        )?)?;
+        // (fb+sa)+(fc+sb) = (fc+sa)+(fb+sb).
+        let eq_r = elim4(nat::add_interchange(), &fb, &sa, &fc, &sb)?
+            .trans(nat::add_comm().all_elim(nat::add(fb.clone(), sb.clone()))?.all_elim(nat::add(sa.clone(), fc.clone()))?)?
+            .trans(nat::cong_add(
+                nat::add_comm().all_elim(sa.clone())?.all_elim(fc.clone())?,
+                Thm::refl(nat::add(fb.clone(), sb.clone()))?,
+            )?)?;
+        let shifted = Thm::refl(nat::nat_lt())?
+            .cong_app(eq_l)?
+            .cong_app(eq_r)?
+            .eq_mp(summed)?; // (fa+sc)+K < (fc+sa)+K,  K = fb+sb
+        let nat_ac = nat::lt_add_mono_r()
+            .all_elim(nat::add(fa.clone(), sc.clone()))?
+            .all_elim(nat::add(fc.clone(), sa.clone()))?
+            .all_elim(nat::add(fb.clone(), sb.clone()))?
+            .eq_mp(shifted)?; // (fa+sc) < (fc+sa)
+        lt_via_components(&ra, &rc)?
+            .sym()?
+            .eq_mp(nat_ac)? // int.lt a c
+            .imp_intro(&hbc)?
+            .imp_intro(&hab)?
+            .all_intro("c", int())?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
 }
 
-/// `⊢ ∀a b. a < b ∨ a = b ∨ b < a` — trichotomy (totality).
-pub fn lt_trichotomy() -> Thm {
-    let (a, b) = (var("a"), var("b"));
-    let eq = a.clone().equals(b.clone()).expect("trichotomy: a = b");
-    let tail = eq.or(lt(b.clone(), a.clone())).expect("trichotomy tail");
-    let body = lt(a, b).or(tail).expect("trichotomy");
-    axiom(forall_int(&["a", "b"], body))
+cached_thm! {
+    /// `⊢ ∀a b. (a < b) ∨ ((a = b) ∨ (b < a))` — **proved** from
+    /// `nat::lt_trichotomy` on `(fa+sb, fb+sa)`, mapping each disjunct back.
+    pub fn lt_trichotomy() -> Result<Thm> {
+        let (a, b) = (var("a"), var("b"));
+        let (ra, rb) = (recon_mk(&a)?, recon_mk(&b)?);
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let (fb, sb) = (fcomp(&b), scomp(&b));
+        let ntri = nat::lt_trichotomy()
+            .all_elim(nat::add(fa.clone(), sb.clone()))?
+            .all_elim(nat::add(fb.clone(), sa.clone()))?; // (X<Y) ∨ ((X=Y) ∨ (Y<X))
+        let dab = lt_via_components(&ra, &rb)?; // int.lt a b = (X<Y)
+        let dba = lt_via_components(&rb, &ra)?; // int.lt b a = (Y<X)
+        let eqab = int_eq_iff(&a, &b)?; // (a=b) = (X=Y)
+        ntri
+            .rewrite(&dab.sym()?)?
+            .rewrite(&eqab.sym()?)?
+            .rewrite(&dba.sym()?)? // (a<b) ∨ ((a=b) ∨ (b<a))
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
 }
 
-/// `⊢ ∀a b. (a ≤ b) = (a < b ∨ a = b)` — `≤` in terms of `<`.
-pub fn le_def() -> Thm {
-    let (a, b) = (var("a"), var("b"));
-    let rhs = lt(a.clone(), b.clone())
-        .or(a.clone().equals(b.clone()).expect("le_def: a = b"))
-        .expect("le_def rhs");
-    let eq = le(a, b).equals(rhs).expect("le_def");
-    axiom(forall_int(&["a", "b"], eq))
+cached_thm! {
+    /// `⊢ ∀a b. (a ≤ b) = (a < b ∨ a = b)` — **proved** from
+    /// `nat::le_iff_lt_or_eq`, mapping `X<Y ↦ a<b` and `X=Y ↦ a=b`.
+    pub fn le_def() -> Result<Thm> {
+        let (a, b) = (var("a"), var("b"));
+        let (ra, rb) = (recon_mk(&a)?, recon_mk(&b)?);
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let (fb, sb) = (fcomp(&b), scomp(&b));
+        let chain = le_via_components(&ra, &rb)?.trans(
+            nat::le_iff_lt_or_eq()
+                .all_elim(nat::add(fa.clone(), sb.clone()))?
+                .all_elim(nat::add(fb.clone(), sa.clone()))?,
+        )?; // (a≤b) = (X<Y ∨ X=Y)
+        let dlt = lt_via_components(&ra, &rb)?;
+        let eqab = int_eq_iff(&a, &b)?;
+        chain
+            .rewrite(&dlt.sym()?)?
+            .rewrite(&eqab.sym()?)? // (a≤b) = (a<b ∨ a=b)
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
 }
 
 // ============================================================================
 // Ordered-ring compatibility
 // ============================================================================
 
-/// `⊢ ∀a b c. a < b ⟹ a + c < b + c` — translation invariance of `<`.
-pub fn lt_add_mono() -> Thm {
-    let (a, b, c) = (var("a"), var("b"), var("c"));
-    let concl = lt(add(a.clone(), c.clone()), add(b.clone(), c));
-    let body = lt(a, b).imp(concl).expect("lt_add_mono");
-    axiom(forall_int(&["a", "b", "c"], body))
+cached_thm! {
+    /// `⊢ ∀a b c. a < b ⟹ a + c < b + c` — **proved**. `int.lt (a+c)(b+c)`
+    /// reads off `(fa+fc)+(sb+sc) ⋚ …`, which is `(fa+sb) ⋚ (fb+sa)` shifted
+    /// by `fc+sc` (`nat::lt_add_mono_r`).
+    pub fn lt_add_mono() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let (fb, sb) = (fcomp(&b), scomp(&b));
+        let (fc, sc) = (fcomp(&c), scomp(&c));
+        let h = lt(a.clone(), b.clone());
+
+        let rac = add_via_components(&ra, &rc)?; // a+c = MK(fa+fc)(sa+sc)
+        let rbc = add_via_components(&rb, &rc)?; // b+c = MK(fb+fc)(sb+sc)
+        let dconcl = lt_via_components(&rac, &rbc)?; // int.lt(a+c)(b+c) = nat.lt(P)(Q)
+        let xy = lt_via_components(&ra, &rb)?.eq_mp(Thm::assume(h.clone())?)?; // (fa+sb)<(fb+sa)
+        let xyk = nat::lt_add_mono_r()
+            .all_elim(nat::add(fa.clone(), sb.clone()))?
+            .all_elim(nat::add(fb.clone(), sa.clone()))?
+            .all_elim(nat::add(fc.clone(), sc.clone()))?
+            .sym()?
+            .eq_mp(xy)?; // (fa+sb)+(fc+sc) < (fb+sa)+(fc+sc)
+        let eq_p = mid_swap(&fa, &fc, &sb, &sc)?; // (fa+fc)+(sb+sc) = (fa+sb)+(fc+sc)
+        let eq_q = mid_swap(&fb, &fc, &sa, &sc)?; // (fb+fc)+(sa+sc) = (fb+sa)+(fc+sc)
+        let pq = Thm::refl(nat::nat_lt())?
+            .cong_app(eq_p.sym()?)?
+            .cong_app(eq_q.sym()?)?
+            .eq_mp(xyk)?; // nat.lt(P)(Q)
+        dconcl
+            .sym()?
+            .eq_mp(pq)? // int.lt(a+c)(b+c)
+            .imp_intro(&h)?
+            .all_intro("c", int())?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
 }
 
 /// `⊢ ∀a b c. 0 < c ⟹ a < b ⟹ a * c < b * c` — `<` preserved by a
-/// positive multiplier.
+/// positive multiplier. **Postulated** — pending `nat` strict
+/// multiplicative monotonicity (`a < b ⟹ 0 < c ⟹ a·c < b·c`).
 pub fn lt_mul_pos() -> Thm {
     let (a, b, c) = (var("a"), var("b"), var("c"));
     let concl = lt(mul(a.clone(), c.clone()), mul(b.clone(), c.clone()));
@@ -1485,32 +1730,54 @@ pub fn lt_mul_pos() -> Thm {
 // Discreteness — the integer-specific axiom
 // ============================================================================
 
-/// `⊢ ∀a b. (a < b) = (a + 1 ≤ b)` — the integers are discrete: strict
-/// `<` is `+1`-shifted `≤`. The key fact the integer-specific Alethe
-/// `la` rules (rounding rational bounds to integer ones) rest on.
-pub fn lt_succ() -> Thm {
-    let (a, b) = (var("a"), var("b"));
-    let eq = lt(a.clone(), b.clone())
-        .equals(le(add(a, lit(1)), b))
-        .expect("lt_succ: (a < b) = (a + 1 ≤ b)");
-    axiom(forall_int(&["a", "b"], eq))
+cached_thm! {
+    /// `⊢ ∀a b. (a < b) = (a + 1 ≤ b)` — **proved**. Both unfold to a `nat`
+    /// comparison on `X = fa+sb`, `Y = fb+sa`: `a<b ↦ X<Y` and `a+1≤b ↦
+    /// S X ≤ Y`, bridged by `nat::lt_iff_succ_le`.
+    pub fn lt_succ() -> Result<Thm> {
+        let (a, b) = (var("a"), var("b"));
+        let (ra, rb) = (recon_mk(&a)?, recon_mk(&b)?);
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let (fb, sb) = (fcomp(&b), scomp(&b));
+        let (x, y) = (nat::add(fa.clone(), sb.clone()), nat::add(fb.clone(), sa.clone()));
+
+        let ra1 = add_via_components(&ra, &lit1_mk()?)?; // a+1 = MK(fa+1)(sa+0)
+        let dle = le_via_components(&ra1, &rb)?; // int.le(a+1)b = nat.le((fa+1)+sb)(fb+(sa+0))
+        let dlt = lt_via_components(&ra, &rb)?; // int.lt a b = nat.lt(X)(Y)
+        let lisl = nat::lt_iff_succ_le()
+            .all_elim(x.clone())?
+            .all_elim(y.clone())?; // (X<Y) = (S X ≤ Y)
+
+        // S X = (fa+1)+sb ; Y = fb+(sa+0).
+        let sx_eq = nat::add_step()
+            .all_elim(fa.clone())?
+            .all_elim(sb.clone())?
+            .sym()? // S(fa+sb) = S fa + sb
+            .trans(
+                Thm::refl(nat::nat_add())?
+                    .cong_app(nat::add_one_succ(&fa)?.sym()?)? // S fa = fa+1
+                    .cong_fn(sb.clone())?, // S fa + sb = (fa+1)+sb
+            )?;
+        let y_eq = cong_add_r(&fb, nat::add_zero().all_elim(sa.clone())?.sym()?)?; // fb+sa = fb+(sa+0)
+        let bridge = Thm::refl(nat::nat_le())?
+            .cong_app(sx_eq)?
+            .cong_app(y_eq)?; // (S X ≤ Y) = ((fa+1)+sb ≤ fb+(sa+0))
+
+        dlt.trans(lisl)?
+            .trans(bridge)?
+            .trans(dle.sym()?)? // (a<b) = (a+1 ≤ b)
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The full postulate set — used to assert the audit-trail invariant.
+    /// The remaining postulate set — used to assert the audit-trail invariant.
     fn all() -> Vec<Thm> {
-        vec![
-            lt_irrefl(),
-            lt_trans(),
-            lt_trichotomy(),
-            le_def(),
-            lt_add_mono(),
-            lt_mul_pos(),
-            lt_succ(),
-        ]
+        vec![lt_mul_pos()]
     }
 
     #[test]
@@ -1524,6 +1791,73 @@ mod tests {
                 ax.hyps().iter().any(|h| h == ax.concl()),
                 "a postulated axiom carries itself as a hypothesis"
             );
+        }
+    }
+
+    #[test]
+    fn order_axioms_are_genuine() {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        // lt_irrefl: ¬(a<a).
+        assert_eq!(
+            lt_irrefl().all_elim(a.clone()).unwrap().concl(),
+            &lt(a.clone(), a.clone()).not().unwrap()
+        );
+        // lt_trans: a<b ⟹ b<c ⟹ a<c.
+        let trans = lt_trans()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap()
+            .all_elim(c.clone())
+            .unwrap();
+        assert_eq!(
+            trans.concl(),
+            &lt(a.clone(), b.clone())
+                .imp(
+                    lt(b.clone(), c.clone())
+                        .imp(lt(a.clone(), c.clone()))
+                        .unwrap()
+                )
+                .unwrap()
+        );
+        // le_def: (a≤b) = (a<b ∨ a=b).
+        let led = le_def()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap();
+        assert_eq!(
+            led.concl(),
+            &le(a.clone(), b.clone())
+                .equals(
+                    lt(a.clone(), b.clone())
+                        .or(a.clone().equals(b.clone()).unwrap())
+                        .unwrap()
+                )
+                .unwrap()
+        );
+        // lt_succ: (a<b) = (a+1 ≤ b).
+        let lsucc = lt_succ()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap();
+        assert_eq!(
+            lsucc.concl(),
+            &lt(a.clone(), b.clone())
+                .equals(le(add(a.clone(), lit(1)), b.clone()))
+                .unwrap()
+        );
+        for t in [
+            lt_irrefl(),
+            lt_trans(),
+            lt_trichotomy(),
+            le_def(),
+            lt_add_mono(),
+            lt_succ(),
+        ] {
+            assert!(t.hyps().is_empty(), "int order facts are genuine");
+            assert!(t.concl().type_of().unwrap().is_bool());
         }
     }
 

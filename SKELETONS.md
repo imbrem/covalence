@@ -48,78 +48,31 @@ it is how unfinished work stays discoverable.
   `nat` semiring embedding (`crate::semiring::Nat`), by contrast, is fully
   proved.
 
-  **Status: the lifting API now exists; applying it to `int` is the work.**
-  The `nat` half is available and **fully proved** — `init::nat` proves
-  `add_zero`/`add_succ_r`/`add_comm`/`add_assoc` by induction (the `induct`
-  helper); `rec_holds` is now a genuine theorem (recursion theorem), so these
-  carry no hypotheses. And `init::quotient` now provides the lifting machinery:
-  `TypeSpec::quot` is a subtype of the powerset, so the kernel's subtype
-  laws *do* apply (the "rejected" case is only for specs whose `tm` is a
-  raw relation; `quot`'s `tm` is the image predicate `λS. ∃z. S =
-  classOf z`). `quotient::class_intro`
-  derives the **forward** law `Γ ⊢ rel a b → Γ ⊢ mkClass a = mkClass b`,
-  the workhorse for proving `int` *equations*.
+  **Machinery (built and proved).** `init::quotient` provides the lifting
+  API on the junk-free `TypeSpec::quot` (carving predicate `λS. ∃z. S =
+  classOf z`, so `Type::int()` has exactly one inhabitant per `int_rel`
+  class): `class_intro` (forward `⊢ rel a b → ⊢ mkClass a = mkClass b`),
+  `class_elim` (converse), `round_trip` (`⊢ rel a (rep_class (mk_class a))`),
+  and `recon` (quotient induction `⊢ a = mk_class (rep_class a)` for *any*
+  element). `init::int` builds on these: `int_rel` is a proven equivalence,
+  the **`MK(f, s)` component layer** (`recon` + surjective pairing)
+  normalises each `int` to `mk_int (pair f s)`, the per-op computation rules
+  (`add_class`/`neg_class`/`sub_class` + `*_mk`) combine `nat` components on
+  the nose, and `lit0_mk` gives literal-`0` coherence. Each proved additive
+  axiom reduces to `nat` algebra on the components.
 
-  Progress: `int_rel` is a **proven equivalence**
-  (`init::int::int_rel_refl`/`_symm`/`_trans`); `quotient::class_intro`
-  lifts `⊢ int_rel p q` to `mkClass p = mkClass q`; the **converse**
-  `quotient::class_elim` lifts it back (`mkClass a = mkClass b ⟹ rel a b`,
-  needs only `refl`); **`add_comm` and `mul_comm` are proved** (on the
-  nose); and the **round-trip** (`quotient::round_trip`: `⊢ rel a
-  (rep_class (mk_class a))`, via `quot_pred_holds` + `spec_rep_abs_fwd` +
-  `select_ax`) is **done and tested on the real `int_ty_spec`** — the
-  keystone for the nested-op axioms.
-
-  The path for the remaining ring-equation axioms (`add_assoc`, `add_neg`,
-  `mul_assoc`, `distrib`):
-  - Unfold both sides with `delta_all(int_add/int_mul)`; a *nested* op like
-    `int.add a b` unfolds to `mk_int P_ab` (a *proper* class), and the
-    outer op sees `rep_pair(mk_int P_ab)`.
-  - `round_trip(P_ab)` + the β-bridge `mk_class p = mk_int p` (verified:
-    `beta_nf(λx. int_rel p x) == defs class_of p`) give
-    `int_rel (rep_pair(mk_int P_ab)) P_ab`, i.e. the chosen representative
-    of `a+b` is `~` its componentwise pair.
-  - `class_intro` on a `nat`-algebra combination of those `~`-facts closes
-    the axiom.
-  - ✅ **`quot` is now junk-free** (`defs/quotient.rs`). The carving
-    predicate is `λS. ∃z. S = classOf z` (S is *exactly* one class), **not**
-    the old "nonempty ∧ upward-closed" (`= close ∘ symmetric-closure`),
-    which admitted every *union* of classes — e.g. `abs(class 0 ∪ class 1)`.
-    With that junk gone, `Type::int()` contains exactly one inhabitant per
-    `int_rel`-class, so **quotient induction is valid** (`a =
-    mk_int(rep_pair a)` for *every* `int`, not just op-results) and the
-    three formerly-false axioms — **`add_zero`, `mul_one`, `mul_zero`** —
-    are now genuine theorems. They remain `Thm::assume` postulates only
-    because the *derivation* (quotient induction + literal coherence) is not
-    yet wired; they are no longer unsound to claim. The keystones are all in
-    place: `class_intro` (forward), `class_elim` (converse), `round_trip`
-    (representative-in-class), and `quot_pred_holds` (every `classOf a` is a
-    valid class).
-  - The `0`/`1` axioms (`add_zero`, `mul_one`, `mul_zero`, `sub_def` uses
-    `neg`) additionally need **literal coherence**: relating `int_lit 0` /
-    `int_lit 1` to their quotient representatives (`(0,0)` / `(1,0)`), a
-    separate lemma.
-
-  Older remaining-list (still accurate for the order axioms):
-  - (a) the **β reconciliation** — `class_intro`'s `classOf a = λx. rel a x`
-    vs `defs/int.rs`'s β-reduced `mk_int`;
-  - (b) **unfold each `int` op** to its representative-pair body (δ + the
-    quotient coercions), so an axiom like `add_comm` reduces to a `nat`
-    fact lifted through `class_intro` — this discharges the 10 ring-equation
-    postulates;
-  - (c) the **converse** `mkClass a = mkClass b ⟹ rel a b` — **done**:
-    `init::quotient::class_elim` (needs `Thm::spec_rep_abs_fwd` +
-    `quot_pred_holds` + `refl`). Available for the *order* axioms (the
-    other 7); the work left there is applying it, not building it;
-  - still-needed `nat` facts for the *order* `int` axioms: the `le`/`lt`
-    order facts. The additive **and** multiplicative theory is now in place —
-    `init::nat` proves the additive theory, `add_cancel`, `add_interchange`,
-    and the full commutative-semiring multiplicative theory (`mul_succ_r`,
-    `mul_one`, `mul_comm`, `mul_assoc`, `distrib`, `distrib_r`, `mul_zero`),
-    consumed by the `nat` semiring embedding in `crate::semiring`. The `nat`
-    `le`/`lt` order theory is now developed too — reflexivity, irreflexivity,
-    successor cancellation, the zero facts, totality, antisymmetry, the
-    `<`/`≤` bridge, and **transitivity** (`le_trans`).
+  **Remaining work, concretely.**
+  - *Multiplicative ring* (`mul_assoc`/`mul_one`/`mul_zero`/`distrib`): add a
+    `mul_pair_cong` (multiplication well-definedness — prove `int_rel`-respect
+    per-argument and chain) + a `mul_class`/`mul_mk` mirroring `add_class`,
+    and `int_lit 1 = MK(1,0)` coherence (the `lit0_mk` analogue).
+  - *Order* (`lt_irrefl`/`lt_trans`/`lt_trichotomy`/`le_def`/`lt_add_mono`/
+    `lt_mul_pos`/`lt_succ`): `int.le`/`int.lt` unfold to the `nat` comparison
+    on representatives. `lt_irrefl`/`le_def` are on-the-nose; the rest need
+    more `nat` `lt` theory than `init::nat` exposes today (it has the `≤`
+    order — reflexivity, totality, antisymmetry, `le_trans`, the `<`/`≤`
+    bridge `lt_iff_succ_le` — but not `lt` transitivity / add-monotonicity /
+    trichotomy as standalone lemmas).
 - **The `rat` quotient + ordered-field theory** in
   `crates/covalence-hol/src/init/rat.rs`. `rat := (int × int.pos) / ~`
   (cross-multiplication). Proved outright: `rat_rel_refl`, `rat_rel_symm`

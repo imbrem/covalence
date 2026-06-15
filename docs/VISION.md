@@ -7,7 +7,12 @@
 > pre-collapse detail). For the kernel see
 > [`kernel-design.md`](./kernel-design.md), for the type catalogue see
 > [`type-hierarchy.md`](./type-hierarchy.md), for what's next see
-> [`roadmap.md`](./roadmap.md).
+> [`roadmap.md`](./roadmap.md). For the (not-yet-built) authoring layer
+> see the design sketches: [`surface-syntax.md`](./surface-syntax.md)
+> (high-level syntax for theories and definitions),
+> [`metatheory.md`](./metatheory.md) (theories/derivations/models as
+> first-class objects), [`observers.md`](./observers.md)
+> (untrusted code feeding facts into the kernel).
 
 ---
 

@@ -5,20 +5,18 @@
 //!
 //! [`init::nat`]: crate::init::nat
 //!
-//! ## Status — the additive commutative group is proved
+//! ## Status — the full commutative ring is proved
 //!
 //! `int := (nat × nat) / ~` is the Grothendieck construction, so every
 //! axiom here is a *theorem* of HOL derivable from the `nat` Peano facts
-//! through the quotient. The lifting machinery is built and the additive
-//! group is fully discharged; the rest are still `Thm::assume` postulates
-//! (flagged in `SKELETONS.md`, each carrying its statement as a
-//! self-hypothesis so the audit trail is visible downstream).
+//! through the quotient. The lifting machinery is built and the **entire
+//! commutative ring is discharged**; only the order theory is still
+//! `Thm::assume` postulates (flagged in `SKELETONS.md`, each carrying its
+//! statement as a self-hypothesis so the audit trail is visible downstream).
 //!
-//! - **Commutative ring** — **proved:** [`add_comm`], [`add_assoc`],
-//!   [`add_zero`], [`add_neg`], [`sub_def`], [`mul_comm`]. **Postulated:**
-//!   [`mul_assoc`], [`mul_one`], [`mul_zero`], [`distrib`] (need
-//!   multiplication well-definedness — a `mul_pair_cong` — plus literal-`1`
-//!   coherence).
+//! - **Commutative ring** — **all proved:** [`add_comm`], [`add_assoc`],
+//!   [`add_zero`], [`add_neg`], [`sub_def`], [`mul_comm`], [`mul_assoc`],
+//!   [`mul_one`], [`mul_zero`], [`distrib`].
 //! - **Linear order** (postulated) — [`lt_irrefl`], [`lt_trans`],
 //!   [`lt_trichotomy`], [`le_def`].
 //! - **Ordered-ring compatibility** (postulated) — [`lt_add_mono`],
@@ -41,15 +39,19 @@
 //! - normalises every reconstructed `int` to the **`MK(f, s)` component
 //!   form** `mk_int (pair f s)` (`recon` + surjective pairing), so the op
 //!   rules combine explicit `nat` components on the nose;
-//! - gives per-op **computation rules** (`add_class`/`neg_class`/`sub_class`
-//!   and their `*_mk` component forms) via the defining equation,
-//!   `round_trip`, and a per-op well-definedness lemma (`*_pair_cong`);
-//! - derives **literal coherence** ([`lit0_mk`]: `int_lit 0 = MK(0, 0)`)
-//!   from the two readings of `0 + 0` (`reduce_prim` vs the Grothendieck
-//!   body) forcing `fst(rep 0) = snd(rep 0)`.
+//! - gives per-op **computation rules** (`add_class` / `neg_class` /
+//!   `sub_class` / `mul_class` / `succ_class` and their `*_mk` component
+//!   forms) via the defining equation, `round_trip`, and a per-op
+//!   well-definedness lemma (`*_pair_cong`). Multiplication
+//!   (`mul_pair_cong`) is the one tedious case — proved per-argument
+//!   (`distrib` on the defining `nat` equation) and chained by transitivity;
+//! - derives **literal coherence** ([`lit0_mk`]: `int_lit 0 = MK(0, 0)`,
+//!   from the two readings of `0 + 0` forcing `fst(rep 0) = snd(rep 0)`;
+//!   [`lit1_mk`]: `int_lit 1 = MK(1, 0)` via `int.succ 0 = succ (MK 0 0)`).
 //!
-//! Each additive axiom then reduces to `nat` algebra on the `f`/`s`
-//! components (e.g. `add_assoc` is `nat::add_assoc` on each component).
+//! Each ring axiom then reduces to `nat` algebra on the `f`/`s` components
+//! (e.g. `add_assoc` is `nat::add_assoc` per component; `mul_assoc` /
+//! `distrib` distribute to the same `nat` products, re-paired by `mid_swap`).
 
 use covalence_core::defs::{fst, pair, prod, snd};
 use covalence_core::{Error, Result, Term, Thm, Type, subst};
@@ -579,6 +581,211 @@ fn sub_class(p: &Term, q: &Term) -> Result<Thm> {
     dl.trans(lift)
 }
 
+// ---- multiplication ----
+
+/// `pair (fx·fy + sx·sy) (fx·sy + sx·fy)` — Grothendieck product
+/// `(a−b)(c−d) = (ac+bd) − (ad+bc)`.
+fn mul_pair(x: &Term, y: &Term) -> Term {
+    let (fx, sx) = (fst_nn(x), snd_nn(x));
+    let (fy, sy) = (fst_nn(y), snd_nn(y));
+    pair_nn(
+        nat::add(
+            nat::mul(fx.clone(), fy.clone()),
+            nat::mul(sx.clone(), sy.clone()),
+        ),
+        nat::add(nat::mul(fx, sy), nat::mul(sx, fy)),
+    )
+}
+
+/// `⊢ x·m = y·m` from `⊢ x = y`.
+fn cong_mul_l(eq: Thm, m: &Term) -> Result<Thm> {
+    Thm::refl(nat::nat_mul())?.cong_app(eq)?.cong_fn(m.clone())
+}
+/// `⊢ m·x = m·y` from `⊢ x = y`.
+fn cong_mul_r(m: &Term, eq: Thm) -> Result<Thm> {
+    Thm::refl(Term::app(nat::nat_mul(), m.clone()))?.cong_app(eq)
+}
+
+/// `⊢ p·m + q·m = r·m + s·m` from `e : ⊢ p + q = r + s` (right multiply).
+fn mul_r_eq(p: &Term, q: &Term, r: &Term, s: &Term, e: Thm, m: &Term) -> Result<Thm> {
+    let lhs = elim3(nat::distrib_r(), p, q, m)?; // (p+q)·m = p·m+q·m
+    let rhs = elim3(nat::distrib_r(), r, s, m)?; // (r+s)·m = r·m+s·m
+    lhs.sym()?.trans(cong_mul_l(e, m)?)?.trans(rhs)
+}
+/// `⊢ m·p + m·q = m·r + m·s` from `e : ⊢ p + q = r + s` (left multiply).
+fn mul_l_eq(m: &Term, p: &Term, q: &Term, r: &Term, s: &Term, e: Thm) -> Result<Thm> {
+    let lhs = elim3(nat::distrib(), m, p, q)?; // m·(p+q) = m·p+m·q
+    let rhs = elim3(nat::distrib(), m, r, s)?; // m·(r+s) = m·r+m·s
+    lhs.sym()?.trans(cong_mul_r(m, e)?)?.trans(rhs)
+}
+
+/// `⊢ u = u` reflexivity helper for re-pairing under `+`.
+fn cong_add_r(left: &Term, eq: Thm) -> Result<Thm> {
+    eq.cong_arg(Term::app(nat::nat_add(), left.clone()))
+}
+
+/// **Left multiplicative well-definedness.** `⊢ int_rel x x'` lifted to
+/// `⊢ int_rel (mul_pair x y) (mul_pair x' y)` (`y` fixed). The Grothendieck
+/// product distributes over the defining `nat` equation in the varied factor.
+fn mul_pair_cong_l(h1: Thm, y: &Term) -> Result<Thm> {
+    let (x, xp) = dest_rel_app(h1.concl())?;
+    let e = reduce_rel(h1)?; // a + b' = a' + b   (a=fx, b=sx, a'=fx', b'=sx')
+    let (a, b) = (fst_nn(&x), snd_nn(&x));
+    let (ap, bp) = (fst_nn(&xp), snd_nn(&xp));
+    let (c, d) = (fst_nn(y), snd_nn(y));
+    let m = |u: &Term, v: &Term| nat::mul(u.clone(), v.clone());
+
+    // eL_c: a·c+b'·c = a'·c+b·c ; eL_d: a·d+b'·d = a'·d+b·d.
+    let elc = mul_r_eq(&a, &bp, &ap, &b, e.clone(), &c)?;
+    let eld = mul_r_eq(&a, &bp, &ap, &b, e, &d)?;
+    // bd+a'd = a'd+bd = ad+b'd.
+    let bd_eq = nat::add_comm()
+        .all_elim(m(&b, &d))?
+        .all_elim(m(&ap, &d))?
+        .trans(eld.sym()?)?; // b·d+a'·d = a·d+b'·d
+
+    let (ac, bd, apd, bpc) = (m(&a, &c), m(&b, &d), m(&ap, &d), m(&bp, &c));
+    let (apc, bc, ad, bpd) = (m(&ap, &c), m(&b, &c), m(&a, &d), m(&bp, &d));
+    // (ac+bd)+(a'd+b'c) = (ac+b'c)+(bd+a'd) = (a'c+bc)+(ad+b'd)
+    //                   = (a'c+b'd)+(bc+ad) = (a'c+b'd)+(ad+bc).
+    let g = elim4(nat::add_interchange(), &ac, &bd, &apd, &bpc)?
+        .trans(nat::cong_add(elc, bd_eq)?)?
+        .trans(elim4(nat::add_interchange(), &apc, &bc, &ad, &bpd)?)?
+        .trans(cong_add_r(
+            &nat::add(apc.clone(), bpd.clone()),
+            nat::add_comm().all_elim(bc.clone())?.all_elim(ad.clone())?,
+        )?)?;
+    rel_of_pairs(
+        &nat::add(ac, bd),
+        &nat::add(ad, bc),
+        &nat::add(apc, bpd),
+        &nat::add(apd, bpc),
+        g,
+    )
+}
+
+/// **Right multiplicative well-definedness.** `⊢ int_rel y y'` lifted to
+/// `⊢ int_rel (mul_pair x' y) (mul_pair x' y')` (`x'` fixed).
+fn mul_pair_cong_r(xp: &Term, h2: Thm) -> Result<Thm> {
+    let (y, yp) = dest_rel_app(h2.concl())?;
+    let e2 = reduce_rel(h2)?; // c + d' = c' + d   (c=fy, d=sy, c'=fy', d'=sy')
+    let (ap, bp) = (fst_nn(xp), snd_nn(xp));
+    let (c, d) = (fst_nn(&y), snd_nn(&y));
+    let (cp, dp) = (fst_nn(&yp), snd_nn(&yp));
+    let m = |u: &Term, v: &Term| nat::mul(u.clone(), v.clone());
+
+    // eR_a: a'·c+a'·d' = a'·c'+a'·d ; eR_b: b'·c+b'·d' = b'·c'+b'·d.
+    let era = mul_l_eq(&ap, &c, &dp, &cp, &d, e2.clone())?;
+    let erb = mul_l_eq(&bp, &c, &dp, &cp, &d, e2)?;
+    // b'd+b'c' = b'c'+b'd = b'c+b'd'.
+    let erb2 = nat::add_comm()
+        .all_elim(m(&bp, &d))?
+        .all_elim(m(&bp, &cp))?
+        .trans(erb.sym()?)?; // b'·d+b'·c' = b'·c+b'·d'
+
+    let (apc, bpd, apdp, bpcp) = (m(&ap, &c), m(&bp, &d), m(&ap, &dp), m(&bp, &cp));
+    let (apcp, apd, bpc, bpdp) = (m(&ap, &cp), m(&ap, &d), m(&bp, &c), m(&bp, &dp));
+    // (a'c+b'd)+(a'd'+b'c') = (a'c+a'd')+(b'd+b'c') = (a'c'+a'd)+(b'c+b'd')
+    //                       = (a'c'+b'd')+(a'd+b'c).
+    let g = mid_swap(&apc, &bpd, &apdp, &bpcp)?
+        .trans(nat::cong_add(era, erb2)?)?
+        .trans(elim4(nat::add_interchange(), &apcp, &apd, &bpc, &bpdp)?)?;
+    rel_of_pairs(
+        &nat::add(apc, bpd),
+        &nat::add(apd, bpc),
+        &nat::add(apcp, bpdp),
+        &nat::add(apdp, bpcp),
+        g,
+    )
+}
+
+/// **Multiplicative well-definedness.** From `⊢ int_rel x x'`, `⊢ int_rel
+/// y y'` conclude `⊢ int_rel (mul_pair x y) (mul_pair x' y')` — vary one
+/// factor at a time ([`mul_pair_cong_l`] / [`mul_pair_cong_r`]) and chain by
+/// transitivity through `mul_pair x' y`.
+fn mul_pair_cong(h1: Thm, h2: Thm) -> Result<Thm> {
+    let (x, xp) = dest_rel_app(h1.concl())?;
+    let (y, yp) = dest_rel_app(h2.concl())?;
+    let left = mul_pair_cong_l(h1, &y)?; // int_rel (mul x y) (mul x' y)
+    let right = mul_pair_cong_r(&xp, h2)?; // int_rel (mul x' y) (mul x' y')
+    elim3(
+        int_rel_trans(),
+        &rel_app_target(&x, &y),
+        &rel_app_target(&xp, &y),
+        &rel_app_target(&xp, &yp),
+    )?
+    .imp_elim(left)?
+    .imp_elim(right)
+}
+
+/// `mul_pair x y` — named so `mul_pair_cong`'s `int_rel_trans` instantiation
+/// reads cleanly.
+fn rel_app_target(x: &Term, y: &Term) -> Term {
+    mul_pair(x, y)
+}
+
+/// **Multiplicative computation rule.** `⊢ int.mul (mk_int p) (mk_int q) =
+/// mk_int (mul_pair p q)`.
+fn mul_class(p: &Term, q: &Term) -> Result<Thm> {
+    let (mp, mq) = (mk_int(p), mk_int(q));
+    let dl = mul_defining_eq(&mp, &mq)?;
+    let (rpp, rpq) = (rep_pair(&mp), rep_pair(&mq));
+    let dl = dl.trans(defs_to_mk_int(&mul_pair(&rpp, &rpq))?)?; // = mk_int(mul_pair RPp RPq)
+    let rpp_p = inst2(int_rel_symm(), p, &rpp)?.imp_elim(round_trip(p)?)?;
+    let rpq_q = inst2(int_rel_symm(), q, &rpq)?.imp_elim(round_trip(q)?)?;
+    let cong = mul_pair_cong(rpp_p, rpq_q)?;
+    let lift = quotient::class_intro(&spec(), &[], &nn(), &int_rel_symm(), &int_rel_trans(), cong)?;
+    dl.trans(lift)
+}
+
+// ---- successor (the bridge to literal-`1` coherence) ----
+
+/// `pair (succ (fst x)) (snd x)` — `succ (a−b) = (a+1) − b`.
+fn succ_pair(x: &Term) -> Term {
+    pair_nn(nat::succ(fst_nn(x)), snd_nn(x))
+}
+
+/// `⊢ int.succ a = abs(class_of_defs (succ_pair (rep_pair a)))`.
+fn succ_defining_eq(a: &Term) -> Result<Thm> {
+    Term::app(int_succ(), a.clone())
+        .delta_all(covalence_core::defs::int_succ_spec().symbol())?
+        .rhs_conv(|t| t.reduce())
+}
+
+/// **Successor well-definedness.** `⊢ int_rel x x'` lifted to
+/// `⊢ int_rel (succ_pair x) (succ_pair x')` — push the `succ` through the
+/// defining equation by `nat::add_step`.
+fn succ_pair_cong(h: Thm) -> Result<Thm> {
+    let (x, xp) = dest_rel_app(h.concl())?;
+    let e = reduce_rel(h)?; // fx + sx' = fx' + sx
+    let (fx, sx) = (fst_nn(&x), snd_nn(&x));
+    let (fxp, sxp) = (fst_nn(&xp), snd_nn(&xp));
+    // (S fx)+sx' = S(fx+sx') = S(fx'+sx) = (S fx')+sx.
+    let g = nat::add_step()
+        .all_elim(fx.clone())?
+        .all_elim(sxp.clone())?
+        .trans(e.cong_arg(nat::nat_succ())?)?
+        .trans(
+            nat::add_step()
+                .all_elim(fxp.clone())?
+                .all_elim(sx.clone())?
+                .sym()?,
+        )?;
+    rel_of_pairs(&nat::succ(fx), &sx, &nat::succ(fxp), &sxp, g)
+}
+
+/// **Successor computation rule.** `⊢ int.succ (mk_int p) = mk_int (succ_pair p)`.
+fn succ_class(p: &Term) -> Result<Thm> {
+    let mp = mk_int(p);
+    let dl = succ_defining_eq(&mp)?;
+    let rpp = rep_pair(&mp);
+    let dl = dl.trans(defs_to_mk_int(&succ_pair(&rpp))?)?; // = mk_int(succ_pair RPp)
+    let rpp_p = inst2(int_rel_symm(), p, &rpp)?.imp_elim(round_trip(p)?)?;
+    let cong = succ_pair_cong(rpp_p)?;
+    let lift = quotient::class_intro(&spec(), &[], &nn(), &int_rel_symm(), &int_rel_trans(), cong)?;
+    dl.trans(lift)
+}
+
 // ============================================================================
 // The `MK(f, s)` component layer — `int` values as explicit `nat`-pairs
 // ============================================================================
@@ -692,6 +899,48 @@ fn sub_mk(fa: &Term, sa: &Term, fb: &Term, sb: &Term) -> Result<Thm> {
         crate::init::prod::fst_pair(&n, &n, fb, sb)?, // fst pb = fb
     ];
     sc.rhs_conv(|t| rewrite_seq(t, &projs)) // = MK (fa+sb)(sa+fb)
+}
+
+/// **Multiplication in component form.** `⊢ int.mul (MK fa sa)(MK fb sb) =
+/// MK (fa·fb + sa·sb)(fa·sb + sa·fb)`.
+fn mul_mk(fa: &Term, sa: &Term, fb: &Term, sb: &Term) -> Result<Thm> {
+    let (pa, pb) = (
+        pair_nn(fa.clone(), sa.clone()),
+        pair_nn(fb.clone(), sb.clone()),
+    );
+    let mc = mul_class(&pa, &pb)?; // = mk_int(mul_pair pa pb)
+    let n = Type::nat();
+    let projs = [
+        crate::init::prod::fst_pair(&n, &n, fa, sa)?, // fst pa = fa  (both occurrences)
+        crate::init::prod::snd_pair(&n, &n, fa, sa)?, // snd pa = sa
+        crate::init::prod::fst_pair(&n, &n, fb, sb)?, // fst pb = fb
+        crate::init::prod::snd_pair(&n, &n, fb, sb)?, // snd pb = sb
+    ];
+    mc.rhs_conv(|t| rewrite_seq(t, &projs)) // = MK (fa·fb+sa·sb)(fa·sb+sa·fb)
+}
+
+/// `⊢ int.mul a b = MK (fa·fb+sa·sb)(fa·sb+sa·fb)`, where `ra : a = MK fa
+/// sa`, `rb : b = MK fb sb`.
+fn mul_via_components(ra: &Thm, rb: &Thm) -> Result<Thm> {
+    let (_a, ma) = dest_eq(ra)?;
+    let (_b, mb) = dest_eq(rb)?;
+    let (fa, sa) = mk_components(&ma)?;
+    let (fb, sb) = mk_components(&mb)?;
+    Thm::refl(int_mul())?
+        .cong_app(ra.clone())?
+        .cong_app(rb.clone())? // int.mul a b = int.mul (MK fa sa)(MK fb sb)
+        .trans(mul_mk(&fa, &sa, &fb, &sb)?)
+}
+
+/// **Successor in component form.** `⊢ int.succ (MK f s) = MK (succ f) s`.
+fn succ_mk(f: &Term, s: &Term) -> Result<Thm> {
+    let sc = succ_class(&pair_nn(f.clone(), s.clone()))?; // = mk_int(succ_pair (pair f s))
+    let n = Type::nat();
+    let projs = [
+        crate::init::prod::fst_pair(&n, &n, f, s)?, // fst (pair f s) = f  (under succ)
+        crate::init::prod::snd_pair(&n, &n, f, s)?, // snd (pair f s) = s
+    ];
+    sc.rhs_conv(|t| rewrite_seq(t, &projs)) // = MK (succ f) s
 }
 
 /// `⊢ int.neg a = MK sa fa`, where `ra : a = MK fa sa`.
@@ -813,6 +1062,21 @@ fn lit0_mk() -> Result<Thm> {
     let rel = rel_of_pairs(&f0, &s0, &nat::zero(), &nat::zero(), g)?;
     let mk_eq = quotient::class_intro(&spec(), &[], &nn(), &int_rel_symm(), &int_rel_trans(), rel)?;
     rm.trans(mk_eq) // ⊢ 0 = MK(0, 0)
+}
+
+/// `⊢ int_lit 1 = MK(1, 0)` — literal-`1` coherence. Cleanly: `int.succ 0`
+/// reduces to `1`, and `int.succ (MK 0 0) = MK (succ 0) 0 = MK 1 0`.
+fn lit1_mk() -> Result<Thm> {
+    let e_red = Term::app(int_succ(), lit(0)).reduce()?; // int.succ 0 = 1
+    let succ_cong = Thm::refl(int_succ())?.cong_app(lit0_mk()?)?; // int.succ 0 = int.succ (MK 0 0)
+    let sm = succ_mk(&nat::zero(), &nat::zero())?; // int.succ (MK 0 0) = MK (succ 0) 0
+    let succ0_eq_1 = nat::succ(nat::zero()).reduce()?; // succ 0 = 1
+    let bridge = mkfs_cong(succ0_eq_1, Thm::refl(nat::zero())?)?; // MK (succ 0) 0 = MK 1 0
+    e_red
+        .sym()? // int_lit 1 = int.succ 0
+        .trans(succ_cong)?
+        .trans(sm)?
+        .trans(bridge) // = MK 1 0
 }
 
 // ============================================================================
@@ -976,38 +1240,164 @@ cached_thm! {
     }
 }
 
-/// `⊢ ∀a b c. (a * b) * c = a * (b * c)`.
-pub fn mul_assoc() -> Thm {
-    let (a, b, c) = (var("a"), var("b"), var("c"));
-    let lhs = mul(mul(a.clone(), b.clone()), c.clone());
-    let rhs = mul(a, mul(b, c));
-    let eq = lhs.equals(rhs).expect("mul_assoc");
-    axiom(forall_int(&["a", "b", "c"], eq))
+cached_thm! {
+    /// `⊢ ∀a b c. (a * b) * c = a * (b * c)` — **proved**. On `MK`
+    /// components each side expands (`distrib`/`distrib_r` + `nat::mul_assoc`)
+    /// to the same four triple-products, re-paired by [`mid_swap`].
+    pub fn mul_assoc() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let (fb, sb) = (fcomp(&b), scomp(&b));
+        let (fc, sc) = (fcomp(&c), scomp(&c));
+        let m = |u: &Term, v: &Term| nat::mul(u.clone(), v.clone());
+        let acomm = |x: &Term, y: &Term| -> Result<Thm> {
+            nat::add_comm().all_elim(x.clone())?.all_elim(y.clone())
+        };
+
+        // (a*b)*c = MK (P1·fc + P2·sc) (P1·sc + P2·fc),  P1=fa·fb+sa·sb,
+        //   P2=fa·sb+sa·fb ; a*(b*c) = MK (fa·Q1 + sa·Q2) (fa·Q2 + sa·Q1),
+        //   Q1=fb·fc+sb·sc, Q2=fb·sc+sb·fc.
+        let ab = mul_via_components(&ra, &rb)?;
+        let lhs = mul_via_components(&ab, &rc)?;
+        let bc = mul_via_components(&rb, &rc)?;
+        let rhs = mul_via_components(&ra, &bc)?;
+
+        // `(x·y + z·w)·u = x·(y·u) + z·(w·u)` (distrib_r + two mul_assoc).
+        let expand_r = |x: &Term, y: &Term, z: &Term, w: &Term, u: &Term| -> Result<Thm> {
+            elim3(nat::distrib_r(), &m(x, y), &m(z, w), u)?.trans(nat::cong_add(
+                elim3(nat::mul_assoc(), x, y, u)?,
+                elim3(nat::mul_assoc(), z, w, u)?,
+            )?)
+        };
+
+        // fst: (P1·fc + P2·sc) = (fa·Q1 + sa·Q2).  Atoms A,B,C,D.
+        let fst_eq = {
+            let (aa, bb) = (m(&fa, &m(&fb, &fc)), m(&sa, &m(&sb, &fc)));
+            let (cc, dd) = (m(&fa, &m(&sb, &sc)), m(&sa, &m(&fb, &sc)));
+            let l = nat::cong_add(
+                expand_r(&fa, &fb, &sa, &sb, &fc)?, // P1·fc = A + B
+                expand_r(&fa, &sb, &sa, &fb, &sc)?, // P2·sc = C + D
+            )?; // L1 = (A+B)+(C+D)
+            let r = nat::cong_add(
+                elim3(nat::distrib(), &fa, &m(&fb, &fc), &m(&sb, &sc))?, // fa·Q1 = A + C
+                elim3(nat::distrib(), &sa, &m(&fb, &sc), &m(&sb, &fc))?, // sa·Q2 = D + B
+            )?; // R1 = (A+C)+(D+B)
+            l.trans(mid_swap(&aa, &bb, &cc, &dd)?)? // = (A+C)+(B+D)
+                .trans(cong_add_r(&nat::add(aa, cc), acomm(&bb, &dd)?)?)? // = (A+C)+(D+B)
+                .trans(r.sym()?)?
+        };
+        // snd: (P1·sc + P2·fc) = (fa·Q2 + sa·Q1).  Atoms E,F,G,H.
+        let snd_eq = {
+            let (ee, ff) = (m(&fa, &m(&fb, &sc)), m(&sa, &m(&sb, &sc)));
+            let (gg, hh) = (m(&fa, &m(&sb, &fc)), m(&sa, &m(&fb, &fc)));
+            let l = nat::cong_add(
+                expand_r(&fa, &fb, &sa, &sb, &sc)?, // P1·sc = E + F
+                expand_r(&fa, &sb, &sa, &fb, &fc)?, // P2·fc = G + H
+            )?; // L2 = (E+F)+(G+H)
+            let r = nat::cong_add(
+                elim3(nat::distrib(), &fa, &m(&fb, &sc), &m(&sb, &fc))?, // fa·Q2 = E + G
+                elim3(nat::distrib(), &sa, &m(&fb, &fc), &m(&sb, &sc))?, // sa·Q1 = H + F
+            )?; // R2 = (E+G)+(H+F)
+            l.trans(mid_swap(&ee, &ff, &gg, &hh)?)? // = (E+G)+(F+H)
+                .trans(cong_add_r(&nat::add(ee, gg), acomm(&ff, &hh)?)?)? // = (E+G)+(H+F)
+                .trans(r.sym()?)?
+        };
+
+        lhs.trans(mkfs_cong(fst_eq, snd_eq)?)?
+            .trans(rhs.sym()?)?
+            .all_intro("c", int())?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
 }
 
-/// `⊢ ∀a. a * 1 = a`.
-pub fn mul_one() -> Thm {
-    let a = var("a");
-    let eq = mul(a.clone(), lit(1))
-        .equals(a)
-        .expect("mul_one: a * 1 = a");
-    axiom(forall_int(&["a"], eq))
+cached_thm! {
+    /// `⊢ ∀a. a * 1 = a` — **proved**. `1 = MK(1,0)` ([`lit1_mk`]), so
+    /// `a * 1 = MK(fa·1+sa·0)(fa·0+sa·1) = MK(fa)(sa) = a` by
+    /// `nat::mul_one`/`mul_zero` on each component.
+    pub fn mul_one() -> Result<Thm> {
+        let a = var("a");
+        let ra = recon_mk(&a)?;
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let lhs = mul_via_components(&ra, &lit1_mk()?)?; // a*1 = MK(fa·1+sa·0)(fa·0+sa·1)
+        // fst: fa·1+sa·0 = fa+0 = fa.
+        let fst_eq = nat::cong_add(
+            nat::mul_one().all_elim(fa.clone())?,
+            nat::mul_zero().all_elim(sa.clone())?,
+        )?
+        .trans(nat::add_zero().all_elim(fa.clone())?)?;
+        // snd: fa·0+sa·1 = 0+sa = sa.
+        let snd_eq = nat::cong_add(
+            nat::mul_zero().all_elim(fa.clone())?,
+            nat::mul_one().all_elim(sa.clone())?,
+        )?
+        .trans(nat::add_base().all_elim(sa.clone())?)?;
+        lhs.trans(mkfs_cong(fst_eq, snd_eq)?)?
+            .trans(ra.sym()?)?
+            .all_intro("a", int())
+    }
 }
 
-/// `⊢ ∀a. a * 0 = 0`.
-pub fn mul_zero() -> Thm {
-    let a = var("a");
-    let eq = mul(a, lit(0)).equals(lit(0)).expect("mul_zero: a * 0 = 0");
-    axiom(forall_int(&["a"], eq))
+cached_thm! {
+    /// `⊢ ∀a. a * 0 = 0` — **proved**. `0 = MK(0,0)` ([`lit0_mk`]), so
+    /// `a * 0 = MK(fa·0+sa·0)(fa·0+sa·0) = MK(0)(0) = 0`.
+    pub fn mul_zero() -> Result<Thm> {
+        let a = var("a");
+        let ra = recon_mk(&a)?;
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let lhs = mul_via_components(&ra, &lit0_mk()?)?; // a*0 = MK(fa·0+sa·0)(fa·0+sa·0)
+        // each component: fa·0+sa·0 = 0+0 = 0.
+        let comp = nat::cong_add(
+            nat::mul_zero().all_elim(fa.clone())?,
+            nat::mul_zero().all_elim(sa.clone())?,
+        )?
+        .trans(nat::add_base().all_elim(nat::zero())?)?;
+        lhs.trans(mkfs_cong(comp.clone(), comp)?)?
+            .trans(lit0_mk()?.sym()?)?
+            .all_intro("a", int())
+    }
 }
 
-/// `⊢ ∀a b c. a * (b + c) = a * b + a * c` — left distributivity.
-pub fn distrib() -> Thm {
-    let (a, b, c) = (var("a"), var("b"), var("c"));
-    let lhs = mul(a.clone(), add(b.clone(), c.clone()));
-    let rhs = add(mul(a.clone(), b), mul(a, c));
-    let eq = lhs.equals(rhs).expect("distrib");
-    axiom(forall_int(&["a", "b", "c"], eq))
+cached_thm! {
+    /// `⊢ ∀a b c. a * (b + c) = a * b + a * c` — **proved** (left
+    /// distributivity). On `MK` components: each side's `fst`/`snd` expands
+    /// by `nat::distrib` to the same four products, re-paired by [`mid_swap`].
+    pub fn distrib() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let (fb, sb) = (fcomp(&b), scomp(&b));
+        let (fc, sc) = (fcomp(&c), scomp(&c));
+        let m = |u: &Term, v: &Term| nat::mul(u.clone(), v.clone());
+
+        // a*(b+c) = MK (fa·(fb+fc)+sa·(sb+sc)) (fa·(sb+sc)+sa·(fb+fc))
+        let bc = add_via_components(&rb, &rc)?;
+        let lhs = mul_via_components(&ra, &bc)?;
+        // a*b + a*c = MK ((fa·fb+sa·sb)+(fa·fc+sa·sc)) ((fa·sb+sa·fb)+(fa·sc+sa·fc))
+        let ab = mul_via_components(&ra, &rb)?;
+        let ac = mul_via_components(&ra, &rc)?;
+        let rhs = add_via_components(&ab, &ac)?;
+
+        // fst: fa·(fb+fc)+sa·(sb+sc) = (fa·fb+sa·sb)+(fa·fc+sa·sc).
+        let fst_eq = nat::cong_add(
+            elim3(nat::distrib(), &fa, &fb, &fc)?, // fa·(fb+fc) = fa·fb+fa·fc
+            elim3(nat::distrib(), &sa, &sb, &sc)?, // sa·(sb+sc) = sa·sb+sa·sc
+        )?
+        .trans(mid_swap(&m(&fa, &fb), &m(&fa, &fc), &m(&sa, &sb), &m(&sa, &sc))?)?;
+        // snd: fa·(sb+sc)+sa·(fb+fc) = (fa·sb+sa·fb)+(fa·sc+sa·fc).
+        let snd_eq = nat::cong_add(
+            elim3(nat::distrib(), &fa, &sb, &sc)?,
+            elim3(nat::distrib(), &sa, &fb, &fc)?,
+        )?
+        .trans(mid_swap(&m(&fa, &sb), &m(&fa, &sc), &m(&sa, &fb), &m(&sa, &fc))?)?;
+
+        lhs.trans(mkfs_cong(fst_eq, snd_eq)?)?
+            .trans(rhs.sym()?)?
+            .all_intro("c", int())?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
 }
 
 cached_thm! {
@@ -1113,10 +1503,6 @@ mod tests {
     /// The full postulate set — used to assert the audit-trail invariant.
     fn all() -> Vec<Thm> {
         vec![
-            mul_assoc(),
-            mul_one(),
-            mul_zero(),
-            distrib(),
             lt_irrefl(),
             lt_trans(),
             lt_trichotomy(),
@@ -1157,6 +1543,13 @@ mod tests {
         let (l, r) = ac.concl().as_eq().unwrap();
         assert_eq!(l, &add(mk_int(&u), mk_int(&v)));
         assert_eq!(r, &mk_int(&add_pair(&u, &v)));
+
+        // mul_class: ⊢ int.mul (mk_int u)(mk_int v) = mk_int(mul_pair u v).
+        let mc = mul_class(&u, &v).expect("mul_class (well-definedness)");
+        assert!(mc.hyps().is_empty(), "mul_class is genuine");
+        let (l, r) = mc.concl().as_eq().unwrap();
+        assert_eq!(l, &mul(mk_int(&u), mk_int(&v)));
+        assert_eq!(r, &mk_int(&mul_pair(&u, &v)));
     }
 
     #[test]
@@ -1175,6 +1568,54 @@ mod tests {
             .unwrap();
         let expected = add(a.clone(), b.clone()).equals(add(b, a)).unwrap();
         assert_eq!(inst.concl(), &expected);
+    }
+
+    #[test]
+    fn distrib_is_a_genuine_theorem() {
+        let thm = distrib();
+        assert!(
+            thm.hyps().is_empty(),
+            "int::distrib is proved, not postulated"
+        );
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let inst = elim3(thm, &a, &b, &c).unwrap();
+        let expected = mul(a.clone(), add(b.clone(), c.clone()))
+            .equals(add(mul(a.clone(), b), mul(a, c)))
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
+    }
+
+    #[test]
+    fn mul_assoc_is_a_genuine_theorem() {
+        let thm = mul_assoc();
+        assert!(
+            thm.hyps().is_empty(),
+            "int::mul_assoc is proved, not postulated"
+        );
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let inst = elim3(thm, &a, &b, &c).unwrap();
+        let expected = mul(mul(a.clone(), b.clone()), c.clone())
+            .equals(mul(a, mul(b, c)))
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
+    }
+
+    #[test]
+    fn mul_unit_and_zero_are_genuine() {
+        // mul_one: ∀a. a*1 = a ; mul_zero: ∀a. a*0 = 0.
+        let a = var("a");
+        let one = mul_one();
+        assert!(one.hyps().is_empty(), "int::mul_one is proved");
+        assert_eq!(
+            one.all_elim(a.clone()).unwrap().concl(),
+            &mul(a.clone(), lit(1)).equals(a.clone()).unwrap()
+        );
+        let z = mul_zero();
+        assert!(z.hyps().is_empty(), "int::mul_zero is proved");
+        assert_eq!(
+            z.all_elim(a.clone()).unwrap().concl(),
+            &mul(a, lit(0)).equals(lit(0)).unwrap()
+        );
     }
 
     #[test]

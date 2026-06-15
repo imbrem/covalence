@@ -11,9 +11,9 @@
 //!   induction over the introduction rules. Generalises `nat`'s
 //!   `graph_total`.
 //!
-//! The per-constructor *inversion* lemmas (the other half of uniqueness)
-//! are in [`super::uniqueness`]; **determinacy** and the **ε-assembly**
-//! remain specialised to `nat` for now (see `SKELETONS.md`).
+//! The other uniqueness pieces are [`super::uniqueness`] (inversion) and
+//! [`super::determinacy`]; only the **ε-assembly** remains specialised to
+//! `nat` (see `SKELETONS.md`).
 
 use covalence_core::{Result, Term, Thm, Type, subst};
 

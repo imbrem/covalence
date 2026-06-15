@@ -1,34 +1,20 @@
-//! The **shallow** embedding of point-free reasoning into HOL: an object
-//! is a HOL [`Type`], a morphism is a HOL `α → β` [`Term`], and a proof
-//! is a HOL [`Thm`] equating two morphisms.
+//! The **shallow** embedding of the coproduct's monoidal structure into
+//! HOL: the [`Monoidal`] impl on [`Hol`].
 //!
-//! [`Hol`] is the trivial implementation of [`Monoidal`] — "trivial"
-//! because point-free reasoning is *just* HOL reasoning about functions
-//! and the `coprod` type. Every axiom forwards to a genuine,
-//! hypothesis-free theorem: the category laws to
-//! [`init::cat`](crate::init::cat) and the coproduct universal property
-//! (β-laws + η/fusion) to [`init::coprod`](crate::init::coprod). So a
-//! shallow point-free proof is an outright HOL theorem — nothing is
-//! postulated.
+//! [`Hol`] itself — the zero-sized handle and its [`Category`] impl —
+//! lives in [`crate::category::shallow`]; this module adds the coproduct
+//! layer. Every axiom forwards to a genuine, hypothesis-free theorem: the
+//! coproduct universal property (β-laws + η/fusion) to
+//! [`init::coprod`](mod@crate::init::coprod). So a shallow point-free
+//! proof is an outright HOL theorem — nothing is postulated.
 
 use covalence_core::defs::coprod_spec;
 use covalence_core::{Error, Result, Term, Thm, Type, TypeKind};
 
+use crate::category::{Category, Hol};
 use crate::init::ext::TermExt;
 use crate::init::{cat, coprod};
 use crate::monoidal::Monoidal;
-
-/// Shallow point-free-in-HOL: `Obj = Type`, `Hom = Term`, `Proof = Thm`.
-/// Zero-sized.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Hol;
-
-impl Hol {
-    /// Construct a handle. Free; no allocation.
-    pub fn new() -> Self {
-        Self
-    }
-}
 
 /// Split `α → β` into `(α, β)`.
 fn fun_parts(ty: &Type) -> Result<(Type, Type)> {
@@ -50,25 +36,10 @@ impl Hol {
 }
 
 impl Monoidal for Hol {
-    type Obj = Type;
-    type Hom = Term;
-    type Proof = Thm;
-    type Error = Error;
-
     // ---- objects ----
 
     fn oplus(&self, a: Type, b: Type) -> Type {
         coprod::coprod(a, b)
-    }
-
-    // ---- morphisms: category ----
-
-    fn id(&self, a: Type) -> Term {
-        cat::id(a)
-    }
-
-    fn comp(&self, g: Term, f: Term) -> Result<Term> {
-        cat::comp(&g, &f)
     }
 
     // ---- morphisms: coproduct join morphisms ----
@@ -108,28 +79,6 @@ impl Monoidal for Hol {
         self.copair_term(&id, &id)
     }
 
-    fn concl(&self, proof: &Thm) -> (Term, Term) {
-        let (l, r) = proof
-            .concl()
-            .as_eq()
-            .expect("a monoidal proof is an equation");
-        (l.clone(), r.clone())
-    }
-
-    // ---- axioms: category laws ----
-
-    fn id_left(&self, f: Term) -> Result<Thm> {
-        cat::id_left(&f)
-    }
-
-    fn id_right(&self, f: Term) -> Result<Thm> {
-        cat::id_right(&f)
-    }
-
-    fn assoc(&self, h: Term, g: Term, f: Term) -> Result<Thm> {
-        cat::comp_assoc(&h, &g, &f)
-    }
-
     // ---- axioms: coproduct universal property ----
 
     fn copair_inl(&self, f: Term, g: Term) -> Result<Thm> {
@@ -161,23 +110,7 @@ impl Monoidal for Hol {
         coprod::case_eta(&a, &b, &c, &m)
     }
 
-    // ---- inference rules ----
-
-    fn refl(&self, f: Term) -> Result<Thm> {
-        Thm::refl(f)
-    }
-
-    fn sym(&self, p: Thm) -> Result<Thm> {
-        p.sym()
-    }
-
-    fn trans(&self, p: Thm, q: Thm) -> Result<Thm> {
-        p.trans(q)
-    }
-
-    fn comp_cong(&self, g_eq: Thm, f_eq: Thm) -> Result<Thm> {
-        cat::comp_cong(&g_eq, &f_eq)
-    }
+    // ---- inference rules: coproduct congruence ----
 
     fn copair_cong(&self, f_eq: Thm, g_eq: Thm) -> Result<Thm> {
         // ⊢ [f, g] = [f', g'] by congruence on `coprod_case`.

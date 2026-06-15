@@ -34,9 +34,9 @@
 //! variables. (`nat`'s hand proof achieves the same by using `j`/`d` for
 //! `wit` against `m`/`b` for the clause.)
 //!
-//! Determinacy (`∀t a b. Graph t a ⟹ Graph t b ⟹ a = b`) and the
-//! ε-assembly build on these; they remain in [`crate::init::recursion`] for
-//! now (see `SKELETONS.md`).
+//! Determinacy (`∀t a b. Graph t a ⟹ Graph t b ⟹ a = b`) builds on these
+//! in [`super::determinacy`]; only the ε-assembly remains in
+//! [`crate::init::recursion`] (see `SKELETONS.md`).
 
 use covalence_core::{Result, Term, Thm, Type, subst};
 

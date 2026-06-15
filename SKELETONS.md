@@ -111,6 +111,60 @@ it is how unfinished work stays discoverable.
     `le`/`lt` order theory is now developed too — reflexivity, irreflexivity,
     successor cancellation, the zero facts, totality, antisymmetry, the
     `<`/`≤` bridge, and **transitivity** (`le_trans`).
+- **The `rat` quotient + ordered-field theory** in
+  `crates/covalence-hol/src/init/rat.rs`. `rat := (int × int.pos) / ~`
+  (cross-multiplication). Proved outright: `rat_rel_refl`, `rat_rel_symm`
+  (pure `int`-equation `refl`/`sym`); `of_nat_via_int` (the ℕ↪ℚ
+  embedding factors through ℤ↪ℚ, by β); and `add_comm` / `mul_comm` —
+  proved **on the nose**, exactly as `init::int`'s are: `ratAdd`/`ratMul`
+  are componentwise on representatives, so the two representative pairs are
+  provably equal (numerator + denominator each by the proved `int`
+  commutativity facts) and equal representatives lift to equal classes by
+  congruence under `mkRat`; no quotient relation and no `int` cancellation
+  are involved. **Postulated** via the module's `axiom` helper (each
+  carrying its statement as a self-hyp):
+  - `rat_rel_trans` — transitivity of the cross-multiplication relation.
+    Needs `int` *multiplicative cancellation by a positive* (cancel the
+    common positive denominator), an `int` fact not yet discharged. Once
+    that lands, this becomes the int-analogue of `int_rel_trans`.
+  - The remaining ordered-field axioms over `rat_zero`/`rat_one`/`rat_add`/
+    `rat_neg`/`rat_mul`/`rat_lt` (commutative-ring `add_assoc`/`add_zero`/
+    `add_neg`/`mul_assoc`/`mul_one`/`mul_zero`/`distrib`, multiplicative
+    inverse `mul_inv`, the linear order `lt_*`/`le_def`, and the base
+    strictness fact `zero_lt_one` — `ratLt` picks ε-representatives, so
+    `0 < 1` is not reducible). Each is a HOL theorem derivable from the
+    `int` ordered-ring theory through the quotient; filling them in does
+    not change the public `fn` surface. They depend transitively on the
+    `int` postulates above. (The `≤` toolkit
+    `le_refl`/`lt_imp_le`/`le_trans`/`not_one_le_zero` is **not**
+    postulated — it is *derived* from `le_def` + the strict-order facts.)
+  - The two **mediant inequalities** `mediant_gt` / `mediant_lt` — the
+    only postulated leaves of `dense` (which is itself *derived* from
+    them via the mediant `(a+c)/(b+d)`, no division needed). Each unfolds
+    to an `int` order fact (`a·d < c·b ⟹ a·(b+d) < (a+c)·b`, etc.)
+    lifted through the quotient — blocked on the same `int` order theory.
+
+- **The `real` Dedekind-cut theory** in
+  `crates/covalence-hol/src/init/real.rs`. `real := close rat ratLe`
+  (upper cuts). **Proved with no postulates**: the `realLe` partial-order
+  laws `le_refl` / `le_trans` / `le_antisym` — `realLe` is reverse inclusion
+  of cut-sets, so reflexivity/transitivity are pure logic and antisymmetry
+  is pure subtype structure (mutual inclusion ⟹ pointwise-equal cut-sets by
+  function extensionality ⟹ equal reals by the round-trip
+  `Thm::spec_abs_rep`); none touch the `rat`/order postulates. **Proved
+  *modulo* the `rat` order postulates** they consume: `is_cut` (every
+  principal up-set `ratLe q` is a genuine cut, from the `rat` `≤` toolkit),
+  `of_rat_mono` (the principal-cut embedding is monotone, by `rat::le_trans`
+  + the round-trip), and `zero_ne_one` (`⊢ ¬(0 = 1)`, via distinct principal
+  cuts transported through the subtype `rep`/`abs`).
+  **Postulated** via the module's `axiom` helper (self-flagged):
+  - `sup_is_ub` / `sup_is_least` — the two least-upper-bound properties of
+    the supremum cut `real_sup A` (the intersection of the members'
+    cut-sets). Each unfolds to a set/order fact about the cuts, blocked on
+    the same `rat`/order theory. `complete` (the least-upper-bound property,
+    "the reals are complete") is itself **derived** from these two, with
+    `real_sup A` as the witness — the direct analogue of how `rat::dense`
+    is derived from its mediant postulates.
 
 ## Partial subsystems
 
@@ -133,24 +187,28 @@ it is how unfinished work stays discoverable.
     ⟹ ∃b⃗. (⋀ Graph rⱼ bⱼ) ∧ a = fᵢ x⃗ b⃗`), via the generic `Good = λk c.
     Graph k c ∧ wit` determinizing relation whose closedness is discharged by
     `distinct` (other constructors) and `injective` (`Cᵢ` itself). Generic over
-    `Inductive`; `nat`'s `graph_base_inv` / `graph_step_inv` consume it.
+    `Inductive`; `nat`'s `graph_base_inv` consumes it.
+  - `determinacy.rs` — `graph_det` (`∀t a b. Graph t a ⟹ Graph t b ⟹ a = b`):
+    folds the supplied induction over `graph_inv` (invert both graphs, then the
+    IH equates the recursive images). Generic over `Inductive`; `nat`'s
+    `graph_det` consumes it.
   - `util.rs` — shared conjunction-proof plumbing.
 
-  Still **specialised to `nat`** in `init/recursion.rs` (the next generalisation
-  targets):
-  - **Determinacy** — `graph_det` (`∀t a b. Graph t a ⟹ Graph t b ⟹ a = b`):
-    fold the supplied induction over `graph_inv` (both inversions, then the IH
-    equates the recursive images). Currently `nat`-specific, built on the now-
-    generic inversions.
+  Still **specialised to `nat`** in `init/recursion.rs`:
   - **ε-assembly** — `recursion_theorem` / `rec_holds_proof` generalised to emit
-    `⊢ ∃rec. P_rec rec` from totality + determinacy for any signature.
+    `⊢ ∃rec. P_rec rec` from totality + determinacy for any signature. The only
+    remaining piece; it couples to the recursor's `defs` selector predicate
+    (`natRec`'s `P_rec`), so generalising it means deriving the per-constructor
+    equation predicate from the signature.
   - **The multi-recursive-argument / multi-constructor-argument paths** in
-    `existence.rs` and `uniqueness.rs` (conjunctive IHs / antecedents,
-    componentwise injectivity, nested `∃`-witnessing) are written but only
-    exercised by `nat`'s ≤1-arg / ≤1-rec-arg cases; a binary-tree or `list`
-    signature is the first real test. The strict `wit`-binder naming discipline
-    (`_wx_` / `_wb_` prefixes, disjoint from a constructor's own binders) is
-    load-bearing — see the `uniqueness.rs` module docs.
+    `existence.rs`, `uniqueness.rs`, and `determinacy.rs` (conjunctive IHs /
+    antecedents, componentwise injectivity, nested `∃`-witnessing) are partial:
+    `existence` / `uniqueness` handle the general shape but are only *exercised*
+    by `nat`'s ≤1-arg / ≤1-rec-arg cases, while `determinacy::det_case`
+    explicitly **errors** on a constructor with ≥2 recursive arguments. A
+    binary-tree or `list` signature is the first real test. The strict
+    `wit`-binder naming discipline (`_wx_` / `_wb_` prefixes, disjoint from a
+    constructor's own binders) is load-bearing — see the `uniqueness.rs` docs.
 
   **Lifting to internal HOL (future).** The trait seam exists precisely so the
   proofs can be re-targeted: today `nat` is a kernel primitive, but we may later

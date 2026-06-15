@@ -17,21 +17,22 @@
 //! 2. **Existence** `∀n. ∃a. Graph z f n a` — now the engine's generic
 //!    [`existence::graph_total`] over [`existence::graph_intro`];
 //!    [`graph_base`] / [`graph_step`] are thin `nat` views of it. ✓
-//! 3. **Uniqueness.** The per-constructor *inversion* lemmas
-//!    ([`graph_base_inv`] / [`graph_step_inv`]) are now the engine's generic
-//!    [`uniqueness::graph_inv`], its freeness supplied by [`NatTheory`]
-//!    (`succ_inj` / `zero_ne_succ`). ✓ *Determinacy*
-//!    `∀n a b. Graph z f n a ∧ Graph z f n b ⟹ a = b` (`graph_det`) still
-//!    folds those by `nat`-induction here.
+//! 3. **Uniqueness** — both halves now the engine's generic proofs over
+//!    [`NatTheory`] (freeness `succ_inj` / `zero_ne_succ`): per-constructor
+//!    *inversion* ([`uniqueness::graph_inv`], `graph_base_inv` its `nat`
+//!    view) and *determinacy* `∀n a b. Graph z f n a ∧ Graph z f n b ⟹
+//!    a = b` ([`determinacy::graph_det`]). ✓
 //! 4. **Assemble** `r z f n ≜ ε a. Graph z f n a`, prove `P_rec r`,
-//!    `∃`-introduce. Still `nat`-specific here.
+//!    `∃`-introduce. The **last** `nat`-specific piece — it couples to
+//!    `natRec`'s `defs` selector predicate; generalising it is the
+//!    remaining engine work (see `SKELETONS.md`).
 //!
 use covalence_core::{Result, Term, Thm, Type, defs, subst};
 
 use crate::init::eq::{beta_expand, beta_reduce};
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::inductive::{
-    Arg, Constructor, Inductive, InductiveSig, existence, graph as gb, uniqueness,
+    Arg, Constructor, Inductive, InductiveSig, determinacy, existence, graph as gb, uniqueness,
 };
 use crate::init::logic::{exists_elim, exists_intro};
 use crate::init::nat::{nat_succ, succ, zero};
@@ -183,10 +184,6 @@ pub(crate) fn graph_total(z: &Term, f: &Term) -> Result<Thm> {
 }
 
 // ============================================================================
-// Uniqueness, part 1: inversion lemmas via "determinizing" instances
-// ============================================================================
-
-// ============================================================================
 // Uniqueness, part 1: inversion — now the generic engine's `graph_inv`
 // ============================================================================
 
@@ -197,111 +194,16 @@ pub(crate) fn graph_base_inv(z: &Term, f: &Term) -> Result<Thm> {
     uniqueness::graph_inv(&NatTheory, &steps(z, f), &nat(), 0)
 }
 
-/// `⊢ Graph z f (S n) a ⟹ (∃c. Graph z f n c ∧ a = f n c)`, for free
-/// `n`, `a` — the step-inversion lemma. Constructor-1 inversion from
-/// [`uniqueness::graph_inv`], with the canonical argument var `m`
-/// instantiated to `n`.
-pub(crate) fn graph_step_inv(z: &Term, f: &Term) -> Result<Thm> {
-    uniqueness::graph_inv(&NatTheory, &steps(z, f), &nat(), 1)?.inst("m", var("n"))
-}
-
-/// `λd. Graph z f j d ∧ c = f j d` — the predicate of the existential the
-/// step inversion exposes; still used by the (not-yet-generalised)
-/// determinacy proof below.
-fn wit_pred(z: &Term, f: &Term, j: &Term, c: &Term) -> Result<Term> {
-    let d = var("d");
-    let body = graph(z, f, j.clone(), d.clone())?.and(c.clone().equals(app2(
-        f.clone(),
-        j.clone(),
-        d,
-    )?)?)?;
-    Ok(Term::abs(nat(), subst::close(&body, "d")))
-}
-
 // ============================================================================
-// Uniqueness, part 2: determinacy by induction
+// Uniqueness, part 2: determinacy — now the generic engine's `graph_det`
 // ============================================================================
-
-/// `λn. ∀a b. Graph z f n a ⟹ Graph z f n b ⟹ a = b` — the
-/// determinacy motive.
-fn det_motive(z: &Term, f: &Term) -> Result<Term> {
-    let n = var("n");
-    let a = var("a");
-    let b = var("b");
-    let body = graph(z, f, n.clone(), a.clone())?
-        .imp(graph(z, f, n.clone(), b.clone())?.imp(a.clone().equals(b.clone())?)?)?;
-    let inner = body.forall("b", nat())?.forall("a", nat())?;
-    Ok(Term::abs(nat(), subst::close(&inner, "n")))
-}
 
 /// `⊢ ∀n. (λn. ∀a b. Graph z f n a ⟹ Graph z f n b ⟹ a = b) n` — the
 /// graph is **functional**: it relates each `n` to at most one value.
+/// The generic [`determinacy::graph_det`] at the [`NatTheory`] adapter.
 /// (β-reduce the body to read `∀n a b. … ⟹ a = b`.)
 pub(crate) fn graph_det(z: &Term, f: &Term) -> Result<Thm> {
-    let mot = det_motive(z, f)?;
-    let a = var("a");
-    let b = var("b");
-
-    // base: ⊢ D 0 — both values equal z (base inversion), hence equal.
-    let ga0 = graph(z, f, zero(), a.clone())?;
-    let gb0 = graph(z, f, zero(), b.clone())?;
-    let a_eq_z = graph_base_inv(z, f)?.imp_elim(Thm::assume(ga0.clone())?)?;
-    let b_eq_z = graph_base_inv(z, f)?
-        .inst("a", b.clone())?
-        .imp_elim(Thm::assume(gb0.clone())?)?;
-    let base_inner = a_eq_z
-        .trans(b_eq_z.sym()?)? // {GA,GB} ⊢ a = b
-        .imp_intro(&gb0)?
-        .imp_intro(&ga0)?
-        .all_intro("b", nat())?
-        .all_intro("a", nat())?;
-    let base = beta_expand(&mot, zero(), base_inner)?;
-
-    // step: ⊢ D n ⟹ D (S n).
-    let n = var("n");
-    let dn = Term::app(mot.clone(), n.clone());
-    let ih = beta_reduce(Thm::assume(dn.clone())?)?; // {Dn} ⊢ ∀a b. Graph n a ⟹ Graph n b ⟹ a=b
-
-    let gsa = graph(z, f, succ(n.clone()), a.clone())?;
-    let gsb = graph(z, f, succ(n.clone()), b.clone())?;
-    let ex_a = graph_step_inv(z, f)?.imp_elim(Thm::assume(gsa.clone())?)?; // {GSA} ⊢ ∃d. Graph n d ∧ a = f n d
-    let ex_b = graph_step_inv(z, f)?
-        .inst("a", b.clone())?
-        .imp_elim(Thm::assume(gsb.clone())?)?; // {GSB} ⊢ ∃d. Graph n d ∧ b = f n d
-    let goal = a.clone().equals(b.clone())?;
-
-    // ∀ca. (predA ca) ⟹ a = b — peel a's witness, then peel b's inside.
-    let pred_a = wit_pred(z, f, &n, &a)?;
-    let ca = var("ca");
-    let pred_a_ca = Term::app(pred_a, ca.clone());
-    let (gca, a_eq) = beta_reduce(Thm::assume(pred_a_ca.clone())?)?.conjuncts()?;
-
-    let pred_b = wit_pred(z, f, &n, &b)?;
-    let cb = var("cb");
-    let pred_b_cb = Term::app(pred_b, cb.clone());
-    let (gcb, b_eq) = beta_reduce(Thm::assume(pred_b_cb.clone())?)?.conjuncts()?;
-
-    // ca = cb by the IH; hence a = f n ca = f n cb = b.
-    let ca_eq_cb = ih
-        .all_elim(ca.clone())?
-        .all_elim(cb.clone())?
-        .imp_elim(gca)?
-        .imp_elim(gcb)?;
-    let f_cong = app2(f.clone(), n.clone(), ca.clone())?.rw_all(&ca_eq_cb)?; // ⊢ f n ca = f n cb
-    let a_eq_b = a_eq.trans(f_cong)?.trans(b_eq.sym()?)?; // {Dn, PA, PB} ⊢ a = b
-
-    let step_b = a_eq_b.imp_intro(&pred_b_cb)?.all_intro("cb", nat())?;
-    let step_a = exists_elim(ex_b, goal.clone(), step_b)? // {GSB, Dn, PA} ⊢ a = b
-        .imp_intro(&pred_a_ca)?
-        .all_intro("ca", nat())?;
-    let step_inner = exists_elim(ex_a, goal, step_a)? // {GSA, GSB, Dn} ⊢ a = b
-        .imp_intro(&gsb)?
-        .imp_intro(&gsa)?
-        .all_intro("b", nat())?
-        .all_intro("a", nat())?;
-    let step = beta_expand(&mot, succ(n.clone()), step_inner)?.imp_intro(&dn)?;
-
-    Thm::nat_induct(base, step)
+    determinacy::graph_det(&NatTheory, &steps(z, f), &nat())
 }
 
 // ============================================================================
@@ -476,8 +378,13 @@ mod tests {
 
     #[test]
     fn graph_step_inv_exposes_predecessor() {
+        // The recursive-constructor inversion `graph_inv(.., 1)`, with the
+        // canonical argument var `m` instantiated to `n`.
         let (z, f) = zf();
-        let thm = graph_step_inv(&z, &f).unwrap();
+        let thm = uniqueness::graph_inv(&NatTheory, &steps(&z, &f), &nat(), 1)
+            .unwrap()
+            .inst("m", var("n"))
+            .unwrap();
         assert!(thm.hyps().is_empty(), "step inversion must be axiom-free");
 
         let n = var("n");

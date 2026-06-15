@@ -184,44 +184,70 @@ fn eval(t: Term) -> Result<Thm> {
 }
 
 // ============================================================================
+// Recursion-equation helpers — the high-level prover API for `natRec`
+// ============================================================================
+//
+// Every `nat` operation defined by `natRec` (`+`, `*`, `-`, …) has the same
+// pair of recursion equations, and each is proved by the same dance:
+//
+//   * the **base** equation `op … 0 = z` — `eval` reduces the LHS to
+//     `natRec z f 0`, then [`rec_zero`] rewrites that to `z`;
+//   * the **step** equation `op … (S k) = ctx (op … k)` — `eval` reduces the
+//     LHS to `natRec z f (S k)`, [`rec_succ`] + β to `ctx (natRec z f k)`,
+//     and the inner `natRec z f k` is folded back to the recursive call
+//     `op … k` under the context `ctx`.
+//
+// [`rec_base_eq`] / [`rec_step_eq`] capture that dance once so each
+// operation's recursion equations become a single readable call.
+
+/// `⊢ lhs = z` — a `natRec` **base** equation. `lhs` must `eval` to
+/// `natRec z f 0` (e.g. `0 + m`, `0 * m`, `n - 0`).
+fn rec_base_eq(lhs: Term, z: Term, f: Term) -> Result<Thm> {
+    eval(lhs)?.trans(rec_zero(z, f)?)
+}
+
+/// `⊢ lhs = ctx (rec_call)` — a `natRec` **step** equation. `lhs` must
+/// `eval` to `natRec z f (S k)`; after [`rec_succ`] + β the result is
+/// `ctx (natRec z f k)`, and `rec_call` (which must `eval` to
+/// `natRec z f k`) is folded in under the function term `ctx`.
+fn rec_step_eq(lhs: Term, z: Term, f: Term, k: Term, rec_call: Term, ctx: Term) -> Result<Thm> {
+    let conv1 = eval(lhs)?; // lhs = natRec z f (S k)
+    let rs = rec_succ(z, f, k)?; // = f k (natRec z f k)
+    let red = rhs(&rs).reduce()?; // = ctx (natRec z f k)
+    let fold = eval(rec_call)?.sym()?; // natRec z f k = rec_call
+    let cong = fold.cong_arg(ctx)?; // ctx (natRec z f k) = ctx (rec_call)
+    conv1.trans(rs)?.trans(red)?.trans(cong)
+}
+
+// ============================================================================
 // Recursion equations for + / * — DERIVED from `rec_holds`
 // ============================================================================
 
 cached_thm! {
     /// `⊢ ∀m. 0 + m = m`. Depends only on [`rec_holds`].
-    pub fn add_base() -> Thm {
-        add_base_impl().expect("add_base derivation")
+    pub fn add_base() -> Result<Thm> {
+        let m = var("m");
+        let f = Term::abs(nat(), nat_succ()); // λ_:nat. succ
+        rec_base_eq(add(zero(), m), var("m"), f)?.all_intro("m", nat())
     }
-}
-fn add_base_impl() -> Result<Thm> {
-    let m = var("m");
-    let f = Term::abs(nat(), nat_succ()); // λ_:nat. succ
-    let conv = eval(add(zero(), m.clone()))?; // ⊢ 0 + m = natRec m (λ_.succ) 0
-    let rz = rec_zero(m.clone(), f)?; //          ⊢ natRec m (λ_.succ) 0 = m
-    conv.trans(rz)?.all_intro("m", nat())
 }
 
 cached_thm! {
     /// `⊢ ∀n m. S n + m = S (n + m)`. Depends only on [`rec_holds`].
-    pub fn add_step() -> Thm {
-        add_step_impl().expect("add_step derivation")
+    pub fn add_step() -> Result<Thm> {
+        let (n, m) = (var("n"), var("m"));
+        let f = Term::abs(nat(), nat_succ()); // λ_:nat. succ
+        rec_step_eq(
+            add(succ(n.clone()), m.clone()),
+            m.clone(),
+            f,
+            n.clone(),
+            add(n, m),
+            nat_succ(), // push the recursive call under `succ`
+        )?
+        .all_intro("m", nat())?
+        .all_intro("n", nat())
     }
-}
-fn add_step_impl() -> Result<Thm> {
-    let n = var("n");
-    let m = var("m");
-    let f = Term::abs(nat(), nat_succ()); // λ_:nat. succ
-
-    // S n + m = natRec m (λ_.succ) (S n) = (λ_.succ) n (natRec m (λ_.succ) n)
-    let conv1 = eval(add(succ(n.clone()), m.clone()))?;
-    let rs = rec_succ(m.clone(), f, n.clone())?;
-    let red = rhs(&rs).reduce()?; // = succ (natRec m (λ_.succ) n)
-    // natRec m (λ_.succ) n = n + m  (fold), then push under `succ`.
-    let fold = eval(add(n.clone(), m.clone()))?.sym()?;
-    let cong = fold.cong_arg(nat_succ())?; // ⊢ succ(natRec…) = succ(n + m)
-
-    let eq = conv1.trans(rs)?.trans(red)?.trans(cong)?; // ⊢ S n + m = S (n + m)
-    eq.all_intro("m", nat())?.all_intro("n", nat())
 }
 
 /// `λ_:nat. λx:nat. m + x` — the `natRec` step function `nat.mul` uses.
@@ -232,39 +258,29 @@ fn mul_step_fn(m: Term) -> Term {
 
 cached_thm! {
     /// `⊢ ∀m. 0 * m = 0`. Depends only on [`rec_holds`].
-    pub fn mul_base() -> Thm {
-        mul_base_impl().expect("mul_base derivation")
+    pub fn mul_base() -> Result<Thm> {
+        let m = var("m");
+        let f = mul_step_fn(m.clone());
+        rec_base_eq(mul(zero(), m), zero(), f)?.all_intro("m", nat())
     }
-}
-fn mul_base_impl() -> Result<Thm> {
-    let m = var("m");
-    let f = mul_step_fn(m.clone());
-    let conv = eval(mul(zero(), m))?; // ⊢ 0 * m = natRec 0 f 0
-    let rz = rec_zero(zero(), f)?; //      ⊢ natRec 0 f 0 = 0
-    conv.trans(rz)?.all_intro("m", nat())
 }
 
 cached_thm! {
     /// `⊢ ∀n m. S n * m = m + n * m`. Depends only on [`rec_holds`].
-    pub fn mul_step() -> Thm {
-        mul_step_impl().expect("mul_step derivation")
+    pub fn mul_step() -> Result<Thm> {
+        let (n, m) = (var("n"), var("m"));
+        let f = mul_step_fn(m.clone());
+        rec_step_eq(
+            mul(succ(n.clone()), m.clone()),
+            zero(),
+            f,
+            n.clone(),
+            mul(n, m.clone()),
+            Term::app(nat_add(), m), // push the recursive call under `(m +)`
+        )?
+        .all_intro("m", nat())?
+        .all_intro("n", nat())
     }
-}
-fn mul_step_impl() -> Result<Thm> {
-    let n = var("n");
-    let m = var("m");
-    let f = mul_step_fn(m.clone());
-
-    // S n * m = natRec 0 f (S n) = f n (natRec 0 f n)
-    let conv1 = eval(mul(succ(n.clone()), m.clone()))?;
-    let rs = rec_succ(zero(), f, n.clone())?;
-    let red = rhs(&rs).reduce()?; // = m + (natRec 0 f n)
-    // natRec 0 f n = n * m  (fold), then push under `(m +)`.
-    let fold = eval(mul(n.clone(), m.clone()))?.sym()?;
-    let cong = fold.cong_arg(Term::app(nat_add(), m.clone()))?; // ⊢ m + natRec… = m + n*m
-
-    let eq = conv1.trans(rs)?.trans(red)?.trans(cong)?; // ⊢ S n * m = m + n * m
-    eq.all_intro("m", nat())?.all_intro("n", nat())
 }
 
 // ============================================================================
@@ -300,26 +316,23 @@ fn induct_on(ivar: &str, motive: &Term, base: Thm, step: Thm) -> Result<Thm> {
 cached_thm! {
     /// `⊢ ∀a. a + 0 = a` — right unit of `+` (the recursion equation gives
     /// the *left* unit `0 + a = a`; this is the induction-on-`a` mirror).
-    pub fn add_zero() -> Thm {
-        add_zero_impl().expect("add_zero derivation")
+    pub fn add_zero() -> Result<Thm> {
+        let n = var("n");
+        let body = add(n.clone(), zero()).equals(n.clone())?; // n + 0 = n
+        let motive = Term::abs(nat(), subst::close(&body, "n"));
+
+        // base: 0 + 0 = 0.
+        let base = add_base().all_elim(zero())?;
+
+        // step: (n + 0 = n) ⟹ (S n + 0 = S n).
+        let ih_concl = add(n.clone(), zero()).equals(n.clone())?;
+        let ih = Thm::assume(ih_concl.clone())?; // {n+0=n} ⊢ n + 0 = n
+        let s = add_step().all_elim(n.clone())?.all_elim(zero())?; // ⊢ S n + 0 = S(n + 0)
+        let cong = ih.cong_arg(nat_succ())?; //                       {n+0=n} ⊢ S(n+0) = S n
+        let step = s.trans(cong)?.imp_intro(&ih_concl)?; //  ⊢ (n+0=n) ⟹ (S n + 0 = S n)
+
+        induct(&motive, base, step)
     }
-}
-fn add_zero_impl() -> Result<Thm> {
-    let n = var("n");
-    let body = add(n.clone(), zero()).equals(n.clone())?; // n + 0 = n
-    let motive = Term::abs(nat(), subst::close(&body, "n"));
-
-    // base: 0 + 0 = 0.
-    let base = add_base().all_elim(zero())?;
-
-    // step: (n + 0 = n) ⟹ (S n + 0 = S n).
-    let ih_concl = add(n.clone(), zero()).equals(n.clone())?;
-    let ih = Thm::assume(ih_concl.clone())?; // {n+0=n} ⊢ n + 0 = n
-    let s = add_step().all_elim(n.clone())?.all_elim(zero())?; // ⊢ S n + 0 = S(n + 0)
-    let cong = ih.cong_arg(nat_succ())?; //                       {n+0=n} ⊢ S(n+0) = S n
-    let step = s.trans(cong)?.imp_intro(&ih_concl)?; //  ⊢ (n+0=n) ⟹ (S n + 0 = S n)
-
-    induct(&motive, base, step)
 }
 
 /// `⊢ x + c = y + c` from `⊢ x = y` — congruence on `+`'s left argument.
@@ -337,195 +350,170 @@ cached_thm! {
     /// rearrangement the Grothendieck `int` relation's transitivity needs
     /// (it pairs the "outer" summands `a, d` and the "inner" summands
     /// `b, c`). Both sides equal `a + ((b + c) + d)`.
-    pub fn add_interchange() -> Thm {
-        add_interchange_impl().expect("add_interchange derivation")
+    pub fn add_interchange() -> Result<Thm> {
+        let (a, b, c, d) = (var("a"), var("b"), var("c"), var("d"));
+        let add_a = Term::app(nat_add(), a.clone());
+
+        // (a+b)+(c+d) = a+((b+c)+d).
+        let s1 = add_assoc()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .all_elim(add(c.clone(), d.clone()))?; // (a+b)+(c+d) = a+(b+(c+d))
+        let s2 = add_assoc()
+            .all_elim(b.clone())?
+            .all_elim(c.clone())?
+            .all_elim(d.clone())?
+            .sym()? // b+(c+d) = (b+c)+d
+            .cong_arg(add_a.clone())?; // a+(b+(c+d)) = a+((b+c)+d)
+        let lhs_to_mid = s1.trans(s2)?;
+
+        // (a+d)+(b+c) = a+((b+c)+d).
+        let t1 = add_assoc()
+            .all_elim(a.clone())?
+            .all_elim(d.clone())?
+            .all_elim(add(b.clone(), c.clone()))?; // (a+d)+(b+c) = a+(d+(b+c))
+        let t2 = add_comm()
+            .all_elim(d.clone())?
+            .all_elim(add(b.clone(), c.clone()))? // d+(b+c) = (b+c)+d
+            .cong_arg(add_a)?; // a+(d+(b+c)) = a+((b+c)+d)
+        let rhs_to_mid = t1.trans(t2)?;
+
+        lhs_to_mid
+            .trans(rhs_to_mid.sym()?)? // (a+b)+(c+d) = (a+d)+(b+c)
+            .all_intro("d", nat())?
+            .all_intro("c", nat())?
+            .all_intro("b", nat())?
+            .all_intro("a", nat())
     }
-}
-fn add_interchange_impl() -> Result<Thm> {
-    let (a, b, c, d) = (var("a"), var("b"), var("c"), var("d"));
-    let add_a = Term::app(nat_add(), a.clone());
-
-    // (a+b)+(c+d) = a+((b+c)+d).
-    let s1 = add_assoc()
-        .all_elim(a.clone())?
-        .all_elim(b.clone())?
-        .all_elim(add(c.clone(), d.clone()))?; // (a+b)+(c+d) = a+(b+(c+d))
-    let s2 = add_assoc()
-        .all_elim(b.clone())?
-        .all_elim(c.clone())?
-        .all_elim(d.clone())?
-        .sym()? // b+(c+d) = (b+c)+d
-        .cong_arg(add_a.clone())?; // a+(b+(c+d)) = a+((b+c)+d)
-    let lhs_to_mid = s1.trans(s2)?;
-
-    // (a+d)+(b+c) = a+((b+c)+d).
-    let t1 = add_assoc()
-        .all_elim(a.clone())?
-        .all_elim(d.clone())?
-        .all_elim(add(b.clone(), c.clone()))?; // (a+d)+(b+c) = a+(d+(b+c))
-    let t2 = add_comm()
-        .all_elim(d.clone())?
-        .all_elim(add(b.clone(), c.clone()))? // d+(b+c) = (b+c)+d
-        .cong_arg(add_a)?; // a+(d+(b+c)) = a+((b+c)+d)
-    let rhs_to_mid = t1.trans(t2)?;
-
-    lhs_to_mid
-        .trans(rhs_to_mid.sym()?)? // (a+b)+(c+d) = (a+d)+(b+c)
-        .all_intro("d", nat())?
-        .all_intro("c", nat())?
-        .all_intro("b", nat())?
-        .all_intro("a", nat())
 }
 
 cached_thm! {
     /// `⊢ ∀a b. a + S b = S (a + b)` — the successor-on-the-right equation
     /// (mirror of [`add_step`], which moves a successor on the *left*).
-    pub fn add_succ_r() -> Thm {
-        add_succ_r_impl().expect("add_succ_r derivation")
+    pub fn add_succ_r() -> Result<Thm> {
+        // body[n] ≔ ∀b. n + S b = S (n + b)
+        let body_at = |t: &Term| -> Result<Term> {
+            let b = var("b");
+            add(t.clone(), succ(b.clone()))
+                .equals(succ(add(t.clone(), b)))?
+                .forall("b", nat())
+        };
+        let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+        // base: ∀b. 0 + S b = S (0 + b).
+        let base = {
+            let b = var("b");
+            let e1 = add_base().all_elim(succ(b.clone()))?; // 0 + Sb = Sb
+            let e2 = add_base().all_elim(b.clone())?.cong_arg(nat_succ())?.sym()?; // Sb = S(0+b)
+            e1.trans(e2)?.all_intro("b", nat())?
+        };
+
+        // step: body[n] ⟹ body[S n].
+        let n = var("n");
+        let ihc = body_at(&n)?;
+        let inner = {
+            let b = var("b");
+            let ih_b = Thm::assume(ihc.clone())?.all_elim(b.clone())?; // n + Sb = S(n+b)
+            let s1 = add_step().all_elim(n.clone())?.all_elim(succ(b.clone()))?; // Sn+Sb = S(n+Sb)
+            let s2 = ih_b.cong_arg(nat_succ())?; //                                S(n+Sb) = S(S(n+b))
+            let s3 = add_step()
+                .all_elim(n.clone())?
+                .all_elim(b.clone())?
+                .cong_arg(nat_succ())?
+                .sym()?; //                                                       S(S(n+b)) = S(Sn+b)
+            s1.trans(s2)?.trans(s3)?.all_intro("b", nat())?
+        };
+        let step = inner.imp_intro(&ihc)?;
+        induct(&motive, base, step)
     }
-}
-fn add_succ_r_impl() -> Result<Thm> {
-    // body[n] ≔ ∀b. n + S b = S (n + b)
-    let body_at = |t: &Term| -> Result<Term> {
-        let b = var("b");
-        add(t.clone(), succ(b.clone()))
-            .equals(succ(add(t.clone(), b)))?
-            .forall("b", nat())
-    };
-    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
-
-    // base: ∀b. 0 + S b = S (0 + b).
-    let base = {
-        let b = var("b");
-        let e1 = add_base().all_elim(succ(b.clone()))?; // 0 + Sb = Sb
-        let e2 = add_base()
-            .all_elim(b.clone())?
-            .cong_arg(nat_succ())?
-            .sym()?; // Sb = S(0+b)
-        e1.trans(e2)?.all_intro("b", nat())?
-    };
-
-    // step: body[n] ⟹ body[S n].
-    let n = var("n");
-    let ihc = body_at(&n)?;
-    let inner = {
-        let b = var("b");
-        let ih_b = Thm::assume(ihc.clone())?.all_elim(b.clone())?; // n + Sb = S(n+b)
-        let s1 = add_step().all_elim(n.clone())?.all_elim(succ(b.clone()))?; // Sn+Sb = S(n+Sb)
-        let s2 = ih_b.cong_arg(nat_succ())?; //                                S(n+Sb) = S(S(n+b))
-        let s3 = add_step()
-            .all_elim(n.clone())?
-            .all_elim(b.clone())?
-            .cong_arg(nat_succ())?
-            .sym()?; //                                                       S(S(n+b)) = S(Sn+b)
-        s1.trans(s2)?.trans(s3)?.all_intro("b", nat())?
-    };
-    let step = inner.imp_intro(&ihc)?;
-    induct(&motive, base, step)
 }
 
 cached_thm! {
     /// `⊢ ∀a b. a + b = b + a` — commutativity of `+`.
-    pub fn add_comm() -> Thm {
-        add_comm_impl().expect("add_comm derivation")
+    pub fn add_comm() -> Result<Thm> {
+        // body[n] ≔ ∀b. n + b = b + n
+        let body_at = |t: &Term| -> Result<Term> {
+            let b = var("b");
+            add(t.clone(), b.clone())
+                .equals(add(b, t.clone()))?
+                .forall("b", nat())
+        };
+        let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+        // base: ∀b. 0 + b = b + 0.
+        let base = {
+            let b = var("b");
+            let e1 = add_base().all_elim(b.clone())?; // 0 + b = b
+            let e2 = add_zero().all_elim(b.clone())?.sym()?; // b = b + 0
+            e1.trans(e2)?.all_intro("b", nat())?
+        };
+
+        // step: body[n] ⟹ body[S n].
+        let n = var("n");
+        let ihc = body_at(&n)?;
+        let inner = {
+            let b = var("b");
+            let ih_b = Thm::assume(ihc.clone())?.all_elim(b.clone())?; // n + b = b + n
+            let s1 = add_step().all_elim(n.clone())?.all_elim(b.clone())?; // Sn+b = S(n+b)
+            let s2 = ih_b.cong_arg(nat_succ())?; //                          S(n+b) = S(b+n)
+            let s3 = add_succ_r().all_elim(b.clone())?.all_elim(n.clone())?.sym()?; // S(b+n) = b+Sn
+            s1.trans(s2)?.trans(s3)?.all_intro("b", nat())?
+        };
+        let step = inner.imp_intro(&ihc)?;
+        induct(&motive, base, step)
     }
-}
-fn add_comm_impl() -> Result<Thm> {
-    // body[n] ≔ ∀b. n + b = b + n
-    let body_at = |t: &Term| -> Result<Term> {
-        let b = var("b");
-        add(t.clone(), b.clone())
-            .equals(add(b, t.clone()))?
-            .forall("b", nat())
-    };
-    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
-
-    // base: ∀b. 0 + b = b + 0.
-    let base = {
-        let b = var("b");
-        let e1 = add_base().all_elim(b.clone())?; // 0 + b = b
-        let e2 = add_zero().all_elim(b.clone())?.sym()?; // b = b + 0
-        e1.trans(e2)?.all_intro("b", nat())?
-    };
-
-    // step: body[n] ⟹ body[S n].
-    let n = var("n");
-    let ihc = body_at(&n)?;
-    let inner = {
-        let b = var("b");
-        let ih_b = Thm::assume(ihc.clone())?.all_elim(b.clone())?; // n + b = b + n
-        let s1 = add_step().all_elim(n.clone())?.all_elim(b.clone())?; // Sn+b = S(n+b)
-        let s2 = ih_b.cong_arg(nat_succ())?; //                          S(n+b) = S(b+n)
-        let s3 = add_succ_r()
-            .all_elim(b.clone())?
-            .all_elim(n.clone())?
-            .sym()?; // S(b+n) = b+Sn
-        s1.trans(s2)?.trans(s3)?.all_intro("b", nat())?
-    };
-    let step = inner.imp_intro(&ihc)?;
-    induct(&motive, base, step)
 }
 
 cached_thm! {
     /// `⊢ ∀a b c. (a + b) + c = a + (b + c)` — associativity of `+`.
-    pub fn add_assoc() -> Thm {
-        add_assoc_impl().expect("add_assoc derivation")
+    pub fn add_assoc() -> Result<Thm> {
+        // body[n] ≔ ∀b c. (n + b) + c = n + (b + c)
+        let body_at = |t: &Term| -> Result<Term> {
+            let (b, c) = (var("b"), var("c"));
+            let lhs = add(add(t.clone(), b.clone()), c.clone());
+            let rhs = add(t.clone(), add(b, c));
+            lhs.equals(rhs)?.forall("c", nat())?.forall("b", nat())
+        };
+        let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+        // base: ∀b c. (0 + b) + c = 0 + (b + c).
+        let base = {
+            let (b, c) = (var("b"), var("c"));
+            // (0 + b) + c = b + c
+            let lhs = cong_add_l(add_base().all_elim(b.clone())?, c.clone())?;
+            // 0 + (b + c) = b + c
+            let rhs = add_base().all_elim(add(b.clone(), c.clone()))?;
+            lhs.trans(rhs.sym()?)? // (0+b)+c = 0+(b+c)
+                .all_intro("c", nat())?
+                .all_intro("b", nat())?
+        };
+
+        // step: body[n] ⟹ body[S n].
+        let n = var("n");
+        let ihc = body_at(&n)?;
+        let inner = {
+            let (b, c) = (var("b"), var("c"));
+            let ih_bc = Thm::assume(ihc.clone())?
+                .all_elim(b.clone())?
+                .all_elim(c.clone())?; // (n+b)+c = n+(b+c)
+            // (Sn + b) + c = (S(n+b)) + c
+            let s1 = cong_add_l(add_step().all_elim(n.clone())?.all_elim(b.clone())?, c.clone())?;
+            // (S(n+b)) + c = S((n+b)+c)
+            let s2 = add_step().all_elim(add(n.clone(), b.clone()))?.all_elim(c.clone())?;
+            // S((n+b)+c) = S(n+(b+c))
+            let s3 = ih_bc.cong_arg(nat_succ())?;
+            // S(n+(b+c)) = Sn + (b+c)
+            let s4 = add_step()
+                .all_elim(n.clone())?
+                .all_elim(add(b.clone(), c.clone()))?
+                .sym()?;
+            s1.trans(s2)?.trans(s3)?.trans(s4)?
+                .all_intro("c", nat())?
+                .all_intro("b", nat())?
+        };
+        let step = inner.imp_intro(&ihc)?;
+        induct(&motive, base, step)
     }
-}
-fn add_assoc_impl() -> Result<Thm> {
-    // body[n] ≔ ∀b c. (n + b) + c = n + (b + c)
-    let body_at = |t: &Term| -> Result<Term> {
-        let (b, c) = (var("b"), var("c"));
-        let lhs = add(add(t.clone(), b.clone()), c.clone());
-        let rhs = add(t.clone(), add(b, c));
-        lhs.equals(rhs)?.forall("c", nat())?.forall("b", nat())
-    };
-    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
-
-    // base: ∀b c. (0 + b) + c = 0 + (b + c).
-    let base = {
-        let (b, c) = (var("b"), var("c"));
-        // (0 + b) + c = b + c
-        let lhs = cong_add_l(add_base().all_elim(b.clone())?, c.clone())?;
-        // 0 + (b + c) = b + c
-        let rhs = add_base().all_elim(add(b.clone(), c.clone()))?;
-        lhs.trans(rhs.sym()?)? // (0+b)+c = 0+(b+c)
-            .all_intro("c", nat())?
-            .all_intro("b", nat())?
-    };
-
-    // step: body[n] ⟹ body[S n].
-    let n = var("n");
-    let ihc = body_at(&n)?;
-    let inner = {
-        let (b, c) = (var("b"), var("c"));
-        let ih_bc = Thm::assume(ihc.clone())?
-            .all_elim(b.clone())?
-            .all_elim(c.clone())?; // (n+b)+c = n+(b+c)
-        // (Sn + b) + c = (S(n+b)) + c
-        let s1 = cong_add_l(
-            add_step().all_elim(n.clone())?.all_elim(b.clone())?,
-            c.clone(),
-        )?;
-        // (S(n+b)) + c = S((n+b)+c)
-        let s2 = add_step()
-            .all_elim(add(n.clone(), b.clone()))?
-            .all_elim(c.clone())?;
-        // S((n+b)+c) = S(n+(b+c))
-        let s3 = ih_bc.cong_arg(nat_succ())?;
-        // S(n+(b+c)) = Sn + (b+c)
-        let s4 = add_step()
-            .all_elim(n.clone())?
-            .all_elim(add(b.clone(), c.clone()))?
-            .sym()?;
-        s1.trans(s2)?
-            .trans(s3)?
-            .trans(s4)?
-            .all_intro("c", nat())?
-            .all_intro("b", nat())?
-    };
-    let step = inner.imp_intro(&ihc)?;
-    induct(&motive, base, step)
 }
 
 cached_thm! {
@@ -533,160 +521,146 @@ cached_thm! {
     /// Proved by induction on the cancelled summand, using successor
     /// injectivity ([`succ_inj`]) at the step. This is the `nat` lemma the
     /// `int` quotient relation's transitivity rests on.
-    pub fn add_cancel() -> Thm {
-        add_cancel_impl().expect("add_cancel derivation")
+    pub fn add_cancel() -> Result<Thm> {
+        let (a, b) = (var("a"), var("b"));
+        // body[n] ≔ (a + n = b + n) ⟹ (a = b)
+        let body_at = |t: &Term| -> Result<Term> {
+            add(a.clone(), t.clone())
+                .equals(add(b.clone(), t.clone()))?
+                .imp(a.clone().equals(b.clone())?)
+        };
+        let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+        // base: (a + 0 = b + 0) ⟹ (a = b) — strip the `+ 0`s and chain.
+        let base = {
+            let prem = add(a.clone(), zero()).equals(add(b.clone(), zero()))?;
+            let az = add_zero().all_elim(a.clone())?; // a + 0 = a
+            let bz = add_zero().all_elim(b.clone())?; // b + 0 = b
+            az.sym()?
+                .trans(Thm::assume(prem.clone())?)?
+                .trans(bz)? // {a+0=b+0} ⊢ a = b
+                .imp_intro(&prem)?
+        };
+
+        // step: body[n] ⟹ body[S n].
+        let n = var("n");
+        let ihc = body_at(&n)?;
+        let inner = {
+            let prem = add(a.clone(), succ(n.clone())).equals(add(b.clone(), succ(n.clone())))?;
+            // a + S n = S(a + n),  b + S n = S(b + n).
+            let asr = add_succ_r().all_elim(a.clone())?.all_elim(n.clone())?;
+            let bsr = add_succ_r().all_elim(b.clone())?.all_elim(n.clone())?;
+            // {a+Sn=b+Sn} ⊢ S(a+n) = S(b+n).
+            let ssucc = asr.sym()?.trans(Thm::assume(prem.clone())?)?.trans(bsr)?;
+            // succ injectivity: S(a+n) = S(b+n) ⟹ a+n = b+n.
+            let acn = succ_inj()
+                .all_elim(add(a.clone(), n.clone()))?
+                .all_elim(add(b.clone(), n.clone()))?
+                .imp_elim(ssucc)?; // {a+Sn=b+Sn} ⊢ a+n = b+n
+            // Apply the induction hypothesis.
+            Thm::assume(ihc.clone())?
+                .imp_elim(acn)? // {body n, a+Sn=b+Sn} ⊢ a = b
+                .imp_intro(&prem)? // {body n} ⊢ (a+Sn=b+Sn) ⟹ (a=b)
+        };
+        let step = inner.imp_intro(&ihc)?;
+        induct(&motive, base, step)?
+            .all_intro("b", nat())?
+            .all_intro("a", nat())
     }
-}
-fn add_cancel_impl() -> Result<Thm> {
-    let (a, b) = (var("a"), var("b"));
-    // body[n] ≔ (a + n = b + n) ⟹ (a = b)
-    let body_at = |t: &Term| -> Result<Term> {
-        add(a.clone(), t.clone())
-            .equals(add(b.clone(), t.clone()))?
-            .imp(a.clone().equals(b.clone())?)
-    };
-    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
-
-    // base: (a + 0 = b + 0) ⟹ (a = b) — strip the `+ 0`s and chain.
-    let base = {
-        let prem = add(a.clone(), zero()).equals(add(b.clone(), zero()))?;
-        let az = add_zero().all_elim(a.clone())?; // a + 0 = a
-        let bz = add_zero().all_elim(b.clone())?; // b + 0 = b
-        az.sym()?
-            .trans(Thm::assume(prem.clone())?)?
-            .trans(bz)? // {a+0=b+0} ⊢ a = b
-            .imp_intro(&prem)?
-    };
-
-    // step: body[n] ⟹ body[S n].
-    let n = var("n");
-    let ihc = body_at(&n)?;
-    let inner = {
-        let prem = add(a.clone(), succ(n.clone())).equals(add(b.clone(), succ(n.clone())))?;
-        // a + S n = S(a + n),  b + S n = S(b + n).
-        let asr = add_succ_r().all_elim(a.clone())?.all_elim(n.clone())?;
-        let bsr = add_succ_r().all_elim(b.clone())?.all_elim(n.clone())?;
-        // {a+Sn=b+Sn} ⊢ S(a+n) = S(b+n).
-        let ssucc = asr.sym()?.trans(Thm::assume(prem.clone())?)?.trans(bsr)?;
-        // succ injectivity: S(a+n) = S(b+n) ⟹ a+n = b+n.
-        let acn = succ_inj()
-            .all_elim(add(a.clone(), n.clone()))?
-            .all_elim(add(b.clone(), n.clone()))?
-            .imp_elim(ssucc)?; // {a+Sn=b+Sn} ⊢ a+n = b+n
-        // Apply the induction hypothesis.
-        Thm::assume(ihc.clone())?
-            .imp_elim(acn)? // {body n, a+Sn=b+Sn} ⊢ a = b
-            .imp_intro(&prem)? // {body n} ⊢ (a+Sn=b+Sn) ⟹ (a=b)
-    };
-    let step = inner.imp_intro(&ihc)?;
-    induct(&motive, base, step)?
-        .all_intro("b", nat())?
-        .all_intro("a", nat())
 }
 
 cached_thm! {
     /// `⊢ ∀a. a * 0 = 0` — right zero of `*` (the recursion equation gives
     /// the *left* zero `0 * a = 0`; this is the induction-on-`a` mirror).
-    pub fn mul_zero() -> Thm {
-        mul_zero_impl().expect("mul_zero derivation")
+    pub fn mul_zero() -> Result<Thm> {
+        let n = var("n");
+        let body = mul(n.clone(), zero()).equals(zero())?; // n * 0 = 0
+        let motive = Term::abs(nat(), subst::close(&body, "n"));
+
+        // base: 0 * 0 = 0.
+        let base = mul_base().all_elim(zero())?;
+
+        // step: (n * 0 = 0) ⟹ (S n * 0 = 0).
+        let ihc = mul(n.clone(), zero()).equals(zero())?;
+        let e1 = mul_step().all_elim(n.clone())?.all_elim(zero())?; // S n * 0 = 0 + n * 0
+        let e2 = Thm::assume(ihc.clone())?.cong_arg(Term::app(nat_add(), zero()))?; // 0 + n*0 = 0 + 0
+        let e3 = add_base().all_elim(zero())?; // 0 + 0 = 0
+        let step = e1.trans(e2)?.trans(e3)?.imp_intro(&ihc)?;
+
+        induct(&motive, base, step)
     }
-}
-fn mul_zero_impl() -> Result<Thm> {
-    let n = var("n");
-    let body = mul(n.clone(), zero()).equals(zero())?; // n * 0 = 0
-    let motive = Term::abs(nat(), subst::close(&body, "n"));
-
-    // base: 0 * 0 = 0.
-    let base = mul_base().all_elim(zero())?;
-
-    // step: (n * 0 = 0) ⟹ (S n * 0 = 0).
-    let ihc = mul(n.clone(), zero()).equals(zero())?;
-    let e1 = mul_step().all_elim(n.clone())?.all_elim(zero())?; // S n * 0 = 0 + n * 0
-    let e2 = Thm::assume(ihc.clone())?.cong_arg(Term::app(nat_add(), zero()))?; // 0 + n*0 = 0 + 0
-    let e3 = add_base().all_elim(zero())?; // 0 + 0 = 0
-    let step = e1.trans(e2)?.trans(e3)?.imp_intro(&ihc)?;
-
-    induct(&motive, base, step)
 }
 
 cached_thm! {
     /// `⊢ ∀a b. a * S b = a + a * b` — successor-on-the-right for `*`
     /// (`mul_step` moves a successor on the *left*).
-    pub fn mul_succ_r() -> Thm {
-        mul_succ_r_impl().expect("mul_succ_r derivation")
+    pub fn mul_succ_r() -> Result<Thm> {
+        // body[n] ≔ ∀b. n * S b = n + n * b
+        let body_at = |t: &Term| -> Result<Term> {
+            let b = var("b");
+            mul(t.clone(), succ(b.clone()))
+                .equals(add(t.clone(), mul(t.clone(), b)))?
+                .forall("b", nat())
+        };
+        let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+        // base: ∀b. 0 * S b = 0 + 0 * b   (both sides reduce to 0).
+        let base = {
+            let b = var("b");
+            let e1 = mul_base().all_elim(succ(b.clone()))?; // 0 * Sb = 0
+            let rhs0 = mul_base()
+                .all_elim(b.clone())?
+                .cong_arg(Term::app(nat_add(), zero()))? // 0 + 0*b = 0 + 0
+                .trans(add_base().all_elim(zero())?)?; // = 0
+            e1.trans(rhs0.sym()?)?.all_intro("b", nat())?
+        };
+
+        // step: body[n] ⟹ body[S n].
+        let n = var("n");
+        let ihc = body_at(&n)?;
+        let inner = {
+            let b = var("b");
+            let nb = mul(n.clone(), b.clone());
+            // Sn * Sb = Sb + n*Sb = Sb + (n + n*b).
+            let l = mul_step()
+                .all_elim(n.clone())?
+                .all_elim(succ(b.clone()))? // Sn*Sb = Sb + n*Sb
+                .trans(
+                    Thm::assume(ihc.clone())?
+                        .all_elim(b.clone())? // n*Sb = n + n*b
+                        .cong_arg(Term::app(nat_add(), succ(b.clone())))?, // Sb + n*Sb = Sb + (n+nb)
+                )?;
+            // Sn + Sn*b = Sn + (b + n*b).
+            let r = mul_step()
+                .all_elim(n.clone())?
+                .all_elim(b.clone())? // Sn*b = b + n*b
+                .cong_arg(Term::app(nat_add(), succ(n.clone())))?; // Sn + Sn*b = Sn + (b+nb)
+            // Sb + (n+nb) = Sn + (b+nb), via succ + b+(n+nb)=n+(b+nb).
+            let inner_eq = add_assoc()
+                .all_elim(b.clone())?
+                .all_elim(n.clone())?
+                .all_elim(nb.clone())?
+                .sym()? // b+(n+nb) = (b+n)+nb
+                .trans(cong_add_l(
+                    add_comm().all_elim(b.clone())?.all_elim(n.clone())?,
+                    nb.clone(),
+                )?)? // = (n+b)+nb
+                .trans(add_assoc().all_elim(n.clone())?.all_elim(b.clone())?.all_elim(nb.clone())?)?; // = n+(b+nb)
+            let middle = add_step()
+                .all_elim(b.clone())?
+                .all_elim(add(n.clone(), nb.clone()))? // Sb+(n+nb) = S(b+(n+nb))
+                .trans(inner_eq.cong_arg(nat_succ())?)? // = S(n+(b+nb))
+                .trans(
+                    add_step()
+                        .all_elim(n.clone())?
+                        .all_elim(add(b.clone(), nb.clone()))?
+                        .sym()?, // = Sn+(b+nb)
+                )?;
+            l.trans(middle)?.trans(r.sym()?)?.all_intro("b", nat())?
+        };
+        let step = inner.imp_intro(&ihc)?;
+        induct(&motive, base, step)
     }
-}
-fn mul_succ_r_impl() -> Result<Thm> {
-    // body[n] ≔ ∀b. n * S b = n + n * b
-    let body_at = |t: &Term| -> Result<Term> {
-        let b = var("b");
-        mul(t.clone(), succ(b.clone()))
-            .equals(add(t.clone(), mul(t.clone(), b)))?
-            .forall("b", nat())
-    };
-    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
-
-    // base: ∀b. 0 * S b = 0 + 0 * b   (both sides reduce to 0).
-    let base = {
-        let b = var("b");
-        let e1 = mul_base().all_elim(succ(b.clone()))?; // 0 * Sb = 0
-        let rhs0 = mul_base()
-            .all_elim(b.clone())?
-            .cong_arg(Term::app(nat_add(), zero()))? // 0 + 0*b = 0 + 0
-            .trans(add_base().all_elim(zero())?)?; // = 0
-        e1.trans(rhs0.sym()?)?.all_intro("b", nat())?
-    };
-
-    // step: body[n] ⟹ body[S n].
-    let n = var("n");
-    let ihc = body_at(&n)?;
-    let inner = {
-        let b = var("b");
-        let nb = mul(n.clone(), b.clone());
-        // Sn * Sb = Sb + n*Sb = Sb + (n + n*b).
-        let l = mul_step()
-            .all_elim(n.clone())?
-            .all_elim(succ(b.clone()))? // Sn*Sb = Sb + n*Sb
-            .trans(
-                Thm::assume(ihc.clone())?
-                    .all_elim(b.clone())? // n*Sb = n + n*b
-                    .cong_arg(Term::app(nat_add(), succ(b.clone())))?, // Sb + n*Sb = Sb + (n+nb)
-            )?;
-        // Sn + Sn*b = Sn + (b + n*b).
-        let r = mul_step()
-            .all_elim(n.clone())?
-            .all_elim(b.clone())? // Sn*b = b + n*b
-            .cong_arg(Term::app(nat_add(), succ(n.clone())))?; // Sn + Sn*b = Sn + (b+nb)
-        // Sb + (n+nb) = Sn + (b+nb), via succ + b+(n+nb)=n+(b+nb).
-        let inner_eq = add_assoc()
-            .all_elim(b.clone())?
-            .all_elim(n.clone())?
-            .all_elim(nb.clone())?
-            .sym()? // b+(n+nb) = (b+n)+nb
-            .trans(cong_add_l(
-                add_comm().all_elim(b.clone())?.all_elim(n.clone())?,
-                nb.clone(),
-            )?)? // = (n+b)+nb
-            .trans(
-                add_assoc()
-                    .all_elim(n.clone())?
-                    .all_elim(b.clone())?
-                    .all_elim(nb.clone())?,
-            )?; // = n+(b+nb)
-        let middle = add_step()
-            .all_elim(b.clone())?
-            .all_elim(add(n.clone(), nb.clone()))? // Sb+(n+nb) = S(b+(n+nb))
-            .trans(inner_eq.cong_arg(nat_succ())?)? // = S(n+(b+nb))
-            .trans(
-                add_step()
-                    .all_elim(n.clone())?
-                    .all_elim(add(b.clone(), nb.clone()))?
-                    .sym()?, // = Sn+(b+nb)
-            )?;
-        l.trans(middle)?.trans(r.sym()?)?.all_intro("b", nat())?
-    };
-    let step = inner.imp_intro(&ihc)?;
-    induct(&motive, base, step)
 }
 
 // ============================================================================
@@ -716,129 +690,105 @@ fn pred_to_rec(t: Term) -> Result<Thm> {
 
 cached_thm! {
     /// `⊢ pred 0 = 0`.
-    pub fn pred_zero() -> Thm {
-        pred_zero_impl().expect("pred_zero")
+    pub fn pred_zero() -> Result<Thm> {
+        pred_to_rec(zero())?.trans(rec_zero(zero(), pred_g())?)
     }
-}
-fn pred_zero_impl() -> Result<Thm> {
-    pred_to_rec(zero())?.trans(rec_zero(zero(), pred_g())?)
 }
 
 cached_thm! {
     /// `⊢ ∀n. pred (S n) = n`.
-    pub fn pred_succ() -> Thm {
-        pred_succ_impl().expect("pred_succ")
+    pub fn pred_succ() -> Result<Thm> {
+        let n = var("n");
+        let g = pred_g();
+        let conv = pred_to_rec(succ(n.clone()))?; // pred(Sn) = natRec 0 g (Sn)
+        let rs = rec_succ(zero(), g, n.clone())?; //            = g n (natRec 0 g n)
+        let red = rhs(&rs).reduce()?; //                        = n
+        conv.trans(rs)?.trans(red)?.all_intro("n", nat())
     }
-}
-fn pred_succ_impl() -> Result<Thm> {
-    let n = var("n");
-    let g = pred_g();
-    let conv = pred_to_rec(succ(n.clone()))?; // pred(Sn) = natRec 0 g (Sn)
-    let rs = rec_succ(zero(), g, n.clone())?; //            = g n (natRec 0 g n)
-    let red = rhs(&rs).reduce()?; //                        = n
-    conv.trans(rs)?.trans(red)?.all_intro("n", nat())
 }
 
 cached_thm! {
     /// `⊢ ∀n. n - 0 = n` — subtraction's base equation.
-    pub fn sub_zero() -> Thm {
-        sub_zero_impl().expect("sub_zero")
+    pub fn sub_zero() -> Result<Thm> {
+        let n = var("n");
+        let f = Term::abs(nat(), nat_pred()); // λ_:nat. pred
+        rec_base_eq(sub(n.clone(), zero()), n, f)?.all_intro("n", nat())
     }
-}
-fn sub_zero_impl() -> Result<Thm> {
-    let n = var("n");
-    let f = Term::abs(nat(), nat_pred()); // λ_:nat. pred
-    let conv = eval(sub(n.clone(), zero()))?; // n - 0 = natRec n (λ_.pred) 0
-    let rz = rec_zero(n.clone(), f)?; //              = n
-    conv.trans(rz)?.all_intro("n", nat())
 }
 
 cached_thm! {
     /// `⊢ ∀n m. n - S m = pred (n - m)` — subtraction's step equation.
-    pub fn sub_succ() -> Thm {
-        sub_succ_impl().expect("sub_succ")
-    }
-}
-fn sub_succ_impl() -> Result<Thm> {
-    let n = var("n");
-    let m = var("m");
-    let f = Term::abs(nat(), nat_pred());
-
-    let conv1 = eval(sub(n.clone(), succ(m.clone())))?; // n - Sm = natRec n (λ_.pred)(Sm)
-    let rs = rec_succ(n.clone(), f, m.clone())?; //                = (λ_.pred) m (natRec n (λ_.pred) m)
-    let red = rhs(&rs).reduce()?; //                              = pred (natRec n (λ_.pred) m)
-    let fold = eval(sub(n.clone(), m.clone()))?.sym()?; // natRec n (λ_.pred) m = n - m
-    let cong = fold.cong_arg(nat_pred())?; //              pred(natRec…) = pred(n - m)
-
-    conv1
-        .trans(rs)?
-        .trans(red)?
-        .trans(cong)?
+    pub fn sub_succ() -> Result<Thm> {
+        let (n, m) = (var("n"), var("m"));
+        let f = Term::abs(nat(), nat_pred()); // λ_:nat. pred
+        rec_step_eq(
+            sub(n.clone(), succ(m.clone())),
+            n.clone(),
+            f,
+            m.clone(),
+            sub(n, m),
+            nat_pred(), // push the recursive call under `pred`
+        )?
         .all_intro("m", nat())?
         .all_intro("n", nat())
+    }
 }
 
 cached_thm! {
     /// `⊢ ∀m. 0 - m = 0` — zero is a left zero of saturating subtraction.
-    pub fn zero_sub() -> Thm {
-        zero_sub_impl().expect("zero_sub")
+    pub fn zero_sub() -> Result<Thm> {
+        let m = var("m");
+        let body = sub(zero(), m.clone()).equals(zero())?; // 0 - m = 0
+        let motive = Term::abs(nat(), subst::close(&body, "m"));
+
+        // base: 0 - 0 = 0.
+        let base = sub_zero().all_elim(zero())?;
+
+        // step: (0 - m = 0) ⟹ (0 - S m = 0).
+        let ihc = sub(zero(), m.clone()).equals(zero())?;
+        let s1 = sub_succ().all_elim(zero())?.all_elim(m.clone())?; // 0 - Sm = pred(0 - m)
+        let s2 = Thm::assume(ihc.clone())?.cong_arg(nat_pred())?; //   pred(0-m) = pred 0
+        let s3 = pred_zero(); //                                        pred 0 = 0
+        let step = s1.trans(s2)?.trans(s3)?.imp_intro(&ihc)?;
+
+        induct_on("m", &motive, base, step)
     }
-}
-fn zero_sub_impl() -> Result<Thm> {
-    let m = var("m");
-    let body = sub(zero(), m.clone()).equals(zero())?; // 0 - m = 0
-    let motive = Term::abs(nat(), subst::close(&body, "m"));
-
-    // base: 0 - 0 = 0.
-    let base = sub_zero().all_elim(zero())?;
-
-    // step: (0 - m = 0) ⟹ (0 - S m = 0).
-    let ihc = sub(zero(), m.clone()).equals(zero())?;
-    let s1 = sub_succ().all_elim(zero())?.all_elim(m.clone())?; // 0 - Sm = pred(0 - m)
-    let s2 = Thm::assume(ihc.clone())?.cong_arg(nat_pred())?; //   pred(0-m) = pred 0
-    let s3 = pred_zero(); //                                        pred 0 = 0
-    let step = s1.trans(s2)?.trans(s3)?.imp_intro(&ihc)?;
-
-    induct_on("m", &motive, base, step)
 }
 
 cached_thm! {
     /// `⊢ ∀n m. S n - S m = n - m` — successors cancel across subtraction.
-    pub fn sub_succ_succ() -> Thm {
-        sub_succ_succ_impl().expect("sub_succ_succ")
+    pub fn sub_succ_succ() -> Result<Thm> {
+        let n = var("n");
+        // body[m] ≔ S n - S m = n - m   (induction on m, with n free)
+        let body_at = |t: &Term| -> Result<Term> {
+            sub(succ(n.clone()), succ(t.clone())).equals(sub(n.clone(), t.clone()))
+        };
+        let motive = Term::abs(nat(), subst::close(&body_at(&var("m"))?, "m"));
+
+        // base: S n - S 0 = n - 0.   (both sides reduce to n)
+        let base = {
+            let s1 = sub_succ().all_elim(succ(n.clone()))?.all_elim(zero())?; // Sn - S0 = pred(Sn - 0)
+            let s2 = sub_zero().all_elim(succ(n.clone()))?.cong_arg(nat_pred())?; // pred(Sn-0) = pred(Sn)
+            let s3 = pred_succ().all_elim(n.clone())?; //                          pred(Sn) = n
+            let s4 = sub_zero().all_elim(n.clone())?.sym()?; //                    n = n - 0
+            s1.trans(s2)?.trans(s3)?.trans(s4)?
+        };
+
+        // step: body[m] ⟹ body[S m].
+        let m = var("m");
+        let ihc = body_at(&m)?;
+        let inner = {
+            let ih = Thm::assume(ihc.clone())?; // S n - S m = n - m
+            let s1 = sub_succ()
+                .all_elim(succ(n.clone()))?
+                .all_elim(succ(m.clone()))?; // Sn - S(Sm) = pred(Sn - Sm)
+            let s2 = ih.cong_arg(nat_pred())?; //  pred(Sn - Sm) = pred(n - m)
+            let s3 = sub_succ().all_elim(n.clone())?.all_elim(m.clone())?.sym()?; // pred(n-m) = n - Sm
+            s1.trans(s2)?.trans(s3)?
+        };
+        let step = inner.imp_intro(&ihc)?;
+        induct_on("m", &motive, base, step)?.all_intro("n", nat())
     }
-}
-fn sub_succ_succ_impl() -> Result<Thm> {
-    let n = var("n");
-    // body[m] ≔ S n - S m = n - m   (induction on m, with n free)
-    let body_at = |t: &Term| -> Result<Term> {
-        sub(succ(n.clone()), succ(t.clone())).equals(sub(n.clone(), t.clone()))
-    };
-    let motive = Term::abs(nat(), subst::close(&body_at(&var("m"))?, "m"));
-
-    // base: S n - S 0 = n - 0.   (both sides reduce to n)
-    let base = {
-        let s1 = sub_succ().all_elim(succ(n.clone()))?.all_elim(zero())?; // Sn - S0 = pred(Sn - 0)
-        let s2 = sub_zero().all_elim(succ(n.clone()))?.cong_arg(nat_pred())?; // pred(Sn-0) = pred(Sn)
-        let s3 = pred_succ().all_elim(n.clone())?; //                          pred(Sn) = n
-        let s4 = sub_zero().all_elim(n.clone())?.sym()?; //                    n = n - 0
-        s1.trans(s2)?.trans(s3)?.trans(s4)?
-    };
-
-    // step: body[m] ⟹ body[S m].
-    let m = var("m");
-    let ihc = body_at(&m)?;
-    let inner = {
-        let ih = Thm::assume(ihc.clone())?; // S n - S m = n - m
-        let s1 = sub_succ()
-            .all_elim(succ(n.clone()))?
-            .all_elim(succ(m.clone()))?; // Sn - S(Sm) = pred(Sn - Sm)
-        let s2 = ih.cong_arg(nat_pred())?; //  pred(Sn - Sm) = pred(n - m)
-        let s3 = sub_succ().all_elim(n.clone())?.all_elim(m.clone())?.sym()?; // pred(n-m) = n - Sm
-        s1.trans(s2)?.trans(s3)?
-    };
-    let step = inner.imp_intro(&ihc)?;
-    induct_on("m", &motive, base, step)?.all_intro("n", nat())
 }
 
 // ============================================================================
@@ -931,110 +881,104 @@ cached_thm! {
     /// `⊢ (0 ≤ 0) ∧ (∀m. 0 ≤ S m) ∧ (∀n. ¬(S n ≤ 0)) ∧
     ///    (∀n m. (S n ≤ S m) = (n ≤ m))` — `nat.le`'s defining clauses,
     /// stated as the selector predicate (with `= T`/`= F` boolean forms).
-    pub fn le_body() -> Thm {
-        le_body_impl().expect("le_body: witness transfer")
+    pub fn le_body() -> Result<Thm> {
+        let w = sub_witness(false)?; // λn m. n - m = 0
+        let wap = |a: Term, b: Term| Term::app(Term::app(w.clone(), a), b);
+        let bnf = crate::init::eq::beta_nf;
+
+        // c1: w 0 0 = T          (0 - 0 = 0)
+        let c1 = {
+            let z = sub_zero().all_elim(zero())?; // 0 - 0 = 0
+            bnf(wap(zero(), zero())).trans(z.eqt_intro()?)?
+        };
+        // c2: ∀m. w 0 (S m) = T  (0 - S m = 0)
+        let c2 = {
+            let m = var("m");
+            let z = zero_sub().all_elim(succ(m.clone()))?; // 0 - S m = 0
+            bnf(wap(zero(), succ(m.clone())))
+                .trans(z.eqt_intro()?)?
+                .all_intro("m", nat())?
+        };
+        // c3: ∀n. w (S n) 0 = F  (S n - 0 = 0  is false)
+        let c3 = {
+            let n = var("n");
+            let s0 = sub_zero().all_elim(succ(n.clone()))?; // S n - 0 = S n
+            let to_succ = cong_eq_l(s0, zero())?; // (S n - 0 = 0) = (S n = 0)
+            let is_f = to_succ.trans(eqf_intro(succ_ne_zero(n.clone())?)?)?; // = F
+            bnf(wap(succ(n.clone()), zero()))
+                .trans(is_f)?
+                .all_intro("n", nat())?
+        };
+        // c4: ∀n m. w (S n)(S m) = w n m
+        let c4 = {
+            let n = var("n");
+            let m = var("m");
+            let ss = sub_succ_succ().all_elim(n.clone())?.all_elim(m.clone())?; // Sn-Sm = n-m
+            let mid = cong_eq_l(ss, zero())?; // (Sn-Sm=0) = (n-m=0)
+            bnf(wap(succ(n.clone()), succ(m.clone())))
+                .trans(mid)?
+                .trans(bnf(wap(n.clone(), m.clone())).sym()?)?
+                .all_intro("m", nat())?
+                .all_intro("n", nat())?
+        };
+
+        transfer_selector(nat_le(), w, [c1, c2, c3, c4])
     }
-}
-fn le_body_impl() -> Result<Thm> {
-    let w = sub_witness(false)?; // λn m. n - m = 0
-    let wap = |a: Term, b: Term| Term::app(Term::app(w.clone(), a), b);
-    let bnf = crate::init::eq::beta_nf;
-
-    // c1: w 0 0 = T          (0 - 0 = 0)
-    let c1 = {
-        let z = sub_zero().all_elim(zero())?; // 0 - 0 = 0
-        bnf(wap(zero(), zero())).trans(z.eqt_intro()?)?
-    };
-    // c2: ∀m. w 0 (S m) = T  (0 - S m = 0)
-    let c2 = {
-        let m = var("m");
-        let z = zero_sub().all_elim(succ(m.clone()))?; // 0 - S m = 0
-        bnf(wap(zero(), succ(m.clone())))
-            .trans(z.eqt_intro()?)?
-            .all_intro("m", nat())?
-    };
-    // c3: ∀n. w (S n) 0 = F  (S n - 0 = 0  is false)
-    let c3 = {
-        let n = var("n");
-        let s0 = sub_zero().all_elim(succ(n.clone()))?; // S n - 0 = S n
-        let to_succ = cong_eq_l(s0, zero())?; // (S n - 0 = 0) = (S n = 0)
-        let is_f = to_succ.trans(eqf_intro(succ_ne_zero(n.clone())?)?)?; // = F
-        bnf(wap(succ(n.clone()), zero()))
-            .trans(is_f)?
-            .all_intro("n", nat())?
-    };
-    // c4: ∀n m. w (S n)(S m) = w n m
-    let c4 = {
-        let n = var("n");
-        let m = var("m");
-        let ss = sub_succ_succ().all_elim(n.clone())?.all_elim(m.clone())?; // Sn-Sm = n-m
-        let mid = cong_eq_l(ss, zero())?; // (Sn-Sm=0) = (n-m=0)
-        bnf(wap(succ(n.clone()), succ(m.clone())))
-            .trans(mid)?
-            .trans(bnf(wap(n.clone(), m.clone())).sym()?)?
-            .all_intro("m", nat())?
-            .all_intro("n", nat())?
-    };
-
-    transfer_selector(nat_le(), w, [c1, c2, c3, c4])
 }
 
 cached_thm! {
     /// `⊢ ¬(0 < 0) ∧ (∀m. 0 < S m) ∧ (∀n. ¬(S n < 0)) ∧
     ///    (∀n m. (S n < S m) = (n < m))` — `nat.lt`'s defining clauses.
-    pub fn lt_body() -> Thm {
-        lt_body_impl().expect("lt_body: witness transfer")
+    pub fn lt_body() -> Result<Thm> {
+        let w = sub_witness(true)?; // λn m. S n - m = 0
+        let wap = |a: Term, b: Term| Term::app(Term::app(w.clone(), a), b);
+        let bnf = crate::init::eq::beta_nf;
+
+        // c1: w 0 0 = F   (S 0 - 0 = 0 is false)
+        let c1 = {
+            let s0 = sub_zero().all_elim(succ(zero()))?; // S 0 - 0 = S 0
+            let to_succ = cong_eq_l(s0, zero())?; // (S0 - 0 = 0) = (S0 = 0)
+            let is_f = to_succ.trans(eqf_intro(succ_ne_zero(zero())?)?)?;
+            bnf(wap(zero(), zero())).trans(is_f)?
+        };
+        // c2: ∀m. w 0 (S m) = T   (S 0 - S m = 0  ⇝  0 - m = 0)
+        let c2 = {
+            let m = var("m");
+            let ss = sub_succ_succ().all_elim(zero())?.all_elim(m.clone())?; // S0 - Sm = 0 - m
+            let step = cong_eq_l(ss, zero())?; // (S0-Sm=0) = (0-m=0)
+            let z = zero_sub().all_elim(m.clone())?; // 0 - m = 0
+            bnf(wap(zero(), succ(m.clone())))
+                .trans(step)?
+                .trans(z.eqt_intro()?)?
+                .all_intro("m", nat())?
+        };
+        // c3: ∀n. w (S n) 0 = F   (S(S n) - 0 = 0 is false)
+        let c3 = {
+            let n = var("n");
+            let s0 = sub_zero().all_elim(succ(succ(n.clone())))?; // S(Sn) - 0 = S(Sn)
+            let to_succ = cong_eq_l(s0, zero())?;
+            let is_f = to_succ.trans(eqf_intro(succ_ne_zero(succ(n.clone()))?)?)?;
+            bnf(wap(succ(n.clone()), zero()))
+                .trans(is_f)?
+                .all_intro("n", nat())?
+        };
+        // c4: ∀n m. w (S n)(S m) = w n m   (S(Sn) - Sm = Sn - m)
+        let c4 = {
+            let n = var("n");
+            let m = var("m");
+            let ss = sub_succ_succ()
+                .all_elim(succ(n.clone()))?
+                .all_elim(m.clone())?; // S(Sn) - Sm = Sn - m
+            let mid = cong_eq_l(ss, zero())?;
+            bnf(wap(succ(n.clone()), succ(m.clone())))
+                .trans(mid)?
+                .trans(bnf(wap(n.clone(), m.clone())).sym()?)?
+                .all_intro("m", nat())?
+                .all_intro("n", nat())?
+        };
+
+        transfer_selector(nat_lt(), w, [c1, c2, c3, c4])
     }
-}
-fn lt_body_impl() -> Result<Thm> {
-    let w = sub_witness(true)?; // λn m. S n - m = 0
-    let wap = |a: Term, b: Term| Term::app(Term::app(w.clone(), a), b);
-    let bnf = crate::init::eq::beta_nf;
-
-    // c1: w 0 0 = F   (S 0 - 0 = 0 is false)
-    let c1 = {
-        let s0 = sub_zero().all_elim(succ(zero()))?; // S 0 - 0 = S 0
-        let to_succ = cong_eq_l(s0, zero())?; // (S0 - 0 = 0) = (S0 = 0)
-        let is_f = to_succ.trans(eqf_intro(succ_ne_zero(zero())?)?)?;
-        bnf(wap(zero(), zero())).trans(is_f)?
-    };
-    // c2: ∀m. w 0 (S m) = T   (S 0 - S m = 0  ⇝  0 - m = 0)
-    let c2 = {
-        let m = var("m");
-        let ss = sub_succ_succ().all_elim(zero())?.all_elim(m.clone())?; // S0 - Sm = 0 - m
-        let step = cong_eq_l(ss, zero())?; // (S0-Sm=0) = (0-m=0)
-        let z = zero_sub().all_elim(m.clone())?; // 0 - m = 0
-        bnf(wap(zero(), succ(m.clone())))
-            .trans(step)?
-            .trans(z.eqt_intro()?)?
-            .all_intro("m", nat())?
-    };
-    // c3: ∀n. w (S n) 0 = F   (S(S n) - 0 = 0 is false)
-    let c3 = {
-        let n = var("n");
-        let s0 = sub_zero().all_elim(succ(succ(n.clone())))?; // S(Sn) - 0 = S(Sn)
-        let to_succ = cong_eq_l(s0, zero())?;
-        let is_f = to_succ.trans(eqf_intro(succ_ne_zero(succ(n.clone()))?)?)?;
-        bnf(wap(succ(n.clone()), zero()))
-            .trans(is_f)?
-            .all_intro("n", nat())?
-    };
-    // c4: ∀n m. w (S n)(S m) = w n m   (S(Sn) - Sm = Sn - m)
-    let c4 = {
-        let n = var("n");
-        let m = var("m");
-        let ss = sub_succ_succ()
-            .all_elim(succ(n.clone()))?
-            .all_elim(m.clone())?; // S(Sn) - Sm = Sn - m
-        let mid = cong_eq_l(ss, zero())?;
-        bnf(wap(succ(n.clone()), succ(m.clone())))
-            .trans(mid)?
-            .trans(bnf(wap(n.clone(), m.clone())).sym()?)?
-            .all_intro("m", nat())?
-            .all_intro("n", nat())?
-    };
-
-    transfer_selector(nat_lt(), w, [c1, c2, c3, c4])
 }
 
 // ---- selector-clause accessors (the conjuncts of le_body / lt_body) ----
@@ -1116,151 +1060,128 @@ cached_thm! {
 
 cached_thm! {
     /// `⊢ ∀m. 0 ≤ m` — `0` is the least element.
-    pub fn le_zero() -> Thm {
-        le_zero_impl().expect("le_zero")
+    pub fn le_zero() -> Result<Thm> {
+        // (0 ≤ m) = T by induction on m; then strip the `= T`.
+        let m = var("m");
+        let body = le_t(zero(), m.clone()).equals(Term::bool_lit(true))?;
+        let motive = Term::abs(nat(), subst::close(&body, "m"));
+        let base = le_c1(); // (0 ≤ 0) = T
+        let ihc = body.clone();
+        let step = le_c2().all_elim(m.clone())?.imp_intro(&ihc)?; // RHS (0≤Sm)=T holds outright
+        let all_eq = induct_on("m", &motive, base, step)?; // ∀m. (0≤m)=T
+        all_eq
+            .all_elim(var("m"))?
+            .eqt_elim()?
+            .all_intro("m", nat())
     }
-}
-fn le_zero_impl() -> Result<Thm> {
-    // (0 ≤ m) = T by induction on m; then strip the `= T`.
-    let m = var("m");
-    let body = le_t(zero(), m.clone()).equals(Term::bool_lit(true))?;
-    let motive = Term::abs(nat(), subst::close(&body, "m"));
-    let base = le_c1(); // (0 ≤ 0) = T
-    let ihc = body.clone();
-    let step = le_c2().all_elim(m.clone())?.imp_intro(&ihc)?; // RHS (0≤Sm)=T holds outright
-    let all_eq = induct_on("m", &motive, base, step)?; // ∀m. (0≤m)=T
-    all_eq.all_elim(var("m"))?.eqt_elim()?.all_intro("m", nat())
 }
 
 cached_thm! {
     /// `⊢ ∀m. 0 < S m` — every successor is positive.
-    pub fn zero_lt_succ() -> Thm {
-        zero_lt_succ_impl().expect("zero_lt_succ")
+    pub fn zero_lt_succ() -> Result<Thm> {
+        let m = var("m");
+        lt_c2()
+            .all_elim(m.clone())? // (0 < S m) = T
+            .eqt_elim()?
+            .all_intro("m", nat())
     }
-}
-fn zero_lt_succ_impl() -> Result<Thm> {
-    let m = var("m");
-    lt_c2()
-        .all_elim(m.clone())? // (0 < S m) = T
-        .eqt_elim()?
-        .all_intro("m", nat())
 }
 
 cached_thm! {
     /// `⊢ ∀n. n ≤ n` — reflexivity of `≤`.
-    pub fn le_refl() -> Thm {
-        le_refl_impl().expect("le_refl")
+    pub fn le_refl() -> Result<Thm> {
+        let n = var("n");
+        let body = le_t(n.clone(), n.clone());
+        let motive = Term::abs(nat(), subst::close(&body, "n"));
+        let base = le_c1().eqt_elim()?; // 0 ≤ 0
+        let ihc = body.clone();
+        let c4 = le_c4().all_elim(n.clone())?.all_elim(n.clone())?; // (Sn≤Sn)=(n≤n)
+        let snsn = c4.sym()?.eq_mp(Thm::assume(ihc.clone())?)?; // {n≤n} ⊢ Sn≤Sn
+        let step = snsn.imp_intro(&ihc)?;
+        induct(&motive, base, step)
     }
-}
-fn le_refl_impl() -> Result<Thm> {
-    let n = var("n");
-    let body = le_t(n.clone(), n.clone());
-    let motive = Term::abs(nat(), subst::close(&body, "n"));
-    let base = le_c1().eqt_elim()?; // 0 ≤ 0
-    let ihc = body.clone();
-    let c4 = le_c4().all_elim(n.clone())?.all_elim(n.clone())?; // (Sn≤Sn)=(n≤n)
-    let snsn = c4.sym()?.eq_mp(Thm::assume(ihc.clone())?)?; // {n≤n} ⊢ Sn≤Sn
-    let step = snsn.imp_intro(&ihc)?;
-    induct(&motive, base, step)
 }
 
 cached_thm! {
     /// `⊢ ∀a b. a * b = b * a` — commutativity of `*` (uses [`mul_succ_r`]).
-    pub fn mul_comm() -> Thm {
-        mul_comm_impl().expect("mul_comm derivation")
+    pub fn mul_comm() -> Result<Thm> {
+        // body[n] ≔ ∀b. n * b = b * n
+        let body_at = |t: &Term| -> Result<Term> {
+            let b = var("b");
+            mul(t.clone(), b.clone())
+                .equals(mul(b, t.clone()))?
+                .forall("b", nat())
+        };
+        let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+        // base: ∀b. 0 * b = b * 0  (both 0).
+        let base = {
+            let b = var("b");
+            mul_base()
+                .all_elim(b.clone())? // 0*b = 0
+                .trans(mul_zero().all_elim(b.clone())?.sym()?)? // = b*0
+                .all_intro("b", nat())?
+        };
+
+        // step: body[n] ⟹ body[S n].
+        let n = var("n");
+        let ihc = body_at(&n)?;
+        let inner = {
+            let b = var("b");
+            // Sn*b = b + n*b = b + b*n = b*Sn.
+            mul_step()
+                .all_elim(n.clone())?
+                .all_elim(b.clone())? // Sn*b = b + n*b
+                .trans(
+                    Thm::assume(ihc.clone())?
+                        .all_elim(b.clone())? // n*b = b*n
+                        .cong_arg(Term::app(nat_add(), b.clone()))?, // b + n*b = b + b*n
+                )?
+                .trans(mul_succ_r().all_elim(b.clone())?.all_elim(n.clone())?.sym()?)? // b + b*n = b*Sn
+                .all_intro("b", nat())?
+        };
+        let step = inner.imp_intro(&ihc)?;
+        induct(&motive, base, step)
     }
-}
-fn mul_comm_impl() -> Result<Thm> {
-    // body[n] ≔ ∀b. n * b = b * n
-    let body_at = |t: &Term| -> Result<Term> {
-        let b = var("b");
-        mul(t.clone(), b.clone())
-            .equals(mul(b, t.clone()))?
-            .forall("b", nat())
-    };
-    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
-
-    // base: ∀b. 0 * b = b * 0  (both 0).
-    let base = {
-        let b = var("b");
-        mul_base()
-            .all_elim(b.clone())? // 0*b = 0
-            .trans(mul_zero().all_elim(b.clone())?.sym()?)? // = b*0
-            .all_intro("b", nat())?
-    };
-
-    // step: body[n] ⟹ body[S n].
-    let n = var("n");
-    let ihc = body_at(&n)?;
-    let inner = {
-        let b = var("b");
-        // Sn*b = b + n*b = b + b*n = b*Sn.
-        mul_step()
-            .all_elim(n.clone())?
-            .all_elim(b.clone())? // Sn*b = b + n*b
-            .trans(
-                Thm::assume(ihc.clone())?
-                    .all_elim(b.clone())? // n*b = b*n
-                    .cong_arg(Term::app(nat_add(), b.clone()))?, // b + n*b = b + b*n
-            )?
-            .trans(
-                mul_succ_r()
-                    .all_elim(b.clone())?
-                    .all_elim(n.clone())?
-                    .sym()?,
-            )? // b + b*n = b*Sn
-            .all_intro("b", nat())?
-    };
-    let step = inner.imp_intro(&ihc)?;
-    induct(&motive, base, step)
 }
 
 cached_thm! {
     /// `⊢ ∀n. ¬(n < n)` — irreflexivity of `<`.
-    pub fn lt_irrefl() -> Thm {
-        lt_irrefl_impl().expect("lt_irrefl")
+    pub fn lt_irrefl() -> Result<Thm> {
+        // (n < n) = F by induction on n; then ¬(n < n).
+        let n = var("n");
+        let body = lt_t(n.clone(), n.clone()).equals(Term::bool_lit(false))?;
+        let motive = Term::abs(nat(), subst::close(&body, "n"));
+        let base = lt_c1(); // (0 < 0) = F
+        let ihc = body.clone();
+        let c4 = lt_c4().all_elim(n.clone())?.all_elim(n.clone())?; // (Sn<Sn)=(n<n)
+        let step = c4.trans(Thm::assume(ihc.clone())?)?.imp_intro(&ihc)?; // (Sn<Sn)=F
+        let all_eq = induct(&motive, base, step)?; // ∀n. (n<n)=F
+        eqf_elim(all_eq.all_elim(var("n"))?)?.all_intro("n", nat())
     }
-}
-fn lt_irrefl_impl() -> Result<Thm> {
-    // (n < n) = F by induction on n; then ¬(n < n).
-    let n = var("n");
-    let body = lt_t(n.clone(), n.clone()).equals(Term::bool_lit(false))?;
-    let motive = Term::abs(nat(), subst::close(&body, "n"));
-    let base = lt_c1(); // (0 < 0) = F
-    let ihc = body.clone();
-    let c4 = lt_c4().all_elim(n.clone())?.all_elim(n.clone())?; // (Sn<Sn)=(n<n)
-    let step = c4.trans(Thm::assume(ihc.clone())?)?.imp_intro(&ihc)?; // (Sn<Sn)=F
-    let all_eq = induct(&motive, base, step)?; // ∀n. (n<n)=F
-    eqf_elim(all_eq.all_elim(var("n"))?)?.all_intro("n", nat())
 }
 
 cached_thm! {
     /// `⊢ ∀n. ¬(S n ≤ 0)` — nothing positive is `≤ 0`.
-    pub fn not_succ_le_zero() -> Thm {
-        not_succ_le_zero_impl().expect("not_succ_le_zero")
+    pub fn not_succ_le_zero() -> Result<Thm> {
+        let n = var("n");
+        eqf_elim(le_c3().all_elim(n.clone())?)?.all_intro("n", nat())
     }
-}
-fn not_succ_le_zero_impl() -> Result<Thm> {
-    let n = var("n");
-    eqf_elim(le_c3().all_elim(n.clone())?)?.all_intro("n", nat())
 }
 
 cached_thm! {
     /// `⊢ ∀n. ¬(n < 0)` — nothing is `< 0`.
-    pub fn not_lt_zero() -> Thm {
-        not_lt_zero_impl().expect("not_lt_zero")
+    pub fn not_lt_zero() -> Result<Thm> {
+        // (n < 0) = F by induction on n.
+        let n = var("n");
+        let body = lt_t(n.clone(), zero()).equals(Term::bool_lit(false))?;
+        let motive = Term::abs(nat(), subst::close(&body, "n"));
+        let base = lt_c1(); // (0 < 0) = F
+        let ihc = body.clone();
+        let step = lt_c3().all_elim(n.clone())?.imp_intro(&ihc)?; // (Sn<0)=F outright
+        let all_eq = induct(&motive, base, step)?;
+        eqf_elim(all_eq.all_elim(var("n"))?)?.all_intro("n", nat())
     }
-}
-fn not_lt_zero_impl() -> Result<Thm> {
-    // (n < 0) = F by induction on n.
-    let n = var("n");
-    let body = lt_t(n.clone(), zero()).equals(Term::bool_lit(false))?;
-    let motive = Term::abs(nat(), subst::close(&body, "n"));
-    let base = lt_c1(); // (0 < 0) = F
-    let ihc = body.clone();
-    let step = lt_c3().all_elim(n.clone())?.imp_intro(&ihc)?; // (Sn<0)=F outright
-    let all_eq = induct(&motive, base, step)?;
-    eqf_elim(all_eq.all_elim(var("n"))?)?.all_intro("n", nat())
 }
 
 // ---- double-induction order properties ----
@@ -1287,58 +1208,55 @@ fn induct_forall2(
 
 cached_thm! {
     /// `⊢ ∀a b. (a ≤ b) ∨ (b ≤ a)` — `≤` is total.
-    pub fn le_total() -> Thm {
-        le_total_impl().expect("le_total")
-    }
-}
-fn le_total_impl() -> Result<Thm> {
-    let disj = |a: &Term, b: &Term| le_t(a.clone(), b.clone()).or(le_t(b.clone(), a.clone()));
+    pub fn le_total() -> Result<Thm> {
+        let disj = |a: &Term, b: &Term| le_t(a.clone(), b.clone()).or(le_t(b.clone(), a.clone()));
 
-    // base a = 0: ∀b. (0 ≤ b) ∨ (b ≤ 0)   — left disjunct via le_zero.
-    let base = {
-        let b = var("b");
-        le_zero()
-            .all_elim(b.clone())?
-            .or_intro_l(le_t(b.clone(), zero()))?
-            .all_intro("b", nat())?
-    };
-
-    let step = |ih_a: Thm| -> Result<Thm> {
-        let a = var("a");
-        let b = var("b");
-        // inner motive_b(b) = (S a ≤ b) ∨ (b ≤ S a)
-        let motive_b = {
-            let body = disj(&succ(a.clone()), &b)?;
-            Term::abs(nat(), subst::close(&body, "b"))
+        // base a = 0: ∀b. (0 ≤ b) ∨ (b ≤ 0)   — left disjunct via le_zero.
+        let base = {
+            let b = var("b");
+            le_zero()
+                .all_elim(b.clone())?
+                .or_intro_l(le_t(b.clone(), zero()))?
+                .all_intro("b", nat())?
         };
-        // inner base b = 0: right disjunct (0 ≤ S a).
-        let inner_base = le_zero()
-            .all_elim(succ(a.clone()))?
-            .or_intro_r(le_t(succ(a.clone()), zero()))?;
-        // inner step: from IH_a @ b decide (S a ≤ S b) ∨ (S b ≤ S a).
-        let inner_ihc = disj(&succ(a.clone()), &b)?;
-        let goal_l = le_t(succ(a.clone()), succ(b.clone()));
-        let goal_r = le_t(succ(b.clone()), succ(a.clone()));
-        let c4ab = le_c4().all_elim(a.clone())?.all_elim(b.clone())?; // (Sa≤Sb)=(a≤b)
-        let c4ba = le_c4().all_elim(b.clone())?.all_elim(a.clone())?; // (Sb≤Sa)=(b≤a)
-        let left = c4ab
-            .sym()?
-            .eq_mp(Thm::assume(le_t(a.clone(), b.clone()))?)? // Sa≤Sb
-            .or_intro_l(goal_r.clone())?
-            .imp_intro(&le_t(a.clone(), b.clone()))?;
-        let right = c4ba
-            .sym()?
-            .eq_mp(Thm::assume(le_t(b.clone(), a.clone()))?)? // Sb≤Sa
-            .or_intro_r(goal_l.clone())?
-            .imp_intro(&le_t(b.clone(), a.clone()))?;
-        let inner_step = ih_a
-            .all_elim(b.clone())? // (a≤b)∨(b≤a)
-            .or_elim(left, right)?
-            .imp_intro(&inner_ihc)?;
-        induct_on("b", &motive_b, inner_base, inner_step)
-    };
 
-    induct_forall2(|a, b| disj(a, b), base, step)
+        let step = |ih_a: Thm| -> Result<Thm> {
+            let a = var("a");
+            let b = var("b");
+            // inner motive_b(b) = (S a ≤ b) ∨ (b ≤ S a)
+            let motive_b = {
+                let body = disj(&succ(a.clone()), &b)?;
+                Term::abs(nat(), subst::close(&body, "b"))
+            };
+            // inner base b = 0: right disjunct (0 ≤ S a).
+            let inner_base = le_zero()
+                .all_elim(succ(a.clone()))?
+                .or_intro_r(le_t(succ(a.clone()), zero()))?;
+            // inner step: from IH_a @ b decide (S a ≤ S b) ∨ (S b ≤ S a).
+            let inner_ihc = disj(&succ(a.clone()), &b)?;
+            let goal_l = le_t(succ(a.clone()), succ(b.clone()));
+            let goal_r = le_t(succ(b.clone()), succ(a.clone()));
+            let c4ab = le_c4().all_elim(a.clone())?.all_elim(b.clone())?; // (Sa≤Sb)=(a≤b)
+            let c4ba = le_c4().all_elim(b.clone())?.all_elim(a.clone())?; // (Sb≤Sa)=(b≤a)
+            let left = c4ab
+                .sym()?
+                .eq_mp(Thm::assume(le_t(a.clone(), b.clone()))?)? // Sa≤Sb
+                .or_intro_l(goal_r.clone())?
+                .imp_intro(&le_t(a.clone(), b.clone()))?;
+            let right = c4ba
+                .sym()?
+                .eq_mp(Thm::assume(le_t(b.clone(), a.clone()))?)? // Sb≤Sa
+                .or_intro_r(goal_l.clone())?
+                .imp_intro(&le_t(b.clone(), a.clone()))?;
+            let inner_step = ih_a
+                .all_elim(b.clone())? // (a≤b)∨(b≤a)
+                .or_elim(left, right)?
+                .imp_intro(&inner_ihc)?;
+            induct_on("b", &motive_b, inner_base, inner_step)
+        };
+
+        induct_forall2(|a, b| disj(a, b), base, step)
+    }
 }
 
 /// `⊢ ∀b. (b ≤ 0) ⟹ (b = 0)` — `0` is the least element strictly.
@@ -1366,61 +1284,61 @@ fn antisym_body(a: &Term, b: &Term) -> Result<Term> {
 
 cached_thm! {
     /// `⊢ ∀a b. (a ≤ b) ⟹ (b ≤ a) ⟹ (a = b)` — antisymmetry of `≤`.
-    pub fn le_antisym() -> Thm {
-        le_antisym_impl().expect("le_antisym")
+    pub fn le_antisym() -> Result<Thm> {
+        // base a = 0: ∀b. (0≤b) ⟹ (b≤0) ⟹ (0=b).
+        let base = {
+            let b = var("b");
+            let b_le_0 = le_t(b.clone(), zero());
+            let inner = le_zero_iff()?
+                .all_elim(b.clone())?
+                .imp_elim(Thm::assume(b_le_0.clone())?)? // {b≤0} ⊢ b=0
+                .sym()? // {b≤0} ⊢ 0=b
+                .imp_intro(&b_le_0)?;
+            inner
+                .imp_intro(&le_t(zero(), b.clone()))?
+                .all_intro("b", nat())?
+        };
+
+        let step = |ih_a: Thm| -> Result<Thm> {
+            let a = var("a");
+            let b = var("b");
+            let motive_b = {
+                let body = antisym_body(&succ(a.clone()), &b)?;
+                Term::abs(nat(), subst::close(&body, "b"))
+            };
+            // inner base b = 0: (Sa≤0) ⟹ (0≤Sa) ⟹ (Sa=0) — antecedent false.
+            let inner_base = {
+                let sa_le_0 = le_t(succ(a.clone()), zero());
+                not_succ_le_zero()
+                    .all_elim(a.clone())?
+                    .not_elim(Thm::assume(sa_le_0.clone())?)? // {Sa≤0} ⊢ F
+                    .false_elim(
+                        le_t(zero(), succ(a.clone()))
+                            .imp(succ(a.clone()).equals(zero())?)?,
+                    )? // {Sa≤0} ⊢ (0≤Sa)⟹(Sa=0)
+                    .imp_intro(&sa_le_0)?
+            };
+            // inner step b = S b': use IH_a @ b' on the cancelled successors.
+            let inner_ihc = antisym_body(&succ(a.clone()), &b)?;
+            let sa_le_sb = le_t(succ(a.clone()), succ(b.clone()));
+            let sb_le_sa = le_t(succ(b.clone()), succ(a.clone()));
+            let c4ab = le_c4().all_elim(a.clone())?.all_elim(b.clone())?; // (Sa≤Sb)=(a≤b)
+            let c4ba = le_c4().all_elim(b.clone())?.all_elim(a.clone())?; // (Sb≤Sa)=(b≤a)
+            let ab = c4ab.eq_mp(Thm::assume(sa_le_sb.clone())?)?; // {Sa≤Sb} ⊢ a≤b
+            let ba = c4ba.eq_mp(Thm::assume(sb_le_sa.clone())?)?; // {Sb≤Sa} ⊢ b≤a
+            let inner_step = ih_a
+                .all_elim(b.clone())?
+                .imp_elim(ab)?
+                .imp_elim(ba)? // {…} ⊢ a=b
+                .cong_arg(nat_succ())? // Sa=Sb
+                .imp_intro(&sb_le_sa)?
+                .imp_intro(&sa_le_sb)? // ⊢ motive_b(S b)
+                .imp_intro(&inner_ihc)?; // ⊢ motive_b(b) ⟹ motive_b(S b)
+            induct_on("b", &motive_b, inner_base, inner_step)
+        };
+
+        induct_forall2(antisym_body, base, step)
     }
-}
-fn le_antisym_impl() -> Result<Thm> {
-    // base a = 0: ∀b. (0≤b) ⟹ (b≤0) ⟹ (0=b).
-    let base = {
-        let b = var("b");
-        let b_le_0 = le_t(b.clone(), zero());
-        let inner = le_zero_iff()?
-            .all_elim(b.clone())?
-            .imp_elim(Thm::assume(b_le_0.clone())?)? // {b≤0} ⊢ b=0
-            .sym()? // {b≤0} ⊢ 0=b
-            .imp_intro(&b_le_0)?;
-        inner
-            .imp_intro(&le_t(zero(), b.clone()))?
-            .all_intro("b", nat())?
-    };
-
-    let step = |ih_a: Thm| -> Result<Thm> {
-        let a = var("a");
-        let b = var("b");
-        let motive_b = {
-            let body = antisym_body(&succ(a.clone()), &b)?;
-            Term::abs(nat(), subst::close(&body, "b"))
-        };
-        // inner base b = 0: (Sa≤0) ⟹ (0≤Sa) ⟹ (Sa=0) — antecedent false.
-        let inner_base = {
-            let sa_le_0 = le_t(succ(a.clone()), zero());
-            not_succ_le_zero()
-                .all_elim(a.clone())?
-                .not_elim(Thm::assume(sa_le_0.clone())?)? // {Sa≤0} ⊢ F
-                .false_elim(le_t(zero(), succ(a.clone())).imp(succ(a.clone()).equals(zero())?)?)? // {Sa≤0} ⊢ (0≤Sa)⟹(Sa=0)
-                .imp_intro(&sa_le_0)?
-        };
-        // inner step b = S b': use IH_a @ b' on the cancelled successors.
-        let inner_ihc = antisym_body(&succ(a.clone()), &b)?;
-        let sa_le_sb = le_t(succ(a.clone()), succ(b.clone()));
-        let sb_le_sa = le_t(succ(b.clone()), succ(a.clone()));
-        let c4ab = le_c4().all_elim(a.clone())?.all_elim(b.clone())?; // (Sa≤Sb)=(a≤b)
-        let c4ba = le_c4().all_elim(b.clone())?.all_elim(a.clone())?; // (Sb≤Sa)=(b≤a)
-        let ab = c4ab.eq_mp(Thm::assume(sa_le_sb.clone())?)?; // {Sa≤Sb} ⊢ a≤b
-        let ba = c4ba.eq_mp(Thm::assume(sb_le_sa.clone())?)?; // {Sb≤Sa} ⊢ b≤a
-        let inner_step = ih_a
-            .all_elim(b.clone())?
-            .imp_elim(ab)?
-            .imp_elim(ba)? // {…} ⊢ a=b
-            .cong_arg(nat_succ())? // Sa=Sb
-            .imp_intro(&sb_le_sa)?
-            .imp_intro(&sa_le_sb)? // ⊢ motive_b(S b)
-            .imp_intro(&inner_ihc)?; // ⊢ motive_b(b) ⟹ motive_b(S b)
-        induct_on("b", &motive_b, inner_base, inner_step)
-    };
-
-    induct_forall2(antisym_body, base, step)
 }
 
 /// `(a < b) = (S a ≤ b)` — the `<`/`≤` bridge body at `a`, `b`.
@@ -1431,51 +1349,45 @@ fn lt_succ_le_body(a: &Term, b: &Term) -> Result<Term> {
 cached_thm! {
     /// `⊢ ∀a b. (a < b) = (S a ≤ b)` — strict `<` is `≤` shifted by one
     /// (both are decided by `S a - b = 0`).
-    pub fn lt_iff_succ_le() -> Thm {
-        lt_iff_succ_le_impl().expect("lt_iff_succ_le")
+    pub fn lt_iff_succ_le() -> Result<Thm> {
+        // base a = 0: ∀b. (0 < b) = (S 0 ≤ b)  — inner induction on b.
+        let base = {
+            let b = var("b");
+            let motive_b = Term::abs(nat(), subst::close(&lt_succ_le_body(&zero(), &b)?, "b"));
+            // b = 0: both sides are F.
+            let ib = lt_c1().trans(le_c3().all_elim(zero())?.sym()?)?;
+            // b = S b': both sides are T.
+            let ihc = lt_succ_le_body(&zero(), &b)?;
+            let lhs_t = lt_c2().all_elim(b.clone())?; // (0 < S b) = T
+            let rhs_t = le_c4()
+                .all_elim(zero())?
+                .all_elim(b.clone())? // (S 0 ≤ S b) = (0 ≤ b)
+                .trans(le_zero().all_elim(b.clone())?.eqt_intro()?)?; // = T
+            let is = lhs_t.trans(rhs_t.sym()?)?.imp_intro(&ihc)?;
+            induct_on("b", &motive_b, ib, is)?
+        };
+
+        let step = |ih_a: Thm| -> Result<Thm> {
+            let a = var("a");
+            let b = var("b");
+            let motive_b = Term::abs(nat(), subst::close(&lt_succ_le_body(&succ(a.clone()), &b)?, "b"));
+            // b = 0: both sides F.
+            let ib = lt_c3()
+                .all_elim(a.clone())? // (S a < 0) = F
+                .trans(le_c3().all_elim(succ(a.clone()))?.sym()?)?; // = (S(S a) ≤ 0)
+            // b = S b': cancel a successor on both sides, then IH_a @ b'.
+            let ihc = lt_succ_le_body(&succ(a.clone()), &b)?;
+            let lhs_eq = lt_c4().all_elim(a.clone())?.all_elim(b.clone())?; // (Sa<Sb)=(a<b)
+            let rhs_eq = le_c4().all_elim(succ(a.clone()))?.all_elim(b.clone())?; // (S(Sa)≤Sb)=(Sa≤b)
+            let is = lhs_eq
+                .trans(ih_a.all_elim(b.clone())?)? // (Sa<Sb)=(Sa≤b)
+                .trans(rhs_eq.sym()?)? // =(S(Sa)≤Sb)
+                .imp_intro(&ihc)?;
+            induct_on("b", &motive_b, ib, is)
+        };
+
+        induct_forall2(lt_succ_le_body, base, step)
     }
-}
-fn lt_iff_succ_le_impl() -> Result<Thm> {
-    // base a = 0: ∀b. (0 < b) = (S 0 ≤ b)  — inner induction on b.
-    let base = {
-        let b = var("b");
-        let motive_b = Term::abs(nat(), subst::close(&lt_succ_le_body(&zero(), &b)?, "b"));
-        // b = 0: both sides are F.
-        let ib = lt_c1().trans(le_c3().all_elim(zero())?.sym()?)?;
-        // b = S b': both sides are T.
-        let ihc = lt_succ_le_body(&zero(), &b)?;
-        let lhs_t = lt_c2().all_elim(b.clone())?; // (0 < S b) = T
-        let rhs_t = le_c4()
-            .all_elim(zero())?
-            .all_elim(b.clone())? // (S 0 ≤ S b) = (0 ≤ b)
-            .trans(le_zero().all_elim(b.clone())?.eqt_intro()?)?; // = T
-        let is = lhs_t.trans(rhs_t.sym()?)?.imp_intro(&ihc)?;
-        induct_on("b", &motive_b, ib, is)?
-    };
-
-    let step = |ih_a: Thm| -> Result<Thm> {
-        let a = var("a");
-        let b = var("b");
-        let motive_b = Term::abs(
-            nat(),
-            subst::close(&lt_succ_le_body(&succ(a.clone()), &b)?, "b"),
-        );
-        // b = 0: both sides F.
-        let ib = lt_c3()
-            .all_elim(a.clone())? // (S a < 0) = F
-            .trans(le_c3().all_elim(succ(a.clone()))?.sym()?)?; // = (S(S a) ≤ 0)
-        // b = S b': cancel a successor on both sides, then IH_a @ b'.
-        let ihc = lt_succ_le_body(&succ(a.clone()), &b)?;
-        let lhs_eq = lt_c4().all_elim(a.clone())?.all_elim(b.clone())?; // (Sa<Sb)=(a<b)
-        let rhs_eq = le_c4().all_elim(succ(a.clone()))?.all_elim(b.clone())?; // (S(Sa)≤Sb)=(Sa≤b)
-        let is = lhs_eq
-            .trans(ih_a.all_elim(b.clone())?)? // (Sa<Sb)=(Sa≤b)
-            .trans(rhs_eq.sym()?)? // =(S(Sa)≤Sb)
-            .imp_intro(&ihc)?;
-        induct_on("b", &motive_b, ib, is)
-    };
-
-    induct_forall2(lt_succ_le_body, base, step)
 }
 
 // ============================================================================
@@ -1501,158 +1413,146 @@ cached_thm! {
     /// `⊢ ∀a. a * 1 = a` — the `nat` literal `1` is a right unit of `*`
     /// (`1` is folded to `S 0`, then [`mul_succ_r`] + [`mul_zero`] +
     /// [`add_zero`] collapse `a * S 0`).
-    pub fn mul_one() -> Thm {
-        mul_one_impl().expect("mul_one derivation")
+    pub fn mul_one() -> Result<Thm> {
+        let a = var("a");
+        let one = Term::nat_lit(1u32);
+        let one_is_s0 = succ(zero()).reduce()?.sym()?; // ⊢ 1 = S 0
+        let c0 = one_is_s0.cong_arg(Term::app(nat_mul(), a.clone()))?; // a*1 = a*(S 0)
+        let c1 = mul_succ_r().all_elim(a.clone())?.all_elim(zero())?; // a*(S 0) = a + a*0
+        let c2 = mul_zero()
+            .all_elim(a.clone())?
+            .cong_arg(Term::app(nat_add(), a.clone()))?; // a + a*0 = a + 0
+        let c3 = add_zero().all_elim(a.clone())?; // a + 0 = a
+        let _ = one; // documents the `1` representation; the proof uses `S 0`.
+        c0.trans(c1)?.trans(c2)?.trans(c3)?.all_intro("a", nat())
     }
-}
-fn mul_one_impl() -> Result<Thm> {
-    let a = var("a");
-    let one = Term::nat_lit(1u32);
-    let one_is_s0 = succ(zero()).reduce()?.sym()?; // ⊢ 1 = S 0
-    let c0 = one_is_s0.cong_arg(Term::app(nat_mul(), a.clone()))?; // a*1 = a*(S 0)
-    let c1 = mul_succ_r().all_elim(a.clone())?.all_elim(zero())?; // a*(S 0) = a + a*0
-    let c2 = mul_zero()
-        .all_elim(a.clone())?
-        .cong_arg(Term::app(nat_add(), a.clone()))?; // a + a*0 = a + 0
-    let c3 = add_zero().all_elim(a.clone())?; // a + 0 = a
-    let _ = one; // documents the `1` representation; the proof uses `S 0`.
-    c0.trans(c1)?.trans(c2)?.trans(c3)?.all_intro("a", nat())
 }
 
 cached_thm! {
     /// `⊢ ∀a b c. a * (b + c) = a * b + a * c` — left distributivity of `*`
     /// over `+` (induction on `a`; the step rearranges four summands via
     /// [`add_interchange`]).
-    pub fn distrib() -> Thm {
-        distrib_impl().expect("distrib derivation")
+    pub fn distrib() -> Result<Thm> {
+        // body[n] ≔ ∀b c. n*(b+c) = n*b + n*c
+        let body_at = |t: &Term| -> Result<Term> {
+            let (b, c) = (var("b"), var("c"));
+            mul(t.clone(), add(b.clone(), c.clone()))
+                .equals(add(mul(t.clone(), b.clone()), mul(t.clone(), c)))?
+                .forall("c", nat())?
+                .forall("b", nat())
+        };
+        let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+        // base: 0*(b+c) = 0*b + 0*c  (both 0).
+        let base = {
+            let (b, c) = (var("b"), var("c"));
+            let l = mul_base().all_elim(add(b.clone(), c.clone()))?; // 0*(b+c) = 0
+            let rb = mul_base().all_elim(b.clone())?; // 0*b = 0
+            let rc = mul_base().all_elim(c.clone())?; // 0*c = 0
+            let r = cong_add(rb, rc)?.trans(add_base().all_elim(zero())?)?; // 0*b+0*c = 0
+            l.trans(r.sym()?)?
+                .all_intro("c", nat())?
+                .all_intro("b", nat())?
+        };
+
+        // step: body[n] ⟹ body[S n].
+        let n = var("n");
+        let ihc = body_at(&n)?;
+        let inner = {
+            let (b, c) = (var("b"), var("c"));
+            let ih = Thm::assume(ihc.clone())?
+                .all_elim(b.clone())?
+                .all_elim(c.clone())?; // n*(b+c) = n*b + n*c
+            // LHS: S n*(b+c) = (b+c) + n*(b+c)  [mul_step]  = (b+c) + (n*b+n*c)  [ih]
+            let l1 = mul_step()
+                .all_elim(n.clone())?
+                .all_elim(add(b.clone(), c.clone()))?;
+            let l2 = ih.cong_arg(Term::app(nat_add(), add(b.clone(), c.clone())))?;
+            let lhs = l1.trans(l2)?; // S n*(b+c) = (b+c) + (n*b+n*c)
+            // RHS: S n*b + S n*c = (b+n*b) + (c+n*c)  [mul_step both]
+            let rb = mul_step().all_elim(n.clone())?.all_elim(b.clone())?; // S n*b = b+n*b
+            let rc = mul_step().all_elim(n.clone())?.all_elim(c.clone())?; // S n*c = c+n*c
+            let rhs = cong_add(rb, rc)?;
+            // Bridge: (b+c)+(n*b+n*c) = (b+n*b)+(c+n*c) — commute the inner pair,
+            // then the additive interchange swaps the middle two.
+            let (nb, nc) = (mul(n.clone(), b.clone()), mul(n.clone(), c.clone()));
+            let s1 = add_comm()
+                .all_elim(nb.clone())?
+                .all_elim(nc.clone())?
+                .cong_arg(Term::app(nat_add(), add(b.clone(), c.clone())))?; // (b+c)+(nb+nc) = (b+c)+(nc+nb)
+            let s2 = elim4(add_interchange(), &b, &c, &nc, &nb)?; // (b+c)+(nc+nb) = (b+nb)+(c+nc)
+            let mid = s1.trans(s2)?;
+            lhs.trans(mid)?
+                .trans(rhs.sym()?)?
+                .all_intro("c", nat())?
+                .all_intro("b", nat())?
+        };
+        let step = inner.imp_intro(&ihc)?;
+        induct(&motive, base, step)
     }
-}
-fn distrib_impl() -> Result<Thm> {
-    // body[n] ≔ ∀b c. n*(b+c) = n*b + n*c
-    let body_at = |t: &Term| -> Result<Term> {
-        let (b, c) = (var("b"), var("c"));
-        mul(t.clone(), add(b.clone(), c.clone()))
-            .equals(add(mul(t.clone(), b.clone()), mul(t.clone(), c)))?
-            .forall("c", nat())?
-            .forall("b", nat())
-    };
-    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
-
-    // base: 0*(b+c) = 0*b + 0*c  (both 0).
-    let base = {
-        let (b, c) = (var("b"), var("c"));
-        let l = mul_base().all_elim(add(b.clone(), c.clone()))?; // 0*(b+c) = 0
-        let rb = mul_base().all_elim(b.clone())?; // 0*b = 0
-        let rc = mul_base().all_elim(c.clone())?; // 0*c = 0
-        let r = cong_add(rb, rc)?.trans(add_base().all_elim(zero())?)?; // 0*b+0*c = 0
-        l.trans(r.sym()?)?
-            .all_intro("c", nat())?
-            .all_intro("b", nat())?
-    };
-
-    // step: body[n] ⟹ body[S n].
-    let n = var("n");
-    let ihc = body_at(&n)?;
-    let inner = {
-        let (b, c) = (var("b"), var("c"));
-        let ih = Thm::assume(ihc.clone())?
-            .all_elim(b.clone())?
-            .all_elim(c.clone())?; // n*(b+c) = n*b + n*c
-        // LHS: S n*(b+c) = (b+c) + n*(b+c)  [mul_step]  = (b+c) + (n*b+n*c)  [ih]
-        let l1 = mul_step()
-            .all_elim(n.clone())?
-            .all_elim(add(b.clone(), c.clone()))?;
-        let l2 = ih.cong_arg(Term::app(nat_add(), add(b.clone(), c.clone())))?;
-        let lhs = l1.trans(l2)?; // S n*(b+c) = (b+c) + (n*b+n*c)
-        // RHS: S n*b + S n*c = (b+n*b) + (c+n*c)  [mul_step both]
-        let rb = mul_step().all_elim(n.clone())?.all_elim(b.clone())?; // S n*b = b+n*b
-        let rc = mul_step().all_elim(n.clone())?.all_elim(c.clone())?; // S n*c = c+n*c
-        let rhs = cong_add(rb, rc)?;
-        // Bridge: (b+c)+(n*b+n*c) = (b+n*b)+(c+n*c) — commute the inner pair,
-        // then the additive interchange swaps the middle two.
-        let (nb, nc) = (mul(n.clone(), b.clone()), mul(n.clone(), c.clone()));
-        let s1 = add_comm()
-            .all_elim(nb.clone())?
-            .all_elim(nc.clone())?
-            .cong_arg(Term::app(nat_add(), add(b.clone(), c.clone())))?; // (b+c)+(nb+nc) = (b+c)+(nc+nb)
-        let s2 = elim4(add_interchange(), &b, &c, &nc, &nb)?; // (b+c)+(nc+nb) = (b+nb)+(c+nc)
-        let mid = s1.trans(s2)?;
-        lhs.trans(mid)?
-            .trans(rhs.sym()?)?
-            .all_intro("c", nat())?
-            .all_intro("b", nat())?
-    };
-    let step = inner.imp_intro(&ihc)?;
-    induct(&motive, base, step)
 }
 
 cached_thm! {
     /// `⊢ ∀a b c. (a + b) * c = a * c + b * c` — right distributivity, by
     /// [`mul_comm`] from the left law [`distrib`].
-    pub fn distrib_r() -> Thm {
-        distrib_r_impl().expect("distrib_r derivation")
+    pub fn distrib_r() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let s1 = mul_comm()
+            .all_elim(add(a.clone(), b.clone()))?
+            .all_elim(c.clone())?; // (a+b)*c = c*(a+b)
+        let s2 = distrib()
+            .all_elim(c.clone())?
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?; // c*(a+b) = c*a + c*b
+        let ca = mul_comm().all_elim(c.clone())?.all_elim(a.clone())?; // c*a = a*c
+        let cb = mul_comm().all_elim(c.clone())?.all_elim(b.clone())?; // c*b = b*c
+        let s3 = cong_add(ca, cb)?; // c*a + c*b = a*c + b*c
+        s1.trans(s2)?
+            .trans(s3)?
+            .all_intro("c", nat())?
+            .all_intro("b", nat())?
+            .all_intro("a", nat())
     }
-}
-fn distrib_r_impl() -> Result<Thm> {
-    let (a, b, c) = (var("a"), var("b"), var("c"));
-    let s1 = mul_comm()
-        .all_elim(add(a.clone(), b.clone()))?
-        .all_elim(c.clone())?; // (a+b)*c = c*(a+b)
-    let s2 = distrib()
-        .all_elim(c.clone())?
-        .all_elim(a.clone())?
-        .all_elim(b.clone())?; // c*(a+b) = c*a + c*b
-    let ca = mul_comm().all_elim(c.clone())?.all_elim(a.clone())?; // c*a = a*c
-    let cb = mul_comm().all_elim(c.clone())?.all_elim(b.clone())?; // c*b = b*c
-    let s3 = cong_add(ca, cb)?; // c*a + c*b = a*c + b*c
-    s1.trans(s2)?
-        .trans(s3)?
-        .all_intro("c", nat())?
-        .all_intro("b", nat())?
-        .all_intro("a", nat())
 }
 
 // ---- transitivity, via the additive structure of ≤ ----
 
 cached_thm! {
     /// `⊢ ∀a k. a ≤ a + k` — adding on the right never decreases.
-    pub fn le_add_r() -> Thm {
-        le_add_r_impl().expect("le_add_r")
-    }
-}
-fn le_add_r_impl() -> Result<Thm> {
-    let a = var("a");
-    // motive λa. ∀k. a ≤ a + k
-    let body_at = |t: &Term| -> Result<Term> {
+    pub fn le_add_r() -> Result<Thm> {
+        let a = var("a");
+        // motive λa. ∀k. a ≤ a + k
+        let body_at = |t: &Term| -> Result<Term> {
+            let k = var("k");
+            le_t(t.clone(), add(t.clone(), k.clone())).forall("k", nat())
+        };
+        let motive = Term::abs(nat(), subst::close(&body_at(&a)?, "a"));
+        // base a = 0: ∀k. 0 ≤ 0 + k.
+        let base = {
+            let k = var("k");
+            le_zero()
+                .all_elim(add(zero(), k.clone()))?
+                .all_intro("k", nat())?
+        };
+        // step: (∀k. a ≤ a+k) ⟹ (∀k. S a ≤ S a + k).
+        let ihc = body_at(&a)?;
         let k = var("k");
-        le_t(t.clone(), add(t.clone(), k.clone())).forall("k", nat())
-    };
-    let motive = Term::abs(nat(), subst::close(&body_at(&a)?, "a"));
-    // base a = 0: ∀k. 0 ≤ 0 + k.
-    let base = {
-        let k = var("k");
-        le_zero()
-            .all_elim(add(zero(), k.clone()))?
+        let ih_k = Thm::assume(ihc.clone())?.all_elim(k.clone())?; // a ≤ a+k
+        let c4 = le_c4()
+            .all_elim(a.clone())?
+            .all_elim(add(a.clone(), k.clone()))?; // (Sa ≤ S(a+k)) = (a ≤ a+k)
+        let sa_le = c4.sym()?.eq_mp(ih_k)?; // Sa ≤ S(a+k)
+        let astep = add_step().all_elim(a.clone())?.all_elim(k.clone())?; // Sa+k = S(a+k)
+        // (Sa ≤ S(a+k)) = (Sa ≤ Sa+k)  by rewriting S(a+k) ↦ Sa+k.
+        let congle = Thm::refl(nat_le())?
+            .cong_app(Thm::refl(succ(a.clone()))?)?
+            .cong_app(astep.sym()?)?;
+        let step = congle
+            .eq_mp(sa_le)?
             .all_intro("k", nat())?
-    };
-    // step: (∀k. a ≤ a+k) ⟹ (∀k. S a ≤ S a + k).
-    let ihc = body_at(&a)?;
-    let k = var("k");
-    let ih_k = Thm::assume(ihc.clone())?.all_elim(k.clone())?; // a ≤ a+k
-    let c4 = le_c4()
-        .all_elim(a.clone())?
-        .all_elim(add(a.clone(), k.clone()))?; // (Sa ≤ S(a+k)) = (a ≤ a+k)
-    let sa_le = c4.sym()?.eq_mp(ih_k)?; // Sa ≤ S(a+k)
-    let astep = add_step().all_elim(a.clone())?.all_elim(k.clone())?; // Sa+k = S(a+k)
-    // (Sa ≤ S(a+k)) = (Sa ≤ Sa+k)  by rewriting S(a+k) ↦ Sa+k.
-    let congle = Thm::refl(nat_le())?
-        .cong_app(Thm::refl(succ(a.clone()))?)?
-        .cong_app(astep.sym()?)?;
-    let step = congle
-        .eq_mp(sa_le)?
-        .all_intro("k", nat())?
-        .imp_intro(&ihc)?;
-    induct_on("a", &motive, base, step)
+            .imp_intro(&ihc)?;
+        induct_on("a", &motive, base, step)
+    }
 }
 
 /// `(a ≤ b) ⟹ a + (b - a) = b` — the order/subtraction body at `a`, `b`.
@@ -1663,60 +1563,56 @@ fn le_add_sub_body(a: &Term, b: &Term) -> Result<Term> {
 cached_thm! {
     /// `⊢ ∀a b. (a ≤ b) ⟹ a + (b - a) = b` — `≤` lets subtraction undo
     /// addition.
-    pub fn le_add_sub() -> Thm {
-        le_add_sub_impl().expect("le_add_sub")
-    }
-}
-fn le_add_sub_impl() -> Result<Thm> {
-    // base a = 0: ∀b. (0 ≤ b) ⟹ 0 + (b - 0) = b.
-    let base = {
-        let b = var("b");
-        add_base()
-            .all_elim(sub(b.clone(), zero()))? // 0 + (b-0) = b-0
-            .trans(sub_zero().all_elim(b.clone())?)? // = b
-            .imp_intro(&le_t(zero(), b.clone()))?
-            .all_intro("b", nat())?
-    };
-
-    let step = |ih_a: Thm| -> Result<Thm> {
-        let a = var("a");
-        let b = var("b");
-        let motive_b = Term::abs(
-            nat(),
-            subst::close(&le_add_sub_body(&succ(a.clone()), &b)?, "b"),
-        );
-        // inner base b = 0: (S a ≤ 0) ⟹ … — antecedent false.
-        let inner_base = {
-            let sa0 = le_t(succ(a.clone()), zero());
-            not_succ_le_zero()
-                .all_elim(a.clone())?
-                .not_elim(Thm::assume(sa0.clone())?)?
-                .false_elim(add(succ(a.clone()), sub(zero(), succ(a.clone()))).equals(zero())?)?
-                .imp_intro(&sa0)?
+    pub fn le_add_sub() -> Result<Thm> {
+        // base a = 0: ∀b. (0 ≤ b) ⟹ 0 + (b - 0) = b.
+        let base = {
+            let b = var("b");
+            add_base()
+                .all_elim(sub(b.clone(), zero()))? // 0 + (b-0) = b-0
+                .trans(sub_zero().all_elim(b.clone())?)? // = b
+                .imp_intro(&le_t(zero(), b.clone()))?
+                .all_intro("b", nat())?
         };
-        // inner step b = S b': cancel one successor, apply IH_a @ b'.
-        let inner_ihc = le_add_sub_body(&succ(a.clone()), &b)?;
-        let sasb = le_t(succ(a.clone()), succ(b.clone()));
-        let ab = le_c4()
-            .all_elim(a.clone())?
-            .all_elim(b.clone())?
-            .eq_mp(Thm::assume(sasb.clone())?)?; // {Sa≤Sb} ⊢ a≤b
-        let iha = ih_a.all_elim(b.clone())?.imp_elim(ab)?; // {Sa≤Sb} ⊢ a+(b-a)=b
-        let ss = sub_succ_succ().all_elim(b.clone())?.all_elim(a.clone())?; // Sb-Sa = b-a
-        // Sa+(Sb-Sa) = Sa+(b-a) = S(a+(b-a)) = S b = S b'
-        let eq = ss
-            .cong_arg(Term::app(nat_add(), succ(a.clone())))? // Sa+(Sb-Sa) = Sa+(b-a)
-            .trans(
-                add_step()
-                    .all_elim(a.clone())?
-                    .all_elim(sub(b.clone(), a.clone()))?, // = S(a+(b-a))
-            )?
-            .trans(iha.cong_arg(nat_succ())?)?; // = S b
-        let inner_step = eq.imp_intro(&sasb)?.imp_intro(&inner_ihc)?;
-        induct_on("b", &motive_b, inner_base, inner_step)
-    };
 
-    induct_forall2(le_add_sub_body, base, step)
+        let step = |ih_a: Thm| -> Result<Thm> {
+            let a = var("a");
+            let b = var("b");
+            let motive_b = Term::abs(nat(), subst::close(&le_add_sub_body(&succ(a.clone()), &b)?, "b"));
+            // inner base b = 0: (S a ≤ 0) ⟹ … — antecedent false.
+            let inner_base = {
+                let sa0 = le_t(succ(a.clone()), zero());
+                not_succ_le_zero()
+                    .all_elim(a.clone())?
+                    .not_elim(Thm::assume(sa0.clone())?)?
+                    .false_elim(
+                        add(succ(a.clone()), sub(zero(), succ(a.clone()))).equals(zero())?,
+                    )?
+                    .imp_intro(&sa0)?
+            };
+            // inner step b = S b': cancel one successor, apply IH_a @ b'.
+            let inner_ihc = le_add_sub_body(&succ(a.clone()), &b)?;
+            let sasb = le_t(succ(a.clone()), succ(b.clone()));
+            let ab = le_c4()
+                .all_elim(a.clone())?
+                .all_elim(b.clone())?
+                .eq_mp(Thm::assume(sasb.clone())?)?; // {Sa≤Sb} ⊢ a≤b
+            let iha = ih_a.all_elim(b.clone())?.imp_elim(ab)?; // {Sa≤Sb} ⊢ a+(b-a)=b
+            let ss = sub_succ_succ().all_elim(b.clone())?.all_elim(a.clone())?; // Sb-Sa = b-a
+            // Sa+(Sb-Sa) = Sa+(b-a) = S(a+(b-a)) = S b = S b'
+            let eq = ss
+                .cong_arg(Term::app(nat_add(), succ(a.clone())))? // Sa+(Sb-Sa) = Sa+(b-a)
+                .trans(
+                    add_step()
+                        .all_elim(a.clone())?
+                        .all_elim(sub(b.clone(), a.clone()))?, // = S(a+(b-a))
+                )?
+                .trans(iha.cong_arg(nat_succ())?)?; // = S b
+            let inner_step = eq.imp_intro(&sasb)?.imp_intro(&inner_ihc)?;
+            induct_on("b", &motive_b, inner_base, inner_step)
+        };
+
+        induct_forall2(le_add_sub_body, base, step)
+    }
 }
 
 cached_thm! {
@@ -1725,112 +1621,106 @@ cached_thm! {
     /// `a ≤ b` and `b ≤ c` give `a + (b-a) = b` and `b + (c-b) = c`
     /// ([`le_add_sub`]), so `a + ((b-a) + (c-b)) = c` by associativity,
     /// and [`le_add_r`] turns that into `a ≤ c`.
-    pub fn le_trans() -> Thm {
-        le_trans_impl().expect("le_trans")
+    pub fn le_trans() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let hab = le_t(a.clone(), b.clone());
+        let hbc = le_t(b.clone(), c.clone());
+        let (p, q) = (sub(b.clone(), a.clone()), sub(c.clone(), b.clone())); // b-a, c-b
+
+        let e1 = le_add_sub()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .imp_elim(Thm::assume(hab.clone())?)?; // {a≤b} ⊢ a+(b-a) = b
+        let e2 = le_add_sub()
+            .all_elim(b.clone())?
+            .all_elim(c.clone())?
+            .imp_elim(Thm::assume(hbc.clone())?)?; // {b≤c} ⊢ b+(c-b) = c
+
+        // a + (p+q) = (a+p)+q = b+q = c
+        let a_pq_eq_c = add_assoc()
+            .all_elim(a.clone())?
+            .all_elim(p.clone())?
+            .all_elim(q.clone())? // (a+p)+q = a+(p+q)
+            .sym()?
+            .trans(cong_add_l(e1, q.clone())?)? // = b+q
+            .trans(e2)?; // = c
+
+        // a ≤ a+(p+q), then rewrite a+(p+q) ↦ c.
+        let lar = le_add_r()
+            .all_elim(a.clone())?
+            .all_elim(add(p.clone(), q.clone()))?; // a ≤ a+(p+q)
+        let a_le_c = Thm::refl(nat_le())?
+            .cong_app(Thm::refl(a.clone())?)?
+            .cong_app(a_pq_eq_c)? // (a ≤ a+(p+q)) = (a ≤ c)
+            .eq_mp(lar)?;
+
+        a_le_c
+            .imp_intro(&hbc)?
+            .imp_intro(&hab)?
+            .all_intro("c", nat())?
+            .all_intro("b", nat())?
+            .all_intro("a", nat())
     }
-}
-fn le_trans_impl() -> Result<Thm> {
-    let (a, b, c) = (var("a"), var("b"), var("c"));
-    let hab = le_t(a.clone(), b.clone());
-    let hbc = le_t(b.clone(), c.clone());
-    let (p, q) = (sub(b.clone(), a.clone()), sub(c.clone(), b.clone())); // b-a, c-b
-
-    let e1 = le_add_sub()
-        .all_elim(a.clone())?
-        .all_elim(b.clone())?
-        .imp_elim(Thm::assume(hab.clone())?)?; // {a≤b} ⊢ a+(b-a) = b
-    let e2 = le_add_sub()
-        .all_elim(b.clone())?
-        .all_elim(c.clone())?
-        .imp_elim(Thm::assume(hbc.clone())?)?; // {b≤c} ⊢ b+(c-b) = c
-
-    // a + (p+q) = (a+p)+q = b+q = c
-    let a_pq_eq_c = add_assoc()
-        .all_elim(a.clone())?
-        .all_elim(p.clone())?
-        .all_elim(q.clone())? // (a+p)+q = a+(p+q)
-        .sym()?
-        .trans(cong_add_l(e1, q.clone())?)? // = b+q
-        .trans(e2)?; // = c
-
-    // a ≤ a+(p+q), then rewrite a+(p+q) ↦ c.
-    let lar = le_add_r()
-        .all_elim(a.clone())?
-        .all_elim(add(p.clone(), q.clone()))?; // a ≤ a+(p+q)
-    let a_le_c = Thm::refl(nat_le())?
-        .cong_app(Thm::refl(a.clone())?)?
-        .cong_app(a_pq_eq_c)? // (a ≤ a+(p+q)) = (a ≤ c)
-        .eq_mp(lar)?;
-
-    a_le_c
-        .imp_intro(&hbc)?
-        .imp_intro(&hab)?
-        .all_intro("c", nat())?
-        .all_intro("b", nat())?
-        .all_intro("a", nat())
 }
 
 cached_thm! {
     /// `⊢ ∀a b c. (a * b) * c = a * (b * c)` — associativity of `*`
     /// (induction on `a`, using [`distrib_r`] at the step).
-    pub fn mul_assoc() -> Thm {
-        mul_assoc_impl().expect("mul_assoc derivation")
+    pub fn mul_assoc() -> Result<Thm> {
+        // body[n] ≔ ∀b c. (n*b)*c = n*(b*c)
+        let body_at = |t: &Term| -> Result<Term> {
+            let (b, c) = (var("b"), var("c"));
+            mul(mul(t.clone(), b.clone()), c.clone())
+                .equals(mul(t.clone(), mul(b.clone(), c)))?
+                .forall("c", nat())?
+                .forall("b", nat())
+        };
+        let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+        // base: (0*b)*c = 0*(b*c)  (both 0).
+        let base = {
+            let (b, c) = (var("b"), var("c"));
+            let l1 = cong_mul_l(mul_base().all_elim(b.clone())?, c.clone())?; // (0*b)*c = 0*c
+            let l2 = mul_base().all_elim(c.clone())?; // 0*c = 0
+            let r = mul_base().all_elim(mul(b.clone(), c.clone()))?.sym()?; // 0 = 0*(b*c)
+            l1.trans(l2)?
+                .trans(r)?
+                .all_intro("c", nat())?
+                .all_intro("b", nat())?
+        };
+
+        // step: body[n] ⟹ body[S n].
+        let n = var("n");
+        let ihc = body_at(&n)?;
+        let inner = {
+            let (b, c) = (var("b"), var("c"));
+            let ih = Thm::assume(ihc.clone())?
+                .all_elim(b.clone())?
+                .all_elim(c.clone())?; // (n*b)*c = n*(b*c)
+            // LHS: (S n*b)*c = (b + n*b)*c  [mul_step]  = b*c + (n*b)*c  [distrib_r]
+            //               = b*c + n*(b*c)  [ih]
+            let l1 = cong_mul_l(
+                mul_step().all_elim(n.clone())?.all_elim(b.clone())?,
+                c.clone(),
+            )?;
+            let l2 = distrib_r()
+                .all_elim(b.clone())?
+                .all_elim(mul(n.clone(), b.clone()))?
+                .all_elim(c.clone())?;
+            let l3 = ih.cong_arg(Term::app(nat_add(), mul(b.clone(), c.clone())))?;
+            // RHS: S n*(b*c) = (b*c) + n*(b*c)  [mul_step]
+            let r1 = mul_step()
+                .all_elim(n.clone())?
+                .all_elim(mul(b.clone(), c.clone()))?;
+            l1.trans(l2)?
+                .trans(l3)?
+                .trans(r1.sym()?)?
+                .all_intro("c", nat())?
+                .all_intro("b", nat())?
+        };
+        let step = inner.imp_intro(&ihc)?;
+        induct(&motive, base, step)
     }
-}
-fn mul_assoc_impl() -> Result<Thm> {
-    // body[n] ≔ ∀b c. (n*b)*c = n*(b*c)
-    let body_at = |t: &Term| -> Result<Term> {
-        let (b, c) = (var("b"), var("c"));
-        mul(mul(t.clone(), b.clone()), c.clone())
-            .equals(mul(t.clone(), mul(b.clone(), c)))?
-            .forall("c", nat())?
-            .forall("b", nat())
-    };
-    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
-
-    // base: (0*b)*c = 0*(b*c)  (both 0).
-    let base = {
-        let (b, c) = (var("b"), var("c"));
-        let l1 = cong_mul_l(mul_base().all_elim(b.clone())?, c.clone())?; // (0*b)*c = 0*c
-        let l2 = mul_base().all_elim(c.clone())?; // 0*c = 0
-        let r = mul_base().all_elim(mul(b.clone(), c.clone()))?.sym()?; // 0 = 0*(b*c)
-        l1.trans(l2)?
-            .trans(r)?
-            .all_intro("c", nat())?
-            .all_intro("b", nat())?
-    };
-
-    // step: body[n] ⟹ body[S n].
-    let n = var("n");
-    let ihc = body_at(&n)?;
-    let inner = {
-        let (b, c) = (var("b"), var("c"));
-        let ih = Thm::assume(ihc.clone())?
-            .all_elim(b.clone())?
-            .all_elim(c.clone())?; // (n*b)*c = n*(b*c)
-        // LHS: (S n*b)*c = (b + n*b)*c  [mul_step]  = b*c + (n*b)*c  [distrib_r]
-        //               = b*c + n*(b*c)  [ih]
-        let l1 = cong_mul_l(
-            mul_step().all_elim(n.clone())?.all_elim(b.clone())?,
-            c.clone(),
-        )?;
-        let l2 = distrib_r()
-            .all_elim(b.clone())?
-            .all_elim(mul(n.clone(), b.clone()))?
-            .all_elim(c.clone())?;
-        let l3 = ih.cong_arg(Term::app(nat_add(), mul(b.clone(), c.clone())))?;
-        // RHS: S n*(b*c) = (b*c) + n*(b*c)  [mul_step]
-        let r1 = mul_step()
-            .all_elim(n.clone())?
-            .all_elim(mul(b.clone(), c.clone()))?;
-        l1.trans(l2)?
-            .trans(l3)?
-            .trans(r1.sym()?)?
-            .all_intro("c", nat())?
-            .all_intro("b", nat())?
-    };
-    let step = inner.imp_intro(&ihc)?;
-    induct(&motive, base, step)
 }
 
 #[cfg(test)]

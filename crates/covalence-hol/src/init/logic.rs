@@ -14,9 +14,9 @@
 //! derived *rules* here ([`and_sym`], [`or_sym`]) return [`Result`] and
 //! thread errors with `?`. The closed *theorems* ([`truth`],
 //! [`and_comm`], [`or_comm`]) are `init` proofs: they return [`Thm`]
-//! and `expect` on failure, since a failure is a build-time bug. See
-//! [`crate::proofs::bool`] for the *derivations* witnessing the
-//! connective primitives' soundness.
+//! and `expect` on failure, since a failure is a build-time bug. The
+//! connective primitives carry their soundness justifications as
+//! `Soundness:` docstrings in `covalence-core` (`defs/logic.rs`).
 //!
 //! On top of that sit the **classical** procedures, all powered by
 //! [`Thm::lem`]:

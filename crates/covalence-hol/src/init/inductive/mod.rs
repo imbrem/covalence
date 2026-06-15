@@ -33,12 +33,16 @@
 //! - **Uniqueness — inversion** ([`uniqueness`]) — done and generic:
 //!   `graph_inv` over any [`Inductive`], its `Good`-relation closedness
 //!   discharged by the trait's `injective` / `distinct`. `nat` consumes it.
-//! - **Uniqueness — determinacy** and the **ε-assembly** — still specialised
-//!   to `nat` in [`crate::init::recursion`]; generalising them, and deriving
-//!   `list`'s induction principle + freeness to feed the engine, are tracked
-//!   in `SKELETONS.md`.
+//! - **Uniqueness — determinacy** ([`determinacy`]) — done and generic:
+//!   `graph_det` folds the supplied induction over `graph_inv`. `nat`
+//!   consumes it. (Multi-recursive-argument constructors not yet handled.)
+//! - **ε-assembly** — the only remaining `nat`-specific piece (in
+//!   [`crate::init::recursion`]); it couples to the recursor's `defs`
+//!   selector predicate. Generalising it, and deriving `list`'s induction
+//!   principle + freeness to feed the engine, are tracked in `SKELETONS.md`.
 
 pub mod data;
+pub mod determinacy;
 pub mod existence;
 pub mod graph;
 pub mod sig;

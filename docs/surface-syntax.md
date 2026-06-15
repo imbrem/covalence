@@ -91,6 +91,104 @@ The planner can be arbitrarily clever, learned, or simply wrong: a bad
 plan is slow or fails, but it is never *unsound*. That is precisely what
 makes "the query planner can be an LLM" a safe thing to say out loud.
 
+### 1.3 Everything is a pure S-expression
+
+There is **no infix syntax**. The arrows, colons, and rewrite arrows
+that appear in this document — `'a -> 'b`, `none : option 'a`, `lhs =>
+rhs` — are **prose sugar for readability only**. The actual language is
+*pure S-expressions*, in which every reserved word is a **`#`-headed
+builtin**:
+
+| sugar (used in prose below) | pure form |
+|---|---|
+| `'a -> 'b` | `(#fn 'a 'b)` |
+| `none : option 'a` | `(#sig none (option 'a))` |
+| `lhs => rhs` | `(#rw lhs rhs)` |
+| `(= a b)` | `(#eq a b)` |
+| `λa. body` / `(lam a body)` | `(#lam a body)` |
+| `(newtype …)` | `(#newtype …)` |
+| `(by …)` | `(#by …)` |
+
+A token's **lexical class is a pure function of its spelling**, so the
+parser never needs scope to route it:
+
+- **`#…`** — a **builtin** keyword. This covers *both* the directive
+  heads (`#theory`, `#def`, `#thm`, …) *and* every type/term form head
+  (`#fn`, `#lam`, `#eq`, `#sel`, `#abs`, `#rep`, …). A `#foo` that is not
+  a known builtin is a *malformed* token, not a name — the parser rejects
+  it.
+- **`'…`** — a **type variable** (`'a`, `'b`).
+- **everything else** — an ordinary **name**, of two kinds: a *dotted
+  catalogue* reference into `defs/` (`coprod.case`, `option.some`,
+  `unit.nil`) or a *local* name (a bound variable or a symbol the
+  enclosing `#theory` declares: `option`, `some`, `e`, `f`). Whether a
+  local name is a bound variable or a declared constant is the
+  *elaborator's* decision; the parser only records the token.
+
+So the §4.1 `option` spec, written out in the real pure syntax, is:
+
+```scheme
+(#theory option
+  (#tydecl
+    (option 'a #ty))
+  (#decl
+    (#sig none (option 'a))
+    (#sig some (#fn 'a (option 'a)))
+    (#sig case (#fn (option 'a) 'b (#fn 'a 'b) 'b)))
+  (#clause
+    (#rw e none)
+    (#rw e (some a)))
+  (#clause
+    (#rw (case none b f) b))
+  (#clause
+    (#rw (case (some a) b f) (f a))))
+```
+
+The remaining sections keep using the lighter sugar for legibility, but
+that table is the whole translation — there is nothing else to it.
+
+### 1.4 The term sublanguage (and lifting it into the TCB)
+
+One fragment of the language is special enough to name on its own: the
+**term sublanguage**, the grammar that `#def` bodies and the leaves of
+`(#by …)` proofs are written in. It is a **simply-typed lambda
+calculus** over the kernel's two logical primitives and the `defs/`
+catalogue:
+
+```text
+term ::= NAME                         ;; var / local constant / dotted catalogue ref
+      |  (term term+)                 ;; curried application (f x y …)
+      |  (#lam x term)                ;; lambda  — (#lam (x A) term) to type-ascribe
+      |  (#eq term term)              ;; primitive equality  =
+      |  (#sel (x A) term)            ;; Hilbert choice  ε
+      |  (#abs SPEC (ty*) term)       ;; TypeSpec carrier→wrapper coercion
+      |  (#rep SPEC (ty*) term)       ;; TypeSpec wrapper→carrier coercion
+      |  NUMERAL                      ;; integer literal
+      |  (#blob …)                    ;; byte-string literal
+```
+
+Two properties make it worth isolating:
+
+1. **It supports lambdas.** `#lam` is the one non-trivial binder, and it
+   is what lets the sublanguage express the `defs/` bodies at all — `some
+   ≡ λa. abs (inl a)` becomes `(#lam a (#abs option ('a) (inl a)))`,
+   one-for-one with the Rust `let`-body.
+2. **It has no operational semantics of its own.** Consistent with §1.1,
+   the sublanguage *names* terms; it never *reduces* them. `case (some a)
+   b f = f a` is a theorem the kernel establishes, not a rewrite the
+   sublanguage performs.
+
+Because it is this small and this closed, the term sublanguage is the
+natural candidate to eventually **move into the TCB**: a trusted
+elaboration of just these constructors into kernel `Term`s would let us
+write the `defs/` catalogue *in this sublanguage* instead of in
+hand-threaded `Term::app` / `Term::abs` Rust. The directive and proof
+layers stay firmly outside the TCB (they only ever *produce checkable
+obligations*); the term sublanguage is the one piece we may choose to
+trust directly, so it is kept as a sharply-delimited grammar from the
+start. A first sketch of the AST lives in
+[`crates/covalence-hol/src/surface/`](../crates/covalence-hol/src/surface/).
+
 ---
 
 ## 2. Two artifacts: **specs** and **definitions**

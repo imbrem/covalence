@@ -332,3 +332,35 @@ coupling guard.
   kernel rewrite. What remains is the content-addressed store wiring
   (`backend.rs`, `store.rs`) plus the empty `facts` module above. Recover the
   old prover from the `backup/pre-hol-cleanup` branch if needed.
+
+## Proof-script layer (`covalence-hol/src/script`)
+
+The S-expression authoring + replay layer (`Env`/prelude, the named term
+parser, `Drv` proof terms, the `check` interpreter, the `rw`/`tauto`
+tactics). The **parse → replay** direction is built and tested (`and_comm`
+ported and checked equal to the Rust `init::logic::and_comm`); these are
+deliberately deferred:
+
+- **No `Drv`/`Term` pretty-printer (serialization-out).** `script` only
+  *parses* the named syntax and *replays* it; there is no printer from a
+  `Drv`/`Term` back to the surface S-expression. This blocks content-addressing
+  (hashing a proof term) and `(lemma …)`-by-hash references — both noted as
+  future in `docs/surface-syntax.md` §7. Authoring (the immediate goal —
+  porting the Rust `init/` theorems) needs only the parse direction. When
+  added, reuse/extend the low-level printers in `crates/covalence-hol/src/sexp.rs`
+  and the hasher in `hash.rs` (which today cover terms/types but **not** proofs).
+- **`rw` does not descend under binders.** `rewrite_conv` in `script/drv.rs`
+  rewrites through `App` and at leaves but returns `refl` for `Abs`, so it
+  cannot rewrite inside `λ`/`∀`/`∃` bodies. Adequate for the quantifier-free
+  goals it targets now; going under binders needs de-Bruijn-aware shifting of
+  the equation.
+- **Prelude `Env::core()` covers only logic + nat.** The name→catalogue
+  resolvers are a starting set (the connectives, `=`, `nat.add/mul/sub/le/lt`,
+  `succ`). int/rat/real/list/option/prod/coprod/set catalogue names are not yet
+  bound; add entries to `script/syntax.rs::Env::core` (the `defs/` churn
+  boundary) as those theories are ported.
+- **No WASM/WIT kernel API.** The longer-term goal of authoring proofs in WASM
+  guests and importing them through a WIT kernel interface (driving the `Drv`
+  replay path across the component boundary) is not started. `check` is
+  intentionally the single kernel-coupled entry point such an interface would
+  sit behind.

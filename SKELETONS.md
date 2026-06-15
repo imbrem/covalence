@@ -111,10 +111,11 @@ it is how unfinished work stays discoverable.
   oracle-free). Still missing:
   - **`cons`-side computations** — `index`/`head`/`tail` of `cons x xs`. Each
     needs `finite (cons-stream)`, a finiteness-*preservation* lemma that rests
-    on `nat` **ordering** theory (`nat_le` successor/predecessor lemmas) not yet
-    developed in `init/nat.rs` (which currently has only `add`/`mul` facts). Add
-    the `nat_le` lemmas first, then `finite_cons`, then the `cons` element
-    lemmas follow the `init::stream` `at_of` pattern.
+    on `nat` **ordering** theory (`nat_le` successor/predecessor lemmas). That
+    order theory is now developed in `init/nat.rs` (the `le`/`lt` foundation:
+    `le_succ_succ`, `le_zero`, `zero_lt_succ`, `le_total`, `le_trans`, …), so
+    `finite_cons` is unblocked; build it, then the `cons` element lemmas follow
+    the `init::stream` `at_of` pattern.
   - **`tail_cons` / list extensionality / induction** — `tail (cons x xs) = xs`
     needs extensionality on the carrier stream (pointwise-equal ⟹ equal),
     re-discharging finiteness; list induction is the structural-recursion

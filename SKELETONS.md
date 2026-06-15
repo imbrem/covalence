@@ -114,22 +114,29 @@ it is how unfinished work stays discoverable.
 - **The `rat` quotient + ordered-field theory** in
   `crates/covalence-hol/src/init/rat.rs`. `rat := (int × int.pos) / ~`
   (cross-multiplication). Proved outright: `rat_rel_refl`, `rat_rel_symm`
-  (pure `int`-equation `refl`/`sym`), and `of_nat_via_int` (the ℕ↪ℚ
-  embedding factors through ℤ↪ℚ, by β). **Postulated** via the module's
-  `axiom` helper (each carrying its statement as a self-hyp):
+  (pure `int`-equation `refl`/`sym`); `of_nat_via_int` (the ℕ↪ℚ
+  embedding factors through ℤ↪ℚ, by β); and `add_comm` / `mul_comm` —
+  proved **on the nose**, exactly as `init::int`'s are: `ratAdd`/`ratMul`
+  are componentwise on representatives, so the two representative pairs are
+  provably equal (numerator + denominator each by the proved `int`
+  commutativity facts) and equal representatives lift to equal classes by
+  congruence under `mkRat`; no quotient relation and no `int` cancellation
+  are involved. **Postulated** via the module's `axiom` helper (each
+  carrying its statement as a self-hyp):
   - `rat_rel_trans` — transitivity of the cross-multiplication relation.
     Needs `int` *multiplicative cancellation by a positive* (cancel the
     common positive denominator), an `int` fact not yet discharged. Once
     that lands, this becomes the int-analogue of `int_rel_trans`.
-  - The ordered-field axioms over `rat_zero`/`rat_one`/`rat_add`/
-    `rat_neg`/`rat_mul`/`rat_lt` (commutative-ring `add_*`/`mul_*`/
-    `distrib`, multiplicative inverse `mul_inv`, the linear order
-    `lt_*`/`le_def`, and the base strictness fact `zero_lt_one` — `ratLt`
-    picks ε-representatives, so `0 < 1` is not reducible). Each is a HOL
-    theorem derivable from the `int` ordered-ring theory through the
-    quotient; filling them in does not change the public `fn` surface.
-    They depend transitively on the `int` postulates above. (The `≤`
-    toolkit `le_refl`/`lt_imp_le`/`le_trans`/`not_one_le_zero` is **not**
+  - The remaining ordered-field axioms over `rat_zero`/`rat_one`/`rat_add`/
+    `rat_neg`/`rat_mul`/`rat_lt` (commutative-ring `add_assoc`/`add_zero`/
+    `add_neg`/`mul_assoc`/`mul_one`/`mul_zero`/`distrib`, multiplicative
+    inverse `mul_inv`, the linear order `lt_*`/`le_def`, and the base
+    strictness fact `zero_lt_one` — `ratLt` picks ε-representatives, so
+    `0 < 1` is not reducible). Each is a HOL theorem derivable from the
+    `int` ordered-ring theory through the quotient; filling them in does
+    not change the public `fn` surface. They depend transitively on the
+    `int` postulates above. (The `≤` toolkit
+    `le_refl`/`lt_imp_le`/`le_trans`/`not_one_le_zero` is **not**
     postulated — it is *derived* from `le_def` + the strict-order facts.)
   - The two **mediant inequalities** `mediant_gt` / `mediant_lt` — the
     only postulated leaves of `dense` (which is itself *derived* from

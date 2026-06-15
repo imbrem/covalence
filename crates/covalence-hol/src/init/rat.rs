@@ -37,9 +37,14 @@
 //!   nat.toInt`, by composition) embed the integers and naturals.
 //! - **Ring / order.** The field operations ([`rat_zero`], [`rat_one`],
 //!   [`rat_add`], [`rat_neg`], [`rat_mul`]) and the strict order
-//!   ([`rat_lt`]) are defined at the representative level; the ordered-
-//!   field axioms over them are **postulated** (same audit-trail style as
-//!   `init::int`), pending the quotient derivations. On top of those, a
+//!   ([`rat_lt`]) are defined at the representative level. [`add_comm`] /
+//!   [`mul_comm`] are **proved** — on the nose, exactly as `init::int`'s
+//!   are, since the ops are componentwise on representatives (so equal
+//!   representative pairs lift to equal classes by congruence, needing only
+//!   the proved `int` commutativity facts, not the blocked cancellation).
+//!   The remaining ordered-field axioms over them are **postulated** (same
+//!   audit-trail style as `init::int`), pending the quotient derivations. On
+//!   top of those, a
 //!   small `≤` toolkit is **derived**: [`le_refl`], [`lt_imp_le`],
 //!   [`le_trans`], and [`not_one_le_zero`] (from [`le_def`] + the strict
 //!   facts + the one base postulate [`zero_lt_one`]). These are what the
@@ -50,7 +55,7 @@
 //!   mediant `(a+c)/(b+d)`, the witness that needs no division.
 
 use covalence_core::defs::{fst, int_pos_spec, int_pos_ty, prod, snd};
-use covalence_core::{Result, Term, Thm, Type, subst};
+use covalence_core::{Error, Result, Term, Thm, Type, subst};
 
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::{int, logic, nat};
@@ -339,13 +344,78 @@ pub fn rat_neg() -> Term {
 }
 
 // ============================================================================
-// Commutative-ring axioms (and the field inverse) — postulated
+// On-the-nose proof machinery (`add_comm` / `mul_comm`)
 // ============================================================================
 //
-// Same audit-trail style as `init::int`: each is a `Thm::assume` carrying
-// its statement as a self-hyp. They are HOL theorems of the quotient,
-// derivable from the `int` ordered-ring theory; discharging them does not
-// change this public surface. See `SKELETONS.md`.
+// `ratAdd` / `ratMul` are componentwise on representatives, so — exactly as
+// `init::int::add_comm` / `mul_comm` commute on the nose over `nat` — their
+// commutativity needs no quotient lifting at all: the two representative
+// *pairs* are provably equal (numerator by `int::add_comm` / `int::mul_comm`,
+// denominator by `int::mul_comm` under the `int.pos` re-wrap), and equal
+// representatives give equal classes by pure congruence under `mkRat`. This
+// rests only on the **proved** `int` commutativity facts, not on the
+// `int` cancellation that `rat_rel_trans` (and the rest of the ring/order
+// theory) is blocked on.
+
+/// β-reduce a binary shell op `op = λx y. body` applied to `a`, `b` down to
+/// `body[x:=a][y:=b]` *without* descending into the body: returns
+/// `⊢ op a b = body[x:=a][y:=b]`. (`reduce` would also fire the `mkRat`
+/// redexes inside the body; here we want the un-reduced `mkRat P` form so
+/// the congruence lift below can target the representative pair.)
+fn binary_beta(op: Term, a: Term, b: Term) -> Result<Thm> {
+    let head = Term::app(op, a); // (λx y. body) a
+    let applied = Thm::beta_conv(head)?.cong_fn(b)?; // ⊢ op a b = (λy. body_a) b
+    let rhs = applied.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    applied.trans(Thm::beta_conv(rhs)?) // ⊢ op a b = body_a[y:=b]
+}
+
+/// From `⊢ n1 = n2` and `⊢ d1 = d2` build `⊢ pair n1 d1 = pair n2 d2` at
+/// `int × int.pos` — congruence of the representative pair in both slots.
+fn pair_cong(num_eq: Thm, den_eq: Thm) -> Result<Thm> {
+    let pair_op = covalence_core::defs::pair(Type::int(), int_pos_ty());
+    let d1 = den_eq.concl().as_eq().ok_or(Error::NotAnEquation)?.0.clone();
+    // ⊢ pair n1 d1 = pair n2 d1, then ⊢ pair n2 d1 = pair n2 d2.
+    let left = num_eq.cong_arg(pair_op)?.cong_fn(d1)?;
+    // `pair n2` — the function side to rewrite the denominator under.
+    let pair_n2 = left
+        .concl()
+        .as_eq()
+        .ok_or(Error::NotAnEquation)?
+        .1
+        .as_app()
+        .ok_or(Error::NotAnEquation)?
+        .0
+        .clone();
+    let right = den_eq.cong_arg(pair_n2)?;
+    left.trans(right)
+}
+
+/// Lift `⊢ P = Q` (an equation between representative pairs) to
+/// `⊢ mkRat P = mkRat Q` by congruence — `mkRat p = abs (λq. rat_rel p q)`,
+/// so equal `p` give equal class-sets and hence equal classes. Reconstructs
+/// `quotient::mk_class`'s structure exactly (bound name `_q`).
+fn lift_to_class(pq: Thm) -> Result<Thm> {
+    let q = Term::free("_q", ip_pair());
+    let pointwise = pq.cong_arg(rat_rel())?.cong_fn(q)?; // ⊢ rat_rel P _q = rat_rel Q _q
+    let classes = pointwise.abs("_q", ip_pair())?; // ⊢ (λ_q. rat_rel P _q) = (λ_q. rat_rel Q _q)
+    classes.cong_arg(Term::spec_abs(rat_spec(), Vec::new())) // ⊢ mkRat P = mkRat Q
+}
+
+/// `int.pos` re-wrap as a *function* — the `f` for `cong_arg` when rewriting
+/// underneath `to_pos`.
+fn to_pos_fn() -> Term {
+    Term::spec_abs(int_pos_spec(), Vec::new())
+}
+
+// ============================================================================
+// Commutative-ring axioms (and the field inverse)
+// ============================================================================
+//
+// `add_comm` / `mul_comm` are **proved** (on the nose, see above). The
+// remaining axioms keep the audit-trail style of `init::int`: each is a
+// `Thm::assume` carrying its statement as a self-hyp. They are HOL theorems
+// of the quotient, derivable from the `int` ordered-ring theory; discharging
+// them does not change this public surface. See `SKELETONS.md`.
 
 fn rvar(name: &str) -> Term {
     Term::free(name, rat())
@@ -367,11 +437,38 @@ fn forall_rat(vars: &[&str], body: Term) -> Term {
     t
 }
 
-/// `⊢ ∀a b. a + b = b + a`.
-pub fn add_comm() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a b. a + b = b + a` — **proved**. `ratAdd` is componentwise on
+    /// representatives (`(a/b)+(c/d) = (a·d+c·b)/(b·d)`), so commutativity
+    /// holds *on the nose*: the numerator `a·d+c·b` commutes to `c·b+a·d`
+    /// by `int::add_comm`, the denominator `b·d` to `d·b` by
+    /// `int::mul_comm`, and equal representative pairs give equal classes
+    /// (`lift_to_class`). No quotient lifting, no `int` cancellation.
+    pub fn add_comm() -> Thm {
+        add_comm_impl().expect("rat::add_comm derivation")
+    }
+}
+fn add_comm_impl() -> Result<Thm> {
     let (a, b) = (rvar("a"), rvar("b"));
-    let eq = radd(a.clone(), b.clone()).equals(radd(b, a)).expect("add_comm");
-    axiom(forall_rat(&["a", "b"], eq))
+    let dl = binary_beta(rat_add(), a.clone(), b.clone())?; // ⊢ a+b = mkRat P
+    let dr = binary_beta(rat_add(), b.clone(), a.clone())?; // ⊢ b+a = mkRat Q
+
+    let (pa, pb) = (rep_pair(a.clone()), rep_pair(b.clone()));
+    // Numerator: (num pa·den pb) + (num pb·den pa)  commutes.
+    let num_eq = int::add_comm()
+        .all_elim(imul(num(&pa), den(&pb)))?
+        .all_elim(imul(num(&pb), den(&pa)))?;
+    // Denominator: (den pa·den pb)  commutes, under the `int.pos` re-wrap.
+    let den_eq = int::mul_comm()
+        .all_elim(den(&pa))?
+        .all_elim(den(&pb))?
+        .cong_arg(to_pos_fn())?;
+    let mkeq = lift_to_class(pair_cong(num_eq, den_eq)?)?; // ⊢ mkRat P = mkRat Q
+
+    dl.trans(mkeq)?
+        .trans(dr.sym()?)?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
 }
 
 /// `⊢ ∀a b c. (a + b) + c = a + (b + c)`.
@@ -396,11 +493,33 @@ pub fn add_neg() -> Thm {
     axiom(forall_rat(&["a"], eq))
 }
 
-/// `⊢ ∀a b. a * b = b * a`.
-pub fn mul_comm() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a b. a * b = b * a` — **proved**, like [`add_comm`]. `ratMul`
+    /// is `(a/b)·(c/d) = (a·c)/(b·d)`; the numerator `a·c` commutes to
+    /// `c·a` and the denominator `b·d` to `d·b`, both by `int::mul_comm`,
+    /// and equal representatives lift to equal classes.
+    pub fn mul_comm() -> Thm {
+        mul_comm_impl().expect("rat::mul_comm derivation")
+    }
+}
+fn mul_comm_impl() -> Result<Thm> {
     let (a, b) = (rvar("a"), rvar("b"));
-    let eq = rmul(a.clone(), b.clone()).equals(rmul(b, a)).expect("mul_comm");
-    axiom(forall_rat(&["a", "b"], eq))
+    let dl = binary_beta(rat_mul(), a.clone(), b.clone())?; // ⊢ a*b = mkRat P
+    let dr = binary_beta(rat_mul(), b.clone(), a.clone())?; // ⊢ b*a = mkRat Q
+
+    let (pa, pb) = (rep_pair(a.clone()), rep_pair(b.clone()));
+    // Numerator num pa·num pb and denominator den pa·den pb each commute.
+    let num_eq = int::mul_comm().all_elim(num(&pa))?.all_elim(num(&pb))?;
+    let den_eq = int::mul_comm()
+        .all_elim(den(&pa))?
+        .all_elim(den(&pb))?
+        .cong_arg(to_pos_fn())?;
+    let mkeq = lift_to_class(pair_cong(num_eq, den_eq)?)?; // ⊢ mkRat P = mkRat Q
+
+    dl.trans(mkeq)?
+        .trans(dr.sym()?)?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
 }
 
 /// `⊢ ∀a b c. (a * b) * c = a * (b * c)`.
@@ -887,12 +1006,12 @@ mod tests {
 
     #[test]
     fn ring_axioms_are_well_typed_and_self_flagged() {
+        // The still-postulated ring/field axioms (add_comm / mul_comm are
+        // now proved — see `commutativity_is_genuine`).
         let all = [
-            add_comm(),
             add_assoc(),
             add_zero(),
             add_neg(),
-            mul_comm(),
             mul_assoc(),
             mul_one(),
             mul_zero(),
@@ -905,6 +1024,23 @@ mod tests {
                 ax.hyps().iter().any(|h| h == ax.concl()),
                 "a postulated rat axiom carries itself as a hypothesis"
             );
+        }
+    }
+
+    #[test]
+    fn commutativity_is_genuine() {
+        // add_comm / mul_comm are proved (no hypotheses), on the nose from
+        // the proved `int` commutativity facts through the quotient.
+        let (a, b) = (rvar("a"), rvar("b"));
+        for (thm, op) in [
+            (add_comm(), rat_add() as Term),
+            (mul_comm(), rat_mul()),
+        ] {
+            assert!(thm.hyps().is_empty(), "rat commutativity is proved, not postulated");
+            let inst = thm.all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
+            let bin = |x: Term, y: Term| Term::app(Term::app(op.clone(), x), y);
+            let expected = bin(a.clone(), b.clone()).equals(bin(b.clone(), a.clone())).unwrap();
+            assert_eq!(inst.concl(), &expected);
         }
     }
 

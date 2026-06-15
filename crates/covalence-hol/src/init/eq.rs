@@ -120,6 +120,49 @@ pub fn beta_nf(t: Term) -> Thm {
     crate::proofs::rewrite::beta_nf(t)
 }
 
+// ============================================================================
+// β-application plumbing — moving a fact between the *applied* form
+// `pred arg` and its β-reduct `body`.
+//
+// `nat_induct`, `exists_intro` / `exists_elim`, and the recursor graph
+// construction all phrase their inputs/outputs as a predicate *applied*
+// to a point (`motive 0`, `pred witness`), while the surrounding proof
+// works with the β-reduced body. These four helpers bridge the two
+// directions, in both the **single-top-redex** flavour (`beta_conv`,
+// when the head is a known λ) and the **strong-nf** flavour (`beta_nf`,
+// for nested redexes — pure β, so literals / equations like `0 = 0` are
+// *not* collapsed by ι).
+// ============================================================================
+
+/// `⊢ f arg` from `⊢ body`, where `body` is the single β-contraction of
+/// the redex `f arg` (so `f` must be a λ). Re-wraps a fact about a
+/// β-reduced body into the *applied* form `nat_induct` / `exists_*`
+/// consume.
+pub fn beta_expand(f: &Term, arg: Term, body: Thm) -> Result<Thm> {
+    Thm::beta_conv(Term::app(f.clone(), arg))?.sym()?.eq_mp(body)
+}
+
+/// `⊢ body` from `⊢ f arg`, β-contracting the single top redex `f arg`
+/// (the inverse of [`beta_expand`]).
+pub fn beta_reduce(thm: Thm) -> Result<Thm> {
+    Thm::beta_conv(thm.concl().clone())?.eq_mp(thm)
+}
+
+/// `⊢ t` from `⊢ nf`, where `nf` is the full **β-normal form** of `t` —
+/// the strong-nf analogue of [`beta_expand`], for a redex `t` whose
+/// contraction needs more than one step. Pure β (via [`beta_nf`]): any
+/// literal equation in `t` is preserved, never ι-collapsed.
+pub fn beta_nf_expand(t: Term, nf: Thm) -> Result<Thm> {
+    beta_nf(t).sym()?.eq_mp(nf)
+}
+
+/// β-normalise a theorem's conclusion (pure β — see [`beta_nf_expand`]):
+/// `Γ ⊢ φ` → `Γ ⊢ φ′` with `φ′` the β-normal form of `φ`. The strong-nf
+/// analogue of [`beta_reduce`].
+pub fn beta_nf_concl(thm: Thm) -> Result<Thm> {
+    beta_nf(thm.concl().clone()).eq_mp(thm)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

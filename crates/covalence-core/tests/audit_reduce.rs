@@ -172,6 +172,71 @@ fn nat_mod_by_zero_is_identity() {
 }
 
 #[test]
+fn nat_div_reduction_satisfies_its_selector_predicate() {
+    // SOUNDNESS GUARD for the def-style `nat.div`. `nat.div` carries the
+    // selector predicate
+    //   λd. ∀n m. (m=0 ⟹ d n m = 0) ∧
+    //             (¬(m=0) ⟹ d n m * m ≤ n ∧ n < S(d n m) * m)
+    // and `spec_ax` only stays consistent with the `builtins` reduction
+    // if the *reduction itself* satisfies that predicate (otherwise the
+    // kernel has no model — nat.div cannot be both the floor and a
+    // predicate-satisfier). Here we evaluate each predicate clause on the
+    // reduced `q = n / m` and assert it holds, across a wide range of
+    // (n, m) — every quotient/divisor shape including the boundaries
+    // n < m, n = q*m exactly, and m = 0.
+    let red = |t: Term| rhs_of(&Thm::reduce_prim(t).expect("reduces"));
+    let t = || Term::bool_lit(true);
+    let mut probes: Vec<(u64, u64)> = Vec::new();
+    for n in [0u64, 1, 2, 3, 5, 7, 10, 16, 17, 23, 24, 100, 255, 1000] {
+        for m in [0u64, 1, 2, 3, 4, 5, 7, 8, 16, 100, 256] {
+            probes.push((n, m));
+        }
+    }
+    for (n, m) in probes {
+        let q = red(app2(defs::nat_div(), nat(n), nat(m)));
+        if m == 0 {
+            // clause 1: m = 0 ⟹ d n m = 0.
+            assert_eq!(q, nat(0), "n/0 must reduce to 0 (n={n})");
+            continue;
+        }
+        // clause 2a: q * m ≤ n.
+        let lower = red(app2(defs::nat_le(), red(app2(defs::nat_mul(), q.clone(), nat(m))), nat(n)));
+        assert_eq!(lower, t(), "q*m ≤ n fails at n={n}, m={m} (q={q:?})");
+        // clause 2b: n < S(q) * m.
+        let sq = red(app1(defs::nat_succ(), q.clone()));
+        let sq_m = red(app2(defs::nat_mul(), sq, nat(m)));
+        let upper = red(app2(defs::nat_lt(), nat(n), sq_m));
+        assert_eq!(upper, t(), "n < S(q)*m fails at n={n}, m={m} (q={q:?})");
+    }
+}
+
+#[test]
+fn nat_div_mod_satisfy_euclidean_law() {
+    // The two `builtins` reductions must jointly satisfy the Euclidean
+    // division law: for all n, m,  n = (n / m) * m + (n mod m),  and for
+    // m > 0 the remainder is bounded, 0 ≤ n mod m < m. This is exactly
+    // the def-style selector predicate `nat_div_predicate` characterises,
+    // checked here on the closed-literal reduction.
+    let red = |t: Term| rhs_of(&Thm::reduce_prim(t).expect("reduces"));
+    for (n, m) in [
+        (0u64, 0u64), (0, 1), (1, 0), (17, 5), (20, 4), (3, 7),
+        (1, 1), (100, 7), (255, 16), (42, 1),
+    ] {
+        let q = red(app2(defs::nat_div(), nat(n), nat(m))); // n / m
+        let r = red(app2(defs::nat_mod(), nat(n), nat(m))); // n mod m
+        // (n/m)*m + (n mod m)  ==  n   (reduce innermost-first; one step each)
+        let qm = red(app2(defs::nat_mul(), q, nat(m)));
+        let recombined = red(app2(defs::nat_add(), qm, r.clone()));
+        assert_eq!(recombined, nat(n), "Euclidean identity fails at n={n}, m={m}");
+        // m > 0 ⟹ n mod m < m.
+        if m != 0 {
+            let bounded = red(app2(defs::nat_lt(), r, nat(m)));
+            assert_eq!(bounded, Term::bool_lit(true), "remainder not < divisor at n={n}, m={m}");
+        }
+    }
+}
+
+#[test]
 fn nat_pow() {
     assert_reduces(app2(defs::nat_pow(), nat(2), nat(0)), nat(1));
     assert_reduces(app2(defs::nat_pow(), nat(0), nat(0)), nat(1));
@@ -876,14 +941,22 @@ fn unfold_def_style_errs() {
 
 #[test]
 fn unfold_declaration_only_errs() {
-    // `nat.div` is declaration-only (`tm = None`): unfold => SpecHasNoBody.
-    // (`cond` used to be declaration-only too, but now carries the HOL
-    // Light `COND` let-body — see `init::cond`.)
-    let t = defs::nat_div();
+    // `nat.bitAnd` is declaration-only (`tm = None`): unfold => SpecHasNoBody.
+    // (`nat.div` and `cond` used to be declaration-only too, but now carry
+    // bodies — div a def-style Euclidean selector, cond the HOL Light
+    // `COND` let-body — see `defs::nat_div` / `init::cond`.)
+    let t = defs::nat_bit_and();
     let err = Thm::unfold_term_spec(t).expect_err("declaration-only spec must not unfold");
     assert!(
         matches!(err, covalence_core::Error::SpecHasNoBody),
         "expected SpecHasNoBody, got {err:?}"
+    );
+    // `nat.div` is now def-style (selector predicate): unfold => SpecIsDefStyle.
+    let err = Thm::unfold_term_spec(defs::nat_div())
+        .expect_err("def-style spec must not let-unfold");
+    assert!(
+        matches!(err, covalence_core::Error::SpecIsDefStyle),
+        "expected SpecIsDefStyle for nat.div, got {err:?}"
     );
     // The fixed-width *conversions* (toNat/toInt/fromNat/fromInt) stay
     // declaration-only — they are the primitive reducible interface.

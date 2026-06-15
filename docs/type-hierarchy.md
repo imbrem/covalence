@@ -1,5 +1,12 @@
 # Type Hierarchy Sketch
 
+> See also [`kernel-design.md`](./kernel-design.md) for the kernel rules
+> operating on these types, and the authoring-layer sketches:
+> [`surface-syntax.md`](./surface-syntax.md) (how types are declared and
+> defined — note "spec" there is a *logical* spec, distinct from the
+> `TypeSpec`/`TermSpec` handles here) and [`metatheory.md`](./metatheory.md)
+> (theories that introduce new types).
+
 ## Equality Concept
 
 

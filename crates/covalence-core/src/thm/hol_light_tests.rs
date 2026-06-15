@@ -955,9 +955,11 @@ fn select_ax_rejects_witness_type_mismatch() {
 
 #[test]
 fn spec_ax_rejects_declaration_only_and_non_spec() {
-    // A declaration-only spec (`tm = None`) has no predicate. `nat.div` is
-    // declaration-only by design — it only reduces on literals, no body.
-    let decl = crate::defs::nat_div();
+    // A declaration-only spec (`tm = None`) has no predicate. `nat.bitAnd`
+    // is declaration-only by design — it only reduces on literals, no body.
+    // (`nat.div` used to be the example here, but it now carries a def-style
+    // Euclidean selector predicate, so `spec_ax` succeeds on it.)
+    let decl = crate::defs::nat_bit_and();
     let w = Term::free("w", decl.type_of().unwrap());
     assert!(matches!(Thm::spec_ax(decl, w), Err(Error::SpecHasNoBody)));
     // A non-spec term is rejected before anything else.

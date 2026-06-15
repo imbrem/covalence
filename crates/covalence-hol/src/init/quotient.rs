@@ -23,37 +23,34 @@
 //!   *proving quotient equations*: an `int` identity like `mkInt p =
 //!   mkInt q` reduces to the `nat` fact `rel p q`. It needs only symmetry
 //!   and transitivity of `rel` (supplied as `∀`-theorems) and function
-//!   extensionality (derived inline) — **not** the `close` predicate.
+//!   extensionality (derived inline) — **not** the carving predicate.
+//! - [`class_elim`] — the **converse** lifting law: from
+//!   `Γ ⊢ mkClass a = mkClass b` conclude `Γ ⊢ rel a b`. For
+//!   dis-equations / order. Needs only reflexivity of `rel`.
 //!
-//! ## The converse — `class_elim` (TODO, recipe below)
+//! ## The round-trip — [`round_trip`]
 //!
-//! `mkClass a = mkClass b ⟹ rel a b` is the converse, needed for `int`
-//! *dis*equations and the order axioms. The shape is:
+//! For order and for *quotient induction* (relating an element to
+//! `mk_class` of its representative) we also need that the chosen
+//! representative of a class is back in the class — [`round_trip`] proves
+//! `⊢ rel a (rep_class (mk_class a))`. It rests on the kernel's
+//! carrier-side round-trip [`Thm::spec_rep_abs_fwd`] (which needs that
+//! `classOf a` satisfies the `quot` carving predicate `λS. ∃z. S =
+//! classOf z` — proved trivially by [`quot_pred_holds`], witness `z := a`,
+//! `classOf a = classOf a` by `refl`) plus Hilbert choice
+//! [`Thm::select_ax`] (with `refl` supplying the non-emptiness witness
+//! that the ε-picked representative is real).
 //!
-//! 1. `cong_arg(rep)` on the class equation → `rep (abs cₐ) = rep (abs c_b)`.
-//! 2. `Thm::spec_rep_abs_fwd(spec, args, cₐ)` gives `P cₐ ⟹ rep (abs cₐ) = cₐ`;
-//!    discharge `P cₐ` (below) to collapse each side to `cₐ` / `c_b`.
-//! 3. So `cₐ = c_b`; apply to `a` (`cong_fn`, β-reduce) → `rel a a = rel b a`;
-//!    `rel a a` (refl) gives `rel b a`; `symm` flips to `rel a b`.
-//!
-//! The work is **step 2's `P cₐ`** — that `classOf a` is a non-empty,
-//! symmetric-closure-upward-closed set (`P = spec.tm()`, the `close`
-//! predicate). It needs `refl` (for non-emptiness, witness `a`) and
-//! `symm`/`trans` (for upward-closure, after `or_elim` on the symmetric
-//! closure `rel x y ∨ rel y x`).
-//!
-//! ⚠️ **η gotcha.** `close_predicate` writes membership as `S x`, so under
-//! `S := classOf a` it becomes `(classOf a) x` *under the `∀`/`∃` binders* —
-//! an η-*expanded* `λx. (classOf a) x`, **not** `classOf a`. Build the
-//! `exists_intro` predicate and the closed-part body in that η-expanded
-//! shape (extract them from `beta_conv (P cₐ)`'s RHS rather than
-//! reconstructing) so they match what `spec_rep_abs_fwd`'s antecedent
-//! expects. See `SKELETONS.md`.
+//! The image predicate makes both `quot_pred_holds` and `class_elim`
+//! cheap: there is no upward-closure obligation (the source of the old
+//! `symm`/`trans`/`or_elim` proof), only the single membership equation
+//! `classOf a = classOf z`.
 
 use covalence_core::defs::TypeSpec;
-use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_core::{Error, Result, Term, Thm, Type, subst};
 
 use crate::init::ext::ThmExt;
+use crate::init::logic;
 
 /// `λx:base. rel a x` — the equivalence class of `a` as a subset of
 /// `base` (the carrier value `mkClass` abstracts).
@@ -134,13 +131,161 @@ fn app2(rel: &Term, a: &Term, b: &Term) -> Term {
     Term::app(Term::app(rel.clone(), a.clone()), b.clone())
 }
 
-/// Specialise a `∀x y[ z]. …` theorem at the given witnesses, in order.
+/// Specialise a `∀x …. …` theorem at the given witnesses, in order.
 fn inst3(thm: &Thm, witnesses: &[&Term]) -> Result<Thm> {
     let mut acc = thm.clone();
     for w in witnesses {
         acc = acc.all_elim((*w).clone())?;
     }
     Ok(acc)
+}
+
+// ============================================================================
+// The round-trip `rel a (rep_class (mk_class a))` and the converse lift
+// ============================================================================
+//
+// For the order axioms and for *quotient induction* (relating an element to
+// `mk_class` of its representative) we need that the chosen representative
+// of a class is back in the class. Built from `Thm::spec_rep_abs_fwd` (the
+// carrier-side round-trip, needing the `quot` predicate holds of `classOf
+// a`) + `Thm::select_ax` (Hilbert choice).
+
+/// A bound-variable name not occurring free in `avoid` (capture-safe).
+fn fresh(avoid: &Term) -> String {
+    let mut i = 0usize;
+    loop {
+        let name = format!("_q{i}");
+        if !subst::has_free_var(avoid, &name) {
+            return name;
+        }
+        i += 1;
+    }
+}
+
+/// `λq:base. (rep x) q`, with `q` chosen capture-safe for `x`.
+fn rep_pred(spec: &TypeSpec, args: &[Type], base: &Type, x: &Term) -> Term {
+    let rep = Term::spec_rep(spec.clone(), args.to_vec());
+    let rep_x = Term::app(rep, x.clone());
+    let q = fresh(&rep_x);
+    Term::abs(
+        base.clone(),
+        subst::close(&Term::app(rep_x, Term::free(&q, base.clone())), &q),
+    )
+}
+
+/// `ε(λq:base. (rep x) q)` — a chosen representative of the class `x`
+/// (`int`'s `rep_pair`, generically).
+pub fn rep_class(spec: &TypeSpec, args: &[Type], base: &Type, x: &Term) -> Term {
+    Term::app(Term::select_op(base.clone()), rep_pred(spec, args, base, x))
+}
+
+/// `⊢ P (classOf a)` — `classOf a = λx. rel a x` satisfies the quotient's
+/// image carving predicate `P = λS. ∃z. S = classOf z` (`= spec.tm()`).
+/// Trivial: witness `z := a`, and `classOf a = classOf a` by reflexivity
+/// of `=`. Needs **nothing** about `rel` itself.
+fn quot_pred_holds(spec: &TypeSpec, base: &Type, rel: &Term, a: &Term) -> Result<Thm> {
+    let coa = class_of(base, rel, a); // λx. rel a x
+    let pred = spec
+        .tm()
+        .ok_or_else(|| Error::ConnectiveRule("quotient: spec has no carving predicate".into()))?
+        .clone();
+    let body_eq = Thm::beta_conv(Term::app(pred, coa.clone()))?; // ⊢ P(coa) = (∃z. coa = classOf z)
+    let body = body_eq.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let exists_pred = body.as_app().ok_or(Error::NotAnEquation)?.1.clone(); // λz. coa = classOf z
+
+    // ⊢ exists_pred a, i.e. `coa = classOf a`, which is `coa = coa` (refl).
+    let pa = Thm::beta_conv(Term::app(exists_pred.clone(), a.clone()))?; // ⊢ (exists_pred a) = (coa = classOf a)
+    let proof = pa.sym()?.eq_mp(Thm::refl(coa.clone())?)?; // ⊢ exists_pred a
+    let ne = logic::exists_intro(exists_pred, a.clone(), proof)?; // ⊢ ∃z. coa = classOf z
+    body_eq.sym()?.eq_mp(ne) // ⊢ P(coa)
+}
+
+/// **Round-trip.** `⊢ rel a (rep_class (mk_class a))` — the chosen
+/// representative of `a`'s class is `rel`-related to `a`. `refl` (`⊢ ∀x.
+/// rel x x`) witnesses that `a` is in its own class, so the ε-picked
+/// representative is real.
+pub fn round_trip(
+    spec: &TypeSpec,
+    args: &[Type],
+    base: &Type,
+    rel: &Term,
+    refl: &Thm,
+    a: &Term,
+) -> Result<Thm> {
+    let coa = class_of(base, rel, a);
+    let abs = Term::spec_abs(spec.clone(), args.to_vec());
+    let mkc = Term::app(abs, coa.clone()); // mk_class a
+
+    // rep(mkc) = coa.
+    let ph = quot_pred_holds(spec, base, rel, a)?;
+    let rep_abs = Thm::spec_rep_abs_fwd(spec.clone(), args.to_vec(), coa.clone())?.imp_elim(ph)?;
+
+    // φ = λq. (rep mkc) q ;  eps = ε φ = rep_class(mkc).
+    let phi = rep_pred(spec, args, base, &mkc);
+    let eps = Term::app(Term::select_op(base.clone()), phi.clone());
+
+    // ⊢ φ a, since φ a → (rep mkc) a = coa a → rel a a.
+    let rel_aa = inst3(refl, &[a])?;
+    let coa_a = Thm::beta_conv(Term::app(coa.clone(), a.clone()))?.sym()?.eq_mp(rel_aa)?; // ⊢ coa a
+    let repmkc_a = rep_abs.clone().cong_fn(a.clone())?.sym()?.eq_mp(coa_a)?; // ⊢ (rep mkc) a
+    let phi_a = Thm::beta_conv(Term::app(phi.clone(), a.clone()))?
+        .sym()?
+        .eq_mp(repmkc_a)?; // ⊢ φ a
+
+    // Choice: φ a ⟹ φ eps ; then φ eps → (rep mkc) eps = coa eps → rel a eps.
+    let phi_eps = Thm::select_ax(phi.clone(), a.clone())?.imp_elim(phi_a)?; // ⊢ φ eps
+    let repmkc_eps = Thm::beta_conv(Term::app(phi.clone(), eps.clone()))?.eq_mp(phi_eps)?; // ⊢ (rep mkc) eps
+    let coa_eps = rep_abs.cong_fn(eps.clone())?.eq_mp(repmkc_eps)?; // ⊢ coa eps
+    Thm::beta_conv(Term::app(coa, eps))?.eq_mp(coa_eps) // ⊢ rel a (rep_class (mk_class a))
+}
+
+/// **Converse lifting.** From `eq : Γ ⊢ mkClass a = mkClass b` conclude
+/// `Γ ⊢ rel a b`. The dual of [`class_intro`], for dis-equations and
+/// order: a class equation now *implies* the underlying `~`-fact, because
+/// the [junk-free `quot`](covalence_core::defs::TypeSpec::quot) predicate
+/// makes every inhabitant exactly one class.
+///
+/// `a`, `b` are passed explicitly (they cannot be read off `mkClass a`,
+/// whose representative-set hides them). `refl` (`⊢ ∀x. rel x x`) is the
+/// only `rel` property needed.
+///
+/// Derivation: apply `rep` to both sides — `rep(mkClass a) = rep(mkClass
+/// b)` — and use [`quot_pred_holds`] + [`Thm::spec_rep_abs_fwd`] to rewrite
+/// each into its class set, giving `classOf a = classOf b`. Apply both
+/// sides to `b`: `rel a b = rel b b`; `rel b b` holds by `refl`, so
+/// `rel a b`.
+pub fn class_elim(
+    spec: &TypeSpec,
+    args: &[Type],
+    base: &Type,
+    rel: &Term,
+    refl: &Thm,
+    a: &Term,
+    b: &Term,
+    eq: Thm,
+) -> Result<Thm> {
+    let coa = class_of(base, rel, a);
+    let cob = class_of(base, rel, b);
+    let rep = Term::spec_rep(spec.clone(), args.to_vec());
+
+    // ⊢ rep(mkClass a) = rep(mkClass b).
+    let rep_eq = eq.cong_arg(rep)?;
+    // ⊢ rep(abs coa) = coa  and  ⊢ rep(abs cob) = cob.
+    let ra = Thm::spec_rep_abs_fwd(spec.clone(), args.to_vec(), coa.clone())?
+        .imp_elim(quot_pred_holds(spec, base, rel, a)?)?;
+    let rb = Thm::spec_rep_abs_fwd(spec.clone(), args.to_vec(), cob.clone())?
+        .imp_elim(quot_pred_holds(spec, base, rel, b)?)?;
+    // ⊢ classOf a = classOf b.
+    let classes_eq = ra.sym()?.trans(rep_eq)?.trans(rb)?;
+
+    // Apply to `b`: ⊢ coa b = cob b, and β-reduce each side.
+    let at_b = classes_eq.cong_fn(b.clone())?; // ⊢ coa b = cob b
+    let lhs = Thm::beta_conv(Term::app(coa, b.clone()))?; // ⊢ coa b = rel a b
+    let rhs = Thm::beta_conv(Term::app(cob, b.clone()))?; // ⊢ cob b = rel b b
+    let rel_eq = lhs.sym()?.trans(at_b)?.trans(rhs)?; // ⊢ rel a b = rel b b
+
+    let rel_bb = inst3(refl, &[b])?; // ⊢ rel b b
+    rel_eq.sym()?.eq_mp(rel_bb) // ⊢ rel a b
 }
 
 #[cfg(test)]
@@ -185,6 +330,12 @@ mod tests {
             .all_intro("x", Type::nat())
             .unwrap()
     }
+    /// `⊢ ∀x. x = x` — reflexivity of `=` at `nat`, the only `rel`
+    /// property `class_elim` / `round_trip` need.
+    fn eq_refl() -> Thm {
+        let x = Term::free("x", Type::nat());
+        Thm::refl(x).unwrap().all_intro("x", Type::nat()).unwrap()
+    }
     fn eq(a: &Term, b: &Term) -> Term {
         a.clone().equals(b.clone()).unwrap()
     }
@@ -213,5 +364,46 @@ mod tests {
         assert_eq!(r, &expected_r);
         // Hypotheses: just the `a = b` we lifted from.
         assert!(lifted.hyps().iter().any(|h| h == &eq(&a, &b)));
+    }
+
+    /// `nat`-by-`=` quotient: classes are singletons, so `mkClass a =
+    /// mkClass b` must imply `a = b`.
+    fn nat_eq_quot() -> (TypeSpec, Term, Type) {
+        let rel = Term::eq_op(Type::nat());
+        let spec = TypeSpec::quot(smol_str::SmolStr::new_static("q.test"), Type::nat(), rel.clone());
+        (spec, rel, Type::nat())
+    }
+
+    #[test]
+    fn class_elim_recovers_the_relation_from_a_class_equation() {
+        let (spec, rel, base) = nat_eq_quot();
+        let a = Term::free("a", base.clone());
+        let b = Term::free("b", base.clone());
+
+        // From {mkClass a = mkClass b} ⊢ …, recover ⊢ a = b.
+        let class_eq = mk_class(&spec, &[], &base, &rel, &a)
+            .equals(mk_class(&spec, &[], &base, &rel, &b))
+            .unwrap();
+        let assumed = Thm::assume(class_eq.clone()).unwrap();
+        let recovered =
+            class_elim(&spec, &[], &base, &rel, &eq_refl(), &a, &b, assumed).unwrap();
+
+        assert_eq!(recovered.concl(), &eq(&a, &b));
+        // The only hypothesis is the class equation we started from.
+        assert!(recovered.hyps().iter().any(|h| h == &class_eq));
+    }
+
+    #[test]
+    fn class_intro_then_class_elim_round_trips() {
+        let (spec, rel, base) = nat_eq_quot();
+        let a = Term::free("a", base.clone());
+        let b = Term::free("b", base.clone());
+
+        // a = b  --intro-->  mkClass a = mkClass b  --elim-->  a = b.
+        let ab = Thm::assume(eq(&a, &b)).unwrap();
+        let lifted = class_intro(&spec, &[], &base, &eq_symm(), &eq_trans(), ab).unwrap();
+        let back = class_elim(&spec, &[], &base, &rel, &eq_refl(), &a, &b, lifted).unwrap();
+        assert_eq!(back.concl(), &eq(&a, &b));
+        assert!(back.hyps().iter().any(|h| h == &eq(&a, &b)));
     }
 }

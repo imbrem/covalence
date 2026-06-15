@@ -24,8 +24,9 @@
 //!
 //! plus the per-theory theorem catalogues — [`cond`] (the boolean
 //! conditional's reduction clauses), [`nat`], [`int`], [`rat`], [`real`],
-//! [`coprod`], [`option`], [`stream`], [`recursion`], [`rel`], and
-//! [`set`].
+//! [`coprod`], [`option`], [`prod`] (the pair projections, surjective
+//! pairing, and injectivity), [`list`] (the `nil`-side element
+//! computations), [`stream`], [`recursion`], [`rel`], and [`set`].
 //!
 //! Efficiency is explicitly *not* a goal: `init` runs once at startup.
 //! The point is for the rest of `covalence-hol` to depend on this
@@ -54,14 +55,18 @@ macro_rules! cached_thm {
     };
 }
 
+pub mod cat;
 pub mod cond;
 pub mod eq;
 pub mod ext;
+pub mod inductive;
 pub mod int;
+pub mod list;
 pub mod logic;
 pub mod coprod;
 pub mod nat;
 pub mod option;
+pub mod prod;
 pub mod quotient;
 pub mod rat;
 pub mod real;

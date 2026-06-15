@@ -22,9 +22,12 @@
 //!   `FirstOrder<Expr>` framework that **wraps any expression theory in
 //!   first-order logic**; PA is then `FirstOrder<arithmetic>` plus the
 //!   six arithmetic axioms.
-//! - **Proofs** ([`Proof`](Peano::Proof)) — the PA axioms (as proofs)
-//!   and the inference rules; [`concl`](Peano::concl) reads back the
-//!   `Prop` a proof establishes.
+//! - **Proofs** ([`Proof`](Peano::Proof)) — the PA axioms (as proofs),
+//!   a full classical natural-deduction system over the FOL layer
+//!   (assumption, the connective intro/elim rules, excluded middle,
+//!   ∀/∃ generalize/specialize/intro/elim), and the [`induct`](Peano::induct)
+//!   schema that makes the theory *Peano* arithmetic;
+//!   [`concl`](Peano::concl) reads back the `Prop` a proof establishes.
 //!
 //! ## Two implementations, one API (the mirror principle)
 //!
@@ -100,6 +103,10 @@ pub trait Peano {
     fn forall(&self, name: &str, body: Self::Prop) -> Self::Prop;
     /// Existential quantification `∃name. body`.
     fn exists(&self, name: &str, body: Self::Prop) -> Self::Prop;
+    /// The false formula `⊥`.
+    fn falsum(&self) -> Self::Prop;
+    /// The true formula `⊤`.
+    fn verum(&self) -> Self::Prop;
 
     /// The proposition a proof establishes (its conclusion).
     fn concl(&self, proof: &Self::Proof) -> Self::Prop;
@@ -120,26 +127,119 @@ pub trait Peano {
     /// `∀n m. S n * m = m + n * m` — multiplication's step equation.
     fn mul_step(&self) -> Self::Proof;
 
-    // ---- inference rules ----
+    // ---- first-order logic: structural / classical rules ----
 
-    /// **Induction.** From a base proof `⊢ P 0` and a step proof
-    /// `⊢ P n ⟹ P (S n)` (free `n`), conclude `⊢ ∀n. P n`. The motive
-    /// `P` and the variable `n` are read from the shapes of `base` /
-    /// `step` (as in `Thm::nat_induct`).
-    fn induct(&self, base: Self::Proof, step: Self::Proof) -> Result<Self::Proof, Self::Error>;
+    /// **Assumption.** `{p} ⊢ p` — take `p` as a hypothesis.
+    fn assume(&self, p: Self::Prop) -> Result<Self::Proof, Self::Error>;
 
-    /// **∀-elimination.** From `⊢ ∀x. P x` and a witness `t`, conclude
-    /// `⊢ P t`.
+    /// **Reflexivity.** `⊢ a = a` — the equality axiom.
+    fn refl(&self, a: Self::Term) -> Result<Self::Proof, Self::Error>;
+
+    /// **Excluded middle** (classical). `⊢ p ∨ ¬p`.
+    fn lem(&self, p: Self::Prop) -> Result<Self::Proof, Self::Error>;
+
+    // ---- first-order logic: connective introduction / elimination ----
+
+    /// **⟹-introduction (discharge).** Given a proof of `q`, discharge
+    /// the hypothesis `hyp` to conclude `⊢ hyp ⟹ q`.
+    fn implies_intro(
+        &self,
+        hyp: Self::Prop,
+        proof: Self::Proof,
+    ) -> Result<Self::Proof, Self::Error>;
+
+    /// **⟹-elimination (modus ponens).** From `⊢ p ⟹ q` and `⊢ p`,
+    /// conclude `⊢ q`.
+    fn mp(
+        &self,
+        implication: Self::Proof,
+        antecedent: Self::Proof,
+    ) -> Result<Self::Proof, Self::Error>;
+
+    /// **∧-introduction.** From `⊢ p` and `⊢ q`, conclude `⊢ p ∧ q`.
+    fn and_intro(&self, p: Self::Proof, q: Self::Proof) -> Result<Self::Proof, Self::Error>;
+    /// **∧-elimination (left).** From `⊢ p ∧ q`, conclude `⊢ p`.
+    fn and_left(&self, conj: Self::Proof) -> Result<Self::Proof, Self::Error>;
+    /// **∧-elimination (right).** From `⊢ p ∧ q`, conclude `⊢ q`.
+    fn and_right(&self, conj: Self::Proof) -> Result<Self::Proof, Self::Error>;
+
+    /// **∨-introduction (left).** From `⊢ p` and a formula `q`, conclude
+    /// `⊢ p ∨ q`.
+    fn or_intro_left(
+        &self,
+        p: Self::Proof,
+        q: Self::Prop,
+    ) -> Result<Self::Proof, Self::Error>;
+    /// **∨-introduction (right).** From a formula `p` and `⊢ q`, conclude
+    /// `⊢ p ∨ q`.
+    fn or_intro_right(
+        &self,
+        p: Self::Prop,
+        q: Self::Proof,
+    ) -> Result<Self::Proof, Self::Error>;
+    /// **∨-elimination (case split).** From `⊢ p ∨ q`, `⊢ p ⟹ r` and
+    /// `⊢ q ⟹ r`, conclude `⊢ r`.
+    fn or_elim(
+        &self,
+        disj: Self::Proof,
+        left: Self::Proof,
+        right: Self::Proof,
+    ) -> Result<Self::Proof, Self::Error>;
+
+    /// **¬-introduction.** From `⊢ p ⟹ ⊥`, conclude `⊢ ¬p`.
+    fn not_intro(&self, p_implies_false: Self::Proof) -> Result<Self::Proof, Self::Error>;
+    /// **¬-elimination.** From `⊢ ¬p` and `⊢ p`, conclude `⊢ ⊥`.
+    fn not_elim(
+        &self,
+        not_p: Self::Proof,
+        p: Self::Proof,
+    ) -> Result<Self::Proof, Self::Error>;
+    /// **⊥-elimination (ex falso).** From `⊢ ⊥`, conclude `⊢ p` for any
+    /// formula `p`.
+    fn absurd(&self, falsity: Self::Proof, p: Self::Prop) -> Result<Self::Proof, Self::Error>;
+
+    // ---- first-order logic: quantifier introduction / elimination ----
+
+    /// **∀-introduction (generalize).** From `⊢ P` in which the term
+    /// variable `var` is not free in any hypothesis, conclude
+    /// `⊢ ∀var. P`.
+    fn generalize(&self, proof: Self::Proof, var: &str) -> Result<Self::Proof, Self::Error>;
+
+    /// **∀-elimination (specialize).** From `⊢ ∀x. P x` and a witness
+    /// `t`, conclude `⊢ P t`.
     fn specialize(
         &self,
         univ: Self::Proof,
         witness: Self::Term,
     ) -> Result<Self::Proof, Self::Error>;
 
-    /// **Modus ponens.** From `⊢ p ⟹ q` and `⊢ p`, conclude `⊢ q`.
-    fn mp(
+    /// **∃-introduction.** From `⊢ body[witness/var]`, conclude
+    /// `⊢ ∃var. body`. The `body`/`var`/`witness` must agree: `proof`
+    /// proves the result of substituting `witness` for `var` in `body`.
+    fn exists_intro(
         &self,
-        implication: Self::Proof,
-        antecedent: Self::Proof,
+        var: &str,
+        body: Self::Prop,
+        witness: Self::Term,
+        proof: Self::Proof,
     ) -> Result<Self::Proof, Self::Error>;
+    /// **∃-elimination.** From `⊢ ∃x. body` and a step
+    /// `⊢ ∀x. body ⟹ c` (with `c` not depending on `x`), conclude
+    /// `⊢ c`. The `step`'s body must be the same formula bound by the
+    /// existential.
+    fn exists_elim(
+        &self,
+        ex: Self::Proof,
+        c: Self::Prop,
+        step: Self::Proof,
+    ) -> Result<Self::Proof, Self::Error>;
+
+    // ---- the induction schema ----
+
+    /// **Induction.** From a base proof `⊢ P 0` and a step proof
+    /// `⊢ P n ⟹ P (S n)` (free `n`), conclude `⊢ ∀n. P n`. The motive
+    /// `P` and the variable `n` are read from the shapes of `base` /
+    /// `step` (as in `Thm::nat_induct`). This is the one schema beyond
+    /// pure first-order logic that makes the theory *Peano* arithmetic.
+    fn induct(&self, base: Self::Proof, step: Self::Proof) -> Result<Self::Proof, Self::Error>;
 }

@@ -16,7 +16,7 @@ use covalence_core::{Error, Result, Term, Thm, Type, TypeKind};
 
 use crate::init::ext::TermExt;
 use crate::init::{cat, coprod};
-use crate::monoidal::Monoidal;
+use crate::monoidal::{Category, Monoidal};
 
 /// Shallow point-free-in-HOL: `Obj = Type`, `Hom = Term`, `Proof = Thm`.
 /// Zero-sized.
@@ -49,17 +49,11 @@ impl Hol {
     }
 }
 
-impl Monoidal for Hol {
+impl Category for Hol {
     type Obj = Type;
     type Hom = Term;
     type Proof = Thm;
     type Error = Error;
-
-    // ---- objects ----
-
-    fn oplus(&self, a: Type, b: Type) -> Type {
-        coprod::coprod(a, b)
-    }
 
     // ---- morphisms: category ----
 
@@ -69,6 +63,51 @@ impl Monoidal for Hol {
 
     fn comp(&self, g: Term, f: Term) -> Result<Term> {
         cat::comp(&g, &f)
+    }
+
+    fn concl(&self, proof: &Thm) -> (Term, Term) {
+        let (l, r) = proof.concl().as_eq().expect("a monoidal proof is an equation");
+        (l.clone(), r.clone())
+    }
+
+    // ---- axioms: category laws ----
+
+    fn id_left(&self, f: Term) -> Result<Thm> {
+        cat::id_left(&f)
+    }
+
+    fn id_right(&self, f: Term) -> Result<Thm> {
+        cat::id_right(&f)
+    }
+
+    fn assoc(&self, h: Term, g: Term, f: Term) -> Result<Thm> {
+        cat::comp_assoc(&h, &g, &f)
+    }
+
+    // ---- inference rules ----
+
+    fn refl(&self, f: Term) -> Result<Thm> {
+        Thm::refl(f)
+    }
+
+    fn sym(&self, p: Thm) -> Result<Thm> {
+        p.sym()
+    }
+
+    fn trans(&self, p: Thm, q: Thm) -> Result<Thm> {
+        p.trans(q)
+    }
+
+    fn comp_cong(&self, g_eq: Thm, f_eq: Thm) -> Result<Thm> {
+        cat::comp_cong(&g_eq, &f_eq)
+    }
+}
+
+impl Monoidal for Hol {
+    // ---- objects ----
+
+    fn oplus(&self, a: Type, b: Type) -> Type {
+        coprod::coprod(a, b)
     }
 
     // ---- morphisms: coproduct join morphisms ----
@@ -108,25 +147,6 @@ impl Monoidal for Hol {
         self.copair_term(&id, &id)
     }
 
-    fn concl(&self, proof: &Thm) -> (Term, Term) {
-        let (l, r) = proof.concl().as_eq().expect("a monoidal proof is an equation");
-        (l.clone(), r.clone())
-    }
-
-    // ---- axioms: category laws ----
-
-    fn id_left(&self, f: Term) -> Result<Thm> {
-        cat::id_left(&f)
-    }
-
-    fn id_right(&self, f: Term) -> Result<Thm> {
-        cat::id_right(&f)
-    }
-
-    fn assoc(&self, h: Term, g: Term, f: Term) -> Result<Thm> {
-        cat::comp_assoc(&h, &g, &f)
-    }
-
     // ---- axioms: coproduct universal property ----
 
     fn copair_inl(&self, f: Term, g: Term) -> Result<Thm> {
@@ -159,23 +179,7 @@ impl Monoidal for Hol {
         coprod::case_eta(&a, &b, &c, &m)
     }
 
-    // ---- inference rules ----
-
-    fn refl(&self, f: Term) -> Result<Thm> {
-        Thm::refl(f)
-    }
-
-    fn sym(&self, p: Thm) -> Result<Thm> {
-        p.sym()
-    }
-
-    fn trans(&self, p: Thm, q: Thm) -> Result<Thm> {
-        p.trans(q)
-    }
-
-    fn comp_cong(&self, g_eq: Thm, f_eq: Thm) -> Result<Thm> {
-        cat::comp_cong(&g_eq, &f_eq)
-    }
+    // ---- inference rules: coproduct congruence ----
 
     fn copair_cong(&self, f_eq: Thm, g_eq: Thm) -> Result<Thm> {
         // ⊢ [f, g] = [f', g'] by congruence on `coprod_case`.

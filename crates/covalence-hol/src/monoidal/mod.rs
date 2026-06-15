@@ -3,38 +3,49 @@
 //!
 //! [`Monoidal`] is the abstract interface of "doing a categorical,
 //! point-free proof" — generic over three representations, the
-//! associated types [`Obj`](Monoidal::Obj) / [`Hom`](Monoidal::Hom) /
-//! [`Proof`](Monoidal::Proof). It is the coproduct analogue of
+//! associated types [`Obj`](Category::Obj) / [`Hom`](Category::Hom) /
+//! [`Proof`](Category::Proof) it inherits from its super-trait
+//! [`Category`]. It is the coproduct analogue of
 //! [`Peano`](crate::peano::Peano): the same "one API, many models, with a
 //! soundness map between them" shape (the mirror principle).
+//!
+//! ## Layering: [`Category`] then [`Monoidal`]
+//!
+//! The plain **category** vocabulary — objects, morphisms,
+//! `id`/`comp`, the category laws, and equational logic — is factored
+//! into the [`Category`] super-trait, because the [`diagram`] API
+//! (commutative diagrams *of functions*) needs exactly that and nothing
+//! about the coproduct.
+//! [`Monoidal`] then adds the coproduct's symmetric-monoidal structure on
+//! top.
 //!
 //! ## Three layers: objects, morphisms, equational proofs
 //!
 //! Point-free programming is *equational reasoning about morphisms* in a
 //! category, and the trait keeps those layers visible:
 //!
-//! - **Objects** ([`Obj`](Monoidal::Obj)) — the "types". They carry a
+//! - **Objects** ([`Obj`](Category::Obj)) — the "types". They carry a
 //!   symmetric-monoidal product [`oplus`](Monoidal::oplus) (`⊕`, the
 //!   coproduct) used to type the structural morphisms.
-//! - **Morphisms** ([`Hom`](Monoidal::Hom)) — the "programs". Built from
-//!   the **category** vocabulary ([`id`](Monoidal::id),
-//!   [`comp`](Monoidal::comp)) and the coproduct's **join morphisms**:
+//! - **Morphisms** ([`Hom`](Category::Hom)) — the "programs". Built from
+//!   the **category** vocabulary ([`id`](Category::id),
+//!   [`comp`](Category::comp)) and the coproduct's **join morphisms**:
 //!   the coprojections [`inl`](Monoidal::inl) / [`inr`](Monoidal::inr),
 //!   the copairing [`copair`](Monoidal::copair) (`[f,g]`), the bifunctor
 //!   [`bimap`](Monoidal::bimap) (`f ⊕ g`), the symmetry
 //!   [`swap`](Monoidal::swap) (`σ`), and the codiagonal
 //!   [`codiag`](Monoidal::codiag) (`∇ = [id,id]`).
-//! - **Proofs** ([`Proof`](Monoidal::Proof)) — *equations between
+//! - **Proofs** ([`Proof`](Category::Proof)) — *equations between
 //!   morphisms*. The **axioms** (as proofs) are the category laws
-//!   ([`id_left`](Monoidal::id_left) / [`id_right`](Monoidal::id_right) /
-//!   [`assoc`](Monoidal::assoc)) and the coproduct **universal property**
+//!   ([`id_left`](Category::id_left) / [`id_right`](Category::id_right) /
+//!   [`assoc`](Category::assoc)) and the coproduct **universal property**
 //!   ([`copair_inl`](Monoidal::copair_inl) /
 //!   [`copair_inr`](Monoidal::copair_inr) — the β-laws — and
 //!   [`fusion`](Monoidal::fusion) — the η/uniqueness law). The
 //!   **inference rules** are the equational-logic ones
-//!   ([`refl`](Monoidal::refl) / [`sym`](Monoidal::sym) /
-//!   [`trans`](Monoidal::trans)) plus the structural congruences
-//!   ([`comp_cong`](Monoidal::comp_cong) /
+//!   ([`refl`](Category::refl) / [`sym`](Category::sym) /
+//!   [`trans`](Category::trans)) plus the structural congruences
+//!   ([`comp_cong`](Category::comp_cong) /
 //!   [`copair_cong`](Monoidal::copair_cong)).
 //!
 //! These axioms suffice to *derive* the symmetric-monoidal coherence
@@ -62,35 +73,23 @@
 //! [`Type`]: covalence_core::Type
 //! [`Term`]: covalence_core::Term
 
+pub mod category;
 pub mod derived;
+pub mod diagram;
 pub mod shallow;
 
+pub use category::Category;
 pub use shallow::Hol;
 
 /// Point-free reasoning over the coproduct's symmetric-monoidal
-/// structure, generic over the proof representation. See the
-/// [module docs](self).
-pub trait Monoidal {
-    /// Objects — the "types".
-    type Obj: Clone;
-    /// Morphisms — the "programs" `a → b`.
-    type Hom: Clone;
-    /// An equational proof between two morphisms.
-    type Proof: Clone;
-    /// Failure type for the (partial) constructors and rules.
-    type Error;
-
+/// structure, generic over the proof representation. Extends
+/// [`Category`] with the coproduct's join morphisms and universal
+/// property. See the [module docs](self).
+pub trait Monoidal: Category {
     // ---- objects ----
 
     /// The monoidal product `a ⊕ b` (the coproduct).
     fn oplus(&self, a: Self::Obj, b: Self::Obj) -> Self::Obj;
-
-    // ---- morphisms: the category vocabulary ----
-
-    /// The identity `id_a : a → a`.
-    fn id(&self, a: Self::Obj) -> Self::Hom;
-    /// Composition `g ∘ f` (apply `f` then `g`).
-    fn comp(&self, g: Self::Hom, f: Self::Hom) -> Result<Self::Hom, Self::Error>;
 
     // ---- morphisms: the coproduct's join morphisms ----
 
@@ -109,23 +108,6 @@ pub trait Monoidal {
     /// The codiagonal / fold `∇ = [id, id] : a ⊕ a → a`.
     fn codiag(&self, a: Self::Obj) -> Result<Self::Hom, Self::Error>;
 
-    /// The two sides `(lhs, rhs)` of the equation a proof establishes.
-    fn concl(&self, proof: &Self::Proof) -> (Self::Hom, Self::Hom);
-
-    // ---- axioms (as proofs): the category laws ----
-
-    /// `⊢ id ∘ f = f`.
-    fn id_left(&self, f: Self::Hom) -> Result<Self::Proof, Self::Error>;
-    /// `⊢ f ∘ id = f`.
-    fn id_right(&self, f: Self::Hom) -> Result<Self::Proof, Self::Error>;
-    /// `⊢ (h ∘ g) ∘ f = h ∘ (g ∘ f)`.
-    fn assoc(
-        &self,
-        h: Self::Hom,
-        g: Self::Hom,
-        f: Self::Hom,
-    ) -> Result<Self::Proof, Self::Error>;
-
     // ---- axioms (as proofs): the coproduct universal property ----
 
     /// **β-left.** `⊢ [f, g] ∘ inl = f`.
@@ -138,20 +120,8 @@ pub trait Monoidal {
     /// point-free equations.
     fn fusion(&self, m: Self::Hom) -> Result<Self::Proof, Self::Error>;
 
-    // ---- inference rules: equational logic + congruence ----
+    // ---- inference rules: coproduct congruence ----
 
-    /// `⊢ f = f`.
-    fn refl(&self, f: Self::Hom) -> Result<Self::Proof, Self::Error>;
-    /// From `⊢ f = g` conclude `⊢ g = f`.
-    fn sym(&self, p: Self::Proof) -> Result<Self::Proof, Self::Error>;
-    /// From `⊢ f = g` and `⊢ g = h` conclude `⊢ f = h`.
-    fn trans(&self, p: Self::Proof, q: Self::Proof) -> Result<Self::Proof, Self::Error>;
-    /// From `⊢ g = g'` and `⊢ f = f'` conclude `⊢ g ∘ f = g' ∘ f'`.
-    fn comp_cong(
-        &self,
-        g_eq: Self::Proof,
-        f_eq: Self::Proof,
-    ) -> Result<Self::Proof, Self::Error>;
     /// From `⊢ f = f'` and `⊢ g = g'` conclude `⊢ [f, g] = [f', g']`.
     fn copair_cong(
         &self,

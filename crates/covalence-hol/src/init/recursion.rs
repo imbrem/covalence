@@ -3,29 +3,31 @@
 //! with it every `add`/`mul` fact, and the shallow Peano embedding).
 //!
 //! The construction is the standard graph route, at `α = nat` (which is
-//! all `add`/`mul` need):
+//! all `add`/`mul` need). Increasingly it is driven by the generic
+//! inductive engine ([`crate::init::inductive`]) at the [`nat_sig`]
+//! signature, with the [`NatTheory`] adapter supplying induction from
+//! `Thm::nat_induct` — this module keeps only the `nat`-specific glue and
+//! the not-yet-generalised steps.
 //!
 //! 1. **Graph** `Graph z f n a` — the least relation closed under the
 //!    recursion rules, encoded impredicatively as
 //!    `∀G. (G 0 z ∧ ∀m b. G m b ⟹ G (S m) (f m b)) ⟹ G n a`. The term
-//!    builders ([`graph`] / [`closed`]) come from the generic inductive
-//!    engine ([`crate::init::inductive`]) at the [`nat_sig`] signature;
-//!    "unfolding" the graph is just manipulating the `∀G …` structure, no
-//!    defined constant. This module supplies the `nat`-specific *proofs*
-//!    over those terms.
-//! 2. **Existence** `∀n. ∃a. Graph z f n a` by induction
-//!    ([`graph_base`] / [`graph_step`] are the base/step facts). ← here
+//!    builders come from the engine ([`crate::init::inductive::graph`]);
+//!    "unfolding" the graph is just manipulating the `∀G …` structure.
+//! 2. **Existence** `∀n. ∃a. Graph z f n a` — now the engine's generic
+//!    [`existence::graph_total`] over [`existence::graph_intro`];
+//!    [`graph_base`] / [`graph_step`] are thin `nat` views of it. ✓
 //! 3. **Uniqueness** `∀n a b. Graph z f n a ∧ Graph z f n b ⟹ a = b`
-//!    by induction (uses `succ_inj` / `zero_ne_succ`). *(next)*
+//!    by induction (uses `succ_inj` / `zero_ne_succ`). Still `nat`-specific
+//!    here — generalising it needs freeness on the [`Inductive`] trait.
 //! 4. **Assemble** `r z f n ≜ ε a. Graph z f n a`, prove `P_rec r`,
-//!    `∃`-introduce. *(next)*
+//!    `∃`-introduce. Still `nat`-specific here.
 //!
 use covalence_core::{Result, Term, Thm, Type, defs, subst};
 
 use crate::init::eq::{beta_expand, beta_nf_concl, beta_nf_expand, beta_reduce};
 use crate::init::ext::{TermExt, ThmExt};
-use crate::init::inductive::graph as gb;
-use crate::init::inductive::{Arg, Constructor, InductiveSig};
+use crate::init::inductive::{Arg, Constructor, Inductive, InductiveSig, existence, graph as gb};
 use crate::init::logic::{exists_elim, exists_intro};
 use crate::init::nat::{nat_succ, succ, zero};
 
@@ -40,11 +42,6 @@ fn nat() -> Type {
 /// `nat → nat → nat` — the recursion step function `f`.
 fn f_ty() -> Type {
     Type::fun(nat(), Type::fun(nat(), nat()))
-}
-
-/// `nat → nat → bool` — the relation variable `G`.
-fn g_ty() -> Type {
-    Type::fun(nat(), Type::fun(nat(), Type::bool()))
 }
 
 fn var(name: &str) -> Term {
@@ -68,124 +65,83 @@ fn app2(h: Term, x: Term, y: Term) -> Result<Term> {
 /// `G 0 z ∧ (∀m b. G m b ⟹ G (S m) (f m b))` / `∀G. closed ⟹ G n a`
 /// exactly — the `nat` step terms are `[z, f]`, the recursor result type
 /// is `nat`.
-fn nat_sig() -> InductiveSig {
-    InductiveSig {
-        ty: nat(),
+fn nat_sig() -> &'static InductiveSig {
+    static SIG: std::sync::LazyLock<InductiveSig> = std::sync::LazyLock::new(|| InductiveSig {
+        ty: Type::nat(),
         relation: "G",
         ctors: vec![
             Constructor::nullary(zero()),
             Constructor::new(nat_succ(), vec![Arg::Rec { name: "m", image: "b" }]),
         ],
-    }
+    });
+    &SIG
 }
 
-/// `G 0 z ∧ (∀m b. G m b ⟹ G (S m) (f m b))` — `G` is closed under the
-/// recursion rules for `z`, `f`.
-fn closed(z: &Term, f: &Term, g: &Term) -> Result<Term> {
-    gb::closed(&nat_sig(), &[z.clone(), f.clone()], &nat(), g)
+/// `nat`'s [`Inductive`] adapter — the engine's view of `nat`, sourcing
+/// **structural induction from the kernel primitive** [`Thm::nat_induct`].
+///
+/// This is the lifting seam in action: the recursion engine
+/// ([`existence`], and later uniqueness / assembly) talks only to this
+/// trait, so the day `nat` is rebuilt internally from `ind` (where
+/// induction is a *derived* theorem), swapping this one impl re-targets the
+/// whole engine — the proofs in [`existence`] are reused verbatim.
+struct NatTheory;
+
+impl Inductive for NatTheory {
+    fn sig(&self) -> &InductiveSig {
+        nat_sig()
+    }
+
+    fn induct(&self, _motive: &Term, cases: Vec<Thm>) -> Result<Thm> {
+        // `cases = [⊢ motive 0, ⊢ motive m ⟹ motive (S m)]` (applied
+        // form) — exactly `Thm::nat_induct`'s base / step.
+        let [base, step]: [Thm; 2] = cases
+            .try_into()
+            .map_err(|_| covalence_core::Error::ConnectiveRule("nat induct: expected 2 cases".into()))?;
+        Thm::nat_induct(base, step)
+    }
 }
 
 /// `Graph z f n a ≜ ∀G. closed(z,f,G) ⟹ G n a`.
 fn graph(z: &Term, f: &Term, n: Term, a: Term) -> Result<Term> {
-    gb::graph(&nat_sig(), &[z.clone(), f.clone()], &nat(), n, a)
+    gb::graph(nat_sig(), &[z.clone(), f.clone()], &nat(), n, a)
+}
+
+/// The recursor step terms `[z, f]` for the `nat` signature.
+fn steps(z: &Term, f: &Term) -> [Term; 2] {
+    [z.clone(), f.clone()]
 }
 
 // ============================================================================
-// Base / step of the existence induction
+// Base / step of the existence induction — via the generic engine
 // ============================================================================
 
-/// `⊢ Graph z f 0 z` — the graph relates `0` to `z`.
-///
-/// Fix `G`, assume it is closed; the first conjunct *is* `G 0 z`.
+/// `⊢ Graph z f 0 z` — the graph relates `0` to `z`. Constructor-0
+/// (`zero`) introduction from [`existence::graph_intro`].
 fn graph_base(z: &Term, f: &Term) -> Result<Thm> {
-    let g = Term::free("G", g_ty());
-    let cl = closed(z, f, &g)?;
-    Thm::assume(cl.clone())?
-        .and_elim_l()? // {closed G} ⊢ G 0 z
-        .imp_intro(&cl)? //          ⊢ closed G ⟹ G 0 z
-        .all_intro("G", g_ty()) //   ⊢ ∀G. closed G ⟹ G 0 z
+    existence::graph_intro(nat_sig(), &steps(z, f), &nat(), 0)
 }
 
 /// `⊢ Graph z f n a ⟹ Graph z f (S n) (f n a)`, for free `n`, `a`.
-///
-/// Fix `G` and assume it closed: from `Graph z f n a` get `G n a`, and
-/// from closure's step clause (at `m,b := n,a`) get `G n a ⟹ G (S n) (f n a)`.
+/// Constructor-1 (`succ`) introduction from [`existence::graph_intro`],
+/// with the canonical argument/image vars `m`/`b` instantiated to `n`/`a`.
 fn graph_step(z: &Term, f: &Term, n: &Term, a: &Term) -> Result<Thm> {
-    let g = Term::free("G", g_ty());
-    let cl = closed(z, f, &g)?;
-    let gh_term = graph(z, f, n.clone(), a.clone())?; // Graph z f n a
-    let gh = Thm::assume(gh_term.clone())?; // {GH} ⊢ Graph z f n a
-    let cl_thm = Thm::assume(cl.clone())?; // {CL} ⊢ closed G
-
-    // {GH, CL} ⊢ G n a
-    let g_n_a = gh.all_elim(g.clone())?.imp_elim(cl_thm.clone())?;
-    // {CL} ⊢ G n a ⟹ G (S n) (f n a)
-    let g_step = cl_thm
-        .and_elim_r()?
-        .all_elim(n.clone())?
-        .all_elim(a.clone())?;
-    // {GH, CL} ⊢ G (S n) (f n a)
-    let g_succ = g_step.imp_elim(g_n_a)?;
-
-    g_succ
-        .imp_intro(&cl)? // {GH} ⊢ closed G ⟹ G (S n) (f n a)
-        .all_intro("G", g_ty())? // {GH} ⊢ Graph z f (S n) (f n a)
-        .imp_intro(&gh_term) //     ⊢ Graph z f n a ⟹ Graph z f (S n) (f n a)
+    existence::graph_intro(nat_sig(), &steps(z, f), &nat(), 1)?
+        .inst("m", n.clone())?
+        .inst("b", a.clone())
 }
 
 // ============================================================================
 // Existence: ∀n. ∃a. Graph z f n a, by induction
 // ============================================================================
 
-/// `λa. Graph z f n a` — the existential predicate at a fixed `n`.
-fn ex_pred(z: &Term, f: &Term, n: &Term) -> Result<Term> {
-    let body = graph(z, f, n.clone(), var("a"))?;
-    Ok(Term::abs(nat(), subst::close(&body, "a")))
-}
-
-/// `λn. ∃a. Graph z f n a` — the induction motive.
-fn motive(z: &Term, f: &Term) -> Result<Term> {
-    let body = graph(z, f, var("n"), var("a"))?.exists("a", nat())?;
-    Ok(Term::abs(nat(), subst::close(&body, "n")))
-}
-
 /// `⊢ ∀n. (λn. ∃a. Graph z f n a) n` — the graph is **total**: every `n`
-/// is related to some `a`. (Conclusion is in `nat_induct`'s applied
-/// form; β-reduce the body to read `∀n. ∃a. Graph z f n a`.)
+/// is related to some `a`. The generic [`existence::graph_total`] at the
+/// [`NatTheory`] adapter (its induction supplied by `Thm::nat_induct`).
+/// (Conclusion is in `nat_induct`'s applied form; β-reduce the body to
+/// read `∀n. ∃a. Graph z f n a`.)
 pub(crate) fn graph_total(z: &Term, f: &Term) -> Result<Thm> {
-    let mot = motive(z, f)?;
-
-    // base: ⊢ motive 0  — witness a := z, via graph_base.
-    let pred0 = ex_pred(z, f, &zero())?;
-    let at_z = beta_expand(&pred0, z.clone(), graph_base(z, f)?)?; // ⊢ pred0 z
-    let ex0 = exists_intro(pred0, z.clone(), at_z)?; // ⊢ ∃a. Graph z f 0 a
-    let base = beta_expand(&mot, zero(), ex0)?; // ⊢ motive 0
-
-    // step: ⊢ motive n ⟹ motive (S n).
-    let n = var("n");
-    let mot_n = Term::app(mot.clone(), n.clone());
-    let exn = beta_reduce(Thm::assume(mot_n.clone())?)?; // {motive n} ⊢ ∃a. Graph z f n a
-
-    // ∀a. (pred_n a) ⟹ motive (S n): from Graph z f n a, witness f n a
-    // for the successor existential.
-    let pred_n = ex_pred(z, f, &n)?;
-    let a = var("a");
-    let pred_n_a = Term::app(pred_n.clone(), a.clone());
-    let gna = beta_reduce(Thm::assume(pred_n_a.clone())?)?; // {pred_n a} ⊢ Graph z f n a
-    let g_succ = graph_step(z, f, &n, &a)?.imp_elim(gna)?; // ⊢ Graph z f (S n) (f n a)
-    let pred_sn = ex_pred(z, f, &succ(n.clone()))?;
-    let fna = app2(f.clone(), n.clone(), a.clone())?;
-    let at_fna = beta_expand(&pred_sn, fna.clone(), g_succ)?; // ⊢ pred_sn (f n a)
-    let ex_sn = exists_intro(pred_sn, fna, at_fna)?; // ⊢ ∃a. Graph z f (S n) a
-    let mot_sn = Term::app(mot.clone(), succ(n.clone()));
-    let step_lemma = beta_expand(&mot, succ(n.clone()), ex_sn)? // ⊢ motive (S n)
-        .imp_intro(&pred_n_a)?
-        .all_intro("a", nat())?; // ⊢ ∀a. pred_n a ⟹ motive (S n)
-
-    let step = exists_elim(exn, mot_sn, step_lemma)? // {motive n} ⊢ motive (S n)
-        .imp_intro(&mot_n)?; //                          ⊢ motive n ⟹ motive (S n)
-
-    Thm::nat_induct(base, step)
+    existence::graph_total(&NatTheory, &steps(z, f), &nat())
 }
 
 // ============================================================================

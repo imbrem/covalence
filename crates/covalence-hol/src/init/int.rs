@@ -5,56 +5,51 @@
 //!
 //! [`init::nat`]: crate::init::nat
 //!
-//! ## Status — all postulated
+//! ## Status — the additive commutative group is proved
 //!
-//! Every theorem here is a `Thm::assume` **postulate** (flagged in
-//! `SKELETONS.md`), carrying its statement as a self-hypothesis so the
-//! audit trail is visible in any downstream theorem. They are the
-//! ingredients an integer-linear-arithmetic certificate checker (the
-//! Alethe `la_generic` / `la_mult_*` family) needs:
+//! `int := (nat × nat) / ~` is the Grothendieck construction, so every
+//! axiom here is a *theorem* of HOL derivable from the `nat` Peano facts
+//! through the quotient. The lifting machinery is built and the additive
+//! group is fully discharged; the rest are still `Thm::assume` postulates
+//! (flagged in `SKELETONS.md`, each carrying its statement as a
+//! self-hypothesis so the audit trail is visible downstream).
 //!
-//! - **Commutative ring** — [`add_comm`] / [`mul_comm`] (**proved**),
-//!   [`add_assoc`], [`add_zero`], [`add_neg`], [`mul_assoc`], [`mul_one`],
-//!   [`mul_zero`], [`distrib`], [`sub_def`].
-//! - **Linear order** — [`lt_irrefl`], [`lt_trans`], [`lt_trichotomy`],
-//!   [`le_def`].
-//! - **Ordered-ring compatibility** — [`lt_add_mono`], [`lt_mul_pos`].
-//! - **Discreteness** (the integer-specific axiom) — [`lt_succ`]:
-//!   `a < b ⟺ a + 1 ≤ b`.
+//! - **Commutative ring** — **proved:** [`add_comm`], [`add_assoc`],
+//!   [`add_zero`], [`add_neg`], [`sub_def`], [`mul_comm`]. **Postulated:**
+//!   [`mul_assoc`], [`mul_one`], [`mul_zero`], [`distrib`] (need
+//!   multiplication well-definedness — a `mul_pair_cong` — plus literal-`1`
+//!   coherence).
+//! - **Linear order** (postulated) — [`lt_irrefl`], [`lt_trans`],
+//!   [`lt_trichotomy`], [`le_def`].
+//! - **Ordered-ring compatibility** (postulated) — [`lt_add_mono`],
+//!   [`lt_mul_pos`].
+//! - **Discreteness** (postulated) — [`lt_succ`]: `a < b ⟺ a + 1 ≤ b`.
 //!
-//! `int := (nat × nat) / ~` is the Grothendieck construction, so each of
-//! these is a *theorem* of HOL, derivable from the `nat` Peano facts in
-//! [`init::nat`] through the quotient. Discharging them is downstream
-//! work; until then they are the `int` postulate set. The public surface
-//! (these `fn`s) does not change when the proofs land — only the bodies.
+//! The public surface (these `fn`s) does not change as proofs land — only
+//! the bodies; downstream consumers (the `int` ring/semiring embedding, the
+//! Alethe `la_*` checker) are unaffected.
 //!
-//! ## What the proofs are waiting on
+//! ## The lifting machinery (how the proved axioms work)
 //!
-//! Two ingredients. The **`nat` side** is in place: [`init::nat`] proves
-//! the additive theory (`add_comm`/`add_assoc`/`add_zero`/`add_cancel`/…)
-//! by induction. The **quotient side** is in place too:
-//! [`init::quotient`](crate::init::quotient) lifts a `~`-fact to an
-//! `int`-class equation (`class_intro`), and [`int_rel`] is now a **proven
-//! equivalence** ([`int_rel_refl`] / [`int_rel_symm`] / [`int_rel_trans`],
-//! the last by Grothendieck cancellation on `nat::add_interchange` +
-//! `nat::add_cancel`). So `class_intro(spec, …, int_rel_symm(),
-//! int_rel_trans(), ⊢ int_rel p q)` already lifts to `mkClass p = mkClass q`
-//! over the real `int_ty_spec`.
+//! [`init::quotient`](crate::init::quotient) supplies `class_intro`
+//! (forward: `⊢ rel a b → ⊢ mkClass a = mkClass b`), `class_elim`
+//! (converse), `round_trip` (`⊢ rel a (rep_class (mk_class a))`), and
+//! `recon` (quotient induction: `⊢ a = mk_class (rep_class a)` for *any*
+//! element of the junk-free quotient). On top of those, this module:
 //!
-//! The **converse** law (`mkClass a = mkClass b ⟹ rel a b`, for
-//! dis-equations / order) is also in place now:
-//! [`init::quotient::class_elim`](crate::init::quotient::class_elim) — the
-//! [`quot`](covalence_core::defs::TypeSpec::quot) type is junk-free (its
-//! carving predicate is `λS. ∃z. S = classOf z`, so every inhabitant is
-//! *exactly one* class), which is what makes the converse and quotient
-//! induction sound.
+//! - proves `int_rel` an equivalence ([`int_rel_refl`]/`_symm`/`_trans`);
+//! - normalises every reconstructed `int` to the **`MK(f, s)` component
+//!   form** `mk_int (pair f s)` (`recon` + surjective pairing), so the op
+//!   rules combine explicit `nat` components on the nose;
+//! - gives per-op **computation rules** (`add_class`/`neg_class`/`sub_class`
+//!   and their `*_mk` component forms) via the defining equation,
+//!   `round_trip`, and a per-op well-definedness lemma (`*_pair_cong`);
+//! - derives **literal coherence** ([`lit0_mk`]: `int_lit 0 = MK(0, 0)`)
+//!   from the two readings of `0 + 0` (`reduce_prim` vs the Grothendieck
+//!   body) forcing `fst(rep 0) = snd(rep 0)`.
 //!
-//! Remaining to discharge the postulates below: (1) the **β
-//! reconciliation** — `class_intro`'s `classOf a = λx. rel a x` vs
-//! `defs/int.rs`'s β-reduced `mk_int`; and (2) **unfolding each `int` op**
-//! to its representative-pair body (δ + the quotient coercions) so the
-//! axiom reduces to a `nat` fact lifted through `class_intro` /
-//! `class_elim`.
+//! Each additive axiom then reduces to `nat` algebra on the `f`/`s`
+//! components (e.g. `add_assoc` is `nat::add_assoc` on each component).
 
 use covalence_core::defs::{fst, pair, prod, snd};
 use covalence_core::{Error, Result, Term, Thm, Type, subst};

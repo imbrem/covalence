@@ -34,28 +34,33 @@ pub use syntax::{ConstDef, Env, Scope, parse_term, parse_type};
 use covalence_core::{Thm, Type};
 use covalence_sexp::SExpr;
 
-/// A replayed theory: the environment it produced (with all its lemmas,
-/// `open`-able by other theories) plus the ordered list of theorems.
+/// A replayed theory. Its **export** environment — the public interface,
+/// built explicitly by `(export …)` directives — is what other theories
+/// `import`/`open` and what the `cov_theory!` accessors expose. The full
+/// internal environment (every import + every proven lemma) is used only
+/// for resolution *during* the run and is not surfaced.
 pub struct Theory {
-    env: Env,
+    /// The explicitly-exported public interface (`(export …)`).
+    exports: Env,
     pub thms: Vec<NamedThm>,
 }
 
 impl Theory {
-    /// The environment this theory produced — pass it as an `(open NAME)`
-    /// target when running a downstream script.
+    /// The exported environment — pass it as an `(open NAME)` target when
+    /// running a downstream script. Empty unless the script `(export …)`s.
     pub fn env(&self) -> Env {
-        self.env.clone()
+        self.exports.clone()
     }
 
-    /// Look up a proven lemma by name (panics if absent — for the
-    /// `cov_theory!` accessor functions, which name lemmas statically).
+    /// Look up an **exported** lemma by name (panics if not exported — for
+    /// the `cov_theory!` accessor functions, which name lemmas statically;
+    /// exposing one as a Rust `fn` therefore requires `(export …)`ing it).
     pub fn lemma(&self, name: &str) -> Thm {
-        self.env
+        self.exports
             .lemmas
             .get(name)
             .cloned()
-            .unwrap_or_else(|| panic!("theory has no lemma `{name}`"))
+            .unwrap_or_else(|| panic!("theory does not export lemma `{name}`"))
     }
 }
 
@@ -93,7 +98,8 @@ pub fn run(
 ) -> Result<Theory, ScriptError> {
     let exprs =
         covalence_sexp::parse(src).map_err(|e| ScriptError::Syntax(format!("sexp: {e}")))?;
-    let mut env = Env::empty();
+    let mut internal = Env::empty();
+    let mut exports = Env::empty();
     let mut thms = Vec::new();
     for e in &exprs {
         let ch = syntax::list(e, "directive")?;
@@ -103,19 +109,39 @@ pub fn run(
                 let name = syntax::sym(&ch[1], "environment name")?;
                 let opened = resolver(name)
                     .ok_or_else(|| ScriptError::Unbound(format!("environment `{name}`")))?;
-                env.open(&opened);
+                internal.open(&opened);
             }
             "thm" => {
-                let nt = run_thm(ch, &env)?;
-                env.lemmas.insert(nt.name.clone(), nt.thm.clone());
+                let nt = run_thm(ch, &internal)?;
+                internal.lemmas.insert(nt.name.clone(), nt.thm.clone());
                 thms.push(nt);
+            }
+            // `(export NAME …)` — build the public interface explicitly.
+            // Each name is looked up in the running environment (a proven
+            // lemma, or an imported lemma/constant) and added to `exports`.
+            "export" => {
+                if ch.len() < 2 {
+                    return Err(ScriptError::Syntax("export: expected (export NAME …)".into()));
+                }
+                for item in &ch[1..] {
+                    let name = syntax::sym(item, "export name")?;
+                    if let Some(thm) = internal.lemmas.get(name) {
+                        exports.lemmas.insert(name.to_string(), thm.clone());
+                    } else if let Some(c) = internal.consts.get(name) {
+                        exports.consts.insert(name.to_string(), c.clone());
+                    } else {
+                        return Err(ScriptError::Unbound(format!(
+                            "export: nothing named `{name}` to export"
+                        )));
+                    }
+                }
             }
             other => {
                 return Err(ScriptError::Syntax(format!("unknown directive: {other}")));
             }
         }
     }
-    Ok(Theory { env, thms })
+    Ok(Theory { exports, thms })
 }
 
 /// Replay a script whose only available environment is the `core` prelude,
@@ -175,9 +201,16 @@ macro_rules! cov_theory {
                     })
                 });
 
-            /// The environment this theory produces (`open` it elsewhere).
+            /// This theory's exported environment, as a lazily-built static.
+            /// Reference it in another theory's `import …` clause (or `open`
+            /// it via a resolver) to bring its exports into scope.
+            $vis static ENV: ::std::sync::LazyLock<$crate::script::Env> =
+                ::std::sync::LazyLock::new(|| THEORY.env());
+
+            /// The exported environment (a clone of [`ENV`]) — convenient
+            /// where an owned `Env` is wanted, e.g. a resolver return.
             $vis fn env() -> $crate::script::Env {
-                THEORY.env()
+                (*ENV).clone()
             }
 
             $(
@@ -401,6 +434,32 @@ mod tests {
         assert_eq!(theory.thms.len(), 1);
         // {a ∧ b} ⊢ b ∧ a — carries the single hypothesis
         assert_eq!(theory.thms[0].thm.hyps().len(), 1);
+        // the same exported env is reachable as a lazy static
+        assert!(crate::init::logic::cov::ENV.lemmas.contains_key("and.comm"));
+    }
+
+    #[test]
+    fn export_controls_the_public_env() {
+        // Two lemmas are proven; only one is `(export …)`ed, so only it is
+        // in the exported env. Both still appear in `thms`.
+        let theory = run(
+            r#"
+            (open core)
+            (thm a (concl true)
+              (proof (eq-mp (reduce-prim (= true true)) (refl true))))
+            (thm b (concl (or p (not p))) (proof (lem p)))
+            (export a)
+            "#,
+            |name| (name == "core").then(Env::core),
+        )
+        .expect("should replay");
+        let env = theory.env();
+        assert!(env.lemmas.contains_key("a"), "exported lemma is public");
+        assert!(
+            !env.lemmas.contains_key("b"),
+            "un-exported lemma stays internal"
+        );
+        assert_eq!(theory.thms.len(), 2, "both lemmas were proven");
     }
 
     #[test]

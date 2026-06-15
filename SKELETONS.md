@@ -315,8 +315,9 @@ type-inference elaborator, `Drv` proof terms, the `check` interpreter, the
 `cov_theory!` (replacing the hand-written Rust proofs — the whole crate's
 ~225 tests still pass, since everything downstream of `truth()` re-checks).
 `run(src, resolver)` resolves `(open NAME)` against caller-supplied envs and
-returns a `Theory` whose `env()` is `open`-able by other scripts. These are
-deliberately deferred:
+returns a `Theory` whose **export** env — built explicitly by `(export NAME …)`
+directives — is `open`-able by other scripts; the macro binds it as a
+`static ENV: LazyLock<Env>`. These are deliberately deferred:
 
 - **Inference is best-effort (untrusted).** `infer.rs` does Hindley–Milner
   unification for free-variable and binder-domain types; it is not complete

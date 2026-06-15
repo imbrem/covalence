@@ -31,3 +31,7 @@
       (or-elim (assume (or p q))
         (imp-intro p (or-intro-r q (assume p)))
         (imp-intro q (or-intro-l p (assume q)))))))
+
+;; The public interface: what `cov::env()` exposes and what the Rust
+;; accessors (`truth`/`and_comm`/`or_comm`) read.
+(export truth and.comm or.comm)

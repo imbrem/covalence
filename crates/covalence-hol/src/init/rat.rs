@@ -898,6 +898,165 @@ fn not_one_le_zero_impl() -> Result<Thm> {
 }
 
 // ============================================================================
+// Linear-order facts — also DERIVED from the order postulates
+// ============================================================================
+//
+// `lt_asymm` / `lt_imp_ne` / `le_antisym` / `le_total` round out `rat` as a
+// linear order. Like `le_refl`/`le_trans` above, they are **derived** from
+// the strict-order postulates (`lt_irrefl`/`lt_trans`/`lt_trichotomy`) +
+// `le_def` and add no new postulate of their own. (The `rat` ordered-field
+// *ring* axioms remain postulated — discharging them goes through the `int`
+// *multiplicative* theory, which is not yet proved; these order facts need
+// only the strict-order postulates and so are available now.)
+
+cached_thm! {
+    /// `⊢ ∀a b. a < b ⟹ ¬(b < a)` — strict order is asymmetric: `a < b` and
+    /// `b < a` would give `a < a` by `lt_trans`, contradicting `lt_irrefl`.
+    pub fn lt_asymm() -> Thm {
+        lt_asymm_impl().expect("lt_asymm")
+    }
+}
+fn lt_asymm_impl() -> Result<Thm> {
+    let (a, b) = (rvar("a"), rvar("b"));
+    let (ab, ba) = (rlt(a.clone(), b.clone()), rlt(b.clone(), a.clone()));
+    let aa = lt_trans()
+        .all_elim(a.clone())?
+        .all_elim(b.clone())?
+        .all_elim(a.clone())?
+        .imp_elim(Thm::assume(ab.clone())?)?
+        .imp_elim(Thm::assume(ba.clone())?)?; // {a<b, b<a} ⊢ a<a
+    let f = lt_irrefl().all_elim(a.clone())?.not_elim(aa)?; // {a<b, b<a} ⊢ F
+    f.imp_intro(&ba)?
+        .not_intro()? // {a<b} ⊢ ¬(b<a)
+        .imp_intro(&ab)?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. a < b ⟹ ¬(a = b)` — a strict inequality rules out equality:
+    /// `a = b` rewrites `a < b` to `a < a`, contradicting `lt_irrefl`.
+    pub fn lt_imp_ne() -> Thm {
+        lt_imp_ne_impl().expect("lt_imp_ne")
+    }
+}
+fn lt_imp_ne_impl() -> Result<Thm> {
+    let (a, b) = (rvar("a"), rvar("b"));
+    let ab = rlt(a.clone(), b.clone());
+    let eq = a.clone().equals(b.clone())?;
+    // (a<a) = (a<b) by congruence under `(<) a` using `a = b`; flip and apply.
+    let cong = Thm::assume(eq.clone())?.cong_arg(Term::app(rat_lt(), a.clone()))?;
+    let aa = cong.sym()?.eq_mp(Thm::assume(ab.clone())?)?; // {a<b, a=b} ⊢ a<a
+    let f = lt_irrefl().all_elim(a.clone())?.not_elim(aa)?;
+    f.imp_intro(&eq)?
+        .not_intro()? // {a<b} ⊢ ¬(a=b)
+        .imp_intro(&ab)?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. a ≤ b ⟹ b ≤ a ⟹ a = b` — antisymmetry, by case analysis on
+    /// `le_def` (each `≤` is `<` or `=`): the `<`/`<` case contradicts
+    /// `lt_asymm` (ex falso), the others give `a = b` directly.
+    pub fn le_antisym() -> Thm {
+        le_antisym_impl().expect("le_antisym")
+    }
+}
+fn le_antisym_impl() -> Result<Thm> {
+    let (a, b) = (rvar("a"), rvar("b"));
+    let (hab, hba) = (rle(a.clone(), b.clone()), rle(b.clone(), a.clone()));
+    let goal = a.clone().equals(b.clone())?; // a = b
+    let d_ab = le_def()
+        .all_elim(a.clone())?
+        .all_elim(b.clone())?
+        .eq_mp(Thm::assume(hab.clone())?)?; // {a≤b} ⊢ a<b ∨ a=b
+    let d_ba = le_def()
+        .all_elim(b.clone())?
+        .all_elim(a.clone())?
+        .eq_mp(Thm::assume(hba.clone())?)?; // {b≤a} ⊢ b<a ∨ b=a
+
+    let ab_lt = rlt(a.clone(), b.clone());
+    let ab_eq = a.clone().equals(b.clone())?;
+    let ba_lt = rlt(b.clone(), a.clone());
+    let ba_eq = b.clone().equals(a.clone())?;
+
+    // a<b branch: split d_ba.
+    let br_ab_lt = {
+        // b<a: a<b and b<a contradict `lt_asymm`, so a=b ex falso.
+        let sub_lt = {
+            let not_ba = lt_asymm()
+                .all_elim(a.clone())?
+                .all_elim(b.clone())?
+                .imp_elim(Thm::assume(ab_lt.clone())?)?; // {a<b} ⊢ ¬(b<a)
+            let f = not_ba.not_elim(Thm::assume(ba_lt.clone())?)?; // {a<b, b<a} ⊢ F
+            f.false_elim(goal.clone())?.imp_intro(&ba_lt)? // {a<b} ⊢ b<a ⟹ a=b
+        };
+        // b=a: a=b by symmetry.
+        let sub_eq = Thm::assume(ba_eq.clone())?.sym()?.imp_intro(&ba_eq)?; // ⊢ b=a ⟹ a=b
+        d_ba.or_elim(sub_lt, sub_eq)?.imp_intro(&ab_lt)? // {a≤b, b≤a} ⊢ a<b ⟹ a=b
+    };
+    // a=b branch: immediate.
+    let br_ab_eq = Thm::assume(ab_eq.clone())?.imp_intro(&ab_eq)?; // ⊢ a=b ⟹ a=b
+
+    d_ab
+        .or_elim(br_ab_lt, br_ab_eq)? // {a≤b, b≤a} ⊢ a=b
+        .imp_intro(&hba)?
+        .imp_intro(&hab)?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. a ≤ b ∨ b ≤ a` — totality, from `lt_trichotomy` + `le_def`
+    /// (`a<b` and `a=b` each give `a≤b`; `b<a` gives `b≤a`).
+    pub fn le_total() -> Thm {
+        le_total_impl().expect("le_total")
+    }
+}
+fn le_total_impl() -> Result<Thm> {
+    let (a, b) = (rvar("a"), rvar("b"));
+    let (le_ab, le_ba) = (rle(a.clone(), b.clone()), rle(b.clone(), a.clone()));
+
+    let ab_lt = rlt(a.clone(), b.clone());
+    let ab_eq = a.clone().equals(b.clone())?;
+    let ba_lt = rlt(b.clone(), a.clone());
+    let inner_hyp = ab_eq.clone().or(ba_lt.clone())?; // a=b ∨ b<a (trichotomy's tail)
+
+    let tri = lt_trichotomy().all_elim(a.clone())?.all_elim(b.clone())?; // ⊢ a<b ∨ (a=b ∨ b<a)
+
+    // a<b ⟹ goal  (a<b gives a≤b).
+    let br_lt = {
+        let le = lt_imp_le()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .imp_elim(Thm::assume(ab_lt.clone())?)?; // {a<b} ⊢ a≤b
+        le.or_intro_l(le_ba.clone())?.imp_intro(&ab_lt)? // ⊢ a<b ⟹ goal
+    };
+    // a=b ⟹ goal  (a=b gives a≤b via le_def).
+    let br_eq = {
+        let ld = le_def().all_elim(a.clone())?.all_elim(b.clone())?; // (a≤b)=(a<b ∨ a=b)
+        let disj = Thm::assume(ab_eq.clone())?.or_intro_r(ab_lt.clone())?; // {a=b} ⊢ a<b ∨ a=b
+        let le = ld.sym()?.eq_mp(disj)?; // {a=b} ⊢ a≤b
+        le.or_intro_l(le_ba.clone())?.imp_intro(&ab_eq)? // ⊢ a=b ⟹ goal
+    };
+    // b<a ⟹ goal  (b<a gives b≤a).
+    let br_ba = {
+        let le = lt_imp_le()
+            .all_elim(b.clone())?
+            .all_elim(a.clone())?
+            .imp_elim(Thm::assume(ba_lt.clone())?)?; // {b<a} ⊢ b≤a
+        le.or_intro_r(le_ab.clone())?.imp_intro(&ba_lt)? // ⊢ b<a ⟹ goal
+    };
+    let inner = Thm::assume(inner_hyp.clone())?
+        .or_elim(br_eq, br_ba)? // {a=b ∨ b<a} ⊢ goal
+        .imp_intro(&inner_hyp)?; // ⊢ (a=b ∨ b<a) ⟹ goal
+    tri.or_elim(br_lt, inner)? // ⊢ goal
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+// ============================================================================
 // Density — DERIVED from the two mediant inequalities
 // ============================================================================
 //
@@ -1183,6 +1342,49 @@ mod tests {
             .imp(rle(y, z.clone()).imp(rle(x, z)).unwrap())
             .unwrap();
         assert_eq!(lt.concl(), &expected);
+    }
+
+    #[test]
+    fn linear_order_facts_have_expected_shapes() {
+        // lt_asymm / lt_imp_ne / le_antisym / le_total — derived, carrying
+        // only (bool) postulate hypotheses, with the expected shapes.
+        let (a, b) = (rvar("a"), rvar("b"));
+        for t in [lt_asymm(), lt_imp_ne(), le_antisym(), le_total()] {
+            assert!(t.concl().type_of().unwrap().is_bool());
+            assert!(t.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
+        }
+
+        let inst2 = |t: Thm| t.all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
+
+        // ∀a b. a < b ⟹ ¬(b < a).
+        let asym = inst2(lt_asymm());
+        let exp_asym = rlt(a.clone(), b.clone())
+            .imp(rlt(b.clone(), a.clone()).not().unwrap())
+            .unwrap();
+        assert_eq!(asym.concl(), &exp_asym);
+
+        // ∀a b. a < b ⟹ ¬(a = b).
+        let ne = inst2(lt_imp_ne());
+        let exp_ne = rlt(a.clone(), b.clone())
+            .imp(a.clone().equals(b.clone()).unwrap().not().unwrap())
+            .unwrap();
+        assert_eq!(ne.concl(), &exp_ne);
+
+        // ∀a b. a ≤ b ⟹ b ≤ a ⟹ a = b.
+        let anti = inst2(le_antisym());
+        let exp_anti = rle(a.clone(), b.clone())
+            .imp(
+                rle(b.clone(), a.clone())
+                    .imp(a.clone().equals(b.clone()).unwrap())
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(anti.concl(), &exp_anti);
+
+        // ∀a b. a ≤ b ∨ b ≤ a.
+        let tot = inst2(le_total());
+        let exp_tot = rle(a.clone(), b.clone()).or(rle(b.clone(), a.clone())).unwrap();
+        assert_eq!(tot.concl(), &exp_tot);
     }
 
     #[test]

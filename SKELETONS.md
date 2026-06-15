@@ -75,6 +75,21 @@ it is how unfinished work stays discoverable.
     free `a` need not be a single class. The axioms work because the *ops*
     always produce `mk_int` (proper) values — route the round-trip through
     those intermediates, never through the free variables.
+  - 🛑 **`int` has junk → three axioms are currently *false*.**
+    `close_predicate` is just `nonempty ∧ upward-closed`, and since
+    `int_rel` is an equivalence, an upward-closed set may be a *union* of
+    classes. So `Type::int()` contains junk like `abs(class 0 ∪ class 1)`,
+    a valid-but-non-class element. For such `a`, `a + int.zero` normalises
+    to a single class `≠ a`, so **`add_zero`, `mul_one`, `mul_zero` are not
+    theorems** (they cannot be proved hypothesis-free; they must stay
+    `Thm::assume` postulates). The *provable* ring axioms are the junk-safe
+    ones: `add_comm`/`mul_comm` (done), `add_assoc`/`mul_assoc`/`distrib`
+    (all-ops, true for junk), and `add_neg`/`sub_def` (the op result is
+    always the proper `0`-class). **The proper fix is upstream**: make
+    `defs/quotient.rs`'s `quot` junk-free — predicate `λS. ∃a. S = classOf
+    a` (S is *exactly* one class), not "nonempty upward-closed". That also
+    revalidates quotient induction. Until then, only the junk-safe axioms
+    are dischargeable.
   - The `0`/`1` axioms (`add_zero`, `mul_one`, `mul_zero`, `sub_def` uses
     `neg`) additionally need **literal coherence**: relating `int_lit 0` /
     `int_lit 1` to their quotient representatives (`(0,0)` / `(1,0)`), a

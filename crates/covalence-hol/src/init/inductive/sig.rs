@@ -41,7 +41,10 @@ pub enum GenArg<Ty> {
     /// closure / induction clause the sub-term is bound as `name` and its
     /// recursive image (a value of the recursor's result type `β`) as
     /// `image`.
-    Rec { name: &'static str, image: &'static str },
+    Rec {
+        name: &'static str,
+        image: &'static str,
+    },
 }
 
 impl<Ty: Clone> GenArg<Ty> {
@@ -95,7 +98,10 @@ pub struct GenConstructor<Tm, Ty> {
 impl<Tm, Ty> GenConstructor<Tm, Ty> {
     /// A nullary constructor (a constant of type `T`, e.g. `zero` / `nil`).
     pub fn nullary(ctor: Tm) -> Self {
-        GenConstructor { ctor, args: Vec::new() }
+        GenConstructor {
+            ctor,
+            args: Vec::new(),
+        }
     }
 
     /// A constructor with the given argument signature.

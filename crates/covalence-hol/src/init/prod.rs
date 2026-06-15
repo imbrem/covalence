@@ -116,9 +116,13 @@ fn prove_singleton_exists(ex_term: &Term, a: &Term, b: &Term, rel: &Term) -> Res
 /// [`singleton_pred`]. The seam every clause builds on; its RHS is the
 /// canonical `pairRel a b` relation.
 pub fn rep_pair(alpha: &Type, beta: &Type, a: &Term, b: &Term) -> Result<Thm> {
-    // pair a b = abs (pairRel a b)
-    let pab_unfold = pair_at(alpha, beta, a, b)
-        .delta_all(pair_spec().symbol())?
+    // pair a b = abs (pairRel a b). Unfold the **head** `pair` only
+    // (`delta` + `cong_fn`); `delta_all` would also unfold any `pair` *inside*
+    // `a`/`b` (a component may itself be a `pair`), desyncing later rewrites.
+    let pab_unfold = pair(alpha.clone(), beta.clone())
+        .delta()? // ⊢ pair = body
+        .cong_fn(a.clone())?
+        .cong_fn(b.clone())? // ⊢ pair a b = body a b
         .rhs_conv(|t| t.reduce())?;
     let abs_rel = rhs_of(&pab_unfold)?;
     let rel = abs_rel.as_app().ok_or(Error::NotAnEquation)?.1.clone(); // pairRel a b

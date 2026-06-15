@@ -302,13 +302,11 @@ fn rewrite_seq(t: &Term, eqs: &[Thm]) -> Result<Thm> {
 // nose) or by [`quotient::class_intro`] from a `~`-fact (when they don't).
 
 /// The `int` type-spec handle.
-#[allow(dead_code)]
 fn spec() -> covalence_core::defs::TypeSpec {
     covalence_core::defs::int_ty_spec()
 }
 
 /// `pair a b : nat × nat`.
-#[allow(dead_code)]
 fn pair_nn(a: Term, b: Term) -> Term {
     Term::app(Term::app(pair(Type::nat(), Type::nat()), a), b)
 }
@@ -316,13 +314,11 @@ fn pair_nn(a: Term, b: Term) -> Term {
 /// `mkInt p ≔ abs(λx. int_rel p x)` — the quotient class of the pair `p`,
 /// in [`quotient::mk_class`] form (the canonical shape `class_intro` /
 /// `class_elim` / `recon` speak).
-#[allow(dead_code)]
 fn mk_int(p: &Term) -> Term {
     quotient::mk_class(&spec(), &[], &nn(), &int_rel(), p)
 }
 
 /// `(0, 0) : nat × nat` — a base witness for `recon`'s non-emptiness side.
-#[allow(dead_code)]
 fn pair00() -> Term {
     pair_nn(nat::zero(), nat::zero())
 }
@@ -330,7 +326,6 @@ fn pair00() -> Term {
 /// `⊢ int_rel p x = (fst p + snd x = fst x + snd p)` — two β-steps, **no**
 /// `ι` (so `fst p` is left intact even when `p` is a literal pair). Matches
 /// the body shape `defs/int.rs`'s `class_of` writes.
-#[allow(dead_code)]
 fn int_rel_beta(p: &Term, x: &Term) -> Result<Thm> {
     let ir_p = Term::app(int_rel(), p.clone()); // (λp' q. body) p
     let s1 = Thm::beta_conv(ir_p.clone())?; // ⊢ int_rel p = λq. body[p]
@@ -344,7 +339,6 @@ fn int_rel_beta(p: &Term, x: &Term) -> Result<Thm> {
 /// β-reduced class body `defs/int.rs` produces (the RHS shape of
 /// [`add_defining_eq`] etc.) equals the un-reduced `quotient::mk_class`
 /// form. Built by β-normalising `λx. int_rel p x` under the binder.
-#[allow(dead_code)]
 fn defs_to_mk_int(p: &Term) -> Result<Thm> {
     let x = Term::free("__cls", nn());
     let body_eq = int_rel_beta(p, &x)?; // ⊢ int_rel p x = defs_body
@@ -355,7 +349,6 @@ fn defs_to_mk_int(p: &Term) -> Result<Thm> {
 }
 
 /// **Reconstruction.** `⊢ a = mk_int(rep_pair a)` for any `a : int`.
-#[allow(dead_code)]
 fn recon(a: &Term) -> Result<Thm> {
     quotient::recon(
         &spec(),
@@ -372,14 +365,12 @@ fn recon(a: &Term) -> Result<Thm> {
 
 /// `⊢ int_rel p (rep_pair (mk_int p))` — the chosen representative of `[p]`
 /// is `~`-related to `p` ([`quotient::round_trip`]).
-#[allow(dead_code)]
 fn round_trip(p: &Term) -> Result<Thm> {
     quotient::round_trip(&spec(), &[], &nn(), &int_rel(), &int_rel_refl(), p)
 }
 
 /// `⊢ (a + b) + (c + d) = (a + c) + (b + d)` on `nat` — the "middle swap"
 /// rearrangement (commute the right summand, then [`nat::add_interchange`]).
-#[allow(dead_code)]
 fn mid_swap(a: &Term, b: &Term, c: &Term, d: &Term) -> Result<Thm> {
     let comm_cd = nat::add_comm().all_elim(c.clone())?.all_elim(d.clone())?; // c+d = d+c
     let left = comm_cd.cong_arg(Term::app(nat::nat_add(), nat::add(a.clone(), b.clone())))?; // (a+b)+(c+d) = (a+b)+(d+c)
@@ -388,7 +379,6 @@ fn mid_swap(a: &Term, b: &Term, c: &Term, d: &Term) -> Result<Thm> {
 }
 
 /// Parse an `int_rel a b` application into `(a, b)`.
-#[allow(dead_code)]
 fn dest_rel_app(t: &Term) -> Result<(Term, Term)> {
     let (rel_a, b) = t.as_app().ok_or(Error::NotAnEquation)?;
     let (_rel, a) = rel_a.as_app().ok_or(Error::NotAnEquation)?;
@@ -397,7 +387,6 @@ fn dest_rel_app(t: &Term) -> Result<(Term, Term)> {
 
 /// `pair (fst x + fst y) (snd x + snd y)` — the Grothendieck sum of two
 /// representative pairs (`int.add`'s componentwise build).
-#[allow(dead_code)]
 fn add_pair(x: &Term, y: &Term) -> Term {
     pair_nn(
         nat::add(fst_nn(x), fst_nn(y)),
@@ -409,7 +398,6 @@ fn add_pair(x: &Term, y: &Term) -> Term {
 /// `g : ⊢ a1 + b2 = b1 + a2`. `fst`/`snd` of a literal pair are stuck under
 /// `reduce` (ε-defined, not primitive), so we bridge `int_rel`'s body via
 /// the proven prod projection theorems instead.
-#[allow(dead_code)]
 fn rel_of_pairs(a1: &Term, a2: &Term, b1: &Term, b2: &Term, g: Thm) -> Result<Thm> {
     let n = Type::nat();
     let a = pair_nn(a1.clone(), a2.clone());
@@ -430,7 +418,6 @@ fn rel_of_pairs(a1: &Term, a2: &Term, b1: &Term, b2: &Term, g: Thm) -> Result<Th
 /// conclude `⊢ int_rel (add_pair x y) (add_pair x' y')` — `int.add` respects
 /// `~`. Pure `nat` algebra: add the two defining equations and re-pair the
 /// four `fst`/`snd` summands ([`mid_swap`]).
-#[allow(dead_code)]
 fn add_pair_cong(h1: Thm, h2: Thm) -> Result<Thm> {
     let (x, xp) = dest_rel_app(h1.concl())?;
     let (y, yp) = dest_rel_app(h2.concl())?;
@@ -459,7 +446,6 @@ fn add_pair_cong(h1: Thm, h2: Thm) -> Result<Thm> {
 /// mk_int (add_pair p q)`. Unfold `int.add` on the two classes, then use the
 /// round-trips `p ~ rep_pair[p]`, `q ~ rep_pair[q]` and additive
 /// well-definedness to re-quotient the chosen representatives back to `p`, `q`.
-#[allow(dead_code)]
 fn add_class(p: &Term, q: &Term) -> Result<Thm> {
     let (mp, mq) = (mk_int(p), mk_int(q));
     let dl = add_defining_eq(&mp, &mq)?; // int.add mp mq = abs(class_of_defs(add_pair RPp RPq))
@@ -476,7 +462,6 @@ fn add_class(p: &Term, q: &Term) -> Result<Thm> {
 }
 
 /// Specialise a `∀x y. …` theorem at two witnesses.
-#[allow(dead_code)]
 fn inst2(thm: Thm, a: &Term, b: &Term) -> Result<Thm> {
     thm.all_elim(a.clone())?.all_elim(b.clone())
 }
@@ -491,11 +476,6 @@ fn inst2(thm: Thm, a: &Term, b: &Term) -> Result<Thm> {
 // `s` (via surjective pairing), and the op rules then combine components on
 // the nose. The ring identities reduce to `nat` algebra on `f`/`s`.
 //
-// NOTE: WIP — this layer and the `add_assoc` proof below are commented out
-// pending a fix to the leaf-vs-unfolded `pair` form mismatch in
-// `add_via_components`. The lower-level machinery (`recon`, `add_class`,
-// `round_trip`) is proved and exercised by `recon_and_add_class_hold_on_int`.
-/*
 /// `MK(f, s) ≔ mk_int(pair f s)`.
 fn mkfs(f: &Term, s: &Term) -> Term {
     mk_int(&pair_nn(f.clone(), s.clone()))
@@ -525,7 +505,10 @@ fn recon_mk(a: &Term) -> Result<Thm> {
 /// sb) = MK (fa+fb) (sa+sb)` — [`add_class`] with the `add_pair` of two
 /// literal pairs simplified componentwise (prod projections).
 fn add_mk(fa: &Term, sa: &Term, fb: &Term, sb: &Term) -> Result<Thm> {
-    let (pa, pb) = (pair_nn(fa.clone(), sa.clone()), pair_nn(fb.clone(), sb.clone()));
+    let (pa, pb) = (
+        pair_nn(fa.clone(), sa.clone()),
+        pair_nn(fb.clone(), sb.clone()),
+    );
     let ac = add_class(&pa, &pb)?; // = mk_int(add_pair pa pb)
     let n = Type::nat();
     let projs = [
@@ -556,7 +539,9 @@ fn add_via_components(ra: &Thm, rb: &Thm) -> Result<Thm> {
     let (fa, sa) = mk_components(&ma)?;
     let (fb, sb) = mk_components(&mb)?;
     // int.add a b = int.add (MK fa sa)(MK fb sb)
-    let cong = Thm::refl(int_add())?.cong_app(ra.clone())?.cong_app(rb.clone())?;
+    let cong = Thm::refl(int_add())?
+        .cong_app(ra.clone())?
+        .cong_app(rb.clone())?;
     let _ = (a, b);
     cong.trans(add_mk(&fa, &sa, &fb, &sb)?)
 }
@@ -578,7 +563,6 @@ fn mk_components(mk: &Term) -> Result<(Term, Term)> {
     let f = pair_f.as_app().ok_or(Error::NotAnEquation)?.1.clone();
     Ok((f, s.clone()))
 }
-*/
 
 // ============================================================================
 // Commutative ring
@@ -618,48 +602,43 @@ cached_thm! {
     }
 }
 
-/// `⊢ ∀a b c. (a + b) + c = a + (b + c)`. **Postulate** — the quotient-lift
-/// proof via the `MK` component layer (commented out above) is WIP, blocked
-/// on a leaf-vs-unfolded `pair` form mismatch in `add_via_components`.
-pub fn add_assoc() -> Thm {
-    let (a, b, c) = (var("a"), var("b"), var("c"));
-    let lhs = add(add(a.clone(), b.clone()), c.clone());
-    let rhs = add(a, add(b, c));
-    let eq = lhs.equals(rhs).expect("add_assoc");
-    axiom(forall_int(&["a", "b", "c"], eq))
-}
+cached_thm! {
+    /// `⊢ ∀a b c. (a + b) + c = a + (b + c)` — **proved**. Reconstruct each
+    /// variable in component form, push `int.add` through to `MK` of
+    /// componentwise `nat` sums, and close by `nat::add_assoc` on each of the
+    /// two `nat` components.
+    pub fn add_assoc() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
 
-/* WIP add_assoc proof — depends on the commented `MK` layer above:
-fn add_assoc_impl() -> Result<Thm> {
-    let (a, b, c) = (var("a"), var("b"), var("c"));
-    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+        // (a+b)+c = MK ((fa+fb)+fc) ((sa+sb)+sc)
+        let ab = add_via_components(&ra, &rb)?;
+        let lhs = add_via_components(&ab, &rc)?;
+        // a+(b+c) = MK (fa+(fb+fc)) (sa+(sb+sc))
+        let bc = add_via_components(&rb, &rc)?;
+        let rhs = add_via_components(&ra, &bc)?;
 
-    // (a+b)+c = MK ((fa+fb)+fc) ((sa+sb)+sc)
-    let ab = add_via_components(&ra, &rb)?;
-    let lhs = add_via_components(&ab, &rc)?;
-    // a+(b+c) = MK (fa+(fb+fc)) (sa+(sb+sc))
-    let bc = add_via_components(&rb, &rc)?;
-    let rhs = add_via_components(&ra, &bc)?;
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let (fb, sb) = (fcomp(&b), scomp(&b));
+        let (fc, sc) = (fcomp(&c), scomp(&c));
+        let assoc_f = elim3(nat::add_assoc(), &fa, &fb, &fc)?; // (fa+fb)+fc = fa+(fb+fc)
+        let assoc_s = elim3(nat::add_assoc(), &sa, &sb, &sc)?;
+        let bridge = mkfs_cong(assoc_f, assoc_s)?;
 
-    let (fa, sa) = (fcomp(&a), scomp(&a));
-    let (fb, sb) = (fcomp(&b), scomp(&b));
-    let (fc, sc) = (fcomp(&c), scomp(&c));
-    let assoc_f = elim3(nat::add_assoc(), &fa, &fb, &fc)?; // (fa+fb)+fc = fa+(fb+fc)
-    let assoc_s = elim3(nat::add_assoc(), &sa, &sb, &sc)?;
-    let bridge = mkfs_cong(assoc_f, assoc_s)?;
-
-    lhs.trans(bridge)?
-        .trans(rhs.sym()?)?
-        .all_intro("c", int())?
-        .all_intro("b", int())?
-        .all_intro("a", int())
+        lhs.trans(bridge)?
+            .trans(rhs.sym()?)?
+            .all_intro("c", int())?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
 }
 
 /// Specialise a `∀a b c. …` theorem at three witnesses.
 fn elim3(thm: Thm, a: &Term, b: &Term, c: &Term) -> Result<Thm> {
-    thm.all_elim(a.clone())?.all_elim(b.clone())?.all_elim(c.clone())
+    thm.all_elim(a.clone())?
+        .all_elim(b.clone())?
+        .all_elim(c.clone())
 }
-*/
 
 /// `⊢ ∀a. a + 0 = a`.
 pub fn add_zero() -> Thm {
@@ -846,7 +825,6 @@ mod tests {
     /// The full postulate set — used to assert the audit-trail invariant.
     fn all() -> Vec<Thm> {
         vec![
-            add_assoc(),
             add_zero(),
             add_neg(),
             mul_assoc(),
@@ -911,6 +889,21 @@ mod tests {
             .all_elim(b.clone())
             .unwrap();
         let expected = add(a.clone(), b.clone()).equals(add(b, a)).unwrap();
+        assert_eq!(inst.concl(), &expected);
+    }
+
+    #[test]
+    fn add_assoc_is_a_genuine_theorem() {
+        let thm = add_assoc();
+        assert!(
+            thm.hyps().is_empty(),
+            "int::add_assoc is proved, not postulated"
+        );
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let inst = elim3(thm, &a, &b, &c).unwrap();
+        let expected = add(add(a.clone(), b.clone()), c.clone())
+            .equals(add(a, add(b, c)))
+            .unwrap();
         assert_eq!(inst.concl(), &expected);
     }
 

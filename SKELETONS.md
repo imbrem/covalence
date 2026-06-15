@@ -109,8 +109,16 @@ it is how unfinished work stays discoverable.
     `lt_*`/`le_def`, and the base strictness fact `zero_lt_one` — `ratLt`
     picks ε-representatives, so `0 < 1` is not reducible. Each is a HOL
     theorem derivable from the `int` ordered-ring theory through the
-    quotient; filling them in does not change the public `fn` surface. They
-    depend transitively on the `int` postulates above. (The linear-order
+    quotient; filling them in does not change the public `fn` surface.
+    **The commutative-ring half is now unblocked**: `init::int` proves its
+    full commutative ring (`add_*`/`mul_*`/`distrib`), so the rat ring
+    axioms only await the *machinery port* — the rat analogue of int's
+    `recon` + MK-component layer + per-op computation/well-definedness rules
+    (`add_pair_cong`/`mul_pair_cong` over the cross-multiplication relation),
+    plus a postulated `int.pos` round-trip for the `to_pos` denominators
+    (`rep(to_pos(d₁·d₂)) = d₁·d₂`, pending `int.pos` positivity). The
+    *order* axioms (`lt_*`/`le_def`/`zero_lt_one`) still await the `int`
+    order theory. (The linear-order
     toolkit `le_refl`/`lt_imp_le`/`le_trans`/`lt_asymm`/`lt_imp_ne`/
     `le_antisym`/`le_total`/`not_one_le_zero` is **not** postulated — it is
     *derived* from `le_def` + the strict-order facts.)

@@ -5,20 +5,18 @@
 //!
 //! [`init::nat`]: crate::init::nat
 //!
-//! ## Status — the additive commutative group is proved
+//! ## Status — the full commutative ring is proved
 //!
 //! `int := (nat × nat) / ~` is the Grothendieck construction, so every
 //! axiom here is a *theorem* of HOL derivable from the `nat` Peano facts
-//! through the quotient. The lifting machinery is built and the additive
-//! group is fully discharged; the rest are still `Thm::assume` postulates
-//! (flagged in `SKELETONS.md`, each carrying its statement as a
-//! self-hypothesis so the audit trail is visible downstream).
+//! through the quotient. The lifting machinery is built and the **entire
+//! commutative ring is discharged**; only the order theory is still
+//! `Thm::assume` postulates (flagged in `SKELETONS.md`, each carrying its
+//! statement as a self-hypothesis so the audit trail is visible downstream).
 //!
-//! - **Commutative ring** — **proved:** [`add_comm`], [`add_assoc`],
-//!   [`add_zero`], [`add_neg`], [`sub_def`], [`mul_comm`]. **Postulated:**
-//!   [`mul_assoc`], [`mul_one`], [`mul_zero`], [`distrib`] (need
-//!   multiplication well-definedness — a `mul_pair_cong` — plus literal-`1`
-//!   coherence).
+//! - **Commutative ring** — **all proved:** [`add_comm`], [`add_assoc`],
+//!   [`add_zero`], [`add_neg`], [`sub_def`], [`mul_comm`], [`mul_assoc`],
+//!   [`mul_one`], [`mul_zero`], [`distrib`].
 //! - **Linear order** (postulated) — [`lt_irrefl`], [`lt_trans`],
 //!   [`lt_trichotomy`], [`le_def`].
 //! - **Ordered-ring compatibility** (postulated) — [`lt_add_mono`],
@@ -41,15 +39,19 @@
 //! - normalises every reconstructed `int` to the **`MK(f, s)` component
 //!   form** `mk_int (pair f s)` (`recon` + surjective pairing), so the op
 //!   rules combine explicit `nat` components on the nose;
-//! - gives per-op **computation rules** (`add_class`/`neg_class`/`sub_class`
-//!   and their `*_mk` component forms) via the defining equation,
-//!   `round_trip`, and a per-op well-definedness lemma (`*_pair_cong`);
-//! - derives **literal coherence** ([`lit0_mk`]: `int_lit 0 = MK(0, 0)`)
-//!   from the two readings of `0 + 0` (`reduce_prim` vs the Grothendieck
-//!   body) forcing `fst(rep 0) = snd(rep 0)`.
+//! - gives per-op **computation rules** (`add_class` / `neg_class` /
+//!   `sub_class` / `mul_class` / `succ_class` and their `*_mk` component
+//!   forms) via the defining equation, `round_trip`, and a per-op
+//!   well-definedness lemma (`*_pair_cong`). Multiplication
+//!   (`mul_pair_cong`) is the one tedious case — proved per-argument
+//!   (`distrib` on the defining `nat` equation) and chained by transitivity;
+//! - derives **literal coherence** ([`lit0_mk`]: `int_lit 0 = MK(0, 0)`,
+//!   from the two readings of `0 + 0` forcing `fst(rep 0) = snd(rep 0)`;
+//!   [`lit1_mk`]: `int_lit 1 = MK(1, 0)` via `int.succ 0 = succ (MK 0 0)`).
 //!
-//! Each additive axiom then reduces to `nat` algebra on the `f`/`s`
-//! components (e.g. `add_assoc` is `nat::add_assoc` on each component).
+//! Each ring axiom then reduces to `nat` algebra on the `f`/`s` components
+//! (e.g. `add_assoc` is `nat::add_assoc` per component; `mul_assoc` /
+//! `distrib` distribute to the same `nat` products, re-paired by `mid_swap`).
 
 use covalence_core::defs::{fst, pair, prod, snd};
 use covalence_core::{Error, Result, Term, Thm, Type, subst};

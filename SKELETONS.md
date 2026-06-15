@@ -130,6 +130,22 @@ it is how unfinished work stays discoverable.
     (need the `cons`-side stream computations). No `*_nil`/`*_cons` clauses for
     any of these yet.
 
+- **`covalence-hol` product theory** in `crates/covalence-hol/src/init/prod.rs`.
+  The core is **complete and genuine** (oracle-free): the `abs`/`rep` seam
+  (`rep_pair`), both projection clauses (`fst_pair`/`snd_pair`), surjective
+  pairing (`pair (fst p) (snd p) = p`), and pair injectivity (`pair_inj`).
+  Not yet covered:
+  - **`signed1` / `signed2`** (`defs/prod.rs`) are *separate* `TypeSpec`s reusing
+    the same singleton `prod_predicate` over `prod bit α`. Their constructors /
+    projections aren't built; once added they mirror `prod` exactly (the
+    `singleton_pred` / `determines` engine is type-agnostic — only the spec
+    handle differs).
+  - **The reverse of `pair_inj`** (`a = c ∧ b = d ⟹ pair a b = pair c d`, trivial
+    by congruence) and the packaged `⟺` form are not exposed.
+  - **A product recursor / `prod.case`** (`(α → β → γ) → prod α β → γ`) is not in
+    the `defs/` catalogue; surjective pairing + the projections are enough to
+    define and reason about one downstream when needed.
+
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in
   `crates/covalence-alethe/src/hol.rs`) checks the QF_UF core (`assume`,
   `resolution` / `th_resolution`, `refl`, `trans`, `symm`, `cong`,

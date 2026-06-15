@@ -94,6 +94,9 @@ fn mul(a: Term, b: Term) -> Term {
     Term::app(Term::app(int_mul(), a), b)
 }
 
+// Used by the test-suite statement builders (the proofs go through
+// `neg_via_components`, never this surface form).
+#[cfg_attr(not(test), allow(dead_code))]
 fn neg(a: Term) -> Term {
     Term::app(int_neg(), a)
 }
@@ -731,6 +734,93 @@ fn mk_components(mk: &Term) -> Result<(Term, Term)> {
 }
 
 // ============================================================================
+// Literal coherence — relating `int_lit n` to its `MK` representative
+// ============================================================================
+//
+// Integer literals are builtin `TermKind::Int`, opaque to the quotient. But
+// `int.add`/`int.succ` on literals reduce (`reduce_prim`) AND unfold to the
+// Grothendieck body, and those two must agree — which pins the literal's
+// class. We exploit that to derive `int_lit 0 = MK(0, 0)` (and `int_lit 1 =
+// MK(1, 0)`), the `0`/`1` coherence the unit/inverse axioms need.
+
+/// `⊢ a1 + b2 = b1 + a2` from `eq : ⊢ MK a1 a2 = MK b1 b2` — the converse of
+/// [`rel_of_pairs`], via [`quotient::class_elim`] then the prod projections.
+fn class_eq_to_nat(eq: Thm, a1: &Term, a2: &Term, b1: &Term, b2: &Term) -> Result<Thm> {
+    let n = Type::nat();
+    let (a, b) = (
+        pair_nn(a1.clone(), a2.clone()),
+        pair_nn(b1.clone(), b2.clone()),
+    );
+    let rel = quotient::class_elim(&spec(), &[], &nn(), &int_rel(), &int_rel_refl(), &a, &b, eq)?; // int_rel a b
+    let red = reduce_rel(rel)?; // fst a + snd b = fst b + snd a (fst/snd of pairs stuck)
+    let projs = [
+        crate::init::prod::fst_pair(&n, &n, a1, a2)?,
+        crate::init::prod::snd_pair(&n, &n, b1, b2)?,
+        crate::init::prod::fst_pair(&n, &n, b1, b2)?,
+        crate::init::prod::snd_pair(&n, &n, a1, a2)?,
+    ];
+    let mut acc = red;
+    for proj in projs {
+        acc = acc.rewrite(&proj)?;
+    }
+    Ok(acc) // ⊢ a1 + b2 = b1 + a2
+}
+
+/// `⊢ int_lit 0 = MK(0, 0)` — literal-`0` coherence. `int.add 0 0` reduces to
+/// `0` (`reduce_prim`) and unfolds to `MK(f0+f0)(s0+s0)` (`f0`/`s0` the
+/// components of `0`'s chosen representative); with `recon`'s `0 = MK(f0, s0)`
+/// the two force `f0 = s0`, hence `MK(f0, s0) = MK(0, 0)`.
+fn lit0_mk() -> Result<Thm> {
+    let z = lit(0);
+    let (f0, s0) = (fcomp(&z), scomp(&z));
+    let rp = rep_pair(&z);
+
+    // 0 = mk_int(add_pair rp rp) = MK(f0+f0)(s0+s0): two readings of `0 + 0`.
+    let e_red = add(z.clone(), z.clone()).reduce()?; // int.add 0 0 = 0
+    let e_def = add_defining_eq(&z, &z)?.trans(defs_to_mk_int(&add_pair(&rp, &rp))?)?;
+    let z_eq_big = e_red.sym()?.trans(e_def)?; // 0 = mk_int(add_pair rp rp)
+
+    let rm = recon_mk(&z)?; // 0 = MK(f0, s0)
+    let big_eq = rm.clone().sym()?.trans(z_eq_big)?; // MK(f0, s0) = MK(f0+f0)(s0+s0)
+
+    // f0 + (s0+s0) = (f0+f0) + s0  ⟹  f0 = s0.
+    let nat_eq = class_eq_to_nat(
+        big_eq,
+        &f0,
+        &s0,
+        &nat::add(f0.clone(), f0.clone()),
+        &nat::add(s0.clone(), s0.clone()),
+    )?;
+    let f0_eq_s0 = {
+        let assoc = elim3(nat::add_assoc(), &f0, &s0, &s0)?; // (f0+s0)+s0 = f0+(s0+s0)
+        let step = assoc.trans(nat_eq)?; // (f0+s0)+s0 = (f0+f0)+s0
+        let c1 = elim3(
+            nat::add_cancel(),
+            &nat::add(f0.clone(), s0.clone()),
+            &nat::add(f0.clone(), f0.clone()),
+            &s0,
+        )?
+        .imp_elim(step)?; // f0+s0 = f0+f0
+        let step2 = nat::add_comm()
+            .all_elim(s0.clone())?
+            .all_elim(f0.clone())?
+            .trans(c1)?; // s0+f0 = f0+f0
+        elim3(nat::add_cancel(), &s0, &f0, &f0)?
+            .imp_elim(step2)?
+            .sym()? // f0 = s0
+    };
+
+    // MK(f0, s0) = MK(0, 0): int_rel via f0 + 0 = 0 + s0.
+    let g = nat::add_zero()
+        .all_elim(f0.clone())? // f0 + 0 = f0
+        .trans(f0_eq_s0)? // = s0
+        .trans(nat::add_base().all_elim(s0.clone())?.sym()?)?; // = 0 + s0
+    let rel = rel_of_pairs(&f0, &s0, &nat::zero(), &nat::zero(), g)?;
+    let mk_eq = quotient::class_intro(&spec(), &[], &nn(), &int_rel_symm(), &int_rel_trans(), rel)?;
+    rm.trans(mk_eq) // ⊢ 0 = MK(0, 0)
+}
+
+// ============================================================================
 // Commutative ring
 // ============================================================================
 
@@ -806,22 +896,50 @@ fn elim3(thm: Thm, a: &Term, b: &Term, c: &Term) -> Result<Thm> {
         .all_elim(c.clone())
 }
 
-/// `⊢ ∀a. a + 0 = a`.
-pub fn add_zero() -> Thm {
-    let a = var("a");
-    let eq = add(a.clone(), lit(0))
-        .equals(a)
-        .expect("add_zero: a + 0 = a");
-    axiom(forall_int(&["a"], eq))
+cached_thm! {
+    /// `⊢ ∀a. a + 0 = a` — **proved**. `0 = MK(0,0)` ([`lit0_mk`]), so
+    /// `a + 0 = MK(fa+0)(sa+0) = MK(fa)(sa) = a` by `nat::add_zero` on each
+    /// component.
+    pub fn add_zero() -> Result<Thm> {
+        let a = var("a");
+        let ra = recon_mk(&a)?; // a = MK(fa, sa)
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let lhs = add_via_components(&ra, &lit0_mk()?)?; // a + 0 = MK(fa+0)(sa+0)
+        let bridge = mkfs_cong(
+            nat::add_zero().all_elim(fa.clone())?, // fa+0 = fa
+            nat::add_zero().all_elim(sa.clone())?, // sa+0 = sa
+        )?;
+        lhs.trans(bridge)?.trans(ra.sym()?)?.all_intro("a", int())
+    }
 }
 
-/// `⊢ ∀a. a + (-a) = 0` — additive inverse.
-pub fn add_neg() -> Thm {
-    let a = var("a");
-    let eq = add(a.clone(), neg(a))
-        .equals(lit(0))
-        .expect("add_neg: a + (-a) = 0");
-    axiom(forall_int(&["a"], eq))
+cached_thm! {
+    /// `⊢ ∀a. a + (-a) = 0` — **proved** (additive inverse). `-a = MK(sa,
+    /// fa)`, so `a + (-a) = MK(fa+sa)(sa+fa)`, which is `~ (0,0)` since
+    /// `(fa+sa)+0 = 0+(sa+fa)` by `nat::add_comm`.
+    pub fn add_neg() -> Result<Thm> {
+        let a = var("a");
+        let ra = recon_mk(&a)?; // a = MK(fa, sa)
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let neg_a = neg_via_components(&ra)?; // -a = MK(sa, fa)
+        let lhs = add_via_components(&ra, &neg_a)?; // a + (-a) = MK(fa+sa)(sa+fa)
+        // MK(fa+sa)(sa+fa) = MK(0,0): (fa+sa)+0 = 0+(sa+fa).
+        let g = nat::add_zero()
+            .all_elim(nat::add(fa.clone(), sa.clone()))? // (fa+sa)+0 = fa+sa
+            .trans(nat::add_comm().all_elim(fa.clone())?.all_elim(sa.clone())?)? // = sa+fa
+            .trans(nat::add_base().all_elim(nat::add(sa.clone(), fa.clone()))?.sym()?)?; // = 0+(sa+fa)
+        let rel = rel_of_pairs(
+            &nat::add(fa.clone(), sa.clone()),
+            &nat::add(sa.clone(), fa.clone()),
+            &nat::zero(),
+            &nat::zero(),
+            g,
+        )?;
+        let to_zero = quotient::class_intro(&spec(), &[], &nn(), &int_rel_symm(), &int_rel_trans(), rel)?;
+        lhs.trans(to_zero)?
+            .trans(lit0_mk()?.sym()?)? // MK(0,0) = 0
+            .all_intro("a", int())
+    }
 }
 
 cached_thm! {
@@ -1000,8 +1118,6 @@ mod tests {
     /// The full postulate set — used to assert the audit-trail invariant.
     fn all() -> Vec<Thm> {
         vec![
-            add_zero(),
-            add_neg(),
             mul_assoc(),
             mul_one(),
             mul_zero(),
@@ -1097,6 +1213,24 @@ mod tests {
         let sub = Term::app(Term::app(int_sub(), a.clone()), b.clone());
         let expected = sub.equals(add(a, neg(b))).unwrap();
         assert_eq!(inst.concl(), &expected);
+    }
+
+    #[test]
+    fn additive_unit_and_inverse_are_genuine() {
+        // add_zero: ∀a. a + 0 = a ; add_neg: ∀a. a + (-a) = 0.
+        let a = var("a");
+        let z = add_zero();
+        assert!(z.hyps().is_empty(), "int::add_zero is proved");
+        assert_eq!(
+            z.all_elim(a.clone()).unwrap().concl(),
+            &add(a.clone(), lit(0)).equals(a.clone()).unwrap()
+        );
+        let ninv = add_neg();
+        assert!(ninv.hyps().is_empty(), "int::add_neg is proved");
+        assert_eq!(
+            ninv.all_elim(a.clone()).unwrap().concl(),
+            &add(a.clone(), neg(a.clone())).equals(lit(0)).unwrap()
+        );
     }
 
     #[test]

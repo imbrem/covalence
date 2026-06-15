@@ -2,40 +2,42 @@
 //! exists. Proving it discharges [`crate::init::nat::rec_holds`] (and
 //! with it every `add`/`mul` fact, and the shallow Peano embedding).
 //!
-//! The construction is the standard graph route, at `α = nat` (which is
-//! all `add`/`mul` need). Increasingly it is driven by the generic
-//! inductive engine ([`crate::init::inductive`]) at the [`nat_sig`]
-//! signature, with the [`NatTheory`] adapter supplying induction from
-//! `Thm::nat_induct` — this module keeps only the `nat`-specific glue and
-//! the not-yet-generalised steps.
+//! The construction is the standard graph route, at `α = nat`. It is now
+//! **fully driven by the generic inductive engine**
+//! ([`crate::init::inductive`]) at the [`nat_sig`] signature, with the
+//! [`NatTheory`] adapter supplying induction + freeness. This module is
+//! reduced to that adapter plus the assembly wiring — every proof step
+//! below is `nat` *consuming* the engine, not a `nat`-specific derivation:
 //!
-//! 1. **Graph** `Graph z f n a` — the least relation closed under the
-//!    recursion rules, encoded impredicatively as
-//!    `∀G. (G 0 z ∧ ∀m b. G m b ⟹ G (S m) (f m b)) ⟹ G n a`. The term
-//!    builders come from the engine ([`crate::init::inductive::graph`]);
-//!    "unfolding" the graph is just manipulating the `∀G …` structure.
-//! 2. **Existence** `∀n. ∃a. Graph z f n a` — now the engine's generic
-//!    [`existence::graph_total`] over [`existence::graph_intro`];
-//!    [`graph_base`] / [`graph_step`] are thin `nat` views of it. ✓
-//! 3. **Uniqueness** — both halves now the engine's generic proofs over
-//!    [`NatTheory`] (freeness `succ_inj` / `zero_ne_succ`): per-constructor
-//!    *inversion* ([`uniqueness::graph_inv`], `graph_base_inv` its `nat`
-//!    view) and *determinacy* `∀n a b. Graph z f n a ∧ Graph z f n b ⟹
-//!    a = b` ([`determinacy::graph_det`]). ✓
-//! 4. **Assemble** `r z f n ≜ ε a. Graph z f n a`, prove `P_rec r`,
-//!    `∃`-introduce. The **last** `nat`-specific piece — it couples to
-//!    `natRec`'s `defs` selector predicate; generalising it is the
-//!    remaining engine work (see `SKELETONS.md`).
+//! 1. **Graph** — the term builders from [`crate::init::inductive::graph`].
+//! 2. **Existence** `∀n. ∃a. Graph z f n a` —
+//!    [`graph_total`](crate::init::inductive::existence::graph_total) over
+//!    [`graph_intro`](crate::init::inductive::existence::graph_intro). ✓
+//! 3. **Uniqueness** — per-constructor *inversion*
+//!    [`graph_inv`](crate::init::inductive::uniqueness::graph_inv) (freeness
+//!    `succ_inj` / `zero_ne_succ`) and *determinacy*
+//!    [`graph_det`](crate::init::inductive::determinacy::graph_det). ✓
+//! 4. **Assembly** — the recursor `λz f n. ε a. Graph z f n a`, its
+//!    equations, and `∃r. P_rec r` from [`recursor::recursion_theorem`],
+//!    given `natRec`'s [`p_rec_pred`]; `spec_ax` then transfers to `natRec`
+//!    ([`rec_holds_proof`]). ✓
+//!
+//! What remains is one direction of *lifting*, not construction: deriving
+//! a non-kernel `Inductive` impl (e.g. `nat`-from-`ind`, or `list`) to feed
+//! the same engine. See `SKELETONS.md`.
 //!
 use covalence_core::{Result, Term, Thm, Type, defs, subst};
 
-use crate::init::eq::{beta_expand, beta_reduce};
-use crate::init::ext::{TermExt, ThmExt};
-use crate::init::inductive::{
-    Arg, Constructor, Inductive, InductiveSig, determinacy, existence, graph as gb, uniqueness,
-};
-use crate::init::logic::{exists_elim, exists_intro};
+use crate::init::eq::beta_reduce;
+use crate::init::ext::TermExt;
+use crate::init::inductive::{Arg, Constructor, Inductive, InductiveSig, recursor};
+use crate::init::logic::exists_elim;
 use crate::init::nat::{nat_succ, succ, zero};
+
+// Engine entry points used only by the `nat`-level validation tests below
+// (production goes through `recursor::recursion_theorem`).
+#[cfg(test)]
+use crate::init::inductive::{determinacy, existence, graph as gb, uniqueness};
 
 // ============================================================================
 // Types / small builders
@@ -50,11 +52,13 @@ fn f_ty() -> Type {
     Type::fun(nat(), Type::fun(nat(), nat()))
 }
 
+#[cfg(test)]
 fn var(name: &str) -> Term {
     Term::free(name, nat())
 }
 
 /// `h x y`.
+#[cfg(test)]
 fn app2(h: Term, x: Term, y: Term) -> Result<Term> {
     h.apply(x)?.apply(y)
 }
@@ -148,11 +152,13 @@ impl Inductive for NatTheory {
 }
 
 /// `Graph z f n a ≜ ∀G. closed(z,f,G) ⟹ G n a`.
+#[cfg(test)]
 fn graph(z: &Term, f: &Term, n: Term, a: Term) -> Result<Term> {
     gb::graph(nat_sig(), &[z.clone(), f.clone()], &nat(), n, a)
 }
 
 /// The recursor step terms `[z, f]` for the `nat` signature.
+#[cfg(test)]
 fn steps(z: &Term, f: &Term) -> [Term; 2] {
     [z.clone(), f.clone()]
 }
@@ -164,6 +170,7 @@ fn steps(z: &Term, f: &Term) -> [Term; 2] {
 /// `⊢ Graph z f n a ⟹ Graph z f (S n) (f n a)`, for free `n`, `a`.
 /// Constructor-1 (`succ`) introduction from [`existence::graph_intro`],
 /// with the canonical argument/image vars `m`/`b` instantiated to `n`/`a`.
+#[cfg(test)]
 fn graph_step(z: &Term, f: &Term, n: &Term, a: &Term) -> Result<Thm> {
     existence::graph_intro(nat_sig(), &steps(z, f), &nat(), 1)?
         .inst("m", n.clone())?
@@ -179,6 +186,7 @@ fn graph_step(z: &Term, f: &Term, n: &Term, a: &Term) -> Result<Thm> {
 /// [`NatTheory`] adapter (its induction supplied by `Thm::nat_induct`).
 /// (Conclusion is in `nat_induct`'s applied form; β-reduce the body to
 /// read `∀n. ∃a. Graph z f n a`.)
+#[cfg(test)]
 pub(crate) fn graph_total(z: &Term, f: &Term) -> Result<Thm> {
     existence::graph_total(&NatTheory, &steps(z, f), &nat())
 }
@@ -190,6 +198,7 @@ pub(crate) fn graph_total(z: &Term, f: &Term) -> Result<Thm> {
 /// `⊢ Graph z f 0 a ⟹ a = z`, for free `a` — the graph forces the value
 /// at `0` to be `z`. Constructor-0 inversion from
 /// [`uniqueness::graph_inv`].
+#[cfg(test)]
 pub(crate) fn graph_base_inv(z: &Term, f: &Term) -> Result<Thm> {
     uniqueness::graph_inv(&NatTheory, &steps(z, f), &nat(), 0)
 }
@@ -202,12 +211,13 @@ pub(crate) fn graph_base_inv(z: &Term, f: &Term) -> Result<Thm> {
 /// graph is **functional**: it relates each `n` to at most one value.
 /// The generic [`determinacy::graph_det`] at the [`NatTheory`] adapter.
 /// (β-reduce the body to read `∀n a b. … ⟹ a = b`.)
+#[cfg(test)]
 pub(crate) fn graph_det(z: &Term, f: &Term) -> Result<Thm> {
     determinacy::graph_det(&NatTheory, &steps(z, f), &nat())
 }
 
 // ============================================================================
-// Assembly: the recursor via ε, its equations, and the recursion theorem
+// Assembly: the recursion theorem — now the generic engine's `recursor`
 // ============================================================================
 
 /// `nat → (nat → nat → nat) → nat → nat` — the recursor's type at `nat`.
@@ -215,47 +225,9 @@ fn rec_ty() -> Type {
     Type::fun(nat(), Type::fun(f_ty(), Type::fun(nat(), nat())))
 }
 
-/// `λa. Graph z f n a` — the predicate the recursor chooses from.
-fn graph_pred(z: &Term, f: &Term, n: &Term) -> Result<Term> {
-    Ok(Term::abs(
-        nat(),
-        subst::close(&graph(z, f, n.clone(), var("a"))?, "a"),
-    ))
-}
-
-/// `ε a. Graph z f n a` — the chosen value at `n`.
-fn rec_at(z: &Term, f: &Term, n: &Term) -> Result<Term> {
-    Ok(Term::app(Term::select_op(nat()), graph_pred(z, f, n)?))
-}
-
-/// `⊢ Graph z f n (ε a. Graph z f n a)`, for free `n` — the chosen
-/// value really is in the graph. From totality + Hilbert choice.
-fn graph_at_rec(z: &Term, f: &Term) -> Result<Thm> {
-    let n = var("n");
-    let pred = graph_pred(z, f, &n)?;
-    let exists_n = beta_reduce(graph_total(z, f)?.all_elim(n.clone())?)?;
-    let choose = Thm::select_ax(pred.clone(), var("a"))?.all_intro("a", nat())?;
-    let eps = Term::app(Term::select_op(nat()), pred.clone());
-    beta_reduce(exists_elim(exists_n, Term::app(pred, eps), choose)?)
-}
-
-/// The closed recursor `λz f n. ε a. Graph z f n a`.
-fn recursor() -> Result<Term> {
-    let z = Term::free("z", nat());
-    let f = Term::free("f", f_ty());
-    let body = rec_at(&z, &f, &var("n"))?;
-    let lam_n = Term::abs(nat(), subst::close(&body, "n"));
-    let lam_f = Term::abs(f_ty(), subst::close(&lam_n, "f"));
-    Ok(Term::abs(nat(), subst::close(&lam_f, "z")))
-}
-
-/// `r z f k`.
-fn rzfk(r: &Term, z: &Term, f: &Term, k: Term) -> Result<Term> {
-    r.clone().apply(z.clone())?.apply(f.clone())?.apply(k)
-}
-
 /// `natRec`'s recursion predicate `P_rec`, instantiated at `α := nat` —
-/// the exact predicate `spec_ax(natRec, ·)` works with.
+/// the exact predicate `spec_ax(natRec, ·)` works with, and the predicate
+/// the engine's [`recursor::recursion_theorem`] ∃-introduces over.
 fn p_rec_pred() -> Result<Term> {
     let poly = defs::nat_rec_spec()
         .tm()
@@ -264,50 +236,13 @@ fn p_rec_pred() -> Result<Term> {
     Ok(subst::subst_tfree_in_term(&poly, "a", &nat()))
 }
 
-/// `⊢ ∃r. P_rec r` — **the recursion theorem** for `nat`. A recursor
-/// exists. Built by assembling the graph: `r ≜ λz f n. ε a. Graph z f n a`
-/// satisfies the recursion equations (base inversion at `0`, step +
-/// determinacy at `S n`), so it witnesses the existential.
+/// `⊢ ∃r. P_rec r` — **the recursion theorem** for `nat`. The generic
+/// [`recursor::recursion_theorem`] at [`NatTheory`], with step variables
+/// `z`, `f` and `natRec`'s [`p_rec_pred`].
 fn recursion_theorem() -> Result<Thm> {
-    let r = recursor()?;
     let z = Term::free("z", nat());
     let f = Term::free("f", f_ty());
-    let n = var("n");
-
-    // eq1: ⊢ r z f 0 = z
-    let eq1 = crate::init::eq::beta_nf(rzfk(&r, &z, &f, zero())?).trans(
-        graph_base_inv(&z, &f)?
-            .inst("a", rec_at(&z, &f, &zero())?)?
-            .imp_elim(graph_at_rec(&z, &f)?.inst("n", zero())?)?,
-    )?;
-
-    // eq2: ⊢ ∀n. r z f (S n) = f n (r z f n)
-    let rec_n = rec_at(&z, &f, &n)?;
-    let g_at_n = graph_at_rec(&z, &f)?; // ⊢ Graph z f n rec_n
-    let g_step = graph_step(&z, &f, &n, &rec_n)?.imp_elim(g_at_n)?; // ⊢ Graph z f (S n) (f n rec_n)
-    let g_at_sn = graph_at_rec(&z, &f)?.inst("n", succ(n.clone()))?; // ⊢ Graph z f (S n) rec_{Sn}
-    let fnrecn = app2(f.clone(), n.clone(), rec_n.clone())?;
-    let det_eq = beta_reduce(graph_det(&z, &f)?.all_elim(succ(n.clone()))?)?
-        .all_elim(rec_at(&z, &f, &succ(n.clone()))?)?
-        .all_elim(fnrecn)?
-        .imp_elim(g_at_sn)?
-        .imp_elim(g_step)?; // ⊢ rec_{Sn} = f n rec_n
-    let f_cong = crate::init::eq::beta_nf(rzfk(&r, &z, &f, n.clone())?)
-        .sym()?
-        .cong_arg(Term::app(f.clone(), n.clone()))?; // ⊢ f n rec_n = f n (r z f n)
-    let eq2 = crate::init::eq::beta_nf(rzfk(&r, &z, &f, succ(n.clone()))?)
-        .trans(det_eq)?
-        .trans(f_cong)?
-        .all_intro("n", nat())?;
-
-    // P_rec body, generalised over z, f.
-    let prec_body = eq1
-        .and_intro(eq2)?
-        .all_intro("f", f_ty())?
-        .all_intro("z", nat())?;
-
-    let pred = p_rec_pred()?;
-    exists_intro(pred.clone(), r.clone(), beta_expand(&pred, r, prec_body)?)
+    recursor::recursion_theorem(&NatTheory, &[z, f], &nat(), &p_rec_pred()?)
 }
 
 /// `⊢ ∀z f. (natRec z f 0 = z) ∧ (∀n. natRec z f (S n) = f n (natRec z f n))`

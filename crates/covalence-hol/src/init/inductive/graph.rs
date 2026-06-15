@@ -44,14 +44,9 @@ fn apply_all(head: Term, args: &[Term]) -> Result<Term> {
 /// Right-associated conjunction `t₀ ∧ (t₁ ∧ … ∧ tₙ)`. Errors on an empty
 /// slice (the engine never builds an empty antecedent — a constructor
 /// with no recursive arguments drops the antecedent entirely).
+/// [`super::hol::conj`] at [`NativeHol`](super::hol::NativeHol).
 pub(super) fn conj(ts: &[Term]) -> Result<Term> {
-    match ts {
-        [] => Err(Error::ConnectiveRule(
-            "inductive::graph: empty conjunction".into(),
-        )),
-        [last] => Ok(last.clone()),
-        [head, rest @ ..] => head.clone().and(conj(rest)?),
-    }
+    super::hol::conj(&super::hol::NativeHol, ts)
 }
 
 /// One constructor's clause materialised over **fresh argument / image

@@ -36,15 +36,23 @@
 //! - **Uniqueness — determinacy** ([`determinacy`]) — done and generic:
 //!   `graph_det` folds the supplied induction over `graph_inv`. `nat`
 //!   consumes it. (Multi-recursive-argument constructors not yet handled.)
-//! - **ε-assembly** — the only remaining `nat`-specific piece (in
-//!   [`crate::init::recursion`]); it couples to the recursor's `defs`
-//!   selector predicate. Generalising it, and deriving `list`'s induction
-//!   principle + freeness to feed the engine, are tracked in `SKELETONS.md`.
+//! - **ε-assembly** ([`recursor`]) — done and generic: `recursion_theorem`
+//!   builds the recursor (Hilbert choice over the graph), proves its
+//!   per-constructor equations, and `∃`-introduces over the caller's `defs`
+//!   recursor predicate. `nat` consumes it.
+//!
+//! The construction is **complete**: `nat`'s recursion theorem is the engine
+//! at the `nat` signature end to end. What remains is *lifting* — supplying
+//! a non-kernel [`Inductive`] impl (`nat`-from-`ind`, or `list`'s derived
+//! induction + freeness) to drive the same engine — and the
+//! multi-recursive-argument cases. Both are tracked in `SKELETONS.md`.
 
 pub mod data;
 pub mod determinacy;
 pub mod existence;
 pub mod graph;
+pub mod hol;
+pub mod recursor;
 pub mod sig;
 pub mod uniqueness;
 mod util;

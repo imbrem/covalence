@@ -5,10 +5,24 @@
 //!   `rel`-upward-closed subsets** of `base`. Dedekind cuts use it
 //!   directly (`real := close rat (≤)`).
 //! - [`TypeSpec::quot`] `base rel` is the **quotient** `base / rel`:
-//!   its equivalence classes are exactly the `close`-sets of the
-//!   *symmetric closure* of `rel`. So `quot = close ∘ symmetric-closure`.
+//!   its elements are exactly the `rel`-equivalence classes, each
+//!   represented as the set of its members. The carving predicate is
+//!   `λS. ∃z. S = (λy. rel z y)` — `S` is *exactly* one class
+//!   (`classOf z`), nothing more. When `rel` is an equivalence relation
+//!   those sets are precisely its equivalence classes, with no junk.
 //!
 //! Both bottom out in [`TypeSpec::subtype`] of `base → bool`.
+//!
+//! ## Why `quot` is not `close`
+//!
+//! An earlier version defined `quot = close ∘ symmetric-closure`, i.e.
+//! the non-empty subsets upward-closed under `rel`. That is **wrong**:
+//! for an equivalence `rel`, every *union* of classes (including the
+//! whole carrier) is non-empty and upward-closed, so the type was full
+//! of junk that is not a single class. Picking representatives off such
+//! junk breaks quotient induction and makes identities like `a + 0 = a`
+//! fail. The image predicate below admits a set iff it is `classOf z`
+//! for some `z`, so there is exactly one inhabitant per class.
 
 use crate::hol;
 use crate::term::{Term, Type};
@@ -37,6 +51,29 @@ fn close_predicate(base: Type, rel: Term) -> Term {
     hol::pub_abs("S", powerset, hol::hol_and(closed_part, nonempty_part))
 }
 
+/// `λy:base. rel z y` — the `rel`-class of `z` as a subset of `base`.
+/// `z` must be a free/closed term; the result is the carrier value a
+/// quotient element abstracts.
+fn class_of(base: &Type, rel: &Term, z: &Term) -> Term {
+    let body = Term::app(Term::app(rel.clone(), z.clone()), Term::free("y", base.clone()));
+    hol::pub_abs("y", base.clone(), body)
+}
+
+/// `λS:base→bool. ∃z. S = (λy. rel z y)` — selects exactly the sets
+/// that are the `rel`-class `classOf z` of some representative `z`.
+/// When `rel` is an equivalence relation these are precisely its
+/// equivalence classes — no junk (contrast [`close_predicate`], which
+/// also admits every *union* of classes).
+fn quot_predicate(base: Type, rel: Term) -> Term {
+    let powerset = Type::fun(base.clone(), Type::bool());
+    let s = Term::free("S", powerset.clone());
+    let z = Term::free("z", base.clone());
+    // `S = classOf z`, with `z` free (bound by the ∃ below).
+    let eq = hol::hol_eq(s, class_of(&base, &rel, &z));
+    let exists_z = hol::hol_exists("z", base.clone(), eq);
+    hol::pub_abs("S", powerset, exists_z)
+}
+
 impl TypeSpec {
     /// `close base rel` — the type of non-empty subsets of `base`
     /// upward-closed under `rel : base → base → bool`; a subtype of
@@ -47,19 +84,14 @@ impl TypeSpec {
     }
 
     /// `quot base rel` — the quotient of `base` by the relation
-    /// `rel : base → base → bool`. Defined as [`TypeSpec::close`] of
-    /// the symmetric closure `λx y. rel x y ∨ rel y x`, so a plain
-    /// pre-order or partial relation still yields the right classes.
+    /// `rel : base → base → bool`. A subtype of the powerset
+    /// `base → bool` carved by [`quot_predicate`]: an element is an
+    /// equivalence class `classOf z = λy. rel z y` for some
+    /// representative `z`. `rel` is expected to be an equivalence
+    /// relation (reflexive / symmetric / transitive); only then do the
+    /// inhabitants partition `base`.
     pub fn quot<S: Symbol>(symbol: S, base: Type, rel: Term) -> Self {
-        let x = Term::free("x", base.clone());
-        let y = Term::free("y", base.clone());
-        let rxy = Term::app(Term::app(rel.clone(), x.clone()), y.clone());
-        let ryx = Term::app(Term::app(rel, y.clone()), x.clone());
-        let sym_rel = hol::pub_abs(
-            "x",
-            base.clone(),
-            hol::pub_abs("y", base.clone(), hol::hol_or(rxy, ryx)),
-        );
-        TypeSpec::close(symbol, base, sym_rel)
+        let powerset = Type::fun(base.clone(), Type::bool());
+        TypeSpec::subtype(symbol, powerset, quot_predicate(base, rel))
     }
 }

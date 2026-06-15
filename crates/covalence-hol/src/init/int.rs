@@ -41,13 +41,20 @@
 //! int_rel_trans(), ⊢ int_rel p q)` already lifts to `mkClass p = mkClass q`
 //! over the real `int_ty_spec`.
 //!
+//! The **converse** law (`mkClass a = mkClass b ⟹ rel a b`, for
+//! dis-equations / order) is also in place now:
+//! [`init::quotient::class_elim`](crate::init::quotient::class_elim) — the
+//! [`quot`](covalence_core::defs::TypeSpec::quot) type is junk-free (its
+//! carving predicate is `λS. ∃z. S = classOf z`, so every inhabitant is
+//! *exactly one* class), which is what makes the converse and quotient
+//! induction sound.
+//!
 //! Remaining to discharge the postulates below: (1) the **β
 //! reconciliation** — `class_intro`'s `classOf a = λx. rel a x` vs
 //! `defs/int.rs`'s β-reduced `mk_int`; and (2) **unfolding each `int` op**
 //! to its representative-pair body (δ + the quotient coercions) so the
-//! axiom reduces to a `nat` fact lifted through `class_intro`. The
-//! converse law (`mkClass a = mkClass b ⟹ rel a b`, for dis-equations /
-//! order) is the other quotient piece; see `SKELETONS.md`.
+//! axiom reduces to a `nat` fact lifted through `class_intro` /
+//! `class_elim`.
 
 use covalence_core::defs::{fst, prod, snd};
 use covalence_core::{Error, Result, Term, Thm, Type, subst};
@@ -618,17 +625,8 @@ mod tests {
         let spec = covalence_core::defs::int_ty_spec();
         let p = Term::free("p", nn());
         // ⊢ int_rel p (rep_class (mk_class p)) — a genuine, hyp-free theorem.
-        let rt = quotient::round_trip(
-            &spec,
-            &[],
-            &nn(),
-            &int_rel(),
-            &int_rel_refl(),
-            &int_rel_symm(),
-            &int_rel_trans(),
-            &p,
-        )
-        .expect("round_trip on int");
+        let rt = quotient::round_trip(&spec, &[], &nn(), &int_rel(), &int_rel_refl(), &p)
+            .expect("round_trip on int");
         assert!(rt.hyps().is_empty(), "round_trip is genuine");
         // Conclusion is `int_rel p <something>`.
         let (rel, a, _) = {

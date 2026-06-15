@@ -46,18 +46,20 @@ it is how unfinished work stays discoverable.
   carry no hypotheses. And `init::quotient` now provides the lifting machinery:
   `TypeSpec::quot` is a subtype of the powerset, so the kernel's subtype
   laws *do* apply (the "rejected" case is only for specs whose `tm` is a
-  raw relation; `quot`'s `tm` is the `close` predicate). `quotient::class_intro`
+  raw relation; `quot`'s `tm` is the image predicate `λS. ∃z. S =
+  classOf z`). `quotient::class_intro`
   derives the **forward** law `Γ ⊢ rel a b → Γ ⊢ mkClass a = mkClass b`,
   the workhorse for proving `int` *equations*.
 
   Progress: `int_rel` is a **proven equivalence**
   (`init::int::int_rel_refl`/`_symm`/`_trans`); `quotient::class_intro`
-  lifts `⊢ int_rel p q` to `mkClass p = mkClass q`; **`add_comm` and
-  `mul_comm` are proved** (on the nose); and the **round-trip**
-  (`quotient::round_trip`: `⊢ rel a (rep_class (mk_class a))`, via
-  `close_pred_holds` + `spec_rep_abs_fwd` + `select_ax`) is **done and
-  tested on the real `int_ty_spec`** — the keystone for the nested-op
-  axioms.
+  lifts `⊢ int_rel p q` to `mkClass p = mkClass q`; the **converse**
+  `quotient::class_elim` lifts it back (`mkClass a = mkClass b ⟹ rel a b`,
+  needs only `refl`); **`add_comm` and `mul_comm` are proved** (on the
+  nose); and the **round-trip** (`quotient::round_trip`: `⊢ rel a
+  (rep_class (mk_class a))`, via `quot_pred_holds` + `spec_rep_abs_fwd` +
+  `select_ax`) is **done and tested on the real `int_ty_spec`** — the
+  keystone for the nested-op axioms.
 
   The path for the remaining ring-equation axioms (`add_assoc`, `add_neg`,
   `mul_assoc`, `distrib`):
@@ -70,26 +72,20 @@ it is how unfinished work stays discoverable.
     of `a+b` is `~` its componentwise pair.
   - `class_intro` on a `nat`-algebra combination of those `~`-facts closes
     the axiom.
-  - ⚠️ **No quotient induction.** `a = mk_int(rep_pair a)` is *false* for a
-    free `int` var: `quot` = `close` admits junk (unions of classes), so a
-    free `a` need not be a single class. The axioms work because the *ops*
-    always produce `mk_int` (proper) values — route the round-trip through
-    those intermediates, never through the free variables.
-  - 🛑 **`int` has junk → three axioms are currently *false*.**
-    `close_predicate` is just `nonempty ∧ upward-closed`, and since
-    `int_rel` is an equivalence, an upward-closed set may be a *union* of
-    classes. So `Type::int()` contains junk like `abs(class 0 ∪ class 1)`,
-    a valid-but-non-class element. For such `a`, `a + int.zero` normalises
-    to a single class `≠ a`, so **`add_zero`, `mul_one`, `mul_zero` are not
-    theorems** (they cannot be proved hypothesis-free; they must stay
-    `Thm::assume` postulates). The *provable* ring axioms are the junk-safe
-    ones: `add_comm`/`mul_comm` (done), `add_assoc`/`mul_assoc`/`distrib`
-    (all-ops, true for junk), and `add_neg`/`sub_def` (the op result is
-    always the proper `0`-class). **The proper fix is upstream**: make
-    `defs/quotient.rs`'s `quot` junk-free — predicate `λS. ∃a. S = classOf
-    a` (S is *exactly* one class), not "nonempty upward-closed". That also
-    revalidates quotient induction. Until then, only the junk-safe axioms
-    are dischargeable.
+  - ✅ **`quot` is now junk-free** (`defs/quotient.rs`). The carving
+    predicate is `λS. ∃z. S = classOf z` (S is *exactly* one class), **not**
+    the old "nonempty ∧ upward-closed" (`= close ∘ symmetric-closure`),
+    which admitted every *union* of classes — e.g. `abs(class 0 ∪ class 1)`.
+    With that junk gone, `Type::int()` contains exactly one inhabitant per
+    `int_rel`-class, so **quotient induction is valid** (`a =
+    mk_int(rep_pair a)` for *every* `int`, not just op-results) and the
+    three formerly-false axioms — **`add_zero`, `mul_one`, `mul_zero`** —
+    are now genuine theorems. They remain `Thm::assume` postulates only
+    because the *derivation* (quotient induction + literal coherence) is not
+    yet wired; they are no longer unsound to claim. The keystones are all in
+    place: `class_intro` (forward), `class_elim` (converse), `round_trip`
+    (representative-in-class), and `quot_pred_holds` (every `classOf a` is a
+    valid class).
   - The `0`/`1` axioms (`add_zero`, `mul_one`, `mul_zero`, `sub_def` uses
     `neg`) additionally need **literal coherence**: relating `int_lit 0` /
     `int_lit 1` to their quotient representatives (`(0,0)` / `(1,0)`), a
@@ -102,10 +98,10 @@ it is how unfinished work stays discoverable.
     quotient coercions), so an axiom like `add_comm` reduces to a `nat`
     fact lifted through `class_intro` — this discharges the 10 ring-equation
     postulates;
-  - (c) the **converse** `mkClass a = mkClass b ⟹ rel a b` in
-    `init::quotient` (recipe + η gotcha in that module's docs; needs
-    `Thm::spec_rep_abs_fwd` + the `close`-predicate proof) — for the
-    *order* axioms (the other 7);
+  - (c) the **converse** `mkClass a = mkClass b ⟹ rel a b` — **done**:
+    `init::quotient::class_elim` (needs `Thm::spec_rep_abs_fwd` +
+    `quot_pred_holds` + `refl`). Available for the *order* axioms (the
+    other 7); the work left there is applying it, not building it;
   - still-needed `nat` facts for the *order* `int` axioms: the `le`/`lt`
     order facts. The additive **and** multiplicative theory is now in place —
     `init::nat` proves the additive theory, `add_cancel`, `add_interchange`,
@@ -117,6 +113,29 @@ it is how unfinished work stays discoverable.
     `<`/`≤` bridge, and **transitivity** (`le_trans`).
 
 ## Partial subsystems
+
+- **`covalence-hol` inductive-type engine** in
+  `crates/covalence-hol/src/init/inductive/`. The shared infrastructure for
+  basic inductive types (single-sorted, parametric, first-order,
+  strictly-positive, directly-recursive). **Only the term layer is in place:**
+  `sig.rs` is the signature data model (`InductiveSig` / `Constructor` /
+  `Arg`), and `graph.rs` builds the impredicative recursion graph
+  (`closed` / `graph`) generically from a signature. `nat`'s construction in
+  `init/recursion.rs` consumes these builders (its `nat_sig`), which validates
+  them. Still missing — the **proof layer**, currently hand-specialised to
+  `nat` in `init/recursion.rs`:
+  - **Generic per-constructor inversion lemmas** — the abstraction of
+    `graph_base_inv` (nullary) and `graph_step_inv` (recursive) to an arbitrary
+    constructor: `Graph (Cᵢ x⃗) a ⟹ ∃b⃗. (⋀ Graph rⱼ bⱼ) ∧ a = fᵢ x⃗ b⃗`, via the
+    per-constructor "determinizing" / "good" instances (`det_zero` / `good`).
+  - **Generic totality / determinacy** — fold the supplied induction principle
+    over the inversion lemmas (the bodies of `graph_total` / `graph_det`), then
+    ε-assemble (`recursion_theorem`) into `⊢ ∃rec. P_rec rec`.
+  - **The two feeders** — the engine *consumes* an induction principle plus
+    constructor freeness (injectivity + disjointness). For `nat` these are the
+    kernel primitives (`nat_induct`, `succ_inj`, `zero_ne_succ`); for `list`
+    they must be *derived* from the `stream (option α)` carrier (list induction
+    is the blocker — see the list theory entry below).
 
 - **`covalence-hol` list theory** in `crates/covalence-hol/src/init/list.rs`.
   Only the **`nil`-side computational foundation** is proved so far — the
@@ -138,9 +157,10 @@ it is how unfinished work stays discoverable.
   - **Structural recursors `list_foldr` / `list_foldl`** — pinned by Hilbert-ε
     selector predicates (defined in `defs/list.rs`), so their defining equations
     (`fr f z nil = z`, `fr f z (cons x xs) = f x (fr f z xs)`, and the left-fold
-    mirror) need a **list recursion theorem** — the analogue of
-    `crate::init::recursion` for `nat` (graph construction → existence →
-    uniqueness → assemble via ε). This is the major undertaking.
+    mirror) need a **list recursion theorem**. The target is to obtain it from
+    the generic inductive engine (`init/inductive/`) once its proof layer is
+    generalised and `list`'s induction principle + `cons`/`nil` freeness are
+    derived to feed it — rather than re-deriving the `nat` graph route by hand.
   - **Ops riding on the recursors** — `length`/`cat`/`filter`/`flatten`
     (factored through `foldr`) and the pointwise `map`/`take`/`skip`/`repeat`
     (need the `cons`-side stream computations). No `*_nil`/`*_cons` clauses for

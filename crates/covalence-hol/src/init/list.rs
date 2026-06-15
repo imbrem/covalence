@@ -47,6 +47,7 @@
 
 use covalence_core::{Error, Result, Term, Thm, Type};
 
+use crate::init::eq::beta_expand;
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic::exists_intro;
 use crate::init::stream::{const_at, head_const};
@@ -222,14 +223,6 @@ pub fn list_of(alpha: &Type, elems: Vec<Term>) -> Result<Term> {
 /// The right-hand side of an equational theorem's conclusion.
 fn rhs_of(thm: &Thm) -> Result<Term> {
     Ok(thm.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone())
-}
-
-/// `⊢ f arg` from `⊢ body`, where `body` is `f arg` β-reduced — re-wrap a
-/// fact about a β-reduced body into the applied form `exists_intro` wants.
-fn beta_expand(f: &Term, arg: Term, body_proof: Thm) -> Result<Thm> {
-    Thm::beta_conv(Term::app(f.clone(), arg))?
-        .sym()?
-        .eq_mp(body_proof)
 }
 
 #[cfg(test)]

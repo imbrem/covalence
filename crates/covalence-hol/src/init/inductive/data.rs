@@ -55,4 +55,22 @@ pub trait Inductive {
     ///
     /// `cases` are in constructor order and must match `self.sig().arity()`.
     fn induct(&self, motive: &Term, cases: Vec<Thm>) -> Result<Thm>;
+
+    /// **Constructor injectivity.** For a constructor `Cᵢ` with at least
+    /// one argument, `⊢ (Cᵢ x⃗ = Cᵢ y⃗) ⟹ (⋀ₖ xₖ = yₖ)` — the right-hand
+    /// side a right-associated conjunction of the componentwise equalities
+    /// (a bare equality when `Cᵢ` is unary). `xs` / `ys` are the two
+    /// argument tuples, each of length `self.sig().ctors[i].args.len()`.
+    ///
+    /// Used by the uniqueness layer ([`super::uniqueness`]); for `nat`'s
+    /// `succ` it is `Thm::succ_inj`.
+    fn injective(&self, i: usize, xs: &[Term], ys: &[Term]) -> Result<Thm>;
+
+    /// **Constructor distinctness.** For `i ≠ j`,
+    /// `⊢ (Cᵢ x⃗ = Cⱼ y⃗) ⟹ F` — different constructors never produce equal
+    /// values. `xs` / `ys` are the argument tuples for `Cᵢ` / `Cⱼ`.
+    ///
+    /// Used by the uniqueness layer; for `nat` it is `Thm::zero_ne_succ`
+    /// (in either order).
+    fn distinct(&self, i: usize, j: usize, xs: &[Term], ys: &[Term]) -> Result<Thm>;
 }

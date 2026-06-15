@@ -1,18 +1,21 @@
-//! The **category** fragment of point-free reasoning — objects,
-//! morphisms, and *equations between morphisms*, with the category laws
-//! and equational-logic rules.
+//! The **category** layer — the foundational point-free vocabulary:
+//! objects, morphisms, and *equations between morphisms*, with the
+//! category laws and equational-logic rules.
 //!
-//! [`Category`] is the part of [`Monoidal`](crate::monoidal::Monoidal)
-//! that knows nothing about the coproduct: it is the bare vocabulary you
-//! need to **state and prove that a diagram commutes** — compose
-//! morphisms, and reason equationally about the composites. The coproduct
-//! join morphisms live one layer up, in `Monoidal: Category`.
+//! This module is deliberately kept *below* (and independent of) the
+//! coproduct's symmetric-monoidal structure in
+//! [`monoidal`](crate::monoidal). A plain category is all you need to
+//! **state and prove that a diagram commutes** — compose morphisms, and
+//! reason equationally about the composites — and it is the substrate the
+//! diagrammatic calculi are built on:
 //!
-//! Splitting it out keeps the [`diagram`](crate::monoidal::diagram)
-//! API honest: commutative diagrams *of functions* are pure category
-//! theory — they never touch `⊕` — so they are written against
-//! [`Category`] and run against any model that implements it (the shallow
-//! HOL one today, a deep proof-term one later).
+//! - [`diagram`] — **commutative diagrams**: objects are nodes,
+//!   morphisms are edges, and a proof shows two parallel paths are equal.
+//! - *string diagrams* (future) — the Poincaré-dual graphical calculus
+//!   (morphisms are boxes, objects are wires). They live here, on the
+//!   bare [`Category`] interface, rather than under
+//!   [`monoidal`](crate::monoidal), so the representation is shared by
+//!   every category model.
 //!
 //! ## Three layers
 //!
@@ -25,14 +28,33 @@
 //!   [`assoc`](Category::assoc)); the **inference rules** are equational
 //!   logic ([`refl`](Category::refl) / [`sym`](Category::sym) /
 //!   [`trans`](Category::trans)) plus the composition congruence
-//!   ([`comp_cong`](Category::comp_cong)) — the *whiskering* rule that
-//!   lets a known equation act inside a larger composite.
+//!   ([`comp_cong`](Category::comp_cong) — the *whiskering* rule that lets
+//!   a known equation act inside a larger composite).
+//!
+//! ## Two implementations, one API (the mirror principle)
+//!
+//! 1. **Shallow** — [`Hol`]: an object *is* a HOL [`Type`], a morphism
+//!    *is* a HOL `α → β` [`Term`], and a proof *is* a HOL
+//!    [`Thm`](covalence_core::Thm) equating two morphisms. Every law
+//!    forwards to a genuine, hypothesis-free theorem in
+//!    [`init::cat`](crate::init::cat). This is the model that exists
+//!    today, and it is *proved* (no postulates).
+//! 2. **Deep** (future) — a syntactic derivation AST whose methods build
+//!    transportable proof objects; the bridge to the shallow model is the
+//!    soundness map "every derivation denotes a valid HOL theorem".
+//!
+//! [`Type`]: covalence_core::Type
+//! [`Term`]: covalence_core::Term
+
+pub mod diagram;
+pub mod shallow;
+
+pub use shallow::Hol;
 
 /// A category whose morphism equations can be *proved*, generic over the
-/// proof representation. The substrate the
-/// [`diagram`](crate::monoidal::diagram) API is built on, and the
-/// super-trait of [`Monoidal`](crate::monoidal::Monoidal). See the
-/// [module docs](self).
+/// proof representation. The substrate the [`diagram`] API (and future
+/// string-diagram calculi) is built on, and the super-trait of
+/// [`Monoidal`](crate::monoidal::Monoidal). See the [module docs](self).
 pub trait Category {
     /// Objects — the "types".
     type Obj: Clone;

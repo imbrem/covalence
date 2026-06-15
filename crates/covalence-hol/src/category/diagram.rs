@@ -35,7 +35,7 @@
 //! through this API — the diagram-chase analogue of
 //! [`swap_involution`](crate::monoidal::derived::swap_involution).
 
-use crate::monoidal::Category;
+use crate::category::Category;
 
 // ============================================================================
 // Paths.
@@ -337,7 +337,7 @@ pub fn paste_horizontal<C: Category>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::monoidal::Hol;
+    use crate::category::Hol;
     use crate::init::ext::TermExt;
     use covalence_core::{Term, Thm, Type};
 
@@ -354,6 +354,22 @@ mod tests {
     fn assume_face(lhs: &Term, rhs: &Term) -> Cell<Hol> {
         let eq = lhs.clone().equals(rhs.clone()).unwrap();
         Cell::face(Thm::assume(eq).unwrap())
+    }
+
+    #[test]
+    fn concat_joins_paths_at_the_shared_node() {
+        let h = Hol::new();
+        let (a, b, c) = (obj("a"), obj("b"), obj("c"));
+        let f = mor("f", a.clone(), b.clone());
+        let g = mor("g", b.clone(), c.clone());
+        let p = Path::<Hol>::edge(a.clone(), f.clone(), b.clone());
+        let q = Path::<Hol>::edge(b.clone(), g.clone(), c.clone());
+        let pq = p.concat(&q);
+        // The junction node `b` is shared, not duplicated: a → b → c.
+        assert_eq!(pq.nodes(), &[a.clone(), b.clone(), c.clone()]);
+        assert_eq!(pq.len(), 2);
+        // Same composite as the two-edge path built directly: g ∘ f.
+        assert_eq!(pq.morphism(&h).unwrap(), crate::init::cat::comp(&g, &f).unwrap());
     }
 
     #[test]

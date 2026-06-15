@@ -12,10 +12,11 @@
 //! ## Layering: [`Category`] then [`Monoidal`]
 //!
 //! The plain **category** vocabulary — objects, morphisms,
-//! `id`/`comp`, the category laws, and equational logic — is factored
-//! into the [`Category`] super-trait, because the [`diagram`] API
-//! (commutative diagrams *of functions*) needs exactly that and nothing
-//! about the coproduct.
+//! `id`/`comp`, the category laws, and equational logic — lives in the
+//! [`Category`] super-trait (its own [`category`](crate::category)
+//! module), because the
+//! [`diagram`](crate::category::diagram) API (commutative diagrams *of
+//! functions*) needs exactly that and nothing about the coproduct.
 //! [`Monoidal`] then adds the coproduct's symmetric-monoidal structure on
 //! top.
 //!
@@ -63,7 +64,7 @@
 //!    [`Thm`](covalence_core::Thm) equating two such terms. The axioms
 //!    forward to the genuine, hypothesis-free theorems in
 //!    [`init::cat`](crate::init::cat) and
-//!    [`init::coprod`](crate::init::coprod). This is the model that
+//!    [`init::coprod`](mod@crate::init::coprod). This is the model that
 //!    exists today, and every axiom in it is *proved* (no postulates).
 //! 2. **Deep** (future) — a syntactic `PointFreeTerm` / derivation AST,
 //!    so the methods *build transportable proof objects*. The bridge to
@@ -73,13 +74,10 @@
 //! [`Type`]: covalence_core::Type
 //! [`Term`]: covalence_core::Term
 
-pub mod category;
 pub mod derived;
-pub mod diagram;
 pub mod shallow;
 
-pub use category::Category;
-pub use shallow::Hol;
+pub use crate::category::{Category, Hol};
 
 /// Point-free reasoning over the coproduct's symmetric-monoidal
 /// structure, generic over the proof representation. Extends

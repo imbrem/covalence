@@ -119,12 +119,7 @@ pub trait Monoidal {
     /// `⊢ f ∘ id = f`.
     fn id_right(&self, f: Self::Hom) -> Result<Self::Proof, Self::Error>;
     /// `⊢ (h ∘ g) ∘ f = h ∘ (g ∘ f)`.
-    fn assoc(
-        &self,
-        h: Self::Hom,
-        g: Self::Hom,
-        f: Self::Hom,
-    ) -> Result<Self::Proof, Self::Error>;
+    fn assoc(&self, h: Self::Hom, g: Self::Hom, f: Self::Hom) -> Result<Self::Proof, Self::Error>;
 
     // ---- axioms (as proofs): the coproduct universal property ----
 
@@ -147,15 +142,8 @@ pub trait Monoidal {
     /// From `⊢ f = g` and `⊢ g = h` conclude `⊢ f = h`.
     fn trans(&self, p: Self::Proof, q: Self::Proof) -> Result<Self::Proof, Self::Error>;
     /// From `⊢ g = g'` and `⊢ f = f'` conclude `⊢ g ∘ f = g' ∘ f'`.
-    fn comp_cong(
-        &self,
-        g_eq: Self::Proof,
-        f_eq: Self::Proof,
-    ) -> Result<Self::Proof, Self::Error>;
+    fn comp_cong(&self, g_eq: Self::Proof, f_eq: Self::Proof) -> Result<Self::Proof, Self::Error>;
     /// From `⊢ f = f'` and `⊢ g = g'` conclude `⊢ [f, g] = [f', g']`.
-    fn copair_cong(
-        &self,
-        f_eq: Self::Proof,
-        g_eq: Self::Proof,
-    ) -> Result<Self::Proof, Self::Error>;
+    fn copair_cong(&self, f_eq: Self::Proof, g_eq: Self::Proof)
+    -> Result<Self::Proof, Self::Error>;
 }

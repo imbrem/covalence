@@ -36,12 +36,14 @@ mod eqn {
 
     /// `a = b` as a HOL `bool` term.
     pub fn eq(a: Term, b: Term) -> Term {
-        a.equals(b).expect("semiring eq: carrier terms are well-typed")
+        a.equals(b)
+            .expect("semiring eq: carrier terms are well-typed")
     }
 
     /// `∀name:ty. body`.
     pub fn forall(name: &str, ty: Type, body: Term) -> Term {
-        body.forall(name, ty).expect("semiring forall: body is bool")
+        body.forall(name, ty)
+            .expect("semiring forall: body is bool")
     }
 
     /// `⊢ op a₁ b₁ = op a₂ b₂` from `⊢ a₁ = a₂` and `⊢ b₁ = b₂`, for a
@@ -255,8 +257,10 @@ mod tests {
         let s = Nat::new();
         // add_comm: ∀a b. a + b = b + a
         let (a, b) = (s.var("a"), s.var("b"));
-        let add_comm_stmt =
-            s.forall("a", s.forall("b", s.eq(s.add(a.clone(), b.clone()), s.add(b, a))));
+        let add_comm_stmt = s.forall(
+            "a",
+            s.forall("b", s.eq(s.add(a.clone(), b.clone()), s.add(b, a))),
+        );
         assert_eq!(s.concl(&s.add_comm()), add_comm_stmt);
 
         // distrib: ∀a b c. a · (b + c) = a · b + a · c
@@ -316,8 +320,10 @@ mod tests {
         let s = Int::new();
         // mul_comm: ∀a b. a · b = b · a
         let (a, b) = (s.var("a"), s.var("b"));
-        let mul_comm_stmt =
-            s.forall("a", s.forall("b", s.eq(s.mul(a.clone(), b.clone()), s.mul(b, a))));
+        let mul_comm_stmt = s.forall(
+            "a",
+            s.forall("b", s.eq(s.mul(a.clone(), b.clone()), s.mul(b, a))),
+        );
         assert_eq!(s.concl(&s.mul_comm()), mul_comm_stmt);
 
         // The still-postulated int axioms carry themselves as a hypothesis
@@ -352,7 +358,8 @@ mod tests {
     where
         S::Error: std::fmt::Debug,
     {
-        s.specialize(s.mul_one(), s.one()).expect("specialize mul_one")
+        s.specialize(s.mul_one(), s.one())
+            .expect("specialize mul_one")
     }
 
     #[test]

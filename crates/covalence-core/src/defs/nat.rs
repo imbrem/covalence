@@ -75,10 +75,7 @@ fn nat_rec_ty() -> Type {
     let alpha = Type::tfree("a");
     Type::fun(
         alpha.clone(),
-        Type::fun(
-            nat_alpha_to_alpha(&alpha),
-            Type::fun(Type::nat(), alpha),
-        ),
+        Type::fun(nat_alpha_to_alpha(&alpha), Type::fun(Type::nat(), alpha)),
     )
 }
 
@@ -175,11 +172,7 @@ poly_let_term! {
 /// where `n_arg` / `a_arg` pick between `n` and `m`, and `step_fn` is
 /// the unary function being iterated. Used to keep the
 /// `natAdd`/`natMul`/`natSub`/etc. definitions one-liners.
-fn iter_binary(
-    iter_count: Either,
-    step_fn: Term,
-    seed: Term,
-) -> Term {
+fn iter_binary(iter_count: Either, step_fn: Term, seed: Term) -> Term {
     let n = Term::free("n", Type::nat());
     let m = Term::free("m", Type::nat());
 
@@ -481,7 +474,10 @@ fn nat_to_int_body() -> Term {
     let int_succ = super::int::int_succ();
     let zero_int = super::int::int_zero();
     let iter_at_int = iter(Type::int());
-    let body = Term::app(Term::app(Term::app(iter_at_int, n.clone()), int_succ), zero_int);
+    let body = Term::app(
+        Term::app(Term::app(iter_at_int, n.clone()), int_succ),
+        zero_int,
+    );
     hol::pub_abs("n", Type::nat(), body)
 }
 

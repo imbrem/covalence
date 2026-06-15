@@ -398,7 +398,10 @@ fn add_succ_r_impl() -> Result<Thm> {
     let base = {
         let b = var("b");
         let e1 = add_base().all_elim(succ(b.clone()))?; // 0 + Sb = Sb
-        let e2 = add_base().all_elim(b.clone())?.cong_arg(nat_succ())?.sym()?; // Sb = S(0+b)
+        let e2 = add_base()
+            .all_elim(b.clone())?
+            .cong_arg(nat_succ())?
+            .sym()?; // Sb = S(0+b)
         e1.trans(e2)?.all_intro("b", nat())?
     };
 
@@ -453,7 +456,10 @@ fn add_comm_impl() -> Result<Thm> {
         let ih_b = Thm::assume(ihc.clone())?.all_elim(b.clone())?; // n + b = b + n
         let s1 = add_step().all_elim(n.clone())?.all_elim(b.clone())?; // Sn+b = S(n+b)
         let s2 = ih_b.cong_arg(nat_succ())?; //                          S(n+b) = S(b+n)
-        let s3 = add_succ_r().all_elim(b.clone())?.all_elim(n.clone())?.sym()?; // S(b+n) = b+Sn
+        let s3 = add_succ_r()
+            .all_elim(b.clone())?
+            .all_elim(n.clone())?
+            .sym()?; // S(b+n) = b+Sn
         s1.trans(s2)?.trans(s3)?.all_intro("b", nat())?
     };
     let step = inner.imp_intro(&ihc)?;
@@ -497,9 +503,14 @@ fn add_assoc_impl() -> Result<Thm> {
             .all_elim(b.clone())?
             .all_elim(c.clone())?; // (n+b)+c = n+(b+c)
         // (Sn + b) + c = (S(n+b)) + c
-        let s1 = cong_add_l(add_step().all_elim(n.clone())?.all_elim(b.clone())?, c.clone())?;
+        let s1 = cong_add_l(
+            add_step().all_elim(n.clone())?.all_elim(b.clone())?,
+            c.clone(),
+        )?;
         // (S(n+b)) + c = S((n+b)+c)
-        let s2 = add_step().all_elim(add(n.clone(), b.clone()))?.all_elim(c.clone())?;
+        let s2 = add_step()
+            .all_elim(add(n.clone(), b.clone()))?
+            .all_elim(c.clone())?;
         // S((n+b)+c) = S(n+(b+c))
         let s3 = ih_bc.cong_arg(nat_succ())?;
         // S(n+(b+c)) = Sn + (b+c)
@@ -507,7 +518,9 @@ fn add_assoc_impl() -> Result<Thm> {
             .all_elim(n.clone())?
             .all_elim(add(b.clone(), c.clone()))?
             .sym()?;
-        s1.trans(s2)?.trans(s3)?.trans(s4)?
+        s1.trans(s2)?
+            .trans(s3)?
+            .trans(s4)?
             .all_intro("c", nat())?
             .all_intro("b", nat())?
     };
@@ -654,7 +667,12 @@ fn mul_succ_r_impl() -> Result<Thm> {
                 add_comm().all_elim(b.clone())?.all_elim(n.clone())?,
                 nb.clone(),
             )?)? // = (n+b)+nb
-            .trans(add_assoc().all_elim(n.clone())?.all_elim(b.clone())?.all_elim(nb.clone())?)?; // = n+(b+nb)
+            .trans(
+                add_assoc()
+                    .all_elim(n.clone())?
+                    .all_elim(b.clone())?
+                    .all_elim(nb.clone())?,
+            )?; // = n+(b+nb)
         let middle = add_step()
             .all_elim(b.clone())?
             .all_elim(add(n.clone(), nb.clone()))? // Sb+(n+nb) = S(b+(n+nb))
@@ -879,7 +897,11 @@ fn cong_eq_l(eq: Thm, c: Term) -> Result<Thm> {
 fn sub_witness(shift_left: bool) -> Result<Term> {
     let n = var("n");
     let m = var("m");
-    let left = if shift_left { succ(n.clone()) } else { n.clone() };
+    let left = if shift_left {
+        succ(n.clone())
+    } else {
+        n.clone()
+    };
     let body = sub(left, m).equals(zero())?; // (left - m = 0) : bool
     let lam_m = Term::abs(nat(), subst::close(&body, "m"));
     Ok(Term::abs(nat(), subst::close(&lam_m, "n")))
@@ -897,7 +919,9 @@ fn transfer_selector(spec: Term, w: Term, clauses: [Thm; 4]) -> Result<Thm> {
         .as_app()
         .and_then(|(f, _)| f.as_app())
         .map(|(_, ante)| ante.clone())
-        .ok_or_else(|| covalence_core::Error::ConnectiveRule("transfer: bad spec_ax shape".into()))?;
+        .ok_or_else(|| {
+            covalence_core::Error::ConnectiveRule("transfer: bad spec_ax shape".into())
+        })?;
     let pw_proof = Thm::beta_conv(pw)?.sym()?.eq_mp(body_w)?; // ⊢ p w
     let p_spec = imp.imp_elim(pw_proof)?; // ⊢ p spec
     Thm::beta_conv(p_spec.concl().clone())?.eq_mp(p_spec) // ⊢ BODY[spec]
@@ -1105,10 +1129,7 @@ fn le_zero_impl() -> Result<Thm> {
     let ihc = body.clone();
     let step = le_c2().all_elim(m.clone())?.imp_intro(&ihc)?; // RHS (0≤Sm)=T holds outright
     let all_eq = induct_on("m", &motive, base, step)?; // ∀m. (0≤m)=T
-    all_eq
-        .all_elim(var("m"))?
-        .eqt_elim()?
-        .all_intro("m", nat())
+    all_eq.all_elim(var("m"))?.eqt_elim()?.all_intro("m", nat())
 }
 
 cached_thm! {
@@ -1182,7 +1203,12 @@ fn mul_comm_impl() -> Result<Thm> {
                     .all_elim(b.clone())? // n*b = b*n
                     .cong_arg(Term::app(nat_add(), b.clone()))?, // b + n*b = b + b*n
             )?
-            .trans(mul_succ_r().all_elim(b.clone())?.all_elim(n.clone())?.sym()?)? // b + b*n = b*Sn
+            .trans(
+                mul_succ_r()
+                    .all_elim(b.clone())?
+                    .all_elim(n.clone())?
+                    .sym()?,
+            )? // b + b*n = b*Sn
             .all_intro("b", nat())?
     };
     let step = inner.imp_intro(&ihc)?;
@@ -1335,8 +1361,7 @@ fn le_zero_iff() -> Result<Thm> {
 
 /// `(a ≤ b) ⟹ (b ≤ a) ⟹ (a = b)` — the antisymmetry body at `a`, `b`.
 fn antisym_body(a: &Term, b: &Term) -> Result<Term> {
-    le_t(a.clone(), b.clone())
-        .imp(le_t(b.clone(), a.clone()).imp(a.clone().equals(b.clone())?)?)
+    le_t(a.clone(), b.clone()).imp(le_t(b.clone(), a.clone()).imp(a.clone().equals(b.clone())?)?)
 }
 
 cached_thm! {
@@ -1373,10 +1398,7 @@ fn le_antisym_impl() -> Result<Thm> {
             not_succ_le_zero()
                 .all_elim(a.clone())?
                 .not_elim(Thm::assume(sa_le_0.clone())?)? // {Sa≤0} ⊢ F
-                .false_elim(
-                    le_t(zero(), succ(a.clone()))
-                        .imp(succ(a.clone()).equals(zero())?)?,
-                )? // {Sa≤0} ⊢ (0≤Sa)⟹(Sa=0)
+                .false_elim(le_t(zero(), succ(a.clone())).imp(succ(a.clone()).equals(zero())?)?)? // {Sa≤0} ⊢ (0≤Sa)⟹(Sa=0)
                 .imp_intro(&sa_le_0)?
         };
         // inner step b = S b': use IH_a @ b' on the cancelled successors.
@@ -1434,7 +1456,10 @@ fn lt_iff_succ_le_impl() -> Result<Thm> {
     let step = |ih_a: Thm| -> Result<Thm> {
         let a = var("a");
         let b = var("b");
-        let motive_b = Term::abs(nat(), subst::close(&lt_succ_le_body(&succ(a.clone()), &b)?, "b"));
+        let motive_b = Term::abs(
+            nat(),
+            subst::close(&lt_succ_le_body(&succ(a.clone()), &b)?, "b"),
+        );
         // b = 0: both sides F.
         let ib = lt_c3()
             .all_elim(a.clone())? // (S a < 0) = F
@@ -1656,16 +1681,17 @@ fn le_add_sub_impl() -> Result<Thm> {
     let step = |ih_a: Thm| -> Result<Thm> {
         let a = var("a");
         let b = var("b");
-        let motive_b = Term::abs(nat(), subst::close(&le_add_sub_body(&succ(a.clone()), &b)?, "b"));
+        let motive_b = Term::abs(
+            nat(),
+            subst::close(&le_add_sub_body(&succ(a.clone()), &b)?, "b"),
+        );
         // inner base b = 0: (S a ≤ 0) ⟹ … — antecedent false.
         let inner_base = {
             let sa0 = le_t(succ(a.clone()), zero());
             not_succ_le_zero()
                 .all_elim(a.clone())?
                 .not_elim(Thm::assume(sa0.clone())?)?
-                .false_elim(
-                    add(succ(a.clone()), sub(zero(), succ(a.clone()))).equals(zero())?,
-                )?
+                .false_elim(add(succ(a.clone()), sub(zero(), succ(a.clone()))).equals(zero())?)?
                 .imp_intro(&sa0)?
         };
         // inner step b = S b': cancel one successor, apply IH_a @ b'.
@@ -1816,9 +1842,12 @@ mod tests {
         // ⊢ ∀a b c. a≤b ⟹ b≤c ⟹ a≤c.
         let (a, b, c) = (var("a"), var("b"), var("c"));
         let inst = le_trans()
-            .all_elim(a.clone()).unwrap()
-            .all_elim(b.clone()).unwrap()
-            .all_elim(c.clone()).unwrap();
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap()
+            .all_elim(c.clone())
+            .unwrap();
         let want = le_t(a.clone(), b.clone())
             .imp(le_t(b.clone(), c.clone()).imp(le_t(a, c)).unwrap())
             .unwrap();
@@ -1832,9 +1861,14 @@ mod tests {
     fn lt_iff_succ_le_holds() {
         // ⊢ ∀a b. (a < b) = (S a ≤ b); instantiate and sanity-check shape.
         let inst = lt_iff_succ_le()
-            .all_elim(var("a")).unwrap()
-            .all_elim(var("b")).unwrap();
-        assert_eq!(inst.concl(), &lt_succ_le_body(&var("a"), &var("b")).unwrap());
+            .all_elim(var("a"))
+            .unwrap()
+            .all_elim(var("b"))
+            .unwrap();
+        assert_eq!(
+            inst.concl(),
+            &lt_succ_le_body(&var("a"), &var("b")).unwrap()
+        );
         assert!(lt_iff_succ_le().hyps().is_empty());
     }
 
@@ -1842,8 +1876,10 @@ mod tests {
     fn le_antisym_holds() {
         // ⊢ ∀a b. a≤b ⟹ b≤a ⟹ a=b, instantiated.
         let inst = le_antisym()
-            .all_elim(var("a")).unwrap()
-            .all_elim(var("b")).unwrap();
+            .all_elim(var("a"))
+            .unwrap()
+            .all_elim(var("b"))
+            .unwrap();
         assert_eq!(inst.concl(), &antisym_body(&var("a"), &var("b")).unwrap());
         assert!(le_antisym().hyps().is_empty());
     }
@@ -1852,9 +1888,13 @@ mod tests {
     fn le_total_holds() {
         // ⊢ ∀a b. a≤b ∨ b≤a, instantiated.
         let inst = le_total()
-            .all_elim(var("a")).unwrap()
-            .all_elim(var("b")).unwrap();
-        let expected = le_t(var("a"), var("b")).or(le_t(var("b"), var("a"))).unwrap();
+            .all_elim(var("a"))
+            .unwrap()
+            .all_elim(var("b"))
+            .unwrap();
+        let expected = le_t(var("a"), var("b"))
+            .or(le_t(var("b"), var("a")))
+            .unwrap();
         assert_eq!(inst.concl(), &expected);
         assert!(le_total().hyps().is_empty());
     }
@@ -1863,13 +1903,28 @@ mod tests {
     fn order_basic_facts_are_proved() {
         // 0 ≤ k, k ≤ k, 0 < S k, ¬(S k ≤ 0), ¬(k < k), ¬(k < 0).
         let k = var("k");
-        assert_eq!(le_zero().all_elim(k.clone()).unwrap().concl(), &le_t(zero(), k.clone()));
-        assert_eq!(le_refl().all_elim(k.clone()).unwrap().concl(), &le_t(k.clone(), k.clone()));
+        assert_eq!(
+            le_zero().all_elim(k.clone()).unwrap().concl(),
+            &le_t(zero(), k.clone())
+        );
+        assert_eq!(
+            le_refl().all_elim(k.clone()).unwrap().concl(),
+            &le_t(k.clone(), k.clone())
+        );
         assert_eq!(
             zero_lt_succ().all_elim(k.clone()).unwrap().concl(),
             &lt_t(zero(), succ(k.clone()))
         );
-        for t in [le_zero(), le_refl(), zero_lt_succ(), lt_irrefl(), not_succ_le_zero(), not_lt_zero(), le_succ_succ(), lt_succ_succ()] {
+        for t in [
+            le_zero(),
+            le_refl(),
+            zero_lt_succ(),
+            lt_irrefl(),
+            not_succ_le_zero(),
+            not_lt_zero(),
+            le_succ_succ(),
+            lt_succ_succ(),
+        ] {
             assert!(t.hyps().is_empty(), "order facts are hypothesis-free");
         }
     }
@@ -1884,14 +1939,27 @@ mod tests {
     fn multiplicative_theory_proves_the_facts() {
         let (a, b) = (var("a"), var("b"));
         // mul_succ_r: a * S b = a + a*b
-        let sr = mul_succ_r().all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
+        let sr = mul_succ_r()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap();
         assert_eq!(
             sr.concl(),
-            &mul(a.clone(), succ(b.clone())).equals(add(a.clone(), mul(a.clone(), b.clone()))).unwrap()
+            &mul(a.clone(), succ(b.clone()))
+                .equals(add(a.clone(), mul(a.clone(), b.clone())))
+                .unwrap()
         );
         // mul_comm: a * b = b * a
-        let comm = mul_comm().all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
-        assert_eq!(comm.concl(), &mul(a.clone(), b.clone()).equals(mul(b, a)).unwrap());
+        let comm = mul_comm()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap();
+        assert_eq!(
+            comm.concl(),
+            &mul(a.clone(), b.clone()).equals(mul(b, a)).unwrap()
+        );
         // genuine (no hyps).
         assert!(mul_succ_r().hyps().is_empty() && mul_comm().hyps().is_empty());
     }
@@ -1906,7 +1974,9 @@ mod tests {
         let one = mul_one().all_elim(a.clone()).unwrap();
         assert_eq!(
             one.concl(),
-            &mul(a.clone(), Term::nat_lit(1u32)).equals(a.clone()).unwrap()
+            &mul(a.clone(), Term::nat_lit(1u32))
+                .equals(a.clone())
+                .unwrap()
         );
 
         // distrib: ∀a b c. a * (b + c) = a * b + a * c
@@ -1971,13 +2041,28 @@ mod tests {
         }
         // le clause 1: ⊢ (0 ≤ 0) = T
         let le_c1 = le_body().and_elim_l().unwrap();
-        assert_eq!(le_c1.concl(), &le_t(zero(), zero()).equals(Term::bool_lit(true)).unwrap());
+        assert_eq!(
+            le_c1.concl(),
+            &le_t(zero(), zero()).equals(Term::bool_lit(true)).unwrap()
+        );
         // lt clause 4: ⊢ ∀n m. (S n < S m) = (n < m)
-        let lt_c4 = lt_body().and_elim_r().unwrap().and_elim_r().unwrap().and_elim_r().unwrap();
-        let inst = lt_c4.all_elim(var("n")).unwrap().all_elim(var("m")).unwrap();
+        let lt_c4 = lt_body()
+            .and_elim_r()
+            .unwrap()
+            .and_elim_r()
+            .unwrap()
+            .and_elim_r()
+            .unwrap();
+        let inst = lt_c4
+            .all_elim(var("n"))
+            .unwrap()
+            .all_elim(var("m"))
+            .unwrap();
         assert_eq!(
             inst.concl(),
-            &lt_t(succ(var("n")), succ(var("m"))).equals(lt_t(var("n"), var("m"))).unwrap()
+            &lt_t(succ(var("n")), succ(var("m")))
+                .equals(lt_t(var("n"), var("m")))
+                .unwrap()
         );
     }
 
@@ -1995,13 +2080,24 @@ mod tests {
         assert_eq!(zs.concl(), &sub(zero(), var("k")).equals(zero()).unwrap());
         // S n - S m = n - m
         let ss = sub_succ_succ()
-            .all_elim(var("n")).unwrap()
-            .all_elim(var("m")).unwrap();
+            .all_elim(var("n"))
+            .unwrap()
+            .all_elim(var("m"))
+            .unwrap();
         assert_eq!(
             ss.concl(),
-            &sub(succ(var("n")), succ(var("m"))).equals(sub(var("n"), var("m"))).unwrap()
+            &sub(succ(var("n")), succ(var("m")))
+                .equals(sub(var("n"), var("m")))
+                .unwrap()
         );
-        for t in [pred_zero(), pred_succ(), sub_zero(), sub_succ(), zero_sub(), sub_succ_succ()] {
+        for t in [
+            pred_zero(),
+            pred_succ(),
+            sub_zero(),
+            sub_succ(),
+            zero_sub(),
+            sub_succ_succ(),
+        ] {
             assert!(t.hyps().is_empty(), "sub/pred theory is hypothesis-free");
         }
     }
@@ -2012,7 +2108,10 @@ mod tests {
         let thm = add_zero();
         let five = Term::nat_lit(Nat::from_inner(5u32.into()));
         let inst = thm.clone().all_elim(five.clone()).unwrap();
-        assert_eq!(inst.concl(), &add(five.clone(), zero()).equals(five).unwrap());
+        assert_eq!(
+            inst.concl(),
+            &add(five.clone(), zero()).equals(five).unwrap()
+        );
         // rec_holds is proved, so this is hypothesis-free.
         assert!(thm.hyps().is_empty());
     }
@@ -2021,19 +2120,35 @@ mod tests {
     fn additive_theory_proves_the_ring_facts() {
         let lit = |n: u32| Term::nat_lit(Nat::from_inner(n.into()));
         // add_succ_r: 2 + S 3 = S (2 + 3)
-        let sr = add_succ_r().all_elim(lit(2)).unwrap().all_elim(lit(3)).unwrap();
+        let sr = add_succ_r()
+            .all_elim(lit(2))
+            .unwrap()
+            .all_elim(lit(3))
+            .unwrap();
         assert_eq!(
             sr.concl(),
-            &add(lit(2), succ(lit(3))).equals(succ(add(lit(2), lit(3)))).unwrap()
+            &add(lit(2), succ(lit(3)))
+                .equals(succ(add(lit(2), lit(3))))
+                .unwrap()
         );
         // add_comm: 2 + 3 = 3 + 2
-        let comm = add_comm().all_elim(lit(2)).unwrap().all_elim(lit(3)).unwrap();
-        assert_eq!(comm.concl(), &add(lit(2), lit(3)).equals(add(lit(3), lit(2))).unwrap());
+        let comm = add_comm()
+            .all_elim(lit(2))
+            .unwrap()
+            .all_elim(lit(3))
+            .unwrap();
+        assert_eq!(
+            comm.concl(),
+            &add(lit(2), lit(3)).equals(add(lit(3), lit(2))).unwrap()
+        );
         // add_assoc: (1 + 2) + 3 = 1 + (2 + 3)
         let assoc = add_assoc()
-            .all_elim(lit(1)).unwrap()
-            .all_elim(lit(2)).unwrap()
-            .all_elim(lit(3)).unwrap();
+            .all_elim(lit(1))
+            .unwrap()
+            .all_elim(lit(2))
+            .unwrap()
+            .all_elim(lit(3))
+            .unwrap();
         let l = add(add(lit(1), lit(2)), lit(3));
         let r = add(lit(1), add(lit(2), lit(3)));
         assert_eq!(assoc.concl(), &l.equals(r).unwrap());
@@ -2048,9 +2163,12 @@ mod tests {
         // ∀a b c. (a+c = b+c) ⟹ (a=b); instantiate to a concrete implication.
         let (a, b, c) = (var("a"), var("b"), var("c"));
         let thm = add_cancel()
-            .all_elim(a.clone()).unwrap()
-            .all_elim(b.clone()).unwrap()
-            .all_elim(c.clone()).unwrap();
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap()
+            .all_elim(c.clone())
+            .unwrap();
         let prem = add(a.clone(), c.clone()).equals(add(b.clone(), c)).unwrap();
         let concl = a.equals(b).unwrap();
         assert_eq!(thm.concl(), &prem.imp(concl).unwrap());
@@ -2107,10 +2225,7 @@ mod tests {
     #[test]
     fn mul_base_and_step_have_expected_statements() {
         let mb = mul_base().all_elim(var("k")).unwrap();
-        assert_eq!(
-            mb.concl(),
-            &mul(zero(), var("k")).equals(zero()).unwrap()
-        );
+        assert_eq!(mb.concl(), &mul(zero(), var("k")).equals(zero()).unwrap());
 
         let ms = mul_step()
             .all_elim(var("j"))

@@ -57,13 +57,13 @@ macro_rules! cached_thm {
 
 pub mod cat;
 pub mod cond;
+pub mod coprod;
 pub mod eq;
 pub mod ext;
 pub mod inductive;
 pub mod int;
 pub mod list;
 pub mod logic;
-pub mod coprod;
 pub mod nat;
 pub mod option;
 pub mod prod;

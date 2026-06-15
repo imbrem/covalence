@@ -95,8 +95,12 @@ pub fn or_sym(pq: Thm) -> Result<Thm> {
     let (p, q) = parse_or(pq.concl()).ok_or_else(|| {
         Error::ConnectiveRule(format!("or_sym: conclusion is not `p ∨ q`: {}", pq.concl()))
     })?;
-    let left = Thm::assume(p.clone())?.or_intro_r(q.clone())?.imp_intro(&p)?;
-    let right = Thm::assume(q.clone())?.or_intro_l(p.clone())?.imp_intro(&q)?;
+    let left = Thm::assume(p.clone())?
+        .or_intro_r(q.clone())?
+        .imp_intro(&p)?;
+    let right = Thm::assume(q.clone())?
+        .or_intro_l(p.clone())?
+        .imp_intro(&q)?;
     pq.or_elim(left, right)
 }
 
@@ -294,11 +298,7 @@ fn inject(lit: Thm, target: &[Term], idx: usize) -> Result<Thm> {
 /// for each literal `l`, returns `Δ_l ⊢ l ⟹ goal`, returns
 /// `Γ ∪ ⋃ Δ_l ⊢ goal`. The recursion mirrors the right-associated
 /// `∨`-spine: peel the head literal, recurse under the assumed tail.
-fn elim_disj(
-    clause: Thm,
-    lits: &[Term],
-    branch: &impl Fn(&Term) -> Result<Thm>,
-) -> Result<Thm> {
+fn elim_disj(clause: Thm, lits: &[Term], branch: &impl Fn(&Term) -> Result<Thm>) -> Result<Thm> {
     match lits {
         [] => Err(Error::ConnectiveRule("elim_disj: empty clause".into())),
         [only] => {
@@ -474,7 +474,9 @@ fn disch_neg(thm: Thm, a: &Term) -> Result<Thm> {
     let tail = thm.concl().clone();
     let na = a.clone().not()?;
     // a ⟹ (a ∨ tail): assume a, inject on the left, discharge.
-    let branch_a = Thm::assume(a.clone())?.or_intro_l(tail.clone())?.imp_intro(a)?;
+    let branch_a = Thm::assume(a.clone())?
+        .or_intro_l(tail.clone())?
+        .imp_intro(a)?;
     // ¬a ⟹ (a ∨ tail): inject `tail` on the right, discharge ¬a.
     let branch_na = thm.or_intro_r(a.clone())?.imp_intro(&na)?;
     Thm::lem(a.clone())?.or_elim(branch_a, branch_na)
@@ -484,7 +486,10 @@ fn disch_neg(thm: Thm, a: &Term) -> Result<Thm> {
 /// clause. Apply the implication to an assumed `a`, then clausify it away.
 pub fn imp_clause(thm: Thm) -> Result<Thm> {
     let (a, _) = dest_imp(thm.concl()).ok_or_else(|| {
-        Error::ConnectiveRule(format!("imp_clause: `{}` is not an implication", thm.concl()))
+        Error::ConnectiveRule(format!(
+            "imp_clause: `{}` is not an implication",
+            thm.concl()
+        ))
     })?;
     let seq = thm.imp_elim(Thm::assume(a.clone())?)?; // Γ, {a} ⊢ b
     clause_intro(seq, &[a])
@@ -493,12 +498,7 @@ pub fn imp_clause(thm: Thm) -> Result<Thm> {
 /// `Γ ⊢ a = b` → `Γ ⊢ ¬a ∨ b` — the left half of a biconditional as a
 /// clause (Alethe `equiv1`; `=` at `bool` is `⟺`).
 pub fn iff_clause_left(thm: Thm) -> Result<Thm> {
-    let a = thm
-        .concl()
-        .as_eq()
-        .ok_or(Error::NotAnEquation)?
-        .0
-        .clone();
+    let a = thm.concl().as_eq().ok_or(Error::NotAnEquation)?.0.clone();
     let seq = thm.eq_mp(Thm::assume(a.clone())?)?; // Γ, {a} ⊢ b
     clause_intro(seq, &[a])
 }
@@ -506,12 +506,7 @@ pub fn iff_clause_left(thm: Thm) -> Result<Thm> {
 /// `Γ ⊢ a = b` → `Γ ⊢ a ∨ ¬b` — the right half of a biconditional as a
 /// clause (Alethe `equiv2`).
 pub fn iff_clause_right(thm: Thm) -> Result<Thm> {
-    let b = thm
-        .concl()
-        .as_eq()
-        .ok_or(Error::NotAnEquation)?
-        .1
-        .clone();
+    let b = thm.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
     let seq = thm.sym()?.eq_mp(Thm::assume(b.clone())?)?; // Γ, {b} ⊢ a
     clause_intro(seq, &[b])
 }
@@ -633,7 +628,9 @@ pub fn decide(p: &Term) -> Result<Thm> {
     }
     let np = p.clone().not()?;
     tauto(&np).map_err(|_| {
-        Error::ConnectiveRule(format!("decide: neither `{p}` nor its negation is a trivial tautology"))
+        Error::ConnectiveRule(format!(
+            "decide: neither `{p}` nor its negation is a trivial tautology"
+        ))
     })
 }
 
@@ -756,9 +753,19 @@ fn simp_conv(t: &Term) -> Result<Thm> {
     } else {
         Thm::refl(t.clone())?
     };
-    let t1 = cong.concl().as_eq().expect("cong yields an equation").1.clone();
+    let t1 = cong
+        .concl()
+        .as_eq()
+        .expect("cong yields an equation")
+        .1
+        .clone();
     if let Some(step) = simp_at(&t1)? {
-        let t2 = step.concl().as_eq().expect("simp step yields an equation").1.clone();
+        let t2 = step
+            .concl()
+            .as_eq()
+            .expect("simp step yields an equation")
+            .1
+            .clone();
         let rest = simp_conv(&t2)?;
         return cong.trans(step)?.trans(rest);
     }
@@ -1050,7 +1057,11 @@ fn eq_simp(a: &Term, b: &Term) -> Result<Option<Thm>> {
         // x ⟹ F : x and (x = ¬x) give ¬x, contradiction.
         let from_x = {
             let xt = Thm::assume(x.clone())?;
-            xeqnx.clone().eq_mp(xt.clone())?.not_elim(xt)?.imp_intro(&x)?
+            xeqnx
+                .clone()
+                .eq_mp(xt.clone())?
+                .not_elim(xt)?
+                .imp_intro(&x)?
         };
         // ¬x ⟹ F : ¬x and (¬x = x) give x, contradiction.
         let from_nx = {
@@ -1095,8 +1106,7 @@ fn eq_false(a: &Term, flipped: bool) -> Result<Thm> {
 /// biconditional is unfolded to a primitive `bool` equation and handed to
 /// [`eq_simp`] on the next pass; otherwise it is left alone.
 fn iff_simp(a: &Term, b: &Term) -> Result<Option<Thm>> {
-    let simplifiable =
-        a == b || is_t(a) || is_t(b) || is_f(a) || is_f(b) || complementary(a, b);
+    let simplifiable = a == b || is_t(a) || is_t(b) || is_f(a) || is_f(b) || complementary(a, b);
     if !simplifiable {
         return Ok(None);
     }
@@ -1133,7 +1143,12 @@ mod tests {
         assert!(thm.has_no_obs(), "and_comm must be oracle-free");
         let p = Term::free("p", Type::bool());
         let q = Term::free("q", Type::bool());
-        let expected = p.clone().and(q.clone()).unwrap().imp(q.and(p).unwrap()).unwrap();
+        let expected = p
+            .clone()
+            .and(q.clone())
+            .unwrap()
+            .imp(q.and(p).unwrap())
+            .unwrap();
         assert_eq!(thm.concl(), &expected);
     }
 
@@ -1144,7 +1159,12 @@ mod tests {
         assert!(thm.has_no_obs(), "or_comm must be oracle-free");
         let p = Term::free("p", Type::bool());
         let q = Term::free("q", Type::bool());
-        let expected = p.clone().or(q.clone()).unwrap().imp(q.or(p).unwrap()).unwrap();
+        let expected = p
+            .clone()
+            .or(q.clone())
+            .unwrap()
+            .imp(q.or(p).unwrap())
+            .unwrap();
         assert_eq!(thm.concl(), &expected);
     }
 
@@ -1247,7 +1267,8 @@ mod tests {
         // {¬a} ⊢ ¬a  ⟶  ⊢ a ∨ ¬a   (the literal stays positive).
         let a = Term::free("a", b());
         let na = a.clone().not().unwrap();
-        let cl = clause_intro_neg(Thm::assume(na.clone()).unwrap(), std::slice::from_ref(&a)).unwrap();
+        let cl =
+            clause_intro_neg(Thm::assume(na.clone()).unwrap(), std::slice::from_ref(&a)).unwrap();
         assert!(cl.hyps().is_empty());
         assert_eq!(cl.concl(), &a.clone().or(na).unwrap());
     }
@@ -1291,13 +1312,17 @@ mod tests {
             (a.clone().equals(a.clone().not().unwrap()).unwrap(), ff()), // (a=¬a) = F
             (a.clone().not().unwrap().equals(a.clone()).unwrap(), ff()), // (¬a=a) = F
             // the biconditional, which unfolds to the above
-            (a.clone().iff(a.clone()).unwrap(), tt()),    // (a ⟺ a) = T
-            (a.clone().iff(tt()).unwrap(), a.clone()),    // (a ⟺ T) = a
+            (a.clone().iff(a.clone()).unwrap(), tt()), // (a ⟺ a) = T
+            (a.clone().iff(tt()).unwrap(), a.clone()), // (a ⟺ T) = a
             (a.clone().iff(ff()).unwrap(), a.clone().not().unwrap()), // (a ⟺ F) = ¬a
         ];
         for (input, want) in cases {
             let eq = simp(&input).unwrap();
-            assert_eq!(eq.concl().as_eq().unwrap().0, &input, "lhs preserved for {input}");
+            assert_eq!(
+                eq.concl().as_eq().unwrap().0,
+                &input,
+                "lhs preserved for {input}"
+            );
             assert_eq!(rhs_of(&eq), want, "simp {input}");
             assert!(eq.hyps().is_empty());
         }
@@ -1344,11 +1369,18 @@ mod tests {
         let guarded = Term::cond(tt().and(tt()).unwrap(), p.clone(), q.clone());
         let eq = simp(&guarded).unwrap();
         assert_eq!(rhs_of(&eq), p, "the guard reduces, then cond fires");
-        assert!(eq.hyps().is_empty(), "a decided cond is a genuine reduction");
+        assert!(
+            eq.hyps().is_empty(),
+            "a decided cond is a genuine reduction"
+        );
         // An undecided guard leaves the conditional in place.
         let a = Term::free("a", b());
         let open = Term::cond(a, p.clone(), q.clone());
-        assert_eq!(rhs_of(&simp(&open).unwrap()), open, "open guard → cond kept");
+        assert_eq!(
+            rhs_of(&simp(&open).unwrap()),
+            open,
+            "open guard → cond kept"
+        );
     }
 
     #[test]
@@ -1449,7 +1481,12 @@ mod tests {
         assert!(prop_eq(&l, &r).is_ok());
         // distribution: a ∧ (c ∨ d) = (a ∧ c) ∨ (a ∧ d)
         let dl = a.clone().and(c.clone().or(d.clone()).unwrap()).unwrap();
-        let dr = a.clone().and(c.clone()).unwrap().or(a.and(d).unwrap()).unwrap();
+        let dr = a
+            .clone()
+            .and(c.clone())
+            .unwrap()
+            .or(a.and(d).unwrap())
+            .unwrap();
         assert!(prop_eq(&dl, &dr).is_ok());
     }
 
@@ -1473,10 +1510,17 @@ mod tests {
         // De Morgan: ¬(a ∧ c) = (¬a ∨ ¬c)
         want(
             a.clone().and(c.clone()).unwrap().not().unwrap(),
-            a.clone().not().unwrap().or(c.clone().not().unwrap()).unwrap(),
+            a.clone()
+                .not()
+                .unwrap()
+                .or(c.clone().not().unwrap())
+                .unwrap(),
         );
         // Absorption: a ∨ (a ∧ c) = a
-        want(a.clone().or(a.clone().and(c.clone()).unwrap()).unwrap(), a.clone());
+        want(
+            a.clone().or(a.clone().and(c.clone()).unwrap()).unwrap(),
+            a.clone(),
+        );
         // Implication as disjunction: (a ⟹ c) = (¬a ∨ c)
         want(
             a.clone().imp(c.clone()).unwrap(),
@@ -1497,7 +1541,12 @@ mod tests {
     fn prop_eq_handles_four_atoms() {
         // Full commutative-reassociation across four atoms.
         let [a, c, d, e] = ["a", "c", "d", "e"].map(|n| Term::free(n, b()));
-        let l = a.clone().or(c.clone()).unwrap().or(d.clone().or(e.clone()).unwrap()).unwrap();
+        let l = a
+            .clone()
+            .or(c.clone())
+            .unwrap()
+            .or(d.clone().or(e.clone()).unwrap())
+            .unwrap();
         let r = e.or(d).unwrap().or(c.or(a).unwrap()).unwrap();
         assert!(prop_eq(&l, &r).unwrap().hyps().is_empty());
     }
@@ -1530,7 +1579,12 @@ mod tests {
     fn pred_at(pred: &Term, witness: Term, body_proof: Thm) -> Thm {
         // body_proof : ⊢ body[witness] ; β backwards gives ⊢ pred witness.
         let redex = Term::app(pred.clone(), witness);
-        Thm::beta_conv(redex).unwrap().sym().unwrap().eq_mp(body_proof).unwrap()
+        Thm::beta_conv(redex)
+            .unwrap()
+            .sym()
+            .unwrap()
+            .eq_mp(body_proof)
+            .unwrap()
     }
 
     #[test]

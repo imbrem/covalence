@@ -165,18 +165,10 @@ pub trait Peano {
 
     /// **∨-introduction (left).** From `⊢ p` and a formula `q`, conclude
     /// `⊢ p ∨ q`.
-    fn or_intro_left(
-        &self,
-        p: Self::Proof,
-        q: Self::Prop,
-    ) -> Result<Self::Proof, Self::Error>;
+    fn or_intro_left(&self, p: Self::Proof, q: Self::Prop) -> Result<Self::Proof, Self::Error>;
     /// **∨-introduction (right).** From a formula `p` and `⊢ q`, conclude
     /// `⊢ p ∨ q`.
-    fn or_intro_right(
-        &self,
-        p: Self::Prop,
-        q: Self::Proof,
-    ) -> Result<Self::Proof, Self::Error>;
+    fn or_intro_right(&self, p: Self::Prop, q: Self::Proof) -> Result<Self::Proof, Self::Error>;
     /// **∨-elimination (case split).** From `⊢ p ∨ q`, `⊢ p ⟹ r` and
     /// `⊢ q ⟹ r`, conclude `⊢ r`.
     fn or_elim(
@@ -189,11 +181,7 @@ pub trait Peano {
     /// **¬-introduction.** From `⊢ p ⟹ ⊥`, conclude `⊢ ¬p`.
     fn not_intro(&self, p_implies_false: Self::Proof) -> Result<Self::Proof, Self::Error>;
     /// **¬-elimination.** From `⊢ ¬p` and `⊢ p`, conclude `⊢ ⊥`.
-    fn not_elim(
-        &self,
-        not_p: Self::Proof,
-        p: Self::Proof,
-    ) -> Result<Self::Proof, Self::Error>;
+    fn not_elim(&self, not_p: Self::Proof, p: Self::Proof) -> Result<Self::Proof, Self::Error>;
     /// **⊥-elimination (ex falso).** From `⊢ ⊥`, conclude `⊢ p` for any
     /// formula `p`.
     fn absurd(&self, falsity: Self::Proof, p: Self::Prop) -> Result<Self::Proof, Self::Error>;

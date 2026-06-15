@@ -282,9 +282,7 @@ pub fn term_to_sexp(t: &Term, ser: &dyn ObsSerializer) -> Result<SExpr> {
         TermKind::Free(name, ty) => list3("free", sym(name), type_to_sexp(ty, ser)?),
         TermKind::Const(name, ty) => list3("const", sym(name), type_to_sexp(ty, ser)?),
         TermKind::App(f, x) => list3("app", term_to_sexp(f, ser)?, term_to_sexp(x, ser)?),
-        TermKind::Abs(ty, body) => {
-            list3("abs", type_to_sexp(ty, ser)?, term_to_sexp(body, ser)?)
-        }
+        TermKind::Abs(ty, body) => list3("abs", type_to_sexp(ty, ser)?, term_to_sexp(body, ser)?),
         TermKind::Blob(bytes) => list2(
             "blob",
             SExp::Atom(Atom::Str {
@@ -422,10 +420,14 @@ pub fn term_from_sexp(s: &SExpr, parser: &dyn ObsParser) -> Result<Term> {
             // equation). Walk the two `App`s to extract the LHS (the
             // `Term::def` leaf).
             let TermKind::App(eq_lhs_app, _) = thm.concl().kind() else {
-                return Err(SexpError("kernel produced unexpected define Thm shape".into()));
+                return Err(SexpError(
+                    "kernel produced unexpected define Thm shape".into(),
+                ));
             };
             let TermKind::App(_, lhs) = eq_lhs_app.kind() else {
-                return Err(SexpError("kernel produced unexpected define Thm shape".into()));
+                return Err(SexpError(
+                    "kernel produced unexpected define Thm shape".into(),
+                ));
             };
             Ok(lhs.clone())
         }

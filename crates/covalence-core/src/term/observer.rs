@@ -100,12 +100,7 @@ pub trait ObsTrue: Observer {
 pub trait ObsImp: Observer {
     /// Decide whether the lazy theorem
     /// `⊢ hyps[0] ⟹ … ⟹ hyps[n] ⟹ (obs self) args` should be minted.
-    fn obs_imp(
-        &self,
-        args: &[Term],
-        hyps: &[Term],
-        hint: Option<&dyn Hint>,
-    ) -> bool;
+    fn obs_imp(&self, args: &[Term], hyps: &[Term], hint: Option<&dyn Hint>) -> bool;
 }
 
 /// Per-observer-Rust-type policy for the kernel's

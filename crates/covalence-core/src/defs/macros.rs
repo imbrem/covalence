@@ -190,4 +190,3 @@ macro_rules! poly_spec_term {
         }
     };
 }
-

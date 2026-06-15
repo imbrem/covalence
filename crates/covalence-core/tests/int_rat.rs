@@ -56,8 +56,8 @@ fn bin(f: Term, a: Term, b: Term) -> Term {
 /// Reduce `t` one step and assert the conclusion is the HOL equation
 /// `t = want`. Walks the conclusion `App(App(Eq, lhs), rhs)`.
 fn assert_reduces(t: Term, want: Term) {
-    let thm = Thm::reduce_prim(t.clone())
-        .unwrap_or_else(|e| panic!("reduce failed for {t:?}: {e:?}"));
+    let thm =
+        Thm::reduce_prim(t.clone()).unwrap_or_else(|e| panic!("reduce failed for {t:?}: {e:?}"));
     let TermKind::App(eq_lhs_app, rhs) = thm.concl().kind() else {
         panic!("concl is not an App: {:?}", thm.concl());
     };

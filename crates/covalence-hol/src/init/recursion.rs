@@ -17,17 +17,22 @@
 //! 2. **Existence** `∀n. ∃a. Graph z f n a` — now the engine's generic
 //!    [`existence::graph_total`] over [`existence::graph_intro`];
 //!    [`graph_base`] / [`graph_step`] are thin `nat` views of it. ✓
-//! 3. **Uniqueness** `∀n a b. Graph z f n a ∧ Graph z f n b ⟹ a = b`
-//!    by induction (uses `succ_inj` / `zero_ne_succ`). Still `nat`-specific
-//!    here — generalising it needs freeness on the [`Inductive`] trait.
+//! 3. **Uniqueness.** The per-constructor *inversion* lemmas
+//!    ([`graph_base_inv`] / [`graph_step_inv`]) are now the engine's generic
+//!    [`uniqueness::graph_inv`], its freeness supplied by [`NatTheory`]
+//!    (`succ_inj` / `zero_ne_succ`). ✓ *Determinacy*
+//!    `∀n a b. Graph z f n a ∧ Graph z f n b ⟹ a = b` (`graph_det`) still
+//!    folds those by `nat`-induction here.
 //! 4. **Assemble** `r z f n ≜ ε a. Graph z f n a`, prove `P_rec r`,
 //!    `∃`-introduce. Still `nat`-specific here.
 //!
 use covalence_core::{Result, Term, Thm, Type, defs, subst};
 
-use crate::init::eq::{beta_expand, beta_nf_concl, beta_nf_expand, beta_reduce};
+use crate::init::eq::{beta_expand, beta_reduce};
 use crate::init::ext::{TermExt, ThmExt};
-use crate::init::inductive::{Arg, Constructor, Inductive, InductiveSig, existence, graph as gb};
+use crate::init::inductive::{
+    Arg, Constructor, Inductive, InductiveSig, existence, graph as gb, uniqueness,
+};
 use crate::init::logic::{exists_elim, exists_intro};
 use crate::init::nat::{nat_succ, succ, zero};
 
@@ -71,7 +76,13 @@ fn nat_sig() -> &'static InductiveSig {
         relation: "G",
         ctors: vec![
             Constructor::nullary(zero()),
-            Constructor::new(nat_succ(), vec![Arg::Rec { name: "m", image: "b" }]),
+            Constructor::new(
+                nat_succ(),
+                vec![Arg::Rec {
+                    name: "m",
+                    image: "b",
+                }],
+            ),
         ],
     });
     &SIG
@@ -95,10 +106,43 @@ impl Inductive for NatTheory {
     fn induct(&self, _motive: &Term, cases: Vec<Thm>) -> Result<Thm> {
         // `cases = [⊢ motive 0, ⊢ motive m ⟹ motive (S m)]` (applied
         // form) — exactly `Thm::nat_induct`'s base / step.
-        let [base, step]: [Thm; 2] = cases
-            .try_into()
-            .map_err(|_| covalence_core::Error::ConnectiveRule("nat induct: expected 2 cases".into()))?;
+        let [base, step]: [Thm; 2] = cases.try_into().map_err(|_| {
+            covalence_core::Error::ConnectiveRule("nat induct: expected 2 cases".into())
+        })?;
         Thm::nat_induct(base, step)
+    }
+
+    fn injective(&self, i: usize, xs: &[Term], ys: &[Term]) -> Result<Thm> {
+        // Only `succ` (constructor 1) is injective-relevant; `succ_inj`
+        // already has the shape `(S x = S y) ⟹ (x = y)`.
+        match (i, xs, ys) {
+            (1, [x], [y]) => Thm::succ_inj(x.clone(), y.clone()),
+            _ => Err(covalence_core::Error::ConnectiveRule(format!(
+                "nat injective: no injectivity for constructor {i}"
+            ))),
+        }
+    }
+
+    fn distinct(&self, i: usize, j: usize, xs: &[Term], ys: &[Term]) -> Result<Thm> {
+        // `zero_ne_succ m : ⊢ ¬(0 = S m)`; bridge it to `(Cᵢ = Cⱼ) ⟹ F`
+        // in whichever order is asked.
+        match (i, j, xs, ys) {
+            (0, 1, [], [m]) => {
+                let eq = zero().equals(succ(m.clone()))?;
+                Thm::zero_ne_succ(m.clone())?
+                    .not_elim(Thm::assume(eq.clone())?)?
+                    .imp_intro(&eq)
+            }
+            (1, 0, [m], []) => {
+                let eq = succ(m.clone()).equals(zero())?;
+                Thm::zero_ne_succ(m.clone())?
+                    .not_elim(Thm::assume(eq.clone())?.sym()?)?
+                    .imp_intro(&eq)
+            }
+            _ => Err(covalence_core::Error::ConnectiveRule(format!(
+                "nat distinct: no rule for constructors {i}, {j}"
+            ))),
+        }
     }
 }
 
@@ -113,14 +157,8 @@ fn steps(z: &Term, f: &Term) -> [Term; 2] {
 }
 
 // ============================================================================
-// Base / step of the existence induction — via the generic engine
+// Step of the existence induction — via the generic engine
 // ============================================================================
-
-/// `⊢ Graph z f 0 z` — the graph relates `0` to `z`. Constructor-0
-/// (`zero`) introduction from [`existence::graph_intro`].
-fn graph_base(z: &Term, f: &Term) -> Result<Thm> {
-    existence::graph_intro(nat_sig(), &steps(z, f), &nat(), 0)
-}
 
 /// `⊢ Graph z f n a ⟹ Graph z f (S n) (f n a)`, for free `n`, `a`.
 /// Constructor-1 (`succ`) introduction from [`existence::graph_intro`],
@@ -148,181 +186,40 @@ pub(crate) fn graph_total(z: &Term, f: &Term) -> Result<Thm> {
 // Uniqueness, part 1: inversion lemmas via "determinizing" instances
 // ============================================================================
 
-// The graph instances below apply relations to literals like `0`, so the
-// re-wrapping uses the **β-only** [`beta_nf_expand`] / [`beta_nf_concl`]
-// (never ι): the proofs keep equations like `0 = 0` intact rather than
-// collapsing them to `T`.
+// ============================================================================
+// Uniqueness, part 1: inversion — now the generic engine's `graph_inv`
+// ============================================================================
 
-/// The determinizing relation `λk c. (k = 0) ⟹ (c = z)` — closed under
-/// the recursion rules, and pins the value at `0` to `z`.
-fn det_zero(z: &Term) -> Result<Term> {
-    let k = var("k");
-    let c = var("c");
-    let body = k.equals(zero())?.imp(c.equals(z.clone())?)?;
-    let lam_c = Term::abs(nat(), subst::close(&body, "c"));
-    Ok(Term::abs(nat(), subst::close(&lam_c, "k")))
-}
-
-/// `⊢ closed(z, f, det_zero z)`.
-fn det_zero_closed(z: &Term, f: &Term) -> Result<Thm> {
-    let g = det_zero(z)?;
-    // conj1: ⊢ G 0 z  (G 0 z β-reduces to (0=0) ⟹ (z=z)).
-    let eq00 = zero().equals(zero())?;
-    let g0z_body = Thm::refl(z.clone())?.imp_intro(&eq00)?; // ⊢ (0=0) ⟹ (z=z)
-    let conj1 = beta_nf_expand(app2(g.clone(), zero(), z.clone())?, g0z_body)?;
-
-    // conj2: ⊢ ∀m b. G m b ⟹ G (S m) (f m b)  — the consequent is
-    // vacuously true (S m ≠ 0), so it holds regardless of the antecedent.
-    let m = var("m");
-    let b = var("b");
-    let sm = succ(m.clone());
-    let fmb = app2(f.clone(), m.clone(), b.clone())?;
-    let sm_eq_0 = sm.clone().equals(zero())?;
-    // {S m = 0} ⊢ f m b = z, by ex falso (S m = 0 contradicts 0 ≠ S m).
-    let contra = Thm::zero_ne_succ(m.clone())?
-        .not_elim(Thm::assume(sm_eq_0.clone())?.sym()?)? // ⊢ F
-        .false_elim(fmb.clone().equals(z.clone())?)?; //     ⊢ f m b = z
-    let g_succ_body = contra.imp_intro(&sm_eq_0)?; // ⊢ (S m = 0) ⟹ (f m b = z)
-    let g_succ = beta_nf_expand(app2(g.clone(), sm, fmb)?, g_succ_body)?;
-    let conj2 = g_succ
-        .imp_intro(&app2(g.clone(), m.clone(), b.clone())?)?
-        .all_intro("b", nat())?
-        .all_intro("m", nat())?;
-
-    conj1.and_intro(conj2)
-}
-
-/// `⊢ Graph z f 0 a ⟹ a = z`, for free `a` — the graph forces the
-/// value at `0` to be `z`. Instantiate the graph's `∀G` at
-/// [`det_zero`], discharge closure, and read off `a = z`.
+/// `⊢ Graph z f 0 a ⟹ a = z`, for free `a` — the graph forces the value
+/// at `0` to be `z`. Constructor-0 inversion from
+/// [`uniqueness::graph_inv`].
 pub(crate) fn graph_base_inv(z: &Term, f: &Term) -> Result<Thm> {
-    let a = var("a");
-    let g = det_zero(z)?;
-    let gh = graph(z, f, zero(), a.clone())?;
-    // {GH} ⊢ G 0 a, then β-reduce to (0=0) ⟹ (a=z), then MP refl.
-    let g0a = Thm::assume(gh.clone())?
-        .all_elim(g)?
-        .imp_elim(det_zero_closed(z, f)?)?;
-    beta_nf_concl(g0a)? // {GH} ⊢ (0=0) ⟹ (a=z)
-        .imp_elim(Thm::refl(zero())?)? // {GH} ⊢ a = z
-        .imp_intro(&gh) //                  ⊢ Graph z f 0 a ⟹ a = z
-}
-
-// ============================================================================
-// Uniqueness, part 2: step inversion via the "Good" instance
-// ============================================================================
-
-/// `λd. Graph z f j d ∧ c = f j d` — the predicate of the existential
-/// inside `wit`.
-fn wit_pred(z: &Term, f: &Term, j: &Term, c: &Term) -> Result<Term> {
-    let d = var("d");
-    let body =
-        graph(z, f, j.clone(), d.clone())?.and(c.clone().equals(app2(f.clone(), j.clone(), d)?)?)?;
-    Ok(Term::abs(nat(), subst::close(&body, "d")))
-}
-
-/// `wit z f k c ≜ ∀j. (k = S j) ⟹ (∃d. Graph z f j d ∧ c = f j d)` —
-/// "if `k` is a successor `S j`, then `c` is `f j` of *some* value the
-/// graph relates to `j`".
-fn wit(z: &Term, f: &Term, k: &Term, c: &Term) -> Result<Term> {
-    let j = var("j");
-    let d = var("d");
-    let exists_d = graph(z, f, j.clone(), d.clone())?
-        .and(c.clone().equals(app2(f.clone(), j.clone(), d)?)?)?
-        .exists("d", nat())?;
-    k.clone()
-        .equals(succ(j.clone()))?
-        .imp(exists_d)?
-        .forall("j", nat())
-}
-
-/// `Good ≜ λk c. Graph z f k c ∧ wit z f k c` — a *closed* relation that
-/// additionally records the predecessor structure, so `Good (S n) a`
-/// exposes `a = f n c` for a graph-related `c`.
-fn good(z: &Term, f: &Term) -> Result<Term> {
-    let k = var("k");
-    let c = var("c");
-    let body = graph(z, f, k.clone(), c.clone())?.and(wit(z, f, &k, &c)?)?;
-    let lam_c = Term::abs(nat(), subst::close(&body, "c"));
-    Ok(Term::abs(nat(), subst::close(&lam_c, "k")))
-}
-
-/// `⊢ wit z f 0 z` — vacuous, since `0` is never `S j`.
-fn wit_zero(z: &Term, f: &Term) -> Result<Thm> {
-    let j = var("j");
-    let zero_eq_sj = zero().equals(succ(j.clone()))?;
-    let exists_d = graph(z, f, j.clone(), var("d"))?
-        .and(z.clone().equals(app2(f.clone(), j.clone(), var("d"))?)?)?
-        .exists("d", nat())?;
-    Thm::zero_ne_succ(j.clone())?
-        .not_elim(Thm::assume(zero_eq_sj.clone())?)? // ⊢ F
-        .false_elim(exists_d)? //                       ⊢ ∃d. …
-        .imp_intro(&zero_eq_sj)? //                     ⊢ (0 = S j) ⟹ ∃d. …
-        .all_intro("j", nat())
-}
-
-/// `⊢ closed(z, f, Good)`.
-fn good_closed(z: &Term, f: &Term) -> Result<Thm> {
-    let g = good(z, f)?;
-
-    // conj1: ⊢ Good 0 z  (β-reduces to Graph 0 z ∧ wit 0 z).
-    let conj1 = {
-        let reduced = graph_base(z, f)?.and_intro(wit_zero(z, f)?)?;
-        beta_nf_expand(app2(g.clone(), zero(), z.clone())?, reduced)?
-    };
-
-    // conj2: ⊢ ∀m b. Good m b ⟹ Good (S m) (f m b).
-    let m = var("m");
-    let b = var("b");
-    let good_mb = app2(g.clone(), m.clone(), b.clone())?;
-    let gm = beta_nf_concl(Thm::assume(good_mb.clone())?)?.and_elim_l()?; // {GA} ⊢ Graph m b
-
-    // Graph (S m) (f m b)
-    let g_succ = graph_step(z, f, &m, &b)?.imp_elim(gm.clone())?; // {GA} ⊢ Graph (S m) (f m b)
-
-    // wit (S m) (f m b): for free j, given S m = S j, succ_inj gives m = j,
-    // so witness d := b — Graph j b (rewrite Graph m b) and f m b = f j b.
-    let j = var("j");
-    let fmb = app2(f.clone(), m.clone(), b.clone())?;
-    let smsj = succ(m.clone()).equals(succ(j.clone()))?;
-    let mj = Thm::succ_inj(m.clone(), j.clone())?.imp_elim(Thm::assume(smsj.clone())?)?; // {SMSJ} ⊢ m = j
-    let graph_jb = gm.rewrite(&mj)?; // {GA, SMSJ} ⊢ Graph j b
-    let fmb_eq_fjb = fmb.clone().rw_all(&mj)?; // {SMSJ} ⊢ f m b = f j b
-    let conj = graph_jb.and_intro(fmb_eq_fjb)?; // {GA, SMSJ} ⊢ Graph j b ∧ f m b = f j b
-    let pred_d = wit_pred(z, f, &j, &fmb)?;
-    let ex_d = exists_intro(pred_d.clone(), b.clone(), beta_expand(&pred_d, b.clone(), conj)?)?;
-    let wit_succ = ex_d.imp_intro(&smsj)?.all_intro("j", nat())?; // {GA} ⊢ wit (S m) (f m b)
-
-    let conj2 = {
-        let reduced = g_succ.and_intro(wit_succ)?;
-        beta_nf_expand(app2(g.clone(), succ(m.clone()), fmb)?, reduced)?
-    }
-    .imp_intro(&good_mb)?
-    .all_intro("b", nat())?
-    .all_intro("m", nat())?;
-
-    conj1.and_intro(conj2)
+    uniqueness::graph_inv(&NatTheory, &steps(z, f), &nat(), 0)
 }
 
 /// `⊢ Graph z f (S n) a ⟹ (∃c. Graph z f n c ∧ a = f n c)`, for free
-/// `n`, `a` — the step-inversion lemma.
+/// `n`, `a` — the step-inversion lemma. Constructor-1 inversion from
+/// [`uniqueness::graph_inv`], with the canonical argument var `m`
+/// instantiated to `n`.
 pub(crate) fn graph_step_inv(z: &Term, f: &Term) -> Result<Thm> {
-    let n = var("n");
-    let a = var("a");
-    let gh = graph(z, f, succ(n.clone()), a.clone())?; // Graph (S n) a
-    // {GH} ⊢ Good (S n) a, β-reduce, take the wit conjunct, specialise at n.
-    let good_sn_a = Thm::assume(gh.clone())?
-        .all_elim(good(z, f)?)?
-        .imp_elim(good_closed(z, f)?)?;
-    let ex_c = beta_nf_concl(good_sn_a)? // {GH} ⊢ Graph (S n) a ∧ wit (S n) a
-        .and_elim_r()? //                  {GH} ⊢ ∀j. (S n = S j) ⟹ ∃d. …
-        .all_elim(n.clone())? //           {GH} ⊢ (S n = S n) ⟹ ∃d. Graph n d ∧ a = f n d
-        .imp_elim(Thm::refl(succ(n.clone()))?)?; // {GH} ⊢ ∃d. Graph n d ∧ a = f n d
-    ex_c.imp_intro(&gh)
+    uniqueness::graph_inv(&NatTheory, &steps(z, f), &nat(), 1)?.inst("m", var("n"))
+}
+
+/// `λd. Graph z f j d ∧ c = f j d` — the predicate of the existential the
+/// step inversion exposes; still used by the (not-yet-generalised)
+/// determinacy proof below.
+fn wit_pred(z: &Term, f: &Term, j: &Term, c: &Term) -> Result<Term> {
+    let d = var("d");
+    let body = graph(z, f, j.clone(), d.clone())?.and(c.clone().equals(app2(
+        f.clone(),
+        j.clone(),
+        d,
+    )?)?)?;
+    Ok(Term::abs(nat(), subst::close(&body, "d")))
 }
 
 // ============================================================================
-// Uniqueness, part 3: determinacy by induction
+// Uniqueness, part 2: determinacy by induction
 // ============================================================================
 
 /// `λn. ∀a b. Graph z f n a ⟹ Graph z f n b ⟹ a = b` — the
@@ -418,7 +315,10 @@ fn rec_ty() -> Type {
 
 /// `λa. Graph z f n a` — the predicate the recursor chooses from.
 fn graph_pred(z: &Term, f: &Term, n: &Term) -> Result<Term> {
-    Ok(Term::abs(nat(), subst::close(&graph(z, f, n.clone(), var("a"))?, "a")))
+    Ok(Term::abs(
+        nat(),
+        subst::close(&graph(z, f, n.clone(), var("a"))?, "a"),
+    ))
 }
 
 /// `ε a. Graph z f n a` — the chosen value at `n`.
@@ -516,8 +416,7 @@ fn recursion_theorem() -> Result<Thm> {
 pub(crate) fn rec_holds_proof() -> Result<Thm> {
     let pred = p_rec_pred()?;
     let natrec = defs::nat_rec(nat());
-    let step = Thm::spec_ax(natrec.clone(), Term::free("r", rec_ty()))?
-        .all_intro("r", rec_ty())?; // ⊢ ∀r. P_rec r ⟹ P_rec natRec
+    let step = Thm::spec_ax(natrec.clone(), Term::free("r", rec_ty()))?.all_intro("r", rec_ty())?; // ⊢ ∀r. P_rec r ⟹ P_rec natRec
     let p_nr = exists_elim(recursion_theorem()?, Term::app(pred, natrec), step)?;
     beta_reduce(p_nr)
 }
@@ -528,14 +427,6 @@ mod tests {
 
     fn zf() -> (Term, Term) {
         (Term::free("z", nat()), Term::free("f", f_ty()))
-    }
-
-    #[test]
-    fn graph_base_relates_zero_to_z() {
-        let (z, f) = zf();
-        let thm = graph_base(&z, &f).unwrap();
-        assert!(thm.hyps().is_empty());
-        assert_eq!(thm.concl(), &graph(&z, &f, zero(), z.clone()).unwrap());
     }
 
     #[test]
@@ -563,7 +454,10 @@ mod tests {
         let k = var("k");
         let inst = thm.all_elim(k.clone()).unwrap();
         let reduced = beta_reduce(inst).unwrap();
-        let expected = graph(&z, &f, k, var("a")).unwrap().exists("a", nat()).unwrap();
+        let expected = graph(&z, &f, k, var("a"))
+            .unwrap()
+            .exists("a", nat())
+            .unwrap();
         assert_eq!(reduced.concl(), &expected);
     }
 
@@ -581,12 +475,6 @@ mod tests {
     }
 
     #[test]
-    fn good_closed_is_axiom_free() {
-        let (z, f) = zf();
-        assert!(good_closed(&z, &f).unwrap().hyps().is_empty());
-    }
-
-    #[test]
     fn graph_step_inv_exposes_predecessor() {
         let (z, f) = zf();
         let thm = graph_step_inv(&z, &f).unwrap();
@@ -597,7 +485,11 @@ mod tests {
         let d = var("d");
         let inner = graph(&z, &f, n.clone(), d.clone())
             .unwrap()
-            .and(a.clone().equals(app2(f.clone(), n.clone(), d).unwrap()).unwrap())
+            .and(
+                a.clone()
+                    .equals(app2(f.clone(), n.clone(), d).unwrap())
+                    .unwrap(),
+            )
             .unwrap();
         let exists_c = inner.exists("d", nat()).unwrap();
         let expected = graph(&z, &f, succ(n.clone()), a.clone())

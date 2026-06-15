@@ -11,67 +11,19 @@
 //!   induction over the introduction rules. Generalises `nat`'s
 //!   `graph_total`.
 //!
-//! Determinacy (uniqueness) and the ε-assembly are the remaining layers;
-//! they additionally need constructor freeness and stay specialised to
-//! `nat` for now (see `SKELETONS.md`).
+//! The per-constructor *inversion* lemmas (the other half of uniqueness)
+//! are in [`super::uniqueness`]; **determinacy** and the **ε-assembly**
+//! remain specialised to `nat` for now (see `SKELETONS.md`).
 
-use covalence_core::{Result, Term, TermKind, Thm, Type, subst};
+use covalence_core::{Result, Term, Thm, Type, subst};
 
 use super::data::Inductive;
 use super::graph::{self, CtorInstance};
 use super::sig::InductiveSig;
+use super::util::{and_all, discharge_conj, project, var_name};
 use crate::init::eq::{beta_expand, beta_reduce};
 use crate::init::ext::TermExt;
 use crate::init::logic::{exists_elim, exists_intro};
-
-// ============================================================================
-// Conjunction plumbing
-// ============================================================================
-
-/// Project conjunct `i` out of a proof of a right-associated conjunction
-/// `c₀ ∧ (c₁ ∧ … ∧ c_{k-1})`.
-fn project(conj: Thm, i: usize, k: usize) -> Result<Thm> {
-    let mut t = conj;
-    for _ in 0..i {
-        t = t.and_elim_r()?;
-    }
-    if i + 1 < k { t.and_elim_l() } else { Ok(t) }
-}
-
-/// `⊢ ⋀ thms` — the right-associated conjunction of the given proofs.
-/// Caller guarantees a non-empty slice.
-fn and_all(thms: &[Thm]) -> Result<Thm> {
-    let mut acc = thms[thms.len() - 1].clone();
-    for t in thms[..thms.len() - 1].iter().rev() {
-        acc = t.clone().and_intro(acc)?;
-    }
-    Ok(acc)
-}
-
-/// Discharge hypotheses `hyps` from `thm` as a single conjunctive
-/// antecedent: `{h₀,…,hₙ} ⊢ c` ↦ `⊢ (⋀ hᵢ) ⟹ c`. Empty → unchanged;
-/// singleton → a plain `imp_intro`.
-fn discharge_conj(thm: Thm, hyps: &[Term]) -> Result<Thm> {
-    match hyps {
-        [] => Ok(thm),
-        [h] => thm.imp_intro(h),
-        _ => {
-            // `⊢ hₙ ⟹ … ⟹ h₀ ⟹ c` (all hyps curried off), then cut each
-            // back against its projection out of the assumed `⋀ hᵢ`.
-            let mut curried = thm;
-            for h in hyps {
-                curried = curried.imp_intro(h)?;
-            }
-            let conj_term = graph::conj(hyps)?;
-            let assumed = Thm::assume(conj_term.clone())?;
-            let mut cut = curried;
-            for i in (0..hyps.len()).rev() {
-                cut = cut.imp_elim(project(assumed.clone(), i, hyps.len())?)?;
-            }
-            cut.imp_intro(&conj_term)
-        }
-    }
-}
 
 // ============================================================================
 // Per-constructor graph introduction
@@ -148,14 +100,6 @@ fn total_motive(sig: &InductiveSig, steps: &[Term], beta: &Type) -> Result<Term>
     Ok(Term::abs(sig.ty.clone(), subst::close(&body, "__t")))
 }
 
-/// The binder name carried by an image free-variable.
-fn img_name(img: &Term) -> &str {
-    match img.kind() {
-        TermKind::Free(n, _) => n.as_str(),
-        _ => "__a",
-    }
-}
-
 /// The totality induction case for constructor `i`:
 /// `⊢ (⋀ⱼ motive rⱼ) ⟹ motive (Cᵢ x⃗)`.
 ///
@@ -201,12 +145,15 @@ fn total_case(
     let goal = Term::app(motive.clone(), inst.head.clone());
     for ((sub, img), hyp) in inst.rec_pairs.iter().zip(&applied_hyps) {
         let ih_exists = beta_reduce(Thm::assume(Term::app(motive.clone(), sub.clone()))?)?;
-        let step = acc.imp_intro(hyp)?.all_intro(img_name(img), beta.clone())?;
+        let step = acc.imp_intro(hyp)?.all_intro(var_name(img), beta.clone())?;
         acc = exists_elim(ih_exists, goal.clone(), step)?;
     }
 
-    let ih_terms: Vec<Term> =
-        inst.rec_pairs.iter().map(|(sub, _)| Term::app(motive.clone(), sub.clone())).collect();
+    let ih_terms: Vec<Term> = inst
+        .rec_pairs
+        .iter()
+        .map(|(sub, _)| Term::app(motive.clone(), sub.clone()))
+        .collect();
     discharge_conj(acc, &ih_terms)
 }
 
@@ -239,13 +186,22 @@ mod tests {
             relation: "G",
             ctors: vec![
                 Constructor::nullary(zero()),
-                Constructor::new(nat_succ(), vec![Arg::Rec { name: "m", image: "b" }]),
+                Constructor::new(
+                    nat_succ(),
+                    vec![Arg::Rec {
+                        name: "m",
+                        image: "b",
+                    }],
+                ),
             ],
         }
     }
 
     fn zf() -> (Term, Term) {
-        (Term::free("z", nat()), Term::free("f", Type::fun(nat(), Type::fun(nat(), nat()))))
+        (
+            Term::free("z", nat()),
+            Term::free("f", Type::fun(nat(), Type::fun(nat(), nat()))),
+        )
     }
 
     /// `graph_intro` at the nullary constructor is `⊢ Graph z f 0 z`, with

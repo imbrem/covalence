@@ -28,7 +28,7 @@
 //!   (`unfold_at_*` / `beta_nf` in [`super::rewrite`]) folding the
 //!   definitions in and out.
 
-use covalence_core::{defs, Term, Thm, Type};
+use covalence_core::{Term, Thm, Type, defs};
 
 use super::rewrite::{beta_nf, cong_at_fn, eq_sides, unfold_at_1, unfold_at_2};
 
@@ -53,15 +53,15 @@ pub fn truth() -> Thm {
     let refl_t = Thm::refl(t.clone()).expect("truth: refl T");
     // ⊢ (T = T) = T
     let t_eq_t = refl_t.concl().clone();
-    let reduced =
-        Thm::reduce_prim(t_eq_t).expect("truth: reduce_prim (T=T)");
+    let reduced = Thm::reduce_prim(t_eq_t).expect("truth: reduce_prim (T=T)");
     reduced.eq_mp(refl_t).expect("truth: eq_mp")
 }
 
 /// `Γ ⊢ p` → `Γ ⊢ p = T` (HOL Light's `EQT_INTRO`). Via
 /// `deduct_antisym` against [`truth`].
 pub fn eqt_intro(th: Thm) -> Thm {
-    th.deduct_antisym(truth()).expect("eqt_intro: deduct_antisym")
+    th.deduct_antisym(truth())
+        .expect("eqt_intro: deduct_antisym")
 }
 
 /// `Γ ⊢ p = T` → `Γ ⊢ p` (HOL Light's `EQT_ELIM`). Via `eq_mp` of
@@ -130,14 +130,14 @@ pub fn and_elim_r(conj_thm: Thm) -> Thm {
 /// Shared core of `and_elim_l` / `and_elim_r`: apply the unfolded
 /// conjunction body to `selector` and read off `⊢ <component> = T`.
 fn and_elim_with(conj_thm: Thm, selector: Term) -> Thm {
-    let (p, q) =
-        parse_and(conj_thm.concl()).expect("and_elim: conclusion is not p ∧ q");
+    let (p, q) = parse_and(conj_thm.concl()).expect("and_elim: conclusion is not p ∧ q");
     // ⊢ (λf. f p q) = (λf. f T T)
-    let body = and_body_at(p, q).eq_mp(conj_thm).expect("and_elim: eq_mp body");
+    let body = and_body_at(p, q)
+        .eq_mp(conj_thm)
+        .expect("and_elim: eq_mp body");
     // ⊢ (λf. f p q) sel = (λf. f T T) sel
     let applied = cong_at_fn(body, selector);
-    let (lhs, rhs) =
-        eq_sides(applied.concl()).expect("and_elim: applied is an equation");
+    let (lhs, rhs) = eq_sides(applied.concl()).expect("and_elim: applied is an equation");
     // ⊢ component = T : sym(lhs_nf) · applied · rhs_nf
     let comp_eq_t = beta_nf(lhs)
         .sym()
@@ -163,7 +163,8 @@ fn snd_selector() -> Term {
 /// isn't a HOL conjunction (the `and` connective spec applied twice).
 fn parse_and(t: &Term) -> Option<(Term, Term)> {
     let (op, p, q) = parse_binop(t)?;
-    op.ptr_eq(&covalence_core::defs::and_spec()).then_some((p, q))
+    op.ptr_eq(&covalence_core::defs::and_spec())
+        .then_some((p, q))
 }
 
 // ============================================================================
@@ -178,8 +179,7 @@ fn not_body_at(p: Term) -> Thm {
 /// Build `Γ ⊢ ¬p` from `Γ ⊢ p ⟹ F` (`NOT_INTRO`). Just fold the
 /// definition `¬p ≡ (p ⟹ F)` backwards.
 pub fn not_intro(p_imp_f_thm: Thm) -> Thm {
-    let (p, _) = parse_imp(p_imp_f_thm.concl())
-        .expect("not_intro: input is not `p ⟹ q`");
+    let (p, _) = parse_imp(p_imp_f_thm.concl()).expect("not_intro: input is not `p ⟹ q`");
     not_body_at(p)
         .sym()
         .expect("not_intro: sym")
@@ -201,7 +201,8 @@ pub fn not_elim(not_p_thm: Thm, p_thm: Thm) -> Thm {
 /// Parse `App(App(==>, p), q)` → `(p, q)`.
 fn parse_imp(t: &Term) -> Option<(Term, Term)> {
     let (op, p, q) = parse_binop(t)?;
-    op.ptr_eq(&covalence_core::defs::imp_spec()).then_some((p, q))
+    op.ptr_eq(&covalence_core::defs::imp_spec())
+        .then_some((p, q))
 }
 
 /// Parse a binary-connective application `App(App(op, p), q)` →

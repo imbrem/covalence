@@ -305,7 +305,10 @@ fn string_diagram_kind_flags_all_same_collapse_to_uniform() {
         .with_kinds(kf)
         .build_with(&mut store);
     assert!(matches!(sd.kinds, SlotRef::Uniform(UniformTag::AllOrdered)));
-    assert!(store.blobs.is_empty(), "uniform overlays shouldn't be stored");
+    assert!(
+        store.blobs.is_empty(),
+        "uniform overlays shouldn't be stored"
+    );
 }
 
 #[test]
@@ -383,7 +386,10 @@ fn render_dag_svg_uses_circles_not_rects() {
     assert!(svg.starts_with("<svg"));
     // DAG view: dots (<circle>) not boxes (<rect>).
     assert!(svg.contains("<circle"), "expected circle, got: {svg}");
-    assert!(!svg.contains("<rect "), "DAG view shouldn't draw rect boxes: {svg}");
+    assert!(
+        !svg.contains("<rect "),
+        "DAG view shouldn't draw rect boxes: {svg}"
+    );
     // Two nodes => two node groups + at least one edge path.
     assert_eq!(svg.matches("<g class=\"node\"").count(), 2);
     assert!(svg.contains("<path "));

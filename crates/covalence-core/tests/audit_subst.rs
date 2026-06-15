@@ -14,9 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use covalence_core::subst::{
-    self, close, has_free_var, is_closed, open, shift_by, subst_free,
-};
+use covalence_core::subst::{self, close, has_free_var, is_closed, open, shift_by, subst_free};
 use covalence_core::{Ctx, Term, Type, TypeKind};
 
 // ---------------------------------------------------------------------------
@@ -65,10 +63,7 @@ fn close_increments_depth_under_binders() {
 fn close_nested_binders_distinct_indices() {
     // λ.λ. (x, y)  where x is closed at outer, y stays free.
     // close on x at depth-2 should give Bound(2).
-    let app = Term::app(
-        Term::free("x", Type::nat()),
-        Term::free("y", Type::nat()),
-    );
+    let app = Term::app(Term::free("x", Type::nat()), Term::free("y", Type::nat()));
     let body = Term::abs(Type::nat(), Term::abs(Type::bool(), app));
     let c = close(&body, "x");
     let expected = Term::abs(
@@ -85,10 +80,7 @@ fn close_nested_binders_distinct_indices() {
 fn close_then_open_with_same_free_is_identity_on_closed() {
     // For a closed term mentioning Free("x"), close then open(_, x)
     // should reproduce the original.
-    let orig = Term::app(
-        Term::free("x", Type::nat()),
-        Term::free("z", Type::bool()),
-    );
+    let orig = Term::app(Term::free("x", Type::nat()), Term::free("z", Type::bool()));
     let closed = close(&orig, "x");
     let reopened = open(&closed, &Term::free("x", Type::nat()));
     assert_eq!(reopened, orig);
@@ -97,10 +89,7 @@ fn close_then_open_with_same_free_is_identity_on_closed() {
 #[test]
 fn close_then_open_under_binder_roundtrip() {
     // λ:bool. (x z) ; close x, then open with Free("x").
-    let inner = Term::app(
-        Term::free("x", Type::nat()),
-        Term::free("z", Type::bool()),
-    );
+    let inner = Term::app(Term::free("x", Type::nat()), Term::free("z", Type::bool()));
     let orig = Term::abs(Type::bool(), inner);
     let closed = close(&orig, "x");
     let reopened = open(&closed, &Term::free("x", Type::nat()));
@@ -281,10 +270,7 @@ fn subst_free_closed_replacement_unchanged_under_binder() {
 
 #[test]
 fn type_of_free_is_its_type() {
-    assert_eq!(
-        Term::free("x", Type::nat()).type_of().unwrap(),
-        Type::nat()
-    );
+    assert_eq!(Term::free("x", Type::nat()).type_of().unwrap(), Type::nat());
 }
 
 #[test]
@@ -327,10 +313,7 @@ fn type_of_select_op() {
 fn type_of_full_eq_application() {
     // (= at nat) 1 2 : bool
     let eq = Term::eq_op(Type::nat());
-    let applied = Term::app(
-        Term::app(eq, Term::nat_lit(1u32)),
-        Term::nat_lit(2u32),
-    );
+    let applied = Term::app(Term::app(eq, Term::nat_lit(1u32)), Term::nat_lit(2u32));
     assert_eq!(applied.type_of().unwrap(), Type::bool());
 }
 
@@ -393,7 +376,10 @@ fn type_of_free_reused_at_two_types() {
     let lhs = Term::app(Term::eq_op(Type::nat()), Term::free("x", Type::nat()));
     let whole = Term::app(lhs, Term::free("x", Type::bool()));
     let err = whole.type_of();
-    assert!(err.is_err(), "free var reused at two types must be rejected");
+    assert!(
+        err.is_err(),
+        "free var reused at two types must be rejected"
+    );
 }
 
 #[test]
@@ -516,10 +502,7 @@ fn subst_tfrees_simultaneous_no_cascade_type() {
 fn subst_tfrees_simultaneous_no_cascade_term() {
     // Same property at the term level: a Free annotated `a` and another
     // annotated `b`.
-    let t = Term::app(
-        Term::free("p", ty_a()),
-        Term::free("q", Type::tfree("b")),
-    );
+    let t = Term::app(Term::free("p", ty_a()), Term::free("q", Type::tfree("b")));
     let mut sub: BTreeMap<smol_str::SmolStr, Type> = BTreeMap::new();
     sub.insert("a".into(), Type::tfree("b"));
     sub.insert("b".into(), Type::tfree("c"));
@@ -542,7 +525,11 @@ fn subst_tfrees_swaps_two_params_type() {
     sub.insert("a".into(), Type::tfree("b"));
     sub.insert("b".into(), Type::tfree("a"));
     let out = subst::subst_tfrees_in_type(&ty, &sub);
-    assert_eq!(out, Type::fun(Type::tfree("b"), Type::tfree("a")), "swap a<->b");
+    assert_eq!(
+        out,
+        Type::fun(Type::tfree("b"), Type::tfree("a")),
+        "swap a<->b"
+    );
     // The cascade bug would collapse both to one variable.
     assert_ne!(out, Type::fun(Type::tfree("a"), Type::tfree("a")));
     assert_ne!(out, Type::fun(Type::tfree("b"), Type::tfree("b")));
@@ -560,7 +547,10 @@ fn subst_tfrees_swaps_two_params_term() {
     sub.insert("b".into(), Type::tfree("a"));
     let out = subst::subst_tfrees_in_term(&t, &sub);
     let expected = Term::app(
-        Term::app(Term::eq_op(Type::tfree("b")), Term::free("p", Type::tfree("b"))),
+        Term::app(
+            Term::eq_op(Type::tfree("b")),
+            Term::free("p", Type::tfree("b")),
+        ),
         Term::free("q", Type::tfree("a")),
     );
     assert_eq!(out, expected);
@@ -576,7 +566,10 @@ fn subst_tfrees_three_cycle() {
     sub.insert("b".into(), Type::tfree("c"));
     sub.insert("c".into(), Type::tfree("a"));
     let out = subst::subst_tfrees_in_type(&ty, &sub);
-    let expected = Type::fun(Type::tfree("b"), Type::fun(Type::tfree("c"), Type::tfree("a")));
+    let expected = Type::fun(
+        Type::tfree("b"),
+        Type::fun(Type::tfree("c"), Type::tfree("a")),
+    );
     assert_eq!(out, expected);
 }
 
@@ -599,15 +592,9 @@ fn subst_tfrees_replacement_is_not_reprocessed() {
 #[test]
 fn subst_tfree_in_term_updates_annotations() {
     // Free("x", a) and the Eq op at type a.
-    let t = Term::app(
-        Term::eq_op(ty_a()),
-        Term::free("x", ty_a()),
-    );
+    let t = Term::app(Term::eq_op(ty_a()), Term::free("x", ty_a()));
     let out = subst::subst_tfree_in_term(&t, "a", &Type::nat());
-    let expected = Term::app(
-        Term::eq_op(Type::nat()),
-        Term::free("x", Type::nat()),
-    );
+    let expected = Term::app(Term::eq_op(Type::nat()), Term::free("x", Type::nat()));
     assert_eq!(out, expected);
 }
 
@@ -710,10 +697,7 @@ fn is_closed_false_for_dangling() {
 
 #[test]
 fn has_free_var_finds_name() {
-    let t = Term::app(
-        Term::free("x", Type::nat()),
-        Term::free("y", Type::bool()),
-    );
+    let t = Term::app(Term::free("x", Type::nat()), Term::free("y", Type::bool()));
     assert!(has_free_var(&t, "x"));
     assert!(has_free_var(&t, "y"));
     assert!(!has_free_var(&t, "z"));

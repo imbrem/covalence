@@ -91,11 +91,20 @@ fn choose(pred: &Term, b: bool, witness: &Term, x: &Term, y: &Term) -> Result<Th
     let at_witness = pred_at(pred, witness, b, x, y)?;
     // ⊢ pred (ε pred).
     let at_choice = Thm::select_ax(pred.clone(), witness.clone())?.imp_elim(at_witness)?;
-    let choice = at_choice.concl().as_app().ok_or(Error::NotAnEquation)?.1.clone();
+    let choice = at_choice
+        .concl()
+        .as_app()
+        .ok_or(Error::NotAnEquation)?
+        .1
+        .clone();
     // β-expose the conjunction at `ε pred`, then peel the selecting
     // conjunct and discharge `b = b`.
     let conj = Thm::beta_conv(Term::app(pred.clone(), choice))?.eq_mp(at_choice)?;
-    let selecting = if b { conj.and_elim_l()? } else { conj.and_elim_r()? };
+    let selecting = if b {
+        conj.and_elim_l()?
+    } else {
+        conj.and_elim_r()?
+    };
     selecting.imp_elim(Thm::refl(Term::bool_lit(b))?)
 }
 
@@ -172,7 +181,10 @@ mod tests {
     #[test]
     fn cond_false_reduces_to_else_branch() {
         let thm = cond_false(&alpha(), &x(), &y()).unwrap();
-        assert!(thm.hyps().is_empty(), "cond_false is proved, not postulated");
+        assert!(
+            thm.hyps().is_empty(),
+            "cond_false is proved, not postulated"
+        );
         assert!(thm.has_no_obs(), "cond_false is oracle-free");
         let lhs = Term::cond(Term::bool_lit(false), x(), y());
         assert_eq!(thm.concl(), &lhs.equals(y()).unwrap());

@@ -83,12 +83,7 @@ pub struct PreviewSink<'a> {
 /// Render `hash` and append a framed preview block if the sink is
 /// enabled (or if `force` is true — `show` uses that to ignore the
 /// `preview-on/off` flag).
-fn emit_preview(
-    sink: &mut PreviewSink<'_>,
-    backend: &dyn SyncBackend,
-    hash: &O256,
-    force: bool,
-) {
+fn emit_preview(sink: &mut PreviewSink<'_>, backend: &dyn SyncBackend, hash: &O256, force: bool) {
     if !sink.enabled && !force {
         return;
     }
@@ -126,7 +121,9 @@ struct OpenBuilder {
 
 impl GraphState {
     pub fn new() -> Self {
-        Self { builders: Vec::new() }
+        Self {
+            builders: Vec::new(),
+        }
     }
 
     fn alloc(&mut self) -> u32 {
@@ -134,8 +131,11 @@ impl GraphState {
             inner: BytesGraphBuilder::new(),
             pending_ports: Vec::new(),
         };
-        if let Some((idx, slot)) =
-            self.builders.iter_mut().enumerate().find(|(_, s)| s.is_none())
+        if let Some((idx, slot)) = self
+            .builders
+            .iter_mut()
+            .enumerate()
+            .find(|(_, s)| s.is_none())
         {
             *slot = Some(new);
             return idx as u32;
@@ -211,11 +211,7 @@ fn parse_node_kind(s: &str) -> Result<NodeKind, FError> {
 
 /// Store `bytes` and register them under `tag`, returning the keyed
 /// identity. Used by every command that produces a graph object.
-fn store_and_tag(
-    backend: &dyn SyncBackend,
-    bytes: &[u8],
-    tag: &str,
-) -> Result<O256, FError> {
+fn store_and_tag(backend: &dyn SyncBackend, bytes: &[u8], tag: &str) -> Result<O256, FError> {
     let content = backend
         .store_blob(bytes)
         .map_err(|e| FError::Parse(e.to_string()))?;
@@ -335,7 +331,11 @@ pub fn cmd_kinds(backend: &dyn SyncBackend, ctx: &mut FCtx<'_>) -> Result<(), FE
         .iter()
         .map(|s| parse_node_kind(s))
         .collect::<Result<Vec<_>, _>>()?;
-    let keyed = store_and_tag(backend, &KindFlags::new(kinds).to_bytes(), KIND_FLAGS_HASH_CTX)?;
+    let keyed = store_and_tag(
+        backend,
+        &KindFlags::new(kinds).to_bytes(),
+        KIND_FLAGS_HASH_CTX,
+    )?;
     ctx.push_hash(keyed);
     Ok(())
 }
@@ -378,7 +378,11 @@ pub fn cmd_string_diagram(
     let kinds = decode_slot(ctx.try_pop_hash()?)?;
     let labels = decode_slot(ctx.try_pop_hash()?)?;
     let graph = ctx.try_pop_hash()?;
-    let sd = StringDiagram { graph, labels, kinds };
+    let sd = StringDiagram {
+        graph,
+        labels,
+        kinds,
+    };
     let keyed = store_and_tag(backend, &sd.to_bytes(), STRING_DIAGRAM_HASH_CTX)?;
     emit_preview(&mut preview, backend, &keyed, false);
     ctx.push_hash(keyed);

@@ -115,7 +115,11 @@ pub fn tail_at(alpha: &Type, s: &Term, n: &Term) -> Result<Thm> {
 fn at_of(alpha: &Type, n: &Term, st: &Term) -> Result<Thm> {
     // st = streamMk f  (δ-unfold ONLY the head op, β-reduce the spine).
     let as_mk = delta_head(st)?.rhs_conv(|t| t.reduce())?;
-    let f = rhs_of(&as_mk)?.as_app().ok_or(Error::NotAnEquation)?.1.clone();
+    let f = rhs_of(&as_mk)?
+        .as_app()
+        .ok_or(Error::NotAnEquation)?
+        .1
+        .clone();
     // streamAt st n = streamAt (streamMk f) n:
     let step1 = as_mk
         .cong_arg(stream_at(alpha.clone()))? // ⊢ streamAt st = streamAt (streamMk f)

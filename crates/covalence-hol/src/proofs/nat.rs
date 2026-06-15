@@ -40,17 +40,14 @@ pub fn nat_zero_ne_one() -> Thm {
         let ctx = HolLightCtx::new();
         let zero = Term::nat_lit(Nat::zero());
         let one = Term::nat_lit(Nat::from_inner(1u32.into()));
-        let zero_eq_one = ctx
-            .mk_eq(zero, one)
-            .expect("nat_zero_ne_one: mk_eq 0 = 1");
+        let zero_eq_one = ctx.mk_eq(zero, one).expect("nat_zero_ne_one: mk_eq 0 = 1");
 
         // ⊢ (0 = 1) ≡ F  via kernel reduction on closed literals.
-        let eq_to_false = Thm::reduce_prim(zero_eq_one.clone())
-            .expect("nat_zero_ne_one: reduce_prim");
+        let eq_to_false =
+            Thm::reduce_prim(zero_eq_one.clone()).expect("nat_zero_ne_one: reduce_prim");
 
         // Assume (0 = 1). Rewrite via eq_to_false to get F.
-        let assumed =
-            Thm::assume(zero_eq_one.clone()).expect("nat_zero_ne_one: assume");
+        let assumed = Thm::assume(zero_eq_one.clone()).expect("nat_zero_ne_one: assume");
         let derive_false = rewrite_with(assumed, eq_to_false);
         // {(0=1)} ⊢ F
 
@@ -76,9 +73,7 @@ mod tests {
     #[test]
     fn nat_predicate_builds_a_lambda() {
         let n = Term::free("n", Type::nat());
-        let body = ctx()
-            .mk_eq(n.clone(), n.clone())
-            .expect("mk_eq n n");
+        let body = ctx().mk_eq(n.clone(), n.clone()).expect("mk_eq n n");
         let p = nat_predicate("n", body);
         let p_ty = p.type_of().expect("p typed");
         assert_eq!(p_ty, Type::fun(Type::nat(), Type::bool()));

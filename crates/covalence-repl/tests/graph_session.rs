@@ -52,9 +52,18 @@ fn compose_string_diagram_with_labels_and_kinds() {
     "#;
     let _ = s.eval(prelude);
     let out = s.eval("^sd svg print");
-    assert!(out.contains("source"), "labeled SVG should mention 'source': {out}");
-    assert!(out.contains("sink"), "labeled SVG should mention 'sink': {out}");
-    assert!(out.contains("state-thread"), "ordered node should yield a state thread: {out}");
+    assert!(
+        out.contains("source"),
+        "labeled SVG should mention 'source': {out}"
+    );
+    assert!(
+        out.contains("sink"),
+        "labeled SVG should mention 'sink': {out}"
+    );
+    assert!(
+        out.contains("state-thread"),
+        "ordered node should yield a state thread: {out}"
+    );
 }
 
 #[test]
@@ -74,8 +83,14 @@ fn uniform_kind_sentinel_does_not_store_overlay() {
         ^sd preview
     "#;
     let out = s.eval(script);
-    assert!(out.contains("all-ordered"), "preview should report all-ordered slot: {out}");
-    assert!(out.contains("absent"), "preview should report absent labels: {out}");
+    assert!(
+        out.contains("all-ordered"),
+        "preview should report all-ordered slot: {out}"
+    );
+    assert!(
+        out.contains("absent"),
+        "preview should report absent labels: {out}"
+    );
 }
 
 #[test]
@@ -97,8 +112,14 @@ fn preview_on_auto_renders_after_string_diagram() {
     let out = s.eval(script);
     // Both b-finish AND string-diagram should auto-emit previews.
     let count = out.matches("cov-preview-svg").count();
-    assert!(count >= 2, "expected at least 2 preview markers, got {count}: {out}");
-    assert!(out.contains("<svg"), "preview should contain SVG markup: {out}");
+    assert!(
+        count >= 2,
+        "expected at least 2 preview markers, got {count}: {out}"
+    );
+    assert!(
+        out.contains("<svg"),
+        "preview should contain SVG markup: {out}"
+    );
 }
 
 #[test]
@@ -115,11 +136,20 @@ fn show_command_emits_preview_regardless_of_flag() {
         ^g show
     "#;
     let out = s.eval(script);
-    assert!(out.contains("cov-preview-svg"), "show should emit preview marker: {out}");
+    assert!(
+        out.contains("cov-preview-svg"),
+        "show should emit preview marker: {out}"
+    );
     assert!(out.contains("<svg"), "show should emit SVG: {out}");
     // Bare COVG topology → DAG view: circles, no rect boxes.
-    assert!(out.contains("<circle"), "DAG preview should use circles: {out}");
-    assert!(!out.contains("<rect "), "DAG preview should not draw rect boxes: {out}");
+    assert!(
+        out.contains("<circle"),
+        "DAG preview should use circles: {out}"
+    );
+    assert!(
+        !out.contains("<rect "),
+        "DAG preview should not draw rect boxes: {out}"
+    );
 }
 
 #[test]
@@ -141,7 +171,10 @@ fn string_diagram_preview_uses_box_renderer() {
     "#;
     let out = s.eval(script);
     // String-diagram preview uses the box renderer.
-    assert!(out.contains("<rect"), "string-diagram should draw boxes: {out}");
+    assert!(
+        out.contains("<rect"),
+        "string-diagram should draw boxes: {out}"
+    );
     assert!(out.contains("source"), "labels should be visible: {out}");
 }
 
@@ -180,8 +213,14 @@ fn b_finish_returns_keyed_identity_not_content_hash() {
     let out = s.eval(script);
     // The preview is reached via the tag-dispatch path, which decodes
     // the topology blob and reports its node/edge counts.
-    assert!(out.contains("graph topology"), "expected graph identification: {out}");
-    assert!(out.contains("2 nodes"), "expected node count in preview: {out}");
+    assert!(
+        out.contains("graph topology"),
+        "expected graph identification: {out}"
+    );
+    assert!(
+        out.contains("2 nodes"),
+        "expected node count in preview: {out}"
+    );
 }
 
 #[test]
@@ -201,7 +240,10 @@ fn string_diagram_dispatched_by_tag() {
         ^sd preview
     "#;
     let out = s.eval(script);
-    assert!(out.contains("string-diagram"), "expected SD identification: {out}");
+    assert!(
+        out.contains("string-diagram"),
+        "expected SD identification: {out}"
+    );
     // The slot summary should be visible — the all-pure sentinel
     // appears as a labelled slot rather than a hash.
     assert!(out.contains("all-pure"), "expected slot summary: {out}");

@@ -179,7 +179,12 @@ impl TreeFs {
         }
     }
 
-    fn dot_entry_plus(inode: u64, name: &'static str, offset: i64, attr: FileAttr) -> DirectoryEntryPlus {
+    fn dot_entry_plus(
+        inode: u64,
+        name: &'static str,
+        offset: i64,
+        attr: FileAttr,
+    ) -> DirectoryEntryPlus {
         DirectoryEntryPlus {
             inode,
             generation: 0,
@@ -432,7 +437,10 @@ mod tests {
 
     #[test]
     fn mode_to_fuse_maps_regular_and_exec() {
-        assert_eq!(mode_to_fuse(DirMode::REGULAR), (FileType::RegularFile, 0o644));
+        assert_eq!(
+            mode_to_fuse(DirMode::REGULAR),
+            (FileType::RegularFile, 0o644)
+        );
         assert_eq!(
             mode_to_fuse(DirMode::EXECUTABLE),
             (FileType::RegularFile, 0o755)
@@ -442,6 +450,9 @@ mod tests {
     #[test]
     fn mode_to_fuse_maps_special_dirs() {
         assert_eq!(mode_to_fuse(DirMode::DIR), (FileType::Directory, 0o755));
-        assert_eq!(mode_to_fuse(DirMode::SUBMODULE), (FileType::Directory, 0o555));
+        assert_eq!(
+            mode_to_fuse(DirMode::SUBMODULE),
+            (FileType::Directory, 0o555)
+        );
     }
 }

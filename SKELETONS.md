@@ -96,23 +96,10 @@ it is how unfinished work stays discoverable.
     `init::nat` proves the additive theory, `add_cancel`, `add_interchange`,
     and the full commutative-semiring multiplicative theory (`mul_succ_r`,
     `mul_one`, `mul_comm`, `mul_assoc`, `distrib`, `distrib_r`, `mul_zero`),
-    consumed by the `nat` semiring embedding in `crate::semiring`.
-
-## Pending theorems
-
-- **`nat.le` transitivity** in `crates/covalence-hol/src/init/nat.rs`.
-  The order theory proves reflexivity, irreflexivity, successor
-  cancellation, the zero facts, **totality** (`le_total`),
-  **antisymmetry** (`le_antisym`), and the `<`/`≤` bridge
-  (`lt_iff_succ_le`) — but **not** transitivity `∀a b c. a≤b → b≤c → a≤c`.
-  It is a triple case-analysis: induct on the middle `b` (base `b = 0`
-  closes by `le_zero_iff` + `le_zero`), and in the `S b'` step run
-  `induct_forall2` over `(a, c)` — case `a = 0` closes by `le_zero`, case
-  `c = 0` is vacuous (`S b' ≤ 0` is false), and `a = S a' ∧ c = S c'`
-  cancels all three successors (`le_succ_succ`) and applies the
-  outer induction hypothesis at `(a', c')`. Alternatively prove the
-  additive characterisation `le_iff_add : (a ≤ b) = (∃k. a + k = b)` and
-  get transitivity/antisymmetry uniformly from `+`.
+    consumed by the `nat` semiring embedding in `crate::semiring`. The `nat`
+    `le`/`lt` order theory is now developed too — reflexivity, irreflexivity,
+    successor cancellation, the zero facts, totality, antisymmetry, the
+    `<`/`≤` bridge, and **transitivity** (`le_trans`).
 
 ## Partial subsystems
 

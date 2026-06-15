@@ -441,6 +441,37 @@ mod tests {
     }
 
     #[test]
+    fn exists_intro_reified() {
+        // The ∃-introduction derivation ported to the script layer:
+        //   ⊢ ∀(P : 'a → bool). ∀(w : 'a). (P w) ⟹ (∃x. P x)
+        // exercising the quantifier-operator form (`exists-op`), `unfold-at-1`
+        // to unfold the `∃` definition, and the ∀/⟹ rules — the harder,
+        // definition-unfolding case (cf. the propositional `and.comm`).
+        let thm = one(
+            r#"
+            (#open core)
+            (#thm exists.intro
+              (#concl
+                (forall (P (fun 'a bool))
+                  (forall (w 'a)
+                    (==> (app P w) (app (exists-op 'a) P)))))
+              (#proof
+                (all-intro P (fun 'a bool)
+                  (all-intro w 'a
+                    (imp-intro (app P w)
+                      (eq-mp
+                        (sym (unfold-at-1 (exists-op 'a) P))
+                        (all-intro q bool
+                          (imp-intro (forall (x) (==> (app P x) q))
+                            (imp-elim
+                              (all-elim w (assume (forall (x) (==> (app P x) q))))
+                              (assume (app P w)))))))))))
+            "#,
+        );
+        assert!(thm.hyps().is_empty(), "the reified ∃-intro rule is closed");
+    }
+
+    #[test]
     fn export_controls_the_public_env() {
         // Two lemmas are proven; only one is `(#export …)`ed, so only it is
         // in the exported env. Both still appear in `thms`.

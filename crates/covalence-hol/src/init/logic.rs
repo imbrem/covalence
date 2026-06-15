@@ -57,13 +57,14 @@ crate::cov_theory! {
     /// Propositional lemmas loaded from `logic.cov`.
     pub mod cov from "logic.cov" {
         import "core" = crate::script::Env::core();
-        "truth"    => pub fn truth;
-        "and.comm" => pub fn and_comm;
-        "or.comm"  => pub fn or_comm;
+        "truth"        => pub fn truth;
+        "and.comm"     => pub fn and_comm;
+        "or.comm"      => pub fn or_comm;
+        "exists.intro" => pub fn exists_intro_thm;
     }
 }
 
-pub use cov::{and_comm, or_comm, truth};
+pub use cov::{and_comm, exists_intro_thm, or_comm, truth};
 
 // ============================================================================
 // Conjunction
@@ -158,24 +159,15 @@ pub fn exists_intro(pred: Term, witness: Term, proof: Thm) -> Result<Thm> {
             "exists_intro: predicate {pred} does not return bool"
         )));
     }
-    let q = Term::free("q", Type::bool());
-    let xname = "__exi_x";
-    let xv = Term::free(xname, alpha.clone());
-    // H = ∀x. pred x ⟹ q
-    let h = pred
-        .clone()
-        .apply(xv)?
-        .imp(q.clone())?
-        .forall(xname, alpha.clone())?;
-    // {H} ⊢ q, then discharge and ∀-generalise q.
-    let unfolded = Thm::assume(h.clone())?
+    // Instantiate the reified ∃-intro theorem (replayed from `logic.cov`):
+    //   ⊢ ∀(P : 'a → bool). ∀(w : 'a). (P w) ⟹ (∃x. P x)
+    // at the element type, the predicate, and the witness, then discharge
+    // the antecedent with `proof : ⊢ pred witness`.
+    exists_intro_thm()
+        .inst_tfree("a", alpha)?
+        .all_elim(pred)?
         .all_elim(witness)?
-        .imp_elim(proof)?
-        .imp_intro(&h)?
-        .all_intro("q", Type::bool())?;
-    // Fold `∀q. (∀x. pred x ⟹ q) ⟹ q` back into `∃x. pred x`.
-    let unfold = crate::proofs::rewrite::unfold_at_1(exists(alpha), pred);
-    unfold.sym()?.eq_mp(unfolded)
+        .imp_elim(proof)
 }
 
 /// **∃-elimination.** From `⊢ ∃x. pred x` and a step

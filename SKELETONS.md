@@ -320,9 +320,9 @@ coupling guard.
 The S-expression authoring + replay layer (`Env`/prelude, the `infer`
 type-inference elaborator, `Drv` proof terms, the `check` interpreter, the
 `rw`/`tauto` tactics, and the `cov_theory!` loader macro). The
-**parse → replay** direction is built and tested; `init::logic`'s
-`truth`/`and_comm`/`or_comm` are now **loaded from `init/logic.cov`** via
-`cov_theory!` (replacing the hand-written Rust proofs — the whole crate's
+**parse → replay** direction is built and tested; `init::logic`'s `truth`/`and_comm`/`or_comm` (and the reified
+`exists.intro`, with the Rust `exists_intro` rule rewired onto it) are now
+**loaded from `init/logic.cov`** via `cov_theory!` (replacing the hand-written Rust proofs — the whole crate's
 ~225 tests still pass, since everything downstream of `truth()` re-checks).
 `run(src, resolver)` resolves `(open NAME)` against caller-supplied envs and
 returns a `Theory` whose **export** env — built explicitly by `(export NAME …)`

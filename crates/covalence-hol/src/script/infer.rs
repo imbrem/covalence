@@ -22,7 +22,7 @@
 
 use std::collections::HashMap;
 
-use covalence_core::defs::TypeSpec;
+use covalence_core::defs::{self, TypeSpec};
 use covalence_core::{Term, Type, TypeKind, subst};
 use covalence_sexp::{SExp, SExpr};
 
@@ -314,6 +314,27 @@ impl<'e> Elab<'e> {
             "forall" | "∀" => self.infer_binder(ch, BinderKind::Forall),
             "exists" | "∃" => self.infer_binder(ch, BinderKind::Exists),
             "select" | "ε" => self.infer_binder(ch, BinderKind::Select),
+            // Explicitly-typed quantifier *operators* (the bare `∀`/`∃`/`ε`
+            // applied to a predicate, rather than the binder sugar) — needed
+            // to name and unfold the quantifier definitions in proofs.
+            "forall-op" => {
+                arity(ch, 2, "forall-op")?;
+                let op = defs::forall(parse_type(&ch[1])?);
+                let ety = self.from_type(&op.type_of()?)?;
+                Ok((ETerm::Lit(op), ety))
+            }
+            "exists-op" => {
+                arity(ch, 2, "exists-op")?;
+                let op = defs::exists(parse_type(&ch[1])?);
+                let ety = self.from_type(&op.type_of()?)?;
+                Ok((ETerm::Lit(op), ety))
+            }
+            "select-op" => {
+                arity(ch, 2, "select-op")?;
+                let op = Term::select_op(parse_type(&ch[1])?);
+                let ety = self.from_type(&op.type_of()?)?;
+                Ok((ETerm::Lit(op), ety))
+            }
             "=" | "eq" => {
                 arity(ch, 3, "eq")?;
                 let alpha = self.fresh();

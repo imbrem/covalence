@@ -36,6 +36,9 @@ pub enum Drv {
     Lemma(String),
     ReducePrim(Term),
     UnfoldTermSpec(Term),
+    /// `⊢ op arg = body[arg]` — unfold a unary defined constant at an
+    /// argument (one β-step). Wraps `proofs::rewrite::unfold_at_1`.
+    UnfoldAt1 { op: Term, arg: Term },
     BetaConv(Term),
     // unary
     Sym(Box<Drv>),
@@ -91,6 +94,9 @@ pub fn check(d: &Drv, env: &Env) -> R<Thm> {
             .ok_or_else(|| ScriptError::Unbound(format!("lemma `{name}`")))?,
         Drv::ReducePrim(t) => Thm::reduce_prim(t.clone())?,
         Drv::UnfoldTermSpec(t) => Thm::unfold_term_spec(t.clone())?,
+        Drv::UnfoldAt1 { op, arg } => {
+            crate::proofs::rewrite::unfold_at_1(op.clone(), arg.clone())
+        }
         Drv::BetaConv(t) => Thm::beta_conv(t.clone())?,
         Drv::Sym(a) => check(a, env)?.sym()?,
         Drv::AbsRule { name, ty, body } => check(body, env)?.abs(name, ty.clone())?,
@@ -195,6 +201,13 @@ pub fn parse_drv(s: &SExpr, scope: &mut Scope, env: &Env) -> R<Drv> {
         "unfold-term-spec" => {
             arity(ch, 2, "unfold-term-spec")?;
             Drv::UnfoldTermSpec(t1(scope)?)
+        }
+        "unfold-at-1" => {
+            arity(ch, 3, "unfold-at-1")?;
+            Drv::UnfoldAt1 {
+                op: parse_term(&ch[1], scope, env)?,
+                arg: parse_term(&ch[2], scope, env)?,
+            }
         }
         "beta-conv" => {
             arity(ch, 2, "beta-conv")?;

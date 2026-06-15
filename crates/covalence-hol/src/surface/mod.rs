@@ -57,8 +57,8 @@ pub mod ast;
 mod parse;
 
 pub use ast::{
-    Def, DefBody, DefSort, Directive, Import, ImportTarget, Kind, Name, NameClass, Proof, Rule,
-    Sig, Statement, Term, ThmDecl, Ty, TyDeclItem,
+    Def, DefBody, DefSort, Directive, Import, Kind, Name, NameClass, Proof, Rule, Sig, Statement,
+    Term, ThmDecl, Ty, TyDeclItem,
 };
 pub use parse::{parse, parse_str};
 

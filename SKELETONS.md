@@ -23,8 +23,8 @@ it is how unfinished work stays discoverable.
   implemented, but the layers above remain stubs: the **elaborator** (surface
   → low-level S-expr → kernel object), the **`#by` tactic grammar** (proof
   steps are kept as raw `SExpr`s in `Proof::steps`), and **`#import` content
-  addressing** (`ImportTarget::Hash` is parsed but not resolved) are all future
-  work.
+  addressing** (`#import` resolves names only; by-hash addressing is unbuilt)
+  are all future work.
 
 ## Postulates pending proof
 

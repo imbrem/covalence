@@ -450,19 +450,15 @@ fn proof(e: &SExpr) -> Result<Proof> {
     })
 }
 
-/// `(#import TARGET)` — a name (symbol) or a content hash (string).
+/// `(#import NAME)` — by name only; by-hash content addressing is future
+/// work (`docs/surface-syntax.md` §7).
 fn import(args: &[SExpr]) -> Result<Import> {
-    let [target] = exact(args, 1, "`(#import TARGET)`")? else {
+    let [target] = exact(args, 1, "`(#import NAME)`")? else {
         unreachable!()
     };
-    let target = if let Some(s) = target.as_symbol() {
-        ImportTarget::Name(SmolStr::new(s))
-    } else if let Some((_fmt, bytes)) = target.as_str() {
-        ImportTarget::Hash(SmolStr::new(String::from_utf8_lossy(bytes)))
-    } else {
-        return Err(malformed("`#import` target must be a name or a hash string"));
-    };
-    Ok(Import { target })
+    Ok(Import {
+        name: SmolStr::new(symbol(target, "an import name")?),
+    })
 }
 
 #[cfg(test)]
@@ -563,6 +559,17 @@ mod tests {
         assert!(matches!(*head, Term::Var(_)));
         assert!(matches!(args[0], Term::Int(_)));
         assert!(matches!(args[1], Term::Var(_)));
+    }
+
+    #[test]
+    fn import_by_name() {
+        let dirs = parse_str("(#import option)").unwrap();
+        let [Directive::Import(i)] = dirs.as_slice() else {
+            panic!("expected an #import");
+        };
+        assert_eq!(i.name, "option");
+        // Hash strings are not a thing yet.
+        assert!(parse_str(r#"(#import "deadbeef")"#).is_err());
     }
 
     #[test]

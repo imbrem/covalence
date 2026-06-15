@@ -334,16 +334,10 @@ pub struct Proof {
 /// An `(#import …)` dependency edge.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Import {
-    /// What is imported.
-    pub target: ImportTarget,
-}
-
-/// The resolution target of an [`Import`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ImportTarget {
-    /// By name, resolved within the file (the only mode today).
-    Name(SmolStr),
-    /// By content hash — a `covalence-store` content-address. The
-    /// endgame (`docs/surface-syntax.md` §7); not yet resolvable.
-    Hash(SmolStr),
+    /// The imported theory / fragment name, resolved within the file.
+    ///
+    /// By-*hash* content addressing (a `covalence-store` content-address;
+    /// the endgame of `docs/surface-syntax.md` §7) is **not supported
+    /// yet** — only names for now.
+    pub name: SmolStr,
 }

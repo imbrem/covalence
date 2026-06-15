@@ -22,8 +22,9 @@
 //!
 //! These are **pure term builders** — no proof. The proofs over them are
 //! the engine's other layers: [`super::existence`] (graph introduction +
-//! totality, generic), and — still specialised to `nat` in
-//! [`crate::init::recursion`] — determinacy and the ε-assembly.
+//! totality) and [`super::uniqueness`] (inversion) and [`super::determinacy`], all generic;
+//! the ε-assembly is the only piece still specialised to `nat` in
+//! [`crate::init::recursion`].
 
 use covalence_core::{Error, Result, Term, Type};
 

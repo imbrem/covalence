@@ -148,28 +148,41 @@ it is how unfinished work stays discoverable.
   strictly-positive, directly-recursive). **In place:**
   - `sig.rs` — the signature data model (`InductiveSig` / `Constructor` / `Arg`).
   - `data.rs` — the `Inductive` **trait**, the lifting seam: the engine
-    consumes induction (and later freeness) only through it, never calling a
-    kernel rule directly. `nat`'s `NatTheory` adapter sources induction from
-    `Thm::nat_induct`.
+    consumes structural induction **and constructor freeness** (`injective` /
+    `distinct`) only through it, never calling a kernel rule directly. `nat`'s
+    `NatTheory` adapter sources them from `Thm::nat_induct` / `Thm::succ_inj` /
+    `Thm::zero_ne_succ`.
   - `graph.rs` — the impredicative recursion graph (`closed` / `graph` /
     `ctor_instance`), generic over a signature.
   - `existence.rs` — `graph_intro` (per-constructor introduction) and
     `graph_total` (`⊢ ∀t. ∃a. Graph t a`, by the supplied induction). Generic
     over `Inductive`; `nat` consumes them (`init/recursion.rs`).
+  - `uniqueness.rs` — `graph_inv` (per-constructor inversion: `Graph (Cᵢ x⃗) a
+    ⟹ ∃b⃗. (⋀ Graph rⱼ bⱼ) ∧ a = fᵢ x⃗ b⃗`), via the generic `Good = λk c.
+    Graph k c ∧ wit` determinizing relation whose closedness is discharged by
+    `distinct` (other constructors) and `injective` (`Cᵢ` itself). Generic over
+    `Inductive`; `nat`'s `graph_base_inv` consumes it.
+  - `determinacy.rs` — `graph_det` (`∀t a b. Graph t a ⟹ Graph t b ⟹ a = b`):
+    folds the supplied induction over `graph_inv` (invert both graphs, then the
+    IH equates the recursive images). Generic over `Inductive`; `nat`'s
+    `graph_det` consumes it.
+  - `util.rs` — shared conjunction-proof plumbing.
 
-  Still **specialised to `nat`** in `init/recursion.rs` (the next generalisation
-  targets):
-  - **Uniqueness** — the per-constructor inversion lemmas (`graph_base_inv`
-    nullary / `graph_step_inv` recursive → `Graph (Cᵢ x⃗) a ⟹ ∃b⃗. (⋀ Graph rⱼ bⱼ)
-    ∧ a = fᵢ x⃗ b⃗`, via the "determinizing" / "good" instances `det_zero` /
-    `good`) and `graph_det`. These need **constructor freeness** (injectivity +
-    distinctness) added to the `Inductive` trait — for `nat` from `succ_inj` /
-    `zero_ne_succ`.
+  Still **specialised to `nat`** in `init/recursion.rs`:
   - **ε-assembly** — `recursion_theorem` / `rec_holds_proof` generalised to emit
-    `⊢ ∃rec. P_rec rec` from totality + determinacy for any signature.
-  - **The multi-recursive-argument path** in `existence.rs` (conjunctive IHs /
-    antecedents) is written but only exercised by `nat`'s ≤1-rec-arg cases; a
-    binary-tree or `list` signature is the first real test.
+    `⊢ ∃rec. P_rec rec` from totality + determinacy for any signature. The only
+    remaining piece; it couples to the recursor's `defs` selector predicate
+    (`natRec`'s `P_rec`), so generalising it means deriving the per-constructor
+    equation predicate from the signature.
+  - **The multi-recursive-argument / multi-constructor-argument paths** in
+    `existence.rs`, `uniqueness.rs`, and `determinacy.rs` (conjunctive IHs /
+    antecedents, componentwise injectivity, nested `∃`-witnessing) are partial:
+    `existence` / `uniqueness` handle the general shape but are only *exercised*
+    by `nat`'s ≤1-arg / ≤1-rec-arg cases, while `determinacy::det_case`
+    explicitly **errors** on a constructor with ≥2 recursive arguments. A
+    binary-tree or `list` signature is the first real test. The strict
+    `wit`-binder naming discipline (`_wx_` / `_wb_` prefixes, disjoint from a
+    constructor's own binders) is load-bearing — see the `uniqueness.rs` docs.
 
   **Lifting to internal HOL (future).** The trait seam exists precisely so the
   proofs can be re-targeted: today `nat` is a kernel primitive, but we may later

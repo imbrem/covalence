@@ -260,8 +260,8 @@ fn term_builtin(b: Builtin, args: &[SExpr]) -> Result<Term> {
 
 fn directive(e: &SExpr) -> Result<Directive> {
     let items = list(e, "a directive")?;
-    let head = head_symbol(items)
-        .ok_or_else(|| malformed("a directive must start with a `#`-keyword"))?;
+    let head =
+        head_symbol(items).ok_or_else(|| malformed("a directive must start with a `#`-keyword"))?;
     let b = Builtin::from_keyword(head)
         .ok_or_else(|| malformed(format!("`{head}` is not a directive keyword")))?;
     let args = &items[1..];
@@ -297,20 +297,18 @@ fn directive(e: &SExpr) -> Result<Directive> {
 fn tydecl_item(e: &SExpr) -> Result<TyDeclItem> {
     let items = list(e, "a `#tydecl` item")?;
     if items.len() < 2 {
-        return Err(malformed(
-            "a `#tydecl` item is `(NAME PARAM… RESULT-KIND)`",
-        ));
+        return Err(malformed("a `#tydecl` item is `(NAME PARAM… RESULT-KIND)`"));
     }
     let name = SmolStr::new(symbol(&items[0], "a type-former name")?);
-    let (result, params_src) = items[1..]
-        .split_last()
-        .expect("len >= 2 checked above");
+    let (result, params_src) = items[1..].split_last().expect("len >= 2 checked above");
     let params = params_src
         .iter()
         .map(|p| {
             let s = symbol(p, "a type parameter")?;
             if !s.starts_with('\'') {
-                return Err(malformed(format!("type parameter `{s}` must start with `'`")));
+                return Err(malformed(format!(
+                    "type parameter `{s}` must start with `'`"
+                )));
             }
             Ok(SmolStr::new(s))
         })
@@ -375,7 +373,11 @@ fn def(args: &[SExpr]) -> Result<Def> {
         }
         _ => return Err(malformed("a `#def` sort is `(#ty …)` or `(#term TYPE)`")),
     };
-    let body = match body_e.as_list().and_then(head_symbol).and_then(Builtin::from_keyword) {
+    let body = match body_e
+        .as_list()
+        .and_then(head_symbol)
+        .and_then(Builtin::from_keyword)
+    {
         Some(Builtin::Newtype) => {
             let items = body_e.as_list().expect("matched a list above");
             let [carrier] = exact(&items[1..], 1, "`(#newtype CARRIER)`")? else {
@@ -416,7 +418,10 @@ fn statement(src: &[SExpr]) -> Result<Statement> {
         let [name] = exact(&items[1..], 1, "`(#spec NAME)`")? else {
             unreachable!()
         };
-        return Ok(Statement::Spec(Name(SmolStr::new(symbol(name, "a spec name")?))));
+        return Ok(Statement::Spec(Name(SmolStr::new(symbol(
+            name,
+            "a spec name",
+        )?))));
     }
     let mut hyps = Vec::new();
     let mut concl = None;
@@ -432,7 +437,11 @@ fn statement(src: &[SExpr]) -> Result<Statement> {
                 };
                 concl = Some(term(c)?);
             }
-            _ => return Err(malformed("`#thm` statement expects `#concl` / `#hyps` / `#spec`")),
+            _ => {
+                return Err(malformed(
+                    "`#thm` statement expects `#concl` / `#hyps` / `#spec`",
+                ));
+            }
         }
     }
     let concl = concl.ok_or_else(|| malformed("`#thm` statement needs a `(#concl TERM)`"))?;
@@ -530,10 +539,9 @@ mod tests {
 
     #[test]
     fn thm_spec_and_sequent() {
-        let dirs = parse_str(
-            "(#thm option/exhaustive (#spec option.exhaustive) (#by step1 step2))",
-        )
-        .unwrap();
+        let dirs =
+            parse_str("(#thm option/exhaustive (#spec option.exhaustive) (#by step1 step2))")
+                .unwrap();
         let [Directive::Thm(t)] = dirs.as_slice() else {
             panic!();
         };
@@ -576,6 +584,8 @@ mod tests {
     fn rejects_unknown_builtin() {
         assert!(parse_str("(#wat foo)").is_err());
         // bare arrow is not a thing — no sugar.
-        assert!(ty(&parse_sexp("(-> 'a 'b)").unwrap()[0]).is_ok_and(|t| matches!(t, Ty::App { .. })));
+        assert!(
+            ty(&parse_sexp("(-> 'a 'b)").unwrap()[0]).is_ok_and(|t| matches!(t, Ty::App { .. }))
+        );
     }
 }

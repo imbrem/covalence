@@ -1730,7 +1730,7 @@ cached_thm! {
 // ============================================================================
 
 /// `⊢ n + 1 = S n` — fold the `1` literal into a successor.
-fn add_one_succ(n: &Term) -> Result<Thm> {
+pub fn add_one_succ(n: &Term) -> Result<Thm> {
     let one_is_s0 = succ(zero()).reduce()?.sym()?; // 1 = S 0
     one_is_s0
         .cong_arg(Term::app(nat_add(), n.clone()))? // n+1 = n+S0
@@ -1865,6 +1865,101 @@ cached_thm! {
             .all_intro("c", nat())?
             .all_intro("b", nat())?
             .all_intro("a", nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a b c d. (a < b) ⟹ (c < d) ⟹ (a + c < b + d)` — add two strict
+    /// inequalities (`lt_add_mono_r` on each side, bridged by `lt_trans`).
+    pub fn add_lt_add() -> Result<Thm> {
+        let (a, b, c, d) = (var("a"), var("b"), var("c"), var("d"));
+        let (hab, hcd) = (lt_t(a.clone(), b.clone()), lt_t(c.clone(), d.clone()));
+        // a+c < b+c.
+        let ac_lt_bc = lt_add_mono_r()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .all_elim(c.clone())?
+            .sym()?
+            .eq_mp(Thm::assume(hab.clone())?)?;
+        // c+b < d+b, then commute to b+c < b+d.
+        let bc_lt_bd = lt_add_mono_r()
+            .all_elim(c.clone())?
+            .all_elim(d.clone())?
+            .all_elim(b.clone())?
+            .sym()?
+            .eq_mp(Thm::assume(hcd.clone())?)? // c+b < d+b
+            .rewrite(&add_comm().all_elim(c.clone())?.all_elim(b.clone())?)? // b+c < d+b
+            .rewrite(&add_comm().all_elim(d.clone())?.all_elim(b.clone())?)?; // b+c < b+d
+        lt_trans()
+            .all_elim(add(a.clone(), c.clone()))?
+            .all_elim(add(b.clone(), c.clone()))?
+            .all_elim(add(b.clone(), d.clone()))?
+            .imp_elim(ac_lt_bc)?
+            .imp_elim(bc_lt_bd)?
+            .imp_intro(&hcd)?
+            .imp_intro(&hab)?
+            .all_intro("d", nat())?
+            .all_intro("c", nat())?
+            .all_intro("b", nat())?
+            .all_intro("a", nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀p q r s. (p + s = r + q) ⟹ (nat.lt p q = nat.lt r s)` — a strict
+    /// comparison depends only on the cross-sum, so equal cross-sums give
+    /// equal comparisons (the well-definedness the `int`/Grothendieck order
+    /// rests on). Both sides equal `(r+q) < (q+s)` after `lt_add_mono_r`.
+    pub fn lt_cross() -> Result<Thm> {
+        let (p, q, r, s) = (var("p"), var("q"), var("r"), var("s"));
+        let hyp = add(p.clone(), s.clone()).equals(add(r.clone(), q.clone()))?; // p+s = r+q
+        // (p<q) = (p+s<q+s) = (r+q<q+s).
+        let e1 = lt_add_mono_r()
+            .all_elim(p.clone())?
+            .all_elim(q.clone())?
+            .all_elim(s.clone())?
+            .sym()?
+            .rewrite(&Thm::assume(hyp.clone())?)?; // (p<q) = (r+q < q+s)
+        // (r<s) = (r+q<s+q) = (r+q<q+s).
+        let e2 = lt_add_mono_r()
+            .all_elim(r.clone())?
+            .all_elim(s.clone())?
+            .all_elim(q.clone())?
+            .sym()?
+            .rewrite(&add_comm().all_elim(s.clone())?.all_elim(q.clone())?)?; // (r<s) = (r+q < q+s)
+        e1.trans(e2.sym()?)?
+            .imp_intro(&hyp)?
+            .all_intro("s", nat())?
+            .all_intro("r", nat())?
+            .all_intro("q", nat())?
+            .all_intro("p", nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀p q r s. (p + s = r + q) ⟹ (nat.le p q = nat.le r s)` — the `≤`
+    /// mirror of [`lt_cross`] (via `le_add_cancel_r`).
+    pub fn le_cross() -> Result<Thm> {
+        let (p, q, r, s) = (var("p"), var("q"), var("r"), var("s"));
+        let hyp = add(p.clone(), s.clone()).equals(add(r.clone(), q.clone()))?;
+        let e1 = le_add_cancel_r()
+            .all_elim(p.clone())?
+            .all_elim(q.clone())?
+            .all_elim(s.clone())?
+            .sym()?
+            .rewrite(&Thm::assume(hyp.clone())?)?; // (p≤q) = (r+q ≤ q+s)
+        let e2 = le_add_cancel_r()
+            .all_elim(r.clone())?
+            .all_elim(s.clone())?
+            .all_elim(q.clone())?
+            .sym()?
+            .rewrite(&add_comm().all_elim(s.clone())?.all_elim(q.clone())?)?; // (r≤s) = (r+q ≤ q+s)
+        e1.trans(e2.sym()?)?
+            .imp_intro(&hyp)?
+            .all_intro("s", nat())?
+            .all_intro("r", nat())?
+            .all_intro("q", nat())?
+            .all_intro("p", nat())
     }
 }
 

@@ -30,6 +30,11 @@ it is how unfinished work stays discoverable.
   a HOL theorem derivable from the `nat` Peano facts through the quotient;
   filling the proofs in does not change the public `fn` surface. These are
   the ingredients the Alethe `la_generic` / `la_mult_*` checker will consume.
+  The `int` semiring/ring embedding (`crate::semiring::Int` /
+  `crate::ring::Int`) forwards its axioms here, so it inherits these
+  postulates (and their self-hyp audit trail) until they are discharged; the
+  `nat` semiring embedding (`crate::semiring::Nat`), by contrast, is fully
+  proved.
 
   **Status: the lifting API now exists; applying it to `int` is the work.**
   The `nat` half is available and **fully proved** — `init::nat` proves
@@ -57,10 +62,12 @@ it is how unfinished work stays discoverable.
     `init::quotient` (recipe + η gotcha in that module's docs; needs
     `Thm::spec_rep_abs_fwd` + the `close`-predicate proof) — for the
     *order* axioms (the other 7);
-  - still-needed `nat` facts for the *order/multiplicative* `int` axioms:
-    `mul_succ_r` / `mul_comm` / `mul_assoc` / `distrib`, and the `le`/`lt`
-    order facts. `init::nat` already has the additive theory, `add_cancel`,
-    `add_interchange`, and `mul_zero`.
+  - still-needed `nat` facts for the *order* `int` axioms: the `le`/`lt`
+    order facts. The additive **and** multiplicative theory is now in place —
+    `init::nat` proves the additive theory, `add_cancel`, `add_interchange`,
+    and the full commutative-semiring multiplicative theory (`mul_succ_r`,
+    `mul_one`, `mul_comm`, `mul_assoc`, `distrib`, `distrib_r`, `mul_zero`),
+    consumed by the `nat` semiring embedding in `crate::semiring`.
 ## Partial subsystems
 
 - **`covalence-hol` list theory** in `crates/covalence-hol/src/init/list.rs`.

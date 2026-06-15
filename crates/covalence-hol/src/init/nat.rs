@@ -21,10 +21,13 @@
 //!   δ-unfolding `nat.add` / `nat.mul` / `iter` down to `natRec` and
 //!   applying [`rec_holds`]; and on top of those, the **additive theory**
 //!   [`add_zero`] / [`add_succ_r`] / [`add_comm`] / [`add_assoc`] /
-//!   [`add_cancel`] (via [`succ_inj`]) and the multiplicative right-zero
-//!   [`mul_zero`], proved by `nat`-induction (the [`induct`] helper). Since
+//!   [`add_cancel`] (via [`succ_inj`]) and the **multiplicative /
+//!   commutative-semiring theory** [`mul_zero`] / [`mul_succ_r`] /
+//!   [`mul_one`] / [`mul_comm`] / [`distrib`] / [`distrib_r`] /
+//!   [`mul_assoc`], proved by `nat`-induction (the [`induct`] helper). Since
 //!   `rec_holds` is hypothesis-free, all of these are genuine theorems — and
-//!   the whole shallow Peano embedding with them.
+//!   the whole shallow Peano embedding (and the `nat` semiring embedding in
+//!   [`crate::semiring`]) with them.
 //!
 //! These are the `nat` half of what the `int` quotient lift
 //! ([`init::int`](crate::init::int)) needs — `add_cancel` in particular is
@@ -576,6 +579,314 @@ fn mul_zero_impl() -> Result<Thm> {
     induct(&motive, base, step)
 }
 
+// ============================================================================
+// Multiplicative theory — proved by induction (the `nat` commutative-semiring
+// laws the `semiring` embedding reads). Like the additive theory above, each
+// is genuine once `rec_holds` is discharged (which it is).
+// ============================================================================
+
+/// `⊢ x * c = y * c` from `⊢ x = y` — congruence on `*`'s left argument.
+fn cong_mul_l(eq: Thm, c: Term) -> Result<Thm> {
+    eq.cong_arg(nat_mul())?.cong_fn(c)
+}
+
+/// Specialise a `∀a b c d. …` theorem at four `nat` witnesses.
+fn elim4(thm: Thm, a: &Term, b: &Term, c: &Term, d: &Term) -> Result<Thm> {
+    thm.all_elim(a.clone())?
+        .all_elim(b.clone())?
+        .all_elim(c.clone())?
+        .all_elim(d.clone())
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. a * S b = a + a * b` — the successor-on-the-right equation
+    /// for `*` (mirror of [`mul_step`], which expands a successor on the
+    /// *left*). The key lemma behind multiplicative commutativity.
+    pub fn mul_succ_r() -> Thm {
+        mul_succ_r_impl().expect("mul_succ_r derivation")
+    }
+}
+fn mul_succ_r_impl() -> Result<Thm> {
+    // body[n] ≔ ∀b. n * S b = n + n * b
+    let body_at = |t: &Term| -> Result<Term> {
+        let b = var("b");
+        mul(t.clone(), succ(b.clone()))
+            .equals(add(t.clone(), mul(t.clone(), b)))?
+            .forall("b", nat())
+    };
+    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+    // base: ∀b. 0 * S b = 0 + 0 * b   (both sides reduce to 0).
+    let base = {
+        let b = var("b");
+        let l = mul_base().all_elim(succ(b.clone()))?; // 0 * S b = 0
+        let zb = mul_base().all_elim(b.clone())?; // 0 * b = 0
+        let r = add_base().all_elim(mul(zero(), b.clone()))?.trans(zb)?; // 0 + 0*b = 0
+        l.trans(r.sym()?)?.all_intro("b", nat())? // 0*Sb = 0+0*b
+    };
+
+    // step: body[n] ⟹ body[S n].
+    let n = var("n");
+    let ihc = body_at(&n)?;
+    let inner = {
+        let b = var("b");
+        let ih_b = Thm::assume(ihc.clone())?.all_elim(b.clone())?; // n*Sb = n + n*b
+        // LHS: S n * S b = S b + n*Sb  [mul_step]  = S b + (n + n*b)  [ih]
+        let l1 = mul_step().all_elim(n.clone())?.all_elim(succ(b.clone()))?;
+        let l2 = ih_b.cong_arg(Term::app(nat_add(), succ(b.clone())))?;
+        let lhs = l1.trans(l2)?; // S n * S b = S b + (n + n*b)
+        // RHS: S n + S n*b = S n + (b + n*b)  [mul_step on S n * b]
+        let r1 = mul_step().all_elim(n.clone())?.all_elim(b.clone())?; // S n*b = b + n*b
+        let rhs = r1.cong_arg(Term::app(nat_add(), succ(n.clone())))?;
+        // Bridge: S b + X = S n + Y, where X = n + n*b, Y = b + n*b.
+        let nb = mul(n.clone(), b.clone());
+        let x = add(n.clone(), nb.clone());
+        let y = add(b.clone(), nb.clone());
+        let lstep = add_step().all_elim(b.clone())?.all_elim(x.clone())?; // S b + X = S(b+X)
+        let rstep = add_step().all_elim(n.clone())?.all_elim(y.clone())?; // S n + Y = S(n+Y)
+        // b + (n + n*b) = n + (b + n*b):  re-associate, commute b/n, re-associate.
+        let rearr = {
+            let a1 = add_assoc()
+                .all_elim(b.clone())?
+                .all_elim(n.clone())?
+                .all_elim(nb.clone())?
+                .sym()?; // b+(n+nb) = (b+n)+nb
+            let a2 = cong_add_l(
+                add_comm().all_elim(b.clone())?.all_elim(n.clone())?,
+                nb.clone(),
+            )?; // (b+n)+nb = (n+b)+nb
+            let a3 = add_assoc()
+                .all_elim(n.clone())?
+                .all_elim(b.clone())?
+                .all_elim(nb.clone())?; // (n+b)+nb = n+(b+nb)
+            a1.trans(a2)?.trans(a3)? // b+(n+nb) = n+(b+nb)
+        };
+        let scong = rearr.cong_arg(nat_succ())?; // S(b+X) = S(n+Y)
+        let mid = lstep.trans(scong)?.trans(rstep.sym()?)?; // S b + X = S n + Y
+        lhs.trans(mid)?.trans(rhs.sym()?)?.all_intro("b", nat())? // Sn*Sb = Sn + Sn*b
+    };
+    let step = inner.imp_intro(&ihc)?;
+    induct(&motive, base, step)
+}
+
+cached_thm! {
+    /// `⊢ ∀a. a * 1 = a` — the `nat` literal `1` is a right unit of `*`
+    /// (`1` is folded to `S 0`, then [`mul_succ_r`] + [`mul_zero`] +
+    /// [`add_zero`] collapse `a * S 0`).
+    pub fn mul_one() -> Thm {
+        mul_one_impl().expect("mul_one derivation")
+    }
+}
+fn mul_one_impl() -> Result<Thm> {
+    let a = var("a");
+    let one = Term::nat_lit(1u32);
+    let one_is_s0 = succ(zero()).reduce()?.sym()?; // ⊢ 1 = S 0
+    let c0 = one_is_s0.cong_arg(Term::app(nat_mul(), a.clone()))?; // a*1 = a*(S 0)
+    let c1 = mul_succ_r().all_elim(a.clone())?.all_elim(zero())?; // a*(S 0) = a + a*0
+    let c2 = mul_zero()
+        .all_elim(a.clone())?
+        .cong_arg(Term::app(nat_add(), a.clone()))?; // a + a*0 = a + 0
+    let c3 = add_zero().all_elim(a.clone())?; // a + 0 = a
+    let _ = one; // documents the `1` representation; the proof uses `S 0`.
+    c0.trans(c1)?.trans(c2)?.trans(c3)?.all_intro("a", nat())
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. a * b = b * a` — commutativity of `*` (induction on `a`,
+    /// using [`mul_succ_r`] for the right factor at the step).
+    pub fn mul_comm() -> Thm {
+        mul_comm_impl().expect("mul_comm derivation")
+    }
+}
+fn mul_comm_impl() -> Result<Thm> {
+    // body[n] ≔ ∀b. n * b = b * n
+    let body_at = |t: &Term| -> Result<Term> {
+        let b = var("b");
+        mul(t.clone(), b.clone())
+            .equals(mul(b, t.clone()))?
+            .forall("b", nat())
+    };
+    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+    // base: ∀b. 0 * b = b * 0.
+    let base = {
+        let b = var("b");
+        let l = mul_base().all_elim(b.clone())?; // 0*b = 0
+        let r = mul_zero().all_elim(b.clone())?.sym()?; // 0 = b*0
+        l.trans(r)?.all_intro("b", nat())?
+    };
+
+    // step: body[n] ⟹ body[S n].
+    let n = var("n");
+    let ihc = body_at(&n)?;
+    let inner = {
+        let b = var("b");
+        let ih_b = Thm::assume(ihc.clone())?.all_elim(b.clone())?; // n*b = b*n
+        let l1 = mul_step().all_elim(n.clone())?.all_elim(b.clone())?; // S n*b = b + n*b
+        let l2 = ih_b.cong_arg(Term::app(nat_add(), b.clone()))?; // b + n*b = b + b*n
+        let r1 = mul_succ_r().all_elim(b.clone())?.all_elim(n.clone())?; // b*S n = b + b*n
+        l1.trans(l2)?.trans(r1.sym()?)?.all_intro("b", nat())? // S n*b = b*S n
+    };
+    let step = inner.imp_intro(&ihc)?;
+    induct(&motive, base, step)
+}
+
+cached_thm! {
+    /// `⊢ ∀a b c. a * (b + c) = a * b + a * c` — left distributivity of `*`
+    /// over `+` (induction on `a`; the step rearranges four summands via
+    /// [`add_interchange`]).
+    pub fn distrib() -> Thm {
+        distrib_impl().expect("distrib derivation")
+    }
+}
+fn distrib_impl() -> Result<Thm> {
+    // body[n] ≔ ∀b c. n*(b+c) = n*b + n*c
+    let body_at = |t: &Term| -> Result<Term> {
+        let (b, c) = (var("b"), var("c"));
+        mul(t.clone(), add(b.clone(), c.clone()))
+            .equals(add(mul(t.clone(), b.clone()), mul(t.clone(), c)))?
+            .forall("c", nat())?
+            .forall("b", nat())
+    };
+    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+    // base: 0*(b+c) = 0*b + 0*c  (both 0).
+    let base = {
+        let (b, c) = (var("b"), var("c"));
+        let l = mul_base().all_elim(add(b.clone(), c.clone()))?; // 0*(b+c) = 0
+        let rb = mul_base().all_elim(b.clone())?; // 0*b = 0
+        let rc = mul_base().all_elim(c.clone())?; // 0*c = 0
+        let r = cong_add(rb, rc)?.trans(add_base().all_elim(zero())?)?; // 0*b+0*c = 0
+        l.trans(r.sym()?)?
+            .all_intro("c", nat())?
+            .all_intro("b", nat())?
+    };
+
+    // step: body[n] ⟹ body[S n].
+    let n = var("n");
+    let ihc = body_at(&n)?;
+    let inner = {
+        let (b, c) = (var("b"), var("c"));
+        let ih = Thm::assume(ihc.clone())?
+            .all_elim(b.clone())?
+            .all_elim(c.clone())?; // n*(b+c) = n*b + n*c
+        // LHS: S n*(b+c) = (b+c) + n*(b+c)  [mul_step]  = (b+c) + (n*b+n*c)  [ih]
+        let l1 = mul_step()
+            .all_elim(n.clone())?
+            .all_elim(add(b.clone(), c.clone()))?;
+        let l2 = ih.cong_arg(Term::app(nat_add(), add(b.clone(), c.clone())))?;
+        let lhs = l1.trans(l2)?; // S n*(b+c) = (b+c) + (n*b+n*c)
+        // RHS: S n*b + S n*c = (b+n*b) + (c+n*c)  [mul_step both]
+        let rb = mul_step().all_elim(n.clone())?.all_elim(b.clone())?; // S n*b = b+n*b
+        let rc = mul_step().all_elim(n.clone())?.all_elim(c.clone())?; // S n*c = c+n*c
+        let rhs = cong_add(rb, rc)?;
+        // Bridge: (b+c)+(n*b+n*c) = (b+n*b)+(c+n*c) — commute the inner pair,
+        // then the additive interchange swaps the middle two.
+        let (nb, nc) = (mul(n.clone(), b.clone()), mul(n.clone(), c.clone()));
+        let s1 = add_comm()
+            .all_elim(nb.clone())?
+            .all_elim(nc.clone())?
+            .cong_arg(Term::app(nat_add(), add(b.clone(), c.clone())))?; // (b+c)+(nb+nc) = (b+c)+(nc+nb)
+        let s2 = elim4(add_interchange(), &b, &c, &nc, &nb)?; // (b+c)+(nc+nb) = (b+nb)+(c+nc)
+        let mid = s1.trans(s2)?;
+        lhs.trans(mid)?
+            .trans(rhs.sym()?)?
+            .all_intro("c", nat())?
+            .all_intro("b", nat())?
+    };
+    let step = inner.imp_intro(&ihc)?;
+    induct(&motive, base, step)
+}
+
+cached_thm! {
+    /// `⊢ ∀a b c. (a + b) * c = a * c + b * c` — right distributivity, by
+    /// [`mul_comm`] from the left law [`distrib`].
+    pub fn distrib_r() -> Thm {
+        distrib_r_impl().expect("distrib_r derivation")
+    }
+}
+fn distrib_r_impl() -> Result<Thm> {
+    let (a, b, c) = (var("a"), var("b"), var("c"));
+    let s1 = mul_comm()
+        .all_elim(add(a.clone(), b.clone()))?
+        .all_elim(c.clone())?; // (a+b)*c = c*(a+b)
+    let s2 = distrib()
+        .all_elim(c.clone())?
+        .all_elim(a.clone())?
+        .all_elim(b.clone())?; // c*(a+b) = c*a + c*b
+    let ca = mul_comm().all_elim(c.clone())?.all_elim(a.clone())?; // c*a = a*c
+    let cb = mul_comm().all_elim(c.clone())?.all_elim(b.clone())?; // c*b = b*c
+    let s3 = cong_add(ca, cb)?; // c*a + c*b = a*c + b*c
+    s1.trans(s2)?
+        .trans(s3)?
+        .all_intro("c", nat())?
+        .all_intro("b", nat())?
+        .all_intro("a", nat())
+}
+
+cached_thm! {
+    /// `⊢ ∀a b c. (a * b) * c = a * (b * c)` — associativity of `*`
+    /// (induction on `a`, using [`distrib_r`] at the step).
+    pub fn mul_assoc() -> Thm {
+        mul_assoc_impl().expect("mul_assoc derivation")
+    }
+}
+fn mul_assoc_impl() -> Result<Thm> {
+    // body[n] ≔ ∀b c. (n*b)*c = n*(b*c)
+    let body_at = |t: &Term| -> Result<Term> {
+        let (b, c) = (var("b"), var("c"));
+        mul(mul(t.clone(), b.clone()), c.clone())
+            .equals(mul(t.clone(), mul(b.clone(), c)))?
+            .forall("c", nat())?
+            .forall("b", nat())
+    };
+    let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+    // base: (0*b)*c = 0*(b*c)  (both 0).
+    let base = {
+        let (b, c) = (var("b"), var("c"));
+        let l1 = cong_mul_l(mul_base().all_elim(b.clone())?, c.clone())?; // (0*b)*c = 0*c
+        let l2 = mul_base().all_elim(c.clone())?; // 0*c = 0
+        let r = mul_base().all_elim(mul(b.clone(), c.clone()))?.sym()?; // 0 = 0*(b*c)
+        l1.trans(l2)?
+            .trans(r)?
+            .all_intro("c", nat())?
+            .all_intro("b", nat())?
+    };
+
+    // step: body[n] ⟹ body[S n].
+    let n = var("n");
+    let ihc = body_at(&n)?;
+    let inner = {
+        let (b, c) = (var("b"), var("c"));
+        let ih = Thm::assume(ihc.clone())?
+            .all_elim(b.clone())?
+            .all_elim(c.clone())?; // (n*b)*c = n*(b*c)
+        // LHS: (S n*b)*c = (b + n*b)*c  [mul_step]  = b*c + (n*b)*c  [distrib_r]
+        //               = b*c + n*(b*c)  [ih]
+        let l1 = cong_mul_l(
+            mul_step().all_elim(n.clone())?.all_elim(b.clone())?,
+            c.clone(),
+        )?;
+        let l2 = distrib_r()
+            .all_elim(b.clone())?
+            .all_elim(mul(n.clone(), b.clone()))?
+            .all_elim(c.clone())?;
+        let l3 = ih.cong_arg(Term::app(nat_add(), mul(b.clone(), c.clone())))?;
+        // RHS: S n*(b*c) = (b*c) + n*(b*c)  [mul_step]
+        let r1 = mul_step()
+            .all_elim(n.clone())?
+            .all_elim(mul(b.clone(), c.clone()))?;
+        l1.trans(l2)?
+            .trans(l3)?
+            .trans(r1.sym()?)?
+            .all_intro("c", nat())?
+            .all_intro("b", nat())?
+    };
+    let step = inner.imp_intro(&ihc)?;
+    induct(&motive, base, step)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -646,6 +957,101 @@ mod tests {
         assert_eq!(inst.concl(), &mul(seven, zero()).equals(zero()).unwrap());
         // rec_holds is proved, so this is hypothesis-free.
         assert!(mul_zero().hyps().is_empty());
+    }
+
+    #[test]
+    fn multiplicative_theory_is_genuine_and_well_stated() {
+        // Each multiplicative semiring law is a hypothesis-free theorem with
+        // the stated shape (checked by reconstructing it and specialising).
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+
+        // mul_succ_r: ∀a b. a * S b = a + a * b
+        let sr = mul_succ_r()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap();
+        assert_eq!(
+            sr.concl(),
+            &mul(a.clone(), succ(b.clone()))
+                .equals(add(a.clone(), mul(a.clone(), b.clone())))
+                .unwrap()
+        );
+
+        // mul_one: ∀a. a * 1 = a
+        let one = mul_one().all_elim(a.clone()).unwrap();
+        assert_eq!(
+            one.concl(),
+            &mul(a.clone(), Term::nat_lit(1u32)).equals(a.clone()).unwrap()
+        );
+
+        // mul_comm: ∀a b. a * b = b * a
+        let comm = mul_comm()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap();
+        assert_eq!(
+            comm.concl(),
+            &mul(a.clone(), b.clone()).equals(mul(b.clone(), a.clone())).unwrap()
+        );
+
+        // distrib: ∀a b c. a * (b + c) = a * b + a * c
+        let d = distrib()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap()
+            .all_elim(c.clone())
+            .unwrap();
+        assert_eq!(
+            d.concl(),
+            &mul(a.clone(), add(b.clone(), c.clone()))
+                .equals(add(mul(a.clone(), b.clone()), mul(a.clone(), c.clone())))
+                .unwrap()
+        );
+
+        // distrib_r: ∀a b c. (a + b) * c = a * c + b * c
+        let dr = distrib_r()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap()
+            .all_elim(c.clone())
+            .unwrap();
+        assert_eq!(
+            dr.concl(),
+            &mul(add(a.clone(), b.clone()), c.clone())
+                .equals(add(mul(a.clone(), c.clone()), mul(b.clone(), c.clone())))
+                .unwrap()
+        );
+
+        // mul_assoc: ∀a b c. (a * b) * c = a * (b * c)
+        let assoc = mul_assoc()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap()
+            .all_elim(c.clone())
+            .unwrap();
+        assert_eq!(
+            assoc.concl(),
+            &mul(mul(a.clone(), b.clone()), c.clone())
+                .equals(mul(a.clone(), mul(b.clone(), c.clone())))
+                .unwrap()
+        );
+
+        for t in [
+            mul_succ_r(),
+            mul_one(),
+            mul_comm(),
+            distrib(),
+            distrib_r(),
+            mul_assoc(),
+        ] {
+            assert!(t.hyps().is_empty(), "a multiplicative nat law must be genuine");
+            assert!(t.concl().type_of().unwrap().is_bool());
+        }
     }
 
     /// `rec_holds` is now a genuine theorem, so every fact derived from

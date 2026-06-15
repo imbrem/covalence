@@ -64,6 +64,7 @@ pub mod nat;
 pub mod option;
 pub mod quotient;
 pub mod rat;
+pub mod real;
 pub mod recursion;
 pub mod rel;
 pub mod set;

@@ -613,6 +613,34 @@ mod tests {
     }
 
     #[test]
+    fn round_trip_relates_the_chosen_representative() {
+        use crate::init::quotient;
+        let spec = covalence_core::defs::int_ty_spec();
+        let p = Term::free("p", nn());
+        // ⊢ int_rel p (rep_class (mk_class p)) — a genuine, hyp-free theorem.
+        let rt = quotient::round_trip(
+            &spec,
+            &[],
+            &nn(),
+            &int_rel(),
+            &int_rel_refl(),
+            &int_rel_symm(),
+            &int_rel_trans(),
+            &p,
+        )
+        .expect("round_trip on int");
+        assert!(rt.hyps().is_empty(), "round_trip is genuine");
+        // Conclusion is `int_rel p <something>`.
+        let (rel, a, _) = {
+            let (ra, b) = rt.concl().as_app().unwrap();
+            let (r, a) = ra.as_app().unwrap();
+            (r.clone(), a.clone(), b.clone())
+        };
+        assert_eq!(&rel, &int_rel());
+        assert_eq!(&a, &p);
+    }
+
+    #[test]
     fn class_intro_lifts_int_rel_to_a_class_equation() {
         // The payoff: with int_rel proven an equivalence, the forward
         // quotient law lifts a `~`-fact to an int-class equation.

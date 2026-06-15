@@ -19,11 +19,7 @@ fn assert_spec(ty: &Type, label: &str, args: &[Type]) {
     match ty.kind() {
         TypeKind::Spec(spec, got_args) => {
             assert_eq!(spec.symbol().label(), label, "label mismatch for {ty:?}");
-            assert_eq!(
-                got_args.as_slice(),
-                args,
-                "type-arg mismatch for {ty:?}"
-            );
+            assert_eq!(got_args.as_slice(), args, "type-arg mismatch for {ty:?}");
         }
         other => panic!("expected TypeKind::Spec({label}), got {other:?}"),
     }
@@ -204,7 +200,10 @@ fn fold_recursors_carry_selector_predicates() {
     // listFoldr / listFoldl are def-style: their `tm` is a Hilbert-ε
     // selector predicate over the fold function, so its type is
     // `ty → bool` (NOT the recorded function `ty` itself).
-    let specs = [("listFoldr", list_foldr_spec()), ("listFoldl", list_foldl_spec())];
+    let specs = [
+        ("listFoldr", list_foldr_spec()),
+        ("listFoldl", list_foldl_spec()),
+    ];
     for (name, spec) in specs {
         let recorded = spec
             .ty()

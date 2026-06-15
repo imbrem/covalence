@@ -26,7 +26,7 @@ pub mod set;
 mod spec;
 mod term;
 
-pub use observer::{Hint, ObsEq, ObsImp, ObsTrue, Object, Observer};
+pub use observer::{Hint, Object, ObsEq, ObsImp, ObsTrue, Observer};
 pub use set::TermSet;
 pub use spec::TermSpec;
 pub use term::{Def, IntTag, SmallIntLiteral, Term, TermKind};

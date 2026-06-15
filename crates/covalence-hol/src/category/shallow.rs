@@ -45,7 +45,10 @@ impl Category for Hol {
     }
 
     fn concl(&self, proof: &Thm) -> (Term, Term) {
-        let (l, r) = proof.concl().as_eq().expect("a categorical proof is an equation");
+        let (l, r) = proof
+            .concl()
+            .as_eq()
+            .expect("a categorical proof is an equation");
         (l.clone(), r.clone())
     }
 

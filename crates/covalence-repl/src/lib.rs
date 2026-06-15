@@ -278,8 +278,14 @@ impl ReplPrims {
             ("status", "show backend info"),
             ("help", "show this help"),
             ("graph-builder", "open a topology builder, → handle"),
-            ("$h \"n\" ty \"in\" b-port", "buffer one port for the next b-node"),
-            ("$h \"payload\" b-node", "commit buffered ports + payload, → node-id"),
+            (
+                "$h \"n\" ty \"in\" b-port",
+                "buffer one port for the next b-node",
+            ),
+            (
+                "$h \"payload\" b-node",
+                "commit buffered ports + payload, → node-id",
+            ),
             (
                 "$h f-n f-p t-n t-p b-wire",
                 "wire an edge (output → input) on the builder",
@@ -289,7 +295,10 @@ impl ReplPrims {
                 "finalise and store the topology, → graph-hash",
             ),
             ("\"a\" \"b\" 2 labels", "build LBLS overlay, → labels-hash"),
-            ("\"pure\" \"ordered\" 2 kinds", "build KFLG overlay, → kinds-hash"),
+            (
+                "\"pure\" \"ordered\" 2 kinds",
+                "build KFLG overlay, → kinds-hash",
+            ),
             (
                 "absent-slot / all-pure / all-ordered",
                 "push a sentinel slot value",
@@ -310,7 +319,10 @@ impl ReplPrims {
                 "preview-on / preview-off",
                 "auto-emit a preview after b-finish / string-diagram",
             ),
-            ("<hash> preview", "inspect a blob: graph summary / image info"),
+            (
+                "<hash> preview",
+                "inspect a blob: graph summary / image info",
+            ),
             ("3 4 +", "arithmetic: + - *"),
             ("42 $x ^x", "variable binding and recall"),
             ("($x ^x 1 +) $inc", "define a closure"),
@@ -542,7 +554,11 @@ fn describe_graph_object(tag: &str, bytes: &[u8]) -> String {
     };
     match tag {
         ORDERED_HASH_CTX => match BytesGraph::from_bytes(bytes) {
-            Ok(g) => format!("graph topology: {} nodes, {} edges", g.node_count(), g.edge_count()),
+            Ok(g) => format!(
+                "graph topology: {} nodes, {} edges",
+                g.node_count(),
+                g.edge_count()
+            ),
             Err(e) => format!("graph topology: decode error ({e})"),
         },
         STRING_DIAGRAM_HASH_CTX => match StringDiagram::from_bytes(bytes) {

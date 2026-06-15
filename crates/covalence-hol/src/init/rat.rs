@@ -101,7 +101,10 @@ fn imul(a: Term, b: Term) -> Term {
 /// quotients by.
 pub fn rat_rel() -> Term {
     let pair_ty = ip_pair();
-    let (p, q) = (Term::free("p", pair_ty.clone()), Term::free("q", pair_ty.clone()));
+    let (p, q) = (
+        Term::free("p", pair_ty.clone()),
+        Term::free("q", pair_ty.clone()),
+    );
     let body = imul(num(&p), den(&q))
         .equals(imul(num(&q), den(&p)))
         .expect("rat_rel: body");
@@ -136,7 +139,10 @@ fn expand_rel(eq: Thm, app: &Term) -> Result<Thm> {
 /// `1 : int.pos` — the abstraction of the `int` literal `1`. The
 /// canonical denominator for the integer / rational embeddings.
 fn one_pos() -> Term {
-    Term::app(Term::spec_abs(int_pos_spec(), Vec::new()), Term::int_lit(1i128))
+    Term::app(
+        Term::spec_abs(int_pos_spec(), Vec::new()),
+        Term::int_lit(1i128),
+    )
 }
 
 /// `pair a b : int × int.pos`.
@@ -159,7 +165,9 @@ fn axiom(t: Term) -> Thm {
 fn forall_pair(vars: &[&str], body: Term) -> Term {
     let mut t = body;
     for name in vars.iter().rev() {
-        t = t.forall(name, ip_pair()).expect("forall_pair: bind variable");
+        t = t
+            .forall(name, ip_pair())
+            .expect("forall_pair: bind variable");
     }
     t
 }
@@ -306,7 +314,10 @@ fn iadd(a: Term, b: Term) -> Term {
 fn binary_rat(build: impl Fn(&Term, &Term) -> Term) -> Term {
     let (x, y) = (Term::free("x", rat()), Term::free("y", rat()));
     let body = mk_rat(&build(&rep_pair(x.clone()), &rep_pair(y.clone())));
-    Term::abs(rat(), subst::close(&Term::abs(rat(), subst::close(&body, "y")), "x"))
+    Term::abs(
+        rat(),
+        subst::close(&Term::abs(rat(), subst::close(&body, "y")), "x"),
+    )
 }
 
 /// `0 : rat` ≡ `mkRat (0, 1)`.
@@ -329,9 +340,7 @@ pub fn rat_add() -> Term {
 
 /// `ratMul : rat → rat → rat` ≡ `(a/b) · (c/d) = (a·c)/(b·d)`.
 pub fn rat_mul() -> Term {
-    binary_rat(|px, py| {
-        ip(imul(num(px), num(py)), to_pos(imul(den(px), den(py))))
-    })
+    binary_rat(|px, py| ip(imul(num(px), num(py)), to_pos(imul(den(px), den(py)))))
 }
 
 /// `ratNeg : rat → rat` ≡ `-(a/b) = (-a)/b` (denominator unchanged).
@@ -365,7 +374,12 @@ pub fn rat_neg() -> Term {
 fn binary_beta(op: Term, a: Term, b: Term) -> Result<Thm> {
     let head = Term::app(op, a); // (λx y. body) a
     let applied = Thm::beta_conv(head)?.cong_fn(b)?; // ⊢ op a b = (λy. body_a) b
-    let rhs = applied.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let rhs = applied
+        .concl()
+        .as_eq()
+        .ok_or(Error::NotAnEquation)?
+        .1
+        .clone();
     applied.trans(Thm::beta_conv(rhs)?) // ⊢ op a b = body_a[y:=b]
 }
 
@@ -373,7 +387,12 @@ fn binary_beta(op: Term, a: Term, b: Term) -> Result<Thm> {
 /// `int × int.pos` — congruence of the representative pair in both slots.
 fn pair_cong(num_eq: Thm, den_eq: Thm) -> Result<Thm> {
     let pair_op = covalence_core::defs::pair(Type::int(), int_pos_ty());
-    let d1 = den_eq.concl().as_eq().ok_or(Error::NotAnEquation)?.0.clone();
+    let d1 = den_eq
+        .concl()
+        .as_eq()
+        .ok_or(Error::NotAnEquation)?
+        .0
+        .clone();
     // ⊢ pair n1 d1 = pair n2 d1, then ⊢ pair n2 d1 = pair n2 d2.
     let left = num_eq.cong_arg(pair_op)?.cong_fn(d1)?;
     // `pair n2` — the function side to rewrite the denominator under.
@@ -476,7 +495,10 @@ pub fn add_assoc() -> Thm {
     let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
     let lhs = radd(radd(a.clone(), b.clone()), c.clone());
     let rhs = radd(a, radd(b, c));
-    axiom(forall_rat(&["a", "b", "c"], lhs.equals(rhs).expect("add_assoc")))
+    axiom(forall_rat(
+        &["a", "b", "c"],
+        lhs.equals(rhs).expect("add_assoc"),
+    ))
 }
 
 /// `⊢ ∀a. a + 0 = a`.
@@ -489,7 +511,9 @@ pub fn add_zero() -> Thm {
 /// `⊢ ∀a. a + (-a) = 0` — additive inverse.
 pub fn add_neg() -> Thm {
     let a = rvar("a");
-    let eq = radd(a.clone(), rneg(a)).equals(rat_zero()).expect("add_neg");
+    let eq = radd(a.clone(), rneg(a))
+        .equals(rat_zero())
+        .expect("add_neg");
     axiom(forall_rat(&["a"], eq))
 }
 
@@ -527,7 +551,10 @@ pub fn mul_assoc() -> Thm {
     let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
     let lhs = rmul(rmul(a.clone(), b.clone()), c.clone());
     let rhs = rmul(a, rmul(b, c));
-    axiom(forall_rat(&["a", "b", "c"], lhs.equals(rhs).expect("mul_assoc")))
+    axiom(forall_rat(
+        &["a", "b", "c"],
+        lhs.equals(rhs).expect("mul_assoc"),
+    ))
 }
 
 /// `⊢ ∀a. a * 1 = a`.
@@ -549,7 +576,10 @@ pub fn distrib() -> Thm {
     let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
     let lhs = rmul(a.clone(), radd(b.clone(), c.clone()));
     let rhs = radd(rmul(a.clone(), b), rmul(a, c));
-    axiom(forall_rat(&["a", "b", "c"], lhs.equals(rhs).expect("distrib")))
+    axiom(forall_rat(
+        &["a", "b", "c"],
+        lhs.equals(rhs).expect("distrib"),
+    ))
 }
 
 /// `⊢ ∀a. ¬(a = 0) ⟹ ∃b. a * b = 1` — the field axiom (multiplicative
@@ -563,7 +593,12 @@ pub fn mul_inv() -> Thm {
         .expect("mul_inv: a * b = 1")
         .exists("b", rat())
         .expect("mul_inv: ∃b");
-    let neq = a.clone().equals(rat_zero()).expect("mul_inv: a = 0").not().expect("mul_inv: ≠");
+    let neq = a
+        .clone()
+        .equals(rat_zero())
+        .expect("mul_inv: a = 0")
+        .not()
+        .expect("mul_inv: ≠");
     let body = neq.imp(has_inv).expect("mul_inv");
     axiom(forall_rat(&["a"], body))
 }
@@ -587,7 +622,10 @@ pub fn rat_lt() -> Term {
     let (x, y) = (Term::free("x", rat()), Term::free("y", rat()));
     let (px, py) = (rep_pair(x.clone()), rep_pair(y.clone()));
     let body = ilt(imul(num(&px), den(&py)), imul(num(&py), den(&px)));
-    Term::abs(rat(), subst::close(&Term::abs(rat(), subst::close(&body, "y")), "x"))
+    Term::abs(
+        rat(),
+        subst::close(&Term::abs(rat(), subst::close(&body, "y")), "x"),
+    )
 }
 
 /// `a < b` on `rat`.
@@ -602,7 +640,10 @@ fn rle(a: Term, b: Term) -> Term {
 /// `⊢ ∀a. ¬(a < a)` — irreflexivity.
 pub fn lt_irrefl() -> Thm {
     let a = rvar("a");
-    axiom(forall_rat(&["a"], rlt(a.clone(), a).not().expect("lt_irrefl")))
+    axiom(forall_rat(
+        &["a"],
+        rlt(a.clone(), a).not().expect("lt_irrefl"),
+    ))
 }
 
 /// `⊢ ∀a b c. a < b ⟹ b < c ⟹ a < c` — transitivity.
@@ -675,8 +716,7 @@ fn lt_imp_le_impl() -> Result<Thm> {
     let (a, b) = (rvar("a"), rvar("b"));
     let lt = rlt(a.clone(), b.clone());
     let ld = le_def().all_elim(a.clone())?.all_elim(b.clone())?; // (a≤b)=(a<b ∨ a=b)
-    let disj = Thm::assume(lt.clone())?
-        .or_intro_l(a.clone().equals(b.clone())?)?; // {a<b} ⊢ a<b ∨ a=b
+    let disj = Thm::assume(lt.clone())?.or_intro_l(a.clone().equals(b.clone())?)?; // {a<b} ⊢ a<b ∨ a=b
     ld.sym()?
         .eq_mp(disj)?
         .imp_intro(&lt)?
@@ -808,8 +848,7 @@ fn not_one_le_zero_impl() -> Result<Thm> {
             .imp_intro(&eq_10)?
     };
 
-    disj
-        .or_elim(br_lt, br_eq)? // {1≤0, 0<1} ⊢ F
+    disj.or_elim(br_lt, br_eq)? // {1≤0, 0<1} ⊢ F
         .imp_intro(&one_le_zero)?
         .not_intro()
 }
@@ -826,9 +865,7 @@ fn not_one_le_zero_impl() -> Result<Thm> {
 
 /// `ratMediant : rat → rat → rat` ≡ `(a/b) ⊕ (c/d) = (a+c)/(b+d)`.
 pub fn mediant() -> Term {
-    binary_rat(|px, py| {
-        ip(iadd(num(px), num(py)), to_pos(iadd(den(px), den(py))))
-    })
+    binary_rat(|px, py| ip(iadd(num(px), num(py)), to_pos(iadd(den(px), den(py)))))
 }
 /// `mediant a b` applied.
 fn med(a: Term, b: Term) -> Term {
@@ -914,10 +951,7 @@ mod tests {
     #[test]
     fn rat_rel_is_a_binary_relation_on_pairs() {
         // rat_rel : (int×int.pos) → (int×int.pos) → bool.
-        let expected = Type::fun(
-            ip_pair(),
-            Type::fun(ip_pair(), Type::bool()),
-        );
+        let expected = Type::fun(ip_pair(), Type::fun(ip_pair(), Type::bool()));
         assert_eq!(rat_rel().type_of().unwrap(), expected);
     }
 
@@ -946,7 +980,10 @@ mod tests {
             assert!(t.concl().type_of().unwrap().is_bool());
         }
         let (p, q) = (Term::free("p", ip_pair()), Term::free("q", ip_pair()));
-        assert_eq!(rat_rel_refl().all_elim(p.clone()).unwrap().concl(), &rel_app(&p, &p));
+        assert_eq!(
+            rat_rel_refl().all_elim(p.clone()).unwrap().concl(),
+            &rel_app(&p, &p)
+        );
         let symm = rat_rel_symm()
             .all_elim(p.clone())
             .unwrap()
@@ -999,7 +1036,10 @@ mod tests {
         let bin = Type::fun(r.clone(), Type::fun(r.clone(), r.clone()));
         assert_eq!(rat_add().type_of().unwrap(), bin);
         assert_eq!(rat_mul().type_of().unwrap(), bin);
-        assert_eq!(rat_neg().type_of().unwrap(), Type::fun(r.clone(), r.clone()));
+        assert_eq!(
+            rat_neg().type_of().unwrap(),
+            Type::fun(r.clone(), r.clone())
+        );
         assert_eq!(rat_zero().type_of().unwrap(), r);
         assert_eq!(rat_one().type_of().unwrap(), rat());
     }
@@ -1032,14 +1072,20 @@ mod tests {
         // add_comm / mul_comm are proved (no hypotheses), on the nose from
         // the proved `int` commutativity facts through the quotient.
         let (a, b) = (rvar("a"), rvar("b"));
-        for (thm, op) in [
-            (add_comm(), rat_add() as Term),
-            (mul_comm(), rat_mul()),
-        ] {
-            assert!(thm.hyps().is_empty(), "rat commutativity is proved, not postulated");
-            let inst = thm.all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
+        for (thm, op) in [(add_comm(), rat_add() as Term), (mul_comm(), rat_mul())] {
+            assert!(
+                thm.hyps().is_empty(),
+                "rat commutativity is proved, not postulated"
+            );
+            let inst = thm
+                .all_elim(a.clone())
+                .unwrap()
+                .all_elim(b.clone())
+                .unwrap();
             let bin = |x: Term, y: Term| Term::app(Term::app(op.clone(), x), y);
-            let expected = bin(a.clone(), b.clone()).equals(bin(b.clone(), a.clone())).unwrap();
+            let expected = bin(a.clone(), b.clone())
+                .equals(bin(b.clone(), a.clone()))
+                .unwrap();
             assert_eq!(inst.concl(), &expected);
         }
     }

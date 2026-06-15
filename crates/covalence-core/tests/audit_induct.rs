@@ -34,8 +34,8 @@ use std::sync::Arc;
 
 use covalence_core::defs;
 use covalence_core::subst::close;
-use covalence_core::{Term, TermKind, Thm, Type, TypeKind};
 use covalence_core::{Hint, ObsEq, ObsImp, ObsTrue};
+use covalence_core::{Term, TermKind, Thm, Type, TypeKind};
 use covalence_types::Nat;
 
 // ============================================================================
@@ -93,7 +93,10 @@ fn prove_refl_motive_at(p: &Term, k: Term) -> Thm {
 
 /// A canonical `unit` value `abs T : unit`.
 fn unit_val() -> Term {
-    Term::app(Term::spec_abs(defs::unit_spec(), vec![]), Term::bool_lit(true))
+    Term::app(
+        Term::spec_abs(defs::unit_spec(), vec![]),
+        Term::bool_lit(true),
+    )
 }
 
 /// Decompose `App(App(=, lhs), rhs)`; panics if not a HOL eq.
@@ -104,7 +107,10 @@ fn parse_eq(concl: &Term) -> (Term, Term) {
     let TermKind::App(head, lhs) = f.kind() else {
         panic!("lhs not an App: {concl:?}");
     };
-    assert!(matches!(head.kind(), TermKind::Eq(_)), "head not =: {concl:?}");
+    assert!(
+        matches!(head.kind(), TermKind::Eq(_)),
+        "head not =: {concl:?}"
+    );
     (lhs.clone(), rhs.clone())
 }
 
@@ -163,7 +169,10 @@ fn nat_induct_allows_free_var_in_base_hyps() {
         &forall_nat(Term::app(p, n.clone())),
         "conclusion is ∀n:nat. p n"
     );
-    assert!(thm.hyps().contains(&base_hyp), "the base hypothesis is carried");
+    assert!(
+        thm.hyps().contains(&base_hyp),
+        "the base hypothesis is carried"
+    );
 }
 
 #[test]
@@ -338,10 +347,7 @@ fn nat_induct_rejects_induction_var_not_nat_typed() {
     // antecedent `p 0` (arg is the literal 0, not a Free var).
     let p_lit = Term::app(p.clone(), zero());
     let p_succ_lit = Term::app(p.clone(), succ(zero()));
-    let step = Thm::assume(p_succ_lit)
-        .unwrap()
-        .imp_intro(&p_lit)
-        .unwrap(); // ⊢ p 0 ⟹ p (succ 0)
+    let step = Thm::assume(p_succ_lit).unwrap().imp_intro(&p_lit).unwrap(); // ⊢ p 0 ⟹ p (succ 0)
     assert!(
         Thm::nat_induct(base, step).is_err(),
         "antecedent arg is a literal, not a free induction variable"
@@ -701,7 +707,10 @@ fn spec_abs_rejects_carrier_less_spec() {
     // less. Find one dynamically and assert spec_abs errors on it.
     let candidates: Vec<covalence_core::TypeSpec> =
         vec![defs::set_spec(), defs::rel_spec(), defs::stream_spec()];
-    let carrier_less: Vec<_> = candidates.into_iter().filter(|s| s.ty().is_none()).collect();
+    let carrier_less: Vec<_> = candidates
+        .into_iter()
+        .filter(|s| s.ty().is_none())
+        .collect();
     if carrier_less.is_empty() {
         // Document the limitation: no carrier-less TypeSpec is reachable
         // via the public API in this build, so the `SpecHasNoCarrier`
@@ -721,7 +730,10 @@ fn spec_abs_rejects_carrier_less_spec() {
             s.symbol().label()
         );
         let rep = Term::spec_rep(s, vec![]);
-        assert!(rep.type_of().is_err(), "carrier-less spec must error in spec_rep typing");
+        assert!(
+            rep.type_of().is_err(),
+            "carrier-less spec must error in spec_rep typing"
+        );
     }
 }
 
@@ -768,13 +780,7 @@ impl ObsImp for TestObs {
 #[derive(Debug)]
 struct OtherObs;
 impl ObsEq for OtherObs {
-    fn obs_eq(
-        &self,
-        _o: &Self,
-        _a: &[Term],
-        _b: &[Term],
-        _h: Option<&dyn Hint>,
-    ) -> bool {
+    fn obs_eq(&self, _o: &Self, _a: &[Term], _b: &[Term], _h: Option<&dyn Hint>) -> bool {
         true
     }
 }
@@ -838,8 +844,14 @@ fn obs_eq_rejects_non_obs_head() {
 #[test]
 fn obs_eq_works_through_applications() {
     // (obs : nat → bool) applied to a nat literal — head is the obs leaf.
-    let f1 = Term::obs(TestObs { answer: true }, Type::fun(Type::nat(), Type::bool()));
-    let f2 = Term::obs(TestObs { answer: true }, Type::fun(Type::nat(), Type::bool()));
+    let f1 = Term::obs(
+        TestObs { answer: true },
+        Type::fun(Type::nat(), Type::bool()),
+    );
+    let f2 = Term::obs(
+        TestObs { answer: true },
+        Type::fun(Type::nat(), Type::bool()),
+    );
     let e1 = Term::app(f1, zero());
     let e2 = Term::app(f2, zero());
     let thm = Thm::obs_eq::<TestObs>(e1.clone(), e2.clone(), None).unwrap();

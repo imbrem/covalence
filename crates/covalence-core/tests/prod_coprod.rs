@@ -270,7 +270,10 @@ fn coprod_type_is_spec_with_label_and_args() {
 
 #[test]
 fn prod_type_display() {
-    assert_eq!(format!("{}", prod(Type::nat(), Type::int())), "(prod nat int)");
+    assert_eq!(
+        format!("{}", prod(Type::nat(), Type::int())),
+        "(prod nat int)"
+    );
 }
 
 #[test]
@@ -408,10 +411,7 @@ fn deeply_nested_prod() {
         Type::fun(inner_r.clone(), prod(inner_l.clone(), inner_r.clone())),
     );
     assert_eq!(pair(inner_l, inner_r).type_of().unwrap(), expected);
-    assert_eq!(
-        format!("{p}"),
-        "(prod (coprod nat int) (prod bool unit))"
-    );
+    assert_eq!(format!("{p}"), "(prod (coprod nat int) (prod bool unit))");
 }
 
 /// `coprod_case` where γ differs from both α and β.

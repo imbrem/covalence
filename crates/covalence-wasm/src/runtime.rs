@@ -285,11 +285,9 @@ impl cov::wasm::build::HostModuleBuilder for RuntimeHost {
     ) -> wasmtime::Result<u32> {
         let params: Vec<_> = params.into_iter().map(val_type_from_wit).collect();
         let results: Vec<_> = results.into_iter().map(val_type_from_wit).collect();
-        Ok(
-            builder_mut(self.table.get_mut(&rep)?)?
-                .import_func(&module, &name, &params, &results)
-                .0,
-        )
+        Ok(builder_mut(self.table.get_mut(&rep)?)?
+            .import_func(&module, &name, &params, &results)
+            .0)
     }
 
     fn start_func(
@@ -350,8 +348,7 @@ impl cov::wasm::build::HostModuleBuilder for RuntimeHost {
         name: String,
         idx: u32,
     ) -> wasmtime::Result<()> {
-        builder_mut(self.table.get_mut(&rep)?)?
-            .export_global(&name, crate::build::GlobalIdx(idx));
+        builder_mut(self.table.get_mut(&rep)?)?.export_global(&name, crate::build::GlobalIdx(idx));
         Ok(())
     }
 
@@ -418,7 +415,9 @@ impl cov::wasm::build::HostModuleBuilder for RuntimeHost {
         rep: wasmtime::component::Resource<HostModuleBuilder>,
         initial_pages: u32,
     ) -> wasmtime::Result<u32> {
-        Ok(builder_mut(self.table.get_mut(&rep)?)?.memory(initial_pages).0)
+        Ok(builder_mut(self.table.get_mut(&rep)?)?
+            .memory(initial_pages)
+            .0)
     }
 
     fn global_i32(
@@ -434,7 +433,9 @@ impl cov::wasm::build::HostModuleBuilder for RuntimeHost {
         rep: wasmtime::component::Resource<HostModuleBuilder>,
         init: i32,
     ) -> wasmtime::Result<u32> {
-        Ok(builder_mut(self.table.get_mut(&rep)?)?.global_i32_mut(init).0)
+        Ok(builder_mut(self.table.get_mut(&rep)?)?
+            .global_i32_mut(init)
+            .0)
     }
 
     fn global_i64(
@@ -450,7 +451,9 @@ impl cov::wasm::build::HostModuleBuilder for RuntimeHost {
         rep: wasmtime::component::Resource<HostModuleBuilder>,
         init: i64,
     ) -> wasmtime::Result<u32> {
-        Ok(builder_mut(self.table.get_mut(&rep)?)?.global_i64_mut(init).0)
+        Ok(builder_mut(self.table.get_mut(&rep)?)?
+            .global_i64_mut(init)
+            .0)
     }
 
     // ----- Instruction methods (open-function delegations) -----
@@ -701,9 +704,7 @@ mod tests {
     /// the same host's runtime.
     #[test]
     fn module_builder_memory_and_globals() {
-        use cov::wasm::build::{
-            BlockType as BT, HostModuleBuilder as _, ValType,
-        };
+        use cov::wasm::build::{BlockType as BT, HostModuleBuilder as _, ValType};
         let mut host = RuntimeHost::new().expect("host");
         let b_rep = new_builder_rep(&mut host);
 
@@ -723,8 +724,10 @@ mod tests {
         host.i32_add(borrow(b_rep)).unwrap();
         host.end_func(borrow(b_rep)).unwrap();
 
-        host.export_func(borrow(b_rep), "go".to_string(), idx).unwrap();
-        host.export_memory(borrow(b_rep), "mem".to_string(), mem).unwrap();
+        host.export_func(borrow(b_rep), "go".to_string(), idx)
+            .unwrap();
+        host.export_memory(borrow(b_rep), "mem".to_string(), mem)
+            .unwrap();
 
         // Throw a block in for control-flow coverage even though the
         // outer fn doesn't need it.

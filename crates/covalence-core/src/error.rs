@@ -105,9 +105,7 @@ pub enum Error {
     #[error("weaken: target context is not a superset of the theorem's hypotheses")]
     NotASuperset,
 
-    #[error(
-        "unfold_term_spec: term is not a TermKind::Spec applied to type args"
-    )]
+    #[error("unfold_term_spec: term is not a TermKind::Spec applied to type args")]
     NotASpec,
 
     #[error(

@@ -182,9 +182,7 @@ impl OpKey {
     fn ty(self) -> Type {
         match self {
             OpKey::Op(t, op) if op.is_unary() => Type::fun(t.ty(), t.ty()),
-            OpKey::Op(t, op) if op.is_cmp() => {
-                Type::fun(t.ty(), Type::fun(t.ty(), Type::bool()))
-            }
+            OpKey::Op(t, op) if op.is_cmp() => Type::fun(t.ty(), Type::fun(t.ty(), Type::bool())),
             OpKey::Op(t, _) => Type::fun(t.ty(), Type::fun(t.ty(), t.ty())),
             OpKey::Zext(s, d) | OpKey::Sext(s, d) => Type::fun(s.ty(), d.ty()),
             OpKey::ToNat(t) => Type::fun(t.ty(), Type::nat()),
@@ -405,13 +403,21 @@ fn shift_body(tag: IntTag, shift: Term, map: &HashMap<OpKey, TermSpec>) -> Term 
     let width = Term::nat_lit(u64::from(tag.width()));
     let amount = Term::app(Term::app(nat_mod(), yn), width);
     let shifted = Term::app(Term::app(shift, xn), amount);
-    hol::pub_abs("x", tag.ty(), hol::pub_abs("y", tag.ty(), Term::app(from_nat, shifted)))
+    hol::pub_abs(
+        "x",
+        tag.ty(),
+        hol::pub_abs("y", tag.ty(), Term::app(from_nat, shifted)),
+    )
 }
 
 /// `spec.ptr_id() → OpKey`, the reverse map used by reduction
 /// dispatch. Only the canonical `FORWARD` allocations appear here.
-static REVERSE: LazyLock<HashMap<usize, OpKey>> =
-    LazyLock::new(|| FORWARD.iter().map(|(k, spec)| (spec.ptr_id(), *k)).collect());
+static REVERSE: LazyLock<HashMap<usize, OpKey>> = LazyLock::new(|| {
+    FORWARD
+        .iter()
+        .map(|(k, spec)| (spec.ptr_id(), *k))
+        .collect()
+});
 
 fn spec_for(key: OpKey) -> TermSpec {
     FORWARD
@@ -493,7 +499,10 @@ static LIST_INDEX: LazyLock<HashMap<IntTag, TermSpec>> = LazyLock::new(|| {
                 .type_of()
                 .expect("list.index.<tag> body must type-check");
             let label = format!("list.index.{}", tag.label());
-            (tag, TermSpec::new(SmolStr::from(label), Some(ty), Some(body)))
+            (
+                tag,
+                TermSpec::new(SmolStr::from(label), Some(ty), Some(body)),
+            )
         })
         .collect()
 });

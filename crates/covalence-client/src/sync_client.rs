@@ -291,11 +291,7 @@ impl SyncBackend for SyncHttpBackend {
     }
 
     fn register_tag(&self, tag: &str, content_hash: O256) -> Result<O256, KernelError> {
-        let body = format!(
-            "{{\"tag\":{:?},\"contentHash\":\"{}\"}}",
-            tag,
-            content_hash
-        );
+        let body = format!("{{\"tag\":{:?},\"contentHash\":\"{}\"}}", tag, content_hash);
         let resp = self.post_json("/api/objects/tag", &body)?;
         let json: HashResponse = serde_json::from_slice::<TagRegisterResponse>(&resp)
             .map(|r| HashResponse { hash: r.keyed })
@@ -311,10 +307,11 @@ impl SyncBackend for SyncHttpBackend {
             Err(KernelError::NotFound(_)) => return Ok(None),
             Err(e) => return Err(e),
         };
-        let json: TagLookupResponse = serde_json::from_slice(&resp)
-            .map_err(|e| KernelError::Store(format!("parse: {e}")))?;
-        let content_hash = O256::from_hex(&json.content_hash)
-            .ok_or_else(|| KernelError::Store(format!("invalid content hash: {}", json.content_hash)))?;
+        let json: TagLookupResponse =
+            serde_json::from_slice(&resp).map_err(|e| KernelError::Store(format!("parse: {e}")))?;
+        let content_hash = O256::from_hex(&json.content_hash).ok_or_else(|| {
+            KernelError::Store(format!("invalid content hash: {}", json.content_hash))
+        })?;
         Ok(Some((json.tag, content_hash)))
     }
 }

@@ -73,11 +73,14 @@ it is how unfinished work stays discoverable.
     that lands, this becomes the int-analogue of `int_rel_trans`.
   - The ordered-field axioms over `rat_zero`/`rat_one`/`rat_add`/
     `rat_neg`/`rat_mul`/`rat_lt` (commutative-ring `add_*`/`mul_*`/
-    `distrib`, multiplicative inverse `mul_inv`, and the linear order
-    `lt_*`/`le_def`). Each is a HOL theorem derivable from the `int`
-    ordered-ring theory through the quotient; filling them in does not
-    change the public `fn` surface. They depend transitively on the
-    `int` postulates above.
+    `distrib`, multiplicative inverse `mul_inv`, the linear order
+    `lt_*`/`le_def`, and the base strictness fact `zero_lt_one` — `ratLt`
+    picks ε-representatives, so `0 < 1` is not reducible). Each is a HOL
+    theorem derivable from the `int` ordered-ring theory through the
+    quotient; filling them in does not change the public `fn` surface.
+    They depend transitively on the `int` postulates above. (The `≤`
+    toolkit `le_refl`/`lt_imp_le`/`le_trans`/`not_one_le_zero` is **not**
+    postulated — it is *derived* from `le_def` + the strict-order facts.)
   - The two **mediant inequalities** `mediant_gt` / `mediant_lt` — the
     only postulated leaves of `dense` (which is itself *derived* from
     them via the mediant `(a+c)/(b+d)`, no division needed). Each unfolds

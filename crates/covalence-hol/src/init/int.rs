@@ -94,6 +94,9 @@ fn mul(a: Term, b: Term) -> Term {
     Term::app(Term::app(int_mul(), a), b)
 }
 
+// Used by the test-suite statement builders (the proofs go through
+// `neg_via_components`, never this surface form).
+#[cfg_attr(not(test), allow(dead_code))]
 fn neg(a: Term) -> Term {
     Term::app(int_neg(), a)
 }
@@ -466,6 +469,121 @@ fn inst2(thm: Thm, a: &Term, b: &Term) -> Result<Thm> {
     thm.all_elim(a.clone())?.all_elim(b.clone())
 }
 
+// ---- negation ----
+
+/// `pair (snd x) (fst x)` — Grothendieck negation `(a − b) ↦ (b − a)`.
+fn neg_pair(x: &Term) -> Term {
+    pair_nn(snd_nn(x), fst_nn(x))
+}
+
+/// `⊢ int.neg a = abs(class_of_defs (neg_pair (rep_pair a)))`.
+fn neg_defining_eq(a: &Term) -> Result<Thm> {
+    Term::app(int_neg(), a.clone())
+        .delta_all(covalence_core::defs::int_neg_spec().symbol())?
+        .rhs_conv(|t| t.reduce())
+}
+
+/// **Negation well-definedness.** `⊢ int_rel x x' ⟹` lifted to
+/// `⊢ int_rel (neg_pair x) (neg_pair x')` — swap the components; the
+/// defining `nat` equation flips by `add_comm`.
+fn neg_pair_cong(h: Thm) -> Result<Thm> {
+    let (x, xp) = dest_rel_app(h.concl())?;
+    let e = reduce_rel(h)?; // fx + sx' = fx' + sx
+    let (fx, sx) = (fst_nn(&x), snd_nn(&x));
+    let (fxp, sxp) = (fst_nn(&xp), snd_nn(&xp));
+    // sx + fx' = fx' + sx = fx + sx' = sx' + fx.
+    let g = nat::add_comm()
+        .all_elim(sx.clone())?
+        .all_elim(fxp.clone())?
+        .trans(e.sym()?)?
+        .trans(
+            nat::add_comm()
+                .all_elim(fx.clone())?
+                .all_elim(sxp.clone())?,
+        )?;
+    rel_of_pairs(&sx, &fx, &sxp, &fxp, g)
+}
+
+/// **Negation computation rule.** `⊢ int.neg (mk_int p) = mk_int (neg_pair p)`.
+fn neg_class(p: &Term) -> Result<Thm> {
+    let mp = mk_int(p);
+    let dl = neg_defining_eq(&mp)?;
+    let rpp = rep_pair(&mp);
+    let dl = dl.trans(defs_to_mk_int(&neg_pair(&rpp))?)?; // = mk_int(neg_pair RPp)
+    let rpp_p = inst2(int_rel_symm(), p, &rpp)?.imp_elim(round_trip(p)?)?; // int_rel RPp p
+    let cong = neg_pair_cong(rpp_p)?; // int_rel (neg_pair RPp) (neg_pair p)
+    let lift = quotient::class_intro(&spec(), &[], &nn(), &int_rel_symm(), &int_rel_trans(), cong)?;
+    dl.trans(lift)
+}
+
+// ---- subtraction ----
+
+/// `pair (fst x + snd y) (snd x + fst y)` — Grothendieck subtraction
+/// `(a − b) − (c − d) = (a + d) − (b + c)`.
+fn sub_pair(x: &Term, y: &Term) -> Term {
+    pair_nn(
+        nat::add(fst_nn(x), snd_nn(y)),
+        nat::add(snd_nn(x), fst_nn(y)),
+    )
+}
+
+/// `⊢ int.sub a b = abs(class_of_defs (sub_pair (rep_pair a) (rep_pair b)))`.
+fn sub_defining_eq(a: &Term, b: &Term) -> Result<Thm> {
+    Term::app(Term::app(int_sub(), a.clone()), b.clone())
+        .delta_all(covalence_core::defs::int_sub_spec().symbol())?
+        .rhs_conv(|t| t.reduce())
+}
+
+/// **Subtraction well-definedness.** From `⊢ int_rel x x'`, `⊢ int_rel y y'`
+/// conclude `⊢ int_rel (sub_pair x y) (sub_pair x' y')`.
+fn sub_pair_cong(h1: Thm, h2: Thm) -> Result<Thm> {
+    let (x, xp) = dest_rel_app(h1.concl())?;
+    let (y, yp) = dest_rel_app(h2.concl())?;
+    let e1 = reduce_rel(h1)?; // fx + sx' = fx' + sx
+    let e2 = reduce_rel(h2)?; // fy + sy' = fy' + sy
+
+    let (fx, sx) = (fst_nn(&x), snd_nn(&x));
+    let (fxp, sxp) = (fst_nn(&xp), snd_nn(&xp));
+    let (fy, sy) = (fst_nn(&y), snd_nn(&y));
+    let (fyp, syp) = (fst_nn(&yp), snd_nn(&yp));
+
+    // sy + fy' = fy' + sy = fy + sy' = sy' + fy.
+    let e2p = nat::add_comm()
+        .all_elim(sy.clone())?
+        .all_elim(fyp.clone())?
+        .trans(e2.sym()?)?
+        .trans(
+            nat::add_comm()
+                .all_elim(fy.clone())?
+                .all_elim(syp.clone())?,
+        )?;
+    // (fx+sy)+(sx'+fy') = (fx+sx')+(sy+fy') = (fx'+sx)+(sy'+fy) = (fx'+sy')+(sx+fy).
+    let g = mid_swap(&fx, &sy, &sxp, &fyp)?
+        .trans(nat::cong_add(e1, e2p)?)?
+        .trans(mid_swap(&fxp, &syp, &sx, &fy)?.sym()?)?;
+    rel_of_pairs(
+        &nat::add(fx, sy),
+        &nat::add(sx, fy),
+        &nat::add(fxp, syp),
+        &nat::add(sxp, fyp),
+        g,
+    )
+}
+
+/// **Subtraction computation rule.** `⊢ int.sub (mk_int p) (mk_int q) =
+/// mk_int (sub_pair p q)`.
+fn sub_class(p: &Term, q: &Term) -> Result<Thm> {
+    let (mp, mq) = (mk_int(p), mk_int(q));
+    let dl = sub_defining_eq(&mp, &mq)?;
+    let (rpp, rpq) = (rep_pair(&mp), rep_pair(&mq));
+    let dl = dl.trans(defs_to_mk_int(&sub_pair(&rpp, &rpq))?)?; // = mk_int(sub_pair RPp RPq)
+    let rpp_p = inst2(int_rel_symm(), p, &rpp)?.imp_elim(round_trip(p)?)?;
+    let rpq_q = inst2(int_rel_symm(), q, &rpq)?.imp_elim(round_trip(q)?)?;
+    let cong = sub_pair_cong(rpp_p, rpq_q)?;
+    let lift = quotient::class_intro(&spec(), &[], &nn(), &int_rel_symm(), &int_rel_trans(), cong)?;
+    dl.trans(lift)
+}
+
 // ============================================================================
 // The `MK(f, s)` component layer — `int` values as explicit `nat`-pairs
 // ============================================================================
@@ -552,6 +670,57 @@ fn dest_eq(thm: &Thm) -> Result<(Term, Term)> {
     Ok((l.clone(), r.clone()))
 }
 
+/// **Negation in component form.** `⊢ int.neg (MK f s) = MK s f`.
+fn neg_mk(f: &Term, s: &Term) -> Result<Thm> {
+    let nc = neg_class(&pair_nn(f.clone(), s.clone()))?; // = mk_int(neg_pair (pair f s))
+    let n = Type::nat();
+    let projs = [
+        crate::init::prod::snd_pair(&n, &n, f, s)?, // snd (pair f s) = s
+        crate::init::prod::fst_pair(&n, &n, f, s)?, // fst (pair f s) = f
+    ];
+    nc.rhs_conv(|t| rewrite_seq(t, &projs)) // = MK s f
+}
+
+/// **Subtraction in component form.** `⊢ int.sub (MK fa sa)(MK fb sb) =
+/// MK (fa+sb)(sa+fb)`.
+fn sub_mk(fa: &Term, sa: &Term, fb: &Term, sb: &Term) -> Result<Thm> {
+    let (pa, pb) = (
+        pair_nn(fa.clone(), sa.clone()),
+        pair_nn(fb.clone(), sb.clone()),
+    );
+    let sc = sub_class(&pa, &pb)?; // = mk_int(sub_pair pa pb)
+    let n = Type::nat();
+    let projs = [
+        crate::init::prod::fst_pair(&n, &n, fa, sa)?, // fst pa = fa
+        crate::init::prod::snd_pair(&n, &n, fb, sb)?, // snd pb = sb
+        crate::init::prod::snd_pair(&n, &n, fa, sa)?, // snd pa = sa
+        crate::init::prod::fst_pair(&n, &n, fb, sb)?, // fst pb = fb
+    ];
+    sc.rhs_conv(|t| rewrite_seq(t, &projs)) // = MK (fa+sb)(sa+fb)
+}
+
+/// `⊢ int.neg a = MK sa fa`, where `ra : a = MK fa sa`.
+fn neg_via_components(ra: &Thm) -> Result<Thm> {
+    let (_a, ma) = dest_eq(ra)?;
+    let (fa, sa) = mk_components(&ma)?;
+    Thm::refl(int_neg())?
+        .cong_app(ra.clone())? // int.neg a = int.neg (MK fa sa)
+        .trans(neg_mk(&fa, &sa)?)
+}
+
+/// `⊢ int.sub a b = MK (fa+sb)(sa+fb)`, where `ra : a = MK fa sa`,
+/// `rb : b = MK fb sb`.
+fn sub_via_components(ra: &Thm, rb: &Thm) -> Result<Thm> {
+    let (_a, ma) = dest_eq(ra)?;
+    let (_b, mb) = dest_eq(rb)?;
+    let (fa, sa) = mk_components(&ma)?;
+    let (fb, sb) = mk_components(&mb)?;
+    Thm::refl(int_sub())?
+        .cong_app(ra.clone())?
+        .cong_app(rb.clone())? // int.sub a b = int.sub (MK fa sa)(MK fb sb)
+        .trans(sub_mk(&fa, &sa, &fb, &sb)?)
+}
+
 /// From `MK f s = mk_int(pair f s)`, read off `(f, s)`.
 fn mk_components(mk: &Term) -> Result<(Term, Term)> {
     // mk = abs(λx. int_rel (pair f s) x). Dig out `pair f s`, then f, s.
@@ -562,6 +731,93 @@ fn mk_components(mk: &Term) -> Result<(Term, Term)> {
     let (pair_f, s) = p.as_app().ok_or(Error::NotAnEquation)?;
     let f = pair_f.as_app().ok_or(Error::NotAnEquation)?.1.clone();
     Ok((f, s.clone()))
+}
+
+// ============================================================================
+// Literal coherence — relating `int_lit n` to its `MK` representative
+// ============================================================================
+//
+// Integer literals are builtin `TermKind::Int`, opaque to the quotient. But
+// `int.add`/`int.succ` on literals reduce (`reduce_prim`) AND unfold to the
+// Grothendieck body, and those two must agree — which pins the literal's
+// class. We exploit that to derive `int_lit 0 = MK(0, 0)` (and `int_lit 1 =
+// MK(1, 0)`), the `0`/`1` coherence the unit/inverse axioms need.
+
+/// `⊢ a1 + b2 = b1 + a2` from `eq : ⊢ MK a1 a2 = MK b1 b2` — the converse of
+/// [`rel_of_pairs`], via [`quotient::class_elim`] then the prod projections.
+fn class_eq_to_nat(eq: Thm, a1: &Term, a2: &Term, b1: &Term, b2: &Term) -> Result<Thm> {
+    let n = Type::nat();
+    let (a, b) = (
+        pair_nn(a1.clone(), a2.clone()),
+        pair_nn(b1.clone(), b2.clone()),
+    );
+    let rel = quotient::class_elim(&spec(), &[], &nn(), &int_rel(), &int_rel_refl(), &a, &b, eq)?; // int_rel a b
+    let red = reduce_rel(rel)?; // fst a + snd b = fst b + snd a (fst/snd of pairs stuck)
+    let projs = [
+        crate::init::prod::fst_pair(&n, &n, a1, a2)?,
+        crate::init::prod::snd_pair(&n, &n, b1, b2)?,
+        crate::init::prod::fst_pair(&n, &n, b1, b2)?,
+        crate::init::prod::snd_pair(&n, &n, a1, a2)?,
+    ];
+    let mut acc = red;
+    for proj in projs {
+        acc = acc.rewrite(&proj)?;
+    }
+    Ok(acc) // ⊢ a1 + b2 = b1 + a2
+}
+
+/// `⊢ int_lit 0 = MK(0, 0)` — literal-`0` coherence. `int.add 0 0` reduces to
+/// `0` (`reduce_prim`) and unfolds to `MK(f0+f0)(s0+s0)` (`f0`/`s0` the
+/// components of `0`'s chosen representative); with `recon`'s `0 = MK(f0, s0)`
+/// the two force `f0 = s0`, hence `MK(f0, s0) = MK(0, 0)`.
+fn lit0_mk() -> Result<Thm> {
+    let z = lit(0);
+    let (f0, s0) = (fcomp(&z), scomp(&z));
+    let rp = rep_pair(&z);
+
+    // 0 = mk_int(add_pair rp rp) = MK(f0+f0)(s0+s0): two readings of `0 + 0`.
+    let e_red = add(z.clone(), z.clone()).reduce()?; // int.add 0 0 = 0
+    let e_def = add_defining_eq(&z, &z)?.trans(defs_to_mk_int(&add_pair(&rp, &rp))?)?;
+    let z_eq_big = e_red.sym()?.trans(e_def)?; // 0 = mk_int(add_pair rp rp)
+
+    let rm = recon_mk(&z)?; // 0 = MK(f0, s0)
+    let big_eq = rm.clone().sym()?.trans(z_eq_big)?; // MK(f0, s0) = MK(f0+f0)(s0+s0)
+
+    // f0 + (s0+s0) = (f0+f0) + s0  ⟹  f0 = s0.
+    let nat_eq = class_eq_to_nat(
+        big_eq,
+        &f0,
+        &s0,
+        &nat::add(f0.clone(), f0.clone()),
+        &nat::add(s0.clone(), s0.clone()),
+    )?;
+    let f0_eq_s0 = {
+        let assoc = elim3(nat::add_assoc(), &f0, &s0, &s0)?; // (f0+s0)+s0 = f0+(s0+s0)
+        let step = assoc.trans(nat_eq)?; // (f0+s0)+s0 = (f0+f0)+s0
+        let c1 = elim3(
+            nat::add_cancel(),
+            &nat::add(f0.clone(), s0.clone()),
+            &nat::add(f0.clone(), f0.clone()),
+            &s0,
+        )?
+        .imp_elim(step)?; // f0+s0 = f0+f0
+        let step2 = nat::add_comm()
+            .all_elim(s0.clone())?
+            .all_elim(f0.clone())?
+            .trans(c1)?; // s0+f0 = f0+f0
+        elim3(nat::add_cancel(), &s0, &f0, &f0)?
+            .imp_elim(step2)?
+            .sym()? // f0 = s0
+    };
+
+    // MK(f0, s0) = MK(0, 0): int_rel via f0 + 0 = 0 + s0.
+    let g = nat::add_zero()
+        .all_elim(f0.clone())? // f0 + 0 = f0
+        .trans(f0_eq_s0)? // = s0
+        .trans(nat::add_base().all_elim(s0.clone())?.sym()?)?; // = 0 + s0
+    let rel = rel_of_pairs(&f0, &s0, &nat::zero(), &nat::zero(), g)?;
+    let mk_eq = quotient::class_intro(&spec(), &[], &nn(), &int_rel_symm(), &int_rel_trans(), rel)?;
+    rm.trans(mk_eq) // ⊢ 0 = MK(0, 0)
 }
 
 // ============================================================================
@@ -640,22 +896,50 @@ fn elim3(thm: Thm, a: &Term, b: &Term, c: &Term) -> Result<Thm> {
         .all_elim(c.clone())
 }
 
-/// `⊢ ∀a. a + 0 = a`.
-pub fn add_zero() -> Thm {
-    let a = var("a");
-    let eq = add(a.clone(), lit(0))
-        .equals(a)
-        .expect("add_zero: a + 0 = a");
-    axiom(forall_int(&["a"], eq))
+cached_thm! {
+    /// `⊢ ∀a. a + 0 = a` — **proved**. `0 = MK(0,0)` ([`lit0_mk`]), so
+    /// `a + 0 = MK(fa+0)(sa+0) = MK(fa)(sa) = a` by `nat::add_zero` on each
+    /// component.
+    pub fn add_zero() -> Result<Thm> {
+        let a = var("a");
+        let ra = recon_mk(&a)?; // a = MK(fa, sa)
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let lhs = add_via_components(&ra, &lit0_mk()?)?; // a + 0 = MK(fa+0)(sa+0)
+        let bridge = mkfs_cong(
+            nat::add_zero().all_elim(fa.clone())?, // fa+0 = fa
+            nat::add_zero().all_elim(sa.clone())?, // sa+0 = sa
+        )?;
+        lhs.trans(bridge)?.trans(ra.sym()?)?.all_intro("a", int())
+    }
 }
 
-/// `⊢ ∀a. a + (-a) = 0` — additive inverse.
-pub fn add_neg() -> Thm {
-    let a = var("a");
-    let eq = add(a.clone(), neg(a))
-        .equals(lit(0))
-        .expect("add_neg: a + (-a) = 0");
-    axiom(forall_int(&["a"], eq))
+cached_thm! {
+    /// `⊢ ∀a. a + (-a) = 0` — **proved** (additive inverse). `-a = MK(sa,
+    /// fa)`, so `a + (-a) = MK(fa+sa)(sa+fa)`, which is `~ (0,0)` since
+    /// `(fa+sa)+0 = 0+(sa+fa)` by `nat::add_comm`.
+    pub fn add_neg() -> Result<Thm> {
+        let a = var("a");
+        let ra = recon_mk(&a)?; // a = MK(fa, sa)
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let neg_a = neg_via_components(&ra)?; // -a = MK(sa, fa)
+        let lhs = add_via_components(&ra, &neg_a)?; // a + (-a) = MK(fa+sa)(sa+fa)
+        // MK(fa+sa)(sa+fa) = MK(0,0): (fa+sa)+0 = 0+(sa+fa).
+        let g = nat::add_zero()
+            .all_elim(nat::add(fa.clone(), sa.clone()))? // (fa+sa)+0 = fa+sa
+            .trans(nat::add_comm().all_elim(fa.clone())?.all_elim(sa.clone())?)? // = sa+fa
+            .trans(nat::add_base().all_elim(nat::add(sa.clone(), fa.clone()))?.sym()?)?; // = 0+(sa+fa)
+        let rel = rel_of_pairs(
+            &nat::add(fa.clone(), sa.clone()),
+            &nat::add(sa.clone(), fa.clone()),
+            &nat::zero(),
+            &nat::zero(),
+            g,
+        )?;
+        let to_zero = quotient::class_intro(&spec(), &[], &nn(), &int_rel_symm(), &int_rel_trans(), rel)?;
+        lhs.trans(to_zero)?
+            .trans(lit0_mk()?.sym()?)? // MK(0,0) = 0
+            .all_intro("a", int())
+    }
 }
 
 cached_thm! {
@@ -731,14 +1015,23 @@ pub fn distrib() -> Thm {
     axiom(forall_int(&["a", "b", "c"], eq))
 }
 
-/// `⊢ ∀a b. a - b = a + (-b)` — subtraction by negation.
-pub fn sub_def() -> Thm {
-    let (a, b) = (var("a"), var("b"));
-    let sub = Term::app(Term::app(int_sub(), a.clone()), b.clone());
-    let eq = sub
-        .equals(add(a, neg(b)))
-        .expect("sub_def: a - b = a + (-b)");
-    axiom(forall_int(&["a", "b"], eq))
+cached_thm! {
+    /// `⊢ ∀a b. a - b = a + (-b)` — **proved**. Both sides land on the same
+    /// representative pair `(fa+sb, sa+fb)`: `int.sub`'s Grothendieck formula
+    /// `(a−b)−(c−d) = (a+d)−(b+c)` *is* `int.add` of `a` with the swapped
+    /// `int.neg b`, so the `MK` components coincide on the nose.
+    pub fn sub_def() -> Result<Thm> {
+        let (a, b) = (var("a"), var("b"));
+        let (ra, rb) = (recon_mk(&a)?, recon_mk(&b)?);
+        // a - b = MK (fa+sb)(sa+fb)
+        let lhs = sub_via_components(&ra, &rb)?;
+        // a + (-b) = MK (fa+sb)(sa+fb)  (neg b = MK sb fb, then add)
+        let neg_b = neg_via_components(&rb)?;
+        let rhs = add_via_components(&ra, &neg_b)?;
+        lhs.trans(rhs.sym()?)?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
 }
 
 // ============================================================================
@@ -825,13 +1118,10 @@ mod tests {
     /// The full postulate set — used to assert the audit-trail invariant.
     fn all() -> Vec<Thm> {
         vec![
-            add_zero(),
-            add_neg(),
             mul_assoc(),
             mul_one(),
             mul_zero(),
             distrib(),
-            sub_def(),
             lt_irrefl(),
             lt_trans(),
             lt_trichotomy(),
@@ -905,6 +1195,42 @@ mod tests {
             .equals(add(a, add(b, c)))
             .unwrap();
         assert_eq!(inst.concl(), &expected);
+    }
+
+    #[test]
+    fn sub_def_is_a_genuine_theorem() {
+        let thm = sub_def();
+        assert!(
+            thm.hyps().is_empty(),
+            "int::sub_def is proved, not postulated"
+        );
+        let (a, b) = (var("a"), var("b"));
+        let inst = thm
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap();
+        let sub = Term::app(Term::app(int_sub(), a.clone()), b.clone());
+        let expected = sub.equals(add(a, neg(b))).unwrap();
+        assert_eq!(inst.concl(), &expected);
+    }
+
+    #[test]
+    fn additive_unit_and_inverse_are_genuine() {
+        // add_zero: ∀a. a + 0 = a ; add_neg: ∀a. a + (-a) = 0.
+        let a = var("a");
+        let z = add_zero();
+        assert!(z.hyps().is_empty(), "int::add_zero is proved");
+        assert_eq!(
+            z.all_elim(a.clone()).unwrap().concl(),
+            &add(a.clone(), lit(0)).equals(a.clone()).unwrap()
+        );
+        let ninv = add_neg();
+        assert!(ninv.hyps().is_empty(), "int::add_neg is proved");
+        assert_eq!(
+            ninv.all_elim(a.clone()).unwrap().concl(),
+            &add(a.clone(), neg(a.clone())).equals(lit(0)).unwrap()
+        );
     }
 
     #[test]

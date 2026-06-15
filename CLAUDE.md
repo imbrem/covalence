@@ -67,7 +67,7 @@ The docs were pared down to the **current design only** (the old
 multi-design docs — `ARCHITECTURE.md`, `AGENTS.md`, the arena/egraph
 prover docs, `docs/design/proposals/*`, the old `MVP_DESIGN.md` /
 `plan.md` — were deleted; recover any of them from the
-`backup/pre-hol-cleanup` branch if needed). The four that remain:
+`backup/pre-hol-cleanup` branch if needed). The four canonical docs:
 
 - **[`docs/VISION.md`](./docs/VISION.md)** — the system vision
   (metatheory-as-default, scoped truths, the mirror principle, stores
@@ -77,12 +77,28 @@ prover docs, `docs/design/proposals/*`, the old `MVP_DESIGN.md` /
   catalogue (nat/int/rat/real/bytes/list/stream/option/result, → f32/f64).
 - **[`docs/kernel-design.md`](./docs/kernel-design.md)** — canonical
   reference for `covalence-core` (the kernel TCB): term/type
-  representation, the inference-rule surface, the three non-computational
+  representation, the inference-rule surface, the four non-computational
   primitive rules, the `defs/` catalogue. **Read first if touching the
   kernel.**
 - **[`docs/roadmap.md`](./docs/roadmap.md)** — what's next: finalize
   the `defs/` operations, the `covalence-kernel` re-export façade, and
   wiring `covalence-core` proofs back through the shell.
+
+Plus three **design sketches** for the (not-yet-built) authoring layer
+*above* the kernel — aspirational, clearly marked as such:
+
+- **[`docs/surface-syntax.md`](./docs/surface-syntax.md)** — high-level
+  syntax for writing theories, definitions, and proofs that elaborate
+  down to kernel objects (the long-term replacement for hand-written
+  `defs/`/`init/` Rust); declarative meaning with pluggable computation.
+- **[`docs/observers.md`](./docs/observers.md)** — how untrusted code
+  feeds facts into the kernel's HOL model without growing the TCB
+  (observer substrate exists today: `Observer` + `ObsEq`/`ObsTrue`/`ObsImp`;
+  the validator/precondition layer is proposed).
+- **[`docs/metatheory.md`](./docs/metatheory.md)** — theories,
+  derivations, and models as first-class objects inside HOL; soundness
+  theorems, theory transport, and the metavariable-layering decisions
+  (two layers + HOL Light now; schematic-FOL framework and HOL-ω later).
 
 Subsystem skills (auto-loaded when relevant): **wasm-guide**,
 **vscode-extension**, **web-server**.

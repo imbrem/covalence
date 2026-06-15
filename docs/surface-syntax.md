@@ -95,6 +95,13 @@ makes "the query planner can be an LLM" a safe thing to say out loud.
 
 ## 2. Two artifacts: **specs** and **definitions**
 
+> **Terminology.** "Spec" here means a *logical specification* — a set of
+> axioms/constraints, possibly with many models. This is **not** the
+> kernel's `TypeSpec` / `TermSpec` (the content-addressed handle types in
+> `covalence-core`, see [`type-hierarchy.md`](./type-hierarchy.md)); those
+> are *implementations*. A surface **definition** is what elaborates to a
+> `TypeSpec`/`TermSpec`; a surface **spec** elaborates to axioms.
+
 The single most important distinction in the surface language:
 
 | | **Spec** (loose) | **Definition** (tight) |
@@ -224,7 +231,7 @@ the kernel's carrier↔wrapper coercions and the catalogue's dotted names.
 | `(#tydecl (option 'a #ty))` | `Canonical::Option` shape | — |
 | `(#def option (newtype (coprod 'a unit)))` | `TypeSpec::newtype(Canonical::Option, coprod(α, unit))` | `(spec option (tfree a))` |
 | `(#def some (lam a (abs (inl a))))` | `poly_let_term!{ some_spec, some(alpha), … some_body() }` | `(term-spec some (tfree a))` w/ body |
-| `(#clause (case (some a) b f => f a))` | a `cached_thm!` in `init/option.rs` | `(thm (hyps) (concl (eq …)))` |
+| `(#clause (case (some a) b f => f a))` | a proof in `init/option.rs` (e.g. `some_ne_none` and the recursor lemmas) | `(thm (hyps) (concl (eq …)))` |
 | `(#thm … (by …))` | hand-threaded `Thm::trans`/`cong_arg` | `(thm (hyps …) (concl …))` |
 
 ---
@@ -284,8 +291,9 @@ The endgame, deliberately deferred:
 
 1. Each directive — every `#def`, `#thm`, `#clause`, `#tydecl` — is
    serialized to its canonical low-level S-expression and **hashed**
-   (BLAKE3, via `covalence-hash`/`O256`, the scheme already used for
-   theorems in `covalence-hol`).
+   (BLAKE3, via `covalence-hash`/`O256`, the scheme already used to
+   content-hash terms and types in `covalence-hol` — see
+   `covalence-hol/src/hash.rs`).
 2. References between fragments are **by hash**, not by name. `#import`
    resolves to a content-address; a theory is a *graph of fragments*.
 3. Identical definitions deduplicate; a proof is reusable across any

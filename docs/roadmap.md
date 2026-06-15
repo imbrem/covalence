@@ -3,7 +3,10 @@
 This is the "what's next" doc. For the vision see
 [`VISION.md`](./VISION.md); for the kernel TCB see
 [`kernel-design.md`](./kernel-design.md); for the type catalogue and
-equality hierarchy see [`type-hierarchy.md`](./type-hierarchy.md).
+equality hierarchy see [`type-hierarchy.md`](./type-hierarchy.md). For
+the (not-yet-built) authoring layer see the design sketches:
+[`surface-syntax.md`](./surface-syntax.md),
+[`metatheory.md`](./metatheory.md), [`observers.md`](./observers.md).
 
 ## Backup branch
 

@@ -11,8 +11,20 @@
 > metatheory this realizes — "get rid of the oracles" by proving instead
 > of trusting), [`surface-syntax.md`](./surface-syntax.md) (how the
 > facts an observer asserts are written), [`kernel-design.md`](./kernel-design.md)
-> (the `obs_eq`/`obs_true`/`obs_imp` rules and ε-model this is sound
+> §5.6 (the `obs_eq`/`obs_true`/`obs_imp` rules and ε-model this is sound
 > under).
+
+> **What exists today vs. what is proposed.** The kernel already
+> implements the **observer substrate** (`crates/covalence-core/src/term/observer.rs`,
+> `kernel-design.md` §5.6): the marker `trait Observer`, the per-type
+> *policy* traits `ObsEq`/`ObsTrue`/`ObsImp`, the type-erased `Object`
+> leaf compared by `Arc` identity, and the kernel rules
+> `Thm::obs_eq`/`obs_true`/`obs_imp` — all sound under the parametric
+> ε-model, none in the TCB. **Everything labelled *validator* below — the
+> `Validator` trait, the precondition set, the frozen `(M, P)` state, and
+> validator composition — is proposed design, not yet code.** Where a
+> proposed concept already has a concrete realization in the kernel, the
+> text says so.
 
 ---
 
@@ -52,21 +64,28 @@ Two roles, with a sharp trust boundary between them:
 
 - **Observer** — *untrusted*. Can **only assert** facts; it can never
   deny one. It is fed arbitrary, possibly interactive, witnesses by the
-  user and turns them into asserted facts.
+  user and turns them into asserted facts. **This role exists today:** in
+  the kernel an observer is *any* Rust type (the marker `trait Observer`
+  has a blanket impl for `Any + Send + Sync + Debug`), wrapped in a
+  type-erased `Object` leaf that the kernel compares only by `Arc`
+  pointer identity — so a misbehaving observer cannot corrupt kernel
+  invariants.
+
+- **Validator** — *trusted, but only for one observer type*. It decides
+  which asserted facts are admitted. **This role exists today, in a
+  specific form:** the per-observer-type **policy traits**
+  `ObsEq`/`ObsTrue`/`ObsImp` (in `observer.rs`) *are* the validator — one
+  policy per Rust observer type, deciding which observations the kernel
+  rules `Thm::obs_eq`/`obs_true`/`obs_imp` will mint. Crucially, these
+  policies are **not in the TCB**: any answer they return is sound under
+  the parametric ε-model (`kernel-design.md` §5.6), because each Rust
+  observer type gets an independent ε-family in the model. The *richer*
+  validator — one that also manages a model, a precondition set, and
+  frozen flags (§3) — is the **proposed** extension:
 
   ```rust
-  trait Observer {
-      // an observer can't say something is FALSE, only that it's true.
-      fn assert(&self, fact: Fact);
-  }
-  ```
-
-- **Validator** — *trusted, but only for one observer type*. It is the
-  gatekeeper that decides which asserted facts are admitted, what gets
-  added to the model, and what becomes a precondition. Each kernel
-  *extension* is a validator.
-
-  ```rust
+  // PROPOSED — not yet in the codebase. The realized core is the
+  // ObsEq / ObsTrue / ObsImp policy traits in observer.rs.
   trait Validator<O: Observer> {
       fn register(&mut self, fact: Fact);          // observer pushes a fact
       fn validate(&self, facts: &Facts) -> bool;   // trusted admission check
@@ -80,12 +99,15 @@ The pipeline is one-directional:
   (arbitrary) (untrusted)  (trusted-for-O)  (scoped assumptions)
 ```
 
-This is the same shape as the existing kernel **observation system**:
-a `System`-typed Rust observer, mode instances, and an *opt-in*
-untrusted-identity axiom — with **no computational kernel rule** added.
-The kernel already exposes `obs_eq`/`obs_true`/`obs_imp`, which are
-"sound under a parametric ε-model" (see CLAUDE.md / `kernel-design.md`).
-The validator is what decides *which* observations are sound to admit.
+In today's kernel that pipeline is: an arbitrary Rust value (the
+witness) becomes an `Object`/`Obs` leaf (the observer); its
+`ObsEq`/`ObsTrue`/`ObsImp` policy (the validator) gates the `Thm::obs_*`
+rules; and **facts that relate an observation to an ordinary term enter
+via `Thm::assume`** — as explicit meaning axioms that stay visible in
+every dependent theorem's hypotheses. Those hypotheses *are* the
+"scoped assumptions" at the end of the pipeline, and the seed of the
+precondition set in §3. There is deliberately **no kernel rule** that
+silently asserts "this observation equals this real term."
 
 ---
 
@@ -109,7 +131,11 @@ clearly bounded soundness story:
   ```
 
   i.e. anything proved is only proved *under* the preconditions the
-  observer needed — the assumptions never silently vanish.
+  observer needed — the assumptions never silently vanish. Today this is
+  exactly what `Thm::assume` gives: an accepted-but-unverified fact is an
+  added hypothesis, carried in the conclusion's hypothesis set until
+  discharged. The proposed precondition set `P` is the first-class,
+  per-validator aggregation of those hypotheses.
 
 **On the model**, a validator may:
 
@@ -147,6 +173,8 @@ claim. Concrete instances:
   model* (swapping executors).
 
   ```rust
+  // PROPOSED / illustrative — sketches a validator on top of the
+  // existing ObsEq/ObsTrue/ObsImp policy substrate.
   impl ITrustTheWasmSpec<MyTrustedWasmExecutor> {
       fn validate(&self, facts: &Facts) -> bool {
           // admit anything following from the spec under this executor

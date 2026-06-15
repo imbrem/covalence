@@ -4,6 +4,13 @@
 > 2026-06-13 (branch `kernel-design`). Supersedes
 > [`docs/design/proposals/stacked-pure-hol/`](./design/proposals/stacked-pure-hol/),
 > which records the historical Pure→HOL evolution.
+>
+> The (not-yet-built) authoring layer *above* this kernel — surface
+> syntax, untrusted observers, and theories/derivations as first-class
+> objects — is described in [`surface-syntax.md`](./surface-syntax.md),
+> [`observers.md`](./observers.md), and [`metatheory.md`](./metatheory.md).
+> Those are design sketches; this doc is the authority on the kernel TCB
+> they elaborate down to.
 
 ## 1. What it is
 

@@ -379,8 +379,12 @@ special trust is needed.
 | `stream.rs`     | `stream`                                                 |
 | `result.rs`     | `result`                                                 |
 | `rat.rs`        | `rat := fieldOfFractions int`                            |
-| `real.rs`       | `real := { rat } close ratLe`                            |
 | `floats.rs`     | `f32`, `f64`                                              |
+
+(The reals — `real := { rat } close ratLe` — are **not** in the kernel
+catalogue: they are a derived `close`-subtype defined in the shell
+[`covalence-hol::init::real`], since the float substrate needs only the
+rationals.)
 
 The catalogue is the binary-data substrate the kernel was designed
 for: every TypeSpec resolves into a content-addressable shape, and

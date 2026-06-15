@@ -50,10 +50,10 @@ mod tests {
         let sub_def_stmt = r.forall("a", r.forall("b", sub_def_body));
         assert_eq!(r.concl(&r.sub_def()), sub_def_stmt);
 
-        // Postulated → each carries itself as a hypothesis (the audit trail).
-        for ax in [r.add_neg(), r.sub_def()] {
-            assert!(ax.hyps().iter().any(|h| h == ax.concl()));
-        }
+        // `add_neg` and `sub_def` are now genuine theorems (proved through
+        // the quotient), so both are hypothesis-free.
+        assert!(r.add_neg().hyps().is_empty());
+        assert!(r.sub_def().hyps().is_empty());
     }
 
     /// A generic ring routine — `⊢ a + (-a) = 0` specialised at the carrier's

@@ -49,7 +49,7 @@
 use covalence_core::defs::TypeSpec;
 use covalence_core::{Error, Result, Term, Thm, Type, subst};
 
-use crate::init::ext::ThmExt;
+use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic;
 
 /// `λx:base. rel a x` — the equivalence class of `a` as a subset of
@@ -295,6 +295,138 @@ pub fn class_elim(
     rel_eq.sym()?.eq_mp(rel_bb) // ⊢ rel a b
 }
 
+/// **Reconstruction (quotient induction base).** `⊢ a = mk_class(rep_class
+/// a)` for *any* quotient element `a : spec args` — every inhabitant of the
+/// junk-free quotient is the class of (a representative drawn from) itself.
+/// This is the keystone for the nested-op `int` axioms: it lets a bound
+/// `int` variable be replaced by `mk_class` of a `nat×nat` pair, after which
+/// the operation computation rules collapse to `nat` algebra.
+///
+/// `base_witness : base` supplies non-emptiness of the carving image
+/// predicate `P = λS. ∃z. S = classOf z` (any base element works; its class
+/// witnesses `∃S. P S`, killing the `¬∃` escape disjunct of
+/// [`Thm::spec_rep_abs_back`]). `refl`/`symm`/`trans` are the equivalence
+/// properties of `rel` (as the usual `∀`-theorems).
+///
+/// Derivation: `rep a` satisfies `P` (the back rule + non-emptiness), so
+/// `rep a = classOf z` for some `z`. The chosen representative `eps =
+/// rep_class a = ε(λp. rep a p)` then lies in that class (`rel z eps`, by
+/// `select_ax` and `rel z z`), so `class_intro` gives `mk_class z = mk_class
+/// eps`; and `mk_class z = abs(classOf z) = abs(rep a) = a`.
+#[allow(clippy::too_many_arguments)]
+pub fn recon(
+    spec: &TypeSpec,
+    args: &[Type],
+    base: &Type,
+    rel: &Term,
+    refl: &Thm,
+    symm: &Thm,
+    trans: &Thm,
+    base_witness: &Term,
+    a: &Term,
+) -> Result<Thm> {
+    let abs = Term::spec_abs(spec.clone(), args.to_vec());
+    let rep = Term::spec_rep(spec.clone(), args.to_vec());
+    let rep_a = Term::app(rep.clone(), a.clone());
+
+    // ⊢ abs(rep a) = a.
+    let abs_rep = Thm::spec_abs_rep(spec.clone(), args.to_vec(), a.clone())?;
+
+    // ⊢ P(rep a) ∨ ¬∃S. P S — back direction at `rep a`, whose premise
+    // `rep(abs(rep a)) = rep a` is `abs_rep` pushed under `rep`.
+    let back = Thm::spec_rep_abs_back(spec.clone(), args.to_vec(), rep_a.clone())?;
+    let prem = abs_rep.clone().cong_arg(rep.clone())?; // rep(abs(rep a)) = rep a
+    let disj = back.imp_elim(prem)?;
+
+    // Peel the two disjuncts `P(rep a)` and `¬∃S. P S` off the conclusion.
+    let (p_rep_a_tm, notex) = {
+        let (or_l, notex) = disj
+            .concl()
+            .as_app()
+            .ok_or_else(|| Error::ConnectiveRule("recon: disjunction shape".into()))?;
+        let (_or, l) = or_l
+            .as_app()
+            .ok_or_else(|| Error::ConnectiveRule("recon: disjunction shape".into()))?;
+        (l.clone(), notex.clone())
+    };
+
+    // ⊢ ∃S. P S, witnessed by `classOf(base_witness)`. Build it against the
+    // exact `λS. P S` inside `notex` so the right branch's `not_elim` lines up.
+    let exists_p = {
+        let inner = notex
+            .as_app()
+            .ok_or_else(|| Error::ConnectiveRule("recon: ¬∃ shape".into()))?
+            .1; // exists_op (λS. P S)
+        let eta_pred = inner
+            .as_app()
+            .ok_or_else(|| Error::ConnectiveRule("recon: ∃ shape".into()))?
+            .1
+            .clone(); // λS. P S
+        let cow = class_of(base, rel, base_witness);
+        let ph = quot_pred_holds(spec, base, rel, base_witness)?; // ⊢ P(cow)
+        let proof = Thm::beta_conv(Term::app(eta_pred.clone(), cow.clone()))?
+            .sym()?
+            .eq_mp(ph)?; // ⊢ (λS. P S) cow
+        logic::exists_intro(eta_pred, cow, proof)?
+    };
+
+    // ⊢ P(rep a): identity on the left, ex-falso (¬∃ vs ∃) on the right.
+    let p_rep_a = {
+        let left = Thm::assume(p_rep_a_tm.clone())?.imp_intro(&p_rep_a_tm)?;
+        let right = Thm::assume(notex.clone())?
+            .not_elim(exists_p)?
+            .false_elim(p_rep_a_tm.clone())?
+            .imp_intro(&notex)?;
+        disj.or_elim(left, right)?
+    };
+
+    // ⊢ ∃z. rep a = classOf z — `P(rep a)` β-reduced.
+    let exists_z = Thm::beta_conv(p_rep_a_tm)?.eq_mp(p_rep_a)?;
+    let pred_z = exists_z
+        .concl()
+        .as_app()
+        .ok_or_else(|| Error::ConnectiveRule("recon: ∃z shape".into()))?
+        .1
+        .clone(); // λz. rep a = classOf z
+
+    // step: ⊢ ∀z. (rep a = classOf z) ⟹ (a = mk_class(rep_class a)).
+    let eps = rep_class(spec, args, base, a); // ε(λp. rep a p)
+    let phi = rep_pred(spec, args, base, a); // λp. (rep a) p
+    let goal_rhs = mk_class(spec, args, base, rel, &eps);
+    let z = Term::free("__recon_z", base.clone());
+    // `exists_elim` reads the antecedent as the *un-reduced* `pred_z z`; assume
+    // that and β-reduce to the underlying `rep a = classOf z` for the work.
+    let app_tm = Term::app(pred_z.clone(), z.clone());
+    let h = Thm::beta_conv(app_tm.clone())?.eq_mp(Thm::assume(app_tm.clone())?)?; // {pred_z z} ⊢ rep a = classOf z
+    let coz = class_of(base, rel, &z); // classOf z
+
+    // ⊢ (rep a) z ← (classOf z) z ← rel z z.
+    let rel_zz = inst3(refl, &[&z])?;
+    let coz_z = Thm::beta_conv(Term::app(coz.clone(), z.clone()))?
+        .sym()?
+        .eq_mp(rel_zz)?; // ⊢ (classOf z) z
+    let repa_z = h.clone().cong_fn(z.clone())?.sym()?.eq_mp(coz_z)?; // ⊢ (rep a) z
+    // ⊢ φ z, then Hilbert choice ⟹ φ eps.
+    let phi_z = Thm::beta_conv(Term::app(phi.clone(), z.clone()))?
+        .sym()?
+        .eq_mp(repa_z)?;
+    let phi_eps = Thm::select_ax(phi.clone(), z.clone())?.imp_elim(phi_z)?;
+    let repa_eps = Thm::beta_conv(Term::app(phi.clone(), eps.clone()))?.eq_mp(phi_eps)?; // ⊢ (rep a) eps
+    // ⊢ rel z eps, via `h`.
+    let coz_eps = h.clone().cong_fn(eps.clone())?.eq_mp(repa_eps)?; // ⊢ (classOf z) eps
+    let rel_z_eps = Thm::beta_conv(Term::app(coz, eps))?.eq_mp(coz_eps)?; // ⊢ rel z eps
+    // class_intro ⟹ ⊢ mk_class z = mk_class eps.
+    let classes = class_intro(spec, args, base, symm, trans, rel_z_eps)?;
+    // ⊢ a = mk_class eps.
+    let mkz_eq_a = h.sym()?.cong_arg(abs)?.trans(abs_rep)?; // abs(classOf z) = a
+    let body = mkz_eq_a.sym()?.trans(classes)?; // {h} ⊢ a = mk_class eps
+    let step = body
+        .imp_intro(&app_tm)?
+        .all_intro("__recon_z", base.clone())?;
+
+    logic::exists_elim(exists_z, a.clone().equals(goal_rhs)?, step)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,5 +547,32 @@ mod tests {
         let back = class_elim(&spec, &[], &base, &rel, &eq_refl(), &a, &b, lifted).unwrap();
         assert_eq!(back.concl(), &eq(&a, &b));
         assert!(back.hyps().iter().any(|h| h == &eq(&a, &b)));
+    }
+
+    #[test]
+    fn recon_reconstructs_an_element_as_its_class() {
+        let (spec, rel, base) = nat_eq_quot();
+        let a = Term::free("a", Type::spec(spec.clone(), vec![])); // a quotient element
+        let bw = super::super::nat::zero(); // any base element witnesses non-emptiness
+        let rt = recon(
+            &spec,
+            &[],
+            &base,
+            &rel,
+            &eq_refl(),
+            &eq_symm(),
+            &eq_trans(),
+            &bw,
+            &a,
+        )
+        .expect("recon on nat-eq quotient");
+        // ⊢ a = mk_class(rep_class a), hypothesis-free.
+        assert!(rt.hyps().is_empty(), "recon is genuine");
+        let (l, r) = rt.concl().as_eq().expect("recon yields an equation");
+        assert_eq!(l, &a);
+        assert_eq!(
+            r,
+            &mk_class(&spec, &[], &base, &rel, &rep_class(&spec, &[], &base, &a))
+        );
     }
 }

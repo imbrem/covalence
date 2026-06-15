@@ -16,6 +16,11 @@
 //! 3. **Term/type serialisation** ([`hash`], [`sexp`]) — content
 //!    hashing and the canonical S-expression syntax.
 //!
+//! 4. **Surface syntax** ([`surface`]) — a *design sketch* of the
+//!    high-level "generalized Haskell" authoring language (pure
+//!    S-expressions, `#`-headed builtins) that will elaborate down to the
+//!    kernel objects. See `docs/surface-syntax.md`.
+//!
 //! Nothing in this crate is consumed by `covalence-core`'s inference
 //! rules.
 
@@ -29,6 +34,7 @@ pub mod proofs;
 pub mod ring;
 pub mod semiring;
 pub mod sexp;
+pub mod surface;
 pub mod traits;
 pub mod types;
 

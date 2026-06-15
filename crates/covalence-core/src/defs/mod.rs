@@ -99,7 +99,6 @@ mod option;
 mod prod;
 mod quotient;
 mod rat;
-mod real;
 mod rel;
 mod result;
 mod set;
@@ -167,7 +166,6 @@ pub use prod::{
     snd, snd_spec,
 };
 pub use rat::{rat_le, rat_le_spec, rat_spec, rat_ty};
-pub use real::{real_spec, real_ty};
 pub use rel::{
     part, part_spec, per, per_spec, pord, pord_spec, preord, preord_spec, rel, rel_compose,
     rel_compose_spec, rel_converse, rel_converse_spec, rel_deterministic, rel_deterministic_spec,
@@ -576,11 +574,9 @@ mod tests {
     }
 
     #[test]
-    fn rat_real_are_zero_ary_types() {
+    fn rat_is_a_zero_ary_type() {
         let r = rat_ty();
         assert!(matches!(r.kind(), TypeKind::Spec(_, args) if args.is_empty()));
-        let re = real_ty();
-        assert!(matches!(re.kind(), TypeKind::Spec(_, args) if args.is_empty()));
     }
 
     #[test]
@@ -592,28 +588,12 @@ mod tests {
     }
 
     #[test]
-    fn real_carrier_is_rat_to_bool() {
-        // `real := { rat } close ratLe` ⟹ carrier is `rat → bool`.
-        let spec = real_spec();
-        assert_eq!(spec.ty().cloned(), Some(Type::fun(rat_ty(), Type::bool())),);
-    }
-
-    #[test]
-    fn real_selector_well_typed() {
-        // Selector predicate is `(rat → bool) → bool` — a predicate
-        // on subsets of `rat`.
-        let spec = real_spec();
-        let tm = spec.tm().expect("real has a selector predicate");
-        let ty = tm.type_of().expect("real selector type-checks");
-        let expected = Type::fun(Type::fun(rat_ty(), Type::bool()), Type::bool());
-        assert_eq!(ty, expected);
-    }
-
-    #[test]
     fn close_spec_factory_well_typed() {
+        // `close` over `int`/`intLe` — a stand-in for any cut-style subtype
+        // (the reals themselves now live in `covalence-hol::init::real`).
         let car = Type::int();
         let pred = int_le();
-        let handle = TypeSpec::close(Canonical::Real, car, pred);
+        let handle = TypeSpec::close(Canonical::Rat, car, pred);
         let tm = handle.tm().expect("close: has tm");
         let ty = tm.type_of().expect("close predicate type-of");
         let expected = Type::fun(Type::fun(Type::int(), Type::bool()), Type::bool());
@@ -761,7 +741,7 @@ mod tests {
         assert_eq!(Canonical::Set.label(), "set");
         assert_eq!(Canonical::Coprod.label(), "coprod");
         assert_eq!(Canonical::Option.label(), "option");
-        assert_eq!(Canonical::Real.label(), "real");
+        assert_eq!(Canonical::Rat.label(), "rat");
     }
 
     #[test]

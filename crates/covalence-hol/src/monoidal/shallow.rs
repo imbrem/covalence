@@ -109,7 +109,10 @@ impl Monoidal for Hol {
     }
 
     fn concl(&self, proof: &Thm) -> (Term, Term) {
-        let (l, r) = proof.concl().as_eq().expect("a monoidal proof is an equation");
+        let (l, r) = proof
+            .concl()
+            .as_eq()
+            .expect("a monoidal proof is an equation");
         (l.clone(), r.clone())
     }
 
@@ -147,8 +150,7 @@ impl Monoidal for Hol {
         let cp = self.copair_term(&f, &g)?;
         let lhs = cat::comp(&cp, &self.inr(a.clone(), b.clone()))?;
         let y = Term::free("__cpy", b.clone());
-        let app_eq = cat::comp_beta(&lhs, &y)?
-            .trans(coprod::case_inr(&a, &b, &c, &f, &g, &y)?)?;
+        let app_eq = cat::comp_beta(&lhs, &y)?.trans(coprod::case_inr(&a, &b, &c, &f, &g, &y)?)?;
         cat::fun_ext(app_eq, "__cpy", &b)
     }
 
@@ -277,10 +279,11 @@ mod tests {
             Type::fun(h.oplus(a.clone(), b.clone()), h.oplus(b.clone(), a.clone()))
         );
         let nabla = h.codiag(a.clone()).unwrap();
-        assert_eq!(nabla.type_of().unwrap(), Type::fun(h.oplus(a.clone(), a.clone()), a.clone()));
-        let bi = h
-            .bimap(h.id(a.clone()), h.id(b.clone()))
-            .unwrap();
+        assert_eq!(
+            nabla.type_of().unwrap(),
+            Type::fun(h.oplus(a.clone(), a.clone()), a.clone())
+        );
+        let bi = h.bimap(h.id(a.clone()), h.id(b.clone())).unwrap();
         assert_eq!(
             bi.type_of().unwrap(),
             Type::fun(h.oplus(a.clone(), b.clone()), h.oplus(a, b))

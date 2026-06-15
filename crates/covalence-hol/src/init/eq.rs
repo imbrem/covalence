@@ -139,7 +139,9 @@ pub fn beta_nf(t: Term) -> Thm {
 /// β-reduced body into the *applied* form `nat_induct` / `exists_*`
 /// consume.
 pub fn beta_expand(f: &Term, arg: Term, body: Thm) -> Result<Thm> {
-    Thm::beta_conv(Term::app(f.clone(), arg))?.sym()?.eq_mp(body)
+    Thm::beta_conv(Term::app(f.clone(), arg))?
+        .sym()?
+        .eq_mp(body)
 }
 
 /// `⊢ body` from `⊢ f arg`, β-contracting the single top redex `f arg`

@@ -144,7 +144,11 @@ pub fn finite_const_none(alpha: &Type) -> Result<Thm> {
 /// recover `finite (rep xs)` for an arbitrary `xs : list α` — the bridge
 /// to the `cons`-side computations once they land.
 pub fn finite_nonempty(alpha: &Type) -> Result<Thm> {
-    exists_intro(finite(alpha.clone()), const_none(alpha), finite_const_none(alpha)?)
+    exists_intro(
+        finite(alpha.clone()),
+        const_none(alpha),
+        finite_const_none(alpha)?,
+    )
 }
 
 // ============================================================================
@@ -240,7 +244,10 @@ mod tests {
     #[test]
     fn finite_const_none_is_genuine() {
         let thm = finite_const_none(&alpha()).unwrap();
-        assert!(thm.hyps().is_empty(), "finite_const_none is proved, not postulated");
+        assert!(
+            thm.hyps().is_empty(),
+            "finite_const_none is proved, not postulated"
+        );
         assert!(thm.has_no_obs(), "finite_const_none is oracle-free");
         let expected = Term::app(finite(alpha()), const_none(&alpha()));
         assert_eq!(thm.concl(), &expected);

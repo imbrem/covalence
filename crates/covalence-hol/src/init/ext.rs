@@ -246,12 +246,7 @@ impl TermExt for Term {
 
     fn prove_true(&self) -> Result<Thm> {
         let conv = self.reduce()?; // ⊢ self = v
-        let v = conv
-            .concl()
-            .as_eq()
-            .ok_or(Error::NotAnEquation)?
-            .1
-            .clone();
+        let v = conv.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
         if v.as_bool() == Some(true) {
             // conv : ⊢ self = T ; the bridge gives ⊢ self.
             conv.eqt_elim()
@@ -333,7 +328,12 @@ fn reduce_conv(t: &Term, with_beta: bool) -> Result<Thm> {
     let f_eq = reduce_conv(f, with_beta)?;
     let x_eq = reduce_conv(x, with_beta)?;
     let cong = f_eq.cong_app(x_eq)?; // ⊢ t = f' x'
-    let fx = cong.concl().as_eq().expect("cong yields an equation").1.clone();
+    let fx = cong
+        .concl()
+        .as_eq()
+        .expect("cong yields an equation")
+        .1
+        .clone();
 
     // β: if the reduced head is a λ, contract and keep reducing.
     if with_beta
@@ -341,7 +341,12 @@ fn reduce_conv(t: &Term, with_beta: bool) -> Result<Thm> {
         && head.as_abs().is_some()
     {
         let beta = Thm::beta_conv(fx.clone())?; // ⊢ f' x' = body[x'/0]
-        let body = beta.concl().as_eq().expect("beta yields an equation").1.clone();
+        let body = beta
+            .concl()
+            .as_eq()
+            .expect("beta yields an equation")
+            .1
+            .clone();
         let body_eq = reduce_conv(&body, with_beta)?;
         return cong.trans(beta)?.trans(body_eq);
     }
@@ -518,7 +523,10 @@ mod tests {
     fn eqt_intro_then_elim_round_trips() {
         let truth = crate::init::logic::truth();
         let as_eq = truth.clone().eqt_intro().unwrap();
-        assert!(as_eq.concl().as_eq().is_some(), "eqt_intro yields an equation");
+        assert!(
+            as_eq.concl().as_eq().is_some(),
+            "eqt_intro yields an equation"
+        );
         let back = as_eq.eqt_elim().unwrap();
         assert_eq!(back.concl(), truth.concl());
         assert!(back.hyps().is_empty());
@@ -563,7 +571,12 @@ mod tests {
         let eq = Thm::assume(a.clone().equals(bb.clone()).unwrap()).unwrap();
 
         // f a a  rewrites to  f b b
-        let t = f.clone().apply(a.clone()).unwrap().apply(a.clone()).unwrap();
+        let t = f
+            .clone()
+            .apply(a.clone())
+            .unwrap()
+            .apply(a.clone())
+            .unwrap();
         let conv = t.rw_all(&eq).unwrap();
         let (lhs, rhs) = conv.concl().as_eq().unwrap();
         assert_eq!(lhs, &t);
@@ -688,8 +701,7 @@ mod tests {
     fn reduce_rhs_evaluates_the_right_side() {
         // {x = 1+1} ⊢ x = 1+1   →   {…} ⊢ x = 2
         let x = Term::free("x", Type::nat());
-        let eq =
-            Thm::assume(x.clone().equals(add(nat_lit(1), nat_lit(1))).unwrap()).unwrap();
+        let eq = Thm::assume(x.clone().equals(add(nat_lit(1), nat_lit(1))).unwrap()).unwrap();
         let out = eq.reduce_rhs().unwrap();
         let (l, r) = out.concl().as_eq().unwrap();
         assert_eq!(l, &x);

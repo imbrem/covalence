@@ -191,7 +191,11 @@ pub fn mem_empty(alpha: &Type, x: &Term) -> Result<Thm> {
 
 /// `⊢ set.mem x (set.singleton a) = (x = a)`.
 pub fn mem_singleton(alpha: &Type, x: &Term, a: &Term) -> Result<Thm> {
-    mem_of(alpha, x, &Term::app(set_singleton(alpha.clone()), a.clone()))
+    mem_of(
+        alpha,
+        x,
+        &Term::app(set_singleton(alpha.clone()), a.clone()),
+    )
 }
 
 /// `⊢ set.mem x (set.insert a s) = (x = a ∨ set.mem x s)`.
@@ -394,7 +398,8 @@ pub fn inter_union_distrib() -> Thm {
 /// unfolding of `⊆`.
 pub fn subset_unfold(alpha: &Type, s: &Term, t: &Term) -> Result<Thm> {
     let st = subset_tm(alpha, s, t);
-    st.delta_all(set_subset_spec().symbol())?.rhs_conv(|x| x.reduce())
+    st.delta_all(set_subset_spec().symbol())?
+        .rhs_conv(|x| x.reduce())
 }
 
 /// **Subset introduction.** From `all_imp : Γ ⊢ ∀x. set.mem x s ⟹
@@ -435,7 +440,9 @@ pub fn subset_trans() -> Thm {
         // mem v s ⟹ mem v u: chain the two implications through mem v t.
         let mem_s = Thm::assume(mem(&a, &v, &s))?;
         let mem_u = imp_tu.imp_elim(imp_st.imp_elim(mem_s)?)?; // {s⊆t, t⊆u, mem v s} ⊢ mem v u
-        let all = mem_u.imp_intro(&mem(&a, &v, &s))?.all_intro("x", a.clone())?;
+        let all = mem_u
+            .imp_intro(&mem(&a, &v, &s))?
+            .all_intro("x", a.clone())?;
         let sub_su = subset_intro(&a, &s, &u, all)?; // {s⊆t, t⊆u} ⊢ s ⊆ u
         sub_su.imp_intro(&sub_tu)?.imp_intro(&sub_st)
     };
@@ -526,7 +533,10 @@ fn subset_tm(alpha: &Type, s: &Term, t: &Term) -> Term {
 
 /// `set.intersect[α] s t : set α`.
 fn inter(alpha: &Type, s: &Term, t: &Term) -> Term {
-    Term::app(Term::app(set_intersect(alpha.clone()), s.clone()), t.clone())
+    Term::app(
+        Term::app(set_intersect(alpha.clone()), s.clone()),
+        t.clone(),
+    )
 }
 
 /// Canonical free `(α, s, t, u)` for the closed algebra theorems.
@@ -584,7 +594,11 @@ mod tests {
         // `mem_mk` lands on the raw application `p x` (β is the caller's
         // job — `mem_of` follows up with a reduce); here `p x = (λy. y=a) x`,
         // which β-reduces to `x = a`.
-        assert_eq!(rhs, &Term::app(pred, x.clone()), "membership reduces to `p x`");
+        assert_eq!(
+            rhs,
+            &Term::app(pred, x.clone()),
+            "membership reduces to `p x`"
+        );
         assert_eq!(
             rhs.reduce().unwrap().concl().as_eq().unwrap().1,
             &x.equals(a).unwrap(),
@@ -604,9 +618,7 @@ mod tests {
         let (x, s, t) = (elem("x"), setvar("s"), setvar("t"));
         let thm = mem_union(&alpha(), &x, &s, &t).unwrap();
         assert!(thm.hyps().is_empty());
-        let expected = mem(&alpha(), &x, &s)
-            .or(mem(&alpha(), &x, &t))
-            .unwrap();
+        let expected = mem(&alpha(), &x, &s).or(mem(&alpha(), &x, &t)).unwrap();
         assert_eq!(rhs_of(&thm).unwrap(), expected);
     }
 
@@ -614,9 +626,7 @@ mod tests {
     fn mem_intersect_is_conjunction() {
         let (x, s, t) = (elem("x"), setvar("s"), setvar("t"));
         let thm = mem_intersect(&alpha(), &x, &s, &t).unwrap();
-        let expected = mem(&alpha(), &x, &s)
-            .and(mem(&alpha(), &x, &t))
-            .unwrap();
+        let expected = mem(&alpha(), &x, &s).and(mem(&alpha(), &x, &t)).unwrap();
         assert_eq!(rhs_of(&thm).unwrap(), expected);
     }
 
@@ -641,14 +651,15 @@ mod tests {
     #[test]
     fn union_comm_is_genuine() {
         let thm = union_comm();
-        assert!(thm.hyps().is_empty(), "union_comm is proved, not postulated");
+        assert!(
+            thm.hyps().is_empty(),
+            "union_comm is proved, not postulated"
+        );
         assert!(thm.has_no_obs(), "union_comm is oracle-free");
         let alpha = alpha();
         let s = setvar("s");
         let t = setvar("t");
-        let expected = union(&alpha, &s, &t)
-            .equals(union(&alpha, &t, &s))
-            .unwrap();
+        let expected = union(&alpha, &s, &t).equals(union(&alpha, &t, &s)).unwrap();
         assert_eq!(thm.concl(), &expected);
     }
 
@@ -674,7 +685,10 @@ mod tests {
 
     /// Every algebra theorem must be a genuine, oracle-free equation.
     fn assert_genuine_eq(thm: &Thm) {
-        assert!(thm.hyps().is_empty(), "theorem must be proved, not postulated");
+        assert!(
+            thm.hyps().is_empty(),
+            "theorem must be proved, not postulated"
+        );
         assert!(thm.has_no_obs(), "theorem must be oracle-free");
     }
 
@@ -720,7 +734,13 @@ mod tests {
 
     #[test]
     fn subset_order_laws_are_genuine() {
-        for thm in [subset_refl(), subset_trans(), empty_subset(), subset_union_l(), inter_subset_l()] {
+        for thm in [
+            subset_refl(),
+            subset_trans(),
+            empty_subset(),
+            subset_union_l(),
+            inter_subset_l(),
+        ] {
             assert!(thm.hyps().is_empty(), "subset law must be proved");
             assert!(thm.has_no_obs(), "subset law must be oracle-free");
         }
@@ -731,11 +751,7 @@ mod tests {
         let thm = subset_trans();
         let (a, s, t, u) = vars();
         let expected = subset_tm(&a, &s, &t)
-            .imp(
-                subset_tm(&a, &t, &u)
-                    .imp(subset_tm(&a, &s, &u))
-                    .unwrap(),
-            )
+            .imp(subset_tm(&a, &t, &u).imp(subset_tm(&a, &s, &u)).unwrap())
             .unwrap();
         assert_eq!(thm.concl(), &expected);
     }

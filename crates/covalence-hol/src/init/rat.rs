@@ -39,7 +39,12 @@
 //!   [`rat_add`], [`rat_neg`], [`rat_mul`]) and the strict order
 //!   ([`rat_lt`]) are defined at the representative level; the ordered-
 //!   field axioms over them are **postulated** (same audit-trail style as
-//!   `init::int`), pending the quotient derivations.
+//!   `init::int`), pending the quotient derivations. On top of those, a
+//!   small `≤` toolkit is **derived**: [`le_refl`], [`lt_imp_le`],
+//!   [`le_trans`], and [`not_one_le_zero`] (from [`le_def`] + the strict
+//!   facts + the one base postulate [`zero_lt_one`]). These are what the
+//!   `real` Dedekind-cut construction in [`init::real`](crate::init::real)
+//!   consumes.
 //! - **Density.** [`dense`] — `∀x y. x < y ⟹ ∃z. x < z ∧ z < y` — is
 //!   **derived** from the two mediant-inequality postulates via the
 //!   mediant `(a+c)/(b+d)`, the witness that needs no division.
@@ -47,7 +52,7 @@
 use covalence_core::defs::{fst, int_pos_spec, int_pos_ty, prod, snd};
 use covalence_core::{Result, Term, Thm, Type, subst};
 
-use crate::init::ext::TermExt;
+use crate::init::ext::{TermExt, ThmExt};
 use crate::init::{int, logic, nat};
 
 // Re-export the `defs/rat.rs` catalogue (the type handles + the declared
@@ -511,6 +516,186 @@ pub fn le_def() -> Thm {
 }
 
 // ============================================================================
+// Order toolkit — derived `≤` facts (and the one base strictness postulate)
+// ============================================================================
+//
+// `le_refl` / `lt_imp_le` / `le_trans` are **derived** from `le_def` and the
+// strict-order postulates (`lt_irrefl` / `lt_trans`). The single new
+// postulate is `zero_lt_one` (`0 < 1`) — the base strictness fact reduction
+// cannot reach (`ratLt` picks representatives via ε). `not_one_le_zero`
+// (`¬(1 ≤ 0)`) then follows. These are what the `real` Dedekind-cut proofs
+// (`init::real`) consume: cut upward-closure is `le_trans`, non-emptiness is
+// `le_refl`, and `0 ≠ 1` for reals turns on `not_one_le_zero`.
+
+/// `⊢ 0 < 1` — the base strictness fact (postulated; `ratLt` is stuck at
+/// the ε-chosen representatives, so this is not reducible).
+pub fn zero_lt_one() -> Thm {
+    axiom(rlt(rat_zero(), rat_one()))
+}
+
+cached_thm! {
+    /// `⊢ ∀a. a ≤ a` — reflexivity of `≤`, from `le_def` + `=`-reflexivity.
+    pub fn le_refl() -> Thm {
+        le_refl_impl().expect("le_refl")
+    }
+}
+fn le_refl_impl() -> Result<Thm> {
+    let a = rvar("a");
+    let ld = le_def().all_elim(a.clone())?.all_elim(a.clone())?; // (a≤a) = (a<a ∨ a=a)
+    let disj = Thm::refl(a.clone())?.or_intro_r(rlt(a.clone(), a.clone()))?; // ⊢ a<a ∨ a=a
+    ld.sym()?.eq_mp(disj)?.all_intro("a", rat())
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. a < b ⟹ a ≤ b` — strict implies non-strict.
+    pub fn lt_imp_le() -> Thm {
+        lt_imp_le_impl().expect("lt_imp_le")
+    }
+}
+fn lt_imp_le_impl() -> Result<Thm> {
+    let (a, b) = (rvar("a"), rvar("b"));
+    let lt = rlt(a.clone(), b.clone());
+    let ld = le_def().all_elim(a.clone())?.all_elim(b.clone())?; // (a≤b)=(a<b ∨ a=b)
+    let disj = Thm::assume(lt.clone())?
+        .or_intro_l(a.clone().equals(b.clone())?)?; // {a<b} ⊢ a<b ∨ a=b
+    ld.sym()?
+        .eq_mp(disj)?
+        .imp_intro(&lt)?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+cached_thm! {
+    /// `⊢ ∀a b c. a ≤ b ⟹ b ≤ c ⟹ a ≤ c` — transitivity of `≤`, by case
+    /// analysis on `le_def` (each `≤` is `<` or `=`) using `lt_trans` and
+    /// equality congruence.
+    pub fn le_trans() -> Thm {
+        le_trans_impl().expect("le_trans")
+    }
+}
+fn le_trans_impl() -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (hab, hbc) = (rle(a.clone(), b.clone()), rle(b.clone(), c.clone()));
+
+    // Goal disjunction `a<c ∨ a=c`, and the closer `(a<c ∨ a=c) ⟹ a≤c`.
+    let ld_ac = le_def().all_elim(a.clone())?.all_elim(c.clone())?; // (a≤c)=(a<c ∨ a=c)
+    let close_goal = |disj: Thm| -> Result<Thm> { ld_ac.clone().sym()?.eq_mp(disj) };
+
+    // From the two `≤` hyps, the two disjunctions.
+    let d_ab = le_def()
+        .all_elim(a.clone())?
+        .all_elim(b.clone())?
+        .eq_mp(Thm::assume(hab.clone())?)?; // {a≤b} ⊢ a<b ∨ a=b
+    let d_bc = le_def()
+        .all_elim(b.clone())?
+        .all_elim(c.clone())?
+        .eq_mp(Thm::assume(hbc.clone())?)?; // {b≤c} ⊢ b<c ∨ b=c
+
+    // The four leaf derivations of `a≤c`, each as `<branch hyp> ⊢ a≤c`.
+    // a<b, b<c ⟹ a<c.
+    let lt_lt = |ab: Thm, bc: Thm| -> Result<Thm> {
+        let ac = lt_trans()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .all_elim(c.clone())?
+            .imp_elim(ab)?
+            .imp_elim(bc)?; // a<c
+        close_goal(ac.or_intro_l(a.clone().equals(c.clone())?)?)
+    };
+    // a<b, b=c ⟹ a<c   (rewrite the `b` in `a<b` to `c`).
+    let lt_eq = |ab: Thm, bc_eq: Thm| -> Result<Thm> {
+        let cong = bc_eq.cong_arg(Term::app(rat_lt(), a.clone()))?; // (a<b)=(a<c)
+        let ac = cong.eq_mp(ab)?; // a<c
+        close_goal(ac.or_intro_l(a.clone().equals(c.clone())?)?)
+    };
+    // a=b, b<c ⟹ a<c   (rewrite the `b` in `b<c` to `a`).
+    let eq_lt = |ab_eq: Thm, bc: Thm| -> Result<Thm> {
+        let cong = ab_eq.cong_arg(rat_lt())?.cong_fn(c.clone())?; // (a<c)=(b<c)
+        let ac = cong.sym()?.eq_mp(bc)?; // a<c
+        close_goal(ac.or_intro_l(a.clone().equals(c.clone())?)?)
+    };
+    // a=b, b=c ⟹ a=c.
+    let eq_eq = |ab_eq: Thm, bc_eq: Thm| -> Result<Thm> {
+        let ac = ab_eq.trans(bc_eq)?; // a=c
+        close_goal(ac.or_intro_r(rlt(a.clone(), c.clone()))?)
+    };
+
+    // Inner case split on `b<c ∨ b=c`, given a fixed left branch builder.
+    let ab_lt = rlt(a.clone(), b.clone());
+    let ab_eq = a.clone().equals(b.clone())?;
+    let bc_lt = rlt(b.clone(), c.clone());
+    let bc_eq = b.clone().equals(c.clone())?;
+
+    // Left of the outer split: assume a<b, case-split d_bc.
+    let outer_left = {
+        let ab = Thm::assume(ab_lt.clone())?;
+        let br_lt = lt_lt(ab.clone(), Thm::assume(bc_lt.clone())?)?.imp_intro(&bc_lt)?;
+        let br_eq = lt_eq(ab, Thm::assume(bc_eq.clone())?)?.imp_intro(&bc_eq)?;
+        d_bc.clone().or_elim(br_lt, br_eq)?.imp_intro(&ab_lt)? // {a≤b,b≤c} ⊢ a<b ⟹ a≤c
+    };
+    // Right of the outer split: assume a=b, case-split d_bc.
+    let outer_right = {
+        let ab = Thm::assume(ab_eq.clone())?;
+        let br_lt = eq_lt(ab.clone(), Thm::assume(bc_lt.clone())?)?.imp_intro(&bc_lt)?;
+        let br_eq = eq_eq(ab, Thm::assume(bc_eq.clone())?)?.imp_intro(&bc_eq)?;
+        d_bc.or_elim(br_lt, br_eq)?.imp_intro(&ab_eq)? // {a≤b,b≤c} ⊢ a=b ⟹ a≤c
+    };
+
+    d_ab.or_elim(outer_left, outer_right)? // {a≤b,b≤c} ⊢ a≤c
+        .imp_intro(&hbc)?
+        .imp_intro(&hab)?
+        .all_intro("c", rat())?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+cached_thm! {
+    /// `⊢ ¬(1 ≤ 0)` — from `0 < 1` (`zero_lt_one`), `lt_trans` and
+    /// `lt_irrefl`. The distinguishing fact behind `real` `0 ≠ 1`.
+    pub fn not_one_le_zero() -> Thm {
+        not_one_le_zero_impl().expect("not_one_le_zero")
+    }
+}
+fn not_one_le_zero_impl() -> Result<Thm> {
+    let (zero, one) = (rat_zero(), rat_one());
+    let one_le_zero = rle(one.clone(), zero.clone());
+    // (1≤0) = (1<0 ∨ 1=0); under the assumption, the disjunction.
+    let ld = le_def().all_elim(one.clone())?.all_elim(zero.clone())?;
+    let disj = ld.eq_mp(Thm::assume(one_le_zero.clone())?)?; // {1≤0} ⊢ 1<0 ∨ 1=0
+
+    let lt_10 = rlt(one.clone(), zero.clone());
+    let eq_10 = one.clone().equals(zero.clone())?;
+
+    // 1<0 branch: 0<1 and 1<0 give 0<0, contradicting irreflexivity.
+    let br_lt = {
+        let chain = lt_trans()
+            .all_elim(zero.clone())?
+            .all_elim(one.clone())?
+            .all_elim(zero.clone())?
+            .imp_elim(zero_lt_one())?
+            .imp_elim(Thm::assume(lt_10.clone())?)?; // 0<0
+        lt_irrefl()
+            .all_elim(zero.clone())?
+            .not_elim(chain)?
+            .imp_intro(&lt_10)?
+    };
+    // 1=0 branch: rewrite 0<1 by 1=0 to 0<0, same contradiction.
+    let br_eq = {
+        let cong = Thm::assume(eq_10.clone())?.cong_arg(Term::app(rat_lt(), zero.clone()))?; // (0<1)=(0<0)
+        let zero_lt_zero = cong.eq_mp(zero_lt_one())?; // 0<0
+        lt_irrefl()
+            .all_elim(zero.clone())?
+            .not_elim(zero_lt_zero)?
+            .imp_intro(&eq_10)?
+    };
+
+    disj
+        .or_elim(br_lt, br_eq)? // {1≤0, 0<1} ⊢ F
+        .imp_intro(&one_le_zero)?
+        .not_intro()
+}
+
+// ============================================================================
 // Density — DERIVED from the two mediant inequalities
 // ============================================================================
 //
@@ -744,6 +929,33 @@ mod tests {
             assert!(ax.concl().type_of().unwrap().is_bool());
             assert!(ax.hyps().iter().any(|h| h == ax.concl()));
         }
+    }
+
+    #[test]
+    fn order_toolkit_derivations_are_well_typed() {
+        // le_refl / lt_imp_le / le_trans / not_one_le_zero are derived: they
+        // carry only postulate hypotheses (no stray assumptions), are
+        // bool-typed, and have the expected shapes.
+        let a = rvar("a");
+        let refl = le_refl().all_elim(a.clone()).unwrap();
+        assert_eq!(refl.concl(), &rle(a.clone(), a.clone()));
+
+        // not_one_le_zero : ¬(1 ≤ 0), resting on the zero_lt_one postulate.
+        let n = not_one_le_zero();
+        assert_eq!(n.concl(), &rle(rat_one(), rat_zero()).not().unwrap());
+        assert!(n.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
+
+        // le_trans specialises to a concrete double implication.
+        let (x, y, z) = (rvar("x"), rvar("y"), rvar("z"));
+        let lt = le_trans()
+            .all_elim(x.clone())
+            .and_then(|t| t.all_elim(y.clone()))
+            .and_then(|t| t.all_elim(z.clone()))
+            .unwrap();
+        let expected = rle(x.clone(), y.clone())
+            .imp(rle(y, z.clone()).imp(rle(x, z)).unwrap())
+            .unwrap();
+        assert_eq!(lt.concl(), &expected);
     }
 
     #[test]

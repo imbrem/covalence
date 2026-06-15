@@ -23,7 +23,7 @@
 //! - [`set`] — the `TypeSpec`-backed set membership / extensionality API.
 //!
 //! plus the per-theory theorem catalogues — [`cond`] (the boolean
-//! conditional's reduction clauses), [`nat`], [`int`], [`rat`],
+//! conditional's reduction clauses), [`nat`], [`int`], [`rat`], [`real`],
 //! [`coprod`], [`option`], [`stream`], [`recursion`], [`rel`], and
 //! [`set`].
 //!
@@ -64,6 +64,7 @@ pub mod nat;
 pub mod option;
 pub mod quotient;
 pub mod rat;
+pub mod real;
 pub mod recursion;
 pub mod rel;
 pub mod set;

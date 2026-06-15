@@ -36,7 +36,7 @@ pub use covalence_core::defs::{compose, compose_spec, flip, id, id_spec, konst};
 fn fun_parts(ty: &Type) -> Result<(Type, Type)> {
     match ty.kind() {
         TypeKind::Fun(dom, cod) => Ok((dom.clone(), cod.clone())),
-        _ => Err(Error::NotBool(ty.clone())),
+        _ => Err(Error::NotFunction(ty.clone())),
     }
 }
 
@@ -44,12 +44,13 @@ fn fun_parts(ty: &Type) -> Result<(Type, Type)> {
 /// and `g : β → γ`. Errors if either is not a function or the middle
 /// objects disagree.
 pub fn comp(g: &Term, f: &Term) -> Result<Term> {
+    let g_ty = g.type_of()?;
     let (alpha, beta) = fun_parts(&f.type_of()?)?;
-    let (beta2, gamma) = fun_parts(&g.type_of()?)?;
+    let (beta2, gamma) = fun_parts(&g_ty)?;
     if beta != beta2 {
         return Err(Error::TypeMismatch {
             expected: Type::fun(beta, gamma),
-            got: g.type_of()?,
+            got: g_ty,
         });
     }
     compose(alpha, beta2, gamma)
@@ -64,7 +65,7 @@ pub fn comp(g: &Term, f: &Term) -> Result<Term> {
 /// `⊢ t = nf`, the applicative normal form of a `compose` / `id` term:
 /// δ-unfold every `compose`, β-reduce, δ-unfold every `id`, β-reduce.
 /// Free morphism variables and other heads are left untouched, so a term
-/// like `(h ∘ g) ∘ f) x` lands on `h (g (f x))`.
+/// like `((h ∘ g) ∘ f) x` lands on `h (g (f x))`.
 fn normalize(t: &Term) -> Result<Thm> {
     let compose_spec = compose_spec();
     let id_spec = id_spec();

@@ -195,13 +195,14 @@ fn left_ne_right(a: &Type, b: &Type, av: &Term, bv: &Term) -> Result<Thm> {
     f.imp_intro(&eq)?.not_intro()
 }
 
-/// `⊢ injRel v = injRel v2 ⟹ v = v2` — injectivity of a tagged
-/// injection relation. `x` / `y` are the two carrier slots and `z` the
-/// discriminator to probe at: for `leftRel` use `(x = v, y arbitrary,
-/// z = T)`, for `rightRel` use `(x arbitrary, y = v, z = F)`. At those
-/// slots both sides reduce to `z' ∧ (v = v[2])`; folding `v = v` to `T`
-/// and discharging the (true) discriminator leaves `v = v2`.
-fn rel_inj(rel: &Term, rel2: &Term, v: &Term, v2: &Term, x: &Term, y: &Term, z: bool) -> Result<Thm> {
+/// `⊢ injRel v = injRel v2 ⟹ v = v2` — injectivity of a tagged injection
+/// relation (here `injRel v2` is `rel2`). `x` / `y` are the two carrier
+/// slots and `z` the discriminator to probe at: for `leftRel` use
+/// `(x = v, y arbitrary, z = T)`, for `rightRel` use `(x arbitrary,
+/// y = v, z = F)`. At those slots both sides reduce to `z' ∧ (v = v[2])`;
+/// folding `v = v` to `T` and discharging the (true) discriminator leaves
+/// `v = v2`.
+fn rel_inj(rel: &Term, rel2: &Term, v: &Term, x: &Term, y: &Term, z: bool) -> Result<Thm> {
     let eq = rel.clone().equals(rel2.clone())?;
     let h = Thm::assume(eq.clone())?;
     let applied = h
@@ -224,7 +225,6 @@ fn rel_inj(rel: &Term, rel2: &Term, v: &Term, v2: &Term, x: &Term, y: &Term, z: 
         .trans(simp(&rhs)?)? // {H} ⊢ T = (v = v2)
         .sym()?
         .eqt_elim()?; // {H} ⊢ v = v2
-    let _ = v2; // documentary: v2 enters via `rel2`, not directly
     v_eq.imp_intro(&eq)
 }
 
@@ -325,7 +325,7 @@ fn pred_at_inl(
     let hl = Thm::assume(ante_l.clone())?;
     let rels_eq = rep_eq.clone().sym()?.trans(hl)?; // {H} ⊢ leftRel av = leftRel __cia
     let probe_y = Term::free("__ciy", b.clone());
-    let inj = rel_inj(&lrel_of(a, b, av)?, &lrel_a, av, &a_var, av, &probe_y, true)?;
+    let inj = rel_inj(&lrel_of(a, b, av)?, &lrel_a, av, av, &probe_y, true)?;
     let v_eq = inj.imp_elim(rels_eq)?; // {H} ⊢ av = __cia
     let f_cong = Thm::refl(f.clone())?.cong_app(v_eq)?; // {H} ⊢ f av = f __cia
     let left_clause = f_cong.imp_intro(&ante_l)?.all_intro("__cia", a.clone())?;
@@ -375,15 +375,8 @@ fn pred_at_inr(
     let hr = Thm::assume(ante_r.clone())?;
     let rels_eq = rep_eq.sym()?.trans(hr)?; // {H} ⊢ rightRel bv = rightRel __cib
     let probe_x = Term::free("__cix", a.clone());
-    let inj = rel_inj(
-        &rrel_of(a, b, bv)?,
-        &rrel_b,
-        bv,
-        &b_var,
-        &probe_x,
-        bv,
-        false,
-    )?; // ⊢ (rightRel bv = rightRel __cib) ⟹ bv = __cib
+    let inj = rel_inj(&rrel_of(a, b, bv)?, &rrel_b, bv, &probe_x, bv, false)?;
+    // ⊢ (rightRel bv = rightRel __cib) ⟹ bv = __cib
     let v_eq = inj.imp_elim(rels_eq)?; // {H} ⊢ bv = __cib
     let g_cong = Thm::refl(g.clone())?.cong_app(v_eq)?; // {H} ⊢ g bv = g __cib
     let right_clause = g_cong.imp_intro(&ante_r)?.all_intro("__cib", b.clone())?;
@@ -582,27 +575,28 @@ fn case_eta_point(
     let goal = Term::app(m.clone(), c.clone()).equals(Term::app(k.clone(), c.clone()))?;
     let (ex_inl, ex_inr) = cases_goal(a, b, c)?;
     let cases_thm = cases(a, b, c)?;
-    let left = eta_branch(a, b, gamma, m, m_inl, k, &ex_inl, &goal, true)?;
-    let right = eta_branch(a, b, gamma, m, m_inr, k, &ex_inr, &goal, false)?;
+    let left = eta_branch(a, b, gamma, m, m_inl, m_inr, k, &ex_inl, &goal, true)?;
+    let right = eta_branch(a, b, gamma, m, m_inl, m_inr, k, &ex_inr, &goal, false)?;
     cases_thm.or_elim(left, right)
 }
 
-/// `⊢ (∃v. c = inj v) ⟹ (m c = k c)` on one injection arm.
+/// `⊢ (∃v. c = inj v) ⟹ (m c = k c)` on one injection arm, where
+/// `k = [m_inl, m_inr]`.
 #[allow(clippy::too_many_arguments)]
 fn eta_branch(
     a: &Type,
     b: &Type,
     gamma: &Type,
     m: &Term,
-    m_inj: &Term,
+    m_inl: &Term,
+    m_inr: &Term,
     k: &Term,
     ex_inj: &Term,
     goal: &Term,
     is_left: bool,
 ) -> Result<Thm> {
-    use crate::init::cat::comp;
+    let (carrier, m_inj) = if is_left { (a, m_inl) } else { (b, m_inr) };
     let pred = ex_inj.as_app().ok_or(Error::NotAnEquation)?.1.clone(); // λv. c = inj v
-    let carrier = if is_left { a } else { b };
     let v = Term::free("__ebv", carrier.clone());
     let ante_app = Term::app(pred.clone(), v.clone());
     let h = Thm::beta_conv(ante_app.clone())?.eq_mp(Thm::assume(ante_app.clone())?)?; // ⊢ c = inj v
@@ -611,9 +605,9 @@ fn eta_branch(
     let m_lhs = Thm::refl(m.clone())?.cong_app(h.clone())?; // ⊢ m c = m (inj v)
     // k c = k (inj v) = m_inj v = (m ∘ inj) v = m (inj v).
     let k_at_inj = if is_left {
-        case_inl(a, b, gamma, &comp(m, &inl(a.clone(), b.clone()))?, &comp(m, &inr(a.clone(), b.clone()))?, &v)?
+        case_inl(a, b, gamma, m_inl, m_inr, &v)?
     } else {
-        case_inr(a, b, gamma, &comp(m, &inl(a.clone(), b.clone()))?, &comp(m, &inr(a.clone(), b.clone()))?, &v)?
+        case_inr(a, b, gamma, m_inl, m_inr, &v)?
     }; // ⊢ k (inj v) = (m ∘ inj) v
     let mij_reduce = crate::init::cat::comp_beta(m_inj, &v)?; // ⊢ (m ∘ inj) v = m (inj v)
     let k_rhs = Thm::refl(k.clone())?

@@ -11,8 +11,10 @@
 //! shallow point-free proof is an outright HOL theorem — nothing is
 //! postulated.
 
+use covalence_core::defs::coprod_spec;
 use covalence_core::{Error, Result, Term, Thm, Type, TypeKind};
 
+use crate::init::ext::TermExt;
 use crate::init::{cat, coprod};
 use crate::monoidal::Monoidal;
 
@@ -32,7 +34,7 @@ impl Hol {
 fn fun_parts(ty: &Type) -> Result<(Type, Type)> {
     match ty.kind() {
         TypeKind::Fun(dom, cod) => Ok((dom.clone(), cod.clone())),
-        _ => Err(Error::NotBool(ty.clone())),
+        _ => Err(Error::NotFunction(ty.clone())),
     }
 }
 
@@ -42,18 +44,8 @@ impl Hol {
         let (a, c) = fun_parts(&f.type_of()?)?;
         let (b, _c) = fun_parts(&g.type_of()?)?;
         coprod::coprod_case(a, b, c)
-            .apply2(f.clone(), g.clone())
-    }
-}
-
-/// Tiny `.apply`-twice helper, kept local to avoid leaking it.
-trait Apply2 {
-    fn apply2(self, x: Term, y: Term) -> Result<Term>;
-}
-impl Apply2 for Term {
-    fn apply2(self, x: Term, y: Term) -> Result<Term> {
-        use crate::init::ext::TermExt;
-        self.apply(x)?.apply(y)
+            .apply(f.clone())?
+            .apply(g.clone())
     }
 }
 
@@ -197,11 +189,17 @@ impl Monoidal for Hol {
     }
 }
 
-/// Split a `coprod a b` type into `(a, b)`.
+/// Split a `coprod a b` type into `(a, b)` (the domain of a map out of a
+/// coproduct). Errors unless `ty` really is a `coprod` instance.
 fn coprod_parts(ty: &Type) -> Result<(Type, Type)> {
     match ty.kind() {
-        TypeKind::Spec(_spec, args) if args.len() == 2 => Ok((args[0].clone(), args[1].clone())),
-        _ => Err(Error::NotBool(ty.clone())),
+        TypeKind::Spec(spec, args) if spec.ptr_eq(&coprod_spec()) && args.len() == 2 => {
+            Ok((args[0].clone(), args[1].clone()))
+        }
+        _ => Err(Error::TypeMismatch {
+            expected: coprod::coprod(Type::tfree("a"), Type::tfree("b")),
+            got: ty.clone(),
+        }),
     }
 }
 

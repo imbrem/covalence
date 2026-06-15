@@ -41,9 +41,24 @@ pub fn nat_succ() -> Term {
     Term::succ()
 }
 
-term_decl! {
-    /// `natPred : nat → nat` — saturating predecessor (`pred 0 = 0`).
-    nat_pred_spec, nat_pred, Canonical::NatPred, sigs::nat_to_nat()
+fn nat_pred_body() -> Term {
+    // pred ≔ λn. natRec 0 (λk _. k) n   (saturating predecessor)
+    let k = Term::free("k", Type::nat());
+    let g = hol::pub_abs("k", Type::nat(), hol::pub_abs("_", Type::nat(), k)); // λk _. k
+    let n = Term::free("n", Type::nat());
+    let body = Term::app(
+        Term::app(Term::app(nat_rec(Type::nat()), hol::zero()), g),
+        n,
+    );
+    hol::pub_abs("n", Type::nat(), body)
+}
+
+let_term! {
+    /// `natPred : nat → nat` ≡ `λn. natRec 0 (λk _. k) n` — saturating
+    /// predecessor. Equations: `pred 0 = 0`, `pred (S n) = n` (both
+    /// provable from the `natRec` recursion equations). Closed-literal
+    /// reduction still goes through `builtins::reduce_spec`.
+    nat_pred_spec, nat_pred, Canonical::NatPred, nat_pred_body()
 }
 
 // ============================================================================

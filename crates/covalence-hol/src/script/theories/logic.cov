@@ -1,0 +1,55 @@
+;; logic.cov — the S-expression rewrite of (part of) init/logic.rs, in the
+;; *implicit* style: no `fix`, no binder annotations. Types are inferred by
+;; the elaborator (p, q : bool from their use under `and`/`or`; x : 'a from
+;; `= x x`). Each theorem is replayed by `script::check` into a genuine
+;; kernel `Thm`; the golden test in `script/mod.rs` checks the closed ones
+;; equal their hand-written Rust counterparts.
+
+(open core)
+
+;; ⊢ T. `reduce-prim` decides (T = T) = T on the closed literals; `refl T`
+;; discharges the antecedent via `eq-mp`.
+(thm truth
+  (concl true)
+  (proof (eq-mp (reduce-prim (= true true)) (refl true))))
+
+;; ⊢ (p ∧ q) ⟹ (q ∧ p). p, q inferred : bool. Assume p ∧ q, swap, discharge.
+(thm and.comm
+  (concl (==> (and p q) (and q p)))
+  (proof
+    (imp-intro (and p q)
+      (and-intro
+        (and-elim-r (assume (and p q)))
+        (and-elim-l (assume (and p q)))))))
+
+;; ⊢ (p ∨ q) ⟹ (q ∨ p). Case-split; each branch re-injects on the far side.
+(thm or.comm
+  (concl (==> (or p q) (or q p)))
+  (proof
+    (imp-intro (or p q)
+      (or-elim (assume (or p q))
+        (imp-intro p (or-intro-r q (assume p)))
+        (imp-intro q (or-intro-l p (assume q)))))))
+
+;; Applying a lemma: instantiate `and.comm`'s schematic p,q at the fixed
+;; a,b (INST — a,b inferred : bool from `and b a`) and modus-ponens it
+;; against the assumption a ∧ b.  →  {a ∧ b} ⊢ b ∧ a
+(thm and.comm.apply
+  (concl (and b a))
+  (proof
+    (imp-elim
+      (inst p a (inst q b (lemma and.comm)))
+      (assume (and a b)))))
+
+;; A *polymorphic* lemma, stated with no type annotation: x is inferred and
+;; generalised, giving ⊢ ∀(x : 'a). x = x.
+(thm eq.refl.poly
+  (concl (forall (x) (= x x)))
+  (proof (all-intro x 'a (refl x))))
+
+;; Applying the polymorphic lemma at a concrete type (INST_TYPE): specialise
+;; 'a := nat to get ⊢ ∀(x : nat). x = x. (The conclusion is annotated `nat`
+;; precisely because that is what this specialisation pins.)
+(thm eq.refl.nat
+  (concl (forall (x nat) (= x x)))
+  (proof (inst-tfree a nat (lemma eq.refl.poly))))

@@ -307,11 +307,28 @@ coupling guard.
 
 ## Proof-script layer (`covalence-hol/src/script`)
 
-The S-expression authoring + replay layer (`Env`/prelude, the named term
-parser, `Drv` proof terms, the `check` interpreter, the `rw`/`tauto`
-tactics). The **parse → replay** direction is built and tested (`and_comm`
-ported and checked equal to the Rust `init::logic::and_comm`); these are
-deliberately deferred:
+The S-expression authoring + replay layer (`Env`/prelude, the `infer`
+type-inference elaborator, `Drv` proof terms, the `check` interpreter, the
+`rw`/`tauto` tactics). The **parse → replay** direction is built and tested;
+`script/theories/logic.cov` ports `truth`/`and.comm`/`or.comm` (checked equal
+to the Rust originals) plus lemma application (`inst`/`inst-tfree` + MP).
+These are deliberately deferred:
+
+- **Inference is best-effort (untrusted).** `infer.rs` does Hindley–Milner
+  unification for free-variable and binder-domain types; it is not complete
+  and need not be sound — `check` re-validates every elaborated term against
+  the kernel. Known partials: the `ε`/`select` result type is approximated;
+  generalisation of leftover metavariables names type vars positionally
+  (`'a`, `'b`, …), so a conclusion and proof that independently generalise
+  must coincide in order (fine for the single-tvar cases today). `all-intro` /
+  `abs-rule` still take an **explicit** binder type — their var isn't
+  usage-constrained across the independently-elaborated sub-proof terms;
+  inferring it would need either threading one metavar arena through the whole
+  `Drv` or a check-time `find_free_type` pass.
+- **Lemma application is explicit, not by unification.** Applying a lemma
+  means `(lemma N)` then manual `inst`/`inst-tfree`/`all-elim`. A higher-level
+  `(apply N args…)` that unifies the lemma's conclusion against the goal /
+  arguments (first-order matching) is the natural next tactic.
 
 - **No `Drv`/`Term` pretty-printer (serialization-out).** `script` only
   *parses* the named syntax and *replays* it; there is no printer from a

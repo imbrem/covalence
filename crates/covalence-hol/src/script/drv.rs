@@ -45,6 +45,9 @@ pub enum Drv {
     ImpIntro { phi: Term, body: Box<Drv> },
     NotIntro(Box<Drv>),
     Inst { name: String, term: Term, body: Box<Drv> },
+    /// Type-variable instantiation (HOL Light `INST_TYPE`) — the way a
+    /// *polymorphic* lemma is applied at a concrete type.
+    InstTfree { name: String, ty: covalence_core::Type, body: Box<Drv> },
     /// `⊢ f a = f b` from `⊢ a = b`.
     CongArg { f: Term, body: Box<Drv> },
     /// `⊢ f a = g a` from `⊢ f = g`.
@@ -96,6 +99,7 @@ pub fn check(d: &Drv, env: &Env) -> R<Thm> {
         Drv::ImpIntro { phi, body } => check(body, env)?.imp_intro(phi)?,
         Drv::NotIntro(a) => check(a, env)?.not_intro()?,
         Drv::Inst { name, term, body } => check(body, env)?.inst(name, term.clone())?,
+        Drv::InstTfree { name, ty, body } => check(body, env)?.inst_tfree(name, ty.clone())?,
         Drv::CongArg { f, body } => Thm::refl(f.clone())?.mk_comb(check(body, env)?)?,
         Drv::CongFn { arg, body } => check(body, env)?.mk_comb(Thm::refl(arg.clone())?)?,
         Drv::AndElimL(a) => check(a, env)?.and_elim_l()?,
@@ -250,6 +254,14 @@ pub fn parse_drv(s: &SExpr, scope: &mut Scope, env: &Env) -> R<Drv> {
             Drv::Inst {
                 name: sym(&ch[1], "inst var")?.to_string(),
                 term: parse_term(&ch[2], scope, env)?,
+                body: boxed(&ch[3], scope, env)?,
+            }
+        }
+        "inst-tfree" => {
+            arity(ch, 4, "inst-tfree")?;
+            Drv::InstTfree {
+                name: sym(&ch[1], "inst-tfree var")?.to_string(),
+                ty: parse_type(&ch[2])?,
                 body: boxed(&ch[3], scope, env)?,
             }
         }

@@ -25,12 +25,13 @@
 //! replay) is the immediate goal: porting the Rust `init/` theorems.
 
 mod drv;
+mod infer;
 mod syntax;
 
 pub use drv::{Drv, check, parse_drv};
 pub use syntax::{ConstDef, Env, Scope, parse_term, parse_type};
 
-use covalence_core::Thm;
+use covalence_core::{Thm, Type};
 use covalence_sexp::SExpr;
 
 /// Errors from parsing or replaying a proof script.
@@ -93,22 +94,26 @@ fn run_thm(ch: &[SExpr], env: &Env) -> Result<NamedThm, ScriptError> {
         ));
     }
     let name = syntax::sym(&ch[1], "thm name")?.to_string();
-    let mut scope: Scope = Vec::new();
     let mut idx = 2;
 
-    // optional (fix (x T) …)
+    // optional (fix x (y T) …) — annotations are optional; omitted types
+    // (and omitted `fix` entirely) are inferred from the conclusion.
+    let mut fix: Vec<(String, Option<Type>)> = Vec::new();
     if let SExpr::List(f) = &ch[idx]
         && f.first().and_then(|x| x.as_symbol()) == Some("fix")
     {
         for v in &f[1..] {
-            scope.push(syntax::parse_var(v)?);
+            fix.push(infer::parse_binder_spec(v)?);
         }
         idx += 1;
     }
 
+    // Elaborate the conclusion: this infers the type of every free
+    // variable, which then seeds the proof so both share one typing.
     let concl_ch = syntax::list(&ch[idx], "concl")?;
     let concl_payload = syntax::expect_head(concl_ch, "concl")?;
-    let expected = syntax::parse_term(concl_payload, &mut scope, env)?;
+    let (expected, vars) = infer::elaborate_concl(concl_payload, &fix, env)?;
+    let mut scope: Scope = vars;
     idx += 1;
 
     let proof_ch = syntax::list(&ch[idx], "proof")?;
@@ -223,6 +228,48 @@ mod tests {
         );
         // carries the single hypothesis a = b
         assert_eq!(thm.hyps().len(), 1);
+    }
+
+    #[test]
+    fn ports_logic_theory_implicitly() {
+        // The checked-in `logic.cov` (implicit style: no `fix`, no binder
+        // annotations) replays, and the closed theorems match the
+        // hand-written Rust `init::logic` originals — the surface-syntax §8
+        // golden-test discipline.
+        let thms = run_str(include_str!("theories/logic.cov")).expect("logic.cov should replay");
+        let get = |n: &str| {
+            &thms
+                .iter()
+                .find(|t| t.name == n)
+                .unwrap_or_else(|| panic!("missing thm {n}"))
+                .thm
+        };
+        assert_eq!(get("truth").concl(), crate::init::logic::truth().concl());
+        assert_eq!(get("and.comm").concl(), crate::init::logic::and_comm().concl());
+        assert_eq!(get("or.comm").concl(), crate::init::logic::or_comm().concl());
+        // lemma application: depends on the single hypothesis a ∧ b
+        assert_eq!(get("and.comm.apply").hyps().len(), 1);
+        // polymorphic lemma + its nat specialisation are hypothesis-free
+        assert!(get("eq.refl.poly").hyps().is_empty());
+        assert!(get("eq.refl.nat").hyps().is_empty());
+    }
+
+    #[test]
+    fn infers_free_var_types_without_fix() {
+        // No `fix`: p, q are inferred `bool` from their use under `and`.
+        let thm = one(
+            r#"
+            (open core)
+            (thm and.comm.implicit
+              (concl (==> (and p q) (and q p)))
+              (proof
+                (imp-intro (and p q)
+                  (and-intro
+                    (and-elim-r (assume (and p q)))
+                    (and-elim-l (assume (and p q)))))))
+            "#,
+        );
+        assert_eq!(thm.concl(), crate::init::logic::and_comm().concl());
     }
 
     #[test]

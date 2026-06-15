@@ -118,10 +118,12 @@ coupling guard.
   (round toward −∞), which `int` does not yet expose (`int.div` truncates
   toward zero). The *unsigned* `uN.shr` and every other `uN`/`sN` op
   (add/sub/mul/neg/and/or/xor/not/lt/le/gt/ge/shl/div/rem) are now defined.
-- **`nat` ops, `crates/covalence-core/src/defs/nat.rs`** — `natDiv`,
-  `natBitAnd/Or/Xor`, `natToBytesLe/Be`, `natFromBytesLe/Be` are
-  `term_decl!` (declaration-only). `natDiv` in particular is *reducible*, so
-  when it gets a body it must be added to the coupling guard.
+- **`nat` ops, `crates/covalence-core/src/defs/nat.rs`** — `natBitAnd/Or/Xor`,
+  `natToBytesLe/Be`, `natFromBytesLe/Be` are `term_decl!`
+  (declaration-only). (`natDiv` now carries a def-style Euclidean selector
+  predicate; it is not let-style, so its `builtins` reduction is checked
+  against the predicate by `nat_div_mod_satisfy_euclidean_law` rather than
+  the unfold-based `audit_reduce_matches_body` coupling guard.)
 - **`bytes` ops, `crates/covalence-core/src/defs/blob.rs`** — `bytesConsNat`,
   `bytesAt` are declaration-only (need a `nat ↔ u8` conversion).
 - **Fixed-width conversions** (`toNat`/`toInt`/`fromNat`/`fromInt`/`zext`/

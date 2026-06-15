@@ -13,9 +13,9 @@
 //! definitions themselves — they're provable by `eq_reflection` on
 //! the body plus the natRec equations.
 //!
-//! Ops still defaulting to `tm = None` (`natDiv`, `natMod`, `natPow`,
-//! the byte/bit ops, `natToInt`) are awaiting their definitions in
-//! follow-up commits.
+//! `natDiv` carries a def-style Euclidean selector predicate and
+//! `natMod` is `λn m. n - (n/m)*m`; the byte/bit ops still default to
+//! `tm = None`, awaiting their definitions in follow-up commits.
 
 use crate::hol;
 use crate::term::{Term, Type};
@@ -359,9 +359,52 @@ let_term! {
 //   natToBytesLe/Be, natFromBytesLe/Be, natToInt
 // ============================================================================
 
-term_decl! {
-    /// `natDiv : nat → nat → nat`.
-    nat_div_spec, nat_div, Canonical::NatDiv, sigs::nat_nat_to_nat()
+/// `λd. ∀n m. (m = 0 ⟹ d n m = 0) ∧
+///            (¬(m = 0) ⟹ (d n m * m ≤ n ∧ n < S (d n m) * m))`.
+///
+/// The Euclidean (flooring) division selector. For `m = 0` it pins the
+/// quotient to `0`; for `m ≠ 0` the bounds `d·m ≤ n < (d+1)·m`
+/// determine `d = ⌊n/m⌋` **uniquely**, so the def-style choice is the
+/// genuine floor — denotationally identical to the closed-literal
+/// `builtins` reduction (`n / 0 = 0`, else truncating division, which
+/// for naturals is flooring).
+fn nat_div_predicate() -> Term {
+    let d_ty = sigs::nat_nat_to_nat();
+    let d = Term::free("d", d_ty.clone());
+    let n = Term::free("n", Type::nat());
+    let m = Term::free("m", Type::nat());
+    let zero = hol::zero();
+
+    let app2 = |f: Term, a: Term, b: Term| Term::app(Term::app(f, a), b);
+    let dnm = app2(d.clone(), n.clone(), m.clone()); // d n m
+
+    // m = 0 ⟹ d n m = 0
+    let m_eq_0 = hol::hol_eq(m.clone(), zero.clone());
+    let case_zero = hol::hol_imp(m_eq_0.clone(), hol::hol_eq(dnm.clone(), zero));
+
+    // ¬(m = 0) ⟹ (d n m * m ≤ n  ∧  n < S (d n m) * m)
+    let q_m = app2(nat_mul(), dnm.clone(), m.clone()); // (d n m) * m
+    let le = app2(nat_le(), q_m, n.clone()); // (d n m)*m ≤ n
+    let succ_q = Term::app(hol::succ_fn(), dnm); // S (d n m)
+    let succq_m = app2(nat_mul(), succ_q, m); // S(d n m) * m
+    let lt = app2(nat_lt(), n, succq_m); // n < S(d n m)*m
+    let case_pos = hol::hol_imp(hol::hol_not(m_eq_0), hol::hol_and(le, lt));
+
+    let body = hol::hol_and(case_zero, case_pos);
+    let body = hol::hol_forall("m", Type::nat(), body);
+    let body = hol::hol_forall("n", Type::nat(), body);
+    hol::pub_abs("d", d_ty, body)
+}
+
+spec_term! {
+    /// `natDiv : nat → nat → nat` — Euclidean (flooring) division.
+    /// Def-style selector predicate (see [`nat_div_predicate`]): the
+    /// unique `d` with `m = 0 ⟹ d n m = 0` and
+    /// `m ≠ 0 ⟹ d n m * m ≤ n < S(d n m) * m`. Closed-literal reduction
+    /// in `builtins` computes the same floor; `n mod m` is then
+    /// `n - (n / m) * m` (see [`nat_mod`]).
+    nat_div_spec, nat_div, Canonical::NatDiv,
+    sigs::nat_nat_to_nat(), nat_div_predicate()
 }
 
 fn nat_mod_body() -> Term {

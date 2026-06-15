@@ -6,27 +6,27 @@
 ;; and the `tauto`/`normalize` machinery depends on `truth`, so a `(tauto …)`
 ;; would re-enter the theory's own initialisation.
 
-(open core)
+(#open core)
 
 ;; ⊢ T. `reduce-prim` decides (T = T) = T on the closed literals; `refl T`
 ;; discharges the antecedent via `eq-mp`.
-(thm truth
-  (concl true)
-  (proof (eq-mp (reduce-prim (= true true)) (refl true))))
+(#thm truth
+  (#concl true)
+  (#proof (eq-mp (reduce-prim (= true true)) (refl true))))
 
 ;; ⊢ (p ∧ q) ⟹ (q ∧ p). p, q inferred : bool.
-(thm and.comm
-  (concl (==> (and p q) (and q p)))
-  (proof
+(#thm and.comm
+  (#concl (==> (and p q) (and q p)))
+  (#proof
     (imp-intro (and p q)
       (and-intro
         (and-elim-r (assume (and p q)))
         (and-elim-l (assume (and p q)))))))
 
 ;; ⊢ (p ∨ q) ⟹ (q ∨ p). Case-split; each branch re-injects on the far side.
-(thm or.comm
-  (concl (==> (or p q) (or q p)))
-  (proof
+(#thm or.comm
+  (#concl (==> (or p q) (or q p)))
+  (#proof
     (imp-intro (or p q)
       (or-elim (assume (or p q))
         (imp-intro p (or-intro-r q (assume p)))
@@ -34,4 +34,4 @@
 
 ;; The public interface: what `cov::env()` exposes and what the Rust
 ;; accessors (`truth`/`and_comm`/`or_comm`) read.
-(export truth and.comm or.comm)
+(#export truth and.comm or.comm)

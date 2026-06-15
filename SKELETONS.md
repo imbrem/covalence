@@ -19,11 +19,14 @@ it is how unfinished work stays discoverable.
 ## Postulates pending proof
 
 - **The `int` ordered-ring theory** in
-  `crates/covalence-hol/src/init/int.rs` is **entirely postulated** via the
+  `crates/covalence-hol/src/init/int.rs` is **mostly postulated** via the
   module's `axiom` helper (`Thm::assume`, each carrying its statement as a
-  self-hyp). Seventeen theorems: the commutative-ring axioms (`add_comm`,
-  `add_assoc`, `add_zero`, `add_neg`, `mul_comm`, `mul_assoc`, `mul_one`,
-  `mul_zero`, `distrib`, `sub_def`), the linear order (`lt_irrefl`,
+  self-hyp). `add_comm` and `mul_comm` are now **proved** (the op-unfolding
+  + representative-rewrite pattern below; both commute *on the nose* as the
+  ops are componentwise `nat` add/mul on representatives); 15 postulates
+  remain: the commutative-ring axioms (`add_assoc`, `add_zero`, `add_neg`,
+  `mul_assoc`, `mul_one`, `mul_zero`, `distrib`, `sub_def`), the linear
+  order (`lt_irrefl`,
   `lt_trans`, `lt_trichotomy`, `le_def`), ordered-ring compatibility
   (`lt_add_mono`, `lt_mul_pos`), and discreteness (`lt_succ`:
   `a < b ⟺ a + 1 ≤ b`). Since `int := (nat × nat) / ~` (Grothendieck), each is
@@ -47,11 +50,37 @@ it is how unfinished work stays discoverable.
   derives the **forward** law `Γ ⊢ rel a b → Γ ⊢ mkClass a = mkClass b`,
   the workhorse for proving `int` *equations*.
 
-  Progress: `int_rel` is now a **proven equivalence**
-  (`init::int::int_rel_refl`/`_symm`/`_trans`, `trans` via
-  `nat::add_interchange` + `nat::add_cancel`), and `quotient::class_intro`
-  already lifts `⊢ int_rel p q` to `mkClass p = mkClass q` over the real
-  `int_ty_spec` (tested). Remaining for `int`:
+  Progress: `int_rel` is a **proven equivalence**
+  (`init::int::int_rel_refl`/`_symm`/`_trans`); `quotient::class_intro`
+  lifts `⊢ int_rel p q` to `mkClass p = mkClass q`; **`add_comm` and
+  `mul_comm` are proved** (on the nose); and the **round-trip**
+  (`quotient::round_trip`: `⊢ rel a (rep_class (mk_class a))`, via
+  `close_pred_holds` + `spec_rep_abs_fwd` + `select_ax`) is **done and
+  tested on the real `int_ty_spec`** — the keystone for the nested-op
+  axioms.
+
+  The path for the remaining ring-equation axioms (`add_assoc`, `add_neg`,
+  `mul_assoc`, `distrib`):
+  - Unfold both sides with `delta_all(int_add/int_mul)`; a *nested* op like
+    `int.add a b` unfolds to `mk_int P_ab` (a *proper* class), and the
+    outer op sees `rep_pair(mk_int P_ab)`.
+  - `round_trip(P_ab)` + the β-bridge `mk_class p = mk_int p` (verified:
+    `beta_nf(λx. int_rel p x) == defs class_of p`) give
+    `int_rel (rep_pair(mk_int P_ab)) P_ab`, i.e. the chosen representative
+    of `a+b` is `~` its componentwise pair.
+  - `class_intro` on a `nat`-algebra combination of those `~`-facts closes
+    the axiom.
+  - ⚠️ **No quotient induction.** `a = mk_int(rep_pair a)` is *false* for a
+    free `int` var: `quot` = `close` admits junk (unions of classes), so a
+    free `a` need not be a single class. The axioms work because the *ops*
+    always produce `mk_int` (proper) values — route the round-trip through
+    those intermediates, never through the free variables.
+  - The `0`/`1` axioms (`add_zero`, `mul_one`, `mul_zero`, `sub_def` uses
+    `neg`) additionally need **literal coherence**: relating `int_lit 0` /
+    `int_lit 1` to their quotient representatives (`(0,0)` / `(1,0)`), a
+    separate lemma.
+
+  Older remaining-list (still accurate for the order axioms):
   - (a) the **β reconciliation** — `class_intro`'s `classOf a = λx. rel a x`
     vs `defs/int.rs`'s β-reduced `mk_int`;
   - (b) **unfold each `int` op** to its representative-pair body (δ + the
@@ -68,6 +97,23 @@ it is how unfinished work stays discoverable.
     and the full commutative-semiring multiplicative theory (`mul_succ_r`,
     `mul_one`, `mul_comm`, `mul_assoc`, `distrib`, `distrib_r`, `mul_zero`),
     consumed by the `nat` semiring embedding in `crate::semiring`.
+
+## Pending theorems
+
+- **`nat.le` transitivity** in `crates/covalence-hol/src/init/nat.rs`.
+  The order theory proves reflexivity, irreflexivity, successor
+  cancellation, the zero facts, **totality** (`le_total`),
+  **antisymmetry** (`le_antisym`), and the `<`/`≤` bridge
+  (`lt_iff_succ_le`) — but **not** transitivity `∀a b c. a≤b → b≤c → a≤c`.
+  It is a triple case-analysis: induct on the middle `b` (base `b = 0`
+  closes by `le_zero_iff` + `le_zero`), and in the `S b'` step run
+  `induct_forall2` over `(a, c)` — case `a = 0` closes by `le_zero`, case
+  `c = 0` is vacuous (`S b' ≤ 0` is false), and `a = S a' ∧ c = S c'`
+  cancels all three successors (`le_succ_succ`) and applies the
+  outer induction hypothesis at `(a', c')`. Alternatively prove the
+  additive characterisation `le_iff_add : (a ≤ b) = (∃k. a + k = b)` and
+  get transitivity/antisymmetry uniformly from `+`.
+
 ## Partial subsystems
 
 - **`covalence-hol` list theory** in `crates/covalence-hol/src/init/list.rs`.
@@ -158,10 +204,12 @@ coupling guard.
   (round toward −∞), which `int` does not yet expose (`int.div` truncates
   toward zero). The *unsigned* `uN.shr` and every other `uN`/`sN` op
   (add/sub/mul/neg/and/or/xor/not/lt/le/gt/ge/shl/div/rem) are now defined.
-- **`nat` ops, `crates/covalence-core/src/defs/nat.rs`** — `natDiv`,
-  `natBitAnd/Or/Xor`, `natToBytesLe/Be`, `natFromBytesLe/Be` are
-  `term_decl!` (declaration-only). `natDiv` in particular is *reducible*, so
-  when it gets a body it must be added to the coupling guard.
+- **`nat` ops, `crates/covalence-core/src/defs/nat.rs`** — `natBitAnd/Or/Xor`,
+  `natToBytesLe/Be`, `natFromBytesLe/Be` are `term_decl!`
+  (declaration-only). (`natDiv` now carries a def-style Euclidean selector
+  predicate; it is not let-style, so its `builtins` reduction is checked
+  against the predicate by `nat_div_mod_satisfy_euclidean_law` rather than
+  the unfold-based `audit_reduce_matches_body` coupling guard.)
 - **`bytes` ops, `crates/covalence-core/src/defs/blob.rs`** — `bytesConsNat`,
   `bytesAt` are declaration-only (need a `nat ↔ u8` conversion).
 - **Fixed-width conversions** (`toNat`/`toInt`/`fromNat`/`fromInt`/`zext`/

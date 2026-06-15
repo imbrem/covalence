@@ -172,6 +172,32 @@ fn nat_mod_by_zero_is_identity() {
 }
 
 #[test]
+fn nat_div_mod_satisfy_euclidean_law() {
+    // The two `builtins` reductions must jointly satisfy the Euclidean
+    // division law: for all n, m,  n = (n / m) * m + (n mod m),  and for
+    // m > 0 the remainder is bounded, 0 ≤ n mod m < m. This is exactly
+    // the def-style selector predicate `nat_div_predicate` characterises,
+    // checked here on the closed-literal reduction.
+    let red = |t: Term| rhs_of(&Thm::reduce_prim(t).expect("reduces"));
+    for (n, m) in [
+        (0u64, 0u64), (0, 1), (1, 0), (17, 5), (20, 4), (3, 7),
+        (1, 1), (100, 7), (255, 16), (42, 1),
+    ] {
+        let q = red(app2(defs::nat_div(), nat(n), nat(m))); // n / m
+        let r = red(app2(defs::nat_mod(), nat(n), nat(m))); // n mod m
+        // (n/m)*m + (n mod m)  ==  n   (reduce innermost-first; one step each)
+        let qm = red(app2(defs::nat_mul(), q, nat(m)));
+        let recombined = red(app2(defs::nat_add(), qm, r.clone()));
+        assert_eq!(recombined, nat(n), "Euclidean identity fails at n={n}, m={m}");
+        // m > 0 ⟹ n mod m < m.
+        if m != 0 {
+            let bounded = red(app2(defs::nat_lt(), r, nat(m)));
+            assert_eq!(bounded, Term::bool_lit(true), "remainder not < divisor at n={n}, m={m}");
+        }
+    }
+}
+
+#[test]
 fn nat_pow() {
     assert_reduces(app2(defs::nat_pow(), nat(2), nat(0)), nat(1));
     assert_reduces(app2(defs::nat_pow(), nat(0), nat(0)), nat(1));
@@ -876,14 +902,22 @@ fn unfold_def_style_errs() {
 
 #[test]
 fn unfold_declaration_only_errs() {
-    // `nat.div` is declaration-only (`tm = None`): unfold => SpecHasNoBody.
-    // (`cond` used to be declaration-only too, but now carries the HOL
-    // Light `COND` let-body — see `init::cond`.)
-    let t = defs::nat_div();
+    // `nat.bitAnd` is declaration-only (`tm = None`): unfold => SpecHasNoBody.
+    // (`nat.div` and `cond` used to be declaration-only too, but now carry
+    // bodies — div a def-style Euclidean selector, cond the HOL Light
+    // `COND` let-body — see `defs::nat_div` / `init::cond`.)
+    let t = defs::nat_bit_and();
     let err = Thm::unfold_term_spec(t).expect_err("declaration-only spec must not unfold");
     assert!(
         matches!(err, covalence_core::Error::SpecHasNoBody),
         "expected SpecHasNoBody, got {err:?}"
+    );
+    // `nat.div` is now def-style (selector predicate): unfold => SpecIsDefStyle.
+    let err = Thm::unfold_term_spec(defs::nat_div())
+        .expect_err("def-style spec must not let-unfold");
+    assert!(
+        matches!(err, covalence_core::Error::SpecIsDefStyle),
+        "expected SpecIsDefStyle for nat.div, got {err:?}"
     );
     // The fixed-width *conversions* (toNat/toInt/fromNat/fromInt) stay
     // declaration-only — they are the primitive reducible interface.

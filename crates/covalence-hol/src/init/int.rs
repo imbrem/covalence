@@ -13,9 +13,9 @@
 //! ingredients an integer-linear-arithmetic certificate checker (the
 //! Alethe `la_generic` / `la_mult_*` family) needs:
 //!
-//! - **Commutative ring** — [`add_comm`], [`add_assoc`], [`add_zero`],
-//!   [`add_neg`], [`mul_comm`], [`mul_assoc`], [`mul_one`], [`mul_zero`],
-//!   [`distrib`], [`sub_def`].
+//! - **Commutative ring** — [`add_comm`] / [`mul_comm`] (**proved**),
+//!   [`add_assoc`], [`add_zero`], [`add_neg`], [`mul_assoc`], [`mul_one`],
+//!   [`mul_zero`], [`distrib`], [`sub_def`].
 //! - **Linear order** — [`lt_irrefl`], [`lt_trans`], [`lt_trichotomy`],
 //!   [`le_def`].
 //! - **Ordered-ring compatibility** — [`lt_add_mono`], [`lt_mul_pos`].
@@ -50,9 +50,9 @@
 //! order) is the other quotient piece; see `SKELETONS.md`.
 
 use covalence_core::defs::{fst, prod, snd};
-use covalence_core::{Result, Term, Thm, Type, subst};
+use covalence_core::{Error, Result, Term, Thm, Type, subst};
 
-use crate::init::ext::TermExt;
+use crate::init::ext::{TermExt, ThmExt};
 use crate::init::nat;
 
 // Re-export the `defs/int.rs` term catalogue (the operations; the
@@ -249,16 +249,84 @@ fn forall_int(vars: &[&str], body: Term) -> Term {
 }
 
 // ============================================================================
+// Op-unfolding machinery — the defining equations on representatives
+// ============================================================================
+
+/// `repPair a ≔ ε(λp. rep a p)` — a representative pair of the int `a`.
+/// Reconstructs `defs/int.rs`'s private `rep_pair` so the unfolded op
+/// bodies match it structurally (and rewrites can target the components).
+fn rep_pair(a: &Term) -> Term {
+    let rep = Term::spec_rep(covalence_core::defs::int_ty_spec(), Vec::<Type>::new());
+    let rep_a = Term::app(rep, a.clone());
+    let p = Term::free("p", nn());
+    let pred = Term::abs(nn(), subst::close(&Term::app(rep_a, p), "p"));
+    Term::app(Term::select_op(nn()), pred)
+}
+
+/// `⊢ int.add a b = abs(classOf (pair Pa Pb))` — `int.add`'s δ-unfolded,
+/// β-reduced defining equation, with `Pa = fst(rep a) + fst(rep b)` and
+/// `Pb = snd(rep a) + snd(rep b)`.
+fn add_defining_eq(a: &Term, b: &Term) -> Result<Thm> {
+    add(a.clone(), b.clone())
+        .delta_all(covalence_core::defs::int_add_spec().symbol())?
+        .rhs_conv(|t| t.reduce())
+}
+
+/// `⊢ int.mul a b = abs(classOf (pair P1 P2))` — `int.mul`'s defining
+/// equation, with `P1 = fa·fb + sa·sb`, `P2 = fa·sb + sa·fb`
+/// (`fa = fst(rep a)`, `sa = snd(rep a)`, …).
+fn mul_defining_eq(a: &Term, b: &Term) -> Result<Thm> {
+    mul(a.clone(), b.clone())
+        .delta_all(covalence_core::defs::int_mul_spec().symbol())?
+        .rhs_conv(|t| t.reduce())
+}
+
+/// `⊢ t = t'`, applying each `eqs[i]` (`rw_all`, all occurrences) to the
+/// running RHS in turn.
+fn rewrite_seq(t: &Term, eqs: &[Thm]) -> Result<Thm> {
+    let mut acc = Thm::refl(t.clone())?;
+    for eq in eqs {
+        let cur = acc.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+        acc = acc.trans(cur.rw_all(eq)?)?;
+    }
+    Ok(acc)
+}
+
+// ============================================================================
 // Commutative ring
 // ============================================================================
 
-/// `⊢ ∀a b. a + b = b + a`.
-pub fn add_comm() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a b. a + b = b + a` — **proved**. `int.add` is componentwise
+    /// `nat` addition on representatives, which is commutative *on the nose*
+    /// (`Pa = fst(rep a)+fst(rep b) = fst(rep b)+fst(rep a) = Qa` by
+    /// `nat::add_comm`, likewise `Pb = Qb`), so no quotient lifting is
+    /// needed: unfold both sides and rewrite the representative components.
+    pub fn add_comm() -> Thm {
+        add_comm_impl().expect("int::add_comm derivation")
+    }
+}
+fn add_comm_impl() -> Result<Thm> {
     let (a, b) = (var("a"), var("b"));
-    let eq = add(a.clone(), b.clone())
-        .equals(add(b, a))
-        .expect("add_comm: a + b = b + a");
-    axiom(forall_int(&["a", "b"], eq))
+    let dl = add_defining_eq(&a, &b)?; // int.add a b = abs(classOf(pair Pa Pb))
+    let dr = add_defining_eq(&b, &a)?; // int.add b a = abs(classOf(pair Qa Qb))
+
+    // Pa = Qa (commute first components); Pb = Qb (second components).
+    let (rpa, rpb) = (rep_pair(&a), rep_pair(&b));
+    let eq_a = nat::add_comm().all_elim(fst_nn(&rpa))?.all_elim(fst_nn(&rpb))?;
+    let eq_b = nat::add_comm().all_elim(snd_nn(&rpa))?.all_elim(snd_nn(&rpb))?;
+
+    // Rewrite the RHS of `dl` (Pa→Qa, Pb→Qb) into the RHS of `dr`.
+    let t0 = dl.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let r1 = t0.rw_all(&eq_a)?; // ⊢ abs(classOf(pair Pa Pb)) = abs(classOf(pair Qa Pb))
+    let t1 = r1.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let r2 = t1.rw_all(&eq_b)?; // ⊢ … = abs(classOf(pair Qa Qb))
+    let rewritten = r1.trans(r2)?; // ⊢ dl.rhs = dr.rhs
+
+    dl.trans(rewritten)?
+        .trans(dr.sym()?)? // int.add a b = int.add b a
+        .all_intro("b", int())?
+        .all_intro("a", int())
 }
 
 /// `⊢ ∀a b c. (a + b) + c = a + (b + c)`.
@@ -286,13 +354,46 @@ pub fn add_neg() -> Thm {
     axiom(forall_int(&["a"], eq))
 }
 
-/// `⊢ ∀a b. a * b = b * a`.
-pub fn mul_comm() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a b. a * b = b * a` — **proved**. Like [`add_comm`], `int.mul`
+    /// is built from `nat::mul` on representatives, so commutativity is *on
+    /// the nose*: the first component `fa·fb + sa·sb` commutes to
+    /// `fb·fa + sb·sa` by `nat::mul_comm`, and the second `fa·sb + sa·fb`
+    /// to `fb·sa + sb·fa` by `nat::mul_comm` (each product) plus one
+    /// `nat::add_comm` (to swap the two summands). Unfold + rewrite.
+    pub fn mul_comm() -> Thm {
+        mul_comm_impl().expect("int::mul_comm derivation")
+    }
+}
+fn mul_comm_impl() -> Result<Thm> {
     let (a, b) = (var("a"), var("b"));
-    let eq = mul(a.clone(), b.clone())
-        .equals(mul(b, a))
-        .expect("mul_comm");
-    axiom(forall_int(&["a", "b"], eq))
+    let dl = mul_defining_eq(&a, &b)?;
+    let dr = mul_defining_eq(&b, &a)?;
+
+    let (rpa, rpb) = (rep_pair(&a), rep_pair(&b));
+    let (fa, sa) = (fst_nn(&rpa), snd_nn(&rpa));
+    let (fb, sb) = (fst_nn(&rpb), snd_nn(&rpb));
+    let mc = |x: &Term, y: &Term| -> Result<Thm> {
+        nat::mul_comm().all_elim(x.clone())?.all_elim(y.clone())
+    };
+    // P1: fa·fb→fb·fa, sa·sb→sb·sa.  P2: fa·sb→sb·fa, sa·fb→fb·sa, then
+    // swap the two summands (sb·fa)+(fb·sa) → (fb·sa)+(sb·fa).
+    let eqs = [
+        mc(&fa, &fb)?,
+        mc(&sa, &sb)?,
+        mc(&fa, &sb)?,
+        mc(&sa, &fb)?,
+        nat::add_comm()
+            .all_elim(nat::mul(sb.clone(), fa.clone()))?
+            .all_elim(nat::mul(fb.clone(), sa.clone()))?,
+    ];
+
+    let t0 = dl.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let rewritten = rewrite_seq(&t0, &eqs)?; // ⊢ dl.rhs = dr.rhs
+    dl.trans(rewritten)?
+        .trans(dr.sym()?)?
+        .all_intro("b", int())?
+        .all_intro("a", int())
 }
 
 /// `⊢ ∀a b c. (a * b) * c = a * (b * c)`.
@@ -419,11 +520,9 @@ mod tests {
     /// The full postulate set — used to assert the audit-trail invariant.
     fn all() -> Vec<Thm> {
         vec![
-            add_comm(),
             add_assoc(),
             add_zero(),
             add_neg(),
-            mul_comm(),
             mul_assoc(),
             mul_one(),
             mul_zero(),
@@ -451,6 +550,27 @@ mod tests {
                 "a postulated axiom carries itself as a hypothesis"
             );
         }
+    }
+
+    #[test]
+    fn add_comm_is_a_genuine_theorem() {
+        let thm = add_comm();
+        assert!(thm.hyps().is_empty(), "int::add_comm is proved, not postulated");
+        // ∀a b. a + b = b + a, specialised.
+        let (a, b) = (var("a"), var("b"));
+        let inst = thm.all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
+        let expected = add(a.clone(), b.clone()).equals(add(b, a)).unwrap();
+        assert_eq!(inst.concl(), &expected);
+    }
+
+    #[test]
+    fn mul_comm_is_a_genuine_theorem() {
+        let thm = mul_comm();
+        assert!(thm.hyps().is_empty(), "int::mul_comm is proved, not postulated");
+        let (a, b) = (var("a"), var("b"));
+        let inst = thm.all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
+        let expected = mul(a.clone(), b.clone()).equals(mul(b, a)).unwrap();
+        assert_eq!(inst.concl(), &expected);
     }
 
     #[test]
@@ -490,6 +610,34 @@ mod tests {
         // symm specialises to `int_rel p q ⟹ int_rel q p`.
         let symm = int_rel_symm().all_elim(p.clone()).unwrap().all_elim(q.clone()).unwrap();
         assert_eq!(symm.concl(), &rel_app(&p, &q).imp(rel_app(&q, &p)).unwrap());
+    }
+
+    #[test]
+    fn round_trip_relates_the_chosen_representative() {
+        use crate::init::quotient;
+        let spec = covalence_core::defs::int_ty_spec();
+        let p = Term::free("p", nn());
+        // ⊢ int_rel p (rep_class (mk_class p)) — a genuine, hyp-free theorem.
+        let rt = quotient::round_trip(
+            &spec,
+            &[],
+            &nn(),
+            &int_rel(),
+            &int_rel_refl(),
+            &int_rel_symm(),
+            &int_rel_trans(),
+            &p,
+        )
+        .expect("round_trip on int");
+        assert!(rt.hyps().is_empty(), "round_trip is genuine");
+        // Conclusion is `int_rel p <something>`.
+        let (rel, a, _) = {
+            let (ra, b) = rt.concl().as_app().unwrap();
+            let (r, a) = ra.as_app().unwrap();
+            (r.clone(), a.clone(), b.clone())
+        };
+        assert_eq!(&rel, &int_rel());
+        assert_eq!(&a, &p);
     }
 
     #[test]

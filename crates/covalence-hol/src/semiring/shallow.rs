@@ -320,11 +320,13 @@ mod tests {
             s.forall("a", s.forall("b", s.eq(s.mul(a.clone(), b.clone()), s.mul(b, a))));
         assert_eq!(s.concl(&s.mul_comm()), mul_comm_stmt);
 
-        // The int axioms are postulated → each carries itself as a hypothesis.
-        for ax in [s.add_comm(), s.mul_one(), s.distrib()] {
+        // The still-postulated int axioms carry themselves as a hypothesis
+        // (the audit trail). `add_comm` / `mul_comm` are already discharged in
+        // `init::int`, so they are *not* checked here.
+        for ax in [s.mul_one(), s.distrib()] {
             assert!(
                 ax.hyps().iter().any(|h| h == ax.concl()),
-                "an int semiring axiom is a self-flagged postulate"
+                "a still-postulated int semiring axiom is self-flagged"
             );
         }
     }

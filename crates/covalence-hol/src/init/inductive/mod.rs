@@ -17,21 +17,29 @@
 //! ```
 //!
 //! [`sig`] is the engine's vocabulary — an [`InductiveSig`] describing a
-//! type's constructors. [`graph`] is the first engine layer: the pure
-//! term builders for the impredicative recursion graph, generic over a
-//! signature.
+//! type's constructors. [`data`] is the lifting seam — the [`Inductive`]
+//! trait through which the engine consumes induction (and later freeness),
+//! so the *same* machinery serves both today's kernel-primitive `nat` and a
+//! future HOL-internal one. [`graph`] is the term layer (the impredicative
+//! recursion graph); [`existence`] is the first proof layer (per-constructor
+//! graph introduction + totality).
 //!
 //! ## Status
 //!
-//! The term layer ([`graph`]) is in place and consumed by `nat`'s
-//! construction in [`crate::init::recursion`]. The *proof* layer — the
-//! per-constructor inversion lemmas, totality / determinacy by the
-//! supplied induction principle, and the ε-assembly — is still specialised
-//! to `nat` in that module; generalising it over an arbitrary
-//! [`InductiveSig`] (and deriving `list`'s induction principle to feed it)
-//! is tracked in `SKELETONS.md`.
+//! - **Term layer** ([`graph`]) — done; consumed by `nat`'s construction in
+//!   [`crate::init::recursion`].
+//! - **Existence** ([`existence`]) — done and generic: `graph_intro` /
+//!   `graph_total` over any [`Inductive`]. `nat` consumes them.
+//! - **Uniqueness** (per-constructor inversion + determinacy) and the
+//!   **ε-assembly** — still specialised to `nat` in [`crate::init::recursion`];
+//!   generalising them (they additionally need constructor freeness on the
+//!   [`Inductive`] trait) and deriving `list`'s induction principle to feed
+//!   the engine are tracked in `SKELETONS.md`.
 
+pub mod data;
+pub mod existence;
 pub mod graph;
 pub mod sig;
 
+pub use data::Inductive;
 pub use sig::{Arg, Constructor, InductiveSig};

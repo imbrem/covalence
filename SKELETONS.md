@@ -171,25 +171,41 @@ it is how unfinished work stays discoverable.
 - **`covalence-hol` inductive-type engine** in
   `crates/covalence-hol/src/init/inductive/`. The shared infrastructure for
   basic inductive types (single-sorted, parametric, first-order,
-  strictly-positive, directly-recursive). **Only the term layer is in place:**
-  `sig.rs` is the signature data model (`InductiveSig` / `Constructor` /
-  `Arg`), and `graph.rs` builds the impredicative recursion graph
-  (`closed` / `graph`) generically from a signature. `nat`'s construction in
-  `init/recursion.rs` consumes these builders (its `nat_sig`), which validates
-  them. Still missing — the **proof layer**, currently hand-specialised to
-  `nat` in `init/recursion.rs`:
-  - **Generic per-constructor inversion lemmas** — the abstraction of
-    `graph_base_inv` (nullary) and `graph_step_inv` (recursive) to an arbitrary
-    constructor: `Graph (Cᵢ x⃗) a ⟹ ∃b⃗. (⋀ Graph rⱼ bⱼ) ∧ a = fᵢ x⃗ b⃗`, via the
-    per-constructor "determinizing" / "good" instances (`det_zero` / `good`).
-  - **Generic totality / determinacy** — fold the supplied induction principle
-    over the inversion lemmas (the bodies of `graph_total` / `graph_det`), then
-    ε-assemble (`recursion_theorem`) into `⊢ ∃rec. P_rec rec`.
-  - **The two feeders** — the engine *consumes* an induction principle plus
-    constructor freeness (injectivity + disjointness). For `nat` these are the
-    kernel primitives (`nat_induct`, `succ_inj`, `zero_ne_succ`); for `list`
-    they must be *derived* from the `stream (option α)` carrier (list induction
-    is the blocker — see the list theory entry below).
+  strictly-positive, directly-recursive). **In place:**
+  - `sig.rs` — the signature data model (`InductiveSig` / `Constructor` / `Arg`).
+  - `data.rs` — the `Inductive` **trait**, the lifting seam: the engine
+    consumes induction (and later freeness) only through it, never calling a
+    kernel rule directly. `nat`'s `NatTheory` adapter sources induction from
+    `Thm::nat_induct`.
+  - `graph.rs` — the impredicative recursion graph (`closed` / `graph` /
+    `ctor_instance`), generic over a signature.
+  - `existence.rs` — `graph_intro` (per-constructor introduction) and
+    `graph_total` (`⊢ ∀t. ∃a. Graph t a`, by the supplied induction). Generic
+    over `Inductive`; `nat` consumes them (`init/recursion.rs`).
+
+  Still **specialised to `nat`** in `init/recursion.rs` (the next generalisation
+  targets):
+  - **Uniqueness** — the per-constructor inversion lemmas (`graph_base_inv`
+    nullary / `graph_step_inv` recursive → `Graph (Cᵢ x⃗) a ⟹ ∃b⃗. (⋀ Graph rⱼ bⱼ)
+    ∧ a = fᵢ x⃗ b⃗`, via the "determinizing" / "good" instances `det_zero` /
+    `good`) and `graph_det`. These need **constructor freeness** (injectivity +
+    distinctness) added to the `Inductive` trait — for `nat` from `succ_inj` /
+    `zero_ne_succ`.
+  - **ε-assembly** — `recursion_theorem` / `rec_holds_proof` generalised to emit
+    `⊢ ∃rec. P_rec rec` from totality + determinacy for any signature.
+  - **The multi-recursive-argument path** in `existence.rs` (conjunctive IHs /
+    antecedents) is written but only exercised by `nat`'s ≤1-rec-arg cases; a
+    binary-tree or `list` signature is the first real test.
+
+  **Lifting to internal HOL (future).** The trait seam exists precisely so the
+  proofs can be re-targeted: today `nat` is a kernel primitive, but we may later
+  define `nat` from `ind` the standard HOL way (`0`/`SUC` carved out of an
+  infinite type via `NUM_REP`), where induction and freeness are **derived
+  theorems**. That presentation supplies the same `Inductive` interface and so
+  drives the same engine — lifting these proofs into internal HOL becomes
+  writing one new `Inductive` impl, not re-deriving the graph route. Keeping
+  every engine entry point generic over `I: Inductive` (never a concrete `nat`)
+  is the standing constraint that keeps this open.
 
 - **`covalence-hol` list theory** in `crates/covalence-hol/src/init/list.rs`.
   Only the **`nil`-side computational foundation** is proved so far — the

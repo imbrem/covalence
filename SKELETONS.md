@@ -82,13 +82,19 @@ it is how unfinished work stays discoverable.
   are componentwise on representatives, so the two representative pairs are
   provably equal (numerator + denominator each by the proved `int`
   commutativity facts) and equal representatives lift to equal classes by
-  congruence under `mkRat`; no quotient relation and no `int` cancellation
-  are involved. **Postulated** via the module's `axiom` helper (each
-  carrying its statement as a self-hyp):
-  - `rat_rel_trans` — transitivity of the cross-multiplication relation.
-    Needs `int` *multiplicative cancellation by a positive* (cancel the
-    common positive denominator), an `int` fact not yet discharged. Once
-    that lands, this becomes the int-analogue of `int_rel_trans`.
+  congruence under `mkRat`. `rat_rel_trans` is now **proved too** — the
+  Grothendieck cross-multiplication cancellation argument — *modulo* two
+  **postulated `int` facts** (stubbed in `init::rat` via `axiom`, **to be
+  relocated to / discharged in `init::int`**):
+  - `int_mul_rcancel` — `∀x y d. ¬(d = 0) ⟹ x·d = y·d ⟹ x = y` (`int` is an
+    integral domain; right-cancellation by a nonzero factor).
+  - `int_pos_nonzero` — `∀p:int.pos. ¬(rep p = 0)` (positive denominators
+    are nonzero).
+
+  So `rat_rel` is now a full equivalence and `quotient::class_intro` /
+  `recon` are available for the remaining `rat` axioms. Still **postulated**
+  via the module's `axiom` helper (each carrying its statement as a
+  self-hyp):
   - The remaining ordered-field axioms over the operations
     `rat_zero`/`rat_one`/`rat_add`/`rat_sub`/`rat_neg`/`rat_mul`/`rat_inv`/
     `rat_div`/`rat_lt` (all **defined** at the representative level;

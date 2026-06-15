@@ -161,28 +161,94 @@ fn axiom(t: Term) -> Thm {
     Thm::assume(t).expect("init::rat::axiom: term must be bool-typed")
 }
 
-/// Universally close `body` over the named representative-pair variables,
-/// outermost first.
-fn forall_pair(vars: &[&str], body: Term) -> Term {
+// ============================================================================
+// Postulated `int` facts (pending `int` proofs)
+// ============================================================================
+//
+// The `rat` quotient theory needs two `int` facts that `init::int` does not
+// yet prove. We **postulate them here** (self-flagged via `axiom`, exactly
+// like the `int` ordered-ring postulates) so the `rat` derivations that
+// consume them are real proofs *modulo* these leaves; when `init::int`
+// proves them, these two stubs are replaced by calls to the `int` versions
+// and every `rat` theorem built on them becomes genuine, with no change to
+// the `rat` public surface. **TODO: relocate to / discharge in `init::int`.**
+
+/// A free `int` variable.
+fn ivar(name: &str) -> Term {
+    Term::free(name, Type::int())
+}
+
+/// `0 : int`.
+fn izero() -> Term {
+    Term::int_lit(0i128)
+}
+
+/// **Postulated.** `⊢ ∀x y d. ¬(d = 0) ⟹ x·d = y·d ⟹ x = y` — `int`
+/// right-cancellation by a nonzero factor (the integers are an integral
+/// domain). Needed to cancel the common positive denominator in
+/// [`rat_rel_trans`]. *To be discharged in `init::int`.*
+fn int_mul_rcancel() -> Thm {
+    let (x, y, d) = (ivar("x"), ivar("y"), ivar("d"));
+    let neq = d.clone().equals(izero()).expect("int_mul_rcancel: d=0").not().expect("¬");
+    let prod_eq = imul(x.clone(), d.clone())
+        .equals(imul(y.clone(), d.clone()))
+        .expect("int_mul_rcancel: x·d=y·d");
+    let concl = x.clone().equals(y.clone()).expect("int_mul_rcancel: x=y");
+    let body = neq
+        .imp(prod_eq.imp(concl).expect("int_mul_rcancel inner"))
+        .expect("int_mul_rcancel");
     let mut t = body;
-    for name in vars.iter().rev() {
-        t = t
-            .forall(name, ip_pair())
-            .expect("forall_pair: bind variable");
+    for name in ["x", "y", "d"].iter().rev() {
+        t = t.forall(name, Type::int()).expect("int_mul_rcancel: ∀");
     }
-    t
+    axiom(t)
+}
+
+/// **Postulated.** `⊢ ∀p. ¬(rep p = 0)` for `p : int.pos` — the strictly-
+/// positive integers (the `rat` denominators) are nonzero. *To be discharged
+/// in `init::int` once `int.pos` positivity is available.*
+fn int_pos_nonzero() -> Thm {
+    let p = Term::free("p", int_pos_ty());
+    let rep = Term::spec_rep(int_pos_spec(), Vec::new());
+    let body = Term::app(rep, p.clone())
+        .equals(izero())
+        .expect("int_pos_nonzero: rep p = 0")
+        .not()
+        .expect("¬");
+    axiom(body.forall("p", int_pos_ty()).expect("int_pos_nonzero: ∀"))
 }
 
 // ============================================================================
-// `rat_rel` is an equivalence
+// `rat_rel` is an equivalence — proved (trans modulo the postulated int facts)
 // ============================================================================
 //
 // `refl` / `symm` are pure `int`-equation manipulations of the cross-
-// multiplication body and are **proved** outright. `trans` is the one
-// piece that needs `int` *multiplicative cancellation by a positive*
-// denominator (from `a·d = c·b` and `c·f = e·d`, cancel `d` to reach
-// `a·f = e·b`); that `int` fact is not yet discharged, so `trans` is a
-// postulate (`SKELETONS.md`).
+// multiplication body and are **proved** outright. `trans` is now **proved**
+// too — the Grothendieck-style cancellation argument (multiply the two
+// defining equations through, rearrange by `int` comm/assoc so the common
+// `den q` factor lines up, then cancel it) — resting on the postulated
+// `int` facts [`int_mul_rcancel`] and [`int_pos_nonzero`] above.
+
+/// `⊢ (x·a)·b = (x·b)·a` on `int` — swap the last two factors of a
+/// left-associated triple (associate, commute, re-associate).
+fn swap_last_two(x: &Term, a: &Term, b: &Term) -> Result<Thm> {
+    let assoc1 = int::mul_assoc()
+        .all_elim(x.clone())?
+        .all_elim(a.clone())?
+        .all_elim(b.clone())?; // (x·a)·b = x·(a·b)
+    let comm = int::mul_comm().all_elim(a.clone())?.all_elim(b.clone())?; // a·b = b·a
+    let cong = comm.cong_arg(Term::app(int::int_mul(), x.clone()))?; // x·(a·b) = x·(b·a)
+    let assoc2 = int::mul_assoc()
+        .all_elim(x.clone())?
+        .all_elim(b.clone())?
+        .all_elim(a.clone())?; // (x·b)·a = x·(b·a)
+    assoc1.trans(cong)?.trans(assoc2.sym()?)
+}
+
+/// `⊢ x = y` → `⊢ x·c = y·c` (right-multiply both sides of an `int` equation).
+fn mul_r(eq: Thm, c: &Term) -> Result<Thm> {
+    eq.cong_arg(int::int_mul())?.cong_fn(c.clone())
+}
 
 cached_thm! {
     /// `⊢ ∀p. rat_rel p p` — reflexivity (`num p · den p = num p · den p`).
@@ -215,27 +281,55 @@ fn rat_rel_symm_impl() -> Result<Thm> {
 
 cached_thm! {
     /// `⊢ ∀p q r. rat_rel p q ⟹ rat_rel q r ⟹ rat_rel p r` —
-    /// transitivity.
+    /// transitivity, **proved** modulo the postulated `int` facts.
     ///
-    /// **Postulated** (audit hyp). The derivation: from `num p · den q =
-    /// num q · den p` and `num q · den r = num r · den q`, multiply the
-    /// first by `den r` and the second by `den p`, commute/associate so
-    /// the common `num q · den q · den r` factor matches, giving
-    /// `(num p · den r) · den q = (num r · den p) · den q`, then cancel
-    /// `den q` (strictly positive, hence nonzero) — the `int`
-    /// multiplicative cancellation that is not yet a proved `int` fact.
+    /// From `num p · den q = num q · den p` and `num q · den r =
+    /// num r · den q`, right-multiply the first by `den r` and the second
+    /// by `den p`, rearrange by `int` comm/assoc ([`swap_last_two`]) so the
+    /// common `den q` lines up — giving `(num p · den r) · den q =
+    /// (num r · den p) · den q` — then cancel the strictly-positive `den q`
+    /// ([`int_mul_rcancel`] + [`int_pos_nonzero`]).
     pub fn rat_rel_trans() -> Thm {
-        let (p, q, r) = (
-            Term::free("p", ip_pair()),
-            Term::free("q", ip_pair()),
-            Term::free("r", ip_pair()),
-        );
-        let pr = rel_app(&p, &r);
-        let body = rel_app(&p, &q)
-            .imp(rel_app(&q, &r).imp(pr).expect("rat_rel_trans inner"))
-            .expect("rat_rel_trans");
-        axiom(forall_pair(&["p", "q", "r"], body))
+        rat_rel_trans_impl().expect("rat_rel_trans")
     }
+}
+fn rat_rel_trans_impl() -> Result<Thm> {
+    let (p, q, r) = (
+        Term::free("p", ip_pair()),
+        Term::free("q", ip_pair()),
+        Term::free("r", ip_pair()),
+    );
+    let (h1, h2) = (rel_app(&p, &q), rel_app(&q, &r));
+    let e1 = reduce_rel(Thm::assume(h1.clone())?)?; // num p·den q = num q·den p
+    let e2 = reduce_rel(Thm::assume(h2.clone())?)?; // num q·den r = num r·den q
+
+    let (np, dp) = (num(&p), den(&p));
+    let (nq, dq) = (num(&q), den(&q));
+    let (nr, dr) = (num(&r), den(&r));
+
+    // (np·dr)·dq = (np·dq)·dr = (nq·dp)·dr = (nq·dr)·dp = (nr·dq)·dp = (nr·dp)·dq.
+    let chain = swap_last_two(&np, &dq, &dr)?
+        .sym()?
+        .trans(mul_r(e1, &dr)?)?
+        .trans(swap_last_two(&nq, &dp, &dr)?)?
+        .trans(mul_r(e2, &dp)?)?
+        .trans(swap_last_two(&nr, &dq, &dp)?)?; // ⊢ (np·dr)·dq = (nr·dp)·dq
+
+    // Cancel the positive den q.
+    let nonzero = int_pos_nonzero().all_elim(den_pos(&q))?; // ¬(den q = 0)
+    let reduced = int_mul_rcancel()
+        .all_elim(imul(np.clone(), dr.clone()))?
+        .all_elim(imul(nr.clone(), dp.clone()))?
+        .all_elim(dq.clone())?
+        .imp_elim(nonzero)?
+        .imp_elim(chain)?; // ⊢ num p·den r = num r·den p
+
+    expand_rel(reduced, &rel_app(&p, &r))?
+        .imp_intro(&h2)?
+        .imp_intro(&h1)?
+        .all_intro("r", ip_pair())?
+        .all_intro("q", ip_pair())?
+        .all_intro("p", ip_pair())
 }
 
 // ============================================================================
@@ -1196,13 +1290,33 @@ mod tests {
     }
 
     #[test]
-    fn rat_rel_trans_is_a_self_flagged_postulate() {
+    fn rat_rel_trans_is_proved_modulo_int_postulates() {
+        // trans is now a real derivation (not self-flagged): its hypotheses
+        // are the postulated `int` leaves, not the conclusion itself.
         let t = rat_rel_trans();
         assert!(t.concl().type_of().unwrap().is_bool());
         assert!(
-            t.hyps().iter().any(|h| h == t.concl()),
-            "the postulate carries itself as a hypothesis"
+            !t.hyps().iter().any(|h| h == t.concl()),
+            "trans is derived, so does not carry itself as a hypothesis"
         );
+        // Shape: ∀p q r. rat_rel p q ⟹ rat_rel q r ⟹ rat_rel p r.
+        let (p, q, r) = (
+            Term::free("p", ip_pair()),
+            Term::free("q", ip_pair()),
+            Term::free("r", ip_pair()),
+        );
+        let inst = t
+            .clone()
+            .all_elim(p.clone())
+            .and_then(|t| t.all_elim(q.clone()))
+            .and_then(|t| t.all_elim(r.clone()))
+            .unwrap();
+        let expected = rel_app(&p, &q)
+            .imp(rel_app(&q, &r).imp(rel_app(&p, &r)).unwrap())
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
+        // All hypotheses are bool (the postulated int facts).
+        assert!(t.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
     }
 
     #[test]

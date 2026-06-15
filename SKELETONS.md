@@ -184,16 +184,21 @@ it is how unfinished work stays discoverable.
     builders + the derived rule set), distinct from the arena-style
     `HolLightKernel`. The pattern is **generic impl + native shim**: each
     function's logic moves to a generic-over-`Hol` version, with the concrete
-    engine function a thin [`NativeHol`] shim so callers are unchanged. **Ported
-    so far:** the conjunction-proof plumbing (`hol::conj` / `project` / `and_all`
-    / `discharge_conj`; `util` + `graph::conj` are now shims). **Still concrete:**
-    `sig`/`graph` term builders + queries (the data model `InductiveSig` becomes
-    generic over `Hol::Term`/`Type`), `existence` / `uniqueness` / `determinacy`
-    / `recursor` proofs, the `Inductive` trait (→ `Inductive<H>`), and the β / ∃
-    derived helpers (`beta_nf`/`beta_reduce`/`beta_expand`/`exists_intro`/
-    `exists_elim`) the engine pulls from `init::eq` / `init::logic` (these become
-    `Hol` methods or generic helpers). The trait grows method-by-method as each
-    module lands.
+    engine function a thin [`NativeHol`] shim so callers are unchanged.
+    **Done:** the `Hol` trait covers the **full proof-layer surface** — types,
+    term builders, queries, the rule set, and the hard derived rules (`beta_nf`,
+    `exists_intro`/`exists_elim`, `rw_all`) as trait methods; the easy derived
+    rules (`cong_arg`/`conjuncts`/`beta_reduce`/`beta_expand`/`beta_nf_concl`/
+    `beta_nf_expand`/`rewrite`) and the conjunction plumbing as generic helpers.
+    `NativeHol` forwards each to the existing `covalence-core` / `init::eq` /
+    `init::logic` impl; the surface is validated generically (the `hol` tests).
+    `util` + `graph::conj` are shims. **Still concrete (next):** the data model
+    (`sig`: `InductiveSig`/`Constructor`/`Arg` → generic over `Hol::Term`/`Type`,
+    e.g. `GenSig<Tm,Ty>` with a `type InductiveSig = GenSig<Term,Type>` alias so
+    concrete call sites are unchanged), the `graph` term builders / queries, the
+    `existence` / `uniqueness` / `determinacy` / `recursor` proofs, and the
+    `Inductive` trait (→ `Inductive<H>`). Each ports as a generic-over-`Hol`
+    function with a `NativeHol` shim.
   - **The multi-recursive-argument / multi-constructor-argument paths** in
     `existence.rs`, `uniqueness.rs`, `determinacy.rs`, and `recursor.rs`
     (conjunctive IHs / antecedents, componentwise injectivity, nested

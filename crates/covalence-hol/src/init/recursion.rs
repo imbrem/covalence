@@ -101,9 +101,9 @@ impl Inductive for NatTheory {
     fn induct(&self, _motive: &Term, cases: Vec<Thm>) -> Result<Thm> {
         // `cases = [⊢ motive 0, ⊢ motive m ⟹ motive (S m)]` (applied
         // form) — exactly `Thm::nat_induct`'s base / step.
-        let [base, step]: [Thm; 2] = cases
-            .try_into()
-            .map_err(|_| covalence_core::Error::ConnectiveRule("nat induct: expected 2 cases".into()))?;
+        let [base, step]: [Thm; 2] = cases.try_into().map_err(|_| {
+            covalence_core::Error::ConnectiveRule("nat induct: expected 2 cases".into())
+        })?;
         Thm::nat_induct(base, step)
     }
 }

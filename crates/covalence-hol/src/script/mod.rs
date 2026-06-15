@@ -125,15 +125,21 @@ pub fn run_str(src: &str) -> Result<Vec<NamedThm>, ScriptError> {
 }
 
 /// Load a `.cov` proof script as a Rust module: run it once, lazily, with
-/// the given `open` environments available, then expose chosen lemmas as
-/// `fn() -> Thm` accessors plus the resulting environment via `env()`
-/// (which downstream theories can `open`).
+/// the given `import`ed environments available for the script to `(open …)`
+/// (or otherwise reference), then expose chosen lemmas as `fn() -> Thm`
+/// accessors plus the resulting environment via `env()` (which downstream
+/// theories can in turn `import`).
+///
+/// `import NAME = EXPR;` makes the environment `EXPR` *available* to the
+/// script under `NAME`; the `.cov` decides what to do with it (today, an
+/// `(open NAME)` directive merges it in — later it may bind it under a
+/// namespace instead, which is why this is `import`, not `open`).
 ///
 /// ```ignore
 /// crate::cov_theory! {
 ///     /// Propositional logic, ported from Rust.
 ///     pub mod cov from "logic.cov" {
-///         open "core" = crate::script::Env::core();
+///         import "core" = crate::script::Env::core();
 ///         "truth"    => pub fn truth;
 ///         "and.comm" => pub fn and_comm;
 ///     }
@@ -149,7 +155,7 @@ macro_rules! cov_theory {
     (
         $(#[$meta:meta])*
         $vis:vis mod $modname:ident from $src:literal {
-            $( open $oname:literal = $oenv:expr ; )*
+            $( import $oname:literal = $oenv:expr ; )*
             $( $lemma:literal => $lvis:vis fn $fn:ident ; )*
         }
     ) => {

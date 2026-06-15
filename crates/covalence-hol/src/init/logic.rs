@@ -56,7 +56,7 @@ use crate::init::ext::{TermExt, ThmExt};
 crate::cov_theory! {
     /// Propositional lemmas loaded from `logic.cov`.
     pub mod cov from "logic.cov" {
-        open "core" = crate::script::Env::core();
+        import "core" = crate::script::Env::core();
         "truth"    => pub fn truth;
         "and.comm" => pub fn and_comm;
         "or.comm"  => pub fn or_comm;

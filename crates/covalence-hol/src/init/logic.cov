@@ -6,32 +6,58 @@
 ;; and the `tauto`/`normalize` machinery depends on `truth`, so a `(tauto …)`
 ;; would re-enter the theory's own initialisation.
 
-(open core)
+(#open core)
 
 ;; ⊢ T. `reduce-prim` decides (T = T) = T on the closed literals; `refl T`
 ;; discharges the antecedent via `eq-mp`.
-(thm truth
-  (concl true)
-  (proof (eq-mp (reduce-prim (= true true)) (refl true))))
+(#thm truth
+  (#concl true)
+  (#proof (eq-mp (reduce-prim (= true true)) (refl true))))
 
 ;; ⊢ (p ∧ q) ⟹ (q ∧ p). p, q inferred : bool.
-(thm and.comm
-  (concl (==> (and p q) (and q p)))
-  (proof
+(#thm and.comm
+  (#concl (==> (and p q) (and q p)))
+  (#proof
     (imp-intro (and p q)
       (and-intro
         (and-elim-r (assume (and p q)))
         (and-elim-l (assume (and p q)))))))
 
 ;; ⊢ (p ∨ q) ⟹ (q ∨ p). Case-split; each branch re-injects on the far side.
-(thm or.comm
-  (concl (==> (or p q) (or q p)))
-  (proof
+(#thm or.comm
+  (#concl (==> (or p q) (or q p)))
+  (#proof
     (imp-intro (or p q)
       (or-elim (assume (or p q))
         (imp-intro p (or-intro-r q (assume p)))
         (imp-intro q (or-intro-l p (assume q)))))))
 
+;; ∃-introduction, reified as a higher-order theorem:
+;;   ⊢ ∀(P : 'a → bool). ∀(w : 'a). (P w) ⟹ (∃x. P x)
+;;
+;; `∃x. P x` is `exists P`; by its definition `exists ≡ λP. ∀q. (∀x. P x ⟹ q)
+;; ⟹ q`. So: fix P, w; assume `P w`; build `∀q. (∀x. P x ⟹ q) ⟹ q` (assume
+;; the hypothesis H = ∀x. P x ⟹ q, specialise at w, MP the assumed `P w`,
+;; discharge H, generalise q); then fold the definition with `unfold-at-1`
+;; (`exists P = ∀q. (∀x. P x ⟹ q) ⟹ q`) via `sym` + `eq-mp`. The
+;; S-expression port of the `exists_intro` derivation in `init/logic.rs`.
+(#thm exists.intro
+  (#concl
+    (forall (P (fun 'a bool))
+      (forall (w 'a)
+        (==> (app P w) (app (exists-op 'a) P)))))
+  (#proof
+    (all-intro P (fun 'a bool)
+      (all-intro w 'a
+        (imp-intro (app P w)
+          (eq-mp
+            (sym (unfold-at-1 (exists-op 'a) P))
+            (all-intro q bool
+              (imp-intro (forall (x) (==> (app P x) q))
+                (imp-elim
+                  (all-elim w (assume (forall (x) (==> (app P x) q))))
+                  (assume (app P w)))))))))))
+
 ;; The public interface: what `cov::env()` exposes and what the Rust
-;; accessors (`truth`/`and_comm`/`or_comm`) read.
-(export truth and.comm or.comm)
+;; accessors read.
+(#export truth and.comm or.comm exists.intro)

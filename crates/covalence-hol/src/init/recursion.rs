@@ -7,9 +7,12 @@
 //!
 //! 1. **Graph** `Graph z f n a` — the least relation closed under the
 //!    recursion rules, encoded impredicatively as
-//!    `∀G. (G 0 z ∧ ∀m b. G m b ⟹ G (S m) (f m b)) ⟹ G n a`. A plain
-//!    term builder ([`graph`]); "unfolding" it is just manipulating the
-//!    `∀G …` structure, no defined constant.
+//!    `∀G. (G 0 z ∧ ∀m b. G m b ⟹ G (S m) (f m b)) ⟹ G n a`. The term
+//!    builders ([`graph`] / [`closed`]) come from the generic inductive
+//!    engine ([`crate::init::inductive`]) at the [`nat_sig`] signature;
+//!    "unfolding" the graph is just manipulating the `∀G …` structure, no
+//!    defined constant. This module supplies the `nat`-specific *proofs*
+//!    over those terms.
 //! 2. **Existence** `∀n. ∃a. Graph z f n a` by induction
 //!    ([`graph_base`] / [`graph_step`] are the base/step facts). ← here
 //! 3. **Uniqueness** `∀n a b. Graph z f n a ∧ Graph z f n b ⟹ a = b`
@@ -19,9 +22,12 @@
 //!
 use covalence_core::{Result, Term, Thm, Type, defs, subst};
 
+use crate::init::eq::{beta_expand, beta_nf_concl, beta_nf_expand, beta_reduce};
 use crate::init::ext::{TermExt, ThmExt};
+use crate::init::inductive::graph as gb;
+use crate::init::inductive::{Arg, Constructor, InductiveSig};
 use crate::init::logic::{exists_elim, exists_intro};
-use crate::init::nat::{succ, zero};
+use crate::init::nat::{nat_succ, succ, zero};
 
 // ============================================================================
 // Types / small builders
@@ -51,30 +57,37 @@ fn app2(h: Term, x: Term, y: Term) -> Result<Term> {
 }
 
 // ============================================================================
-// The graph predicate
+// The graph predicate — built through the generic inductive engine
 // ============================================================================
+
+/// The `nat` signature: `zero` (nullary) and `succ` (one recursive
+/// argument `m` with image `b`). This is what makes the engine's term
+/// layer concrete; the proofs below specialise to it.
+///
+/// The generated closure and graph reproduce the hand-written
+/// `G 0 z ∧ (∀m b. G m b ⟹ G (S m) (f m b))` / `∀G. closed ⟹ G n a`
+/// exactly — the `nat` step terms are `[z, f]`, the recursor result type
+/// is `nat`.
+fn nat_sig() -> InductiveSig {
+    InductiveSig {
+        ty: nat(),
+        relation: "G",
+        ctors: vec![
+            Constructor::nullary(zero()),
+            Constructor::new(nat_succ(), vec![Arg::Rec { name: "m", image: "b" }]),
+        ],
+    }
+}
 
 /// `G 0 z ∧ (∀m b. G m b ⟹ G (S m) (f m b))` — `G` is closed under the
 /// recursion rules for `z`, `f`.
 fn closed(z: &Term, f: &Term, g: &Term) -> Result<Term> {
-    let g0z = app2(g.clone(), zero(), z.clone())?;
-    let m = var("m");
-    let b = var("b");
-    let gmb = app2(g.clone(), m.clone(), b.clone())?;
-    let fmb = app2(f.clone(), m.clone(), b.clone())?;
-    let g_succ = app2(g.clone(), succ(m.clone()), fmb)?;
-    let step = gmb
-        .imp(g_succ)?
-        .forall("b", nat())?
-        .forall("m", nat())?;
-    g0z.and(step)
+    gb::closed(&nat_sig(), &[z.clone(), f.clone()], &nat(), g)
 }
 
 /// `Graph z f n a ≜ ∀G. closed(z,f,G) ⟹ G n a`.
 fn graph(z: &Term, f: &Term, n: Term, a: Term) -> Result<Term> {
-    let g = Term::free("G", g_ty());
-    let gna = app2(g.clone(), n, a)?;
-    closed(z, f, &g)?.imp(gna)?.forall("G", g_ty())
+    gb::graph(&nat_sig(), &[z.clone(), f.clone()], &nat(), n, a)
 }
 
 // ============================================================================
@@ -124,19 +137,6 @@ fn graph_step(z: &Term, f: &Term, n: &Term, a: &Term) -> Result<Thm> {
 // Existence: ∀n. ∃a. Graph z f n a, by induction
 // ============================================================================
 
-/// `⊢ f arg` from `⊢ body`, where `body` is `f arg` β-reduced (used to
-/// re-wrap a fact into the "applied" form `nat_induct` / `exists_*` want).
-fn beta_expand(f: &Term, arg: Term, body_proof: Thm) -> Result<Thm> {
-    Thm::beta_conv(Term::app(f.clone(), arg))?
-        .sym()?
-        .eq_mp(body_proof)
-}
-
-/// `⊢ body[arg]` from `⊢ f arg` (β-reduce a conclusion that is a redex).
-fn beta_reduce_thm(thm: Thm) -> Result<Thm> {
-    Thm::beta_conv(thm.concl().clone())?.eq_mp(thm)
-}
-
 /// `λa. Graph z f n a` — the existential predicate at a fixed `n`.
 fn ex_pred(z: &Term, f: &Term, n: &Term) -> Result<Term> {
     let body = graph(z, f, n.clone(), var("a"))?;
@@ -164,14 +164,14 @@ pub(crate) fn graph_total(z: &Term, f: &Term) -> Result<Thm> {
     // step: ⊢ motive n ⟹ motive (S n).
     let n = var("n");
     let mot_n = Term::app(mot.clone(), n.clone());
-    let exn = beta_reduce_thm(Thm::assume(mot_n.clone())?)?; // {motive n} ⊢ ∃a. Graph z f n a
+    let exn = beta_reduce(Thm::assume(mot_n.clone())?)?; // {motive n} ⊢ ∃a. Graph z f n a
 
     // ∀a. (pred_n a) ⟹ motive (S n): from Graph z f n a, witness f n a
     // for the successor existential.
     let pred_n = ex_pred(z, f, &n)?;
     let a = var("a");
     let pred_n_a = Term::app(pred_n.clone(), a.clone());
-    let gna = beta_reduce_thm(Thm::assume(pred_n_a.clone())?)?; // {pred_n a} ⊢ Graph z f n a
+    let gna = beta_reduce(Thm::assume(pred_n_a.clone())?)?; // {pred_n a} ⊢ Graph z f n a
     let g_succ = graph_step(z, f, &n, &a)?.imp_elim(gna)?; // ⊢ Graph z f (S n) (f n a)
     let pred_sn = ex_pred(z, f, &succ(n.clone()))?;
     let fna = app2(f.clone(), n.clone(), a.clone())?;
@@ -192,20 +192,10 @@ pub(crate) fn graph_total(z: &Term, f: &Term) -> Result<Thm> {
 // Uniqueness, part 1: inversion lemmas via "determinizing" instances
 // ============================================================================
 
-/// `⊢ redex`, given `⊢ (redex β-reduced)`. Bridges a fact about a
-/// β-normal body back to the un-reduced application the graph carries.
-///
-/// **β only** (`beta_nf`, not `reduce`): the instances apply relations
-/// to literals like `0`, and we must *not* let ι collapse the resulting
-/// `0 = 0` to `T` — the proofs are stated with the equation intact.
-fn prove_redex(redex: Term, reduced_proof: Thm) -> Result<Thm> {
-    crate::init::eq::beta_nf(redex).sym()?.eq_mp(reduced_proof)
-}
-
-/// β-normalise a theorem's conclusion (β only — see [`prove_redex`]).
-fn reduce_concl(thm: Thm) -> Result<Thm> {
-    crate::init::eq::beta_nf(thm.concl().clone()).eq_mp(thm)
-}
+// The graph instances below apply relations to literals like `0`, so the
+// re-wrapping uses the **β-only** [`beta_nf_expand`] / [`beta_nf_concl`]
+// (never ι): the proofs keep equations like `0 = 0` intact rather than
+// collapsing them to `T`.
 
 /// The determinizing relation `λk c. (k = 0) ⟹ (c = z)` — closed under
 /// the recursion rules, and pins the value at `0` to `z`.
@@ -223,7 +213,7 @@ fn det_zero_closed(z: &Term, f: &Term) -> Result<Thm> {
     // conj1: ⊢ G 0 z  (G 0 z β-reduces to (0=0) ⟹ (z=z)).
     let eq00 = zero().equals(zero())?;
     let g0z_body = Thm::refl(z.clone())?.imp_intro(&eq00)?; // ⊢ (0=0) ⟹ (z=z)
-    let conj1 = prove_redex(app2(g.clone(), zero(), z.clone())?, g0z_body)?;
+    let conj1 = beta_nf_expand(app2(g.clone(), zero(), z.clone())?, g0z_body)?;
 
     // conj2: ⊢ ∀m b. G m b ⟹ G (S m) (f m b)  — the consequent is
     // vacuously true (S m ≠ 0), so it holds regardless of the antecedent.
@@ -237,7 +227,7 @@ fn det_zero_closed(z: &Term, f: &Term) -> Result<Thm> {
         .not_elim(Thm::assume(sm_eq_0.clone())?.sym()?)? // ⊢ F
         .false_elim(fmb.clone().equals(z.clone())?)?; //     ⊢ f m b = z
     let g_succ_body = contra.imp_intro(&sm_eq_0)?; // ⊢ (S m = 0) ⟹ (f m b = z)
-    let g_succ = prove_redex(app2(g.clone(), sm, fmb)?, g_succ_body)?;
+    let g_succ = beta_nf_expand(app2(g.clone(), sm, fmb)?, g_succ_body)?;
     let conj2 = g_succ
         .imp_intro(&app2(g.clone(), m.clone(), b.clone())?)?
         .all_intro("b", nat())?
@@ -257,7 +247,7 @@ pub(crate) fn graph_base_inv(z: &Term, f: &Term) -> Result<Thm> {
     let g0a = Thm::assume(gh.clone())?
         .all_elim(g)?
         .imp_elim(det_zero_closed(z, f)?)?;
-    reduce_concl(g0a)? // {GH} ⊢ (0=0) ⟹ (a=z)
+    beta_nf_concl(g0a)? // {GH} ⊢ (0=0) ⟹ (a=z)
         .imp_elim(Thm::refl(zero())?)? // {GH} ⊢ a = z
         .imp_intro(&gh) //                  ⊢ Graph z f 0 a ⟹ a = z
 }
@@ -322,14 +312,14 @@ fn good_closed(z: &Term, f: &Term) -> Result<Thm> {
     // conj1: ⊢ Good 0 z  (β-reduces to Graph 0 z ∧ wit 0 z).
     let conj1 = {
         let reduced = graph_base(z, f)?.and_intro(wit_zero(z, f)?)?;
-        prove_redex(app2(g.clone(), zero(), z.clone())?, reduced)?
+        beta_nf_expand(app2(g.clone(), zero(), z.clone())?, reduced)?
     };
 
     // conj2: ⊢ ∀m b. Good m b ⟹ Good (S m) (f m b).
     let m = var("m");
     let b = var("b");
     let good_mb = app2(g.clone(), m.clone(), b.clone())?;
-    let gm = reduce_concl(Thm::assume(good_mb.clone())?)?.and_elim_l()?; // {GA} ⊢ Graph m b
+    let gm = beta_nf_concl(Thm::assume(good_mb.clone())?)?.and_elim_l()?; // {GA} ⊢ Graph m b
 
     // Graph (S m) (f m b)
     let g_succ = graph_step(z, f, &m, &b)?.imp_elim(gm.clone())?; // {GA} ⊢ Graph (S m) (f m b)
@@ -349,7 +339,7 @@ fn good_closed(z: &Term, f: &Term) -> Result<Thm> {
 
     let conj2 = {
         let reduced = g_succ.and_intro(wit_succ)?;
-        prove_redex(app2(g.clone(), succ(m.clone()), fmb)?, reduced)?
+        beta_nf_expand(app2(g.clone(), succ(m.clone()), fmb)?, reduced)?
     }
     .imp_intro(&good_mb)?
     .all_intro("b", nat())?
@@ -368,7 +358,7 @@ pub(crate) fn graph_step_inv(z: &Term, f: &Term) -> Result<Thm> {
     let good_sn_a = Thm::assume(gh.clone())?
         .all_elim(good(z, f)?)?
         .imp_elim(good_closed(z, f)?)?;
-    let ex_c = reduce_concl(good_sn_a)? // {GH} ⊢ Graph (S n) a ∧ wit (S n) a
+    let ex_c = beta_nf_concl(good_sn_a)? // {GH} ⊢ Graph (S n) a ∧ wit (S n) a
         .and_elim_r()? //                  {GH} ⊢ ∀j. (S n = S j) ⟹ ∃d. …
         .all_elim(n.clone())? //           {GH} ⊢ (S n = S n) ⟹ ∃d. Graph n d ∧ a = f n d
         .imp_elim(Thm::refl(succ(n.clone()))?)?; // {GH} ⊢ ∃d. Graph n d ∧ a = f n d
@@ -417,7 +407,7 @@ pub(crate) fn graph_det(z: &Term, f: &Term) -> Result<Thm> {
     // step: ⊢ D n ⟹ D (S n).
     let n = var("n");
     let dn = Term::app(mot.clone(), n.clone());
-    let ih = beta_reduce_thm(Thm::assume(dn.clone())?)?; // {Dn} ⊢ ∀a b. Graph n a ⟹ Graph n b ⟹ a=b
+    let ih = beta_reduce(Thm::assume(dn.clone())?)?; // {Dn} ⊢ ∀a b. Graph n a ⟹ Graph n b ⟹ a=b
 
     let gsa = graph(z, f, succ(n.clone()), a.clone())?;
     let gsb = graph(z, f, succ(n.clone()), b.clone())?;
@@ -431,12 +421,12 @@ pub(crate) fn graph_det(z: &Term, f: &Term) -> Result<Thm> {
     let pred_a = wit_pred(z, f, &n, &a)?;
     let ca = var("ca");
     let pred_a_ca = Term::app(pred_a, ca.clone());
-    let (gca, a_eq) = beta_reduce_thm(Thm::assume(pred_a_ca.clone())?)?.conjuncts()?;
+    let (gca, a_eq) = beta_reduce(Thm::assume(pred_a_ca.clone())?)?.conjuncts()?;
 
     let pred_b = wit_pred(z, f, &n, &b)?;
     let cb = var("cb");
     let pred_b_cb = Term::app(pred_b, cb.clone());
-    let (gcb, b_eq) = beta_reduce_thm(Thm::assume(pred_b_cb.clone())?)?.conjuncts()?;
+    let (gcb, b_eq) = beta_reduce(Thm::assume(pred_b_cb.clone())?)?.conjuncts()?;
 
     // ca = cb by the IH; hence a = f n ca = f n cb = b.
     let ca_eq_cb = ih
@@ -485,10 +475,10 @@ fn rec_at(z: &Term, f: &Term, n: &Term) -> Result<Term> {
 fn graph_at_rec(z: &Term, f: &Term) -> Result<Thm> {
     let n = var("n");
     let pred = graph_pred(z, f, &n)?;
-    let exists_n = beta_reduce_thm(graph_total(z, f)?.all_elim(n.clone())?)?;
+    let exists_n = beta_reduce(graph_total(z, f)?.all_elim(n.clone())?)?;
     let choose = Thm::select_ax(pred.clone(), var("a"))?.all_intro("a", nat())?;
     let eps = Term::app(Term::select_op(nat()), pred.clone());
-    beta_reduce_thm(exists_elim(exists_n, Term::app(pred, eps), choose)?)
+    beta_reduce(exists_elim(exists_n, Term::app(pred, eps), choose)?)
 }
 
 /// The closed recursor `λz f n. ε a. Graph z f n a`.
@@ -539,7 +529,7 @@ fn recursion_theorem() -> Result<Thm> {
     let g_step = graph_step(&z, &f, &n, &rec_n)?.imp_elim(g_at_n)?; // ⊢ Graph z f (S n) (f n rec_n)
     let g_at_sn = graph_at_rec(&z, &f)?.inst("n", succ(n.clone()))?; // ⊢ Graph z f (S n) rec_{Sn}
     let fnrecn = app2(f.clone(), n.clone(), rec_n.clone())?;
-    let det_eq = beta_reduce_thm(graph_det(&z, &f)?.all_elim(succ(n.clone()))?)?
+    let det_eq = beta_reduce(graph_det(&z, &f)?.all_elim(succ(n.clone()))?)?
         .all_elim(rec_at(&z, &f, &succ(n.clone()))?)?
         .all_elim(fnrecn)?
         .imp_elim(g_at_sn)?
@@ -573,7 +563,7 @@ pub(crate) fn rec_holds_proof() -> Result<Thm> {
     let step = Thm::spec_ax(natrec.clone(), Term::free("r", rec_ty()))?
         .all_intro("r", rec_ty())?; // ⊢ ∀r. P_rec r ⟹ P_rec natRec
     let p_nr = exists_elim(recursion_theorem()?, Term::app(pred, natrec), step)?;
-    beta_reduce_thm(p_nr)
+    beta_reduce(p_nr)
 }
 
 #[cfg(test)]
@@ -616,7 +606,7 @@ mod tests {
         // ⊢ ∃a. Graph z f k a.
         let k = var("k");
         let inst = thm.all_elim(k.clone()).unwrap();
-        let reduced = beta_reduce_thm(inst).unwrap();
+        let reduced = beta_reduce(inst).unwrap();
         let expected = graph(&z, &f, k, var("a")).unwrap().exists("a", nat()).unwrap();
         assert_eq!(reduced.concl(), &expected);
     }
@@ -668,7 +658,7 @@ mod tests {
         assert!(thm.hyps().is_empty(), "determinacy must be axiom-free");
         // Specialise at k and β-reduce: ∀a b. Graph k a ⟹ Graph k b ⟹ a = b.
         let k = var("k");
-        let reduced = beta_reduce_thm(thm.all_elim(k.clone()).unwrap()).unwrap();
+        let reduced = beta_reduce(thm.all_elim(k.clone()).unwrap()).unwrap();
         let a = var("a");
         let b = var("b");
         let expected = graph(&z, &f, k.clone(), a.clone())

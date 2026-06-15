@@ -52,6 +52,7 @@
 use covalence_core::{Result, Term, Thm, Type, defs, subst};
 use covalence_types::Nat;
 
+use crate::init::eq::{beta_expand, beta_nf_concl, beta_reduce};
 use crate::init::ext::{TermExt, ThmExt};
 
 // Re-export the `defs/nat.rs` term catalogue (the operations; the
@@ -274,17 +275,6 @@ fn mul_step_impl() -> Result<Thm> {
 // `add_base` / `add_step`), so they become genuine theorems the moment
 // `rec_holds` is discharged — exactly like the recursion equations above.
 
-/// `⊢ f arg` from a proof of its β-reduct — wrap a fact into the "applied"
-/// form `nat_induct` wants.
-fn beta_expand(f: &Term, arg: Term, body: Thm) -> Result<Thm> {
-    Thm::beta_conv(Term::app(f.clone(), arg))?.sym()?.eq_mp(body)
-}
-
-/// `⊢ body[arg]` from `⊢ f arg` — β-reduce a redex conclusion.
-fn beta_reduce_thm(thm: Thm) -> Result<Thm> {
-    Thm::beta_conv(thm.concl().clone())?.eq_mp(thm)
-}
-
 /// Prove `⊢ ∀n. body` by `nat`-induction. `motive` is `λn. body`; `base`
 /// proves the β-reduct `body[0/n]`; `step` proves `body[n] ⟹ body[S n]`
 /// for the free variable `n`. Wraps both into [`Thm::nat_induct`]'s applied
@@ -300,12 +290,11 @@ fn induct_on(ivar: &str, motive: &Term, base: Thm, step: Thm) -> Result<Thm> {
     let n = var(ivar);
     let base = beta_expand(motive, zero(), base)?; // ⊢ motive 0
     let pn = Term::app(motive.clone(), n.clone());
-    let body_n = beta_reduce_thm(Thm::assume(pn.clone())?)?; // {motive n} ⊢ body[n]
-    let body_sn = step.imp_elim(body_n)?; //                    {motive n} ⊢ body[S n]
+    let body_n = beta_reduce(Thm::assume(pn.clone())?)?; // {motive n} ⊢ body[n]
+    let body_sn = step.imp_elim(body_n)?; //               {motive n} ⊢ body[S n]
     let p_sn = beta_expand(motive, succ(n.clone()), body_sn)?; // {motive n} ⊢ motive (S n)
     let step = p_sn.imp_intro(&pn)?; //                          ⊢ motive n ⟹ motive (S n)
-    let applied = Thm::nat_induct(base, step)?; //               ⊢ ∀n. motive n
-    crate::init::eq::beta_nf(applied.concl().clone()).eq_mp(applied)
+    beta_nf_concl(Thm::nat_induct(base, step)?) //              ⊢ ∀n. body
 }
 
 cached_thm! {

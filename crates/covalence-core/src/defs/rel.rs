@@ -337,9 +337,8 @@ fn rel_property_spec(symbol: Canonical, props: &[fn(Type) -> Term]) -> TypeSpec 
 
 /// `preord 'a := rel 'a 'a where (transitive ∧ reflexive)`.
 pub fn preord_spec() -> TypeSpec {
-    static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
-        rel_property_spec(Canonical::Preord, &[transitive_pred, reflexive_pred])
-    });
+    static LAZY: LazyLock<TypeSpec> =
+        LazyLock::new(|| rel_property_spec(Canonical::Preord, &[transitive_pred, reflexive_pred]));
     LAZY.clone()
 }
 pub fn preord(alpha: Type) -> Type {
@@ -362,9 +361,8 @@ pub fn pord(alpha: Type) -> Type {
 
 /// `per 'a := rel 'a 'a where (transitive ∧ symmetric)`.
 pub fn per_spec() -> TypeSpec {
-    static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
-        rel_property_spec(Canonical::Per, &[transitive_pred, symmetric_pred])
-    });
+    static LAZY: LazyLock<TypeSpec> =
+        LazyLock::new(|| rel_property_spec(Canonical::Per, &[transitive_pred, symmetric_pred]));
     LAZY.clone()
 }
 pub fn per(alpha: Type) -> Type {

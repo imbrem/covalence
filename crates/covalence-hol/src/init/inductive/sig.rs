@@ -87,7 +87,10 @@ pub struct Constructor {
 impl Constructor {
     /// A nullary constructor (a constant of type `T`, e.g. `zero` / `nil`).
     pub fn nullary(ctor: Term) -> Self {
-        Constructor { ctor, args: Vec::new() }
+        Constructor {
+            ctor,
+            args: Vec::new(),
+        }
     }
 
     /// A constructor with the given argument signature.

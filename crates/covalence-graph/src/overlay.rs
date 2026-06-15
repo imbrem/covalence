@@ -303,4 +303,3 @@ impl KindFlags {
         O256::context(KIND_FLAGS_HASH_CTX, self.content_hash().as_bytes())
     }
 }
-

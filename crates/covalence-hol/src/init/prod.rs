@@ -59,7 +59,10 @@ use covalence_core::defs::{fst_spec, pair_spec, prod_spec, snd_spec};
 
 /// `pair[α,β] a b : prod α β` — the constructor as a builder.
 fn pair_at(alpha: &Type, beta: &Type, a: &Term, b: &Term) -> Term {
-    Term::app(Term::app(pair(alpha.clone(), beta.clone()), a.clone()), b.clone())
+    Term::app(
+        Term::app(pair(alpha.clone(), beta.clone()), a.clone()),
+        b.clone(),
+    )
 }
 
 /// `rep : prod α β → (α → β → bool)` — the raw carrier coercion.
@@ -82,7 +85,9 @@ fn singleton_pred(prem: &Term, a: &Term, b: &Term, rel: &Term) -> Result<Thm> {
     // predicate is the bare `prod_predicate`, not eta-expanded).
     let prem_beta = Thm::beta_conv(prem.clone())?;
     let ex = rhs_of(&prem_beta)?;
-    prem_beta.sym()?.eq_mp(prove_singleton_exists(&ex, a, b, rel)?)
+    prem_beta
+        .sym()?
+        .eq_mp(prove_singleton_exists(&ex, a, b, rel)?)
 }
 
 /// `⊢ ∃a'. ∃b'. rel = (λx y. x = a' ∧ y = b')`, given `rel = pairRel a b`
@@ -174,7 +179,11 @@ fn determines(ex: Thm, a: &Term, b: &Term, c: &Term, first: bool) -> Result<Thm>
     let rhs_conj = conj_eq.eq_mp(lhs_true)?; // {pred_w} ⊢ RHS conjunction
     // `first` ⇒ the fixed component `c` is the *first* relation arg, so
     // the equation `a = c` is the left conjunct; otherwise `b = c` right.
-    let comp = if first { rhs_conj.and_elim_l()? } else { rhs_conj.and_elim_r()? };
+    let comp = if first {
+        rhs_conj.and_elim_l()?
+    } else {
+        rhs_conj.and_elim_r()?
+    };
 
     let step = comp.imp_intro(&pred_w)?.all_intro("__det_w", dom)?;
     exists_elim(ex, goal, step)
@@ -248,7 +257,11 @@ fn pred_holds(p: &Term, a: &Term, b: &Term, comp: &Term) -> Result<Thm> {
     // The relation `pairRel a b` is the LHS of the (reflexive) inner body.
     let rel = {
         let body = Thm::beta_conv(Term::app(inner_pred.clone(), other_witness(a, b, &dom)?))?;
-        rhs_of(&body)?.as_eq().ok_or(Error::NotAnEquation)?.0.clone()
+        rhs_of(&body)?
+            .as_eq()
+            .ok_or(Error::NotAnEquation)?
+            .0
+            .clone()
     };
     let wit = other_witness(a, b, &dom)?;
     let at_wit = beta_expand(&inner_pred, wit.clone(), Thm::refl(rel)?)?; // ⊢ inner_pred wit
@@ -284,22 +297,40 @@ pub fn surjective_pairing(alpha: &Type, beta: &Type, p: &Term) -> Result<Thm> {
     //   fst p = a0, snd p = b0  (projections, via determines on rep p),
     //   pair a0 b0 = abs (rep p) = p,
     //   so pair (fst p) (snd p) = pair a0 b0 = p.
-    let goal = pair_at(alpha, beta, &Term::app(fst(alpha.clone(), beta.clone()), p.clone()),
-        &Term::app(snd(alpha.clone(), beta.clone()), p.clone()))
-        .equals(p.clone())?;
+    let goal = pair_at(
+        alpha,
+        beta,
+        &Term::app(fst(alpha.clone(), beta.clone()), p.clone()),
+        &Term::app(snd(alpha.clone(), beta.clone()), p.clone()),
+    )
+    .equals(p.clone())?;
 
-    let outer_pred = ex_ab.concl().as_app().ok_or(Error::NotAnEquation)?.1.clone();
+    let outer_pred = ex_ab
+        .concl()
+        .as_app()
+        .ok_or(Error::NotAnEquation)?
+        .1
+        .clone();
     let a0 = Term::free("__sp_a", alpha.clone());
     let inner_ex = beta_reduce(Thm::assume(Term::app(outer_pred.clone(), a0.clone()))?)?; // {…} ⊢ ∃b. rep p = pairRel a0 b
-    let inner_pred = inner_ex.concl().as_app().ok_or(Error::NotAnEquation)?.1.clone();
+    let inner_pred = inner_ex
+        .concl()
+        .as_app()
+        .ok_or(Error::NotAnEquation)?
+        .1
+        .clone();
     let b0 = Term::free("__sp_b", beta.clone());
     let eqn = beta_reduce(Thm::assume(Term::app(inner_pred.clone(), b0.clone()))?)?; // {E} ⊢ rep p = pairRel a0 b0
 
     let body = surjective_under(alpha, beta, p, &a0, &b0, eqn)?; // {E} ⊢ goal
     // Peel b0 then a0.
-    let step_b = body.imp_intro(&Term::app(inner_pred.clone(), b0.clone()))?.all_intro("__sp_b", beta.clone())?;
+    let step_b = body
+        .imp_intro(&Term::app(inner_pred.clone(), b0.clone()))?
+        .all_intro("__sp_b", beta.clone())?;
     let by_b = exists_elim(inner_ex, goal.clone(), step_b)?; // {outer_pred a0} ⊢ goal
-    let step_a = by_b.imp_intro(&Term::app(outer_pred, a0.clone()))?.all_intro("__sp_a", alpha.clone())?;
+    let step_a = by_b
+        .imp_intro(&Term::app(outer_pred, a0.clone()))?
+        .all_intro("__sp_a", alpha.clone())?;
     exists_elim(ex_ab, goal, step_a)
 }
 
@@ -332,10 +363,7 @@ fn surjective_under(
     let abs_cong = eqn.clone().sym()?.cong_arg(abs)?; // {E} ⊢ abs (pairRel a0 b0) = abs (rep p)
     let abs_rep = Thm::spec_abs_rep(prod_spec(), vec![alpha.clone(), beta.clone()], p.clone())?; // ⊢ abs (rep p) = p
 
-    pair_cong
-        .trans(pab_unfold)?
-        .trans(abs_cong)?
-        .trans(abs_rep)
+    pair_cong.trans(pab_unfold)?.trans(abs_cong)?.trans(abs_rep)
 }
 
 /// `⊢ proj p = comp` given `eqn : ⊢ rep p = pairRel a0 b0`, for a free
@@ -380,7 +408,11 @@ fn proj_value(
 /// inhabitation ([`predicate_inhabited`]).
 fn rep_is_singleton(alpha: &Type, beta: &Type, p: &Term) -> Result<Thm> {
     let rep_p = Term::app(rep(alpha, beta), p.clone());
-    let back = Thm::spec_rep_abs_back(prod_spec(), vec![alpha.clone(), beta.clone()], rep_p.clone())?;
+    let back = Thm::spec_rep_abs_back(
+        prod_spec(),
+        vec![alpha.clone(), beta.clone()],
+        rep_p.clone(),
+    )?;
     // premise: rep (abs (rep p)) = rep p — from abs (rep p) = p under rep.
     let abs_rep = Thm::spec_abs_rep(prod_spec(), vec![alpha.clone(), beta.clone()], p.clone())?; // ⊢ abs (rep p) = p
     let prem = abs_rep.cong_arg(rep(alpha, beta))?; // ⊢ rep (abs (rep p)) = rep p
@@ -418,7 +450,9 @@ fn predicate_inhabited(alpha: &Type, beta: &Type, ex_r: &Term) -> Result<Thm> {
     // pred rel ⟶β ∃a' b'. rel = pairRel a' b' (strong β through the η layer).
     let nf = crate::init::eq::beta_nf(Term::app(pred.clone(), rel.clone())); // ⊢ pred rel = ∃a' b'. …
     let ex = rhs_of(&nf)?;
-    let at_rel = nf.sym()?.eq_mp(prove_singleton_exists(&ex, &a, &b, &rel)?)?; // ⊢ pred rel
+    let at_rel = nf
+        .sym()?
+        .eq_mp(prove_singleton_exists(&ex, &a, &b, &rel)?)?; // ⊢ pred rel
     exists_intro(pred, rel, at_rel)
 }
 
@@ -453,7 +487,9 @@ fn rhs_of(thm: &Thm) -> Result<Term> {
 
 /// `⊢ f arg` from `⊢ body`, where `body` is `f arg` β-reduced.
 fn beta_expand(f: &Term, arg: Term, body_proof: Thm) -> Result<Thm> {
-    Thm::beta_conv(Term::app(f.clone(), arg))?.sym()?.eq_mp(body_proof)
+    Thm::beta_conv(Term::app(f.clone(), arg))?
+        .sym()?
+        .eq_mp(body_proof)
 }
 
 /// β-reduce a theorem whose conclusion is a redex: `Γ ⊢ f arg` →
@@ -492,7 +528,10 @@ mod tests {
         assert!(thm.hyps().is_empty() && thm.has_no_obs());
         // LHS is `rep (pair a b)`.
         let (lhs, _rhs) = thm.concl().as_eq().unwrap();
-        assert_eq!(lhs, &Term::app(rep(&alpha(), &beta()), pair_at(&alpha(), &beta(), &a, &b)));
+        assert_eq!(
+            lhs,
+            &Term::app(rep(&alpha(), &beta()), pair_at(&alpha(), &beta(), &a, &b))
+        );
     }
 
     #[test]
@@ -502,7 +541,10 @@ mod tests {
         assert!(thm.hyps().is_empty(), "fst_pair is proved, not postulated");
         assert!(thm.has_no_obs(), "fst_pair is oracle-free");
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
-        assert_eq!(lhs, &Term::app(fst(alpha(), beta()), pair_at(&alpha(), &beta(), &a, &b)));
+        assert_eq!(
+            lhs,
+            &Term::app(fst(alpha(), beta()), pair_at(&alpha(), &beta(), &a, &b))
+        );
         assert_eq!(rhs, &a);
     }
 
@@ -512,7 +554,10 @@ mod tests {
         let thm = snd_pair(&alpha(), &beta(), &a, &b).unwrap();
         assert!(thm.hyps().is_empty() && thm.has_no_obs());
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
-        assert_eq!(lhs, &Term::app(snd(alpha(), beta()), pair_at(&alpha(), &beta(), &a, &b)));
+        assert_eq!(
+            lhs,
+            &Term::app(snd(alpha(), beta()), pair_at(&alpha(), &beta(), &a, &b))
+        );
         assert_eq!(rhs, &b);
     }
 
@@ -539,7 +584,13 @@ mod tests {
         let expected = pair_at(&alpha(), &beta(), &a, &b)
             .equals(pair_at(&alpha(), &beta(), &c, &d))
             .unwrap()
-            .imp(a.clone().equals(c).unwrap().and(b.clone().equals(d).unwrap()).unwrap())
+            .imp(
+                a.clone()
+                    .equals(c)
+                    .unwrap()
+                    .and(b.clone().equals(d).unwrap())
+                    .unwrap(),
+            )
             .unwrap();
         assert_eq!(thm.concl(), &expected);
     }
@@ -548,7 +599,10 @@ mod tests {
     fn surjective_pairing_reassembles() {
         let p = Term::free("p", prod(alpha(), beta()));
         let thm = surjective_pairing(&alpha(), &beta(), &p).unwrap();
-        assert!(thm.hyps().is_empty(), "surjective_pairing is proved, not postulated");
+        assert!(
+            thm.hyps().is_empty(),
+            "surjective_pairing is proved, not postulated"
+        );
         assert!(thm.has_no_obs(), "surjective_pairing is oracle-free");
         let expected = pair_at(
             &alpha(),

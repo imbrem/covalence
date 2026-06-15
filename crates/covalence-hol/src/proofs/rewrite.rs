@@ -101,24 +101,21 @@ pub fn eq_sides(t: &Term) -> Option<(Term, Term)> {
 /// has been applied to concrete arguments (see [`unfold_at_1`] /
 /// [`unfold_at_2`]).
 pub fn beta_nf(t: Term) -> Thm {
-    use covalence_core::{subst, TermKind};
+    use covalence_core::{TermKind, subst};
     match t.kind() {
         TermKind::App(f, x) => {
             let f_nf = beta_nf(f.clone());
             let x_nf = beta_nf(x.clone());
             // ⊢ f x = f' x'
             let comb = f_nf.cong_app(x_nf).expect("beta_nf: cong_app");
-            let (_, fx_rhs) =
-                eq_sides(comb.concl()).expect("beta_nf: comb is an equation");
+            let (_, fx_rhs) = eq_sides(comb.concl()).expect("beta_nf: comb is an equation");
             // If the normalised function side is a λ, `f' x'` is a
             // redex — fire it and keep normalising the result.
             if let TermKind::App(f_prime, _) = fx_rhs.kind()
                 && matches!(f_prime.kind(), TermKind::Abs(..))
             {
-                let beta = Thm::beta_conv(fx_rhs.clone())
-                    .expect("beta_nf: beta_conv");
-                let (_, body) =
-                    eq_sides(beta.concl()).expect("beta_nf: beta is an equation");
+                let beta = Thm::beta_conv(fx_rhs.clone()).expect("beta_nf: beta_conv");
+                let (_, body) = eq_sides(beta.concl()).expect("beta_nf: beta is an equation");
                 let body_nf = beta_nf(body);
                 return comb
                     .trans(beta)
@@ -166,8 +163,7 @@ fn fresh_name(body: &Term) -> String {
 pub fn unfold_at_1(op: Term, arg: Term) -> Thm {
     let def = Thm::unfold_term_spec(op).expect("unfold_at_1: unfold_term_spec");
     let applied = cong_at_fn(def, arg); // ⊢ op arg = (λx.body) arg
-    let (_, redex) =
-        eq_sides(applied.concl()).expect("unfold_at_1: applied is an equation");
+    let (_, redex) = eq_sides(applied.concl()).expect("unfold_at_1: applied is an equation");
     let beta = Thm::beta_conv(redex).expect("unfold_at_1: beta_conv");
     applied.trans(beta).expect("unfold_at_1: trans")
 }
@@ -178,8 +174,7 @@ pub fn unfold_at_1(op: Term, arg: Term) -> Thm {
 pub fn unfold_at_2(op: Term, a: Term, b: Term) -> Thm {
     let step1 = unfold_at_1(op, a); // ⊢ op a = (λy. body[a])
     let applied = cong_at_fn(step1, b); // ⊢ (op a) b = (λy. body[a]) b
-    let (_, redex) =
-        eq_sides(applied.concl()).expect("unfold_at_2: applied is an equation");
+    let (_, redex) = eq_sides(applied.concl()).expect("unfold_at_2: applied is an equation");
     let beta = Thm::beta_conv(redex).expect("unfold_at_2: beta_conv");
     applied.trans(beta).expect("unfold_at_2: trans")
 }
@@ -199,15 +194,21 @@ mod tests {
 
         // Three assumed equations a≡b, b≡c, c≡d.
         let ab = Thm::assume(
-            crate::HolLightCtx::new().mk_eq(a.clone(), b.clone()).unwrap(),
+            crate::HolLightCtx::new()
+                .mk_eq(a.clone(), b.clone())
+                .unwrap(),
         )
         .unwrap();
         let bc = Thm::assume(
-            crate::HolLightCtx::new().mk_eq(b.clone(), c.clone()).unwrap(),
+            crate::HolLightCtx::new()
+                .mk_eq(b.clone(), c.clone())
+                .unwrap(),
         )
         .unwrap();
         let cd = Thm::assume(
-            crate::HolLightCtx::new().mk_eq(c.clone(), d.clone()).unwrap(),
+            crate::HolLightCtx::new()
+                .mk_eq(c.clone(), d.clone())
+                .unwrap(),
         )
         .unwrap();
         let ad = trans_chain(vec![ab, bc, cd]);
@@ -223,13 +224,12 @@ mod tests {
         let c = Term::free("c", nat);
 
         let ab = Thm::assume(
-            crate::HolLightCtx::new().mk_eq(a.clone(), b.clone()).unwrap(),
+            crate::HolLightCtx::new()
+                .mk_eq(a.clone(), b.clone())
+                .unwrap(),
         )
         .unwrap();
-        let bc = Thm::assume(
-            crate::HolLightCtx::new().mk_eq(b, c.clone()).unwrap(),
-        )
-        .unwrap();
+        let bc = Thm::assume(crate::HolLightCtx::new().mk_eq(b, c.clone()).unwrap()).unwrap();
         let ac = trans2(ab, bc);
         let expected = crate::HolLightCtx::new().mk_eq(a, c).unwrap();
         assert_eq!(ac.concl(), &expected);
@@ -241,7 +241,9 @@ mod tests {
         let a = Term::free("a", nat.clone());
         let b = Term::free("b", nat);
         let ab = Thm::assume(
-            crate::HolLightCtx::new().mk_eq(a.clone(), b.clone()).unwrap(),
+            crate::HolLightCtx::new()
+                .mk_eq(a.clone(), b.clone())
+                .unwrap(),
         )
         .unwrap();
         let ba = sym(ab);

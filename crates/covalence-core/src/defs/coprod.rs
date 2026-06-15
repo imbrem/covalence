@@ -13,7 +13,10 @@ use super::spec::{TermSpec, TypeSpec};
 /// The carrier relation type `α → β → bool → bool` — a relation on
 /// `(α, β)` with an extra `bool` discriminator slot (see [`left_rel`]).
 fn coprod_carrier(alpha: Type, beta: Type) -> Type {
-    Type::fun(alpha, Type::fun(beta, Type::fun(Type::bool(), Type::bool())))
+    Type::fun(
+        alpha,
+        Type::fun(beta, Type::fun(Type::bool(), Type::bool())),
+    )
 }
 
 /// Build the coprod predicate at concrete carriers α, β:
@@ -175,7 +178,10 @@ fn coprod_case_body() -> Term {
 
     // ∀a. rep c = (λx y. x = a) ⟹ r = f a
     let a = Term::free("a", alpha.clone());
-    let left_eq = hol::hol_eq(rep_c.clone(), left_rel(a.clone(), alpha.clone(), beta.clone()));
+    let left_eq = hol::hol_eq(
+        rep_c.clone(),
+        left_rel(a.clone(), alpha.clone(), beta.clone()),
+    );
     let r_eq_fa = hol::hol_eq(r.clone(), Term::app(f.clone(), a));
     let left_clause = hol::hol_forall("a", alpha.clone(), hol::hol_imp(left_eq, r_eq_fa));
 

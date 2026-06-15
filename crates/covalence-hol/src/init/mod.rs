@@ -38,10 +38,18 @@
 /// sizeable (inductions, the recursion theorem), so recomputing one per
 /// call is pure waste. Doc comments and visibility pass through.
 ///
+/// Two body forms are accepted:
+///
 /// ```ignore
 /// cached_thm! {
-///     /// `⊢ T`.
+///     /// `⊢ T` — build a `Thm` directly.
 ///     pub fn truth() -> Thm { /* build it */ }
+/// }
+/// cached_thm! {
+///     /// `⊢ ∀m. 0 + m = m` — a fallible derivation. The `Result<Thm>`
+///     /// body may use `?`; the macro `.expect`s it, so a separate
+///     /// `*_impl` wrapper is no longer needed.
+///     pub fn add_base() -> Result<Thm> { /* build it, may use `?` */ }
 /// }
 /// ```
 macro_rules! cached_thm {
@@ -53,17 +61,28 @@ macro_rules! cached_thm {
             CACHE.clone()
         }
     };
+    ($(#[$attr:meta])* $vis:vis fn $name:ident() -> Result<Thm> $body:block) => {
+        $(#[$attr])*
+        $vis fn $name() -> ::covalence_core::Thm {
+            static CACHE: ::std::sync::LazyLock<::covalence_core::Thm> =
+                ::std::sync::LazyLock::new(|| {
+                    (|| -> ::covalence_core::Result<::covalence_core::Thm> { $body })()
+                        .expect(concat!("init: ", stringify!($name), " derivation"))
+                });
+            CACHE.clone()
+        }
+    };
 }
 
 pub mod cat;
 pub mod cond;
+pub mod coprod;
 pub mod eq;
 pub mod ext;
 pub mod inductive;
 pub mod int;
 pub mod list;
 pub mod logic;
-pub mod coprod;
 pub mod nat;
 pub mod option;
 pub mod prod;

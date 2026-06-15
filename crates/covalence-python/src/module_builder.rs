@@ -21,8 +21,8 @@ use covalence_wasm::build::{self as cwb, FuncIdx};
 use crate::component_builder::ComponentBuilder;
 use crate::module::Module;
 use crate::system_builder::{
-    ContainerId, ExportEntry, FuncData, FuncId, ImportedFunc, InstanceImport, ModuleData,
-    ModuleId, SystemBuilder, extract_hash, parse_val_type, parse_val_types,
+    ContainerId, ExportEntry, FuncData, FuncId, ImportedFunc, InstanceImport, ModuleData, ModuleId,
+    SystemBuilder, extract_hash, parse_val_type, parse_val_types,
 };
 
 // ---------------------------------------------------------------------------
@@ -105,29 +105,97 @@ impl FuncBuilder {
     }
 
     // -- Locals --
-    fn local_get(&self, i: u32) { self.with_body(|b| { b.local_get(i); }); }
-    fn local_set(&self, i: u32) { self.with_body(|b| { b.local_set(i); }); }
-    fn local_tee(&self, i: u32) { self.with_body(|b| { b.local_tee(i); }); }
+    fn local_get(&self, i: u32) {
+        self.with_body(|b| {
+            b.local_get(i);
+        });
+    }
+    fn local_set(&self, i: u32) {
+        self.with_body(|b| {
+            b.local_set(i);
+        });
+    }
+    fn local_tee(&self, i: u32) {
+        self.with_body(|b| {
+            b.local_tee(i);
+        });
+    }
 
     // -- i32 ops --
-    fn i32_const(&self, v: i32) { self.with_body(|b| { b.i32_const(v); }); }
-    fn i32_add(&self) { self.with_body(|b| { b.i32_add(); }); }
-    fn i32_sub(&self) { self.with_body(|b| { b.i32_sub(); }); }
-    fn i32_mul(&self) { self.with_body(|b| { b.i32_mul(); }); }
-    fn i32_eq(&self) { self.with_body(|b| { b.i32_eq(); }); }
-    fn i32_ne(&self) { self.with_body(|b| { b.i32_ne(); }); }
-    fn i32_eqz(&self) { self.with_body(|b| { b.i32_eqz(); }); }
+    fn i32_const(&self, v: i32) {
+        self.with_body(|b| {
+            b.i32_const(v);
+        });
+    }
+    fn i32_add(&self) {
+        self.with_body(|b| {
+            b.i32_add();
+        });
+    }
+    fn i32_sub(&self) {
+        self.with_body(|b| {
+            b.i32_sub();
+        });
+    }
+    fn i32_mul(&self) {
+        self.with_body(|b| {
+            b.i32_mul();
+        });
+    }
+    fn i32_eq(&self) {
+        self.with_body(|b| {
+            b.i32_eq();
+        });
+    }
+    fn i32_ne(&self) {
+        self.with_body(|b| {
+            b.i32_ne();
+        });
+    }
+    fn i32_eqz(&self) {
+        self.with_body(|b| {
+            b.i32_eqz();
+        });
+    }
 
     // -- i64 ops --
-    fn i64_const(&self, v: i64) { self.with_body(|b| { b.i64_const(v); }); }
-    fn i64_add(&self) { self.with_body(|b| { b.i64_add(); }); }
-    fn i64_sub(&self) { self.with_body(|b| { b.i64_sub(); }); }
-    fn i64_mul(&self) { self.with_body(|b| { b.i64_mul(); }); }
+    fn i64_const(&self, v: i64) {
+        self.with_body(|b| {
+            b.i64_const(v);
+        });
+    }
+    fn i64_add(&self) {
+        self.with_body(|b| {
+            b.i64_add();
+        });
+    }
+    fn i64_sub(&self) {
+        self.with_body(|b| {
+            b.i64_sub();
+        });
+    }
+    fn i64_mul(&self) {
+        self.with_body(|b| {
+            b.i64_mul();
+        });
+    }
 
     // -- Control flow / stack --
-    fn drop_(&self) { self.with_body(|b| { b.drop(); }); }
-    fn return_(&self) { self.with_body(|b| { b.return_(); }); }
-    fn unreachable_(&self) { self.with_body(|b| { b.unreachable(); }); }
+    fn drop_(&self) {
+        self.with_body(|b| {
+            b.drop();
+        });
+    }
+    fn return_(&self) {
+        self.with_body(|b| {
+            b.return_();
+        });
+    }
+    fn unreachable_(&self) {
+        self.with_body(|b| {
+            b.unreachable();
+        });
+    }
 
     fn __repr__(&self) -> String {
         let sys = self.system.lock().unwrap();
@@ -273,12 +341,14 @@ impl ModuleBuilder {
     fn call(&self, inst: &InstanceRef, func_name: &str) -> PyResult<()> {
         let module_ns = format!("inst{}", inst.index);
         let mut sys = self.system.lock().unwrap();
-        let import_idx = sys.find_import(self.id, &module_ns, func_name).ok_or_else(|| {
-            PyValueError::new_err(format!(
-                "no import for instance {} export '{func_name}'",
-                inst.index
-            ))
-        })?;
+        let import_idx = sys
+            .find_import(self.id, &module_ns, func_name)
+            .ok_or_else(|| {
+                PyValueError::new_err(format!(
+                    "no import for instance {} export '{func_name}'",
+                    inst.index
+                ))
+            })?;
         sys.modules[self.id].start_calls.push(import_idx);
         Ok(())
     }

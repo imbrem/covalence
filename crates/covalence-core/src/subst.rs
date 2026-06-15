@@ -46,9 +46,7 @@ fn close_at(t: &Term, name: &str, depth: u32) -> Term {
         | TermKind::Succ
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => Term::app(close_at(f, name, depth), close_at(x, name, depth)),
-        TermKind::Abs(ty, body) => {
-            Term::abs(ty.clone(), close_at(body, name, depth + 1))
-        }
+        TermKind::Abs(ty, body) => Term::abs(ty.clone(), close_at(body, name, depth + 1)),
     }
 }
 
@@ -87,9 +85,7 @@ fn inst(t: &Term, u: &Term, depth: u32) -> Term {
         | TermKind::Succ
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => Term::app(inst(f, u, depth), inst(x, u, depth)),
-        TermKind::Abs(ty, body) => {
-            Term::abs(ty.clone(), inst(body, u, depth + 1))
-        }
+        TermKind::Abs(ty, body) => Term::abs(ty.clone(), inst(body, u, depth + 1)),
     }
 }
 
@@ -223,7 +219,9 @@ pub fn subst_tfree_in_type(ty: &Type, name: &str, r: &Type) -> Type {
         // what we want for polymorphic typedefs.
         TypeKind::TyConObs(observer, args) => Type::tycon_obs_from_dyn(
             observer.clone(),
-            args.iter().map(|a| subst_tfree_in_type(a, name, r)).collect::<Vec<_>>(),
+            args.iter()
+                .map(|a| subst_tfree_in_type(a, name, r))
+                .collect::<Vec<_>>(),
         ),
     }
 }
@@ -244,9 +242,7 @@ pub fn subst_tfrees_in_type(ty: &Type, sub: &BTreeMap<SmolStr, Type>) -> Type {
         TypeKind::TFree(n) => sub.get(n).cloned().unwrap_or_else(|| ty.clone()),
         TypeKind::Nat | TypeKind::Bool => ty.clone(),
         TypeKind::Fun(a, b) => Type::fun(go(a), go(b)),
-        TypeKind::Tycon(n, args) => {
-            Type::tycon(n.clone(), args.iter().map(go).collect::<Vec<_>>())
-        }
+        TypeKind::Tycon(n, args) => Type::tycon(n.clone(), args.iter().map(go).collect::<Vec<_>>()),
         TypeKind::Spec(spec, args) => {
             Type::spec(spec.clone(), args.iter().map(go).collect::<Vec<_>>())
         }
@@ -370,9 +366,7 @@ fn is_closed_at(t: &Term, depth: u32) -> bool {
         | TermKind::Obs(..)
         | TermKind::Succ
         | TermKind::Def(_) => true,
-        TermKind::App(a, b) => {
-            is_closed_at(a, depth) && is_closed_at(b, depth)
-        }
+        TermKind::App(a, b) => is_closed_at(a, depth) && is_closed_at(b, depth),
         TermKind::Abs(_, body) => is_closed_at(body, depth + 1),
     }
 }
@@ -405,9 +399,7 @@ pub fn find_free_type(t: &Term, name: &str) -> Option<Type> {
         | TermKind::Obs(..)
         | TermKind::Succ
         | TermKind::Def(_) => None,
-        TermKind::App(a, b) => {
-            find_free_type(a, name).or_else(|| find_free_type(b, name))
-        }
+        TermKind::App(a, b) => find_free_type(a, name).or_else(|| find_free_type(b, name)),
         TermKind::Abs(_, body) => find_free_type(body, name),
     }
 }
@@ -438,12 +430,8 @@ fn uses_bound_at(t: &Term, target: u32, depth: u32) -> bool {
         | TermKind::Obs(..)
         | TermKind::Succ
         | TermKind::Def(_) => false,
-        TermKind::App(a, b) => {
-            uses_bound_at(a, target, depth) || uses_bound_at(b, target, depth)
-        }
-        TermKind::Abs(_, body) => {
-            uses_bound_at(body, target, depth + 1)
-        }
+        TermKind::App(a, b) => uses_bound_at(a, target, depth) || uses_bound_at(b, target, depth),
+        TermKind::Abs(_, body) => uses_bound_at(body, target, depth + 1),
     }
 }
 
@@ -535,9 +523,7 @@ pub fn match_types(
             match_types(pa, ta, sub)?;
             match_types(pb, tb, sub)
         }
-        (TypeKind::Tycon(pn, pa), TypeKind::Tycon(tn, ta))
-            if pn == tn && pa.len() == ta.len() =>
-        {
+        (TypeKind::Tycon(pn, pa), TypeKind::Tycon(tn, ta)) if pn == tn && pa.len() == ta.len() => {
             for (p, t) in pa.iter().zip(ta) {
                 match_types(p, t, sub)?;
             }
@@ -557,9 +543,7 @@ pub fn match_types(
         // Without this arm, `Def::body` would panic recovering the
         // substitution for any `Def` typed at a `Spec` (e.g. `int`,
         // `bytes`, `set 'a`).
-        (TypeKind::Spec(ps, pa), TypeKind::Spec(ts, ta))
-            if ps == ts && pa.len() == ta.len() =>
-        {
+        (TypeKind::Spec(ps, pa), TypeKind::Spec(ts, ta)) if ps == ts && pa.len() == ta.len() => {
             for (p, t) in pa.iter().zip(ta) {
                 match_types(p, t, sub)?;
             }

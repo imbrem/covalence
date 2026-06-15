@@ -74,7 +74,13 @@ fn nat_sig() -> InductiveSig {
         relation: "G",
         ctors: vec![
             Constructor::nullary(zero()),
-            Constructor::new(nat_succ(), vec![Arg::Rec { name: "m", image: "b" }]),
+            Constructor::new(
+                nat_succ(),
+                vec![Arg::Rec {
+                    name: "m",
+                    image: "b",
+                }],
+            ),
         ],
     }
 }
@@ -260,8 +266,11 @@ pub(crate) fn graph_base_inv(z: &Term, f: &Term) -> Result<Thm> {
 /// inside `wit`.
 fn wit_pred(z: &Term, f: &Term, j: &Term, c: &Term) -> Result<Term> {
     let d = var("d");
-    let body =
-        graph(z, f, j.clone(), d.clone())?.and(c.clone().equals(app2(f.clone(), j.clone(), d)?)?)?;
+    let body = graph(z, f, j.clone(), d.clone())?.and(c.clone().equals(app2(
+        f.clone(),
+        j.clone(),
+        d,
+    )?)?)?;
     Ok(Term::abs(nat(), subst::close(&body, "d")))
 }
 
@@ -334,7 +343,11 @@ fn good_closed(z: &Term, f: &Term) -> Result<Thm> {
     let fmb_eq_fjb = fmb.clone().rw_all(&mj)?; // {SMSJ} ⊢ f m b = f j b
     let conj = graph_jb.and_intro(fmb_eq_fjb)?; // {GA, SMSJ} ⊢ Graph j b ∧ f m b = f j b
     let pred_d = wit_pred(z, f, &j, &fmb)?;
-    let ex_d = exists_intro(pred_d.clone(), b.clone(), beta_expand(&pred_d, b.clone(), conj)?)?;
+    let ex_d = exists_intro(
+        pred_d.clone(),
+        b.clone(),
+        beta_expand(&pred_d, b.clone(), conj)?,
+    )?;
     let wit_succ = ex_d.imp_intro(&smsj)?.all_intro("j", nat())?; // {GA} ⊢ wit (S m) (f m b)
 
     let conj2 = {
@@ -462,7 +475,10 @@ fn rec_ty() -> Type {
 
 /// `λa. Graph z f n a` — the predicate the recursor chooses from.
 fn graph_pred(z: &Term, f: &Term, n: &Term) -> Result<Term> {
-    Ok(Term::abs(nat(), subst::close(&graph(z, f, n.clone(), var("a"))?, "a")))
+    Ok(Term::abs(
+        nat(),
+        subst::close(&graph(z, f, n.clone(), var("a"))?, "a"),
+    ))
 }
 
 /// `ε a. Graph z f n a` — the chosen value at `n`.
@@ -560,8 +576,7 @@ fn recursion_theorem() -> Result<Thm> {
 pub(crate) fn rec_holds_proof() -> Result<Thm> {
     let pred = p_rec_pred()?;
     let natrec = defs::nat_rec(nat());
-    let step = Thm::spec_ax(natrec.clone(), Term::free("r", rec_ty()))?
-        .all_intro("r", rec_ty())?; // ⊢ ∀r. P_rec r ⟹ P_rec natRec
+    let step = Thm::spec_ax(natrec.clone(), Term::free("r", rec_ty()))?.all_intro("r", rec_ty())?; // ⊢ ∀r. P_rec r ⟹ P_rec natRec
     let p_nr = exists_elim(recursion_theorem()?, Term::app(pred, natrec), step)?;
     beta_reduce(p_nr)
 }
@@ -607,7 +622,10 @@ mod tests {
         let k = var("k");
         let inst = thm.all_elim(k.clone()).unwrap();
         let reduced = beta_reduce(inst).unwrap();
-        let expected = graph(&z, &f, k, var("a")).unwrap().exists("a", nat()).unwrap();
+        let expected = graph(&z, &f, k, var("a"))
+            .unwrap()
+            .exists("a", nat())
+            .unwrap();
         assert_eq!(reduced.concl(), &expected);
     }
 
@@ -641,7 +659,11 @@ mod tests {
         let d = var("d");
         let inner = graph(&z, &f, n.clone(), d.clone())
             .unwrap()
-            .and(a.clone().equals(app2(f.clone(), n.clone(), d).unwrap()).unwrap())
+            .and(
+                a.clone()
+                    .equals(app2(f.clone(), n.clone(), d).unwrap())
+                    .unwrap(),
+            )
             .unwrap();
         let exists_c = inner.exists("d", nat()).unwrap();
         let expected = graph(&z, &f, succ(n.clone()), a.clone())

@@ -190,7 +190,12 @@ fn quot_pred_holds(spec: &TypeSpec, base: &Type, rel: &Term, a: &Term) -> Result
         .ok_or_else(|| Error::ConnectiveRule("quotient: spec has no carving predicate".into()))?
         .clone();
     let body_eq = Thm::beta_conv(Term::app(pred, coa.clone()))?; // ⊢ P(coa) = (∃z. coa = classOf z)
-    let body = body_eq.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let body = body_eq
+        .concl()
+        .as_eq()
+        .ok_or(Error::NotAnEquation)?
+        .1
+        .clone();
     let exists_pred = body.as_app().ok_or(Error::NotAnEquation)?.1.clone(); // λz. coa = classOf z
 
     // ⊢ exists_pred a, i.e. `coa = classOf a`, which is `coa = coa` (refl).
@@ -226,7 +231,9 @@ pub fn round_trip(
 
     // ⊢ φ a, since φ a → (rep mkc) a = coa a → rel a a.
     let rel_aa = inst3(refl, &[a])?;
-    let coa_a = Thm::beta_conv(Term::app(coa.clone(), a.clone()))?.sym()?.eq_mp(rel_aa)?; // ⊢ coa a
+    let coa_a = Thm::beta_conv(Term::app(coa.clone(), a.clone()))?
+        .sym()?
+        .eq_mp(rel_aa)?; // ⊢ coa a
     let repmkc_a = rep_abs.clone().cong_fn(a.clone())?.sym()?.eq_mp(coa_a)?; // ⊢ (rep mkc) a
     let phi_a = Thm::beta_conv(Term::app(phi.clone(), a.clone()))?
         .sym()?
@@ -370,7 +377,11 @@ mod tests {
     /// mkClass b` must imply `a = b`.
     fn nat_eq_quot() -> (TypeSpec, Term, Type) {
         let rel = Term::eq_op(Type::nat());
-        let spec = TypeSpec::quot(smol_str::SmolStr::new_static("q.test"), Type::nat(), rel.clone());
+        let spec = TypeSpec::quot(
+            smol_str::SmolStr::new_static("q.test"),
+            Type::nat(),
+            rel.clone(),
+        );
         (spec, rel, Type::nat())
     }
 
@@ -385,8 +396,7 @@ mod tests {
             .equals(mk_class(&spec, &[], &base, &rel, &b))
             .unwrap();
         let assumed = Thm::assume(class_eq.clone()).unwrap();
-        let recovered =
-            class_elim(&spec, &[], &base, &rel, &eq_refl(), &a, &b, assumed).unwrap();
+        let recovered = class_elim(&spec, &[], &base, &rel, &eq_refl(), &a, &b, assumed).unwrap();
 
         assert_eq!(recovered.concl(), &eq(&a, &b));
         // The only hypothesis is the class equation we started from.

@@ -82,12 +82,7 @@ pub trait Category {
     /// `⊢ f ∘ id = f`.
     fn id_right(&self, f: Self::Hom) -> Result<Self::Proof, Self::Error>;
     /// `⊢ (h ∘ g) ∘ f = h ∘ (g ∘ f)`.
-    fn assoc(
-        &self,
-        h: Self::Hom,
-        g: Self::Hom,
-        f: Self::Hom,
-    ) -> Result<Self::Proof, Self::Error>;
+    fn assoc(&self, h: Self::Hom, g: Self::Hom, f: Self::Hom) -> Result<Self::Proof, Self::Error>;
 
     // ---- inference rules: equational logic + congruence ----
 
@@ -100,9 +95,5 @@ pub trait Category {
     /// From `⊢ g = g'` and `⊢ f = f'` conclude `⊢ g ∘ f = g' ∘ f'` — the
     /// **whiskering** congruence that lets a proof act on either side of a
     /// composite.
-    fn comp_cong(
-        &self,
-        g_eq: Self::Proof,
-        f_eq: Self::Proof,
-    ) -> Result<Self::Proof, Self::Error>;
+    fn comp_cong(&self, g_eq: Self::Proof, f_eq: Self::Proof) -> Result<Self::Proof, Self::Error>;
 }

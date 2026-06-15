@@ -121,9 +121,6 @@ pub trait Monoidal: Category {
     // ---- inference rules: coproduct congruence ----
 
     /// From `⊢ f = f'` and `⊢ g = g'` conclude `⊢ [f, g] = [f', g']`.
-    fn copair_cong(
-        &self,
-        f_eq: Self::Proof,
-        g_eq: Self::Proof,
-    ) -> Result<Self::Proof, Self::Error>;
+    fn copair_cong(&self, f_eq: Self::Proof, g_eq: Self::Proof)
+    -> Result<Self::Proof, Self::Error>;
 }

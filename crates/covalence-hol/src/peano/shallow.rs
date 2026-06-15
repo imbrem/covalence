@@ -66,7 +66,9 @@ impl Peano for Hol {
     // ---- first-order logic: formula constructors (HOL connectives) ----
 
     fn eq(&self, a: Term, b: Term) -> Term {
-        HolLightCtx::new().mk_eq(a, b).expect("eq: nat terms are well-typed")
+        HolLightCtx::new()
+            .mk_eq(a, b)
+            .expect("eq: nat terms are well-typed")
     }
     fn not(&self, p: Term) -> Term {
         HolLightCtx::new().mk_not(p)
@@ -218,7 +220,9 @@ impl Peano for Hol {
             .as_app()
             .and_then(|(f, _c)| f.as_app())
             .map(|(op, _ante)| op.clone())
-            .ok_or_else(|| Error::ConnectiveRule("exists_elim: step is not an implication".into()))?;
+            .ok_or_else(|| {
+                Error::ConnectiveRule("exists_elim: step is not an implication".into())
+            })?;
         // ⊢ (body[x] ⟹ c) = (pred x ⟹ c), then transport `inst` across it.
         let cong = Thm::refl(imp_op)?
             .cong_app(beta.sym()?)? // ⊢ imp body[x] = imp (pred x)
@@ -275,10 +279,7 @@ mod tests {
 
         // succ_inj: ∀m n. (S m = S n) ⟹ (m = n)
         let (m, n) = (h.var("m"), h.var("n"));
-        let body = h.implies(
-            h.eq(h.succ(m.clone()), h.succ(n.clone())),
-            h.eq(m, n),
-        );
+        let body = h.implies(h.eq(h.succ(m.clone()), h.succ(n.clone())), h.eq(m, n));
         let succ_inj_stmt = h.forall("m", h.forall("n", body));
         assert_eq!(h.concl(&h.succ_inj()), succ_inj_stmt);
 
@@ -440,6 +441,10 @@ mod tests {
         let covalence_core::TermKind::App(_forall, lam) = all.concl().kind() else {
             panic!("expected a ∀ application");
         };
-        assert!(lam.as_abs().map(|(ty, _)| ty == &Type::nat()).unwrap_or(false));
+        assert!(
+            lam.as_abs()
+                .map(|(ty, _)| ty == &Type::nat())
+                .unwrap_or(false)
+        );
     }
 }

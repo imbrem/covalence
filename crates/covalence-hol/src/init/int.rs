@@ -320,8 +320,12 @@ fn add_comm_impl() -> Result<Thm> {
 
     // Pa = Qa (commute first components); Pb = Qb (second components).
     let (rpa, rpb) = (rep_pair(&a), rep_pair(&b));
-    let eq_a = nat::add_comm().all_elim(fst_nn(&rpa))?.all_elim(fst_nn(&rpb))?;
-    let eq_b = nat::add_comm().all_elim(snd_nn(&rpa))?.all_elim(snd_nn(&rpb))?;
+    let eq_a = nat::add_comm()
+        .all_elim(fst_nn(&rpa))?
+        .all_elim(fst_nn(&rpb))?;
+    let eq_b = nat::add_comm()
+        .all_elim(snd_nn(&rpa))?
+        .all_elim(snd_nn(&rpb))?;
 
     // Rewrite the RHS of `dl` (Pa→Qa, Pb→Qb) into the RHS of `dr`.
     let t0 = dl.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
@@ -348,7 +352,9 @@ pub fn add_assoc() -> Thm {
 /// `⊢ ∀a. a + 0 = a`.
 pub fn add_zero() -> Thm {
     let a = var("a");
-    let eq = add(a.clone(), lit(0)).equals(a).expect("add_zero: a + 0 = a");
+    let eq = add(a.clone(), lit(0))
+        .equals(a)
+        .expect("add_zero: a + 0 = a");
     axiom(forall_int(&["a"], eq))
 }
 
@@ -415,7 +421,9 @@ pub fn mul_assoc() -> Thm {
 /// `⊢ ∀a. a * 1 = a`.
 pub fn mul_one() -> Thm {
     let a = var("a");
-    let eq = mul(a.clone(), lit(1)).equals(a).expect("mul_one: a * 1 = a");
+    let eq = mul(a.clone(), lit(1))
+        .equals(a)
+        .expect("mul_one: a * 1 = a");
     axiom(forall_int(&["a"], eq))
 }
 
@@ -439,7 +447,9 @@ pub fn distrib() -> Thm {
 pub fn sub_def() -> Thm {
     let (a, b) = (var("a"), var("b"));
     let sub = Term::app(Term::app(int_sub(), a.clone()), b.clone());
-    let eq = sub.equals(add(a, neg(b))).expect("sub_def: a - b = a + (-b)");
+    let eq = sub
+        .equals(add(a, neg(b)))
+        .expect("sub_def: a - b = a + (-b)");
     axiom(forall_int(&["a", "b"], eq))
 }
 
@@ -562,10 +572,17 @@ mod tests {
     #[test]
     fn add_comm_is_a_genuine_theorem() {
         let thm = add_comm();
-        assert!(thm.hyps().is_empty(), "int::add_comm is proved, not postulated");
+        assert!(
+            thm.hyps().is_empty(),
+            "int::add_comm is proved, not postulated"
+        );
         // ∀a b. a + b = b + a, specialised.
         let (a, b) = (var("a"), var("b"));
-        let inst = thm.all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
+        let inst = thm
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap();
         let expected = add(a.clone(), b.clone()).equals(add(b, a)).unwrap();
         assert_eq!(inst.concl(), &expected);
     }
@@ -573,9 +590,16 @@ mod tests {
     #[test]
     fn mul_comm_is_a_genuine_theorem() {
         let thm = mul_comm();
-        assert!(thm.hyps().is_empty(), "int::mul_comm is proved, not postulated");
+        assert!(
+            thm.hyps().is_empty(),
+            "int::mul_comm is proved, not postulated"
+        );
         let (a, b) = (var("a"), var("b"));
-        let inst = thm.all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
+        let inst = thm
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap();
         let expected = mul(a.clone(), b.clone()).equals(mul(b, a)).unwrap();
         assert_eq!(inst.concl(), &expected);
     }
@@ -613,9 +637,16 @@ mod tests {
         let p = Term::free("p", nn());
         let q = Term::free("q", nn());
         // refl specialises to `int_rel p p`.
-        assert_eq!(int_rel_refl().all_elim(p.clone()).unwrap().concl(), &rel_app(&p, &p));
+        assert_eq!(
+            int_rel_refl().all_elim(p.clone()).unwrap().concl(),
+            &rel_app(&p, &p)
+        );
         // symm specialises to `int_rel p q ⟹ int_rel q p`.
-        let symm = int_rel_symm().all_elim(p.clone()).unwrap().all_elim(q.clone()).unwrap();
+        let symm = int_rel_symm()
+            .all_elim(p.clone())
+            .unwrap()
+            .all_elim(q.clone())
+            .unwrap();
         assert_eq!(symm.concl(), &rel_app(&p, &q).imp(rel_app(&q, &p)).unwrap());
     }
 
@@ -647,16 +678,13 @@ mod tests {
         let (p, q) = (Term::free("p", nn()), Term::free("q", nn()));
         // From {int_rel p q} ⊢ int_rel p q, lift to mkClass p = mkClass q.
         let ab = Thm::assume(rel_app(&p, &q)).unwrap();
-        let lifted = quotient::class_intro(
-            &spec,
-            &[],
-            &nn(),
-            &int_rel_symm(),
-            &int_rel_trans(),
-            ab,
-        )
-        .expect("class_intro on int_rel");
-        assert!(lifted.concl().as_eq().is_some(), "lifted to a class equation");
+        let lifted =
+            quotient::class_intro(&spec, &[], &nn(), &int_rel_symm(), &int_rel_trans(), ab)
+                .expect("class_intro on int_rel");
+        assert!(
+            lifted.concl().as_eq().is_some(),
+            "lifted to a class equation"
+        );
         assert!(lifted.hyps().iter().any(|h| h == &rel_app(&p, &q)));
     }
 }

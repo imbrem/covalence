@@ -29,9 +29,7 @@ use super::canonical::Canonical;
 use super::nat::{nat_add, nat_lt, nat_rec};
 use super::option::{none, option, option_case, some};
 use super::spec::{TermSpec, TypeSpec};
-use super::stream::{
-    finite, stream, stream_at, stream_const, stream_head, stream_mk, stream_tail,
-};
+use super::stream::{finite, stream, stream_at, stream_const, stream_head, stream_mk, stream_tail};
 
 /// `list 'a := stream (option 'a) where finite`. The carrier is
 /// the spec'd `stream (option α)`; the selector predicate is
@@ -267,11 +265,7 @@ fn list_filter_body() -> Term {
     let p_x = Term::app(p.clone(), x.clone());
     let cons_x_acc = Term::app(Term::app(cons(alpha.clone()), x.clone()), acc.clone());
     let chosen = Term::cond(p_x, cons_x_acc, acc);
-    let step = hol::pub_abs(
-        "x",
-        alpha.clone(),
-        hol::pub_abs("acc", la.clone(), chosen),
-    );
+    let step = hol::pub_abs("x", alpha.clone(), hol::pub_abs("acc", la.clone(), chosen));
 
     let folded = Term::app(
         Term::app(
@@ -331,7 +325,10 @@ fn list_foldr_predicate() -> Term {
     let xs = Term::free("xs", la.clone());
     let cons_x_xs = Term::app(Term::app(cons(alpha.clone()), x.clone()), xs.clone());
     let lhs = Term::app(fr_f_z.clone(), cons_x_xs);
-    let rhs = Term::app(Term::app(f.clone(), x.clone()), Term::app(fr_f_z, xs.clone()));
+    let rhs = Term::app(
+        Term::app(f.clone(), x.clone()),
+        Term::app(fr_f_z, xs.clone()),
+    );
     let step_eq = hol::hol_eq(lhs, rhs);
     let step = hol::hol_forall("x", alpha, hol::hol_forall("xs", la, step_eq));
 

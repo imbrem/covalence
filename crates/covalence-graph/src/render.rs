@@ -84,7 +84,11 @@ fn layout<P: AsRef<[u8]>>(diagram: &ResolvedDiagram<P>, opts: &LayoutOpts) -> La
     let graph: &Graph<P> = diagram.graph;
     let mut boxes = Vec::with_capacity(graph.node_count() as usize);
     for (i, node) in graph.nodes().iter().enumerate() {
-        let inputs_n = node.ports.iter().filter(|p| p.kind == PortKind::Input).count();
+        let inputs_n = node
+            .ports
+            .iter()
+            .filter(|p| p.kind == PortKind::Input)
+            .count();
         let outputs_n = node
             .ports
             .iter()
@@ -105,7 +109,11 @@ fn layout<P: AsRef<[u8]>>(diagram: &ResolvedDiagram<P>, opts: &LayoutOpts) -> La
 
         let x = opts.margin_x;
         let y = opts.margin_y + i as f32 * opts.row_h;
-        let data_left_edge = if is_ordered { x + opts.state_slot_pad } else { x };
+        let data_left_edge = if is_ordered {
+            x + opts.state_slot_pad
+        } else {
+            x
+        };
         let data_area_w = w - if is_ordered { opts.state_slot_pad } else { 0.0 };
 
         let state_in = if is_ordered {
@@ -265,7 +273,11 @@ pub fn render_svg<P: AsRef<[u8]>>(diagram: &ResolvedDiagram<P>, opts: &LayoutOpt
         let _ = write!(
             s,
             "<g class=\"node {kc}\" data-node-id=\"{i}\">",
-            kc = if b.kind.is_ordered() { "ordered" } else { "pure" },
+            kc = if b.kind.is_ordered() {
+                "ordered"
+            } else {
+                "pure"
+            },
         );
         let _ = write!(
             s,
@@ -380,7 +392,8 @@ pub fn render_dag_svg<P: AsRef<[u8]>>(graph: &Graph<P>, opts: &DagLayoutOpts) ->
     let n = graph.node_count() as usize;
     let (ranks, _max_rank) = topo_ranks(graph);
     // Group nodes per rank, preserving insertion order within each rank.
-    let mut by_rank: std::collections::BTreeMap<u32, Vec<usize>> = std::collections::BTreeMap::new();
+    let mut by_rank: std::collections::BTreeMap<u32, Vec<usize>> =
+        std::collections::BTreeMap::new();
     for (i, &r) in ranks.iter().enumerate() {
         by_rank.entry(r).or_default().push(i);
     }
@@ -415,9 +428,7 @@ pub fn render_dag_svg<P: AsRef<[u8]>>(graph: &Graph<P>, opts: &DagLayoutOpts) ->
         .fold((f32::INFINITY, f32::NEG_INFINITY), |(mn, mx), &(x, _)| {
             (mn.min(x), mx.max(x))
         });
-    let max_y = dot_centers
-        .iter()
-        .fold(0f32, |m, &(_, y)| m.max(y));
+    let max_y = dot_centers.iter().fold(0f32, |m, &(_, y)| m.max(y));
     let pad = opts.col_x;
     let (width, height) = if n == 0 {
         (pad * 2.0, opts.margin_y * 2.0)

@@ -1004,7 +1004,8 @@ fn parse_def(file: FileId, input: &mut &[Spanned]) -> Result<Top, Diagnostic> {
         // top-level form or end-of-input. Treated as a signature with no
         // return type (empty TokenRun).
         Some(Spanned {
-            token: Token::BinderHint, ..
+            token: Token::BinderHint,
+            ..
         })
         | None => {
             let hints = parse_hints(input)?;
@@ -1229,7 +1230,8 @@ impl TokenRunExt for TokenRun {
 fn parse_hints(input: &mut &[Spanned]) -> Result<Vec<HintAtom>, Diagnostic> {
     let mut out = Vec::new();
     while let Some(Spanned {
-        token: Token::BinderHint, ..
+        token: Token::BinderHint,
+        ..
     }) = peek(input)
     {
         out.push(parse_hint(input)?);

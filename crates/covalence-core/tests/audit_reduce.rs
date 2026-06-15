@@ -74,8 +74,8 @@ fn app3(f: Term, a: Term, b: Term, c: Term) -> Term {
 
 /// Run `reduce_prim` and assert it yields `⊢ t = want` (HOL eq).
 fn assert_reduces(t: Term, want: Term) {
-    let thm = Thm::reduce_prim(t.clone())
-        .unwrap_or_else(|e| panic!("reduce failed for {t:?}: {e:?}"));
+    let thm =
+        Thm::reduce_prim(t.clone()).unwrap_or_else(|e| panic!("reduce failed for {t:?}: {e:?}"));
     let TermKind::App(eq_lhs_app, rhs) = thm.concl().kind() else {
         panic!("concl is not an App: {:?}", thm.concl());
     };
@@ -200,7 +200,11 @@ fn nat_div_reduction_satisfies_its_selector_predicate() {
             continue;
         }
         // clause 2a: q * m ≤ n.
-        let lower = red(app2(defs::nat_le(), red(app2(defs::nat_mul(), q.clone(), nat(m))), nat(n)));
+        let lower = red(app2(
+            defs::nat_le(),
+            red(app2(defs::nat_mul(), q.clone(), nat(m))),
+            nat(n),
+        ));
         assert_eq!(lower, t(), "q*m ≤ n fails at n={n}, m={m} (q={q:?})");
         // clause 2b: n < S(q) * m.
         let sq = red(app1(defs::nat_succ(), q.clone()));
@@ -219,19 +223,35 @@ fn nat_div_mod_satisfy_euclidean_law() {
     // checked here on the closed-literal reduction.
     let red = |t: Term| rhs_of(&Thm::reduce_prim(t).expect("reduces"));
     for (n, m) in [
-        (0u64, 0u64), (0, 1), (1, 0), (17, 5), (20, 4), (3, 7),
-        (1, 1), (100, 7), (255, 16), (42, 1),
+        (0u64, 0u64),
+        (0, 1),
+        (1, 0),
+        (17, 5),
+        (20, 4),
+        (3, 7),
+        (1, 1),
+        (100, 7),
+        (255, 16),
+        (42, 1),
     ] {
         let q = red(app2(defs::nat_div(), nat(n), nat(m))); // n / m
         let r = red(app2(defs::nat_mod(), nat(n), nat(m))); // n mod m
         // (n/m)*m + (n mod m)  ==  n   (reduce innermost-first; one step each)
         let qm = red(app2(defs::nat_mul(), q, nat(m)));
         let recombined = red(app2(defs::nat_add(), qm, r.clone()));
-        assert_eq!(recombined, nat(n), "Euclidean identity fails at n={n}, m={m}");
+        assert_eq!(
+            recombined,
+            nat(n),
+            "Euclidean identity fails at n={n}, m={m}"
+        );
         // m > 0 ⟹ n mod m < m.
         if m != 0 {
             let bounded = red(app2(defs::nat_lt(), r, nat(m)));
-            assert_eq!(bounded, Term::bool_lit(true), "remainder not < divisor at n={n}, m={m}");
+            assert_eq!(
+                bounded,
+                Term::bool_lit(true),
+                "remainder not < divisor at n={n}, m={m}"
+            );
         }
     }
 }
@@ -486,10 +506,19 @@ fn bytes_slice_saturates() {
         blob(vec![40, 50]),
     );
     // Start at/past end: empty.
-    assert_reduces(app3(defs::bytes_slice(), bs(), nat(5), nat(3)), blob(vec![]));
-    assert_reduces(app3(defs::bytes_slice(), bs(), nat(99), nat(3)), blob(vec![]));
+    assert_reduces(
+        app3(defs::bytes_slice(), bs(), nat(5), nat(3)),
+        blob(vec![]),
+    );
+    assert_reduces(
+        app3(defs::bytes_slice(), bs(), nat(99), nat(3)),
+        blob(vec![]),
+    );
     // Zero length: empty.
-    assert_reduces(app3(defs::bytes_slice(), bs(), nat(1), nat(0)), blob(vec![]));
+    assert_reduces(
+        app3(defs::bytes_slice(), bs(), nat(1), nat(0)),
+        blob(vec![]),
+    );
     // Whole thing.
     assert_reduces(
         app3(defs::bytes_slice(), bs(), nat(0), nat(5)),
@@ -530,15 +559,27 @@ fn small_int_add_sub_mul_wrap() {
     );
     // u16 / u32 / u64 wrap.
     assert_reduces(
-        app2(intop(IntTag::U16, Add), Term::u16_lit(0xFFFF), Term::u16_lit(1)),
+        app2(
+            intop(IntTag::U16, Add),
+            Term::u16_lit(0xFFFF),
+            Term::u16_lit(1),
+        ),
         Term::u16_lit(0),
     );
     assert_reduces(
-        app2(intop(IntTag::U32, Add), Term::u32_lit(u32::MAX), Term::u32_lit(1)),
+        app2(
+            intop(IntTag::U32, Add),
+            Term::u32_lit(u32::MAX),
+            Term::u32_lit(1),
+        ),
         Term::u32_lit(0),
     );
     assert_reduces(
-        app2(intop(IntTag::U64, Mul), Term::u64_lit(u64::MAX), Term::u64_lit(2)),
+        app2(
+            intop(IntTag::U64, Mul),
+            Term::u64_lit(u64::MAX),
+            Term::u64_lit(2),
+        ),
         Term::u64_lit(u64::MAX.wrapping_mul(2)),
     );
 }
@@ -629,20 +670,38 @@ fn small_int_shifts() {
 fn small_int_bitwise() {
     use IntOp::*;
     assert_reduces(
-        app2(intop(IntTag::U8, And), Term::u8_lit(0b1100), Term::u8_lit(0b1010)),
+        app2(
+            intop(IntTag::U8, And),
+            Term::u8_lit(0b1100),
+            Term::u8_lit(0b1010),
+        ),
         Term::u8_lit(0b1000),
     );
     assert_reduces(
-        app2(intop(IntTag::U8, Or), Term::u8_lit(0b1100), Term::u8_lit(0b1010)),
+        app2(
+            intop(IntTag::U8, Or),
+            Term::u8_lit(0b1100),
+            Term::u8_lit(0b1010),
+        ),
         Term::u8_lit(0b1110),
     );
     assert_reduces(
-        app2(intop(IntTag::U8, Xor), Term::u8_lit(0b1100), Term::u8_lit(0b1010)),
+        app2(
+            intop(IntTag::U8, Xor),
+            Term::u8_lit(0b1100),
+            Term::u8_lit(0b1010),
+        ),
         Term::u8_lit(0b0110),
     );
     // Unary not / neg.
-    assert_reduces(app1(intop(IntTag::U8, Not), Term::u8_lit(0)), Term::u8_lit(255));
-    assert_reduces(app1(intop(IntTag::U8, Neg), Term::u8_lit(1)), Term::u8_lit(255));
+    assert_reduces(
+        app1(intop(IntTag::U8, Not), Term::u8_lit(0)),
+        Term::u8_lit(255),
+    );
+    assert_reduces(
+        app1(intop(IntTag::U8, Neg), Term::u8_lit(1)),
+        Term::u8_lit(255),
+    );
     // Signed neg with overflow: -(-128) wraps to -128 in s8.
     assert_reduces(
         app1(intop(IntTag::S8, Neg), Term::s8_lit(-128)),
@@ -686,7 +745,10 @@ fn small_int_zext_sext_wrap() {
     );
     // zext as wrap (narrowing): u32 0x1FF -> u8 0xFF.
     assert_reduces(
-        app1(defs::int_zext(IntTag::U32, IntTag::U8), Term::u32_lit(0x1FF)),
+        app1(
+            defs::int_zext(IntTag::U32, IntTag::U8),
+            Term::u32_lit(0x1FF),
+        ),
         Term::u8_lit(0xFF),
     );
     // sext s8 -> s32 of a negative.
@@ -703,34 +765,75 @@ fn small_int_zext_sext_wrap() {
 #[test]
 fn small_int_nat_int_casts() {
     // toNat (unsigned value of bits).
-    assert_reduces(app1(defs::int_to_nat(IntTag::U8), Term::u8_lit(200)), nat(200));
+    assert_reduces(
+        app1(defs::int_to_nat(IntTag::U8), Term::u8_lit(200)),
+        nat(200),
+    );
     // toNat on signed reads the *unsigned* bit value: s8 -1 = 0xFF = 255.
-    assert_reduces(app1(defs::int_to_nat(IntTag::S8), Term::s8_lit(-1)), nat(255));
+    assert_reduces(
+        app1(defs::int_to_nat(IntTag::S8), Term::s8_lit(-1)),
+        nat(255),
+    );
     // toInt (signed value for sN).
-    assert_reduces(app1(defs::int_to_int(IntTag::S8), Term::s8_lit(-5)), int(-5));
-    assert_reduces(app1(defs::int_to_int(IntTag::U8), Term::u8_lit(200)), int(200));
+    assert_reduces(
+        app1(defs::int_to_int(IntTag::S8), Term::s8_lit(-5)),
+        int(-5),
+    );
+    assert_reduces(
+        app1(defs::int_to_int(IntTag::U8), Term::u8_lit(200)),
+        int(200),
+    );
     // fromNat wraps mod 2^width.
-    assert_reduces(app1(defs::int_from_nat(IntTag::U8), nat(300)), Term::u8_lit(44));
-    assert_reduces(app1(defs::int_from_nat(IntTag::U8), nat(255)), Term::u8_lit(255));
+    assert_reduces(
+        app1(defs::int_from_nat(IntTag::U8), nat(300)),
+        Term::u8_lit(44),
+    );
+    assert_reduces(
+        app1(defs::int_from_nat(IntTag::U8), nat(255)),
+        Term::u8_lit(255),
+    );
     // fromInt two's complement.
-    assert_reduces(app1(defs::int_from_int(IntTag::S8), int(-1)), Term::s8_lit(-1));
-    assert_reduces(app1(defs::int_from_int(IntTag::U8), int(-1)), Term::u8_lit(255));
-    assert_reduces(app1(defs::int_from_int(IntTag::S8), int(-128)), Term::s8_lit(-128));
+    assert_reduces(
+        app1(defs::int_from_int(IntTag::S8), int(-1)),
+        Term::s8_lit(-1),
+    );
+    assert_reduces(
+        app1(defs::int_from_int(IntTag::U8), int(-1)),
+        Term::u8_lit(255),
+    );
+    assert_reduces(
+        app1(defs::int_from_int(IntTag::S8), int(-128)),
+        Term::s8_lit(-128),
+    );
     // fromInt wrap of an out-of-range positive: 256 -> 0 (u8).
-    assert_reduces(app1(defs::int_from_int(IntTag::U8), int(256)), Term::u8_lit(0));
+    assert_reduces(
+        app1(defs::int_from_int(IntTag::U8), int(256)),
+        Term::u8_lit(0),
+    );
 }
 
 #[test]
 fn small_int_wrong_tag_refuses() {
     use IntOp::*;
     // u8.add applied to u16 literals: tag mismatch => no reduction.
-    assert_no_reduce(app2(intop(IntTag::U8, Add), Term::u16_lit(1), Term::u16_lit(2)));
+    assert_no_reduce(app2(
+        intop(IntTag::U8, Add),
+        Term::u16_lit(1),
+        Term::u16_lit(2),
+    ));
     // Mixed tags.
-    assert_no_reduce(app2(intop(IntTag::U8, Add), Term::u8_lit(1), Term::u16_lit(2)));
+    assert_no_reduce(app2(
+        intop(IntTag::U8, Add),
+        Term::u8_lit(1),
+        Term::u16_lit(2),
+    ));
     // u8.toNat applied to s8 literal: src tag mismatch.
     assert_no_reduce(app1(defs::int_to_nat(IntTag::U8), Term::s8_lit(1)));
     // zext src tag mismatch.
-    assert_no_reduce(app1(defs::int_zext(IntTag::U8, IntTag::U32), Term::u16_lit(1)));
+    assert_no_reduce(app1(
+        defs::int_zext(IntTag::U8, IntTag::U32),
+        Term::u16_lit(1),
+    ));
 }
 
 // ============================================================================
@@ -814,7 +917,10 @@ fn hol_eq_ill_typed_operands_refuse_without_panic() {
     // `(Bool, Bool)` shape, so before the `type_of` guard in
     // `reduce_prim` this panicked while building the conclusion. It must
     // now return a clean `Err`.
-    let t = Term::app(Term::app(Term::eq_op(Type::nat()), Term::bool_lit(true)), Term::bool_lit(false));
+    let t = Term::app(
+        Term::app(Term::eq_op(Type::nat()), Term::bool_lit(true)),
+        Term::bool_lit(false),
+    );
     assert!(
         Thm::reduce_prim(t).is_err(),
         "ill-typed Eq application must Err, not panic"
@@ -902,8 +1008,7 @@ fn unfold_let_style_yields_body() {
     // `nat_add` is a let-style spec (its `tm` is the body and has the
     // spec's declared type). Unfolding yields `⊢ natAdd = body`.
     let t = defs::nat_add();
-    let thm = Thm::unfold_term_spec(t.clone())
-        .expect("let-style spec should unfold");
+    let thm = Thm::unfold_term_spec(t.clone()).expect("let-style spec should unfold");
     // Conclusion is a HOL eq with the spec on the LHS.
     let TermKind::App(eq_lhs_app, rhs) = thm.concl().kind() else {
         panic!("unfold concl is not App: {:?}", thm.concl());
@@ -952,8 +1057,8 @@ fn unfold_declaration_only_errs() {
         "expected SpecHasNoBody, got {err:?}"
     );
     // `nat.div` is now def-style (selector predicate): unfold => SpecIsDefStyle.
-    let err = Thm::unfold_term_spec(defs::nat_div())
-        .expect_err("def-style spec must not let-unfold");
+    let err =
+        Thm::unfold_term_spec(defs::nat_div()).expect_err("def-style spec must not let-unfold");
     assert!(
         matches!(err, covalence_core::Error::SpecIsDefStyle),
         "expected SpecIsDefStyle for nat.div, got {err:?}"
@@ -996,8 +1101,7 @@ fn unfold_non_spec_errs() {
         "expected NotASpec, got {err:?}"
     );
     // An Eq op is not a spec.
-    let err =
-        Thm::unfold_term_spec(Term::eq_op(Type::nat())).expect_err("eq op is not a spec");
+    let err = Thm::unfold_term_spec(Term::eq_op(Type::nat())).expect_err("eq op is not a spec");
     assert!(matches!(err, covalence_core::Error::NotASpec));
 }
 
@@ -1200,7 +1304,7 @@ fn audit_reduce_matches_body() {
             (-128, 127),
             (-7, 2),
             (7, -2),
-            (-5, 0), // div/rem by zero
+            (-5, 0),    // div/rem by zero
             (-128, -1), // div overflow edge
             (5, 5),
             (-50, 50),
@@ -1216,9 +1320,9 @@ fn audit_reduce_matches_body() {
     }
     for t in probes {
         let via_reduce = rhs_of(&Thm::reduce_prim(t.clone()).unwrap());
-        let via_body = rhs_of(&body_eval(&t).unwrap_or_else(|| {
-            panic!("{t}: body did not reduce to a literal")
-        }));
+        let via_body = rhs_of(
+            &body_eval(&t).unwrap_or_else(|| panic!("{t}: body did not reduce to a literal")),
+        );
         assert_eq!(
             via_reduce, via_body,
             "{t}: reduce_prim={via_reduce} but unfolded body={via_body} \
@@ -1241,7 +1345,10 @@ fn iter_based_bodies_are_stuck() {
         app1(defs::nat_to_int(), nat(5)),
     ] {
         // reduce_prim still decides it…
-        assert!(Thm::reduce_prim(t.clone()).is_ok(), "{t} should reduce_prim");
+        assert!(
+            Thm::reduce_prim(t.clone()).is_ok(),
+            "{t} should reduce_prim"
+        );
         // …but the body cannot be driven to a literal by the kernel.
         assert!(
             body_eval(&t).is_none(),
@@ -1276,8 +1383,16 @@ fn audit_reduced_def_specs_satisfy_their_predicate() {
     for &(cmp, zz, zs, sz) in cases {
         assert_eq!(reduce_bool(app2(cmp(), nat(0), nat(0))), zz, "cmp 0 0");
         for m in [0u64, 1, 5, 42] {
-            assert_eq!(reduce_bool(app2(cmp(), nat(0), nat(m + 1))), zs, "cmp 0 (S m)");
-            assert_eq!(reduce_bool(app2(cmp(), nat(m + 1), nat(0))), sz, "cmp (S n) 0");
+            assert_eq!(
+                reduce_bool(app2(cmp(), nat(0), nat(m + 1))),
+                zs,
+                "cmp 0 (S m)"
+            );
+            assert_eq!(
+                reduce_bool(app2(cmp(), nat(m + 1), nat(0))),
+                sz,
+                "cmp (S n) 0"
+            );
         }
         // Recursion clause: `cmp (S n) (S m) = cmp n m`.
         for (n, m) in [(0u64, 0u64), (3, 5), (5, 3), (2, 2), (7, 0), (0, 7)] {

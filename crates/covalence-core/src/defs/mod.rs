@@ -111,10 +111,10 @@ mod unit;
 
 pub use bits::{
     bit_spec, bit_ty, bits_len, bits_len_spec, bits_spec, bits_ty, s1_spec, s1_ty, s2_spec, s2_ty,
-    s4_spec, s4_ty, s8_spec, s8_ty, s16_spec, s16_ty, s32_spec, s32_ty, s64_spec, s64_ty, s128_spec,
-    s128_ty, s256_spec, s256_ty, s512_spec, s512_ty, u2_spec, u2_ty, u4_spec, u4_ty, u8_spec, u8_ty,
-    u16_spec, u16_ty, u32_spec, u32_ty, u64_spec, u64_ty, u128_spec, u128_ty, u256_spec, u256_ty,
-    u512_spec, u512_ty,
+    s4_spec, s4_ty, s8_spec, s8_ty, s16_spec, s16_ty, s32_spec, s32_ty, s64_spec, s64_ty,
+    s128_spec, s128_ty, s256_spec, s256_ty, s512_spec, s512_ty, u2_spec, u2_ty, u4_spec, u4_ty,
+    u8_spec, u8_ty, u16_spec, u16_ty, u32_spec, u32_ty, u64_spec, u64_ty, u128_spec, u128_ty,
+    u256_spec, u256_ty, u512_spec, u512_ty,
 };
 pub use blob::{
     bytes_at, bytes_at_spec, bytes_cat, bytes_cat_spec, bytes_cons_nat, bytes_cons_nat_spec,
@@ -127,18 +127,16 @@ pub use coprod::{
 };
 pub use fail::{fail, fail_spec};
 pub use floats::{f32_spec, f32_ty, f64_spec, f64_ty};
-pub use fun::{
-    compose, compose_spec, flip, flip_spec, id, id_spec, konst, konst_spec,
-};
+pub use fun::{compose, compose_spec, flip, flip_spec, id, id_spec, konst, konst_spec};
 pub use int::{
     int_abs, int_abs_spec, int_add, int_add_spec, int_div, int_div_spec, int_le, int_le_spec,
     int_lt, int_lt_spec, int_mod, int_mod_spec, int_mul, int_mul_spec, int_neg, int_neg_spec,
-    int_pos_spec, int_pos_ty, int_pred, int_pred_spec, int_sgn, int_sgn_spec, int_sub, int_sub_spec,
-    int_succ, int_succ_spec, int_ty_spec, int_zero,
+    int_pos_spec, int_pos_ty, int_pred, int_pred_spec, int_sgn, int_sgn_spec, int_sub,
+    int_sub_spec, int_succ, int_succ_spec, int_ty_spec, int_zero,
 };
 pub use int_ops::{
-    int_from_int, int_from_nat, int_op, int_op_spec, int_sext, int_to_int, int_to_nat, int_zext,
-    list_index_int, list_index_int_spec, IntOp,
+    IntOp, int_from_int, int_from_nat, int_op, int_op_spec, int_sext, int_to_int, int_to_nat,
+    int_zext, list_index_int, list_index_int_spec,
 };
 pub use list::{
     cons, cons_spec, head, head_spec, list, list_cat, list_cat_spec, list_filter, list_filter_spec,
@@ -190,8 +188,8 @@ pub use set::{
 pub use spec::{TermSpec, TypeSpec};
 pub use stream::{
     finite, finite_spec, stream, stream_at, stream_at_spec, stream_const, stream_const_spec,
-    stream_head, stream_head_spec, stream_iterate, stream_iterate_spec, stream_mk,
-    stream_mk_spec, stream_nth, stream_nth_spec, stream_spec, stream_tail, stream_tail_spec,
+    stream_head, stream_head_spec, stream_iterate, stream_iterate_spec, stream_mk, stream_mk_spec,
+    stream_nth, stream_nth_spec, stream_spec, stream_tail, stream_tail_spec,
 };
 pub use symbol::Symbol;
 pub use unit::{unit_nil, unit_nil_spec, unit_spec};
@@ -355,7 +353,10 @@ mod tests {
         let beta = Type::tfree("b");
         // Carrier is the *tagged* relation `α → β → bool → bool` (the
         // trailing `bool` is the inl/inr discriminator).
-        let carrier = Type::fun(alpha, Type::fun(beta, Type::fun(Type::bool(), Type::bool())));
+        let carrier = Type::fun(
+            alpha,
+            Type::fun(beta, Type::fun(Type::bool(), Type::bool())),
+        );
         let expected = Type::fun(carrier, Type::bool());
         assert_eq!(ty, expected);
     }

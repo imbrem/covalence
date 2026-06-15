@@ -15,9 +15,9 @@
 //! This is an external (integration-test) crate, so it sees only the
 //! public API.
 
+use covalence_core::defs;
 use covalence_core::subst::close;
 use covalence_core::{Error, Term, TermKind, Thm, Type};
-use covalence_core::defs;
 
 // ============================================================================
 // Term-builder helpers (mirror `covalence_core::hol`, public-API-only)
@@ -211,8 +211,7 @@ fn imp_elim_unions_hyps() {
     let q = pvar("q");
     let extra = pvar("extra");
     let imp_body = imp(p.clone(), q.clone());
-    let bigger: covalence_core::Ctx =
-        [imp_body.clone(), extra.clone()].into_iter().collect();
+    let bigger: covalence_core::Ctx = [imp_body.clone(), extra.clone()].into_iter().collect();
     let imp_thm = assume(imp_body.clone()).weaken(bigger).unwrap();
     let result = imp_thm.imp_elim(assume(p.clone())).unwrap();
     // Hyp set is the union of both inputs' hyps: {p⟹q, extra} ∪ {p}.
@@ -408,8 +407,7 @@ fn all_elim_preserves_hyps() {
         let xf = Term::free("x", nat());
         eq(nat(), xf.clone(), xf)
     });
-    let big: covalence_core::Ctx =
-        [q.clone(), univ_term.clone()].into_iter().collect();
+    let big: covalence_core::Ctx = [q.clone(), univ_term.clone()].into_iter().collect();
     let univ = assume(univ_term).weaken(big).unwrap();
     let inst = univ.all_elim(Term::nat_lit(7u32)).unwrap();
     assert!(inst.hyps().contains(&q));
@@ -423,7 +421,9 @@ fn all_elim_preserves_hyps() {
 fn and_intro_builds_conjunction() {
     let p = pvar("p");
     let q = pvar("q");
-    let thm = assume(p.clone()).and_intro(assume(q.clone())).expect("and_intro");
+    let thm = assume(p.clone())
+        .and_intro(assume(q.clone()))
+        .expect("and_intro");
     assert!(binop_head_is(thm.concl(), &defs::and_spec()));
     let (lhs, rhs) = binop_args(thm.concl());
     assert_eq!(lhs, p);
@@ -756,7 +756,9 @@ fn not_intro_rejects_consequent_true() {
 fn not_elim_yields_false() {
     // ⊢ ¬p, ⊢ p  ⇒  ⊢ F
     let p = pvar("p");
-    let result = assume(not(p.clone())).not_elim(assume(p)).expect("not_elim");
+    let result = assume(not(p.clone()))
+        .not_elim(assume(p))
+        .expect("not_elim");
     assert_eq!(result.concl(), &f());
 }
 
@@ -764,7 +766,9 @@ fn not_elim_yields_false() {
 fn not_elim_unions_hyps() {
     let p = pvar("p");
     let not_term = not(p.clone());
-    let result = assume(not_term.clone()).not_elim(assume(p.clone())).unwrap();
+    let result = assume(not_term.clone())
+        .not_elim(assume(p.clone()))
+        .unwrap();
     assert!(result.hyps().contains(&not_term));
     assert!(result.hyps().contains(&p));
 }

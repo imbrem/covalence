@@ -62,7 +62,8 @@ mod tests {
     where
         R::Error: std::fmt::Debug,
     {
-        r.specialize(r.add_neg(), r.one()).expect("specialize add_neg")
+        r.specialize(r.add_neg(), r.one())
+            .expect("specialize add_neg")
     }
 
     #[test]

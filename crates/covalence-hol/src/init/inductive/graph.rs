@@ -46,7 +46,9 @@ fn apply_all(head: Term, args: &[Term]) -> Result<Term> {
 /// with no recursive arguments drops the antecedent entirely).
 fn conj(ts: &[Term]) -> Result<Term> {
     match ts {
-        [] => Err(Error::ConnectiveRule("inductive::graph: empty conjunction".into())),
+        [] => Err(Error::ConnectiveRule(
+            "inductive::graph: empty conjunction".into(),
+        )),
         [last] => Ok(last.clone()),
         [head, rest @ ..] => head.clone().and(conj(rest)?),
     }
@@ -132,7 +134,9 @@ pub fn graph(sig: &InductiveSig, steps: &[Term], beta: &Type, t: Term, a: Term) 
     let g_ty = relation_ty(sig, beta);
     let g = Term::free(sig.relation, g_ty.clone());
     let gta = app2(&g, t, a)?;
-    closed(sig, steps, beta, &g)?.imp(gta)?.forall(sig.relation, g_ty)
+    closed(sig, steps, beta, &g)?
+        .imp(gta)?
+        .forall(sig.relation, g_ty)
 }
 
 #[cfg(test)]
@@ -151,7 +155,13 @@ mod tests {
             relation: "G",
             ctors: vec![
                 Constructor::nullary(zero()),
-                Constructor::new(nat_succ(), vec![Arg::Rec { name: "m", image: "b" }]),
+                Constructor::new(
+                    nat_succ(),
+                    vec![Arg::Rec {
+                        name: "m",
+                        image: "b",
+                    }],
+                ),
             ],
         }
     }
@@ -177,7 +187,13 @@ mod tests {
         let gmb = app2(&g, m.clone(), b.clone()).unwrap();
         let fmb = f.apply(m.clone()).unwrap().apply(b.clone()).unwrap();
         let g_succ = app2(&g, succ(m), fmb).unwrap();
-        let step = gmb.imp(g_succ).unwrap().forall("b", nat()).unwrap().forall("m", nat()).unwrap();
+        let step = gmb
+            .imp(g_succ)
+            .unwrap()
+            .forall("b", nat())
+            .unwrap()
+            .forall("m", nat())
+            .unwrap();
         let expected = g0z.and(step).unwrap();
 
         assert_eq!(got, expected);
@@ -191,7 +207,14 @@ mod tests {
         let n = Term::free("n", nat());
         let a = Term::free("a", nat());
 
-        let got = graph(&nat_sig(), &[z.clone(), f.clone()], &nat(), n.clone(), a.clone()).unwrap();
+        let got = graph(
+            &nat_sig(),
+            &[z.clone(), f.clone()],
+            &nat(),
+            n.clone(),
+            a.clone(),
+        )
+        .unwrap();
 
         let g = g_var();
         let g_ty = relation_ty(&nat_sig(), &nat());
@@ -216,10 +239,16 @@ mod tests {
         let t = nat(); // stand-in for `list α`
         let beta = nat();
         // C : α → T → T  and step f : α → T → β → β.
-        let c = Term::free("C", Type::fun(elem.clone(), Type::fun(t.clone(), t.clone())));
+        let c = Term::free(
+            "C",
+            Type::fun(elem.clone(), Type::fun(t.clone(), t.clone())),
+        );
         let f = Term::free(
             "f",
-            Type::fun(elem.clone(), Type::fun(t.clone(), Type::fun(beta.clone(), beta.clone()))),
+            Type::fun(
+                elem.clone(),
+                Type::fun(t.clone(), Type::fun(beta.clone(), beta.clone())),
+            ),
         );
         let sig = InductiveSig {
             ty: t.clone(),
@@ -227,8 +256,14 @@ mod tests {
             ctors: vec![Constructor::new(
                 c.clone(),
                 vec![
-                    Arg::Param { ty: elem.clone(), name: "x" },
-                    Arg::Rec { name: "xs", image: "b" },
+                    Arg::Param {
+                        ty: elem.clone(),
+                        name: "x",
+                    },
+                    Arg::Rec {
+                        name: "xs",
+                        image: "b",
+                    },
                 ],
             )],
         };
@@ -241,7 +276,13 @@ mod tests {
         let b = Term::free("b", beta.clone());
         let gxsb = app2(&g, xs.clone(), b.clone()).unwrap();
         let cons = c.apply(x.clone()).unwrap().apply(xs.clone()).unwrap();
-        let fval = f.apply(x.clone()).unwrap().apply(xs.clone()).unwrap().apply(b.clone()).unwrap();
+        let fval = f
+            .apply(x.clone())
+            .unwrap()
+            .apply(xs.clone())
+            .unwrap()
+            .apply(b.clone())
+            .unwrap();
         let g_cons = app2(&g, cons, fval).unwrap();
         let expected = gxsb
             .imp(g_cons)
@@ -261,6 +302,9 @@ mod tests {
     fn step_count_must_match_arity() {
         let g = g_var();
         let err = closed(&nat_sig(), &[Term::free("z", nat())], &nat(), &g);
-        assert!(err.is_err(), "1 step for a 2-constructor signature must error");
+        assert!(
+            err.is_err(),
+            "1 step for a 2-constructor signature must error"
+        );
     }
 }

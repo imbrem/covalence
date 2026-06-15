@@ -168,10 +168,7 @@ fn coprod_abs_rep_types() {
 fn prod_abs_rep_types() {
     // carrier of prod is `a -> b -> bool`.
     let args = vec![Type::nat(), Type::bool()];
-    let carrier = Type::fun(
-        Type::nat(),
-        Type::fun(Type::bool(), Type::bool()),
-    );
+    let carrier = Type::fun(Type::nat(), Type::fun(Type::bool(), Type::bool()));
     let wrapper = defs::prod(Type::nat(), Type::bool());
 
     let abs = Term::spec_abs(defs::prod_spec(), args.clone());
@@ -188,10 +185,7 @@ fn prod_abs_rep_types() {
 fn int_abs_rep_types() {
     // int is a 0-ary quotient spec; carrier is `(prod nat nat) -> bool`
     // (the powerset the quotient closure lives in).
-    let carrier = Type::fun(
-        defs::prod(Type::nat(), Type::nat()),
-        Type::bool(),
-    );
+    let carrier = Type::fun(defs::prod(Type::nat(), Type::nat()), Type::bool());
     let wrapper = Type::spec(defs::int_ty_spec(), vec![]);
 
     let abs = Term::spec_abs(defs::int_ty_spec(), vec![]);

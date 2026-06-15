@@ -130,7 +130,9 @@ pub fn holds_mk(alpha: &Type, beta: &Type, x: &Term, y: &Term, p: &Term) -> Resu
     let d_mk = after.delta_all(rel_mk_spec().symbol())?; // unfold the inner rel.mk
     let reduced = rhs_of(&d_mk)?.reduce()?; // βι → (rep (abs p)) x y
     // `rep (abs p) = p`, lifted to `(rep (abs p)) x y = p x y` by congruence.
-    let cong = rep_abs(alpha, beta, p)?.cong_fn(x.clone())?.cong_fn(y.clone())?;
+    let cong = rep_abs(alpha, beta, p)?
+        .cong_fn(x.clone())?
+        .cong_fn(y.clone())?;
     trans_chain([d_holds, d_mk, reduced, cong])
 }
 

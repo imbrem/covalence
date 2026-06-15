@@ -57,7 +57,10 @@ pub struct Path<C: Category> {
 // itself is never stored, so `Clone` must not spuriously require `C: Clone`.
 impl<C: Category> Clone for Path<C> {
     fn clone(&self) -> Self {
-        Path { nodes: self.nodes.clone(), edges: self.edges.clone() }
+        Path {
+            nodes: self.nodes.clone(),
+            edges: self.edges.clone(),
+        }
     }
 }
 
@@ -65,12 +68,18 @@ impl<C: Category> Path<C> {
     /// The empty path at `obj` — the diagram's identity loop, folding to
     /// `id_obj`.
     pub fn point(obj: C::Obj) -> Self {
-        Path { nodes: vec![obj], edges: Vec::new() }
+        Path {
+            nodes: vec![obj],
+            edges: Vec::new(),
+        }
     }
 
     /// The one-edge path `src --e--> tgt`.
     pub fn edge(src: C::Obj, e: C::Hom, tgt: C::Obj) -> Self {
-        Path { nodes: vec![src, tgt], edges: vec![e] }
+        Path {
+            nodes: vec![src, tgt],
+            edges: vec![e],
+        }
     }
 
     /// Extend the path by one more edge `tgt() --e--> next`, walking
@@ -102,7 +111,9 @@ impl<C: Category> Path<C> {
 
     /// The target object (where the path ends).
     pub fn tgt(&self) -> &C::Obj {
-        self.nodes.last().expect("a path always has at least one node")
+        self.nodes
+            .last()
+            .expect("a path always has at least one node")
     }
 
     /// The number of edges (`0` for the identity path).
@@ -158,7 +169,9 @@ pub struct Cell<C: Category> {
 
 impl<C: Category> Clone for Cell<C> {
     fn clone(&self) -> Self {
-        Cell { proof: self.proof.clone() }
+        Cell {
+            proof: self.proof.clone(),
+        }
     }
 }
 
@@ -369,7 +382,10 @@ mod tests {
         assert_eq!(pq.nodes(), &[a.clone(), b.clone(), c.clone()]);
         assert_eq!(pq.len(), 2);
         // Same composite as the two-edge path built directly: g ∘ f.
-        assert_eq!(pq.morphism(&h).unwrap(), crate::init::cat::comp(&g, &f).unwrap());
+        assert_eq!(
+            pq.morphism(&h).unwrap(),
+            crate::init::cat::comp(&g, &f).unwrap()
+        );
     }
 
     #[test]
@@ -458,15 +474,25 @@ mod tests {
         );
 
         let rect = paste_horizontal(
-            &h, f.clone(), g.clone(), a.clone(), b.clone(), cm.clone(),
-            f_low.clone(), g_low.clone(), left, right,
+            &h,
+            f.clone(),
+            g.clone(),
+            a.clone(),
+            b.clone(),
+            cm.clone(),
+            f_low.clone(),
+            g_low.clone(),
+            left,
+            right,
         )
         .unwrap();
 
         // Conclusion: c ∘ (g ∘ f) = (g' ∘ f') ∘ a.
         let (lhs, rhs) = rect.sides(&h);
-        let expect_l = crate::init::cat::comp(&cm, &crate::init::cat::comp(&g, &f).unwrap()).unwrap();
-        let expect_r = crate::init::cat::comp(&crate::init::cat::comp(&g_low, &f_low).unwrap(), &a).unwrap();
+        let expect_l =
+            crate::init::cat::comp(&cm, &crate::init::cat::comp(&g, &f).unwrap()).unwrap();
+        let expect_r =
+            crate::init::cat::comp(&crate::init::cat::comp(&g_low, &f_low).unwrap(), &a).unwrap();
         assert_eq!(lhs, expect_l);
         assert_eq!(rhs, expect_r);
 

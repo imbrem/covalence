@@ -326,11 +326,20 @@ fn is_cut(q: &Term) -> Result<Thm> {
     let s = upper_cut(q.clone()); // ratLe q : rat→bool
     let pred_app = Term::app(cut_pred(), s);
     let conv = Thm::beta_conv(pred_app)?; // ⊢ pred_app = (closed ∧ nonempty)
-    let clean = conv.concl().as_eq().expect("beta_conv yields an equation").1.clone();
+    let clean = conv
+        .concl()
+        .as_eq()
+        .expect("beta_conv yields an equation")
+        .1
+        .clone();
 
     // clean = and closed nonempty = App(App(and, closed), nonempty).
     let (and_closed, nonempty_t) = clean.as_app().expect("clean is a conjunction");
-    let closed_t = and_closed.as_app().expect("clean is a conjunction").1.clone();
+    let closed_t = and_closed
+        .as_app()
+        .expect("clean is a conjunction")
+        .1
+        .clone();
     let nonempty_t = nonempty_t.clone();
 
     // closed: ∀x y. x≤y ⟹ q≤x ⟹ q≤y, via le_trans q x y (antecedents reordered).
@@ -352,7 +361,11 @@ fn is_cut(q: &Term) -> Result<Thm> {
 
     // nonempty: ∃x. q≤x, witness q, proof le_refl q (β-expanded to `pred q`).
     let nonempty_thm = {
-        let pred = nonempty_t.as_app().expect("nonempty is `exists pred`").1.clone();
+        let pred = nonempty_t
+            .as_app()
+            .expect("nonempty is `exists pred`")
+            .1
+            .clone();
         let refl = rat::le_refl().all_elim(q.clone())?; // ⊢ q≤q
         let pf = Thm::beta_conv(Term::app(pred.clone(), q.clone()))?
             .sym()?
@@ -580,14 +593,8 @@ mod tests {
     #[test]
     fn carrier_is_the_rational_powerset() {
         // abs : (rat→bool) → real ; rep : real → (rat→bool).
-        assert_eq!(
-            real_abs().type_of().unwrap(),
-            Type::fun(powerset(), real())
-        );
-        assert_eq!(
-            real_rep().type_of().unwrap(),
-            Type::fun(real(), powerset())
-        );
+        assert_eq!(real_abs().type_of().unwrap(), Type::fun(powerset(), real()));
+        assert_eq!(real_rep().type_of().unwrap(), Type::fun(real(), powerset()));
     }
 
     #[test]
@@ -695,10 +702,7 @@ mod tests {
     #[test]
     fn sup_postulates_and_completeness_are_well_formed() {
         // real_sup : (real→bool) → real.
-        assert_eq!(
-            real_sup().type_of().unwrap(),
-            Type::fun(real_set(), real())
-        );
+        assert_eq!(real_sup().type_of().unwrap(), Type::fun(real_set(), real()));
         // The two sup postulates are self-flagged bool statements.
         for ax in [sup_is_ub(), sup_is_least()] {
             assert!(ax.concl().type_of().unwrap().is_bool());

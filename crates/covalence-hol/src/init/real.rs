@@ -40,10 +40,10 @@
 //!   supremum is the *intersection of the cut-sets* ([`real_sup`]).
 
 use covalence_core::defs::{real_spec, real_ty};
-use covalence_core::{Term, Type, subst};
+use covalence_core::{Result, Term, Thm, Type, subst};
 
-use crate::init::ext::TermExt;
-use crate::init::rat;
+use crate::init::ext::{TermExt, ThmExt};
+use crate::init::{logic, rat};
 
 // Re-export the `defs/real.rs` catalogue.
 pub use covalence_core::defs::real_ty as real_type;
@@ -144,6 +144,109 @@ fn rle(r: Term, s: Term) -> Term {
     Term::app(Term::app(real_le(), r), s)
 }
 
+/// `ratLe a b` — a rational `≤` atom.
+fn rat_le_app(a: &Term, b: &Term) -> Term {
+    Term::app(Term::app(rat::rat_le(), a.clone()), b.clone())
+}
+
+// ============================================================================
+// Principal up-sets are genuine cuts
+// ============================================================================
+
+/// `⊢ cut_pred (ratLe q)` — every principal up-set `{x | q ≤ x}` is a
+/// Dedekind cut. **Proved** from the `rat` `≤` toolkit: upward closure is
+/// `le_trans` (`q ≤ x` and `x ≤ y` give `q ≤ y`), non-emptiness is
+/// `le_refl` (the witness `q` lies in its own up-set).
+///
+/// The conclusion is the *un-reduced* redex `cut_pred (ratLe q)` — exactly
+/// the antecedent [`Thm::spec_rep_abs_fwd`] expects — obtained by proving
+/// the β-reduced conjunction and transporting back across `beta_conv`.
+fn is_cut(q: &Term) -> Result<Thm> {
+    let s = upper_cut(q.clone()); // ratLe q : rat→bool
+    let pred_app = Term::app(cut_pred(), s);
+    let conv = Thm::beta_conv(pred_app)?; // ⊢ pred_app = (closed ∧ nonempty)
+    let clean = conv.concl().as_eq().expect("beta_conv yields an equation").1.clone();
+
+    // clean = and closed nonempty = App(App(and, closed), nonempty).
+    let (and_closed, nonempty_t) = clean.as_app().expect("clean is a conjunction");
+    let closed_t = and_closed.as_app().expect("clean is a conjunction").1.clone();
+    let nonempty_t = nonempty_t.clone();
+
+    // closed: ∀x y. x≤y ⟹ q≤x ⟹ q≤y, via le_trans q x y (antecedents reordered).
+    let closed_thm = {
+        let (x, y) = (Term::free("x", ratt()), Term::free("y", ratt()));
+        let xy = rat_le_app(&x, &y);
+        let qx = rat_le_app(q, &x);
+        let qy = rat::le_trans()
+            .all_elim(q.clone())?
+            .all_elim(x.clone())?
+            .all_elim(y.clone())?
+            .imp_elim(Thm::assume(qx.clone())?)?
+            .imp_elim(Thm::assume(xy.clone())?)?; // {q≤x, x≤y} ⊢ q≤y
+        qy.imp_intro(&qx)?
+            .imp_intro(&xy)?
+            .all_intro("y", ratt())?
+            .all_intro("x", ratt())?
+    };
+
+    // nonempty: ∃x. q≤x, witness q, proof le_refl q (β-expanded to `pred q`).
+    let nonempty_thm = {
+        let pred = nonempty_t.as_app().expect("nonempty is `exists pred`").1.clone();
+        let refl = rat::le_refl().all_elim(q.clone())?; // ⊢ q≤q
+        let pf = Thm::beta_conv(Term::app(pred.clone(), q.clone()))?
+            .sym()?
+            .eq_mp(refl)?; // ⊢ pred q
+        logic::exists_intro(pred, q.clone(), pf)? // ⊢ ∃x. q≤x
+    };
+
+    // Re-assemble the conjunction and transport back to the redex.
+    debug_assert_eq!(closed_thm.concl(), &closed_t);
+    let p_clean = closed_thm.and_intro(nonempty_thm)?; // ⊢ closed ∧ nonempty
+    conv.sym()?.eq_mp(p_clean) // ⊢ cut_pred (ratLe q)
+}
+
+// ============================================================================
+// 0 ≠ 1
+// ============================================================================
+
+cached_thm! {
+    /// `⊢ ¬(0 = 1)` — zero and one are distinct reals.
+    ///
+    /// **Proved.** The principal cuts `ratLe 0` and `ratLe 1` differ at the
+    /// rational `0`: `0 ≤ 0` holds (`le_refl`) but `1 ≤ 0` does not
+    /// (`not_one_le_zero`). Assuming `0 = 1`, congruence under `rep` plus
+    /// the subtype round-trip [`Thm::spec_rep_abs_fwd`] (discharged by
+    /// [`is_cut`]) collapses the two cut-sets, so `0 ≤ 0 = 1 ≤ 0`,
+    /// contradicting `not_one_le_zero`. Genuine *modulo* the `rat` order
+    /// postulates `is_cut` / `not_one_le_zero` rest on.
+    pub fn zero_ne_one() -> Thm {
+        zero_ne_one_impl().expect("real zero_ne_one")
+    }
+}
+fn zero_ne_one_impl() -> Result<Thm> {
+    let (zero, one) = (rat::rat_zero(), rat::rat_one());
+    let (s0, s1) = (upper_cut(zero.clone()), upper_cut(one.clone()));
+    let eq01 = real_zero().equals(real_one())?; // abs s0 = abs s1
+
+    // rep both sides of the assumed equality.
+    let reps_eq = Thm::assume(eq01.clone())?.cong_arg(real_rep())?; // {eq} ⊢ rep(abs s0)=rep(abs s1)
+    // rep(abs sᵢ) = sᵢ, the subtype round-trip discharged by `is_cut`.
+    let r0 = Thm::spec_rep_abs_fwd(real_spec(), Vec::new(), s0)?.imp_elim(is_cut(&zero)?)?;
+    let r1 = Thm::spec_rep_abs_fwd(real_spec(), Vec::new(), s1)?.imp_elim(is_cut(&one)?)?;
+    let sets_eq = r0.sym()?.trans(reps_eq)?.trans(r1)?; // {eq} ⊢ s0 = s1
+
+    // Evaluate both cut-sets at the rational 0: (0≤0) = (1≤0).
+    let at0 = sets_eq.cong_fn(zero.clone())?; // {eq} ⊢ ratLe 0 0 = ratLe 1 0
+    let le00 = rat::le_refl().all_elim(zero.clone())?; // ⊢ ratLe 0 0
+    let le10 = at0.eq_mp(le00)?; // {eq} ⊢ ratLe 1 0
+
+    // ¬(1≤0) gives the contradiction.
+    rat::not_one_le_zero()
+        .not_elim(le10)? // {eq, …} ⊢ F
+        .imp_intro(&eq01)?
+        .not_intro() // ⊢ ¬(0 = 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,6 +286,38 @@ mod tests {
         // `r ≤ s` is a bool.
         let (r, s) = (Term::free("r", real()), Term::free("s", real()));
         assert!(rle(r, s).type_of().unwrap().is_bool());
+    }
+
+    #[test]
+    fn is_cut_proves_a_principal_up_set_is_a_cut() {
+        // A concrete rational (`is_cut` is only ever called on closed
+        // rationals; `exists_intro` reserves the name `q` internally).
+        let q = rat::rat_zero();
+        let thm = is_cut(&q).expect("is_cut q");
+        // Conclusion is exactly the redex `cut_pred (ratLe q)`.
+        assert_eq!(thm.concl(), &Term::app(cut_pred(), upper_cut(q)));
+        assert!(thm.concl().type_of().unwrap().is_bool());
+    }
+
+    #[test]
+    fn zero_is_distinct_from_one() {
+        let thm = zero_ne_one();
+        // Statement: ¬(0 = 1).
+        assert_eq!(
+            thm.concl(),
+            &real_zero().equals(real_one()).unwrap().not().unwrap()
+        );
+        // Genuine modulo the rat-order postulates: the assumed `0 = 1` is
+        // discharged, so no equation hypothesis remains — only bool
+        // (postulate) hyps.
+        let eq01 = real_zero().equals(real_one()).unwrap();
+        assert!(
+            !thm.hyps().iter().any(|h| h == &eq01),
+            "the assumed equality is discharged"
+        );
+        for h in thm.hyps() {
+            assert!(h.type_of().unwrap().is_bool());
+        }
     }
 
     #[test]

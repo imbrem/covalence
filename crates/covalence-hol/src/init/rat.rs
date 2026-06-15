@@ -775,13 +775,31 @@ fn rle(a: Term, b: Term) -> Term {
     Term::app(Term::app(rat_le(), a), b)
 }
 
-/// `⊢ ∀a. ¬(a < a)` — irreflexivity.
-pub fn lt_irrefl() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a. ¬(a < a)` — irreflexivity, **proved on the nose** from
+    /// `int::lt_irrefl`: `ratLt a a` reduces to `int_lt X X` with
+    /// `X = num(rep a) · den(rep a)`, so the rational `<` inherits the
+    /// integer's irreflexivity at `X`.
+    pub fn lt_irrefl() -> Thm {
+        lt_irrefl_impl().expect("rat::lt_irrefl")
+    }
+}
+fn lt_irrefl_impl() -> Result<Thm> {
     let a = rvar("a");
-    axiom(forall_rat(
-        &["a"],
-        rlt(a.clone(), a).not().expect("lt_irrefl"),
-    ))
+    let red = rlt(a.clone(), a.clone()).reduce()?; // ratLt a a = int_lt X X
+    let ltxx = red.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let x = ltxx
+        .as_app()
+        .ok_or(Error::NotAnEquation)?
+        .0
+        .as_app()
+        .ok_or(Error::NotAnEquation)?
+        .1
+        .clone(); // X = num(rep a) · den(rep a)
+    int::lt_irrefl()
+        .all_elim(x)? // ¬(int_lt X X)
+        .rewrite(&red.sym()?)? // ¬(ratLt a a)
+        .all_intro("a", rat())
 }
 
 /// `⊢ ∀a b c. a < b ⟹ b < c ⟹ a < c` — transitivity.
@@ -1425,10 +1443,21 @@ mod tests {
 
     #[test]
     fn order_axioms_are_well_typed_and_self_flagged() {
-        for ax in [lt_irrefl(), lt_trans(), lt_trichotomy(), le_def()] {
+        // Still-postulated order axioms (lt_irrefl is now proved — see
+        // lt_irrefl_is_genuine).
+        for ax in [lt_trans(), lt_trichotomy(), le_def()] {
             assert!(ax.concl().type_of().unwrap().is_bool());
             assert!(ax.hyps().iter().any(|h| h == ax.concl()));
         }
+    }
+
+    #[test]
+    fn lt_irrefl_is_genuine() {
+        let thm = lt_irrefl();
+        assert!(thm.hyps().is_empty(), "rat::lt_irrefl is proved, not postulated");
+        let a = rvar("a");
+        let inst = thm.all_elim(a.clone()).unwrap();
+        assert_eq!(inst.concl(), &rlt(a.clone(), a.clone()).not().unwrap());
     }
 
     #[test]

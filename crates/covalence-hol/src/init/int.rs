@@ -5,23 +5,24 @@
 //!
 //! [`init::nat`]: crate::init::nat
 //!
-//! ## Status — the full commutative ring is proved
+//! ## Status — full commutative ring + all order facts but `lt_mul_pos`
 //!
 //! `int := (nat × nat) / ~` is the Grothendieck construction, so every
 //! axiom here is a *theorem* of HOL derivable from the `nat` Peano facts
-//! through the quotient. The lifting machinery is built and the **entire
-//! commutative ring is discharged**; only the order theory is still
-//! `Thm::assume` postulates (flagged in `SKELETONS.md`, each carrying its
-//! statement as a self-hypothesis so the audit trail is visible downstream).
+//! through the quotient. The lifting machinery is built; everything is
+//! discharged **except [`lt_mul_pos`]**, the last `Thm::assume` postulate
+//! (flagged in `SKELETONS.md`, carrying its statement as a self-hypothesis
+//! so the audit trail is visible downstream).
 //!
 //! - **Commutative ring** — **all proved:** [`add_comm`], [`add_assoc`],
 //!   [`add_zero`], [`add_neg`], [`sub_def`], [`mul_comm`], [`mul_assoc`],
 //!   [`mul_one`], [`mul_zero`], [`distrib`].
-//! - **Linear order** (postulated) — [`lt_irrefl`], [`lt_trans`],
+//! - **Linear order** — **all proved:** [`lt_irrefl`], [`lt_trans`],
 //!   [`lt_trichotomy`], [`le_def`].
-//! - **Ordered-ring compatibility** (postulated) — [`lt_add_mono`],
-//!   [`lt_mul_pos`].
-//! - **Discreteness** (postulated) — [`lt_succ`]: `a < b ⟺ a + 1 ≤ b`.
+//! - **Discreteness** — **proved:** [`lt_succ`] (`a < b ⟺ a + 1 ≤ b`).
+//! - **Ordered-ring compatibility** — [`lt_add_mono`] **proved**;
+//!   [`lt_mul_pos`] (`0 < c ⟹ a < b ⟹ a·c < b·c`) **postulated**, pending
+//!   `nat` strict multiplicative monotonicity (`a < b ⟹ 0 < c ⟹ a·c < b·c`).
 //!
 //! The public surface (these `fn`s) does not change as proofs land — only
 //! the bodies; downstream consumers (the `int` ring/semiring embedding, the
@@ -52,6 +53,16 @@
 //! Each ring axiom then reduces to `nat` algebra on the `f`/`s` components
 //! (e.g. `add_assoc` is `nat::add_assoc` per component; `mul_assoc` /
 //! `distrib` distribute to the same `nat` products, re-paired by `mid_swap`).
+//!
+//! **Order** works the same way: `int.le` / `int.lt` on the `MK` form read
+//! off the clean components (`le_mk` / `lt_mk`) — the ε-representatives the
+//! comparison picks are `round_trip`-related to `(f, s)`, and `nat::le_cross`
+//! / `lt_cross` make the comparison invariant under that. `le_via_components`
+//! / `lt_via_components` then express each order axiom as a `nat` order fact
+//! (the `nat` strict-order theory `lt_trans` / `lt_trichotomy` /
+//! `lt_add_mono_r` / `lt_iff_succ_le` / `le_iff_lt_or_eq`), and `int_eq_iff`
+//! identifies `int` equality with the Grothendieck relation on
+//! representatives.
 
 use covalence_core::defs::{fst, pair, prod, snd};
 use covalence_core::{Error, Result, Term, Thm, Type, subst};

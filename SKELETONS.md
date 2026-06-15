@@ -29,27 +29,29 @@ it is how unfinished work stays discoverable.
 ## Postulates pending proof
 
 - **The `int` ordered-ring theory** in
-  `crates/covalence-hol/src/init/int.rs`: the **full commutative ring is now
-  proved** through the quotient — `add_comm`, `add_assoc`, `add_zero`,
-  `add_neg`, `sub_def`, `mul_comm`, `mul_assoc`, `mul_one`, `mul_zero`,
-  `distrib`. **7 postulates remain** (still `Thm::assume` via the module's
-  `axiom` helper, each carrying its statement as a self-hyp) — all *order*:
-  - **linear order** — `lt_irrefl`, `lt_trans`, `lt_trichotomy`, `le_def`;
-    **ordered-ring compatibility** — `lt_add_mono`, `lt_mul_pos`;
-    **discreteness** — `lt_succ` (`a < b ⟺ a + 1 ≤ b`). These unfold
-    `int.le`/`int.lt` to the `nat` comparison on representatives
-    (`a − b ⋚ c − d ⟺ a + d ⋚ c + b`); `lt_irrefl`/`le_def` are on-the-nose
-    like `add_comm`, but `lt_trans`/`lt_trichotomy`/`lt_add_mono`/`lt_succ`
-    need more **`nat` `lt` theory** (transitivity, add-monotonicity/cancel,
-    trichotomy, the `< / ≤` bridge) than `init::nat` currently exposes.
+  `crates/covalence-hol/src/init/int.rs`: the **full commutative ring and all
+  the linear-order facts are now proved** through the quotient — `add_comm`,
+  `add_assoc`, `add_zero`, `add_neg`, `sub_def`, `mul_comm`, `mul_assoc`,
+  `mul_one`, `mul_zero`, `distrib`, `lt_irrefl`, `lt_trans`, `lt_trichotomy`,
+  `le_def`, `lt_add_mono`, `lt_succ`. **1 postulate remains** (`Thm::assume`
+  via the module's `axiom` helper, carrying its statement as a self-hyp):
+  - `lt_mul_pos` (`0 < c ⟹ a < b ⟹ a·c < b·c`) — the ordered-ring
+    positive-multiplier law. Blocked on **`nat` strict multiplicative
+    monotonicity** (`a < b ⟹ 0 < c ⟹ a·c < b·c`, itself needing
+    `0 < a ⟹ 0 < b ⟹ 0 < a·b`) plus the Grothendieck-product
+    rearrangement that lifts it — a sizeable `nat` additive shuffle (the
+    `int` side decomposes the two product comparisons as `D + (fa+sb)·m` /
+    `D + (fb+sa)·m` with `fc = sc + m`, `0 < m`, then cancels `D`). A reusable
+    `nat` additive-normaliser would make this (and the existing hand-rolled
+    `mul_assoc`/`distrib` rearrangements) routine.
 
-  Since `int := (nat × nat) / ~` (Grothendieck), each is a HOL theorem;
-  filling the proofs in does not change the public `fn` surface. These are
-  the ingredients the Alethe `la_generic` / `la_mult_*` checker will consume.
-  The `int` semiring/ring embedding (`crate::semiring::Int` /
-  `crate::ring::Int`) forwards its axioms here, so its ring axioms are now
-  genuine theorems; only the ordered-ring order facts remain postulated. The
-  `nat` semiring embedding (`crate::semiring::Nat`) is likewise fully proved.
+  Since `int := (nat × nat) / ~` (Grothendieck), this is a HOL theorem;
+  filling it in does not change the public `fn` surface. These are the
+  ingredients the Alethe `la_generic` / `la_mult_*` checker will consume. The
+  `int` semiring/ring embedding (`crate::semiring::Int` / `crate::ring::Int`)
+  forwards its axioms here, so its ring axioms are now genuine theorems; only
+  the single positive-multiplier order fact remains postulated. The `nat`
+  semiring embedding (`crate::semiring::Nat`) is likewise fully proved.
 
   **Machinery (built and proved).** `init::quotient` provides the lifting
   API on the junk-free `TypeSpec::quot` (carving predicate `λS. ∃z. S =
@@ -64,17 +66,20 @@ it is how unfinished work stays discoverable.
   combine `nat` components on the nose, and `lit0_mk`/`lit1_mk` give
   literal-`0`/`1` coherence. Each ring axiom reduces to `nat` algebra on the
   components (`mul_pair_cong` — multiplication well-definedness — is proved
-  per-argument via `distrib` and chained).
+  per-argument via `distrib` and chained). **Order** lifts the same way:
+  `le_mk`/`lt_mk` (the ε-reps bridged by `nat::le_cross`/`lt_cross` +
+  `round_trip`), `le_via_components`/`lt_via_components`, and `int_eq_iff`.
+  `init::nat` now also has the strict-order theory (`lt_trans`,
+  `lt_add_mono_r`, `lt_cross`, `add_lt_add`, `le_iff_lt_or_eq`,
+  `lt_trichotomy`, `nat_cases`).
 
-  **Remaining work, concretely (order only).**
-  - `lt_irrefl`/`le_def` are on-the-nose (unfold `int.le`/`int.lt` to the
-    `nat` comparison on representatives, `a−b ⋚ c−d ⟺ a+d ⋚ c+b`, then the
-    `nat` facts — same shape as `add_comm`).
-  - `lt_trans`/`lt_trichotomy`/`lt_add_mono`/`lt_mul_pos`/`lt_succ` need more
-    `nat` `lt` theory than `init::nat` exposes today (it has the `≤` order —
-    reflexivity, totality, antisymmetry, `le_trans`, the `<`/`≤` bridge
-    `lt_iff_succ_le` — but not `lt` transitivity / add-monotonicity /
-    trichotomy as standalone lemmas). Develop those in `init::nat` first.
+  **Remaining work, concretely (`lt_mul_pos` only).** Needs `nat` strict
+  multiplicative monotonicity — `0 < a ⟹ 0 < b ⟹ 0 < a·b` and
+  `a < b ⟹ 0 < c ⟹ a·c < b·c` — neither in `init::nat` yet, plus the
+  Grothendieck-product additive shuffle to lift it. The shuffle is the same
+  hand-rolled `nat` rearrangement style as `mul_assoc`/`distrib`; a reusable
+  `nat` additive-normaliser (`prove_add_eq` over `+`-trees with equal leaf
+  multisets) would make it — and those existing proofs — routine.
 - **The `rat` quotient + ordered-field theory** in
   `crates/covalence-hol/src/init/rat.rs`. `rat := (int × int.pos) / ~`
   (cross-multiplication). Proved outright: `rat_rel_refl`, `rat_rel_symm`

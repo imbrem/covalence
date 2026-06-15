@@ -16,6 +16,16 @@ it is how unfinished work stays discoverable.
   will land here as the HOL-on-store stack comes online. See the
   `covalence-kernel` crate-root docs and `docs/roadmap.md`.
 
+- **`crates/covalence-hol/src/surface/`** — design sketch of the surface
+  syntax (the "generalized Haskell" authoring layer, `docs/surface-syntax.md`).
+  The AST (`surface::ast`), the `#`-builtin registry (`surface::Builtin`), and
+  the parser (`surface::parse` / `parse_str`, pure S-expr → directive AST) are
+  implemented, but the layers above remain stubs: the **elaborator** (surface
+  → low-level S-expr → kernel object), the **`#by` tactic grammar** (proof
+  steps are kept as raw `SExpr`s in `Proof::steps`), and **`#import` content
+  addressing** (`#import` resolves names only; by-hash addressing is unbuilt)
+  are all future work.
+
 ## Postulates pending proof
 
 - **The `int` ordered-ring theory** in

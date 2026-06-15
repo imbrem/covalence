@@ -326,13 +326,12 @@ mod tests {
         );
         assert_eq!(s.concl(&s.mul_comm()), mul_comm_stmt);
 
-        // The still-postulated int axioms carry themselves as a hypothesis
-        // (the audit trail). `add_comm` / `mul_comm` are already discharged in
-        // `init::int`, so they are *not* checked here.
-        for ax in [s.mul_one(), s.distrib()] {
+        // The full commutative ring is now discharged in `init::int`, so the
+        // semiring axioms are genuine theorems — hypothesis-free.
+        for ax in [s.mul_one(), s.distrib(), s.mul_comm()] {
             assert!(
-                ax.hyps().iter().any(|h| h == ax.concl()),
-                "a still-postulated int semiring axiom is self-flagged"
+                ax.hyps().is_empty(),
+                "the int semiring axioms are now proved (hypothesis-free)"
             );
         }
     }

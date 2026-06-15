@@ -71,8 +71,9 @@ use crate::init::{cat, logic, rat};
 /// `rat → bool`; the `close` selector predicate enforces upward closure
 /// under `ratLe` plus non-emptiness.
 pub fn real_spec() -> TypeSpec {
-    static LAZY: LazyLock<TypeSpec> =
-        LazyLock::new(|| TypeSpec::close(SmolStr::new_static("real"), rat::rat_ty(), rat::rat_le()));
+    static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
+        TypeSpec::close(SmolStr::new_static("real"), rat::rat_ty(), rat::rat_le())
+    });
     LAZY.clone()
 }
 /// `real` as a 0-ary [`Type`].

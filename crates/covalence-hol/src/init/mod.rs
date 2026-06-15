@@ -55,6 +55,7 @@ macro_rules! cached_thm {
     };
 }
 
+pub mod cat;
 pub mod cond;
 pub mod eq;
 pub mod ext;

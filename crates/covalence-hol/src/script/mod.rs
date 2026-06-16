@@ -114,9 +114,14 @@ impl TheoryHandle {
     }
 
     /// **Force** the theory: splice every `(#fill …)` into the pending proofs
-    /// and re-check them, producing a fully-proved [`Theory`]. Errors
-    /// with [`ScriptError::UnresolvedObligation`] if a hole has no fill.
-    pub fn resolve(self) -> Result<Theory, ScriptError> {
+    /// and re-check them, producing a fully-proved [`Theory`]. Errors with
+    /// [`ScriptError::UnresolvedObligation`] if a hole has no fill.
+    ///
+    /// `async` because this is where the prover becomes a tokio task graph:
+    /// each pending `#thm` will `await` the futures of the lemmas it depends on
+    /// so the runtime schedules the order (today the body is still sequential).
+    /// For a synchronous caller use [`TheoryHandle::resolve_blocking`].
+    pub async fn resolve(self) -> Result<Theory, ScriptError> {
         // Any hole still without a `(#fill …)` makes the theory unforceable —
         // report every one of them by name.
         let open = self.obligations();
@@ -150,6 +155,14 @@ impl TheoryHandle {
             exports.define_lemma(name, thm);
         }
         Ok(Theory { exports, thms })
+    }
+
+    /// Force the theory on the current thread — the blocking wrapper over
+    /// [`TheoryHandle::resolve`]. Runs on a tokio current-thread runtime (see
+    /// [`block_on`]); native only, and not for callers already inside a tokio
+    /// runtime (which should `.resolve().await` instead).
+    pub fn resolve_blocking(self) -> Result<Theory, ScriptError> {
+        block_on(self.resolve())
     }
 }
 
@@ -551,7 +564,7 @@ macro_rules! cov_theory {
                     )
                     // A `cov_theory!` is a finished resource — force it to its
                     // resolved (fully-proved) state, discharging any `#fill`s.
-                    .and_then(|__t| __t.resolve())
+                    .and_then(|__t| __t.resolve_blocking())
                     .unwrap_or_else(|__e| {
                         panic!("cov_theory `{}`: {}", stringify!($modname), __e)
                     })
@@ -856,7 +869,7 @@ mod tests {
         assert!(!theory.is_resolved(), "the holed #thm is pending");
         assert_eq!(theory.obligations(), vec!["body".to_string()]);
         assert!(theory.thms.is_empty(), "nothing checked eagerly");
-        let Err(err) = theory.resolve() else {
+        let Err(err) = theory.resolve_blocking() else {
             panic!("forcing an unfilled theory must error");
         };
         match err {
@@ -872,9 +885,18 @@ mod tests {
         let theory = holed("(#fill body (assume p))").unwrap();
         assert!(!theory.is_resolved(), "still pending until forced");
         assert!(theory.obligations().is_empty(), "the obligation is filled");
-        let resolved = theory.resolve().expect("fill discharges the hole");
+        let resolved = theory.resolve_blocking().expect("fill discharges the hole");
         assert_eq!(resolved.thms.len(), 1);
         assert!(resolved.thms[0].thm.hyps().is_empty());
+    }
+
+    #[test]
+    fn resolve_is_awaitable() {
+        // `resolve` is `async`; drive the future directly (the blocking
+        // helper is just `block_on(self.resolve())`).
+        let theory = holed("(#fill body (assume p))").unwrap();
+        let resolved = block_on(theory.resolve()).expect("async resolve");
+        assert_eq!(resolved.thms.len(), 1);
     }
 
     #[test]
@@ -882,7 +904,7 @@ mod tests {
         // First fill wins; the second (a *wrong* proof, never even inspected)
         // is ignored — so the theory still resolves via the first.
         let theory = holed("(#fill body (assume p))(#fill body (assume q))").unwrap();
-        let resolved = theory.resolve().expect("first fill wins");
+        let resolved = theory.resolve_blocking().expect("first fill wins");
         assert_eq!(resolved.thms.len(), 1);
     }
 
@@ -914,7 +936,7 @@ mod tests {
         .unwrap();
         // Not exported yet (still pending), but becomes exported on resolve.
         assert!(!theory.env().has_lemma("id"));
-        let resolved = theory.resolve().expect("resolve discharges + exports");
+        let resolved = theory.resolve_blocking().expect("resolve discharges + exports");
         assert!(resolved.env().has_lemma("id"));
     }
 

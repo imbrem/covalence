@@ -28,58 +28,6 @@ it is how unfinished work stays discoverable.
 
 ## Postulates pending proof
 
-- **The `int` ordered-ring theory** in
-  `crates/covalence-hol/src/init/int.rs`: the **full commutative ring and all
-  the linear-order facts are now proved** through the quotient — `add_comm`,
-  `add_assoc`, `add_zero`, `add_neg`, `sub_def`, `mul_comm`, `mul_assoc`,
-  `mul_one`, `mul_zero`, `distrib`, `lt_irrefl`, `lt_trans`, `lt_trichotomy`,
-  `le_def`, `lt_add_mono`, `lt_succ`. **1 postulate remains** (`Thm::assume`
-  via the module's `axiom` helper, carrying its statement as a self-hyp):
-  - `lt_mul_pos` (`0 < c ⟹ a < b ⟹ a·c < b·c`) — the ordered-ring
-    positive-multiplier law. Blocked on **`nat` strict multiplicative
-    monotonicity** (`a < b ⟹ 0 < c ⟹ a·c < b·c`, itself needing
-    `0 < a ⟹ 0 < b ⟹ 0 < a·b`) plus the Grothendieck-product
-    rearrangement that lifts it — a sizeable `nat` additive shuffle (the
-    `int` side decomposes the two product comparisons as `D + (fa+sb)·m` /
-    `D + (fb+sa)·m` with `fc = sc + m`, `0 < m`, then cancels `D`). A reusable
-    `nat` additive-normaliser would make this (and the existing hand-rolled
-    `mul_assoc`/`distrib` rearrangements) routine.
-
-  Since `int := (nat × nat) / ~` (Grothendieck), this is a HOL theorem;
-  filling it in does not change the public `fn` surface. These are the
-  ingredients the Alethe `la_generic` / `la_mult_*` checker will consume. The
-  `int` semiring/ring embedding (`crate::semiring::Int` / `crate::ring::Int`)
-  forwards its axioms here, so its ring axioms are now genuine theorems; only
-  the single positive-multiplier order fact remains postulated. The `nat`
-  semiring embedding (`crate::semiring::Nat`) is likewise fully proved.
-
-  **Machinery (built and proved).** `init::quotient` provides the lifting
-  API on the junk-free `TypeSpec::quot` (carving predicate `λS. ∃z. S =
-  classOf z`, so `Type::int()` has exactly one inhabitant per `int_rel`
-  class): `class_intro` (forward `⊢ rel a b → ⊢ mkClass a = mkClass b`),
-  `class_elim` (converse), `round_trip` (`⊢ rel a (rep_class (mk_class a))`),
-  and `recon` (quotient induction `⊢ a = mk_class (rep_class a)` for *any*
-  element). `init::int` builds on these: `int_rel` is a proven equivalence,
-  the **`MK(f, s)` component layer** (`recon` + surjective pairing)
-  normalises each `int` to `mk_int (pair f s)`, the per-op computation rules
-  (`add_class`/`neg_class`/`sub_class`/`mul_class`/`succ_class` + `*_mk`)
-  combine `nat` components on the nose, and `lit0_mk`/`lit1_mk` give
-  literal-`0`/`1` coherence. Each ring axiom reduces to `nat` algebra on the
-  components (`mul_pair_cong` — multiplication well-definedness — is proved
-  per-argument via `distrib` and chained). **Order** lifts the same way:
-  `le_mk`/`lt_mk` (the ε-reps bridged by `nat::le_cross`/`lt_cross` +
-  `round_trip`), `le_via_components`/`lt_via_components`, and `int_eq_iff`.
-  `init::nat` now also has the strict-order theory (`lt_trans`,
-  `lt_add_mono_r`, `lt_cross`, `add_lt_add`, `le_iff_lt_or_eq`,
-  `lt_trichotomy`, `nat_cases`).
-
-  **Remaining work, concretely (`lt_mul_pos` only).** Needs `nat` strict
-  multiplicative monotonicity — `0 < a ⟹ 0 < b ⟹ 0 < a·b` and
-  `a < b ⟹ 0 < c ⟹ a·c < b·c` — neither in `init::nat` yet, plus the
-  Grothendieck-product additive shuffle to lift it. The shuffle is the same
-  hand-rolled `nat` rearrangement style as `mul_assoc`/`distrib`; a reusable
-  `nat` additive-normaliser (`prove_add_eq` over `+`-trees with equal leaf
-  multisets) would make it — and those existing proofs — routine.
 - **The `rat` quotient + ordered-field theory** in
   `crates/covalence-hol/src/init/rat.rs`. `rat := (int × int.pos) / ~`
   (cross-multiplication). Proved outright: `rat_rel_refl`, `rat_rel_symm`
@@ -92,16 +40,16 @@ it is how unfinished work stays discoverable.
   congruence under `mkRat`. `rat_rel_trans` is now **proved too** — the
   Grothendieck cross-multiplication cancellation argument — *modulo* two
   **postulated `int` facts** (stubbed in `init::rat` via `axiom`, **to be
-  relocated to / discharged in `init::int`**):
+  relocated to / discharged in `init::int`**, now that the `int` ordered ring
+  is fully proved both are derivable: cancellation from `lt_mul_pos` +
+  `lt_trichotomy`, nonzero-positivity from the `int.pos` carving predicate):
   - `int_mul_rcancel` — `∀x y d. ¬(d = 0) ⟹ x·d = y·d ⟹ x = y` (`int` is an
     integral domain; right-cancellation by a nonzero factor).
   - `int_pos_nonzero` — `∀p:int.pos. ¬(rep p = 0)` (positive denominators
     are nonzero).
 
   So `rat_rel` is now a full equivalence and `quotient::class_intro` /
-  `recon` are available for the remaining `rat` axioms. Still **postulated**
-  via the module's `axiom` helper (each carrying its statement as a
-  self-hyp):
+  `recon` are available for the remaining `rat` axioms.
   The **quotient-lifting machinery is now built** (the rat analogue of
   int's): `rat_recon` (quotient induction), `round_trip`, `recon_mk` (MK
   component form `MK(f,d) = mk_rat(pair f d)`, `f:int`, `d:int.pos`), the
@@ -130,11 +78,10 @@ it is how unfinished work stays discoverable.
     field inverse `mul_inv` also remain.
   - The order axioms `lt_trans`/`lt_trichotomy`/`le_def`/`zero_lt_one`.
     `le_def` is definitional (pins the opaque `ratLe`); the rest unfold
-    `ratLt` to the
-    `int` comparison on cross-products and await the `int` order facts
-    (`lt_trans`/`lt_trichotomy`/`lt_add_mono` are now proved in `int`;
-    `lt_mul_pos` — needed to multiply inequalities by a positive denominator —
-    is the last `int` order postulate). (The linear-order toolkit
+    `ratLt` to the `int` comparison on cross-products. The `int` ordered
+    ring is **now fully proved** (`lt_*`/`lt_mul_pos` all discharged), so the
+    `int` order facts these lean on are all available; the remaining work is
+    the rat-quotient lifting. (The linear-order toolkit
     `le_refl`/`lt_imp_le`/`le_trans`/`lt_asymm`/`lt_imp_ne`/`le_antisym`/
     `le_total`/`not_one_le_zero` is **not** postulated — it is *derived* from
     `le_def` + the strict-order facts.)
@@ -142,7 +89,8 @@ it is how unfinished work stays discoverable.
     only postulated leaves of `dense` (which is itself *derived* from
     them via the mediant `(a+c)/(b+d)`, no division needed). Each unfolds
     to an `int` order fact (`a·d < c·b ⟹ a·(b+d) < (a+c)·b`, etc.)
-    lifted through the quotient — blocked on the same `int` order theory.
+    lifted through the quotient — now unblocked (the `int` order theory it
+    needs is fully proved); the remaining work is the rat-quotient lifting.
 
 - **The `real` Dedekind-cut theory** in
   `crates/covalence-hol/src/init/real.rs`. `real := close rat ratLe`

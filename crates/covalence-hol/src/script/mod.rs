@@ -37,6 +37,8 @@ pub use scope::Scope;
 pub use syntax::{parse_term, parse_type};
 pub use tactic::{Interp, Tactic};
 
+use std::sync::Arc;
+
 use covalence_core::{Thm, Type};
 use covalence_sexp::SExpr;
 
@@ -97,10 +99,34 @@ pub struct NamedThm {
 /// brings a previously-imported namespace's bindings into scope; `(#thm …)`
 /// directives are checked and accumulate so later theorems can reference
 /// earlier ones — and any opened namespace's lemmas — via `(lemma NAME)`.
+/// Replay a script, blocking until the whole theory is proved. The blocking
+/// half of the async core ([`run_async`]) — see [`block_on`]. This is the
+/// stable entry point; the kernel/TCB stays synchronous, so today the future
+/// completes without ever pending.
 pub fn run(
     src: &str,
     resolver: impl Fn(&str) -> Option<Env>,
-    tactics: impl Fn(&str) -> Option<Tactic>,
+    tactics: impl Fn(&str) -> Option<Arc<dyn Tactic>>,
+) -> Result<Theory, ScriptError> {
+    block_on(run_async(src, resolver, tactics))
+}
+
+/// The async core: parse and replay a whole script into a [`Theory`].
+///
+/// Async on purpose — this is the seam where the prover becomes a cooperative
+/// scheduler. The intended model (not yet built — see SKELETONS.md): each
+/// `#thm` is a task producing a *future* for its `Thm`; when a task blocks
+/// (an unresolved import, a tactic awaiting an observer/peer/the user), the
+/// scheduler **moves on to the next statement** and resumes the blocked one
+/// when it unblocks, so a theory can be *semi-proved* and verification
+/// auto-parallelises. `(#dep NAME)` forces the enclosing task to wait for
+/// `NAME`. A failed import yields a *partial* theory that is still importable.
+/// Today execution is eager and in order; the async shape is what lets us add
+/// that scheduler without touching proofs or the TCB.
+pub async fn run_async(
+    src: &str,
+    resolver: impl Fn(&str) -> Option<Env>,
+    tactics: impl Fn(&str) -> Option<Arc<dyn Tactic>>,
 ) -> Result<Theory, ScriptError> {
     let exprs =
         covalence_sexp::parse(src).map_err(|e| ScriptError::Syntax(format!("sexp: {e}")))?;
@@ -163,6 +189,25 @@ pub fn run(
                 })?;
                 internal.register_tactic(name, tac);
             }
+            // `(#dep NAME)` — force a dependency: the enclosing task must not
+            // proceed until `NAME` is available. Today statements run eagerly
+            // and in order, so this is a synchronous availability guard; once
+            // the cooperative scheduler lands (see SKELETONS.md) it becomes
+            // the explicit `await` point that blocks the enclosing task on
+            // `NAME`'s completion.
+            "#dep" => {
+                syntax::arity(ch, 2, "#dep")?;
+                let name = syntax::sym(&ch[1], "dependency name")?;
+                let known = internal.has_lemma(name)
+                    || internal.lookup_const(name).is_some()
+                    || internal.lookup_tactic(name).is_some()
+                    || internal.get_import(name).is_some();
+                if !known {
+                    return Err(ScriptError::Unbound(format!(
+                        "#dep: unknown dependency `{name}`"
+                    )));
+                }
+            }
             "#thm" => {
                 let nt = run_thm(ch, &internal)?;
                 internal.define_lemma(nt.name.clone(), nt.thm.clone());
@@ -196,6 +241,36 @@ pub fn run(
         }
     }
     Ok(Theory { exports, thms })
+}
+
+/// Drive a future to completion on the current thread — a minimal,
+/// dependency-free executor that is the blocking half of the async core. It
+/// parks the thread between polls, so it is already correct for genuinely
+/// pending futures (a single-threaded `pollster`); today the script core
+/// completes without ever pending. A real work-stealing runtime can replace
+/// it for cross-theory parallelism later without changing the API.
+fn block_on<F: std::future::Future>(future: F) -> F::Output {
+    use std::task::{Context, Poll, Wake, Waker};
+
+    struct ThreadWaker(std::thread::Thread);
+    impl Wake for ThreadWaker {
+        fn wake(self: Arc<Self>) {
+            self.0.unpark();
+        }
+        fn wake_by_ref(self: &Arc<Self>) {
+            self.0.unpark();
+        }
+    }
+
+    let mut future = std::pin::pin!(future);
+    let waker = Waker::from(Arc::new(ThreadWaker(std::thread::current())));
+    let mut cx = Context::from_waker(&waker);
+    loop {
+        match future.as_mut().poll(&mut cx) {
+            Poll::Ready(out) => return out,
+            Poll::Pending => std::thread::park(),
+        }
+    }
 }
 
 /// Replay a script whose only available environment is the `core` prelude,
@@ -276,9 +351,13 @@ macro_rules! cov_theory {
                             $( $oname => Some($oenv), )*
                             _ => None,
                         },
-                        |__tname| match __tname {
-                            $( $tname => Some($texpr as $crate::script::Tactic), )*
-                            _ => None,
+                        |__tname| -> ::core::option::Option<
+                            ::std::sync::Arc<dyn $crate::script::Tactic>,
+                        > {
+                            match __tname {
+                                $( $tname => Some(::std::sync::Arc::new($texpr)), )*
+                                _ => None,
+                            }
                         },
                     )
                     .unwrap_or_else(|__e| {
@@ -359,6 +438,79 @@ mod tests {
         let mut thms = run_str(src).expect("script should replay");
         assert_eq!(thms.len(), 1);
         thms.pop().unwrap().thm
+    }
+
+    #[test]
+    fn run_async_is_driven_by_block_on() {
+        // The async core is reachable directly; `block_on` drives it exactly
+        // as the sync `run` wrapper does.
+        let theory = block_on(run_async(
+            r#"
+            (#import core)
+            (#open core)
+            (#thm add.2.3
+              (#concl (= (nat.add 2 3) 5))
+              (#proof (reduce-prim (nat.add 2 3))))
+            "#,
+            |name| (name == "core").then(Env::core),
+            |_| None,
+        ))
+        .expect("async run");
+        assert_eq!(theory.thms.len(), 1);
+    }
+
+    #[test]
+    fn dep_forces_known_and_rejects_unknown() {
+        // `(#dep NAME)` is satisfied by an available lemma…
+        let ok = run_str(
+            r#"
+            (#import core)
+            (#open core)
+            (#thm id (#fix (p bool)) (#concl (==> p p))
+              (#proof (imp-intro p (assume p))))
+            (#dep id)
+            "#,
+        );
+        assert!(ok.is_ok(), "#dep on a proven lemma should pass");
+        // …and rejects an unknown name (today a synchronous availability
+        // guard; the cooperative `await` semantics come with the scheduler).
+        let bad = run_str("(#import core)(#open core)(#dep nonexistent)");
+        assert!(
+            matches!(bad, Err(ScriptError::Unbound(_))),
+            "#dep on unknown should error"
+        );
+    }
+
+    #[test]
+    fn closure_tactic_captures_state() {
+        // A host tactic built from a CLOSURE that captures a precomputed
+        // theorem — impossible with the old bare-`fn`-pointer registry, and
+        // the concrete reason `Tactic` is now a trait. It ignores the goal
+        // and returns the captured `Thm`.
+        let canned: Arc<dyn Tactic> = {
+            let thm = one(
+                r#"
+                (#import core)
+                (#open core)
+                (#thm t (#concl (= (nat.add 2 3) 5))
+                  (#proof (reduce-prim (nat.add 2 3))))
+                "#,
+            );
+            Arc::new(move |_s: &[SExpr], _rest: &[SExpr], _it: &mut Interp| Ok(thm.clone()))
+        };
+        let theory = run(
+            r#"
+            (#import core)
+            (#open core)
+            (#register-ffi-tactic canned)
+            (#thm u (#concl (= (nat.add 2 3) 5)) (#by (canned)))
+            "#,
+            |name| (name == "core").then(Env::core),
+            move |name| (name == "canned").then(|| canned.clone()),
+        )
+        .expect("closure tactic registers and runs");
+        assert_eq!(theory.thms.len(), 1);
+        assert!(theory.thms[0].thm.hyps().is_empty());
     }
 
     #[test]

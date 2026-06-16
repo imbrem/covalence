@@ -14,6 +14,7 @@
 //! A stricter, stack-guarded form (and a WASM tactic ABI) is future work.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use covalence_core::{Term, TermKind, Thm, Type, defs, subst};
 use covalence_sexp::SExpr;
@@ -37,9 +38,32 @@ pub enum Hyp {
     Proven(Thm),
 }
 
-/// A native tactic: `(s, rest, interp) -> Thm`. `s` is the tactic's own
-/// S-expression (e.g. `(intro a b)`), `rest` the following steps.
-pub type Tactic = for<'a> fn(&[SExpr], &[SExpr], &mut Interp<'a>) -> R<Thm>;
+/// A tactic: a registry-dispatched goal transformer. `apply` gets the
+/// tactic's own S-expression `s` (e.g. `(intro a b)`), the following `rest`
+/// steps, and the mutable interpreter state.
+///
+/// This is a **trait**, not a bare `fn`, so a tactic can carry state, be
+/// backed by a WASM component, or (the direction we are building toward) run
+/// *async* — awaiting a long-running observer, a peer prover, or the user,
+/// and yielding control meanwhile. Object-safe; the [`Env`] registry holds
+/// `Arc<dyn Tactic>`. `apply` is synchronous today (the kernel/TCB stays
+/// sync); when async tactics land, this grows a future-returning method and
+/// [`Interp::run`] awaits it (the blocking API is unaffected — see
+/// `super::block_on`).
+pub trait Tactic: Send + Sync {
+    fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm>;
+}
+
+/// Any `fn`/closure of the right shape is a [`Tactic`], so the primitive
+/// tactics register as plain functions and hosts can supply closures.
+impl<F> Tactic for F
+where
+    F: Fn(&[SExpr], &[SExpr], &mut Interp) -> R<Thm> + Send + Sync,
+{
+    fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
+        self(s, rest, it)
+    }
+}
 
 /// The mutable interpreter state during a `#by` block: the current goal,
 /// the available context facts, and the variable scope. Borrows the
@@ -91,7 +115,7 @@ impl<'e> Interp<'e> {
             .env
             .lookup_tactic(name)
             .ok_or_else(|| ScriptError::Syntax(format!("unknown tactic: `{name}`")))?;
-        tac(s, rest, self)
+        tac.apply(s, rest, self)
     }
 }
 
@@ -130,18 +154,22 @@ fn prove_with(
 }
 
 /// The primitive tactics, registered as part of `core`.
-pub fn core_tactics() -> HashMap<String, Tactic> {
-    let mut t: HashMap<String, Tactic> = HashMap::new();
-    t.insert("intro".into(), tac_intro);
-    t.insert("exact".into(), tac_exact);
-    t.insert("assumption".into(), tac_assumption);
-    t.insert("refl".into(), tac_refl);
-    t.insert("sym".into(), tac_sym);
-    t.insert("not-intro".into(), tac_not_intro);
-    t.insert("contrapositive".into(), tac_contrapositive);
-    t.insert("rw".into(), tac_rw);
-    t.insert("induct".into(), tac_induct);
-    t.insert("#have".into(), tac_have);
+pub fn core_tactics() -> HashMap<String, Arc<dyn Tactic>> {
+    let mut t: HashMap<String, Arc<dyn Tactic>> = HashMap::new();
+    let mut reg = |name: &str, tac: Arc<dyn Tactic>| {
+        t.insert(name.into(), tac);
+    };
+    reg("intro", Arc::new(tac_intro));
+    reg("exact", Arc::new(tac_exact));
+    reg("assumption", Arc::new(tac_assumption));
+    reg("refl", Arc::new(tac_refl));
+    reg("sym", Arc::new(tac_sym));
+    reg("not-intro", Arc::new(tac_not_intro));
+    reg("contrapositive", Arc::new(tac_contrapositive));
+    reg("rw", Arc::new(tac_rw));
+    reg("induct", Arc::new(tac_induct));
+    reg("#have", Arc::new(tac_have));
+    drop(reg);
     t
 }
 

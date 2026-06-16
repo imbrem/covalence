@@ -361,8 +361,38 @@ directives — is `open`-able by other scripts; the macro binds it as a
 - **Prelude `Env::core()` covers only logic + nat.** The name→catalogue
   resolvers are a starting set (the connectives, `=`, `nat.add/mul/sub/le/lt`,
   `succ`). int/rat/real/list/option/prod/coprod/set catalogue names are not yet
-  bound; add entries to `script/syntax.rs::Env::core` (the `defs/` churn
+  bound; add entries to `script/env.rs::Env::core` (the `defs/` churn
   boundary) as those theories are ported.
+- **Async core has no cooperative scheduler yet.** `script/mod.rs::run_async`
+  is `async` and `run` blocks on it via a minimal parking `block_on`, but the
+  body still runs every statement eagerly and in order. Intended model: each
+  `#thm` is a *task* yielding a **future** for its `Thm`; when a task blocks
+  (unresolved import, a tactic awaiting an observer / peer prover / the user)
+  the scheduler moves on to the next statement and resumes the blocked one when
+  it unblocks — so a theory can be *semi-proved* and verification auto-
+  parallelises, and a failed import yields a *partial* theory that is still
+  importable. Needs: a per-statement task graph, a real (work-stealing)
+  executor, and a `Theory` holding theorem futures rather than resolved `Thm`s.
+  Wanted for BLAKE3-range partial verification (validating part of a proof file
+  must not be invalidated by unrelated wrong portions).
+- **`(#dep NAME)` is a synchronous availability guard, not an await.**
+  `script/mod.rs` accepts `(#dep NAME)` and errors if `NAME` is not already a
+  known lemma/const/tactic/import. Its real semantics — *force the enclosing
+  task to block until `NAME` completes* (forward references included) — depend
+  on the cooperative scheduler above.
+- **`Tactic::apply` is synchronous.** `script/tactic.rs::Tactic` is a trait
+  (so tactics can carry state / be WASM-backed — the closure-capturing tactic
+  test exercises that) but `apply` returns `Result`, not a future. Async
+  tactics — awaiting long-running observers, transferring control to a peer
+  program or the user, WASM component-model streams/futures — need a future-
+  returning method that `Interp::run` awaits. The TCB stays sync for now; only
+  this untrusted shell goes async.
+- **`Term`/theorem futures (holes) not represented.** Terms are eagerly built;
+  there is no `Term` future. A key target use case: represent a **unification
+  hole** as a term future (optionally asserting a fixed type up front), letting
+  the elaborator explore unification variants and resolve holes lazily — and,
+  with content-addressing, fetch a term's contents on demand. Needs a future-
+  carrying `Term`/elaborator value wired into `script/infer.rs`.
 - **No WASM/WIT kernel API.** The longer-term goal of authoring proofs in WASM
   guests and importing them through a WIT kernel interface (driving the `Drv`
   replay path across the component boundary) is not started. `check` is

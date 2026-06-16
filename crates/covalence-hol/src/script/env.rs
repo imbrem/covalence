@@ -8,6 +8,7 @@
 //! goals — lives in [`super::tactic::Interp`], not here.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use covalence_core::{Term, Thm, defs};
 
@@ -47,7 +48,7 @@ pub enum ConstDef {
 pub struct Env {
     consts: HashMap<String, ConstDef>,
     lemmas: HashMap<String, Thm>,
-    tactics: HashMap<String, Tactic>,
+    tactics: HashMap<String, Arc<dyn Tactic>>,
     imports: HashMap<String, Env>,
 }
 
@@ -64,8 +65,8 @@ impl Env {
     pub fn lookup_lemma(&self, name: &str) -> Option<&Thm> {
         self.lemmas.get(name)
     }
-    pub fn lookup_tactic(&self, name: &str) -> Option<Tactic> {
-        self.tactics.get(name).copied()
+    pub fn lookup_tactic(&self, name: &str) -> Option<Arc<dyn Tactic>> {
+        self.tactics.get(name).cloned()
     }
     pub fn has_lemma(&self, name: &str) -> bool {
         self.lemmas.contains_key(name)
@@ -78,7 +79,7 @@ impl Env {
     pub fn define_lemma(&mut self, name: impl Into<String>, thm: Thm) {
         self.lemmas.insert(name.into(), thm);
     }
-    pub fn register_tactic(&mut self, name: impl Into<String>, t: Tactic) {
+    pub fn register_tactic(&mut self, name: impl Into<String>, t: Arc<dyn Tactic>) {
         self.tactics.insert(name.into(), t);
     }
 
@@ -90,7 +91,7 @@ impl Env {
         self.lemmas
             .extend(other.lemmas.iter().map(|(k, v)| (k.clone(), v.clone())));
         self.tactics
-            .extend(other.tactics.iter().map(|(k, v)| (k.clone(), *v)));
+            .extend(other.tactics.iter().map(|(k, v)| (k.clone(), v.clone())));
     }
 
     /// `(#import NAME)`: register `env` as an importable namespace under
@@ -114,7 +115,7 @@ impl Env {
             self.lemmas.insert(qualify(prefix, k), v.clone());
         }
         for (k, v) in &other.tactics {
-            self.tactics.insert(qualify(prefix, k), *v);
+            self.tactics.insert(qualify(prefix, k), v.clone());
         }
     }
 

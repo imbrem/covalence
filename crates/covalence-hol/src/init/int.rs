@@ -1861,9 +1861,118 @@ cached_thm! {
     }
 }
 
+// ============================================================================
+// Ported proofs — `int.cov` over `core` + the `int` env
+// ============================================================================
+
+/// The `int` environment imported by `int.cov`: the int operation
+/// constants (`int.add`/`int.neg`/`int.sub`/`int.mul`/`int.lt`/`int.le`,
+/// the literals `int.zero`/`int.one`), plus the **given** lemmas the ported
+/// proofs build on — provided exactly the way [`nat::natrec_env`] hands the
+/// `natRec` equations to `nat.cov`:
+///
+/// - the int **ring axioms** ([`add_comm`] / [`add_assoc`] / [`add_zero`] /
+///   [`add_neg`] / [`mul_comm`] / [`mul_assoc`] / [`mul_one`] / [`mul_zero`]
+///   / [`distrib`] / [`sub_def`]), proved in Rust above. Their proofs rest
+///   on the quotient bridge (`recon_mk` / `*_via_components` / the ε-laden
+///   `rep_pair`), which is not yet expressible in the surface syntax, so for
+///   now they are imported rather than re-derived — exactly as `nat.cov`
+///   imports its recursion equations;
+/// - a few `nat` lemmas (`nat.add_zero`, `nat.zero_add`, `nat.add_comm`,
+///   `nat.add_assoc`), **wired manually for now** (they will be exported by
+///   `nat.cov`), so int proofs that ultimately reduce to `nat` algebra can
+///   reference them.
+pub fn int_env() -> crate::script::Env {
+    use crate::script::{ConstDef, Env};
+    let mut e = Env::empty();
+    for (name, t) in [
+        ("int.add", int_add()),
+        ("int.neg", int_neg()),
+        ("int.sub", int_sub()),
+        ("int.mul", int_mul()),
+        ("int.succ", int_succ()),
+        ("int.lt", int_lt()),
+        ("int.le", int_le()),
+        ("int.zero", lit(0)),
+        ("int.one", lit(1)),
+    ] {
+        e.consts.insert(name.into(), ConstDef::Op(t));
+    }
+    // int ring axioms (proved in Rust above).
+    for (name, thm) in [
+        ("int.add_comm", add_comm()),
+        ("int.add_assoc", add_assoc()),
+        ("int.add_zero", add_zero()),
+        ("int.add_neg", add_neg()),
+        ("int.mul_comm", mul_comm()),
+        ("int.mul_assoc", mul_assoc()),
+        ("int.mul_one", mul_one()),
+        ("int.mul_zero", mul_zero()),
+        ("int.distrib", distrib()),
+        ("int.sub_def", sub_def()),
+    ] {
+        e.lemmas.insert(name.into(), thm);
+    }
+    // nat lemmas (manually wired for now; nat.cov will export these).
+    for (name, thm) in [
+        ("nat.add_zero", nat::add_zero()),
+        ("nat.zero_add", nat::add_base()),
+        ("nat.add_comm", nat::add_comm()),
+        ("nat.add_assoc", nat::add_assoc()),
+    ] {
+        e.lemmas.insert(name.into(), thm);
+    }
+    e
+}
+
+crate::cov_theory! {
+    /// int ring corollaries ported to `int.cov`, over `core` + the `int` env.
+    pub mod cov from "int.cov" {
+        import "core" = crate::script::Env::core();
+        import "int" = crate::init::int::int_env();
+        "int.zero_add"   => pub fn zero_add;
+        "int.neg_add"    => pub fn neg_add;
+        "int.mul_one_l"  => pub fn mul_one_l;
+        "int.mul_zero_l" => pub fn mul_zero_l;
+        "int.distrib_r"  => pub fn distrib_r;
+        "int.sub_self"   => pub fn sub_self;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn int_cov_corollaries_replay() {
+        // The ported `int.cov` corollaries replay through the kernel and are
+        // all genuine (hypothesis-free) theorems built on the imported ring
+        // axioms.
+        let ported = [
+            cov::zero_add(),
+            cov::neg_add(),
+            cov::sub_self(),
+            cov::mul_one_l(),
+            cov::mul_zero_l(),
+            cov::distrib_r(),
+        ];
+        for thm in ported {
+            assert!(thm.hyps().is_empty(), "an int.cov corollary is genuine");
+            assert!(thm.concl().type_of().unwrap().is_bool());
+        }
+    }
+
+    #[test]
+    fn int_cov_zero_add_matches_statement() {
+        // ⊢ ∀a. 0 + a = a — check the conclusion is exactly the left unit.
+        let a = var("a");
+        let expected = add(lit(0), a.clone())
+            .equals(a)
+            .unwrap()
+            .forall("a", int())
+            .unwrap();
+        assert_eq!(cov::zero_add().concl(), &expected);
+    }
 
     #[test]
     fn the_whole_ordered_ring_is_proved() {

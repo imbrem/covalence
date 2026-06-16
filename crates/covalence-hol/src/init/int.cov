@@ -1,0 +1,88 @@
+;; int.cov — int ring corollaries over `core` + the `int` env.
+;;
+;; The `int` env imports the int operation constants and the int ring
+;; *axioms* (`int.add_comm`, `int.add_zero`, `int.add_neg`, `int.mul_comm`,
+;; `int.mul_one`, `int.mul_zero`, `int.distrib`, `int.sub_def`, …) as given
+;; lemmas — proved in Rust (init/int.rs) through the Grothendieck quotient,
+;; whose ε-laden bridge (`rep_pair` / `MK`) the surface syntax cannot yet
+;; name. On top of those axioms we derive the standard "mirror" corollaries
+;; by pure equational rewriting, exactly the way nat.cov derives `add_zero` /
+;; `add_comm` from the recursion equations. The nat lemmas (`nat.add_zero`,
+;; `nat.zero_add`, …) are also imported (manually for now), available to the
+;; proofs that ultimately reduce to nat algebra.
+
+(#open core)
+(#open int)
+
+;; ============================================================================
+;; Additive mirrors
+;; ============================================================================
+
+;; ⊢ ∀a. 0 + a = a.  The left unit; `int.add_zero` only gives the right unit
+;; a + 0 = a, so commute first.
+(#thm int.zero_add
+  (#concl (forall (a int) (= (int.add int.zero a) a)))
+  (#by
+    (intro a)
+    (rw (all-elim a (all-elim int.zero (lemma int.add_comm))))
+    (exact (all-elim a (lemma int.add_zero)))))
+
+;; ⊢ ∀a. (-a) + a = 0.  Left additive inverse; commute, then `int.add_neg`.
+(#thm int.neg_add
+  (#concl (forall (a int) (= (int.add (int.neg a) a) int.zero)))
+  (#by
+    (intro a)
+    (rw (all-elim a (all-elim (int.neg a) (lemma int.add_comm))))
+    (exact (all-elim a (lemma int.add_neg)))))
+
+;; ⊢ ∀a. a - a = 0.  Unfold subtraction (`a - a = a + (-a)`), then the
+;; additive-inverse axiom.
+(#thm int.sub_self
+  (#concl (forall (a int) (= (int.sub a a) int.zero)))
+  (#by
+    (intro a)
+    (rw (all-elim a (all-elim a (lemma int.sub_def))))
+    (exact (all-elim a (lemma int.add_neg)))))
+
+;; ============================================================================
+;; Multiplicative mirrors
+;; ============================================================================
+
+;; ⊢ ∀a. 1 * a = a.  Left unit of `*`; commute, then `int.mul_one`.
+(#thm int.mul_one_l
+  (#concl (forall (a int) (= (int.mul int.one a) a)))
+  (#by
+    (intro a)
+    (rw (all-elim a (all-elim int.one (lemma int.mul_comm))))
+    (exact (all-elim a (lemma int.mul_one)))))
+
+;; ⊢ ∀a. 0 * a = 0.  Left zero of `*`; commute, then `int.mul_zero`.
+(#thm int.mul_zero_l
+  (#concl (forall (a int) (= (int.mul int.zero a) int.zero)))
+  (#by
+    (intro a)
+    (rw (all-elim a (all-elim int.zero (lemma int.mul_comm))))
+    (exact (all-elim a (lemma int.mul_zero)))))
+
+;; ⊢ ∀a b c. (a + b) * c = a*c + b*c.  Right distributivity, from the left
+;; distributivity axiom and commutativity of `*`.
+(#thm int.distrib_r
+  (#concl
+    (forall (a int)
+      (forall (b int)
+        (forall (c int)
+          (= (int.mul (int.add a b) c)
+             (int.add (int.mul a c) (int.mul b c)))))))
+  (#by
+    (intro a b c)
+    ;; (a+b)*c = c*(a+b)
+    (rw (all-elim c (all-elim (int.add a b) (lemma int.mul_comm))))
+    ;; c*(a+b) = c*a + c*b
+    (rw (all-elim b (all-elim a (all-elim c (lemma int.distrib)))))
+    ;; c*a → a*c , c*b → b*c
+    (rw (all-elim a (all-elim c (lemma int.mul_comm))))
+    (rw (all-elim b (all-elim c (lemma int.mul_comm))))
+    (refl)))
+
+(#export int.zero_add int.neg_add int.sub_self
+         int.mul_one_l int.mul_zero_l int.distrib_r)

@@ -64,18 +64,18 @@ it is how unfinished work stays discoverable.
   **Proved** through that machinery (over the operations `rat_zero`/`rat_one`/
   `rat_add`/`rat_sub`/`rat_neg`/`rat_mul`/`rat_inv`/`rat_div`/`rat_lt`, all
   defined at the representative level): the full additive group + commutative
-  monoid fragment — `add_comm`, `mul_comm` (on the nose), `add_assoc`,
-  `add_zero`, `add_neg`, `mul_assoc`, `mul_one`, `mul_zero` — and the order
-  `lt_irrefl` (on the nose from `int::lt_irrefl`). All genuine *modulo* the
-  `int.pos` round-trip + `rat_rel_trans` int stubs.
+  monoid fragment plus distributivity — the **full commutative ring**:
+  `add_comm`, `mul_comm` (on the nose), `add_assoc`, `add_zero`, `add_neg`,
+  `mul_assoc`, `mul_one`, `mul_zero`, `distrib` — and the order `lt_irrefl`
+  (on the nose from `int::lt_irrefl`). All genuine *modulo* the `int.pos`
+  round-trip + `rat_rel_trans` int stubs. `distrib` is the one *non*-
+  componentwise ring axiom (`a·(b+c) = N/D` while `a·b + a·c = (rda·N)/(rda·D)`,
+  the same rational scaled by the common factor `rda`), so its
+  cross-multiplication collapses to comm/assoc and lifts by `class_intro`.
 
   **Still postulated** via the module's `axiom` helper:
-  - `distrib` (`a·(b+c) = a·b + a·c`) — the one ring axiom that is *not*
-    componentwise: the two sides' denominators differ by a factor of `da`
-    (`da·db·dc` vs `da²·db·dc`), so it needs a `class_intro` on a large
-    cross-multiplication polynomial identity. `sub_def` (`a - b = a + (-b)`,
-    componentwise modulo a derivable `int` `(-x)·y = -(x·y)` lemma) and the
-    field inverse `mul_inv` also remain.
+  - The field inverse `mul_inv` (`¬(a=0) ⟹ ∃b. a·b = 1`), realisable via
+    the defined `rat_inv` (sign-normalised so the denominator stays positive).
   - The order axioms `lt_trans`/`lt_trichotomy`/`le_def`/`zero_lt_one`.
     `le_def` is definitional (pins the opaque `ratLe`); the rest unfold
     `ratLt` to the `int` comparison on cross-products. The `int` ordered

@@ -1033,15 +1033,86 @@ fn add_comm_impl() -> Result<Thm> {
         .all_intro("a", rat())
 }
 
-/// `⊢ ∀a b c. (a + b) + c = a + (b + c)`.
-pub fn add_assoc() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a b c. (a + b) + c = a + (b + c)` — **proved**. In component form
+    /// both sides are `MK(N, to_pos(D))`; the numerators `N` are equal as
+    /// `int` polynomials (`distrib_r` to split, `mul_assoc`/`mul_comm` to
+    /// align the three monomials `fa·(db·dc)`, `fb·(da·dc)`, `fc·(da·db)`,
+    /// `add_assoc` to re-bracket the sum) and the denominators by `mul_assoc`
+    /// under `to_pos` (nested `to_pos` via [`pos_prod_rt`]).
+    pub fn add_assoc() -> Thm {
+        add_assoc_impl().expect("rat::add_assoc")
+    }
+}
+fn add_assoc_impl() -> Result<Thm> {
     let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
-    let lhs = radd(radd(a.clone(), b.clone()), c.clone());
-    let rhs = radd(a, radd(b, c));
-    axiom(forall_rat(
-        &["a", "b", "c"],
-        lhs.equals(rhs).expect("add_assoc"),
-    ))
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let ab = add_via_components(&ra, &rb)?;
+    let lhs = add_via_components(&ab, &rc)?;
+    let bc = add_via_components(&rb, &rc)?;
+    let rhs = add_via_components(&ra, &bc)?;
+
+    let (fa, fb, fc) = (rfst(&a), rfst(&b), rfst(&c));
+    let (da, db, dc) = (rden(&a), rden(&b), rden(&c));
+    let (rda, rdb, rdc) = (
+        den(&rep_pair(a.clone())),
+        den(&rep_pair(b.clone())),
+        den(&rep_pair(c.clone())),
+    );
+    let comm = |u: &Term, v: &Term| int::mul_comm().all_elim(u.clone())?.all_elim(v.clone());
+    let massoc = |u: &Term, v: &Term, w: &Term| {
+        int::mul_assoc().all_elim(u.clone())?.all_elim(v.clone())?.all_elim(w.clone())
+    };
+
+    // Round-trip the nested denominators in the extracted numerators.
+    let ppab = pos_prod_rt().all_elim(da.clone())?.all_elim(db.clone())?;
+    let ppbc = pos_prod_rt().all_elim(db.clone())?.all_elim(dc.clone())?;
+    let lhs_f = mk_components(&dest_eq(&lhs)?.1)?.0;
+    let rhs_f = mk_components(&dest_eq(&rhs)?.1)?.0;
+    let lf_rt = rewrite_seq(&lhs_f, std::slice::from_ref(&ppab))?; // lhs_f = lhs_f'
+    let rf_rt = rewrite_seq(&rhs_f, std::slice::from_ref(&ppbc))?; // rhs_f = rhs_f'
+
+    // The three monomials (both sides normalise to N1 + (N2' + N3')).
+    let (m1, m2) = (imul(fa.clone(), rdb.clone()), imul(fb.clone(), rda.clone()));
+    let cap_m1 = imul(imul(fa.clone(), rdb.clone()), rdc.clone());
+    let cap_m2 = imul(imul(fb.clone(), rda.clone()), rdc.clone());
+    let cap_m3 = imul(fc.clone(), imul(rda.clone(), rdb.clone()));
+    let n1 = imul(fa.clone(), imul(rdb.clone(), rdc.clone()));
+
+    let s_a = idistrib_r(&m1, &m2, &rdc)?; // (fa·rdb + fb·rda)·rdc = M1 + M2
+    let lhs_step = iadd_cong(s_a, Thm::refl(cap_m3.clone())?)?; // lhs_f' = (M1+M2)+M3
+    let reassoc = int::add_assoc()
+        .all_elim(cap_m1.clone())?
+        .all_elim(cap_m2.clone())?
+        .all_elim(cap_m3.clone())?; // (M1+M2)+M3 = M1+(M2+M3)
+
+    let e_m1 = massoc(&fa, &rdb, &rdc)?; // M1 = fa·(rdb·rdc) = N1
+    let e_m2 = massoc(&fb, &rda, &rdc)?; // M2 = fb·(rda·rdc)
+    let e_n2 = massoc(&fb, &rdc, &rda)?.trans(imul_l_cong(&fb, comm(&rdc, &rda)?)?)?; // N2 = fb·(rdc·rda) = fb·(rda·rdc)
+    let e_n3 = massoc(&fc, &rdb, &rda)?.trans(imul_l_cong(&fc, comm(&rdb, &rda)?)?)?; // N3 = fc·(rdb·rda) = fc·(rda·rdb)
+    let mid = iadd_cong(e_m2.trans(e_n2.sym()?)?, e_n3.sym()?)?; // M2+M3 = N2+N3
+    let mmm_nnn = iadd_cong(e_m1, mid)?; // M1+(M2+M3) = N1+(N2+N3)
+
+    let s_b = idistrib_r(&imul(fb.clone(), rdc.clone()), &imul(fc.clone(), rdb.clone()), &rda)?; // (fb·rdc+fc·rdb)·rda = N2+N3
+    let rhs_step = iadd_cong(Thm::refl(n1)?, s_b)?; // rhs_f' = N1+(N2+N3)
+
+    let fp_eq = lhs_step.trans(reassoc)?.trans(mmm_nnn)?.trans(rhs_step.sym()?)?; // lhs_f' = rhs_f'
+    let f_eq = lf_rt.trans(fp_eq)?.trans(rf_rt.sym()?)?; // lhs_f = rhs_f
+
+    // Denominator: same shape as mul_assoc.
+    let dl = mk_components(&dest_eq(&lhs)?.1)?.1;
+    let assoc_d = massoc(&rda, &rdb, &rdc)?.cong_arg(to_pos_fn())?;
+    let assoc_rhs = assoc_d.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let d_eq = rewrite_seq(&dl, std::slice::from_ref(&ppab))?
+        .trans(assoc_d)?
+        .trans(rewrite_seq(&assoc_rhs, &[ppbc.sym()?])?)?;
+
+    let bridge = mkfs_cong(f_eq, d_eq)?;
+    lhs.trans(bridge)?
+        .trans(rhs.sym()?)?
+        .all_intro("c", rat())?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
 }
 
 cached_thm! {
@@ -1971,7 +2042,7 @@ mod tests {
         // The still-postulated ring/field axioms (add_comm / mul_comm /
         // mul_assoc are now proved — see `commutativity_is_genuine` /
         // `mul_assoc_is_genuine`).
-        let all = [add_assoc(), distrib(), mul_inv()];
+        let all = [distrib(), mul_inv()];
         for ax in all {
             assert!(ax.concl().type_of().unwrap().is_bool());
             assert!(
@@ -2085,6 +2156,24 @@ mod tests {
         let inst = thm.clone().all_elim(a.clone()).unwrap();
         let neg_a = Term::app(rat_neg(), a.clone());
         assert_eq!(inst.concl(), &radd(a, neg_a).equals(rat_zero()).unwrap());
+        assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
+        assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
+    }
+
+    #[test]
+    fn add_assoc_is_genuine() {
+        let thm = add_assoc();
+        let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+        let inst = thm
+            .clone()
+            .all_elim(a.clone())
+            .and_then(|t| t.all_elim(b.clone()))
+            .and_then(|t| t.all_elim(c.clone()))
+            .unwrap();
+        let expected = radd(radd(a.clone(), b.clone()), c.clone())
+            .equals(radd(a, radd(b, c)))
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
         assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
         assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
     }

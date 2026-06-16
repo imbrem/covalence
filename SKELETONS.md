@@ -197,13 +197,19 @@ it is how unfinished work stays discoverable.
     `beta_nf_expand`/`rewrite`) and the conjunction plumbing as generic helpers.
     `NativeHol` forwards each to the existing `covalence-core` / `init::eq` /
     `init::logic` impl; the surface is validated generically (the `hol` tests).
-    `util` + `graph::conj` are shims. **Still concrete (next):** the data model
-    (`sig`: `InductiveSig`/`Constructor`/`Arg` → generic over `Hol::Term`/`Type`,
-    e.g. `GenSig<Tm,Ty>` with a `type InductiveSig = GenSig<Term,Type>` alias so
-    concrete call sites are unchanged), the `graph` term builders / queries, the
-    `existence` / `uniqueness` / `determinacy` / `recursor` proofs, and the
-    `Inductive` trait (→ `Inductive<H>`). Each ports as a generic-over-`Hol`
-    function with a `NativeHol` shim.
+    Also done: the **data model** (`sig`: `GenArg<Ty>`/`GenConstructor<Tm,Ty>`/
+    `GenSig<Tm,Ty>` with native aliases `Arg`/`Constructor`/`InductiveSig`),
+    the **`graph` term builders** (`gen_app2`/`gen_ctor_instance`/`gen_closed`/
+    `gen_graph` + `GenCtorInstance<Tm>`, bare names are `NativeHol` shims), and
+    the **`Inductive` trait** (now `Inductive<H: Hol = NativeHol>` — the default
+    type param keeps `NatTheory`'s impl and the proof modules' `I: Inductive`
+    bounds unchanged). `util` + `graph::conj` + `graph::{graph,closed,…}` are
+    shims. **Still concrete (next):** the proof modules `existence` /
+    `uniqueness` / `determinacy` / `recursor` — each ports to
+    `<H: Hol, I: Inductive<H>>(hol, …)` using the `gen_*` graph builders + the
+    `Hol` rule methods + the generic β/∃ helpers, with a `NativeHol` shim
+    keeping its `nat`-facing signature. Then `recursion.rs`'s entry points can
+    flip to any backend.
   - **The multi-recursive-argument / multi-constructor-argument paths** in
     `existence.rs`, `uniqueness.rs`, `determinacy.rs`, and `recursor.rs`
     (conjunctive IHs / antecedents, componentwise injectivity, nested

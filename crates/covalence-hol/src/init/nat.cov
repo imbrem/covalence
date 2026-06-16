@@ -1,0 +1,120 @@
+;; nat.cov — nat lemmas over `core` + the `natrec` env.
+;;
+;; The `natrec` env imports the nat primitives as given (proved in Rust in
+;; init/nat.rs for now): `nat.succ_inj` (∀m n. S m = S n ⟹ m = n), `nat.zero_ne_succ`
+;; (∀n. ¬(0 = S n)), and `nat.rec_holds` (the natRec recursion equations). We
+;; build the freeness corollaries, the recursion-equation projections, and a
+;; sample induction on top.
+
+(#open core)
+(#open natrec)
+
+;; ⊢ ∀n. ¬(S n = 0).  `sym` flips the negated-equation goal to ¬(0 = S n),
+;; which is exactly `nat.zero_ne_succ`.
+(#thm nat.succ_ne_zero
+  (#concl (forall (n nat) (not (= (succ n) 0))))
+  (#by
+    (intro n)
+    (sym)
+    (exact (all-elim n (lemma nat.zero_ne_succ)))))
+
+;; ⊢ ∀m n. ¬(m = n) ⟹ ¬(S m = S n).  `contrapositive` strips the negations,
+;; leaving (S m = S n) ⟹ (m = n) — exactly `nat.succ_inj`.
+(#thm nat.succ_cong_ne
+  (#concl
+    (forall (m nat)
+      (forall (n nat)
+        (==> (not (= m n)) (not (= (succ m) (succ n)))))))
+  (#by
+    (intro m n)
+    (contrapositive)
+    (exact (all-elim n (all-elim m (lemma nat.succ_inj))))))
+
+;; ⊢ ∀z f. natRec z f 0 = z.  Project the base equation out of `nat.rec_holds`.
+(#thm nat.rec_zero
+  (#concl
+    (forall (z nat)
+      (forall (f (fun nat (fun nat nat)))
+        (= (app (app (app (natrec-op nat) z) f) 0) z))))
+  (#by
+    (intro z f)
+    (exact (and-elim-l (all-elim f (all-elim z (lemma nat.rec_holds)))))))
+
+;; ⊢ ∀z f n. natRec z f (S n) = f n (natRec z f n).  The step equation.
+(#thm nat.rec_succ
+  (#concl
+    (forall (z nat)
+      (forall (f (fun nat (fun nat nat)))
+        (forall (n nat)
+          (= (app (app (app (natrec-op nat) z) f) (succ n))
+             (app (app f n) (app (app (app (natrec-op nat) z) f) n)))))))
+  (#by
+    (intro z f n)
+    (exact (all-elim n (and-elim-r (all-elim f (all-elim z (lemma nat.rec_holds))))))))
+
+;; ⊢ ∀n. n = n, by induction — a minimal use of the `induct` tactic (base
+;; and step both close by `refl`; the IH is unused here).
+(#thm nat.eq_refl
+  (#concl (forall (n nat) (= n n)))
+  (#by (induct n (#by (refl)) (#by (refl)))))
+
+;; ============================================================================
+;; Addition — real inductions, with `rw` reducing via the `+` equations
+;; (`nat.zero_add`: 0 + m = m;  `nat.succ_add`: S n + m = S(n + m)).
+;; ============================================================================
+
+;; ⊢ ∀a. a + 0 = a.  (The right unit; `nat.zero_add` only gives the left unit.)
+(#thm nat.add_zero
+  (#concl (forall (a nat) (= (nat.add a 0) a)))
+  (#by
+    (induct a
+      (#by (rw (all-elim 0 (lemma nat.zero_add))) (refl))
+      (#by
+        (rw (all-elim 0 (all-elim a (lemma nat.succ_add))))
+        (rw (assume (= (nat.add a 0) a)))
+        (refl)))))
+
+;; ⊢ ∀a b. a + S b = S(a + b).  Induction on a.
+(#thm nat.add_succ
+  (#concl
+    (forall (a nat)
+      (forall (b nat)
+        (= (nat.add a (succ b)) (succ (nat.add a b))))))
+  (#by
+    (induct a
+      (#by
+        (intro b)
+        (rw (all-elim (succ b) (lemma nat.zero_add)))
+        (rw (all-elim b (lemma nat.zero_add)))
+        (refl))
+      (#by
+        (intro b)
+        (rw (all-elim (succ b) (all-elim a (lemma nat.succ_add))))
+        (rw (all-elim b
+              (assume (forall (b nat)
+                        (= (nat.add a (succ b)) (succ (nat.add a b)))))))
+        (rw (all-elim b (all-elim a (lemma nat.succ_add))))
+        (refl)))))
+
+;; ⊢ ∀a b. a + b = b + a.  Commutativity, by induction on a, using
+;; `nat.add_zero` and `nat.add_succ`.
+(#thm nat.add_comm
+  (#concl (forall (a nat) (forall (b nat) (= (nat.add a b) (nat.add b a)))))
+  (#by
+    (induct a
+      (#by
+        (intro b)
+        (rw (all-elim b (lemma nat.zero_add)))
+        (sym)
+        (rw (all-elim b (lemma nat.add_zero)))
+        (refl))
+      (#by
+        (intro b)
+        (rw (all-elim b (all-elim a (lemma nat.succ_add))))
+        (rw (all-elim b (assume (forall (b nat) (= (nat.add a b) (nat.add b a))))))
+        (sym)
+        (rw (all-elim a (all-elim b (lemma nat.add_succ))))
+        (refl)))))
+
+(#export nat.succ_ne_zero nat.succ_cong_ne nat.rec_zero nat.rec_succ nat.eq_refl
+         nat.add_zero nat.add_succ nat.add_comm)

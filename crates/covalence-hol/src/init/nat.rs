@@ -153,6 +153,44 @@ fn rec_succ(z: Term, f: Term, n: Term) -> Result<Thm> {
         .all_elim(n)
 }
 
+// ============================================================================
+// Ported proofs — `nat.cov` over `core` + the `natrec` env
+// ============================================================================
+
+/// The `natrec` environment imported by `nat.cov`: the nat freeness rules
+/// and the recursion theorem, provided as **given** lemmas. They are proved
+/// in Rust above (`succ_inj` / `zero_ne_succ` / `rec_holds`) — importing
+/// them lets `nat.cov` build on them without re-deriving the deep kernel
+/// machinery (they can be ported themselves later).
+pub fn natrec_env() -> crate::script::Env {
+    let mut e = crate::script::Env::empty();
+    e.lemmas.insert("nat.succ_inj".into(), succ_inj());
+    e.lemmas.insert("nat.zero_ne_succ".into(), zero_ne_succ());
+    e.lemmas.insert("nat.rec_holds".into(), rec_holds());
+    // the `+` / `*` recursion equations (also proved in Rust for now)
+    e.lemmas.insert("nat.zero_add".into(), add_base());
+    e.lemmas.insert("nat.succ_add".into(), add_step());
+    e.lemmas.insert("nat.zero_mul".into(), mul_base());
+    e.lemmas.insert("nat.succ_mul".into(), mul_step());
+    e
+}
+
+crate::cov_theory! {
+    /// nat lemmas ported to `nat.cov`, over `core` + the `natrec` env.
+    pub mod cov from "nat.cov" {
+        import "core" = crate::script::Env::core();
+        import "natrec" = crate::init::nat::natrec_env();
+        "nat.succ_ne_zero" => pub fn succ_ne_zero;
+        "nat.succ_cong_ne" => pub fn succ_cong_ne;
+        "nat.rec_zero"     => pub fn natrec_zero_eq;
+        "nat.rec_succ"     => pub fn natrec_succ_eq;
+        "nat.eq_refl"      => pub fn nat_eq_refl;
+        "nat.add_zero"     => pub fn add_zero_cov;
+        "nat.add_succ"     => pub fn add_succ_r_cov;
+        "nat.add_comm"     => pub fn add_comm_cov;
+    }
+}
+
 /// `⊢ t = t'`, where `t'` is `t` with the let-style specs `nat.add` /
 /// `nat.mul` / `iter` δ-unfolded and β-reduced to weak-normal form
 /// (typically a `natRec` application). Reduction is weak, so `natRec`
@@ -2556,5 +2594,25 @@ mod tests {
             .equals(add(var("k"), mul(var("j"), var("k"))))
             .unwrap();
         assert_eq!(ms.concl(), &expected);
+    }
+}
+
+#[cfg(test)]
+mod cov_tests {
+    use super::cov;
+
+    #[test]
+    fn nat_cov_loads_and_proves() {
+        // Force the `nat.cov` theory: all five lemmas must replay (the
+        // `induct` tactic + the natrec equations + the freeness corollaries).
+        assert!(cov::succ_ne_zero().hyps().is_empty());
+        assert!(cov::succ_cong_ne().hyps().is_empty());
+        assert!(cov::natrec_zero_eq().hyps().is_empty());
+        assert!(cov::natrec_succ_eq().hyps().is_empty());
+        assert!(cov::nat_eq_refl().hyps().is_empty());
+        assert!(cov::add_zero_cov().hyps().is_empty());
+        assert!(cov::add_succ_r_cov().hyps().is_empty());
+        // `add.comm` ported via #by/induct/rw must equal the Rust proof.
+        assert_eq!(cov::add_comm_cov().concl(), super::add_comm().concl());
     }
 }

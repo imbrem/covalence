@@ -98,11 +98,64 @@ fn run(goal: &mut Goal, steps: &[SExpr], scope: &mut Scope, env: &Env) -> R<Thm>
         // goal transformers (reduce to a single subgoal, wrap with a rule)
         "sym" => {
             arity(s, 1, "sym")?;
-            let (a, b) = dest_eq(&goal.target).ok_or_else(|| {
-                ScriptError::Syntax(format!("sym: goal is not an equation: {}", goal.target))
+            let ctx = HolLightCtx::new();
+            if let Some(eq) = dest_not(&goal.target) {
+                // `¬(a = b)`  →  subgoal `¬(b = a)`
+                let (a, b) = dest_eq(&eq).ok_or_else(|| {
+                    ScriptError::Syntax(format!(
+                        "sym: `¬_` goal is not a negated equation: {}",
+                        goal.target
+                    ))
+                })?;
+                let ab = ctx.mk_eq(a.clone(), b.clone())?;
+                goal.target = ctx.mk_not(ctx.mk_eq(b, a)?);
+                let inner = run(goal, rest, scope, env)?; // ⊢ ¬(b = a)
+                let f = inner.not_elim(Thm::assume(ab.clone())?.sym()?)?; // {a=b} ⊢ F
+                Ok(f.imp_intro(&ab)?.not_intro()?) // ⊢ ¬(a = b)
+            } else if let Some((a, b)) = dest_eq(&goal.target) {
+                goal.target = ctx.mk_eq(b, a)?;
+                Ok(run(goal, rest, scope, env)?.sym()?)
+            } else {
+                Err(ScriptError::Syntax(format!(
+                    "sym: goal is not an equation or a negated equation: {}",
+                    goal.target
+                )))
+            }
+        }
+        // Prove an implication by its contrapositive. `¬P ⟹ ¬Q` reduces to
+        // `Q ⟹ P` (strips the negations); a general `a ⟹ b` reduces to
+        // `¬b ⟹ ¬a` (classical, via `lem`).
+        "contrapositive" => {
+            arity(s, 1, "contrapositive")?;
+            let (a, b) = dest_imp(&goal.target).ok_or_else(|| {
+                ScriptError::Syntax(format!(
+                    "contrapositive: goal is not an implication: {}",
+                    goal.target
+                ))
             })?;
-            goal.target = HolLightCtx::new().mk_eq(b, a)?;
-            Ok(run(goal, rest, scope, env)?.sym()?)
+            let ctx = HolLightCtx::new();
+            match (dest_not(&a), dest_not(&b)) {
+                (Some(p), Some(q)) => {
+                    goal.target = ctx.mk_imp(q.clone(), p);
+                    let inner = run(goal, rest, scope, env)?; // ⊢ Q ⟹ P
+                    let p_thm = inner.imp_elim(Thm::assume(q.clone())?)?; // {Q} ⊢ P
+                    let f = Thm::assume(a.clone())?.not_elim(p_thm)?; // {¬P, Q} ⊢ F
+                    let nq = f.imp_intro(&q)?.not_intro()?; // {¬P} ⊢ ¬Q
+                    Ok(nq.imp_intro(&a)?) // ⊢ ¬P ⟹ ¬Q
+                }
+                _ => {
+                    let nb = ctx.mk_not(b.clone());
+                    let na = ctx.mk_not(a.clone());
+                    goal.target = ctx.mk_imp(nb.clone(), na);
+                    let inner = run(goal, rest, scope, env)?; // ⊢ ¬b ⟹ ¬a
+                    let left = Thm::assume(b.clone())?.imp_intro(&b)?; // ⊢ b ⟹ b
+                    let na_thm = inner.imp_elim(Thm::assume(nb.clone())?)?; // {¬b} ⊢ ¬a
+                    let f = na_thm.not_elim(Thm::assume(a.clone())?)?; // {¬b, a} ⊢ F
+                    let right = f.false_elim(b.clone())?.imp_intro(&nb)?; // {a} ⊢ ¬b ⟹ b
+                    let b_thm = Thm::lem(b)?.or_elim(left, right)?; // {a} ⊢ b
+                    Ok(b_thm.imp_intro(&a)?) // ⊢ a ⟹ b
+                }
+            }
         }
         "not-intro" => {
             arity(s, 1, "not-intro")?;
@@ -111,6 +164,22 @@ fn run(goal: &mut Goal, steps: &[SExpr], scope: &mut Scope, env: &Env) -> R<Thm>
             })?;
             goal.target = HolLightCtx::new().mk_imp(p, Term::bool_lit(false));
             Ok(run(goal, rest, scope, env)?.not_intro()?)
+        }
+        // Rewrite the goal left-to-right with the equation proved by the
+        // given (instantiated) tree-mode proof — the nat-reduction workhorse
+        // (`rw (all-elim 0 (lemma add.base))`, `rw (assume IH)`, …). Every
+        // occurrence of the LHS is replaced; the remaining goal is the
+        // rewritten one.
+        "rw" => {
+            arity(s, 2, "rw")?;
+            let eq = check(&parse_drv(&s[1], scope, env)?, env)?; // ⊢ lhs = rhs
+            let cong = super::drv::rewrite_conv(&goal.target, &eq)?; // ⊢ G = G'
+            let (_, gprime) = dest_eq(cong.concl()).ok_or_else(|| {
+                ScriptError::Syntax("rw: rewrite did not yield an equation".into())
+            })?;
+            goal.target = gprime;
+            let inner = run(goal, rest, scope, env)?; // ⊢ G'
+            Ok(cong.sym()?.eq_mp(inner)?) // ⊢ G
         }
         // dischargers — close the goal; no tactics may follow.
         "exact" => {
@@ -149,6 +218,55 @@ fn run(goal: &mut Goal, steps: &[SExpr], scope: &mut Scope, env: &Env) -> R<Thm>
                 ScriptError::Syntax(format!("refl: goal is not an equation: {}", goal.target))
             })?;
             Ok(Thm::refl(lhs)?)
+        }
+        // nat induction on a `∀(v:nat). P v` goal, into base + step
+        // subproofs.  `(induct v BASE STEP)`: BASE proves `P 0`; STEP proves
+        // `P (S v)` with the IH `P v` available (`v` fixed). The β-conv
+        // bookkeeping (the kernel's `nat_induct` keeps the motive applied,
+        // un-reduced) is handled here.
+        "induct" => {
+            arity(s, 4, "induct")?;
+            expect_done(rest, "induct")?;
+            let var = sym(&s[1], "induct variable")?.to_string();
+            let (ty, body) = dest_forall(&goal.target).ok_or_else(|| {
+                ScriptError::Syntax(format!("induct: goal is not a `∀`: {}", goal.target))
+            })?;
+            if ty != Type::nat() {
+                return Err(ScriptError::Syntax(format!(
+                    "induct: goal quantifies over {ty}, not nat"
+                )));
+            }
+            let p = Term::abs(Type::nat(), body.clone()); // the motive λv. P v
+            let zero = Term::nat_lit(0u64);
+
+            // base: prove P 0 (β-reduced), then β-expand to `p 0`.
+            let base_body = prove_with(&subst::open(&body, &zero), &s[2], scope, &goal.hyps, env)?;
+            let base = Thm::beta_conv(Term::app(p.clone(), zero))?
+                .sym()?
+                .eq_mp(base_body)?;
+
+            // step: prove P (S v) with the IH `P v` in context (v fixed).
+            let v = Term::free(var.as_str(), Type::nat());
+            let ih = subst::open(&body, &v);
+            let sv = Term::app(Term::succ(), v.clone());
+            let mut step_hyps = goal.hyps.clone();
+            step_hyps.push((ih.clone(), Hyp::Assumed));
+            scope.push((var.clone(), Type::nat()));
+            let step_body = prove_with(&subst::open(&body, &sv), &s[3], scope, &step_hyps, env);
+            scope.pop();
+            let step_imp = step_body?.imp_intro(&ih)?;
+            // β-expand the two sides to `p v ⟹ p (S v)`.
+            let ea = Thm::beta_conv(Term::app(p.clone(), v))?;
+            let eb = Thm::beta_conv(Term::app(p, sv))?;
+            let step = Thm::refl(defs::imp())?
+                .mk_comb(ea.sym()?)?
+                .mk_comb(eb.sym()?)?
+                .eq_mp(step_imp)?;
+
+            // ⊢ ∀n. p n, then β-normalise back to the goal's (reduced) form.
+            let ind = Thm::nat_induct(base, step)?;
+            let nf = crate::proofs::rewrite::beta_nf(ind.concl().clone());
+            Ok(nf.eq_mp(ind)?)
         }
         "#have" => {
             arity(s, 3, "#have")?;

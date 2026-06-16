@@ -335,6 +335,13 @@ impl<'e> Elab<'e> {
                 let ety = self.from_type(&op.type_of()?)?;
                 Ok((ETerm::Lit(op), ety))
             }
+            // `natRec` at a result type: `'a → (nat → 'a → 'a) → nat → 'a`.
+            "natrec-op" => {
+                arity(ch, 2, "natrec-op")?;
+                let op = defs::nat_rec(parse_type(&ch[1])?);
+                let ety = self.from_type(&op.type_of()?)?;
+                Ok((ETerm::Lit(op), ety))
+            }
             "=" | "eq" => {
                 arity(ch, 3, "eq")?;
                 let alpha = self.fresh();

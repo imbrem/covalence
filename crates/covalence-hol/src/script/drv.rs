@@ -148,7 +148,7 @@ pub fn check(d: &Drv, env: &Env) -> R<Thm> {
 ///
 /// Does not descend under binders (`Abs`) — adequate for the
 /// quantifier-free rewriting the tactic targets today; see SKELETONS.md.
-fn rewrite_conv(t: &Term, eq: &Thm) -> R<Thm> {
+pub(super) fn rewrite_conv(t: &Term, eq: &Thm) -> R<Thm> {
     let (lhs, _rhs) = dest_eq(eq.concl())
         .ok_or_else(|| ScriptError::Syntax("rw: equation theorem is not an `=`".into()))?;
     if *t == lhs {

@@ -363,22 +363,23 @@ directives — is `open`-able by other scripts; the macro binds it as a
   `succ`). int/rat/real/list/option/prod/coprod/set catalogue names are not yet
   bound; add entries to `script/env.rs::Env::core` (the `defs/` churn
   boundary) as those theories are ported.
-- **Async core runs on tokio, but theorems are not yet tasks.**
-  `script/mod.rs::run_async` is `async` and `run` blocks on it via a tokio
-  **current-thread** runtime (`block_on`) — the real scheduler the prover is
-  built on. The in-progress vs resolved *types* exist — `TheoryHandle`
-  (semi-proved; holds `pending` holed `#thm`s + `fills` + `deferred_exports`)
-  and `Theory` (forced via `TheoryHandle::resolve`). What's missing is making
-  each `#thm` an actual **tokio task** yielding a future for its `Thm`: a
-  theorem `tokio::spawn`s, `await`s the futures of the lemmas it references
-  (dependency analysis = scan the proof for `(lemma …)`), checks (CPU-bound →
-  `spawn_blocking`), and completes its own. **tokio does the scheduling — we do
-  NOT hand-roll dependency reordering** (the current `resolve` checks `pending`
-  top-to-bottom only because it isn't a task graph yet). Then: a task that
-  blocks (an unready import, a tactic awaiting an observer / peer / the user)
-  just lets tokio run another; a failed import yields a *partial* theory that
-  is still importable; verification auto-parallelises (swap to a multi-thread
-  runtime). Wanted for BLAKE3-range partial verification.
+- **Async core runs on tokio; pending resolution is a task graph, the rest
+  isn't yet.** `script/mod.rs::run_async` is `async`; `run`/`resolve_blocking`
+  block via a tokio **current-thread** runtime (`block_on`). `TheoryHandle::
+  resolve` already resolves the **pending** (holed) theorems in dependency
+  **waves** — each wave's independent theorems `tokio::spawn` and run
+  concurrently, dependencies (`collect_lemma_deps` scan of `(lemma …)`) flow
+  across waves, and a no-progress wave is a cycle error. So pending order
+  follows the dep graph, not declaration order. Still TODO:
+  - **The EAGER (hole-free) `#thm`s are still checked inline, in order**, in
+    `run_async`'s loop — not yet tasks. Making *every* theorem a task (await
+    its `(lemma …)` deps, check via `spawn_blocking`) and switching to a
+    multi-thread runtime is what unlocks real parallel verification; the
+    current-thread runtime + wave spawns give correct order but no parallelism.
+  - A task that blocks (an unready import, a tactic awaiting an observer / peer
+    / the user) should let tokio run another; a failed import should yield a
+    *partial* theory that is still importable. Wanted for BLAKE3-range partial
+    verification.
   - **`EnvHandle` (in-progress env) not built.** Mirror of `TheoryHandle` for
     environments: a *fully-resolved* `Env` holds no futures, but an in-progress
     one's **imported** lemmas/consts ARE futures (an imported theory need not be
@@ -396,6 +397,22 @@ directives — is `open`-able by other scripts; the macro binds it as a
   known lemma/const/tactic/import. Its real semantics — *force the enclosing
   task to block until `NAME` completes* (forward references included) — depend
   on the cooperative scheduler above.
+- **`ScriptError` is flat strings — no source spans or traces.** Errors carry
+  only a message (e.g. the cycle error stringifies theorem names; kernel errors
+  wrap `covalence_core::Error`). Eventually the error type should carry **source
+  extents** (byte/line spans, threaded from parsing) and **traces** — the chain
+  of rules/tactics/obligations that led to a failure. **Very important for
+  LLM-assisted proofs**, where the model needs precise, localized, structured
+  feedback to repair a proof. Pairs with the typed-pipeline note below (extents
+  come from preserving spans through every stage).
+- **No typed `Stmt` / multi-stage pipeline.** Today `run_async` walks raw
+  `SExpr` directives and does parse-resolve-check in one pass (the elaborator
+  infers types inline). The intended pipeline: **parse → untyped elaboration →
+  typechecking → typed elaboration → execution**, with a typed `Stmt` enum (and
+  typed term/proof IR) as the staged representation, **preserving source extents
+  from parsing through every stage** so any stage can surface a precise,
+  well-located error to the user (and to an LLM). This is the structural
+  prerequisite for the rich errors above and for good editor/LSP feedback.
 - **`Tactic::apply` is synchronous.** `script/tactic.rs::Tactic` is a trait
   (so tactics can carry state / be WASM-backed — the closure-capturing tactic
   test exercises that) but `apply` returns `Result`, not a future. Async

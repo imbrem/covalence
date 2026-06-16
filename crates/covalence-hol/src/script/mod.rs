@@ -117,11 +117,17 @@ impl TheoryHandle {
     /// and re-check them, producing a fully-proved [`Theory`]. Errors with
     /// [`ScriptError::UnresolvedObligation`] if a hole has no fill.
     ///
-    /// `async` because this is where the prover becomes a tokio task graph:
-    /// each pending `#thm` will `await` the futures of the lemmas it depends on
-    /// so the runtime schedules the order (today the body is still sequential).
-    /// For a synchronous caller use [`TheoryHandle::resolve_blocking`].
+    /// `async` because this is where the prover is a tokio task graph: the
+    /// pending `#thm`s are resolved in **dependency waves**, and a wave's
+    /// (mutually independent) theorems run as concurrent `tokio::spawn` tasks —
+    /// the runtime executes them, so the proving order follows the
+    /// `(lemma …)`-dependency graph, NOT the declaration order (a pending
+    /// theorem may reference one declared later). A wave that makes no progress
+    /// while theorems remain is a dependency cycle. For a synchronous caller
+    /// use [`TheoryHandle::resolve_blocking`].
     pub async fn resolve(self) -> Result<Theory, ScriptError> {
+        use std::collections::{HashMap, HashSet};
+
         // Any hole still without a `(#fill …)` makes the theory unforceable —
         // report every one of them by name.
         let open = self.obligations();
@@ -130,28 +136,88 @@ impl TheoryHandle {
         }
         let TheoryHandle {
             mut exports,
-            mut internal,
+            internal,
             mut thms,
             pending,
             fills,
             deferred_exports,
         } = self;
-        for p in pending {
-            // Splice the fills into the stored `(#thm …)` and re-check it in
-            // the internal environment (which now also holds any earlier
-            // pending lemma we have already resolved).
-            let spliced = splice_holes(&p.sexpr, &fills)?;
-            let ch = syntax::list(&spliced, "#thm")?;
-            let nt = run_thm(ch, &internal)?;
-            internal.define_lemma(nt.name.clone(), nt.thm.clone());
-            thms.push(nt);
+
+        // Splice each pending proof hole-free and find its dependencies on the
+        // *other* pending theorems (eager lemmas are already in `internal`).
+        let pending_names: HashSet<String> = pending.iter().map(|p| p.name.clone()).collect();
+        struct Spec {
+            spliced: SExpr,
+            deps: HashSet<String>,
         }
+        let mut remaining: Vec<Spec> = Vec::with_capacity(pending.len());
+        for p in &pending {
+            let spliced = splice_holes(&p.sexpr, &fills)?;
+            let mut deps = HashSet::new();
+            collect_lemma_deps(&spliced, &pending_names, &mut deps);
+            remaining.push(Spec { spliced, deps });
+        }
+
+        // Resolve in waves; each wave's theorems are independent → concurrent.
+        let internal = Arc::new(internal);
+        let mut resolved: HashMap<String, Thm> = HashMap::new();
+        while !remaining.is_empty() {
+            let (ready, blocked): (Vec<Spec>, Vec<Spec>) = remaining
+                .into_iter()
+                .partition(|s| s.deps.iter().all(|d| resolved.contains_key(d)));
+            if ready.is_empty() {
+                // No theorem's dependencies are all met ⇒ a `(lemma …)` cycle.
+                return Err(ScriptError::Syntax(format!(
+                    "resolve: dependency cycle among pending theorems {:?}",
+                    blocked
+                        .iter()
+                        .filter_map(|s| syntax::list(&s.spliced, "#thm")
+                            .ok()
+                            .and_then(|c| c.get(1))
+                            .and_then(|x| x.as_symbol())
+                            .map(str::to_string))
+                        .collect::<Vec<_>>()
+                )));
+            }
+            // Spawn each ready theorem; it builds its own env (the shared
+            // `internal` plus the dep theorems it needs) and checks itself.
+            let mut handles = Vec::with_capacity(ready.len());
+            for s in ready {
+                let internal = Arc::clone(&internal);
+                let dep_thms: Vec<(String, Thm)> = s
+                    .deps
+                    .iter()
+                    .map(|d| (d.clone(), resolved[d].clone()))
+                    .collect();
+                handles.push(tokio::spawn(async move {
+                    let mut env = (*internal).clone();
+                    for (n, t) in dep_thms {
+                        env.define_lemma(n, t);
+                    }
+                    let ch = syntax::list(&s.spliced, "#thm")?;
+                    run_thm(ch, &env)
+                }));
+            }
+            for h in handles {
+                let nt = h
+                    .await
+                    .map_err(|e| ScriptError::Syntax(format!("resolve: task failed: {e}")))??;
+                resolved.insert(nt.name.clone(), nt.thm.clone());
+                thms.push(nt);
+            }
+            remaining = blocked;
+        }
+
         // Now that the pending theorems are proved, honour the exports that
         // referenced them.
         for name in deferred_exports {
-            let thm = internal.lookup_lemma(&name).cloned().ok_or_else(|| {
-                ScriptError::Unbound(format!("#export: nothing named `{name}` to export"))
-            })?;
+            let thm = resolved
+                .get(&name)
+                .cloned()
+                .or_else(|| internal.lookup_lemma(&name).cloned())
+                .ok_or_else(|| {
+                    ScriptError::Unbound(format!("#export: nothing named `{name}` to export"))
+                })?;
             exports.define_lemma(name, thm);
         }
         Ok(Theory { exports, thms })
@@ -215,6 +281,28 @@ fn splice_holes(
                 .map(|c| splice_holes(c, fills))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(covalence_sexp::SExp::List(spliced))
+        }
+    }
+}
+
+/// Collect the `(lemma X)` references in `s` whose `X` is in `among` — i.e. the
+/// dependency edges from one pending theorem to the others.
+fn collect_lemma_deps(
+    s: &SExpr,
+    among: &std::collections::HashSet<String>,
+    out: &mut std::collections::HashSet<String>,
+) {
+    if let covalence_sexp::SExp::List(ch) = s {
+        if ch.first().and_then(|h| h.as_symbol()) == Some("lemma") {
+            if let Some(name) = ch.get(1).and_then(|x| x.as_symbol())
+                && among.contains(name)
+            {
+                out.insert(name.to_string());
+            }
+            return;
+        }
+        for c in ch {
+            collect_lemma_deps(c, among, out);
         }
     }
 }
@@ -427,7 +515,9 @@ pub async fn run_async(
             // the "nothing named" error.)
             "#export" => {
                 if ch.len() < 2 {
-                    return Err(ScriptError::Syntax("#export: expected (#export NAME …)".into()));
+                    return Err(ScriptError::Syntax(
+                        "#export: expected (#export NAME …)".into(),
+                    ));
                 }
                 for item in &ch[1..] {
                     let name = syntax::sym(item, "export name")?;
@@ -693,14 +783,12 @@ mod tests {
         // the concrete reason `Tactic` is now a trait. It ignores the goal
         // and returns the captured `Thm`.
         let canned: Arc<dyn Tactic> = {
-            let thm = one(
-                r#"
+            let thm = one(r#"
                 (#import core)
                 (#open core)
                 (#thm t (#concl (= (nat.add 2 3) 5))
                   (#proof (reduce-prim (nat.add 2 3))))
-                "#,
-            );
+                "#);
             Arc::new(move |_s: &[SExpr], _rest: &[SExpr], _it: &mut Interp| Ok(thm.clone()))
         };
         let theory = run(
@@ -721,8 +809,7 @@ mod tests {
     #[test]
     fn and_comm_ports_from_rust() {
         // The S-expression rewrite of `init::logic::and_comm`.
-        let thm = one(
-            r#"
+        let thm = one(r#"
             (#import core)
             (#open core)
             (#thm and.comm
@@ -733,8 +820,7 @@ mod tests {
                   (and-intro
                     (and-elim-r (assume (and p q)))
                     (and-elim-l (assume (and p q)))))))
-            "#,
-        );
+            "#);
         assert!(thm.hyps().is_empty(), "and.comm must be hypothesis-free");
         // It must match the hand-written Rust theorem exactly.
         let rust = crate::init::logic::and_comm();
@@ -744,15 +830,13 @@ mod tests {
     #[test]
     fn ground_arithmetic_via_reduce_prim() {
         // ⊢ 2 + 3 = 5, by primitive computation.
-        let thm = one(
-            r#"
+        let thm = one(r#"
             (#import core)
             (#open core)
             (#thm add.2.3
               (#concl (= (nat.add 2 3) 5))
               (#proof (reduce-prim (nat.add 2 3))))
-            "#,
-        );
+            "#);
         assert!(thm.hyps().is_empty());
     }
 
@@ -764,16 +848,14 @@ mod tests {
         // existing `tauto` decides *trivial* tautologies — those that
         // `normalize` reduces to `T` — not arbitrary propositional
         // goals like ∧-commutativity.)
-        let thm = one(
-            r#"
+        let thm = one(r#"
             (#import core)
             (#open core)
             (#thm imp.refl.auto
               (#fix (p bool))
               (#concl (==> p p))
               (#proof (tauto (==> p p))))
-            "#,
-        );
+            "#);
         assert!(thm.hyps().is_empty());
     }
 
@@ -844,7 +926,10 @@ mod tests {
         assert_eq!(theory.thms.len(), 1);
         // the alias `lg.` and the re-export `prelude.` are both present
         let env = theory.env();
-        assert!(env.has_lemma("prelude.and.comm"), "re-exported under prelude");
+        assert!(
+            env.has_lemma("prelude.and.comm"),
+            "re-exported under prelude"
+        );
     }
 
     /// A theorem with one open obligation, optionally filled.
@@ -900,6 +985,50 @@ mod tests {
     }
 
     #[test]
+    fn pending_deps_resolve_out_of_declaration_order() {
+        // `a` is declared *before* `b` but its fill depends on `b` — the wave
+        // resolver proves `b` first then `a`, so declaration order doesn't
+        // matter (the old in-order resolve would have failed on `(lemma b)`).
+        let theory = run(
+            r#"
+            (#import core)
+            (#open core)
+            (#thm a (#concl (= 0 0)) (#proof (#hole ha)))
+            (#thm b (#concl (= 0 0)) (#proof (#hole hb)))
+            (#fill ha (lemma b))
+            (#fill hb (refl 0))
+            "#,
+            |name| (name == "core").then(Env::core),
+            |_| None,
+        )
+        .unwrap();
+        let resolved = theory.resolve_blocking().expect("waves resolve b then a");
+        assert_eq!(resolved.thms.len(), 2);
+    }
+
+    #[test]
+    fn pending_dependency_cycle_is_an_error() {
+        // `a` depends on `b` and `b` depends on `a` — no wave can start.
+        let theory = run(
+            r#"
+            (#import core)
+            (#open core)
+            (#thm a (#concl (= 0 0)) (#proof (#hole ha)))
+            (#thm b (#concl (= 0 0)) (#proof (#hole hb)))
+            (#fill ha (lemma b))
+            (#fill hb (lemma a))
+            "#,
+            |name| (name == "core").then(Env::core),
+            |_| None,
+        )
+        .unwrap();
+        let Err(err) = theory.resolve_blocking() else {
+            panic!("a dependency cycle must error");
+        };
+        assert!(matches!(err, ScriptError::Syntax(ref m) if m.contains("cycle")));
+    }
+
+    #[test]
     fn second_fill_of_a_hole_is_a_noop() {
         // First fill wins; the second (a *wrong* proof, never even inspected)
         // is ignored — so the theory still resolves via the first.
@@ -936,7 +1065,9 @@ mod tests {
         .unwrap();
         // Not exported yet (still pending), but becomes exported on resolve.
         assert!(!theory.env().has_lemma("id"));
-        let resolved = theory.resolve_blocking().expect("resolve discharges + exports");
+        let resolved = theory
+            .resolve_blocking()
+            .expect("resolve discharges + exports");
         assert!(resolved.env().has_lemma("id"));
     }
 
@@ -957,16 +1088,14 @@ mod tests {
 
     #[test]
     fn excluded_middle_via_lem() {
-        let thm = one(
-            r#"
+        let thm = one(r#"
             (#import core)
             (#open core)
             (#thm lem.p
               (#fix (p bool))
               (#concl (or p (not p)))
               (#proof (lem p)))
-            "#,
-        );
+            "#);
         assert!(thm.hyps().is_empty());
     }
 
@@ -975,26 +1104,22 @@ mod tests {
         // `rw` is a full congruence — it rewrites *every* occurrence of
         // the equation's LHS. From `a = b` (assumed) and `⊢ a = a`
         // (refl), rewriting `a ↦ b` everywhere gives {a = b} ⊢ b = b.
-        let thm = one(
-            r#"
+        let thm = one(r#"
             (#import core)
             (#open core)
             (#thm rw.demo
               (#fix (a nat) (b nat))
               (#concl (= b b))
               (#proof (rw (assume (= a b)) (refl a))))
-            "#,
-        );
+            "#);
         // carries the single hypothesis a = b
         assert_eq!(thm.hyps().len(), 1);
     }
 
-
     #[test]
     fn infers_free_var_types_without_fix() {
         // No `fix`: p, q are inferred `bool` from their use under `and`.
-        let thm = one(
-            r#"
+        let thm = one(r#"
             (#import core)
             (#open core)
             (#thm and.comm.implicit
@@ -1004,8 +1129,7 @@ mod tests {
                   (and-intro
                     (and-elim-r (assume (and p q)))
                     (and-elim-l (assume (and p q)))))))
-            "#,
-        );
+            "#);
         assert_eq!(thm.concl(), crate::init::logic::and_comm().concl());
     }
 
@@ -1050,8 +1174,7 @@ mod tests {
         // exercising the quantifier-operator form (`exists-op`), `unfold-at-1`
         // to unfold the `∃` definition, and the ∀/⟹ rules — the harder,
         // definition-unfolding case (cf. the propositional `and.comm`).
-        let thm = one(
-            r#"
+        let thm = one(r#"
             (#import core)
             (#open core)
             (#thm exists.intro
@@ -1070,8 +1193,7 @@ mod tests {
                             (imp-elim
                               (all-elim w (assume (forall (x) (==> (app P x) q))))
                               (assume (app P w)))))))))))
-            "#,
-        );
+            "#);
         assert!(thm.hyps().is_empty(), "the reified ∃-intro rule is closed");
     }
 
@@ -1094,10 +1216,7 @@ mod tests {
         .expect("should replay");
         let env = theory.env();
         assert!(env.has_lemma("a"), "exported lemma is public");
-        assert!(
-            !env.has_lemma("b"),
-            "un-exported lemma stays internal"
-        );
+        assert!(!env.has_lemma("b"), "un-exported lemma stays internal");
         assert_eq!(theory.thms.len(), 2, "both lemmas were proven");
     }
 
@@ -1106,8 +1225,7 @@ mod tests {
         // Goal-directed: `intro` the implication, then `exact` a tree-mode
         // proof of the swapped conjunction. The `#by` block elaborates to
         // the same `Drv` the tree-mode `and.comm` produces.
-        let thm = one(
-            r#"
+        let thm = one(r#"
             (#import core)
             (#open core)
             (#thm and.comm.by
@@ -1118,38 +1236,33 @@ mod tests {
                   (and-intro
                     (and-elim-r (assume (and p q)))
                     (and-elim-l (assume (and p q)))))))
-            "#,
-        );
+            "#);
         assert_eq!(thm.concl(), crate::init::logic::and_comm().concl());
     }
 
     #[test]
     fn by_intro_and_assumption() {
         // `intro` moves `p` into the context; `assumption` closes the goal.
-        let thm = one(
-            r#"
+        let thm = one(r#"
             (#import core)
             (#open core)
             (#thm imp.refl.by
               (#concl (==> p p))
               (#by (intro h) (assumption)))
-            "#,
-        );
+            "#);
         assert!(thm.hyps().is_empty());
     }
 
     #[test]
     fn by_intro_over_forall() {
         // ∀-introduction in tactic mode, closed by `refl`: ⊢ ∀(x:nat). x = x.
-        let thm = one(
-            r#"
+        let thm = one(r#"
             (#import core)
             (#open core)
             (#thm eq.refl.by
               (#concl (forall (x nat) (= x x)))
               (#by (intro x) (refl)))
-            "#,
-        );
+            "#);
         assert!(thm.hyps().is_empty());
     }
 
@@ -1157,8 +1270,7 @@ mod tests {
     fn by_have_brings_a_fact_into_context() {
         // `#have` proves an intermediate fact in (nested) tree mode and
         // makes it available; `assumption` then discharges the goal with it.
-        let thm = one(
-            r#"
+        let thm = one(r#"
             (#import core)
             (#open core)
             (#thm dup.by
@@ -1167,8 +1279,7 @@ mod tests {
                 (intro h)
                 (#have (and p p) (#proof (and-intro (assume p) (assume p))))
                 (assumption)))
-            "#,
-        );
+            "#);
         assert!(thm.hyps().is_empty());
     }
 
@@ -1176,30 +1287,26 @@ mod tests {
     fn by_multi_intro_and_sym() {
         // `intro a b h` peels three binders at once; `sym` swaps the
         // equation goal; `assumption` closes it with the hypothesis.
-        let thm = one(
-            r#"
+        let thm = one(r#"
             (#import core)
             (#open core)
             (#thm eq.sym.by
               (#concl (forall (a nat) (forall (b nat) (==> (= a b) (= b a)))))
               (#by (intro a b h) (sym) (assumption)))
-            "#,
-        );
+            "#);
         assert!(thm.hyps().is_empty());
     }
 
     #[test]
     fn by_not_intro() {
         // `not-intro` turns goal `¬F` into `F ⟹ F`.
-        let thm = one(
-            r#"
+        let thm = one(r#"
             (#import core)
             (#open core)
             (#thm not.false.by
               (#concl (not false))
               (#by (not-intro) (intro h) (assumption)))
-            "#,
-        );
+            "#);
         assert!(thm.hyps().is_empty());
     }
 
@@ -1207,15 +1314,13 @@ mod tests {
     fn by_induct_on_nat() {
         // The `induct` tactic: ⊢ ∀(n:nat). n = n, base + step both by `refl`.
         // Exercises the kernel's `nat_induct` plus the β-conv bookkeeping.
-        let thm = one(
-            r#"
+        let thm = one(r#"
             (#import core)
             (#open core)
             (#thm nat.eq.refl.by
               (#concl (forall (n nat) (= n n)))
               (#by (induct n (#by (refl)) (#by (refl)))))
-            "#,
-        );
+            "#);
         assert!(thm.hyps().is_empty());
     }
 

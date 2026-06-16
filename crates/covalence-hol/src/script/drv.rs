@@ -18,7 +18,9 @@
 use covalence_core::{Term, TermKind, Thm};
 use covalence_sexp::SExpr;
 
-use super::syntax::{Env, Scope, arity, head_sym, list, parse_term, parse_type, sym};
+use super::env::Env;
+use super::scope::Scope;
+use super::syntax::{arity, head_sym, list, parse_term, parse_type, sym};
 use super::ScriptError;
 
 type R<T> = Result<T, ScriptError>;

@@ -20,7 +20,9 @@ use covalence_sexp::SExpr;
 
 use super::ScriptError;
 use super::drv::{check, parse_drv, rewrite_conv};
-use super::syntax::{Env, Scope, arity, head_sym, list, parse_term, sym};
+use super::env::Env;
+use super::scope::Scope;
+use super::syntax::{arity, head_sym, list, parse_term, sym};
 use crate::HolLightCtx;
 
 type R<T> = Result<T, ScriptError>;

@@ -27,7 +27,9 @@ use covalence_core::{Term, Type, TypeKind, subst};
 use covalence_sexp::{SExp, SExpr};
 
 use super::ScriptError;
-use super::syntax::{ConstDef, Env, Scope, arity, head_sym, parse_type, sym};
+use super::env::{ConstDef, Env};
+use super::scope::Scope;
+use super::syntax::{arity, head_sym, parse_type, sym};
 use crate::HolLightCtx;
 
 type R<T> = Result<T, ScriptError>;

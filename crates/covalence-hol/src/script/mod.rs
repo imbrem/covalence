@@ -25,12 +25,16 @@
 //! replay) is the immediate goal: porting the Rust `init/` theorems.
 
 mod drv;
+mod env;
 mod infer;
+mod scope;
 mod syntax;
 mod tactic;
 
 pub use drv::{Drv, check, parse_drv};
-pub use syntax::{ConstDef, Env, Scope, parse_term, parse_type};
+pub use env::{ConstDef, Env};
+pub use scope::Scope;
+pub use syntax::{parse_term, parse_type};
 pub use tactic::{Interp, Tactic};
 
 use covalence_core::{Thm, Type};

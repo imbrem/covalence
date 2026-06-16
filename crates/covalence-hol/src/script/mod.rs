@@ -27,6 +27,7 @@
 mod drv;
 mod infer;
 mod syntax;
+mod tactic;
 
 pub use drv::{Drv, check, parse_drv};
 pub use syntax::{ConstDef, Env, Scope, parse_term, parse_type};
@@ -253,11 +254,10 @@ fn run_thm(ch: &[SExpr], env: &Env) -> Result<NamedThm, ScriptError> {
     let mut scope: Scope = vars;
     idx += 1;
 
-    let proof_ch = syntax::list(&ch[idx], "#proof")?;
-    let proof_payload = syntax::expect_head(proof_ch, "#proof")?;
-    let drv = drv::parse_drv(proof_payload, &mut scope, env)?;
-
-    let thm = drv::check(&drv, env)?;
+    // The proof body is `(#proof DRV)` (tree mode) or `(#by STEP…)`
+    // (goal-directed tactic mode). Tree mode checks a `Drv` to a `Thm`;
+    // tactic mode produces the `Thm` directly by driving the goal.
+    let thm = tactic::prove(&expected, &ch[idx], &mut scope, env)?;
     if thm.concl() != &expected {
         return Err(ScriptError::ConclMismatch {
             name,
@@ -493,6 +493,102 @@ mod tests {
             "un-exported lemma stays internal"
         );
         assert_eq!(theory.thms.len(), 2, "both lemmas were proven");
+    }
+
+    #[test]
+    fn by_tactic_mode_proves_and_comm() {
+        // Goal-directed: `intro` the implication, then `exact` a tree-mode
+        // proof of the swapped conjunction. The `#by` block elaborates to
+        // the same `Drv` the tree-mode `and.comm` produces.
+        let thm = one(
+            r#"
+            (#open core)
+            (#thm and.comm.by
+              (#concl (==> (and p q) (and q p)))
+              (#by
+                (intro h)
+                (exact
+                  (and-intro
+                    (and-elim-r (assume (and p q)))
+                    (and-elim-l (assume (and p q)))))))
+            "#,
+        );
+        assert_eq!(thm.concl(), crate::init::logic::and_comm().concl());
+    }
+
+    #[test]
+    fn by_intro_and_assumption() {
+        // `intro` moves `p` into the context; `assumption` closes the goal.
+        let thm = one(
+            r#"
+            (#open core)
+            (#thm imp.refl.by
+              (#concl (==> p p))
+              (#by (intro h) (assumption)))
+            "#,
+        );
+        assert!(thm.hyps().is_empty());
+    }
+
+    #[test]
+    fn by_intro_over_forall() {
+        // ∀-introduction in tactic mode, closed by `refl`: ⊢ ∀(x:nat). x = x.
+        let thm = one(
+            r#"
+            (#open core)
+            (#thm eq.refl.by
+              (#concl (forall (x nat) (= x x)))
+              (#by (intro x) (refl)))
+            "#,
+        );
+        assert!(thm.hyps().is_empty());
+    }
+
+    #[test]
+    fn by_have_brings_a_fact_into_context() {
+        // `#have` proves an intermediate fact in (nested) tree mode and
+        // makes it available; `assumption` then discharges the goal with it.
+        let thm = one(
+            r#"
+            (#open core)
+            (#thm dup.by
+              (#concl (==> p (and p p)))
+              (#by
+                (intro h)
+                (#have (and p p) (#proof (and-intro (assume p) (assume p))))
+                (assumption)))
+            "#,
+        );
+        assert!(thm.hyps().is_empty());
+    }
+
+    #[test]
+    fn by_multi_intro_and_sym() {
+        // `intro a b h` peels three binders at once; `sym` swaps the
+        // equation goal; `assumption` closes it with the hypothesis.
+        let thm = one(
+            r#"
+            (#open core)
+            (#thm eq.sym.by
+              (#concl (forall (a nat) (forall (b nat) (==> (= a b) (= b a)))))
+              (#by (intro a b h) (sym) (assumption)))
+            "#,
+        );
+        assert!(thm.hyps().is_empty());
+    }
+
+    #[test]
+    fn by_not_intro() {
+        // `not-intro` turns goal `¬F` into `F ⟹ F`.
+        let thm = one(
+            r#"
+            (#open core)
+            (#thm not.false.by
+              (#concl (not false))
+              (#by (not-intro) (intro h) (assumption)))
+            "#,
+        );
+        assert!(thm.hyps().is_empty());
     }
 
     #[test]

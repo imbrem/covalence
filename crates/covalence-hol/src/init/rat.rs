@@ -964,6 +964,14 @@ fn add_via_components(ra: &Thm, rb: &Thm) -> Result<Thm> {
         .trans(add_mk(&fa, &da, &fb, &db)?)
 }
 
+/// `⊢ ratNeg a = MK(int_neg(fst(rep_pair a)), snd(rep_pair a))` — negation in
+/// component form. Pure β: `ratNeg` operates on the single representative
+/// `rep_pair a` (negating the numerator, keeping the denominator), the same
+/// representative `recon_mk a` uses, so no well-definedness is needed.
+fn neg_via_components(a: &Term) -> Result<Thm> {
+    Thm::beta_conv(Term::app(rat_neg(), a.clone()))
+}
+
 // ============================================================================
 // Commutative-ring axioms (and the field inverse)
 // ============================================================================
@@ -982,9 +990,6 @@ fn radd(a: Term, b: Term) -> Term {
 }
 fn rmul(a: Term, b: Term) -> Term {
     Term::app(Term::app(rat_mul(), a), b)
-}
-fn rneg(a: Term) -> Term {
-    Term::app(rat_neg(), a)
 }
 fn forall_rat(vars: &[&str], body: Term) -> Term {
     let mut t = body;
@@ -1076,13 +1081,60 @@ fn add_zero_impl() -> Result<Thm> {
     lhs.trans(bridge)?.trans(ra.sym()?)?.all_intro("a", rat())
 }
 
-/// `⊢ ∀a. a + (-a) = 0` — additive inverse.
-pub fn add_neg() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a. a + (-a) = 0` — **proved** (additive inverse). `-a = MK(-fa,
+    /// da)` (β), so `a + (-a) = MK(fa·rep da + (-fa)·rep da, …)`; the
+    /// numerator is `(fa + -fa)·rep da = 0` (`idistrib_r` + `int::add_neg`),
+    /// and `MK(0, to_pos(rep da · rep da)) = 0` by `class_intro` (as in
+    /// `mul_zero`).
+    pub fn add_neg() -> Thm {
+        add_neg_impl().expect("rat::add_neg")
+    }
+}
+fn add_neg_impl() -> Result<Thm> {
     let a = rvar("a");
-    let eq = radd(a.clone(), rneg(a))
-        .equals(rat_zero())
-        .expect("add_neg");
-    axiom(forall_rat(&["a"], eq))
+    let ra = recon_mk(&a)?; // a = MK(fa, da)
+    let neg_a = neg_via_components(&a)?; // -a = MK(int_neg fa, da)
+    let lhs = add_via_components(&ra, &neg_a)?; // a + (-a) = MK(fa·rda + (-fa)·rda, to_pos(rda·rda))
+    let fa = rfst(&a);
+    let rda = den(&rep_pair(a.clone())); // rep da
+    let nfa = Term::app(int::int_neg(), fa.clone());
+    let i0 = Term::int_lit(0i128);
+
+    // Numerator: fa·rda + (-fa)·rda = (fa + -fa)·rda = 0·rda = 0.
+    let f_eq = idistrib_r(&fa, &nfa, &rda)?
+        .sym()? // fa·rda + (-fa)·rda = (fa + -fa)·rda
+        .trans(mul_r(int::add_neg().all_elim(fa)?, &rda)?)? // = 0·rda
+        .trans(
+            int::mul_comm()
+                .all_elim(i0.clone())?
+                .all_elim(rda.clone())?
+                .trans(int::mul_zero().all_elim(rda.clone())?)?,
+        )?; // = rda·0 = 0
+
+    let dl = mk_components(&dest_eq(&lhs)?.1)?.1; // to_pos(rda · rda) : int.pos
+    let step = lhs.trans(mkfs_cong(f_eq, Thm::refl(dl.clone())?)?)?; // a+(-a) = MK(0, dl)
+
+    // 0/dl ~ 0/1: cross-mult 0·rep(one_pos) = 0·rep(dl) (both 0).
+    let rep = Term::spec_rep(int_pos_spec(), Vec::new());
+    let zero_times = |d: Term| -> Result<Thm> {
+        int::mul_comm()
+            .all_elim(i0.clone())?
+            .all_elim(Term::app(rep.clone(), d.clone()))?
+            .trans(int::mul_zero().all_elim(Term::app(rep.clone(), d))?)
+    };
+    let g = zero_times(one_pos())?.trans(zero_times(dl.clone())?.sym()?)?;
+    let rel = rel_of_pairs(&i0, &dl, &i0, &one_pos(), g)?;
+    let cls = crate::init::quotient::class_intro(
+        &rat_spec(),
+        &[],
+        &ip_pair(),
+        &rat_rel_symm(),
+        &rat_rel_trans(),
+        rel,
+    )?;
+
+    step.trans(cls)?.all_intro("a", rat())
 }
 
 cached_thm! {
@@ -1919,7 +1971,7 @@ mod tests {
         // The still-postulated ring/field axioms (add_comm / mul_comm /
         // mul_assoc are now proved — see `commutativity_is_genuine` /
         // `mul_assoc_is_genuine`).
-        let all = [add_assoc(), add_neg(), distrib(), mul_inv()];
+        let all = [add_assoc(), distrib(), mul_inv()];
         for ax in all {
             assert!(ax.concl().type_of().unwrap().is_bool());
             assert!(
@@ -2022,6 +2074,17 @@ mod tests {
         let a = rvar("a");
         let inst = thm.clone().all_elim(a.clone()).unwrap();
         assert_eq!(inst.concl(), &rmul(a, rat_zero()).equals(rat_zero()).unwrap());
+        assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
+        assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
+    }
+
+    #[test]
+    fn add_neg_is_genuine() {
+        let thm = add_neg();
+        let a = rvar("a");
+        let inst = thm.clone().all_elim(a.clone()).unwrap();
+        let neg_a = Term::app(rat_neg(), a.clone());
+        assert_eq!(inst.concl(), &radd(a, neg_a).equals(rat_zero()).unwrap());
         assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
         assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
     }

@@ -700,6 +700,15 @@ fn pos_prod_rt() -> Thm {
     axiom(t)
 }
 
+/// **Postulated.** `⊢ rep(one_pos) = 1` — the canonical denominator `1`
+/// round-trips. *To be discharged in `init::int`* (`0 < 1`, so `to_pos 1`
+/// is a genuine `int.pos` wrapping of `1`).
+fn one_pos_rt() -> Thm {
+    let rep = Term::spec_rep(int_pos_spec(), Vec::new());
+    let lhs = Term::app(rep, one_pos());
+    axiom(lhs.equals(Term::int_lit(1i128)).expect("one_pos_rt"))
+}
+
 /// `⊢ rep(to_pos(den x · den y)) = den x · den y` — [`pos_prod_rt`] at the
 /// `int.pos` denominators of the representative pairs `x`, `y` (`den_pos =
 /// snd`, and `den = rep ∘ snd` lines up).
@@ -1003,11 +1012,31 @@ fn mul_assoc_impl() -> Result<Thm> {
         .all_intro("a", rat())
 }
 
-/// `⊢ ∀a. a * 1 = a`.
-pub fn mul_one() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a. a * 1 = a` — **proved**. `1 = MK(1, one_pos)`, so
+    /// `a · 1 = MK(fa·1, to_pos(rep da · rep one_pos)) = MK(fa, da) = a`:
+    /// numerator by `int::mul_one`, denominator by `one_pos_rt` + `int::mul_one`
+    /// + the unconditional `spec_abs_rep` round-trip.
+    pub fn mul_one() -> Thm {
+        mul_one_impl().expect("rat::mul_one")
+    }
+}
+fn mul_one_impl() -> Result<Thm> {
     let a = rvar("a");
-    let eq = rmul(a.clone(), rat_one()).equals(a).expect("mul_one");
-    axiom(forall_rat(&["a"], eq))
+    let ra = recon_mk(&a)?; // a = MK(fa, da)
+    let r1 = Thm::refl(rat_one())?; // rat_one = MK(1, one_pos)
+    let lhs = mul_via_components(&ra, &r1)?; // a·1 = MK(fa·1, to_pos(rep da · rep one_pos))
+    let (fa, da) = (rfst(&a), rden(&a));
+    let rda = den(&rep_pair(a.clone())); // rep da
+
+    let f_eq = int::mul_one().all_elim(fa)?; // fa·1 = fa
+    let dl = mk_components(&dest_eq(&lhs)?.1)?.1; // to_pos(rep da · rep one_pos)
+    let d_eq = rewrite_seq(&dl, &[one_pos_rt()])? // = to_pos(rep da · 1)
+        .trans(int::mul_one().all_elim(rda)?.cong_arg(to_pos_fn())?)? // = to_pos(rep da)
+        .trans(Thm::spec_abs_rep(int_pos_spec(), Vec::new(), da)?)?; // = da
+
+    let bridge = mkfs_cong(f_eq, d_eq)?;
+    lhs.trans(bridge)?.trans(ra.sym()?)?.all_intro("a", rat())
 }
 
 /// `⊢ ∀a. a * 0 = 0`.
@@ -1697,7 +1726,6 @@ mod tests {
             add_assoc(),
             add_zero(),
             add_neg(),
-            mul_one(),
             mul_zero(),
             distrib(),
             mul_inv(),
@@ -1774,6 +1802,16 @@ mod tests {
             .equals(rmul(a, rmul(b, c)))
             .unwrap();
         assert_eq!(inst.concl(), &expected);
+        assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
+        assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
+    }
+
+    #[test]
+    fn mul_one_is_genuine() {
+        let thm = mul_one();
+        let a = rvar("a");
+        let inst = thm.clone().all_elim(a.clone()).unwrap();
+        assert_eq!(inst.concl(), &rmul(a.clone(), rat_one()).equals(a).unwrap());
         assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
         assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
     }

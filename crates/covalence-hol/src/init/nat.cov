@@ -317,8 +317,47 @@
         (rw (all-elim (nat.mul b c) (all-elim a (lemma nat.succ_mul))))
         (refl)))))
 
+;; ============================================================================
+;; Saturating subtraction.  (`nat.sub_zero`: n - 0 = n;  `nat.sub_succ`:
+;; n - S m = pred (n - m);  `nat.pred_zero`/`nat.pred_succ` for pred.)
+;; ============================================================================
+
+;; ⊢ ∀m. 0 - m = 0.  Zero is a left zero of saturating subtraction.
+(#thm nat.zero_sub
+  (#concl (forall (m nat) (= (nat.sub 0 m) 0)))
+  (#by
+    (induct m
+      (#by (rw (all-elim 0 (lemma nat.sub_zero))) (refl))
+      (#by
+        (rw (all-elim m (all-elim 0 (lemma nat.sub_succ))))
+        (rw (assume (= (nat.sub 0 m) 0)))
+        (rw (lemma nat.pred_zero))
+        (refl)))))
+
+;; ⊢ ∀n m. S n - S m = n - m.  Successors cancel across subtraction.
+(#thm nat.succ_sub
+  (#concl
+    (forall (n nat) (forall (m nat)
+      (= (nat.sub (succ n) (succ m)) (nat.sub n m)))))
+  (#by
+    (intro n)
+    (induct m
+      (#by
+        (rw (all-elim 0 (all-elim (succ n) (lemma nat.sub_succ))))
+        (rw (all-elim (succ n) (lemma nat.sub_zero)))
+        (rw (all-elim n (lemma nat.pred_succ)))
+        (sym)
+        (rw (all-elim n (lemma nat.sub_zero)))
+        (refl))
+      (#by
+        (rw (all-elim (succ m) (all-elim (succ n) (lemma nat.sub_succ))))
+        (rw (assume (= (nat.sub (succ n) (succ m)) (nat.sub n m))))
+        (rw (all-elim m (all-elim n (lemma nat.sub_succ))))
+        (refl)))))
+
 (#export nat.succ_ne_zero nat.succ_cong_ne nat.rec_zero nat.rec_succ nat.eq_refl
          nat.add_zero nat.add_succ nat.add_comm nat.add_assoc nat.add_cancel
          nat.add_swap_mid
          nat.mul_zero nat.mul_succ nat.mul_comm nat.mul_one
-         nat.distrib nat.distrib_r nat.mul_assoc)
+         nat.distrib nat.distrib_r nat.mul_assoc
+         nat.zero_sub nat.succ_sub)

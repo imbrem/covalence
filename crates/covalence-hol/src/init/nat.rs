@@ -172,6 +172,11 @@ pub fn natrec_env() -> crate::script::Env {
     e.lemmas.insert("nat.succ_add".into(), add_step());
     e.lemmas.insert("nat.zero_mul".into(), mul_base());
     e.lemmas.insert("nat.succ_mul".into(), mul_step());
+    // pred / saturating-subtraction recursion equations
+    e.lemmas.insert("nat.pred_zero".into(), pred_zero());
+    e.lemmas.insert("nat.pred_succ".into(), pred_succ());
+    e.lemmas.insert("nat.sub_zero".into(), sub_zero());
+    e.lemmas.insert("nat.sub_succ".into(), sub_succ());
     e
 }
 

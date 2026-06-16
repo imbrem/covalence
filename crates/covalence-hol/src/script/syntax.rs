@@ -75,6 +75,7 @@ impl Env {
         op(&["nat.add", "+"], defs::nat_add());
         op(&["nat.mul", "*"], defs::nat_mul());
         op(&["nat.sub"], defs::nat_sub());
+        op(&["nat.pred"], defs::nat_pred());
         op(&["nat.le", "<="], defs::nat_le());
         op(&["nat.lt", "<"], defs::nat_lt());
         op(&["succ", "nat.succ"], Term::succ());

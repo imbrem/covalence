@@ -1194,11 +1194,53 @@ fn mul_one_impl() -> Result<Thm> {
     lhs.trans(bridge)?.trans(ra.sym()?)?.all_intro("a", rat())
 }
 
-/// `⊢ ∀a. a * 0 = 0`.
-pub fn mul_zero() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a. a * 0 = 0` — **proved**. `a · 0 = MK(fa·0, …) = MK(0, da)`
+    /// (numerator by `int::mul_zero`, denominator to `da` as in `mul_one`),
+    /// then `MK(0, da) = MK(0, one_pos) = 0` by `class_intro` on the
+    /// cross-multiplication `0·rep(one_pos) = 0·rep(da)` (both `0`).
+    pub fn mul_zero() -> Thm {
+        mul_zero_impl().expect("rat::mul_zero")
+    }
+}
+fn mul_zero_impl() -> Result<Thm> {
     let a = rvar("a");
-    let eq = rmul(a, rat_zero()).equals(rat_zero()).expect("mul_zero");
-    axiom(forall_rat(&["a"], eq))
+    let ra = recon_mk(&a)?; // a = MK(fa, da)
+    let r0 = Thm::refl(rat_zero())?; // rat_zero = MK(0, one_pos)
+    let lhs = mul_via_components(&ra, &r0)?; // a·0 = MK(fa·0, to_pos(rep da · rep one_pos))
+    let (fa, da) = (rfst(&a), rden(&a));
+    let rda = den(&rep_pair(a.clone())); // rep da
+    let i0 = Term::int_lit(0i128);
+    let rop = Term::app(Term::spec_rep(int_pos_spec(), Vec::new()), one_pos()); // rep(one_pos)
+
+    let f_eq = int::mul_zero().all_elim(fa)?; // fa·0 = 0
+    let dl = mk_components(&dest_eq(&lhs)?.1)?.1;
+    let d_eq = rewrite_seq(&dl, &[one_pos_rt()])?
+        .trans(int::mul_one().all_elim(rda.clone())?.cong_arg(to_pos_fn())?)?
+        .trans(Thm::spec_abs_rep(int_pos_spec(), Vec::new(), da.clone())?)?;
+    let step = lhs.trans(mkfs_cong(f_eq, d_eq)?)?; // a·0 = MK(0, da) = mk_rat(ip 0 da)
+
+    // 0/da ~ 0/1: cross-mult 0·rep(one_pos) = 0·rep(da) (both 0).
+    let lz = int::mul_comm()
+        .all_elim(i0.clone())?
+        .all_elim(rop.clone())?
+        .trans(int::mul_zero().all_elim(rop)?)?; // 0·rep(one_pos) = 0
+    let rz = int::mul_comm()
+        .all_elim(i0.clone())?
+        .all_elim(rda.clone())?
+        .trans(int::mul_zero().all_elim(rda)?)?; // 0·rep(da) = 0
+    let g = lz.trans(rz.sym()?)?; // 0·rep(one_pos) = 0·rep(da)
+    let rel = rel_of_pairs(&i0, &da, &i0, &one_pos(), g)?; // rat_rel (ip 0 da)(ip 0 one_pos)
+    let cls = crate::init::quotient::class_intro(
+        &rat_spec(),
+        &[],
+        &ip_pair(),
+        &rat_rel_symm(),
+        &rat_rel_trans(),
+        rel,
+    )?; // mk_rat(ip 0 da) = mk_rat(ip 0 one_pos) = rat_zero
+
+    step.trans(cls)?.all_intro("a", rat())
 }
 
 /// `⊢ ∀a b c. a * (b + c) = a * b + a * c` — left distributivity.
@@ -1877,7 +1919,7 @@ mod tests {
         // The still-postulated ring/field axioms (add_comm / mul_comm /
         // mul_assoc are now proved — see `commutativity_is_genuine` /
         // `mul_assoc_is_genuine`).
-        let all = [add_assoc(), add_neg(), mul_zero(), distrib(), mul_inv()];
+        let all = [add_assoc(), add_neg(), distrib(), mul_inv()];
         for ax in all {
             assert!(ax.concl().type_of().unwrap().is_bool());
             assert!(
@@ -1970,6 +2012,16 @@ mod tests {
         let a = rvar("a");
         let inst = thm.clone().all_elim(a.clone()).unwrap();
         assert_eq!(inst.concl(), &radd(a.clone(), rat_zero()).equals(a).unwrap());
+        assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
+        assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
+    }
+
+    #[test]
+    fn mul_zero_is_genuine() {
+        let thm = mul_zero();
+        let a = rvar("a");
+        let inst = thm.clone().all_elim(a.clone()).unwrap();
+        assert_eq!(inst.concl(), &rmul(a, rat_zero()).equals(rat_zero()).unwrap());
         assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
         assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
     }

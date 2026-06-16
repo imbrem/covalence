@@ -352,16 +352,6 @@ pub fn parse_drv(s: &SExpr, scope: &mut Scope, env: &Env) -> R<Drv> {
                 step: boxed(&ch[2], scope, env)?,
             }
         }
-        // `(#hole NAME)` — an open obligation. It never reaches `parse_drv`
-        // in the normal flow: a `#thm` containing one is held *pending* and
-        // only parsed after `(#fill NAME …)` has spliced a real derivation in.
-        // Reaching here means an unfilled hole was checked directly.
-        "#hole" => {
-            arity(ch, 2, "#hole")?;
-            return Err(ScriptError::UnresolvedObligation(
-                sym(&ch[1], "hole name")?.to_string(),
-            ));
-        }
         other => return Err(ScriptError::Syntax(format!("unknown proof rule: {other}"))),
     })
 }

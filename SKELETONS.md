@@ -363,44 +363,35 @@ directives — is `open`-able by other scripts; the macro binds it as a
   `succ`). int/rat/real/list/option/prod/coprod/set catalogue names are not yet
   bound; add entries to `script/env.rs::Env::core` (the `defs/` churn
   boundary) as those theories are ported.
-- **Async core: single-threaded manual driving; the `ThmHandle` yield path
-  isn't built.** `script/mod.rs::run_async` is `async`; `run`/`resolve_blocking`
-  block via a tokio **current-thread** runtime (`block_on`). Proofs run through
-  the async `prove()` entry, driven **manually** by `poll_once` (one poll on a
-  noop waker) — **no task is spawned**, default execution is single-threaded,
-  parallelism is meant to be an explicit opt-in. `TheoryHandle::resolve` takes
-  the pending (holed) theorems in `(lemma …)`-dependency order
-  (`collect_lemma_deps`), so a pending theorem may reference one declared later;
-  no theorem ready while some remain ⇒ a cycle error. Still TODO:
-  - **The intended `ThmHandle` model isn't realized.** Target: `prove()`
-    returns a future; `poll_once` it; if it **completes** (the common
-    synchronous case) store the `Thm`; if it **yields** store the *handle* (a
-    `ThmHandle = Ready(Thm) | Pending(future)`) in the env and move on,
-    resuming/forcing it later. Today nothing yields (the kernel check is
-    synchronous and holes are pre-spliced at force), so `poll_once` always hits
-    `Ready` and the `Pending` arm is dormant. Real yields appear when a hole
-    awaits its fill, or a tactic awaits an observer / peer / the user.
-  - **Eager (hole-free) `#thm`s are still checked inline in `run_async`'s loop**
-    — not yet driven through `prove`/`poll_once`. Unify the two paths so every
-    theorem goes through the handle model.
-  - A proof that blocks (an unready import, a tactic awaiting something) should
-    let other work proceed; a failed import should yield a *partial* theory that
-    is still importable. Parallelism stays explicit (opt-in `tokio::spawn` /
-    multi-thread runtime), not the default. Wanted for BLAKE3-range partial
-    verification. (`covalence_core::Error` and `ScriptError` are now `Clone`, so
-    a `Pending` handle can be a multi-consumer `Shared` future if needed.)
-  - **`EnvHandle` (in-progress env) not built.** Mirror of `TheoryHandle` for
-    environments: a *fully-resolved* `Env` holds no futures, but an in-progress
-    one's **imported** lemmas/consts ARE futures (an imported theory need not be
-    fully proved to start proving its importers). Model: `EnvHandle` carries
-    `Shared`/`oneshot` futures per name; `EnvHandle::resolve().await -> Env`.
-    The `#import` resolver would return `EnvHandle`s (or futures), and `#dep`
-    becomes a real `await` on one. Touches the whole import path + the
-    `cov_theory!` resolver closures, so staged.
-  - **Holes are tactic-mode-reachable only via `(derive (#hole …))`.** A
-    `(#hole NAME)` is detected by an S-expression scan of the whole `#thm`
-    (`collect_holes`), so it works anywhere — but there is no first-class
-    `hole` *tactic*; in `#by` mode you reach it through the `derive` bridge.
+- **Async core: types + tokio in place; the open-obligation (hole) feature was
+  removed, pending a channel-based rebuild.** `script/mod.rs::run_async` is
+  `async`; `run`/`resolve_blocking` block via a tokio **current-thread** runtime
+  (`block_on`). `run` returns a `TheoryHandle` (in-progress) and
+  `TheoryHandle::resolve` (async) forces it to a `Theory` (resolved) — but with
+  no obligations, every `#thm` is checked inline (eagerly) and `resolve` is
+  trivial, so the in-progress/resolved split is currently only nominal. The
+  earlier `#hole`/`#fill` machinery (pending theorems, `splice_holes`,
+  `collect_holes`, the manual `prove`/`poll_once` drive, `obligations`/
+  `is_resolved`, `UnresolvedObligation`) was **deleted** — it was the wrong
+  shape and is to be rebuilt cleanly. Target rebuild:
+  - **Env channels + holes-as-yields.** A top-level `(#channel NAME)`
+    declaration adds a **channel** to the environment; `(#fill NAME DRV)`
+    **pushes** to it; `(#hole NAME)` in a proof **receives** from it. Because a
+    future cannot mutate the env, the channel is the async-safe bridge: when
+    `prove()` hits an unfilled hole it awaits the channel → genuinely **yields**.
+  - **`ThmHandle` + manual poll.** `prove()` returns a future; `poll_once` it
+    (one poll, noop waker — single-threaded, no spawn); if it **completes**
+    store the `Thm`, if it **yields** stash a `ThmHandle = Ready(Thm) |
+    Pending(future)` and move on, driving it later at force. Parallelism stays
+    an explicit opt-in (`tokio::spawn` / multi-thread runtime), not the default.
+    (`covalence_core::Error` + `ScriptError` are now `Clone`, so a `Pending`
+    handle can be a multi-consumer `Shared` future.)
+  - **`EnvHandle` (in-progress env).** Mirror of `TheoryHandle`: a fully-resolved
+    `Env` holds no futures, but an in-progress one's **imported** lemmas/consts
+    ARE futures (an import need not be fully proved to start proving importers);
+    `EnvHandle::resolve().await -> Env`, `#import` resolver returns `EnvHandle`s,
+    `#dep` becomes a real `await`. A failed import yields a *partial* theory
+    that is still importable (wanted for BLAKE3-range partial verification).
 - **`(#dep NAME)` is a synchronous availability guard, not an await.**
   `script/mod.rs` accepts `(#dep NAME)` and errors if `NAME` is not already a
   known lemma/const/tactic/import. Its real semantics — *force the enclosing

@@ -164,9 +164,14 @@ fn rec_succ(z: Term, f: Term, n: Term) -> Result<Thm> {
 /// machinery (they can be ported themselves later).
 pub fn natrec_env() -> crate::script::Env {
     let mut e = crate::script::Env::empty();
-    e.lemmas.insert("succ.inj".into(), succ_inj());
-    e.lemmas.insert("zero.ne.succ".into(), zero_ne_succ());
-    e.lemmas.insert("rec.holds".into(), rec_holds());
+    e.lemmas.insert("nat.succ_inj".into(), succ_inj());
+    e.lemmas.insert("nat.zero_ne_succ".into(), zero_ne_succ());
+    e.lemmas.insert("nat.rec_holds".into(), rec_holds());
+    // the `+` / `*` recursion equations (also proved in Rust for now)
+    e.lemmas.insert("nat.zero_add".into(), add_base());
+    e.lemmas.insert("nat.succ_add".into(), add_step());
+    e.lemmas.insert("nat.zero_mul".into(), mul_base());
+    e.lemmas.insert("nat.succ_mul".into(), mul_step());
     e
 }
 
@@ -175,11 +180,14 @@ crate::cov_theory! {
     pub mod cov from "nat.cov" {
         import "core" = crate::script::Env::core();
         import "natrec" = crate::init::nat::natrec_env();
-        "succ.ne.zero" => pub fn succ_ne_zero;
-        "succ.cong.ne" => pub fn succ_cong_ne;
-        "natrec.zero"  => pub fn natrec_zero_eq;
-        "natrec.succ"  => pub fn natrec_succ_eq;
-        "nat.eq.refl"  => pub fn nat_eq_refl;
+        "nat.succ_ne_zero" => pub fn succ_ne_zero;
+        "nat.succ_cong_ne" => pub fn succ_cong_ne;
+        "nat.rec_zero"     => pub fn natrec_zero_eq;
+        "nat.rec_succ"     => pub fn natrec_succ_eq;
+        "nat.eq_refl"      => pub fn nat_eq_refl;
+        "nat.add_zero"     => pub fn add_zero_cov;
+        "nat.add_succ"     => pub fn add_succ_r_cov;
+        "nat.add_comm"     => pub fn add_comm_cov;
     }
 }
 
@@ -2171,5 +2179,9 @@ mod cov_tests {
         assert!(cov::natrec_zero_eq().hyps().is_empty());
         assert!(cov::natrec_succ_eq().hyps().is_empty());
         assert!(cov::nat_eq_refl().hyps().is_empty());
+        assert!(cov::add_zero_cov().hyps().is_empty());
+        assert!(cov::add_succ_r_cov().hyps().is_empty());
+        // `add.comm` ported via #by/induct/rw must equal the Rust proof.
+        assert_eq!(cov::add_comm_cov().concl(), super::add_comm().concl());
     }
 }

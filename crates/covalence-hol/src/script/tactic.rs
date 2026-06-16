@@ -165,6 +165,22 @@ fn run(goal: &mut Goal, steps: &[SExpr], scope: &mut Scope, env: &Env) -> R<Thm>
             goal.target = HolLightCtx::new().mk_imp(p, Term::bool_lit(false));
             Ok(run(goal, rest, scope, env)?.not_intro()?)
         }
+        // Rewrite the goal left-to-right with the equation proved by the
+        // given (instantiated) tree-mode proof — the nat-reduction workhorse
+        // (`rw (all-elim 0 (lemma add.base))`, `rw (assume IH)`, …). Every
+        // occurrence of the LHS is replaced; the remaining goal is the
+        // rewritten one.
+        "rw" => {
+            arity(s, 2, "rw")?;
+            let eq = check(&parse_drv(&s[1], scope, env)?, env)?; // ⊢ lhs = rhs
+            let cong = super::drv::rewrite_conv(&goal.target, &eq)?; // ⊢ G = G'
+            let (_, gprime) = dest_eq(cong.concl()).ok_or_else(|| {
+                ScriptError::Syntax("rw: rewrite did not yield an equation".into())
+            })?;
+            goal.target = gprime;
+            let inner = run(goal, rest, scope, env)?; // ⊢ G'
+            Ok(cong.sym()?.eq_mp(inner)?) // ⊢ G
+        }
         // dischargers — close the goal; no tactics may follow.
         "exact" => {
             arity(s, 2, "exact")?;

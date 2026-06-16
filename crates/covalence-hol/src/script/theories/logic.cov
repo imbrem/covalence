@@ -5,6 +5,7 @@
 ;; kernel `Thm`; the golden test in `script/mod.rs` checks the closed ones
 ;; equal their hand-written Rust counterparts.
 
+(#import core)
 (#open core)
 
 ;; ⊢ T. `reduce-prim` decides (T = T) = T on the closed literals; `refl T`

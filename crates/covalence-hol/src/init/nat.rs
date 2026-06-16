@@ -164,23 +164,23 @@ fn rec_succ(z: Term, f: Term, n: Term) -> Result<Thm> {
 /// machinery (they can be ported themselves later).
 pub fn natrec_env() -> crate::script::Env {
     let mut e = crate::script::Env::empty();
-    e.lemmas.insert("nat.succ_inj".into(), succ_inj());
-    e.lemmas.insert("nat.zero_ne_succ".into(), zero_ne_succ());
-    e.lemmas.insert("nat.rec_holds".into(), rec_holds());
+    e.define_lemma("nat.succ_inj", succ_inj());
+    e.define_lemma("nat.zero_ne_succ", zero_ne_succ());
+    e.define_lemma("nat.rec_holds", rec_holds());
     // the `+` / `*` recursion equations (also proved in Rust for now)
-    e.lemmas.insert("nat.zero_add".into(), add_base());
-    e.lemmas.insert("nat.succ_add".into(), add_step());
-    e.lemmas.insert("nat.zero_mul".into(), mul_base());
-    e.lemmas.insert("nat.succ_mul".into(), mul_step());
+    e.define_lemma("nat.zero_add", add_base());
+    e.define_lemma("nat.succ_add", add_step());
+    e.define_lemma("nat.zero_mul", mul_base());
+    e.define_lemma("nat.succ_mul", mul_step());
     // pred / saturating-subtraction recursion equations
-    e.lemmas.insert("nat.pred_zero".into(), pred_zero());
-    e.lemmas.insert("nat.pred_succ".into(), pred_succ());
-    e.lemmas.insert("nat.sub_zero".into(), sub_zero());
-    e.lemmas.insert("nat.sub_succ".into(), sub_succ());
+    e.define_lemma("nat.pred_zero", pred_zero());
+    e.define_lemma("nat.pred_succ", pred_succ());
+    e.define_lemma("nat.sub_zero", sub_zero());
+    e.define_lemma("nat.sub_succ", sub_succ());
     // the `≤` / `<` defining clauses (`= T`/`= F` boolean forms), as the
     // 4-way conjunctions; nat.cov projects them with `and-elim`.
-    e.lemmas.insert("nat.le_body".into(), le_body());
-    e.lemmas.insert("nat.lt_body".into(), lt_body());
+    e.define_lemma("nat.le_body", le_body());
+    e.define_lemma("nat.lt_body", lt_body());
     e
 }
 

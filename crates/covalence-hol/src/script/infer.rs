@@ -247,7 +247,7 @@ impl<'e> Elab<'e> {
                 if let Ok(k) = n.parse::<u64>() {
                     return Ok((ETerm::Lit(Term::nat_lit(k)), ETy::Nat));
                 }
-                match self.env.consts.get(n) {
+                match self.env.lookup_const(n) {
                     Some(ConstDef::Op(t)) => {
                         let ety = self.from_type(&t.type_of()?)?;
                         Ok((ETerm::Lit(t.clone()), ety))
@@ -354,7 +354,7 @@ impl<'e> Elab<'e> {
                     ETy::Bool,
                 ))
             }
-            other => match self.env.consts.get(other).cloned() {
+            other => match self.env.lookup_const(other).cloned() {
                 Some(ConstDef::Op(t)) => {
                     let mut acc_ty = self.from_type(&t.type_of()?)?;
                     let mut acc = ETerm::Lit(t);

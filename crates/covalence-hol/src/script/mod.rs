@@ -5,7 +5,7 @@
 //! A script file is a sequence of directives:
 //!
 //! ```text
-//! (#open core)                         ;; seed the name-resolution prelude
+//! (#import core) (#open core)                         ;; seed the name-resolution prelude
 //!
 //! (#thm NAME
 //!   (#fix (p bool) (q bool))           ;; optional: typed free variables
@@ -47,7 +47,7 @@ pub struct Theory {
 }
 
 impl Theory {
-    /// The exported environment — pass it as an `(#open NAME)` target when
+    /// The exported environment — pass it as an `(#import NAME) (#open NAME)` target when
     /// running a downstream script. Empty unless the script `(#export …)`s.
     pub fn env(&self) -> Env {
         self.exports.clone()
@@ -58,8 +58,7 @@ impl Theory {
     /// exposing one as a Rust `fn` therefore requires `(#export …)`ing it).
     pub fn lemma(&self, name: &str) -> Thm {
         self.exports
-            .lemmas
-            .get(name)
+            .lookup_lemma(name)
             .cloned()
             .unwrap_or_else(|| panic!("theory does not export lemma `{name}`"))
     }
@@ -88,11 +87,11 @@ pub struct NamedThm {
     pub thm: Thm,
 }
 
-/// Parse and replay a whole script. `(#open NAME)` directives are resolved
-/// by `resolver` (returning the `Env` to merge in); `(#thm …)` directives
-/// are checked and accumulate into the running environment so later
-/// theorems can reference earlier ones — and any opened theory's lemmas —
-/// via `(lemma NAME)`.
+/// Parse and replay a whole script. `(#import NAME)` resolves `NAME` via
+/// `resolver` and registers it as an importable namespace; `(#import NAME) (#open NAME)`
+/// brings a previously-imported namespace's bindings into scope; `(#thm …)`
+/// directives are checked and accumulate so later theorems can reference
+/// earlier ones — and any opened namespace's lemmas — via `(lemma NAME)`.
 pub fn run(
     src: &str,
     resolver: impl Fn(&str) -> Option<Env>,
@@ -107,16 +106,20 @@ pub fn run(
         // Structural directives are `#`-prefixed; bare names (inside proofs)
         // are rules/terms resolved from the environment, never directives.
         match syntax::head_sym(ch)? {
+            "#import" => {
+                syntax::arity(ch, 2, "#import")?;
+                let name = syntax::sym(&ch[1], "environment name")?;
+                let env = resolver(name)
+                    .ok_or_else(|| ScriptError::Unbound(format!("environment `{name}`")))?;
+                internal.import(name, env);
+            }
             "#open" => {
                 syntax::arity(ch, 2, "#open")?;
-                let name = syntax::sym(&ch[1], "environment name")?;
-                let opened = resolver(name)
-                    .ok_or_else(|| ScriptError::Unbound(format!("environment `{name}`")))?;
-                internal.open(&opened);
+                internal.open(syntax::sym(&ch[1], "environment name")?)?;
             }
             "#thm" => {
                 let nt = run_thm(ch, &internal)?;
-                internal.lemmas.insert(nt.name.clone(), nt.thm.clone());
+                internal.define_lemma(nt.name.clone(), nt.thm.clone());
                 thms.push(nt);
             }
             // `(#export NAME …)` — build the public interface explicitly.
@@ -128,10 +131,10 @@ pub fn run(
                 }
                 for item in &ch[1..] {
                     let name = syntax::sym(item, "export name")?;
-                    if let Some(thm) = internal.lemmas.get(name) {
-                        exports.lemmas.insert(name.to_string(), thm.clone());
-                    } else if let Some(c) = internal.consts.get(name) {
-                        exports.consts.insert(name.to_string(), c.clone());
+                    if let Some(thm) = internal.lookup_lemma(name) {
+                        exports.define_lemma(name, thm.clone());
+                    } else if let Some(c) = internal.lookup_const(name) {
+                        exports.define_const(name, c.clone());
                     } else {
                         return Err(ScriptError::Unbound(format!(
                             "#export: nothing named `{name}` to export"
@@ -161,7 +164,7 @@ pub fn run_str(src: &str) -> Result<Vec<NamedThm>, ScriptError> {
 ///
 /// `import NAME = EXPR;` makes the environment `EXPR` *available* to the
 /// script under `NAME`; the `.cov` decides what to do with it (today, an
-/// `(#open NAME)` directive merges it in — later it may bind it under a
+/// `(#import NAME) (#open NAME)` directive merges it in — later it may bind it under a
 /// namespace instead, which is why this is `import`, not `open`).
 ///
 /// ```ignore
@@ -284,6 +287,7 @@ mod tests {
         // The S-expression rewrite of `init::logic::and_comm`.
         let thm = one(
             r#"
+            (#import core)
             (#open core)
             (#thm and.comm
               (#fix (p bool) (q bool))
@@ -306,6 +310,7 @@ mod tests {
         // ⊢ 2 + 3 = 5, by primitive computation.
         let thm = one(
             r#"
+            (#import core)
             (#open core)
             (#thm add.2.3
               (#concl (= (nat.add 2 3) 5))
@@ -325,6 +330,7 @@ mod tests {
         // goals like ∧-commutativity.)
         let thm = one(
             r#"
+            (#import core)
             (#open core)
             (#thm imp.refl.auto
               (#fix (p bool))
@@ -339,6 +345,7 @@ mod tests {
     fn excluded_middle_via_lem() {
         let thm = one(
             r#"
+            (#import core)
             (#open core)
             (#thm lem.p
               (#fix (p bool))
@@ -356,6 +363,7 @@ mod tests {
         // (refl), rewriting `a ↦ b` everywhere gives {a = b} ⊢ b = b.
         let thm = one(
             r#"
+            (#import core)
             (#open core)
             (#thm rw.demo
               (#fix (a nat) (b nat))
@@ -396,6 +404,7 @@ mod tests {
         // No `fix`: p, q are inferred `bool` from their use under `and`.
         let thm = one(
             r#"
+            (#import core)
             (#open core)
             (#thm and.comm.implicit
               (#concl (==> (and p q) (and q p)))
@@ -411,13 +420,15 @@ mod tests {
 
     #[test]
     fn opens_a_loaded_theory_env() {
-        // A separate script `(#open logic)`s the environment produced by the
+        // A separate script `(#import logic) (#open logic)`s the environment produced by the
         // `cov_theory!`-loaded `init::logic::cov`, and applies one of its
         // lemmas by name — demonstrating the exposed env + cross-theory
         // `(lemma …)` reference.
         let theory = run(
             r#"
+            (#import core)
             (#open core)
+            (#import logic)
             (#open logic)
             (#thm use.and.comm
               (#concl (and b a))
@@ -437,7 +448,7 @@ mod tests {
         // {a ∧ b} ⊢ b ∧ a — carries the single hypothesis
         assert_eq!(theory.thms[0].thm.hyps().len(), 1);
         // the same exported env is reachable as a lazy static
-        assert!(crate::init::logic::cov::ENV.lemmas.contains_key("and.comm"));
+        assert!(crate::init::logic::cov::ENV.has_lemma("and.comm"));
     }
 
     #[test]
@@ -449,6 +460,7 @@ mod tests {
         // definition-unfolding case (cf. the propositional `and.comm`).
         let thm = one(
             r#"
+            (#import core)
             (#open core)
             (#thm exists.intro
               (#concl
@@ -477,6 +489,7 @@ mod tests {
         // in the exported env. Both still appear in `thms`.
         let theory = run(
             r#"
+            (#import core)
             (#open core)
             (#thm a (#concl true)
               (#proof (eq-mp (reduce-prim (= true true)) (refl true))))
@@ -487,9 +500,9 @@ mod tests {
         )
         .expect("should replay");
         let env = theory.env();
-        assert!(env.lemmas.contains_key("a"), "exported lemma is public");
+        assert!(env.has_lemma("a"), "exported lemma is public");
         assert!(
-            !env.lemmas.contains_key("b"),
+            !env.has_lemma("b"),
             "un-exported lemma stays internal"
         );
         assert_eq!(theory.thms.len(), 2, "both lemmas were proven");
@@ -502,6 +515,7 @@ mod tests {
         // the same `Drv` the tree-mode `and.comm` produces.
         let thm = one(
             r#"
+            (#import core)
             (#open core)
             (#thm and.comm.by
               (#concl (==> (and p q) (and q p)))
@@ -521,6 +535,7 @@ mod tests {
         // `intro` moves `p` into the context; `assumption` closes the goal.
         let thm = one(
             r#"
+            (#import core)
             (#open core)
             (#thm imp.refl.by
               (#concl (==> p p))
@@ -535,6 +550,7 @@ mod tests {
         // ∀-introduction in tactic mode, closed by `refl`: ⊢ ∀(x:nat). x = x.
         let thm = one(
             r#"
+            (#import core)
             (#open core)
             (#thm eq.refl.by
               (#concl (forall (x nat) (= x x)))
@@ -550,6 +566,7 @@ mod tests {
         // makes it available; `assumption` then discharges the goal with it.
         let thm = one(
             r#"
+            (#import core)
             (#open core)
             (#thm dup.by
               (#concl (==> p (and p p)))
@@ -568,6 +585,7 @@ mod tests {
         // equation goal; `assumption` closes it with the hypothesis.
         let thm = one(
             r#"
+            (#import core)
             (#open core)
             (#thm eq.sym.by
               (#concl (forall (a nat) (forall (b nat) (==> (= a b) (= b a)))))
@@ -582,6 +600,7 @@ mod tests {
         // `not-intro` turns goal `¬F` into `F ⟹ F`.
         let thm = one(
             r#"
+            (#import core)
             (#open core)
             (#thm not.false.by
               (#concl (not false))
@@ -597,6 +616,7 @@ mod tests {
         // Exercises the kernel's `nat_induct` plus the β-conv bookkeeping.
         let thm = one(
             r#"
+            (#import core)
             (#open core)
             (#thm nat.eq.refl.by
               (#concl (forall (n nat) (= n n)))
@@ -610,6 +630,7 @@ mod tests {
     fn conclusion_mismatch_is_caught() {
         let res = run_str(
             r#"
+            (#import core)
             (#open core)
             (#thm wrong
               (#fix (p bool) (q bool))

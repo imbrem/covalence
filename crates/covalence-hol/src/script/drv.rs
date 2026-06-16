@@ -91,8 +91,7 @@ pub fn check(d: &Drv, env: &Env) -> R<Thm> {
         Drv::Assume(t) => Thm::assume(t.clone())?,
         Drv::Lem(t) => Thm::lem(t.clone())?,
         Drv::Lemma(name) => env
-            .lemmas
-            .get(name)
+            .lookup_lemma(name)
             .cloned()
             .ok_or_else(|| ScriptError::Unbound(format!("lemma `{name}`")))?,
         Drv::ReducePrim(t) => Thm::reduce_prim(t.clone())?,

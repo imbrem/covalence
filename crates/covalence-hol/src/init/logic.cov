@@ -6,6 +6,7 @@
 ;; and the `tauto`/`normalize` machinery depends on `truth`, so a `(tauto …)`
 ;; would re-enter the theory's own initialisation.
 
+(#import core)
 (#open core)
 
 ;; ⊢ T. `reduce-prim` decides (T = T) = T on the closed literals; `refl T`

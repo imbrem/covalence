@@ -28,41 +28,89 @@ pub enum ConstDef {
     Eq,
 }
 
-/// The name-resolution environment: the prelude of catalogue constants
-/// plus the lemmas proven so far (referenceable by later proofs).
+/// A name-resolution environment — the **namespace** part of the system:
+/// constants, proven lemmas, and a tactic registry, plus the set of
+/// imported (but not necessarily opened) sub-namespaces. Fields are
+/// encapsulated behind methods; this will grow into a proper namespace
+/// system (separate namespaces for consts/types/terms/tactics/…, qualified
+/// names, `#import … as …`). The transient proof state — the variable
+/// [`Scope`], goals — lives in [`super::tactic::Interp`], not here.
 #[derive(Clone, Default)]
 pub struct Env {
-    pub consts: HashMap<String, ConstDef>,
-    pub lemmas: HashMap<String, Thm>,
+    consts: HashMap<String, ConstDef>,
+    lemmas: HashMap<String, Thm>,
+    tactics: HashMap<String, super::tactic::Tactic>,
+    imports: HashMap<String, Env>,
 }
 
 impl Env {
-    /// An empty environment (no constants, no lemmas).
+    /// An empty environment.
     pub fn empty() -> Self {
         Env::default()
     }
 
-    /// Merge another environment in (its constants and lemmas shadow
-    /// existing entries of the same name). This is what `(open NAME)`
-    /// does once `NAME` is resolved to an `Env`.
-    pub fn open(&mut self, other: &Env) {
-        for (k, v) in &other.consts {
-            self.consts.insert(k.clone(), v.clone());
-        }
-        for (k, v) in &other.lemmas {
-            self.lemmas.insert(k.clone(), v.clone());
-        }
+    // -- lookups --------------------------------------------------------
+    pub fn lookup_const(&self, name: &str) -> Option<&ConstDef> {
+        self.consts.get(name)
+    }
+    pub fn lookup_lemma(&self, name: &str) -> Option<&Thm> {
+        self.lemmas.get(name)
+    }
+    pub fn lookup_tactic(&self, name: &str) -> Option<super::tactic::Tactic> {
+        self.tactics.get(name).copied()
+    }
+    pub fn has_lemma(&self, name: &str) -> bool {
+        self.lemmas.contains_key(name)
     }
 
-    /// The `core` prelude — exposes `covalence-core`'s `defs/` catalogue
-    /// (the logic connectives + the nat operations) by dotted name. This
-    /// is the churn boundary: a `defs/` refactor updates entries here,
-    /// never a proof.
+    // -- definitions ----------------------------------------------------
+    pub fn define_const(&mut self, name: impl Into<String>, c: ConstDef) {
+        self.consts.insert(name.into(), c);
+    }
+    pub fn define_lemma(&mut self, name: impl Into<String>, thm: Thm) {
+        self.lemmas.insert(name.into(), thm);
+    }
+    pub fn register_tactic(&mut self, name: impl Into<String>, t: super::tactic::Tactic) {
+        self.tactics.insert(name.into(), t);
+    }
+
+    /// Merge another environment's bindings in (it shadows existing entries
+    /// of the same name). Touches namespaces only — not the imports map.
+    pub fn merge(&mut self, other: &Env) {
+        self.consts
+            .extend(other.consts.iter().map(|(k, v)| (k.clone(), v.clone())));
+        self.lemmas
+            .extend(other.lemmas.iter().map(|(k, v)| (k.clone(), v.clone())));
+        self.tactics
+            .extend(other.tactics.iter().map(|(k, v)| (k.clone(), *v)));
+    }
+
+    /// `(#import NAME)`: register `env` as an importable namespace under
+    /// `NAME` (not yet brought into scope — that is `(#open NAME)`).
+    pub fn import(&mut self, name: impl Into<String>, env: Env) {
+        self.imports.insert(name.into(), env);
+    }
+
+    /// `(#open NAME)`: bring a previously-`#import`ed namespace's bindings
+    /// into scope (errors if `NAME` was not imported).
+    pub fn open(&mut self, name: &str) -> R<()> {
+        let opened = self
+            .imports
+            .get(name)
+            .cloned()
+            .ok_or_else(|| ScriptError::Unbound(format!("environment not imported: `{name}`")))?;
+        self.merge(&opened);
+        Ok(())
+    }
+
+    /// The `core` prelude — `covalence-core`'s `defs/` catalogue by dotted
+    /// name **plus the primitive tactics**. Opening `core` is what makes
+    /// `intro`/`sym`/`rw`/… available. This is the `defs/` churn boundary.
     pub fn core() -> Self {
-        let mut c: HashMap<String, ConstDef> = HashMap::new();
+        let mut e = Env::default();
         let mut op = |names: &[&str], t: Term| {
             for n in names {
-                c.insert((*n).to_string(), ConstDef::Op(t.clone()));
+                e.consts.insert((*n).to_string(), ConstDef::Op(t.clone()));
             }
         };
         op(&["true"], Term::bool_lit(true));
@@ -80,12 +128,10 @@ impl Env {
         op(&["nat.lt", "<"], defs::nat_lt());
         op(&["succ", "nat.succ"], Term::succ());
         drop(op);
-        c.insert("=".into(), ConstDef::Eq);
-        c.insert("eq".into(), ConstDef::Eq);
-        Env {
-            consts: c,
-            lemmas: HashMap::new(),
-        }
+        e.consts.insert("=".into(), ConstDef::Eq);
+        e.consts.insert("eq".into(), ConstDef::Eq);
+        e.tactics = super::tactic::core_tactics();
+        e
     }
 }
 

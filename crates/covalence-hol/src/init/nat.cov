@@ -6,8 +6,11 @@
 ;; build the freeness corollaries, the recursion-equation projections, and a
 ;; sample induction on top.
 
+(#import core)
 (#open core)
+(#import natrec)
 (#open natrec)
+(#import logic)
 (#open logic)   ;; for `truth`, used to strip `= T` from the ≤/< clauses
 
 ;; ⊢ ∀n. ¬(S n = 0).  `sym` flips the negated-equation goal to ¬(0 = S n),

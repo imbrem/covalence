@@ -12,10 +12,12 @@ covalence-types = { path = "../covalence-types" }
 covalence-hash = { path = "../covalence-hash", default-features = false }
 covalence-sexp = { path = "../covalence-sexp" }
 bytes = "1"
+futures = "0.3"
 imbl = "5"
 indexmap = "2"
 smol_str = "0.3"
 thiserror = "2"
 # The async proof core runs on tokio; `run` blocks on it via a current-thread
-# runtime. Native only (the kernel/TCB stays sync) — see `script::block_on`.
+# runtime. `rt` also gives `spawn_blocking` (the `#compute` rule). Native only
+# (the kernel/TCB stays sync) — see `script::block_on`.
 tokio = { version = "1", features = ["rt"] }

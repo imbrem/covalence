@@ -26,6 +26,7 @@
 
 mod drv;
 mod env;
+mod handle;
 mod infer;
 mod scope;
 mod syntax;
@@ -33,6 +34,7 @@ mod tactic;
 
 pub use drv::{Drv, check, parse_drv};
 pub use env::{ConstDef, Env};
+pub use handle::EnvHandle;
 pub use scope::Scope;
 pub use syntax::{parse_term, parse_type};
 pub use tactic::{Interp, Tactic};
@@ -57,6 +59,9 @@ pub struct TheoryHandle {
     exports: Env,
     /// The checked theorems.
     pub thms: Vec<NamedThm>,
+    /// Theorems still *computing* on a blocking thread (`(#compute …)`),
+    /// awaited and folded into `thms` when the theory is forced.
+    computed: EnvHandle,
 }
 
 impl TheoryHandle {
@@ -76,12 +81,26 @@ impl TheoryHandle {
             .unwrap_or_else(|| panic!("theory does not export lemma `{name}`"))
     }
 
-    /// **Force** the theory to its fully-proved [`Theory`]. `async` so it stays
-    /// the seam where a future open-obligation model is driven to completion;
-    /// today it is immediate. For a synchronous caller use
+    /// **Force** the theory to its fully-proved [`Theory`]: await every
+    /// still-`#compute`-ing theorem (each running on a blocking thread) and
+    /// fold its result into `thms`. For a synchronous caller use
     /// [`TheoryHandle::resolve_blocking`].
     pub async fn resolve(self) -> Result<Theory, ScriptError> {
-        let TheoryHandle { exports, thms } = self;
+        let TheoryHandle {
+            exports,
+            mut thms,
+            computed,
+        } = self;
+        // Await the background computations, in name order for determinism.
+        let mut names: Vec<String> = computed.names().cloned().collect();
+        names.sort();
+        for name in names {
+            let thm = computed
+                .get(&name)
+                .await
+                .expect("name came from the same handle")?;
+            thms.push(NamedThm { name, thm });
+        }
         Ok(Theory { exports, thms })
     }
 
@@ -123,6 +142,7 @@ impl From<Env> for TheoryHandle {
         TheoryHandle {
             exports,
             thms: Vec::new(),
+            computed: EnvHandle::new(),
         }
     }
 }
@@ -135,6 +155,7 @@ impl From<Theory> for TheoryHandle {
         TheoryHandle {
             exports: t.exports,
             thms: t.thms,
+            computed: EnvHandle::new(),
         }
     }
 }
@@ -223,6 +244,7 @@ pub async fn run_async(
     let mut internal = Env::empty();
     let mut exports = Env::empty();
     let mut thms = Vec::new();
+    let mut computed = EnvHandle::new();
     for stmt in stmts {
         match stmt {
             // The async step: await the import's future, then register its
@@ -274,6 +296,22 @@ pub async fn run_async(
                 internal.define_lemma(nt.name.clone(), nt.thm.clone());
                 thms.push(nt);
             }
+            // `(#compute NAME …)` — kick off the proof on a blocking thread
+            // (its env is the cheap-to-clone `internal` snapshot) and keep its
+            // handle; execution moves straight on to the next statement. The
+            // result is awaited when the theory is forced. (A `#compute`d
+            // theorem is not visible to later *synchronous* proofs — it lands
+            // only at resolve.)
+            Stmt::Compute(sexpr) => {
+                let ch = syntax::list(&sexpr, "#compute")?;
+                let name = syntax::sym(&ch[1], "compute name")?.to_string();
+                let env = internal.clone();
+                let task = tokio::task::spawn_blocking(move || {
+                    let ch = syntax::list(&sexpr, "#compute")?;
+                    run_thm(ch, &env).map(|nt| nt.thm)
+                });
+                computed.insert_compute(name, task);
+            }
             // `(#export NAME …)` — build the public interface explicitly: each
             // name is a proven lemma or an imported lemma/const/tactic.
             Stmt::Export(names) => {
@@ -293,7 +331,11 @@ pub async fn run_async(
             }
         }
     }
-    Ok(TheoryHandle { exports, thms })
+    Ok(TheoryHandle {
+        exports,
+        thms,
+        computed,
+    })
 }
 
 /// Fetch an imported namespace's environment, erroring if it was never
@@ -347,6 +389,10 @@ enum Stmt {
     Dep(String),
     /// `(#thm …)` — the whole directive; parsed + checked at execution.
     Thm(SExpr),
+    /// `(#compute NAME …)` — like `#thm`, but checked on a **blocking thread**
+    /// (`spawn_blocking`) so it runs while later statements proceed; awaited
+    /// when the theory is forced.
+    Compute(SExpr),
     /// `(#export NAME …)` — the public interface.
     Export(Vec<String>),
 }
@@ -388,6 +434,7 @@ fn parse_stmt(e: &SExpr) -> Result<Stmt, ScriptError> {
             Stmt::Dep(syntax::sym(&ch[1], "dependency name")?.to_string())
         }
         "#thm" => Stmt::Thm(e.clone()),
+        "#compute" => Stmt::Compute(e.clone()),
         "#export" => {
             if ch.len() < 2 {
                 return Err(ScriptError::Syntax(
@@ -813,6 +860,47 @@ mod tests {
         ))
         .expect("import awaits the pending future");
         assert_eq!(theory.thms.len(), 1);
+    }
+
+    #[test]
+    fn compute_runs_in_the_background_and_lands_on_resolve() {
+        // A `#compute`d theorem runs on a blocking thread while later
+        // statements proceed; it is NOT in `thms` until the theory is forced.
+        let theory = run(
+            r#"
+            (#import core)
+            (#open core)
+            (#thm eager (#concl (= 1 1)) (#proof (refl 1)))
+            (#compute slow (#concl (= (nat.add 2 3) 5))
+              (#proof (reduce-prim (nat.add 2 3))))
+            "#,
+            |name| (name == "core").then(Env::core),
+            |_| None,
+        )
+        .unwrap();
+        assert!(theory.thms.iter().any(|nt| nt.name == "eager"));
+        assert!(
+            !theory.thms.iter().any(|nt| nt.name == "slow"),
+            "the #compute is still pending pre-force"
+        );
+        let resolved = theory.resolve_blocking().expect("forcing awaits the compute");
+        assert!(resolved.thms.iter().any(|nt| nt.name == "slow"));
+        assert!(resolved.thms.iter().any(|nt| nt.name == "eager"));
+    }
+
+    #[test]
+    fn compute_failure_surfaces_on_resolve() {
+        // A `#compute` whose proof is wrong errors only when forced.
+        let theory = run(
+            r#"
+            (#import core)(#open core)
+            (#compute bad (#concl (= 1 2)) (#proof (refl 1)))
+            "#,
+            |name| (name == "core").then(Env::core),
+            |_| None,
+        )
+        .unwrap();
+        assert!(theory.resolve_blocking().is_err());
     }
 
     #[test]

@@ -416,22 +416,24 @@ directives — is `open`-able by other scripts; the macro binds it as a
 - **No rule registry; tactics + rules are synchronous.** Tactics are a registry
   (`Env`, `Arc<dyn Tactic>`) but the **derivation rules** (`imp-intro`,
   `and-elim`, …) are still hardcoded in `script/drv.rs::parse_drv`, not a
-  registry. Wanted: a **rule registry** mirroring the tactic registry (so rules
-  are looked up / extensible / host-suppliable like tactics), **and make both
-  rules and `Tactic::apply` `async`** — awaiting long-running observers, a peer
-  prover, the user, or WASM component-model streams/futures. Making `apply`
-  async ripples through `Interp::run` → the proof execution path; the TCB stays
-  sync (only this untrusted shell goes async).
-- **`Env` lemma values are resolved `Thm`s, not handles.** `Env` is now on
-  `imbl` persistent maps (O(1) clone) and `Interp` OWNS its `Env` (no lifetime)
-  — so it already holds a cheap env *handle*. The remaining refinement: the
-  `lemmas` map should hold **`ThmHandle` (`Ready(Thm) | Pending(future)`)**, not
-  bare `Thm`, so that when a theorem **yields** its (Pending) handle goes into
-  the env and the next theorem starts; a later `(lemma …)` / `#dep` reference
-  then awaits that handle. This is the `EnvHandle` idea (in-progress env whose
-  entries are futures) — coupled to the yield mechanism (channels/holes), which
-  is currently removed, so building handle-valued entries now would be a
-  permanently-`Ready` no-op. Do it together with the yield-mechanism rebuild.
+  registry. Wanted: a **rule registry** mirroring the tactic registry, **and
+  make both rules and `Tactic::apply` `async`** (awaiting observers / a peer
+  prover / the user / WASM streams). `(#compute …)` is the first async op (it
+  `spawn_blocking`s a whole `#thm`), but it lives at the *statement* level —
+  individual rules/tactics inside a proof are still sync. Making `apply` async
+  ripples through `Interp::run` → the proof execution path; TCB stays sync.
+- **`EnvHandle` exists but isn't the proof env yet.** `script/handle.rs`'s
+  `EnvHandle` is an in-progress env of `ThmHandle`s (`Ready(Thm) |
+  Pending(Shared future)`) with **encapsulated** rep + **async getters**
+  (`get(name).await`), populated by `(#compute …)` (`spawn_blocking`) and
+  awaited at `TheoryHandle::resolve`. BUT it is a *side* table for computed
+  theorems only — the main proof `Env` still holds bare `Thm`s, so a
+  `#compute`d theorem is **not visible to later *synchronous* proofs** (it lands
+  only at resolve). To finish: make the proof env itself hold `ThmHandle`s so a
+  `(lemma …)` / `#dep` to a still-computing theorem *awaits* it — which needs
+  the proof checker (`drv.rs::check`, `tactic.rs`) to be `async` (the rule/
+  tactic async-ification above). A `#spawn` (`tokio::spawn`, non-blocking) is
+  the natural sibling of `#compute` for IO-bound / cooperative work.
 - **`Term` futures (term-level holes) not represented.** Terms are eagerly
   built — there is no `Term` future (and proof holes were removed, see above).
   A key target use case: represent a **unification hole** as a term future

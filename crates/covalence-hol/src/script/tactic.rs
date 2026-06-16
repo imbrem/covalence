@@ -5,17 +5,20 @@
 //! of `core`). Dispatch is by name through that registry, so opening `core`
 //! is what makes the primitives available.
 //!
-//! A tactic is a native Rust `fn` taking its own S-expression, the remaining
-//! steps, and the mutable interpreter state [`Interp`]; it returns a `Thm`
-//! for the current goal. (Goal-transformers recurse via [`Interp::run`].)
-//! `Interp` owns the transient proof state — the goal, the context facts, and
-//! the variable scope (`open_scope`/`close_scope` to push/pop groups,
-//! `define_var` to bind) — separate from the importable namespace [`Env`].
-//! A stricter, stack-guarded form (and a WASM tactic ABI) is future work.
+//! A tactic implements the **async** [`Tactic`] trait — `apply` takes its own
+//! S-expression, the remaining steps, and the mutable interpreter state
+//! [`Interp`], and returns a `Thm` for the current goal. Because `apply` is
+//! `async`, a tactic may **await** mid-proof (a long-running observer, a peer
+//! prover, the user). Goal-transformers recurse via [`Interp::run`] (also
+//! async). Simple goal-closing tactics register as plain sync `fn`s (the
+//! blanket impl); recursing ones are concrete types. `Interp` owns the
+//! transient proof state — goal, context facts, variable scope — separate from
+//! the importable namespace [`Env`]. (The kernel replay [`check`] stays sync.)
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use covalence_core::{Term, TermKind, Thm, Type, defs, subst};
 use covalence_sexp::SExpr;
 
@@ -43,24 +46,29 @@ pub enum Hyp {
 /// steps, and the mutable interpreter state.
 ///
 /// This is a **trait**, not a bare `fn`, so a tactic can carry state, be
-/// backed by a WASM component, or (the direction we are building toward) run
-/// *async* — awaiting a long-running observer, a peer prover, or the user,
-/// and yielding control meanwhile. Object-safe; the [`Env`] registry holds
-/// `Arc<dyn Tactic>`. `apply` is synchronous today (the kernel/TCB stays
-/// sync); when async tactics land, this grows a future-returning method and
-/// [`Interp::run`] awaits it (the blocking API is unaffected — see
-/// `super::block_on`).
+/// backed by a WASM component, or run *async* — awaiting a long-running
+/// observer, a peer prover, or the user, and yielding control meanwhile.
+/// `apply` is `async` ([`Interp::run`] awaits it); object-safe via
+/// `#[async_trait]`, so the [`Env`] registry holds `Arc<dyn Tactic>`.
+///
+/// *Synchronous* tactics (those that close the goal directly, without
+/// recursing or awaiting) register as plain `fn`s through the blanket impl
+/// below; tactics that recurse (`intro`, `rw`, `#have`, `induct`) are concrete
+/// types whose `apply` `await`s [`Interp::run`].
+#[async_trait]
 pub trait Tactic: Send + Sync {
-    fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm>;
+    async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm>;
 }
 
-/// Any `fn`/closure of the right shape is a [`Tactic`], so the primitive
-/// tactics register as plain functions and hosts can supply closures.
+/// Any synchronous `fn`/closure of the right shape is a [`Tactic`], so the
+/// goal-closing primitives register as plain functions and hosts can supply
+/// closures (the `apply` body is sync — it does not await).
+#[async_trait]
 impl<F> Tactic for F
 where
     F: Fn(&[SExpr], &[SExpr], &mut Interp) -> R<Thm> + Send + Sync,
 {
-    fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
+    async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
         self(s, rest, it)
     }
 }
@@ -103,7 +111,8 @@ impl Interp {
 
     /// Dispatch the next tactic in `steps` (looked up by name in the
     /// environment's tactic registry), or error if the goal is still open.
-    pub fn run(&mut self, steps: &[SExpr]) -> R<Thm> {
+    /// `async` — a tactic may await (an observer, a peer, the user).
+    pub async fn run(&mut self, steps: &[SExpr]) -> R<Thm> {
         let Some((step, rest)) = steps.split_first() else {
             return Err(ScriptError::Syntax(format!(
                 "#by: the goal is still open: {}",
@@ -116,17 +125,17 @@ impl Interp {
             .env
             .lookup_tactic(name)
             .ok_or_else(|| ScriptError::Syntax(format!("unknown tactic: `{name}`")))?;
-        tac.apply(s, rest, self)
+        tac.apply(s, rest, self).await
     }
 }
 
 /// Prove `goal` from a proof body — `(#proof DRV)` (tree mode) or
 /// `(#by STEP…)` (tactic mode) — returning a kernel `Thm`.
-pub fn prove(goal: &Term, body: &SExpr, scope: &mut Scope, env: &Env) -> R<Thm> {
-    prove_with(goal, body, scope, &[], env)
+pub async fn prove(goal: &Term, body: &SExpr, scope: &mut Scope, env: &Env) -> R<Thm> {
+    prove_with(goal, body, scope, &[], env).await
 }
 
-fn prove_with(
+async fn prove_with(
     goal: &Term,
     body: &SExpr,
     scope: &mut Scope,
@@ -135,10 +144,12 @@ fn prove_with(
 ) -> R<Thm> {
     let ch = list(body, "proof body")?;
     match head_sym(ch)? {
+        // Tree mode: the kernel replay is synchronous (no await here).
         "#proof" => {
             arity(ch, 2, "#proof")?;
             check(&parse_drv(&ch[1], scope, env)?, env)
         }
+        // Tactic mode: the interpreter loop may await.
         "#by" => {
             let mut it = Interp {
                 env: env.clone(),
@@ -146,7 +157,7 @@ fn prove_with(
                 hyps: hyps.to_vec(),
                 scope: scope.clone(),
             };
-            it.run(&ch[1..])
+            it.run(&ch[1..]).await
         }
         other => Err(ScriptError::Syntax(format!(
             "expected (#proof …) or (#by …), got `{other}`"
@@ -160,17 +171,17 @@ pub fn core_tactics() -> HashMap<String, Arc<dyn Tactic>> {
     let mut reg = |name: &str, tac: Arc<dyn Tactic>| {
         t.insert(name.into(), tac);
     };
-    reg("intro", Arc::new(tac_intro));
+    reg("intro", Arc::new(Intro));
     reg("derive", Arc::new(tac_derive));
     reg("drv", Arc::new(tac_derive));
     reg("assumption", Arc::new(tac_assumption));
     reg("refl", Arc::new(tac_refl));
-    reg("sym", Arc::new(tac_sym));
-    reg("not-intro", Arc::new(tac_not_intro));
-    reg("contrapositive", Arc::new(tac_contrapositive));
-    reg("rw", Arc::new(tac_rw));
-    reg("induct", Arc::new(tac_induct));
-    reg("#have", Arc::new(tac_have));
+    reg("sym", Arc::new(Sym));
+    reg("not-intro", Arc::new(NotIntro));
+    reg("contrapositive", Arc::new(Contrapositive));
+    reg("rw", Arc::new(Rw));
+    reg("induct", Arc::new(Induct));
+    reg("#have", Arc::new(Have));
     drop(reg);
     t
 }
@@ -179,29 +190,36 @@ pub fn core_tactics() -> HashMap<String, Arc<dyn Tactic>> {
 // The primitive tactics
 // ============================================================================
 
-fn tac_intro(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
-    if s.len() < 2 {
-        return Err(ScriptError::Syntax("intro: expected at least one name".into()));
+/// `(intro a b …)`: strip leading `⟹`/`∀` binders, then run the rest.
+struct Intro;
+#[async_trait]
+impl Tactic for Intro {
+    async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
+        if s.len() < 2 {
+            return Err(ScriptError::Syntax(
+                "intro: expected at least one name".into(),
+            ));
+        }
+        intro_names(&s[1..], rest, it).await
     }
-    intro_names(&s[1..], rest, it)
 }
 
-fn intro_names(names: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
+async fn intro_names(names: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
     let Some((name_s, more)) = names.split_first() else {
-        return it.run(rest);
+        return it.run(rest).await;
     };
     let name = sym(name_s, "intro name")?.to_string();
     if let Some((a, b)) = dest_imp(&it.goal) {
         it.hyps.push((a.clone(), Hyp::Assumed));
         it.goal = b;
-        let inner = intro_names(more, rest, it);
+        let inner = Box::pin(intro_names(more, rest, it)).await;
         it.hyps.pop();
         Ok(inner?.imp_intro(&a)?)
     } else if let Some((ty, body)) = dest_forall(&it.goal) {
         it.goal = subst::open(&body, &Term::free(name.as_str(), ty.clone()));
         it.scope.open();
         it.scope.define(name.clone(), ty.clone());
-        let inner = intro_names(more, rest, it);
+        let inner = Box::pin(intro_names(more, rest, it)).await;
         it.scope.close();
         Ok(inner?.all_intro(&name, ty)?)
     } else {
@@ -244,141 +262,189 @@ fn tac_assumption(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
 fn tac_refl(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
     arity(s, 1, "refl")?;
     expect_done(rest, "refl")?;
-    let (lhs, _) = dest_eq(&it.goal)
-        .ok_or_else(|| ScriptError::Syntax(format!("refl: goal is not an equation: {}", it.goal)))?;
+    let (lhs, _) = dest_eq(&it.goal).ok_or_else(|| {
+        ScriptError::Syntax(format!("refl: goal is not an equation: {}", it.goal))
+    })?;
     Ok(Thm::refl(lhs)?)
 }
 
-fn tac_sym(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
-    arity(s, 1, "sym")?;
-    let ctx = HolLightCtx::new();
-    if let Some(eq) = dest_not(&it.goal) {
-        let (a, b) = dest_eq(&eq).ok_or_else(|| {
+/// `(sym …)`: flip an equation (or negated equation) goal, then run the rest.
+struct Sym;
+#[async_trait]
+impl Tactic for Sym {
+    async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
+        arity(s, 1, "sym")?;
+        let ctx = HolLightCtx::new();
+        if let Some(eq) = dest_not(&it.goal) {
+            let (a, b) = dest_eq(&eq).ok_or_else(|| {
+                ScriptError::Syntax(format!(
+                    "sym: `¬_` goal is not a negated equation: {}",
+                    it.goal
+                ))
+            })?;
+            let ab = ctx.mk_eq(a.clone(), b.clone())?;
+            it.goal = ctx.mk_not(ctx.mk_eq(b, a)?);
+            let inner = it.run(rest).await?;
+            let f = inner.not_elim(Thm::assume(ab.clone())?.sym()?)?;
+            Ok(f.imp_intro(&ab)?.not_intro()?)
+        } else if let Some((a, b)) = dest_eq(&it.goal) {
+            it.goal = ctx.mk_eq(b, a)?;
+            Ok(it.run(rest).await?.sym()?)
+        } else {
+            Err(ScriptError::Syntax(format!(
+                "sym: goal is not an equation or a negated equation: {}",
+                it.goal
+            )))
+        }
+    }
+}
+
+/// `(not-intro …)`: turn a `¬p` goal into `p ⟹ ⊥`, run the rest, re-wrap.
+struct NotIntro;
+#[async_trait]
+impl Tactic for NotIntro {
+    async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
+        arity(s, 1, "not-intro")?;
+        let p = dest_not(&it.goal).ok_or_else(|| {
+            ScriptError::Syntax(format!("not-intro: goal is not `¬_`: {}", it.goal))
+        })?;
+        it.goal = HolLightCtx::new().mk_imp(p, Term::bool_lit(false));
+        Ok(it.run(rest).await?.not_intro()?)
+    }
+}
+
+/// `(contrapositive …)`: transform `a ⟹ b` into its contrapositive, run the
+/// rest, then re-derive the original.
+struct Contrapositive;
+#[async_trait]
+impl Tactic for Contrapositive {
+    async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
+        arity(s, 1, "contrapositive")?;
+        let (a, b) = dest_imp(&it.goal).ok_or_else(|| {
             ScriptError::Syntax(format!(
-                "sym: `¬_` goal is not a negated equation: {}",
+                "contrapositive: goal is not an implication: {}",
                 it.goal
             ))
         })?;
-        let ab = ctx.mk_eq(a.clone(), b.clone())?;
-        it.goal = ctx.mk_not(ctx.mk_eq(b, a)?);
-        let inner = it.run(rest)?;
-        let f = inner.not_elim(Thm::assume(ab.clone())?.sym()?)?;
-        Ok(f.imp_intro(&ab)?.not_intro()?)
-    } else if let Some((a, b)) = dest_eq(&it.goal) {
-        it.goal = ctx.mk_eq(b, a)?;
-        Ok(it.run(rest)?.sym()?)
-    } else {
-        Err(ScriptError::Syntax(format!(
-            "sym: goal is not an equation or a negated equation: {}",
-            it.goal
-        )))
-    }
-}
-
-fn tac_not_intro(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
-    arity(s, 1, "not-intro")?;
-    let p = dest_not(&it.goal)
-        .ok_or_else(|| ScriptError::Syntax(format!("not-intro: goal is not `¬_`: {}", it.goal)))?;
-    it.goal = HolLightCtx::new().mk_imp(p, Term::bool_lit(false));
-    Ok(it.run(rest)?.not_intro()?)
-}
-
-fn tac_contrapositive(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
-    arity(s, 1, "contrapositive")?;
-    let (a, b) = dest_imp(&it.goal).ok_or_else(|| {
-        ScriptError::Syntax(format!(
-            "contrapositive: goal is not an implication: {}",
-            it.goal
-        ))
-    })?;
-    let ctx = HolLightCtx::new();
-    match (dest_not(&a), dest_not(&b)) {
-        (Some(p), Some(q)) => {
-            it.goal = ctx.mk_imp(q.clone(), p);
-            let inner = it.run(rest)?;
-            let p_thm = inner.imp_elim(Thm::assume(q.clone())?)?;
-            let f = Thm::assume(a.clone())?.not_elim(p_thm)?;
-            let nq = f.imp_intro(&q)?.not_intro()?;
-            Ok(nq.imp_intro(&a)?)
-        }
-        _ => {
-            let nb = ctx.mk_not(b.clone());
-            let na = ctx.mk_not(a.clone());
-            it.goal = ctx.mk_imp(nb.clone(), na);
-            let inner = it.run(rest)?;
-            let left = Thm::assume(b.clone())?.imp_intro(&b)?;
-            let na_thm = inner.imp_elim(Thm::assume(nb.clone())?)?;
-            let f = na_thm.not_elim(Thm::assume(a.clone())?)?;
-            let right = f.false_elim(b.clone())?.imp_intro(&nb)?;
-            let b_thm = Thm::lem(b)?.or_elim(left, right)?;
-            Ok(b_thm.imp_intro(&a)?)
+        let ctx = HolLightCtx::new();
+        match (dest_not(&a), dest_not(&b)) {
+            (Some(p), Some(q)) => {
+                it.goal = ctx.mk_imp(q.clone(), p);
+                let inner = it.run(rest).await?;
+                let p_thm = inner.imp_elim(Thm::assume(q.clone())?)?;
+                let f = Thm::assume(a.clone())?.not_elim(p_thm)?;
+                let nq = f.imp_intro(&q)?.not_intro()?;
+                Ok(nq.imp_intro(&a)?)
+            }
+            _ => {
+                let nb = ctx.mk_not(b.clone());
+                let na = ctx.mk_not(a.clone());
+                it.goal = ctx.mk_imp(nb.clone(), na);
+                let inner = it.run(rest).await?;
+                let left = Thm::assume(b.clone())?.imp_intro(&b)?;
+                let na_thm = inner.imp_elim(Thm::assume(nb.clone())?)?;
+                let f = na_thm.not_elim(Thm::assume(a.clone())?)?;
+                let right = f.false_elim(b.clone())?.imp_intro(&nb)?;
+                let b_thm = Thm::lem(b)?.or_elim(left, right)?;
+                Ok(b_thm.imp_intro(&a)?)
+            }
         }
     }
 }
 
-fn tac_rw(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
-    arity(s, 2, "rw")?;
-    let env = it.env.clone();
-    let eq = check(&parse_drv(&s[1], &mut it.scope, &env)?, &env)?;
-    let cong = rewrite_conv(&it.goal, &eq)?;
-    let (_, gprime) = dest_eq(cong.concl())
-        .ok_or_else(|| ScriptError::Syntax("rw: rewrite did not yield an equation".into()))?;
-    it.goal = gprime;
-    let inner = it.run(rest)?;
-    Ok(cong.sym()?.eq_mp(inner)?)
-}
-
-fn tac_have(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
-    arity(s, 3, "#have")?;
-    let env = it.env.clone();
-    let fact = parse_term(&s[1], &mut it.scope, &env)?;
-    let sub = prove_with(&fact, &s[2], &mut it.scope, &it.hyps, &env)?;
-    it.hyps.push((fact, Hyp::Proven(sub)));
-    let result = it.run(rest);
-    it.hyps.pop();
-    result
-}
-
-fn tac_induct(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
-    arity(s, 4, "induct")?;
-    expect_done(rest, "induct")?;
-    let env = it.env.clone();
-    let var = sym(&s[1], "induct variable")?.to_string();
-    let (ty, body) = dest_forall(&it.goal)
-        .ok_or_else(|| ScriptError::Syntax(format!("induct: goal is not a `∀`: {}", it.goal)))?;
-    if ty != Type::nat() {
-        return Err(ScriptError::Syntax(format!(
-            "induct: goal quantifies over {ty}, not nat"
-        )));
+/// `(rw EQN STEP…)`: rewrite the goal by an equation, then run the rest.
+struct Rw;
+#[async_trait]
+impl Tactic for Rw {
+    async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
+        arity(s, 2, "rw")?;
+        let env = it.env.clone();
+        let eq = check(&parse_drv(&s[1], &mut it.scope, &env)?, &env)?;
+        let cong = rewrite_conv(&it.goal, &eq)?;
+        let (_, gprime) = dest_eq(cong.concl())
+            .ok_or_else(|| ScriptError::Syntax("rw: rewrite did not yield an equation".into()))?;
+        it.goal = gprime;
+        let inner = it.run(rest).await?;
+        Ok(cong.sym()?.eq_mp(inner)?)
     }
-    let p = Term::abs(Type::nat(), body.clone());
-    let zero = Term::nat_lit(0u64);
+}
 
-    let base_body = prove_with(&subst::open(&body, &zero), &s[2], &mut it.scope, &it.hyps, &env)?;
-    let base = Thm::beta_conv(Term::app(p.clone(), zero))?
-        .sym()?
-        .eq_mp(base_body)?;
+/// `(#have FACT PROOF STEP…)`: prove a fact, add it to context, run the rest.
+struct Have;
+#[async_trait]
+impl Tactic for Have {
+    async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
+        arity(s, 3, "#have")?;
+        let env = it.env.clone();
+        let fact = parse_term(&s[1], &mut it.scope, &env)?;
+        let sub = prove_with(&fact, &s[2], &mut it.scope, &it.hyps, &env).await?;
+        it.hyps.push((fact, Hyp::Proven(sub)));
+        let result = it.run(rest).await;
+        it.hyps.pop();
+        result
+    }
+}
 
-    let v = Term::free(var.as_str(), Type::nat());
-    let ih = subst::open(&body, &v);
-    let sv = Term::app(Term::succ(), v.clone());
-    let mut step_hyps = it.hyps.clone();
-    step_hyps.push((ih.clone(), Hyp::Assumed));
-    it.scope.open();
-    it.scope.define(var.clone(), Type::nat());
-    let step_body = prove_with(&subst::open(&body, &sv), &s[3], &mut it.scope, &step_hyps, &env);
-    it.scope.close();
-    let step_imp = step_body?.imp_intro(&ih)?;
-    let ea = Thm::beta_conv(Term::app(p.clone(), v))?;
-    let eb = Thm::beta_conv(Term::app(p, sv))?;
-    let step = Thm::refl(defs::imp())?
-        .mk_comb(ea.sym()?)?
-        .mk_comb(eb.sym()?)?
-        .eq_mp(step_imp)?;
+/// `(induct VAR BASE STEP)`: nat induction on the leading `∀`.
+struct Induct;
+#[async_trait]
+impl Tactic for Induct {
+    async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
+        arity(s, 4, "induct")?;
+        expect_done(rest, "induct")?;
+        let env = it.env.clone();
+        let var = sym(&s[1], "induct variable")?.to_string();
+        let (ty, body) = dest_forall(&it.goal).ok_or_else(|| {
+            ScriptError::Syntax(format!("induct: goal is not a `∀`: {}", it.goal))
+        })?;
+        if ty != Type::nat() {
+            return Err(ScriptError::Syntax(format!(
+                "induct: goal quantifies over {ty}, not nat"
+            )));
+        }
+        let p = Term::abs(Type::nat(), body.clone());
+        let zero = Term::nat_lit(0u64);
 
-    let ind = Thm::nat_induct(base, step)?;
-    let nf = crate::proofs::rewrite::beta_nf(ind.concl().clone());
-    Ok(nf.eq_mp(ind)?)
+        let base_body = prove_with(
+            &subst::open(&body, &zero),
+            &s[2],
+            &mut it.scope,
+            &it.hyps,
+            &env,
+        )
+        .await?;
+        let base = Thm::beta_conv(Term::app(p.clone(), zero))?
+            .sym()?
+            .eq_mp(base_body)?;
+
+        let v = Term::free(var.as_str(), Type::nat());
+        let ih = subst::open(&body, &v);
+        let sv = Term::app(Term::succ(), v.clone());
+        let mut step_hyps = it.hyps.clone();
+        step_hyps.push((ih.clone(), Hyp::Assumed));
+        it.scope.open();
+        it.scope.define(var.clone(), Type::nat());
+        let step_body = prove_with(
+            &subst::open(&body, &sv),
+            &s[3],
+            &mut it.scope,
+            &step_hyps,
+            &env,
+        )
+        .await;
+        it.scope.close();
+        let step_imp = step_body?.imp_intro(&ih)?;
+        let ea = Thm::beta_conv(Term::app(p.clone(), v))?;
+        let eb = Thm::beta_conv(Term::app(p, sv))?;
+        let step = Thm::refl(defs::imp())?
+            .mk_comb(ea.sym()?)?
+            .mk_comb(eb.sym()?)?
+            .eq_mp(step_imp)?;
+
+        let ind = Thm::nat_induct(base, step)?;
+        let nf = crate::proofs::rewrite::beta_nf(ind.concl().clone());
+        Ok(nf.eq_mp(ind)?)
+    }
 }
 
 // ============================================================================

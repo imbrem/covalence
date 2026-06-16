@@ -126,9 +126,10 @@ impl Env {
     /// `(#open NAME)`: bring a previously-`#import`ed namespace's bindings
     /// into scope UNQUALIFIED (errors if `NAME` was not imported).
     pub fn open(&mut self, name: &str) -> R<()> {
-        let opened = self.imports.get(name).cloned().ok_or_else(|| {
-            ScriptError::Unbound(format!("environment not imported: `{name}`"))
-        })?;
+        let opened =
+            self.imports.get(name).cloned().ok_or_else(|| {
+                ScriptError::Unbound(format!("environment not imported: `{name}`"))
+            })?;
         self.merge(&opened);
         Ok(())
     }
@@ -137,9 +138,10 @@ impl Env {
     /// previously-`#import`ed namespace's bindings into scope QUALIFIED by
     /// `prefix` (default `NAME`), so e.g. `and.comm` becomes `logic.and.comm`.
     pub fn use_ns(&mut self, name: &str, prefix: &str) -> R<()> {
-        let opened = self.imports.get(name).cloned().ok_or_else(|| {
-            ScriptError::Unbound(format!("environment not imported: `{name}`"))
-        })?;
+        let opened =
+            self.imports.get(name).cloned().ok_or_else(|| {
+                ScriptError::Unbound(format!("environment not imported: `{name}`"))
+            })?;
         self.merge_prefixed(&opened, prefix);
         Ok(())
     }

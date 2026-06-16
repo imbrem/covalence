@@ -178,11 +178,15 @@ impl<'e> Elab<'e> {
             }
             TypeKind::Spec(s, args) => ETy::Spec(
                 s.clone(),
-                args.iter().map(|a| self.from_type(a)).collect::<R<Vec<_>>>()?,
+                args.iter()
+                    .map(|a| self.from_type(a))
+                    .collect::<R<Vec<_>>>()?,
             ),
             TypeKind::Tycon(n, args) => ETy::Tycon(
                 n.to_string(),
-                args.iter().map(|a| self.from_type(a)).collect::<R<Vec<_>>>()?,
+                args.iter()
+                    .map(|a| self.from_type(a))
+                    .collect::<R<Vec<_>>>()?,
             ),
             other => {
                 return Err(ScriptError::Syntax(format!(
@@ -215,11 +219,17 @@ impl<'e> Elab<'e> {
             ETy::TFree(n) => Type::tfree(n),
             ETy::Fun(a, b) => Type::fun(self.to_type(&a)?, self.to_type(&b)?),
             ETy::Spec(s, args) => {
-                let a = args.iter().map(|x| self.to_type(x)).collect::<R<Vec<_>>>()?;
+                let a = args
+                    .iter()
+                    .map(|x| self.to_type(x))
+                    .collect::<R<Vec<_>>>()?;
                 Type::spec(s, a)
             }
             ETy::Tycon(n, args) => {
-                let a = args.iter().map(|x| self.to_type(x)).collect::<R<Vec<_>>>()?;
+                let a = args
+                    .iter()
+                    .map(|x| self.to_type(x))
+                    .collect::<R<Vec<_>>>()?;
                 Type::tycon(n, a)
             }
         })
@@ -274,13 +284,19 @@ impl<'e> Elab<'e> {
             "free" => {
                 arity(ch, 3, "free")?;
                 let ety = self.from_type(&parse_type(&ch[2])?)?;
-                Ok((ETerm::Free(sym(&ch[1], "free name")?.into(), ety.clone()), ety))
+                Ok((
+                    ETerm::Free(sym(&ch[1], "free name")?.into(), ety.clone()),
+                    ety,
+                ))
             }
             "const" => {
                 arity(ch, 3, "const")?;
                 let ty = parse_type(&ch[2])?;
                 let ety = self.from_type(&ty)?;
-                Ok((ETerm::Lit(Term::const_(sym(&ch[1], "const name")?, ty)), ety))
+                Ok((
+                    ETerm::Lit(Term::const_(sym(&ch[1], "const name")?, ty)),
+                    ety,
+                ))
             }
             "bound" => {
                 arity(ch, 2, "bound")?;
@@ -351,10 +367,7 @@ impl<'e> Elab<'e> {
                 let (eb, tb) = self.infer(&ch[2])?;
                 self.unify(&ta, &alpha)?;
                 self.unify(&tb, &alpha)?;
-                Ok((
-                    ETerm::Eq(Box::new(ea), Box::new(eb)),
-                    ETy::Bool,
-                ))
+                Ok((ETerm::Eq(Box::new(ea), Box::new(eb)), ETy::Bool))
             }
             other => match self.env.lookup_const(other).cloned() {
                 Some(ConstDef::Op(t)) => {

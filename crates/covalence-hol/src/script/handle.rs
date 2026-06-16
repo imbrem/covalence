@@ -131,8 +131,7 @@ mod tests {
     fn compute_error_propagates_through_the_getter() {
         rt().block_on(async {
             let mut e = LazyEnv::new();
-            let task =
-                tokio::task::spawn_blocking(|| Err(ScriptError::Syntax("boom".into())));
+            let task = tokio::task::spawn_blocking(|| Err(ScriptError::Syntax("boom".into())));
             e.insert_compute("bad", task);
             let err = e.get("bad").await.unwrap().unwrap_err();
             assert!(matches!(err, ScriptError::Syntax(ref m) if m == "boom"));

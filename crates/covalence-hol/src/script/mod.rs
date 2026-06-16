@@ -297,7 +297,7 @@ pub async fn run_async(
                 // is at the proof *boundary*; the kernel replay stays sync.
                 await_computed_deps(&sexpr, &mut internal, &computed).await?;
                 let ch = syntax::list(&sexpr, "#thm")?;
-                let nt = run_thm(ch, &internal)?;
+                let nt = run_thm(ch, &internal).await?;
                 internal.define_lemma(nt.name.clone(), nt.thm.clone());
                 thms.push(nt);
             }
@@ -313,7 +313,9 @@ pub async fn run_async(
                 let env = internal.clone();
                 let task = tokio::task::spawn_blocking(move || {
                     let ch = syntax::list(&sexpr, "#compute")?;
-                    run_thm(ch, &env).map(|nt| nt.thm)
+                    // Drive the (async) proof to completion on this blocking
+                    // thread — its own runtime, not nested in the caller's.
+                    block_on(run_thm(ch, &env)).map(|nt| nt.thm)
                 });
                 computed.insert_compute(name, task);
             }
@@ -600,7 +602,7 @@ macro_rules! cov_theory {
     };
 }
 
-fn run_thm(ch: &[SExpr], env: &Env) -> Result<NamedThm, ScriptError> {
+async fn run_thm(ch: &[SExpr], env: &Env) -> Result<NamedThm, ScriptError> {
     if ch.len() < 4 {
         return Err(ScriptError::Syntax(
             "#thm: expected (#thm NAME [(#fix …)] (#concl …) (#proof …))".into(),
@@ -632,7 +634,7 @@ fn run_thm(ch: &[SExpr], env: &Env) -> Result<NamedThm, ScriptError> {
     // The proof body is `(#proof DRV)` (tree mode) or `(#by STEP…)`
     // (goal-directed tactic mode). Tree mode checks a `Drv` to a `Thm`;
     // tactic mode produces the `Thm` directly by driving the goal.
-    let thm = tactic::prove(&expected, &ch[idx], &mut scope, env)?;
+    let thm = tactic::prove(&expected, &ch[idx], &mut scope, env).await?;
     if thm.concl() != &expected {
         return Err(ScriptError::ConclMismatch {
             name,
@@ -873,7 +875,10 @@ mod tests {
         .unwrap();
         let env = theory.env();
         assert!(env.has_lemma("and.comm"), "#extend re-exports at the root");
-        assert!(env.has_lemma("logic.and.comm"), "#provide under module name");
+        assert!(
+            env.has_lemma("logic.and.comm"),
+            "#provide under module name"
+        );
         assert!(env.has_lemma("pre.and.comm"), "#provide under an alias");
     }
 
@@ -922,7 +927,9 @@ mod tests {
             !theory.thms.iter().any(|nt| nt.name == "slow"),
             "the #compute is still pending pre-force"
         );
-        let resolved = theory.resolve_blocking().expect("forcing awaits the compute");
+        let resolved = theory
+            .resolve_blocking()
+            .expect("forcing awaits the compute");
         assert!(resolved.thms.iter().any(|nt| nt.name == "slow"));
         assert!(resolved.thms.iter().any(|nt| nt.name == "eager"));
     }
@@ -949,6 +956,43 @@ mod tests {
         let resolved = theory.resolve_blocking().unwrap();
         assert!(resolved.thms.iter().any(|nt| nt.name == "base"));
         assert!(resolved.thms.iter().any(|nt| nt.name == "uses"));
+    }
+
+    #[test]
+    fn async_tactic_can_yield_mid_proof() {
+        // A custom tactic whose `apply` AWAITS (yields) before producing its
+        // theorem — only possible because `Tactic::apply` is async. It hands
+        // back a precomputed theorem after a real suspension point.
+        let thm = one(
+            "(#import core)(#open core)(#thm t (#concl (= (nat.add 2 3) 5))
+              (#proof (reduce-prim (nat.add 2 3))))",
+        );
+        struct AsyncCanned(Thm);
+        #[async_trait::async_trait]
+        impl Tactic for AsyncCanned {
+            async fn apply(
+                &self,
+                _s: &[SExpr],
+                _rest: &[SExpr],
+                _it: &mut Interp,
+            ) -> Result<Thm, ScriptError> {
+                tokio::task::yield_now().await; // genuine mid-proof yield
+                Ok(self.0.clone())
+            }
+        }
+        let tac: Arc<dyn Tactic> = Arc::new(AsyncCanned(thm));
+        let theory = run(
+            r#"
+            (#import core)
+            (#open core)
+            (#register-ffi-tactic acanned)
+            (#thm u (#concl (= (nat.add 2 3) 5)) (#by (acanned)))
+            "#,
+            |name| (name == "core").then(Env::core),
+            move |name| (name == "acanned").then(|| tac.clone()),
+        )
+        .expect("async tactic runs");
+        assert_eq!(theory.thms.len(), 1);
     }
 
     #[test]

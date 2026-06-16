@@ -413,32 +413,35 @@ directives — is `open`-able by other scripts; the macro binds it as a
   typed elaboration → execution**, with a typed term/proof IR and spans threaded
   through every stage — is still TODO. The spans are the prerequisite for the
   rich, well-located errors above and good editor/LSP feedback.
-- **No rule registry; tactics + rules are synchronous.** Tactics are a registry
-  (`Env`, `Arc<dyn Tactic>`) but the **derivation rules** (`imp-intro`,
-  `and-elim`, …) are still hardcoded in `script/drv.rs::parse_drv`, not a
-  registry. Wanted: a **rule registry** mirroring the tactic registry, **and
-  make both rules and `Tactic::apply` `async`** (awaiting observers / a peer
-  prover / the user / WASM streams). `(#compute …)` is the first async op (it
-  `spawn_blocking`s a whole `#thm`), but it lives at the *statement* level —
-  individual rules/tactics inside a proof are still sync. Making `apply` async
-  ripples through `Interp::run` → the proof execution path; TCB stays sync.
+- **`Tactic` is async, but there's no rule registry and `check` is still sync.**
+  `script/tactic.rs::Tactic` is now an **`#[async_trait]`** trait: `apply` is
+  `async`, `Interp::run`/`prove`/`run_thm` are async, recursing tactics
+  (`Intro`/`Sym`/`NotIntro`/`Contrapositive`/`Rw`/`Have`/`Induct`) are concrete
+  structs, goal-closing ones stay sync `fn`s via the blanket impl. A tactic can
+  now genuinely **await mid-proof** (test `async_tactic_can_yield_mid_proof`).
+  Still TODO:
+  - **The derivation rules (`imp-intro`, `and-elim`, …) are NOT a registry** —
+    still hardcoded in `script/drv.rs::parse_drv`/`check`. Wanted: a **rule
+    registry** mirroring the tactic registry (looked-up / extensible /
+    host-suppliable rules).
+  - **`drv.rs::check` is still SYNCHRONOUS**, so the **tree-mode** `#proof` path
+    and `derive`/`rw` (which call `check`) can't await *inside* a derivation —
+    only the `#by` tactic loop can. Making `check` async (recursive `BoxFuture`)
+    is the remaining viral piece; it's also what would let `(lemma NAME)` await
+    a `LazyEnv` handle directly (see below).
 - **Lemma awaits are at the proof *boundary*, not inside `check`.** A `#thm`
-  whose proof references a still-`#compute`-ing theorem now **awaits** it before
-  checking: `run_async`'s `Stmt::Thm` arm scans the proof for `(lemma NAME)`
-  (`lemma_refs`) and `await`s any name still in the `EnvHandle` (`#compute`)
-  table, folding the resolved `Thm` into the sync `Env` (`await_computed_deps`).
-  So `#compute`d lemmas ARE usable by later proofs, while the trusted kernel
-  replay (`drv.rs::check`, tactics) stays **synchronous**. Still TODO:
-  - **No mid-proof awaits.** Because `check`/`Interp`/`Tactic::apply` are sync,
-    a proof can't `await` *during* checking — e.g. a tactic awaiting an async
-    observer / a peer prover / the user. That needs the real async-ification
-    (async-trait `Tactic`, recursive-async `check`, per-tactic structs, env
-    lemmas as `ThmHandle`s) — the genuinely viral change (the higher-ranked
-    `Fn(... &mut Interp) -> impl Future` problem is why it's hard).
+  whose proof references a still-`#compute`-ing theorem **awaits** it before
+  checking: `run_async`'s `Stmt::Thm` scans the proof for `(lemma NAME)`
+  (`lemma_refs`) and `await`s any name still in the `LazyEnv` (`#compute`) table,
+  folding the resolved `Thm` into the sync `Env` (`await_computed_deps`). The
+  user wants **all environment accesses async** — i.e. the proof env itself a
+  `LazyEnv` with async getters, so `(lemma NAME)` / `#dep` await directly. That
+  needs async `check` (above); const lookups (the elaborator, `infer.rs`) are
+  eager and could stay sync to avoid async-ifying term parsing.
   - **A `#compute` can't depend on another `#compute`.** Its proof runs in
-    `spawn_blocking` against a *sync snapshot* of `internal` taken at spawn, so
-    it can't await a sibling computation. Only ordinary `#thm`s (the
-    boundary-await path) can depend on `#compute`d lemmas.
+    `spawn_blocking` against a *sync snapshot* of `internal`, driven by a nested
+    `block_on`, so it can't await a sibling. Only ordinary `#thm`s
+    (boundary-await) can depend on `#compute`d lemmas.
   - **`#spawn`** (`tokio::spawn`, non-blocking) is the natural sibling of
     `#compute` for IO-bound / cooperative work.
 - **`Term` futures (term-level holes) not represented.** Terms are eagerly

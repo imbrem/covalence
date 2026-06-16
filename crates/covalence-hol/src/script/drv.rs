@@ -18,10 +18,10 @@
 use covalence_core::{Term, TermKind, Thm};
 use covalence_sexp::SExpr;
 
+use super::ScriptError;
 use super::env::Env;
 use super::scope::Scope;
 use super::syntax::{arity, head_sym, list, parse_term, parse_type, sym};
-use super::ScriptError;
 
 type R<T> = Result<T, ScriptError>;
 
@@ -40,31 +40,75 @@ pub enum Drv {
     UnfoldTermSpec(Term),
     /// `⊢ op arg = body[arg]` — unfold a unary defined constant at an
     /// argument (one β-step). Wraps `proofs::rewrite::unfold_at_1`.
-    UnfoldAt1 { op: Term, arg: Term },
+    UnfoldAt1 {
+        op: Term,
+        arg: Term,
+    },
     /// `⊢ op a b = body[a,b]` — unfold a binary defined constant at two
     /// arguments. Wraps `proofs::rewrite::unfold_at_2`.
-    UnfoldAt2 { op: Term, a: Term, b: Term },
+    UnfoldAt2 {
+        op: Term,
+        a: Term,
+        b: Term,
+    },
     BetaConv(Term),
     // unary
     Sym(Box<Drv>),
-    AbsRule { name: String, ty: covalence_core::Type, body: Box<Drv> },
-    AllIntro { name: String, ty: covalence_core::Type, body: Box<Drv> },
-    AllElim { witness: Term, body: Box<Drv> },
-    ImpIntro { phi: Term, body: Box<Drv> },
+    AbsRule {
+        name: String,
+        ty: covalence_core::Type,
+        body: Box<Drv>,
+    },
+    AllIntro {
+        name: String,
+        ty: covalence_core::Type,
+        body: Box<Drv>,
+    },
+    AllElim {
+        witness: Term,
+        body: Box<Drv>,
+    },
+    ImpIntro {
+        phi: Term,
+        body: Box<Drv>,
+    },
     NotIntro(Box<Drv>),
-    Inst { name: String, term: Term, body: Box<Drv> },
+    Inst {
+        name: String,
+        term: Term,
+        body: Box<Drv>,
+    },
     /// Type-variable instantiation (HOL Light `INST_TYPE`) — the way a
     /// *polymorphic* lemma is applied at a concrete type.
-    InstTfree { name: String, ty: covalence_core::Type, body: Box<Drv> },
+    InstTfree {
+        name: String,
+        ty: covalence_core::Type,
+        body: Box<Drv>,
+    },
     /// `⊢ f a = f b` from `⊢ a = b`.
-    CongArg { f: Term, body: Box<Drv> },
+    CongArg {
+        f: Term,
+        body: Box<Drv>,
+    },
     /// `⊢ f a = g a` from `⊢ f = g`.
-    CongFn { arg: Term, body: Box<Drv> },
+    CongFn {
+        arg: Term,
+        body: Box<Drv>,
+    },
     AndElimL(Box<Drv>),
     AndElimR(Box<Drv>),
-    OrIntroL { q: Term, body: Box<Drv> },
-    OrIntroR { p: Term, body: Box<Drv> },
-    FalseElim { p: Term, body: Box<Drv> },
+    OrIntroL {
+        q: Term,
+        body: Box<Drv>,
+    },
+    OrIntroR {
+        p: Term,
+        body: Box<Drv>,
+    },
+    FalseElim {
+        p: Term,
+        body: Box<Drv>,
+    },
     // binary
     Trans(Box<Drv>, Box<Drv>),
     MkComb(Box<Drv>, Box<Drv>),
@@ -74,15 +118,25 @@ pub enum Drv {
     AndIntro(Box<Drv>, Box<Drv>),
     NotElim(Box<Drv>, Box<Drv>),
     // ternary
-    OrElim { disj: Box<Drv>, left: Box<Drv>, right: Box<Drv> },
-    NatInduct { base: Box<Drv>, step: Box<Drv> },
+    OrElim {
+        disj: Box<Drv>,
+        left: Box<Drv>,
+        right: Box<Drv>,
+    },
+    NatInduct {
+        base: Box<Drv>,
+        step: Box<Drv>,
+    },
     // tactics (elaborate to longer derivations at replay time)
     /// Prove a propositional / closed-arithmetic tautology via
     /// [`crate::init::logic::tauto`].
     Tauto(Term),
     /// Rewrite `target`'s conclusion left-to-right with the equation
     /// proved by `eqn` (congruence over every occurrence).
-    Rw { eqn: Box<Drv>, target: Box<Drv> },
+    Rw {
+        eqn: Box<Drv>,
+        target: Box<Drv>,
+    },
 }
 
 /// Replay a proof term into a kernel theorem. The sole kernel-coupled
@@ -98,9 +152,7 @@ pub fn check(d: &Drv, env: &Env) -> R<Thm> {
             .ok_or_else(|| ScriptError::Unbound(format!("lemma `{name}`")))?,
         Drv::ReducePrim(t) => Thm::reduce_prim(t.clone())?,
         Drv::UnfoldTermSpec(t) => Thm::unfold_term_spec(t.clone())?,
-        Drv::UnfoldAt1 { op, arg } => {
-            crate::proofs::rewrite::unfold_at_1(op.clone(), arg.clone())
-        }
+        Drv::UnfoldAt1 { op, arg } => crate::proofs::rewrite::unfold_at_1(op.clone(), arg.clone()),
         Drv::UnfoldAt2 { op, a, b } => {
             crate::proofs::rewrite::unfold_at_2(op.clone(), a.clone(), b.clone())
         }
@@ -130,9 +182,7 @@ pub fn check(d: &Drv, env: &Env) -> R<Thm> {
         Drv::OrElim { disj, left, right } => {
             check(disj, env)?.or_elim(check(left, env)?, check(right, env)?)?
         }
-        Drv::NatInduct { base, step } => {
-            Thm::nat_induct(check(base, env)?, check(step, env)?)?
-        }
+        Drv::NatInduct { base, step } => Thm::nat_induct(check(base, env)?, check(step, env)?)?,
         Drv::Tauto(t) => crate::init::logic::tauto(t)?,
         Drv::Rw { eqn, target } => {
             let eq = check(eqn, env)?;

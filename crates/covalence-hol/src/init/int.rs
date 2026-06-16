@@ -5,24 +5,20 @@
 //!
 //! [`init::nat`]: crate::init::nat
 //!
-//! ## Status — full commutative ring + all order facts but `lt_mul_pos`
+//! ## Status — the entire ordered ring is proved (no postulates)
 //!
 //! `int := (nat × nat) / ~` is the Grothendieck construction, so every
 //! axiom here is a *theorem* of HOL derivable from the `nat` Peano facts
-//! through the quotient. The lifting machinery is built; everything is
-//! discharged **except [`lt_mul_pos`]**, the last `Thm::assume` postulate
-//! (flagged in `SKELETONS.md`, carrying its statement as a self-hypothesis
-//! so the audit trail is visible downstream).
+//! through the quotient — and **all of them are now discharged**. There are
+//! no `Thm::assume` postulates left in this module.
 //!
-//! - **Commutative ring** — **all proved:** [`add_comm`], [`add_assoc`],
-//!   [`add_zero`], [`add_neg`], [`sub_def`], [`mul_comm`], [`mul_assoc`],
-//!   [`mul_one`], [`mul_zero`], [`distrib`].
-//! - **Linear order** — **all proved:** [`lt_irrefl`], [`lt_trans`],
-//!   [`lt_trichotomy`], [`le_def`].
-//! - **Discreteness** — **proved:** [`lt_succ`] (`a < b ⟺ a + 1 ≤ b`).
-//! - **Ordered-ring compatibility** — [`lt_add_mono`] **proved**;
-//!   [`lt_mul_pos`] (`0 < c ⟹ a < b ⟹ a·c < b·c`) **postulated**, pending
-//!   `nat` strict multiplicative monotonicity (`a < b ⟹ 0 < c ⟹ a·c < b·c`).
+//! - **Commutative ring** — [`add_comm`], [`add_assoc`], [`add_zero`],
+//!   [`add_neg`], [`sub_def`], [`mul_comm`], [`mul_assoc`], [`mul_one`],
+//!   [`mul_zero`], [`distrib`].
+//! - **Linear order** — [`lt_irrefl`], [`lt_trans`], [`lt_trichotomy`],
+//!   [`le_def`].
+//! - **Ordered-ring compatibility** — [`lt_add_mono`], [`lt_mul_pos`].
+//! - **Discreteness** — [`lt_succ`] (`a < b ⟺ a + 1 ≤ b`).
 //!
 //! The public surface (these `fn`s) does not change as proofs land — only
 //! the bodies; downstream consumers (the `int` ring/semiring embedding, the
@@ -60,9 +56,12 @@
 //! / `lt_cross` make the comparison invariant under that. `le_via_components`
 //! / `lt_via_components` then express each order axiom as a `nat` order fact
 //! (the `nat` strict-order theory `lt_trans` / `lt_trichotomy` /
-//! `lt_add_mono_r` / `lt_iff_succ_le` / `le_iff_lt_or_eq`), and `int_eq_iff`
-//! identifies `int` equality with the Grothendieck relation on
-//! representatives.
+//! `lt_add_mono_r` / `lt_iff_succ_le` / `le_iff_lt_or_eq` / `lt_mul_mono_r`),
+//! and `int_eq_iff` identifies `int` equality with the Grothendieck relation
+//! on representatives. The one genuinely heavy lift, `lt_mul_pos`, writes
+//! `0 < c` as `fc = sc + m` and decomposes both product comparisons as
+//! `D + (fa+sb)·m` / `D + (fb+sa)·m` over the same `D` — the shuffle handled
+//! by the reusable `nat` additive normaliser `nat::prove_add_eq`.
 
 use covalence_core::defs::{fst, pair, prod, snd};
 use covalence_core::{Error, Result, Term, Thm, Type, subst};
@@ -239,23 +238,6 @@ fn lt(a: Term, b: Term) -> Term {
 
 fn le(a: Term, b: Term) -> Term {
     Term::app(Term::app(int_le(), a), b)
-}
-
-/// Postulate an `int` axiom: `{t} ⊢ t`. The self-hypothesis is the audit
-/// trail — every proof built on it carries it, flagging the unproved leaf
-/// until the quotient derivation discharges it.
-fn axiom(t: Term) -> Thm {
-    Thm::assume(t).expect("init::int::axiom: term must be bool-typed")
-}
-
-/// Universally close `body` over the named `int` variables, **outermost
-/// first** (so `forall_int(&["a", "b"], body)` is `∀a b. body`).
-fn forall_int(vars: &[&str], body: Term) -> Term {
-    let mut t = body;
-    for name in vars.iter().rev() {
-        t = t.forall(name, int()).expect("forall_int: bind variable");
-    }
-    t
 }
 
 // ============================================================================
@@ -1726,15 +1708,112 @@ cached_thm! {
     }
 }
 
-/// `⊢ ∀a b c. 0 < c ⟹ a < b ⟹ a * c < b * c` — `<` preserved by a
-/// positive multiplier. **Postulated** — pending `nat` strict
-/// multiplicative monotonicity (`a < b ⟹ 0 < c ⟹ a·c < b·c`).
-pub fn lt_mul_pos() -> Thm {
-    let (a, b, c) = (var("a"), var("b"), var("c"));
-    let concl = lt(mul(a.clone(), c.clone()), mul(b.clone(), c.clone()));
-    let inner = lt(a, b).imp(concl).expect("lt_mul_pos inner");
-    let body = lt(lit(0), c).imp(inner).expect("lt_mul_pos");
-    axiom(forall_int(&["a", "b", "c"], body))
+cached_thm! {
+    /// `⊢ ∀a b c. 0 < c ⟹ a < b ⟹ a * c < b * c` — **proved**. Writing
+    /// `0 < c` as `fc = sc + m` (`0 < m`), each Grothendieck product
+    /// comparison decomposes as `D + (fa+sb)·m` / `D + (fb+sa)·m` over the
+    /// **same** `D` (`nat::prove_add_eq` does the shuffle), so the goal is
+    /// `(fa+sb)·m < (fb+sa)·m` by `nat::lt_mul_mono_r`.
+    pub fn lt_mul_pos() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let (fb, sb) = (fcomp(&b), scomp(&b));
+        let (fc, sc) = (fcomp(&c), scomp(&c));
+        let m_ = |u: &Term, v: &Term| nat::mul(u.clone(), v.clone());
+        let (hc, hab) = (lt(lit(0), c.clone()), lt(a.clone(), b.clone()));
+
+        let rac = mul_via_components(&ra, &rc)?; // a·c = MK(fa·fc+sa·sc)(fa·sc+sa·fc)
+        let rbc = mul_via_components(&rb, &rc)?;
+        let dconcl = lt_via_components(&rac, &rbc)?; // int.lt(a·c)(b·c) = nat.lt(P)(Q)
+        let p = nat::add(
+            nat::add(m_(&fa, &fc), m_(&sa, &sc)),
+            nat::add(m_(&fb, &sc), m_(&sb, &fc)),
+        );
+        let q = nat::add(
+            nat::add(m_(&fb, &fc), m_(&sb, &sc)),
+            nat::add(m_(&fa, &sc), m_(&sa, &fc)),
+        );
+
+        // positivity: 0 < c ⟹ sc < fc.
+        let pos_c = lt_via_components(&lit0_mk()?, &rc)?
+            .eq_mp(Thm::assume(hc.clone())?)? // {0<c} ⊢ nat.lt(0+sc)(fc+0)
+            .rewrite(&nat::add_base().all_elim(sc.clone())?)?
+            .rewrite(&nat::add_zero().all_elim(fc.clone())?)?; // {0<c} ⊢ sc < fc
+        // fc = sc + m, m = S(fc − S sc), 0 < m.
+        let ssc_le_fc = nat::lt_iff_succ_le()
+            .all_elim(sc.clone())?
+            .all_elim(fc.clone())?
+            .eq_mp(pos_c)?; // {0<c} ⊢ S sc ≤ fc
+        let mprime = nat::sub(fc.clone(), nat::succ(sc.clone()));
+        let m = nat::succ(mprime.clone());
+        let fc_eq = nat::add_succ_r()
+            .all_elim(sc.clone())?
+            .all_elim(mprime.clone())? // sc + S m' = S(sc+m')
+            .trans(nat::add_step().all_elim(sc.clone())?.all_elim(mprime.clone())?.sym()?)? // = S sc + m'
+            .trans(
+                nat::le_add_sub()
+                    .all_elim(nat::succ(sc.clone()))?
+                    .all_elim(fc.clone())?
+                    .imp_elim(ssc_le_fc)?,
+            )?; // {0<c} ⊢ sc + m = fc
+        let pos_m = nat::zero_lt_succ().all_elim(mprime.clone())?; // 0 < m
+
+        // X = fa+sb, Y = fb+sa.
+        let (xx, yy) = (nat::add(fa.clone(), sb.clone()), nat::add(fb.clone(), sa.clone()));
+        let big_d = nat::add(
+            nat::add(m_(&fa, &sc), m_(&sa, &sc)),
+            nat::add(m_(&fb, &sc), m_(&sb, &sc)),
+        );
+
+        // P = D + (u+v)·m, with `(u,v) = (fa,sb)` for P and `(fb,sa)` for Q —
+        // the two `_·(sc+m)` products in `lhs[fc→sc+m]` distribute and the six
+        // leaves re-pair (via `prove_add_eq`) as `D + (u·m + v·m) = D + (u+v)·m`.
+        let fc_sym = fc_eq.clone().sym()?; // {0<c} ⊢ fc = sc + m
+        let decompose = |lhs: &Term, u: &Term, v: &Term| -> Result<Thm> {
+            let e_sub = lhs.rw_all(&fc_sym)?; // lhs = lhs[fc→sc+m]
+            let e_dist = rewrite_seq(
+                &dest_eq(&e_sub)?.1,
+                &[
+                    elim3(nat::distrib(), u, &sc, &m)?,
+                    elim3(nat::distrib(), v, &sc, &m)?,
+                ],
+            )?;
+            let target = nat::add(big_d.clone(), nat::add(m_(u, &m), m_(v, &m)));
+            let e_norm = nat::prove_add_eq(&dest_eq(&e_dist)?.1, &target)?; // l2 = D + (u·m + v·m)
+            let e_fold = cong_add_r(&big_d, elim3(nat::distrib_r(), u, v, &m)?.sym()?)?; // = D + (u+v)·m
+            e_sub.trans(e_dist)?.trans(e_norm)?.trans(e_fold)
+        };
+        let p_eq = decompose(&p, &fa, &sb)?; // {0<c} ⊢ P = D + X·m
+        let q_eq = decompose(&q, &fb, &sa)?; // {0<c} ⊢ Q = D + Y·m
+
+        // X·m < Y·m, hence D+X·m < D+Y·m.
+        let xy = lt_via_components(&ra, &rb)?.eq_mp(Thm::assume(hab.clone())?)?; // {a<b} ⊢ X < Y
+        let xm_lt_ym = nat::lt_mul_mono_r()
+            .all_elim(xx.clone())?
+            .all_elim(yy.clone())?
+            .all_elim(m.clone())?
+            .imp_elim(xy)?
+            .imp_elim(pos_m)?; // {a<b} ⊢ X·m < Y·m
+        let d_lt = nat::lt_add_mono_r()
+            .all_elim(m_(&xx, &m))?
+            .all_elim(m_(&yy, &m))?
+            .all_elim(big_d.clone())?
+            .sym()?
+            .eq_mp(xm_lt_ym)? // X·m+D < Y·m+D
+            .rewrite(&nat::add_comm().all_elim(m_(&xx, &m))?.all_elim(big_d.clone())?)? // D+X·m < Y·m+D
+            .rewrite(&nat::add_comm().all_elim(m_(&yy, &m))?.all_elim(big_d.clone())?)?; // D+X·m < D+Y·m
+        let pq = d_lt.rewrite(&p_eq.sym()?)?.rewrite(&q_eq.sym()?)?; // {a<b,0<c} ⊢ nat.lt(P)(Q)
+
+        dconcl
+            .sym()?
+            .eq_mp(pq)? // int.lt(a·c)(b·c)
+            .imp_intro(&hab)?
+            .imp_intro(&hc)?
+            .all_intro("c", int())?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
 }
 
 // ============================================================================
@@ -1786,23 +1865,52 @@ cached_thm! {
 mod tests {
     use super::*;
 
-    /// The remaining postulate set — used to assert the audit-trail invariant.
-    fn all() -> Vec<Thm> {
-        vec![lt_mul_pos()]
+    #[test]
+    fn the_whole_ordered_ring_is_proved() {
+        // Every `int` ordered-ring axiom is now a genuine (hypothesis-free)
+        // theorem — no `Thm::assume` postulates remain.
+        let axioms = [
+            add_comm(),
+            add_assoc(),
+            add_zero(),
+            add_neg(),
+            sub_def(),
+            mul_comm(),
+            mul_assoc(),
+            mul_one(),
+            mul_zero(),
+            distrib(),
+            lt_irrefl(),
+            lt_trans(),
+            lt_trichotomy(),
+            le_def(),
+            lt_add_mono(),
+            lt_mul_pos(),
+            lt_succ(),
+        ];
+        for ax in axioms {
+            assert!(ax.hyps().is_empty(), "an int ordered-ring axiom is genuine");
+            assert!(ax.concl().type_of().unwrap().is_bool());
+        }
     }
 
     #[test]
-    fn postulates_are_well_typed_and_self_flagged() {
-        for ax in all() {
-            assert!(
-                ax.concl().type_of().unwrap().is_bool(),
-                "an int postulate is a bool statement"
-            );
-            assert!(
-                ax.hyps().iter().any(|h| h == ax.concl()),
-                "a postulated axiom carries itself as a hypothesis"
-            );
-        }
+    fn lt_mul_pos_is_a_genuine_theorem() {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let thm = lt_mul_pos();
+        assert!(
+            thm.hyps().is_empty(),
+            "int::lt_mul_pos is proved, not postulated"
+        );
+        let inst = elim3(thm, &a, &b, &c).unwrap();
+        let expected = lt(lit(0), c.clone())
+            .imp(
+                lt(a.clone(), b.clone())
+                    .imp(lt(mul(a, c.clone()), mul(b, c)))
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
     }
 
     #[test]

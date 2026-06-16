@@ -839,6 +839,131 @@ fn mul_via_components(ra: &Thm, rb: &Thm) -> Result<Thm> {
         .trans(mul_mk(&fa, &da, &fb, &db)?)
 }
 
+// ---- additive computation / well-definedness ----
+
+/// `⊢ a + b = a' + b'` from `⊢ a = a'`, `⊢ b = b'` (int sum congruence).
+fn iadd_cong(ea: Thm, eb: Thm) -> Result<Thm> {
+    Thm::refl(int::int_add())?.cong_app(ea)?.cong_app(eb)
+}
+/// `⊢ w·x = w·y` from `⊢ x = y` (left-multiply by `w` on `int`).
+fn imul_l_cong(w: &Term, e: Thm) -> Result<Thm> {
+    e.cong_arg(Term::app(int::int_mul(), w.clone()))
+}
+/// `⊢ (a+b)·c = a·c + b·c` — right distributivity on `int` (from the proved
+/// left `distrib` + `mul_comm`).
+fn idistrib_r(a: &Term, b: &Term, c: &Term) -> Result<Thm> {
+    let comm = int::mul_comm()
+        .all_elim(iadd(a.clone(), b.clone()))?
+        .all_elim(c.clone())?; // (a+b)·c = c·(a+b)
+    let dist = int::distrib()
+        .all_elim(c.clone())?
+        .all_elim(a.clone())?
+        .all_elim(b.clone())?; // c·(a+b) = c·a + c·b
+    let ca = int::mul_comm().all_elim(c.clone())?.all_elim(a.clone())?; // c·a = a·c
+    let cb = int::mul_comm().all_elim(c.clone())?.all_elim(b.clone())?; // c·b = b·c
+    comm.trans(dist)?.trans(iadd_cong(ca, cb)?)
+}
+
+/// **Additive well-definedness.** From `⊢ rat_rel x x'`, `⊢ rat_rel y y'`
+/// conclude `⊢ rat_rel (add_pair x y) (add_pair x' y')`. Split the numerator
+/// product by `idistrib_r`, re-pair the four factors of each summand by
+/// `imul_interchange` (+`mul_comm`) substituting the two hypotheses, over the
+/// round-tripped denominators.
+fn add_pair_cong(h1: Thm, h2: Thm) -> Result<Thm> {
+    let (x, xp) = dest_rel_app(h1.concl())?;
+    let (y, yp) = dest_rel_app(h2.concl())?;
+    let e1 = reduce_rel(h1)?; // nx·dx' = nx'·dx
+    let e2 = reduce_rel(h2)?; // ny·dy' = ny'·dy
+    let (nx, dx, nxp, dxp) = (num(&x), den(&x), num(&xp), den(&xp));
+    let (ny, dy, nyp, dyp) = (num(&y), den(&y), num(&yp), den(&yp));
+
+    let comm = |u: &Term, v: &Term| int::mul_comm().all_elim(u.clone())?.all_elim(v.clone());
+
+    // Term1: (nx·dy)·(dx'·dy') = (nx'·dy')·(dx·dy).
+    let t1 = imul_interchange(&nx, &dy, &dxp, &dyp)? // = (nx·dx')·(dy·dy')
+        .trans(mul_r(e1.clone(), &imul(dy.clone(), dyp.clone()))?)? // = (nx'·dx)·(dy·dy')
+        .trans(imul_l_cong(&imul(nxp.clone(), dx.clone()), comm(&dy, &dyp)?)?)? // = (nx'·dx)·(dy'·dy)
+        .trans(imul_interchange(&nxp, &dx, &dyp, &dy)?)?; // = (nx'·dy')·(dx·dy)
+
+    // Term2: (ny·dx)·(dx'·dy') = (ny'·dx')·(dx·dy).
+    let t2 = imul_l_cong(&imul(ny.clone(), dx.clone()), comm(&dxp, &dyp)?)? // = (ny·dx)·(dy'·dx')
+        .trans(imul_interchange(&ny, &dx, &dyp, &dxp)?)? // = (ny·dy')·(dx·dx')
+        .trans(mul_r(e2.clone(), &imul(dx.clone(), dxp.clone()))?)? // = (ny'·dy)·(dx·dx')
+        .trans(imul_l_cong(&imul(nyp.clone(), dy.clone()), comm(&dx, &dxp)?)?)? // = (ny'·dy)·(dx'·dx)
+        .trans(imul_interchange(&nyp, &dy, &dxp, &dx)?)? // = (ny'·dx')·(dy·dx)
+        .trans(imul_l_cong(&imul(nyp.clone(), dxp.clone()), comm(&dy, &dx)?)?)?; // = (ny'·dx')·(dx·dy)
+
+    let (p1, p2) = (imul(nx.clone(), dy.clone()), imul(ny.clone(), dx.clone()));
+    let (q1, q2) = (imul(nxp.clone(), dyp.clone()), imul(nyp.clone(), dxp.clone()));
+    let split_l = idistrib_r(&p1, &p2, &imul(dxp.clone(), dyp.clone()))?;
+    let split_r = idistrib_r(&q1, &q2, &imul(dx.clone(), dy.clone()))?;
+    let g_clean = split_l.trans(iadd_cong(t1, t2)?)?.trans(split_r.sym()?)?;
+
+    let rt_xy = den_prod_rt(&x, &y)?; // rep(to_pos(dx·dy)) = dx·dy
+    let rt_xpyp = den_prod_rt(&xp, &yp)?;
+    let g = g_clean
+        .lhs_conv(|t| t.rw_all(&rt_xpyp.sym()?))?
+        .rhs_conv(|t| t.rw_all(&rt_xy.sym()?))?;
+
+    rel_of_pairs(
+        &iadd(imul(nx, dy.clone()), imul(ny, dx.clone())),
+        &to_pos(imul(dx, dy)),
+        &iadd(imul(nxp, dyp.clone()), imul(nyp, dxp.clone())),
+        &to_pos(imul(dxp, dyp)),
+        g,
+    )
+}
+
+/// **Additive computation rule.** `⊢ ratAdd (mk_rat p) (mk_rat q) =
+/// mk_rat (add_pair p q)`.
+fn add_class(p: &Term, q: &Term) -> Result<Thm> {
+    let (mp, mq) = (mk_rat(p), mk_rat(q));
+    let dl = binary_beta(rat_add(), mp.clone(), mq.clone())?;
+    let (rt_p, rt_q) = (round_trip(p)?, round_trip(q)?);
+    let (_, rpp) = dest_rel_app(rt_p.concl())?;
+    let (_, rpq) = dest_rel_app(rt_q.concl())?;
+    let rpp_p = rat_rel_symm().all_elim(p.clone())?.all_elim(rpp)?.imp_elim(rt_p)?;
+    let rpq_q = rat_rel_symm().all_elim(q.clone())?.all_elim(rpq)?.imp_elim(rt_q)?;
+    let cong = add_pair_cong(rpp_p, rpq_q)?;
+    let lift = crate::init::quotient::class_intro(
+        &rat_spec(),
+        &[],
+        &ip_pair(),
+        &rat_rel_symm(),
+        &rat_rel_trans(),
+        cong,
+    )?;
+    dl.trans(lift)
+}
+
+/// **Addition in component form.** `⊢ ratAdd (MK fa da)(MK fb db) =
+/// MK (fa·rep db + fb·rep da) (to_pos(rep da · rep db))`.
+fn add_mk(fa: &Term, da: &Term, fb: &Term, db: &Term) -> Result<Thm> {
+    let (pa, pb) = (ip(fa.clone(), da.clone()), ip(fb.clone(), db.clone()));
+    let ac = add_class(&pa, &pb)?;
+    let (i, pp) = (Type::int(), int_pos_ty());
+    let projs = [
+        crate::init::prod::fst_pair(&i, &pp, fa, da)?,
+        crate::init::prod::fst_pair(&i, &pp, fb, db)?,
+        crate::init::prod::snd_pair(&i, &pp, fa, da)?,
+        crate::init::prod::snd_pair(&i, &pp, fb, db)?,
+    ];
+    ac.rhs_conv(|t| rewrite_seq(t, &projs))
+}
+
+/// `⊢ ratAdd a b = MK (fa·rep db + fb·rep da) (to_pos(rep da · rep db))`,
+/// from `ra : a = MK fa da`, `rb : b = MK fb db`.
+fn add_via_components(ra: &Thm, rb: &Thm) -> Result<Thm> {
+    let (_a, ma) = dest_eq(ra)?;
+    let (_b, mb) = dest_eq(rb)?;
+    let (fa, da) = mk_components(&ma)?;
+    let (fb, db) = mk_components(&mb)?;
+    Thm::refl(rat_add())?
+        .cong_app(ra.clone())?
+        .cong_app(rb.clone())?
+        .trans(add_mk(&fa, &da, &fb, &db)?)
+}
+
 // ============================================================================
 // Commutative-ring axioms (and the field inverse)
 // ============================================================================
@@ -914,11 +1039,41 @@ pub fn add_assoc() -> Thm {
     ))
 }
 
-/// `⊢ ∀a. a + 0 = a`.
-pub fn add_zero() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a. a + 0 = a` — **proved**. `0 = MK(0, one_pos)`, so
+    /// `a + 0 = MK(fa·rep one_pos + 0·rep da, to_pos(rep da · rep one_pos))`;
+    /// the numerator collapses to `fa` (`one_pos_rt` + `int::mul_one` /
+    /// `mul_zero` / `add_zero`) and the denominator to `da` (as in `mul_one`).
+    pub fn add_zero() -> Thm {
+        add_zero_impl().expect("rat::add_zero")
+    }
+}
+fn add_zero_impl() -> Result<Thm> {
     let a = rvar("a");
-    let eq = radd(a.clone(), rat_zero()).equals(a).expect("add_zero");
-    axiom(forall_rat(&["a"], eq))
+    let ra = recon_mk(&a)?; // a = MK(fa, da)
+    let r0 = Thm::refl(rat_zero())?; // rat_zero = MK(0, one_pos)
+    let lhs = add_via_components(&ra, &r0)?;
+    let (fa, da) = (rfst(&a), rden(&a));
+    let rda = den(&rep_pair(a.clone())); // rep da
+    let i0 = Term::int_lit(0i128);
+
+    // Numerator: fa·rep one_pos + 0·rep da = fa.
+    let t1 = imul_l_cong(&fa, one_pos_rt())? // fa·rep one_pos = fa·1
+        .trans(int::mul_one().all_elim(fa.clone())?)?; // = fa
+    let t2 = int::mul_comm()
+        .all_elim(i0.clone())?
+        .all_elim(rda.clone())? // 0·rep da = rep da·0
+        .trans(int::mul_zero().all_elim(rda.clone())?)?; // = 0
+    let f_eq = iadd_cong(t1, t2)?.trans(int::add_zero().all_elim(fa)?)?; // = fa
+
+    // Denominator: to_pos(rep da · rep one_pos) = da (same as mul_one).
+    let dl = mk_components(&dest_eq(&lhs)?.1)?.1;
+    let d_eq = rewrite_seq(&dl, &[one_pos_rt()])?
+        .trans(int::mul_one().all_elim(rda)?.cong_arg(to_pos_fn())?)?
+        .trans(Thm::spec_abs_rep(int_pos_spec(), Vec::new(), da)?)?;
+
+    let bridge = mkfs_cong(f_eq, d_eq)?;
+    lhs.trans(bridge)?.trans(ra.sym()?)?.all_intro("a", rat())
 }
 
 /// `⊢ ∀a. a + (-a) = 0` — additive inverse.
@@ -1722,14 +1877,7 @@ mod tests {
         // The still-postulated ring/field axioms (add_comm / mul_comm /
         // mul_assoc are now proved — see `commutativity_is_genuine` /
         // `mul_assoc_is_genuine`).
-        let all = [
-            add_assoc(),
-            add_zero(),
-            add_neg(),
-            mul_zero(),
-            distrib(),
-            mul_inv(),
-        ];
+        let all = [add_assoc(), add_neg(), mul_zero(), distrib(), mul_inv()];
         for ax in all {
             assert!(ax.concl().type_of().unwrap().is_bool());
             assert!(
@@ -1812,6 +1960,16 @@ mod tests {
         let a = rvar("a");
         let inst = thm.clone().all_elim(a.clone()).unwrap();
         assert_eq!(inst.concl(), &rmul(a.clone(), rat_one()).equals(a).unwrap());
+        assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
+        assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
+    }
+
+    #[test]
+    fn add_zero_is_genuine() {
+        let thm = add_zero();
+        let a = rvar("a");
+        let inst = thm.clone().all_elim(a.clone()).unwrap();
+        assert_eq!(inst.concl(), &radd(a.clone(), rat_zero()).equals(a).unwrap());
         assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
         assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
     }

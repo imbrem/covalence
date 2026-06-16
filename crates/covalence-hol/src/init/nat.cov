@@ -1,8 +1,8 @@
-;; nat.cov — nat lemmas over `core` + the `natrec` env.
+;; cov — nat lemmas over `core` + the `natrec` env.
 ;;
 ;; The `natrec` env imports the nat primitives as given (proved in Rust in
-;; init/nat.rs for now): `nat.succ_inj` (∀m n. S m = S n ⟹ m = n), `nat.zero_ne_succ`
-;; (∀n. ¬(0 = S n)), and `nat.rec_holds` (the natRec recursion equations). We
+;; init/rs for now): `succ_inj` (∀m n. S m = S n ⟹ m = n), `zero_ne_succ`
+;; (∀n. ¬(0 = S n)), and `rec_holds` (the natRec recursion equations). We
 ;; build the freeness corollaries, the recursion-equation projections, and a
 ;; sample induction on top.
 
@@ -14,17 +14,17 @@
 (#open logic)   ;; for `truth`, used to strip `= T` from the ≤/< clauses
 
 ;; ⊢ ∀n. ¬(S n = 0).  `sym` flips the negated-equation goal to ¬(0 = S n),
-;; which is exactly `nat.zero_ne_succ`.
-(#thm nat.succ_ne_zero
+;; which is exactly `zero_ne_succ`.
+(#thm succ_ne_zero
   (#concl (forall (n nat) (not (= (succ n) 0))))
   (#by
     (intro n)
     (sym)
-    (exact (all-elim n (lemma nat.zero_ne_succ)))))
+    (exact (all-elim n (lemma zero_ne_succ)))))
 
 ;; ⊢ ∀m n. ¬(m = n) ⟹ ¬(S m = S n).  `contrapositive` strips the negations,
-;; leaving (S m = S n) ⟹ (m = n) — exactly `nat.succ_inj`.
-(#thm nat.succ_cong_ne
+;; leaving (S m = S n) ⟹ (m = n) — exactly `succ_inj`.
+(#thm succ_cong_ne
   (#concl
     (forall (m nat)
       (forall (n nat)
@@ -32,20 +32,20 @@
   (#by
     (intro m n)
     (contrapositive)
-    (exact (all-elim n (all-elim m (lemma nat.succ_inj))))))
+    (exact (all-elim n (all-elim m (lemma succ_inj))))))
 
-;; ⊢ ∀z f. natRec z f 0 = z.  Project the base equation out of `nat.rec_holds`.
-(#thm nat.rec_zero
+;; ⊢ ∀z f. natRec z f 0 = z.  Project the base equation out of `rec_holds`.
+(#thm rec_zero
   (#concl
     (forall (z nat)
       (forall (f (fun nat (fun nat nat)))
         (= (app (app (app (natrec-op nat) z) f) 0) z))))
   (#by
     (intro z f)
-    (exact (and-elim-l (all-elim f (all-elim z (lemma nat.rec_holds)))))))
+    (exact (and-elim-l (all-elim f (all-elim z (lemma rec_holds)))))))
 
 ;; ⊢ ∀z f n. natRec z f (S n) = f n (natRec z f n).  The step equation.
-(#thm nat.rec_succ
+(#thm rec_succ
   (#concl
     (forall (z nat)
       (forall (f (fun nat (fun nat nat)))
@@ -54,32 +54,32 @@
              (app (app f n) (app (app (app (natrec-op nat) z) f) n)))))))
   (#by
     (intro z f n)
-    (exact (all-elim n (and-elim-r (all-elim f (all-elim z (lemma nat.rec_holds))))))))
+    (exact (all-elim n (and-elim-r (all-elim f (all-elim z (lemma rec_holds))))))))
 
 ;; ⊢ ∀n. n = n, by induction — a minimal use of the `induct` tactic (base
 ;; and step both close by `refl`; the IH is unused here).
-(#thm nat.eq_refl
+(#thm eq_refl
   (#concl (forall (n nat) (= n n)))
   (#by (induct n (#by (refl)) (#by (refl)))))
 
 ;; ============================================================================
 ;; Addition — real inductions, with `rw` reducing via the `+` equations
-;; (`nat.zero_add`: 0 + m = m;  `nat.succ_add`: S n + m = S(n + m)).
+;; (`zero_add`: 0 + m = m;  `succ_add`: S n + m = S(n + m)).
 ;; ============================================================================
 
-;; ⊢ ∀a. a + 0 = a.  (The right unit; `nat.zero_add` only gives the left unit.)
-(#thm nat.add_zero
+;; ⊢ ∀a. a + 0 = a.  (The right unit; `zero_add` only gives the left unit.)
+(#thm add_zero
   (#concl (forall (a nat) (= (nat.add a 0) a)))
   (#by
     (induct a
-      (#by (rw (all-elim 0 (lemma nat.zero_add))) (refl))
+      (#by (rw (all-elim 0 (lemma zero_add))) (refl))
       (#by
-        (rw (all-elim 0 (all-elim a (lemma nat.succ_add))))
+        (rw (all-elim 0 (all-elim a (lemma succ_add))))
         (rw (assume (= (nat.add a 0) a)))
         (refl)))))
 
 ;; ⊢ ∀a b. a + S b = S(a + b).  Induction on a.
-(#thm nat.add_succ
+(#thm add_succ
   (#concl
     (forall (a nat)
       (forall (b nat)
@@ -88,40 +88,40 @@
     (induct a
       (#by
         (intro b)
-        (rw (all-elim (succ b) (lemma nat.zero_add)))
-        (rw (all-elim b (lemma nat.zero_add)))
+        (rw (all-elim (succ b) (lemma zero_add)))
+        (rw (all-elim b (lemma zero_add)))
         (refl))
       (#by
         (intro b)
-        (rw (all-elim (succ b) (all-elim a (lemma nat.succ_add))))
+        (rw (all-elim (succ b) (all-elim a (lemma succ_add))))
         (rw (all-elim b
               (assume (forall (b nat)
                         (= (nat.add a (succ b)) (succ (nat.add a b)))))))
-        (rw (all-elim b (all-elim a (lemma nat.succ_add))))
+        (rw (all-elim b (all-elim a (lemma succ_add))))
         (refl)))))
 
 ;; ⊢ ∀a b. a + b = b + a.  Commutativity, by induction on a, using
-;; `nat.add_zero` and `nat.add_succ`.
-(#thm nat.add_comm
+;; `add_zero` and `add_succ`.
+(#thm add_comm
   (#concl (forall (a nat) (forall (b nat) (= (nat.add a b) (nat.add b a)))))
   (#by
     (induct a
       (#by
         (intro b)
-        (rw (all-elim b (lemma nat.zero_add)))
+        (rw (all-elim b (lemma zero_add)))
         (sym)
-        (rw (all-elim b (lemma nat.add_zero)))
+        (rw (all-elim b (lemma add_zero)))
         (refl))
       (#by
         (intro b)
-        (rw (all-elim b (all-elim a (lemma nat.succ_add))))
+        (rw (all-elim b (all-elim a (lemma succ_add))))
         (rw (all-elim b (assume (forall (b nat) (= (nat.add a b) (nat.add b a))))))
         (sym)
-        (rw (all-elim a (all-elim b (lemma nat.add_succ))))
+        (rw (all-elim a (all-elim b (lemma add_succ))))
         (refl)))))
 
 ;; ⊢ ∀a b c. (a + b) + c = a + (b + c).  Associativity, induction on a.
-(#thm nat.add_assoc
+(#thm add_assoc
   (#concl
     (forall (a nat) (forall (b nat) (forall (c nat)
       (= (nat.add (nat.add a b) c) (nat.add a (nat.add b c)))))))
@@ -129,38 +129,38 @@
     (induct a
       (#by
         (intro b c)
-        (rw (all-elim b (lemma nat.zero_add)))
-        (rw (all-elim (nat.add b c) (lemma nat.zero_add)))
+        (rw (all-elim b (lemma zero_add)))
+        (rw (all-elim (nat.add b c) (lemma zero_add)))
         (refl))
       (#by
         (intro b c)
-        (rw (all-elim b (all-elim a (lemma nat.succ_add))))
-        (rw (all-elim c (all-elim (nat.add a b) (lemma nat.succ_add))))
+        (rw (all-elim b (all-elim a (lemma succ_add))))
+        (rw (all-elim c (all-elim (nat.add a b) (lemma succ_add))))
         (rw (all-elim c (all-elim b
               (assume (forall (b nat) (forall (c nat)
                 (= (nat.add (nat.add a b) c) (nat.add a (nat.add b c)))))))))
-        (rw (all-elim (nat.add b c) (all-elim a (lemma nat.succ_add))))
+        (rw (all-elim (nat.add b c) (all-elim a (lemma succ_add))))
         (refl)))))
 
 ;; ============================================================================
 ;; Multiplication — the commutative-semiring laws.
-;; (`nat.zero_mul`: 0 * m = 0;  `nat.succ_mul`: S n * m = m + n * m).
+;; (`zero_mul`: 0 * m = 0;  `succ_mul`: S n * m = m + n * m).
 ;; ============================================================================
 
-;; ⊢ ∀a. a * 0 = 0.  (The right zero; `nat.zero_mul` gives the left zero.)
-(#thm nat.mul_zero
+;; ⊢ ∀a. a * 0 = 0.  (The right zero; `zero_mul` gives the left zero.)
+(#thm mul_zero
   (#concl (forall (a nat) (= (nat.mul a 0) 0)))
   (#by
     (induct a
-      (#by (rw (all-elim 0 (lemma nat.zero_mul))) (refl))
+      (#by (rw (all-elim 0 (lemma zero_mul))) (refl))
       (#by
-        (rw (all-elim 0 (all-elim a (lemma nat.succ_mul))))
-        (rw (all-elim (nat.mul a 0) (lemma nat.zero_add)))
+        (rw (all-elim 0 (all-elim a (lemma succ_mul))))
+        (rw (all-elim (nat.mul a 0) (lemma zero_add)))
         (rw (assume (= (nat.mul a 0) 0)))
         (refl)))))
 
 ;; ⊢ ∀a b. a * S b = a + a * b.  Successor-on-the-right, induction on a.
-(#thm nat.mul_succ
+(#thm mul_succ
   (#concl
     (forall (a nat) (forall (b nat)
       (= (nat.mul a (succ b)) (nat.add a (nat.mul a b))))))
@@ -168,54 +168,54 @@
     (induct a
       (#by
         (intro b)
-        (rw (all-elim (succ b) (lemma nat.zero_mul)))
-        (rw (all-elim b (lemma nat.zero_mul)))
-        (rw (all-elim 0 (lemma nat.zero_add)))
+        (rw (all-elim (succ b) (lemma zero_mul)))
+        (rw (all-elim b (lemma zero_mul)))
+        (rw (all-elim 0 (lemma zero_add)))
         (refl))
       (#by
         (intro b)
-        (rw (all-elim (succ b) (all-elim a (lemma nat.succ_mul))))
+        (rw (all-elim (succ b) (all-elim a (lemma succ_mul))))
         (rw (all-elim b
               (assume (forall (b nat)
                 (= (nat.mul a (succ b)) (nat.add a (nat.mul a b)))))))
-        (rw (all-elim (nat.add a (nat.mul a b)) (all-elim b (lemma nat.succ_add))))
-        (rw (all-elim b (all-elim a (lemma nat.succ_mul))))
-        (rw (all-elim (nat.add b (nat.mul a b)) (all-elim a (lemma nat.succ_add))))
-        (rw (sym (all-elim (nat.mul a b) (all-elim a (all-elim b (lemma nat.add_assoc))))))
-        (rw (all-elim a (all-elim b (lemma nat.add_comm))))
-        (rw (all-elim (nat.mul a b) (all-elim b (all-elim a (lemma nat.add_assoc)))))
+        (rw (all-elim (nat.add a (nat.mul a b)) (all-elim b (lemma succ_add))))
+        (rw (all-elim b (all-elim a (lemma succ_mul))))
+        (rw (all-elim (nat.add b (nat.mul a b)) (all-elim a (lemma succ_add))))
+        (rw (sym (all-elim (nat.mul a b) (all-elim a (all-elim b (lemma add_assoc))))))
+        (rw (all-elim a (all-elim b (lemma add_comm))))
+        (rw (all-elim (nat.mul a b) (all-elim b (all-elim a (lemma add_assoc)))))
         (refl)))))
 
 ;; ⊢ ∀a b. a * b = b * a.  Commutativity, induction on a.
-(#thm nat.mul_comm
+(#thm mul_comm
   (#concl (forall (a nat) (forall (b nat) (= (nat.mul a b) (nat.mul b a)))))
   (#by
     (induct a
       (#by
         (intro b)
-        (rw (all-elim b (lemma nat.zero_mul)))
-        (rw (all-elim b (lemma nat.mul_zero)))
+        (rw (all-elim b (lemma zero_mul)))
+        (rw (all-elim b (lemma mul_zero)))
         (refl))
       (#by
         (intro b)
-        (rw (all-elim b (all-elim a (lemma nat.succ_mul))))
-        (rw (all-elim a (all-elim b (lemma nat.mul_succ))))
+        (rw (all-elim b (all-elim a (lemma succ_mul))))
+        (rw (all-elim a (all-elim b (lemma mul_succ))))
         (rw (all-elim b (assume (forall (b nat) (= (nat.mul a b) (nat.mul b a))))))
         (refl)))))
 
 ;; ⊢ ∀a. a * 1 = a.  (`1` folds to `S 0`, then `mul_succ`/`mul_zero`/`add_zero`.)
-(#thm nat.mul_one
+(#thm mul_one
   (#concl (forall (a nat) (= (nat.mul a 1) a)))
   (#by
     (intro a)
     (rw (sym (reduce-prim (succ 0))))
-    (rw (all-elim 0 (all-elim a (lemma nat.mul_succ))))
-    (rw (all-elim a (lemma nat.mul_zero)))
-    (rw (all-elim a (lemma nat.add_zero)))
+    (rw (all-elim 0 (all-elim a (lemma mul_succ))))
+    (rw (all-elim a (lemma mul_zero)))
+    (rw (all-elim a (lemma add_zero)))
     (refl)))
 
 ;; ⊢ ∀a b c. (a + c = b + c) ⟹ (a = b).  Right cancellation, induction on c.
-(#thm nat.add_cancel
+(#thm add_cancel
   (#concl
     (forall (a nat) (forall (b nat) (forall (c nat)
       (==> (= (nat.add a c) (nat.add b c)) (= a b))))))
@@ -226,9 +226,9 @@
       (#by
         (intro h)
         (exact
-          (trans (sym (all-elim a (lemma nat.add_zero)))
+          (trans (sym (all-elim a (lemma add_zero)))
             (trans (assume (= (nat.add a 0) (nat.add b 0)))
-                   (all-elim b (lemma nat.add_zero))))))
+                   (all-elim b (lemma add_zero))))))
       ;; step: ih (a+c=b+c ⟹ a=b) ⊢ (a+Sc=b+Sc) ⟹ a=b
       (#by
         (intro h)
@@ -236,30 +236,30 @@
           (imp-elim
             (assume (==> (= (nat.add a c) (nat.add b c)) (= a b)))
             (imp-elim
-              (all-elim (nat.add b c) (all-elim (nat.add a c) (lemma nat.succ_inj)))
-              (trans (sym (all-elim c (all-elim a (lemma nat.add_succ))))
+              (all-elim (nat.add b c) (all-elim (nat.add a c) (lemma succ_inj)))
+              (trans (sym (all-elim c (all-elim a (lemma add_succ))))
                 (trans (assume (= (nat.add a (succ c)) (nat.add b (succ c))))
-                       (all-elim c (all-elim b (lemma nat.add_succ))))))))))))
+                       (all-elim c (all-elim b (lemma add_succ))))))))))))
 
 ;; ⊢ ∀w x y z. (w + x) + (y + z) = (w + y) + (x + z).  The "middle-four
 ;; interchange" — pure associativity/commutativity, no induction. Used to
 ;; rearrange the cross terms in distributivity.
-(#thm nat.add_swap_mid
+(#thm add_swap_mid
   (#concl
     (forall (w nat) (forall (x nat) (forall (y nat) (forall (z nat)
       (= (nat.add (nat.add w x) (nat.add y z))
          (nat.add (nat.add w y) (nat.add x z))))))))
   (#by
     (intro w x y z)
-    (rw (all-elim (nat.add y z) (all-elim x (all-elim w (lemma nat.add_assoc)))))
-    (rw (sym (all-elim z (all-elim y (all-elim x (lemma nat.add_assoc))))))
-    (rw (all-elim y (all-elim x (lemma nat.add_comm))))
-    (rw (all-elim z (all-elim x (all-elim y (lemma nat.add_assoc)))))
-    (rw (sym (all-elim (nat.add x z) (all-elim y (all-elim w (lemma nat.add_assoc))))))
+    (rw (all-elim (nat.add y z) (all-elim x (all-elim w (lemma add_assoc)))))
+    (rw (sym (all-elim z (all-elim y (all-elim x (lemma add_assoc))))))
+    (rw (all-elim y (all-elim x (lemma add_comm))))
+    (rw (all-elim z (all-elim x (all-elim y (lemma add_assoc)))))
+    (rw (sym (all-elim (nat.add x z) (all-elim y (all-elim w (lemma add_assoc))))))
     (refl)))
 
 ;; ⊢ ∀a b c. a * (b + c) = a * b + a * c.  Left distributivity, induction on a.
-(#thm nat.distrib
+(#thm distrib
   (#concl
     (forall (a nat) (forall (b nat) (forall (c nat)
       (= (nat.mul a (nat.add b c)) (nat.add (nat.mul a b) (nat.mul a c)))))))
@@ -267,39 +267,39 @@
     (induct a
       (#by
         (intro b c)
-        (rw (all-elim (nat.add b c) (lemma nat.zero_mul)))
-        (rw (all-elim b (lemma nat.zero_mul)))
-        (rw (all-elim c (lemma nat.zero_mul)))
-        (rw (all-elim 0 (lemma nat.zero_add)))
+        (rw (all-elim (nat.add b c) (lemma zero_mul)))
+        (rw (all-elim b (lemma zero_mul)))
+        (rw (all-elim c (lemma zero_mul)))
+        (rw (all-elim 0 (lemma zero_add)))
         (refl))
       (#by
         (intro b c)
-        (rw (all-elim (nat.add b c) (all-elim a (lemma nat.succ_mul))))
+        (rw (all-elim (nat.add b c) (all-elim a (lemma succ_mul))))
         (rw (all-elim c (all-elim b
               (assume (forall (b nat) (forall (c nat)
                 (= (nat.mul a (nat.add b c)) (nat.add (nat.mul a b) (nat.mul a c)))))))))
-        (rw (all-elim b (all-elim a (lemma nat.succ_mul))))
-        (rw (all-elim c (all-elim a (lemma nat.succ_mul))))
+        (rw (all-elim b (all-elim a (lemma succ_mul))))
+        (rw (all-elim c (all-elim a (lemma succ_mul))))
         (rw (all-elim (nat.mul a c) (all-elim (nat.mul a b)
-              (all-elim c (all-elim b (lemma nat.add_swap_mid))))))
+              (all-elim c (all-elim b (lemma add_swap_mid))))))
         (refl)))))
 
 ;; ⊢ ∀a b c. (a + b) * c = a * c + b * c.  Right distributivity — from
 ;; `distrib` + `mul_comm`, no induction.
-(#thm nat.distrib_r
+(#thm distrib_r
   (#concl
     (forall (a nat) (forall (b nat) (forall (c nat)
       (= (nat.mul (nat.add a b) c) (nat.add (nat.mul a c) (nat.mul b c)))))))
   (#by
     (intro a b c)
-    (rw (all-elim c (all-elim (nat.add a b) (lemma nat.mul_comm))))
-    (rw (all-elim b (all-elim a (all-elim c (lemma nat.distrib)))))
-    (rw (all-elim a (all-elim c (lemma nat.mul_comm))))
-    (rw (all-elim b (all-elim c (lemma nat.mul_comm))))
+    (rw (all-elim c (all-elim (nat.add a b) (lemma mul_comm))))
+    (rw (all-elim b (all-elim a (all-elim c (lemma distrib)))))
+    (rw (all-elim a (all-elim c (lemma mul_comm))))
+    (rw (all-elim b (all-elim c (lemma mul_comm))))
     (refl)))
 
 ;; ⊢ ∀a b c. (a * b) * c = a * (b * c).  Associativity, induction on a.
-(#thm nat.mul_assoc
+(#thm mul_assoc
   (#concl
     (forall (a nat) (forall (b nat) (forall (c nat)
       (= (nat.mul (nat.mul a b) c) (nat.mul a (nat.mul b c)))))))
@@ -307,39 +307,39 @@
     (induct a
       (#by
         (intro b c)
-        (rw (all-elim b (lemma nat.zero_mul)))
-        (rw (all-elim c (lemma nat.zero_mul)))
-        (rw (all-elim (nat.mul b c) (lemma nat.zero_mul)))
+        (rw (all-elim b (lemma zero_mul)))
+        (rw (all-elim c (lemma zero_mul)))
+        (rw (all-elim (nat.mul b c) (lemma zero_mul)))
         (refl))
       (#by
         (intro b c)
-        (rw (all-elim b (all-elim a (lemma nat.succ_mul))))
-        (rw (all-elim c (all-elim (nat.mul a b) (all-elim b (lemma nat.distrib_r)))))
+        (rw (all-elim b (all-elim a (lemma succ_mul))))
+        (rw (all-elim c (all-elim (nat.mul a b) (all-elim b (lemma distrib_r)))))
         (rw (all-elim c (all-elim b
               (assume (forall (b nat) (forall (c nat)
                 (= (nat.mul (nat.mul a b) c) (nat.mul a (nat.mul b c)))))))))
-        (rw (all-elim (nat.mul b c) (all-elim a (lemma nat.succ_mul))))
+        (rw (all-elim (nat.mul b c) (all-elim a (lemma succ_mul))))
         (refl)))))
 
 ;; ============================================================================
-;; Saturating subtraction.  (`nat.sub_zero`: n - 0 = n;  `nat.sub_succ`:
-;; n - S m = pred (n - m);  `nat.pred_zero`/`nat.pred_succ` for pred.)
+;; Saturating subtraction.  (`sub_zero`: n - 0 = n;  `sub_succ`:
+;; n - S m = pred (n - m);  `pred_zero`/`pred_succ` for pred.)
 ;; ============================================================================
 
 ;; ⊢ ∀m. 0 - m = 0.  Zero is a left zero of saturating subtraction.
-(#thm nat.zero_sub
+(#thm zero_sub
   (#concl (forall (m nat) (= (nat.sub 0 m) 0)))
   (#by
     (induct m
-      (#by (rw (all-elim 0 (lemma nat.sub_zero))) (refl))
+      (#by (rw (all-elim 0 (lemma sub_zero))) (refl))
       (#by
-        (rw (all-elim m (all-elim 0 (lemma nat.sub_succ))))
+        (rw (all-elim m (all-elim 0 (lemma sub_succ))))
         (rw (assume (= (nat.sub 0 m) 0)))
-        (rw (lemma nat.pred_zero))
+        (rw (lemma pred_zero))
         (refl)))))
 
 ;; ⊢ ∀n m. S n - S m = n - m.  Successors cancel across subtraction.
-(#thm nat.succ_sub
+(#thm succ_sub
   (#concl
     (forall (n nat) (forall (m nat)
       (= (nat.sub (succ n) (succ m)) (nat.sub n m)))))
@@ -347,110 +347,110 @@
     (intro n)
     (induct m
       (#by
-        (rw (all-elim 0 (all-elim (succ n) (lemma nat.sub_succ))))
-        (rw (all-elim (succ n) (lemma nat.sub_zero)))
-        (rw (all-elim n (lemma nat.pred_succ)))
+        (rw (all-elim 0 (all-elim (succ n) (lemma sub_succ))))
+        (rw (all-elim (succ n) (lemma sub_zero)))
+        (rw (all-elim n (lemma pred_succ)))
         (sym)
-        (rw (all-elim n (lemma nat.sub_zero)))
+        (rw (all-elim n (lemma sub_zero)))
         (refl))
       (#by
-        (rw (all-elim (succ m) (all-elim (succ n) (lemma nat.sub_succ))))
+        (rw (all-elim (succ m) (all-elim (succ n) (lemma sub_succ))))
         (rw (assume (= (nat.sub (succ n) (succ m)) (nat.sub n m))))
-        (rw (all-elim m (all-elim n (lemma nat.sub_succ))))
+        (rw (all-elim m (all-elim n (lemma sub_succ))))
         (refl)))))
 
 ;; ============================================================================
 ;; Order (`≤`, `<`).  `nat.le`/`nat.lt` are def-style selector predicates;
-;; `nat.le_body`/`nat.lt_body` give the 4 defining clauses in `= T`/`= F`
+;; `le_body`/`lt_body` give the 4 defining clauses in `= T`/`= F`
 ;; form. `eqt`/`eqf` here is `eq-mp` against `truth` (or `assume` + `eq-mp`).
 ;; ============================================================================
 
-;; ⊢ ∀n m. (S n ≤ S m) = (n ≤ m).  The 4th clause of `nat.le_body`.
-(#thm nat.le_succ_succ
+;; ⊢ ∀n m. (S n ≤ S m) = (n ≤ m).  The 4th clause of `le_body`.
+(#thm le_succ_succ
   (#concl (forall (n nat) (forall (m nat)
             (= (nat.le (succ n) (succ m)) (nat.le n m)))))
   (#by
     (intro n m)
     (exact (all-elim m (all-elim n
-              (and-elim-r (and-elim-r (and-elim-r (lemma nat.le_body)))))))))
+              (and-elim-r (and-elim-r (and-elim-r (lemma le_body)))))))))
 
 ;; ⊢ ∀n m. (S n < S m) = (n < m).
-(#thm nat.lt_succ_succ
+(#thm lt_succ_succ
   (#concl (forall (n nat) (forall (m nat)
             (= (nat.lt (succ n) (succ m)) (nat.lt n m)))))
   (#by
     (intro n m)
     (exact (all-elim m (all-elim n
-              (and-elim-r (and-elim-r (and-elim-r (lemma nat.lt_body)))))))))
+              (and-elim-r (and-elim-r (and-elim-r (lemma lt_body)))))))))
 
-;; ⊢ ∀m. 0 ≤ m.  Induction on m; both cases from `nat.le_body` (= T), via
+;; ⊢ ∀m. 0 ≤ m.  Induction on m; both cases from `le_body` (= T), via
 ;; `truth` to strip the `= T`.
-(#thm nat.le_zero
+(#thm le_zero
   (#concl (forall (m nat) (nat.le 0 m)))
   (#by
     (induct m
-      (#by (exact (eq-mp (sym (and-elim-l (lemma nat.le_body))) (lemma truth))))
-      (#by (exact (eq-mp (sym (all-elim m (and-elim-l (and-elim-r (lemma nat.le_body)))))
+      (#by (exact (eq-mp (sym (and-elim-l (lemma le_body))) (lemma truth))))
+      (#by (exact (eq-mp (sym (all-elim m (and-elim-l (and-elim-r (lemma le_body)))))
                          (lemma truth)))))))
 
 ;; ⊢ ∀m. 0 < S m.  Every successor is positive (2nd `<` clause).
-(#thm nat.zero_lt_succ
+(#thm zero_lt_succ
   (#concl (forall (m nat) (nat.lt 0 (succ m))))
   (#by
     (intro m)
-    (exact (eq-mp (sym (all-elim m (and-elim-l (and-elim-r (lemma nat.lt_body)))))
+    (exact (eq-mp (sym (all-elim m (and-elim-l (and-elim-r (lemma lt_body)))))
                   (lemma truth)))))
 
 ;; ⊢ ∀n. n ≤ n.  Reflexivity, induction (step rewrites with `le_succ_succ`).
-(#thm nat.le_refl
+(#thm le_refl
   (#concl (forall (n nat) (nat.le n n)))
   (#by
     (induct n
-      (#by (exact (eq-mp (sym (and-elim-l (lemma nat.le_body))) (lemma truth))))
+      (#by (exact (eq-mp (sym (and-elim-l (lemma le_body))) (lemma truth))))
       (#by
-        (rw (all-elim n (all-elim n (lemma nat.le_succ_succ))))
+        (rw (all-elim n (all-elim n (lemma le_succ_succ))))
         (assumption)))))
 
 ;; ⊢ ∀n. ¬(S n ≤ 0).  Nothing positive is ≤ 0 (3rd `≤` clause, = F).
-(#thm nat.not_succ_le_zero
+(#thm not_succ_le_zero
   (#concl (forall (n nat) (not (nat.le (succ n) 0))))
   (#by
     (intro n)
     (not-intro)
     (intro h)
-    (exact (eq-mp (all-elim n (and-elim-l (and-elim-r (and-elim-r (lemma nat.le_body)))))
+    (exact (eq-mp (all-elim n (and-elim-l (and-elim-r (and-elim-r (lemma le_body)))))
                   (assume (nat.le (succ n) 0))))))
 
 ;; ⊢ ∀n. ¬(n < 0).  Nothing is < 0 (induction: 0 from clause 1, S n from 3).
-(#thm nat.not_lt_zero
+(#thm not_lt_zero
   (#concl (forall (n nat) (not (nat.lt n 0))))
   (#by
     (induct n
       (#by
         (not-intro) (intro h)
-        (exact (eq-mp (and-elim-l (lemma nat.lt_body)) (assume (nat.lt 0 0)))))
+        (exact (eq-mp (and-elim-l (lemma lt_body)) (assume (nat.lt 0 0)))))
       (#by
         (not-intro) (intro h)
-        (exact (eq-mp (all-elim n (and-elim-l (and-elim-r (and-elim-r (lemma nat.lt_body)))))
+        (exact (eq-mp (all-elim n (and-elim-l (and-elim-r (and-elim-r (lemma lt_body)))))
                       (assume (nat.lt (succ n) 0))))))))
 
 ;; ⊢ ∀n. ¬(n < n).  Irreflexivity of `<`, induction (step via `lt_succ_succ`).
-(#thm nat.lt_irrefl
+(#thm lt_irrefl
   (#concl (forall (n nat) (not (nat.lt n n))))
   (#by
     (induct n
       (#by
         (not-intro) (intro h)
-        (exact (eq-mp (and-elim-l (lemma nat.lt_body)) (assume (nat.lt 0 0)))))
+        (exact (eq-mp (and-elim-l (lemma lt_body)) (assume (nat.lt 0 0)))))
       (#by
-        (rw (all-elim n (all-elim n (lemma nat.lt_succ_succ))))
+        (rw (all-elim n (all-elim n (lemma lt_succ_succ))))
         (assumption)))))
 
-(#export nat.succ_ne_zero nat.succ_cong_ne nat.rec_zero nat.rec_succ nat.eq_refl
-         nat.add_zero nat.add_succ nat.add_comm nat.add_assoc nat.add_cancel
-         nat.add_swap_mid
-         nat.mul_zero nat.mul_succ nat.mul_comm nat.mul_one
-         nat.distrib nat.distrib_r nat.mul_assoc
-         nat.zero_sub nat.succ_sub
-         nat.le_succ_succ nat.lt_succ_succ nat.le_zero nat.zero_lt_succ
-         nat.le_refl nat.not_succ_le_zero nat.not_lt_zero nat.lt_irrefl)
+(#export succ_ne_zero succ_cong_ne rec_zero rec_succ eq_refl
+         add_zero add_succ add_comm add_assoc add_cancel
+         add_swap_mid
+         mul_zero mul_succ mul_comm mul_one
+         distrib distrib_r mul_assoc
+         zero_sub succ_sub
+         le_succ_succ lt_succ_succ le_zero zero_lt_succ
+         le_refl not_succ_le_zero not_lt_zero lt_irrefl)

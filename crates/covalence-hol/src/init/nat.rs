@@ -164,23 +164,23 @@ fn rec_succ(z: Term, f: Term, n: Term) -> Result<Thm> {
 /// machinery (they can be ported themselves later).
 pub fn natrec_env() -> crate::script::Env {
     let mut e = crate::script::Env::empty();
-    e.define_lemma("nat.succ_inj", succ_inj());
-    e.define_lemma("nat.zero_ne_succ", zero_ne_succ());
-    e.define_lemma("nat.rec_holds", rec_holds());
+    e.define_lemma("succ_inj", succ_inj());
+    e.define_lemma("zero_ne_succ", zero_ne_succ());
+    e.define_lemma("rec_holds", rec_holds());
     // the `+` / `*` recursion equations (also proved in Rust for now)
-    e.define_lemma("nat.zero_add", add_base());
-    e.define_lemma("nat.succ_add", add_step());
-    e.define_lemma("nat.zero_mul", mul_base());
-    e.define_lemma("nat.succ_mul", mul_step());
+    e.define_lemma("zero_add", add_base());
+    e.define_lemma("succ_add", add_step());
+    e.define_lemma("zero_mul", mul_base());
+    e.define_lemma("succ_mul", mul_step());
     // pred / saturating-subtraction recursion equations
-    e.define_lemma("nat.pred_zero", pred_zero());
-    e.define_lemma("nat.pred_succ", pred_succ());
-    e.define_lemma("nat.sub_zero", sub_zero());
-    e.define_lemma("nat.sub_succ", sub_succ());
+    e.define_lemma("pred_zero", pred_zero());
+    e.define_lemma("pred_succ", pred_succ());
+    e.define_lemma("sub_zero", sub_zero());
+    e.define_lemma("sub_succ", sub_succ());
     // the `≤` / `<` defining clauses (`= T`/`= F` boolean forms), as the
     // 4-way conjunctions; nat.cov projects them with `and-elim`.
-    e.define_lemma("nat.le_body", le_body());
-    e.define_lemma("nat.lt_body", lt_body());
+    e.define_lemma("le_body", le_body());
+    e.define_lemma("lt_body", lt_body());
     e
 }
 
@@ -190,20 +190,20 @@ crate::cov_theory! {
         import "core" = crate::script::Env::core();
         import "natrec" = crate::init::nat::natrec_env();
         import "logic" = crate::init::logic::cov::env();
-        "nat.succ_ne_zero" => pub fn succ_ne_zero;
-        "nat.succ_cong_ne" => pub fn succ_cong_ne;
-        "nat.rec_zero"     => pub fn natrec_zero_eq;
-        "nat.rec_succ"     => pub fn natrec_succ_eq;
-        "nat.eq_refl"      => pub fn nat_eq_refl;
-        "nat.add_zero"     => pub fn add_zero_cov;
-        "nat.add_succ"     => pub fn add_succ_r_cov;
-        "nat.add_comm"     => pub fn add_comm_cov;
-        "nat.add_assoc"    => pub fn add_assoc_cov;
-        "nat.add_cancel"   => pub fn add_cancel_cov;
-        "nat.mul_comm"     => pub fn mul_comm_cov;
-        "nat.mul_one"      => pub fn mul_one_cov;
-        "nat.distrib"      => pub fn distrib_cov;
-        "nat.mul_assoc"    => pub fn mul_assoc_cov;
+        "succ_ne_zero" => pub fn succ_ne_zero;
+        "succ_cong_ne" => pub fn succ_cong_ne;
+        "rec_zero"     => pub fn natrec_zero_eq;
+        "rec_succ"     => pub fn natrec_succ_eq;
+        "eq_refl"      => pub fn nat_eq_refl;
+        "add_zero"     => pub fn add_zero_cov;
+        "add_succ"     => pub fn add_succ_r_cov;
+        "add_comm"     => pub fn add_comm_cov;
+        "add_assoc"    => pub fn add_assoc_cov;
+        "add_cancel"   => pub fn add_cancel_cov;
+        "mul_comm"     => pub fn mul_comm_cov;
+        "mul_one"      => pub fn mul_one_cov;
+        "distrib"      => pub fn distrib_cov;
+        "mul_assoc"    => pub fn mul_assoc_cov;
     }
 }
 
@@ -2206,5 +2206,33 @@ mod cov_tests {
         assert_eq!(cov::mul_one_cov().concl(), super::mul_one().concl());
         assert_eq!(cov::distrib_cov().concl(), super::distrib().concl());
         assert_eq!(cov::mul_assoc_cov().concl(), super::mul_assoc().concl());
+    }
+
+    #[test]
+    fn use_nat_qualifies_lemmas() {
+        // `nat.cov` now defines its lemmas UNQUALIFIED (`add_comm`, …); a
+        // downstream theory recovers the `nat.` namespace with `(#use nat)`,
+        // so the lemma is reachable as `nat.add_comm`.
+        use crate::script::{Env, run};
+        let theory = run(
+            r#"
+            (#import core)
+            (#open core)
+            (#import nat)
+            (#use nat)
+            (#thm comm.echo
+              (#fix (a nat) (b nat))
+              (#concl (= (nat.add a b) (nat.add b a)))
+              (#proof (all-elim b (all-elim a (lemma nat.add_comm)))))
+            "#,
+            |name| match name {
+                "core" => Some(Env::core()),
+                "nat" => Some(cov::env()),
+                _ => None,
+            },
+            |_| None,
+        )
+        .expect("`(#use nat)` should expose `nat.add_comm`");
+        assert!(theory.thms[0].thm.hyps().is_empty());
     }
 }

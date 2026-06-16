@@ -251,9 +251,10 @@ pub fn parse_drv(s: &SExpr, scope: &mut Scope, env: &Env) -> R<Drv> {
             arity(ch, 4, head)?;
             let name = sym(&ch[1], "var name")?.to_string();
             let ty = parse_type(&ch[2])?;
-            scope.push((name.clone(), ty.clone()));
+            scope.open();
+            scope.define(name.clone(), ty.clone());
             let body = parse_drv(&ch[3], scope, env);
-            scope.pop();
+            scope.close();
             let body = Box::new(body?);
             if head == "abs-rule" {
                 Drv::AbsRule { name, ty, body }

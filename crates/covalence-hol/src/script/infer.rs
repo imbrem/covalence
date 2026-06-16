@@ -27,7 +27,7 @@ use covalence_core::{Term, Type, TypeKind, subst};
 use covalence_sexp::{SExp, SExpr};
 
 use super::ScriptError;
-use super::syntax::{ConstDef, Env, arity, head_sym, parse_type, sym};
+use super::syntax::{ConstDef, Env, Scope, arity, head_sym, parse_type, sym};
 use crate::HolLightCtx;
 
 type R<T> = Result<T, ScriptError>;
@@ -468,9 +468,9 @@ pub fn parse_binder_spec(s: &SExpr) -> R<(String, Option<Type>)> {
 /// Elaborate a single term against a fully-typed scope. Implicit free
 /// variables and binder domains are inferred; leftover metavariables are
 /// generalised to type variables.
-pub fn elaborate_term(s: &SExpr, scope: &[(String, Type)], env: &Env) -> R<Term> {
+pub fn elaborate_term(s: &SExpr, scope: &Scope, env: &Env) -> R<Term> {
     let mut e = Elab::new(env);
-    for (n, t) in scope {
+    for (n, t) in scope.iter() {
         let ety = e.from_type(t)?;
         e.frees.push((n.clone(), ety));
     }

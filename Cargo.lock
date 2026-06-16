@@ -1041,6 +1041,7 @@ dependencies = [
  "covalence-hash",
  "covalence-sexp",
  "covalence-types",
+ "indexmap",
  "smol_str",
  "thiserror 2.0.18",
 ]

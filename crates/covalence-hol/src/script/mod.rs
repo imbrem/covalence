@@ -119,6 +119,35 @@ pub fn run(
                 syntax::arity(ch, 2, "#open")?;
                 internal.open(syntax::sym(&ch[1], "environment name")?)?;
             }
+            // `(#use NAME)` / `(#use (#alias NAME PREFIX))` — bring an
+            // imported namespace into scope QUALIFIED, so `and.comm` becomes
+            // `NAME.and.comm` (or `PREFIX.and.comm`).
+            "#use" => {
+                syntax::arity(ch, 2, "#use")?;
+                let (name, prefix) = parse_use_target(&ch[1])?;
+                internal.use_ns(&name, &prefix)?;
+            }
+            // `(#export-all NAME)` / `(#export-all NAME as PREFIX)` — re-export
+            // *every* symbol of an imported namespace, optionally re-prefixed
+            // (e.g. `nat` → `init.nat`, or `logic` → `prelude`).
+            "#export-all" => {
+                let name = syntax::sym(&ch[1], "namespace name")?;
+                let prefix = match ch.len() {
+                    2 => "",
+                    4 if syntax::sym(&ch[2], "as")? == "as" => {
+                        syntax::sym(&ch[3], "export prefix")?
+                    }
+                    _ => {
+                        return Err(ScriptError::Syntax(
+                            "#export-all: expected (#export-all NAME [as PREFIX])".into(),
+                        ));
+                    }
+                };
+                let ns = internal.get_import(name).cloned().ok_or_else(|| {
+                    ScriptError::Unbound(format!("environment not imported: `{name}`"))
+                })?;
+                exports.merge_prefixed(&ns, prefix);
+            }
             // `(#register-ffi-tactic NAME)` — register a host-supplied native
             // tactic (the pointer comes from `tactics`, e.g. a `cov_theory!`
             // `ffi-tactic` clause) into the running environment under NAME.
@@ -169,6 +198,29 @@ pub fn run(
 /// returning the theorems it proves.
 pub fn run_str(src: &str) -> Result<Vec<NamedThm>, ScriptError> {
     Ok(run(src, |name| (name == "core").then(Env::core), |_| None)?.thms)
+}
+
+/// Parse a `#use` target — `NAME` (qualify by `NAME`) or
+/// `(#alias NAME PREFIX)` (qualify by `PREFIX`).
+fn parse_use_target(s: &SExpr) -> Result<(String, String), ScriptError> {
+    match s {
+        covalence_sexp::SExp::Atom(_) => {
+            let n = syntax::sym(s, "namespace name")?;
+            Ok((n.to_string(), n.to_string()))
+        }
+        covalence_sexp::SExp::List(a) => {
+            if syntax::head_sym(a)? != "#alias" {
+                return Err(ScriptError::Syntax(
+                    "#use: expected NAME or (#alias NAME PREFIX)".into(),
+                ));
+            }
+            syntax::arity(a, 3, "#alias")?;
+            Ok((
+                syntax::sym(&a[1], "alias name")?.to_string(),
+                syntax::sym(&a[2], "alias prefix")?.to_string(),
+            ))
+        }
+    }
 }
 
 /// Load a `.cov` proof script as a Rust module: run it once, lazily, with
@@ -277,7 +329,7 @@ fn run_thm(ch: &[SExpr], env: &Env) -> Result<NamedThm, ScriptError> {
     let concl_ch = syntax::list(&ch[idx], "#concl")?;
     let concl_payload = syntax::expect_head(concl_ch, "#concl")?;
     let (expected, vars) = infer::elaborate_concl(concl_payload, &fix, env)?;
-    let mut scope: Scope = vars;
+    let mut scope = Scope::with_vars(vars);
     idx += 1;
 
     // The proof body is `(#proof DRV)` (tree mode) or `(#by STEP…)`
@@ -398,6 +450,40 @@ mod tests {
             "#,
         );
         assert!(missing.is_err(), "tauto tactic must not be a core tactic");
+    }
+
+    #[test]
+    fn use_qualifies_a_namespace() {
+        // `(#use logic)` brings logic's exports in QUALIFIED: `and.comm`
+        // becomes `logic.and.comm`. An alias re-prefixes; `#export-all`
+        // re-exports everything under a layer.
+        let theory = run(
+            r#"
+            (#import core)
+            (#open core)
+            (#import logic)
+            (#use logic)
+            (#thm uses.qualified
+              (#concl (and b a))
+              (#proof
+                (imp-elim
+                  (inst p a (inst q b (lemma logic.and.comm)))
+                  (assume (and a b)))))
+            (#export-all logic as prelude)
+            "#,
+            |name| match name {
+                "core" => Some(Env::core()),
+                "logic" => Some(crate::init::logic::cov::env()),
+                _ => None,
+            },
+            |_| None,
+        )
+        .expect("qualified use of logic");
+        // `lemma logic.and.comm` resolved (the proof checked).
+        assert_eq!(theory.thms.len(), 1);
+        // the alias `lg.` and the re-export `prelude.` are both present
+        let env = theory.env();
+        assert!(env.has_lemma("prelude.and.comm"), "re-exported under prelude");
     }
 
     #[test]

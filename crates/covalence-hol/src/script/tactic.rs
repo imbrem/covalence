@@ -9,9 +9,9 @@
 //! steps, and the mutable interpreter state [`Interp`]; it returns a `Thm`
 //! for the current goal. (Goal-transformers recurse via [`Interp::run`].)
 //! `Interp` owns the transient proof state — the goal, the context facts, and
-//! the variable scope (`open_scope`/`close_scope`) — separate from the
-//! importable namespace [`Env`]. A stricter, stack-guarded form (and a WASM
-//! tactic ABI) is future work.
+//! the variable scope (`open_scope`/`close_scope` to push/pop groups,
+//! `define_var` to bind) — separate from the importable namespace [`Env`].
+//! A stricter, stack-guarded form (and a WASM tactic ABI) is future work.
 
 use std::collections::HashMap;
 
@@ -58,14 +58,20 @@ impl<'e> Interp<'e> {
     pub fn goal(&self) -> &Term {
         &self.goal
     }
-    /// Introduce a fixed variable into scope (for the duration until
-    /// [`Interp::close_scope`]).
-    pub fn open_scope(&mut self, name: &str, ty: Type) {
-        self.scope.push((name.to_string(), ty));
+    /// Open a fresh variable group (closed as a unit by
+    /// [`Interp::close_scope`]). Variable definition is separate — see
+    /// [`Interp::define_var`].
+    pub fn open_scope(&mut self) {
+        self.scope.open();
     }
-    /// Drop the innermost fixed variable.
+    /// Close the innermost variable group, dropping every variable defined
+    /// in it.
     pub fn close_scope(&mut self) {
-        self.scope.pop();
+        self.scope.close();
+    }
+    /// Define a fixed variable in the current scope group.
+    pub fn define_var(&mut self, name: &str, ty: Type) {
+        self.scope.define(name.to_string(), ty);
     }
 
     /// Dispatch the next tactic in `steps` (looked up by name in the
@@ -161,9 +167,10 @@ fn intro_names(names: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
         Ok(inner?.imp_intro(&a)?)
     } else if let Some((ty, body)) = dest_forall(&it.goal) {
         it.goal = subst::open(&body, &Term::free(name.as_str(), ty.clone()));
-        it.scope.push((name.clone(), ty.clone()));
+        it.scope.open();
+        it.scope.define(name.clone(), ty.clone());
         let inner = intro_names(more, rest, it);
-        it.scope.pop();
+        it.scope.close();
         Ok(inner?.all_intro(&name, ty)?)
     } else {
         Err(ScriptError::Syntax(format!(
@@ -323,9 +330,10 @@ fn tac_induct(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
     let sv = Term::app(Term::succ(), v.clone());
     let mut step_hyps = it.hyps.clone();
     step_hyps.push((ih.clone(), Hyp::Assumed));
-    it.scope.push((var.clone(), Type::nat()));
+    it.scope.open();
+    it.scope.define(var.clone(), Type::nat());
     let step_body = prove_with(&subst::open(&body, &sv), &s[3], &mut it.scope, &step_hyps, env);
-    it.scope.pop();
+    it.scope.close();
     let step_imp = step_body?.imp_intro(&ih)?;
     let ea = Thm::beta_conv(Term::app(p.clone(), v))?;
     let eb = Thm::beta_conv(Term::app(p, sv))?;

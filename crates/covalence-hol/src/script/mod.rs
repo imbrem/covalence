@@ -291,6 +291,11 @@ pub async fn run_async(
                 }
             }
             Stmt::Thm(sexpr) => {
+                // Await any still-`#compute`-ing lemmas this proof references,
+                // folding them into the (synchronous) env before checking —
+                // so a proof may depend on a background computation. The await
+                // is at the proof *boundary*; the kernel replay stays sync.
+                await_computed_deps(&sexpr, &mut internal, &computed).await?;
                 let ch = syntax::list(&sexpr, "#thm")?;
                 let nt = run_thm(ch, &internal)?;
                 internal.define_lemma(nt.name.clone(), nt.thm.clone());
@@ -336,6 +341,40 @@ pub async fn run_async(
         thms,
         computed,
     })
+}
+
+/// Await every `(lemma NAME)` reference in `sexpr` that is still
+/// `#compute`-ing (present in `computed`, not yet in `internal`), folding each
+/// resolved theorem into `internal` so the synchronous check finds it ready.
+async fn await_computed_deps(
+    sexpr: &SExpr,
+    internal: &mut Env,
+    computed: &EnvHandle,
+) -> Result<(), ScriptError> {
+    let mut refs = Vec::new();
+    lemma_refs(sexpr, &mut refs);
+    for name in refs {
+        if !internal.has_lemma(&name) && computed.contains(&name) {
+            let thm = computed.get(&name).await.expect("contains ⇒ Some")?;
+            internal.define_lemma(name, thm);
+        }
+    }
+    Ok(())
+}
+
+/// Collect the names of every `(lemma NAME)` appearing anywhere in `s`.
+fn lemma_refs(s: &SExpr, out: &mut Vec<String>) {
+    if let covalence_sexp::SExp::List(ch) = s {
+        if ch.first().and_then(|h| h.as_symbol()) == Some("lemma") {
+            if let Some(name) = ch.get(1).and_then(|x| x.as_symbol()) {
+                out.push(name.to_string());
+            }
+            return;
+        }
+        for c in ch {
+            lemma_refs(c, out);
+        }
+    }
 }
 
 /// Fetch an imported namespace's environment, erroring if it was never
@@ -886,6 +925,30 @@ mod tests {
         let resolved = theory.resolve_blocking().expect("forcing awaits the compute");
         assert!(resolved.thms.iter().any(|nt| nt.name == "slow"));
         assert!(resolved.thms.iter().any(|nt| nt.name == "eager"));
+    }
+
+    #[test]
+    fn a_proof_awaits_a_computed_lemma() {
+        // A later `#thm` references a `#compute`d theorem via `(lemma …)` — its
+        // proof awaits the background computation (at the proof boundary)
+        // before the synchronous check runs, so `#compute`d lemmas ARE usable
+        // by later proofs.
+        let theory = run(
+            r#"
+            (#import core)
+            (#open core)
+            (#compute base (#concl (= 0 0)) (#proof (refl 0)))
+            (#thm uses (#concl (= 0 0)) (#proof (lemma base)))
+            "#,
+            |name| (name == "core").then(Env::core),
+            |_| None,
+        )
+        .unwrap();
+        // `uses` checked eagerly (after awaiting `base`); `base` lands on force.
+        assert!(theory.thms.iter().any(|nt| nt.name == "uses"));
+        let resolved = theory.resolve_blocking().unwrap();
+        assert!(resolved.thms.iter().any(|nt| nt.name == "base"));
+        assert!(resolved.thms.iter().any(|nt| nt.name == "uses"));
     }
 
     #[test]

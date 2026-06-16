@@ -45,9 +45,34 @@
 //!   they never reduce under a binder. The lone exception is the strong
 //!   normaliser [`beta_nf`] below, kept for the connective derivations.
 
-use covalence_core::{Error, Result, Term, Thm};
+use covalence_core::{Error, Result, Term, Thm, Type, subst};
 
+use crate::HolLightCtx;
 use crate::init::ext::{TermExt, ThmExt};
+
+// ============================================================================
+// Disequality (`≠`) — a defined abbreviation, for later use
+// ============================================================================
+
+/// The `≠` operator at element type `alpha`: `λx y. ¬(x = y)`.
+///
+/// A defined abbreviation — `a ≠ b ≡ ¬(a = b)` — provided for later use
+/// (surface syntax, a `≠` smart constructor, …). **Not referenced by any
+/// proof yet**; `≠` unfolds to `¬(=)` whenever it is needed.
+pub fn ne(alpha: Type) -> Term {
+    let ctx = HolLightCtx::new();
+    let x = Term::free("x", alpha.clone());
+    let y = Term::free("y", alpha.clone());
+    let body = ctx.mk_not(ctx.mk_eq(x, y).expect("ne: x = y is well-typed at alpha"));
+    let lam_y = Term::abs(alpha.clone(), subst::close(&body, "y"));
+    Term::abs(alpha, subst::close(&lam_y, "x"))
+}
+
+/// Build `a ≠ b` in its unfolded form `¬(a = b)`.
+pub fn mk_ne(a: Term, b: Term) -> Result<Term> {
+    let ctx = HolLightCtx::new();
+    Ok(ctx.mk_not(ctx.mk_eq(a, b)?))
+}
 
 /// Peel an application spine `f a₁ … aₙ` into `(f, [a₁, …, aₙ])`.
 /// The head `f` is the left-most non-application; the args are in

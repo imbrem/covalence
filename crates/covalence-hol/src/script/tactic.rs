@@ -98,11 +98,64 @@ fn run(goal: &mut Goal, steps: &[SExpr], scope: &mut Scope, env: &Env) -> R<Thm>
         // goal transformers (reduce to a single subgoal, wrap with a rule)
         "sym" => {
             arity(s, 1, "sym")?;
-            let (a, b) = dest_eq(&goal.target).ok_or_else(|| {
-                ScriptError::Syntax(format!("sym: goal is not an equation: {}", goal.target))
+            let ctx = HolLightCtx::new();
+            if let Some(eq) = dest_not(&goal.target) {
+                // `¬(a = b)`  →  subgoal `¬(b = a)`
+                let (a, b) = dest_eq(&eq).ok_or_else(|| {
+                    ScriptError::Syntax(format!(
+                        "sym: `¬_` goal is not a negated equation: {}",
+                        goal.target
+                    ))
+                })?;
+                let ab = ctx.mk_eq(a.clone(), b.clone())?;
+                goal.target = ctx.mk_not(ctx.mk_eq(b, a)?);
+                let inner = run(goal, rest, scope, env)?; // ⊢ ¬(b = a)
+                let f = inner.not_elim(Thm::assume(ab.clone())?.sym()?)?; // {a=b} ⊢ F
+                Ok(f.imp_intro(&ab)?.not_intro()?) // ⊢ ¬(a = b)
+            } else if let Some((a, b)) = dest_eq(&goal.target) {
+                goal.target = ctx.mk_eq(b, a)?;
+                Ok(run(goal, rest, scope, env)?.sym()?)
+            } else {
+                Err(ScriptError::Syntax(format!(
+                    "sym: goal is not an equation or a negated equation: {}",
+                    goal.target
+                )))
+            }
+        }
+        // Prove an implication by its contrapositive. `¬P ⟹ ¬Q` reduces to
+        // `Q ⟹ P` (strips the negations); a general `a ⟹ b` reduces to
+        // `¬b ⟹ ¬a` (classical, via `lem`).
+        "contrapositive" => {
+            arity(s, 1, "contrapositive")?;
+            let (a, b) = dest_imp(&goal.target).ok_or_else(|| {
+                ScriptError::Syntax(format!(
+                    "contrapositive: goal is not an implication: {}",
+                    goal.target
+                ))
             })?;
-            goal.target = HolLightCtx::new().mk_eq(b, a)?;
-            Ok(run(goal, rest, scope, env)?.sym()?)
+            let ctx = HolLightCtx::new();
+            match (dest_not(&a), dest_not(&b)) {
+                (Some(p), Some(q)) => {
+                    goal.target = ctx.mk_imp(q.clone(), p);
+                    let inner = run(goal, rest, scope, env)?; // ⊢ Q ⟹ P
+                    let p_thm = inner.imp_elim(Thm::assume(q.clone())?)?; // {Q} ⊢ P
+                    let f = Thm::assume(a.clone())?.not_elim(p_thm)?; // {¬P, Q} ⊢ F
+                    let nq = f.imp_intro(&q)?.not_intro()?; // {¬P} ⊢ ¬Q
+                    Ok(nq.imp_intro(&a)?) // ⊢ ¬P ⟹ ¬Q
+                }
+                _ => {
+                    let nb = ctx.mk_not(b.clone());
+                    let na = ctx.mk_not(a.clone());
+                    goal.target = ctx.mk_imp(nb.clone(), na);
+                    let inner = run(goal, rest, scope, env)?; // ⊢ ¬b ⟹ ¬a
+                    let left = Thm::assume(b.clone())?.imp_intro(&b)?; // ⊢ b ⟹ b
+                    let na_thm = inner.imp_elim(Thm::assume(nb.clone())?)?; // {¬b} ⊢ ¬a
+                    let f = na_thm.not_elim(Thm::assume(a.clone())?)?; // {¬b, a} ⊢ F
+                    let right = f.false_elim(b.clone())?.imp_intro(&nb)?; // {a} ⊢ ¬b ⟹ b
+                    let b_thm = Thm::lem(b)?.or_elim(left, right)?; // {a} ⊢ b
+                    Ok(b_thm.imp_intro(&a)?) // ⊢ a ⟹ b
+                }
+            }
         }
         "not-intro" => {
             arity(s, 1, "not-intro")?;

@@ -9,31 +9,26 @@
 (#open core)
 (#open natrec)
 
-;; ⊢ ∀n. ¬(S n = 0).  Flip `zero.ne.succ` (`¬(0 = S n)`) by `sym`.
+;; ⊢ ∀n. ¬(S n = 0).  `sym` flips the negated-equation goal to ¬(0 = S n),
+;; which is exactly `zero.ne.succ`.
 (#thm succ.ne.zero
   (#concl (forall (n nat) (not (= (succ n) 0))))
   (#by
     (intro n)
-    (not-intro)
-    (intro h)
-    (exact
-      (not-elim (all-elim n (lemma zero.ne.succ))
-                (sym (assume (= (succ n) 0)))))))
+    (sym)
+    (exact (all-elim n (lemma zero.ne.succ)))))
 
-;; ⊢ ∀m n. ¬(m = n) ⟹ ¬(S m = S n).  Contrapositive of `succ.inj`.
+;; ⊢ ∀m n. ¬(m = n) ⟹ ¬(S m = S n).  `contrapositive` strips the negations,
+;; leaving (S m = S n) ⟹ (m = n) — exactly `succ.inj`.
 (#thm succ.cong.ne
   (#concl
     (forall (m nat)
       (forall (n nat)
         (==> (not (= m n)) (not (= (succ m) (succ n)))))))
   (#by
-    (intro m n hne)
-    (not-intro)
-    (intro h)
-    (exact
-      (not-elim (assume (not (= m n)))
-                (imp-elim (all-elim n (all-elim m (lemma succ.inj)))
-                          (assume (= (succ m) (succ n))))))))
+    (intro m n)
+    (contrapositive)
+    (exact (all-elim n (all-elim m (lemma succ.inj))))))
 
 ;; ⊢ ∀z f. natRec z f 0 = z.  Project the base equation out of `rec.holds`.
 (#thm natrec.zero

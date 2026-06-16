@@ -25,9 +25,10 @@
 //! over a concrete `nat`) is what keeps that door open; see
 //! `SKELETONS.md` for the planned `nat`-from-`ind` construction.
 
-use covalence_core::{Result, Term, Thm};
+use covalence_core::Result;
 
-use super::sig::InductiveSig;
+use super::hol::{Hol, NativeHol};
+use super::sig::GenSig;
 
 /// An inductive type, presented to the recursion engine as its signature
 /// plus the structural facts the engine consumes.
@@ -37,9 +38,9 @@ use super::sig::InductiveSig;
 /// split is what makes the engine reusable across presentations of the
 /// same type (kernel-primitive vs. HOL-internal — see the [module
 /// docs](self)).
-pub trait Inductive {
+pub trait Inductive<H: Hol = NativeHol> {
     /// The type's constructor signature.
-    fn sig(&self) -> &InductiveSig;
+    fn sig(&self) -> &GenSig<H::Term, H::Type>;
 
     /// **Structural induction.** Given the induction `motive` (a predicate
     /// `λt. …` over the inductive type) and one `case` proof per
@@ -54,7 +55,7 @@ pub trait Inductive {
     /// conclude `⊢ ∀t. motive t`.
     ///
     /// `cases` are in constructor order and must match `self.sig().arity()`.
-    fn induct(&self, motive: &Term, cases: Vec<Thm>) -> Result<Thm>;
+    fn induct(&self, motive: &H::Term, cases: Vec<H::Thm>) -> Result<H::Thm>;
 
     /// **Constructor injectivity.** For a constructor `Cᵢ` with at least
     /// one argument, `⊢ (Cᵢ x⃗ = Cᵢ y⃗) ⟹ (⋀ₖ xₖ = yₖ)` — the right-hand
@@ -64,7 +65,7 @@ pub trait Inductive {
     ///
     /// Used by the uniqueness layer ([`super::uniqueness`]); for `nat`'s
     /// `succ` it is `Thm::succ_inj`.
-    fn injective(&self, i: usize, xs: &[Term], ys: &[Term]) -> Result<Thm>;
+    fn injective(&self, i: usize, xs: &[H::Term], ys: &[H::Term]) -> Result<H::Thm>;
 
     /// **Constructor distinctness.** For `i ≠ j`,
     /// `⊢ (Cᵢ x⃗ = Cⱼ y⃗) ⟹ F` — different constructors never produce equal
@@ -72,5 +73,5 @@ pub trait Inductive {
     ///
     /// Used by the uniqueness layer; for `nat` it is `Thm::zero_ne_succ`
     /// (in either order).
-    fn distinct(&self, i: usize, j: usize, xs: &[Term], ys: &[Term]) -> Result<Thm>;
+    fn distinct(&self, i: usize, j: usize, xs: &[H::Term], ys: &[H::Term]) -> Result<H::Thm>;
 }

@@ -7,16 +7,23 @@
 //! different (still kernel-valid) theorem; it can never manufacture an
 //! unsound `Thm`.
 //!
-//! [`check`] is the *only* kernel-coupled surface here: every variant is
-//! one rule call. Edit the kernel's rule set → fix the matching arm;
-//! authored proofs (the `Drv` data) stay put.
+//! [`check`] is the *only* kernel-coupled surface here: every built-in variant
+//! is one rule call. Edit the kernel's rule set → fix the matching arm;
+//! authored proofs (the `Drv` data) stay put. `check` is **async** — a
+//! [`Rule`] (below) may await — so it returns a `BoxFuture` (the recursion
+//! needs a known size).
 //!
-//! Two `Drv` variants are **tactics** — `Tauto` and `Rw` — which
-//! elaborate to longer derivations at replay time (they are *not* extra
-//! trust, just convenience that bottoms out in the same rules).
+//! Two `Drv` variants are **tactics** — `Tauto` and `Rw` — which elaborate to
+//! longer derivations at replay time. `Drv::Rule` is the open extension point:
+//! any head `check` doesn't recognise dispatches through the [`Env`] **rule
+//! registry** (the tree-mode analogue of the tactic registry), so hosts can add
+//! their own (possibly async) rules without touching this file. None of this is
+//! extra trust — registry rules still bottom out in real kernel `Thm`s.
 
+use async_trait::async_trait;
 use covalence_core::{Term, TermKind, Thm};
 use covalence_sexp::SExpr;
+use futures::future::BoxFuture;
 
 use super::ScriptError;
 use super::env::Env;
@@ -24,6 +31,17 @@ use super::scope::Scope;
 use super::syntax::{arity, head_sym, list, parse_term, parse_type, sym};
 
 type R<T> = Result<T, ScriptError>;
+
+/// A **derivation rule** — the tree-mode analogue of a [`super::Tactic`]. A
+/// rule combines the (already-checked) theorems of its sub-derivations into a
+/// new theorem. It is `async`, so a custom rule may await (an observer, a peer
+/// prover, the user) *inside* a `#proof`. The core rules are still hardcoded
+/// arms of [`check`]; the registry ([`Env`]'s `rules`) is for **extension**
+/// rules, invoked by any head [`check`] does not recognise: `(NAME SUB…)`.
+#[async_trait]
+pub trait Rule: Send + Sync {
+    async fn apply(&self, args: &[Thm], env: &Env) -> R<Thm>;
+}
 
 /// A proof term. One constructor per kernel rule (plus the two tactics).
 #[derive(Debug, Clone)]
@@ -137,59 +155,91 @@ pub enum Drv {
         eqn: Box<Drv>,
         target: Box<Drv>,
     },
+    /// A **registry** rule: any head `check` does not recognise. Its
+    /// sub-derivations are checked, then the named [`Rule`] combines them.
+    Rule {
+        name: String,
+        args: Vec<Drv>,
+    },
 }
 
 /// Replay a proof term into a kernel theorem. The sole kernel-coupled
-/// function in the script layer.
-pub fn check(d: &Drv, env: &Env) -> R<Thm> {
-    Ok(match d {
-        Drv::Refl(t) => Thm::refl(t.clone())?,
-        Drv::Assume(t) => Thm::assume(t.clone())?,
-        Drv::Lem(t) => Thm::lem(t.clone())?,
-        Drv::Lemma(name) => env
-            .lookup_lemma(name)
-            .cloned()
-            .ok_or_else(|| ScriptError::Unbound(format!("lemma `{name}`")))?,
-        Drv::ReducePrim(t) => Thm::reduce_prim(t.clone())?,
-        Drv::UnfoldTermSpec(t) => Thm::unfold_term_spec(t.clone())?,
-        Drv::UnfoldAt1 { op, arg } => crate::proofs::rewrite::unfold_at_1(op.clone(), arg.clone()),
-        Drv::UnfoldAt2 { op, a, b } => {
-            crate::proofs::rewrite::unfold_at_2(op.clone(), a.clone(), b.clone())
-        }
-        Drv::BetaConv(t) => Thm::beta_conv(t.clone())?,
-        Drv::Sym(a) => check(a, env)?.sym()?,
-        Drv::AbsRule { name, ty, body } => check(body, env)?.abs(name, ty.clone())?,
-        Drv::AllIntro { name, ty, body } => check(body, env)?.all_intro(name, ty.clone())?,
-        Drv::AllElim { witness, body } => check(body, env)?.all_elim(witness.clone())?,
-        Drv::ImpIntro { phi, body } => check(body, env)?.imp_intro(phi)?,
-        Drv::NotIntro(a) => check(a, env)?.not_intro()?,
-        Drv::Inst { name, term, body } => check(body, env)?.inst(name, term.clone())?,
-        Drv::InstTfree { name, ty, body } => check(body, env)?.inst_tfree(name, ty.clone())?,
-        Drv::CongArg { f, body } => Thm::refl(f.clone())?.mk_comb(check(body, env)?)?,
-        Drv::CongFn { arg, body } => check(body, env)?.mk_comb(Thm::refl(arg.clone())?)?,
-        Drv::AndElimL(a) => check(a, env)?.and_elim_l()?,
-        Drv::AndElimR(a) => check(a, env)?.and_elim_r()?,
-        Drv::OrIntroL { q, body } => check(body, env)?.or_intro_l(q.clone())?,
-        Drv::OrIntroR { p, body } => check(body, env)?.or_intro_r(p.clone())?,
-        Drv::FalseElim { p, body } => check(body, env)?.false_elim(p.clone())?,
-        Drv::Trans(a, b) => check(a, env)?.trans(check(b, env)?)?,
-        Drv::MkComb(a, b) => check(a, env)?.mk_comb(check(b, env)?)?,
-        Drv::EqMp(a, b) => check(a, env)?.eq_mp(check(b, env)?)?,
-        Drv::ImpElim(a, b) => check(a, env)?.imp_elim(check(b, env)?)?,
-        Drv::DeductAntisym(a, b) => check(a, env)?.deduct_antisym(check(b, env)?)?,
-        Drv::AndIntro(a, b) => check(a, env)?.and_intro(check(b, env)?)?,
-        Drv::NotElim(a, b) => check(a, env)?.not_elim(check(b, env)?)?,
-        Drv::OrElim { disj, left, right } => {
-            check(disj, env)?.or_elim(check(left, env)?, check(right, env)?)?
-        }
-        Drv::NatInduct { base, step } => Thm::nat_induct(check(base, env)?, check(step, env)?)?,
-        Drv::Tauto(t) => crate::init::logic::tauto(t)?,
-        Drv::Rw { eqn, target } => {
-            let eq = check(eqn, env)?;
-            let tgt = check(target, env)?;
-            let cong = rewrite_conv(tgt.concl(), &eq)?;
-            cong.eq_mp(tgt)?
-        }
+/// function in the script layer. `async` — a registry [`Rule`] may await
+/// (returns a boxed future so the recursion has a known size).
+pub fn check<'a>(d: &'a Drv, env: &'a Env) -> BoxFuture<'a, R<Thm>> {
+    Box::pin(async move {
+        Ok(match d {
+            Drv::Refl(t) => Thm::refl(t.clone())?,
+            Drv::Assume(t) => Thm::assume(t.clone())?,
+            Drv::Lem(t) => Thm::lem(t.clone())?,
+            Drv::Lemma(name) => env
+                .lookup_lemma(name)
+                .cloned()
+                .ok_or_else(|| ScriptError::Unbound(format!("lemma `{name}`")))?,
+            Drv::ReducePrim(t) => Thm::reduce_prim(t.clone())?,
+            Drv::UnfoldTermSpec(t) => Thm::unfold_term_spec(t.clone())?,
+            Drv::UnfoldAt1 { op, arg } => {
+                crate::proofs::rewrite::unfold_at_1(op.clone(), arg.clone())
+            }
+            Drv::UnfoldAt2 { op, a, b } => {
+                crate::proofs::rewrite::unfold_at_2(op.clone(), a.clone(), b.clone())
+            }
+            Drv::BetaConv(t) => Thm::beta_conv(t.clone())?,
+            Drv::Sym(a) => check(a, env).await?.sym()?,
+            Drv::AbsRule { name, ty, body } => check(body, env).await?.abs(name, ty.clone())?,
+            Drv::AllIntro { name, ty, body } => {
+                check(body, env).await?.all_intro(name, ty.clone())?
+            }
+            Drv::AllElim { witness, body } => check(body, env).await?.all_elim(witness.clone())?,
+            Drv::ImpIntro { phi, body } => check(body, env).await?.imp_intro(phi)?,
+            Drv::NotIntro(a) => check(a, env).await?.not_intro()?,
+            Drv::Inst { name, term, body } => check(body, env).await?.inst(name, term.clone())?,
+            Drv::InstTfree { name, ty, body } => {
+                check(body, env).await?.inst_tfree(name, ty.clone())?
+            }
+            Drv::CongArg { f, body } => Thm::refl(f.clone())?.mk_comb(check(body, env).await?)?,
+            Drv::CongFn { arg, body } => {
+                check(body, env).await?.mk_comb(Thm::refl(arg.clone())?)?
+            }
+            Drv::AndElimL(a) => check(a, env).await?.and_elim_l()?,
+            Drv::AndElimR(a) => check(a, env).await?.and_elim_r()?,
+            Drv::OrIntroL { q, body } => check(body, env).await?.or_intro_l(q.clone())?,
+            Drv::OrIntroR { p, body } => check(body, env).await?.or_intro_r(p.clone())?,
+            Drv::FalseElim { p, body } => check(body, env).await?.false_elim(p.clone())?,
+            Drv::Trans(a, b) => check(a, env).await?.trans(check(b, env).await?)?,
+            Drv::MkComb(a, b) => check(a, env).await?.mk_comb(check(b, env).await?)?,
+            Drv::EqMp(a, b) => check(a, env).await?.eq_mp(check(b, env).await?)?,
+            Drv::ImpElim(a, b) => check(a, env).await?.imp_elim(check(b, env).await?)?,
+            Drv::DeductAntisym(a, b) => {
+                check(a, env).await?.deduct_antisym(check(b, env).await?)?
+            }
+            Drv::AndIntro(a, b) => check(a, env).await?.and_intro(check(b, env).await?)?,
+            Drv::NotElim(a, b) => check(a, env).await?.not_elim(check(b, env).await?)?,
+            Drv::OrElim { disj, left, right } => check(disj, env)
+                .await?
+                .or_elim(check(left, env).await?, check(right, env).await?)?,
+            Drv::NatInduct { base, step } => {
+                Thm::nat_induct(check(base, env).await?, check(step, env).await?)?
+            }
+            Drv::Tauto(t) => crate::init::logic::tauto(t)?,
+            Drv::Rw { eqn, target } => {
+                let eq = check(eqn, env).await?;
+                let tgt = check(target, env).await?;
+                let cong = rewrite_conv(tgt.concl(), &eq)?;
+                cong.eq_mp(tgt)?
+            }
+            // A registry rule: check the sub-derivations, then dispatch.
+            Drv::Rule { name, args } => {
+                let rule = env
+                    .lookup_rule(name)
+                    .ok_or_else(|| ScriptError::Unbound(format!("rule `{name}`")))?;
+                let mut thms = Vec::with_capacity(args.len());
+                for a in args {
+                    thms.push(check(a, env).await?);
+                }
+                rule.apply(&thms, env).await?
+            }
+        })
     })
 }
 
@@ -402,7 +452,15 @@ pub fn parse_drv(s: &SExpr, scope: &mut Scope, env: &Env) -> R<Drv> {
                 step: boxed(&ch[2], scope, env)?,
             }
         }
-        other => return Err(ScriptError::Syntax(format!("unknown proof rule: {other}"))),
+        // Any head not built-in is a **registry rule** — its arguments are
+        // sub-derivations, resolved (looked up + applied) by [`check`].
+        other => Drv::Rule {
+            name: other.to_string(),
+            args: ch[1..]
+                .iter()
+                .map(|a| parse_drv(a, scope, env))
+                .collect::<R<Vec<_>>>()?,
+        },
     })
 }
 

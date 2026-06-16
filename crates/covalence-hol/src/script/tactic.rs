@@ -144,10 +144,11 @@ async fn prove_with(
 ) -> R<Thm> {
     let ch = list(body, "proof body")?;
     match head_sym(ch)? {
-        // Tree mode: the kernel replay is synchronous (no await here).
+        // Tree mode: replay the derivation (which may now await a registry
+        // rule).
         "#proof" => {
             arity(ch, 2, "#proof")?;
-            check(&parse_drv(&ch[1], scope, env)?, env)
+            check(&parse_drv(&ch[1], scope, env)?, env).await
         }
         // Tactic mode: the interpreter loop may await.
         "#by" => {
@@ -172,8 +173,8 @@ pub fn core_tactics() -> HashMap<String, Arc<dyn Tactic>> {
         t.insert(name.into(), tac);
     };
     reg("intro", Arc::new(Intro));
-    reg("derive", Arc::new(tac_derive));
-    reg("drv", Arc::new(tac_derive));
+    reg("derive", Arc::new(Derive));
+    reg("drv", Arc::new(Derive));
     reg("assumption", Arc::new(tac_assumption));
     reg("refl", Arc::new(tac_refl));
     reg("sym", Arc::new(Sym));
@@ -232,11 +233,16 @@ async fn intro_names(names: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm>
 
 /// `(derive DRV)` (alias `drv`): close the goal with a tree-mode derivation —
 /// the bridge from tactic mode back into the `Drv` grammar. (Formerly `exact`.)
-fn tac_derive(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
-    arity(s, 2, "derive")?;
-    expect_done(rest, "derive")?;
-    let env = it.env.clone();
-    check(&parse_drv(&s[1], &mut it.scope, &env)?, &env)
+/// Async because `check` is async (a registry rule may await).
+struct Derive;
+#[async_trait]
+impl Tactic for Derive {
+    async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
+        arity(s, 2, "derive")?;
+        expect_done(rest, "derive")?;
+        let env = it.env.clone();
+        check(&parse_drv(&s[1], &mut it.scope, &env)?, &env).await
+    }
 }
 
 fn tac_assumption(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
@@ -359,7 +365,7 @@ impl Tactic for Rw {
     async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
         arity(s, 2, "rw")?;
         let env = it.env.clone();
-        let eq = check(&parse_drv(&s[1], &mut it.scope, &env)?, &env)?;
+        let eq = check(&parse_drv(&s[1], &mut it.scope, &env)?, &env).await?;
         let cong = rewrite_conv(&it.goal, &eq)?;
         let (_, gprime) = dest_eq(cong.concl())
             .ok_or_else(|| ScriptError::Syntax("rw: rewrite did not yield an equation".into()))?;

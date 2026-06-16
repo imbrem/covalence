@@ -12,6 +12,7 @@ use std::sync::Arc;
 use covalence_core::{Term, Thm, defs};
 use imbl::HashMap;
 
+use super::drv::Rule;
 use super::{ScriptError, tactic::Tactic};
 
 type R<T> = Result<T, ScriptError>;
@@ -53,6 +54,7 @@ pub struct Env {
     consts: HashMap<String, ConstDef>,
     lemmas: HashMap<String, Thm>,
     tactics: HashMap<String, Arc<dyn Tactic>>,
+    rules: HashMap<String, Arc<dyn Rule>>,
     imports: HashMap<String, Env>,
 }
 
@@ -72,6 +74,9 @@ impl Env {
     pub fn lookup_tactic(&self, name: &str) -> Option<Arc<dyn Tactic>> {
         self.tactics.get(name).cloned()
     }
+    pub fn lookup_rule(&self, name: &str) -> Option<Arc<dyn Rule>> {
+        self.rules.get(name).cloned()
+    }
     pub fn has_lemma(&self, name: &str) -> bool {
         self.lemmas.contains_key(name)
     }
@@ -86,6 +91,9 @@ impl Env {
     pub fn register_tactic(&mut self, name: impl Into<String>, t: Arc<dyn Tactic>) {
         self.tactics.insert(name.into(), t);
     }
+    pub fn register_rule(&mut self, name: impl Into<String>, r: Arc<dyn Rule>) {
+        self.rules.insert(name.into(), r);
+    }
 
     /// Merge another environment's bindings in (it shadows existing entries
     /// of the same name). Touches namespaces only — not the imports map.
@@ -96,6 +104,8 @@ impl Env {
             .extend(other.lemmas.iter().map(|(k, v)| (k.clone(), v.clone())));
         self.tactics
             .extend(other.tactics.iter().map(|(k, v)| (k.clone(), v.clone())));
+        self.rules
+            .extend(other.rules.iter().map(|(k, v)| (k.clone(), v.clone())));
     }
 
     /// `(#import NAME)`: register `env` as an importable namespace under
@@ -120,6 +130,9 @@ impl Env {
         }
         for (k, v) in &other.tactics {
             self.tactics.insert(qualify(prefix, k), v.clone());
+        }
+        for (k, v) in &other.rules {
+            self.rules.insert(qualify(prefix, k), v.clone());
         }
     }
 

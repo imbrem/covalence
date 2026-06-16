@@ -413,31 +413,31 @@ directives — is `open`-able by other scripts; the macro binds it as a
   typed elaboration → execution**, with a typed term/proof IR and spans threaded
   through every stage — is still TODO. The spans are the prerequisite for the
   rich, well-located errors above and good editor/LSP feedback.
-- **`Tactic` is async, but there's no rule registry and `check` is still sync.**
-  `script/tactic.rs::Tactic` is now an **`#[async_trait]`** trait: `apply` is
-  `async`, `Interp::run`/`prove`/`run_thm` are async, recursing tactics
-  (`Intro`/`Sym`/`NotIntro`/`Contrapositive`/`Rw`/`Have`/`Induct`) are concrete
-  structs, goal-closing ones stay sync `fn`s via the blanket impl. A tactic can
-  now genuinely **await mid-proof** (test `async_tactic_can_yield_mid_proof`).
-  Still TODO:
-  - **The derivation rules (`imp-intro`, `and-elim`, …) are NOT a registry** —
-    still hardcoded in `script/drv.rs::parse_drv`/`check`. Wanted: a **rule
-    registry** mirroring the tactic registry (looked-up / extensible /
-    host-suppliable rules).
-  - **`drv.rs::check` is still SYNCHRONOUS**, so the **tree-mode** `#proof` path
-    and `derive`/`rw` (which call `check`) can't await *inside* a derivation —
-    only the `#by` tactic loop can. Making `check` async (recursive `BoxFuture`)
-    is the remaining viral piece; it's also what would let `(lemma NAME)` await
-    a `LazyEnv` handle directly (see below).
-- **Lemma awaits are at the proof *boundary*, not inside `check`.** A `#thm`
-  whose proof references a still-`#compute`-ing theorem **awaits** it before
-  checking: `run_async`'s `Stmt::Thm` scans the proof for `(lemma NAME)`
-  (`lemma_refs`) and `await`s any name still in the `LazyEnv` (`#compute`) table,
-  folding the resolved `Thm` into the sync `Env` (`await_computed_deps`). The
-  user wants **all environment accesses async** — i.e. the proof env itself a
-  `LazyEnv` with async getters, so `(lemma NAME)` / `#dep` await directly. That
-  needs async `check` (above); const lookups (the elaborator, `infer.rs`) are
-  eager and could stay sync to avoid async-ifying term parsing.
+- **Async tactics + async `check` + a rule registry all exist; the core rules
+  aren't IN the registry, and lemma lookup is still sync.** `Tactic` is an
+  `#[async_trait]` trait (`apply` async; `Interp::run`/`prove`/`run_thm` async;
+  recursing tactics are structs, goal-closers stay sync `fn`s via the blanket).
+  `drv.rs::check` is **async** (returns `BoxFuture`); both tactic-mode and
+  tree-mode (`#proof`) can now **await mid-proof** (tests
+  `async_tactic_can_yield_mid_proof`, `registry_rule_in_tree_mode_can_await`).
+  `Env` has a **rule registry** (`Rule` async trait, `register_rule`/
+  `lookup_rule`, merged like tactics): any head `check` doesn't recognise →
+  `Drv::Rule { name, args }` → registry dispatch. Still TODO:
+  - **The built-in rules (`imp-intro`, `and-elim`, …) are still hardcoded** arms
+    of `check`, NOT registry entries — the registry is currently only for
+    *extension* rules. Migrating the core rules into the registry (so all rules
+    are uniform / overridable) is the symmetric-with-tactics finish.
+  - **Registry `Rule::apply` only takes checked sub-`Thm`s** (`&[Thm]`) — no
+    `Term` args, no goal/scope access. Fine for combining rules; a richer rule
+    needs the raw S-expr + a check-context (à la `Interp` for tactics).
+- **Lemma lookup is sync (boundary-await), not an async getter.** Despite async
+  `check`, `Drv::Lemma` still reads `Env::lookup_lemma` *synchronously*; a `#thm`
+  that references a still-`#compute`-ing theorem awaits it at the proof
+  *boundary* (`run_async`'s `Stmt::Thm` → `lemma_refs` + `await_computed_deps`
+  fold the `Thm` into the sync `Env`). The user wants **all environment accesses
+  async** — the proof `Env` itself a `LazyEnv` with an async `lookup_lemma` so
+  `Drv::Lemma`/`#dep` await a handle *directly*. Now tractable (check is async);
+  const lookups (the elaborator, `infer.rs`) are eager and can stay sync.
   - **A `#compute` can't depend on another `#compute`.** Its proof runs in
     `spawn_blocking` against a *sync snapshot* of `internal`, driven by a nested
     `block_on`, so it can't await a sibling. Only ordinary `#thm`s

@@ -32,7 +32,7 @@ mod scope;
 mod syntax;
 mod tactic;
 
-pub use drv::{Drv, check, parse_drv};
+pub use drv::{Drv, Rule, check, parse_drv};
 pub use env::{ConstDef, Env};
 pub use handle::LazyEnv;
 pub use scope::Scope;
@@ -992,6 +992,40 @@ mod tests {
             move |name| (name == "acanned").then(|| tac.clone()),
         )
         .expect("async tactic runs");
+        assert_eq!(theory.thms.len(), 1);
+    }
+
+    #[test]
+    fn registry_rule_in_tree_mode_can_await() {
+        // A custom **derivation rule** that AWAITS mid-derivation, then returns
+        // its sub-derivation's theorem — proving tree-mode `check` is async and
+        // that unknown heads dispatch through the `Env` rule registry.
+        struct YieldId;
+        #[async_trait::async_trait]
+        impl Rule for YieldId {
+            async fn apply(&self, args: &[Thm], _env: &Env) -> Result<Thm, ScriptError> {
+                tokio::task::yield_now().await; // genuine mid-derivation await
+                args.first()
+                    .cloned()
+                    .ok_or_else(|| ScriptError::Syntax("yield-id: needs one arg".into()))
+            }
+        }
+        let mut rule_env = Env::empty();
+        rule_env.register_rule("yield-id", Arc::new(YieldId));
+        let theory = run(
+            r#"
+            (#import core)(#open core)
+            (#import rules)(#open rules)
+            (#thm t (#concl (= 0 0)) (#proof (yield-id (refl 0))))
+            "#,
+            move |name| match name {
+                "core" => Some(Env::core()),
+                "rules" => Some(rule_env.clone()),
+                _ => None,
+            },
+            |_| None,
+        )
+        .expect("registry rule resolves in tree mode");
         assert_eq!(theory.thms.len(), 1);
     }
 

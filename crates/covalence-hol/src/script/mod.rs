@@ -592,6 +592,21 @@ mod tests {
     }
 
     #[test]
+    fn by_induct_on_nat() {
+        // The `induct` tactic: ⊢ ∀(n:nat). n = n, base + step both by `refl`.
+        // Exercises the kernel's `nat_induct` plus the β-conv bookkeeping.
+        let thm = one(
+            r#"
+            (#open core)
+            (#thm nat.eq.refl.by
+              (#concl (forall (n nat) (= n n)))
+              (#by (induct n (#by (refl)) (#by (refl)))))
+            "#,
+        );
+        assert!(thm.hyps().is_empty());
+    }
+
+    #[test]
     fn conclusion_mismatch_is_caught() {
         let res = run_str(
             r#"

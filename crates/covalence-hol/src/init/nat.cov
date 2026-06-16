@@ -1,0 +1,66 @@
+;; nat.cov — nat lemmas over `core` + the `natrec` env.
+;;
+;; The `natrec` env imports the nat primitives as given (proved in Rust in
+;; init/nat.rs for now): `succ.inj` (∀m n. S m = S n ⟹ m = n), `zero.ne.succ`
+;; (∀n. ¬(0 = S n)), and `rec.holds` (the natRec recursion equations). We
+;; build the freeness corollaries, the recursion-equation projections, and a
+;; sample induction on top.
+
+(#open core)
+(#open natrec)
+
+;; ⊢ ∀n. ¬(S n = 0).  Flip `zero.ne.succ` (`¬(0 = S n)`) by `sym`.
+(#thm succ.ne.zero
+  (#concl (forall (n nat) (not (= (succ n) 0))))
+  (#by
+    (intro n)
+    (not-intro)
+    (intro h)
+    (exact
+      (not-elim (all-elim n (lemma zero.ne.succ))
+                (sym (assume (= (succ n) 0)))))))
+
+;; ⊢ ∀m n. ¬(m = n) ⟹ ¬(S m = S n).  Contrapositive of `succ.inj`.
+(#thm succ.cong.ne
+  (#concl
+    (forall (m nat)
+      (forall (n nat)
+        (==> (not (= m n)) (not (= (succ m) (succ n)))))))
+  (#by
+    (intro m n hne)
+    (not-intro)
+    (intro h)
+    (exact
+      (not-elim (assume (not (= m n)))
+                (imp-elim (all-elim n (all-elim m (lemma succ.inj)))
+                          (assume (= (succ m) (succ n))))))))
+
+;; ⊢ ∀z f. natRec z f 0 = z.  Project the base equation out of `rec.holds`.
+(#thm natrec.zero
+  (#concl
+    (forall (z nat)
+      (forall (f (fun nat (fun nat nat)))
+        (= (app (app (app (natrec-op nat) z) f) 0) z))))
+  (#by
+    (intro z f)
+    (exact (and-elim-l (all-elim f (all-elim z (lemma rec.holds)))))))
+
+;; ⊢ ∀z f n. natRec z f (S n) = f n (natRec z f n).  The step equation.
+(#thm natrec.succ
+  (#concl
+    (forall (z nat)
+      (forall (f (fun nat (fun nat nat)))
+        (forall (n nat)
+          (= (app (app (app (natrec-op nat) z) f) (succ n))
+             (app (app f n) (app (app (app (natrec-op nat) z) f) n)))))))
+  (#by
+    (intro z f n)
+    (exact (all-elim n (and-elim-r (all-elim f (all-elim z (lemma rec.holds))))))))
+
+;; ⊢ ∀n. n = n, by induction — a minimal use of the `induct` tactic (base
+;; and step both close by `refl`; the IH is unused here).
+(#thm nat.eq.refl
+  (#concl (forall (n nat) (= n n)))
+  (#by (induct n (#by (refl)) (#by (refl)))))
+
+(#export succ.ne.zero succ.cong.ne natrec.zero natrec.succ nat.eq.refl)

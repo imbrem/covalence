@@ -153,6 +153,36 @@ fn rec_succ(z: Term, f: Term, n: Term) -> Result<Thm> {
         .all_elim(n)
 }
 
+// ============================================================================
+// Ported proofs — `nat.cov` over `core` + the `natrec` env
+// ============================================================================
+
+/// The `natrec` environment imported by `nat.cov`: the nat freeness rules
+/// and the recursion theorem, provided as **given** lemmas. They are proved
+/// in Rust above (`succ_inj` / `zero_ne_succ` / `rec_holds`) — importing
+/// them lets `nat.cov` build on them without re-deriving the deep kernel
+/// machinery (they can be ported themselves later).
+pub fn natrec_env() -> crate::script::Env {
+    let mut e = crate::script::Env::empty();
+    e.lemmas.insert("succ.inj".into(), succ_inj());
+    e.lemmas.insert("zero.ne.succ".into(), zero_ne_succ());
+    e.lemmas.insert("rec.holds".into(), rec_holds());
+    e
+}
+
+crate::cov_theory! {
+    /// nat lemmas ported to `nat.cov`, over `core` + the `natrec` env.
+    pub mod cov from "nat.cov" {
+        import "core" = crate::script::Env::core();
+        import "natrec" = crate::init::nat::natrec_env();
+        "succ.ne.zero" => pub fn succ_ne_zero;
+        "succ.cong.ne" => pub fn succ_cong_ne;
+        "natrec.zero"  => pub fn natrec_zero_eq;
+        "natrec.succ"  => pub fn natrec_succ_eq;
+        "nat.eq.refl"  => pub fn nat_eq_refl;
+    }
+}
+
 /// `⊢ t = t'`, where `t'` is `t` with the let-style specs `nat.add` /
 /// `nat.mul` / `iter` δ-unfolded and β-reduced to weak-normal form
 /// (typically a `natRec` application). Reduction is weak, so `natRec`
@@ -2125,5 +2155,21 @@ mod tests {
             .equals(add(var("k"), mul(var("j"), var("k"))))
             .unwrap();
         assert_eq!(ms.concl(), &expected);
+    }
+}
+
+#[cfg(test)]
+mod cov_tests {
+    use super::cov;
+
+    #[test]
+    fn nat_cov_loads_and_proves() {
+        // Force the `nat.cov` theory: all five lemmas must replay (the
+        // `induct` tactic + the natrec equations + the freeness corollaries).
+        assert!(cov::succ_ne_zero().hyps().is_empty());
+        assert!(cov::succ_cong_ne().hyps().is_empty());
+        assert!(cov::natrec_zero_eq().hyps().is_empty());
+        assert!(cov::natrec_succ_eq().hyps().is_empty());
+        assert!(cov::nat_eq_refl().hyps().is_empty());
     }
 }

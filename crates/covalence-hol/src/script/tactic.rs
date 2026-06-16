@@ -150,6 +150,55 @@ fn run(goal: &mut Goal, steps: &[SExpr], scope: &mut Scope, env: &Env) -> R<Thm>
             })?;
             Ok(Thm::refl(lhs)?)
         }
+        // nat induction on a `∀(v:nat). P v` goal, into base + step
+        // subproofs.  `(induct v BASE STEP)`: BASE proves `P 0`; STEP proves
+        // `P (S v)` with the IH `P v` available (`v` fixed). The β-conv
+        // bookkeeping (the kernel's `nat_induct` keeps the motive applied,
+        // un-reduced) is handled here.
+        "induct" => {
+            arity(s, 4, "induct")?;
+            expect_done(rest, "induct")?;
+            let var = sym(&s[1], "induct variable")?.to_string();
+            let (ty, body) = dest_forall(&goal.target).ok_or_else(|| {
+                ScriptError::Syntax(format!("induct: goal is not a `∀`: {}", goal.target))
+            })?;
+            if ty != Type::nat() {
+                return Err(ScriptError::Syntax(format!(
+                    "induct: goal quantifies over {ty}, not nat"
+                )));
+            }
+            let p = Term::abs(Type::nat(), body.clone()); // the motive λv. P v
+            let zero = Term::nat_lit(0u64);
+
+            // base: prove P 0 (β-reduced), then β-expand to `p 0`.
+            let base_body = prove_with(&subst::open(&body, &zero), &s[2], scope, &goal.hyps, env)?;
+            let base = Thm::beta_conv(Term::app(p.clone(), zero))?
+                .sym()?
+                .eq_mp(base_body)?;
+
+            // step: prove P (S v) with the IH `P v` in context (v fixed).
+            let v = Term::free(var.as_str(), Type::nat());
+            let ih = subst::open(&body, &v);
+            let sv = Term::app(Term::succ(), v.clone());
+            let mut step_hyps = goal.hyps.clone();
+            step_hyps.push((ih.clone(), Hyp::Assumed));
+            scope.push((var.clone(), Type::nat()));
+            let step_body = prove_with(&subst::open(&body, &sv), &s[3], scope, &step_hyps, env);
+            scope.pop();
+            let step_imp = step_body?.imp_intro(&ih)?;
+            // β-expand the two sides to `p v ⟹ p (S v)`.
+            let ea = Thm::beta_conv(Term::app(p.clone(), v))?;
+            let eb = Thm::beta_conv(Term::app(p, sv))?;
+            let step = Thm::refl(defs::imp())?
+                .mk_comb(ea.sym()?)?
+                .mk_comb(eb.sym()?)?
+                .eq_mp(step_imp)?;
+
+            // ⊢ ∀n. p n, then β-normalise back to the goal's (reduced) form.
+            let ind = Thm::nat_induct(base, step)?;
+            let nf = crate::proofs::rewrite::beta_nf(ind.concl().clone());
+            Ok(nf.eq_mp(ind)?)
+        }
         "#have" => {
             arity(s, 3, "#have")?;
             let fact = parse_term(&s[1], scope, env)?;

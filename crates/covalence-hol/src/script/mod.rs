@@ -34,7 +34,7 @@ mod tactic;
 
 pub use drv::{Drv, check, parse_drv};
 pub use env::{ConstDef, Env};
-pub use handle::EnvHandle;
+pub use handle::LazyEnv;
 pub use scope::Scope;
 pub use syntax::{parse_term, parse_type};
 pub use tactic::{Interp, Tactic};
@@ -45,26 +45,26 @@ use covalence_core::{Thm, Type};
 use covalence_sexp::SExpr;
 
 /// A replayed theory in its **in-progress** state, the value `run`/`run_async`
-/// return. Every `#thm` is already checked (`thms`); [`TheoryHandle::resolve`]
+/// return. Every `#thm` is already checked (`thms`); [`LazyTheory::resolve`]
 /// forces it to a [`Theory`].
 ///
 /// The two types are nominally distinct (in-progress vs "done") to keep the
-/// async-prover API shape — `run` → `TheoryHandle`, force → `Theory`. The
+/// async-prover API shape — `run` → `LazyTheory`, force → `Theory`. The
 /// machinery that made a theorem genuinely *open* (proof holes / obligations)
 /// was removed pending a clean channel-based rebuild (`#hole` receives from an
 /// env channel that `#fill` pushes to); see SKELETONS.md. So today resolving is
 /// trivial — nothing is ever pending.
-pub struct TheoryHandle {
+pub struct LazyTheory {
     /// The explicitly-exported public interface (`(#export …)`).
     exports: Env,
     /// The checked theorems.
     pub thms: Vec<NamedThm>,
     /// Theorems still *computing* on a blocking thread (`(#compute …)`),
     /// awaited and folded into `thms` when the theory is forced.
-    computed: EnvHandle,
+    computed: LazyEnv,
 }
 
-impl TheoryHandle {
+impl LazyTheory {
     /// The exported environment — pass it as an `(#import NAME) (#open NAME)` target when
     /// running a downstream script. Empty unless the script `(#export …)`s.
     pub fn env(&self) -> Env {
@@ -84,9 +84,9 @@ impl TheoryHandle {
     /// **Force** the theory to its fully-proved [`Theory`]: await every
     /// still-`#compute`-ing theorem (each running on a blocking thread) and
     /// fold its result into `thms`. For a synchronous caller use
-    /// [`TheoryHandle::resolve_blocking`].
+    /// [`LazyTheory::resolve_blocking`].
     pub async fn resolve(self) -> Result<Theory, ScriptError> {
-        let TheoryHandle {
+        let LazyTheory {
             exports,
             mut thms,
             computed,
@@ -105,7 +105,7 @@ impl TheoryHandle {
     }
 
     /// Force the theory on the current thread — the blocking wrapper over
-    /// [`TheoryHandle::resolve`]. Runs on a tokio current-thread runtime (see
+    /// [`LazyTheory::resolve`]. Runs on a tokio current-thread runtime (see
     /// [`block_on`]); native only, and not for callers already inside a tokio
     /// runtime (which should `.resolve().await` instead).
     pub fn resolve_blocking(self) -> Result<Theory, ScriptError> {
@@ -114,19 +114,19 @@ impl TheoryHandle {
 }
 
 /// A theory all of whose `#thm`s are checked — the result of forcing a
-/// [`TheoryHandle`]. This is the "done" state: a `Thm` for every theorem.
+/// [`LazyTheory`]. This is the "done" state: a `Thm` for every theorem.
 pub struct Theory {
     exports: Env,
     pub thms: Vec<NamedThm>,
 }
 
 impl Theory {
-    /// The exported environment (see [`TheoryHandle::env`]).
+    /// The exported environment (see [`LazyTheory::env`]).
     pub fn env(&self) -> Env {
         self.exports.clone()
     }
 
-    /// Look up an **exported** lemma by name (see [`TheoryHandle::lemma`]).
+    /// Look up an **exported** lemma by name (see [`LazyTheory::lemma`]).
     pub fn lemma(&self, name: &str) -> Thm {
         self.exports
             .lookup_lemma(name)
@@ -137,12 +137,12 @@ impl Theory {
 
 /// A bare environment becomes a handle with no theorems (e.g. the `core`
 /// prelude, imported for its constants/tactics).
-impl From<Env> for TheoryHandle {
+impl From<Env> for LazyTheory {
     fn from(exports: Env) -> Self {
-        TheoryHandle {
+        LazyTheory {
             exports,
             thms: Vec::new(),
-            computed: EnvHandle::new(),
+            computed: LazyEnv::new(),
         }
     }
 }
@@ -150,25 +150,25 @@ impl From<Env> for TheoryHandle {
 /// A resolved [`Theory`] casts back to a (trivially in-progress) handle — what
 /// lets an `#import` receive a fully-proved theory through the future-returning
 /// resolver.
-impl From<Theory> for TheoryHandle {
+impl From<Theory> for LazyTheory {
     fn from(t: Theory) -> Self {
-        TheoryHandle {
+        LazyTheory {
             exports: t.exports,
             thms: t.thms,
-            computed: EnvHandle::new(),
+            computed: LazyEnv::new(),
         }
     }
 }
 
 /// The result of resolving an `#import`: a **future** yielding the imported
-/// [`TheoryHandle`]. `#import` awaits it — the script layer's first genuinely
+/// [`LazyTheory`]. `#import` awaits it — the script layer's first genuinely
 /// async operation — so an import need not be ready (or fully proved) when it
 /// is requested. Boxed so a resolver can return differently-shaped futures.
-pub type Import = std::pin::Pin<Box<dyn std::future::Future<Output = TheoryHandle>>>;
+pub type Import = std::pin::Pin<Box<dyn std::future::Future<Output = LazyTheory>>>;
 
 /// Wrap an already-available env/theory as a ready [`Import`] — the common case
 /// where an import resolves synchronously (the future is immediately ready).
-pub fn ready_import(handle: impl Into<TheoryHandle> + 'static) -> Import {
+pub fn ready_import(handle: impl Into<LazyTheory> + 'static) -> Import {
     Box::pin(async move { handle.into() })
 }
 
@@ -208,7 +208,7 @@ pub fn run(
     src: &str,
     resolver: impl Fn(&str) -> Option<Env>,
     tactics: impl Fn(&str) -> Option<Arc<dyn Tactic>>,
-) -> Result<TheoryHandle, ScriptError> {
+) -> Result<LazyTheory, ScriptError> {
     // Adapt the synchronous `Env` resolver to the async core's future-returning
     // one: each import is already available, so it resolves immediately.
     block_on(run_async(
@@ -219,7 +219,7 @@ pub fn run(
 }
 
 /// The async core: parse a whole script into structured [`Stmt`]s and execute
-/// them into a [`TheoryHandle`].
+/// them into a [`LazyTheory`].
 ///
 /// `#import` is the one genuinely **async** step: it `await`s the
 /// `resolver`-supplied [`Import`] future, so an imported theory can be produced
@@ -230,7 +230,7 @@ pub async fn run_async(
     src: &str,
     resolver: impl Fn(&str) -> Option<Import>,
     tactics: impl Fn(&str) -> Option<Arc<dyn Tactic>>,
-) -> Result<TheoryHandle, ScriptError> {
+) -> Result<LazyTheory, ScriptError> {
     let exprs =
         covalence_sexp::parse(src).map_err(|e| ScriptError::Syntax(format!("sexp: {e}")))?;
     // Stage 1: parse every directive into a typed statement (structural errors
@@ -244,7 +244,7 @@ pub async fn run_async(
     let mut internal = Env::empty();
     let mut exports = Env::empty();
     let mut thms = Vec::new();
-    let mut computed = EnvHandle::new();
+    let mut computed = LazyEnv::new();
     for stmt in stmts {
         match stmt {
             // The async step: await the import's future, then register its
@@ -336,7 +336,7 @@ pub async fn run_async(
             }
         }
     }
-    Ok(TheoryHandle {
+    Ok(LazyTheory {
         exports,
         thms,
         computed,
@@ -349,7 +349,7 @@ pub async fn run_async(
 async fn await_computed_deps(
     sexpr: &SExpr,
     internal: &mut Env,
-    computed: &EnvHandle,
+    computed: &LazyEnv,
 ) -> Result<(), ScriptError> {
     let mut refs = Vec::new();
     lemma_refs(sexpr, &mut refs);
@@ -968,9 +968,9 @@ mod tests {
 
     #[test]
     fn resolved_theory_imports_via_cast() {
-        // A fully-proved `Theory` casts to a `TheoryHandle` (From<Theory>) and
+        // A fully-proved `Theory` casts to a `LazyTheory` (From<Theory>) and
         // can be `#import`ed by a downstream script.
-        let handle: TheoryHandle = run(
+        let handle: LazyTheory = run(
             "(#import core)(#open core)(#thm foo (#concl (= 0 0)) (#proof (refl 0)))(#export foo)",
             |name| (name == "core").then(Env::core),
             |_| None,

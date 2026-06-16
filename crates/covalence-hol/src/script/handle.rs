@@ -1,4 +1,4 @@
-//! [`EnvHandle`] — an **in-progress** environment whose theorem bindings may
+//! [`LazyEnv`] — an **in-progress** environment whose theorem bindings may
 //! still be computing. Each binding is a [`ThmHandle`]: a ready `Thm`, or a
 //! future (e.g. a `#compute` running on a blocking thread). The Ready/Pending
 //! representation is **encapsulated** — callers only ever use the async
@@ -25,11 +25,11 @@ enum ThmHandle {
 /// An in-progress environment of theorem handles. Cloning is cheap (an `imbl`
 /// persistent map of clonable handles); the Ready/Pending split is private.
 #[derive(Clone, Default)]
-pub struct EnvHandle {
+pub struct LazyEnv {
     lemmas: imbl::HashMap<String, ThmHandle>,
 }
 
-impl EnvHandle {
+impl LazyEnv {
     /// An empty handle environment.
     pub fn new() -> Self {
         Self::default()
@@ -47,7 +47,7 @@ impl EnvHandle {
 
     /// Bind `name` to a computation running on a blocking thread (a `#compute`
     /// / `spawn_blocking` task). The binding is *pending* until the task
-    /// finishes; [`EnvHandle::get`] awaits it.
+    /// finishes; [`LazyEnv::get`] awaits it.
     pub fn insert_compute(
         &mut self,
         name: impl Into<String>,
@@ -101,7 +101,7 @@ mod tests {
     #[test]
     fn ready_binding_is_returned_directly() {
         rt().block_on(async {
-            let mut e = EnvHandle::new();
+            let mut e = LazyEnv::new();
             assert!(e.is_empty());
             e.insert_ready("x", refl0());
             assert!(e.contains("x"));
@@ -114,7 +114,7 @@ mod tests {
     #[test]
     fn pending_compute_is_awaited_transparently() {
         rt().block_on(async {
-            let mut e = EnvHandle::new();
+            let mut e = LazyEnv::new();
             // A computation on a blocking thread — the getter awaits it.
             let task = tokio::task::spawn_blocking(|| Ok(refl0()));
             e.insert_compute("y", task);
@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn compute_error_propagates_through_the_getter() {
         rt().block_on(async {
-            let mut e = EnvHandle::new();
+            let mut e = LazyEnv::new();
             let task =
                 tokio::task::spawn_blocking(|| Err(ScriptError::Syntax("boom".into())));
             e.insert_compute("bad", task);

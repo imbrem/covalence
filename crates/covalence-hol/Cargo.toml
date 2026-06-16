@@ -15,3 +15,6 @@ bytes = "1"
 indexmap = "2"
 smol_str = "0.3"
 thiserror = "2"
+# The async proof core runs on tokio; `run` blocks on it via a current-thread
+# runtime. Native only (the kernel/TCB stays sync) — see `script::block_on`.
+tokio = { version = "1", features = ["rt"] }

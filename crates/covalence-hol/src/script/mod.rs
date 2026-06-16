@@ -45,17 +45,17 @@ use covalence_sexp::SExpr;
 /// A replayed theory in its **in-progress** (semi-proved) state. Hole-free
 /// `#thm`s are already checked (`thms`); `#thm`s containing an `(#hole NAME)`
 /// obligation are *pending* until that hole is filled (by a `(#fill NAME …)`
-/// directive). [`Theory::resolve`] forces it — checking every pending proof
-/// once its holes are filled — yielding a fully-proved [`ResolvedTheory`].
+/// directive). [`TheoryHandle::resolve`] forces it — checking every pending proof
+/// once its holes are filled — yielding a fully-proved [`Theory`].
 ///
 /// This is the future-shaped half: a theory you can hold and inspect while
 /// some of its theorems are still open. The kernel/TCB stays synchronous;
 /// "open" is a property of the untrusted script layer, not of any `Thm`.
-pub struct Theory {
+pub struct TheoryHandle {
     /// The explicitly-exported public interface (`(#export …)`).
     exports: Env,
     /// The full internal environment (imports + every checked lemma) — used
-    /// to re-check pending proofs at [`Theory::resolve`] time.
+    /// to re-check pending proofs at [`TheoryHandle::resolve`] time.
     internal: Env,
     /// Hole-free theorems, already checked.
     pub thms: Vec<NamedThm>,
@@ -77,7 +77,7 @@ struct PendingThm {
     sexpr: SExpr,
 }
 
-impl Theory {
+impl TheoryHandle {
     /// The exported environment — pass it as an `(#import NAME) (#open NAME)` target when
     /// running a downstream script. Empty unless the script `(#export …)`s.
     pub fn env(&self) -> Env {
@@ -108,22 +108,22 @@ impl Theory {
     }
 
     /// Whether this theory is already fully proved — no `#thm` is pending,
-    /// so [`Theory::resolve`] is a no-op that cannot fail.
+    /// so [`TheoryHandle::resolve`] is a no-op that cannot fail.
     pub fn is_resolved(&self) -> bool {
         self.pending.is_empty()
     }
 
     /// **Force** the theory: splice every `(#fill …)` into the pending proofs
-    /// and re-check them, producing a fully-proved [`ResolvedTheory`]. Errors
+    /// and re-check them, producing a fully-proved [`Theory`]. Errors
     /// with [`ScriptError::UnresolvedObligation`] if a hole has no fill.
-    pub fn resolve(self) -> Result<ResolvedTheory, ScriptError> {
+    pub fn resolve(self) -> Result<Theory, ScriptError> {
         // Any hole still without a `(#fill …)` makes the theory unforceable —
         // report every one of them by name.
         let open = self.obligations();
         if !open.is_empty() {
             return Err(ScriptError::UnresolvedObligation(open.join("`, `")));
         }
-        let Theory {
+        let TheoryHandle {
             mut exports,
             mut internal,
             mut thms,
@@ -149,24 +149,24 @@ impl Theory {
             })?;
             exports.define_lemma(name, thm);
         }
-        Ok(ResolvedTheory { exports, thms })
+        Ok(Theory { exports, thms })
     }
 }
 
 /// A theory all of whose `#thm`s are checked — the result of forcing a
-/// [`Theory`]. This is the "done" state: a `Thm` for every theorem.
-pub struct ResolvedTheory {
+/// [`TheoryHandle`]. This is the "done" state: a `Thm` for every theorem.
+pub struct Theory {
     exports: Env,
     pub thms: Vec<NamedThm>,
 }
 
-impl ResolvedTheory {
-    /// The exported environment (see [`Theory::env`]).
+impl Theory {
+    /// The exported environment (see [`TheoryHandle::env`]).
     pub fn env(&self) -> Env {
         self.exports.clone()
     }
 
-    /// Look up an **exported** lemma by name (see [`Theory::lemma`]).
+    /// Look up an **exported** lemma by name (see [`TheoryHandle::lemma`]).
     pub fn lemma(&self, name: &str) -> Thm {
         self.exports
             .lookup_lemma(name)
@@ -261,11 +261,11 @@ pub fn run(
     src: &str,
     resolver: impl Fn(&str) -> Option<Env>,
     tactics: impl Fn(&str) -> Option<Arc<dyn Tactic>>,
-) -> Result<Theory, ScriptError> {
+) -> Result<TheoryHandle, ScriptError> {
     block_on(run_async(src, resolver, tactics))
 }
 
-/// The async core: parse and replay a whole script into a [`Theory`].
+/// The async core: parse and replay a whole script into a [`TheoryHandle`].
 ///
 /// Async on purpose — this is the seam where the prover becomes a cooperative
 /// scheduler. The intended model (not yet built — see SKELETONS.md): each
@@ -281,7 +281,7 @@ pub async fn run_async(
     src: &str,
     resolver: impl Fn(&str) -> Option<Env>,
     tactics: impl Fn(&str) -> Option<Arc<dyn Tactic>>,
-) -> Result<Theory, ScriptError> {
+) -> Result<TheoryHandle, ScriptError> {
     let exprs =
         covalence_sexp::parse(src).map_err(|e| ScriptError::Syntax(format!("sexp: {e}")))?;
     let mut internal = Env::empty();
@@ -438,7 +438,7 @@ pub async fn run_async(
             }
         }
     }
-    Ok(Theory {
+    Ok(TheoryHandle {
         exports,
         internal,
         thms,
@@ -448,34 +448,18 @@ pub async fn run_async(
     })
 }
 
-/// Drive a future to completion on the current thread — a minimal,
-/// dependency-free executor that is the blocking half of the async core. It
-/// parks the thread between polls, so it is already correct for genuinely
-/// pending futures (a single-threaded `pollster`); today the script core
-/// completes without ever pending. A real work-stealing runtime can replace
-/// it for cross-theory parallelism later without changing the API.
+/// Drive the async proof core to completion — the blocking half of the API.
+/// Runs on a fresh **tokio** current-thread runtime, which is the scheduler
+/// the prover is built on: cooperative concurrency (block a task → run another
+/// → resume it) today, swappable for a multi-thread runtime when we want true
+/// parallel verification. Native only, and must not be called from inside an
+/// existing tokio runtime (the `cov_theory!` loads + tests run it from plain
+/// sync context).
 fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    use std::task::{Context, Poll, Wake, Waker};
-
-    struct ThreadWaker(std::thread::Thread);
-    impl Wake for ThreadWaker {
-        fn wake(self: Arc<Self>) {
-            self.0.unpark();
-        }
-        fn wake_by_ref(self: &Arc<Self>) {
-            self.0.unpark();
-        }
-    }
-
-    let mut future = std::pin::pin!(future);
-    let waker = Waker::from(Arc::new(ThreadWaker(std::thread::current())));
-    let mut cx = Context::from_waker(&waker);
-    loop {
-        match future.as_mut().poll(&mut cx) {
-            Poll::Ready(out) => return out,
-            Poll::Pending => std::thread::park(),
-        }
-    }
+    tokio::runtime::Builder::new_current_thread()
+        .build()
+        .expect("build a current-thread tokio runtime for the proof core")
+        .block_on(future)
 }
 
 /// Replay a script whose only available environment is the `core` prelude,
@@ -548,7 +532,7 @@ macro_rules! cov_theory {
             #[allow(unused_imports)]
             use super::*;
 
-            static THEORY: ::std::sync::LazyLock<$crate::script::ResolvedTheory> =
+            static THEORY: ::std::sync::LazyLock<$crate::script::Theory> =
                 ::std::sync::LazyLock::new(|| {
                     $crate::script::run(
                         include_str!($src),
@@ -851,7 +835,7 @@ mod tests {
     }
 
     /// A theorem with one open obligation, optionally filled.
-    fn holed(fill: &str) -> Result<Theory, ScriptError> {
+    fn holed(fill: &str) -> Result<TheoryHandle, ScriptError> {
         let src = format!(
             r#"
             (#import core)
@@ -884,7 +868,7 @@ mod tests {
     #[test]
     fn fill_then_force_resolves_the_theory() {
         // `(#fill body (assume p))` discharges the hole; forcing yields a
-        // fully-proved ResolvedTheory with the theorem.
+        // fully-proved Theory with the theorem.
         let theory = holed("(#fill body (assume p))").unwrap();
         assert!(!theory.is_resolved(), "still pending until forced");
         assert!(theory.obligations().is_empty(), "the obligation is filled");

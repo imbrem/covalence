@@ -363,23 +363,30 @@ directives — is `open`-able by other scripts; the macro binds it as a
   `succ`). int/rat/real/list/option/prod/coprod/set catalogue names are not yet
   bound; add entries to `script/env.rs::Env::core` (the `defs/` churn
   boundary) as those theories are ported.
-- **Async core has no cooperative scheduler yet.** `script/mod.rs::run_async`
-  is `async` and `run` blocks on it via a minimal parking `block_on`, but the
-  body still runs every statement eagerly and in order. The in-progress vs
-  resolved *types* now exist — `Theory` (semi-proved; holds `pending` holed
-  `#thm`s + `fills`) and `ResolvedTheory` (forced via `Theory::resolve`) — but
-  the SCHEDULER does not: each `#thm` should be a *task* yielding a **future**
-  for its `Thm`; when a task blocks (unresolved import, a tactic awaiting an
-  observer / peer prover / the user) the scheduler should move on to the next
-  statement and resume the blocked one when it unblocks — so verification
-  auto-parallelises and a failed import yields a *partial* theory that is still
-  importable. Needs: a per-statement task graph, a real (work-stealing)
-  executor, and a `Theory` holding theorem futures rather than `pending`
-  S-expressions. Wanted for BLAKE3-range partial verification.
-  - **Pending resolution is in declaration order, no dependency reordering.**
-    `Theory::resolve` re-checks `pending` theorems top-to-bottom, adding each
-    to the env as it goes; a pending `#thm` that references a *later* pending
-    theorem's lemma would fail. A real scheduler resolves by dependency.
+- **Async core runs on tokio, but theorems are not yet tasks.**
+  `script/mod.rs::run_async` is `async` and `run` blocks on it via a tokio
+  **current-thread** runtime (`block_on`) — the real scheduler the prover is
+  built on. The in-progress vs resolved *types* exist — `TheoryHandle`
+  (semi-proved; holds `pending` holed `#thm`s + `fills` + `deferred_exports`)
+  and `Theory` (forced via `TheoryHandle::resolve`). What's missing is making
+  each `#thm` an actual **tokio task** yielding a future for its `Thm`: a
+  theorem `tokio::spawn`s, `await`s the futures of the lemmas it references
+  (dependency analysis = scan the proof for `(lemma …)`), checks (CPU-bound →
+  `spawn_blocking`), and completes its own. **tokio does the scheduling — we do
+  NOT hand-roll dependency reordering** (the current `resolve` checks `pending`
+  top-to-bottom only because it isn't a task graph yet). Then: a task that
+  blocks (an unready import, a tactic awaiting an observer / peer / the user)
+  just lets tokio run another; a failed import yields a *partial* theory that
+  is still importable; verification auto-parallelises (swap to a multi-thread
+  runtime). Wanted for BLAKE3-range partial verification.
+  - **`EnvHandle` (in-progress env) not built.** Mirror of `TheoryHandle` for
+    environments: a *fully-resolved* `Env` holds no futures, but an in-progress
+    one's **imported** lemmas/consts ARE futures (an imported theory need not be
+    fully proved to start proving its importers). Model: `EnvHandle` carries
+    `Shared`/`oneshot` futures per name; `EnvHandle::resolve().await -> Env`.
+    The `#import` resolver would return `EnvHandle`s (or futures), and `#dep`
+    becomes a real `await` on one. Touches the whole import path + the
+    `cov_theory!` resolver closures, so staged.
   - **Holes are tactic-mode-reachable only via `(derive (#hole …))`.** A
     `(#hole NAME)` is detected by an S-expression scan of the whole `#thm`
     (`collect_holes`), so it works anywhere — but there is no first-class

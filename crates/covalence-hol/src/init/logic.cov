@@ -2,12 +2,13 @@
 ;; `cov_theory!` macro, replacing the hand-written Rust proofs. Replayed
 ;; once (lazily) through the kernel; nothing here is trusted from the text.
 ;;
-;; Keep this theory `tauto`-free: `init::logic::truth` is loaded from here,
-;; and the `tauto`/`normalize` machinery depends on `truth`, so a `(tauto …)`
-;; would re-enter the theory's own initialisation.
+;; `tauto` is registered here as a host (FFI) tactic and exported, so
+;; downstream theories that `(#open logic)` get it. (`tauto` depends on
+;; `truth`, which logic provides — it belongs to logic, not core.)
 
 (#import core)
 (#open core)
+(#register-ffi-tactic tauto)
 
 ;; ⊢ T. `reduce-prim` decides (T = T) = T on the closed literals; `refl T`
 ;; discharges the antecedent via `eq-mp`.
@@ -110,6 +111,7 @@
       (eq-mp (sym (eq-mp (unfold-at-2 iff p q) (assume (iff p q)))) (assume q)))))
 
 ;; The public interface: what `cov::env()` exposes and what the Rust
-;; accessors read.
+;; accessors read. (`tauto` is the host tactic registered above.)
 (#export truth and.comm or.comm exists.intro
-         iff.refl iff.intro iff.mp iff.mpr)
+         iff.refl iff.intro iff.mp iff.mpr
+         tauto)

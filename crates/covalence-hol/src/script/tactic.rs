@@ -127,7 +127,6 @@ pub fn core_tactics() -> HashMap<String, Tactic> {
     t.insert("intro".into(), tac_intro);
     t.insert("exact".into(), tac_exact);
     t.insert("assumption".into(), tac_assumption);
-    t.insert("tauto".into(), tac_tauto);
     t.insert("refl".into(), tac_refl);
     t.insert("sym".into(), tac_sym);
     t.insert("not-intro".into(), tac_not_intro);
@@ -199,12 +198,6 @@ fn tac_assumption(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
             "assumption: no fact matches the goal {target}"
         ))),
     }
-}
-
-fn tac_tauto(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
-    arity(s, 1, "tauto")?;
-    expect_done(rest, "tauto")?;
-    Ok(crate::init::logic::tauto(&it.goal)?)
 }
 
 fn tac_refl(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {

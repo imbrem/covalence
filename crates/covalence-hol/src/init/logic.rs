@@ -47,16 +47,34 @@ use crate::init::ext::{TermExt, ThmExt};
 // `truth`, `and_comm`, and `or_comm` are no longer hand-written here: they
 // are *replayed* from the colocated `logic.cov` proof script through the
 // `script` layer (the kernel re-checks every step). `cov::env()` exposes
-// the resulting environment for downstream theories to `(open …)`.
+// the resulting environment for downstream theories to `(#open …)`.
 //
-// Keep `logic.cov` `tauto`-free: `truth` is loaded from it and the
-// `tauto`/`normalize` machinery below depends on `truth`, so a `(tauto …)`
-// directive there would re-enter this theory's own initialisation.
+// `tauto` is registered into `logic`'s environment (not `core`): it depends
+// on `truth`, which `logic` provides, so it belongs here. `logic.cov` itself
+// does not use it (its proofs are explicit), so there is no re-entrancy.
+
+/// The `tauto` **tactic**: discharge the current goal if it is a trivial
+/// tautology (delegates to [`tauto`]). Registered into `logic`'s exported
+/// env via `(#register-ffi-tactic tauto)` + the `cov_theory!` `ffi-tactic`
+/// clause, so downstream theories that `(#open logic)` get it.
+pub fn tauto_tactic(
+    s: &[covalence_sexp::SExpr],
+    rest: &[covalence_sexp::SExpr],
+    it: &mut crate::script::Interp,
+) -> core::result::Result<Thm, crate::script::ScriptError> {
+    if s.len() != 1 || !rest.is_empty() {
+        return Err(crate::script::ScriptError::Syntax(
+            "tauto: expected `(tauto)` as the closing tactic".into(),
+        ));
+    }
+    Ok(tauto(it.goal())?)
+}
 
 crate::cov_theory! {
     /// Propositional lemmas loaded from `logic.cov`.
     pub mod cov from "logic.cov" {
         import "core" = crate::script::Env::core();
+        ffi-tactic "tauto" = crate::init::logic::tauto_tactic;
         "truth"        => pub fn truth;
         "and.comm"     => pub fn and_comm;
         "or.comm"      => pub fn or_comm;

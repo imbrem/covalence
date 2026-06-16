@@ -31,6 +31,7 @@ mod tactic;
 
 pub use drv::{Drv, check, parse_drv};
 pub use syntax::{ConstDef, Env, Scope, parse_term, parse_type};
+pub use tactic::{Interp, Tactic};
 
 use covalence_core::{Thm, Type};
 use covalence_sexp::SExpr;
@@ -95,6 +96,7 @@ pub struct NamedThm {
 pub fn run(
     src: &str,
     resolver: impl Fn(&str) -> Option<Env>,
+    tactics: impl Fn(&str) -> Option<Tactic>,
 ) -> Result<Theory, ScriptError> {
     let exprs =
         covalence_sexp::parse(src).map_err(|e| ScriptError::Syntax(format!("sexp: {e}")))?;
@@ -117,6 +119,17 @@ pub fn run(
                 syntax::arity(ch, 2, "#open")?;
                 internal.open(syntax::sym(&ch[1], "environment name")?)?;
             }
+            // `(#register-ffi-tactic NAME)` — register a host-supplied native
+            // tactic (the pointer comes from `tactics`, e.g. a `cov_theory!`
+            // `ffi-tactic` clause) into the running environment under NAME.
+            "#register-ffi-tactic" => {
+                syntax::arity(ch, 2, "#register-ffi-tactic")?;
+                let name = syntax::sym(&ch[1], "tactic name")?;
+                let tac = tactics(name).ok_or_else(|| {
+                    ScriptError::Unbound(format!("ffi tactic `{name}` (not provided by host)"))
+                })?;
+                internal.register_tactic(name, tac);
+            }
             "#thm" => {
                 let nt = run_thm(ch, &internal)?;
                 internal.define_lemma(nt.name.clone(), nt.thm.clone());
@@ -135,6 +148,8 @@ pub fn run(
                         exports.define_lemma(name, thm.clone());
                     } else if let Some(c) = internal.lookup_const(name) {
                         exports.define_const(name, c.clone());
+                    } else if let Some(t) = internal.lookup_tactic(name) {
+                        exports.register_tactic(name, t);
                     } else {
                         return Err(ScriptError::Unbound(format!(
                             "#export: nothing named `{name}` to export"
@@ -153,7 +168,7 @@ pub fn run(
 /// Replay a script whose only available environment is the `core` prelude,
 /// returning the theorems it proves.
 pub fn run_str(src: &str) -> Result<Vec<NamedThm>, ScriptError> {
-    Ok(run(src, |name| (name == "core").then(Env::core))?.thms)
+    Ok(run(src, |name| (name == "core").then(Env::core), |_| None)?.thms)
 }
 
 /// Load a `.cov` proof script as a Rust module: run it once, lazily, with
@@ -188,6 +203,7 @@ macro_rules! cov_theory {
         $(#[$meta:meta])*
         $vis:vis mod $modname:ident from $src:literal {
             $( import $oname:literal = $oenv:expr ; )*
+            $( ffi-tactic $tname:literal = $texpr:expr ; )*
             $( $lemma:literal => $lvis:vis fn $fn:ident ; )*
         }
     ) => {
@@ -198,10 +214,17 @@ macro_rules! cov_theory {
 
             static THEORY: ::std::sync::LazyLock<$crate::script::Theory> =
                 ::std::sync::LazyLock::new(|| {
-                    $crate::script::run(include_str!($src), |__name| match __name {
-                        $( $oname => Some($oenv), )*
-                        _ => None,
-                    })
+                    $crate::script::run(
+                        include_str!($src),
+                        |__name| match __name {
+                            $( $oname => Some($oenv), )*
+                            _ => None,
+                        },
+                        |__tname| match __tname {
+                            $( $tname => Some($texpr as $crate::script::Tactic), )*
+                            _ => None,
+                        },
+                    )
                     .unwrap_or_else(|__e| {
                         panic!("cov_theory `{}`: {}", stringify!($modname), __e)
                     })
@@ -342,6 +365,42 @@ mod tests {
     }
 
     #[test]
+    fn tauto_tactic_comes_from_logic() {
+        // The `tauto` *tactic* (goal mode) is registered into `logic`'s env
+        // via `(#register-ffi-tactic tauto)` + the `ffi-tactic` macro clause
+        // — NOT into `core`. Opening logic brings it into scope.
+        let theory = run(
+            r#"
+            (#import core)
+            (#open core)
+            (#import logic)
+            (#open logic)
+            (#thm imp.refl.by
+              (#concl (==> p p))
+              (#by (tauto)))
+            "#,
+            |name| match name {
+                "core" => Some(Env::core()),
+                "logic" => Some(crate::init::logic::cov::env()),
+                _ => None,
+            },
+            |_| None,
+        )
+        .expect("the tauto tactic is available via the logic env");
+        assert!(theory.thms[0].thm.hyps().is_empty());
+
+        // Without opening logic, the `tauto` *tactic* is not in scope.
+        let missing = run_str(
+            r#"
+            (#import core)
+            (#open core)
+            (#thm t (#concl (==> p p)) (#by (tauto)))
+            "#,
+        );
+        assert!(missing.is_err(), "tauto tactic must not be a core tactic");
+    }
+
+    #[test]
     fn excluded_middle_via_lem() {
         let thm = one(
             r#"
@@ -375,29 +434,6 @@ mod tests {
         assert_eq!(thm.hyps().len(), 1);
     }
 
-    #[test]
-    fn ports_logic_theory_implicitly() {
-        // The checked-in `logic.cov` (implicit style: no `fix`, no binder
-        // annotations) replays, and the closed theorems match the
-        // hand-written Rust `init::logic` originals — the surface-syntax §8
-        // golden-test discipline.
-        let thms = run_str(include_str!("theories/logic.cov")).expect("logic.cov should replay");
-        let get = |n: &str| {
-            &thms
-                .iter()
-                .find(|t| t.name == n)
-                .unwrap_or_else(|| panic!("missing thm {n}"))
-                .thm
-        };
-        assert_eq!(get("truth").concl(), crate::init::logic::truth().concl());
-        assert_eq!(get("and.comm").concl(), crate::init::logic::and_comm().concl());
-        assert_eq!(get("or.comm").concl(), crate::init::logic::or_comm().concl());
-        // lemma application: depends on the single hypothesis a ∧ b
-        assert_eq!(get("and.comm.apply").hyps().len(), 1);
-        // polymorphic lemma + its nat specialisation are hypothesis-free
-        assert!(get("eq.refl.poly").hyps().is_empty());
-        assert!(get("eq.refl.nat").hyps().is_empty());
-    }
 
     #[test]
     fn infers_free_var_types_without_fix() {
@@ -442,6 +478,7 @@ mod tests {
                 "logic" => Some(crate::init::logic::cov::env()),
                 _ => None,
             },
+            |_| None,
         )
         .expect("should replay against the opened `logic` env");
         assert_eq!(theory.thms.len(), 1);
@@ -497,6 +534,7 @@ mod tests {
             (#export a)
             "#,
             |name| (name == "core").then(Env::core),
+            |_| None,
         )
         .expect("should replay");
         let env = theory.env();

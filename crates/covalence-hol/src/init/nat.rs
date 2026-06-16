@@ -177,6 +177,10 @@ pub fn natrec_env() -> crate::script::Env {
     e.lemmas.insert("nat.pred_succ".into(), pred_succ());
     e.lemmas.insert("nat.sub_zero".into(), sub_zero());
     e.lemmas.insert("nat.sub_succ".into(), sub_succ());
+    // the `≤` / `<` defining clauses (`= T`/`= F` boolean forms), as the
+    // 4-way conjunctions; nat.cov projects them with `and-elim`.
+    e.lemmas.insert("nat.le_body".into(), le_body());
+    e.lemmas.insert("nat.lt_body".into(), lt_body());
     e
 }
 
@@ -185,6 +189,7 @@ crate::cov_theory! {
     pub mod cov from "nat.cov" {
         import "core" = crate::script::Env::core();
         import "natrec" = crate::init::nat::natrec_env();
+        import "logic" = crate::init::logic::cov::env();
         "nat.succ_ne_zero" => pub fn succ_ne_zero;
         "nat.succ_cong_ne" => pub fn succ_cong_ne;
         "nat.rec_zero"     => pub fn natrec_zero_eq;

@@ -8,6 +8,7 @@
 
 (#open core)
 (#open natrec)
+(#open logic)   ;; for `truth`, used to strip `= T` from the ≤/< clauses
 
 ;; ⊢ ∀n. ¬(S n = 0).  `sym` flips the negated-equation goal to ¬(0 = S n),
 ;; which is exactly `nat.zero_ne_succ`.
@@ -355,9 +356,98 @@
         (rw (all-elim m (all-elim n (lemma nat.sub_succ))))
         (refl)))))
 
+;; ============================================================================
+;; Order (`≤`, `<`).  `nat.le`/`nat.lt` are def-style selector predicates;
+;; `nat.le_body`/`nat.lt_body` give the 4 defining clauses in `= T`/`= F`
+;; form. `eqt`/`eqf` here is `eq-mp` against `truth` (or `assume` + `eq-mp`).
+;; ============================================================================
+
+;; ⊢ ∀n m. (S n ≤ S m) = (n ≤ m).  The 4th clause of `nat.le_body`.
+(#thm nat.le_succ_succ
+  (#concl (forall (n nat) (forall (m nat)
+            (= (nat.le (succ n) (succ m)) (nat.le n m)))))
+  (#by
+    (intro n m)
+    (exact (all-elim m (all-elim n
+              (and-elim-r (and-elim-r (and-elim-r (lemma nat.le_body)))))))))
+
+;; ⊢ ∀n m. (S n < S m) = (n < m).
+(#thm nat.lt_succ_succ
+  (#concl (forall (n nat) (forall (m nat)
+            (= (nat.lt (succ n) (succ m)) (nat.lt n m)))))
+  (#by
+    (intro n m)
+    (exact (all-elim m (all-elim n
+              (and-elim-r (and-elim-r (and-elim-r (lemma nat.lt_body)))))))))
+
+;; ⊢ ∀m. 0 ≤ m.  Induction on m; both cases from `nat.le_body` (= T), via
+;; `truth` to strip the `= T`.
+(#thm nat.le_zero
+  (#concl (forall (m nat) (nat.le 0 m)))
+  (#by
+    (induct m
+      (#by (exact (eq-mp (sym (and-elim-l (lemma nat.le_body))) (lemma truth))))
+      (#by (exact (eq-mp (sym (all-elim m (and-elim-l (and-elim-r (lemma nat.le_body)))))
+                         (lemma truth)))))))
+
+;; ⊢ ∀m. 0 < S m.  Every successor is positive (2nd `<` clause).
+(#thm nat.zero_lt_succ
+  (#concl (forall (m nat) (nat.lt 0 (succ m))))
+  (#by
+    (intro m)
+    (exact (eq-mp (sym (all-elim m (and-elim-l (and-elim-r (lemma nat.lt_body)))))
+                  (lemma truth)))))
+
+;; ⊢ ∀n. n ≤ n.  Reflexivity, induction (step rewrites with `le_succ_succ`).
+(#thm nat.le_refl
+  (#concl (forall (n nat) (nat.le n n)))
+  (#by
+    (induct n
+      (#by (exact (eq-mp (sym (and-elim-l (lemma nat.le_body))) (lemma truth))))
+      (#by
+        (rw (all-elim n (all-elim n (lemma nat.le_succ_succ))))
+        (assumption)))))
+
+;; ⊢ ∀n. ¬(S n ≤ 0).  Nothing positive is ≤ 0 (3rd `≤` clause, = F).
+(#thm nat.not_succ_le_zero
+  (#concl (forall (n nat) (not (nat.le (succ n) 0))))
+  (#by
+    (intro n)
+    (not-intro)
+    (intro h)
+    (exact (eq-mp (all-elim n (and-elim-l (and-elim-r (and-elim-r (lemma nat.le_body)))))
+                  (assume (nat.le (succ n) 0))))))
+
+;; ⊢ ∀n. ¬(n < 0).  Nothing is < 0 (induction: 0 from clause 1, S n from 3).
+(#thm nat.not_lt_zero
+  (#concl (forall (n nat) (not (nat.lt n 0))))
+  (#by
+    (induct n
+      (#by
+        (not-intro) (intro h)
+        (exact (eq-mp (and-elim-l (lemma nat.lt_body)) (assume (nat.lt 0 0)))))
+      (#by
+        (not-intro) (intro h)
+        (exact (eq-mp (all-elim n (and-elim-l (and-elim-r (and-elim-r (lemma nat.lt_body)))))
+                      (assume (nat.lt (succ n) 0))))))))
+
+;; ⊢ ∀n. ¬(n < n).  Irreflexivity of `<`, induction (step via `lt_succ_succ`).
+(#thm nat.lt_irrefl
+  (#concl (forall (n nat) (not (nat.lt n n))))
+  (#by
+    (induct n
+      (#by
+        (not-intro) (intro h)
+        (exact (eq-mp (and-elim-l (lemma nat.lt_body)) (assume (nat.lt 0 0)))))
+      (#by
+        (rw (all-elim n (all-elim n (lemma nat.lt_succ_succ))))
+        (assumption)))))
+
 (#export nat.succ_ne_zero nat.succ_cong_ne nat.rec_zero nat.rec_succ nat.eq_refl
          nat.add_zero nat.add_succ nat.add_comm nat.add_assoc nat.add_cancel
          nat.add_swap_mid
          nat.mul_zero nat.mul_succ nat.mul_comm nat.mul_one
          nat.distrib nat.distrib_r nat.mul_assoc
-         nat.zero_sub nat.succ_sub)
+         nat.zero_sub nat.succ_sub
+         nat.le_succ_succ nat.lt_succ_succ nat.le_zero nat.zero_lt_succ
+         nat.le_refl nat.not_succ_le_zero nat.not_lt_zero nat.lt_irrefl)

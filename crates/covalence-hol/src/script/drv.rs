@@ -39,6 +39,9 @@ pub enum Drv {
     /// `⊢ op arg = body[arg]` — unfold a unary defined constant at an
     /// argument (one β-step). Wraps `proofs::rewrite::unfold_at_1`.
     UnfoldAt1 { op: Term, arg: Term },
+    /// `⊢ op a b = body[a,b]` — unfold a binary defined constant at two
+    /// arguments. Wraps `proofs::rewrite::unfold_at_2`.
+    UnfoldAt2 { op: Term, a: Term, b: Term },
     BetaConv(Term),
     // unary
     Sym(Box<Drv>),
@@ -96,6 +99,9 @@ pub fn check(d: &Drv, env: &Env) -> R<Thm> {
         Drv::UnfoldTermSpec(t) => Thm::unfold_term_spec(t.clone())?,
         Drv::UnfoldAt1 { op, arg } => {
             crate::proofs::rewrite::unfold_at_1(op.clone(), arg.clone())
+        }
+        Drv::UnfoldAt2 { op, a, b } => {
+            crate::proofs::rewrite::unfold_at_2(op.clone(), a.clone(), b.clone())
         }
         Drv::BetaConv(t) => Thm::beta_conv(t.clone())?,
         Drv::Sym(a) => check(a, env)?.sym()?,
@@ -207,6 +213,14 @@ pub fn parse_drv(s: &SExpr, scope: &mut Scope, env: &Env) -> R<Drv> {
             Drv::UnfoldAt1 {
                 op: parse_term(&ch[1], scope, env)?,
                 arg: parse_term(&ch[2], scope, env)?,
+            }
+        }
+        "unfold-at-2" => {
+            arity(ch, 4, "unfold-at-2")?;
+            Drv::UnfoldAt2 {
+                op: parse_term(&ch[1], scope, env)?,
+                a: parse_term(&ch[2], scope, env)?,
+                b: parse_term(&ch[3], scope, env)?,
             }
         }
         "beta-conv" => {

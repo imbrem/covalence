@@ -255,9 +255,9 @@ fn run_thm(ch: &[SExpr], env: &Env) -> Result<NamedThm, ScriptError> {
     idx += 1;
 
     // The proof body is `(#proof DRV)` (tree mode) or `(#by STEP…)`
-    // (goal-directed tactic mode); both elaborate to a `Drv`.
-    let drv = tactic::elaborate_proof(&expected, &ch[idx], &mut scope, env)?;
-    let thm = drv::check(&drv, env)?;
+    // (goal-directed tactic mode). Tree mode checks a `Drv` to a `Thm`;
+    // tactic mode produces the `Thm` directly by driving the goal.
+    let thm = tactic::prove(&expected, &ch[idx], &mut scope, env)?;
     if thm.concl() != &expected {
         return Err(ScriptError::ConclMismatch {
             name,
@@ -557,6 +557,35 @@ mod tests {
                 (intro h)
                 (#have (and p p) (#proof (and-intro (assume p) (assume p))))
                 (assumption)))
+            "#,
+        );
+        assert!(thm.hyps().is_empty());
+    }
+
+    #[test]
+    fn by_multi_intro_and_sym() {
+        // `intro a b h` peels three binders at once; `sym` swaps the
+        // equation goal; `assumption` closes it with the hypothesis.
+        let thm = one(
+            r#"
+            (#open core)
+            (#thm eq.sym.by
+              (#concl (forall (a nat) (forall (b nat) (==> (= a b) (= b a)))))
+              (#by (intro a b h) (sym) (assumption)))
+            "#,
+        );
+        assert!(thm.hyps().is_empty());
+    }
+
+    #[test]
+    fn by_not_intro() {
+        // `not-intro` turns goal `¬F` into `F ⟹ F`.
+        let thm = one(
+            r#"
+            (#open core)
+            (#thm not.false.by
+              (#concl (not false))
+              (#by (not-intro) (intro h) (assumption)))
             "#,
         );
         assert!(thm.hyps().is_empty());

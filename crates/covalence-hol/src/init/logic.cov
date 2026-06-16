@@ -36,28 +36,79 @@
 ;;   ⊢ ∀(P : 'a → bool). ∀(w : 'a). (P w) ⟹ (∃x. P x)
 ;;
 ;; `∃x. P x` is `exists P`; by its definition `exists ≡ λP. ∀q. (∀x. P x ⟹ q)
-;; ⟹ q`. So: fix P, w; assume `P w`; build `∀q. (∀x. P x ⟹ q) ⟹ q` (assume
-;; the hypothesis H = ∀x. P x ⟹ q, specialise at w, MP the assumed `P w`,
-;; discharge H, generalise q); then fold the definition with `unfold-at-1`
-;; (`exists P = ∀q. (∀x. P x ⟹ q) ⟹ q`) via `sym` + `eq-mp`. The
+;; ⟹ q`. In `#by` tactic mode: `intro` P, w, and the hypothesis `P w`, which
+;; leaves the goal `exists P`; then `exact` a tree-mode core that builds
+;; `∀q. (∀x. P x ⟹ q) ⟹ q` (specialise the inner hypothesis at w, MP the
+;; assumed `P w`) and folds the definition with `unfold-at-1`. The
 ;; S-expression port of the `exists_intro` derivation in `init/logic.rs`.
 (#thm exists.intro
   (#concl
     (forall (P (fun 'a bool))
       (forall (w 'a)
         (==> (app P w) (app (exists-op 'a) P)))))
-  (#proof
-    (all-intro P (fun 'a bool)
-      (all-intro w 'a
-        (imp-intro (app P w)
-          (eq-mp
-            (sym (unfold-at-1 (exists-op 'a) P))
-            (all-intro q bool
-              (imp-intro (forall (x) (==> (app P x) q))
-                (imp-elim
-                  (all-elim w (assume (forall (x) (==> (app P x) q))))
-                  (assume (app P w)))))))))))
+  (#by
+    (intro P w h)
+    (exact
+      (eq-mp
+        (sym (unfold-at-1 (exists-op 'a) P))
+        (all-intro q bool
+          (imp-intro (forall (x) (==> (app P x) q))
+            (imp-elim
+              (all-elim w (assume (forall (x) (==> (app P x) q))))
+              (assume (app P w)))))))))
+
+;; ============================================================================
+;; Biconditional (⟺).  `iff ≡ λp q. p = q`, so `p ⟺ q` folds to `p = q` via
+;; `unfold-at-2`, and `=` at bool IS the biconditional.
+;; ============================================================================
+
+;; ⊢ ∀(p:bool). p ⟺ p.  Reflexivity: fold `refl p : p = p` into `p ⟺ p`.
+(#thm iff.refl
+  (#concl (forall (p bool) (iff p p)))
+  (#by
+    (intro p)
+    (exact (eq-mp (sym (unfold-at-2 iff p p)) (refl p)))))
+
+;; ⊢ ∀p q. (p ⟹ q) ⟹ (q ⟹ p) ⟹ (p ⟺ q).  Antisymmetry of `⟹`
+;; (HOL Light's IMP_ANTISYM_RULE): from the two implications derive `p = q`
+;; by `deduct-antisym`, then fold to `p ⟺ q`.
+(#thm iff.intro
+  (#concl
+    (forall (p bool)
+      (forall (q bool)
+        (==> (==> p q) (==> (==> q p) (iff p q))))))
+  (#by
+    (intro p q hpq hqp)
+    (exact
+      (eq-mp (sym (unfold-at-2 iff p q))
+        (sym
+          (deduct-antisym
+            (imp-elim (assume (==> p q)) (assume p))
+            (imp-elim (assume (==> q p)) (assume q))))))))
+
+;; ⊢ ∀p q. (p ⟺ q) ⟹ p ⟹ q.  Forward elimination: unfold `p ⟺ q` to
+;; `p = q`, then `eq-mp` with `p`.
+(#thm iff.mp
+  (#concl
+    (forall (p bool)
+      (forall (q bool)
+        (==> (iff p q) (==> p q)))))
+  (#by
+    (intro p q h hp)
+    (exact (eq-mp (eq-mp (unfold-at-2 iff p q) (assume (iff p q))) (assume p)))))
+
+;; ⊢ ∀p q. (p ⟺ q) ⟹ q ⟹ p.  Backward elimination.
+(#thm iff.mpr
+  (#concl
+    (forall (p bool)
+      (forall (q bool)
+        (==> (iff p q) (==> q p)))))
+  (#by
+    (intro p q h hq)
+    (exact
+      (eq-mp (sym (eq-mp (unfold-at-2 iff p q) (assume (iff p q)))) (assume q)))))
 
 ;; The public interface: what `cov::env()` exposes and what the Rust
 ;; accessors read.
-(#export truth and.comm or.comm exists.intro)
+(#export truth and.comm or.comm exists.intro
+         iff.refl iff.intro iff.mp iff.mpr)

@@ -61,10 +61,14 @@ crate::cov_theory! {
         "and.comm"     => pub fn and_comm;
         "or.comm"      => pub fn or_comm;
         "exists.intro" => pub fn exists_intro_thm;
+        "iff.refl"     => pub fn iff_refl;
+        "iff.intro"    => pub fn iff_intro;
+        "iff.mp"       => pub fn iff_mp;
+        "iff.mpr"      => pub fn iff_mpr;
     }
 }
 
-pub use cov::{and_comm, exists_intro_thm, or_comm, truth};
+pub use cov::{and_comm, exists_intro_thm, iff_intro, iff_mp, iff_mpr, iff_refl, or_comm, truth};
 
 // ============================================================================
 // Conjunction
@@ -1556,6 +1560,28 @@ mod tests {
             .unwrap()
             .eq_mp(body_proof)
             .unwrap()
+    }
+
+    #[test]
+    fn iff_lemmas_load_and_apply() {
+        // The `#by`-proved iff lemmas from `logic.cov` are hypothesis-free,
+        // and `iff.mp` instantiates + chains to derive `q` from `p ⟺ q`, `p`.
+        for thm in [iff_refl(), iff_intro(), iff_mp(), iff_mpr()] {
+            assert!(thm.hyps().is_empty());
+        }
+        // ⊢ ∀p q. (p ⟺ q) ⟹ p ⟹ q  ⊢  {a ⟺ b, a} ⊢ b
+        let a = Term::free("a", Type::bool());
+        let b = Term::free("b", Type::bool());
+        let derived = iff_mp()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap()
+            .imp_elim(Thm::assume(a.clone().iff(b.clone()).unwrap()).unwrap())
+            .unwrap()
+            .imp_elim(Thm::assume(a).unwrap())
+            .unwrap();
+        assert_eq!(derived.concl(), &b);
     }
 
     #[test]

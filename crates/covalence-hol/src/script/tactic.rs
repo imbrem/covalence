@@ -1,149 +1,211 @@
 //! `#by` — goal-directed **tactic mode**.
 //!
-//! Tactic mode is the imperative authoring layer: you start from a single
-//! goal (the thing to prove now) plus a context of fixed variables and
-//! available facts, and apply *tactics* that reduce the goal until it is
-//! discharged. Crucially it is not a separate proof representation — it
-//! **elaborates to a forward [`Drv`]**, which `check` then replays. So the
-//! tree stays the certificate; `#by` is just a nicer way to build one.
+//! A tactic here is the imperative job of driving a goal to discharge.
+//! Unlike tree mode (`#proof DRV`), `#by` **produces a `Thm` directly** by
+//! calling kernel rules on the focused goal — the shape a future
+//! WASM-over-WIT tactic uses (inspect the goal, call rule ops, return a
+//! thm handle). Since the system is proof-irrelevant — we keep the *fact*
+//! `⊢ X`, not a proof object — there is no `Drv` to build here.
 //!
-//! Tactics here:
-//! - `(intro NAME)` — backward `⟹`/`∀` introduction (peel the goal,
-//!   moving the antecedent into the context or fixing the bound variable);
-//! - `(exact DRV)` — the **tree-mode discharger**: close the goal with an
-//!   arbitrary forward proof term;
-//! - `(assumption)` — close the goal with a context fact (an `intro`'d
-//!   hypothesis or a `#have`'d lemma);
+//! Tactics:
+//! - `(intro NAME)` — backward `⟹`/`∀` introduction;
+//! - `(exact DRV)` — the **tree-mode discharger**: close the goal with a
+//!   forward proof term (checked to a `Thm`);
+//! - `(assumption)` — close with a context fact;
 //! - `(tauto)` / `(refl)` — close by the corresponding decider;
-//! - `(#have FACT BODY)` — prove `FACT` (in `(#proof …)` tree mode or a
-//!   nested `(#by …)`), bind it into the context, and continue.
+//! - `(#have FACT BODY)` — prove `FACT` (in nested `#proof`/`#by`), add it
+//!   to the context, and continue.
+//!
+//! The goal context is `{ target, hyps }` (hyps: `intro`'d assumptions or
+//! `#have`'d lemmas) — the value a WASM tactic would see over the WIT. A
+//! fully reified `Vec<Goal>` stack (for branching tactics / the WIT) is the
+//! next step; today the focus is a single evolving goal.
 
-use covalence_core::{Term, TermKind, Type, defs, subst};
+use covalence_core::{Term, TermKind, Thm, Type, defs, subst};
 use covalence_sexp::SExpr;
 
 use super::ScriptError;
-use super::drv::{Drv, parse_drv};
+use super::drv::{check, parse_drv};
 use super::syntax::{Env, Scope, arity, head_sym, list, parse_term, sym};
+use crate::HolLightCtx;
 
 type R<T> = Result<T, ScriptError>;
 
-/// A local fact available in tactic mode: a term plus how to prove it —
-/// `None` for an `intro`'d assumption (proved by `assume`, discharged by
-/// the enclosing `imp-intro`), `Some(drv)` for a `#have`'d fact.
-type Facts = Vec<(Term, Option<Drv>)>;
-
-/// Elaborate a proof body — `(#proof DRV)` (tree mode) or `(#by STEP…)`
-/// (tactic mode) — proving `goal`, into a forward [`Drv`].
-pub fn elaborate_proof(goal: &Term, body: &SExpr, scope: &mut Scope, env: &Env) -> R<Drv> {
-    let mut facts = Facts::new();
-    elaborate_body(goal, body, scope, &mut facts, env)
+/// How a context fact is discharged into a `Thm`.
+#[derive(Clone)]
+enum Hyp {
+    /// An `intro`'d assumption — proved by `Thm::assume`, discharged by the
+    /// enclosing `imp-intro`.
+    Assumed,
+    /// A `#have`'d fact — the proven theorem itself.
+    Proven(Thm),
 }
 
-fn elaborate_body(
+/// The focused goal: a target plus the facts available to discharge it.
+struct Goal {
+    target: Term,
+    hyps: Vec<(Term, Hyp)>,
+}
+
+/// Prove `goal` from a proof body — `(#proof DRV)` (tree mode) or
+/// `(#by STEP…)` (tactic mode) — returning a kernel `Thm`.
+pub fn prove(goal: &Term, body: &SExpr, scope: &mut Scope, env: &Env) -> R<Thm> {
+    prove_with(goal, body, scope, &[], env)
+}
+
+fn prove_with(
     goal: &Term,
     body: &SExpr,
     scope: &mut Scope,
-    facts: &mut Facts,
+    hyps: &[(Term, Hyp)],
     env: &Env,
-) -> R<Drv> {
+) -> R<Thm> {
     let ch = list(body, "proof body")?;
     match head_sym(ch)? {
         "#proof" => {
             arity(ch, 2, "#proof")?;
-            parse_drv(&ch[1], scope, env)
+            check(&parse_drv(&ch[1], scope, env)?, env)
         }
-        "#by" => run(goal, &ch[1..], scope, facts, env),
+        "#by" => {
+            let mut g = Goal {
+                target: goal.clone(),
+                hyps: hyps.to_vec(),
+            };
+            run(&mut g, &ch[1..], scope, env)
+        }
         other => Err(ScriptError::Syntax(format!(
             "expected (#proof …) or (#by …), got `{other}`"
         ))),
     }
 }
 
-fn run(
-    goal: &Term,
-    steps: &[SExpr],
-    scope: &mut Scope,
-    facts: &mut Facts,
-    env: &Env,
-) -> R<Drv> {
+fn run(goal: &mut Goal, steps: &[SExpr], scope: &mut Scope, env: &Env) -> R<Thm> {
     let Some((step, rest)) = steps.split_first() else {
         return Err(ScriptError::Syntax(format!(
-            "#by: ran out of steps with the goal still open: {goal}"
+            "#by: the goal is still open: {}",
+            goal.target
         )));
     };
     let s = list(step, "tactic")?;
     match head_sym(s)? {
-        // backward ⟹/∀ introduction
+        // backward ⟹/∀ introduction — one or more names at once.
         "intro" => {
-            arity(s, 2, "intro")?;
-            let name = sym(&s[1], "intro name")?.to_string();
-            if let Some((a, b)) = dest_imp(goal) {
-                facts.push((a.clone(), None));
-                let inner = run(&b, rest, scope, facts, env);
-                facts.pop();
-                Ok(Drv::ImpIntro {
-                    phi: a,
-                    body: Box::new(inner?),
-                })
-            } else if let Some((ty, body)) = dest_forall(goal) {
-                let new_goal = subst::open(&body, &Term::free(name.as_str(), ty.clone()));
-                scope.push((name.clone(), ty.clone()));
-                let inner = run(&new_goal, rest, scope, facts, env);
-                scope.pop();
-                Ok(Drv::AllIntro {
-                    name,
-                    ty,
-                    body: Box::new(inner?),
-                })
-            } else {
-                Err(ScriptError::Syntax(format!(
-                    "intro: goal is neither `⟹` nor `∀`: {goal}"
-                )))
+            if s.len() < 2 {
+                return Err(ScriptError::Syntax("intro: expected at least one name".into()));
             }
+            intro_names(goal, &s[1..], rest, scope, env)
         }
-        // the tree-mode discharger
+        // goal transformers (reduce to a single subgoal, wrap with a rule)
+        "sym" => {
+            arity(s, 1, "sym")?;
+            let (a, b) = dest_eq(&goal.target).ok_or_else(|| {
+                ScriptError::Syntax(format!("sym: goal is not an equation: {}", goal.target))
+            })?;
+            goal.target = HolLightCtx::new().mk_eq(b, a)?;
+            Ok(run(goal, rest, scope, env)?.sym()?)
+        }
+        "not-intro" => {
+            arity(s, 1, "not-intro")?;
+            let p = dest_not(&goal.target).ok_or_else(|| {
+                ScriptError::Syntax(format!("not-intro: goal is not `¬_`: {}", goal.target))
+            })?;
+            goal.target = HolLightCtx::new().mk_imp(p, Term::bool_lit(false));
+            Ok(run(goal, rest, scope, env)?.not_intro()?)
+        }
+        // dischargers — close the goal; no tactics may follow.
         "exact" => {
             arity(s, 2, "exact")?;
-            parse_drv(&s[1], scope, env)
+            expect_done(rest, "exact")?;
+            check(&parse_drv(&s[1], scope, env)?, env)
         }
         "assumption" => {
             arity(s, 1, "assumption")?;
-            discharge_from_facts(goal, facts).ok_or_else(|| {
-                ScriptError::Syntax(format!("assumption: no fact matches the goal {goal}"))
-            })
+            expect_done(rest, "assumption")?;
+            let target = goal.target.clone();
+            let mut src = None;
+            for (t, h) in goal.hyps.iter().rev() {
+                if *t == target {
+                    src = Some(h.clone());
+                    break;
+                }
+            }
+            match src {
+                Some(Hyp::Assumed) => Ok(Thm::assume(target)?),
+                Some(Hyp::Proven(th)) => Ok(th),
+                None => Err(ScriptError::Syntax(format!(
+                    "assumption: no fact matches the goal {target}"
+                ))),
+            }
         }
         "tauto" => {
             arity(s, 1, "tauto")?;
-            Ok(Drv::Tauto(goal.clone()))
+            expect_done(rest, "tauto")?;
+            Ok(crate::init::logic::tauto(&goal.target)?)
         }
         "refl" => {
             arity(s, 1, "refl")?;
-            let (lhs, _) = dest_eq(goal).ok_or_else(|| {
-                ScriptError::Syntax(format!("refl: goal is not an equation: {goal}"))
+            expect_done(rest, "refl")?;
+            let (lhs, _) = dest_eq(&goal.target).ok_or_else(|| {
+                ScriptError::Syntax(format!("refl: goal is not an equation: {}", goal.target))
             })?;
-            Ok(Drv::Refl(lhs))
+            Ok(Thm::refl(lhs)?)
         }
-        // prove an intermediate fact, then continue with it in context
         "#have" => {
             arity(s, 3, "#have")?;
             let fact = parse_term(&s[1], scope, env)?;
-            let sub = elaborate_body(&fact, &s[2], scope, facts, env)?;
-            facts.push((fact, Some(sub)));
-            let result = run(goal, rest, scope, facts, env);
-            facts.pop();
+            let sub = prove_with(&fact, &s[2], scope, &goal.hyps, env)?;
+            goal.hyps.push((fact, Hyp::Proven(sub)));
+            let result = run(goal, rest, scope, env);
+            goal.hyps.pop();
             result
         }
         other => Err(ScriptError::Syntax(format!("unknown tactic: `{other}`"))),
     }
 }
 
-fn discharge_from_facts(goal: &Term, facts: &Facts) -> Option<Drv> {
-    facts.iter().rev().find_map(|(t, src)| {
-        (t == goal).then(|| match src {
-            None => Drv::Assume(goal.clone()),
-            Some(d) => d.clone(),
-        })
-    })
+/// `(intro a b c …)` — introduce each name in turn (backward `⟹`/`∀`),
+/// then continue with the remaining tactics.
+fn intro_names(
+    goal: &mut Goal,
+    names: &[SExpr],
+    rest: &[SExpr],
+    scope: &mut Scope,
+    env: &Env,
+) -> R<Thm> {
+    let Some((name_s, more)) = names.split_first() else {
+        return run(goal, rest, scope, env);
+    };
+    let name = sym(name_s, "intro name")?.to_string();
+    if let Some((a, b)) = dest_imp(&goal.target) {
+        goal.hyps.push((a.clone(), Hyp::Assumed));
+        goal.target = b;
+        let inner = intro_names(goal, more, rest, scope, env);
+        goal.hyps.pop();
+        Ok(inner?.imp_intro(&a)?)
+    } else if let Some((ty, body)) = dest_forall(&goal.target) {
+        goal.target = subst::open(&body, &Term::free(name.as_str(), ty.clone()));
+        scope.push((name.clone(), ty.clone()));
+        let inner = intro_names(goal, more, rest, scope, env);
+        scope.pop();
+        Ok(inner?.all_intro(&name, ty)?)
+    } else {
+        Err(ScriptError::Syntax(format!(
+            "intro: goal is neither `⟹` nor `∀`: {}",
+            goal.target
+        )))
+    }
+}
+
+/// A discharging tactic closes the goal; reject any trailing tactics.
+fn expect_done(rest: &[SExpr], tac: &str) -> R<()> {
+    if rest.is_empty() {
+        Ok(())
+    } else {
+        Err(ScriptError::Syntax(format!(
+            "{tac}: the goal is closed, but {} more tactic(s) follow",
+            rest.len()
+        )))
+    }
 }
 
 fn dest_imp(t: &Term) -> Option<(Term, Term)> {
@@ -175,4 +237,12 @@ fn dest_eq(t: &Term) -> Option<(Term, Term)> {
         return None;
     };
     matches!(h.kind(), TermKind::Eq(_)).then(|| (lhs.clone(), rhs.clone()))
+}
+
+fn dest_not(t: &Term) -> Option<Term> {
+    let not = defs::not();
+    let TermKind::App(h, p) = t.kind() else {
+        return None;
+    };
+    (*h == not).then(|| p.clone())
 }

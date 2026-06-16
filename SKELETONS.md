@@ -102,31 +102,42 @@ it is how unfinished work stays discoverable.
   `recon` are available for the remaining `rat` axioms. Still **postulated**
   via the module's `axiom` helper (each carrying its statement as a
   self-hyp):
-  - The remaining ordered-field axioms over the operations
-    `rat_zero`/`rat_one`/`rat_add`/`rat_sub`/`rat_neg`/`rat_mul`/`rat_inv`/
-    `rat_div`/`rat_lt` (all **defined** at the representative level;
-    `rat_sub`/`rat_inv`/`rat_div` are the additive/multiplicative
-    companions — `rat_div x y = x · y⁻¹`, `rat_inv` sign-normalised so the
-    denominator stays positive). The unproved laws: commutative-ring
-    `add_assoc`/`add_zero`/`add_neg`/`sub_def`/`mul_assoc`/`mul_one`/
-    `mul_zero`/`distrib`, the multiplicative inverse `mul_inv`
-    (now realisable concretely via `rat_inv`), the linear order
-    `lt_*`/`le_def`, and the base strictness fact `zero_lt_one` — `ratLt`
-    picks ε-representatives, so `0 < 1` is not reducible. Each is a HOL
-    theorem derivable from the `int` ordered-ring theory through the
-    quotient; filling them in does not change the public `fn` surface.
-    **The commutative-ring half is now unblocked**: `init::int` proves its
-    full commutative ring (`add_*`/`mul_*`/`distrib`), so the rat ring
-    axioms only await the *machinery port* — the rat analogue of int's
-    `recon` + MK-component layer + per-op computation/well-definedness rules
-    (`add_pair_cong`/`mul_pair_cong` over the cross-multiplication relation),
-    plus a postulated `int.pos` round-trip for the `to_pos` denominators
-    (`rep(to_pos(d₁·d₂)) = d₁·d₂`, pending `int.pos` positivity). The
-    *order* axioms (`lt_*`/`le_def`/`zero_lt_one`) still await the `int`
-    order theory. (The linear-order
-    toolkit `le_refl`/`lt_imp_le`/`le_trans`/`lt_asymm`/`lt_imp_ne`/
-    `le_antisym`/`le_total`/`not_one_le_zero` is **not** postulated — it is
-    *derived* from `le_def` + the strict-order facts.)
+  The **quotient-lifting machinery is now built** (the rat analogue of
+  int's): `rat_recon` (quotient induction), `round_trip`, `recon_mk` (MK
+  component form `MK(f,d) = mk_rat(pair f d)`, `f:int`, `d:int.pos`), the
+  per-op computation rules `add_class`/`mul_class` + `add_mk`/`mul_mk` +
+  `*_via_components`, the well-definedness lemmas `add_pair_cong` (distrib +
+  interchange) / `mul_pair_cong` (interchange), `rel_of_pairs` (prod-
+  projection bridge), and `imul_interchange`. It rests on two postulated
+  `int.pos` round-trips for the `to_pos` denominators (**to discharge in
+  `init::int`**): `pos_prod_rt` (`rep(to_pos(rep a · rep b)) = rep a · rep b`)
+  and `one_pos_rt` (`rep(one_pos) = 1`).
+
+  **Proved** through that machinery (over the operations `rat_zero`/`rat_one`/
+  `rat_add`/`rat_sub`/`rat_neg`/`rat_mul`/`rat_inv`/`rat_div`/`rat_lt`, all
+  defined at the representative level): the full additive group + commutative
+  monoid fragment — `add_comm`, `mul_comm` (on the nose), `add_assoc`,
+  `add_zero`, `add_neg`, `mul_assoc`, `mul_one`, `mul_zero` — and the order
+  `lt_irrefl` (on the nose from `int::lt_irrefl`). All genuine *modulo* the
+  `int.pos` round-trip + `rat_rel_trans` int stubs.
+
+  **Still postulated** via the module's `axiom` helper:
+  - `distrib` (`a·(b+c) = a·b + a·c`) — the one ring axiom that is *not*
+    componentwise: the two sides' denominators differ by a factor of `da`
+    (`da·db·dc` vs `da²·db·dc`), so it needs a `class_intro` on a large
+    cross-multiplication polynomial identity. `sub_def` (`a - b = a + (-b)`,
+    componentwise modulo a derivable `int` `(-x)·y = -(x·y)` lemma) and the
+    field inverse `mul_inv` also remain.
+  - The order axioms `lt_trans`/`lt_trichotomy`/`le_def`/`zero_lt_one`.
+    `le_def` is definitional (pins the opaque `ratLe`); the rest unfold
+    `ratLt` to the
+    `int` comparison on cross-products and await the `int` order facts
+    (`lt_trans`/`lt_trichotomy`/`lt_add_mono` are now proved in `int`;
+    `lt_mul_pos` — needed to multiply inequalities by a positive denominator —
+    is the last `int` order postulate). (The linear-order toolkit
+    `le_refl`/`lt_imp_le`/`le_trans`/`lt_asymm`/`lt_imp_ne`/`le_antisym`/
+    `le_total`/`not_one_le_zero` is **not** postulated — it is *derived* from
+    `le_def` + the strict-order facts.)
   - The two **mediant inequalities** `mediant_gt` / `mediant_lt` — the
     only postulated leaves of `dense` (which is itself *derived* from
     them via the mediant `(a+c)/(b+d)`, no division needed). Each unfolds

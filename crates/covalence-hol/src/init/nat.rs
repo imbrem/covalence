@@ -188,6 +188,12 @@ crate::cov_theory! {
         "nat.add_zero"     => pub fn add_zero_cov;
         "nat.add_succ"     => pub fn add_succ_r_cov;
         "nat.add_comm"     => pub fn add_comm_cov;
+        "nat.add_assoc"    => pub fn add_assoc_cov;
+        "nat.add_cancel"   => pub fn add_cancel_cov;
+        "nat.mul_comm"     => pub fn mul_comm_cov;
+        "nat.mul_one"      => pub fn mul_one_cov;
+        "nat.distrib"      => pub fn distrib_cov;
+        "nat.mul_assoc"    => pub fn mul_assoc_cov;
     }
 }
 
@@ -2181,7 +2187,14 @@ mod cov_tests {
         assert!(cov::nat_eq_refl().hyps().is_empty());
         assert!(cov::add_zero_cov().hyps().is_empty());
         assert!(cov::add_succ_r_cov().hyps().is_empty());
-        // `add.comm` ported via #by/induct/rw must equal the Rust proof.
+        // The ported commutative-semiring lemmas must state exactly what the
+        // hand-written Rust proofs state (same checked theorem, two proofs).
         assert_eq!(cov::add_comm_cov().concl(), super::add_comm().concl());
+        assert_eq!(cov::add_assoc_cov().concl(), super::add_assoc().concl());
+        assert_eq!(cov::add_cancel_cov().concl(), super::add_cancel().concl());
+        assert_eq!(cov::mul_comm_cov().concl(), super::mul_comm().concl());
+        assert_eq!(cov::mul_one_cov().concl(), super::mul_one().concl());
+        assert_eq!(cov::distrib_cov().concl(), super::distrib().concl());
+        assert_eq!(cov::mul_assoc_cov().concl(), super::mul_assoc().concl());
     }
 }

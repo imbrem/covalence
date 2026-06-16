@@ -42,15 +42,39 @@ use std::sync::Arc;
 use covalence_core::{Thm, Type};
 use covalence_sexp::SExpr;
 
-/// A replayed theory. Its **export** environment — the public interface,
-/// built explicitly by `(#export …)` directives — is what other theories
-/// `import`/`open` and what the `cov_theory!` accessors expose. The full
-/// internal environment (every import + every proven lemma) is used only
-/// for resolution *during* the run and is not surfaced.
+/// A replayed theory in its **in-progress** (semi-proved) state. Hole-free
+/// `#thm`s are already checked (`thms`); `#thm`s containing an `(#hole NAME)`
+/// obligation are *pending* until that hole is filled (by a `(#fill NAME …)`
+/// directive). [`Theory::resolve`] forces it — checking every pending proof
+/// once its holes are filled — yielding a fully-proved [`ResolvedTheory`].
+///
+/// This is the future-shaped half: a theory you can hold and inspect while
+/// some of its theorems are still open. The kernel/TCB stays synchronous;
+/// "open" is a property of the untrusted script layer, not of any `Thm`.
 pub struct Theory {
     /// The explicitly-exported public interface (`(#export …)`).
     exports: Env,
+    /// The full internal environment (imports + every checked lemma) — used
+    /// to re-check pending proofs at [`Theory::resolve`] time.
+    internal: Env,
+    /// Hole-free theorems, already checked.
     pub thms: Vec<NamedThm>,
+    /// `#thm`s with open holes, replayed only once their holes are filled.
+    pending: Vec<PendingThm>,
+    /// `(#fill NAME …)` obligations: the derivation that replaces `(#hole NAME)`.
+    fills: std::collections::HashMap<String, SExpr>,
+    /// `(#export …)`s of still-pending theorems, added to `exports` on resolve.
+    deferred_exports: Vec<String>,
+}
+
+/// A `#thm` whose proof still contains one or more `(#hole NAME)` obligations.
+/// Stored as the raw `(#thm …)` S-expression so the fills can be spliced in
+/// (textually, at the hole's exact position — preserving the local scope) and
+/// the whole thing re-checked.
+struct PendingThm {
+    name: String,
+    holes: Vec<String>,
+    sexpr: SExpr,
 }
 
 impl Theory {
@@ -69,6 +93,132 @@ impl Theory {
             .cloned()
             .unwrap_or_else(|| panic!("theory does not export lemma `{name}`"))
     }
+
+    /// The still-open obligations: hole names with no matching `(#fill …)` yet.
+    pub fn obligations(&self) -> Vec<String> {
+        let mut open = Vec::new();
+        for p in &self.pending {
+            for h in &p.holes {
+                if !self.fills.contains_key(h) && !open.contains(h) {
+                    open.push(h.clone());
+                }
+            }
+        }
+        open
+    }
+
+    /// Whether this theory is already fully proved — no `#thm` is pending,
+    /// so [`Theory::resolve`] is a no-op that cannot fail.
+    pub fn is_resolved(&self) -> bool {
+        self.pending.is_empty()
+    }
+
+    /// **Force** the theory: splice every `(#fill …)` into the pending proofs
+    /// and re-check them, producing a fully-proved [`ResolvedTheory`]. Errors
+    /// with [`ScriptError::UnresolvedObligation`] if a hole has no fill.
+    pub fn resolve(self) -> Result<ResolvedTheory, ScriptError> {
+        // Any hole still without a `(#fill …)` makes the theory unforceable —
+        // report every one of them by name.
+        let open = self.obligations();
+        if !open.is_empty() {
+            return Err(ScriptError::UnresolvedObligation(open.join("`, `")));
+        }
+        let Theory {
+            mut exports,
+            mut internal,
+            mut thms,
+            pending,
+            fills,
+            deferred_exports,
+        } = self;
+        for p in pending {
+            // Splice the fills into the stored `(#thm …)` and re-check it in
+            // the internal environment (which now also holds any earlier
+            // pending lemma we have already resolved).
+            let spliced = splice_holes(&p.sexpr, &fills)?;
+            let ch = syntax::list(&spliced, "#thm")?;
+            let nt = run_thm(ch, &internal)?;
+            internal.define_lemma(nt.name.clone(), nt.thm.clone());
+            thms.push(nt);
+        }
+        // Now that the pending theorems are proved, honour the exports that
+        // referenced them.
+        for name in deferred_exports {
+            let thm = internal.lookup_lemma(&name).cloned().ok_or_else(|| {
+                ScriptError::Unbound(format!("#export: nothing named `{name}` to export"))
+            })?;
+            exports.define_lemma(name, thm);
+        }
+        Ok(ResolvedTheory { exports, thms })
+    }
+}
+
+/// A theory all of whose `#thm`s are checked — the result of forcing a
+/// [`Theory`]. This is the "done" state: a `Thm` for every theorem.
+pub struct ResolvedTheory {
+    exports: Env,
+    pub thms: Vec<NamedThm>,
+}
+
+impl ResolvedTheory {
+    /// The exported environment (see [`Theory::env`]).
+    pub fn env(&self) -> Env {
+        self.exports.clone()
+    }
+
+    /// Look up an **exported** lemma by name (see [`Theory::lemma`]).
+    pub fn lemma(&self, name: &str) -> Thm {
+        self.exports
+            .lookup_lemma(name)
+            .cloned()
+            .unwrap_or_else(|| panic!("theory does not export lemma `{name}`"))
+    }
+}
+
+/// Replace every `(#hole NAME)` in `s` with its `(#fill NAME …)` derivation,
+/// so the result is hole-free and can be checked. One-shot: a `#fill` is
+/// itself fully resolved (validated hole-free when registered), so the
+/// substituted derivation is spliced in as-is — no further recursion into it,
+/// and `#fill` cycles cannot arise.
+fn splice_holes(
+    s: &SExpr,
+    fills: &std::collections::HashMap<String, SExpr>,
+) -> Result<SExpr, ScriptError> {
+    match s {
+        covalence_sexp::SExp::Atom(_) => Ok(s.clone()),
+        covalence_sexp::SExp::List(ch) => {
+            if ch.first().and_then(|h| h.as_symbol()) == Some("#hole") {
+                let name = ch
+                    .get(1)
+                    .and_then(|x| x.as_symbol())
+                    .ok_or_else(|| ScriptError::Syntax("#hole: expected (#hole NAME)".into()))?;
+                let fill = fills
+                    .get(name)
+                    .ok_or_else(|| ScriptError::UnresolvedObligation(name.to_string()))?;
+                return Ok(fill.clone());
+            }
+            let spliced = ch
+                .iter()
+                .map(|c| splice_holes(c, fills))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(covalence_sexp::SExp::List(spliced))
+        }
+    }
+}
+
+/// Collect the names of every `(#hole NAME)` appearing anywhere in `s`.
+fn collect_holes(s: &SExpr, out: &mut Vec<String>) {
+    if let covalence_sexp::SExp::List(ch) = s {
+        if ch.first().and_then(|h| h.as_symbol()) == Some("#hole") {
+            if let Some(name) = ch.get(1).and_then(|x| x.as_symbol()) {
+                out.push(name.to_string());
+            }
+            return;
+        }
+        for c in ch {
+            collect_holes(c, out);
+        }
+    }
 }
 
 /// Errors from parsing or replaying a proof script.
@@ -78,6 +228,10 @@ pub enum ScriptError {
     Syntax(String),
     #[error("unbound name: {0}")]
     Unbound(String),
+    #[error(
+        "unresolved obligation(s): `{0}` — fill every hole with `(#fill …)` before forcing the theory"
+    )]
+    UnresolvedObligation(String),
     #[error(transparent)]
     Kernel(#[from] covalence_core::Error),
     #[error("conclusion mismatch in `{name}`:\n  stated:  {expected}\n  derived: {got}")]
@@ -133,6 +287,9 @@ pub async fn run_async(
     let mut internal = Env::empty();
     let mut exports = Env::empty();
     let mut thms = Vec::new();
+    let mut pending: Vec<PendingThm> = Vec::new();
+    let mut fills: std::collections::HashMap<String, SExpr> = std::collections::HashMap::new();
+    let mut deferred_exports: Vec<String> = Vec::new();
     for e in &exprs {
         let ch = syntax::list(e, "directive")?;
         // Structural directives are `#`-prefixed; bare names (inside proofs)
@@ -209,13 +366,52 @@ pub async fn run_async(
                 }
             }
             "#thm" => {
-                let nt = run_thm(ch, &internal)?;
-                internal.define_lemma(nt.name.clone(), nt.thm.clone());
-                thms.push(nt);
+                // A `#thm` whose proof contains `(#hole …)` obligations is
+                // *pending* — left semi-proved until those holes are filled
+                // and the theory is forced. Hole-free `#thm`s check eagerly.
+                let mut holes = Vec::new();
+                collect_holes(e, &mut holes);
+                if holes.is_empty() {
+                    let nt = run_thm(ch, &internal)?;
+                    internal.define_lemma(nt.name.clone(), nt.thm.clone());
+                    thms.push(nt);
+                } else {
+                    let name = syntax::sym(&ch[1], "theorem name")?.to_string();
+                    pending.push(PendingThm {
+                        name,
+                        holes,
+                        sexpr: e.clone(),
+                    });
+                }
+            }
+            // `(#fill NAME DRV)` — discharge the obligation named `NAME`: the
+            // derivation `DRV` is spliced in where `(#hole NAME)` sits and the
+            // pending proof is re-checked when the theory is forced. `DRV` is
+            // taken fully resolved, so it must be hole-free. Filling the same
+            // hole again is a **no-op** (first fill wins; the later `DRV` is
+            // not even inspected).
+            "#fill" => {
+                syntax::arity(ch, 3, "#fill")?;
+                let name = syntax::sym(&ch[1], "obligation name")?.to_string();
+                if !fills.contains_key(&name) {
+                    let mut inner = Vec::new();
+                    collect_holes(&ch[2], &mut inner);
+                    if !inner.is_empty() {
+                        return Err(ScriptError::Syntax(format!(
+                            "#fill {name}: the filling derivation must be fully \
+                             resolved, but still has holes: {inner:?}"
+                        )));
+                    }
+                    fills.insert(name, ch[2].clone());
+                }
             }
             // `(#export NAME …)` — build the public interface explicitly.
             // Each name is looked up in the running environment (a proven
-            // lemma, or an imported lemma/constant) and added to `exports`.
+            // lemma, or an imported lemma/constant) and added to `exports`. A
+            // still-pending (holed) theorem is fine to export — it is deferred
+            // and added once the theory is forced. (Hole *names* are not in any
+            // exportable namespace, so `(#export the-hole)` falls through to
+            // the "nothing named" error.)
             "#export" => {
                 if ch.len() < 2 {
                     return Err(ScriptError::Syntax("#export: expected (#export NAME …)".into()));
@@ -228,6 +424,8 @@ pub async fn run_async(
                         exports.define_const(name, c.clone());
                     } else if let Some(t) = internal.lookup_tactic(name) {
                         exports.register_tactic(name, t);
+                    } else if pending.iter().any(|p| p.name == name) {
+                        deferred_exports.push(name.to_string());
                     } else {
                         return Err(ScriptError::Unbound(format!(
                             "#export: nothing named `{name}` to export"
@@ -240,7 +438,14 @@ pub async fn run_async(
             }
         }
     }
-    Ok(Theory { exports, thms })
+    Ok(Theory {
+        exports,
+        internal,
+        thms,
+        pending,
+        fills,
+        deferred_exports,
+    })
 }
 
 /// Drive a future to completion on the current thread — a minimal,
@@ -343,7 +548,7 @@ macro_rules! cov_theory {
             #[allow(unused_imports)]
             use super::*;
 
-            static THEORY: ::std::sync::LazyLock<$crate::script::Theory> =
+            static THEORY: ::std::sync::LazyLock<$crate::script::ResolvedTheory> =
                 ::std::sync::LazyLock::new(|| {
                     $crate::script::run(
                         include_str!($src),
@@ -360,6 +565,9 @@ macro_rules! cov_theory {
                             }
                         },
                     )
+                    // A `cov_theory!` is a finished resource — force it to its
+                    // resolved (fully-proved) state, discharging any `#fill`s.
+                    .and_then(|__t| __t.resolve())
                     .unwrap_or_else(|__e| {
                         panic!("cov_theory `{}`: {}", stringify!($modname), __e)
                     })
@@ -642,6 +850,105 @@ mod tests {
         assert!(env.has_lemma("prelude.and.comm"), "re-exported under prelude");
     }
 
+    /// A theorem with one open obligation, optionally filled.
+    fn holed(fill: &str) -> Result<Theory, ScriptError> {
+        let src = format!(
+            r#"
+            (#import core)
+            (#open core)
+            (#thm id (#fix (p bool)) (#concl (==> p p))
+              (#proof (imp-intro p (#hole body))))
+            {fill}
+            "#,
+        );
+        run(&src, |name| (name == "core").then(Env::core), |_| None)
+    }
+
+    #[test]
+    fn unfilled_hole_is_an_open_obligation() {
+        // No `(#fill …)`: the theory is in-progress, the holed `#thm` is not
+        // among the eagerly-checked ones, and forcing it errors by hole name.
+        let theory = holed("").unwrap();
+        assert!(!theory.is_resolved(), "the holed #thm is pending");
+        assert_eq!(theory.obligations(), vec!["body".to_string()]);
+        assert!(theory.thms.is_empty(), "nothing checked eagerly");
+        let Err(err) = theory.resolve() else {
+            panic!("forcing an unfilled theory must error");
+        };
+        match err {
+            ScriptError::UnresolvedObligation(ref names) => assert!(names.contains("body")),
+            other => panic!("expected UnresolvedObligation, got {other}"),
+        }
+    }
+
+    #[test]
+    fn fill_then_force_resolves_the_theory() {
+        // `(#fill body (assume p))` discharges the hole; forcing yields a
+        // fully-proved ResolvedTheory with the theorem.
+        let theory = holed("(#fill body (assume p))").unwrap();
+        assert!(!theory.is_resolved(), "still pending until forced");
+        assert!(theory.obligations().is_empty(), "the obligation is filled");
+        let resolved = theory.resolve().expect("fill discharges the hole");
+        assert_eq!(resolved.thms.len(), 1);
+        assert!(resolved.thms[0].thm.hyps().is_empty());
+    }
+
+    #[test]
+    fn second_fill_of_a_hole_is_a_noop() {
+        // First fill wins; the second (a *wrong* proof, never even inspected)
+        // is ignored — so the theory still resolves via the first.
+        let theory = holed("(#fill body (assume p))(#fill body (assume q))").unwrap();
+        let resolved = theory.resolve().expect("first fill wins");
+        assert_eq!(resolved.thms.len(), 1);
+    }
+
+    #[test]
+    fn fill_must_be_hole_free() {
+        // A `(#fill …)` whose derivation still has a hole is rejected outright.
+        let Err(err) = holed("(#fill body (imp-intro p (#hole inner)))") else {
+            panic!("a #fill with a hole must error");
+        };
+        assert!(matches!(err, ScriptError::Syntax(ref m) if m.contains("fully")));
+    }
+
+    #[test]
+    fn holed_theorem_export_is_deferred_to_resolve() {
+        // Exporting a holed theorem is fine — it is deferred and honoured once
+        // the theory is forced. (A hole *name* is not exportable.)
+        let theory = run(
+            r#"
+            (#import core)
+            (#open core)
+            (#thm id (#fix (p bool)) (#concl (==> p p))
+              (#proof (imp-intro p (#hole body))))
+            (#fill body (assume p))
+            (#export id)
+            "#,
+            |name| (name == "core").then(Env::core),
+            |_| None,
+        )
+        .unwrap();
+        // Not exported yet (still pending), but becomes exported on resolve.
+        assert!(!theory.env().has_lemma("id"));
+        let resolved = theory.resolve().expect("resolve discharges + exports");
+        assert!(resolved.env().has_lemma("id"));
+    }
+
+    #[test]
+    fn derive_and_drv_alias_the_old_exact() {
+        // `exact` was renamed to `derive` (short alias `drv`): both close a
+        // goal with a tree-mode derivation.
+        let a = one(
+            "(#import core)(#open core)(#thm t (#fix (p bool)) (#concl (==> p p))
+              (#by (derive (imp-intro p (assume p)))))",
+        );
+        let b = one(
+            "(#import core)(#open core)(#thm t (#fix (p bool)) (#concl (==> p p))
+              (#by (drv (imp-intro p (assume p)))))",
+        );
+        assert_eq!(a.concl(), b.concl());
+    }
+
     #[test]
     fn excluded_middle_via_lem() {
         let thm = one(
@@ -801,7 +1108,7 @@ mod tests {
               (#concl (==> (and p q) (and q p)))
               (#by
                 (intro h)
-                (exact
+                (derive
                   (and-intro
                     (and-elim-r (assume (and p q)))
                     (and-elim-l (assume (and p q)))))))

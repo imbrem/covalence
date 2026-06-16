@@ -50,7 +50,7 @@
         (==> (app P w) (app (exists-op 'a) P)))))
   (#by
     (intro P w h)
-    (exact
+    (derive
       (eq-mp
         (sym (unfold-at-1 (exists-op 'a) P))
         (all-intro q bool
@@ -69,7 +69,7 @@
   (#concl (forall (p bool) (iff p p)))
   (#by
     (intro p)
-    (exact (eq-mp (sym (unfold-at-2 iff p p)) (refl p)))))
+    (derive (eq-mp (sym (unfold-at-2 iff p p)) (refl p)))))
 
 ;; ⊢ ∀p q. (p ⟹ q) ⟹ (q ⟹ p) ⟹ (p ⟺ q).  Antisymmetry of `⟹`
 ;; (HOL Light's IMP_ANTISYM_RULE): from the two implications derive `p = q`
@@ -81,7 +81,7 @@
         (==> (==> p q) (==> (==> q p) (iff p q))))))
   (#by
     (intro p q hpq hqp)
-    (exact
+    (derive
       (eq-mp (sym (unfold-at-2 iff p q))
         (sym
           (deduct-antisym
@@ -97,7 +97,7 @@
         (==> (iff p q) (==> p q)))))
   (#by
     (intro p q h hp)
-    (exact (eq-mp (eq-mp (unfold-at-2 iff p q) (assume (iff p q))) (assume p)))))
+    (derive (eq-mp (eq-mp (unfold-at-2 iff p q) (assume (iff p q))) (assume p)))))
 
 ;; ⊢ ∀p q. (p ⟺ q) ⟹ q ⟹ p.  Backward elimination.
 (#thm iff.mpr
@@ -107,7 +107,7 @@
         (==> (iff p q) (==> q p)))))
   (#by
     (intro p q h hq)
-    (exact
+    (derive
       (eq-mp (sym (eq-mp (unfold-at-2 iff p q) (assume (iff p q)))) (assume q)))))
 
 ;; The public interface: what `cov::env()` exposes and what the Rust

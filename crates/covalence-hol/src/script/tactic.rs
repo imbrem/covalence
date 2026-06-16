@@ -160,7 +160,8 @@ pub fn core_tactics() -> HashMap<String, Arc<dyn Tactic>> {
         t.insert(name.into(), tac);
     };
     reg("intro", Arc::new(tac_intro));
-    reg("exact", Arc::new(tac_exact));
+    reg("derive", Arc::new(tac_derive));
+    reg("drv", Arc::new(tac_derive));
     reg("assumption", Arc::new(tac_assumption));
     reg("refl", Arc::new(tac_refl));
     reg("sym", Arc::new(tac_sym));
@@ -210,9 +211,11 @@ fn intro_names(names: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
     }
 }
 
-fn tac_exact(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
-    arity(s, 2, "exact")?;
-    expect_done(rest, "exact")?;
+/// `(derive DRV)` (alias `drv`): close the goal with a tree-mode derivation —
+/// the bridge from tactic mode back into the `Drv` grammar. (Formerly `exact`.)
+fn tac_derive(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
+    arity(s, 2, "derive")?;
+    expect_done(rest, "derive")?;
     let env = it.env;
     check(&parse_drv(&s[1], &mut it.scope, env)?, env)
 }

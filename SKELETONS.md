@@ -365,16 +365,25 @@ directives — is `open`-able by other scripts; the macro binds it as a
   boundary) as those theories are ported.
 - **Async core has no cooperative scheduler yet.** `script/mod.rs::run_async`
   is `async` and `run` blocks on it via a minimal parking `block_on`, but the
-  body still runs every statement eagerly and in order. Intended model: each
-  `#thm` is a *task* yielding a **future** for its `Thm`; when a task blocks
-  (unresolved import, a tactic awaiting an observer / peer prover / the user)
-  the scheduler moves on to the next statement and resumes the blocked one when
-  it unblocks — so a theory can be *semi-proved* and verification auto-
-  parallelises, and a failed import yields a *partial* theory that is still
+  body still runs every statement eagerly and in order. The in-progress vs
+  resolved *types* now exist — `Theory` (semi-proved; holds `pending` holed
+  `#thm`s + `fills`) and `ResolvedTheory` (forced via `Theory::resolve`) — but
+  the SCHEDULER does not: each `#thm` should be a *task* yielding a **future**
+  for its `Thm`; when a task blocks (unresolved import, a tactic awaiting an
+  observer / peer prover / the user) the scheduler should move on to the next
+  statement and resume the blocked one when it unblocks — so verification
+  auto-parallelises and a failed import yields a *partial* theory that is still
   importable. Needs: a per-statement task graph, a real (work-stealing)
-  executor, and a `Theory` holding theorem futures rather than resolved `Thm`s.
-  Wanted for BLAKE3-range partial verification (validating part of a proof file
-  must not be invalidated by unrelated wrong portions).
+  executor, and a `Theory` holding theorem futures rather than `pending`
+  S-expressions. Wanted for BLAKE3-range partial verification.
+  - **Pending resolution is in declaration order, no dependency reordering.**
+    `Theory::resolve` re-checks `pending` theorems top-to-bottom, adding each
+    to the env as it goes; a pending `#thm` that references a *later* pending
+    theorem's lemma would fail. A real scheduler resolves by dependency.
+  - **Holes are tactic-mode-reachable only via `(derive (#hole …))`.** A
+    `(#hole NAME)` is detected by an S-expression scan of the whole `#thm`
+    (`collect_holes`), so it works anywhere — but there is no first-class
+    `hole` *tactic*; in `#by` mode you reach it through the `derive` bridge.
 - **`(#dep NAME)` is a synchronous availability guard, not an await.**
   `script/mod.rs` accepts `(#dep NAME)` and errors if `NAME` is not already a
   known lemma/const/tactic/import. Its real semantics — *force the enclosing
@@ -387,12 +396,14 @@ directives — is `open`-able by other scripts; the macro binds it as a
   program or the user, WASM component-model streams/futures — need a future-
   returning method that `Interp::run` awaits. The TCB stays sync for now; only
   this untrusted shell goes async.
-- **`Term`/theorem futures (holes) not represented.** Terms are eagerly built;
-  there is no `Term` future. A key target use case: represent a **unification
-  hole** as a term future (optionally asserting a fixed type up front), letting
-  the elaborator explore unification variants and resolve holes lazily — and,
-  with content-addressing, fetch a term's contents on demand. Needs a future-
-  carrying `Term`/elaborator value wired into `script/infer.rs`.
+- **`Term` futures (term-level holes) not represented.** *Proof* holes exist
+  now (`(#hole NAME)` + `(#fill NAME …)` → pending `Theory`, forced by
+  `resolve`), but *terms* are still eagerly built — there is no `Term` future.
+  A key target use case: represent a **unification hole** as a term future
+  (optionally asserting a fixed type up front), letting the elaborator explore
+  unification variants and resolve holes lazily — and, with content-addressing,
+  fetch a term's contents on demand. Needs a future-carrying `Term`/elaborator
+  value wired into `script/infer.rs`.
 - **No WASM/WIT kernel API.** The longer-term goal of authoring proofs in WASM
   guests and importing them through a WIT kernel interface (driving the `Drv`
   replay path across the component boundary) is not started. `check` is

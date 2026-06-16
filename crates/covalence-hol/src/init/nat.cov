@@ -20,7 +20,7 @@
   (#by
     (intro n)
     (sym)
-    (exact (all-elim n (lemma zero_ne_succ)))))
+    (derive (all-elim n (lemma zero_ne_succ)))))
 
 ;; ⊢ ∀m n. ¬(m = n) ⟹ ¬(S m = S n).  `contrapositive` strips the negations,
 ;; leaving (S m = S n) ⟹ (m = n) — exactly `succ_inj`.
@@ -32,7 +32,7 @@
   (#by
     (intro m n)
     (contrapositive)
-    (exact (all-elim n (all-elim m (lemma succ_inj))))))
+    (derive (all-elim n (all-elim m (lemma succ_inj))))))
 
 ;; ⊢ ∀z f. natRec z f 0 = z.  Project the base equation out of `rec_holds`.
 (#thm rec_zero
@@ -42,7 +42,7 @@
         (= (app (app (app (natrec-op nat) z) f) 0) z))))
   (#by
     (intro z f)
-    (exact (and-elim-l (all-elim f (all-elim z (lemma rec_holds)))))))
+    (derive (and-elim-l (all-elim f (all-elim z (lemma rec_holds)))))))
 
 ;; ⊢ ∀z f n. natRec z f (S n) = f n (natRec z f n).  The step equation.
 (#thm rec_succ
@@ -54,7 +54,7 @@
              (app (app f n) (app (app (app (natrec-op nat) z) f) n)))))))
   (#by
     (intro z f n)
-    (exact (all-elim n (and-elim-r (all-elim f (all-elim z (lemma rec_holds))))))))
+    (derive (all-elim n (and-elim-r (all-elim f (all-elim z (lemma rec_holds))))))))
 
 ;; ⊢ ∀n. n = n, by induction — a minimal use of the `induct` tactic (base
 ;; and step both close by `refl`; the IH is unused here).
@@ -225,14 +225,14 @@
       ;; base: (a + 0 = b + 0) ⟹ a = b
       (#by
         (intro h)
-        (exact
+        (derive
           (trans (sym (all-elim a (lemma add_zero)))
             (trans (assume (= (nat.add a 0) (nat.add b 0)))
                    (all-elim b (lemma add_zero))))))
       ;; step: ih (a+c=b+c ⟹ a=b) ⊢ (a+Sc=b+Sc) ⟹ a=b
       (#by
         (intro h)
-        (exact
+        (derive
           (imp-elim
             (assume (==> (= (nat.add a c) (nat.add b c)) (= a b)))
             (imp-elim
@@ -371,7 +371,7 @@
             (= (nat.le (succ n) (succ m)) (nat.le n m)))))
   (#by
     (intro n m)
-    (exact (all-elim m (all-elim n
+    (derive (all-elim m (all-elim n
               (and-elim-r (and-elim-r (and-elim-r (lemma le_body)))))))))
 
 ;; ⊢ ∀n m. (S n < S m) = (n < m).
@@ -380,7 +380,7 @@
             (= (nat.lt (succ n) (succ m)) (nat.lt n m)))))
   (#by
     (intro n m)
-    (exact (all-elim m (all-elim n
+    (derive (all-elim m (all-elim n
               (and-elim-r (and-elim-r (and-elim-r (lemma lt_body)))))))))
 
 ;; ⊢ ∀m. 0 ≤ m.  Induction on m; both cases from `le_body` (= T), via
@@ -389,8 +389,8 @@
   (#concl (forall (m nat) (nat.le 0 m)))
   (#by
     (induct m
-      (#by (exact (eq-mp (sym (and-elim-l (lemma le_body))) (lemma truth))))
-      (#by (exact (eq-mp (sym (all-elim m (and-elim-l (and-elim-r (lemma le_body)))))
+      (#by (derive (eq-mp (sym (and-elim-l (lemma le_body))) (lemma truth))))
+      (#by (derive (eq-mp (sym (all-elim m (and-elim-l (and-elim-r (lemma le_body)))))
                          (lemma truth)))))))
 
 ;; ⊢ ∀m. 0 < S m.  Every successor is positive (2nd `<` clause).
@@ -398,7 +398,7 @@
   (#concl (forall (m nat) (nat.lt 0 (succ m))))
   (#by
     (intro m)
-    (exact (eq-mp (sym (all-elim m (and-elim-l (and-elim-r (lemma lt_body)))))
+    (derive (eq-mp (sym (all-elim m (and-elim-l (and-elim-r (lemma lt_body)))))
                   (lemma truth)))))
 
 ;; ⊢ ∀n. n ≤ n.  Reflexivity, induction (step rewrites with `le_succ_succ`).
@@ -406,7 +406,7 @@
   (#concl (forall (n nat) (nat.le n n)))
   (#by
     (induct n
-      (#by (exact (eq-mp (sym (and-elim-l (lemma le_body))) (lemma truth))))
+      (#by (derive (eq-mp (sym (and-elim-l (lemma le_body))) (lemma truth))))
       (#by
         (rw (all-elim n (all-elim n (lemma le_succ_succ))))
         (assumption)))))
@@ -418,7 +418,7 @@
     (intro n)
     (not-intro)
     (intro h)
-    (exact (eq-mp (all-elim n (and-elim-l (and-elim-r (and-elim-r (lemma le_body)))))
+    (derive (eq-mp (all-elim n (and-elim-l (and-elim-r (and-elim-r (lemma le_body)))))
                   (assume (nat.le (succ n) 0))))))
 
 ;; ⊢ ∀n. ¬(n < 0).  Nothing is < 0 (induction: 0 from clause 1, S n from 3).
@@ -428,10 +428,10 @@
     (induct n
       (#by
         (not-intro) (intro h)
-        (exact (eq-mp (and-elim-l (lemma lt_body)) (assume (nat.lt 0 0)))))
+        (derive (eq-mp (and-elim-l (lemma lt_body)) (assume (nat.lt 0 0)))))
       (#by
         (not-intro) (intro h)
-        (exact (eq-mp (all-elim n (and-elim-l (and-elim-r (and-elim-r (lemma lt_body)))))
+        (derive (eq-mp (all-elim n (and-elim-l (and-elim-r (and-elim-r (lemma lt_body)))))
                       (assume (nat.lt (succ n) 0))))))))
 
 ;; ⊢ ∀n. ¬(n < n).  Irreflexivity of `<`, induction (step via `lt_succ_succ`).
@@ -441,7 +441,7 @@
     (induct n
       (#by
         (not-intro) (intro h)
-        (exact (eq-mp (and-elim-l (lemma lt_body)) (assume (nat.lt 0 0)))))
+        (derive (eq-mp (and-elim-l (lemma lt_body)) (assume (nat.lt 0 0)))))
       (#by
         (rw (all-elim n (all-elim n (lemma lt_succ_succ))))
         (assumption)))))

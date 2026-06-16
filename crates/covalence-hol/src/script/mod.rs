@@ -116,6 +116,41 @@ impl Theory {
     }
 }
 
+/// A bare environment becomes a handle with no theorems (e.g. the `core`
+/// prelude, imported for its constants/tactics).
+impl From<Env> for TheoryHandle {
+    fn from(exports: Env) -> Self {
+        TheoryHandle {
+            exports,
+            thms: Vec::new(),
+        }
+    }
+}
+
+/// A resolved [`Theory`] casts back to a (trivially in-progress) handle — what
+/// lets an `#import` receive a fully-proved theory through the future-returning
+/// resolver.
+impl From<Theory> for TheoryHandle {
+    fn from(t: Theory) -> Self {
+        TheoryHandle {
+            exports: t.exports,
+            thms: t.thms,
+        }
+    }
+}
+
+/// The result of resolving an `#import`: a **future** yielding the imported
+/// [`TheoryHandle`]. `#import` awaits it — the script layer's first genuinely
+/// async operation — so an import need not be ready (or fully proved) when it
+/// is requested. Boxed so a resolver can return differently-shaped futures.
+pub type Import = std::pin::Pin<Box<dyn std::future::Future<Output = TheoryHandle>>>;
+
+/// Wrap an already-available env/theory as a ready [`Import`] — the common case
+/// where an import resolves synchronously (the future is immediately ready).
+pub fn ready_import(handle: impl Into<TheoryHandle> + 'static) -> Import {
+    Box::pin(async move { handle.into() })
+}
+
 /// Errors from parsing or replaying a proof script.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum ScriptError {
@@ -153,127 +188,101 @@ pub fn run(
     resolver: impl Fn(&str) -> Option<Env>,
     tactics: impl Fn(&str) -> Option<Arc<dyn Tactic>>,
 ) -> Result<TheoryHandle, ScriptError> {
-    block_on(run_async(src, resolver, tactics))
+    // Adapt the synchronous `Env` resolver to the async core's future-returning
+    // one: each import is already available, so it resolves immediately.
+    block_on(run_async(
+        src,
+        |name| resolver(name).map(ready_import),
+        tactics,
+    ))
 }
 
-/// The async core: parse and replay a whole script into a [`TheoryHandle`].
+/// The async core: parse a whole script into structured [`Stmt`]s and execute
+/// them into a [`TheoryHandle`].
 ///
-/// Async on purpose — this is the seam where the prover becomes a cooperative
-/// scheduler. The intended model (not yet built — see SKELETONS.md): each
-/// `#thm` is a task producing a *future* for its `Thm`; when a task blocks
-/// (an unresolved import, a tactic awaiting an observer/peer/the user), the
-/// scheduler **moves on to the next statement** and resumes the blocked one
-/// when it unblocks, so a theory can be *semi-proved* and verification
-/// auto-parallelises. `(#dep NAME)` forces the enclosing task to wait for
-/// `NAME`. A failed import yields a *partial* theory that is still importable.
-/// Today execution is eager and in order; the async shape is what lets us add
-/// that scheduler without touching proofs or the TCB.
+/// `#import` is the one genuinely **async** step: it `await`s the
+/// `resolver`-supplied [`Import`] future, so an imported theory can be produced
+/// lazily / remotely / while still in progress. Everything else runs
+/// synchronously and in order (the cooperative scheduler that lets a *blocked*
+/// statement yield to the next is future work — see SKELETONS.md).
 pub async fn run_async(
     src: &str,
-    resolver: impl Fn(&str) -> Option<Env>,
+    resolver: impl Fn(&str) -> Option<Import>,
     tactics: impl Fn(&str) -> Option<Arc<dyn Tactic>>,
 ) -> Result<TheoryHandle, ScriptError> {
     let exprs =
         covalence_sexp::parse(src).map_err(|e| ScriptError::Syntax(format!("sexp: {e}")))?;
+    // Stage 1: parse every directive into a typed statement (structural errors
+    // surface here, before any execution).
+    let stmts = exprs
+        .iter()
+        .map(parse_stmt)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Stage 2: execute.
     let mut internal = Env::empty();
     let mut exports = Env::empty();
     let mut thms = Vec::new();
-    for e in &exprs {
-        let ch = syntax::list(e, "directive")?;
-        // Structural directives are `#`-prefixed; bare names (inside proofs)
-        // are rules/terms resolved from the environment, never directives.
-        match syntax::head_sym(ch)? {
-            "#import" => {
-                syntax::arity(ch, 2, "#import")?;
-                let name = syntax::sym(&ch[1], "environment name")?;
-                let env = resolver(name)
+    for stmt in stmts {
+        match stmt {
+            // The async step: await the import's future, then register its
+            // exported environment under NAME.
+            Stmt::Import(name) => {
+                let future = resolver(&name)
                     .ok_or_else(|| ScriptError::Unbound(format!("environment `{name}`")))?;
-                internal.import(name, env);
+                let handle = future.await;
+                internal.import(name, handle.env());
             }
-            "#open" => {
-                syntax::arity(ch, 2, "#open")?;
-                internal.open(syntax::sym(&ch[1], "environment name")?)?;
+            Stmt::Open(name) => internal.open(&name)?,
+            Stmt::Use { module, prefix } => internal.use_ns(&module, &prefix)?,
+            // `(#extend MODULE)` — re-export MODULE's symbols at the *root*
+            // (no prefix), e.g. fold `logic` into the prelude.
+            Stmt::Extend(module) => {
+                let ns = imported(&internal, &module)?;
+                exports.merge_prefixed(&ns, "");
             }
-            // `(#use NAME)` / `(#use (#alias NAME PREFIX))` — bring an
-            // imported namespace into scope QUALIFIED, so `and.comm` becomes
-            // `NAME.and.comm` (or `PREFIX.and.comm`).
-            "#use" => {
-                syntax::arity(ch, 2, "#use")?;
-                let (name, prefix) = parse_use_target(&ch[1])?;
-                internal.use_ns(&name, &prefix)?;
+            // `(#provide MODULE)` / `(#provide (#alias MODULE PREFIX))` —
+            // re-export MODULE's symbols *under a prefix* (default the module's
+            // own name), e.g. `nat` → `nat.*`, or aliased `nat` → `init.nat.*`.
+            Stmt::Provide { module, prefix } => {
+                let ns = imported(&internal, &module)?;
+                exports.merge_prefixed(&ns, &prefix);
             }
-            // `(#export-all NAME)` / `(#export-all NAME as PREFIX)` — re-export
-            // *every* symbol of an imported namespace, optionally re-prefixed
-            // (e.g. `nat` → `init.nat`, or `logic` → `prelude`).
-            "#export-all" => {
-                let name = syntax::sym(&ch[1], "namespace name")?;
-                let prefix = match ch.len() {
-                    2 => "",
-                    4 if syntax::sym(&ch[2], "as")? == "as" => {
-                        syntax::sym(&ch[3], "export prefix")?
-                    }
-                    _ => {
-                        return Err(ScriptError::Syntax(
-                            "#export-all: expected (#export-all NAME [as PREFIX])".into(),
-                        ));
-                    }
-                };
-                let ns = internal.get_import(name).cloned().ok_or_else(|| {
-                    ScriptError::Unbound(format!("environment not imported: `{name}`"))
-                })?;
-                exports.merge_prefixed(&ns, prefix);
-            }
-            // `(#register-ffi-tactic NAME)` — register a host-supplied native
-            // tactic (the pointer comes from `tactics`, e.g. a `cov_theory!`
-            // `ffi-tactic` clause) into the running environment under NAME.
-            "#register-ffi-tactic" => {
-                syntax::arity(ch, 2, "#register-ffi-tactic")?;
-                let name = syntax::sym(&ch[1], "tactic name")?;
-                let tac = tactics(name).ok_or_else(|| {
+            Stmt::RegisterFfiTactic(name) => {
+                let tac = tactics(&name).ok_or_else(|| {
                     ScriptError::Unbound(format!("ffi tactic `{name}` (not provided by host)"))
                 })?;
                 internal.register_tactic(name, tac);
             }
-            // `(#dep NAME)` — force a dependency: the enclosing task must not
-            // proceed until `NAME` is available. Today statements run eagerly
-            // and in order, so this is a synchronous availability guard; once
-            // the cooperative scheduler lands (see SKELETONS.md) it becomes
-            // the explicit `await` point that blocks the enclosing task on
-            // `NAME`'s completion.
-            "#dep" => {
-                syntax::arity(ch, 2, "#dep")?;
-                let name = syntax::sym(&ch[1], "dependency name")?;
-                let known = internal.has_lemma(name)
-                    || internal.lookup_const(name).is_some()
-                    || internal.lookup_tactic(name).is_some()
-                    || internal.get_import(name).is_some();
+            // `(#dep NAME)` — force a dependency: a synchronous availability
+            // guard today; the real `await`-until-`NAME`-completes semantics
+            // depend on the cooperative scheduler (see SKELETONS.md).
+            Stmt::Dep(name) => {
+                let known = internal.has_lemma(&name)
+                    || internal.lookup_const(&name).is_some()
+                    || internal.lookup_tactic(&name).is_some()
+                    || internal.get_import(&name).is_some();
                 if !known {
                     return Err(ScriptError::Unbound(format!(
                         "#dep: unknown dependency `{name}`"
                     )));
                 }
             }
-            "#thm" => {
+            Stmt::Thm(sexpr) => {
+                let ch = syntax::list(&sexpr, "#thm")?;
                 let nt = run_thm(ch, &internal)?;
                 internal.define_lemma(nt.name.clone(), nt.thm.clone());
                 thms.push(nt);
             }
-            // `(#export NAME …)` — build the public interface explicitly.
-            // Each name is looked up in the running environment (a proven
-            // lemma, or an imported lemma/constant) and added to `exports`.
-            "#export" => {
-                if ch.len() < 2 {
-                    return Err(ScriptError::Syntax(
-                        "#export: expected (#export NAME …)".into(),
-                    ));
-                }
-                for item in &ch[1..] {
-                    let name = syntax::sym(item, "export name")?;
-                    if let Some(thm) = internal.lookup_lemma(name) {
+            // `(#export NAME …)` — build the public interface explicitly: each
+            // name is a proven lemma or an imported lemma/const/tactic.
+            Stmt::Export(names) => {
+                for name in names {
+                    if let Some(thm) = internal.lookup_lemma(&name) {
                         exports.define_lemma(name, thm.clone());
-                    } else if let Some(c) = internal.lookup_const(name) {
+                    } else if let Some(c) = internal.lookup_const(&name) {
                         exports.define_const(name, c.clone());
-                    } else if let Some(t) = internal.lookup_tactic(name) {
+                    } else if let Some(t) = internal.lookup_tactic(&name) {
                         exports.register_tactic(name, t);
                     } else {
                         return Err(ScriptError::Unbound(format!(
@@ -282,12 +291,18 @@ pub async fn run_async(
                     }
                 }
             }
-            other => {
-                return Err(ScriptError::Syntax(format!("unknown directive: {other}")));
-            }
         }
     }
     Ok(TheoryHandle { exports, thms })
+}
+
+/// Fetch an imported namespace's environment, erroring if it was never
+/// `(#import …)`ed.
+fn imported(internal: &Env, name: &str) -> Result<Env, ScriptError> {
+    internal
+        .get_import(name)
+        .cloned()
+        .ok_or_else(|| ScriptError::Unbound(format!("environment not imported: `{name}`")))
 }
 
 /// Drive the async proof core to completion — the blocking half of the API.
@@ -310,23 +325,102 @@ pub fn run_str(src: &str) -> Result<Vec<NamedThm>, ScriptError> {
     Ok(run(src, |name| (name == "core").then(Env::core), |_| None)?.thms)
 }
 
-/// Parse a `#use` target — `NAME` (qualify by `NAME`) or
-/// `(#alias NAME PREFIX)` (qualify by `PREFIX`).
-fn parse_use_target(s: &SExpr) -> Result<(String, String), ScriptError> {
+/// A structured top-level script directive — the first stage of the eventual
+/// parse → untyped-elaborate → typecheck → typed-elaborate → execute pipeline.
+/// (`#thm` bodies stay as raw `SExpr` for now; their typed elaboration is a
+/// later stage. Source extents are not yet carried — see SKELETONS.md.)
+enum Stmt {
+    /// `(#import NAME)` — resolve and register NAME (the async step).
+    Import(String),
+    /// `(#open NAME)` — merge an imported namespace UNQUALIFIED into scope.
+    Open(String),
+    /// `(#use NAME)` / `(#use (#alias MODULE PREFIX))` — merge QUALIFIED.
+    Use { module: String, prefix: String },
+    /// `(#extend MODULE)` — re-export MODULE's symbols at the root (no prefix).
+    Extend(String),
+    /// `(#provide MODULE)` / `(#provide (#alias MODULE PREFIX))` — re-export
+    /// MODULE's symbols under a prefix (default: the module's own name).
+    Provide { module: String, prefix: String },
+    /// `(#register-ffi-tactic NAME)` — register a host-supplied tactic.
+    RegisterFfiTactic(String),
+    /// `(#dep NAME)` — force/await a dependency.
+    Dep(String),
+    /// `(#thm …)` — the whole directive; parsed + checked at execution.
+    Thm(SExpr),
+    /// `(#export NAME …)` — the public interface.
+    Export(Vec<String>),
+}
+
+/// Parse one directive S-expression into a typed [`Stmt`].
+fn parse_stmt(e: &SExpr) -> Result<Stmt, ScriptError> {
+    let ch = syntax::list(e, "directive")?;
+    // Structural directives are `#`-prefixed; bare names (inside proofs) are
+    // rules/terms resolved from the environment, never directives.
+    Ok(match syntax::head_sym(ch)? {
+        "#import" => {
+            syntax::arity(ch, 2, "#import")?;
+            Stmt::Import(syntax::sym(&ch[1], "environment name")?.to_string())
+        }
+        "#open" => {
+            syntax::arity(ch, 2, "#open")?;
+            Stmt::Open(syntax::sym(&ch[1], "environment name")?.to_string())
+        }
+        "#use" => {
+            syntax::arity(ch, 2, "#use")?;
+            let (module, prefix) = parse_module_target(&ch[1])?;
+            Stmt::Use { module, prefix }
+        }
+        "#extend" => {
+            syntax::arity(ch, 2, "#extend")?;
+            Stmt::Extend(syntax::sym(&ch[1], "module name")?.to_string())
+        }
+        "#provide" => {
+            syntax::arity(ch, 2, "#provide")?;
+            let (module, prefix) = parse_module_target(&ch[1])?;
+            Stmt::Provide { module, prefix }
+        }
+        "#register-ffi-tactic" => {
+            syntax::arity(ch, 2, "#register-ffi-tactic")?;
+            Stmt::RegisterFfiTactic(syntax::sym(&ch[1], "tactic name")?.to_string())
+        }
+        "#dep" => {
+            syntax::arity(ch, 2, "#dep")?;
+            Stmt::Dep(syntax::sym(&ch[1], "dependency name")?.to_string())
+        }
+        "#thm" => Stmt::Thm(e.clone()),
+        "#export" => {
+            if ch.len() < 2 {
+                return Err(ScriptError::Syntax(
+                    "#export: expected (#export NAME …)".into(),
+                ));
+            }
+            let names = ch[1..]
+                .iter()
+                .map(|item| Ok(syntax::sym(item, "export name")?.to_string()))
+                .collect::<Result<Vec<_>, ScriptError>>()?;
+            Stmt::Export(names)
+        }
+        other => return Err(ScriptError::Syntax(format!("unknown directive: {other}"))),
+    })
+}
+
+/// Parse a module target — `MODULE` (prefix = `MODULE`) or `(#alias MODULE
+/// PREFIX)` (prefix = `PREFIX`). Shared by `#use` and `#provide`.
+fn parse_module_target(s: &SExpr) -> Result<(String, String), ScriptError> {
     match s {
         covalence_sexp::SExp::Atom(_) => {
-            let n = syntax::sym(s, "namespace name")?;
+            let n = syntax::sym(s, "module name")?;
             Ok((n.to_string(), n.to_string()))
         }
         covalence_sexp::SExp::List(a) => {
             if syntax::head_sym(a)? != "#alias" {
                 return Err(ScriptError::Syntax(
-                    "#use: expected NAME or (#alias NAME PREFIX)".into(),
+                    "expected MODULE or (#alias MODULE PREFIX)".into(),
                 ));
             }
             syntax::arity(a, 3, "#alias")?;
             Ok((
-                syntax::sym(&a[1], "alias name")?.to_string(),
+                syntax::sym(&a[1], "module name")?.to_string(),
                 syntax::sym(&a[2], "alias prefix")?.to_string(),
             ))
         }
@@ -486,7 +580,7 @@ mod tests {
               (#concl (= (nat.add 2 3) 5))
               (#proof (reduce-prim (nat.add 2 3))))
             "#,
-            |name| (name == "core").then(Env::core),
+            |name| (name == "core").then(|| ready_import(Env::core())),
             |_| None,
         ))
         .expect("async run");
@@ -637,8 +731,8 @@ mod tests {
     #[test]
     fn use_qualifies_a_namespace() {
         // `(#use logic)` brings logic's exports in QUALIFIED: `and.comm`
-        // becomes `logic.and.comm`. An alias re-prefixes; `#export-all`
-        // re-exports everything under a layer.
+        // becomes `logic.and.comm`. `#provide (#alias …)` re-exports everything
+        // under a prefix.
         let theory = run(
             r#"
             (#import core)
@@ -651,7 +745,7 @@ mod tests {
                 (imp-elim
                   (inst p a (inst q b (lemma logic.and.comm)))
                   (assume (and a b)))))
-            (#export-all logic as prelude)
+            (#provide (#alias logic prelude))
             "#,
             |name| match name {
                 "core" => Some(Env::core()),
@@ -672,6 +766,73 @@ mod tests {
     }
 
     #[test]
+    fn extend_and_provide_reexport() {
+        // `#extend` folds a module in at the root; `#provide` puts it under a
+        // prefix (the module name, or an alias).
+        let theory = run(
+            r#"
+            (#import core)(#open core)
+            (#import logic)
+            (#extend logic)
+            (#provide logic)
+            (#provide (#alias logic pre))
+            "#,
+            |name| match name {
+                "core" => Some(Env::core()),
+                "logic" => Some(crate::init::logic::cov::env()),
+                _ => None,
+            },
+            |_| None,
+        )
+        .unwrap();
+        let env = theory.env();
+        assert!(env.has_lemma("and.comm"), "#extend re-exports at the root");
+        assert!(env.has_lemma("logic.and.comm"), "#provide under module name");
+        assert!(env.has_lemma("pre.and.comm"), "#provide under an alias");
+    }
+
+    #[test]
+    fn import_awaits_a_pending_future() {
+        // The import future *yields* before producing its handle — `#import`
+        // awaits it (the script layer's first genuinely async step).
+        let theory = block_on(run_async(
+            r#"
+            (#import core)
+            (#open core)
+            (#thm t (#concl (= 1 1)) (#proof (refl 1)))
+            "#,
+            |name| {
+                (name == "core").then(|| -> Import {
+                    Box::pin(async {
+                        tokio::task::yield_now().await;
+                        Env::core().into()
+                    })
+                })
+            },
+            |_| None,
+        ))
+        .expect("import awaits the pending future");
+        assert_eq!(theory.thms.len(), 1);
+    }
+
+    #[test]
+    fn resolved_theory_imports_via_cast() {
+        // A fully-proved `Theory` casts to a `TheoryHandle` (From<Theory>) and
+        // can be `#import`ed by a downstream script.
+        let handle: TheoryHandle = run(
+            "(#import core)(#open core)(#thm foo (#concl (= 0 0)) (#proof (refl 0)))(#export foo)",
+            |name| (name == "core").then(Env::core),
+            |_| None,
+        )
+        .unwrap()
+        .resolve_blocking()
+        .unwrap()
+        .into();
+        assert!(handle.env().has_lemma("foo"));
+        assert_eq!(handle.thms.len(), 1);
+    }
+
+    #[test]
     fn resolve_blocking_forces_an_eager_theory() {
         // With no open obligations, forcing is trivial: every `#thm` is already
         // checked, and `resolve` just hands back the `Theory`.
@@ -689,7 +850,8 @@ mod tests {
         let resolved = theory.resolve_blocking().expect("eager theory resolves");
         assert_eq!(resolved.thms.len(), 1);
         // And the async entry is awaitable directly.
-        let theory = run_str("(#import core)(#open core)(#thm t (#concl (= 1 1)) (#proof (refl 1)))");
+        let theory =
+            run_str("(#import core)(#open core)(#thm t (#concl (= 1 1)) (#proof (refl 1)))");
         assert!(theory.is_ok());
     }
 

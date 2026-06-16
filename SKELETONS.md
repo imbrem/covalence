@@ -405,24 +405,31 @@ directives — is `open`-able by other scripts; the macro binds it as a
   LLM-assisted proofs**, where the model needs precise, localized, structured
   feedback to repair a proof. Pairs with the typed-pipeline note below (extents
   come from preserving spans through every stage).
-- **No typed `Stmt` / multi-stage pipeline.** Today `run_async` walks raw
-  `SExpr` directives and does parse-resolve-check in one pass (the elaborator
-  infers types inline). The intended pipeline: **parse → untyped elaboration →
-  typechecking → typed elaboration → execution**, with a typed `Stmt` enum (and
-  typed term/proof IR) as the staged representation, **preserving source extents
-  from parsing through every stage** so any stage can surface a precise,
-  well-located error to the user (and to an LLM). This is the structural
-  prerequisite for the rich errors above and for good editor/LSP feedback.
-- **`Tactic::apply` is synchronous.** `script/tactic.rs::Tactic` is a trait
-  (so tactics can carry state / be WASM-backed — the closure-capturing tactic
-  test exercises that) but `apply` returns `Result`, not a future. Async
-  tactics — awaiting long-running observers, transferring control to a peer
-  program or the user, WASM component-model streams/futures — need a future-
-  returning method that `Interp::run` awaits. The TCB stays sync for now; only
-  this untrusted shell goes async.
-- **`Term` futures (term-level holes) not represented.** *Proof* holes exist
-  now (`(#hole NAME)` + `(#fill NAME …)` → pending `Theory`, forced by
-  `resolve`), but *terms* are still eagerly built — there is no `Term` future.
+- **Typed `Stmt` exists for directives, but the pipeline + extents don't.**
+  `run_async` now parses every directive into a typed `Stmt` enum (`parse_stmt`)
+  in a first pass, then executes — but `#thm` bodies are still raw `SExpr`
+  (typed elaboration of the proof is deferred), and **no source extents** are
+  carried. The full pipeline — **parse → untyped elaboration → typechecking →
+  typed elaboration → execution**, with a typed term/proof IR and spans threaded
+  through every stage — is still TODO. The spans are the prerequisite for the
+  rich, well-located errors above and good editor/LSP feedback.
+- **No rule registry; tactics + rules are synchronous.** Tactics are a registry
+  (`Env`, `Arc<dyn Tactic>`) but the **derivation rules** (`imp-intro`,
+  `and-elim`, …) are still hardcoded in `script/drv.rs::parse_drv`, not a
+  registry. Wanted: a **rule registry** mirroring the tactic registry (so rules
+  are looked up / extensible / host-suppliable like tactics), **and make both
+  rules and `Tactic::apply` `async`** — awaiting long-running observers, a peer
+  prover, the user, or WASM component-model streams/futures. Making `apply`
+  async ripples through `Interp::run` → the proof execution path; the TCB stays
+  sync (only this untrusted shell goes async).
+- **`Env` is `std::HashMap`-backed (O(n) clone), `Interp` borrows it.** `Env`
+  is cloned a lot (imports, exports, the prove path), so it should sit on
+  **persistent/immutable maps** (`imbl` — crates.io) for O(1) clone + cheap
+  structural-sharing mutation, and `Interp` should **own** its `Env` (cheap
+  clone) rather than borrow `&'e Env`. Touches `env.rs` (swap the four
+  `HashMap`s) + `tactic.rs` (`Interp` loses its lifetime).
+- **`Term` futures (term-level holes) not represented.** Terms are eagerly
+  built — there is no `Term` future (and proof holes were removed, see above).
   A key target use case: represent a **unification hole** as a term future
   (optionally asserting a fixed type up front), letting the elaborator explore
   unification variants and resolve holes lazily — and, with content-addressing,

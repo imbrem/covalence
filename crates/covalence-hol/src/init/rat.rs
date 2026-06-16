@@ -985,6 +985,7 @@ fn neg_via_components(a: &Term) -> Result<Thm> {
 fn rvar(name: &str) -> Term {
     Term::free(name, rat())
 }
+#[cfg(test)]
 fn radd(a: Term, b: Term) -> Term {
     Term::app(Term::app(rat_add(), a), b)
 }
@@ -1366,15 +1367,98 @@ fn mul_zero_impl() -> Result<Thm> {
     step.trans(cls)?.all_intro("a", rat())
 }
 
-/// `⊢ ∀a b c. a * (b + c) = a * b + a * c` — left distributivity.
-pub fn distrib() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a b c. a * (b + c) = a * b + a * c` — **proved** (left
+    /// distributivity). Unlike the other ring axioms this is *not*
+    /// componentwise: `a·(b+c) = N/D` while `a·b + a·c = (rda·N)/(rda·D)` —
+    /// the same rational scaled by the common factor `rda`. The
+    /// cross-multiplication `N·(rda·D) = (rda·N)·D` then collapses to comm/
+    /// assoc, lifted by `class_intro`.
+    pub fn distrib() -> Thm {
+        distrib_impl().expect("rat::distrib")
+    }
+}
+fn distrib_impl() -> Result<Thm> {
     let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
-    let lhs = rmul(a.clone(), radd(b.clone(), c.clone()));
-    let rhs = radd(rmul(a.clone(), b), rmul(a, c));
-    axiom(forall_rat(
-        &["a", "b", "c"],
-        lhs.equals(rhs).expect("distrib"),
-    ))
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let bc = add_via_components(&rb, &rc)?;
+    let lhs_thm = mul_via_components(&ra, &bc)?; // a·(b+c) = MK(lf, ld)
+    let ab = mul_via_components(&ra, &rb)?;
+    let ac = mul_via_components(&ra, &rc)?;
+    let rhs_thm = add_via_components(&ab, &ac)?; // a·b + a·c = MK(rf, rd)
+
+    let (lf, ld) = mk_components(&dest_eq(&lhs_thm)?.1)?; // N_L (clean), LHS denom (nested)
+    let (rf, rd) = mk_components(&dest_eq(&rhs_thm)?.1)?; // RHS num (nested), RHS denom (nested)
+
+    let (fa, fb, fc) = (rfst(&a), rfst(&b), rfst(&c));
+    let (da, db, dc) = (rden(&a), rden(&b), rden(&c)); // int.pos components
+    let (rda, rdb, rdc) = (
+        den(&rep_pair(a.clone())),
+        den(&rep_pair(b.clone())),
+        den(&rep_pair(c.clone())),
+    );
+    // int.pos denominators of the intermediate ops.
+    let dbc = mk_components(&dest_eq(&bc)?.1)?.1;
+    let dab = mk_components(&dest_eq(&ab)?.1)?.1;
+    let dac = mk_components(&dest_eq(&ac)?.1)?.1;
+
+    let comm = |u: &Term, v: &Term| int::mul_comm().all_elim(u.clone())?.all_elim(v.clone());
+    let massoc = |u: &Term, v: &Term, w: &Term| {
+        int::mul_assoc().all_elim(u.clone())?.all_elim(v.clone())?.all_elim(w.clone())
+    };
+    let pp = |x: &Term, y: &Term| pos_prod_rt().all_elim(x.clone())?.all_elim(y.clone());
+
+    let n_l = lf.clone(); // fa·(fb·rdc + fc·rdb)
+    let d_l = imul(rda.clone(), imul(rdb.clone(), rdc.clone()));
+
+    // rep(ld) = D_L ; rep(rd) = D_R ; rf = N_R (round-trips of the nested denoms).
+    let rep_ld = pp(&da, &dbc)?.trans(imul_l_cong(&rda, pp(&db, &dc)?)?)?;
+    let rep_rd = pp(&dab, &dac)?.trans(imul_cong(pp(&da, &db)?, pp(&da, &dc)?)?)?;
+    let rf_eq = iadd_cong(
+        imul_l_cong(&imul(fa.clone(), fb.clone()), pp(&da, &dc)?)?,
+        imul_l_cong(&imul(fa.clone(), fc.clone()), pp(&da, &db)?)?,
+    )?; // rf = N_R
+
+    // D_R = rda·D_L.
+    let dr_fact = imul_interchange(&rda, &rdb, &rda, &rdc)?
+        .trans(massoc(&rda, &rda, &imul(rdb.clone(), rdc.clone()))?)?;
+    // rda·N_L = N_R.
+    let nbc = iadd(imul(fb.clone(), rdc.clone()), imul(fc.clone(), rdb.clone()));
+    let term1 = imul_interchange(&fa, &fb, &rda, &rdc)?
+        .trans(mul_r(comm(&fa, &rda)?, &imul(fb.clone(), rdc.clone()))?)?; // (fa·fb)·(rda·rdc) = (rda·fa)·(fb·rdc)
+    let term2 = imul_interchange(&fa, &fc, &rda, &rdb)?
+        .trans(mul_r(comm(&fa, &rda)?, &imul(fc.clone(), rdb.clone()))?)?;
+    let nr_fact = massoc(&rda, &fa, &nbc)?
+        .sym()? // rda·(fa·nbc) = (rda·fa)·nbc
+        .trans(int::distrib().all_elim(imul(rda.clone(), fa.clone()))?.all_elim(imul(fb.clone(), rdc.clone()))?.all_elim(imul(fc.clone(), rdb.clone()))?)? // = (rda·fa)·(fb·rdc) + (rda·fa)·(fc·rdb)
+        .trans(iadd_cong(term1.sym()?, term2.sym()?)?)?; // = N_R
+
+    // Cross-multiplication N_L·D_R = N_R·D_L, by the common factor rda.
+    let g_clean = imul_l_cong(&n_l, dr_fact)? // N_L·D_R = N_L·(rda·D_L)
+        .trans(massoc(&n_l, &rda, &d_l)?.sym()?)? // = (N_L·rda)·D_L
+        .trans(mul_r(comm(&n_l, &rda)?, &d_l)?)? // = (rda·N_L)·D_L
+        .trans(mul_r(nr_fact, &d_l)?)?; // = N_R·D_L
+
+    // Re-introduce the raw (nested) numerator / denominators for rel_of_pairs.
+    let g = g_clean
+        .lhs_conv(|t| t.rw_all(&rep_rd.clone().sym()?))? // D_R ↦ rep(rd)
+        .rhs_conv(|t| rewrite_seq(t, &[rf_eq.sym()?, rep_ld.sym()?]))?; // N_R ↦ rf, D_L ↦ rep(ld)
+
+    let rel = rel_of_pairs(&lf, &ld, &rf, &rd, g)?;
+    let cls = crate::init::quotient::class_intro(
+        &rat_spec(),
+        &[],
+        &ip_pair(),
+        &rat_rel_symm(),
+        &rat_rel_trans(),
+        rel,
+    )?;
+    lhs_thm
+        .trans(cls)?
+        .trans(rhs_thm.sym()?)?
+        .all_intro("c", rat())?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
 }
 
 /// `⊢ ∀a. ¬(a = 0) ⟹ ∃b. a * b = 1` — the field axiom (multiplicative
@@ -2042,7 +2126,7 @@ mod tests {
         // The still-postulated ring/field axioms (add_comm / mul_comm /
         // mul_assoc are now proved — see `commutativity_is_genuine` /
         // `mul_assoc_is_genuine`).
-        let all = [distrib(), mul_inv()];
+        let all = [mul_inv()];
         for ax in all {
             assert!(ax.concl().type_of().unwrap().is_bool());
             assert!(
@@ -2172,6 +2256,24 @@ mod tests {
             .unwrap();
         let expected = radd(radd(a.clone(), b.clone()), c.clone())
             .equals(radd(a, radd(b, c)))
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
+        assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
+        assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
+    }
+
+    #[test]
+    fn distrib_is_genuine() {
+        let thm = distrib();
+        let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+        let inst = thm
+            .clone()
+            .all_elim(a.clone())
+            .and_then(|t| t.all_elim(b.clone()))
+            .and_then(|t| t.all_elim(c.clone()))
+            .unwrap();
+        let expected = rmul(a.clone(), radd(b.clone(), c.clone()))
+            .equals(radd(rmul(a.clone(), b), rmul(a, c)))
             .unwrap();
         assert_eq!(inst.concl(), &expected);
         assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));

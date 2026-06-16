@@ -9,7 +9,7 @@ use crate::term::Type;
 /// over the observer type. This keeps error handling uniform across
 /// kernels with different observer types and avoids leaking
 /// observation data through error types.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum Error {
     #[error("expected term of kind bool, got type {0}")]
     NotBool(Type),

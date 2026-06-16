@@ -117,16 +117,14 @@ impl TheoryHandle {
     /// and re-check them, producing a fully-proved [`Theory`]. Errors with
     /// [`ScriptError::UnresolvedObligation`] if a hole has no fill.
     ///
-    /// `async` because this is where the prover is a tokio task graph: the
-    /// pending `#thm`s are resolved in **dependency waves**, and a wave's
-    /// (mutually independent) theorems run as concurrent `tokio::spawn` tasks —
-    /// the runtime executes them, so the proving order follows the
-    /// `(lemma …)`-dependency graph, NOT the declaration order (a pending
-    /// theorem may reference one declared later). A wave that makes no progress
-    /// while theorems remain is a dependency cycle. For a synchronous caller
-    /// use [`TheoryHandle::resolve_blocking`].
+    /// `async` because each pending proof is run through the async [`prove`]
+    /// entry, driven **manually and single-threaded** (no task spawned — see
+    /// [`poll_once`]). Theorems are taken in `(lemma …)`-dependency order, so a
+    /// pending theorem may reference one declared *later*. If no remaining
+    /// theorem's dependencies are all met, that is a dependency cycle. For a
+    /// synchronous caller use [`TheoryHandle::resolve_blocking`].
     pub async fn resolve(self) -> Result<Theory, ScriptError> {
-        use std::collections::{HashMap, HashSet};
+        use std::collections::HashSet;
 
         // Any hole still without a `(#fill …)` makes the theory unforceable —
         // report every one of them by name.
@@ -136,7 +134,7 @@ impl TheoryHandle {
         }
         let TheoryHandle {
             mut exports,
-            internal,
+            mut internal,
             mut thms,
             pending,
             fills,
@@ -158,18 +156,21 @@ impl TheoryHandle {
             remaining.push(Spec { spliced, deps });
         }
 
-        // Resolve in waves; each wave's theorems are independent → concurrent.
-        let internal = Arc::new(internal);
-        let mut resolved: HashMap<String, Thm> = HashMap::new();
+        // Resolve single-threaded, in dependency order: repeatedly take a
+        // theorem whose pending deps are all proved and run its proof by
+        // MANUALLY driving the `prove()` future — `poll_once` finishes the
+        // common (synchronous) case with no task spawned; a genuine yield is
+        // driven to completion inline. No theorem ready while some remain ⇒ a
+        // `(lemma …)` cycle.
+        let mut resolved: HashSet<String> = HashSet::new();
         while !remaining.is_empty() {
-            let (ready, blocked): (Vec<Spec>, Vec<Spec>) = remaining
-                .into_iter()
-                .partition(|s| s.deps.iter().all(|d| resolved.contains_key(d)));
-            if ready.is_empty() {
-                // No theorem's dependencies are all met ⇒ a `(lemma …)` cycle.
+            let Some(idx) = remaining
+                .iter()
+                .position(|s| s.deps.iter().all(|d| resolved.contains(d)))
+            else {
                 return Err(ScriptError::Syntax(format!(
                     "resolve: dependency cycle among pending theorems {:?}",
-                    blocked
+                    remaining
                         .iter()
                         .filter_map(|s| syntax::list(&s.spliced, "#thm")
                             .ok()
@@ -178,46 +179,26 @@ impl TheoryHandle {
                             .map(str::to_string))
                         .collect::<Vec<_>>()
                 )));
-            }
-            // Spawn each ready theorem; it builds its own env (the shared
-            // `internal` plus the dep theorems it needs) and checks itself.
-            let mut handles = Vec::with_capacity(ready.len());
-            for s in ready {
-                let internal = Arc::clone(&internal);
-                let dep_thms: Vec<(String, Thm)> = s
-                    .deps
-                    .iter()
-                    .map(|d| (d.clone(), resolved[d].clone()))
-                    .collect();
-                handles.push(tokio::spawn(async move {
-                    let mut env = (*internal).clone();
-                    for (n, t) in dep_thms {
-                        env.define_lemma(n, t);
-                    }
-                    let ch = syntax::list(&s.spliced, "#thm")?;
-                    run_thm(ch, &env)
-                }));
-            }
-            for h in handles {
-                let nt = h
-                    .await
-                    .map_err(|e| ScriptError::Syntax(format!("resolve: task failed: {e}")))??;
-                resolved.insert(nt.name.clone(), nt.thm.clone());
-                thms.push(nt);
-            }
-            remaining = blocked;
+            };
+            let s = remaining.swap_remove(idx);
+            // `internal` already holds the eager lemmas and every pending one
+            // resolved so far, so it is the right environment for this proof.
+            let mut fut = std::pin::pin!(prove(s.spliced, internal.clone()));
+            let nt = match poll_once(fut.as_mut()) {
+                std::task::Poll::Ready(result) => result?,
+                std::task::Poll::Pending => fut.await?,
+            };
+            resolved.insert(nt.name.clone());
+            internal.define_lemma(nt.name.clone(), nt.thm.clone());
+            thms.push(nt);
         }
 
         // Now that the pending theorems are proved, honour the exports that
         // referenced them.
         for name in deferred_exports {
-            let thm = resolved
-                .get(&name)
-                .cloned()
-                .or_else(|| internal.lookup_lemma(&name).cloned())
-                .ok_or_else(|| {
-                    ScriptError::Unbound(format!("#export: nothing named `{name}` to export"))
-                })?;
+            let thm = internal.lookup_lemma(&name).cloned().ok_or_else(|| {
+                ScriptError::Unbound(format!("#export: nothing named `{name}` to export"))
+            })?;
             exports.define_lemma(name, thm);
         }
         Ok(Theory { exports, thms })
@@ -285,6 +266,30 @@ fn splice_holes(
     }
 }
 
+/// Run a theorem's proof — the async proof entry, the analogue of the old
+/// synchronous interpreter except it returns a *future*. Today the body
+/// completes without ever yielding (the kernel check is synchronous, so a
+/// single poll finishes it — no task is spawned). When proofs gain real await
+/// points — a tactic awaiting an observer / a peer prover / the user, or a hole
+/// blocked on its fill — `prove` will yield, and the caller keeps the future as
+/// a handle (rather than the `Thm`) and moves on. See [`poll_once`].
+async fn prove(thm: SExpr, env: Env) -> Result<NamedThm, ScriptError> {
+    let ch = syntax::list(&thm, "#thm")?;
+    run_thm(ch, &env)
+}
+
+/// Start executing a future *manually*: poll it exactly once on the current
+/// thread (a noop waker). `Ready` ⇒ it finished without yielding — the common,
+/// fully-synchronous case, no executor or task needed. `Pending` ⇒ it yielded,
+/// and the same future can be driven to completion later (`.await`) or stashed
+/// as a handle. This is the single-threaded default; parallelism (spawning) is
+/// an explicit opt-in.
+fn poll_once<F: std::future::Future>(fut: std::pin::Pin<&mut F>) -> std::task::Poll<F::Output> {
+    let waker = std::task::Waker::noop();
+    let mut cx = std::task::Context::from_waker(waker);
+    fut.poll(&mut cx)
+}
+
 /// Collect the `(lemma X)` references in `s` whose `X` is in `among` — i.e. the
 /// dependency edges from one pending theorem to the others.
 fn collect_lemma_deps(
@@ -323,7 +328,7 @@ fn collect_holes(s: &SExpr, out: &mut Vec<String>) {
 }
 
 /// Errors from parsing or replaying a proof script.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum ScriptError {
     #[error("syntax: {0}")]
     Syntax(String),

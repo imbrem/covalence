@@ -363,23 +363,32 @@ directives — is `open`-able by other scripts; the macro binds it as a
   `succ`). int/rat/real/list/option/prod/coprod/set catalogue names are not yet
   bound; add entries to `script/env.rs::Env::core` (the `defs/` churn
   boundary) as those theories are ported.
-- **Async core runs on tokio; pending resolution is a task graph, the rest
-  isn't yet.** `script/mod.rs::run_async` is `async`; `run`/`resolve_blocking`
-  block via a tokio **current-thread** runtime (`block_on`). `TheoryHandle::
-  resolve` already resolves the **pending** (holed) theorems in dependency
-  **waves** — each wave's independent theorems `tokio::spawn` and run
-  concurrently, dependencies (`collect_lemma_deps` scan of `(lemma …)`) flow
-  across waves, and a no-progress wave is a cycle error. So pending order
-  follows the dep graph, not declaration order. Still TODO:
-  - **The EAGER (hole-free) `#thm`s are still checked inline, in order**, in
-    `run_async`'s loop — not yet tasks. Making *every* theorem a task (await
-    its `(lemma …)` deps, check via `spawn_blocking`) and switching to a
-    multi-thread runtime is what unlocks real parallel verification; the
-    current-thread runtime + wave spawns give correct order but no parallelism.
-  - A task that blocks (an unready import, a tactic awaiting an observer / peer
-    / the user) should let tokio run another; a failed import should yield a
-    *partial* theory that is still importable. Wanted for BLAKE3-range partial
-    verification.
+- **Async core: single-threaded manual driving; the `ThmHandle` yield path
+  isn't built.** `script/mod.rs::run_async` is `async`; `run`/`resolve_blocking`
+  block via a tokio **current-thread** runtime (`block_on`). Proofs run through
+  the async `prove()` entry, driven **manually** by `poll_once` (one poll on a
+  noop waker) — **no task is spawned**, default execution is single-threaded,
+  parallelism is meant to be an explicit opt-in. `TheoryHandle::resolve` takes
+  the pending (holed) theorems in `(lemma …)`-dependency order
+  (`collect_lemma_deps`), so a pending theorem may reference one declared later;
+  no theorem ready while some remain ⇒ a cycle error. Still TODO:
+  - **The intended `ThmHandle` model isn't realized.** Target: `prove()`
+    returns a future; `poll_once` it; if it **completes** (the common
+    synchronous case) store the `Thm`; if it **yields** store the *handle* (a
+    `ThmHandle = Ready(Thm) | Pending(future)`) in the env and move on,
+    resuming/forcing it later. Today nothing yields (the kernel check is
+    synchronous and holes are pre-spliced at force), so `poll_once` always hits
+    `Ready` and the `Pending` arm is dormant. Real yields appear when a hole
+    awaits its fill, or a tactic awaits an observer / peer / the user.
+  - **Eager (hole-free) `#thm`s are still checked inline in `run_async`'s loop**
+    — not yet driven through `prove`/`poll_once`. Unify the two paths so every
+    theorem goes through the handle model.
+  - A proof that blocks (an unready import, a tactic awaiting something) should
+    let other work proceed; a failed import should yield a *partial* theory that
+    is still importable. Parallelism stays explicit (opt-in `tokio::spawn` /
+    multi-thread runtime), not the default. Wanted for BLAKE3-range partial
+    verification. (`covalence_core::Error` and `ScriptError` are now `Clone`, so
+    a `Pending` handle can be a multi-consumer `Shared` future if needed.)
   - **`EnvHandle` (in-progress env) not built.** Mirror of `TheoryHandle` for
     environments: a *fully-resolved* `Env` holds no futures, but an in-progress
     one's **imported** lemmas/consts ARE futures (an imported theory need not be

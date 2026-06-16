@@ -7,10 +7,10 @@
 //! methods. The transient proof state — the variable [`super::scope::Scope`],
 //! goals — lives in [`super::tactic::Interp`], not here.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use covalence_core::{Term, Thm, defs};
+use imbl::HashMap;
 
 use super::{ScriptError, tactic::Tactic};
 
@@ -44,6 +44,10 @@ pub enum ConstDef {
 /// encapsulated behind methods; this will grow into a proper namespace
 /// system (separate namespaces for consts/types/terms/tactics/…, qualified
 /// names, `#import … as …`).
+///
+/// Backed by [`imbl::HashMap`] **persistent** maps, so cloning an `Env` is
+/// O(1) (structural sharing) and mutating a clone is cheap copy-on-write —
+/// which is why [`super::tactic::Interp`] can afford to *own* its environment.
 #[derive(Clone, Default)]
 pub struct Env {
     consts: HashMap<String, ConstDef>,
@@ -167,7 +171,9 @@ impl Env {
         drop(op);
         e.consts.insert("=".into(), ConstDef::Eq);
         e.consts.insert("eq".into(), ConstDef::Eq);
-        e.tactics = super::tactic::core_tactics();
+        for (name, tac) in super::tactic::core_tactics() {
+            e.tactics.insert(name, tac);
+        }
         e
     }
 }

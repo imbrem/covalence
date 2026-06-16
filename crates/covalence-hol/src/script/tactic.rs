@@ -66,19 +66,20 @@ where
 }
 
 /// The mutable interpreter state during a `#by` block: the current goal,
-/// the available context facts, and the variable scope. Borrows the
-/// namespace [`Env`] (for tactic/name lookup) but owns the transient state.
-pub struct Interp<'e> {
-    env: &'e Env,
+/// the available context facts, and the variable scope. **Owns** the namespace
+/// [`Env`] (cheap to clone — it is on `imbl` persistent maps) along with the
+/// transient state.
+pub struct Interp {
+    env: Env,
     goal: Term,
     hyps: Vec<(Term, Hyp)>,
     scope: Scope,
 }
 
-impl<'e> Interp<'e> {
+impl Interp {
     /// The namespace environment (tactic registry, consts, lemmas).
     pub fn env(&self) -> &Env {
-        self.env
+        &self.env
     }
     /// The current goal.
     pub fn goal(&self) -> &Term {
@@ -140,7 +141,7 @@ fn prove_with(
         }
         "#by" => {
             let mut it = Interp {
-                env,
+                env: env.clone(),
                 goal: goal.clone(),
                 hyps: hyps.to_vec(),
                 scope: scope.clone(),
@@ -216,8 +217,8 @@ fn intro_names(names: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
 fn tac_derive(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
     arity(s, 2, "derive")?;
     expect_done(rest, "derive")?;
-    let env = it.env;
-    check(&parse_drv(&s[1], &mut it.scope, env)?, env)
+    let env = it.env.clone();
+    check(&parse_drv(&s[1], &mut it.scope, &env)?, &env)
 }
 
 fn tac_assumption(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
@@ -317,8 +318,8 @@ fn tac_contrapositive(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
 
 fn tac_rw(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
     arity(s, 2, "rw")?;
-    let env = it.env;
-    let eq = check(&parse_drv(&s[1], &mut it.scope, env)?, env)?;
+    let env = it.env.clone();
+    let eq = check(&parse_drv(&s[1], &mut it.scope, &env)?, &env)?;
     let cong = rewrite_conv(&it.goal, &eq)?;
     let (_, gprime) = dest_eq(cong.concl())
         .ok_or_else(|| ScriptError::Syntax("rw: rewrite did not yield an equation".into()))?;
@@ -329,9 +330,9 @@ fn tac_rw(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
 
 fn tac_have(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
     arity(s, 3, "#have")?;
-    let env = it.env;
-    let fact = parse_term(&s[1], &mut it.scope, env)?;
-    let sub = prove_with(&fact, &s[2], &mut it.scope, &it.hyps, env)?;
+    let env = it.env.clone();
+    let fact = parse_term(&s[1], &mut it.scope, &env)?;
+    let sub = prove_with(&fact, &s[2], &mut it.scope, &it.hyps, &env)?;
     it.hyps.push((fact, Hyp::Proven(sub)));
     let result = it.run(rest);
     it.hyps.pop();
@@ -341,7 +342,7 @@ fn tac_have(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
 fn tac_induct(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
     arity(s, 4, "induct")?;
     expect_done(rest, "induct")?;
-    let env = it.env;
+    let env = it.env.clone();
     let var = sym(&s[1], "induct variable")?.to_string();
     let (ty, body) = dest_forall(&it.goal)
         .ok_or_else(|| ScriptError::Syntax(format!("induct: goal is not a `∀`: {}", it.goal)))?;
@@ -353,7 +354,7 @@ fn tac_induct(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
     let p = Term::abs(Type::nat(), body.clone());
     let zero = Term::nat_lit(0u64);
 
-    let base_body = prove_with(&subst::open(&body, &zero), &s[2], &mut it.scope, &it.hyps, env)?;
+    let base_body = prove_with(&subst::open(&body, &zero), &s[2], &mut it.scope, &it.hyps, &env)?;
     let base = Thm::beta_conv(Term::app(p.clone(), zero))?
         .sym()?
         .eq_mp(base_body)?;
@@ -365,7 +366,7 @@ fn tac_induct(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
     step_hyps.push((ih.clone(), Hyp::Assumed));
     it.scope.open();
     it.scope.define(var.clone(), Type::nat());
-    let step_body = prove_with(&subst::open(&body, &sv), &s[3], &mut it.scope, &step_hyps, env);
+    let step_body = prove_with(&subst::open(&body, &sv), &s[3], &mut it.scope, &step_hyps, &env);
     it.scope.close();
     let step_imp = step_body?.imp_intro(&ih)?;
     let ea = Thm::beta_conv(Term::app(p.clone(), v))?;

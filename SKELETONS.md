@@ -422,12 +422,16 @@ directives — is `open`-able by other scripts; the macro binds it as a
   prover, the user, or WASM component-model streams/futures. Making `apply`
   async ripples through `Interp::run` → the proof execution path; the TCB stays
   sync (only this untrusted shell goes async).
-- **`Env` is `std::HashMap`-backed (O(n) clone), `Interp` borrows it.** `Env`
-  is cloned a lot (imports, exports, the prove path), so it should sit on
-  **persistent/immutable maps** (`imbl` — crates.io) for O(1) clone + cheap
-  structural-sharing mutation, and `Interp` should **own** its `Env` (cheap
-  clone) rather than borrow `&'e Env`. Touches `env.rs` (swap the four
-  `HashMap`s) + `tactic.rs` (`Interp` loses its lifetime).
+- **`Env` lemma values are resolved `Thm`s, not handles.** `Env` is now on
+  `imbl` persistent maps (O(1) clone) and `Interp` OWNS its `Env` (no lifetime)
+  — so it already holds a cheap env *handle*. The remaining refinement: the
+  `lemmas` map should hold **`ThmHandle` (`Ready(Thm) | Pending(future)`)**, not
+  bare `Thm`, so that when a theorem **yields** its (Pending) handle goes into
+  the env and the next theorem starts; a later `(lemma …)` / `#dep` reference
+  then awaits that handle. This is the `EnvHandle` idea (in-progress env whose
+  entries are futures) — coupled to the yield mechanism (channels/holes), which
+  is currently removed, so building handle-valued entries now would be a
+  permanently-`Ready` no-op. Do it together with the yield-mechanism rebuild.
 - **`Term` futures (term-level holes) not represented.** Terms are eagerly
   built — there is no `Term` future (and proof holes were removed, see above).
   A key target use case: represent a **unification hole** as a term future

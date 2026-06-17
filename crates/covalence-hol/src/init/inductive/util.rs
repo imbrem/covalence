@@ -1,12 +1,18 @@
 //! Shared conjunction-proof plumbing for the engine's proof layers
-//! ([`super::existence`], [`super::uniqueness`]).
+//! ([`super::existence`], [`super::uniqueness`], …).
+//!
+//! The proofs now live generically over [`super::hol::Hol`]; the functions
+//! here are thin [`NativeHol`](super::hol::NativeHol) shims so existing
+//! call sites stay unchanged while the engine ports module-by-module. See
+//! [`super::hol`].
 
 use covalence_core::{Result, Term, TermKind, Thm};
 
-use super::graph;
+use super::hol::{self, NativeHol};
 
 /// The binder name carried by a free-variable term (e.g. an image var);
-/// falls back to `"__a"` for a non-variable.
+/// falls back to `"__a"` for a non-variable. (Still concrete — a `Term`
+/// query, ported when the engine's term-query layer lands.)
 pub(super) fn var_name(v: &Term) -> &str {
     match v.kind() {
         TermKind::Free(n, _) => n.as_str(),
@@ -15,46 +21,20 @@ pub(super) fn var_name(v: &Term) -> &str {
 }
 
 /// Project conjunct `i` out of a proof of a right-associated conjunction
-/// `c₀ ∧ (c₁ ∧ … ∧ c_{k-1})`.
+/// `c₀ ∧ (c₁ ∧ … ∧ c_{k-1})`. [`hol::project`] at [`NativeHol`].
 pub(super) fn project(conj: Thm, i: usize, k: usize) -> Result<Thm> {
-    let mut t = conj;
-    for _ in 0..i {
-        t = t.and_elim_r()?;
-    }
-    if i + 1 < k { t.and_elim_l() } else { Ok(t) }
+    hol::project(&NativeHol, conj, i, k)
 }
 
 /// `⊢ ⋀ thms` — the right-associated conjunction of the given proofs.
-/// Caller guarantees a non-empty slice.
+/// [`hol::and_all`] at [`NativeHol`].
 pub(super) fn and_all(thms: &[Thm]) -> Result<Thm> {
-    let mut acc = thms[thms.len() - 1].clone();
-    for t in thms[..thms.len() - 1].iter().rev() {
-        acc = t.clone().and_intro(acc)?;
-    }
-    Ok(acc)
+    hol::and_all(&NativeHol, thms)
 }
 
 /// Discharge hypotheses `hyps` from `thm` as a single conjunctive
-/// antecedent: `{h₀,…,hₙ} ⊢ c` ↦ `⊢ (⋀ hᵢ) ⟹ c`. Empty → unchanged;
-/// singleton → a plain `imp_intro`.
+/// antecedent: `{h₀,…,hₙ} ⊢ c` ↦ `⊢ (⋀ hᵢ) ⟹ c`. [`hol::discharge_conj`]
+/// at [`NativeHol`].
 pub(super) fn discharge_conj(thm: Thm, hyps: &[Term]) -> Result<Thm> {
-    match hyps {
-        [] => Ok(thm),
-        [h] => thm.imp_intro(h),
-        _ => {
-            // `⊢ hₙ ⟹ … ⟹ h₀ ⟹ c` (all hyps curried off), then cut each
-            // back against its projection out of the assumed `⋀ hᵢ`.
-            let mut curried = thm;
-            for h in hyps {
-                curried = curried.imp_intro(h)?;
-            }
-            let conj_term = graph::conj(hyps)?;
-            let assumed = Thm::assume(conj_term.clone())?;
-            let mut cut = curried;
-            for i in (0..hyps.len()).rev() {
-                cut = cut.imp_elim(project(assumed.clone(), i, hyps.len())?)?;
-            }
-            cut.imp_intro(&conj_term)
-        }
-    }
+    hol::discharge_conj(&NativeHol, thm, hyps)
 }

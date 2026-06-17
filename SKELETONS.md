@@ -145,21 +145,53 @@ it is how unfinished work stays discoverable.
     folds the supplied induction over `graph_inv` (invert both graphs, then the
     IH equates the recursive images). Generic over `Inductive`; `nat`'s
     `graph_det` consumes it.
+  - `recursor.rs` — `recursion_theorem` (`⊢ ∃rec. P_rec rec`): builds the
+    recursor `λ(steps). λt. ε a. Graph t a` by Hilbert choice over the graph,
+    proves its per-constructor equations (`rec (Cᵢ x⃗) = fᵢ x⃗ (rec r⃗)`) from
+    totality + determinacy, and `∃`-introduces over a caller-supplied `defs`
+    recursor predicate. Generic over `Inductive`; `nat`'s `recursion_theorem` /
+    `rec_holds_proof` consume it.
   - `util.rs` — shared conjunction-proof plumbing.
 
-  Still **specialised to `nat`** in `init/recursion.rs`:
-  - **ε-assembly** — `recursion_theorem` / `rec_holds_proof` generalised to emit
-    `⊢ ∃rec. P_rec rec` from totality + determinacy for any signature. The only
-    remaining piece; it couples to the recursor's `defs` selector predicate
-    (`natRec`'s `P_rec`), so generalising it means deriving the per-constructor
-    equation predicate from the signature.
+  The construction is **complete**: `init/recursion.rs` is now just the
+  `NatTheory` adapter + assembly wiring, consuming the engine end to end.
+  Remaining engine work:
+  - **Port the engine onto the abstract `Hol` interface** (`inductive/hol.rs`),
+    so the same machinery drives any HOL backend (native today; internal /
+    object-level HOL later — "prove induction inside HOL"). `Hol` is the
+    value-typed HOL Light surface (assoc `Type`/`Term`/`Thm` + connective
+    builders + the derived rule set), distinct from the arena-style
+    `HolLightKernel`. The pattern is **generic impl + native shim**: each
+    function's logic moves to a generic-over-`Hol` version, with the concrete
+    engine function a thin [`NativeHol`] shim so callers are unchanged.
+    **Done:** the `Hol` trait covers the **full proof-layer surface** — types,
+    term builders, queries, the rule set, and the hard derived rules (`beta_nf`,
+    `exists_intro`/`exists_elim`, `rw_all`) as trait methods; the easy derived
+    rules (`cong_arg`/`conjuncts`/`beta_reduce`/`beta_expand`/`beta_nf_concl`/
+    `beta_nf_expand`/`rewrite`) and the conjunction plumbing as generic helpers.
+    `NativeHol` forwards each to the existing `covalence-core` / `init::eq` /
+    `init::logic` impl; the surface is validated generically (the `hol` tests).
+    Also done: the **data model** (`sig`: `GenArg<Ty>`/`GenConstructor<Tm,Ty>`/
+    `GenSig<Tm,Ty>` with native aliases `Arg`/`Constructor`/`InductiveSig`),
+    the **`graph` term builders** (`gen_app2`/`gen_ctor_instance`/`gen_closed`/
+    `gen_graph` + `GenCtorInstance<Tm>`, bare names are `NativeHol` shims), and
+    the **`Inductive` trait** (now `Inductive<H: Hol = NativeHol>` — the default
+    type param keeps `NatTheory`'s impl and the proof modules' `I: Inductive`
+    bounds unchanged). `util` + `graph::conj` + `graph::{graph,closed,…}` are
+    shims. **Still concrete (next):** the proof modules `existence` /
+    `uniqueness` / `determinacy` / `recursor` — each ports to
+    `<H: Hol, I: Inductive<H>>(hol, …)` using the `gen_*` graph builders + the
+    `Hol` rule methods + the generic β/∃ helpers, with a `NativeHol` shim
+    keeping its `nat`-facing signature. Then `recursion.rs`'s entry points can
+    flip to any backend.
   - **The multi-recursive-argument / multi-constructor-argument paths** in
-    `existence.rs`, `uniqueness.rs`, and `determinacy.rs` (conjunctive IHs /
-    antecedents, componentwise injectivity, nested `∃`-witnessing) are partial:
-    `existence` / `uniqueness` handle the general shape but are only *exercised*
-    by `nat`'s ≤1-arg / ≤1-rec-arg cases, while `determinacy::det_case`
-    explicitly **errors** on a constructor with ≥2 recursive arguments. A
-    binary-tree or `list` signature is the first real test. The strict
+    `existence.rs`, `uniqueness.rs`, `determinacy.rs`, and `recursor.rs`
+    (conjunctive IHs / antecedents, componentwise injectivity, nested
+    `∃`-witnessing) are partial: `existence` / `uniqueness` handle the general
+    shape but are only *exercised* by `nat`'s ≤1-arg / ≤1-rec-arg cases, while
+    `determinacy::det_case` and `recursor::rec_equation` explicitly **error** on
+    a constructor with ≥2 recursive arguments. A binary-tree or `list`
+    signature is the first real test. The strict
     `wit`-binder naming discipline (`_wx_` / `_wb_` prefixes, disjoint from a
     constructor's own binders) is load-bearing — see the `uniqueness.rs` docs.
 

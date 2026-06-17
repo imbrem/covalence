@@ -31,6 +31,7 @@ use super::ScriptError;
 use super::env::Env;
 use super::scope::Scope;
 use super::syntax::{head_sym, list, parse_term, parse_type, sym};
+use super::tactic::Tactic;
 
 type R<T> = Result<T, ScriptError>;
 
@@ -92,7 +93,7 @@ impl<'a> CheckCtx<'a> {
 }
 
 /// Check a rule received exactly `n` arguments (head excluded).
-fn ctx_arity(args: &[SExpr], n: usize, rule: &str) -> R<()> {
+pub(super) fn ctx_arity(args: &[SExpr], n: usize, rule: &str) -> R<()> {
     if args.len() != n {
         return Err(ScriptError::Syntax(format!(
             "rule `{rule}` expects {n} argument(s), got {}",
@@ -103,32 +104,30 @@ fn ctx_arity(args: &[SExpr], n: usize, rule: &str) -> R<()> {
 }
 
 // ============================================================================
-// Rule — the registry entry, and the replayer
+// The replayer
 // ============================================================================
 
-/// A **derivation rule** — the tree-mode analogue of a [`super::Tactic`], and
-/// the unit of the registry. Given its raw S-expr arguments and a [`CheckCtx`],
-/// it self-parses (terms/types/sub-derivations) and produces a kernel theorem.
-/// `async`, so a custom rule may await (an observer, a peer prover, the user)
-/// *inside* a `#proof`.
-#[async_trait]
-pub trait Rule: Send + Sync {
-    async fn apply(&self, args: &[SExpr], ctx: &mut CheckCtx<'_>) -> R<Thm>;
-}
+// A derivation rule is just the tree-mode facet of a [`Tactic`]: given its raw
+// S-expr arguments and a [`CheckCtx`], `Tactic::rule` self-parses (terms/types/
+// sub-derivations) and produces a kernel theorem. The structs below override
+// only `rule` (their `apply` defaults to a "not a tactic" error); the dual-mode
+// inferences (`refl`/`sym`/`not-intro`/`rw`) live in `tactic.rs` and override
+// both.
 
 /// Replay a proof S-expr into a kernel theorem by dispatching its head through
-/// the [`Env`] rule registry. The sole kernel-coupled surface in the script
-/// layer (each built-in [`Rule`] is one-or-few kernel calls). `async` — a rule
-/// may await — so it returns a boxed future (the recursion needs a known size).
+/// the [`Env`] registry and invoking the matched inference's `rule` facet. The
+/// sole kernel-coupled surface in the script layer (each built-in rule is
+/// one-or-few kernel calls). `async` — a rule may await — so it returns a boxed
+/// future (the recursion needs a known size).
 pub fn check<'a>(s: &'a SExpr, ctx: &'a mut CheckCtx<'_>) -> BoxFuture<'a, R<Thm>> {
     Box::pin(async move {
         let ch = list(s, "proof")?;
         let head = head_sym(ch)?;
-        let rule = ctx
+        let op = ctx
             .env
             .lookup_rule(head)
             .ok_or_else(|| ScriptError::Unbound(format!("unknown proof rule `{head}`")))?;
-        rule.apply(&ch[1..], ctx).await
+        op.rule(&ch[1..], ctx).await
     })
 }
 
@@ -141,8 +140,8 @@ macro_rules! term_rule {
     ($S:ident, $name:literal, $build:expr) => {
         struct $S;
         #[async_trait]
-        impl Rule for $S {
-            async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        impl Tactic for $S {
+            async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
                 ctx_arity(a, 1, $name)?;
                 let t = c.term(&a[0])?;
                 #[allow(clippy::redundant_closure_call)]
@@ -157,8 +156,8 @@ macro_rules! unary_rule {
     ($S:ident, $name:literal, $m:ident) => {
         struct $S;
         #[async_trait]
-        impl Rule for $S {
-            async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        impl Tactic for $S {
+            async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
                 ctx_arity(a, 1, $name)?;
                 let s = c.check(&a[0]).await?;
                 Ok(s.$m()?)
@@ -172,8 +171,8 @@ macro_rules! binary_rule {
     ($S:ident, $name:literal, $m:ident) => {
         struct $S;
         #[async_trait]
-        impl Rule for $S {
-            async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        impl Tactic for $S {
+            async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
                 ctx_arity(a, 2, $name)?;
                 let x = c.check(&a[0]).await?;
                 let y = c.check(&a[1]).await?;
@@ -188,8 +187,8 @@ macro_rules! term_sub_rule {
     ($S:ident, $name:literal, $f:expr) => {
         struct $S;
         #[async_trait]
-        impl Rule for $S {
-            async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        impl Tactic for $S {
+            async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
                 ctx_arity(a, 2, $name)?;
                 let t = c.term(&a[0])?;
                 let s = c.check(&a[1]).await?;
@@ -201,7 +200,7 @@ macro_rules! term_sub_rule {
 }
 
 // -- leaves -----------------------------------------------------------------
-term_rule!(ReflRule, "refl", |t| Ok(Thm::refl(t)?));
+// (`refl` is dual-mode — its rule facet lives on the `Refl` inference in tactic.rs.)
 term_rule!(AssumeRule, "assume", |t| Ok(Thm::assume(t)?));
 term_rule!(LemRule, "lem", |t| Ok(Thm::lem(t)?));
 term_rule!(ReducePrimRule, "reduce-prim", |t| Ok(Thm::reduce_prim(t)?));
@@ -218,8 +217,8 @@ term_rule!(TautoRule, "tauto", |t| Ok(crate::init::logic::tauto(&t)?));
 /// **awaits** if the lemma is still `#compute`-ing.
 struct LemmaRule;
 #[async_trait]
-impl Rule for LemmaRule {
-    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+impl Tactic for LemmaRule {
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
         ctx_arity(a, 1, "lemma")?;
         let name = c.name(&a[0])?;
         c.env()
@@ -232,8 +231,8 @@ impl Rule for LemmaRule {
 /// `(unfold-at-1 OP ARG)` → `⊢ op arg = body[arg]` (one β-step).
 struct UnfoldAt1Rule;
 #[async_trait]
-impl Rule for UnfoldAt1Rule {
-    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+impl Tactic for UnfoldAt1Rule {
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
         ctx_arity(a, 2, "unfold-at-1")?;
         let op = c.term(&a[0])?;
         let arg = c.term(&a[1])?;
@@ -244,8 +243,8 @@ impl Rule for UnfoldAt1Rule {
 /// `(unfold-at-2 OP A B)` → `⊢ op a b = body[a,b]`.
 struct UnfoldAt2Rule;
 #[async_trait]
-impl Rule for UnfoldAt2Rule {
-    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+impl Tactic for UnfoldAt2Rule {
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
         ctx_arity(a, 3, "unfold-at-2")?;
         let op = c.term(&a[0])?;
         let x = c.term(&a[1])?;
@@ -255,8 +254,7 @@ impl Rule for UnfoldAt2Rule {
 }
 
 // -- unary ------------------------------------------------------------------
-unary_rule!(SymRule, "sym", sym);
-unary_rule!(NotIntroRule, "not-intro", not_intro);
+// (`sym`/`not-intro` are dual-mode — their rule facets are in tactic.rs.)
 unary_rule!(AndElimLRule, "and-elim-l", and_elim_l);
 unary_rule!(AndElimRRule, "and-elim-r", and_elim_r);
 
@@ -283,8 +281,8 @@ term_sub_rule!(CongFnRule, "cong-fn", |t, s: Thm| Ok(
 /// `(inst VAR TERM SUB)` — instantiate a free variable.
 struct InstRule;
 #[async_trait]
-impl Rule for InstRule {
-    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+impl Tactic for InstRule {
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
         ctx_arity(a, 3, "inst")?;
         let name = c.name(&a[0])?;
         let term = c.term(&a[1])?;
@@ -297,8 +295,8 @@ impl Rule for InstRule {
 /// `INST_TYPE`), the way a *polymorphic* lemma is applied at a concrete type.
 struct InstTfreeRule;
 #[async_trait]
-impl Rule for InstTfreeRule {
-    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+impl Tactic for InstTfreeRule {
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
         ctx_arity(a, 3, "inst-tfree")?;
         let name = c.name(&a[0])?;
         let ty = c.ty(&a[1])?;
@@ -311,8 +309,8 @@ impl Rule for InstTfreeRule {
 /// `(abs-rule VAR TYPE SUB)` — abstraction under a binder.
 struct AbsRuleRule;
 #[async_trait]
-impl Rule for AbsRuleRule {
-    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+impl Tactic for AbsRuleRule {
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
         ctx_arity(a, 3, "abs-rule")?;
         let name = c.name(&a[0])?;
         let ty = c.ty(&a[1])?;
@@ -326,8 +324,8 @@ impl Rule for AbsRuleRule {
 /// `(all-intro VAR TYPE SUB)` — universal generalization.
 struct AllIntroRule;
 #[async_trait]
-impl Rule for AllIntroRule {
-    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+impl Tactic for AllIntroRule {
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
         ctx_arity(a, 3, "all-intro")?;
         let name = c.name(&a[0])?;
         let ty = c.ty(&a[1])?;
@@ -350,8 +348,8 @@ binary_rule!(NotElimRule, "not-elim", not_elim);
 /// `(nat-induct BASE STEP)` → `∀n. P n` from the base case and step.
 struct NatInductRule;
 #[async_trait]
-impl Rule for NatInductRule {
-    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+impl Tactic for NatInductRule {
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
         ctx_arity(a, 2, "nat-induct")?;
         let base = c.check(&a[0]).await?;
         let step = c.check(&a[1]).await?;
@@ -363,8 +361,8 @@ impl Rule for NatInductRule {
 /// `(or-elim DISJ LEFT RIGHT)` — case split on a disjunction.
 struct OrElimRule;
 #[async_trait]
-impl Rule for OrElimRule {
-    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+impl Tactic for OrElimRule {
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
         ctx_arity(a, 3, "or-elim")?;
         let disj = c.check(&a[0]).await?;
         let left = c.check(&a[1]).await?;
@@ -373,28 +371,16 @@ impl Rule for OrElimRule {
     }
 }
 
-// -- tactics (elaborate to longer derivations at replay time) ---------------
-/// `(rw EQN TARGET)` — rewrite `TARGET`'s conclusion left-to-right with the
-/// equation proved by `EQN` (congruence over every occurrence).
-struct RwRule;
-#[async_trait]
-impl Rule for RwRule {
-    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
-        ctx_arity(a, 2, "rw")?;
-        let eq = c.check(&a[0]).await?;
-        let tgt = c.check(&a[1]).await?;
-        let cong = rewrite_conv(tgt.concl(), &eq)?;
-        Ok(cong.eq_mp(tgt)?)
-    }
-}
+// (`rw` is dual-mode — its rule facet is on the `Rw` inference in tactic.rs.)
 
 /// The built-in derivation vocabulary — installed into every [`Env::core`].
 /// Each entry is `(head, rule)`; a host may register more via
-/// [`Env::register_rule`] without touching this file.
-pub fn core_rules() -> Vec<(&'static str, Arc<dyn Rule>)> {
+/// [`Env::register_rule`] without touching this file. The dual-mode inferences
+/// (`refl`/`sym`/`not-intro`/`rw`) are NOT here — they are registered once as
+/// tactics (`tactic.rs`) and carry their `rule` facet with them.
+pub fn core_rules() -> Vec<(&'static str, Arc<dyn Tactic>)> {
     vec![
         // leaves
-        ("refl", Arc::new(ReflRule)),
         ("assume", Arc::new(AssumeRule)),
         ("lem", Arc::new(LemRule)),
         ("lemma", Arc::new(LemmaRule)),
@@ -405,8 +391,6 @@ pub fn core_rules() -> Vec<(&'static str, Arc<dyn Rule>)> {
         ("beta-conv", Arc::new(BetaConvRule)),
         ("tauto", Arc::new(TautoRule)),
         // unary
-        ("sym", Arc::new(SymRule)),
-        ("not-intro", Arc::new(NotIntroRule)),
         ("and-elim-l", Arc::new(AndElimLRule)),
         ("and-elim-r", Arc::new(AndElimRRule)),
         // term + sub
@@ -434,8 +418,6 @@ pub fn core_rules() -> Vec<(&'static str, Arc<dyn Rule>)> {
         // ternary
         ("or-elim", Arc::new(OrElimRule)),
         ("nat-induct", Arc::new(NatInductRule)),
-        // replay-time tactics
-        ("rw", Arc::new(RwRule)),
     ]
 }
 

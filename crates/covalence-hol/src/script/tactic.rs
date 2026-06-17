@@ -23,7 +23,7 @@ use covalence_core::{Term, TermKind, Thm, Type, defs, subst};
 use covalence_sexp::SExpr;
 
 use super::ScriptError;
-use super::drv::{CheckCtx, check, rewrite_conv};
+use super::drv::{CheckCtx, check, ctx_arity, rewrite_conv};
 use super::env::Env;
 use super::scope::Scope;
 use super::syntax::{arity, head_sym, list, parse_term, sym};
@@ -41,23 +41,40 @@ pub enum Hyp {
     Proven(Thm),
 }
 
-/// A tactic: a registry-dispatched goal transformer. `apply` gets the
-/// tactic's own S-expression `s` (e.g. `(intro a b)`), the following `rest`
-/// steps, and the mutable interpreter state.
+/// An **inference** — a single registry-dispatched object usable in *either*
+/// proof mode, via two methods:
 ///
-/// This is a **trait**, not a bare `fn`, so a tactic can carry state, be
+/// - [`apply`](Tactic::apply) — **tactic mode** (`#by`): drive the focused goal
+///   to a theorem. Gets the inference's own S-expression `s` (e.g.
+///   `(intro a b)`), the following `rest` steps, and the mutable [`Interp`].
+/// - [`rule`](Tactic::rule) — **tree mode** (`#proof`): combine the
+///   sub-derivations of `(NAME args…)` into a theorem, self-parsing its args
+///   through a [`CheckCtx`].
+///
+/// Both default to a "wrong mode" error, so a concrete inference implements
+/// only the mode(s) it supports: a goal-only tactic (`intro`) overrides
+/// `apply`; a forward rule (`trans`) overrides `rule`; a dual-mode inference
+/// (`sym`, `refl`, `not-intro`, `rw`) overrides both — one object, no stapling.
+///
+/// This is a **trait**, not a bare `fn`, so an inference can carry state, be
 /// backed by a WASM component, or run *async* — awaiting a long-running
-/// observer, a peer prover, or the user, and yielding control meanwhile.
-/// `apply` is `async` ([`Interp::run`] awaits it); object-safe via
-/// `#[async_trait]`, so the [`Env`] registry holds `Arc<dyn Tactic>`.
-///
-/// *Synchronous* tactics (those that close the goal directly, without
-/// recursing or awaiting) register as plain `fn`s through the blanket impl
-/// below; tactics that recurse (`intro`, `rw`, `#have`, `induct`) are concrete
-/// types whose `apply` `await`s [`Interp::run`].
+/// observer, a peer prover, or the user. Object-safe via `#[async_trait]`, so
+/// the [`Env`] registry holds `Arc<dyn Tactic>`. *Synchronous* goal-closing
+/// tactics register as plain `fn`s through the blanket impl below.
 #[async_trait]
 pub trait Tactic: Send + Sync {
-    async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm>;
+    /// Tactic mode (`#by`). Default: not usable as a tactic.
+    async fn apply(&self, _s: &[SExpr], _rest: &[SExpr], _it: &mut Interp) -> R<Thm> {
+        Err(ScriptError::Syntax(
+            "this inference cannot be used as a `#by` tactic".into(),
+        ))
+    }
+    /// Tree mode (`#proof`). Default: not usable as a derivation rule.
+    async fn rule(&self, _args: &[SExpr], _ctx: &mut CheckCtx<'_>) -> R<Thm> {
+        Err(ScriptError::Syntax(
+            "this inference cannot be used as a `#proof` rule".into(),
+        ))
+    }
 }
 
 /// Any synchronous `fn`/closure of the right shape is a [`Tactic`], so the
@@ -176,7 +193,7 @@ pub fn core_tactics() -> HashMap<String, Arc<dyn Tactic>> {
     reg("derive", Arc::new(Derive));
     reg("drv", Arc::new(Derive));
     reg("assumption", Arc::new(tac_assumption));
-    reg("refl", Arc::new(tac_refl));
+    reg("refl", Arc::new(Refl));
     reg("sym", Arc::new(Sym));
     reg("not-intro", Arc::new(NotIntro));
     reg("contrapositive", Arc::new(Contrapositive));
@@ -265,16 +282,25 @@ fn tac_assumption(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
     }
 }
 
-fn tac_refl(s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
-    arity(s, 1, "refl")?;
-    expect_done(rest, "refl")?;
-    let (lhs, _) = dest_eq(&it.goal).ok_or_else(|| {
-        ScriptError::Syntax(format!("refl: goal is not an equation: {}", it.goal))
-    })?;
-    Ok(Thm::refl(lhs)?)
+/// `(refl)` tactic / `(refl TERM)` rule: reflexivity `⊢ t = t`.
+struct Refl;
+#[async_trait]
+impl Tactic for Refl {
+    async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
+        arity(s, 1, "refl")?;
+        expect_done(rest, "refl")?;
+        let (lhs, _) = dest_eq(&it.goal).ok_or_else(|| {
+            ScriptError::Syntax(format!("refl: goal is not an equation: {}", it.goal))
+        })?;
+        Ok(Thm::refl(lhs)?)
+    }
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 1, "refl")?;
+        Ok(Thm::refl(c.term(&a[0])?)?)
+    }
 }
 
-/// `(sym …)`: flip an equation (or negated equation) goal, then run the rest.
+/// `(sym …)` tactic / `(sym SUB)` rule: flip an equation (or negated equation).
 struct Sym;
 #[async_trait]
 impl Tactic for Sym {
@@ -303,9 +329,13 @@ impl Tactic for Sym {
             )))
         }
     }
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 1, "sym")?;
+        Ok(c.check(&a[0]).await?.sym()?)
+    }
 }
 
-/// `(not-intro …)`: turn a `¬p` goal into `p ⟹ ⊥`, run the rest, re-wrap.
+/// `(not-intro …)` tactic / `(not-intro SUB)` rule: introduce `¬`.
 struct NotIntro;
 #[async_trait]
 impl Tactic for NotIntro {
@@ -316,6 +346,10 @@ impl Tactic for NotIntro {
         })?;
         it.goal = HolLightCtx::new().mk_imp(p, Term::bool_lit(false));
         Ok(it.run(rest).await?.not_intro()?)
+    }
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 1, "not-intro")?;
+        Ok(c.check(&a[0]).await?.not_intro()?)
     }
 }
 
@@ -372,6 +406,14 @@ impl Tactic for Rw {
         it.goal = gprime;
         let inner = it.run(rest).await?;
         Ok(cong.sym()?.eq_mp(inner)?)
+    }
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        // `(rw EQN TARGET)` — rewrite TARGET's conclusion by the equation EQN.
+        ctx_arity(a, 2, "rw")?;
+        let eq = c.check(&a[0]).await?;
+        let tgt = c.check(&a[1]).await?;
+        let cong = rewrite_conv(tgt.concl(), &eq)?;
+        Ok(cong.eq_mp(tgt)?)
     }
 }
 

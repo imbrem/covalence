@@ -53,28 +53,50 @@ use crate::init::ext::{TermExt, ThmExt};
 // on `truth`, which `logic` provides, so it belongs here. `logic.cov` itself
 // does not use it (its proofs are explicit), so there is no re-entrancy.
 
-/// The `tauto` **tactic**: discharge the current goal if it is a trivial
-/// tautology (delegates to [`tauto`]). Registered into `logic`'s exported
-/// env via `(#register-ffi-tactic tauto)` + the `cov_theory!` `ffi-tactic`
-/// clause, so downstream theories that `(#open logic)` get it.
-pub fn tauto_tactic(
-    s: &[covalence_sexp::SExpr],
-    rest: &[covalence_sexp::SExpr],
-    it: &mut crate::script::Interp,
-) -> core::result::Result<Thm, crate::script::ScriptError> {
-    if s.len() != 1 || !rest.is_empty() {
-        return Err(crate::script::ScriptError::Syntax(
-            "tauto: expected `(tauto)` as the closing tactic".into(),
-        ));
+/// The `tauto` **inference** — a trivial-tautology decider usable in **both**
+/// proof modes (delegating to [`tauto`]): as a `#by` tactic `(tauto)` closing
+/// the current goal, and as a `#proof` rule `(tauto TERM)` proving `TERM`.
+/// Registered into `logic`'s exported env via `(#register-ffi-tactic tauto)` +
+/// the `cov_theory!` `ffi-tactic` clause, so downstream theories that
+/// `(#open logic)` get both facets. (`core` carries only the tree-mode facet —
+/// the tauto *tactic* is logic-only.)
+pub struct Tauto;
+
+#[async_trait::async_trait]
+impl crate::script::Tactic for Tauto {
+    async fn apply(
+        &self,
+        s: &[covalence_sexp::SExpr],
+        rest: &[covalence_sexp::SExpr],
+        it: &mut crate::script::Interp,
+    ) -> core::result::Result<Thm, crate::script::ScriptError> {
+        if s.len() != 1 || !rest.is_empty() {
+            return Err(crate::script::ScriptError::Syntax(
+                "tauto: expected `(tauto)` as the closing tactic".into(),
+            ));
+        }
+        Ok(tauto(it.goal())?)
     }
-    Ok(tauto(it.goal())?)
+
+    async fn rule(
+        &self,
+        a: &[covalence_sexp::SExpr],
+        c: &mut crate::script::CheckCtx<'_>,
+    ) -> core::result::Result<Thm, crate::script::ScriptError> {
+        if a.len() != 1 {
+            return Err(crate::script::ScriptError::Syntax(
+                "rule `tauto` expects 1 argument".into(),
+            ));
+        }
+        Ok(tauto(&c.term(&a[0])?)?)
+    }
 }
 
 crate::cov_theory! {
     /// Propositional lemmas loaded from `logic.cov`.
     pub mod cov from "logic.cov" {
         import "core" = crate::script::Env::core();
-        ffi-tactic "tauto" = crate::init::logic::tauto_tactic;
+        ffi-tactic "tauto" = crate::init::logic::Tauto;
         "truth"        => pub fn truth;
         "and.comm"     => pub fn and_comm;
         "or.comm"      => pub fn or_comm;

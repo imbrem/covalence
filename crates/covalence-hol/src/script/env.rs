@@ -19,7 +19,6 @@ use covalence_core::{Term, Thm, defs};
 use futures::FutureExt;
 use imbl::HashMap;
 
-use super::drv::Rule;
 use super::handle::LazyMap;
 use super::{ScriptError, tactic::Tactic};
 
@@ -40,16 +39,14 @@ pub enum ConstDef {
 /// A single namespace entry — the kinds of definition share one map. Cloning is
 /// cheap (`Arc` / `imbl`-backed kernel data).
 ///
-/// `TacticAndRule` is the one wrinkle: several names (`sym`, `refl`,
-/// `not-intro`, `rw`, …) denote **both** a goal-directed tactic *and* a
-/// tree-mode derivation rule, so a single key must carry both facets.
+/// There is **one** callable kind, [`Tactic`]: an inference usable in tactic
+/// mode (`apply`), tree mode (`rule`), or both — so a dual-mode name (`sym`,
+/// `refl`, `not-intro`, `rw`) is a single object, not two stapled together.
 #[derive(Clone)]
 enum Entry {
     Const(ConstDef),
     Lemma(Thm),
     Tactic(Arc<dyn Tactic>),
-    Rule(Arc<dyn Rule>),
-    TacticAndRule(Arc<dyn Tactic>, Arc<dyn Rule>),
 }
 
 /// A name-resolution environment — the **namespace** part of the system: one
@@ -99,17 +96,18 @@ impl Env {
             _ => None,
         }
     }
+    /// The inference bound to `name` (tactic-mode dispatch). Same object as
+    /// [`lookup_rule`](Env::lookup_rule) — modes differ, not the entry.
     pub fn lookup_tactic(&self, name: &str) -> Option<Arc<dyn Tactic>> {
         match self.entries.get_ready(name)? {
-            Entry::Tactic(t) | Entry::TacticAndRule(t, _) => Some(t),
+            Entry::Tactic(t) => Some(t),
             _ => None,
         }
     }
-    pub fn lookup_rule(&self, name: &str) -> Option<Arc<dyn Rule>> {
-        match self.entries.get_ready(name)? {
-            Entry::Rule(r) | Entry::TacticAndRule(_, r) => Some(r),
-            _ => None,
-        }
+    /// The inference bound to `name` (tree-mode dispatch). The caller invokes
+    /// its `rule` facet (which errors if the inference is tactic-only).
+    pub fn lookup_rule(&self, name: &str) -> Option<Arc<dyn Tactic>> {
+        self.lookup_tactic(name)
     }
     /// Whether `name` is bound to a lemma (ready *or* still `#compute`-ing).
     pub fn has_lemma(&self, name: &str) -> bool {
@@ -145,23 +143,15 @@ impl Env {
         .boxed();
         self.entries.insert_pending(name, fut);
     }
+    /// Register an inference (usable in tactic mode, tree mode, or both). A
+    /// dual-mode inference is registered **once**, under one name.
     pub fn register_tactic(&mut self, name: impl Into<String>, t: Arc<dyn Tactic>) {
-        let name = name.into();
-        // Combine with an existing rule of the same name (dual-mode inference).
-        let entry = match self.entries.get_ready(&name) {
-            Some(Entry::Rule(r)) | Some(Entry::TacticAndRule(_, r)) => Entry::TacticAndRule(t, r),
-            _ => Entry::Tactic(t),
-        };
-        self.entries.insert_ready(name, entry);
+        self.entries.insert_ready(name, Entry::Tactic(t));
     }
-    pub fn register_rule(&mut self, name: impl Into<String>, r: Arc<dyn Rule>) {
-        let name = name.into();
-        // Combine with an existing tactic of the same name (dual-mode inference).
-        let entry = match self.entries.get_ready(&name) {
-            Some(Entry::Tactic(t)) | Some(Entry::TacticAndRule(t, _)) => Entry::TacticAndRule(t, r),
-            _ => Entry::Rule(r),
-        };
-        self.entries.insert_ready(name, entry);
+    /// Alias of [`register_tactic`](Env::register_tactic) — an inference and a
+    /// "rule" are the same kind of object now (one [`Tactic`], two modes).
+    pub fn register_rule(&mut self, name: impl Into<String>, r: Arc<dyn Tactic>) {
+        self.register_tactic(name, r);
     }
 
     /// Merge another environment's bindings in (it shadows existing entries

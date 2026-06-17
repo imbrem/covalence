@@ -33,7 +33,7 @@ mod scope;
 mod syntax;
 mod tactic;
 
-pub use drv::{CheckCtx, Rule, check, core_rules};
+pub use drv::{CheckCtx, check, core_rules};
 pub use env::{ConstDef, Env};
 pub use scope::Scope;
 pub use syntax::{parse_term, parse_type};
@@ -785,6 +785,38 @@ mod tests {
     }
 
     #[test]
+    fn one_inference_serves_both_modes_and_errors_when_misused() {
+        // `tauto` is a single dual-mode inference: tactic mode `(tauto)` and
+        // tree mode `(tauto TERM)` are two facets of one registered object.
+        // Opening `logic` brings BOTH (core carries only the tree facet).
+        // Force logic's `ENV` lazylock *outside* `run`'s runtime first (it
+        // `block_on`s) so the in-`run` resolver call is a cheap clone.
+        let _ = crate::init::logic::cov::env();
+        let resolver = |name: &str| match name {
+            "core" => Some(Env::core()),
+            "logic" => Some(crate::init::logic::cov::env()),
+            _ => None,
+        };
+        let theory = run(
+            r#"
+            (#import core)(#open core)
+            (#import logic)(#open logic)
+            (#thm tree (#fix (p bool)) (#concl (==> p p)) (#proof (tauto (==> p p))))
+            (#thm tac  (#fix (p bool)) (#concl (==> p p)) (#by (tauto)))
+            "#,
+            resolver,
+            |_| None,
+        )
+        .expect("tauto works in both modes via logic");
+        assert_eq!(theory.thms.len(), 2);
+
+        // Using a TREE-only rule (`trans`) as a tactic hits the default
+        // "cannot be used as a `#by` tactic" error — not a silent wrong answer.
+        let misused = run_str("(#import core)(#open core)(#thm t (#concl (= 0 0)) (#by (trans)))");
+        assert!(misused.is_err(), "a rule-only inference is not a tactic");
+    }
+
+    #[test]
     fn use_qualifies_a_namespace() {
         // `(#use logic)` brings logic's exports in QUALIFIED: `and.comm`
         // becomes `logic.and.comm`. `#provide (#alias …)` re-exports everything
@@ -970,8 +1002,10 @@ mod tests {
         // that unknown heads dispatch through the `Env` rule registry.
         struct YieldId;
         #[async_trait::async_trait]
-        impl Rule for YieldId {
-            async fn apply(
+        impl Tactic for YieldId {
+            // Override only the tree-mode (`rule`) facet; `apply` defaults to
+            // the "not a tactic" error.
+            async fn rule(
                 &self,
                 args: &[SExpr],
                 ctx: &mut CheckCtx<'_>,

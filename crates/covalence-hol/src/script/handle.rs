@@ -80,6 +80,35 @@ impl LazyEnv {
             ThmHandle::Pending(f) => Some(f.clone().await),
         }
     }
+
+    /// Synchronous peek: the theorem bound to `name` **only if already ready**
+    /// (not still computing). For sync accessors over a forced theory.
+    pub fn get_ready(&self, name: &str) -> Option<Thm> {
+        match self.lemmas.get(name)? {
+            ThmHandle::Ready(t) => Some(t.clone()),
+            ThmHandle::Pending(_) => None,
+        }
+    }
+
+    /// Merge another lazy environment's bindings in (cheap — handles are
+    /// clonable; shadows existing entries of the same name).
+    pub fn merge(&mut self, other: &LazyEnv) {
+        self.lemmas
+            .extend(other.lemmas.iter().map(|(k, v)| (k.clone(), v.clone())));
+    }
+
+    /// Merge another's bindings in, each name qualified by `prefix`
+    /// (`prefix.name`), or unchanged if `prefix` is empty.
+    pub fn merge_prefixed(&mut self, other: &LazyEnv, prefix: &str) {
+        for (k, v) in &other.lemmas {
+            let key = if prefix.is_empty() {
+                k.clone()
+            } else {
+                format!("{prefix}.{k}")
+            };
+            self.lemmas.insert(key, v.clone());
+        }
+    }
 }
 
 #[cfg(test)]

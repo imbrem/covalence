@@ -13,6 +13,7 @@ use covalence_core::{Term, Thm, defs};
 use imbl::HashMap;
 
 use super::drv::Rule;
+use super::handle::LazyEnv;
 use super::{ScriptError, tactic::Tactic};
 
 type R<T> = Result<T, ScriptError>;
@@ -52,7 +53,9 @@ pub enum ConstDef {
 #[derive(Clone, Default)]
 pub struct Env {
     consts: HashMap<String, ConstDef>,
-    lemmas: HashMap<String, Thm>,
+    /// Proven lemmas — a [`LazyEnv`], so a lemma may still be **computing**
+    /// (`#compute`) and `lookup_lemma` is **async**.
+    lemmas: LazyEnv,
     tactics: HashMap<String, Arc<dyn Tactic>>,
     rules: HashMap<String, Arc<dyn Rule>>,
     imports: HashMap<String, Env>,
@@ -68,8 +71,14 @@ impl Env {
     pub fn lookup_const(&self, name: &str) -> Option<&ConstDef> {
         self.consts.get(name)
     }
-    pub fn lookup_lemma(&self, name: &str) -> Option<&Thm> {
-        self.lemmas.get(name)
+    /// Look up a lemma, **awaiting** it if it is still computing (`#compute`).
+    /// `None` if unbound; `Some(Err)` if its computation failed.
+    pub async fn lookup_lemma(&self, name: &str) -> Option<Result<Thm, ScriptError>> {
+        self.lemmas.get(name).await
+    }
+    /// Synchronous peek: the lemma only if already proved (not still computing).
+    pub fn lemma_ready(&self, name: &str) -> Option<Thm> {
+        self.lemmas.get_ready(name)
     }
     pub fn lookup_tactic(&self, name: &str) -> Option<Arc<dyn Tactic>> {
         self.tactics.get(name).cloned()
@@ -78,7 +87,7 @@ impl Env {
         self.rules.get(name).cloned()
     }
     pub fn has_lemma(&self, name: &str) -> bool {
-        self.lemmas.contains_key(name)
+        self.lemmas.contains(name)
     }
 
     // -- definitions ----------------------------------------------------
@@ -86,7 +95,15 @@ impl Env {
         self.consts.insert(name.into(), c);
     }
     pub fn define_lemma(&mut self, name: impl Into<String>, thm: Thm) {
-        self.lemmas.insert(name.into(), thm);
+        self.lemmas.insert_ready(name, thm);
+    }
+    /// Bind a lemma to a still-running `#compute` (`spawn_blocking`) task.
+    pub fn define_computing(
+        &mut self,
+        name: impl Into<String>,
+        task: tokio::task::JoinHandle<Result<Thm, ScriptError>>,
+    ) {
+        self.lemmas.insert_compute(name, task);
     }
     pub fn register_tactic(&mut self, name: impl Into<String>, t: Arc<dyn Tactic>) {
         self.tactics.insert(name.into(), t);
@@ -100,8 +117,7 @@ impl Env {
     pub fn merge(&mut self, other: &Env) {
         self.consts
             .extend(other.consts.iter().map(|(k, v)| (k.clone(), v.clone())));
-        self.lemmas
-            .extend(other.lemmas.iter().map(|(k, v)| (k.clone(), v.clone())));
+        self.lemmas.merge(&other.lemmas);
         self.tactics
             .extend(other.tactics.iter().map(|(k, v)| (k.clone(), v.clone())));
         self.rules
@@ -125,9 +141,7 @@ impl Env {
         for (k, v) in &other.consts {
             self.consts.insert(qualify(prefix, k), v.clone());
         }
-        for (k, v) in &other.lemmas {
-            self.lemmas.insert(qualify(prefix, k), v.clone());
-        }
+        self.lemmas.merge_prefixed(&other.lemmas, prefix);
         for (k, v) in &other.tactics {
             self.tactics.insert(qualify(prefix, k), v.clone());
         }

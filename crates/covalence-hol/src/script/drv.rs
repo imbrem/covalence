@@ -172,10 +172,11 @@ pub fn check<'a>(d: &'a Drv, env: &'a Env) -> BoxFuture<'a, R<Thm>> {
             Drv::Refl(t) => Thm::refl(t.clone())?,
             Drv::Assume(t) => Thm::assume(t.clone())?,
             Drv::Lem(t) => Thm::lem(t.clone())?,
+            // Await the lemma (it may still be `#compute`-ing).
             Drv::Lemma(name) => env
                 .lookup_lemma(name)
-                .cloned()
-                .ok_or_else(|| ScriptError::Unbound(format!("lemma `{name}`")))?,
+                .await
+                .ok_or_else(|| ScriptError::Unbound(format!("lemma `{name}`")))??,
             Drv::ReducePrim(t) => Thm::reduce_prim(t.clone())?,
             Drv::UnfoldTermSpec(t) => Thm::unfold_term_spec(t.clone())?,
             Drv::UnfoldAt1 { op, arg } => {

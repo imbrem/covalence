@@ -430,18 +430,21 @@ directives — is `open`-able by other scripts; the macro binds it as a
   - **Registry `Rule::apply` only takes checked sub-`Thm`s** (`&[Thm]`) — no
     `Term` args, no goal/scope access. Fine for combining rules; a richer rule
     needs the raw S-expr + a check-context (à la `Interp` for tactics).
-- **Lemma lookup is sync (boundary-await), not an async getter.** Despite async
-  `check`, `Drv::Lemma` still reads `Env::lookup_lemma` *synchronously*; a `#thm`
-  that references a still-`#compute`-ing theorem awaits it at the proof
-  *boundary* (`run_async`'s `Stmt::Thm` → `lemma_refs` + `await_computed_deps`
-  fold the `Thm` into the sync `Env`). The user wants **all environment accesses
-  async** — the proof `Env` itself a `LazyEnv` with an async `lookup_lemma` so
-  `Drv::Lemma`/`#dep` await a handle *directly*. Now tractable (check is async);
-  const lookups (the elaborator, `infer.rs`) are eager and can stay sync.
+- **Lemma lookup is async; const lookup is NOT (yet).** `Env::lemmas` is now a
+  `LazyEnv` (handle-valued) and **`Env::lookup_lemma` is `async`** — `check`'s
+  `Drv::Lemma` arm `await`s a still-`#compute`-ing lemma directly (the old
+  boundary-await `lemma_refs`/`await_computed_deps` was deleted). `#compute`
+  binds NAME to its task in the env (`define_computing`); a later `(lemma NAME)`
+  or the force just awaits it. The remaining half of **"all env accesses
+  async"** (user): **`Env::lookup_const` should also be async**, which makes the
+  **elaborator (`infer.rs`) async** (recursive `BoxFuture` + const-lookup await)
+  → `parse_term`/`parse_drv`/`elaborate_concl` async. The vision: *one async
+  task per definition* (a `const` loaded from the network, like `#compute` for a
+  theorem). The non-async `lemma_ready(name)` peek stays for the sync
+  `Theory::lemma` macro accessor (a forced theory's lemmas are all Ready).
   - **A `#compute` can't depend on another `#compute`.** Its proof runs in
     `spawn_blocking` against a *sync snapshot* of `internal`, driven by a nested
-    `block_on`, so it can't await a sibling. Only ordinary `#thm`s
-    (boundary-await) can depend on `#compute`d lemmas.
+    `block_on`, so it can't await a sibling. (Only ordinary `#thm`s can.)
   - **`#spawn`** (`tokio::spawn`, non-blocking) is the natural sibling of
     `#compute` for IO-bound / cooperative work.
 - **`Term` futures (term-level holes) not represented.** Terms are eagerly

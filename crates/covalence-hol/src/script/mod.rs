@@ -57,11 +57,13 @@ use covalence_sexp::SExpr;
 pub struct LazyTheory {
     /// The explicitly-exported public interface (`(#export …)`).
     exports: Env,
-    /// The checked theorems.
+    /// The full running environment (its `lemmas` may still be `#compute`-ing).
+    internal: Env,
+    /// The eagerly-checked theorems.
     pub thms: Vec<NamedThm>,
-    /// Theorems still *computing* on a blocking thread (`(#compute …)`),
-    /// awaited and folded into `thms` when the theory is forced.
-    computed: LazyEnv,
+    /// Names of `(#compute …)` theorems still running on a blocking thread,
+    /// awaited from `internal` and folded into `thms` when the theory is forced.
+    computed_names: Vec<String>,
 }
 
 impl LazyTheory {
@@ -76,8 +78,7 @@ impl LazyTheory {
     /// exposing one as a Rust `fn` therefore requires `(#export …)`ing it).
     pub fn lemma(&self, name: &str) -> Thm {
         self.exports
-            .lookup_lemma(name)
-            .cloned()
+            .lemma_ready(name)
             .unwrap_or_else(|| panic!("theory does not export lemma `{name}`"))
     }
 
@@ -88,17 +89,18 @@ impl LazyTheory {
     pub async fn resolve(self) -> Result<Theory, ScriptError> {
         let LazyTheory {
             exports,
+            internal,
             mut thms,
-            computed,
+            mut computed_names,
         } = self;
-        // Await the background computations, in name order for determinism.
-        let mut names: Vec<String> = computed.names().cloned().collect();
-        names.sort();
-        for name in names {
-            let thm = computed
-                .get(&name)
+        // Await the background computations (in name order for determinism),
+        // each looked up — and awaited — from the running env.
+        computed_names.sort();
+        for name in computed_names {
+            let thm = internal
+                .lookup_lemma(&name)
                 .await
-                .expect("name came from the same handle")?;
+                .expect("computed name is bound in internal")?;
             thms.push(NamedThm { name, thm });
         }
         Ok(Theory { exports, thms })
@@ -129,8 +131,7 @@ impl Theory {
     /// Look up an **exported** lemma by name (see [`LazyTheory::lemma`]).
     pub fn lemma(&self, name: &str) -> Thm {
         self.exports
-            .lookup_lemma(name)
-            .cloned()
+            .lemma_ready(name)
             .unwrap_or_else(|| panic!("theory does not export lemma `{name}`"))
     }
 }
@@ -141,8 +142,9 @@ impl From<Env> for LazyTheory {
     fn from(exports: Env) -> Self {
         LazyTheory {
             exports,
+            internal: Env::empty(),
             thms: Vec::new(),
-            computed: LazyEnv::new(),
+            computed_names: Vec::new(),
         }
     }
 }
@@ -154,8 +156,9 @@ impl From<Theory> for LazyTheory {
     fn from(t: Theory) -> Self {
         LazyTheory {
             exports: t.exports,
+            internal: Env::empty(),
             thms: t.thms,
-            computed: LazyEnv::new(),
+            computed_names: Vec::new(),
         }
     }
 }
@@ -244,7 +247,7 @@ pub async fn run_async(
     let mut internal = Env::empty();
     let mut exports = Env::empty();
     let mut thms = Vec::new();
-    let mut computed = LazyEnv::new();
+    let mut computed_names: Vec<String> = Vec::new();
     for stmt in stmts {
         match stmt {
             // The async step: await the import's future, then register its
@@ -291,22 +294,17 @@ pub async fn run_async(
                 }
             }
             Stmt::Thm(sexpr) => {
-                // Await any still-`#compute`-ing lemmas this proof references,
-                // folding them into the (synchronous) env before checking —
-                // so a proof may depend on a background computation. The await
-                // is at the proof *boundary*; the kernel replay stays sync.
-                await_computed_deps(&sexpr, &mut internal, &computed).await?;
                 let ch = syntax::list(&sexpr, "#thm")?;
+                // `check` awaits any `(lemma …)` it references that is still
+                // `#compute`-ing — lemma lookup is now async.
                 let nt = run_thm(ch, &internal).await?;
                 internal.define_lemma(nt.name.clone(), nt.thm.clone());
                 thms.push(nt);
             }
             // `(#compute NAME …)` — kick off the proof on a blocking thread
-            // (its env is the cheap-to-clone `internal` snapshot) and keep its
-            // handle; execution moves straight on to the next statement. The
-            // result is awaited when the theory is forced. (A `#compute`d
-            // theorem is not visible to later *synchronous* proofs — it lands
-            // only at resolve.)
+            // and bind NAME to the still-running task in the env. Execution
+            // moves straight on; a later proof's `(lemma NAME)` (or the force)
+            // simply **awaits** it.
             Stmt::Compute(sexpr) => {
                 let ch = syntax::list(&sexpr, "#compute")?;
                 let name = syntax::sym(&ch[1], "compute name")?.to_string();
@@ -317,18 +315,20 @@ pub async fn run_async(
                     // thread — its own runtime, not nested in the caller's.
                     block_on(run_thm(ch, &env)).map(|nt| nt.thm)
                 });
-                computed.insert_compute(name, task);
+                internal.define_computing(name.clone(), task);
+                computed_names.push(name);
             }
             // `(#export NAME …)` — build the public interface explicitly: each
-            // name is a proven lemma or an imported lemma/const/tactic.
+            // name is a proven lemma or an imported lemma/const/tactic. A lemma
+            // is **awaited** (so an exported `#compute` lands ready).
             Stmt::Export(names) => {
                 for name in names {
-                    if let Some(thm) = internal.lookup_lemma(&name) {
-                        exports.define_lemma(name, thm.clone());
-                    } else if let Some(c) = internal.lookup_const(&name) {
+                    if let Some(c) = internal.lookup_const(&name) {
                         exports.define_const(name, c.clone());
                     } else if let Some(t) = internal.lookup_tactic(&name) {
                         exports.register_tactic(name, t);
+                    } else if let Some(thm) = internal.lookup_lemma(&name).await {
+                        exports.define_lemma(name, thm?);
                     } else {
                         return Err(ScriptError::Unbound(format!(
                             "#export: nothing named `{name}` to export"
@@ -340,45 +340,13 @@ pub async fn run_async(
     }
     Ok(LazyTheory {
         exports,
+        internal,
         thms,
-        computed,
+        computed_names,
     })
 }
 
 /// Await every `(lemma NAME)` reference in `sexpr` that is still
-/// `#compute`-ing (present in `computed`, not yet in `internal`), folding each
-/// resolved theorem into `internal` so the synchronous check finds it ready.
-async fn await_computed_deps(
-    sexpr: &SExpr,
-    internal: &mut Env,
-    computed: &LazyEnv,
-) -> Result<(), ScriptError> {
-    let mut refs = Vec::new();
-    lemma_refs(sexpr, &mut refs);
-    for name in refs {
-        if !internal.has_lemma(&name) && computed.contains(&name) {
-            let thm = computed.get(&name).await.expect("contains ⇒ Some")?;
-            internal.define_lemma(name, thm);
-        }
-    }
-    Ok(())
-}
-
-/// Collect the names of every `(lemma NAME)` appearing anywhere in `s`.
-fn lemma_refs(s: &SExpr, out: &mut Vec<String>) {
-    if let covalence_sexp::SExp::List(ch) = s {
-        if ch.first().and_then(|h| h.as_symbol()) == Some("lemma") {
-            if let Some(name) = ch.get(1).and_then(|x| x.as_symbol()) {
-                out.push(name.to_string());
-            }
-            return;
-        }
-        for c in ch {
-            lemma_refs(c, out);
-        }
-    }
-}
-
 /// Fetch an imported namespace's environment, erroring if it was never
 /// `(#import …)`ed.
 fn imported(internal: &Env, name: &str) -> Result<Env, ScriptError> {
@@ -936,9 +904,9 @@ mod tests {
 
     #[test]
     fn a_proof_awaits_a_computed_lemma() {
-        // A later `#thm` references a `#compute`d theorem via `(lemma …)` — its
-        // proof awaits the background computation (at the proof boundary)
-        // before the synchronous check runs, so `#compute`d lemmas ARE usable
+        // A later `#thm` references a `#compute`d theorem via `(lemma …)`:
+        // `check`'s `Drv::Lemma` arm now AWAITS the still-computing lemma
+        // directly (lemma lookup is async), so `#compute`d lemmas are usable
         // by later proofs.
         let theory = run(
             r#"

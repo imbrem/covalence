@@ -34,7 +34,7 @@ mod tactic;
 
 pub use drv::{Drv, Rule, check, parse_drv};
 pub use env::{ConstDef, Env};
-pub use handle::LazyEnv;
+pub use handle::{Lazy, LazyMap, LazyThm};
 pub use scope::Scope;
 pub use syntax::{parse_term, parse_type};
 pub use tactic::{Interp, Tactic};

@@ -1,12 +1,13 @@
-//! [`LazyEnv`] — an **in-progress** environment whose theorem bindings may
-//! still be computing. Each binding is a [`ThmHandle`]: a ready `Thm`, or a
-//! future (e.g. a `#compute` running on a blocking thread). The Ready/Pending
-//! representation is **encapsulated** — callers only ever use the async
-//! getters, so an entry that is still running is awaited transparently.
+//! Lazy environment values — a value is either **ready**, or still being
+//! **computed** (a shared future). [`Lazy<T>`] is the value; [`LazyMap<T>`] is
+//! a name→`Lazy<T>` store with **async** getters (the Ready/Pending split is
+//! encapsulated — a caller just `get(name).await`s and a still-running entry is
+//! awaited transparently).
 //!
-//! This is the seed of the async-prover env: when a theorem *yields* (a
-//! long-running `#compute`/observer), its handle goes here and the next
-//! statement proceeds; a later reference simply awaits it.
+//! This is the future-holding backing of an [`super::Env`]: today its `lemmas`
+//! (a `LazyMap<Thm>` populated by `#compute`); the goal is for every env map
+//! (consts, lemmas, tactics, rules) to be a `LazyMap`, so **all** lookups are
+//! async — "one async task per definition", just like one per theorem.
 
 use covalence_core::Thm;
 use futures::FutureExt;
@@ -14,44 +15,56 @@ use futures::future::{BoxFuture, Shared};
 
 use super::ScriptError;
 
-/// A handle to a theorem: already proved, or still being computed (a shared
-/// future, so several consumers can await the same computation).
+/// A lazily-computed value: ready, or still being computed. The pending future
+/// is `Shared`, so several consumers can await the same computation.
 #[derive(Clone)]
-enum ThmHandle {
-    Ready(Thm),
-    Pending(Shared<BoxFuture<'static, Result<Thm, ScriptError>>>),
+pub enum Lazy<T: Clone> {
+    Ready(T),
+    Pending(Shared<BoxFuture<'static, Result<T, ScriptError>>>),
 }
 
-/// An in-progress environment of theorem handles. Cloning is cheap (an `imbl`
-/// persistent map of clonable handles); the Ready/Pending split is private.
-#[derive(Clone, Default)]
-pub struct LazyEnv {
-    lemmas: imbl::HashMap<String, ThmHandle>,
+/// A lazily-computed theorem (a `#compute`-ing or proved lemma).
+pub type LazyThm = Lazy<Thm>;
+
+/// A name→[`Lazy<T>`] map with async getters. Cloning is cheap (an `imbl`
+/// persistent map of clonable handles). The bound `T: Clone + Send + Sync +
+/// 'static` is what `Shared`/`spawn_blocking` need.
+#[derive(Clone)]
+pub struct LazyMap<T: Clone> {
+    entries: imbl::HashMap<String, Lazy<T>>,
 }
 
-impl LazyEnv {
-    /// An empty handle environment.
+impl<T: Clone> Default for LazyMap<T> {
+    fn default() -> Self {
+        LazyMap {
+            entries: imbl::HashMap::new(),
+        }
+    }
+}
+
+impl<T: Clone + Send + Sync + 'static> LazyMap<T> {
+    /// An empty map.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Whether this environment binds nothing.
+    /// Whether this map binds nothing.
     pub fn is_empty(&self) -> bool {
-        self.lemmas.is_empty()
+        self.entries.is_empty()
     }
 
-    /// Bind `name` to an already-proved theorem.
-    pub fn insert_ready(&mut self, name: impl Into<String>, thm: Thm) {
-        self.lemmas.insert(name.into(), ThmHandle::Ready(thm));
+    /// Bind `name` to an already-available value.
+    pub fn insert_ready(&mut self, name: impl Into<String>, value: T) {
+        self.entries.insert(name.into(), Lazy::Ready(value));
     }
 
-    /// Bind `name` to a computation running on a blocking thread (a `#compute`
-    /// / `spawn_blocking` task). The binding is *pending* until the task
-    /// finishes; [`LazyEnv::get`] awaits it.
+    /// Bind `name` to a value being computed on a blocking thread (a
+    /// `#compute` / `spawn_blocking` task). The binding is *pending* until the
+    /// task finishes; [`LazyMap::get`] awaits it.
     pub fn insert_compute(
         &mut self,
         name: impl Into<String>,
-        task: tokio::task::JoinHandle<Result<Thm, ScriptError>>,
+        task: tokio::task::JoinHandle<Result<T, ScriptError>>,
     ) {
         let fut = async move {
             task.await
@@ -59,54 +72,53 @@ impl LazyEnv {
         }
         .boxed()
         .shared();
-        self.lemmas.insert(name.into(), ThmHandle::Pending(fut));
+        self.entries.insert(name.into(), Lazy::Pending(fut));
     }
 
     /// Whether `name` is bound (ready or pending).
     pub fn contains(&self, name: &str) -> bool {
-        self.lemmas.contains_key(name)
+        self.entries.contains_key(name)
     }
 
     /// The bound names, in arbitrary order.
     pub fn names(&self) -> impl Iterator<Item = &String> {
-        self.lemmas.keys()
+        self.entries.keys()
     }
 
-    /// **Async getter:** the theorem bound to `name`, awaiting its computation
-    /// if still pending. `None` if `name` is unbound.
-    pub async fn get(&self, name: &str) -> Option<Result<Thm, ScriptError>> {
-        match self.lemmas.get(name)? {
-            ThmHandle::Ready(t) => Some(Ok(t.clone())),
-            ThmHandle::Pending(f) => Some(f.clone().await),
+    /// **Async getter:** the value bound to `name`, awaiting its computation if
+    /// still pending. `None` if `name` is unbound.
+    pub async fn get(&self, name: &str) -> Option<Result<T, ScriptError>> {
+        match self.entries.get(name)? {
+            Lazy::Ready(t) => Some(Ok(t.clone())),
+            Lazy::Pending(f) => Some(f.clone().await),
         }
     }
 
-    /// Synchronous peek: the theorem bound to `name` **only if already ready**
-    /// (not still computing). For sync accessors over a forced theory.
-    pub fn get_ready(&self, name: &str) -> Option<Thm> {
-        match self.lemmas.get(name)? {
-            ThmHandle::Ready(t) => Some(t.clone()),
-            ThmHandle::Pending(_) => None,
+    /// Synchronous peek: the value bound to `name` **only if already ready**.
+    pub fn get_ready(&self, name: &str) -> Option<T> {
+        match self.entries.get(name)? {
+            Lazy::Ready(t) => Some(t.clone()),
+            Lazy::Pending(_) => None,
         }
     }
 
-    /// Merge another lazy environment's bindings in (cheap — handles are
-    /// clonable; shadows existing entries of the same name).
-    pub fn merge(&mut self, other: &LazyEnv) {
-        self.lemmas
-            .extend(other.lemmas.iter().map(|(k, v)| (k.clone(), v.clone())));
+    /// Merge another map's bindings in (cheap — handles are clonable; shadows
+    /// existing entries of the same name).
+    pub fn merge(&mut self, other: &LazyMap<T>) {
+        self.entries
+            .extend(other.entries.iter().map(|(k, v)| (k.clone(), v.clone())));
     }
 
     /// Merge another's bindings in, each name qualified by `prefix`
     /// (`prefix.name`), or unchanged if `prefix` is empty.
-    pub fn merge_prefixed(&mut self, other: &LazyEnv, prefix: &str) {
-        for (k, v) in &other.lemmas {
+    pub fn merge_prefixed(&mut self, other: &LazyMap<T>, prefix: &str) {
+        for (k, v) in &other.entries {
             let key = if prefix.is_empty() {
                 k.clone()
             } else {
                 format!("{prefix}.{k}")
             };
-            self.lemmas.insert(key, v.clone());
+            self.entries.insert(key, v.clone());
         }
     }
 }
@@ -130,10 +142,11 @@ mod tests {
     #[test]
     fn ready_binding_is_returned_directly() {
         rt().block_on(async {
-            let mut e = LazyEnv::new();
+            let mut e: LazyMap<Thm> = LazyMap::new();
             assert!(e.is_empty());
             e.insert_ready("x", refl0());
             assert!(e.contains("x"));
+            assert_eq!(e.get_ready("x").unwrap().concl(), refl0().concl());
             let thm = e.get("x").await.unwrap().unwrap();
             assert_eq!(thm.concl(), refl0().concl());
             assert!(e.get("missing").await.is_none());
@@ -143,11 +156,12 @@ mod tests {
     #[test]
     fn pending_compute_is_awaited_transparently() {
         rt().block_on(async {
-            let mut e = LazyEnv::new();
+            let mut e: LazyMap<Thm> = LazyMap::new();
             // A computation on a blocking thread — the getter awaits it.
             let task = tokio::task::spawn_blocking(|| Ok(refl0()));
             e.insert_compute("y", task);
             assert!(e.contains("y"));
+            assert!(e.get_ready("y").is_none(), "pending until awaited");
             let thm = e.get("y").await.unwrap().unwrap();
             assert_eq!(thm.concl(), refl0().concl());
             // The shared future is multi-await: a second get still resolves.
@@ -159,7 +173,7 @@ mod tests {
     #[test]
     fn compute_error_propagates_through_the_getter() {
         rt().block_on(async {
-            let mut e = LazyEnv::new();
+            let mut e: LazyMap<Thm> = LazyMap::new();
             let task = tokio::task::spawn_blocking(|| Err(ScriptError::Syntax("boom".into())));
             e.insert_compute("bad", task);
             let err = e.get("bad").await.unwrap().unwrap_err();

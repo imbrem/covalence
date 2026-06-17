@@ -13,7 +13,7 @@ use covalence_core::{Term, Thm, defs};
 use imbl::HashMap;
 
 use super::drv::Rule;
-use super::handle::LazyEnv;
+use super::handle::LazyMap;
 use super::{ScriptError, tactic::Tactic};
 
 type R<T> = Result<T, ScriptError>;
@@ -53,9 +53,9 @@ pub enum ConstDef {
 #[derive(Clone, Default)]
 pub struct Env {
     consts: HashMap<String, ConstDef>,
-    /// Proven lemmas — a [`LazyEnv`], so a lemma may still be **computing**
+    /// Proven lemmas — a [`LazyMap`], so a lemma may still be **computing**
     /// (`#compute`) and `lookup_lemma` is **async**.
-    lemmas: LazyEnv,
+    lemmas: LazyMap<Thm>,
     tactics: HashMap<String, Arc<dyn Tactic>>,
     rules: HashMap<String, Arc<dyn Rule>>,
     imports: HashMap<String, Env>,

@@ -838,6 +838,76 @@
               (or-intro-r (nat.lt a b)
                 (or-intro-l (nat.lt b a) (sym (assume (= b a))))))))))))
 
+;; ⊢ ∀a b c d. (a < b) ⟹ (c < d) ⟹ (a + c < b + d).  Add two strict
+;; inequalities: a+c < b+c (lt_add_mono_r), b+c < b+d (commuted), then lt_trans.
+(#thm add_lt_add
+  (#concl (forall (a nat) (forall (b nat) (forall (c nat) (forall (d nat)
+            (==> (nat.lt a b)
+              (==> (nat.lt c d) (nat.lt (nat.add a c) (nat.add b d)))))))))
+  (#by
+    (intro a b c d h1 h2)
+    (derive
+      (imp-elim
+        (imp-elim
+          (all-elim (nat.add b d)
+            (all-elim (nat.add b c)
+              (all-elim (nat.add a c) (lemma lt_trans))))
+          (eq-mp (sym (all-elim c (all-elim b (all-elim a (lemma lt_add_mono_r)))))
+                 (assume (nat.lt a b))))
+        (eq-mp
+          (mk-comb
+            (mk-comb (refl nat.lt) (all-elim b (all-elim c (lemma add_comm))))
+            (all-elim b (all-elim d (lemma add_comm))))
+          (eq-mp (sym (all-elim b (all-elim d (all-elim c (lemma lt_add_mono_r)))))
+                 (assume (nat.lt c d))))))))
+
+;; ⊢ ∀p q r s. (p + s = r + q) ⟹ (p < q) = (r < s).  A strict comparison
+;; depends only on the cross-sum (both sides reduce to `r+q < q+s`).  The
+;; well-definedness the `int`/Grothendieck order rests on.
+(#thm lt_cross
+  (#concl (forall (p nat) (forall (q nat) (forall (r nat) (forall (s nat)
+            (==> (= (nat.add p s) (nat.add r q))
+              (= (nat.lt p q) (nat.lt r s))))))))
+  (#by
+    (intro p q r s h)
+    (derive
+      (trans
+        ;; (p<q) = (r+q < q+s)
+        (trans
+          (sym (all-elim s (all-elim q (all-elim p (lemma lt_add_mono_r)))))
+          (mk-comb
+            (mk-comb (refl nat.lt) (assume (= (nat.add p s) (nat.add r q))))
+            (refl (nat.add q s))))
+        (sym
+          ;; (r<s) = (r+q < q+s)
+          (trans
+            (sym (all-elim q (all-elim s (all-elim r (lemma lt_add_mono_r)))))
+            (mk-comb
+              (mk-comb (refl nat.lt) (refl (nat.add r q)))
+              (all-elim q (all-elim s (lemma add_comm))))))))))
+
+;; ⊢ ∀p q r s. (p + s = r + q) ⟹ (p ≤ q) = (r ≤ s).  The `≤` mirror of
+;; lt_cross (via le_add_cancel_r); both sides reduce to `r+q ≤ q+s`.
+(#thm le_cross
+  (#concl (forall (p nat) (forall (q nat) (forall (r nat) (forall (s nat)
+            (==> (= (nat.add p s) (nat.add r q))
+              (= (nat.le p q) (nat.le r s))))))))
+  (#by
+    (intro p q r s h)
+    (derive
+      (trans
+        (trans
+          (sym (all-elim s (all-elim q (all-elim p (lemma le_add_cancel_r)))))
+          (mk-comb
+            (mk-comb (refl nat.le) (assume (= (nat.add p s) (nat.add r q))))
+            (refl (nat.add q s))))
+        (sym
+          (trans
+            (sym (all-elim q (all-elim s (all-elim r (lemma le_add_cancel_r)))))
+            (mk-comb
+              (mk-comb (refl nat.le) (refl (nat.add r q)))
+              (all-elim q (all-elim s (lemma add_comm))))))))))
+
 (#export succ_ne_zero succ_cong_ne rec_zero rec_succ eq_refl
          add_zero add_succ add_comm add_assoc add_cancel
          add_swap_mid
@@ -849,4 +919,5 @@
          le_succ_self le_total lt_iff_succ_le le_add_r
          le_zero_iff le_antisym le_add_sub le_trans
          lt_imp_le lt_trans le_add_cancel_r lt_add_mono_r
-         le_iff_lt_or_eq lt_trichotomy)
+         le_iff_lt_or_eq lt_trichotomy
+         add_lt_add lt_cross le_cross)

@@ -207,6 +207,11 @@ crate::cov_theory! {
         "le_succ_self" => pub fn le_succ_self_cov;
         "le_total"     => pub fn le_total_cov;
         "lt_iff_succ_le" => pub fn lt_iff_succ_le_cov;
+        "le_add_r"     => pub fn le_add_r_cov;
+        "le_zero_iff"  => pub fn le_zero_iff_cov;
+        "le_antisym"   => pub fn le_antisym_cov;
+        "le_add_sub"   => pub fn le_add_sub_cov;
+        "le_trans"     => pub fn le_trans_cov;
     }
 }
 
@@ -2938,6 +2943,14 @@ mod cov_tests {
             cov::lt_iff_succ_le_cov().concl(),
             super::lt_iff_succ_le().concl()
         );
+        assert_eq!(cov::le_add_r_cov().concl(), super::le_add_r().concl());
+        assert_eq!(
+            cov::le_zero_iff_cov().concl(),
+            super::le_zero_iff().unwrap().concl()
+        );
+        assert_eq!(cov::le_antisym_cov().concl(), super::le_antisym().concl());
+        assert_eq!(cov::le_add_sub_cov().concl(), super::le_add_sub().concl());
+        assert_eq!(cov::le_trans_cov().concl(), super::le_trans().concl());
     }
 
     #[test]

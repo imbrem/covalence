@@ -2,9 +2,12 @@
 ;;
 ;; The `natrec` env imports the nat primitives as given (proved in Rust in
 ;; init/rs for now): `succ_inj` (∀m n. S m = S n ⟹ m = n), `zero_ne_succ`
-;; (∀n. ¬(0 = S n)), and `rec_holds` (the natRec recursion equations). We
-;; build the freeness corollaries, the recursion-equation projections, and a
-;; sample induction on top.
+;; (∀n. ¬(0 = S n)), `rec_holds` (the natRec recursion equations), and the
+;; `+`/`*`/`pred`/`-` recursion equations + `≤`/`<` defining clauses.  On top
+;; we build: the freeness corollaries, the FULL commutative semiring
+;; (add/mul/sub), and the `≤`/`<` ORDER THEORY — reflexivity, the successor
+;; clauses, totality, antisymmetry, the `<`↔`S·≤` bridge, and transitivity (via
+;; the additive characterisation `a ≤ b ⟹ a+(b-a)=b`).
 
 (#import core)
 (#open core)
@@ -535,6 +538,145 @@
                     (assume (forall (b nat) (= (nat.lt a b) (nat.le (succ a) b)))))
                   (sym (all-elim b (all-elim (succ a) (lemma le_succ_succ)))))))))))))
 
+;; ============================================================================
+;; The additive theory of `≤` — `le_add_r`, `le_add_sub`, and transitivity.
+;; ============================================================================
+
+;; ⊢ ∀a k. a ≤ a + k.  Adding on the right never decreases.  Induction on a:
+;; base `0 ≤ 0+k` from le_zero; step rewrites `S a ≤ S a + k` (via succ_add then
+;; le_succ_succ) down to the IH `a ≤ a + k`.
+(#thm le_add_r
+  (#concl (forall (a nat) (forall (k nat) (nat.le a (nat.add a k)))))
+  (#by
+    (induct a
+      (#by (intro k) (derive (all-elim (nat.add 0 k) (lemma le_zero))))
+      (#by
+        (intro k)
+        (rw (all-elim k (all-elim a (lemma succ_add))))
+        (rw (all-elim (nat.add a k) (all-elim a (lemma le_succ_succ))))
+        (derive (all-elim k (assume (forall (k nat) (nat.le a (nat.add a k))))))))))
+
+;; ⊢ ∀b. (b ≤ 0) ⟹ (b = 0).  Zero is the least element strictly.  Induction:
+;; base trivial (`refl`); the step's antecedent `S b ≤ 0` is false
+;; (not_succ_le_zero), so `false-elim` closes it.
+(#thm le_zero_iff
+  (#concl (forall (b nat) (==> (nat.le b 0) (= b 0))))
+  (#by
+    (induct b
+      (#by (intro h) (refl))
+      (#by
+        (intro h)
+        (derive
+          (false-elim (= (succ b) 0)
+            (not-elim (all-elim b (lemma not_succ_le_zero))
+                      (assume (nat.le (succ b) 0)))))))))
+
+;; ⊢ ∀a b. (a ≤ b) ⟹ (b ≤ a) ⟹ (a = b).  Antisymmetry of `≤`, double
+;; induction.  Base flips `le_zero_iff`; the inner step cancels successors via
+;; `le_succ_succ`, applies the OUTER IH at b to get `a = b`, then lifts to
+;; `S a = S b` with `cong-arg succ`.
+(#thm le_antisym
+  (#concl
+    (forall (a nat) (forall (b nat)
+      (==> (nat.le a b) (==> (nat.le b a) (= a b))))))
+  (#by
+    (induct a
+      ;; base a=0: ∀b. (0≤b) ⟹ (b≤0) ⟹ (0=b).
+      (#by
+        (intro b h1 h2)
+        (sym)
+        (derive (imp-elim (all-elim b (lemma le_zero_iff)) (assume (nat.le b 0)))))
+      ;; step: ih ∀b.(a≤b)⟹(b≤a)⟹(a=b) ⊢ ∀b. (Sa≤b)⟹(b≤Sa)⟹(Sa=b).
+      (#by
+        (induct b
+          ;; inner base b=0: antecedent `S a ≤ 0` is false.
+          (#by
+            (intro h1)
+            (derive
+              (false-elim (==> (nat.le 0 (succ a)) (= (succ a) 0))
+                (not-elim (all-elim a (lemma not_succ_le_zero))
+                          (assume (nat.le (succ a) 0))))))
+          ;; inner step b=S b': cancel successors, apply the outer IH at b.
+          (#by
+            (intro h1 h2)
+            (derive
+              (cong-arg succ
+                (imp-elim
+                  (imp-elim
+                    (all-elim b
+                      (assume (forall (b nat)
+                        (==> (nat.le a b) (==> (nat.le b a) (= a b))))))
+                    (eq-mp (all-elim b (all-elim a (lemma le_succ_succ)))
+                           (assume (nat.le (succ a) (succ b)))))
+                  (eq-mp (all-elim a (all-elim b (lemma le_succ_succ)))
+                         (assume (nat.le (succ b) (succ a)))))))))))))
+
+;; ⊢ ∀a b. (a ≤ b) ⟹ a + (b - a) = b.  `≤` lets subtraction undo addition.
+;; Double induction.  Base uses zero_add + sub_zero; the inner step cancels a
+;; successor on each side (succ_sub / succ_add) and applies the outer IH at b.
+(#thm le_add_sub
+  (#concl
+    (forall (a nat) (forall (b nat)
+      (==> (nat.le a b) (= (nat.add a (nat.sub b a)) b)))))
+  (#by
+    (induct a
+      ;; base a=0: ∀b. (0≤b) ⟹ 0+(b-0) = b.
+      (#by
+        (intro b h)
+        (derive (trans (all-elim (nat.sub b 0) (lemma zero_add))
+                       (all-elim b (lemma sub_zero)))))
+      ;; step: ih ∀b.(a≤b)⟹a+(b-a)=b ⊢ ∀b. (Sa≤b) ⟹ Sa+(b-Sa) = b.
+      (#by
+        (induct b
+          ;; inner base b=0: antecedent `S a ≤ 0` is false.
+          (#by
+            (intro h1)
+            (derive
+              (false-elim (= (nat.add (succ a) (nat.sub 0 (succ a))) 0)
+                (not-elim (all-elim a (lemma not_succ_le_zero))
+                          (assume (nat.le (succ a) 0))))))
+          ;; inner step b=S b': Sa+(Sb-Sa) = Sa+(b-a) = S(a+(b-a)) = S b.
+          (#by
+            (intro h1)
+            (derive
+              (trans
+                (cong-arg (nat.add (succ a))
+                  (all-elim a (all-elim b (lemma succ_sub))))
+                (trans
+                  (all-elim (nat.sub b a) (all-elim a (lemma succ_add)))
+                  (cong-arg succ
+                    (imp-elim
+                      (all-elim b
+                        (assume (forall (b nat)
+                          (==> (nat.le a b) (= (nat.add a (nat.sub b a)) b)))))
+                      (eq-mp (all-elim b (all-elim a (lemma le_succ_succ)))
+                             (assume (nat.le (succ a) (succ b)))))))))))))))
+
+;; ⊢ ∀a b c. (a ≤ b) ⟹ (b ≤ c) ⟹ (a ≤ c).  Transitivity (no induction).
+;; `le_add_sub` gives a+(b-a)=b and b+(c-b)=c, so a+((b-a)+(c-b))=c by
+;; `add_assoc`; `le_add_r` provides a ≤ a+((b-a)+(c-b)), rewritten to a ≤ c.
+(#thm le_trans
+  (#concl (forall (a nat) (forall (b nat) (forall (c nat)
+            (==> (nat.le a b) (==> (nat.le b c) (nat.le a c)))))))
+  (#by
+    (intro a b c h1 h2)
+    (derive
+      (eq-mp
+        (mk-comb
+          (mk-comb (refl nat.le) (refl a))
+          (trans
+            (sym (all-elim (nat.sub c b)
+                   (all-elim (nat.sub b a) (all-elim a (lemma add_assoc)))))
+            (trans
+              (cong-fn (nat.sub c b)
+                (cong-arg nat.add
+                  (imp-elim (all-elim b (all-elim a (lemma le_add_sub)))
+                            (assume (nat.le a b)))))
+              (imp-elim (all-elim c (all-elim b (lemma le_add_sub)))
+                        (assume (nat.le b c))))))
+        (all-elim (nat.add (nat.sub b a) (nat.sub c b))
+                  (all-elim a (lemma le_add_r)))))))
+
 (#export succ_ne_zero succ_cong_ne rec_zero rec_succ eq_refl
          add_zero add_succ add_comm add_assoc add_cancel
          add_swap_mid
@@ -543,4 +685,5 @@
          zero_sub succ_sub
          le_succ_succ lt_succ_succ le_zero zero_lt_succ
          le_refl not_succ_le_zero not_lt_zero lt_irrefl
-         le_succ_self le_total lt_iff_succ_le)
+         le_succ_self le_total lt_iff_succ_le le_add_r
+         le_zero_iff le_antisym le_add_sub le_trans)

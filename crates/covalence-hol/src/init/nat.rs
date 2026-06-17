@@ -49,7 +49,7 @@
 //!   [`le_add_r`] (`a ≤ a + k`) and [`le_add_sub`]
 //!   (`a ≤ b ⟹ a + (b - a) = b`), making `≤` a full linear order.
 
-use covalence_core::{Result, Term, Thm, Type, defs, subst};
+use covalence_core::{Error, Result, Term, Thm, Type, defs, subst};
 use covalence_types::Nat;
 
 use crate::init::eq::{beta_expand, beta_nf_concl, beta_reduce};
@@ -1777,6 +1777,625 @@ cached_thm! {
     }
 }
 
+// ============================================================================
+// Strict order `<` — the facts the `int` ordered-ring axioms lift through the
+// Grothendieck quotient: `lt` transitivity, `≤`/`<` add-cancellation and
+// add-monotonicity, the `≤ = < ∨ =` bridge, and trichotomy.
+// ============================================================================
+
+/// `⊢ n + 1 = S n` — fold the `1` literal into a successor.
+pub fn add_one_succ(n: &Term) -> Result<Thm> {
+    let one_is_s0 = succ(zero()).reduce()?.sym()?; // 1 = S 0
+    one_is_s0
+        .cong_arg(Term::app(nat_add(), n.clone()))? // n+1 = n+S0
+        .trans(add_succ_r().all_elim(n.clone())?.all_elim(zero())?)? // = S(n+0)
+        .trans(add_zero().all_elim(n.clone())?.cong_arg(nat_succ())?) // = S n
+}
+
+cached_thm! {
+    /// `⊢ ∀n. n ≤ S n`.
+    pub fn le_succ_self() -> Result<Thm> {
+        let n = var("n");
+        let one = Term::nat_lit(1u32);
+        le_add_r()
+            .all_elim(n.clone())?
+            .all_elim(one)? // n ≤ n+1
+            .rewrite(&add_one_succ(&n)?)? // n ≤ S n
+            .all_intro("n", nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. (a < b) ⟹ (a ≤ b)`.
+    pub fn lt_imp_le() -> Result<Thm> {
+        let (a, b) = (var("a"), var("b"));
+        let hab = lt_t(a.clone(), b.clone());
+        // a<b ⟹ Sa≤b ; a≤Sa ; le_trans a Sa b.
+        let sa_le_b = lt_iff_succ_le()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .eq_mp(Thm::assume(hab.clone())?)?; // {a<b} ⊢ Sa ≤ b
+        let a_le_sa = le_succ_self().all_elim(a.clone())?; // a ≤ Sa
+        let a_le_b = le_trans()
+            .all_elim(a.clone())?
+            .all_elim(succ(a.clone()))?
+            .all_elim(b.clone())?
+            .imp_elim(a_le_sa)?
+            .imp_elim(sa_le_b)?; // {a<b} ⊢ a ≤ b
+        a_le_b
+            .imp_intro(&hab)?
+            .all_intro("b", nat())?
+            .all_intro("a", nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a b c. (a + c ≤ b + c) = (a ≤ b)` — adding a common summand is an
+    /// order equivalence (induction on `c`, peeling successors).
+    pub fn le_add_cancel_r() -> Result<Thm> {
+        let (a, b) = (var("a"), var("b"));
+        let body_at = |t: &Term| -> Result<Term> {
+            le_t(add(a.clone(), t.clone()), add(b.clone(), t.clone()))
+                .equals(le_t(a.clone(), b.clone()))
+        };
+        let motive = Term::abs(nat(), subst::close(&body_at(&var("c"))?, "c"));
+        // base c=0: (a+0 ≤ b+0) = (a ≤ b).
+        let base = Thm::refl(nat_le())?
+            .cong_app(add_zero().all_elim(a.clone())?)?
+            .cong_app(add_zero().all_elim(b.clone())?)?;
+        // step: body[c] ⟹ body[S c].
+        let c = var("c");
+        let ihc = body_at(&c)?;
+        let inner = {
+            let asr = add_succ_r().all_elim(a.clone())?.all_elim(c.clone())?; // a+Sc = S(a+c)
+            let bsr = add_succ_r().all_elim(b.clone())?.all_elim(c.clone())?; // b+Sc = S(b+c)
+            let e1 = Thm::refl(nat_le())?.cong_app(asr)?.cong_app(bsr)?; // (a+Sc≤b+Sc) = (S(a+c)≤S(b+c))
+            let e2 = le_succ_succ()
+                .all_elim(add(a.clone(), c.clone()))?
+                .all_elim(add(b.clone(), c.clone()))?; // = (a+c≤b+c)
+            e1.trans(e2)?.trans(Thm::assume(ihc.clone())?)?.imp_intro(&ihc)?
+        };
+        induct_on("c", &motive, base, inner)?
+            .all_intro("b", nat())?
+            .all_intro("a", nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a b c. (a + c < b + c) = (a < b)` — `<` add-monotonicity.
+    pub fn lt_add_mono_r() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        // (a+c<b+c) = (S(a+c)≤b+c) = (Sa+c≤b+c) = (Sa≤b) = (a<b).
+        let e1 = lt_iff_succ_le()
+            .all_elim(add(a.clone(), c.clone()))?
+            .all_elim(add(b.clone(), c.clone()))?;
+        let astep = add_step().all_elim(a.clone())?.all_elim(c.clone())?; // Sa+c = S(a+c)
+        let e2 = Thm::refl(nat_le())?
+            .cong_app(astep.sym()?)?
+            .cong_fn(add(b.clone(), c.clone()))?; // (S(a+c)≤b+c) = (Sa+c≤b+c)
+        let e3 = le_add_cancel_r()
+            .all_elim(succ(a.clone()))?
+            .all_elim(b.clone())?
+            .all_elim(c.clone())?; // = (Sa≤b)
+        let e4 = lt_iff_succ_le()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .sym()?; // (Sa≤b) = (a<b)
+        e1.trans(e2)?
+            .trans(e3)?
+            .trans(e4)?
+            .all_intro("c", nat())?
+            .all_intro("b", nat())?
+            .all_intro("a", nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a b c. (a < b) ⟹ (b < c) ⟹ (a < c)` — transitivity of `<`.
+    pub fn lt_trans() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let (hab, hbc) = (lt_t(a.clone(), b.clone()), lt_t(b.clone(), c.clone()));
+        let sa_le_b = lt_iff_succ_le()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .eq_mp(Thm::assume(hab.clone())?)?; // {a<b} ⊢ Sa ≤ b
+        let b_le_c = lt_imp_le()
+            .all_elim(b.clone())?
+            .all_elim(c.clone())?
+            .imp_elim(Thm::assume(hbc.clone())?)?; // {b<c} ⊢ b ≤ c
+        let sa_le_c = le_trans()
+            .all_elim(succ(a.clone()))?
+            .all_elim(b.clone())?
+            .all_elim(c.clone())?
+            .imp_elim(sa_le_b)?
+            .imp_elim(b_le_c)?; // Sa ≤ c
+        lt_iff_succ_le()
+            .all_elim(a.clone())?
+            .all_elim(c.clone())?
+            .sym()?
+            .eq_mp(sa_le_c)? // a < c
+            .imp_intro(&hbc)?
+            .imp_intro(&hab)?
+            .all_intro("c", nat())?
+            .all_intro("b", nat())?
+            .all_intro("a", nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a b c d. (a < b) ⟹ (c < d) ⟹ (a + c < b + d)` — add two strict
+    /// inequalities (`lt_add_mono_r` on each side, bridged by `lt_trans`).
+    pub fn add_lt_add() -> Result<Thm> {
+        let (a, b, c, d) = (var("a"), var("b"), var("c"), var("d"));
+        let (hab, hcd) = (lt_t(a.clone(), b.clone()), lt_t(c.clone(), d.clone()));
+        // a+c < b+c.
+        let ac_lt_bc = lt_add_mono_r()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .all_elim(c.clone())?
+            .sym()?
+            .eq_mp(Thm::assume(hab.clone())?)?;
+        // c+b < d+b, then commute to b+c < b+d.
+        let bc_lt_bd = lt_add_mono_r()
+            .all_elim(c.clone())?
+            .all_elim(d.clone())?
+            .all_elim(b.clone())?
+            .sym()?
+            .eq_mp(Thm::assume(hcd.clone())?)? // c+b < d+b
+            .rewrite(&add_comm().all_elim(c.clone())?.all_elim(b.clone())?)? // b+c < d+b
+            .rewrite(&add_comm().all_elim(d.clone())?.all_elim(b.clone())?)?; // b+c < b+d
+        lt_trans()
+            .all_elim(add(a.clone(), c.clone()))?
+            .all_elim(add(b.clone(), c.clone()))?
+            .all_elim(add(b.clone(), d.clone()))?
+            .imp_elim(ac_lt_bc)?
+            .imp_elim(bc_lt_bd)?
+            .imp_intro(&hcd)?
+            .imp_intro(&hab)?
+            .all_intro("d", nat())?
+            .all_intro("c", nat())?
+            .all_intro("b", nat())?
+            .all_intro("a", nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀p q r s. (p + s = r + q) ⟹ (nat.lt p q = nat.lt r s)` — a strict
+    /// comparison depends only on the cross-sum, so equal cross-sums give
+    /// equal comparisons (the well-definedness the `int`/Grothendieck order
+    /// rests on). Both sides equal `(r+q) < (q+s)` after `lt_add_mono_r`.
+    pub fn lt_cross() -> Result<Thm> {
+        let (p, q, r, s) = (var("p"), var("q"), var("r"), var("s"));
+        let hyp = add(p.clone(), s.clone()).equals(add(r.clone(), q.clone()))?; // p+s = r+q
+        // (p<q) = (p+s<q+s) = (r+q<q+s).
+        let e1 = lt_add_mono_r()
+            .all_elim(p.clone())?
+            .all_elim(q.clone())?
+            .all_elim(s.clone())?
+            .sym()?
+            .rewrite(&Thm::assume(hyp.clone())?)?; // (p<q) = (r+q < q+s)
+        // (r<s) = (r+q<s+q) = (r+q<q+s).
+        let e2 = lt_add_mono_r()
+            .all_elim(r.clone())?
+            .all_elim(s.clone())?
+            .all_elim(q.clone())?
+            .sym()?
+            .rewrite(&add_comm().all_elim(s.clone())?.all_elim(q.clone())?)?; // (r<s) = (r+q < q+s)
+        e1.trans(e2.sym()?)?
+            .imp_intro(&hyp)?
+            .all_intro("s", nat())?
+            .all_intro("r", nat())?
+            .all_intro("q", nat())?
+            .all_intro("p", nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀p q r s. (p + s = r + q) ⟹ (nat.le p q = nat.le r s)` — the `≤`
+    /// mirror of [`lt_cross`] (via `le_add_cancel_r`).
+    pub fn le_cross() -> Result<Thm> {
+        let (p, q, r, s) = (var("p"), var("q"), var("r"), var("s"));
+        let hyp = add(p.clone(), s.clone()).equals(add(r.clone(), q.clone()))?;
+        let e1 = le_add_cancel_r()
+            .all_elim(p.clone())?
+            .all_elim(q.clone())?
+            .all_elim(s.clone())?
+            .sym()?
+            .rewrite(&Thm::assume(hyp.clone())?)?; // (p≤q) = (r+q ≤ q+s)
+        let e2 = le_add_cancel_r()
+            .all_elim(r.clone())?
+            .all_elim(s.clone())?
+            .all_elim(q.clone())?
+            .sym()?
+            .rewrite(&add_comm().all_elim(s.clone())?.all_elim(q.clone())?)?; // (r≤s) = (r+q ≤ q+s)
+        e1.trans(e2.sym()?)?
+            .imp_intro(&hyp)?
+            .all_intro("s", nat())?
+            .all_intro("r", nat())?
+            .all_intro("q", nat())?
+            .all_intro("p", nat())
+    }
+}
+
+/// Prove `⊢ ∀n. body` by case analysis (no induction hypothesis): `base`
+/// proves `body[0]`, `cases_step` proves `∀n. body[S n]`.
+fn nat_cases(motive: &Term, base: Thm, cases_step: Thm) -> Result<Thm> {
+    let n = var("n");
+    let body_n = rhs(&Thm::beta_conv(Term::app(motive.clone(), n.clone()))?); // body[n]
+    let step = cases_step.all_elim(n)?.imp_intro(&body_n)?; // body[n] ⟹ body[S n]
+    induct(motive, base, step)
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. (a ≤ b) = ((a < b) ∨ (a = b))` — the `≤`/`<` decomposition.
+    pub fn le_iff_lt_or_eq() -> Result<Thm> {
+        let (a, b) = (var("a"), var("b"));
+        let eq_ab = a.clone().equals(b.clone())?;
+        let disj = lt_t(a.clone(), b.clone()).or(eq_ab.clone())?;
+        let le_ab = le_t(a.clone(), b.clone());
+
+        // Forward: {a ≤ b} ⊢ disj — by cases on d = b - a using a + d = b.
+        let fwd = {
+            // motive_d ≔ λd. (a + d = b) ⟹ disj.
+            let body_at = |t: &Term| -> Result<Term> {
+                add(a.clone(), t.clone()).equals(b.clone())?.imp(disj.clone())
+            };
+            let motive = Term::abs(nat(), subst::close(&body_at(&var("d"))?, "d"));
+            // base d=0: a+0=b ⟹ disj (a=b, right).
+            let base = {
+                let prem = add(a.clone(), zero()).equals(b.clone())?;
+                add_zero()
+                    .all_elim(a.clone())?
+                    .sym()?
+                    .trans(Thm::assume(prem.clone())?)? // {a+0=b} ⊢ a = b
+                    .or_intro_r(lt_t(a.clone(), b.clone()))? // ⊢ disj
+                    .imp_intro(&prem)?
+            };
+            // cases_step: ∀k. a+Sk=b ⟹ disj (a<b, left).
+            let cases_step = {
+                let k = var("k");
+                let prem = add(a.clone(), succ(k.clone())).equals(b.clone())?;
+                let s_ak_eq_b = add_succ_r()
+                    .all_elim(a.clone())?
+                    .all_elim(k.clone())?
+                    .sym()?
+                    .trans(Thm::assume(prem.clone())?)?; // {a+Sk=b} ⊢ S(a+k) = b
+                let sa_le_sak = le_succ_succ()
+                    .all_elim(a.clone())?
+                    .all_elim(add(a.clone(), k.clone()))?
+                    .sym()?
+                    .eq_mp(le_add_r().all_elim(a.clone())?.all_elim(k.clone())?)?; // Sa ≤ S(a+k)
+                lt_iff_succ_le()
+                    .all_elim(a.clone())?
+                    .all_elim(b.clone())?
+                    .sym()?
+                    .eq_mp(sa_le_sak.rewrite(&s_ak_eq_b)?)? // {a+Sk=b} ⊢ a < b
+                    .or_intro_l(eq_ab.clone())? // ⊢ disj
+                    .imp_intro(&prem)?
+                    .all_intro("k", nat())?
+            };
+            let by_d = nat_cases(&motive, base, cases_step)?; // ∀d. a+d=b ⟹ disj
+            let ad_eq_b = le_add_sub()
+                .all_elim(a.clone())?
+                .all_elim(b.clone())?
+                .imp_elim(Thm::assume(le_ab.clone())?)?; // {a≤b} ⊢ a+(b-a)=b
+            by_d.all_elim(sub(b.clone(), a.clone()))?.imp_elim(ad_eq_b)? // {a≤b} ⊢ disj
+        };
+
+        // Backward: {disj} ⊢ a ≤ b.
+        let bwd = {
+            let left = lt_imp_le().all_elim(a.clone())?.all_elim(b.clone())?; // (a<b)⟹(a≤b)
+            let right = {
+                let aeqb = Thm::assume(eq_ab.clone())?;
+                Thm::refl(nat_le())?
+                    .cong_fn(a.clone())?
+                    .cong_app(aeqb)? // (a≤a) = (a≤b)
+                    .eq_mp(le_refl().all_elim(a.clone())?)? // {a=b} ⊢ a≤b
+                    .imp_intro(&eq_ab)?
+            };
+            Thm::assume(disj.clone())?.or_elim(left, right)?
+        };
+
+        bwd.deduct_antisym(fwd)? // ⊢ (a≤b) = disj
+            .all_intro("b", nat())?
+            .all_intro("a", nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. (a < b) ∨ ((a = b) ∨ (b < a))` — trichotomy of `<`.
+    pub fn lt_trichotomy() -> Result<Thm> {
+        let (a, b) = (var("a"), var("b"));
+        let (lab, lba) = (lt_t(a.clone(), b.clone()), lt_t(b.clone(), a.clone()));
+        let (eab, eba) = (a.clone().equals(b.clone())?, b.clone().equals(a.clone())?);
+        let tail = eab.clone().or(lba.clone())?; // (a=b) ∨ (b<a)
+        // goal ≔ a<b ∨ ((a=b) ∨ (b<a)) — assembled by the or-intros below.
+
+        // a ≤ b branch.
+        let left = {
+            let lub = le_iff_lt_or_eq()
+                .all_elim(a.clone())?
+                .all_elim(b.clone())?
+                .eq_mp(Thm::assume(le_t(a.clone(), b.clone()))?)?; // {a≤b} ⊢ a<b ∨ a=b
+            let l1 = Thm::assume(lab.clone())?
+                .or_intro_l(tail.clone())?
+                .imp_intro(&lab)?; // (a<b)⟹goal
+            let r1 = Thm::assume(eab.clone())?
+                .or_intro_l(lba.clone())?
+                .or_intro_r(lab.clone())?
+                .imp_intro(&eab)?; // (a=b)⟹goal
+            lub.or_elim(l1, r1)?.imp_intro(&le_t(a.clone(), b.clone()))?
+        };
+        // b ≤ a branch.
+        let right = {
+            let lub = le_iff_lt_or_eq()
+                .all_elim(b.clone())?
+                .all_elim(a.clone())?
+                .eq_mp(Thm::assume(le_t(b.clone(), a.clone()))?)?; // {b≤a} ⊢ b<a ∨ b=a
+            let l2 = Thm::assume(lba.clone())?
+                .or_intro_r(eab.clone())?
+                .or_intro_r(lab.clone())?
+                .imp_intro(&lba)?; // (b<a)⟹goal
+            let r2 = Thm::assume(eba.clone())?
+                .sym()?
+                .or_intro_l(lba.clone())?
+                .or_intro_r(lab.clone())?
+                .imp_intro(&eba)?; // (b=a)⟹goal
+            lub.or_elim(l2, r2)?.imp_intro(&le_t(b.clone(), a.clone()))?
+        };
+
+        le_total()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .or_elim(left, right)?
+            .all_intro("b", nat())?
+            .all_intro("a", nat())
+    }
+}
+
+// ============================================================================
+// Additive normaliser — prove `t = t'` for any two `+`-trees over the same
+// multiset of leaves (associate to the right, then bubble into order). The
+// reusable workhorse for the Grothendieck rearrangements.
+// ============================================================================
+
+/// `nat.add a b` → `(a, b)`; `None` for any other (leaf) term.
+fn as_add(t: &Term) -> Option<(Term, Term)> {
+    let (f, b) = t.as_app()?;
+    let (op, a) = f.as_app()?;
+    (*op == nat_add()).then(|| (a.clone(), b.clone()))
+}
+
+/// `⊢ left + x = left + y` from `eq : ⊢ x = y`.
+fn cong_add_r(left: &Term, eq: Thm) -> Result<Thm> {
+    eq.cong_arg(Term::app(nat_add(), left.clone()))
+}
+
+/// `⊢ t = t'` re-associating `t` fully to the right (leaf order preserved).
+fn right_nest(t: &Term) -> Result<Thm> {
+    if let Some((a, b)) = as_add(t) {
+        let ea = right_nest(&a)?; // a = rn_a
+        let eb = right_nest(&b)?; // b = rn_b
+        let (rn_a, rn_b) = (rhs(&ea), rhs(&eb));
+        cong_add(ea, eb)?.trans(assoc_append(&rn_a, &rn_b)?)
+    } else {
+        Thm::refl(t.clone())
+    }
+}
+
+/// `⊢ (rn_a + rn_b) = right-nested(leaves rn_a ++ rn_b)` for right-nested
+/// `rn_a` — repeated associativity.
+fn assoc_append(rn_a: &Term, rn_b: &Term) -> Result<Thm> {
+    if let Some((x0, rest_a)) = as_add(rn_a) {
+        let assoc = add_assoc()
+            .all_elim(x0.clone())?
+            .all_elim(rest_a.clone())?
+            .all_elim(rn_b.clone())?; // (x0+rest)+rn_b = x0+(rest+rn_b)
+        assoc.trans(cong_add_r(&x0, assoc_append(&rest_a, rn_b)?)?)
+    } else {
+        Thm::refl(add(rn_a.clone(), rn_b.clone()))
+    }
+}
+
+/// `⊢ a0 + (x + r) = x + (a0 + r)` — swap the first two of a right-nested sum.
+fn swap_front2(a0: &Term, x: &Term, r: &Term) -> Result<Thm> {
+    add_assoc()
+        .all_elim(a0.clone())?
+        .all_elim(x.clone())?
+        .all_elim(r.clone())?
+        .sym()? // a0+(x+r) = (a0+x)+r
+        .trans(cong_add_l(
+            add_comm().all_elim(a0.clone())?.all_elim(x.clone())?,
+            r.clone(),
+        )?)? // = (x+a0)+r
+        .trans(
+            add_assoc()
+                .all_elim(x.clone())?
+                .all_elim(a0.clone())?
+                .all_elim(r.clone())?,
+        ) // = x+(a0+r)
+}
+
+/// `⊢ a = x + a'` — bring an occurrence of `x` to the front of a right-nested
+/// sum `a` (with `a'` the remaining leaves). Requires `x` to occur in `a` and
+/// `a` to have at least two leaves.
+fn bring_front(a: &Term, x: &Term) -> Result<Thm> {
+    let (a0, a_rest) =
+        as_add(a).ok_or_else(|| Error::ConnectiveRule("bring_front: leaf".into()))?;
+    if a0 == *x {
+        return Thm::refl(a.clone()); // a = x + a_rest
+    }
+    if as_add(&a_rest).is_none() {
+        // a_rest is the single remaining leaf — it is `x`.  a0 + x = x + a0.
+        return add_comm().all_elim(a0)?.all_elim(a_rest);
+    }
+    let br = bring_front(&a_rest, x)?; // a_rest = x + a_rest'
+    let a_rest_p = as_add(&rhs(&br))
+        .ok_or_else(|| Error::ConnectiveRule("bring_front: shape".into()))?
+        .1;
+    cong_add_r(&a0, br)?.trans(swap_front2(&a0, x, &a_rest_p)?)
+}
+
+/// `⊢ a = b` for right-nested `a`, `b` over the same leaf multiset.
+fn permute_eq(a: &Term, b: &Term) -> Result<Thm> {
+    if a == b {
+        return Thm::refl(a.clone());
+    }
+    let (b0, b_rest) = as_add(b).ok_or_else(|| Error::ConnectiveRule("permute_eq: leaf".into()))?;
+    let bring = bring_front(a, &b0)?; // a = b0 + a_rest
+    let a_rest = as_add(&rhs(&bring))
+        .ok_or_else(|| Error::ConnectiveRule("permute_eq: shape".into()))?
+        .1;
+    bring.trans(cong_add_r(&b0, permute_eq(&a_rest, &b_rest)?)?)
+}
+
+/// **Additive normalisation.** `⊢ lhs = rhs` whenever `lhs` and `rhs` are
+/// `+`-trees over the same multiset of leaves (re-associate both to the
+/// right, then permute). Errors if the leaf multisets differ.
+pub fn prove_add_eq(lhs: &Term, rhs_t: &Term) -> Result<Thm> {
+    let el = right_nest(lhs)?; // lhs = rnL
+    let er = right_nest(rhs_t)?; // rhs = rnR
+    let perm = permute_eq(&rhs(&el), &rhs(&er))?; // rnL = rnR
+    el.trans(perm)?.trans(er.sym()?)
+}
+
+// ============================================================================
+// Strict multiplicative monotonicity — `int`'s positive-multiplier order law
+// lifts through these.
+// ============================================================================
+
+cached_thm! {
+    /// `⊢ ∀x p. (0 < p) ⟹ (x < x + p)`.
+    pub fn lt_add_pos() -> Result<Thm> {
+        let (x, p) = (var("x"), var("p"));
+        let hp = lt_t(zero(), p.clone());
+        let s0_le_p = lt_iff_succ_le()
+            .all_elim(zero())?
+            .all_elim(p.clone())?
+            .eq_mp(Thm::assume(hp.clone())?)?; // S0 ≤ p
+        let shifted = le_add_cancel_r()
+            .all_elim(succ(zero()))?
+            .all_elim(p.clone())?
+            .all_elim(x.clone())?
+            .sym()?
+            .eq_mp(s0_le_p)?; // S0 + x ≤ p + x
+        let comm_l = shifted
+            .rewrite(&add_comm().all_elim(succ(zero()))?.all_elim(x.clone())?)? // x+S0 ≤ p+x
+            .rewrite(&add_comm().all_elim(p.clone())?.all_elim(x.clone())?)?; // x+S0 ≤ x+p
+        let xs0 = add_succ_r()
+            .all_elim(x.clone())?
+            .all_elim(zero())?
+            .trans(add_zero().all_elim(x.clone())?.cong_arg(nat_succ())?)?; // x+S0 = S x
+        let sx_le = comm_l.rewrite(&xs0)?; // S x ≤ x+p
+        lt_iff_succ_le()
+            .all_elim(x.clone())?
+            .all_elim(add(x.clone(), p.clone()))?
+            .sym()?
+            .eq_mp(sx_le)? // x < x+p
+            .imp_intro(&hp)?
+            .all_intro("p", nat())?
+            .all_intro("x", nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. (0 < a) ⟹ (0 < b) ⟹ (0 < a · b)` — a product of positives
+    /// is positive (cases on `a`; the successor case uses `0 < b ≤ b + a'·b`).
+    pub fn mul_pos() -> Result<Thm> {
+        let b = var("b");
+        let body_at = |t: &Term| -> Result<Term> {
+            lt_t(zero(), t.clone())
+                .imp(lt_t(zero(), b.clone()).imp(lt_t(zero(), mul(t.clone(), b.clone())))?)?
+                .forall("b", nat())
+        };
+        let motive = Term::abs(nat(), subst::close(&body_at(&var("a"))?, "a"));
+        // base a=0: 0<0 is false, so vacuous.
+        let base = {
+            let h00 = lt_t(zero(), zero());
+            let concl = lt_t(zero(), b.clone()).imp(lt_t(zero(), mul(zero(), b.clone())))?;
+            lt_irrefl()
+                .all_elim(zero())?
+                .not_elim(Thm::assume(h00.clone())?)? // {0<0} ⊢ F
+                .false_elim(concl)?
+                .imp_intro(&h00)?
+                .all_intro("b", nat())?
+        };
+        // step a=S a'.
+        let cases_step = {
+            let ap = var("a'");
+            let (pos_sa, pos_b) = (lt_t(zero(), succ(ap.clone())), lt_t(zero(), b.clone()));
+            let sum = add(b.clone(), mul(ap.clone(), b.clone())); // b + a'·b
+            let ms = mul_step().all_elim(ap.clone())?.all_elim(b.clone())?; // S a'·b = b + a'·b
+            let s0_le_b = lt_iff_succ_le()
+                .all_elim(zero())?
+                .all_elim(b.clone())?
+                .eq_mp(Thm::assume(pos_b.clone())?)?; // S0 ≤ b
+            let s0_le_sum = le_trans()
+                .all_elim(succ(zero()))?
+                .all_elim(b.clone())?
+                .all_elim(sum.clone())?
+                .imp_elim(s0_le_b)?
+                .imp_elim(le_add_r().all_elim(b.clone())?.all_elim(mul(ap.clone(), b.clone()))?)?; // S0 ≤ b+a'·b
+            lt_iff_succ_le()
+                .all_elim(zero())?
+                .all_elim(sum)?
+                .sym()?
+                .eq_mp(s0_le_sum)? // 0 < b+a'·b
+                .rewrite(&ms.sym()?)? // 0 < S a'·b
+                .imp_intro(&pos_b)?
+                .imp_intro(&pos_sa)?
+                .all_intro("b", nat())?
+                .all_intro("a'", nat())?
+        };
+        nat_cases(&motive, base, cases_step)
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a b c. (a < b) ⟹ (0 < c) ⟹ (a · c < b · c)`.
+    pub fn lt_mul_mono_r() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let (hab, hc) = (lt_t(a.clone(), b.clone()), lt_t(zero(), c.clone()));
+        // b = a + d, d = S(b − S a), 0 < d.
+        let sa_le_b = lt_iff_succ_le()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .eq_mp(Thm::assume(hab.clone())?)?; // S a ≤ b
+        let dprime = sub(b.clone(), succ(a.clone())); // b − S a
+        let split = le_add_sub()
+            .all_elim(succ(a.clone()))?
+            .all_elim(b.clone())?
+            .imp_elim(sa_le_b)?; // S a + (b−S a) = b
+        let b_eq = add_succ_r()
+            .all_elim(a.clone())?
+            .all_elim(dprime.clone())? // a + S d' = S(a+d')
+            .trans(add_step().all_elim(a.clone())?.all_elim(dprime.clone())?.sym()?)? // = S a + d'
+            .trans(split)?; // a + S d' = b
+        let d = succ(dprime.clone());
+        let pos_dc = mul_pos()
+            .all_elim(d.clone())?
+            .all_elim(c.clone())?
+            .imp_elim(zero_lt_succ().all_elim(dprime.clone())?)? // 0 < d
+            .imp_elim(Thm::assume(hc.clone())?)?; // 0 < d·c
+        let acc_eq = distrib_r()
+            .all_elim(a.clone())?
+            .all_elim(d.clone())?
+            .all_elim(c.clone())?
+            .sym()? // a·c + d·c = (a+d)·c
+            .trans(Thm::refl(nat_mul())?.cong_app(b_eq)?.cong_fn(c.clone())?)?; // = b·c
+        lt_add_pos()
+            .all_elim(mul(a.clone(), c.clone()))?
+            .all_elim(mul(d.clone(), c.clone()))?
+            .imp_elim(pos_dc)? // a·c < a·c + d·c
+            .rewrite(&acc_eq)? // a·c < b·c
+            .imp_intro(&hc)?
+            .imp_intro(&hab)?
+            .all_intro("c", nat())?
+            .all_intro("b", nat())?
+            .all_intro("a", nat())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1814,6 +2433,106 @@ mod tests {
             &lt_succ_le_body(&var("a"), &var("b")).unwrap()
         );
         assert!(lt_iff_succ_le().hyps().is_empty());
+    }
+
+    #[test]
+    fn mul_monotonicity_and_normaliser() {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        // mul_pos / lt_mul_mono_r genuine + well-stated.
+        let mp = mul_pos()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap();
+        assert_eq!(
+            mp.concl(),
+            &lt_t(zero(), a.clone())
+                .imp(
+                    lt_t(zero(), b.clone())
+                        .imp(lt_t(zero(), mul(a.clone(), b.clone())))
+                        .unwrap()
+                )
+                .unwrap()
+        );
+        let mm = lt_mul_mono_r()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap()
+            .all_elim(c.clone())
+            .unwrap();
+        assert_eq!(
+            mm.concl(),
+            &lt_t(a.clone(), b.clone())
+                .imp(
+                    lt_t(zero(), c.clone())
+                        .imp(lt_t(mul(a.clone(), c.clone()), mul(b.clone(), c.clone())))
+                        .unwrap()
+                )
+                .unwrap()
+        );
+        assert!(mul_pos().hyps().is_empty() && lt_mul_mono_r().hyps().is_empty());
+        // prove_add_eq: (a+b)+c = c+(b+a) (same leaves, reordered).
+        let lhs = add(add(a.clone(), b.clone()), c.clone());
+        let rhs_t = add(c.clone(), add(b.clone(), a.clone()));
+        let pe = super::prove_add_eq(&lhs, &rhs_t).unwrap();
+        assert_eq!(pe.concl(), &lhs.equals(rhs_t).unwrap());
+        assert!(pe.hyps().is_empty());
+    }
+
+    #[test]
+    fn strict_order_theory_is_genuine() {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        // lt_trans: a<b ⟹ b<c ⟹ a<c.
+        let lt = lt_trans()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap()
+            .all_elim(c.clone())
+            .unwrap();
+        assert_eq!(
+            lt.concl(),
+            &lt_t(a.clone(), b.clone())
+                .imp(
+                    lt_t(b.clone(), c.clone())
+                        .imp(lt_t(a.clone(), c.clone()))
+                        .unwrap()
+                )
+                .unwrap()
+        );
+        // lt_add_mono_r: (a+c<b+c) = (a<b).
+        let mono = lt_add_mono_r()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap()
+            .all_elim(c.clone())
+            .unwrap();
+        assert_eq!(
+            mono.concl(),
+            &lt_t(add(a.clone(), c.clone()), add(b.clone(), c.clone()))
+                .equals(lt_t(a.clone(), b.clone()))
+                .unwrap()
+        );
+        // trichotomy + le_iff_lt_or_eq shapes.
+        let tri = lt_trichotomy()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap();
+        assert!(tri.concl().type_of().unwrap().is_bool());
+        for t in [
+            le_succ_self(),
+            lt_imp_le(),
+            le_add_cancel_r(),
+            lt_add_mono_r(),
+            lt_trans(),
+            le_iff_lt_or_eq(),
+            lt_trichotomy(),
+        ] {
+            assert!(t.hyps().is_empty(), "nat strict-order facts are genuine");
+        }
     }
 
     #[test]

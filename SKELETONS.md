@@ -28,61 +28,6 @@ it is how unfinished work stays discoverable.
 
 ## Postulates pending proof
 
-- **The `int` ordered-ring theory** in
-  `crates/covalence-hol/src/init/int.rs`: the **additive commutative group is
-  now fully proved** through the quotient — `add_comm`, `add_assoc`,
-  `add_zero`, `add_neg`, `sub_def`, and `mul_comm`. **9 postulates remain**
-  (still `Thm::assume` via the module's `axiom` helper, each carrying its
-  statement as a self-hyp):
-  - **multiplicative ring** — `mul_assoc`, `mul_one`, `mul_zero`, `distrib`.
-    Blocked on **multiplication well-definedness** (a `mul_pair_cong`:
-    `int_rel`-respecting of the Grothendieck product, the one genuinely
-    tedious `nat` commutative-algebra lemma — prove it per-argument and
-    chain) plus **literal-`1` coherence** (`int_lit 1 = MK(1,0)`, the
-    `mul_one`/`mul_zero` analogue of the proved `lit0_mk`).
-  - **linear order** — `lt_irrefl`, `lt_trans`, `lt_trichotomy`, `le_def`;
-    **ordered-ring compatibility** — `lt_add_mono`, `lt_mul_pos`;
-    **discreteness** — `lt_succ` (`a < b ⟺ a + 1 ≤ b`). These unfold
-    `int.le`/`int.lt` to the `nat` comparison on representatives
-    (`a − b ⋚ c − d ⟺ a + d ⋚ c + b`); `lt_irrefl`/`le_def` are on-the-nose
-    like `add_comm`, but `lt_trans`/`lt_trichotomy`/`lt_add_mono`/`lt_succ`
-    need more **`nat` `lt` theory** (transitivity, add-monotonicity/cancel,
-    trichotomy, the `< / ≤` bridge) than `init::nat` currently exposes.
-
-  Since `int := (nat × nat) / ~` (Grothendieck), each is a HOL theorem;
-  filling the proofs in does not change the public `fn` surface. These are
-  the ingredients the Alethe `la_generic` / `la_mult_*` checker will consume.
-  The `int` semiring/ring embedding (`crate::semiring::Int` /
-  `crate::ring::Int`) forwards its axioms here, so it inherits the remaining
-  postulates (and their self-hyp audit trail) until they are discharged; the
-  `nat` semiring embedding (`crate::semiring::Nat`), by contrast, is fully
-  proved.
-
-  **Machinery (built and proved).** `init::quotient` provides the lifting
-  API on the junk-free `TypeSpec::quot` (carving predicate `λS. ∃z. S =
-  classOf z`, so `Type::int()` has exactly one inhabitant per `int_rel`
-  class): `class_intro` (forward `⊢ rel a b → ⊢ mkClass a = mkClass b`),
-  `class_elim` (converse), `round_trip` (`⊢ rel a (rep_class (mk_class a))`),
-  and `recon` (quotient induction `⊢ a = mk_class (rep_class a)` for *any*
-  element). `init::int` builds on these: `int_rel` is a proven equivalence,
-  the **`MK(f, s)` component layer** (`recon` + surjective pairing)
-  normalises each `int` to `mk_int (pair f s)`, the per-op computation rules
-  (`add_class`/`neg_class`/`sub_class` + `*_mk`) combine `nat` components on
-  the nose, and `lit0_mk` gives literal-`0` coherence. Each proved additive
-  axiom reduces to `nat` algebra on the components.
-
-  **Remaining work, concretely.**
-  - *Multiplicative ring* (`mul_assoc`/`mul_one`/`mul_zero`/`distrib`): add a
-    `mul_pair_cong` (multiplication well-definedness — prove `int_rel`-respect
-    per-argument and chain) + a `mul_class`/`mul_mk` mirroring `add_class`,
-    and `int_lit 1 = MK(1,0)` coherence (the `lit0_mk` analogue).
-  - *Order* (`lt_irrefl`/`lt_trans`/`lt_trichotomy`/`le_def`/`lt_add_mono`/
-    `lt_mul_pos`/`lt_succ`): `int.le`/`int.lt` unfold to the `nat` comparison
-    on representatives. `lt_irrefl`/`le_def` are on-the-nose; the rest need
-    more `nat` `lt` theory than `init::nat` exposes today (it has the `≤`
-    order — reflexivity, totality, antisymmetry, `le_trans`, the `<`/`≤`
-    bridge `lt_iff_succ_le` — but not `lt` transitivity / add-monotonicity /
-    trichotomy as standalone lemmas).
 - **The `rat` quotient + ordered-field theory** in
   `crates/covalence-hol/src/init/rat.rs`. `rat := (int × int.pos) / ~`
   (cross-multiplication). Proved outright: `rat_rel_refl`, `rat_rel_symm`
@@ -97,8 +42,10 @@ it is how unfinished work stays discoverable.
   carrying its statement as a self-hyp):
   - `rat_rel_trans` — transitivity of the cross-multiplication relation.
     Needs `int` *multiplicative cancellation by a positive* (cancel the
-    common positive denominator), an `int` fact not yet discharged. Once
-    that lands, this becomes the int-analogue of `int_rel_trans`.
+    common positive denominator) — now derivable from the fully-proved `int`
+    ordered ring (`lt_mul_pos` + `lt_trichotomy`: `a·c = b·c ∧ 0 < c ⟹ a = b`),
+    just not yet packaged. Once that lands, this becomes the int-analogue of
+    `int_rel_trans`.
   - The remaining ordered-field axioms over the operations
     `rat_zero`/`rat_one`/`rat_add`/`rat_sub`/`rat_neg`/`rat_mul`/`rat_inv`/
     `rat_div`/`rat_lt` (all **defined** at the representative level;
@@ -110,16 +57,18 @@ it is how unfinished work stays discoverable.
     (now realisable concretely via `rat_inv`), the linear order
     `lt_*`/`le_def`, and the base strictness fact `zero_lt_one` — `ratLt`
     picks ε-representatives, so `0 < 1` is not reducible. Each is a HOL
-    theorem derivable from the `int` ordered-ring theory through the
-    quotient; filling them in does not change the public `fn` surface. They
-    depend transitively on the `int` postulates above. (The `≤` toolkit
+    theorem derivable from the **now fully-proved** `int` ordered-ring theory
+    through the quotient; filling them in does not change the public `fn`
+    surface. The `int` order facts they lean on are all discharged. (The `≤`
+    toolkit
     `le_refl`/`lt_imp_le`/`le_trans`/`not_one_le_zero` is **not**
     postulated — it is *derived* from `le_def` + the strict-order facts.)
   - The two **mediant inequalities** `mediant_gt` / `mediant_lt` — the
     only postulated leaves of `dense` (which is itself *derived* from
     them via the mediant `(a+c)/(b+d)`, no division needed). Each unfolds
     to an `int` order fact (`a·d < c·b ⟹ a·(b+d) < (a+c)·b`, etc.)
-    lifted through the quotient — blocked on the same `int` order theory.
+    lifted through the quotient — now unblocked (the `int` order theory it
+    needs is fully proved); the remaining work is the rat-quotient lifting.
 
 - **The `real` Dedekind-cut theory** in
   `crates/covalence-hol/src/init/real.rs`. `real := close rat ratLe`
@@ -156,28 +105,41 @@ it is how unfinished work stays discoverable.
   strictly-positive, directly-recursive). **In place:**
   - `sig.rs` — the signature data model (`InductiveSig` / `Constructor` / `Arg`).
   - `data.rs` — the `Inductive` **trait**, the lifting seam: the engine
-    consumes induction (and later freeness) only through it, never calling a
-    kernel rule directly. `nat`'s `NatTheory` adapter sources induction from
-    `Thm::nat_induct`.
+    consumes structural induction **and constructor freeness** (`injective` /
+    `distinct`) only through it, never calling a kernel rule directly. `nat`'s
+    `NatTheory` adapter sources them from `Thm::nat_induct` / `Thm::succ_inj` /
+    `Thm::zero_ne_succ`.
   - `graph.rs` — the impredicative recursion graph (`closed` / `graph` /
     `ctor_instance`), generic over a signature.
   - `existence.rs` — `graph_intro` (per-constructor introduction) and
     `graph_total` (`⊢ ∀t. ∃a. Graph t a`, by the supplied induction). Generic
     over `Inductive`; `nat` consumes them (`init/recursion.rs`).
+  - `uniqueness.rs` — `graph_inv` (per-constructor inversion: `Graph (Cᵢ x⃗) a
+    ⟹ ∃b⃗. (⋀ Graph rⱼ bⱼ) ∧ a = fᵢ x⃗ b⃗`), via the generic `Good = λk c.
+    Graph k c ∧ wit` determinizing relation whose closedness is discharged by
+    `distinct` (other constructors) and `injective` (`Cᵢ` itself). Generic over
+    `Inductive`; `nat`'s `graph_base_inv` consumes it.
+  - `determinacy.rs` — `graph_det` (`∀t a b. Graph t a ⟹ Graph t b ⟹ a = b`):
+    folds the supplied induction over `graph_inv` (invert both graphs, then the
+    IH equates the recursive images). Generic over `Inductive`; `nat`'s
+    `graph_det` consumes it.
+  - `util.rs` — shared conjunction-proof plumbing.
 
-  Still **specialised to `nat`** in `init/recursion.rs` (the next generalisation
-  targets):
-  - **Uniqueness** — the per-constructor inversion lemmas (`graph_base_inv`
-    nullary / `graph_step_inv` recursive → `Graph (Cᵢ x⃗) a ⟹ ∃b⃗. (⋀ Graph rⱼ bⱼ)
-    ∧ a = fᵢ x⃗ b⃗`, via the "determinizing" / "good" instances `det_zero` /
-    `good`) and `graph_det`. These need **constructor freeness** (injectivity +
-    distinctness) added to the `Inductive` trait — for `nat` from `succ_inj` /
-    `zero_ne_succ`.
+  Still **specialised to `nat`** in `init/recursion.rs`:
   - **ε-assembly** — `recursion_theorem` / `rec_holds_proof` generalised to emit
-    `⊢ ∃rec. P_rec rec` from totality + determinacy for any signature.
-  - **The multi-recursive-argument path** in `existence.rs` (conjunctive IHs /
-    antecedents) is written but only exercised by `nat`'s ≤1-rec-arg cases; a
-    binary-tree or `list` signature is the first real test.
+    `⊢ ∃rec. P_rec rec` from totality + determinacy for any signature. The only
+    remaining piece; it couples to the recursor's `defs` selector predicate
+    (`natRec`'s `P_rec`), so generalising it means deriving the per-constructor
+    equation predicate from the signature.
+  - **The multi-recursive-argument / multi-constructor-argument paths** in
+    `existence.rs`, `uniqueness.rs`, and `determinacy.rs` (conjunctive IHs /
+    antecedents, componentwise injectivity, nested `∃`-witnessing) are partial:
+    `existence` / `uniqueness` handle the general shape but are only *exercised*
+    by `nat`'s ≤1-arg / ≤1-rec-arg cases, while `determinacy::det_case`
+    explicitly **errors** on a constructor with ≥2 recursive arguments. A
+    binary-tree or `list` signature is the first real test. The strict
+    `wit`-binder naming discipline (`_wx_` / `_wb_` prefixes, disjoint from a
+    constructor's own binders) is load-bearing — see the `uniqueness.rs` docs.
 
   **Lifting to internal HOL (future).** The trait seam exists precisely so the
   proofs can be re-targeted: today `nat` is a kernel primitive, but we may later

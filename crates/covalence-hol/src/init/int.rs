@@ -5,25 +5,20 @@
 //!
 //! [`init::nat`]: crate::init::nat
 //!
-//! ## Status — the additive commutative group is proved
+//! ## Status — the entire ordered ring is proved (no postulates)
 //!
 //! `int := (nat × nat) / ~` is the Grothendieck construction, so every
 //! axiom here is a *theorem* of HOL derivable from the `nat` Peano facts
-//! through the quotient. The lifting machinery is built and the additive
-//! group is fully discharged; the rest are still `Thm::assume` postulates
-//! (flagged in `SKELETONS.md`, each carrying its statement as a
-//! self-hypothesis so the audit trail is visible downstream).
+//! through the quotient — and **all of them are now discharged**. There are
+//! no `Thm::assume` postulates left in this module.
 //!
-//! - **Commutative ring** — **proved:** [`add_comm`], [`add_assoc`],
-//!   [`add_zero`], [`add_neg`], [`sub_def`], [`mul_comm`]. **Postulated:**
-//!   [`mul_assoc`], [`mul_one`], [`mul_zero`], [`distrib`] (need
-//!   multiplication well-definedness — a `mul_pair_cong` — plus literal-`1`
-//!   coherence).
-//! - **Linear order** (postulated) — [`lt_irrefl`], [`lt_trans`],
-//!   [`lt_trichotomy`], [`le_def`].
-//! - **Ordered-ring compatibility** (postulated) — [`lt_add_mono`],
-//!   [`lt_mul_pos`].
-//! - **Discreteness** (postulated) — [`lt_succ`]: `a < b ⟺ a + 1 ≤ b`.
+//! - **Commutative ring** — [`add_comm`], [`add_assoc`], [`add_zero`],
+//!   [`add_neg`], [`sub_def`], [`mul_comm`], [`mul_assoc`], [`mul_one`],
+//!   [`mul_zero`], [`distrib`].
+//! - **Linear order** — [`lt_irrefl`], [`lt_trans`], [`lt_trichotomy`],
+//!   [`le_def`].
+//! - **Ordered-ring compatibility** — [`lt_add_mono`], [`lt_mul_pos`].
+//! - **Discreteness** — [`lt_succ`] (`a < b ⟺ a + 1 ≤ b`).
 //!
 //! The public surface (these `fn`s) does not change as proofs land — only
 //! the bodies; downstream consumers (the `int` ring/semiring embedding, the
@@ -41,15 +36,32 @@
 //! - normalises every reconstructed `int` to the **`MK(f, s)` component
 //!   form** `mk_int (pair f s)` (`recon` + surjective pairing), so the op
 //!   rules combine explicit `nat` components on the nose;
-//! - gives per-op **computation rules** (`add_class`/`neg_class`/`sub_class`
-//!   and their `*_mk` component forms) via the defining equation,
-//!   `round_trip`, and a per-op well-definedness lemma (`*_pair_cong`);
-//! - derives **literal coherence** ([`lit0_mk`]: `int_lit 0 = MK(0, 0)`)
-//!   from the two readings of `0 + 0` (`reduce_prim` vs the Grothendieck
-//!   body) forcing `fst(rep 0) = snd(rep 0)`.
+//! - gives per-op **computation rules** (`add_class` / `neg_class` /
+//!   `sub_class` / `mul_class` / `succ_class` and their `*_mk` component
+//!   forms) via the defining equation, `round_trip`, and a per-op
+//!   well-definedness lemma (`*_pair_cong`). Multiplication
+//!   (`mul_pair_cong`) is the one tedious case — proved per-argument
+//!   (`distrib` on the defining `nat` equation) and chained by transitivity;
+//! - derives **literal coherence** ([`lit0_mk`]: `int_lit 0 = MK(0, 0)`,
+//!   from the two readings of `0 + 0` forcing `fst(rep 0) = snd(rep 0)`;
+//!   [`lit1_mk`]: `int_lit 1 = MK(1, 0)` via `int.succ 0 = succ (MK 0 0)`).
 //!
-//! Each additive axiom then reduces to `nat` algebra on the `f`/`s`
-//! components (e.g. `add_assoc` is `nat::add_assoc` on each component).
+//! Each ring axiom then reduces to `nat` algebra on the `f`/`s` components
+//! (e.g. `add_assoc` is `nat::add_assoc` per component; `mul_assoc` /
+//! `distrib` distribute to the same `nat` products, re-paired by `mid_swap`).
+//!
+//! **Order** works the same way: `int.le` / `int.lt` on the `MK` form read
+//! off the clean components (`le_mk` / `lt_mk`) — the ε-representatives the
+//! comparison picks are `round_trip`-related to `(f, s)`, and `nat::le_cross`
+//! / `lt_cross` make the comparison invariant under that. `le_via_components`
+//! / `lt_via_components` then express each order axiom as a `nat` order fact
+//! (the `nat` strict-order theory `lt_trans` / `lt_trichotomy` /
+//! `lt_add_mono_r` / `lt_iff_succ_le` / `le_iff_lt_or_eq` / `lt_mul_mono_r`),
+//! and `int_eq_iff` identifies `int` equality with the Grothendieck relation
+//! on representatives. The one genuinely heavy lift, `lt_mul_pos`, writes
+//! `0 < c` as `fc = sc + m` and decomposes both product comparisons as
+//! `D + (fa+sb)·m` / `D + (fb+sa)·m` over the same `D` — the shuffle handled
+//! by the reusable `nat` additive normaliser `nat::prove_add_eq`.
 
 use covalence_core::defs::{fst, pair, prod, snd};
 use covalence_core::{Error, Result, Term, Thm, Type, subst};
@@ -226,23 +238,6 @@ fn lt(a: Term, b: Term) -> Term {
 
 fn le(a: Term, b: Term) -> Term {
     Term::app(Term::app(int_le(), a), b)
-}
-
-/// Postulate an `int` axiom: `{t} ⊢ t`. The self-hypothesis is the audit
-/// trail — every proof built on it carries it, flagging the unproved leaf
-/// until the quotient derivation discharges it.
-fn axiom(t: Term) -> Thm {
-    Thm::assume(t).expect("init::int::axiom: term must be bool-typed")
-}
-
-/// Universally close `body` over the named `int` variables, **outermost
-/// first** (so `forall_int(&["a", "b"], body)` is `∀a b. body`).
-fn forall_int(vars: &[&str], body: Term) -> Term {
-    let mut t = body;
-    for name in vars.iter().rev() {
-        t = t.forall(name, int()).expect("forall_int: bind variable");
-    }
-    t
 }
 
 // ============================================================================
@@ -579,6 +574,211 @@ fn sub_class(p: &Term, q: &Term) -> Result<Thm> {
     dl.trans(lift)
 }
 
+// ---- multiplication ----
+
+/// `pair (fx·fy + sx·sy) (fx·sy + sx·fy)` — Grothendieck product
+/// `(a−b)(c−d) = (ac+bd) − (ad+bc)`.
+fn mul_pair(x: &Term, y: &Term) -> Term {
+    let (fx, sx) = (fst_nn(x), snd_nn(x));
+    let (fy, sy) = (fst_nn(y), snd_nn(y));
+    pair_nn(
+        nat::add(
+            nat::mul(fx.clone(), fy.clone()),
+            nat::mul(sx.clone(), sy.clone()),
+        ),
+        nat::add(nat::mul(fx, sy), nat::mul(sx, fy)),
+    )
+}
+
+/// `⊢ x·m = y·m` from `⊢ x = y`.
+fn cong_mul_l(eq: Thm, m: &Term) -> Result<Thm> {
+    Thm::refl(nat::nat_mul())?.cong_app(eq)?.cong_fn(m.clone())
+}
+/// `⊢ m·x = m·y` from `⊢ x = y`.
+fn cong_mul_r(m: &Term, eq: Thm) -> Result<Thm> {
+    Thm::refl(Term::app(nat::nat_mul(), m.clone()))?.cong_app(eq)
+}
+
+/// `⊢ p·m + q·m = r·m + s·m` from `e : ⊢ p + q = r + s` (right multiply).
+fn mul_r_eq(p: &Term, q: &Term, r: &Term, s: &Term, e: Thm, m: &Term) -> Result<Thm> {
+    let lhs = elim3(nat::distrib_r(), p, q, m)?; // (p+q)·m = p·m+q·m
+    let rhs = elim3(nat::distrib_r(), r, s, m)?; // (r+s)·m = r·m+s·m
+    lhs.sym()?.trans(cong_mul_l(e, m)?)?.trans(rhs)
+}
+/// `⊢ m·p + m·q = m·r + m·s` from `e : ⊢ p + q = r + s` (left multiply).
+fn mul_l_eq(m: &Term, p: &Term, q: &Term, r: &Term, s: &Term, e: Thm) -> Result<Thm> {
+    let lhs = elim3(nat::distrib(), m, p, q)?; // m·(p+q) = m·p+m·q
+    let rhs = elim3(nat::distrib(), m, r, s)?; // m·(r+s) = m·r+m·s
+    lhs.sym()?.trans(cong_mul_r(m, e)?)?.trans(rhs)
+}
+
+/// `⊢ u = u` reflexivity helper for re-pairing under `+`.
+fn cong_add_r(left: &Term, eq: Thm) -> Result<Thm> {
+    eq.cong_arg(Term::app(nat::nat_add(), left.clone()))
+}
+
+/// **Left multiplicative well-definedness.** `⊢ int_rel x x'` lifted to
+/// `⊢ int_rel (mul_pair x y) (mul_pair x' y)` (`y` fixed). The Grothendieck
+/// product distributes over the defining `nat` equation in the varied factor.
+fn mul_pair_cong_l(h1: Thm, y: &Term) -> Result<Thm> {
+    let (x, xp) = dest_rel_app(h1.concl())?;
+    let e = reduce_rel(h1)?; // a + b' = a' + b   (a=fx, b=sx, a'=fx', b'=sx')
+    let (a, b) = (fst_nn(&x), snd_nn(&x));
+    let (ap, bp) = (fst_nn(&xp), snd_nn(&xp));
+    let (c, d) = (fst_nn(y), snd_nn(y));
+    let m = |u: &Term, v: &Term| nat::mul(u.clone(), v.clone());
+
+    // eL_c: a·c+b'·c = a'·c+b·c ; eL_d: a·d+b'·d = a'·d+b·d.
+    let elc = mul_r_eq(&a, &bp, &ap, &b, e.clone(), &c)?;
+    let eld = mul_r_eq(&a, &bp, &ap, &b, e, &d)?;
+    // bd+a'd = a'd+bd = ad+b'd.
+    let bd_eq = nat::add_comm()
+        .all_elim(m(&b, &d))?
+        .all_elim(m(&ap, &d))?
+        .trans(eld.sym()?)?; // b·d+a'·d = a·d+b'·d
+
+    let (ac, bd, apd, bpc) = (m(&a, &c), m(&b, &d), m(&ap, &d), m(&bp, &c));
+    let (apc, bc, ad, bpd) = (m(&ap, &c), m(&b, &c), m(&a, &d), m(&bp, &d));
+    // (ac+bd)+(a'd+b'c) = (ac+b'c)+(bd+a'd) = (a'c+bc)+(ad+b'd)
+    //                   = (a'c+b'd)+(bc+ad) = (a'c+b'd)+(ad+bc).
+    let g = elim4(nat::add_interchange(), &ac, &bd, &apd, &bpc)?
+        .trans(nat::cong_add(elc, bd_eq)?)?
+        .trans(elim4(nat::add_interchange(), &apc, &bc, &ad, &bpd)?)?
+        .trans(cong_add_r(
+            &nat::add(apc.clone(), bpd.clone()),
+            nat::add_comm().all_elim(bc.clone())?.all_elim(ad.clone())?,
+        )?)?;
+    rel_of_pairs(
+        &nat::add(ac, bd),
+        &nat::add(ad, bc),
+        &nat::add(apc, bpd),
+        &nat::add(apd, bpc),
+        g,
+    )
+}
+
+/// **Right multiplicative well-definedness.** `⊢ int_rel y y'` lifted to
+/// `⊢ int_rel (mul_pair x' y) (mul_pair x' y')` (`x'` fixed).
+fn mul_pair_cong_r(xp: &Term, h2: Thm) -> Result<Thm> {
+    let (y, yp) = dest_rel_app(h2.concl())?;
+    let e2 = reduce_rel(h2)?; // c + d' = c' + d   (c=fy, d=sy, c'=fy', d'=sy')
+    let (ap, bp) = (fst_nn(xp), snd_nn(xp));
+    let (c, d) = (fst_nn(&y), snd_nn(&y));
+    let (cp, dp) = (fst_nn(&yp), snd_nn(&yp));
+    let m = |u: &Term, v: &Term| nat::mul(u.clone(), v.clone());
+
+    // eR_a: a'·c+a'·d' = a'·c'+a'·d ; eR_b: b'·c+b'·d' = b'·c'+b'·d.
+    let era = mul_l_eq(&ap, &c, &dp, &cp, &d, e2.clone())?;
+    let erb = mul_l_eq(&bp, &c, &dp, &cp, &d, e2)?;
+    // b'd+b'c' = b'c'+b'd = b'c+b'd'.
+    let erb2 = nat::add_comm()
+        .all_elim(m(&bp, &d))?
+        .all_elim(m(&bp, &cp))?
+        .trans(erb.sym()?)?; // b'·d+b'·c' = b'·c+b'·d'
+
+    let (apc, bpd, apdp, bpcp) = (m(&ap, &c), m(&bp, &d), m(&ap, &dp), m(&bp, &cp));
+    let (apcp, apd, bpc, bpdp) = (m(&ap, &cp), m(&ap, &d), m(&bp, &c), m(&bp, &dp));
+    // (a'c+b'd)+(a'd'+b'c') = (a'c+a'd')+(b'd+b'c') = (a'c'+a'd)+(b'c+b'd')
+    //                       = (a'c'+b'd')+(a'd+b'c).
+    let g = mid_swap(&apc, &bpd, &apdp, &bpcp)?
+        .trans(nat::cong_add(era, erb2)?)?
+        .trans(elim4(nat::add_interchange(), &apcp, &apd, &bpc, &bpdp)?)?;
+    rel_of_pairs(
+        &nat::add(apc, bpd),
+        &nat::add(apd, bpc),
+        &nat::add(apcp, bpdp),
+        &nat::add(apdp, bpcp),
+        g,
+    )
+}
+
+/// **Multiplicative well-definedness.** From `⊢ int_rel x x'`, `⊢ int_rel
+/// y y'` conclude `⊢ int_rel (mul_pair x y) (mul_pair x' y')` — vary one
+/// factor at a time ([`mul_pair_cong_l`] / [`mul_pair_cong_r`]) and chain by
+/// transitivity through `mul_pair x' y`.
+fn mul_pair_cong(h1: Thm, h2: Thm) -> Result<Thm> {
+    let (x, xp) = dest_rel_app(h1.concl())?;
+    let (y, yp) = dest_rel_app(h2.concl())?;
+    let left = mul_pair_cong_l(h1, &y)?; // int_rel (mul x y) (mul x' y)
+    let right = mul_pair_cong_r(&xp, h2)?; // int_rel (mul x' y) (mul x' y')
+    elim3(
+        int_rel_trans(),
+        &rel_app_target(&x, &y),
+        &rel_app_target(&xp, &y),
+        &rel_app_target(&xp, &yp),
+    )?
+    .imp_elim(left)?
+    .imp_elim(right)
+}
+
+/// `mul_pair x y` — named so `mul_pair_cong`'s `int_rel_trans` instantiation
+/// reads cleanly.
+fn rel_app_target(x: &Term, y: &Term) -> Term {
+    mul_pair(x, y)
+}
+
+/// **Multiplicative computation rule.** `⊢ int.mul (mk_int p) (mk_int q) =
+/// mk_int (mul_pair p q)`.
+fn mul_class(p: &Term, q: &Term) -> Result<Thm> {
+    let (mp, mq) = (mk_int(p), mk_int(q));
+    let dl = mul_defining_eq(&mp, &mq)?;
+    let (rpp, rpq) = (rep_pair(&mp), rep_pair(&mq));
+    let dl = dl.trans(defs_to_mk_int(&mul_pair(&rpp, &rpq))?)?; // = mk_int(mul_pair RPp RPq)
+    let rpp_p = inst2(int_rel_symm(), p, &rpp)?.imp_elim(round_trip(p)?)?;
+    let rpq_q = inst2(int_rel_symm(), q, &rpq)?.imp_elim(round_trip(q)?)?;
+    let cong = mul_pair_cong(rpp_p, rpq_q)?;
+    let lift = quotient::class_intro(&spec(), &[], &nn(), &int_rel_symm(), &int_rel_trans(), cong)?;
+    dl.trans(lift)
+}
+
+// ---- successor (the bridge to literal-`1` coherence) ----
+
+/// `pair (succ (fst x)) (snd x)` — `succ (a−b) = (a+1) − b`.
+fn succ_pair(x: &Term) -> Term {
+    pair_nn(nat::succ(fst_nn(x)), snd_nn(x))
+}
+
+/// `⊢ int.succ a = abs(class_of_defs (succ_pair (rep_pair a)))`.
+fn succ_defining_eq(a: &Term) -> Result<Thm> {
+    Term::app(int_succ(), a.clone())
+        .delta_all(covalence_core::defs::int_succ_spec().symbol())?
+        .rhs_conv(|t| t.reduce())
+}
+
+/// **Successor well-definedness.** `⊢ int_rel x x'` lifted to
+/// `⊢ int_rel (succ_pair x) (succ_pair x')` — push the `succ` through the
+/// defining equation by `nat::add_step`.
+fn succ_pair_cong(h: Thm) -> Result<Thm> {
+    let (x, xp) = dest_rel_app(h.concl())?;
+    let e = reduce_rel(h)?; // fx + sx' = fx' + sx
+    let (fx, sx) = (fst_nn(&x), snd_nn(&x));
+    let (fxp, sxp) = (fst_nn(&xp), snd_nn(&xp));
+    // (S fx)+sx' = S(fx+sx') = S(fx'+sx) = (S fx')+sx.
+    let g = nat::add_step()
+        .all_elim(fx.clone())?
+        .all_elim(sxp.clone())?
+        .trans(e.cong_arg(nat::nat_succ())?)?
+        .trans(
+            nat::add_step()
+                .all_elim(fxp.clone())?
+                .all_elim(sx.clone())?
+                .sym()?,
+        )?;
+    rel_of_pairs(&nat::succ(fx), &sx, &nat::succ(fxp), &sxp, g)
+}
+
+/// **Successor computation rule.** `⊢ int.succ (mk_int p) = mk_int (succ_pair p)`.
+fn succ_class(p: &Term) -> Result<Thm> {
+    let mp = mk_int(p);
+    let dl = succ_defining_eq(&mp)?;
+    let rpp = rep_pair(&mp);
+    let dl = dl.trans(defs_to_mk_int(&succ_pair(&rpp))?)?; // = mk_int(succ_pair RPp)
+    let rpp_p = inst2(int_rel_symm(), p, &rpp)?.imp_elim(round_trip(p)?)?;
+    let cong = succ_pair_cong(rpp_p)?;
+    let lift = quotient::class_intro(&spec(), &[], &nn(), &int_rel_symm(), &int_rel_trans(), cong)?;
+    dl.trans(lift)
+}
+
 // ============================================================================
 // The `MK(f, s)` component layer — `int` values as explicit `nat`-pairs
 // ============================================================================
@@ -692,6 +892,48 @@ fn sub_mk(fa: &Term, sa: &Term, fb: &Term, sb: &Term) -> Result<Thm> {
         crate::init::prod::fst_pair(&n, &n, fb, sb)?, // fst pb = fb
     ];
     sc.rhs_conv(|t| rewrite_seq(t, &projs)) // = MK (fa+sb)(sa+fb)
+}
+
+/// **Multiplication in component form.** `⊢ int.mul (MK fa sa)(MK fb sb) =
+/// MK (fa·fb + sa·sb)(fa·sb + sa·fb)`.
+fn mul_mk(fa: &Term, sa: &Term, fb: &Term, sb: &Term) -> Result<Thm> {
+    let (pa, pb) = (
+        pair_nn(fa.clone(), sa.clone()),
+        pair_nn(fb.clone(), sb.clone()),
+    );
+    let mc = mul_class(&pa, &pb)?; // = mk_int(mul_pair pa pb)
+    let n = Type::nat();
+    let projs = [
+        crate::init::prod::fst_pair(&n, &n, fa, sa)?, // fst pa = fa  (both occurrences)
+        crate::init::prod::snd_pair(&n, &n, fa, sa)?, // snd pa = sa
+        crate::init::prod::fst_pair(&n, &n, fb, sb)?, // fst pb = fb
+        crate::init::prod::snd_pair(&n, &n, fb, sb)?, // snd pb = sb
+    ];
+    mc.rhs_conv(|t| rewrite_seq(t, &projs)) // = MK (fa·fb+sa·sb)(fa·sb+sa·fb)
+}
+
+/// `⊢ int.mul a b = MK (fa·fb+sa·sb)(fa·sb+sa·fb)`, where `ra : a = MK fa
+/// sa`, `rb : b = MK fb sb`.
+fn mul_via_components(ra: &Thm, rb: &Thm) -> Result<Thm> {
+    let (_a, ma) = dest_eq(ra)?;
+    let (_b, mb) = dest_eq(rb)?;
+    let (fa, sa) = mk_components(&ma)?;
+    let (fb, sb) = mk_components(&mb)?;
+    Thm::refl(int_mul())?
+        .cong_app(ra.clone())?
+        .cong_app(rb.clone())? // int.mul a b = int.mul (MK fa sa)(MK fb sb)
+        .trans(mul_mk(&fa, &sa, &fb, &sb)?)
+}
+
+/// **Successor in component form.** `⊢ int.succ (MK f s) = MK (succ f) s`.
+fn succ_mk(f: &Term, s: &Term) -> Result<Thm> {
+    let sc = succ_class(&pair_nn(f.clone(), s.clone()))?; // = mk_int(succ_pair (pair f s))
+    let n = Type::nat();
+    let projs = [
+        crate::init::prod::fst_pair(&n, &n, f, s)?, // fst (pair f s) = f  (under succ)
+        crate::init::prod::snd_pair(&n, &n, f, s)?, // snd (pair f s) = s
+    ];
+    sc.rhs_conv(|t| rewrite_seq(t, &projs)) // = MK (succ f) s
 }
 
 /// `⊢ int.neg a = MK sa fa`, where `ra : a = MK fa sa`.
@@ -813,6 +1055,21 @@ fn lit0_mk() -> Result<Thm> {
     let rel = rel_of_pairs(&f0, &s0, &nat::zero(), &nat::zero(), g)?;
     let mk_eq = quotient::class_intro(&spec(), &[], &nn(), &int_rel_symm(), &int_rel_trans(), rel)?;
     rm.trans(mk_eq) // ⊢ 0 = MK(0, 0)
+}
+
+/// `⊢ int_lit 1 = MK(1, 0)` — literal-`1` coherence. Cleanly: `int.succ 0`
+/// reduces to `1`, and `int.succ (MK 0 0) = MK (succ 0) 0 = MK 1 0`.
+fn lit1_mk() -> Result<Thm> {
+    let e_red = Term::app(int_succ(), lit(0)).reduce()?; // int.succ 0 = 1
+    let succ_cong = Thm::refl(int_succ())?.cong_app(lit0_mk()?)?; // int.succ 0 = int.succ (MK 0 0)
+    let sm = succ_mk(&nat::zero(), &nat::zero())?; // int.succ (MK 0 0) = MK (succ 0) 0
+    let succ0_eq_1 = nat::succ(nat::zero()).reduce()?; // succ 0 = 1
+    let bridge = mkfs_cong(succ0_eq_1, Thm::refl(nat::zero())?)?; // MK (succ 0) 0 = MK 1 0
+    e_red
+        .sym()? // int_lit 1 = int.succ 0
+        .trans(succ_cong)?
+        .trans(sm)?
+        .trans(bridge) // = MK 1 0
 }
 
 // ============================================================================
@@ -976,38 +1233,164 @@ cached_thm! {
     }
 }
 
-/// `⊢ ∀a b c. (a * b) * c = a * (b * c)`.
-pub fn mul_assoc() -> Thm {
-    let (a, b, c) = (var("a"), var("b"), var("c"));
-    let lhs = mul(mul(a.clone(), b.clone()), c.clone());
-    let rhs = mul(a, mul(b, c));
-    let eq = lhs.equals(rhs).expect("mul_assoc");
-    axiom(forall_int(&["a", "b", "c"], eq))
+cached_thm! {
+    /// `⊢ ∀a b c. (a * b) * c = a * (b * c)` — **proved**. On `MK`
+    /// components each side expands (`distrib`/`distrib_r` + `nat::mul_assoc`)
+    /// to the same four triple-products, re-paired by [`mid_swap`].
+    pub fn mul_assoc() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let (fb, sb) = (fcomp(&b), scomp(&b));
+        let (fc, sc) = (fcomp(&c), scomp(&c));
+        let m = |u: &Term, v: &Term| nat::mul(u.clone(), v.clone());
+        let acomm = |x: &Term, y: &Term| -> Result<Thm> {
+            nat::add_comm().all_elim(x.clone())?.all_elim(y.clone())
+        };
+
+        // (a*b)*c = MK (P1·fc + P2·sc) (P1·sc + P2·fc),  P1=fa·fb+sa·sb,
+        //   P2=fa·sb+sa·fb ; a*(b*c) = MK (fa·Q1 + sa·Q2) (fa·Q2 + sa·Q1),
+        //   Q1=fb·fc+sb·sc, Q2=fb·sc+sb·fc.
+        let ab = mul_via_components(&ra, &rb)?;
+        let lhs = mul_via_components(&ab, &rc)?;
+        let bc = mul_via_components(&rb, &rc)?;
+        let rhs = mul_via_components(&ra, &bc)?;
+
+        // `(x·y + z·w)·u = x·(y·u) + z·(w·u)` (distrib_r + two mul_assoc).
+        let expand_r = |x: &Term, y: &Term, z: &Term, w: &Term, u: &Term| -> Result<Thm> {
+            elim3(nat::distrib_r(), &m(x, y), &m(z, w), u)?.trans(nat::cong_add(
+                elim3(nat::mul_assoc(), x, y, u)?,
+                elim3(nat::mul_assoc(), z, w, u)?,
+            )?)
+        };
+
+        // fst: (P1·fc + P2·sc) = (fa·Q1 + sa·Q2).  Atoms A,B,C,D.
+        let fst_eq = {
+            let (aa, bb) = (m(&fa, &m(&fb, &fc)), m(&sa, &m(&sb, &fc)));
+            let (cc, dd) = (m(&fa, &m(&sb, &sc)), m(&sa, &m(&fb, &sc)));
+            let l = nat::cong_add(
+                expand_r(&fa, &fb, &sa, &sb, &fc)?, // P1·fc = A + B
+                expand_r(&fa, &sb, &sa, &fb, &sc)?, // P2·sc = C + D
+            )?; // L1 = (A+B)+(C+D)
+            let r = nat::cong_add(
+                elim3(nat::distrib(), &fa, &m(&fb, &fc), &m(&sb, &sc))?, // fa·Q1 = A + C
+                elim3(nat::distrib(), &sa, &m(&fb, &sc), &m(&sb, &fc))?, // sa·Q2 = D + B
+            )?; // R1 = (A+C)+(D+B)
+            l.trans(mid_swap(&aa, &bb, &cc, &dd)?)? // = (A+C)+(B+D)
+                .trans(cong_add_r(&nat::add(aa, cc), acomm(&bb, &dd)?)?)? // = (A+C)+(D+B)
+                .trans(r.sym()?)?
+        };
+        // snd: (P1·sc + P2·fc) = (fa·Q2 + sa·Q1).  Atoms E,F,G,H.
+        let snd_eq = {
+            let (ee, ff) = (m(&fa, &m(&fb, &sc)), m(&sa, &m(&sb, &sc)));
+            let (gg, hh) = (m(&fa, &m(&sb, &fc)), m(&sa, &m(&fb, &fc)));
+            let l = nat::cong_add(
+                expand_r(&fa, &fb, &sa, &sb, &sc)?, // P1·sc = E + F
+                expand_r(&fa, &sb, &sa, &fb, &fc)?, // P2·fc = G + H
+            )?; // L2 = (E+F)+(G+H)
+            let r = nat::cong_add(
+                elim3(nat::distrib(), &fa, &m(&fb, &sc), &m(&sb, &fc))?, // fa·Q2 = E + G
+                elim3(nat::distrib(), &sa, &m(&fb, &fc), &m(&sb, &sc))?, // sa·Q1 = H + F
+            )?; // R2 = (E+G)+(H+F)
+            l.trans(mid_swap(&ee, &ff, &gg, &hh)?)? // = (E+G)+(F+H)
+                .trans(cong_add_r(&nat::add(ee, gg), acomm(&ff, &hh)?)?)? // = (E+G)+(H+F)
+                .trans(r.sym()?)?
+        };
+
+        lhs.trans(mkfs_cong(fst_eq, snd_eq)?)?
+            .trans(rhs.sym()?)?
+            .all_intro("c", int())?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
 }
 
-/// `⊢ ∀a. a * 1 = a`.
-pub fn mul_one() -> Thm {
-    let a = var("a");
-    let eq = mul(a.clone(), lit(1))
-        .equals(a)
-        .expect("mul_one: a * 1 = a");
-    axiom(forall_int(&["a"], eq))
+cached_thm! {
+    /// `⊢ ∀a. a * 1 = a` — **proved**. `1 = MK(1,0)` ([`lit1_mk`]), so
+    /// `a * 1 = MK(fa·1+sa·0)(fa·0+sa·1) = MK(fa)(sa) = a` by
+    /// `nat::mul_one`/`mul_zero` on each component.
+    pub fn mul_one() -> Result<Thm> {
+        let a = var("a");
+        let ra = recon_mk(&a)?;
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let lhs = mul_via_components(&ra, &lit1_mk()?)?; // a*1 = MK(fa·1+sa·0)(fa·0+sa·1)
+        // fst: fa·1+sa·0 = fa+0 = fa.
+        let fst_eq = nat::cong_add(
+            nat::mul_one().all_elim(fa.clone())?,
+            nat::mul_zero().all_elim(sa.clone())?,
+        )?
+        .trans(nat::add_zero().all_elim(fa.clone())?)?;
+        // snd: fa·0+sa·1 = 0+sa = sa.
+        let snd_eq = nat::cong_add(
+            nat::mul_zero().all_elim(fa.clone())?,
+            nat::mul_one().all_elim(sa.clone())?,
+        )?
+        .trans(nat::add_base().all_elim(sa.clone())?)?;
+        lhs.trans(mkfs_cong(fst_eq, snd_eq)?)?
+            .trans(ra.sym()?)?
+            .all_intro("a", int())
+    }
 }
 
-/// `⊢ ∀a. a * 0 = 0`.
-pub fn mul_zero() -> Thm {
-    let a = var("a");
-    let eq = mul(a, lit(0)).equals(lit(0)).expect("mul_zero: a * 0 = 0");
-    axiom(forall_int(&["a"], eq))
+cached_thm! {
+    /// `⊢ ∀a. a * 0 = 0` — **proved**. `0 = MK(0,0)` ([`lit0_mk`]), so
+    /// `a * 0 = MK(fa·0+sa·0)(fa·0+sa·0) = MK(0)(0) = 0`.
+    pub fn mul_zero() -> Result<Thm> {
+        let a = var("a");
+        let ra = recon_mk(&a)?;
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let lhs = mul_via_components(&ra, &lit0_mk()?)?; // a*0 = MK(fa·0+sa·0)(fa·0+sa·0)
+        // each component: fa·0+sa·0 = 0+0 = 0.
+        let comp = nat::cong_add(
+            nat::mul_zero().all_elim(fa.clone())?,
+            nat::mul_zero().all_elim(sa.clone())?,
+        )?
+        .trans(nat::add_base().all_elim(nat::zero())?)?;
+        lhs.trans(mkfs_cong(comp.clone(), comp)?)?
+            .trans(lit0_mk()?.sym()?)?
+            .all_intro("a", int())
+    }
 }
 
-/// `⊢ ∀a b c. a * (b + c) = a * b + a * c` — left distributivity.
-pub fn distrib() -> Thm {
-    let (a, b, c) = (var("a"), var("b"), var("c"));
-    let lhs = mul(a.clone(), add(b.clone(), c.clone()));
-    let rhs = add(mul(a.clone(), b), mul(a, c));
-    let eq = lhs.equals(rhs).expect("distrib");
-    axiom(forall_int(&["a", "b", "c"], eq))
+cached_thm! {
+    /// `⊢ ∀a b c. a * (b + c) = a * b + a * c` — **proved** (left
+    /// distributivity). On `MK` components: each side's `fst`/`snd` expands
+    /// by `nat::distrib` to the same four products, re-paired by [`mid_swap`].
+    pub fn distrib() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let (fb, sb) = (fcomp(&b), scomp(&b));
+        let (fc, sc) = (fcomp(&c), scomp(&c));
+        let m = |u: &Term, v: &Term| nat::mul(u.clone(), v.clone());
+
+        // a*(b+c) = MK (fa·(fb+fc)+sa·(sb+sc)) (fa·(sb+sc)+sa·(fb+fc))
+        let bc = add_via_components(&rb, &rc)?;
+        let lhs = mul_via_components(&ra, &bc)?;
+        // a*b + a*c = MK ((fa·fb+sa·sb)+(fa·fc+sa·sc)) ((fa·sb+sa·fb)+(fa·sc+sa·fc))
+        let ab = mul_via_components(&ra, &rb)?;
+        let ac = mul_via_components(&ra, &rc)?;
+        let rhs = add_via_components(&ab, &ac)?;
+
+        // fst: fa·(fb+fc)+sa·(sb+sc) = (fa·fb+sa·sb)+(fa·fc+sa·sc).
+        let fst_eq = nat::cong_add(
+            elim3(nat::distrib(), &fa, &fb, &fc)?, // fa·(fb+fc) = fa·fb+fa·fc
+            elim3(nat::distrib(), &sa, &sb, &sc)?, // sa·(sb+sc) = sa·sb+sa·sc
+        )?
+        .trans(mid_swap(&m(&fa, &fb), &m(&fa, &fc), &m(&sa, &sb), &m(&sa, &sc))?)?;
+        // snd: fa·(sb+sc)+sa·(fb+fc) = (fa·sb+sa·fb)+(fa·sc+sa·fc).
+        let snd_eq = nat::cong_add(
+            elim3(nat::distrib(), &fa, &sb, &sc)?,
+            elim3(nat::distrib(), &sa, &fb, &fc)?,
+        )?
+        .trans(mid_swap(&m(&fa, &sb), &m(&fa, &sc), &m(&sa, &fb), &m(&sa, &fc))?)?;
+
+        lhs.trans(mkfs_cong(fst_eq, snd_eq)?)?
+            .trans(rhs.sym()?)?
+            .all_intro("c", int())?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
 }
 
 cached_thm! {
@@ -1030,89 +1413,469 @@ cached_thm! {
 }
 
 // ============================================================================
+// Order machinery — `int.le` / `int.lt` as the `nat` comparison on components
+// ============================================================================
+//
+// `int.le`/`int.lt` pick ε-representatives and compare `a + d ⋚ c + b`. On the
+// `MK(f, s)` form the comparison reads off the *clean* components (`le_mk` /
+// `lt_mk`) — the ε-reps are `round_trip`-related to `(f, s)`, and the
+// comparison is invariant under that (`nat::le_cross` / `lt_cross`). Then each
+// order axiom is a `nat` order fact lifted through `*_via_components`.
+
+/// `⊢ int.lt a b = nat.lt (fst(rep a)+snd(rep b)) (fst(rep b)+snd(rep a))`.
+fn lt_defining_eq(a: &Term, b: &Term) -> Result<Thm> {
+    lt(a.clone(), b.clone())
+        .delta_all(covalence_core::defs::int_lt_spec().symbol())?
+        .rhs_conv(|t| t.reduce())
+}
+/// `⊢ int.le a b = nat.le (…)(…)` — the `≤` mirror of [`lt_defining_eq`].
+fn le_defining_eq(a: &Term, b: &Term) -> Result<Thm> {
+    le(a.clone(), b.clone())
+        .delta_all(covalence_core::defs::int_le_spec().symbol())?
+        .rhs_conv(|t| t.reduce())
+}
+
+/// The cross-sum bridge for `MK fa sa` vs `MK fb sb`:
+/// `⊢ (F1+S2)+(fb+sa) = (fa+sb)+(F2+S1)`, where `F1/S1` (resp. `F2/S2`) are
+/// the components of the ε-representative `int.le`/`int.lt` picks for `MK fa
+/// sa` (resp. `MK fb sb`). Shared by [`le_mk`] / [`lt_mk`].
+fn cmp_cross_eq(fa: &Term, sa: &Term, fb: &Term, sb: &Term) -> Result<Thm> {
+    let n = Type::nat();
+    let (rp, rq) = (rep_pair(&mkfs(fa, sa)), rep_pair(&mkfs(fb, sb)));
+    let (cf1, cs1) = (fst_nn(&rp), snd_nn(&rp)); // F1, S1
+    let (cf2, cs2) = (fst_nn(&rq), snd_nn(&rq)); // F2, S2
+    // r1: fa + S1 = F1 + sa ; r2: fb + S2 = F2 + sb  (round_trip + projections).
+    let r1 = reduce_rel(round_trip(&pair_nn(fa.clone(), sa.clone()))?)?
+        .rewrite(&crate::init::prod::fst_pair(&n, &n, fa, sa)?)?
+        .rewrite(&crate::init::prod::snd_pair(&n, &n, fa, sa)?)?;
+    let r2 = reduce_rel(round_trip(&pair_nn(fb.clone(), sb.clone()))?)?
+        .rewrite(&crate::init::prod::fst_pair(&n, &n, fb, sb)?)?
+        .rewrite(&crate::init::prod::snd_pair(&n, &n, fb, sb)?)?;
+    // S2 + fb = fb + S2 = F2 + sb = sb + F2.
+    let s2_fb = nat::add_comm()
+        .all_elim(cs2.clone())?
+        .all_elim(fb.clone())?
+        .trans(r2)?
+        .trans(
+            nat::add_comm()
+                .all_elim(cf2.clone())?
+                .all_elim(sb.clone())?,
+        )?;
+    // (F1+S2)+(fb+sa) = (F1+sa)+(S2+fb) = (fa+S1)+(sb+F2) = (fa+sb)+(F2+S1).
+    elim4(nat::add_interchange(), &cf1, &cs2, fb, sa)?
+        .trans(nat::cong_add(r1.sym()?, s2_fb)?)?
+        .trans(elim4(nat::add_interchange(), fa, sb, &cf2, &cs1)?.sym()?)
+}
+
+/// **Strict comparison computation rule.** `⊢ int.lt (MK fa sa)(MK fb sb) =
+/// nat.lt (fa+sb)(fb+sa)`.
+fn lt_mk(fa: &Term, sa: &Term, fb: &Term, sb: &Term) -> Result<Thm> {
+    let de = lt_defining_eq(&mkfs(fa, sa), &mkfs(fb, sb))?;
+    let (rp, rq) = (rep_pair(&mkfs(fa, sa)), rep_pair(&mkfs(fb, sb)));
+    let (cf1, cs1) = (fst_nn(&rp), snd_nn(&rp));
+    let (cf2, cs2) = (fst_nn(&rq), snd_nn(&rq));
+    let well = nat::lt_cross()
+        .all_elim(nat::add(cf1, cs2))?
+        .all_elim(nat::add(cf2, cs1))?
+        .all_elim(nat::add(fa.clone(), sb.clone()))?
+        .all_elim(nat::add(fb.clone(), sa.clone()))?
+        .imp_elim(cmp_cross_eq(fa, sa, fb, sb)?)?;
+    de.trans(well)
+}
+
+/// **Non-strict comparison computation rule.** `⊢ int.le (MK fa sa)(MK fb
+/// sb) = nat.le (fa+sb)(fb+sa)`.
+fn le_mk(fa: &Term, sa: &Term, fb: &Term, sb: &Term) -> Result<Thm> {
+    let de = le_defining_eq(&mkfs(fa, sa), &mkfs(fb, sb))?;
+    let (rp, rq) = (rep_pair(&mkfs(fa, sa)), rep_pair(&mkfs(fb, sb)));
+    let (cf1, cs1) = (fst_nn(&rp), snd_nn(&rp));
+    let (cf2, cs2) = (fst_nn(&rq), snd_nn(&rq));
+    let well = nat::le_cross()
+        .all_elim(nat::add(cf1, cs2))?
+        .all_elim(nat::add(cf2, cs1))?
+        .all_elim(nat::add(fa.clone(), sb.clone()))?
+        .all_elim(nat::add(fb.clone(), sa.clone()))?
+        .imp_elim(cmp_cross_eq(fa, sa, fb, sb)?)?;
+    de.trans(well)
+}
+
+/// `⊢ int.lt a b = nat.lt (fa+sb)(fb+sa)`, where `ra : a = MK fa sa`,
+/// `rb : b = MK fb sb`.
+fn lt_via_components(ra: &Thm, rb: &Thm) -> Result<Thm> {
+    let (fa, sa) = mk_components(&dest_eq(ra)?.1)?;
+    let (fb, sb) = mk_components(&dest_eq(rb)?.1)?;
+    Thm::refl(int_lt())?
+        .cong_app(ra.clone())?
+        .cong_app(rb.clone())?
+        .trans(lt_mk(&fa, &sa, &fb, &sb)?)
+}
+/// `⊢ int.le a b = nat.le (fa+sb)(fb+sa)` — the `≤` mirror.
+fn le_via_components(ra: &Thm, rb: &Thm) -> Result<Thm> {
+    let (fa, sa) = mk_components(&dest_eq(ra)?.1)?;
+    let (fb, sb) = mk_components(&dest_eq(rb)?.1)?;
+    Thm::refl(int_le())?
+        .cong_app(ra.clone())?
+        .cong_app(rb.clone())?
+        .trans(le_mk(&fa, &sa, &fb, &sb)?)
+}
+
+/// `⊢ (a = b) = (fst(rep a)+snd(rep b) = fst(rep b)+snd(rep a))` — `int`
+/// equality is the Grothendieck relation on representatives. Forward by
+/// congruence; backward by `class_intro` + `recon`.
+fn int_eq_iff(a: &Term, b: &Term) -> Result<Thm> {
+    let (fa, sa, fb, sb) = (fcomp(a), scomp(a), fcomp(b), scomp(b));
+    let nat_eq = nat::add(fa.clone(), sb.clone()).equals(nat::add(fb.clone(), sa.clone()))?; // X = Y
+    let int_eq = a.clone().equals(b.clone())?;
+    // forward: {a = b} ⊢ X = Y.
+    let fwd = {
+        let rp_eq = rep_pair(a).rw_all(&Thm::assume(int_eq.clone())?)?; // rep a = rep b
+        let n = (Type::nat(), Type::nat());
+        nat::cong_add(
+            rp_eq.clone().cong_arg(fst(n.0.clone(), n.1.clone()))?, // fst(rep a) = fst(rep b)
+            rp_eq.cong_arg(snd(n.0, n.1))?.sym()?,                  // snd(rep b) = snd(rep a)
+        )?
+    };
+    // backward: {X = Y} ⊢ a = b.
+    let bwd = {
+        let rel = expand_rel(
+            Thm::assume(nat_eq.clone())?,
+            &rel_app(&rep_pair(a), &rep_pair(b)),
+        )?; // int_rel (rep a)(rep b)
+        let classes =
+            quotient::class_intro(&spec(), &[], &nn(), &int_rel_symm(), &int_rel_trans(), rel)?;
+        recon(a)?.trans(classes)?.trans(recon(b)?.sym()?)? // a = b
+    };
+    bwd.deduct_antisym(fwd) // ⊢ (a = b) = (X = Y)
+}
+
+// ============================================================================
 // Linear order
 // ============================================================================
 
-/// `⊢ ∀a. ¬(a < a)` — irreflexivity.
-pub fn lt_irrefl() -> Thm {
-    let a = var("a");
-    let body = lt(a.clone(), a).not().expect("lt_irrefl: ¬(a < a)");
-    axiom(forall_int(&["a"], body))
+cached_thm! {
+    /// `⊢ ∀a. ¬(a < a)` — **proved**. `int.lt a a = nat.lt N N` (`N = fa+sa`)
+    /// and `nat::lt_irrefl`.
+    pub fn lt_irrefl() -> Result<Thm> {
+        let a = var("a");
+        let ra = recon_mk(&a)?;
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let de = lt_via_components(&ra, &ra)?; // int.lt a a = nat.lt(fa+sa)(fa+sa)
+        nat::lt_irrefl()
+            .all_elim(nat::add(fa, sa))?
+            .rewrite(&de.sym()?)? // ¬(int.lt a a)
+            .all_intro("a", int())
+    }
 }
 
-/// `⊢ ∀a b c. a < b ⟹ b < c ⟹ a < c` — transitivity.
-pub fn lt_trans() -> Thm {
-    let (a, b, c) = (var("a"), var("b"), var("c"));
-    let inner = lt(b.clone(), c.clone())
-        .imp(lt(a.clone(), c))
-        .expect("lt_trans inner");
-    let body = lt(a, b).imp(inner).expect("lt_trans");
-    axiom(forall_int(&["a", "b", "c"], body))
+cached_thm! {
+    /// `⊢ ∀a b c. a < b ⟹ b < c ⟹ a < c` — **proved**. Add the two
+    /// representative inequalities, re-pair, and cancel the common summand.
+    pub fn lt_trans() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let (fb, sb) = (fcomp(&b), scomp(&b));
+        let (fc, sc) = (fcomp(&c), scomp(&c));
+        let (hab, hbc) = (lt(a.clone(), b.clone()), lt(b.clone(), c.clone()));
+
+        let e1 = lt_via_components(&ra, &rb)?.eq_mp(Thm::assume(hab.clone())?)?; // (fa+sb)<(fb+sa)
+        let e2 = lt_via_components(&rb, &rc)?.eq_mp(Thm::assume(hbc.clone())?)?; // (fb+sc)<(fc+sb)
+        let summed = nat::add_lt_add()
+            .all_elim(nat::add(fa.clone(), sb.clone()))?
+            .all_elim(nat::add(fb.clone(), sa.clone()))?
+            .all_elim(nat::add(fb.clone(), sc.clone()))?
+            .all_elim(nat::add(fc.clone(), sb.clone()))?
+            .imp_elim(e1)?
+            .imp_elim(e2)?; // (fa+sb)+(fb+sc) < (fb+sa)+(fc+sb)
+
+        // (fa+sb)+(fb+sc) = (fa+sc)+(fb+sb).
+        let eq_l = elim4(nat::add_interchange(), &fa, &sb, &fb, &sc)?.trans(cong_add_r(
+            &nat::add(fa.clone(), sc.clone()),
+            nat::add_comm().all_elim(sb.clone())?.all_elim(fb.clone())?,
+        )?)?;
+        // (fb+sa)+(fc+sb) = (fc+sa)+(fb+sb).
+        let eq_r = elim4(nat::add_interchange(), &fb, &sa, &fc, &sb)?
+            .trans(nat::add_comm().all_elim(nat::add(fb.clone(), sb.clone()))?.all_elim(nat::add(sa.clone(), fc.clone()))?)?
+            .trans(nat::cong_add(
+                nat::add_comm().all_elim(sa.clone())?.all_elim(fc.clone())?,
+                Thm::refl(nat::add(fb.clone(), sb.clone()))?,
+            )?)?;
+        let shifted = Thm::refl(nat::nat_lt())?
+            .cong_app(eq_l)?
+            .cong_app(eq_r)?
+            .eq_mp(summed)?; // (fa+sc)+K < (fc+sa)+K,  K = fb+sb
+        let nat_ac = nat::lt_add_mono_r()
+            .all_elim(nat::add(fa.clone(), sc.clone()))?
+            .all_elim(nat::add(fc.clone(), sa.clone()))?
+            .all_elim(nat::add(fb.clone(), sb.clone()))?
+            .eq_mp(shifted)?; // (fa+sc) < (fc+sa)
+        lt_via_components(&ra, &rc)?
+            .sym()?
+            .eq_mp(nat_ac)? // int.lt a c
+            .imp_intro(&hbc)?
+            .imp_intro(&hab)?
+            .all_intro("c", int())?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
 }
 
-/// `⊢ ∀a b. a < b ∨ a = b ∨ b < a` — trichotomy (totality).
-pub fn lt_trichotomy() -> Thm {
-    let (a, b) = (var("a"), var("b"));
-    let eq = a.clone().equals(b.clone()).expect("trichotomy: a = b");
-    let tail = eq.or(lt(b.clone(), a.clone())).expect("trichotomy tail");
-    let body = lt(a, b).or(tail).expect("trichotomy");
-    axiom(forall_int(&["a", "b"], body))
+cached_thm! {
+    /// `⊢ ∀a b. (a < b) ∨ ((a = b) ∨ (b < a))` — **proved** from
+    /// `nat::lt_trichotomy` on `(fa+sb, fb+sa)`, mapping each disjunct back.
+    pub fn lt_trichotomy() -> Result<Thm> {
+        let (a, b) = (var("a"), var("b"));
+        let (ra, rb) = (recon_mk(&a)?, recon_mk(&b)?);
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let (fb, sb) = (fcomp(&b), scomp(&b));
+        let ntri = nat::lt_trichotomy()
+            .all_elim(nat::add(fa.clone(), sb.clone()))?
+            .all_elim(nat::add(fb.clone(), sa.clone()))?; // (X<Y) ∨ ((X=Y) ∨ (Y<X))
+        let dab = lt_via_components(&ra, &rb)?; // int.lt a b = (X<Y)
+        let dba = lt_via_components(&rb, &ra)?; // int.lt b a = (Y<X)
+        let eqab = int_eq_iff(&a, &b)?; // (a=b) = (X=Y)
+        ntri
+            .rewrite(&dab.sym()?)?
+            .rewrite(&eqab.sym()?)?
+            .rewrite(&dba.sym()?)? // (a<b) ∨ ((a=b) ∨ (b<a))
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
 }
 
-/// `⊢ ∀a b. (a ≤ b) = (a < b ∨ a = b)` — `≤` in terms of `<`.
-pub fn le_def() -> Thm {
-    let (a, b) = (var("a"), var("b"));
-    let rhs = lt(a.clone(), b.clone())
-        .or(a.clone().equals(b.clone()).expect("le_def: a = b"))
-        .expect("le_def rhs");
-    let eq = le(a, b).equals(rhs).expect("le_def");
-    axiom(forall_int(&["a", "b"], eq))
+cached_thm! {
+    /// `⊢ ∀a b. (a ≤ b) = (a < b ∨ a = b)` — **proved** from
+    /// `nat::le_iff_lt_or_eq`, mapping `X<Y ↦ a<b` and `X=Y ↦ a=b`.
+    pub fn le_def() -> Result<Thm> {
+        let (a, b) = (var("a"), var("b"));
+        let (ra, rb) = (recon_mk(&a)?, recon_mk(&b)?);
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let (fb, sb) = (fcomp(&b), scomp(&b));
+        let chain = le_via_components(&ra, &rb)?.trans(
+            nat::le_iff_lt_or_eq()
+                .all_elim(nat::add(fa.clone(), sb.clone()))?
+                .all_elim(nat::add(fb.clone(), sa.clone()))?,
+        )?; // (a≤b) = (X<Y ∨ X=Y)
+        let dlt = lt_via_components(&ra, &rb)?;
+        let eqab = int_eq_iff(&a, &b)?;
+        chain
+            .rewrite(&dlt.sym()?)?
+            .rewrite(&eqab.sym()?)? // (a≤b) = (a<b ∨ a=b)
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
 }
 
 // ============================================================================
 // Ordered-ring compatibility
 // ============================================================================
 
-/// `⊢ ∀a b c. a < b ⟹ a + c < b + c` — translation invariance of `<`.
-pub fn lt_add_mono() -> Thm {
-    let (a, b, c) = (var("a"), var("b"), var("c"));
-    let concl = lt(add(a.clone(), c.clone()), add(b.clone(), c));
-    let body = lt(a, b).imp(concl).expect("lt_add_mono");
-    axiom(forall_int(&["a", "b", "c"], body))
+cached_thm! {
+    /// `⊢ ∀a b c. a < b ⟹ a + c < b + c` — **proved**. `int.lt (a+c)(b+c)`
+    /// reads off `(fa+fc)+(sb+sc) ⋚ …`, which is `(fa+sb) ⋚ (fb+sa)` shifted
+    /// by `fc+sc` (`nat::lt_add_mono_r`).
+    pub fn lt_add_mono() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let (fb, sb) = (fcomp(&b), scomp(&b));
+        let (fc, sc) = (fcomp(&c), scomp(&c));
+        let h = lt(a.clone(), b.clone());
+
+        let rac = add_via_components(&ra, &rc)?; // a+c = MK(fa+fc)(sa+sc)
+        let rbc = add_via_components(&rb, &rc)?; // b+c = MK(fb+fc)(sb+sc)
+        let dconcl = lt_via_components(&rac, &rbc)?; // int.lt(a+c)(b+c) = nat.lt(P)(Q)
+        let xy = lt_via_components(&ra, &rb)?.eq_mp(Thm::assume(h.clone())?)?; // (fa+sb)<(fb+sa)
+        let xyk = nat::lt_add_mono_r()
+            .all_elim(nat::add(fa.clone(), sb.clone()))?
+            .all_elim(nat::add(fb.clone(), sa.clone()))?
+            .all_elim(nat::add(fc.clone(), sc.clone()))?
+            .sym()?
+            .eq_mp(xy)?; // (fa+sb)+(fc+sc) < (fb+sa)+(fc+sc)
+        let eq_p = mid_swap(&fa, &fc, &sb, &sc)?; // (fa+fc)+(sb+sc) = (fa+sb)+(fc+sc)
+        let eq_q = mid_swap(&fb, &fc, &sa, &sc)?; // (fb+fc)+(sa+sc) = (fb+sa)+(fc+sc)
+        let pq = Thm::refl(nat::nat_lt())?
+            .cong_app(eq_p.sym()?)?
+            .cong_app(eq_q.sym()?)?
+            .eq_mp(xyk)?; // nat.lt(P)(Q)
+        dconcl
+            .sym()?
+            .eq_mp(pq)? // int.lt(a+c)(b+c)
+            .imp_intro(&h)?
+            .all_intro("c", int())?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
 }
 
-/// `⊢ ∀a b c. 0 < c ⟹ a < b ⟹ a * c < b * c` — `<` preserved by a
-/// positive multiplier.
-pub fn lt_mul_pos() -> Thm {
-    let (a, b, c) = (var("a"), var("b"), var("c"));
-    let concl = lt(mul(a.clone(), c.clone()), mul(b.clone(), c.clone()));
-    let inner = lt(a, b).imp(concl).expect("lt_mul_pos inner");
-    let body = lt(lit(0), c).imp(inner).expect("lt_mul_pos");
-    axiom(forall_int(&["a", "b", "c"], body))
+cached_thm! {
+    /// `⊢ ∀a b c. 0 < c ⟹ a < b ⟹ a * c < b * c` — **proved**. Writing
+    /// `0 < c` as `fc = sc + m` (`0 < m`), each Grothendieck product
+    /// comparison decomposes as `D + (fa+sb)·m` / `D + (fb+sa)·m` over the
+    /// **same** `D` (`nat::prove_add_eq` does the shuffle), so the goal is
+    /// `(fa+sb)·m < (fb+sa)·m` by `nat::lt_mul_mono_r`.
+    pub fn lt_mul_pos() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let (fb, sb) = (fcomp(&b), scomp(&b));
+        let (fc, sc) = (fcomp(&c), scomp(&c));
+        let m_ = |u: &Term, v: &Term| nat::mul(u.clone(), v.clone());
+        let (hc, hab) = (lt(lit(0), c.clone()), lt(a.clone(), b.clone()));
+
+        let rac = mul_via_components(&ra, &rc)?; // a·c = MK(fa·fc+sa·sc)(fa·sc+sa·fc)
+        let rbc = mul_via_components(&rb, &rc)?;
+        let dconcl = lt_via_components(&rac, &rbc)?; // int.lt(a·c)(b·c) = nat.lt(P)(Q)
+        let p = nat::add(
+            nat::add(m_(&fa, &fc), m_(&sa, &sc)),
+            nat::add(m_(&fb, &sc), m_(&sb, &fc)),
+        );
+        let q = nat::add(
+            nat::add(m_(&fb, &fc), m_(&sb, &sc)),
+            nat::add(m_(&fa, &sc), m_(&sa, &fc)),
+        );
+
+        // positivity: 0 < c ⟹ sc < fc.
+        let pos_c = lt_via_components(&lit0_mk()?, &rc)?
+            .eq_mp(Thm::assume(hc.clone())?)? // {0<c} ⊢ nat.lt(0+sc)(fc+0)
+            .rewrite(&nat::add_base().all_elim(sc.clone())?)?
+            .rewrite(&nat::add_zero().all_elim(fc.clone())?)?; // {0<c} ⊢ sc < fc
+        // fc = sc + m, m = S(fc − S sc), 0 < m.
+        let ssc_le_fc = nat::lt_iff_succ_le()
+            .all_elim(sc.clone())?
+            .all_elim(fc.clone())?
+            .eq_mp(pos_c)?; // {0<c} ⊢ S sc ≤ fc
+        let mprime = nat::sub(fc.clone(), nat::succ(sc.clone()));
+        let m = nat::succ(mprime.clone());
+        let fc_eq = nat::add_succ_r()
+            .all_elim(sc.clone())?
+            .all_elim(mprime.clone())? // sc + S m' = S(sc+m')
+            .trans(nat::add_step().all_elim(sc.clone())?.all_elim(mprime.clone())?.sym()?)? // = S sc + m'
+            .trans(
+                nat::le_add_sub()
+                    .all_elim(nat::succ(sc.clone()))?
+                    .all_elim(fc.clone())?
+                    .imp_elim(ssc_le_fc)?,
+            )?; // {0<c} ⊢ sc + m = fc
+        let pos_m = nat::zero_lt_succ().all_elim(mprime.clone())?; // 0 < m
+
+        // X = fa+sb, Y = fb+sa.
+        let (xx, yy) = (nat::add(fa.clone(), sb.clone()), nat::add(fb.clone(), sa.clone()));
+        let big_d = nat::add(
+            nat::add(m_(&fa, &sc), m_(&sa, &sc)),
+            nat::add(m_(&fb, &sc), m_(&sb, &sc)),
+        );
+
+        // P = D + (u+v)·m, with `(u,v) = (fa,sb)` for P and `(fb,sa)` for Q —
+        // the two `_·(sc+m)` products in `lhs[fc→sc+m]` distribute and the six
+        // leaves re-pair (via `prove_add_eq`) as `D + (u·m + v·m) = D + (u+v)·m`.
+        let fc_sym = fc_eq.clone().sym()?; // {0<c} ⊢ fc = sc + m
+        let decompose = |lhs: &Term, u: &Term, v: &Term| -> Result<Thm> {
+            let e_sub = lhs.rw_all(&fc_sym)?; // lhs = lhs[fc→sc+m]
+            let e_dist = rewrite_seq(
+                &dest_eq(&e_sub)?.1,
+                &[
+                    elim3(nat::distrib(), u, &sc, &m)?,
+                    elim3(nat::distrib(), v, &sc, &m)?,
+                ],
+            )?;
+            let target = nat::add(big_d.clone(), nat::add(m_(u, &m), m_(v, &m)));
+            let e_norm = nat::prove_add_eq(&dest_eq(&e_dist)?.1, &target)?; // l2 = D + (u·m + v·m)
+            let e_fold = cong_add_r(&big_d, elim3(nat::distrib_r(), u, v, &m)?.sym()?)?; // = D + (u+v)·m
+            e_sub.trans(e_dist)?.trans(e_norm)?.trans(e_fold)
+        };
+        let p_eq = decompose(&p, &fa, &sb)?; // {0<c} ⊢ P = D + X·m
+        let q_eq = decompose(&q, &fb, &sa)?; // {0<c} ⊢ Q = D + Y·m
+
+        // X·m < Y·m, hence D+X·m < D+Y·m.
+        let xy = lt_via_components(&ra, &rb)?.eq_mp(Thm::assume(hab.clone())?)?; // {a<b} ⊢ X < Y
+        let xm_lt_ym = nat::lt_mul_mono_r()
+            .all_elim(xx.clone())?
+            .all_elim(yy.clone())?
+            .all_elim(m.clone())?
+            .imp_elim(xy)?
+            .imp_elim(pos_m)?; // {a<b} ⊢ X·m < Y·m
+        let d_lt = nat::lt_add_mono_r()
+            .all_elim(m_(&xx, &m))?
+            .all_elim(m_(&yy, &m))?
+            .all_elim(big_d.clone())?
+            .sym()?
+            .eq_mp(xm_lt_ym)? // X·m+D < Y·m+D
+            .rewrite(&nat::add_comm().all_elim(m_(&xx, &m))?.all_elim(big_d.clone())?)? // D+X·m < Y·m+D
+            .rewrite(&nat::add_comm().all_elim(m_(&yy, &m))?.all_elim(big_d.clone())?)?; // D+X·m < D+Y·m
+        let pq = d_lt.rewrite(&p_eq.sym()?)?.rewrite(&q_eq.sym()?)?; // {a<b,0<c} ⊢ nat.lt(P)(Q)
+
+        dconcl
+            .sym()?
+            .eq_mp(pq)? // int.lt(a·c)(b·c)
+            .imp_intro(&hab)?
+            .imp_intro(&hc)?
+            .all_intro("c", int())?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
 }
 
 // ============================================================================
 // Discreteness — the integer-specific axiom
 // ============================================================================
 
-/// `⊢ ∀a b. (a < b) = (a + 1 ≤ b)` — the integers are discrete: strict
-/// `<` is `+1`-shifted `≤`. The key fact the integer-specific Alethe
-/// `la` rules (rounding rational bounds to integer ones) rest on.
-pub fn lt_succ() -> Thm {
-    let (a, b) = (var("a"), var("b"));
-    let eq = lt(a.clone(), b.clone())
-        .equals(le(add(a, lit(1)), b))
-        .expect("lt_succ: (a < b) = (a + 1 ≤ b)");
-    axiom(forall_int(&["a", "b"], eq))
+cached_thm! {
+    /// `⊢ ∀a b. (a < b) = (a + 1 ≤ b)` — **proved**. Both unfold to a `nat`
+    /// comparison on `X = fa+sb`, `Y = fb+sa`: `a<b ↦ X<Y` and `a+1≤b ↦
+    /// S X ≤ Y`, bridged by `nat::lt_iff_succ_le`.
+    pub fn lt_succ() -> Result<Thm> {
+        let (a, b) = (var("a"), var("b"));
+        let (ra, rb) = (recon_mk(&a)?, recon_mk(&b)?);
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let (fb, sb) = (fcomp(&b), scomp(&b));
+        let (x, y) = (nat::add(fa.clone(), sb.clone()), nat::add(fb.clone(), sa.clone()));
+
+        let ra1 = add_via_components(&ra, &lit1_mk()?)?; // a+1 = MK(fa+1)(sa+0)
+        let dle = le_via_components(&ra1, &rb)?; // int.le(a+1)b = nat.le((fa+1)+sb)(fb+(sa+0))
+        let dlt = lt_via_components(&ra, &rb)?; // int.lt a b = nat.lt(X)(Y)
+        let lisl = nat::lt_iff_succ_le()
+            .all_elim(x.clone())?
+            .all_elim(y.clone())?; // (X<Y) = (S X ≤ Y)
+
+        // S X = (fa+1)+sb ; Y = fb+(sa+0).
+        let sx_eq = nat::add_step()
+            .all_elim(fa.clone())?
+            .all_elim(sb.clone())?
+            .sym()? // S(fa+sb) = S fa + sb
+            .trans(
+                Thm::refl(nat::nat_add())?
+                    .cong_app(nat::add_one_succ(&fa)?.sym()?)? // S fa = fa+1
+                    .cong_fn(sb.clone())?, // S fa + sb = (fa+1)+sb
+            )?;
+        let y_eq = cong_add_r(&fb, nat::add_zero().all_elim(sa.clone())?.sym()?)?; // fb+sa = fb+(sa+0)
+        let bridge = Thm::refl(nat::nat_le())?
+            .cong_app(sx_eq)?
+            .cong_app(y_eq)?; // (S X ≤ Y) = ((fa+1)+sb ≤ fb+(sa+0))
+
+        dlt.trans(lisl)?
+            .trans(bridge)?
+            .trans(dle.sym()?)? // (a<b) = (a+1 ≤ b)
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The full postulate set — used to assert the audit-trail invariant.
-    fn all() -> Vec<Thm> {
-        vec![
+    #[test]
+    fn the_whole_ordered_ring_is_proved() {
+        // Every `int` ordered-ring axiom is now a genuine (hypothesis-free)
+        // theorem — no `Thm::assume` postulates remain.
+        let axioms = [
+            add_comm(),
+            add_assoc(),
+            add_zero(),
+            add_neg(),
+            sub_def(),
+            mul_comm(),
             mul_assoc(),
             mul_one(),
             mul_zero(),
@@ -1124,20 +1887,96 @@ mod tests {
             lt_add_mono(),
             lt_mul_pos(),
             lt_succ(),
-        ]
+        ];
+        for ax in axioms {
+            assert!(ax.hyps().is_empty(), "an int ordered-ring axiom is genuine");
+            assert!(ax.concl().type_of().unwrap().is_bool());
+        }
     }
 
     #[test]
-    fn postulates_are_well_typed_and_self_flagged() {
-        for ax in all() {
-            assert!(
-                ax.concl().type_of().unwrap().is_bool(),
-                "an int postulate is a bool statement"
-            );
-            assert!(
-                ax.hyps().iter().any(|h| h == ax.concl()),
-                "a postulated axiom carries itself as a hypothesis"
-            );
+    fn lt_mul_pos_is_a_genuine_theorem() {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let thm = lt_mul_pos();
+        assert!(
+            thm.hyps().is_empty(),
+            "int::lt_mul_pos is proved, not postulated"
+        );
+        let inst = elim3(thm, &a, &b, &c).unwrap();
+        let expected = lt(lit(0), c.clone())
+            .imp(
+                lt(a.clone(), b.clone())
+                    .imp(lt(mul(a, c.clone()), mul(b, c)))
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
+    }
+
+    #[test]
+    fn order_axioms_are_genuine() {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        // lt_irrefl: ¬(a<a).
+        assert_eq!(
+            lt_irrefl().all_elim(a.clone()).unwrap().concl(),
+            &lt(a.clone(), a.clone()).not().unwrap()
+        );
+        // lt_trans: a<b ⟹ b<c ⟹ a<c.
+        let trans = lt_trans()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap()
+            .all_elim(c.clone())
+            .unwrap();
+        assert_eq!(
+            trans.concl(),
+            &lt(a.clone(), b.clone())
+                .imp(
+                    lt(b.clone(), c.clone())
+                        .imp(lt(a.clone(), c.clone()))
+                        .unwrap()
+                )
+                .unwrap()
+        );
+        // le_def: (a≤b) = (a<b ∨ a=b).
+        let led = le_def()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap();
+        assert_eq!(
+            led.concl(),
+            &le(a.clone(), b.clone())
+                .equals(
+                    lt(a.clone(), b.clone())
+                        .or(a.clone().equals(b.clone()).unwrap())
+                        .unwrap()
+                )
+                .unwrap()
+        );
+        // lt_succ: (a<b) = (a+1 ≤ b).
+        let lsucc = lt_succ()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap();
+        assert_eq!(
+            lsucc.concl(),
+            &lt(a.clone(), b.clone())
+                .equals(le(add(a.clone(), lit(1)), b.clone()))
+                .unwrap()
+        );
+        for t in [
+            lt_irrefl(),
+            lt_trans(),
+            lt_trichotomy(),
+            le_def(),
+            lt_add_mono(),
+            lt_succ(),
+        ] {
+            assert!(t.hyps().is_empty(), "int order facts are genuine");
+            assert!(t.concl().type_of().unwrap().is_bool());
         }
     }
 
@@ -1157,6 +1996,13 @@ mod tests {
         let (l, r) = ac.concl().as_eq().unwrap();
         assert_eq!(l, &add(mk_int(&u), mk_int(&v)));
         assert_eq!(r, &mk_int(&add_pair(&u, &v)));
+
+        // mul_class: ⊢ int.mul (mk_int u)(mk_int v) = mk_int(mul_pair u v).
+        let mc = mul_class(&u, &v).expect("mul_class (well-definedness)");
+        assert!(mc.hyps().is_empty(), "mul_class is genuine");
+        let (l, r) = mc.concl().as_eq().unwrap();
+        assert_eq!(l, &mul(mk_int(&u), mk_int(&v)));
+        assert_eq!(r, &mk_int(&mul_pair(&u, &v)));
     }
 
     #[test]
@@ -1175,6 +2021,54 @@ mod tests {
             .unwrap();
         let expected = add(a.clone(), b.clone()).equals(add(b, a)).unwrap();
         assert_eq!(inst.concl(), &expected);
+    }
+
+    #[test]
+    fn distrib_is_a_genuine_theorem() {
+        let thm = distrib();
+        assert!(
+            thm.hyps().is_empty(),
+            "int::distrib is proved, not postulated"
+        );
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let inst = elim3(thm, &a, &b, &c).unwrap();
+        let expected = mul(a.clone(), add(b.clone(), c.clone()))
+            .equals(add(mul(a.clone(), b), mul(a, c)))
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
+    }
+
+    #[test]
+    fn mul_assoc_is_a_genuine_theorem() {
+        let thm = mul_assoc();
+        assert!(
+            thm.hyps().is_empty(),
+            "int::mul_assoc is proved, not postulated"
+        );
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let inst = elim3(thm, &a, &b, &c).unwrap();
+        let expected = mul(mul(a.clone(), b.clone()), c.clone())
+            .equals(mul(a, mul(b, c)))
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
+    }
+
+    #[test]
+    fn mul_unit_and_zero_are_genuine() {
+        // mul_one: ∀a. a*1 = a ; mul_zero: ∀a. a*0 = 0.
+        let a = var("a");
+        let one = mul_one();
+        assert!(one.hyps().is_empty(), "int::mul_one is proved");
+        assert_eq!(
+            one.all_elim(a.clone()).unwrap().concl(),
+            &mul(a.clone(), lit(1)).equals(a.clone()).unwrap()
+        );
+        let z = mul_zero();
+        assert!(z.hyps().is_empty(), "int::mul_zero is proved");
+        assert_eq!(
+            z.all_elim(a.clone()).unwrap().concl(),
+            &mul(a, lit(0)).equals(lit(0)).unwrap()
+        );
     }
 
     #[test]

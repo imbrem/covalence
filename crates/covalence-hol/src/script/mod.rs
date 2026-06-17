@@ -625,6 +625,21 @@ mod tests {
     }
 
     #[test]
+    fn spec_machinery_rules_replay() {
+        // The subtype/spec rules added for porting the non-`nat` modules.
+        // `eta-conv`: ⊢ (λx. succ x) = succ.
+        let eta = one(r#"(#import core)(#open core)
+               (#thm eta (#concl (= (lam (x nat) (succ x)) succ))
+                 (#proof (eta-conv (lam (x nat) (succ x)))))"#);
+        assert!(eta.hyps().is_empty());
+        // `reduce`: full βι normal form — `(λx. x) 0` reduces to `0`.
+        let red = one(r#"(#import core)(#open core)
+               (#thm red (#concl (= (app (lam (x nat) x) 0) 0))
+                 (#proof (reduce (app (lam (x nat) x) 0))))"#);
+        assert!(red.hyps().is_empty());
+    }
+
+    #[test]
     fn run_async_is_driven_by_block_on() {
         // The async core is reachable directly; `block_on` drives it exactly
         // as the sync `run` wrapper does.

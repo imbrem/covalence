@@ -208,9 +208,34 @@ term_rule!(UnfoldTermSpecRule, "unfold-term-spec", |t| Ok(
     Thm::unfold_term_spec(t)?
 ));
 term_rule!(BetaConvRule, "beta-conv", |t| Ok(Thm::beta_conv(t)?));
+// `(eta-conv (λx. f x))` → `⊢ (λx. f x) = f`.
+term_rule!(EtaConvRule, "eta-conv", |t| Ok(Thm::eta_conv(t)?));
+// `(reduce TERM)` → `⊢ TERM = TERM'` where TERM' is the full βι normal form
+// (β-reduction + primitive constant folding); the conversion workhorse for
+// subtype/spec proofs. `(delta TERM)` → `⊢ TERM = body` δ-unfolds the head
+// `TermSpec` (one definitional step).
+term_rule!(ReduceRule, "reduce", |t| Ok(
+    <Term as crate::init::ext::TermExt>::reduce(&t)?
+));
+term_rule!(DeltaRule, "delta", |t| Ok(
+    <Term as crate::init::ext::TermExt>::delta(&t)?
+));
 // `tauto`: prove a propositional / closed-arithmetic tautology via
 // `crate::init::logic::tauto`.
 term_rule!(TautoRule, "tauto", |t| Ok(crate::init::logic::tauto(&t)?));
+
+/// `(select-ax PRED WITNESS)` → `⊢ PRED WITNESS ⟹ PRED (ε PRED)` — the Hilbert
+/// ε axiom (choice). Used by the subtype/option/cond seam proofs.
+struct SelectAxRule;
+#[async_trait]
+impl Tactic for SelectAxRule {
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 2, "select-ax")?;
+        let p = c.term(&a[0])?;
+        let x = c.term(&a[1])?;
+        Ok(Thm::select_ax(p, x)?)
+    }
+}
 
 /// `(lemma NAME)` — reference a lemma proven earlier in the file. Looked up in
 /// [`Env`]'s lemma table and re-checked in-session (never trusted from disk);
@@ -389,6 +414,10 @@ pub fn core_rules() -> Vec<(&'static str, Arc<dyn Tactic>)> {
         ("unfold-at-1", Arc::new(UnfoldAt1Rule)),
         ("unfold-at-2", Arc::new(UnfoldAt2Rule)),
         ("beta-conv", Arc::new(BetaConvRule)),
+        ("eta-conv", Arc::new(EtaConvRule)),
+        ("reduce", Arc::new(ReduceRule)),
+        ("delta", Arc::new(DeltaRule)),
+        ("select-ax", Arc::new(SelectAxRule)),
         ("tauto", Arc::new(TautoRule)),
         // unary
         ("and-elim-l", Arc::new(AndElimLRule)),

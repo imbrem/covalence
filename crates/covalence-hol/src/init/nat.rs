@@ -216,6 +216,8 @@ crate::cov_theory! {
         "lt_trans"     => pub fn lt_trans_cov;
         "le_add_cancel_r" => pub fn le_add_cancel_r_cov;
         "lt_add_mono_r"   => pub fn lt_add_mono_r_cov;
+        "le_iff_lt_or_eq" => pub fn le_iff_lt_or_eq_cov;
+        "lt_trichotomy"   => pub fn lt_trichotomy_cov;
     }
 }
 
@@ -2964,6 +2966,14 @@ mod cov_tests {
         assert_eq!(
             cov::lt_add_mono_r_cov().concl(),
             super::lt_add_mono_r().concl()
+        );
+        assert_eq!(
+            cov::le_iff_lt_or_eq_cov().concl(),
+            super::le_iff_lt_or_eq().concl()
+        );
+        assert_eq!(
+            cov::lt_trichotomy_cov().concl(),
+            super::lt_trichotomy().concl()
         );
     }
 

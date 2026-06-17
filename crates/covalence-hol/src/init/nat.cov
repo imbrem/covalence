@@ -755,6 +755,89 @@
             (all-elim c (all-elim b (all-elim (succ a) (lemma le_add_cancel_r))))
             (sym (all-elim b (all-elim a (lemma lt_iff_succ_le))))))))))
 
+;; Internal helper for le_iff_lt_or_eq (not exported): from a witness `d` with
+;; `a + d = b`, decide `(a < b) ∨ (a = b)` — case-analysis on `d` (the IH is
+;; unused).  d=0 ⟹ a = b (right);  d = S d' ⟹ S a ≤ b ⟹ a < b (left).
+(#thm le_add_eq_or
+  (#concl (forall (a nat) (forall (b nat) (forall (d nat)
+            (==> (= (nat.add a d) b) (or (nat.lt a b) (= a b)))))))
+  (#by
+    (intro a b)
+    (induct d
+      (#by
+        (intro h)
+        (derive
+          (or-intro-r (nat.lt a b)
+            (trans (sym (all-elim a (lemma add_zero)))
+                   (assume (= (nat.add a 0) b))))))
+      (#by
+        (intro h)
+        (derive
+          (or-intro-l (= a b)
+            (eq-mp
+              (sym (all-elim b (all-elim a (lemma lt_iff_succ_le))))
+              (eq-mp
+                (mk-comb
+                  (mk-comb (refl nat.le) (refl (succ a)))
+                  (trans (sym (all-elim d (all-elim a (lemma add_succ))))
+                         (assume (= (nat.add a (succ d)) b))))
+                (eq-mp
+                  (sym (all-elim (nat.add a d) (all-elim a (lemma le_succ_succ))))
+                  (all-elim d (all-elim a (lemma le_add_r))))))))))))
+
+;; ⊢ ∀a b. (a ≤ b) = ((a < b) ∨ (a = b)).  The ≤/< decomposition, by
+;; `deduct-antisym` of the two directions.  Forward: from `a ≤ b`, `le_add_sub`
+;; supplies a witness `a + (b-a) = b` for `le_add_eq_or`.  Backward: `a < b`
+;; gives `a ≤ b` (lt_imp_le); `a = b` gives `a ≤ b` (le_refl, transported).
+(#thm le_iff_lt_or_eq
+  (#concl (forall (a nat) (forall (b nat)
+            (= (nat.le a b) (or (nat.lt a b) (= a b))))))
+  (#by
+    (intro a b)
+    (derive
+      (deduct-antisym
+        (or-elim
+          (assume (or (nat.lt a b) (= a b)))
+          (all-elim b (all-elim a (lemma lt_imp_le)))
+          (imp-intro (= a b)
+            (eq-mp (mk-comb (cong-fn a (refl nat.le)) (assume (= a b)))
+                   (all-elim a (lemma le_refl)))))
+        (imp-elim
+          (all-elim (nat.sub b a) (all-elim b (all-elim a (lemma le_add_eq_or))))
+          (imp-elim (all-elim b (all-elim a (lemma le_add_sub)))
+                    (assume (nat.le a b))))))))
+
+;; ⊢ ∀a b. (a < b) ∨ ((a = b) ∨ (b < a)).  Trichotomy.  `le_total` gives
+;; `a ≤ b ∨ b ≤ a`; each is decomposed by `le_iff_lt_or_eq` and folded into the
+;; three-way disjunction with `or-intro`/`or-elim`.
+(#thm lt_trichotomy
+  (#concl (forall (a nat) (forall (b nat)
+            (or (nat.lt a b) (or (= a b) (nat.lt b a))))))
+  (#by
+    (intro a b)
+    (derive
+      (or-elim
+        (all-elim b (all-elim a (lemma le_total)))
+        (imp-intro (nat.le a b)
+          (or-elim
+            (eq-mp (all-elim b (all-elim a (lemma le_iff_lt_or_eq)))
+                   (assume (nat.le a b)))
+            (imp-intro (nat.lt a b)
+              (or-intro-l (or (= a b) (nat.lt b a)) (assume (nat.lt a b))))
+            (imp-intro (= a b)
+              (or-intro-r (nat.lt a b)
+                (or-intro-l (nat.lt b a) (assume (= a b)))))))
+        (imp-intro (nat.le b a)
+          (or-elim
+            (eq-mp (all-elim a (all-elim b (lemma le_iff_lt_or_eq)))
+                   (assume (nat.le b a)))
+            (imp-intro (nat.lt b a)
+              (or-intro-r (nat.lt a b)
+                (or-intro-r (= a b) (assume (nat.lt b a)))))
+            (imp-intro (= b a)
+              (or-intro-r (nat.lt a b)
+                (or-intro-l (nat.lt b a) (sym (assume (= b a))))))))))))
+
 (#export succ_ne_zero succ_cong_ne rec_zero rec_succ eq_refl
          add_zero add_succ add_comm add_assoc add_cancel
          add_swap_mid
@@ -765,4 +848,5 @@
          le_refl not_succ_le_zero not_lt_zero lt_irrefl
          le_succ_self le_total lt_iff_succ_le le_add_r
          le_zero_iff le_antisym le_add_sub le_trans
-         lt_imp_le lt_trans le_add_cancel_r lt_add_mono_r)
+         lt_imp_le lt_trans le_add_cancel_r lt_add_mono_r
+         le_iff_lt_or_eq lt_trichotomy)

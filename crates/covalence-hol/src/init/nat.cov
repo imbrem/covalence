@@ -677,6 +677,84 @@
         (all-elim (nat.add (nat.sub b a) (nat.sub c b))
                   (all-elim a (lemma le_add_r)))))))
 
+;; ============================================================================
+;; Strict order `<` — its own transitivity, the `≤`/`<` decomposition, and
+;; trichotomy.  Mostly forward derivations over the `≤` theory above.
+;; ============================================================================
+
+;; ⊢ ∀a b. (a < b) ⟹ (a ≤ b).  `a < b` gives `S a ≤ b`; with `a ≤ S a`
+;; (le_succ_self) and `le_trans`, `a ≤ b`.
+(#thm lt_imp_le
+  (#concl (forall (a nat) (forall (b nat) (==> (nat.lt a b) (nat.le a b)))))
+  (#by
+    (intro a b h)
+    (derive
+      (imp-elim
+        (imp-elim
+          (all-elim b (all-elim (succ a) (all-elim a (lemma le_trans))))
+          (all-elim a (lemma le_succ_self)))
+        (eq-mp (all-elim b (all-elim a (lemma lt_iff_succ_le)))
+               (assume (nat.lt a b)))))))
+
+;; ⊢ ∀a b c. (a < b) ⟹ (b < c) ⟹ (a < c).  Transitivity of `<`: `S a ≤ b`
+;; and `b ≤ c` give `S a ≤ c`, i.e. `a < c`.
+(#thm lt_trans
+  (#concl (forall (a nat) (forall (b nat) (forall (c nat)
+            (==> (nat.lt a b) (==> (nat.lt b c) (nat.lt a c)))))))
+  (#by
+    (intro a b c h1 h2)
+    (derive
+      (eq-mp
+        (sym (all-elim c (all-elim a (lemma lt_iff_succ_le))))
+        (imp-elim
+          (imp-elim
+            (all-elim c (all-elim b (all-elim (succ a) (lemma le_trans))))
+            (eq-mp (all-elim b (all-elim a (lemma lt_iff_succ_le)))
+                   (assume (nat.lt a b))))
+          (imp-elim (all-elim c (all-elim b (lemma lt_imp_le)))
+                    (assume (nat.lt b c))))))))
+
+;; ⊢ ∀a b c. (a + c ≤ b + c) = (a ≤ b).  Cancelling a common right summand.
+;; Induction on c, peeling a successor each side (add_succ + le_succ_succ).
+(#thm le_add_cancel_r
+  (#concl (forall (a nat) (forall (b nat) (forall (c nat)
+            (= (nat.le (nat.add a c) (nat.add b c)) (nat.le a b))))))
+  (#by
+    (intro a b)
+    (induct c
+      (#by
+        (derive
+          (mk-comb (mk-comb (refl nat.le) (all-elim a (lemma add_zero)))
+                   (all-elim b (lemma add_zero)))))
+      (#by
+        (derive
+          (trans
+            (trans
+              (mk-comb
+                (mk-comb (refl nat.le) (all-elim c (all-elim a (lemma add_succ))))
+                (all-elim c (all-elim b (lemma add_succ))))
+              (all-elim (nat.add b c)
+                (all-elim (nat.add a c) (lemma le_succ_succ))))
+            (assume (= (nat.le (nat.add a c) (nat.add b c)) (nat.le a b)))))))))
+
+;; ⊢ ∀a b c. (a + c < b + c) = (a < b).  `<` add-monotonicity, threading
+;; `(a+c<b+c) = (S(a+c)≤b+c) = (S a+c≤b+c) = (S a≤b) = (a<b)`.
+(#thm lt_add_mono_r
+  (#concl (forall (a nat) (forall (b nat) (forall (c nat)
+            (= (nat.lt (nat.add a c) (nat.add b c)) (nat.lt a b))))))
+  (#by
+    (intro a b c)
+    (derive
+      (trans
+        (all-elim (nat.add b c) (all-elim (nat.add a c) (lemma lt_iff_succ_le)))
+        (trans
+          (cong-fn (nat.add b c)
+            (mk-comb (refl nat.le)
+              (sym (all-elim c (all-elim a (lemma succ_add))))))
+          (trans
+            (all-elim c (all-elim b (all-elim (succ a) (lemma le_add_cancel_r))))
+            (sym (all-elim b (all-elim a (lemma lt_iff_succ_le))))))))))
+
 (#export succ_ne_zero succ_cong_ne rec_zero rec_succ eq_refl
          add_zero add_succ add_comm add_assoc add_cancel
          add_swap_mid
@@ -686,4 +764,5 @@
          le_succ_succ lt_succ_succ le_zero zero_lt_succ
          le_refl not_succ_le_zero not_lt_zero lt_irrefl
          le_succ_self le_total lt_iff_succ_le le_add_r
-         le_zero_iff le_antisym le_add_sub le_trans)
+         le_zero_iff le_antisym le_add_sub le_trans
+         lt_imp_le lt_trans le_add_cancel_r lt_add_mono_r)

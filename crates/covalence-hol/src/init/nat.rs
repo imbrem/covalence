@@ -212,6 +212,10 @@ crate::cov_theory! {
         "le_antisym"   => pub fn le_antisym_cov;
         "le_add_sub"   => pub fn le_add_sub_cov;
         "le_trans"     => pub fn le_trans_cov;
+        "lt_imp_le"    => pub fn lt_imp_le_cov;
+        "lt_trans"     => pub fn lt_trans_cov;
+        "le_add_cancel_r" => pub fn le_add_cancel_r_cov;
+        "lt_add_mono_r"   => pub fn lt_add_mono_r_cov;
     }
 }
 
@@ -2951,6 +2955,16 @@ mod cov_tests {
         assert_eq!(cov::le_antisym_cov().concl(), super::le_antisym().concl());
         assert_eq!(cov::le_add_sub_cov().concl(), super::le_add_sub().concl());
         assert_eq!(cov::le_trans_cov().concl(), super::le_trans().concl());
+        assert_eq!(cov::lt_imp_le_cov().concl(), super::lt_imp_le().concl());
+        assert_eq!(cov::lt_trans_cov().concl(), super::lt_trans().concl());
+        assert_eq!(
+            cov::le_add_cancel_r_cov().concl(),
+            super::le_add_cancel_r().concl()
+        );
+        assert_eq!(
+            cov::lt_add_mono_r_cov().concl(),
+            super::lt_add_mono_r().concl()
+        );
     }
 
     #[test]

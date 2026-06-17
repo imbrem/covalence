@@ -381,18 +381,21 @@ directives — is `open`-able by other scripts; the macro binds it as a
   via the blanket). `drv.rs::check` is **async** (returns `BoxFuture`); both
   tactic-mode and tree-mode (`#proof`) can **await mid-proof** (tests
   `async_tactic_can_yield_mid_proof`, `registry_rule_in_tree_mode_can_await`).
-  Every proof rule — built-in *and* extension — now lives in the **rule
-  registry** (`Rule` async trait, `register_rule`/`lookup_rule`, merged like
-  tactics): `check` dispatches **every** head through `Env::lookup_rule`;
-  `drv.rs::core_rules()` installs the ~35 built-ins into `Env::core`. The old
-  hardcoded `Drv` AST + `parse_drv` pass are gone — `Rule::apply(&[SExpr], &mut
+  There is no separate `Rule` trait: `Tactic` has **two** async methods —
+  `apply` (tactic mode) and `rule` (tree mode), each defaulting to a "wrong
+  mode" error — so ONE registered object serves either/both. `check` dispatches
+  **every** `#proof` head through `Env::lookup_rule` (alias of `lookup_tactic`)
+  and calls `.rule()`; `drv.rs::core_rules()` installs the ~30 forward rules
+  into `Env::core` (override only `rule`), and dual-mode `refl`/`sym`/`not-intro`/
+  `rw` (+ `tauto` in logic) are single structs overriding both. The old
+  hardcoded `Drv` AST + `parse_drv` pass are gone — `Tactic::rule(&[SExpr], &mut
   CheckCtx)` **self-parses** its term/type/name/sub-derivation args (a
   `CheckCtx` gives `term`/`ty`/`name`/`push_var`/`check`), so a custom rule has
   the same power as a built-in. No remaining TODO for this item.
 - **Lemma lookup is async; const lookup is sync (the data model is ready, the
   accessor + elaborator aren't).** `Env` is now ONE unified `entries:
-  LazyMap<Entry>` (`Entry` = `Const|Lemma|Tactic|Rule|TacticAndRule`), so EVERY
-  kind is already future-capable — a const *can* pend, no new machinery needed.
+  LazyMap<Entry>` (`Entry` = `Const|Lemma|Tactic`), so EVERY kind is already
+  future-capable — a const *can* pend, no new machinery needed.
   **`Env::lookup_lemma` is `async`** (awaits a still-`#compute`-ing
   `Entry::Lemma`); the old boundary-await `lemma_refs`/`await_computed_deps` was
   deleted. `#compute` binds NAME via `define_computing` → `insert_pending`; a

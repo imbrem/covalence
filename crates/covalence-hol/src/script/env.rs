@@ -203,6 +203,9 @@ impl Env {
         for (name, tac) in super::tactic::core_tactics() {
             e.tactics.insert(name, tac);
         }
+        for (name, rule) in super::drv::core_rules() {
+            e.rules.insert(name.to_string(), rule);
+        }
         e
     }
 }

@@ -13,14 +13,15 @@
 //!   (#proof  DRV))                     ;; the proof term, replayed by `check`
 //! ```
 //!
-//! The pipeline is **author → parse → replay**: the named term syntax
-//! (`syntax.rs`) resolves catalogue names through [`Env`] (the `defs/`
-//! churn-absorber); the proof term ([`Drv`]) is replayed by [`check`],
-//! which is the only kernel-coupled code. Nothing is trusted from the
-//! text — the kernel re-derives every theorem. See `Drv`'s docs.
+//! The pipeline is **author → replay**: the named term syntax (`syntax.rs`)
+//! resolves catalogue names through [`Env`] (the `defs/` churn-absorber); a
+//! proof S-expr is replayed by [`check`], which dispatches each head through
+//! the [`Env`] **derivation registry** (`drv.rs`) — the only kernel-coupled
+//! code. Nothing is trusted from the text — the kernel re-derives every
+//! theorem. See `drv.rs`'s docs.
 //!
 //! Two directions are deliberately **not** built yet (see SKELETONS.md):
-//! pretty-printing a `Drv`/`Term` back to this syntax, and content-hashing
+//! pretty-printing a proof / `Term` back to this syntax, and content-hashing
 //! proof terms for `(lemma …)`-by-hash references. Authoring (parse +
 //! replay) is the immediate goal: porting the Rust `init/` theorems.
 
@@ -32,7 +33,7 @@ mod scope;
 mod syntax;
 mod tactic;
 
-pub use drv::{Drv, Rule, check, parse_drv};
+pub use drv::{CheckCtx, Rule, check, core_rules};
 pub use env::{ConstDef, Env};
 pub use scope::Scope;
 pub use syntax::{parse_term, parse_type};
@@ -598,9 +599,9 @@ async fn run_thm(ch: &[SExpr], env: &Env) -> Result<NamedThm, ScriptError> {
     let mut scope = Scope::with_vars(vars);
     idx += 1;
 
-    // The proof body is `(#proof DRV)` (tree mode) or `(#by STEP…)`
-    // (goal-directed tactic mode). Tree mode checks a `Drv` to a `Thm`;
-    // tactic mode produces the `Thm` directly by driving the goal.
+    // The proof body is `(#proof DERIV)` (tree mode) or `(#by STEP…)`
+    // (goal-directed tactic mode). Tree mode replays a proof S-expr to a
+    // `Thm`; tactic mode produces the `Thm` directly by driving the goal.
     let thm = tactic::prove(&expected, &ch[idx], &mut scope, env).await?;
     if thm.concl() != &expected {
         return Err(ScriptError::ConclMismatch {
@@ -904,7 +905,7 @@ mod tests {
     #[test]
     fn a_proof_awaits_a_computed_lemma() {
         // A later `#thm` references a `#compute`d theorem via `(lemma …)`:
-        // `check`'s `Drv::Lemma` arm now AWAITS the still-computing lemma
+        // the `lemma` registry rule now AWAITS the still-computing lemma
         // directly (lemma lookup is async), so `#compute`d lemmas are usable
         // by later proofs.
         let theory = run(
@@ -970,11 +971,16 @@ mod tests {
         struct YieldId;
         #[async_trait::async_trait]
         impl Rule for YieldId {
-            async fn apply(&self, args: &[Thm], _env: &Env) -> Result<Thm, ScriptError> {
+            async fn apply(
+                &self,
+                args: &[SExpr],
+                ctx: &mut CheckCtx<'_>,
+            ) -> Result<Thm, ScriptError> {
                 tokio::task::yield_now().await; // genuine mid-derivation await
-                args.first()
-                    .cloned()
-                    .ok_or_else(|| ScriptError::Syntax("yield-id: needs one arg".into()))
+                let first = args
+                    .first()
+                    .ok_or_else(|| ScriptError::Syntax("yield-id: needs one arg".into()))?;
+                ctx.check(first).await // self-parse + check the sub-derivation
             }
         }
         let mut rule_env = Env::empty();
@@ -1204,7 +1210,7 @@ mod tests {
     fn by_tactic_mode_proves_and_comm() {
         // Goal-directed: `intro` the implication, then `exact` a tree-mode
         // proof of the swapped conjunction. The `#by` block elaborates to
-        // the same `Drv` the tree-mode `and.comm` produces.
+        // the same derivation the tree-mode `and.comm` produces.
         let thm = one(r#"
             (#import core)
             (#open core)

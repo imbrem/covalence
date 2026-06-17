@@ -318,8 +318,8 @@ coupling guard.
 ## Proof-script layer (`covalence-hol/src/script`)
 
 The S-expression authoring + replay layer (`Env`/prelude, the `infer`
-type-inference elaborator, `Drv` proof terms, the `check` interpreter, the
-`rw`/`tauto` tactics, and the `cov_theory!` loader macro). The
+type-inference elaborator, the `check` replayer + derivation registry, the
+`rw`/`tauto` rules, and the `cov_theory!` loader macro). The
 **parse → replay** direction is built and tested; `init::logic`'s `truth`/`and_comm`/`or_comm` (and the reified
 `exists.intro`, with the Rust `exists_intro` rule rewired onto it) are now
 **loaded from `init/logic.cov`** via `cov_theory!` (replacing the hand-written Rust proofs — the whole crate's
@@ -339,15 +339,15 @@ directives — is `open`-able by other scripts; the macro binds it as a
   `abs-rule` still take an **explicit** binder type — their var isn't
   usage-constrained across the independently-elaborated sub-proof terms;
   inferring it would need either threading one metavar arena through the whole
-  `Drv` or a check-time `find_free_type` pass.
+  derivation or a check-time `find_free_type` pass.
 - **Lemma application is explicit, not by unification.** Applying a lemma
   means `(lemma N)` then manual `inst`/`inst-tfree`/`all-elim`. A higher-level
   `(apply N args…)` that unifies the lemma's conclusion against the goal /
   arguments (first-order matching) is the natural next tactic.
 
-- **No `Drv`/`Term` pretty-printer (serialization-out).** `script` only
+- **No proof/`Term` pretty-printer (serialization-out).** `script` only
   *parses* the named syntax and *replays* it; there is no printer from a
-  `Drv`/`Term` back to the surface S-expression. This blocks content-addressing
+  proof / `Term` back to the surface S-expression. This blocks content-addressing
   (hashing a proof term) and `(lemma …)`-by-hash references — both noted as
   future in `docs/surface-syntax.md` §7. Authoring (the immediate goal —
   porting the Rust `init/` theorems) needs only the parse direction. When
@@ -413,32 +413,29 @@ directives — is `open`-able by other scripts; the macro binds it as a
   typed elaboration → execution**, with a typed term/proof IR and spans threaded
   through every stage — is still TODO. The spans are the prerequisite for the
   rich, well-located errors above and good editor/LSP feedback.
-- **Async tactics + async `check` + a rule registry all exist; the core rules
-  aren't IN the registry, and lemma lookup is still sync.** `Tactic` is an
-  `#[async_trait]` trait (`apply` async; `Interp::run`/`prove`/`run_thm` async;
-  recursing tactics are structs, goal-closers stay sync `fn`s via the blanket).
-  `drv.rs::check` is **async** (returns `BoxFuture`); both tactic-mode and
-  tree-mode (`#proof`) can now **await mid-proof** (tests
+- **Async tactics + async `check` + a uniform derivation registry all exist.**
+  `Tactic` is an `#[async_trait]` trait (`apply` async; `Interp::run`/`prove`/
+  `run_thm` async; recursing tactics are structs, goal-closers stay sync `fn`s
+  via the blanket). `drv.rs::check` is **async** (returns `BoxFuture`); both
+  tactic-mode and tree-mode (`#proof`) can **await mid-proof** (tests
   `async_tactic_can_yield_mid_proof`, `registry_rule_in_tree_mode_can_await`).
-  `Env` has a **rule registry** (`Rule` async trait, `register_rule`/
-  `lookup_rule`, merged like tactics): any head `check` doesn't recognise →
-  `Drv::Rule { name, args }` → registry dispatch. Still TODO:
-  - **The built-in rules (`imp-intro`, `and-elim`, …) are still hardcoded** arms
-    of `check`, NOT registry entries — the registry is currently only for
-    *extension* rules. Migrating the core rules into the registry (so all rules
-    are uniform / overridable) is the symmetric-with-tactics finish.
-  - **Registry `Rule::apply` only takes checked sub-`Thm`s** (`&[Thm]`) — no
-    `Term` args, no goal/scope access. Fine for combining rules; a richer rule
-    needs the raw S-expr + a check-context (à la `Interp` for tactics).
+  Every proof rule — built-in *and* extension — now lives in the **rule
+  registry** (`Rule` async trait, `register_rule`/`lookup_rule`, merged like
+  tactics): `check` dispatches **every** head through `Env::lookup_rule`;
+  `drv.rs::core_rules()` installs the ~35 built-ins into `Env::core`. The old
+  hardcoded `Drv` AST + `parse_drv` pass are gone — `Rule::apply(&[SExpr], &mut
+  CheckCtx)` **self-parses** its term/type/name/sub-derivation args (a
+  `CheckCtx` gives `term`/`ty`/`name`/`push_var`/`check`), so a custom rule has
+  the same power as a built-in. No remaining TODO for this item.
 - **Lemma lookup is async; const lookup is NOT (yet).** `Env::lemmas` is now a
-  `LazyEnv` (handle-valued) and **`Env::lookup_lemma` is `async`** — `check`'s
-  `Drv::Lemma` arm `await`s a still-`#compute`-ing lemma directly (the old
+  `LazyMap` (handle-valued) and **`Env::lookup_lemma` is `async`** — the `lemma`
+  registry rule `await`s a still-`#compute`-ing lemma directly (the old
   boundary-await `lemma_refs`/`await_computed_deps` was deleted). `#compute`
   binds NAME to its task in the env (`define_computing`); a later `(lemma NAME)`
   or the force just awaits it. The remaining half of **"all env accesses
   async"** (user): **`Env::lookup_const` should also be async**, which makes the
   **elaborator (`infer.rs`) async** (recursive `BoxFuture` + const-lookup await)
-  → `parse_term`/`parse_drv`/`elaborate_concl` async. The vision: *one async
+  → `parse_term`/`CheckCtx::term`/`elaborate_concl` async. The vision: *one async
   task per definition* (a `const` loaded from the network, like `#compute` for a
   theorem). The non-async `lemma_ready(name)` peek stays for the sync
   `Theory::lemma` macro accessor (a forced theory's lemmas are all Ready).
@@ -455,7 +452,7 @@ directives — is `open`-able by other scripts; the macro binds it as a
   fetch a term's contents on demand. Needs a future-carrying `Term`/elaborator
   value wired into `script/infer.rs`.
 - **No WASM/WIT kernel API.** The longer-term goal of authoring proofs in WASM
-  guests and importing them through a WIT kernel interface (driving the `Drv`
+  guests and importing them through a WIT kernel interface (driving the proof
   replay path across the component boundary) is not started. `check` is
   intentionally the single kernel-coupled entry point such an interface would
   sit behind.

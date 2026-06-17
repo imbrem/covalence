@@ -1,248 +1,447 @@
-//! The **proof term** ([`Drv`]) and the **replay interpreter** ([`check`]).
+//! The **proof replayer** ([`check`]) and the **derivation registry**.
 //!
-//! A `Drv` is untrusted *data*: a transcript of which kernel rules to
-//! apply. It carries no soundness of its own — [`check`] replays it by
-//! calling the real `covalence-core` rules, each of which re-validates.
-//! A corrupt or hostile `Drv` can at worst fail to check or produce a
-//! different (still kernel-valid) theorem; it can never manufacture an
-//! unsound `Thm`.
+//! A `#proof` body is untrusted *data*: a transcript of which kernel rules to
+//! apply, e.g. `(trans (refl a) (sym (lemma foo)))`. It carries no soundness of
+//! its own — [`check`] replays it by dispatching each head through the **rule
+//! registry** ([`Env`]'s `rules`) and the matched [`Rule`] calls the real
+//! `covalence-core` rules, each of which re-validates. A corrupt or hostile
+//! proof can at worst fail to check or produce a different (still kernel-valid)
+//! theorem; it can never manufacture an unsound `Thm`.
 //!
-//! [`check`] is the *only* kernel-coupled surface here: every built-in variant
-//! is one rule call. Edit the kernel's rule set → fix the matching arm;
-//! authored proofs (the `Drv` data) stay put. `check` is **async** — a
-//! [`Rule`] (below) may await — so it returns a `BoxFuture` (the recursion
-//! needs a known size).
+//! Unlike a hardcoded interpreter, the proof-rule vocabulary lives in the
+//! registry — exactly like the tactic registry. [`core_rules`] installs the
+//! built-ins (`refl`, `trans`, `nat-induct`, …); a host can register its own
+//! (possibly async — an observer, a peer prover, the user) without touching
+//! this file. Each [`Rule`] gets the raw S-expr arguments plus a [`CheckCtx`],
+//! so it **self-parses** its terms/types/sub-derivations — there is no separate
+//! parse pass and no `Drv` AST. None of this is extra trust: registry rules
+//! still bottom out in real kernel `Thm`s.
 //!
-//! Two `Drv` variants are **tactics** — `Tauto` and `Rw` — which elaborate to
-//! longer derivations at replay time. `Drv::Rule` is the open extension point:
-//! any head `check` doesn't recognise dispatches through the [`Env`] **rule
-//! registry** (the tree-mode analogue of the tactic registry), so hosts can add
-//! their own (possibly async) rules without touching this file. None of this is
-//! extra trust — registry rules still bottom out in real kernel `Thm`s.
+//! [`check`] is **async** (a `Rule` may await) so it returns a `BoxFuture` —
+//! the recursion through `Rule::apply` needs a known size.
+
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use covalence_core::{Term, TermKind, Thm};
+use covalence_core::{Term, TermKind, Thm, Type};
 use covalence_sexp::SExpr;
 use futures::future::BoxFuture;
 
 use super::ScriptError;
 use super::env::Env;
 use super::scope::Scope;
-use super::syntax::{arity, head_sym, list, parse_term, parse_type, sym};
+use super::syntax::{head_sym, list, parse_term, parse_type, sym};
 
 type R<T> = Result<T, ScriptError>;
 
-/// A **derivation rule** — the tree-mode analogue of a [`super::Tactic`]. A
-/// rule combines the (already-checked) theorems of its sub-derivations into a
-/// new theorem. It is `async`, so a custom rule may await (an observer, a peer
-/// prover, the user) *inside* a `#proof`. The core rules are still hardcoded
-/// arms of [`check`]; the registry ([`Env`]'s `rules`) is for **extension**
-/// rules, invoked by any head [`check`] does not recognise: `(NAME SUB…)`.
+// ============================================================================
+// CheckCtx — what a rule needs to resolve its arguments
+// ============================================================================
+
+/// The replay context handed to every [`Rule`]: the resolution [`Env`] and the
+/// mutable proof [`Scope`]. A rule uses it to parse term/type/name arguments
+/// and to recursively [`check`](CheckCtx::check) sub-derivations. Binder rules
+/// extend the scope (via [`push_var`](CheckCtx::push_var)) for their sub-proof.
+pub struct CheckCtx<'a> {
+    env: &'a Env,
+    scope: &'a mut Scope,
+}
+
+impl<'a> CheckCtx<'a> {
+    /// Build a context over an environment and proof scope.
+    pub fn new(env: &'a Env, scope: &'a mut Scope) -> Self {
+        CheckCtx { env, scope }
+    }
+
+    /// The resolution environment (for rules that look up lemmas, etc.).
+    pub fn env(&self) -> &Env {
+        self.env
+    }
+
+    /// Parse a term argument, resolved against the env + current scope.
+    pub fn term(&mut self, s: &SExpr) -> R<Term> {
+        parse_term(s, self.scope, self.env)
+    }
+
+    /// Parse a type argument.
+    pub fn ty(&self, s: &SExpr) -> R<Type> {
+        parse_type(s)
+    }
+
+    /// Read a bare symbol argument (a variable / lemma name).
+    pub fn name(&self, s: &SExpr) -> R<String> {
+        Ok(sym(s, "name")?.to_string())
+    }
+
+    /// Extend the scope with a bound variable for a sub-derivation (paired with
+    /// [`pop_var`](CheckCtx::pop_var)).
+    pub fn push_var(&mut self, name: &str, ty: Type) {
+        self.scope.open();
+        self.scope.define(name.to_string(), ty);
+    }
+
+    /// Undo the most recent [`push_var`](CheckCtx::push_var).
+    pub fn pop_var(&mut self) {
+        self.scope.close();
+    }
+
+    /// Recursively replay a sub-derivation S-expr into a theorem.
+    pub async fn check(&mut self, s: &SExpr) -> R<Thm> {
+        check(s, self).await
+    }
+}
+
+/// Check a rule received exactly `n` arguments (head excluded).
+fn ctx_arity(args: &[SExpr], n: usize, rule: &str) -> R<()> {
+    if args.len() != n {
+        return Err(ScriptError::Syntax(format!(
+            "rule `{rule}` expects {n} argument(s), got {}",
+            args.len()
+        )));
+    }
+    Ok(())
+}
+
+// ============================================================================
+// Rule — the registry entry, and the replayer
+// ============================================================================
+
+/// A **derivation rule** — the tree-mode analogue of a [`super::Tactic`], and
+/// the unit of the registry. Given its raw S-expr arguments and a [`CheckCtx`],
+/// it self-parses (terms/types/sub-derivations) and produces a kernel theorem.
+/// `async`, so a custom rule may await (an observer, a peer prover, the user)
+/// *inside* a `#proof`.
 #[async_trait]
 pub trait Rule: Send + Sync {
-    async fn apply(&self, args: &[Thm], env: &Env) -> R<Thm>;
+    async fn apply(&self, args: &[SExpr], ctx: &mut CheckCtx<'_>) -> R<Thm>;
 }
 
-/// A proof term. One constructor per kernel rule (plus the two tactics).
-#[derive(Debug, Clone)]
-pub enum Drv {
-    // leaves
-    Refl(Term),
-    Assume(Term),
-    Lem(Term),
-    /// Reference a lemma proven earlier in the file (looked up in
-    /// [`Env::lemmas`] and re-checked in-session — never trusted from
-    /// disk).
-    Lemma(String),
-    ReducePrim(Term),
-    UnfoldTermSpec(Term),
-    /// `⊢ op arg = body[arg]` — unfold a unary defined constant at an
-    /// argument (one β-step). Wraps `proofs::rewrite::unfold_at_1`.
-    UnfoldAt1 {
-        op: Term,
-        arg: Term,
-    },
-    /// `⊢ op a b = body[a,b]` — unfold a binary defined constant at two
-    /// arguments. Wraps `proofs::rewrite::unfold_at_2`.
-    UnfoldAt2 {
-        op: Term,
-        a: Term,
-        b: Term,
-    },
-    BetaConv(Term),
-    // unary
-    Sym(Box<Drv>),
-    AbsRule {
-        name: String,
-        ty: covalence_core::Type,
-        body: Box<Drv>,
-    },
-    AllIntro {
-        name: String,
-        ty: covalence_core::Type,
-        body: Box<Drv>,
-    },
-    AllElim {
-        witness: Term,
-        body: Box<Drv>,
-    },
-    ImpIntro {
-        phi: Term,
-        body: Box<Drv>,
-    },
-    NotIntro(Box<Drv>),
-    Inst {
-        name: String,
-        term: Term,
-        body: Box<Drv>,
-    },
-    /// Type-variable instantiation (HOL Light `INST_TYPE`) — the way a
-    /// *polymorphic* lemma is applied at a concrete type.
-    InstTfree {
-        name: String,
-        ty: covalence_core::Type,
-        body: Box<Drv>,
-    },
-    /// `⊢ f a = f b` from `⊢ a = b`.
-    CongArg {
-        f: Term,
-        body: Box<Drv>,
-    },
-    /// `⊢ f a = g a` from `⊢ f = g`.
-    CongFn {
-        arg: Term,
-        body: Box<Drv>,
-    },
-    AndElimL(Box<Drv>),
-    AndElimR(Box<Drv>),
-    OrIntroL {
-        q: Term,
-        body: Box<Drv>,
-    },
-    OrIntroR {
-        p: Term,
-        body: Box<Drv>,
-    },
-    FalseElim {
-        p: Term,
-        body: Box<Drv>,
-    },
-    // binary
-    Trans(Box<Drv>, Box<Drv>),
-    MkComb(Box<Drv>, Box<Drv>),
-    EqMp(Box<Drv>, Box<Drv>),
-    ImpElim(Box<Drv>, Box<Drv>),
-    DeductAntisym(Box<Drv>, Box<Drv>),
-    AndIntro(Box<Drv>, Box<Drv>),
-    NotElim(Box<Drv>, Box<Drv>),
-    // ternary
-    OrElim {
-        disj: Box<Drv>,
-        left: Box<Drv>,
-        right: Box<Drv>,
-    },
-    NatInduct {
-        base: Box<Drv>,
-        step: Box<Drv>,
-    },
-    // tactics (elaborate to longer derivations at replay time)
-    /// Prove a propositional / closed-arithmetic tautology via
-    /// [`crate::init::logic::tauto`].
-    Tauto(Term),
-    /// Rewrite `target`'s conclusion left-to-right with the equation
-    /// proved by `eqn` (congruence over every occurrence).
-    Rw {
-        eqn: Box<Drv>,
-        target: Box<Drv>,
-    },
-    /// A **registry** rule: any head `check` does not recognise. Its
-    /// sub-derivations are checked, then the named [`Rule`] combines them.
-    Rule {
-        name: String,
-        args: Vec<Drv>,
-    },
-}
-
-/// Replay a proof term into a kernel theorem. The sole kernel-coupled
-/// function in the script layer. `async` — a registry [`Rule`] may await
-/// (returns a boxed future so the recursion has a known size).
-pub fn check<'a>(d: &'a Drv, env: &'a Env) -> BoxFuture<'a, R<Thm>> {
+/// Replay a proof S-expr into a kernel theorem by dispatching its head through
+/// the [`Env`] rule registry. The sole kernel-coupled surface in the script
+/// layer (each built-in [`Rule`] is one-or-few kernel calls). `async` — a rule
+/// may await — so it returns a boxed future (the recursion needs a known size).
+pub fn check<'a>(s: &'a SExpr, ctx: &'a mut CheckCtx<'_>) -> BoxFuture<'a, R<Thm>> {
     Box::pin(async move {
-        Ok(match d {
-            Drv::Refl(t) => Thm::refl(t.clone())?,
-            Drv::Assume(t) => Thm::assume(t.clone())?,
-            Drv::Lem(t) => Thm::lem(t.clone())?,
-            // Await the lemma (it may still be `#compute`-ing).
-            Drv::Lemma(name) => env
-                .lookup_lemma(name)
-                .await
-                .ok_or_else(|| ScriptError::Unbound(format!("lemma `{name}`")))??,
-            Drv::ReducePrim(t) => Thm::reduce_prim(t.clone())?,
-            Drv::UnfoldTermSpec(t) => Thm::unfold_term_spec(t.clone())?,
-            Drv::UnfoldAt1 { op, arg } => {
-                crate::proofs::rewrite::unfold_at_1(op.clone(), arg.clone())
-            }
-            Drv::UnfoldAt2 { op, a, b } => {
-                crate::proofs::rewrite::unfold_at_2(op.clone(), a.clone(), b.clone())
-            }
-            Drv::BetaConv(t) => Thm::beta_conv(t.clone())?,
-            Drv::Sym(a) => check(a, env).await?.sym()?,
-            Drv::AbsRule { name, ty, body } => check(body, env).await?.abs(name, ty.clone())?,
-            Drv::AllIntro { name, ty, body } => {
-                check(body, env).await?.all_intro(name, ty.clone())?
-            }
-            Drv::AllElim { witness, body } => check(body, env).await?.all_elim(witness.clone())?,
-            Drv::ImpIntro { phi, body } => check(body, env).await?.imp_intro(phi)?,
-            Drv::NotIntro(a) => check(a, env).await?.not_intro()?,
-            Drv::Inst { name, term, body } => check(body, env).await?.inst(name, term.clone())?,
-            Drv::InstTfree { name, ty, body } => {
-                check(body, env).await?.inst_tfree(name, ty.clone())?
-            }
-            Drv::CongArg { f, body } => Thm::refl(f.clone())?.mk_comb(check(body, env).await?)?,
-            Drv::CongFn { arg, body } => {
-                check(body, env).await?.mk_comb(Thm::refl(arg.clone())?)?
-            }
-            Drv::AndElimL(a) => check(a, env).await?.and_elim_l()?,
-            Drv::AndElimR(a) => check(a, env).await?.and_elim_r()?,
-            Drv::OrIntroL { q, body } => check(body, env).await?.or_intro_l(q.clone())?,
-            Drv::OrIntroR { p, body } => check(body, env).await?.or_intro_r(p.clone())?,
-            Drv::FalseElim { p, body } => check(body, env).await?.false_elim(p.clone())?,
-            Drv::Trans(a, b) => check(a, env).await?.trans(check(b, env).await?)?,
-            Drv::MkComb(a, b) => check(a, env).await?.mk_comb(check(b, env).await?)?,
-            Drv::EqMp(a, b) => check(a, env).await?.eq_mp(check(b, env).await?)?,
-            Drv::ImpElim(a, b) => check(a, env).await?.imp_elim(check(b, env).await?)?,
-            Drv::DeductAntisym(a, b) => {
-                check(a, env).await?.deduct_antisym(check(b, env).await?)?
-            }
-            Drv::AndIntro(a, b) => check(a, env).await?.and_intro(check(b, env).await?)?,
-            Drv::NotElim(a, b) => check(a, env).await?.not_elim(check(b, env).await?)?,
-            Drv::OrElim { disj, left, right } => check(disj, env)
-                .await?
-                .or_elim(check(left, env).await?, check(right, env).await?)?,
-            Drv::NatInduct { base, step } => {
-                Thm::nat_induct(check(base, env).await?, check(step, env).await?)?
-            }
-            Drv::Tauto(t) => crate::init::logic::tauto(t)?,
-            Drv::Rw { eqn, target } => {
-                let eq = check(eqn, env).await?;
-                let tgt = check(target, env).await?;
-                let cong = rewrite_conv(tgt.concl(), &eq)?;
-                cong.eq_mp(tgt)?
-            }
-            // A registry rule: check the sub-derivations, then dispatch.
-            Drv::Rule { name, args } => {
-                let rule = env
-                    .lookup_rule(name)
-                    .ok_or_else(|| ScriptError::Unbound(format!("rule `{name}`")))?;
-                let mut thms = Vec::with_capacity(args.len());
-                for a in args {
-                    thms.push(check(a, env).await?);
-                }
-                rule.apply(&thms, env).await?
-            }
-        })
+        let ch = list(s, "proof")?;
+        let head = head_sym(ch)?;
+        let rule = ctx
+            .env
+            .lookup_rule(head)
+            .ok_or_else(|| ScriptError::Unbound(format!("unknown proof rule `{head}`")))?;
+        rule.apply(&ch[1..], ctx).await
     })
 }
+
+// ============================================================================
+// Built-in rules
+// ============================================================================
+
+/// `(NAME TERM)` → build a theorem from one parsed term.
+macro_rules! term_rule {
+    ($S:ident, $name:literal, $build:expr) => {
+        struct $S;
+        #[async_trait]
+        impl Rule for $S {
+            async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+                ctx_arity(a, 1, $name)?;
+                let t = c.term(&a[0])?;
+                #[allow(clippy::redundant_closure_call)]
+                ($build)(t)
+            }
+        }
+    };
+}
+
+/// `(NAME SUB)` → `check(SUB).METHOD()`.
+macro_rules! unary_rule {
+    ($S:ident, $name:literal, $m:ident) => {
+        struct $S;
+        #[async_trait]
+        impl Rule for $S {
+            async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+                ctx_arity(a, 1, $name)?;
+                let s = c.check(&a[0]).await?;
+                Ok(s.$m()?)
+            }
+        }
+    };
+}
+
+/// `(NAME A B)` → `check(A).METHOD(check(B))`.
+macro_rules! binary_rule {
+    ($S:ident, $name:literal, $m:ident) => {
+        struct $S;
+        #[async_trait]
+        impl Rule for $S {
+            async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+                ctx_arity(a, 2, $name)?;
+                let x = c.check(&a[0]).await?;
+                let y = c.check(&a[1]).await?;
+                Ok(x.$m(y)?)
+            }
+        }
+    };
+}
+
+/// `(NAME TERM SUB)` → combine a parsed term with one checked sub-derivation.
+macro_rules! term_sub_rule {
+    ($S:ident, $name:literal, $f:expr) => {
+        struct $S;
+        #[async_trait]
+        impl Rule for $S {
+            async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+                ctx_arity(a, 2, $name)?;
+                let t = c.term(&a[0])?;
+                let s = c.check(&a[1]).await?;
+                #[allow(clippy::redundant_closure_call)]
+                ($f)(t, s)
+            }
+        }
+    };
+}
+
+// -- leaves -----------------------------------------------------------------
+term_rule!(ReflRule, "refl", |t| Ok(Thm::refl(t)?));
+term_rule!(AssumeRule, "assume", |t| Ok(Thm::assume(t)?));
+term_rule!(LemRule, "lem", |t| Ok(Thm::lem(t)?));
+term_rule!(ReducePrimRule, "reduce-prim", |t| Ok(Thm::reduce_prim(t)?));
+term_rule!(UnfoldTermSpecRule, "unfold-term-spec", |t| Ok(
+    Thm::unfold_term_spec(t)?
+));
+term_rule!(BetaConvRule, "beta-conv", |t| Ok(Thm::beta_conv(t)?));
+// `tauto`: prove a propositional / closed-arithmetic tautology via
+// `crate::init::logic::tauto`.
+term_rule!(TautoRule, "tauto", |t| Ok(crate::init::logic::tauto(&t)?));
+
+/// `(lemma NAME)` — reference a lemma proven earlier in the file. Looked up in
+/// [`Env`]'s lemma table and re-checked in-session (never trusted from disk);
+/// **awaits** if the lemma is still `#compute`-ing.
+struct LemmaRule;
+#[async_trait]
+impl Rule for LemmaRule {
+    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 1, "lemma")?;
+        let name = c.name(&a[0])?;
+        c.env()
+            .lookup_lemma(&name)
+            .await
+            .ok_or_else(|| ScriptError::Unbound(format!("lemma `{name}`")))?
+    }
+}
+
+/// `(unfold-at-1 OP ARG)` → `⊢ op arg = body[arg]` (one β-step).
+struct UnfoldAt1Rule;
+#[async_trait]
+impl Rule for UnfoldAt1Rule {
+    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 2, "unfold-at-1")?;
+        let op = c.term(&a[0])?;
+        let arg = c.term(&a[1])?;
+        Ok(crate::proofs::rewrite::unfold_at_1(op, arg))
+    }
+}
+
+/// `(unfold-at-2 OP A B)` → `⊢ op a b = body[a,b]`.
+struct UnfoldAt2Rule;
+#[async_trait]
+impl Rule for UnfoldAt2Rule {
+    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 3, "unfold-at-2")?;
+        let op = c.term(&a[0])?;
+        let x = c.term(&a[1])?;
+        let y = c.term(&a[2])?;
+        Ok(crate::proofs::rewrite::unfold_at_2(op, x, y))
+    }
+}
+
+// -- unary ------------------------------------------------------------------
+unary_rule!(SymRule, "sym", sym);
+unary_rule!(NotIntroRule, "not-intro", not_intro);
+unary_rule!(AndElimLRule, "and-elim-l", and_elim_l);
+unary_rule!(AndElimRRule, "and-elim-r", and_elim_r);
+
+// -- term + sub -------------------------------------------------------------
+term_sub_rule!(ImpIntroRule, "imp-intro", |t, s: Thm| Ok(s.imp_intro(&t)?));
+term_sub_rule!(AllElimRule, "all-elim", |t, s: Thm| Ok(s.all_elim(t)?));
+term_sub_rule!(OrIntroLRule, "or-intro-l", |t, s: Thm| Ok(s.or_intro_l(t)?));
+term_sub_rule!(OrIntroRRule, "or-intro-r", |t, s: Thm| Ok(s.or_intro_r(t)?));
+term_sub_rule!(
+    FalseElimRule,
+    "false-elim",
+    |t, s: Thm| Ok(s.false_elim(t)?)
+);
+// `(cong-arg F SUB)` → `⊢ f a = f b` from `⊢ a = b`.
+term_sub_rule!(CongArgRule, "cong-arg", |t, s: Thm| Ok(
+    Thm::refl(t)?.mk_comb(s)?
+));
+// `(cong-fn ARG SUB)` → `⊢ f a = g a` from `⊢ f = g`.
+term_sub_rule!(CongFnRule, "cong-fn", |t, s: Thm| Ok(
+    s.mk_comb(Thm::refl(t)?)?
+));
+
+// -- name + term + sub ------------------------------------------------------
+/// `(inst VAR TERM SUB)` — instantiate a free variable.
+struct InstRule;
+#[async_trait]
+impl Rule for InstRule {
+    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 3, "inst")?;
+        let name = c.name(&a[0])?;
+        let term = c.term(&a[1])?;
+        let s = c.check(&a[2]).await?;
+        Ok(s.inst(&name, term)?)
+    }
+}
+
+/// `(inst-tfree VAR TYPE SUB)` — type-variable instantiation (HOL Light
+/// `INST_TYPE`), the way a *polymorphic* lemma is applied at a concrete type.
+struct InstTfreeRule;
+#[async_trait]
+impl Rule for InstTfreeRule {
+    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 3, "inst-tfree")?;
+        let name = c.name(&a[0])?;
+        let ty = c.ty(&a[1])?;
+        let s = c.check(&a[2]).await?;
+        Ok(s.inst_tfree(&name, ty)?)
+    }
+}
+
+// -- binder-introducing: NAME TYPE SUB (NAME is free in the sub-proof) -------
+/// `(abs-rule VAR TYPE SUB)` — abstraction under a binder.
+struct AbsRuleRule;
+#[async_trait]
+impl Rule for AbsRuleRule {
+    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 3, "abs-rule")?;
+        let name = c.name(&a[0])?;
+        let ty = c.ty(&a[1])?;
+        c.push_var(&name, ty.clone());
+        let sub = c.check(&a[2]).await;
+        c.pop_var();
+        Ok(sub?.abs(&name, ty)?)
+    }
+}
+
+/// `(all-intro VAR TYPE SUB)` — universal generalization.
+struct AllIntroRule;
+#[async_trait]
+impl Rule for AllIntroRule {
+    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 3, "all-intro")?;
+        let name = c.name(&a[0])?;
+        let ty = c.ty(&a[1])?;
+        c.push_var(&name, ty.clone());
+        let sub = c.check(&a[2]).await;
+        c.pop_var();
+        Ok(sub?.all_intro(&name, ty)?)
+    }
+}
+
+// -- binary -----------------------------------------------------------------
+binary_rule!(TransRule, "trans", trans);
+binary_rule!(MkCombRule, "mk-comb", mk_comb);
+binary_rule!(EqMpRule, "eq-mp", eq_mp);
+binary_rule!(ImpElimRule, "imp-elim", imp_elim);
+binary_rule!(DeductAntisymRule, "deduct-antisym", deduct_antisym);
+binary_rule!(AndIntroRule, "and-intro", and_intro);
+binary_rule!(NotElimRule, "not-elim", not_elim);
+
+/// `(nat-induct BASE STEP)` → `∀n. P n` from the base case and step.
+struct NatInductRule;
+#[async_trait]
+impl Rule for NatInductRule {
+    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 2, "nat-induct")?;
+        let base = c.check(&a[0]).await?;
+        let step = c.check(&a[1]).await?;
+        Ok(Thm::nat_induct(base, step)?)
+    }
+}
+
+// -- ternary ----------------------------------------------------------------
+/// `(or-elim DISJ LEFT RIGHT)` — case split on a disjunction.
+struct OrElimRule;
+#[async_trait]
+impl Rule for OrElimRule {
+    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 3, "or-elim")?;
+        let disj = c.check(&a[0]).await?;
+        let left = c.check(&a[1]).await?;
+        let right = c.check(&a[2]).await?;
+        Ok(disj.or_elim(left, right)?)
+    }
+}
+
+// -- tactics (elaborate to longer derivations at replay time) ---------------
+/// `(rw EQN TARGET)` — rewrite `TARGET`'s conclusion left-to-right with the
+/// equation proved by `EQN` (congruence over every occurrence).
+struct RwRule;
+#[async_trait]
+impl Rule for RwRule {
+    async fn apply(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 2, "rw")?;
+        let eq = c.check(&a[0]).await?;
+        let tgt = c.check(&a[1]).await?;
+        let cong = rewrite_conv(tgt.concl(), &eq)?;
+        Ok(cong.eq_mp(tgt)?)
+    }
+}
+
+/// The built-in derivation vocabulary — installed into every [`Env::core`].
+/// Each entry is `(head, rule)`; a host may register more via
+/// [`Env::register_rule`] without touching this file.
+pub fn core_rules() -> Vec<(&'static str, Arc<dyn Rule>)> {
+    vec![
+        // leaves
+        ("refl", Arc::new(ReflRule)),
+        ("assume", Arc::new(AssumeRule)),
+        ("lem", Arc::new(LemRule)),
+        ("lemma", Arc::new(LemmaRule)),
+        ("reduce-prim", Arc::new(ReducePrimRule)),
+        ("unfold-term-spec", Arc::new(UnfoldTermSpecRule)),
+        ("unfold-at-1", Arc::new(UnfoldAt1Rule)),
+        ("unfold-at-2", Arc::new(UnfoldAt2Rule)),
+        ("beta-conv", Arc::new(BetaConvRule)),
+        ("tauto", Arc::new(TautoRule)),
+        // unary
+        ("sym", Arc::new(SymRule)),
+        ("not-intro", Arc::new(NotIntroRule)),
+        ("and-elim-l", Arc::new(AndElimLRule)),
+        ("and-elim-r", Arc::new(AndElimRRule)),
+        // term + sub
+        ("imp-intro", Arc::new(ImpIntroRule)),
+        ("all-elim", Arc::new(AllElimRule)),
+        ("or-intro-l", Arc::new(OrIntroLRule)),
+        ("or-intro-r", Arc::new(OrIntroRRule)),
+        ("false-elim", Arc::new(FalseElimRule)),
+        ("cong-arg", Arc::new(CongArgRule)),
+        ("cong-fn", Arc::new(CongFnRule)),
+        // name + term/type + sub
+        ("inst", Arc::new(InstRule)),
+        ("inst-tfree", Arc::new(InstTfreeRule)),
+        // binders
+        ("abs-rule", Arc::new(AbsRuleRule)),
+        ("all-intro", Arc::new(AllIntroRule)),
+        // binary
+        ("trans", Arc::new(TransRule)),
+        ("mk-comb", Arc::new(MkCombRule)),
+        ("eq-mp", Arc::new(EqMpRule)),
+        ("imp-elim", Arc::new(ImpElimRule)),
+        ("deduct-antisym", Arc::new(DeductAntisymRule)),
+        ("and-intro", Arc::new(AndIntroRule)),
+        ("not-elim", Arc::new(NotElimRule)),
+        // ternary
+        ("or-elim", Arc::new(OrElimRule)),
+        ("nat-induct", Arc::new(NatInductRule)),
+        // replay-time tactics
+        ("rw", Arc::new(RwRule)),
+    ]
+}
+
+// ============================================================================
+// Rewriting helper (used by the `rw` rule)
+// ============================================================================
 
 /// `⊢ t = t'` where `t'` is `t` with every occurrence of the equation's
 /// LHS replaced by its RHS, built by congruence. Carries the equation's
@@ -271,210 +470,4 @@ fn dest_eq(t: &Term) -> Option<(Term, Term)> {
         return None;
     };
     matches!(h.kind(), TermKind::Eq(_)).then(|| (lhs.clone(), rhs.clone()))
-}
-
-// ============================================================================
-// Parsing: S-expression → Drv (terms resolved against `env` + `scope`)
-// ============================================================================
-
-/// Parse a proof term. Term/type/name arguments are resolved eagerly
-/// through `env`/`scope`; nested proofs recurse. Binder-introducing
-/// rules (`abs-rule`, `all-intro`) extend `scope` for their sub-proof.
-pub fn parse_drv(s: &SExpr, scope: &mut Scope, env: &Env) -> R<Drv> {
-    let ch = list(s, "proof")?;
-    let head = head_sym(ch)?;
-    // `(head TERM)` / `(head NAME)` shorthands.
-    let t1 = |scope: &mut Scope| parse_term(&ch[1], scope, env);
-    Ok(match head {
-        "refl" => {
-            arity(ch, 2, "refl")?;
-            Drv::Refl(t1(scope)?)
-        }
-        "assume" => {
-            arity(ch, 2, "assume")?;
-            Drv::Assume(t1(scope)?)
-        }
-        "lem" => {
-            arity(ch, 2, "lem")?;
-            Drv::Lem(t1(scope)?)
-        }
-        "lemma" => {
-            arity(ch, 2, "lemma")?;
-            Drv::Lemma(sym(&ch[1], "lemma name")?.to_string())
-        }
-        "reduce-prim" => {
-            arity(ch, 2, "reduce-prim")?;
-            Drv::ReducePrim(t1(scope)?)
-        }
-        "unfold-term-spec" => {
-            arity(ch, 2, "unfold-term-spec")?;
-            Drv::UnfoldTermSpec(t1(scope)?)
-        }
-        "unfold-at-1" => {
-            arity(ch, 3, "unfold-at-1")?;
-            Drv::UnfoldAt1 {
-                op: parse_term(&ch[1], scope, env)?,
-                arg: parse_term(&ch[2], scope, env)?,
-            }
-        }
-        "unfold-at-2" => {
-            arity(ch, 4, "unfold-at-2")?;
-            Drv::UnfoldAt2 {
-                op: parse_term(&ch[1], scope, env)?,
-                a: parse_term(&ch[2], scope, env)?,
-                b: parse_term(&ch[3], scope, env)?,
-            }
-        }
-        "beta-conv" => {
-            arity(ch, 2, "beta-conv")?;
-            Drv::BetaConv(t1(scope)?)
-        }
-        "sym" => {
-            arity(ch, 2, "sym")?;
-            Drv::Sym(boxed(&ch[1], scope, env)?)
-        }
-        "not-intro" => {
-            arity(ch, 2, "not-intro")?;
-            Drv::NotIntro(boxed(&ch[1], scope, env)?)
-        }
-        "and-elim-l" => {
-            arity(ch, 2, "and-elim-l")?;
-            Drv::AndElimL(boxed(&ch[1], scope, env)?)
-        }
-        "and-elim-r" => {
-            arity(ch, 2, "and-elim-r")?;
-            Drv::AndElimR(boxed(&ch[1], scope, env)?)
-        }
-        "tauto" => {
-            arity(ch, 2, "tauto")?;
-            Drv::Tauto(t1(scope)?)
-        }
-        // binder-introducing: NAME TYPE D  (NAME is free in the sub-proof)
-        "abs-rule" | "all-intro" => {
-            arity(ch, 4, head)?;
-            let name = sym(&ch[1], "var name")?.to_string();
-            let ty = parse_type(&ch[2])?;
-            scope.open();
-            scope.define(name.clone(), ty.clone());
-            let body = parse_drv(&ch[3], scope, env);
-            scope.close();
-            let body = Box::new(body?);
-            if head == "abs-rule" {
-                Drv::AbsRule { name, ty, body }
-            } else {
-                Drv::AllIntro { name, ty, body }
-            }
-        }
-        "all-elim" => {
-            arity(ch, 3, "all-elim")?;
-            Drv::AllElim {
-                witness: parse_term(&ch[1], scope, env)?,
-                body: boxed(&ch[2], scope, env)?,
-            }
-        }
-        "imp-intro" => {
-            arity(ch, 3, "imp-intro")?;
-            Drv::ImpIntro {
-                phi: parse_term(&ch[1], scope, env)?,
-                body: boxed(&ch[2], scope, env)?,
-            }
-        }
-        "inst" => {
-            arity(ch, 4, "inst")?;
-            Drv::Inst {
-                name: sym(&ch[1], "inst var")?.to_string(),
-                term: parse_term(&ch[2], scope, env)?,
-                body: boxed(&ch[3], scope, env)?,
-            }
-        }
-        "inst-tfree" => {
-            arity(ch, 4, "inst-tfree")?;
-            Drv::InstTfree {
-                name: sym(&ch[1], "inst-tfree var")?.to_string(),
-                ty: parse_type(&ch[2])?,
-                body: boxed(&ch[3], scope, env)?,
-            }
-        }
-        "cong-arg" => {
-            arity(ch, 3, "cong-arg")?;
-            Drv::CongArg {
-                f: parse_term(&ch[1], scope, env)?,
-                body: boxed(&ch[2], scope, env)?,
-            }
-        }
-        "cong-fn" => {
-            arity(ch, 3, "cong-fn")?;
-            Drv::CongFn {
-                arg: parse_term(&ch[1], scope, env)?,
-                body: boxed(&ch[2], scope, env)?,
-            }
-        }
-        "or-intro-l" => {
-            arity(ch, 3, "or-intro-l")?;
-            Drv::OrIntroL {
-                q: parse_term(&ch[1], scope, env)?,
-                body: boxed(&ch[2], scope, env)?,
-            }
-        }
-        "or-intro-r" => {
-            arity(ch, 3, "or-intro-r")?;
-            Drv::OrIntroR {
-                p: parse_term(&ch[1], scope, env)?,
-                body: boxed(&ch[2], scope, env)?,
-            }
-        }
-        "false-elim" => {
-            arity(ch, 3, "false-elim")?;
-            Drv::FalseElim {
-                p: parse_term(&ch[1], scope, env)?,
-                body: boxed(&ch[2], scope, env)?,
-            }
-        }
-        "trans" => bin(ch, scope, env, Drv::Trans)?,
-        "mk-comb" => bin(ch, scope, env, Drv::MkComb)?,
-        "eq-mp" => bin(ch, scope, env, Drv::EqMp)?,
-        "imp-elim" => bin(ch, scope, env, Drv::ImpElim)?,
-        "deduct-antisym" => bin(ch, scope, env, Drv::DeductAntisym)?,
-        "and-intro" => bin(ch, scope, env, Drv::AndIntro)?,
-        "not-elim" => bin(ch, scope, env, Drv::NotElim)?,
-        "rw" => bin(ch, scope, env, |eqn, target| Drv::Rw { eqn, target })?,
-        "or-elim" => {
-            arity(ch, 4, "or-elim")?;
-            Drv::OrElim {
-                disj: boxed(&ch[1], scope, env)?,
-                left: boxed(&ch[2], scope, env)?,
-                right: boxed(&ch[3], scope, env)?,
-            }
-        }
-        "nat-induct" => {
-            arity(ch, 3, "nat-induct")?;
-            Drv::NatInduct {
-                base: boxed(&ch[1], scope, env)?,
-                step: boxed(&ch[2], scope, env)?,
-            }
-        }
-        // Any head not built-in is a **registry rule** — its arguments are
-        // sub-derivations, resolved (looked up + applied) by [`check`].
-        other => Drv::Rule {
-            name: other.to_string(),
-            args: ch[1..]
-                .iter()
-                .map(|a| parse_drv(a, scope, env))
-                .collect::<R<Vec<_>>>()?,
-        },
-    })
-}
-
-fn boxed(s: &SExpr, scope: &mut Scope, env: &Env) -> R<Box<Drv>> {
-    Ok(Box::new(parse_drv(s, scope, env)?))
-}
-
-fn bin(
-    ch: &[SExpr],
-    scope: &mut Scope,
-    env: &Env,
-    f: impl FnOnce(Box<Drv>, Box<Drv>) -> Drv,
-) -> R<Drv> {
-    arity(ch, 3, "binary rule")?;
-    Ok(f(boxed(&ch[1], scope, env)?, boxed(&ch[2], scope, env)?))
 }

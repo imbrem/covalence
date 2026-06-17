@@ -23,7 +23,7 @@ use covalence_core::{Term, TermKind, Thm, Type, defs, subst};
 use covalence_sexp::SExpr;
 
 use super::ScriptError;
-use super::drv::{check, parse_drv, rewrite_conv};
+use super::drv::{CheckCtx, check, rewrite_conv};
 use super::env::Env;
 use super::scope::Scope;
 use super::syntax::{arity, head_sym, list, parse_term, sym};
@@ -148,7 +148,7 @@ async fn prove_with(
         // rule).
         "#proof" => {
             arity(ch, 2, "#proof")?;
-            check(&parse_drv(&ch[1], scope, env)?, env).await
+            check(&ch[1], &mut CheckCtx::new(env, scope)).await
         }
         // Tactic mode: the interpreter loop may await.
         "#by" => {
@@ -231,9 +231,9 @@ async fn intro_names(names: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm>
     }
 }
 
-/// `(derive DRV)` (alias `drv`): close the goal with a tree-mode derivation —
-/// the bridge from tactic mode back into the `Drv` grammar. (Formerly `exact`.)
-/// Async because `check` is async (a registry rule may await).
+/// `(derive DERIV)` (alias `drv`): close the goal with a tree-mode derivation —
+/// the bridge from tactic mode back into the proof-rule grammar. (Formerly
+/// `exact`.) Async because `check` is async (a registry rule may await).
 struct Derive;
 #[async_trait]
 impl Tactic for Derive {
@@ -241,7 +241,7 @@ impl Tactic for Derive {
         arity(s, 2, "derive")?;
         expect_done(rest, "derive")?;
         let env = it.env.clone();
-        check(&parse_drv(&s[1], &mut it.scope, &env)?, &env).await
+        check(&s[1], &mut CheckCtx::new(&env, &mut it.scope)).await
     }
 }
 
@@ -365,7 +365,7 @@ impl Tactic for Rw {
     async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
         arity(s, 2, "rw")?;
         let env = it.env.clone();
-        let eq = check(&parse_drv(&s[1], &mut it.scope, &env)?, &env).await?;
+        let eq = check(&s[1], &mut CheckCtx::new(&env, &mut it.scope)).await?;
         let cong = rewrite_conv(&it.goal, &eq)?;
         let (_, gprime) = dest_eq(cong.concl())
             .ok_or_else(|| ScriptError::Syntax("rw: rewrite did not yield an equation".into()))?;

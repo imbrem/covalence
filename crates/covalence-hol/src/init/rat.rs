@@ -189,7 +189,12 @@ fn izero() -> Term {
 /// [`rat_rel_trans`]. *To be discharged in `init::int`.*
 fn int_mul_rcancel() -> Thm {
     let (x, y, d) = (ivar("x"), ivar("y"), ivar("d"));
-    let neq = d.clone().equals(izero()).expect("int_mul_rcancel: d=0").not().expect("¬");
+    let neq = d
+        .clone()
+        .equals(izero())
+        .expect("int_mul_rcancel: d=0")
+        .not()
+        .expect("¬");
     let prod_eq = imul(x.clone(), d.clone())
         .equals(imul(y.clone(), d.clone()))
         .expect("int_mul_rcancel: x·d=y·d");
@@ -620,8 +625,7 @@ fn rden(a: &Term) -> Term {
 /// representative.
 fn recon_mk(a: &Term) -> Result<Thm> {
     let rp = rep_pair(a.clone());
-    let surj =
-        crate::init::prod::surjective_pairing(&Type::int(), &int_pos_ty(), &rp)?; // pair(fst rp)(snd rp) = rp
+    let surj = crate::init::prod::surjective_pairing(&Type::int(), &int_pos_ty(), &rp)?; // pair(fst rp)(snd rp) = rp
     rat_recon(a)?.rhs_conv(|t| t.rw_all(&surj.sym()?))
 }
 
@@ -690,7 +694,10 @@ fn imul_cong(ea: Thm, eb: Thm) -> Result<Thm> {
 fn pos_prod_rt() -> Thm {
     let rep = Term::spec_rep(int_pos_spec(), Vec::new());
     let (a, b) = (Term::free("a", int_pos_ty()), Term::free("b", int_pos_ty()));
-    let prod = imul(Term::app(rep.clone(), a.clone()), Term::app(rep.clone(), b.clone()));
+    let prod = imul(
+        Term::app(rep.clone(), a.clone()),
+        Term::app(rep.clone(), b.clone()),
+    );
     let lhs = Term::app(rep, to_pos(prod.clone()));
     let body = lhs.equals(prod).expect("pos_prod_rt body");
     let t = body
@@ -797,8 +804,14 @@ fn mul_class(p: &Term, q: &Term) -> Result<Thm> {
         .all_elim(rpq.clone())?
         .imp_elim(rt_q)?; // rat_rel RPq q
     let cong = mul_pair_cong(rpp_p, rpq_q)?; // rat_rel (mul_pair RPp RPq)(mul_pair p q)
-    let lift =
-        crate::init::quotient::class_intro(&rat_spec(), &[], &ip_pair(), &rat_rel_symm(), &rat_rel_trans(), cong)?;
+    let lift = crate::init::quotient::class_intro(
+        &rat_spec(),
+        &[],
+        &ip_pair(),
+        &rat_rel_symm(),
+        &rat_rel_trans(),
+        cong,
+    )?;
     dl.trans(lift)
 }
 
@@ -882,19 +895,31 @@ fn add_pair_cong(h1: Thm, h2: Thm) -> Result<Thm> {
     // Term1: (nx·dy)·(dx'·dy') = (nx'·dy')·(dx·dy).
     let t1 = imul_interchange(&nx, &dy, &dxp, &dyp)? // = (nx·dx')·(dy·dy')
         .trans(mul_r(e1.clone(), &imul(dy.clone(), dyp.clone()))?)? // = (nx'·dx)·(dy·dy')
-        .trans(imul_l_cong(&imul(nxp.clone(), dx.clone()), comm(&dy, &dyp)?)?)? // = (nx'·dx)·(dy'·dy)
+        .trans(imul_l_cong(
+            &imul(nxp.clone(), dx.clone()),
+            comm(&dy, &dyp)?,
+        )?)? // = (nx'·dx)·(dy'·dy)
         .trans(imul_interchange(&nxp, &dx, &dyp, &dy)?)?; // = (nx'·dy')·(dx·dy)
 
     // Term2: (ny·dx)·(dx'·dy') = (ny'·dx')·(dx·dy).
     let t2 = imul_l_cong(&imul(ny.clone(), dx.clone()), comm(&dxp, &dyp)?)? // = (ny·dx)·(dy'·dx')
         .trans(imul_interchange(&ny, &dx, &dyp, &dxp)?)? // = (ny·dy')·(dx·dx')
         .trans(mul_r(e2.clone(), &imul(dx.clone(), dxp.clone()))?)? // = (ny'·dy)·(dx·dx')
-        .trans(imul_l_cong(&imul(nyp.clone(), dy.clone()), comm(&dx, &dxp)?)?)? // = (ny'·dy)·(dx'·dx)
+        .trans(imul_l_cong(
+            &imul(nyp.clone(), dy.clone()),
+            comm(&dx, &dxp)?,
+        )?)? // = (ny'·dy)·(dx'·dx)
         .trans(imul_interchange(&nyp, &dy, &dxp, &dx)?)? // = (ny'·dx')·(dy·dx)
-        .trans(imul_l_cong(&imul(nyp.clone(), dxp.clone()), comm(&dy, &dx)?)?)?; // = (ny'·dx')·(dx·dy)
+        .trans(imul_l_cong(
+            &imul(nyp.clone(), dxp.clone()),
+            comm(&dy, &dx)?,
+        )?)?; // = (ny'·dx')·(dx·dy)
 
     let (p1, p2) = (imul(nx.clone(), dy.clone()), imul(ny.clone(), dx.clone()));
-    let (q1, q2) = (imul(nxp.clone(), dyp.clone()), imul(nyp.clone(), dxp.clone()));
+    let (q1, q2) = (
+        imul(nxp.clone(), dyp.clone()),
+        imul(nyp.clone(), dxp.clone()),
+    );
     let split_l = idistrib_r(&p1, &p2, &imul(dxp.clone(), dyp.clone()))?;
     let split_r = idistrib_r(&q1, &q2, &imul(dx.clone(), dy.clone()))?;
     let g_clean = split_l.trans(iadd_cong(t1, t2)?)?.trans(split_r.sym()?)?;
@@ -922,8 +947,14 @@ fn add_class(p: &Term, q: &Term) -> Result<Thm> {
     let (rt_p, rt_q) = (round_trip(p)?, round_trip(q)?);
     let (_, rpp) = dest_rel_app(rt_p.concl())?;
     let (_, rpq) = dest_rel_app(rt_q.concl())?;
-    let rpp_p = rat_rel_symm().all_elim(p.clone())?.all_elim(rpp)?.imp_elim(rt_p)?;
-    let rpq_q = rat_rel_symm().all_elim(q.clone())?.all_elim(rpq)?.imp_elim(rt_q)?;
+    let rpp_p = rat_rel_symm()
+        .all_elim(p.clone())?
+        .all_elim(rpp)?
+        .imp_elim(rt_p)?;
+    let rpq_q = rat_rel_symm()
+        .all_elim(q.clone())?
+        .all_elim(rpq)?
+        .imp_elim(rt_q)?;
     let cong = add_pair_cong(rpp_p, rpq_q)?;
     let lift = crate::init::quotient::class_intro(
         &rat_spec(),
@@ -1062,7 +1093,10 @@ fn add_assoc_impl() -> Result<Thm> {
     );
     let comm = |u: &Term, v: &Term| int::mul_comm().all_elim(u.clone())?.all_elim(v.clone());
     let massoc = |u: &Term, v: &Term, w: &Term| {
-        int::mul_assoc().all_elim(u.clone())?.all_elim(v.clone())?.all_elim(w.clone())
+        int::mul_assoc()
+            .all_elim(u.clone())?
+            .all_elim(v.clone())?
+            .all_elim(w.clone())
     };
 
     // Round-trip the nested denominators in the extracted numerators.
@@ -1094,16 +1128,28 @@ fn add_assoc_impl() -> Result<Thm> {
     let mid = iadd_cong(e_m2.trans(e_n2.sym()?)?, e_n3.sym()?)?; // M2+M3 = N2+N3
     let mmm_nnn = iadd_cong(e_m1, mid)?; // M1+(M2+M3) = N1+(N2+N3)
 
-    let s_b = idistrib_r(&imul(fb.clone(), rdc.clone()), &imul(fc.clone(), rdb.clone()), &rda)?; // (fb·rdc+fc·rdb)·rda = N2+N3
+    let s_b = idistrib_r(
+        &imul(fb.clone(), rdc.clone()),
+        &imul(fc.clone(), rdb.clone()),
+        &rda,
+    )?; // (fb·rdc+fc·rdb)·rda = N2+N3
     let rhs_step = iadd_cong(Thm::refl(n1)?, s_b)?; // rhs_f' = N1+(N2+N3)
 
-    let fp_eq = lhs_step.trans(reassoc)?.trans(mmm_nnn)?.trans(rhs_step.sym()?)?; // lhs_f' = rhs_f'
+    let fp_eq = lhs_step
+        .trans(reassoc)?
+        .trans(mmm_nnn)?
+        .trans(rhs_step.sym()?)?; // lhs_f' = rhs_f'
     let f_eq = lf_rt.trans(fp_eq)?.trans(rf_rt.sym()?)?; // lhs_f = rhs_f
 
     // Denominator: same shape as mul_assoc.
     let dl = mk_components(&dest_eq(&lhs)?.1)?.1;
     let assoc_d = massoc(&rda, &rdb, &rdc)?.cong_arg(to_pos_fn())?;
-    let assoc_rhs = assoc_d.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let assoc_rhs = assoc_d
+        .concl()
+        .as_eq()
+        .ok_or(Error::NotAnEquation)?
+        .1
+        .clone();
     let d_eq = rewrite_seq(&dl, std::slice::from_ref(&ppab))?
         .trans(assoc_d)?
         .trans(rewrite_seq(&assoc_rhs, &[ppbc.sym()?])?)?;
@@ -1261,13 +1307,14 @@ fn mul_assoc_impl() -> Result<Thm> {
     // Components fa : int, da : int.pos; rda = rep da : int.
     let (fa, fb, fc) = (rfst(&a), rfst(&b), rfst(&c));
     let (da, db, dc) = (rden(&a), rden(&b), rden(&c));
-    let (rda, rdb, rdc) = (den(&rep_pair(a.clone())), den(&rep_pair(b.clone())), den(&rep_pair(c.clone())));
+    let (rda, rdb, rdc) = (
+        den(&rep_pair(a.clone())),
+        den(&rep_pair(b.clone())),
+        den(&rep_pair(c.clone())),
+    );
 
     // Numerator: (fa·fb)·fc = fa·(fb·fc).
-    let f_eq = int::mul_assoc()
-        .all_elim(fa)?
-        .all_elim(fb)?
-        .all_elim(fc)?;
+    let f_eq = int::mul_assoc().all_elim(fa)?.all_elim(fb)?.all_elim(fc)?;
 
     // Denominator (extracted from the two sides, so the shapes line up).
     let dl = mk_components(&dest_eq(&lhs)?.1)?.1; // to_pos(rep(to_pos(rda·rdb))·rdc)
@@ -1278,7 +1325,12 @@ fn mul_assoc_impl() -> Result<Thm> {
         .all_elim(rdb.clone())?
         .all_elim(rdc.clone())?
         .cong_arg(to_pos_fn())?; // to_pos((rda·rdb)·rdc) = to_pos(rda·(rdb·rdc))
-    let assoc_rhs = assoc_d.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let assoc_rhs = assoc_d
+        .concl()
+        .as_eq()
+        .ok_or(Error::NotAnEquation)?
+        .1
+        .clone();
     let d_eq = rewrite_seq(&dl, &[ppab])? // dl = to_pos((rda·rdb)·rdc)
         .trans(assoc_d)? // = to_pos(rda·(rdb·rdc))
         .trans(rewrite_seq(&assoc_rhs, &[ppbc.sym()?])?)?; // = to_pos(rda·rep(to_pos(rdb·rdc)))
@@ -1340,7 +1392,11 @@ fn mul_zero_impl() -> Result<Thm> {
     let f_eq = int::mul_zero().all_elim(fa)?; // fa·0 = 0
     let dl = mk_components(&dest_eq(&lhs)?.1)?.1;
     let d_eq = rewrite_seq(&dl, &[one_pos_rt()])?
-        .trans(int::mul_one().all_elim(rda.clone())?.cong_arg(to_pos_fn())?)?
+        .trans(
+            int::mul_one()
+                .all_elim(rda.clone())?
+                .cong_arg(to_pos_fn())?,
+        )?
         .trans(Thm::spec_abs_rep(int_pos_spec(), Vec::new(), da.clone())?)?;
     let step = lhs.trans(mkfs_cong(f_eq, d_eq)?)?; // a·0 = MK(0, da) = mk_rat(ip 0 da)
 
@@ -1404,7 +1460,10 @@ fn distrib_impl() -> Result<Thm> {
 
     let comm = |u: &Term, v: &Term| int::mul_comm().all_elim(u.clone())?.all_elim(v.clone());
     let massoc = |u: &Term, v: &Term, w: &Term| {
-        int::mul_assoc().all_elim(u.clone())?.all_elim(v.clone())?.all_elim(w.clone())
+        int::mul_assoc()
+            .all_elim(u.clone())?
+            .all_elim(v.clone())?
+            .all_elim(w.clone())
     };
     let pp = |x: &Term, y: &Term| pos_prod_rt().all_elim(x.clone())?.all_elim(y.clone());
 
@@ -1420,8 +1479,11 @@ fn distrib_impl() -> Result<Thm> {
     )?; // rf = N_R
 
     // D_R = rda·D_L.
-    let dr_fact = imul_interchange(&rda, &rdb, &rda, &rdc)?
-        .trans(massoc(&rda, &rda, &imul(rdb.clone(), rdc.clone()))?)?;
+    let dr_fact = imul_interchange(&rda, &rdb, &rda, &rdc)?.trans(massoc(
+        &rda,
+        &rda,
+        &imul(rdb.clone(), rdc.clone()),
+    )?)?;
     // rda·N_L = N_R.
     let nbc = iadd(imul(fb.clone(), rdc.clone()), imul(fc.clone(), rdb.clone()));
     let term1 = imul_interchange(&fa, &fb, &rda, &rdc)?
@@ -1430,7 +1492,12 @@ fn distrib_impl() -> Result<Thm> {
         .trans(mul_r(comm(&fa, &rda)?, &imul(fc.clone(), rdb.clone()))?)?;
     let nr_fact = massoc(&rda, &fa, &nbc)?
         .sym()? // rda·(fa·nbc) = (rda·fa)·nbc
-        .trans(int::distrib().all_elim(imul(rda.clone(), fa.clone()))?.all_elim(imul(fb.clone(), rdc.clone()))?.all_elim(imul(fc.clone(), rdb.clone()))?)? // = (rda·fa)·(fb·rdc) + (rda·fa)·(fc·rdb)
+        .trans(
+            int::distrib()
+                .all_elim(imul(rda.clone(), fa.clone()))?
+                .all_elim(imul(fb.clone(), rdc.clone()))?
+                .all_elim(imul(fc.clone(), rdb.clone()))?,
+        )? // = (rda·fa)·(fb·rdc) + (rda·fa)·(fc·rdb)
         .trans(iadd_cong(term1.sym()?, term2.sym()?)?)?; // = N_R
 
     // Cross-multiplication N_L·D_R = N_R·D_L, by the common factor rda.
@@ -1852,8 +1919,7 @@ fn le_antisym_impl() -> Result<Thm> {
     // a=b branch: immediate.
     let br_ab_eq = Thm::assume(ab_eq.clone())?.imp_intro(&ab_eq)?; // ⊢ a=b ⟹ a=b
 
-    d_ab
-        .or_elim(br_ab_lt, br_ab_eq)? // {a≤b, b≤a} ⊢ a=b
+    d_ab.or_elim(br_ab_lt, br_ab_eq)? // {a≤b, b≤a} ⊢ a=b
         .imp_intro(&hba)?
         .imp_intro(&hab)?
         .all_intro("b", rat())?
@@ -2218,7 +2284,10 @@ mod tests {
         let thm = add_zero();
         let a = rvar("a");
         let inst = thm.clone().all_elim(a.clone()).unwrap();
-        assert_eq!(inst.concl(), &radd(a.clone(), rat_zero()).equals(a).unwrap());
+        assert_eq!(
+            inst.concl(),
+            &radd(a.clone(), rat_zero()).equals(a).unwrap()
+        );
         assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
         assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
     }
@@ -2228,7 +2297,10 @@ mod tests {
         let thm = mul_zero();
         let a = rvar("a");
         let inst = thm.clone().all_elim(a.clone()).unwrap();
-        assert_eq!(inst.concl(), &rmul(a, rat_zero()).equals(rat_zero()).unwrap());
+        assert_eq!(
+            inst.concl(),
+            &rmul(a, rat_zero()).equals(rat_zero()).unwrap()
+        );
         assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
         assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
     }
@@ -2283,7 +2355,10 @@ mod tests {
     #[test]
     fn lt_irrefl_is_genuine() {
         let thm = lt_irrefl();
-        assert!(thm.hyps().is_empty(), "rat::lt_irrefl is proved, not postulated");
+        assert!(
+            thm.hyps().is_empty(),
+            "rat::lt_irrefl is proved, not postulated"
+        );
         let a = rvar("a");
         let inst = thm.all_elim(a.clone()).unwrap();
         assert_eq!(inst.concl(), &rlt(a.clone(), a.clone()).not().unwrap());
@@ -2355,7 +2430,9 @@ mod tests {
 
         // ∀a b. a ≤ b ∨ b ≤ a.
         let tot = inst2(le_total());
-        let exp_tot = rle(a.clone(), b.clone()).or(rle(b.clone(), a.clone())).unwrap();
+        let exp_tot = rle(a.clone(), b.clone())
+            .or(rle(b.clone(), a.clone()))
+            .unwrap();
         assert_eq!(tot.concl(), &exp_tot);
     }
 

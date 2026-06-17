@@ -204,6 +204,9 @@ crate::cov_theory! {
         "mul_one"      => pub fn mul_one_cov;
         "distrib"      => pub fn distrib_cov;
         "mul_assoc"    => pub fn mul_assoc_cov;
+        "le_succ_self" => pub fn le_succ_self_cov;
+        "le_total"     => pub fn le_total_cov;
+        "lt_iff_succ_le" => pub fn lt_iff_succ_le_cov;
     }
 }
 
@@ -2925,6 +2928,16 @@ mod cov_tests {
         assert_eq!(cov::mul_one_cov().concl(), super::mul_one().concl());
         assert_eq!(cov::distrib_cov().concl(), super::distrib().concl());
         assert_eq!(cov::mul_assoc_cov().concl(), super::mul_assoc().concl());
+        // Order theory ported to `nat.cov`.
+        assert_eq!(
+            cov::le_succ_self_cov().concl(),
+            super::le_succ_self().concl()
+        );
+        assert_eq!(cov::le_total_cov().concl(), super::le_total().concl());
+        assert_eq!(
+            cov::lt_iff_succ_le_cov().concl(),
+            super::lt_iff_succ_le().concl()
+        );
     }
 
     #[test]

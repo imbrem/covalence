@@ -446,6 +446,95 @@
         (rw (all-elim n (all-elim n (lemma lt_succ_succ))))
         (assumption)))))
 
+;; ⊢ ∀n. n ≤ S n.  Every nat is ≤ its successor.  Induction: base `0 ≤ S 0`
+;; from `le_zero`; step rewrites `S n ≤ S(S n)` to `n ≤ S n` (the IH) via
+;; `le_succ_succ`.
+(#thm le_succ_self
+  (#concl (forall (n nat) (nat.le n (succ n))))
+  (#by
+    (induct n
+      (#by (derive (all-elim (succ 0) (lemma le_zero))))
+      (#by
+        (rw (all-elim (succ n) (all-elim n (lemma le_succ_succ))))
+        (assumption)))))
+
+;; ⊢ ∀a b. (a ≤ b) ∨ (b ≤ a).  Totality of `≤`.  Double induction: outer on a,
+;; inner on b; the inner step case-splits the OUTER IH (`ih_a @ b`) with
+;; `or-elim`, lifting each side through `le_succ_succ`.  (The inner IH is
+;; unused — the inner induction only exposes `b`'s shape.)
+(#thm le_total
+  (#concl (forall (a nat) (forall (b nat) (or (nat.le a b) (nat.le b a)))))
+  (#by
+    (induct a
+      ;; base a=0: ∀b. (0 ≤ b) ∨ (b ≤ 0) — left disjunct via le_zero.
+      (#by
+        (intro b)
+        (derive (or-intro-l (nat.le b 0) (all-elim b (lemma le_zero)))))
+      ;; step: ih ∀b.(a≤b)∨(b≤a) ⊢ ∀b. (S a ≤ b) ∨ (b ≤ S a).
+      (#by
+        (induct b
+          ;; inner base b=0: (S a ≤ 0) ∨ (0 ≤ S a) — right disjunct.
+          (#by
+            (derive
+              (or-intro-r (nat.le (succ a) 0) (all-elim (succ a) (lemma le_zero)))))
+          ;; inner step: decide via the outer IH at b.
+          (#by
+            (derive
+              (or-elim
+                (all-elim b
+                  (assume (forall (b nat) (or (nat.le a b) (nat.le b a)))))
+                (imp-intro (nat.le a b)
+                  (or-intro-l (nat.le (succ b) (succ a))
+                    (eq-mp (sym (all-elim b (all-elim a (lemma le_succ_succ))))
+                           (assume (nat.le a b)))))
+                (imp-intro (nat.le b a)
+                  (or-intro-r (nat.le (succ a) (succ b))
+                    (eq-mp (sym (all-elim a (all-elim b (lemma le_succ_succ))))
+                           (assume (nat.le b a)))))))))))))
+
+;; ⊢ ∀a b. (a < b) = (S a ≤ b).  The bridge between `<` and `≤` (strict is `≤`
+;; shifted by one).  Double induction; each leaf chains the raw `<`/`≤` body
+;; clauses with `trans`.  `(X = T)` is built by `deduct-antisym` against
+;; `truth` (HOL's `EQT_INTRO`); the step uses the outer IH `(a<b)=(S a≤b)`.
+(#thm lt_iff_succ_le
+  (#concl (forall (a nat) (forall (b nat) (= (nat.lt a b) (nat.le (succ a) b)))))
+  (#by
+    (induct a
+      ;; base a=0: ∀b. (0 < b) = (S 0 ≤ b).
+      (#by
+        (induct b
+          ;; b=0: both sides F.  (0<0)=F  trans  F=(S0≤0).
+          (#by
+            (derive
+              (trans (and-elim-l (lemma lt_body))
+                (sym (all-elim 0
+                       (and-elim-l (and-elim-r (and-elim-r (lemma le_body)))))))))
+          ;; b=S b': both sides T.  (0<Sb)=T  trans  T=(S0≤Sb).
+          (#by
+            (derive
+              (trans (all-elim b (and-elim-l (and-elim-r (lemma lt_body))))
+                (sym
+                  (trans (all-elim b (all-elim 0 (lemma le_succ_succ)))
+                    (deduct-antisym (all-elim b (lemma le_zero)) (lemma truth)))))))))
+      ;; step: ih ∀b.(a<b)=(Sa≤b) ⊢ ∀b. (S a < b) = (S(S a) ≤ b).
+      (#by
+        (induct b
+          ;; b=0: both sides F.  (Sa<0)=F  trans  F=(S(Sa)≤0).
+          (#by
+            (derive
+              (trans (all-elim a
+                       (and-elim-l (and-elim-r (and-elim-r (lemma lt_body)))))
+                (sym (all-elim (succ a)
+                       (and-elim-l (and-elim-r (and-elim-r (lemma le_body)))))))))
+          ;; b=S b': cancel a successor on each side, then the outer IH at b.
+          (#by
+            (derive
+              (trans (all-elim b (all-elim a (lemma lt_succ_succ)))
+                (trans
+                  (all-elim b
+                    (assume (forall (b nat) (= (nat.lt a b) (nat.le (succ a) b)))))
+                  (sym (all-elim b (all-elim (succ a) (lemma le_succ_succ)))))))))))))
+
 (#export succ_ne_zero succ_cong_ne rec_zero rec_succ eq_refl
          add_zero add_succ add_comm add_assoc add_cancel
          add_swap_mid
@@ -453,4 +542,5 @@
          distrib distrib_r mul_assoc
          zero_sub succ_sub
          le_succ_succ lt_succ_succ le_zero zero_lt_succ
-         le_refl not_succ_le_zero not_lt_zero lt_irrefl)
+         le_refl not_succ_le_zero not_lt_zero lt_irrefl
+         le_succ_self le_total lt_iff_succ_le)

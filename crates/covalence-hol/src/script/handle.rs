@@ -15,22 +15,25 @@ use futures::future::{BoxFuture, Shared};
 
 use super::ScriptError;
 
-/// A lazily-computed value: ready, or still being computed. The pending future
-/// is `Shared`, so several consumers can await the same computation.
+/// A lazily-computed value: **ready** (an `Ok` value — or a held `Err`, so a
+/// failed definition can be reported *later*, grouped with others, à la
+/// Python's `ExceptionGroup`), or still being **computed** (a `Shared` future,
+/// so several consumers await the same computation).
 #[derive(Clone)]
-pub enum Lazy<T: Clone> {
-    Ready(T),
+pub(super) enum Lazy<T: Clone> {
+    Ready(Result<T, ScriptError>),
     Pending(Shared<BoxFuture<'static, Result<T, ScriptError>>>),
 }
 
 /// A lazily-computed theorem (a `#compute`-ing or proved lemma).
-pub type LazyThm = Lazy<Thm>;
+#[allow(dead_code)]
+pub(super) type LazyThm = Lazy<Thm>;
 
 /// A name→[`Lazy<T>`] map with async getters. Cloning is cheap (an `imbl`
 /// persistent map of clonable handles). The bound `T: Clone + Send + Sync +
 /// 'static` is what `Shared`/`spawn_blocking` need.
 #[derive(Clone)]
-pub struct LazyMap<T: Clone> {
+pub(super) struct LazyMap<T: Clone> {
     entries: imbl::HashMap<String, Lazy<T>>,
 }
 
@@ -44,18 +47,27 @@ impl<T: Clone> Default for LazyMap<T> {
 
 impl<T: Clone + Send + Sync + 'static> LazyMap<T> {
     /// An empty map.
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Whether this map binds nothing.
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
     /// Bind `name` to an already-available value.
     pub fn insert_ready(&mut self, name: impl Into<String>, value: T) {
-        self.entries.insert(name.into(), Lazy::Ready(value));
+        self.entries.insert(name.into(), Lazy::Ready(Ok(value)));
+    }
+
+    /// Bind `name` to an already-known **failure**, held for deferred /
+    /// grouped reporting (the error surfaces when the binding is looked up).
+    #[allow(dead_code)]
+    pub fn insert_failed(&mut self, name: impl Into<String>, err: ScriptError) {
+        self.entries.insert(name.into(), Lazy::Ready(Err(err)));
     }
 
     /// Bind `name` to a value being computed on a blocking thread (a
@@ -81,6 +93,7 @@ impl<T: Clone + Send + Sync + 'static> LazyMap<T> {
     }
 
     /// The bound names, in arbitrary order.
+    #[allow(dead_code)]
     pub fn names(&self) -> impl Iterator<Item = &String> {
         self.entries.keys()
     }
@@ -89,16 +102,17 @@ impl<T: Clone + Send + Sync + 'static> LazyMap<T> {
     /// still pending. `None` if `name` is unbound.
     pub async fn get(&self, name: &str) -> Option<Result<T, ScriptError>> {
         match self.entries.get(name)? {
-            Lazy::Ready(t) => Some(Ok(t.clone())),
+            Lazy::Ready(r) => Some(r.clone()),
             Lazy::Pending(f) => Some(f.clone().await),
         }
     }
 
-    /// Synchronous peek: the value bound to `name` **only if already ready**.
+    /// Synchronous peek: the value bound to `name` **only if already ready and
+    /// successful** (not still computing, not a held error).
     pub fn get_ready(&self, name: &str) -> Option<T> {
         match self.entries.get(name)? {
-            Lazy::Ready(t) => Some(t.clone()),
-            Lazy::Pending(_) => None,
+            Lazy::Ready(Ok(t)) => Some(t.clone()),
+            _ => None,
         }
     }
 

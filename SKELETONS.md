@@ -37,32 +37,54 @@ it is how unfinished work stays discoverable.
   are componentwise on representatives, so the two representative pairs are
   provably equal (numerator + denominator each by the proved `int`
   commutativity facts) and equal representatives lift to equal classes by
-  congruence under `mkRat`; no quotient relation and no `int` cancellation
-  are involved. **Postulated** via the module's `axiom` helper (each
-  carrying its statement as a self-hyp):
-  - `rat_rel_trans` — transitivity of the cross-multiplication relation.
-    Needs `int` *multiplicative cancellation by a positive* (cancel the
-    common positive denominator) — now derivable from the fully-proved `int`
-    ordered ring (`lt_mul_pos` + `lt_trichotomy`: `a·c = b·c ∧ 0 < c ⟹ a = b`),
-    just not yet packaged. Once that lands, this becomes the int-analogue of
-    `int_rel_trans`.
-  - The remaining ordered-field axioms over the operations
-    `rat_zero`/`rat_one`/`rat_add`/`rat_sub`/`rat_neg`/`rat_mul`/`rat_inv`/
-    `rat_div`/`rat_lt` (all **defined** at the representative level;
-    `rat_sub`/`rat_inv`/`rat_div` are the additive/multiplicative
-    companions — `rat_div x y = x · y⁻¹`, `rat_inv` sign-normalised so the
-    denominator stays positive). The unproved laws: commutative-ring
-    `add_assoc`/`add_zero`/`add_neg`/`sub_def`/`mul_assoc`/`mul_one`/
-    `mul_zero`/`distrib`, the multiplicative inverse `mul_inv`
-    (now realisable concretely via `rat_inv`), the linear order
-    `lt_*`/`le_def`, and the base strictness fact `zero_lt_one` — `ratLt`
-    picks ε-representatives, so `0 < 1` is not reducible. Each is a HOL
-    theorem derivable from the **now fully-proved** `int` ordered-ring theory
-    through the quotient; filling them in does not change the public `fn`
-    surface. The `int` order facts they lean on are all discharged. (The `≤`
-    toolkit
-    `le_refl`/`lt_imp_le`/`le_trans`/`not_one_le_zero` is **not**
-    postulated — it is *derived* from `le_def` + the strict-order facts.)
+  congruence under `mkRat`. `rat_rel_trans` is now **proved too** — the
+  Grothendieck cross-multiplication cancellation argument — *modulo* two
+  **postulated `int` facts** (stubbed in `init::rat` via `axiom`, **to be
+  relocated to / discharged in `init::int`**, now that the `int` ordered ring
+  is fully proved both are derivable: cancellation from `lt_mul_pos` +
+  `lt_trichotomy`, nonzero-positivity from the `int.pos` carving predicate):
+  - `int_mul_rcancel` — `∀x y d. ¬(d = 0) ⟹ x·d = y·d ⟹ x = y` (`int` is an
+    integral domain; right-cancellation by a nonzero factor).
+  - `int_pos_nonzero` — `∀p:int.pos. ¬(rep p = 0)` (positive denominators
+    are nonzero).
+
+  So `rat_rel` is now a full equivalence and `quotient::class_intro` /
+  `recon` are available for the remaining `rat` axioms.
+  The **quotient-lifting machinery is now built** (the rat analogue of
+  int's): `rat_recon` (quotient induction), `round_trip`, `recon_mk` (MK
+  component form `MK(f,d) = mk_rat(pair f d)`, `f:int`, `d:int.pos`), the
+  per-op computation rules `add_class`/`mul_class` + `add_mk`/`mul_mk` +
+  `*_via_components`, the well-definedness lemmas `add_pair_cong` (distrib +
+  interchange) / `mul_pair_cong` (interchange), `rel_of_pairs` (prod-
+  projection bridge), and `imul_interchange`. It rests on two postulated
+  `int.pos` round-trips for the `to_pos` denominators (**to discharge in
+  `init::int`**): `pos_prod_rt` (`rep(to_pos(rep a · rep b)) = rep a · rep b`)
+  and `one_pos_rt` (`rep(one_pos) = 1`).
+
+  **Proved** through that machinery (over the operations `rat_zero`/`rat_one`/
+  `rat_add`/`rat_sub`/`rat_neg`/`rat_mul`/`rat_inv`/`rat_div`/`rat_lt`, all
+  defined at the representative level): the full additive group + commutative
+  monoid fragment plus distributivity — the **full commutative ring**:
+  `add_comm`, `mul_comm` (on the nose), `add_assoc`, `add_zero`, `add_neg`,
+  `mul_assoc`, `mul_one`, `mul_zero`, `distrib` — and the order `lt_irrefl`
+  (on the nose from `int::lt_irrefl`). All genuine *modulo* the `int.pos`
+  round-trip + `rat_rel_trans` int stubs. `distrib` is the one *non*-
+  componentwise ring axiom (`a·(b+c) = N/D` while `a·b + a·c = (rda·N)/(rda·D)`,
+  the same rational scaled by the common factor `rda`), so its
+  cross-multiplication collapses to comm/assoc and lifts by `class_intro`.
+
+  **Still postulated** via the module's `axiom` helper:
+  - The field inverse `mul_inv` (`¬(a=0) ⟹ ∃b. a·b = 1`), realisable via
+    the defined `rat_inv` (sign-normalised so the denominator stays positive).
+  - The order axioms `lt_trans`/`lt_trichotomy`/`le_def`/`zero_lt_one`.
+    `le_def` is definitional (pins the opaque `ratLe`); the rest unfold
+    `ratLt` to the `int` comparison on cross-products. The `int` ordered
+    ring is **now fully proved** (`lt_*`/`lt_mul_pos` all discharged), so the
+    `int` order facts these lean on are all available; the remaining work is
+    the rat-quotient lifting. (The linear-order toolkit
+    `le_refl`/`lt_imp_le`/`le_trans`/`lt_asymm`/`lt_imp_ne`/`le_antisym`/
+    `le_total`/`not_one_le_zero` is **not** postulated — it is *derived* from
+    `le_def` + the strict-order facts.)
   - The two **mediant inequalities** `mediant_gt` / `mediant_lt` — the
     only postulated leaves of `dense` (which is itself *derived* from
     them via the mediant `(a+c)/(b+d)`, no division needed). Each unfolds

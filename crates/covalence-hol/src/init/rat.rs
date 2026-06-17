@@ -161,28 +161,94 @@ fn axiom(t: Term) -> Thm {
     Thm::assume(t).expect("init::rat::axiom: term must be bool-typed")
 }
 
-/// Universally close `body` over the named representative-pair variables,
-/// outermost first.
-fn forall_pair(vars: &[&str], body: Term) -> Term {
+// ============================================================================
+// Postulated `int` facts (pending `int` proofs)
+// ============================================================================
+//
+// The `rat` quotient theory needs two `int` facts that `init::int` does not
+// yet prove. We **postulate them here** (self-flagged via `axiom`, exactly
+// like the `int` ordered-ring postulates) so the `rat` derivations that
+// consume them are real proofs *modulo* these leaves; when `init::int`
+// proves them, these two stubs are replaced by calls to the `int` versions
+// and every `rat` theorem built on them becomes genuine, with no change to
+// the `rat` public surface. **TODO: relocate to / discharge in `init::int`.**
+
+/// A free `int` variable.
+fn ivar(name: &str) -> Term {
+    Term::free(name, Type::int())
+}
+
+/// `0 : int`.
+fn izero() -> Term {
+    Term::int_lit(0i128)
+}
+
+/// **Postulated.** `⊢ ∀x y d. ¬(d = 0) ⟹ x·d = y·d ⟹ x = y` — `int`
+/// right-cancellation by a nonzero factor (the integers are an integral
+/// domain). Needed to cancel the common positive denominator in
+/// [`rat_rel_trans`]. *To be discharged in `init::int`.*
+fn int_mul_rcancel() -> Thm {
+    let (x, y, d) = (ivar("x"), ivar("y"), ivar("d"));
+    let neq = d.clone().equals(izero()).expect("int_mul_rcancel: d=0").not().expect("¬");
+    let prod_eq = imul(x.clone(), d.clone())
+        .equals(imul(y.clone(), d.clone()))
+        .expect("int_mul_rcancel: x·d=y·d");
+    let concl = x.clone().equals(y.clone()).expect("int_mul_rcancel: x=y");
+    let body = neq
+        .imp(prod_eq.imp(concl).expect("int_mul_rcancel inner"))
+        .expect("int_mul_rcancel");
     let mut t = body;
-    for name in vars.iter().rev() {
-        t = t
-            .forall(name, ip_pair())
-            .expect("forall_pair: bind variable");
+    for name in ["x", "y", "d"].iter().rev() {
+        t = t.forall(name, Type::int()).expect("int_mul_rcancel: ∀");
     }
-    t
+    axiom(t)
+}
+
+/// **Postulated.** `⊢ ∀p. ¬(rep p = 0)` for `p : int.pos` — the strictly-
+/// positive integers (the `rat` denominators) are nonzero. *To be discharged
+/// in `init::int` once `int.pos` positivity is available.*
+fn int_pos_nonzero() -> Thm {
+    let p = Term::free("p", int_pos_ty());
+    let rep = Term::spec_rep(int_pos_spec(), Vec::new());
+    let body = Term::app(rep, p.clone())
+        .equals(izero())
+        .expect("int_pos_nonzero: rep p = 0")
+        .not()
+        .expect("¬");
+    axiom(body.forall("p", int_pos_ty()).expect("int_pos_nonzero: ∀"))
 }
 
 // ============================================================================
-// `rat_rel` is an equivalence
+// `rat_rel` is an equivalence — proved (trans modulo the postulated int facts)
 // ============================================================================
 //
 // `refl` / `symm` are pure `int`-equation manipulations of the cross-
-// multiplication body and are **proved** outright. `trans` is the one
-// piece that needs `int` *multiplicative cancellation by a positive*
-// denominator (from `a·d = c·b` and `c·f = e·d`, cancel `d` to reach
-// `a·f = e·b`); that `int` fact is not yet discharged, so `trans` is a
-// postulate (`SKELETONS.md`).
+// multiplication body and are **proved** outright. `trans` is now **proved**
+// too — the Grothendieck-style cancellation argument (multiply the two
+// defining equations through, rearrange by `int` comm/assoc so the common
+// `den q` factor lines up, then cancel it) — resting on the postulated
+// `int` facts [`int_mul_rcancel`] and [`int_pos_nonzero`] above.
+
+/// `⊢ (x·a)·b = (x·b)·a` on `int` — swap the last two factors of a
+/// left-associated triple (associate, commute, re-associate).
+fn swap_last_two(x: &Term, a: &Term, b: &Term) -> Result<Thm> {
+    let assoc1 = int::mul_assoc()
+        .all_elim(x.clone())?
+        .all_elim(a.clone())?
+        .all_elim(b.clone())?; // (x·a)·b = x·(a·b)
+    let comm = int::mul_comm().all_elim(a.clone())?.all_elim(b.clone())?; // a·b = b·a
+    let cong = comm.cong_arg(Term::app(int::int_mul(), x.clone()))?; // x·(a·b) = x·(b·a)
+    let assoc2 = int::mul_assoc()
+        .all_elim(x.clone())?
+        .all_elim(b.clone())?
+        .all_elim(a.clone())?; // (x·b)·a = x·(b·a)
+    assoc1.trans(cong)?.trans(assoc2.sym()?)
+}
+
+/// `⊢ x = y` → `⊢ x·c = y·c` (right-multiply both sides of an `int` equation).
+fn mul_r(eq: Thm, c: &Term) -> Result<Thm> {
+    eq.cong_arg(int::int_mul())?.cong_fn(c.clone())
+}
 
 cached_thm! {
     /// `⊢ ∀p. rat_rel p p` — reflexivity (`num p · den p = num p · den p`).
@@ -215,27 +281,55 @@ fn rat_rel_symm_impl() -> Result<Thm> {
 
 cached_thm! {
     /// `⊢ ∀p q r. rat_rel p q ⟹ rat_rel q r ⟹ rat_rel p r` —
-    /// transitivity.
+    /// transitivity, **proved** modulo the postulated `int` facts.
     ///
-    /// **Postulated** (audit hyp). The derivation: from `num p · den q =
-    /// num q · den p` and `num q · den r = num r · den q`, multiply the
-    /// first by `den r` and the second by `den p`, commute/associate so
-    /// the common `num q · den q · den r` factor matches, giving
-    /// `(num p · den r) · den q = (num r · den p) · den q`, then cancel
-    /// `den q` (strictly positive, hence nonzero) — the `int`
-    /// multiplicative cancellation that is not yet a proved `int` fact.
+    /// From `num p · den q = num q · den p` and `num q · den r =
+    /// num r · den q`, right-multiply the first by `den r` and the second
+    /// by `den p`, rearrange by `int` comm/assoc ([`swap_last_two`]) so the
+    /// common `den q` lines up — giving `(num p · den r) · den q =
+    /// (num r · den p) · den q` — then cancel the strictly-positive `den q`
+    /// ([`int_mul_rcancel`] + [`int_pos_nonzero`]).
     pub fn rat_rel_trans() -> Thm {
-        let (p, q, r) = (
-            Term::free("p", ip_pair()),
-            Term::free("q", ip_pair()),
-            Term::free("r", ip_pair()),
-        );
-        let pr = rel_app(&p, &r);
-        let body = rel_app(&p, &q)
-            .imp(rel_app(&q, &r).imp(pr).expect("rat_rel_trans inner"))
-            .expect("rat_rel_trans");
-        axiom(forall_pair(&["p", "q", "r"], body))
+        rat_rel_trans_impl().expect("rat_rel_trans")
     }
+}
+fn rat_rel_trans_impl() -> Result<Thm> {
+    let (p, q, r) = (
+        Term::free("p", ip_pair()),
+        Term::free("q", ip_pair()),
+        Term::free("r", ip_pair()),
+    );
+    let (h1, h2) = (rel_app(&p, &q), rel_app(&q, &r));
+    let e1 = reduce_rel(Thm::assume(h1.clone())?)?; // num p·den q = num q·den p
+    let e2 = reduce_rel(Thm::assume(h2.clone())?)?; // num q·den r = num r·den q
+
+    let (np, dp) = (num(&p), den(&p));
+    let (nq, dq) = (num(&q), den(&q));
+    let (nr, dr) = (num(&r), den(&r));
+
+    // (np·dr)·dq = (np·dq)·dr = (nq·dp)·dr = (nq·dr)·dp = (nr·dq)·dp = (nr·dp)·dq.
+    let chain = swap_last_two(&np, &dq, &dr)?
+        .sym()?
+        .trans(mul_r(e1, &dr)?)?
+        .trans(swap_last_two(&nq, &dp, &dr)?)?
+        .trans(mul_r(e2, &dp)?)?
+        .trans(swap_last_two(&nr, &dq, &dp)?)?; // ⊢ (np·dr)·dq = (nr·dp)·dq
+
+    // Cancel the positive den q.
+    let nonzero = int_pos_nonzero().all_elim(den_pos(&q))?; // ¬(den q = 0)
+    let reduced = int_mul_rcancel()
+        .all_elim(imul(np.clone(), dr.clone()))?
+        .all_elim(imul(nr.clone(), dp.clone()))?
+        .all_elim(dq.clone())?
+        .imp_elim(nonzero)?
+        .imp_elim(chain)?; // ⊢ num p·den r = num r·den p
+
+    expand_rel(reduced, &rel_app(&p, &r))?
+        .imp_intro(&h2)?
+        .imp_intro(&h1)?
+        .all_intro("r", ip_pair())?
+        .all_intro("q", ip_pair())?
+        .all_intro("p", ip_pair())
 }
 
 // ============================================================================
@@ -471,6 +565,414 @@ fn to_pos_fn() -> Term {
 }
 
 // ============================================================================
+// Quotient-lifting machinery for the ring axioms
+// ============================================================================
+//
+// The rat analogue of `init::int`'s `recon` + MK-component layer + per-op
+// computation/well-definedness rules. Each `rat` op picks representative
+// pairs, computes on the `int` numerator / `int.pos` denominator components,
+// and re-quotients. Op denominators are re-wrapped via `to_pos`
+// (= `abs : int → int.pos`); simplifying a result denominator back to its
+// `int` value uses the **postulated** `int.pos` product round-trip below
+// (pending `int.pos` positivity in `init::int`).
+
+/// `(0, 1) : int × int.pos` — base witness for `recon`'s non-emptiness side.
+fn ip_witness() -> Term {
+    ip(izero(), one_pos())
+}
+
+/// **Quotient induction.** `⊢ a = mk_rat (rep_pair a)` for any `a : rat`.
+fn rat_recon(a: &Term) -> Result<Thm> {
+    crate::init::quotient::recon(
+        &rat_spec(),
+        &[],
+        &ip_pair(),
+        &rat_rel(),
+        &rat_rel_refl(),
+        &rat_rel_symm(),
+        &rat_rel_trans(),
+        &ip_witness(),
+        a,
+    )
+}
+
+/// `⊢ rat_rel p (rep_pair (mk_rat p))` — the chosen representative of `[p]`
+/// is `~`-related to `p`.
+fn round_trip(p: &Term) -> Result<Thm> {
+    crate::init::quotient::round_trip(&rat_spec(), &[], &ip_pair(), &rat_rel(), &rat_rel_refl(), p)
+}
+
+/// `MK(f, d) ≔ mk_rat (pair f d)` for `f : int`, `d : int.pos`.
+fn mkfs(f: &Term, d: &Term) -> Term {
+    mk_rat(&ip(f.clone(), d.clone()))
+}
+/// `fst (rep_pair a) : int` — the numerator component of `a`'s representative.
+fn rfst(a: &Term) -> Term {
+    num(&rep_pair(a.clone()))
+}
+/// `snd (rep_pair a) : int.pos` — the denominator component.
+fn rden(a: &Term) -> Term {
+    den_pos(&rep_pair(a.clone()))
+}
+
+/// **Reconstruction in component form.** `⊢ a = MK(fst(rep_pair a),
+/// snd(rep_pair a))` — `recon` followed by surjective pairing of the
+/// representative.
+fn recon_mk(a: &Term) -> Result<Thm> {
+    let rp = rep_pair(a.clone());
+    let surj =
+        crate::init::prod::surjective_pairing(&Type::int(), &int_pos_ty(), &rp)?; // pair(fst rp)(snd rp) = rp
+    rat_recon(a)?.rhs_conv(|t| t.rw_all(&surj.sym()?))
+}
+
+/// Parse a `rat_rel x y` application into `(x, y)`.
+fn dest_rel_app(t: &Term) -> Result<(Term, Term)> {
+    let (rel_x, y) = t.as_app().ok_or(Error::NotAnEquation)?;
+    let (_rel, x) = rel_x.as_app().ok_or(Error::NotAnEquation)?;
+    Ok((x.clone(), y.clone()))
+}
+
+/// Split an equation theorem `⊢ l = r` into `(l, r)`.
+fn dest_eq(thm: &Thm) -> Result<(Term, Term)> {
+    let (l, r) = thm.concl().as_eq().ok_or(Error::NotAnEquation)?;
+    Ok((l.clone(), r.clone()))
+}
+
+/// From `MK(f, d) = mk_rat(ip f d)`, read off `(f, d)`.
+fn mk_components(mk: &Term) -> Result<(Term, Term)> {
+    let lam = mk.as_app().ok_or(Error::NotAnEquation)?.1.clone(); // λ_q. rat_rel (ip f d) _q
+    let body = lam.as_abs().ok_or(Error::NotAnEquation)?.1.clone(); // rat_rel (ip f d) #0
+    let rel_p = body.as_app().ok_or(Error::NotAnEquation)?.0.clone(); // rat_rel (ip f d)
+    let p = rel_p.as_app().ok_or(Error::NotAnEquation)?.1.clone(); // ip f d
+    let (pair_f, d) = p.as_app().ok_or(Error::NotAnEquation)?;
+    let f = pair_f.as_app().ok_or(Error::NotAnEquation)?.1.clone();
+    Ok((f, d.clone()))
+}
+
+/// `⊢ (a·b)·(c·d) = (a·c)·(b·d)` on `int` (assoc/comm interchange).
+fn imul_interchange(a: &Term, b: &Term, c: &Term, d: &Term) -> Result<Thm> {
+    let s1 = int::mul_assoc()
+        .all_elim(a.clone())?
+        .all_elim(b.clone())?
+        .all_elim(imul(c.clone(), d.clone()))?; // (a·b)·(c·d) = a·(b·(c·d))
+    let inner = int::mul_assoc()
+        .all_elim(b.clone())?
+        .all_elim(c.clone())?
+        .all_elim(d.clone())?
+        .sym()? // b·(c·d) = (b·c)·d
+        .trans(mul_r(
+            int::mul_comm().all_elim(b.clone())?.all_elim(c.clone())?,
+            d,
+        )?)? // = (c·b)·d
+        .trans(
+            int::mul_assoc()
+                .all_elim(c.clone())?
+                .all_elim(b.clone())?
+                .all_elim(d.clone())?,
+        )?; // = c·(b·d)
+    let s2 = inner.cong_arg(Term::app(int::int_mul(), a.clone()))?; // a·(b·(c·d)) = a·(c·(b·d))
+    let s3 = int::mul_assoc()
+        .all_elim(a.clone())?
+        .all_elim(c.clone())?
+        .all_elim(imul(b.clone(), d.clone()))?
+        .sym()?; // a·(c·(b·d)) = (a·c)·(b·d)
+    s1.trans(s2)?.trans(s3)
+}
+
+/// `⊢ a·b = a'·b'` from `⊢ a = a'` and `⊢ b = b'` (int product congruence).
+fn imul_cong(ea: Thm, eb: Thm) -> Result<Thm> {
+    Thm::refl(int::int_mul())?.cong_app(ea)?.cong_app(eb)
+}
+
+/// **Postulated.** `⊢ ∀a b:int.pos. rep(to_pos(rep a · rep b)) = rep a · rep b`
+/// — products of positive denominators round-trip through `int.pos`.
+/// *To be discharged in `init::int`* (positivity of products of positives).
+fn pos_prod_rt() -> Thm {
+    let rep = Term::spec_rep(int_pos_spec(), Vec::new());
+    let (a, b) = (Term::free("a", int_pos_ty()), Term::free("b", int_pos_ty()));
+    let prod = imul(Term::app(rep.clone(), a.clone()), Term::app(rep.clone(), b.clone()));
+    let lhs = Term::app(rep, to_pos(prod.clone()));
+    let body = lhs.equals(prod).expect("pos_prod_rt body");
+    let t = body
+        .forall("b", int_pos_ty())
+        .and_then(|t| t.forall("a", int_pos_ty()))
+        .expect("pos_prod_rt: ∀");
+    axiom(t)
+}
+
+/// **Postulated.** `⊢ rep(one_pos) = 1` — the canonical denominator `1`
+/// round-trips. *To be discharged in `init::int`* (`0 < 1`, so `to_pos 1`
+/// is a genuine `int.pos` wrapping of `1`).
+fn one_pos_rt() -> Thm {
+    let rep = Term::spec_rep(int_pos_spec(), Vec::new());
+    let lhs = Term::app(rep, one_pos());
+    axiom(lhs.equals(Term::int_lit(1i128)).expect("one_pos_rt"))
+}
+
+/// `⊢ rep(to_pos(den x · den y)) = den x · den y` — [`pos_prod_rt`] at the
+/// `int.pos` denominators of the representative pairs `x`, `y` (`den_pos =
+/// snd`, and `den = rep ∘ snd` lines up).
+fn den_prod_rt(x: &Term, y: &Term) -> Result<Thm> {
+    pos_prod_rt().all_elim(den_pos(x))?.all_elim(den_pos(y))
+}
+
+/// `⊢ t = t'` applying each `eqs[i]` (`rw_all`) to the running RHS in turn.
+fn rewrite_seq(t: &Term, eqs: &[Thm]) -> Result<Thm> {
+    let mut acc = Thm::refl(t.clone())?;
+    for eq in eqs {
+        let cur = acc.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+        acc = acc.trans(cur.rw_all(eq)?)?;
+    }
+    Ok(acc)
+}
+
+/// `⊢ rat_rel (ip a1 a2) (ip b1 b2)` from the cross-multiplication fact
+/// `g : ⊢ a1 · rep b2 = b1 · rep a2` (`a2`, `b2 : int.pos`). Bridges the
+/// `rat_rel` body's stuck `fst`/`snd` via the proven prod projections.
+fn rel_of_pairs(a1: &Term, a2: &Term, b1: &Term, b2: &Term, g: Thm) -> Result<Thm> {
+    let (i, pp) = (Type::int(), int_pos_ty());
+    let app = rel_app(&ip(a1.clone(), a2.clone()), &ip(b1.clone(), b2.clone()));
+    let beta = app.reduce()?; // ⊢ app = (fst pa · rep(snd pb) = fst pb · rep(snd pa))
+    let br = beta.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let projs = [
+        crate::init::prod::fst_pair(&i, &pp, a1, a2)?,
+        crate::init::prod::snd_pair(&i, &pp, b1, b2)?,
+        crate::init::prod::fst_pair(&i, &pp, b1, b2)?,
+        crate::init::prod::snd_pair(&i, &pp, a1, a2)?,
+    ];
+    let proj_eq = rewrite_seq(&br, &projs)?; // ⊢ br = (a1·rep b2 = b1·rep a2)
+    beta.trans(proj_eq)?.sym()?.eq_mp(g)
+}
+
+/// **Multiplicative well-definedness.** From `⊢ rat_rel x x'`, `⊢ rat_rel
+/// y y'` conclude `⊢ rat_rel (mul_pair x y) (mul_pair x' y')`. Clean `int`
+/// interchange: `(nx·ny)·(dx'·dy') = (nx·dx')·(ny·dy') = (nx'·dx)·(ny'·dy)
+/// = (nx'·ny')·(dx·dy)` (hypotheses substituted in the middle), over the
+/// round-tripped denominators.
+fn mul_pair_cong(h1: Thm, h2: Thm) -> Result<Thm> {
+    let (x, xp) = dest_rel_app(h1.concl())?;
+    let (y, yp) = dest_rel_app(h2.concl())?;
+    let e1 = reduce_rel(h1)?; // nx·dx' = nx'·dx
+    let e2 = reduce_rel(h2)?; // ny·dy' = ny'·dy
+    let (nx, dx, nxp, dxp) = (num(&x), den(&x), num(&xp), den(&xp));
+    let (ny, dy, nyp, dyp) = (num(&y), den(&y), num(&yp), den(&yp));
+
+    let g_clean = imul_interchange(&nx, &ny, &dxp, &dyp)? // (nx·ny)·(dx'·dy') = (nx·dx')·(ny·dy')
+        .trans(imul_cong(e1, e2)?)? // = (nx'·dx)·(ny'·dy)
+        .trans(imul_interchange(&nxp, &dx, &nyp, &dy)?)?; // = (nx'·ny')·(dx·dy)
+
+    // Re-introduce round-tripped denominators on each side.
+    let rt_xy = den_prod_rt(&x, &y)?; // rep(to_pos(dx·dy)) = dx·dy
+    let rt_xpyp = den_prod_rt(&xp, &yp)?; // rep(to_pos(dx'·dy')) = dx'·dy'
+    let g = g_clean
+        .lhs_conv(|t| t.rw_all(&rt_xpyp.sym()?))? // dx'·dy' ↦ rep(to_pos(dx'·dy'))
+        .rhs_conv(|t| t.rw_all(&rt_xy.sym()?))?; // dx·dy ↦ rep(to_pos(dx·dy))
+
+    rel_of_pairs(
+        &imul(nx, ny),
+        &to_pos(imul(dx, dy)),
+        &imul(nxp, nyp),
+        &to_pos(imul(dxp, dyp)),
+        g,
+    )
+}
+
+/// **Multiplicative computation rule.** `⊢ ratMul (mk_rat p) (mk_rat q) =
+/// mk_rat (mul_pair p q)`.
+fn mul_class(p: &Term, q: &Term) -> Result<Thm> {
+    let (mp, mq) = (mk_rat(p), mk_rat(q));
+    let dl = binary_beta(rat_mul(), mp.clone(), mq.clone())?; // = mk_rat(mul_pair RPp RPq)
+    // Read the chosen representatives from `round_trip` (capture-safe), so
+    // they match `binary_beta`'s; reconstructing via `rep_pair(mk_rat p)`
+    // would capture a free `p`.
+    let (rt_p, rt_q) = (round_trip(p)?, round_trip(q)?); // rat_rel p RPp, rat_rel q RPq
+    let (_, rpp) = dest_rel_app(rt_p.concl())?;
+    let (_, rpq) = dest_rel_app(rt_q.concl())?;
+    let rpp_p = rat_rel_symm()
+        .all_elim(p.clone())?
+        .all_elim(rpp.clone())?
+        .imp_elim(rt_p)?; // rat_rel RPp p
+    let rpq_q = rat_rel_symm()
+        .all_elim(q.clone())?
+        .all_elim(rpq.clone())?
+        .imp_elim(rt_q)?; // rat_rel RPq q
+    let cong = mul_pair_cong(rpp_p, rpq_q)?; // rat_rel (mul_pair RPp RPq)(mul_pair p q)
+    let lift =
+        crate::init::quotient::class_intro(&rat_spec(), &[], &ip_pair(), &rat_rel_symm(), &rat_rel_trans(), cong)?;
+    dl.trans(lift)
+}
+
+/// **Multiplication in component form.** `⊢ ratMul (MK fa da)(MK fb db) =
+/// MK (fa·fb) (to_pos(rep da · rep db))`.
+fn mul_mk(fa: &Term, da: &Term, fb: &Term, db: &Term) -> Result<Thm> {
+    let (pa, pb) = (ip(fa.clone(), da.clone()), ip(fb.clone(), db.clone()));
+    let mc = mul_class(&pa, &pb)?;
+    let (i, pp) = (Type::int(), int_pos_ty());
+    let projs = [
+        crate::init::prod::fst_pair(&i, &pp, fa, da)?,
+        crate::init::prod::fst_pair(&i, &pp, fb, db)?,
+        crate::init::prod::snd_pair(&i, &pp, fa, da)?,
+        crate::init::prod::snd_pair(&i, &pp, fb, db)?,
+    ];
+    mc.rhs_conv(|t| rewrite_seq(t, &projs))
+}
+
+/// `⊢ MK f d = MK f' d'` from `⊢ f = f'` and `⊢ d = d'`.
+fn mkfs_cong(f_eq: Thm, d_eq: Thm) -> Result<Thm> {
+    let (f, d) = (
+        f_eq.concl().as_eq().ok_or(Error::NotAnEquation)?.0.clone(),
+        d_eq.concl().as_eq().ok_or(Error::NotAnEquation)?.0.clone(),
+    );
+    rewrite_seq(&mkfs(&f, &d), &[f_eq, d_eq])
+}
+
+/// `⊢ ratMul a b = MK (fa·fb) (to_pos(rep da · rep db))`, where `ra : a = MK
+/// fa da`, `rb : b = MK fb db`.
+fn mul_via_components(ra: &Thm, rb: &Thm) -> Result<Thm> {
+    let (_a, ma) = dest_eq(ra)?;
+    let (_b, mb) = dest_eq(rb)?;
+    let (fa, da) = mk_components(&ma)?;
+    let (fb, db) = mk_components(&mb)?;
+    Thm::refl(rat_mul())?
+        .cong_app(ra.clone())?
+        .cong_app(rb.clone())?
+        .trans(mul_mk(&fa, &da, &fb, &db)?)
+}
+
+// ---- additive computation / well-definedness ----
+
+/// `⊢ a + b = a' + b'` from `⊢ a = a'`, `⊢ b = b'` (int sum congruence).
+fn iadd_cong(ea: Thm, eb: Thm) -> Result<Thm> {
+    Thm::refl(int::int_add())?.cong_app(ea)?.cong_app(eb)
+}
+/// `⊢ w·x = w·y` from `⊢ x = y` (left-multiply by `w` on `int`).
+fn imul_l_cong(w: &Term, e: Thm) -> Result<Thm> {
+    e.cong_arg(Term::app(int::int_mul(), w.clone()))
+}
+/// `⊢ (a+b)·c = a·c + b·c` — right distributivity on `int` (from the proved
+/// left `distrib` + `mul_comm`).
+fn idistrib_r(a: &Term, b: &Term, c: &Term) -> Result<Thm> {
+    let comm = int::mul_comm()
+        .all_elim(iadd(a.clone(), b.clone()))?
+        .all_elim(c.clone())?; // (a+b)·c = c·(a+b)
+    let dist = int::distrib()
+        .all_elim(c.clone())?
+        .all_elim(a.clone())?
+        .all_elim(b.clone())?; // c·(a+b) = c·a + c·b
+    let ca = int::mul_comm().all_elim(c.clone())?.all_elim(a.clone())?; // c·a = a·c
+    let cb = int::mul_comm().all_elim(c.clone())?.all_elim(b.clone())?; // c·b = b·c
+    comm.trans(dist)?.trans(iadd_cong(ca, cb)?)
+}
+
+/// **Additive well-definedness.** From `⊢ rat_rel x x'`, `⊢ rat_rel y y'`
+/// conclude `⊢ rat_rel (add_pair x y) (add_pair x' y')`. Split the numerator
+/// product by `idistrib_r`, re-pair the four factors of each summand by
+/// `imul_interchange` (+`mul_comm`) substituting the two hypotheses, over the
+/// round-tripped denominators.
+fn add_pair_cong(h1: Thm, h2: Thm) -> Result<Thm> {
+    let (x, xp) = dest_rel_app(h1.concl())?;
+    let (y, yp) = dest_rel_app(h2.concl())?;
+    let e1 = reduce_rel(h1)?; // nx·dx' = nx'·dx
+    let e2 = reduce_rel(h2)?; // ny·dy' = ny'·dy
+    let (nx, dx, nxp, dxp) = (num(&x), den(&x), num(&xp), den(&xp));
+    let (ny, dy, nyp, dyp) = (num(&y), den(&y), num(&yp), den(&yp));
+
+    let comm = |u: &Term, v: &Term| int::mul_comm().all_elim(u.clone())?.all_elim(v.clone());
+
+    // Term1: (nx·dy)·(dx'·dy') = (nx'·dy')·(dx·dy).
+    let t1 = imul_interchange(&nx, &dy, &dxp, &dyp)? // = (nx·dx')·(dy·dy')
+        .trans(mul_r(e1.clone(), &imul(dy.clone(), dyp.clone()))?)? // = (nx'·dx)·(dy·dy')
+        .trans(imul_l_cong(&imul(nxp.clone(), dx.clone()), comm(&dy, &dyp)?)?)? // = (nx'·dx)·(dy'·dy)
+        .trans(imul_interchange(&nxp, &dx, &dyp, &dy)?)?; // = (nx'·dy')·(dx·dy)
+
+    // Term2: (ny·dx)·(dx'·dy') = (ny'·dx')·(dx·dy).
+    let t2 = imul_l_cong(&imul(ny.clone(), dx.clone()), comm(&dxp, &dyp)?)? // = (ny·dx)·(dy'·dx')
+        .trans(imul_interchange(&ny, &dx, &dyp, &dxp)?)? // = (ny·dy')·(dx·dx')
+        .trans(mul_r(e2.clone(), &imul(dx.clone(), dxp.clone()))?)? // = (ny'·dy)·(dx·dx')
+        .trans(imul_l_cong(&imul(nyp.clone(), dy.clone()), comm(&dx, &dxp)?)?)? // = (ny'·dy)·(dx'·dx)
+        .trans(imul_interchange(&nyp, &dy, &dxp, &dx)?)? // = (ny'·dx')·(dy·dx)
+        .trans(imul_l_cong(&imul(nyp.clone(), dxp.clone()), comm(&dy, &dx)?)?)?; // = (ny'·dx')·(dx·dy)
+
+    let (p1, p2) = (imul(nx.clone(), dy.clone()), imul(ny.clone(), dx.clone()));
+    let (q1, q2) = (imul(nxp.clone(), dyp.clone()), imul(nyp.clone(), dxp.clone()));
+    let split_l = idistrib_r(&p1, &p2, &imul(dxp.clone(), dyp.clone()))?;
+    let split_r = idistrib_r(&q1, &q2, &imul(dx.clone(), dy.clone()))?;
+    let g_clean = split_l.trans(iadd_cong(t1, t2)?)?.trans(split_r.sym()?)?;
+
+    let rt_xy = den_prod_rt(&x, &y)?; // rep(to_pos(dx·dy)) = dx·dy
+    let rt_xpyp = den_prod_rt(&xp, &yp)?;
+    let g = g_clean
+        .lhs_conv(|t| t.rw_all(&rt_xpyp.sym()?))?
+        .rhs_conv(|t| t.rw_all(&rt_xy.sym()?))?;
+
+    rel_of_pairs(
+        &iadd(imul(nx, dy.clone()), imul(ny, dx.clone())),
+        &to_pos(imul(dx, dy)),
+        &iadd(imul(nxp, dyp.clone()), imul(nyp, dxp.clone())),
+        &to_pos(imul(dxp, dyp)),
+        g,
+    )
+}
+
+/// **Additive computation rule.** `⊢ ratAdd (mk_rat p) (mk_rat q) =
+/// mk_rat (add_pair p q)`.
+fn add_class(p: &Term, q: &Term) -> Result<Thm> {
+    let (mp, mq) = (mk_rat(p), mk_rat(q));
+    let dl = binary_beta(rat_add(), mp.clone(), mq.clone())?;
+    let (rt_p, rt_q) = (round_trip(p)?, round_trip(q)?);
+    let (_, rpp) = dest_rel_app(rt_p.concl())?;
+    let (_, rpq) = dest_rel_app(rt_q.concl())?;
+    let rpp_p = rat_rel_symm().all_elim(p.clone())?.all_elim(rpp)?.imp_elim(rt_p)?;
+    let rpq_q = rat_rel_symm().all_elim(q.clone())?.all_elim(rpq)?.imp_elim(rt_q)?;
+    let cong = add_pair_cong(rpp_p, rpq_q)?;
+    let lift = crate::init::quotient::class_intro(
+        &rat_spec(),
+        &[],
+        &ip_pair(),
+        &rat_rel_symm(),
+        &rat_rel_trans(),
+        cong,
+    )?;
+    dl.trans(lift)
+}
+
+/// **Addition in component form.** `⊢ ratAdd (MK fa da)(MK fb db) =
+/// MK (fa·rep db + fb·rep da) (to_pos(rep da · rep db))`.
+fn add_mk(fa: &Term, da: &Term, fb: &Term, db: &Term) -> Result<Thm> {
+    let (pa, pb) = (ip(fa.clone(), da.clone()), ip(fb.clone(), db.clone()));
+    let ac = add_class(&pa, &pb)?;
+    let (i, pp) = (Type::int(), int_pos_ty());
+    let projs = [
+        crate::init::prod::fst_pair(&i, &pp, fa, da)?,
+        crate::init::prod::fst_pair(&i, &pp, fb, db)?,
+        crate::init::prod::snd_pair(&i, &pp, fa, da)?,
+        crate::init::prod::snd_pair(&i, &pp, fb, db)?,
+    ];
+    ac.rhs_conv(|t| rewrite_seq(t, &projs))
+}
+
+/// `⊢ ratAdd a b = MK (fa·rep db + fb·rep da) (to_pos(rep da · rep db))`,
+/// from `ra : a = MK fa da`, `rb : b = MK fb db`.
+fn add_via_components(ra: &Thm, rb: &Thm) -> Result<Thm> {
+    let (_a, ma) = dest_eq(ra)?;
+    let (_b, mb) = dest_eq(rb)?;
+    let (fa, da) = mk_components(&ma)?;
+    let (fb, db) = mk_components(&mb)?;
+    Thm::refl(rat_add())?
+        .cong_app(ra.clone())?
+        .cong_app(rb.clone())?
+        .trans(add_mk(&fa, &da, &fb, &db)?)
+}
+
+/// `⊢ ratNeg a = MK(int_neg(fst(rep_pair a)), snd(rep_pair a))` — negation in
+/// component form. Pure β: `ratNeg` operates on the single representative
+/// `rep_pair a` (negating the numerator, keeping the denominator), the same
+/// representative `recon_mk a` uses, so no well-definedness is needed.
+fn neg_via_components(a: &Term) -> Result<Thm> {
+    Thm::beta_conv(Term::app(rat_neg(), a.clone()))
+}
+
+// ============================================================================
 // Commutative-ring axioms (and the field inverse)
 // ============================================================================
 //
@@ -483,14 +985,12 @@ fn to_pos_fn() -> Term {
 fn rvar(name: &str) -> Term {
     Term::free(name, rat())
 }
+#[cfg(test)]
 fn radd(a: Term, b: Term) -> Term {
     Term::app(Term::app(rat_add(), a), b)
 }
 fn rmul(a: Term, b: Term) -> Term {
     Term::app(Term::app(rat_mul(), a), b)
-}
-fn rneg(a: Term) -> Term {
-    Term::app(rat_neg(), a)
 }
 fn forall_rat(vars: &[&str], body: Term) -> Term {
     let mut t = body;
@@ -534,31 +1034,179 @@ fn add_comm_impl() -> Result<Thm> {
         .all_intro("a", rat())
 }
 
-/// `⊢ ∀a b c. (a + b) + c = a + (b + c)`.
-pub fn add_assoc() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a b c. (a + b) + c = a + (b + c)` — **proved**. In component form
+    /// both sides are `MK(N, to_pos(D))`; the numerators `N` are equal as
+    /// `int` polynomials (`distrib_r` to split, `mul_assoc`/`mul_comm` to
+    /// align the three monomials `fa·(db·dc)`, `fb·(da·dc)`, `fc·(da·db)`,
+    /// `add_assoc` to re-bracket the sum) and the denominators by `mul_assoc`
+    /// under `to_pos` (nested `to_pos` via [`pos_prod_rt`]).
+    pub fn add_assoc() -> Thm {
+        add_assoc_impl().expect("rat::add_assoc")
+    }
+}
+fn add_assoc_impl() -> Result<Thm> {
     let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
-    let lhs = radd(radd(a.clone(), b.clone()), c.clone());
-    let rhs = radd(a, radd(b, c));
-    axiom(forall_rat(
-        &["a", "b", "c"],
-        lhs.equals(rhs).expect("add_assoc"),
-    ))
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let ab = add_via_components(&ra, &rb)?;
+    let lhs = add_via_components(&ab, &rc)?;
+    let bc = add_via_components(&rb, &rc)?;
+    let rhs = add_via_components(&ra, &bc)?;
+
+    let (fa, fb, fc) = (rfst(&a), rfst(&b), rfst(&c));
+    let (da, db, dc) = (rden(&a), rden(&b), rden(&c));
+    let (rda, rdb, rdc) = (
+        den(&rep_pair(a.clone())),
+        den(&rep_pair(b.clone())),
+        den(&rep_pair(c.clone())),
+    );
+    let comm = |u: &Term, v: &Term| int::mul_comm().all_elim(u.clone())?.all_elim(v.clone());
+    let massoc = |u: &Term, v: &Term, w: &Term| {
+        int::mul_assoc().all_elim(u.clone())?.all_elim(v.clone())?.all_elim(w.clone())
+    };
+
+    // Round-trip the nested denominators in the extracted numerators.
+    let ppab = pos_prod_rt().all_elim(da.clone())?.all_elim(db.clone())?;
+    let ppbc = pos_prod_rt().all_elim(db.clone())?.all_elim(dc.clone())?;
+    let lhs_f = mk_components(&dest_eq(&lhs)?.1)?.0;
+    let rhs_f = mk_components(&dest_eq(&rhs)?.1)?.0;
+    let lf_rt = rewrite_seq(&lhs_f, std::slice::from_ref(&ppab))?; // lhs_f = lhs_f'
+    let rf_rt = rewrite_seq(&rhs_f, std::slice::from_ref(&ppbc))?; // rhs_f = rhs_f'
+
+    // The three monomials (both sides normalise to N1 + (N2' + N3')).
+    let (m1, m2) = (imul(fa.clone(), rdb.clone()), imul(fb.clone(), rda.clone()));
+    let cap_m1 = imul(imul(fa.clone(), rdb.clone()), rdc.clone());
+    let cap_m2 = imul(imul(fb.clone(), rda.clone()), rdc.clone());
+    let cap_m3 = imul(fc.clone(), imul(rda.clone(), rdb.clone()));
+    let n1 = imul(fa.clone(), imul(rdb.clone(), rdc.clone()));
+
+    let s_a = idistrib_r(&m1, &m2, &rdc)?; // (fa·rdb + fb·rda)·rdc = M1 + M2
+    let lhs_step = iadd_cong(s_a, Thm::refl(cap_m3.clone())?)?; // lhs_f' = (M1+M2)+M3
+    let reassoc = int::add_assoc()
+        .all_elim(cap_m1.clone())?
+        .all_elim(cap_m2.clone())?
+        .all_elim(cap_m3.clone())?; // (M1+M2)+M3 = M1+(M2+M3)
+
+    let e_m1 = massoc(&fa, &rdb, &rdc)?; // M1 = fa·(rdb·rdc) = N1
+    let e_m2 = massoc(&fb, &rda, &rdc)?; // M2 = fb·(rda·rdc)
+    let e_n2 = massoc(&fb, &rdc, &rda)?.trans(imul_l_cong(&fb, comm(&rdc, &rda)?)?)?; // N2 = fb·(rdc·rda) = fb·(rda·rdc)
+    let e_n3 = massoc(&fc, &rdb, &rda)?.trans(imul_l_cong(&fc, comm(&rdb, &rda)?)?)?; // N3 = fc·(rdb·rda) = fc·(rda·rdb)
+    let mid = iadd_cong(e_m2.trans(e_n2.sym()?)?, e_n3.sym()?)?; // M2+M3 = N2+N3
+    let mmm_nnn = iadd_cong(e_m1, mid)?; // M1+(M2+M3) = N1+(N2+N3)
+
+    let s_b = idistrib_r(&imul(fb.clone(), rdc.clone()), &imul(fc.clone(), rdb.clone()), &rda)?; // (fb·rdc+fc·rdb)·rda = N2+N3
+    let rhs_step = iadd_cong(Thm::refl(n1)?, s_b)?; // rhs_f' = N1+(N2+N3)
+
+    let fp_eq = lhs_step.trans(reassoc)?.trans(mmm_nnn)?.trans(rhs_step.sym()?)?; // lhs_f' = rhs_f'
+    let f_eq = lf_rt.trans(fp_eq)?.trans(rf_rt.sym()?)?; // lhs_f = rhs_f
+
+    // Denominator: same shape as mul_assoc.
+    let dl = mk_components(&dest_eq(&lhs)?.1)?.1;
+    let assoc_d = massoc(&rda, &rdb, &rdc)?.cong_arg(to_pos_fn())?;
+    let assoc_rhs = assoc_d.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let d_eq = rewrite_seq(&dl, std::slice::from_ref(&ppab))?
+        .trans(assoc_d)?
+        .trans(rewrite_seq(&assoc_rhs, &[ppbc.sym()?])?)?;
+
+    let bridge = mkfs_cong(f_eq, d_eq)?;
+    lhs.trans(bridge)?
+        .trans(rhs.sym()?)?
+        .all_intro("c", rat())?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
 }
 
-/// `⊢ ∀a. a + 0 = a`.
-pub fn add_zero() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a. a + 0 = a` — **proved**. `0 = MK(0, one_pos)`, so
+    /// `a + 0 = MK(fa·rep one_pos + 0·rep da, to_pos(rep da · rep one_pos))`;
+    /// the numerator collapses to `fa` (`one_pos_rt` + `int::mul_one` /
+    /// `mul_zero` / `add_zero`) and the denominator to `da` (as in `mul_one`).
+    pub fn add_zero() -> Thm {
+        add_zero_impl().expect("rat::add_zero")
+    }
+}
+fn add_zero_impl() -> Result<Thm> {
     let a = rvar("a");
-    let eq = radd(a.clone(), rat_zero()).equals(a).expect("add_zero");
-    axiom(forall_rat(&["a"], eq))
+    let ra = recon_mk(&a)?; // a = MK(fa, da)
+    let r0 = Thm::refl(rat_zero())?; // rat_zero = MK(0, one_pos)
+    let lhs = add_via_components(&ra, &r0)?;
+    let (fa, da) = (rfst(&a), rden(&a));
+    let rda = den(&rep_pair(a.clone())); // rep da
+    let i0 = Term::int_lit(0i128);
+
+    // Numerator: fa·rep one_pos + 0·rep da = fa.
+    let t1 = imul_l_cong(&fa, one_pos_rt())? // fa·rep one_pos = fa·1
+        .trans(int::mul_one().all_elim(fa.clone())?)?; // = fa
+    let t2 = int::mul_comm()
+        .all_elim(i0.clone())?
+        .all_elim(rda.clone())? // 0·rep da = rep da·0
+        .trans(int::mul_zero().all_elim(rda.clone())?)?; // = 0
+    let f_eq = iadd_cong(t1, t2)?.trans(int::add_zero().all_elim(fa)?)?; // = fa
+
+    // Denominator: to_pos(rep da · rep one_pos) = da (same as mul_one).
+    let dl = mk_components(&dest_eq(&lhs)?.1)?.1;
+    let d_eq = rewrite_seq(&dl, &[one_pos_rt()])?
+        .trans(int::mul_one().all_elim(rda)?.cong_arg(to_pos_fn())?)?
+        .trans(Thm::spec_abs_rep(int_pos_spec(), Vec::new(), da)?)?;
+
+    let bridge = mkfs_cong(f_eq, d_eq)?;
+    lhs.trans(bridge)?.trans(ra.sym()?)?.all_intro("a", rat())
 }
 
-/// `⊢ ∀a. a + (-a) = 0` — additive inverse.
-pub fn add_neg() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a. a + (-a) = 0` — **proved** (additive inverse). `-a = MK(-fa,
+    /// da)` (β), so `a + (-a) = MK(fa·rep da + (-fa)·rep da, …)`; the
+    /// numerator is `(fa + -fa)·rep da = 0` (`idistrib_r` + `int::add_neg`),
+    /// and `MK(0, to_pos(rep da · rep da)) = 0` by `class_intro` (as in
+    /// `mul_zero`).
+    pub fn add_neg() -> Thm {
+        add_neg_impl().expect("rat::add_neg")
+    }
+}
+fn add_neg_impl() -> Result<Thm> {
     let a = rvar("a");
-    let eq = radd(a.clone(), rneg(a))
-        .equals(rat_zero())
-        .expect("add_neg");
-    axiom(forall_rat(&["a"], eq))
+    let ra = recon_mk(&a)?; // a = MK(fa, da)
+    let neg_a = neg_via_components(&a)?; // -a = MK(int_neg fa, da)
+    let lhs = add_via_components(&ra, &neg_a)?; // a + (-a) = MK(fa·rda + (-fa)·rda, to_pos(rda·rda))
+    let fa = rfst(&a);
+    let rda = den(&rep_pair(a.clone())); // rep da
+    let nfa = Term::app(int::int_neg(), fa.clone());
+    let i0 = Term::int_lit(0i128);
+
+    // Numerator: fa·rda + (-fa)·rda = (fa + -fa)·rda = 0·rda = 0.
+    let f_eq = idistrib_r(&fa, &nfa, &rda)?
+        .sym()? // fa·rda + (-fa)·rda = (fa + -fa)·rda
+        .trans(mul_r(int::add_neg().all_elim(fa)?, &rda)?)? // = 0·rda
+        .trans(
+            int::mul_comm()
+                .all_elim(i0.clone())?
+                .all_elim(rda.clone())?
+                .trans(int::mul_zero().all_elim(rda.clone())?)?,
+        )?; // = rda·0 = 0
+
+    let dl = mk_components(&dest_eq(&lhs)?.1)?.1; // to_pos(rda · rda) : int.pos
+    let step = lhs.trans(mkfs_cong(f_eq, Thm::refl(dl.clone())?)?)?; // a+(-a) = MK(0, dl)
+
+    // 0/dl ~ 0/1: cross-mult 0·rep(one_pos) = 0·rep(dl) (both 0).
+    let rep = Term::spec_rep(int_pos_spec(), Vec::new());
+    let zero_times = |d: Term| -> Result<Thm> {
+        int::mul_comm()
+            .all_elim(i0.clone())?
+            .all_elim(Term::app(rep.clone(), d.clone()))?
+            .trans(int::mul_zero().all_elim(Term::app(rep.clone(), d))?)
+    };
+    let g = zero_times(one_pos())?.trans(zero_times(dl.clone())?.sym()?)?;
+    let rel = rel_of_pairs(&i0, &dl, &i0, &one_pos(), g)?;
+    let cls = crate::init::quotient::class_intro(
+        &rat_spec(),
+        &[],
+        &ip_pair(),
+        &rat_rel_symm(),
+        &rat_rel_trans(),
+        rel,
+    )?;
+
+    step.trans(cls)?.all_intro("a", rat())
 }
 
 cached_thm! {
@@ -590,40 +1238,227 @@ fn mul_comm_impl() -> Result<Thm> {
         .all_intro("a", rat())
 }
 
-/// `⊢ ∀a b c. (a * b) * c = a * (b * c)`.
-pub fn mul_assoc() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a b c. (a * b) * c = a * (b * c)` — **proved**. Reconstruct each
+    /// rational in component form (`MK(f, d)`), push `ratMul` through to
+    /// `MK` of the componentwise int product / `int.pos` denominator, then
+    /// close: numerators by `int::mul_assoc`, denominators by `int::mul_assoc`
+    /// under `to_pos` (the nested `to_pos` round-trips via [`pos_prod_rt`]).
+    pub fn mul_assoc() -> Thm {
+        mul_assoc_impl().expect("rat::mul_assoc")
+    }
+}
+fn mul_assoc_impl() -> Result<Thm> {
     let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
-    let lhs = rmul(rmul(a.clone(), b.clone()), c.clone());
-    let rhs = rmul(a, rmul(b, c));
-    axiom(forall_rat(
-        &["a", "b", "c"],
-        lhs.equals(rhs).expect("mul_assoc"),
-    ))
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+
+    // (a·b)·c and a·(b·c) in MK component form.
+    let ab = mul_via_components(&ra, &rb)?;
+    let lhs = mul_via_components(&ab, &rc)?;
+    let bc = mul_via_components(&rb, &rc)?;
+    let rhs = mul_via_components(&ra, &bc)?;
+
+    // Components fa : int, da : int.pos; rda = rep da : int.
+    let (fa, fb, fc) = (rfst(&a), rfst(&b), rfst(&c));
+    let (da, db, dc) = (rden(&a), rden(&b), rden(&c));
+    let (rda, rdb, rdc) = (den(&rep_pair(a.clone())), den(&rep_pair(b.clone())), den(&rep_pair(c.clone())));
+
+    // Numerator: (fa·fb)·fc = fa·(fb·fc).
+    let f_eq = int::mul_assoc()
+        .all_elim(fa)?
+        .all_elim(fb)?
+        .all_elim(fc)?;
+
+    // Denominator (extracted from the two sides, so the shapes line up).
+    let dl = mk_components(&dest_eq(&lhs)?.1)?.1; // to_pos(rep(to_pos(rda·rdb))·rdc)
+    let ppab = pos_prod_rt().all_elim(da.clone())?.all_elim(db.clone())?; // rep(to_pos(rda·rdb)) = rda·rdb
+    let ppbc = pos_prod_rt().all_elim(db)?.all_elim(dc)?; // rep(to_pos(rdb·rdc)) = rdb·rdc
+    let assoc_d = int::mul_assoc()
+        .all_elim(rda.clone())?
+        .all_elim(rdb.clone())?
+        .all_elim(rdc.clone())?
+        .cong_arg(to_pos_fn())?; // to_pos((rda·rdb)·rdc) = to_pos(rda·(rdb·rdc))
+    let assoc_rhs = assoc_d.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let d_eq = rewrite_seq(&dl, &[ppab])? // dl = to_pos((rda·rdb)·rdc)
+        .trans(assoc_d)? // = to_pos(rda·(rdb·rdc))
+        .trans(rewrite_seq(&assoc_rhs, &[ppbc.sym()?])?)?; // = to_pos(rda·rep(to_pos(rdb·rdc)))
+
+    let bridge = mkfs_cong(f_eq, d_eq)?;
+    lhs.trans(bridge)?
+        .trans(rhs.sym()?)?
+        .all_intro("c", rat())?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
 }
 
-/// `⊢ ∀a. a * 1 = a`.
-pub fn mul_one() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a. a * 1 = a` — **proved**. `1 = MK(1, one_pos)`, so
+    /// `a · 1 = MK(fa·1, to_pos(rep da · rep one_pos)) = MK(fa, da) = a`:
+    /// numerator by `int::mul_one`, denominator by `one_pos_rt` + `int::mul_one`
+    /// + the unconditional `spec_abs_rep` round-trip.
+    pub fn mul_one() -> Thm {
+        mul_one_impl().expect("rat::mul_one")
+    }
+}
+fn mul_one_impl() -> Result<Thm> {
     let a = rvar("a");
-    let eq = rmul(a.clone(), rat_one()).equals(a).expect("mul_one");
-    axiom(forall_rat(&["a"], eq))
+    let ra = recon_mk(&a)?; // a = MK(fa, da)
+    let r1 = Thm::refl(rat_one())?; // rat_one = MK(1, one_pos)
+    let lhs = mul_via_components(&ra, &r1)?; // a·1 = MK(fa·1, to_pos(rep da · rep one_pos))
+    let (fa, da) = (rfst(&a), rden(&a));
+    let rda = den(&rep_pair(a.clone())); // rep da
+
+    let f_eq = int::mul_one().all_elim(fa)?; // fa·1 = fa
+    let dl = mk_components(&dest_eq(&lhs)?.1)?.1; // to_pos(rep da · rep one_pos)
+    let d_eq = rewrite_seq(&dl, &[one_pos_rt()])? // = to_pos(rep da · 1)
+        .trans(int::mul_one().all_elim(rda)?.cong_arg(to_pos_fn())?)? // = to_pos(rep da)
+        .trans(Thm::spec_abs_rep(int_pos_spec(), Vec::new(), da)?)?; // = da
+
+    let bridge = mkfs_cong(f_eq, d_eq)?;
+    lhs.trans(bridge)?.trans(ra.sym()?)?.all_intro("a", rat())
 }
 
-/// `⊢ ∀a. a * 0 = 0`.
-pub fn mul_zero() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a. a * 0 = 0` — **proved**. `a · 0 = MK(fa·0, …) = MK(0, da)`
+    /// (numerator by `int::mul_zero`, denominator to `da` as in `mul_one`),
+    /// then `MK(0, da) = MK(0, one_pos) = 0` by `class_intro` on the
+    /// cross-multiplication `0·rep(one_pos) = 0·rep(da)` (both `0`).
+    pub fn mul_zero() -> Thm {
+        mul_zero_impl().expect("rat::mul_zero")
+    }
+}
+fn mul_zero_impl() -> Result<Thm> {
     let a = rvar("a");
-    let eq = rmul(a, rat_zero()).equals(rat_zero()).expect("mul_zero");
-    axiom(forall_rat(&["a"], eq))
+    let ra = recon_mk(&a)?; // a = MK(fa, da)
+    let r0 = Thm::refl(rat_zero())?; // rat_zero = MK(0, one_pos)
+    let lhs = mul_via_components(&ra, &r0)?; // a·0 = MK(fa·0, to_pos(rep da · rep one_pos))
+    let (fa, da) = (rfst(&a), rden(&a));
+    let rda = den(&rep_pair(a.clone())); // rep da
+    let i0 = Term::int_lit(0i128);
+    let rop = Term::app(Term::spec_rep(int_pos_spec(), Vec::new()), one_pos()); // rep(one_pos)
+
+    let f_eq = int::mul_zero().all_elim(fa)?; // fa·0 = 0
+    let dl = mk_components(&dest_eq(&lhs)?.1)?.1;
+    let d_eq = rewrite_seq(&dl, &[one_pos_rt()])?
+        .trans(int::mul_one().all_elim(rda.clone())?.cong_arg(to_pos_fn())?)?
+        .trans(Thm::spec_abs_rep(int_pos_spec(), Vec::new(), da.clone())?)?;
+    let step = lhs.trans(mkfs_cong(f_eq, d_eq)?)?; // a·0 = MK(0, da) = mk_rat(ip 0 da)
+
+    // 0/da ~ 0/1: cross-mult 0·rep(one_pos) = 0·rep(da) (both 0).
+    let lz = int::mul_comm()
+        .all_elim(i0.clone())?
+        .all_elim(rop.clone())?
+        .trans(int::mul_zero().all_elim(rop)?)?; // 0·rep(one_pos) = 0
+    let rz = int::mul_comm()
+        .all_elim(i0.clone())?
+        .all_elim(rda.clone())?
+        .trans(int::mul_zero().all_elim(rda)?)?; // 0·rep(da) = 0
+    let g = lz.trans(rz.sym()?)?; // 0·rep(one_pos) = 0·rep(da)
+    let rel = rel_of_pairs(&i0, &da, &i0, &one_pos(), g)?; // rat_rel (ip 0 da)(ip 0 one_pos)
+    let cls = crate::init::quotient::class_intro(
+        &rat_spec(),
+        &[],
+        &ip_pair(),
+        &rat_rel_symm(),
+        &rat_rel_trans(),
+        rel,
+    )?; // mk_rat(ip 0 da) = mk_rat(ip 0 one_pos) = rat_zero
+
+    step.trans(cls)?.all_intro("a", rat())
 }
 
-/// `⊢ ∀a b c. a * (b + c) = a * b + a * c` — left distributivity.
-pub fn distrib() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a b c. a * (b + c) = a * b + a * c` — **proved** (left
+    /// distributivity). Unlike the other ring axioms this is *not*
+    /// componentwise: `a·(b+c) = N/D` while `a·b + a·c = (rda·N)/(rda·D)` —
+    /// the same rational scaled by the common factor `rda`. The
+    /// cross-multiplication `N·(rda·D) = (rda·N)·D` then collapses to comm/
+    /// assoc, lifted by `class_intro`.
+    pub fn distrib() -> Thm {
+        distrib_impl().expect("rat::distrib")
+    }
+}
+fn distrib_impl() -> Result<Thm> {
     let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
-    let lhs = rmul(a.clone(), radd(b.clone(), c.clone()));
-    let rhs = radd(rmul(a.clone(), b), rmul(a, c));
-    axiom(forall_rat(
-        &["a", "b", "c"],
-        lhs.equals(rhs).expect("distrib"),
-    ))
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let bc = add_via_components(&rb, &rc)?;
+    let lhs_thm = mul_via_components(&ra, &bc)?; // a·(b+c) = MK(lf, ld)
+    let ab = mul_via_components(&ra, &rb)?;
+    let ac = mul_via_components(&ra, &rc)?;
+    let rhs_thm = add_via_components(&ab, &ac)?; // a·b + a·c = MK(rf, rd)
+
+    let (lf, ld) = mk_components(&dest_eq(&lhs_thm)?.1)?; // N_L (clean), LHS denom (nested)
+    let (rf, rd) = mk_components(&dest_eq(&rhs_thm)?.1)?; // RHS num (nested), RHS denom (nested)
+
+    let (fa, fb, fc) = (rfst(&a), rfst(&b), rfst(&c));
+    let (da, db, dc) = (rden(&a), rden(&b), rden(&c)); // int.pos components
+    let (rda, rdb, rdc) = (
+        den(&rep_pair(a.clone())),
+        den(&rep_pair(b.clone())),
+        den(&rep_pair(c.clone())),
+    );
+    // int.pos denominators of the intermediate ops.
+    let dbc = mk_components(&dest_eq(&bc)?.1)?.1;
+    let dab = mk_components(&dest_eq(&ab)?.1)?.1;
+    let dac = mk_components(&dest_eq(&ac)?.1)?.1;
+
+    let comm = |u: &Term, v: &Term| int::mul_comm().all_elim(u.clone())?.all_elim(v.clone());
+    let massoc = |u: &Term, v: &Term, w: &Term| {
+        int::mul_assoc().all_elim(u.clone())?.all_elim(v.clone())?.all_elim(w.clone())
+    };
+    let pp = |x: &Term, y: &Term| pos_prod_rt().all_elim(x.clone())?.all_elim(y.clone());
+
+    let n_l = lf.clone(); // fa·(fb·rdc + fc·rdb)
+    let d_l = imul(rda.clone(), imul(rdb.clone(), rdc.clone()));
+
+    // rep(ld) = D_L ; rep(rd) = D_R ; rf = N_R (round-trips of the nested denoms).
+    let rep_ld = pp(&da, &dbc)?.trans(imul_l_cong(&rda, pp(&db, &dc)?)?)?;
+    let rep_rd = pp(&dab, &dac)?.trans(imul_cong(pp(&da, &db)?, pp(&da, &dc)?)?)?;
+    let rf_eq = iadd_cong(
+        imul_l_cong(&imul(fa.clone(), fb.clone()), pp(&da, &dc)?)?,
+        imul_l_cong(&imul(fa.clone(), fc.clone()), pp(&da, &db)?)?,
+    )?; // rf = N_R
+
+    // D_R = rda·D_L.
+    let dr_fact = imul_interchange(&rda, &rdb, &rda, &rdc)?
+        .trans(massoc(&rda, &rda, &imul(rdb.clone(), rdc.clone()))?)?;
+    // rda·N_L = N_R.
+    let nbc = iadd(imul(fb.clone(), rdc.clone()), imul(fc.clone(), rdb.clone()));
+    let term1 = imul_interchange(&fa, &fb, &rda, &rdc)?
+        .trans(mul_r(comm(&fa, &rda)?, &imul(fb.clone(), rdc.clone()))?)?; // (fa·fb)·(rda·rdc) = (rda·fa)·(fb·rdc)
+    let term2 = imul_interchange(&fa, &fc, &rda, &rdb)?
+        .trans(mul_r(comm(&fa, &rda)?, &imul(fc.clone(), rdb.clone()))?)?;
+    let nr_fact = massoc(&rda, &fa, &nbc)?
+        .sym()? // rda·(fa·nbc) = (rda·fa)·nbc
+        .trans(int::distrib().all_elim(imul(rda.clone(), fa.clone()))?.all_elim(imul(fb.clone(), rdc.clone()))?.all_elim(imul(fc.clone(), rdb.clone()))?)? // = (rda·fa)·(fb·rdc) + (rda·fa)·(fc·rdb)
+        .trans(iadd_cong(term1.sym()?, term2.sym()?)?)?; // = N_R
+
+    // Cross-multiplication N_L·D_R = N_R·D_L, by the common factor rda.
+    let g_clean = imul_l_cong(&n_l, dr_fact)? // N_L·D_R = N_L·(rda·D_L)
+        .trans(massoc(&n_l, &rda, &d_l)?.sym()?)? // = (N_L·rda)·D_L
+        .trans(mul_r(comm(&n_l, &rda)?, &d_l)?)? // = (rda·N_L)·D_L
+        .trans(mul_r(nr_fact, &d_l)?)?; // = N_R·D_L
+
+    // Re-introduce the raw (nested) numerator / denominators for rel_of_pairs.
+    let g = g_clean
+        .lhs_conv(|t| t.rw_all(&rep_rd.clone().sym()?))? // D_R ↦ rep(rd)
+        .rhs_conv(|t| rewrite_seq(t, &[rf_eq.sym()?, rep_ld.sym()?]))?; // N_R ↦ rf, D_L ↦ rep(ld)
+
+    let rel = rel_of_pairs(&lf, &ld, &rf, &rd, g)?;
+    let cls = crate::init::quotient::class_intro(
+        &rat_spec(),
+        &[],
+        &ip_pair(),
+        &rat_rel_symm(),
+        &rat_rel_trans(),
+        rel,
+    )?;
+    lhs_thm
+        .trans(cls)?
+        .trans(rhs_thm.sym()?)?
+        .all_intro("c", rat())?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
 }
 
 /// `⊢ ∀a. ¬(a = 0) ⟹ ∃b. a * b = 1` — the field axiom (multiplicative
@@ -681,13 +1516,31 @@ fn rle(a: Term, b: Term) -> Term {
     Term::app(Term::app(rat_le(), a), b)
 }
 
-/// `⊢ ∀a. ¬(a < a)` — irreflexivity.
-pub fn lt_irrefl() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a. ¬(a < a)` — irreflexivity, **proved on the nose** from
+    /// `int::lt_irrefl`: `ratLt a a` reduces to `int_lt X X` with
+    /// `X = num(rep a) · den(rep a)`, so the rational `<` inherits the
+    /// integer's irreflexivity at `X`.
+    pub fn lt_irrefl() -> Thm {
+        lt_irrefl_impl().expect("rat::lt_irrefl")
+    }
+}
+fn lt_irrefl_impl() -> Result<Thm> {
     let a = rvar("a");
-    axiom(forall_rat(
-        &["a"],
-        rlt(a.clone(), a).not().expect("lt_irrefl"),
-    ))
+    let red = rlt(a.clone(), a.clone()).reduce()?; // ratLt a a = int_lt X X
+    let ltxx = red.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let x = ltxx
+        .as_app()
+        .ok_or(Error::NotAnEquation)?
+        .0
+        .as_app()
+        .ok_or(Error::NotAnEquation)?
+        .1
+        .clone(); // X = num(rep a) · den(rep a)
+    int::lt_irrefl()
+        .all_elim(x)? // ¬(int_lt X X)
+        .rewrite(&red.sym()?)? // ¬(ratLt a a)
+        .all_intro("a", rat())
 }
 
 /// `⊢ ∀a b c. a < b ⟹ b < c ⟹ a < c` — transitivity.
@@ -898,6 +1751,165 @@ fn not_one_le_zero_impl() -> Result<Thm> {
 }
 
 // ============================================================================
+// Linear-order facts — also DERIVED from the order postulates
+// ============================================================================
+//
+// `lt_asymm` / `lt_imp_ne` / `le_antisym` / `le_total` round out `rat` as a
+// linear order. Like `le_refl`/`le_trans` above, they are **derived** from
+// the strict-order postulates (`lt_irrefl`/`lt_trans`/`lt_trichotomy`) +
+// `le_def` and add no new postulate of their own. (The `rat` ordered-field
+// *ring* axioms remain postulated — discharging them goes through the `int`
+// *multiplicative* theory, which is not yet proved; these order facts need
+// only the strict-order postulates and so are available now.)
+
+cached_thm! {
+    /// `⊢ ∀a b. a < b ⟹ ¬(b < a)` — strict order is asymmetric: `a < b` and
+    /// `b < a` would give `a < a` by `lt_trans`, contradicting `lt_irrefl`.
+    pub fn lt_asymm() -> Thm {
+        lt_asymm_impl().expect("lt_asymm")
+    }
+}
+fn lt_asymm_impl() -> Result<Thm> {
+    let (a, b) = (rvar("a"), rvar("b"));
+    let (ab, ba) = (rlt(a.clone(), b.clone()), rlt(b.clone(), a.clone()));
+    let aa = lt_trans()
+        .all_elim(a.clone())?
+        .all_elim(b.clone())?
+        .all_elim(a.clone())?
+        .imp_elim(Thm::assume(ab.clone())?)?
+        .imp_elim(Thm::assume(ba.clone())?)?; // {a<b, b<a} ⊢ a<a
+    let f = lt_irrefl().all_elim(a.clone())?.not_elim(aa)?; // {a<b, b<a} ⊢ F
+    f.imp_intro(&ba)?
+        .not_intro()? // {a<b} ⊢ ¬(b<a)
+        .imp_intro(&ab)?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. a < b ⟹ ¬(a = b)` — a strict inequality rules out equality:
+    /// `a = b` rewrites `a < b` to `a < a`, contradicting `lt_irrefl`.
+    pub fn lt_imp_ne() -> Thm {
+        lt_imp_ne_impl().expect("lt_imp_ne")
+    }
+}
+fn lt_imp_ne_impl() -> Result<Thm> {
+    let (a, b) = (rvar("a"), rvar("b"));
+    let ab = rlt(a.clone(), b.clone());
+    let eq = a.clone().equals(b.clone())?;
+    // (a<a) = (a<b) by congruence under `(<) a` using `a = b`; flip and apply.
+    let cong = Thm::assume(eq.clone())?.cong_arg(Term::app(rat_lt(), a.clone()))?;
+    let aa = cong.sym()?.eq_mp(Thm::assume(ab.clone())?)?; // {a<b, a=b} ⊢ a<a
+    let f = lt_irrefl().all_elim(a.clone())?.not_elim(aa)?;
+    f.imp_intro(&eq)?
+        .not_intro()? // {a<b} ⊢ ¬(a=b)
+        .imp_intro(&ab)?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. a ≤ b ⟹ b ≤ a ⟹ a = b` — antisymmetry, by case analysis on
+    /// `le_def` (each `≤` is `<` or `=`): the `<`/`<` case contradicts
+    /// `lt_asymm` (ex falso), the others give `a = b` directly.
+    pub fn le_antisym() -> Thm {
+        le_antisym_impl().expect("le_antisym")
+    }
+}
+fn le_antisym_impl() -> Result<Thm> {
+    let (a, b) = (rvar("a"), rvar("b"));
+    let (hab, hba) = (rle(a.clone(), b.clone()), rle(b.clone(), a.clone()));
+    let goal = a.clone().equals(b.clone())?; // a = b
+    let d_ab = le_def()
+        .all_elim(a.clone())?
+        .all_elim(b.clone())?
+        .eq_mp(Thm::assume(hab.clone())?)?; // {a≤b} ⊢ a<b ∨ a=b
+    let d_ba = le_def()
+        .all_elim(b.clone())?
+        .all_elim(a.clone())?
+        .eq_mp(Thm::assume(hba.clone())?)?; // {b≤a} ⊢ b<a ∨ b=a
+
+    let ab_lt = rlt(a.clone(), b.clone());
+    let ab_eq = a.clone().equals(b.clone())?;
+    let ba_lt = rlt(b.clone(), a.clone());
+    let ba_eq = b.clone().equals(a.clone())?;
+
+    // a<b branch: split d_ba.
+    let br_ab_lt = {
+        // b<a: a<b and b<a contradict `lt_asymm`, so a=b ex falso.
+        let sub_lt = {
+            let not_ba = lt_asymm()
+                .all_elim(a.clone())?
+                .all_elim(b.clone())?
+                .imp_elim(Thm::assume(ab_lt.clone())?)?; // {a<b} ⊢ ¬(b<a)
+            let f = not_ba.not_elim(Thm::assume(ba_lt.clone())?)?; // {a<b, b<a} ⊢ F
+            f.false_elim(goal.clone())?.imp_intro(&ba_lt)? // {a<b} ⊢ b<a ⟹ a=b
+        };
+        // b=a: a=b by symmetry.
+        let sub_eq = Thm::assume(ba_eq.clone())?.sym()?.imp_intro(&ba_eq)?; // ⊢ b=a ⟹ a=b
+        d_ba.or_elim(sub_lt, sub_eq)?.imp_intro(&ab_lt)? // {a≤b, b≤a} ⊢ a<b ⟹ a=b
+    };
+    // a=b branch: immediate.
+    let br_ab_eq = Thm::assume(ab_eq.clone())?.imp_intro(&ab_eq)?; // ⊢ a=b ⟹ a=b
+
+    d_ab
+        .or_elim(br_ab_lt, br_ab_eq)? // {a≤b, b≤a} ⊢ a=b
+        .imp_intro(&hba)?
+        .imp_intro(&hab)?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. a ≤ b ∨ b ≤ a` — totality, from `lt_trichotomy` + `le_def`
+    /// (`a<b` and `a=b` each give `a≤b`; `b<a` gives `b≤a`).
+    pub fn le_total() -> Thm {
+        le_total_impl().expect("le_total")
+    }
+}
+fn le_total_impl() -> Result<Thm> {
+    let (a, b) = (rvar("a"), rvar("b"));
+    let (le_ab, le_ba) = (rle(a.clone(), b.clone()), rle(b.clone(), a.clone()));
+
+    let ab_lt = rlt(a.clone(), b.clone());
+    let ab_eq = a.clone().equals(b.clone())?;
+    let ba_lt = rlt(b.clone(), a.clone());
+    let inner_hyp = ab_eq.clone().or(ba_lt.clone())?; // a=b ∨ b<a (trichotomy's tail)
+
+    let tri = lt_trichotomy().all_elim(a.clone())?.all_elim(b.clone())?; // ⊢ a<b ∨ (a=b ∨ b<a)
+
+    // a<b ⟹ goal  (a<b gives a≤b).
+    let br_lt = {
+        let le = lt_imp_le()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .imp_elim(Thm::assume(ab_lt.clone())?)?; // {a<b} ⊢ a≤b
+        le.or_intro_l(le_ba.clone())?.imp_intro(&ab_lt)? // ⊢ a<b ⟹ goal
+    };
+    // a=b ⟹ goal  (a=b gives a≤b via le_def).
+    let br_eq = {
+        let ld = le_def().all_elim(a.clone())?.all_elim(b.clone())?; // (a≤b)=(a<b ∨ a=b)
+        let disj = Thm::assume(ab_eq.clone())?.or_intro_r(ab_lt.clone())?; // {a=b} ⊢ a<b ∨ a=b
+        let le = ld.sym()?.eq_mp(disj)?; // {a=b} ⊢ a≤b
+        le.or_intro_l(le_ba.clone())?.imp_intro(&ab_eq)? // ⊢ a=b ⟹ goal
+    };
+    // b<a ⟹ goal  (b<a gives b≤a).
+    let br_ba = {
+        let le = lt_imp_le()
+            .all_elim(b.clone())?
+            .all_elim(a.clone())?
+            .imp_elim(Thm::assume(ba_lt.clone())?)?; // {b<a} ⊢ b≤a
+        le.or_intro_r(le_ab.clone())?.imp_intro(&ba_lt)? // ⊢ b<a ⟹ goal
+    };
+    let inner = Thm::assume(inner_hyp.clone())?
+        .or_elim(br_eq, br_ba)? // {a=b ∨ b<a} ⊢ goal
+        .imp_intro(&inner_hyp)?; // ⊢ (a=b ∨ b<a) ⟹ goal
+    tri.or_elim(br_lt, inner)? // ⊢ goal
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+// ============================================================================
 // Density — DERIVED from the two mediant inequalities
 // ============================================================================
 //
@@ -1037,13 +2049,33 @@ mod tests {
     }
 
     #[test]
-    fn rat_rel_trans_is_a_self_flagged_postulate() {
+    fn rat_rel_trans_is_proved_modulo_int_postulates() {
+        // trans is now a real derivation (not self-flagged): its hypotheses
+        // are the postulated `int` leaves, not the conclusion itself.
         let t = rat_rel_trans();
         assert!(t.concl().type_of().unwrap().is_bool());
         assert!(
-            t.hyps().iter().any(|h| h == t.concl()),
-            "the postulate carries itself as a hypothesis"
+            !t.hyps().iter().any(|h| h == t.concl()),
+            "trans is derived, so does not carry itself as a hypothesis"
         );
+        // Shape: ∀p q r. rat_rel p q ⟹ rat_rel q r ⟹ rat_rel p r.
+        let (p, q, r) = (
+            Term::free("p", ip_pair()),
+            Term::free("q", ip_pair()),
+            Term::free("r", ip_pair()),
+        );
+        let inst = t
+            .clone()
+            .all_elim(p.clone())
+            .and_then(|t| t.all_elim(q.clone()))
+            .and_then(|t| t.all_elim(r.clone()))
+            .unwrap();
+        let expected = rel_app(&p, &q)
+            .imp(rel_app(&q, &r).imp(rel_app(&p, &r)).unwrap())
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
+        // All hypotheses are bool (the postulated int facts).
+        assert!(t.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
     }
 
     #[test]
@@ -1091,18 +2123,10 @@ mod tests {
 
     #[test]
     fn ring_axioms_are_well_typed_and_self_flagged() {
-        // The still-postulated ring/field axioms (add_comm / mul_comm are
-        // now proved — see `commutativity_is_genuine`).
-        let all = [
-            add_assoc(),
-            add_zero(),
-            add_neg(),
-            mul_assoc(),
-            mul_one(),
-            mul_zero(),
-            distrib(),
-            mul_inv(),
-        ];
+        // The still-postulated ring/field axioms (add_comm / mul_comm /
+        // mul_assoc are now proved — see `commutativity_is_genuine` /
+        // `mul_assoc_is_genuine`).
+        let all = [mul_inv()];
         for ax in all {
             assert!(ax.concl().type_of().unwrap().is_bool());
             assert!(
@@ -1152,10 +2176,117 @@ mod tests {
 
     #[test]
     fn order_axioms_are_well_typed_and_self_flagged() {
-        for ax in [lt_irrefl(), lt_trans(), lt_trichotomy(), le_def()] {
+        // Still-postulated order axioms (lt_irrefl is now proved — see
+        // lt_irrefl_is_genuine).
+        for ax in [lt_trans(), lt_trichotomy(), le_def()] {
             assert!(ax.concl().type_of().unwrap().is_bool());
             assert!(ax.hyps().iter().any(|h| h == ax.concl()));
         }
+    }
+
+    #[test]
+    fn mul_assoc_is_genuine() {
+        // (a·b)·c = a·(b·c), genuine modulo the int/int.pos round-trip stubs.
+        let thm = mul_assoc();
+        let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+        let inst = thm
+            .clone()
+            .all_elim(a.clone())
+            .and_then(|t| t.all_elim(b.clone()))
+            .and_then(|t| t.all_elim(c.clone()))
+            .unwrap();
+        let expected = rmul(rmul(a.clone(), b.clone()), c.clone())
+            .equals(rmul(a, rmul(b, c)))
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
+        assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
+        assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
+    }
+
+    #[test]
+    fn mul_one_is_genuine() {
+        let thm = mul_one();
+        let a = rvar("a");
+        let inst = thm.clone().all_elim(a.clone()).unwrap();
+        assert_eq!(inst.concl(), &rmul(a.clone(), rat_one()).equals(a).unwrap());
+        assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
+        assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
+    }
+
+    #[test]
+    fn add_zero_is_genuine() {
+        let thm = add_zero();
+        let a = rvar("a");
+        let inst = thm.clone().all_elim(a.clone()).unwrap();
+        assert_eq!(inst.concl(), &radd(a.clone(), rat_zero()).equals(a).unwrap());
+        assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
+        assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
+    }
+
+    #[test]
+    fn mul_zero_is_genuine() {
+        let thm = mul_zero();
+        let a = rvar("a");
+        let inst = thm.clone().all_elim(a.clone()).unwrap();
+        assert_eq!(inst.concl(), &rmul(a, rat_zero()).equals(rat_zero()).unwrap());
+        assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
+        assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
+    }
+
+    #[test]
+    fn add_neg_is_genuine() {
+        let thm = add_neg();
+        let a = rvar("a");
+        let inst = thm.clone().all_elim(a.clone()).unwrap();
+        let neg_a = Term::app(rat_neg(), a.clone());
+        assert_eq!(inst.concl(), &radd(a, neg_a).equals(rat_zero()).unwrap());
+        assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
+        assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
+    }
+
+    #[test]
+    fn add_assoc_is_genuine() {
+        let thm = add_assoc();
+        let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+        let inst = thm
+            .clone()
+            .all_elim(a.clone())
+            .and_then(|t| t.all_elim(b.clone()))
+            .and_then(|t| t.all_elim(c.clone()))
+            .unwrap();
+        let expected = radd(radd(a.clone(), b.clone()), c.clone())
+            .equals(radd(a, radd(b, c)))
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
+        assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
+        assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
+    }
+
+    #[test]
+    fn distrib_is_genuine() {
+        let thm = distrib();
+        let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+        let inst = thm
+            .clone()
+            .all_elim(a.clone())
+            .and_then(|t| t.all_elim(b.clone()))
+            .and_then(|t| t.all_elim(c.clone()))
+            .unwrap();
+        let expected = rmul(a.clone(), radd(b.clone(), c.clone()))
+            .equals(radd(rmul(a.clone(), b), rmul(a, c)))
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
+        assert!(thm.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
+        assert!(!thm.hyps().iter().any(|h| h == thm.concl()));
+    }
+
+    #[test]
+    fn lt_irrefl_is_genuine() {
+        let thm = lt_irrefl();
+        assert!(thm.hyps().is_empty(), "rat::lt_irrefl is proved, not postulated");
+        let a = rvar("a");
+        let inst = thm.all_elim(a.clone()).unwrap();
+        assert_eq!(inst.concl(), &rlt(a.clone(), a.clone()).not().unwrap());
     }
 
     #[test]
@@ -1183,6 +2314,49 @@ mod tests {
             .imp(rle(y, z.clone()).imp(rle(x, z)).unwrap())
             .unwrap();
         assert_eq!(lt.concl(), &expected);
+    }
+
+    #[test]
+    fn linear_order_facts_have_expected_shapes() {
+        // lt_asymm / lt_imp_ne / le_antisym / le_total — derived, carrying
+        // only (bool) postulate hypotheses, with the expected shapes.
+        let (a, b) = (rvar("a"), rvar("b"));
+        for t in [lt_asymm(), lt_imp_ne(), le_antisym(), le_total()] {
+            assert!(t.concl().type_of().unwrap().is_bool());
+            assert!(t.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
+        }
+
+        let inst2 = |t: Thm| t.all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
+
+        // ∀a b. a < b ⟹ ¬(b < a).
+        let asym = inst2(lt_asymm());
+        let exp_asym = rlt(a.clone(), b.clone())
+            .imp(rlt(b.clone(), a.clone()).not().unwrap())
+            .unwrap();
+        assert_eq!(asym.concl(), &exp_asym);
+
+        // ∀a b. a < b ⟹ ¬(a = b).
+        let ne = inst2(lt_imp_ne());
+        let exp_ne = rlt(a.clone(), b.clone())
+            .imp(a.clone().equals(b.clone()).unwrap().not().unwrap())
+            .unwrap();
+        assert_eq!(ne.concl(), &exp_ne);
+
+        // ∀a b. a ≤ b ⟹ b ≤ a ⟹ a = b.
+        let anti = inst2(le_antisym());
+        let exp_anti = rle(a.clone(), b.clone())
+            .imp(
+                rle(b.clone(), a.clone())
+                    .imp(a.clone().equals(b.clone()).unwrap())
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(anti.concl(), &exp_anti);
+
+        // ∀a b. a ≤ b ∨ b ≤ a.
+        let tot = inst2(le_total());
+        let exp_tot = rle(a.clone(), b.clone()).or(rle(b.clone(), a.clone())).unwrap();
+        assert_eq!(tot.concl(), &exp_tot);
     }
 
     #[test]

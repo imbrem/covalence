@@ -369,7 +369,7 @@ impl<'e> Elab<'e> {
                 self.unify(&tb, &alpha)?;
                 Ok((ETerm::Eq(Box::new(ea), Box::new(eb)), ETy::Bool))
             }
-            other => match self.env.lookup_const(other).cloned() {
+            other => match self.env.lookup_const(other) {
                 Some(ConstDef::Op(t)) => {
                     let mut acc_ty = self.from_type(&t.type_of()?)?;
                     let mut acc = ETerm::Lit(t);

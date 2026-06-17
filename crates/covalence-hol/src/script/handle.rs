@@ -4,10 +4,11 @@
 //! encapsulated — a caller just `get(name).await`s and a still-running entry is
 //! awaited transparently).
 //!
-//! This is the future-holding backing of an [`super::Env`]: today its `lemmas`
-//! (a `LazyMap<Thm>` populated by `#compute`); the goal is for every env map
-//! (consts, lemmas, tactics, rules) to be a `LazyMap`, so **all** lookups are
-//! async — "one async task per definition", just like one per theorem.
+//! This is the future-holding backing of an [`super::Env`]: its **single**
+//! namespace map holds every definition kind (consts, lemmas, tactics, rules)
+//! as a `LazyMap`, so any binding can still be **computing** — today only
+//! `#compute`-ing lemmas, but the same machinery covers "one async task per
+//! definition" (e.g. a `bytes` const loaded from the network) with no new code.
 
 use covalence_core::Thm;
 use futures::FutureExt;
@@ -70,21 +71,16 @@ impl<T: Clone + Send + Sync + 'static> LazyMap<T> {
         self.entries.insert(name.into(), Lazy::Ready(Err(err)));
     }
 
-    /// Bind `name` to a value being computed on a blocking thread (a
-    /// `#compute` / `spawn_blocking` task). The binding is *pending* until the
-    /// task finishes; [`LazyMap::get`] awaits it.
-    pub fn insert_compute(
+    /// Bind `name` to a value still being **computed** (a future). The binding
+    /// is *pending* until the future resolves; [`LazyMap::get`] awaits it (the
+    /// future is `Shared`, so several consumers await the same computation).
+    pub fn insert_pending(
         &mut self,
         name: impl Into<String>,
-        task: tokio::task::JoinHandle<Result<T, ScriptError>>,
+        fut: BoxFuture<'static, Result<T, ScriptError>>,
     ) {
-        let fut = async move {
-            task.await
-                .map_err(|e| ScriptError::Syntax(format!("#compute task failed: {e}")))?
-        }
-        .boxed()
-        .shared();
-        self.entries.insert(name.into(), Lazy::Pending(fut));
+        self.entries
+            .insert(name.into(), Lazy::Pending(fut.shared()));
     }
 
     /// Whether `name` is bound (ready or pending).
@@ -171,9 +167,8 @@ mod tests {
     fn pending_compute_is_awaited_transparently() {
         rt().block_on(async {
             let mut e: LazyMap<Thm> = LazyMap::new();
-            // A computation on a blocking thread — the getter awaits it.
-            let task = tokio::task::spawn_blocking(|| Ok(refl0()));
-            e.insert_compute("y", task);
+            // A still-computing binding — the getter awaits it.
+            e.insert_pending("y", async { Ok(refl0()) }.boxed());
             assert!(e.contains("y"));
             assert!(e.get_ready("y").is_none(), "pending until awaited");
             let thm = e.get("y").await.unwrap().unwrap();
@@ -188,8 +183,10 @@ mod tests {
     fn compute_error_propagates_through_the_getter() {
         rt().block_on(async {
             let mut e: LazyMap<Thm> = LazyMap::new();
-            let task = tokio::task::spawn_blocking(|| Err(ScriptError::Syntax("boom".into())));
-            e.insert_compute("bad", task);
+            e.insert_pending(
+                "bad",
+                async { Err(ScriptError::Syntax("boom".into())) }.boxed(),
+            );
             let err = e.get("bad").await.unwrap().unwrap_err();
             assert!(matches!(err, ScriptError::Syntax(ref m) if m == "boom"));
         });

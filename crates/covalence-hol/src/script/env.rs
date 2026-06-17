@@ -2,14 +2,21 @@
 //!
 //! [`Env`] is the single place that absorbs `covalence-core` `defs/` churn:
 //! re-point a resolver here and every proof that mentions the name keeps
-//! working unchanged. It holds the constant catalogue, the proven-lemma table,
-//! the tactic registry, and the set of imported sub-namespaces — all behind
-//! methods. The transient proof state — the variable [`super::scope::Scope`],
-//! goals — lives in [`super::tactic::Interp`], not here.
+//! working unchanged. It holds **one** namespace — a name→[`Entry`] map — plus
+//! the set of imported sub-namespaces. The transient proof state — the variable
+//! [`super::scope::Scope`], goals — lives in [`super::tactic::Interp`], not here.
+//!
+//! The namespace is a single [`LazyMap`], so **every** kind of definition
+//! (const, lemma, tactic, rule) is uniformly **lazy**: a binding may still be
+//! computing (today only `#compute`-ing lemmas; tomorrow a `bytes` const loaded
+//! from the network — "one async task per definition"). This is deliberately
+//! the *simple* unified design; finer-grained namespaces (separate const/type/
+//! tactic spaces, qualified names) can come later.
 
 use std::sync::Arc;
 
 use covalence_core::{Term, Thm, defs};
+use futures::FutureExt;
 use imbl::HashMap;
 
 use super::drv::Rule;
@@ -17,16 +24,6 @@ use super::handle::LazyMap;
 use super::{ScriptError, tactic::Tactic};
 
 type R<T> = Result<T, ScriptError>;
-
-/// Qualify a dotted name with a namespace `prefix` (`prefix.name`), or
-/// leave it unchanged when `prefix` is empty.
-fn qualify(prefix: &str, name: &str) -> String {
-    if prefix.is_empty() {
-        name.to_string()
-    } else {
-        format!("{prefix}.{name}")
-    }
-}
 
 /// How a head symbol resolves to a kernel term.
 #[derive(Clone)]
@@ -40,24 +37,34 @@ pub enum ConstDef {
     Eq,
 }
 
-/// A name-resolution environment — the **namespace** part of the system:
-/// constants, proven lemmas, and a tactic registry, plus the set of
-/// imported (but not necessarily opened) sub-namespaces. Fields are
-/// encapsulated behind methods; this will grow into a proper namespace
-/// system (separate namespaces for consts/types/terms/tactics/…, qualified
-/// names, `#import … as …`).
+/// A single namespace entry — the kinds of definition share one map. Cloning is
+/// cheap (`Arc` / `imbl`-backed kernel data).
+///
+/// `TacticAndRule` is the one wrinkle: several names (`sym`, `refl`,
+/// `not-intro`, `rw`, …) denote **both** a goal-directed tactic *and* a
+/// tree-mode derivation rule, so a single key must carry both facets.
+#[derive(Clone)]
+enum Entry {
+    Const(ConstDef),
+    Lemma(Thm),
+    Tactic(Arc<dyn Tactic>),
+    Rule(Arc<dyn Rule>),
+    TacticAndRule(Arc<dyn Tactic>, Arc<dyn Rule>),
+}
+
+/// A name-resolution environment — the **namespace** part of the system: one
+/// lazy name→[`Entry`] map (constants, proven lemmas, tactics, rules), plus the
+/// set of imported (but not necessarily opened) sub-namespaces. Fields are
+/// encapsulated behind methods.
 ///
 /// Backed by [`imbl::HashMap`] **persistent** maps, so cloning an `Env` is
 /// O(1) (structural sharing) and mutating a clone is cheap copy-on-write —
 /// which is why [`super::tactic::Interp`] can afford to *own* its environment.
 #[derive(Clone, Default)]
 pub struct Env {
-    consts: HashMap<String, ConstDef>,
-    /// Proven lemmas — a [`LazyMap`], so a lemma may still be **computing**
-    /// (`#compute`) and `lookup_lemma` is **async**.
-    lemmas: LazyMap<Thm>,
-    tactics: HashMap<String, Arc<dyn Tactic>>,
-    rules: HashMap<String, Arc<dyn Rule>>,
+    /// The unified namespace: every definition kind, each possibly still
+    /// **computing** (so all lookups are lazy; lemma lookup is `async`).
+    entries: LazyMap<Entry>,
     imports: HashMap<String, Env>,
 }
 
@@ -68,60 +75,99 @@ impl Env {
     }
 
     // -- lookups --------------------------------------------------------
-    pub fn lookup_const(&self, name: &str) -> Option<&ConstDef> {
-        self.consts.get(name)
+    /// The constant bound to `name`, if it is a ready `Const` entry.
+    pub fn lookup_const(&self, name: &str) -> Option<ConstDef> {
+        match self.entries.get_ready(name)? {
+            Entry::Const(c) => Some(c),
+            _ => None,
+        }
     }
     /// Look up a lemma, **awaiting** it if it is still computing (`#compute`).
-    /// `None` if unbound; `Some(Err)` if its computation failed.
+    /// `None` if unbound (or bound to a non-lemma); `Some(Err)` if its
+    /// computation failed.
     pub async fn lookup_lemma(&self, name: &str) -> Option<Result<Thm, ScriptError>> {
-        self.lemmas.get(name).await
+        match self.entries.get(name).await? {
+            Ok(Entry::Lemma(t)) => Some(Ok(t)),
+            Ok(_) => None,
+            Err(e) => Some(Err(e)),
+        }
     }
     /// Synchronous peek: the lemma only if already proved (not still computing).
     pub fn lemma_ready(&self, name: &str) -> Option<Thm> {
-        self.lemmas.get_ready(name)
+        match self.entries.get_ready(name)? {
+            Entry::Lemma(t) => Some(t),
+            _ => None,
+        }
     }
     pub fn lookup_tactic(&self, name: &str) -> Option<Arc<dyn Tactic>> {
-        self.tactics.get(name).cloned()
+        match self.entries.get_ready(name)? {
+            Entry::Tactic(t) | Entry::TacticAndRule(t, _) => Some(t),
+            _ => None,
+        }
     }
     pub fn lookup_rule(&self, name: &str) -> Option<Arc<dyn Rule>> {
-        self.rules.get(name).cloned()
+        match self.entries.get_ready(name)? {
+            Entry::Rule(r) | Entry::TacticAndRule(_, r) => Some(r),
+            _ => None,
+        }
     }
+    /// Whether `name` is bound to a lemma (ready *or* still `#compute`-ing).
     pub fn has_lemma(&self, name: &str) -> bool {
-        self.lemmas.contains(name)
+        match self.entries.get_ready(name) {
+            Some(Entry::Lemma(_)) => true,
+            Some(_) => false,
+            // No ready entry: a *pending* binding is always a #compute-ing
+            // lemma (the only kind that pends today).
+            None => self.entries.contains(name),
+        }
     }
 
     // -- definitions ----------------------------------------------------
     pub fn define_const(&mut self, name: impl Into<String>, c: ConstDef) {
-        self.consts.insert(name.into(), c);
+        self.entries.insert_ready(name, Entry::Const(c));
     }
     pub fn define_lemma(&mut self, name: impl Into<String>, thm: Thm) {
-        self.lemmas.insert_ready(name, thm);
+        self.entries.insert_ready(name, Entry::Lemma(thm));
     }
-    /// Bind a lemma to a still-running `#compute` (`spawn_blocking`) task.
+    /// Bind a lemma to a still-running `#compute` (`spawn_blocking`) task; a
+    /// later `(lemma NAME)` or the force just awaits it.
     pub fn define_computing(
         &mut self,
         name: impl Into<String>,
         task: tokio::task::JoinHandle<Result<Thm, ScriptError>>,
     ) {
-        self.lemmas.insert_compute(name, task);
+        let fut = async move {
+            let thm = task
+                .await
+                .map_err(|e| ScriptError::Syntax(format!("#compute task failed: {e}")))??;
+            Ok(Entry::Lemma(thm))
+        }
+        .boxed();
+        self.entries.insert_pending(name, fut);
     }
     pub fn register_tactic(&mut self, name: impl Into<String>, t: Arc<dyn Tactic>) {
-        self.tactics.insert(name.into(), t);
+        let name = name.into();
+        // Combine with an existing rule of the same name (dual-mode inference).
+        let entry = match self.entries.get_ready(&name) {
+            Some(Entry::Rule(r)) | Some(Entry::TacticAndRule(_, r)) => Entry::TacticAndRule(t, r),
+            _ => Entry::Tactic(t),
+        };
+        self.entries.insert_ready(name, entry);
     }
     pub fn register_rule(&mut self, name: impl Into<String>, r: Arc<dyn Rule>) {
-        self.rules.insert(name.into(), r);
+        let name = name.into();
+        // Combine with an existing tactic of the same name (dual-mode inference).
+        let entry = match self.entries.get_ready(&name) {
+            Some(Entry::Tactic(t)) | Some(Entry::TacticAndRule(t, _)) => Entry::TacticAndRule(t, r),
+            _ => Entry::Rule(r),
+        };
+        self.entries.insert_ready(name, entry);
     }
 
     /// Merge another environment's bindings in (it shadows existing entries
-    /// of the same name). Touches namespaces only — not the imports map.
+    /// of the same name). Touches the namespace only — not the imports map.
     pub fn merge(&mut self, other: &Env) {
-        self.consts
-            .extend(other.consts.iter().map(|(k, v)| (k.clone(), v.clone())));
-        self.lemmas.merge(&other.lemmas);
-        self.tactics
-            .extend(other.tactics.iter().map(|(k, v)| (k.clone(), v.clone())));
-        self.rules
-            .extend(other.rules.iter().map(|(k, v)| (k.clone(), v.clone())));
+        self.entries.merge(&other.entries);
     }
 
     /// `(#import NAME)`: register `env` as an importable namespace under
@@ -138,16 +184,7 @@ impl Env {
     /// Merge another env's bindings in, each name qualified by `prefix`
     /// (`prefix.name`), or unchanged if `prefix` is empty.
     pub fn merge_prefixed(&mut self, other: &Env, prefix: &str) {
-        for (k, v) in &other.consts {
-            self.consts.insert(qualify(prefix, k), v.clone());
-        }
-        self.lemmas.merge_prefixed(&other.lemmas, prefix);
-        for (k, v) in &other.tactics {
-            self.tactics.insert(qualify(prefix, k), v.clone());
-        }
-        for (k, v) in &other.rules {
-            self.rules.insert(qualify(prefix, k), v.clone());
-        }
+        self.entries.merge_prefixed(&other.entries, prefix);
     }
 
     /// `(#open NAME)`: bring a previously-`#import`ed namespace's bindings
@@ -174,13 +211,15 @@ impl Env {
     }
 
     /// The `core` prelude — `covalence-core`'s `defs/` catalogue by dotted
-    /// name **plus the primitive tactics**. Opening `core` is what makes
-    /// `intro`/`sym`/`rw`/… available. This is the `defs/` churn boundary.
+    /// name **plus the primitive tactics and derivation rules**. Opening `core`
+    /// is what makes `intro`/`sym`/`rw`/… available. This is the `defs/` churn
+    /// boundary.
     pub fn core() -> Self {
         let mut e = Env::default();
         let mut op = |names: &[&str], t: Term| {
             for n in names {
-                e.consts.insert((*n).to_string(), ConstDef::Op(t.clone()));
+                e.entries
+                    .insert_ready((*n).to_string(), Entry::Const(ConstDef::Op(t.clone())));
             }
         };
         op(&["true"], Term::bool_lit(true));
@@ -198,13 +237,15 @@ impl Env {
         op(&["nat.lt", "<"], defs::nat_lt());
         op(&["succ", "nat.succ"], Term::succ());
         drop(op);
-        e.consts.insert("=".into(), ConstDef::Eq);
-        e.consts.insert("eq".into(), ConstDef::Eq);
+        e.entries
+            .insert_ready("=".to_string(), Entry::Const(ConstDef::Eq));
+        e.entries
+            .insert_ready("eq".to_string(), Entry::Const(ConstDef::Eq));
         for (name, tac) in super::tactic::core_tactics() {
-            e.tactics.insert(name, tac);
+            e.register_tactic(name, tac);
         }
         for (name, rule) in super::drv::core_rules() {
-            e.rules.insert(name.to_string(), rule);
+            e.register_rule(name, rule);
         }
         e
     }

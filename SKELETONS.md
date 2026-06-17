@@ -389,16 +389,20 @@ directives — is `open`-able by other scripts; the macro binds it as a
   CheckCtx)` **self-parses** its term/type/name/sub-derivation args (a
   `CheckCtx` gives `term`/`ty`/`name`/`push_var`/`check`), so a custom rule has
   the same power as a built-in. No remaining TODO for this item.
-- **Lemma lookup is async; const lookup is NOT (yet).** `Env::lemmas` is now a
-  `LazyMap` (handle-valued) and **`Env::lookup_lemma` is `async`** — the `lemma`
-  registry rule `await`s a still-`#compute`-ing lemma directly (the old
-  boundary-await `lemma_refs`/`await_computed_deps` was deleted). `#compute`
-  binds NAME to its task in the env (`define_computing`); a later `(lemma NAME)`
-  or the force just awaits it. The remaining half of **"all env accesses
-  async"** (user): **`Env::lookup_const` should also be async**, which makes the
-  **elaborator (`infer.rs`) async** (recursive `BoxFuture` + const-lookup await)
-  → `parse_term`/`CheckCtx::term`/`elaborate_concl` async. The vision: *one async
-  task per definition* (a `const` loaded from the network, like `#compute` for a
+- **Lemma lookup is async; const lookup is sync (the data model is ready, the
+  accessor + elaborator aren't).** `Env` is now ONE unified `entries:
+  LazyMap<Entry>` (`Entry` = `Const|Lemma|Tactic|Rule|TacticAndRule`), so EVERY
+  kind is already future-capable — a const *can* pend, no new machinery needed.
+  **`Env::lookup_lemma` is `async`** (awaits a still-`#compute`-ing
+  `Entry::Lemma`); the old boundary-await `lemma_refs`/`await_computed_deps` was
+  deleted. `#compute` binds NAME via `define_computing` → `insert_pending`; a
+  later `(lemma NAME)` or the force just awaits it. The remaining half of **"all
+  env accesses async"** (user) is now just the *accessor*: `lookup_const`/
+  `lookup_tactic`/`lookup_rule` are still SYNC `get_ready` peeks. Making
+  `lookup_const` async makes the **elaborator (`infer.rs`) async** (recursive
+  `BoxFuture` + const-lookup await) → `parse_term`/`CheckCtx::term`/
+  `elaborate_concl` async — that's the unbuilt step for *one async task per
+  definition* (a `const` loaded from the network, like `#compute` for a
   theorem). The non-async `lemma_ready(name)` peek stays for the sync
   `Theory::lemma` macro accessor (a forced theory's lemmas are all Ready).
   - **A `#compute` can't depend on another `#compute`.** Its proof runs in

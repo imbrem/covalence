@@ -362,11 +362,15 @@ directives — is `open`-able by other scripts; the macro binds it as a
   instantiates a quantified `∀x⃗. L = R` by matching `L` against a subterm of the
   target (`Env::rw_unify` → `script/unify.rs::find_match`), so neither needs a
   hand-written `all-elim` prefix; bare lemma names (`(N w…)`) replaced the old
-  `lemma` keyword. Still TODO: (a) the unifier is hard-coded — a **registerable
+  `lemma` keyword. `rw` takes several equations
+  (`(rw E1 E2 …)` / `(rw E… TARGET)`), applied in sequence; bare atom names work
+  (`(rw sub_zero)`). Still TODO: (a) the unifier is hard-coded — a **registerable
   custom handler** (the stated motivation for routing through `Env` methods) is
-  not wired; (b) the matcher is purely first-order (no higher-order patterns);
-  (c) `rw` matches the FIRST (leftmost-outermost) subterm — no "rewrite at
-  occurrence-N" control yet.
+  not wired; (b) a third inference facet **`rewrite(a) -> ⊢ a = b`** (a
+  *rewriter*, what `rw` consumes — a lemma casts to one via `rw_unify`) is not a
+  first-class kind yet; (c) the matcher is purely first-order (no higher-order
+  patterns); (d) `rw` matches the FIRST (leftmost-outermost) subterm — no
+  "rewrite at occurrence-N" control yet.
 
 - **No proof/`Term` pretty-printer (serialization-out).** `script` only
   *parses* the named syntax and *replays* it; there is no printer from a

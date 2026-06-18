@@ -56,6 +56,13 @@ pub enum Hyp {
 /// `apply`; a forward rule (`trans`) overrides `rule`; a dual-mode inference
 /// (`sym`, `refl`, `not-intro`, `rw`) overrides both — one object, no stapling.
 ///
+/// FUTURE: a third facet, `rewrite(a) -> ⊢ a = b` (a **rewriter**), is planned
+/// — what `rw` consumes. A lemma already casts to a rewriter today via
+/// [`Env::rw_unify`](super::Env::rw_unify) (match its `∀x⃗. L = R` LHS against a
+/// subterm); promoting that to an explicit facet lets a custom inference be a
+/// rewriter just as it can be a tactic/rule, and `rw E1 E2 …` becomes "run these
+/// rewriters in sequence".
+///
 /// This is a **trait**, not a bare `fn`, so an inference can carry state, be
 /// backed by a WASM component, or run *async* — awaiting a long-running
 /// observer, a peer prover, or the user. Object-safe via `#[async_trait]`, so

@@ -70,6 +70,28 @@ pub(super) fn match_term(
     }
 }
 
+/// Search `target` for the first subterm `pattern` matches — the root, then
+/// left-to-right `App` children, **not** under binders (mirroring
+/// `rewrite_conv`, which does not descend into `Abs`). Returns the binding that
+/// makes them equal. Used by rw-unification to locate where to instantiate an
+/// equation's LHS.
+pub(super) fn find_match(
+    pattern: &Term,
+    target: &Term,
+    schematics: &BTreeSet<SmolStr>,
+) -> Option<Subst> {
+    let mut sub = Subst::default();
+    if match_term(pattern, target, schematics, &mut sub).is_ok() {
+        return Some(sub);
+    }
+    match target.kind() {
+        TermKind::App(f, a) => {
+            find_match(pattern, f, schematics).or_else(|| find_match(pattern, a, schematics))
+        }
+        _ => None,
+    }
+}
+
 fn match_type_args<'a>(
     p: impl Iterator<Item = &'a Type>,
     t: impl Iterator<Item = &'a Type>,

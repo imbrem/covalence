@@ -626,6 +626,21 @@ mod tests {
     }
 
     #[test]
+    fn rw_matches_a_quantified_equation() {
+        // `rw` instantiates a QUANTIFIED equation by matching its LHS against a
+        // subterm of the goal — no hand-written `all-elim` prefix needed.
+        let thms = run_str(
+            r#"(#import core)(#open core)
+               (#thm idem (#concl (forall (p bool) (= (and p p) p)))
+                 (#by (intro p) (derive (prop-eq (and p p) p))))
+               (#thm test (#concl (= (and a a) a)) (#by (rw (idem)) (refl)))"#,
+        )
+        .expect("rw-unification replays");
+        assert_eq!(thms.len(), 2);
+        assert!(thms[1].thm.hyps().is_empty());
+    }
+
+    #[test]
     fn apply_unifies_and_bare_lemma_names() {
         let thms = run_str(
             r#"(#import core)(#open core)

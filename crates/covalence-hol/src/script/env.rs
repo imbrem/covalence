@@ -253,52 +253,77 @@ impl Env {
     /// (premises intact — the caller discharges them; with none it is just
     /// `⊢ target`). Untrusted matching, re-checked by `all_elim`/`inst_tfree`.
     pub fn apply_unify(&self, lemma: &Thm, target: &Term) -> R<Thm> {
-        // Open the `∀` prefix with fresh schematic free vars.
-        let mut schematics = BTreeSet::new();
-        let mut order: Vec<SmolStr> = Vec::new();
-        let mut body = lemma.concl().clone();
-        while let Some((ty, inner)) = dest_forall(&body) {
-            let name = SmolStr::new(format!("?{}", order.len()));
-            body = subst::open(&inner, &Term::free(name.clone(), ty));
-            schematics.insert(name.clone());
-            order.push(name);
-        }
-        // Strip `⟹` premises to reach the conclusion `C`.
+        let (schematics, order, body) = open_foralls(lemma.concl());
+        // Strip `⟹` premises to reach the conclusion `C`, and match against `target`.
         let mut concl = body;
         while let Some((_p, rest)) = dest_imp(&concl) {
             concl = rest;
         }
-        // Match `C` against `target`.
         let mut sub = Subst::default();
         match_term(&concl, target, &schematics, &mut sub).map_err(|()| {
             ScriptError::Syntax(format!("apply: lemma conclusion does not match `{target}`"))
         })?;
-        // Instantiate: type-vars first, then the `∀` witnesses in binder order.
-        let mut thm = lemma.clone();
-        for (tv, ty) in &sub.types {
-            if Type::tfree(tv.as_str()) != *ty {
-                thm = thm.inst_tfree(tv, ty.clone())?;
-            }
-        }
-        for name in &order {
-            let w = sub.terms.get(name).ok_or_else(|| {
-                ScriptError::Syntax(
-                    "apply: a `∀` variable was left undetermined by matching".into(),
-                )
-            })?;
-            thm = thm.all_elim(w.clone())?;
-        }
-        Ok(thm)
+        instantiate(lemma, &order, &sub, "apply")
     }
 
     /// **Rw-unification** — the equation-matching analogue of
-    /// [`apply_unify`](Env::apply_unify), kept SEPARATE so a future
-    /// equation-specific matcher (instantiate `∀x⃗. L = R` so `L` matches a
-    /// subterm of `target`) hooks in here without touching `apply`. For now it
-    /// is the identity — the equation is used as given (the original `rw`).
-    pub fn rw_unify(&self, eqn: &Thm, _target: &Term) -> R<Thm> {
-        Ok(eqn.clone())
+    /// [`apply_unify`](Env::apply_unify), kept SEPARATE so the two can grow
+    /// independently. An already-instantiated `⊢ L = R` is used as given (the
+    /// original `rw`); a **quantified** `⊢ ∀x⃗. L = R` is instantiated here by
+    /// finding the first subterm of `target` that the LHS `L` matches — so
+    /// `(rw EQN)` no longer needs a hand-written `all-elim` prefix on `EQN`.
+    pub fn rw_unify(&self, eqn: &Thm, target: &Term) -> R<Thm> {
+        if eqn.concl().as_eq().is_some() {
+            return Ok(eqn.clone());
+        }
+        let (schematics, order, body) = open_foralls(eqn.concl());
+        let (lhs, _rhs) = body.as_eq().ok_or_else(|| {
+            ScriptError::Syntax("rw: the equation is not an `=` (nor a `∀`-quantified `=`)".into())
+        })?;
+        let sub = super::unify::find_match(lhs, target, &schematics).ok_or_else(|| {
+            ScriptError::Syntax(format!(
+                "rw: no subterm of `{target}` matches the equation's LHS `{lhs}`"
+            ))
+        })?;
+        instantiate(eqn, &order, &sub, "rw")
     }
+}
+
+/// Open a theorem-conclusion's `∀` prefix with fresh schematic free vars
+/// (`?0`, `?1`, …), returning the hole-name set, their binder order, and the
+/// opened body. Shared by the unification seams.
+fn open_foralls(concl: &Term) -> (BTreeSet<SmolStr>, Vec<SmolStr>, Term) {
+    let mut schematics = BTreeSet::new();
+    let mut order: Vec<SmolStr> = Vec::new();
+    let mut body = concl.clone();
+    while let Some((ty, inner)) = dest_forall(&body) {
+        let name = SmolStr::new(format!("?{}", order.len()));
+        body = subst::open(&inner, &Term::free(name.clone(), ty));
+        schematics.insert(name.clone());
+        order.push(name);
+    }
+    (schematics, order, body)
+}
+
+/// Instantiate `thm` (a `∀x⃗. …`) with a matched substitution: type-vars first
+/// (`inst_tfree`), then the `∀` witnesses in binder order (`all_elim`). `what`
+/// labels the error if a hole was left undetermined.
+fn instantiate(thm: &Thm, order: &[SmolStr], sub: &Subst, what: &str) -> R<Thm> {
+    let mut t = thm.clone();
+    for (tv, ty) in &sub.types {
+        if Type::tfree(tv.as_str()) != *ty {
+            t = t.inst_tfree(tv, ty.clone())?;
+        }
+    }
+    for name in order {
+        let w = sub.terms.get(name).ok_or_else(|| {
+            ScriptError::Syntax(format!(
+                "{what}: a `∀` variable was left undetermined by matching"
+            ))
+        })?;
+        t = t.all_elim(w.clone())?;
+    }
+    Ok(t)
 }
 
 /// `∀`/`⟹` shape probes for [`Env::apply_unify`].

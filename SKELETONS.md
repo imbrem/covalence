@@ -356,17 +356,17 @@ directives — is `open`-able by other scripts; the macro binds it as a
   usage-constrained across the independently-elaborated sub-proof terms;
   inferring it would need either threading one metavar arena through the whole
   derivation or a check-time `find_free_type` pass.
-- **Lemma application unifies (`apply`); the `rw` matcher + pluggable unifier
-  are not built.** `apply` (a dual-mode inference) instantiates a lemma by
-  first-order matching its conclusion against the goal/target
-  (`Env::apply_unify` → `script/unify.rs`), discharging premises with
-  sub-derivations; bare lemma names (`(N w…)`) replaced the old `lemma` keyword.
-  Still TODO: (a) `Env::rw_unify` is the **identity** — `rw` does not yet
-  instantiate a quantified `∀x⃗. L = R` by matching `L` against a subterm (the
-  seam is in place, separate from `apply_unify`); (b) the unifier is hard-coded —
-  a **registerable custom handler** (the stated motivation for routing through an
-  `Env` method) is not wired; (c) the matcher is purely first-order (no
-  higher-order patterns).
+- **Lemma application + `rw` unify (first-order); the pluggable unifier is not
+  built.** `apply` (a dual-mode inference) instantiates a lemma by first-order
+  matching its conclusion against the goal/target (`Env::apply_unify`), and `rw`
+  instantiates a quantified `∀x⃗. L = R` by matching `L` against a subterm of the
+  target (`Env::rw_unify` → `script/unify.rs::find_match`), so neither needs a
+  hand-written `all-elim` prefix; bare lemma names (`(N w…)`) replaced the old
+  `lemma` keyword. Still TODO: (a) the unifier is hard-coded — a **registerable
+  custom handler** (the stated motivation for routing through `Env` methods) is
+  not wired; (b) the matcher is purely first-order (no higher-order patterns);
+  (c) `rw` matches the FIRST (leftmost-outermost) subterm — no "rewrite at
+  occurrence-N" control yet.
 
 - **No proof/`Term` pretty-printer (serialization-out).** `script` only
   *parses* the named syntax and *replays* it; there is no printer from a

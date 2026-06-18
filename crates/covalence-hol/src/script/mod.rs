@@ -22,7 +22,7 @@
 //!
 //! Two directions are deliberately **not** built yet (see SKELETONS.md):
 //! pretty-printing a proof / `Term` back to this syntax, and content-hashing
-//! proof terms for `(lemma …)`-by-hash references. Authoring (parse +
+//! proof terms for lemma-by-hash references. Authoring (parse +
 //! replay) is the immediate goal: porting the Rust `init/` theorems.
 
 mod drv;
@@ -203,7 +203,7 @@ pub struct NamedThm {
 /// `resolver` and registers it as an importable namespace; `(#import NAME) (#open NAME)`
 /// brings a previously-imported namespace's bindings into scope; `(#thm …)`
 /// directives are checked and accumulate so later theorems can reference
-/// earlier ones — and any opened namespace's lemmas — via `(lemma NAME)`.
+/// earlier ones — and any opened namespace's lemmas — via `(NAME)` (by name).
 /// Replay a script, blocking until the whole theory is proved. The blocking
 /// half of the async core ([`run_async`]) — see [`block_on`]. This is the
 /// stable entry point; the kernel/TCB stays synchronous, so today the future
@@ -296,7 +296,7 @@ pub async fn run_async(
             }
             Stmt::Thm(sexpr) => {
                 let ch = syntax::list(&sexpr, "#thm")?;
-                // `check` awaits any `(lemma …)` it references that is still
+                // `check` awaits any a lemma reference it references that is still
                 // `#compute`-ing — lemma lookup is now async.
                 let nt = run_thm(ch, &internal).await?;
                 internal.define_lemma(nt.name.clone(), nt.thm.clone());
@@ -304,7 +304,7 @@ pub async fn run_async(
             }
             // `(#compute NAME …)` — kick off the proof on a blocking thread
             // and bind NAME to the still-running task in the env. Execution
-            // moves straight on; a later proof's `(lemma NAME)` (or the force)
+            // moves straight on; a later proof's `(NAME)` (by name) (or the force)
             // simply **awaits** it.
             Stmt::Compute(sexpr) => {
                 let ch = syntax::list(&sexpr, "#compute")?;
@@ -347,7 +347,7 @@ pub async fn run_async(
     })
 }
 
-/// Await every `(lemma NAME)` reference in `sexpr` that is still
+/// Await every `(NAME)` (by name) reference in `sexpr` that is still
 /// Fetch an imported namespace's environment, erroring if it was never
 /// `(#import …)`ed.
 fn imported(internal: &Env, name: &str) -> Result<Env, ScriptError> {
@@ -633,7 +633,7 @@ mod tests {
                  (#by (induct n (#by (refl)) (#by (refl)))))
                ;; apply by unification (tactic) — matches `∀n. n = n` against `5 = 5`
                (#thm five_a (#concl (= 5 5)) (#by (apply my_refl)))
-               ;; bare lemma name + explicit witness (tree) — `(all-elim 5 (lemma my_refl))`
+               ;; bare lemma name + explicit witness (tree) — `(all-elim 5 (my_refl))`
                (#thm five_b (#concl (= 5 5)) (#proof (my_refl 5)))
                ;; apply as a derivation with an explicit target (tree)
                (#thm five_c (#concl (= 5 5)) (#proof (apply my_refl (= 5 5))))
@@ -870,7 +870,7 @@ mod tests {
               (#concl (and b a))
               (#proof
                 (imp-elim
-                  (inst p a (inst q b (lemma logic.and.comm)))
+                  (inst p a (inst q b (logic.and.comm)))
                   (assume (and a b)))))
             (#provide (#alias logic prelude))
             "#,
@@ -975,7 +975,7 @@ mod tests {
 
     #[test]
     fn a_proof_awaits_a_computed_lemma() {
-        // A later `#thm` references a `#compute`d theorem via `(lemma …)`:
+        // A later `#thm` references a `#compute`d theorem via a lemma reference:
         // the `lemma` registry rule now AWAITS the still-computing lemma
         // directly (lemma lookup is async), so `#compute`d lemmas are usable
         // by later proofs.
@@ -984,7 +984,7 @@ mod tests {
             (#import core)
             (#open core)
             (#compute base (#concl (= 0 0)) (#proof (refl 0)))
-            (#thm uses (#concl (= 0 0)) (#proof (lemma base)))
+            (#thm uses (#concl (= 0 0)) (#proof (base)))
             "#,
             |name| (name == "core").then(Env::core),
             |_| None,
@@ -1197,7 +1197,7 @@ mod tests {
         // A separate script `(#import logic) (#open logic)`s the environment produced by the
         // `cov_theory!`-loaded `init::logic::cov`, and applies one of its
         // lemmas by name — demonstrating the exposed env + cross-theory
-        // `(lemma …)` reference.
+        // a lemma reference reference.
         let theory = run(
             r#"
             (#import core)
@@ -1208,7 +1208,7 @@ mod tests {
               (#concl (and b a))
               (#proof
                 (imp-elim
-                  (inst p a (inst q b (lemma and.comm)))
+                  (inst p a (inst q b (and.comm)))
                   (assume (and a b)))))
             "#,
             |name| match name {

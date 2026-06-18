@@ -356,15 +356,22 @@ directives — is `open`-able by other scripts; the macro binds it as a
   usage-constrained across the independently-elaborated sub-proof terms;
   inferring it would need either threading one metavar arena through the whole
   derivation or a check-time `find_free_type` pass.
-- **Lemma application is explicit, not by unification.** Applying a lemma
-  means `(lemma N)` then manual `inst`/`inst-tfree`/`all-elim`. A higher-level
-  `(apply N args…)` that unifies the lemma's conclusion against the goal /
-  arguments (first-order matching) is the natural next tactic.
+- **Lemma application unifies (`apply`); the `rw` matcher + pluggable unifier
+  are not built.** `apply` (a dual-mode inference) instantiates a lemma by
+  first-order matching its conclusion against the goal/target
+  (`Env::apply_unify` → `script/unify.rs`), discharging premises with
+  sub-derivations; bare lemma names (`(N w…)`) replaced the old `lemma` keyword.
+  Still TODO: (a) `Env::rw_unify` is the **identity** — `rw` does not yet
+  instantiate a quantified `∀x⃗. L = R` by matching `L` against a subterm (the
+  seam is in place, separate from `apply_unify`); (b) the unifier is hard-coded —
+  a **registerable custom handler** (the stated motivation for routing through an
+  `Env` method) is not wired; (c) the matcher is purely first-order (no
+  higher-order patterns).
 
 - **No proof/`Term` pretty-printer (serialization-out).** `script` only
   *parses* the named syntax and *replays* it; there is no printer from a
   proof / `Term` back to the surface S-expression. This blocks content-addressing
-  (hashing a proof term) and `(lemma …)`-by-hash references — both noted as
+  (hashing a proof term) and lemma-by-hash references — both noted as
   future in `docs/surface-syntax.md` §7. Authoring (the immediate goal —
   porting the Rust `init/` theorems) needs only the parse direction. When
   added, reuse/extend the low-level printers in `crates/covalence-hol/src/sexp.rs`
@@ -453,7 +460,7 @@ directives — is `open`-able by other scripts; the macro binds it as a
   **`Env::lookup_lemma` is `async`** (awaits a still-`#compute`-ing
   `Entry::Lemma`); the old boundary-await `lemma_refs`/`await_computed_deps` was
   deleted. `#compute` binds NAME via `define_computing` → `insert_pending`; a
-  later `(lemma NAME)` or the force just awaits it. The remaining half of **"all
+  later reference (or the force) just awaits it. The remaining half of **"all
   env accesses async"** (user) is now just the *accessor*: `lookup_const`/
   `lookup_tactic`/`lookup_rule` are still SYNC `get_ready` peeks. Making
   `lookup_const` async makes the **elaborator (`infer.rs`) async** (recursive

@@ -1,7 +1,7 @@
 //! The **proof replayer** ([`check`]) and the **derivation registry**.
 //!
 //! A `#proof` body is untrusted *data*: a transcript of which kernel rules to
-//! apply, e.g. `(trans (refl a) (sym (lemma foo)))`. It carries no soundness of
+//! apply, e.g. `(trans (refl a) (sym (foo)))`. It carries no soundness of
 //! its own — [`check`] replays it by dispatching each head through the **rule
 //! registry** ([`Env`]'s `rules`) and the matched [`Rule`] calls the real
 //! `covalence-core` rules, each of which re-validates. A corrupt or hostile
@@ -126,9 +126,10 @@ pub fn check<'a>(s: &'a SExpr, ctx: &'a mut CheckCtx<'_>) -> BoxFuture<'a, R<Thm
         if let Some(op) = ctx.env().lookup_rule(head) {
             return op.rule(&ch[1..], ctx).await;
         }
-        // Not a rule — fall through to a bare LEMMA name, instantiated at the
-        // explicit term witnesses (`(NAME w…)` = `(all-elim w (lemma NAME))`),
-        // so the `lemma` keyword is no longer required.
+        // Not a rule — it is a LEMMA name, instantiated at the explicit term
+        // witnesses: `(NAME)` is the lemma's full statement and `(NAME w…)`
+        // `all-elim`s it at `w…`. (This replaced the old `lemma` keyword;
+        // `apply` is the smarter, unifying form — see tactic.rs.)
         let lemma = ctx.env().lookup_lemma(head).await.ok_or_else(|| {
             ScriptError::Unbound(format!("unknown proof rule or lemma `{head}`"))
         })??;
@@ -259,22 +260,6 @@ impl Tactic for PropEqRule {
         let p = c.term(&a[0])?;
         let q = c.term(&a[1])?;
         Ok(crate::init::logic::prop_eq(&p, &q)?)
-    }
-}
-
-/// `(lemma NAME)` — reference a lemma proven earlier in the file. Looked up in
-/// [`Env`]'s lemma table and re-checked in-session (never trusted from disk);
-/// **awaits** if the lemma is still `#compute`-ing.
-struct LemmaRule;
-#[async_trait]
-impl Tactic for LemmaRule {
-    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
-        ctx_arity(a, 1, "lemma")?;
-        let name = c.name(&a[0])?;
-        c.env()
-            .lookup_lemma(&name)
-            .await
-            .ok_or_else(|| ScriptError::Unbound(format!("lemma `{name}`")))?
     }
 }
 
@@ -433,7 +418,6 @@ pub fn core_rules() -> Vec<(&'static str, Arc<dyn Tactic>)> {
         // leaves
         ("assume", Arc::new(AssumeRule)),
         ("lem", Arc::new(LemRule)),
-        ("lemma", Arc::new(LemmaRule)),
         ("reduce-prim", Arc::new(ReducePrimRule)),
         ("unfold-term-spec", Arc::new(UnfoldTermSpecRule)),
         ("unfold-at-1", Arc::new(UnfoldAt1Rule)),

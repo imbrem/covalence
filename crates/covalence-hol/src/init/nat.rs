@@ -2998,7 +2998,7 @@ mod cov_tests {
             (#thm comm.echo
               (#fix (a nat) (b nat))
               (#concl (= (nat.add a b) (nat.add b a)))
-              (#proof (all-elim b (all-elim a (lemma nat.add_comm)))))
+              (#proof (all-elim b (all-elim a (nat.add_comm)))))
             "#,
             |name| match name {
                 "core" => Some(Env::core()),

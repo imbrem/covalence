@@ -36,28 +36,28 @@
   (#concl (= (set.union s t) (set.union t s)))
   (#by (derive
     (imp-elim
-      (all-elim (set.union t s) (all-elim (set.union s t) (lemma ext)))
+      (all-elim (set.union t s) (all-elim (set.union s t) (ext)))
       (all-intro x 'a
         (trans
-          (all-elim t (all-elim s (all-elim x (lemma mem_union))))
+          (all-elim t (all-elim s (all-elim x (mem_union))))
           (trans
             (prop-eq (or (set.mem x s) (set.mem x t))
                      (or (set.mem x t) (set.mem x s)))
-            (sym (all-elim s (all-elim t (all-elim x (lemma mem_union))))))))))))
+            (sym (all-elim s (all-elim t (all-elim x (mem_union))))))))))))
 
 ;; ⊢ s ∩ t = t ∩ s.
 (#thm inter_comm
   (#concl (= (set.intersect s t) (set.intersect t s)))
   (#by (derive
     (imp-elim
-      (all-elim (set.intersect t s) (all-elim (set.intersect s t) (lemma ext)))
+      (all-elim (set.intersect t s) (all-elim (set.intersect s t) (ext)))
       (all-intro x 'a
         (trans
-          (all-elim t (all-elim s (all-elim x (lemma mem_intersect))))
+          (all-elim t (all-elim s (all-elim x (mem_intersect))))
           (trans
             (prop-eq (and (set.mem x s) (set.mem x t))
                      (and (set.mem x t) (set.mem x s)))
-            (sym (all-elim s (all-elim t (all-elim x (lemma mem_intersect))))))))))))
+            (sym (all-elim s (all-elim t (all-elim x (mem_intersect))))))))))))
 
 ;; ⊢ (s ∪ t) ∪ u = s ∪ (t ∪ u).
 (#thm union_assoc
@@ -65,18 +65,18 @@
   (#by (derive
     (imp-elim
       (all-elim (set.union s (set.union t u))
-        (all-elim (set.union (set.union s t) u) (lemma ext)))
+        (all-elim (set.union (set.union s t) u) (ext)))
       (all-intro x 'a
         (trans
-          (rw (all-elim t (all-elim s (all-elim x (lemma mem_union))))
-              (all-elim u (all-elim (set.union s t) (all-elim x (lemma mem_union)))))
+          (rw (all-elim t (all-elim s (all-elim x (mem_union))))
+              (all-elim u (all-elim (set.union s t) (all-elim x (mem_union)))))
           (trans
             (prop-eq (or (or (set.mem x s) (set.mem x t)) (set.mem x u))
                      (or (set.mem x s) (or (set.mem x t) (set.mem x u))))
             (sym
-              (rw (all-elim u (all-elim t (all-elim x (lemma mem_union))))
+              (rw (all-elim u (all-elim t (all-elim x (mem_union))))
                   (all-elim (set.union t u)
-                    (all-elim s (all-elim x (lemma mem_union)))))))))))))
+                    (all-elim s (all-elim x (mem_union)))))))))))))
 
 ;; ⊢ (s ∩ t) ∩ u = s ∩ (t ∩ u).
 (#thm inter_assoc
@@ -85,29 +85,29 @@
   (#by (derive
     (imp-elim
       (all-elim (set.intersect s (set.intersect t u))
-        (all-elim (set.intersect (set.intersect s t) u) (lemma ext)))
+        (all-elim (set.intersect (set.intersect s t) u) (ext)))
       (all-intro x 'a
         (trans
-          (rw (all-elim t (all-elim s (all-elim x (lemma mem_intersect))))
+          (rw (all-elim t (all-elim s (all-elim x (mem_intersect))))
               (all-elim u
-                (all-elim (set.intersect s t) (all-elim x (lemma mem_intersect)))))
+                (all-elim (set.intersect s t) (all-elim x (mem_intersect)))))
           (trans
             (prop-eq (and (and (set.mem x s) (set.mem x t)) (set.mem x u))
                      (and (set.mem x s) (and (set.mem x t) (set.mem x u))))
             (sym
-              (rw (all-elim u (all-elim t (all-elim x (lemma mem_intersect))))
+              (rw (all-elim u (all-elim t (all-elim x (mem_intersect))))
                   (all-elim (set.intersect t u)
-                    (all-elim s (all-elim x (lemma mem_intersect)))))))))))))
+                    (all-elim s (all-elim x (mem_intersect)))))))))))))
 
 ;; ⊢ s ∪ s = s.
 (#thm union_idem
   (#concl (= (set.union s s) s))
   (#by (derive
     (imp-elim
-      (all-elim s (all-elim (set.union s s) (lemma ext)))
+      (all-elim s (all-elim (set.union s s) (ext)))
       (all-intro x 'a
         (trans
-          (all-elim s (all-elim s (all-elim x (lemma mem_union))))
+          (all-elim s (all-elim s (all-elim x (mem_union))))
           (prop-eq (or (set.mem x s) (set.mem x s)) (set.mem x s))))))))
 
 ;; ⊢ s ∩ s = s.
@@ -115,10 +115,10 @@
   (#concl (= (set.intersect s s) s))
   (#by (derive
     (imp-elim
-      (all-elim s (all-elim (set.intersect s s) (lemma ext)))
+      (all-elim s (all-elim (set.intersect s s) (ext)))
       (all-intro x 'a
         (trans
-          (all-elim s (all-elim s (all-elim x (lemma mem_intersect))))
+          (all-elim s (all-elim s (all-elim x (mem_intersect))))
           (prop-eq (and (set.mem x s) (set.mem x s)) (set.mem x s))))))))
 
 ;; ⊢ s ∪ ∅ = s.
@@ -126,11 +126,11 @@
   (#concl (= (set.union s set.empty) s))
   (#by (derive
     (imp-elim
-      (all-elim s (all-elim (set.union s set.empty) (lemma ext)))
+      (all-elim s (all-elim (set.union s set.empty) (ext)))
       (all-intro x 'a
         (trans
-          (rw (all-elim x (lemma mem_empty))
-              (all-elim set.empty (all-elim s (all-elim x (lemma mem_union)))))
+          (rw (all-elim x (mem_empty))
+              (all-elim set.empty (all-elim s (all-elim x (mem_union)))))
           (prop-eq (or (set.mem x s) false) (set.mem x s))))))))
 
 ;; ⊢ s ∩ ∅ = ∅.
@@ -138,14 +138,14 @@
   (#concl (= (set.intersect s set.empty) set.empty))
   (#by (derive
     (imp-elim
-      (all-elim set.empty (all-elim (set.intersect s set.empty) (lemma ext)))
+      (all-elim set.empty (all-elim (set.intersect s set.empty) (ext)))
       (all-intro x 'a
         (trans
-          (rw (all-elim x (lemma mem_empty))
-              (all-elim set.empty (all-elim s (all-elim x (lemma mem_intersect)))))
+          (rw (all-elim x (mem_empty))
+              (all-elim set.empty (all-elim s (all-elim x (mem_intersect)))))
           (trans
             (prop-eq (and (set.mem x s) false) false)
-            (sym (all-elim x (lemma mem_empty))))))))))
+            (sym (all-elim x (mem_empty))))))))))
 
 ;; ⊢ s ∩ (t ∪ u) = (s ∩ t) ∪ (s ∩ u).  Intersection distributes over union.
 (#thm inter_union_distrib
@@ -154,22 +154,22 @@
   (#by (derive
     (imp-elim
       (all-elim (set.union (set.intersect s t) (set.intersect s u))
-        (all-elim (set.intersect s (set.union t u)) (lemma ext)))
+        (all-elim (set.intersect s (set.union t u)) (ext)))
       (all-intro x 'a
         (trans
-          (rw (all-elim u (all-elim t (all-elim x (lemma mem_union))))
+          (rw (all-elim u (all-elim t (all-elim x (mem_union))))
               (all-elim (set.union t u)
-                (all-elim s (all-elim x (lemma mem_intersect)))))
+                (all-elim s (all-elim x (mem_intersect)))))
           (trans
             (prop-eq (and (set.mem x s) (or (set.mem x t) (set.mem x u)))
                      (or (and (set.mem x s) (set.mem x t))
                          (and (set.mem x s) (set.mem x u))))
             (sym
-              (rw (all-elim u (all-elim s (all-elim x (lemma mem_intersect))))
-                  (rw (all-elim t (all-elim s (all-elim x (lemma mem_intersect))))
+              (rw (all-elim u (all-elim s (all-elim x (mem_intersect))))
+                  (rw (all-elim t (all-elim s (all-elim x (mem_intersect))))
                       (all-elim (set.intersect s u)
                         (all-elim (set.intersect s t)
-                          (all-elim x (lemma mem_union))))))))))))))
+                          (all-elim x (mem_union))))))))))))))
 
 ;; ============================================================================
 ;; Subset — reflexive, transitive, antisymmetric; ∅ least; the ∪/∩ bounds.
@@ -181,7 +181,7 @@
   (#concl (set.subset s s))
   (#by (derive
     (eq-mp
-      (sym (all-elim s (all-elim s (lemma subset_unfold))))
+      (sym (all-elim s (all-elim s (subset_unfold))))
       (all-intro x 'a
         (imp-intro (set.mem x s) (assume (set.mem x s))))))))
 
@@ -192,16 +192,16 @@
     (imp-intro (set.subset s t)
       (imp-intro (set.subset t u)
         (eq-mp
-          (sym (all-elim u (all-elim s (lemma subset_unfold))))
+          (sym (all-elim u (all-elim s (subset_unfold))))
           (all-intro x 'a
             (imp-intro (set.mem x s)
               (imp-elim
                 (all-elim x
-                  (eq-mp (all-elim u (all-elim t (lemma subset_unfold)))
+                  (eq-mp (all-elim u (all-elim t (subset_unfold)))
                          (assume (set.subset t u))))
                 (imp-elim
                   (all-elim x
-                    (eq-mp (all-elim t (all-elim s (lemma subset_unfold)))
+                    (eq-mp (all-elim t (all-elim s (subset_unfold)))
                            (assume (set.subset s t))))
                   (assume (set.mem x s))))))))))))
 
@@ -213,17 +213,17 @@
     (imp-intro (set.subset s t)
       (imp-intro (set.subset t s)
         (imp-elim
-          (all-elim t (all-elim s (lemma ext)))
+          (all-elim t (all-elim s (ext)))
           (all-intro x 'a
             (deduct-antisym
               (imp-elim
                 (all-elim x
-                  (eq-mp (all-elim s (all-elim t (lemma subset_unfold)))
+                  (eq-mp (all-elim s (all-elim t (subset_unfold)))
                          (assume (set.subset t s))))
                 (assume (set.mem x t)))
               (imp-elim
                 (all-elim x
-                  (eq-mp (all-elim t (all-elim s (lemma subset_unfold)))
+                  (eq-mp (all-elim t (all-elim s (subset_unfold)))
                          (assume (set.subset s t))))
                 (assume (set.mem x s)))))))))))
 
@@ -232,11 +232,11 @@
   (#concl (set.subset set.empty s))
   (#by (derive
     (eq-mp
-      (sym (all-elim s (all-elim set.empty (lemma subset_unfold))))
+      (sym (all-elim s (all-elim set.empty (subset_unfold))))
       (all-intro x 'a
         (imp-intro (set.mem x set.empty)
           (false-elim (set.mem x s)
-            (eq-mp (all-elim x (lemma mem_empty))
+            (eq-mp (all-elim x (mem_empty))
                    (assume (set.mem x set.empty))))))))))
 
 ;; ⊢ s ⊆ s ∪ t.
@@ -244,11 +244,11 @@
   (#concl (set.subset s (set.union s t)))
   (#by (derive
     (eq-mp
-      (sym (all-elim (set.union s t) (all-elim s (lemma subset_unfold))))
+      (sym (all-elim (set.union s t) (all-elim s (subset_unfold))))
       (all-intro x 'a
         (imp-intro (set.mem x s)
           (eq-mp
-            (sym (all-elim t (all-elim s (all-elim x (lemma mem_union)))))
+            (sym (all-elim t (all-elim s (all-elim x (mem_union)))))
             (or-intro-l (set.mem x t) (assume (set.mem x s))))))))))
 
 ;; ⊢ s ∩ t ⊆ s.
@@ -256,11 +256,11 @@
   (#concl (set.subset (set.intersect s t) s))
   (#by (derive
     (eq-mp
-      (sym (all-elim s (all-elim (set.intersect s t) (lemma subset_unfold))))
+      (sym (all-elim s (all-elim (set.intersect s t) (subset_unfold))))
       (all-intro x 'a
         (imp-intro (set.mem x (set.intersect s t))
           (and-elim-l
-            (eq-mp (all-elim t (all-elim s (all-elim x (lemma mem_intersect))))
+            (eq-mp (all-elim t (all-elim s (all-elim x (mem_intersect))))
                    (assume (set.mem x (set.intersect s t)))))))))))
 
 (#export union_comm inter_comm union_assoc inter_assoc union_idem inter_idem

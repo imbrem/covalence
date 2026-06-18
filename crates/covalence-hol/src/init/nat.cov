@@ -23,7 +23,7 @@
   (#by
     (intro n)
     (sym)
-    (derive (all-elim n (lemma zero_ne_succ)))))
+    (derive (all-elim n (zero_ne_succ)))))
 
 ;; ⊢ ∀m n. ¬(m = n) ⟹ ¬(S m = S n).  `contrapositive` strips the negations,
 ;; leaving (S m = S n) ⟹ (m = n) — exactly `succ_inj`.
@@ -35,7 +35,7 @@
   (#by
     (intro m n)
     (contrapositive)
-    (derive (all-elim n (all-elim m (lemma succ_inj))))))
+    (derive (all-elim n (all-elim m (succ_inj))))))
 
 ;; ⊢ ∀z f. natRec z f 0 = z.  Project the base equation out of `rec_holds`.
 (#thm rec_zero
@@ -45,7 +45,7 @@
         (= (app (app (app (natrec-op nat) z) f) 0) z))))
   (#by
     (intro z f)
-    (derive (and-elim-l (all-elim f (all-elim z (lemma rec_holds)))))))
+    (derive (and-elim-l (all-elim f (all-elim z (rec_holds)))))))
 
 ;; ⊢ ∀z f n. natRec z f (S n) = f n (natRec z f n).  The step equation.
 (#thm rec_succ
@@ -57,7 +57,7 @@
              (app (app f n) (app (app (app (natrec-op nat) z) f) n)))))))
   (#by
     (intro z f n)
-    (derive (all-elim n (and-elim-r (all-elim f (all-elim z (lemma rec_holds))))))))
+    (derive (all-elim n (and-elim-r (all-elim f (all-elim z (rec_holds))))))))
 
 ;; ⊢ ∀n. n = n, by induction — a minimal use of the `induct` tactic (base
 ;; and step both close by `refl`; the IH is unused here).
@@ -75,9 +75,9 @@
   (#concl (forall (a nat) (= (nat.add a 0) a)))
   (#by
     (induct a
-      (#by (rw (all-elim 0 (lemma zero_add))) (refl))
+      (#by (rw (all-elim 0 (zero_add))) (refl))
       (#by
-        (rw (all-elim 0 (all-elim a (lemma succ_add))))
+        (rw (all-elim 0 (all-elim a (succ_add))))
         (rw (assume (= (nat.add a 0) a)))
         (refl)))))
 
@@ -91,16 +91,16 @@
     (induct a
       (#by
         (intro b)
-        (rw (all-elim (succ b) (lemma zero_add)))
-        (rw (all-elim b (lemma zero_add)))
+        (rw (all-elim (succ b) (zero_add)))
+        (rw (all-elim b (zero_add)))
         (refl))
       (#by
         (intro b)
-        (rw (all-elim (succ b) (all-elim a (lemma succ_add))))
+        (rw (all-elim (succ b) (all-elim a (succ_add))))
         (rw (all-elim b
               (assume (forall (b nat)
                         (= (nat.add a (succ b)) (succ (nat.add a b)))))))
-        (rw (all-elim b (all-elim a (lemma succ_add))))
+        (rw (all-elim b (all-elim a (succ_add))))
         (refl)))))
 
 ;; ⊢ ∀a b. a + b = b + a.  Commutativity, by induction on a, using
@@ -111,16 +111,16 @@
     (induct a
       (#by
         (intro b)
-        (rw (all-elim b (lemma zero_add)))
+        (rw (all-elim b (zero_add)))
         (sym)
-        (rw (all-elim b (lemma add_zero)))
+        (rw (all-elim b (add_zero)))
         (refl))
       (#by
         (intro b)
-        (rw (all-elim b (all-elim a (lemma succ_add))))
+        (rw (all-elim b (all-elim a (succ_add))))
         (rw (all-elim b (assume (forall (b nat) (= (nat.add a b) (nat.add b a))))))
         (sym)
-        (rw (all-elim a (all-elim b (lemma add_succ))))
+        (rw (all-elim a (all-elim b (add_succ))))
         (refl)))))
 
 ;; ⊢ ∀a b c. (a + b) + c = a + (b + c).  Associativity, induction on a.
@@ -132,17 +132,17 @@
     (induct a
       (#by
         (intro b c)
-        (rw (all-elim b (lemma zero_add)))
-        (rw (all-elim (nat.add b c) (lemma zero_add)))
+        (rw (all-elim b (zero_add)))
+        (rw (all-elim (nat.add b c) (zero_add)))
         (refl))
       (#by
         (intro b c)
-        (rw (all-elim b (all-elim a (lemma succ_add))))
-        (rw (all-elim c (all-elim (nat.add a b) (lemma succ_add))))
+        (rw (all-elim b (all-elim a (succ_add))))
+        (rw (all-elim c (all-elim (nat.add a b) (succ_add))))
         (rw (all-elim c (all-elim b
               (assume (forall (b nat) (forall (c nat)
                 (= (nat.add (nat.add a b) c) (nat.add a (nat.add b c)))))))))
-        (rw (all-elim (nat.add b c) (all-elim a (lemma succ_add))))
+        (rw (all-elim (nat.add b c) (all-elim a (succ_add))))
         (refl)))))
 
 ;; ============================================================================
@@ -155,10 +155,10 @@
   (#concl (forall (a nat) (= (nat.mul a 0) 0)))
   (#by
     (induct a
-      (#by (rw (all-elim 0 (lemma zero_mul))) (refl))
+      (#by (rw (all-elim 0 (zero_mul))) (refl))
       (#by
-        (rw (all-elim 0 (all-elim a (lemma succ_mul))))
-        (rw (all-elim (nat.mul a 0) (lemma zero_add)))
+        (rw (all-elim 0 (all-elim a (succ_mul))))
+        (rw (all-elim (nat.mul a 0) (zero_add)))
         (rw (assume (= (nat.mul a 0) 0)))
         (refl)))))
 
@@ -171,22 +171,22 @@
     (induct a
       (#by
         (intro b)
-        (rw (all-elim (succ b) (lemma zero_mul)))
-        (rw (all-elim b (lemma zero_mul)))
-        (rw (all-elim 0 (lemma zero_add)))
+        (rw (all-elim (succ b) (zero_mul)))
+        (rw (all-elim b (zero_mul)))
+        (rw (all-elim 0 (zero_add)))
         (refl))
       (#by
         (intro b)
-        (rw (all-elim (succ b) (all-elim a (lemma succ_mul))))
+        (rw (all-elim (succ b) (all-elim a (succ_mul))))
         (rw (all-elim b
               (assume (forall (b nat)
                 (= (nat.mul a (succ b)) (nat.add a (nat.mul a b)))))))
-        (rw (all-elim (nat.add a (nat.mul a b)) (all-elim b (lemma succ_add))))
-        (rw (all-elim b (all-elim a (lemma succ_mul))))
-        (rw (all-elim (nat.add b (nat.mul a b)) (all-elim a (lemma succ_add))))
-        (rw (sym (all-elim (nat.mul a b) (all-elim a (all-elim b (lemma add_assoc))))))
-        (rw (all-elim a (all-elim b (lemma add_comm))))
-        (rw (all-elim (nat.mul a b) (all-elim b (all-elim a (lemma add_assoc)))))
+        (rw (all-elim (nat.add a (nat.mul a b)) (all-elim b (succ_add))))
+        (rw (all-elim b (all-elim a (succ_mul))))
+        (rw (all-elim (nat.add b (nat.mul a b)) (all-elim a (succ_add))))
+        (rw (sym (all-elim (nat.mul a b) (all-elim a (all-elim b (add_assoc))))))
+        (rw (all-elim a (all-elim b (add_comm))))
+        (rw (all-elim (nat.mul a b) (all-elim b (all-elim a (add_assoc)))))
         (refl)))))
 
 ;; ⊢ ∀a b. a * b = b * a.  Commutativity, induction on a.
@@ -196,13 +196,13 @@
     (induct a
       (#by
         (intro b)
-        (rw (all-elim b (lemma zero_mul)))
-        (rw (all-elim b (lemma mul_zero)))
+        (rw (all-elim b (zero_mul)))
+        (rw (all-elim b (mul_zero)))
         (refl))
       (#by
         (intro b)
-        (rw (all-elim b (all-elim a (lemma succ_mul))))
-        (rw (all-elim a (all-elim b (lemma mul_succ))))
+        (rw (all-elim b (all-elim a (succ_mul))))
+        (rw (all-elim a (all-elim b (mul_succ))))
         (rw (all-elim b (assume (forall (b nat) (= (nat.mul a b) (nat.mul b a))))))
         (refl)))))
 
@@ -212,9 +212,9 @@
   (#by
     (intro a)
     (rw (sym (reduce-prim (succ 0))))
-    (rw (all-elim 0 (all-elim a (lemma mul_succ))))
-    (rw (all-elim a (lemma mul_zero)))
-    (rw (all-elim a (lemma add_zero)))
+    (rw (all-elim 0 (all-elim a (mul_succ))))
+    (rw (all-elim a (mul_zero)))
+    (rw (all-elim a (add_zero)))
     (refl)))
 
 ;; ⊢ ∀a b c. (a + c = b + c) ⟹ (a = b).  Right cancellation, induction on c.
@@ -229,9 +229,9 @@
       (#by
         (intro h)
         (derive
-          (trans (sym (all-elim a (lemma add_zero)))
+          (trans (sym (all-elim a (add_zero)))
             (trans (assume (= (nat.add a 0) (nat.add b 0)))
-                   (all-elim b (lemma add_zero))))))
+                   (all-elim b (add_zero))))))
       ;; step: ih (a+c=b+c ⟹ a=b) ⊢ (a+Sc=b+Sc) ⟹ a=b
       (#by
         (intro h)
@@ -239,10 +239,10 @@
           (imp-elim
             (assume (==> (= (nat.add a c) (nat.add b c)) (= a b)))
             (imp-elim
-              (all-elim (nat.add b c) (all-elim (nat.add a c) (lemma succ_inj)))
-              (trans (sym (all-elim c (all-elim a (lemma add_succ))))
+              (all-elim (nat.add b c) (all-elim (nat.add a c) (succ_inj)))
+              (trans (sym (all-elim c (all-elim a (add_succ))))
                 (trans (assume (= (nat.add a (succ c)) (nat.add b (succ c))))
-                       (all-elim c (all-elim b (lemma add_succ))))))))))))
+                       (all-elim c (all-elim b (add_succ))))))))))))
 
 ;; ⊢ ∀w x y z. (w + x) + (y + z) = (w + y) + (x + z).  The "middle-four
 ;; interchange" — pure associativity/commutativity, no induction. Used to
@@ -254,11 +254,11 @@
          (nat.add (nat.add w y) (nat.add x z))))))))
   (#by
     (intro w x y z)
-    (rw (all-elim (nat.add y z) (all-elim x (all-elim w (lemma add_assoc)))))
-    (rw (sym (all-elim z (all-elim y (all-elim x (lemma add_assoc))))))
-    (rw (all-elim y (all-elim x (lemma add_comm))))
-    (rw (all-elim z (all-elim x (all-elim y (lemma add_assoc)))))
-    (rw (sym (all-elim (nat.add x z) (all-elim y (all-elim w (lemma add_assoc))))))
+    (rw (all-elim (nat.add y z) (all-elim x (all-elim w (add_assoc)))))
+    (rw (sym (all-elim z (all-elim y (all-elim x (add_assoc))))))
+    (rw (all-elim y (all-elim x (add_comm))))
+    (rw (all-elim z (all-elim x (all-elim y (add_assoc)))))
+    (rw (sym (all-elim (nat.add x z) (all-elim y (all-elim w (add_assoc))))))
     (refl)))
 
 ;; ⊢ ∀a b c. a * (b + c) = a * b + a * c.  Left distributivity, induction on a.
@@ -270,21 +270,21 @@
     (induct a
       (#by
         (intro b c)
-        (rw (all-elim (nat.add b c) (lemma zero_mul)))
-        (rw (all-elim b (lemma zero_mul)))
-        (rw (all-elim c (lemma zero_mul)))
-        (rw (all-elim 0 (lemma zero_add)))
+        (rw (all-elim (nat.add b c) (zero_mul)))
+        (rw (all-elim b (zero_mul)))
+        (rw (all-elim c (zero_mul)))
+        (rw (all-elim 0 (zero_add)))
         (refl))
       (#by
         (intro b c)
-        (rw (all-elim (nat.add b c) (all-elim a (lemma succ_mul))))
+        (rw (all-elim (nat.add b c) (all-elim a (succ_mul))))
         (rw (all-elim c (all-elim b
               (assume (forall (b nat) (forall (c nat)
                 (= (nat.mul a (nat.add b c)) (nat.add (nat.mul a b) (nat.mul a c)))))))))
-        (rw (all-elim b (all-elim a (lemma succ_mul))))
-        (rw (all-elim c (all-elim a (lemma succ_mul))))
+        (rw (all-elim b (all-elim a (succ_mul))))
+        (rw (all-elim c (all-elim a (succ_mul))))
         (rw (all-elim (nat.mul a c) (all-elim (nat.mul a b)
-              (all-elim c (all-elim b (lemma add_swap_mid))))))
+              (all-elim c (all-elim b (add_swap_mid))))))
         (refl)))))
 
 ;; ⊢ ∀a b c. (a + b) * c = a * c + b * c.  Right distributivity — from
@@ -295,10 +295,10 @@
       (= (nat.mul (nat.add a b) c) (nat.add (nat.mul a c) (nat.mul b c)))))))
   (#by
     (intro a b c)
-    (rw (all-elim c (all-elim (nat.add a b) (lemma mul_comm))))
-    (rw (all-elim b (all-elim a (all-elim c (lemma distrib)))))
-    (rw (all-elim a (all-elim c (lemma mul_comm))))
-    (rw (all-elim b (all-elim c (lemma mul_comm))))
+    (rw (all-elim c (all-elim (nat.add a b) (mul_comm))))
+    (rw (all-elim b (all-elim a (all-elim c (distrib)))))
+    (rw (all-elim a (all-elim c (mul_comm))))
+    (rw (all-elim b (all-elim c (mul_comm))))
     (refl)))
 
 ;; ⊢ ∀a b c. (a * b) * c = a * (b * c).  Associativity, induction on a.
@@ -310,18 +310,18 @@
     (induct a
       (#by
         (intro b c)
-        (rw (all-elim b (lemma zero_mul)))
-        (rw (all-elim c (lemma zero_mul)))
-        (rw (all-elim (nat.mul b c) (lemma zero_mul)))
+        (rw (all-elim b (zero_mul)))
+        (rw (all-elim c (zero_mul)))
+        (rw (all-elim (nat.mul b c) (zero_mul)))
         (refl))
       (#by
         (intro b c)
-        (rw (all-elim b (all-elim a (lemma succ_mul))))
-        (rw (all-elim c (all-elim (nat.mul a b) (all-elim b (lemma distrib_r)))))
+        (rw (all-elim b (all-elim a (succ_mul))))
+        (rw (all-elim c (all-elim (nat.mul a b) (all-elim b (distrib_r)))))
         (rw (all-elim c (all-elim b
               (assume (forall (b nat) (forall (c nat)
                 (= (nat.mul (nat.mul a b) c) (nat.mul a (nat.mul b c)))))))))
-        (rw (all-elim (nat.mul b c) (all-elim a (lemma succ_mul))))
+        (rw (all-elim (nat.mul b c) (all-elim a (succ_mul))))
         (refl)))))
 
 ;; ============================================================================
@@ -334,11 +334,11 @@
   (#concl (forall (m nat) (= (nat.sub 0 m) 0)))
   (#by
     (induct m
-      (#by (rw (all-elim 0 (lemma sub_zero))) (refl))
+      (#by (rw (all-elim 0 (sub_zero))) (refl))
       (#by
-        (rw (all-elim m (all-elim 0 (lemma sub_succ))))
+        (rw (all-elim m (all-elim 0 (sub_succ))))
         (rw (assume (= (nat.sub 0 m) 0)))
-        (rw (lemma pred_zero))
+        (rw (pred_zero))
         (refl)))))
 
 ;; ⊢ ∀n m. S n - S m = n - m.  Successors cancel across subtraction.
@@ -350,16 +350,16 @@
     (intro n)
     (induct m
       (#by
-        (rw (all-elim 0 (all-elim (succ n) (lemma sub_succ))))
-        (rw (all-elim (succ n) (lemma sub_zero)))
-        (rw (all-elim n (lemma pred_succ)))
+        (rw (all-elim 0 (all-elim (succ n) (sub_succ))))
+        (rw (all-elim (succ n) (sub_zero)))
+        (rw (all-elim n (pred_succ)))
         (sym)
-        (rw (all-elim n (lemma sub_zero)))
+        (rw (all-elim n (sub_zero)))
         (refl))
       (#by
-        (rw (all-elim (succ m) (all-elim (succ n) (lemma sub_succ))))
+        (rw (all-elim (succ m) (all-elim (succ n) (sub_succ))))
         (rw (assume (= (nat.sub (succ n) (succ m)) (nat.sub n m))))
-        (rw (all-elim m (all-elim n (lemma sub_succ))))
+        (rw (all-elim m (all-elim n (sub_succ))))
         (refl)))))
 
 ;; ============================================================================
@@ -375,7 +375,7 @@
   (#by
     (intro n m)
     (derive (all-elim m (all-elim n
-              (and-elim-r (and-elim-r (and-elim-r (lemma le_body)))))))))
+              (and-elim-r (and-elim-r (and-elim-r (le_body)))))))))
 
 ;; ⊢ ∀n m. (S n < S m) = (n < m).
 (#thm lt_succ_succ
@@ -384,7 +384,7 @@
   (#by
     (intro n m)
     (derive (all-elim m (all-elim n
-              (and-elim-r (and-elim-r (and-elim-r (lemma lt_body)))))))))
+              (and-elim-r (and-elim-r (and-elim-r (lt_body)))))))))
 
 ;; ⊢ ∀m. 0 ≤ m.  Induction on m; both cases from `le_body` (= T), via
 ;; `truth` to strip the `= T`.
@@ -392,26 +392,26 @@
   (#concl (forall (m nat) (nat.le 0 m)))
   (#by
     (induct m
-      (#by (derive (eq-mp (sym (and-elim-l (lemma le_body))) (lemma truth))))
-      (#by (derive (eq-mp (sym (all-elim m (and-elim-l (and-elim-r (lemma le_body)))))
-                         (lemma truth)))))))
+      (#by (derive (eq-mp (sym (and-elim-l (le_body))) (truth))))
+      (#by (derive (eq-mp (sym (all-elim m (and-elim-l (and-elim-r (le_body)))))
+                         (truth)))))))
 
 ;; ⊢ ∀m. 0 < S m.  Every successor is positive (2nd `<` clause).
 (#thm zero_lt_succ
   (#concl (forall (m nat) (nat.lt 0 (succ m))))
   (#by
     (intro m)
-    (derive (eq-mp (sym (all-elim m (and-elim-l (and-elim-r (lemma lt_body)))))
-                  (lemma truth)))))
+    (derive (eq-mp (sym (all-elim m (and-elim-l (and-elim-r (lt_body)))))
+                  (truth)))))
 
 ;; ⊢ ∀n. n ≤ n.  Reflexivity, induction (step rewrites with `le_succ_succ`).
 (#thm le_refl
   (#concl (forall (n nat) (nat.le n n)))
   (#by
     (induct n
-      (#by (derive (eq-mp (sym (and-elim-l (lemma le_body))) (lemma truth))))
+      (#by (derive (eq-mp (sym (and-elim-l (le_body))) (truth))))
       (#by
-        (rw (all-elim n (all-elim n (lemma le_succ_succ))))
+        (rw (all-elim n (all-elim n (le_succ_succ))))
         (assumption)))))
 
 ;; ⊢ ∀n. ¬(S n ≤ 0).  Nothing positive is ≤ 0 (3rd `≤` clause, = F).
@@ -421,7 +421,7 @@
     (intro n)
     (not-intro)
     (intro h)
-    (derive (eq-mp (all-elim n (and-elim-l (and-elim-r (and-elim-r (lemma le_body)))))
+    (derive (eq-mp (all-elim n (and-elim-l (and-elim-r (and-elim-r (le_body)))))
                   (assume (nat.le (succ n) 0))))))
 
 ;; ⊢ ∀n. ¬(n < 0).  Nothing is < 0 (induction: 0 from clause 1, S n from 3).
@@ -431,10 +431,10 @@
     (induct n
       (#by
         (not-intro) (intro h)
-        (derive (eq-mp (and-elim-l (lemma lt_body)) (assume (nat.lt 0 0)))))
+        (derive (eq-mp (and-elim-l (lt_body)) (assume (nat.lt 0 0)))))
       (#by
         (not-intro) (intro h)
-        (derive (eq-mp (all-elim n (and-elim-l (and-elim-r (and-elim-r (lemma lt_body)))))
+        (derive (eq-mp (all-elim n (and-elim-l (and-elim-r (and-elim-r (lt_body)))))
                       (assume (nat.lt (succ n) 0))))))))
 
 ;; ⊢ ∀n. ¬(n < n).  Irreflexivity of `<`, induction (step via `lt_succ_succ`).
@@ -444,9 +444,9 @@
     (induct n
       (#by
         (not-intro) (intro h)
-        (derive (eq-mp (and-elim-l (lemma lt_body)) (assume (nat.lt 0 0)))))
+        (derive (eq-mp (and-elim-l (lt_body)) (assume (nat.lt 0 0)))))
       (#by
-        (rw (all-elim n (all-elim n (lemma lt_succ_succ))))
+        (rw (all-elim n (all-elim n (lt_succ_succ))))
         (assumption)))))
 
 ;; ⊢ ∀n. n ≤ S n.  Every nat is ≤ its successor.  Induction: base `0 ≤ S 0`
@@ -456,9 +456,9 @@
   (#concl (forall (n nat) (nat.le n (succ n))))
   (#by
     (induct n
-      (#by (derive (all-elim (succ 0) (lemma le_zero))))
+      (#by (derive (all-elim (succ 0) (le_zero))))
       (#by
-        (rw (all-elim (succ n) (all-elim n (lemma le_succ_succ))))
+        (rw (all-elim (succ n) (all-elim n (le_succ_succ))))
         (assumption)))))
 
 ;; ⊢ ∀a b. (a ≤ b) ∨ (b ≤ a).  Totality of `≤`.  Double induction: outer on a,
@@ -472,14 +472,14 @@
       ;; base a=0: ∀b. (0 ≤ b) ∨ (b ≤ 0) — left disjunct via le_zero.
       (#by
         (intro b)
-        (derive (or-intro-l (nat.le b 0) (all-elim b (lemma le_zero)))))
+        (derive (or-intro-l (nat.le b 0) (all-elim b (le_zero)))))
       ;; step: ih ∀b.(a≤b)∨(b≤a) ⊢ ∀b. (S a ≤ b) ∨ (b ≤ S a).
       (#by
         (induct b
           ;; inner base b=0: (S a ≤ 0) ∨ (0 ≤ S a) — right disjunct.
           (#by
             (derive
-              (or-intro-r (nat.le (succ a) 0) (all-elim (succ a) (lemma le_zero)))))
+              (or-intro-r (nat.le (succ a) 0) (all-elim (succ a) (le_zero)))))
           ;; inner step: decide via the outer IH at b.
           (#by
             (derive
@@ -488,11 +488,11 @@
                   (assume (forall (b nat) (or (nat.le a b) (nat.le b a)))))
                 (imp-intro (nat.le a b)
                   (or-intro-l (nat.le (succ b) (succ a))
-                    (eq-mp (sym (all-elim b (all-elim a (lemma le_succ_succ))))
+                    (eq-mp (sym (all-elim b (all-elim a (le_succ_succ))))
                            (assume (nat.le a b)))))
                 (imp-intro (nat.le b a)
                   (or-intro-r (nat.le (succ a) (succ b))
-                    (eq-mp (sym (all-elim a (all-elim b (lemma le_succ_succ))))
+                    (eq-mp (sym (all-elim a (all-elim b (le_succ_succ))))
                            (assume (nat.le b a)))))))))))))
 
 ;; ⊢ ∀a b. (a < b) = (S a ≤ b).  The bridge between `<` and `≤` (strict is `≤`
@@ -509,16 +509,16 @@
           ;; b=0: both sides F.  (0<0)=F  trans  F=(S0≤0).
           (#by
             (derive
-              (trans (and-elim-l (lemma lt_body))
+              (trans (and-elim-l (lt_body))
                 (sym (all-elim 0
-                       (and-elim-l (and-elim-r (and-elim-r (lemma le_body)))))))))
+                       (and-elim-l (and-elim-r (and-elim-r (le_body)))))))))
           ;; b=S b': both sides T.  (0<Sb)=T  trans  T=(S0≤Sb).
           (#by
             (derive
-              (trans (all-elim b (and-elim-l (and-elim-r (lemma lt_body))))
+              (trans (all-elim b (and-elim-l (and-elim-r (lt_body))))
                 (sym
-                  (trans (all-elim b (all-elim 0 (lemma le_succ_succ)))
-                    (deduct-antisym (all-elim b (lemma le_zero)) (lemma truth)))))))))
+                  (trans (all-elim b (all-elim 0 (le_succ_succ)))
+                    (deduct-antisym (all-elim b (le_zero)) (truth)))))))))
       ;; step: ih ∀b.(a<b)=(Sa≤b) ⊢ ∀b. (S a < b) = (S(S a) ≤ b).
       (#by
         (induct b
@@ -526,17 +526,17 @@
           (#by
             (derive
               (trans (all-elim a
-                       (and-elim-l (and-elim-r (and-elim-r (lemma lt_body)))))
+                       (and-elim-l (and-elim-r (and-elim-r (lt_body)))))
                 (sym (all-elim (succ a)
-                       (and-elim-l (and-elim-r (and-elim-r (lemma le_body)))))))))
+                       (and-elim-l (and-elim-r (and-elim-r (le_body)))))))))
           ;; b=S b': cancel a successor on each side, then the outer IH at b.
           (#by
             (derive
-              (trans (all-elim b (all-elim a (lemma lt_succ_succ)))
+              (trans (all-elim b (all-elim a (lt_succ_succ)))
                 (trans
                   (all-elim b
                     (assume (forall (b nat) (= (nat.lt a b) (nat.le (succ a) b)))))
-                  (sym (all-elim b (all-elim (succ a) (lemma le_succ_succ)))))))))))))
+                  (sym (all-elim b (all-elim (succ a) (le_succ_succ)))))))))))))
 
 ;; ============================================================================
 ;; The additive theory of `≤` — `le_add_r`, `le_add_sub`, and transitivity.
@@ -549,11 +549,11 @@
   (#concl (forall (a nat) (forall (k nat) (nat.le a (nat.add a k)))))
   (#by
     (induct a
-      (#by (intro k) (derive (all-elim (nat.add 0 k) (lemma le_zero))))
+      (#by (intro k) (derive (all-elim (nat.add 0 k) (le_zero))))
       (#by
         (intro k)
-        (rw (all-elim k (all-elim a (lemma succ_add))))
-        (rw (all-elim (nat.add a k) (all-elim a (lemma le_succ_succ))))
+        (rw (all-elim k (all-elim a (succ_add))))
+        (rw (all-elim (nat.add a k) (all-elim a (le_succ_succ))))
         (derive (all-elim k (assume (forall (k nat) (nat.le a (nat.add a k))))))))))
 
 ;; ⊢ ∀b. (b ≤ 0) ⟹ (b = 0).  Zero is the least element strictly.  Induction:
@@ -568,7 +568,7 @@
         (intro h)
         (derive
           (false-elim (= (succ b) 0)
-            (not-elim (all-elim b (lemma not_succ_le_zero))
+            (not-elim (all-elim b (not_succ_le_zero))
                       (assume (nat.le (succ b) 0)))))))))
 
 ;; ⊢ ∀a b. (a ≤ b) ⟹ (b ≤ a) ⟹ (a = b).  Antisymmetry of `≤`, double
@@ -585,7 +585,7 @@
       (#by
         (intro b h1 h2)
         (sym)
-        (derive (imp-elim (all-elim b (lemma le_zero_iff)) (assume (nat.le b 0)))))
+        (derive (imp-elim (all-elim b (le_zero_iff)) (assume (nat.le b 0)))))
       ;; step: ih ∀b.(a≤b)⟹(b≤a)⟹(a=b) ⊢ ∀b. (Sa≤b)⟹(b≤Sa)⟹(Sa=b).
       (#by
         (induct b
@@ -594,7 +594,7 @@
             (intro h1)
             (derive
               (false-elim (==> (nat.le 0 (succ a)) (= (succ a) 0))
-                (not-elim (all-elim a (lemma not_succ_le_zero))
+                (not-elim (all-elim a (not_succ_le_zero))
                           (assume (nat.le (succ a) 0))))))
           ;; inner step b=S b': cancel successors, apply the outer IH at b.
           (#by
@@ -606,9 +606,9 @@
                     (all-elim b
                       (assume (forall (b nat)
                         (==> (nat.le a b) (==> (nat.le b a) (= a b))))))
-                    (eq-mp (all-elim b (all-elim a (lemma le_succ_succ)))
+                    (eq-mp (all-elim b (all-elim a (le_succ_succ)))
                            (assume (nat.le (succ a) (succ b)))))
-                  (eq-mp (all-elim a (all-elim b (lemma le_succ_succ)))
+                  (eq-mp (all-elim a (all-elim b (le_succ_succ)))
                          (assume (nat.le (succ b) (succ a)))))))))))))
 
 ;; ⊢ ∀a b. (a ≤ b) ⟹ a + (b - a) = b.  `≤` lets subtraction undo addition.
@@ -623,8 +623,8 @@
       ;; base a=0: ∀b. (0≤b) ⟹ 0+(b-0) = b.
       (#by
         (intro b h)
-        (derive (trans (all-elim (nat.sub b 0) (lemma zero_add))
-                       (all-elim b (lemma sub_zero)))))
+        (derive (trans (all-elim (nat.sub b 0) (zero_add))
+                       (all-elim b (sub_zero)))))
       ;; step: ih ∀b.(a≤b)⟹a+(b-a)=b ⊢ ∀b. (Sa≤b) ⟹ Sa+(b-Sa) = b.
       (#by
         (induct b
@@ -633,7 +633,7 @@
             (intro h1)
             (derive
               (false-elim (= (nat.add (succ a) (nat.sub 0 (succ a))) 0)
-                (not-elim (all-elim a (lemma not_succ_le_zero))
+                (not-elim (all-elim a (not_succ_le_zero))
                           (assume (nat.le (succ a) 0))))))
           ;; inner step b=S b': Sa+(Sb-Sa) = Sa+(b-a) = S(a+(b-a)) = S b.
           (#by
@@ -641,15 +641,15 @@
             (derive
               (trans
                 (cong-arg (nat.add (succ a))
-                  (all-elim a (all-elim b (lemma succ_sub))))
+                  (all-elim a (all-elim b (succ_sub))))
                 (trans
-                  (all-elim (nat.sub b a) (all-elim a (lemma succ_add)))
+                  (all-elim (nat.sub b a) (all-elim a (succ_add)))
                   (cong-arg succ
                     (imp-elim
                       (all-elim b
                         (assume (forall (b nat)
                           (==> (nat.le a b) (= (nat.add a (nat.sub b a)) b)))))
-                      (eq-mp (all-elim b (all-elim a (lemma le_succ_succ)))
+                      (eq-mp (all-elim b (all-elim a (le_succ_succ)))
                              (assume (nat.le (succ a) (succ b)))))))))))))))
 
 ;; ⊢ ∀a b c. (a ≤ b) ⟹ (b ≤ c) ⟹ (a ≤ c).  Transitivity (no induction).
@@ -666,16 +666,16 @@
           (mk-comb (refl nat.le) (refl a))
           (trans
             (sym (all-elim (nat.sub c b)
-                   (all-elim (nat.sub b a) (all-elim a (lemma add_assoc)))))
+                   (all-elim (nat.sub b a) (all-elim a (add_assoc)))))
             (trans
               (cong-fn (nat.sub c b)
                 (cong-arg nat.add
-                  (imp-elim (all-elim b (all-elim a (lemma le_add_sub)))
+                  (imp-elim (all-elim b (all-elim a (le_add_sub)))
                             (assume (nat.le a b)))))
-              (imp-elim (all-elim c (all-elim b (lemma le_add_sub)))
+              (imp-elim (all-elim c (all-elim b (le_add_sub)))
                         (assume (nat.le b c))))))
         (all-elim (nat.add (nat.sub b a) (nat.sub c b))
-                  (all-elim a (lemma le_add_r)))))))
+                  (all-elim a (le_add_r)))))))
 
 ;; ============================================================================
 ;; Strict order `<` — its own transitivity, the `≤`/`<` decomposition, and
@@ -691,9 +691,9 @@
     (derive
       (imp-elim
         (imp-elim
-          (all-elim b (all-elim (succ a) (all-elim a (lemma le_trans))))
-          (all-elim a (lemma le_succ_self)))
-        (eq-mp (all-elim b (all-elim a (lemma lt_iff_succ_le)))
+          (all-elim b (all-elim (succ a) (all-elim a (le_trans))))
+          (all-elim a (le_succ_self)))
+        (eq-mp (all-elim b (all-elim a (lt_iff_succ_le)))
                (assume (nat.lt a b)))))))
 
 ;; ⊢ ∀a b c. (a < b) ⟹ (b < c) ⟹ (a < c).  Transitivity of `<`: `S a ≤ b`
@@ -705,13 +705,13 @@
     (intro a b c h1 h2)
     (derive
       (eq-mp
-        (sym (all-elim c (all-elim a (lemma lt_iff_succ_le))))
+        (sym (all-elim c (all-elim a (lt_iff_succ_le))))
         (imp-elim
           (imp-elim
-            (all-elim c (all-elim b (all-elim (succ a) (lemma le_trans))))
-            (eq-mp (all-elim b (all-elim a (lemma lt_iff_succ_le)))
+            (all-elim c (all-elim b (all-elim (succ a) (le_trans))))
+            (eq-mp (all-elim b (all-elim a (lt_iff_succ_le)))
                    (assume (nat.lt a b))))
-          (imp-elim (all-elim c (all-elim b (lemma lt_imp_le)))
+          (imp-elim (all-elim c (all-elim b (lt_imp_le)))
                     (assume (nat.lt b c))))))))
 
 ;; ⊢ ∀a b c. (a + c ≤ b + c) = (a ≤ b).  Cancelling a common right summand.
@@ -724,17 +724,17 @@
     (induct c
       (#by
         (derive
-          (mk-comb (mk-comb (refl nat.le) (all-elim a (lemma add_zero)))
-                   (all-elim b (lemma add_zero)))))
+          (mk-comb (mk-comb (refl nat.le) (all-elim a (add_zero)))
+                   (all-elim b (add_zero)))))
       (#by
         (derive
           (trans
             (trans
               (mk-comb
-                (mk-comb (refl nat.le) (all-elim c (all-elim a (lemma add_succ))))
-                (all-elim c (all-elim b (lemma add_succ))))
+                (mk-comb (refl nat.le) (all-elim c (all-elim a (add_succ))))
+                (all-elim c (all-elim b (add_succ))))
               (all-elim (nat.add b c)
-                (all-elim (nat.add a c) (lemma le_succ_succ))))
+                (all-elim (nat.add a c) (le_succ_succ))))
             (assume (= (nat.le (nat.add a c) (nat.add b c)) (nat.le a b)))))))))
 
 ;; ⊢ ∀a b c. (a + c < b + c) = (a < b).  `<` add-monotonicity, threading
@@ -746,14 +746,14 @@
     (intro a b c)
     (derive
       (trans
-        (all-elim (nat.add b c) (all-elim (nat.add a c) (lemma lt_iff_succ_le)))
+        (all-elim (nat.add b c) (all-elim (nat.add a c) (lt_iff_succ_le)))
         (trans
           (cong-fn (nat.add b c)
             (mk-comb (refl nat.le)
-              (sym (all-elim c (all-elim a (lemma succ_add))))))
+              (sym (all-elim c (all-elim a (succ_add))))))
           (trans
-            (all-elim c (all-elim b (all-elim (succ a) (lemma le_add_cancel_r))))
-            (sym (all-elim b (all-elim a (lemma lt_iff_succ_le))))))))))
+            (all-elim c (all-elim b (all-elim (succ a) (le_add_cancel_r))))
+            (sym (all-elim b (all-elim a (lt_iff_succ_le))))))))))
 
 ;; Internal helper for le_iff_lt_or_eq (not exported): from a witness `d` with
 ;; `a + d = b`, decide `(a < b) ∨ (a = b)` — case-analysis on `d` (the IH is
@@ -768,22 +768,22 @@
         (intro h)
         (derive
           (or-intro-r (nat.lt a b)
-            (trans (sym (all-elim a (lemma add_zero)))
+            (trans (sym (all-elim a (add_zero)))
                    (assume (= (nat.add a 0) b))))))
       (#by
         (intro h)
         (derive
           (or-intro-l (= a b)
             (eq-mp
-              (sym (all-elim b (all-elim a (lemma lt_iff_succ_le))))
+              (sym (all-elim b (all-elim a (lt_iff_succ_le))))
               (eq-mp
                 (mk-comb
                   (mk-comb (refl nat.le) (refl (succ a)))
-                  (trans (sym (all-elim d (all-elim a (lemma add_succ))))
+                  (trans (sym (all-elim d (all-elim a (add_succ))))
                          (assume (= (nat.add a (succ d)) b))))
                 (eq-mp
-                  (sym (all-elim (nat.add a d) (all-elim a (lemma le_succ_succ))))
-                  (all-elim d (all-elim a (lemma le_add_r))))))))))))
+                  (sym (all-elim (nat.add a d) (all-elim a (le_succ_succ))))
+                  (all-elim d (all-elim a (le_add_r))))))))))))
 
 ;; ⊢ ∀a b. (a ≤ b) = ((a < b) ∨ (a = b)).  The ≤/< decomposition, by
 ;; `deduct-antisym` of the two directions.  Forward: from `a ≤ b`, `le_add_sub`
@@ -798,13 +798,13 @@
       (deduct-antisym
         (or-elim
           (assume (or (nat.lt a b) (= a b)))
-          (all-elim b (all-elim a (lemma lt_imp_le)))
+          (all-elim b (all-elim a (lt_imp_le)))
           (imp-intro (= a b)
             (eq-mp (mk-comb (cong-fn a (refl nat.le)) (assume (= a b)))
-                   (all-elim a (lemma le_refl)))))
+                   (all-elim a (le_refl)))))
         (imp-elim
-          (all-elim (nat.sub b a) (all-elim b (all-elim a (lemma le_add_eq_or))))
-          (imp-elim (all-elim b (all-elim a (lemma le_add_sub)))
+          (all-elim (nat.sub b a) (all-elim b (all-elim a (le_add_eq_or))))
+          (imp-elim (all-elim b (all-elim a (le_add_sub)))
                     (assume (nat.le a b))))))))
 
 ;; ⊢ ∀a b. (a < b) ∨ ((a = b) ∨ (b < a)).  Trichotomy.  `le_total` gives
@@ -817,10 +817,10 @@
     (intro a b)
     (derive
       (or-elim
-        (all-elim b (all-elim a (lemma le_total)))
+        (all-elim b (all-elim a (le_total)))
         (imp-intro (nat.le a b)
           (or-elim
-            (eq-mp (all-elim b (all-elim a (lemma le_iff_lt_or_eq)))
+            (eq-mp (all-elim b (all-elim a (le_iff_lt_or_eq)))
                    (assume (nat.le a b)))
             (imp-intro (nat.lt a b)
               (or-intro-l (or (= a b) (nat.lt b a)) (assume (nat.lt a b))))
@@ -829,7 +829,7 @@
                 (or-intro-l (nat.lt b a) (assume (= a b)))))))
         (imp-intro (nat.le b a)
           (or-elim
-            (eq-mp (all-elim a (all-elim b (lemma le_iff_lt_or_eq)))
+            (eq-mp (all-elim a (all-elim b (le_iff_lt_or_eq)))
                    (assume (nat.le b a)))
             (imp-intro (nat.lt b a)
               (or-intro-r (nat.lt a b)
@@ -851,14 +851,14 @@
         (imp-elim
           (all-elim (nat.add b d)
             (all-elim (nat.add b c)
-              (all-elim (nat.add a c) (lemma lt_trans))))
-          (eq-mp (sym (all-elim c (all-elim b (all-elim a (lemma lt_add_mono_r)))))
+              (all-elim (nat.add a c) (lt_trans))))
+          (eq-mp (sym (all-elim c (all-elim b (all-elim a (lt_add_mono_r)))))
                  (assume (nat.lt a b))))
         (eq-mp
           (mk-comb
-            (mk-comb (refl nat.lt) (all-elim b (all-elim c (lemma add_comm))))
-            (all-elim b (all-elim d (lemma add_comm))))
-          (eq-mp (sym (all-elim b (all-elim d (all-elim c (lemma lt_add_mono_r)))))
+            (mk-comb (refl nat.lt) (all-elim b (all-elim c (add_comm))))
+            (all-elim b (all-elim d (add_comm))))
+          (eq-mp (sym (all-elim b (all-elim d (all-elim c (lt_add_mono_r)))))
                  (assume (nat.lt c d))))))))
 
 ;; ⊢ ∀p q r s. (p + s = r + q) ⟹ (p < q) = (r < s).  A strict comparison
@@ -874,17 +874,17 @@
       (trans
         ;; (p<q) = (r+q < q+s)
         (trans
-          (sym (all-elim s (all-elim q (all-elim p (lemma lt_add_mono_r)))))
+          (sym (all-elim s (all-elim q (all-elim p (lt_add_mono_r)))))
           (mk-comb
             (mk-comb (refl nat.lt) (assume (= (nat.add p s) (nat.add r q))))
             (refl (nat.add q s))))
         (sym
           ;; (r<s) = (r+q < q+s)
           (trans
-            (sym (all-elim q (all-elim s (all-elim r (lemma lt_add_mono_r)))))
+            (sym (all-elim q (all-elim s (all-elim r (lt_add_mono_r)))))
             (mk-comb
               (mk-comb (refl nat.lt) (refl (nat.add r q)))
-              (all-elim q (all-elim s (lemma add_comm))))))))))
+              (all-elim q (all-elim s (add_comm))))))))))
 
 ;; ⊢ ∀p q r s. (p + s = r + q) ⟹ (p ≤ q) = (r ≤ s).  The `≤` mirror of
 ;; lt_cross (via le_add_cancel_r); both sides reduce to `r+q ≤ q+s`.
@@ -897,16 +897,16 @@
     (derive
       (trans
         (trans
-          (sym (all-elim s (all-elim q (all-elim p (lemma le_add_cancel_r)))))
+          (sym (all-elim s (all-elim q (all-elim p (le_add_cancel_r)))))
           (mk-comb
             (mk-comb (refl nat.le) (assume (= (nat.add p s) (nat.add r q))))
             (refl (nat.add q s))))
         (sym
           (trans
-            (sym (all-elim q (all-elim s (all-elim r (lemma le_add_cancel_r)))))
+            (sym (all-elim q (all-elim s (all-elim r (le_add_cancel_r)))))
             (mk-comb
               (mk-comb (refl nat.le) (refl (nat.add r q)))
-              (all-elim q (all-elim s (lemma add_comm))))))))))
+              (all-elim q (all-elim s (add_comm))))))))))
 
 (#export succ_ne_zero succ_cong_ne rec_zero rec_succ eq_refl
          add_zero add_succ add_comm add_assoc add_cancel

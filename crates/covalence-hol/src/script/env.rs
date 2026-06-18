@@ -131,7 +131,7 @@ impl Env {
         self.entries.insert_ready(name, Entry::Lemma(thm));
     }
     /// Bind a lemma to a still-running `#compute` (`spawn_blocking`) task; a
-    /// later `(lemma NAME)` or the force just awaits it.
+    /// later reference (or the force) just awaits it.
     pub fn define_computing(
         &mut self,
         name: impl Into<String>,

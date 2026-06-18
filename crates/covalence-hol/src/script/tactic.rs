@@ -198,6 +198,7 @@ pub fn core_tactics() -> HashMap<String, Arc<dyn Tactic>> {
     reg("not-intro", Arc::new(NotIntro));
     reg("contrapositive", Arc::new(Contrapositive));
     reg("rw", Arc::new(Rw));
+    reg("apply", Arc::new(Apply));
     reg("induct", Arc::new(Induct));
     reg("#have", Arc::new(Have));
     drop(reg);
@@ -400,6 +401,8 @@ impl Tactic for Rw {
         arity(s, 2, "rw")?;
         let env = it.env.clone();
         let eq = check(&s[1], &mut CheckCtx::new(&env, &mut it.scope)).await?;
+        // Route through the rw-unification seam (identity for now).
+        let eq = env.rw_unify(&eq, &it.goal)?;
         let cong = rewrite_conv(&it.goal, &eq)?;
         let (_, gprime) = dest_eq(cong.concl())
             .ok_or_else(|| ScriptError::Syntax("rw: rewrite did not yield an equation".into()))?;
@@ -412,9 +415,61 @@ impl Tactic for Rw {
         ctx_arity(a, 2, "rw")?;
         let eq = c.check(&a[0]).await?;
         let tgt = c.check(&a[1]).await?;
+        let eq = c.env().rw_unify(&eq, tgt.concl())?;
         let cong = rewrite_conv(tgt.concl(), &eq)?;
         Ok(cong.eq_mp(tgt)?)
     }
+}
+
+/// `(apply LEMMA PREMISE…)` — apply a lemma by first-order matching. The tactic
+/// facet matches LEMMA's conclusion against the **goal** (instantiating its `∀`s
+/// and type-vars), discharging any premises with the given sub-derivations and
+/// closing the goal in one go (mirroring Coq's `apply`). The tree facet
+/// `(apply LEMMA TARGET PREMISE…)` proves an explicit TARGET the same way.
+/// Unification is delegated to [`Env::apply_unify`](super::Env::apply_unify) so
+/// it can later be customised by a registered handler.
+struct Apply;
+#[async_trait]
+impl Tactic for Apply {
+    async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
+        if s.len() < 2 {
+            return Err(ScriptError::Syntax("apply: expected a lemma name".into()));
+        }
+        expect_done(rest, "apply")?;
+        let name = sym(&s[1], "apply lemma")?.to_string();
+        let env = it.env.clone();
+        let lemma = lookup_lemma(&env, &name).await?;
+        let mut thm = env.apply_unify(&lemma, &it.goal)?; // ⊢ P₁⟹…⟹goal
+        for p in &s[2..] {
+            let prem = check(p, &mut CheckCtx::new(&env, &mut it.scope)).await?;
+            thm = thm.imp_elim(prem)?;
+        }
+        Ok(thm)
+    }
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        if a.len() < 2 {
+            return Err(ScriptError::Syntax(
+                "apply: expected a lemma name and a target term".into(),
+            ));
+        }
+        let name = c.name(&a[0])?;
+        let target = c.term(&a[1])?;
+        let env = c.env().clone();
+        let lemma = lookup_lemma(&env, &name).await?;
+        let mut thm = env.apply_unify(&lemma, &target)?;
+        for p in &a[2..] {
+            let prem = c.check(p).await?;
+            thm = thm.imp_elim(prem)?;
+        }
+        Ok(thm)
+    }
+}
+
+/// Look up a lemma by name (awaiting a still-`#compute`-ing one).
+async fn lookup_lemma(env: &Env, name: &str) -> R<Thm> {
+    env.lookup_lemma(name)
+        .await
+        .ok_or_else(|| ScriptError::Unbound(format!("lemma `{name}`")))?
 }
 
 /// `(#have FACT PROOF STEP…)`: prove a fact, add it to context, run the rest.

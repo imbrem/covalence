@@ -13,13 +13,16 @@
 //! the *simple* unified design; finer-grained namespaces (separate const/type/
 //! tactic spaces, qualified names) can come later.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use covalence_core::{Term, Thm, defs};
+use covalence_core::{Term, TermKind, Thm, Type, defs, subst};
 use futures::FutureExt;
 use imbl::HashMap;
+use smol_str::SmolStr;
 
 use super::handle::LazyMap;
+use super::unify::{Subst, match_term};
 use super::{ScriptError, tactic::Tactic};
 
 type R<T> = Result<T, ScriptError>;
@@ -239,4 +242,83 @@ impl Env {
         }
         e
     }
+
+    // -- unification seams ----------------------------------------------
+    // These route lemma application through a method so a custom unifier can
+    // be registered here later. `apply_unify` (general) and `rw_unify`
+    // (equation-specific) are kept SEPARATE on purpose.
+
+    /// **Apply-unification.** Instantiate `lemma` (`⊢ ∀x⃗. P₁⟹…⟹C`) so its
+    /// conclusion `C` first-order-matches `target`, returning `⊢ P₁[σ]⟹…⟹target`
+    /// (premises intact — the caller discharges them; with none it is just
+    /// `⊢ target`). Untrusted matching, re-checked by `all_elim`/`inst_tfree`.
+    pub fn apply_unify(&self, lemma: &Thm, target: &Term) -> R<Thm> {
+        // Open the `∀` prefix with fresh schematic free vars.
+        let mut schematics = BTreeSet::new();
+        let mut order: Vec<SmolStr> = Vec::new();
+        let mut body = lemma.concl().clone();
+        while let Some((ty, inner)) = dest_forall(&body) {
+            let name = SmolStr::new(format!("?{}", order.len()));
+            body = subst::open(&inner, &Term::free(name.clone(), ty));
+            schematics.insert(name.clone());
+            order.push(name);
+        }
+        // Strip `⟹` premises to reach the conclusion `C`.
+        let mut concl = body;
+        while let Some((_p, rest)) = dest_imp(&concl) {
+            concl = rest;
+        }
+        // Match `C` against `target`.
+        let mut sub = Subst::default();
+        match_term(&concl, target, &schematics, &mut sub).map_err(|()| {
+            ScriptError::Syntax(format!("apply: lemma conclusion does not match `{target}`"))
+        })?;
+        // Instantiate: type-vars first, then the `∀` witnesses in binder order.
+        let mut thm = lemma.clone();
+        for (tv, ty) in &sub.types {
+            if Type::tfree(tv.as_str()) != *ty {
+                thm = thm.inst_tfree(tv, ty.clone())?;
+            }
+        }
+        for name in &order {
+            let w = sub.terms.get(name).ok_or_else(|| {
+                ScriptError::Syntax(
+                    "apply: a `∀` variable was left undetermined by matching".into(),
+                )
+            })?;
+            thm = thm.all_elim(w.clone())?;
+        }
+        Ok(thm)
+    }
+
+    /// **Rw-unification** — the equation-matching analogue of
+    /// [`apply_unify`](Env::apply_unify), kept SEPARATE so a future
+    /// equation-specific matcher (instantiate `∀x⃗. L = R` so `L` matches a
+    /// subterm of `target`) hooks in here without touching `apply`. For now it
+    /// is the identity — the equation is used as given (the original `rw`).
+    pub fn rw_unify(&self, eqn: &Thm, _target: &Term) -> R<Thm> {
+        Ok(eqn.clone())
+    }
+}
+
+/// `∀`/`⟹` shape probes for [`Env::apply_unify`].
+fn dest_forall(t: &Term) -> Option<(Type, Term)> {
+    let TermKind::App(h, abs) = t.kind() else {
+        return None;
+    };
+    let TermKind::Abs(ty, body) = abs.kind() else {
+        return None;
+    };
+    (*h == defs::forall(ty.clone())).then(|| (ty.clone(), body.clone()))
+}
+
+fn dest_imp(t: &Term) -> Option<(Term, Term)> {
+    let imp = defs::imp();
+    let TermKind::App(f, b) = t.kind() else {
+        return None;
+    };
+    let TermKind::App(h, a) = f.kind() else {
+        return None;
+    };
+    (*h == imp).then(|| (a.clone(), b.clone()))
 }

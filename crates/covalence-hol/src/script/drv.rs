@@ -123,11 +123,21 @@ pub fn check<'a>(s: &'a SExpr, ctx: &'a mut CheckCtx<'_>) -> BoxFuture<'a, R<Thm
     Box::pin(async move {
         let ch = list(s, "proof")?;
         let head = head_sym(ch)?;
-        let op = ctx
-            .env
-            .lookup_rule(head)
-            .ok_or_else(|| ScriptError::Unbound(format!("unknown proof rule `{head}`")))?;
-        op.rule(&ch[1..], ctx).await
+        if let Some(op) = ctx.env().lookup_rule(head) {
+            return op.rule(&ch[1..], ctx).await;
+        }
+        // Not a rule — fall through to a bare LEMMA name, instantiated at the
+        // explicit term witnesses (`(NAME w…)` = `(all-elim w (lemma NAME))`),
+        // so the `lemma` keyword is no longer required.
+        let lemma = ctx.env().lookup_lemma(head).await.ok_or_else(|| {
+            ScriptError::Unbound(format!("unknown proof rule or lemma `{head}`"))
+        })??;
+        let mut thm = lemma;
+        for w in &ch[1..] {
+            let witness = ctx.term(w)?;
+            thm = thm.all_elim(witness)?;
+        }
+        Ok(thm)
     })
 }
 

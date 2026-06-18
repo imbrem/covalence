@@ -32,6 +32,7 @@ mod infer;
 mod scope;
 mod syntax;
 mod tactic;
+mod unify;
 
 pub use drv::{CheckCtx, check, core_rules};
 pub use env::{ConstDef, Env};
@@ -622,6 +623,29 @@ mod tests {
         let mut thms = run_str(src).expect("script should replay");
         assert_eq!(thms.len(), 1);
         thms.pop().unwrap().thm
+    }
+
+    #[test]
+    fn apply_unifies_and_bare_lemma_names() {
+        let thms = run_str(
+            r#"(#import core)(#open core)
+               (#thm my_refl (#concl (forall (n nat) (= n n)))
+                 (#by (induct n (#by (refl)) (#by (refl)))))
+               ;; apply by unification (tactic) — matches `∀n. n = n` against `5 = 5`
+               (#thm five_a (#concl (= 5 5)) (#by (apply my_refl)))
+               ;; bare lemma name + explicit witness (tree) — `(all-elim 5 (lemma my_refl))`
+               (#thm five_b (#concl (= 5 5)) (#proof (my_refl 5)))
+               ;; apply as a derivation with an explicit target (tree)
+               (#thm five_c (#concl (= 5 5)) (#proof (apply my_refl (= 5 5))))
+               ;; apply with a premise discharged inline
+               (#thm imp_self (#concl (forall (p bool) (==> p p))) (#by (intro p h) (assumption)))
+               (#thm zero_eq (#concl (= 0 0)) (#by (apply imp_self (refl 0))))"#,
+        )
+        .expect("apply / bare-lemma script replays");
+        assert_eq!(thms.len(), 6);
+        for nt in &thms {
+            assert!(nt.thm.hyps().is_empty(), "{} should be hyp-free", nt.name);
+        }
     }
 
     #[test]

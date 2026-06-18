@@ -1,0 +1,269 @@
+;; cov — `set` algebra + order theorems over `core` + `logic` + the `setprim`
+;; seam env.
+;;
+;; `set α` is a newtype over the membership predicate `α → bool`; the seam
+;; lemmas (membership computation `mem_*`, extensionality `ext`, the `⊆`
+;; unfolding) cross the abs/rep boundary and are imported as Rust-proved GIVENS
+;; from `setprim` (the `nat.cov` `rec_holds` pattern). Here we prove the algebra
+;; and order theorems over them, never touching abs/rep:
+;;
+;;   ext           : ∀s t. (∀x. mem x s = mem x t) ⟹ s = t
+;;   mem_union     : ∀x s t. mem x (s ∪ t) = (mem x s ∨ mem x t)
+;;   mem_intersect : ∀x s t. mem x (s ∩ t) = (mem x s ∧ mem x t)
+;;   mem_empty     : ∀x.     mem x ∅ = F
+;;   subset_unfold : ∀s t.   subset s t = (∀x. mem x s ⟹ mem x t)
+;;
+;; Each set equality is proved EXTENSIONALLY: build `∀x. mem x L = mem x R` by
+;; rewriting both sides' membership with the `mem_*` givens (`rw` normalises
+;; nested ops), bridge the two boolean formulas with `prop-eq` (the complete
+;; propositional decider), then close with `ext`. Subset facts go through
+;; `subset_unfold` (the membership characterisation of `⊆`). Everything is
+;; schematic in one element type `'a`.
+
+(#import core)
+(#open core)
+(#import logic)
+(#open logic)
+(#import setprim)
+(#open setprim)
+
+;; ============================================================================
+;; Union / intersection — commutative, associative, idempotent, with ∅.
+;; ============================================================================
+
+;; ⊢ s ∪ t = t ∪ s.
+(#thm union_comm
+  (#concl (= (set.union s t) (set.union t s)))
+  (#by (derive
+    (imp-elim
+      (all-elim (set.union t s) (all-elim (set.union s t) (lemma ext)))
+      (all-intro x 'a
+        (trans
+          (all-elim t (all-elim s (all-elim x (lemma mem_union))))
+          (trans
+            (prop-eq (or (set.mem x s) (set.mem x t))
+                     (or (set.mem x t) (set.mem x s)))
+            (sym (all-elim s (all-elim t (all-elim x (lemma mem_union))))))))))))
+
+;; ⊢ s ∩ t = t ∩ s.
+(#thm inter_comm
+  (#concl (= (set.intersect s t) (set.intersect t s)))
+  (#by (derive
+    (imp-elim
+      (all-elim (set.intersect t s) (all-elim (set.intersect s t) (lemma ext)))
+      (all-intro x 'a
+        (trans
+          (all-elim t (all-elim s (all-elim x (lemma mem_intersect))))
+          (trans
+            (prop-eq (and (set.mem x s) (set.mem x t))
+                     (and (set.mem x t) (set.mem x s)))
+            (sym (all-elim s (all-elim t (all-elim x (lemma mem_intersect))))))))))))
+
+;; ⊢ (s ∪ t) ∪ u = s ∪ (t ∪ u).
+(#thm union_assoc
+  (#concl (= (set.union (set.union s t) u) (set.union s (set.union t u))))
+  (#by (derive
+    (imp-elim
+      (all-elim (set.union s (set.union t u))
+        (all-elim (set.union (set.union s t) u) (lemma ext)))
+      (all-intro x 'a
+        (trans
+          (rw (all-elim t (all-elim s (all-elim x (lemma mem_union))))
+              (all-elim u (all-elim (set.union s t) (all-elim x (lemma mem_union)))))
+          (trans
+            (prop-eq (or (or (set.mem x s) (set.mem x t)) (set.mem x u))
+                     (or (set.mem x s) (or (set.mem x t) (set.mem x u))))
+            (sym
+              (rw (all-elim u (all-elim t (all-elim x (lemma mem_union))))
+                  (all-elim (set.union t u)
+                    (all-elim s (all-elim x (lemma mem_union)))))))))))))
+
+;; ⊢ (s ∩ t) ∩ u = s ∩ (t ∩ u).
+(#thm inter_assoc
+  (#concl (= (set.intersect (set.intersect s t) u)
+             (set.intersect s (set.intersect t u))))
+  (#by (derive
+    (imp-elim
+      (all-elim (set.intersect s (set.intersect t u))
+        (all-elim (set.intersect (set.intersect s t) u) (lemma ext)))
+      (all-intro x 'a
+        (trans
+          (rw (all-elim t (all-elim s (all-elim x (lemma mem_intersect))))
+              (all-elim u
+                (all-elim (set.intersect s t) (all-elim x (lemma mem_intersect)))))
+          (trans
+            (prop-eq (and (and (set.mem x s) (set.mem x t)) (set.mem x u))
+                     (and (set.mem x s) (and (set.mem x t) (set.mem x u))))
+            (sym
+              (rw (all-elim u (all-elim t (all-elim x (lemma mem_intersect))))
+                  (all-elim (set.intersect t u)
+                    (all-elim s (all-elim x (lemma mem_intersect)))))))))))))
+
+;; ⊢ s ∪ s = s.
+(#thm union_idem
+  (#concl (= (set.union s s) s))
+  (#by (derive
+    (imp-elim
+      (all-elim s (all-elim (set.union s s) (lemma ext)))
+      (all-intro x 'a
+        (trans
+          (all-elim s (all-elim s (all-elim x (lemma mem_union))))
+          (prop-eq (or (set.mem x s) (set.mem x s)) (set.mem x s))))))))
+
+;; ⊢ s ∩ s = s.
+(#thm inter_idem
+  (#concl (= (set.intersect s s) s))
+  (#by (derive
+    (imp-elim
+      (all-elim s (all-elim (set.intersect s s) (lemma ext)))
+      (all-intro x 'a
+        (trans
+          (all-elim s (all-elim s (all-elim x (lemma mem_intersect))))
+          (prop-eq (and (set.mem x s) (set.mem x s)) (set.mem x s))))))))
+
+;; ⊢ s ∪ ∅ = s.
+(#thm union_empty
+  (#concl (= (set.union s set.empty) s))
+  (#by (derive
+    (imp-elim
+      (all-elim s (all-elim (set.union s set.empty) (lemma ext)))
+      (all-intro x 'a
+        (trans
+          (rw (all-elim x (lemma mem_empty))
+              (all-elim set.empty (all-elim s (all-elim x (lemma mem_union)))))
+          (prop-eq (or (set.mem x s) false) (set.mem x s))))))))
+
+;; ⊢ s ∩ ∅ = ∅.
+(#thm inter_empty
+  (#concl (= (set.intersect s set.empty) set.empty))
+  (#by (derive
+    (imp-elim
+      (all-elim set.empty (all-elim (set.intersect s set.empty) (lemma ext)))
+      (all-intro x 'a
+        (trans
+          (rw (all-elim x (lemma mem_empty))
+              (all-elim set.empty (all-elim s (all-elim x (lemma mem_intersect)))))
+          (trans
+            (prop-eq (and (set.mem x s) false) false)
+            (sym (all-elim x (lemma mem_empty))))))))))
+
+;; ⊢ s ∩ (t ∪ u) = (s ∩ t) ∪ (s ∩ u).  Intersection distributes over union.
+(#thm inter_union_distrib
+  (#concl (= (set.intersect s (set.union t u))
+             (set.union (set.intersect s t) (set.intersect s u))))
+  (#by (derive
+    (imp-elim
+      (all-elim (set.union (set.intersect s t) (set.intersect s u))
+        (all-elim (set.intersect s (set.union t u)) (lemma ext)))
+      (all-intro x 'a
+        (trans
+          (rw (all-elim u (all-elim t (all-elim x (lemma mem_union))))
+              (all-elim (set.union t u)
+                (all-elim s (all-elim x (lemma mem_intersect)))))
+          (trans
+            (prop-eq (and (set.mem x s) (or (set.mem x t) (set.mem x u)))
+                     (or (and (set.mem x s) (set.mem x t))
+                         (and (set.mem x s) (set.mem x u))))
+            (sym
+              (rw (all-elim u (all-elim s (all-elim x (lemma mem_intersect))))
+                  (rw (all-elim t (all-elim s (all-elim x (lemma mem_intersect))))
+                      (all-elim (set.intersect s u)
+                        (all-elim (set.intersect s t)
+                          (all-elim x (lemma mem_union))))))))))))))
+
+;; ============================================================================
+;; Subset — reflexive, transitive, antisymmetric; ∅ least; the ∪/∩ bounds.
+;; All via `subset_unfold` (the `∀x. mem x s ⟹ mem x t` characterisation).
+;; ============================================================================
+
+;; ⊢ s ⊆ s.
+(#thm subset_refl
+  (#concl (set.subset s s))
+  (#by (derive
+    (eq-mp
+      (sym (all-elim s (all-elim s (lemma subset_unfold))))
+      (all-intro x 'a
+        (imp-intro (set.mem x s) (assume (set.mem x s))))))))
+
+;; ⊢ s ⊆ t ⟹ t ⊆ u ⟹ s ⊆ u.
+(#thm subset_trans
+  (#concl (==> (set.subset s t) (==> (set.subset t u) (set.subset s u))))
+  (#by (derive
+    (imp-intro (set.subset s t)
+      (imp-intro (set.subset t u)
+        (eq-mp
+          (sym (all-elim u (all-elim s (lemma subset_unfold))))
+          (all-intro x 'a
+            (imp-intro (set.mem x s)
+              (imp-elim
+                (all-elim x
+                  (eq-mp (all-elim u (all-elim t (lemma subset_unfold)))
+                         (assume (set.subset t u))))
+                (imp-elim
+                  (all-elim x
+                    (eq-mp (all-elim t (all-elim s (lemma subset_unfold)))
+                           (assume (set.subset s t))))
+                  (assume (set.mem x s))))))))))))
+
+;; ⊢ s ⊆ t ⟹ t ⊆ s ⟹ s = t.  Antisymmetry — each direction supplies one half
+;; of the membership equivalence at every point; `ext` concludes.
+(#thm subset_antisym
+  (#concl (==> (set.subset s t) (==> (set.subset t s) (= s t))))
+  (#by (derive
+    (imp-intro (set.subset s t)
+      (imp-intro (set.subset t s)
+        (imp-elim
+          (all-elim t (all-elim s (lemma ext)))
+          (all-intro x 'a
+            (deduct-antisym
+              (imp-elim
+                (all-elim x
+                  (eq-mp (all-elim s (all-elim t (lemma subset_unfold)))
+                         (assume (set.subset t s))))
+                (assume (set.mem x t)))
+              (imp-elim
+                (all-elim x
+                  (eq-mp (all-elim t (all-elim s (lemma subset_unfold)))
+                         (assume (set.subset s t))))
+                (assume (set.mem x s)))))))))))
+
+;; ⊢ ∅ ⊆ s.  The antecedent `mem x ∅` is false, so ex falso.
+(#thm empty_subset
+  (#concl (set.subset set.empty s))
+  (#by (derive
+    (eq-mp
+      (sym (all-elim s (all-elim set.empty (lemma subset_unfold))))
+      (all-intro x 'a
+        (imp-intro (set.mem x set.empty)
+          (false-elim (set.mem x s)
+            (eq-mp (all-elim x (lemma mem_empty))
+                   (assume (set.mem x set.empty))))))))))
+
+;; ⊢ s ⊆ s ∪ t.
+(#thm subset_union_l
+  (#concl (set.subset s (set.union s t)))
+  (#by (derive
+    (eq-mp
+      (sym (all-elim (set.union s t) (all-elim s (lemma subset_unfold))))
+      (all-intro x 'a
+        (imp-intro (set.mem x s)
+          (eq-mp
+            (sym (all-elim t (all-elim s (all-elim x (lemma mem_union)))))
+            (or-intro-l (set.mem x t) (assume (set.mem x s))))))))))
+
+;; ⊢ s ∩ t ⊆ s.
+(#thm inter_subset_l
+  (#concl (set.subset (set.intersect s t) s))
+  (#by (derive
+    (eq-mp
+      (sym (all-elim s (all-elim (set.intersect s t) (lemma subset_unfold))))
+      (all-intro x 'a
+        (imp-intro (set.mem x (set.intersect s t))
+          (and-elim-l
+            (eq-mp (all-elim t (all-elim s (all-elim x (lemma mem_intersect))))
+                   (assume (set.mem x (set.intersect s t)))))))))))
+
+(#export union_comm inter_comm union_assoc inter_assoc union_idem inter_idem
+         union_empty inter_empty inter_union_distrib
+         subset_refl subset_trans subset_antisym empty_subset
+         subset_union_l inter_subset_l)

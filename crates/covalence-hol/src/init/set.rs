@@ -560,6 +560,122 @@ fn rhs_of(thm: &Thm) -> Result<Term> {
     Ok(thm.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone())
 }
 
+// ============================================================================
+// `setprim` env + the `set.cov` port.
+// ============================================================================
+
+/// The `setprim` environment imported by `set.cov`: the `set` operators
+/// (monomorphic at the type variable `'a` — the algebra theorems are all
+/// schematic in one element type) plus the **seam** lemmas (membership
+/// computation `mem_*`, extensionality `ext`, and the `⊆` unfolding) in
+/// universally-quantified form. These cross the abs/rep boundary via the
+/// kernel's subtype laws, so they stay Rust-proved givens (the `nat.cov`
+/// `rec_holds` pattern); `set.cov` proves the algebra/order theorems over them
+/// and never mentions abs/rep.
+pub fn set_env() -> crate::script::Env {
+    use crate::script::{ConstDef, Env};
+    let a = Type::tfree("a");
+    let sa = set(a.clone());
+    let mut e = Env::empty();
+
+    // operators (monomorphic at `'a`)
+    e.define_const("set.mem", ConstDef::Op(set_mem(a.clone())));
+    e.define_const("set.union", ConstDef::Op(set_union(a.clone())));
+    e.define_const("set.intersect", ConstDef::Op(set_intersect(a.clone())));
+    e.define_const("set.empty", ConstDef::Op(set_empty(a.clone())));
+    e.define_const("set.subset", ConstDef::Op(set_subset(a.clone())));
+
+    let x = Term::free("x", a.clone());
+    let s = Term::free("s", sa.clone());
+    let t = Term::free("t", sa.clone());
+
+    // mem_empty : ⊢ ∀x. mem x ∅ = F
+    e.define_lemma(
+        "mem_empty",
+        mem_empty(&a, &x)
+            .unwrap()
+            .all_intro("x", a.clone())
+            .unwrap(),
+    );
+    // mem_union : ⊢ ∀x s t. mem x (s ∪ t) = (mem x s ∨ mem x t)
+    e.define_lemma(
+        "mem_union",
+        mem_union(&a, &x, &s, &t)
+            .unwrap()
+            .all_intro("t", sa.clone())
+            .unwrap()
+            .all_intro("s", sa.clone())
+            .unwrap()
+            .all_intro("x", a.clone())
+            .unwrap(),
+    );
+    // mem_intersect : ⊢ ∀x s t. mem x (s ∩ t) = (mem x s ∧ mem x t)
+    e.define_lemma(
+        "mem_intersect",
+        mem_intersect(&a, &x, &s, &t)
+            .unwrap()
+            .all_intro("t", sa.clone())
+            .unwrap()
+            .all_intro("s", sa.clone())
+            .unwrap()
+            .all_intro("x", a.clone())
+            .unwrap(),
+    );
+    // ext : ⊢ ∀s t. (∀x. mem x s = mem x t) ⟹ s = t
+    let h = mem(&a, &x, &s)
+        .equals(mem(&a, &x, &t))
+        .unwrap()
+        .forall("x", a.clone())
+        .unwrap();
+    e.define_lemma(
+        "ext",
+        ext(&a, &s, &t, Thm::assume(h.clone()).unwrap())
+            .unwrap()
+            .imp_intro(&h)
+            .unwrap()
+            .all_intro("t", sa.clone())
+            .unwrap()
+            .all_intro("s", sa.clone())
+            .unwrap(),
+    );
+    // subset_unfold : ⊢ ∀s t. subset s t = (∀x. mem x s ⟹ mem x t)
+    e.define_lemma(
+        "subset_unfold",
+        subset_unfold(&a, &s, &t)
+            .unwrap()
+            .all_intro("t", sa.clone())
+            .unwrap()
+            .all_intro("s", sa.clone())
+            .unwrap(),
+    );
+    e
+}
+
+crate::cov_theory! {
+    /// `set` algebra/order theorems ported to `set.cov`, over `core` + `logic`
+    /// + the `setprim` seam env.
+    pub mod cov from "set.cov" {
+        import "core" = crate::script::Env::core();
+        import "logic" = crate::init::logic::cov::env();
+        import "setprim" = crate::init::set::set_env();
+        "union_comm"          => pub fn union_comm_cov;
+        "inter_comm"          => pub fn inter_comm_cov;
+        "union_assoc"         => pub fn union_assoc_cov;
+        "inter_assoc"         => pub fn inter_assoc_cov;
+        "union_idem"          => pub fn union_idem_cov;
+        "inter_idem"          => pub fn inter_idem_cov;
+        "union_empty"         => pub fn union_empty_cov;
+        "inter_empty"         => pub fn inter_empty_cov;
+        "inter_union_distrib" => pub fn inter_union_distrib_cov;
+        "subset_refl"         => pub fn subset_refl_cov;
+        "subset_trans"        => pub fn subset_trans_cov;
+        "subset_antisym"      => pub fn subset_antisym_cov;
+        "empty_subset"        => pub fn empty_subset_cov;
+        "subset_union_l"      => pub fn subset_union_l_cov;
+        "inter_subset_l"      => pub fn inter_subset_l_cov;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -787,6 +903,45 @@ mod tests {
             .imp(subset_tm(&a, &t, &s).imp(s.equals(t).unwrap()).unwrap())
             .unwrap();
         assert_eq!(thm.concl(), &expected);
+    }
+
+    #[test]
+    fn set_cov_matches_rust() {
+        // The ported `set.cov` theorems must state exactly what the Rust
+        // proofs state (same checked theorem, two proofs — over the seam env).
+        assert_eq!(cov::union_comm_cov().concl(), super::union_comm().concl());
+        assert_eq!(cov::inter_comm_cov().concl(), super::inter_comm().concl());
+        assert_eq!(cov::union_assoc_cov().concl(), super::union_assoc().concl());
+        assert_eq!(cov::inter_assoc_cov().concl(), super::inter_assoc().concl());
+        assert_eq!(cov::union_idem_cov().concl(), super::union_idem().concl());
+        assert_eq!(cov::inter_idem_cov().concl(), super::inter_idem().concl());
+        assert_eq!(cov::union_empty_cov().concl(), super::union_empty().concl());
+        assert_eq!(cov::inter_empty_cov().concl(), super::inter_empty().concl());
+        assert_eq!(
+            cov::inter_union_distrib_cov().concl(),
+            super::inter_union_distrib().concl()
+        );
+        assert_eq!(cov::subset_refl_cov().concl(), super::subset_refl().concl());
+        assert_eq!(
+            cov::subset_trans_cov().concl(),
+            super::subset_trans().concl()
+        );
+        assert_eq!(
+            cov::subset_antisym_cov().concl(),
+            super::subset_antisym().concl()
+        );
+        assert_eq!(
+            cov::empty_subset_cov().concl(),
+            super::empty_subset().concl()
+        );
+        assert_eq!(
+            cov::subset_union_l_cov().concl(),
+            super::subset_union_l().concl()
+        );
+        assert_eq!(
+            cov::inter_subset_l_cov().concl(),
+            super::inter_subset_l().concl()
+        );
     }
 
     #[test]

@@ -237,6 +237,21 @@ impl Tactic for SelectAxRule {
     }
 }
 
+/// `(prop-eq P Q)` → `⊢ P = Q` when `P` and `Q` are propositionally equal
+/// (Shannon expansion over their shared atoms, via [`crate::init::logic::prop_eq`]).
+/// The complete propositional decider — stronger than `tauto` (which only folds
+/// trivial tautologies to `T`); the bridge the set-algebra proofs need.
+struct PropEqRule;
+#[async_trait]
+impl Tactic for PropEqRule {
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 2, "prop-eq")?;
+        let p = c.term(&a[0])?;
+        let q = c.term(&a[1])?;
+        Ok(crate::init::logic::prop_eq(&p, &q)?)
+    }
+}
+
 /// `(lemma NAME)` — reference a lemma proven earlier in the file. Looked up in
 /// [`Env`]'s lemma table and re-checked in-session (never trusted from disk);
 /// **awaits** if the lemma is still `#compute`-ing.
@@ -418,6 +433,7 @@ pub fn core_rules() -> Vec<(&'static str, Arc<dyn Tactic>)> {
         ("reduce", Arc::new(ReduceRule)),
         ("delta", Arc::new(DeltaRule)),
         ("select-ax", Arc::new(SelectAxRule)),
+        ("prop-eq", Arc::new(PropEqRule)),
         ("tauto", Arc::new(TautoRule)),
         // unary
         ("and-elim-l", Arc::new(AndElimLRule)),

@@ -121,25 +121,34 @@ pub(super) fn ctx_arity(args: &[SExpr], n: usize, rule: &str) -> R<()> {
 /// future (the recursion needs a known size).
 pub fn check<'a>(s: &'a SExpr, ctx: &'a mut CheckCtx<'_>) -> BoxFuture<'a, R<Thm>> {
     Box::pin(async move {
-        let ch = list(s, "proof")?;
-        let head = head_sym(ch)?;
-        if let Some(op) = ctx.env().lookup_rule(head) {
-            return op.rule(&ch[1..], ctx).await;
+        // A bare symbol `NAME` is a 0-witness reference (the lemma's statement);
+        // a list `(head args…)` dispatches `head` with its args.
+        if let Some(name) = s.as_symbol() {
+            return resolve_head(name, &[], ctx).await;
         }
-        // Not a rule — it is a LEMMA name, instantiated at the explicit term
-        // witnesses: `(NAME)` is the lemma's full statement and `(NAME w…)`
-        // `all-elim`s it at `w…`. (This replaced the old `lemma` keyword;
-        // `apply` is the smarter, unifying form — see tactic.rs.)
-        let lemma = ctx.env().lookup_lemma(head).await.ok_or_else(|| {
+        let ch = list(s, "proof")?;
+        resolve_head(head_sym(ch)?, &ch[1..], ctx).await
+    })
+}
+
+/// Resolve a `#proof` head: a registered RULE (invoked with its args), else a
+/// LEMMA name instantiated at the explicit term witnesses — `NAME` / `(NAME)` is
+/// the lemma's full statement, `(NAME w…)` `all-elim`s it at `w…`. (This
+/// replaced the old `lemma` keyword; `apply` is the smarter, unifying form.)
+async fn resolve_head(head: &str, args: &[SExpr], ctx: &mut CheckCtx<'_>) -> R<Thm> {
+    if let Some(op) = ctx.env().lookup_rule(head) {
+        return op.rule(args, ctx).await;
+    }
+    let lemma =
+        ctx.env().lookup_lemma(head).await.ok_or_else(|| {
             ScriptError::Unbound(format!("unknown proof rule or lemma `{head}`"))
         })??;
-        let mut thm = lemma;
-        for w in &ch[1..] {
-            let witness = ctx.term(w)?;
-            thm = thm.all_elim(witness)?;
-        }
-        Ok(thm)
-    })
+    let mut thm = lemma;
+    for w in args {
+        let witness = ctx.term(w)?;
+        thm = thm.all_elim(witness)?;
+    }
+    Ok(thm)
 }
 
 // ============================================================================

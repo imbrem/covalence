@@ -335,12 +335,12 @@
   (#by
     (induct m
       ;; `rw` matches the quantified `sub_zero` (`∀n. n - 0 = n`) against the
-      ;; goal's `0 - 0` automatically — no `(all-elim 0 …)`.
-      (#by (rw (sub_zero)) (refl))
+      ;; goal's `0 - 0` automatically — bare name, no `(all-elim 0 …)`.
+      (#by (rw sub_zero) (refl))
       (#by
         (rw (all-elim m (all-elim 0 (sub_succ))))
         (rw (assume (= (nat.sub 0 m) 0)))
-        (rw (pred_zero))
+        (rw pred_zero)
         (refl)))))
 
 ;; ⊢ ∀n m. S n - S m = n - m.  Successors cancel across subtraction.
@@ -352,11 +352,11 @@
     (intro n)
     (induct m
       (#by
-        (rw (all-elim 0 (all-elim (succ n) (sub_succ))))
-        (rw (sub_zero))
-        (rw (pred_succ))
+        ;; three quantified equations applied in sequence (bare names,
+        ;; auto-matched): S n - S 0 → pred(S n - 0) → pred(S n) → S n's RHS, etc.
+        (rw sub_succ sub_zero pred_succ)
         (sym)
-        (rw (sub_zero))
+        (rw sub_zero)
         (refl))
       (#by
         (rw (all-elim (succ m) (all-elim (succ n) (sub_succ))))

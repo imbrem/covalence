@@ -393,31 +393,60 @@ impl Tactic for Contrapositive {
     }
 }
 
-/// `(rw EQN STEP…)`: rewrite the goal by an equation, then run the rest.
+/// `(rw EQN… STEP…)`: rewrite the goal by each equation in turn, then run the
+/// rest. Each `EQN` is a (possibly quantified) equation — bare lemma names work
+/// — instantiated against the current goal by the rw-unification seam
+/// ([`Env::rw_unify`]). (Toward the future *rewriter* inference kind: each arg
+/// is a "rewriter" mapping the current term `a` to a proof `a = b`; a lemma
+/// casts to one via `rw_unify`.)
 struct Rw;
 #[async_trait]
 impl Tactic for Rw {
     async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
-        arity(s, 2, "rw")?;
+        if s.len() < 2 {
+            return Err(ScriptError::Syntax(
+                "rw: expected at least one equation".into(),
+            ));
+        }
         let env = it.env.clone();
-        let eq = check(&s[1], &mut CheckCtx::new(&env, &mut it.scope)).await?;
-        // Route through the rw-unification seam (identity for now).
-        let eq = env.rw_unify(&eq, &it.goal)?;
-        let cong = rewrite_conv(&it.goal, &eq)?;
-        let (_, gprime) = dest_eq(cong.concl())
-            .ok_or_else(|| ScriptError::Syntax("rw: rewrite did not yield an equation".into()))?;
-        it.goal = gprime;
+        // Fold the equations into one congruence `⊢ goal = goal'`, threading the
+        // intermediate term through each rewrite.
+        let mut current = it.goal.clone();
+        let mut cong: Option<Thm> = None;
+        for e in &s[1..] {
+            let eq = check(e, &mut CheckCtx::new(&env, &mut it.scope)).await?;
+            let eq = env.rw_unify(&eq, &current)?;
+            let step = rewrite_conv(&current, &eq)?; // ⊢ current = next
+            let (_, next) = dest_eq(step.concl()).ok_or_else(|| {
+                ScriptError::Syntax("rw: rewrite did not yield an equation".into())
+            })?;
+            current = next;
+            cong = Some(match cong {
+                None => step,
+                Some(c) => c.trans(step)?,
+            });
+        }
+        let cong = cong.expect("at least one equation"); // ⊢ goal = current
+        it.goal = current;
         let inner = it.run(rest).await?;
         Ok(cong.sym()?.eq_mp(inner)?)
     }
     async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
-        // `(rw EQN TARGET)` — rewrite TARGET's conclusion by the equation EQN.
-        ctx_arity(a, 2, "rw")?;
-        let eq = c.check(&a[0]).await?;
-        let tgt = c.check(&a[1]).await?;
-        let eq = c.env().rw_unify(&eq, tgt.concl())?;
-        let cong = rewrite_conv(tgt.concl(), &eq)?;
-        Ok(cong.eq_mp(tgt)?)
+        // `(rw EQN… TARGET)` — rewrite TARGET's conclusion by each equation.
+        if a.len() < 2 {
+            return Err(ScriptError::Syntax(
+                "rw: expected at least one equation and a target".into(),
+            ));
+        }
+        let (eqns, last) = a.split_at(a.len() - 1);
+        let mut thm = c.check(&last[0]).await?; // ⊢ TARGET
+        for e in eqns {
+            let eq = c.check(e).await?;
+            let eq = c.env().rw_unify(&eq, thm.concl())?;
+            let cong = rewrite_conv(thm.concl(), &eq)?; // ⊢ thm.concl = next
+            thm = cong.eq_mp(thm)?;
+        }
+        Ok(thm)
     }
 }
 

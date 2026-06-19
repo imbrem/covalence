@@ -10,6 +10,9 @@ pub use object::{
 mod range;
 pub use range::{BlobInfo, ByteRange, ResolvedRange, clip_slice, slice_range};
 
+mod overlay;
+pub use overlay::{DEFAULT_SIZE_THRESHOLD, OverlayStore, SizeRouter};
+
 // ---------------------------------------------------------------------------
 // TreeStore — POSIX-style virtual filesystem trait
 // ---------------------------------------------------------------------------

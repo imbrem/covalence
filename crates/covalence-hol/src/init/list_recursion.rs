@@ -320,6 +320,159 @@ fn prove_foldr_pred(r: &Term, witness: &Term, foldr_pred: &Term, p_rec_r: &Thm) 
     beta_expand(foldr_pred, witness.clone(), closed)
 }
 
+// ============================================================================
+// The `list_foldr` defining equations — the recursion clauses, at *arbitrary*
+// element/result types `α, β` and arbitrary `f, z`. Projected out of
+// `foldr_holds` (`⊢ list_foldr_predicate list_foldr`, β-reduced to the
+// `∀f z` conjunction of nil/cons clauses) and re-typed at `α, β`. These are
+// the seam givens `list.cov` (and the `length`/`cat`/`map` derivations below)
+// build on.
+// ============================================================================
+
+/// `foldr_holds` at a chosen element type `α` and result type `β` — the
+/// generic `a, b` are instantiated to `alpha, beta` so the clauses come out
+/// at the caller's types. Returns `⊢ ∀f z. (foldr f z nil = z) ∧
+/// (∀x xs. foldr f z (cons x xs) = f x (foldr f z xs))`.
+fn foldr_holds_at(alpha: &Type, beta: &Type) -> Result<Thm> {
+    foldr_holds()?
+        .inst_tfree("a", alpha.clone())?
+        .inst_tfree("b", beta.clone())
+}
+
+/// `⊢ list_foldr f z nil = z` — the right-fold base clause, at the given
+/// `f : α → β → β` and `z : β`. Genuine (hypothesis- and oracle-free).
+pub fn foldr_nil(alpha: &Type, beta: &Type, f: &Term, z: &Term) -> Result<Thm> {
+    foldr_holds_at(alpha, beta)?
+        .all_elim(f.clone())?
+        .all_elim(z.clone())?
+        .and_elim_l()
+}
+
+/// `⊢ list_foldr f z (cons x xs) = f x (list_foldr f z xs)` — the right-fold
+/// step clause, at the given `f, z` and `x : α`, `xs : list α`. Genuine.
+pub fn foldr_cons(
+    alpha: &Type,
+    beta: &Type,
+    f: &Term,
+    z: &Term,
+    x: &Term,
+    xs: &Term,
+) -> Result<Thm> {
+    foldr_holds_at(alpha, beta)?
+        .all_elim(f.clone())?
+        .all_elim(z.clone())?
+        .and_elim_r()?
+        .all_elim(x.clone())?
+        .all_elim(xs.clone())
+}
+
+// ============================================================================
+// `length` / `cat` (append) — the `foldr`-factored structural ops. Their
+// nil/cons recursion clauses follow by δ-unfolding the op to its `foldr`
+// body, β-reducing, applying the matching `foldr` clause, and folding the
+// inner `foldr` application back to a recursive call.
+// ============================================================================
+
+/// `nat` (the result type of `length`).
+fn nat_ty() -> Type {
+    Type::nat()
+}
+
+/// `0 : nat`.
+fn nat_zero() -> Term {
+    Term::nat_lit(0u32)
+}
+
+/// `succ n`.
+fn succ(n: &Term) -> Term {
+    Term::app(defs::nat_succ(), n.clone())
+}
+
+/// `list_length[α] xs` applied.
+fn length_app(alpha: &Type, xs: &Term) -> Term {
+    Term::app(defs::list_length(alpha.clone()), xs.clone())
+}
+
+/// The `length` fold step `λ_:α. λacc:nat. succ acc`, and its zero seed.
+fn length_step(alpha: &Type) -> Term {
+    let acc = Term::free("acc", nat_ty());
+    abs("_", alpha.clone(), abs("acc", nat_ty(), succ(&acc)))
+}
+
+/// `⊢ list_length t = foldr step 0 t` — δ-unfold `length` to its `foldr`
+/// body (`delta_all` walks the spine, then β collapses the applied λ).
+fn length_unfold(alpha: &Type, t: &Term) -> Result<Thm> {
+    length_app(alpha, t)
+        .delta_all(defs::list_length_spec().symbol())?
+        .rhs_conv(|u| u.reduce())
+}
+
+/// `⊢ list_length nil = 0` — the empty list has length zero. Genuine.
+pub fn length_nil(alpha: &Type) -> Result<Thm> {
+    let step = length_step(alpha);
+    let unfold = length_unfold(alpha, &nil(alpha.clone()))?; // length nil = foldr step 0 nil
+    let base = foldr_nil(alpha, &nat_ty(), &step, &nat_zero())?; // foldr step 0 nil = 0
+    unfold.trans(base)
+}
+
+/// `⊢ list_length (cons x xs) = succ (list_length xs)` — length recurses
+/// over `cons`. Genuine (hypothesis- and oracle-free).
+pub fn length_cons(alpha: &Type, x: &Term, xs: &Term) -> Result<Thm> {
+    let consed = cons(alpha.clone()).apply(x.clone())?.apply(xs.clone())?;
+    let step = length_step(alpha);
+
+    // length (cons x xs) = foldr step 0 (cons x xs)  (δ + β).
+    let unfold = length_unfold(alpha, &consed)?;
+    // foldr step 0 (cons x xs) = step x (foldr step 0 xs).
+    let fc = foldr_cons(alpha, &nat_ty(), &step, &nat_zero(), x, xs)?;
+    // β: step x (foldr step 0 xs) = succ (foldr step 0 xs).
+    let collapse = rhs_of(&fc)?.reduce()?;
+    // foldr step 0 xs = length xs  (reverse δ + β).
+    let fold_back = length_unfold(alpha, xs)?.sym()?;
+    let cong = fold_back.cong_arg(defs::nat_succ())?; // succ (foldr…) = succ (length xs)
+
+    crate::init::eq::trans_chain([unfold, fc, collapse, cong])
+}
+
+/// `list_cat[α] xs ys` applied.
+fn cat_app(alpha: &Type, xs: &Term, ys: &Term) -> Term {
+    Term::app(Term::app(defs::list_cat(alpha.clone()), xs.clone()), ys.clone())
+}
+
+/// `⊢ list_cat t ys = foldr cons ys t` — δ-unfold `cat` to its `foldr`
+/// body (`delta_all` spine walk + β).
+fn cat_unfold(alpha: &Type, t: &Term, ys: &Term) -> Result<Thm> {
+    cat_app(alpha, t, ys)
+        .delta_all(defs::list_cat_spec().symbol())?
+        .rhs_conv(|u| u.reduce())
+}
+
+/// `⊢ list_cat nil ys = ys` — appending onto `nil` is the identity (left
+/// unit). Genuine (hypothesis- and oracle-free).
+pub fn cat_nil(alpha: &Type, ys: &Term) -> Result<Thm> {
+    let la = list(alpha.clone());
+    let unfold = cat_unfold(alpha, &nil(alpha.clone()), ys)?; // cat nil ys = foldr cons ys nil
+    let base = foldr_nil(alpha, &la, &cons(alpha.clone()), ys)?; // foldr cons ys nil = ys
+    unfold.trans(base)
+}
+
+/// `⊢ list_cat (cons x xs) ys = cons x (list_cat xs ys)` — append recurses
+/// over the left list's `cons`. Genuine (hypothesis- and oracle-free).
+pub fn cat_cons(alpha: &Type, x: &Term, xs: &Term, ys: &Term) -> Result<Thm> {
+    let la = list(alpha.clone());
+    let consed = cons(alpha.clone()).apply(x.clone())?.apply(xs.clone())?;
+
+    // cat (cons x xs) ys = foldr cons ys (cons x xs)  (δ + β).
+    let unfold = cat_unfold(alpha, &consed, ys)?;
+    // foldr cons ys (cons x xs) = cons x (foldr cons ys xs).
+    let fc = foldr_cons(alpha, &la, &cons(alpha.clone()), ys, x, xs)?;
+    // foldr cons ys xs = cat xs ys  (reverse δ + β).
+    let fold_back = cat_unfold(alpha, xs, ys)?.sym()?;
+    let cong = fold_back.cong_arg(Term::app(cons(alpha.clone()), x.clone()))?; // cons x (foldr…) = cons x (cat xs ys)
+
+    crate::init::eq::trans_chain([unfold, fc, cong])
+}
+
 // --- small term helpers (kept local to keep the proof readable) ---
 
 fn mk_eq(a: Term, b: Term) -> Term {
@@ -480,5 +633,70 @@ mod tests {
             .unwrap();
         let _ = beta_reduce; // (kept for parity with the nat module's helpers)
         Term::abs(rec_ty, subst::close(&body, "r"))
+    }
+
+    // -- the foldr / length / cat equations --------------------------------
+
+    #[test]
+    fn foldr_clauses_are_genuine() {
+        let f = Term::free("f", super::fold_f_ty());
+        let z = Term::free("z", super::fold_beta());
+        let x = Term::free("x", elem());
+        let xs = Term::free("xs", list_ty());
+        let nil_eq = super::foldr_nil(&elem(), &super::fold_beta(), &f, &z).unwrap();
+        assert!(nil_eq.hyps().is_empty() && nil_eq.has_no_obs());
+        let (l, r) = nil_eq.concl().as_eq().unwrap();
+        let foldr = covalence_core::defs::list_foldr(elem(), super::fold_beta());
+        assert_eq!(
+            l,
+            &Term::app(Term::app(Term::app(foldr.clone(), f.clone()), z.clone()), nil(elem()))
+        );
+        assert_eq!(r, &z);
+        let cons_eq = super::foldr_cons(&elem(), &super::fold_beta(), &f, &z, &x, &xs).unwrap();
+        assert!(cons_eq.hyps().is_empty() && cons_eq.has_no_obs());
+    }
+
+    #[test]
+    fn length_clauses_are_genuine() {
+        let x = Term::free("x", elem());
+        let xs = Term::free("xs", list_ty());
+        let ln = super::length_nil(&elem()).unwrap();
+        assert!(ln.hyps().is_empty() && ln.has_no_obs());
+        let (l, r) = ln.concl().as_eq().unwrap();
+        assert_eq!(l, &Term::app(covalence_core::defs::list_length(elem()), nil(elem())));
+        assert_eq!(r, &Term::nat_lit(0u32));
+
+        let lc = super::length_cons(&elem(), &x, &xs).unwrap();
+        assert!(lc.hyps().is_empty() && lc.has_no_obs());
+        let (l, r) = lc.concl().as_eq().unwrap();
+        let consed = cons(elem()).apply(x.clone()).unwrap().apply(xs.clone()).unwrap();
+        assert_eq!(l, &Term::app(covalence_core::defs::list_length(elem()), consed));
+        let expected_r = Term::app(
+            covalence_core::defs::nat_succ(),
+            Term::app(covalence_core::defs::list_length(elem()), xs.clone()),
+        );
+        assert_eq!(r, &expected_r);
+    }
+
+    #[test]
+    fn cat_clauses_are_genuine() {
+        let x = Term::free("x", elem());
+        let xs = Term::free("xs", list_ty());
+        let ys = Term::free("ys", list_ty());
+        let cn = super::cat_nil(&elem(), &ys).unwrap();
+        assert!(cn.hyps().is_empty() && cn.has_no_obs());
+        let (l, r) = cn.concl().as_eq().unwrap();
+        let cat = covalence_core::defs::list_cat(elem());
+        assert_eq!(l, &Term::app(Term::app(cat.clone(), nil(elem())), ys.clone()));
+        assert_eq!(r, &ys);
+
+        let cc = super::cat_cons(&elem(), &x, &xs, &ys).unwrap();
+        assert!(cc.hyps().is_empty() && cc.has_no_obs());
+        let (l, r) = cc.concl().as_eq().unwrap();
+        let consed = cons(elem()).apply(x.clone()).unwrap().apply(xs.clone()).unwrap();
+        assert_eq!(l, &Term::app(Term::app(cat.clone(), consed), ys.clone()));
+        let cat_xs_ys = Term::app(Term::app(cat.clone(), xs.clone()), ys.clone());
+        let expected_r = Term::app(Term::app(cons(elem()), x.clone()), cat_xs_ys);
+        assert_eq!(r, &expected_r);
     }
 }

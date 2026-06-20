@@ -97,6 +97,12 @@ _above_ the kernel — aspirational, clearly marked as such:
   syntax for writing theories, definitions, and proofs that elaborate
   down to kernel objects (the long-term replacement for hand-written
   `defs/`/`init/` Rust); declarative meaning with pluggable computation.
+- **[`docs/surface-compiler.md`](./docs/surface-compiler.md)** — unifies
+  `surface/` + `script/` into one language: theories and their **many
+  models across many logics** as first-class objects (a model = a logic's
+  handler set + an interpretation), and the multi-stage compiler
+  (parse → resolve → elaborate+dispatch → lower → check) with span-carrying
+  diagnostics.
 - **[`docs/observers.md`](./docs/observers.md)** — how untrusted code
   feeds facts into the kernel's HOL model without growing the TCB
   (observer substrate exists today: `Observer` + `ObsEq`/`ObsTrue`/`ObsImp`;

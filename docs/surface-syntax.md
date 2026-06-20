@@ -7,7 +7,10 @@
 > `covalence-core` (`defs/`, `init/`) and `covalence-hol` (`init/`,
 > `proofs/`). Nothing here is implemented yet; this is the target.
 >
-> See also: [`observers.md`](./observers.md) (how untrusted code feeds
+> See also: [`surface-compiler.md`](./surface-compiler.md) (the *language* this
+> syntax feeds — theories and their many models across many logics, and the
+> multi-stage compiler that unifies `surface/` + `script/`),
+> [`observers.md`](./observers.md) (how untrusted code feeds
 > facts into the kernel), [`metatheory.md`](./metatheory.md) (theories,
 > derivations, and models as first-class objects),
 > [`kernel-design.md`](./kernel-design.md) (the kernel TCB this

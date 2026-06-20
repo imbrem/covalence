@@ -210,6 +210,31 @@ start. A first sketch of the AST — and a parser (`parse` / `parse_str`)
 lowering pure S-expressions into it — lives in
 [`crates/covalence-hol/src/surface/`](../crates/covalence-hol/src/surface/).
 
+### 1.5 Above the pure form: the concrete-syntax layer (planned)
+
+Everything above is the *canonical* form — pure S-expressions, the
+elaboration target and serialization format. It is deliberately **not** what
+a human types at the top. The **planned top layer is a real concrete syntax**:
+a lexer + an operator-precedence (Pratt) parser that reads the notation people
+actually want — infix `a + b * c`, the type arrow `'a -> 'b`,
+`none : option 'a`, the rewrite `lhs => rhs` — and genuinely **parses** it
+(not "prose sugar") into the canonical S-expression AST.
+
+- **Precedence + associativity** come from a table — ideally *declarable*
+  (Lean/Isabelle/Agda-style `notation` / `mixfix` declarations), so a theory
+  introduces its own operators with their fixity. `a + b * c` parses to
+  `(+ a (* b c))`; the table is the only place precedence lives.
+- **The pure S-expr stays canonical.** The concrete layer elaborates *down*
+  to it and adds no expressive power — it is **stage 0** of the compiler
+  ([`surface-compiler.md`](./surface-compiler.md) §6), above
+  parse/resolve/elaborate. Two texts that elaborate to the same S-expr are the
+  same program; the S-expr is what hashes, what serializes, what the rest of
+  the pipeline consumes.
+
+So §1.3's "only the right-hand column is a language" stays true of the
+*canonical* form; the concrete-syntax layer is a parser onto it — the part a
+user actually writes.
+
 ---
 
 ## 2. Two artifacts: **specs** and **definitions**

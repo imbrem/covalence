@@ -271,7 +271,10 @@ a **multi-stage compiler**; each stage produces typed IR, and errors are
 **diagnostics with spans, propagated** (never panics):
 
 ```
-  surface text
+  concrete text  (infix, precedence, notation — what a human writes)
+     │  0. READ         operator-precedence (Pratt) parse → canonical S-expr
+     ▼                  (surface-syntax.md §1.5; the pure S-expr stays canonical)
+  surface text  (canonical pure S-expr)
      │  1. PARSE        surface S-expr → surface AST  (+ source spans)
      ▼
   surface AST

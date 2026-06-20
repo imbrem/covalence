@@ -452,6 +452,22 @@ directives — is `open`-able by other scripts; the macro binds it as a
   patterns); (d) `rw` matches the FIRST (leftmost-outermost) subterm — no
   "rewrite at occurrence-N" control yet.
 
+- **`#comp` calc handles only `=` (no heterogeneous relations).** The
+  `#comp` rule (`script/tactic.rs`) folds `trans` over `(= RHS [BY])` steps,
+  per `docs/surface-syntax.md` §5.1; the heterogeneous form (`a = b ≤ c < d ⊢
+  a < d`, looking up a transitivity rule per adjacent relation pair, à la Lean
+  `calc` / Isabelle `also`) is deferred until a relation/transitivity registry
+  exists. Each step head must be `=` for now.
+- **Equational seams not yet registerable per-logic.** `Env::beta` /
+  `Env::congr` / `Env::funext` / `Env::comp_default` (`script/env.rs`) are
+  *methods* — the seam pattern of `apply_unify`/`rw_unify` — so the rules
+  (`beta`/`congr`/`funext`/`#comp`) *request* these operations rather than
+  hard-wiring them, but the methods still hold the single built-in HOL default.
+  Swapping in a logic's own `HandlerSet` (`ctx.active.rewrite`/`.reduce` of
+  `docs/surface-compiler.md` §9 — a monoid normalizer, a reified-logic decider)
+  needs the scoped `Context`/`HandlerSet` plumbing, not yet built. Same gap as
+  the `rw_unify` "registerable custom handler" TODO above; they should be wired
+  together.
 - **No proof/`Term` pretty-printer (serialization-out).** `script` only
   *parses* the named syntax and *replays* it; there is no printer from a
   proof / `Term` back to the surface S-expression. This blocks content-addressing

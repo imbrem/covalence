@@ -38,3 +38,16 @@ coupling guard.
   accessors still source from Rust (`.cov` proven equal, not yet authoritative) —
   flipping the source of truth + porting the numeric tower (hand-rolled copy did it)
   is the follow-up.
+
+## defs source-of-truth flip — reverted, pending re-entrancy fix
+
+- **Flipping the public `defs::*` accessors to source from `core_env()` is
+  DEFERRED.** An attempt (merge `f349a58`) made `defs::and()` → `spec("bool.and")`
+  → `core_env()` (a `LazyLock`) whose own init (`parse_core` over `core.cov`)
+  re-entered the same accessor on the same thread → **std `LazyLock` deadlock**,
+  freezing the whole `covalence-hol` suite. Reverted (`fed9819`). To redo safely:
+  `parse_core` must resolve catalogue references from the **partial env under
+  construction** (or a build-local Rust resolver), NEVER from the `core_env`-backed
+  `defs::*` accessors — and the change must be **test-gated** (the original was
+  build-only). `core.cov` + the byte-identical `cov::tests` remain in place; the
+  accessors stay Rust-sourced (`.cov` proven-equal but not yet authoritative).
